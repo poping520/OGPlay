@@ -14,7 +14,7 @@
 
 #include "catalog.h"
 
-namespace ogplay::runtime::dexvm::intrinsics::dvm80_java_util_zip {
+namespace ogplay::runtime::dexvm::intrinsics {
 namespace {
 
 [[noreturn]] void ZipFailure(const ZipRuntimeError &error) {
@@ -123,9 +123,3 @@ void AppendJavaUtilZip(std::vector<IntrinsicClassDecl> &catalog) {
 }
 
 } // namespace ogplay::runtime::dexvm::intrinsics
-
-namespace ogplay::runtime::dexvm::intrinsics {
-void AppendJavaUtilZip(std::vector<IntrinsicClassDecl>& catalog) {
-    dvm80_java_util_zip::AppendJavaUtilZip(catalog);
-}
-}  // namespace ogplay::runtime::dexvm::intrinsics

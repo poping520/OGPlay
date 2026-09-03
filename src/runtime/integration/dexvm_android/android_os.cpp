@@ -60,30 +60,30 @@ void WriteParcelAtom(DexVmAndroidContext::ParcelState& parcel,
 }  // namespace
 }  // namespace ogplay::runtime::android_intrinsics
 
-namespace ogplay::runtime::android_intrinsics::dvm80_android_os_AsyncTask {
+namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_os_AsyncTask(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class(
         "Landroid/os/AsyncTask;", "Ljava/lang/Object;", {},
-        kPublicAccess | kAbstractAccess);
+        dx::kAccPublic | dx::kAccAbstract);
     builder.Constructor("()V", [context](dx::IntrinsicContext& call) {
         std::scoped_lock lock(context->scheduler_mutex);
         context->async_tasks.try_emplace(call.receiver.Value());
         return dx::VmValue::Void();
     });
     builder.VirtualMethod("onPreExecute", "()V", NeutralHandler('V'),
-                          kProtectedAccess);
+                          dx::kAccProtected);
     builder.VirtualMethod("onPostExecute", "(Ljava/lang/Object;)V",
-                          NeutralHandler('V'), kProtectedAccess);
+                          NeutralHandler('V'), dx::kAccProtected);
     builder.VirtualMethod("onProgressUpdate", "([Ljava/lang/Object;)V",
-                          NeutralHandler('V'), kProtectedAccess);
+                          NeutralHandler('V'), dx::kAccProtected);
     builder.VirtualMethod("onCancelled", "(Ljava/lang/Object;)V",
-                          NeutralHandler('V'), kProtectedAccess);
+                          NeutralHandler('V'), dx::kAccProtected);
     builder.VirtualMethod("doInBackground", "([Ljava/lang/Object;)Ljava/lang/Object;",
         [](dx::IntrinsicContext&) -> dx::VmValue {
             throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
                                   "AsyncTask.doInBackground is not overridden"};
-        }, kProtectedAccess | kAbstractAccess);
+        }, dx::kAccProtected | dx::kAccAbstract);
     builder.FinalMethod("execute", "([Ljava/lang/Object;)Landroid/os/AsyncTask;",
         [context](dx::IntrinsicContext& call) {
             StartAsyncTask(call, context, call.receiver,
@@ -166,9 +166,6 @@ Decl Declare_android_os_AsyncTask(const Context& context) {
 }  // namespace ogplay::runtime::android_intrinsics
 
 namespace ogplay::runtime::android_intrinsics {
-Decl Declare_android_os_AsyncTask(const Context& context) {
-    return dvm80_android_os_AsyncTask::Declare_android_os_AsyncTask(context);
-}
 
 Decl Declare_android_os_AsyncTask_Status(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class(
@@ -229,7 +226,7 @@ Decl Declare_android_os_AsyncTask_Worker(const Context& context) {
 // ---- migrated from android_os_Build_VERSION.cpp ----
 #include "catalog.h"
 
-namespace ogplay::runtime::android_intrinsics::dvm80_android_os_Build_VERSION {
+namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_os_Build_VERSION(const Context& context) {
     static_cast<void>(context);
@@ -242,16 +239,11 @@ Decl Declare_android_os_Build_VERSION(const Context& context) {
 
 }  // namespace ogplay::runtime::android_intrinsics
 
-namespace ogplay::runtime::android_intrinsics {
-Decl Declare_android_os_Build_VERSION(const Context& context) {
-    return dvm80_android_os_Build_VERSION::Declare_android_os_Build_VERSION(context);
-}
-}  // namespace ogplay::runtime::android_intrinsics
 
 // ---- migrated from android_os_Build.cpp ----
 #include "catalog.h"
 
-namespace ogplay::runtime::android_intrinsics::dvm80_android_os_Build {
+namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_os_Build(const Context& context) {
     static_cast<void>(context);
@@ -267,11 +259,6 @@ Decl Declare_android_os_Build(const Context& context) {
 
 }  // namespace ogplay::runtime::android_intrinsics
 
-namespace ogplay::runtime::android_intrinsics {
-Decl Declare_android_os_Build(const Context& context) {
-    return dvm80_android_os_Build::Declare_android_os_Build(context);
-}
-}  // namespace ogplay::runtime::android_intrinsics
 
 // ---- migrated from android_os_Bundle.cpp ----
 // Bundle handlers store key/value pairs in the per-session bundle map
@@ -279,12 +266,14 @@ Decl Declare_android_os_Build(const Context& context) {
 
 #include "catalog.h"
 
-namespace ogplay::runtime::android_intrinsics::dvm80_android_os_Bundle {
+namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_os_Bundle(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class(
         "Landroid/os/Bundle;", "Ljava/lang/Object;", {"Landroid/os/Parcelable;"});
-    builder.StaticField("CREATOR", "Landroid/os/Parcelable$Creator;", 0x0019U);
+    builder.StaticField(
+        "CREATOR", "Landroid/os/Parcelable$Creator;",
+        dx::kAccPublic | dx::kAccStatic | dx::kAccFinal);
     builder.ClassInitializer([](dx::IntrinsicContext& call) {
         call.vm.SetIntrinsicStaticRef(
             "Landroid/os/Bundle;", "CREATOR", "Landroid/os/Parcelable$Creator;",
@@ -450,16 +439,11 @@ Decl Declare_android_os_Bundle(const Context& context) {
 
 }  // namespace ogplay::runtime::android_intrinsics
 
-namespace ogplay::runtime::android_intrinsics {
-Decl Declare_android_os_Bundle(const Context& context) {
-    return dvm80_android_os_Bundle::Declare_android_os_Bundle(context);
-}
-}  // namespace ogplay::runtime::android_intrinsics
 
 // ---- migrated from android_os_CountDownTimer.cpp ----
 #include "catalog.h"
 
-namespace ogplay::runtime::android_intrinsics::dvm80_android_os_CountDownTimer {
+namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_os_CountDownTimer(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/os/CountDownTimer;", "Ljava/lang/Object;");
@@ -498,16 +482,11 @@ Decl Declare_android_os_CountDownTimer(const Context& context) {
 
 }  // namespace ogplay::runtime::android_intrinsics
 
-namespace ogplay::runtime::android_intrinsics {
-Decl Declare_android_os_CountDownTimer(const Context& context) {
-    return dvm80_android_os_CountDownTimer::Declare_android_os_CountDownTimer(context);
-}
-}  // namespace ogplay::runtime::android_intrinsics
 
 // ---- migrated from android_os_Environment.cpp ----
 #include "catalog.h"
 
-namespace ogplay::runtime::android_intrinsics::dvm80_android_os_Environment {
+namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_os_Environment(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/os/Environment;", "Ljava/lang/Object;");
@@ -545,16 +524,11 @@ Decl Declare_android_os_Environment(const Context& context) {
 
 }  // namespace ogplay::runtime::android_intrinsics
 
-namespace ogplay::runtime::android_intrinsics {
-Decl Declare_android_os_Environment(const Context& context) {
-    return dvm80_android_os_Environment::Declare_android_os_Environment(context);
-}
-}  // namespace ogplay::runtime::android_intrinsics
 
 // ---- migrated from android_os_Handler.cpp ----
 #include "catalog.h"
 
-namespace ogplay::runtime::android_intrinsics::dvm80_android_os_Handler {
+namespace ogplay::runtime::android_intrinsics {
 
 namespace {
 
@@ -872,9 +846,6 @@ Decl Declare_android_os_Handler(const Context& context) {
 }  // namespace ogplay::runtime::android_intrinsics
 
 namespace ogplay::runtime::android_intrinsics {
-Decl Declare_android_os_Handler(const Context& context) {
-    return dvm80_android_os_Handler::Declare_android_os_Handler(context);
-}
 
 namespace dvm89_android_os_ResultReceiver {
 namespace {
@@ -908,13 +879,13 @@ Decl Declare_android_os_ResultReceiver_MyRunnable(const Context& context) {
     static_cast<void>(context);
     auto builder = dx::IntrinsicClassBuilder::Class(
         "Landroid/os/ResultReceiver$MyRunnable;", "Ljava/lang/Object;",
-        {"Ljava/lang/Runnable;"}, 0x0020U);
+        {"Ljava/lang/Runnable;"}, dx::kAccSuper);
     const auto receiver = builder.BoundInstanceField(
         "this$0", "Landroid/os/ResultReceiver;", 0x1010U);
     const auto result_code =
-        builder.BoundInstanceField("mResultCode", "I", 0x0010U);
+        builder.BoundInstanceField("mResultCode", "I", dx::kAccFinal);
     const auto result_data = builder.BoundInstanceField(
-        "mResultData", "Landroid/os/Bundle;", 0x0010U);
+        "mResultData", "Landroid/os/Bundle;", dx::kAccFinal);
     builder.Constructor(
         "(Landroid/os/ResultReceiver;ILandroid/os/Bundle;)V",
         [receiver, result_code, result_data](dx::IntrinsicContext& call) {
@@ -940,9 +911,9 @@ Decl Declare_android_os_ResultReceiver(const Context& context) {
         "Landroid/os/ResultReceiver;", "Ljava/lang/Object;",
         {"Landroid/os/Parcelable;"});
     const auto local =
-        builder.BoundInstanceField("mLocal", "Z", 0x0010U);
+        builder.BoundInstanceField("mLocal", "Z", dx::kAccFinal);
     const auto handler = builder.BoundInstanceField(
-        "mHandler", "Landroid/os/Handler;", 0x0010U);
+        "mHandler", "Landroid/os/Handler;", dx::kAccFinal);
     builder.Constructor("(Landroid/os/Handler;)V",
         [local, handler](dx::IntrinsicContext& call) {
             dx::IntrinsicCall fields(call);
@@ -1003,7 +974,7 @@ Decl Declare_android_os_ResultReceiver(const Context& context) {
     builder.VirtualMethod(
         "onReceiveResult", "(ILandroid/os/Bundle;)V",
         [](dx::IntrinsicContext&) { return dx::VmValue::Void(); },
-        kProtectedAccess);
+        dx::kAccProtected);
     builder.VirtualMethod("describeContents", "()I",
         [](dx::IntrinsicContext&) { return dx::VmValue::Int(0); });
     builder.VirtualMethod("writeToParcel", "(Landroid/os/Parcel;I)V",
@@ -1061,7 +1032,7 @@ Decl Declare_android_os_HandlerThread(const Context& context) {
     builder.Constructor("(Ljava/lang/String;)V", construct);
     builder.Constructor("(Ljava/lang/String;I)V", construct);
     builder.VirtualMethod("onLooperPrepared", "()V", NeutralHandler('V'),
-                          kProtectedAccess);
+                          dx::kAccProtected);
     builder.OverrideMethod("run", "()V", [context](dx::IntrinsicContext& call) {
         const auto looper = PrepareLooper(call, context, false);
         PublishHandlerThreadLooper(context, call.receiver, looper);
@@ -1105,7 +1076,7 @@ Decl Declare_android_os_HandlerThread(const Context& context) {
 // ---- migrated from android_os_IBinder.cpp ----
 #include "catalog.h"
 
-namespace ogplay::runtime::android_intrinsics::dvm80_android_os_IBinder {
+namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_os_IBinder(const Context& context) {
     static_cast<void>(context);
@@ -1115,16 +1086,11 @@ Decl Declare_android_os_IBinder(const Context& context) {
 
 }  // namespace ogplay::runtime::android_intrinsics
 
-namespace ogplay::runtime::android_intrinsics {
-Decl Declare_android_os_IBinder(const Context& context) {
-    return dvm80_android_os_IBinder::Declare_android_os_IBinder(context);
-}
-}  // namespace ogplay::runtime::android_intrinsics
 
 // ---- migrated from android_os_Looper.cpp ----
 #include "catalog.h"
 
-namespace ogplay::runtime::android_intrinsics::dvm80_android_os_Looper {
+namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_os_Looper(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/os/Looper;", "Ljava/lang/Object;");
@@ -1184,16 +1150,11 @@ Decl Declare_android_os_Looper(const Context& context) {
 
 }  // namespace ogplay::runtime::android_intrinsics
 
-namespace ogplay::runtime::android_intrinsics {
-Decl Declare_android_os_Looper(const Context& context) {
-    return dvm80_android_os_Looper::Declare_android_os_Looper(context);
-}
-}  // namespace ogplay::runtime::android_intrinsics
 
 // ---- migrated from android_os_Message.cpp ----
 #include "catalog.h"
 
-namespace ogplay::runtime::android_intrinsics::dvm80_android_os_Message {
+namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_os_Message(const Context& context) {
     static_cast<void>(context);
@@ -1267,11 +1228,6 @@ Decl Declare_android_os_SystemClock(const Context& context) {
 }
 }  // namespace ogplay::runtime::android_intrinsics
 
-namespace ogplay::runtime::android_intrinsics {
-Decl Declare_android_os_Message(const Context& context) {
-    return dvm80_android_os_Message::Declare_android_os_Message(context);
-}
-}  // namespace ogplay::runtime::android_intrinsics
 
 // ---- migrated from android_os_StatFs.cpp ----
 #include <algorithm>
@@ -1279,7 +1235,7 @@ Decl Declare_android_os_Message(const Context& context) {
 
 #include "catalog.h"
 
-namespace ogplay::runtime::android_intrinsics::dvm80_android_os_StatFs {
+namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_os_StatFs(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/os/StatFs;", "Ljava/lang/Object;");
@@ -1303,19 +1259,18 @@ Decl Declare_android_os_StatFs(const Context& context) {
 
 }  // namespace ogplay::runtime::android_intrinsics
 
-namespace ogplay::runtime::android_intrinsics {
-Decl Declare_android_os_StatFs(const Context& context) {
-    return dvm80_android_os_StatFs::Declare_android_os_StatFs(context);
-}
-}  // namespace ogplay::runtime::android_intrinsics
 
 namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_os_Parcelable(const Context& context) {
     static_cast<void>(context);
     auto builder = dx::IntrinsicClassBuilder::Interface("Landroid/os/Parcelable;");
-    builder.ConstantInt("CONTENTS_FILE_DESCRIPTOR", "I", 1, 0x0019U)
-        .ConstantInt("PARCELABLE_WRITE_RETURN_VALUE", "I", 1, 0x0019U);
+    builder.ConstantInt(
+               "CONTENTS_FILE_DESCRIPTOR", "I", 1,
+               dx::kAccPublic | dx::kAccStatic | dx::kAccFinal)
+        .ConstantInt(
+            "PARCELABLE_WRITE_RETURN_VALUE", "I", 1,
+            dx::kAccPublic | dx::kAccStatic | dx::kAccFinal);
     builder.VirtualMethod("describeContents", "()I", [](dx::IntrinsicContext&) -> dx::VmValue {
         throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
                               "Parcelable.describeContents is not implemented"};
@@ -1373,7 +1328,7 @@ Decl Declare_android_os_Parcel(const Context& context) {
     builder.Constructor("()V", [context](dx::IntrinsicContext& call) {
         context->parcels[call.receiver.Value()] = {};
         return dx::VmValue::Void();
-    }, 0x0002U);
+    }, dx::kAccPrivate);
     builder.StaticMethod("obtain", "()Landroid/os/Parcel;", [context](dx::IntrinsicContext& call) {
         const auto parcel = call.vm.NewIntrinsicInstance("Landroid/os/Parcel;");
         context->parcels[parcel.Value()] = {};
@@ -1540,8 +1495,11 @@ Decl Declare_android_os_PowerManager_WakeLock(const Context& context) {
 Decl Declare_android_os_ParcelFileDescriptor(const Context&) {
     auto builder = dx::IntrinsicClassBuilder::Class(
         "Landroid/os/ParcelFileDescriptor;", "Ljava/lang/Object;");
-    builder.ConstantInt("MODE_READ_ONLY", "I", 0x10000000, 0x0019U);
-    builder.InstanceField("mFd", "Ljava/io/FileDescriptor;", 0x0012U);
+    builder.ConstantInt(
+        "MODE_READ_ONLY", "I", 0x10000000,
+        dx::kAccPublic | dx::kAccStatic | dx::kAccFinal);
+    builder.InstanceField("mFd", "Ljava/io/FileDescriptor;",
+                          dx::kAccPrivate | dx::kAccFinal);
     builder.StaticMethod(
         "open", "(Ljava/io/File;I)Landroid/os/ParcelFileDescriptor;",
         [](dx::IntrinsicContext& call) {
@@ -1584,12 +1542,16 @@ Decl Declare_android_os_ParcelFileDescriptor(const Context&) {
 
 Decl Declare_android_os_PowerManager(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/os/PowerManager;", "Ljava/lang/Object;");
-    builder.ConstantInt("PARTIAL_WAKE_LOCK", "I", 1, 0x0019U)
-        .ConstantInt("SCREEN_DIM_WAKE_LOCK", "I", 6, 0x0019U)
-        .ConstantInt("SCREEN_BRIGHT_WAKE_LOCK", "I", 10, 0x0019U)
-        .ConstantInt("FULL_WAKE_LOCK", "I", 26, 0x0019U)
-        .ConstantInt("ACQUIRE_CAUSES_WAKEUP", "I", 0x10000000, 0x0019U)
-        .ConstantInt("ON_AFTER_RELEASE", "I", 0x20000000, 0x0019U);
+    constexpr auto constant_access =
+        dx::kAccPublic | dx::kAccStatic | dx::kAccFinal;
+    builder.ConstantInt("PARTIAL_WAKE_LOCK", "I", 1, constant_access)
+        .ConstantInt("SCREEN_DIM_WAKE_LOCK", "I", 6, constant_access)
+        .ConstantInt("SCREEN_BRIGHT_WAKE_LOCK", "I", 10, constant_access)
+        .ConstantInt("FULL_WAKE_LOCK", "I", 26, constant_access)
+        .ConstantInt("ACQUIRE_CAUSES_WAKEUP", "I", 0x10000000,
+                     constant_access)
+        .ConstantInt("ON_AFTER_RELEASE", "I", 0x20000000,
+                     constant_access);
     builder.FinalMethod("newWakeLock", "(ILjava/lang/String;)Landroid/os/PowerManager$WakeLock;",
         [context](dx::IntrinsicContext& call) {
             if (!call.arguments[1].ref.IsValid())
@@ -1628,11 +1590,14 @@ Decl Declare_android_os_Vibrator(const Context& context) {
 
 Decl Declare_android_os_Process(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/os/Process;", "Ljava/lang/Object;");
-    builder.ConstantInt("SYSTEM_UID", "I", 1000, 0x0019U)
-        .ConstantInt("FIRST_APPLICATION_UID", "I", 10000, 0x0019U)
-        .ConstantInt("THREAD_PRIORITY_DEFAULT", "I", 0, 0x0019U)
-        .ConstantInt("THREAD_PRIORITY_BACKGROUND", "I", 10, 0x0019U)
-        .ConstantInt("THREAD_PRIORITY_URGENT_DISPLAY", "I", -8, 0x0019U);
+    constexpr auto constant_access =
+        dx::kAccPublic | dx::kAccStatic | dx::kAccFinal;
+    builder.ConstantInt("SYSTEM_UID", "I", 1000, constant_access)
+        .ConstantInt("FIRST_APPLICATION_UID", "I", 10000, constant_access)
+        .ConstantInt("THREAD_PRIORITY_DEFAULT", "I", 0, constant_access)
+        .ConstantInt("THREAD_PRIORITY_BACKGROUND", "I", 10, constant_access)
+        .ConstantInt("THREAD_PRIORITY_URGENT_DISPLAY", "I", -8,
+                     constant_access);
     builder.StaticMethod("myPid", "()I", [](dx::IntrinsicContext&) { return dx::VmValue::Int(1); })
         .StaticMethod("myUid", "()I", [context](dx::IntrinsicContext&) {
             return dx::VmValue::Int(static_cast<std::int32_t>(context->application_uid));

@@ -112,13 +112,14 @@ IntrinsicClassDecl DeclareDefaultHandler() {
 IntrinsicClassDecl DeclareXmlPullParser() {
     auto builder = IntrinsicClassBuilder::Interface(
         "Lorg/xmlpull/v1/XmlPullParser;");
-    constexpr std::uint32_t kPublicAbstract = 0x0401U;
-    builder.UnimplementedVirtual("getEventType", "()I", kPublicAbstract);
-    builder.UnimplementedVirtual("next", "()I", kPublicAbstract);
+    builder.UnimplementedVirtual("getEventType", "()I",
+                                 kAccPublic | kAccAbstract);
+    builder.UnimplementedVirtual("next", "()I",
+                                 kAccPublic | kAccAbstract);
     builder.UnimplementedVirtual("getName", "()Ljava/lang/String;",
-                                 kPublicAbstract);
+                                 kAccPublic | kAccAbstract);
     builder.UnimplementedVirtual("getText", "()Ljava/lang/String;",
-                                 kPublicAbstract);
+                                 kAccPublic | kAccAbstract);
     return std::move(builder).Build();
 }
 

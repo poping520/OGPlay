@@ -13,7 +13,7 @@
 
 #include "ogplay/runtime/dexvm/intrinsic_builder.h"
 
-namespace ogplay::runtime::dexvm::intrinsics::dvm80_java_util_regex_PatternSyntaxException {
+namespace ogplay::runtime::dexvm::intrinsics {
 using namespace detail;
 
 IntrinsicClassDecl Declare_java_util_regex_PatternSyntaxException() {
@@ -32,11 +32,6 @@ IntrinsicClassDecl Declare_java_util_regex_PatternSyntaxException() {
 
 }  // namespace ogplay::runtime::dexvm::intrinsics
 
-namespace ogplay::runtime::dexvm::intrinsics {
-IntrinsicClassDecl Declare_java_util_regex_PatternSyntaxException() {
-    return dvm80_java_util_regex_PatternSyntaxException::Declare_java_util_regex_PatternSyntaxException();
-}
-}  // namespace ogplay::runtime::dexvm::intrinsics
 
 // ---- DVM-87 bounded API 19 Pattern/Matcher ----
 

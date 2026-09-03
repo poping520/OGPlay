@@ -9,7 +9,7 @@
 
 #include "catalog.h"
 
-namespace ogplay::runtime::android_intrinsics::dvm80_android_app_Activity {
+namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_app_Application(const Context& context) {
     static_cast<void>(context);
@@ -33,19 +33,19 @@ Decl Declare_android_app_Activity(const Context& context) {
     const auto lifecycle_noop = dx::IntrinsicHandler(
         [](dx::IntrinsicContext&) { return dx::VmValue::Void(); });
     builder.VirtualMethod("onCreate", "(Landroid/os/Bundle;)V", lifecycle_noop,
-                          kProtectedAccess);
+                          dx::kAccProtected);
     builder.VirtualMethod("onStart", "()V", lifecycle_noop,
-                          kProtectedAccess);
+                          dx::kAccProtected);
     builder.VirtualMethod("onRestart", "()V", lifecycle_noop,
-                          kProtectedAccess);
+                          dx::kAccProtected);
     builder.VirtualMethod("onResume", "()V", lifecycle_noop,
-                          kProtectedAccess);
+                          dx::kAccProtected);
     builder.VirtualMethod("onPause", "()V", lifecycle_noop,
-                          kProtectedAccess);
+                          dx::kAccProtected);
     builder.VirtualMethod("onStop", "()V", lifecycle_noop,
-                          kProtectedAccess);
+                          dx::kAccProtected);
     builder.VirtualMethod("onDestroy", "()V", lifecycle_noop,
-                          kProtectedAccess);
+                          dx::kAccProtected);
     builder.VirtualMethod("onConfigurationChanged",
         "(Landroid/content/res/Configuration;)V", lifecycle_noop);
     builder.FinalMethod("getWindow", "()Landroid/view/Window;",
@@ -254,19 +254,11 @@ Decl Declare_android_app_Activity(const Context& context) {
 
 }  // namespace ogplay::runtime::android_intrinsics
 
-namespace ogplay::runtime::android_intrinsics {
-Decl Declare_android_app_Application(const Context& context) {
-    return dvm80_android_app_Activity::Declare_android_app_Application(context);
-}
-Decl Declare_android_app_Activity(const Context& context) {
-    return dvm80_android_app_Activity::Declare_android_app_Activity(context);
-}
-}  // namespace ogplay::runtime::android_intrinsics
 
 // ---- migrated from android_app_AlertDialog_Builder.cpp ----
 #include "catalog.h"
 
-namespace ogplay::runtime::android_intrinsics::dvm80_android_app_AlertDialog_Builder {
+namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_app_AlertDialog_Builder(const Context& context) {
     static_cast<void>(context);
@@ -287,16 +279,11 @@ Decl Declare_android_app_AlertDialog_Builder(const Context& context) {
 
 }  // namespace ogplay::runtime::android_intrinsics
 
-namespace ogplay::runtime::android_intrinsics {
-Decl Declare_android_app_AlertDialog_Builder(const Context& context) {
-    return dvm80_android_app_AlertDialog_Builder::Declare_android_app_AlertDialog_Builder(context);
-}
-}  // namespace ogplay::runtime::android_intrinsics
 
 // ---- migrated from android_app_AlertDialog.cpp ----
 #include "catalog.h"
 
-namespace ogplay::runtime::android_intrinsics::dvm80_android_app_AlertDialog {
+namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_app_AlertDialog(const Context& context) {
     static_cast<void>(context);
@@ -307,16 +294,11 @@ Decl Declare_android_app_AlertDialog(const Context& context) {
 
 }  // namespace ogplay::runtime::android_intrinsics
 
-namespace ogplay::runtime::android_intrinsics {
-Decl Declare_android_app_AlertDialog(const Context& context) {
-    return dvm80_android_app_AlertDialog::Declare_android_app_AlertDialog(context);
-}
-}  // namespace ogplay::runtime::android_intrinsics
 
 // ---- migrated from android_app_Dialog.cpp ----
 #include "catalog.h"
 
-namespace ogplay::runtime::android_intrinsics::dvm80_android_app_Dialog {
+namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_app_Dialog(const Context& context) {
     static_cast<void>(context);
@@ -327,46 +309,36 @@ Decl Declare_android_app_Dialog(const Context& context) {
 
 }  // namespace ogplay::runtime::android_intrinsics
 
-namespace ogplay::runtime::android_intrinsics {
-Decl Declare_android_app_Dialog(const Context& context) {
-    return dvm80_android_app_Dialog::Declare_android_app_Dialog(context);
-}
-}  // namespace ogplay::runtime::android_intrinsics
 
 // ---- migrated from android_app_IntentService.cpp ----
 #include "catalog.h"
 
-namespace ogplay::runtime::android_intrinsics::dvm80_android_app_IntentService {
+namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_app_IntentService(const Context& context) {
     static_cast<void>(context);
     auto builder = dx::IntrinsicClassBuilder::Class(
         "Landroid/app/IntentService;", "Landroid/app/Service;", {},
-        0x0401U);
+        dx::kAccPublic | dx::kAccAbstract);
     builder.Constructor("()V", NeutralHandler('V'));
     builder.VirtualMethod("onHandleIntent", "(Landroid/content/Intent;)V",
         [](dx::IntrinsicContext&) -> dx::VmValue {
             throw dx::VmJavaThrow{
                 "Ljava/lang/UnsupportedOperationException;",
                 "IntentService.onHandleIntent must be overridden"};
-        }, kProtectedAccess | kAbstractAccess);
+        }, dx::kAccProtected | dx::kAccAbstract);
     return std::move(builder).Build();
 }
 
 }  // namespace ogplay::runtime::android_intrinsics
 
-namespace ogplay::runtime::android_intrinsics {
-Decl Declare_android_app_IntentService(const Context& context) {
-    return dvm80_android_app_IntentService::Declare_android_app_IntentService(context);
-}
-}  // namespace ogplay::runtime::android_intrinsics
 
 namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_app_Service(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class(
         "Landroid/app/Service;", "Landroid/content/ContextWrapper;", {},
-        0x0401U);
+        dx::kAccPublic | dx::kAccAbstract);
     builder.Constructor("()V", [](dx::IntrinsicContext&) {
         return dx::VmValue::Void();
     });
@@ -399,7 +371,7 @@ Decl Declare_android_app_Service(const Context& context) {
                 throw dx::VmJavaThrow{
                     "Ljava/lang/UnsupportedOperationException;",
                     "Service.onBind must be overridden"};
-            }, 0x0401U)
+            }, dx::kAccPublic | dx::kAccAbstract)
         .VirtualMethod("onUnbind", "(Landroid/content/Intent;)Z",
             [](dx::IntrinsicContext&) { return dx::VmValue::Int(0); })
         .VirtualMethod("onRebind", "(Landroid/content/Intent;)V", noop);
@@ -411,7 +383,7 @@ Decl Declare_android_app_Service(const Context& context) {
 // ---- migrated from android_app_PendingIntent.cpp ----
 #include "catalog.h"
 
-namespace ogplay::runtime::android_intrinsics::dvm80_android_app_PendingIntent {
+namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_app_PendingIntent(const Context& context) {
     static_cast<void>(context);
@@ -427,16 +399,11 @@ Decl Declare_android_app_PendingIntent(const Context& context) {
 
 }  // namespace ogplay::runtime::android_intrinsics
 
-namespace ogplay::runtime::android_intrinsics {
-Decl Declare_android_app_PendingIntent(const Context& context) {
-    return dvm80_android_app_PendingIntent::Declare_android_app_PendingIntent(context);
-}
-}  // namespace ogplay::runtime::android_intrinsics
 
 // ---- migrated from android_app_ProgressDialog.cpp ----
 #include "catalog.h"
 
-namespace ogplay::runtime::android_intrinsics::dvm80_android_app_ProgressDialog {
+namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_app_ProgressDialog(const Context& context) {
     static_cast<void>(context);
@@ -451,11 +418,6 @@ Decl Declare_android_app_ProgressDialog(const Context& context) {
 
 }  // namespace ogplay::runtime::android_intrinsics
 
-namespace ogplay::runtime::android_intrinsics {
-Decl Declare_android_app_ProgressDialog(const Context& context) {
-    return dvm80_android_app_ProgressDialog::Declare_android_app_ProgressDialog(context);
-}
-}  // namespace ogplay::runtime::android_intrinsics
 
 // ---- migrated from support_activity.cpp ----
 // Managed surface lifecycle callback dispatch. Intrinsic handlers live in

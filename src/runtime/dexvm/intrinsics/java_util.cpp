@@ -22,10 +22,6 @@ namespace ogplay::runtime::dexvm::intrinsics {
 using namespace detail;
 namespace {
 
-constexpr std::uint32_t kPublic = 0x0001U;
-constexpr std::uint32_t kProtected = 0x0004U;
-constexpr std::uint32_t kAbstract = 0x0400U;
-constexpr std::uint32_t kSynchronized = 0x0020U;
 constexpr std::size_t kNoIndex = std::numeric_limits<std::size_t>::max();
 
 [[noreturn]] void Null(std::string_view what) {
@@ -324,7 +320,7 @@ SnapshotMap(IntrinsicContext &context, const VmObjectRef source) {
 }
 
 void AddSequenceMethods(IntrinsicClassBuilder &builder,
-                        const std::uint32_t flags = kPublic,
+                        const std::uint32_t flags = kAccPublic,
                         const bool reject_null = false) {
   builder.VirtualMethod(
       "add", "(Ljava/lang/Object;)Z",
@@ -695,7 +691,7 @@ struct MapMethodDeclarer final {
 
   void VirtualMethod(std::string name, std::string descriptor,
                      IntrinsicHandler handler,
-                     const std::uint32_t flags = kPublic) const {
+                     const std::uint32_t flags = kAccPublic) const {
     if (overrides) {
       target.OverrideMethod(std::move(name), std::move(descriptor),
                             std::move(handler), flags);
@@ -707,7 +703,7 @@ struct MapMethodDeclarer final {
 };
 
 void AddMapMethods(IntrinsicClassBuilder &raw_builder, const bool reject_null,
-                   const bool linked, const std::uint32_t flags = kPublic,
+                   const bool linked, const std::uint32_t flags = kAccPublic,
                    const bool overrides = false) {
   const MapMethodDeclarer builder{raw_builder, overrides};
   builder.VirtualMethod(
@@ -1240,7 +1236,7 @@ void AddVectorMethods(IntrinsicClassBuilder &builder,
 }
 
 void AddStackMethods(IntrinsicClassBuilder &builder) {
-  constexpr auto flags = kPublic | kSynchronized;
+  constexpr auto flags = kAccPublic | kAccSynchronized;
   builder.VirtualMethod(
       "push", "(Ljava/lang/Object;)Ljava/lang/Object;",
       [](IntrinsicContext &context) {
@@ -1308,7 +1304,7 @@ void DeclareCollectionMethods(IntrinsicClassBuilder &builder) {
            {"size", "()I"},
            {"toArray", "()[Ljava/lang/Object;"},
            {"toArray", "([Ljava/lang/Object;)[Ljava/lang/Object;"}}) {
-    builder.UnimplementedVirtual(name, descriptor, kPublic | kAbstract);
+    builder.UnimplementedVirtual(name, descriptor, kAccPublic | kAccAbstract);
   }
 }
 
@@ -1334,7 +1330,7 @@ IntrinsicClassDecl DeclareList() {
            {"listIterator", "()Ljava/util/ListIterator;"},
            {"listIterator", "(I)Ljava/util/ListIterator;"},
            {"subList", "(II)Ljava/util/List;"}}) {
-    builder.UnimplementedVirtual(name, descriptor, kPublic | kAbstract);
+    builder.UnimplementedVirtual(name, descriptor, kAccPublic | kAccAbstract);
   }
   return std::move(builder).Build();
 }
@@ -1349,15 +1345,15 @@ IntrinsicClassDecl DeclareSet() {
 IntrinsicClassDecl DeclareMapEntryInterface() {
   auto builder = IntrinsicClassBuilder::Interface("Ljava/util/Map$Entry;");
   builder.UnimplementedVirtual("getKey", "()Ljava/lang/Object;",
-                               kPublic | kAbstract);
+                               kAccPublic | kAccAbstract);
   builder.UnimplementedVirtual("getValue", "()Ljava/lang/Object;",
-                               kPublic | kAbstract);
+                               kAccPublic | kAccAbstract);
   builder.UnimplementedVirtual("setValue",
                                "(Ljava/lang/Object;)Ljava/lang/Object;",
-                               kPublic | kAbstract);
+                               kAccPublic | kAccAbstract);
   builder.UnimplementedVirtual("equals", "(Ljava/lang/Object;)Z",
-                               kPublic | kAbstract);
-  builder.UnimplementedVirtual("hashCode", "()I", kPublic | kAbstract);
+                               kAccPublic | kAccAbstract);
+  builder.UnimplementedVirtual("hashCode", "()I", kAccPublic | kAccAbstract);
   return std::move(builder).Build();
 }
 
@@ -1377,17 +1373,17 @@ IntrinsicClassDecl DeclareMap() {
            {"remove", "(Ljava/lang/Object;)Ljava/lang/Object;"},
            {"size", "()I"},
            {"values", "()Ljava/util/Collection;"}}) {
-    builder.UnimplementedVirtual(name, descriptor, kPublic | kAbstract);
+    builder.UnimplementedVirtual(name, descriptor, kAccPublic | kAccAbstract);
   }
   return std::move(builder).Build();
 }
 
 IntrinsicClassDecl DeclareIteratorInterface() {
   auto builder = IntrinsicClassBuilder::Interface("Ljava/util/Iterator;");
-  builder.UnimplementedVirtual("hasNext", "()Z", kPublic | kAbstract);
+  builder.UnimplementedVirtual("hasNext", "()Z", kAccPublic | kAccAbstract);
   builder.UnimplementedVirtual("next", "()Ljava/lang/Object;",
-                               kPublic | kAbstract);
-  builder.UnimplementedVirtual("remove", "()V", kPublic | kAbstract);
+                               kAccPublic | kAccAbstract);
+  builder.UnimplementedVirtual("remove", "()V", kAccPublic | kAccAbstract);
   return std::move(builder).Build();
 }
 
@@ -1405,7 +1401,7 @@ IntrinsicClassDecl DeclareListIteratorInterface() {
            {"previousIndex", "()I"},
            {"remove", "()V"},
            {"set", "(Ljava/lang/Object;)V"}}) {
-    builder.UnimplementedVirtual(name, descriptor, kPublic | kAbstract);
+    builder.UnimplementedVirtual(name, descriptor, kAccPublic | kAccAbstract);
   }
   return std::move(builder).Build();
 }
@@ -1426,7 +1422,7 @@ IntrinsicClassDecl DeclareQueue() {
            {"peek", "()Ljava/lang/Object;"},
            {"poll", "()Ljava/lang/Object;"},
            {"remove", "()Ljava/lang/Object;"}}) {
-    builder.UnimplementedVirtual(name, descriptor, kPublic | kAbstract);
+    builder.UnimplementedVirtual(name, descriptor, kAccPublic | kAccAbstract);
   }
   return std::move(builder).Build();
 }
@@ -1453,16 +1449,17 @@ IntrinsicClassDecl DeclareDeque() {
            {"descendingIterator", "()Ljava/util/Iterator;"},
            {"push", "(Ljava/lang/Object;)V"},
            {"pop", "()Ljava/lang/Object;"}}) {
-    builder.UnimplementedVirtual(name, descriptor, kPublic | kAbstract);
+    builder.UnimplementedVirtual(name, descriptor, kAccPublic | kAccAbstract);
   }
   return std::move(builder).Build();
 }
 
 IntrinsicClassDecl DeclareEnumeration() {
   auto builder = IntrinsicClassBuilder::Interface("Ljava/util/Enumeration;");
-  builder.UnimplementedVirtual("hasMoreElements", "()Z", kPublic | kAbstract);
+  builder.UnimplementedVirtual("hasMoreElements", "()Z",
+                               kAccPublic | kAccAbstract);
   builder.UnimplementedVirtual("nextElement", "()Ljava/lang/Object;",
-                               kPublic | kAbstract);
+                               kAccPublic | kAccAbstract);
   return std::move(builder).Build();
 }
 
@@ -1470,9 +1467,9 @@ IntrinsicClassDecl DeclareComparator() {
   auto builder = IntrinsicClassBuilder::Interface("Ljava/util/Comparator;");
   builder.UnimplementedVirtual("compare",
                                "(Ljava/lang/Object;Ljava/lang/Object;)I",
-                               kPublic | kAbstract);
+                               kAccPublic | kAccAbstract);
   builder.UnimplementedVirtual("equals", "(Ljava/lang/Object;)Z",
-                               kPublic | kAbstract);
+                               kAccPublic | kAccAbstract);
   return std::move(builder).Build();
 }
 
@@ -1481,9 +1478,10 @@ IntrinsicClassDecl DeclareAbstract(std::string descriptor,
                                    std::vector<std::string> interfaces) {
   auto builder =
       IntrinsicClassBuilder::Class(std::move(descriptor), std::move(superclass),
-                                   std::move(interfaces), kPublic | kAbstract);
+                                   std::move(interfaces),
+                                   kAccPublic | kAccAbstract);
   builder.Constructor(
-      "()V", [](IntrinsicContext &) { return VmValue::Void(); }, kProtected);
+      "()V", [](IntrinsicContext &) { return VmValue::Void(); }, kAccProtected);
   return std::move(builder).Build();
 }
 
@@ -1531,13 +1529,14 @@ IntrinsicClassDecl DeclareSequenceClass(
   }
   if (!stack_methods) {
     AddSequenceMethods(builder,
-                       synchronized ? kPublic | kSynchronized : kPublic,
+                       synchronized ? kAccPublic | kAccSynchronized : kAccPublic,
                        reject_null);
   }
   if (deque)
     AddDequeMethods(builder, reject_null);
   if (vector_methods && !stack_methods) {
-    AddVectorMethods(builder, synchronized ? kPublic | kSynchronized : kPublic);
+    AddVectorMethods(builder,
+                     synchronized ? kAccPublic | kAccSynchronized : kAccPublic);
   }
   if (stack_methods)
     AddStackMethods(builder);
@@ -1615,10 +1614,11 @@ IntrinsicClassDecl DeclareMapClass(std::string descriptor,
   if (linked) {
     builder.VirtualMethod(
         "removeEldestEntry", "(Ljava/util/Map$Entry;)Z",
-        [](IntrinsicContext &) { return VmValue::Int(0); }, kProtected);
+        [](IntrinsicContext &) { return VmValue::Int(0); }, kAccProtected);
   }
   AddMapMethods(builder, reject_null, linked,
-                synchronized ? kPublic | kSynchronized : kPublic, linked);
+                synchronized ? kAccPublic | kAccSynchronized : kAccPublic,
+                linked);
   return std::move(builder).Build();
 }
 
@@ -2097,7 +2097,7 @@ IntrinsicClassDecl DeclareObserver() {
   auto builder = IntrinsicClassBuilder::Interface("Ljava/util/Observer;");
   builder.UnimplementedVirtual(
       "update", "(Ljava/util/Observable;Ljava/lang/Object;)V",
-      kPublic | kAbstract);
+      kAccPublic | kAccAbstract);
   return std::move(builder).Build();
 }
 
@@ -2105,8 +2105,8 @@ IntrinsicClassDecl DeclareObservable() {
   auto builder = IntrinsicClassBuilder::Class("Ljava/util/Observable;",
                                               "Ljava/lang/Object;");
   const auto observers = builder.BoundInstanceField(
-      "observers", "Ljava/util/List;", 0U);
-  const auto changed = builder.BoundInstanceField("changed", "Z", 0U);
+      "observers", "Ljava/util/List;", kAccNone);
+  const auto changed = builder.BoundInstanceField("changed", "Z", kAccNone);
 
   builder.Constructor("()V", [observers, changed](IntrinsicContext &context) {
     const auto list =
@@ -2147,7 +2147,7 @@ IntrinsicClassDecl DeclareObservable() {
         IntrinsicCall(context).SetInt(changed, 0);
         return VmValue::Void();
       },
-      kProtected);
+      kAccProtected);
   builder.VirtualMethod(
       "countObservers", "()I", [observers](IntrinsicContext &context) {
         const auto list = IntrinsicCall(context).GetRef(observers);
@@ -2170,7 +2170,7 @@ IntrinsicClassDecl DeclareObservable() {
         }
         return VmValue::Void();
       },
-      kPublic | kSynchronized);
+      kAccPublic | kAccSynchronized);
   builder.VirtualMethod(
       "deleteObservers", "()V",
       [observers](IntrinsicContext &context) {
@@ -2183,7 +2183,7 @@ IntrinsicClassDecl DeclareObservable() {
         }
         return VmValue::Void();
       },
-      kPublic | kSynchronized);
+      kAccPublic | kAccSynchronized);
   builder.VirtualMethod(
       "hasChanged", "()Z", [changed](IntrinsicContext &context) {
         return VmValue::Int(IntrinsicCall(context).GetInt(changed) != 0);
@@ -2247,7 +2247,7 @@ IntrinsicClassDecl DeclareObservable() {
         IntrinsicCall(context).SetInt(changed, 1);
         return VmValue::Void();
       },
-      kProtected);
+      kAccProtected);
   return std::move(builder).Build();
 }
 
@@ -2481,7 +2481,7 @@ IntrinsicClassDecl DeclarePlatformTimerTask(
             IntrinsicContext& call) {
             return VmValue::Long(scheduled ? scheduled(call.receiver) : 0);
         });
-    builder.UnimplementedVirtual("run", "()V", 0x0001U | 0x0400U);
+    builder.UnimplementedVirtual("run", "()V", kAccPublic | kAccAbstract);
     return std::move(builder).Build();
 }
 
@@ -2502,7 +2502,7 @@ void AppendJavaUtilPlatform(std::vector<IntrinsicClassDecl>& catalog,
 
 #include "ogplay/runtime/dexvm/intrinsic_builder.h"
 
-namespace ogplay::runtime::dexvm::intrinsics::dvm80_java_util_Date {
+namespace ogplay::runtime::dexvm::intrinsics {
 using namespace detail;
 
 IntrinsicClassDecl Declare_java_util_Date() {
@@ -2517,11 +2517,6 @@ IntrinsicClassDecl Declare_java_util_Date() {
 
 }  // namespace ogplay::runtime::dexvm::intrinsics
 
-namespace ogplay::runtime::dexvm::intrinsics {
-IntrinsicClassDecl Declare_java_util_Date() {
-    return dvm80_java_util_Date::Declare_java_util_Date();
-}
-}  // namespace ogplay::runtime::dexvm::intrinsics
 
 // ---- migrated from java_util_Random.cpp ----
 #include "catalog.h"
@@ -2529,7 +2524,7 @@ IntrinsicClassDecl Declare_java_util_Date() {
 
 #include "ogplay/runtime/dexvm/intrinsic_builder.h"
 
-namespace ogplay::runtime::dexvm::intrinsics::dvm80_java_util_Random {
+namespace ogplay::runtime::dexvm::intrinsics {
 using namespace detail;
 
 IntrinsicClassDecl Declare_java_util_Random() {
@@ -2598,11 +2593,6 @@ IntrinsicClassDecl Declare_java_util_Random() {
 
 }  // namespace ogplay::runtime::dexvm::intrinsics
 
-namespace ogplay::runtime::dexvm::intrinsics {
-IntrinsicClassDecl Declare_java_util_Random() {
-    return dvm80_java_util_Random::Declare_java_util_Random();
-}
-}  // namespace ogplay::runtime::dexvm::intrinsics
 
 // ---- DVM-87 API 19 Arrays/Collections algorithms ----
 
@@ -3178,7 +3168,7 @@ Dvm87TimeZoneDeclaration Dvm87DeclareTimeZone() {
         call.SetRef(fields.id, call.Vm().NewStringUtf8("GMT"));
         call.SetInt(fields.raw_offset, 0);
         return VmValue::Void();
-    }, 0x0004U);
+    }, kAccProtected);
     builder.StaticMethod("getDefault", "()Ljava/util/TimeZone;",
         [make_zone](IntrinsicContext& context) {
             return VmValue::Ref(make_zone(context, "GMT"));
@@ -3265,7 +3255,8 @@ Dvm87CalendarDeclaration Dvm87DeclareCalendar(
     const CoreIntrinsicServices& services) {
     auto builder = IntrinsicClassBuilder::Class(
         "Ljava/util/Calendar;", "Ljava/lang/Object;",
-        {"Ljava/io/Serializable;", "Ljava/lang/Cloneable;"}, 0x0401U);
+        {"Ljava/io/Serializable;", "Ljava/lang/Cloneable;"},
+        kAccPublic | kAccAbstract);
     const Dvm87CalendarFields fields{
         builder.BoundInstanceField("time", "J"),
         builder.BoundInstanceField("zone", "Ljava/util/TimeZone;"),
@@ -3293,7 +3284,7 @@ Dvm87CalendarDeclaration Dvm87DeclareCalendar(
             call.SetRef(fields.zone, call.NonNullRef(0, "zone"));
             call.SetInt(fields.lenient, 1);
             return VmValue::Void();
-        }, 0x0004U);
+        }, kAccProtected);
     builder.StaticMethod("getInstance", "()Ljava/util/Calendar;",
         [fields, now = services.current_time_millis](IntrinsicContext& context) {
             IntrinsicCall call(context);

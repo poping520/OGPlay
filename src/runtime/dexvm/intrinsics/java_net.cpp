@@ -6,7 +6,7 @@
 
 #include "ogplay/runtime/dexvm/intrinsic_builder.h"
 
-namespace ogplay::runtime::dexvm::intrinsics::dvm80_java_net_MalformedURLException {
+namespace ogplay::runtime::dexvm::intrinsics {
 using namespace detail;
 
 IntrinsicClassDecl Declare_java_net_MalformedURLException() {
@@ -172,8 +172,8 @@ IntrinsicClassDecl DeclareUriSyntaxException() {
     auto builder = IntrinsicClassBuilder::Class(
         "Ljava/net/URISyntaxException;", "Ljava/lang/Exception;");
     const auto input = builder.BoundInstanceField("input", "Ljava/lang/String;",
-                                                   0x0002U);
-    const auto index = builder.BoundInstanceField("index", "I", 0x0002U);
+                                                   kAccPrivate);
+    const auto index = builder.BoundInstanceField("index", "I", kAccPrivate);
     const auto construct = [input, index](IntrinsicContext& context) {
         IntrinsicCall call(context);
         const auto input_value = call.NonNullRef(0, "input");
@@ -209,23 +209,25 @@ IntrinsicClassDecl DeclareUriSyntaxException() {
 IntrinsicClassDecl DeclareUri() {
     auto builder = IntrinsicClassBuilder::Class(
         "Ljava/net/URI;", "Ljava/lang/Object;",
-        {"Ljava/io/Serializable;", "Ljava/lang/Comparable;"}, 0x0011U);
+        {"Ljava/io/Serializable;", "Ljava/lang/Comparable;"},
+        kAccPublic | kAccFinal);
     const auto spec = builder.BoundInstanceField("string", "Ljava/lang/String;",
-                                                 0x0002U);
+                                                 kAccPrivate);
     const auto scheme = builder.BoundInstanceField("scheme", "Ljava/lang/String;",
-                                                   0x0002U);
+                                                   kAccPrivate);
     const auto ssp = builder.BoundInstanceField(
-        "schemeSpecificPart", "Ljava/lang/String;", 0x0002U);
+        "schemeSpecificPart", "Ljava/lang/String;", kAccPrivate);
     const auto authority = builder.BoundInstanceField(
-        "authority", "Ljava/lang/String;", 0x0002U);
+        "authority", "Ljava/lang/String;", kAccPrivate);
     const auto path = builder.BoundInstanceField("path", "Ljava/lang/String;",
-                                                 0x0002U);
+                                                 kAccPrivate);
     const auto query = builder.BoundInstanceField("query", "Ljava/lang/String;",
-                                                  0x0002U);
+                                                  kAccPrivate);
     const auto fragment = builder.BoundInstanceField(
-        "fragment", "Ljava/lang/String;", 0x0002U);
-    const auto absolute = builder.BoundInstanceField("absolute", "Z", 0x0002U);
-    const auto opaque = builder.BoundInstanceField("opaque", "Z", 0x0002U);
+        "fragment", "Ljava/lang/String;", kAccPrivate);
+    const auto absolute =
+        builder.BoundInstanceField("absolute", "Z", kAccPrivate);
+    const auto opaque = builder.BoundInstanceField("opaque", "Z", kAccPrivate);
     builder.Constructor("(Ljava/lang/String;)V",
         [=](IntrinsicContext& context) {
             IntrinsicCall call(context);
@@ -813,11 +815,6 @@ void AppendJavaNetPlatform(std::vector<IntrinsicClassDecl>& catalog,
 
 }  // namespace ogplay::runtime::dexvm::intrinsics
 
-namespace ogplay::runtime::dexvm::intrinsics {
-IntrinsicClassDecl Declare_java_net_MalformedURLException() {
-    return dvm80_java_net_MalformedURLException::Declare_java_net_MalformedURLException();
-}
-}  // namespace ogplay::runtime::dexvm::intrinsics
 
 // ---- migrated from java_net_SocketException.cpp ----
 #include "catalog.h"
@@ -825,7 +822,7 @@ IntrinsicClassDecl Declare_java_net_MalformedURLException() {
 
 #include "ogplay/runtime/dexvm/intrinsic_builder.h"
 
-namespace ogplay::runtime::dexvm::intrinsics::dvm80_java_net_SocketException {
+namespace ogplay::runtime::dexvm::intrinsics {
 using namespace detail;
 
 IntrinsicClassDecl Declare_java_net_SocketException() {
@@ -834,11 +831,6 @@ IntrinsicClassDecl Declare_java_net_SocketException() {
 
 }  // namespace ogplay::runtime::dexvm::intrinsics
 
-namespace ogplay::runtime::dexvm::intrinsics {
-IntrinsicClassDecl Declare_java_net_SocketException() {
-    return dvm80_java_net_SocketException::Declare_java_net_SocketException();
-}
-}  // namespace ogplay::runtime::dexvm::intrinsics
 
 // ---- migrated from java_net_SocketTimeoutException.cpp ----
 #include "catalog.h"
@@ -846,7 +838,7 @@ IntrinsicClassDecl Declare_java_net_SocketException() {
 
 #include "ogplay/runtime/dexvm/intrinsic_builder.h"
 
-namespace ogplay::runtime::dexvm::intrinsics::dvm80_java_net_SocketTimeoutException {
+namespace ogplay::runtime::dexvm::intrinsics {
 using namespace detail;
 
 IntrinsicClassDecl Declare_java_net_SocketTimeoutException() {
@@ -855,11 +847,6 @@ IntrinsicClassDecl Declare_java_net_SocketTimeoutException() {
 
 }  // namespace ogplay::runtime::dexvm::intrinsics
 
-namespace ogplay::runtime::dexvm::intrinsics {
-IntrinsicClassDecl Declare_java_net_SocketTimeoutException() {
-    return dvm80_java_net_SocketTimeoutException::Declare_java_net_SocketTimeoutException();
-}
-}  // namespace ogplay::runtime::dexvm::intrinsics
 
 // ---- migrated from java_net_UnknownHostException.cpp ----
 #include "catalog.h"
@@ -867,17 +854,11 @@ IntrinsicClassDecl Declare_java_net_SocketTimeoutException() {
 
 #include "ogplay/runtime/dexvm/intrinsic_builder.h"
 
-namespace ogplay::runtime::dexvm::intrinsics::dvm80_java_net_UnknownHostException {
+namespace ogplay::runtime::dexvm::intrinsics {
 using namespace detail;
 
 IntrinsicClassDecl Declare_java_net_UnknownHostException() {
     return DeclareSimpleThrowable("Ljava/net/UnknownHostException;", "Ljava/io/IOException;");
 }
 
-}  // namespace ogplay::runtime::dexvm::intrinsics
-
-namespace ogplay::runtime::dexvm::intrinsics {
-IntrinsicClassDecl Declare_java_net_UnknownHostException() {
-    return dvm80_java_net_UnknownHostException::Declare_java_net_UnknownHostException();
-}
 }  // namespace ogplay::runtime::dexvm::intrinsics

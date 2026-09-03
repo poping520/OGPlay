@@ -5,7 +5,9 @@
 提供 dex_activity 生命周期使用的 `android.*` 与 `javax.microedition.*` 平台
 intrinsic。`catalog.cpp` 是唯一注册聚合点；平台类按 API 家族聚合到一个源文件，
 每个类仍导出独立的 `Declare_<类名>(context)`，返回已经直接持有 handler 的
-不可变声明。Java handle 文件按 API family 与共享状态聚合，以控制翻译单元数量。
+不可变声明。这些入口直接位于正式 `ogplay::runtime::android_intrinsics` 命名空间，
+不得保留 `dvm80_*` 迁移命名空间或同名转发函数。Java handle 文件按 API family 与
+共享状态聚合，以控制翻译单元数量。
 
 声明与实现同址是唯一 handler 形态。`shared.h` 只暴露跨类共享 helper 与工厂；
 跨类复用的 handler 以 `shared.cpp` 中的工厂函数（如 `ViewInitHandler(context)`、
@@ -74,7 +76,8 @@ binding。`GLUtils` 读取 context 中既有 Bitmap backing；本层不拥有 GL
   禁止复制 Context/ContextWrapper 方法；`ContextWrapper` 的 `mBase` 转发必须逐项使用
   `OverrideMethod`，继承与 declaring class 只由 linker 决定（ADR-0028）。
 - override callback 的 access flags 必须对齐 pinned Android 4.4.4 DEX 元数据。Protected
-  方法显式使用 `kProtectedAccess`，不得依赖 builder 的 public 默认值；当前门禁覆盖
+  方法显式使用共享 `dx::kAccProtected`，不得依赖 builder 的 public 默认值；所有平台
+  class/member 声明均使用 `access_flags.h` 的 `dx::kAcc*`，不得复制直接量。当前门禁覆盖
   Activity 生命周期、ContextWrapper/IntentService、View、AsyncTask、ResultReceiver 和
   HandlerThread。此约束只校准已实现 API，不扩大 framework 范围。
 - owner-attached Android 状态统一经具名 state-table trace/sweep；session roots 不枚举 map key。

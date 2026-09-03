@@ -6,7 +6,7 @@
 
 #include "ogplay/runtime/dexvm/intrinsic_builder.h"
 
-namespace ogplay::runtime::dexvm::intrinsics::dvm80_java_io_EOFException {
+namespace ogplay::runtime::dexvm::intrinsics {
 using namespace detail;
 
 IntrinsicClassDecl Declare_java_io_EOFException() {
@@ -15,11 +15,6 @@ IntrinsicClassDecl Declare_java_io_EOFException() {
 
 }  // namespace ogplay::runtime::dexvm::intrinsics
 
-namespace ogplay::runtime::dexvm::intrinsics {
-IntrinsicClassDecl Declare_java_io_EOFException() {
-    return dvm80_java_io_EOFException::Declare_java_io_EOFException();
-}
-}  // namespace ogplay::runtime::dexvm::intrinsics
 
 // ---- migrated from java_io_FileNotFoundException.cpp ----
 #include "catalog.h"
@@ -27,7 +22,7 @@ IntrinsicClassDecl Declare_java_io_EOFException() {
 
 #include "ogplay/runtime/dexvm/intrinsic_builder.h"
 
-namespace ogplay::runtime::dexvm::intrinsics::dvm80_java_io_FileNotFoundException {
+namespace ogplay::runtime::dexvm::intrinsics {
 using namespace detail;
 
 IntrinsicClassDecl Declare_java_io_FileNotFoundException() {
@@ -36,11 +31,6 @@ IntrinsicClassDecl Declare_java_io_FileNotFoundException() {
 
 }  // namespace ogplay::runtime::dexvm::intrinsics
 
-namespace ogplay::runtime::dexvm::intrinsics {
-IntrinsicClassDecl Declare_java_io_FileNotFoundException() {
-    return dvm80_java_io_FileNotFoundException::Declare_java_io_FileNotFoundException();
-}
-}  // namespace ogplay::runtime::dexvm::intrinsics
 
 // ---- migrated from java_io_files.cpp ----
 #include "catalog.h"
@@ -57,7 +47,7 @@ IntrinsicClassDecl Declare_java_io_FileNotFoundException() {
 #include "ogplay/runtime/dexvm/intrinsic_builder.h"
 #include "ogplay/runtime/dexvm/io_runtime.h"
 
-namespace ogplay::runtime::dexvm::intrinsics::dvm80_java_io_files {
+namespace ogplay::runtime::dexvm::intrinsics {
 namespace {
 
 [[nodiscard]] VmObjectRef FilePathRef(IntrinsicContext &call,
@@ -349,11 +339,15 @@ IntrinsicClassDecl DeclareFile() {
   auto builder = IntrinsicClassBuilder::Class(
       "Ljava/io/File;", "Ljava/lang/Object;",
       {"Ljava/io/Serializable;", "Ljava/lang/Comparable;"});
-  builder.ConstantInt("separatorChar", "C", '/', 0x0019U);
-  builder.ConstantString("separator", "/", 0x0019U);
-  builder.ConstantInt("pathSeparatorChar", "C", ':', 0x0019U);
-  builder.ConstantString("pathSeparator", ":", 0x0019U);
-  builder.InstanceField("path", "Ljava/lang/String;", 0x0002U);
+  builder.ConstantInt("separatorChar", "C", '/',
+                      kAccPublic | kAccStatic | kAccFinal);
+  builder.ConstantString("separator", "/",
+                         kAccPublic | kAccStatic | kAccFinal);
+  builder.ConstantInt("pathSeparatorChar", "C", ':',
+                      kAccPublic | kAccStatic | kAccFinal);
+  builder.ConstantString("pathSeparator", ":",
+                         kAccPublic | kAccStatic | kAccFinal);
+  builder.InstanceField("path", "Ljava/lang/String;", kAccPrivate);
   // 使用字符串路径创建 File 对象。
   builder.Constructor("(Ljava/lang/String;)V", [](IntrinsicContext &call) {
     if (!call.arguments[0].ref.IsValid()) {
@@ -753,7 +747,7 @@ IntrinsicClassDecl DeclareFile() {
             call, call.receiver, "compareTo", "(Ljava/io/File;)I", arguments);
         return comparison.value_or(VmValue::Int(0));
       },
-      0x1041U);
+      kAccPublic | kAccBridge | kAccSynthetic);
   // 将普通文件重命名到新的 guest 路径。
   builder.VirtualMethod("renameTo", "(Ljava/io/File;)Z",
                         [](IntrinsicContext &call) {
@@ -825,14 +819,16 @@ IntrinsicClassDecl DeclareFilenameFilter() {
   auto builder = IntrinsicClassBuilder::Interface("Ljava/io/FilenameFilter;");
   // 判断指定目录中的文件名是否应被接收。
   builder.UnimplementedVirtual(
-      "accept", "(Ljava/io/File;Ljava/lang/String;)Z", 0x0401U);
+      "accept", "(Ljava/io/File;Ljava/lang/String;)Z",
+      kAccPublic | kAccAbstract);
   return std::move(builder).Build();
 }
 
 IntrinsicClassDecl DeclareFileFilter() {
   auto builder = IntrinsicClassBuilder::Interface("Ljava/io/FileFilter;");
   // 判断指定 File 对象是否应被接收。
-  builder.UnimplementedVirtual("accept", "(Ljava/io/File;)Z", 0x0401U);
+  builder.UnimplementedVirtual("accept", "(Ljava/io/File;)Z",
+                               kAccPublic | kAccAbstract);
   return std::move(builder).Build();
 }
 
@@ -840,9 +836,9 @@ IntrinsicClassDecl DeclareFileInputStream() {
   auto builder = IntrinsicClassBuilder::Class("Ljava/io/FileInputStream;",
                                               "Ljava/io/InputStream;");
   const auto fd = builder.BoundInstanceField(
-      "fd", "Ljava/io/FileDescriptor;", 0x0002U);
+      "fd", "Ljava/io/FileDescriptor;", kAccPrivate);
   const auto should_close =
-      builder.BoundInstanceField("shouldClose", "Z", 0x0012U);
+      builder.BoundInstanceField("shouldClose", "Z", kAccPrivate | kAccFinal);
   const auto open_path = [fd, should_close](const bool file_argument) {
     return [fd, should_close, file_argument](IntrinsicContext &call) {
       IntrinsicCall typed(call);
@@ -1026,9 +1022,9 @@ IntrinsicClassDecl DeclareFileOutputStream() {
   auto builder = IntrinsicClassBuilder::Class("Ljava/io/FileOutputStream;",
                                               "Ljava/io/OutputStream;");
   const auto fd = builder.BoundInstanceField(
-      "fd", "Ljava/io/FileDescriptor;", 0x0002U);
+      "fd", "Ljava/io/FileDescriptor;", kAccPrivate);
   const auto should_close =
-      builder.BoundInstanceField("shouldClose", "Z", 0x0012U);
+      builder.BoundInstanceField("shouldClose", "Z", kAccPrivate | kAccFinal);
 
   const auto open_path = [fd, should_close](const bool file_argument,
                                             const bool has_append) {
@@ -1242,11 +1238,6 @@ void AppendJavaIoFiles(std::vector<IntrinsicClassDecl> &catalog) {
 
 } // namespace ogplay::runtime::dexvm::intrinsics
 
-namespace ogplay::runtime::dexvm::intrinsics {
-void AppendJavaIoFiles(std::vector<IntrinsicClassDecl>& catalog) {
-    dvm80_java_io_files::AppendJavaIoFiles(catalog);
-}
-}  // namespace ogplay::runtime::dexvm::intrinsics
 
 // ---- migrated from java_io_IOException.cpp ----
 #include "catalog.h"
@@ -1254,7 +1245,7 @@ void AppendJavaIoFiles(std::vector<IntrinsicClassDecl>& catalog) {
 
 #include "ogplay/runtime/dexvm/intrinsic_builder.h"
 
-namespace ogplay::runtime::dexvm::intrinsics::dvm80_java_io_IOException {
+namespace ogplay::runtime::dexvm::intrinsics {
 using namespace detail;
 
 IntrinsicClassDecl Declare_java_io_IOException() {
@@ -1263,11 +1254,6 @@ IntrinsicClassDecl Declare_java_io_IOException() {
 
 }  // namespace ogplay::runtime::dexvm::intrinsics
 
-namespace ogplay::runtime::dexvm::intrinsics {
-IntrinsicClassDecl Declare_java_io_IOException() {
-    return dvm80_java_io_IOException::Declare_java_io_IOException();
-}
-}  // namespace ogplay::runtime::dexvm::intrinsics
 
 // ---- migrated from java_io_PrintStream.cpp ----
 #include "catalog.h"
@@ -1275,7 +1261,7 @@ IntrinsicClassDecl Declare_java_io_IOException() {
 
 #include "ogplay/runtime/dexvm/intrinsic_builder.h"
 
-namespace ogplay::runtime::dexvm::intrinsics::dvm80_java_io_PrintStream {
+namespace ogplay::runtime::dexvm::intrinsics {
 using namespace detail;
 
 IntrinsicClassDecl Declare_java_io_PrintStream() {
@@ -1310,11 +1296,6 @@ IntrinsicClassDecl Declare_java_io_PrintStream() {
 
 }  // namespace ogplay::runtime::dexvm::intrinsics
 
-namespace ogplay::runtime::dexvm::intrinsics {
-IntrinsicClassDecl Declare_java_io_PrintStream() {
-    return dvm80_java_io_PrintStream::Declare_java_io_PrintStream();
-}
-}  // namespace ogplay::runtime::dexvm::intrinsics
 
 // ---- migrated from java_io_Serializable.cpp ----
 #include "catalog.h"
@@ -1322,7 +1303,7 @@ IntrinsicClassDecl Declare_java_io_PrintStream() {
 
 #include "ogplay/runtime/dexvm/intrinsic_builder.h"
 
-namespace ogplay::runtime::dexvm::intrinsics::dvm80_java_io_Serializable {
+namespace ogplay::runtime::dexvm::intrinsics {
 using namespace detail;
 
 IntrinsicClassDecl Declare_java_io_Serializable() {
@@ -1333,11 +1314,6 @@ IntrinsicClassDecl Declare_java_io_Serializable() {
 
 }  // namespace ogplay::runtime::dexvm::intrinsics
 
-namespace ogplay::runtime::dexvm::intrinsics {
-IntrinsicClassDecl Declare_java_io_Serializable() {
-    return dvm80_java_io_Serializable::Declare_java_io_Serializable();
-}
-}  // namespace ogplay::runtime::dexvm::intrinsics
 
 // ---- migrated from java_io_streams.cpp ----
 #include "catalog.h"
@@ -1353,12 +1329,8 @@ IntrinsicClassDecl Declare_java_io_Serializable() {
 #include "ogplay/runtime/dexvm/intrinsic_builder.h"
 #include "ogplay/runtime/dexvm/io_runtime.h"
 
-namespace ogplay::runtime::dexvm::intrinsics::dvm80_java_io_streams {
+namespace ogplay::runtime::dexvm::intrinsics {
 namespace {
-
-[[noreturn]] void IoFailure(const IoRuntimeError &error) {
-  throw VmJavaThrow{"Ljava/io/IOException;", error.what()};
-}
 
 [[nodiscard]] IoRuntime::InputState &Input(IntrinsicContext &call) {
   try {
@@ -1544,7 +1516,7 @@ IntrinsicHandler SkipInput() {
 IntrinsicClassDecl DeclareInputStream() {
   auto builder = IntrinsicClassBuilder::Class(
       "Ljava/io/InputStream;", "Ljava/lang/Object;",
-      {"Ljava/io/Closeable;"}, 0x0401U);
+      {"Ljava/io/Closeable;"}, kAccPublic | kAccAbstract);
   // 创建输入流基类。
   builder.Constructor("()V", [](IntrinsicContext &) {
     return VmValue::Void();
@@ -1595,7 +1567,7 @@ IntrinsicClassDecl DeclareInputStream() {
     return outcome.value;
   });
   // 子类必须实现单字节读取。
-  builder.UnimplementedVirtual("read", "()I", 0x0401U);
+  builder.UnimplementedVirtual("read", "()I", kAccPublic | kAccAbstract);
   // 基类默认没有可立即读取的字节。
   builder.VirtualMethod("available", "()I", [](IntrinsicContext &) {
     return VmValue::Int(0);
@@ -1618,7 +1590,7 @@ IntrinsicClassDecl DeclareInputStream() {
       [](IntrinsicContext &) -> VmValue {
         throw VmJavaThrow{"Ljava/io/IOException;", "mark/reset not supported"};
       },
-      0x0021U);
+      kAccPublic | kAccSynchronized);
   // 通过可覆写的读取方法消费并跳过字节。
   builder.VirtualMethod("skip", "(J)J", [](IntrinsicContext &call) {
     const auto requested = call.arguments[0].AsLong();
@@ -1654,7 +1626,8 @@ IntrinsicClassDecl DeclareInputStream() {
 IntrinsicClassDecl DeclareOutputStream() {
   auto builder = IntrinsicClassBuilder::Class(
       "Ljava/io/OutputStream;", "Ljava/lang/Object;",
-      {"Ljava/io/Closeable;", "Ljava/io/Flushable;"}, 0x0401U);
+      {"Ljava/io/Closeable;", "Ljava/io/Flushable;"},
+      kAccPublic | kAccAbstract);
   // 创建输出流基类。
   builder.Constructor("()V", [](IntrinsicContext &) {
     return VmValue::Void();
@@ -1695,7 +1668,7 @@ IntrinsicClassDecl DeclareOutputStream() {
     return VmValue::Void();
   });
   // 子类必须实现单字节写入。
-  builder.UnimplementedVirtual("write", "(I)V", 0x0401U);
+  builder.UnimplementedVirtual("write", "(I)V", kAccPublic | kAccAbstract);
   // 基类刷新不执行额外操作。
   builder.VirtualMethod("flush", "()V", [](IntrinsicContext &) {
     return VmValue::Void();
@@ -1707,7 +1680,7 @@ IntrinsicClassDecl DeclareOutputStream() {
   // 报告此输出流是否记录了被抑制的写入错误。
   builder.VirtualMethod("checkError", "()Z", [](IntrinsicContext &) {
     return VmValue::Int(0);
-  }, 0U);
+  }, kAccNone);
   return std::move(builder).Build();
 }
 
@@ -1989,10 +1962,12 @@ IntrinsicClassDecl DeclareObjectInputStream() {
 void AppendJavaIoStreams(std::vector<IntrinsicClassDecl> &catalog) {
   auto closeable = IntrinsicClassBuilder::Interface(
       "Ljava/io/Closeable;", {"Ljava/lang/AutoCloseable;"});
-  closeable.UnimplementedVirtual("close", "()V", 0x0401U);
+  closeable.UnimplementedVirtual("close", "()V",
+                                 kAccPublic | kAccAbstract);
   catalog.push_back(std::move(closeable).Build());
   auto flushable = IntrinsicClassBuilder::Interface("Ljava/io/Flushable;");
-  flushable.UnimplementedVirtual("flush", "()V", 0x0401U);
+  flushable.UnimplementedVirtual("flush", "()V",
+                                 kAccPublic | kAccAbstract);
   catalog.push_back(std::move(flushable).Build());
   catalog.push_back(DeclareInputStream());
   catalog.push_back(DeclareOutputStream());
@@ -2013,11 +1988,6 @@ void AppendJavaIoStreams(std::vector<IntrinsicClassDecl> &catalog) {
 
 } // namespace ogplay::runtime::dexvm::intrinsics
 
-namespace ogplay::runtime::dexvm::intrinsics {
-void AppendJavaIoStreams(std::vector<IntrinsicClassDecl>& catalog) {
-    dvm80_java_io_streams::AppendJavaIoStreams(catalog);
-}
-}  // namespace ogplay::runtime::dexvm::intrinsics
 
 // ---- migrated from java_io_UnsupportedEncodingException.cpp ----
 #include "catalog.h"
@@ -2025,17 +1995,11 @@ void AppendJavaIoStreams(std::vector<IntrinsicClassDecl>& catalog) {
 
 #include "ogplay/runtime/dexvm/intrinsic_builder.h"
 
-namespace ogplay::runtime::dexvm::intrinsics::dvm80_java_io_UnsupportedEncodingException {
+namespace ogplay::runtime::dexvm::intrinsics {
 using namespace detail;
 
 IntrinsicClassDecl Declare_java_io_UnsupportedEncodingException() {
     return DeclareSimpleThrowable("Ljava/io/UnsupportedEncodingException;", "Ljava/io/IOException;");
 }
 
-}  // namespace ogplay::runtime::dexvm::intrinsics
-
-namespace ogplay::runtime::dexvm::intrinsics {
-IntrinsicClassDecl Declare_java_io_UnsupportedEncodingException() {
-    return dvm80_java_io_UnsupportedEncodingException::Declare_java_io_UnsupportedEncodingException();
-}
 }  // namespace ogplay::runtime::dexvm::intrinsics

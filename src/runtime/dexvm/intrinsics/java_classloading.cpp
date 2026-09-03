@@ -7,7 +7,7 @@
 
 #include "ogplay/runtime/dexvm/intrinsic_builder.h"
 
-namespace ogplay::runtime::dexvm::intrinsics::dvm80_dalvik_system_PathClassLoader {
+namespace ogplay::runtime::dexvm::intrinsics {
 
 IntrinsicClassDecl Declare_dalvik_system_PathClassLoader() {
     auto builder = IntrinsicClassBuilder::Class(
@@ -21,11 +21,6 @@ IntrinsicClassDecl Declare_dalvik_system_PathClassLoader() {
 
 }  // namespace ogplay::runtime::dexvm::intrinsics
 
-namespace ogplay::runtime::dexvm::intrinsics {
-IntrinsicClassDecl Declare_dalvik_system_PathClassLoader() {
-    return dvm80_dalvik_system_PathClassLoader::Declare_dalvik_system_PathClassLoader();
-}
-}  // namespace ogplay::runtime::dexvm::intrinsics
 
 // ---- migrated from java_lang_BootClassLoader.cpp ----
 #include "catalog.h"
@@ -34,22 +29,17 @@ IntrinsicClassDecl Declare_dalvik_system_PathClassLoader() {
 
 #include "ogplay/runtime/dexvm/intrinsic_builder.h"
 
-namespace ogplay::runtime::dexvm::intrinsics::dvm80_java_lang_BootClassLoader {
+namespace ogplay::runtime::dexvm::intrinsics {
 
 IntrinsicClassDecl Declare_java_lang_BootClassLoader() {
     auto builder = IntrinsicClassBuilder::Class(
-        "Ljava/lang/BootClassLoader;", "Ljava/lang/ClassLoader;", {}, 0U);
+        "Ljava/lang/BootClassLoader;", "Ljava/lang/ClassLoader;", {}, kAccNone);
     builder.UnimplementedConstructor("()V");
     return std::move(builder).Build();
 }
 
 }  // namespace ogplay::runtime::dexvm::intrinsics
 
-namespace ogplay::runtime::dexvm::intrinsics {
-IntrinsicClassDecl Declare_java_lang_BootClassLoader() {
-    return dvm80_java_lang_BootClassLoader::Declare_java_lang_BootClassLoader();
-}
-}  // namespace ogplay::runtime::dexvm::intrinsics
 
 // ---- migrated from java_lang_ClassLoader.cpp ----
 #include "catalog.h"
@@ -64,7 +54,7 @@ IntrinsicClassDecl Declare_java_lang_BootClassLoader() {
 #include "ogplay/runtime/dexvm/intrinsic_builder.h"
 #include "ogplay/runtime/dexvm/interpreter.h"
 
-namespace ogplay::runtime::dexvm::intrinsics::dvm80_java_lang_ClassLoader {
+namespace ogplay::runtime::dexvm::intrinsics {
 namespace {
 
 struct ClassLoaderFields final {
@@ -102,10 +92,11 @@ struct ClassLoaderFields final {
 
 IntrinsicClassDecl Declare_java_lang_ClassLoader() {
     auto builder = IntrinsicClassBuilder::Class(
-        "Ljava/lang/ClassLoader;", "Ljava/lang/Object;", {}, 0x0401U);
+        "Ljava/lang/ClassLoader;", "Ljava/lang/Object;", {},
+        kAccPublic | kAccAbstract);
     const ClassLoaderFields fields{
         builder.BoundInstanceField("parent", "Ljava/lang/ClassLoader;",
-                                   0x0002U),
+                                   kAccPrivate),
     };
 
     // AOSP API19: libcore ClassLoader.java :: ClassLoader()/ClassLoader(parent)
@@ -114,13 +105,13 @@ IntrinsicClassDecl Declare_java_lang_ClassLoader() {
         call.SetRef(fields.parent,
                     context.vm.ClassLoaders().ApplicationLoader());
         return VmValue::Void();
-    }, 0x0004U);
+    }, kAccProtected);
     builder.Constructor("(Ljava/lang/ClassLoader;)V",
                         [fields](IntrinsicContext& context) {
         IntrinsicCall call(context);
         call.SetRef(fields.parent, call.NonNullRef(0, "parentLoader"));
         return VmValue::Void();
-    }, 0x0004U);
+    }, kAccProtected);
 
     builder.StaticMethod(
         "getSystemClassLoader", "()Ljava/lang/ClassLoader;",
@@ -152,13 +143,13 @@ IntrinsicClassDecl Declare_java_lang_ClassLoader() {
             } catch (const ClassNameCodecError&) {
                 return VmValue::Ref(VmObjectRef(0));
             }
-        }, 0x0004U);
+        }, kAccProtected);
     builder.FinalMethod(
         "findSystemClass",
         "(Ljava/lang/String;)Ljava/lang/Class;",
         [](IntrinsicContext& context) {
             return Load(context, kApplicationLoader);
-        }, 0x0004U);
+        }, kAccProtected);
     builder.VirtualMethod(
         "loadClass", "(Ljava/lang/String;)Ljava/lang/Class;",
         [](IntrinsicContext& context) {
@@ -169,7 +160,7 @@ IntrinsicClassDecl Declare_java_lang_ClassLoader() {
         [](IntrinsicContext& context) {
             // API-19 Dalvik ignores resolve for ClassLoader.loadClass.
             return Load(context, ReceiverRole(context));
-        }, 0x0004U);
+        }, kAccProtected);
     builder.VirtualMethod(
         "findClass", "(Ljava/lang/String;)Ljava/lang/Class;",
         [](IntrinsicContext& context) -> VmValue {
@@ -177,21 +168,15 @@ IntrinsicClassDecl Declare_java_lang_ClassLoader() {
             const auto name = context.vm.StringUtf8(
                 call.NonNullRef(0, "className"));
             throw VmJavaThrow{"Ljava/lang/ClassNotFoundException;", name};
-        }, 0x0004U);
+        }, kAccProtected);
     builder.FinalMethod(
         "resolveClass", "(Ljava/lang/Class;)V",
         [](IntrinsicContext& context) {
             static_cast<void>(IntrinsicCall(context).NonNullRef(0, "clazz"));
             return VmValue::Void();
-        }, 0x0004U);
+        }, kAccProtected);
 
     return std::move(builder).Build();
 }
 
-}  // namespace ogplay::runtime::dexvm::intrinsics
-
-namespace ogplay::runtime::dexvm::intrinsics {
-IntrinsicClassDecl Declare_java_lang_ClassLoader() {
-    return dvm80_java_lang_ClassLoader::Declare_java_lang_ClassLoader();
-}
 }  // namespace ogplay::runtime::dexvm::intrinsics

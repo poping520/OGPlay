@@ -10,6 +10,7 @@
 #include <utility>
 #include <vector>
 
+#include "ogplay/runtime/dexvm/access_flags.h"
 #include "ogplay/runtime/dexvm/class_linker.h"
 #include "ogplay/runtime/dexvm/class_name_codec.h"
 
@@ -18,15 +19,6 @@
 // Not part of the public linker surface.
 
 namespace ogplay::runtime::dexvm {
-
-constexpr std::uint32_t kAccStatic = 0x0008;
-constexpr std::uint32_t kAccFinal = 0x0010;
-constexpr std::uint32_t kAccPublic = 0x0001;
-constexpr std::uint32_t kAccPrivate = 0x0002;
-constexpr std::uint32_t kAccProtected = 0x0004;
-constexpr std::uint32_t kAccInterface = 0x0200;
-constexpr std::uint32_t kAccNative = 0x0100;
-constexpr std::uint32_t kAccAbstract = 0x0400;
 
 [[noreturn]] void Fail(DexVmErrorReason reason, std::string message);
 // Member and type names in the supported titles are ASCII; anything else

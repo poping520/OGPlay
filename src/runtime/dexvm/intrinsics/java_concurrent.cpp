@@ -73,7 +73,7 @@ IntrinsicClassDecl Dvm87DeclareInterface(
         std::move(descriptor), std::move(parents));
     for (auto& [name, signature] : methods)
         builder.UnimplementedVirtual(std::move(name), std::move(signature),
-                                     0x0001U | 0x0400U);
+                                     kAccPublic | kAccAbstract);
     return std::move(builder).Build();
 }
 

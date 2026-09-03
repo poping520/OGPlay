@@ -8,7 +8,7 @@
 
 #include "ogplay/core/encoding.h"
 
-namespace ogplay::runtime::android_intrinsics::dvm80_android_content_BroadcastReceiver {
+namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_content_BroadcastReceiver(const Context& context) {
     static_cast<void>(context);
@@ -780,33 +780,17 @@ void RegisterAndroidDatabaseStateTables(
 
 }  // namespace ogplay::runtime
 
-namespace ogplay::runtime::android_intrinsics::
-    dvm80_android_content_pm_PackageManager {
+namespace ogplay::runtime::android_intrinsics {
 Decl Declare_android_content_pm_PackageManager_NameNotFoundException(
     const Context& context);
 }
 
-namespace ogplay::runtime::android_intrinsics {
 
-Decl Declare_android_content_pm_PackageManager_NameNotFoundException(
-    const Context& context) {
-    return dvm80_android_content_pm_PackageManager::
-        Declare_android_content_pm_PackageManager_NameNotFoundException(
-            context);
-}
-
-}  // namespace ogplay::runtime::android_intrinsics
-
-namespace ogplay::runtime::android_intrinsics {
-Decl Declare_android_content_BroadcastReceiver(const Context& context) {
-    return dvm80_android_content_BroadcastReceiver::Declare_android_content_BroadcastReceiver(context);
-}
-}  // namespace ogplay::runtime::android_intrinsics
 
 // ---- migrated from android_content_ContentResolver.cpp ----
 #include "catalog.h"
 
-namespace ogplay::runtime::android_intrinsics::dvm80_android_content_ContentResolver {
+namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_content_ContentResolver(const Context& context) {
     static_cast<void>(context);
@@ -816,16 +800,11 @@ Decl Declare_android_content_ContentResolver(const Context& context) {
 
 }  // namespace ogplay::runtime::android_intrinsics
 
-namespace ogplay::runtime::android_intrinsics {
-Decl Declare_android_content_ContentResolver(const Context& context) {
-    return dvm80_android_content_ContentResolver::Declare_android_content_ContentResolver(context);
-}
-}  // namespace ogplay::runtime::android_intrinsics
 
 // ---- migrated from android_content_Context.cpp ----
 #include "catalog.h"
 
-namespace ogplay::runtime::android_intrinsics::dvm80_android_content_Context {
+namespace ogplay::runtime::android_intrinsics {
 
 namespace {
 
@@ -883,8 +862,12 @@ void LoadPreferencesOnce(const Context& context, const std::string& name) {
 
 Decl Declare_android_content_Context(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/content/Context;", "Ljava/lang/Object;");
-    builder.ConstantString("POWER_SERVICE", "power", 0x0019U)
-        .ConstantString("VIBRATOR_SERVICE", "vibrator", 0x0019U);
+    builder.ConstantString(
+               "POWER_SERVICE", "power",
+               dx::kAccPublic | dx::kAccStatic | dx::kAccFinal)
+        .ConstantString(
+            "VIBRATOR_SERVICE", "vibrator",
+            dx::kAccPublic | dx::kAccStatic | dx::kAccFinal);
     builder.Constructor("()V", [](dx::IntrinsicContext&) {
         return dx::VmValue::Void();
     });
@@ -1162,7 +1145,7 @@ Decl Declare_android_content_ContextWrapper(const Context& context) {
             }
             call.SetRef(base, context.arguments[0].ref);
             return dx::VmValue::Void();
-        }, kProtectedAccess);
+        }, dx::kAccProtected);
     builder.VirtualMethod("getBaseContext", "()Landroid/content/Context;",
         [base](dx::IntrinsicContext& context) {
             return dx::VmValue::Ref(dx::IntrinsicCall(context).GetRef(base));
@@ -1200,20 +1183,11 @@ Decl Declare_android_content_ContextWrapper(const Context& context) {
 
 }  // namespace ogplay::runtime::android_intrinsics
 
-namespace ogplay::runtime::android_intrinsics {
-Decl Declare_android_content_Context(const Context& context) {
-    return dvm80_android_content_Context::Declare_android_content_Context(context);
-}
-Decl Declare_android_content_ContextWrapper(const Context& context) {
-    return dvm80_android_content_Context::Declare_android_content_ContextWrapper(
-        context);
-}
-}  // namespace ogplay::runtime::android_intrinsics
 
 // ---- migrated from android_content_DialogInterface_OnCancelListener.cpp ----
 #include "catalog.h"
 
-namespace ogplay::runtime::android_intrinsics::dvm80_android_content_DialogInterface_OnCancelListener {
+namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_content_DialogInterface_OnCancelListener(const Context& context) {
     static_cast<void>(context);
@@ -1223,16 +1197,11 @@ Decl Declare_android_content_DialogInterface_OnCancelListener(const Context& con
 
 }  // namespace ogplay::runtime::android_intrinsics
 
-namespace ogplay::runtime::android_intrinsics {
-Decl Declare_android_content_DialogInterface_OnCancelListener(const Context& context) {
-    return dvm80_android_content_DialogInterface_OnCancelListener::Declare_android_content_DialogInterface_OnCancelListener(context);
-}
-}  // namespace ogplay::runtime::android_intrinsics
 
 // ---- migrated from android_content_DialogInterface_OnClickListener.cpp ----
 #include "catalog.h"
 
-namespace ogplay::runtime::android_intrinsics::dvm80_android_content_DialogInterface_OnClickListener {
+namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_content_DialogInterface_OnClickListener(const Context& context) {
     static_cast<void>(context);
@@ -1242,16 +1211,11 @@ Decl Declare_android_content_DialogInterface_OnClickListener(const Context& cont
 
 }  // namespace ogplay::runtime::android_intrinsics
 
-namespace ogplay::runtime::android_intrinsics {
-Decl Declare_android_content_DialogInterface_OnClickListener(const Context& context) {
-    return dvm80_android_content_DialogInterface_OnClickListener::Declare_android_content_DialogInterface_OnClickListener(context);
-}
-}  // namespace ogplay::runtime::android_intrinsics
 
 // ---- migrated from android_content_DialogInterface_OnDismissListener.cpp ----
 #include "catalog.h"
 
-namespace ogplay::runtime::android_intrinsics::dvm80_android_content_DialogInterface_OnDismissListener {
+namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_content_DialogInterface_OnDismissListener(const Context& context) {
     static_cast<void>(context);
@@ -1261,11 +1225,6 @@ Decl Declare_android_content_DialogInterface_OnDismissListener(const Context& co
 
 }  // namespace ogplay::runtime::android_intrinsics
 
-namespace ogplay::runtime::android_intrinsics {
-Decl Declare_android_content_DialogInterface_OnDismissListener(const Context& context) {
-    return dvm80_android_content_DialogInterface_OnDismissListener::Declare_android_content_DialogInterface_OnDismissListener(context);
-}
-}  // namespace ogplay::runtime::android_intrinsics
 
 // ---- migrated from android_content_Intent.cpp ----
 // Intent handlers keep component targets and typed extras in the session
@@ -1273,7 +1232,7 @@ Decl Declare_android_content_DialogInterface_OnDismissListener(const Context& co
 
 #include "catalog.h"
 
-namespace ogplay::runtime::android_intrinsics::dvm80_android_content_Intent {
+namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_content_Intent(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/content/Intent;", "Ljava/lang/Object;");
@@ -1385,11 +1344,6 @@ Decl Declare_android_content_Intent(const Context& context) {
 
 }  // namespace ogplay::runtime::android_intrinsics
 
-namespace ogplay::runtime::android_intrinsics {
-Decl Declare_android_content_Intent(const Context& context) {
-    return dvm80_android_content_Intent::Declare_android_content_Intent(context);
-}
-}  // namespace ogplay::runtime::android_intrinsics
 
 // ---- migrated from android_content_IntentFilter.cpp ----
 #include "catalog.h"
@@ -1433,7 +1387,7 @@ std::int32_t ParseJavaInt(const std::string_view text) {
 
 }  // namespace
 
-namespace ogplay::runtime::android_intrinsics::dvm80_android_content_IntentFilter {
+namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_content_IntentFilter(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/content/IntentFilter;", "Ljava/lang/Object;");
@@ -1492,16 +1446,11 @@ Decl Declare_android_content_IntentFilter(const Context& context) {
 
 }  // namespace ogplay::runtime::android_intrinsics
 
-namespace ogplay::runtime::android_intrinsics {
-Decl Declare_android_content_IntentFilter(const Context& context) {
-    return dvm80_android_content_IntentFilter::Declare_android_content_IntentFilter(context);
-}
-}  // namespace ogplay::runtime::android_intrinsics
 
 // ---- migrated from android_content_pm_PackageManager.cpp ----
 #include "catalog.h"
 
-namespace ogplay::runtime::android_intrinsics::dvm80_android_content_pm_PackageManager {
+namespace ogplay::runtime::android_intrinsics {
 
 namespace {
 
@@ -1665,20 +1614,29 @@ Decl Declare_android_content_pm_PackageManager_NameNotFoundException(
 }
 
 Decl Declare_android_content_pm_PackageManager(const Context& context) {
-    constexpr std::uint32_t kPublicAbstract = 0x0401U;
     auto builder = dx::IntrinsicClassBuilder::Class(
         "Landroid/content/pm/PackageManager;", "Ljava/lang/Object;", {},
-        kPublicAbstract);
-    builder.ConstantInt("GET_META_DATA", "I", kGetMetaData, 0x0019U)
-        .ConstantInt("GET_PERMISSIONS", "I", kGetPermissions, 0x0019U)
-        .ConstantInt("PERMISSION_GRANTED", "I", kPermissionGranted, 0x0019U)
-        .ConstantInt("PERMISSION_DENIED", "I", kPermissionDenied, 0x0019U)
+        dx::kAccPublic | dx::kAccAbstract);
+    builder.ConstantInt(
+               "GET_META_DATA", "I", kGetMetaData,
+               dx::kAccPublic | dx::kAccStatic | dx::kAccFinal)
+        .ConstantInt(
+            "GET_PERMISSIONS", "I", kGetPermissions,
+            dx::kAccPublic | dx::kAccStatic | dx::kAccFinal)
+        .ConstantInt(
+            "PERMISSION_GRANTED", "I", kPermissionGranted,
+            dx::kAccPublic | dx::kAccStatic | dx::kAccFinal)
+        .ConstantInt(
+            "PERMISSION_DENIED", "I", kPermissionDenied,
+            dx::kAccPublic | dx::kAccStatic | dx::kAccFinal)
         .ConstantString("FEATURE_TOUCHSCREEN", "android.hardware.touchscreen",
-                        0x0019U)
+                        dx::kAccPublic | dx::kAccStatic | dx::kAccFinal)
         .ConstantString("FEATURE_SCREEN_LANDSCAPE",
-                        "android.hardware.screen.landscape", 0x0019U)
+                        "android.hardware.screen.landscape",
+                        dx::kAccPublic | dx::kAccStatic | dx::kAccFinal)
         .ConstantString("FEATURE_SCREEN_PORTRAIT",
-                        "android.hardware.screen.portrait", 0x0019U);
+                        "android.hardware.screen.portrait",
+                        dx::kAccPublic | dx::kAccStatic | dx::kAccFinal);
     builder.VirtualMethod(
         "getApplicationInfo",
         "(Ljava/lang/String;I)Landroid/content/pm/ApplicationInfo;",
@@ -1759,25 +1717,11 @@ Decl Declare_android_content_pm_PackageManager(const Context& context) {
 
 }  // namespace ogplay::runtime::android_intrinsics
 
-namespace ogplay::runtime::android_intrinsics {
-Decl Declare_android_content_pm_PackageItemInfo(const Context& context) {
-    return dvm80_android_content_pm_PackageManager::Declare_android_content_pm_PackageItemInfo(context);
-}
-Decl Declare_android_content_pm_ApplicationInfo(const Context& context) {
-    return dvm80_android_content_pm_PackageManager::Declare_android_content_pm_ApplicationInfo(context);
-}
-Decl Declare_android_content_pm_PackageInfo(const Context& context) {
-    return dvm80_android_content_pm_PackageManager::Declare_android_content_pm_PackageInfo(context);
-}
-Decl Declare_android_content_pm_PackageManager(const Context& context) {
-    return dvm80_android_content_pm_PackageManager::Declare_android_content_pm_PackageManager(context);
-}
-}  // namespace ogplay::runtime::android_intrinsics
 
 // ---- migrated from android_content_SharedPreferences_Editor.cpp ----
 #include "catalog.h"
 
-namespace ogplay::runtime::android_intrinsics::dvm80_android_content_SharedPreferences_Editor {
+namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_content_SharedPreferences_Editor(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Interface("Landroid/content/SharedPreferences$Editor;");
@@ -1791,16 +1735,11 @@ Decl Declare_android_content_SharedPreferences_Editor(const Context& context) {
 
 }  // namespace ogplay::runtime::android_intrinsics
 
-namespace ogplay::runtime::android_intrinsics {
-Decl Declare_android_content_SharedPreferences_Editor(const Context& context) {
-    return dvm80_android_content_SharedPreferences_Editor::Declare_android_content_SharedPreferences_Editor(context);
-}
-}  // namespace ogplay::runtime::android_intrinsics
 
 // ---- migrated from android_content_SharedPreferences.cpp ----
 #include "catalog.h"
 
-namespace ogplay::runtime::android_intrinsics::dvm80_android_content_SharedPreferences {
+namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_content_SharedPreferences(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Interface("Landroid/content/SharedPreferences;");
@@ -1814,16 +1753,11 @@ Decl Declare_android_content_SharedPreferences(const Context& context) {
 
 }  // namespace ogplay::runtime::android_intrinsics
 
-namespace ogplay::runtime::android_intrinsics {
-Decl Declare_android_content_SharedPreferences(const Context& context) {
-    return dvm80_android_content_SharedPreferences::Declare_android_content_SharedPreferences(context);
-}
-}  // namespace ogplay::runtime::android_intrinsics
 
 // ---- migrated from android_content_SharedPreferencesEditorImpl.cpp ----
 #include "catalog.h"
 
-namespace ogplay::runtime::android_intrinsics::dvm80_android_content_SharedPreferencesEditorImpl {
+namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_content_SharedPreferencesEditorImpl(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/content/SharedPreferencesEditorImpl;", "Ljava/lang/Object;", {"Landroid/content/SharedPreferences$Editor;"});
@@ -1837,16 +1771,11 @@ Decl Declare_android_content_SharedPreferencesEditorImpl(const Context& context)
 
 }  // namespace ogplay::runtime::android_intrinsics
 
-namespace ogplay::runtime::android_intrinsics {
-Decl Declare_android_content_SharedPreferencesEditorImpl(const Context& context) {
-    return dvm80_android_content_SharedPreferencesEditorImpl::Declare_android_content_SharedPreferencesEditorImpl(context);
-}
-}  // namespace ogplay::runtime::android_intrinsics
 
 // ---- migrated from android_content_SharedPreferencesImpl.cpp ----
 #include "catalog.h"
 
-namespace ogplay::runtime::android_intrinsics::dvm80_android_content_SharedPreferencesImpl {
+namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_content_SharedPreferencesImpl(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/content/SharedPreferencesImpl;", "Ljava/lang/Object;", {"Landroid/content/SharedPreferences;"});
@@ -1858,10 +1787,4 @@ Decl Declare_android_content_SharedPreferencesImpl(const Context& context) {
     return std::move(builder).Build();
 }
 
-}  // namespace ogplay::runtime::android_intrinsics
-
-namespace ogplay::runtime::android_intrinsics {
-Decl Declare_android_content_SharedPreferencesImpl(const Context& context) {
-    return dvm80_android_content_SharedPreferencesImpl::Declare_android_content_SharedPreferencesImpl(context);
-}
 }  // namespace ogplay::runtime::android_intrinsics

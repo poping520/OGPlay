@@ -7,6 +7,8 @@
 #include <utility>
 
 #include "interpreter_internal.h"
+
+#include "ogplay/runtime/dexvm/access_flags.h"
 #include "ogplay/core/encoding.h"
 #include "ogplay/runtime/dexvm/vm_monitors.h"
 #include "ogplay/runtime/dexvm/vm_threads.h"
@@ -16,7 +18,6 @@ namespace ogplay::runtime::dexvm {
 // ---- Impl helpers ----------------------------------------------------------
 
 namespace {
-constexpr std::uint32_t kAccSynchronized = 0x0020U;
 constexpr std::size_t kMaximumFatalStackFrames = 64U;
 constexpr std::string_view kGuestStackHeader =
     "\nDexVM guest stack (innermost first):";

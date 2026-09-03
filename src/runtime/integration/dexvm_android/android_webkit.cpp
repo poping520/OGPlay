@@ -3,7 +3,7 @@
 // ---- migrated from android_webkit_WebChromeClient.cpp ----
 #include "catalog.h"
 
-namespace ogplay::runtime::android_intrinsics::dvm80_android_webkit_WebChromeClient {
+namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_webkit_WebChromeClient(const Context& context) {
     static_cast<void>(context);
@@ -14,16 +14,11 @@ Decl Declare_android_webkit_WebChromeClient(const Context& context) {
 
 }  // namespace ogplay::runtime::android_intrinsics
 
-namespace ogplay::runtime::android_intrinsics {
-Decl Declare_android_webkit_WebChromeClient(const Context& context) {
-    return dvm80_android_webkit_WebChromeClient::Declare_android_webkit_WebChromeClient(context);
-}
-}  // namespace ogplay::runtime::android_intrinsics
 
 // ---- migrated from android_webkit_WebSettings.cpp ----
 #include "catalog.h"
 
-namespace ogplay::runtime::android_intrinsics::dvm80_android_webkit_WebSettings {
+namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_webkit_WebSettings(const Context& context) {
     static_cast<void>(context);
@@ -35,16 +30,11 @@ Decl Declare_android_webkit_WebSettings(const Context& context) {
 
 }  // namespace ogplay::runtime::android_intrinsics
 
-namespace ogplay::runtime::android_intrinsics {
-Decl Declare_android_webkit_WebSettings(const Context& context) {
-    return dvm80_android_webkit_WebSettings::Declare_android_webkit_WebSettings(context);
-}
-}  // namespace ogplay::runtime::android_intrinsics
 
 // ---- migrated from android_webkit_WebView.cpp ----
 #include "catalog.h"
 
-namespace ogplay::runtime::android_intrinsics::dvm80_android_webkit_WebView {
+namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_webkit_WebView(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/webkit/WebView;", "Landroid/view/ViewGroup;");
@@ -71,16 +61,11 @@ Decl Declare_android_webkit_WebView(const Context& context) {
 
 }  // namespace ogplay::runtime::android_intrinsics
 
-namespace ogplay::runtime::android_intrinsics {
-Decl Declare_android_webkit_WebView(const Context& context) {
-    return dvm80_android_webkit_WebView::Declare_android_webkit_WebView(context);
-}
-}  // namespace ogplay::runtime::android_intrinsics
 
 // ---- migrated from android_webkit_WebViewClient.cpp ----
 #include "catalog.h"
 
-namespace ogplay::runtime::android_intrinsics::dvm80_android_webkit_WebViewClient {
+namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_webkit_WebViewClient(const Context& context) {
     static_cast<void>(context);
@@ -89,10 +74,4 @@ Decl Declare_android_webkit_WebViewClient(const Context& context) {
     return std::move(builder).Build();
 }
 
-}  // namespace ogplay::runtime::android_intrinsics
-
-namespace ogplay::runtime::android_intrinsics {
-Decl Declare_android_webkit_WebViewClient(const Context& context) {
-    return dvm80_android_webkit_WebViewClient::Declare_android_webkit_WebViewClient(context);
-}
 }  // namespace ogplay::runtime::android_intrinsics

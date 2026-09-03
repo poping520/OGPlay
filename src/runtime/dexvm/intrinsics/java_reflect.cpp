@@ -15,15 +15,8 @@
 #include "ogplay/runtime/dexvm/intrinsic_builder.h"
 #include "ogplay/runtime/dexvm/reflection.h"
 
-namespace ogplay::runtime::dexvm::intrinsics::dvm80_java_lang_Class {
+namespace ogplay::runtime::dexvm::intrinsics {
 namespace {
-
-constexpr std::uint32_t kJavaFlagsMask = 0xffffU;
-constexpr std::uint32_t kAccInterface = 0x0200U;
-constexpr std::uint32_t kAccFinal = 0x0010U;
-constexpr std::uint32_t kAccAbstract = 0x0400U;
-constexpr std::uint32_t kAccSynthetic = 0x1000U;
-constexpr std::uint32_t kAccEnum = 0x4000U;
 
 [[nodiscard]] DexClassId Represented(IntrinsicContext& context) {
     return context.vm.Model().ClassOfClassObject(context.receiver);
@@ -85,19 +78,19 @@ constexpr std::uint32_t kAccEnum = 0x4000U;
     auto& linker = context.vm.Linker();
     const auto& linked = linker.Class(represented);
     if (IsPrimitiveDescriptor(linked.descriptor)) {
-        return 0x0001U | kAccFinal | kAccAbstract;
+        return kAccPublic | kAccFinal | kAccAbstract;
     }
     if (!linked.is_array) {
         const auto system = linker.ReflectionSystemMetadata(represented);
         return (system.has_inner_class ? system.inner_access_flags
                                        : linked.access_flags) &
-               kJavaFlagsMask;
+               kAccJavaFlagsMask;
     }
 
     std::string_view leaf = linked.descriptor;
     while (leaf.starts_with("[")) leaf.remove_prefix(1);
     const auto leaf_class = linker.ResolveDescriptor(leaf);
-    return ((ClassModifiers(context, leaf_class) & kJavaFlagsMask) &
+    return ((ClassModifiers(context, leaf_class) & kAccJavaFlagsMask) &
             ~kAccInterface) |
            kAccFinal | kAccAbstract;
 }
@@ -237,7 +230,7 @@ IntrinsicClassDecl Declare_java_lang_Class() {
         {"Ljava/io/Serializable;", "Ljava/lang/reflect/AnnotatedElement;",
          "Ljava/lang/reflect/GenericDeclaration;",
          "Ljava/lang/reflect/Type;"},
-        0x0011U);
+        kAccPublic | kAccFinal);
 
     builder.StaticMethod(
         "forName", "(Ljava/lang/String;)Ljava/lang/Class;",
@@ -538,7 +531,7 @@ IntrinsicClassDecl Declare_java_lang_Class() {
             for (const auto& constructor :
                  context.vm.Reflection().DeclaredConstructors(
                      Represented(context))) {
-                if ((constructor.access_flags & 0x0001U) != 0U) {
+                if ((constructor.access_flags & kAccPublic) != 0U) {
                     constructors.push_back(constructor);
                 }
             }
@@ -600,11 +593,6 @@ IntrinsicClassDecl Declare_java_lang_Class() {
 
 }  // namespace ogplay::runtime::dexvm::intrinsics
 
-namespace ogplay::runtime::dexvm::intrinsics {
-IntrinsicClassDecl Declare_java_lang_Class() {
-    return dvm80_java_lang_Class::Declare_java_lang_Class();
-}
-}  // namespace ogplay::runtime::dexvm::intrinsics
 
 // ---- migrated from java_lang_reflect_AccessibleObject.cpp ----
 #include "catalog.h"
@@ -615,16 +603,16 @@ IntrinsicClassDecl Declare_java_lang_Class() {
 #include "ogplay/runtime/dexvm/interpreter.h"
 #include "ogplay/runtime/dexvm/reflection.h"
 
-namespace ogplay::runtime::dexvm::intrinsics::dvm80_java_lang_reflect_AccessibleObject {
+namespace ogplay::runtime::dexvm::intrinsics {
 
 IntrinsicClassDecl Declare_java_lang_reflect_AccessibleObject() {
     auto builder = IntrinsicClassBuilder::Class(
         "Ljava/lang/reflect/AccessibleObject;", "Ljava/lang/Object;",
         {"Ljava/lang/reflect/AnnotatedElement;"});
-    builder.InstanceField("flag", "Z", 0U);
+    builder.InstanceField("flag", "Z", kAccNone);
     builder.Constructor("()V", [](IntrinsicContext&) {
         return VmValue::Void();
-    }, 0x0004U);
+    }, kAccProtected);
     builder.StaticMethod(
         "setAccessible", "([Ljava/lang/reflect/AccessibleObject;Z)V",
         [](IntrinsicContext& context) {
@@ -662,11 +650,6 @@ IntrinsicClassDecl Declare_java_lang_reflect_AccessibleObject() {
 
 }  // namespace ogplay::runtime::dexvm::intrinsics
 
-namespace ogplay::runtime::dexvm::intrinsics {
-IntrinsicClassDecl Declare_java_lang_reflect_AccessibleObject() {
-    return dvm80_java_lang_reflect_AccessibleObject::Declare_java_lang_reflect_AccessibleObject();
-}
-}  // namespace ogplay::runtime::dexvm::intrinsics
 
 // ---- migrated from java_lang_reflect_AnnotatedElement.cpp ----
 #include "catalog.h"
@@ -675,7 +658,7 @@ IntrinsicClassDecl Declare_java_lang_reflect_AccessibleObject() {
 
 #include "ogplay/runtime/dexvm/intrinsic_builder.h"
 
-namespace ogplay::runtime::dexvm::intrinsics::dvm80_java_lang_reflect_AnnotatedElement {
+namespace ogplay::runtime::dexvm::intrinsics {
 
 IntrinsicClassDecl Declare_java_lang_reflect_AnnotatedElement() {
     auto builder = IntrinsicClassBuilder::Interface(
@@ -693,11 +676,6 @@ IntrinsicClassDecl Declare_java_lang_reflect_AnnotatedElement() {
 
 }  // namespace ogplay::runtime::dexvm::intrinsics
 
-namespace ogplay::runtime::dexvm::intrinsics {
-IntrinsicClassDecl Declare_java_lang_reflect_AnnotatedElement() {
-    return dvm80_java_lang_reflect_AnnotatedElement::Declare_java_lang_reflect_AnnotatedElement();
-}
-}  // namespace ogplay::runtime::dexvm::intrinsics
 
 // ---- migrated from java_lang_reflect_Array.cpp ----
 #include "catalog.h"
@@ -712,7 +690,7 @@ IntrinsicClassDecl Declare_java_lang_reflect_AnnotatedElement() {
 #include "ogplay/runtime/dexvm/reflection.h"
 #include "ogplay/runtime/dexvm/reflection_codec.h"
 
-namespace ogplay::runtime::dexvm::intrinsics::dvm80_java_lang_reflect_Array {
+namespace ogplay::runtime::dexvm::intrinsics {
 namespace {
 using namespace detail;
 
@@ -820,7 +798,8 @@ void CheckIndex(JavaObjectModel& model, const VmObjectRef array,
 
 IntrinsicClassDecl Declare_java_lang_reflect_Array() {
     auto builder = IntrinsicClassBuilder::Class(
-        "Ljava/lang/reflect/Array;", "Ljava/lang/Object;", {}, 0x0011U);
+        "Ljava/lang/reflect/Array;", "Ljava/lang/Object;", {},
+        kAccPublic | kAccFinal);
     builder.StaticMethod(
         "newInstance", "(Ljava/lang/Class;I)Ljava/lang/Object;",
         [](IntrinsicContext& context) {
@@ -973,11 +952,6 @@ IntrinsicClassDecl Declare_java_lang_reflect_Array() {
 
 }  // namespace ogplay::runtime::dexvm::intrinsics
 
-namespace ogplay::runtime::dexvm::intrinsics {
-IntrinsicClassDecl Declare_java_lang_reflect_Array() {
-    return dvm80_java_lang_reflect_Array::Declare_java_lang_reflect_Array();
-}
-}  // namespace ogplay::runtime::dexvm::intrinsics
 
 // ---- migrated from java_lang_reflect_Constructor.cpp ----
 #include "catalog.h"
@@ -990,19 +964,19 @@ IntrinsicClassDecl Declare_java_lang_reflect_Array() {
 #include "ogplay/runtime/dexvm/interpreter.h"
 #include "ogplay/runtime/dexvm/reflection.h"
 
-namespace ogplay::runtime::dexvm::intrinsics::dvm80_java_lang_reflect_Constructor {
+namespace ogplay::runtime::dexvm::intrinsics {
 
 IntrinsicClassDecl Declare_java_lang_reflect_Constructor() {
     auto builder = IntrinsicClassBuilder::Class(
         "Ljava/lang/reflect/Constructor;",
         "Ljava/lang/reflect/AccessibleObject;",
         {"Ljava/lang/reflect/GenericDeclaration;",
-         "Ljava/lang/reflect/Member;"}, 0x0011U);
-    builder.InstanceField("declaringClass", "Ljava/lang/Class;", 0U);
-    builder.InstanceField("parameterTypes", "[Ljava/lang/Class;", 0U);
-    builder.InstanceField("exceptionTypes", "[Ljava/lang/Class;", 0U);
-    builder.InstanceField("slot", "I", 0U);
-    builder.InstanceField("methodDexIndex", "I", 0x0002U);
+         "Ljava/lang/reflect/Member;"}, kAccPublic | kAccFinal);
+    builder.InstanceField("declaringClass", "Ljava/lang/Class;", kAccNone);
+    builder.InstanceField("parameterTypes", "[Ljava/lang/Class;", kAccNone);
+    builder.InstanceField("exceptionTypes", "[Ljava/lang/Class;", kAccNone);
+    builder.InstanceField("slot", "I", kAccNone);
+    builder.InstanceField("methodDexIndex", "I", kAccPrivate);
 
     builder.VirtualMethod("getDeclaringClass", "()Ljava/lang/Class;",
         [](IntrinsicContext& context) {
@@ -1022,7 +996,7 @@ IntrinsicClassDecl Declare_java_lang_reflect_Constructor() {
     builder.VirtualMethod("getModifiers", "()I", [](IntrinsicContext& context) {
         return VmValue::Int(static_cast<std::int32_t>(
             context.vm.Reflection().ConstructorMetadata(context.receiver)
-                .access_flags & 0x0007U));
+                .access_flags & kJavaConstructorModifierMask));
     });
     builder.VirtualMethod("getParameterTypes", "()[Ljava/lang/Class;",
         [](IntrinsicContext& context) {
@@ -1043,7 +1017,7 @@ IntrinsicClassDecl Declare_java_lang_reflect_Constructor() {
     builder.VirtualMethod("isSynthetic", "()Z", [](IntrinsicContext& context) {
         return VmValue::Int(
             (context.vm.Reflection().ConstructorMetadata(context.receiver)
-                 .access_flags & 0x1000U) != 0U ? 1 : 0);
+                 .access_flags & kAccSynthetic) != 0U ? 1 : 0);
     });
     builder.OverrideMethod("equals", "(Ljava/lang/Object;)Z",
         [](IntrinsicContext& context) {
@@ -1062,7 +1036,8 @@ IntrinsicClassDecl Declare_java_lang_reflect_Constructor() {
         [](IntrinsicContext& context) {
             const auto& meta = context.vm.Reflection().ConstructorMetadata(
                 context.receiver);
-            auto text = detail::ModifierString(meta.access_flags & 0x0007U);
+            auto text = detail::ModifierString(
+                meta.access_flags & kJavaConstructorModifierMask);
             if (!text.empty()) text.push_back(' ');
             text += ClassNameCodec::ClassGetName(
                 context.vm.Linker().Class(meta.declaring_class).descriptor);
@@ -1088,11 +1063,6 @@ IntrinsicClassDecl Declare_java_lang_reflect_Constructor() {
 
 }  // namespace ogplay::runtime::dexvm::intrinsics
 
-namespace ogplay::runtime::dexvm::intrinsics {
-IntrinsicClassDecl Declare_java_lang_reflect_Constructor() {
-    return dvm80_java_lang_reflect_Constructor::Declare_java_lang_reflect_Constructor();
-}
-}  // namespace ogplay::runtime::dexvm::intrinsics
 
 // ---- migrated from java_lang_reflect_Field.cpp ----
 #include "catalog.h"
@@ -1106,17 +1076,17 @@ IntrinsicClassDecl Declare_java_lang_reflect_Constructor() {
 #include "ogplay/runtime/dexvm/interpreter.h"
 #include "ogplay/runtime/dexvm/reflection.h"
 
-namespace ogplay::runtime::dexvm::intrinsics::dvm80_java_lang_reflect_Field {
+namespace ogplay::runtime::dexvm::intrinsics {
 
 IntrinsicClassDecl Declare_java_lang_reflect_Field() {
     auto builder = IntrinsicClassBuilder::Class(
         "Ljava/lang/reflect/Field;", "Ljava/lang/reflect/AccessibleObject;",
-        {"Ljava/lang/reflect/Member;"}, 0x0011U);
-    builder.InstanceField("declaringClass", "Ljava/lang/Class;", 0x0002U);
-    builder.InstanceField("type", "Ljava/lang/Class;", 0x0002U);
-    builder.InstanceField("name", "Ljava/lang/String;", 0x0002U);
-    builder.InstanceField("slot", "I", 0x0002U);
-    builder.InstanceField("fieldDexIndex", "I", 0x0012U);
+        {"Ljava/lang/reflect/Member;"}, kAccPublic | kAccFinal);
+    builder.InstanceField("declaringClass", "Ljava/lang/Class;", kAccPrivate);
+    builder.InstanceField("type", "Ljava/lang/Class;", kAccPrivate);
+    builder.InstanceField("name", "Ljava/lang/String;", kAccPrivate);
+    builder.InstanceField("slot", "I", kAccPrivate);
+    builder.InstanceField("fieldDexIndex", "I", kAccPrivate | kAccFinal);
 
     builder.VirtualMethod("getDeclaringClass", "()Ljava/lang/Class;",
         [](IntrinsicContext& context) {
@@ -1139,12 +1109,12 @@ IntrinsicClassDecl Declare_java_lang_reflect_Field() {
     builder.VirtualMethod("getModifiers", "()I", [](IntrinsicContext& context) {
         return VmValue::Int(static_cast<std::int32_t>(
             context.vm.Reflection().FieldMetadata(context.receiver)
-                .access_flags & 0x00dfU));
+                .access_flags & kJavaFieldModifierMask));
     });
     builder.VirtualMethod("isSynthetic", "()Z", [](IntrinsicContext& context) {
         return VmValue::Int(
             (context.vm.Reflection().FieldMetadata(context.receiver)
-                 .access_flags & 0x1000U) != 0U ? 1 : 0);
+                 .access_flags & kAccSynthetic) != 0U ? 1 : 0);
     });
     builder.OverrideMethod("equals", "(Ljava/lang/Object;)Z",
         [](IntrinsicContext& context) {
@@ -1167,7 +1137,8 @@ IntrinsicClassDecl Declare_java_lang_reflect_Field() {
             const auto& meta = context.vm.Reflection().FieldMetadata(
                 context.receiver);
             const auto& linker = context.vm.Linker();
-            auto text = detail::ModifierString(meta.access_flags & 0x00dfU);
+            auto text = detail::ModifierString(
+                meta.access_flags & kJavaFieldModifierMask);
             if (!text.empty()) text.push_back(' ');
             text += detail::PrintableTypeName(context, meta.type);
             text.push_back(' ');
@@ -1230,11 +1201,6 @@ IntrinsicClassDecl Declare_java_lang_reflect_Field() {
 
 }  // namespace ogplay::runtime::dexvm::intrinsics
 
-namespace ogplay::runtime::dexvm::intrinsics {
-IntrinsicClassDecl Declare_java_lang_reflect_Field() {
-    return dvm80_java_lang_reflect_Field::Declare_java_lang_reflect_Field();
-}
-}  // namespace ogplay::runtime::dexvm::intrinsics
 
 // ---- migrated from java_lang_reflect_GenericDeclaration.cpp ----
 #include "catalog.h"
@@ -1243,7 +1209,7 @@ IntrinsicClassDecl Declare_java_lang_reflect_Field() {
 
 #include "ogplay/runtime/dexvm/intrinsic_builder.h"
 
-namespace ogplay::runtime::dexvm::intrinsics::dvm80_java_lang_reflect_GenericDeclaration {
+namespace ogplay::runtime::dexvm::intrinsics {
 
 IntrinsicClassDecl Declare_java_lang_reflect_GenericDeclaration() {
     auto builder = IntrinsicClassBuilder::Interface(
@@ -1256,11 +1222,6 @@ IntrinsicClassDecl Declare_java_lang_reflect_GenericDeclaration() {
 
 }  // namespace ogplay::runtime::dexvm::intrinsics
 
-namespace ogplay::runtime::dexvm::intrinsics {
-IntrinsicClassDecl Declare_java_lang_reflect_GenericDeclaration() {
-    return dvm80_java_lang_reflect_GenericDeclaration::Declare_java_lang_reflect_GenericDeclaration();
-}
-}  // namespace ogplay::runtime::dexvm::intrinsics
 
 // ---- migrated from java_lang_reflect_InvocationTargetException.cpp ----
 #include "catalog.h"
@@ -1271,7 +1232,7 @@ IntrinsicClassDecl Declare_java_lang_reflect_GenericDeclaration() {
 #include "ogplay/runtime/dexvm/intrinsic_builder.h"
 #include "ogplay/runtime/dexvm/interpreter.h"
 
-namespace ogplay::runtime::dexvm::intrinsics::dvm80_java_lang_reflect_InvocationTargetException {
+namespace ogplay::runtime::dexvm::intrinsics {
 namespace {
 
 void SetTarget(IntrinsicContext& context, const VmObjectRef target) {
@@ -1307,10 +1268,10 @@ IntrinsicClassDecl Declare_java_lang_reflect_InvocationTargetException() {
     auto builder = IntrinsicClassBuilder::Class(
         "Ljava/lang/reflect/InvocationTargetException;",
         "Ljava/lang/ReflectiveOperationException;");
-    builder.InstanceField("target", "Ljava/lang/Throwable;", 0x0002U);
+    builder.InstanceField("target", "Ljava/lang/Throwable;", kAccPrivate);
     builder.Constructor("()V", [](IntrinsicContext&) {
         return VmValue::Void();
-    }, 0x0004U);
+    }, kAccProtected);
     builder.Constructor("(Ljava/lang/Throwable;)V",
         [](IntrinsicContext& context) {
             SetTarget(context, context.arguments[0].ref);
@@ -1337,11 +1298,6 @@ IntrinsicClassDecl Declare_java_lang_reflect_InvocationTargetException() {
 
 }  // namespace ogplay::runtime::dexvm::intrinsics
 
-namespace ogplay::runtime::dexvm::intrinsics {
-IntrinsicClassDecl Declare_java_lang_reflect_InvocationTargetException() {
-    return dvm80_java_lang_reflect_InvocationTargetException::Declare_java_lang_reflect_InvocationTargetException();
-}
-}  // namespace ogplay::runtime::dexvm::intrinsics
 
 // ---- migrated from java_lang_reflect_Member.cpp ----
 #include "catalog.h"
@@ -1350,7 +1306,7 @@ IntrinsicClassDecl Declare_java_lang_reflect_InvocationTargetException() {
 
 #include "ogplay/runtime/dexvm/intrinsic_builder.h"
 
-namespace ogplay::runtime::dexvm::intrinsics::dvm80_java_lang_reflect_Member {
+namespace ogplay::runtime::dexvm::intrinsics {
 
 IntrinsicClassDecl Declare_java_lang_reflect_Member() {
     auto builder = IntrinsicClassBuilder::Interface(
@@ -1364,11 +1320,6 @@ IntrinsicClassDecl Declare_java_lang_reflect_Member() {
 
 }  // namespace ogplay::runtime::dexvm::intrinsics
 
-namespace ogplay::runtime::dexvm::intrinsics {
-IntrinsicClassDecl Declare_java_lang_reflect_Member() {
-    return dvm80_java_lang_reflect_Member::Declare_java_lang_reflect_Member();
-}
-}  // namespace ogplay::runtime::dexvm::intrinsics
 
 // ---- migrated from java_lang_reflect_Method.cpp ----
 #include "catalog.h"
@@ -1382,21 +1333,19 @@ IntrinsicClassDecl Declare_java_lang_reflect_Member() {
 #include "ogplay/runtime/dexvm/interpreter.h"
 #include "ogplay/runtime/dexvm/reflection.h"
 
-namespace ogplay::runtime::dexvm::intrinsics::dvm80_java_lang_reflect_Method {
-constexpr std::uint32_t kMethodModifierMask = 0x0d3fU;
-
+namespace ogplay::runtime::dexvm::intrinsics {
 IntrinsicClassDecl Declare_java_lang_reflect_Method() {
     auto builder = IntrinsicClassBuilder::Class(
         "Ljava/lang/reflect/Method;", "Ljava/lang/reflect/AccessibleObject;",
         {"Ljava/lang/reflect/GenericDeclaration;",
-         "Ljava/lang/reflect/Member;"}, 0x0011U);
-    builder.InstanceField("slot", "I", 0x0002U);
-    builder.InstanceField("methodDexIndex", "I", 0x0012U);
-    builder.InstanceField("declaringClass", "Ljava/lang/Class;", 0x0002U);
-    builder.InstanceField("name", "Ljava/lang/String;", 0x0002U);
-    builder.InstanceField("parameterTypes", "[Ljava/lang/Class;", 0x0002U);
-    builder.InstanceField("exceptionTypes", "[Ljava/lang/Class;", 0x0002U);
-    builder.InstanceField("returnType", "Ljava/lang/Class;", 0x0002U);
+         "Ljava/lang/reflect/Member;"}, kAccPublic | kAccFinal);
+    builder.InstanceField("slot", "I", kAccPrivate);
+    builder.InstanceField("methodDexIndex", "I", kAccPrivate | kAccFinal);
+    builder.InstanceField("declaringClass", "Ljava/lang/Class;", kAccPrivate);
+    builder.InstanceField("name", "Ljava/lang/String;", kAccPrivate);
+    builder.InstanceField("parameterTypes", "[Ljava/lang/Class;", kAccPrivate);
+    builder.InstanceField("exceptionTypes", "[Ljava/lang/Class;", kAccPrivate);
+    builder.InstanceField("returnType", "Ljava/lang/Class;", kAccPrivate);
 
     builder.VirtualMethod("getName", "()Ljava/lang/String;",
         [](IntrinsicContext& context) {
@@ -1414,7 +1363,7 @@ IntrinsicClassDecl Declare_java_lang_reflect_Method() {
     builder.VirtualMethod("getModifiers", "()I", [](IntrinsicContext& context) {
         return VmValue::Int(static_cast<std::int32_t>(
             context.vm.Reflection().MethodMetadata(context.receiver)
-                .access_flags & kMethodModifierMask));
+                .access_flags & kJavaMethodModifierMask));
     });
     builder.VirtualMethod("getReturnType", "()Ljava/lang/Class;",
         [](IntrinsicContext& context) {
@@ -1441,7 +1390,7 @@ IntrinsicClassDecl Declare_java_lang_reflect_Method() {
     builder.VirtualMethod("isSynthetic", "()Z", [](IntrinsicContext& context) {
         return VmValue::Int(
             (context.vm.Reflection().MethodMetadata(context.receiver)
-                 .access_flags & 0x1000U) != 0U ? 1 : 0);
+                 .access_flags & kAccSynthetic) != 0U ? 1 : 0);
     });
     builder.OverrideMethod("equals", "(Ljava/lang/Object;)Z",
         [](IntrinsicContext& context) {
@@ -1462,7 +1411,7 @@ IntrinsicClassDecl Declare_java_lang_reflect_Method() {
             const auto& linker = context.vm.Linker();
             const auto& method = linker.Method(meta.method);
             auto text = detail::ModifierString(meta.access_flags &
-                                               kMethodModifierMask);
+                                               kJavaMethodModifierMask);
             if (!text.empty()) text.push_back(' ');
             text += ClassNameCodec::ClassGetName(
                 linker.Class(meta.return_type).descriptor);
@@ -1494,11 +1443,6 @@ IntrinsicClassDecl Declare_java_lang_reflect_Method() {
 
 }  // namespace ogplay::runtime::dexvm::intrinsics
 
-namespace ogplay::runtime::dexvm::intrinsics {
-IntrinsicClassDecl Declare_java_lang_reflect_Method() {
-    return dvm80_java_lang_reflect_Method::Declare_java_lang_reflect_Method();
-}
-}  // namespace ogplay::runtime::dexvm::intrinsics
 
 // ---- migrated from java_lang_reflect_Modifier.cpp ----
 #include "catalog.h"
@@ -1508,7 +1452,7 @@ IntrinsicClassDecl Declare_java_lang_reflect_Method() {
 
 #include "ogplay/runtime/dexvm/intrinsic_builder.h"
 
-namespace ogplay::runtime::dexvm::intrinsics::dvm80_java_lang_reflect_Modifier {
+namespace ogplay::runtime::dexvm::intrinsics {
 
 IntrinsicClassDecl Declare_java_lang_reflect_Modifier() {
     auto builder = IntrinsicClassBuilder::Class(
@@ -1524,11 +1468,6 @@ IntrinsicClassDecl Declare_java_lang_reflect_Modifier() {
 
 }  // namespace ogplay::runtime::dexvm::intrinsics
 
-namespace ogplay::runtime::dexvm::intrinsics {
-IntrinsicClassDecl Declare_java_lang_reflect_Modifier() {
-    return dvm80_java_lang_reflect_Modifier::Declare_java_lang_reflect_Modifier();
-}
-}  // namespace ogplay::runtime::dexvm::intrinsics
 
 // ---- migrated from java_lang_reflect_Type.cpp ----
 #include "catalog.h"
@@ -1537,7 +1476,7 @@ IntrinsicClassDecl Declare_java_lang_reflect_Modifier() {
 
 #include "ogplay/runtime/dexvm/intrinsic_builder.h"
 
-namespace ogplay::runtime::dexvm::intrinsics::dvm80_java_lang_reflect_Type {
+namespace ogplay::runtime::dexvm::intrinsics {
 
 IntrinsicClassDecl Declare_java_lang_reflect_Type() {
     return std::move(IntrinsicClassBuilder::Interface(
@@ -1545,10 +1484,4 @@ IntrinsicClassDecl Declare_java_lang_reflect_Type() {
         .Build();
 }
 
-}  // namespace ogplay::runtime::dexvm::intrinsics
-
-namespace ogplay::runtime::dexvm::intrinsics {
-IntrinsicClassDecl Declare_java_lang_reflect_Type() {
-    return dvm80_java_lang_reflect_Type::Declare_java_lang_reflect_Type();
-}
 }  // namespace ogplay::runtime::dexvm::intrinsics

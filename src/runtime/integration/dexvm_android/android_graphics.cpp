@@ -11,7 +11,7 @@
 // ---- migrated from android_graphics_Bitmap_Config.cpp ----
 #include "catalog.h"
 
-namespace ogplay::runtime::android_intrinsics::dvm80_android_graphics_Bitmap_Config {
+namespace ogplay::runtime::android_intrinsics {
 
 namespace {
 
@@ -96,15 +96,21 @@ void InitializeConstant(dx::IntrinsicContext& call,
 Decl Declare_android_graphics_Bitmap_Config(const Context& context) {
     static_cast<void>(context);
     auto builder = dx::IntrinsicClassBuilder::Class(
-        std::string(kConfigDescriptor), "Ljava/lang/Enum;", {}, 0x4031U);
+        std::string(kConfigDescriptor), "Ljava/lang/Enum;", {},
+        dx::kAccPublic | dx::kAccFinal | dx::kAccSuper | dx::kAccEnum);
     for (const auto& [name, _] : kConfigs) {
-        builder.StaticField(name, std::string(kConfigDescriptor), 0x4019U);
+        builder.StaticField(
+            name, std::string(kConfigDescriptor),
+            dx::kAccPublic | dx::kAccStatic | dx::kAccFinal | dx::kAccEnum);
     }
     builder.StaticField(
-               "$VALUES", "[Landroid/graphics/Bitmap$Config;", 0x101aU)
+               "$VALUES", "[Landroid/graphics/Bitmap$Config;",
+               dx::kAccPrivate | dx::kAccStatic | dx::kAccFinal |
+                   dx::kAccSynthetic)
         .StaticField(
-            "sConfigs", "[Landroid/graphics/Bitmap$Config;", 0x000aU)
-        .InstanceField("nativeInt", "I", 0x0010U);
+            "sConfigs", "[Landroid/graphics/Bitmap$Config;",
+            dx::kAccPrivate | dx::kAccStatic)
+        .InstanceField("nativeInt", "I", dx::kAccFinal);
     builder.Constructor("(Ljava/lang/String;II)V",
         [](dx::IntrinsicContext& call) {
             InitializeConstant(call, call.receiver,
@@ -112,14 +118,14 @@ Decl Declare_android_graphics_Bitmap_Config(const Context& context) {
                                call.arguments[1].AsInt(),
                                call.arguments[2].AsInt());
             return dx::VmValue::Void();
-        }, 0x0002U);
+        }, dx::kAccPrivate);
     builder.StaticMethod("values", "()[Landroid/graphics/Bitmap$Config;",
         [](dx::IntrinsicContext& call) {
             const auto values = StaticReference(
                 call.vm, "$VALUES",
                 "[Landroid/graphics/Bitmap$Config;");
             return dx::VmValue::Ref(call.vm.CloneObject(values));
-        }, 0x0009U);
+        }, dx::kAccPublic | dx::kAccStatic);
     builder.StaticMethod(
         "valueOf",
         "(Ljava/lang/String;)Landroid/graphics/Bitmap$Config;",
@@ -139,7 +145,7 @@ Decl Declare_android_graphics_Bitmap_Config(const Context& context) {
             throw dx::VmJavaThrow{
                 "Ljava/lang/IllegalArgumentException;",
                 wanted + " is not a constant in android.graphics.Bitmap.Config"};
-        }, 0x0009U);
+        }, dx::kAccPublic | dx::kAccStatic);
     builder.StaticMethod(
         "nativeToConfig", "(I)Landroid/graphics/Bitmap$Config;",
         [](dx::IntrinsicContext& call) {
@@ -154,7 +160,7 @@ Decl Declare_android_graphics_Bitmap_Config(const Context& context) {
                 "[Landroid/graphics/Bitmap$Config;");
             return dx::VmValue::Ref(
                 call.vm.Model().GetObjectElement(configs, index));
-        }, 0x0008U);
+        }, dx::kAccStatic);
     builder.ClassInitializer([](dx::IntrinsicContext& call) {
         auto& vm = call.vm;
         std::array<dx::VmObjectRef, kConfigs.size()> values{
@@ -186,16 +192,11 @@ Decl Declare_android_graphics_Bitmap_Config(const Context& context) {
 
 }  // namespace ogplay::runtime::android_intrinsics
 
-namespace ogplay::runtime::android_intrinsics {
-Decl Declare_android_graphics_Bitmap_Config(const Context& context) {
-    return dvm80_android_graphics_Bitmap_Config::Declare_android_graphics_Bitmap_Config(context);
-}
-}  // namespace ogplay::runtime::android_intrinsics
 
 // ---- migrated from android_graphics_Bitmap.cpp ----
 #include "catalog.h"
 
-namespace ogplay::runtime::android_intrinsics::dvm80_android_graphics_Bitmap {
+namespace ogplay::runtime::android_intrinsics {
 
 namespace {
 
@@ -437,18 +438,13 @@ Decl Declare_android_graphics_Bitmap(const Context& context) {
 
 }  // namespace ogplay::runtime::android_intrinsics
 
-namespace ogplay::runtime::android_intrinsics {
-Decl Declare_android_graphics_Bitmap(const Context& context) {
-    return dvm80_android_graphics_Bitmap::Declare_android_graphics_Bitmap(context);
-}
-}  // namespace ogplay::runtime::android_intrinsics
 
 // ---- migrated from android_graphics_BitmapFactory.cpp ----
 #include "ogplay/runtime/integration/host_image_decode.h"
 
 #include "catalog.h"
 
-namespace ogplay::runtime::android_intrinsics::dvm80_android_graphics_BitmapFactory {
+namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_graphics_BitmapFactory(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/graphics/BitmapFactory;", "Ljava/lang/Object;");
@@ -493,16 +489,11 @@ Decl Declare_android_graphics_BitmapFactory(const Context& context) {
 
 }  // namespace ogplay::runtime::android_intrinsics
 
-namespace ogplay::runtime::android_intrinsics {
-Decl Declare_android_graphics_BitmapFactory(const Context& context) {
-    return dvm80_android_graphics_BitmapFactory::Declare_android_graphics_BitmapFactory(context);
-}
-}  // namespace ogplay::runtime::android_intrinsics
 
 // ---- migrated from android_graphics_Canvas.cpp ----
 #include "catalog.h"
 
-namespace ogplay::runtime::android_intrinsics::dvm80_android_graphics_Canvas {
+namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_graphics_Canvas(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/graphics/Canvas;", "Ljava/lang/Object;");
@@ -586,16 +577,11 @@ Decl Declare_android_graphics_Canvas(const Context& context) {
 
 }  // namespace ogplay::runtime::android_intrinsics
 
-namespace ogplay::runtime::android_intrinsics {
-Decl Declare_android_graphics_Canvas(const Context& context) {
-    return dvm80_android_graphics_Canvas::Declare_android_graphics_Canvas(context);
-}
-}  // namespace ogplay::runtime::android_intrinsics
 
 // ---- migrated from android_graphics_drawable_Drawable.cpp ----
 #include "catalog.h"
 
-namespace ogplay::runtime::android_intrinsics::dvm80_android_graphics_drawable_Drawable {
+namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_graphics_drawable_Drawable(const Context& context) {
     static_cast<void>(context);
@@ -605,16 +591,11 @@ Decl Declare_android_graphics_drawable_Drawable(const Context& context) {
 
 }  // namespace ogplay::runtime::android_intrinsics
 
-namespace ogplay::runtime::android_intrinsics {
-Decl Declare_android_graphics_drawable_Drawable(const Context& context) {
-    return dvm80_android_graphics_drawable_Drawable::Declare_android_graphics_drawable_Drawable(context);
-}
-}  // namespace ogplay::runtime::android_intrinsics
 
 // ---- migrated from android_graphics_drawable_PaintDrawable.cpp ----
 #include "catalog.h"
 
-namespace ogplay::runtime::android_intrinsics::dvm80_android_graphics_drawable_PaintDrawable {
+namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_graphics_drawable_PaintDrawable(const Context& context) {
     static_cast<void>(context);
@@ -626,16 +607,11 @@ Decl Declare_android_graphics_drawable_PaintDrawable(const Context& context) {
 
 }  // namespace ogplay::runtime::android_intrinsics
 
-namespace ogplay::runtime::android_intrinsics {
-Decl Declare_android_graphics_drawable_PaintDrawable(const Context& context) {
-    return dvm80_android_graphics_drawable_PaintDrawable::Declare_android_graphics_drawable_PaintDrawable(context);
-}
-}  // namespace ogplay::runtime::android_intrinsics
 
 // ---- migrated from android_graphics_Matrix.cpp ----
 #include "catalog.h"
 
-namespace ogplay::runtime::android_intrinsics::dvm80_android_graphics_Matrix {
+namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_graphics_Matrix(const Context& context) {
     static_cast<void>(context);
@@ -646,16 +622,11 @@ Decl Declare_android_graphics_Matrix(const Context& context) {
 
 }  // namespace ogplay::runtime::android_intrinsics
 
-namespace ogplay::runtime::android_intrinsics {
-Decl Declare_android_graphics_Matrix(const Context& context) {
-    return dvm80_android_graphics_Matrix::Declare_android_graphics_Matrix(context);
-}
-}  // namespace ogplay::runtime::android_intrinsics
 
 // ---- migrated from android_graphics_Paint.cpp ----
 #include "catalog.h"
 
-namespace ogplay::runtime::android_intrinsics::dvm80_android_graphics_Paint {
+namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_graphics_Paint(const Context& context) {
     static_cast<void>(context);
@@ -676,16 +647,11 @@ Decl Declare_android_graphics_Paint(const Context& context) {
 
 }  // namespace ogplay::runtime::android_intrinsics
 
-namespace ogplay::runtime::android_intrinsics {
-Decl Declare_android_graphics_Paint(const Context& context) {
-    return dvm80_android_graphics_Paint::Declare_android_graphics_Paint(context);
-}
-}  // namespace ogplay::runtime::android_intrinsics
 
 // ---- migrated from android_graphics_Rect.cpp ----
 #include "catalog.h"
 
-namespace ogplay::runtime::android_intrinsics::dvm80_android_graphics_Rect {
+namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_graphics_Rect(const Context& context) {
     static_cast<void>(context);
@@ -710,16 +676,11 @@ Decl Declare_android_graphics_Rect(const Context& context) {
 
 }  // namespace ogplay::runtime::android_intrinsics
 
-namespace ogplay::runtime::android_intrinsics {
-Decl Declare_android_graphics_Rect(const Context& context) {
-    return dvm80_android_graphics_Rect::Declare_android_graphics_Rect(context);
-}
-}  // namespace ogplay::runtime::android_intrinsics
 
 // ---- migrated from android_graphics_Region_Op.cpp ----
 #include "catalog.h"
 
-namespace ogplay::runtime::android_intrinsics::dvm80_android_graphics_Region_Op {
+namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_graphics_Region_Op(const Context& context) {
     static_cast<void>(context);
@@ -738,11 +699,6 @@ Decl Declare_android_graphics_Region_Op(const Context& context) {
 
 }  // namespace ogplay::runtime::android_intrinsics
 
-namespace ogplay::runtime::android_intrinsics {
-Decl Declare_android_graphics_Region_Op(const Context& context) {
-    return dvm80_android_graphics_Region_Op::Declare_android_graphics_Region_Op(context);
-}
-}  // namespace ogplay::runtime::android_intrinsics
 
 namespace ogplay::runtime::android_intrinsics {
 namespace {
@@ -793,7 +749,9 @@ Decl Declare_android_graphics_Color(const Context& context) {
              std::pair{"GREEN", 0xff00ff00U}, std::pair{"BLUE", 0xff0000ffU},
              std::pair{"YELLOW", 0xffffff00U}, std::pair{"CYAN", 0xff00ffffU},
              std::pair{"MAGENTA", 0xffff00ffU}, std::pair{"TRANSPARENT", 0x00000000U}}) {
-        builder.ConstantInt(name, "I", static_cast<std::int32_t>(value), 0x0019U);
+        builder.ConstantInt(
+            name, "I", static_cast<std::int32_t>(value),
+            dx::kAccPublic | dx::kAccStatic | dx::kAccFinal);
     }
     builder.StaticMethod("alpha", "(I)I", [](dx::IntrinsicContext& call) {
         return dx::VmValue::Int(static_cast<std::uint32_t>(call.arguments[0].AsInt()) >> 24U);
@@ -917,12 +875,12 @@ Decl Declare_android_graphics_Path_Direction(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/graphics/Path$Direction;", "Ljava/lang/Object;");
     builder.StaticField("CW", "Landroid/graphics/Path$Direction;")
         .StaticField("CCW", "Landroid/graphics/Path$Direction;");
-    builder.InstanceField("nativeInt", "I", 0x0011U);
+    builder.InstanceField("nativeInt", "I", dx::kAccPublic | dx::kAccFinal);
     builder.Constructor("(I)V", [](dx::IntrinsicContext& call) {
         call.vm.Model().InstanceSlots(call.receiver)[0] = {
             static_cast<std::uint32_t>(call.arguments[0].AsInt()), dx::SlotTag::cat1};
         return dx::VmValue::Void();
-    }, 0x0002U);
+    }, dx::kAccPrivate);
     builder.ClassInitializer([](dx::IntrinsicContext& call) {
         for (std::int32_t index = 0; index < 2; ++index) {
             const auto value = call.vm.NewIntrinsicInstance("Landroid/graphics/Path$Direction;");
@@ -994,7 +952,7 @@ Decl Declare_android_graphics_PorterDuff_Mode(const Context& context) {
         std::pair{"MULTIPLY", 14}, std::pair{"SCREEN", 15}, std::pair{"ADD", 16},
         std::pair{"OVERLAY", 17}};
     for (const auto& [name, _] : modes) builder.StaticField(name, "Landroid/graphics/PorterDuff$Mode;");
-    builder.InstanceField("nativeInt", "I", 0x0011U);
+    builder.InstanceField("nativeInt", "I", dx::kAccPublic | dx::kAccFinal);
     builder.ClassInitializer([modes](dx::IntrinsicContext& call) {
         for (const auto& [name, value] : modes) {
             const auto object = call.vm.NewIntrinsicInstance("Landroid/graphics/PorterDuff$Mode;");
@@ -1016,7 +974,8 @@ Decl Declare_android_graphics_drawable_BitmapDrawable(const Context& context) {
     static_cast<void>(context);
     auto builder = dx::IntrinsicClassBuilder::Class(
         "Landroid/graphics/drawable/BitmapDrawable;", "Landroid/graphics/drawable/Drawable;");
-    builder.InstanceField("bitmap", "Landroid/graphics/Bitmap;", 0x0012U);
+    builder.InstanceField("bitmap", "Landroid/graphics/Bitmap;",
+                          dx::kAccPrivate | dx::kAccFinal);
     const auto bitmap_ctor = [](const std::size_t index) {
         return dx::IntrinsicHandler([index](dx::IntrinsicContext& call) {
             call.vm.Model().InstanceSlots(call.receiver)[0] = {
@@ -1036,7 +995,7 @@ Decl Declare_android_graphics_drawable_ColorDrawable(const Context& context) {
     static_cast<void>(context);
     auto builder = dx::IntrinsicClassBuilder::Class(
         "Landroid/graphics/drawable/ColorDrawable;", "Landroid/graphics/drawable/Drawable;");
-    builder.InstanceField("color", "I", 0x0002U);
+    builder.InstanceField("color", "I", dx::kAccPrivate);
     builder.Constructor("()V", GraphicsNoopHandler());
     const auto set = [](dx::IntrinsicContext& call) {
         call.vm.Model().InstanceSlots(call.receiver)[0] = {
@@ -1056,7 +1015,7 @@ Decl Declare_android_graphics_drawable_ColorDrawable(const Context& context) {
 // ---- migrated from android_graphics_Typeface.cpp ----
 #include "catalog.h"
 
-namespace ogplay::runtime::android_intrinsics::dvm80_android_graphics_Typeface {
+namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_graphics_Typeface(const Context& context) {
     static_cast<void>(context);
@@ -1078,10 +1037,4 @@ Decl Declare_android_graphics_Typeface(const Context& context) {
     return std::move(builder).Build();
 }
 
-}  // namespace ogplay::runtime::android_intrinsics
-
-namespace ogplay::runtime::android_intrinsics {
-Decl Declare_android_graphics_Typeface(const Context& context) {
-    return dvm80_android_graphics_Typeface::Declare_android_graphics_Typeface(context);
-}
 }  // namespace ogplay::runtime::android_intrinsics

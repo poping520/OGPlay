@@ -13,13 +13,6 @@ namespace dx = dexvm;
 using Decl = dexvm::IntrinsicClassDecl;
 using Context = std::shared_ptr<DexVmAndroidContext>;
 
-// Android 4.4.4 DEX access bits used by declarations whose visibility is
-// part of the subclass contract. Keep protected callbacks explicit: the
-// builder's public default is intentionally unsuitable for them.
-inline constexpr std::uint32_t kPublicAccess = 0x0001U;
-inline constexpr std::uint32_t kProtectedAccess = 0x0004U;
-inline constexpr std::uint32_t kAbstractAccess = 0x0400U;
-
 // Helpers shared across handler batches; batch-local helpers stay private to
 // their translation unit.
 [[nodiscard]] dx::VmValue Self(dx::IntrinsicContext& call);

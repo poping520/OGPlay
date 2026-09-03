@@ -10,7 +10,7 @@
 // ---- migrated from android_media_AudioManager.cpp ----
 #include "catalog.h"
 
-namespace ogplay::runtime::android_intrinsics::dvm80_android_media_AudioManager {
+namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_media_AudioManager(const Context& context) {
     static_cast<void>(context);
@@ -399,9 +399,11 @@ Decl Declare_android_media_AudioTrack_OnPlaybackPositionUpdateListener(
     auto builder = dx::IntrinsicClassBuilder::Interface(
         "Landroid/media/AudioTrack$OnPlaybackPositionUpdateListener;");
     builder.UnimplementedVirtual(
-        "onMarkerReached", "(Landroid/media/AudioTrack;)V", 0x0401U);
+        "onMarkerReached", "(Landroid/media/AudioTrack;)V",
+        dx::kAccPublic | dx::kAccAbstract);
     builder.UnimplementedVirtual(
-        "onPeriodicNotification", "(Landroid/media/AudioTrack;)V", 0x0401U);
+        "onPeriodicNotification", "(Landroid/media/AudioTrack;)V",
+        dx::kAccPublic | dx::kAccAbstract);
     return std::move(builder).Build();
 }
 }  // namespace ogplay::runtime::android_intrinsics
@@ -433,16 +435,11 @@ void RegisterAndroidAudioTrackStateTable(
 }
 }  // namespace ogplay::runtime
 
-namespace ogplay::runtime::android_intrinsics {
-Decl Declare_android_media_AudioManager(const Context& context) {
-    return dvm80_android_media_AudioManager::Declare_android_media_AudioManager(context);
-}
-}  // namespace ogplay::runtime::android_intrinsics
 
 // ---- migrated from android_media_MediaPlayer_OnCompletionListener.cpp ----
 #include "catalog.h"
 
-namespace ogplay::runtime::android_intrinsics::dvm80_android_media_MediaPlayer_OnCompletionListener {
+namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_media_MediaPlayer_OnCompletionListener(const Context& context) {
     static_cast<void>(context);
@@ -452,16 +449,11 @@ Decl Declare_android_media_MediaPlayer_OnCompletionListener(const Context& conte
 
 }  // namespace ogplay::runtime::android_intrinsics
 
-namespace ogplay::runtime::android_intrinsics {
-Decl Declare_android_media_MediaPlayer_OnCompletionListener(const Context& context) {
-    return dvm80_android_media_MediaPlayer_OnCompletionListener::Declare_android_media_MediaPlayer_OnCompletionListener(context);
-}
-}  // namespace ogplay::runtime::android_intrinsics
 
 // ---- migrated from android_media_MediaPlayer_OnErrorListener.cpp ----
 #include "catalog.h"
 
-namespace ogplay::runtime::android_intrinsics::dvm80_android_media_MediaPlayer_OnErrorListener {
+namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_media_MediaPlayer_OnErrorListener(const Context& context) {
     static_cast<void>(context);
@@ -471,16 +463,11 @@ Decl Declare_android_media_MediaPlayer_OnErrorListener(const Context& context) {
 
 }  // namespace ogplay::runtime::android_intrinsics
 
-namespace ogplay::runtime::android_intrinsics {
-Decl Declare_android_media_MediaPlayer_OnErrorListener(const Context& context) {
-    return dvm80_android_media_MediaPlayer_OnErrorListener::Declare_android_media_MediaPlayer_OnErrorListener(context);
-}
-}  // namespace ogplay::runtime::android_intrinsics
 
 // ---- migrated from android_media_MediaPlayer_OnPreparedListener.cpp ----
 #include "catalog.h"
 
-namespace ogplay::runtime::android_intrinsics::dvm80_android_media_MediaPlayer_OnPreparedListener {
+namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_media_MediaPlayer_OnPreparedListener(const Context& context) {
     static_cast<void>(context);
@@ -490,11 +477,6 @@ Decl Declare_android_media_MediaPlayer_OnPreparedListener(const Context& context
 
 }  // namespace ogplay::runtime::android_intrinsics
 
-namespace ogplay::runtime::android_intrinsics {
-Decl Declare_android_media_MediaPlayer_OnPreparedListener(const Context& context) {
-    return dvm80_android_media_MediaPlayer_OnPreparedListener::Declare_android_media_MediaPlayer_OnPreparedListener(context);
-}
-}  // namespace ogplay::runtime::android_intrinsics
 
 // ---- migrated from android_media_MediaPlayer.cpp ----
 // MediaPlayer handlers bound to the session's offline mixer ("big" bank,
@@ -506,7 +488,7 @@ Decl Declare_android_media_MediaPlayer_OnPreparedListener(const Context& context
 
 #include "catalog.h"
 
-namespace ogplay::runtime::android_intrinsics::dvm80_android_media_MediaPlayer {
+namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_media_MediaPlayer(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/media/MediaPlayer;", "Ljava/lang/Object;");
@@ -744,11 +726,6 @@ Decl Declare_android_media_MediaPlayer(const Context& context) {
 
 }  // namespace ogplay::runtime::android_intrinsics
 
-namespace ogplay::runtime::android_intrinsics {
-Decl Declare_android_media_MediaPlayer(const Context& context) {
-    return dvm80_android_media_MediaPlayer::Declare_android_media_MediaPlayer(context);
-}
-}  // namespace ogplay::runtime::android_intrinsics
 
 // ---- migrated from android_media_SoundPool.cpp ----
 // SoundPool handlers bound to the session's offline mixer (resid is the
@@ -759,7 +736,7 @@ Decl Declare_android_media_MediaPlayer(const Context& context) {
 
 #include "catalog.h"
 
-namespace ogplay::runtime::android_intrinsics::dvm80_android_media_SoundPool {
+namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_media_SoundPool(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/media/SoundPool;", "Ljava/lang/Object;");
@@ -864,11 +841,6 @@ Decl Declare_android_media_SoundPool(const Context& context) {
 
 }  // namespace ogplay::runtime::android_intrinsics
 
-namespace ogplay::runtime::android_intrinsics {
-Decl Declare_android_media_SoundPool(const Context& context) {
-    return dvm80_android_media_SoundPool::Declare_android_media_SoundPool(context);
-}
-}  // namespace ogplay::runtime::android_intrinsics
 
 // ---- migrated from android_widget_VideoView.cpp ----
 // VideoView handlers: real decoded playback through the injected
@@ -881,7 +853,7 @@ Decl Declare_android_media_SoundPool(const Context& context) {
 
 #include "catalog.h"
 
-namespace ogplay::runtime::android_intrinsics::dvm80_android_widget_VideoView {
+namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_widget_VideoView(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/widget/VideoView;", "Landroid/view/View;");
@@ -1063,11 +1035,6 @@ Decl Declare_android_widget_VideoView(const Context& context) {
 
 }  // namespace ogplay::runtime::android_intrinsics
 
-namespace ogplay::runtime::android_intrinsics {
-Decl Declare_android_widget_VideoView(const Context& context) {
-    return dvm80_android_widget_VideoView::Declare_android_widget_VideoView(context);
-}
-}  // namespace ogplay::runtime::android_intrinsics
 
 // ---- migrated from support_video.cpp ----
 // Guest video pump (ADR-0021): publishes decoded frames, mixes video PCM

@@ -44,14 +44,14 @@ IntrinsicClassDecl DeclareFormat() {
   return std::move(IntrinsicClassBuilder::Class(
                        "Ljava/text/Format;", "Ljava/lang/Object;",
                        {"Ljava/io/Serializable;", "Ljava/lang/Cloneable;"},
-                       0x0401U))
+                       kAccPublic | kAccAbstract))
       .Build();
 }
 
 IntrinsicClassDecl DeclareDateFormat() {
   return std::move(IntrinsicClassBuilder::Class(
                        "Ljava/text/DateFormat;", "Ljava/text/Format;", {},
-                       0x0401U))
+                       kAccPublic | kAccAbstract))
       .Build();
 }
 
@@ -59,7 +59,7 @@ IntrinsicClassDecl DeclareSimpleDateFormat() {
   auto builder = IntrinsicClassBuilder::Class(
       "Ljava/text/SimpleDateFormat;", "Ljava/text/DateFormat;");
   const auto pattern = builder.BoundInstanceField(
-      "pattern", "Ljava/lang/String;", 0x0002U);
+      "pattern", "Ljava/lang/String;", kAccPrivate);
   // 使用指定的非本地化模式和 Locale 创建日期格式器。
   builder.Constructor(
       "(Ljava/lang/String;Ljava/util/Locale;)V",

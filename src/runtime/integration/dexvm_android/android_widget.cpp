@@ -3,7 +3,7 @@
 // ---- migrated from android_widget_AbsoluteLayout_LayoutParams.cpp ----
 #include "catalog.h"
 
-namespace ogplay::runtime::android_intrinsics::dvm80_android_widget_AbsoluteLayout_LayoutParams {
+namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_widget_AbsoluteLayout_LayoutParams(const Context& context) {
     static_cast<void>(context);
@@ -14,16 +14,11 @@ Decl Declare_android_widget_AbsoluteLayout_LayoutParams(const Context& context) 
 
 }  // namespace ogplay::runtime::android_intrinsics
 
-namespace ogplay::runtime::android_intrinsics {
-Decl Declare_android_widget_AbsoluteLayout_LayoutParams(const Context& context) {
-    return dvm80_android_widget_AbsoluteLayout_LayoutParams::Declare_android_widget_AbsoluteLayout_LayoutParams(context);
-}
-}  // namespace ogplay::runtime::android_intrinsics
 
 // ---- migrated from android_widget_AbsoluteLayout.cpp ----
 #include "catalog.h"
 
-namespace ogplay::runtime::android_intrinsics::dvm80_android_widget_AbsoluteLayout {
+namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_widget_AbsoluteLayout(const Context& context) {
     static_cast<void>(context);
@@ -34,16 +29,11 @@ Decl Declare_android_widget_AbsoluteLayout(const Context& context) {
 
 }  // namespace ogplay::runtime::android_intrinsics
 
-namespace ogplay::runtime::android_intrinsics {
-Decl Declare_android_widget_AbsoluteLayout(const Context& context) {
-    return dvm80_android_widget_AbsoluteLayout::Declare_android_widget_AbsoluteLayout(context);
-}
-}  // namespace ogplay::runtime::android_intrinsics
 
 // ---- migrated from android_widget_Button.cpp ----
 #include "catalog.h"
 
-namespace ogplay::runtime::android_intrinsics::dvm80_android_widget_Button {
+namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_widget_Button(const Context& context) {
     static_cast<void>(context);
@@ -54,16 +44,11 @@ Decl Declare_android_widget_Button(const Context& context) {
 
 }  // namespace ogplay::runtime::android_intrinsics
 
-namespace ogplay::runtime::android_intrinsics {
-Decl Declare_android_widget_Button(const Context& context) {
-    return dvm80_android_widget_Button::Declare_android_widget_Button(context);
-}
-}  // namespace ogplay::runtime::android_intrinsics
 
 // ---- migrated from android_widget_EditText.cpp ----
 #include "catalog.h"
 
-namespace ogplay::runtime::android_intrinsics::dvm80_android_widget_EditText {
+namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_widget_EditText(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/widget/EditText;", "Landroid/widget/TextView;");
@@ -82,19 +67,14 @@ Decl Declare_android_widget_EditText(const Context& context) {
 
 }  // namespace ogplay::runtime::android_intrinsics
 
-namespace ogplay::runtime::android_intrinsics {
-Decl Declare_android_widget_EditText(const Context& context) {
-    return dvm80_android_widget_EditText::Declare_android_widget_EditText(context);
-}
-}  // namespace ogplay::runtime::android_intrinsics
 
 // ---- migrated from android_widget_FrameLayout_LayoutParams.cpp ----
 #include "catalog.h"
 
-namespace ogplay::runtime::android_intrinsics::dvm80_android_widget_FrameLayout_LayoutParams {
+namespace ogplay::runtime::android_intrinsics {
 namespace {
 
-ui::DimensionSpec Dimension(const std::int32_t value) {
+ui::DimensionSpec FrameLayoutDimension(const std::int32_t value) {
     if (value == -1) return {ui::SizeMode::MatchParent, 0};
     if (value == -2) return {ui::SizeMode::WrapContent, 0};
     if (value >= 0) return {ui::SizeMode::Fixed, value};
@@ -110,8 +90,8 @@ Decl Declare_android_widget_FrameLayout_LayoutParams(const Context& context) {
     builder.Constructor("(II)V",
         [context](dx::IntrinsicContext& call) {
             ui::LayoutParams params;
-            params.width = Dimension(call.arguments[0].AsInt());
-            params.height = Dimension(call.arguments[1].AsInt());
+            params.width = FrameLayoutDimension(call.arguments[0].AsInt());
+            params.height = FrameLayoutDimension(call.arguments[1].AsInt());
             context->ui_layout_params[call.receiver.Value()] = params;
             return dx::VmValue::Void();
         });
@@ -120,16 +100,11 @@ Decl Declare_android_widget_FrameLayout_LayoutParams(const Context& context) {
 
 }  // namespace ogplay::runtime::android_intrinsics
 
-namespace ogplay::runtime::android_intrinsics {
-Decl Declare_android_widget_FrameLayout_LayoutParams(const Context& context) {
-    return dvm80_android_widget_FrameLayout_LayoutParams::Declare_android_widget_FrameLayout_LayoutParams(context);
-}
-}  // namespace ogplay::runtime::android_intrinsics
 
 // ---- migrated from android_widget_FrameLayout.cpp ----
 #include "catalog.h"
 
-namespace ogplay::runtime::android_intrinsics::dvm80_android_widget_FrameLayout {
+namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_widget_FrameLayout(const Context& context) {
     static_cast<void>(context);
@@ -140,16 +115,11 @@ Decl Declare_android_widget_FrameLayout(const Context& context) {
 
 }  // namespace ogplay::runtime::android_intrinsics
 
-namespace ogplay::runtime::android_intrinsics {
-Decl Declare_android_widget_FrameLayout(const Context& context) {
-    return dvm80_android_widget_FrameLayout::Declare_android_widget_FrameLayout(context);
-}
-}  // namespace ogplay::runtime::android_intrinsics
 
 // ---- migrated from android_widget_ImageButton.cpp ----
 #include "catalog.h"
 
-namespace ogplay::runtime::android_intrinsics::dvm80_android_widget_ImageButton {
+namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_widget_ImageButton(const Context& context) {
     static_cast<void>(context);
@@ -160,16 +130,11 @@ Decl Declare_android_widget_ImageButton(const Context& context) {
 
 }  // namespace ogplay::runtime::android_intrinsics
 
-namespace ogplay::runtime::android_intrinsics {
-Decl Declare_android_widget_ImageButton(const Context& context) {
-    return dvm80_android_widget_ImageButton::Declare_android_widget_ImageButton(context);
-}
-}  // namespace ogplay::runtime::android_intrinsics
 
 // ---- migrated from android_widget_ImageView_ScaleType.cpp ----
 #include "catalog.h"
 
-namespace ogplay::runtime::android_intrinsics::dvm80_android_widget_ImageView_ScaleType {
+namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_widget_ImageView_ScaleType(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/widget/ImageView$ScaleType;", "Ljava/lang/Object;");
@@ -201,16 +166,11 @@ Decl Declare_android_widget_ImageView_ScaleType(const Context& context) {
 
 }  // namespace ogplay::runtime::android_intrinsics
 
-namespace ogplay::runtime::android_intrinsics {
-Decl Declare_android_widget_ImageView_ScaleType(const Context& context) {
-    return dvm80_android_widget_ImageView_ScaleType::Declare_android_widget_ImageView_ScaleType(context);
-}
-}  // namespace ogplay::runtime::android_intrinsics
 
 // ---- migrated from android_widget_ImageView.cpp ----
 #include "catalog.h"
 
-namespace ogplay::runtime::android_intrinsics::dvm80_android_widget_ImageView {
+namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_widget_ImageView(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/widget/ImageView;", "Landroid/view/View;");
@@ -266,21 +226,16 @@ Decl Declare_android_widget_ImageView(const Context& context) {
 
 }  // namespace ogplay::runtime::android_intrinsics
 
-namespace ogplay::runtime::android_intrinsics {
-Decl Declare_android_widget_ImageView(const Context& context) {
-    return dvm80_android_widget_ImageView::Declare_android_widget_ImageView(context);
-}
-}  // namespace ogplay::runtime::android_intrinsics
 
 // ---- migrated from android_widget_LinearLayout_LayoutParams.cpp ----
 #include "catalog.h"
 
 #include <cmath>
 
-namespace ogplay::runtime::android_intrinsics::dvm80_android_widget_LinearLayout_LayoutParams {
+namespace ogplay::runtime::android_intrinsics {
 namespace {
 
-ui::DimensionSpec Dimension(const std::int32_t value) {
+ui::DimensionSpec LinearLayoutDimension(const std::int32_t value) {
     if (value == -1) return {ui::SizeMode::MatchParent, 0};
     if (value == -2) return {ui::SizeMode::WrapContent, 0};
     if (value >= 0) return {ui::SizeMode::Fixed, value};
@@ -292,8 +247,8 @@ ui::DimensionSpec Dimension(const std::int32_t value) {
 dx::IntrinsicHandler Init(const Context& context, const bool has_weight) {
     return [context, has_weight](dx::IntrinsicContext& call) {
         ui::LayoutParams params;
-        params.width = Dimension(call.arguments[0].AsInt());
-        params.height = Dimension(call.arguments[1].AsInt());
+        params.width = LinearLayoutDimension(call.arguments[0].AsInt());
+        params.height = LinearLayoutDimension(call.arguments[1].AsInt());
         if (has_weight) {
             params.weight = call.arguments[2].AsFloat();
             if (!std::isfinite(params.weight) || params.weight < 0.0F) {
@@ -339,16 +294,11 @@ Decl Declare_android_widget_LinearLayout_LayoutParams(const Context& context) {
 
 }  // namespace ogplay::runtime::android_intrinsics
 
-namespace ogplay::runtime::android_intrinsics {
-Decl Declare_android_widget_LinearLayout_LayoutParams(const Context& context) {
-    return dvm80_android_widget_LinearLayout_LayoutParams::Declare_android_widget_LinearLayout_LayoutParams(context);
-}
-}  // namespace ogplay::runtime::android_intrinsics
 
 // ---- migrated from android_widget_LinearLayout.cpp ----
 #include "catalog.h"
 
-namespace ogplay::runtime::android_intrinsics::dvm80_android_widget_LinearLayout {
+namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_widget_LinearLayout(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/widget/LinearLayout;", "Landroid/view/ViewGroup;");
@@ -392,16 +342,11 @@ Decl Declare_android_widget_LinearLayout(const Context& context) {
 
 }  // namespace ogplay::runtime::android_intrinsics
 
-namespace ogplay::runtime::android_intrinsics {
-Decl Declare_android_widget_LinearLayout(const Context& context) {
-    return dvm80_android_widget_LinearLayout::Declare_android_widget_LinearLayout(context);
-}
-}  // namespace ogplay::runtime::android_intrinsics
 
 // ---- migrated from android_widget_ProgressBar.cpp ----
 #include "catalog.h"
 
-namespace ogplay::runtime::android_intrinsics::dvm80_android_widget_ProgressBar {
+namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_widget_ProgressBar(const Context& context) {
     static_cast<void>(context);
@@ -415,19 +360,14 @@ Decl Declare_android_widget_ProgressBar(const Context& context) {
 
 }  // namespace ogplay::runtime::android_intrinsics
 
-namespace ogplay::runtime::android_intrinsics {
-Decl Declare_android_widget_ProgressBar(const Context& context) {
-    return dvm80_android_widget_ProgressBar::Declare_android_widget_ProgressBar(context);
-}
-}  // namespace ogplay::runtime::android_intrinsics
 
 // ---- migrated from android_widget_RelativeLayout_LayoutParams.cpp ----
 #include "catalog.h"
 
-namespace ogplay::runtime::android_intrinsics::dvm80_android_widget_RelativeLayout_LayoutParams {
+namespace ogplay::runtime::android_intrinsics {
 namespace {
 
-ui::DimensionSpec Dimension(const std::int32_t value) {
+ui::DimensionSpec RelativeLayoutDimension(const std::int32_t value) {
     if (value == -1) return {ui::SizeMode::MatchParent, 0};
     if (value == -2) return {ui::SizeMode::WrapContent, 0};
     if (value >= 0) return {ui::SizeMode::Fixed, value};
@@ -508,8 +448,8 @@ Decl Declare_android_widget_RelativeLayout_LayoutParams(const Context& context) 
     builder.Constructor("(II)V",
         [context](dx::IntrinsicContext& call) {
             ui::LayoutParams params;
-            params.width = Dimension(call.arguments[0].AsInt());
-            params.height = Dimension(call.arguments[1].AsInt());
+            params.width = RelativeLayoutDimension(call.arguments[0].AsInt());
+            params.height = RelativeLayoutDimension(call.arguments[1].AsInt());
             context->ui_layout_params[call.receiver.Value()] = params;
             return dx::VmValue::Void();
         });
@@ -540,16 +480,11 @@ Decl Declare_android_widget_RelativeLayout_LayoutParams(const Context& context) 
 
 }  // namespace ogplay::runtime::android_intrinsics
 
-namespace ogplay::runtime::android_intrinsics {
-Decl Declare_android_widget_RelativeLayout_LayoutParams(const Context& context) {
-    return dvm80_android_widget_RelativeLayout_LayoutParams::Declare_android_widget_RelativeLayout_LayoutParams(context);
-}
-}  // namespace ogplay::runtime::android_intrinsics
 
 // ---- migrated from android_widget_RelativeLayout.cpp ----
 #include "catalog.h"
 
-namespace ogplay::runtime::android_intrinsics::dvm80_android_widget_RelativeLayout {
+namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_widget_RelativeLayout(const Context& context) {
     static_cast<void>(context);
@@ -560,16 +495,11 @@ Decl Declare_android_widget_RelativeLayout(const Context& context) {
 
 }  // namespace ogplay::runtime::android_intrinsics
 
-namespace ogplay::runtime::android_intrinsics {
-Decl Declare_android_widget_RelativeLayout(const Context& context) {
-    return dvm80_android_widget_RelativeLayout::Declare_android_widget_RelativeLayout(context);
-}
-}  // namespace ogplay::runtime::android_intrinsics
 
 // ---- migrated from android_widget_ScrollView.cpp ----
 #include "catalog.h"
 
-namespace ogplay::runtime::android_intrinsics::dvm80_android_widget_ScrollView {
+namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_widget_ScrollView(const Context& context) {
     static_cast<void>(context);
@@ -580,16 +510,11 @@ Decl Declare_android_widget_ScrollView(const Context& context) {
 
 }  // namespace ogplay::runtime::android_intrinsics
 
-namespace ogplay::runtime::android_intrinsics {
-Decl Declare_android_widget_ScrollView(const Context& context) {
-    return dvm80_android_widget_ScrollView::Declare_android_widget_ScrollView(context);
-}
-}  // namespace ogplay::runtime::android_intrinsics
 
 // ---- migrated from android_widget_TableLayout.cpp ----
 #include "catalog.h"
 
-namespace ogplay::runtime::android_intrinsics::dvm80_android_widget_TableLayout {
+namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_widget_TableLayout(const Context& context) {
     static_cast<void>(context);
@@ -600,16 +525,11 @@ Decl Declare_android_widget_TableLayout(const Context& context) {
 
 }  // namespace ogplay::runtime::android_intrinsics
 
-namespace ogplay::runtime::android_intrinsics {
-Decl Declare_android_widget_TableLayout(const Context& context) {
-    return dvm80_android_widget_TableLayout::Declare_android_widget_TableLayout(context);
-}
-}  // namespace ogplay::runtime::android_intrinsics
 
 // ---- migrated from android_widget_TableRow.cpp ----
 #include "catalog.h"
 
-namespace ogplay::runtime::android_intrinsics::dvm80_android_widget_TableRow {
+namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_widget_TableRow(const Context& context) {
     static_cast<void>(context);
@@ -620,16 +540,11 @@ Decl Declare_android_widget_TableRow(const Context& context) {
 
 }  // namespace ogplay::runtime::android_intrinsics
 
-namespace ogplay::runtime::android_intrinsics {
-Decl Declare_android_widget_TableRow(const Context& context) {
-    return dvm80_android_widget_TableRow::Declare_android_widget_TableRow(context);
-}
-}  // namespace ogplay::runtime::android_intrinsics
 
 // ---- migrated from android_widget_TextView.cpp ----
 #include "catalog.h"
 
-namespace ogplay::runtime::android_intrinsics::dvm80_android_widget_TextView {
+namespace ogplay::runtime::android_intrinsics {
 namespace {
 
 ui::UiNodeId TextNode(dx::IntrinsicContext& call, const Context& context) {
@@ -757,18 +672,13 @@ Decl Declare_android_widget_TextView(const Context& context) {
 
 }  // namespace ogplay::runtime::android_intrinsics
 
-namespace ogplay::runtime::android_intrinsics {
-Decl Declare_android_widget_TextView(const Context& context) {
-    return dvm80_android_widget_TextView::Declare_android_widget_TextView(context);
-}
-}  // namespace ogplay::runtime::android_intrinsics
 
 // ---- migrated from android_widget_Toast.cpp ----
 // Toast has no on-screen surface here; show() lands in the guest log.
 
 #include "catalog.h"
 
-namespace ogplay::runtime::android_intrinsics::dvm80_android_widget_Toast {
+namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_widget_Toast(const Context& context) {
     static_cast<void>(context);
@@ -788,10 +698,4 @@ Decl Declare_android_widget_Toast(const Context& context) {
     return std::move(builder).Build();
 }
 
-}  // namespace ogplay::runtime::android_intrinsics
-
-namespace ogplay::runtime::android_intrinsics {
-Decl Declare_android_widget_Toast(const Context& context) {
-    return dvm80_android_widget_Toast::Declare_android_widget_Toast(context);
-}
 }  // namespace ogplay::runtime::android_intrinsics

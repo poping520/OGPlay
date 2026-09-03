@@ -138,7 +138,9 @@ java.* 核心 intrinsic。只解释游戏自带 DEX 的应用类；平台类永�
   实例字段与整型常量的类型/范围。`BoundInstanceField/BoundStaticField` 产生声明
   token，由每个 linker 在注册时预绑定到自己的 `VmFieldId`；`IntrinsicCall` 为
   handler 提供受检的类型化参数、receiver 与 primitive/reference 字段读写，禁止
-  handler 重复按字符串查字段或直接读写裸 slot。
+  handler 重复按字符串查字段或直接读写裸 slot。DEX/Dalvik access flag、校验 mask 与
+  API 19 reflection modifier mask 统一由 `access_flags.h` 发布；builder、linker、解释器和
+  intrinsic 声明不得各自复制数值定义。
 - `JavaObjectModel`：session 级统一对象身份（VmObjectRef 句柄空间，0=null）。
   VM 实例与对象数组自有存储；字符串与基元数组委托注入的
   `JniStringStore`/`JniPrimitiveArrayStore`——native 与解释器看到同一对象。

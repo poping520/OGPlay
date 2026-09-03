@@ -541,7 +541,8 @@ namespace ogplay::runtime::dexvm {
         IntrinsicClassBuilder builder(std::move(descriptor));
         builder.declaration_.interfaces = std::move(super_interfaces);
         builder.declaration_.is_interface = true;
-        builder.declaration_.access_flags = access_flags | 0x0600U;
+        builder.declaration_.access_flags =
+            access_flags | kAccInterface | kAccAbstract;
         return builder;
     }
 
@@ -563,14 +564,14 @@ namespace ogplay::runtime::dexvm {
         method.access_flags = access_flags;
         switch (type) {
         case MethodType::constructor:
-            method.access_flags |= 0x10000U;
+            method.access_flags |= kAccConstructor;
             method.invoke_kind = DeclaredInvokeKind::direct;
             break;
         case MethodType::direct_method:
             method.invoke_kind = DeclaredInvokeKind::direct;
             break;
         case MethodType::static_method:
-            method.access_flags |= 0x0008U;
+            method.access_flags |= kAccStatic;
             method.invoke_kind = DeclaredInvokeKind::static_call;
             break;
         case MethodType::virtual_method:
@@ -580,13 +581,13 @@ namespace ogplay::runtime::dexvm {
                                      : DeclaredInvokeKind::virtual_call;
             break;
         case MethodType::final_override_method:
-            method.access_flags |= 0x0010U;
+            method.access_flags |= kAccFinal;
             method.invoke_kind = declaration_.is_interface
                                      ? DeclaredInvokeKind::interface_call
                                      : DeclaredInvokeKind::virtual_call;
             break;
         case MethodType::final_method:
-            method.access_flags |= 0x0010U;
+            method.access_flags |= kAccFinal;
             method.invoke_kind = declaration_.is_interface
                                      ? DeclaredInvokeKind::interface_call
                                      : DeclaredInvokeKind::virtual_call;
@@ -727,8 +728,8 @@ namespace ogplay::runtime::dexvm {
         field.name = std::move(name);
         field.descriptor = std::move(descriptor);
         field.is_static = type == FieldType::static_field;
-        field.access_flags = access_flags |
-                             (field.is_static ? 0x0008U : 0U);
+        field.access_flags =
+            access_flags | (field.is_static ? kAccStatic : kAccNone);
         declaration_.fields.push_back(std::move(field));
         return *this;
     }
@@ -759,8 +760,8 @@ namespace ogplay::runtime::dexvm {
         field.name = std::move(name);
         field.descriptor = std::move(descriptor);
         field.is_static = type == FieldType::static_field;
-        field.access_flags = access_flags |
-                             (field.is_static ? 0x0008U : 0U);
+        field.access_flags =
+            access_flags | (field.is_static ? kAccStatic : kAccNone);
         field.binding_token = token;
         declaration_.fields.push_back(std::move(field));
         return IntrinsicFieldHandle(token);
@@ -788,7 +789,7 @@ namespace ogplay::runtime::dexvm {
         field.descriptor = std::move(descriptor);
         field.is_static = true;
         field.has_constant = true;
-        field.access_flags = access_flags | 0x0018U;
+        field.access_flags = access_flags | kAccStatic | kAccFinal;
         field.integral = value;
         declaration_.fields.push_back(std::move(field));
         return *this;
@@ -802,7 +803,7 @@ namespace ogplay::runtime::dexvm {
         field.descriptor = "Ljava/lang/String;";
         field.is_static = true;
         field.has_constant = true;
-        field.access_flags = access_flags | 0x0018U;
+        field.access_flags = access_flags | kAccStatic | kAccFinal;
         field.string_value = std::move(value);
         declaration_.fields.push_back(std::move(field));
         return *this;

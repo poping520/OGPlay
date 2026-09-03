@@ -3,7 +3,7 @@
 // ---- migrated from android_provider_Settings_System.cpp ----
 #include "catalog.h"
 
-namespace ogplay::runtime::android_intrinsics::dvm80_android_provider_Settings_System {
+namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_provider_Settings_System(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/provider/Settings$System;", "Ljava/lang/Object;");
@@ -33,16 +33,11 @@ Decl Declare_android_provider_Settings_System(const Context& context) {
 
 }  // namespace ogplay::runtime::android_intrinsics
 
-namespace ogplay::runtime::android_intrinsics {
-Decl Declare_android_provider_Settings_System(const Context& context) {
-    return dvm80_android_provider_Settings_System::Declare_android_provider_Settings_System(context);
-}
-}  // namespace ogplay::runtime::android_intrinsics
 
 // ---- migrated from android_telephony_PhoneStateListener.cpp ----
 #include "catalog.h"
 
-namespace ogplay::runtime::android_intrinsics::dvm80_android_telephony_PhoneStateListener {
+namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_telephony_PhoneStateListener(const Context& context) {
     static_cast<void>(context);
@@ -53,11 +48,6 @@ Decl Declare_android_telephony_PhoneStateListener(const Context& context) {
 
 }  // namespace ogplay::runtime::android_intrinsics
 
-namespace ogplay::runtime::android_intrinsics {
-Decl Declare_android_telephony_PhoneStateListener(const Context& context) {
-    return dvm80_android_telephony_PhoneStateListener::Declare_android_telephony_PhoneStateListener(context);
-}
-}  // namespace ogplay::runtime::android_intrinsics
 
 // ---- migrated from android_telephony_SmsManager.cpp ----
 // SMS sending is a non-goal surface: getDefault answers the cached
@@ -65,7 +55,7 @@ Decl Declare_android_telephony_PhoneStateListener(const Context& context) {
 
 #include "catalog.h"
 
-namespace ogplay::runtime::android_intrinsics::dvm80_android_telephony_SmsManager {
+namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_telephony_SmsManager(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/telephony/SmsManager;", "Ljava/lang/Object;");
@@ -84,11 +74,6 @@ Decl Declare_android_telephony_SmsManager(const Context& context) {
 
 }  // namespace ogplay::runtime::android_intrinsics
 
-namespace ogplay::runtime::android_intrinsics {
-Decl Declare_android_telephony_SmsManager(const Context& context) {
-    return dvm80_android_telephony_SmsManager::Declare_android_telephony_SmsManager(context);
-}
-}  // namespace ogplay::runtime::android_intrinsics
 
 // ---- migrated from android_telephony_SmsMessage.cpp ----
 // SMS is a non-goal surface: every entry point fails with accounting
@@ -96,7 +81,7 @@ Decl Declare_android_telephony_SmsManager(const Context& context) {
 
 #include "catalog.h"
 
-namespace ogplay::runtime::android_intrinsics::dvm80_android_telephony_SmsMessage {
+namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_telephony_SmsMessage(const Context& context) {
     static_cast<void>(context);
@@ -112,16 +97,11 @@ Decl Declare_android_telephony_SmsMessage(const Context& context) {
 
 }  // namespace ogplay::runtime::android_intrinsics
 
-namespace ogplay::runtime::android_intrinsics {
-Decl Declare_android_telephony_SmsMessage(const Context& context) {
-    return dvm80_android_telephony_SmsMessage::Declare_android_telephony_SmsMessage(context);
-}
-}  // namespace ogplay::runtime::android_intrinsics
 
 // ---- migrated from android_telephony_TelephonyManager.cpp ----
 #include "catalog.h"
 
-namespace ogplay::runtime::android_intrinsics::dvm80_android_telephony_TelephonyManager {
+namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_telephony_TelephonyManager(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/telephony/TelephonyManager;", "Ljava/lang/Object;");
@@ -160,10 +140,4 @@ Decl Declare_android_telephony_TelephonyManager(const Context& context) {
     return std::move(builder).Build();
 }
 
-}  // namespace ogplay::runtime::android_intrinsics
-
-namespace ogplay::runtime::android_intrinsics {
-Decl Declare_android_telephony_TelephonyManager(const Context& context) {
-    return dvm80_android_telephony_TelephonyManager::Declare_android_telephony_TelephonyManager(context);
-}
 }  // namespace ogplay::runtime::android_intrinsics

@@ -13,7 +13,7 @@
 
 #include "ogplay/runtime/dexvm/intrinsic_builder.h"
 
-namespace ogplay::runtime::dexvm::intrinsics::dvm80_java_lang_Enum {
+namespace ogplay::runtime::dexvm::intrinsics {
 using namespace detail;
 
 namespace {
@@ -182,7 +182,7 @@ IntrinsicClassDecl Declare_java_lang_Enum() {
         [](IntrinsicContext& context) {
             const auto other = context.arguments[0].ref;
             return VmValue::Int(context.receiver == other ? 1 : 0);
-        }, 0x0011U);
+        }, kAccPublic | kAccFinal);
     builder.OverrideMethod("hashCode", "()I",
         [](IntrinsicContext& context) {
             const auto name = NameOf(context.vm, context.receiver);
@@ -191,12 +191,12 @@ IntrinsicClassDecl Declare_java_lang_Enum() {
                 (name.IsValid()
                      ? JavaStringHash(context.vm.Model().StringValue(name))
                      : 0));
-        }, 0x0011U);
+        }, kAccPublic | kAccFinal);
     builder.OverrideMethod("clone", "()Ljava/lang/Object;",
         [](IntrinsicContext&) -> VmValue {
             throw VmJavaThrow{"Ljava/lang/CloneNotSupportedException;",
                               "Enums may not be cloned"};
-        }, 0x0014U);
+        }, kAccProtected | kAccFinal);
     builder.FinalMethod("compareTo", "(Ljava/lang/Enum;)I",
         [](IntrinsicContext& context) {
             return VmValue::Int(CompareOrdinals(
@@ -249,27 +249,12 @@ IntrinsicClassDecl Declare_java_lang_Enum() {
 
 }  // namespace ogplay::runtime::dexvm::intrinsics
 
-namespace ogplay::runtime::dexvm::intrinsics::
-    dvm80_java_lang_primitive_wrappers {
+namespace ogplay::runtime::dexvm::intrinsics {
 void AppendJavaLangPrimitiveWrappers(
     std::vector<IntrinsicClassDecl>& catalog);
 }
 
-namespace ogplay::runtime::dexvm::intrinsics {
 
-void AppendJavaLangPrimitiveWrappers(
-    std::vector<IntrinsicClassDecl>& catalog) {
-    dvm80_java_lang_primitive_wrappers::
-        AppendJavaLangPrimitiveWrappers(catalog);
-}
-
-}  // namespace ogplay::runtime::dexvm::intrinsics
-
-namespace ogplay::runtime::dexvm::intrinsics {
-IntrinsicClassDecl Declare_java_lang_Enum() {
-    return dvm80_java_lang_Enum::Declare_java_lang_Enum();
-}
-}  // namespace ogplay::runtime::dexvm::intrinsics
 
 // ---- migrated from java_lang_interfaces.cpp ----
 #include "catalog.h"
@@ -277,7 +262,7 @@ IntrinsicClassDecl Declare_java_lang_Enum() {
 
 #include "ogplay/runtime/dexvm/intrinsic_builder.h"
 
-namespace ogplay::runtime::dexvm::intrinsics::dvm80_java_lang_interfaces {
+namespace ogplay::runtime::dexvm::intrinsics {
     using namespace detail;
 
     namespace {
@@ -355,11 +340,6 @@ namespace ogplay::runtime::dexvm::intrinsics::dvm80_java_lang_interfaces {
     }
 } // namespace ogplay::runtime::dexvm::intrinsics
 
-namespace ogplay::runtime::dexvm::intrinsics {
-void AppendJavaLangInterfaces(std::vector<IntrinsicClassDecl>& catalog) {
-    dvm80_java_lang_interfaces::AppendJavaLangInterfaces(catalog);
-}
-}  // namespace ogplay::runtime::dexvm::intrinsics
 
 // ---- migrated from java_lang_Math.cpp ----
 #include "catalog.h"
@@ -367,7 +347,7 @@ void AppendJavaLangInterfaces(std::vector<IntrinsicClassDecl>& catalog) {
 
 #include "ogplay/runtime/dexvm/intrinsic_builder.h"
 
-namespace ogplay::runtime::dexvm::intrinsics::dvm80_java_lang_Math {
+namespace ogplay::runtime::dexvm::intrinsics {
 using namespace detail;
 
 IntrinsicClassDecl Declare_java_lang_Math() {
@@ -446,11 +426,6 @@ IntrinsicClassDecl Declare_java_lang_Math() {
 
 }  // namespace ogplay::runtime::dexvm::intrinsics
 
-namespace ogplay::runtime::dexvm::intrinsics {
-IntrinsicClassDecl Declare_java_lang_Math() {
-    return dvm80_java_lang_Math::Declare_java_lang_Math();
-}
-}  // namespace ogplay::runtime::dexvm::intrinsics
 
 // ---- migrated from java_lang_Object.cpp ----
 #include "catalog.h"
@@ -462,7 +437,7 @@ IntrinsicClassDecl Declare_java_lang_Math() {
 
 #include "ogplay/runtime/dexvm/intrinsic_builder.h"
 
-namespace ogplay::runtime::dexvm::intrinsics::dvm80_java_lang_Object {
+namespace ogplay::runtime::dexvm::intrinsics {
     using namespace detail;
     namespace {
 
@@ -544,7 +519,7 @@ namespace ogplay::runtime::dexvm::intrinsics::dvm80_java_lang_Object {
                                   "Class doesn't implement Cloneable"};
             }
             return VmValue::Ref(vm.CloneObject(context.receiver));
-        }, 0x0004U);
+        }, kAccProtected);
 
         builder.FinalMethod("getClass", "()Ljava/lang/Class;", [](IntrinsicContext& context) {
             auto& vm = context.vm;
@@ -601,11 +576,6 @@ namespace ogplay::runtime::dexvm::intrinsics::dvm80_java_lang_Object {
     }
 } // namespace ogplay::runtime::dexvm::intrinsics
 
-namespace ogplay::runtime::dexvm::intrinsics {
-IntrinsicClassDecl Declare_java_lang_Object() {
-    return dvm80_java_lang_Object::Declare_java_lang_Object();
-}
-}  // namespace ogplay::runtime::dexvm::intrinsics
 
 // ---- migrated from java_lang_primitive_wrappers.cpp ----
 #include "catalog.h"
@@ -623,7 +593,7 @@ IntrinsicClassDecl Declare_java_lang_Object() {
 #include "ogplay/hal/from_chars.h"
 #include "ogplay/runtime/dexvm/intrinsic_builder.h"
 
-namespace ogplay::runtime::dexvm::intrinsics::dvm80_java_lang_primitive_wrappers {
+namespace ogplay::runtime::dexvm::intrinsics {
 using namespace detail;
 namespace {
 
@@ -1122,27 +1092,31 @@ void AddNumberConversions(IntrinsicClassBuilder& builder, bool wide,
         const auto integer = (kind == 'F' || kind == 'D')
             ? FloatToJavaInteger<long double, std::int32_t>(value)
             : static_cast<std::int32_t>(value);
-        return VmValue::Int(static_cast<std::int8_t>(integer)); }, 0x0011U);
+        return VmValue::Int(static_cast<std::int8_t>(integer)); },
+        kAccPublic | kAccFinal);
     builder.OverrideMethod("shortValue", "()S", [numeric, kind](IntrinsicContext& c) {
         const auto value = numeric(c);
         const auto integer = (kind == 'F' || kind == 'D')
             ? FloatToJavaInteger<long double, std::int32_t>(value)
             : static_cast<std::int32_t>(value);
-        return VmValue::Int(static_cast<std::int16_t>(integer)); }, 0x0011U);
+        return VmValue::Int(static_cast<std::int16_t>(integer)); },
+        kAccPublic | kAccFinal);
     builder.OverrideMethod("intValue", "()I", [numeric, kind](IntrinsicContext& c) {
         const auto v = numeric(c);
         return VmValue::Int((kind == 'F' || kind == 'D')
             ? FloatToJavaInteger<long double, std::int32_t>(v)
-            : static_cast<std::int32_t>(v)); }, 0x0011U);
+            : static_cast<std::int32_t>(v)); }, kAccPublic | kAccFinal);
     builder.OverrideMethod("longValue", "()J", [numeric, kind](IntrinsicContext& c) {
         const auto v = numeric(c);
         return VmValue::Long((kind == 'F' || kind == 'D')
             ? FloatToJavaInteger<long double, std::int64_t>(v)
-            : static_cast<std::int64_t>(v)); }, 0x0011U);
+            : static_cast<std::int64_t>(v)); }, kAccPublic | kAccFinal);
     builder.OverrideMethod("floatValue", "()F", [numeric](IntrinsicContext& c) {
-        return VmValue::Float(static_cast<float>(numeric(c))); }, 0x0011U);
+        return VmValue::Float(static_cast<float>(numeric(c))); },
+        kAccPublic | kAccFinal);
     builder.OverrideMethod("doubleValue", "()D", [numeric](IntrinsicContext& c) {
-        return VmValue::Double(static_cast<double>(numeric(c))); }, 0x0011U);
+        return VmValue::Double(static_cast<double>(numeric(c))); },
+        kAccPublic | kAccFinal);
 }
 
 IntrinsicClassDecl Declare_java_lang_Number() {
@@ -1634,35 +1608,6 @@ void AppendJavaLangPrimitiveWrappers(
 
 }  // namespace ogplay::runtime::dexvm::intrinsics
 
-namespace ogplay::runtime::dexvm::intrinsics {
-IntrinsicClassDecl Declare_java_lang_Number() {
-    return dvm80_java_lang_primitive_wrappers::Declare_java_lang_Number();
-}
-IntrinsicClassDecl Declare_java_lang_Byte() {
-    return dvm80_java_lang_primitive_wrappers::Declare_java_lang_Byte();
-}
-IntrinsicClassDecl Declare_java_lang_Short() {
-    return dvm80_java_lang_primitive_wrappers::Declare_java_lang_Short();
-}
-IntrinsicClassDecl Declare_java_lang_Integer() {
-    return dvm80_java_lang_primitive_wrappers::Declare_java_lang_Integer();
-}
-IntrinsicClassDecl Declare_java_lang_Long() {
-    return dvm80_java_lang_primitive_wrappers::Declare_java_lang_Long();
-}
-IntrinsicClassDecl Declare_java_lang_Boolean() {
-    return dvm80_java_lang_primitive_wrappers::Declare_java_lang_Boolean();
-}
-IntrinsicClassDecl Declare_java_lang_Float() {
-    return dvm80_java_lang_primitive_wrappers::Declare_java_lang_Float();
-}
-IntrinsicClassDecl Declare_java_lang_Double() {
-    return dvm80_java_lang_primitive_wrappers::Declare_java_lang_Double();
-}
-IntrinsicClassDecl Declare_java_lang_Character() {
-    return dvm80_java_lang_primitive_wrappers::Declare_java_lang_Character();
-}
-}  // namespace ogplay::runtime::dexvm::intrinsics
 
 // ---- migrated from java_lang_ref_WeakReference.cpp ----
 #include "catalog.h"
@@ -1670,7 +1615,7 @@ IntrinsicClassDecl Declare_java_lang_Character() {
 
 #include "ogplay/runtime/dexvm/intrinsic_builder.h"
 
-namespace ogplay::runtime::dexvm::intrinsics::dvm80_java_lang_ref_WeakReference {
+namespace ogplay::runtime::dexvm::intrinsics {
 using namespace detail;
 
 IntrinsicClassDecl Declare_java_lang_ref_WeakReference() {
@@ -1693,11 +1638,6 @@ IntrinsicClassDecl Declare_java_lang_ref_WeakReference() {
 
 }  // namespace ogplay::runtime::dexvm::intrinsics
 
-namespace ogplay::runtime::dexvm::intrinsics {
-IntrinsicClassDecl Declare_java_lang_ref_WeakReference() {
-    return dvm80_java_lang_ref_WeakReference::Declare_java_lang_ref_WeakReference();
-}
-}  // namespace ogplay::runtime::dexvm::intrinsics
 
 // ---- migrated from java_lang_String.cpp ----
 #include "catalog.h"
@@ -1705,7 +1645,7 @@ IntrinsicClassDecl Declare_java_lang_ref_WeakReference() {
 
 #include "ogplay/runtime/dexvm/intrinsic_builder.h"
 
-namespace ogplay::runtime::dexvm::intrinsics::dvm80_java_lang_String {
+namespace ogplay::runtime::dexvm::intrinsics {
 using namespace detail;
 
 namespace {
@@ -2265,11 +2205,6 @@ IntrinsicClassDecl Declare_java_lang_String() {
 
 }  // namespace ogplay::runtime::dexvm::intrinsics
 
-namespace ogplay::runtime::dexvm::intrinsics {
-IntrinsicClassDecl Declare_java_lang_String() {
-    return dvm80_java_lang_String::Declare_java_lang_String();
-}
-}  // namespace ogplay::runtime::dexvm::intrinsics
 
 // ---- migrated from java_lang_StringBuffer.cpp ----
 #include "catalog.h"
@@ -2400,19 +2335,14 @@ namespace ogplay::runtime::dexvm::intrinsics::detail {
 
 }  // namespace ogplay::runtime::dexvm::intrinsics::detail
 
-namespace ogplay::runtime::dexvm::intrinsics::dvm80_java_lang_StringBuffer {
+namespace ogplay::runtime::dexvm::intrinsics {
 
 IntrinsicClassDecl Declare_java_lang_StringBuffer() {
     return detail::DeclareStringBuilderLike("Ljava/lang/StringBuffer;");
 }
 
-}  // namespace ogplay::runtime::dexvm::intrinsics::dvm80_java_lang_StringBuffer
-
-namespace ogplay::runtime::dexvm::intrinsics {
-IntrinsicClassDecl Declare_java_lang_StringBuffer() {
-    return dvm80_java_lang_StringBuffer::Declare_java_lang_StringBuffer();
-}
 }  // namespace ogplay::runtime::dexvm::intrinsics
+
 
 // ---- migrated from java_lang_StringBuilder.cpp ----
 #include "catalog.h"
@@ -2420,19 +2350,14 @@ IntrinsicClassDecl Declare_java_lang_StringBuffer() {
 
 #include "ogplay/runtime/dexvm/intrinsic_builder.h"
 
-namespace ogplay::runtime::dexvm::intrinsics::dvm80_java_lang_StringBuilder {
+namespace ogplay::runtime::dexvm::intrinsics {
 
 IntrinsicClassDecl Declare_java_lang_StringBuilder() {
     return detail::DeclareStringBuilderLike("Ljava/lang/StringBuilder;");
 }
 
-}  // namespace ogplay::runtime::dexvm::intrinsics::dvm80_java_lang_StringBuilder
-
-namespace ogplay::runtime::dexvm::intrinsics {
-IntrinsicClassDecl Declare_java_lang_StringBuilder() {
-    return dvm80_java_lang_StringBuilder::Declare_java_lang_StringBuilder();
-}
 }  // namespace ogplay::runtime::dexvm::intrinsics
+
 
 // ---- migrated from java_lang_System.cpp ----
 #include "catalog.h"
@@ -2440,7 +2365,7 @@ IntrinsicClassDecl Declare_java_lang_StringBuilder() {
 
 #include "ogplay/runtime/dexvm/intrinsic_builder.h"
 
-namespace ogplay::runtime::dexvm::intrinsics::dvm80_java_lang_System {
+namespace ogplay::runtime::dexvm::intrinsics {
 using namespace detail;
 namespace {
 
@@ -2575,11 +2500,6 @@ IntrinsicClassDecl Declare_java_lang_System() {
 
 }  // namespace ogplay::runtime::dexvm::intrinsics
 
-namespace ogplay::runtime::dexvm::intrinsics {
-IntrinsicClassDecl Declare_java_lang_System() {
-    return dvm80_java_lang_System::Declare_java_lang_System();
-}
-}  // namespace ogplay::runtime::dexvm::intrinsics
 
 // ---- migrated from java_lang_Thread.cpp ----
 // java.lang.Thread core facade for the pinned Android 4.4.4 libdvm class.
@@ -2600,7 +2520,7 @@ IntrinsicClassDecl Declare_java_lang_System() {
 #include "ogplay/runtime/dexvm/vm_monitors.h"
 #include "ogplay/runtime/dexvm/vm_threads.h"
 
-namespace ogplay::runtime::dexvm::intrinsics::dvm80_java_lang_Thread {
+namespace ogplay::runtime::dexvm::intrinsics {
     namespace {
         struct ThreadFields final {
             IntrinsicFieldHandle target;
@@ -2798,17 +2718,18 @@ namespace ogplay::runtime::dexvm::intrinsics::dvm80_java_lang_Thread {
             builder.BoundInstanceField("id", "J"),
             builder.BoundInstanceField("hasBeenStarted", "Z"),
             builder.BoundInstanceField("contextClassLoader",
-                                       "Ljava/lang/ClassLoader;", 0x0002U),
+                                       "Ljava/lang/ClassLoader;", kAccPrivate),
             builder.BoundInstanceField("group", "Ljava/lang/ThreadGroup;"),
-            builder.BoundInstanceField("parkState", "I", 0x0002U),
+            builder.BoundInstanceField("parkState", "I", kAccPrivate),
             builder.BoundInstanceField("interruptActions", "Ljava/util/List;",
-                                       0x0012U),
+                                       kAccPrivate | kAccFinal),
             builder.BoundInstanceField(
                 "uncaughtHandler",
-                "Ljava/lang/Thread$UncaughtExceptionHandler;", 0x0002U),
+                "Ljava/lang/Thread$UncaughtExceptionHandler;", kAccPrivate),
             builder.BoundStaticField(
                 "defaultUncaughtHandler",
-                "Ljava/lang/Thread$UncaughtExceptionHandler;", 0x000aU),
+                "Ljava/lang/Thread$UncaughtExceptionHandler;",
+                kAccPrivate | kAccStatic),
         };
         builder.ConstantInt("MIN_PRIORITY", "I", 1)
                 .ConstantInt("NORM_PRIORITY", "I", 5)
@@ -2909,7 +2830,7 @@ namespace ogplay::runtime::dexvm::intrinsics::dvm80_java_lang_Thread {
                 }
             );
             return VmValue::Void();
-        }, 0x0021U);
+        }, kAccPublic | kAccSynchronized);
 
         builder.StaticMethod("currentThread", "()Ljava/lang/Thread;", [fields](IntrinsicContext& context) {
             IntrinsicCall call(context);
@@ -3433,7 +3354,7 @@ namespace ogplay::runtime::dexvm::intrinsics::dvm80_java_lang_Thread {
 
         builder.UnimplementedFinal("stop", "()V");
         builder.UnimplementedFinal("stop", "(Ljava/lang/Throwable;)V",
-                                   0x0021U);
+                                   kAccPublic | kAccSynchronized);
         builder.UnimplementedFinal("suspend", "()V");
         builder.UnimplementedFinal("resume", "()V");
         builder.UnimplementedVirtual("destroy", "()V");
@@ -3442,16 +3363,13 @@ namespace ogplay::runtime::dexvm::intrinsics::dvm80_java_lang_Thread {
 } // namespace ogplay::runtime::dexvm::intrinsics
 
 namespace ogplay::runtime::dexvm::intrinsics {
-IntrinsicClassDecl Declare_java_lang_Thread() {
-    return dvm80_java_lang_Thread::Declare_java_lang_Thread();
-}
 
 IntrinsicClassDecl Declare_java_lang_Thread_UncaughtExceptionHandler() {
     auto builder = IntrinsicClassBuilder::Interface(
         "Ljava/lang/Thread$UncaughtExceptionHandler;");
     builder.UnimplementedVirtual(
         "uncaughtException", "(Ljava/lang/Thread;Ljava/lang/Throwable;)V",
-        0x0401U);
+        kAccPublic | kAccAbstract);
     return std::move(builder).Build();
 }
 
@@ -3460,13 +3378,13 @@ IntrinsicClassDecl Declare_java_lang_ThreadGroup() {
         "Ljava/lang/ThreadGroup;", "Ljava/lang/Object;",
         {"Ljava/lang/Thread$UncaughtExceptionHandler;"});
     const auto name =
-        builder.BoundInstanceField("name", "Ljava/lang/String;", 0x0002U);
+        builder.BoundInstanceField("name", "Ljava/lang/String;", kAccPrivate);
     const auto parent = builder.BoundInstanceField(
-        "parent", "Ljava/lang/ThreadGroup;", 0x0010U);
+        "parent", "Ljava/lang/ThreadGroup;", kAccFinal);
     const auto system = builder.BoundStaticField(
-        "mSystem", "Ljava/lang/ThreadGroup;", 0x0018U);
+        "mSystem", "Ljava/lang/ThreadGroup;", kAccStatic | kAccFinal);
     const auto main = builder.BoundStaticField(
-        "mMain", "Ljava/lang/ThreadGroup;", 0x0018U);
+        "mMain", "Ljava/lang/ThreadGroup;", kAccStatic | kAccFinal);
     builder.ClassInitializer(
         [name, parent, system, main](IntrinsicContext& context) {
             IntrinsicCall call(context);
@@ -3528,15 +3446,17 @@ IntrinsicClassDecl Declare_java_lang_ThreadGroup() {
 IntrinsicClassDecl Declare_java_lang_StackTraceElement() {
     auto builder = IntrinsicClassBuilder::Class(
         "Ljava/lang/StackTraceElement;", "Ljava/lang/Object;",
-        {"Ljava/io/Serializable;"}, 0x0011U);
+        {"Ljava/io/Serializable;"}, kAccPublic | kAccFinal);
     const auto declaring_class =
-        builder.BoundInstanceField("declaringClass", "Ljava/lang/String;", 0U);
+        builder.BoundInstanceField("declaringClass", "Ljava/lang/String;",
+                                   kAccNone);
     const auto method_name =
-        builder.BoundInstanceField("methodName", "Ljava/lang/String;", 0U);
+        builder.BoundInstanceField("methodName", "Ljava/lang/String;",
+                                   kAccNone);
     const auto file_name =
-        builder.BoundInstanceField("fileName", "Ljava/lang/String;", 0U);
+        builder.BoundInstanceField("fileName", "Ljava/lang/String;", kAccNone);
     const auto line_number =
-        builder.BoundInstanceField("lineNumber", "I", 0U);
+        builder.BoundInstanceField("lineNumber", "I", kAccNone);
     builder.Constructor(
         "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;I)V",
         [declaring_class, method_name, file_name,
@@ -3646,17 +3566,30 @@ IntrinsicClassDecl Declare_java_lang_StackTraceElement() {
 
 IntrinsicClassDecl Declare_java_lang_Thread_State() {
     auto builder = IntrinsicClassBuilder::Class(
-        "Ljava/lang/Thread$State;", "Ljava/lang/Enum;", {}, 0x4031U);
+        "Ljava/lang/Thread$State;", "Ljava/lang/Enum;", {},
+        kAccPublic | kAccFinal | kAccSuper | kAccEnum);
     const std::array<std::string_view, 6> names{
         "NEW", "RUNNABLE", "BLOCKED", "WAITING", "TIMED_WAITING",
         "TERMINATED"};
     const std::array<IntrinsicFieldHandle, 6> fields{
-        builder.BoundStaticField("NEW", "Ljava/lang/Thread$State;", 0x4019U),
-        builder.BoundStaticField("RUNNABLE", "Ljava/lang/Thread$State;", 0x4019U),
-        builder.BoundStaticField("BLOCKED", "Ljava/lang/Thread$State;", 0x4019U),
-        builder.BoundStaticField("WAITING", "Ljava/lang/Thread$State;", 0x4019U),
-        builder.BoundStaticField("TIMED_WAITING", "Ljava/lang/Thread$State;", 0x4019U),
-        builder.BoundStaticField("TERMINATED", "Ljava/lang/Thread$State;", 0x4019U)};
+        builder.BoundStaticField(
+            "NEW", "Ljava/lang/Thread$State;",
+            kAccPublic | kAccStatic | kAccFinal | kAccEnum),
+        builder.BoundStaticField(
+            "RUNNABLE", "Ljava/lang/Thread$State;",
+            kAccPublic | kAccStatic | kAccFinal | kAccEnum),
+        builder.BoundStaticField(
+            "BLOCKED", "Ljava/lang/Thread$State;",
+            kAccPublic | kAccStatic | kAccFinal | kAccEnum),
+        builder.BoundStaticField(
+            "WAITING", "Ljava/lang/Thread$State;",
+            kAccPublic | kAccStatic | kAccFinal | kAccEnum),
+        builder.BoundStaticField(
+            "TIMED_WAITING", "Ljava/lang/Thread$State;",
+            kAccPublic | kAccStatic | kAccFinal | kAccEnum),
+        builder.BoundStaticField(
+            "TERMINATED", "Ljava/lang/Thread$State;",
+            kAccPublic | kAccStatic | kAccFinal | kAccEnum)};
     builder.ClassInitializer([fields, names](IntrinsicContext& context) {
         IntrinsicCall call(context);
         const auto enum_class = *context.vm.Linker().FindClass("Ljava/lang/Enum;");
@@ -3708,7 +3641,7 @@ IntrinsicClassDecl Declare_java_lang_Thread_State() {
 
 #include "ogplay/runtime/dexvm/intrinsic_builder.h"
 
-namespace ogplay::runtime::dexvm::intrinsics::dvm80_java_lang_throwables {
+namespace ogplay::runtime::dexvm::intrinsics {
 using namespace detail;
 
 namespace {
@@ -4235,10 +4168,4 @@ void AppendJavaLangThrowables(std::vector<IntrinsicClassDecl>& catalog) {
     catalog.push_back(Declare_java_lang_VerifyError());
 }
 
-}  // namespace ogplay::runtime::dexvm::intrinsics
-
-namespace ogplay::runtime::dexvm::intrinsics {
-void AppendJavaLangThrowables(std::vector<IntrinsicClassDecl>& catalog) {
-    dvm80_java_lang_throwables::AppendJavaLangThrowables(catalog);
-}
 }  // namespace ogplay::runtime::dexvm::intrinsics

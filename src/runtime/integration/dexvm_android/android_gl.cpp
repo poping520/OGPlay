@@ -3,7 +3,7 @@
 // ---- migrated from android_opengl_GLSurfaceView_EGLConfigChooser.cpp ----
 #include "catalog.h"
 
-namespace ogplay::runtime::android_intrinsics::dvm80_android_opengl_GLSurfaceView_EGLConfigChooser {
+namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_opengl_GLSurfaceView_EGLConfigChooser(const Context&) {
     return std::move(dx::IntrinsicClassBuilder::Interface(
@@ -13,16 +13,11 @@ Decl Declare_android_opengl_GLSurfaceView_EGLConfigChooser(const Context&) {
 
 }  // namespace ogplay::runtime::android_intrinsics
 
-namespace ogplay::runtime::android_intrinsics {
-Decl Declare_android_opengl_GLSurfaceView_EGLConfigChooser(const Context& context) {
-    return dvm80_android_opengl_GLSurfaceView_EGLConfigChooser::Declare_android_opengl_GLSurfaceView_EGLConfigChooser(context);
-}
-}  // namespace ogplay::runtime::android_intrinsics
 
 // ---- migrated from android_opengl_GLSurfaceView_EGLContextFactory.cpp ----
 #include "catalog.h"
 
-namespace ogplay::runtime::android_intrinsics::dvm80_android_opengl_GLSurfaceView_EGLContextFactory {
+namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_opengl_GLSurfaceView_EGLContextFactory(const Context&) {
     return std::move(dx::IntrinsicClassBuilder::Interface(
@@ -32,16 +27,11 @@ Decl Declare_android_opengl_GLSurfaceView_EGLContextFactory(const Context&) {
 
 }  // namespace ogplay::runtime::android_intrinsics
 
-namespace ogplay::runtime::android_intrinsics {
-Decl Declare_android_opengl_GLSurfaceView_EGLContextFactory(const Context& context) {
-    return dvm80_android_opengl_GLSurfaceView_EGLContextFactory::Declare_android_opengl_GLSurfaceView_EGLContextFactory(context);
-}
-}  // namespace ogplay::runtime::android_intrinsics
 
 // ---- migrated from android_opengl_GLSurfaceView_Renderer.cpp ----
 #include "catalog.h"
 
-namespace ogplay::runtime::android_intrinsics::dvm80_android_opengl_GLSurfaceView_Renderer {
+namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_opengl_GLSurfaceView_Renderer(const Context& context) {
     static_cast<void>(context);
@@ -51,16 +41,11 @@ Decl Declare_android_opengl_GLSurfaceView_Renderer(const Context& context) {
 
 }  // namespace ogplay::runtime::android_intrinsics
 
-namespace ogplay::runtime::android_intrinsics {
-Decl Declare_android_opengl_GLSurfaceView_Renderer(const Context& context) {
-    return dvm80_android_opengl_GLSurfaceView_Renderer::Declare_android_opengl_GLSurfaceView_Renderer(context);
-}
-}  // namespace ogplay::runtime::android_intrinsics
 
 // ---- migrated from android_opengl_GLSurfaceView.cpp ----
 #include "catalog.h"
 
-namespace ogplay::runtime::android_intrinsics::dvm80_android_opengl_GLSurfaceView {
+namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_opengl_GLSurfaceView(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/opengl/GLSurfaceView;", "Landroid/view/View;");
@@ -96,11 +81,6 @@ Decl Declare_android_opengl_GLSurfaceView(const Context& context) {
 
 }  // namespace ogplay::runtime::android_intrinsics
 
-namespace ogplay::runtime::android_intrinsics {
-Decl Declare_android_opengl_GLSurfaceView(const Context& context) {
-    return dvm80_android_opengl_GLSurfaceView::Declare_android_opengl_GLSurfaceView(context);
-}
-}  // namespace ogplay::runtime::android_intrinsics
 
 // ---- migrated from javax_microedition_khronos_egl.cpp ----
 #include "catalog.h"

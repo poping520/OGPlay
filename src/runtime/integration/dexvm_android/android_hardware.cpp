@@ -3,7 +3,7 @@
 // ---- migrated from android_hardware_Sensor.cpp ----
 #include "catalog.h"
 
-namespace ogplay::runtime::android_intrinsics::dvm80_android_hardware_Sensor {
+namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_hardware_Sensor(const Context& context) {
     static_cast<void>(context);
@@ -16,16 +16,11 @@ Decl Declare_android_hardware_Sensor(const Context& context) {
 
 }  // namespace ogplay::runtime::android_intrinsics
 
-namespace ogplay::runtime::android_intrinsics {
-Decl Declare_android_hardware_Sensor(const Context& context) {
-    return dvm80_android_hardware_Sensor::Declare_android_hardware_Sensor(context);
-}
-}  // namespace ogplay::runtime::android_intrinsics
 
 // ---- migrated from android_hardware_SensorEvent.cpp ----
 #include "catalog.h"
 
-namespace ogplay::runtime::android_intrinsics::dvm80_android_hardware_SensorEvent {
+namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_hardware_SensorEvent(const Context& context) {
     static_cast<void>(context);
@@ -36,16 +31,11 @@ Decl Declare_android_hardware_SensorEvent(const Context& context) {
 
 }  // namespace ogplay::runtime::android_intrinsics
 
-namespace ogplay::runtime::android_intrinsics {
-Decl Declare_android_hardware_SensorEvent(const Context& context) {
-    return dvm80_android_hardware_SensorEvent::Declare_android_hardware_SensorEvent(context);
-}
-}  // namespace ogplay::runtime::android_intrinsics
 
 // ---- migrated from android_hardware_SensorEventListener.cpp ----
 #include "catalog.h"
 
-namespace ogplay::runtime::android_intrinsics::dvm80_android_hardware_SensorEventListener {
+namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_hardware_SensorEventListener(const Context& context) {
     static_cast<void>(context);
@@ -55,16 +45,11 @@ Decl Declare_android_hardware_SensorEventListener(const Context& context) {
 
 }  // namespace ogplay::runtime::android_intrinsics
 
-namespace ogplay::runtime::android_intrinsics {
-Decl Declare_android_hardware_SensorEventListener(const Context& context) {
-    return dvm80_android_hardware_SensorEventListener::Declare_android_hardware_SensorEventListener(context);
-}
-}  // namespace ogplay::runtime::android_intrinsics
 
 // ---- migrated from android_hardware_SensorManager.cpp ----
 #include "catalog.h"
 
-namespace ogplay::runtime::android_intrinsics::dvm80_android_hardware_SensorManager {
+namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_hardware_SensorManager(const Context& context) {
     static_cast<void>(context);
@@ -80,10 +65,4 @@ Decl Declare_android_hardware_SensorManager(const Context& context) {
     return std::move(builder).Build();
 }
 
-}  // namespace ogplay::runtime::android_intrinsics
-
-namespace ogplay::runtime::android_intrinsics {
-Decl Declare_android_hardware_SensorManager(const Context& context) {
-    return dvm80_android_hardware_SensorManager::Declare_android_hardware_SensorManager(context);
-}
 }  // namespace ogplay::runtime::android_intrinsics

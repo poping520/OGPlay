@@ -7,7 +7,7 @@
 #include "catalog.h"
 #include "ogplay/runtime/dexvm/io_runtime.h"
 
-namespace ogplay::runtime::android_intrinsics::dvm80_android_content_res_AssetFileDescriptor {
+namespace ogplay::runtime::android_intrinsics {
 
 namespace {
 
@@ -52,9 +52,12 @@ void Initialize(dx::IntrinsicContext& call, const dx::VmObjectRef descriptor,
 Decl Declare_android_content_res_AssetFileDescriptor(const Context&) {
     auto builder = dx::IntrinsicClassBuilder::Class(
         "Landroid/content/res/AssetFileDescriptor;", "Ljava/lang/Object;");
-    builder.InstanceField("mFd", "Landroid/os/ParcelFileDescriptor;", 0x0012U);
-    builder.InstanceField("mStartOffset", "J", 0x0012U);
-    builder.InstanceField("mLength", "J", 0x0012U);
+    builder.InstanceField("mFd", "Landroid/os/ParcelFileDescriptor;",
+                          dx::kAccPrivate | dx::kAccFinal);
+    builder.InstanceField("mStartOffset", "J",
+                          dx::kAccPrivate | dx::kAccFinal);
+    builder.InstanceField("mLength", "J",
+                          dx::kAccPrivate | dx::kAccFinal);
     builder.Constructor("(Landroid/os/ParcelFileDescriptor;JJ)V",
         [](dx::IntrinsicContext& call) {
             Initialize(call, call.receiver, call.arguments[0].ref,
@@ -93,11 +96,6 @@ Decl Declare_android_content_res_AssetFileDescriptor(const Context&) {
 
 }  // namespace ogplay::runtime::android_intrinsics
 
-namespace ogplay::runtime::android_intrinsics {
-Decl Declare_android_content_res_AssetFileDescriptor(const Context& context) {
-    return dvm80_android_content_res_AssetFileDescriptor::Declare_android_content_res_AssetFileDescriptor(context);
-}
-}  // namespace ogplay::runtime::android_intrinsics
 
 // ---- migrated from android_content_res_AssetManager.cpp ----
 #include <set>
@@ -105,7 +103,7 @@ Decl Declare_android_content_res_AssetFileDescriptor(const Context& context) {
 
 #include "catalog.h"
 
-namespace ogplay::runtime::android_intrinsics::dvm80_android_content_res_AssetManager {
+namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_content_res_AssetManager(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/content/res/AssetManager;", "Ljava/lang/Object;");
@@ -155,7 +153,7 @@ Decl Declare_android_content_res_AssetManager(const Context& context) {
                 "Landroid/content/res/AssetFileDescriptor;");
             const auto length =
                 static_cast<std::uint64_t>(entry->uncompressed_size);
-            dvm80_android_content_res_AssetFileDescriptor::Initialize(
+            Initialize(
                 call, descriptor, pfd, static_cast<std::int64_t>(data_offset),
                 static_cast<std::int64_t>(length));
             return dx::VmValue::Ref(descriptor);
@@ -209,16 +207,11 @@ Decl Declare_android_content_res_AssetManager(const Context& context) {
 
 }  // namespace ogplay::runtime::android_intrinsics
 
-namespace ogplay::runtime::android_intrinsics {
-Decl Declare_android_content_res_AssetManager(const Context& context) {
-    return dvm80_android_content_res_AssetManager::Declare_android_content_res_AssetManager(context);
-}
-}  // namespace ogplay::runtime::android_intrinsics
 
 // ---- migrated from android_content_res_Configuration.cpp ----
 #include "catalog.h"
 
-namespace ogplay::runtime::android_intrinsics::dvm80_android_content_res_Configuration {
+namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_content_res_Configuration(const Context& context) {
     static_cast<void>(context);
@@ -230,11 +223,6 @@ Decl Declare_android_content_res_Configuration(const Context& context) {
 
 }  // namespace ogplay::runtime::android_intrinsics
 
-namespace ogplay::runtime::android_intrinsics {
-Decl Declare_android_content_res_Configuration(const Context& context) {
-    return dvm80_android_content_res_Configuration::Declare_android_content_res_Configuration(context);
-}
-}  // namespace ogplay::runtime::android_intrinsics
 
 // ---- migrated from android_content_res_Resources.cpp ----
 #include "catalog.h"
@@ -430,7 +418,8 @@ Decl Declare_android_content_res_XmlResourceParser(const Context& context) {
         "Landroid/content/res/XmlResourceParser;",
         {"Lorg/xmlpull/v1/XmlPullParser;", "Landroid/util/AttributeSet;",
          "Ljava/lang/AutoCloseable;"});
-    builder.UnimplementedVirtual("close", "()V", 0x0401U);
+    builder.UnimplementedVirtual("close", "()V",
+                                 dx::kAccPublic | dx::kAccAbstract);
     return std::move(builder).Build();
 }
 
@@ -440,11 +429,14 @@ Decl Declare_android_content_res_XmlResourceParser_Impl(
     auto builder = dx::IntrinsicClassBuilder::Class(
         "Landroid/content/res/XmlResourceParser$Impl;", "Ljava/lang/Object;",
         {"Landroid/content/res/XmlResourceParser;"});
-    builder.InstanceField("mEventTypes", "[I", 0x0012U)
-        .InstanceField("mNames", "[Ljava/lang/String;", 0x0012U)
-        .InstanceField("mTexts", "[Ljava/lang/String;", 0x0012U)
-        .InstanceField("mIndex", "I", 0x0002U)
-        .InstanceField("mClosed", "I", 0x0002U);
+    builder.InstanceField("mEventTypes", "[I",
+                          dx::kAccPrivate | dx::kAccFinal)
+        .InstanceField("mNames", "[Ljava/lang/String;",
+                       dx::kAccPrivate | dx::kAccFinal)
+        .InstanceField("mTexts", "[Ljava/lang/String;",
+                       dx::kAccPrivate | dx::kAccFinal)
+        .InstanceField("mIndex", "I", dx::kAccPrivate)
+        .InstanceField("mClosed", "I", dx::kAccPrivate);
     // 返回解析器当前所在的 XML 事件类型。
     builder.FinalMethod("getEventType", "()I", [](dx::IntrinsicContext& call) {
         RequireOpenXmlParser(call);
@@ -495,7 +487,7 @@ Decl Declare_android_content_res_XmlResourceParser_Impl(
 
 }  // namespace ogplay::runtime::android_intrinsics
 
-namespace ogplay::runtime::android_intrinsics::dvm80_android_content_res_Resources {
+namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_content_res_Resources(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/content/res/Resources;", "Ljava/lang/Object;");
@@ -574,10 +566,4 @@ Decl Declare_android_content_res_Resources(const Context& context) {
     return std::move(builder).Build();
 }
 
-}  // namespace ogplay::runtime::android_intrinsics
-
-namespace ogplay::runtime::android_intrinsics {
-Decl Declare_android_content_res_Resources(const Context& context) {
-    return dvm80_android_content_res_Resources::Declare_android_content_res_Resources(context);
-}
 }  // namespace ogplay::runtime::android_intrinsics

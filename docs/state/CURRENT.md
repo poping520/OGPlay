@@ -16,8 +16,9 @@
   `ArrayList`，按 changed flag 门控并在 receiver monitor 外按快照虚派发 `update`；覆盖
   回调删除、异常传播和 nested GC 强根保活。格式化/解析及完整 XmlPullParser 长尾仍 deferred。
 - **基础架构**：DVM-92 teardown 及 DVM-94～96 的稳定 linker metadata、`MethodShape`、
-  own-member intrinsic 与 owner-state trace/sweep 已完成；解释执行仍由 `VmExecutionLock`
-  串行，threaded 生产默认关闭。
+  own-member intrinsic 与 owner-state trace/sweep 已完成；Dalvik access flag 与 Java reflection
+  modifier mask 已集中到共享头，core 与平台 intrinsics 不再复制直接量。解释执行仍由
+  `VmExecutionLock` 串行，threaded 生产默认关闭。
 - **Title 进展**：Tales 已越过 uniform sampler、`GL_OES_mapbuffer`、Context 路径和 thread
   context loader 缺口，两个 native 库完成 JNI 初始化；新首错为
   `android.location.LocationListener`。PvZ 需重跑确认 Observer/Observable 后的下一首错。
@@ -26,6 +27,11 @@
 
 ## 最近验证
 
+- 2026-09-03 Windows `windows-msvc` Release：core 与 Android 平台 intrinsic 中 164 个
+  DVM-80 迁移命名空间和 180 个同名转发函数已移除，`ogplay_runtime` 构建通过；按要求未跑测试。
+- 2026-09-03 Windows `windows-msvc` Release：共享 access flag 重构后 `ogplay_tests`
+  构建通过；builder/reflection/各受影响 Java family 两组定向回归分别 52/52、32/32，
+  intrinsic layout 架构检查 1/1 通过。
 - 2026-09-03 Windows `windows-msvc` Release：`ogplay_tests` 构建通过；
   Observer/Observable 4/4、相邻 DVM-87/core catalog/collections 8/8、能力账本与架构静态
   检查 4/4 通过；`java_util` 集合族已移除无用途的 DVM-80 转发命名空间。

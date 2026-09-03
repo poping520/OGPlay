@@ -3,7 +3,7 @@
 // ---- migrated from android_net_ConnectivityManager.cpp ----
 #include "catalog.h"
 
-namespace ogplay::runtime::android_intrinsics::dvm80_android_net_ConnectivityManager {
+namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_net_ConnectivityManager(const Context& context) {
     static_cast<void>(context);
@@ -23,16 +23,11 @@ Decl Declare_android_net_ConnectivityManager(const Context& context) {
 
 }  // namespace ogplay::runtime::android_intrinsics
 
-namespace ogplay::runtime::android_intrinsics {
-Decl Declare_android_net_ConnectivityManager(const Context& context) {
-    return dvm80_android_net_ConnectivityManager::Declare_android_net_ConnectivityManager(context);
-}
-}  // namespace ogplay::runtime::android_intrinsics
 
 // ---- migrated from android_net_NetworkInfo_State.cpp ----
 #include "catalog.h"
 
-namespace ogplay::runtime::android_intrinsics::dvm80_android_net_NetworkInfo_State {
+namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_net_NetworkInfo_State(const Context& context) {
     static_cast<void>(context);
@@ -51,16 +46,11 @@ Decl Declare_android_net_NetworkInfo_State(const Context& context) {
 
 }  // namespace ogplay::runtime::android_intrinsics
 
-namespace ogplay::runtime::android_intrinsics {
-Decl Declare_android_net_NetworkInfo_State(const Context& context) {
-    return dvm80_android_net_NetworkInfo_State::Declare_android_net_NetworkInfo_State(context);
-}
-}  // namespace ogplay::runtime::android_intrinsics
 
 // ---- migrated from android_net_NetworkInfo.cpp ----
 #include "catalog.h"
 
-namespace ogplay::runtime::android_intrinsics::dvm80_android_net_NetworkInfo {
+namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_net_NetworkInfo(const Context& context) {
     static_cast<void>(context);
@@ -70,16 +60,11 @@ Decl Declare_android_net_NetworkInfo(const Context& context) {
 
 }  // namespace ogplay::runtime::android_intrinsics
 
-namespace ogplay::runtime::android_intrinsics {
-Decl Declare_android_net_NetworkInfo(const Context& context) {
-    return dvm80_android_net_NetworkInfo::Declare_android_net_NetworkInfo(context);
-}
-}  // namespace ogplay::runtime::android_intrinsics
 
 // ---- migrated from android_net_Uri.cpp ----
 #include "catalog.h"
 
-namespace ogplay::runtime::android_intrinsics::dvm80_android_net_Uri {
+namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_net_Uri(const Context& context) {
     static_cast<void>(context);
@@ -94,16 +79,11 @@ Decl Declare_android_net_Uri(const Context& context) {
 
 }  // namespace ogplay::runtime::android_intrinsics
 
-namespace ogplay::runtime::android_intrinsics {
-Decl Declare_android_net_Uri(const Context& context) {
-    return dvm80_android_net_Uri::Declare_android_net_Uri(context);
-}
-}  // namespace ogplay::runtime::android_intrinsics
 
 // ---- migrated from android_net_wifi_WifiInfo.cpp ----
 #include "catalog.h"
 
-namespace ogplay::runtime::android_intrinsics::dvm80_android_net_wifi_WifiInfo {
+namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_net_wifi_WifiInfo(const Context& context) {
     static_cast<void>(context);
@@ -120,16 +100,11 @@ Decl Declare_android_net_wifi_WifiInfo(const Context& context) {
 
 }  // namespace ogplay::runtime::android_intrinsics
 
-namespace ogplay::runtime::android_intrinsics {
-Decl Declare_android_net_wifi_WifiInfo(const Context& context) {
-    return dvm80_android_net_wifi_WifiInfo::Declare_android_net_wifi_WifiInfo(context);
-}
-}  // namespace ogplay::runtime::android_intrinsics
 
 // ---- migrated from android_net_wifi_WifiManager_WifiLock.cpp ----
 #include "catalog.h"
 
-namespace ogplay::runtime::android_intrinsics::dvm80_android_net_wifi_WifiManager_WifiLock {
+namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_net_wifi_WifiManager_WifiLock(const Context& context) {
     static_cast<void>(context);
@@ -142,16 +117,11 @@ Decl Declare_android_net_wifi_WifiManager_WifiLock(const Context& context) {
 
 }  // namespace ogplay::runtime::android_intrinsics
 
-namespace ogplay::runtime::android_intrinsics {
-Decl Declare_android_net_wifi_WifiManager_WifiLock(const Context& context) {
-    return dvm80_android_net_wifi_WifiManager_WifiLock::Declare_android_net_wifi_WifiManager_WifiLock(context);
-}
-}  // namespace ogplay::runtime::android_intrinsics
 
 // ---- migrated from android_net_wifi_WifiManager.cpp ----
 #include "catalog.h"
 
-namespace ogplay::runtime::android_intrinsics::dvm80_android_net_wifi_WifiManager {
+namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_net_wifi_WifiManager(const Context& context) {
     static_cast<void>(context);
@@ -176,10 +146,4 @@ Decl Declare_android_net_wifi_WifiManager(const Context& context) {
     return std::move(builder).Build();
 }
 
-}  // namespace ogplay::runtime::android_intrinsics
-
-namespace ogplay::runtime::android_intrinsics {
-Decl Declare_android_net_wifi_WifiManager(const Context& context) {
-    return dvm80_android_net_wifi_WifiManager::Declare_android_net_wifi_WifiManager(context);
-}
 }  // namespace ogplay::runtime::android_intrinsics

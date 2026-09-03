@@ -27,7 +27,8 @@ IntrinsicHandler Cursor(void (NioRuntime::*fn)(JniObjectIdentity)) {
 
 IntrinsicClassDecl DeclareBuffer() {
     auto b = IntrinsicClassBuilder::Class("Ljava/nio/Buffer;",
-                                          "Ljava/lang/Object;", {}, 0x0401U);
+                                          "Ljava/lang/Object;", {},
+                                          kAccPublic | kAccAbstract);
     b.FinalMethod("capacity", "()I", [](IntrinsicContext& c) {
         return VmValue::Int(c.vm.NIO().Snapshot(Id(c.vm, c.receiver)).capacity);
     });
@@ -233,9 +234,13 @@ void Views(IntrinsicClassBuilder& b, const std::string& type,
 }
 
 IntrinsicClassDecl DeclareByteOrder() {
-    auto b = IntrinsicClassBuilder::Class("Ljava/nio/ByteOrder;", "Ljava/lang/Object;", {}, 0x0011U);
-    b.StaticField("BIG_ENDIAN", "Ljava/nio/ByteOrder;", 0x0019U);
-    b.StaticField("LITTLE_ENDIAN", "Ljava/nio/ByteOrder;", 0x0019U);
+    auto b = IntrinsicClassBuilder::Class(
+        "Ljava/nio/ByteOrder;", "Ljava/lang/Object;", {},
+        kAccPublic | kAccFinal);
+    b.StaticField("BIG_ENDIAN", "Ljava/nio/ByteOrder;",
+                  kAccPublic | kAccStatic | kAccFinal);
+    b.StaticField("LITTLE_ENDIAN", "Ljava/nio/ByteOrder;",
+                  kAccPublic | kAccStatic | kAccFinal);
     b.ClassInitializer([](IntrinsicContext& c) {
         c.vm.SetIntrinsicStaticRef("Ljava/nio/ByteOrder;", "BIG_ENDIAN", "Ljava/nio/ByteOrder;", c.vm.NewIntrinsicInstance("Ljava/nio/ByteOrder;"));
         c.vm.SetIntrinsicStaticRef("Ljava/nio/ByteOrder;", "LITTLE_ENDIAN", "Ljava/nio/ByteOrder;", c.vm.NewIntrinsicInstance("Ljava/nio/ByteOrder;"));
@@ -265,7 +270,8 @@ VmObjectRef OrderObject(IntrinsicContext& c, bool little) {
 
 IntrinsicClassDecl DeclareByteBuffer() {
     auto b = IntrinsicClassBuilder::Class("Ljava/nio/ByteBuffer;", "Ljava/nio/Buffer;",
-                                          {"Ljava/lang/Comparable;"}, 0x0401U);
+                                          {"Ljava/lang/Comparable;"},
+                                          kAccPublic | kAccAbstract);
     b.StaticMethod("allocate", "(I)Ljava/nio/ByteBuffer;", Allocate("Ljava/nio/HeapByteBuffer;", NioElementKind::byte));
     b.StaticMethod("allocateDirect", "(I)Ljava/nio/ByteBuffer;", [](IntrinsicContext& c) {
         const auto object = c.vm.NewIntrinsicInstance("Ljava/nio/DirectByteBuffer;");
@@ -331,7 +337,8 @@ IntrinsicClassDecl TypedBuffer(const std::string& name, const std::string& array
     const auto type = "Ljava/nio/" + name + "Buffer;";
     const auto concrete = "Ljava/nio/" + name + "ArrayBuffer;";
     auto b = IntrinsicClassBuilder::Class(type, "Ljava/nio/Buffer;",
-                                          {"Ljava/lang/Comparable;"}, 0x0401U);
+                                          {"Ljava/lang/Comparable;"},
+                                          kAccPublic | kAccAbstract);
     b.StaticMethod("allocate", "(I)" + type, Allocate(concrete, kind));
     b.StaticMethod("wrap", "(" + array + ")" + type, Wrap(concrete, kind, false));
     b.StaticMethod("wrap", "(" + array + "II)" + type, Wrap(concrete, kind, true));
@@ -360,7 +367,9 @@ IntrinsicClassDecl TypedBuffer(const std::string& name, const std::string& array
 }
 
 IntrinsicClassDecl Plain(const std::string& descriptor, const std::string& parent) {
-    return std::move(IntrinsicClassBuilder::Class(descriptor, parent, {}, 0x0000U)).Build();
+    return std::move(
+               IntrinsicClassBuilder::Class(descriptor, parent, {}, kAccNone))
+        .Build();
 }
 IntrinsicClassDecl Exception(const std::string& descriptor, const std::string& parent) {
     auto b = IntrinsicClassBuilder::Class(descriptor, parent);
@@ -387,7 +396,9 @@ void AppendJavaNio(std::vector<IntrinsicClassDecl>& catalog) {
     catalog.push_back(DeclareByteBuffer());
     catalog.push_back(Plain("Ljava/nio/MappedByteBuffer;", "Ljava/nio/ByteBuffer;"));
     catalog.push_back(Plain("Ljava/nio/HeapByteBuffer;", "Ljava/nio/ByteBuffer;"));
-    auto direct = IntrinsicClassBuilder::Class("Ljava/nio/DirectByteBuffer;", "Ljava/nio/MappedByteBuffer;", {}, 0x0000U);
+    auto direct = IntrinsicClassBuilder::Class(
+        "Ljava/nio/DirectByteBuffer;", "Ljava/nio/MappedByteBuffer;", {},
+        kAccNone);
     direct.Constructor("(JI)V", [](IntrinsicContext& c) {
         c.vm.NIO().WrapDirect(Id(c.vm, c.receiver), memory::GuestAddress(static_cast<std::uint32_t>(c.arguments[0].AsLong())), c.arguments[1].AsInt());
         return VmValue::Void();

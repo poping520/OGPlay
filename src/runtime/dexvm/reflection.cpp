@@ -1,5 +1,7 @@
 #include "ogplay/runtime/dexvm/reflection.h"
 
+#include "ogplay/runtime/dexvm/access_flags.h"
+
 #include <algorithm>
 #include <array>
 #include <bit>
@@ -23,12 +25,6 @@ struct ClassReflectionMetadata final {
     std::vector<ReflectConstructorMeta> constructors;
     std::vector<ReflectFieldMeta> fields;
 };
-
-constexpr std::uint32_t kAccPublic = 0x0001U;
-constexpr std::uint32_t kAccPrivate = 0x0002U;
-constexpr std::uint32_t kAccProtected = 0x0004U;
-constexpr std::uint32_t kAccFinal = 0x0010U;
-constexpr std::uint32_t kAccAbstract = 0x0400U;
 
 [[nodiscard]] std::string_view RuntimePackage(
     const std::string_view descriptor) {

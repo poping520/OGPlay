@@ -6,6 +6,7 @@
 #include <string_view>
 #include <vector>
 
+#include "ogplay/runtime/dexvm/access_flags.h"
 #include "ogplay/runtime/dexvm/class_linker.h"
 
 namespace ogplay::runtime::dexvm {
@@ -82,37 +83,38 @@ namespace ogplay::runtime::dexvm {
         // Defines a class without a superclass.
         // Primarily used for java.lang.Object.
         [[nodiscard]] static IntrinsicClassBuilder RootClass(
-            std::string descriptor, std::uint32_t access_flags = 0x0001U);
+            std::string descriptor, std::uint32_t access_flags = kAccPublic);
 
         [[nodiscard]] static IntrinsicClassBuilder Class(
             std::string descriptor,
             std::optional<std::string> superclass = std::string{"Ljava/lang/Object;"},
             std::vector<std::string> interfaces = {},
-            std::uint32_t access_flags = 0x0001U);
+            std::uint32_t access_flags = kAccPublic);
 
         [[nodiscard]] static IntrinsicClassBuilder Interface(
             std::string descriptor,
             std::vector<std::string> super_interfaces = {},
-            std::uint32_t access_flags = 0x0601U);
+            std::uint32_t access_flags =
+                kAccPublic | kAccInterface | kAccAbstract);
 
         IntrinsicClassBuilder& Constructor(std::string descriptor,
                                            IntrinsicHandler handler,
-                                           std::uint32_t access_flags = 0x0001U);
+                                           std::uint32_t access_flags = kAccPublic);
 
         IntrinsicClassBuilder& DirectMethod(
             std::string name, std::string descriptor,
             IntrinsicHandler handler,
-            std::uint32_t access_flags = 0x0002U);
+            std::uint32_t access_flags = kAccPrivate);
 
         IntrinsicClassBuilder& StaticMethod(std::string name,
                                             std::string descriptor,
                                             IntrinsicHandler handler,
-                                            std::uint32_t access_flags = 0x0001U);
+                                            std::uint32_t access_flags = kAccPublic);
 
         IntrinsicClassBuilder& VirtualMethod(std::string name,
                                              std::string descriptor,
                                              IntrinsicHandler handler,
-                                             std::uint32_t access_flags = 0x0001U);
+                                             std::uint32_t access_flags = kAccPublic);
 
         // Declares an intentional replacement of an inherited virtual.  The
         // linker rejects this declaration unless an exact overridable parent
@@ -120,64 +122,64 @@ namespace ogplay::runtime::dexvm {
         IntrinsicClassBuilder& OverrideMethod(
             std::string name, std::string descriptor,
             IntrinsicHandler handler,
-            std::uint32_t access_flags = 0x0001U);
+            std::uint32_t access_flags = kAccPublic);
 
         IntrinsicClassBuilder& FinalOverrideMethod(
             std::string name, std::string descriptor,
             IntrinsicHandler handler,
-            std::uint32_t access_flags = 0x0001U);
+            std::uint32_t access_flags = kAccPublic);
 
         IntrinsicClassBuilder& FinalMethod(std::string name,
                                            std::string descriptor,
                                            IntrinsicHandler handler,
-                                           std::uint32_t access_flags = 0x0001U);
+                                           std::uint32_t access_flags = kAccPublic);
 
         IntrinsicClassBuilder& UnimplementedStatic(std::string name,
                                                    std::string descriptor,
-                                                   std::uint32_t access_flags = 0x0001U);
+                                                   std::uint32_t access_flags = kAccPublic);
 
         IntrinsicClassBuilder& UnimplementedConstructor(
-            std::string descriptor, std::uint32_t access_flags = 0x0001U);
+            std::string descriptor, std::uint32_t access_flags = kAccPublic);
 
         IntrinsicClassBuilder& UnimplementedDirect(
             std::string name, std::string descriptor,
-            std::uint32_t access_flags = 0x0002U);
+            std::uint32_t access_flags = kAccPrivate);
 
         IntrinsicClassBuilder& UnimplementedVirtual(std::string name,
                                                     std::string descriptor,
-                                                    std::uint32_t access_flags = 0x0001U);
+                                                    std::uint32_t access_flags = kAccPublic);
 
         IntrinsicClassBuilder& UnimplementedOverride(
             std::string name, std::string descriptor,
-            std::uint32_t access_flags = 0x0001U);
+            std::uint32_t access_flags = kAccPublic);
 
         IntrinsicClassBuilder& UnimplementedFinal(std::string name,
                                                   std::string descriptor,
-                                                  std::uint32_t access_flags = 0x0001U);
+                                                  std::uint32_t access_flags = kAccPublic);
 
         IntrinsicClassBuilder& InstanceField(std::string name,
                                              std::string descriptor,
-                                             std::uint32_t access_flags = 0x0001U);
+                                             std::uint32_t access_flags = kAccPublic);
 
         IntrinsicClassBuilder& StaticField(std::string name,
                                            std::string descriptor,
-                                           std::uint32_t access_flags = 0x0001U);
+                                           std::uint32_t access_flags = kAccPublic);
 
         [[nodiscard]] IntrinsicFieldHandle BoundInstanceField(
             std::string name, std::string descriptor,
-            std::uint32_t access_flags = 0x0001U);
+            std::uint32_t access_flags = kAccPublic);
 
         [[nodiscard]] IntrinsicFieldHandle BoundStaticField(
             std::string name, std::string descriptor,
-            std::uint32_t access_flags = 0x0001U);
+            std::uint32_t access_flags = kAccPublic);
 
         IntrinsicClassBuilder& ConstantInt(
             std::string name, std::string descriptor, std::int64_t value,
-            std::uint32_t access_flags = 0x0001U);
+            std::uint32_t access_flags = kAccPublic);
 
         IntrinsicClassBuilder& ConstantString(
             std::string name, std::string value,
-            std::uint32_t access_flags = 0x0001U);
+            std::uint32_t access_flags = kAccPublic);
 
         IntrinsicClassBuilder& ClassInitializer(IntrinsicHandler handler);
 

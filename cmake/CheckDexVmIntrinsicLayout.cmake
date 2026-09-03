@@ -59,6 +59,19 @@ foreach(kind IN ITEMS core android)
     endforeach()
 endforeach()
 
+file(GLOB intrinsic_sources
+    "${core_dir}/*.cpp"
+    "${core_dir}/*.h"
+    "${android_dir}/*.cpp"
+    "${android_dir}/*.h")
+foreach(source IN LISTS intrinsic_sources)
+    file(READ "${source}" content)
+    if(content MATCHES "dvm80_")
+        message(FATAL_ERROR
+            "DVM-80 transitional namespace remains in intrinsic source: ${source}")
+    endif()
+endforeach()
+
 file(READ "${core_dir}/catalog.cpp" core_catalog)
 file(READ "${android_dir}/catalog.cpp" android_catalog)
 foreach(token IN ITEMS IntrinsicClassBuilder IntrinsicHandler VmJavaThrow)
@@ -114,6 +127,7 @@ endforeach()
 # inheritance example from being mechanically removed.
 file(READ "${ROOT}/include/ogplay/runtime/dexvm/class_linker.h" linker_header)
 file(READ "${ROOT}/include/ogplay/runtime/dexvm/intrinsic_builder.h" builder_header)
+file(READ "${ROOT}/include/ogplay/runtime/dexvm/access_flags.h" access_flags_header)
 file(READ "${ROOT}/include/ogplay/runtime/dexvm/owned_state_table.h" state_header)
 foreach(token IN ITEMS "enum class InvokeKind" "struct MethodShape" "ResolvedCallSite")
     string(FIND "${linker_header}" "${token}" found)
@@ -121,6 +135,22 @@ foreach(token IN ITEMS "enum class InvokeKind" "struct MethodShape" "ResolvedCal
         message(FATAL_ERROR "Missing DVM-94 linker contract: ${token}")
     endif()
 endforeach()
+foreach(token IN ITEMS
+        "kAccPublic"
+        "kAccDeclaredSynchronized"
+        "kAccClassMask"
+        "kAccMethodMask"
+        "kJavaMethodModifierMask")
+    string(FIND "${access_flags_header}" "${token}" found)
+    if(found EQUAL -1)
+        message(FATAL_ERROR "Missing shared Dalvik access flag contract: ${token}")
+    endif()
+endforeach()
+string(FIND "${builder_header}" "ogplay/runtime/dexvm/access_flags.h"
+       access_flags_include_found)
+if(access_flags_include_found EQUAL -1)
+    message(FATAL_ERROR "Intrinsic builder does not publish shared access flags")
+endif()
 foreach(token IN ITEMS "OverrideMethod" "UnimplementedOverride")
     string(FIND "${builder_header}" "${token}" found)
     if(found EQUAL -1)
@@ -144,11 +174,6 @@ endforeach()
 # DVM-94 regression: Android 4.4 protected subclass callbacks must never fall
 # back to IntrinsicClassBuilder's public default. Counts are lower bounds so
 # adding another audited protected API does not break the gate.
-file(READ "${android_dir}/shared.h" android_shared)
-string(FIND "${android_shared}" "kProtectedAccess" protected_access_found)
-if(protected_access_found EQUAL -1)
-    message(FATAL_ERROR "Missing explicit Android protected access contract")
-endif()
 foreach(source_and_minimum IN ITEMS
         "android_app.cpp:8"
         "android_content.cpp:1"
@@ -158,7 +183,7 @@ foreach(source_and_minimum IN ITEMS
     list(GET pair 0 source)
     list(GET pair 1 minimum)
     file(READ "${android_dir}/${source}" protected_source)
-    string(REGEX MATCHALL "kProtectedAccess" protected_uses
+    string(REGEX MATCHALL "dx::kAccProtected" protected_uses
            "${protected_source}")
     list(LENGTH protected_uses protected_count)
     if(protected_count LESS minimum)

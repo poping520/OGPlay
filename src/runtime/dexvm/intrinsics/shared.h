@@ -144,12 +144,12 @@ BuildReflectArray(Interpreter &vm, const std::string &element_descriptor,
         const char* text;
     };
     constexpr Entry entries[]{
-        {0x0001U, "public"},       {0x0004U, "protected"},
-        {0x0002U, "private"},      {0x0400U, "abstract"},
-        {0x0008U, "static"},       {0x0010U, "final"},
-        {0x0080U, "transient"},    {0x0040U, "volatile"},
-        {0x0020U, "synchronized"}, {0x0100U, "native"},
-        {0x0800U, "strictfp"},     {0x0200U, "interface"},
+        {kAccPublic, "public"},             {kAccProtected, "protected"},
+        {kAccPrivate, "private"},           {kAccAbstract, "abstract"},
+        {kAccStatic, "static"},             {kAccFinal, "final"},
+        {kAccTransient, "transient"},       {kAccVolatile, "volatile"},
+        {kAccSynchronized, "synchronized"}, {kAccNative, "native"},
+        {kAccStrict, "strictfp"},            {kAccInterface, "interface"},
     };
     std::string result;
     for (const auto& entry : entries) {

@@ -14,7 +14,7 @@
 
 #include "ogplay/core/encoding.h"
 
-namespace ogplay::runtime::android_intrinsics::dvm80_android_util_Log {
+namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_util_Log(const Context& context) {
     static_cast<void>(context);
@@ -40,16 +40,11 @@ Decl Declare_android_util_Log(const Context& context) {
 
 }  // namespace ogplay::runtime::android_intrinsics
 
-namespace ogplay::runtime::android_intrinsics {
-Decl Declare_android_util_Log(const Context& context) {
-    return dvm80_android_util_Log::Declare_android_util_Log(context);
-}
-}  // namespace ogplay::runtime::android_intrinsics
 
 // ---- migrated from android_util_Pair.cpp ----
 #include "catalog.h"
 
-namespace ogplay::runtime::android_intrinsics::dvm80_android_util_Pair {
+namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_util_Pair(const Context& context) {
     static_cast<void>(context);
@@ -68,11 +63,6 @@ Decl Declare_android_util_Pair(const Context& context) {
 
 }  // namespace ogplay::runtime::android_intrinsics
 
-namespace ogplay::runtime::android_intrinsics {
-Decl Declare_android_util_Pair(const Context& context) {
-    return dvm80_android_util_Pair::Declare_android_util_Pair(context);
-}
-}  // namespace ogplay::runtime::android_intrinsics
 
 namespace ogplay::runtime::android_intrinsics {
 
@@ -164,11 +154,13 @@ Decl Declare_android_util_Base64(const Context& context) {
     static_cast<void>(context);
     auto builder = dx::IntrinsicClassBuilder::Class(
         "Landroid/util/Base64;", "Ljava/lang/Object;");
-    builder.ConstantInt("DEFAULT", "I", 0, 0x0019U)
-        .ConstantInt("NO_PADDING", "I", 1, 0x0019U)
-        .ConstantInt("NO_WRAP", "I", 2, 0x0019U)
-        .ConstantInt("CRLF", "I", 4, 0x0019U)
-        .ConstantInt("URL_SAFE", "I", 8, 0x0019U);
+    constexpr auto constant_access =
+        dx::kAccPublic | dx::kAccStatic | dx::kAccFinal;
+    builder.ConstantInt("DEFAULT", "I", 0, constant_access)
+        .ConstantInt("NO_PADDING", "I", 1, constant_access)
+        .ConstantInt("NO_WRAP", "I", 2, constant_access)
+        .ConstantInt("CRLF", "I", 4, constant_access)
+        .ConstantInt("URL_SAFE", "I", 8, constant_access);
     builder.StaticMethod("encode", "([BI)[B", [](dx::IntrinsicContext& call) {
         const auto input = ByteWindow(call, call.arguments[0].ref, 0,
                                       call.vm.Model().ArrayLength(call.arguments[0].ref));
@@ -234,7 +226,8 @@ Decl Declare_android_util_Base64(const Context& context) {
 
 Decl Declare_android_util_SparseArray(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class(
-        "Landroid/util/SparseArray;", "Ljava/lang/Object;", {}, 0x0001U);
+        "Landroid/util/SparseArray;", "Ljava/lang/Object;", {},
+        dx::kAccPublic);
     const auto init = [context](dx::IntrinsicContext& call) {
         context->sparse_arrays.try_emplace(call.receiver.Value());
         return dx::VmValue::Void();
@@ -396,7 +389,9 @@ Decl Declare_android_util_TypedValue(const Context& context) {
              std::pair{"COMPLEX_UNIT_PX", 0}, std::pair{"COMPLEX_UNIT_DIP", 1},
              std::pair{"COMPLEX_UNIT_SP", 2}, std::pair{"COMPLEX_UNIT_PT", 3},
              std::pair{"COMPLEX_UNIT_IN", 4}, std::pair{"COMPLEX_UNIT_MM", 5}}) {
-        builder.ConstantInt(name, "I", value, 0x0019U);
+        builder.ConstantInt(
+            name, "I", value,
+            dx::kAccPublic | dx::kAccStatic | dx::kAccFinal);
     }
     builder.InstanceField("type", "I").InstanceField("string", "Ljava/lang/CharSequence;")
         .InstanceField("data", "I").InstanceField("assetCookie", "I")

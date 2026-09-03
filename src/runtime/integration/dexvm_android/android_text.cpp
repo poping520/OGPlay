@@ -3,7 +3,7 @@
 // ---- migrated from android_text_Editable.cpp ----
 #include "catalog.h"
 
-namespace ogplay::runtime::android_intrinsics::dvm80_android_text_Editable {
+namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_text_Editable(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Interface("Landroid/text/Editable;");
@@ -15,16 +15,11 @@ Decl Declare_android_text_Editable(const Context& context) {
 
 }  // namespace ogplay::runtime::android_intrinsics
 
-namespace ogplay::runtime::android_intrinsics {
-Decl Declare_android_text_Editable(const Context& context) {
-    return dvm80_android_text_Editable::Declare_android_text_Editable(context);
-}
-}  // namespace ogplay::runtime::android_intrinsics
 
 // ---- migrated from android_text_EditableImpl.cpp ----
 #include "catalog.h"
 
-namespace ogplay::runtime::android_intrinsics::dvm80_android_text_EditableImpl {
+namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_text_EditableImpl(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/text/EditableImpl;", "Ljava/lang/Object;", {"Landroid/text/Editable;"});
@@ -36,16 +31,11 @@ Decl Declare_android_text_EditableImpl(const Context& context) {
 
 }  // namespace ogplay::runtime::android_intrinsics
 
-namespace ogplay::runtime::android_intrinsics {
-Decl Declare_android_text_EditableImpl(const Context& context) {
-    return dvm80_android_text_EditableImpl::Declare_android_text_EditableImpl(context);
-}
-}  // namespace ogplay::runtime::android_intrinsics
 
 // ---- migrated from android_text_TextPaint.cpp ----
 #include "catalog.h"
 
-namespace ogplay::runtime::android_intrinsics::dvm80_android_text_TextPaint {
+namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_text_TextPaint(const Context& context) {
     static_cast<void>(context);
@@ -76,16 +66,11 @@ Decl Declare_android_text_TextPaint(const Context& context) {
 
 }  // namespace ogplay::runtime::android_intrinsics
 
-namespace ogplay::runtime::android_intrinsics {
-Decl Declare_android_text_TextPaint(const Context& context) {
-    return dvm80_android_text_TextPaint::Declare_android_text_TextPaint(context);
-}
-}  // namespace ogplay::runtime::android_intrinsics
 
 // ---- migrated from android_text_TextWatcher.cpp ----
 #include "catalog.h"
 
-namespace ogplay::runtime::android_intrinsics::dvm80_android_text_TextWatcher {
+namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_text_TextWatcher(const Context& context) {
     static_cast<void>(context);
@@ -95,11 +80,6 @@ Decl Declare_android_text_TextWatcher(const Context& context) {
 
 }  // namespace ogplay::runtime::android_intrinsics
 
-namespace ogplay::runtime::android_intrinsics {
-Decl Declare_android_text_TextWatcher(const Context& context) {
-    return dvm80_android_text_TextWatcher::Declare_android_text_TextWatcher(context);
-}
-}  // namespace ogplay::runtime::android_intrinsics
 
 namespace ogplay::runtime::android_intrinsics {
 

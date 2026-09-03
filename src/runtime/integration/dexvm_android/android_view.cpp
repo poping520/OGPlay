@@ -42,7 +42,7 @@ Decl Declare_android_view_ContextThemeWrapper(const Context& context) {
         "Landroid/view/ContextThemeWrapper;",
         "Landroid/content/ContextWrapper;");
     const auto theme_resource =
-        builder.BoundInstanceField("mThemeResource", "I", 0x0002U);
+        builder.BoundInstanceField("mThemeResource", "I", dx::kAccPrivate);
     builder.Constructor("()V", [](dx::IntrinsicContext&) {
         return dx::VmValue::Void();
     });
@@ -71,7 +71,7 @@ Decl Declare_android_view_ContextThemeWrapper(const Context& context) {
 
 }  // namespace ogplay::runtime::android_intrinsics
 
-namespace ogplay::runtime::android_intrinsics::dvm80_android_view_Display {
+namespace ogplay::runtime::android_intrinsics {
 namespace {
 
 void WriteMetric(dx::IntrinsicContext& call, const dx::VmObjectRef metrics,
@@ -194,19 +194,11 @@ Decl Declare_android_view_Display(const Context& context) {
 
 }  // namespace ogplay::runtime::android_intrinsics
 
-namespace ogplay::runtime::android_intrinsics {
-Decl Declare_android_util_DisplayMetrics(const Context& context) {
-    return dvm80_android_view_Display::Declare_android_util_DisplayMetrics(context);
-}
-Decl Declare_android_view_Display(const Context& context) {
-    return dvm80_android_view_Display::Declare_android_view_Display(context);
-}
-}  // namespace ogplay::runtime::android_intrinsics
 
 // ---- migrated from android_view_inputmethod_InputMethodManager.cpp ----
 #include "catalog.h"
 
-namespace ogplay::runtime::android_intrinsics::dvm80_android_view_inputmethod_InputMethodManager {
+namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_view_inputmethod_InputMethodManager(const Context& context) {
     static_cast<void>(context);
@@ -217,16 +209,11 @@ Decl Declare_android_view_inputmethod_InputMethodManager(const Context& context)
 
 }  // namespace ogplay::runtime::android_intrinsics
 
-namespace ogplay::runtime::android_intrinsics {
-Decl Declare_android_view_inputmethod_InputMethodManager(const Context& context) {
-    return dvm80_android_view_inputmethod_InputMethodManager::Declare_android_view_inputmethod_InputMethodManager(context);
-}
-}  // namespace ogplay::runtime::android_intrinsics
 
 // ---- migrated from android_view_KeyEvent.cpp ----
 #include "catalog.h"
 
-namespace ogplay::runtime::android_intrinsics::dvm80_android_view_KeyEvent {
+namespace ogplay::runtime::android_intrinsics {
 
 namespace {
 
@@ -272,19 +259,20 @@ namespace {
 Decl Declare_android_view_KeyEvent(const Context& context) {
     static_cast<void>(context);
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/view/KeyEvent;", "Ljava/lang/Object;");
-    const auto action = builder.BoundInstanceField("mAction", "I", 0x0002U);
+    const auto action =
+        builder.BoundInstanceField("mAction", "I", dx::kAccPrivate);
     const auto key_code =
-        builder.BoundInstanceField("mKeyCode", "I", 0x0002U);
+        builder.BoundInstanceField("mKeyCode", "I", dx::kAccPrivate);
     const auto repeat_count =
-        builder.BoundInstanceField("mRepeatCount", "I", 0x0002U);
+        builder.BoundInstanceField("mRepeatCount", "I", dx::kAccPrivate);
     const auto meta_state =
-        builder.BoundInstanceField("mMetaState", "I", 0x0002U);
+        builder.BoundInstanceField("mMetaState", "I", dx::kAccPrivate);
     const auto scan_code =
-        builder.BoundInstanceField("mScanCode", "I", 0x0002U);
+        builder.BoundInstanceField("mScanCode", "I", dx::kAccPrivate);
     const auto device_id =
-        builder.BoundInstanceField("mDeviceId", "I", 0x0002U);
+        builder.BoundInstanceField("mDeviceId", "I", dx::kAccPrivate);
     const auto unicode_char =
-        builder.BoundInstanceField("mOgplayUnicodeChar", "I", 0x0002U);
+        builder.BoundInstanceField("mOgplayUnicodeChar", "I", dx::kAccPrivate);
     builder.Constructor("(II)V",
         [action, key_code, repeat_count, meta_state, scan_code, device_id,
          unicode_char](dx::IntrinsicContext& call) {
@@ -359,11 +347,6 @@ Decl Declare_android_view_KeyEvent(const Context& context) {
 
 }  // namespace ogplay::runtime::android_intrinsics
 
-namespace ogplay::runtime::android_intrinsics {
-Decl Declare_android_view_KeyEvent(const Context& context) {
-    return dvm80_android_view_KeyEvent::Declare_android_view_KeyEvent(context);
-}
-}  // namespace ogplay::runtime::android_intrinsics
 
 namespace ogplay::runtime {
 
@@ -390,7 +373,7 @@ void SetAndroidKeyEventUnicode(dexvm::Interpreter& vm,
 
 #include "catalog.h"
 
-namespace ogplay::runtime::android_intrinsics::dvm80_android_view_MotionEvent {
+namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_view_MotionEvent(const Context& context) {
     static_cast<void>(context);
@@ -439,16 +422,11 @@ Decl Declare_android_view_MotionEvent(const Context& context) {
 
 }  // namespace ogplay::runtime::android_intrinsics
 
-namespace ogplay::runtime::android_intrinsics {
-Decl Declare_android_view_MotionEvent(const Context& context) {
-    return dvm80_android_view_MotionEvent::Declare_android_view_MotionEvent(context);
-}
-}  // namespace ogplay::runtime::android_intrinsics
 
 // ---- migrated from android_view_SurfaceHolder_Callback.cpp ----
 #include "catalog.h"
 
-namespace ogplay::runtime::android_intrinsics::dvm80_android_view_SurfaceHolder_Callback {
+namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_view_SurfaceHolder_Callback(const Context& context) {
     static_cast<void>(context);
@@ -458,16 +436,11 @@ Decl Declare_android_view_SurfaceHolder_Callback(const Context& context) {
 
 }  // namespace ogplay::runtime::android_intrinsics
 
-namespace ogplay::runtime::android_intrinsics {
-Decl Declare_android_view_SurfaceHolder_Callback(const Context& context) {
-    return dvm80_android_view_SurfaceHolder_Callback::Declare_android_view_SurfaceHolder_Callback(context);
-}
-}  // namespace ogplay::runtime::android_intrinsics
 
 // ---- migrated from android_view_SurfaceHolder_Impl.cpp ----
 #include "catalog.h"
 
-namespace ogplay::runtime::android_intrinsics::dvm80_android_view_SurfaceHolder_Impl {
+namespace ogplay::runtime::android_intrinsics {
 
 namespace {
 
@@ -547,16 +520,11 @@ Decl Declare_android_view_SurfaceHolder_Impl(const Context& context) {
 
 }  // namespace ogplay::runtime::android_intrinsics
 
-namespace ogplay::runtime::android_intrinsics {
-Decl Declare_android_view_SurfaceHolder_Impl(const Context& context) {
-    return dvm80_android_view_SurfaceHolder_Impl::Declare_android_view_SurfaceHolder_Impl(context);
-}
-}  // namespace ogplay::runtime::android_intrinsics
 
 // ---- migrated from android_view_SurfaceHolder.cpp ----
 #include "catalog.h"
 
-namespace ogplay::runtime::android_intrinsics::dvm80_android_view_SurfaceHolder {
+namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_view_SurfaceHolder(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Interface("Landroid/view/SurfaceHolder;");
@@ -565,28 +533,23 @@ Decl Declare_android_view_SurfaceHolder(const Context& context) {
     builder.FinalMethod("setType", "(I)V", SurfaceHolderSetTypeHandler());
     builder.FinalMethod("setFormat", "(I)V", SurfaceHolderSetFormatHandler());
     builder.FinalMethod("lockCanvas", "()Landroid/graphics/Canvas;",
-                        dvm80_android_view_SurfaceHolder_Impl::LockCanvasHandler(context));
+                        LockCanvasHandler(context));
     builder.FinalMethod(
         "lockCanvas", "(Landroid/graphics/Rect;)Landroid/graphics/Canvas;",
-        dvm80_android_view_SurfaceHolder_Impl::LockCanvasHandler(context));
+        LockCanvasHandler(context));
     builder.FinalMethod(
         "unlockCanvasAndPost", "(Landroid/graphics/Canvas;)V",
-        dvm80_android_view_SurfaceHolder_Impl::UnlockCanvasAndPostHandler(context));
+        UnlockCanvasAndPostHandler(context));
     return std::move(builder).Build();
 }
 
 }  // namespace ogplay::runtime::android_intrinsics
 
-namespace ogplay::runtime::android_intrinsics {
-Decl Declare_android_view_SurfaceHolder(const Context& context) {
-    return dvm80_android_view_SurfaceHolder::Declare_android_view_SurfaceHolder(context);
-}
-}  // namespace ogplay::runtime::android_intrinsics
 
 // ---- migrated from android_view_SurfaceView.cpp ----
 #include "catalog.h"
 
-namespace ogplay::runtime::android_intrinsics::dvm80_android_view_SurfaceView {
+namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_view_SurfaceView(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/view/SurfaceView;", "Landroid/view/View;");
@@ -614,16 +577,11 @@ Decl Declare_android_view_SurfaceView(const Context& context) {
 
 }  // namespace ogplay::runtime::android_intrinsics
 
-namespace ogplay::runtime::android_intrinsics {
-Decl Declare_android_view_SurfaceView(const Context& context) {
-    return dvm80_android_view_SurfaceView::Declare_android_view_SurfaceView(context);
-}
-}  // namespace ogplay::runtime::android_intrinsics
 
 // ---- migrated from android_view_View_OnClickListener.cpp ----
 #include "catalog.h"
 
-namespace ogplay::runtime::android_intrinsics::dvm80_android_view_View_OnClickListener {
+namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_view_View_OnClickListener(const Context& context) {
     static_cast<void>(context);
@@ -633,11 +591,6 @@ Decl Declare_android_view_View_OnClickListener(const Context& context) {
 
 }  // namespace ogplay::runtime::android_intrinsics
 
-namespace ogplay::runtime::android_intrinsics {
-Decl Declare_android_view_View_OnClickListener(const Context& context) {
-    return dvm80_android_view_View_OnClickListener::Declare_android_view_View_OnClickListener(context);
-}
-}  // namespace ogplay::runtime::android_intrinsics
 
 // ---- android.view.View.OnFocusChangeListener (API 19) ----
 #include "catalog.h"
@@ -654,7 +607,8 @@ Decl Declare_android_view_View_OnFocusChangeListener(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Interface(
         "Landroid/view/View$OnFocusChangeListener;");
     builder.UnimplementedVirtual(
-        "onFocusChange", "(Landroid/view/View;Z)V", 0x0401U);
+        "onFocusChange", "(Landroid/view/View;Z)V",
+        dx::kAccPublic | dx::kAccAbstract);
     return std::move(builder).Build();
 }
 
@@ -678,7 +632,8 @@ Decl Declare_android_view_View_OnSystemUiVisibilityChangeListener(
     auto builder = dx::IntrinsicClassBuilder::Interface(
         "Landroid/view/View$OnSystemUiVisibilityChangeListener;");
     builder.UnimplementedVirtual(
-        "onSystemUiVisibilityChange", "(I)V", 0x0401U);
+        "onSystemUiVisibilityChange", "(I)V",
+        dx::kAccPublic | dx::kAccAbstract);
     return std::move(builder).Build();
 }
 
@@ -695,7 +650,7 @@ Decl Declare_android_view_View_OnSystemUiVisibilityChangeListener(
 // ---- migrated from android_view_View_OnTouchListener.cpp ----
 #include "catalog.h"
 
-namespace ogplay::runtime::android_intrinsics::dvm80_android_view_View_OnTouchListener {
+namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_view_View_OnTouchListener(const Context& context) {
     static_cast<void>(context);
@@ -705,16 +660,11 @@ Decl Declare_android_view_View_OnTouchListener(const Context& context) {
 
 }  // namespace ogplay::runtime::android_intrinsics
 
-namespace ogplay::runtime::android_intrinsics {
-Decl Declare_android_view_View_OnTouchListener(const Context& context) {
-    return dvm80_android_view_View_OnTouchListener::Declare_android_view_View_OnTouchListener(context);
-}
-}  // namespace ogplay::runtime::android_intrinsics
 
 // ---- migrated from android_view_View.cpp ----
 #include "catalog.h"
 
-namespace ogplay::runtime::android_intrinsics::dvm80_android_view_View {
+namespace ogplay::runtime::android_intrinsics {
 namespace {
 
 ui::UiNodeId ViewNode(dx::IntrinsicContext& call, const Context& context) {
@@ -742,33 +692,34 @@ std::uint32_t AndroidColorToRgba(const std::uint32_t argb) {
 
 Decl Declare_android_view_View(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/view/View;", "Ljava/lang/Object;");
-    builder.ConstantInt("SYSTEM_UI_FLAG_VISIBLE", "I", 0, 0x0001U)
+    builder.ConstantInt("SYSTEM_UI_FLAG_VISIBLE", "I", 0, dx::kAccPublic)
         .ConstantInt("SYSTEM_UI_FLAG_LOW_PROFILE", "I", 0x00000001,
-                     0x0001U)
+                     dx::kAccPublic)
         .ConstantInt("SYSTEM_UI_FLAG_HIDE_NAVIGATION", "I", 0x00000002,
-                     0x0001U)
+                     dx::kAccPublic)
         .ConstantInt("SYSTEM_UI_FLAG_FULLSCREEN", "I", 0x00000004,
-                     0x0001U)
+                     dx::kAccPublic)
         .ConstantInt("SYSTEM_UI_FLAG_LAYOUT_STABLE", "I", 0x00000100,
-                     0x0001U)
+                     dx::kAccPublic)
         .ConstantInt("SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION", "I",
-                     0x00000200, 0x0001U)
+                     0x00000200, dx::kAccPublic)
         .ConstantInt("SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN", "I", 0x00000400,
-                     0x0001U)
+                     dx::kAccPublic)
         .ConstantInt("SYSTEM_UI_FLAG_IMMERSIVE", "I", 0x00000800,
-                     0x0001U)
+                     dx::kAccPublic)
         .ConstantInt("SYSTEM_UI_FLAG_IMMERSIVE_STICKY", "I", 0x00001000,
-                     0x0001U);
+                     dx::kAccPublic);
     const auto system_ui_visibility = builder.BoundInstanceField(
-        "mSystemUiVisibility", "I", 0U);
+        "mSystemUiVisibility", "I", dx::kAccNone);
     const auto system_ui_listener = builder.BoundInstanceField(
         "mOgplaySystemUiVisibilityListener",
-        "Landroid/view/View$OnSystemUiVisibilityChangeListener;", 0x1002U);
+        "Landroid/view/View$OnSystemUiVisibilityChangeListener;",
+        dx::kAccPrivate | dx::kAccSynthetic);
     builder.Constructor("(Landroid/content/Context;)V",
                     ViewInitHandler(context));
     builder.VirtualMethod("onSizeChanged", "(IIII)V",
         [](dx::IntrinsicContext&) { return dx::VmValue::Void(); },
-        kProtectedAccess);
+        dx::kAccProtected);
     builder.VirtualMethod("onWindowFocusChanged", "(Z)V",
         [context](dx::IntrinsicContext& call) {
             const auto node = FindViewUiNode(*context, call.receiver.Value());
@@ -1099,16 +1050,11 @@ Decl Declare_android_view_View(const Context& context) {
 
 }  // namespace ogplay::runtime::android_intrinsics
 
-namespace ogplay::runtime::android_intrinsics {
-Decl Declare_android_view_View(const Context& context) {
-    return dvm80_android_view_View::Declare_android_view_View(context);
-}
-}  // namespace ogplay::runtime::android_intrinsics
 
 // ---- migrated from android_view_ViewGroup_LayoutParams.cpp ----
 #include "catalog.h"
 
-namespace ogplay::runtime::android_intrinsics::dvm80_android_view_ViewGroup_LayoutParams {
+namespace ogplay::runtime::android_intrinsics {
 namespace {
 
 ui::DimensionSpec Dimension(const std::int32_t value) {
@@ -1137,18 +1083,13 @@ Decl Declare_android_view_ViewGroup_LayoutParams(const Context& context) {
 
 }  // namespace ogplay::runtime::android_intrinsics
 
-namespace ogplay::runtime::android_intrinsics {
-Decl Declare_android_view_ViewGroup_LayoutParams(const Context& context) {
-    return dvm80_android_view_ViewGroup_LayoutParams::Declare_android_view_ViewGroup_LayoutParams(context);
-}
-}  // namespace ogplay::runtime::android_intrinsics
 
 // ---- migrated from android_view_ViewGroup.cpp ----
 #include "catalog.h"
 
 #include <optional>
 
-namespace ogplay::runtime::android_intrinsics::dvm80_android_view_ViewGroup {
+namespace ogplay::runtime::android_intrinsics {
 namespace {
 
 ui::UiNodeId NodeFor(dx::IntrinsicContext& call, const Context& context,
@@ -1295,16 +1236,11 @@ Decl Declare_android_view_ViewGroup(const Context& context) {
 
 }  // namespace ogplay::runtime::android_intrinsics
 
-namespace ogplay::runtime::android_intrinsics {
-Decl Declare_android_view_ViewGroup(const Context& context) {
-    return dvm80_android_view_ViewGroup::Declare_android_view_ViewGroup(context);
-}
-}  // namespace ogplay::runtime::android_intrinsics
 
 // ---- migrated from android_view_ViewTreeObserver_OnGlobalLayoutListener.cpp ----
 #include "catalog.h"
 
-namespace ogplay::runtime::android_intrinsics::dvm80_android_view_ViewTreeObserver_OnGlobalLayoutListener {
+namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_view_ViewTreeObserver_OnGlobalLayoutListener(const Context& context) {
     static_cast<void>(context);
@@ -1314,16 +1250,11 @@ Decl Declare_android_view_ViewTreeObserver_OnGlobalLayoutListener(const Context&
 
 }  // namespace ogplay::runtime::android_intrinsics
 
-namespace ogplay::runtime::android_intrinsics {
-Decl Declare_android_view_ViewTreeObserver_OnGlobalLayoutListener(const Context& context) {
-    return dvm80_android_view_ViewTreeObserver_OnGlobalLayoutListener::Declare_android_view_ViewTreeObserver_OnGlobalLayoutListener(context);
-}
-}  // namespace ogplay::runtime::android_intrinsics
 
 // ---- migrated from android_view_ViewTreeObserver.cpp ----
 #include "catalog.h"
 
-namespace ogplay::runtime::android_intrinsics::dvm80_android_view_ViewTreeObserver {
+namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_view_ViewTreeObserver(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/view/ViewTreeObserver;", "Ljava/lang/Object;");
@@ -1359,16 +1290,11 @@ Decl Declare_android_view_ViewTreeObserver(const Context& context) {
 
 }  // namespace ogplay::runtime::android_intrinsics
 
-namespace ogplay::runtime::android_intrinsics {
-Decl Declare_android_view_ViewTreeObserver(const Context& context) {
-    return dvm80_android_view_ViewTreeObserver::Declare_android_view_ViewTreeObserver(context);
-}
-}  // namespace ogplay::runtime::android_intrinsics
 
 // ---- migrated from android_view_Window.cpp ----
 #include "catalog.h"
 
-namespace ogplay::runtime::android_intrinsics::dvm80_android_view_Window {
+namespace ogplay::runtime::android_intrinsics {
 namespace {
 
 [[nodiscard]] dx::VmObjectRef Attributes(dx::IntrinsicContext& call,
@@ -1464,16 +1390,11 @@ Decl Declare_android_view_Window(const Context& context) {
 
 }  // namespace ogplay::runtime::android_intrinsics
 
-namespace ogplay::runtime::android_intrinsics {
-Decl Declare_android_view_Window(const Context& context) {
-    return dvm80_android_view_Window::Declare_android_view_Window(context);
-}
-}  // namespace ogplay::runtime::android_intrinsics
 
 // ---- migrated from android_view_WindowManager_LayoutParams.cpp ----
 #include "catalog.h"
 
-namespace ogplay::runtime::android_intrinsics::dvm80_android_view_WindowManager_LayoutParams {
+namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_view_WindowManager_LayoutParams(const Context& context) {
     static_cast<void>(context);
@@ -1487,16 +1408,11 @@ Decl Declare_android_view_WindowManager_LayoutParams(const Context& context) {
 
 }  // namespace ogplay::runtime::android_intrinsics
 
-namespace ogplay::runtime::android_intrinsics {
-Decl Declare_android_view_WindowManager_LayoutParams(const Context& context) {
-    return dvm80_android_view_WindowManager_LayoutParams::Declare_android_view_WindowManager_LayoutParams(context);
-}
-}  // namespace ogplay::runtime::android_intrinsics
 
 // ---- migrated from android_view_WindowManager.cpp ----
 #include "catalog.h"
 
-namespace ogplay::runtime::android_intrinsics::dvm80_android_view_WindowManager {
+namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_view_WindowManager(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Interface("Landroid/view/WindowManager;");
@@ -1506,16 +1422,11 @@ Decl Declare_android_view_WindowManager(const Context& context) {
 
 }  // namespace ogplay::runtime::android_intrinsics
 
-namespace ogplay::runtime::android_intrinsics {
-Decl Declare_android_view_WindowManager(const Context& context) {
-    return dvm80_android_view_WindowManager::Declare_android_view_WindowManager(context);
-}
-}  // namespace ogplay::runtime::android_intrinsics
 
 // ---- migrated from android_view_WindowManagerImpl.cpp ----
 #include "catalog.h"
 
-namespace ogplay::runtime::android_intrinsics::dvm80_android_view_WindowManagerImpl {
+namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_view_WindowManagerImpl(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/view/WindowManagerImpl;", "Ljava/lang/Object;", {"Landroid/view/WindowManager;"});
@@ -1523,10 +1434,4 @@ Decl Declare_android_view_WindowManagerImpl(const Context& context) {
     return std::move(builder).Build();
 }
 
-}  // namespace ogplay::runtime::android_intrinsics
-
-namespace ogplay::runtime::android_intrinsics {
-Decl Declare_android_view_WindowManagerImpl(const Context& context) {
-    return dvm80_android_view_WindowManagerImpl::Declare_android_view_WindowManagerImpl(context);
-}
 }  // namespace ogplay::runtime::android_intrinsics

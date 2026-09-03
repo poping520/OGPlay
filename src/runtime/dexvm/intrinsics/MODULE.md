@@ -61,6 +61,14 @@ execution-local `RootScope` 保活，宿主 `VmObjectRef` 容器本身不是 GC 
 `InputStream` 的默认 bulk read/skip 同样必须经 receiver vtable 派发；基类
 `available/close/mark` 使用 API 19 默认语义，`reset` 明确抛 `IOException`，不得要求自定义
 子类注册 `IoRuntime` 输入状态。
+`ObjectInputStream/ObjectOutputStream` 按 API 19 分别继承 `InputStream/OutputStream`，
+实现 `ObjectInput/ObjectOutput` 与 `ObjectStreamConstants`；`ObjectInput/ObjectOutput` 再继承
+`DataInput/DataOutput` 与 `AutoCloseable`。公开包装构造器通过 `IoRuntime` single-owner 接管
+底层流，校验/写入 serialization stream header，并按 block-data wire format 实现继承的
+原始字节、基本类型、modified UTF、available/skip/flush/close 契约。对象协议支持 `null`、
+`String`、默认 `Serializable` 类层级、字段、循环/重复引用、枚举及 API 19 `Date` 自定义段；
+stream handle 中的 guest ref 必须经 `IoRuntime` trace。数组、`Externalizable`、任意
+`writeObject/readObject` hooks 和缺少显式 UID 的默认 UID 计算仍明确不支持。
 
 `java_zip.cpp` 聚合 `ZipEntry`/`ZipInputStream`。输入源只经 `IoRuntime` single-owner
 接管，archive/entry/cursor/close 状态只委托 per-VM `ZipRuntime`；ZIP32 结构校验、inflate

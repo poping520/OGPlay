@@ -2506,8 +2506,11 @@ namespace ogplay::runtime::dexvm::intrinsics {
 using namespace detail;
 
 IntrinsicClassDecl Declare_java_util_Date() {
-    auto builder = IntrinsicClassBuilder::Class("Ljava/util/Date;", "Ljava/lang/Object;");
-    builder.InstanceField("millis", "J");
+    auto builder = IntrinsicClassBuilder::Class(
+        "Ljava/util/Date;", "Ljava/lang/Object;",
+        {"Ljava/io/Serializable;", "Ljava/lang/Cloneable;",
+         "Ljava/lang/Comparable;"});
+    builder.InstanceField("millis", "J", kAccPrivate | kAccTransient);
     builder.UnimplementedConstructor("()V");
     builder.UnimplementedFinal("getTime", "()J");
     builder.UnimplementedFinal("getYear", "()I");

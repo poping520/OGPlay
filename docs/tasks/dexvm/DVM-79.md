@@ -87,5 +87,21 @@
 - `InputStream` 恢复抽象基类、公共构造与 Closeable 契约；默认 bulk read 与 skip 经 vtable
   调用子类 override，并保持部分读取后的异常抑制语义；默认 available/close/mark/
   markSupported/reset 与 API 19 对齐，自定义子类无需持有 `IoRuntime` 状态。
+- 2026-09-03 后续在同一 Java IO family 增加 `ObjectOutputStream` 无参空壳；按 API 19
+  继承 `OutputStream` 并实现 `ObjectOutput`、`ObjectStreamConstants`，其中
+  `ObjectOutput` 继承 `DataOutput`、`AutoCloseable`。空壳只支持 protected 空构造；
+  `DataOutput`、`ObjectOutput` 发布 API 19 完整 abstract 方法表，供类链接与自定义子类构造，
+  不宣称 Java serialization 能力。
+- 同日继续补齐 `DataInput/ObjectInput` 方法表与 `ObjectInputStream` API 19 层级；两个对象流
+  的公开包装构造器经 `IoRuntime` 接管底层流，写入/校验 stream header，并以 block-data
+  wire format 实现接口继承的字节、基本类型、modified UTF、available/skip/flush/close。
+  `writeObject/readObject` 仅支持真实 wire token 的 `null` 与 `String` 往返；对象图、引用 handle、
+  class descriptor 和 custom serialization hooks 仍明确不支持。
+- PVZ 实跑暴露上述范围不足后，继续按 AOSP 4.4.4 wire format 补齐默认 `Serializable` 类描述符、
+  显式 `serialVersionUID`、按 primitive-first/name 排序的字段、可序列化父类层级、循环/重复引用
+  handle、枚举常量以及 `Date` custom data；输入端按本地字段名/类型恢复，未知字段可跳过，UID、
+  类型和边界不匹配明确抛 `IOException`。对象 handle 由 `IoRuntime` 跟随流 owner trace/sweep。
+  `FileDescriptor.sync()` 同步关联输出缓冲到 VFS，使 `ObjectOutputStream` 后的 durable-save 路径
+  与 API 19 调用链闭合。数组、`Externalizable`、应用自定义 hooks 和默认 UID 计算继续 deferred。
 
 状态：完成。

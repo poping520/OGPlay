@@ -829,7 +829,10 @@ Interpreter::Interpreter(DexClassLinker& linker, JavaObjectModel& model,
         }});
     RegisterIntrinsicStateTable({
         "io",
-        [](const VmObjectRef, const VmRootVisitor&) {},
+        [state = impl_.get()](const VmObjectRef owner,
+                              const VmRootVisitor& visit) {
+            state->io.Trace(owner, visit);
+        },
         [state = impl_.get()](const VmObjectRef owner) {
             state->io.Sweep(owner);
         },

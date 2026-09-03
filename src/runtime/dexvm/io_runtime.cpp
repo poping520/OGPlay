@@ -72,6 +72,34 @@ void IoRuntime::CloseInput(const VmObjectRef owner) {
     found->second.state->closed = true;
 }
 
+void IoRuntime::BeginObjectInput(const VmObjectRef owner) {
+  static_cast<void>(Input(owner));
+  object_inputs_[owner.Value()] = {};
+}
+
+IoRuntime::ObjectInputState &IoRuntime::ObjectInput(const VmObjectRef owner) {
+  static_cast<void>(Input(owner));
+  const auto found = object_inputs_.find(owner.Value());
+  if (found == object_inputs_.end()) {
+    throw IoRuntimeError("object input stream was never opened");
+  }
+  return found->second;
+}
+
+void IoRuntime::BeginObjectOutput(const VmObjectRef owner) {
+  static_cast<void>(Output(owner));
+  object_outputs_[owner.Value()] = {};
+}
+
+IoRuntime::ObjectOutputState &IoRuntime::ObjectOutput(const VmObjectRef owner) {
+  static_cast<void>(Output(owner));
+  const auto found = object_outputs_.find(owner.Value());
+  if (found == object_outputs_.end()) {
+    throw IoRuntimeError("object output stream was never opened");
+  }
+  return found->second;
+}
+
 std::shared_ptr<IoRuntime::OutputState>
 IoRuntime::SetOutput(const VmObjectRef owner, OutputState state,
                      const bool close_underlying) {
@@ -162,6 +190,18 @@ IoRuntime::FindDescriptor(const VmObjectRef owner) noexcept {
   return found == descriptors_.end() ? nullptr : &found->second;
 }
 
+void IoRuntime::SyncDescriptor(const VmObjectRef owner) {
+  auto &descriptor = Descriptor(owner);
+  if (descriptor.output == nullptr || descriptor.output->closed ||
+      !descriptor.output->writable) {
+    throw IoRuntimeError("file descriptor is not writable");
+  }
+  if (descriptor.output->path.empty()) {
+    throw IoRuntimeError("file descriptor has no VFS path");
+  }
+  WriteFile(descriptor.output->path, descriptor.output->bytes);
+}
+
 void IoRuntime::CloseDescriptor(const VmObjectRef owner) noexcept {
   const auto found = descriptors_.find(owner.Value());
   if (found != descriptors_.end()) {
@@ -224,8 +264,27 @@ void IoRuntime::WriteFile(const std::string_view path,
 
 void IoRuntime::Sweep(const VmObjectRef owner) {
   inputs_.erase(owner.Value());
+  object_inputs_.erase(owner.Value());
   outputs_.erase(owner.Value());
+  object_outputs_.erase(owner.Value());
   descriptors_.erase(owner.Value());
+}
+
+void IoRuntime::Trace(
+    const VmObjectRef owner,
+    const std::function<void(VmObjectRef)> &visitor) const {
+  const auto input = object_inputs_.find(owner.Value());
+  if (input != object_inputs_.end()) {
+    for (const auto &handle : input->second.handles) {
+      if (handle.object.IsValid()) visitor(handle.object);
+    }
+  }
+  const auto output = object_outputs_.find(owner.Value());
+  if (output != object_outputs_.end()) {
+    for (const auto object : output->second.handle_objects) {
+      if (object.IsValid()) visitor(object);
+    }
+  }
 }
 
 } // namespace ogplay::runtime::dexvm

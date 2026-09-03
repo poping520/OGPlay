@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <span>
@@ -49,6 +50,23 @@ public:
 // Android assembly only injects the process guest VFS.
 class IoRuntime final {
 public:
+  struct SerializedFieldDescriptor final {
+    char type_code{};
+    std::string name;
+    std::string descriptor;
+  };
+  struct SerializedClassDescriptor final {
+    std::string descriptor;
+    std::uint32_t runtime_class{};
+    std::int64_t serial_version_uid{};
+    std::uint8_t flags{};
+    std::vector<SerializedFieldDescriptor> fields;
+    std::shared_ptr<SerializedClassDescriptor> super;
+  };
+  struct ObjectInputHandle final {
+    VmObjectRef object{0};
+    std::shared_ptr<SerializedClassDescriptor> class_descriptor;
+  };
   enum class DescriptorKind : std::uint8_t {
     vfs_path,
     apk_entry,
@@ -63,6 +81,17 @@ public:
     std::vector<std::byte> bytes;
     bool writable{true};
     bool closed{};
+  };
+  struct ObjectInputState final {
+    std::size_t block_remaining{};
+    std::optional<std::uint8_t> pushback;
+    std::vector<ObjectInputHandle> handles;
+  };
+  struct ObjectOutputState final {
+    std::unordered_map<std::uint32_t, std::uint32_t> object_handles;
+    std::unordered_map<std::uint32_t, std::uint32_t> class_handles;
+    std::vector<VmObjectRef> handle_objects;
+    std::uint32_t next_handle{0x007e0000U};
   };
   struct DescriptorState final {
     DescriptorKind kind{DescriptorKind::vfs_path};
@@ -84,6 +113,10 @@ public:
   void AdoptInput(VmObjectRef source, VmObjectRef target);
   [[nodiscard]] std::vector<std::byte> TakeRemainingInput(VmObjectRef owner);
   void CloseInput(VmObjectRef owner);
+  void BeginObjectInput(VmObjectRef owner);
+  [[nodiscard]] ObjectInputState &ObjectInput(VmObjectRef owner);
+  void BeginObjectOutput(VmObjectRef owner);
+  [[nodiscard]] ObjectOutputState &ObjectOutput(VmObjectRef owner);
 
   std::shared_ptr<OutputState> SetOutput(VmObjectRef owner, OutputState state,
                                          bool close_underlying = true);
@@ -100,6 +133,7 @@ public:
       VmObjectRef owner) noexcept;
   [[nodiscard]] const DescriptorState *FindDescriptor(
       VmObjectRef owner) const noexcept;
+  void SyncDescriptor(VmObjectRef owner);
   void CloseDescriptor(VmObjectRef owner) noexcept;
 
   [[nodiscard]] std::optional<IoFileInfo> Stat(std::string_view path) const;
@@ -116,6 +150,8 @@ public:
   void WriteFile(std::string_view path, std::span<const std::byte> bytes);
 
   void Sweep(VmObjectRef owner);
+  void Trace(VmObjectRef owner,
+             const std::function<void(VmObjectRef)> &visitor) const;
 
 private:
   struct InputHandle final {
@@ -132,6 +168,8 @@ private:
 
   IoFileSystem *file_system_{};
   std::unordered_map<std::uint32_t, InputHandle> inputs_;
+  std::unordered_map<std::uint32_t, ObjectInputState> object_inputs_;
+  std::unordered_map<std::uint32_t, ObjectOutputState> object_outputs_;
   std::unordered_map<std::uint32_t, OutputHandle> outputs_;
   std::unordered_map<std::uint32_t, DescriptorState> descriptors_;
 };

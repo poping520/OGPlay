@@ -641,6 +641,126 @@ TEST_CASE("dexvm core intrinsic catalog is unique and structurally stable") {
               {"<init>",
                "(Ljava/io/InputStream;Ljava/nio/charset/Charset;)V"},
           });
+    CHECK(signatures("Ljava/io/ObjectOutputStream;") ==
+          std::set<std::pair<std::string, std::string>>{
+              {"<init>", "()V"},
+              {"<init>", "(Ljava/io/OutputStream;)V"},
+              {"close", "()V"},
+              {"flush", "()V"},
+              {"write", "(I)V"},
+              {"write", "([BII)V"},
+              {"writeBoolean", "(Z)V"},
+              {"writeByte", "(I)V"},
+              {"writeBytes", "(Ljava/lang/String;)V"},
+              {"writeChar", "(I)V"},
+              {"writeChars", "(Ljava/lang/String;)V"},
+              {"writeDouble", "(D)V"},
+              {"writeFloat", "(F)V"},
+              {"writeInt", "(I)V"},
+              {"writeLong", "(J)V"},
+              {"writeObject", "(Ljava/lang/Object;)V"},
+              {"writeShort", "(I)V"},
+              {"writeUTF", "(Ljava/lang/String;)V"},
+          });
+    const auto object_output = std::find_if(
+        catalog.begin(), catalog.end(), [](const auto& declaration) {
+            return declaration.descriptor ==
+                   "Ljava/io/ObjectOutputStream;";
+        });
+    REQUIRE(object_output != catalog.end());
+    CHECK(object_output->superclass == "Ljava/io/OutputStream;");
+    CHECK(object_output->interfaces ==
+          std::vector<std::string>{"Ljava/io/ObjectOutput;",
+                                   "Ljava/io/ObjectStreamConstants;"});
+    const auto object_input = std::find_if(
+        catalog.begin(), catalog.end(), [](const auto& declaration) {
+            return declaration.descriptor == "Ljava/io/ObjectInputStream;";
+        });
+    REQUIRE(object_input != catalog.end());
+    CHECK(object_input->superclass == "Ljava/io/InputStream;");
+    CHECK(object_input->interfaces ==
+          std::vector<std::string>{"Ljava/io/ObjectInput;",
+                                   "Ljava/io/ObjectStreamConstants;"});
+    CHECK(signatures("Ljava/io/DataInput;") ==
+          std::set<std::pair<std::string, std::string>>{
+              {"readBoolean", "()Z"},
+              {"readByte", "()B"},
+              {"readChar", "()C"},
+              {"readDouble", "()D"},
+              {"readFloat", "()F"},
+              {"readFully", "([B)V"},
+              {"readFully", "([BII)V"},
+              {"readInt", "()I"},
+              {"readLine", "()Ljava/lang/String;"},
+              {"readLong", "()J"},
+              {"readShort", "()S"},
+              {"readUnsignedByte", "()I"},
+              {"readUnsignedShort", "()I"},
+              {"readUTF", "()Ljava/lang/String;"},
+              {"skipBytes", "(I)I"},
+          });
+    CHECK(signatures("Ljava/io/ObjectInput;") ==
+          std::set<std::pair<std::string, std::string>>{
+              {"available", "()I"},
+              {"close", "()V"},
+              {"read", "()I"},
+              {"read", "([B)I"},
+              {"read", "([BII)I"},
+              {"readObject", "()Ljava/lang/Object;"},
+              {"skip", "(J)J"},
+          });
+    CHECK(signatures("Ljava/io/ObjectInputStream;").size() == 23U);
+    const auto data_output = std::find_if(
+        catalog.begin(), catalog.end(), [](const auto& declaration) {
+            return declaration.descriptor == "Ljava/io/DataOutput;";
+        });
+    REQUIRE(data_output != catalog.end());
+    CHECK(data_output->is_interface);
+    CHECK(data_output->interfaces.empty());
+    CHECK(signatures("Ljava/io/DataOutput;") ==
+          std::set<std::pair<std::string, std::string>>{
+              {"write", "(I)V"},
+              {"write", "([B)V"},
+              {"write", "([BII)V"},
+              {"writeBoolean", "(Z)V"},
+              {"writeByte", "(I)V"},
+              {"writeBytes", "(Ljava/lang/String;)V"},
+              {"writeChar", "(I)V"},
+              {"writeChars", "(Ljava/lang/String;)V"},
+              {"writeDouble", "(D)V"},
+              {"writeFloat", "(F)V"},
+              {"writeInt", "(I)V"},
+              {"writeLong", "(J)V"},
+              {"writeShort", "(I)V"},
+              {"writeUTF", "(Ljava/lang/String;)V"},
+          });
+    const auto object_output_interface = std::find_if(
+        catalog.begin(), catalog.end(), [](const auto& declaration) {
+            return declaration.descriptor == "Ljava/io/ObjectOutput;";
+        });
+    REQUIRE(object_output_interface != catalog.end());
+    CHECK(object_output_interface->is_interface);
+    CHECK(object_output_interface->interfaces ==
+          std::vector<std::string>{"Ljava/io/DataOutput;",
+                                   "Ljava/lang/AutoCloseable;"});
+    CHECK(signatures("Ljava/io/ObjectOutput;") ==
+          std::set<std::pair<std::string, std::string>>{
+              {"close", "()V"},
+              {"flush", "()V"},
+              {"write", "(I)V"},
+              {"write", "([B)V"},
+              {"write", "([BII)V"},
+              {"writeObject", "(Ljava/lang/Object;)V"},
+          });
+    const auto object_stream_constants = std::find_if(
+        catalog.begin(), catalog.end(), [](const auto& declaration) {
+            return declaration.descriptor ==
+                   "Ljava/io/ObjectStreamConstants;";
+        });
+    REQUIRE(object_stream_constants != catalog.end());
+    CHECK(object_stream_constants->is_interface);
+    CHECK(object_stream_constants->interfaces.empty());
+    CHECK(signatures("Ljava/io/ObjectStreamConstants;").empty());
     CHECK(signatures("Ljava/io/File;").contains(
         {"list", "()[Ljava/lang/String;"}));
     CHECK(signatures("Ljava/util/zip/ZipInputStream;").contains(

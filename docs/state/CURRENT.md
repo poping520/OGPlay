@@ -14,7 +14,10 @@
 - **Java core**：File streams 公共 API（NIO/FileChannel 除外）、Resources XML 有界 pull、
   SimpleDateFormat API 19 最小层级以及 Observer/Observable 已闭合。Observable 复用
   `ArrayList`，按 changed flag 门控并在 receiver monitor 外按快照虚派发 `update`；覆盖
-  回调删除、异常传播和 nested GC 强根保活。格式化/解析及完整 XmlPullParser 长尾仍 deferred。
+  回调删除、异常传播和 nested GC 强根保活。Object streams 已闭合 API 19 接口继承、
+  primitive/block-data、默认 `Serializable` 字段图、引用、枚举及 `Date` 往返；数组、
+  Externalizable/custom hooks 与默认 UID 计算仍 deferred。格式化/解析及完整 XmlPullParser
+  长尾仍 deferred。
 - **Android Context 文件流**：`openFileInput/openFileOutput` 已接入 app files 目录；
   `MODE_PRIVATE` 覆盖、`MODE_APPEND` 追加，Activity/ContextWrapper 继续委托进程 base Context，
   文件状态只存在于 core `IoRuntime` 与统一 VFS。
@@ -24,12 +27,19 @@
   `VmExecutionLock` 串行，threaded 生产默认关闭。
 - **Title 进展**：Tales 已越过 uniform sampler、`GL_OES_mapbuffer`、Context 路径和 thread
   context loader 缺口，两个 native 库完成 JNI 初始化；新首错为
-  `android.location.LocationListener`。PvZ 需重跑确认 Observer/Observable 后的下一首错。
+  `android.location.LocationListener`。PvZ 已越过持久化对象图读写，新首错为
+  `java.net.URLDecoder`缺失。
   A6/DH exact、长运行 gate 与 threaded 默认裁决尚未闭合。见
   [DVM-47](../tasks/dexvm/DVM-47.md) 和 [WU-0231](../tasks/m5/WU-0231.md)。
 
 ## 最近验证
 
+- 2026-09-03 Windows `windows-msvc` Release：默认 Serializable 图、循环/重复引用、枚举、Date、
+  FileDescriptor.sync 双后端定向回归通过；PvZ 首次启动写出 690-byte 配置，第二次成功读回，
+  对象流异常消失，下一首错推进到 `java.net.URLDecoder` 缺失。
+- 2026-09-03 Windows `windows-msvc` Release：Object input/output streams 的 API 19 层级、
+  完整继承方法表、双后端 primitive/UTF/header/block-data 与 `null`/`String` 往返定向回归通过；
+  后续对象图能力见上一条验证。
 - 2026-09-03 Windows `windows-msvc` Release：`ogplay_tests` 构建通过；Context 私有文件流
   覆盖/追加/读取及异常、ContextWrapper 委托、Android catalog 定向回归通过。
 - 2026-09-03 Windows `windows-msvc` Release：core 与 Android 平台 intrinsic 中 164 个
@@ -46,7 +56,7 @@
 
 ## 下一步
 
-1. 重跑 clean-sandbox PvZ；补 Tales `LocationListener`，完成 DH 主菜单 Scenario gate。
+1. 补 PvZ `URLDecoder` 与 Tales `LocationListener`，完成 DH 主菜单 Scenario gate。
 2. 执行 A6 bootstrap 三轮、gc_long 与 threaded title gate。
 3. 出现可复用停滞 fixture 时，补 Diagnostics 外部触发子进程验收。
 

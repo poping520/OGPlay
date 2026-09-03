@@ -922,6 +922,45 @@ TEST_CASE("DexVM imports JNI-created application objects with instance slots") {
           runtime::dexvm::VmObjectKind::external);
 }
 
+TEST_CASE("DexVM Intent ArrayList extras trace children and sweep with owner") {
+    using namespace ogplay;
+    ApplicationProcess fixture;
+    auto& vm = fixture.bridge->Vm();
+    auto& linker = fixture.bridge->Linker();
+    const auto intent =
+        vm.NewIntrinsicInstance("Landroid/content/Intent;");
+    const auto list = vm.NewIntrinsicInstance("Ljava/util/ArrayList;");
+    const auto key = vm.NewStringUtf8("levels");
+    const auto intent_class = linker.ResolveDescriptor(
+        "Landroid/content/Intent;");
+    const auto put_index = linker.FindVtableIndex(
+        intent_class, "putIntegerArrayListExtra",
+        "(Ljava/lang/String;Ljava/util/ArrayList;)Landroid/content/Intent;");
+    REQUIRE(put_index.has_value());
+    auto outcome = vm.Call(
+        linker.Class(intent_class).vtable[*put_index],
+        std::vector{runtime::dexvm::VmValue::Ref(intent),
+                    runtime::dexvm::VmValue::Ref(key),
+                    runtime::dexvm::VmValue::Ref(list)});
+    REQUIRE_MESSAGE(!outcome.exception.IsValid(), outcome.exception_message);
+
+    vm.SetGcIntegration({
+        {}, {}, [intent](const runtime::dexvm::VmRootVisitor& visit) {
+            visit(intent);
+        }});
+    const auto marked = vm.MarkReachable();
+    CHECK(marked.IsMarked(intent));
+    CHECK(marked.IsMarked(list));
+    static_cast<void>(vm.CollectGarbage("intent-list-extra-edge"));
+    REQUIRE(fixture.context->intent_integer_array_list_extras.contains(
+        intent));
+
+    vm.SetGcIntegration({});
+    static_cast<void>(vm.CollectGarbage("intent-list-extra-owner-sweep"));
+    CHECK_FALSE(fixture.context->intent_integer_array_list_extras.contains(
+        intent));
+}
+
 TEST_CASE("DexVM JNI fields share interpreter storage and reference identity") {
     using namespace ogplay;
     ApplicationProcess fixture;

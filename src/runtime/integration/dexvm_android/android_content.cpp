@@ -1388,6 +1388,18 @@ namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_content_Intent(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/content/Intent;", "Ljava/lang/Object;");
+    const auto remove_extra = [context](const dx::VmObjectRef intent,
+                                        const std::string& name) {
+        const auto remove = [&name](auto& extras, const auto key) {
+            const auto values = extras.find(key);
+            if (values == extras.end()) return;
+            values->second.erase(name);
+            if (values->second.empty()) extras.erase(values);
+        };
+        remove(context->intent_string_extras, intent.Value());
+        remove(context->intent_int_extras, intent.Value());
+        remove(context->intent_integer_array_list_extras, intent);
+    };
     const auto intent_init = [](dx::IntrinsicContext&) {
         return dx::VmValue::Void();
     };
@@ -1422,18 +1434,34 @@ Decl Declare_android_content_Intent(const Context& context) {
     builder.FinalMethod("addFlags", "(I)Landroid/content/Intent;", set_flags);
     builder.FinalMethod("putExtra",
         "(Ljava/lang/String;I)Landroid/content/Intent;",
-        [context](dx::IntrinsicContext& call) {
+        [context, remove_extra](dx::IntrinsicContext& call) {
+            const auto intent = call.receiver;
+            const auto name = call.vm.StringUtf8(call.arguments[0].ref);
+            remove_extra(intent, name);
             context->intent_int_extras[call.receiver.Value()]
-                [call.vm.StringUtf8(call.arguments[0].ref)] =
-                    call.arguments[1].AsInt();
+                [name] = call.arguments[1].AsInt();
             return Self(call);
         });
     builder.FinalMethod("putExtra",
         "(Ljava/lang/String;Ljava/lang/String;)Landroid/content/Intent;",
-        [context](dx::IntrinsicContext& call) {
+        [context, remove_extra](dx::IntrinsicContext& call) {
+            const auto intent = call.receiver;
+            const auto name = call.vm.StringUtf8(call.arguments[0].ref);
+            const auto value = call.vm.StringUtf8(call.arguments[1].ref);
+            remove_extra(intent, name);
             context->intent_string_extras[call.receiver.Value()]
-                [call.vm.StringUtf8(call.arguments[0].ref)] =
-                    call.vm.StringUtf8(call.arguments[1].ref);
+                [name] = value;
+            return Self(call);
+        });
+    builder.FinalMethod(
+        "putIntegerArrayListExtra",
+        "(Ljava/lang/String;Ljava/util/ArrayList;)Landroid/content/Intent;",
+        [context, remove_extra](dx::IntrinsicContext& call) {
+            const auto intent = call.receiver;
+            const auto name = call.vm.StringUtf8(call.arguments[0].ref);
+            remove_extra(intent, name);
+            context->intent_integer_array_list_extras[intent][name] =
+                call.arguments[1].ref;
             return Self(call);
         });
     builder.FinalMethod("getStringExtra",
@@ -1463,18 +1491,26 @@ Decl Declare_android_content_Intent(const Context& context) {
             }
             return dx::VmValue::Int(call.arguments[1].AsInt());
         });
-    builder.FinalMethod("removeExtra", "(Ljava/lang/String;)V",
+    builder.FinalMethod(
+        "getIntegerArrayListExtra",
+        "(Ljava/lang/String;)Ljava/util/ArrayList;",
         [context](dx::IntrinsicContext& call) {
-            const auto intent = call.receiver.Value();
+            const auto extras = context->intent_integer_array_list_extras.find(
+                call.receiver);
+            if (extras == context->intent_integer_array_list_extras.end()) {
+                return dx::VmValue::Ref(dx::VmObjectRef{});
+            }
+            const auto found = extras->second.find(
+                call.vm.StringUtf8(call.arguments[0].ref));
+            return dx::VmValue::Ref(
+                found == extras->second.end() ? dx::VmObjectRef{}
+                                              : found->second);
+        });
+    builder.FinalMethod("removeExtra", "(Ljava/lang/String;)V",
+        [remove_extra](dx::IntrinsicContext& call) {
+            const auto intent = call.receiver;
             const auto name = call.vm.StringUtf8(call.arguments[0].ref);
-            const auto remove = [intent, &name](auto& extras) {
-                const auto values = extras.find(intent);
-                if (values == extras.end()) return;
-                values->second.erase(name);
-                if (values->second.empty()) extras.erase(values);
-            };
-            remove(context->intent_string_extras);
-            remove(context->intent_int_extras);
+            remove_extra(intent, name);
             return dx::VmValue::Void();
         });
     builder.FinalMethod("addCategory",

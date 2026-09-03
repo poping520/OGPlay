@@ -178,8 +178,10 @@ binding。`GLUtils` 读取 context 中既有 Bitmap backing；本层不拥有 GL
 - 动态 BroadcastReceiver 注册按发起调用的 Context 实例拥有；null receiver 只查询
   sticky broadcast，未注册、重复或跨 Context 注销抛 `IllegalArgumentException`。
   当前平台没有广播来源，因此不伪造 `onReceive` 派发。
-- Intent extra 当前支持的 String/Int 类型共享逻辑 key 空间；`removeExtra` 从全部
-  类型分表删除该 key，空表随即释放，不存在的 key 无操作。
+- Intent extra 当前支持 String、Int 与 `ArrayList<Integer>`，三者共享一个逻辑 key 空间：
+  任一 typed put 覆盖旧类型；`getIntegerArrayListExtra` 命中时返回原 guest list 身份，缺失、
+  显式 null 或其他类型返回 null。list 是 Intent owner 的 GC 强边；`removeExtra` 从全部类型
+  分表删除该 key，空表随即释放，不存在的 key 无操作。
 - VideoView error listener 按 view 实例注册、替换或清除；没有具体异步错误事件时
   不伪造 `onError` 回调。pause/seek capability 只反映已打开 player；缺失 player
   的 completion 延迟到视频 pump，禁止从 `start()` 重入 guest。

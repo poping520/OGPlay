@@ -166,7 +166,7 @@ TEST_CASE("android intrinsic catalog is unique and directly bound") {
   CHECK(method_count("Landroid/content/Context;") == 23);
   CHECK(method_count("Landroid/content/ContextWrapper;") == 24);
   CHECK(method_count("Landroid/view/ContextThemeWrapper;") == 4);
-  CHECK(method_count("Landroid/content/Intent;") == 16);
+  CHECK(method_count("Landroid/content/Intent;") == 18);
   CHECK(method_count("Landroid/os/Bundle;") == 17);
   CHECK(method_count("Landroid/os/ResultReceiver;") == 5);
   CHECK(method_count("Landroid/os/ResultReceiver$MyRunnable;") == 2);
@@ -1593,14 +1593,102 @@ TEST_CASE("Intent removeExtra clears every typed backing entry") {
   const auto key = vm.interpreter.NewStringUtf8("shared-key");
   vm.context->intent_string_extras[intent.Value()]["shared-key"] = "value";
   vm.context->intent_int_extras[intent.Value()]["shared-key"] = 42;
+  vm.context->intent_integer_array_list_extras[intent]["shared-key"] =
+      vm.interpreter.NewIntrinsicInstance("Ljava/util/ArrayList;");
   const auto remove = vm.Virtual("Landroid/content/Intent;", "removeExtra", "(Ljava/lang/String;)V");
   const std::vector arguments{VmValue::Ref(intent), VmValue::Ref(key)};
   auto outcome = vm.interpreter.Call(remove, arguments);
   REQUIRE_FALSE(outcome.exception.IsValid());
   CHECK_FALSE(vm.context->intent_string_extras.contains(intent.Value()));
   CHECK_FALSE(vm.context->intent_int_extras.contains(intent.Value()));
+  CHECK_FALSE(
+      vm.context->intent_integer_array_list_extras.contains(intent));
   outcome = vm.interpreter.Call(remove, arguments);
   CHECK_FALSE(outcome.exception.IsValid());
+}
+
+TEST_CASE("Intent integer ArrayList extra preserves identity and typed keys") {
+  AndroidVm vm;
+  const auto intent =
+      vm.interpreter.NewIntrinsicInstance("Landroid/content/Intent;");
+  const auto list =
+      vm.interpreter.NewIntrinsicInstance("Ljava/util/ArrayList;");
+  const auto key = vm.interpreter.NewStringUtf8("levels");
+  const auto missing = vm.interpreter.NewStringUtf8("missing");
+  const auto put = vm.Virtual(
+      "Landroid/content/Intent;", "putIntegerArrayListExtra",
+      "(Ljava/lang/String;Ljava/util/ArrayList;)Landroid/content/Intent;");
+  const auto get = vm.Virtual(
+      "Landroid/content/Intent;", "getIntegerArrayListExtra",
+      "(Ljava/lang/String;)Ljava/util/ArrayList;");
+  auto outcome = vm.interpreter.Call(
+      put, std::vector{VmValue::Ref(intent), VmValue::Ref(key),
+                       VmValue::Ref(list)});
+  REQUIRE_FALSE(outcome.exception.IsValid());
+  CHECK(outcome.value.ref == intent);
+
+  outcome = vm.interpreter.Call(
+      get, std::vector{VmValue::Ref(intent), VmValue::Ref(key)});
+  REQUIRE_FALSE(outcome.exception.IsValid());
+  CHECK(outcome.value.ref == list);
+  outcome = vm.interpreter.Call(
+      get, std::vector{VmValue::Ref(intent), VmValue::Ref(missing)});
+  REQUIRE_FALSE(outcome.exception.IsValid());
+  CHECK_FALSE(outcome.value.ref.IsValid());
+
+  const auto put_int = vm.Virtual(
+      "Landroid/content/Intent;", "putExtra",
+      "(Ljava/lang/String;I)Landroid/content/Intent;");
+  outcome = vm.interpreter.Call(
+      put_int, std::vector{VmValue::Ref(intent), VmValue::Ref(key),
+                           VmValue::Int(7)});
+  REQUIRE_FALSE(outcome.exception.IsValid());
+  CHECK_FALSE(vm.context->intent_integer_array_list_extras.contains(
+      intent));
+  outcome = vm.interpreter.Call(
+      get, std::vector{VmValue::Ref(intent), VmValue::Ref(key)});
+  REQUIRE_FALSE(outcome.exception.IsValid());
+  CHECK_FALSE(outcome.value.ref.IsValid());
+
+  outcome = vm.interpreter.Call(
+      put, std::vector{VmValue::Ref(intent), VmValue::Ref(key),
+                       VmValue::Ref(list)});
+  REQUIRE_FALSE(outcome.exception.IsValid());
+  CHECK_FALSE(vm.context->intent_int_extras.contains(intent.Value()));
+  const auto get_int = vm.Virtual(
+      "Landroid/content/Intent;", "getIntExtra", "(Ljava/lang/String;I)I");
+  outcome = vm.interpreter.Call(
+      get_int,
+      std::vector{VmValue::Ref(intent), VmValue::Ref(key),
+                  VmValue::Int(99)});
+  REQUIRE_FALSE(outcome.exception.IsValid());
+  CHECK(outcome.value.AsInt() == 99);
+
+  const auto put_string = vm.Virtual(
+      "Landroid/content/Intent;", "putExtra",
+      "(Ljava/lang/String;Ljava/lang/String;)Landroid/content/Intent;");
+  const auto string_value = vm.interpreter.NewStringUtf8("campaign");
+  outcome = vm.interpreter.Call(
+      put_string,
+      std::vector{VmValue::Ref(intent), VmValue::Ref(key),
+                  VmValue::Ref(string_value)});
+  REQUIRE_FALSE(outcome.exception.IsValid());
+  CHECK_FALSE(vm.context->intent_integer_array_list_extras.contains(
+      intent));
+  outcome = vm.interpreter.Call(
+      get, std::vector{VmValue::Ref(intent), VmValue::Ref(key)});
+  REQUIRE_FALSE(outcome.exception.IsValid());
+  CHECK_FALSE(outcome.value.ref.IsValid());
+
+  const auto null_key = vm.interpreter.NewStringUtf8("nullable");
+  outcome = vm.interpreter.Call(
+      put, std::vector{VmValue::Ref(intent), VmValue::Ref(null_key),
+                       VmValue::Ref(VmObjectRef{})});
+  REQUIRE_FALSE(outcome.exception.IsValid());
+  outcome = vm.interpreter.Call(
+      get, std::vector{VmValue::Ref(intent), VmValue::Ref(null_key)});
+  REQUIRE_FALSE(outcome.exception.IsValid());
+  CHECK_FALSE(outcome.value.ref.IsValid());
 }
 
 TEST_CASE("SAX setup retains its handler and parsing fails explicitly") {

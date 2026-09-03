@@ -4,6 +4,7 @@
 #include <condition_variable>
 #include <cstdint>
 #include <functional>
+#include <map>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -483,6 +484,9 @@ struct DexVmAndroidContext final {
     std::unordered_map<std::uint32_t,
                        std::unordered_map<std::string, std::int32_t>>
         intent_int_extras;
+    std::map<dexvm::VmObjectRef,
+             std::unordered_map<std::string, dexvm::VmObjectRef>>
+        intent_integer_array_list_extras;
     std::string pending_activity_descriptor;
     // Intent that launched the current/pending activity (getIntent()).
     dexvm::VmObjectRef current_intent;

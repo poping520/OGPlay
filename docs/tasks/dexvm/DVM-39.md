@@ -57,3 +57,14 @@
 
 结论：DVM-39 完成，Asphalt 6 已稳定运行到可见开场动画；Profile 仍为 `partial`，
 主界面与可游玩闭环尚未验收。广播派发和无具体错误来源的视频 error callback 仍未伪造。
+
+## 追加（2026-09-03 Intent Integer ArrayList extra）
+
+- 对照 AOSP 4.4.4 `Intent`/`Bundle`，补齐
+  `putIntegerArrayListExtra(String, ArrayList<Integer>)` 与
+  `getIntegerArrayListExtra(String)`：命中返回原 guest `ArrayList` 身份，缺失或显式 null
+  返回 null，不复制列表也不检查擦除后的泛型元素。
+- String、Int、Integer ArrayList 三类 extra 现共享单一逻辑 key 空间，后一次 typed put
+  覆盖旧类型；`removeExtra` 同步清理三类分表及空 owner 记录。
+- guest list 引用已进入 `android.owner-attached` trace，Intent 存活时保留 child，Intent
+  死亡时 sweep 状态。行为、类型覆盖、null、remove 与 GC trace/sweep 均有机器测试。

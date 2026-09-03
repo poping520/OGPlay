@@ -23,6 +23,9 @@
   `MODE_PRIVATE` 覆盖、`MODE_APPEND` 追加，Activity/ContextWrapper 继续委托进程 base Context，
   文件状态只存在于 core `IoRuntime` 与统一 VFS。APK 资源流现返回具体
   `ByteArrayInputStream`，不再实例化 API 19 抽象 `InputStream`。
+- **Intent extra**：String、Int 与 `ArrayList<Integer>` 共享逻辑 key；新增 Integer ArrayList
+  typed put/get，getter 返回原 guest list，缺失/显式 null/其他类型返回 null，引用随 Intent
+  owner 参与 GC trace/sweep。
 - **基础架构**：DVM-92 teardown 及 DVM-94～96 的稳定 linker metadata、`MethodShape`、
   own-member intrinsic 与 owner-state trace/sweep 已完成；Dalvik access flag 与 Java reflection
   modifier mask 已集中到共享头，core 与平台 intrinsics 不再复制直接量。解释执行仍由
@@ -36,6 +39,8 @@
 
 ## 最近验证
 
+- 2026-09-03 macOS Release：Intent Integer ArrayList 行为/覆盖/remove/GC 三组定向测试
+  46/46 断言通过。
 - 2026-09-03 macOS Release：资源流与 Locale 定向测试通过；Asphalt 5 原 APK 3 帧烟测
   正常退出；title-flow 末帧 Main Menu 经人工检查并在两个 fresh sandbox 中稳定为
   `cb892db9…`，golden 更新后 6 个 checkpoint 全部通过并 clean shutdown。
@@ -52,9 +57,6 @@
   后续对象图能力见上一条验证。
 - 2026-09-03 Windows `windows-msvc` Release：`ogplay_tests` 构建通过；Context 私有文件流
   覆盖/追加/读取及异常、ContextWrapper 委托、Android catalog 定向回归通过。
-- 2026-09-03 Windows `windows-msvc` Release：共享 access flag 重构后 `ogplay_tests`
-  构建通过；builder/reflection/各受影响 Java family 两组定向回归分别 52/52、32/32，
-  intrinsic layout 架构检查 1/1 通过。
 - 2026-09-03 Windows `windows-msvc` Release：`ogplay_tests` 构建通过；
   Observer/Observable 4/4、相邻 DVM-87/core catalog/collections 8/8、能力账本与架构静态
   检查 4/4 通过；`java_util` 集合族已移除无用途的 DVM-80 转发命名空间。

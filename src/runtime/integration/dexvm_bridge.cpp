@@ -200,6 +200,11 @@ void RegisterAndroidOwnerAttachedStateTable(
                 found != context->video_completion.end()) visit_ref(found->second);
             if (const auto found = context->video_errors.find(key);
                 found != context->video_errors.end()) visit_ref(found->second);
+            if (const auto found =
+                    context->intent_integer_array_list_extras.find(owner);
+                found != context->intent_integer_array_list_extras.end()) {
+                for (const auto& [_, list] : found->second) visit_ref(list);
+            }
         },
         [context](const dx::VmObjectRef owner) {
             const auto key = owner.Value();
@@ -225,6 +230,7 @@ void RegisterAndroidOwnerAttachedStateTable(
             context->intent_components.erase(key);
             context->intent_string_extras.erase(key);
             context->intent_int_extras.erase(key);
+            context->intent_integer_array_list_extras.erase(owner);
             context->ui_layout_params.erase(key);
             context->ui_view_layout_params.erase(key);
             context->ui_image_scale_types.erase(key);

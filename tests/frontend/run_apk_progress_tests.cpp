@@ -69,8 +69,11 @@ TEST_CASE("run-apk progress logging is bounded and structured") {
     ogplay::frontend::LogProfileFrameProgress(logger, 1U, 1000U, 1U, 3U, 2U);
     ogplay::frontend::LogProfileFrameProgress(logger, 2U, 2000U, 2U, 4U, 3U);
     ogplay::frontend::LogProfileFrameProgress(logger, 60U, 60000U, 60U, 9U, 4U);
+    ogplay::frontend::LogProfileFrameProgress(logger, 600U, 600000U, 600U, 12U, 5U);
     const auto frames = logger.Snapshot(std::nullopt, "frontend.run_apk");
     REQUIRE(frames.size() == 2U);
     CHECK(frames.front().frame == 1U);
-    CHECK(frames.back().frame == 60U);
+    CHECK(frames.front().level == ogplay::core::LogLevel::debug);
+    CHECK(frames.back().frame == 600U);
+    CHECK(frames.back().level == ogplay::core::LogLevel::debug);
 }

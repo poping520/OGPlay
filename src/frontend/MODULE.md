@@ -27,7 +27,8 @@ Streamable HTTP transport，并把截图、输入和会话控制交给 agent/ses
 - `McpPointerDispatcher`：在 guest 主线程把 MCP pointer phase 映射为通用 boundary input，
   与桌面鼠标手势互斥。
 - 结构化日志报告 exact Profile、guest bootstrap、静态预置、JNI/lifecycle、首帧、进度和
-  有序 teardown；长调用 observer 只读取既有 A32 slice 事实。
+  有序 teardown；帧进度以 debug 记录首帧和每 600 帧，长调用 observer 只读取既有 A32
+  slice 事实。
 
 `run-apk` 默认为 APK 的 package 打开持久存档沙盒（ADR-0020）：根目录取
 `hal::HostUserDataDirectory()` + `sandbox/`，`--sandbox-dir` 显式指定，

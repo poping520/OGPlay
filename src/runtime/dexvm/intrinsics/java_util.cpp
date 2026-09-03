@@ -1,6 +1,4 @@
-// DVM-80: API-family translation unit. Physical consolidation only.
-
-// ---- migrated from java_util_collections.cpp ----
+// API 19 java.util collection family.
 #include "catalog.h"
 #include "shared.h"
 
@@ -20,7 +18,7 @@
 #include "ogplay/runtime/dexvm/collection_runtime.h"
 #include "ogplay/runtime/dexvm/intrinsic_builder.h"
 
-namespace ogplay::runtime::dexvm::intrinsics::dvm80_java_util_collections {
+namespace ogplay::runtime::dexvm::intrinsics {
 using namespace detail;
 namespace {
 
@@ -2095,6 +2093,164 @@ IntrinsicClassDecl DeclareEmptyStackException() {
   return std::move(builder).Build();
 }
 
+IntrinsicClassDecl DeclareObserver() {
+  auto builder = IntrinsicClassBuilder::Interface("Ljava/util/Observer;");
+  builder.UnimplementedVirtual(
+      "update", "(Ljava/util/Observable;Ljava/lang/Object;)V",
+      kPublic | kAbstract);
+  return std::move(builder).Build();
+}
+
+IntrinsicClassDecl DeclareObservable() {
+  auto builder = IntrinsicClassBuilder::Class("Ljava/util/Observable;",
+                                              "Ljava/lang/Object;");
+  const auto observers = builder.BoundInstanceField(
+      "observers", "Ljava/util/List;", 0U);
+  const auto changed = builder.BoundInstanceField("changed", "Z", 0U);
+
+  builder.Constructor("()V", [observers, changed](IntrinsicContext &context) {
+    const auto list =
+        context.vm.NewIntrinsicInstance("Ljava/util/ArrayList;");
+    context.vm.Collections().EnsureSequence(list) = {};
+    IntrinsicCall call(context);
+    call.SetRef(observers, list);
+    call.SetInt(changed, 0);
+    return VmValue::Void();
+  });
+  builder.VirtualMethod(
+      "addObserver", "(Ljava/util/Observer;)V",
+      [observers](IntrinsicContext &context) {
+        IntrinsicCall call(context);
+        const auto observer = call.NonNullRef(0, "observer");
+        auto &monitors = context.vm.Monitors();
+        const auto token = context.vm.CurrentContextToken();
+        monitors.Enter(context.receiver, token);
+        try {
+          const auto list = call.GetRef(observers);
+          auto window = Sequence(context, list);
+          const auto found = SequenceFind(context, window, observer);
+          if (!found.failed && found.index == kNoIndex) {
+            window.state->elements.push_back(observer);
+            ++window.size;
+            SequenceChanged(window);
+          }
+          monitors.Exit(context.receiver, token);
+          return VmValue::Void();
+        } catch (...) {
+          monitors.Exit(context.receiver, token);
+          throw;
+        }
+      });
+  builder.VirtualMethod(
+      "clearChanged", "()V",
+      [changed](IntrinsicContext &context) {
+        IntrinsicCall(context).SetInt(changed, 0);
+        return VmValue::Void();
+      },
+      kProtected);
+  builder.VirtualMethod(
+      "countObservers", "()I", [observers](IntrinsicContext &context) {
+        const auto list = IntrinsicCall(context).GetRef(observers);
+        return VmValue::Int(static_cast<std::int32_t>(
+            Sequence(context, list).size));
+      });
+  builder.VirtualMethod(
+      "deleteObserver", "(Ljava/util/Observer;)V",
+      [observers](IntrinsicContext &context) {
+        const auto observer = IntrinsicCall(context).Ref(0);
+        const auto list = IntrinsicCall(context).GetRef(observers);
+        auto window = Sequence(context, list);
+        const auto found = SequenceFind(context, window, observer);
+        if (!found.failed && found.index != kNoIndex) {
+          window.state->elements.erase(
+              window.state->elements.begin() +
+              static_cast<std::ptrdiff_t>(window.offset + found.index));
+          --window.size;
+          SequenceChanged(window);
+        }
+        return VmValue::Void();
+      },
+      kPublic | kSynchronized);
+  builder.VirtualMethod(
+      "deleteObservers", "()V",
+      [observers](IntrinsicContext &context) {
+        const auto list = IntrinsicCall(context).GetRef(observers);
+        auto window = Sequence(context, list);
+        if (window.size != 0U) {
+          window.state->elements.clear();
+          window.size = 0U;
+          SequenceChanged(window);
+        }
+        return VmValue::Void();
+      },
+      kPublic | kSynchronized);
+  builder.VirtualMethod(
+      "hasChanged", "()Z", [changed](IntrinsicContext &context) {
+        return VmValue::Int(IntrinsicCall(context).GetInt(changed) != 0);
+      });
+  builder.VirtualMethod(
+      "notifyObservers", "()V", [](IntrinsicContext &context) {
+        const auto outcome = InvokeVirtual(
+            context, context.receiver, "notifyObservers",
+            "(Ljava/lang/Object;)V", {VmValue::Ref(VmObjectRef{})});
+        static_cast<void>(outcome);
+        return VmValue::Void();
+      });
+  builder.VirtualMethod(
+      "notifyObservers", "(Ljava/lang/Object;)V",
+      [observers](IntrinsicContext &context) {
+        std::vector<VmObjectRef> snapshot;
+        auto &monitors = context.vm.Monitors();
+        const auto token = context.vm.CurrentContextToken();
+        monitors.Enter(context.receiver, token);
+        try {
+          const auto has_changed =
+              InvokeVirtual(context, context.receiver, "hasChanged", "()Z");
+          if (!has_changed.has_value() || has_changed->AsInt() == 0) {
+            monitors.Exit(context.receiver, token);
+            return VmValue::Void();
+          }
+          const auto cleared = InvokeVirtual(context, context.receiver,
+                                             "clearChanged", "()V");
+          if (!cleared.has_value()) {
+            monitors.Exit(context.receiver, token);
+            return VmValue::Void();
+          }
+          const auto list = IntrinsicCall(context).GetRef(observers);
+          const auto window = Sequence(context, list);
+          snapshot.assign(
+              window.state->elements.begin() +
+                  static_cast<std::ptrdiff_t>(window.offset),
+              window.state->elements.begin() +
+                  static_cast<std::ptrdiff_t>(window.offset + window.size));
+          monitors.Exit(context.receiver, token);
+        } catch (...) {
+          monitors.Exit(context.receiver, token);
+          throw;
+        }
+
+        [[maybe_unused]] const auto roots =
+            context.vm.ProtectReferences(snapshot);
+        const auto data = IntrinsicCall(context).Ref(0);
+        for (const auto observer : snapshot) {
+          const auto updated = InvokeVirtual(
+              context, observer, "update",
+              "(Ljava/util/Observable;Ljava/lang/Object;)V",
+              {VmValue::Ref(context.receiver), VmValue::Ref(data)});
+          if (!updated.has_value()) break;
+        }
+        return VmValue::Void();
+      });
+  builder.VirtualMethod(
+      "setChanged", "()V",
+      [changed](IntrinsicContext &context) {
+        IntrinsicCall(context).SetInt(changed, 1);
+        return VmValue::Void();
+      },
+      kProtected);
+  return std::move(builder).Build();
+}
+
 } // namespace
 
 void AppendJavaUtilCollections(std::vector<IntrinsicClassDecl> &catalog) {
@@ -2177,14 +2333,10 @@ void AppendJavaUtilCollections(std::vector<IntrinsicClassDecl> &catalog) {
   catalog.push_back(DeclareConcurrentModificationException());
   catalog.push_back(DeclareNoSuchElementException());
   catalog.push_back(DeclareEmptyStackException());
+  catalog.push_back(DeclareObserver());
+  catalog.push_back(DeclareObservable());
 }
 
-} // namespace ogplay::runtime::dexvm::intrinsics
-
-namespace ogplay::runtime::dexvm::intrinsics {
-void AppendJavaUtilCollections(std::vector<IntrinsicClassDecl>& catalog) {
-    dvm80_java_util_collections::AppendJavaUtilCollections(catalog);
-}
 }  // namespace ogplay::runtime::dexvm::intrinsics
 
 // ---- migrated from dexvm_android java.util platform classes ----

@@ -26,6 +26,12 @@ Collections 算法和固定 offset Calendar/TimeZone；handler 只做 Java 参�
 `equals/hashCode` 派发，sequence/map/view/entry/iterator 的宿主状态和生命周期统一委托
 `CollectionRuntime`。Tree/Sorted/Navigable、并发集合、完整算法长尾与 DST/locale 时区数据库
 不在该 family 范围内，缺失能力必须继续明确失败。
+集合声明直接位于正式 `ogplay::runtime::dexvm::intrinsics` 命名空间，通过唯一
+`AppendJavaUtilCollections()` 接入 catalog；不保留 DVM-80 迁移期的内部转发命名空间。
+API 19 `Observer`/`Observable` 也在该 family 发布：`Observable` 以实例字段持有既有
+`ArrayList` 与 changed flag，重复注册/删除沿用 guest `equals`；通知在 receiver monitor 内
+清标记并复制注册顺序快照，随后在 monitor 外虚派发 `Observer.update`。快照通过
+execution-local `RootScope` 跨回调保活，回调删除不改变本轮通知，回调异常原样传播。
 `java_text.cpp` 发布 `SimpleDateFormat → DateFormat → Format` 最小层级；指定 pattern/Locale
 构造器只校验 API 19 pattern 并保存 pattern 字段。NumberFormat、Calendar、DateFormatSymbols
 初始化及 format/parse 尚未闭合，不得据此伪造格式化或解析能力。

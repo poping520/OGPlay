@@ -75,8 +75,8 @@ void LogProfileFrameProgress(core::Logger& logger, const std::uint64_t frame,
                              const std::uint64_t presented,
                              const std::uint64_t draws,
                              const std::uint64_t clears) {
-    if (frame != 1U && frame % 60U != 0U) return;
-    logger.Write(core::LogLevel::info, "frontend.run_apk",
+    if (frame != 1U && frame % 600U != 0U) return;
+    logger.Write(core::LogLevel::debug, "frontend.run_apk",
                  "Profile frame completed",
                  {.frame = frame, .guest_ticks = clock_ticks},
                  {{"presented", presented},

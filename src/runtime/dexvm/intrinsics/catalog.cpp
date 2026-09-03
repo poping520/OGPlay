@@ -54,10 +54,6 @@ std::vector<IntrinsicClassDecl> CoreIntrinsicCatalog(
         Declare_java_io_FileNotFoundException(),
         Declare_java_io_UnsupportedEncodingException(),
         Declare_java_util_regex_PatternSyntaxException(),
-        Declare_java_net_SocketException(),
-        Declare_java_net_SocketTimeoutException(),
-        Declare_java_net_UnknownHostException(),
-        Declare_java_net_MalformedURLException(),
         Declare_java_io_EOFException(),
     });
 

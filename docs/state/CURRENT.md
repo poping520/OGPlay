@@ -16,8 +16,8 @@
   `ArrayList`，按 changed flag 门控并在 receiver monitor 外按快照虚派发 `update`；覆盖
   回调删除、异常传播和 nested GC 强根保活。Object streams 已闭合 API 19 接口继承、
   primitive/block-data、默认 `Serializable` 字段图、引用、枚举及 `Date` 往返；数组、
-  Externalizable/custom hooks 与默认 UID 计算仍 deferred。格式化/解析及完整 XmlPullParser
-  长尾仍 deferred。
+  Externalizable/custom hooks 与默认 UID 计算仍 deferred。`URLEncoder/URLDecoder` 已以
+  Boost.URL 闭合 UTF-8 form codec；其他 charset、格式化/解析及完整 XmlPullParser 长尾仍 deferred。
 - **Android Context 文件流**：`openFileInput/openFileOutput` 已接入 app files 目录；
   `MODE_PRIVATE` 覆盖、`MODE_APPEND` 追加，Activity/ContextWrapper 继续委托进程 base Context，
   文件状态只存在于 core `IoRuntime` 与统一 VFS。
@@ -27,13 +27,16 @@
   `VmExecutionLock` 串行，threaded 生产默认关闭。
 - **Title 进展**：Tales 已越过 uniform sampler、`GL_OES_mapbuffer`、Context 路径和 thread
   context loader 缺口，两个 native 库完成 JNI 初始化；新首错为
-  `android.location.LocationListener`。PvZ 已越过持久化对象图读写，新首错为
-  `java.net.URLDecoder`缺失。
+  `android.location.LocationListener`。PvZ 已越过持久化对象图和 URL form codec，新首错为
+  `java.util.Locale.ENGLISH` 静态字段缺失。
   A6/DH exact、长运行 gate 与 threaded 默认裁决尚未闭合。见
   [DVM-47](../tasks/dexvm/DVM-47.md) 和 [WU-0231](../tasks/m5/WU-0231.md)。
 
 ## 最近验证
 
+- 2026-09-03 Windows `windows-msvc` Release：Boost.URL form codec 双后端 42/42、DVM-88
+  相邻 134/134、core catalog 556/556 断言通过；PvZ 关闭 survey 越过 `URLDecoder`，
+  新首错为 `java.util.Locale.ENGLISH`。
 - 2026-09-03 Windows `windows-msvc` Release：默认 Serializable 图、循环/重复引用、枚举、Date、
   FileDescriptor.sync 双后端定向回归通过；PvZ 首次启动写出 690-byte 配置，第二次成功读回，
   对象流异常消失，下一首错推进到 `java.net.URLDecoder` 缺失。
@@ -56,7 +59,7 @@
 
 ## 下一步
 
-1. 补 PvZ `URLDecoder` 与 Tales `LocationListener`，完成 DH 主菜单 Scenario gate。
+1. 补 PvZ `Locale.ENGLISH` 与 Tales `LocationListener`，完成 DH 主菜单 Scenario gate。
 2. 执行 A6 bootstrap 三轮、gc_long 与 threaded title gate。
 3. 出现可复用停滞 fixture 时，补 Diagnostics 外部触发子进程验收。
 

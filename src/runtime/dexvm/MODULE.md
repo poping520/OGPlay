@@ -80,6 +80,8 @@ intrinsic。只解释游戏 DEX 的应用类；平台类始终由 intrinsic 提�
   `NetworkTransport`，默认离线；host allowlist、TLS、datagram 分别校验，未注入或未授权明确
   失败。core 不创建 host socket，不读系统 DNS/代理/证书库，也不依赖 Android connectivity。
   teardown 必须在 transport 存活期关闭 channel，再清空 endpoint/stream/packet state。
+  `URLEncoder/URLDecoder` 的纯 UTF-8 form codec 不进入 NetworkRuntime，百分号转换只调用仓库
+  固定的 Boost.URL；不支持的 charset 明确失败。
 - `NioRuntime`（DVM-82/83）：以 JNI object identity 索引 Buffer state；heap array、direct
   guest memory 与 view 共用 storage，view 仅复制 position/limit/mark/order；`slice`/
   `duplicate`/`asReadOnlyBuffer` 保留 receiver concrete class，不把 direct view 物化为 heap

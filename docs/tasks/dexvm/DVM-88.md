@@ -46,5 +46,9 @@ ContentValues/Cursor/SQLite 的有界数据语义只持久化到 guest VFS，完
 - Windows `windows-msvc` 完整 configure 与 Debug build 通过；验收补强定向 20/20、
   architecture 6/6 通过，全量 CTest 991/991。既有 liblog guest tag 求值顺序问题已随本次
   验收补强修复，未新开 WU。
+- 2026-09-03 沿用本 WU 增加 API 19 `URLEncoder/URLDecoder` 两个重载；UTF-8 form
+  百分号转换复用 `third_party/ext-boost` Boost.URL，覆盖空格/加号、Unicode、非法转义和
+  不支持 charset。Windows Release 双后端定向回归通过；PvZ 关闭 survey 后越过
+  `URLDecoder`，新首错为 `java.util.Locale.ENGLISH` 缺失。
 
 状态：已完成。

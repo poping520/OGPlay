@@ -65,10 +65,6 @@ Declare_java_lang_reflect_InvocationTargetException();
 [[nodiscard]] IntrinsicClassDecl Declare_java_io_FileNotFoundException();
 [[nodiscard]] IntrinsicClassDecl Declare_java_io_UnsupportedEncodingException();
 [[nodiscard]] IntrinsicClassDecl Declare_java_util_regex_PatternSyntaxException();
-[[nodiscard]] IntrinsicClassDecl Declare_java_net_SocketException();
-[[nodiscard]] IntrinsicClassDecl Declare_java_net_SocketTimeoutException();
-[[nodiscard]] IntrinsicClassDecl Declare_java_net_UnknownHostException();
-[[nodiscard]] IntrinsicClassDecl Declare_java_net_MalformedURLException();
 [[nodiscard]] IntrinsicClassDecl Declare_java_io_EOFException();
 
 }  // namespace ogplay::runtime::dexvm::intrinsics

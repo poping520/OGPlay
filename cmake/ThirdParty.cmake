@@ -38,6 +38,12 @@ endfunction()
 ogplay_require_submodule("third_party/SDL" "SDL3")
 ogplay_require_submodule("third_party/dynarmic" "Dynarmic")
 ogplay_require_submodule("third_party/yyjson" "yyjson")
+if(NOT EXISTS "${PROJECT_SOURCE_DIR}/third_party/ext-boost/boost/url/encode.hpp" OR
+   NOT EXISTS "${PROJECT_SOURCE_DIR}/third_party/ext-boost/libs/url/src/pct_string_view.cpp")
+    message(FATAL_ERROR
+        "ext-boost Boost.URL sources are missing. "
+        "Run: git submodule update --init --recursive")
+endif()
 if(OGPLAY_ENABLE_SDL3 AND OGPLAY_ENABLE_ANGLE AND
    NOT EXISTS "${PROJECT_SOURCE_DIR}/third_party/imgui/imgui.cpp")
     message(FATAL_ERROR
@@ -57,11 +63,6 @@ if(OGPLAY_ENABLE_SDL3)
 endif()
 
 if(OGPLAY_ENABLE_DYNARMIC)
-    if(NOT EXISTS "${PROJECT_SOURCE_DIR}/third_party/ext-boost/boost/version.hpp")
-        message(FATAL_ERROR
-            "ext-boost submodule is missing. "
-            "Run: git submodule update --init --recursive")
-    endif()
     if(NOT EXISTS
        "${PROJECT_SOURCE_DIR}/third_party/boost-pool/include/boost/pool/pool_alloc.hpp")
         message(FATAL_ERROR

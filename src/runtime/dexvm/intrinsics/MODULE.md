@@ -85,6 +85,9 @@ SocketFactory family。socket/stream/packet 状态只委托 per-VM `NetworkRunti
 离线，只有显式 allowlist 与注入 transport 才能发起连接。handler 不调用宿主 socket/DNS，
 不读取 Android network service，也不以 no-op 伪造连接、TLS 或 datagram 成功。
 `SocketFactory.getDefault/createSocket` 与 SSL factory 只创建受同一 policy 管理的 socket。
+`URLEncoder/URLDecoder` 是无网络副作用的 API 19 form codec：UTF-8 字节的百分号编解码使用
+仓库固定的 `third_party/ext-boost` Boost.URL，空格与 `+` 保持
+`application/x-www-form-urlencoded` 语义；非法 `%` 与未交付 charset 必须抛 Java 异常。
 
 `java_lang.cpp` 中的 interface 段覆盖 pinned libcore `java.lang` 顶层 8 个
 interface；方法表按 Luni 源码建模。已有 `CharSequence.length` handler 保持

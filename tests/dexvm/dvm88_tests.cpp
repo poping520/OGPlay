@@ -82,7 +82,8 @@ struct Dvm88Vm final {
     std::int32_t helper_old_version{};
     std::int32_t helper_new_version{};
 
-    Dvm88Vm()
+    explicit Dvm88Vm(
+        const InterpreterBackend backend = InterpreterBackend::switch_dispatch)
         : vm([this]() -> DexClassLinker& {
               context->package_name = "test.game";
               context->vfs = &vfs;
@@ -110,7 +111,7 @@ struct Dvm88Vm final {
               linker.RegisterIntrinsics(test_catalog);
               linker.Link();
               return linker;
-          }(), model, nullptr, ledger, {}) {
+          }(), model, nullptr, ledger, InterpreterConfig{.backend = backend}) {
         RegisterAndroidDatabaseStateTables(vm, context);
         vfs.CreateDirectory("/data");
         vfs.CreateDirectory("/data/data");
@@ -225,6 +226,66 @@ TEST_CASE("DVM-88 network runtime closes live channels during teardown") {
     }
     CHECK(transport.closed == 7);
     CHECK(transport.close_count == 1);
+}
+
+TEST_CASE("DVM-88 URL form codecs match API 19 UTF-8 behavior") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch,
+                               InterpreterBackend::threaded}) {
+        CAPTURE(backend == InterpreterBackend::threaded ? "threaded" :
+                                                         "switch");
+        Dvm88Vm fixture(backend);
+        const auto utf8 = fixture.vm.NewStringUtf8("UTF-8");
+        const std::u16string clear{u'a', u' ', u'b', u'+', u'c', u'/',
+                                   0x00e9U, 0xd83dU, 0xde00U};
+        const auto input = fixture.model.NewString(clear);
+        const auto encoded = fixture.Static(
+            "Ljava/net/URLEncoder;", "encode",
+            "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;",
+            {VmValue::Ref(input), VmValue::Ref(utf8)}).ref;
+        CHECK(fixture.vm.StringUtf8(encoded) ==
+              "a+b%2Bc%2F%C3%A9%F0%9F%98%80");
+
+        const auto decoded = fixture.Static(
+            "Ljava/net/URLDecoder;", "decode",
+            "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;",
+            {VmValue::Ref(encoded), VmValue::Ref(utf8)}).ref;
+        CHECK(fixture.model.StringValue(decoded) == clear);
+
+        const auto default_encoded = fixture.Static(
+            "Ljava/net/URLEncoder;", "encode",
+            "(Ljava/lang/String;)Ljava/lang/String;",
+            {VmValue::Ref(fixture.vm.NewStringUtf8("x y"))}).ref;
+        CHECK(fixture.vm.StringUtf8(default_encoded) == "x+y");
+        const auto default_decoded = fixture.Static(
+            "Ljava/net/URLDecoder;", "decode",
+            "(Ljava/lang/String;)Ljava/lang/String;",
+            {VmValue::Ref(default_encoded)}).ref;
+        CHECK(fixture.vm.StringUtf8(default_decoded) == "x y");
+
+        const auto unchanged = fixture.vm.NewStringUtf8("plain");
+        CHECK(fixture.Static(
+                  "Ljava/net/URLDecoder;", "decode",
+                  "(Ljava/lang/String;)Ljava/lang/String;",
+                  {VmValue::Ref(unchanged)}).ref == unchanged);
+
+        const auto invalid = fixture.StaticOutcome(
+            "Ljava/net/URLDecoder;", "decode",
+            "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;",
+            {VmValue::Ref(fixture.vm.NewStringUtf8("bad%2")),
+             VmValue::Ref(utf8)});
+        REQUIRE(invalid.exception.IsValid());
+        CHECK(fixture.linker.Class(invalid.exception_class).descriptor ==
+              "Ljava/lang/IllegalArgumentException;");
+
+        const auto unsupported = fixture.StaticOutcome(
+            "Ljava/net/URLEncoder;", "encode",
+            "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;",
+            {VmValue::Ref(input),
+             VmValue::Ref(fixture.vm.NewStringUtf8("UTF-16"))});
+        REQUIRE(unsupported.exception.IsValid());
+        CHECK(fixture.linker.Class(unsupported.exception_class).descriptor ==
+              "Ljava/io/UnsupportedEncodingException;");
+    }
 }
 
 TEST_CASE("DVM-88 SocketFactory exposes policy-gated common creation") {

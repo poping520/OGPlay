@@ -1393,7 +1393,7 @@ note = "DVM-87 发布 Callable/Future/RunnableFuture/ExecutorService shape、Fut
 [dexvm.java_network]
 status = "complete"
 test = "tests/dexvm/dvm88_tests.cpp"
-note = "DVM-88 以 per-VM NetworkRuntime 发布 InetAddress/Socket/stream/datagram/SocketFactory/SSLSocket bounded core；默认离线，host allowlist、TLS 与 datagram 需显式 NetworkPolicy 授权，实际 I/O 只经注入 NetworkTransport，不直接访问宿主 socket/DNS/证书库；SocketFactory 常用创建面受同一 policy 管理，VM teardown 关闭全部 live channel"
+note = "DVM-88 以 per-VM NetworkRuntime 发布 InetAddress/Socket/stream/datagram/SocketFactory/SSLSocket bounded core；默认离线，host allowlist、TLS 与 datagram 需显式 NetworkPolicy 授权，实际 I/O 只经注入 NetworkTransport，不直接访问宿主 socket/DNS/证书库；SocketFactory 常用创建面受同一 policy 管理，VM teardown 关闭全部 live channel。2026-09-03 增加 API 19 URLEncoder/URLDecoder 无参与 charset-name 重载，UTF-8 form 百分号编解码复用仓库固定 Boost.URL；其他 charset 明确抛 UnsupportedEncodingException"
 
 [dexvm.sqlite_vfs]
 status = "complete"

@@ -371,6 +371,14 @@ else()
         OGPLAY_ANGLE_HAS_SWIFTSHADER=0)
 endif()
 
+set(OGPLAY_BOOST_URL_CODEC_SOURCES
+    third_party/ext-boost/libs/url/src/detail/decode.cpp
+    third_party/ext-boost/libs/url/src/detail/except.cpp
+    third_party/ext-boost/libs/url/src/error.cpp
+    third_party/ext-boost/libs/url/src/grammar/error.cpp
+    third_party/ext-boost/libs/url/src/pct_string_view.cpp
+)
+
 add_library(ogplay_runtime
     src/runtime/debug/stall_diagnostics.cpp
     src/runtime/ui/ui_layout.cpp
@@ -489,6 +497,7 @@ add_library(ogplay_runtime
     src/runtime/vfs/sandbox_store.cpp
     src/runtime/vfs/vfs.cpp
     src/runtime/vfs/vfs_sandbox.cpp
+    ${OGPLAY_BOOST_URL_CODEC_SOURCES}
 )
 add_library(OGPlay::Runtime ALIAS ogplay_runtime)
 target_link_libraries(ogplay_runtime PUBLIC
@@ -504,12 +513,18 @@ target_include_directories(ogplay_runtime PUBLIC
 )
 add_dependencies(ogplay_runtime ogplay_dexvm_codegen)
 target_include_directories(ogplay_runtime SYSTEM PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/ext-boost
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party/stb)
+target_compile_definitions(ogplay_runtime PRIVATE BOOST_URL_NO_LIB=1)
 if(MSVC)
     set_source_files_properties(src/runtime/integration/host_image_decode.cpp
         PROPERTIES COMPILE_OPTIONS "/w")
+    set_source_files_properties(${OGPLAY_BOOST_URL_CODEC_SOURCES}
+        PROPERTIES COMPILE_OPTIONS "/w")
 else()
     set_source_files_properties(src/runtime/integration/host_image_decode.cpp
+        PROPERTIES COMPILE_OPTIONS "-w")
+    set_source_files_properties(${OGPLAY_BOOST_URL_CODEC_SOURCES}
         PROPERTIES COMPILE_OPTIONS "-w")
 endif()
 ogplay_set_project_warnings(ogplay_runtime)

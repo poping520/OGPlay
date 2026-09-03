@@ -633,7 +633,10 @@ TEST_CASE("dexvm core intrinsic catalog is unique and structurally stable") {
           std::set<std::pair<std::string, std::string>>{{"run", "()V"}});
     CHECK(signatures("Ljava/lang/StringBuilder;").size() == 17U);
     CHECK(signatures("Ljava/lang/StringBuffer;").size() == 17U);
-    CHECK(signatures("Ljava/lang/String;").size() == 44U);
+    const auto string_signatures = signatures("Ljava/lang/String;");
+    CHECK(string_signatures.size() == 45U);
+    CHECK(string_signatures.contains({
+        "toLowerCase", "(Ljava/util/Locale;)Ljava/lang/String;"}));
     CHECK(signatures("Ljava/lang/Integer;").size() == 37U);
     CHECK(signatures("Ljava/io/InputStreamReader;") ==
           std::set<std::pair<std::string, std::string>>{

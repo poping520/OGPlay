@@ -50,5 +50,9 @@ Context 能力通过稳定 base Context 委托，并由 Activity 生命周期完
   `MODE_PRIVATE/MODE_APPEND`：文件名按 API 19 拒绝路径分隔符，流对象复用 core
   `FileInputStream/FileOutputStream` 和唯一 `IoRuntime`/VFS；`ContextWrapper` 继续只委托
   base Context。覆盖、追加、读取、缺失文件和非法名称均有双后端回归。
+- 2026-09-03 对齐 AOSP 4.4.4 补齐 Context 所有的 final `getString(int)`：先在运行时
+  receiver 上虚派 `getResources()`，再调用 `Resources.getString(int)`；wrapper/component
+  只继承该方法。字符串与引用走唯一 ARSC resolver，缺失、环与错类型抛
+  `Resources.NotFoundException`，继承归属、UTF-8、别名及失败路径均有定向回归。
 
 状态：已完成。

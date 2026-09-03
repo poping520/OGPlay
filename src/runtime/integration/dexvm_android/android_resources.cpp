@@ -558,10 +558,18 @@ Decl Declare_android_content_res_Resources(const Context& context) {
             return dx::VmValue::Ref(MakeXmlParser(call, events));
         });
     builder.FinalMethod("getString", "(I)Ljava/lang/String;",
-        [](dx::IntrinsicContext&) -> dx::VmValue {
-            throw dx::VmJavaThrow{
-                "Ljava/lang/UnsupportedOperationException;",
-                "string resources are not provided yet"};
+        [context](dx::IntrinsicContext& call) -> dx::VmValue {
+            const auto resource_id =
+                static_cast<std::uint32_t>(call.arguments[0].AsInt());
+            try {
+                return dx::VmValue::Ref(call.vm.NewStringUtf8(
+                    ResolveResourceString(*context, resource_id)));
+            } catch (const std::exception& error) {
+                throw dx::VmJavaThrow{
+                    "Landroid/content/res/Resources$NotFoundException;",
+                    "string resource cannot be resolved: " +
+                        std::string(error.what())};
+            }
         });
     return std::move(builder).Build();
 }

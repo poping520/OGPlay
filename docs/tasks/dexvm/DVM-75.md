@@ -25,6 +25,9 @@
 - 未实现 conversion/flags/index/width/precision 明确抛
   `UnsupportedOperationException`，不静默返回原 format，不调用宿主 printf/locale，
   不改变 Object[]、wrapper、String identity 或 logging 行为；
+- 后续 exact reached 的 `String.toLowerCase(Locale)` 按 API 19 `CaseMapper` 契约检查 null，
+  `Locale.ENGLISH` 的 ASCII 输入执行确定性映射且无变化时返回 receiver；其他 Locale 与
+  需要 ICU 的非 ASCII case mapping 明确失败；
 - `getPackageManager()` 声明为 `android.content.Context` virtual FinalMethod，Activity
   沿现有 Context 继承链解析，不增加 Activity 特例；每个 `DexVmAndroidContext` 只物化
   一个稳定 `Landroid/content/pm/PackageManager;` guest identity，所有 Context
@@ -45,6 +48,8 @@
       同一非 null identity；
 - [x] Android intrinsic catalog 包含 API19 PackageManager class shape；
 - [x] focused String/Object[]/wrapper/Context tests 通过（4/4、5/5）；
+- [x] `toLowerCase(Locale.ENGLISH)` 覆盖混合大小写、receiver 复用、null、非 English
+      Locale 与非 ASCII fail-closed；
 - [ ] 关闭 survey 的 bounded exact run 固定下一 fault 或达到可见帧；
 - [x] 无 `ogplay` 残留，同步 MODULE/CURRENT/capability。
 

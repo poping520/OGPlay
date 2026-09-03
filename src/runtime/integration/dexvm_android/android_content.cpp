@@ -1030,6 +1030,56 @@ Decl Declare_android_content_Context(const Context& context) {
             return dx::VmValue::Ref(Singleton(call, context, "resources",
                 "Landroid/content/res/Resources;"));
         });
+    // API 19 Context owns this final convenience method. It deliberately
+    // dispatches getResources() on the runtime receiver so wrappers keep the
+    // framework inheritance relationship without copying resource state.
+    builder.FinalMethod("getString", "(I)Ljava/lang/String;",
+        [](dx::IntrinsicContext& call) -> dx::VmValue {
+            auto& linker = call.vm.Linker();
+            const auto receiver_class =
+                call.vm.Model().ObjectClass(call.receiver);
+            const auto resources_index = linker.FindVtableIndex(
+                receiver_class, "getResources",
+                "()Landroid/content/res/Resources;");
+            if (!resources_index.has_value()) {
+                throw dx::VmJavaThrow{
+                    "Ljava/lang/AbstractMethodError;",
+                    "Context has no getResources()"};
+            }
+            const auto resources_outcome = call.vm.Call(
+                linker.Class(receiver_class).vtable[*resources_index],
+                std::vector{dx::VmValue::Ref(call.receiver)});
+            if (resources_outcome.exception.IsValid()) {
+                call.vm.SetPendingException(resources_outcome.exception);
+                return dx::VmValue::Ref(dx::VmObjectRef{});
+            }
+            const auto resources = resources_outcome.value.ref;
+            if (!resources.IsValid()) {
+                throw dx::VmJavaThrow{
+                    "Ljava/lang/NullPointerException;",
+                    "Context.getResources() returned null"};
+            }
+            const std::array resource_roots{resources};
+            const auto root_scope =
+                call.vm.ProtectReferences(resource_roots);
+            const auto resources_class =
+                call.vm.Model().ObjectClass(resources);
+            const auto string_index = linker.FindVtableIndex(
+                resources_class, "getString", "(I)Ljava/lang/String;");
+            if (!string_index.has_value()) {
+                throw dx::VmJavaThrow{
+                    "Ljava/lang/AbstractMethodError;",
+                    "Resources has no getString(I)"};
+            }
+            const auto outcome = call.vm.Call(
+                linker.Class(resources_class).vtable[*string_index],
+                std::vector{dx::VmValue::Ref(resources), call.arguments[0]});
+            if (outcome.exception.IsValid()) {
+                call.vm.SetPendingException(outcome.exception);
+                return dx::VmValue::Ref(dx::VmObjectRef{});
+            }
+            return outcome.value;
+        });
     builder.VirtualMethod("getSystemService",
         "(Ljava/lang/String;)Ljava/lang/Object;",
         [context](dx::IntrinsicContext& call) {

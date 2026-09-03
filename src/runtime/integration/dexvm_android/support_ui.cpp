@@ -409,13 +409,18 @@ void ApplyAttribute(DexVmAndroidContext& context, const ui::UiNodeId node_id,
 
 }  // namespace
 
-std::u16string ResolveUiString(const DexVmAndroidContext& context,
-                               const std::uint32_t resource_id) {
+std::string ResolveResourceString(const DexVmAndroidContext& context,
+                                  const std::uint32_t resource_id) {
     const auto& entry = ResolveEntry(context, resource_id);
     if (entry.value_type != kTypeString || !entry.string_value.has_value()) {
-        throw std::runtime_error("UI resource is not a string");
+        throw std::runtime_error("resource is not a string");
     }
-    return AsciiText(*entry.string_value);
+    return *entry.string_value;
+}
+
+std::u16string ResolveUiString(const DexVmAndroidContext& context,
+                               const std::uint32_t resource_id) {
+    return AsciiText(ResolveResourceString(context, resource_id));
 }
 
 std::uint32_t ResolveUiColor(const DexVmAndroidContext& context,

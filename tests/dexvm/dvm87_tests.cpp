@@ -173,6 +173,34 @@ TEST_CASE("DVM-87 Calendar uses injected clock and fixed-offset zones") {
           8 * 60 * 60 * 1000);
 }
 
+TEST_CASE("DVM-87 Locale publishes the API 19 ENGLISH singleton") {
+    Dvm87Vm fixture;
+    const auto locale =
+        fixture.linker.ResolveDescriptor("Ljava/util/Locale;");
+    const auto& locale_class = fixture.linker.Class(locale);
+    CHECK(locale_class.access_flags == (kAccPublic | kAccFinal));
+    CHECK(locale_class.direct_interfaces == std::vector<DexClassId>{
+        fixture.linker.ResolveDescriptor("Ljava/lang/Cloneable;"),
+        fixture.linker.ResolveDescriptor("Ljava/io/Serializable;")});
+
+    const auto initialized = fixture.vm.EnsureClassInitialized(locale);
+    Dvm87Vm::RequireOk(initialized);
+
+    const auto english_field = fixture.linker.FindFieldRecursive(
+        locale, "ENGLISH", "Ljava/util/Locale;");
+    REQUIRE(english_field.has_value());
+    const auto& linked = fixture.linker.Field(*english_field);
+    CHECK(linked.access_flags == (kAccPublic | kAccStatic | kAccFinal));
+    const auto english = VmObjectRef(
+        fixture.linker.Class(linked.owner).static_storage[linked.slot]);
+    REQUIRE(english.IsValid());
+    CHECK(fixture.model.ObjectClass(english) == locale);
+
+    Dvm87Vm::RequireOk(fixture.vm.EnsureClassInitialized(locale));
+    CHECK(VmObjectRef(fixture.linker.Class(linked.owner)
+                          .static_storage[linked.slot]) == english);
+}
+
 TEST_CASE("DVM-87 SimpleDateFormat shell preserves the API 19 hierarchy") {
     Dvm87Vm fixture;
     const auto format = fixture.linker.ResolveDescriptor("Ljava/text/Format;");

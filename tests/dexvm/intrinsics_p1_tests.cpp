@@ -101,6 +101,59 @@ TEST_CASE("dexvm P1 String surface: trim/lower/startsWith/indexOf") {
     ExpectInt(vm.CallStatic("compareIgnore", "()I"), 0);
 }
 
+TEST_CASE("dexvm String.toLowerCase Locale English is bounded and stable") {
+    Vm vm;
+    const auto locale_class =
+        vm.linker.ResolveDescriptor("Ljava/util/Locale;");
+    const auto initialized = vm.interpreter.EnsureClassInitialized(locale_class);
+    REQUIRE_MESSAGE(!initialized.exception.IsValid(),
+                    initialized.exception_message);
+    const auto english_field = vm.linker.FindFieldRecursive(
+        locale_class, "ENGLISH", "Ljava/util/Locale;");
+    REQUIRE(english_field.has_value());
+    const auto& linked_english = vm.linker.Field(*english_field);
+    const auto english = VmObjectRef(
+        vm.linker.Class(linked_english.owner)
+            .static_storage[linked_english.slot]);
+    REQUIRE(english.IsValid());
+
+    const auto call = [&](const VmObjectRef receiver,
+                          const VmObjectRef locale) {
+        const auto string_class = vm.model.ObjectClass(receiver);
+        const auto method = vm.linker.FindVtableIndex(
+            string_class, "toLowerCase",
+            "(Ljava/util/Locale;)Ljava/lang/String;");
+        REQUIRE(method.has_value());
+        const std::array arguments{VmValue::Ref(receiver),
+                                   VmValue::Ref(locale)};
+        return vm.interpreter.Call(
+            vm.linker.Class(string_class).vtable[*method], arguments);
+    };
+
+    const auto mixed = vm.interpreter.NewStringUtf8("SeRvEr-CONFIG_19");
+    const auto lowered = call(mixed, english);
+    CHECK(vm.AsString(lowered) == "server-config_19");
+    CHECK(lowered.value.ref != mixed);
+
+    const auto stable = vm.interpreter.NewStringUtf8("already-lower_19");
+    const auto unchanged = call(stable, english);
+    REQUIRE_FALSE(unchanged.exception.IsValid());
+    CHECK(unchanged.value.ref == stable);
+
+    ExpectThrow(vm, call(mixed, VmObjectRef{}),
+                "Ljava/lang/NullPointerException;", "locale == null");
+    const auto other_locale =
+        vm.interpreter.NewIntrinsicInstance("Ljava/util/Locale;");
+    ExpectThrow(vm, call(mixed, other_locale),
+                "Ljava/lang/UnsupportedOperationException;",
+                "String.toLowerCase only supports Locale.ENGLISH");
+    const auto unicode = vm.model.NewString(u"\u00c4");
+    ExpectThrow(
+        vm, call(unicode, english),
+        "Ljava/lang/UnsupportedOperationException;",
+        "String.toLowerCase(Locale.ENGLISH) Unicode mapping is not provided");
+}
+
 TEST_CASE("dexvm String.format renders integral wrappers and percent") {
     Vm vm;
     const auto object_class = vm.linker.ResolveDescriptor("Ljava/lang/Object;");

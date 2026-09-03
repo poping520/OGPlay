@@ -163,6 +163,7 @@ TEST_CASE("android intrinsic catalog is unique and directly bound") {
   CHECK(method_count("Landroid/app/Application;") == 2);
   CHECK(method_count("Landroid/app/Activity;") == 26);
   CHECK(method_count("Landroid/app/Service;") == 13);
+  CHECK(method_count("Landroid/content/Context;") == 23);
   CHECK(method_count("Landroid/content/ContextWrapper;") == 24);
   CHECK(method_count("Landroid/view/ContextThemeWrapper;") == 4);
   CHECK(method_count("Landroid/content/Intent;") == 16);
@@ -286,6 +287,97 @@ TEST_CASE("ContextWrapper owns one base identity and delegates supported calls")
   REQUIRE(outcome.exception.IsValid());
   CHECK(vm.linker.Class(outcome.exception_class).descriptor ==
         "Ljava/lang/IllegalStateException;");
+}
+
+TEST_CASE("Context getString is final and resolves through inherited Resources") {
+  AndroidVm vm;
+  constexpr std::uint32_t kTitle = 0x7f010001U;
+  constexpr std::uint32_t kAlias = 0x7f010002U;
+  constexpr std::uint32_t kCycleA = 0x7f010003U;
+  constexpr std::uint32_t kCycleB = 0x7f010004U;
+  constexpr std::uint32_t kNotString = 0x7f020001U;
+  vm.context->arsc.entries = {
+      {.resource_id = kTitle,
+       .type_name = "string",
+       .entry_name = "title",
+       .string_value = "Terms \xE6\x9D\xA1\xE6\xAC\xBE",
+       .value_type = 0x03},
+      {.resource_id = kAlias,
+       .type_name = "string",
+       .entry_name = "title_alias",
+       .value_type = 0x01,
+       .value_data = kTitle},
+      {.resource_id = kCycleA,
+       .type_name = "string",
+       .entry_name = "cycle_a",
+       .value_type = 0x01,
+       .value_data = kCycleB},
+      {.resource_id = kCycleB,
+       .type_name = "string",
+       .entry_name = "cycle_b",
+       .value_type = 0x01,
+       .value_data = kCycleA},
+      {.resource_id = kNotString,
+       .type_name = "color",
+       .entry_name = "black",
+       .value_type = 0x1c,
+       .value_data = 0xff000000U},
+  };
+
+  const auto base =
+      vm.interpreter.NewIntrinsicInstance("Landroid/content/Context;");
+  const auto wrapper = vm.interpreter.NewIntrinsicInstance(
+      "Landroid/content/ContextWrapper;");
+  const auto activity =
+      vm.interpreter.NewIntrinsicInstance("Landroid/app/Activity;");
+  vm.AttachBase(wrapper, base);
+  vm.AttachBase(activity, base);
+
+  const auto context_method = vm.Virtual(
+      "Landroid/content/Context;", "getString", "(I)Ljava/lang/String;");
+  const auto inherited_method = vm.Virtual(
+      "Landroid/content/ContextWrapper;", "getString",
+      "(I)Ljava/lang/String;");
+  const auto activity_method = vm.Virtual(
+      "Landroid/app/Activity;", "getString", "(I)Ljava/lang/String;");
+  CHECK(inherited_method == context_method);
+  CHECK(activity_method == context_method);
+  const auto& linked = vm.linker.Method(inherited_method);
+  CHECK(vm.linker.Class(linked.owner).descriptor ==
+        "Landroid/content/Context;");
+  CHECK_FALSE(linked.overridable);
+
+  const auto outcome = vm.interpreter.Call(
+      activity_method,
+      std::vector{VmValue::Ref(activity),
+                  VmValue::Int(static_cast<std::int32_t>(kAlias))});
+  REQUIRE_FALSE(outcome.exception.IsValid());
+  CHECK(vm.interpreter.StringUtf8(outcome.value.ref) ==
+        "Terms \xE6\x9D\xA1\xE6\xAC\xBE");
+
+  const auto resources_outcome = vm.interpreter.Call(
+      vm.Virtual("Landroid/content/ContextWrapper;", "getResources",
+                 "()Landroid/content/res/Resources;"),
+      std::vector{VmValue::Ref(wrapper)});
+  REQUIRE_FALSE(resources_outcome.exception.IsValid());
+  const auto direct = vm.interpreter.Call(
+      vm.Virtual("Landroid/content/res/Resources;", "getString",
+                 "(I)Ljava/lang/String;"),
+      std::vector{VmValue::Ref(resources_outcome.value.ref),
+                  VmValue::Int(static_cast<std::int32_t>(kTitle))});
+  REQUIRE_FALSE(direct.exception.IsValid());
+  CHECK(vm.interpreter.StringUtf8(direct.value.ref) ==
+        "Terms \xE6\x9D\xA1\xE6\xAC\xBE");
+
+  for (const auto bad_id : {0x7f010099U, kNotString, kCycleA}) {
+    const auto failure = vm.interpreter.Call(
+        inherited_method,
+        std::vector{VmValue::Ref(wrapper),
+                    VmValue::Int(static_cast<std::int32_t>(bad_id))});
+    REQUIRE(failure.exception.IsValid());
+    CHECK(vm.linker.Class(failure.exception_class).descriptor ==
+          "Landroid/content/res/Resources$NotFoundException;");
+  }
 }
 
 TEST_CASE("ContextThemeWrapper keeps bounded theme state on the same base") {

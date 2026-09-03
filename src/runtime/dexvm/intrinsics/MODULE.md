@@ -15,6 +15,8 @@ family TU 中写裸十六进制访问标志；反射过滤使用同一头文件�
 
 `java.*`、`javax.net.*`、`javax.xml.*` 与 `org.xml.sax.*` 均由 core 发布；需要平台事实的
 Locale、Timer、SSL singleton 与 SAX handler 通过 `CoreIntrinsicServices` 窄接口注入；
+Locale 保持 API 19 的 final class 及 Cloneable/Serializable 直接接口关系，`ENGLISH`
+预定义对象由类初始化器创建并保存在静态强根中；
 `org.xmlpull.v1.XmlPullParser` 只发布 API 19 接口 shape，资源事件实现归 Android integration，
 core 不依赖 `DexVmAndroidContext`。
 Timer/TimerTask 仅保留 Java 参数、重复调度与取消入口；deadline、执行队列、Clock 和
@@ -116,6 +118,9 @@ priority 与 daemon 仅是明确有界的 guest fact。字段通过 builder 的�
 API 共用每 VM 属性表；默认只发布
 API 19 guest 可确定的 `/`、`:`、`\n` 三个 separator 属性，不读取宿主系统属性。
 未知 key 返回 null，null/空 key 与 null value 按 Java 异常语义失败。
+`String.toLowerCase(Locale)` 对齐 API 19 的 null 检查和“内容未变则返回 receiver”语义；
+当前只接受 `Locale.ENGLISH` 的 ASCII 映射，其他 Locale 或需要 ICU 的非 ASCII 输入明确
+抛 `UnsupportedOperationException`，不得读取宿主 locale 或伪造完整 Unicode case mapping。
 
 `java.lang.ClassLoader`、`java.lang.BootClassLoader` 与
 `dalvik.system.PathClassLoader` 分别保持一类一文件；对象身份、parent 与 lookup/

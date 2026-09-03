@@ -45,5 +45,8 @@
   锁定抽象标志、父类和 `Format` 的 Serializable/Cloneable 接口；指定 pattern/Locale
   构造器校验并保存 AOSP pattern，NumberFormat/Calendar/DateFormatSymbols 与 format/parse
   仍明确不在本次范围。
+- 2026-09-03 对齐 AOSP 4.4.4 `Locale.java`，补充 `public static final Locale ENGLISH`；
+  同步修正 final class 与 Cloneable/Serializable 直接接口关系；类初始化后发布稳定的
+  非空 `Locale` 对象，并锁定类/字段 shape、类型与重复初始化身份。
 
 状态：已完成。

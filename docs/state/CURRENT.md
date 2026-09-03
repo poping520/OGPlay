@@ -27,13 +27,15 @@
   `VmExecutionLock` 串行，threaded 生产默认关闭。
 - **Title 进展**：Tales 已越过 uniform sampler、`GL_OES_mapbuffer`、Context 路径和 thread
   context loader 缺口，两个 native 库完成 JNI 初始化；新首错为
-  `android.location.LocationListener`。PvZ 已越过持久化对象图和 URL form codec，新首错为
-  `java.util.Locale.ENGLISH` 静态字段缺失。
+  `android.location.LocationListener`。PvZ 已越过对象图、URL form codec、`Locale.ENGLISH`
+  与 `String.toLowerCase(Locale)`；新缺口 `Context.getString(int)` 已有界补齐，待复跑确认。
   A6/DH exact、长运行 gate 与 threaded 默认裁决尚未闭合。见
   [DVM-47](../tasks/dexvm/DVM-47.md) 和 [WU-0231](../tasks/m5/WU-0231.md)。
 
 ## 最近验证
 
+- 2026-09-03 Windows `windows-msvc` Debug：`ogplay_tests` 构建通过；Context final
+  `getString(int)` 继承/资源/异常与相邻定向检查 5/5 通过；此前 Locale/小写检查 12/12 通过。
 - 2026-09-03 Windows `windows-msvc` Release：Boost.URL form codec 双后端 42/42、DVM-88
   相邻 134/134、core catalog 556/556 断言通过；PvZ 关闭 survey 越过 `URLDecoder`，
   新首错为 `java.util.Locale.ENGLISH`。
@@ -59,7 +61,7 @@
 
 ## 下一步
 
-1. 补 PvZ `Locale.ENGLISH` 与 Tales `LocationListener`，完成 DH 主菜单 Scenario gate。
+1. 复跑 PvZ 确认 `Context.getString(int)` 后的下一首错，补 Tales `LocationListener`，完成 DH 主菜单 Scenario gate。
 2. 执行 A6 bootstrap 三轮、gc_long 与 threaded title gate。
 3. 出现可复用停滞 fixture 时，补 Diagnostics 外部触发子进程验收。
 

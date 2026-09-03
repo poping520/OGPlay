@@ -570,6 +570,8 @@ using UiLayoutLoader = std::function<std::vector<loader::BinaryXmlElement>(
     std::uint32_t layout_id);
 [[nodiscard]] std::u16string ResolveUiString(
     const DexVmAndroidContext& context, std::uint32_t resource_id);
+[[nodiscard]] std::string ResolveResourceString(
+    const DexVmAndroidContext& context, std::uint32_t resource_id);
 [[nodiscard]] std::uint32_t ResolveUiColor(
     const DexVmAndroidContext& context, std::uint32_t resource_id);
 [[nodiscard]] std::int32_t ResolveUiDimension(

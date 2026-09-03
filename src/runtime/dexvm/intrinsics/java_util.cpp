@@ -2347,8 +2347,18 @@ namespace {
 
 IntrinsicClassDecl DeclarePlatformLocale(
     const CoreIntrinsicServices& services) {
-    auto builder = IntrinsicClassBuilder::Class("Ljava/util/Locale;",
-                                                "Ljava/lang/Object;");
+    auto builder = IntrinsicClassBuilder::Class(
+        "Ljava/util/Locale;", "Ljava/lang/Object;",
+        {"Ljava/lang/Cloneable;", "Ljava/io/Serializable;"},
+        kAccPublic | kAccFinal);
+    builder.StaticField("ENGLISH", "Ljava/util/Locale;",
+                        kAccPublic | kAccFinal);
+    builder.ClassInitializer([](IntrinsicContext& call) {
+        call.vm.SetIntrinsicStaticRef(
+            "Ljava/util/Locale;", "ENGLISH", "Ljava/util/Locale;",
+            call.vm.NewIntrinsicInstance("Ljava/util/Locale;"));
+        return VmValue::Void();
+    });
     builder.StaticMethod(
         "getDefault", "()Ljava/util/Locale;",
         [services](IntrinsicContext& call) {

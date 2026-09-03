@@ -163,6 +163,9 @@ binding。`GLUtils` 读取 context 中既有 Bitmap backing；本层不拥有 GL
 - UI resource resolver 复用唯一 ArscTable/APK reader，最多 16 层解析 reference，并支持默认
   配置的 ASCII string、color、px/dp/sp dimension、bitmap/color drawable；session density 未知
   时显式使用 1.0 fallback。complex style bag、无命中 selector、非默认 qualifier 明确不承诺。
+- `Resources.getString(int)` 经同一 resolver 返回默认配置 UTF-8 string，缺失、引用环、错类型
+  或损坏字符串统一抛 `Resources.NotFoundException`；`Context.getString(int)` 是 Context 的 final
+  便利方法，经运行时 `getResources()` 虚派后调用它，wrapper/component 只继承、不重复声明。
 - `Resources.getXml(int)` 只经唯一 ArscTable 将 resid 解析为 sealed APK entry，再把严格
   AXML pull events 物化为 guest 字段/数组持有的 `XmlResourceParser`；当前 API 19 有界面为
   `getEventType/next/getName/getText/close`。缺失或畸形资源抛 `Resources.NotFoundException`，

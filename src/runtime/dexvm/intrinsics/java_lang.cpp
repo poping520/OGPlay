@@ -1741,6 +1741,36 @@ VmValue FormatSequential(IntrinsicContext& context) {
     return Make(context, output);
 }
 
+VmValue LowercaseEnglish(IntrinsicContext& context) {
+    const auto locale = context.arguments[0].ref;
+    if (!locale.IsValid()) {
+        throw VmJavaThrow{"Ljava/lang/NullPointerException;",
+                          "locale == null"};
+    }
+    const auto english = StaticReference(
+        context, "Ljava/util/Locale;", "ENGLISH", "Ljava/util/Locale;");
+    if (!english.IsValid() || locale != english) {
+        throw VmJavaThrow{
+            "Ljava/lang/UnsupportedOperationException;",
+            "String.toLowerCase only supports Locale.ENGLISH"};
+    }
+
+    auto value = Value(context, context.receiver);
+    bool changed = false;
+    for (auto& unit : value) {
+        if (unit > 0x7fU) {
+            throw VmJavaThrow{
+                "Ljava/lang/UnsupportedOperationException;",
+                "String.toLowerCase(Locale.ENGLISH) Unicode mapping is not "
+                "provided"};
+        }
+        const auto lower = AsciiLower(unit);
+        changed = changed || lower != unit;
+        unit = lower;
+    }
+    return changed ? Make(context, value) : VmValue::Ref(context.receiver);
+}
+
 }  // namespace
 
 IntrinsicClassDecl Declare_java_lang_String() {
@@ -2129,6 +2159,9 @@ IntrinsicClassDecl Declare_java_lang_String() {
                 for (auto& unit : value) unit = AsciiLower(unit);
                 return Make(context, value);
             });
+    builder.FinalMethod(
+        "toLowerCase", "(Ljava/util/Locale;)Ljava/lang/String;",
+        LowercaseEnglish);
     builder.FinalMethod("toUpperCase", "()Ljava/lang/String;",
         [](IntrinsicContext& context) {
                 auto value = Value(context, context.receiver);

@@ -85,6 +85,7 @@ struct DexVmAndroidContext final {
     float ui_density{1.0F};
     float ui_scaled_density{1.0F};
     std::int32_t api_level{19};
+    std::string language{"en"};
     std::string iso3_language{"eng"};
     std::string iso3_country{"USA"};
     std::string iso_country{"US"};

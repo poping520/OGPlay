@@ -2351,23 +2351,68 @@ IntrinsicClassDecl DeclarePlatformLocale(
         "Ljava/util/Locale;", "Ljava/lang/Object;",
         {"Ljava/lang/Cloneable;", "Ljava/io/Serializable;"},
         kAccPublic | kAccFinal);
+    builder.InstanceField("languageCode", "Ljava/lang/String;",
+                          kAccPrivate | kAccTransient);
     builder.StaticField("ENGLISH", "Ljava/util/Locale;",
                         kAccPublic | kAccFinal);
     builder.ClassInitializer([](IntrinsicContext& call) {
+        const auto english =
+            call.vm.NewIntrinsicInstance("Ljava/util/Locale;");
         call.vm.SetIntrinsicStaticRef(
-            "Ljava/util/Locale;", "ENGLISH", "Ljava/util/Locale;",
-            call.vm.NewIntrinsicInstance("Ljava/util/Locale;"));
+            "Ljava/util/Locale;", "ENGLISH", "Ljava/util/Locale;", english);
+        const auto field = call.vm.Linker().FindFieldRecursive(
+            call.vm.Model().ObjectClass(english), "languageCode",
+            "Ljava/lang/String;");
+        if (!field.has_value()) {
+            throw DexVmError(DexVmErrorReason::internal_invariant,
+                             "Locale.languageCode is not linked");
+        }
+        const auto language = call.vm.NewStringUtf8("en");
+        call.vm.Model().InstanceSlots(english)
+            [call.vm.Linker().Field(*field).slot] = {
+                language.Value(), SlotTag::ref};
         return VmValue::Void();
     });
     builder.StaticMethod(
         "getDefault", "()Ljava/util/Locale;",
         [services](IntrinsicContext& call) {
-            if (services.singleton) {
-                return VmValue::Ref(services.singleton(
-                    call.vm, "locale", "Ljava/util/Locale;"));
+            const auto locale = services.singleton
+                                    ? services.singleton(
+                                          call.vm, "locale",
+                                          "Ljava/util/Locale;")
+                                    : call.vm.NewIntrinsicInstance(
+                                          "Ljava/util/Locale;");
+            const std::array roots{locale};
+            const auto root_scope = call.vm.ProtectReferences(roots);
+            const auto field = call.vm.Linker().FindFieldRecursive(
+                call.vm.Model().ObjectClass(locale), "languageCode",
+                "Ljava/lang/String;");
+            if (!field.has_value()) {
+                throw DexVmError(DexVmErrorReason::internal_invariant,
+                                 "Locale.languageCode is not linked");
             }
-            return VmValue::Ref(
-                call.vm.NewIntrinsicInstance("Ljava/util/Locale;"));
+            auto& slot = call.vm.Model().InstanceSlots(locale)
+                [call.vm.Linker().Field(*field).slot];
+            if (slot.bits == 0) {
+                slot = {call.vm.NewStringUtf8(services.language).Value(),
+                        SlotTag::ref};
+            }
+            return VmValue::Ref(locale);
+        });
+    builder.FinalMethod(
+        "getLanguage", "()Ljava/lang/String;",
+        [](IntrinsicContext& call) {
+            const auto field = call.vm.Linker().FindFieldRecursive(
+                call.vm.Model().ObjectClass(call.receiver), "languageCode",
+                "Ljava/lang/String;");
+            if (!field.has_value()) {
+                throw DexVmError(DexVmErrorReason::internal_invariant,
+                                 "Locale.languageCode is not linked");
+            }
+            return VmValue::Ref(VmObjectRef(
+                call.vm.Model().InstanceSlots(call.receiver)
+                    [call.vm.Linker().Field(*field).slot]
+                        .bits));
         });
     builder.FinalMethod(
         "getISO3Language", "()Ljava/lang/String;",

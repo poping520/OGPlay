@@ -16,11 +16,13 @@
   `ArrayList`，按 changed flag 门控并在 receiver monitor 外按快照虚派发 `update`；覆盖
   回调删除、异常传播和 nested GC 强根保活。Object streams 已闭合 API 19 接口继承、
   primitive/block-data、默认 `Serializable` 字段图、引用、枚举及 `Date` 往返；数组、
-  Externalizable/custom hooks 与默认 UID 计算仍 deferred。`URLEncoder/URLDecoder` 已以
+  Externalizable/custom hooks 与默认 UID 计算仍 deferred。Locale `getLanguage()` 返回
+  会话注入语言，`ENGLISH` 返回 `en`。`URLEncoder/URLDecoder` 已以
   Boost.URL 闭合 UTF-8 form codec；其他 charset、格式化/解析及完整 XmlPullParser 长尾仍 deferred。
 - **Android Context 文件流**：`openFileInput/openFileOutput` 已接入 app files 目录；
   `MODE_PRIVATE` 覆盖、`MODE_APPEND` 追加，Activity/ContextWrapper 继续委托进程 base Context，
-  文件状态只存在于 core `IoRuntime` 与统一 VFS。
+  文件状态只存在于 core `IoRuntime` 与统一 VFS。APK 资源流现返回具体
+  `ByteArrayInputStream`，不再实例化 API 19 抽象 `InputStream`。
 - **基础架构**：DVM-92 teardown 及 DVM-94～96 的稳定 linker metadata、`MethodShape`、
   own-member intrinsic 与 owner-state trace/sweep 已完成；Dalvik access flag 与 Java reflection
   modifier mask 已集中到共享头，core 与平台 intrinsics 不再复制直接量。解释执行仍由
@@ -34,6 +36,9 @@
 
 ## 最近验证
 
+- 2026-09-03 macOS Release：资源流与 Locale 定向测试通过；Asphalt 5 原 APK 3 帧烟测
+  正常退出；title-flow 末帧 Main Menu 经人工检查并在两个 fresh sandbox 中稳定为
+  `cb892db9…`，golden 更新后 6 个 checkpoint 全部通过并 clean shutdown。
 - 2026-09-03 Windows `windows-msvc` Debug：`ogplay_tests` 构建通过；Context final
   `getString(int)` 继承/资源/异常与相邻定向检查 5/5 通过；此前 Locale/小写检查 12/12 通过。
 - 2026-09-03 Windows `windows-msvc` Release：Boost.URL form codec 双后端 42/42、DVM-88
@@ -47,17 +52,12 @@
   后续对象图能力见上一条验证。
 - 2026-09-03 Windows `windows-msvc` Release：`ogplay_tests` 构建通过；Context 私有文件流
   覆盖/追加/读取及异常、ContextWrapper 委托、Android catalog 定向回归通过。
-- 2026-09-03 Windows `windows-msvc` Release：core 与 Android 平台 intrinsic 中 164 个
-  DVM-80 迁移命名空间和 180 个同名转发函数已移除，`ogplay_runtime` 构建通过；按要求未跑测试。
 - 2026-09-03 Windows `windows-msvc` Release：共享 access flag 重构后 `ogplay_tests`
   构建通过；builder/reflection/各受影响 Java family 两组定向回归分别 52/52、32/32，
   intrinsic layout 架构检查 1/1 通过。
 - 2026-09-03 Windows `windows-msvc` Release：`ogplay_tests` 构建通过；
   Observer/Observable 4/4、相邻 DVM-87/core catalog/collections 8/8、能力账本与架构静态
   检查 4/4 通过；`java_util` 集合族已移除无用途的 DVM-80 转发命名空间。
-- 2026-09-03 API 19 系统库、Profile/GUI/CLI、安装 staging、payload 和 scenario runner
-  定向验证通过；五库的哈希、ELF、来源及 NOTICE 完整。帧日志降噪按用户要求未另跑测试，
-  仅同步既有定向测试契约。
 
 ## 下一步
 

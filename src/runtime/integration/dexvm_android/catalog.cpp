@@ -6,6 +6,7 @@ dexvm::CoreIntrinsicServices AndroidCoreIntrinsicServices(
     const std::shared_ptr<DexVmAndroidContext>& context) {
     dexvm::CoreIntrinsicServices services;
     if (context == nullptr) return services;
+    services.language = context->language;
     services.iso3_language = context->iso3_language;
     services.iso3_country = context->iso3_country;
     services.singleton =

@@ -30,6 +30,7 @@ struct Dvm87Vm final {
     Dvm87Vm()
         : vm([this]() -> DexClassLinker& {
               CoreIntrinsicServices services;
+              services.language = "zh";
               services.current_time_millis = [] { return 1704067200000LL; };
               linker.RegisterIntrinsics(CoreIntrinsicCatalog(services));
               auto callable = IntrinsicClassBuilder::Class(
@@ -173,7 +174,7 @@ TEST_CASE("DVM-87 Calendar uses injected clock and fixed-offset zones") {
           8 * 60 * 60 * 1000);
 }
 
-TEST_CASE("DVM-87 Locale publishes the API 19 ENGLISH singleton") {
+TEST_CASE("DVM-87 Locale publishes ENGLISH and its injected default language") {
     Dvm87Vm fixture;
     const auto locale =
         fixture.linker.ResolveDescriptor("Ljava/util/Locale;");
@@ -195,6 +196,23 @@ TEST_CASE("DVM-87 Locale publishes the API 19 ENGLISH singleton") {
         fixture.linker.Class(linked.owner).static_storage[linked.slot]);
     REQUIRE(english.IsValid());
     CHECK(fixture.model.ObjectClass(english) == locale);
+    const auto language_field = fixture.linker.FindFieldRecursive(
+        locale, "languageCode", "Ljava/lang/String;");
+    REQUIRE(language_field.has_value());
+    CHECK(fixture.linker.Field(*language_field).access_flags ==
+          (kAccPrivate | kAccTransient));
+    const auto english_language = fixture.Virtual(
+        english, "getLanguage", "()Ljava/lang/String;");
+    Dvm87Vm::RequireOk(english_language);
+    CHECK(fixture.vm.StringUtf8(english_language.value.ref) == "en");
+
+    const auto default_locale = fixture.Static(
+        "Ljava/util/Locale;", "getDefault", "()Ljava/util/Locale;");
+    Dvm87Vm::RequireOk(default_locale);
+    const auto default_language = fixture.Virtual(
+        default_locale.value.ref, "getLanguage", "()Ljava/lang/String;");
+    Dvm87Vm::RequireOk(default_language);
+    CHECK(fixture.vm.StringUtf8(default_language.value.ref) == "zh");
 
     Dvm87Vm::RequireOk(fixture.vm.EnsureClassInitialized(locale));
     CHECK(VmObjectRef(fixture.linker.Class(linked.owner)

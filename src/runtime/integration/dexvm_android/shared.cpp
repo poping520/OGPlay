@@ -629,9 +629,12 @@ std::string FilePathOf(dx::IntrinsicContext& call,
 }
 
 dx::VmObjectRef OpenStream(dx::IntrinsicContext& call, const Context& context,
-                           std::vector<std::byte> bytes,
-                           const char* descriptor) {
-    const auto instance = call.vm.NewIntrinsicInstance(descriptor);
+                           std::vector<std::byte> bytes) {
+    // InputStream is abstract on API 19: its bulk read virtual-dispatches to
+    // read(). APK resources are in-memory byte sources, so expose the concrete
+    // byte-array stream whose overrides consume the shared IoRuntime state.
+    const auto instance = call.vm.NewIntrinsicInstance(
+        "Ljava/io/ByteArrayInputStream;");
     call.vm.IO().SetInput(instance, {std::move(bytes), 0, false});
     static_cast<void>(context);
     return instance;

@@ -16,7 +16,9 @@ family TU 中写裸十六进制访问标志；反射过滤使用同一头文件�
 `java.*`、`javax.net.*`、`javax.xml.*` 与 `org.xml.sax.*` 均由 core 发布；需要平台事实的
 Locale、Timer、SSL singleton 与 SAX handler 通过 `CoreIntrinsicServices` 窄接口注入；
 Locale 保持 API 19 的 final class 及 Cloneable/Serializable 直接接口关系，`ENGLISH`
-预定义对象由类初始化器创建并保存在静态强根中；
+预定义对象由类初始化器创建并保存在静态强根中；`languageCode` 是对象持有的
+API 19 transient 字段，`getLanguage()` 返回该字段，默认 Locale 从会话注入的确定性
+两字母语言初始化且不读取宿主 locale；
 `org.xmlpull.v1.XmlPullParser` 只发布 API 19 接口 shape，资源事件实现归 Android integration，
 core 不依赖 `DexVmAndroidContext`。
 Timer/TimerTask 仅保留 Java 参数、重复调度与取消入口；deadline、执行队列、Clock 和

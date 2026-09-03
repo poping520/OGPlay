@@ -76,6 +76,9 @@ binding。`GLUtils` 读取 context 中既有 Bitmap backing；本层不拥有 GL
   必须按 API 19 抛 `IllegalArgumentException`；`MODE_PRIVATE` 覆盖、`MODE_APPEND` 追加，实际
   流状态与读写全部委托 core `FileInputStream/FileOutputStream` 和唯一 `IoRuntime`/VFS。
   `ContextWrapper` 只虚派委托 base，不建立 Android 侧文件流状态或宿主文件句柄。
+- `AssetManager.open` 与 `Resources.openRawResource` 必须把 APK 内存字节发布为 core
+  `ByteArrayInputStream`；禁止实例化 API 19 抽象 `InputStream`。读取、游标和 close 状态只属于
+  唯一 `IoRuntime`，integration 不建立第二套资源流状态。
 - `Application/Activity/Service` declaration 只声明自身构造器、生命周期和真实 override，
   禁止复制 Context/ContextWrapper 方法；`ContextWrapper` 的 `mBase` 转发必须逐项使用
   `OverrideMethod`，继承与 declaring class 只由 linker 决定（ADR-0028）。

@@ -38,3 +38,14 @@ pilot title 删除 profile 全部 `native_call` 与 `[[java.class]]`，以 schem
      `java.io.IOException`。
 - 人工复验：换语言/主菜单/进入赛道（SAINT TROPEZ 加载并可进游戏）均正常；
   标准 title_flow gate 与 full CTest 558/558 在 512 MiB 预算下保持通过。
+
+## 追加（2026-09-03 InputStream 回归修复）
+
+- core 按 API 19 恢复抽象 `InputStream` 后，Android APK 资源桥仍实例化该抽象基类，导致
+  `GLResLoader.getResourceFull` 的 bulk read 无法取得 `gamecfg.bar` 内容；游戏忽略 read count，
+  随后 native `CPackage` 连续触发 `GetLibSize/FSeekLibData` 断言，并以压缩文件指针 `1`
+  调用 `LZMAFile::OpenAttached`，在 `0x4d9` 写入崩溃。
+- 资源桥改为具体 `ByteArrayInputStream` 后，Release 原 APK 无持久化 3 帧烟测正常启动/退出；
+  title-flow 跑至 468 帧、无 guest fault 且 clean shutdown。最终 Main Menu 经人工检查，并在
+  两个 fresh sandbox 中稳定得到 SHA-256 `cb892db9…`；场景 golden 已由旧 `f91150b4…`
+  更新为该修复后的确定性画面，通过态复验的 6 个 checkpoint 全部 passed。

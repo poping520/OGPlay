@@ -48,5 +48,8 @@
 - 2026-09-03 对齐 AOSP 4.4.4 `Locale.java`，补充 `public static final Locale ENGLISH`；
   同步修正 final class 与 Cloneable/Serializable 直接接口关系；类初始化后发布稳定的
   非空 `Locale` 对象，并锁定类/字段 shape、类型与重复初始化身份。
+- 2026-09-03 继续补齐 `Locale.getLanguage()`：以 API 19 private transient
+  `languageCode` 实例字段承载语言，`ENGLISH` 返回 `en`，默认 Locale 返回会话注入的
+  确定性两字母语言；定向 Locale、DVM-87 与 core/Android catalog 检查通过。
 
 状态：已完成。

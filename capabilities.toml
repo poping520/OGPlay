@@ -513,7 +513,7 @@ note = "ADR-0020 SBX-7 让 run-apk 默认按 package 打开持久沙盒（根为
 [dexvm.file_io_vfs]
 status = "complete"
 test = "tests/dexvm/file_vfs_tests.cpp; Dungeon Hunter exact 240-frame local run; Asphalt 5 exact title-flow gate"
-note = "ADR-0020 SBX-5 使 java.io File 家族与 native fopen 共用唯一 VFS/sandbox 世界。DVM-79 又把 File/FileInputStream/FileOutputStream/FileReader/FileWriter handle 和全部 input/output side state 从 Android integration 下沉到 core IoRuntime；core 只依赖 IoFileSystem 窄接口，session 以 DexVmIoVfsAdapter 注入具体 VFS，无文件系统明确失败且不与 ENOENT 合并。续作把 ZipEntry/ZipInputStream 与 archive side state 一并迁入 core ZipRuntime，输入经 IoRuntime single-owner 接管，严格解析/inflate 复用 loader，死亡 owner 由 GC sweep 清扫。输入/输出流仍为整文件内存状态；FileInputStream/FileOutputStream 已补齐非 NIO 公共构造、getFD、read/write 等公共函数，逻辑描述符共享对应状态和游标并区分拥有/借用关闭，getChannel/FileChannel 继续 deferred；InputStream/OutputStream 默认 bulk 操作经 vtable 派发到子类，自定义子类不依赖 IoRuntime 状态；File.list 空目录、filter 回调 GC 强根、wrapper/ZIP adoption、幂等双 close 与跨会话持久均有回归。"
+note = "ADR-0020 SBX-5 使 java.io File 家族与 native fopen 共用唯一 VFS/sandbox 世界。DVM-79 又把 File/FileInputStream/FileOutputStream/FileReader/FileWriter handle 和全部 input/output side state 从 Android integration 下沉到 core IoRuntime；core 只依赖 IoFileSystem 窄接口，session 以 DexVmIoVfsAdapter 注入具体 VFS，无文件系统明确失败且不与 ENOENT 合并。续作把 ZipEntry/ZipInputStream 与 archive side state 一并迁入 core ZipRuntime，输入经 IoRuntime single-owner 接管，严格解析/inflate 复用 loader，死亡 owner 由 GC sweep 清扫。输入/输出流仍为整文件内存状态；FileInputStream/FileOutputStream 已补齐非 NIO 公共构造、getFD、read/write 等公共函数，逻辑描述符共享对应状态和游标并区分拥有/借用关闭，getChannel/FileChannel 继续 deferred；InputStream/OutputStream 默认 bulk 操作经 vtable 派发到子类，自定义子类不依赖 IoRuntime 状态；Android APK 资源桥统一返回具体 ByteArrayInputStream 并复用同一 IoRuntime，非零 payload bulk read 有回归；File.list 空目录、filter 回调 GC 强根、wrapper/ZIP adoption、幂等双 close 与跨会话持久均有回归。"
 
 [runtime.preferences_persistence]
 status = "complete"
@@ -1378,7 +1378,7 @@ note = "DVM-86 发布 API19 Base64/SparseArray family/TypedValue/TextUtils、Col
 [dexvm.java_util_algorithms]
 status = "complete"
 test = "tests/dexvm/dvm87_tests.cpp"
-note = "DVM-87 发布常用 primitive/Object Arrays 算法、Collections sort/reverse/swap/fill/frequency/binarySearch、API 19 final Locale 的 Cloneable/Serializable 关系与 ENGLISH 静态对象，以及注入 Clock 的 Calendar/GregorianCalendar 和 GMT/UTC 固定 offset TimeZone；完整算法长尾、DST/locale 时区数据库 deferred"
+note = "DVM-87 发布常用 primitive/Object Arrays 算法、Collections sort/reverse/swap/fill/frequency/binarySearch、API 19 final Locale 的 Cloneable/Serializable 关系、ENGLISH 静态对象与从对象 languageCode 返回的 getLanguage（默认语言由会话确定性注入），以及注入 Clock 的 Calendar/GregorianCalendar 和 GMT/UTC 固定 offset TimeZone；完整算法长尾、DST/locale 时区数据库 deferred"
 
 [dexvm.java_regex]
 status = "complete"

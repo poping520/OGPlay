@@ -35,8 +35,7 @@ using Context = std::shared_ptr<DexVmAndroidContext>;
 void GuestLog(dx::IntrinsicContext& call, core::LogLevel level,
               const std::string& line);
 dx::VmObjectRef OpenStream(dx::IntrinsicContext& call, const Context& context,
-                           std::vector<std::byte> bytes,
-                           const char* descriptor = "Ljava/io/InputStream;");
+                           std::vector<std::byte> bytes);
 // Missing or damaged entries throw the Java IOException the glue catches.
 [[nodiscard]] std::vector<std::byte> ReadApkFile(const Context& context,
                                                  const std::string& path);

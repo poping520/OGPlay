@@ -1480,6 +1480,37 @@ TEST_CASE("AssetManager openFd publishes exact logical asset length") {
           "Ljava/io/FileNotFoundException;");
 }
 
+TEST_CASE("AssetManager open returns a readable concrete byte stream") {
+    FileVm vm;
+    const std::vector<std::byte> payload{
+        std::byte{0x47}, std::byte{0x41}, std::byte{0x4d}, std::byte{0x45}};
+    vm.context->apk_bytes = MakeStoredZip("assets/gamecfg.bar", payload);
+    vm.context->archive =
+        ogplay::loader::ParseApkArchive(vm.context->apk_bytes);
+    const auto manager = vm.interpreter.NewIntrinsicInstance(
+        "Landroid/content/res/AssetManager;");
+    const auto stream = vm.CallOn(
+        manager, "open", "(Ljava/lang/String;)Ljava/io/InputStream;",
+        {VmValue::Ref(vm.interpreter.NewStringUtf8("gamecfg.bar"))}).ref;
+    REQUIRE(stream.IsValid());
+    CHECK(vm.linker.Class(vm.model.ObjectClass(stream)).descriptor ==
+          "Ljava/io/ByteArrayInputStream;");
+    CHECK(vm.CallOn(stream, "available", "()I").AsInt() ==
+          static_cast<std::int32_t>(payload.size()));
+
+    const auto bytes = vm.model.NewPrimitiveArray(
+        vm.linker.ResolveDescriptor("[B"), JniPrimitiveKind::byte,
+        static_cast<JniSize>(payload.size()));
+    CHECK(vm.CallOn(stream, "read", "([BII)I",
+                    {VmValue::Ref(bytes), VmValue::Int(0),
+                     VmValue::Int(static_cast<std::int32_t>(payload.size()))})
+              .AsInt() == static_cast<std::int32_t>(payload.size()));
+    CHECK(vm.model.ReadByteRegion(bytes, 0,
+                                  static_cast<JniSize>(payload.size())) ==
+          payload);
+    CHECK(vm.CallOn(stream, "read", "()I").AsInt() == -1);
+}
+
 TEST_CASE("Resources getXml exposes compiled APK XML as pull events") {
     FileVm vm;
     constexpr std::uint32_t kResourceId = 0x7f010000U;

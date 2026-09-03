@@ -103,5 +103,10 @@
   类型和边界不匹配明确抛 `IOException`。对象 handle 由 `IoRuntime` 跟随流 owner trace/sweep。
   `FileDescriptor.sync()` 同步关联输出缓冲到 VFS，使 `ObjectOutputStream` 后的 durable-save 路径
   与 API 19 调用链闭合。数组、`Externalizable`、应用自定义 hooks 和默认 UID 计算继续 deferred。
+- Asphalt 5 回归暴露 Android 资源桥仍直接实例化抽象 `InputStream`：core 恢复 API 19 默认
+  bulk-read 虚派后，资源读取会落到抽象 `read()`，游戏随后解析空数据并在 native package
+  初始化中崩溃。`AssetManager.open`/`Resources.openRawResource` 现统一返回具体
+  `ByteArrayInputStream`，继续复用 `IoRuntime`；回归测试锁定非零 APK payload 的
+  `available`、bulk read 与 EOF。
 
 状态：完成。

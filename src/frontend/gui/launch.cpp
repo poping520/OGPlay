@@ -50,11 +50,6 @@ LaunchPlan BuildLaunchPlan(const std::filesystem::path& cli_executable,
         throw GuiModelError(GuiModelErrorCode::not_found,
                             "OGPlay CLI executable is missing", cli_executable);
     }
-    if (!config.system_dir.has_value()) {
-        throw GuiModelError(GuiModelErrorCode::not_found,
-                            "Android system library directory is not configured");
-    }
-    RequireDirectory(*config.system_dir, "Android system library directory");
     if (config.profiles_dir.has_value()) {
         RequireDirectory(*config.profiles_dir, "Profile directory");
     }
@@ -71,9 +66,9 @@ LaunchPlan BuildLaunchPlan(const std::filesystem::path& cli_executable,
 
     LaunchPlan plan;
     plan.package = entry.key;
-    plan.argv = {PathUtf8(std::filesystem::absolute(cli_executable).lexically_normal()),
-                 "run-apk", PathUtf8(apk), "--system-dir",
-                 PathUtf8(*config.system_dir)};
+    plan.argv = {
+        PathUtf8(std::filesystem::absolute(cli_executable).lexically_normal()),
+        "run-apk", PathUtf8(apk)};
     if (config.profiles_dir.has_value()) {
         plan.argv.push_back("--profiles-dir");
         plan.argv.push_back(PathUtf8(*config.profiles_dir));

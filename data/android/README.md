@@ -1,8 +1,8 @@
 # Android guest 系统库数据目录
 
-发行版在 `19/`、`22/`、`23/` 中存放来自 AOSP 源码构建的系统库。当前已纳入
-Android 4.4.4/API 19 的 `aosp_arm-user` 五库发行集；`19/lib/` 是可传给
-`run-apk --system-dir` 的目录。
+发行版按 API 目录存放来自 AOSP 源码构建的系统库。当前已纳入 Android 4.4.4/API 19
+的 `aosp_arm-user` 五库发行集；`run-apk` 根据所选 Profile 自动读取 `19/lib/`，不接受
+外部系统库目录。
 
 `19/manifest.json` 是唯一机器可读事实源，保存构建、逐库 ELF/哈希、依赖和 NOTICE
 映射；`19/source-manifest.xml` 固定参与构建的源码 revision；`19/notices/` 每库一份构建

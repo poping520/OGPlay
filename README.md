@@ -42,10 +42,9 @@ Windows 构建后可直接双击 `build/windows-msvc/Debug/ogplay-gui.exe`；Lin
 build/dev/ogplay gui [--library-root <dir>] [--smoke-frames <count>]
 ```
 
-首次使用先在“设置”中选择随程序提供的 `data/android/19/lib`；Profile 目录留空使用
-内置默认。随后
-通过“导入游戏”选择 APK 与可选数据包目录，点击无角标磁贴即通过同一 `run-apk` 路径
-启动。右键磁贴可删除库内副本；原地数据包和持久存档不会被删除。
+Android guest 系统库由程序从随包数据中自动选择，无需额外设置；Profile 目录留空使用
+内置默认。随后通过“导入游戏”选择 APK 与可选数据包目录，点击无角标磁贴即通过同一
+`run-apk` 路径启动。右键磁贴可删除库内副本；原地数据包和持久存档不会被删除。
 
 运行最小 CLI：
 

@@ -31,8 +31,20 @@ void AppendCandidate(std::vector<std::filesystem::path>& candidates,
         return false;
     }
     error.clear();
-    return std::filesystem::is_regular_file(root / "quirks.toml", error) &&
-           !error;
+    if (!std::filesystem::is_regular_file(root / "quirks.toml", error) ||
+        error) {
+        return false;
+    }
+    for (const auto* name : {"libc.so", "libdl.so", "libm.so",
+                             "libstdc++.so", "libz.so"}) {
+        error.clear();
+        if (!std::filesystem::is_regular_file(
+                root / "android" / "19" / "lib" / name, error) ||
+            error) {
+            return false;
+        }
+    }
+    return true;
 }
 
 }  // namespace
@@ -60,7 +72,7 @@ BundledDataPaths ResolveBundledDataPaths(
         }
     }
     throw std::runtime_error(
-        "bundled Profile/quirk data is unavailable beside executable: " +
+        "bundled runtime data is unavailable beside executable: " +
         PathUtf8(executable));
 }
 

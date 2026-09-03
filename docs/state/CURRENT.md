@@ -1,19 +1,21 @@
 # 当前状态
 
-更新：内置可再分发的 Android 4.4.4/API 19 guest 系统库；保留 GUI-17/18 双栏主界面
+更新：运行入口自动使用内置 Android 4.4.4/API 19 guest 系统库
 
 ## 当前阶段
 
 - **API 19 Android guest 系统库发行集已内置**：`data/android/19/lib` 收录从 AOSP
   `android-4.4.4_r2.0.1` clean tag、`aosp_arm-user` 构建的 libc/libm/libdl/libstdc++/libz；
   精确源码 revision、构建记录、文件哈希、ELF 身份和逐库 NOTICE 随包保存。构建目录、
-  安装目录与 macOS bundle 均通过统一 data staging 携带该发行集；API 22/23 尚未纳入。
+  安装目录与 macOS bundle 均通过统一 data staging 携带该发行集；`run-apk` 按 Profile
+  API 自动选取，不再接受 `--system-dir`，GUI 也不再保存或呈现外部系统库设置；API
+  22/23 尚未纳入。
 - **GUI-17/18 双栏主界面已完成**：主面板改为左侧列表、右侧详情，单击选择，ready
-  条目双击或详情按钮启动；Profile、external、system 三项条件明确呈现。系统库未配置
-  不再显示 ready；选择刷新稳定、删除相邻回退且不落盘。没有加入搜索、筛选、替换导入、
+  条目双击或详情按钮启动；Profile、external 两项 title 条件明确呈现。系统库属于完整
+  bundled runtime，不再作为逐条目设置；选择刷新稳定、删除相邻回退且不落盘。没有加入搜索、筛选、替换导入、
   常驻日志或游戏设置占位控件。
-- **缺 Profile 可通用启动**：仍显示橙色未匹配和 external 无法判断，但 system 目录有效、
-  条目未运行时允许进入既有 generic `run-apk`；不把可尝试启动表述为已验证兼容。
+- **缺 Profile 可通用启动**：仍显示橙色未匹配和 external 无法判断，条目未运行时允许
+  进入既有 generic `run-apk`；不把可尝试启动表述为已验证兼容。
 - **DVM-87 SimpleDateFormat 最小层级已增加**：core catalog 发布抽象 `Format`、抽象
   `DateFormat` 与具体 `SimpleDateFormat`，严格保持 API 19 父链；`Format` 同时实现
   Serializable/Cloneable。指定 pattern/Locale 构造器校验参数并保存 pattern；format/parse
@@ -40,6 +42,9 @@
 
 ## 最近验证
 
+- 2026-09-03 Windows `windows-msvc` Release 的 `ogplay_tests`/`ogplay-gui` 受影响目标构建
+  通过；内置 Android 库解析、GUI 配置迁移/LaunchPlan/视图、CLI 参数、GUI 实际冒烟、
+  payload 校验与 scenario runner 自检 21/21 通过。
 - 2026-09-03 Windows `windows-msvc` Release 的 `ogplay_tests`/`ogplay-gui` 受影响目标构建
   通过；API 19 Android guest 系统库、profile 路径与构建暂存测试 3/3 通过，临时
   `cmake --install` 产物再次通过五库、哈希、ELF、来源与 NOTICE 完整性校验。

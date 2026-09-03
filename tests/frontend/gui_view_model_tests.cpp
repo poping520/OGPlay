@@ -170,53 +170,6 @@ TEST_CASE("unavailable Profile catalog fails closed before launch readiness") {
     CHECK(ready_tile->detail.find("设置") != std::string::npos);
 }
 
-TEST_CASE("system setup is visible after title requirements and running state") {
-    TemporaryDirectory temporary;
-    const auto external = temporary.path / "external";
-    std::filesystem::create_directories(external);
-    auto missing_external = Entry("org.example.data", "Data");
-    auto running = Entry("org.example.running", "Running");
-    auto setup = Entry("org.example.setup", "Setup");
-    running.metadata->external_dir = external;
-    const std::vector<ogplay::frontend::LibraryEntry> entries{
-        missing_external, running, setup};
-    const auto tiles = ogplay::frontend::BuildLibraryTiles(
-        entries,
-        {.running_packages = {running.key, missing_external.key},
-         .external_required_packages = {missing_external.key, running.key},
-         .system_directory_error = "system fixture unavailable"});
-    const auto status = [&tiles](const std::string& key) {
-        for (const auto& tile : tiles) {
-            if (tile.key == key) return tile.status;
-        }
-        return ogplay::frontend::LibraryTileStatus::ready;
-    };
-    CHECK(status(missing_external.key) ==
-          ogplay::frontend::LibraryTileStatus::missing_external);
-    CHECK(status(running.key) ==
-          ogplay::frontend::LibraryTileStatus::running);
-    CHECK(status(setup.key) ==
-          ogplay::frontend::LibraryTileStatus::setup_required);
-    const auto missing_detail = ogplay::frontend::BuildLibraryDetail(
-        missing_external, *std::find_if(tiles.begin(), tiles.end(),
-                                       [&missing_external](const auto& tile) {
-                                           return tile.key == missing_external.key;
-                                       }),
-        {.running_packages = {missing_external.key},
-         .external_required_packages = {missing_external.key},
-         .system_directory_error = "system fixture unavailable"});
-    CHECK_FALSE(missing_detail.can_delete);
-
-    auto generic = Entry("org.example.generic", "Generic", std::nullopt);
-    const auto generic_tiles = ogplay::frontend::BuildLibraryTiles(
-        std::span<const ogplay::frontend::LibraryEntry>(&generic, 1),
-        {.system_directory_error = "system fixture unavailable"});
-    REQUIRE(generic_tiles.size() == 1);
-    CHECK(generic_tiles.front().status ==
-          ogplay::frontend::LibraryTileStatus::missing_profile);
-    CHECK_FALSE(generic_tiles.front().can_launch);
-}
-
 TEST_CASE("library selection preserves packages and falls back beside removals") {
     const std::vector<ogplay::frontend::LibraryEntry> entries{
         Entry("org.example.alpha", "Alpha"),
@@ -244,9 +197,7 @@ TEST_CASE("library selection preserves packages and falls back beside removals")
 TEST_CASE("library detail exposes factual conditions without inferring runtime facts") {
     TemporaryDirectory temporary;
     const auto external = temporary.path / "external";
-    const auto system = temporary.path / "system";
     std::filesystem::create_directories(external);
-    std::filesystem::create_directories(system);
 
     auto entry = Entry("org.example.game", "Example");
     entry.metadata->version_code = 42;
@@ -269,8 +220,6 @@ TEST_CASE("library detail exposes factual conditions without inferring runtime f
     CHECK(detail.external.status ==
           ogplay::frontend::LibraryConditionStatus::ready);
     CHECK(detail.external.value == "已就绪");
-    CHECK(detail.system.status ==
-          ogplay::frontend::LibraryConditionStatus::ready);
     CHECK(detail.can_launch);
     CHECK(detail.can_delete);
     CHECK_FALSE(detail.version.find("ARM") != std::string::npos);
@@ -287,7 +236,6 @@ TEST_CASE("library detail distinguishes external and damaged states") {
 
     const ogplay::frontend::LibraryViewContext context{
         .external_required_packages = {missing.key},
-        .system_directory_error = "system missing",
     };
     const std::vector<ogplay::frontend::LibraryEntry> entries{
         optional, missing, unknown, damaged};
@@ -316,19 +264,6 @@ TEST_CASE("library detail distinguishes external and damaged states") {
           ogplay::frontend::LibraryConditionStatus::unavailable);
     CHECK_FALSE(damaged_detail.can_launch);
     CHECK(damaged_detail.can_delete);
-}
-
-TEST_CASE("system directory readiness distinguishes unset invalid and ready") {
-    TemporaryDirectory temporary;
-    const auto ready = temporary.path / "system";
-    std::filesystem::create_directories(ready);
-    CHECK(ogplay::frontend::GuiSystemDirectoryError({}).has_value());
-    CHECK(ogplay::frontend::GuiSystemDirectoryError(
-              {.system_dir = temporary.path / "missing"})
-              .has_value());
-    CHECK_FALSE(ogplay::frontend::GuiSystemDirectoryError(
-                    {.system_dir = ready})
-                    .has_value());
 }
 
 TEST_CASE("CJK font selection preserves candidates and supports ASCII fallback") {

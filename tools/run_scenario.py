@@ -490,7 +490,7 @@ def _free_port() -> int:
 
 
 def _launch(plan: ScenarioPlan, fixtures: dict[str, Path], ogplay: Path,
-            system_dir: Path, profiles: Path, evidence_dir: Path,
+            profiles: Path, evidence_dir: Path,
             port: int, dexvm_interpreter: str | None = None) -> LaunchedSession:
     expected = {item["id"] for item in plan.fixtures if item["required"]}
     missing = sorted(expected - fixtures.keys())
@@ -505,7 +505,7 @@ def _launch(plan: ScenarioPlan, fixtures: dict[str, Path], ogplay: Path,
         if not path.exists():
             raise RunnerError(f"fixture path does not exist: {path}")
     command = [
-        str(ogplay), "run-apk", str(apk_paths[0]), "--system-dir", str(system_dir),
+        str(ogplay), "run-apk", str(apk_paths[0]),
         "--profiles-dir", str(profiles), "--mcp-port", str(port),
         "--mcp-manual-step",
         # Scenario results have to be reproducible, so a run never inherits
@@ -727,7 +727,6 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
     parser.add_argument("--scenario", type=Path)
     parser.add_argument("--profiles", type=Path)
     parser.add_argument("--ogplay", type=Path)
-    parser.add_argument("--system-dir", type=Path)
     parser.add_argument("--fixture", action="append", default=[])
     parser.add_argument("--evidence-dir", type=Path)
     parser.add_argument("--fresh", action="store_true",
@@ -754,12 +753,12 @@ def _write_result(evidence: Path, result: ScenarioResult) -> None:
 
 
 def _run_once(plan: ScenarioPlan, fixtures: dict[str, Path], ogplay: Path,
-              system_dir: Path, profiles: Path,
+              profiles: Path,
               evidence: Path,
               dexvm_interpreter: str | None = None) -> ScenarioResult:
     port = _free_port()
     started = time.monotonic()
-    launched = _launch(plan, fixtures, ogplay, system_dir, profiles,
+    launched = _launch(plan, fixtures, ogplay, profiles,
                        evidence, port, dexvm_interpreter)
     try:
         executor = ScenarioExecutor(
@@ -775,12 +774,12 @@ class _WatchGeneration:
     """One live session executing a growing checkpoint prefix."""
 
     def __init__(self, plan: ScenarioPlan, fixtures: dict[str, Path],
-                 ogplay: Path, system_dir: Path, profiles: Path,
+                 ogplay: Path, profiles: Path,
                  evidence: Path,
                  dexvm_interpreter: str | None = None) -> None:
         self.evidence = evidence
         self.port = _free_port()
-        self.launched = _launch(plan, fixtures, ogplay, system_dir, profiles,
+        self.launched = _launch(plan, fixtures, ogplay, profiles,
                                 evidence, self.port, dexvm_interpreter)
         self.client = McpClient(f"http://127.0.0.1:{self.port}/mcp")
         self.executor = ScenarioExecutor(
@@ -875,7 +874,6 @@ def _run_watch(args: argparse.Namespace, fixtures: dict[str, Path],
 
     scenario = args.scenario.resolve()
     profiles = args.profiles.resolve()
-    system_dir = args.system_dir.resolve()
 
     def load() -> ScenarioPlan:
         return load_plan(scenario, profiles)
@@ -894,7 +892,7 @@ def _run_watch(args: argparse.Namespace, fixtures: dict[str, Path],
                       f"{len(plan.checkpoints)} checkpoint(s) into "
                       f"{gen_dir}", flush=True)
                 current = _WatchGeneration(plan, fixtures, ogplay,
-                                           system_dir, profiles, gen_dir,
+                                           profiles, gen_dir,
                                            args.dexvm_interpreter)
                 current.execute_from(plan.checkpoints)
                 print("[watch] waiting for scenario changes "
@@ -946,7 +944,7 @@ def main(argv: Sequence[str]) -> int:
     if args.self_test:
         return self_test(args.result_schema)
     required = {name: getattr(args, name) for name in
-                ("scenario", "profiles", "ogplay", "system_dir", "evidence_dir")}
+                ("scenario", "profiles", "ogplay", "evidence_dir")}
     missing = [name for name, value in required.items() if value is None]
     if missing:
         raise RunnerError("missing runner arguments: " + ", ".join(missing))
@@ -959,8 +957,7 @@ def main(argv: Sequence[str]) -> int:
     evidence = _prepare_evidence_dir(args.evidence_dir, args.fresh)
     if args.watch:
         return _run_watch(args, fixtures, ogplay, evidence)
-    result = _run_once(plan, fixtures, ogplay, args.system_dir.resolve(),
-                       args.profiles.resolve(), evidence,
+    result = _run_once(plan, fixtures, ogplay, args.profiles.resolve(), evidence,
                        args.dexvm_interpreter)
     _write_result(evidence, result)
     print(result.to_json())

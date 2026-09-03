@@ -20,7 +20,6 @@ enum class LibraryTileStatus : std::uint8_t {
     missing_profile,
     missing_external,
     running,
-    setup_required,
     ready,
 };
 
@@ -35,7 +34,6 @@ struct LibraryViewContext final {
     std::vector<std::string> running_packages;
     std::vector<std::string> external_required_packages;
     std::optional<std::string> profile_catalog_error;
-    std::optional<std::string> system_directory_error;
 };
 
 struct LibraryTile final {
@@ -64,7 +62,6 @@ struct LibraryDetail final {
     std::string detail;
     LibraryCondition profile;
     LibraryCondition external;
-    LibraryCondition system;
     bool can_launch{};
     bool can_delete{};
 };
@@ -105,11 +102,6 @@ private:
 [[nodiscard]] LibraryDetail BuildLibraryDetail(
     const LibraryEntry& entry, const LibraryTile& tile,
     const LibraryViewContext& context);
-
-// Empty means the configured Android system-library directory is ready.
-// A non-empty result is suitable for direct user presentation.
-[[nodiscard]] std::optional<std::string> GuiSystemDirectoryError(
-    const GuiConfig& config);
 
 // Returns the first regular file, preserving candidate order. An empty result
 // means the view must keep ImGui's ASCII font and log a warning.

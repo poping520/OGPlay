@@ -5,8 +5,7 @@
 启动一个游戏目前需要用户手工完成整条 CLI 链：
 
 ```sh
-ogplay run-apk <apk> --system-dir <api19-lib-dir> \
-    [--profiles-dir <dir>] [--external-dir <host-dir>]
+ogplay run-apk <apk> [--profiles-dir <dir>] [--external-dir <host-dir>]
 ```
 
 内核侧的事实是：**启动一个游戏所需的全部校验与运行机制都已存在且受检**——
@@ -14,7 +13,7 @@ APK 精确身份匹配（`profiles.apk_exact_identity_match`）、依赖闭包�
 交叉验证、external 数据挂载、窗口与输入（`src/frontend/MODULE.md`）。
 缺的只是一层面向非技术用户的壳：
 
-1. 用户要自己记住 APK、数据目录、Bionic 目录的路径，每次启动敲一遍。
+1. 用户要自己记住 APK、数据目录的路径，每次启动敲一遍。
 2. 没有"我有哪些游戏"的持久视图；没有图标、名称等可辨识信息。
 3. 失败信息在终端 stderr，非技术用户看不到也读不懂。
 
@@ -33,8 +32,8 @@ roadmap [06 §3.1](../../roadmap/06-user-experience.md) 已确定 GUI 形态与
 4. **双击启动入口**：产品入口是可双击的 GUI 可执行 `ogplay-gui`
    （Windows 免控制台窗口、macOS 为 `OGPlay.app`），用户全程不接触
    终端；终端子命令仅服务开发与测试。
-5. **基本可用即止**：设置页只暴露启动所必需的两个目录（Bionic
-   `--system-dir`、Profile 目录）；其余一切留给 M7。
+5. **基本可用即止**：Android guest 系统库由程序内置选择，设置页只暴露可选的
+   Profile 目录；其余一切留给 M7。
 6. **明确失败**：导入、启动、图标提取的每个失败点都有用户可读的原因与
    可执行下一步，不静默、不伪造成功（对齐 roadmap README"不要让失败静默"）。
 

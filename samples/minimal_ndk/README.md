@@ -29,8 +29,7 @@ Windows/MSVC 启用 ANGLE 构建后，可直接启动生成的 APK：
 
 ```powershell
 .\build\windows-msvc\Debug\ogplay.exe run-apk `
-  .\out\minimal-ndk\ogplay-minimal-ndk-armeabi-v7a.apk `
-  --system-dir .\.local\bionic-oracle\api19\lib
+  .\out\minimal-ndk\ogplay-minimal-ndk-armeabi-v7a.apk
 ```
 
 窗口出现后，按键会切换清屏颜色，鼠标按下或移动会按坐标改变颜色；关闭窗口后 guest

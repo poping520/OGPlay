@@ -20,11 +20,10 @@
   resources.arsc 与统一条目读取；名称回退 package，图标归一化为 128×128 PNG，
   非致命失败以 `ApplicationVisualFallback` 枚举返回。
 - `ResizeArgbBilinear`：以像素中心双线性插值归一化图标 ARGB，拒绝尺寸/像素数不一致。
-- `BuildLibraryTiles`：将库条目与运行/required-external/system-dir 事实合成为名称排序的
-  条目，状态优先级固定为损坏、Profile catalog 不可用、缺 Profile、缺数据包、运行中、
-  需要设置、ready。
-- `LibrarySelection` / `BuildLibraryDetail`：维护不落盘的稳定选择，并把条目、Profile、
-  external 和系统目录事实组合为双栏详情；详情不推断 API、ABI 或兼容性等级。
+- `BuildLibraryTiles`：将库条目与运行/required-external 事实合成为名称排序的条目，
+  状态优先级固定为损坏、Profile catalog 不可用、缺 Profile、缺数据包、运行中、ready。
+- `LibrarySelection` / `BuildLibraryDetail`：维护不落盘的稳定选择，并把条目、Profile 和
+  external 事实组合为双栏详情；详情不推断 API、ABI 或兼容性等级。
 - `GuiMessageQueue`：按 FIFO 保存运行/启动诊断，仅在没有其他 popup 时激活下一条。
 - `SelectCjkFont`：按注入候选顺序选择宿主字体，全部缺失时返回空路径供 ASCII 回退。
 - `GuiEventWaitMilliseconds`：普通运行最多等待 100ms 事件，smoke 为 0ms。
@@ -39,7 +38,7 @@
 - `GuiProcessManager`：以 SDL3 启动/非阻塞回收游戏子进程，维护同 package 单实例和
   `last-run.log`；GUI 退出只解除跟踪，不终止游戏。
 - `ValidateGuiConfigDirectories` / `GuiSettingsUi`：保存前严格验证已配置目录；设置页只
-  编辑 system/Profile 目录，库根只读，Profile 留空使用内置默认。
+  编辑可选 Profile 目录，库根只读，Profile 留空使用内置默认。
 - `GuiManagementUi`：呈现删除边界并调用 `LibraryStore::Remove`；运行中条目拒绝删除，
   external 数据和 `<library-root>/sandbox/<package>` 存档始终保留。
 
@@ -63,8 +62,8 @@
 - optional Profile 和 required external 事实必须来自
   `SelectApkCompatibilityProfile` 与 `SummarizeCompatibilityProfile`，不得在 GUI
   重复解析 applicability 或遍历 Profile mounts；no match 是 generic APK，不是错误。
-- 缺 Profile 是可启动的提示状态，不是硬阻断；系统目录有效且条目未运行时，GUI 必须
-  允许同一 `run-apk` 通用路径启动。缺 Profile 时 external 只能显示无法判断，不伪造就绪。
+- 缺 Profile 是可启动的提示状态，不是硬阻断；条目未运行时，GUI 必须允许同一
+  `run-apk` 通用路径启动。缺 Profile 时 external 只能显示无法判断，不伪造就绪。
 - Profile catalog 不可用时所有非损坏磁贴必须显示显式不可用状态，不得把空的
   required-external 集合解释为 ready。
 - 未匹配 Profile 或跳过 required external 仍允许入库并显示对应角标；APK/manifest

@@ -34,7 +34,6 @@ private:
 };
 
 struct GuiConfig final {
-    std::optional<std::filesystem::path> system_dir;
     std::optional<std::filesystem::path> profiles_dir;
 
     bool operator==(const GuiConfig&) const = default;

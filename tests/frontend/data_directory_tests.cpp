@@ -33,6 +33,12 @@ public:
 void WritePayload(const std::filesystem::path& root) {
     std::filesystem::create_directories(root / "profiles");
     std::ofstream(root / "quirks.toml", std::ios::binary) << "schema = 1\n";
+    const auto libraries = root / "android" / "19" / "lib";
+    std::filesystem::create_directories(libraries);
+    for (const auto* name : {"libc.so", "libdl.so", "libm.so",
+                             "libstdc++.so", "libz.so"}) {
+        std::ofstream(libraries / name, std::ios::binary) << "elf";
+    }
 }
 
 }  // namespace
@@ -57,6 +63,20 @@ TEST_CASE("bundled data prefers executable and macOS resource payloads") {
     CHECK(paths.root == std::filesystem::absolute(executable / "data"));
     CHECK(paths.profiles_directory == paths.root / "profiles");
     CHECK(paths.quirk_registry == paths.root / "quirks.toml");
+}
+
+TEST_CASE("bundled data rejects payloads without Android libraries") {
+    TemporaryDirectory temporary;
+    const auto executable = temporary.path / "bin";
+    const auto source = temporary.path / "source";
+    std::filesystem::create_directories(executable / "data" / "profiles");
+    std::ofstream(executable / "data" / "quirks.toml", std::ios::binary)
+        << "schema = 1\n";
+    WritePayload(source / "data");
+
+    const auto paths =
+        ogplay::frontend::ResolveBundledDataPaths(executable, source);
+    CHECK(paths.root == std::filesystem::absolute(source / "data"));
 }
 
 TEST_CASE("build stages a complete runtime data payload") {

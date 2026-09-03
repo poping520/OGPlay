@@ -392,8 +392,6 @@ struct Badge final {
         return {"缺数据包", IM_COL32(243, 166, 42, 255)};
     case LibraryTileStatus::running:
         return {"运行中", IM_COL32(67, 209, 122, 255)};
-    case LibraryTileStatus::setup_required:
-        return {"需要设置", IM_COL32(243, 166, 42, 255)};
     case LibraryTileStatus::ready:
         return {"可启动", IM_COL32(67, 209, 122, 255)};
     }
@@ -611,11 +609,6 @@ void DrawDetail(const LibraryDetail& detail, const LibraryTextures& textures,
     if (!detail.detail.empty()) {
         ImGui::TextWrapped("%s", detail.detail.c_str());
     }
-    if (detail.status == LibraryTileStatus::setup_required &&
-        GuiButton("打开设置##detail")) {
-        action.settings_requested = true;
-    }
-
     ImGui::Spacing();
     ImGui::SeparatorText("运行条件");
     if (ImGui::BeginTable("运行条件", 3,
@@ -626,7 +619,6 @@ void DrawDetail(const LibraryDetail& detail, const LibraryTextures& textures,
         ImGui::TableSetupColumn("状态", ImGuiTableColumnFlags_WidthStretch, 0.25F);
         DrawConditionRow("精确 Profile", detail.profile);
         DrawConditionRow("外部数据", detail.external);
-        DrawConditionRow("Android 系统库", detail.system);
         ImGui::EndTable();
     }
 
@@ -725,16 +717,6 @@ void DrawDetail(const LibraryDetail& detail, const LibraryTextures& textures,
     return found == entries.end() ? nullptr : &*found;
 }
 
-[[nodiscard]] std::optional<std::string> LoadSystemDirectoryError(
-    const std::filesystem::path& library_root) {
-    try {
-        return GuiSystemDirectoryError(LoadGuiConfig(library_root));
-    } catch (const std::exception& error) {
-        return "现有设置不可读：" + std::string(error.what()) +
-               "。请打开设置并保存有效目录。";
-    }
-}
-
 int RunShell(const GuiOptions& options, core::Logger& logger) {
     PrepareLog(logger, options.library_root);
     logger.Write(core::LogLevel::info, "frontend.gui", "GUI shell starting", {},
@@ -774,8 +756,6 @@ int RunShell(const GuiOptions& options, core::Logger& logger) {
             .running_packages = processes.RunningPackages(),
             .external_required_packages = required_external,
             .profile_catalog_error = import_ui.ProfileCatalogError(),
-            .system_directory_error =
-                LoadSystemDirectoryError(options.library_root),
         };
         tiles = BuildLibraryTiles(entries, view_context);
         selection.Reconcile(tiles);

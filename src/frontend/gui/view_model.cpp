@@ -87,23 +87,16 @@ std::vector<LibraryTile> BuildLibraryTiles(
             } else if (tile.running) {
                 tile.status = LibraryTileStatus::running;
                 tile.detail = "游戏正在运行；请先退出游戏。";
-            } else if (context.system_directory_error.has_value()) {
-                tile.status = LibraryTileStatus::setup_required;
-                tile.detail = *context.system_directory_error;
             } else {
                 tile.status = LibraryTileStatus::ready;
             }
         } else if (tile.running) {
             tile.status = LibraryTileStatus::running;
             tile.detail = "游戏正在运行；请先退出游戏。";
-        } else if (context.system_directory_error.has_value()) {
-            tile.status = LibraryTileStatus::setup_required;
-            tile.detail = *context.system_directory_error;
         } else {
             tile.status = LibraryTileStatus::ready;
         }
         tile.can_launch = !tile.running &&
-                          !context.system_directory_error.has_value() &&
                           (tile.status == LibraryTileStatus::ready ||
                            tile.status == LibraryTileStatus::missing_profile);
         tiles.push_back(std::move(tile));
@@ -185,13 +178,6 @@ LibraryDetail BuildLibraryDetail(const LibraryEntry& entry,
         }
     }
 
-    if (context.system_directory_error.has_value()) {
-        result.system = {LibraryConditionStatus::missing, "未配置",
-                         *context.system_directory_error};
-    } else {
-        result.system = {LibraryConditionStatus::ready, "已配置",
-                         "Android 系统库目录可用。"};
-    }
     return result;
 }
 
@@ -225,18 +211,6 @@ void LibrarySelection::Reconcile(const std::span<const LibraryTile> tiles) {
 
 const std::optional<std::string>& LibrarySelection::Key() const noexcept {
     return key_;
-}
-
-std::optional<std::string> GuiSystemDirectoryError(const GuiConfig& config) {
-    if (!config.system_dir.has_value()) {
-        return "Android 系统库未设置；请在设置中选择有效目录。";
-    }
-    std::error_code error;
-    if (!std::filesystem::is_directory(*config.system_dir, error) || error) {
-        return "Android 系统库目录不可用：" + PathUtf8(*config.system_dir) +
-               "。请在设置中修正。";
-    }
-    return std::nullopt;
 }
 
 std::filesystem::path SelectCjkFont(

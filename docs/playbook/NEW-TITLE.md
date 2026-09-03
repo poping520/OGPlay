@@ -69,7 +69,7 @@ handler。固定清单的来源与复验命令见 `tools/README.md`。
 ### 步 3 · survey 运行：一次收割全部真实命中
 
 ```bash
-ogplay run-apk <title>.apk --system-dir … --profiles-dir data/profiles-dexvm \
+ogplay run-apk <title>.apk --profiles-dir data/profiles-dexvm \
   --exit-after-frames 120 --survey-gaps .local/<title>_survey.json
 ```
 
@@ -147,15 +147,13 @@ cmake --build --preset dev --target <affected-target>
 ctest --preset dev -R "<affected-test>"
 ```
 
-**跑 title**：必须在构建输出目录下执行（ANGLE 动态库按相对路径加载），
-`--system-dir` 指向 Bionic 的 **lib 子目录**，未通过 gate 的 v2 profile 放在
-`data/profiles-dexvm/`（故意不在 `data/profiles/`，以免与生产 v1 profile 的门禁
-冲突）：
+**跑 title**：必须在构建输出目录下执行（ANGLE 动态库及 Android guest 系统库随构建
+产物提供），未通过 gate 的 v2 profile 放在 `data/profiles-dexvm/`（故意不在
+`data/profiles/`，以免与生产 v1 profile 的门禁冲突）：
 
 ```bash
 cd build/dev
 ./ogplay run-apk <title>.apk \
-  --system-dir <api19-lib-dir> \
   --profiles-dir ../../data/profiles-dexvm \
   --external-dir <该 title 的外部数据目录> \
   --exit-after-frames 3

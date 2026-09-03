@@ -278,7 +278,7 @@ note = "Launcher GUI-1/4/7/8/11/12/13/14/17/18 提供双入口与随程序交付
 [frontend.gui_library]
 status = "complete"
 test = "tests/frontend/data_directory_tests.cpp; tests/frontend/gui_model_tests.cpp; tests/frontend/gui_view_model_tests.cpp; tests/frontend/gui_import_tests.cpp; tests/session/profile_apk_tests.cpp"
-note = "Launcher GUI-2/5/7/10/12/15/16/17 交付严格 LibraryStore/GuiConfig、导入、删除、内存选择和详情模型：APK visuals、session 精确 Profile 摘要、required external、system readiness 和原子入库共用公共事实，versionCode 0 可往返；缺 Profile 保留提示但在 system 有效时允许通用 run-apk，external 明确无法判断；选择刷新保持 package、删除按原索引回退且不落盘；删除只移除库条目并保留 external/存档，重复 package、损坏输入明确失败"
+note = "Launcher GUI-2/5/7/10/12/15/16/17 交付严格 LibraryStore/GuiConfig、导入、删除、内存选择和详情模型：APK visuals、session 精确 Profile 摘要、required external 和原子入库共用公共事实，versionCode 0 可往返；Android guest 系统库改由 bundled data 自动选择，GUI 不再保存或呈现外部 system 目录；缺 Profile 保留提示并允许通用 run-apk，external 明确无法判断；选择刷新保持 package、删除按原索引回退且不落盘；删除只移除库条目并保留 external/存档，重复 package、损坏输入明确失败"
 
 [frontend.gui_launch_spawn]
 status = "complete"
@@ -503,7 +503,7 @@ note = "M2 三平台完成 120 项 Android ARM 分组目录和样本所需调用
 [runtime.bionic]
 status = "complete"
 test = "tests/runtime/bionic_profile_tests.cpp; tools.android_payload_current; tests/frontend/data_directory_tests.cpp"
-note = "M2 三平台 API 19/22/23 真实 Bionic 完成装载自检和累计样本执行；mem 热点拦截具备生产 handler 与吞吐基准。发行数据现内置从 android-4.4.4_r2.0.1 clean tag 构建的 aosp_arm-user API 19 五库，逐文件哈希、ELF 身份、pinned source manifest 与 NOTICE 受检并随构建/安装产物暂存；API 22/23 发行集仍未纳入。"
+note = "M2 三平台 API 19/22/23 真实 Bionic 完成装载自检和累计样本执行；mem 热点拦截具备生产 handler 与吞吐基准。发行数据现内置从 android-4.4.4_r2.0.1 clean tag 构建的 aosp_arm-user API 19 五库，逐文件哈希、ELF 身份、pinned source manifest 与 NOTICE 受检并随构建/安装产物暂存；run-apk 按 Profile API 自动从 bundled data 选库且不再接受外部 system 目录；API 22/23 发行集仍未纳入。"
 
 [frontend.save_sandbox]
 status = "partial"

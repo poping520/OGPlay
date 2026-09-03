@@ -32,7 +32,6 @@ python tools/run_scenario.py \
   --scenario data/scenarios/<id>.scenario.toml \
   --profiles data/profiles \
   --ogplay build/windows-msvc/Release/ogplay.exe \
-  --system-dir <api19-lib-dir> \
   --fixture <logical-id>=<host-apk> \
   --evidence-dir .local/evidence/<id> --fresh
 ```

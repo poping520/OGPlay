@@ -59,9 +59,8 @@ TEST_CASE("GUI config is strict and round-trips UTF-8 paths") {
     CHECK(ogplay::frontend::LoadGuiConfig(tree.path) == ogplay::frontend::GuiConfig{});
 
     const ogplay::frontend::GuiConfig config{
-        .system_dir = std::filesystem::absolute(
-            tree.path / std::filesystem::path(std::u8string(u8"系统库"))),
-        .profiles_dir = std::filesystem::absolute(tree.path / "profiles"),
+        .profiles_dir = std::filesystem::absolute(
+            tree.path / std::filesystem::path(std::u8string(u8"配置"))),
     };
     ogplay::frontend::SaveGuiConfig(tree.path, config);
     CHECK(ogplay::frontend::LoadGuiConfig(tree.path) == config);
@@ -79,19 +78,14 @@ TEST_CASE("GUI config is strict and round-trips UTF-8 paths") {
 
 TEST_CASE("GUI settings validate every configured directory before save") {
     TemporaryDirectory tree;
-    const auto system = tree.path / "system";
     const auto profiles = tree.path / "profiles";
-    std::filesystem::create_directories(system);
     std::filesystem::create_directories(profiles);
     CHECK_NOTHROW(ogplay::frontend::ValidateGuiConfigDirectories({}));
     CHECK_NOTHROW(ogplay::frontend::ValidateGuiConfigDirectories(
-        {system, profiles}));
-    CHECK_THROWS_AS(ogplay::frontend::ValidateGuiConfigDirectories(
-                        {tree.path / "missing-system", std::nullopt}),
-                    ogplay::frontend::GuiModelError);
+        {.profiles_dir = profiles}));
     try {
         ogplay::frontend::ValidateGuiConfigDirectories(
-            {system, tree.path / "missing"});
+            {.profiles_dir = tree.path / "missing"});
         FAIL("missing Profile directory should fail");
     } catch (const ogplay::frontend::GuiModelError& error) {
         CHECK(error.Code() == ogplay::frontend::GuiModelErrorCode::not_found);
@@ -101,15 +95,27 @@ TEST_CASE("GUI settings validate every configured directory before save") {
 
 TEST_CASE("GUI config recovers an interrupted replacement backup") {
     TemporaryDirectory tree;
-    const auto system = std::filesystem::absolute(tree.path / "system");
-    std::filesystem::create_directories(system);
-    ogplay::frontend::SaveGuiConfig(tree.path, {.system_dir = system});
+    const auto profiles = std::filesystem::absolute(tree.path / "profiles");
+    std::filesystem::create_directories(profiles);
+    ogplay::frontend::SaveGuiConfig(tree.path, {.profiles_dir = profiles});
     std::filesystem::rename(tree.path / "config.toml",
                             tree.path / "config.toml.bak");
     const auto recovered = ogplay::frontend::LoadGuiConfig(tree.path);
-    CHECK(recovered.system_dir == system);
+    CHECK(recovered.profiles_dir == profiles);
     CHECK(std::filesystem::is_regular_file(tree.path / "config.toml"));
     CHECK_FALSE(std::filesystem::exists(tree.path / "config.toml.bak"));
+}
+
+TEST_CASE("GUI config discards the legacy external system directory") {
+    TemporaryDirectory tree;
+    Write(tree.path / "config.toml",
+          "schema = 1\nsystem_dir = \"C:/old-bionic\"\n");
+    CHECK(ogplay::frontend::LoadGuiConfig(tree.path) ==
+          ogplay::frontend::GuiConfig{});
+    ogplay::frontend::SaveGuiConfig(tree.path,
+                                    ogplay::frontend::GuiConfig{});
+    CHECK(std::filesystem::file_size(tree.path / "config.toml") ==
+          std::string_view("schema = 1\n").size());
 }
 
 TEST_CASE("library import atomically copies APK metadata and optional icon") {

@@ -42,9 +42,11 @@ ogplay gui [--library-root <dir>] [--smoke-frames <n>]   # 开发与 CI
 | --- | --- | --- |
 | `<ogplay> run-apk` | `SDL_GetBasePath` 同目录下的 `ogplay` CLI 二进制 | 不查 PATH；同目录缺失该二进制 = 安装损坏，启动前校验明确失败 |
 | `<apk>` | `library/<pkg>/game.apk` | 绝对路径 |
-| `--system-dir <dir>` | `config.toml: system_dir` | 必填；未设置在校验期拦截 |
 | `--profiles-dir <dir>` | `config.toml: profiles_dir` | 仅在非空时传递 |
 | `--external-dir <dir>` | `meta.toml: external_dir` | 仅在条目声明时传递 |
+
+Android guest 系统库不进入 LaunchPlan；`run-apk` 根据匹配 Profile 的 API 从随程序交付
+的 bundled data 自动选择，缺少对应发行集时明确失败。
 
 不传递任何其他旗标：超采样、MCP、preflight、survey 等均为 CLI/自动化
 面，主面板不暴露（[01 §3 非目标](01-scope.md)）。装配函数是纯函数

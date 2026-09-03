@@ -13,7 +13,7 @@ MCP 服务只在 `run-apk` 会话存活期间存在，**它不能启动或终止
 
 ```powershell
 cmake --build --preset windows-msvc --config Release --target ogplay
-build\windows-msvc\Release\ogplay.exe run-apk <apk> --system-dir <api19-lib-dir> --mcp
+build\windows-msvc\Release\ogplay.exe run-apk <apk> --mcp
 ```
 
 等终端打印 `OGPlay: MCP ready at http://127.0.0.1:15971/mcp` 再发第一个工具调用。

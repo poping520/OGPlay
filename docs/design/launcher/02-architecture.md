@@ -66,7 +66,7 @@ Windows `%APPDATA%/OGPlay`、Linux `$XDG_DATA_HOME/OGPlay`，回退
 
 ```
 <library-root>/
-  config.toml                 # GuiConfig：system_dir、profiles_dir
+  config.toml                 # GuiConfig：可选 profiles_dir
   library/
     <package-name>/
       game.apk                # 导入时复制入库的 APK 副本

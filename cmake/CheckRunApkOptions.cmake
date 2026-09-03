@@ -3,7 +3,6 @@ if(NOT DEFINED OGPLAY_CLI OR NOT DEFINED ROOT)
 endif()
 
 set(_missing_apk "${ROOT}/.local/run-apk-options-missing.apk")
-set(_missing_system "${ROOT}/.local/run-apk-options-missing-system")
 
 function(expect_failure label expected)
     execute_process(
@@ -36,9 +35,12 @@ function(expect_usage expected)
     endif()
 endfunction()
 
-set(_base run-apk "${_missing_apk}" --system-dir "${_missing_system}")
+set(_base run-apk "${_missing_apk}")
 expect_usage("[--mcp | --mcp-port <1..65535>]")
 expect_usage("[--mcp-manual-step]")
+expect_failure(removed_system_dir
+    "unknown or incomplete run-apk option: --system-dir"
+    ${_base} --system-dir old-bionic)
 expect_failure(zero "--supersample requires an integer in 1..4"
     ${_base} --supersample 0)
 expect_failure(too_large "--supersample requires an integer in 1..4"

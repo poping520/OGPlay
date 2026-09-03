@@ -48,8 +48,9 @@ Streamable HTTP transport，并把截图、输入和会话控制交给 agent/ses
   Clock、输入、frame 或 present。
 - MCP 会话发布同一份 lifecycle/frame/ticks/presented-frame/movie/exit/fault 状态；fault
   不得伪装为停止或成功。截图只读取已成功 present 的 RGBA8 快照。
-- `run-apk` 要求显式 Bionic 目录；入口只由 Manifest + native hash + ABI exact Profile
-  决定，支持压缩的 armeabi/armeabi-v7a，依赖闭包不得由 CLI 手写。
+- `run-apk` 根据 exact Profile 的 API 从完整 bundled data 自动选择 Android guest 系统库；
+  入口只由 Manifest + native hash + ABI exact Profile 决定，支持压缩的
+  armeabi/armeabi-v7a，系统库路径和依赖闭包不得由 CLI 手写。
 - 只接受 Title Profile v2 `dex_activity`。Profile entry override 在生命周期前解析，static
   presets 在 DexVM class 初始化后、Activity 启动前应用；required external manifest 必须
   已由 VFS 验证。
@@ -76,8 +77,8 @@ Streamable HTTP transport，并把截图、输入和会话控制交给 agent/ses
   package 单实例，GUI 退出不得杀死仍运行的游戏；存档根固定为当前库根的 `sandbox/`。
   macOS bundle 内的 CLI 使用 `ogplay-cli` 文件名，以避免大小写不敏感文件系统上与
   `OGPlay` GUI 可执行名冲突。
-- GUI 删除库条目不得删除 external 数据或持久存档；设置面只保存启动必需的
-  system/Profile 目录，所有用户可见失败必须同时进入结构化日志并给出下一步。
+- GUI 删除库条目不得删除 external 数据或持久存档；设置面只保存可选 Profile 目录，
+  所有用户可见失败必须同时进入结构化日志并给出下一步。
 
 ## 禁止
 

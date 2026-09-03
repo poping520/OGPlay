@@ -248,15 +248,6 @@ void ValidateMetadata(const LibraryMetadata& metadata) {
 
 [[nodiscard]] std::string EncodeConfig(const GuiConfig& config) {
     std::string text = "schema = 1\n";
-    if (config.system_dir.has_value()) {
-        if (!config.system_dir->is_absolute()) {
-            throw GuiModelError(GuiModelErrorCode::invalid_argument,
-                                "GUI system directory must be absolute");
-        }
-        text.append("system_dir = ")
-            .append(EscapeToml(PathUtf8(*config.system_dir)))
-            .push_back('\n');
-    }
     if (config.profiles_dir.has_value()) {
         if (!config.profiles_dir->is_absolute()) {
             throw GuiModelError(GuiModelErrorCode::invalid_argument,
@@ -276,14 +267,17 @@ void ValidateMetadata(const LibraryMetadata& metadata) {
         throw std::runtime_error("GUI config schema is not supported");
     }
     GuiConfig config;
+    // schema 1 previously persisted an externally selected Bionic directory.
+    // Parse the value so damaged legacy files still fail closed, then discard
+    // it because system libraries are now part of the bundled runtime data.
     if (const auto item = values.find("system_dir"); item != values.end()) {
-        config.system_dir = Utf8Path(ParseTomlString(item->second));
+        static_cast<void>(ParseTomlString(item->second));
     }
     if (const auto item = values.find("profiles_dir"); item != values.end()) {
         config.profiles_dir = Utf8Path(ParseTomlString(item->second));
     }
-    if ((config.system_dir.has_value() && !config.system_dir->is_absolute()) ||
-        (config.profiles_dir.has_value() && !config.profiles_dir->is_absolute())) {
+    if (config.profiles_dir.has_value() &&
+        !config.profiles_dir->is_absolute()) {
         throw std::runtime_error("GUI config paths must be absolute");
     }
     return config;
@@ -346,9 +340,6 @@ void ValidateGuiConfigDirectories(const GuiConfig& config) {
                                 std::string(name) + " is unavailable", path);
         }
     };
-    if (config.system_dir.has_value()) {
-        require_directory(*config.system_dir, "Android system library directory");
-    }
     if (config.profiles_dir.has_value()) {
         require_directory(*config.profiles_dir, "Profile directory");
     }

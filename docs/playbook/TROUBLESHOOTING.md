@@ -13,7 +13,7 @@ title 的通用症状。手册总览见 [README.md](README.md)。
 启动时显式打开诊断；超时值只触发取证，不会强杀 guest：
 
 ```powershell
-.\build\windows-msvc\Release\ogplay.exe run-apk game.apk --system-dir api19\lib `
+.\build\windows-msvc\Release\ogplay.exe run-apk game.apk `
   --diag --diag-dir .local\diagnostics --diag-on-teardown-timeout 5
 ```
 

@@ -85,7 +85,7 @@ std::vector<OwnedSystemLibrary> ReadSystemLibraries(
     const runtime::BionicProfile& profile) {
     std::error_code error;
     if (!std::filesystem::is_directory(directory, error) || error) {
-        throw std::runtime_error("Bionic system library directory is unavailable: " +
+        throw std::runtime_error("bundled Android library directory is unavailable: " +
                                  directory.string());
     }
     std::vector<OwnedSystemLibrary> result;
@@ -234,12 +234,10 @@ void ReleaseCapturedFrame(agent::FrameSnapshotStore* frames, Guest& guest) {
 
 int RunApkCommand(const int argc, const char* const argv[],
                   core::Logger& logger) {
-    if (argc < 5) {
-        throw std::invalid_argument(
-            "run-apk requires <apk> --system-dir <api19-lib-dir>");
+    if (argc < 3) {
+        throw std::invalid_argument("run-apk requires <apk>");
     }
     const std::filesystem::path apk_path{argv[2]};
-    std::optional<std::filesystem::path> system_directory;
     std::optional<std::filesystem::path> external_directory;
     const auto bundled_data = HostBundledDataPaths();
     auto profiles_directory = bundled_data.profiles_directory;
@@ -263,9 +261,7 @@ int RunApkCommand(const int argc, const char* const argv[],
     bool ephemeral_sandbox{};
     for (int index = 3; index < argc; ++index) {
         const std::string_view option{argv[index]};
-        if (option == "--system-dir" && index + 1 < argc) {
-            system_directory = std::filesystem::path{argv[++index]};
-        } else if (option == "--profiles-dir" && index + 1 < argc) {
+        if (option == "--profiles-dir" && index + 1 < argc) {
             profiles_directory = std::filesystem::path{argv[++index]};
         } else if (option == "--external-dir" && index + 1 < argc) {
             if (external_directory.has_value()) {
@@ -355,9 +351,6 @@ int RunApkCommand(const int argc, const char* const argv[],
                                         std::string(option));
         }
     }
-    if (!system_directory.has_value()) {
-        throw std::invalid_argument("run-apk requires --system-dir with API 19 Bionic libraries");
-    }
     if (ephemeral_sandbox && sandbox_directory.has_value()) {
         throw std::invalid_argument(
             "--ephemeral-sandbox and --sandbox-dir cannot be combined");
@@ -414,7 +407,9 @@ int RunApkCommand(const int argc, const char* const argv[],
         filesystem.SetWorkingDirectory(*profile.data->working_directory);
     }
     const auto& bionic = runtime::SelectBionicProfile(profile.runtime.api_level);
-    const auto owned_system = ReadSystemLibraries(*system_directory, bionic);
+    const auto system_directory =
+        bundled_data.root / bionic.data_directory / "lib";
+    const auto owned_system = ReadSystemLibraries(system_directory, bionic);
     std::vector<runtime::BionicModuleSource> system_sources;
     system_sources.reserve(owned_system.size());
     for (const auto& source : owned_system) {

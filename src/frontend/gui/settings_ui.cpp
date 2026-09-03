@@ -23,10 +23,7 @@
 namespace ogplay::frontend {
 namespace {
 
-enum class SettingTarget : std::uint8_t { system, profiles };
-
 struct DialogResult final {
-    SettingTarget target{SettingTarget::system};
     std::optional<std::filesystem::path> path;
     std::string error;
 };
@@ -50,7 +47,6 @@ private:
 
 struct DialogRequest final {
     Uint32 event_type{};
-    SettingTarget target{SettingTarget::system};
     std::shared_ptr<DialogMailbox> mailbox;
 };
 
@@ -69,7 +65,7 @@ void SDLCALL DialogCallback(void* userdata, const char* const* files,
     static_cast<void>(filter);
     std::unique_ptr<DialogRequest> request(
         static_cast<DialogRequest*>(userdata));
-    DialogResult result{.target = request->target};
+    DialogResult result;
     if (files == nullptr) {
         result.error = SDL_GetError();
         if (result.error.empty()) result.error = "host folder dialog failed";
@@ -131,11 +127,7 @@ public:
                 SetError("所选目录不存在或不可读：" + PathUtf8(selected));
                 continue;
             }
-            if (result.target == SettingTarget::system) {
-                config_.system_dir = std::move(selected);
-            } else {
-                config_.profiles_dir = std::move(selected);
-            }
+            config_.profiles_dir = std::move(selected);
             error_.clear();
         }
         return true;
@@ -152,11 +144,8 @@ public:
             ImGui::TextUnformatted("游戏库（只读）");
             ImGui::TextWrapped("%s", PathUtf8(library_root_).c_str());
             ImGui::Separator();
-            DrawDirectory("Android 系统库目录", config_.system_dir,
-                          SettingTarget::system, "选择系统库目录");
-            ImGui::Spacing();
             DrawDirectory("Profile 目录", config_.profiles_dir,
-                          SettingTarget::profiles, "选择 Profile 目录");
+                          "选择 Profile 目录");
             ImGui::TextWrapped("Profile 目录留空时使用 OGPlay 内置默认目录。");
             if (!error_.empty()) {
                 ImGui::Spacing();
@@ -182,32 +171,29 @@ public:
 private:
     void DrawDirectory(const char* label,
                        std::optional<std::filesystem::path>& value,
-                       const SettingTarget target, const char* button) {
+                       const char* button) {
         ImGui::TextUnformatted(label);
         if (value.has_value()) {
             ImGui::TextWrapped("%s", PathUtf8(*value).c_str());
         } else {
             ImGui::TextDisabled("未设置");
         }
-        if (GuiButton(button)) OpenFolderDialog(target);
+        if (GuiButton(button)) OpenFolderDialog();
         if (value.has_value()) {
             ImGui::SameLine();
-            const auto clear_label = target == SettingTarget::system
-                                         ? "清除系统库目录"
-                                         : "使用内置 Profile";
-            if (GuiButton(clear_label)) {
+            if (GuiButton("使用内置 Profile")) {
                 value.reset();
                 error_.clear();
             }
         }
     }
 
-    void OpenFolderDialog(const SettingTarget target) {
+    void OpenFolderDialog() {
         if (dialog_open_) return;
         dialog_open_ = true;
         SDL_ShowOpenFolderDialog(
             DialogCallback,
-            new DialogRequest{event_type_, target, mailbox_}, window_, nullptr,
+            new DialogRequest{event_type_, mailbox_}, window_, nullptr,
             false);
     }
 
@@ -218,10 +204,7 @@ private:
             logger_.Write(
                 core::LogLevel::info, "frontend.gui.settings",
                 "GUI settings saved", {},
-                {{"system_dir", config_.system_dir.has_value()
-                                    ? PathUtf8(*config_.system_dir)
-                                    : std::string{}},
-                 {"profiles_dir", config_.profiles_dir.has_value()
+                {{"profiles_dir", config_.profiles_dir.has_value()
                                       ? PathUtf8(*config_.profiles_dir)
                                       : std::string{}}});
             ImGui::CloseCurrentPopup();

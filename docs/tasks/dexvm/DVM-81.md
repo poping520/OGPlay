@@ -46,5 +46,9 @@ Context 能力通过稳定 base Context 委托，并由 Activity 生命周期完
   package/resource/service/VFS 等 Context 行为不复制状态，只经 base 虚派委托。
 - `ContextThemeWrapper` 仅保存可查询的 theme resource id，未承诺完整 theme 行为。
 - Windows Debug 全目标构建及 DVM-81 定向回归通过；全量 CTest 按计划未运行。
+- 2026-09-03 后续补齐 `Context.openFileInput/openFileOutput` 与
+  `MODE_PRIVATE/MODE_APPEND`：文件名按 API 19 拒绝路径分隔符，流对象复用 core
+  `FileInputStream/FileOutputStream` 和唯一 `IoRuntime`/VFS；`ContextWrapper` 继续只委托
+  base Context。覆盖、追加、读取、缺失文件和非法名称均有双后端回归。
 
 状态：已完成。

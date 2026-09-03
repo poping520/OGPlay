@@ -15,6 +15,9 @@
   SimpleDateFormat API 19 最小层级以及 Observer/Observable 已闭合。Observable 复用
   `ArrayList`，按 changed flag 门控并在 receiver monitor 外按快照虚派发 `update`；覆盖
   回调删除、异常传播和 nested GC 强根保活。格式化/解析及完整 XmlPullParser 长尾仍 deferred。
+- **Android Context 文件流**：`openFileInput/openFileOutput` 已接入 app files 目录；
+  `MODE_PRIVATE` 覆盖、`MODE_APPEND` 追加，Activity/ContextWrapper 继续委托进程 base Context，
+  文件状态只存在于 core `IoRuntime` 与统一 VFS。
 - **基础架构**：DVM-92 teardown 及 DVM-94～96 的稳定 linker metadata、`MethodShape`、
   own-member intrinsic 与 owner-state trace/sweep 已完成；Dalvik access flag 与 Java reflection
   modifier mask 已集中到共享头，core 与平台 intrinsics 不再复制直接量。解释执行仍由
@@ -27,6 +30,8 @@
 
 ## 最近验证
 
+- 2026-09-03 Windows `windows-msvc` Release：`ogplay_tests` 构建通过；Context 私有文件流
+  覆盖/追加/读取及异常、ContextWrapper 委托、Android catalog 定向回归通过。
 - 2026-09-03 Windows `windows-msvc` Release：core 与 Android 平台 intrinsic 中 164 个
   DVM-80 迁移命名空间和 180 个同名转发函数已移除，`ogplay_runtime` 构建通过；按要求未跑测试。
 - 2026-09-03 Windows `windows-msvc` Release：共享 access flag 重构后 `ogplay_tests`

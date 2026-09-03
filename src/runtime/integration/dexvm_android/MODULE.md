@@ -72,6 +72,10 @@ binding。`GLUtils` 读取 context 中既有 Bitmap backing；本层不拥有 GL
   `onCreate` 前完成一次性 attach，现有 Context 方法必须虚派委托 base，不复制资源或
   service 状态。ContextThemeWrapper 只承诺有界 theme id，不引入 Instrumentation、
   ActivityManager、service process 或完整 framework。
+- `Context.openFileInput/openFileOutput` 只接受 app `files` 目录下的单个文件名，包含 `/`
+  必须按 API 19 抛 `IllegalArgumentException`；`MODE_PRIVATE` 覆盖、`MODE_APPEND` 追加，实际
+  流状态与读写全部委托 core `FileInputStream/FileOutputStream` 和唯一 `IoRuntime`/VFS。
+  `ContextWrapper` 只虚派委托 base，不建立 Android 侧文件流状态或宿主文件句柄。
 - `Application/Activity/Service` declaration 只声明自身构造器、生命周期和真实 override，
   禁止复制 Context/ContextWrapper 方法；`ContextWrapper` 的 `mBase` 转发必须逐项使用
   `OverrideMethod`，继承与 declaring class 只由 linker 决定（ADR-0028）。

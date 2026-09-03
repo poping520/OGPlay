@@ -829,6 +829,66 @@ namespace {
     return true;
 }
 
+[[nodiscard]] std::string ContextFilesPath(const Context& context) {
+    return "/data/data/" + context->package_name + "/files";
+}
+
+[[nodiscard]] std::string ContextFilePath(
+    dx::IntrinsicContext& call, const Context& context,
+    const dx::VmObjectRef name_ref) {
+    if (!name_ref.IsValid()) {
+        throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;",
+                              "name == null"};
+    }
+    const auto name = call.vm.StringUtf8(name_ref);
+    if (name.find('/') != std::string::npos) {
+        throw dx::VmJavaThrow{
+            "Ljava/lang/IllegalArgumentException;",
+            "File " + name + " contains a path separator"};
+    }
+    const auto directory = ContextFilesPath(context);
+    if (!EnsureDirectory(context, directory)) {
+        if (context->vfs == nullptr) {
+            throw dx::VmJavaThrow{
+                "Ljava/lang/UnsupportedOperationException;",
+                "guest filesystem is unavailable"};
+        }
+        throw dx::VmJavaThrow{"Ljava/io/FileNotFoundException;",
+                              "files directory is unavailable: " + directory};
+    }
+    return directory + "/" + name;
+}
+
+[[nodiscard]] dx::VmObjectRef NewContextFileStream(
+    dx::IntrinsicContext& call, const std::string_view stream_descriptor,
+    const std::string_view constructor_descriptor,
+    std::vector<dx::VmValue> constructor_arguments,
+    const dx::VmObjectRef path) {
+    const std::array path_references{path};
+    [[maybe_unused]] const auto path_roots =
+        call.vm.ProtectReferences(path_references);
+    const auto stream = call.vm.NewIntrinsicInstance(stream_descriptor);
+    const std::array stream_references{stream};
+    [[maybe_unused]] const auto stream_roots =
+        call.vm.ProtectReferences(stream_references);
+    const auto stream_class = call.vm.Model().ObjectClass(stream);
+    const auto constructor = call.vm.Linker().FindDirectMethod(
+        stream_class, "<init>", std::string(constructor_descriptor));
+    if (!constructor.has_value()) {
+        throw dx::DexVmError(
+            dx::DexVmErrorReason::internal_invariant,
+            std::string(stream_descriptor) + " constructor is unavailable");
+    }
+    constructor_arguments.insert(constructor_arguments.begin(),
+                                 dx::VmValue::Ref(stream));
+    const auto outcome = call.vm.Call(*constructor, constructor_arguments);
+    if (outcome.exception.IsValid()) {
+        call.vm.SetPendingException(outcome.exception);
+        return dx::VmObjectRef{};
+    }
+    return stream;
+}
+
 [[nodiscard]] dx::VmObjectRef ContextDirectory(
     dx::IntrinsicContext& call, const Context& context,
     const std::string& path, const std::string& singleton_key) {
@@ -862,7 +922,13 @@ void LoadPreferencesOnce(const Context& context, const std::string& name) {
 
 Decl Declare_android_content_Context(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/content/Context;", "Ljava/lang/Object;");
-    builder.ConstantString(
+    builder.ConstantInt(
+               "MODE_PRIVATE", "I", 0,
+               dx::kAccPublic | dx::kAccStatic | dx::kAccFinal)
+        .ConstantInt(
+            "MODE_APPEND", "I", 0x8000,
+            dx::kAccPublic | dx::kAccStatic | dx::kAccFinal)
+        .ConstantString(
                "POWER_SERVICE", "power",
                dx::kAccPublic | dx::kAccStatic | dx::kAccFinal)
         .ConstantString(
@@ -922,10 +988,34 @@ Decl Declare_android_content_Context(const Context& context) {
         });
     builder.VirtualMethod("getFilesDir", "()Ljava/io/File;",
         [context](dx::IntrinsicContext& call) {
-            const auto path = "/data/data/" + context->package_name +
-                              "/files";
+            const auto path = ContextFilesPath(context);
             return dx::VmValue::Ref(ContextDirectory(
                 call, context, path, "context_files_directory"));
+        });
+    builder.VirtualMethod(
+        "openFileInput", "(Ljava/lang/String;)Ljava/io/FileInputStream;",
+        [context](dx::IntrinsicContext& call) {
+            const auto path = call.vm.NewStringUtf8(ContextFilePath(
+                call, context, call.arguments[0].ref));
+            return dx::VmValue::Ref(NewContextFileStream(
+                call, "Ljava/io/FileInputStream;",
+                "(Ljava/lang/String;)V", {dx::VmValue::Ref(path)}, path));
+        });
+    builder.VirtualMethod(
+        "openFileOutput",
+        "(Ljava/lang/String;I)Ljava/io/FileOutputStream;",
+        [context](dx::IntrinsicContext& call) {
+            constexpr std::int32_t kModeAppend = 0x8000;
+            const auto path = call.vm.NewStringUtf8(ContextFilePath(
+                call, context, call.arguments[0].ref));
+            const auto append =
+                (call.arguments[1].AsInt() & kModeAppend) != 0;
+            return dx::VmValue::Ref(NewContextFileStream(
+                call, "Ljava/io/FileOutputStream;",
+                "(Ljava/lang/String;Z)V",
+                {dx::VmValue::Ref(path),
+                 dx::VmValue::Int(append ? 1 : 0)},
+                path));
         });
     // 返回当前应用存放可清理缓存文件的内部目录。
     builder.VirtualMethod("getCacheDir", "()Ljava/io/File;",
@@ -1092,8 +1182,15 @@ namespace {
 dx::IntrinsicHandler DelegateContextMethod(
     const dx::IntrinsicFieldHandle base_field, std::string name,
     std::string descriptor) {
+    const auto return_offset = descriptor.find(')') + 1U;
+    const auto return_shorty = descriptor[return_offset] == '['
+                                  ? 'L'
+                                  : descriptor[return_offset];
+    auto neutral_return = NeutralHandler(return_shorty);
     return [base_field, name = std::move(name),
-            descriptor = std::move(descriptor)](dx::IntrinsicContext& context) {
+            descriptor = std::move(descriptor),
+            neutral_return = std::move(neutral_return)](
+               dx::IntrinsicContext& context) {
         dx::IntrinsicCall call(context);
         const auto base = call.GetRef(base_field);
         if (!base.IsValid()) {
@@ -1116,6 +1213,7 @@ dx::IntrinsicHandler DelegateContextMethod(
             linker.Class(base_class).vtable[*index], arguments);
         if (outcome.exception.IsValid()) {
             vm.SetPendingException(outcome.exception);
+            return neutral_return(context);
         }
         return outcome.value;
     };
@@ -1163,6 +1261,10 @@ Decl Declare_android_content_ContextWrapper(const Context& context) {
     delegate("getPackageManager", "()Landroid/content/pm/PackageManager;");
     delegate("getApplicationContext", "()Landroid/content/Context;");
     delegate("getFilesDir", "()Ljava/io/File;");
+    delegate("openFileInput",
+             "(Ljava/lang/String;)Ljava/io/FileInputStream;");
+    delegate("openFileOutput",
+             "(Ljava/lang/String;I)Ljava/io/FileOutputStream;");
     delegate("getCacheDir", "()Ljava/io/File;");
     delegate("getResources", "()Landroid/content/res/Resources;");
     delegate("getSystemService", "(Ljava/lang/String;)Ljava/lang/Object;");

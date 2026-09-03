@@ -171,7 +171,9 @@ DVM-79 的 `DexVmIoVfsAdapter` 是 DexVM core `IoFileSystem` 与具体
   IO 走 APK 条目与会话 VFS；API19 `Environment.getDataDirectory()` 返回稳定的
   guest `File("/data")`；`Context.getFilesDir()` 由 Activity 正常继承，返回稳定
   `/data/data/<package>/files` File 并经 VFS 真实建立目录；两者都不读取或泄漏
-  sandbox 宿主路径。`AssetManager.openFd()` 对虚拟 APK 只发布目标实际消费的
+  sandbox 宿主路径。`Context.openFileInput/openFileOutput` 在该目录内校验单一文件名，
+  并把覆盖/追加和读取直接交给 core Java file stream 与同一 VFS。
+  `AssetManager.openFd()` 对虚拟 APK 只发布目标实际消费的
   logical `AssetFileDescriptor.getLength()`，长度取受检 central-directory
   uncompressed size；`AssetManager.list()` 从同一 sealed entry directory 返回
   case-sensitive、排序去重的 direct child；logical descriptor `close()` 对空资源集

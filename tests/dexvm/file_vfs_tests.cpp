@@ -1306,6 +1306,93 @@ TEST_CASE("Context files and cache directories are inherited stable and VFS back
     CHECK(vm.CallOn(base, "getCacheDir", "()Ljava/io/File;").ref == cache);
 }
 
+TEST_CASE("Context private file streams use the app files directory on both backends") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch,
+                               InterpreterBackend::threaded}) {
+        CAPTURE(backend == InterpreterBackend::threaded ? "threaded" :
+                                                         "switch");
+        InterpreterConfig config;
+        config.backend = backend;
+        FileVm vm(nullptr, true, config);
+        CHECK(vm.StaticField("Landroid/content/Context;", "MODE_PRIVATE",
+                             "I") == 0U);
+        CHECK(vm.StaticField("Landroid/content/Context;", "MODE_APPEND",
+                             "I") == 0x8000U);
+        const auto base =
+            vm.interpreter.NewIntrinsicInstance("Landroid/content/Context;");
+        const auto activity =
+            vm.interpreter.NewIntrinsicInstance("Landroid/app/Activity;");
+        static_cast<void>(vm.CallOn(
+            activity, "attachBaseContext", "(Landroid/content/Context;)V",
+            {VmValue::Ref(base)}));
+        const auto name = vm.interpreter.NewStringUtf8("slot.dat");
+        const auto output_descriptor =
+            "(Ljava/lang/String;I)Ljava/io/FileOutputStream;";
+        const auto input_descriptor =
+            "(Ljava/lang/String;)Ljava/io/FileInputStream;";
+
+        auto output = vm.CallOn(
+            activity, "openFileOutput", output_descriptor,
+            {VmValue::Ref(name), VmValue::Int(0)}).ref;
+        REQUIRE(output.IsValid());
+        CHECK(vm.linker.Class(vm.model.ObjectClass(output)).descriptor ==
+              "Ljava/io/FileOutputStream;");
+        static_cast<void>(vm.CallOn(output, "write", "(I)V",
+                                    {VmValue::Int('A')}));
+        static_cast<void>(vm.CallOn(output, "close", "()V"));
+        CHECK(vm.NativeRead(
+                  "/data/data/com.example.game/files/slot.dat") == "A");
+
+        output = vm.CallOn(
+            activity, "openFileOutput", output_descriptor,
+            {VmValue::Ref(name), VmValue::Int(0x8000)}).ref;
+        static_cast<void>(vm.CallOn(output, "write", "(I)V",
+                                    {VmValue::Int('B')}));
+        static_cast<void>(vm.CallOn(output, "close", "()V"));
+        CHECK(vm.NativeRead(
+                  "/data/data/com.example.game/files/slot.dat") == "AB");
+
+        output = vm.CallOn(
+            base, "openFileOutput", output_descriptor,
+            {VmValue::Ref(name), VmValue::Int(0)}).ref;
+        static_cast<void>(vm.CallOn(output, "write", "(I)V",
+                                    {VmValue::Int('C')}));
+        static_cast<void>(vm.CallOn(output, "close", "()V"));
+
+        const auto input = vm.CallOn(
+            activity, "openFileInput", input_descriptor,
+            {VmValue::Ref(name)}).ref;
+        REQUIRE(input.IsValid());
+        CHECK(vm.linker.Class(vm.model.ObjectClass(input)).descriptor ==
+              "Ljava/io/FileInputStream;");
+        CHECK(vm.CallOn(input, "read", "()I").AsInt() == 'C');
+        CHECK(vm.CallOn(input, "read", "()I").AsInt() == -1);
+        static_cast<void>(vm.CallOn(input, "close", "()V"));
+
+        const auto expect_exception = [&](const std::string& method,
+                                          const std::string& descriptor,
+                                          std::vector<VmValue> arguments,
+                                          const std::string_view expected) {
+            const auto outcome = vm.CallOnOutcome(
+                activity, method, descriptor, std::move(arguments));
+            REQUIRE(outcome.exception.IsValid());
+            CHECK(vm.linker.Class(outcome.exception_class).descriptor ==
+                  expected);
+        };
+        expect_exception(
+            "openFileInput", input_descriptor,
+            {VmValue::Ref(vm.interpreter.NewStringUtf8("missing.dat"))},
+            "Ljava/io/FileNotFoundException;");
+        expect_exception(
+            "openFileInput", input_descriptor,
+            {VmValue::Ref(vm.interpreter.NewStringUtf8("nested/slot.dat"))},
+            "Ljava/lang/IllegalArgumentException;");
+        expect_exception("openFileOutput", output_descriptor,
+                         {VmValue::Ref(VmObjectRef{}), VmValue::Int(0)},
+                         "Ljava/lang/NullPointerException;");
+    }
+}
+
 TEST_CASE("Context internal directories return null when VFS is unavailable") {
     FileVm vm;
     vm.context->vfs = nullptr;
@@ -1315,6 +1402,13 @@ TEST_CASE("Context internal directories return null when VFS is unavailable") {
                     .ref.IsValid());
     CHECK_FALSE(vm.CallOn(context, "getCacheDir", "()Ljava/io/File;")
                     .ref.IsValid());
+    const auto outcome = vm.CallOnOutcome(
+        context, "openFileInput",
+        "(Ljava/lang/String;)Ljava/io/FileInputStream;",
+        {VmValue::Ref(vm.interpreter.NewStringUtf8("slot.dat"))});
+    REQUIRE(outcome.exception.IsValid());
+    CHECK(vm.linker.Class(outcome.exception_class).descriptor ==
+          "Ljava/lang/UnsupportedOperationException;");
 }
 
 TEST_CASE("AssetManager openFd publishes exact logical asset length") {

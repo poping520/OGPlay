@@ -14,6 +14,22 @@
     return-void
 .end method
 
+# android.support.* is an APK-bundled application library, even though its
+# historical package name sits below android.*.
+.class public Landroid/support/v4/content/FixtureSupport;
+.super Ljava/lang/Object;
+
+.method static public answer()I
+.registers 1
+    const/16 v0, 42
+    return v0
+.end method
+
+# A real framework namespace remains sealed to the intrinsic catalog.  This
+# APK definition must never become an application class.
+.class public Landroid/app/Activity;
+.super Ljava/lang/Object;
+
 .class public LCounter;
 .super Ljava/lang/Object;
 

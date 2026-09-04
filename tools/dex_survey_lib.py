@@ -289,4 +289,8 @@ PLATFORM_PREFIXES = (
 
 
 def is_platform_descriptor(descriptor: str) -> bool:
+    # android.support.* is an APK-bundled application library, not an Android
+    # framework namespace, even though its binary name begins with android.
+    if descriptor.startswith("Landroid/support/"):
+        return False
     return descriptor.startswith(PLATFORM_PREFIXES)

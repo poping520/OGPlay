@@ -36,5 +36,8 @@
 - AsyncTask 后台阶段与主线程 post 阶段分离，状态只允许单次执行。
 - `windows-msvc` Debug `ogplay_tests` 构建及 DVM-85 4/4（83 assertions）通过；
   Thread/monitor/lifecycle 定向回归 26/26（132805 assertions）通过；全量未运行。
+- 2026-09-04 follow-up：`Context.getMainLooper` 与 `ContextWrapper` 委托接入同一主
+  Looper；Windows Release scheduler 定向测试 6/6（136 assertions）通过，PvZ Profile
+  实跑越过该缺口并停于 `Intent.resolveTypeIfNeeded(ContentResolver)`。
 
 状态：已完成。

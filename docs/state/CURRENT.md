@@ -23,35 +23,33 @@
   `MODE_PRIVATE` 覆盖、`MODE_APPEND` 追加，Activity/ContextWrapper 继续委托进程 base Context，
   文件状态只存在于 core `IoRuntime` 与统一 VFS。APK 资源流现返回具体
   `ByteArrayInputStream`，不再实例化 API 19 抽象 `InputStream`。
-- **Intent extra**：String、Int 与 `ArrayList<Integer>` 共享逻辑 key；新增 Integer ArrayList
-  typed put/get，getter 返回原 guest list，缺失/显式 null/其他类型返回 null，引用随 Intent
-  owner 参与 GC trace/sweep。
+- **Intent**：String/Int/`ArrayList<Integer>` extra 共享逻辑 key；DVM-97 已闭合
+  action/type/data/scheme/categories/flags 与 action/MIME/scheme/authority/category 有界匹配。
+  ContentProvider MIME、path/SSP、manifest resolver 与系统广播仍明确不支持。
 - **基础架构**：DVM-92 teardown 及 DVM-94～96 的稳定 linker metadata、`MethodShape`、
   own-member intrinsic 与 owner-state trace/sweep 已完成；Dalvik access flag 与 Java reflection
   modifier mask 已集中到共享头，core 与平台 intrinsics 不再复制直接量。解释执行仍由
   `VmExecutionLock` 串行，threaded 生产默认关闭。
 - **Title 进展**：Tales 已越过 uniform sampler、`GL_OES_mapbuffer`、Context 路径和 thread
   context loader 缺口，两个 native 库完成 JNI 初始化；新首错为
-  `android.location.LocationListener`。PvZ 已越过对象图、URL form codec、`Locale.ENGLISH`
-  与 `String.toLowerCase(Locale)`；新缺口 `Context.getString(int)` 已有界补齐，待复跑确认。
+  `android.location.LocationListener`。PvZ Profile 已绕过 COPPA/Terms 外壳；APK 自带
+  `android.support.*` 按应用类链接，主 Looper 与 LocalBroadcastManager Intent 匹配链已闭合；
+  新首错为 NetworkImpl 的 SMS/network action 边界。
   A6/DH exact、长运行 gate 与 threaded 默认裁决尚未闭合。见
   [DVM-47](../tasks/dexvm/DVM-47.md) 和 [WU-0231](../tasks/m5/WU-0231.md)。
 
 ## 最近验证
 
-- 2026-09-03 macOS Release：Intent Integer ArrayList 行为/覆盖/remove/GC 三组定向测试
-  46/46 断言通过。
+- 2026-09-04 Windows Release：DVM-97 Android value 9/9、374 断言与 catalog 30/30、
+  3989 断言通过；PvZ 实跑越过 `resolveTypeIfNeeded`，停于后续 SMS/network action 边界。
 - 2026-09-03 macOS Release：资源流与 Locale 定向测试通过；Asphalt 5 原 APK 3 帧烟测
   正常退出；title-flow 末帧 Main Menu 经人工检查并在两个 fresh sandbox 中稳定为
   `cb892db9…`，golden 更新后 6 个 checkpoint 全部通过并 clean shutdown。
 - 2026-09-03 Windows `windows-msvc` Debug：`ogplay_tests` 构建通过；Context final
   `getString(int)` 继承/资源/异常与相邻定向检查 5/5 通过；此前 Locale/小写检查 12/12 通过。
-- 2026-09-03 Windows `windows-msvc` Release：Boost.URL form codec 双后端 42/42、DVM-88
-  相邻 134/134、core catalog 556/556 断言通过；PvZ 关闭 survey 越过 `URLDecoder`，
-  新首错为 `java.util.Locale.ENGLISH`。
-- 2026-09-03 Windows `windows-msvc` Release：默认 Serializable 图、循环/重复引用、枚举、Date、
-  FileDescriptor.sync 双后端定向回归通过；PvZ 首次启动写出 690-byte 配置，第二次成功读回，
-  对象流异常消失，下一首错推进到 `java.net.URLDecoder` 缺失。
+- 2026-09-04 Windows `windows-msvc` Release：Android Support 应用所有权 10/10、相邻 lazy
+  hierarchy/survey 11/11 通过；Context/ContextWrapper 主 Looper 身份及 scheduler 定向测试
+  6/6、136 个断言通过；PvZ Profile 实跑停于 `Intent.resolveTypeIfNeeded(ContentResolver)`。
 - 2026-09-03 Windows `windows-msvc` Release：Object input/output streams 的 API 19 层级、
   完整继承方法表、双后端 primitive/UTF/header/block-data 与 `null`/`String` 往返定向回归通过；
   后续对象图能力见上一条验证。
@@ -63,7 +61,7 @@
 
 ## 下一步
 
-1. 复跑 PvZ 确认 `Context.getString(int)` 后的下一首错，补 Tales `LocationListener`，完成 DH 主菜单 Scenario gate。
+1. 处理 PvZ NetworkImpl 的 SMS/network action 边界，补 Tales `LocationListener`，完成 DH 主菜单 Scenario gate。
 2. 执行 A6 bootstrap 三轮、gc_long 与 threaded title gate。
 3. 出现可复用停滞 fixture 时，补 Diagnostics 外部触发子进程验收。
 

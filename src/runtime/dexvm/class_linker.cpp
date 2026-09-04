@@ -37,12 +37,21 @@ namespace {
 }
 
 [[nodiscard]] bool IsPlatformDescriptor(const std::string_view descriptor) {
-    return descriptor.starts_with("Landroid/") ||
+    // 临时方案：OGPlay 尚未加载完整的 API 19 boot class path，而是以
+    // intrinsic catalog 代替 bootstrap 类，因此目前只能按 descriptor 前缀近似判断
+    // 平台归属。旧版 Android Support Library 虽位于 android.* 命名空间，实际是 APK
+    // 自带的应用字节码，必须由 application loader 定义。
+    //
+    // 正确做法（后续实现）：从固定的 API 19 BOOTCLASSPATH 产物生成精确类描述符索引，
+    // 按 boot class path 和 defining ClassLoader 判断归属；intrinsic catalog 只表示
+    // 平台类的实现状态。届时应移除此前缀规则及 android/support 特例。
+    return (descriptor.starts_with("Landroid/") &&
+            !descriptor.starts_with("Landroid/support/")) ||
            descriptor.starts_with("Ljava/") ||
            descriptor.starts_with("Ljavax/") ||
            descriptor.starts_with("Ldalvik/") ||
            descriptor.starts_with("Lorg/apache/http/") ||
-           // AOSP-bundled library packages (SAX, JSON) count as platform.
+           // AOSP 随系统提供的库包（SAX、JSON）也暂按平台类处理。
            descriptor.starts_with("Lorg/xml/") ||
            descriptor.starts_with("Lorg/json/");
 }
@@ -265,8 +274,8 @@ void DexClassLinker::RegisterDex(std::vector<std::uint8_t> dex_bytes) {
         const auto descriptor =
             image.types[definition.class_type_index].descriptor;
         if (IsPlatformDescriptor(descriptor)) {
-            // Bundled support-library copies of platform classes are never
-            // interpreted (03 §1); the intrinsic catalog wins.
+            // 临时规则判定为平台所有的 APK 类不参与解释（03 §1），由 intrinsic
+            // catalog 胜出；android.support.* 已在上方作为应用类排除。
             continue;
         }
         LinkedClass linked;

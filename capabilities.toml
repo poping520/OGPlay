@@ -1232,8 +1232,8 @@ note = "DVM-62 交付受检 ClassNameCodec 与 linker metadata v2；DVM-94 保�
 
 [dexvm.class_loader_facade]
 status = "complete"
-test = "tests/dexvm/class_loader_tests.cpp; Class.forName switch/threaded/caller-loader/init/error tests"
-note = "DVM-63/Chapter 11 closure 以 linker 唯一 class directory 交付稳定 PathClassLoader/BootClassLoader facade、固定 parent 链、defining/initiating loader 分离、无副作用 findLoadedClass、受检 loadClass delegation 与两个 Class.forName overload；单参数用真实 caller loader 并初始化，三参数处理 null/system、boot、application/custom bounded role；missing 为 CNFE，lookup/link failure 保留原 throwable 为 CNFE cause，初始化 EIIE identity 直传；动态 classpath、多 namespace 与自定义 definition 明确不支持"
+test = "tests/dexvm/class_loader_tests.cpp; tests/dexvm/interpreter_tests.cpp; Class.forName switch/threaded/caller-loader/init/error tests"
+note = "DVM-63/Chapter 11 closure 以 linker 唯一 class directory 交付稳定 PathClassLoader/BootClassLoader facade、固定 parent 链、defining/initiating loader 分离、无副作用 findLoadedClass、受检 loadClass delegation 与两个 Class.forName overload；单参数用真实 caller loader 并初始化，三参数处理 null/system、boot、application/custom bounded role；APK 自带 android.support.* 由 application loader 定义，真正 android.* framework 副本仍丢弃且 intrinsic 获胜；missing 为 CNFE，lookup/link failure 保留原 throwable 为 CNFE cause，初始化 EIIE identity 直传；动态 classpath、多 namespace 与自定义 definition 明确不支持"
 
 [dexvm.reflection_wrappers]
 status = "complete"
@@ -1340,6 +1340,11 @@ status = "partial"
 test = "tests/session/profile_entry_scope_tests.cpp; tests/dexvm/file_vfs_tests.cpp; tests/loader/binary_xml_tests.cpp; tests/dexvm/videoview_tests.cpp; tests/dexvm/scheduler_tests.cpp; tests/runtime/native_library_loader_tests.cpp; Asphalt 5 exact dexvm title-flow gate 3/3; Dungeon Hunter exact 到标题画面渲染; Asphalt 6 bootstrap"
 note = "SharedPreferences 已于 ADR-0020 SBX-6 改为 shared_prefs XML 持久化（见 runtime.preferences_persistence）。DVM-18 按 pilot 测量面交付 Android 核心 surface/resource/IO/device/media/widget 能力；2026-08-30 补充 Resources.getXml、API19 XmlResourceParser 层级及 getEventType/next/getName/getText/close 有界 pull 面，resid 经唯一 ARSC/APK/AXML 链解析，缺失或畸形资源抛 Resources.NotFoundException。DVM-39 增加按 Context 身份的 receiver 生命周期、Intent.removeExtra、VideoView listener/control 与 deferred completion、Activity surface generation、稳定 application Context 及无连接 Wifi 事实；后续补齐 Intent Integer ArrayList typed put/get，同 String/Int 共享逻辑 key，guest list 由 owner-attached GC trace/sweep。后续批次增加 `Activity.isTaskRoot()Z` 与 API19 DisplayMetrics/Configuration bounded 事实；DVM-72 发布稳定 guest data/files VFS identity，DVM-77 发布当前 APK PackageManager P0，DVM-81 恢复 Context 继承链并补齐 `openFileInput/openFileOutput` 的 app files 目录读取、覆盖与追加桥接；后续按 AOSP 4.4.4 增加 Context final `getString(I)`，经虚派 `getResources()` 进入唯一 ARSC string resolver，wrapper/component 仅继承，失败抛 Resources.NotFoundException。DVM-88 发布 VFS SQLite bounded 数据面，DVM-89 发布 Bitmap.Config、APK path、软件 Surface/Canvas、AudioTrack、ResultReceiver/KeyEvent，并闭合 SDL scancode→Android keyCode、Unicode/meta/repeat 输入链与 getUnicodeChar 两个重载；DVM-90 建立 live UiTree 的 per-holder Surface generation。DVM-91 用真实逻辑 FileDescriptor 替换 PFD 空壳，闭合 PFD.open、AFD ctor/getter、stored AssetManager.openFd 与 MediaPlayer FD/区间数据源；DVM-94 缺陷修复按 Android 4.4.4 DEX 校准现有 protected callback access flags。后续补齐 Context `getPackageCodePath/getCacheDir/getApplicationInfo`：code/resource/sourceDir 共用只读 guest APK，cache 经 VFS 建目录，ApplicationInfo 为进程稳定身份且 wrapper 仅委托 base；Tales 关闭 survey 越过原首错。AttributeSet/XmlPullParser 长尾、listener 回调、visibility/format/size 重建与完整 framework 仍 deferred；不引入 Binder、ActivityManager、service process、ContentProvider 或 title 分支，能力保持 partial。"
 
+[dexvm.intent_filter_matching]
+status = "partial"
+test = "tests/dexvm/android_value_tests.cpp; tests/session/profile_entry_scope_tests.cpp; PvZ exact Profile reached-fault"
+note = "DVM-97 闭合 support-v4 LocalBroadcastManager 所需 Intent action/type/data/scheme/categories/flags 与 IntentFilter action/MIME wildcard/scheme/authority/category 匹配，返回 API 19 match/error 常量；Uri 只解析常规 hierarchical scheme/host/port/path。ContentProvider MIME、path/SSP pattern、manifest resolver 与系统广播不在范围内并明确失败，因此能力保持 partial。"
+
 [dexvm.media_data_sources]
 status = "complete"
 test = "tests/dexvm/file_vfs_tests.cpp; tests/audio/mp3_tests.cpp; tests/audio/java_sound_pool_mixer_tests.cpp"
@@ -1368,7 +1373,7 @@ note = "DVM-84 发布 API 19 AudioFormat 常用 PCM 常量与 AudioTrack ctor/mi
 [dexvm.android_scheduler]
 status = "complete"
 test = "tests/dexvm/scheduler_tests.cpp; tests/dexvm/thread_intrinsic_tests.cpp; tests/dexvm/vm_monitor_tests.cpp; tests/session/lifecycle_tests.cpp"
-note = "DVM-85 发布 API19 SystemClock、Looper/Handler/HandlerThread、CountDownTimer 与 bounded AsyncTask，并将 core Timer/TimerTask 迁入会话唯一 uptime_millis scheduler；队列按 deadline/sequence 确定排序，主 Looper 在 lifecycle 安全点泵送，子 Looper/AsyncTask 使用 VmThreadRuntime，GC 与 shutdown 生命周期闭合。不模拟设备 suspend、Binder MessageQueue 或 AsyncTask Executor 并行策略"
+note = "DVM-85 发布 API19 SystemClock、Looper/Handler/HandlerThread、CountDownTimer 与 bounded AsyncTask，并将 core Timer/TimerTask 迁入会话唯一 uptime_millis scheduler；队列按 deadline/sequence 确定排序，Context/ContextWrapper 与 Looper.getMainLooper 共用进程稳定主 Looper，主 Looper 在 lifecycle 安全点泵送，子 Looper/AsyncTask 使用 VmThreadRuntime，GC 与 shutdown 生命周期闭合。不模拟设备 suspend、Binder MessageQueue 或 AsyncTask Executor 并行策略"
 
 [dexvm.android_value_services]
 status = "complete"

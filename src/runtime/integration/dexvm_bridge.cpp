@@ -212,6 +212,9 @@ void RegisterAndroidOwnerAttachedStateTable(
             context->editable_owner.erase(key);
             context->telephony_listeners.erase(key);
             context->broadcast_receivers.erase(key);
+            context->intent_filter_actions.erase(key);
+            context->intent_filter_categories.erase(key);
+            context->intent_filter_types.erase(key);
             context->intent_filter_schemes.erase(key);
             context->intent_filter_authorities.erase(key);
             context->requested_orientations.erase(key);

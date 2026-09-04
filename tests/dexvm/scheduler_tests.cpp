@@ -195,6 +195,45 @@ bool WaitFor(Predicate predicate) {
 
 }  // namespace
 
+TEST_CASE("Context exposes the stable scheduler main Looper through wrappers") {
+    SchedulerVm fixture;
+    const auto static_main = fixture.Direct(
+        "Landroid/os/Looper;", "getMainLooper",
+        "()Landroid/os/Looper;");
+    SchedulerVm::RequireOk(static_main);
+    REQUIRE(static_main.value.ref.IsValid());
+
+    const auto base = fixture.New("Landroid/content/Context;");
+    fixture.ConstructAs(base, "Landroid/content/Context;", "()V");
+    const auto from_base = fixture.Virtual(
+        base, "getMainLooper", "()Landroid/os/Looper;");
+    SchedulerVm::RequireOk(from_base);
+    CHECK(from_base.value.ref == static_main.value.ref);
+
+    const auto wrapper = fixture.New("Landroid/content/ContextWrapper;");
+    fixture.ConstructAs(
+        wrapper, "Landroid/content/ContextWrapper;",
+        "(Landroid/content/Context;)V", {VmValue::Ref(base)});
+    const auto from_wrapper = fixture.Virtual(
+        wrapper, "getMainLooper", "()Landroid/os/Looper;");
+    SchedulerVm::RequireOk(from_wrapper);
+    CHECK(from_wrapper.value.ref == static_main.value.ref);
+
+    const auto repeated = fixture.Virtual(
+        base, "getMainLooper", "()Landroid/os/Looper;");
+    SchedulerVm::RequireOk(repeated);
+    CHECK(repeated.value.ref == static_main.value.ref);
+
+    const auto handler = fixture.New("Landroid/os/Handler;");
+    fixture.ConstructAs(handler, "Landroid/os/Handler;",
+                        "(Landroid/os/Looper;)V",
+                        {VmValue::Ref(from_wrapper.value.ref)});
+    const auto handler_looper = fixture.Virtual(
+        handler, "getLooper", "()Landroid/os/Looper;");
+    SchedulerVm::RequireOk(handler_looper);
+    CHECK(handler_looper.value.ref == static_main.value.ref);
+}
+
 TEST_CASE("DVM-89 ResultReceiver dispatches locally and through its Handler") {
     SchedulerVm fixture;
     const auto bundle = fixture.New("Landroid/os/Bundle;");

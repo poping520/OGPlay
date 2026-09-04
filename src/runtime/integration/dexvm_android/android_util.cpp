@@ -16,6 +16,28 @@
 
 namespace ogplay::runtime::android_intrinsics {
 
+Decl Declare_android_util_AndroidException(const Context&) {
+    auto builder = dx::IntrinsicClassBuilder::Class(
+        "Landroid/util/AndroidException;", "Ljava/lang/Exception;");
+    builder.Constructor("()V", [](dx::IntrinsicContext&) {
+        return dx::VmValue::Void();
+    });
+    builder.Constructor("(Ljava/lang/String;)V",
+        [](dx::IntrinsicContext& call) {
+            call.vm.SetThrowableMessage(call.receiver, call.arguments[0].ref);
+            return dx::VmValue::Void();
+        });
+    builder.Constructor(
+        "(Ljava/lang/String;Ljava/lang/Throwable;)V",
+        [](dx::IntrinsicContext& call) {
+            call.vm.SetThrowableMessage(call.receiver, call.arguments[0].ref);
+            return dx::VmValue::Void();
+        });
+    builder.Constructor("(Ljava/lang/Exception;)V",
+        [](dx::IntrinsicContext&) { return dx::VmValue::Void(); });
+    return std::move(builder).Build();
+}
+
 Decl Declare_android_util_Log(const Context& context) {
     static_cast<void>(context);
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/util/Log;", "Ljava/lang/Object;");

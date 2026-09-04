@@ -119,6 +119,7 @@ Asphalt 5（pilot title）删除 profile 全部 `native_call` 与 `[[java.class]
 | [DVM-94](DVM-94.md) | 稳定 Linker、Intrinsic 继承与强类型调用模型 | 已完成 |
 | [DVM-95](DVM-95.md) | Intrinsic owner state 与 GC 生命周期统一 | 已完成 |
 | [DVM-96](DVM-96.md) | Switch/Threaded 共享对象与 Invoke 语义 | 已完成 |
+| [DVM-97](DVM-97.md) | 有界的 Intent/IntentFilter 匹配 | 已完成 |
 
 ## 批次 4 · 更多 title 上 dexvm 路线（进行中）
 

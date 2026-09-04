@@ -66,13 +66,20 @@ struct AndroidValueVm final {
     VmValue On(const VmObjectRef receiver, const char* name,
                const char* signature,
                std::vector<VmValue> arguments = {}) {
+        const auto outcome = OnOutcome(receiver, name, signature,
+                                       std::move(arguments));
+        REQUIRE_MESSAGE(!outcome.exception.IsValid(), outcome.exception_message);
+        return outcome.value;
+    }
+
+    VmCallOutcome OnOutcome(const VmObjectRef receiver, const char* name,
+                            const char* signature,
+                            std::vector<VmValue> arguments = {}) {
         const auto klass = model.ObjectClass(receiver);
         const auto index = linker.FindVtableIndex(klass, name, signature);
         REQUIRE(index.has_value());
         arguments.insert(arguments.begin(), VmValue::Ref(receiver));
-        const auto outcome = vm.Call(linker.Class(klass).vtable[*index], arguments);
-        REQUIRE_MESSAGE(!outcome.exception.IsValid(), outcome.exception_message);
-        return outcome.value;
+        return vm.Call(linker.Class(klass).vtable[*index], arguments);
     }
 
     VmObjectRef Bytes(const std::string& value) {
@@ -96,6 +103,202 @@ struct AndroidValueVm final {
 };
 
 }  // namespace
+
+TEST_CASE("DVM-97 action-only Intent follows the LocalBroadcastManager match chain") {
+    AndroidValueVm fixture;
+    const auto action = fixture.vm.NewStringUtf8("org.example.PLANT");
+    const auto intent = fixture.New(
+        "Landroid/content/Intent;", "(Ljava/lang/String;)V",
+        {VmValue::Ref(action)});
+    const auto filter = fixture.New(
+        "Landroid/content/IntentFilter;", "(Ljava/lang/String;)V",
+        {VmValue::Ref(action)});
+
+    CHECK(fixture.vm.StringUtf8(
+        fixture.On(intent, "getAction", "()Ljava/lang/String;").ref) ==
+          "org.example.PLANT");
+    CHECK_FALSE(fixture.On(intent, "getData", "()Landroid/net/Uri;")
+                    .ref.IsValid());
+    CHECK_FALSE(fixture.On(intent, "getScheme", "()Ljava/lang/String;")
+                    .ref.IsValid());
+    CHECK_FALSE(fixture.On(intent, "getCategories", "()Ljava/util/Set;")
+                    .ref.IsValid());
+    CHECK(fixture.On(intent, "getFlags", "()I").AsInt() == 0);
+    CHECK_FALSE(fixture.On(
+        intent, "resolveTypeIfNeeded",
+        "(Landroid/content/ContentResolver;)Ljava/lang/String;",
+        {VmValue::Ref(VmObjectRef{})}).ref.IsValid());
+
+    CHECK(fixture.On(filter, "countActions", "()I").AsInt() == 1);
+    CHECK(fixture.vm.StringUtf8(fixture.On(
+        filter, "getAction", "(I)Ljava/lang/String;", {VmValue::Int(0)}).ref) ==
+          "org.example.PLANT");
+    CHECK(fixture.On(
+        filter, "match",
+        "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;"
+        "Landroid/net/Uri;Ljava/util/Set;Ljava/lang/String;)I",
+        {VmValue::Ref(action), VmValue::Ref(VmObjectRef{}),
+         VmValue::Ref(VmObjectRef{}), VmValue::Ref(VmObjectRef{}),
+         VmValue::Ref(VmObjectRef{}), VmValue::Ref(VmObjectRef{})}).AsInt() ==
+          0x00108000);
+
+    fixture.On(intent, "setFlags", "(I)Landroid/content/Intent;",
+               {VmValue::Int(0x04)});
+    fixture.On(intent, "addFlags", "(I)Landroid/content/Intent;",
+               {VmValue::Int(0x08)});
+    CHECK(fixture.On(intent, "getFlags", "()I").AsInt() == 0x0c);
+}
+
+TEST_CASE("DVM-97 IntentFilter matches bounded MIME URI authority and categories") {
+    AndroidValueVm fixture;
+    const auto action = fixture.vm.NewStringUtf8("org.example.VIEW");
+    const auto mime = fixture.vm.NewStringUtf8("image/png");
+    const auto uri_text =
+        fixture.vm.NewStringUtf8("content://cdn.Example.com:443/plants/pea");
+    const auto uri = fixture.Static(
+        "Landroid/net/Uri;", "parse",
+        "(Ljava/lang/String;)Landroid/net/Uri;",
+        {VmValue::Ref(uri_text)}).ref;
+
+    CHECK(fixture.vm.StringUtf8(
+        fixture.On(uri, "getScheme", "()Ljava/lang/String;").ref) == "content");
+    CHECK(fixture.vm.StringUtf8(
+        fixture.On(uri, "getHost", "()Ljava/lang/String;").ref) ==
+          "cdn.Example.com");
+    CHECK(fixture.On(uri, "getPort", "()I").AsInt() == 443);
+    CHECK(fixture.vm.StringUtf8(
+        fixture.On(uri, "getPath", "()Ljava/lang/String;").ref) ==
+          "/plants/pea");
+    CHECK(fixture.On(uri, "toString", "()Ljava/lang/String;").ref == uri_text);
+
+    const auto intent = fixture.New(
+        "Landroid/content/Intent;",
+        "(Ljava/lang/String;Landroid/net/Uri;)V",
+        {VmValue::Ref(action), VmValue::Ref(uri)});
+    fixture.On(intent, "setDataAndType",
+               "(Landroid/net/Uri;Ljava/lang/String;)Landroid/content/Intent;",
+               {VmValue::Ref(uri), VmValue::Ref(mime)});
+    const auto category = fixture.vm.NewStringUtf8("org.example.GREEN");
+    fixture.On(intent, "addCategory",
+               "(Ljava/lang/String;)Landroid/content/Intent;",
+               {VmValue::Ref(category)});
+    const auto categories =
+        fixture.On(intent, "getCategories", "()Ljava/util/Set;").ref;
+    REQUIRE(categories.IsValid());
+    CHECK(fixture.On(intent, "hasCategory", "(Ljava/lang/String;)Z",
+                     {VmValue::Ref(category)}).AsInt() == 1);
+    CHECK(fixture.On(
+        intent, "resolveTypeIfNeeded",
+        "(Landroid/content/ContentResolver;)Ljava/lang/String;",
+        {VmValue::Ref(VmObjectRef{})}).ref == mime);
+
+    const auto filter = fixture.New(
+        "Landroid/content/IntentFilter;",
+        "(Ljava/lang/String;Ljava/lang/String;)V",
+        {VmValue::Ref(action), VmValue::Ref(mime)});
+    fixture.On(filter, "addDataScheme", "(Ljava/lang/String;)V",
+               {VmValue::Ref(fixture.vm.NewStringUtf8("content"))});
+    fixture.On(filter, "addDataAuthority",
+               "(Ljava/lang/String;Ljava/lang/String;)V",
+               {VmValue::Ref(fixture.vm.NewStringUtf8("*.example.com")),
+                VmValue::Ref(fixture.vm.NewStringUtf8("443"))});
+    fixture.On(filter, "addCategory", "(Ljava/lang/String;)V",
+               {VmValue::Ref(category)});
+    CHECK(fixture.On(filter, "countDataTypes", "()I").AsInt() == 1);
+    CHECK(fixture.On(filter, "countDataSchemes", "()I").AsInt() == 1);
+    CHECK(fixture.On(filter, "countCategories", "()I").AsInt() == 1);
+
+    const auto partial_filter = fixture.New("Landroid/content/IntentFilter;");
+    fixture.On(partial_filter, "addDataType", "(Ljava/lang/String;)V",
+               {VmValue::Ref(fixture.vm.NewStringUtf8("image/*"))});
+    CHECK(fixture.On(
+        partial_filter, "hasDataType", "(Ljava/lang/String;)Z",
+        {VmValue::Ref(fixture.vm.NewStringUtf8("image/jpeg"))}).AsInt() == 1);
+    CHECK(fixture.vm.StringUtf8(fixture.On(
+        partial_filter, "getDataType", "(I)Ljava/lang/String;",
+        {VmValue::Int(0)}).ref) == "image");
+
+    const auto match = [&](const VmObjectRef requested_action,
+                           const VmObjectRef requested_type,
+                           const VmObjectRef requested_uri,
+                           const VmObjectRef requested_categories) {
+        const auto requested_scheme = requested_uri.IsValid()
+            ? fixture.On(requested_uri, "getScheme", "()Ljava/lang/String;").ref
+            : VmObjectRef{};
+        return fixture.On(
+            filter, "match",
+            "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;"
+            "Landroid/net/Uri;Ljava/util/Set;Ljava/lang/String;)I",
+            {VmValue::Ref(requested_action), VmValue::Ref(requested_type),
+             VmValue::Ref(requested_scheme), VmValue::Ref(requested_uri),
+             VmValue::Ref(requested_categories),
+             VmValue::Ref(VmObjectRef{})}).AsInt();
+    };
+    CHECK(match(action, mime, uri, categories) == 0x00608000);
+    CHECK(match(fixture.vm.NewStringUtf8("org.example.OTHER"), mime, uri,
+                categories) == -3);
+    CHECK(match(action, fixture.vm.NewStringUtf8("text/plain"), uri,
+                categories) == -1);
+    const auto wrong_uri = fixture.Static(
+        "Landroid/net/Uri;", "parse",
+        "(Ljava/lang/String;)Landroid/net/Uri;",
+        {VmValue::Ref(fixture.vm.NewStringUtf8(
+            "content://example.org:443/plants/pea"))}).ref;
+    CHECK(match(action, mime, wrong_uri, categories) == -2);
+
+    const auto unmatched_intent = fixture.New("Landroid/content/Intent;");
+    fixture.On(unmatched_intent, "addCategory",
+               "(Ljava/lang/String;)Landroid/content/Intent;",
+               {VmValue::Ref(fixture.vm.NewStringUtf8("org.example.BLUE"))});
+    const auto unmatched_categories = fixture.On(
+        unmatched_intent, "getCategories", "()Ljava/util/Set;").ref;
+    CHECK(match(action, mime, uri, unmatched_categories) == -4);
+}
+
+TEST_CASE("DVM-97 dynamic content MIME and malformed filters fail explicitly") {
+    AndroidValueVm fixture;
+    const auto content_uri = fixture.Static(
+        "Landroid/net/Uri;", "parse",
+        "(Ljava/lang/String;)Landroid/net/Uri;",
+        {VmValue::Ref(fixture.vm.NewStringUtf8("content://plants/1"))}).ref;
+    const auto intent = fixture.New("Landroid/content/Intent;");
+    fixture.On(intent, "setData",
+               "(Landroid/net/Uri;)Landroid/content/Intent;",
+               {VmValue::Ref(content_uri)});
+    const auto resolver = fixture.vm.NewIntrinsicInstance(
+        "Landroid/content/ContentResolver;");
+    auto outcome = fixture.OnOutcome(
+        intent, "resolveTypeIfNeeded",
+        "(Landroid/content/ContentResolver;)Ljava/lang/String;",
+        {VmValue::Ref(resolver)});
+    REQUIRE(outcome.exception.IsValid());
+    CHECK(fixture.linker.Class(outcome.exception_class).descriptor ==
+          "Ljava/lang/UnsupportedOperationException;");
+
+    const auto explicit_intent = fixture.New("Landroid/content/Intent;");
+    fixture.On(explicit_intent, "setData",
+               "(Landroid/net/Uri;)Landroid/content/Intent;",
+               {VmValue::Ref(content_uri)});
+    fixture.On(
+        explicit_intent, "setClassName",
+        "(Ljava/lang/String;Ljava/lang/String;)Landroid/content/Intent;",
+        {VmValue::Ref(fixture.vm.NewStringUtf8("org.example")),
+         VmValue::Ref(fixture.vm.NewStringUtf8("org.example.Target"))});
+    outcome = fixture.OnOutcome(
+        explicit_intent, "resolveTypeIfNeeded",
+        "(Landroid/content/ContentResolver;)Ljava/lang/String;",
+        {VmValue::Ref(VmObjectRef{})});
+    CHECK_FALSE(outcome.exception.IsValid());
+    CHECK_FALSE(outcome.value.ref.IsValid());
+
+    const auto filter = fixture.New("Landroid/content/IntentFilter;");
+    outcome = fixture.OnOutcome(
+        filter, "addDataType", "(Ljava/lang/String;)V",
+        {VmValue::Ref(fixture.vm.NewStringUtf8("not-a-mime"))});
+    REQUIRE(outcome.exception.IsValid());
+    CHECK(fixture.linker.Class(outcome.exception_class).descriptor ==
+          "Landroid/content/IntentFilter$MalformedMimeTypeException;");
+}
 
 TEST_CASE("DVM-86 Base64 and sparse arrays preserve data semantics") {
     AndroidValueVm fixture;

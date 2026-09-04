@@ -13,6 +13,7 @@
 #include "ogplay/core/capability_ledger.h"
 #include "ogplay/core/logger.h"
 #include "ogplay/runtime/dexvm/class_linker.h"
+#include "ogplay/runtime/dexvm/access_flags.h"
 #include "ogplay/runtime/dexvm/interpreter.h"
 #include "ogplay/runtime/dexvm/object_model.h"
 #include "ogplay/runtime/dexvm/vm_threads.h"
@@ -129,7 +130,7 @@ struct AndroidVm final {
 TEST_CASE("android intrinsic catalog is unique and directly bound") {
   auto context = std::make_shared<ogplay::runtime::DexVmAndroidContext>();
   const auto catalog = ogplay::runtime::AndroidIntrinsicCatalog(context);
-  CHECK(catalog.size() == 195);
+  CHECK(catalog.size() == 197);
 
   std::unordered_set<std::string> descriptors;
   for (const auto& declaration : catalog) {
@@ -160,13 +161,44 @@ TEST_CASE("android intrinsic catalog is unique and directly bound") {
     REQUIRE(found != catalog.end());
     return found->methods.size();
   };
+  const auto has_method = [&catalog](const std::string_view owner,
+                                     const std::string_view name,
+                                     const std::string_view descriptor) {
+    const auto found = std::find_if(
+        catalog.begin(), catalog.end(), [owner](const auto& declaration) {
+          return declaration.descriptor == owner;
+        });
+    REQUIRE(found != catalog.end());
+    return std::ranges::any_of(found->methods, [&](const auto& method) {
+      return method.name == name && method.descriptor == descriptor;
+    });
+  };
   CHECK(method_count("Landroid/app/Application;") == 2);
   CHECK(method_count("Landroid/app/Activity;") == 26);
   CHECK(method_count("Landroid/app/Service;") == 13);
-  CHECK(method_count("Landroid/content/Context;") == 23);
-  CHECK(method_count("Landroid/content/ContextWrapper;") == 24);
+  CHECK(method_count("Landroid/content/Context;") == 24);
+  CHECK(method_count("Landroid/content/ContextWrapper;") == 25);
+  CHECK(has_method("Landroid/content/Context;", "getMainLooper",
+                   "()Landroid/os/Looper;"));
+  CHECK(has_method("Landroid/content/ContextWrapper;", "getMainLooper",
+                   "()Landroid/os/Looper;"));
   CHECK(method_count("Landroid/view/ContextThemeWrapper;") == 4);
-  CHECK(method_count("Landroid/content/Intent;") == 18);
+  CHECK(method_count("Landroid/content/Intent;") == 31);
+  CHECK(method_count("Landroid/content/IntentFilter;") == 24);
+  CHECK(has_method("Landroid/content/Intent;", "resolveTypeIfNeeded",
+                   "(Landroid/content/ContentResolver;)Ljava/lang/String;"));
+  CHECK(has_method(
+      "Landroid/content/IntentFilter;", "match",
+      "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;"
+      "Landroid/net/Uri;Ljava/util/Set;Ljava/lang/String;)I"));
+  const auto intent_declaration = std::ranges::find_if(
+      catalog, [](const auto& declaration) {
+        return declaration.descriptor == "Landroid/content/Intent;";
+      });
+  REQUIRE(intent_declaration != catalog.end());
+  for (const auto& method : intent_declaration->methods) {
+    CHECK((method.access_flags & ogplay::runtime::dexvm::kAccFinal) == 0U);
+  }
   CHECK(method_count("Landroid/os/Bundle;") == 17);
   CHECK(method_count("Landroid/os/ResultReceiver;") == 5);
   CHECK(method_count("Landroid/os/ResultReceiver$MyRunnable;") == 2);

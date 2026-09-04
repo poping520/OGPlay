@@ -69,7 +69,7 @@ BUILDER_FIELD_PATTERN = re.compile(
 
 
 def is_platform(descriptor: str) -> bool:
-    return descriptor.startswith(lib.PLATFORM_PREFIXES) or \
+    return lib.is_platform_descriptor(descriptor) or \
         descriptor.startswith(EXTRA_PLATFORM_PREFIXES)
 
 

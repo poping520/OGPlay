@@ -11,7 +11,8 @@ intrinsic。只解释游戏 DEX 的应用类；平台类始终由 intrinsic 提�
 ### 链接、类加载与反射
 
 - `DexClassLinker`：按 `RegisterIntrinsics` → `RegisterDex` → `Link` 装配。平台类只来自
-  intrinsic；单一 `classes.dex` 中的平台前缀类被忽略。APK class_def 全量登记，但层级、字段
+  intrinsic；单一 `classes.dex` 中真正的平台前缀类被忽略，但 APK 自带的旧
+  `android.support.*` 支持库仍由 application loader 定义。APK class_def 全量登记，但层级、字段
   布局、vtable/iftable 仅在首次解析、实例化或调用时完成；未触达可选类的缺失层级不阻断启动，
   触达后的循环继承、缺失层级、final 覆盖、interface-as-super 和不可覆盖 intrinsic 方法明确
   失败，survey 仅为真实触达的平台缺口合成并记账。常量池解析缓存

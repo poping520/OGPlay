@@ -807,6 +807,31 @@ TEST_CASE("survey records a missing hierarchy only when its class is reached") {
     CHECK(hits[0].member.empty());
 }
 
+TEST_CASE("APK Android Support classes remain application-owned") {
+    Vm vm;
+
+    constexpr auto support_descriptor =
+        "Landroid/support/v4/content/FixtureSupport;";
+    const auto support = vm.linker.ResolveDescriptor(support_descriptor);
+    CHECK(vm.linker.Class(support).defining_loader == kApplicationLoader);
+    CHECK_FALSE(vm.linker.Class(support).is_intrinsic);
+    CHECK(vm.CallStatic(support_descriptor, "answer", "()I").value.AsInt() ==
+          42);
+
+    // The APK fixture also declares this framework class.  It is discarded,
+    // so an absent platform catalog cannot accidentally expose the APK copy.
+    CHECK_FALSE(vm.linker.FindClass("Landroid/app/Activity;").has_value());
+
+    auto activity = IntrinsicClassBuilder::Class(
+        "Landroid/app/Activity;", "Ljava/lang/Object;");
+    Vm with_platform({}, {}, {std::move(activity).Build()});
+    const auto platform =
+        with_platform.linker.ResolveDescriptor("Landroid/app/Activity;");
+    CHECK(with_platform.linker.Class(platform).defining_loader ==
+          kBootstrapLoader);
+    CHECK(with_platform.linker.Class(platform).is_intrinsic);
+}
+
 TEST_CASE("dexvm API 19 primitive wrapper family inventory is complete") {
     const auto catalog = CoreIntrinsicCatalog();
     const auto declaration = [&catalog](const std::string& descriptor)

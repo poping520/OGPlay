@@ -263,6 +263,11 @@ def self_test() -> int:
     if not dexlib.is_platform_descriptor("Landroid/os/Bundle;"):
         print("self-test: android prefix missed", file=sys.stderr)
         return 1
+    if dexlib.is_platform_descriptor(
+            "Landroid/support/v4/content/LocalBroadcastManager;"):
+        print("self-test: Android Support class misclassified",
+              file=sys.stderr)
+        return 1
     value, offset = dexlib.read_uleb128(bytes([0xE5, 0x8E, 0x26]), 0)
     if value != 624485 or offset != 3:
         print("self-test: uleb128 decode broken", file=sys.stderr)

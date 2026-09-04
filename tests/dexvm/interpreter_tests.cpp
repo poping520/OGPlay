@@ -27,6 +27,7 @@
 
 #include "ogplay/core/capability_ledger.h"
 #include "ogplay/core/text.h"
+#include "ogplay/runtime/dexvm/access_flags.h"
 #include "ogplay/runtime/dexvm/class_linker.h"
 #include "ogplay/runtime/dexvm/intrinsic_builder.h"
 #include "ogplay/runtime/dexvm/interpreter.h"
@@ -1577,6 +1578,110 @@ TEST_CASE("dexvm intrinsic builder binds implementations without a registry") {
                                            .static_storage[
                                                vm.linker.Field(*name).slot]);
     CHECK(vm.interpreter.StringUtf8(name_ref) == "direct");
+}
+
+TEST_CASE("DVM-98 intrinsic enum builder publishes generated enum behavior") {
+    std::size_t initialized_constants = 0;
+    std::size_t published_constants = 0;
+    IntrinsicEnumBuilder builder("Lbuilder/Color;", {"RED", "GREEN"});
+    const auto payload =
+        builder.ClassBuilder().BoundInstanceField("payload", "I");
+    builder.WithConstantInitializer(
+        [payload, &initialized_constants](IntrinsicContext& call,
+                                          VmObjectRef value,
+                                          std::string_view,
+                                          std::size_t ordinal) {
+            IntrinsicCall(call).SetInt(
+                payload, value, static_cast<std::int32_t>(10U + ordinal));
+            ++initialized_constants;
+        });
+    builder.AfterConstants(
+        [&published_constants](IntrinsicContext&,
+                               std::span<const VmObjectRef> constants) {
+            published_constants = constants.size();
+        });
+    std::vector<IntrinsicClassDecl> catalog;
+    catalog.push_back(std::move(builder).Build());
+    IntrinsicVm vm(std::move(catalog));
+
+    const auto color = vm.linker.FindClass("Lbuilder/Color;");
+    const auto enum_class = vm.linker.FindClass("Ljava/lang/Enum;");
+    REQUIRE(color.has_value());
+    REQUIRE(enum_class.has_value());
+    REQUIRE(vm.linker.Class(*color).super.has_value());
+    CHECK(*vm.linker.Class(*color).super == *enum_class);
+    CHECK((vm.linker.Class(*color).access_flags & (kAccFinal | kAccEnum)) ==
+          (kAccFinal | kAccEnum));
+
+    const auto first_values = vm.interpreter.Call(
+        vm.Static("Lbuilder/Color;", "values", "()[Lbuilder/Color;"), {});
+    const auto second_values = vm.interpreter.Call(
+        vm.Static("Lbuilder/Color;", "values", "()[Lbuilder/Color;"), {});
+    REQUIRE_FALSE(first_values.exception.IsValid());
+    REQUIRE_FALSE(second_values.exception.IsValid());
+    CHECK(first_values.value.ref != second_values.value.ref);
+    CHECK(vm.model.ArrayLength(first_values.value.ref) == 2);
+    CHECK(initialized_constants == 2U);
+    CHECK(published_constants == 2U);
+
+    const auto red = vm.model.GetObjectElement(first_values.value.ref, 0);
+    const auto green = vm.model.GetObjectElement(first_values.value.ref, 1);
+    const std::array red_argument{VmValue::Ref(red)};
+    const std::array green_receiver{VmValue::Ref(green)};
+    CHECK(vm.interpreter.StringUtf8(
+              vm.interpreter.Call(vm.Virtual("Ljava/lang/Enum;", "name",
+                                             "()Ljava/lang/String;"),
+                                  red_argument)
+                  .value.ref) == "RED");
+    CHECK(vm.interpreter.Call(vm.Virtual("Ljava/lang/Enum;", "ordinal",
+                                         "()I"),
+                              green_receiver)
+              .value.AsInt() == 1);
+    const auto payload_field = vm.linker.FindFieldRecursive(
+        *color, "payload", "I");
+    REQUIRE(payload_field.has_value());
+    CHECK(vm.model.InstanceSlots(red)[vm.linker.Field(*payload_field).slot]
+              .bits == 10U);
+    CHECK(vm.model.InstanceSlots(green)[vm.linker.Field(*payload_field).slot]
+              .bits == 11U);
+
+    const std::array green_argument{
+        VmValue::Ref(vm.interpreter.NewStringUtf8("GREEN"))};
+    const auto by_name = vm.interpreter.Call(
+        vm.Static("Lbuilder/Color;", "valueOf",
+                  "(Ljava/lang/String;)Lbuilder/Color;"),
+        green_argument);
+    REQUIRE_FALSE(by_name.exception.IsValid());
+    CHECK(by_name.value.ref == green);
+
+    const std::array null_argument{VmValue::Ref(VmObjectRef{})};
+    const auto null_name = vm.interpreter.Call(
+        vm.Static("Lbuilder/Color;", "valueOf",
+                  "(Ljava/lang/String;)Lbuilder/Color;"),
+        null_argument);
+    REQUIRE(null_name.exception.IsValid());
+    CHECK(vm.linker.Class(null_name.exception_class).descriptor ==
+          "Ljava/lang/NullPointerException;");
+    const std::array unknown_argument{
+        VmValue::Ref(vm.interpreter.NewStringUtf8("BLUE"))};
+    const auto unknown_name = vm.interpreter.Call(
+        vm.Static("Lbuilder/Color;", "valueOf",
+                  "(Ljava/lang/String;)Lbuilder/Color;"),
+        unknown_argument);
+    REQUIRE(unknown_name.exception.IsValid());
+    CHECK(vm.linker.Class(unknown_name.exception_class).descriptor ==
+          "Ljava/lang/IllegalArgumentException;");
+
+    const auto red_field = vm.linker.FindFieldRecursive(
+        *color, "RED", "Lbuilder/Color;");
+    const auto values_field = vm.linker.FindFieldRecursive(
+        *color, "$VALUES", "[Lbuilder/Color;");
+    REQUIRE(red_field.has_value());
+    REQUIRE(values_field.has_value());
+    CHECK(vm.linker.Field(*red_field).access_flags ==
+          (kAccPublic | kAccStatic | kAccFinal | kAccEnum));
+    CHECK(vm.linker.Field(*values_field).access_flags ==
+          (kAccPrivate | kAccStatic | kAccFinal | kAccSynthetic));
 }
 
 TEST_CASE("DVM-96 intrinsic boundary validates arguments receivers and returns") {

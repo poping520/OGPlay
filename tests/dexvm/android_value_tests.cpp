@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "ogplay/core/capability_ledger.h"
+#include "ogplay/runtime/dexvm/access_flags.h"
 #include "ogplay/runtime/dexvm/class_linker.h"
 #include "ogplay/runtime/dexvm/interpreter.h"
 #include "ogplay/runtime/dexvm/object_model.h"
@@ -348,6 +349,80 @@ TEST_CASE("DVM-86 graphics value classes keep geometry and path state") {
     fixture.On(path, "lineTo", "(FF)V", {VmValue::Float(3), VmValue::Float(4)});
     CHECK(fixture.context->paths.at(path.Value()).commands.size() == 2U);
     CHECK(fixture.On(path, "isEmpty", "()Z").AsInt() == 0);
+}
+
+TEST_CASE("DVM-98 Android platform enums share generated enum behavior") {
+    AndroidValueVm fixture;
+    const std::vector<std::pair<std::string, std::vector<std::string>>> specs{
+        {"Landroid/graphics/Bitmap$Config;",
+         {"ALPHA_8", "RGB_565", "ARGB_4444", "ARGB_8888"}},
+        {"Landroid/graphics/Region$Op;", {"REPLACE"}},
+        {"Landroid/graphics/Path$Direction;", {"CW", "CCW"}},
+        {"Landroid/graphics/PorterDuff$Mode;",
+         {"CLEAR", "SRC", "DST", "SRC_OVER", "DST_OVER", "SRC_IN",
+          "DST_IN", "SRC_OUT", "DST_OUT", "SRC_ATOP", "DST_ATOP",
+          "XOR", "DARKEN", "LIGHTEN", "MULTIPLY", "SCREEN", "ADD",
+          "OVERLAY"}},
+        {"Landroid/net/NetworkInfo$State;", {"CONNECTED"}},
+        {"Landroid/os/AsyncTask$Status;",
+         {"PENDING", "RUNNING", "FINISHED"}},
+        {"Landroid/widget/ImageView$ScaleType;",
+         {"CENTER", "CENTER_INSIDE", "FIT_CENTER", "FIT_XY",
+          "CENTER_CROP"}}};
+    const auto enum_class = fixture.linker.ResolveDescriptor("Ljava/lang/Enum;");
+
+    for (const auto& [descriptor, constants] : specs) {
+        CAPTURE(descriptor);
+        const auto klass = fixture.linker.ResolveDescriptor(descriptor);
+        const auto& linked_class = fixture.linker.Class(klass);
+        REQUIRE(linked_class.super.has_value());
+        CHECK(*linked_class.super == enum_class);
+        CHECK((linked_class.access_flags & (kAccFinal | kAccEnum)) ==
+              (kAccFinal | kAccEnum));
+
+        const auto array_descriptor = "[" + descriptor;
+        const auto values_descriptor = "()" + array_descriptor;
+        const auto first = fixture.Static(descriptor.c_str(), "values",
+                                          values_descriptor.c_str()).ref;
+        const auto second = fixture.Static(descriptor.c_str(), "values",
+                                           values_descriptor.c_str()).ref;
+        CHECK(first != second);
+        REQUIRE(fixture.model.ArrayLength(first) ==
+                static_cast<JniSize>(constants.size()));
+
+        for (std::size_t ordinal = 0; ordinal < constants.size(); ++ordinal) {
+            const auto& name = constants[ordinal];
+            const auto field = fixture.linker.FindFieldRecursive(
+                klass, name, descriptor);
+            REQUIRE(field.has_value());
+            CHECK(fixture.linker.Field(*field).access_flags ==
+                  (kAccPublic | kAccStatic | kAccFinal | kAccEnum));
+            const auto value = VmObjectRef(
+                fixture.linker.Class(klass).static_storage[
+                    fixture.linker.Field(*field).slot]);
+            CHECK(fixture.model.GetObjectElement(
+                      first, static_cast<JniSize>(ordinal)) == value);
+            CHECK(fixture.vm.StringUtf8(
+                      fixture.On(value, "name", "()Ljava/lang/String;").ref) ==
+                  name);
+            CHECK(fixture.On(value, "ordinal", "()I").AsInt() ==
+                  static_cast<std::int32_t>(ordinal));
+
+            const auto value_of_descriptor =
+                "(Ljava/lang/String;)" + descriptor;
+            CHECK(fixture.Static(
+                      descriptor.c_str(), "valueOf",
+                      value_of_descriptor.c_str(),
+                      {VmValue::Ref(fixture.vm.NewStringUtf8(name))})
+                      .ref == value);
+        }
+
+        const auto values_field = fixture.linker.FindFieldRecursive(
+            klass, "$VALUES", array_descriptor);
+        REQUIRE(values_field.has_value());
+        CHECK(fixture.linker.Field(*values_field).access_flags ==
+              (kAccPrivate | kAccStatic | kAccFinal | kAccSynthetic));
+    }
 }
 
 TEST_CASE("Bitmap Config matches the API 19 enum and native mapping") {

@@ -124,6 +124,8 @@ intrinsic。只解释游戏 DEX 的应用类；平台类始终由 intrinsic 提�
   常量范围。
   `BoundInstanceField/BoundStaticField` token 在每个 linker 注册时绑定到本地 `VmFieldId`；
   `IntrinsicCall` 提供受检参数、receiver 和字段访问，handler 不得字符串查字段或读写裸 slot。
+  `IntrinsicEnumBuilder` 统一生成平台 enum 的常量、`$VALUES`、初始化及精确类型
+  `values/valueOf`；payload 只经显式 factory/hook 扩展。
   DEX/Dalvik flags、校验 mask 和 API 19 reflection mask 统一由 `access_flags.h` 发布。
 
 ### 对象、解释执行与线程

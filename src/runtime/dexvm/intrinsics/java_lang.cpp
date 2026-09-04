@@ -3598,73 +3598,11 @@ IntrinsicClassDecl Declare_java_lang_StackTraceElement() {
 }
 
 IntrinsicClassDecl Declare_java_lang_Thread_State() {
-    auto builder = IntrinsicClassBuilder::Class(
-        "Ljava/lang/Thread$State;", "Ljava/lang/Enum;", {},
-        kAccPublic | kAccFinal | kAccSuper | kAccEnum);
-    const std::array<std::string_view, 6> names{
-        "NEW", "RUNNABLE", "BLOCKED", "WAITING", "TIMED_WAITING",
-        "TERMINATED"};
-    const std::array<IntrinsicFieldHandle, 6> fields{
-        builder.BoundStaticField(
-            "NEW", "Ljava/lang/Thread$State;",
-            kAccPublic | kAccStatic | kAccFinal | kAccEnum),
-        builder.BoundStaticField(
-            "RUNNABLE", "Ljava/lang/Thread$State;",
-            kAccPublic | kAccStatic | kAccFinal | kAccEnum),
-        builder.BoundStaticField(
-            "BLOCKED", "Ljava/lang/Thread$State;",
-            kAccPublic | kAccStatic | kAccFinal | kAccEnum),
-        builder.BoundStaticField(
-            "WAITING", "Ljava/lang/Thread$State;",
-            kAccPublic | kAccStatic | kAccFinal | kAccEnum),
-        builder.BoundStaticField(
-            "TIMED_WAITING", "Ljava/lang/Thread$State;",
-            kAccPublic | kAccStatic | kAccFinal | kAccEnum),
-        builder.BoundStaticField(
-            "TERMINATED", "Ljava/lang/Thread$State;",
-            kAccPublic | kAccStatic | kAccFinal | kAccEnum)};
-    builder.ClassInitializer([fields, names](IntrinsicContext& context) {
-        IntrinsicCall call(context);
-        const auto enum_class = *context.vm.Linker().FindClass("Ljava/lang/Enum;");
-        const auto constructor = context.vm.Linker().FindDirectMethod(
-            enum_class, "<init>", "(Ljava/lang/String;I)V");
-        for (std::size_t index = 0; index < names.size(); ++index) {
-            const auto value =
-                context.vm.NewIntrinsicInstance("Ljava/lang/Thread$State;");
-            call.SetRef(fields[index], value);
-            const std::vector<VmValue> arguments{
-                VmValue::Ref(value),
-                VmValue::Ref(context.vm.NewStringUtf8(names[index])),
-                VmValue::Int(static_cast<std::int32_t>(index))};
-            const auto outcome = context.vm.Call(*constructor, arguments);
-            if (outcome.exception.IsValid()) {
-                throw VmJavaThrow{
-                    context.vm.Linker().Class(outcome.exception_class).descriptor,
-                    outcome.exception_message};
-            }
-        }
-        return VmValue::Void();
-    });
-    builder.StaticMethod("values", "()[Ljava/lang/Thread$State;", [fields](IntrinsicContext& context) {
-        IntrinsicCall call(context);
-        const auto array = context.vm.Model().NewObjectArray(
-            context.vm.Linker().ResolveDescriptor("[Ljava/lang/Thread$State;"),
-            context.vm.Linker().ResolveDescriptor("Ljava/lang/Thread$State;"), 6);
-        for (JniSize index = 0; index < 6; ++index) {
-            context.vm.Model().SetObjectElement(
-                array, index, call.GetRef(fields[static_cast<std::size_t>(index)]));
-        }
-        return VmValue::Ref(array);
-    });
-    builder.StaticMethod("valueOf", "(Ljava/lang/String;)Ljava/lang/Thread$State;", [fields, names](IntrinsicContext& context) -> VmValue {
-        IntrinsicCall call(context);
-        const auto requested = context.vm.StringUtf8(call.NonNullRef(0, "name"));
-        for (std::size_t index = 0; index < names.size(); ++index) {
-            if (requested == names[index]) return VmValue::Ref(call.GetRef(fields[index]));
-        }
-        throw VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "unknown Thread.State"};
-    });
-    return std::move(builder).Build();
+    return IntrinsicEnumBuilder(
+               "Ljava/lang/Thread$State;",
+               {"NEW", "RUNNABLE", "BLOCKED", "WAITING", "TIMED_WAITING",
+                "TERMINATED"})
+        .Build();
 }
 }  // namespace ogplay::runtime::dexvm::intrinsics
 

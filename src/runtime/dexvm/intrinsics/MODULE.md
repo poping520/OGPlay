@@ -12,6 +12,8 @@ family TU 按 API 语义与共享状态聚合，以控制翻译单元数量。
 全局静态自注册，以及 android.* 声明和行为顺手修改。
 class/member access flag 必须使用 `access_flags.h` 的共享 `kAcc*` 常量组合，禁止在
 family TU 中写裸十六进制访问标志；反射过滤使用同一头文件中单独命名的 Java modifier mask。
+平台 enum 必须通过 `IntrinsicEnumBuilder` 在链接前生成常量字段、`$VALUES`、类初始化器
+及精确类型的 `values/valueOf`；普通扩展只声明常量，payload 使用显式回调。
 
 `java.*`、`javax.net.*`、`javax.xml.*` 与 `org.xml.sax.*` 均由 core 发布；需要平台事实的
 Locale、Timer、SSL singleton 与 SAX handler 通过 `CoreIntrinsicServices` 窄接口注入；

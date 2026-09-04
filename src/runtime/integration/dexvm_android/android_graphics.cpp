@@ -21,60 +21,6 @@ constexpr std::array kConfigs{
     std::pair{"ALPHA_8", 1}, std::pair{"RGB_565", 3},
     std::pair{"ARGB_4444", 4}, std::pair{"ARGB_8888", 5}};
 
-[[nodiscard]] const dx::LinkedField& RequireField(
-    dx::Interpreter& vm, const std::string_view name,
-    const std::string_view descriptor) {
-    const auto owner = vm.Linker().FindClass(kConfigDescriptor);
-    const auto field = owner.has_value()
-                           ? vm.Linker().FindFieldRecursive(
-                                 *owner, std::string(name),
-                                 std::string(descriptor))
-                           : std::nullopt;
-    if (!field.has_value()) {
-        throw dx::DexVmError(dx::DexVmErrorReason::internal_invariant,
-                             "Bitmap.Config field is unavailable: " +
-                                 std::string(name) +
-                                 std::string(descriptor));
-    }
-    return vm.Linker().Field(*field);
-}
-
-[[nodiscard]] dx::VmObjectRef StaticReference(
-    dx::Interpreter& vm, const std::string_view name,
-    const std::string_view descriptor) {
-    const auto& field = RequireField(vm, name, descriptor);
-    const auto& storage = vm.Linker().Class(field.owner).static_storage;
-    if (!field.is_static || !field.is_ref || field.slot >= storage.size()) {
-        throw dx::DexVmError(dx::DexVmErrorReason::internal_invariant,
-                             "Bitmap.Config static reference is invalid");
-    }
-    return dx::VmObjectRef(storage[field.slot]);
-}
-
-void InitializeConstant(dx::IntrinsicContext& call,
-                        const dx::VmObjectRef constant,
-                        const std::string_view name,
-                        const std::int32_t ordinal,
-                        const std::int32_t native_int) {
-    auto slots = call.vm.Model().InstanceSlots(constant);
-    const auto& name_field = RequireField(
-        call.vm, "name", "Ljava/lang/String;");
-    const auto& ordinal_field = RequireField(call.vm, "ordinal", "I");
-    const auto& native_field = RequireField(call.vm, "nativeInt", "I");
-    if (name_field.slot >= slots.size() ||
-        ordinal_field.slot >= slots.size() ||
-        native_field.slot >= slots.size()) {
-        throw dx::DexVmError(dx::DexVmErrorReason::internal_invariant,
-                             "Bitmap.Config instance slots are invalid");
-    }
-    slots[name_field.slot] = {
-        call.vm.NewStringUtf8(name).Value(), dx::SlotTag::ref};
-    slots[ordinal_field.slot] = {
-        static_cast<std::uint32_t>(ordinal), dx::SlotTag::cat1};
-    slots[native_field.slot] = {
-        static_cast<std::uint32_t>(native_int), dx::SlotTag::cat1};
-}
-
 [[nodiscard]] dx::VmObjectRef NewConfigArray(
     dx::Interpreter& vm, const std::span<const dx::VmObjectRef> values) {
     const auto array_class = vm.Linker().ResolveDescriptor(
@@ -91,103 +37,79 @@ void InitializeConstant(dx::IntrinsicContext& call,
     return array;
 }
 
+[[nodiscard]] std::int32_t ReadIntField(
+    dx::Interpreter& vm, const dx::VmObjectRef object,
+    const std::string_view name) {
+    const auto field = vm.Linker().FindFieldRecursive(
+        vm.Model().ObjectClass(object), std::string(name), "I");
+    if (!field.has_value()) {
+        throw dx::DexVmError(dx::DexVmErrorReason::internal_invariant,
+                             "intrinsic int field is unavailable: " +
+                                 std::string(name));
+    }
+    const auto& linked = vm.Linker().Field(*field);
+    const auto slots = vm.Model().InstanceSlots(object);
+    if (linked.is_ref || linked.is_wide || linked.slot >= slots.size()) {
+        throw dx::DexVmError(dx::DexVmErrorReason::internal_invariant,
+                             "intrinsic int field is invalid: " +
+                                 std::string(name));
+    }
+    return static_cast<std::int32_t>(slots[linked.slot].bits);
+}
+
 }  // namespace
 
 Decl Declare_android_graphics_Bitmap_Config(const Context& context) {
     static_cast<void>(context);
-    auto builder = dx::IntrinsicClassBuilder::Class(
-        std::string(kConfigDescriptor), "Ljava/lang/Enum;", {},
-        dx::kAccPublic | dx::kAccFinal | dx::kAccSuper | dx::kAccEnum);
-    for (const auto& [name, _] : kConfigs) {
-        builder.StaticField(
-            name, std::string(kConfigDescriptor),
-            dx::kAccPublic | dx::kAccStatic | dx::kAccFinal | dx::kAccEnum);
-    }
-    builder.StaticField(
-               "$VALUES", "[Landroid/graphics/Bitmap$Config;",
-               dx::kAccPrivate | dx::kAccStatic | dx::kAccFinal |
-                   dx::kAccSynthetic)
-        .StaticField(
-            "sConfigs", "[Landroid/graphics/Bitmap$Config;",
-            dx::kAccPrivate | dx::kAccStatic)
-        .InstanceField("nativeInt", "I", dx::kAccFinal);
+    dx::IntrinsicEnumBuilder enum_builder(
+        std::string(kConfigDescriptor),
+        {"ALPHA_8", "RGB_565", "ARGB_4444", "ARGB_8888"});
+    auto& builder = enum_builder.ClassBuilder();
+    const auto configs = builder.BoundStaticField(
+        "sConfigs", "[Landroid/graphics/Bitmap$Config;", dx::kAccPrivate);
+    const auto native_int =
+        builder.BoundInstanceField("nativeInt", "I", dx::kAccFinal);
     builder.Constructor("(Ljava/lang/String;II)V",
-        [](dx::IntrinsicContext& call) {
-            InitializeConstant(call, call.receiver,
-                               call.vm.StringUtf8(call.arguments[0].ref),
-                               call.arguments[1].AsInt(),
-                               call.arguments[2].AsInt());
+        [native_int](dx::IntrinsicContext& context) {
+            const dx::IntrinsicCall call(context);
+            dx::IntrinsicEnumBuilder::InitializeBase(
+                context, context.receiver,
+                context.vm.StringUtf8(call.NonNullRef(0, "name")),
+                call.Int(1));
+            call.SetInt(native_int, call.Int(2));
             return dx::VmValue::Void();
         }, dx::kAccPrivate);
-    builder.StaticMethod("values", "()[Landroid/graphics/Bitmap$Config;",
-        [](dx::IntrinsicContext& call) {
-            const auto values = StaticReference(
-                call.vm, "$VALUES",
-                "[Landroid/graphics/Bitmap$Config;");
-            return dx::VmValue::Ref(call.vm.CloneObject(values));
-        }, dx::kAccPublic | dx::kAccStatic);
-    builder.StaticMethod(
-        "valueOf",
-        "(Ljava/lang/String;)Landroid/graphics/Bitmap$Config;",
-        [](dx::IntrinsicContext& call) {
-            const auto requested = call.arguments[0].ref;
-            if (!requested.IsValid()) {
-                throw dx::VmJavaThrow{
-                    "Ljava/lang/NullPointerException;", "name == null"};
-            }
-            const auto wanted = call.vm.StringUtf8(requested);
-            for (const auto& [name, _] : kConfigs) {
-                if (wanted == name) {
-                    return dx::VmValue::Ref(StaticReference(
-                        call.vm, name, kConfigDescriptor));
-                }
-            }
-            throw dx::VmJavaThrow{
-                "Ljava/lang/IllegalArgumentException;",
-                wanted + " is not a constant in android.graphics.Bitmap.Config"};
-        }, dx::kAccPublic | dx::kAccStatic);
     builder.StaticMethod(
         "nativeToConfig", "(I)Landroid/graphics/Bitmap$Config;",
-        [](dx::IntrinsicContext& call) {
-            const auto index = call.arguments[0].AsInt();
+        [configs](dx::IntrinsicContext& context) {
+            const dx::IntrinsicCall call(context);
+            const auto index = call.Int(0);
             if (index < 0 || index >= 6) {
                 throw dx::VmJavaThrow{
                     "Ljava/lang/ArrayIndexOutOfBoundsException;",
                     "Bitmap.Config native index " + std::to_string(index)};
             }
-            const auto configs = StaticReference(
-                call.vm, "sConfigs",
-                "[Landroid/graphics/Bitmap$Config;");
             return dx::VmValue::Ref(
-                call.vm.Model().GetObjectElement(configs, index));
+                context.vm.Model().GetObjectElement(call.GetRef(configs), index));
         }, dx::kAccStatic);
-    builder.ClassInitializer([](dx::IntrinsicContext& call) {
-        auto& vm = call.vm;
-        std::array<dx::VmObjectRef, kConfigs.size()> values{
-            dx::VmObjectRef{}, dx::VmObjectRef{}, dx::VmObjectRef{},
-            dx::VmObjectRef{}};
-        for (std::size_t index = 0; index < kConfigs.size(); ++index) {
-            const auto& [name, native_int] = kConfigs[index];
-            values[index] = vm.NewIntrinsicInstance(kConfigDescriptor);
-            InitializeConstant(call, values[index], name,
-                               static_cast<std::int32_t>(index), native_int);
-            vm.SetIntrinsicStaticRef(
-                kConfigDescriptor, name, kConfigDescriptor, values[index]);
-        }
-        vm.SetIntrinsicStaticRef(
-            kConfigDescriptor, "$VALUES",
-            "[Landroid/graphics/Bitmap$Config;",
-            NewConfigArray(vm, values));
-        std::array<dx::VmObjectRef, 6> native_configs{
-            dx::VmObjectRef{}, values[0], dx::VmObjectRef{}, values[1],
-            values[2], values[3]};
-        vm.SetIntrinsicStaticRef(
-            kConfigDescriptor, "sConfigs",
-            "[Landroid/graphics/Bitmap$Config;",
-            NewConfigArray(vm, native_configs));
-        return dx::VmValue::Void();
-    });
-    return std::move(builder).Build();
+    enum_builder.WithConstantInitializer(
+        [native_int](dx::IntrinsicContext& context,
+                     const dx::VmObjectRef value, std::string_view,
+                     const std::int32_t ordinal) {
+            const dx::IntrinsicCall call(context);
+            call.SetInt(native_int, value,
+                        kConfigs[static_cast<std::size_t>(ordinal)].second);
+        });
+    enum_builder.AfterConstants(
+        [configs](dx::IntrinsicContext& context,
+                  const std::span<const dx::VmObjectRef> values) {
+            const std::array<dx::VmObjectRef, 6> native_configs{
+                dx::VmObjectRef{}, values[0], dx::VmObjectRef{}, values[1],
+                values[2], values[3]};
+            const dx::IntrinsicCall call(context);
+            call.SetRef(configs, NewConfigArray(context.vm, native_configs));
+        });
+    return std::move(enum_builder).Build();
 }
 
 }  // namespace ogplay::runtime::android_intrinsics
@@ -684,17 +606,9 @@ namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_graphics_Region_Op(const Context& context) {
     static_cast<void>(context);
-    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/graphics/Region$Op;", "Ljava/lang/Object;");
-    builder.StaticField("REPLACE", "Landroid/graphics/Region$Op;");
-    builder.ClassInitializer([](dx::IntrinsicContext& call) {
-        auto& vm = call.vm;
-        vm.SetIntrinsicStaticRef(
-            "Landroid/graphics/Region$Op;", "REPLACE",
-            "Landroid/graphics/Region$Op;",
-            vm.NewIntrinsicInstance("Landroid/graphics/Region$Op;"));
-        return dx::VmValue::Void();
-    });
-    return std::move(builder).Build();
+    return dx::IntrinsicEnumBuilder(
+               "Landroid/graphics/Region$Op;", {"REPLACE"})
+        .Build();
 }
 
 }  // namespace ogplay::runtime::android_intrinsics
@@ -872,25 +786,24 @@ Decl Declare_android_graphics_PointF(const Context& context) {
 
 Decl Declare_android_graphics_Path_Direction(const Context& context) {
     static_cast<void>(context);
-    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/graphics/Path$Direction;", "Ljava/lang/Object;");
-    builder.StaticField("CW", "Landroid/graphics/Path$Direction;")
-        .StaticField("CCW", "Landroid/graphics/Path$Direction;");
-    builder.InstanceField("nativeInt", "I", dx::kAccPublic | dx::kAccFinal);
-    builder.Constructor("(I)V", [](dx::IntrinsicContext& call) {
-        call.vm.Model().InstanceSlots(call.receiver)[0] = {
-            static_cast<std::uint32_t>(call.arguments[0].AsInt()), dx::SlotTag::cat1};
+    dx::IntrinsicEnumBuilder enum_builder(
+        "Landroid/graphics/Path$Direction;", {"CW", "CCW"});
+    auto& builder = enum_builder.ClassBuilder();
+    const auto native_int = builder.BoundInstanceField(
+        "nativeInt", "I", dx::kAccPublic | dx::kAccFinal);
+    builder.Constructor("(I)V", [native_int](dx::IntrinsicContext& context) {
+        const dx::IntrinsicCall call(context);
+        call.SetInt(native_int, call.Int(0));
         return dx::VmValue::Void();
     }, dx::kAccPrivate);
-    builder.ClassInitializer([](dx::IntrinsicContext& call) {
-        for (std::int32_t index = 0; index < 2; ++index) {
-            const auto value = call.vm.NewIntrinsicInstance("Landroid/graphics/Path$Direction;");
-            call.vm.Model().InstanceSlots(value)[0] = {static_cast<std::uint32_t>(index), dx::SlotTag::cat1};
-            call.vm.SetIntrinsicStaticRef("Landroid/graphics/Path$Direction;", index == 0 ? "CW" : "CCW",
-                                          "Landroid/graphics/Path$Direction;", value);
-        }
-        return dx::VmValue::Void();
-    });
-    return std::move(builder).Build();
+    enum_builder.WithConstantInitializer(
+        [native_int](dx::IntrinsicContext& context,
+                     const dx::VmObjectRef value, std::string_view,
+                     const std::int32_t ordinal) {
+            const dx::IntrinsicCall call(context);
+            call.SetInt(native_int, value, ordinal);
+        });
+    return std::move(enum_builder).Build();
 }
 
 Decl Declare_android_graphics_Path(const Context& context) {
@@ -929,8 +842,8 @@ Decl Declare_android_graphics_Path(const Context& context) {
         [context](dx::IntrinsicContext& call) {
             if (!call.arguments[4].ref.IsValid())
                 throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;", "direction"};
-            const auto direction = static_cast<std::int32_t>(
-                call.vm.Model().InstanceSlots(call.arguments[4].ref)[0].bits);
+            const auto direction =
+                ReadIntField(call.vm, call.arguments[4].ref, "nativeInt");
             context->paths[call.receiver.Value()].commands.push_back({
                 DexVmAndroidContext::PathState::Verb::rect,
                 call.arguments[0].AsFloat(), call.arguments[1].AsFloat(),
@@ -942,7 +855,6 @@ Decl Declare_android_graphics_Path(const Context& context) {
 
 Decl Declare_android_graphics_PorterDuff_Mode(const Context& context) {
     static_cast<void>(context);
-    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/graphics/PorterDuff$Mode;", "Ljava/lang/Object;");
     constexpr std::array modes{
         std::pair{"CLEAR", 0}, std::pair{"SRC", 1}, std::pair{"DST", 2},
         std::pair{"SRC_OVER", 3}, std::pair{"DST_OVER", 4},
@@ -951,18 +863,22 @@ Decl Declare_android_graphics_PorterDuff_Mode(const Context& context) {
         std::pair{"XOR", 11}, std::pair{"DARKEN", 12}, std::pair{"LIGHTEN", 13},
         std::pair{"MULTIPLY", 14}, std::pair{"SCREEN", 15}, std::pair{"ADD", 16},
         std::pair{"OVERLAY", 17}};
-    for (const auto& [name, _] : modes) builder.StaticField(name, "Landroid/graphics/PorterDuff$Mode;");
-    builder.InstanceField("nativeInt", "I", dx::kAccPublic | dx::kAccFinal);
-    builder.ClassInitializer([modes](dx::IntrinsicContext& call) {
-        for (const auto& [name, value] : modes) {
-            const auto object = call.vm.NewIntrinsicInstance("Landroid/graphics/PorterDuff$Mode;");
-            call.vm.Model().InstanceSlots(object)[0] = {static_cast<std::uint32_t>(value), dx::SlotTag::cat1};
-            call.vm.SetIntrinsicStaticRef("Landroid/graphics/PorterDuff$Mode;", name,
-                                          "Landroid/graphics/PorterDuff$Mode;", object);
-        }
-        return dx::VmValue::Void();
-    });
-    return std::move(builder).Build();
+    dx::IntrinsicEnumBuilder enum_builder(
+        "Landroid/graphics/PorterDuff$Mode;",
+        {"CLEAR", "SRC", "DST", "SRC_OVER", "DST_OVER", "SRC_IN",
+         "DST_IN", "SRC_OUT", "DST_OUT", "SRC_ATOP", "DST_ATOP", "XOR",
+         "DARKEN", "LIGHTEN", "MULTIPLY", "SCREEN", "ADD", "OVERLAY"});
+    const auto native_int = enum_builder.ClassBuilder().BoundInstanceField(
+        "nativeInt", "I", dx::kAccPublic | dx::kAccFinal);
+    enum_builder.WithConstantInitializer(
+        [native_int, modes](dx::IntrinsicContext& context,
+                            const dx::VmObjectRef value, std::string_view,
+                            const std::int32_t ordinal) {
+            const dx::IntrinsicCall call(context);
+            call.SetInt(native_int, value,
+                        modes[static_cast<std::size_t>(ordinal)].second);
+        });
+    return std::move(enum_builder).Build();
 }
 
 Decl Declare_android_graphics_PorterDuff(const Context& context) {

@@ -1,5 +1,7 @@
 #include "ogplay/runtime/dexvm/intrinsic_builder.h"
 
+#include <algorithm>
+#include <array>
 #include <atomic>
 #include <bit>
 #include <limits>
@@ -867,5 +869,167 @@ namespace ogplay::runtime::dexvm {
         }
 
         return std::move(declaration_);
+    }
+
+    IntrinsicEnumBuilder::IntrinsicEnumBuilder(
+        std::string descriptor,
+        const std::initializer_list<std::string_view> constants)
+        : IntrinsicEnumBuilder(
+              std::move(descriptor),
+              [&constants] {
+                  std::vector<std::string> result;
+                  result.reserve(constants.size());
+                  for (const auto constant : constants) {
+                      result.emplace_back(constant);
+                  }
+                  return result;
+              }()) {}
+
+    IntrinsicEnumBuilder::IntrinsicEnumBuilder(
+        std::string descriptor, std::vector<std::string> constants)
+        : descriptor_(std::move(descriptor)),
+          array_descriptor_("[" + descriptor_),
+          constants_(std::move(constants)),
+          builder_(IntrinsicClassBuilder::Class(
+              descriptor_, "Ljava/lang/Enum;", {},
+              kAccPublic | kAccFinal | kAccEnum)) {
+        std::unordered_set<std::string> names;
+        for (const auto& name : constants_) {
+            if (name.empty() || name == "$VALUES" || !names.insert(name).second) {
+                FailBuild("invalid or duplicate intrinsic enum constant: " +
+                          name);
+            }
+            constant_fields_.push_back(builder_.BoundStaticField(
+                name, descriptor_, kAccPublic | kAccFinal | kAccEnum));
+        }
+        values_field_ = builder_.BoundStaticField(
+            "$VALUES", array_descriptor_,
+            kAccPrivate | kAccFinal | kAccSynthetic);
+    }
+
+    IntrinsicEnumBuilder& IntrinsicEnumBuilder::WithObjectFactory(
+        ObjectFactory factory) {
+        if (!factory) FailBuild("intrinsic enum object factory is empty");
+        object_factory_ = std::move(factory);
+        return *this;
+    }
+
+    IntrinsicEnumBuilder& IntrinsicEnumBuilder::WithConstantInitializer(
+        ConstantInitializer initializer) {
+        if (!initializer) FailBuild("intrinsic enum constant initializer is empty");
+        constant_initializer_ = std::move(initializer);
+        return *this;
+    }
+
+    IntrinsicEnumBuilder& IntrinsicEnumBuilder::AfterConstants(
+        AfterInitialization initializer) {
+        if (!initializer) FailBuild("intrinsic enum after-initialization hook is empty");
+        after_initialization_ = std::move(initializer);
+        return *this;
+    }
+
+    void IntrinsicEnumBuilder::InitializeBase(
+        IntrinsicContext& context, const VmObjectRef constant,
+        const std::string_view name, const std::int32_t ordinal) {
+        const auto enum_class = context.vm.Linker().FindClass("Ljava/lang/Enum;");
+        const auto constructor = enum_class.has_value()
+                                     ? context.vm.Linker().FindDirectMethod(
+                                           *enum_class, "<init>",
+                                           "(Ljava/lang/String;I)V")
+                                     : std::nullopt;
+        if (!constructor.has_value()) {
+            FailBuild("java.lang.Enum constructor is unavailable");
+        }
+        const std::array arguments{
+            VmValue::Ref(constant),
+            VmValue::Ref(context.vm.NewStringUtf8(name)),
+            VmValue::Int(ordinal)};
+        const auto outcome = context.vm.Call(*constructor, arguments);
+        if (outcome.exception.IsValid()) {
+            throw VmJavaThrow{
+                context.vm.Linker().Class(outcome.exception_class).descriptor,
+                outcome.exception_message};
+        }
+    }
+
+    void IntrinsicEnumBuilder::DeclareEnumSurface() {
+        if (surface_declared_) {
+            FailBuild("intrinsic enum surface was already declared: " + descriptor_);
+        }
+        surface_declared_ = true;
+
+        const auto descriptor = descriptor_;
+        const auto array_descriptor = array_descriptor_;
+        const auto constants = constants_;
+        const auto fields = constant_fields_;
+        const auto values_field = values_field_;
+        const auto object_factory = object_factory_;
+        const auto constant_initializer = constant_initializer_;
+        const auto after_initialization = after_initialization_;
+
+        builder_.StaticMethod(
+            "values", "()" + array_descriptor,
+            [values_field](IntrinsicContext& context) {
+                const IntrinsicCall call(context);
+                return VmValue::Ref(context.vm.CloneObject(call.GetRef(values_field)));
+            }, kAccPublic | kAccStatic);
+        builder_.StaticMethod(
+            "valueOf", "(Ljava/lang/String;)" + descriptor,
+            [constants, fields, descriptor](IntrinsicContext& context) {
+                const IntrinsicCall call(context);
+                const auto wanted = context.vm.StringUtf8(
+                    call.NonNullRef(0, "name"));
+                for (std::size_t index = 0; index < constants.size(); ++index) {
+                    if (wanted == constants[index]) {
+                        return VmValue::Ref(call.GetRef(fields[index]));
+                    }
+                }
+                auto type_name = descriptor.substr(1, descriptor.size() - 2U);
+                std::replace(type_name.begin(), type_name.end(), '/', '.');
+                throw VmJavaThrow{"Ljava/lang/IllegalArgumentException;",
+                                  wanted + " is not a constant in " + type_name};
+            }, kAccPublic | kAccStatic);
+        builder_.ClassInitializer(
+            [descriptor, array_descriptor, constants, fields, values_field,
+             object_factory, constant_initializer,
+             after_initialization](IntrinsicContext& context) {
+                const IntrinsicCall call(context);
+                std::vector<VmObjectRef> values;
+                values.reserve(constants.size());
+                for (std::size_t index = 0; index < constants.size(); ++index) {
+                    const auto ordinal = static_cast<std::int32_t>(index);
+                    const auto value = object_factory
+                                           ? object_factory(
+                                                 context, constants[index], ordinal)
+                                           : context.vm.NewIntrinsicInstance(descriptor);
+                    if (!value.IsValid()) {
+                        FailBuild("intrinsic enum factory returned null: " +
+                                  descriptor + "." + constants[index]);
+                    }
+                    call.SetRef(fields[index], value);
+                    InitializeBase(context, value, constants[index], ordinal);
+                    if (constant_initializer) {
+                        constant_initializer(context, value, constants[index],
+                                             ordinal);
+                    }
+                    values.push_back(value);
+                }
+                const auto array = context.vm.Model().NewObjectArray(
+                    context.vm.Linker().ResolveDescriptor(array_descriptor),
+                    context.vm.Linker().ResolveDescriptor(descriptor),
+                    static_cast<JniSize>(values.size()));
+                for (std::size_t index = 0; index < values.size(); ++index) {
+                    context.vm.Model().SetObjectElement(
+                        array, static_cast<JniSize>(index), values[index]);
+                }
+                call.SetRef(values_field, array);
+                if (after_initialization) after_initialization(context, values);
+                return VmValue::Void();
+            });
+    }
+
+    IntrinsicClassDecl IntrinsicEnumBuilder::Build() && {
+        DeclareEnumSurface();
+        return std::move(builder_).Build();
     }
 } // namespace ogplay::runtime::dexvm

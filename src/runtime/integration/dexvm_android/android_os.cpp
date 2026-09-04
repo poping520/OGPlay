@@ -168,46 +168,18 @@ Decl Declare_android_os_AsyncTask(const Context& context) {
 namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_os_AsyncTask_Status(const Context& context) {
-    auto builder = dx::IntrinsicClassBuilder::Class(
-        "Landroid/os/AsyncTask$Status;", "Ljava/lang/Enum;");
-    builder.StaticField("PENDING", "Landroid/os/AsyncTask$Status;")
-        .StaticField("RUNNING", "Landroid/os/AsyncTask$Status;")
-        .StaticField("FINISHED", "Landroid/os/AsyncTask$Status;");
-    builder.ClassInitializer([context](dx::IntrinsicContext& call) {
-        const std::array entries{
-            std::pair{"PENDING", "async_status_pending"},
-            std::pair{"RUNNING", "async_status_running"},
-            std::pair{"FINISHED", "async_status_finished"}};
-        const auto enum_class = call.vm.Linker().FindClass("Ljava/lang/Enum;");
-        const auto constructor = enum_class.has_value()
-                                     ? call.vm.Linker().FindDirectMethod(
-                                           *enum_class, "<init>",
-                                           "(Ljava/lang/String;I)V")
-                                     : std::nullopt;
-        if (!constructor.has_value()) {
-            throw dx::DexVmError(dx::DexVmErrorReason::internal_invariant,
-                                 "Enum constructor is unavailable");
-        }
-        for (std::size_t index = 0; index < entries.size(); ++index) {
-            const auto [field, key] = entries[index];
-            const auto value = Singleton(
-                call, context, key, "Landroid/os/AsyncTask$Status;");
-            const auto outcome = call.vm.Call(
-                *constructor,
-                std::vector<dx::VmValue>{
-                    dx::VmValue::Ref(value),
-                    dx::VmValue::Ref(call.vm.NewStringUtf8(field)),
-                    dx::VmValue::Int(static_cast<std::int32_t>(index))});
-            if (outcome.exception.IsValid()) {
-                call.vm.SetPendingException(outcome.exception);
-                return dx::VmValue::Void();
-            }
-            call.vm.SetIntrinsicStaticRef(
-                "Landroid/os/AsyncTask$Status;", field,
-                "Landroid/os/AsyncTask$Status;", value);
-        }
-        return dx::VmValue::Void();
-    });
+    constexpr std::array singleton_keys{
+        "async_status_pending", "async_status_running",
+        "async_status_finished"};
+    dx::IntrinsicEnumBuilder builder(
+        "Landroid/os/AsyncTask$Status;",
+        {"PENDING", "RUNNING", "FINISHED"});
+    builder.WithObjectFactory(
+        [context, singleton_keys](dx::IntrinsicContext& call,
+                                  std::string_view, std::size_t ordinal) {
+            return Singleton(call, context, singleton_keys[ordinal],
+                             "Landroid/os/AsyncTask$Status;");
+        });
     return std::move(builder).Build();
 }
 

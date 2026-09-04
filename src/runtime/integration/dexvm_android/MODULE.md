@@ -17,6 +17,8 @@ intrinsic。`catalog.cpp` 是唯一注册聚合点；平台类按 API 家族聚�
 通用 `java.io` handle 与流状态属于 DexVM core；integration 装配只通过
 `DexVmIoVfsAdapter` 向 `IoRuntime` 注入窄文件接口。`java.util.zip` handle 与 archive
 状态同样属于 DexVM core 的 `ZipRuntime`；不得恢复 context stream/output/zip map。
+Android 平台 enum 统一使用 core `IntrinsicEnumBuilder`；Android family 只通过 object factory、
+逐常量初始化或完成回调附加 singleton、native payload 与 context side state。
 DVM-91 的 PFD/AFD 只包装 core 逻辑 FileDescriptor：PFD.open 只接受受检只读 VFS 文件，
 AssetManager.openFd 只接受 STORED APK entry 并发布 payload offset；MediaPlayer 把 FD 与
 区间规范化为 `EncodedAudioSource` 后交给进程唯一 mixer，不建立宿主 fd 或第二套播放器。

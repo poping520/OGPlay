@@ -360,6 +360,35 @@ TEST_CASE("dexvm Thread third priority declarations match API19 shape") {
     }
 }
 
+TEST_CASE("DVM-98 Thread State uses generated enum methods") {
+    ThreadVm vm;
+    constexpr auto descriptor = "Ljava/lang/Thread$State;";
+    const auto first = vm.Static(
+        descriptor, "values", "()[Ljava/lang/Thread$State;");
+    const auto second = vm.Static(
+        descriptor, "values", "()[Ljava/lang/Thread$State;");
+    REQUIRE_FALSE(first.exception.IsValid());
+    REQUIRE_FALSE(second.exception.IsValid());
+    CHECK(first.value.ref != second.value.ref);
+    REQUIRE(vm.model.ArrayLength(first.value.ref) == 6);
+
+    const auto runnable = vm.model.GetObjectElement(first.value.ref, 1);
+    CHECK(vm.interpreter.StringUtf8(
+              vm.Virtual(runnable, "name", "()Ljava/lang/String;").value.ref) ==
+          "RUNNABLE");
+    const auto by_name = vm.Static(
+        descriptor, "valueOf",
+        "(Ljava/lang/String;)Ljava/lang/Thread$State;",
+        {VmValue::Ref(vm.interpreter.NewStringUtf8("RUNNABLE"))});
+    REQUIRE_FALSE(by_name.exception.IsValid());
+    CHECK(by_name.value.ref == runnable);
+
+    const auto state_class = vm.Class(descriptor);
+    CHECK(vm.linker.FindFieldRecursive(
+              state_class, "$VALUES", "[Ljava/lang/Thread$State;")
+              .has_value());
+}
+
 TEST_CASE("dexvm Thread uncaught handlers are scoped and accept null") {
     for (const auto backend : {InterpreterBackend::switch_dispatch,
                                InterpreterBackend::threaded}) {

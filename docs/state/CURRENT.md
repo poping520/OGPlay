@@ -29,7 +29,8 @@
   ContentProvider MIME、path/SSP、manifest resolver 与系统广播仍明确不支持。
 - **基础架构**：DVM-92 teardown 及 DVM-94～96 的稳定 linker metadata、`MethodShape`、
   own-member intrinsic 与 owner-state trace/sweep 已完成；Dalvik access flag 与 Java reflection
-  modifier mask 已集中到共享头；生命周期异常日志现含具体 Java 类型。解释执行仍由
+  modifier mask 已集中到共享头；DVM-98 统一现有 8 个平台 enum；生命周期异常日志现含
+  具体 Java 类型。解释执行仍由
   `VmExecutionLock` 串行，threaded 生产默认关闭。
 - **Title 进展**：Tales 已越过 uniform sampler、`GL_OES_mapbuffer`、Context 路径和 thread
   context loader 缺口，两个 native 库完成 JNI 初始化；新首错为
@@ -56,9 +57,9 @@
   后续对象图能力见上一条验证。
 - 2026-09-03 Windows `windows-msvc` Release：`ogplay_tests` 构建通过；Context 私有文件流
   覆盖/追加/读取及异常、ContextWrapper 委托、Android catalog 定向回归通过。
-- 2026-09-03 Windows `windows-msvc` Release：`ogplay_tests` 构建通过；
-  Observer/Observable 4/4、相邻 DVM-87/core catalog/collections 8/8、能力账本与架构静态
-  检查 4/4 通过；`java_util` 集合族已移除无用途的 DVM-80 转发命名空间。
+- 2026-09-03 Release：Observer/Observable 4/4、相邻回归 8/8、账本与架构检查 4/4。
+- 2026-09-04 Windows Release：DVM-98 及 enum 相邻回归 9/9，架构检查 1/1；现有
+  8 个平台 enum 已迁移到统一生成器。
 
 ## 下一步
 

@@ -1,7 +1,10 @@
 #pragma once
 
 #include <cstdint>
+#include <functional>
+#include <initializer_list>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -20,10 +23,12 @@ namespace ogplay::runtime::dexvm {
         [[nodiscard]] bool IsValid() const noexcept { return token_ != 0U; }
 
     private:
+        IntrinsicFieldHandle() = default;
         explicit IntrinsicFieldHandle(std::uint64_t token) : token_(token) {}
         std::uint64_t token_{};
         friend class IntrinsicCall;
         friend class IntrinsicClassBuilder;
+        friend class IntrinsicEnumBuilder;
     };
 
     // Typed façade for intrinsic handlers. Descriptor mismatches are VM
@@ -227,5 +232,53 @@ namespace ogplay::runtime::dexvm {
             std::uint32_t access_flags);
 
         IntrinsicClassDecl declaration_;
+    };
+
+    // Declarative builder for platform enum classes without guest bytecode.
+    class IntrinsicEnumBuilder final {
+    public:
+        using ObjectFactory = std::function<VmObjectRef(
+            IntrinsicContext&, std::string_view, std::int32_t)>;
+        using ConstantInitializer = std::function<void(
+            IntrinsicContext&, VmObjectRef, std::string_view, std::int32_t)>;
+        using AfterInitialization = std::function<void(
+            IntrinsicContext&, std::span<const VmObjectRef>)>;
+
+        IntrinsicEnumBuilder(
+            std::string descriptor,
+            std::initializer_list<std::string_view> constants);
+        IntrinsicEnumBuilder(std::string descriptor,
+                             std::vector<std::string> constants);
+
+        [[nodiscard]] IntrinsicClassBuilder& ClassBuilder() noexcept {
+            return builder_;
+        }
+
+        IntrinsicEnumBuilder& WithObjectFactory(ObjectFactory factory);
+        IntrinsicEnumBuilder& WithConstantInitializer(
+            ConstantInitializer initializer);
+        IntrinsicEnumBuilder& AfterConstants(
+            AfterInitialization initializer);
+
+        static void InitializeBase(IntrinsicContext& context,
+                                   VmObjectRef constant,
+                                   std::string_view name,
+                                   std::int32_t ordinal);
+
+        [[nodiscard]] IntrinsicClassDecl Build() &&;
+
+    private:
+        void DeclareEnumSurface();
+
+        std::string descriptor_;
+        std::string array_descriptor_;
+        std::vector<std::string> constants_;
+        IntrinsicClassBuilder builder_;
+        std::vector<IntrinsicFieldHandle> constant_fields_;
+        IntrinsicFieldHandle values_field_;
+        ObjectFactory object_factory_;
+        ConstantInitializer constant_initializer_;
+        AfterInitialization after_initialization_;
+        bool surface_declared_{};
     };
 } // namespace ogplay::runtime::dexvm

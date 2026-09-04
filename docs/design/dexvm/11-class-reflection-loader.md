@@ -56,7 +56,7 @@ AOSP 语义引用一律指向 OGPlay 仓库根目录下的本地 checkout，供�
 | generic reflection | `TypeVariable` / `ParameterizedType` / generic signature 延后 |
 | `Proxy` / MethodHandle / invokedynamic | 不做 |
 | SecurityManager / ReflectPermission | 不实现；`setAccessible` 仅影响 VM access check |
-| framework/core 字节码执行 | 不做；平台类仍为 intrinsic |
+| 完整 framework/core 字节码执行 | 不做；ADR-0030 仅允许 curated API 19 Boot DEX，平台类可由 DEX 结构/字节码与精确 intrinsic method overlay 混合提供 |
 | reflection wrapper 跨 session 持久化 | 不做 |
 
 允许解析 `InnerClass`、`EnclosingClass`、`EnclosingMethod`、`Throws` 等 Dalvik
@@ -209,7 +209,7 @@ struct LinkedClass {
 
 规则：
 
-- platform intrinsic / primitive 归 bootstrap；application DEX 归唯一 application loader；
+- curated Boot DEX、platform intrinsic / primitive 归 bootstrap；application DEX 归唯一 application loader；
 - array 的 defining-loader 语义跟随 component type，并按 API19 `Class.getClassLoader` 结果验收；
 - app DEX 保留 `class_data_item` declared order；
 - intrinsic 保留 generated declaration order；

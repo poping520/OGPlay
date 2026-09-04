@@ -35,7 +35,7 @@
 
 | 非目标 | 说明 |
 | --- | --- |
-| framework/core 字节码执行 | 不加载 framework.jar / core-libart / 任何 ROM 侧 dex；平台类只有 intrinsic 一种形态 |
+| 完整 framework/core 字节码执行 | 不加载完整 framework.jar/core.jar；ADR-0030 只允许随包发布并全量装载受审的 API 19 curated Boot DEX，普通方法解释执行、VM/host 方法精确 overlay |
 | JIT / AOT | 纯解释器。Java 层不是这代游戏的热点（roadmap 04 §7.3 结论） |
 | odex / quickened / dex 038+ 新指令 | 只支持标准 dex 035 指令集；invoke-polymorphic 等新指令明确失败 |
 | 多 ClassLoader 与动态加载 | 单一应用类命名空间；`DexClassLoader`/`loadDex` 记账失败 |
@@ -46,8 +46,8 @@
 
 ADR-0001"不实现 Binder、system_server、Zygote 或完整 ART/Dalvik"继续有效。
 本方案与其兼容的判定方法保持一致：**游戏进程自己会执行这段字节码吗？**
-游戏 DEX 里的类会——所以解释它在范围内；framework 的类不会以字节码形态
-进入游戏进程边界——所以永远是 intrinsic。
+游戏 DEX 里的类会；curated Boot DEX 中经受审的纯 Java 类也会。完整 framework、
+Binder/system_server 与未入选平台类仍不进入执行边界。
 
 ## 4. 规模量级（用于投入判断）
 

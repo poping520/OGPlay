@@ -481,11 +481,11 @@
     return-object v0
 .end method
 
-.class public LP1Enum;
+.class public final enum LP1Enum;
 .super Ljava/lang/Enum;
 
-.field static public SMALL:LP1Enum;
-.field static public LARGE:LP1Enum;
+.field public static final enum SMALL:LP1Enum;
+.field public static final enum LARGE:LP1Enum;
 
 .method static constructor <clinit>()V
 .registers 3
@@ -697,10 +697,10 @@
 .end method
 
 # toString is not final on the platform: enum types may override it.
-.class public LP1EnumTagged;
+.class public final enum LP1EnumTagged;
 .super Ljava/lang/Enum;
 
-.field static public TAG:LP1EnumTagged;
+.field public static final enum TAG:LP1EnumTagged;
 
 .method static constructor <clinit>()V
 .registers 3

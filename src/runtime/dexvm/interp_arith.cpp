@@ -369,10 +369,16 @@ bool Interpreter::Impl::ExecuteArithmetic(Frame& frame,
                              static_cast<std::int32_t>(get_cat1(src2)),
                              static_cast<std::uint8_t>(opcode - 0x90));
         }
-        if (opcode <= 0xa5) {  // long
+        if (opcode <= 0xa2) {  // long, two wide operands
             return long_binop(vAA,
                               static_cast<std::int64_t>(get_wide(src1)),
                               static_cast<std::int64_t>(get_wide(src2)),
+                              static_cast<std::uint8_t>(opcode - 0x9b));
+        }
+        if (opcode <= 0xa5) {  // long shift, cat1 distance operand
+            return long_binop(vAA,
+                              static_cast<std::int64_t>(get_wide(src1)),
+                              static_cast<std::int32_t>(get_cat1(src2)),
                               static_cast<std::uint8_t>(opcode - 0x9b));
         }
         if (opcode <= 0xaa) {  // float
@@ -393,10 +399,16 @@ bool Interpreter::Impl::ExecuteArithmetic(Frame& frame,
                              static_cast<std::int32_t>(get_cat1(vB4)),
                              static_cast<std::uint8_t>(opcode - 0xb0));
         }
-        if (opcode <= 0xc5) {  // long
+        if (opcode <= 0xc2) {  // long, two wide operands
             return long_binop(vA,
                               static_cast<std::int64_t>(get_wide(vA)),
                               static_cast<std::int64_t>(get_wide(vB4)),
+                              static_cast<std::uint8_t>(opcode - 0xbb));
+        }
+        if (opcode <= 0xc5) {  // long shift/2addr, cat1 distance operand
+            return long_binop(vA,
+                              static_cast<std::int64_t>(get_wide(vA)),
+                              static_cast<std::int32_t>(get_cat1(vB4)),
                               static_cast<std::uint8_t>(opcode - 0xbb));
         }
         if (opcode <= 0xca) {  // float

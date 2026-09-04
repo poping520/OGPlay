@@ -244,6 +244,17 @@ IntrinsicClassDecl Declare_java_lang_Enum() {
     builder.StaticMethod("valueOf",
                    "(Ljava/lang/Class;Ljava/lang/String;)Ljava/lang/Enum;",
                    ValueOfConstant);
+    builder.StaticMethod("getSharedConstants",
+                         "(Ljava/lang/Class;)[Ljava/lang/Enum;",
+        [](IntrinsicContext& context) {
+            const auto class_object = context.arguments[0].ref;
+            if (!class_object.IsValid()) {
+                throw VmJavaThrow{"Ljava/lang/NullPointerException;",
+                                  "enumType == null"};
+            }
+            return VmValue::Ref(context.vm.SharedEnumConstants(
+                context.vm.Model().ClassOfClassObject(class_object)));
+        });
     return std::move(builder).Build();
 }
 

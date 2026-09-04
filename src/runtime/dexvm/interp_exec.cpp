@@ -21,6 +21,7 @@ void Interpreter::Impl::Step(InterpreterExecutionState& execution) {
     auto& exit_result = execution.exit_result;
     auto& frame = frames.back();
     const auto& code = *frame.method->code;
+    const auto dex_unit = *frame.method->dex_unit;
     const auto& units = code.instructions;
     if (frame.pc >= units.size()) {
         FailCode("pc ran off the end of the method");
@@ -217,9 +218,11 @@ void Interpreter::Impl::Step(InterpreterExecutionState& execution) {
         case 0x1a:  // const-string
             PrepareSafeAllocation(
                 JavaObjectModel::EstimateStringBytes(
-                    linker->Image().strings[units[frame.pc + 1]].value.size()),
+                    linker->Image(dex_unit)
+                        .strings[units[frame.pc + 1]].value.size()),
                 "const-string");
-            SetRef(frame, vAA, InternDexString(units[frame.pc + 1]));
+            SetRef(frame, vAA,
+                   InternDexString(dex_unit, units[frame.pc + 1]));
             advance();
             return;
         case 0x1b:  // const-string/jumbo
@@ -228,15 +231,16 @@ void Interpreter::Impl::Step(InterpreterExecutionState& execution) {
                 static_cast<std::uint32_t>(units[frame.pc + 1]) |
                 (static_cast<std::uint32_t>(units[frame.pc + 2]) << 16U);
             PrepareSafeAllocation(JavaObjectModel::EstimateStringBytes(
-                                      linker->Image().strings[string_index].value.size()),
+                                      linker->Image(dex_unit)
+                                          .strings[string_index].value.size()),
                                   "const-string-jumbo");
-            SetRef(frame, vAA, InternDexString(string_index));
+            SetRef(frame, vAA, InternDexString(dex_unit, string_index));
             advance();
             return;
         }
         case 0x1c: {  // const-class (does not trigger <clinit>, 02 §5)
             const auto java_class =
-                linker->ResolveTypeIndex(units[frame.pc + 1]);
+                linker->ResolveTypeIndex(dex_unit, units[frame.pc + 1]);
             SetRef(frame, vAA, model->ClassObject(java_class));
             advance();
             return;
@@ -277,7 +281,7 @@ void Interpreter::Impl::Step(InterpreterExecutionState& execution) {
             const auto ref = GetRef(frame, vAA);
             if (ref.IsValid()) {
                 const auto target =
-                    linker->ResolveTypeIndex(units[frame.pc + 1]);
+                    linker->ResolveTypeIndex(dex_unit, units[frame.pc + 1]);
                 const auto source = model->ObjectClass(ref);
                 if (!source.IsValid() ||
                     !linker->IsAssignable(target, source)) {
@@ -298,7 +302,7 @@ void Interpreter::Impl::Step(InterpreterExecutionState& execution) {
             bool result = false;
             if (ref.IsValid()) {
                 const auto target =
-                    linker->ResolveTypeIndex(units[frame.pc + 1]);
+                    linker->ResolveTypeIndex(dex_unit, units[frame.pc + 1]);
                 const auto source = model->ObjectClass(ref);
                 result = source.IsValid() &&
                          linker->IsAssignable(target, source);
@@ -323,7 +327,7 @@ void Interpreter::Impl::Step(InterpreterExecutionState& execution) {
         // ---- allocation --------------------------------------------------
         case 0x22: {  // new-instance
             const auto java_class =
-                linker->ResolveTypeIndex(units[frame.pc + 1]);
+                linker->ResolveTypeIndex(dex_unit, units[frame.pc + 1]);
             PrepareSafeAllocation(JavaObjectModel::EstimateInstanceBytes(
                                       linker->Class(java_class).instance_slots),
                                   "new-instance");
@@ -342,7 +346,7 @@ void Interpreter::Impl::Step(InterpreterExecutionState& execution) {
                 return;
             }
             const auto array_class =
-                linker->ResolveTypeIndex(units[frame.pc + 1]);
+                linker->ResolveTypeIndex(dex_unit, units[frame.pc + 1]);
             const auto& linked = linker->Class(array_class);
             if (!linked.is_array) {
                 FailCode("new-array with non-array type");
@@ -370,7 +374,7 @@ void Interpreter::Impl::Step(InterpreterExecutionState& execution) {
         case 0x24:    // filled-new-array
         case 0x25: {  // filled-new-array/range
             const auto array_class =
-                linker->ResolveTypeIndex(units[frame.pc + 1]);
+                linker->ResolveTypeIndex(dex_unit, units[frame.pc + 1]);
             const auto& linked = linker->Class(array_class);
             if (!linked.is_array) FailCode("filled-new-array non-array type");
             const auto& element = linked.array_element_descriptor;

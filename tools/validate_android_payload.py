@@ -9,6 +9,7 @@ import json
 import re
 import struct
 import xml.etree.ElementTree as ET
+import zipfile
 from pathlib import Path
 from typing import Any
 
@@ -21,7 +22,10 @@ LIBRARIES = {
     "lib/libz.so",
 }
 NOTICES = {f"notices/{Path(path).name}.txt" for path in LIBRARIES}
-PAYLOAD_FILES = LIBRARIES | NOTICES | {"manifest.json", "source-manifest.xml"}
+BOOT_DEX = "framework/bootdex.jar"
+BOOT_DEX_NOTICE = "notices/bootdex.jar.txt"
+PAYLOAD_FILES = LIBRARIES | NOTICES | {
+    BOOT_DEX, BOOT_DEX_NOTICE, "manifest.json", "source-manifest.xml"}
 SHA256 = re.compile(r"[0-9a-f]{64}")
 
 
@@ -97,6 +101,7 @@ def _validate_source_manifest(root: Path, source: dict[str, Any]) -> set[str]:
         "platform/bionic": "081db840befec895fb86e709ae95832ade2d065c",
         "platform/external/zlib":
             "a5c7131da47c991585a6c6ac0c063b6d7d56e3fc",
+        "platform/libcore": "d49420b1b7edf8b3f27dabd3e1b7512a5502595e",
     }
     for name, revision in expected.items():
         if projects.get(name) != revision:
@@ -136,6 +141,42 @@ def validate(root: Path) -> None:
             source.get("worktrees_clean") is not True:
         raise PayloadError("source provenance is incomplete")
     source_projects = _validate_source_manifest(root, source)
+
+    boot_dex = _mapping(manifest.get("boot_dex"), "boot_dex")
+    if boot_dex.get("path") != BOOT_DEX or \
+            boot_dex.get("source_project") != "platform/libcore" or \
+            boot_dex.get("source_jar") != "core.jar" or \
+            boot_dex.get("source_jar_sha256") != \
+                "996557954e45f7192b187b2394259bc8aca6e3946652e03b99d837432f83d1ef" or \
+            boot_dex.get("dex_entry") != "classes.dex" or \
+            boot_dex.get("selection_policy") != "load-all":
+        raise PayloadError("boot_dex identity does not match")
+    _validate_digest(root / BOOT_DEX, boot_dex.get("size"),
+                     boot_dex.get("sha256"), "boot_dex")
+    notice = _text(boot_dex.get("notice"), "boot_dex.notice")
+    if notice != BOOT_DEX_NOTICE or not (root / notice).is_file():
+        raise PayloadError("boot_dex NOTICE does not match")
+    if _digest(root / notice) != _text(
+            boot_dex.get("notice_sha256"), "boot_dex.notice_sha256"):
+        raise PayloadError("boot_dex NOTICE SHA-256 does not match")
+    try:
+        with zipfile.ZipFile(root / BOOT_DEX) as archive:
+            names = {name for name in archive.namelist()
+                     if not name.endswith("/")}
+            if names != {"META-INF/MANIFEST.MF", "classes.dex"}:
+                raise PayloadError("boot_dex archive entries do not match")
+            dex = archive.read("classes.dex")
+    except (OSError, zipfile.BadZipFile, KeyError) as error:
+        raise PayloadError(f"boot_dex archive is invalid: {error}") from error
+    if len(dex) != boot_dex.get("dex_size") or \
+            hashlib.sha256(dex).hexdigest() != boot_dex.get("dex_sha256"):
+        raise PayloadError("boot_dex classes.dex digest does not match")
+    if len(dex) < 0x70 or dex[:8] != b"dex\n035\0" or \
+            struct.unpack_from("<I", dex, 0x20)[0] != len(dex) or \
+            struct.unpack_from("<I", dex, 0x28)[0] != 0x12345678:
+        raise PayloadError("boot_dex classes.dex is not canonical DEX 035")
+    if struct.unpack_from("<I", dex, 0x60)[0] != boot_dex.get("class_count"):
+        raise PayloadError("boot_dex class count does not match")
 
     build = _mapping(manifest.get("build"), "build")
     expected_build = {
@@ -199,7 +240,7 @@ def main() -> int:
         validate(args.root)
     except (OSError, PayloadError) as error:
         parser.error(str(error))
-    print("Android runtime payload validated: API 19, 5 libraries, 5 notices")
+    print("Android runtime payload validated: API 19, boot dex, 5 libraries")
     return 0
 
 

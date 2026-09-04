@@ -503,7 +503,7 @@ note = "M2 三平台完成 120 项 Android ARM 分组目录和样本所需调用
 [runtime.bionic]
 status = "complete"
 test = "tests/runtime/bionic_profile_tests.cpp; tools.android_payload_current; tests/frontend/data_directory_tests.cpp"
-note = "M2 三平台 API 19/22/23 真实 Bionic 完成装载自检和累计样本执行；mem 热点拦截具备生产 handler 与吞吐基准。发行数据现内置从 android-4.4.4_r2.0.1 clean tag 构建的 aosp_arm-user API 19 五库，逐文件哈希、ELF 身份、pinned source manifest 与 NOTICE 受检并随构建/安装产物暂存；run-apk 按 Profile API 自动从 bundled data 选库且不再接受外部 system 目录；API 22/23 发行集仍未纳入。"
+note = "M2 三平台 API 19/22/23 真实 Bionic 完成装载自检和累计样本执行；mem 热点拦截具备生产 handler 与吞吐基准。发行数据现内置从 android-4.4.4_r2.0.1 clean tag 构建的 aosp_arm-user API 19 五库，以及 DVM-99 curated Boot DEX；逐文件哈希、ELF/DEX 身份、pinned source manifest 与 NOTICE 受检并随构建/安装产物暂存；run-apk 按 Profile API 自动从 bundled data 选库且不再接受外部 system 目录；API 22/23 发行集仍未纳入。"
 
 [frontend.save_sandbox]
 status = "partial"
@@ -1222,8 +1222,13 @@ note = "DVM-6 在 L1 之上受检读取方法指令流、try/catch（区间有�
 
 [dexvm.class_linker]
 status = "complete"
-test = "tests/dexvm/class_name_codec_tests.cpp; tests/dexvm/interpreter_tests.cpp; architecture.dexvm_intrinsic_layout"
-note = "DVM-7 注册/层级/布局/vtable/iftable 四步链接与懒结构预检；DVM-94/ADR-0028 将 class/method/field 改为追加地址稳定存储，以 InvokeKind+ResolvedCallSite 隔离 virtual/interface/super/static/private/constructor 缓存，MethodShape 在链接期一次生成。intrinsic declaration 只含 own members，隐式/虚假/final/收窄覆盖链接失败；protected/public/package/private 可见性矩阵受测，Application 等子类直接继承 ContextWrapper"
+test = "tests/dexvm/class_name_codec_tests.cpp; tests/dexvm/interpreter_tests.cpp; tests/dexvm/intrinsics_p1_tests.cpp; architecture.dexvm_intrinsic_layout"
+note = "DVM-7 注册/层级/布局/vtable/iftable 四步链接与懒结构预检；DVM-94/ADR-0028 将 class/method/field 改为追加地址稳定存储，以 InvokeKind+ResolvedCallSite 隔离 virtual/interface/super/static/private/constructor 缓存，MethodShape 在链接期一次生成。DVM-99/ADR-0030 增加独立 Boot/Application DexUnit 与 unit-local 常量池缓存；Boot DEX 类全量登记，同类 DEX 结构上精确同签名 intrinsic method overlay，未绑定 native fail closed。intrinsic declaration 只含 own members，隐式/虚假/final/收窄覆盖链接失败；protected/public/package/private 可见性矩阵受测，Application 等子类直接继承 ContextWrapper"
+
+[dexvm.boot_dex]
+status = "complete"
+test = "tests/dexvm/intrinsics_p1_tests.cpp; tests/frontend/data_directory_tests.cpp; tools.android_payload_current; PvZ exact Profile reached-fault"
+note = "DVM-99/ADR-0030 交付固定 API 19 curated bootdex.jar：运行时对 jar 内 class_def 无 allowlist 全量装载，普通方法解释执行，精确 intrinsic method overlay；Enum.getSharedConstants 以 ACC_ENUM 字段和 ordinal 构造强根 typed array。当前制品 11 类，EnumSet/MiniEnumSet/HugeEnumSet allOf 路径双后端通过；完整 core/framework、multidex、动态 classpath 与 Android 系统服务仍不在此能力内。"
 
 [dexvm.reflection_linker_metadata]
 status = "complete"
@@ -1278,7 +1283,7 @@ note = "DVM-42..49 已交付精确非移动 STW 标记清除与具名 IntrinsicS
 [dexvm.interpreter_core]
 status = "complete"
 test = "tests/dexvm/interpreter_tests.cpp; tests/dexvm/reflection_tests.cpp"
-note = "DVM-9..12 tagged 帧、全部 dex 035 家族、invoke 三路由、tick 与帧深度；DVM-96 让 switch/threaded 共用 ResolvedCallSite 目标选择和 MethodShape intrinsic 边界，receiver/参数/返回 kind 在调用点立即验证。对象/字段/数组双后端夹具保持结果、异常和 tick 等价"
+note = "DVM-9..12 tagged 帧、全部 dex 035 家族、invoke 三路由、tick 与帧深度；DVM-96 让 switch/threaded 共用 ResolvedCallSite 目标选择和 MethodShape intrinsic 边界，receiver/参数/返回 kind 在调用点立即验证。DVM-99 让解释帧按所属 DexUnit 解析所有索引，并修正 long shift 的 cat1 移位量。对象/字段/数组与 Boot EnumSet 双后端夹具保持结果、异常和 tick 等价"
 
 [dexvm.interpreter_threaded]
 status = "partial"

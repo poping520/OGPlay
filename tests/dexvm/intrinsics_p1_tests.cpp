@@ -5,13 +5,17 @@
 #include <doctest/doctest.h>
 
 #include <array>
+#include <cstddef>
 #include <cstdint>
+#include <cstring>
+#include <filesystem>
 #include <fstream>
 #include <string>
 #include <vector>
 
 #include "ogplay/core/capability_ledger.h"
 #include "ogplay/core/logger.h"
+#include "ogplay/loader/apk.h"
 #include "ogplay/runtime/dexvm/class_linker.h"
 #include "ogplay/runtime/dexvm/interpreter.h"
 #include "ogplay/runtime/dexvm/io_runtime.h"
@@ -30,6 +34,24 @@ std::vector<std::uint8_t> ReadFixture(const std::string& name) {
                                      std::istreambuf_iterator<char>());
 }
 
+std::vector<std::uint8_t> ReadBootDex() {
+    const auto path = std::filesystem::path(OGPLAY_SOURCE_DIR) / "data" /
+                      "android" / "19" / "framework" / "bootdex.jar";
+    std::ifstream stream(path, std::ios::binary);
+    REQUIRE_MESSAGE(stream.good(), "missing boot dex: ", path.string());
+    const std::vector<char> raw{
+        std::istreambuf_iterator<char>(stream),
+        std::istreambuf_iterator<char>()};
+    std::vector<std::byte> bytes(raw.size());
+    std::memcpy(bytes.data(), raw.data(), raw.size());
+    const auto archive = ogplay::loader::ParseApkArchive(bytes);
+    const auto entry =
+        ogplay::loader::ReadApkEntry(bytes, archive, "classes.dex");
+    std::vector<std::uint8_t> result(entry.size());
+    std::memcpy(result.data(), entry.data(), entry.size());
+    return result;
+}
+
 struct Vm final {
     JniStringStore strings;
     JniPrimitiveArrayStore arrays;
@@ -39,11 +61,13 @@ struct Vm final {
     ogplay::core::Logger logger;
     Interpreter interpreter;
 
-    explicit Vm(const InterpreterConfig config = {})
+    explicit Vm(const InterpreterConfig config = {},
+                const bool load_boot_dex = false)
       : model(strings, arrays), linker(),
           interpreter(
-              [this]() -> DexClassLinker& {
+              [this, load_boot_dex]() -> DexClassLinker& {
                   linker.RegisterIntrinsics(CoreIntrinsicCatalog());
+                  if (load_boot_dex) linker.RegisterBootDex(ReadBootDex());
                   linker.RegisterDex(ReadFixture("p1.dex"));
                   linker.Link();
                   return linker;
@@ -402,4 +426,74 @@ TEST_CASE("dexvm P1 Enum clone is rejected like the platform") {
 TEST_CASE("dexvm P1 enum values array clone is a shallow copy") {
     Vm vm;
     ExpectInt(vm.CallStatic("cloneValues", "()I", {}, "LP1Enum;"), 1);
+}
+
+TEST_CASE("API 19 boot dex loads every class and executes EnumSet") {
+    const std::array boot_classes{
+        "Ljava/util/AbstractCollection;",
+        "Ljava/util/AbstractSet;",
+        "Ljava/util/EnumSet$1;",
+        "Ljava/util/EnumSet$SerializationProxy;",
+        "Ljava/util/EnumSet;",
+        "Ljava/util/HugeEnumSet$1;",
+        "Ljava/util/HugeEnumSet$HugeEnumSetIterator;",
+        "Ljava/util/HugeEnumSet;",
+        "Ljava/util/MiniEnumSet$1;",
+        "Ljava/util/MiniEnumSet$MiniEnumSetIterator;",
+        "Ljava/util/MiniEnumSet;",
+    };
+    for (const auto backend : {InterpreterBackend::switch_dispatch,
+                               InterpreterBackend::threaded}) {
+        INFO("backend=", backend == InterpreterBackend::threaded
+                              ? "threaded"
+                              : "switch");
+        InterpreterConfig config;
+        config.backend = backend;
+        Vm vm(config, true);
+        for (const auto* descriptor : boot_classes) {
+            const auto java_class = vm.linker.FindClass(descriptor);
+            REQUIRE_MESSAGE(java_class.has_value(), descriptor);
+            CHECK(vm.linker.Class(*java_class).is_boot_dex);
+        }
+        const auto abstract_collection =
+            vm.linker.FindClass("Ljava/util/AbstractCollection;");
+        REQUIRE(abstract_collection.has_value());
+        CHECK_FALSE(vm.linker.Class(*abstract_collection).is_intrinsic);
+        const auto collection_constructor = vm.linker.FindDirectMethod(
+            *abstract_collection, "<init>", "()V");
+        REQUIRE(collection_constructor.has_value());
+        CHECK(vm.linker.Method(*collection_constructor).kind ==
+              MethodKind::intrinsic);
+        CHECK(vm.linker.Method(*collection_constructor).dex_unit.has_value());
+
+        const auto enum_class = vm.linker.ResolveDescriptor("LP1Enum;");
+        const auto shared = vm.interpreter.SharedEnumConstants(enum_class);
+        REQUIRE(shared.IsValid());
+        CHECK(vm.model.ArrayLength(shared) == 2);
+        CHECK(vm.interpreter.SharedEnumConstants(enum_class) == shared);
+
+        const auto enum_set =
+            vm.linker.ResolveDescriptor("Ljava/util/EnumSet;");
+        const auto all_of = vm.linker.FindDirectMethod(
+            enum_set, "allOf", "(Ljava/lang/Class;)Ljava/util/EnumSet;");
+        REQUIRE(all_of.has_value());
+        CHECK(vm.linker.Method(*all_of).kind == MethodKind::interpreted);
+        CHECK(vm.linker.Method(*all_of).dex_unit.has_value());
+        const std::array arguments{
+            VmValue::Ref(vm.model.ClassObject(enum_class))};
+        const auto set = vm.interpreter.Call(*all_of, arguments);
+        REQUIRE_MESSAGE(!set.exception.IsValid(), set.exception_message);
+        REQUIRE(set.value.kind == VmValue::Kind::ref);
+        CHECK(vm.linker.Class(vm.model.ObjectClass(set.value.ref)).descriptor ==
+              "Ljava/util/MiniEnumSet;");
+        const auto size_slot = vm.linker.FindVtableIndex(
+            vm.model.ObjectClass(set.value.ref), "size", "()I");
+        REQUIRE(size_slot.has_value());
+        const std::array receiver{VmValue::Ref(set.value.ref)};
+        ExpectInt(vm.interpreter.Call(
+                      vm.linker.Class(vm.model.ObjectClass(set.value.ref))
+                          .vtable[*size_slot],
+                      receiver),
+                  2);
+    }
 }

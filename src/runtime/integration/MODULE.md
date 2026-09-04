@@ -107,8 +107,9 @@ DVM-79 的 `DexVmIoVfsAdapter` 是 DexVM core `IoFileSystem` 与具体
 - legacy `AndroidGuestCallSession::InitializeJniLibrary` 只可在运行中的会话调用一次;调用方必须
   在 ELF constructors 完成并注册所需 Java class 后显式调用,成功或 root 无 OnLoad 时才
   发布 library-ready。失败、重复或停止后调用不得伪造完成。
-- `DexVmGuestBridge`(ADR-0017)在运行中的会话之上装配 dexvm:链接
-  core+android intrinsic 目录与单一 classes.dex,对象模型复用会话的
+- `DexVmGuestBridge`（ADR-0017、ADR-0030）在运行中的会话之上装配 dexvm：依次链接
+  core+android intrinsic、API 19 curated Boot DEX 与应用 classes.dex；Boot DEX 同签名
+  intrinsic method 作为精确 overlay，其余方法解释执行。对象模型复用会话的
   string/primitive-array/object-array store(native 与解释器同一对象)，并在
   DexVM/JNI 边界双向适配 class identity；任一方向穿越边界的 `jclass` 都规范化为
   model 中同一 `ClassObject`，因而可直接作为 `java.lang.Class` instance JNI 方法的

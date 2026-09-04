@@ -198,7 +198,7 @@ schema v2（v1 冻结不动，二者由 `schema = 1|2` 区分，校验器同仓�
 | identity | 不变（精确匹配是安全边界，永久保留） |
 | runtime | `lifecycle` 新增 `dex_activity`；该模式下 `native_call` **不允许出现**；预算字段保留并新增 dexvm tick/堆预算 |
 | data / audio | 不变（挂载、manifest、资源模式仍是每 title 事实） |
-| java | `[[java.class]]` 在 `dex_activity` 模式下**不允许出现**（应用类查 DEX，平台类查 intrinsic 目录） |
+| java | `[[java.class]]` 在 `dex_activity` 模式下**不允许出现**（应用类查 application DEX，平台类查 curated Boot DEX + intrinsic overlay 目录） |
 | quirks | 不变，并允许 dexvm 域 quirk（如个别 title 的堆预算、帧深度覆盖），仍强制"关闭即失败"测试 |
 
 行数上限随内容收缩重估（目标 < 100 行）；`tools/validate_title_profiles.py`

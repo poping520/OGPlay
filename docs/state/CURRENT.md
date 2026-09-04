@@ -1,6 +1,6 @@
 # 当前状态
 
-更新：运行入口自动使用内置 Android 4.4.4/API 19 guest 系统库。
+更新：API 19 curated Boot DEX 已接入，PvZ 已真实越过 EnumSet 缺口。
 
 ## 当前阶段
 
@@ -10,7 +10,9 @@
 - **API 19 系统库**：`data/android/19/lib` 内置从 AOSP
   `android-4.4.4_r2.0.1` clean tag 构建的 libc/libm/libdl/libstdc++/libz，随包携带来源、
   哈希、ELF 身份、构建记录和 NOTICE；构建、安装及 macOS bundle 均统一 staging。
-  API 22/23 尚未纳入。
+  `framework/bootdex.jar` 同属必需 payload：当前从 pinned core.jar 提取 11 个 EnumSet
+  闭包类，运行时全部装载，jar/dex 哈希、DEX 035、class 数与 NOTICE 受检。API 22/23
+  尚未纳入。
 - **Java core**：File streams 公共 API（NIO/FileChannel 除外）、Resources XML 有界 pull、
   SimpleDateFormat API 19 最小层级以及 Observer/Observable 已闭合。Observable 复用
   `ArrayList`，按 changed flag 门控并在 receiver monitor 外按快照虚派发 `update`；覆盖
@@ -30,18 +32,24 @@
 - **基础架构**：DVM-92 teardown 及 DVM-94～96 的稳定 linker metadata、`MethodShape`、
   own-member intrinsic 与 owner-state trace/sweep 已完成；Dalvik access flag 与 Java reflection
   modifier mask 已集中到共享头；DVM-98 统一现有 8 个平台 enum；生命周期异常日志现含
-  具体 Java 类型。解释执行仍由
+  具体 Java 类型。DVM-99/ADR-0030 增加 Boot/Application DexUnit、unit-local 常量池缓存、
+  Boot DEX 结构与精确 intrinsic method overlay；`Enum.getSharedConstants` 按 ordinal
+  发布强根 typed array，EnumSet 行为不再手写。解释执行仍由
   `VmExecutionLock` 串行，threaded 生产默认关闭。
 - **Title 进展**：Tales 已越过 uniform sampler、`GL_OES_mapbuffer`、Context 路径和 thread
   context loader 缺口，两个 native 库完成 JNI 初始化；新首错为
   `android.location.LocationListener`。PvZ Profile 已绕过 COPPA/Terms 外壳；APK 自带
   `android.support.*` 按应用类链接，主 Looper 与 LocalBroadcastManager Intent 匹配链已闭合；
-  新首错为 NetworkImpl 的 SMS/network action 边界。
+  `EnumSet.allOf` 已真实执行到 `MiniEnumSet.complement`；新首错为
+  `Executors.newFixedThreadPool(I)`。
   A6/DH exact、长运行 gate 与 threaded 默认裁决尚未闭合。见
   [DVM-47](../tasks/dexvm/DVM-47.md) 和 [WU-0231](../tasks/m5/WU-0231.md)。
 
 ## 最近验证
 
+- 2026-09-04 macOS Release：DVM-99 Boot DEX/EnumSet switch+threaded 1/1、84 断言；
+  Android payload validator 通过；PvZ exact Profile 越过 `EnumSet` 并停于
+  `Executors.newFixedThreadPool(I)`。
 - 2026-09-04 Windows Release：URL 双后端 124/124、DVM-88 全组 9/9（252 断言）；PvZ 越过
   `URL.<init>`，新首错为 `Ljava/util/EnumSet;`。
 - 2026-09-03 macOS Release：资源流与 Locale 定向测试通过；Asphalt 5 原 APK 3 帧烟测
@@ -63,7 +71,8 @@
 
 ## 下一步
 
-1. 处理 PvZ NetworkImpl 的 SMS/network action 边界，补 Tales `LocationListener`，完成 DH 主菜单 Scenario gate。
+1. 处理 PvZ `Executors.newFixedThreadPool(I)` 与后续 NetworkImpl 边界，补 Tales
+   `LocationListener`，完成 DH 主菜单 Scenario gate。
 2. 执行 A6 bootstrap 三轮、gc_long 与 threaded title gate。
 3. 出现可复用停滞 fixture 时，补 Diagnostics 外部触发子进程验收。
 

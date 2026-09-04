@@ -1,7 +1,7 @@
     if (instruction.handler == FastHandler::object_checked) {
         if (opcode >= 0x1fU && opcode <= 0x25U) {
             const auto java_class = linker->ResolveTypeIndex(
-                static_cast<std::uint32_t>(instruction.extra));
+                dex_unit, static_cast<std::uint32_t>(instruction.extra));
             instruction.resolved_id = java_class.Value();
             if (opcode == 0x23U || opcode == 0x24U || opcode == 0x25U) {
                 const auto& linked = linker->Class(java_class);
@@ -22,6 +22,7 @@
             const bool is_static = opcode >= 0x60U;
             instruction.resolved_id =
                 linker->ResolveFieldIndex(
+                           dex_unit,
                            static_cast<std::uint32_t>(instruction.extra),
                            is_static)
                     .field.Value();

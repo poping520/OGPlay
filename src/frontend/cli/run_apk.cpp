@@ -642,6 +642,16 @@ int RunApkCommand(const int argc, const char* const argv[],
             loader::ReadApkEntry(apk_bytes, archive, "classes.dex");
         std::vector<std::uint8_t> dex_bytes(dex_entry.size());
         std::memcpy(dex_bytes.data(), dex_entry.data(), dex_entry.size());
+        const auto boot_archive_bytes = ReadBytes(
+            bundled_data.root / bionic.data_directory / "framework" /
+            "bootdex.jar");
+        const auto boot_archive =
+            loader::ParseApkArchive(boot_archive_bytes);
+        const auto boot_entry = loader::ReadApkEntry(
+            boot_archive_bytes, boot_archive, "classes.dex");
+        std::vector<std::uint8_t> boot_dex_bytes(boot_entry.size());
+        std::memcpy(boot_dex_bytes.data(), boot_entry.data(),
+                    boot_entry.size());
         runtime::DexVmBridgeConfig bridge_config;
         if (profile.runtime.dexvm.has_value()) {
             bridge_config.heap.heap_budget_bytes =
@@ -684,6 +694,7 @@ int RunApkCommand(const int argc, const char* const argv[],
         app_request.manifest = manifest;
         app_request.native_libraries = libraries;
         app_request.system_libraries = system_sources;
+        app_request.boot_dex_bytes = std::move(boot_dex_bytes);
         app_request.dex_bytes = std::move(dex_bytes);
         app_request.context = dex_context;
         if (profile.runtime.entry.has_value()) {

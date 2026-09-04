@@ -45,7 +45,8 @@ public:
         std::span<const dexvm::IntrinsicClassDecl> platform_catalog,
         const std::shared_ptr<DexVmAndroidContext>& android_context,
         core::CapabilityLedger& ledger, core::Logger* logger,
-        DexVmBridgeConfig config = {});
+        DexVmBridgeConfig config = {},
+        std::vector<std::uint8_t> boot_dex_bytes = {});
     ~DexVmGuestBridge() override;
     DexVmGuestBridge(const DexVmGuestBridge&) = delete;
     DexVmGuestBridge& operator=(const DexVmGuestBridge&) = delete;

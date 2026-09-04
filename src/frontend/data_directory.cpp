@@ -44,6 +44,12 @@ void AppendCandidate(std::vector<std::filesystem::path>& candidates,
             return false;
         }
     }
+    error.clear();
+    if (!std::filesystem::is_regular_file(
+            root / "android" / "19" / "framework" / "bootdex.jar", error) ||
+        error) {
+        return false;
+    }
     return true;
 }
 

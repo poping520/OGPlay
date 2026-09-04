@@ -9,6 +9,8 @@
 #include <utility>
 
 #include "interpreter_internal.h"
+
+#include "ogplay/runtime/dexvm/access_flags.h"
 #include "ogplay/runtime/dexvm/vm_threads.h"
 #include "ogplay/runtime/dexvm/vm_monitors.h"
 
@@ -292,6 +294,77 @@ VmThreadRuntime* Interpreter::AttachedThreadRuntime() const noexcept {
     return impl_->threads;
 }
 
+VmObjectRef Interpreter::SharedEnumConstants(const DexClassId java_class) {
+    auto& linker = *impl_->linker;
+    const auto& linked = linker.Class(java_class);
+    if (!linked.super.has_value() ||
+        linker.Class(*linked.super).descriptor != "Ljava/lang/Enum;") {
+        throw VmJavaThrow{"Ljava/lang/IllegalArgumentException;",
+                          linked.descriptor + " is not an enum type"};
+    }
+    const auto initialized = EnsureClassInitialized(java_class);
+    if (initialized.exception.IsValid()) {
+        throw VmJavaThrow{
+            linker.Class(initialized.exception_class).descriptor,
+            initialized.exception_message};
+    }
+    if (const auto found =
+            impl_->enum_constant_arrays.find(java_class.Value());
+        found != impl_->enum_constant_arrays.end()) {
+        return found->second;
+    }
+
+    struct Constant final {
+        std::int32_t ordinal{};
+        VmObjectRef object;
+    };
+    std::vector<Constant> constants;
+    for (const auto field_id : linked.own_static_fields) {
+        const auto& field = linker.Field(field_id);
+        if ((field.access_flags & kAccEnum) == 0U || !field.is_static ||
+            !field.is_ref || field.descriptor != linked.descriptor) {
+            continue;
+        }
+        const auto object = VmObjectRef(linked.static_storage[field.slot]);
+        if (!object.IsValid()) {
+            throw DexVmError(DexVmErrorReason::internal_invariant,
+                             "enum constant is null: " + field.name);
+        }
+        const auto ordinal_field = linker.FindFieldRecursive(
+            java_class, "ordinal", "I");
+        if (!ordinal_field.has_value()) {
+            throw DexVmError(DexVmErrorReason::internal_invariant,
+                             "Enum ordinal field is missing");
+        }
+        const auto& ordinal_linked = linker.Field(*ordinal_field);
+        const auto slots = impl_->model->InstanceSlots(object);
+        if (ordinal_linked.slot >= slots.size()) {
+            throw DexVmError(DexVmErrorReason::internal_invariant,
+                             "enum ordinal slot is invalid");
+        }
+        constants.push_back(
+            {static_cast<std::int32_t>(slots[ordinal_linked.slot].bits),
+             object});
+    }
+    std::ranges::sort(constants, {}, &Constant::ordinal);
+    for (std::size_t index = 0; index < constants.size(); ++index) {
+        if (constants[index].ordinal != static_cast<std::int32_t>(index)) {
+            throw DexVmError(DexVmErrorReason::internal_invariant,
+                             "enum ordinals are not contiguous: " +
+                                 linked.descriptor);
+        }
+    }
+    const auto array_class = linker.ResolveDescriptor("[" + linked.descriptor);
+    const auto array = impl_->model->NewObjectArray(
+        array_class, java_class, static_cast<JniSize>(constants.size()));
+    for (std::size_t index = 0; index < constants.size(); ++index) {
+        impl_->model->SetObjectElement(array, static_cast<JniSize>(index),
+                                       constants[index].object);
+    }
+    impl_->enum_constant_arrays.emplace(java_class.Value(), array);
+    return array;
+}
+
 void Interpreter::VisitRoots(const VmRootVisitor& visitor) {
     if (!visitor) return;
     const std::lock_guard contexts_lock(impl_->executions_mutex);
@@ -317,6 +390,7 @@ void Interpreter::VisitRoots(const VmRootVisitor& visitor) {
             visitor(VmObjectRef(linked.static_storage[slot]));
         }
     }
+    for (const auto& [_, array] : impl_->enum_constant_arrays) visitor(array);
     impl_->model->VisitPermanentRoots(visitor);
     impl_->class_loaders->VisitRoots(visitor);
     if (impl_->gc_integration.visit_jni_roots) {

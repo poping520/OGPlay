@@ -63,6 +63,13 @@ struct VmClassLoaderId final {
     auto operator<=>(const VmClassLoaderId&) const = default;
 };
 
+struct DexUnitId final {
+    std::uint32_t value{};
+
+    [[nodiscard]] bool IsValid() const noexcept { return value != 0U; }
+    auto operator<=>(const DexUnitId&) const = default;
+};
+
 inline constexpr VmClassLoaderId kBootstrapLoader{0};
 inline constexpr VmClassLoaderId kApplicationLoader{1};
 
@@ -170,6 +177,7 @@ struct LinkedMethod final {
     bool prechecked{};
     std::shared_ptr<FastCode> fast_code;
     std::optional<std::uint32_t> dex_method_index;
+    std::optional<DexUnitId> dex_unit;
 };
 
 struct ReflectionClassSystemMetadata final {
@@ -198,6 +206,7 @@ struct LinkedClass final {
     std::vector<DexClassId> interfaces;  // direct + inherited, flattened
     std::uint32_t access_flags{};
     bool is_intrinsic{};
+    bool is_boot_dex{};
     bool is_interface{};
     bool is_array{};
     std::string array_element_descriptor;
@@ -215,6 +224,7 @@ struct LinkedClass final {
     // so GC must derive this once from the declared field descriptors.
     std::vector<std::uint16_t> static_ref_slots;
     std::optional<std::uint32_t> dex_class_def_index;
+    std::optional<DexUnitId> dex_unit;
     IntrinsicHandler clinit_implementation;
     HostStateDestructor host_state_destructor;
     std::vector<IntrinsicFieldDecl> intrinsic_constants;
@@ -248,7 +258,8 @@ public:
     DexClassLinker& operator=(const DexClassLinker&) = delete;
 
     void RegisterIntrinsics(std::span<const IntrinsicClassDecl> catalog);
-    void RegisterDex(std::vector<std::uint8_t> dex_bytes);
+    DexUnitId RegisterBootDex(std::vector<std::uint8_t> dex_bytes);
+    DexUnitId RegisterDex(std::vector<std::uint8_t> dex_bytes);
     void Link();
 
     [[nodiscard]] bool IsLinked() const noexcept;
@@ -271,10 +282,16 @@ public:
 
     // Constant-pool resolution against the registered dex (cached).
     [[nodiscard]] DexClassId ResolveTypeIndex(std::uint32_t type_index);
+    [[nodiscard]] DexClassId ResolveTypeIndex(DexUnitId unit,
+                                              std::uint32_t type_index);
     [[nodiscard]] ResolvedCallSite ResolveMethodIndex(
         std::uint32_t method_index, InvokeKind kind);
+    [[nodiscard]] ResolvedCallSite ResolveMethodIndex(
+        DexUnitId unit, std::uint32_t method_index, InvokeKind kind);
     [[nodiscard]] ResolvedFieldRef ResolveFieldIndex(
         std::uint32_t field_index, bool is_static);
+    [[nodiscard]] ResolvedFieldRef ResolveFieldIndex(
+        DexUnitId unit, std::uint32_t field_index, bool is_static);
 
     // Runtime dispatch helpers.
     [[nodiscard]] std::optional<std::uint16_t> FindVtableIndex(
@@ -292,7 +309,9 @@ public:
     void MarkInitiatedBy(DexClassId java_class, VmClassLoaderId loader);
 
     [[nodiscard]] const loader::DexImage& Image() const;
+    [[nodiscard]] const loader::DexImage& Image(DexUnitId unit) const;
     [[nodiscard]] std::span<const std::uint8_t> DexBytes() const;
+    [[nodiscard]] std::span<const std::uint8_t> DexBytes(DexUnitId unit) const;
     [[nodiscard]] std::vector<loader::DexEncodedValue> StaticValues(
         const LinkedClass& linked) const;
     [[nodiscard]] std::size_t ClassCount() const noexcept;
@@ -330,6 +349,8 @@ public:
     [[nodiscard]] std::vector<GapSurveyHit> GapSurveyHits() const;
 
 private:
+    [[nodiscard]] DexUnitId RegisterDexUnit(
+        std::vector<std::uint8_t> dex_bytes, bool boot);
     class Impl;
     std::unique_ptr<Impl> impl_;
 };

@@ -7,7 +7,8 @@
             : invoke.base_opcode == 0x71U ? InvokeKind::static_call
                                           : InvokeKind::interface_call;
         const auto resolved = linker->ResolveMethodIndex(
-            static_cast<std::uint32_t>(instruction.extra), invoke_kind);
+            dex_unit, static_cast<std::uint32_t>(instruction.extra),
+            invoke_kind);
         const auto& named = linker->Method(resolved.method);
         if (invoke.registers.size() != named.ins_words) {
             FailCode("invoke argument words do not match descriptor of " +

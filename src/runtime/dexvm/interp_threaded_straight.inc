@@ -102,14 +102,15 @@
             const auto index = static_cast<std::uint32_t>(instruction.extra);
             PrepareSafeAllocation(
                 JavaObjectModel::EstimateStringBytes(
-                    linker->Image().strings[index].value.size()),
+                    linker->Image(dex_unit).strings[index].value.size()),
                 opcode == 0x1a ? "const-string" : "const-string-jumbo");
-            SetFastRef(regs, instruction.a, InternDexString(index));
+            SetFastRef(regs, instruction.a,
+                       InternDexString(dex_unit, index));
             OGPLAY_DISPATCH_NEXT();
         }
         case 0x1c:
             SetFastRef(regs, instruction.a,
-                   model->ClassObject(linker->ResolveTypeIndex(
+                   model->ClassObject(linker->ResolveTypeIndex(dex_unit,
                        static_cast<std::uint32_t>(instruction.extra))));
             OGPLAY_DISPATCH_NEXT();
         case 0x28:

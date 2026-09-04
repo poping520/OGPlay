@@ -117,6 +117,7 @@ public:
 
     std::unordered_map<std::uint32_t, ThrowableState> throwables;
     std::unordered_map<std::uint32_t, std::u16string> builders;
+    std::unordered_map<std::uint32_t, VmObjectRef> enum_constant_arrays;
     CollectionRuntime collections;
     IoRuntime io;
     NetworkRuntime network;
@@ -424,7 +425,8 @@ public:
     [[nodiscard]] VmObjectRef AllocateInstance(DexClassId java_class);
 
     // Utility: convert modified-UTF8-ish ASCII to UTF-16 and back.
-    [[nodiscard]] VmObjectRef InternDexString(std::uint32_t string_index);
+    [[nodiscard]] VmObjectRef InternDexString(DexUnitId unit,
+                                              std::uint32_t string_index);
     void TraceIntrinsicSideTables(VmObjectRef owner,
                                   const VmRootVisitor& visitor) const;
     void PrepareSafeAllocation(std::uint64_t request_bytes,

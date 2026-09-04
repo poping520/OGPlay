@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
   Minimal pinned manifest exported from the synced projects used by the
-  Bionic-only build. The original manifest default was
+  runtime payload build and curated Boot DEX. The original manifest default was
   refs/tags/android-4.4.4_r2.0.1; each project revision below is the actual
   checked-out HEAD observed in the partial source tree.
 -->
@@ -15,6 +15,7 @@
   </project>
   <project path="external/compiler-rt" name="platform/external/compiler-rt" revision="7cba5f1d950495b02bc8da53d27bdbb1b0d4f117" />
   <project path="external/zlib" name="platform/external/zlib" revision="a5c7131da47c991585a6c6ac0c063b6d7d56e3fc" />
+  <project path="libcore" name="platform/libcore" revision="d49420b1b7edf8b3f27dabd3e1b7512a5502595e" />
   <project path="prebuilts/clang/linux-x86/arm/3.3" name="platform/prebuilts/clang/linux-x86/arm/3.3" revision="2f6d2db9e2af3507d132cf5d286a42fe1d47f7bc" />
   <project path="prebuilts/clang/linux-x86/host/3.3" name="platform/prebuilts/clang/linux-x86/host/3.3" revision="bba7eb9ee3ec2af12b926023256dbe4799995645" />
   <project path="prebuilts/gcc/linux-x86/arm/arm-eabi-4.6" name="platform/prebuilts/gcc/linux-x86/arm/arm-eabi-4.6" revision="d73a051b1fd1d98f5c2463354fb67898f0090bdb" />

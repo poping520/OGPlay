@@ -45,6 +45,7 @@ void Interpreter::Impl::StepThreaded(
         regs = frame_ptr->regs.data();
     }
     const FastCode* code_ptr = frame_ptr->method->fast_code.get();
+    const auto dex_unit = *frame_ptr->method->dex_unit;
     const auto entry_depth = frames.size();
     std::uint64_t ticks = execution.ticks;
     std::uint64_t executed = 0;

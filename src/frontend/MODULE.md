@@ -13,7 +13,8 @@ Streamable HTTP transport，并把截图、输入和会话控制交给 agent/ses
   只为开发/CI 接受库根覆盖与有界帧数。点击 ready 条目只 spawn 同目录既有
   `run-apk` 路径；运行状态和退出结果由 SDL 进程对象回收。
 - `HostBundledDataPaths`：优先从可执行文件同目录（macOS 为 bundle Resources）解析随
-  程序交付的 `profiles/` 与 `quirks.toml`；源码树只是开发构建回退。
+  程序交付的 `profiles/`、`quirks.toml` 与 API 19 `framework/bootdex.jar`；源码树只是
+  开发构建回退。`run-apk` 解包 Boot jar 的唯一 `classes.dex` 后交给 session。
 - `--external-dir`：把一个宿主目录按 Profile 声明的唯一 external guest 根 lazy mount；
   guest 路径不取决于宿主目录名。Android 4.4 的 `/storage/emulated/0` 通过 VFS
   path alias 与 `/sdcard` 共享同一 external 节点和存档 overlay。
@@ -50,6 +51,7 @@ Streamable HTTP transport，并把截图、输入和会话控制交给 agent/ses
 - MCP 会话发布同一份 lifecycle/frame/ticks/presented-frame/movie/exit/fault 状态；fault
   不得伪装为停止或成功。截图只读取已成功 present 的 RGBA8 快照。
 - `run-apk` 根据 exact Profile 的 API 从完整 bundled data 自动选择 Android guest 系统库；
+  API 19 payload 缺少 `framework/bootdex.jar` 必须与缺 ELF 一样在装配前失败；
   入口只由 Manifest + native hash + ABI exact Profile 决定，支持压缩的
   armeabi/armeabi-v7a，系统库路径和依赖闭包不得由 CLI 手写。
 - 只接受 Title Profile v2 `dex_activity`。Profile entry override 在生命周期前解析，static

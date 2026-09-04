@@ -14,6 +14,8 @@ class/member access flag 必须使用 `access_flags.h` 的共享 `kAcc*` 常量�
 family TU 中写裸十六进制访问标志；反射过滤使用同一头文件中单独命名的 Java modifier mask。
 平台 enum 必须通过 `IntrinsicEnumBuilder` 在链接前生成常量字段、`$VALUES`、类初始化器
 及精确类型的 `values/valueOf`；普通扩展只声明常量，payload 使用显式回调。
+curated Boot DEX 内的纯 Java enum 消费 `java.lang.Enum.getSharedConstants` 通用 VM
+overlay；不得为 `EnumSet/MiniEnumSet/HugeEnumSet` 增加 C++ 行为副本。
 
 `java.*`、`javax.net.*`、`javax.xml.*` 与 `org.xml.sax.*` 均由 core 发布；需要平台事实的
 Locale、Timer、SSL singleton 与 SAX handler 通过 `CoreIntrinsicServices` 窄接口注入；

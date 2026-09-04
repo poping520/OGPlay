@@ -42,6 +42,19 @@ using DescriptorParts = MethodTypeDescriptor;
 
 class DexClassLinker::Impl final {
 public:
+    struct DexUnit final {
+        DexUnitId id;
+        bool boot{};
+        std::vector<std::uint8_t> bytes;
+        loader::DexImage image;
+        std::vector<loader::DexClassData> class_data;
+        std::vector<std::optional<DexClassId>> type_cache;
+        static constexpr std::size_t kInvokeKindCount = 6U;
+        std::vector<std::array<std::optional<ResolvedCallSite>,
+                               kInvokeKindCount>> method_cache;
+        std::vector<std::optional<ResolvedFieldRef>> field_cache;
+    };
+
     struct ClassExtras final {
         std::unordered_map<std::string, std::uint16_t> virtual_lookup;
         std::unordered_map<std::string, VmMethodId> direct_lookup;
@@ -61,15 +74,9 @@ public:
     std::unordered_map<std::string, std::uint32_t> class_by_descriptor;
     std::unordered_map<std::uint64_t, VmFieldId> intrinsic_field_bindings;
 
-    std::vector<std::uint8_t> dex_bytes;
-    std::optional<loader::DexImage> image;
-    std::vector<loader::DexClassData> class_data;
-
-    std::vector<std::optional<DexClassId>> type_cache;
-    static constexpr std::size_t kInvokeKindCount = 6U;
-    std::vector<std::array<std::optional<ResolvedCallSite>,
-                           kInvokeKindCount>> method_cache;
-    std::vector<std::optional<ResolvedFieldRef>> field_cache;
+    std::deque<DexUnit> dex_units;
+    std::optional<DexUnitId> boot_unit;
+    std::optional<DexUnitId> application_unit;
 
     bool link_complete{};
     std::vector<std::string> implicit_intrinsic_overrides;
@@ -78,6 +85,19 @@ public:
     // report order is deterministic.
     bool gap_survey{};
     std::map<std::string, std::uint32_t> survey_hits;
+
+    [[nodiscard]] DexUnit& UnitAt(const DexUnitId id) {
+        if (!id.IsValid() || id.value > dex_units.size()) {
+            Fail(DexVmErrorReason::invalid_image, "dex unit id is invalid");
+        }
+        return dex_units[id.value - 1U];
+    }
+    [[nodiscard]] const DexUnit& UnitAt(const DexUnitId id) const {
+        if (!id.IsValid() || id.value > dex_units.size()) {
+            Fail(DexVmErrorReason::invalid_image, "dex unit id is invalid");
+        }
+        return dex_units[id.value - 1U];
+    }
 
     [[nodiscard]] DexClassId AddClass(LinkedClass linked) {
         const auto id = DexClassId(
@@ -233,7 +253,8 @@ public:
                              linked.descriptor + "." + method.name);
                 }
                 const auto& overridden = MethodAt(linked.vtable[index]);
-                if (linked.is_intrinsic && !method.must_override) {
+                if (linked.is_intrinsic && !method.must_override &&
+                    ClassAt(overridden.owner).is_intrinsic) {
                     implicit_intrinsic_overrides.push_back(
                         linked.descriptor + "->" + method.name +
                         method.descriptor + " overrides " +

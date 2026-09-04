@@ -4,14 +4,18 @@
 
 有界 Dalvik 字节码解释器（ADR-0017、`docs/design/dexvm/`），负责类链接、统一 Java
 对象模型、解释器内核（帧/分派/三路 invoke/异常展开/`<clinit>`）及 java.* core
-intrinsic。只解释游戏 DEX 的应用类；平台类始终由 intrinsic 提供。
+intrinsic。解释应用 DEX 与受审 API 19 curated Boot DEX；完整平台库仍不装载。
 
 ## 公共 API
 
 ### 链接、类加载与反射
 
-- `DexClassLinker`：按 `RegisterIntrinsics` → `RegisterDex` → `Link` 装配。平台类只来自
-  intrinsic；单一 `classes.dex` 中真正的平台前缀类被忽略，但 APK 自带的旧
+- `DexClassLinker`：按 `RegisterIntrinsics` → `RegisterBootDex` → `RegisterDex` → `Link`
+  装配。Boot/Application 各有独立 `DexUnitId`、字节、image 与 type/method/field cache；
+  解释方法及 encoded value/catch/string/type/field/method 索引必须使用其所属 unit，禁止
+  隐式落到 application image。Boot jar 中 class_def 全量登记；与 intrinsic 同类时 DEX
+  提供 class/field/hierarchy，精确同签名 intrinsic method 保持 overlay，其余方法解释执行，
+  未 overlay 的 native 方法拒绝。应用 `classes.dex` 中真正的平台前缀类仍被忽略，但 APK 自带的旧
   `android.support.*` 支持库仍由 application loader 定义。APK class_def 全量登记，但层级、字段
   布局、vtable/iftable 仅在首次解析、实例化或调用时完成；未触达可选类的缺失层级不阻断启动，
   触达后的循环继承、缺失层级、final 覆盖、interface-as-super 和不可覆盖 intrinsic 方法明确
@@ -57,7 +61,9 @@ intrinsic。只解释游戏 DEX 的应用类；平台类始终由 intrinsic 提�
   `java.lang.Enum` 语义对照 pinned libcore `Enum.java`：name/ordinal 为可继承的声明式实例槽，
   构造器 `(String,I)` 写入；查询方法 final、`toString`
   可覆盖、`clone` 恒抛 `CloneNotSupportedException`；`getDeclaringClass` 按直接父类判断；
-  `valueOf(Class,String)` 先初始化，再从本 enum 同型 static 常量字段活值按名匹配；null 抛
+  `valueOf(Class,String)` 先初始化，再从本 enum 同型 static 常量字段活值按名匹配；
+  `getSharedConstants(Class)` 为 Boot DEX 提供按 `ACC_ENUM` 字段收集、ordinal 排序/连续性
+  校验的 typed array，缓存作为 GC 强根；null 抛
   `NullPointerException`，非 enum/未命中抛 `IllegalArgumentException`。enum `values()` 经数组
   `Object.clone()` 浅拷贝。
   StringBuffer/StringBuilder 用 descriptor 参数化的同一声明；仅含 `()`/`(String)` 构造器的

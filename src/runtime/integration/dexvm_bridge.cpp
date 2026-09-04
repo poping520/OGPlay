@@ -1016,7 +1016,8 @@ DexVmGuestBridge::DexVmGuestBridge(
     const std::span<const dexvm::IntrinsicClassDecl> platform_catalog,
     const std::shared_ptr<DexVmAndroidContext>& android_context,
     core::CapabilityLedger& ledger, core::Logger* logger,
-    const DexVmBridgeConfig config)
+    const DexVmBridgeConfig config,
+    std::vector<std::uint8_t> boot_dex_bytes)
     : impl_(std::make_unique<Impl>()) {
     impl_->session = &session;
     impl_->ledger = &ledger;
@@ -1031,6 +1032,9 @@ DexVmGuestBridge::DexVmGuestBridge(
     impl_->linker.RegisterIntrinsics(core_catalog);
     if (!platform_catalog.empty()) {
         impl_->linker.RegisterIntrinsics(platform_catalog);
+    }
+    if (!boot_dex_bytes.empty()) {
+        impl_->linker.RegisterBootDex(std::move(boot_dex_bytes));
     }
     impl_->linker.RegisterDex(std::move(dex_bytes));
     impl_->linker.Link();

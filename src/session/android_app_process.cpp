@@ -157,7 +157,8 @@ public:
         const auto catalog = runtime::AndroidIntrinsicCatalog(context);
         bridge = std::make_unique<runtime::DexVmGuestBridge>(
             *session, std::move(request.dex_bytes), catalog, context,
-            *request.ledger, request.logger, request.dexvm);
+            *request.ledger, request.logger, request.dexvm,
+            std::move(request.boot_dex_bytes));
         context->threads = &bridge->Threads();
         if (request.configure_dex_vm) {
             request.configure_dex_vm(bridge->Vm());

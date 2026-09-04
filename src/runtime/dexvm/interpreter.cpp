@@ -240,8 +240,9 @@ VmObjectRef Interpreter::Impl::AllocateInstance(const DexClassId java_class) {
 }
 
 VmObjectRef
-Interpreter::Impl::InternDexString(const std::uint32_t string_index) {
-    const auto& image = linker->Image();
+Interpreter::Impl::InternDexString(const DexUnitId unit,
+                                   const std::uint32_t string_index) {
+    const auto& image = linker->Image(unit);
     if (string_index >= image.strings.size()) {
         FailCode("string index out of range");
     }
@@ -309,6 +310,7 @@ void Interpreter::Impl::EnsureInitialized(
     // Materialize static initial values before running <clinit>
     // (state machine follows AOSP vm/oo/Class.cpp dvmInitClass).
     const auto values = linker->StaticValues(linker->Class(java_class));
+    const auto dex_unit = linker->Class(java_class).dex_unit;
     const auto static_field_count =
         linker->Class(java_class).own_static_fields.size();
     for (std::size_t index = 0;
@@ -349,11 +351,13 @@ void Interpreter::Impl::EnsureInitialized(
                 break;
             }
             case DexEncodedValueKind::string_index:
-                write_slot(0, InternDexString(value.index).Value());
+                write_slot(0,
+                           InternDexString(*dex_unit, value.index).Value());
                 break;
             case DexEncodedValueKind::type_index:
                 write_slot(0, model->ClassObject(
-                                  linker->ResolveTypeIndex(value.index))
+                                  linker->ResolveTypeIndex(*dex_unit,
+                                                           value.index))
                                   .Value());
                 break;
             case DexEncodedValueKind::null_reference:
@@ -404,7 +408,7 @@ void Interpreter::Impl::EnsureInitialized(
     }
 
     const auto clinit = linker->Class(java_class).clinit;
-    if (clinit.has_value()) {
+    if (!clinit_implementation && clinit.has_value()) {
         linker->PrecheckMethod(*clinit);
         PushInterpretedFrame(execution, linker->Method(*clinit), {}, 0);
         const auto outcome = Run(execution, frames.size() - 1);
@@ -706,8 +710,8 @@ VmCallOutcome Interpreter::Impl::Run(InterpreterExecutionState& execution,
                         continue;
                     }
                     for (const auto& handler : block.typed_handlers) {
-            const auto handler_class =
-                linker->ResolveTypeIndex(handler.type_index);
+            const auto handler_class = linker->ResolveTypeIndex(
+                *method.dex_unit, handler.type_index);
             if (linker->IsAssignable(handler_class, pending_exception_class)) {
                             frame.pc = handler.handler_pc;
                             frame.fast_ip = kInvalidFastIndex;

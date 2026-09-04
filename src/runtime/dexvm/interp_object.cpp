@@ -14,6 +14,7 @@ void Interpreter::Impl::StepObjectOrInvoke(
     auto& frames = execution.frames;
     auto& pending_exception = execution.pending_exception;
     const auto& units = frame.method->code->instructions;
+    const auto dex_unit = *frame.method->dex_unit;
     const auto& info = gen::kDexOpcodeTable[opcode];
     const auto width = info.width;
     const auto advance = [&] { frames.back().pc += width; };
@@ -133,7 +134,7 @@ void Interpreter::Impl::StepObjectOrInvoke(
     // ---- iget/iput family (0x52..0x5f) -----------------------------------
     if (opcode >= 0x52 && opcode <= 0x5f) {
         const auto resolved =
-            linker->ResolveFieldIndex(units[frame.pc + 1], false);
+            linker->ResolveFieldIndex(dex_unit, units[frame.pc + 1], false);
         const auto& field = linker->Field(resolved.field);
         const auto receiver = GetRef(frame, vB4);
         if (!receiver.IsValid()) {
@@ -184,7 +185,7 @@ void Interpreter::Impl::StepObjectOrInvoke(
     // ---- sget/sput family (0x60..0x6d) ------------------------------------
     if (opcode >= 0x60 && opcode <= 0x6d) {
         const auto resolved =
-            linker->ResolveFieldIndex(units[frame.pc + 1], true);
+            linker->ResolveFieldIndex(dex_unit, units[frame.pc + 1], true);
         const auto& field = linker->Field(resolved.field);
         EnsureInitialized(execution, field.owner);
         if (pending_exception.IsValid()) return;
@@ -236,7 +237,7 @@ void Interpreter::Impl::StepObjectOrInvoke(
             : base == 0x71 ? InvokeKind::static_call
                            : InvokeKind::interface_call;
         const auto resolved = linker->ResolveMethodIndex(
-            units[frame.pc + 1], invoke_kind);
+            dex_unit, units[frame.pc + 1], invoke_kind);
         const auto& named = linker->Method(resolved.method);
 
         std::vector<std::uint32_t> registers;

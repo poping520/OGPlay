@@ -40,6 +40,7 @@ struct AndroidAppProcessRequest final {
     loader::AndroidManifestFacts manifest;
     std::vector<loader::ApkNativeLibrary> native_libraries;
     std::span<const runtime::BionicModuleSource> system_libraries;
+    std::vector<std::uint8_t> boot_dex_bytes;
     std::vector<std::uint8_t> dex_bytes;
     std::shared_ptr<runtime::DexVmAndroidContext> context;
     std::optional<std::string> launcher_override;

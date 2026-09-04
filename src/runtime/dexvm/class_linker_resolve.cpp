@@ -7,27 +7,46 @@
 namespace ogplay::runtime::dexvm {
 
 DexClassId DexClassLinker::ResolveTypeIndex(const std::uint32_t type_index) {
-    if (!impl_->image.has_value() ||
-        type_index >= impl_->image->types.size()) {
+    if (!impl_->application_unit.has_value()) {
+        Fail(DexVmErrorReason::unresolved_reference,
+             "no application dex is registered");
+    }
+    return ResolveTypeIndex(*impl_->application_unit, type_index);
+}
+
+DexClassId DexClassLinker::ResolveTypeIndex(
+    const DexUnitId unit_id, const std::uint32_t type_index) {
+    auto& unit = impl_->UnitAt(unit_id);
+    if (type_index >= unit.image.types.size()) {
         Fail(DexVmErrorReason::unresolved_reference,
              "type index is out of range");
     }
-    auto& cached = impl_->type_cache[type_index];
+    auto& cached = unit.type_cache[type_index];
     if (!cached.has_value()) {
-        cached = ResolveDescriptor(
-            impl_->image->types[type_index].descriptor);
+        cached = ResolveDescriptor(unit.image.types[type_index].descriptor);
     }
     return *cached;
 }
 
 ResolvedCallSite DexClassLinker::ResolveMethodIndex(
     const std::uint32_t method_index, const InvokeKind requested_kind) {
-    if (!impl_->image.has_value() ||
-        method_index >= impl_->image->methods.size()) {
+    if (!impl_->application_unit.has_value()) {
+        Fail(DexVmErrorReason::unresolved_reference,
+             "no application dex is registered");
+    }
+    return ResolveMethodIndex(*impl_->application_unit, method_index,
+                              requested_kind);
+}
+
+ResolvedCallSite DexClassLinker::ResolveMethodIndex(
+    const DexUnitId unit_id, const std::uint32_t method_index,
+    const InvokeKind requested_kind) {
+    auto& unit = impl_->UnitAt(unit_id);
+    if (method_index >= unit.image.methods.size()) {
         Fail(DexVmErrorReason::unresolved_reference,
              "method index is out of range");
     }
-    const auto& image = *impl_->image;
+    const auto& image = unit.image;
     const auto& entry = image.methods[method_index];
     const auto owner_descriptor =
         image.types[entry.class_type_index].descriptor;
@@ -45,8 +64,8 @@ ResolvedCallSite DexClassLinker::ResolveMethodIndex(
                               name == "<init>"
                           ? InvokeKind::constructor
                           : requested_kind;
-    auto& cached = impl_->method_cache[method_index]
-                                      [static_cast<std::size_t>(kind)];
+    auto& cached = unit.method_cache[method_index]
+                                    [static_cast<std::size_t>(kind)];
     if (cached.has_value()) return *cached;
 
     std::optional<VmMethodId> resolved;
@@ -126,12 +145,22 @@ ResolvedCallSite DexClassLinker::ResolveMethodIndex(
 
 ResolvedFieldRef DexClassLinker::ResolveFieldIndex(
     const std::uint32_t field_index, const bool is_static) {
-    if (!impl_->image.has_value() ||
-        field_index >= impl_->image->fields.size()) {
+    if (!impl_->application_unit.has_value()) {
+        Fail(DexVmErrorReason::unresolved_reference,
+             "no application dex is registered");
+    }
+    return ResolveFieldIndex(*impl_->application_unit, field_index, is_static);
+}
+
+ResolvedFieldRef DexClassLinker::ResolveFieldIndex(
+    const DexUnitId unit_id, const std::uint32_t field_index,
+    const bool is_static) {
+    auto& unit = impl_->UnitAt(unit_id);
+    if (field_index >= unit.image.fields.size()) {
         Fail(DexVmErrorReason::unresolved_reference,
              "field index is out of range");
     }
-    auto& cached = impl_->field_cache[field_index];
+    auto& cached = unit.field_cache[field_index];
     if (cached.has_value()) {
         const auto& field = impl_->FieldAt(cached->field);
         if (field.is_static != is_static) {
@@ -140,7 +169,7 @@ ResolvedFieldRef DexClassLinker::ResolveFieldIndex(
         }
         return *cached;
     }
-    const auto& image = *impl_->image;
+    const auto& image = unit.image;
     const auto& entry = image.fields[field_index];
     const auto owner_descriptor =
         image.types[entry.class_type_index].descriptor;

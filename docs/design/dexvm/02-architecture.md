@@ -191,7 +191,7 @@ session 级唯一所有者，吸收既有 backlog（`JniObjectArrayStore` 从 ar
 - JNI local/global 引用表直接指向 JavaObjectModel 句柄——native 侧和解释器
   看到**同一个对象**，不存在影子拷贝。
 - `jclass`/`jmethodID`/`jfieldID` 统一由链接器产出。`FindClass` 对应用类查
-  DEX 元数据、对平台类查 intrinsic 目录，**不再需要 profile 声明**；
+  DEX 元数据、对平台类查 curated Boot DEX + intrinsic overlay 目录，**不再需要 profile 声明**；
   `GetStaticMethodID` 查真实方法表。Asphalt 6 的 17 个推送方法查表因此
   自动成立。
 - 对象非移动（GC 不压缩，见 04 §5），句柄生命周期内稳定，现有 copy-based

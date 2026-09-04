@@ -334,6 +334,10 @@ public:
     [[nodiscard]] VmCallOutcome EnsureClassInitialized(DexClassId java_class);
     [[nodiscard]] VmCallOutcome EnsureClassInitialized(
         const InterpreterExecutionContext& context, DexClassId java_class);
+    // API-19 Enum substrate: initialize the enum and return its constants in
+    // ordinal order. The cached array is a VM root, matching libcore's shared
+    // constants contract.
+    [[nodiscard]] VmObjectRef SharedEnumConstants(DexClassId java_class);
 
     [[nodiscard]] DexClassLinker& Linker() noexcept;
     [[nodiscard]] JavaObjectModel& Model() noexcept;

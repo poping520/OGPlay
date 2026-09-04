@@ -36,6 +36,21 @@
       "java": "OpenJDK 1.6.0_41"
     }
   },
+  "boot_dex": {
+    "path": "framework/bootdex.jar",
+    "source_project": "platform/libcore",
+    "source_jar": "core.jar",
+    "source_jar_sha256": "996557954e45f7192b187b2394259bc8aca6e3946652e03b99d837432f83d1ef",
+    "size": 9412,
+    "sha256": "aeca2979e3f1e105124cf06cb59564197400fcafb4aefaf5e3f98b02f3863248",
+    "dex_entry": "classes.dex",
+    "dex_size": 18616,
+    "dex_sha256": "0efe25ed073c98435463d9b07b63360c5fabea634ea91efb1c89ed5012f6cbb7",
+    "class_count": 11,
+    "selection_policy": "load-all",
+    "notice": "notices/bootdex.jar.txt",
+    "notice_sha256": "eee2a3e3ace26767b6290ad771ae9cf61ac729fb81db9306b2f5be63e4169235"
+  },
   "libraries": [
     {
       "path": "lib/libc.so",

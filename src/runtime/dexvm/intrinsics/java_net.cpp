@@ -10,6 +10,7 @@
 
 #include <algorithm>
 #include <array>
+#include <charconv>
 #include <cctype>
 #include <cstdint>
 #include <optional>
@@ -27,7 +28,8 @@ namespace ogplay::runtime::dexvm::intrinsics {
             return [](IntrinsicContext&) -> VmValue {
                 throw VmJavaThrow{
                     "Ljava/lang/UnsupportedOperationException;",
-                    "SMS/network actions are outside the compatibility scope"
+                    "HTTP networking is unavailable in the bounded java.net "
+                    "facade"
                 };
             };
         }
@@ -299,12 +301,236 @@ namespace ogplay::runtime::dexvm::intrinsics {
             return std::move(builder).Build();
         }
 
+        [[noreturn]] void MalformedUrl(const std::string_view spec,
+                                       const std::string_view reason) {
+            throw VmJavaThrow{
+                "Ljava/net/MalformedURLException;",
+                std::string(reason) + ": " + std::string(spec)
+            };
+        }
+
         IntrinsicClassDecl DeclarePlatformUrl() {
             auto builder = IntrinsicClassBuilder::Class("Ljava/net/URL;",
-                                                        "Ljava/lang/Object;");
-            builder.Constructor("(Ljava/lang/String;)V", NetworkUnsupported());
+                "Ljava/lang/Object;", {"Ljava/io/Serializable;"},
+                kAccPublic | kAccFinal);
+            const auto protocol = builder.BoundInstanceField(
+                "protocol", "Ljava/lang/String;", kAccPrivate);
+            const auto authority = builder.BoundInstanceField(
+                "authority", "Ljava/lang/String;", kAccPrivate);
+            const auto host = builder.BoundInstanceField(
+                "host", "Ljava/lang/String;", kAccPrivate);
+            const auto port = builder.BoundInstanceField(
+                "port", "I", kAccPrivate);
+            const auto file = builder.BoundInstanceField(
+                "file", "Ljava/lang/String;", kAccPrivate);
+            const auto ref = builder.BoundInstanceField(
+                "ref", "Ljava/lang/String;", kAccPrivate);
+            const auto user_info = builder.BoundInstanceField(
+                "userInfo", "Ljava/lang/String;", kAccPrivate | kAccTransient);
+            const auto path = builder.BoundInstanceField(
+                "path", "Ljava/lang/String;", kAccPrivate | kAccTransient);
+            const auto query = builder.BoundInstanceField(
+                "query", "Ljava/lang/String;", kAccPrivate | kAccTransient);
+            builder.Constructor("(Ljava/lang/String;)V",
+                [=](IntrinsicContext& context) {
+                    IntrinsicCall call(context);
+                    const auto input = call.Ref(0);
+                    if (!input.IsValid()) MalformedUrl({}, "URL spec is null");
+                    const auto input_text = call.Vm().StringUtf8(input);
+                    const std::string trimmed(
+                        core::TrimAsciiWhitespace(input_text));
+                    ParsedUri parsed;
+                    try {
+                        parsed = ParseUri(std::string(trimmed));
+                    } catch (const VmJavaThrow&) {
+                        MalformedUrl(trimmed, "Invalid URL");
+                    }
+                    if (!parsed.absolute || !parsed.scheme.has_value()) {
+                        MalformedUrl(trimmed, "Protocol not found");
+                    }
+                    if (!parsed.authority.has_value() &&
+                        parsed.scheme_specific_part.starts_with("//")) {
+                        parsed.authority = std::string{};
+                    }
+                    auto scheme = *parsed.scheme;
+                    std::transform(scheme.begin(), scheme.end(), scheme.begin(),
+                        [](const unsigned char value) {
+                            return static_cast<char>(std::tolower(value));
+                        });
+                    if (scheme != "http" && scheme != "https" &&
+                        scheme != "file") {
+                        MalformedUrl(trimmed, "Unknown protocol");
+                    }
+
+                    std::optional<std::string> parsed_user_info;
+                    std::string parsed_host;
+                    std::int32_t parsed_port = -1;
+                    if (parsed.authority.has_value()) {
+                        auto host_and_port = std::string_view(*parsed.authority);
+                        const auto user_end = host_and_port.rfind('@');
+                        if (user_end != std::string_view::npos) {
+                            parsed_user_info =
+                                std::string(host_and_port.substr(0, user_end));
+                            host_and_port.remove_prefix(user_end + 1U);
+                        }
+
+                        std::string_view port_view;
+                        if (!host_and_port.empty() &&
+                            host_and_port.front() == '[') {
+                            const auto close = host_and_port.find(']');
+                            if (close == std::string_view::npos) {
+                                MalformedUrl(trimmed, "Invalid IPv6 host");
+                            }
+                            parsed_host = std::string(
+                                host_and_port.substr(0, close + 1U));
+                            if (close + 1U < host_and_port.size()) {
+                                if (host_and_port[close + 1U] != ':') {
+                                    MalformedUrl(trimmed, "Invalid authority");
+                                }
+                                port_view = host_and_port.substr(close + 2U);
+                            }
+                        } else {
+                            const auto separator = host_and_port.rfind(':');
+                            if (separator != std::string_view::npos) {
+                                parsed_host = std::string(
+                                    host_and_port.substr(0, separator));
+                                port_view = host_and_port.substr(separator + 1U);
+                            } else {
+                                parsed_host = std::string(host_and_port);
+                            }
+                        }
+
+                        if (!port_view.empty()) {
+                            std::uint32_t value{};
+                            const auto result = std::from_chars(
+                                port_view.data(),
+                                port_view.data() + port_view.size(), value);
+                            if (result.ec != std::errc{} ||
+                                result.ptr != port_view.data() + port_view.size() ||
+                                value > UINT16_MAX) {
+                                MalformedUrl(trimmed, "Invalid port");
+                            }
+                            parsed_port = static_cast<std::int32_t>(value);
+                        } else if (!host_and_port.empty() &&
+                                   host_and_port.back() == ':') {
+                            MalformedUrl(trimmed, "Invalid port");
+                        }
+                    }
+                    if ((scheme == "http" || scheme == "https") &&
+                        (!parsed.authority.has_value() || parsed_host.empty())) {
+                        MalformedUrl(trimmed, "Host expected");
+                    }
+
+                    const auto optional_ref = [&](
+                        const std::optional<std::string>& value) {
+                        return value.has_value()
+                                   ? call.Vm().NewStringUtf8(*value)
+                                   : VmObjectRef{};
+                    };
+                    const auto path_text = parsed.path.value_or("");
+                    std::string file_text = path_text;
+                    if (parsed.query.has_value()) {
+                        file_text.push_back('?');
+                        file_text += *parsed.query;
+                    }
+
+                    call.SetRef(protocol, call.Vm().NewStringUtf8(scheme));
+                    call.SetRef(authority, optional_ref(parsed.authority));
+                    call.SetRef(host, call.Vm().NewStringUtf8(parsed_host));
+                    call.SetInt(port, parsed_port);
+                    call.SetRef(file, call.Vm().NewStringUtf8(file_text));
+                    call.SetRef(ref, optional_ref(parsed.fragment));
+                    call.SetRef(user_info, optional_ref(parsed_user_info));
+                    call.SetRef(path, call.Vm().NewStringUtf8(path_text));
+                    call.SetRef(query, optional_ref(parsed.query));
+                    return VmValue::Void();
+                });
+
+            const auto raw = [](const IntrinsicFieldHandle field) {
+                return [field](IntrinsicContext& context) {
+                    return VmValue::Ref(IntrinsicCall(context).GetRef(field));
+                };
+            };
+            builder.FinalMethod("getProtocol", "()Ljava/lang/String;",
+                                raw(protocol));
+            builder.FinalMethod("getAuthority", "()Ljava/lang/String;",
+                                raw(authority));
+            builder.FinalMethod("getUserInfo", "()Ljava/lang/String;",
+                                raw(user_info));
+            builder.FinalMethod("getHost", "()Ljava/lang/String;", raw(host));
+            builder.FinalMethod("getPort", "()I",
+                [port](IntrinsicContext& context) {
+                    return VmValue::Int(IntrinsicCall(context).GetInt(port));
+                });
+            builder.FinalMethod("getDefaultPort", "()I",
+                [protocol](IntrinsicContext& context) {
+                    IntrinsicCall call(context);
+                    const auto value = call.Vm().StringUtf8(
+                        call.GetRef(protocol));
+                    if (value == "http") return VmValue::Int(80);
+                    if (value == "https") return VmValue::Int(443);
+                    return VmValue::Int(-1);
+                });
+            builder.FinalMethod("getFile", "()Ljava/lang/String;", raw(file));
+            builder.FinalMethod("getPath", "()Ljava/lang/String;", raw(path));
+            builder.FinalMethod("getQuery", "()Ljava/lang/String;", raw(query));
+            builder.FinalMethod("getRef", "()Ljava/lang/String;", raw(ref));
+
+            const auto external_form = [=](IntrinsicContext& context) {
+                IntrinsicCall call(context);
+                std::string rendered = call.Vm().StringUtf8(
+                    call.GetRef(protocol));
+                rendered.push_back(':');
+                const auto authority_ref = call.GetRef(authority);
+                if (authority_ref.IsValid()) {
+                    rendered += "//";
+                    rendered += call.Vm().StringUtf8(authority_ref);
+                }
+                rendered += call.Vm().StringUtf8(call.GetRef(path));
+                const auto query_ref = call.GetRef(query);
+                if (query_ref.IsValid()) {
+                    rendered.push_back('?');
+                    rendered += call.Vm().StringUtf8(query_ref);
+                }
+                const auto fragment_ref = call.GetRef(ref);
+                if (fragment_ref.IsValid()) {
+                    rendered.push_back('#');
+                    rendered += call.Vm().StringUtf8(fragment_ref);
+                }
+                return VmValue::Ref(call.Vm().NewStringUtf8(rendered));
+            };
+            builder.FinalMethod("toExternalForm", "()Ljava/lang/String;",
+                                external_form);
+            builder.FinalOverrideMethod("toString", "()Ljava/lang/String;",
+                                        external_form);
+
+            const auto open_connection = [host, protocol](IntrinsicContext& context)
+                -> VmValue {
+                IntrinsicCall call(context);
+                const auto protocol_text = call.Vm().StringUtf8(
+                    call.GetRef(protocol));
+                if (protocol_text == "file") {
+                    throw VmJavaThrow{
+                        "Ljava/io/IOException;",
+                        "file URL I/O is not implemented"
+                    };
+                }
+                const auto host_text = call.Vm().StringUtf8(call.GetRef(host));
+                if (!call.Vm().Network().Policy().enabled) {
+                    throw VmJavaThrow{
+                        "Ljava/net/UnknownHostException;",
+                        "network policy is offline for " + host_text
+                    };
+                }
+                throw VmJavaThrow{
+                    "Ljava/lang/UnsupportedOperationException;",
+                    "HTTP URLConnection is not implemented"
+                };
+            };
             builder.FinalMethod("openConnection", "()Ljava/net/URLConnection;",
-                                NetworkUnsupported());
+                                open_connection);
+            builder.FinalMethod("openStream", "()Ljava/io/InputStream;",
+                                open_connection);
             return std::move(builder).Build();
         }
 

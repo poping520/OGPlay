@@ -443,7 +443,7 @@ note = "M1 固定 A32/T32 核心与扩展寄存器、线程号、运行结果和
 [runtime.guest_fault_diagnostics]
 status = "complete"
 test = "tests/core/logger_tests.cpp; tests/runtime/guest_thread_runner_tests.cpp; tests/runtime/native_library_loader_tests.cpp; tests/dexvm/vm_thread_tests.cpp"
-note = "DVM-90 可诊断性补强统一 A32 abnormal-stop 报告：固定宽度十六进制 PC/fault/核心寄存器、具名+数值 stop/fault 枚举、guest thread 与有界指令窗口；text sink 按 Java/JNI/stop/fault/register/code 层级缩进且 JSONL 保留原值；RegisterNatives 目标失败附规范 class/method/descriptor，DexVM Java child 失败附 name+record id，run-apk 外层不再误称 GLSurfaceView profile 失败"
+note = "DVM-90 可诊断性补强统一 A32 abnormal-stop 报告：固定宽度十六进制 PC/fault/核心寄存器、具名+数值 stop/fault 枚举、guest thread 与有界指令窗口；text sink 按 Java/JNI/stop/fault/register/code 层级缩进且 JSONL 保留原值；RegisterNatives 目标失败附规范 class/method/descriptor，DexVM Java child 失败附 name+record id，生命周期未捕获 Java 异常附具体 class descriptor、消息和 guest 栈，run-apk 外层不再误称 GLSurfaceView profile 失败"
 
 [cpu.interpreter]
 status = "partial"
@@ -1398,7 +1398,7 @@ note = "DVM-87 发布 Callable/Future/RunnableFuture/ExecutorService shape、Fut
 [dexvm.java_network]
 status = "complete"
 test = "tests/dexvm/dvm88_tests.cpp"
-note = "DVM-88 以 per-VM NetworkRuntime 发布 InetAddress/Socket/stream/datagram/SocketFactory/SSLSocket bounded core；默认离线，host allowlist、TLS 与 datagram 需显式 NetworkPolicy 授权，实际 I/O 只经注入 NetworkTransport，不直接访问宿主 socket/DNS/证书库；SocketFactory 常用创建面受同一 policy 管理，VM teardown 关闭全部 live channel。2026-09-03 增加 API 19 URLEncoder/URLDecoder 无参与 charset-name 重载，UTF-8 form 百分号编解码复用仓库固定 Boost.URL；其他 charset 明确抛 UnsupportedEncodingException"
+note = "DVM-88 以 per-VM NetworkRuntime 发布 InetAddress/Socket/stream/datagram/SocketFactory/SSLSocket bounded core；默认离线，host allowlist、TLS 与 datagram 需显式 NetworkPolicy 授权，实际 I/O 只经注入 NetworkTransport，不直接访问宿主 socket/DNS/证书库；SocketFactory 常用创建面受同一 policy 管理，VM teardown 关闭全部 live channel。API 19 URL(String) 的 http/https/file 绝对地址解析、getter 与 external form 是纯值语义，openConnection/openStream 才进入离线 I/O 失败；URLEncoder/URLDecoder 支持 UTF-8 form，其他 charset 明确抛 UnsupportedEncodingException"
 
 [dexvm.sqlite_vfs]
 status = "complete"

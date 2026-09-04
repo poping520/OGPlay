@@ -151,13 +151,20 @@ struct Dvm88Vm final {
 
     VmValue On(VmObjectRef receiver, const char* name, const char* descriptor,
                std::vector<VmValue> arguments = {}) {
+        const auto outcome = OnOutcome(receiver, name, descriptor,
+                                       std::move(arguments));
+        REQUIRE_MESSAGE(!outcome.exception.IsValid(), outcome.exception_message);
+        return outcome.value;
+    }
+
+    VmCallOutcome OnOutcome(VmObjectRef receiver, const char* name,
+                            const char* descriptor,
+                            std::vector<VmValue> arguments = {}) {
         const auto owner = model.ObjectClass(receiver);
         const auto index = linker.FindVtableIndex(owner, name, descriptor);
         REQUIRE(index.has_value());
         arguments.insert(arguments.begin(), VmValue::Ref(receiver));
-        const auto outcome = vm.Call(linker.Class(owner).vtable[*index], arguments);
-        REQUIRE_MESSAGE(!outcome.exception.IsValid(), outcome.exception_message);
-        return outcome.value;
+        return vm.Call(linker.Class(owner).vtable[*index], arguments);
     }
 
     VmObjectRef Strings(std::initializer_list<std::string_view> values) {
@@ -285,6 +292,84 @@ TEST_CASE("DVM-88 URL form codecs match API 19 UTF-8 behavior") {
         REQUIRE(unsupported.exception.IsValid());
         CHECK(fixture.linker.Class(unsupported.exception_class).descriptor ==
               "Ljava/io/UnsupportedEncodingException;");
+    }
+}
+
+TEST_CASE("DVM-88 URL parsing is value-only and offline failure starts at I/O") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch,
+                               InterpreterBackend::threaded}) {
+        CAPTURE(backend == InterpreterBackend::threaded ? "threaded" :
+                                                         "switch");
+        FakeNetwork transport;
+        Dvm88Vm fixture(backend);
+        const auto url = fixture.New(
+            "Ljava/net/URL;", "(Ljava/lang/String;)V",
+            {VmValue::Ref(fixture.vm.NewStringUtf8(
+                "  HTTPS://user:pass@example.com:8443/a%20b?q=1#frag  "))});
+        const auto text = [&](const char* name) {
+            return fixture.vm.StringUtf8(
+                fixture.On(url, name, "()Ljava/lang/String;").ref);
+        };
+        CHECK(text("getProtocol") == "https");
+        CHECK(text("getAuthority") == "user:pass@example.com:8443");
+        CHECK(text("getUserInfo") == "user:pass");
+        CHECK(text("getHost") == "example.com");
+        CHECK(fixture.On(url, "getPort", "()I").AsInt() == 8443);
+        CHECK(fixture.On(url, "getDefaultPort", "()I").AsInt() == 443);
+        CHECK(text("getPath") == "/a%20b");
+        CHECK(text("getQuery") == "q=1");
+        CHECK(text("getFile") == "/a%20b?q=1");
+        CHECK(text("getRef") == "frag");
+        CHECK(text("toExternalForm") ==
+              "https://user:pass@example.com:8443/a%20b?q=1#frag");
+        CHECK(text("toString") ==
+              "https://user:pass@example.com:8443/a%20b?q=1#frag");
+
+        const auto file_url = fixture.New(
+            "Ljava/net/URL;", "(Ljava/lang/String;)V",
+            {VmValue::Ref(fixture.vm.NewStringUtf8("file:///data/save.dat"))});
+        CHECK(fixture.vm.StringUtf8(fixture.On(
+                  file_url, "getAuthority", "()Ljava/lang/String;").ref)
+              .empty());
+        CHECK(fixture.vm.StringUtf8(fixture.On(
+                  file_url, "toString", "()Ljava/lang/String;").ref) ==
+              "file:///data/save.dat");
+        CHECK(fixture.On(file_url, "getDefaultPort", "()I").AsInt() == -1);
+        const auto file_io = fixture.OnOutcome(
+            file_url, "openStream", "()Ljava/io/InputStream;");
+        REQUIRE(file_io.exception.IsValid());
+        CHECK(fixture.linker.Class(file_io.exception_class).descriptor ==
+              "Ljava/io/IOException;");
+
+        const auto offline = fixture.OnOutcome(
+            url, "openConnection", "()Ljava/net/URLConnection;");
+        REQUIRE(offline.exception.IsValid());
+        CHECK(fixture.linker.Class(offline.exception_class).descriptor ==
+              "Ljava/net/UnknownHostException;");
+        CHECK(offline.exception_message ==
+              "network policy is offline for example.com");
+
+        fixture.vm.Network().Configure(
+            {true, true, false, {"example.com"}}, &transport);
+        const auto http_unimplemented = fixture.OnOutcome(
+            url, "openConnection", "()Ljava/net/URLConnection;");
+        REQUIRE(http_unimplemented.exception.IsValid());
+        CHECK(fixture.linker.Class(
+                  http_unimplemented.exception_class).descriptor ==
+              "Ljava/lang/UnsupportedOperationException;");
+
+        const auto url_class = fixture.linker.ResolveDescriptor("Ljava/net/URL;");
+        const auto constructor = fixture.linker.FindDirectMethod(
+            url_class, "<init>", "(Ljava/lang/String;)V");
+        REQUIRE(constructor.has_value());
+        const auto malformed_url = fixture.vm.NewIntrinsicInstance("Ljava/net/URL;");
+        const auto malformed = fixture.vm.Call(
+            *constructor,
+            std::array{VmValue::Ref(malformed_url),
+                       VmValue::Ref(fixture.vm.NewStringUtf8("not a URL"))});
+        REQUIRE(malformed.exception.IsValid());
+        CHECK(fixture.linker.Class(malformed.exception_class).descriptor ==
+              "Ljava/net/MalformedURLException;");
     }
 }
 

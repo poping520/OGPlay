@@ -50,5 +50,11 @@ ContentValues/Cursor/SQLite 的有界数据语义只持久化到 guest VFS，完
   百分号转换复用 `third_party/ext-boost` Boost.URL，覆盖空格/加号、Unicode、非法转义和
   不支持 charset。Windows Release 双后端定向回归通过；PvZ 关闭 survey 后越过
   `URLDecoder`，新首错为 `java.util.Locale.ENGLISH` 缺失。
+- 2026-09-04 修正过粗的 URL/I/O 边界：`URL(String)` 对 http/https/file 绝对地址发布
+  API 19 数据字段、解析、getter、`toExternalForm/toString` 纯值语义；HTTP(S) 默认离线只在
+  `openConnection/openStream` 抛 `UnknownHostException`，file URL I/O 明确抛 `IOException`，
+  不再让构造器抛通用 network 错误。
+  Windows Release URL 双后端 124/124、DVM-88 全组 9/9（252 断言）通过；PvZ 实跑越过
+  `URL.<init>`，新首错为 `Ljava/util/EnumSet;`。
 
 状态：已完成。

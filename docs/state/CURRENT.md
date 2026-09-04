@@ -17,8 +17,9 @@
   回调删除、异常传播和 nested GC 强根保活。Object streams 已闭合 API 19 接口继承、
   primitive/block-data、默认 `Serializable` 字段图、引用、枚举及 `Date` 往返；数组、
   Externalizable/custom hooks 与默认 UID 计算仍 deferred。Locale `getLanguage()` 返回
-  会话注入语言，`ENGLISH` 返回 `en`。`URLEncoder/URLDecoder` 已以
-  Boost.URL 闭合 UTF-8 form codec；其他 charset、格式化/解析及完整 XmlPullParser 长尾仍 deferred。
+  会话注入语言，`ENGLISH` 返回 `en`。`URLEncoder/URLDecoder` 已闭合 UTF-8 form codec；
+  `URL` 的 http/https/file 构造与 getter 为纯值语义，`openConnection/openStream` 才按离线
+  策略失败；其他 charset 与完整 XmlPullParser 长尾仍 deferred。
 - **Android Context 文件流**：`openFileInput/openFileOutput` 已接入 app files 目录；
   `MODE_PRIVATE` 覆盖、`MODE_APPEND` 追加，Activity/ContextWrapper 继续委托进程 base Context，
   文件状态只存在于 core `IoRuntime` 与统一 VFS。APK 资源流现返回具体
@@ -28,7 +29,7 @@
   ContentProvider MIME、path/SSP、manifest resolver 与系统广播仍明确不支持。
 - **基础架构**：DVM-92 teardown 及 DVM-94～96 的稳定 linker metadata、`MethodShape`、
   own-member intrinsic 与 owner-state trace/sweep 已完成；Dalvik access flag 与 Java reflection
-  modifier mask 已集中到共享头，core 与平台 intrinsics 不再复制直接量。解释执行仍由
+  modifier mask 已集中到共享头；生命周期异常日志现含具体 Java 类型。解释执行仍由
   `VmExecutionLock` 串行，threaded 生产默认关闭。
 - **Title 进展**：Tales 已越过 uniform sampler、`GL_OES_mapbuffer`、Context 路径和 thread
   context loader 缺口，两个 native 库完成 JNI 初始化；新首错为
@@ -40,8 +41,8 @@
 
 ## 最近验证
 
-- 2026-09-04 Windows Release：DVM-97 Android value 9/9、374 断言与 catalog 30/30、
-  3989 断言通过；PvZ 实跑越过 `resolveTypeIfNeeded`，停于后续 SMS/network action 边界。
+- 2026-09-04 Windows Release：URL 双后端 124/124、DVM-88 全组 9/9（252 断言）；PvZ 越过
+  `URL.<init>`，新首错为 `Ljava/util/EnumSet;`。
 - 2026-09-03 macOS Release：资源流与 Locale 定向测试通过；Asphalt 5 原 APK 3 帧烟测
   正常退出；title-flow 末帧 Main Menu 经人工检查并在两个 fresh sandbox 中稳定为
   `cb892db9…`，golden 更新后 6 个 checkpoint 全部通过并 clean shutdown。

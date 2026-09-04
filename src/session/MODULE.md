@@ -41,8 +41,8 @@ Dex activity 每帧在 guest 回调前泵送主 Looper，到帧尾只通过
   resolve→`<clinit>`→construct→attach base Context→虚派 `onCreate` 建立稳定的 process
   Application root，再实例化入口 Activity 并解释执行 onCreate/onStart/onResume、
   renderer surface/frame、输入、suspend/resume 与 surfaceDestroyed/onStop/onDestroy；
-  未捕获 Java 异常携带解释器栈失败。每帧同时泵 VideoView 与 AudioTrack position
-  notification；音频回调只在生命周期解释器单写者线程执行，guest 异常使 lifecycle
+  未捕获 Java 异常携带具体 class descriptor、消息和解释器栈失败。每帧同时泵 VideoView
+  与 AudioTrack position notification；音频回调只在生命周期解释器单写者线程执行，guest 异常使 lifecycle
   失败。首次 Surface traversal 前按 ADR-0024 冻结 onStart/onResume 后已存在的 worker
   context，并有限轮 yield，直到每个 worker 被观测到 park 或终止；期间新线程不追入，
   超限写结构化 warn 后 fail-open。初始 focus 仍留到下一 frame，不并入握手。输入按

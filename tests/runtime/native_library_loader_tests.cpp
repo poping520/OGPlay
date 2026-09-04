@@ -1120,8 +1120,12 @@ TEST_CASE("Application failure prevents launcher construction and surface effect
     bindings.open_surface = [&] { opened = true; };
     session::DexActivityLifecycle lifecycle(std::move(bindings));
 
-    CHECK_THROWS_AS(static_cast<void>(lifecycle.Start()),
-                    session::DexActivityLifecycleError);
+    CHECK_THROWS_WITH_AS(
+        static_cast<void>(lifecycle.Start()),
+        doctest::Contains(
+            "Application onCreate raised an uncaught Java exception: "
+            "Ljava/lang/RuntimeException;: application failed"),
+        session::DexActivityLifecycleError);
     CHECK_FALSE(opened);
     CHECK_FALSE(fixture.context->application.IsValid());
     CHECK_FALSE(fixture.context->activity.IsValid());

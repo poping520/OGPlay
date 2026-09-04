@@ -24,12 +24,26 @@ namespace ogplay::session {
             throw DexActivityLifecycleError(message);
         }
 
-        void RequireOutcome(const dx::VmCallOutcome& outcome,
+        [[nodiscard]] std::string RenderJavaException(
+            const dx::DexClassLinker& linker,
+            const dx::VmCallOutcome& outcome) {
+            std::string rendered = outcome.exception_class.IsValid()
+                                       ? linker.Class(outcome.exception_class)
+                                             .descriptor
+                                       : "<unknown Java exception>";
+            if (!outcome.exception_message.empty()) {
+                rendered += ": " + outcome.exception_message;
+            }
+            return rendered;
+        }
+
+        void RequireOutcome(dx::Interpreter& vm,
+                            const dx::VmCallOutcome& outcome,
                             const std::string& what) {
             if (!outcome.exception.IsValid()) return;
             std::string rendered =
                     what + " raised an uncaught Java exception: " +
-                    outcome.exception_message;
+                    RenderJavaException(vm.Linker(), outcome);
             for (const auto& entry: outcome.exception_stack) {
                 rendered += "\n  at " + entry.class_descriptor + "." +
                         entry.method_name + " (pc " +
@@ -51,6 +65,7 @@ namespace ogplay::session {
                 Fail(what + " has no attachBaseContext method");
             }
             RequireOutcome(
+                vm,
                 vm.Call(linker.Class(java_class).vtable[*attach],
                         std::vector<dx::VmValue>{
                             dx::VmValue::Ref(object),
@@ -79,7 +94,7 @@ namespace ogplay::session {
         if (!java_class.has_value()) {
             Fail("Application class is not linked: " + application_descriptor);
         }
-        RequireOutcome(vm.EnsureClassInitialized(*java_class),
+        RequireOutcome(vm, vm.EnsureClassInitialized(*java_class),
                        "Application <clinit>");
         const auto init = linker.FindDirectMethod(*java_class, "<init>", "()V");
         if (!init.has_value()) {
@@ -94,6 +109,7 @@ namespace ogplay::session {
         context->application_base_context = base_context;
         try {
             RequireOutcome(
+                vm,
                 vm.Call(*init, std::vector<dx::VmValue>{
                             dx::VmValue::Ref(application)
                         }),
@@ -107,6 +123,7 @@ namespace ogplay::session {
                      application_descriptor);
             }
             RequireOutcome(
+                vm,
                 vm.Call(linker.Class(*java_class).vtable[*on_create],
                         std::vector<dx::VmValue>{
                             dx::VmValue::Ref(application)
@@ -149,8 +166,10 @@ namespace ogplay::session {
                 method, std::vector<dx::VmValue>{dx::VmValue::Ref(receiver),
                                                  dx::VmValue::Ref(event)});
             if (outcome.exception.IsValid()) {
-                return {.error = "View onTouchEvent raised: " +
-                                 outcome.exception_message};
+                return {.error =
+                            "View onTouchEvent raised an uncaught Java "
+                            "exception: " +
+                            RenderJavaException(linker, outcome)};
             }
             const bool handled = outcome.value.AsInt() != 0;
             return {.handled = handled,
@@ -208,7 +227,7 @@ namespace ogplay::session {
         }
         arguments.insert(arguments.begin(), dx::VmValue::Ref(activity));
         const auto target = linker.Class(activity_class).vtable[*index];
-        RequireOutcome(vm.Call(target, arguments), name);
+        RequireOutcome(vm, vm.Call(target, arguments), name);
     }
 
     void DexActivityLifecycle::CallOnView(
@@ -225,7 +244,7 @@ namespace ogplay::session {
         }
         arguments.insert(arguments.begin(), dx::VmValue::Ref(receiver));
         const auto target = linker.Class(receiver_class).vtable[*index];
-        RequireOutcome(vm.Call(target, arguments), name);
+        RequireOutcome(vm, vm.Call(target, arguments), name);
     }
 
     LifecycleFrameState DexActivityLifecycle::Start() {
@@ -254,7 +273,7 @@ namespace ogplay::session {
                 Fail("launcher activity class is not in the dex: " +
                      bindings_.launcher_descriptor);
             }
-            RequireOutcome(vm.EnsureClassInitialized(*activity_class),
+            RequireOutcome(vm, vm.EnsureClassInitialized(*activity_class),
                            "launcher <clinit>");
             const auto init = linker.FindDirectMethod(*activity_class, "<init>",
                                                       "()V");
@@ -268,6 +287,7 @@ namespace ogplay::session {
             // stays the task root across later startActivity handoffs.
             context.task_root_activity = activity.Value();
             RequireOutcome(
+                vm,
                 vm.Call(*init, std::vector<dx::VmValue>{
                             dx::VmValue::Ref(activity)
                         }),
@@ -413,6 +433,7 @@ namespace ogplay::session {
                     Fail("KeyEvent has no timed input constructor");
                 }
                 RequireOutcome(
+                    vm,
                     vm.Call(*constructor,
                             std::vector<dx::VmValue>{
                                 dx::VmValue::Ref(key_event),
@@ -679,7 +700,7 @@ namespace ogplay::session {
             if (!activity_class.has_value()) {
                 Fail("startActivity target is not in the dex: " + descriptor);
             }
-            RequireOutcome(vm.EnsureClassInitialized(*activity_class),
+            RequireOutcome(vm, vm.EnsureClassInitialized(*activity_class),
                            "activity <clinit>");
             const auto init = linker.FindDirectMethod(*activity_class,
                                                       "<init>", "()V");
@@ -690,6 +711,7 @@ namespace ogplay::session {
                 *activity_class, linker.Class(*activity_class).instance_slots);
             context.activity = activity;
             RequireOutcome(
+                vm,
                 vm.Call(*init, std::vector<dx::VmValue>{
                             dx::VmValue::Ref(activity)
                         }),
@@ -789,6 +811,7 @@ namespace ogplay::session {
                     "(Ljavax/microedition/khronos/opengles/GL10;)V");
                 if (index.has_value()) {
                     RequireOutcome(
+                        vm,
                         vm.Call(linker.Class(renderer_class).vtable[*index],
                                 std::vector<dx::VmValue>{
                                     dx::VmValue::Ref(bindings_.context->renderer),

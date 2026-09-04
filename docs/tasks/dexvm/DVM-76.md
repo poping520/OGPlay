@@ -24,6 +24,8 @@ DexVM 在解释执行中抛出不可恢复的 `DexVmError` 时，在销毁帧前
    每帧输出 class、完整 method descriptor 与 DEX code-unit PC，不输出宿主地址。
 4. 栈按最内层优先最多输出 64 帧，报告总数/已显示数与省略的外层数；native/JNI
    重入导致同一错误跨多个 `Run` 边界时只附加一次栈标题。
+5. 生命周期出口渲染未捕获 Java 异常时保留 `VmCallOutcome` 的具体 class descriptor；
+   message 非空时紧随类型输出，类型不得再被通用文案吞掉。
 
 ## 验收（机器可判定）
 
@@ -45,5 +47,7 @@ DexVM 在解释执行中抛出不可恢复的 `DexVmError` 时，在销毁帧前
   与 6 层调用链：
   最内层 `BaseCore.loadConfiguration()V dex_pc=18`，最外层
   `PvZActivity.onCreate(Bundle)V dex_pc=107`。
+- 生命周期异常回归固定输出 `Ljava/lang/RuntimeException;: application failed`，并保留
+  guest Java 调用栈；无 message 时仍输出具体类型。
 - 完整 Windows CTest 949/951；DVM-76 与 architecture 均通过，两个失败为本次未触及的
   既有断言漂移：String intrinsic 数量期望 43/实际 44、liblog tag 期望 `PVZ`/实际为空。

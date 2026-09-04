@@ -81,6 +81,10 @@ intrinsic。只解释游戏 DEX 的应用类；平台类始终由 intrinsic 提�
   `NetworkTransport`，默认离线；host allowlist、TLS、datagram 分别校验，未注入或未授权明确
   失败。core 不创建 host socket，不读系统 DNS/代理/证书库，也不依赖 Android connectivity。
   teardown 必须在 transport 存活期关闭 channel，再清空 endpoint/stream/packet state。
+  API 19 `URL(String)` 对 http/https/file 绝对地址只做解析并保存 protocol/authority/host/
+  port/path/query/ref，getter 与 external form 不进入网络策略；`openConnection/openStream`
+  才是 I/O 边界：HTTP(S) 默认离线抛 `UnknownHostException`，policy 开启但未实现 HTTP
+  façade 时明确失败；file URL I/O 尚未接入 VFS，抛 `IOException`。
   `URLEncoder/URLDecoder` 的纯 UTF-8 form codec 不进入 NetworkRuntime，百分号转换只调用仓库
   固定的 Boost.URL；不支持的 charset 明确失败。
 - `NioRuntime`（DVM-82/83）：以 JNI object identity 索引 Buffer state；heap array、direct

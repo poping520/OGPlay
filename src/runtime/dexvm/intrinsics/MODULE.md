@@ -51,6 +51,14 @@ execution-local `RootScope` 跨回调保活，回调删除不改变本轮通知�
 和 atomic family 复用 `VmThreadRuntime` 的真实 Thread identity；不创建第二套 scheduler，
 不扩展到并行池、scheduled executor 或 concurrent collection。
 
+`java_concurrent.cpp` 同时声明 API 19 libdvm 的 `sun.misc.Unsafe`：同一静态强根单例、
+真实 caller loader 检查、受检字段/数组位置、int/long/reference 读写和 CAS 委托
+`UnsafeRuntime`；handler 不操作裸槽。`park/unpark` 复用 Thread，absolute epoch 毫秒
+经 `CoreIntrinsicServices.current_time_millis` 与 monitor Clock 转换为单调 deadline。
+无时间源/溢出明确失败，permit/interrupt/teardown 不另建状态。Thread 补齐 API 19 private
+`parkBlocker` 对象字段，由 BootDex LockSupport 通过 Unsafe 读写并形成普通 GC 强边。`allocateInstance` 完成
+clinit 后跳过构造器，拒绝不可实例化类。此能力不代表 BootDex Executors 已闭合。
+
 `java_io.cpp` 聚合 pinned libcore `java.io`：stream/reader/filter/buffer/byte-array/data
 handle、File 与文件 reader/writer handle。每个 Java class 仍保留 TU-private `Declare_*()`；
 流状态、`FileDescriptor` 逻辑来源和文件访问只委托 per-VM `IoRuntime`，不得回读 Android

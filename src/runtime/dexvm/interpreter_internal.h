@@ -16,6 +16,7 @@
 #include "ogplay/runtime/dexvm/collection_runtime.h"
 #include "ogplay/runtime/dexvm/io_runtime.h"
 #include "ogplay/runtime/dexvm/nio_runtime.h"
+#include "ogplay/runtime/dexvm/unsafe_runtime.h"
 #include "ogplay/runtime/dexvm/network_runtime.h"
 #include "ogplay/runtime/dexvm/zip_runtime.h"
 #include "ogplay/runtime/dexvm/reflection.h"
@@ -124,6 +125,7 @@ public:
     NioRuntime nio;
     NioRuntime* nio_runtime{&nio};
     ZipRuntime zip;
+    std::unique_ptr<UnsafeRuntime> unsafe;
     std::unordered_map<std::string, std::string> system_properties{
         {"file.separator", "/"},
         {"line.separator", "\n"},

@@ -1,0 +1,64 @@
+# API 19 Unsafe interop: ordinary DEX fields, allocation, caller and CAS.
+.class public LUnsafeBean;
+.super Ljava/lang/Object;
+.field public value:I
+.field public wide:J
+.field public reference:Ljava/lang/String;
+.field public static initialized:I
+.method static constructor <clinit>()V
+.registers 1
+    const/4 v0, 7
+    sput v0, LUnsafeBean;->initialized:I
+    return-void
+.end method
+.method public constructor <init>()V
+.registers 2
+    const/16 v0, 99
+    iput v0, v1, LUnsafeBean;->value:I
+    return-void
+.end method
+.method public get()I
+.registers 2
+    iget v0, v1, LUnsafeBean;->value:I
+    return v0
+.end method
+.method public set(I)V
+.registers 2
+    iput v1, v0, LUnsafeBean;->value:I
+    return-void
+.end method
+.method static public denied()Lsun/misc/Unsafe;
+.registers 1
+    invoke-static {}, Lsun/misc/Unsafe;->getUnsafe()Lsun/misc/Unsafe;
+    move-result-object v0
+    return-object v0
+.end method
+.method static public increment(Lsun/misc/Unsafe;Ljava/lang/Object;J)I
+.registers 10
+:retry
+    invoke-virtual {v6, v7, v8, v9}, Lsun/misc/Unsafe;->getIntVolatile(Ljava/lang/Object;J)I
+    move-result v4
+    add-int/lit8 v5, v4, 1
+    move-object v0, v6
+    move-object v1, v7
+    move-wide v2, v8
+    invoke-virtual/range {v0 .. v5}, Lsun/misc/Unsafe;->compareAndSwapInt(Ljava/lang/Object;JII)Z
+    move-result v0
+    if-eqz v0, :retry
+    return v5
+.end method
+.class public LUnsafeChild;
+.super LUnsafeBean;
+.field public other:I
+.class public abstract LUnsafeAbstract;
+.super Ljava/lang/Object;
+.class public LUnsafeBadInit;
+.super Ljava/lang/Object;
+.field public static failure:Ljava/lang/Throwable;
+.method static constructor <clinit>()V
+.registers 1
+    new-instance v0, Ljava/lang/AssertionError;
+    invoke-direct {v0}, Ljava/lang/AssertionError;-><init>()V
+    sput-object v0, LUnsafeBadInit;->failure:Ljava/lang/Throwable;
+    throw v0
+.end method

@@ -883,6 +883,7 @@ Interpreter::Interpreter(DexClassLinker& linker, JavaObjectModel& model,
         std::make_unique<ClassLoaderFacade>(linker, model);
     impl_->reflection =
         std::make_unique<ReflectionRuntime>(*this, linker, model);
+    impl_->unsafe = std::make_unique<UnsafeRuntime>(*this);
 }
 
 CollectionRuntime& Interpreter::Collections() {
@@ -923,6 +924,10 @@ Interpreter::~Interpreter() {
 
 ClassLoaderFacade& Interpreter::ClassLoaders() noexcept {
     return *impl_->class_loaders;
+}
+
+UnsafeRuntime& Interpreter::Unsafe() noexcept {
+    return *impl_->unsafe;
 }
 
 ReflectionRuntime& Interpreter::Reflection() noexcept {

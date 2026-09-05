@@ -2753,6 +2753,7 @@ namespace ogplay::runtime::dexvm::intrinsics {
             "Ljava/lang/Object;",
             {"Ljava/lang/Runnable;"}
         );
+        builder.InstanceField("parkBlocker", "Ljava/lang/Object;", kAccPrivate);
         const ThreadFields fields{
             builder.BoundInstanceField("target", "Ljava/lang/Runnable;"),
             builder.BoundInstanceField("name", "Ljava/lang/String;"),

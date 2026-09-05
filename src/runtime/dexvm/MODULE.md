@@ -228,6 +228,17 @@ intrinsic。解释应用 DEX 与受审 API 19 curated Boot DEX；完整平台库
   `object_model_failure`，转换为 guest NPE 以继续收集；非 survey 保持硬失败。流程见
   `docs/playbook/NEW-TITLE.md`。
 
+## API 19 Unsafe
+
+DVM-101/ADR-0031：`Interpreter::Unsafe()` 拥有 per-VM `UnsafeRuntime`，字段查询只保存
+稳定 `VmFieldId` 元数据并返回逻辑令牌；访问校验 receiver/type，复用唯一字段槽与 JNI
+数组存储。数组 base=16，scale 按 A32 元素宽度，拒绝错类型、未对齐和越界访问。
+所有 plain/volatile/ordered/CAS 入口要求持有 `VmExecutionLock`；CAS 期间禁止分配、
+回调或阻塞。引用写入保留 GC 标签和可赋值性，不把逻辑 offset 转成任何宿主/guest 地址。
+令牌不持反射 wrapper 或对象强根，不因 wrapper 回收失效。
+`tests/dexvm/unsafe_tests.cpp` 与 `fixtures/unsafe.dexasm` 验证字段互通、CAS、GC、
+array、caller、allocation、Clock/permit 与真实 BootDex atomic/AQS 初始化。
+
 ## 文件分工
 
 - linker：`class_linker_internal.h` 持有 `DexClassLinker::Impl`；注册/布局/vtable 在

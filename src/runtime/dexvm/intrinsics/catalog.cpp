@@ -63,7 +63,7 @@ std::vector<IntrinsicClassDecl> CoreIntrinsicCatalog(
     AppendJavaUtilAlgorithms(catalog, services);
     AppendJavaText(catalog);
     AppendJavaRegex(catalog);
-    AppendJavaConcurrent(catalog);
+    AppendJavaConcurrent(catalog, services);
     AppendJavaXml(catalog, services);
 
     return catalog;

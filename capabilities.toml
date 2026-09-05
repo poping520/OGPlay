@@ -1228,7 +1228,12 @@ note = "DVM-7 注册/层级/布局/vtable/iftable 四步链接与懒结构预检
 [dexvm.boot_dex]
 status = "complete"
 test = "tests/dexvm/intrinsics_p1_tests.cpp; tests/frontend/data_directory_tests.cpp; tools.bootdex_builder_self_test; tools.android_payload_current; PvZ exact Profile reached-fault"
-note = "DVM-99/ADR-0030 交付固定 API 19 curated bootdex.jar：运行时对 jar 内 class_def 无 allowlist 全量装载，普通方法解释执行，精确 intrinsic method overlay；Enum.getSharedConstants 以 ACC_ENUM 字段和 ordinal 构造强根 typed array。DVM-100 增加固定 AOSP 输入、精确 class recipe、双目录确定性 DEX 重组、canonical JAR 和可重建校验；当前制品含 EnumSet 11 类及 Executors fixed-pool 相关 35 类，后者仅完成选类和装载，并行线程池语义未闭合，PvZ 当前停于 sun.misc.Unsafe。完整 core/framework、multidex、动态 classpath 与 Android 系统服务仍不在此能力内。"
+note = "DVM-99/ADR-0030 交付固定 API 19 curated bootdex.jar：运行时对 jar 内 class_def 无 allowlist 全量装载，普通方法解释执行，精确 intrinsic method overlay；Enum.getSharedConstants 以 ACC_ENUM 字段和 ordinal 构造强根 typed array。DVM-100 增加固定 AOSP 输入、精确 class recipe、双目录确定性 DEX 重组、canonical JAR 和可重建校验；当前制品含 EnumSet 11 类及 Executors fixed-pool 相关 35 类，后者仅完成选类和装载，并行线程池语义未闭合，DVM-101 已闭合 Unsafe，PvZ 当前停于 System.getSecurityManager。完整 core/framework、multidex、动态 classpath 与 Android 系统服务仍不在此能力内。"
+
+[dexvm.unsafe]
+status = "complete"
+test = "tests/dexvm/unsafe_tests.cpp; tests/dexvm/fixtures/unsafe.dexasm; tests/dexvm/thread_intrinsic_tests.cpp; PvZ exact Profile reached-fault"
+note = "DVM-101/ADR-0031 发布 API 19 libdvm sun.misc.Unsafe 单例与 caller loader 检查；per-VM UnsafeRuntime 用受检逻辑字段令牌及 A32 array base/scale 访问唯一 Java/JNI 存储，int/long/ref plain/volatile/ordered/CAS 由 VmExecutionLock 保证原子性，引用按 identity 比较并保持 GC 强边。park/unpark 复用 Thread 单许可、interrupt 与统一 Clock，epoch deadline 显式转换到单调时间；allocateInstance 先 clinit 后分配且跳过构造器。补齐 Thread.parkBlocker，真实 BootDex AtomicInteger/AQS/LockSupport 初始化通过；PvZ 已越过 Unsafe，当前首错为 System.getSecurityManager。complete 仅指此有界闭包，不支持字段地址算术、任意字节/类型重解释、宿主指针或完整并行线程池。"
 
 [dexvm.reflection_linker_metadata]
 status = "complete"

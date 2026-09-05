@@ -20,7 +20,8 @@ void AppendJavaUtilAlgorithms(std::vector<IntrinsicClassDecl>& catalog,
                               const CoreIntrinsicServices& services);
 void AppendJavaText(std::vector<IntrinsicClassDecl>& catalog);
 void AppendJavaRegex(std::vector<IntrinsicClassDecl>& catalog);
-void AppendJavaConcurrent(std::vector<IntrinsicClassDecl>& catalog);
+void AppendJavaConcurrent(std::vector<IntrinsicClassDecl>& catalog,
+                          const CoreIntrinsicServices& services);
 void AppendJavaNio(std::vector<IntrinsicClassDecl>& catalog);
 void AppendJavaNetPlatform(std::vector<IntrinsicClassDecl>& catalog,
                            const CoreIntrinsicServices& services);

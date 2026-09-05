@@ -279,6 +279,12 @@ IntrinsicClassDecl Declare_java_lang_Class() {
                     context.vm.Linker().Class(Represented(context))
                         .descriptor)));
         });
+    builder.VirtualMethod("desiredAssertionStatus", "()Z",
+        [](IntrinsicContext&) {
+            // OGPlay does not expose Dalvik assertion-control arguments;
+            // API 19 defaults assertions to disabled when no rule matches.
+            return VmValue::Int(0);
+        });
     builder.VirtualMethod("getSimpleName", "()Ljava/lang/String;",
         [](IntrinsicContext& context) {
             return VmValue::Ref(context.vm.NewStringUtf8(

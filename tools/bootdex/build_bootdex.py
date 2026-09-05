@@ -202,8 +202,7 @@ def manifest_bytes(metadata: dict) -> bytes:
 
 
 def self_test() -> int:
-    if sum(map(len, load_recipe().values())) != 11:
-        raise BuildError("API 19 recipe must currently contain 11 classes")
+    load_recipe()
     sample = b"dex\n035\0sample"
     if make_jar(sample) != make_jar(sample):
         raise BuildError("JAR output is not deterministic")

@@ -143,6 +143,8 @@ reflection shape 按一类一文件声明 `AnnotatedElement`、`GenericDeclarati
 linker/`ReflectionRuntime`，禁止读写 raw member id；public 聚合顺序固定为
 class → superclass → direct interface 递归。nested/enclosing 与 Throws 只消费 loader
 输出的 Dalvik system metadata；generic 与 annotation proxy 明确不实现。
+OGPlay 不提供 Dalvik assertion-control 启动参数，`Class.desiredAssertionStatus()` 固定返回
+API 19 无匹配规则时的默认值 `false`。
 
 DVM-66 将 `Method.invoke` 降为 `ReflectionRuntime` 的薄入口：handler 不手写
 unbox/boxing 或 target id，统一使用 `ReflectionCodec`、真实 interpreted caller

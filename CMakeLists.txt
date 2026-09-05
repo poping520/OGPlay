@@ -1069,6 +1069,15 @@ if(OGPLAY_BUILD_TESTS)
     set_tests_properties(tools.dexvm_gap_report_self_test PROPERTIES LABELS tools)
 
     add_test(
+        NAME tools.bootdex_builder_self_test
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/bootdex/build_bootdex.py
+            --self-test
+    )
+    set_tests_properties(tools.bootdex_builder_self_test
+        PROPERTIES LABELS "tools;dexvm;distribution")
+
+    add_test(
         NAME tools.diagnostics_align_host_threads
         COMMAND ${Python3_EXECUTABLE}
             ${CMAKE_CURRENT_SOURCE_DIR}/tests/tools/test_align_host_threads.py

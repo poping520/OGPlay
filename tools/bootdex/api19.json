@@ -1,0 +1,18 @@
+{
+  "api_level": 19,
+  "classes": {
+    "core.jar": [
+      "Ljava/util/AbstractCollection;",
+      "Ljava/util/AbstractSet;",
+      "Ljava/util/EnumSet$1;",
+      "Ljava/util/EnumSet$SerializationProxy;",
+      "Ljava/util/EnumSet;",
+      "Ljava/util/HugeEnumSet$1;",
+      "Ljava/util/HugeEnumSet$HugeEnumSetIterator;",
+      "Ljava/util/HugeEnumSet;",
+      "Ljava/util/MiniEnumSet$1;",
+      "Ljava/util/MiniEnumSet$MiniEnumSetIterator;",
+      "Ljava/util/MiniEnumSet;"
+    ]
+  }
+}

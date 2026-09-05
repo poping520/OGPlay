@@ -1,5 +1,19 @@
 # 开发工具
 
+## API 19 BootDex
+
+`bootdex/build_bootdex.py` 根据 [`bootdex/api19.json`](bootdex/api19.json) 从 pinned AOSP jar
+精确选取 class_def，以 smali/baksmali 3.0.10 重组 DEX，并生成固定格式的 JAR。
+
+```text
+python3 tools/bootdex/build_bootdex.py build
+python3 tools/bootdex/build_bootdex.py check
+```
+
+输入默认位于 `.local/aosp` 和 `.local/tools`；缺少 smali/baksmali 时生成器会下载固定的
+3.0.10 release，所有输入均校验固定 SHA-256。新增类时只修改 recipe 对应源 jar 的有序
+列表，运行时仍全量加载生成物中的 class_def。
+
 ## DexVM API-19 intrinsic 骨架
 
 `dexvm_api19_surface.py` 从 pinned Android 4.4.4 Java 源码抽取 public/protected

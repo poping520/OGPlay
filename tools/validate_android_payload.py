@@ -8,10 +8,18 @@ import hashlib
 import json
 import re
 import struct
+import sys
 import xml.etree.ElementTree as ET
 import zipfile
 from pathlib import Path
 from typing import Any
+
+TOOLS_DIR = Path(__file__).resolve().parent
+sys.path.insert(0, str(TOOLS_DIR))
+sys.path.insert(0, str(TOOLS_DIR / "bootdex"))
+
+import build_bootdex as bootdex
+import dex_survey_lib
 
 
 LIBRARIES = {
@@ -142,41 +150,45 @@ def validate(root: Path) -> None:
         raise PayloadError("source provenance is incomplete")
     source_projects = _validate_source_manifest(root, source)
 
-    boot_dex = _mapping(manifest.get("boot_dex"), "boot_dex")
-    if boot_dex.get("path") != BOOT_DEX or \
-            boot_dex.get("source_project") != "platform/libcore" or \
-            boot_dex.get("source_jar") != "core.jar" or \
-            boot_dex.get("source_jar_sha256") != \
-                "996557954e45f7192b187b2394259bc8aca6e3946652e03b99d837432f83d1ef" or \
-            boot_dex.get("dex_entry") != "classes.dex" or \
-            boot_dex.get("selection_policy") != "load-all":
-        raise PayloadError("boot_dex identity does not match")
-    _validate_digest(root / BOOT_DEX, boot_dex.get("size"),
-                     boot_dex.get("sha256"), "boot_dex")
-    notice = _text(boot_dex.get("notice"), "boot_dex.notice")
-    if notice != BOOT_DEX_NOTICE or not (root / notice).is_file():
-        raise PayloadError("boot_dex NOTICE does not match")
-    if _digest(root / notice) != _text(
-            boot_dex.get("notice_sha256"), "boot_dex.notice_sha256"):
-        raise PayloadError("boot_dex NOTICE SHA-256 does not match")
     try:
+        recipe = bootdex.load_recipe()
+    except (bootdex.BuildError, OSError) as error:
+        raise PayloadError(f"BootDex recipe is invalid: {error}") from error
+    try:
+        jar_bytes = (root / BOOT_DEX).read_bytes()
         with zipfile.ZipFile(root / BOOT_DEX) as archive:
-            names = {name for name in archive.namelist()
-                     if not name.endswith("/")}
-            if names != {"META-INF/MANIFEST.MF", "classes.dex"}:
+            if archive.namelist() != ["META-INF/MANIFEST.MF", "classes.dex"]:
                 raise PayloadError("boot_dex archive entries do not match")
+            if archive.comment or \
+                    archive.read("META-INF/MANIFEST.MF") != \
+                    bootdex.JAR_MANIFEST:
+                raise PayloadError("boot_dex JAR manifest is not canonical")
             dex = archive.read("classes.dex")
     except (OSError, zipfile.BadZipFile, KeyError) as error:
         raise PayloadError(f"boot_dex archive is invalid: {error}") from error
-    if len(dex) != boot_dex.get("dex_size") or \
-            hashlib.sha256(dex).hexdigest() != boot_dex.get("dex_sha256"):
-        raise PayloadError("boot_dex classes.dex digest does not match")
+    try:
+        expected_metadata = bootdex.boot_metadata(jar_bytes, dex, recipe)
+    except OSError as error:
+        raise PayloadError(f"BootDex metadata input is missing: {error}") from error
+    if _mapping(manifest.get("boot_dex"), "boot_dex") != expected_metadata:
+        raise PayloadError("boot_dex metadata does not match its recipe")
+    if any(bootdex.SOURCES[source][0] not in source_projects
+           for source in recipe):
+        raise PayloadError("BootDex source project is not pinned")
     if len(dex) < 0x70 or dex[:8] != b"dex\n035\0" or \
             struct.unpack_from("<I", dex, 0x20)[0] != len(dex) or \
             struct.unpack_from("<I", dex, 0x28)[0] != 0x12345678:
         raise PayloadError("boot_dex classes.dex is not canonical DEX 035")
-    if struct.unpack_from("<I", dex, 0x60)[0] != boot_dex.get("class_count"):
-        raise PayloadError("boot_dex class count does not match")
+    if bootdex.make_jar(dex) != jar_bytes:
+        raise PayloadError("boot_dex archive metadata is not canonical")
+    try:
+        classes = bootdex.class_names(dex)
+    except dex_survey_lib.DexFormatError as error:
+        raise PayloadError(f"boot_dex DEX structure is invalid: {error}") \
+            from error
+    selected = tuple(sorted(item for values in recipe.values() for item in values))
+    if classes != selected:
+        raise PayloadError("boot_dex exact class selection does not match")
 
     build = _mapping(manifest.get("build"), "build")
     expected_build = {

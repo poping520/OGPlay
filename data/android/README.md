@@ -4,10 +4,13 @@
 的 `aosp_arm-user` 五库发行集；`run-apk` 根据所选 Profile 自动读取 `19/lib/`，不接受
 外部系统库目录。
 
-`19/manifest.json` 是唯一机器可读事实源，保存构建、逐库 ELF/哈希、依赖和 NOTICE
-映射；`19/source-manifest.xml` 固定参与构建的源码 revision；`19/notices/` 每库一份构建
-系统生成的 NOTICE。Bionic-only 构建没有生成 build fingerprint，因此清单以 `null`
+`19/manifest.json` 是发行 payload 的机器可读事实源，保存构建、逐库 ELF/哈希、依赖和
+NOTICE 映射，以及 BootDex 的 recipe、输入和 DEX/JAR 身份；`19/source-manifest.xml` 固定
+参与构建的源码 revision。Bionic-only 构建没有生成 build fingerprint，因此清单以 `null`
 明确表示未知，不以推测值代替。
+
+BootDex 的内容选择事实源是 `tools/bootdex/api19.json`；生成命令为
+`python3 tools/bootdex/build_bootdex.py build`。运行时全量加载 jar 内 class_def。
 
 提交或发布前运行：
 
@@ -16,7 +19,8 @@ python tools/validate_android_payload.py --root data/android/19
 ```
 
 校验器要求精确的五库闭集，复核体积、SHA-256、ELF32/little-endian/ARM/DYN 身份、
-目标 AOSP tag、构建目标、源码仓库 clean/tag 状态和逐库 NOTICE。
+目标 AOSP tag、构建目标、源码仓库 clean/tag 状态和逐库 NOTICE；同时复核 BootDex recipe、
+精确 class descriptor 集与 canonical JAR。
 
 设备提取物只能作为开发期 ABI 行为 oracle，禁止进入本目录和发行包。
 

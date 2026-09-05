@@ -1227,8 +1227,8 @@ note = "DVM-7 注册/层级/布局/vtable/iftable 四步链接与懒结构预检
 
 [dexvm.boot_dex]
 status = "complete"
-test = "tests/dexvm/intrinsics_p1_tests.cpp; tests/frontend/data_directory_tests.cpp; tools.android_payload_current; PvZ exact Profile reached-fault"
-note = "DVM-99/ADR-0030 交付固定 API 19 curated bootdex.jar：运行时对 jar 内 class_def 无 allowlist 全量装载，普通方法解释执行，精确 intrinsic method overlay；Enum.getSharedConstants 以 ACC_ENUM 字段和 ordinal 构造强根 typed array。当前制品 11 类，EnumSet/MiniEnumSet/HugeEnumSet allOf 路径双后端通过；完整 core/framework、multidex、动态 classpath 与 Android 系统服务仍不在此能力内。"
+test = "tests/dexvm/intrinsics_p1_tests.cpp; tests/frontend/data_directory_tests.cpp; tools.bootdex_builder_self_test; tools.android_payload_current; PvZ exact Profile reached-fault"
+note = "DVM-99/ADR-0030 交付固定 API 19 curated bootdex.jar：运行时对 jar 内 class_def 无 allowlist 全量装载，普通方法解释执行，精确 intrinsic method overlay；Enum.getSharedConstants 以 ACC_ENUM 字段和 ordinal 构造强根 typed array。DVM-100 增加固定 AOSP 输入、精确 class recipe、双目录确定性 DEX 重组、canonical JAR 和可重建校验；当前制品仍为 EnumSet 11 类。完整 core/framework、multidex、动态 classpath 与 Android 系统服务仍不在此能力内。"
 
 [dexvm.reflection_linker_metadata]
 status = "complete"

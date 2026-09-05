@@ -28,7 +28,8 @@
     "build_fingerprint": null,
     "commands": [
       "make -B -j8 libc libm libdl libstdc++ libz",
-      "make -B -j8 libz"
+      "make -B -j8 libz",
+      "python3 tools/bootdex/build_bootdex.py build"
     ],
     "toolchain": {
       "target_gcc": "arm-linux-androideabi-gcc (GCC) 4.7",
@@ -38,11 +39,18 @@
   },
   "boot_dex": {
     "path": "framework/bootdex.jar",
-    "source_project": "platform/libcore",
-    "source_jar": "core.jar",
-    "source_jar_sha256": "996557954e45f7192b187b2394259bc8aca6e3946652e03b99d837432f83d1ef",
-    "size": 9412,
-    "sha256": "aeca2979e3f1e105124cf06cb59564197400fcafb4aefaf5e3f98b02f3863248",
+    "generator": "tools/bootdex/build_bootdex.py",
+    "recipe": "tools/bootdex/api19.json",
+    "recipe_sha256": "de1c3a70fa3612aa7bfafe97efd64f3e87c3ecfa40d97e3f5ecf2782e8653c4e",
+    "sources": [
+      {
+        "source_project": "platform/libcore",
+        "source_jar": "core.jar",
+        "source_jar_sha256": "996557954e45f7192b187b2394259bc8aca6e3946652e03b99d837432f83d1ef"
+      }
+    ],
+    "size": 18913,
+    "sha256": "f6a40dc820fc36b5c91d0462e138f471e6d376648471a428e931bfda88627e19",
     "dex_entry": "classes.dex",
     "dex_size": 18616,
     "dex_sha256": "0efe25ed073c98435463d9b07b63360c5fabea634ea91efb1c89ed5012f6cbb7",
@@ -58,7 +66,9 @@
       "size": 306336,
       "sha256": "f1d65ec53efdd181f4f07011cb0599005d28d71f552e8c8eb8b36555b6929a77",
       "soname": "libc.so",
-      "needed": ["libdl.so"],
+      "needed": [
+        "libdl.so"
+      ],
       "notice": "notices/libc.so.txt",
       "notice_sha256": "ca5b0ccbc98bcc4a4f97ec73dd6ffeeda27de5ca7e49ad81dfc04729ec5dc53a"
     },
@@ -78,7 +88,9 @@
       "size": 103624,
       "sha256": "1bd47c0f84db64307d9819ef2bccde3a379f58814d4cc7d8a053bf9921b3e672",
       "soname": "libm.so",
-      "needed": ["libc.so"],
+      "needed": [
+        "libc.so"
+      ],
       "notice": "notices/libm.so.txt",
       "notice_sha256": "04d431d8c33eb0fa98bbb0bf04bce47e6ba14f165db44aa05243dd1c05000dbf"
     },
@@ -88,7 +100,9 @@
       "size": 5224,
       "sha256": "372b2d55730266bea582b8a64804ed130850cfeafc369cd4fb6f1633bd1b386b",
       "soname": "libstdc++.so",
-      "needed": ["libc.so"],
+      "needed": [
+        "libc.so"
+      ],
       "notice": "notices/libstdc++.so.txt",
       "notice_sha256": "f97199b1d75ba28d11eb3a1815ea20b036d12853c44380d2679aeb849a7ab7c8"
     },
@@ -98,7 +112,11 @@
       "size": 95496,
       "sha256": "c2f0143900e491639a0ceac70d1d24a008ab719ec8283465acb4449f2a83c48e",
       "soname": "libz.so",
-      "needed": ["libc.so", "libstdc++.so", "libm.so"],
+      "needed": [
+        "libc.so",
+        "libstdc++.so",
+        "libm.so"
+      ],
       "notice": "notices/libz.so.txt",
       "notice_sha256": "60c2c920b6af058e3b9659a19e2e667985c9ac193d426309925077a511f32a45"
     }

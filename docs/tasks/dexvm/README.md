@@ -122,6 +122,7 @@ Asphalt 5（pilot title）删除 profile 全部 `native_call` 与 `[[java.class]
 | [DVM-97](DVM-97.md) | 有界的 Intent/IntentFilter 匹配 | 已完成 |
 | [DVM-98](DVM-98.md) | 平台 intrinsic enum 声明生成器 | 已完成 |
 | [DVM-99](DVM-99.md) | API 19 Boot DEX + EnumSet Pilot | 已完成 |
+| [DVM-100](DVM-100.md) | 可重复构建 API 19 BootDex | 已完成 |
 
 ## 批次 4 · 更多 title 上 dexvm 路线（进行中）
 

@@ -3,6 +3,7 @@
   "classes": {
     "core.jar": [
       "Ljava/lang/RuntimePermission;",
+      "Ljava/lang/SecurityManager;",
       "Ljava/security/BasicPermission;",
       "Ljava/security/Guard;",
       "Ljava/security/Permission;",

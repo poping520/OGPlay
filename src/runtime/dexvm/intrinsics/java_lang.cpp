@@ -2504,6 +2504,12 @@ IntrinsicClassDecl Declare_java_lang_System() {
                 return VmValue::Int(context.vm.Model().IdentityHashCode(
                     context.arguments[0].ref));
             });
+    // API 19 libcore has no installed SecurityManager. This is a source-
+    // compatibility query, not a permission facade or host security hook.
+    builder.StaticMethod("getSecurityManager", "()Ljava/lang/SecurityManager;",
+        [](IntrinsicContext&) {
+                return VmValue::Ref(VmObjectRef{});
+            });
     builder.StaticMethod("getProperty", "(Ljava/lang/String;)Ljava/lang/String;",
         [](IntrinsicContext& context) {
                 const auto key = PropertyKey(context, context.arguments[0].ref);

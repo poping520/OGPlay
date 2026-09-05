@@ -431,6 +431,7 @@ TEST_CASE("dexvm P1 enum values array clone is a shallow copy") {
 TEST_CASE("API 19 boot dex loads every class and executes EnumSet") {
     const std::array boot_classes{
         "Ljava/lang/RuntimePermission;",
+        "Ljava/lang/SecurityManager;",
         "Ljava/security/BasicPermission;",
         "Ljava/security/Guard;",
         "Ljava/security/Permission;",
@@ -500,6 +501,19 @@ TEST_CASE("API 19 boot dex loads every class and executes EnumSet") {
         CHECK(vm.linker.Method(*collection_constructor).kind ==
               MethodKind::intrinsic);
         CHECK(vm.linker.Method(*collection_constructor).dex_unit.has_value());
+
+        const auto security_manager =
+            vm.linker.ResolveDescriptor("Ljava/lang/SecurityManager;");
+        CHECK(vm.linker.Class(security_manager).is_boot_dex);
+        const auto get_security_manager = vm.linker.FindDirectMethod(
+            vm.linker.ResolveDescriptor("Ljava/lang/System;"),
+            "getSecurityManager", "()Ljava/lang/SecurityManager;");
+        REQUIRE(get_security_manager.has_value());
+        const auto security_manager_result =
+            vm.interpreter.Call(*get_security_manager, {});
+        REQUIRE_MESSAGE(!security_manager_result.exception.IsValid(),
+                        security_manager_result.exception_message);
+        CHECK_FALSE(security_manager_result.value.ref.IsValid());
 
         const auto enum_class = vm.linker.ResolveDescriptor("LP1Enum;");
         const auto shared = vm.interpreter.SharedEnumConstants(enum_class);

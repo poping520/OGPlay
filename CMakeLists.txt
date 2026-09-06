@@ -92,6 +92,7 @@ add_library(ogplay_hal
     src/hal/thread.cpp
 )
 if(WIN32)
+    target_link_libraries(ogplay_hal PRIVATE bcrypt)
       target_sources(ogplay_hal PRIVATE
           src/hal/windows/diagnostic_trigger.cpp
           src/hal/from_chars.cpp

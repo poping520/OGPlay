@@ -141,3 +141,6 @@
 
 `tests/loader/` 的单元与畸形输入契约测试；三平台 warnings-as-errors 构建同时约束
 小端字段、encoded-value 宽度与 UTF-16 host projection 不依赖实现相关的隐式整型转换。
+
+DVM-105：空 APK inventory 可建立空 ApkSelectedNativeLibraries 视图，以加载系统 JNI。
+非空 inventory 缺少指定 ABI 仍拒绝；ResolveApkProcessAbi 对空 inventory 的报错保持。

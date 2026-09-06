@@ -540,12 +540,65 @@ GcSweepResult Interpreter::SweepGarbage(const GcMarkResult& mark) {
             }});
 }
 
+void Interpreter::TrackGuestNativeResource(VmObjectRef owner, VmMethodId cleanup, std::int64_t token) {
+    VmExecutionLockScope lock_scope(impl_->execution_lock);
+    if (!owner.IsValid() || token <= 0 ||
+        !impl_->guest_native_resources.emplace(owner.Value(), Impl::GuestNativeResource{cleanup, token}).second)
+        throw DexVmError(DexVmErrorReason::unresolved_reference, "invalid native resource owner");
+}
+std::size_t Interpreter::GuestNativeResourceCount() const {
+    VmExecutionLockScope lock_scope(impl_->execution_lock);
+    return impl_->guest_native_resources.size() + impl_->pending_guest_cleanup.size();
+}
+void Interpreter::ReleaseGuestNativeResources(const bool all) {
+    VmExecutionLockScope lock_scope(impl_->execution_lock);
+    if (all) {
+        for (const auto& [owner, resource] : impl_->guest_native_resources) {
+            static_cast<void>(owner);
+            impl_->pending_guest_cleanup.push_back(resource);
+        }
+        impl_->guest_native_resources.clear();
+    }
+    auto& execution = impl_->Execution();
+    struct RestorePending final {
+        InterpreterExecutionState& execution;
+        VmObjectRef exception;
+        DexClassId type;
+        VmValue result;
+        ~RestorePending() {
+            execution.pending_exception = exception;
+            execution.pending_exception_class = type;
+            execution.exit_result = result;
+        }
+    } restore{execution, execution.pending_exception, execution.pending_exception_class, execution.exit_result};
+    const auto roots = ProtectReferences(std::array{restore.exception,
+        restore.result.kind == VmValue::Kind::ref ? restore.result.ref : VmObjectRef{}});
+    execution.pending_exception = VmObjectRef{};
+    execution.pending_exception_class = DexClassId{};
+    auto pending = std::move(impl_->pending_guest_cleanup);
+    impl_->pending_guest_cleanup.clear();
+    for (std::size_t index = 0; index < pending.size(); ++index) {
+        const auto& resource = pending[index];
+        try {
+            const auto outcome = Call(resource.cleanup, std::array{VmValue::Long(resource.token)});
+            if (outcome.exception.IsValid()) throw VmJavaThrow{
+                Linker().Class(outcome.exception_class).descriptor, outcome.exception_message, outcome.exception};
+        } catch (...) {
+            // Preserve failed/unattempted resources for teardown; never lose the queue.
+            impl_->pending_guest_cleanup.insert(impl_->pending_guest_cleanup.end(),
+                pending.begin() + static_cast<std::ptrdiff_t>(index), pending.end());
+            throw;
+        }
+    }
+}
+
 GcSweepResult Interpreter::CollectGarbage(const std::string_view trigger) {
     VmExecutionLockScope lock_scope(impl_->execution_lock);
     auto& execution = impl_->Execution();
     impl_->RecordTrace(DexVmTraceKind::gc_begin, execution);
     const auto mark = MarkReachable();
     const auto swept = SweepGarbage(mark);
+    ReleaseGuestNativeResources();
     impl_->RecordTrace(DexVmTraceKind::gc_end, execution, nullptr, 0, 0,
                        swept.freed_bytes);
     ++impl_->stats.gc_collections;

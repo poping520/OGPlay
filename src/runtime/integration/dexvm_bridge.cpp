@@ -1,6 +1,9 @@
 #include "ogplay/runtime/integration/dexvm_bridge.h"
 #include "ogplay/runtime/debug/stall_diagnostics.h"
 
+#include "ogplay/core/text.h"
+#include "ogplay/runtime/jni/jni_utf.h"
+
 #include <algorithm>
 #include <cstring>
 #include <mutex>
@@ -967,11 +970,17 @@ public:
         execution_lock.ReacquireAfterBlocking(execution_depth);
 
         // Pending exception propagates into the interpreter.
-        if (session->Environment().ExceptionCheck(process_thread)) {
+        if (const auto pending = session->Environment().PendingExceptionMetadata(process_thread)) {
             session->Environment().ExceptionClear(process_thread);
-      throw dx::VmJavaThrow{"Ljava/lang/RuntimeException;",
-                "native method raised a pending JNI exception: " +
-                    class_name + "." + method.name};
+            if (pending->exception_class.value != 0) {
+                const auto type = DexClassIdentity(pending->exception_class);
+                const auto encoded = std::vector<std::uint8_t>(pending->modified_utf8_message.begin(), pending->modified_utf8_message.end());
+                throw dx::VmJavaThrow{linker.Class(type).descriptor,
+                    core::Utf16ToUtf8(DecodeJniModifiedUtf8(encoded), core::InvalidUtf16Policy::replace).value()};
+            }
+            const auto existing = model->FromIdentity(pending->throwable);
+            throw dx::VmJavaThrow{linker.Class(model->ObjectClass(existing)).descriptor,
+                {}, existing};
         }
         native_diagnostic.threw = false;
 
@@ -1223,6 +1232,17 @@ DexVmGuestBridge::~DexVmGuestBridge() {
         ShutdownAndroidScheduler(*impl_->android_context);
     }
     if (impl_->threads) impl_->threads->Shutdown();
+    if (impl_->vm) {
+        try { impl_->vm->ReleaseGuestNativeResources(true); }
+        catch (const dx::VmJavaThrow& error) {
+            if (impl_->logger) impl_->logger->Write(core::LogLevel::error,
+                "runtime.dexvm.native_cleanup", error.descriptor + ": " + error.message);
+        }
+        catch (const std::exception& error) {
+            if (impl_->logger) impl_->logger->Write(core::LogLevel::error,
+                "runtime.dexvm.native_cleanup", error.what());
+        }
+    }
     if (impl_->android_context) impl_->android_context->threads = nullptr;
     if (impl_->session) {
         impl_->session->Environment().SetMonitorHooks({});

@@ -3,7 +3,9 @@ Copyright 2005-2008 The Android Open Source Project
 
 This product includes software developed as part of The Android Open Source
 Project (https://source.android.com/) and Apache Harmony. The curated API 19
-boot DEX is extracted from AOSP libcore at android-4.4.4_r2.0.1. Its source
+boot DEX uses pinned AOSP libcore at android-4.4.4_r2.0.1. Selected Conscrypt
+AES classes temporarily come from the user-provided MoKee API 19 device
+conscrypt.jar (2026-09-06); see manifest.json for the distinct provenance. Its source
 files retain their copyright and Apache License, Version 2.0 notices.
 
 Apache Harmony

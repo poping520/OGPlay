@@ -1251,7 +1251,8 @@ TEST_CASE("AndroidAppProcess supports a pure Java APK without a Profile or ABI")
     using namespace ogplay;
     OrchestratedApp fixture("fixture.LauncherActivity", true, false);
     CHECK_FALSE(fixture.app->SelectedAbi().has_value());
-    CHECK(fixture.app->NativeLibraries() == nullptr);
+    REQUIRE(fixture.app->NativeLibraries() != nullptr);
+    CHECK(fixture.app->NativeLibraries()->Records().empty());
     fixture.app->StartApplication();
     const auto started = fixture.app->StartLauncherActivity();
     CHECK(started.state == session::LifecycleRunState::running);
@@ -1311,4 +1312,332 @@ TEST_CASE("run-apk delegates application startup and never selects an ELF root")
     const auto gui = read_source("/src/frontend/gui/import.cpp");
     CHECK(gui.find("SelectApkCompatibilityProfile") != std::string::npos);
     CHECK(gui.find("MatchApkTitleProfile") == std::string::npos);
+}
+
+TEST_CASE("DVM-105 AES uses BootDex and real guest libcrypto") {
+    using namespace ogplay;
+    using namespace runtime::dexvm;
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        CAPTURE(backend == InterpreterBackend::threaded ? "threaded" : "switch");
+        runtime::VirtualFileSystem filesystem;
+        core::CapabilityLedger ledger;
+        core::Logger logger;
+        std::vector<std::vector<std::byte>> contents;
+        std::vector<runtime::BionicModuleSource> libraries;
+        for (const auto name : {"libc.so", "libm.so", "libdl.so", "libstdc++.so", "libz.so",
+                                "libcrypto.so", "libogplay_cipher.so"}) {
+            std::ifstream stream(std::string(OGPLAY_SOURCE_DIR) + "/data/android/19/lib/" + name,
+                                 std::ios::binary);
+            REQUIRE_MESSAGE(stream.good(), name);
+            std::vector<char> data{std::istreambuf_iterator<char>(stream), {}};
+            contents.emplace_back(data.size());
+            std::transform(data.begin(), data.end(), contents.back().begin(),
+                           [](char c) { return static_cast<std::byte>(c); });
+            libraries.push_back({name, contents.back()});
+        }
+        auto context = std::make_shared<runtime::DexVmAndroidContext>();
+        context->apk_bytes = {std::byte{0x50}, std::byte{0x4b}, std::byte{3}, std::byte{4}};
+        session::AndroidAppProcessRequest request;
+        request.manifest = AppManifest("fixture.MainActivity");
+        request.system_libraries = libraries;
+        request.dex_bytes = ReadDexFixture("cipher.dex");
+        request.boot_dex_bytes = test::ReadBootDex();
+        request.context = context;
+        request.dexvm.interpreter.backend = backend;
+        request.surface_width = 64;
+        request.surface_height = 36;
+        request.maximum_ticks_per_call = UINT64_C(100000000);
+#if defined(_WIN32)
+        request.backend = {gles::AngleRenderer::d3d11, gles::AngleDevice::hardware};
+#elif defined(__APPLE__)
+        request.backend = {gles::AngleRenderer::metal, gles::AngleDevice::hardware};
+#else
+        request.backend = {gles::AngleRenderer::vulkan, gles::AngleDevice::hardware};
+#endif
+        request.filesystem = &filesystem;
+        request.ledger = &ledger;
+        request.logger = &logger;
+        auto app = session::AndroidAppProcess::Create(std::move(request));
+        auto& vm = app->DexVm().Vm();
+        auto& linker = vm.Linker();
+        const auto direct = [&](const char* owner, const char* name, const char* desc,
+                                std::vector<VmValue> args) {
+            auto type = linker.FindClass(owner);
+            REQUIRE(type.has_value());
+            auto method = linker.FindDirectMethod(*type, name, desc);
+            REQUIRE_MESSAGE(method.has_value(), name);
+            auto result = vm.Call(*method, args);
+            REQUIRE_MESSAGE(!result.exception.IsValid(), result.exception_message);
+            return result.value;
+        };
+        const auto invoke = [&](VmObjectRef obj, const char* name, const char* desc,
+                                std::vector<VmValue> args) {
+            auto type = vm.Model().ObjectClass(obj);
+            auto slot = linker.FindVtableIndex(type, name, desc);
+            REQUIRE_MESSAGE(slot.has_value(), name);
+            args.insert(args.begin(), VmValue::Ref(obj));
+            auto result = vm.Call(linker.Class(type).vtable[*slot], args);
+            REQUIRE_MESSAGE(!result.exception.IsValid(), result.exception_message);
+            return result.value;
+        };
+        const auto bytes = [&](const char* hex) {
+            std::vector<std::byte> data;
+            for (std::size_t i = 0; hex[i]; i += 2)
+                data.push_back(
+                    static_cast<std::byte>(std::stoul(std::string(hex + i, 2), nullptr, 16)));
+            auto array = vm.Model().NewPrimitiveArray(linker.ResolveDescriptor("[B"),
+                                                      runtime::JniPrimitiveKind::byte,
+                                                      static_cast<runtime::JniSize>(data.size()));
+            vm.Model().WriteByteRegion(array, 0, data);
+            return array;
+        };
+        const auto key_bytes = bytes("000102030405060708090a0b0c0d0e0f");
+        const auto key = vm.NewIntrinsicInstance("Ljavax/crypto/spec/SecretKeySpec;");
+        const auto key_roots = vm.ProtectReferences(std::array{key, key_bytes});
+        direct("Ljavax/crypto/spec/SecretKeySpec;", "<init>", "([BLjava/lang/String;)V",
+               {VmValue::Ref(key), VmValue::Ref(key_bytes), VmValue::Ref(vm.NewStringUtf8("AES"))});
+        const auto cipher = direct("Ljavax/crypto/Cipher;", "getInstance",
+                                   "(Ljava/lang/String;)Ljavax/crypto/Cipher;",
+                                   {VmValue::Ref(vm.NewStringUtf8("AES/ECB/NoPadding"))})
+                                .ref;
+        const auto cipher_roots = vm.ProtectReferences(std::array{cipher});
+        invoke(cipher, "init", "(ILjava/security/Key;)V", {VmValue::Int(1), VmValue::Ref(key)});
+        const auto result = invoke(cipher, "doFinal", "([B)[B",
+                                   {VmValue::Ref(bytes("00112233445566778899aabbccddeeff"))})
+                                .ref;
+        const auto expected = bytes("69c4e0d86a7b0430d8cdb78070b4c55a");
+        CHECK(vm.Model().ReadByteRegion(result, 0, 16) ==
+              vm.Model().ReadByteRegion(expected, 0, 16));
+        CHECK(vm.GuestNativeResourceCount() == 1);
+        invoke(cipher, "init", "(ILjava/security/Key;)V", {VmValue::Int(2), VmValue::Ref(key)});
+        const auto plain = invoke(cipher, "doFinal", "([B)[B", {VmValue::Ref(expected)}).ref;
+        CHECK(vm.Model().ReadByteRegion(plain, 0, 16) ==
+              vm.Model().ReadByteRegion(bytes("00112233445566778899aabbccddeeff"), 0, 16));
+        const auto raw_invoke = [&](VmObjectRef obj, const char* name, const char* desc,
+                                    std::vector<VmValue> args) {
+            const auto type = vm.Model().ObjectClass(obj);
+            const auto slot = linker.FindVtableIndex(type, name, desc);
+            REQUIRE(slot.has_value());
+            args.insert(args.begin(), VmValue::Ref(obj));
+            return vm.Call(linker.Class(type).vtable[*slot], args);
+        };
+        const auto expect_exception = [&](const VmCallOutcome& result, const char* descriptor) {
+            INFO(result.exception_message);
+            REQUIRE(result.exception.IsValid());
+            CHECK(linker.Class(result.exception_class).descriptor == descriptor);
+        };
+        const auto make_cipher = [&](const std::string& transformation) {
+            return direct("Ljavax/crypto/Cipher;", "getInstance",
+                          "(Ljava/lang/String;)Ljavax/crypto/Cipher;",
+                          {VmValue::Ref(vm.NewStringUtf8(transformation))})
+                .ref;
+        };
+        const auto make_key = [&](const char* hex) {
+            const auto object = vm.NewIntrinsicInstance("Ljavax/crypto/spec/SecretKeySpec;");
+            const auto roots = vm.ProtectReferences(std::array{object});
+            const auto data = bytes(hex);
+            const auto data_roots = vm.ProtectReferences(std::array{data});
+            direct(
+                "Ljavax/crypto/spec/SecretKeySpec;", "<init>", "([BLjava/lang/String;)V",
+                {VmValue::Ref(object), VmValue::Ref(data), VmValue::Ref(vm.NewStringUtf8("AES"))});
+            return object;
+        };
+        const auto make_iv = [&](const char* hex) {
+            const auto object = vm.NewIntrinsicInstance("Ljavax/crypto/spec/IvParameterSpec;");
+            const auto roots = vm.ProtectReferences(std::array{object});
+            direct("Ljavax/crypto/spec/IvParameterSpec;", "<init>", "([B)V",
+                   {VmValue::Ref(object), VmValue::Ref(bytes(hex))});
+            return object;
+        };
+        const auto read = [&](VmObjectRef object) {
+            return object.IsValid()
+                       ? vm.Model().ReadByteRegion(object, 0, vm.Model().ArrayLength(object))
+                       : std::vector<std::byte>{};
+        };
+        struct Vector {
+            const char* key;
+            const char* ecb;
+            const char* cbc;
+            const char* ctr;
+        };
+        // NIST SP 800-38A F.1/F.2/F.5, first block, all three AES key lengths.
+        for (const auto& vector : std::array{
+                 Vector{"2b7e151628aed2a6abf7158809cf4f3c", "3ad77bb40d7a3660a89ecaf32466ef97",
+                        "7649abac8119b246cee98e9b12e9197d", "874d6191b620e3261bef6864990db6ce"},
+                 Vector{"8e73b0f7da0e6452c810f32b809079e562f8ead2522c6b7b",
+                        "bd334f1d6e45f25ff712a214571fa5cc", "4f021db243bc633d7178183a9fa071e8",
+                        "1abc932417521ca24f2b0459fe7e6e0b"},
+                 Vector{"603deb1015ca71be2b73aef0857d77811f352c073b6108d72d9810a30914dff4",
+                        "f3eed1bdb5d2a03c064b5a7e3db181f8", "f58c4c04d6e5f1ba779eabfb5f7bfbd6",
+                        "601ec313775789a5b7a7f504bbf3d228"}}) {
+            const auto vector_key = make_key(vector.key);
+            const auto vector_roots = vm.ProtectReferences(std::array{vector_key});
+            for (const auto mode : {"ECB", "CBC", "CTR"}) {
+                CAPTURE(mode);
+                CAPTURE(vector.key);
+                const auto aes = make_cipher(std::string("AES/") + mode + "/NoPadding");
+                const auto roots = vm.ProtectReferences(std::array{aes});
+                const auto iv =
+                    make_iv(std::string_view(mode) == "CTR" ? "f0f1f2f3f4f5f6f7f8f9fafbfcfdfeff"
+                                                            : "000102030405060708090a0b0c0d0e0f");
+                const auto iv_roots = vm.ProtectReferences(std::array{iv});
+                const auto initialize = [&](int operation) {
+                    if (std::string_view(mode) == "ECB")
+                        invoke(aes, "init", "(ILjava/security/Key;)V",
+                               {VmValue::Int(operation), VmValue::Ref(vector_key)});
+                    else
+                        invoke(
+                            aes, "init",
+                            "(ILjava/security/Key;Ljava/security/spec/AlgorithmParameterSpec;)V",
+                            {VmValue::Int(operation), VmValue::Ref(vector_key), VmValue::Ref(iv)});
+                };
+                initialize(1);
+                const auto input = bytes("6bc1bee22e409f96e93d7e117393172a");
+                const auto input_roots = vm.ProtectReferences(std::array{input});
+                const auto output = invoke(aes, "doFinal", "([B)[B", {VmValue::Ref(input)}).ref;
+                const auto output_roots = vm.ProtectReferences(std::array{output});
+                const auto answer = bytes(std::string_view(mode) == "ECB"   ? vector.ecb
+                                          : std::string_view(mode) == "CBC" ? vector.cbc
+                                                                            : vector.ctr);
+                CHECK(read(output) == read(answer));
+                // doFinal resets the key/IV and allows reuse.
+                CHECK(read(invoke(aes, "doFinal", "([B)[B", {VmValue::Ref(input)}).ref) ==
+                      read(output));
+                initialize(2);
+                CHECK(read(invoke(aes, "doFinal", "([B)[B", {VmValue::Ref(output)}).ref) ==
+                      read(input));
+                initialize(1);
+                auto split = read(invoke(aes, "update", "([BII)[B",
+                                         {VmValue::Ref(input), VmValue::Int(0), VmValue::Int(5)})
+                                      .ref);
+                auto tail = read(invoke(aes, "doFinal", "([BII)[B",
+                                        {VmValue::Ref(input), VmValue::Int(5), VmValue::Int(11)})
+                                     .ref);
+                split.insert(split.end(), tail.begin(), tail.end());
+                CHECK(split == read(output));
+                const auto provider =
+                    invoke(aes, "getProvider", "()Ljava/security/Provider;", {}).ref;
+                CHECK(vm.StringUtf8(invoke(provider, "getName", "()Ljava/lang/String;", {}).ref) ==
+                      "AndroidOpenSSL");
+            }
+        }
+        for (const auto mode : {"ECB", "CBC"}) {
+            const auto aes = make_cipher(std::string("AES/") + mode + "/PKCS5Padding");
+            const auto roots = vm.ProtectReferences(std::array{aes});
+            invoke(aes, "init", "(ILjava/security/Key;)V", {VmValue::Int(1), VmValue::Ref(key)});
+            const auto iv_bytes = invoke(aes, "getIV", "()[B", {}).ref;
+            const auto iv_roots = vm.ProtectReferences(std::array{iv_bytes});
+            for (const auto length : {0, 1, 15, 16, 17, 31, 32, 65}) {
+                CAPTURE(mode);
+                CAPTURE(length);
+                const auto input = vm.Model().NewPrimitiveArray(
+                    linker.ResolveDescriptor("[B"), runtime::JniPrimitiveKind::byte, length);
+                const auto input_roots = vm.ProtectReferences(std::array{input});
+                const auto encrypted = invoke(aes, "doFinal", "([B)[B", {VmValue::Ref(input)}).ref;
+                const auto encrypted_roots = vm.ProtectReferences(std::array{encrypted});
+                CHECK(vm.Model().ArrayLength(encrypted) == (length / 16 + 1) * 16);
+                const auto decrypt = make_cipher(std::string("AES/") + mode + "/PKCS5Padding");
+                const auto decrypt_roots = vm.ProtectReferences(std::array{decrypt});
+                if (iv_bytes.IsValid()) {
+                    const auto spec =
+                        vm.NewIntrinsicInstance("Ljavax/crypto/spec/IvParameterSpec;");
+                    const auto spec_roots = vm.ProtectReferences(std::array{spec});
+                    direct("Ljavax/crypto/spec/IvParameterSpec;", "<init>", "([B)V",
+                           {VmValue::Ref(spec), VmValue::Ref(iv_bytes)});
+                    invoke(decrypt, "init",
+                           "(ILjava/security/Key;Ljava/security/spec/AlgorithmParameterSpec;)V",
+                           {VmValue::Int(2), VmValue::Ref(key), VmValue::Ref(spec)});
+                } else
+                    invoke(decrypt, "init", "(ILjava/security/Key;)V",
+                           {VmValue::Int(2), VmValue::Ref(key)});
+                auto restored =
+                    read(invoke(decrypt, "update", "([BII)[B",
+                                {VmValue::Ref(encrypted), VmValue::Int(0), VmValue::Int(7)})
+                             .ref);
+                auto tail = read(invoke(decrypt, "doFinal", "([BII)[B",
+                                        {VmValue::Ref(encrypted), VmValue::Int(7),
+                                         VmValue::Int(vm.Model().ArrayLength(encrypted) - 7)})
+                                     .ref);
+                restored.insert(restored.end(), tail.begin(), tail.end());
+                CHECK(restored == read(input));
+            }
+            if (iv_bytes.IsValid()) {
+                invoke(aes, "init", "(ILjava/security/Key;)V",
+                       {VmValue::Int(1), VmValue::Ref(key)});
+                const auto second_iv = invoke(aes, "getIV", "()[B", {}).ref;
+                CHECK(read(second_iv) != read(iv_bytes));
+                CHECK(read(second_iv) != std::vector<std::byte>(16));
+            }
+        }
+        const auto bad_key = make_key("000102030405060708090a0b0c0d0e");
+        expect_exception(raw_invoke(cipher, "init", "(ILjava/security/Key;)V",
+                                    {VmValue::Int(1), VmValue::Ref(bad_key)}),
+                         "Ljava/security/InvalidKeyException;");
+        invoke(cipher, "init", "(ILjava/security/Key;)V", {VmValue::Int(1), VmValue::Ref(key)});
+        expect_exception(raw_invoke(cipher, "doFinal", "([B)[B", {VmValue::Ref(bytes("00"))}),
+                         "Ljavax/crypto/IllegalBlockSizeException;");
+        const auto bad_padding = make_cipher("AES/ECB/PKCS5Padding");
+        const auto bad_roots = vm.ProtectReferences(std::array{bad_padding});
+        invoke(bad_padding, "init", "(ILjava/security/Key;)V",
+               {VmValue::Int(2), VmValue::Ref(key)});
+        expect_exception(raw_invoke(bad_padding, "doFinal", "([B)[B",
+                                    {VmValue::Ref(bytes("69c4e0d86a7b0430d8cdb78070b4c55a"))}),
+                         "Ljavax/crypto/BadPaddingException;");
+        invoke(cipher, "init", "(ILjava/security/Key;)V", {VmValue::Int(1), VmValue::Ref(key)});
+        const auto block = bytes("00112233445566778899aabbccddeeff");
+        const auto block_roots = vm.ProtectReferences(std::array{block});
+        expect_exception(raw_invoke(cipher, "doFinal", "([BII[BI)I",
+                                    {VmValue::Ref(block), VmValue::Int(0), VmValue::Int(16),
+                                     VmValue::Ref(bytes("00")), VmValue::Int(0)}),
+                         "Ljavax/crypto/ShortBufferException;");
+        CHECK(invoke(cipher, "doFinal", "([BII[BI)I",
+                     {VmValue::Ref(block), VmValue::Int(0), VmValue::Int(16), VmValue::Ref(block),
+                      VmValue::Int(0)})
+                  .AsInt() == 16);
+        CHECK(read(block) == read(bytes("69c4e0d86a7b0430d8cdb78070b4c55a")));
+        const auto cbc = make_cipher("AES/CBC/NoPadding");
+        const auto cbc_roots = vm.ProtectReferences(std::array{cbc});
+        expect_exception(
+            raw_invoke(cbc, "init",
+                       "(ILjava/security/Key;Ljava/security/spec/AlgorithmParameterSpec;)V",
+                       {VmValue::Int(1), VmValue::Ref(key), VmValue::Ref(make_iv("00"))}),
+            "Ljava/security/InvalidAlgorithmParameterException;");
+        const auto cipher_type = *linker.FindClass("Ljavax/crypto/Cipher;");
+        const auto factory = *linker.FindDirectMethod(cipher_type, "getInstance",
+                                                      "(Ljava/lang/String;)Ljavax/crypto/Cipher;");
+        for (const auto name : {"AES/GCM/NoPadding", "AES/CTR/PKCS5Padding", "DES/ECB/NoPadding",
+                                "RSA/ECB/PKCS1Padding"}) {
+            CAPTURE(std::string(name));
+            expect_exception(vm.Call(factory, std::array{VmValue::Ref(vm.NewStringUtf8(name))}),
+                             "Ljava/security/NoSuchAlgorithmException;");
+        }
+        const auto alias = make_cipher("AES");
+        const auto alias_roots = vm.ProtectReferences(std::array{alias});
+        invoke(alias, "init", "(ILjava/security/Key;)V", {VmValue::Int(1), VmValue::Ref(key)});
+        CHECK(read(invoke(alias, "doFinal", "([B)[B", {VmValue::Ref(bytes(""))}).ref).size() == 16);
+        // Tokens stay private to guest libcrypto and stale/foreign tokens fail explicitly.
+        const auto native = *linker.FindClass("Lcom/android/org/conscrypt/NativeCrypto;");
+        const auto allocate = *linker.FindDirectMethod(native, "EVP_CIPHER_CTX_new", "()J");
+        const auto cleanup = *linker.FindDirectMethod(native, "EVP_CIPHER_CTX_cleanup", "(J)V");
+        const auto size = *linker.FindDirectMethod(native, "EVP_CIPHER_CTX_block_size", "(J)I");
+        CHECK(linker.Method(allocate).kind == MethodKind::native);
+        CHECK_FALSE(static_cast<bool>(linker.Method(allocate).implementation));
+        const auto token = vm.Call(allocate, {}).value.AsLong();
+        CHECK_THROWS_AS(vm.Call(size, std::array{VmValue::Long(token)}), VmJavaThrow);
+        static_cast<void>(vm.Call(cleanup, std::array{VmValue::Long(token)}));
+        CHECK_THROWS_AS(vm.Call(cleanup, std::array{VmValue::Long(token)}), VmJavaThrow);
+        CHECK_THROWS_AS(vm.Call(size, std::array{VmValue::Long(0x123456789LL)}), VmJavaThrow);
+        CHECK(direct("Lfixture/CipherThreads;", "exercise", "()I", {}).AsInt() == 32);
+        const auto before_gc = vm.GuestNativeResourceCount();
+        CHECK(before_gc > 3);
+        static_cast<void>(vm.CollectGarbage("cipher-test"));
+        CHECK(vm.GuestNativeResourceCount() < before_gc);
+        CHECK(vm.GuestNativeResourceCount() >= 2);
+        invoke(cipher, "init", "(ILjava/security/Key;)V", {VmValue::Int(1), VmValue::Ref(key)});
+        CHECK(read(invoke(cipher, "doFinal", "([B)[B",
+                          {VmValue::Ref(bytes("00112233445566778899aabbccddeeff"))})
+                       .ref) == read(bytes("69c4e0d86a7b0430d8cdb78070b4c55a")));
+        vm.ReleaseGuestNativeResources(true);
+        CHECK(vm.GuestNativeResourceCount() == 0);
+    }
 }

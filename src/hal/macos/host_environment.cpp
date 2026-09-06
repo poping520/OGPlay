@@ -1,5 +1,6 @@
 #include "ogplay/hal/host_environment.h"
 
+#include <algorithm>
 #include <cstdint>
 #include <cstdlib>
 #include <mutex>
@@ -10,6 +11,9 @@
 #include <vector>
 
 #include <mach-o/dyld.h>
+
+#include <unistd.h>
+#include <cerrno>
 
 namespace ogplay::hal {
 namespace {
@@ -129,3 +133,9 @@ std::optional<std::filesystem::path> HostUserDataDirectory() {
 }
 
 }  // namespace ogplay::hal
+
+namespace ogplay::hal {
+void FillSecureRandom(std::span<std::byte> output) {
+    arc4random_buf(output.data(), output.size());
+}
+}

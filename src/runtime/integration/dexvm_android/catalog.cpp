@@ -1,10 +1,12 @@
 #include "catalog.h"
+#include "ogplay/hal/host_environment.h"
 
 namespace ogplay::runtime {
 
 dexvm::CoreIntrinsicServices AndroidCoreIntrinsicServices(
     const std::shared_ptr<DexVmAndroidContext>& context) {
     dexvm::CoreIntrinsicServices services;
+    services.secure_random = hal::FillSecureRandom;
     if (context == nullptr) return services;
     services.language = context->language;
     services.iso3_language = context->iso3_language;

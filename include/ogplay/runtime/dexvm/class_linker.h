@@ -27,6 +27,7 @@ using HostStateDestructor = std::function<void(std::uint64_t)>;
 // Narrow host facts needed by Java/JRE intrinsic families that used to live
 // in dexvm_android. Callbacks keep core independent from DexVmAndroidContext.
 struct CoreIntrinsicServices final {
+    std::function<void(std::span<std::byte>)> secure_random;
     std::string language{"en"};
     std::string default_timezone{"GMT"};
     std::string iso3_language{"eng"};
@@ -116,6 +117,7 @@ struct IntrinsicMethodDecl final {
     DeclaredInvokeKind invoke_kind{DeclaredInvokeKind::direct};
     bool must_override{};
     IntrinsicHandler implementation;
+    bool guest_native{};
 };
 
 struct IntrinsicFieldDecl final {

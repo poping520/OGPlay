@@ -133,3 +133,7 @@ Dex activity 每帧在 guest 回调前泵送主 Looper，到帧尾只通过
 `tests/dexvm/widget_click_tests.cpp` 锁定 touch/click ownership 四组合、无 listener 的深层
 View override、reverse-Z fallback、capture 及取消路径；
 `tools/validate_title_profiles.py` 提供独立目录门禁。
+
+DVM-105：纯 Java APK 也建立 NativeLibraryLoader，用于平台 Java 类加载 bundled JNI。
+APK selected ABI 仍为空，application ELF 数仍为零。内部空 ARMv7 库视图只用于 API 19
+系统进程，不表示 APK 自带 native 库。

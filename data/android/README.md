@@ -18,11 +18,17 @@ BootDex 的内容选择事实源是 `tools/bootdex/api19.json`；生成命令为
 python tools/validate_android_payload.py --root data/android/19
 ```
 
-校验器要求精确的五库闭集，复核体积、SHA-256、ELF32/little-endian/ARM/DYN 身份、
+校验器要求精确的五个 pinned 库及两个 Cipher 库闭集，复核体积、SHA-256、ELF32/little-endian/ARM/DYN 身份、
 目标 AOSP tag、构建目标、源码仓库 clean/tag 状态和逐库 NOTICE；同时复核 BootDex recipe、
 精确 class descriptor 集与 canonical JAR。
 
-设备提取物只能作为开发期 ABI 行为 oracle，禁止进入本目录和发行包。
+通常设备提取物只作为开发期 ABI oracle。DVM-105 按用户明确授权，临时纳入设备
+libcrypto.so 与 conscrypt.jar 中的 AES 字节码，用于本地运行；来源单列在
+manifest.cipher_native / boot_dex.sources，不冒充原 AOSP clean build。
+正式发行前应替换为自行构建的制品并重新验收。
+
+JNI 桥构建：`python3 tools/bootdex/build_bootdex.py build-cipher`，然后重建 BootDex
+并执行 payload 校验。输入位置、工具链要求见 tools/bootdex/native/MODULE.md。
 
 本地 oracle 使用 `tools/import_bionic_oracles.ps1 -SourceRoot <目录>` 导入到被 Git 忽略的
 `.local/bionic-oracle/`。工具只保存 API、相对路径、ELF 类型、体积和 SHA-256，不记录

@@ -8,6 +8,7 @@ import hashlib
 import io
 import json
 import subprocess
+import shutil
 import sys
 import tempfile
 import urllib.request
@@ -29,7 +30,15 @@ AUDIT_REPORT = ROOT / ".local/dvm102-date-family-audit.json"
 CATEGORIES = ("boot_dex", "existing_vm_intrinsic", "native_boundary", "deferred")
 NATIVE_DISPOSITIONS = ("required_backend", "explicit_failure")
 
+DEVICE = ROOT / ".local/android-device/20260906-cipher/system/framework"
+
+def source_path(source: str) -> Path:
+    return (DEVICE if source == "conscrypt.jar" else AOSP) / source
+
 SOURCES = {
+    "conscrypt.jar": (
+        "temporary-device/MoKee-API19-20260906/libcore-crypto",
+        "43ab6b953bd5a9e25f0f0d4411a5aa3f0660d16954a0a84e95ad834558b21a1e"),
     "core.jar": (
         "platform/libcore",
         "996557954e45f7192b187b2394259bc8aca6e3946652e03b99d837432f83d1ef"),
@@ -106,7 +115,7 @@ def load_recipe(document: dict | None = None) -> dict[str, tuple[str, ...]]:
 
 
 def verify_inputs(recipe: dict[str, tuple[str, ...]]) -> None:
-    expected = {AOSP / source: SOURCES[source][1] for source in recipe}
+    expected = {source_path(source): SOURCES[source][1] for source in recipe}
     for path, digest in expected.items():
         if not path.is_file() or file_sha256(path) != digest:
             raise BuildError(f"missing or unexpected input: {path}")
@@ -129,7 +138,7 @@ def assemble(recipe: dict[str, tuple[str, ...]], work: Path) -> bytes:
         run([
             "java", "-jar", str(SMALI / "baksmali.jar"), "disassemble",
             "--api", "19", "--jobs", "1", "--classes", ",".join(classes),
-            "--output", str(destination), str(AOSP / source),
+            "--output", str(destination), str(source_path(source)),
         ])
         smali_roots.append(str(destination))
     output = work / "classes.dex"
@@ -468,9 +477,60 @@ def self_test() -> int:
     return 0
 
 
+CRYPTO_SHA256 = "3c7ea441e482f50244f74774bc7230449f82911831ceb4ce937ca176041e6f17"
+
+def build_cipher() -> int:
+    """Build the small ARM JNI adapter; keep temporary device provenance separate."""
+    crypto = DEVICE.parent / "lib/libcrypto.so"
+    if not crypto.is_file() or file_sha256(crypto) != CRYPTO_SHA256:
+        raise BuildError("missing or unexpected temporary device libcrypto.so")
+    clang = shutil.which("clang")
+    linker = shutil.which("ld.lld")
+    if not linker:
+        candidates = sorted(Path.home().glob(".rustup/toolchains/stable-*/lib/rustlib/*/bin/gcc-ld/ld.lld"))
+        linker = str(candidates[0]) if candidates else None
+    if not clang or not linker:
+        raise BuildError("build-cipher requires clang with ARM support and ELF ld.lld")
+    source = ROOT / "tools/bootdex/native/cipher.c"
+    flags = ["--target=armv7a-linux-androideabi19", "-march=armv7-a", "-mfloat-abi=softfp",
+             "-fPIC", "-ffreestanding", "-fno-stack-protector", "-O2", "-Wall", "-Wextra", "-Werror"]
+    def compile_at(work: Path) -> bytes:
+        obj, library = work / "cipher.o", work / "libogplay_cipher.so"
+        run([clang, *flags, "-c", str(source), "-o", str(obj)])
+        run([linker, "-shared", "--hash-style=sysv", "-soname", library.name,
+             "-z", "max-page-size=4096", "--no-undefined", str(obj), str(crypto),
+             str(MANIFEST.parent / "lib/libc.so"), "-o", str(library)])
+        return library.read_bytes()
+    with tempfile.TemporaryDirectory() as a, tempfile.TemporaryDirectory() as b:
+        library = compile_at(Path(a))
+        if library != compile_at(Path(b)):
+            raise BuildError("two guest Cipher builds differ")
+    (MANIFEST.parent / "lib/libcrypto.so").write_bytes(crypto.read_bytes())
+    (MANIFEST.parent / "lib/libogplay_cipher.so").write_bytes(library)
+    document = json.loads(MANIFEST.read_text(encoding="utf-8"))
+    document["cipher_native"] = {
+        "source_kind": "temporary-device-plus-source-built-adapter",
+        "device": "MoKee Android 4.4.4 API 19 ARMv7, extracted 2026-09-06",
+        "replacement": "Replace with a self-built API 19 ARM OpenSSL and update pinned hashes before distribution.",
+        "generator": "tools/bootdex/build_bootdex.py build-cipher",
+        "adapter_source": "tools/bootdex/native/cipher.c",
+        "adapter_source_sha256": file_sha256(source),
+        "notice": "notices/libcrypto.so.txt",
+        "notice_sha256": file_sha256(MANIFEST.parent / "notices/libcrypto.so.txt"),
+        "compiler_sha256": file_sha256(Path(clang).resolve()),
+        "linker_sha256": file_sha256(Path(linker).resolve()),
+        "compile_flags": flags,
+        "libraries": [{"path": "lib/libcrypto.so", "sha256": CRYPTO_SHA256, "size": crypto.stat().st_size},
+                      {"path": "lib/libogplay_cipher.so", "sha256": sha256(library), "size": len(library)}],
+    }
+    MANIFEST.write_text(json.dumps(document, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    print("Built deterministic API 19 ARM Cipher JNI adapter and staged temporary libcrypto")
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("mode", nargs="?", choices=("build", "check", "audit"))
+    parser.add_argument("mode", nargs="?", choices=("build", "check", "audit", "build-cipher"))
     parser.add_argument("--self-test", action="store_true")
     parser.add_argument("--report", type=Path, help="audit report destination")
     parser.add_argument("--emit-expectations", action="store_true",
@@ -486,6 +546,8 @@ def main() -> int:
                 arguments.report or AUDIT_REPORT, arguments.emit_expectations)
         if arguments.report is not None or arguments.emit_expectations:
             parser.error("--report and --emit-expectations require audit mode")
+        if arguments.mode == "build-cipher":
+            return build_cipher()
         jar, dex, recipe = build()
         manifest = manifest_bytes(boot_metadata(jar, dex, recipe))
         if arguments.mode == "build":

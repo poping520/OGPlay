@@ -246,3 +246,6 @@ IntentFilter action/MIME/URI/authority/category 匹配。
 DVM-104：AssetManager/Resources 的 OpenStream 创建 guest byte[] 并调用 BootDex
 ByteArrayInputStream([B) 构造器，不再向 IoRuntime 写内存流侧表。构造跨 nested guest call
 的临时对象需 RootScope 保活，异常保留原 throwable 身份。
+
+DVM-105：AndroidCoreIntrinsicServices 注入 hal::FillSecureRandom，只提供 CSPRNG 字节，
+不执行 Cipher 算法。System.loadLibrary 可加载注入的 bundled 系统库。

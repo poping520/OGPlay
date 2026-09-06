@@ -37,3 +37,7 @@ integration。线程和 syscall 只通过上层装配接入。
 ## 测试
 
 对应 `tests/runtime/bionic_*_tests.cpp`。
+
+DVM-105：API 19 guest 库增加 libcrypto.so 和 libogplay_cipher.so；API 22/23 保持五库。
+两库作为普通 ARM ELF 执行，依赖复用 pinned libc/libm/libdl/libstdc++，无宿主 EVP/AES
+替代。设备临时来源和源构建 JNI 桥单列 manifest.cipher_native，不冒充 AOSP 五库来源。

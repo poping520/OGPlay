@@ -57,6 +57,7 @@ std::vector<IntrinsicClassDecl> CoreIntrinsicCatalog(
     AppendJavaNio(catalog);
     AppendJavaUtilPlatform(catalog, services);
     AppendJavaIcu(catalog, services);
+    AppendJavaCrypto(catalog, services);
     AppendJavaRegex(catalog);
     AppendJavaConcurrent(catalog, services);
     AppendJavaXml(catalog, services);

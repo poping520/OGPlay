@@ -1,6 +1,7 @@
 #pragma once
 
 #include <filesystem>
+#include <cstddef>
 #include <memory>
 #include <optional>
 #include <span>
@@ -8,6 +9,9 @@
 #include <string_view>
 
 namespace ogplay::hal {
+
+// OS CSPRNG; failure throws, never falls back to a PRNG.
+void FillSecureRandom(std::span<std::byte> output);
 
 struct HostEnvironmentOverride final {
     std::string name;

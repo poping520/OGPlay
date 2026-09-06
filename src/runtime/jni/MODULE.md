@@ -36,3 +36,6 @@ Bionic、syscall、execution 或 integration。
 ## 测试
 
 对应 `tests/runtime/jni*_tests.cpp`、字段/数组/对象/JavaVM 契约测试。
+
+DVM-105：PendingExceptionMetadata 读取 pending identity，不清除异常或新增 local ref。
+ThrowNew 提供原类与 modified-UTF8 消息，Throw 保留原 identity；上层据此传播异常。

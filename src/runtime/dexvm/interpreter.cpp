@@ -898,6 +898,13 @@ Interpreter::Interpreter(DexClassLinker& linker, JavaObjectModel& model,
             const auto token = static_cast<std::uint64_t>(slots[slot].bits) | (static_cast<std::uint64_t>(slots[slot + 1].bits) << 32U);
             state->big_ints.Sweep(token);
         }, {}});
+    RegisterIntrinsicStateTable({"guest-native-resources", {},
+        [state = impl_.get()](VmObjectRef owner) {
+            const auto found = state->guest_native_resources.find(owner.Value());
+            if (found == state->guest_native_resources.end()) return;
+            state->pending_guest_cleanup.push_back(found->second);
+            state->guest_native_resources.erase(found);
+        }, {}});
     const auto string_class = linker.FindClass("Ljava/lang/String;");
     const auto class_class = linker.FindClass("Ljava/lang/Class;");
     if (string_class.has_value() && class_class.has_value()) {
@@ -1208,6 +1215,18 @@ VmObjectRef Interpreter::MakeThrowable(const std::string_view descriptor,
 
 void Interpreter::SetPendingException(const VmObjectRef throwable) {
     impl_->SetPendingExisting(throwable);
+}
+
+void Interpreter::InitThrowableCause(VmObjectRef throwable, VmObjectRef cause) {
+    auto& state = impl_->throwables[throwable.Value()];
+    if (state.cause_initialized) throw VmJavaThrow{"Ljava/lang/IllegalStateException;", "cause already initialized"};
+    if (throwable == cause) throw VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "self-causation not permitted"};
+    state.cause = cause;
+    state.cause_initialized = true;
+}
+VmObjectRef Interpreter::ThrowableCause(VmObjectRef throwable) const {
+    const auto found = impl_->throwables.find(throwable.Value());
+    return found == impl_->throwables.end() ? VmObjectRef{} : found->second.cause;
 }
 
 void Interpreter::SetThrowableMessage(const VmObjectRef throwable,

@@ -79,3 +79,7 @@
 ## 测试
 
 后端契约测试放在 `tests/hal/`。
+
+DVM-105：host_environment.h 的 FillSecureRandom(span<byte>) 提供 OS CSPRNG。
+macOS 使用 arc4random_buf；Linux getrandom 处理 EINTR/短读；Windows BCryptGenRandom。
+失败抛出，不使用 PRNG fallback；该边界不执行 Cipher 算法。

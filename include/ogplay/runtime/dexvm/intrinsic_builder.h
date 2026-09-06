@@ -116,6 +116,9 @@ namespace ogplay::runtime::dexvm {
                                             IntrinsicHandler handler,
                                             std::uint32_t access_flags = kAccPublic);
 
+        // Explicit admission to the real guest JNI bridge, never a host handler.
+        IntrinsicClassBuilder& GuestNativeStatic(std::string name, std::string descriptor);
+
         IntrinsicClassBuilder& VirtualMethod(std::string name,
                                              std::string descriptor,
                                              IntrinsicHandler handler,

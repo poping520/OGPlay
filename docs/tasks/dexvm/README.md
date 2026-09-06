@@ -127,6 +127,7 @@ Asphalt 5（pilot title）删除 profile 全部 `native_call` 与 `[[java.class]
 | [DVM-102](DVM-102.md) | 日期格式化家族迁入 BootDex | 完成（具名时区/大数长尾除外） |
 | [DVM-103](DVM-103.md) | 集合家族与 Externalizable 迁入 BootDex | 完成（并发/对象流长尾除外） |
 | [DVM-104](DVM-104.md) | 纯 Java 工具、同步器、流与 X500 迁入 BootDex | 已完成 |
+| [DVM-105](DVM-105.md) | Cipher AES / Conscrypt / guest OpenSSL | 完成 |
 
 ## 批次 4 · 更多 title 上 dexvm 路线（进行中）
 

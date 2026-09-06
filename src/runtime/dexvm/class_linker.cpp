@@ -171,13 +171,17 @@ void DexClassLinker::RegisterIntrinsics(
         // behind already registered interfaces in reflection metadata.
         extra.missing_interfaces = declaration->interfaces;
         for (const auto& method : declaration->methods) {
+            if (method.guest_native && (method.implementation || !method.is_static ||
+                !(method.access_flags & kAccNative) || (method.access_flags & kAccAbstract))) {
+                Fail(DexVmErrorReason::invalid_member, "invalid guest JNI admission: " + method.name);
+            }
             LinkedMethod linked_method;
             linked_method.owner = id;
             linked_method.name = method.name;
             linked_method.descriptor = method.descriptor;
             linked_method.is_static = method.is_static;
             linked_method.access_flags = method.access_flags;
-            linked_method.kind = MethodKind::intrinsic;
+            linked_method.kind = method.guest_native ? MethodKind::native : MethodKind::intrinsic;
             linked_method.overridable = method.overridable;
             linked_method.declared_invoke_kind =
                 declaration->is_interface &&
@@ -459,6 +463,9 @@ DexUnitId DexClassLinker::RegisterDexUnit(
                              "intrinsic overlay invoke kind differs from "
                              "boot dex: " + stored.descriptor + "." +
                                  method.name + method.descriptor);
+                    }
+                    if (current.kind == MethodKind::native && method.kind != MethodKind::native) {
+                        Fail(DexVmErrorReason::invalid_member, "guest JNI admission requires a boot native declaration");
                     }
                     current.access_flags = method.access_flags;
                     current.dex_method_index = method.dex_method_index;

@@ -35,8 +35,25 @@ inline VmValue InvokeGuest(Interpreter& vm, VmObjectRef receiver,
     return result.value;
 }
 
+inline void AddThrowableCauseConstructors(IntrinsicClassBuilder& builder) {
+    builder.Constructor("(Ljava/lang/String;Ljava/lang/Throwable;)V", [](IntrinsicContext& c) {
+        c.vm.SetThrowableMessage(c.receiver, c.arguments[0].ref);
+        c.vm.InitThrowableCause(c.receiver, c.arguments[1].ref);
+        return VmValue::Void();
+    });
+    builder.Constructor("(Ljava/lang/Throwable;)V", [](IntrinsicContext& c) {
+        const auto cause = c.arguments[0].ref;
+        c.vm.InitThrowableCause(c.receiver, cause);
+        if (cause.IsValid()) {
+            const auto message = InvokeGuest(c.vm, cause, "toString", "()Ljava/lang/String;").ref;
+            c.vm.SetThrowableMessage(c.receiver, message);
+        }
+        return VmValue::Void();
+    });
+}
+
 [[nodiscard]] inline IntrinsicClassDecl DeclareSimpleThrowable(
-    const std::string_view descriptor, const std::string_view super_descriptor) {
+    const std::string_view descriptor, const std::string_view super_descriptor, bool with_cause = false) {
     auto builder = IntrinsicClassBuilder::Class(
         std::string(descriptor), std::string(super_descriptor));
     builder.Constructor("()V", [](IntrinsicContext&) { return VmValue::Void(); });
@@ -45,6 +62,7 @@ inline VmValue InvokeGuest(Interpreter& vm, VmObjectRef receiver,
                                        context.arguments[0].ref);
         return VmValue::Void();
     });
+    if (with_cause) AddThrowableCauseConstructors(builder);
     return std::move(builder).Build();
 }
 

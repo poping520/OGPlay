@@ -48,6 +48,7 @@ struct Frame final {
 struct ThrowableState final {
     VmObjectRef message;
     VmObjectRef cause;
+    bool cause_initialized{};
     std::string message_utf8;  // rendered lazily for diagnostics
     std::vector<VmStackEntry> stack;
 };
@@ -122,6 +123,10 @@ public:
     std::unordered_map<std::uint32_t, VmObjectRef> enum_constant_arrays;
     IcuFormatterRuntime icu_formatters;
     BigIntRuntime big_ints;
+    struct GuestNativeResource final { VmMethodId cleanup; std::int64_t token; };
+    std::unordered_map<std::uint32_t, GuestNativeResource> guest_native_resources;
+    std::vector<GuestNativeResource> pending_guest_cleanup;
+
     IoRuntime io;
     NetworkRuntime network;
     NioRuntime nio;

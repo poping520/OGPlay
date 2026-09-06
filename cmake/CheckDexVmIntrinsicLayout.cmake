@@ -12,6 +12,7 @@ set(android_dir "${ROOT}/src/runtime/integration/dexvm_android")
 set(core_allowlist
     catalog.cpp
     java_classloading.cpp
+    java_crypto.cpp
     java_concurrent.cpp
     java_icu.cpp
     java_io.cpp

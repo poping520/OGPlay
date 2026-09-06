@@ -1081,7 +1081,10 @@ TEST_CASE("DVM-103 all BootDex classes link and collection methods have no intri
         CAPTURE(std::string(descriptor));
         f.linker.EnsureClassLinked(type);
         ++count;
-        if (descriptor.starts_with("Ljava/io/") || descriptor.starts_with("Ljava/beans/") ||
+        if (descriptor.starts_with("Ljavax/crypto/") ||
+            descriptor.starts_with("Lcom/android/org/conscrypt/OpenSSLCipher$") ||
+            descriptor == "Lcom/android/org/conscrypt/OpenSSLCipher;" ||
+            descriptor.starts_with("Ljava/io/") || descriptor.starts_with("Ljava/beans/") ||
             descriptor.starts_with("Ljava/util/concurrent/atomic/") ||
             descriptor.starts_with("Ljava/util/concurrent/CountDownLatch") ||
             descriptor.starts_with("Ljava/util/concurrent/Semaphore") ||
@@ -1106,7 +1109,7 @@ TEST_CASE("DVM-103 all BootDex classes link and collection methods have no intri
         for (const auto method : f.linker.Class(type).own_direct_methods)
             CHECK(f.linker.Method(method).kind != MethodKind::intrinsic);
     }
-    CHECK(count == 521);
+    CHECK(count == 566);
 }
 
 TEST_CASE("DVM-103 bounded queues and Collections wrappers use API19 semantics") {

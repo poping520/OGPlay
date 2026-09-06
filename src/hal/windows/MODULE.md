@@ -22,3 +22,6 @@
 `HostUserDataDirectory()` 返回本平台的用户数据根（Windows `%APPDATA%\OGPlay`、
 macOS `~/Library/Application Support/OGPlay`、Linux `$XDG_DATA_HOME/ogplay` 或
 `~/.local/share/ogplay`）；宿主环境未声明时返回空，由调用方明确报错而不是猜测。
+
+DVM-105：FillSecureRandom 分块调用 BCryptGenRandom 的 SYSTEM_PREFERRED_RNG，链接
+bcrypt，失败抛出；本 WU 未验证 Windows 实际构建。

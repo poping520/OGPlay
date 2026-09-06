@@ -375,3 +375,34 @@ overlay 和指标摘要检查保持，统一进入 builder 自测；派生报告
 编码替换与流包装；所有 BootDex 类全链接，迁入普通方法无 intrinsic overlay。
 完整数字 formatter、对象流 custom hooks/数组/默认 UID、Charset provider API、
 FieldUpdater/ForkJoin 和证书验证不因类迁移宣称可用；PvZ 首错推进只记 reached-fault。
+
+<a id="adr-0035"></a>
+
+## ADR-0035 · Cipher AES 使用 BootDex Conscrypt 与 guest OpenSSL
+
+- 状态：Accepted
+- 日期：2026-09-06
+- 关联：[DVM-105](../tasks/dexvm/DVM-105.md)、[ADR-0034](#adr-0034)
+
+### 决定
+
+- Cipher/CipherSpi、JCA 查找、密钥/IV 值和 Conscrypt AES 普通方法由 API 19 DEX 执行。
+  通过显式 GuestNativeStatic 声明、正常 JNI native frame、精简 ARM JNI 桥调用 guest
+  libcrypto。禁止宿主 AES 替代；不引入完整 libjavacrypto、TLS、证书 provider 或 RSA。
+- 首批支持 128/192/256 位 AES：ECB/CBC 的 NoPadding、PKCS5Padding，以及 CTR/NoPadding。
+  AndroidOpenSSL 只注册该闭集；裸 AES 默认服务限制为 ECB，避免 JCA fallback 扩大范围。
+  OS entropy 作为独立 SecureRandomSpi 服务注入；自设 seed 明确失败。
+- Context 使用逻辑令牌，guest registry/per-context mutex 与引用计数保护生命周期。
+  Java owner sweep 只排队，GC 后通过 JNI 释放，teardown 在 guest process 停止前清理；
+  保存原始 IV 以确保 CTR 的 doFinal/reset 恢复初始状态。JNI 保留真实异常类型和消息。
+- 用户明确允许开发期使用设备制品：暂用已核对哈希的 MoKee API 19 ARM libcrypto.so
+  和 conscrypt.jar 选类，独立记录临时来源；原 pinned core.jar 和五库不替换。
+  这是 data/android 通常仅接受源构建制品规则的本次明确例外；正式发行前自行构建替换。
+  构建、选类、哈希和校验继续整合在 build_bootdex.py、api19.json 与 payload manifest。
+
+### 验证与边界
+
+双解释后端运行 NIST AES 已知答案、分段/原位输出、填充/短缓冲/非法参数、IV 重置、
+真实随机 IV、两个 guest 线程和 GC/teardown。566 类全链接及普通 Cipher 方法所有权受检。
+完整 JCA、AES AlgorithmParameters 编码、wrap/unwrap 长尾、RSA、证书和 TLS 不在验收范围。
+真机当前已断开，未宣称完成手机对照或任何游戏 gate；本次验证平台为 macOS。

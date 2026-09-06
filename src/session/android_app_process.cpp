@@ -110,16 +110,13 @@ public:
             std::move(native_process));
         state = AndroidAppProcessState::native_process_ready;
 
-        if (!inventory.Empty()) {
-            selected_abi = loader::ResolveApkProcessAbi(inventory);
-            selected = std::make_unique<loader::ApkSelectedNativeLibraries>(
-                inventory, *selected_abi);
-            native_libraries =
-                std::make_unique<runtime::NativeLibraryLoader>(
-                    session->Process(), *selected,
-                    runtime::SelectBionicProfile(request.api_level),
-                    request.system_libraries, request.logger);
-        }
+        if (!inventory.Empty()) selected_abi = loader::ResolveApkProcessAbi(inventory);
+        selected = std::make_unique<loader::ApkSelectedNativeLibraries>(
+            inventory, selected_abi.value_or(loader::AndroidArmAbi::armeabi_v7a));
+        native_libraries = std::make_unique<runtime::NativeLibraryLoader>(
+            session->Process(), *selected,
+            runtime::SelectBionicProfile(request.api_level),
+            request.system_libraries, request.logger);
         context->session = session.get();
         context->pcm_playback = &session->PcmPlayback();
         context->encoded_audio_playback = &session->SoundPoolMixer();

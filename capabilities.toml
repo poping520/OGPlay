@@ -1228,7 +1228,7 @@ note = "DVM-7 注册/层级/布局/vtable/iftable 四步链接与懒结构预检
 [dexvm.boot_dex]
 status = "complete"
 test = "tests/dexvm/intrinsics_p1_tests.cpp; tests/frontend/data_directory_tests.cpp; tools.bootdex_builder_self_test; tools.android_payload_current; PvZ exact Profile reached-fault"
-note = "DVM-99/ADR-0030 交付固定 API 19 curated bootdex.jar：运行时对 jar 内 class_def 无 allowlist 全量装载，普通方法解释执行，精确 intrinsic method overlay；Enum.getSharedConstants 以 ACC_ENUM 字段和 ordinal 构造强根 typed array。DVM-100 增加固定 AOSP 输入、精确 class recipe、双目录确定性 DEX 重组、canonical JAR 和可重建校验。DVM-102 选入日期格式化闭包，DVM-103 迁入集合与 Externalizable 相关接口，DVM-104 再迁入工具/事件、同步器/普通 atomic、内存/包装流与 X500 名字闭包，当前制品共 521 个 class_def，DEX/JAR SHA-256 分别为 `1bb0ab430cba7e551fbcf38bb93cf2d534558a34c834b92ceec5ea8ad58a3513` / `1d861473de2eaf580e40e7705c1b816558938a7ff852100c0ac1966a54b943d0`。521 类全链接与集合无 intrinsic overlay 受检。DVM-101 已闭合 Unsafe。完整 core/framework、multidex、动态 classpath 与 Android 系统服务仍不在此能力内。"
+note = "DVM-99/100 建立 curated BootDex、精确选类和确定性重建；DVM-102/103/104 迁入日期、集合、普通流与 X500，DVM-105 再加入 Cipher/JCA/Conscrypt AES 直接依赖，当前 566 个 class_def。普通 Java 算法归 DEX，精确边界 overlay 与显式 guest JNI 声明受审；566 类全链接、Cipher 与集合普通方法无 intrinsic 副本。当前 DEX/JAR 身份以 data/android/19/manifest.json 为准。Conscrypt 为用户授权的临时设备来源，区别于 pinned core.jar。完整 core/framework、multidex、动态 classpath 与 Android 系统服务不在范围。"
 
 [dexvm.date_format_bootdex_audit]
 status = "complete"
@@ -1483,7 +1483,7 @@ note = "WU2 固化 procdump/WinDbg/lldb 外部 dump、十进制/十六进制 hos
 [dexvm.collections_bootdex]
 status = "complete"
 test = "tests/dexvm/dvm87_tests.cpp; tests/dexvm/intrinsics_p1_tests.cpp; tests/dexvm/observable_tests.cpp"
-note = "DVM-103/ADR-0033 完成 API 19 Collection/List/Map 家族、Tree/Sorted/Navigable、Weak/Identity/Enum、concurrent 容器与内部类的精确选入；完整 BootDex 521 类可链接，集合自身方法无 intrinsic overlay，字段/数组为唯一存储。双后端覆盖基本操作、live view、fail-fast、clone、弱键清空入队与强引用存活。complete 指代码归属迁移，不代表 XML、任意序列化与并发长尾均实现。"
+note = "DVM-103/ADR-0033 完成 API 19 Collection/List/Map 家族、Tree/Sorted/Navigable、Weak/Identity/Enum、concurrent 容器与内部类的精确选入；完整 BootDex 566 类可链接，集合自身方法无 intrinsic overlay，字段/数组为唯一存储。双后端覆盖基本操作、live view、fail-fast、clone、弱键清空入队与强引用存活。complete 指代码归属迁移，不代表 XML、任意序列化与并发长尾均实现。"
 
 [dexvm.externalizable]
 status = "complete"
@@ -1499,3 +1499,8 @@ note = "DVM-104/ADR-0034 在一个 WU 内新增 131 类至 BootDex（共 521 类
 status = "complete"
 test = "tests/dexvm/dvm87_tests.cpp; tests/dexvm/gc_tests.cpp"
 note = "DVM-104 为 X500 ASN.1 标签键直接触达的 BigInt/NativeBN 闭合 11 个最多 64 位 magnitude 原语：分配/释放/拷贝/比较、signed/unsigned long 写入、符号/long/bitLength/小端 int 数组读取及符号设置。每 VM 单调逻辑令牌受检，BigInt owner GC 与 VM teardown 释放；其余 24 个 native 明确失败。complete 仅覆盖该有界子集，不表示完整 BigInteger/BigDecimal、OpenSSL 或 crypto provider 已实现。"
+
+[dexvm.cipher_aes]
+status = "complete"
+test = "tests/runtime/native_library_loader_tests.cpp; tests/dexvm/fixtures/cipher.dexasm; tests/dexvm/interpreter_tests.cpp; tests/runtime/jni_environment_tests.cpp; tools.android_payload_current"
+note = "DVM-105/ADR-0035 完成 AES 128/192/256：ECB/CBC 的 NoPadding/PKCS5Padding，CTR/NoPadding，裸 AES 默认 ECB/PKCS5Padding。Cipher/JCA/Conscrypt 普通 Java 逻辑由 BootDex 执行，11 个 native 经 guest ARM JNI 桥调用临时 API19 libcrypto；无宿主 AES 替代。双解释后端 NIST 向量、分段/原位/异常、IV reset、OS CSPRNG、两个真实 guest 线程、逻辑 token 与 GC/teardown 受检。JNI 原异常类型/消息及 Throwable cause 保持。complete 仅指该 AES 子集；自设随机 seed、AES AlgorithmParameters 编码、RSA/证书/TLS、完整 JCA 与 wrap/unwrap 长尾未验收；手机断开，未跑本轮真机对照或游戏 gate。设备来源和构建器输出身份单独登记。"

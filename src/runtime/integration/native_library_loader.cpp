@@ -214,6 +214,11 @@ public:
         }
         const auto* library = libraries_->FindLogicalName(logical_name);
         if (library == nullptr) {
+            const auto soname = "lib" + std::string(logical_name) + ".so";
+            if (const auto* system = FindSystemLibrary(soname); system != nullptr) {
+                return LoadResolved({"/system/lib/" + soname, soname,
+                    system->image, "bundled " + soname, true}, class_loader);
+            }
             throw NativeLibraryLoadError(
                 NativeLibraryLoadErrorReason::library_not_found,
                 "APK native logical library is unavailable: " +

@@ -3849,7 +3849,7 @@ IntrinsicClassDecl Declare_java_lang_ClassNotFoundException() {
                 return VmValue::Ref(GetThrowableRefField(
                     context, "ex", "Ljava/lang/Throwable;"));
             });
-    builder.VirtualMethod("getCause", "()Ljava/lang/Throwable;",
+    builder.OverrideMethod("getCause", "()Ljava/lang/Throwable;",
         [](IntrinsicContext& context) {
                 return VmValue::Ref(GetThrowableRefField(
                     context, "ex", "Ljava/lang/Throwable;"));
@@ -3863,7 +3863,7 @@ IntrinsicClassDecl Declare_java_lang_Error() {
 }
 
 IntrinsicClassDecl Declare_java_lang_Exception() {
-    return DeclareSimpleThrowable("Ljava/lang/Exception;", "Ljava/lang/Throwable;");
+    return DeclareSimpleThrowable("Ljava/lang/Exception;", "Ljava/lang/Throwable;", true);
 }
 
 IntrinsicClassDecl Declare_java_lang_IllegalArgumentException() {
@@ -3915,7 +3915,7 @@ IntrinsicClassDecl Declare_java_lang_OutOfMemoryError() {
 }
 
 IntrinsicClassDecl Declare_java_lang_RuntimeException() {
-    return DeclareSimpleThrowable("Ljava/lang/RuntimeException;", "Ljava/lang/Exception;");
+    return DeclareSimpleThrowable("Ljava/lang/RuntimeException;", "Ljava/lang/Exception;", true);
 }
 
 IntrinsicClassDecl Declare_java_lang_StackOverflowError() {
@@ -3936,6 +3936,14 @@ IntrinsicClassDecl Declare_java_lang_Throwable() {
                 context.vm.SetThrowableMessage(context.receiver, message);
                 return VmValue::Void();
             });
+    AddThrowableCauseConstructors(builder);
+    builder.VirtualMethod("initCause", "(Ljava/lang/Throwable;)Ljava/lang/Throwable;",
+        [](IntrinsicContext& context) {
+            context.vm.InitThrowableCause(context.receiver, IntrinsicCall(context).Ref(0));
+            return VmValue::Ref(context.receiver);
+        }, kAccPublic | kAccSynchronized);
+    builder.VirtualMethod("getCause", "()Ljava/lang/Throwable;",
+        [](IntrinsicContext& context) { return VmValue::Ref(context.vm.ThrowableCause(context.receiver)); });
     builder.VirtualMethod("getMessage", "()Ljava/lang/String;",
         [](IntrinsicContext &context) {
                 return VmValue::Ref(context.vm.ThrowableMessage(context.receiver));
@@ -4123,7 +4131,7 @@ IntrinsicClassDecl Declare_java_lang_ExceptionInInitializerError() {
                 return VmValue::Ref(GetThrowableRefField(
                     context, "exception", "Ljava/lang/Throwable;"));
             });
-    builder.VirtualMethod("getCause", "()Ljava/lang/Throwable;",
+    builder.OverrideMethod("getCause", "()Ljava/lang/Throwable;",
         [](IntrinsicContext& context) {
                 return VmValue::Ref(GetThrowableRefField(
                     context, "exception", "Ljava/lang/Throwable;"));

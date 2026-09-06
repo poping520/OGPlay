@@ -3091,3 +3091,40 @@ TEST_CASE("dexvm diagnostics reject invalid recorder configuration") {
     CHECK_THROWS_AS(static_cast<void>(Vm(excessive_ring)),
                     std::invalid_argument);
 }
+
+TEST_CASE("DVM-105 guest native admission is explicit and has no intrinsic handler") {
+    auto b = IntrinsicClassBuilder::Class("Ltest/GuestNative;");
+    b.GuestNativeStatic("call", "(J)I");
+    const auto declaration = std::move(b).Build();
+    REQUIRE(declaration.methods.size() == 1);
+    CHECK(declaration.methods[0].guest_native);
+    CHECK(declaration.methods[0].is_static);
+    CHECK((declaration.methods[0].access_flags & kAccNative) != 0);
+    CHECK_FALSE(static_cast<bool>(declaration.methods[0].implementation));
+    DexClassLinker linker;
+    linker.RegisterIntrinsics(std::array{declaration});
+    const auto type = *linker.FindClass("Ltest/GuestNative;");
+    const auto method = *linker.FindDirectMethod(type, "call", "(J)I");
+    CHECK(linker.Method(method).kind == MethodKind::native);
+    auto invalid = declaration;
+    invalid.methods[0].implementation = [](IntrinsicContext&) { return VmValue::Int(0); };
+    DexClassLinker rejected;
+    CHECK_THROWS_AS(rejected.RegisterIntrinsics(std::array{invalid}), DexVmError);
+}
+
+TEST_CASE("DVM-105 Throwable cause retains identity across GC and rejects overwrites") {
+    Vm fixture;
+    auto& vm = fixture.interpreter;
+    const auto outer = vm.NewIntrinsicInstance("Ljava/lang/Exception;");
+    const auto inner = vm.NewIntrinsicInstance("Ljava/lang/IllegalArgumentException;");
+    const auto roots = vm.ProtectReferences(std::array{outer});
+    vm.InitThrowableCause(outer, inner);
+    CHECK(vm.ThrowableCause(outer) == inner);
+    static_cast<void>(vm.CollectGarbage("cause-test"));
+    CHECK(vm.Model().ObjectClass(vm.ThrowableCause(outer)) == *fixture.linker.FindClass("Ljava/lang/IllegalArgumentException;"));
+    CHECK_THROWS_AS(vm.InitThrowableCause(outer, VmObjectRef{}), VmJavaThrow);
+    const auto self = vm.NewIntrinsicInstance("Ljava/lang/Exception;");
+    CHECK_THROWS_AS(vm.InitThrowableCause(self, self), VmJavaThrow);
+    vm.InitThrowableCause(self, VmObjectRef{});
+    CHECK_THROWS_AS(vm.InitThrowableCause(self, inner), VmJavaThrow);
+}

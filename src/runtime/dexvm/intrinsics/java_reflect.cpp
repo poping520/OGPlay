@@ -1295,7 +1295,7 @@ IntrinsicClassDecl Declare_java_lang_reflect_InvocationTargetException() {
         [](IntrinsicContext& context) {
             return VmValue::Ref(Target(context));
         });
-    builder.VirtualMethod("getCause", "()Ljava/lang/Throwable;",
+    builder.OverrideMethod("getCause", "()Ljava/lang/Throwable;",
         [](IntrinsicContext& context) {
             return VmValue::Ref(Target(context));
         });

@@ -349,3 +349,14 @@ ClassLoader namespace、动态 DexClassLoader/defineClass 和 resource classpath
 
 DVM-104 的 ZIP 适配器调用 BootDex FilterInputStream 构造以保持源强引用；read/skip/available
 使用解压后 entry 游标，mark/reset 明确不支持，close 经父类关闭原始源且幂等。
+
+## DVM-105 Cipher 边界
+
+- Cipher/CipherSpi、JCA provider 查找和 Conscrypt AES 普通方法由 BootDex 拥有。
+  GuestNativeStatic 仅允许 static/native、无 handler 的显式 JNI 声明；未登记 BootDex
+  native 仍拒绝。NativeCrypto 的 11 个 AES 方法进入真实 guest JNI。
+- Security 初始化仅配置 AndroidOpenSSL；provider 构造只注册五种 AES transformation
+  与 OS entropy service。OpenSSLCipherContext 构造绑定逻辑 token 和 owner。
+- GC sweep 只排队，结束 sweep 后经正常 native frame 执行 cleanup，保存/恢复当前异常
+  和返回值；teardown 在 guest process 停止前释放余下资源。native context 不持 Java 引用。
+- Throwable initCause/getCause 复用 throwable 状态表的强边，拒绝自因与重复初始化。

@@ -388,6 +388,14 @@ bool JniEnvironment::ExceptionCheck(const std::uint64_t thread_id) const {
     return exceptions_.HasPending(thread_id);
 }
 
+std::optional<JniThrowableMetadata> JniEnvironment::PendingExceptionMetadata(const std::uint64_t thread_id) const {
+    const auto pending = exceptions_.Occurred(thread_id);
+    if (!pending) return std::nullopt;
+    std::scoped_lock lock(throwable_mutex_);
+    const auto found = throwables_.find(pending->value);
+    return found != throwables_.end() ? found->second : JniThrowableMetadata{*pending, {}, {}};
+}
+
 void JniEnvironment::ExceptionDescribe(const std::uint64_t thread_id) {
     RequireAllowed(thread_id, "ExceptionDescribe");
     const auto pending = exceptions_.Occurred(thread_id);

@@ -370,6 +370,11 @@ public:
     [[nodiscard]] VmThreadRuntime* AttachedThreadRuntime() const noexcept;
     void VisitRoots(const VmRootVisitor& visitor);
     void RegisterIntrinsicStateTable(IntrinsicStateTableHooks hooks);
+    // Cleanup is queued during sweep and executed through JNI after GC finishes.
+    void TrackGuestNativeResource(VmObjectRef owner, VmMethodId cleanup, std::int64_t token);
+    void ReleaseGuestNativeResources(bool all = false);
+    [[nodiscard]] std::size_t GuestNativeResourceCount() const;
+
     [[nodiscard]] std::size_t RegisteredIntrinsicSideTableCount() const noexcept;
     [[nodiscard]] GcMarkResult MarkReachable();
     [[nodiscard]] GcSweepResult SweepGarbage(const GcMarkResult& mark);
@@ -386,6 +391,8 @@ public:
     // Intrinsic-only propagation path for an already materialized guest
     // throwable. Preserves its object identity and side-table state.
     void SetPendingException(VmObjectRef throwable);
+    void InitThrowableCause(VmObjectRef throwable, VmObjectRef cause);
+    [[nodiscard]] VmObjectRef ThrowableCause(VmObjectRef throwable) const;
     void SetThrowableMessage(VmObjectRef throwable, VmObjectRef message);
     [[nodiscard]] VmObjectRef ThrowableMessage(VmObjectRef throwable) const;
 

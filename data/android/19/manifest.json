@@ -41,23 +41,28 @@
     "path": "framework/bootdex.jar",
     "generator": "tools/bootdex/build_bootdex.py",
     "recipe": "tools/bootdex/api19.json",
-    "recipe_sha256": "07926b60b2463423e962f6d594ff55ebc16de3d2af882d6ce98e7c647d0fe577",
+    "recipe_sha256": "b6bd3fffca3a737d7c45c7e35a49f9d90ff25e067d0317e761a4746967db5c40",
     "sources": [
       {
         "source_project": "platform/libcore",
         "source_jar": "core.jar",
         "source_jar_sha256": "996557954e45f7192b187b2394259bc8aca6e3946652e03b99d837432f83d1ef"
+      },
+      {
+        "source_project": "temporary-device/MoKee-API19-20260906/libcore-crypto",
+        "source_jar": "conscrypt.jar",
+        "source_jar_sha256": "43ab6b953bd5a9e25f0f0d4411a5aa3f0660d16954a0a84e95ad834558b21a1e"
       }
     ],
-    "size": 865977,
-    "sha256": "1d861473de2eaf580e40e7705c1b816558938a7ff852100c0ac1966a54b943d0",
+    "size": 931101,
+    "sha256": "d5d94f2b2dd8eb8e490fe5213e5f9526f019f51391ad645783fde74ea2d1ce4d",
     "dex_entry": "classes.dex",
-    "dex_size": 865680,
-    "dex_sha256": "1bb0ab430cba7e551fbcf38bb93cf2d534558a34c834b92ceec5ea8ad58a3513",
-    "class_count": 521,
+    "dex_size": 930804,
+    "dex_sha256": "750f26ab7b2945c7f729dc4aeb15ac4b5253e805141cb9e021f61153a9b5d7f7",
+    "class_count": 566,
     "selection_policy": "load-all",
     "notice": "notices/bootdex.jar.txt",
-    "notice_sha256": "eee2a3e3ace26767b6290ad771ae9cf61ac729fb81db9306b2f5be63e4169235"
+    "notice_sha256": "fc3aef183f6fe9cea0faa0caab397c423bcf414d7843e8a5d51bd1dfd7684d3f"
   },
   "icu": {
     "source_project": "platform/external/icu4c",
@@ -139,5 +144,41 @@
       "notice": "notices/libz.so.txt",
       "notice_sha256": "60c2c920b6af058e3b9659a19e2e667985c9ac193d426309925077a511f32a45"
     }
-  ]
+  ],
+  "cipher_native": {
+    "source_kind": "temporary-device-plus-source-built-adapter",
+    "device": "MoKee Android 4.4.4 API 19 ARMv7, extracted 2026-09-06",
+    "replacement": "Replace with a self-built API 19 ARM OpenSSL and update pinned hashes before distribution.",
+    "generator": "tools/bootdex/build_bootdex.py build-cipher",
+    "adapter_source": "tools/bootdex/native/cipher.c",
+    "adapter_source_sha256": "40550f9764fd5839ee3c0493b68836ff9e7eee5fcc649752179d6e6ca9f21425",
+    "notice": "notices/libcrypto.so.txt",
+    "notice_sha256": "257fe1b542f846557d0fc938f4206d6c9a6334e2b571fa020e51f96377537120",
+    "compiler_sha256": "7f30f076d0e9c38f772a76449fca9da8cf97f6a3d43b94c90a00e4f9ce7ad39e",
+    "linker_sha256": "0ba311a537cf5a03f7046849a4a6a5c54d8db827e35519d9ebcd8e61a862546b",
+    "compile_flags": [
+      "--target=armv7a-linux-androideabi19",
+      "-march=armv7-a",
+      "-mfloat-abi=softfp",
+      "-fPIC",
+      "-ffreestanding",
+      "-fno-stack-protector",
+      "-O2",
+      "-Wall",
+      "-Wextra",
+      "-Werror"
+    ],
+    "libraries": [
+      {
+        "path": "lib/libcrypto.so",
+        "sha256": "3c7ea441e482f50244f74774bc7230449f82911831ceb4ce937ca176041e6f17",
+        "size": 953268
+      },
+      {
+        "path": "lib/libogplay_cipher.so",
+        "sha256": "3ea5aa9c63a141132462105e5f76053ede8114c4933a8e47c5deca1a63fc1fd4",
+        "size": 16156
+      }
+    ]
+  }
 }

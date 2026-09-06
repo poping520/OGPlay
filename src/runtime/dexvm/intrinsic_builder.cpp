@@ -629,6 +629,13 @@ namespace ogplay::runtime::dexvm {
                       access_flags);
     }
 
+    IntrinsicClassBuilder& IntrinsicClassBuilder::GuestNativeStatic(
+        std::string name, std::string descriptor) {
+        UnimplementedStatic(std::move(name), std::move(descriptor), kAccPublic | kAccNative);
+        declaration_.methods.back().guest_native = true;
+        return *this;
+    }
+
     IntrinsicClassBuilder& IntrinsicClassBuilder::VirtualMethod(
         std::string name, std::string descriptor, IntrinsicHandler handler,
         const std::uint32_t access_flags) {

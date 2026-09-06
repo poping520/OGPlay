@@ -1,5 +1,6 @@
 #include "ogplay/hal/host_environment.h"
 
+#include <algorithm>
 #include <mutex>
 #include <optional>
 #include <stdexcept>
@@ -9,6 +10,8 @@
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
+#include <bcrypt.h>
+#include <limits>
 
 namespace ogplay::hal {
 namespace {
@@ -139,3 +142,15 @@ std::optional<std::filesystem::path> HostUserDataDirectory() {
 }
 
 }  // namespace ogplay::hal
+
+namespace ogplay::hal {
+void FillSecureRandom(std::span<std::byte> output) {
+    while (!output.empty()) {
+        const auto size = static_cast<ULONG>((std::min<std::size_t>)(output.size(), 1048576));
+        if (BCryptGenRandom(nullptr, reinterpret_cast<PUCHAR>(output.data()), size,
+                           BCRYPT_USE_SYSTEM_PREFERRED_RNG) < 0)
+            throw std::runtime_error("OS secure random failed");
+        output = output.subspan(size);
+    }
+}
+}

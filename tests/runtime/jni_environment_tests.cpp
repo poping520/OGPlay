@@ -165,3 +165,25 @@ TEST_CASE("JNI environment delegates every monitor operation to one backend") {
     CHECK(interrupted == 1U);
     CHECK(shut_down == 1U);
 }
+
+TEST_CASE("JNI pending metadata preserves ThrowNew class and message without clearing") {
+    using namespace ogplay::runtime;
+    JniEnvironment environment({8, 4, 4});
+    environment.AttachThread(11, 4);
+    CHECK_FALSE(environment.PendingExceptionMetadata(11).has_value());
+    const JniObjectIdentity type{JniObjectDomain::host, 1234};
+    environment.ThrowNew(11, type, "bad padding");
+    const auto metadata = environment.PendingExceptionMetadata(11);
+    REQUIRE(metadata.has_value());
+    CHECK(metadata->exception_class == type);
+    CHECK(metadata->modified_utf8_message == "bad padding");
+    CHECK(environment.ExceptionCheck(11));
+    environment.ExceptionClear(11);
+    CHECK_FALSE(environment.PendingExceptionMetadata(11).has_value());
+    const auto ref = environment.PublishLocalObject(11, {JniObjectDomain::dex_vm, 99});
+    environment.Throw(11, ref);
+    CHECK(environment.PendingExceptionMetadata(11)->throwable == JniObjectIdentity{JniObjectDomain::dex_vm, 99});
+    CHECK(environment.PendingExceptionMetadata(11)->exception_class.value == 0);
+    environment.ExceptionClear(11);
+    environment.DetachThread(11);
+}

@@ -126,6 +126,7 @@ public:
                   std::string modified_utf8_message);
     [[nodiscard]] JniReference ExceptionOccurred(std::uint64_t thread_id);
     [[nodiscard]] bool ExceptionCheck(std::uint64_t thread_id) const;
+    [[nodiscard]] std::optional<JniThrowableMetadata> PendingExceptionMetadata(std::uint64_t thread_id) const;
     void ExceptionDescribe(std::uint64_t thread_id);
     void ExceptionClear(std::uint64_t thread_id);
     [[nodiscard]] std::vector<core::LogRecord> ExceptionDiagnostics() const;

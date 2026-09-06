@@ -14,6 +14,7 @@ std::string CharsetName(Interpreter& vm, VmObjectRef charset);
 std::u16string DecodeCharset(std::span<const std::byte> bytes, const std::string& charset);
 std::vector<std::byte> EncodeCharset(std::u16string_view text, const std::string& charset);
 
+void AppendJavaCrypto(std::vector<IntrinsicClassDecl>& catalog, const CoreIntrinsicServices& services);
 void AppendJavaLangThrowables(std::vector<IntrinsicClassDecl>& catalog);
 void AppendJavaLangPrimitiveWrappers(
     std::vector<IntrinsicClassDecl>& catalog);

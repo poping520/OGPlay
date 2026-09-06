@@ -1,0 +1,75 @@
+# Independent real guest threads exercise JNI contexts, IV entropy and exception paths.
+.class public Lfixture/CipherWorker;
+.super Ljava/lang/Thread;
+.field public completed:I
+.method public constructor <init>()V
+.registers 1
+    invoke-direct {v0}, Ljava/lang/Thread;-><init>()V
+    return-void
+.end method
+.method public run()V
+.registers 12
+    const/16 v0, 16
+    new-array v1, v0, [B
+    new-instance v2, Ljavax/crypto/spec/SecretKeySpec;
+    const-string v3, "AES"
+    invoke-direct {v2, v1, v3}, Ljavax/crypto/spec/SecretKeySpec;-><init>([BLjava/lang/String;)V
+    const/4 v10, 0
+:loop
+    const-string v3, "AES/CBC/PKCS5Padding"
+    invoke-static {v3}, Ljavax/crypto/Cipher;->getInstance(Ljava/lang/String;)Ljavax/crypto/Cipher;
+    move-result-object v4
+    const/4 v5, 1
+    invoke-virtual {v4, v5, v2}, Ljavax/crypto/Cipher;->init(ILjava/security/Key;)V
+    invoke-virtual {v4, v1}, Ljavax/crypto/Cipher;->doFinal([B)[B
+    move-result-object v6
+    invoke-virtual {v4}, Ljavax/crypto/Cipher;->getIV()[B
+    move-result-object v7
+    new-instance v8, Ljavax/crypto/spec/IvParameterSpec;
+    invoke-direct {v8, v7}, Ljavax/crypto/spec/IvParameterSpec;-><init>([B)V
+    const/4 v5, 2
+    invoke-virtual {v4, v5, v2, v8}, Ljavax/crypto/Cipher;->init(ILjava/security/Key;Ljava/security/spec/AlgorithmParameterSpec;)V
+    invoke-virtual {v4, v6}, Ljavax/crypto/Cipher;->doFinal([B)[B
+    move-result-object v7
+    invoke-static {v1, v7}, Ljava/util/Arrays;->equals([B[B)Z
+    move-result v9
+    if-eqz v9, :done
+    add-int/lit8 v10, v10, 1
+    iput v10, v11, Lfixture/CipherWorker;->completed:I
+    const/16 v0, 16
+    if-lt v10, v0, :loop
+:done
+    return-void
+.end method
+.class public Lfixture/CipherThreads;
+.super Ljava/lang/Object;
+.method public static exercise()I
+.registers 4
+    new-instance v0, Lfixture/CipherWorker;
+    invoke-direct {v0}, Lfixture/CipherWorker;-><init>()V
+    new-instance v1, Lfixture/CipherWorker;
+    invoke-direct {v1}, Lfixture/CipherWorker;-><init>()V
+    invoke-virtual {v0}, Ljava/lang/Thread;->start()V
+    invoke-virtual {v1}, Ljava/lang/Thread;->start()V
+    invoke-virtual {v0}, Ljava/lang/Thread;->join()V
+    invoke-virtual {v1}, Ljava/lang/Thread;->join()V
+    iget v2, v0, Lfixture/CipherWorker;->completed:I
+    iget v3, v1, Lfixture/CipherWorker;->completed:I
+    add-int/2addr v2, v3
+    return v2
+.end method
+.method public static main([Ljava/lang/String;)V
+.registers 3
+    invoke-static {}, Lfixture/CipherThreads;->exercise()I
+    move-result v0
+    sget-object v1, Ljava/lang/System;->out:Ljava/io/PrintStream;
+    invoke-virtual {v1, v0}, Ljava/io/PrintStream;->println(I)V
+    return-void
+.end method
+.class public Lfixture/MainActivity;
+.super Landroid/app/Activity;
+.method public constructor <init>()V
+.registers 1
+    invoke-direct {v0}, Landroid/app/Activity;-><init>()V
+    return-void
+.end method

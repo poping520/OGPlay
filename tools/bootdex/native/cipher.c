@@ -1,0 +1,345 @@
+/* API 19 ARM guest JNI adapter. All AES operations execute in guest libcrypto.
+ * JNI 1.6 table slots follow the Android JNI ABI; no host headers are used. */
+typedef unsigned int size_t;
+typedef long long jlong;
+typedef void *jobject;
+typedef const void **JNIEnv;
+typedef struct evp_cipher_ctx_st EVP_CIPHER_CTX;
+typedef struct evp_cipher_st EVP_CIPHER;
+extern void *malloc(size_t);
+extern void free(void *);
+/* bionic API 19 pthread_mutex_t is one 32-bit word; static initializer is 0. */
+extern int pthread_mutex_lock(int *);
+extern int pthread_mutex_unlock(int *);
+static int registry_mutex;
+
+extern int strcmp(const char *, const char *);
+extern EVP_CIPHER_CTX *EVP_CIPHER_CTX_new(void);
+extern void EVP_CIPHER_CTX_free(EVP_CIPHER_CTX *);
+extern int EVP_CIPHER_CTX_block_size(const EVP_CIPHER_CTX *);
+extern int EVP_CIPHER_CTX_set_padding(EVP_CIPHER_CTX *, int);
+extern int EVP_CIPHER_CTX_set_key_length(EVP_CIPHER_CTX *, int);
+extern int EVP_CIPHER_iv_length(const EVP_CIPHER *);
+extern int EVP_CipherInit_ex(EVP_CIPHER_CTX *, const EVP_CIPHER *, void *, const unsigned char *,
+                             const unsigned char *, int);
+extern int EVP_CipherUpdate(EVP_CIPHER_CTX *, unsigned char *, int *, const unsigned char *, int);
+extern int EVP_CipherFinal_ex(EVP_CIPHER_CTX *, unsigned char *, int *);
+extern unsigned long ERR_get_error(void);
+extern void ERR_clear_error(void);
+#define AES(bits, mode) extern const EVP_CIPHER *EVP_aes_##bits##_##mode(void);
+AES(128, ecb)
+AES(192, ecb)
+AES(256, ecb) AES(128, cbc) AES(192, cbc) AES(256, cbc) AES(128, ctr) AES(192, ctr) AES(256, ctr)
+#define JNI(slot, type) ((type)((*env)[slot]))
+    static void wipe32(unsigned char (*buffer)[32]) {
+    volatile unsigned char *p = *buffer;
+    for (int i = 0; i < 32; ++i) p[i] = 0;
+}
+static void fail(JNIEnv *env, const char *type, const char *message) {
+    jobject cls = JNI(6, jobject(*)(JNIEnv *, const char *))(env, type);
+    if (cls) JNI(14, int (*)(JNIEnv *, jobject, const char *))(env, cls, message);
+}
+static int length(JNIEnv *env, jobject array) {
+    if (!array) {
+        fail(env, "java/lang/NullPointerException", "array == null");
+        return -1;
+    }
+    return JNI(171, int (*)(JNIEnv *, jobject))(env, array);
+}
+static int range(JNIEnv *env, jobject array, int offset, int count) {
+    int n = length(env, array);
+    if (n < 0) return 0;
+    if (offset < 0 || count < 0 || offset > n || count > n - offset) {
+        fail(env, "java/lang/ArrayIndexOutOfBoundsException", "invalid cipher buffer range");
+        return 0;
+    }
+    return 1;
+}
+static void read_bytes(JNIEnv *env, jobject a, int off, int n, unsigned char *p) {
+    JNI(200, void (*)(JNIEnv *, jobject, int, int, unsigned char *))(env, a, off, n, p);
+}
+static void write_bytes(JNIEnv *env, jobject a, int off, int n, const unsigned char *p) {
+    JNI(208, void (*)(JNIEnv *, jobject, int, int, const unsigned char *))(env, a, off, n, p);
+}
+typedef struct Context {
+    struct Context *next;
+    int mutex, references, removed;
+    jlong token;
+    EVP_CIPHER_CTX *evp;
+    int buffered, padding, encrypting, algorithm;
+    unsigned char iv[16];
+} Context;
+static Context *contexts;
+static jlong next_token = 1;
+static Context *context(JNIEnv *env, jlong token) {
+    pthread_mutex_lock(&registry_mutex);
+    Context *p = contexts;
+    while (p && p->token != token) p = p->next;
+    if (p) ++p->references;
+    pthread_mutex_unlock(&registry_mutex);
+    if (!p)
+        fail(env, "java/lang/IllegalStateException", "invalid cipher context token");
+    else
+        pthread_mutex_lock(&p->mutex);
+    return p;
+}
+static void release_context(Context **address) {
+    Context *p = *address;
+    if (!p) return;
+    pthread_mutex_unlock(&p->mutex);
+    pthread_mutex_lock(&registry_mutex);
+    int destroy = (--p->references == 0 && p->removed);
+    pthread_mutex_unlock(&registry_mutex);
+    if (destroy) {
+        EVP_CIPHER_CTX_free(p->evp);
+        free(p);
+    }
+}
+#define CONTEXT Context *p __attribute__((cleanup(release_context))) = context(env, token)
+static int ready(JNIEnv *env, Context *p) {
+    if (p && p->algorithm) return 1;
+    if (p) fail(env, "java/lang/IllegalStateException", "cipher context is not initialized");
+    return 0;
+}
+static const EVP_CIPHER *cipher(jlong token) {
+    switch (token) {
+#define CHOICE(id, bits, mode) \
+    case id:                   \
+        return EVP_aes_##bits##_##mode();
+        CHOICE(1, 128, ecb)
+        CHOICE(2, 192, ecb)
+        CHOICE(3, 256, ecb) CHOICE(4, 128, cbc) CHOICE(5, 192, cbc) CHOICE(6, 256, cbc)
+            CHOICE(7, 128, ctr) CHOICE(8, 192, ctr) CHOICE(9, 256, ctr)
+    }
+    return (void *)0;
+}
+#define N(name) Java_com_android_org_conscrypt_NativeCrypto_##name
+jlong N(EVP_1get_1cipherbyname)(JNIEnv *env, jobject cls, jobject name) {
+    (void)cls;
+    if (!name) {
+        fail(env, "java/lang/NullPointerException", "cipher name == null");
+        return 0;
+    }
+    const char *s = JNI(169, const char *(*)(JNIEnv *, jobject, void *))(env, name, 0);
+    if (!s) return 0;
+    const char *names[] = {"aes-128-ecb", "aes-192-ecb", "aes-256-ecb",
+                           "aes-128-cbc", "aes-192-cbc", "aes-256-cbc",
+                           "aes-128-ctr", "aes-192-ctr", "aes-256-ctr"};
+    jlong result = 0;
+    for (int i = 0; i < 9; i++)
+        if (!strcmp(s, names[i])) result = i + 1;
+    JNI(170, void (*)(JNIEnv *, jobject, const char *))(env, name, s);
+    return result;
+}
+jlong N(EVP_1CIPHER_1CTX_1new)(JNIEnv *env, jobject cls) {
+    (void)cls;
+    Context *p = malloc(sizeof(Context));
+    if (!p) {
+        fail(env, "java/lang/OutOfMemoryError", "cipher context");
+        return 0;
+    }
+    p->evp = EVP_CIPHER_CTX_new();
+    if (!p->evp) {
+        free(p);
+        fail(env, "java/lang/OutOfMemoryError", "EVP cipher context");
+        return 0;
+    }
+    p->mutex = 0;
+    p->references = 0;
+    p->removed = 0;
+    pthread_mutex_lock(&registry_mutex);
+    if (next_token == 0x7fffffffffffffffLL) {
+        pthread_mutex_unlock(&registry_mutex);
+        EVP_CIPHER_CTX_free(p->evp);
+        free(p);
+        fail(env, "java/lang/OutOfMemoryError", "cipher token space exhausted");
+        return 0;
+    }
+    p->token = next_token++;
+    p->next = contexts;
+    p->buffered = 0;
+    p->padding = 1;
+    p->encrypting = 0;
+    p->algorithm = 0;
+    contexts = p;
+    jlong token = p->token;
+    pthread_mutex_unlock(&registry_mutex);
+    return token;
+}
+void N(EVP_1CIPHER_1CTX_1cleanup)(JNIEnv *env, jobject cls, jlong token) {
+    (void)cls;
+    pthread_mutex_lock(&registry_mutex);
+    Context **p = &contexts;
+    while (*p && (*p)->token != token) p = &(*p)->next;
+    if (!*p) {
+        pthread_mutex_unlock(&registry_mutex);
+        fail(env, "java/lang/IllegalStateException", "invalid cipher context token");
+        return;
+    }
+    Context *old = *p;
+    *p = old->next;
+    old->removed = 1;
+    int destroy = old->references == 0;
+    pthread_mutex_unlock(&registry_mutex);
+    if (destroy) {
+        EVP_CIPHER_CTX_free(old->evp);
+        free(old);
+    }
+}
+void N(EVP_1CipherInit_1ex)(JNIEnv *env, jobject cls, jlong token, jlong algorithm, jobject key,
+                            jobject iv, unsigned char encrypt) {
+    (void)cls;
+    CONTEXT;
+    if (!p) return;
+    const EVP_CIPHER *c = cipher(algorithm);
+    if (algorithm && !c) {
+        fail(env, "java/security/InvalidAlgorithmParameterException", "unsupported cipher token");
+        return;
+    }
+    int selected = algorithm ? (int)algorithm : p->algorithm;
+    if (!selected) {
+        fail(env, "java/lang/IllegalStateException", "cipher context is not initialized");
+        return;
+    }
+    if (algorithm && (!key || (selected > 3 && !iv))) {
+        fail(env, "java/security/InvalidAlgorithmParameterException",
+             "initial AES key and IV are required");
+        return;
+    }
+    unsigned char k[32] __attribute__((cleanup(wipe32))) = {0};
+    unsigned char v[16] = {0};
+    if (key) {
+        int n = length(env, key);
+        if (n != 16 + ((selected - 1) % 3) * 8) {
+            fail(env, "java/security/InvalidKeyException", "AES key length");
+            return;
+        }
+        read_bytes(env, key, 0, n, k);
+    }
+    if (iv) {
+        if (length(env, iv) != 16) {
+            fail(env, "java/security/InvalidAlgorithmParameterException", "AES IV length");
+            return;
+        }
+        read_bytes(env, iv, 0, 16, v);
+    }
+    if (iv)
+        for (int i = 0; i < 16; i++) p->iv[i] = v[i];
+    ERR_clear_error();
+    int ok =
+        EVP_CipherInit_ex(p->evp, c, 0, key ? k : 0, selected > 3 ? p->iv : 0, encrypt ? 1 : 0);
+    volatile unsigned char *wipe = k;
+    for (int i = 0; i < 32; i++) wipe[i] = 0;
+    if (!ok) {
+        fail(env, "java/security/InvalidKeyException", "EVP cipher initialization failed");
+        return;
+    }
+    p->buffered = 0;
+    p->encrypting = encrypt ? 1 : 0;
+    p->algorithm = selected;
+}
+int N(EVP_1CIPHER_1iv_1length)(JNIEnv *env, jobject cls, jlong token) {
+    (void)cls;
+    const EVP_CIPHER *c = cipher(token);
+    if (!c) {
+        fail(env, "java/lang/IllegalStateException", "invalid cipher algorithm token");
+        return 0;
+    }
+    return EVP_CIPHER_iv_length(c);
+}
+int N(EVP_1CIPHER_1CTX_1block_1size)(JNIEnv *env, jobject cls, jlong token) {
+    (void)cls;
+    CONTEXT;
+    return ready(env, p) ? EVP_CIPHER_CTX_block_size(p->evp) : 0;
+}
+int N(get_1EVP_1CIPHER_1CTX_1buf_1len)(JNIEnv *env, jobject cls, jlong token) {
+    (void)cls;
+    CONTEXT;
+    return ready(env, p) ? p->buffered : 0;
+}
+void N(EVP_1CIPHER_1CTX_1set_1padding)(JNIEnv *env, jobject cls, jlong token,
+                                       unsigned char padding) {
+    (void)cls;
+    CONTEXT;
+    if (!p) return;
+    EVP_CIPHER_CTX_set_padding(p->evp, padding ? 1 : 0);
+    p->padding = padding ? 1 : 0;
+}
+void N(EVP_1CIPHER_1CTX_1set_1key_1length)(JNIEnv *env, jobject cls, jlong token, int size) {
+    (void)cls;
+    CONTEXT;
+    if (!p) return;
+    if (!ready(env, p)) return;
+    if (size != 16 + ((p->algorithm - 1) % 3) * 8 || !EVP_CIPHER_CTX_set_key_length(p->evp, size))
+        fail(env, "java/security/InvalidKeyException", "AES key length");
+}
+int N(EVP_1CipherUpdate)(JNIEnv *env, jobject cls, jlong token, jobject out, int outoff, jobject in,
+                         int inoff, int count) {
+    (void)cls;
+    CONTEXT;
+    if (!ready(env, p)) return 0;
+    if (!range(env, in, inoff, count) || !range(env, out, outoff, 0)) return 0;
+    if (count > 0x3fffffff) {
+        fail(env, "java/lang/OutOfMemoryError", "cipher input too large");
+        return 0;
+    }
+    unsigned char *input = malloc((size_t)count + 1), *output = malloc((size_t)count + 32);
+    if (!input || !output) {
+        free(input);
+        free(output);
+        fail(env, "java/lang/OutOfMemoryError", "cipher buffers");
+        return 0;
+    }
+    read_bytes(env, in, inoff, count, input);
+    int written = 0;
+    ERR_clear_error();
+    int ok = EVP_CipherUpdate(p->evp, output, &written, input, count);
+    if (!ok)
+        fail(env, "java/lang/IllegalStateException", "EVP cipher update failed");
+    else if (written > length(env, out) - outoff)
+        fail(env, "javax/crypto/ShortBufferException", "cipher output too short");
+    else {
+        write_bytes(env, out, outoff, written, output);
+        p->buffered = (p->buffered + (count % 16)) % 16;
+    }
+    volatile unsigned char *wipe = input;
+    for (int i = 0; i < count; i++) wipe[i] = 0;
+    wipe = output;
+    for (int i = 0; i < count + 32; i++) wipe[i] = 0;
+    free(input);
+    free(output);
+    return written;
+}
+int N(EVP_1CipherFinal_1ex)(JNIEnv *env, jobject cls, jlong token, jobject out, int outoff) {
+    (void)cls;
+    CONTEXT;
+    if (!ready(env, p) || !range(env, out, outoff, 0)) return 0;
+    unsigned char output[32] __attribute__((cleanup(wipe32)));
+    int written = 0;
+    ERR_clear_error();
+    if (!EVP_CipherFinal_ex(p->evp, output, &written)) {
+        unsigned long reason = ERR_get_error() & 0xfff;
+        fail(env,
+             (reason == 100) ? "javax/crypto/BadPaddingException"
+                             : "javax/crypto/IllegalBlockSizeException",
+             "EVP cipher final failed");
+        return 0;
+    }
+    if (written > length(env, out) - outoff) {
+        fail(env, "javax/crypto/ShortBufferException", "cipher output too short");
+        return 0;
+    }
+    write_bytes(env, out, outoff, written, output);
+    p->buffered = 0;
+    volatile unsigned char *wipe = output;
+    for (int i = 0; i < 32; i++) wipe[i] = 0;
+    return written;
+}
+__attribute__((destructor)) static void release_contexts(void) {
+    while (contexts) {
+        Context *p = contexts;
+        contexts = p->next;
+        EVP_CIPHER_CTX_free(p->evp);
+        free(p);
+    }
+}

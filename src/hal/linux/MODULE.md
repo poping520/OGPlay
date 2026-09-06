@@ -23,3 +23,5 @@
 `HostUserDataDirectory()` 返回本平台的用户数据根（Windows `%APPDATA%\OGPlay`、
 macOS `~/Library/Application Support/OGPlay`、Linux `$XDG_DATA_HOME/ogplay` 或
 `~/.local/share/ogplay`）；宿主环境未声明时返回空，由调用方明确报错而不是猜测。
+
+DVM-105：FillSecureRandom 循环调用 getrandom，处理 EINTR/短读，其余失败抛出。

@@ -296,7 +296,7 @@ const ApkNativeLibrary* ApkNativeLibraryInventory::FindEntryName(
 ApkSelectedNativeLibraries::ApkSelectedNativeLibraries(
     const ApkNativeLibraryInventory& inventory, const AndroidArmAbi abi)
     : inventory_(&inventory), abi_(abi) {
-    if (!inventory.HasAbi(abi)) {
+    if (!inventory.Empty() && !inventory.HasAbi(abi)) {
         throw ApkNativeInventoryError(
             ApkNativeInventoryErrorReason::abi_not_present,
             "APK native inventory does not contain selected ABI " +

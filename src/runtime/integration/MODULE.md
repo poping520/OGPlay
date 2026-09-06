@@ -323,3 +323,10 @@ surface/video/widget 派发子系统。禁止恢复集中式 handler 容器、Po
 
 DVM-102：DexVM bridge 不再安装 Date 初始化/毫秒/年份的 Android intrinsic patch；
 Date 与日历执行 BootDex，当前 epoch 毫秒仅由 CoreIntrinsicServices 接到统一 Clock。
+
+## DVM-105 Cipher 装配
+
+NativeLibraryLoader 在 APK 未找到逻辑库时查找注入的 bundled 系统库，复用依赖闭包、
+构造器、JNI_OnLoad 和 class-loader 归属检查。DexVmGuestBridge 将 ThrowNew 的真实类和
+modified-UTF8 消息传回 Java；Throw 的已有 DexVM throwable 引用保持身份。bridge
+teardown 在 guest process 停止前排空 native owner 资源；算法只在 ARM libcrypto 执行。

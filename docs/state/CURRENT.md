@@ -1,17 +1,21 @@
 # 当前状态
 
-更新：[DVM-104](../tasks/dexvm/DVM-104.md) 完成后续 Luni 家族迁移，
-BootDex 共 521 类；普通流与 atomic 算法转由 API 19 字节码执行。
+更新：[DVM-105](../tasks/dexvm/DVM-105.md) 完成 Cipher AES；BootDex 共 566 类，
+Conscrypt Java 经精简 guest JNI 调用 ARM libcrypto。
 
 ## 当前能力
 
 - **运行与发行**：`run-apk` 按 exact Profile API 选择 bundled data；API 19 已内置 pinned
-  AOSP libc/libm/libdl/libstdc++/libz、521 类 BootDex 与 ICU4C 51.1 数据，来源、哈希、
-  ELF/DEX、NOTICE 与 staging 受检。API 22/23 尚未纳入。
+  AOSP 五库、566 类 BootDex 与 ICU4C 51.1 数据；按用户授权临时加入设备 libcrypto
+  和源构建 JNI 桥，来源/哈希/ELF/NOTICE 单列受检。API 22/23 尚未纳入。
 - **BootDex**：Boot/Application DexUnit、unit-local 常量池、精确 intrinsic method overlay
   和 jar 内 class_def 全量装载已完成。固定输入及 recipe 可确定性重建；当前 DEX/JAR
-  SHA-256 分别为 `1bb0ab430cba7e551fbcf38bb93cf2d534558a34c834b92ceec5ea8ad58a3513` /
-  `1d861473de2eaf580e40e7705c1b816558938a7ff852100c0ac1966a54b943d0`。
+  SHA-256 分别为 `750f26ab7b2945c7f729dc4aeb15ac4b5253e805141cb9e021f61153a9b5d7f7` /
+  `d5d94f2b2dd8eb8e490fe5213e5f9526f019f51391ad645783fde74ea2d1ce4d`。
+- **Cipher**：AES 128/192/256；ECB/CBC 的 NoPadding/PKCS5Padding、CTR/NoPadding，
+  裸 AES 默认 ECB/PKCS5Padding。Java 算法归 BootDex，11 个 native 进入 guest OpenSSL；
+  分段/原位/异常、IV reset、OS 安全随机源、真实线程及 token GC/teardown 受检。
+  自设 seed、AES AlgorithmParameters 编码、RSA/证书/TLS 与完整 JCA 未纳入。
 - **集合**：List/Collection/Map 及实现、视图、迭代器、Tree/Sorted/Navigable、Weak/Identity/
   Enum、concurrent 容器与 Arrays/Collections 来自 API 19 字节码；Observable/Observer、
   Random、ThreadLocal 一并迁入。普通字段/数组为唯一集合存储，弱 referent 清空并入队；
@@ -41,20 +45,23 @@ BootDex 共 521 类；普通流与 atomic 算法转由 API 19 字节码执行。
 
 ## 最近验证
 
-- 2026-09-06 DVM-104：双后端工具/事件、同步器/atomic、字符集、内存流、X500 DER、
-  NativeBN 令牌/GC 与文件/AssetManager 衔接定向验收；同期回归日期/集合/对象流、
-  线程/monitor/Unsafe、NIO/反射和相关集成。数量与日志见 [DVM-104](../tasks/dexvm/DVM-104.md)。
-- 521 类全链接，迁入普通方法无 intrinsic overlay；BootDex build/check、日期 audit
+- 2026-09-06 DVM-105：双后端 NIST AES、填充/错误、两条 guest 线程各 16 次往返、
+  真随机 IV 和资源回收通过；定向回归 139 用例/13653 断言，后续 GC 与类所有权复验
+  分别 12 用例/1500 断言、4 用例/4611 断言。日志见 `.local/review/dvm105/`。
+- 临时文件来自已核对 SHA-256 的 MoKee API 19 ARMv7 设备，存放于
+  `.local/android-device/20260906-cipher/`；原 pinned core.jar/五库不变。手机现已断开，
+  本轮未做真机对照；正式发行前须自行构建替换临时制品。
+- 566 类全链接，普通 Cipher/集合方法无 intrinsic overlay；BootDex build/check、日期 audit
   （固定 42 类/47 native）、builder 自测、payload/staging、文档布局、能力单调性受检。
 - 构建限制：macOS Release 沿用本地 `OGPLAY_WARNINGS_AS_ERRORS=OFF`（既有 minimp3 等告警），
   只构建受影响的 `ogplay_tests` 及其 `ogplay` 依赖；未运行全量测试，未验证 Windows/Linux。
 - 门禁遗留：`architecture.platform_boundaries` 在既有
   `src/frontend/gui/process_manager.cpp:131` 平台分支失败；本轮未改该文件、未重跑该门禁。
-- ADR 继续按 6 个主题维护，本轮在 DexVM 主题追加 [0034](../adr/dexvm.md#adr-0034)。
+- ADR 继续按 6 个主题维护，本轮在 DexVM 主题追加 [0035](../adr/dexvm.md#adr-0035)。
 
 ## 下一步
 
-1. 按真实首错处理 PvZ 证书家族/NetworkImpl 与 Tales `LocationListener`。
+1. 按用户要求接入 Certificate/X509Certificate/CertificateFactory，再处理 NetworkImpl。
 2. 在 Windows/Linux 验证固定 ICU 构建；另行处理既有 GUI 平台分支门禁。
 3. 继续 DH 主菜单 gate；出现可复用停滞 fixture 时补 Diagnostics 外部触发子进程验收。
 

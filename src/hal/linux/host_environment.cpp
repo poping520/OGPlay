@@ -10,6 +10,9 @@
 
 #include <unistd.h>
 
+#include <sys/random.h>
+#include <cerrno>
+
 namespace ogplay::hal {
 namespace {
 
@@ -135,3 +138,14 @@ std::optional<std::filesystem::path> HostUserDataDirectory() {
 }
 
 }  // namespace ogplay::hal
+
+namespace ogplay::hal {
+void FillSecureRandom(std::span<std::byte> output) {
+    while (!output.empty()) {
+        const auto size = getrandom(output.data(), output.size(), 0);
+        if (size < 0 && errno == EINTR) continue;
+        if (size <= 0) throw std::runtime_error("OS secure random failed");
+        output = output.subspan(static_cast<std::size_t>(size));
+    }
+}
+}

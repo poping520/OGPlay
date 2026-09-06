@@ -1,3 +1,4 @@
+#include "boot_dex.h"
 #include <doctest/doctest.h>
 
 #include <cstddef>
@@ -109,6 +110,7 @@ struct Dvm88Vm final {
               std::vector<IntrinsicClassDecl> test_catalog;
               test_catalog.push_back(std::move(helper).Build());
               linker.RegisterIntrinsics(test_catalog);
+              ogplay::test::RegisterBootDex(linker);
               linker.Link();
               return linker;
           }(), model, nullptr, ledger, InterpreterConfig{.backend = backend}) {

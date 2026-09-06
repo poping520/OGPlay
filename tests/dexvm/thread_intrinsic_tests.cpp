@@ -1,3 +1,4 @@
+#include "boot_dex.h"
 // DVM-48 java.lang.Thread integration tests. Observable behavior is mapped
 // to pinned libcore Thread.java/VMThread.java and Dalvik Thread.cpp/Sync.cpp.
 
@@ -95,6 +96,7 @@ struct ThreadVm final {
                   catalog.push_back(std::move(throwing_handler).Build());
                   linker.RegisterIntrinsics(std::move(catalog));
                   linker.RegisterDex(ReadFixture("interp.dex"));
+                  ogplay::test::RegisterBootDex(linker);
                   linker.Link();
                   return linker;
               }(),

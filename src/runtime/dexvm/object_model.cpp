@@ -338,7 +338,8 @@ void JavaObjectModel::VisitPermanentRoots(const RootVisitor& visitor) const {
 GcMarkResult JavaObjectModel::MarkReachable(
     const std::vector<VmObjectRef>& roots,
     const std::function<void(VmObjectRef, const RootVisitor&)>&
-        trace_host_edges) {
+        trace_host_edges,
+    const std::function<bool(DexClassId, std::size_t)>& is_weak_slot) {
     // JNI may have populated an object array without entering dexvm for each
     // element. Import those identities before sizing the mark bitmap so the
     // array edge set is complete and stable for this collection.
@@ -386,8 +387,11 @@ GcMarkResult JavaObjectModel::MarkReachable(
         }
         switch (record.kind) {
             case VmObjectKind::vm_instance:
-                for (const auto& slot : impl_->instance_storage[record.storage]) {
-                    if (slot.tag == SlotTag::ref) mark(VmObjectRef(slot.bits));
+                for (std::size_t index = 0; index < impl_->instance_storage[record.storage].size(); ++index) {
+                    const auto& slot = impl_->instance_storage[record.storage][index];
+                    if (slot.tag == SlotTag::ref &&
+                        (!is_weak_slot || !is_weak_slot(record.java_class, index)))
+                        mark(VmObjectRef(slot.bits));
                 }
                 break;
             case VmObjectKind::object_array:

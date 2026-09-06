@@ -164,22 +164,12 @@ void DexClassLinker::RegisterIntrinsics(
         auto& extra = impl_->ExtrasAt(id);
         if (declaration->superclass.has_value()) {
             const auto super = FindClass(*declaration->superclass);
-            if (!super.has_value()) {
-                Fail(DexVmErrorReason::unknown_class,
-                     "intrinsic superclass is not registered: " +
-                         *declaration->superclass);
-            }
-            linked.super = *super;
+            if (super.has_value()) linked.super = *super;
+            else extra.missing_super = *declaration->superclass;
         }
-        for (const auto& interface_name : declaration->interfaces) {
-            const auto interface_id = FindClass(interface_name);
-            if (!interface_id.has_value()) {
-                Fail(DexVmErrorReason::unknown_class,
-                     "intrinsic interface is not registered: " +
-                         interface_name);
-            }
-            linked.direct_interfaces.push_back(*interface_id);
-        }
+        // Resolve the whole list together so BootDex dependencies do not move
+        // behind already registered interfaces in reflection metadata.
+        extra.missing_interfaces = declaration->interfaces;
         for (const auto& method : declaration->methods) {
             LinkedMethod linked_method;
             linked_method.owner = id;
@@ -326,6 +316,8 @@ DexUnitId DexClassLinker::RegisterDexUnit(
             linked.access_flags = definition.access_flags;
             linked.super.reset();
             linked.direct_interfaces.clear();
+            impl_->ExtrasAt(id).missing_super.reset();
+            impl_->ExtrasAt(id).missing_interfaces.clear();
             linked.intrinsic_constants.clear();
             linked.dex_class_def_index = class_index;
             linked.dex_unit = unit_id;
@@ -509,6 +501,23 @@ void DexClassLinker::Link() {
     if (!FindClass("Ljava/lang/Object;").has_value()) {
         Fail(DexVmErrorReason::unknown_class,
              "core intrinsic catalog is not registered");
+    }
+    // Native-backed classes may implement interfaces supplied by the BootDex
+    // registered after their declarations. Resolve those names before linking.
+    for (auto& linked : impl_->classes) {
+        if (!linked.is_intrinsic) continue;
+        auto& extra = impl_->ExtrasAt(linked.id);
+        const auto require = [&](const std::string& name) {
+            const auto found = FindClass(name);
+            if (!found) Fail(DexVmErrorReason::unknown_class,
+                             "intrinsic hierarchy is not registered: " + name);
+            return *found;
+        };
+        if (extra.missing_super) linked.super = require(*extra.missing_super);
+        for (const auto& name : extra.missing_interfaces)
+            linked.direct_interfaces.push_back(require(name));
+        extra.missing_super.reset();
+        extra.missing_interfaces.clear();
     }
     // Resolve hierarchy names that are already available. A DEX commonly
     // contains optional SDK/support classes that the selected execution path

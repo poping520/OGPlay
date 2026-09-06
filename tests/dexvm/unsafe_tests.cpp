@@ -39,7 +39,7 @@ struct UnsafeVm {
     VmObjectRef unsafe;
 
     explicit UnsafeVm(InterpreterBackend backend = InterpreterBackend::switch_dispatch,
-                      bool boot = false)
+                      bool boot = true)
         : vm([&]() -> DexClassLinker& {
             CoreIntrinsicServices services;
             services.current_time_millis = [this] { return 1'400'000'000'000LL + millis.load(); };

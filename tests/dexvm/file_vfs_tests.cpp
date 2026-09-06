@@ -383,7 +383,7 @@ struct FileVm final {
                     const InterpreterConfig config = {},
                     const std::span<const IntrinsicClassDecl>
                         extra_intrinsics = {},
-                    const bool include_boot_dex = false)
+                    const bool include_boot_dex = true)
         : model(strings, arrays),
           context(std::make_shared<DexVmAndroidContext>()),
           io_file_system(vfs),

@@ -186,6 +186,7 @@ binding。`GLUtils` 读取 context 中既有 Bitmap backing；本层不拥有 GL
   `resolveTypeIfNeeded` 按 API 19 处理 explicit component/type，只有无显式 type 的
   `content://` 才进入 resolver。`IntentFilter.match` 有界覆盖 action、MIME wildcard、
   scheme、authority host/wildcard/port 与 categories，返回 API 19 match/error 常量。
+  category 快照只通过 guest iterator 读取 BootDex Set，不读取宿主集合状态。
   `Intent` 的公开实例方法保持 API 19 的非 final 可覆盖形状，`IntentFilter` 匹配方法保持 final。
   scheme-specific-part/path pattern、隐式组件解析、ContentProvider/Binder 和系统广播仍明确
   不支持；不得猜测 content MIME 或因此伪造广播派发。

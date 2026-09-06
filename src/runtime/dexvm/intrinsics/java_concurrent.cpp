@@ -2,6 +2,8 @@
 #include "shared.h"
 
 #include <array>
+#include <bit>
+#include <type_traits>
 #include <limits>
 #include <string>
 #include <vector>
@@ -337,6 +339,16 @@ IntrinsicClassDecl Dvm87DeclareAtomicIntegral(const std::string& descriptor,
             const auto next = sizeof(T) == 8 ? call.Long(1) : call.Int(1);
             if (get(call) != expected) return VmValue::Int(0);
             set(call, next); return VmValue::Int(1);
+        });
+    builder.FinalMethod("getAndAdd", "(" + value_descriptor + ")" + value_descriptor,
+        [get, set](IntrinsicContext& context) {
+            IntrinsicCall call(context);
+            const auto old = get(call);
+            const auto delta = sizeof(T) == 8 ? call.Long(0) : call.Int(0);
+            using U = std::make_unsigned_t<T>;
+            set(call, std::bit_cast<T>(static_cast<U>(old) + static_cast<U>(delta)));
+            if constexpr (sizeof(T) == 8) return VmValue::Long(old);
+            else return VmValue::Int(old);
         });
     builder.FinalMethod("getAndIncrement", "()" + value_descriptor,
         [get, set](IntrinsicContext& context) {

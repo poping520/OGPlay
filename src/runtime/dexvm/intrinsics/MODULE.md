@@ -29,20 +29,11 @@ Timer/TimerTask 仅保留 Java 参数、重复调度与取消入口；deadline�
 生命周期由注入的 scheduler 窄接口拥有。core 禁止反向读取 Android context 或恢复
 cooperative next-frame task queue。
 
-`java_util.cpp` 中的 collection 段是 pinned libcore `java.util` 核心集合 family：集中声明
-Collection/List/Set/Map、Iterator/ListIterator、Queue/Deque、常用抽象基类以及
-ArrayList/LinkedList/ArrayDeque、HashMap/LinkedHashMap、HashSet/LinkedHashSet；既有
-Vector/Stack/Hashtable 也迁入同一 family。DVM-87 在同一 family 增加常用 Arrays/
-Collections 算法；handler 只做 Java 参数/异常边界与 virtual
-`equals/hashCode` 派发，sequence/map/view/entry/iterator 的宿主状态和生命周期统一委托
-`CollectionRuntime`。LinkedHashMap 的 API 19 `eldest()` 复用同一稳定 Entry，以供 BootDex
-BasicLruCache 使用。Tree/Sorted/Navigable、并发集合与完整算法长尾
-不在该 family 范围内，缺失能力必须继续明确失败。
-集合声明通过唯一 `AppendJavaUtilCollections()` 接入 catalog。
-API 19 `Observer`/`Observable` 也在该 family 发布：`Observable` 以实例字段持有既有
-`ArrayList` 与 changed flag，重复注册/删除沿用 guest `equals`；通知在 receiver monitor 内
-清标记并复制注册顺序快照，随后在 monitor 外虚派发 `Observer.update`。快照通过
-execution-local `RootScope` 跨回调保活，回调删除不改变本轮通知，回调异常原样传播。
+`java_util.cpp` 只保留 Locale 与 Timer/TimerTask 的宿主边界。Collection/List/Map、所有
+选入的容器/视图/迭代器、Arrays/Collections、Observable/Observer 与 Random 由 BootDex
+执行，不允许重建 C++ 算法或集合侧表。WeakReference 的弱边/入队属于通用 VM GC 原语。
+ThreadLocal 消费 Thread.localValues 和 wrapping atomic getAndAdd；System.nanoTime 只读
+统一 Clock，Runtime.availableProcessors 发布单 guest 执行通道事实 1。
 `java_icu.cpp` 只发布 DVM-102 审计固定的 ICU native、NativeDecimalFormat 与 TimeZone 数据
 边界；Format/DateFormat/SimpleDateFormat、NumberFormat/DecimalFormat、Date/Calendar 及
 SimpleTimeZone 的类、字段和 Java 算法均来自 BootDex。formatter 的 Java long 只保存 per-VM
@@ -57,7 +48,7 @@ Locale 构造规范化语言小写、区域大写与 he/id/yi 旧码；Matcher.g
 `java_regex.cpp` 的 Pattern/Matcher 只承诺 String 输入与已登记 API 的 bounded regex 语义；
 非法语法/flag 必须抛 Java 异常，不伪造匹配。`java_concurrent.cpp` 的 FutureTask、串行 executor
 和 atomic family 复用 `VmThreadRuntime` 的真实 Thread identity；不创建第二套 scheduler，
-不扩展到并行池、scheduled executor 或 concurrent collection。
+不扩展到并行解释执行或 scheduled executor；concurrent 容器算法由 BootDex 拥有。
 
 `java_concurrent.cpp` 同时声明 API 19 libdvm 的 `sun.misc.Unsafe`：同一静态强根单例、
 真实 caller loader 检查、受检字段/数组位置、int/long/reference 读写和 CAS 委托
@@ -91,8 +82,11 @@ execution-local `RootScope` 保活，宿主 `VmObjectRef` 容器本身不是 GC 
 底层流，校验/写入 serialization stream header，并按 block-data wire format 实现继承的
 原始字节、基本类型、modified UTF、available/skip/flush/close 契约。对象协议支持 `null`、
 `String`、默认 `Serializable` 类层级、字段、循环/重复引用、枚举及 API 19 `Date` 自定义段；
-stream handle 中的 guest ref 必须经 `IoRuntime` trace。数组、`Externalizable`、任意
-`writeObject/readObject` hooks 和缺少显式 UID 的默认 UID 计算仍明确不支持。
+Serializable/Externalizable 及上述数据/对象 IO 接口均来自 BootDex。
+Externalizable 协议 2 使用显式 UID、公共无参构造器及虚派 writeExternal/readExternal，
+注册 handle 后才调用回调；同一流共享递归预算，未消费的 block/object 数据跳过到 end-block，
+回调异常原样传播。stream handle 中的 guest ref 必须经 `IoRuntime` trace。
+数组、Externalizable 协议 1、任意私有 `writeObject/readObject` hooks 和默认 UID 计算仍明确失败。
 
 `java_zip.cpp` 聚合 `ZipEntry`/`ZipInputStream`。输入源只经 `IoRuntime` single-owner
 接管，archive/entry/cursor/close 状态只委托 per-VM `ZipRuntime`；ZIP32 结构校验、inflate

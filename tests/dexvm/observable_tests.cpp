@@ -1,3 +1,4 @@
+#include "boot_dex.h"
 #include <doctest/doctest.h>
 
 #include <array>
@@ -95,6 +96,7 @@ struct ObservableVm final {
               std::vector<IntrinsicClassDecl> test_catalog;
               test_catalog.push_back(std::move(observer).Build());
               linker.RegisterIntrinsics(test_catalog);
+              ogplay::test::RegisterBootDex(linker);
               linker.Link();
               return linker;
           }(), model, nullptr, ledger, {}) {}
@@ -178,10 +180,10 @@ TEST_CASE("java.util Observer and Observable expose the API 19 hierarchy") {
     REQUIRE(delete_observers.has_value());
     CHECK((fixture.linker.Method(
                observable_class.vtable[*delete_observer]).access_flags &
-           0x0020U) != 0U);
+           0x20000U) != 0U);
     CHECK((fixture.linker.Method(
                observable_class.vtable[*delete_observers]).access_flags &
-           0x0020U) != 0U);
+           0x20000U) != 0U);
 }
 
 TEST_CASE("java.util Observable gates notifications and manages registration") {

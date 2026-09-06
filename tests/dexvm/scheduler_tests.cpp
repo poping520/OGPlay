@@ -1,3 +1,4 @@
+#include "boot_dex.h"
 #include <doctest/doctest.h>
 
 #include <atomic>
@@ -127,6 +128,7 @@ struct SchedulerVm final {
                      &messages, &ticks, &receiver_results, &runnable_calls,
                      &timer_calls, &finishes, &async_background,
                      &async_post));
+                 ogplay::test::RegisterBootDex(linker);
                  linker.Link();
                  return linker;
              }(), model, nullptr, ledger, {}),

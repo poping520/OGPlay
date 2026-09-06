@@ -290,7 +290,7 @@
     const-string v1, "b"
     invoke-virtual {v0, v1}, Ljava/util/ArrayList;->add(Ljava/lang/Object;)Z
     :try_start
-    invoke-interface {v2}, Ljava/util/Iterator;->hasNext()Z
+    invoke-interface {v2}, Ljava/util/Iterator;->next()Ljava/lang/Object;
     :try_end
     const/4 v3, 0
     return v3

@@ -1,3 +1,4 @@
+#include "boot_dex.h"
 #include <doctest/doctest.h>
 
 #include <array>
@@ -34,6 +35,7 @@ struct AndroidValueVm final {
         : vm([this]() -> DexClassLinker& {
                  linker.RegisterIntrinsics(CoreIntrinsicCatalog());
                  linker.RegisterIntrinsics(AndroidIntrinsicCatalog(context));
+                 ogplay::test::RegisterBootDex(linker);
                  linker.Link();
                  return linker;
              }(), model, nullptr, ledger, {}) {

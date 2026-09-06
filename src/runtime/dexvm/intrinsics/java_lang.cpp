@@ -320,12 +320,6 @@ namespace ogplay::runtime::dexvm::intrinsics {
             return std::move(builder).Build();
         }
 
-        IntrinsicClassDecl Declare_java_lang_Iterable() {
-            auto builder = IntrinsicClassBuilder::Interface("Ljava/lang/Iterable;");
-            builder.UnimplementedVirtual("iterator", "()Ljava/util/Iterator;");
-            return std::move(builder).Build();
-        }
-
         IntrinsicClassDecl Declare_java_lang_Readable() {
             auto builder = IntrinsicClassBuilder::Interface("Ljava/lang/Readable;");
             builder.UnimplementedVirtual("read", "(Ljava/nio/CharBuffer;)I");
@@ -345,7 +339,6 @@ namespace ogplay::runtime::dexvm::intrinsics {
         catalog.push_back(Declare_java_lang_CharSequence());
         catalog.push_back(Declare_java_lang_Cloneable());
         catalog.push_back(Declare_java_lang_Comparable());
-        catalog.push_back(Declare_java_lang_Iterable());
         catalog.push_back(Declare_java_lang_Readable());
         catalog.push_back(Declare_java_lang_Runnable());
     }
@@ -360,6 +353,25 @@ namespace ogplay::runtime::dexvm::intrinsics {
 
 namespace ogplay::runtime::dexvm::intrinsics {
 using namespace detail;
+
+IntrinsicClassDecl Declare_java_lang_Runtime() {
+    auto builder = IntrinsicClassBuilder::Class("Ljava/lang/Runtime;", "Ljava/lang/Object;");
+    const auto current = builder.BoundStaticField(
+        "currentRuntime", "Ljava/lang/Runtime;", kAccPrivate | kAccFinal);
+    builder.ClassInitializer([current](IntrinsicContext& context) {
+        IntrinsicCall(context).SetRef(current,
+            context.vm.NewIntrinsicInstance("Ljava/lang/Runtime;"));
+        return VmValue::Void();
+    });
+    builder.StaticMethod("getRuntime", "()Ljava/lang/Runtime;", [current](IntrinsicContext& context) {
+        return VmValue::Ref(IntrinsicCall(context).GetRef(current));
+    });
+    builder.VirtualMethod("availableProcessors", "()I", [](IntrinsicContext&) {
+        // The interpreter exposes one execution lane under VmExecutionLock.
+        return VmValue::Int(1);
+    });
+    return std::move(builder).Build();
+}
 
 IntrinsicClassDecl Declare_java_lang_Math() {
     auto builder = IntrinsicClassBuilder::Class("Ljava/lang/Math;", "Ljava/lang/Object;");
@@ -1620,36 +1632,6 @@ void AppendJavaLangPrimitiveWrappers(
 }  // namespace ogplay::runtime::dexvm::intrinsics
 
 
-// ---- migrated from java_lang_ref_WeakReference.cpp ----
-#include "catalog.h"
-#include "shared.h"
-
-#include "ogplay/runtime/dexvm/intrinsic_builder.h"
-
-namespace ogplay::runtime::dexvm::intrinsics {
-using namespace detail;
-
-IntrinsicClassDecl Declare_java_lang_ref_WeakReference() {
-    auto builder = IntrinsicClassBuilder::Class("Ljava/lang/ref/WeakReference;", "Ljava/lang/Object;");
-    builder.InstanceField("referent", "Ljava/lang/Object;");
-    builder.Constructor("(Ljava/lang/Object;)V",
-        [](IntrinsicContext &context) {
-                const auto slots = context.vm.Model().InstanceSlots(context.receiver);
-                slots[0] = {context.arguments[0].ref.Value(), SlotTag::ref};
-                return VmValue::Void();
-            });
-    builder.FinalMethod("get", "()Ljava/lang/Object;",
-        [](IntrinsicContext &context) {
-                const auto slots = context.vm.Model().InstanceSlots(context.receiver);
-                return VmValue::Ref(VmObjectRef(slots[0].bits));
-            });
-    auto result = std::move(builder).Build();
-    return result;
-}
-
-}  // namespace ogplay::runtime::dexvm::intrinsics
-
-
 // ---- migrated from java_lang_String.cpp ----
 #include "catalog.h"
 #include "shared.h"
@@ -1970,6 +1952,15 @@ IntrinsicClassDecl Declare_java_lang_String() {
                     Value(context, context.receiver),
                     Value(context, context.arguments[0].ref), false));
             });
+    builder.FinalMethod("compareTo", "(Ljava/lang/Object;)I",
+        [](IntrinsicContext& context) {
+            const auto other = context.arguments[0].ref;
+            if (!other.IsValid()) throw VmJavaThrow{"Ljava/lang/NullPointerException;", "other == null"};
+            if (context.vm.Model().Kind(other) != VmObjectKind::string)
+                throw VmJavaThrow{"Ljava/lang/ClassCastException;", "other is not a String"};
+            return VmValue::Int(CompareStrings(Value(context, context.receiver),
+                                               Value(context, other), false));
+        }, kAccPublic | kAccFinal | kAccBridge | kAccSynthetic);
     builder.FinalMethod("compareToIgnoreCase", "(Ljava/lang/String;)I",
         [](IntrinsicContext& context) {
                 return VmValue::Int(CompareStrings(
@@ -2611,7 +2602,13 @@ IntrinsicClassDecl Declare_java_lang_System(const CoreIntrinsicServices& service
             }
             return VmValue::Long(now());
         });
-    builder.UnimplementedStatic("nanoTime", "()J");
+    builder.StaticMethod("nanoTime", "()J", [](IntrinsicContext& context) {
+        const auto now = context.vm.Monitors().TimeSource();
+        if (!now) throw VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
+                                   "System.nanoTime requires the unified Clock"};
+        return VmValue::Long(std::bit_cast<std::int64_t>(
+            static_cast<std::uint64_t>(now()) * 1000000ULL));
+    });
     builder.UnimplementedStatic("load", "(Ljava/lang/String;)V");
     builder.UnimplementedStatic("loadLibrary", "(Ljava/lang/String;)V");
     builder.UnimplementedStatic("exit", "(I)V");
@@ -2744,8 +2741,17 @@ namespace ogplay::runtime::dexvm::intrinsics {
                         context_class_loader);
             call.SetRef(fields.group, object, group);
             call.SetInt(fields.park_state, object, 1);
-            call.SetRef(fields.interrupt_actions, object,
-                        call.Vm().NewIntrinsicInstance("Ljava/util/ArrayList;"));
+            auto& vm = call.Vm();
+            const auto actions = vm.NewIntrinsicInstance("Ljava/util/ArrayList;");
+            call.SetRef(fields.interrupt_actions, object, actions);
+            const auto constructor = vm.Linker().FindDirectMethod(
+                vm.Model().ObjectClass(actions), "<init>", "()V");
+            if (!constructor) {
+                throw DexVmError(DexVmErrorReason::internal_invariant,
+                                 "BootDex ArrayList constructor is unavailable");
+            }
+            const VmValue arguments[] = {VmValue::Ref(actions)};
+            PropagateOutcome(vm, vm.Call(*constructor, arguments));
             call.SetRef(fields.uncaught_handler, object, VmObjectRef{});
         }
 
@@ -2841,6 +2847,7 @@ namespace ogplay::runtime::dexvm::intrinsics {
             "Ljava/lang/Object;",
             {"Ljava/lang/Runnable;"}
         );
+        builder.InstanceField("localValues", "Ljava/lang/ThreadLocal$Values;", kAccNone);
         builder.InstanceField("parkBlocker", "Ljava/lang/Object;", kAccPrivate);
         const ThreadFields fields{
             builder.BoundInstanceField("target", "Ljava/lang/Runnable;"),

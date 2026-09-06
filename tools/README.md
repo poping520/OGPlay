@@ -15,7 +15,7 @@ python3 tools/bootdex/build_bootdex.py check
 列表，运行时仍全量加载生成物中的 class_def。
 
 `api19.json` 的 `date_family_audit` 保存 DVM-102 日期闭包的依赖分类、native 边界与
-ICU 来源；其中 `boot_dex` 是主类清单的受检子集，外部依赖分类不得与主清单冲突。
+ICU 来源；`roots` 冻结原 42 类审计样本，不随依赖迁移扩大；其中 `boot_dex` 是主类清单的受检子集，外部依赖分类不得与主清单冲突。
 `audit` 校验固定 `core.jar`、全部引用分类与 native 签名，完整派生成员表写入
 `.local/dvm102-date-family-audit.json`。`--report` 可指定报告路径；`--emit-expectations`
 只打印观测指标供审阅，不修改冻结值。清单结构校验与审计自测统一由 builder 执行：

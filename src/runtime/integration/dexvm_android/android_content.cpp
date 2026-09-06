@@ -7,7 +7,6 @@
 #include "catalog.h"
 
 #include "ogplay/core/encoding.h"
-#include "ogplay/runtime/dexvm/collection_runtime.h"
 
 namespace ogplay::runtime::android_intrinsics {
 
@@ -1967,13 +1966,6 @@ Decl Declare_android_content_IntentFilter(const Context& context) {
                                         const dx::VmObjectRef categories)
         -> std::optional<std::vector<dx::VmObjectRef>> {
         if (!categories.IsValid()) return std::vector<dx::VmObjectRef>{};
-        if (const auto* map = call.vm.Collections().FindMap(categories);
-            map != nullptr) {
-            std::vector<dx::VmObjectRef> result;
-            result.reserve(map->entries.size());
-            for (const auto& entry : map->entries) result.push_back(entry.key);
-            return result;
-        }
         const auto iterator = InvokeAndroidVirtual(
             call, categories, "iterator", "()Ljava/util/Iterator;");
         if (!iterator.has_value()) return std::nullopt;

@@ -1,3 +1,4 @@
+#include "boot_dex.h"
 #include <doctest/doctest.h>
 
 #include <algorithm>
@@ -111,6 +112,7 @@ struct AudioTrackVm final {
                  linker.RegisterIntrinsics(CoreIntrinsicCatalog());
                  linker.RegisterIntrinsics(AndroidIntrinsicCatalog(context));
                  linker.RegisterIntrinsics(AudioTrackTestCatalog(&recorder));
+                 ogplay::test::RegisterBootDex(linker);
                  linker.Link();
                  return linker;
              }(),

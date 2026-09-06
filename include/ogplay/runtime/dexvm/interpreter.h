@@ -18,7 +18,6 @@
 
 namespace ogplay::runtime::dexvm {
 
-class CollectionRuntime;
 class IcuFormatterRuntime;
 class IoRuntime;
 class NioRuntime;
@@ -394,11 +393,9 @@ public:
     [[nodiscard]] core::Logger* Log() const noexcept;
 
     // Object.clone: model-level shallow copy plus intrinsic side tables
-    // (list/map/builder) keyed by the source handle.
+    // (builder/resource) keyed by the source handle.
     [[nodiscard]] VmObjectRef CloneObject(VmObjectRef source);
 
-    [[nodiscard]] CollectionRuntime& Collections();
-    [[nodiscard]] const CollectionRuntime& Collections() const;
     [[nodiscard]] IcuFormatterRuntime& IcuFormatters();
     [[nodiscard]] const IcuFormatterRuntime& IcuFormatters() const;
     [[nodiscard]] NioRuntime& NIO();
@@ -413,8 +410,6 @@ public:
 
     // Intrinsic instance side state.
     [[nodiscard]] std::u16string& BuilderBuffer(VmObjectRef instance);
-    // Test/legacy bridge; collection handlers use CollectionRuntime directly.
-    [[nodiscard]] std::vector<VmObjectRef>& ListStorage(VmObjectRef instance);
 
     // Writes a reference into an intrinsic static field (System.out etc.).
     void SetIntrinsicStaticRef(std::string_view class_descriptor,

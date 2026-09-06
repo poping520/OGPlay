@@ -1,3 +1,4 @@
+#include "boot_dex.h"
 #include <fstream>
 #include <iterator>
 #include <string>
@@ -38,6 +39,7 @@ struct LoaderVm final {
               const auto catalog = CoreIntrinsicCatalog();
               linker.RegisterIntrinsics(catalog);
               linker.RegisterDex(ReadFixture("interp.dex"));
+              ogplay::test::RegisterBootDex(linker);
               linker.Link();
               return linker;
           }(), model, nullptr, ledger, InterpreterConfig{.backend = backend}) {}

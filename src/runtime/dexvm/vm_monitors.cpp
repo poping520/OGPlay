@@ -381,6 +381,16 @@ void VmMonitorTable::NotifyAll(const VmObjectRef object,
     impl_->changed.notify_all();
 }
 
+void VmMonitorTable::NotifyForGc(const VmObjectRef object) {
+    {
+        const std::lock_guard guard(impl_->mutex);
+        auto& monitor = impl_->MonitorFor(object);
+        for (const auto waiter : monitor.wait_set) impl_->woken.insert(waiter);
+        monitor.wait_set.clear();
+    }
+    impl_->changed.notify_all();
+}
+
 void VmMonitorTable::Interrupt(const std::uint64_t owner) {
     {
         const std::lock_guard guard(impl_->mutex);

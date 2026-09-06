@@ -15,7 +15,8 @@ intrinsic。解释应用 DEX 与受审 API 19 curated Boot DEX；完整平台库
   解释方法及 encoded value/catch/string/type/field/method 索引必须使用其所属 unit，禁止
   隐式落到 application image。Boot jar 中 class_def 全量登记；与 intrinsic 同类时 DEX
   提供 class/field/hierarchy，精确同签名 intrinsic method 保持 overlay，其余方法解释执行，
-  未 overlay 的 native 方法拒绝。应用 `classes.dex` 中真正的平台前缀类仍被忽略，但 APK 自带的旧
+  未 overlay 的 native 方法拒绝。intrinsic 引用的父类/接口允许在 BootDex 注册后由 Link
+  解析；接口继承但未声明的方法使用 abstract Miranda vtable 槽，不加入 own members。应用 `classes.dex` 中真正的平台前缀类仍被忽略，但 APK 自带的旧
   `android.support.*` 支持库仍由 application loader 定义。APK class_def 全量登记，但层级、字段
   布局、vtable/iftable 仅在首次解析、实例化或调用时完成；未触达可选类的缺失层级不阻断启动，
   触达后的循环继承、缺失层级、final 覆盖、interface-as-super 和不可覆盖 intrinsic 方法明确
@@ -55,9 +56,10 @@ intrinsic。解释应用 DEX 与受审 API 19 curated Boot DEX；完整平台库
 ### Core intrinsic 与运行时状态
 
 - `CoreIntrinsicCatalog(services)`：聚合 `intrinsics/` 中按 API family 同址定义的声明和
-  handler，覆盖 Object/String/Class/Throwable、隐式异常层级、核心集合接口，以及 pinned
-  libcore 的 8 个 `java.lang` 顶层接口（`Appendable`/`AutoCloseable`/`CharSequence`/
-  `Cloneable`/`Comparable`/`Iterable`/`Readable`/`Runnable`，统一位于 `java_lang.cpp`）。
+  handler，覆盖 Object/String/Class/Throwable、隐式异常层级、pinned
+  libcore 的 7 个 `java.lang` 顶层接口（`Appendable`/`AutoCloseable`/`CharSequence`/
+  `Cloneable`/`Comparable`/`Readable`/`Runnable`，统一位于 `java_lang.cpp`）。
+  `Iterable` 和 java.io 序列化接口来自 BootDex。
   `java.lang.Enum` 语义对照 pinned libcore `Enum.java`：name/ordinal 为可继承的声明式实例槽，
   构造器 `(String,I)` 写入；查询方法 final、`toString`
   可覆盖、`clone` 恒抛 `CloneNotSupportedException`；`getDeclaringClass` 按直接父类判断；
@@ -68,11 +70,10 @@ intrinsic。解释应用 DEX 与受审 API 19 curated Boot DEX；完整平台库
   `Object.clone()` 浅拷贝。
   StringBuffer/StringBuilder 用 descriptor 参数化的同一声明；仅含 `()`/`(String)` 构造器的
   简单 throwable 共用声明助手，特殊异常独立定义。
-- `CollectionRuntime`（DVM-78）：统一拥有 sequence/map、sub-list、三类 live map view、稳定
-  Entry 和 fail-fast iterator 的 per-VM side state。map 节点保存 guest virtual `hashCode`
-  与稳定 entry id，结构修改递增 `mod_count`。guest ref 经同一具名 state table trace/sweep；
-  `Object.clone` 只浅拷贝 sequence/map 内容，不复制 view/entry/iterator 游标。handler 不保存
-  宿主容器指针，也不以 `VmObjectRef` 数值替代 Java equals/hashCode。
+- 集合家族（DVM-103）：List/Collection/Map、实现、视图、迭代器、Arrays/Collections、
+  Observable/Observer 与 Random 均归 API 19 BootDex；对象字段和数组是唯一状态，
+  不保留 CollectionRuntime 或集合 intrinsic。Tree/Sorted/Navigable、Weak/Identity/Enum
+  及 concurrent 容器一并选入；迁移不承诺全部序列化、XML 或并发调度长尾。
 - BootDex 与 intrinsic 字段合并后，own_static_fields 必须以 DEX 声明顺序为首部，
   encoded_array 初始值逐项对应同序字段；不得让 overlay 声明顺序改变整数、wide 或引用初值。
 - `IcuFormatterRuntime`（DVM-102）：每 VM 持有 NativeDecimalFormat 的受检逻辑令牌与固定
@@ -90,6 +91,9 @@ intrinsic。解释应用 DEX 与受审 API 19 curated Boot DEX；完整平台库
   closed，不含 host/native fd；`FileInputStream.getFD()` 与读 cursor 独立。无文件系统明确失败；
   stream wrapper 单 owner 转移，clone 不复制游标或缓冲。对象流的 block cursor、class/object
   handle 与强引用同样由 `IoRuntime` 按 owner 保存、trace 并随 owner 清扫，不成为第二套流存储。
+  Externalizable 协议 2 调用真实 writeExternal/readExternal，共享递归深度与 handle；读取前
+  执行本类公共无参构造器，跳过未消费的 block/object 数据，回调异常保持原身份。
+  协议 1、数组、默认 UID 计算和任意私有 custom hooks 仍明确失败。
 - `ZipRuntime`（DVM-79）：管理 archive、当前 entry bytes/cursor 和 close 状态，复用 loader 的
   严格 ZIP parser/inflate，并由 intrinsic state-table hook 清扫。
 - `NetworkRuntime`（DVM-88）：管理 InetAddress endpoint、Socket、stream、datagram 的 per-VM
@@ -119,10 +123,13 @@ intrinsic。解释应用 DEX 与受审 API 19 curated Boot DEX；完整平台库
   interrupt action 和有界 daemon flag；priority 不映射 host scheduler，daemon 不驱动 session
   退出。context ClassLoader 复用稳定 application/bootstrap identity：root 默认 application，
   child 继承创建者，setter 只更新 guest 字段且允许 null，不增加 namespace。
+  Thread.localValues 供 BootDex ThreadLocal 使用；Runtime.availableProcessors 返回执行锁
+  对应的单 guest 执行通道事实 1。System.nanoTime 使用统一单调 Clock 的毫秒值转纳秒，
+  未注入 Clock 明确失败，不读取宿主时间。
 - `java.lang.Object.clone` 是可覆盖 virtual intrinsic（不是 `internalClone`）：
   `instanceof Cloneable` 失败抛
   `CloneNotSupportedException`，成功则由 `Interpreter::CloneObject` 浅拷贝 payload 及
-  list/map/builder side state。`JavaObjectModel::CloneObject` 对照 AOSP `dvmCloneObject`，分配
+  builder side state；集合 clone 由 DEX 复制字段/数组。`JavaObjectModel::CloneObject` 对照 AOSP `dvmCloneObject`，分配
   新 identity，仅复制 `vm_instance` slots 或数组元素；string/class/host-backed 明确失败。
   JNI `NewObject` 的 application identity 回入解释器时，经注入的 lazy layout resolver 建立完整实例槽并保留
   identity；intrinsic host object 仍属 external/专用 store。`String.format(String,Object[])` 只支持
@@ -150,6 +157,8 @@ intrinsic。解释应用 DEX 与受审 API 19 curated Boot DEX；完整平台库
   存储，String/primitive array 委托注入的 `JniStringStore`/`JniPrimitiveArrayStore`；
   `CloneObject` 以新句柄浅拷贝实例槽/数组元素。GC 为精确、非移动、STW mark-sweep；记录保存
   `reserved_bytes`，回收预算并以确定性 LIFO 复用记录/实例槽/数组槽，访问空闲记录明确失败。
+  BootDex WeakReference 的 Reference.referent 不参与强标记；STW 清扫前清空死 referent，
+  按 API 19 ReferenceQueue 链入队并唤醒等待者，不保留宿主弱引用侧表；Soft/Phantom 未选入。
   intern string 与 Class object 为不朽强根，JNI weak global 非根且随目标清空；默认 heap 64 MiB，
   `SetEmergencyReserve` 仅供 OOM throwable。identity hash 独立于可复用句柄：普通对象使用
   不回收的 per-VM 序列，Class 按 descriptor 稳定派生。`Object.hashCode` 与

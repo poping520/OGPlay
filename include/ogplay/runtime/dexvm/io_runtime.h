@@ -83,11 +83,13 @@ public:
     bool closed{};
   };
   struct ObjectInputState final {
+    std::size_t depth{};
     std::size_t block_remaining{};
     std::optional<std::uint8_t> pushback;
     std::vector<ObjectInputHandle> handles;
   };
   struct ObjectOutputState final {
+    std::size_t depth{};
     std::unordered_map<std::uint32_t, std::uint32_t> object_handles;
     std::unordered_map<std::uint32_t, std::uint32_t> class_handles;
     std::vector<VmObjectRef> handle_objects;

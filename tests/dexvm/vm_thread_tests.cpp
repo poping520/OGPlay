@@ -1,3 +1,4 @@
+#include "boot_dex.h"
 // Guest Java threads on real host threads (DVM-28, design 04 §3).
 // State transitions follow AOSP vm/Thread.cpp: start publishes a running
 // thread, a second start is refused, interrupt raises a flag, teardown
@@ -64,6 +65,7 @@ struct ThreadedVm final {
               [this]() -> DexClassLinker& {
                   linker.RegisterIntrinsics(CoreIntrinsicCatalog());
                   linker.RegisterDex(ReadFixture("interp.dex"));
+                  ogplay::test::RegisterBootDex(linker);
                   linker.Link();
                   return linker;
               }(),

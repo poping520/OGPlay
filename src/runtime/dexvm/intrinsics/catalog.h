@@ -10,13 +10,11 @@ void AppendJavaLangThrowables(std::vector<IntrinsicClassDecl>& catalog);
 void AppendJavaLangPrimitiveWrappers(
     std::vector<IntrinsicClassDecl>& catalog);
 void AppendJavaLangInterfaces(std::vector<IntrinsicClassDecl>& catalog);
-void AppendJavaUtilCollections(std::vector<IntrinsicClassDecl>& catalog);
 void AppendJavaIoStreams(std::vector<IntrinsicClassDecl>& catalog);
 void AppendJavaIoFiles(std::vector<IntrinsicClassDecl>& catalog);
 void AppendJavaUtilZip(std::vector<IntrinsicClassDecl>& catalog);
 void AppendJavaUtilPlatform(std::vector<IntrinsicClassDecl>& catalog,
                             const CoreIntrinsicServices& services);
-void AppendJavaUtilAlgorithms(std::vector<IntrinsicClassDecl>& catalog);
 void AppendJavaIcu(std::vector<IntrinsicClassDecl>& catalog,
                    const CoreIntrinsicServices& services);
 void AppendJavaRegex(std::vector<IntrinsicClassDecl>& catalog);
@@ -39,7 +37,6 @@ Declare_java_lang_Thread_UncaughtExceptionHandler();
 [[nodiscard]] IntrinsicClassDecl Declare_java_lang_StackTraceElement();
 [[nodiscard]] IntrinsicClassDecl Declare_java_lang_Thread_State();
 [[nodiscard]] IntrinsicClassDecl Declare_java_lang_Enum();
-[[nodiscard]] IntrinsicClassDecl Declare_java_io_Serializable();
 [[nodiscard]] IntrinsicClassDecl Declare_java_lang_String();
 [[nodiscard]] IntrinsicClassDecl Declare_java_lang_StringBuilder();
 [[nodiscard]] IntrinsicClassDecl Declare_java_lang_StringBuffer();
@@ -47,7 +44,7 @@ Declare_java_lang_Thread_UncaughtExceptionHandler();
     const CoreIntrinsicServices& services);
 [[nodiscard]] IntrinsicClassDecl Declare_java_io_PrintStream();
 [[nodiscard]] IntrinsicClassDecl Declare_java_lang_Math();
-[[nodiscard]] IntrinsicClassDecl Declare_java_util_Random();
+[[nodiscard]] IntrinsicClassDecl Declare_java_lang_Runtime();
 [[nodiscard]] IntrinsicClassDecl Declare_java_lang_Class();
 [[nodiscard]] IntrinsicClassDecl Declare_java_lang_reflect_AnnotatedElement();
 [[nodiscard]] IntrinsicClassDecl Declare_java_lang_reflect_GenericDeclaration();
@@ -60,7 +57,6 @@ Declare_java_lang_Thread_UncaughtExceptionHandler();
 Declare_java_lang_reflect_InvocationTargetException();
 [[nodiscard]] IntrinsicClassDecl Declare_java_lang_reflect_Constructor();
 [[nodiscard]] IntrinsicClassDecl Declare_java_lang_reflect_Field();
-[[nodiscard]] IntrinsicClassDecl Declare_java_lang_ref_WeakReference();
 [[nodiscard]] IntrinsicClassDecl Declare_java_lang_reflect_Array();
 [[nodiscard]] IntrinsicClassDecl Declare_java_io_IOException();
 [[nodiscard]] IntrinsicClassDecl Declare_java_io_FileNotFoundException();

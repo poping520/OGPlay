@@ -13,7 +13,6 @@
 
 #include "ogplay/runtime/dexvm/interpreter.h"
 #include "ogplay/runtime/dexvm/class_loader_facade.h"
-#include "ogplay/runtime/dexvm/collection_runtime.h"
 #include "ogplay/runtime/dexvm/icu_formatter_runtime.h"
 #include "ogplay/runtime/dexvm/io_runtime.h"
 #include "ogplay/runtime/dexvm/nio_runtime.h"
@@ -120,7 +119,6 @@ public:
     std::unordered_map<std::uint32_t, ThrowableState> throwables;
     std::unordered_map<std::uint32_t, std::u16string> builders;
     std::unordered_map<std::uint32_t, VmObjectRef> enum_constant_arrays;
-    CollectionRuntime collections;
     IcuFormatterRuntime icu_formatters;
     IoRuntime io;
     NetworkRuntime network;

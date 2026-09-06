@@ -819,19 +819,6 @@ Interpreter::Interpreter(DexClassLinker& linker, JavaObjectModel& model,
             }
         }});
     RegisterIntrinsicStateTable({
-        "collections",
-        [state = impl_.get()](const VmObjectRef owner,
-                              const VmRootVisitor& visit) {
-            state->collections.Trace(owner, visit);
-        },
-        [state = impl_.get()](const VmObjectRef owner) {
-            state->collections.Sweep(owner);
-        },
-        [state = impl_.get()](const VmObjectRef source,
-                              const VmObjectRef clone) {
-            state->collections.Clone(source, clone);
-        }});
-    RegisterIntrinsicStateTable({
         "io",
         [state = impl_.get()](const VmObjectRef owner,
                               const VmRootVisitor& visit) {
@@ -908,14 +895,6 @@ Interpreter::Interpreter(DexClassLinker& linker, JavaObjectModel& model,
     impl_->reflection =
         std::make_unique<ReflectionRuntime>(*this, linker, model);
     impl_->unsafe = std::make_unique<UnsafeRuntime>(*this);
-}
-
-CollectionRuntime& Interpreter::Collections() {
-    return impl_->collections;
-}
-
-const CollectionRuntime& Interpreter::Collections() const {
-    return impl_->collections;
 }
 
 IcuFormatterRuntime& Interpreter::IcuFormatters() {
@@ -1245,10 +1224,7 @@ VmObjectRef Interpreter::CloneObject(const VmObjectRef source) {
 std::u16string& Interpreter::BuilderBuffer(const VmObjectRef instance) {
     return impl_->builders[instance.Value()];
 }
-std::vector<VmObjectRef>& Interpreter::ListStorage(
-    const VmObjectRef instance) {
-    return impl_->collections.EnsureSequence(instance).elements;
-}
+
 std::optional<std::string> Interpreter::GetSystemProperty(
     const std::string_view key) const {
     const auto found = impl_->system_properties.find(std::string(key));

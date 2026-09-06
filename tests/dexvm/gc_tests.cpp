@@ -1,3 +1,4 @@
+#include "boot_dex.h"
 #include <doctest/doctest.h>
 
 #include <algorithm>
@@ -7,7 +8,6 @@
 #include <vector>
 
 #include "ogplay/core/capability_ledger.h"
-#include "ogplay/runtime/dexvm/collection_runtime.h"
 #include "ogplay/runtime/dexvm/intrinsic_builder.h"
 #include "ogplay/runtime/dexvm/interpreter.h"
 #include "ogplay/runtime/dexvm/owned_state_table.h"
@@ -49,6 +49,7 @@ struct GcVm final {
                      });
                  catalog.push_back(std::move(host).Build());
                  linker.RegisterIntrinsics(catalog);
+                 ogplay::test::RegisterBootDex(linker);
                  linker.Link();
                  return linker;
              }(),
@@ -118,7 +119,10 @@ TEST_CASE("DexVM marker traces exact object edges and intrinsic side tables") {
     const auto array = fixture.model.NewObjectArray(array_class, *object_class, 1);
     fixture.model.SetObjectElement(array, 0, root);
     const auto side_child = fixture.vm.NewIntrinsicInstance("Lgc/RootBox;");
-    fixture.vm.ListStorage(root).push_back(side_child);
+    fixture.vm.RegisterIntrinsicStateTable({
+        "marker-edge", [root, side_child](VmObjectRef owner, const VmRootVisitor& visit) {
+            if (owner == root) visit(side_child);
+        }, [](VmObjectRef) {}, {}});
     const auto garbage = fixture.vm.NewIntrinsicInstance("Lgc/RootBox;");
     fixture.vm.SetGcIntegration(
         {{}, {}, [array](const VmRootVisitor& visit) { visit(array); }});
@@ -150,7 +154,7 @@ TEST_CASE("DexVM intrinsic state tables register trace sweep and clone hooks") {
                 (*state)[clone.Value()] = found->second;
             }
         }});
-    CHECK(fixture.vm.RegisteredIntrinsicSideTableCount() == 9);
+    CHECK(fixture.vm.RegisteredIntrinsicSideTableCount() == 8);
 
     const auto owner = fixture.vm.NewIntrinsicInstance("Lgc/RootBox;");
     const auto child = fixture.vm.NewIntrinsicInstance("Lgc/RootBox;");
@@ -166,22 +170,12 @@ TEST_CASE("DexVM intrinsic state tables register trace sweep and clone hooks") {
          std::byte{0}, std::byte{0}, std::byte{0}, std::byte{0},
          std::byte{0}, std::byte{0}});
     (*state)[owner.Value()] = child;
-    fixture.vm.ListStorage(owner).push_back(child);
-    auto& source_map = fixture.vm.Collections().EnsureMap(owner);
-    source_map.entries.push_back({1, child, owner, 7});
     const auto source_hash = fixture.model.IdentityHashCode(owner);
     const auto clone = fixture.vm.CloneObject(owner);
     CHECK(fixture.model.IdentityHashCode(clone) != source_hash);
     CHECK(fixture.model.IdentityHashCode(owner) == source_hash);
     REQUIRE(state->contains(clone.Value()));
     CHECK(state->at(clone.Value()) == child);
-    REQUIRE(fixture.vm.ListStorage(clone).size() == 1);
-    CHECK(fixture.vm.ListStorage(clone).front() == child);
-    const auto* cloned_map = fixture.vm.Collections().FindMap(clone);
-    REQUIRE(cloned_map != nullptr);
-    REQUIRE(cloned_map->entries.size() == 1);
-    CHECK(cloned_map->entries.front().key == child);
-    CHECK(cloned_map->entries.front().value == owner);
 
     fixture.vm.SetGcIntegration(
         {{}, {}, [owner](const VmRootVisitor& visit) { visit(owner); }});
@@ -248,6 +242,7 @@ TEST_CASE("DexVM and JNI share one object array identity and element store") {
     catalog.push_back(
         std::move(IntrinsicClassBuilder::Class("Lgc/Box;")).Build());
     linker.RegisterIntrinsics(catalog);
+    ogplay::test::RegisterBootDex(linker);
     linker.Link();
     const auto dex_object = linker.FindClass("Ljava/lang/Object;");
     const auto dex_box = linker.FindClass("Lgc/Box;");
@@ -291,7 +286,7 @@ TEST_CASE("DexVM sweeper releases stores reuses handles and is idempotent") {
     GcVm fixture;
     const auto survivor = fixture.vm.NewIntrinsicInstance("Lgc/RootBox;");
     const auto dead = fixture.vm.NewIntrinsicInstance("Lgc/RootBox;");
-    fixture.vm.ListStorage(dead).push_back(survivor);
+    fixture.model.InstanceSlots(dead)[0] = {survivor.Value(), SlotTag::ref};
     const auto dead_string = fixture.model.NewString(u"dead");
     const auto dead_string_hash =
         fixture.model.IdentityHashCode(dead_string);
@@ -316,7 +311,7 @@ TEST_CASE("DexVM sweeper releases stores reuses handles and is idempotent") {
     const auto reused = fixture.vm.NewIntrinsicInstance("Lgc/RootBox;");
     CHECK(reused == dead_string);
     CHECK(fixture.model.IdentityHashCode(reused) != dead_string_hash);
-    CHECK(fixture.vm.ListStorage(reused).empty());
+    CHECK(fixture.model.InstanceSlots(reused)[0].bits == 0);
     fixture.vm.SetGcIntegration(
         {{}, {}, [survivor, reused](const VmRootVisitor& visit) {
              visit(survivor);

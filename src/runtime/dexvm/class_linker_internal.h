@@ -301,6 +301,23 @@ public:
                 linked.vtable.push_back(method_id);
             }
         }
+        // Dalvik Miranda slots allow invoke-virtual on an abstract class to
+        // resolve methods inherited only from its interfaces (AbstractQueue.poll).
+        // These are dispatch slots, not new reflection-visible declarations.
+        for (const auto interface_id : linked.interfaces) {
+            for (const auto interface_method : ClassAt(interface_id).own_virtual_methods) {
+                const auto& declaration = MethodAt(interface_method);
+                const auto key = MemberKey(declaration.name, declaration.descriptor);
+                if (extra.virtual_lookup.contains(key)) continue;
+                auto miranda = declaration;
+                miranda.kind = MethodKind::abstract;
+                miranda.implementation = {};
+                miranda.access_flags |= kAccAbstract;
+                miranda.vtable_index = static_cast<std::int32_t>(linked.vtable.size());
+                extra.virtual_lookup.emplace(key, static_cast<std::uint16_t>(linked.vtable.size()));
+                linked.vtable.push_back(AddMethod(std::move(miranda)));
+            }
+        }
         extra.linked = true;
         visiting.erase(id.Value());
     }

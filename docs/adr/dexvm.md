@@ -9,6 +9,7 @@
 - [ADR-0030 · API 19 curated Boot DEX 与方法覆盖](#adr-0030)
 - [ADR-0031 · API 19 Unsafe 逻辑位置与原子性](#adr-0031)
 - [ADR-0032 · API 19 日期格式化数据与平台边界](#adr-0032)
+- [ADR-0033 · 集合 BootDex 所有权与弱引用边界](#adr-0033)
 
 <a id="adr-0017"></a>
 
@@ -308,3 +309,35 @@ macOS 已验证；原先 B 阶段“三平台验证”要求的 Windows/Linux �
 两份独立文件删除，以上旧路径由此替代。审计复用 builder 的 API level 与 core.jar 固定输入，
 日期 BootDex 子集必须包含于主类清单，外部依赖分类不得与主清单冲突。原有闭包、native、
 overlay 和指标摘要检查保持，统一进入 builder 自测；派生报告路径不变。
+
+<a id="adr-0033"></a>
+
+## ADR-0033 · 集合 BootDex 所有权与弱引用边界
+
+- 状态：Accepted
+- 日期：2026-09-06
+- 关联：[DVM-103](../tasks/dexvm/DVM-103.md)、[ADR-0030](#adr-0030)
+- Supersedes：ADR-0029 中 collections 作为宿主 owner-attached table 的实现选择；其他状态表规则不变。
+
+### 决定
+
+- Collection/List/Map 及容器、视图、算法改由 pinned API 19 BootDex 拥有，删除
+  CollectionRuntime 和相关 intrinsic。Observable/Random/ThreadLocal 一并迁入；recipe
+  仍统一维护于 api19.json，日期审计固定 42 类样本，仅更新依赖归属分类。
+- intrinsic 引用的 BootDex 父类/接口延迟至 Link 解析；Miranda 槽只参与虚分派，不扩充
+  reflection own members。实例字段与数组是集合唯一存储，GC/clone 使用通用对象路径。
+- WeakReference 的 referent 不构成强边；STW 清扫前清空失效目标，直接写 API 19
+  ReferenceQueue 字段并通知 wait-set。执行锁内不调用 guest 代码或等待 guest monitor。
+  SoftReference/PhantomReference 和宿主 GC 策略不在本轮范围。
+- Thread.localValues 供 DEX ThreadLocal 使用；atomic getAndAdd 遵循 Java 位宽回绕。
+  Runtime.availableProcessors 返回执行锁对应的单 guest 执行通道事实 1；nanoTime 由统一
+  Clock 毫秒值转换，未注入时明确失败，不引入宿主时钟。
+- java.io 序列化接口归 BootDex，实际流仍由 IoRuntime 拥有。Externalizable 支持显式 UID
+  的协议 2：公共无参构造、真实回调、共享 handle/递归预算、未消费尾部跳过及异常原身份。
+  协议 1、默认 UID、数组与任意私有 writeObject/readObject 明确失败。
+
+### 验证与边界
+
+390 个 BootDex class_def 全部链接，集合自身方法无 intrinsic overlay；双后端定向验证
+容器、视图、迭代器、clone、弱键 GC、对象流及已有日期行为。类迁移不表示所有 XML、
+序列化或并发长尾均已支持；游戏首错推进只记为 reached-fault，不替代 Scenario gate。

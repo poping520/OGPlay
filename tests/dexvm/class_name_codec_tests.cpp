@@ -1,3 +1,4 @@
+#include "boot_dex.h"
 #include <fstream>
 #include <iterator>
 #include <string>
@@ -138,6 +139,7 @@ TEST_CASE("reflection linker metadata preserves intrinsic declarations") {
 
     DexClassLinker linker;
     linker.RegisterIntrinsics(catalog);
+    ogplay::test::RegisterBootDex(linker);
     linker.Link();
 
     const auto owner_id = linker.FindClass("Ltest/Owner;");
@@ -208,6 +210,7 @@ TEST_CASE("DVM-94 intrinsic declarations inherit and replace stable vtable slots
     catalog.push_back(std::move(grandchild).Build());
     DexClassLinker linker;
     linker.RegisterIntrinsics(catalog);
+    ogplay::test::RegisterBootDex(linker);
     linker.Link();
 
     const auto parent_id = linker.ResolveDescriptor("Ltest/Dvm94Parent;");
@@ -259,6 +262,7 @@ TEST_CASE("DVM-94 intrinsic override intent is checked during linking") {
         catalog.push_back(std::move(child).Build());
         DexClassLinker linker;
         linker.RegisterIntrinsics(catalog);
+        ogplay::test::RegisterBootDex(linker);
         linker.Link();
     };
 
@@ -284,6 +288,7 @@ TEST_CASE("DVM-94 intrinsic override intent is checked during linking") {
             catalog.push_back(std::move(child).Build());
             DexClassLinker linker;
             linker.RegisterIntrinsics(catalog);
+            ogplay::test::RegisterBootDex(linker);
             linker.Link();
         }(),
         DexVmError);
@@ -305,6 +310,7 @@ TEST_CASE("DVM-94 intrinsic override intent is checked during linking") {
         catalog.push_back(std::move(child).Build());
         DexClassLinker linker;
         linker.RegisterIntrinsics(catalog);
+        ogplay::test::RegisterBootDex(linker);
         linker.Link();
     };
     CHECK_NOTHROW(link_protected_parent(0x0004U));
@@ -317,6 +323,7 @@ TEST_CASE("reflection linker metadata preserves DEX order and loader roles") {
     DexClassLinker linker;
     const auto core = CoreIntrinsicCatalog();
     linker.RegisterIntrinsics(core);
+    ogplay::test::RegisterBootDex(linker);
     linker.RegisterDex(ReadFixture("interp.dex"));
     linker.Link();
 

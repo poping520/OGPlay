@@ -1,3 +1,4 @@
+#include "boot_dex.h"
 // Widget state, resolved UiTree geometry and listener dispatch integration.
 
 #include <doctest/doctest.h>
@@ -134,6 +135,7 @@ struct ClickVm final {
                       std::move(system_ui_listener).Build());
                   linker.RegisterIntrinsics(test_catalog);
                   linker.RegisterDex(ReadFixture("widgetclick.dex"));
+                  ogplay::test::RegisterBootDex(linker);
                   linker.Link();
                   return linker;
               }(),

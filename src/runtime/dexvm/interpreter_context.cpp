@@ -466,14 +466,52 @@ GcMarkResult Interpreter::MarkReachable() {
     VisitRoots([&](const VmObjectRef ref) {
         if (ref.IsValid()) roots.push_back(ref);
     });
+    const auto reference = impl_->linker->FindClass("Ljava/lang/ref/Reference;");
+    std::optional<VmFieldId> referent;
+    if (reference) referent = impl_->linker->FindFieldRecursive(
+        *reference, "referent", "Ljava/lang/Object;");
     return impl_->model->MarkReachable(
         roots, [this](const VmObjectRef owner, const VmRootVisitor& visitor) {
             impl_->TraceIntrinsicSideTables(owner, visitor);
+        }, [this, reference, referent](DexClassId owner, std::size_t slot) {
+            return reference && referent && owner.IsValid() &&
+                slot == impl_->linker->Field(*referent).slot &&
+                impl_->linker->IsAssignable(*reference, owner);
         });
 }
 
 GcSweepResult Interpreter::SweepGarbage(const GcMarkResult& mark) {
     VmExecutionLockScope lock_scope(impl_->execution_lock);
+    // The collector holds VmExecutionLock: publish cleared weak referents and
+    // queue links without entering guest code or parking on a guest monitor.
+    const auto reference = impl_->linker->FindClass("Ljava/lang/ref/Reference;");
+    const auto queue_class = impl_->linker->FindClass("Ljava/lang/ref/ReferenceQueue;");
+    if (reference && queue_class) {
+        const auto referent = impl_->linker->FindFieldRecursive(*reference, "referent", "Ljava/lang/Object;");
+        const auto queue = impl_->linker->FindFieldRecursive(*reference, "queue", "Ljava/lang/ref/ReferenceQueue;");
+        const auto next = impl_->linker->FindFieldRecursive(*reference, "queueNext", "Ljava/lang/ref/Reference;");
+        const auto head = impl_->linker->FindFieldRecursive(*queue_class, "head", "Ljava/lang/ref/Reference;");
+        if (referent && queue && next && head) {
+            for (std::size_t i = 0; i < mark.marked.size(); ++i) {
+                if (!mark.marked[i]) continue;
+                const auto owner = VmObjectRef(static_cast<std::uint32_t>(i + 1));
+                const auto owner_class = impl_->model->ObjectClass(owner);
+                if (!owner_class.IsValid() || !impl_->linker->IsAssignable(*reference, owner_class)) continue;
+                auto slots = impl_->model->InstanceSlots(owner);
+                auto& target = slots[impl_->linker->Field(*referent).slot];
+                if (target.bits == 0 || mark.IsMarked(VmObjectRef(target.bits))) continue;
+                target = {0, SlotTag::ref};
+                const auto queue_ref = VmObjectRef(slots[impl_->linker->Field(*queue).slot].bits);
+                auto& next_slot = slots[impl_->linker->Field(*next).slot];
+                if (!queue_ref.IsValid() || next_slot.bits != 0) continue;
+                auto& queue_head = impl_->model->InstanceSlots(queue_ref)[impl_->linker->Field(*head).slot];
+                next_slot = {queue_head.bits == 0 ? owner.Value() : queue_head.bits, SlotTag::ref};
+                queue_head = {owner.Value(), SlotTag::ref};
+                slots[impl_->linker->Field(*queue).slot] = {0, SlotTag::ref};
+                impl_->monitors->NotifyForGc(queue_ref);
+            }
+        }
+    }
     return impl_->model->Sweep(
         mark,
         GcSweepHooks{

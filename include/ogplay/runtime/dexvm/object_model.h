@@ -125,7 +125,8 @@ public:
     [[nodiscard]] GcMarkResult MarkReachable(
         const std::vector<VmObjectRef>& roots,
         const std::function<void(VmObjectRef, const RootVisitor&)>&
-            trace_host_edges);
+            trace_host_edges,
+        const std::function<bool(DexClassId, std::size_t)>& is_weak_slot = {});
     [[nodiscard]] GcSweepResult Sweep(const GcMarkResult& mark,
                                       const GcSweepHooks& hooks);
 

@@ -41,7 +41,7 @@
     "path": "framework/bootdex.jar",
     "generator": "tools/bootdex/build_bootdex.py",
     "recipe": "tools/bootdex/api19.json",
-    "recipe_sha256": "a9807a24019a26a82db4662ae599773ed77777eb96deeb524ab8027e4e43411e",
+    "recipe_sha256": "e1f67bd25a08c6fea77e35d91a31d6382fc053cc4a2bc2cd0b36c199f62e2671",
     "sources": [
       {
         "source_project": "platform/libcore",
@@ -49,12 +49,12 @@
         "source_jar_sha256": "996557954e45f7192b187b2394259bc8aca6e3946652e03b99d837432f83d1ef"
       }
     ],
-    "size": 259381,
-    "sha256": "00266a1c22c279310d422d8572f06fb4ebd1222fbb6dd24fc15b36c4fdb7e668",
+    "size": 703117,
+    "sha256": "a78badef86f6020129f0f2712834d2c04daa6d25cc7166f14eb3f13506c7e5e2",
     "dex_entry": "classes.dex",
-    "dex_size": 259084,
-    "dex_sha256": "54cf68c55c9571d8cca343b2f7719996c5b2fcbeb137fa4edf58cd10cc54bd4e",
-    "class_count": 89,
+    "dex_size": 702820,
+    "dex_sha256": "9093d7cb6acacba5cb0046bbcb3ff4ce0cdb427f54ee4b144d56e30c14e39630",
+    "class_count": 390,
     "selection_policy": "load-all",
     "notice": "notices/bootdex.jar.txt",
     "notice_sha256": "eee2a3e3ace26767b6290ad771ae9cf61ac729fb81db9306b2f5be63e4169235"

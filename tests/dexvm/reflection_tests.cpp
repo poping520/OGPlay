@@ -1,3 +1,4 @@
+#include "boot_dex.h"
 #include <algorithm>
 #include <array>
 #include <fstream>
@@ -43,6 +44,7 @@ struct ReflectionVm final {
               const auto catalog = CoreIntrinsicCatalog();
               linker.RegisterIntrinsics(catalog);
               linker.RegisterDex(ReadFixture(fixture));
+              ogplay::test::RegisterBootDex(linker);
               linker.Link();
               return linker;
           }(), model, nullptr, ledger, InterpreterConfig{.backend = backend}) {}

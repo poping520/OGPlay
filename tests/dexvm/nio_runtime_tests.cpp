@@ -1,3 +1,4 @@
+#include "boot_dex.h"
 #include <array>
 #include <bit>
 #include <cstddef>
@@ -33,6 +34,7 @@ struct NioVm final {
     NioVm()
         : vm([this]() -> dx::DexClassLinker& {
               linker.RegisterIntrinsics(dx::CoreIntrinsicCatalog());
+              ogplay::test::RegisterBootDex(linker);
               linker.Link();
               return linker;
           }(), model, nullptr, ledger, {}) {

@@ -1,3 +1,4 @@
+#include "boot_dex.h"
 // Gap survey mode (diagnostic): unresolved platform surfaces become recorded
 // neutral stubs so one run harvests the whole work queue. Every case here has
 // a "survey off => honest failure" counterpart, per the quirk rule.
@@ -31,6 +32,7 @@ struct Linked final {
           interpreter(
               [this]() -> DexClassLinker& {
                   linker.RegisterIntrinsics(CoreIntrinsicCatalog());
+                  ogplay::test::RegisterBootDex(linker);
                   linker.Link();
                   return linker;
               }(),

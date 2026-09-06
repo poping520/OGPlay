@@ -92,6 +92,8 @@ public:
                                      std::int64_t timeout_millis);
     void Notify(VmObjectRef object, std::uint64_t owner);
     void NotifyAll(VmObjectRef object, std::uint64_t owner);
+    // GC has the VM execution lock and never acquires guest monitor ownership.
+    void NotifyForGc(VmObjectRef object);
 
     // Thread.interrupt (AOSP vm/Thread.cpp dvmThreadInterrupt): raise the
     // flag, then wake the target if it is parked.

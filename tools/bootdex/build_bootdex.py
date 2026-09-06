@@ -374,7 +374,7 @@ def classified_records(policy: dict, dex: dex_survey_lib.DexFile) -> dict:
 
 
 def make_audit_report(policy: dict) -> dict:
-    classes = tuple(policy["classifications"]["boot_dex"])
+    classes = tuple(policy["roots"])
     dex = dex_survey_lib.parse_dex(selected_dex(policy["source"], classes))
     actual_classes = tuple(sorted(dex.type_name(item.type_index) for item in dex.classes))
     if actual_classes != classes:

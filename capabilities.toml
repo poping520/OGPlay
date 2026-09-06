@@ -1223,12 +1223,12 @@ note = "DVM-6 在 L1 之上受检读取方法指令流、try/catch（区间有�
 [dexvm.class_linker]
 status = "complete"
 test = "tests/dexvm/class_name_codec_tests.cpp; tests/dexvm/interpreter_tests.cpp; tests/dexvm/intrinsics_p1_tests.cpp; architecture.dexvm_intrinsic_layout"
-note = "DVM-7 注册/层级/布局/vtable/iftable 四步链接与懒结构预检；DVM-94/ADR-0028 将 class/method/field 改为追加地址稳定存储，以 InvokeKind+ResolvedCallSite 隔离 virtual/interface/super/static/private/constructor 缓存，MethodShape 在链接期一次生成。DVM-99/ADR-0030 增加独立 Boot/Application DexUnit 与 unit-local 常量池缓存；Boot DEX 类全量登记，同类 DEX 结构上精确同签名 intrinsic method overlay，未绑定 native fail closed。intrinsic declaration 只含 own members，隐式/虚假/final/收窄覆盖链接失败；protected/public/package/private 可见性矩阵受测，Application 等子类直接继承 ContextWrapper"
+note = "DVM-7 注册/层级/布局/vtable/iftable 四步链接与懒结构预检；DVM-94/ADR-0028 将 class/method/field 改为追加地址稳定存储，以 InvokeKind+ResolvedCallSite 隔离 virtual/interface/super/static/private/constructor 缓存，MethodShape 在链接期一次生成。DVM-99/ADR-0030 增加独立 Boot/Application DexUnit 与 unit-local 常量池缓存；Boot DEX 类全量登记，同类 DEX 结构上精确同签名 intrinsic method overlay，未绑定 native fail closed。intrinsic declaration 只含 own members，隐式/虚假/final/收窄覆盖链接失败；protected/public/package/private 可见性矩阵受测，Application 等子类直接继承 ContextWrapper；DVM-103 延迟解析 intrinsic 的 BootDex 父类/接口并保留声明顺序，Miranda 槽只参与分派、不污染 own members。"
 
 [dexvm.boot_dex]
 status = "complete"
 test = "tests/dexvm/intrinsics_p1_tests.cpp; tests/frontend/data_directory_tests.cpp; tools.bootdex_builder_self_test; tools.android_payload_current; PvZ exact Profile reached-fault"
-note = "DVM-99/ADR-0030 交付固定 API 19 curated bootdex.jar：运行时对 jar 内 class_def 无 allowlist 全量装载，普通方法解释执行，精确 intrinsic method overlay；Enum.getSharedConstants 以 ACC_ENUM 字段和 ordinal 构造强根 typed array。DVM-100 增加固定 AOSP 输入、精确 class recipe、双目录确定性 DEX 重组、canonical JAR 和可重建校验。DVM-102 再选入日期格式化闭包 42 类，当前制品共 89 个 class_def，DEX/JAR SHA-256 分别为 `54cf68c55c9571d8cca343b2f7719996c5b2fcbeb137fa4edf58cd10cc54bd4e` / `00266a1c22c279310d422d8572f06fb4ebd1222fbb6dd24fc15b36c4fdb7e668`。DVM-101 已闭合 Unsafe；PvZ 越过 DateFormat 后停于 Externalizable。完整 core/framework、multidex、动态 classpath 与 Android 系统服务仍不在此能力内。"
+note = "DVM-99/ADR-0030 交付固定 API 19 curated bootdex.jar：运行时对 jar 内 class_def 无 allowlist 全量装载，普通方法解释执行，精确 intrinsic method overlay；Enum.getSharedConstants 以 ACC_ENUM 字段和 ordinal 构造强根 typed array。DVM-100 增加固定 AOSP 输入、精确 class recipe、双目录确定性 DEX 重组、canonical JAR 和可重建校验。DVM-102 选入日期格式化闭包，DVM-103 迁入集合与 Externalizable 相关接口，当前制品共 390 个 class_def，DEX/JAR SHA-256 分别为 `9093d7cb6acacba5cb0046bbcb3ff4ce0cdb427f54ee4b144d56e30c14e39630` / `a78badef86f6020129f0f2712834d2c04daa6d25cc7166f14eb3f13506c7e5e2`。390 类全链接与集合无 intrinsic overlay 受检。DVM-101 已闭合 Unsafe。完整 core/framework、multidex、动态 classpath 与 Android 系统服务仍不在此能力内。"
 
 [dexvm.date_format_bootdex_audit]
 status = "complete"
@@ -1293,7 +1293,7 @@ note = "DVM-8 建立统一 VmObjectRef 句柄空间，字符串与基元数组�
 [dexvm.gc]
 status = "partial"
 test = "tests/dexvm/gc_tests.cpp; tests/dexvm/android_value_tests.cpp; tests/dexvm/scheduler_tests.cpp; tests/dexvm/audio_track_tests.cpp; tools.title_profiles_current; tools.scenarios_current"
-note = "DVM-42..49 已交付精确非移动 STW 标记清除与具名 IntrinsicStateTableHooks。DVM-95/ADR-0029 新增强类型 OwnedStateTable，强制唯一名称、trace policy、sweep 与可选 clone；Android owner-attached family 删除兼容 key roots，只以 owner 标记触发 child trace，并在 handle 复用前 sweep。process/session 根与非对象 identity 分离；title 长运行 gate 未重跑，能力诚实保持 partial"
+note = "DVM-42..49 已交付精确非移动 STW 标记清除与具名 IntrinsicStateTableHooks。DVM-95/ADR-0029 新增强类型 OwnedStateTable，强制唯一名称、trace policy、sweep 与可选 clone；Android owner-attached family 删除兼容 key roots，只以 owner 标记触发 child trace，并在 handle 复用前 sweep。process/session 根与非对象 identity 分离；title 长运行 gate 未重跑，能力诚实保持 partial；DVM-103 删除集合侧表，WeakReference.referent 不参与强标记，死 referent 清空、入队后解除 queue 关联并唤醒 wait-set；弱键/重复 enqueue/通知有定向回归，Soft/Phantom 仍不在范围。"
 
 [dexvm.interpreter_core]
 status = "complete"
@@ -1343,12 +1343,12 @@ note = "DVM-12 per-class 状态机、静态初始值、super 顺序与失败粘�
 [dexvm.intrinsics_java_core]
 status = "partial"
 test = "tests/dexvm/interpreter_tests.cpp; tests/dexvm/intrinsics_p1_tests.cpp; tests/dexvm/thread_intrinsic_tests.cpp; tests/dexvm/file_vfs_tests.cpp; tests/dexvm/nio_runtime_tests.cpp; tests/session/profile_entry_scope_tests.cpp"
-note = "DVM-12/13 P1：Object/String/Class/Throwable、System/Math/StringBuilder/集合；DVM-40/41 补齐 API 19 Throwable 与 primitive wrapper families；后续批次交付 java.lang.Enum 全表面、Object.clone 与 pinned libcore 顶层 8 个 interface。DVM-48 将 java.lang.Thread 从 Android 侧表迁入 core，并于 2026-08-30 补齐 context ClassLoader、UncaughtExceptionHandler 分发、safe-point stack trace、bounded system/main ThreadGroup、Thread.State、显式组构造、存活枚举、park 单许可、interrupt action 与 API19 toString；最终检查增加 execution-local intrinsic 强根，保护 Thread/File 在 nested guest call 与 GC 间使用的新引用。DVM-61 交付独立 identity 服务；DVM-75 交付 bounded String.format 及 Locale.ENGLISH ASCII toLowerCase，其他 locale/Unicode case mapping 明确失败。DVM-78 以统一 CollectionRuntime 发布 List/Map/Set/Deque 常用层级、live view、稳定 Entry、sub-list、双向/fail-fast iterator。DVM-79 以统一 IoRuntime 发布常用 stream/reader/data/byte-array/filter/buffer 与 File/ZIP 家族，文件仅经注入 VFS；2026-08-30 首批补齐 File 路径/对象/URI 及 API19 shape，第二批补齐访问/类型、filter list/listFiles、文件 rename 与 bounded setWritable，并区分单级 mkdir 与递归 mkdirs；2026-09-03 补齐 ObjectInput/ObjectOutput 与 DataInput/DataOutput 的 API 19 层级和方法表，ObjectInputStream/ObjectOutputStream 通过 IoRuntime 实现 stream header、block-data、primitive/modified-UTF，并在 PvZ 实跑后继续闭合默认 Serializable 类描述符/字段图、循环与重复引用、枚举、Date 及 FileDescriptor.sync。DVM-82 以统一 NioRuntime 发布 API 19 Buffer family 并与 JNI direct-buffer 共用状态。DVM-87 交付常用 Arrays/Collections algorithm、固定时区 Calendar、Pattern/Matcher、Future/Executor/atomic bounded core，并在独立 java_text family 发布 SimpleDateFormat→DateFormat→Format 的 API19 最小层级；指定 pattern/Locale 构造器校验并保存 pattern，但不声明格式化行为。DVM-88 交付默认离线、显式注入的 NetworkRuntime bounded core。DVM-91 发布不泄漏宿主句柄的逻辑 FileDescriptor.valid 与 FileInputStream.getFD。DVM-98 以 IntrinsicEnumBuilder 统一平台 enum 的常量、$VALUES、类初始化及 values/valueOf，并迁移现有 8 类。`Class.desiredAssertionStatus()` 在无 Dalvik assertion-control 参数时固定返回 API 19 默认值 false。File metadata/临时文件/真实权限变更/canonical path、完整 ThreadGroup family、Tree/Sorted/Navigable、并发集合、数组、Externalizable/custom hooks 与默认 UID 计算、java.text 格式化行为、完整 charset/FileChannel 与网络长尾仍 deferred；deprecated Thread API 仅保留 API shape 并明确未实现，能力保持 partial。"
+note = "DVM-12/13 P1：Object/String/Class/Throwable、System/Math/StringBuilder/集合；DVM-40/41 补齐 API 19 Throwable 与 primitive wrapper families；后续批次交付 java.lang.Enum 全表面、Object.clone 与 pinned libcore 顶层 8 个 interface。DVM-48 将 java.lang.Thread 从 Android 侧表迁入 core，并于 2026-08-30 补齐 context ClassLoader、UncaughtExceptionHandler 分发、safe-point stack trace、bounded system/main ThreadGroup、Thread.State、显式组构造、存活枚举、park 单许可、interrupt action 与 API19 toString；最终检查增加 execution-local intrinsic 强根，保护 Thread/File 在 nested guest call 与 GC 间使用的新引用。DVM-61 交付独立 identity 服务；DVM-75 交付 bounded String.format 及 Locale.ENGLISH ASCII toLowerCase，其他 locale/Unicode case mapping 明确失败。DVM-78 以统一 CollectionRuntime 发布 List/Map/Set/Deque 常用层级、live view、稳定 Entry、sub-list、双向/fail-fast iterator。DVM-79 以统一 IoRuntime 发布常用 stream/reader/data/byte-array/filter/buffer 与 File/ZIP 家族，文件仅经注入 VFS；2026-08-30 首批补齐 File 路径/对象/URI 及 API19 shape，第二批补齐访问/类型、filter list/listFiles、文件 rename 与 bounded setWritable，并区分单级 mkdir 与递归 mkdirs；2026-09-03 补齐 ObjectInput/ObjectOutput 与 DataInput/DataOutput 的 API 19 层级和方法表，ObjectInputStream/ObjectOutputStream 通过 IoRuntime 实现 stream header、block-data、primitive/modified-UTF，并在 PvZ 实跑后继续闭合默认 Serializable 类描述符/字段图、循环与重复引用、枚举、Date 及 FileDescriptor.sync。DVM-82 以统一 NioRuntime 发布 API 19 Buffer family 并与 JNI direct-buffer 共用状态。DVM-87 交付常用 Arrays/Collections algorithm、固定时区 Calendar、Pattern/Matcher、Future/Executor/atomic bounded core，并在独立 java_text family 发布 SimpleDateFormat→DateFormat→Format 的 API19 最小层级；指定 pattern/Locale 构造器校验并保存 pattern，但不声明格式化行为。DVM-88 交付默认离线、显式注入的 NetworkRuntime bounded core。DVM-91 发布不泄漏宿主句柄的逻辑 FileDescriptor.valid 与 FileInputStream.getFD。DVM-98 以 IntrinsicEnumBuilder 统一平台 enum 的常量、$VALUES、类初始化及 values/valueOf，并迁移现有 8 类。`Class.desiredAssertionStatus()` 在无 Dalvik assertion-control 参数时固定返回 API 19 默认值 false。File metadata/临时文件/真实权限变更/canonical path、DVM-102/103 后日期与集合算法归 BootDex，CollectionRuntime 已删除；Externalizable 协议 2 使用公共无参构造与真实回调。完整 ThreadGroup family、对象流数组/协议 1/custom hooks 与默认 UID 计算、日期大数/具名时区、完整 charset/FileChannel 与网络长尾仍 deferred；deprecated Thread API 仅保留 API shape 并明确未实现，能力保持 partial。"
 
 [dexvm.observable]
 status = "complete"
 test = "tests/dexvm/observable_tests.cpp"
-note = "API 19 java.util.Observer/Observable 完整表面与行为：changed 门控、guest equals 去重/删除、注册顺序快照、receiver monitor、锁外虚派发 update、回调删除稳定性、异常传播及 nested GC 强根保活"
+note = "DVM-103 将 API 19 Observer/Observable 及 ArrayList 依赖迁入 BootDex，删除宿主 handler。changed 门控、guest equals 去重/删除、注册顺序快照、receiver monitor、锁外 update、回调删除稳定性、异常传播和 nested GC 保活由既有回归验证。"
 
 [dexvm.jni_bridge]
 status = "complete"
@@ -1403,7 +1403,7 @@ note = "DVM-86 发布 API19 Base64/SparseArray family/TypedValue/TextUtils、Col
 [dexvm.java_util_algorithms]
 status = "complete"
 test = "tests/dexvm/dvm87_tests.cpp"
-note = "DVM-87 发布常用 primitive/Object Arrays 算法、Collections sort/reverse/swap/fill/frequency/binarySearch、API 19 final Locale 的 Cloneable/Serializable 关系、ENGLISH 静态对象与从对象 languageCode 返回的 getLanguage（默认语言由会话确定性注入），以及注入 Clock 的 Calendar/GregorianCalendar 和 GMT/UTC 固定 offset TimeZone；完整算法长尾、DST/locale 时区数据库 deferred"
+note = "DVM-103 将 Arrays/Collections、排序实现与包装视图迁入 pinned API 19 BootDex，删除对应 intrinsic；常用数组算法、sort/reverse/swap/fill/frequency/binarySearch 与 live unmodifiable view 定向受检。Locale 与 ICU 数据仍经既有边界，DVM-102 日期算法来自 BootDex；具名时区数据库和大数长尾仍 deferred。"
 
 [dexvm.java_regex]
 status = "complete"
@@ -1413,7 +1413,7 @@ note = "DVM-87 发布 String 输入上的 Pattern compile/matches/quote 与 Matc
 [dexvm.java_concurrent_core]
 status = "complete"
 test = "tests/dexvm/dvm87_tests.cpp; tests/dexvm/thread_intrinsic_tests.cpp"
-note = "DVM-87 发布 Callable/Future/RunnableFuture/ExecutorService shape、FutureTask、串行 single-thread executor 与 AtomicInteger/Long/Boolean/Reference；worker 复用 VmThreadRuntime，不提供并行池、scheduled executor、timed get 或并发集合"
+note = "DVM-87 的 FutureTask、串行 executor 与 atomic 原语继续复用 VmThreadRuntime。DVM-103 concurrent 容器和 ThreadLocal 来自 BootDex，容量限制、空队列、基本增删查与迭代定向受检；getAndAdd 按 Java 位宽回绕，nanoTime 只读统一 Clock，Runtime 发布单 guest 执行通道事实 1。完整定时/取消/高争用容器语义未全量验收，scheduled executor 仍 deferred。"
 
 [dexvm.java_network]
 status = "complete"
@@ -1479,3 +1479,13 @@ note = "ADR-0026 进程内闭环：schema-1 txt/JSON 汇总 lifecycle、executio
 status = "complete"
 test = "tests/tools/test_align_host_threads.py; docs/playbook/TROUBLESHOOTING.md"
 note = "WU2 固化 procdump/WinDbg/lldb 外部 dump、十进制/十六进制 host_tid 对齐、PDB/DWARF 构建边界与无符号 module+offset 判读；对齐工具只合并事实，不猜函数名"
+
+[dexvm.collections_bootdex]
+status = "complete"
+test = "tests/dexvm/dvm87_tests.cpp; tests/dexvm/intrinsics_p1_tests.cpp; tests/dexvm/observable_tests.cpp"
+note = "DVM-103/ADR-0033 完成 API 19 Collection/List/Map 家族、Tree/Sorted/Navigable、Weak/Identity/Enum、concurrent 容器与内部类的精确选入；完整 BootDex 390 类可链接，集合自身方法无 intrinsic overlay，字段/数组为唯一存储。双后端覆盖基本操作、live view、fail-fast、clone、弱键清空入队与强引用存活。complete 指代码归属迁移，不代表 XML、任意序列化与并发长尾均实现。"
+
+[dexvm.externalizable]
+status = "complete"
+test = "tests/dexvm/dvm87_tests.cpp"
+note = "DVM-103 将 Serializable/Externalizable、DataInput/DataOutput、ObjectInput/ObjectOutput、ObjectStreamConstants 与序列化异常选入 BootDex；IoRuntime 闭合显式 UID 的 Externalizable 协议 2，公共无参构造、真实回调、primitive/object block、循环/共享 handle、尾部跳过和原异常身份双后端受检。协议 1、默认 UID、数组与任意 private custom hooks 仍明确失败。"

@@ -1,3 +1,4 @@
+#include "../dexvm/boot_dex.h"
 #include <algorithm>
 #include <array>
 #include <cstddef>
@@ -333,7 +334,7 @@ struct ApplicationProcess final {
         globals_before_bridge = session->Environment().GlobalReferenceCount();
         bridge = std::make_unique<ogplay::runtime::DexVmGuestBridge>(
             *session, ReadDexFixture("application.dex"), catalog, context,
-            ledger, nullptr);
+            ledger, nullptr, ogplay::runtime::DexVmBridgeConfig{}, ogplay::test::ReadBootDex());
         context->threads = &bridge->Threads();
     }
 
@@ -412,6 +413,7 @@ struct OrchestratedApp final {
         request.native_libraries = std::move(libraries);
         request.system_libraries = std::span{&system, 1};
         request.dex_bytes = ReadDexFixture("application.dex");
+        request.boot_dex_bytes = ogplay::test::ReadBootDex();
         request.context = context;
         request.surface_width = 64;
         request.surface_height = 36;
@@ -666,7 +668,7 @@ TEST_CASE("DexVM System load APIs support nested JNI OnLoad Java reentry") {
     auto catalog = runtime::AndroidIntrinsicCatalog(context);
     auto bridge = std::make_unique<runtime::DexVmGuestBridge>(
         *session, ReadDexFixture("aps5.dex"), catalog, context, ledger,
-        nullptr);
+        nullptr, runtime::DexVmBridgeConfig{}, test::ReadBootDex());
     context->threads = &bridge->Threads();
 
     const auto aps5_class = bridge->Linker().FindClass("Lfixture/Aps5;");
@@ -766,7 +768,7 @@ TEST_CASE("DexVM preserves failure from a resolved RegisterNatives target") {
     auto catalog = runtime::AndroidIntrinsicCatalog(context);
     auto bridge = std::make_unique<runtime::DexVmGuestBridge>(
         *session, ReadDexFixture("aps5.dex"), catalog, context, ledger,
-        nullptr);
+        nullptr, runtime::DexVmBridgeConfig{}, test::ReadBootDex());
     context->threads = &bridge->Threads();
 
     const auto owner = bridge->Linker().FindClass("Lfixture/Aps5;");

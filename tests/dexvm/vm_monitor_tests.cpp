@@ -1,3 +1,4 @@
+#include "boot_dex.h"
 // Monitor wait set across real host threads (DVM-29, design 04 §4).
 // The sequence under test is AOSP vm/Sync.cpp waitMonitor: validate the
 // owner, save the recursion depth, release the monitor completely, join the
@@ -55,6 +56,7 @@ struct MonitorVm final {
               [this]() -> DexClassLinker& {
                   linker.RegisterIntrinsics(CoreIntrinsicCatalog());
                   linker.RegisterDex(ReadFixture("interp.dex"));
+                  ogplay::test::RegisterBootDex(linker);
                   linker.Link();
                   return linker;
               }(),
@@ -521,4 +523,23 @@ TEST_CASE("dexvm worker timed wait advances only with a blocked clock driver") {
     CHECK(outcome == VmWaitOutcome::timed_out);
     CHECK(advances.load() == 1);
     CHECK(vm.clock_millis.load() == 50);
+}
+
+TEST_CASE("DVM-103 GC notification wakes a guest waiter without owning its monitor") {
+    MonitorVm vm;
+    vm.UseTestClock();
+    const auto lock = vm.Lock();
+    const auto waiter = vm.Make("LWaitTimedRunner;");
+    vm.threads.Start(waiter, "gc-waiter", vm.threads.AllocateThreadId());
+    REQUIRE(WaitFor([&] { return vm.interpreter.Monitors().WaitingCount(lock) == 1U; }));
+    {
+        VmExecutionLockScope execution(vm.interpreter.ExecutionLock());
+        vm.interpreter.Monitors().NotifyForGc(lock);
+    }
+    const bool woke = WaitFor([&] { return !vm.threads.IsAlive(waiter); });
+    if (!woke) vm.clock_millis.store(50);
+    vm.threads.Join(waiter);
+    CHECK(woke);
+    CHECK_FALSE(vm.threads.TakeFailure().has_value());
+    CHECK(vm.interpreter.Monitors().WaitingCount(lock) == 0U);
 }

@@ -13,10 +13,12 @@
 #include "ogplay/loader/apk.h"
 #include "ogplay/runtime/dexvm/class_linker.h"
 #include "ogplay/runtime/dexvm/icu_formatter_runtime.h"
+#include "ogplay/runtime/dexvm/io_runtime.h"
 #include "ogplay/runtime/dexvm/interpreter.h"
 #include "ogplay/runtime/dexvm/intrinsic_builder.h"
 #include "ogplay/runtime/dexvm/object_model.h"
 #include "ogplay/runtime/dexvm/vm_threads.h"
+#include "ogplay/runtime/dexvm/vm_monitors.h"
 
 namespace {
 
@@ -54,9 +56,10 @@ struct Dvm87Vm final {
         const std::string& language = "zh",
         const std::string& iso3_language = "zho",
         const std::string& iso3_country = "CHN",
-        const std::string& default_timezone = "GMT")
+        const std::string& default_timezone = "GMT",
+        const std::vector<IntrinsicClassDecl>& extras = {})
         : vm([this, &language, &iso3_language,
-              &iso3_country, &default_timezone]() -> DexClassLinker& {
+              &iso3_country, &default_timezone, &extras]() -> DexClassLinker& {
               CoreIntrinsicServices services;
               services.language = language;
               services.iso3_language = iso3_language;
@@ -76,6 +79,7 @@ struct Dvm87Vm final {
               std::vector<IntrinsicClassDecl> test_catalog;
               test_catalog.push_back(std::move(callable).Build());
               linker.RegisterIntrinsics(test_catalog);
+              linker.RegisterIntrinsics(extras);
               linker.Link();
               return linker;
           }(), model, nullptr, ledger, InterpreterConfig{.backend = backend}),
@@ -878,4 +882,285 @@ TEST_CASE("DVM-102 regression configured timezone is restored after Java reset")
           {VmValue::Ref(VmObjectRef{})}));
     }
   }
+}
+
+TEST_CASE("DVM-103 BootDex collection implementations own their methods and storage") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        Dvm87Vm f(backend);
+        for (const auto* name : {"ArrayList", "LinkedList", "Vector", "Stack", "ArrayDeque",
+                                "HashSet", "LinkedHashSet", "TreeSet", "PriorityQueue",
+                                "concurrent/CopyOnWriteArrayList", "concurrent/CopyOnWriteArraySet",
+                                "concurrent/ConcurrentLinkedQueue", "concurrent/ConcurrentLinkedDeque",
+                                "concurrent/LinkedBlockingQueue", "concurrent/LinkedBlockingDeque",
+                                "concurrent/PriorityBlockingQueue", "concurrent/ConcurrentSkipListSet"}) {
+            CAPTURE(name);
+            const auto descriptor = std::string("Ljava/util/") + name + ";";
+            const auto type = f.linker.ResolveDescriptor(descriptor);
+            CHECK(f.linker.Class(type).is_boot_dex);
+            for (const auto method : f.linker.Class(type).own_virtual_methods)
+                CHECK(f.linker.Method(method).kind != MethodKind::intrinsic);
+            const auto object = f.vm.NewIntrinsicInstance(descriptor);
+            f.Construct(object, descriptor, "()V");
+            const auto a = f.vm.NewStringUtf8("b");
+            const auto b = f.vm.NewStringUtf8("a");
+            f.RequireOk(f.Virtual(object, "add", "(Ljava/lang/Object;)Z", {VmValue::Ref(a)}));
+            f.RequireOk(f.Virtual(object, "add", "(Ljava/lang/Object;)Z", {VmValue::Ref(b)}));
+            auto size = f.Virtual(object, "size", "()I"); f.RequireOk(size); CHECK(size.value.AsInt() == 2);
+            auto it = f.Virtual(object, "iterator", "()Ljava/util/Iterator;"); f.RequireOk(it);
+            auto next = f.Virtual(it.value.ref, "next", "()Ljava/lang/Object;"); f.RequireOk(next);
+            CHECK((next.value.ref == a || next.value.ref == b));
+            f.RequireOk(f.Virtual(object, "clear", "()V"));
+            size = f.Virtual(object, "size", "()I"); f.RequireOk(size); CHECK(size.value.AsInt() == 0);
+        }
+        for (const auto* name : {"HashMap", "LinkedHashMap", "Hashtable", "TreeMap", "IdentityHashMap",
+                                "WeakHashMap", "Properties", "concurrent/ConcurrentHashMap",
+                                "concurrent/ConcurrentSkipListMap"}) {
+            CAPTURE(name);
+            const auto descriptor = std::string("Ljava/util/") + name + ";";
+            const auto object = f.vm.NewIntrinsicInstance(descriptor);
+            f.Construct(object, descriptor, "()V");
+            const auto key = f.vm.NewStringUtf8("key");
+            const auto value = f.vm.NewStringUtf8("value");
+            f.RequireOk(f.Virtual(object, "put", "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;",
+                                 {VmValue::Ref(key), VmValue::Ref(value)}));
+            auto got = f.Virtual(object, "get", "(Ljava/lang/Object;)Ljava/lang/Object;", {VmValue::Ref(key)});
+            f.RequireOk(got); CHECK(got.value.ref == value);
+            const auto view = f.Virtual(object, "entrySet", "()Ljava/util/Set;"); f.RequireOk(view);
+            const auto it = f.Virtual(view.value.ref, "iterator", "()Ljava/util/Iterator;"); f.RequireOk(it);
+            const auto entry = f.Virtual(it.value.ref, "next", "()Ljava/lang/Object;"); f.RequireOk(entry);
+            got = f.Virtual(entry.value.ref, "getKey", "()Ljava/lang/Object;"); f.RequireOk(got); CHECK(got.value.ref == key);
+            f.RequireOk(f.Virtual(object, "clear", "()V"));
+            got = f.Virtual(view.value.ref, "size", "()I"); f.RequireOk(got); CHECK(got.value.AsInt() == 0);
+        }
+    }
+}
+
+TEST_CASE("DVM-103 BootDex weak keys clear and enqueue while live list elements survive GC") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        Dvm87Vm f(backend);
+        const auto map = f.vm.NewIntrinsicInstance("Ljava/util/WeakHashMap;");
+        f.Construct(map, "Ljava/util/WeakHashMap;", "()V");
+        const auto list = f.vm.NewIntrinsicInstance("Ljava/util/ArrayList;");
+        f.Construct(list, "Ljava/util/ArrayList;", "()V");
+        const auto key = f.vm.NewIntrinsicInstance("Ljava/lang/Object;");
+        const auto value = f.vm.NewIntrinsicInstance("Ljava/lang/Object;");
+        const auto queue = f.vm.NewIntrinsicInstance("Ljava/lang/ref/ReferenceQueue;");
+        f.Construct(queue, "Ljava/lang/ref/ReferenceQueue;", "()V");
+        const auto weak = f.vm.NewIntrinsicInstance("Ljava/lang/ref/WeakReference;");
+        f.Construct(weak, "Ljava/lang/ref/WeakReference;",
+            "(Ljava/lang/Object;Ljava/lang/ref/ReferenceQueue;)V", {VmValue::Ref(key), VmValue::Ref(queue)});
+        f.RequireOk(f.Virtual(map, "put", "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;",
+                             {VmValue::Ref(key), VmValue::Ref(value)}));
+        f.RequireOk(f.Virtual(list, "add", "(Ljava/lang/Object;)Z", {VmValue::Ref(value)}));
+        const std::array roots{map, list, weak, queue};
+        const auto protect = f.vm.ProtectReferences(roots);
+        static_cast<void>(f.vm.CollectGarbage());
+        CHECK_FALSE(f.model.IsValidRef(key));
+        CHECK(f.model.IsValidRef(value));
+        const auto cleared = f.Virtual(weak, "get", "()Ljava/lang/Object;");
+        f.RequireOk(cleared); CHECK_FALSE(cleared.value.ref.IsValid());
+        const auto polled = f.Virtual(queue, "poll", "()Ljava/lang/ref/Reference;");
+        f.RequireOk(polled); CHECK(polled.value.ref == weak);
+        const auto reenqueue = f.Virtual(weak, "enqueue", "()Z");
+        f.RequireOk(reenqueue); CHECK(reenqueue.value.AsInt() == 0);
+        auto size = f.Virtual(map, "size", "()I"); f.RequireOk(size); CHECK(size.value.AsInt() == 0);
+        auto clone = f.Virtual(list, "clone", "()Ljava/lang/Object;"); f.RequireOk(clone);
+        f.RequireOk(f.Virtual(list, "clear", "()V"));
+        size = f.Virtual(clone.value.ref, "size", "()I"); f.RequireOk(size); CHECK(size.value.AsInt() == 1);
+        const auto got = f.Virtual(clone.value.ref, "get", "(I)Ljava/lang/Object;", {VmValue::Int(0)});
+        f.RequireOk(got); CHECK(got.value.ref == value);
+    }
+}
+
+TEST_CASE("DVM-103 Externalizable invokes public constructor and callbacks with shared handles") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        bool public_constructor = true;
+        bool fail_write = false;
+        bool fail_read = false;
+        SUBCASE("round trip") {}
+        SUBCASE("private constructor is rejected") { public_constructor = false; }
+        SUBCASE("write callback preserves throwable identity") { fail_write = true; }
+        SUBCASE("read callback preserves throwable identity") { fail_read = true; }
+        auto expected_failure = std::make_shared<VmObjectRef>();
+        auto builder = IntrinsicClassBuilder::Class("Ltest/External;", "Ljava/lang/Object;", {"Ljava/io/Externalizable;"});
+        builder.ConstantInt("serialVersionUID", "J", 123, kAccPrivate);
+        const auto value = builder.BoundInstanceField("value", "I");
+        const auto self = builder.BoundInstanceField("self", "Ljava/lang/Object;");
+        const auto constructed = builder.BoundInstanceField("constructed", "Z");
+        builder.Constructor("()V", [constructed](IntrinsicContext& c) {
+            IntrinsicCall(c).SetInt(constructed, 1); return VmValue::Void();
+        }, public_constructor ? kAccPublic : kAccPrivate);
+        const auto invoke = [](IntrinsicContext& c, VmObjectRef receiver, const char* name,
+                               const char* signature, std::vector<VmValue> args = {}) {
+            const auto type = c.vm.Model().ObjectClass(receiver);
+            const auto slot = c.vm.Linker().FindVtableIndex(type, name, signature);
+            REQUIRE(slot.has_value()); args.insert(args.begin(), VmValue::Ref(receiver));
+            const auto result = c.vm.Call(c.vm.Linker().Class(type).vtable[*slot], args);
+            REQUIRE_MESSAGE(!result.exception.IsValid(), result.exception_message);
+            return result.value;
+        };
+        builder.VirtualMethod("writeExternal", "(Ljava/io/ObjectOutput;)V", [value, invoke, fail_write, expected_failure](IntrinsicContext& c) {
+            if (fail_write) {
+                *expected_failure = c.vm.NewIntrinsicInstance("Ljava/io/IOException;");
+                c.vm.SetPendingException(*expected_failure);
+                return VmValue::Void();
+            }
+            const auto out = c.arguments[0].ref;
+            invoke(c, out, "writeInt", "(I)V", {VmValue::Int(IntrinsicCall(c).GetInt(value))});
+            invoke(c, out, "writeObject", "(Ljava/lang/Object;)V", {VmValue::Ref(c.receiver)});
+            // The reader may leave trailing primitive and object data unconsumed.
+            invoke(c, out, "writeInt", "(I)V", {VmValue::Int(99)});
+            invoke(c, out, "writeObject", "(Ljava/lang/Object;)V", {VmValue::Ref(c.receiver)});
+            return VmValue::Void();
+        });
+        builder.VirtualMethod("readExternal", "(Ljava/io/ObjectInput;)V", [value, self, invoke, fail_read, expected_failure](IntrinsicContext& c) {
+            if (fail_read) {
+                *expected_failure = c.vm.NewIntrinsicInstance("Ljava/io/IOException;");
+                c.vm.SetPendingException(*expected_failure);
+                return VmValue::Void();
+            }
+            const auto in = c.arguments[0].ref;
+            IntrinsicCall(c).SetInt(value, invoke(c, in, "readInt", "()I").AsInt());
+            IntrinsicCall(c).SetRef(self, invoke(c, in, "readObject", "()Ljava/lang/Object;").ref);
+            return VmValue::Void();
+        });
+        std::vector<IntrinsicClassDecl> extras{std::move(builder).Build()};
+        Dvm87Vm f(backend, "en", "eng", "USA", "GMT", extras);
+        const auto object = f.vm.NewIntrinsicInstance("Ltest/External;");
+        const auto field = f.linker.FindFieldRecursive(f.model.ObjectClass(object), "value", "I"); REQUIRE(field);
+        f.model.InstanceSlots(object)[f.linker.Field(*field).slot] = {42, SlotTag::cat1};
+        const auto bytes = f.vm.NewIntrinsicInstance("Ljava/io/ByteArrayOutputStream;");
+        f.Construct(bytes, "Ljava/io/ByteArrayOutputStream;", "()V");
+        const auto out = f.vm.NewIntrinsicInstance("Ljava/io/ObjectOutputStream;");
+        f.Construct(out, "Ljava/io/ObjectOutputStream;", "(Ljava/io/OutputStream;)V", {VmValue::Ref(bytes)});
+        const auto written = f.Virtual(out, "writeObject", "(Ljava/lang/Object;)V", {VmValue::Ref(object)});
+        if (fail_write) { CHECK(written.exception == *expected_failure); continue; }
+        f.RequireOk(written);
+        f.RequireOk(f.Virtual(out, "writeObject", "(Ljava/lang/Object;)V", {VmValue::Ref(object)}));
+        f.RequireOk(f.Virtual(out, "flush", "()V"));
+        const auto encoded = f.vm.IO().Output(out).bytes;
+        const auto raw = f.model.NewPrimitiveArray(f.linker.ResolveDescriptor("[B"),
+            JniPrimitiveKind::byte, static_cast<JniSize>(encoded.size()));
+        f.model.WriteByteRegion(raw, 0, encoded);
+        const auto input = f.vm.NewIntrinsicInstance("Ljava/io/ByteArrayInputStream;");
+        f.Construct(input, "Ljava/io/ByteArrayInputStream;", "([B)V", {VmValue::Ref(raw)});
+        const auto in = f.vm.NewIntrinsicInstance("Ljava/io/ObjectInputStream;");
+        f.Construct(in, "Ljava/io/ObjectInputStream;", "(Ljava/io/InputStream;)V", {VmValue::Ref(input)});
+        const auto first = f.Virtual(in, "readObject", "()Ljava/lang/Object;");
+        if (!public_constructor) {
+            REQUIRE(first.exception.IsValid());
+            CHECK(f.linker.Class(first.exception_class).descriptor == "Ljava/io/InvalidClassException;");
+            continue;
+        }
+        if (fail_read) { CHECK(first.exception == *expected_failure); continue; }
+        f.RequireOk(first);
+        const auto second = f.Virtual(in, "readObject", "()Ljava/lang/Object;"); f.RequireOk(second);
+        CHECK(first.value.ref == second.value.ref);
+        CHECK(first.value.ref != object);
+        const auto type = f.model.ObjectClass(first.value.ref);
+        const auto slots = f.model.InstanceSlots(first.value.ref);
+        CHECK(slots[f.linker.Field(*field).slot].bits == 42);
+        const auto self_field = f.linker.FindFieldRecursive(type, "self", "Ljava/lang/Object;"); REQUIRE(self_field);
+        CHECK(slots[f.linker.Field(*self_field).slot].bits == first.value.ref.Value());
+        const auto ctor_field = f.linker.FindFieldRecursive(type, "constructed", "Z"); REQUIRE(ctor_field);
+        CHECK(slots[f.linker.Field(*ctor_field).slot].bits == 1);
+    }
+}
+
+TEST_CASE("DVM-103 all BootDex classes link and collection methods have no intrinsic overlay") {
+    Dvm87Vm f;
+    const auto all = f.linker.AllClasses();
+    std::size_t count{};
+    for (const auto type : all) {
+        if (!f.linker.Class(type).is_boot_dex) continue;
+        const auto descriptor = f.linker.Class(type).descriptor;
+        CAPTURE(descriptor);
+        f.linker.EnsureClassLinked(type);
+        ++count;
+        if (!descriptor.starts_with("Ljava/util/") ||
+            descriptor.starts_with("Ljava/util/concurrent/Executors")) continue;
+        // All newly selected collection implementations are ordinary DEX.
+        const auto collection = f.linker.ResolveDescriptor("Ljava/util/Collection;");
+        const auto map = f.linker.ResolveDescriptor("Ljava/util/Map;");
+        if (!f.linker.IsAssignable(collection, type) && !f.linker.IsAssignable(map, type)) continue;
+        for (const auto method : f.linker.Class(type).own_virtual_methods)
+            CHECK(f.linker.Method(method).kind != MethodKind::intrinsic);
+        for (const auto method : f.linker.Class(type).own_direct_methods)
+            CHECK(f.linker.Method(method).kind != MethodKind::intrinsic);
+    }
+    CHECK(count == 390);
+}
+
+TEST_CASE("DVM-103 bounded queues and Collections wrappers use API19 semantics") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        Dvm87Vm f(backend);
+        const auto value = f.vm.NewStringUtf8("item");
+        for (const auto* name : {"ArrayBlockingQueue", "LinkedBlockingQueue", "LinkedBlockingDeque"}) {
+            CAPTURE(name);
+            const auto descriptor = std::string("Ljava/util/concurrent/") + name + ";";
+            const auto q = f.vm.NewIntrinsicInstance(descriptor);
+            f.Construct(q, descriptor, "(I)V", {VmValue::Int(1)});
+            const auto offer = [&] { return f.Virtual(q, "offer", "(Ljava/lang/Object;)Z", {VmValue::Ref(value)}); };
+            auto result = offer(); f.RequireOk(result); CHECK(result.value.AsInt() == 1);
+            result = offer(); f.RequireOk(result); CHECK(result.value.AsInt() == 0);
+            result = f.Virtual(q, "poll", "()Ljava/lang/Object;"); f.RequireOk(result); CHECK(result.value.ref == value);
+            result = f.Virtual(q, "poll", "()Ljava/lang/Object;"); f.RequireOk(result); CHECK_FALSE(result.value.ref.IsValid());
+        }
+        for (const auto* name : {"SynchronousQueue", "LinkedTransferQueue"}) {
+            CAPTURE(name);
+            const auto descriptor = std::string("Ljava/util/concurrent/") + name + ";";
+            const auto q = f.vm.NewIntrinsicInstance(descriptor);
+            f.Construct(q, descriptor, "()V");
+            const auto result = f.Virtual(q, "poll", "()Ljava/lang/Object;");
+            f.RequireOk(result); CHECK_FALSE(result.value.ref.IsValid());
+        }
+        const auto list = f.vm.NewIntrinsicInstance("Ljava/util/ArrayList;");
+        f.Construct(list, "Ljava/util/ArrayList;", "()V");
+        f.RequireOk(f.Virtual(list, "add", "(Ljava/lang/Object;)Z", {VmValue::Ref(value)}));
+        const auto view = f.Static("Ljava/util/Collections;", "unmodifiableList",
+            "(Ljava/util/List;)Ljava/util/List;", {VmValue::Ref(list)}); f.RequireOk(view);
+        const auto rejected = f.Virtual(view.value.ref, "clear", "()V");
+        REQUIRE(rejected.exception.IsValid());
+        CHECK(f.linker.Class(rejected.exception_class).descriptor == "Ljava/lang/UnsupportedOperationException;");
+        f.RequireOk(f.Virtual(list, "clear", "()V"));
+        const auto size = f.Virtual(view.value.ref, "size", "()I"); f.RequireOk(size); CHECK(size.value.AsInt() == 0);
+    }
+}
+
+TEST_CASE("DVM-103 collection VM primitives use injected time and wrapping atomics") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        Dvm87Vm f(backend);
+        auto time = f.Static("Ljava/lang/System;", "nanoTime", "()J");
+        REQUIRE(time.exception.IsValid());
+        CHECK(f.linker.Class(time.exception_class).descriptor == "Ljava/lang/UnsupportedOperationException;");
+        f.vm.Monitors().SetTimeSource([] { return std::int64_t{123}; });
+        time = f.Static("Ljava/lang/System;", "nanoTime", "()J");
+        f.RequireOk(time); CHECK(time.value.AsLong() == 123000000);
+        const auto runtime = f.Static("Ljava/lang/Runtime;", "getRuntime", "()Ljava/lang/Runtime;");
+        f.RequireOk(runtime);
+        const auto processors = f.Virtual(runtime.value.ref, "availableProcessors", "()I");
+        f.RequireOk(processors); CHECK(processors.value.AsInt() == 1);
+        const auto atomic = f.vm.NewIntrinsicInstance("Ljava/util/concurrent/atomic/AtomicInteger;");
+        f.Construct(atomic, "Ljava/util/concurrent/atomic/AtomicInteger;", "(I)V", {VmValue::Int(2147483647)});
+        const auto old = f.Virtual(atomic, "getAndAdd", "(I)I", {VmValue::Int(1)});
+        f.RequireOk(old); CHECK(old.value.AsInt() == 2147483647);
+        const auto wrapped = f.Virtual(atomic, "get", "()I");
+        f.RequireOk(wrapped); CHECK(wrapped.value.AsInt() == (-2147483647 - 1));
+    }
+}
+
+TEST_CASE("DVM-103 deferred intrinsic interfaces preserve declaration order") {
+    DexClassLinker linker;
+    auto catalog = CoreIntrinsicCatalog();
+    auto probe = IntrinsicClassBuilder::Class("Ltest/InterfaceOrder;", "Ljava/lang/Object;",
+        {"Ljava/io/Serializable;", "Ljava/lang/Cloneable;"});
+    catalog.push_back(std::move(probe).Build());
+    linker.RegisterIntrinsics(catalog);
+    linker.RegisterBootDex(Dvm102BootDex());
+    linker.Link();
+    const auto owner = linker.ResolveDescriptor("Ltest/InterfaceOrder;");
+    const auto& interfaces = linker.Class(owner).direct_interfaces;
+    REQUIRE(interfaces.size() == 2);
+    CHECK(linker.Class(interfaces[0]).descriptor == "Ljava/io/Serializable;");
+    CHECK(linker.Class(interfaces[1]).descriptor == "Ljava/lang/Cloneable;");
 }

@@ -1,3 +1,4 @@
+#include "boot_dex.h"
 // DexVM stage-1 interpreter conformance over dexasm fixtures.
 // Expected values are recorded with their semantic source: AOSP
 // vm/mterp/c/OP_*.cpp at the pinned baseline (07 §2 mode B) or the Dalvik
@@ -70,6 +71,7 @@ struct Vm final {
                       std::make_move_iterator(extra_catalog.end()));
                   linker.RegisterIntrinsics(catalog);
                   linker.RegisterDex(ReadFixture("interp.dex"));
+                  ogplay::test::RegisterBootDex(linker);
                   linker.Link();
                   return linker;
               }(),
@@ -112,6 +114,7 @@ struct IntrinsicVm final {
                               std::make_move_iterator(catalog.begin()),
                               std::make_move_iterator(catalog.end()));
                   linker.RegisterIntrinsics(core);
+                  ogplay::test::RegisterBootDex(linker);
                   linker.Link();
                   return linker;
               }(),
@@ -487,7 +490,7 @@ void ExpectException(const VmType& vm, const VmCallOutcome& outcome,
 }  // namespace
 
 TEST_CASE("dexvm core intrinsic catalog is unique and structurally stable") {
-    const auto catalog = CoreIntrinsicCatalog();
+    auto catalog = CoreIntrinsicCatalog();
     std::set<std::string> descriptors;
     const std::set<std::string> intentionally_unimplemented = {
         // DVM-102: precise native failures frozen in api19.json (date_family_audit).
@@ -599,6 +602,32 @@ TEST_CASE("dexvm core intrinsic catalog is unique and structurally stable") {
     CHECK(descriptors.contains("Ljavax/xml/parsers/SAXParserFactory;"));
     CHECK(descriptors.contains("Lorg/xml/sax/XMLReader;"));
 
+    DexClassLinker boot_linker;
+    boot_linker.RegisterIntrinsics(catalog);
+    ogplay::test::RegisterBootDex(boot_linker);
+    boot_linker.Link();
+    for (const auto* name : {"Ljava/lang/Iterable;", "Ljava/io/DataInput;", "Ljava/io/DataOutput;",
+                             "Ljava/io/ObjectInput;", "Ljava/io/ObjectOutput;",
+                             "Ljava/io/ObjectStreamConstants;"}) {
+        CHECK_FALSE(descriptors.contains(name));
+        const auto type = boot_linker.ResolveDescriptor(name);
+        const auto& linked = boot_linker.Class(type);
+        CHECK(linked.is_boot_dex);
+        IntrinsicClassDecl shape;
+        shape.descriptor = name;
+        shape.is_interface = linked.is_interface;
+        for (const auto parent : linked.direct_interfaces)
+            shape.interfaces.push_back(boot_linker.Class(parent).descriptor);
+        for (const auto id : linked.own_virtual_methods) {
+            const auto& method = boot_linker.Method(id);
+            IntrinsicMethodDecl member;
+            member.name = method.name;
+            member.descriptor = method.descriptor;
+            shape.methods.push_back(std::move(member));
+        }
+        catalog.push_back(std::move(shape));
+    }
+
     const auto signatures = [&catalog](const std::string& descriptor) {
         std::set<std::pair<std::string, std::string>> result;
         const auto declaration = std::find_if(
@@ -660,7 +689,7 @@ TEST_CASE("dexvm core intrinsic catalog is unique and structurally stable") {
     CHECK(signatures("Ljava/lang/StringBuilder;").size() == 19U);
     CHECK(signatures("Ljava/lang/StringBuffer;").size() == 19U);
     const auto string_signatures = signatures("Ljava/lang/String;");
-    CHECK(string_signatures.size() == 46U);
+    CHECK(string_signatures.size() == 47U);
     CHECK(string_signatures.contains({
         "toLowerCase", "(Ljava/util/Locale;)Ljava/lang/String;"}));
     CHECK(signatures("Ljava/lang/Integer;").size() == 37U);
@@ -1493,9 +1522,20 @@ TEST_CASE("dexvm API 19 java.lang interface inventory is complete") {
     for (const auto& declaration : catalog) {
         ++descriptor_counts[declaration.descriptor];
     }
+    DexClassLinker linker;
+    linker.RegisterIntrinsics(catalog);
+    ogplay::test::RegisterBootDex(linker);
+    linker.Link();
     for (const auto& name : inventory) {
         const auto descriptor = "Ljava/lang/" + name + ";";
         CAPTURE(descriptor);
+        if (name == "Iterable") {
+            CHECK(descriptor_counts[descriptor] == 0U);
+            const auto type = linker.ResolveDescriptor(descriptor);
+            CHECK(linker.Class(type).is_boot_dex);
+            CHECK(linker.Class(type).is_interface);
+            continue;
+        }
         CHECK(descriptor_counts[descriptor] == 1U);
         const auto declaration = std::find_if(
             catalog.begin(), catalog.end(), [&](const auto& candidate) {

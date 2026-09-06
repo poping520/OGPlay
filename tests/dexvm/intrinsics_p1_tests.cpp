@@ -62,7 +62,7 @@ struct Vm final {
     Interpreter interpreter;
 
     explicit Vm(const InterpreterConfig config = {},
-                const bool load_boot_dex = false)
+                const bool load_boot_dex = true)
       : model(strings, arrays), linker(),
           interpreter(
               [this, load_boot_dex]() -> DexClassLinker& {
@@ -499,7 +499,7 @@ TEST_CASE("API 19 boot dex loads every class and executes EnumSet") {
             *abstract_collection, "<init>", "()V");
         REQUIRE(collection_constructor.has_value());
         CHECK(vm.linker.Method(*collection_constructor).kind ==
-              MethodKind::intrinsic);
+              MethodKind::interpreted);
         CHECK(vm.linker.Method(*collection_constructor).dex_unit.has_value());
 
         const auto security_manager =

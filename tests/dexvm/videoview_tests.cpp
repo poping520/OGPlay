@@ -1,3 +1,4 @@
+#include "boot_dex.h"
 // VideoView real-playback semantics against the deterministic Fake backend:
 // frames publish letterboxed to the surface, position follows the shared
 // uptime clock, onCompletion fires exactly once per playback, and the
@@ -80,6 +81,7 @@ struct VideoVm final {
                   linker.RegisterIntrinsics(CoreIntrinsicCatalog());
                   linker.RegisterIntrinsics(AndroidIntrinsicCatalog(context));
                   linker.RegisterDex(ReadFixture("videoview.dex"));
+                  ogplay::test::RegisterBootDex(linker);
                   linker.Link();
                   return linker;
               }(),

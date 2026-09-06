@@ -16,14 +16,13 @@ std::vector<IntrinsicClassDecl> CoreIntrinsicCatalog(
         Declare_java_lang_StackTraceElement(),
         Declare_java_lang_Thread_State(),
         Declare_java_lang_Enum(),
-        Declare_java_io_Serializable(),
         Declare_java_lang_String(),
         Declare_java_lang_StringBuilder(),
         Declare_java_lang_StringBuffer(),
         Declare_java_lang_System(services),
         Declare_java_io_PrintStream(),
         Declare_java_lang_Math(),
-        Declare_java_util_Random(),
+        Declare_java_lang_Runtime(),
         Declare_java_lang_Class(),
         Declare_java_lang_reflect_AnnotatedElement(),
         Declare_java_lang_reflect_GenericDeclaration(),
@@ -35,13 +34,11 @@ std::vector<IntrinsicClassDecl> CoreIntrinsicCatalog(
         Declare_java_lang_reflect_InvocationTargetException(),
         Declare_java_lang_reflect_Constructor(),
         Declare_java_lang_reflect_Field(),
-        Declare_java_lang_ref_WeakReference(),
         Declare_java_lang_reflect_Array(),
     };
 
     AppendJavaLangInterfaces(catalog);
     AppendJavaLangPrimitiveWrappers(catalog);
-    AppendJavaUtilCollections(catalog);
     AppendJavaIoStreams(catalog);
     AppendJavaIoFiles(catalog);
     AppendJavaUtilZip(catalog);
@@ -59,7 +56,6 @@ std::vector<IntrinsicClassDecl> CoreIntrinsicCatalog(
     AppendJavaNetPlatform(catalog, services);
     AppendJavaNio(catalog);
     AppendJavaUtilPlatform(catalog, services);
-    AppendJavaUtilAlgorithms(catalog);
     AppendJavaIcu(catalog, services);
     AppendJavaRegex(catalog);
     AppendJavaConcurrent(catalog, services);

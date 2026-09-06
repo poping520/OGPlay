@@ -1377,11 +1377,7 @@ namespace ogplay::runtime::dexvm::intrinsics {
 namespace ogplay::runtime::dexvm::intrinsics {
     using namespace detail;
 
-    IntrinsicClassDecl Declare_java_io_Serializable() {
-        auto builder = IntrinsicClassBuilder::Interface("Ljava/io/Serializable;");
-        auto result = std::move(builder).Build();
-        return result;
-    }
+
 } // namespace ogplay::runtime::dexvm::intrinsics
 
 
@@ -1621,6 +1617,8 @@ namespace ogplay::runtime::dexvm::intrinsics {
         constexpr std::uint8_t kTcEnum = 0x7eU;
         constexpr std::uint8_t kScWriteMethod = 0x01U;
         constexpr std::uint8_t kScSerializable = 0x02U;
+        constexpr std::uint8_t kScExternalizable = 0x04U;
+        constexpr std::uint8_t kScBlockData = 0x08U;
         constexpr std::uint8_t kScEnum = 0x10U;
         constexpr std::uint32_t kBaseWireHandle = 0x007e0000U;
         constexpr std::size_t kMaximumObjectDepth = 256U;
@@ -1734,13 +1732,10 @@ namespace ogplay::runtime::dexvm::intrinsics {
             }
         }
 
-        void PropagateNestedOutcome(IntrinsicContext& call,
-                                    const VmCallOutcome& outcome) {
-            if (!outcome.exception.IsValid()) return;
-            throw VmJavaThrow{
-                call.vm.Linker().Class(outcome.exception_class).descriptor,
-                outcome.exception_message
-            };
+        struct ObjectStreamCallbackFailure final { VmObjectRef throwable; };
+
+        void PropagateNestedOutcome(IntrinsicContext&, const VmCallOutcome& outcome) {
+            if (outcome.exception.IsValid()) throw ObjectStreamCallbackFailure{outcome.exception};
         }
 
         [[nodiscard]] std::string StreamClassName(const std::string_view descriptor) {
@@ -1907,6 +1902,10 @@ namespace ogplay::runtime::dexvm::intrinsics {
             result->serial_version_uid = SerialVersionUid(call, java_class);
             if (enum_descriptor || IsEnumClass(call.vm.Linker(), java_class)) {
                 result->flags = kScSerializable | kScEnum;
+            } else if (call.vm.Linker().IsAssignable(
+                           call.vm.Linker().ResolveDescriptor("Ljava/io/Externalizable;"),
+                           java_class)) {
+                result->flags = kScExternalizable | kScBlockData;
             } else if (descriptor == "Ljava/util/Date;") {
                 result->flags = kScSerializable | kScWriteMethod;
             } else {
@@ -1985,6 +1984,18 @@ namespace ogplay::runtime::dexvm::intrinsics {
             }
         }
 
+        void InvokeExternal(IntrinsicContext& call, VmObjectRef object, bool write) {
+            const auto java_class = call.vm.Model().ObjectClass(object);
+            const auto method = call.vm.Linker().FindVtableIndex(
+                java_class, write ? "writeExternal" : "readExternal",
+                write ? "(Ljava/io/ObjectOutput;)V" : "(Ljava/io/ObjectInput;)V");
+            if (!method) throw VmJavaThrow{"Ljava/io/InvalidClassException;",
+                                           "Externalizable callback is missing"};
+            const std::array args{VmValue::Ref(object), VmValue::Ref(call.receiver)};
+            PropagateNestedOutcome(call, call.vm.Call(
+                call.vm.Linker().Class(java_class).vtable[*method], args));
+        }
+
         class ObjectStreamWriter final {
         public:
             explicit ObjectStreamWriter(IntrinsicContext& call)
@@ -1992,18 +2003,18 @@ namespace ogplay::runtime::dexvm::intrinsics {
             }
 
             void Write(const VmObjectRef object) {
-                if (depth_ >= kMaximumObjectDepth) {
+                if (state_.depth >= kMaximumObjectDepth) {
                     throw VmJavaThrow{
                         "Ljava/io/IOException;",
                         "serialized object graph is too deep"
                     };
                 }
-                ++depth_;
+                ++state_.depth;
                 try {
                     WriteInternal(object);
-                    --depth_;
+                    --state_.depth;
                 } catch (...) {
-                    --depth_;
+                    --state_.depth;
                     throw;
                 }
             }
@@ -2097,6 +2108,11 @@ namespace ogplay::runtime::dexvm::intrinsics {
             void WriteClassData(
                 const VmObjectRef object,
                 const std::shared_ptr<IoRuntime::SerializedClassDescriptor>& descriptor) {
+                if ((descriptor->flags & kScExternalizable) != 0U) {
+                    InvokeExternal(call_, object, true);
+                    Output(call_).bytes.push_back(static_cast<std::byte>(kTcEndBlockData));
+                    return;
+                }
                 if (descriptor->super != nullptr) {
                     WriteClassData(object, descriptor->super);
                 }
@@ -2203,7 +2219,6 @@ namespace ogplay::runtime::dexvm::intrinsics {
 
             IntrinsicContext& call_;
             IoRuntime::ObjectOutputState& state_;
-            std::size_t depth_{};
         };
 
         class ObjectStreamReader final {
@@ -2213,19 +2228,19 @@ namespace ogplay::runtime::dexvm::intrinsics {
             }
 
             [[nodiscard]] VmObjectRef Read() {
-                if (depth_ >= kMaximumObjectDepth) {
+                if (state_.depth >= kMaximumObjectDepth) {
                     throw VmJavaThrow{
                         "Ljava/io/IOException;",
                         "serialized object graph is too deep"
                     };
                 }
-                ++depth_;
+                ++state_.depth;
                 try {
                     const auto result = ReadInternal();
-                    --depth_;
+                    --state_.depth;
                     return result;
                 } catch (...) {
-                    --depth_;
+                    --state_.depth;
                     throw;
                 }
             }
@@ -2292,10 +2307,11 @@ namespace ogplay::runtime::dexvm::intrinsics {
                     } else if (token == kTcBlockDataLong) {
                         length = static_cast<std::size_t>(TakeRawUnsigned(call_, 4U));
                     } else {
-                        throw VmJavaThrow{
-                            "Ljava/io/IOException;",
-                            "unsupported object stream class annotation"
-                        };
+                        // Unread callback objects still participate in the shared
+                        // handle table, including references from later objects.
+                        --Input(call_).cursor;
+                        static_cast<void>(Read());
+                        continue;
                     }
                     static_cast<void>(TakeRawBytes(call_, length));
                 }
@@ -2380,11 +2396,16 @@ namespace ogplay::runtime::dexvm::intrinsics {
             void VerifyClassDescriptor(
                 const IoRuntime::SerializedClassDescriptor& descriptor,
                 const DexClassId java_class) {
-                if ((descriptor.flags & kScSerializable) == 0U) {
-                    throw VmJavaThrow{
-                        "Ljava/io/IOException;",
-                        "externalizable object streams are unsupported"
-                    };
+                const auto externalizable = call_.vm.Linker().IsAssignable(
+                    call_.vm.Linker().ResolveDescriptor("Ljava/io/Externalizable;"), java_class);
+                const bool external = (descriptor.flags & kScExternalizable) != 0U;
+                if (external != externalizable ||
+                    (external && ((descriptor.flags & kScBlockData) == 0U ||
+                                  (descriptor.flags & kScSerializable) != 0U ||
+                                  !descriptor.fields.empty())) ||
+                    (!external && (descriptor.flags & kScSerializable) == 0U)) {
+                    throw VmJavaThrow{"Ljava/io/InvalidClassException;",
+                                      "incompatible serialization protocol"};
                 }
                 const auto serializable =
                         call_.vm.Linker().ResolveDescriptor("Ljava/io/Serializable;");
@@ -2416,6 +2437,14 @@ namespace ogplay::runtime::dexvm::intrinsics {
             void ReadClassData(
                 const VmObjectRef object,
                 const std::shared_ptr<IoRuntime::SerializedClassDescriptor>& descriptor) {
+                if ((descriptor->flags & kScExternalizable) != 0U) {
+                    InvokeExternal(call_, object, false);
+                    static_cast<void>(TakeRawBytes(call_, state_.block_remaining));
+                    state_.block_remaining = 0;
+                    state_.pushback.reset();
+                    DiscardClassAnnotation();
+                    return;
+                }
                 if (descriptor->super != nullptr) {
                     ReadClassData(object, descriptor->super);
                 }
@@ -2586,6 +2615,17 @@ namespace ogplay::runtime::dexvm::intrinsics {
                     const auto object =
                             call_.vm.Model().NewInstance(java_class, linked.instance_slots);
                     static_cast<void>(RegisterHandle({object, nullptr}));
+                    if ((descriptor->flags & kScExternalizable) != 0U) {
+                        const auto ctor = call_.vm.Linker().FindDirectMethod(
+                            java_class, "<init>", "()V");
+                        if (!ctor || call_.vm.Linker().Method(*ctor).owner != java_class ||
+                            (call_.vm.Linker().Method(*ctor).access_flags & kAccPublic) == 0U)
+                            throw VmJavaThrow{"Ljava/io/InvalidClassException;",
+                                              "Externalizable requires a public no-arg constructor"};
+                        PropagateNestedOutcome(call_, call_.vm.EnsureClassInitialized(java_class));
+                        const std::array args{VmValue::Ref(object)};
+                        PropagateNestedOutcome(call_, call_.vm.Call(*ctor, args));
+                    }
                     ReadClassData(object, descriptor);
                     return object;
                 }
@@ -2593,7 +2633,6 @@ namespace ogplay::runtime::dexvm::intrinsics {
 
             IntrinsicContext& call_;
             IoRuntime::ObjectInputState& state_;
-            std::size_t depth_{};
         };
 
         [[nodiscard]] bool PrepareObjectPrimitiveBlock(IntrinsicContext& call) {
@@ -3150,59 +3189,6 @@ namespace ogplay::runtime::dexvm::intrinsics {
             return std::move(builder).Build();
         }
 
-        IntrinsicClassDecl DeclareDataInput() {
-            auto builder = IntrinsicClassBuilder::Interface("Ljava/io/DataInput;");
-            builder.UnimplementedVirtual("readBoolean", "()Z",
-                                         kAccPublic | kAccAbstract);
-            builder.UnimplementedVirtual("readByte", "()B",
-                                         kAccPublic | kAccAbstract);
-            builder.UnimplementedVirtual("readChar", "()C",
-                                         kAccPublic | kAccAbstract);
-            builder.UnimplementedVirtual("readDouble", "()D",
-                                         kAccPublic | kAccAbstract);
-            builder.UnimplementedVirtual("readFloat", "()F",
-                                         kAccPublic | kAccAbstract);
-            builder.UnimplementedVirtual("readFully", "([B)V",
-                                         kAccPublic | kAccAbstract);
-            builder.UnimplementedVirtual("readFully", "([BII)V",
-                                         kAccPublic | kAccAbstract);
-            builder.UnimplementedVirtual("readInt", "()I",
-                                         kAccPublic | kAccAbstract);
-            builder.UnimplementedVirtual("readLine", "()Ljava/lang/String;",
-                                         kAccPublic | kAccAbstract);
-            builder.UnimplementedVirtual("readLong", "()J",
-                                         kAccPublic | kAccAbstract);
-            builder.UnimplementedVirtual("readShort", "()S",
-                                         kAccPublic | kAccAbstract);
-            builder.UnimplementedVirtual("readUnsignedByte", "()I",
-                                         kAccPublic | kAccAbstract);
-            builder.UnimplementedVirtual("readUnsignedShort", "()I",
-                                         kAccPublic | kAccAbstract);
-            builder.UnimplementedVirtual("readUTF", "()Ljava/lang/String;",
-                                         kAccPublic | kAccAbstract);
-            builder.UnimplementedVirtual("skipBytes", "(I)I",
-                                         kAccPublic | kAccAbstract);
-            return std::move(builder).Build();
-        }
-
-        IntrinsicClassDecl DeclareObjectInput() {
-            auto builder = IntrinsicClassBuilder::Interface(
-                "Ljava/io/ObjectInput;",
-                {"Ljava/io/DataInput;", "Ljava/lang/AutoCloseable;"});
-            builder.UnimplementedVirtual("available", "()I",
-                                         kAccPublic | kAccAbstract);
-            builder.UnimplementedVirtual("close", "()V",
-                                         kAccPublic | kAccAbstract);
-            builder.UnimplementedVirtual("read", "()I", kAccPublic | kAccAbstract);
-            builder.UnimplementedVirtual("read", "([B)I", kAccPublic | kAccAbstract);
-            builder.UnimplementedVirtual("read", "([BII)I",
-                                         kAccPublic | kAccAbstract);
-            builder.UnimplementedVirtual("readObject", "()Ljava/lang/Object;",
-                                         kAccPublic | kAccAbstract);
-            builder.UnimplementedVirtual("skip", "(J)J", kAccPublic | kAccAbstract);
-            return std::move(builder).Build();
-        }
-
         IntrinsicClassDecl DeclareObjectInputStream() {
             auto builder = IntrinsicClassBuilder::Class(
                 "Ljava/io/ObjectInputStream;", "Ljava/io/InputStream;",
@@ -3377,61 +3363,13 @@ namespace ogplay::runtime::dexvm::intrinsics {
                             "primitive block data remains"
                         };
                     }
-                    return VmValue::Ref(ObjectStreamReader(call).Read());
+                    try { return VmValue::Ref(ObjectStreamReader(call).Read()); }
+                    catch (const ObjectStreamCallbackFailure& failure) {
+                        call.vm.SetPendingException(failure.throwable);
+                        return VmValue::Ref(VmObjectRef{});
+                    }
                 });
             return std::move(builder).Build();
-        }
-
-        IntrinsicClassDecl DeclareDataOutput() {
-            auto builder = IntrinsicClassBuilder::Interface("Ljava/io/DataOutput;");
-            builder.UnimplementedVirtual("write", "(I)V", kAccPublic | kAccAbstract);
-            builder.UnimplementedVirtual("write", "([B)V", kAccPublic | kAccAbstract);
-            builder.UnimplementedVirtual("write", "([BII)V",
-                                         kAccPublic | kAccAbstract);
-            builder.UnimplementedVirtual("writeBoolean", "(Z)V",
-                                         kAccPublic | kAccAbstract);
-            builder.UnimplementedVirtual("writeByte", "(I)V",
-                                         kAccPublic | kAccAbstract);
-            builder.UnimplementedVirtual("writeBytes", "(Ljava/lang/String;)V",
-                                         kAccPublic | kAccAbstract);
-            builder.UnimplementedVirtual("writeChar", "(I)V",
-                                         kAccPublic | kAccAbstract);
-            builder.UnimplementedVirtual("writeChars", "(Ljava/lang/String;)V",
-                                         kAccPublic | kAccAbstract);
-            builder.UnimplementedVirtual("writeDouble", "(D)V",
-                                         kAccPublic | kAccAbstract);
-            builder.UnimplementedVirtual("writeFloat", "(F)V",
-                                         kAccPublic | kAccAbstract);
-            builder.UnimplementedVirtual("writeInt", "(I)V",
-                                         kAccPublic | kAccAbstract);
-            builder.UnimplementedVirtual("writeLong", "(J)V",
-                                         kAccPublic | kAccAbstract);
-            builder.UnimplementedVirtual("writeShort", "(I)V",
-                                         kAccPublic | kAccAbstract);
-            builder.UnimplementedVirtual("writeUTF", "(Ljava/lang/String;)V",
-                                         kAccPublic | kAccAbstract);
-            return std::move(builder).Build();
-        }
-
-        IntrinsicClassDecl DeclareObjectOutput() {
-            auto builder = IntrinsicClassBuilder::Interface(
-                "Ljava/io/ObjectOutput;",
-                {"Ljava/io/DataOutput;", "Ljava/lang/AutoCloseable;"});
-            builder.UnimplementedVirtual("close", "()V", kAccPublic | kAccAbstract);
-            builder.UnimplementedVirtual("flush", "()V", kAccPublic | kAccAbstract);
-            builder.UnimplementedVirtual("write", "(I)V", kAccPublic | kAccAbstract);
-            builder.UnimplementedVirtual("write", "([B)V", kAccPublic | kAccAbstract);
-            builder.UnimplementedVirtual("write", "([BII)V",
-                                         kAccPublic | kAccAbstract);
-            builder.UnimplementedVirtual("writeObject", "(Ljava/lang/Object;)V",
-                                         kAccPublic | kAccAbstract);
-            return std::move(builder).Build();
-        }
-
-        IntrinsicClassDecl DeclareObjectStreamConstants() {
-            return IntrinsicClassBuilder::Interface(
-                        "Ljava/io/ObjectStreamConstants;")
-                    .Build();
         }
 
         IntrinsicClassDecl DeclareObjectOutputStream() {
@@ -3582,7 +3520,10 @@ namespace ogplay::runtime::dexvm::intrinsics {
                 return VmValue::Void();
             });
             builder.FinalMethod("writeObject", "(Ljava/lang/Object;)V", [](IntrinsicContext& call) {
-                ObjectStreamWriter(call).Write(call.arguments[0].ref);
+                try { ObjectStreamWriter(call).Write(call.arguments[0].ref); }
+                catch (const ObjectStreamCallbackFailure& failure) {
+                    call.vm.SetPendingException(failure.throwable);
+                }
                 return VmValue::Void();
             });
             return std::move(builder).Build();
@@ -3599,11 +3540,6 @@ namespace ogplay::runtime::dexvm::intrinsics {
         flushable.UnimplementedVirtual("flush", "()V",
                                        kAccPublic | kAccAbstract);
         catalog.push_back(std::move(flushable).Build());
-        catalog.push_back(DeclareDataInput());
-        catalog.push_back(DeclareObjectInput());
-        catalog.push_back(DeclareDataOutput());
-        catalog.push_back(DeclareObjectOutput());
-        catalog.push_back(DeclareObjectStreamConstants());
         catalog.push_back(DeclareInputStream());
         catalog.push_back(DeclareOutputStream());
         catalog.push_back(DeclareReader());

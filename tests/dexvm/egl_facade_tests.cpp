@@ -1,3 +1,4 @@
+#include "boot_dex.h"
 #include <doctest/doctest.h>
 
 #include <cstdint>
@@ -38,6 +39,7 @@ struct EglVm final {
                        "Landroid/opengl/GLSurfaceView$EGLConfigChooser;"}))
                                     .Build());
               linker.RegisterIntrinsics(std::move(android));
+              ogplay::test::RegisterBootDex(linker);
               linker.Link();
               return linker;
           }(), model, nullptr, ledger, {}) {

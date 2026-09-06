@@ -1,5 +1,7 @@
 #include <doctest/doctest.h>
 
+#include "../dexvm/boot_dex.h"
+
 #include <algorithm>
 #include <bit>
 #include <cstdint>
@@ -63,6 +65,7 @@ struct Vm final {
                   };
                   catalog.push_back(std::move(presets));
                   linker.RegisterIntrinsics(catalog);
+                  ogplay::test::RegisterBootDex(linker);
                   linker.RegisterDex(ReadInterpreterFixture());
                   linker.Link();
                   return linker;
@@ -88,6 +91,7 @@ struct AndroidVm final {
               const auto android = ogplay::runtime::AndroidIntrinsicCatalog(context);
               catalog.insert(catalog.end(), android.begin(), android.end());
               linker.RegisterIntrinsics(catalog);
+              ogplay::test::RegisterBootDex(linker);
               linker.RegisterDex(ReadInterpreterFixture());
               linker.Link();
               return linker;
@@ -926,6 +930,7 @@ TEST_CASE("AudioManager reports the deterministic external music fact") {
     const auto android_catalog = ogplay::runtime::AndroidIntrinsicCatalog(context);
   catalog.insert(catalog.end(), android_catalog.begin(), android_catalog.end());
     linker.RegisterIntrinsics(catalog);
+    ogplay::test::RegisterBootDex(linker);
     linker.RegisterDex(ReadInterpreterFixture());
     linker.Link();
     ogplay::core::CapabilityLedger ledger;
@@ -954,6 +959,7 @@ TEST_CASE("TelephonyManager records and cancels offline listeners") {
     const auto android_catalog = ogplay::runtime::AndroidIntrinsicCatalog(context);
   catalog.insert(catalog.end(), android_catalog.begin(), android_catalog.end());
     linker.RegisterIntrinsics(catalog);
+    ogplay::test::RegisterBootDex(linker);
     linker.RegisterDex(ReadInterpreterFixture());
     linker.Link();
     ogplay::core::CapabilityLedger ledger;
@@ -1006,6 +1012,7 @@ TEST_CASE("SurfaceView owns a stable holder and callback identity") {
     const auto android_catalog = ogplay::runtime::AndroidIntrinsicCatalog(context);
   catalog.insert(catalog.end(), android_catalog.begin(), android_catalog.end());
     linker.RegisterIntrinsics(catalog);
+    ogplay::test::RegisterBootDex(linker);
     linker.RegisterDex(ReadInterpreterFixture());
     linker.Link();
     ogplay::core::CapabilityLedger ledger;
@@ -1054,6 +1061,7 @@ TEST_CASE("managed surface delivers holder callbacks to every registration") {
     catalog.insert(catalog.end(), android_catalog.begin(),
                    android_catalog.end());
     linker.RegisterIntrinsics(catalog);
+    ogplay::test::RegisterBootDex(linker);
     linker.RegisterDex(ReadInterpreterFixture());
     linker.Link();
     context->surface_width = 1280;
@@ -1151,6 +1159,7 @@ TEST_CASE("dynamic attached SurfaceView owns one callback generation") {
     const auto android_catalog = ogplay::runtime::AndroidIntrinsicCatalog(context);
     catalog.insert(catalog.end(), android_catalog.begin(), android_catalog.end());
     linker.RegisterIntrinsics(catalog);
+    ogplay::test::RegisterBootDex(linker);
     linker.RegisterDex(ReadInterpreterFixture());
     linker.Link();
     context->surface_width = 800;
@@ -1321,6 +1330,7 @@ TEST_CASE("Thread priority validates and records the guest fact") {
     const auto android_catalog = ogplay::runtime::AndroidIntrinsicCatalog(context);
   catalog.insert(catalog.end(), android_catalog.begin(), android_catalog.end());
     linker.RegisterIntrinsics(catalog);
+    ogplay::test::RegisterBootDex(linker);
     linker.RegisterDex(ReadInterpreterFixture());
     linker.Link();
     ogplay::core::CapabilityLedger ledger;
@@ -1393,6 +1403,7 @@ TEST_CASE("ViewTreeObserver retains stable observer and listener identity") {
     const auto android_catalog = ogplay::runtime::AndroidIntrinsicCatalog(context);
   catalog.insert(catalog.end(), android_catalog.begin(), android_catalog.end());
     linker.RegisterIntrinsics(catalog);
+    ogplay::test::RegisterBootDex(linker);
     linker.RegisterDex(ReadInterpreterFixture());
     linker.Link();
     ogplay::core::CapabilityLedger ledger;
@@ -1439,6 +1450,7 @@ TEST_CASE("URLEncoder applies UTF-8 form encoding") {
     const auto android_catalog = ogplay::runtime::AndroidIntrinsicCatalog(context);
   catalog.insert(catalog.end(), android_catalog.begin(), android_catalog.end());
     linker.RegisterIntrinsics(catalog);
+    ogplay::test::RegisterBootDex(linker);
     linker.RegisterDex(ReadInterpreterFixture());
     linker.Link();
     ogplay::core::CapabilityLedger ledger;

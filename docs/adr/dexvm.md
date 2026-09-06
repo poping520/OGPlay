@@ -341,3 +341,37 @@ overlay 和指标摘要检查保持，统一进入 builder 自测；派生报告
 390 个 BootDex class_def 全部链接，集合自身方法无 intrinsic overlay；双后端定向验证
 容器、视图、迭代器、clone、弱键 GC、对象流及已有日期行为。类迁移不表示所有 XML、
 序列化或并发长尾均已支持；游戏首错推进只记为 reached-fault，不替代 Scenario gate。
+
+<a id="adr-0034"></a>
+
+## ADR-0034 · 普通流与后续 Luni 家族的 BootDex 所有权
+
+- 状态：Accepted
+- 日期：2026-09-06
+- 关联：[DVM-104](../tasks/dexvm/DVM-104.md)、[ADR-0030](#adr-0030)、[ADR-0033](#adr-0033)
+- Supersedes：ADR-0033 中普通流仍由 IoRuntime 拥有的实现选择；对象协议和资源边界保留。
+
+### 决定
+
+- 一份 api19.json 选类、一份 build_bootdex.py 构建/审计；本 WU 新增 131 类，合计 521 类。
+  工具/事件、同步器/普通 atomic、Choice/MessageFormat、内存/包装 IO、X500 名字/DER
+  和选定 key spec 由 pinned API 19 字节码拥有，不保留普通算法 intrinsic 副本。
+- 普通流状态只在 guest 字段/数组中；删除 IoRuntime wrapper-adoption 接口。对象流协议
+  通过 source/sink guest 虚方法通信并 trace 强边；资源流和 ZIP 保留既有有界资源实现。
+  AssetManager 调用真实 ByteArrayInputStream 构造器。InputStreamReader 使用固定 ICU
+  增量解码器及 Reader.lock guest monitor，FileReader 委托该适配器。
+- Charset 六个标准编码的值语义、String 编解码与 Locale 大小写复用固定 ICU 51。
+  X500 仅包括名字/ASN.1/DER；其标签键触达 BigInteger/BigInt，因此补充 NativeBN 的
+  11 个最多 64 位 magnitude 原语，余下 24 个 native 明确失败。每 VM 逻辑令牌受检，
+  owner GC/teardown 释放资源；不引入完整 crypto provider、证书验证或大数 backend。
+- 同步器复用 AQS/Condition/Unsafe、真实 guest 线程与统一 Clock；AtomicLong 只保留
+  VMSupportsCS8 native。long 2addr shift 的 distance 按 int 单槽预检。
+- nested guest 调用跨 intrinsic 返回原 throwable，VmJavaThrow 可携带原引用；不通过
+  descriptor/message 重建异常，以维持 guest catch、cause 与异常身份。
+
+### 验证与边界
+
+双后端定向验证迁入行为、真实线程阻塞/释放/中断、零超时/barrier break/reset、GC、
+编码替换与流包装；所有 BootDex 类全链接，迁入普通方法无 intrinsic overlay。
+完整数字 formatter、对象流 custom hooks/数组/默认 UID、Charset provider API、
+FieldUpdater/ForkJoin 和证书验证不因类迁移宣称可用；PvZ 首错推进只记 reached-fault。

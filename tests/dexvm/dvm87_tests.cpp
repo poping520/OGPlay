@@ -1,6 +1,10 @@
 #include <doctest/doctest.h>
 
 #include <cstdint>
+#include <atomic>
+#include <chrono>
+#include <thread>
+#include "ogplay/runtime/dexvm/big_int_runtime.h"
 #include <cstring>
 #include <filesystem>
 #include <fstream>
@@ -1074,9 +1078,23 @@ TEST_CASE("DVM-103 all BootDex classes link and collection methods have no intri
     for (const auto type : all) {
         if (!f.linker.Class(type).is_boot_dex) continue;
         const auto descriptor = f.linker.Class(type).descriptor;
-        CAPTURE(descriptor);
+        CAPTURE(std::string(descriptor));
         f.linker.EnsureClassLinked(type);
         ++count;
+        if (descriptor.starts_with("Ljava/io/") || descriptor.starts_with("Ljava/beans/") ||
+            descriptor.starts_with("Ljava/util/concurrent/atomic/") ||
+            descriptor.starts_with("Ljava/util/concurrent/CountDownLatch") ||
+            descriptor.starts_with("Ljava/util/concurrent/Semaphore") ||
+            descriptor.starts_with("Ljava/util/concurrent/CyclicBarrier") ||
+            descriptor.starts_with("Ljava/text/ChoiceFormat") || descriptor.starts_with("Ljava/text/MessageFormat") ||
+            descriptor.starts_with("Ljavax/security/auth/x500/") || descriptor.starts_with("Lorg/apache/harmony/security/")) {
+            const auto check = [&](VmMethodId method) {
+                if (!(f.linker.Method(method).access_flags & kAccNative))
+                    CHECK(f.linker.Method(method).kind != MethodKind::intrinsic);
+            };
+            for (const auto method : f.linker.Class(type).own_virtual_methods) check(method);
+            for (const auto method : f.linker.Class(type).own_direct_methods) check(method);
+        }
         if (!descriptor.starts_with("Ljava/util/") ||
             descriptor.starts_with("Ljava/util/concurrent/Executors")) continue;
         // All newly selected collection implementations are ordinary DEX.
@@ -1088,7 +1106,7 @@ TEST_CASE("DVM-103 all BootDex classes link and collection methods have no intri
         for (const auto method : f.linker.Class(type).own_direct_methods)
             CHECK(f.linker.Method(method).kind != MethodKind::intrinsic);
     }
-    CHECK(count == 390);
+    CHECK(count == 521);
 }
 
 TEST_CASE("DVM-103 bounded queues and Collections wrappers use API19 semantics") {
@@ -1163,4 +1181,281 @@ TEST_CASE("DVM-103 deferred intrinsic interfaces preserve declaration order") {
     REQUIRE(interfaces.size() == 2);
     CHECK(linker.Class(interfaces[0]).descriptor == "Ljava/io/Serializable;");
     CHECK(linker.Class(interfaces[1]).descriptor == "Ljava/lang/Cloneable;");
+}
+
+TEST_CASE("DVM-104 tools events atomics and X500 execute API19 bytecode") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        Dvm87Vm f(backend);
+        const auto text = f.vm.NewStringUtf8("one,two,,three");
+        const auto tokenizer = f.vm.NewIntrinsicInstance("Ljava/util/StringTokenizer;");
+        f.Construct(tokenizer, "Ljava/util/StringTokenizer;", "(Ljava/lang/String;Ljava/lang/String;)V",
+            {VmValue::Ref(text), VmValue::Ref(f.vm.NewStringUtf8(","))});
+        auto result = f.Virtual(tokenizer, "countTokens", "()I"); f.RequireOk(result); CHECK(result.value.AsInt() == 3);
+        result = f.Virtual(tokenizer, "nextToken", "()Ljava/lang/String;"); f.RequireOk(result); CHECK(f.vm.StringUtf8(result.value.ref) == "one");
+        const auto bitset = f.vm.NewIntrinsicInstance("Ljava/util/BitSet;"); f.Construct(bitset, "Ljava/util/BitSet;", "()V");
+        f.RequireOk(f.Virtual(bitset, "set", "(I)V", {VmValue::Int(130)}));
+        result = f.Virtual(bitset, "nextSetBit", "(I)I", {VmValue::Int(0)}); f.RequireOk(result); CHECK(result.value.AsInt() == 130);
+        result = f.Static("Ljava/util/Objects;", "equals", "(Ljava/lang/Object;Ljava/lang/Object;)Z", {VmValue::Ref(text), VmValue::Ref(text)}); f.RequireOk(result); CHECK(result.value.AsInt() == 1);
+        const auto math = f.vm.NewIntrinsicInstance("Ljava/math/MathContext;"); f.Construct(math, "Ljava/math/MathContext;", "(I)V", {VmValue::Int(7)});
+        result = f.Virtual(math, "getPrecision", "()I"); f.RequireOk(result); CHECK(result.value.AsInt() == 7);
+        const auto atomic = f.vm.NewIntrinsicInstance("Ljava/util/concurrent/atomic/AtomicLong;");
+        f.Construct(atomic, "Ljava/util/concurrent/atomic/AtomicLong;", "(J)V", {VmValue::Long(INT64_MAX)});
+        result = f.Virtual(atomic, "incrementAndGet", "()J"); f.RequireOk(result); CHECK(result.value.AsLong() == INT64_MIN);
+        const auto principal = f.vm.NewIntrinsicInstance("Ljavax/security/auth/x500/X500Principal;");
+        f.Construct(principal, "Ljavax/security/auth/x500/X500Principal;", "(Ljava/lang/String;)V", {VmValue::Ref(f.vm.NewStringUtf8("CN=Alice,O=Example,C=US"))});
+        result = f.Virtual(principal, "getName", "(Ljava/lang/String;)Ljava/lang/String;", {VmValue::Ref(f.vm.NewStringUtf8("CANONICAL"))});
+        f.RequireOk(result); CHECK(f.vm.StringUtf8(result.value.ref) == "cn=alice,o=example,c=us");
+        const auto encoded = f.Virtual(principal, "getEncoded", "()[B"); f.RequireOk(encoded);
+        const auto decoded = f.vm.NewIntrinsicInstance("Ljavax/security/auth/x500/X500Principal;");
+        f.Construct(decoded, "Ljavax/security/auth/x500/X500Principal;", "([B)V", {VmValue::Ref(encoded.value.ref)});
+        result = f.Virtual(principal, "equals", "(Ljava/lang/Object;)Z", {VmValue::Ref(decoded)}); f.RequireOk(result); CHECK(result.value.AsInt() == 1);
+    }
+}
+
+TEST_CASE("DVM-104 memory wrappers preserve underlying guest stream identity") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        Dvm87Vm f(backend);
+        const auto bytes = f.vm.NewIntrinsicInstance("Ljava/io/ByteArrayOutputStream;");
+        f.Construct(bytes, "Ljava/io/ByteArrayOutputStream;", "()V");
+        const auto buffered = f.vm.NewIntrinsicInstance("Ljava/io/BufferedOutputStream;");
+        f.Construct(buffered, "Ljava/io/BufferedOutputStream;", "(Ljava/io/OutputStream;I)V", {VmValue::Ref(bytes), VmValue::Int(2)});
+        const auto data = f.vm.NewIntrinsicInstance("Ljava/io/DataOutputStream;");
+        f.Construct(data, "Ljava/io/DataOutputStream;", "(Ljava/io/OutputStream;)V", {VmValue::Ref(buffered)});
+        const auto text = f.vm.NewStringUtf8("Hello 世界");
+        f.RequireOk(f.Virtual(data, "writeUTF", "(Ljava/lang/String;)V", {VmValue::Ref(text)}));
+        f.RequireOk(f.Virtual(data, "flush", "()V"));
+        const auto encoded = f.Virtual(bytes, "toByteArray", "()[B"); f.RequireOk(encoded);
+        CHECK(f.model.ArrayLength(encoded.value.ref) == 14);
+        const auto source = f.vm.NewIntrinsicInstance("Ljava/io/ByteArrayInputStream;");
+        f.Construct(source, "Ljava/io/ByteArrayInputStream;", "([B)V", {VmValue::Ref(encoded.value.ref)});
+        const auto input = f.vm.NewIntrinsicInstance("Ljava/io/DataInputStream;");
+        f.Construct(input, "Ljava/io/DataInputStream;", "(Ljava/io/InputStream;)V", {VmValue::Ref(source)});
+        const auto decoded = f.Virtual(input, "readUTF", "()Ljava/lang/String;"); f.RequireOk(decoded);
+        CHECK(f.vm.StringUtf8(decoded.value.ref) == "Hello 世界");
+        const auto remaining = f.Virtual(source, "available", "()I"); f.RequireOk(remaining); CHECK(remaining.value.AsInt() == 0);
+        const auto sr = f.vm.NewIntrinsicInstance("Ljava/io/StringReader;");
+        f.Construct(sr, "Ljava/io/StringReader;", "(Ljava/lang/String;)V", {VmValue::Ref(f.vm.NewStringUtf8("first\r\nsecond"))});
+        const auto br = f.vm.NewIntrinsicInstance("Ljava/io/BufferedReader;");
+        f.Construct(br, "Ljava/io/BufferedReader;", "(Ljava/io/Reader;I)V", {VmValue::Ref(sr), VmValue::Int(2)});
+        auto line=f.Virtual(br,"readLine","()Ljava/lang/String;");f.RequireOk(line);CHECK(f.vm.StringUtf8(line.value.ref)=="first");
+        line=f.Virtual(br,"readLine","()Ljava/lang/String;");f.RequireOk(line);CHECK(f.vm.StringUtf8(line.value.ref)=="second");
+        f.RequireOk(f.Virtual(br,"close","()V"));
+        const auto closed=f.Virtual(sr,"read","()I");REQUIRE(closed.exception.IsValid());CHECK(f.linker.Class(closed.exception_class).descriptor=="Ljava/io/IOException;");
+    }
+}
+
+TEST_CASE("DVM-104 standard charset names encode decode and incremental reader agree") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        Dvm87Vm f(backend);
+        for (const auto* name : {"UTF-8", "UTF-16", "UTF-16BE", "UTF-16LE", "ISO-8859-1", "US-ASCII"}) {
+            CAPTURE(name);
+            const auto charset=f.Static("Ljava/nio/charset/Charset;","forName","(Ljava/lang/String;)Ljava/nio/charset/Charset;",{VmValue::Ref(f.vm.NewStringUtf8(name))});f.RequireOk(charset);
+            const auto text=f.model.NewString(std::string(name).starts_with("UTF")?u"A世界😀":u"Abc");
+            const auto bytes=f.Virtual(text,"getBytes","(Ljava/nio/charset/Charset;)[B",{VmValue::Ref(charset.value.ref)});f.RequireOk(bytes);
+            const auto decoded=f.vm.NewIntrinsicInstance("Ljava/lang/String;");
+            f.Construct(decoded,"Ljava/lang/String;","([BLjava/nio/charset/Charset;)V",{VmValue::Ref(bytes.value.ref),VmValue::Ref(charset.value.ref)});
+            CHECK(f.vm.StringUtf8(decoded)==f.vm.StringUtf8(text));
+            const auto source=f.vm.NewIntrinsicInstance("Ljava/io/ByteArrayInputStream;");f.Construct(source,"Ljava/io/ByteArrayInputStream;","([B)V",{VmValue::Ref(bytes.value.ref)});
+            const auto reader=f.vm.NewIntrinsicInstance("Ljava/io/InputStreamReader;");f.Construct(reader,"Ljava/io/InputStreamReader;","(Ljava/io/InputStream;Ljava/nio/charset/Charset;)V",{VmValue::Ref(source),VmValue::Ref(charset.value.ref)});
+            std::u16string result;
+            for (int i=0;i<32;++i) {const auto unit=f.Virtual(reader,"read","()I");f.RequireOk(unit);if(unit.value.AsInt()<0)break;result.push_back(static_cast<char16_t>(unit.value.AsInt()));}
+            CHECK(result==f.model.StringValue(text));
+            const auto encoding=f.Virtual(reader,"getEncoding","()Ljava/lang/String;"); f.RequireOk(encoding); CHECK(f.vm.StringUtf8(encoding.value.ref)==name);
+            const auto named=f.vm.NewIntrinsicInstance("Ljava/lang/String;"); f.Construct(named,"Ljava/lang/String;","([BLjava/lang/String;)V",{VmValue::Ref(bytes.value.ref),VmValue::Ref(f.vm.NewStringUtf8(name))}); CHECK(f.model.StringValue(named)==f.model.StringValue(text));
+            const auto ordering=f.Virtual(charset.value.ref,"compareTo","(Ljava/nio/charset/Charset;)I",{VmValue::Ref(charset.value.ref)}); f.RequireOk(ordering); CHECK(ordering.value.AsInt()==0);
+
+            f.RequireOk(f.Virtual(reader,"close","()V"));
+        }
+        const auto malformed=f.model.NewString(std::u16string(1,static_cast<char16_t>(0xd800)));
+        for (const auto* name : {"UTF-8", "UTF-16BE", "UTF-16LE", "US-ASCII"}) {
+            const auto bytes=f.Virtual(malformed,"getBytes","(Ljava/lang/String;)[B",{VmValue::Ref(f.vm.NewStringUtf8(name))}); f.RequireOk(bytes);
+            const auto decoded=f.vm.NewIntrinsicInstance("Ljava/lang/String;");
+            f.Construct(decoded,"Ljava/lang/String;","([BLjava/lang/String;)V",{VmValue::Ref(bytes.value.ref),VmValue::Ref(f.vm.NewStringUtf8(name))});
+            CHECK(f.model.StringValue(decoded)==(std::string_view(name).starts_with("UTF-16")?u"\ufffd":u"?"));
+        }
+        const auto invalid=f.Static("Ljava/nio/charset/Charset;","forName","(Ljava/lang/String;)Ljava/nio/charset/Charset;",{VmValue::Ref(f.vm.NewStringUtf8("not a charset"))});
+        REQUIRE(invalid.exception.IsValid());CHECK(f.linker.Class(invalid.exception_class).descriptor=="Ljava/nio/charset/IllegalCharsetNameException;");
+        const auto unsupported=f.Static("Ljava/nio/charset/Charset;","forName","(Ljava/lang/String;)Ljava/nio/charset/Charset;",{VmValue::Ref(f.vm.NewStringUtf8("made-up"))});
+        REQUIRE(unsupported.exception.IsValid());CHECK(f.linker.Class(unsupported.exception_class).descriptor=="Ljava/nio/charset/UnsupportedCharsetException;");
+    }
+}
+
+TEST_CASE("DVM-104 formatters events tokenizer and key parameters use guest state") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        auto calls=std::make_shared<int>();
+        auto listener=IntrinsicClassBuilder::Class("Ltest/PropertyListener;","Ljava/lang/Object;",{"Ljava/beans/PropertyChangeListener;"});
+        listener.VirtualMethod("propertyChange","(Ljava/beans/PropertyChangeEvent;)V",[calls](IntrinsicContext&){++*calls;return VmValue::Void();});
+        const std::vector<IntrinsicClassDecl> extras{std::move(listener).Build()};
+        Dvm87Vm f(backend,"en","eng","USA","GMT",extras);
+        const auto events=f.vm.NewIntrinsicInstance("Ljava/beans/PropertyChangeSupport;");
+        const auto source=f.vm.NewIntrinsicInstance("Ljava/lang/Object;");
+        f.Construct(events,"Ljava/beans/PropertyChangeSupport;","(Ljava/lang/Object;)V",{VmValue::Ref(source)});
+        const auto observer=f.vm.NewIntrinsicInstance("Ltest/PropertyListener;");
+        f.RequireOk(f.Virtual(events,"addPropertyChangeListener","(Ljava/beans/PropertyChangeListener;)V",{VmValue::Ref(observer)}));
+        const auto fire=[&](int old,int next){return f.Virtual(events,"firePropertyChange","(Ljava/lang/String;II)V",{VmValue::Ref(f.vm.NewStringUtf8("value")),VmValue::Int(old),VmValue::Int(next)});};
+        f.RequireOk(fire(1,1));CHECK(*calls==0);f.RequireOk(fire(1,2));CHECK(*calls==1);
+        f.RequireOk(f.Virtual(events,"removePropertyChangeListener","(Ljava/beans/PropertyChangeListener;)V",{VmValue::Ref(observer)}));f.RequireOk(fire(2,3));CHECK(*calls==1);
+        const auto choice=f.vm.NewIntrinsicInstance("Ljava/text/ChoiceFormat;");
+        f.Construct(choice,"Ljava/text/ChoiceFormat;","(Ljava/lang/String;)V",{VmValue::Ref(f.vm.NewStringUtf8("0#none|1#one|1<many"))});
+        const auto rendered=f.Virtual(choice,"format","(J)Ljava/lang/String;",{VmValue::Long(2)});f.RequireOk(rendered);CHECK(f.vm.StringUtf8(rendered.value.ref)=="many");
+        const auto format=f.vm.NewIntrinsicInstance("Ljava/text/MessageFormat;");
+        f.Construct(format,"Ljava/text/MessageFormat;","(Ljava/lang/String;)V",{VmValue::Ref(f.vm.NewStringUtf8("Hello {0}"))});
+        const auto args=f.model.NewObjectArray(f.linker.ResolveDescriptor("[Ljava/lang/Object;"),f.linker.ResolveDescriptor("Ljava/lang/Object;"),1);
+        f.model.SetObjectElement(args,0,f.vm.NewStringUtf8("world"));
+        const auto message=f.Virtual(format,"format","(Ljava/lang/Object;)Ljava/lang/String;",{VmValue::Ref(args)});f.RequireOk(message);CHECK(f.vm.StringUtf8(message.value.ref)=="Hello world");
+        const auto reader=f.vm.NewIntrinsicInstance("Ljava/io/StringReader;");f.Construct(reader,"Ljava/io/StringReader;","(Ljava/lang/String;)V",{VmValue::Ref(f.vm.NewStringUtf8("word 42"))});
+        const auto tokenizer=f.vm.NewIntrinsicInstance("Ljava/io/StreamTokenizer;");f.Construct(tokenizer,"Ljava/io/StreamTokenizer;","(Ljava/io/Reader;)V",{VmValue::Ref(reader)});
+        const auto token=f.Virtual(tokenizer,"nextToken","()I");f.RequireOk(token);CHECK(token.value.AsInt()==-3);
+        const auto keybytes=f.model.NewPrimitiveArray(f.linker.ResolveDescriptor("[B"),JniPrimitiveKind::byte,3);
+        f.model.WriteByteRegion(keybytes,0,std::array{std::byte{1},std::byte{2},std::byte{3}});
+        for(const auto* owner:{"Ljavax/crypto/spec/IvParameterSpec;","Ljavax/crypto/spec/SecretKeySpec;","Ljava/security/spec/PKCS8EncodedKeySpec;","Ljava/security/spec/X509EncodedKeySpec;"}) {
+            CAPTURE(owner);const auto key=f.vm.NewIntrinsicInstance(owner);
+            const bool secret=std::string_view(owner).find("SecretKey")!=std::string_view::npos;
+            if(secret)f.Construct(key,owner,"([BLjava/lang/String;)V",{VmValue::Ref(keybytes),VmValue::Ref(f.vm.NewStringUtf8("AES"))});
+            else f.Construct(key,owner,"([B)V",{VmValue::Ref(keybytes)});
+            const auto copied=f.Virtual(key,std::string_view(owner).find("IvParameter")!=std::string_view::npos?"getIV":"getEncoded","()[B");f.RequireOk(copied);CHECK(copied.value.ref!=keybytes);CHECK(f.model.ReadByteRegion(copied.value.ref,0,3)==f.model.ReadByteRegion(keybytes,0,3));
+        }
+    }
+}
+
+TEST_CASE("DVM-104 synchronizers park real guest threads and handle interruption") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        for (const auto* descriptor : {"Ljava/util/concurrent/CountDownLatch;", "Ljava/util/concurrent/Semaphore;", "Ljava/util/concurrent/CyclicBarrier;"}) {
+            CAPTURE(std::string(descriptor));
+            for (const bool interrupt : {false, true}) {
+                CAPTURE(interrupt);
+                auto sync=std::make_shared<VmObjectRef>(); auto finished=std::make_shared<std::atomic<bool>>(false);auto interrupted=std::make_shared<std::atomic<bool>>(false);
+                auto runner=IntrinsicClassBuilder::Class("Ltest/SyncRunner;","Ljava/lang/Object;",{"Ljava/lang/Runnable;"});
+                const bool barrier=std::string_view(descriptor).find("CyclicBarrier")!=std::string_view::npos;
+                const bool semaphore=std::string_view(descriptor).find("Semaphore")!=std::string_view::npos;
+                runner.VirtualMethod("run","()V",[sync,finished,interrupted,barrier,semaphore](IntrinsicContext& c) {
+                    const auto cls=c.vm.Model().ObjectClass(*sync);
+                    const auto slot=c.vm.Linker().FindVtableIndex(cls,semaphore?"acquire":"await",barrier?"()I":"()V");
+                    const std::array args{VmValue::Ref(*sync)};const auto result=c.vm.Call(c.vm.Linker().Class(cls).vtable[*slot],args);
+                    if(result.exception.IsValid()) {
+                        if(c.vm.Linker().Class(result.exception_class).descriptor=="Ljava/lang/InterruptedException;") *interrupted=true;
+                        else c.vm.SetPendingException(result.exception);
+                    }
+                    *finished=true;return VmValue::Void();
+                });
+                const std::vector<IntrinsicClassDecl> extras{std::move(runner).Build()};Dvm87Vm f(backend,"en","eng","USA","GMT",extras);
+                f.vm.Monitors().SetTimeSource([] {return std::int64_t{0};});
+                *sync=f.vm.NewIntrinsicInstance(descriptor);f.Construct(*sync,descriptor,"(I)V",{VmValue::Int(barrier?2:semaphore?0:1)});
+                const std::array roots{*sync};const auto protect=f.vm.ProtectReferences(roots);
+                const auto target=f.vm.NewIntrinsicInstance("Ltest/SyncRunner;");
+                const auto thread=f.vm.NewIntrinsicInstance("Ljava/lang/Thread;");f.Construct(thread,"Ljava/lang/Thread;","(Ljava/lang/Runnable;)V",{VmValue::Ref(target)});
+                f.RequireOk(f.Virtual(thread,"start","()V"));
+                bool parked=false;
+                for(int i=0;i<3000;++i) {
+                    for(const auto& t:f.threads.Snapshot()) if(t.object==thread.Value() && t.wait_state!=VmThreadWaitState::none)parked=true;
+                    if(parked || finished->load())break;std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                }
+                if (!parked) { f.threads.Interrupt(thread); f.threads.Join(thread); }
+                REQUIRE(parked);CHECK_FALSE(finished->load());
+                if(interrupt)f.threads.Interrupt(thread);
+                else if(barrier)f.RequireOk(f.Virtual(*sync,"await","()I"));
+                else f.RequireOk(f.Virtual(*sync,semaphore?"release":"countDown","()V"));
+                bool done=false;for(int i=0;i<3000;++i){if(finished->load()){done=true;break;}std::this_thread::sleep_for(std::chrono::milliseconds(1));}
+                if(!done)f.threads.Interrupt(thread);
+                f.threads.Join(thread);CHECK(done);CHECK(interrupted->load()==interrupt);const auto failure=f.threads.TakeFailure(); CHECK_MESSAGE(!failure, failure.value_or(""));
+                if(barrier) {const auto broken=f.Virtual(*sync,"isBroken","()Z");f.RequireOk(broken);CHECK(broken.value.AsInt()==interrupt);f.RequireOk(f.Virtual(*sync,"reset","()V"));}
+            }
+        }
+    }
+}
+
+TEST_CASE("DVM-104 NativeBN tokens are isolated checked and swept with BigInt owners") {
+    Dvm87Vm f;
+    const auto baseline=f.vm.BigInts().Size();
+    const auto owner=f.vm.NewIntrinsicInstance("Ljava/math/BigInt;");f.Construct(owner,"Ljava/math/BigInt;","()V");
+    auto call=[&](const char* name,const char* sig,std::vector<VmValue> args){return f.Virtual(owner,name,sig,args);};
+    f.RequireOk(call("putLongInt","(J)V",{VmValue::Long(INT64_MIN)}));
+    const auto field=f.linker.FindFieldRecursive(f.model.ObjectClass(owner),"bignum","J");REQUIRE(field);
+    const auto slot=f.linker.Field(*field).slot;const auto slots=f.model.InstanceSlots(owner);
+    const auto token=static_cast<std::uint64_t>(slots[slot].bits)|(static_cast<std::uint64_t>(slots[slot+1].bits)<<32U);
+    CHECK(f.vm.BigInts().Require(token).magnitude==(UINT64_C(1)<<63U));
+    CHECK(f.vm.BigInts().Size()==baseline+1);
+    const auto unsupported=f.Static("Ljava/math/NativeBN;", "BN_add", "(JJJ)V", {VmValue::Long(static_cast<std::int64_t>(token)),VmValue::Long(static_cast<std::int64_t>(token)),VmValue::Long(static_cast<std::int64_t>(token))}); REQUIRE(unsupported.exception.IsValid());
+
+    Dvm87Vm other;CHECK_THROWS(other.vm.BigInts().Require(token));
+    static_cast<void>(f.vm.CollectGarbage());CHECK(f.vm.BigInts().Size()==baseline);CHECK_THROWS(f.vm.BigInts().Require(token));
+}
+
+TEST_CASE("DVM-104 atomic arrays references and immediate timeouts follow API19") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        Dvm87Vm f(backend);
+        f.vm.Monitors().SetTimeSource([] { return std::int64_t{123}; });
+        for (const bool wide : {false, true}) {
+            const auto type = std::string("Ljava/util/concurrent/atomic/Atomic") + (wide ? "LongArray;" : "IntegerArray;");
+            const auto array = f.vm.NewIntrinsicInstance(type);
+            f.Construct(array, type, "(I)V", {VmValue::Int(2)});
+            auto result = f.Virtual(array, "compareAndSet", wide ? "(IJJ)Z" : "(III)Z",
+                {VmValue::Int(1), wide ? VmValue::Long(0) : VmValue::Int(0), wide ? VmValue::Long(INT64_MAX) : VmValue::Int(INT32_MAX)});
+            f.RequireOk(result); CHECK(result.value.AsInt() == 1);
+            result = f.Virtual(array, "incrementAndGet", wide ? "(I)J" : "(I)I", {VmValue::Int(1)});
+            f.RequireOk(result); CHECK((wide ? result.value.AsLong() : result.value.AsInt()) == (wide ? INT64_MIN : INT32_MIN));
+            result = f.Virtual(array, "get", wide ? "(I)J" : "(I)I", {VmValue::Int(2)});
+            REQUIRE(result.exception.IsValid()); CHECK(f.linker.Class(result.exception_class).descriptor == "Ljava/lang/IndexOutOfBoundsException;");
+        }
+        const auto original = f.vm.NewStringUtf8("old"), next = f.vm.NewStringUtf8("new");
+        for (const bool marked : {false, true}) {
+            const auto type = std::string("Ljava/util/concurrent/atomic/Atomic") + (marked ? "MarkableReference;" : "StampedReference;");
+            const auto reference = f.vm.NewIntrinsicInstance(type);
+            f.Construct(reference, type, marked ? "(Ljava/lang/Object;Z)V" : "(Ljava/lang/Object;I)V", {VmValue::Ref(original), VmValue::Int(0)});
+            const auto cas = f.Virtual(reference, "compareAndSet", marked ? "(Ljava/lang/Object;Ljava/lang/Object;ZZ)Z" : "(Ljava/lang/Object;Ljava/lang/Object;II)Z",
+                {VmValue::Ref(original), VmValue::Ref(next), VmValue::Int(0), VmValue::Int(1)});
+            f.RequireOk(cas); CHECK(cas.value.AsInt() == 1);
+            const auto value = f.Virtual(reference, "getReference", "()Ljava/lang/Object;"); f.RequireOk(value); CHECK(value.value.ref == next);
+        }
+        const auto references = f.vm.NewIntrinsicInstance("Ljava/util/concurrent/atomic/AtomicReferenceArray;");
+        f.Construct(references, "Ljava/util/concurrent/atomic/AtomicReferenceArray;", "(I)V", {VmValue::Int(1)});
+        f.RequireOk(f.Virtual(references, "lazySet", "(ILjava/lang/Object;)V", {VmValue::Int(0), VmValue::Ref(next)}));
+        const std::array roots{references}; const auto protect = f.vm.ProtectReferences(roots);
+        static_cast<void>(f.vm.CollectGarbage());
+        const auto kept = f.Virtual(references, "get", "(I)Ljava/lang/Object;", {VmValue::Int(0)}); f.RequireOk(kept); CHECK(f.vm.StringUtf8(kept.value.ref) == "new");
+        const auto unit_type = f.linker.ResolveDescriptor("Ljava/util/concurrent/TimeUnit;");
+        f.RequireOk(f.vm.EnsureClassInitialized(unit_type));
+        const auto unit_field = f.linker.FindFieldRecursive(unit_type, "MILLISECONDS", "Ljava/util/concurrent/TimeUnit;"); REQUIRE(unit_field);
+        const auto unit = VmObjectRef(f.linker.Class(unit_type).static_storage[f.linker.Field(*unit_field).slot]);
+        for (const auto* type : {"Ljava/util/concurrent/CountDownLatch;", "Ljava/util/concurrent/Semaphore;", "Ljava/util/concurrent/CyclicBarrier;"}) {
+            const bool barrier = std::string_view(type).find("CyclicBarrier") != std::string_view::npos;
+            const bool semaphore = std::string_view(type).find("Semaphore") != std::string_view::npos;
+            const auto sync = f.vm.NewIntrinsicInstance(type); f.Construct(sync, type, "(I)V", {VmValue::Int(barrier ? 2 : semaphore ? 0 : 1)});
+            const auto result = f.Virtual(sync, semaphore ? "tryAcquire" : "await", barrier ? "(JLjava/util/concurrent/TimeUnit;)I" : "(JLjava/util/concurrent/TimeUnit;)Z", {VmValue::Long(0), VmValue::Ref(unit)});
+            if (barrier) {
+                REQUIRE(result.exception.IsValid()); CHECK(f.linker.Class(result.exception_class).descriptor == "Ljava/util/concurrent/TimeoutException;");
+                const auto broken = f.Virtual(sync, "isBroken", "()Z"); f.RequireOk(broken); CHECK(broken.value.AsInt() == 1);
+            } else { f.RequireOk(result); CHECK(result.value.AsInt() == 0); }
+        }
+    }
+}
+
+TEST_CASE("DVM-104 guest stream callbacks retain monitor exception identity and nonblocking available") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        auto failure = std::make_shared<VmObjectRef>();
+        auto reads = std::make_shared<int>();
+        auto locked = std::make_shared<bool>(false);
+        auto input = IntrinsicClassBuilder::Class("Ltest/CallbackInput;", "Ljava/io/InputStream;");
+        input.OverrideMethod("read", "()I", [failure, reads, locked](IntrinsicContext& c) {
+            *locked = c.vm.Monitors().IsOwner(c.receiver, c.vm.CurrentContextToken());
+            ++*reads;
+            static_cast<void>(c.vm.CollectGarbage("stream-callback"));
+            c.vm.SetPendingException(*failure); return VmValue::Int(-1);
+        });
+        const std::vector<IntrinsicClassDecl> extras{std::move(input).Build()};
+        Dvm87Vm f(backend,"en","eng","USA","GMT",extras);
+        *failure=f.vm.NewIntrinsicInstance("Ljava/io/IOException;");
+        const std::array roots{*failure}; const auto protect=f.vm.ProtectReferences(roots);
+        const auto source=f.vm.NewIntrinsicInstance("Ltest/CallbackInput;");
+        const auto reader=f.vm.NewIntrinsicInstance("Ljava/io/InputStreamReader;");
+        f.Construct(reader,"Ljava/io/InputStreamReader;","(Ljava/io/InputStream;)V",{VmValue::Ref(source)});
+        const auto result=f.Virtual(reader,"read","()I"); CHECK(result.exception==*failure); CHECK(*locked); CHECK(*reads==1);
+        CHECK_FALSE(f.vm.Monitors().IsOwner(source,f.vm.CurrentContextToken()));
+        // A stream whose header is available but whose next byte must not be read by available().
+        auto& state=f.vm.IO();
+        const auto object=f.vm.NewIntrinsicInstance("Ljava/io/ObjectInputStream;");
+        IoRuntime::InputState protocol; protocol.source=source;
+        state.SetInput(object,std::move(protocol)); state.BeginObjectInput(object);
+        const auto available=f.Virtual(object,"available","()I"); f.RequireOk(available); CHECK(available.value.AsInt()==0); CHECK(*reads==1);
+    }
 }

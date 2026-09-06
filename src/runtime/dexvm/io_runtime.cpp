@@ -43,26 +43,6 @@ IoRuntime::InputState *IoRuntime::FindInput(const VmObjectRef owner) noexcept {
   return found == inputs_.end() ? nullptr : found->second.state.get();
 }
 
-void IoRuntime::AdoptInput(const VmObjectRef source, const VmObjectRef target) {
-  const auto found = inputs_.find(source.Value());
-  if (found == inputs_.end() || found->second.closed ||
-      found->second.state->closed) {
-    throw IoRuntimeError("input stream is closed or was never opened");
-  }
-  inputs_[target.Value()] = std::move(found->second);
-  inputs_.erase(source.Value());
-}
-
-std::vector<std::byte> IoRuntime::TakeRemainingInput(const VmObjectRef owner) {
-  auto &state = Input(owner);
-  std::vector<std::byte> result(state.bytes.begin() +
-                                    static_cast<std::ptrdiff_t>(state.cursor),
-                                state.bytes.end());
-  state.cursor = state.bytes.size();
-  inputs_.erase(owner.Value());
-  return result;
-}
-
 void IoRuntime::CloseInput(const VmObjectRef owner) {
   const auto found = inputs_.find(owner.Value());
   if (found == inputs_.end() || found->second.closed)
@@ -133,17 +113,6 @@ IoRuntime::OutputState *
 IoRuntime::FindOutput(const VmObjectRef owner) noexcept {
   const auto found = outputs_.find(owner.Value());
   return found == outputs_.end() ? nullptr : found->second.state.get();
-}
-
-void IoRuntime::AdoptOutput(const VmObjectRef source,
-                            const VmObjectRef target) {
-  const auto found = outputs_.find(source.Value());
-  if (found == outputs_.end() || found->second.closed ||
-      found->second.state->closed) {
-    throw IoRuntimeError("output stream is closed or was never opened");
-  }
-  outputs_[target.Value()] = std::move(found->second);
-  outputs_.erase(source.Value());
 }
 
 void IoRuntime::FlushOutput(const VmObjectRef owner, const bool close) {
@@ -263,6 +232,7 @@ void IoRuntime::WriteFile(const std::string_view path,
 }
 
 void IoRuntime::Sweep(const VmObjectRef owner) {
+  decoders_.erase(owner.Value());
   inputs_.erase(owner.Value());
   object_inputs_.erase(owner.Value());
   outputs_.erase(owner.Value());
@@ -273,6 +243,8 @@ void IoRuntime::Sweep(const VmObjectRef owner) {
 void IoRuntime::Trace(
     const VmObjectRef owner,
     const std::function<void(VmObjectRef)> &visitor) const {
+  if (const auto found = inputs_.find(owner.Value()); found != inputs_.end() && found->second.state->source.IsValid()) visitor(found->second.state->source);
+  if (const auto found = outputs_.find(owner.Value()); found != outputs_.end() && found->second.state->sink.IsValid()) visitor(found->second.state->sink);
   const auto input = object_inputs_.find(owner.Value());
   if (input != object_inputs_.end()) {
     for (const auto &handle : input->second.handles) {

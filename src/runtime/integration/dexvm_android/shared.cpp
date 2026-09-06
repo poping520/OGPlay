@@ -589,12 +589,14 @@ std::string FilePathOf(dx::IntrinsicContext& call,
 
 dx::VmObjectRef OpenStream(dx::IntrinsicContext& call, const Context& context,
                            std::vector<std::byte> bytes) {
-    // InputStream is abstract on API 19: its bulk read virtual-dispatches to
-    // read(). APK resources are in-memory byte sources, so expose the concrete
-    // byte-array stream whose overrides consume the shared IoRuntime state.
-    const auto instance = call.vm.NewIntrinsicInstance(
-        "Ljava/io/ByteArrayInputStream;");
-    call.vm.IO().SetInput(instance, {std::move(bytes), 0, false});
+    const auto instance = call.vm.NewIntrinsicInstance("Ljava/io/ByteArrayInputStream;");
+    const std::array roots{instance}; const auto protect = call.vm.ProtectReferences(roots);
+    const auto array = call.vm.Model().NewPrimitiveArray(call.vm.Linker().ResolveDescriptor("[B"), JniPrimitiveKind::byte, static_cast<JniSize>(bytes.size()));
+    call.vm.Model().WriteByteRegion(array, 0, bytes);
+    const auto ctor = call.vm.Linker().FindDirectMethod(call.vm.Model().ObjectClass(instance), "<init>", "([B)V");
+    const std::array args{dx::VmValue::Ref(instance), dx::VmValue::Ref(array)};
+    const auto outcome = call.vm.Call(*ctor, args);
+    if (outcome.exception.IsValid()) throw dx::VmJavaThrow{call.vm.Linker().Class(outcome.exception_class).descriptor, outcome.exception_message, outcome.exception};
     static_cast<void>(context);
     return instance;
 }

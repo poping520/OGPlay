@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <functional>
+#include <deque>
 #include <memory>
 #include <optional>
 #include <span>
@@ -75,13 +76,22 @@ public:
     std::vector<std::byte> bytes;
     std::size_t cursor{};
     bool closed{};
+    VmObjectRef source{0};
   };
   struct OutputState final {
     std::string path;
     std::vector<std::byte> bytes;
     bool writable{true};
     bool closed{};
+    VmObjectRef sink{0};
+    std::size_t delivered{};
   };
+  struct DecoderState final {
+    std::shared_ptr<void> converter;
+    std::deque<char16_t> pending;
+    bool ended{};
+  };
+  DecoderState& Decoder(VmObjectRef owner) { return decoders_[owner.Value()]; }
   struct ObjectInputState final {
     std::size_t depth{};
     std::size_t block_remaining{};
@@ -112,8 +122,6 @@ public:
                   bool close_underlying);
   [[nodiscard]] InputState &Input(VmObjectRef owner);
   [[nodiscard]] InputState *FindInput(VmObjectRef owner) noexcept;
-  void AdoptInput(VmObjectRef source, VmObjectRef target);
-  [[nodiscard]] std::vector<std::byte> TakeRemainingInput(VmObjectRef owner);
   void CloseInput(VmObjectRef owner);
   void BeginObjectInput(VmObjectRef owner);
   [[nodiscard]] ObjectInputState &ObjectInput(VmObjectRef owner);
@@ -126,7 +134,6 @@ public:
                    bool close_underlying);
   [[nodiscard]] OutputState &Output(VmObjectRef owner);
   [[nodiscard]] OutputState *FindOutput(VmObjectRef owner) noexcept;
-  void AdoptOutput(VmObjectRef source, VmObjectRef target);
   void FlushOutput(VmObjectRef owner, bool close);
 
   void SetDescriptor(VmObjectRef owner, DescriptorState state);
@@ -169,6 +176,7 @@ private:
   };
 
   IoFileSystem *file_system_{};
+  std::unordered_map<std::uint32_t, DecoderState> decoders_;
   std::unordered_map<std::uint32_t, InputHandle> inputs_;
   std::unordered_map<std::uint32_t, ObjectInputState> object_inputs_;
   std::unordered_map<std::uint32_t, ObjectOutputState> object_outputs_;

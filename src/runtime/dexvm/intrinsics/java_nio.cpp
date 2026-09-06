@@ -1,10 +1,14 @@
 #include "catalog.h"
+#include "shared.h"
+#include "../icu_support.h"
+#include <unicode/ucnv.h>
 
 #include <array>
 #include <bit>
 #include <optional>
 #include <string>
 #include <string_view>
+#include <tuple>
 
 #include "ogplay/runtime/dexvm/intrinsic_builder.h"
 #include "ogplay/runtime/dexvm/interpreter.h"
@@ -377,14 +381,125 @@ IntrinsicClassDecl Exception(const std::string& descriptor, const std::string& p
     return std::move(b).Build();
 }
 IntrinsicClassDecl Charset() {
-    auto b = IntrinsicClassBuilder::Class("Ljava/nio/charset/Charset;", "Ljava/lang/Object;");
-    b.StaticMethod("forName", "(Ljava/lang/String;)Ljava/nio/charset/Charset;", [](IntrinsicContext& c) {
-        return VmValue::Ref(c.vm.NewIntrinsicInstance("Ljava/nio/charset/Charset;"));
+    auto b = IntrinsicClassBuilder::Class("Ljava/nio/charset/Charset;", "Ljava/lang/Object;", {"Ljava/lang/Comparable;"});
+    const auto name = b.BoundInstanceField("canonicalName", "Ljava/lang/String;", kAccPrivate | kAccFinal);
+    const auto make = [name](IntrinsicContext& c, std::string text) {
+        text = CanonicalCharset(std::move(text));
+        const auto object = c.vm.NewIntrinsicInstance("Ljava/nio/charset/Charset;");
+        const std::array refs{object}; const auto roots = c.vm.ProtectReferences(refs);
+        IntrinsicCall(c).SetRef(name, object, c.vm.NewStringUtf8(text));
+        return VmValue::Ref(object);
+    };
+    b.StaticMethod("forName", "(Ljava/lang/String;)Ljava/nio/charset/Charset;", [make](IntrinsicContext& c) {
+        if (!c.arguments[0].ref.IsValid()) throw VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "charsetName == null"};
+        return make(c, c.vm.StringUtf8(c.arguments[0].ref));
+    });
+    b.StaticMethod("defaultCharset", "()Ljava/nio/charset/Charset;", [make](IntrinsicContext& c) { return make(c, "UTF-8"); });
+    b.StaticMethod("isSupported", "(Ljava/lang/String;)Z", [](IntrinsicContext& c) {
+        if (!c.arguments[0].ref.IsValid()) throw VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "charsetName == null"};
+        try { static_cast<void>(CanonicalCharset(c.vm.StringUtf8(c.arguments[0].ref))); return VmValue::Int(1); }
+        catch (const VmJavaThrow& e) { if (e.descriptor == "Ljava/nio/charset/UnsupportedCharsetException;") return VmValue::Int(0); throw; }
+    });
+    const auto compare = [name](IntrinsicContext& c) {
+        const auto other = c.arguments[0].ref;
+        if (!other.IsValid()) throw VmJavaThrow{"Ljava/lang/NullPointerException;", "charset == null"};
+        if (c.vm.Model().ObjectClass(other) != c.vm.Model().ObjectClass(c.receiver))
+            throw VmJavaThrow{"Ljava/lang/ClassCastException;", "expected Charset"};
+        return detail::InvokeGuest(c.vm, IntrinsicCall(c).GetRef(name), "compareToIgnoreCase",
+            "(Ljava/lang/String;)I", {VmValue::Ref(IntrinsicCall(c).GetRef(name, other))});
+    };
+    b.FinalMethod("compareTo", "(Ljava/nio/charset/Charset;)I", compare);
+    b.VirtualMethod("compareTo", "(Ljava/lang/Object;)I", compare, kAccPublic | kAccBridge | kAccSynthetic);
+    b.FinalMethod("name", "()Ljava/lang/String;", [name](IntrinsicContext& c) { return VmValue::Ref(IntrinsicCall(c).GetRef(name)); });
+    b.OverrideMethod("toString", "()Ljava/lang/String;", [name](IntrinsicContext& c) { return VmValue::Ref(IntrinsicCall(c).GetRef(name)); });
+    b.OverrideMethod("hashCode", "()I", [name](IntrinsicContext& c) { return detail::InvokeGuest(c.vm, IntrinsicCall(c).GetRef(name), "hashCode", "()I"); });
+    b.OverrideMethod("equals", "(Ljava/lang/Object;)Z", [name](IntrinsicContext& c) {
+        const auto other = c.arguments[0].ref;
+        if (!other.IsValid() || c.vm.Model().ObjectClass(other) != c.vm.Model().ObjectClass(c.receiver)) return VmValue::Int(0);
+        return VmValue::Int(c.vm.StringUtf8(IntrinsicCall(c).GetRef(name)) == c.vm.StringUtf8(IntrinsicCall(c).GetRef(name, other)));
     });
     return std::move(b).Build();
 }
 
 }  // namespace
+
+std::string CanonicalCharset(std::string name) {
+    const auto original = name;
+    if (name.empty()) throw VmJavaThrow{"Ljava/nio/charset/IllegalCharsetNameException;", name};
+    for (std::size_t i = 0; i < name.size(); ++i) {
+        auto& c = name[i];
+        const bool alnum = (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9');
+        if (!alnum && (i == 0 || (c != '-' && c != '+' && c != ':' && c != '_' && c != '.')))
+            throw VmJavaThrow{"Ljava/nio/charset/IllegalCharsetNameException;", original};
+        if (c >= 'a' && c <= 'z') c = static_cast<char>(c - 'a' + 'A');
+    }
+    if (name == "UTF8" || name == "UTF-8") return "UTF-8";
+    if (name == "UTF16" || name == "UTF-16") return "UTF-16";
+    if (name == "UTF16BE" || name == "UTF-16BE") return "UTF-16BE";
+    if (name == "UTF16LE" || name == "UTF-16LE") return "UTF-16LE";
+    if (name == "ASCII" || name == "US-ASCII" || name == "ISO646-US") return "US-ASCII";
+    if (name == "ISO-8859-1" || name == "ISO_8859-1" || name == "ISO8859_1" || name == "LATIN1") return "ISO-8859-1";
+    throw VmJavaThrow{"Ljava/nio/charset/UnsupportedCharsetException;", original};
+}
+std::string CharsetName(Interpreter& vm, VmObjectRef charset) {
+    return CanonicalCharset(vm.StringUtf8(detail::InvokeGuest(vm, charset, "name", "()Ljava/lang/String;").ref));
+}
+std::u16string DecodeCharset(std::span<const std::byte> bytes, const std::string& charset) {
+    InitializePinnedIcu(); UErrorCode status = U_ZERO_ERROR;
+    const std::unique_ptr<UConverter, decltype(&ucnv_close)> converter(ucnv_open(charset.c_str(), &status), ucnv_close);
+    CheckIcu(status);
+    if (bytes.size() > INT32_MAX) throw std::length_error("encoded string is too long");
+    const auto* input = reinterpret_cast<const char*>(bytes.data()); const auto count = static_cast<int32_t>(bytes.size());
+    const auto length = ucnv_toUChars(converter.get(), nullptr, 0, input, count, &status);
+    if (status != U_BUFFER_OVERFLOW_ERROR) CheckIcu(status);
+    status = U_ZERO_ERROR; std::u16string result(static_cast<std::size_t>(length), u'\0');
+    ucnv_toUChars(converter.get(), reinterpret_cast<UChar*>(result.data()), length, input, count, &status);
+    CheckIcu(status); return result;
+}
+std::vector<std::byte> EncodeCharset(std::u16string_view text, const std::string& charset) {
+    InitializePinnedIcu(); UErrorCode status = U_ZERO_ERROR;
+    const std::unique_ptr<UConverter, decltype(&ucnv_close)> converter(ucnv_open(charset.c_str(), &status), ucnv_close);
+    CheckIcu(status); const UChar replacement = charset.starts_with("UTF-16") ? 0xfffd : '?'; ucnv_setSubstString(converter.get(), &replacement, 1, &status); CheckIcu(status);
+    if (text.size() > INT32_MAX) throw std::length_error("string is too long");
+    const auto* input = reinterpret_cast<const UChar*>(text.data()); const auto count = static_cast<int32_t>(text.size());
+    const auto length = ucnv_fromUChars(converter.get(), nullptr, 0, input, count, &status);
+    if (status != U_BUFFER_OVERFLOW_ERROR) CheckIcu(status);
+    status = U_ZERO_ERROR; std::vector<std::byte> result(static_cast<std::size_t>(length));
+    ucnv_fromUChars(converter.get(), reinterpret_cast<char*>(result.data()), length, input, count, &status);
+    CheckIcu(status); return result;
+}
+
+IntrinsicClassDecl DeclareMemoryArray() {
+    auto b = IntrinsicClassBuilder::Class("Llibcore/io/Memory;");
+    for (const auto& [name, type, width] : std::vector<std::tuple<std::string,std::string,int>>{{"Short","S",2},{"Int","I",4},{"Long","J",8}}) {
+        const auto range = [](IntrinsicContext& c, int count) {
+            if (!c.arguments[0].ref.IsValid()) throw VmJavaThrow{"Ljava/lang/NullPointerException;", "array == null"};
+            const auto offset=c.arguments[1].AsInt();
+            if (offset<0 || static_cast<std::int64_t>(offset)+count>c.vm.Model().ArrayLength(c.arguments[0].ref)) throw VmJavaThrow{"Ljava/lang/IndexOutOfBoundsException;", "memory range"};
+            return offset;
+        };
+        b.StaticMethod("poke"+name,"([BI"+type+"Ljava/nio/ByteOrder;)V",[range,width](IntrinsicContext& c) {
+            const auto offset=range(c,width);
+            if (!c.arguments[3].ref.IsValid()) throw VmJavaThrow{"Ljava/lang/NullPointerException;", "byte order == null"};
+            const bool big=c.arguments[3].ref==OrderObject(c,false);
+            const auto bits=width==8?static_cast<std::uint64_t>(c.arguments[2].AsLong()):static_cast<std::uint64_t>(static_cast<std::uint32_t>(c.arguments[2].AsInt()));
+            std::vector<std::byte> bytes(static_cast<std::size_t>(width));
+            for(int i=0;i<width;++i)bytes[static_cast<std::size_t>(i)]=static_cast<std::byte>(bits>>(static_cast<unsigned>(big?width-i-1:i)*8U));
+            c.vm.Model().WriteByteRegion(c.arguments[0].ref,offset,bytes);return VmValue::Void();
+        });
+        b.StaticMethod("peek"+name,"([BILjava/nio/ByteOrder;)"+type,[range,width](IntrinsicContext& c) {
+            const auto offset=range(c,width);
+            if (!c.arguments[2].ref.IsValid()) throw VmJavaThrow{"Ljava/lang/NullPointerException;", "byte order == null"};
+            const bool big=c.arguments[2].ref==OrderObject(c,false);
+            const auto bytes=c.vm.Model().ReadByteRegion(c.arguments[0].ref,offset,width);std::uint64_t bits{};
+            for(int i=0;i<width;++i)bits|=static_cast<std::uint64_t>(bytes[static_cast<std::size_t>(i)])<<(static_cast<unsigned>(big?width-i-1:i)*8U);
+            if(width==8)return VmValue::Long(std::bit_cast<std::int64_t>(bits));
+            if(width==2)return VmValue::Int(std::bit_cast<std::int16_t>(static_cast<std::uint16_t>(bits)));
+            return VmValue::Int(std::bit_cast<std::int32_t>(static_cast<std::uint32_t>(bits)));
+        });
+    }
+    return std::move(b).Build();
+}
 
 void AppendJavaNio(std::vector<IntrinsicClassDecl>& catalog) {
     catalog.push_back(Exception("Ljava/nio/BufferOverflowException;", "Ljava/lang/RuntimeException;"));
@@ -414,6 +529,7 @@ void AppendJavaNio(std::vector<IntrinsicClassDecl>& catalog) {
         catalog.push_back(Plain(std::string("Ljava/nio/ByteBufferAs") + t.name + "Buffer;", std::string("Ljava/nio/") + t.name + "Buffer;"));
     }
     catalog.push_back(Charset());
+    catalog.push_back(DeclareMemoryArray());
 }
 
 }  // namespace ogplay::runtime::dexvm::intrinsics

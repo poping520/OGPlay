@@ -2,6 +2,8 @@
 
 // ---- migrated from java_io_EOFException.cpp ----
 #include "catalog.h"
+#include "../icu_support.h"
+#include <unicode/ucnv.h>
 #include "shared.h"
 
 #include "ogplay/runtime/dexvm/intrinsic_builder.h"
@@ -1073,10 +1075,29 @@ namespace ogplay::runtime::dexvm::intrinsics {
         }
 
         IntrinsicClassDecl DeclareFileReader() {
-            auto builder =
-                    IntrinsicClassBuilder::Class("Ljava/io/FileReader;", "Ljava/io/Reader;");
-            builder.Constructor("(Ljava/io/File;)V", OpenInputFromPath(true));
-            builder.Constructor("(Ljava/lang/String;)V", OpenInputFromPath(false));
+            auto builder = IntrinsicClassBuilder::Class(
+                "Ljava/io/FileReader;", "Ljava/io/InputStreamReader;");
+            for (const auto* signature : {"(Ljava/io/File;)V", "(Ljava/lang/String;)V",
+                                          "(Ljava/io/FileDescriptor;)V"}) {
+                builder.Constructor(signature, [signature](IntrinsicContext& call) {
+                    const auto stream = call.vm.NewIntrinsicInstance("Ljava/io/FileInputStream;");
+                    const std::array refs{stream};
+                    const auto roots = call.vm.ProtectReferences(refs);
+                    const auto initialize = [&](const char* owner, const char* descriptor,
+                                                VmObjectRef receiver, VmObjectRef argument) {
+                        const auto ctor = call.vm.Linker().FindDirectMethod(
+                            call.vm.Linker().ResolveDescriptor(owner), "<init>", descriptor);
+                        const std::array args{VmValue::Ref(receiver), VmValue::Ref(argument)};
+                        const auto result = call.vm.Call(*ctor, args);
+                        if (result.exception.IsValid()) throw VmJavaThrow{
+                            call.vm.Linker().Class(result.exception_class).descriptor,
+                            result.exception_message, result.exception};
+                    };
+                    initialize("Ljava/io/FileInputStream;", signature, stream, call.arguments[0].ref);
+                    initialize("Ljava/io/InputStreamReader;", "(Ljava/io/InputStream;)V", call.receiver, stream);
+                    return VmValue::Void();
+                });
+            }
             return std::move(builder).Build();
         }
 
@@ -1245,6 +1266,13 @@ namespace ogplay::runtime::dexvm::intrinsics {
             auto builder =
                     IntrinsicClassBuilder::Class("Ljava/io/FileWriter;", "Ljava/io/Writer;");
             builder.Constructor("(Ljava/io/File;Z)V", [](IntrinsicContext& call) {
+                const auto ctor = call.vm.Linker().FindDirectMethod(
+                    call.vm.Linker().ResolveDescriptor("Ljava/io/Writer;"), "<init>", "()V");
+                const std::array args{VmValue::Ref(call.receiver)};
+                const auto result = call.vm.Call(*ctor, args);
+                if (result.exception.IsValid()) throw VmJavaThrow{
+                    call.vm.Linker().Class(result.exception_class).descriptor,
+                    result.exception_message, result.exception};
                 const auto path = FilePath(call, call.arguments[0].ref);
                 IoRuntime::OutputState output{path, {}, true, false};
                 if (call.arguments[1].AsInt() != 0) {
@@ -1431,172 +1459,41 @@ namespace ogplay::runtime::dexvm::intrinsics {
             }
         }
 
-        IntrinsicHandler AdoptInput() {
-            return [](IntrinsicContext& call) {
-                try {
-                    call.vm.IO().AdoptInput(call.arguments[0].ref, call.receiver);
-                } catch (const IoRuntimeError& error) {
-                    IoFailure(error);
-                }
-                return VmValue::Void();
-            };
-        }
-
-        IntrinsicHandler AdoptOutput() {
-            return [](IntrinsicContext& call) {
-                try {
-                    call.vm.IO().AdoptOutput(call.arguments[0].ref, call.receiver);
-                } catch (const IoRuntimeError& error) {
-                    IoFailure(error);
-                }
-                return VmValue::Void();
-            };
-        }
-
-        IntrinsicHandler WriteRange() {
-            return [](IntrinsicContext& call) {
-                const auto array = call.arguments[0].ref;
-                if (!array.IsValid()) {
-                    throw VmJavaThrow{"Ljava/lang/NullPointerException;", "buffer == null"};
-                }
-                const auto offset = call.arguments[1].AsInt();
-                const auto length = call.arguments[2].AsInt();
-                if (offset < 0 || length < 0 ||
-                    static_cast<std::int64_t>(offset) + length >
-                    call.vm.Model().ArrayLength(array)) {
-                    throw VmJavaThrow{
-                        "Ljava/lang/IndexOutOfBoundsException;",
-                        "write range exceeds the source array"
-                    };
-                }
-                auto& output = Output(call);
-                const auto bytes = call.vm.Model().ReadByteRegion(array, offset, length);
-                output.bytes.insert(output.bytes.end(), bytes.begin(), bytes.end());
-                return VmValue::Void();
-            };
-        }
-
-        IntrinsicHandler FlushOutput(const bool close) {
-            return [close](IntrinsicContext& call) {
-                try {
-                    call.vm.IO().FlushOutput(call.receiver, close);
-                } catch (const IoRuntimeError& error) {
-                    IoFailure(error);
-                }
-                return VmValue::Void();
-            };
-        }
-
-        [[nodiscard]] bool InvokeOutputVirtual(
-            IntrinsicContext& call, const std::string_view name,
-            const std::string_view descriptor, std::vector<VmValue> arguments) {
-            const auto receiver_class = call.vm.Model().ObjectClass(call.receiver);
-            const auto index = call.vm.Linker().FindVtableIndex(
-                receiver_class, std::string(name), std::string(descriptor));
-            if (!index.has_value()) {
-                throw DexVmError(DexVmErrorReason::internal_invariant,
-                                 "OutputStream virtual method is unavailable: " +
-                                 std::string(name) + std::string(descriptor));
-            }
-            arguments.insert(arguments.begin(), VmValue::Ref(call.receiver));
-            const auto outcome = call.vm.Call(
-                call.vm.Linker().Class(receiver_class).vtable[*index], arguments);
-            if (outcome.exception.IsValid()) {
-                call.vm.SetPendingException(outcome.exception);
-                return false;
+        bool EnsureInput(IntrinsicContext& call, std::size_t count, bool blocking = true) {
+            auto& input = Input(call);
+            if (input.closed) throw VmJavaThrow{"Ljava/io/IOException;", "stream is closed"};
+            while (input.bytes.size() - input.cursor < count) {
+                if (!input.source.IsValid()) return false;
+                if (!blocking && detail::InvokeGuest(call.vm, input.source, "available", "()I").AsInt() <= 0) return false;
+                const auto value = detail::InvokeGuest(call.vm, input.source, "read", "()I").AsInt();
+                if (value < 0) return false;
+                input.bytes.push_back(static_cast<std::byte>(value));
             }
             return true;
         }
 
-        [[nodiscard]] VmCallOutcome InvokeInputVirtual(
-            IntrinsicContext& call, const std::string_view name,
-            const std::string_view descriptor, std::vector<VmValue> arguments) {
-            const auto receiver_class = call.vm.Model().ObjectClass(call.receiver);
-            const auto index = call.vm.Linker().FindVtableIndex(
-                receiver_class, std::string(name), std::string(descriptor));
-            if (!index.has_value()) {
-                throw DexVmError(DexVmErrorReason::internal_invariant,
-                                 "InputStream virtual method is unavailable: " +
-                                 std::string(name) + std::string(descriptor));
+        void DeliverOutput(IntrinsicContext& call, bool flush, bool close) {
+            auto& output = Output(call);
+            if (!output.sink.IsValid()) { call.vm.IO().FlushOutput(call.receiver, close); return; }
+            if (output.closed) throw VmJavaThrow{"Ljava/io/IOException;", "stream is closed"};
+            while (output.delivered < output.bytes.size()) {
+                const auto count = std::min<std::size_t>(8192, output.bytes.size() - output.delivered);
+                const auto array = call.vm.Model().NewPrimitiveArray(call.vm.Linker().ResolveDescriptor("[B"), JniPrimitiveKind::byte, static_cast<JniSize>(count));
+                call.vm.Model().WriteByteRegion(array, 0, std::span(output.bytes).subspan(output.delivered, count));
+                detail::InvokeGuest(call.vm, output.sink, "write", "([BII)V", {VmValue::Ref(array), VmValue::Int(0), VmValue::Int(static_cast<std::int32_t>(count))});
+                output.delivered += count;
             }
-            arguments.insert(arguments.begin(), VmValue::Ref(call.receiver));
-            return call.vm.Call(
-                call.vm.Linker().Class(receiver_class).vtable[*index], arguments);
+            if (flush) detail::InvokeGuest(call.vm, output.sink, "flush", "()V");
+            if (close) { detail::InvokeGuest(call.vm, output.sink, "close", "()V"); output.closed = true; }
         }
 
-        IntrinsicHandler ReadInputRange() {
-            return [](IntrinsicContext& call) {
-                const auto array = call.arguments[0].ref;
-                if (!array.IsValid()) {
-                    throw VmJavaThrow{"Ljava/lang/NullPointerException;", "buffer == null"};
-                }
-                const auto offset = call.arguments[1].AsInt();
-                const auto length = call.arguments[2].AsInt();
-                if (offset < 0 || length < 0 ||
-                    static_cast<std::int64_t>(offset) + length >
-                    call.vm.Model().ArrayLength(array)) {
-                    throw VmJavaThrow{
-                        "Ljava/lang/IndexOutOfBoundsException;",
-                        "read range exceeds the destination array"
-                    };
-                }
-                try {
-                    auto& input = call.vm.IO().Input(call.receiver);
-                    if (length == 0) return VmValue::Int(0);
-                    const auto remaining = input.bytes.size() - input.cursor;
-                    if (remaining == 0) return VmValue::Int(-1);
-                    const auto amount = std::min<std::size_t>(
-                        static_cast<std::size_t>(length), remaining);
-                    call.vm.Model().WriteByteRegion(
-                        array, offset,
-                        std::span(input.bytes).subspan(input.cursor, amount));
-                    input.cursor += amount;
-                    return VmValue::Int(static_cast<std::int32_t>(amount));
-                } catch (const IoRuntimeError& error) {
-                    IoFailure(error);
-                }
-            };
-        }
-
-        IntrinsicHandler ReadInputByte() {
-            return [](IntrinsicContext& call) {
-                try {
-                    auto& input = call.vm.IO().Input(call.receiver);
-                    if (input.cursor >= input.bytes.size()) return VmValue::Int(-1);
-                    return VmValue::Int(
-                        static_cast<std::uint8_t>(input.bytes[input.cursor++]));
-                } catch (const IoRuntimeError& error) {
-                    IoFailure(error);
-                }
-            };
-        }
-
-        IntrinsicHandler AvailableInput() {
-            return [](IntrinsicContext& call) {
-                try {
-                    const auto& input = call.vm.IO().Input(call.receiver);
-                    return VmValue::Int(static_cast<std::int32_t>(
-                        input.bytes.size() - input.cursor));
-                } catch (const IoRuntimeError& error) {
-                    IoFailure(error);
-                }
-            };
-        }
-
-        IntrinsicHandler SkipInput() {
-            return [](IntrinsicContext& call) {
-                try {
-                    auto& input = call.vm.IO().Input(call.receiver);
-                    const auto requested = call.arguments[0].AsLong();
-                    const auto remaining =
-                            static_cast<std::int64_t>(input.bytes.size() - input.cursor);
-                    const auto amount =
-                            std::max<std::int64_t>(0, std::min(requested, remaining));
-                    input.cursor += static_cast<std::size_t>(amount);
-                    return VmValue::Long(amount);
-                } catch (const IoRuntimeError& error) {
-                    IoFailure(error);
-                }
+        IntrinsicHandler FlushOutput(const bool close) {
+            return [close](IntrinsicContext& call) {
+                const auto* state = call.vm.IO().FindOutput(call.receiver);
+                if (close && state && state->closed) return VmValue::Void();
+                try { DeliverOutput(call, true, close); }
+                catch (const IoRuntimeError& error) { IoFailure(error); }
+                return VmValue::Void();
             };
         }
 
@@ -1687,6 +1584,7 @@ namespace ogplay::runtime::dexvm::intrinsics {
                              static_cast<std::ptrdiff_t>(offset + count));
                 offset += count;
             }
+            DeliverOutput(call, false, false);
         }
 
         void AppendObjectPrimitiveInteger(IntrinsicContext& call,
@@ -1701,7 +1599,7 @@ namespace ogplay::runtime::dexvm::intrinsics {
         [[nodiscard]] std::uint64_t TakeRawUnsigned(IntrinsicContext& call,
                                                     const std::size_t count) {
             auto& input = Input(call);
-            if (count > 8U || input.bytes.size() - input.cursor < count) {
+            if (count > 8U || !EnsureInput(call, count)) {
                 throw VmJavaThrow{"Ljava/io/EOFException;", "end of object stream"};
             }
             std::uint64_t value{};
@@ -1715,7 +1613,7 @@ namespace ogplay::runtime::dexvm::intrinsics {
         [[nodiscard]] std::span<const std::byte>
         TakeRawBytes(IntrinsicContext& call, const std::size_t count) {
             auto& input = Input(call);
-            if (input.bytes.size() - input.cursor < count) {
+            if (!EnsureInput(call, count)) {
                 throw VmJavaThrow{"Ljava/io/EOFException;", "end of object stream"};
             }
             const auto offset = input.cursor;
@@ -2635,28 +2533,26 @@ namespace ogplay::runtime::dexvm::intrinsics {
             IoRuntime::ObjectInputState& state_;
         };
 
-        [[nodiscard]] bool PrepareObjectPrimitiveBlock(IntrinsicContext& call) {
+        [[nodiscard]] bool PrepareObjectPrimitiveBlock(IntrinsicContext& call, bool blocking = true) {
             auto& object = ObjectInput(call);
             if (object.pushback.has_value() || object.block_remaining > 0U) return true;
             auto& input = Input(call);
-            while (input.cursor < input.bytes.size()) {
+            while (EnsureInput(call, 1, blocking)) {
                 const auto token = static_cast<std::uint8_t>(input.bytes[input.cursor]);
+                const std::size_t header = token == kTcBlockData ? 2 : token == kTcBlockDataLong ? 5 : 0;
+                if (!header) return false;
+                if (!EnsureInput(call, header, blocking)) {
+                    if (!blocking) return false;
+                    throw VmJavaThrow{"Ljava/io/EOFException;", "truncated object block header"};
+                }
                 std::uint64_t count{};
-                if (token == kTcBlockData) {
-                    ++input.cursor;
-                    count = TakeRawUnsigned(call, 1U);
-                } else if (token == kTcBlockDataLong) {
-                    ++input.cursor;
-                    count = TakeRawUnsigned(call, 4U);
-                } else {
-                    return false;
+                for (std::size_t i = 1; i < header; ++i)
+                    count = (count << 8U) | static_cast<std::uint8_t>(input.bytes[input.cursor + i]);
+                if (count > SIZE_MAX - header || !EnsureInput(call, header + static_cast<std::size_t>(count), blocking)) {
+                    if (!blocking) return false;
+                    throw VmJavaThrow{"Ljava/io/IOException;", "invalid object stream block length"};
                 }
-                if (count > input.bytes.size() - input.cursor) {
-                    throw VmJavaThrow{
-                        "Ljava/io/IOException;",
-                        "invalid object stream block length"
-                    };
-                }
+                input.cursor += header;
                 object.block_remaining = static_cast<std::size_t>(count);
                 if (object.block_remaining > 0U) return true;
             }
@@ -2742,451 +2638,97 @@ namespace ogplay::runtime::dexvm::intrinsics {
             };
         }
 
-        IntrinsicClassDecl DeclareInputStream() {
-            auto builder = IntrinsicClassBuilder::Class(
-                "Ljava/io/InputStream;", "Ljava/lang/Object;",
-                {"Ljava/io/Closeable;"}, kAccPublic | kAccAbstract);
-            // 创建输入流基类。
-            builder.Constructor("()V", [](IntrinsicContext&) {
-                return VmValue::Void();
-            });
-            // 默认逐字节虚调用子类的 read()，并在部分成功后抑制后续异常。
-            builder.VirtualMethod("read", "([BII)I", [](IntrinsicContext& call) {
-                const auto array = call.arguments[0].ref;
-                if (!array.IsValid()) {
-                    throw VmJavaThrow{"Ljava/lang/NullPointerException;", "buffer == null"};
-                }
-                const auto offset = call.arguments[1].AsInt();
-                const auto length = call.arguments[2].AsInt();
-                if (offset < 0 || length < 0 ||
-                    static_cast<std::int64_t>(offset) + length >
-                    call.vm.Model().ArrayLength(array)) {
-                    throw VmJavaThrow{
-                        "Ljava/lang/IndexOutOfBoundsException;",
-                        "invalid stream read range"
-                    };
-                }
-                if (length == 0) return VmValue::Int(0);
-                for (std::int32_t index = 0; index < length; ++index) {
-                    const auto outcome = InvokeInputVirtual(call, "read", "()I", {});
-                    if (outcome.exception.IsValid()) {
-                        if (index == 0) call.vm.SetPendingException(outcome.exception);
-                        return VmValue::Int(index);
-                    }
-                    const auto value = outcome.value.AsInt();
-                    if (value < 0) return VmValue::Int(index == 0 ? -1 : index);
-                    const std::array byte{
-                        static_cast<std::byte>(value & 0xff)
-                    };
-                    call.vm.Model().WriteByteRegion(array, offset + index, byte);
-                }
-                return VmValue::Int(length);
-            });
-            // 将整个字节数组转发给可覆写的区间读取方法。
-            builder.VirtualMethod("read", "([B)I", [](IntrinsicContext& call) {
-                const auto array = call.arguments[0].ref;
-                if (!array.IsValid()) {
-                    throw VmJavaThrow{"Ljava/lang/NullPointerException;", "buffer == null"};
-                }
-                const auto outcome = InvokeInputVirtual(
-                    call, "read", "([BII)I",
-                    {
-                        VmValue::Ref(array), VmValue::Int(0),
-                        VmValue::Int(call.vm.Model().ArrayLength(array))
-                    });
-                if (outcome.exception.IsValid()) {
-                    call.vm.SetPendingException(outcome.exception);
-                    return VmValue::Int(0);
-                }
-                return outcome.value;
-            });
-            // 子类必须实现单字节读取。
-            builder.UnimplementedVirtual("read", "()I", kAccPublic | kAccAbstract);
-            // 基类默认没有可立即读取的字节。
-            builder.VirtualMethod("available", "()I", [](IntrinsicContext&) {
-                return VmValue::Int(0);
-            });
-            // 基类关闭不执行额外操作。
-            builder.VirtualMethod("close", "()V", [](IntrinsicContext&) {
-                return VmValue::Void();
-            });
-            // 标记当前读取位置；基类默认不支持标记。
-            builder.VirtualMethod("mark", "(I)V", [](IntrinsicContext&) {
-                return VmValue::Void();
-            });
-            // 报告基类不支持 mark/reset。
-            builder.VirtualMethod("markSupported", "()Z", [](IntrinsicContext&) {
-                return VmValue::Int(0);
-            });
-            // 基类无法恢复到标记位置。
-            builder.VirtualMethod(
-                "reset", "()V",
-                [](IntrinsicContext&) -> VmValue {
-                    throw VmJavaThrow{"Ljava/io/IOException;", "mark/reset not supported"};
-                },
-                kAccPublic | kAccSynchronized);
-            // 通过可覆写的读取方法消费并跳过字节。
-            builder.VirtualMethod("skip", "(J)J", [](IntrinsicContext& call) {
-                const auto requested = call.arguments[0].AsLong();
-                if (requested <= 0) return VmValue::Long(0);
-                const auto buffer_size = static_cast<JniSize>(
-                    std::min<std::int64_t>(requested, 4096));
-                const auto buffer = call.vm.Model().NewPrimitiveArray(
-                    call.vm.Linker().ResolveDescriptor("[B"), JniPrimitiveKind::byte,
-                    buffer_size);
-                const std::array references{buffer};
-                [[maybe_unused]] const auto roots =
-                        call.vm.ProtectReferences(references);
-                std::int64_t skipped{};
-                while (skipped < requested) {
-                    const auto chunk = static_cast<std::int32_t>(std::min<std::int64_t>(
-                        buffer_size, requested - skipped));
-                    const auto outcome = InvokeInputVirtual(
-                        call, "read", "([BII)I",
-                        {VmValue::Ref(buffer), VmValue::Int(0), VmValue::Int(chunk)});
-                    if (outcome.exception.IsValid()) {
-                        call.vm.SetPendingException(outcome.exception);
-                        return VmValue::Long(skipped);
-                    }
-                    const auto count = outcome.value.AsInt();
-                    if (count <= 0) break;
-                    skipped += count;
-                }
-                return VmValue::Long(skipped);
-            });
-            return std::move(builder).Build();
-        }
-
-        IntrinsicClassDecl DeclareOutputStream() {
-            auto builder = IntrinsicClassBuilder::Class(
-                "Ljava/io/OutputStream;", "Ljava/lang/Object;",
-                {"Ljava/io/Closeable;", "Ljava/io/Flushable;"},
-                kAccPublic | kAccAbstract);
-            // 创建输出流基类。
-            builder.Constructor("()V", [](IntrinsicContext&) {
-                return VmValue::Void();
-            });
-            // 将整个字节数组转发给可覆写的区间写入方法。
-            builder.VirtualMethod("write", "([B)V", [](IntrinsicContext& call) {
-                const auto array = call.arguments[0].ref;
-                if (!array.IsValid()) {
-                    throw VmJavaThrow{"Ljava/lang/NullPointerException;", "buffer == null"};
-                }
-                static_cast<void>(InvokeOutputVirtual(
-                    call, "write", "([BII)V",
-                    {
-                        VmValue::Ref(array), VmValue::Int(0),
-                        VmValue::Int(call.vm.Model().ArrayLength(array))
-                    }));
-                return VmValue::Void();
-            });
-            // 默认逐字节虚调用子类的 write(int)。
-            builder.VirtualMethod("write", "([BII)V", [](IntrinsicContext& call) {
-                const auto array = call.arguments[0].ref;
-                if (!array.IsValid()) {
-                    throw VmJavaThrow{"Ljava/lang/NullPointerException;", "buffer == null"};
-                }
-                const auto offset = call.arguments[1].AsInt();
-                const auto length = call.arguments[2].AsInt();
-                if (offset < 0 || length < 0 ||
-                    static_cast<std::int64_t>(offset) + length >
-                    call.vm.Model().ArrayLength(array)) {
-                    throw VmJavaThrow{
-                        "Ljava/lang/IndexOutOfBoundsException;",
-                        "write range exceeds the source array"
-                    };
-                }
-                const auto bytes = call.vm.Model().ReadByteRegion(array, offset, length);
-                for (const auto byte: bytes) {
-                    if (!InvokeOutputVirtual(
-                        call, "write", "(I)V",
-                        {VmValue::Int(static_cast<std::uint8_t>(byte))}))
-                        break;
-                }
-                return VmValue::Void();
-            });
-            // 子类必须实现单字节写入。
-            builder.UnimplementedVirtual("write", "(I)V", kAccPublic | kAccAbstract);
-            // 基类刷新不执行额外操作。
-            builder.VirtualMethod("flush", "()V", [](IntrinsicContext&) {
-                return VmValue::Void();
-            });
-            // 基类关闭不执行额外操作。
-            builder.VirtualMethod("close", "()V", [](IntrinsicContext&) {
-                return VmValue::Void();
-            });
-            // 报告此输出流是否记录了被抑制的写入错误。
-            builder.VirtualMethod("checkError", "()Z", [](IntrinsicContext&) {
-                return VmValue::Int(0);
-            }, kAccNone);
-            return std::move(builder).Build();
-        }
-
-        IntrinsicClassDecl DeclareByteArrayInputStream() {
-            auto builder = IntrinsicClassBuilder::Class("Ljava/io/ByteArrayInputStream;",
-                                                        "Ljava/io/InputStream;");
-            builder.Constructor("([B)V", [](IntrinsicContext& call) {
-                const auto array = call.arguments[0].ref;
-                if (!array.IsValid()) {
-                    throw VmJavaThrow{"Ljava/lang/NullPointerException;", "buffer == null"};
-                }
-                call.vm.IO().SetInput(call.receiver,
-                                      {
-                                          call.vm.Model().ReadByteRegion(
-                                              array, 0, call.vm.Model().ArrayLength(array)),
-                                          0, false
-                                      });
-                return VmValue::Void();
-            });
-            // 读取一个内存字节，流结束时返回 -1。
-            builder.OverrideMethod("read", "()I", ReadInputByte());
-            // 将内存字节读取到数组的指定区间。
-            builder.OverrideMethod("read", "([BII)I", ReadInputRange());
-            // 返回尚未读取的内存字节数。
-            builder.OverrideMethod("available", "()I", AvailableInput());
-            // 前移内存流的读取位置。
-            builder.OverrideMethod("skip", "(J)J", SkipInput());
-            // 关闭内存输入流；Android 实现允许关闭后继续读取。
-            builder.OverrideMethod("close", "()V", [](IntrinsicContext&) {
-                return VmValue::Void();
-            });
-            return std::move(builder).Build();
-        }
-
-        IntrinsicClassDecl DeclareByteArrayOutputStream() {
-            auto builder = IntrinsicClassBuilder::Class("Ljava/io/ByteArrayOutputStream;",
-                                                        "Ljava/io/OutputStream;");
-            builder.Constructor("()V", [](IntrinsicContext& call) {
-                call.vm.IO().SetOutput(call.receiver, {{}, {}, true, false});
-                return VmValue::Void();
-            });
-            builder.OverrideMethod("write", "([BII)V", WriteRange());
-            builder.OverrideMethod("write", "(I)V", [](IntrinsicContext& call) {
-                Output(call).bytes.push_back(
-                    static_cast<std::byte>(call.arguments[0].AsInt() & 0xff));
-                return VmValue::Void();
-            });
-            builder.FinalMethod("toByteArray", "()[B", [](IntrinsicContext& call) {
-                const auto& bytes = Output(call).bytes;
-                const auto array_class = call.vm.Linker().ResolveDescriptor("[B");
-                const auto array =
-                        call.vm.Model().NewPrimitiveArray(array_class, JniPrimitiveKind::byte,
-                                                          static_cast<JniSize>(bytes.size()));
-                if (!bytes.empty())
-                    call.vm.Model().WriteByteRegion(array, 0, bytes);
-                return VmValue::Ref(array);
-            });
-            builder.FinalMethod("size", "()I", [](IntrinsicContext& call) {
-                return VmValue::Int(static_cast<std::int32_t>(Output(call).bytes.size()));
-            });
-            builder.FinalOverrideMethod(
-                "toString", "()Ljava/lang/String;", [](IntrinsicContext& call) {
-                    const auto& bytes = Output(call).bytes;
-                    return VmValue::Ref(call.vm.NewStringUtf8(std::string(
-                        reinterpret_cast<const char*>(bytes.data()), bytes.size())));
-                });
-            builder.OverrideMethod("close", "()V",
-                                   [](IntrinsicContext&) { return VmValue::Void(); });
-            return std::move(builder).Build();
-        }
-
-        IntrinsicClassDecl BuildWrapper(std::string descriptor, std::string superclass,
-                                        std::string argument, const bool output,
-                                        const bool capacity = false) {
-            auto builder = IntrinsicClassBuilder::Class(std::move(descriptor),
-                                                        std::move(superclass));
-            const auto handler = output ? AdoptOutput() : AdoptInput();
-            builder.Constructor("(" + argument + ")V", handler);
-            if (capacity)
-                builder.Constructor("(" + argument + "I)V", handler);
-            if (output) {
-                builder.OverrideMethod("write", "([BII)V", WriteRange());
-                builder.OverrideMethod("write", "(I)V", [](IntrinsicContext& call) {
-                    Output(call).bytes.push_back(
-                        static_cast<std::byte>(call.arguments[0].AsInt() & 0xff));
-                    return VmValue::Void();
-                });
-                builder.OverrideMethod("flush", "()V", FlushOutput(false));
-                builder.OverrideMethod("close", "()V", FlushOutput(true));
-            } else {
-                builder.OverrideMethod("read", "()I", ReadInputByte());
-                builder.OverrideMethod("read", "([BII)I", ReadInputRange());
-                builder.OverrideMethod("available", "()I", AvailableInput());
-                builder.OverrideMethod("skip", "(J)J", SkipInput());
-                builder.OverrideMethod("close", "()V", [](IntrinsicContext& call) {
-                    call.vm.IO().CloseInput(call.receiver);
-                    return VmValue::Void();
-                });
+        class ReaderMonitor final {
+        public:
+            ReaderMonitor(Interpreter& vm, VmObjectRef lock)
+                : vm_(vm), lock_(lock), token_(vm.CurrentContextToken()) {
+                vm_.Monitors().Enter(lock_, token_);
             }
-            return std::move(builder).Build();
-        }
-
-        IntrinsicClassDecl DeclareReader() {
-            return std::move(IntrinsicClassBuilder::Class("Ljava/io/Reader;",
-                                                          "Ljava/lang/Object;"))
-                    .Build();
-        }
-
-        IntrinsicClassDecl DeclareWriter() {
-            return std::move(IntrinsicClassBuilder::Class("Ljava/io/Writer;",
-                                                          "Ljava/lang/Object;"))
-                    .Build();
-        }
-
-        IntrinsicClassDecl DeclareFilterInputStream() {
-            return BuildWrapper("Ljava/io/FilterInputStream;", "Ljava/io/InputStream;",
-                                "Ljava/io/InputStream;", false);
-        }
-
-        IntrinsicClassDecl DeclareFilterOutputStream() {
-            return BuildWrapper("Ljava/io/FilterOutputStream;", "Ljava/io/OutputStream;",
-                                "Ljava/io/OutputStream;", true);
-        }
-
-        IntrinsicClassDecl DeclareBufferedInputStream() {
-            return BuildWrapper("Ljava/io/BufferedInputStream;",
-                                "Ljava/io/FilterInputStream;", "Ljava/io/InputStream;",
-                                false, true);
-        }
-
-        IntrinsicClassDecl DeclareBufferedOutputStream() {
-            return BuildWrapper("Ljava/io/BufferedOutputStream;",
-                                "Ljava/io/FilterOutputStream;", "Ljava/io/OutputStream;",
-                                true, true);
-        }
+            ~ReaderMonitor() { vm_.Monitors().Exit(lock_, token_); }
+        private:
+            Interpreter& vm_;
+            VmObjectRef lock_;
+            std::uint64_t token_;
+        };
 
         IntrinsicClassDecl DeclareInputStreamReader() {
-            auto builder = IntrinsicClassBuilder::Class("Ljava/io/InputStreamReader;",
-                                                        "Ljava/io/Reader;");
-            const auto handler = AdoptInput();
-            builder.Constructor("(Ljava/io/InputStream;)V", handler);
-            builder.Constructor("(Ljava/io/InputStream;Ljava/nio/charset/Charset;)V",
-                                handler);
-            return std::move(builder).Build();
-        }
-
-        IntrinsicClassDecl DeclareBufferedReader() {
-            auto builder = IntrinsicClassBuilder::Class("Ljava/io/BufferedReader;",
-                                                        "Ljava/io/Reader;");
-            builder.Constructor("(Ljava/io/Reader;)V", AdoptInput());
-            builder.FinalMethod(
-                "readLine", "()Ljava/lang/String;", [](IntrinsicContext& call) {
-                    auto& input = Input(call);
-                    if (input.cursor >= input.bytes.size()) {
-                        return VmValue::Ref(VmObjectRef{});
-                    }
-                    std::string line;
-                    while (input.cursor < input.bytes.size()) {
-                        const auto byte = static_cast<char>(input.bytes[input.cursor++]);
-                        if (byte == '\n')
-                            break;
-                        if (byte == '\r') {
-                            if (input.cursor < input.bytes.size() &&
-                                static_cast<char>(input.bytes[input.cursor]) == '\n') {
-                                ++input.cursor;
-                            }
-                            break;
-                        }
-                        line.push_back(byte);
-                    }
-                    return VmValue::Ref(call.vm.NewStringUtf8(line));
-                });
-            builder.FinalMethod("ready", "()Z", [](IntrinsicContext& call) {
-                const auto& input = Input(call);
-                return VmValue::Int(input.cursor < input.bytes.size());
-            });
-            builder.FinalMethod("close", "()V", [](IntrinsicContext& call) {
-                call.vm.IO().CloseInput(call.receiver);
+            auto b = IntrinsicClassBuilder::Class("Ljava/io/InputStreamReader;", "Ljava/io/Reader;");
+            const auto source = b.BoundInstanceField("source", "Ljava/io/InputStream;", kAccPrivate);
+            const auto encoding = b.BoundInstanceField("encoding", "Ljava/lang/String;", kAccPrivate);
+            const auto closed = b.BoundInstanceField("closed", "Z", kAccPrivate);
+            const auto construct = [source, encoding](IntrinsicContext& c, std::string name) {
+                if (!c.arguments[0].ref.IsValid()) throw VmJavaThrow{"Ljava/lang/NullPointerException;", "input == null"};
+                const auto parent = c.vm.Linker().ResolveDescriptor("Ljava/io/Reader;");
+                const auto ctor = c.vm.Linker().FindDirectMethod(parent, "<init>", "(Ljava/lang/Object;)V");
+                const std::array args{VmValue::Ref(c.receiver), VmValue::Ref(c.arguments[0].ref)};
+                const auto result = c.vm.Call(*ctor, args);
+                if (result.exception.IsValid()) throw VmJavaThrow{c.vm.Linker().Class(result.exception_class).descriptor, result.exception_message, result.exception};
+                IntrinsicCall(c).SetRef(source, c.arguments[0].ref);
+                IntrinsicCall(c).SetRef(encoding, c.vm.NewStringUtf8(name));
+                InitializePinnedIcu(); UErrorCode status = U_ZERO_ERROR;
+                auto* converter = ucnv_open(name.c_str(), &status); CheckIcu(status);
+                c.vm.IO().Decoder(c.receiver).converter = std::shared_ptr<void>(converter, [](void* p) { ucnv_close(static_cast<UConverter*>(p)); });
                 return VmValue::Void();
-            });
-            return std::move(builder).Build();
-        }
-
-        IntrinsicClassDecl DeclareDataInputStream() {
-            auto builder = IntrinsicClassBuilder::Class("Ljava/io/DataInputStream;",
-                                                        "Ljava/io/FilterInputStream;");
-            builder.Constructor("(Ljava/io/InputStream;)V", AdoptInput());
-            // 将数据输入流字节读取到数组的指定区间。
-            builder.FinalOverrideMethod("read", "([BII)I", ReadInputRange());
-            const auto take = [](IntrinsicContext& call, const std::size_t count) {
-                auto& input = Input(call);
-                if (input.bytes.size() - input.cursor < count) {
-                    throw VmJavaThrow{"Ljava/io/EOFException;", "end of stream"};
-                }
-                const auto begin = input.cursor;
-                input.cursor += count;
-                return std::span(input.bytes).subspan(begin, count);
             };
-            builder.FinalMethod("readFully", "([B)V", [take](IntrinsicContext& call) {
-                const auto array = call.arguments[0].ref;
-                const auto count =
-                        static_cast<std::size_t>(call.vm.Model().ArrayLength(array));
-                call.vm.Model().WriteByteRegion(array, 0, take(call, count));
-                return VmValue::Void();
+            b.Constructor("(Ljava/io/InputStream;)V", [construct](IntrinsicContext& c) { return construct(c, "UTF-8"); });
+            b.Constructor("(Ljava/io/InputStream;Ljava/nio/charset/Charset;)V", [construct](IntrinsicContext& c) { return construct(c, CharsetName(c.vm, c.arguments[1].ref)); });
+            b.Constructor("(Ljava/io/InputStream;Ljava/lang/String;)V", [construct](IntrinsicContext& c) {
+                if (!c.arguments[1].ref.IsValid()) throw VmJavaThrow{"Ljava/lang/NullPointerException;", "charset == null"};
+                try { return construct(c, CanonicalCharset(c.vm.StringUtf8(c.arguments[1].ref))); }
+                catch (const VmJavaThrow& e) { if (e.descriptor == "Ljava/nio/charset/UnsupportedCharsetException;" || e.descriptor == "Ljava/nio/charset/IllegalCharsetNameException;") throw VmJavaThrow{"Ljava/io/UnsupportedEncodingException;", e.message}; throw; }
             });
-            builder.FinalMethod("skipBytes", "(I)I", [](IntrinsicContext& call) {
-                auto& input = Input(call);
-                const auto requested = call.arguments[0].AsInt();
-                const auto amount = std::min<std::size_t>(
-                    requested > 0 ? static_cast<std::size_t>(requested) : 0,
-                    input.bytes.size() - input.cursor);
-                input.cursor += amount;
-                return VmValue::Int(static_cast<std::int32_t>(amount));
-            });
-            builder.FinalMethod("readInt", "()I", [take](IntrinsicContext& call) {
-                std::uint32_t value{};
-                for (const auto byte: take(call, 4)) {
-                    value = (value << 8U) | static_cast<std::uint8_t>(byte);
+            const auto read = [source, closed](IntrinsicContext& c) -> std::int32_t {
+                if (IntrinsicCall(c).GetInt(closed)) throw VmJavaThrow{"Ljava/io/IOException;", "reader is closed"};
+                auto& state = c.vm.IO().Decoder(c.receiver);
+                if (!state.converter) throw VmJavaThrow{"Ljava/io/IOException;", "reader is uninitialized"};
+                while (state.pending.empty() && !state.ended) {
+                    const auto value = detail::InvokeGuest(c.vm, IntrinsicCall(c).GetRef(source), "read", "()I").AsInt();
+                    state.ended = value < 0;
+                    const char byte = static_cast<char>(value); const char* input = &byte;
+                    const char* end = input + (state.ended ? 0 : 1);
+                    UChar output[4]; auto* next = output; UErrorCode status = U_ZERO_ERROR;
+                    ucnv_toUnicode(static_cast<UConverter*>(state.converter.get()), &next, output + 4, &input, end, nullptr, state.ended, &status);
+                    CheckIcu(status);
+                    for (auto* unit = output; unit != next; ++unit) state.pending.push_back(static_cast<char16_t>(*unit));
                 }
-                return VmValue::Int(static_cast<std::int32_t>(value));
+                if (state.pending.empty()) return -1;
+                const auto unit = state.pending.front(); state.pending.pop_front(); return unit;
+            };
+            b.OverrideMethod("read", "()I", [read,source](IntrinsicContext& c) {
+                const ReaderMonitor lock(c.vm, IntrinsicCall(c).GetRef(source));
+                return VmValue::Int(read(c));
             });
-            builder.FinalMethod("readLong", "()J", [take](IntrinsicContext& call) {
-                std::uint64_t value{};
-                for (const auto byte: take(call, 8)) {
-                    value = (value << 8U) | static_cast<std::uint8_t>(byte);
+            b.OverrideMethod("read", "([CII)I", [read,source,closed](IntrinsicContext& c) {
+                const ReaderMonitor lock(c.vm, IntrinsicCall(c).GetRef(source));
+                if (IntrinsicCall(c).GetInt(closed)) throw VmJavaThrow{"Ljava/io/IOException;", "reader is closed"};
+                const auto array = c.arguments[0].ref;
+                if (!array.IsValid()) throw VmJavaThrow{"Ljava/lang/NullPointerException;", "buffer == null"};
+                const auto offset = c.arguments[1].AsInt(), count = c.arguments[2].AsInt();
+                if (offset < 0 || count < 0 || static_cast<std::int64_t>(offset) + count > c.vm.Model().ArrayLength(array)) throw VmJavaThrow{"Ljava/lang/IndexOutOfBoundsException;", "read range"};
+                std::int32_t done = 0;
+                while (done < count) {
+                    if (done && c.vm.IO().Decoder(c.receiver).pending.empty() && detail::InvokeGuest(c.vm, IntrinsicCall(c).GetRef(source), "available", "()I").AsInt() == 0) break;
+                    const auto unit = read(c); if (unit < 0) return VmValue::Int(done ? done : -1);
+                    c.vm.Model().SetPrimitiveElement(array, offset + done++, static_cast<std::uint64_t>(unit));
                 }
-                return VmValue::Long(static_cast<std::int64_t>(value));
+                return VmValue::Int(done);
             });
-            builder.FinalMethod(
-                "readUTF", "()Ljava/lang/String;", [take](IntrinsicContext& call) {
-                    const auto length_bytes = take(call, 2);
-                    const auto length = static_cast<std::size_t>(
-                        (static_cast<std::uint8_t>(length_bytes[0]) << 8U) |
-                        static_cast<std::uint8_t>(length_bytes[1]));
-                    const auto bytes = take(call, length);
-                    return VmValue::Ref(call.vm.NewStringUtf8(std::string(
-                        reinterpret_cast<const char*>(bytes.data()), bytes.size())));
-                });
-            builder.FinalOverrideMethod("close", "()V", [](IntrinsicContext& call) {
-                call.vm.IO().CloseInput(call.receiver);
+            b.OverrideMethod("ready", "()Z", [source, closed](IntrinsicContext& c) {
+                const ReaderMonitor lock(c.vm, IntrinsicCall(c).GetRef(source));
+                if (IntrinsicCall(c).GetInt(closed)) throw VmJavaThrow{"Ljava/io/IOException;", "reader is closed"};
+                return VmValue::Int(!c.vm.IO().Decoder(c.receiver).pending.empty() || detail::InvokeGuest(c.vm, IntrinsicCall(c).GetRef(source), "available", "()I").AsInt() > 0);
+            });
+            b.OverrideMethod("close", "()V", [source, closed](IntrinsicContext& c) {
+                const ReaderMonitor lock(c.vm, IntrinsicCall(c).GetRef(source));
+                if (!IntrinsicCall(c).GetInt(closed)) {
+                    detail::InvokeGuest(c.vm, IntrinsicCall(c).GetRef(source), "close", "()V");
+                    c.vm.IO().Decoder(c.receiver) = {};
+                    IntrinsicCall(c).SetInt(closed, 1);
+                }
                 return VmValue::Void();
             });
-            return std::move(builder).Build();
-        }
-
-        IntrinsicClassDecl DeclareDataOutputStream() {
-            auto builder = IntrinsicClassBuilder::Class("Ljava/io/DataOutputStream;",
-                                                        "Ljava/io/FilterOutputStream;");
-            builder.Constructor("(Ljava/io/OutputStream;)V", AdoptOutput());
-            builder.OverrideMethod("write", "([BII)V", WriteRange());
-            builder.OverrideMethod("write", "(I)V", [](IntrinsicContext& call) {
-                Output(call).bytes.push_back(
-                    static_cast<std::byte>(call.arguments[0].AsInt() & 0xff));
-                return VmValue::Void();
-            });
-            builder.OverrideMethod("flush", "()V", FlushOutput(false));
-            builder.FinalMethod(
-                "writeUTF", "(Ljava/lang/String;)V", [](IntrinsicContext& call) {
-                    auto& bytes = Output(call).bytes;
-                    const auto text = call.vm.StringUtf8(call.arguments[0].ref);
-                    bytes.push_back(static_cast<std::byte>((text.size() >> 8U) & 0xffU));
-                    bytes.push_back(static_cast<std::byte>(text.size() & 0xffU));
-                    for (const auto character: text) {
-                        bytes.push_back(static_cast<std::byte>(character));
-                    }
-                    return VmValue::Void();
-                });
-            return std::move(builder).Build();
+            b.VirtualMethod("getEncoding", "()Ljava/lang/String;", [encoding,closed](IntrinsicContext& c) { return VmValue::Ref(IntrinsicCall(c).GetInt(closed) ? VmObjectRef{} : IntrinsicCall(c).GetRef(encoding)); });
+            return std::move(b).Build();
         }
 
         IntrinsicClassDecl DeclareObjectInputStream() {
@@ -3201,28 +2743,11 @@ namespace ogplay::runtime::dexvm::intrinsics {
                 if (!source.IsValid()) {
                     throw VmJavaThrow{"Ljava/lang/NullPointerException;", "input == null"};
                 }
-                try {
-                    auto& input = call.vm.IO().Input(source);
-                    if (input.bytes.size() - input.cursor < 4U ||
-                        static_cast<std::uint8_t>(input.bytes[input.cursor]) !=
-                        kStreamMagicHigh ||
-                        static_cast<std::uint8_t>(input.bytes[input.cursor + 1U]) !=
-                        kStreamMagicLow ||
-                        static_cast<std::uint8_t>(input.bytes[input.cursor + 2U]) !=
-                        kStreamVersionHigh ||
-                        static_cast<std::uint8_t>(input.bytes[input.cursor + 3U]) !=
-                        kStreamVersionLow) {
-                        throw VmJavaThrow{
-                            "Ljava/io/IOException;",
-                            "invalid object stream header"
-                        };
-                    }
-                    input.cursor += 4U;
-                    call.vm.IO().AdoptInput(source, call.receiver);
-                    call.vm.IO().BeginObjectInput(call.receiver);
-                } catch (const IoRuntimeError& error) {
-                    IoFailure(error);
-                }
+                IoRuntime::InputState input; input.source = source;
+                call.vm.IO().SetInput(call.receiver, std::move(input));
+                call.vm.IO().BeginObjectInput(call.receiver);
+                if (TakeRawUnsigned(call, 4) != UINT64_C(0xaced0005))
+                    throw VmJavaThrow{"Ljava/io/IOException;", "invalid object stream header"};
                 return VmValue::Void();
             });
             builder.OverrideMethod("read", "()I", [](IntrinsicContext& call) {
@@ -3231,7 +2756,7 @@ namespace ogplay::runtime::dexvm::intrinsics {
             });
             builder.OverrideMethod("read", "([BII)I", ReadObjectInputRange());
             builder.OverrideMethod("available", "()I", [](IntrinsicContext& call) {
-                if (!PrepareObjectPrimitiveBlock(call)) return VmValue::Int(0);
+                if (!PrepareObjectPrimitiveBlock(call, false)) return VmValue::Int(0);
                 const auto& object = ObjectInput(call);
                 const auto available = object.block_remaining +
                                        (object.pushback.has_value() ? 1U : 0U);
@@ -3241,7 +2766,11 @@ namespace ogplay::runtime::dexvm::intrinsics {
             });
             builder.OverrideMethod("skip", "(J)J", SkipObjectInput());
             builder.OverrideMethod("close", "()V", [](IntrinsicContext& call) {
-                call.vm.IO().CloseInput(call.receiver);
+                auto* input = call.vm.IO().FindInput(call.receiver);
+                if (input && !input->closed) {
+                    if (input->source.IsValid()) detail::InvokeGuest(call.vm, input->source, "close", "()V");
+                    call.vm.IO().CloseInput(call.receiver);
+                }
                 return VmValue::Void();
             });
             builder.VirtualMethod("readBoolean", "()Z", [](IntrinsicContext& call) {
@@ -3385,7 +2914,8 @@ namespace ogplay::runtime::dexvm::intrinsics {
                     throw VmJavaThrow{"Ljava/lang/NullPointerException;", "output == null"};
                 }
                 try {
-                    call.vm.IO().AdoptOutput(target, call.receiver);
+                    IoRuntime::OutputState output; output.sink = target;
+                    call.vm.IO().SetOutput(call.receiver, std::move(output));
                     call.vm.IO().BeginObjectOutput(call.receiver);
                 } catch (const IoRuntimeError& error) {
                     IoFailure(error);
@@ -3395,6 +2925,7 @@ namespace ogplay::runtime::dexvm::intrinsics {
                 bytes.push_back(static_cast<std::byte>(kStreamMagicLow));
                 bytes.push_back(static_cast<std::byte>(kStreamVersionHigh));
                 bytes.push_back(static_cast<std::byte>(kStreamVersionLow));
+                DeliverOutput(call, false, false);
                 return VmValue::Void();
             });
             builder.OverrideMethod("write", "(I)V", [](IntrinsicContext& call) {
@@ -3520,7 +3051,7 @@ namespace ogplay::runtime::dexvm::intrinsics {
                 return VmValue::Void();
             });
             builder.FinalMethod("writeObject", "(Ljava/lang/Object;)V", [](IntrinsicContext& call) {
-                try { ObjectStreamWriter(call).Write(call.arguments[0].ref); }
+                try { ObjectStreamWriter(call).Write(call.arguments[0].ref); DeliverOutput(call, false, false); }
                 catch (const ObjectStreamCallbackFailure& failure) {
                     call.vm.SetPendingException(failure.throwable);
                 }
@@ -3531,29 +3062,7 @@ namespace ogplay::runtime::dexvm::intrinsics {
     } // namespace
 
     void AppendJavaIoStreams(std::vector<IntrinsicClassDecl>& catalog) {
-        auto closeable = IntrinsicClassBuilder::Interface(
-            "Ljava/io/Closeable;", {"Ljava/lang/AutoCloseable;"});
-        closeable.UnimplementedVirtual("close", "()V",
-                                       kAccPublic | kAccAbstract);
-        catalog.push_back(std::move(closeable).Build());
-        auto flushable = IntrinsicClassBuilder::Interface("Ljava/io/Flushable;");
-        flushable.UnimplementedVirtual("flush", "()V",
-                                       kAccPublic | kAccAbstract);
-        catalog.push_back(std::move(flushable).Build());
-        catalog.push_back(DeclareInputStream());
-        catalog.push_back(DeclareOutputStream());
-        catalog.push_back(DeclareReader());
-        catalog.push_back(DeclareWriter());
-        catalog.push_back(DeclareByteArrayInputStream());
-        catalog.push_back(DeclareByteArrayOutputStream());
-        catalog.push_back(DeclareFilterInputStream());
-        catalog.push_back(DeclareFilterOutputStream());
-        catalog.push_back(DeclareBufferedInputStream());
-        catalog.push_back(DeclareBufferedOutputStream());
-        catalog.push_back(DeclareBufferedReader());
         catalog.push_back(DeclareInputStreamReader());
-        catalog.push_back(DeclareDataInputStream());
-        catalog.push_back(DeclareDataOutputStream());
         catalog.push_back(DeclareObjectInputStream());
         catalog.push_back(DeclareObjectOutputStream());
     }

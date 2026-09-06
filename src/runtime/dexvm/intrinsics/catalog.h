@@ -1,10 +1,18 @@
 #pragma once
 
 #include <vector>
+#include <span>
+#include <string>
+#include <string_view>
 
 #include "ogplay/runtime/dexvm/class_linker.h"
 
 namespace ogplay::runtime::dexvm::intrinsics {
+
+std::string CanonicalCharset(std::string name);
+std::string CharsetName(Interpreter& vm, VmObjectRef charset);
+std::u16string DecodeCharset(std::span<const std::byte> bytes, const std::string& charset);
+std::vector<std::byte> EncodeCharset(std::u16string_view text, const std::string& charset);
 
 void AppendJavaLangThrowables(std::vector<IntrinsicClassDecl>& catalog);
 void AppendJavaLangPrimitiveWrappers(

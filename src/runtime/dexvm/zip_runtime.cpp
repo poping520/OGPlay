@@ -80,6 +80,11 @@ ZipRuntime::Read(const VmObjectRef owner, const std::size_t maximum) {
   return result;
 }
 
+bool ZipRuntime::Available(const VmObjectRef owner) {
+  const auto& stream = impl_->OpenStream(owner);
+  return stream.entry_open && stream.cursor < stream.entry_bytes.size();
+}
+
 void ZipRuntime::CloseEntry(const VmObjectRef owner) {
   auto &stream = impl_->OpenStream(owner);
   stream.entry_bytes.clear();

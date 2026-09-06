@@ -125,7 +125,7 @@ TEST_CASE("dexvm P1 String surface: trim/lower/startsWith/indexOf") {
     ExpectInt(vm.CallStatic("compareIgnore", "()I"), 0);
 }
 
-TEST_CASE("dexvm String.toLowerCase Locale English is bounded and stable") {
+TEST_CASE("dexvm String.toLowerCase uses pinned ICU locale mapping and preserves unchanged identity") {
     Vm vm;
     const auto locale_class =
         vm.linker.ResolveDescriptor("Ljava/util/Locale;");
@@ -166,16 +166,9 @@ TEST_CASE("dexvm String.toLowerCase Locale English is bounded and stable") {
 
     ExpectThrow(vm, call(mixed, VmObjectRef{}),
                 "Ljava/lang/NullPointerException;", "locale == null");
-    const auto other_locale =
-        vm.interpreter.NewIntrinsicInstance("Ljava/util/Locale;");
-    ExpectThrow(vm, call(mixed, other_locale),
-                "Ljava/lang/UnsupportedOperationException;",
-                "String.toLowerCase only supports Locale.ENGLISH");
     const auto unicode = vm.model.NewString(u"\u00c4");
-    ExpectThrow(
-        vm, call(unicode, english),
-        "Ljava/lang/UnsupportedOperationException;",
-        "String.toLowerCase(Locale.ENGLISH) Unicode mapping is not provided");
+    CHECK(vm.AsString(call(unicode, english)) == "ä");
+
 }
 
 TEST_CASE("dexvm String.format renders integral wrappers and percent") {

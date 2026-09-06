@@ -10,6 +10,8 @@
 
 #include "catalog.h"
 #include "shared.h"
+#include "../icu_support.h"
+#include <unicode/locid.h>
 
 #include "ogplay/runtime/dexvm/intrinsic_builder.h"
 
@@ -398,6 +400,8 @@ IntrinsicClassDecl Declare_java_lang_Math() {
             return VmValue::Int(
                 std::max(context.arguments[0].AsInt(), context.arguments[1].AsInt()));
             });
+    builder.StaticMethod("min", "(JJ)J", [](IntrinsicContext& c) { return VmValue::Long(std::min(c.arguments[0].AsLong(),c.arguments[1].AsLong())); });
+    builder.StaticMethod("max", "(JJ)J", [](IntrinsicContext& c) { return VmValue::Long(std::max(c.arguments[0].AsLong(),c.arguments[1].AsLong())); });
     builder.StaticMethod("min", "(II)I",
         [](IntrinsicContext& context) {
             return VmValue::Int(
@@ -1616,8 +1620,52 @@ IntrinsicClassDecl Declare_java_lang_Character() {
 
 }  // namespace
 
+IntrinsicClassDecl Declare_java_math_NativeBN() {
+    auto b = IntrinsicClassBuilder::Class("Ljava/math/NativeBN;");
+    b.StaticMethod("BN_new", "()J", [](IntrinsicContext& c) { return VmValue::Long(static_cast<std::int64_t>(c.vm.BigInts().New())); }, kAccPublic | kAccNative);
+    b.StaticMethod("BN_free", "(J)V", [](IntrinsicContext& c) { c.vm.BigInts().Free(static_cast<std::uint64_t>(c.arguments[0].AsLong())); return VmValue::Void(); }, kAccPublic | kAccNative);
+    const auto get = [](IntrinsicContext& c, std::size_t i) -> BigIntRuntime::Number& { return c.vm.BigInts().Require(static_cast<std::uint64_t>(c.arguments[i].AsLong())); };
+    b.StaticMethod("putULongInt", "(JJZ)V", [get](IntrinsicContext& c) { auto& n=get(c,0); n.magnitude=static_cast<std::uint64_t>(c.arguments[1].AsLong()); n.negative=n.magnitude && c.arguments[2].AsInt(); return VmValue::Void(); }, kAccPublic | kAccNative);
+    b.StaticMethod("putLongInt", "(JJ)V", [get](IntrinsicContext& c) { const auto v=c.arguments[1].AsLong(); auto& n=get(c,0); n.negative=v<0; n.magnitude=v<0?std::uint64_t{0}-static_cast<std::uint64_t>(v):static_cast<std::uint64_t>(v); return VmValue::Void(); }, kAccPublic | kAccNative);
+    b.StaticMethod("BN_copy", "(JJ)V", [get](IntrinsicContext& c) { get(c,0)=get(c,1); return VmValue::Void(); }, kAccPublic | kAccNative);
+    b.StaticMethod("BN_cmp", "(JJ)I", [get](IntrinsicContext& c) { const auto a=get(c,0), d=get(c,1); const auto am=a.negative&&a.magnitude, dm=d.negative&&d.magnitude; int order=a.magnitude<d.magnitude?-1:a.magnitude>d.magnitude?1:0; return VmValue::Int(am!=dm?(am?-1:1):(am?-order:order)); }, kAccPublic | kAccNative);
+    b.StaticMethod("sign", "(J)I", [get](IntrinsicContext& c) { const auto n=get(c,0); return VmValue::Int(n.magnitude?(n.negative?-1:1):0); }, kAccPublic | kAccNative);
+    b.StaticMethod("longInt", "(J)J", [get](IntrinsicContext& c) { const auto n=get(c,0); return VmValue::Long(std::bit_cast<std::int64_t>(n.negative?std::uint64_t{0}-n.magnitude:n.magnitude)); }, kAccPublic | kAccNative);
+    b.StaticMethod("bitLength", "(J)I", [get](IntrinsicContext& c) { const auto n=get(c,0); const auto bits=n.negative&&n.magnitude?n.magnitude-1:n.magnitude; return VmValue::Int(64-std::countl_zero(bits)); }, kAccPublic | kAccNative);
+    b.StaticMethod("BN_set_negative", "(JI)V", [get](IntrinsicContext& c) { auto& n=get(c,0); n.negative=n.magnitude&&c.arguments[1].AsInt(); return VmValue::Void(); }, kAccPublic | kAccNative);
+    b.StaticMethod("bn2litEndInts", "(J)[I", [get](IntrinsicContext& c) { const auto n=get(c,0); if (!n.magnitude) return VmValue::Ref(VmObjectRef{}); const int length=n.magnitude>>32U?2:1; const auto a=c.vm.Model().NewPrimitiveArray(c.vm.Linker().ResolveDescriptor("[I"),JniPrimitiveKind::integer,length); for(int i=0;i<length;++i)c.vm.Model().SetPrimitiveElement(a,i,(n.magnitude>>(static_cast<unsigned>(i)*32U))&UINT64_C(0xffffffff)); return VmValue::Ref(a); }, kAccPublic | kAccNative);
+    // BootDex admission requires every native signature to be classified.
+    // Retain explicit failing declarations for the unsupported big-number API.
+    b.UnimplementedStatic("BN_add", "(JJJ)V", kAccPublic | kAccNative);
+    b.UnimplementedStatic("BN_add_word", "(JI)V", kAccPublic | kAccNative);
+    b.UnimplementedStatic("BN_bin2bn", "([BIZJ)V", kAccPublic | kAccNative);
+    b.UnimplementedStatic("BN_bn2bin", "(J)[B", kAccPublic | kAccNative);
+    b.UnimplementedStatic("BN_bn2dec", "(J)Ljava/lang/String;", kAccPublic | kAccNative);
+    b.UnimplementedStatic("BN_bn2hex", "(J)Ljava/lang/String;", kAccPublic | kAccNative);
+    b.UnimplementedStatic("BN_dec2bn", "(JLjava/lang/String;)I", kAccPublic | kAccNative);
+    b.UnimplementedStatic("BN_div", "(JJJJ)V", kAccPublic | kAccNative);
+    b.UnimplementedStatic("BN_exp", "(JJJ)V", kAccPublic | kAccNative);
+    b.UnimplementedStatic("BN_gcd", "(JJJ)V", kAccPublic | kAccNative);
+    b.UnimplementedStatic("BN_generate_prime_ex", "(JIZJJJ)V", kAccPublic | kAccNative);
+    b.UnimplementedStatic("BN_hex2bn", "(JLjava/lang/String;)I", kAccPublic | kAccNative);
+    b.UnimplementedStatic("BN_is_bit_set", "(JI)Z", kAccPublic | kAccNative);
+    b.UnimplementedStatic("BN_is_prime_ex", "(JIJ)Z", kAccPublic | kAccNative);
+    b.UnimplementedStatic("BN_mod_exp", "(JJJJ)V", kAccPublic | kAccNative);
+    b.UnimplementedStatic("BN_mod_inverse", "(JJJ)V", kAccPublic | kAccNative);
+    b.UnimplementedStatic("BN_mod_word", "(JI)I", kAccPublic | kAccNative);
+    b.UnimplementedStatic("BN_mul", "(JJJ)V", kAccPublic | kAccNative);
+    b.UnimplementedStatic("BN_mul_word", "(JI)V", kAccPublic | kAccNative);
+    b.UnimplementedStatic("BN_nnmod", "(JJJ)V", kAccPublic | kAccNative);
+    b.UnimplementedStatic("BN_shift", "(JJI)V", kAccPublic | kAccNative);
+    b.UnimplementedStatic("BN_sub", "(JJJ)V", kAccPublic | kAccNative);
+    b.UnimplementedStatic("litEndInts2bn", "([IIZJ)V", kAccPublic | kAccNative);
+    b.UnimplementedStatic("twosComp2bn", "([BIJ)V", kAccPublic | kAccNative);
+    return std::move(b).Build();
+}
+
 void AppendJavaLangPrimitiveWrappers(
     std::vector<IntrinsicClassDecl>& catalog) {
+    catalog.push_back(Declare_java_math_NativeBN());
     catalog.push_back(Declare_java_lang_Number());
     catalog.push_back(Declare_java_lang_Byte());
     catalog.push_back(Declare_java_lang_Short());
@@ -1763,34 +1811,17 @@ VmValue FormatSequential(IntrinsicContext& context) {
     return Make(context, output);
 }
 
-VmValue LowercaseEnglish(IntrinsicContext& context) {
+VmValue MapCase(IntrinsicContext& context, bool upper) {
     const auto locale = context.arguments[0].ref;
-    if (!locale.IsValid()) {
-        throw VmJavaThrow{"Ljava/lang/NullPointerException;",
-                          "locale == null"};
-    }
-    const auto english = StaticReference(
-        context, "Ljava/util/Locale;", "ENGLISH", "Ljava/util/Locale;");
-    if (!english.IsValid() || locale != english) {
-        throw VmJavaThrow{
-            "Ljava/lang/UnsupportedOperationException;",
-            "String.toLowerCase only supports Locale.ENGLISH"};
-    }
-
-    auto value = Value(context, context.receiver);
-    bool changed = false;
-    for (auto& unit : value) {
-        if (unit > 0x7fU) {
-            throw VmJavaThrow{
-                "Ljava/lang/UnsupportedOperationException;",
-                "String.toLowerCase(Locale.ENGLISH) Unicode mapping is not "
-                "provided"};
-        }
-        const auto lower = AsciiLower(unit);
-        changed = changed || lower != unit;
-        unit = lower;
-    }
-    return changed ? Make(context, value) : VmValue::Ref(context.receiver);
+    if (!locale.IsValid()) throw VmJavaThrow{"Ljava/lang/NullPointerException;", "locale == null"};
+    const auto language = detail::InvokeGuest(context.vm, locale, "getLanguage", "()Ljava/lang/String;");
+    const auto locale_name = context.vm.StringUtf8(language.ref);
+    InitializePinnedIcu();
+    auto value = IcuString(Value(context, context.receiver));
+    if (upper) value.toUpper(icu::Locale(locale_name.c_str()));
+    else value.toLower(icu::Locale(locale_name.c_str()));
+    const auto result = FromIcu(value);
+    return result == Value(context, context.receiver) ? VmValue::Ref(context.receiver) : Make(context, result);
 }
 
 }  // namespace
@@ -1830,37 +1861,42 @@ IntrinsicClassDecl Declare_java_lang_String() {
                 model.BindString(context.receiver, Utf8DecodeReplace(bytes));
                 return VmValue::Void();
             });
-    builder.Constructor("([BLjava/lang/String;)V",
-        [](IntrinsicContext& context) {
-                auto& model = context.vm.Model();
-                const auto array = RequireArray(context.arguments[0].ref);
-                auto charset = Value(context, context.arguments[1].ref);
-                for (auto& unit : charset) unit = AsciiUpper(unit);
-                const auto bytes =
-                    model.ReadByteRegion(array, 0, model.ArrayLength(array));
-                std::u16string decoded;
-                if (charset == u"UTF-8" || charset == u"UTF8") {
-                    decoded = Utf8DecodeReplace(bytes);
-                } else if (charset == u"ISO-8859-1" || charset == u"LATIN1" ||
-                           charset == u"ISO8859_1") {
-                    decoded.reserve(bytes.size());
-                    for (const auto byte : bytes) {
-                        decoded.push_back(static_cast<std::uint8_t>(byte));
-                    }
-                } else if (charset == u"US-ASCII" || charset == u"ASCII") {
-                    decoded.reserve(bytes.size());
-                    for (const auto byte : bytes) {
-                        const auto unit = static_cast<std::uint8_t>(byte);
-                        decoded.push_back(unit < 0x80U ? unit : u'\ufffd');
-                    }
-                } else {
-                    throw VmJavaThrow{
-                        "Ljava/io/UnsupportedEncodingException;",
-                        "charset is not provided: " + ToUtf8(charset)};
-                }
-                model.BindString(context.receiver, decoded);
+    builder.Constructor("([BLjava/lang/String;)V", [](IntrinsicContext& c) {
+        const auto array = RequireArray(c.arguments[0].ref);
+        if (!c.arguments[1].ref.IsValid()) throw VmJavaThrow{"Ljava/lang/NullPointerException;", "charset == null"};
+        std::string name;
+        try { name = CanonicalCharset(c.vm.StringUtf8(c.arguments[1].ref)); }
+        catch (const VmJavaThrow& e) { throw VmJavaThrow{"Ljava/io/UnsupportedEncodingException;", e.message}; }
+        c.vm.Model().BindString(c.receiver, DecodeCharset(
+            c.vm.Model().ReadByteRegion(array, 0, c.vm.Model().ArrayLength(array)), name));
+        return VmValue::Void();
+    });
+    for (const bool ranged : {false, true}) {
+        builder.Constructor(ranged ? "([BIILjava/nio/charset/Charset;)V" : "([BLjava/nio/charset/Charset;)V",
+            [ranged](IntrinsicContext& c) {
+                const auto array = RequireArray(c.arguments[0].ref);
+                const auto length = c.vm.Model().ArrayLength(array);
+                const auto offset = ranged ? c.arguments[1].AsInt() : 0;
+                const auto count = ranged ? c.arguments[2].AsInt() : length;
+                CheckRegion(length, offset, count);
+                const auto name = CharsetName(c.vm, c.arguments[ranged ? 3 : 1].ref);
+                c.vm.Model().BindString(c.receiver, DecodeCharset(c.vm.Model().ReadByteRegion(array, offset, count), name));
                 return VmValue::Void();
             });
+    }
+    for (const bool named : {false, true}) {
+        builder.FinalMethod("getBytes", named ? "(Ljava/lang/String;)[B" : "(Ljava/nio/charset/Charset;)[B",
+            [named](IntrinsicContext& c) {
+                if (!c.arguments[0].ref.IsValid()) throw VmJavaThrow{"Ljava/lang/NullPointerException;", "charset == null"};
+                std::string name;
+                try { name = named ? CanonicalCharset(c.vm.StringUtf8(c.arguments[0].ref)) : CharsetName(c.vm, c.arguments[0].ref); }
+                catch (const VmJavaThrow& e) { if (named) throw VmJavaThrow{"Ljava/io/UnsupportedEncodingException;", e.message}; throw; }
+                const auto bytes = EncodeCharset(Value(c, c.receiver), name);
+                const auto array = c.vm.Model().NewPrimitiveArray(c.vm.Linker().ResolveDescriptor("[B"), JniPrimitiveKind::byte, static_cast<JniSize>(bytes.size()));
+                c.vm.Model().WriteByteRegion(array, 0, bytes);
+                return VmValue::Ref(array);
+            });
+    }
     builder.Constructor("([C)V",
         [](IntrinsicContext& context) {
                 auto& model = context.vm.Model();
@@ -2206,7 +2242,9 @@ IntrinsicClassDecl Declare_java_lang_String() {
             });
     builder.FinalMethod(
         "toLowerCase", "(Ljava/util/Locale;)Ljava/lang/String;",
-        LowercaseEnglish);
+        [](IntrinsicContext& context) { return MapCase(context, false); });
+    builder.FinalMethod("toUpperCase", "(Ljava/util/Locale;)Ljava/lang/String;",
+        [](IntrinsicContext& context) { return MapCase(context, true); });
     builder.FinalMethod("toUpperCase", "()Ljava/lang/String;",
         [](IntrinsicContext& context) {
                 auto value = Value(context, context.receiver);
@@ -2395,6 +2433,12 @@ namespace ogplay::runtime::dexvm::intrinsics::detail {
         const auto index = context.arguments[0].AsInt();
         CheckBuilderIndex(buffer, index);
         return VmValue::Int(buffer[static_cast<std::size_t>(index)]);
+    });
+    builder.FinalMethod("setLength", "(I)V", [](IntrinsicContext& c) {
+        const auto length = c.arguments[0].AsInt();
+        if (length < 0) throw VmJavaThrow{"Ljava/lang/StringIndexOutOfBoundsException;", "negative length"};
+        c.vm.BuilderBuffer(c.receiver).resize(static_cast<std::size_t>(length), u'\0');
+        return VmValue::Void();
     });
     builder.FinalMethod("setCharAt", "(IC)V", [](IntrinsicContext& context) {
         auto& buffer = context.vm.BuilderBuffer(context.receiver);

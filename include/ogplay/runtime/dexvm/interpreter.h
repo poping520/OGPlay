@@ -19,6 +19,7 @@
 namespace ogplay::runtime::dexvm {
 
 class IcuFormatterRuntime;
+class BigIntRuntime;
 class IoRuntime;
 class NioRuntime;
 class NetworkRuntime;
@@ -85,6 +86,7 @@ struct VmValue final {
 struct VmJavaThrow final {
     std::string descriptor;
     std::string message;
+    VmObjectRef existing{0};
 };
 
 struct VmStackEntry final {
@@ -396,6 +398,7 @@ public:
     // (builder/resource) keyed by the source handle.
     [[nodiscard]] VmObjectRef CloneObject(VmObjectRef source);
 
+    [[nodiscard]] BigIntRuntime& BigInts();
     [[nodiscard]] IcuFormatterRuntime& IcuFormatters();
     [[nodiscard]] const IcuFormatterRuntime& IcuFormatters() const;
     [[nodiscard]] NioRuntime& NIO();

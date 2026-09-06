@@ -58,10 +58,13 @@ Locale 构造规范化语言小写、区域大写与 he/id/yi 旧码；Matcher.g
 `parkBlocker` 对象字段，由 BootDex LockSupport 通过 Unsafe 读写并形成普通 GC 强边。`allocateInstance` 完成
 clinit 后跳过构造器，拒绝不可实例化类。此能力不代表 BootDex Executors 已闭合。
 
-`java_io.cpp` 聚合 pinned libcore `java.io`：stream/reader/filter/buffer/byte-array/data
-handle、File 与文件 reader/writer handle。每个 Java class 仍保留 TU-private `Declare_*()`；
-流状态、`FileDescriptor` 逻辑来源和文件访问只委托 per-VM `IoRuntime`，不得回读 Android
-session context。逻辑描述符不保存宿主句柄；`FileInputStream.getFD()` 与借用描述符构造
+`java_io.cpp` 保留文件/VFS、有界 Object streams 与 InputStreamReader 字符解码边界。
+DVM-104 的 Input/OutputStream、Reader/Writer、内存/Buffer/Filter/Data 等普通流来自
+BootDex，状态只在 guest 字段/数组中；禁止恢复相关 handler 或 wrapper-adoption 侧表。
+FileDescriptor、对象协议状态与 ICU decoder 委托 per-VM IoRuntime，不回读 Android context。
+FileReader 经真实 FileInputStream 构造后委托 InputStreamReader；后者以 Reader.lock 的
+source monitor 保护增量转换器，六个标准编码来自固定 ICU 51，close/GC/teardown 释放资源。
+逻辑描述符不保存宿主句柄；`FileInputStream.getFD()` 与借用描述符构造
 共享输入状态和读游标，`FileOutputStream.getFD()` 同样共享输出状态，两者关闭时都必须
 区分拥有与借用关系。`File` 路径/对象、访问、类型、过滤列表与文件 rename 语义以
 pinned API 19 libcore 为准；相对绝对化只消费 `IoRuntime` 注入的 guest 工作目录，`mkdir`
@@ -78,8 +81,8 @@ execution-local `RootScope` 保活，宿主 `VmObjectRef` 容器本身不是 GC 
 子类注册 `IoRuntime` 输入状态。
 `ObjectInputStream/ObjectOutputStream` 按 API 19 分别继承 `InputStream/OutputStream`，
 实现 `ObjectInput/ObjectOutput` 与 `ObjectStreamConstants`；`ObjectInput/ObjectOutput` 再继承
-`DataInput/DataOutput` 与 `AutoCloseable`。公开包装构造器通过 `IoRuntime` single-owner 接管
-底层流，校验/写入 serialization stream header，并按 block-data wire format 实现继承的
+`DataInput/DataOutput` 与 `AutoCloseable`。公开包装构造器保留 source/sink 的 guest 身份，
+经虚方法读取/写出而不接管其游标；IoRuntime 只存对象协议所需缓冲，校验/写入 stream header，并按 block-data wire format 实现继承的
 原始字节、基本类型、modified UTF、available/skip/flush/close 契约。对象协议支持 `null`、
 `String`、默认 `Serializable` 类层级、字段、循环/重复引用、枚举及 API 19 `Date` 自定义段；
 Serializable/Externalizable 及上述数据/对象 IO 接口均来自 BootDex。
@@ -88,8 +91,8 @@ Externalizable 协议 2 使用显式 UID、公共无参构造器及虚派 writeE
 回调异常原样传播。stream handle 中的 guest ref 必须经 `IoRuntime` trace。
 数组、Externalizable 协议 1、任意私有 `writeObject/readObject` hooks 和默认 UID 计算仍明确失败。
 
-`java_zip.cpp` 聚合 `ZipEntry`/`ZipInputStream`。输入源只经 `IoRuntime` single-owner
-接管，archive/entry/cursor/close 状态只委托 per-VM `ZipRuntime`；ZIP32 结构校验、inflate
+`java_zip.cpp` 聚合 `ZipEntry`/`ZipInputStream`。构造时经 guest read 读取源数据，
+archive/entry/cursor/close 状态只委托 per-VM `ZipRuntime`；ZIP32 结构校验、inflate
 与 CRC 继续复用 loader 的严格实现。该 family 不得在 Android context 恢复 ZIP side map。
 
 `java_nio.cpp`（DVM-82）聚合 API 19 Buffer family、ByteOrder、Buffer exception 与 Charset。
@@ -171,3 +174,14 @@ enclosing/member-local-anonymous 和 Method/Constructor Throws 只读 linker sys
 metadata，禁止 `$` split 或 guest Annotation proxy。
 Method/Constructor/Field 的 API19 hashCode 与 exact toString 读取同一 immutable
 metadata；最小 `Modifier.toString(int)` 只提供 JLS 顺序格式化，不开启 generic surface。
+
+DVM-104：java_concurrent 删除普通 atomic 宿主算法，只保留 AtomicLong.VMSupportsCS8
+native；同步器/原子数组经 DEX 调用既有 Unsafe、Thread、monitor 与统一 Clock。
+Charset 的六种标准编码具有 canonical name、相等/排序与真实编解码语义；String 具名和
+Charset 重载使用同一固定 ICU 转换，Locale 大小写同样由 ICU 提供。Memory 仅保留受检
+byte[] 的 short/int/long 大小端 codec，不开放 raw address。java_lang 的 NativeBN
+仅绑定 11 个最多 64 位 magnitude 原语，24 个其余 native 显式未实现；令牌由 BigIntRuntime
+按 VM 管理，owner GC/teardown 释放，不引入 OpenSSL/provider 或完整大数计算。
+
+DVM-104 的 ZIP 适配器调用 BootDex FilterInputStream 构造以保持源强引用；read/skip/available
+使用解压后 entry 游标，mark/reset 明确不支持，close 经父类关闭原始源且幂等。

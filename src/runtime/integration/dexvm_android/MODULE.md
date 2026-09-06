@@ -14,7 +14,8 @@ intrinsic。`catalog.cpp` 是唯一注册聚合点；平台类按 API 家族聚�
 `PrefsEditHandler(context)`）形式提供，捕获会话状态的工厂显式接收 context。
 资源、VFS、音频、视频、widget、线程与设备事实全部来自显式传入的
 `DexVmAndroidContext`，不得读取游戏身份或另建宿主状态。
-通用 `java.io` handle 与流状态属于 DexVM core；integration 装配只通过
+普通内存/包装流的状态属于 BootDex 对象字段与数组，文件/对象协议边界属于 DexVM core；
+integration 装配只通过
 `DexVmIoVfsAdapter` 向 `IoRuntime` 注入窄文件接口。`java.util.zip` handle 与 archive
 状态同样属于 DexVM core 的 `ZipRuntime`；不得恢复 context stream/output/zip map。
 Android 平台 enum 统一使用 core `IntrinsicEnumBuilder`；Android family 只通过 object factory、
@@ -241,3 +242,7 @@ Looper 身份、Timer/CountDownTimer、HandlerThread 与 AsyncTask 的线程/回
 `tests/dexvm/android_value_tests.cpp` 锁定 Base64/Sparse、graphics value/Path、
 Parcel/Bundle snapshot、有界 power/vibrator，以及 DVM-97 LocalBroadcastManager 读取链和
 IntentFilter action/MIME/URI/authority/category 匹配。
+
+DVM-104：AssetManager/Resources 的 OpenStream 创建 guest byte[] 并调用 BootDex
+ByteArrayInputStream([B) 构造器，不再向 IoRuntime 写内存流侧表。构造跨 nested guest call
+的临时对象需 RootScope 保活，异常保留原 throwable 身份。

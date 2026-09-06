@@ -276,159 +276,12 @@ IntrinsicClassDecl Dvm87DeclareExecutors() {
     return std::move(builder).Build();
 }
 
-template <typename T>
-IntrinsicClassDecl Dvm87DeclareAtomicIntegral(const std::string& descriptor,
-                                              const std::string& value_descriptor) {
-    auto builder = IntrinsicClassBuilder::Class(descriptor, "Ljava/lang/Number;",
-                                                {"Ljava/io/Serializable;"});
-    const auto value = value_descriptor == "J"
-        ? builder.BoundInstanceField("value", "J")
-        : builder.BoundInstanceField("value", "I");
-    const auto get = [value](IntrinsicCall& call) -> std::int64_t {
-        if constexpr (sizeof(T) == 8) {
-            return call.GetLong(value);
-        } else {
-            return call.GetInt(value);
-        }
-    };
-    const auto set = [value](IntrinsicCall& call, const std::int64_t next) {
-        if constexpr (sizeof(T) == 8) call.SetLong(value, next);
-        else call.SetInt(value, static_cast<std::int32_t>(next));
-    };
-    builder.Constructor("()V", [set](IntrinsicContext& context) {
-        IntrinsicCall call(context); set(call, 0); return VmValue::Void();
-    });
-    builder.Constructor("(" + value_descriptor + ")V", [set](IntrinsicContext& context) {
-        IntrinsicCall call(context);
-        if constexpr (sizeof(T) == 8) set(call, call.Long(0));
-        else set(call, call.Int(0));
-        return VmValue::Void();
-    });
-    builder.FinalMethod("get", "()" + value_descriptor,
-        [get](IntrinsicContext& context) {
-            IntrinsicCall call(context);
-            if constexpr (sizeof(T) == 8) {
-                return VmValue::Long(get(call));
-            } else {
-                return VmValue::Int(static_cast<std::int32_t>(get(call)));
-            }
-        });
-    builder.FinalMethod("set", "(" + value_descriptor + ")V",
-        [set](IntrinsicContext& context) {
-            IntrinsicCall call(context);
-            if constexpr (sizeof(T) == 8) set(call, call.Long(0));
-            else set(call, call.Int(0));
-            return VmValue::Void();
-        });
-    builder.FinalMethod("getAndSet", "(" + value_descriptor + ")" + value_descriptor,
-        [get, set](IntrinsicContext& context) {
-            IntrinsicCall call(context); const auto old = get(call);
-            if constexpr (sizeof(T) == 8) set(call, call.Long(0));
-            else set(call, call.Int(0));
-            if constexpr (sizeof(T) == 8) {
-                return VmValue::Long(old);
-            } else {
-                return VmValue::Int(static_cast<std::int32_t>(old));
-            }
-        });
-    builder.FinalMethod("compareAndSet",
-        "(" + value_descriptor + value_descriptor + ")Z",
-        [get, set](IntrinsicContext& context) {
-            IntrinsicCall call(context);
-            const auto expected = sizeof(T) == 8 ? call.Long(0) : call.Int(0);
-            const auto next = sizeof(T) == 8 ? call.Long(1) : call.Int(1);
-            if (get(call) != expected) return VmValue::Int(0);
-            set(call, next); return VmValue::Int(1);
-        });
-    builder.FinalMethod("getAndAdd", "(" + value_descriptor + ")" + value_descriptor,
-        [get, set](IntrinsicContext& context) {
-            IntrinsicCall call(context);
-            const auto old = get(call);
-            const auto delta = sizeof(T) == 8 ? call.Long(0) : call.Int(0);
-            using U = std::make_unsigned_t<T>;
-            set(call, std::bit_cast<T>(static_cast<U>(old) + static_cast<U>(delta)));
-            if constexpr (sizeof(T) == 8) return VmValue::Long(old);
-            else return VmValue::Int(old);
-        });
-    builder.FinalMethod("getAndIncrement", "()" + value_descriptor,
-        [get, set](IntrinsicContext& context) {
-            IntrinsicCall call(context); const auto old = get(call); set(call, old + 1);
-            if constexpr (sizeof(T) == 8) {
-                return VmValue::Long(old);
-            } else {
-                return VmValue::Int(static_cast<std::int32_t>(old));
-            }
-        });
-    builder.FinalMethod("incrementAndGet", "()" + value_descriptor,
-        [get, set](IntrinsicContext& context) {
-            IntrinsicCall call(context); const auto next = get(call) + 1; set(call, next);
-            if constexpr (sizeof(T) == 8) {
-                return VmValue::Long(next);
-            } else {
-                return VmValue::Int(static_cast<std::int32_t>(next));
-            }
-        });
-    return std::move(builder).Build();
-}
-
-IntrinsicClassDecl Dvm87DeclareAtomicBoolean() {
-    auto builder = IntrinsicClassBuilder::Class(
-        "Ljava/util/concurrent/atomic/AtomicBoolean;", "Ljava/lang/Object;",
-        {"Ljava/io/Serializable;"});
-    const auto value = builder.BoundInstanceField("value", "Z");
-    builder.Constructor("()V", [value](IntrinsicContext& context) {
-        IntrinsicCall(context).SetInt(value, 0); return VmValue::Void();
-    });
-    builder.Constructor("(Z)V", [value](IntrinsicContext& context) {
-        IntrinsicCall call(context); call.SetInt(value, call.Int(0)); return VmValue::Void();
-    });
-    builder.FinalMethod("get", "()Z", [value](IntrinsicContext& context) {
-        return VmValue::Int(IntrinsicCall(context).GetInt(value));
-    });
-    builder.FinalMethod("set", "(Z)V", [value](IntrinsicContext& context) {
-        IntrinsicCall call(context); call.SetInt(value, call.Int(0)); return VmValue::Void();
-    });
-    builder.FinalMethod("compareAndSet", "(ZZ)Z", [value](IntrinsicContext& context) {
-        IntrinsicCall call(context);
-        if (call.GetInt(value) != call.Int(0)) return VmValue::Int(0);
-        call.SetInt(value, call.Int(1)); return VmValue::Int(1);
-    });
-    builder.FinalMethod("getAndSet", "(Z)Z", [value](IntrinsicContext& context) {
-        IntrinsicCall call(context); const auto old = call.GetInt(value);
-        call.SetInt(value, call.Int(0)); return VmValue::Int(old);
-    });
-    return std::move(builder).Build();
-}
-
-IntrinsicClassDecl Dvm87DeclareAtomicReference() {
-    auto builder = IntrinsicClassBuilder::Class(
-        "Ljava/util/concurrent/atomic/AtomicReference;", "Ljava/lang/Object;",
-        {"Ljava/io/Serializable;"});
-    const auto value = builder.BoundInstanceField("value", "Ljava/lang/Object;");
-    builder.Constructor("()V", [value](IntrinsicContext& context) {
-        IntrinsicCall(context).SetRef(value, VmObjectRef{0});
-        return VmValue::Void();
-    });
-    builder.Constructor("(Ljava/lang/Object;)V", [value](IntrinsicContext& context) {
-        IntrinsicCall call(context); call.SetRef(value, call.Ref(0)); return VmValue::Void();
-    });
-    builder.FinalMethod("get", "()Ljava/lang/Object;", [value](IntrinsicContext& context) {
-        return VmValue::Ref(IntrinsicCall(context).GetRef(value));
-    });
-    builder.FinalMethod("set", "(Ljava/lang/Object;)V", [value](IntrinsicContext& context) {
-        IntrinsicCall call(context); call.SetRef(value, call.Ref(0)); return VmValue::Void();
-    });
-    builder.FinalMethod("compareAndSet", "(Ljava/lang/Object;Ljava/lang/Object;)Z",
-        [value](IntrinsicContext& context) {
-            IntrinsicCall call(context);
-            if (call.GetRef(value) != call.Ref(0)) return VmValue::Int(0);
-            call.SetRef(value, call.Ref(1)); return VmValue::Int(1);
-        });
-    builder.FinalMethod("getAndSet", "(Ljava/lang/Object;)Ljava/lang/Object;",
-        [value](IntrinsicContext& context) {
-            IntrinsicCall call(context); const auto old = call.GetRef(value);
-            call.SetRef(value, call.Ref(0)); return VmValue::Ref(old);
-        });
+IntrinsicClassDecl DeclareAtomicLongNative() {
+    auto builder = IntrinsicClassBuilder::Class("Ljava/util/concurrent/atomic/AtomicLong;");
+    builder.StaticMethod("VMSupportsCS8", "()Z", [](IntrinsicContext&) {
+        // UnsafeRuntime implements long CAS under the VM execution lock.
+        return VmValue::Int(1);
+    }, kAccPrivate | kAccNative);
     return std::move(builder).Build();
 }
 
@@ -614,12 +467,7 @@ void AppendJavaConcurrent(std::vector<IntrinsicClassDecl>& catalog,
     catalog.push_back(Dvm87DeclareFutureTask());
     catalog.push_back(Dvm87DeclareSingleThreadExecutor());
     catalog.push_back(Dvm87DeclareExecutors());
-    catalog.push_back(Dvm87DeclareAtomicIntegral<std::int32_t>(
-        "Ljava/util/concurrent/atomic/AtomicInteger;", "I"));
-    catalog.push_back(Dvm87DeclareAtomicIntegral<std::int64_t>(
-        "Ljava/util/concurrent/atomic/AtomicLong;", "J"));
-    catalog.push_back(Dvm87DeclareAtomicBoolean());
-    catalog.push_back(Dvm87DeclareAtomicReference());
+    catalog.push_back(DeclareAtomicLongNative());
     catalog.push_back(Dvm87DeclareConcurrentException(
         "Ljava/util/concurrent/CancellationException;",
         "Ljava/lang/IllegalStateException;"));

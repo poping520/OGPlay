@@ -402,7 +402,8 @@ void Interpreter::Impl::EnsureInitialized(
             PublishClinitState(java_class, ClinitState::failed);
             RecordTrace(DexVmTraceKind::class_init_fail, execution, nullptr,
                         0, 0, java_class.Value());
-            ThrowJava(thrown.descriptor, thrown.message);
+            if (thrown.existing.IsValid()) owner->SetPendingException(thrown.existing);
+            else ThrowJava(thrown.descriptor, thrown.message);
             return;
         }
     }
@@ -657,7 +658,8 @@ VmCallOutcome Interpreter::Impl::Run(InterpreterExecutionState& execution,
                 Step(execution);
             }
         } catch (const VmJavaThrow& thrown) {
-            ThrowJava(thrown.descriptor, thrown.message);
+            if (thrown.existing.IsValid()) owner->SetPendingException(thrown.existing);
+            else ThrowJava(thrown.descriptor, thrown.message);
         } catch (const DexVmError& error) {
             if (error.Reason() == DexVmErrorReason::heap_budget_exhausted) {
                 // The OutOfMemoryError object itself must still allocate;
@@ -885,6 +887,17 @@ Interpreter::Interpreter(DexClassLinker& linker, JavaObjectModel& model,
         },
         [](const VmObjectRef, const VmObjectRef) {}});
 
+    RegisterIntrinsicStateTable({"native-bignums", {},
+        [state = impl_.get(), &model](VmObjectRef owner) {
+            const auto type = state->linker->FindClass("Ljava/math/BigInt;");
+            if (!type || model.ObjectClass(owner) != *type) return;
+            const auto field = state->linker->FindFieldRecursive(*type, "bignum", "J");
+            if (!field) return;
+            const auto slot = state->linker->Field(*field).slot;
+            const auto slots = model.InstanceSlots(owner);
+            const auto token = static_cast<std::uint64_t>(slots[slot].bits) | (static_cast<std::uint64_t>(slots[slot + 1].bits) << 32U);
+            state->big_ints.Sweep(token);
+        }, {}});
     const auto string_class = linker.FindClass("Ljava/lang/String;");
     const auto class_class = linker.FindClass("Ljava/lang/Class;");
     if (string_class.has_value() && class_class.has_value()) {
@@ -896,6 +909,8 @@ Interpreter::Interpreter(DexClassLinker& linker, JavaObjectModel& model,
         std::make_unique<ReflectionRuntime>(*this, linker, model);
     impl_->unsafe = std::make_unique<UnsafeRuntime>(*this);
 }
+
+BigIntRuntime& Interpreter::BigInts() { return impl_->big_ints; }
 
 IcuFormatterRuntime& Interpreter::IcuFormatters() {
     return impl_->icu_formatters;
@@ -1000,7 +1015,8 @@ VmCallOutcome Interpreter::Call(const VmMethodId method_id,
                 impl_->RecordTrace(DexVmTraceKind::method_exit, execution,
                                    &impl_->linker->Method(method_id));
             } catch (const VmJavaThrow& thrown) {
-                impl_->ThrowJava(thrown.descriptor, thrown.message);
+                if (thrown.existing.IsValid()) SetPendingException(thrown.existing);
+                else impl_->ThrowJava(thrown.descriptor, thrown.message);
                 impl_->RecordTrace(DexVmTraceKind::method_exit, execution,
                                    nullptr, 0, 0, 1);
                 outcome.exception = pending_exception;

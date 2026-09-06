@@ -447,6 +447,7 @@ add_library(ogplay_runtime
     src/runtime/integration/headless_jni_contract.cpp
     src/runtime/dexvm/class_name_codec.cpp
     src/runtime/dexvm/class_loader_facade.cpp
+    src/runtime/dexvm/big_int_runtime.cpp
     src/runtime/dexvm/icu_formatter_runtime.cpp
     src/runtime/dexvm/io_runtime.cpp
     src/runtime/dexvm/network_runtime.cpp

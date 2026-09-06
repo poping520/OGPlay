@@ -634,31 +634,16 @@ TEST_CASE("File declarations match Android class shape through second batch") {
                method.name == "flush" || method.name == "getChannel";
     }));
 
-    const auto& output_base = declaration("Ljava/io/OutputStream;");
+    FileVm shape;
+    const auto& output_base = shape.linker.Class(shape.linker.ResolveDescriptor("Ljava/io/OutputStream;"));
+    CHECK(output_base.is_boot_dex);
     CHECK(output_base.access_flags == 0x0401U);
-    CHECK(output_base.interfaces == std::vector<std::string>{
-        "Ljava/io/Closeable;", "Ljava/io/Flushable;"});
-    const auto base_constructor = std::ranges::find_if(
-        output_base.methods, [](const auto& method) {
-            return method.name == "<init>" && method.descriptor == "()V";
-        });
-    REQUIRE(base_constructor != output_base.methods.end());
-    const auto abstract_write = std::ranges::find_if(
-        output_base.methods, [](const auto& method) {
-            return method.name == "write" && method.descriptor == "(I)V";
-        });
-    REQUIRE(abstract_write != output_base.methods.end());
-    CHECK(abstract_write->access_flags == 0x0401U);
-    CHECK_FALSE(abstract_write->implementation);
-
-    const auto& byte_output = declaration("Ljava/io/ByteArrayOutputStream;");
-    CHECK(std::ranges::any_of(byte_output.methods, [](const auto& method) {
-        return method.name == "write" && method.descriptor == "(I)V" &&
-               method.must_override;
-    }));
-    const auto& data_output = declaration("Ljava/io/DataOutputStream;");
-    REQUIRE(data_output.superclass.has_value());
-    CHECK(*data_output.superclass == "Ljava/io/FilterOutputStream;");
+    for (const auto* descriptor : {"Ljava/io/ByteArrayOutputStream;", "Ljava/io/DataOutputStream;", "Ljava/io/OutputStream;"}) {
+        CHECK(std::ranges::none_of(catalog, [&](const auto& c) { return c.descriptor == descriptor; }));
+        const auto type = shape.linker.ResolveDescriptor(descriptor);
+        for (const auto method : shape.linker.Class(type).own_virtual_methods)
+            CHECK(shape.linker.Method(method).kind != MethodKind::intrinsic);
+    }
 
     const auto& input = declaration("Ljava/io/FileInputStream;");
     const auto input_fd = std::ranges::find(
@@ -696,26 +681,14 @@ TEST_CASE("File declarations match Android class shape through second batch") {
                method.name == "getChannel";
     }));
 
-    const auto& input_base = declaration("Ljava/io/InputStream;");
+    const auto& input_base = shape.linker.Class(shape.linker.ResolveDescriptor("Ljava/io/InputStream;"));
+    CHECK(input_base.is_boot_dex);
     CHECK(input_base.access_flags == 0x0401U);
-    CHECK(input_base.interfaces ==
-          std::vector<std::string>{"Ljava/io/Closeable;"});
-    const auto abstract_read = std::ranges::find_if(
-        input_base.methods, [](const auto& method) {
-            return method.name == "read" && method.descriptor == "()I";
-        });
-    REQUIRE(abstract_read != input_base.methods.end());
-    CHECK(abstract_read->access_flags == 0x0401U);
-    CHECK_FALSE(abstract_read->implementation);
-    const auto reset = std::ranges::find_if(
-        input_base.methods, [](const auto& method) {
-            return method.name == "reset" && method.descriptor == "()V";
-        });
-    REQUIRE(reset != input_base.methods.end());
-    CHECK(reset->access_flags == 0x0021U);
-    const auto& data_input = declaration("Ljava/io/DataInputStream;");
-    REQUIRE(data_input.superclass.has_value());
-    CHECK(*data_input.superclass == "Ljava/io/FilterInputStream;");
+    CHECK(std::ranges::none_of(catalog, [](const auto& c) { return c.descriptor == "Ljava/io/InputStream;" || c.descriptor == "Ljava/io/DataInputStream;"; }));
+    const auto input_read = shape.linker.FindVtableIndex(input_base.id, "read", "()I");
+    REQUIRE(input_read);
+    CHECK(shape.linker.Method(input_base.vtable[*input_read]).kind == MethodKind::abstract);
+
 }
 
 TEST_CASE("OutputStream inherited bulk writes virtual-dispatch to subclasses") {
@@ -2355,9 +2328,9 @@ TEST_CASE("Object streams reject nonserializable objects and invalid headers") {
           "Ljava/io/IOException;");
 }
 
-TEST_CASE("ZipInputStream adopts core input bytes and reads the entry") {
+TEST_CASE("ZipInputStream reads guest source bytes and dispatches entry operations") {
     FileVm vm(nullptr, false);
-    const std::vector<std::byte> payload{std::byte{'o'}, std::byte{'k'}};
+    const std::vector<std::byte> payload{std::byte{'h'}, std::byte{'i'}, std::byte{'o'}, std::byte{'k'}};
     const auto archive = MakeStoredZip("save.dat", payload);
     const auto array_class = vm.linker.ResolveDescriptor("[B");
     const auto source_array = vm.model.NewPrimitiveArray(
@@ -2379,12 +2352,31 @@ TEST_CASE("ZipInputStream adopts core input bytes and reads the entry") {
     REQUIRE(entry.IsValid());
     CHECK(vm.interpreter.StringUtf8(vm.CallOn(
               entry, "getName", "()Ljava/lang/String;").ref) == "save.dat");
+    CHECK(vm.CallOn(zip,"available","()I").AsInt()==1);
+    CHECK(vm.CallOn(zip,"read","()I").AsInt()=='h');
+    CHECK(vm.CallOn(zip,"skip","(J)J",{VmValue::Long(1)}).AsLong()==1);
+    CHECK(vm.CallOn(zip,"markSupported","()Z").AsInt()==0);
+    CHECK(vm.CallOnOutcome(zip,"reset","()V").exception.IsValid());
     const auto output = vm.model.NewPrimitiveArray(
         array_class, JniPrimitiveKind::byte, 2);
     CHECK(vm.CallOn(zip, "read", "([BII)I",
                     {VmValue::Ref(output), VmValue::Int(0), VmValue::Int(2)})
               .AsInt() == 2);
-    CHECK(vm.model.ReadByteRegion(output, 0, 2) == payload);
+    CHECK(vm.model.ReadByteRegion(output, 0, 2) == std::vector<std::byte>{std::byte{'o'},std::byte{'k'}});
+    CHECK(vm.CallOn(zip,"read","()I").AsInt()==-1);
+    CHECK(vm.CallOn(zip,"available","()I").AsInt()==0);
+    static_cast<void>(vm.CallOn(zip,"close","()V"));
+    static_cast<void>(vm.CallOn(zip,"close","()V"));
+    CHECK(vm.CallOnOutcome(zip,"read","()I").exception.IsValid());
+    const auto raw=vm.interpreter.NewIntrinsicInstance("Ljava/io/FileInputStream;");
+    vm.vfs.CreateDirectory("/sdcard"); vm.interpreter.IO().WriteFile("/sdcard/archive.zip",archive);
+    static_cast<void>(vm.CallOn(raw,"<init>","(Ljava/lang/String;)V",{VmValue::Ref(vm.interpreter.NewStringUtf8("/sdcard/archive.zip"))}));
+    const auto filezip=vm.interpreter.NewIntrinsicInstance("Ljava/util/zip/ZipInputStream;");
+    static_cast<void>(vm.CallOn(filezip,"<init>","(Ljava/io/InputStream;)V",{VmValue::Ref(raw)}));
+    const std::array roots{filezip}; const auto protect=vm.interpreter.ProtectReferences(roots);
+    static_cast<void>(vm.interpreter.CollectGarbage());
+    static_cast<void>(vm.CallOn(filezip,"close","()V"));
+    CHECK(vm.CallOnOutcome(raw,"read","()I").exception.IsValid());
 }
 
 TEST_CASE("Java file writes survive into the next session") {
@@ -2485,4 +2477,25 @@ TEST_CASE("SharedPreferences persist as platform XML across sessions") {
                     {VmValue::Ref(vm.interpreter.NewStringUtf8("missing")),
                      VmValue::Int(42)})
               .AsInt() == 42);
+}
+
+TEST_CASE("DVM-104 FileReader inherits guest Reader behavior over VFS UTF8") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        FileVm vm(nullptr, false, InterpreterConfig{.backend=backend});
+        vm.vfs.CreateDirectory("/sdcard");
+        const auto file=vm.NewFile("/sdcard/reader.txt");
+        const auto writer=vm.interpreter.NewIntrinsicInstance("Ljava/io/FileWriter;");
+        static_cast<void>(vm.CallOn(writer,"<init>","(Ljava/io/File;Z)V",{VmValue::Ref(file),VmValue::Int(0)}));
+        static_cast<void>(vm.CallOn(writer,"append","(Ljava/lang/CharSequence;)Ljava/io/Writer;",{VmValue::Ref(vm.interpreter.NewStringUtf8("A世界"))}));
+        static_cast<void>(vm.CallOn(writer,"close","()V"));
+        const auto reader=vm.interpreter.NewIntrinsicInstance("Ljava/io/FileReader;");
+        static_cast<void>(vm.CallOn(reader,"<init>","(Ljava/io/File;)V",{VmValue::Ref(file)}));
+        CHECK(vm.CallOn(reader,"read","()I").AsInt()=='A');
+        CHECK(vm.CallOn(reader,"skip","(J)J",{VmValue::Long(1)}).AsLong()==1);
+        CHECK(vm.CallOn(reader,"read","()I").AsInt()==0x754c);
+        CHECK(vm.CallOn(reader,"read","()I").AsInt()==-1);
+        static_cast<void>(vm.CallOn(reader,"close","()V"));
+        static_cast<void>(vm.CallOn(reader,"close","()V"));
+        CHECK(vm.CallOnOutcome(reader,"read","()I").exception.IsValid());
+    }
 }

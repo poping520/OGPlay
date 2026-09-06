@@ -13,6 +13,7 @@
 #include "ogplay/runtime/dexvm/zip_runtime.h"
 
 #include "catalog.h"
+#include "shared.h"
 
 namespace ogplay::runtime::dexvm::intrinsics {
 namespace {
@@ -43,15 +44,40 @@ ZipEntryDeclaration DeclareZipEntry() {
   return {std::move(builder).Build(), name};
 }
 
+// Explicit superclass calls avoid dispatching back into the ZIP override.
+VmValue CallIoParent(IntrinsicContext& context, const char* owner,
+                     const char* name, const char* signature,
+                     std::vector<VmValue> arguments = {}) {
+  auto& linker = context.vm.Linker();
+  const auto type = linker.ResolveDescriptor(owner);
+  const auto method = std::string_view(name) == "<init>"
+      ? *linker.FindDirectMethod(type, name, signature)
+      : linker.Class(type).vtable[*linker.FindVtableIndex(type, name, signature)];
+  arguments.insert(arguments.begin(), VmValue::Ref(context.receiver));
+  const auto result = context.vm.Call(method, arguments);
+  if (result.exception.IsValid()) throw VmJavaThrow{
+      linker.Class(result.exception_class).descriptor,
+      result.exception_message, result.exception};
+  return result.value;
+}
+
 IntrinsicClassDecl
 DeclareZipInputStream(const IntrinsicFieldHandle entry_name) {
   auto builder = IntrinsicClassBuilder::Class(
       "Ljava/util/zip/ZipInputStream;", "Ljava/io/FilterInputStream;");
+  const auto closed = builder.BoundInstanceField("closed", "Z", kAccPrivate);
   builder.Constructor("(Ljava/io/InputStream;)V", [](IntrinsicContext &context) {
     IntrinsicCall call(context);
+    static_cast<void>(call.NonNullRef(0, "input"));
+    CallIoParent(context, "Ljava/io/FilterInputStream;", "<init>",
+        "(Ljava/io/InputStream;)V", {VmValue::Ref(call.Ref(0))});
     std::vector<std::byte> bytes;
     try {
-      bytes = context.vm.IO().TakeRemainingInput(call.Ref(0));
+      while (true) {
+        const auto value = detail::InvokeGuest(context.vm, call.Ref(0), "read", "()I").AsInt();
+        if (value < 0) break;
+        bytes.push_back(static_cast<std::byte>(value));
+      }
       context.vm.ZIP().Open(context.receiver, std::move(bytes));
     } catch (const IoRuntimeError &error) {
       throw VmJavaThrow{"Ljava/io/IOException;", error.what()};
@@ -76,6 +102,27 @@ DeclareZipInputStream(const IntrinsicFieldHandle entry_name) {
             entry_name, entry, context.vm.NewStringUtf8(*name));
         return VmValue::Ref(entry);
       });
+  builder.FinalOverrideMethod("read", "()I", [](IntrinsicContext& context) {
+    try {
+      const auto bytes = context.vm.ZIP().Read(context.receiver, 1);
+      return VmValue::Int(bytes ? static_cast<std::uint8_t>((*bytes)[0]) : -1);
+    } catch (const ZipRuntimeError& error) { ZipFailure(error); }
+  });
+  builder.FinalOverrideMethod("skip", "(J)J", [](IntrinsicContext& context) {
+    if (context.arguments[0].AsLong() < 0)
+      throw VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "byteCount < 0"};
+    return CallIoParent(context, "Ljava/io/InputStream;", "skip", "(J)J",
+        {context.arguments[0]});
+  });
+  builder.FinalOverrideMethod("available", "()I", [](IntrinsicContext& context) {
+    try { return VmValue::Int(context.vm.ZIP().Available(context.receiver) ? 1 : 0); }
+    catch (const ZipRuntimeError& error) { ZipFailure(error); }
+  });
+  builder.FinalOverrideMethod("markSupported", "()Z", [](IntrinsicContext&) { return VmValue::Int(0); });
+  builder.FinalOverrideMethod("mark", "(I)V", [](IntrinsicContext&) { return VmValue::Void(); });
+  builder.FinalOverrideMethod("reset", "()V", [](IntrinsicContext&) -> VmValue {
+    throw VmJavaThrow{"Ljava/io/IOException;", "mark/reset not supported"};
+  });
   builder.FinalOverrideMethod("read", "([BII)I", [](IntrinsicContext &context) {
     IntrinsicCall call(context);
     const auto array = call.Ref(0);
@@ -107,8 +154,13 @@ DeclareZipInputStream(const IntrinsicFieldHandle entry_name) {
     }
     return VmValue::Void();
   });
-  builder.FinalOverrideMethod("close", "()V", [](IntrinsicContext &context) {
-    context.vm.ZIP().Close(context.receiver);
+  builder.FinalOverrideMethod("close", "()V", [closed](IntrinsicContext &context) {
+    IntrinsicCall call(context);
+    if (!call.GetInt(closed)) {
+      CallIoParent(context, "Ljava/io/FilterInputStream;", "close", "()V");
+      context.vm.ZIP().Close(context.receiver);
+      call.SetInt(closed, 1);
+    }
     return VmValue::Void();
   });
   return std::move(builder).Build();

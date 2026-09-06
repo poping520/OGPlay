@@ -21,6 +21,20 @@
 
 namespace ogplay::runtime::dexvm::intrinsics::detail {
 
+inline VmValue InvokeGuest(Interpreter& vm, VmObjectRef receiver,
+                           const std::string& name, const std::string& signature,
+                           std::vector<VmValue> args = {}) {
+    if (!receiver.IsValid()) throw VmJavaThrow{"Ljava/lang/NullPointerException;", "receiver == null"};
+    const auto type = vm.Model().ObjectClass(receiver);
+    const auto slot = vm.Linker().FindVtableIndex(type, name, signature);
+    if (!slot) throw DexVmError(DexVmErrorReason::unresolved_reference, "guest method is unavailable: " + name + signature);
+    args.insert(args.begin(), VmValue::Ref(receiver));
+    const auto result = vm.Call(vm.Linker().Class(type).vtable[*slot], args);
+    if (result.exception.IsValid()) throw VmJavaThrow{
+        vm.Linker().Class(result.exception_class).descriptor, result.exception_message, result.exception};
+    return result.value;
+}
+
 [[nodiscard]] inline IntrinsicClassDecl DeclareSimpleThrowable(
     const std::string_view descriptor, const std::string_view super_descriptor) {
     auto builder = IntrinsicClassBuilder::Class(

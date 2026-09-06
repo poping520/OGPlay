@@ -357,7 +357,8 @@ void Interpreter::Impl::StepObjectOrInvoke(
                     RecordTrace(DexVmTraceKind::method_exit, execution,
                                 &method, frame.pc);
                 } catch (const VmJavaThrow& thrown) {
-                    ThrowJava(thrown.descriptor, thrown.message);
+                    if (thrown.existing.IsValid()) owner->SetPendingException(thrown.existing);
+                    else ThrowJava(thrown.descriptor, thrown.message);
                     RecordTrace(DexVmTraceKind::method_exit, execution,
                                 &method, frame.pc, 0, 1);
                     return;

@@ -14,6 +14,7 @@
 #include "ogplay/runtime/dexvm/interpreter.h"
 #include "ogplay/runtime/dexvm/class_loader_facade.h"
 #include "ogplay/runtime/dexvm/icu_formatter_runtime.h"
+#include "ogplay/runtime/dexvm/big_int_runtime.h"
 #include "ogplay/runtime/dexvm/io_runtime.h"
 #include "ogplay/runtime/dexvm/nio_runtime.h"
 #include "ogplay/runtime/dexvm/unsafe_runtime.h"
@@ -120,6 +121,7 @@ public:
     std::unordered_map<std::uint32_t, std::u16string> builders;
     std::unordered_map<std::uint32_t, VmObjectRef> enum_constant_arrays;
     IcuFormatterRuntime icu_formatters;
+    BigIntRuntime big_ints;
     IoRuntime io;
     NetworkRuntime network;
     NioRuntime nio;

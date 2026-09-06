@@ -30,6 +30,7 @@ public:
   [[nodiscard]] std::optional<std::string> NextEntry(VmObjectRef owner);
   [[nodiscard]] std::optional<std::vector<std::byte>>
   Read(VmObjectRef owner, std::size_t maximum);
+  [[nodiscard]] bool Available(VmObjectRef owner);
   void CloseEntry(VmObjectRef owner);
   void Close(VmObjectRef owner) noexcept;
   [[nodiscard]] bool Contains(VmObjectRef owner) const noexcept;

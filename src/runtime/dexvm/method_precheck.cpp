@@ -138,7 +138,7 @@ struct Decoded final {
     }
     if ((opcode >= 0x9b && opcode <= 0xa5) ||
         (opcode >= 0xab && opcode <= 0xaf) ||
-        (opcode >= 0xbb && opcode <= 0xc5) ||
+        (opcode >= 0xbb && opcode <= 0xc2) ||
         (opcode >= 0xcb && opcode <= 0xcf)) {
         return true;
     }

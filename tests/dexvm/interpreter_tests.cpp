@@ -582,6 +582,30 @@ TEST_CASE("dexvm core intrinsic catalog is unique and structurally stable") {
         "Ljava/lang/reflect/Member;.getName()Ljava/lang/String;",
         "Ljava/lang/reflect/Member;.getModifiers()I",
         "Ljava/lang/reflect/Member;.isSynthetic()Z",
+        "Ljava/math/NativeBN;.BN_add(JJJ)V",
+        "Ljava/math/NativeBN;.BN_add_word(JI)V",
+        "Ljava/math/NativeBN;.BN_bin2bn([BIZJ)V",
+        "Ljava/math/NativeBN;.BN_bn2bin(J)[B",
+        "Ljava/math/NativeBN;.BN_bn2dec(J)Ljava/lang/String;",
+        "Ljava/math/NativeBN;.BN_bn2hex(J)Ljava/lang/String;",
+        "Ljava/math/NativeBN;.BN_dec2bn(JLjava/lang/String;)I",
+        "Ljava/math/NativeBN;.BN_div(JJJJ)V",
+        "Ljava/math/NativeBN;.BN_exp(JJJ)V",
+        "Ljava/math/NativeBN;.BN_gcd(JJJ)V",
+        "Ljava/math/NativeBN;.BN_generate_prime_ex(JIZJJJ)V",
+        "Ljava/math/NativeBN;.BN_hex2bn(JLjava/lang/String;)I",
+        "Ljava/math/NativeBN;.BN_is_bit_set(JI)Z",
+        "Ljava/math/NativeBN;.BN_is_prime_ex(JIJ)Z",
+        "Ljava/math/NativeBN;.BN_mod_exp(JJJJ)V",
+        "Ljava/math/NativeBN;.BN_mod_inverse(JJJ)V",
+        "Ljava/math/NativeBN;.BN_mod_word(JI)I",
+        "Ljava/math/NativeBN;.BN_mul(JJJ)V",
+        "Ljava/math/NativeBN;.BN_mul_word(JI)V",
+        "Ljava/math/NativeBN;.BN_nnmod(JJJ)V",
+        "Ljava/math/NativeBN;.BN_shift(JJI)V",
+        "Ljava/math/NativeBN;.BN_sub(JJJ)V",
+        "Ljava/math/NativeBN;.litEndInts2bn([IIZJ)V",
+        "Ljava/math/NativeBN;.twosComp2bn([BIJ)V",
     };
     for (const auto& declaration : catalog) {
         CHECK(descriptors.insert(declaration.descriptor).second);
@@ -686,10 +710,10 @@ TEST_CASE("dexvm core intrinsic catalog is unique and structurally stable") {
           });
     CHECK(signatures("Ljava/lang/Runnable;") ==
           std::set<std::pair<std::string, std::string>>{{"run", "()V"}});
-    CHECK(signatures("Ljava/lang/StringBuilder;").size() == 19U);
-    CHECK(signatures("Ljava/lang/StringBuffer;").size() == 19U);
+    CHECK(signatures("Ljava/lang/StringBuilder;").size() == 20U);
+    CHECK(signatures("Ljava/lang/StringBuffer;").size() == 20U);
     const auto string_signatures = signatures("Ljava/lang/String;");
-    CHECK(string_signatures.size() == 47U);
+    CHECK(string_signatures.size() == 52U);
     CHECK(string_signatures.contains({
         "toLowerCase", "(Ljava/util/Locale;)Ljava/lang/String;"}));
     CHECK(signatures("Ljava/lang/Integer;").size() == 37U);
@@ -698,6 +722,10 @@ TEST_CASE("dexvm core intrinsic catalog is unique and structurally stable") {
               {"<init>", "(Ljava/io/InputStream;)V"},
               {"<init>",
                "(Ljava/io/InputStream;Ljava/nio/charset/Charset;)V"},
+              {"<init>", "(Ljava/io/InputStream;Ljava/lang/String;)V"},
+              {"read", "()I"}, {"read", "([CII)I"},
+              {"ready", "()Z"}, {"close", "()V"},
+              {"getEncoding", "()Ljava/lang/String;"},
           });
     CHECK(signatures("Ljava/io/ObjectOutputStream;") ==
           std::set<std::pair<std::string, std::string>>{

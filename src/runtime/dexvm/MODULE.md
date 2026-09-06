@@ -24,7 +24,7 @@ intrinsic。解释应用 DEX 与受审 API 19 curated Boot DEX；完整平台库
   `ResolveTypeIndex/ResolveMethodIndex/ResolveFieldIndex`；数组类按需合成；`IsAssignable`
   覆盖类、接口、数组协变及数组到 `Object`/`Cloneable`/`Serializable`。`PrecheckMethod`
   懒校验未知 opcode、寄存器（含 `k35c`/`k3rc` 参数与 wide pair）、分支/payload 目标和
-  move-result 位置，规则子集对照 AOSP `CodeVerify.cpp`，不做全量数据流。
+  move-result 位置；long 的 2addr shift distance 是单槽 int，不能按 wide pair 预检。规则子集对照 AOSP `CodeVerify.cpp`，不做全量数据流。
 - `ClassNameCodec` 与 linker reflection metadata（DVM-62）：唯一受检的 method/type
   descriptor 拆分及 `Class.getName`/binary-name 转换入口。每类发布 defining-loader role、
   direct interfaces、flattened iftable，以及按 DEX/intrinsic 声明顺序排列的 own methods/
@@ -84,16 +84,27 @@ intrinsic。解释应用 DEX 与受审 API 19 curated Boot DEX；完整平台库
   时区名称和整数 format/parse 直接使用同版本 ICU，不维护手写区域/数字算法。
   CoreIntrinsicServices.default_timezone（默认 GMT）仅用于 Java 默认时区未设置或被重置时，
   getDefault/setDefault 共用 DEX 静态字段，clone 与缓存均按 VM 隔离。
-- `IoRuntime`（DVM-79/91）：统一拥有 java.io bytes/cursor/close/wrapper-adoption side state，
-  随 owner 清扫。File 仅使用装配方注入的 `IoFileSystem`，具体 VFS 只在 integration adapter
-  可见；工作目录、writable、rename、单级/递归建目录均为注入事实。相对 `File` 不读宿主 cwd，
-  `mkdir()` 不递归，core 不读写宿主权限位。逻辑 FileDescriptor 只记录 source/base-offset/
-  closed，不含 host/native fd；`FileInputStream.getFD()` 与读 cursor 独立。无文件系统明确失败；
-  stream wrapper 单 owner 转移，clone 不复制游标或缓冲。对象流的 block cursor、class/object
-  handle 与强引用同样由 `IoRuntime` 按 owner 保存、trace 并随 owner 清扫，不成为第二套流存储。
-  Externalizable 协议 2 调用真实 writeExternal/readExternal，共享递归深度与 handle；读取前
-  执行本类公共无参构造器，跳过未消费的 block/object 数据，回调异常保持原身份。
-  协议 1、数组、默认 UID 计算和任意私有 custom hooks 仍明确失败。
+- `IoRuntime`（DVM-79/91/104）：只拥有文件资源、对象流协议缓冲/handle 与增量字符解码器。
+  Input/OutputStream、Reader/Writer、内存/Buffer/Filter/Data/Pushback/LineNumber/Sequence 流
+  归 API 19 BootDex；字段和数组是唯一普通流状态，删除 wrapper-adoption 宿主转移接口。
+  Object streams 通过 guest 虚方法读取 source、写入 sink，保留底层对象身份；这些引用和
+  序列化 handle 经 owner trace，协议状态及 ICU converter 随 owner sweep/VM teardown 释放。
+  available 不等待底层新数据，嵌套调用抛回原 throwable；不重新创建异常。
+  File 仅使用注入的 `IoFileSystem`，具体 VFS 在 integration adapter；相对路径不读宿主 cwd，
+  mkdir 不递归，权限操作不伪造成功。逻辑 FileDescriptor 不保存 host/native fd，借用关系不变。
+  InputStreamReader 使用固定 ICU 51 标准字符集增量解码，并持有 Reader.lock（source）的
+  guest monitor；FileReader 经 FileInputStream 和该适配器读取。FileWriter 仍是有界文件适配器。
+  Externalizable 协议 2 保持公共无参构造、真实回调、共享递归深度/handle 与尾部跳过；
+  协议 1、数组、默认 UID 计算及任意私有 custom hooks 仍明确失败。
+- 后续纯 Java 家族（DVM-104）：Objects/StringTokenizer/BitSet/MathContext、事件/beans、
+  CountDownLatch/Semaphore/CyclicBarrier、普通 atomic/数组、ChoiceFormat/MessageFormat、
+  X500 名字/DER 与指定 key spec 由 BootDex 拥有。AtomicLong 只保留 VMSupportsCS8 native，
+  普通 CAS 复用 Unsafe 与执行锁；同步器复用真实 guest 线程、park/monitor 与统一 Clock。
+  Charset/String 标准六编码及 Locale 大小写调用固定 ICU；完整 Charset provider/encoder/
+  decoder API 和完整数字 formatter 不因选类自动可用。
+- `BigIntRuntime`（DVM-104）：为 X500 ASN.1 标签键直接触达的 BigInt/NativeBN 提供每 VM
+  单调逻辑令牌和最多 64 位 magnitude；11 个分配/拷贝/比较/符号/转换原语受检，BigInt owner
+  的 bignum 字段清扫释放令牌，其余 24 个 native 明确失败。不是完整大数或密码学 backend。
 - `ZipRuntime`（DVM-79）：管理 archive、当前 entry bytes/cursor 和 close 状态，复用 loader 的
   严格 ZIP parser/inflate，并由 intrinsic state-table hook 清扫。
 - `NetworkRuntime`（DVM-88）：管理 InetAddress endpoint、Socket、stream、datagram 的 per-VM
@@ -335,3 +346,6 @@ ClassLoader namespace、动态 DexClassLoader/defineClass 和 resource classpath
 - `tests/dexvm/dex_code_tests.cpp` / `tests/dexvm/dexasm_readback_tests.cpp`：DEX 读取与往返；
   `tests/dexvm/gap_survey_tests.cpp`：
   survey 开关、桩返回、命中计数和工作单排序。
+
+DVM-104 的 ZIP 适配器调用 BootDex FilterInputStream 构造以保持源强引用；read/skip/available
+使用解压后 entry 游标，mark/reset 明确不支持，close 经父类关闭原始源且幂等。

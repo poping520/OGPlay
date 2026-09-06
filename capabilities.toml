@@ -207,7 +207,7 @@ note = "M5 WU-0207 以 guest 根 + source 精确配对已导入文件并装配�
 
 [session.profile_java]
 status = "complete"
-test = "docs/adr/0022-profile-entry-scope-and-v2-only.md; tests/session/title_profile_tests.cpp"
+test = "docs/adr/session.md#adr-0022; tests/session/title_profile_tests.cpp"
 note = "历史能力已由 ADR-0022/DVM-25 退役并从生产代码、schema 和测试删除；v2 明确拒绝 Profile Java handler 映射，Java 能力只来自 DexVM 与代码定义平台目录"
 
 [input.template_catalog]
@@ -792,7 +792,7 @@ note = "历史能力已由 ADR-0022/DVM-25 退役并完整删除；v2 loader 对
 
 [profiles.first_legacy_native_sequence]
 status = "complete"
-test = "docs/adr/0022-profile-entry-scope-and-v2-only.md; tests/session/title_profile_tests.cpp"
+test = "docs/adr/session.md#adr-0022; tests/session/title_profile_tests.cpp"
 note = "历史序列已由 ADR-0022/DVM-25 退役并从 Profile 数据删除；该账本项仅保留单调历史，当前入口为 dex_activity"
 
 [runtime.jni_native_export_names]
@@ -802,12 +802,12 @@ note = "M5 WU-0227 从受检 class/method/descriptor 生成 JNI short/long 导�
 
 [profiles.native_call_targets]
 status = "complete"
-test = "docs/adr/0022-profile-entry-scope-and-v2-only.md; tests/session/title_profile_tests.cpp"
+test = "docs/adr/session.md#adr-0022; tests/session/title_profile_tests.cpp"
 note = "历史 Profile target resolver 已由 ADR-0022/DVM-25 从生产代码和测试删除；JNI 导出名等通用 runtime 原语不受影响"
 
 [profiles.native_call_invocations]
 status = "complete"
-test = "docs/adr/0022-profile-entry-scope-and-v2-only.md; tests/session/title_profile_tests.cpp"
+test = "docs/adr/session.md#adr-0022; tests/session/title_profile_tests.cpp"
 note = "历史 Profile invocation assembler 已由 ADR-0022/DVM-25 从生产代码和测试删除；A32 通用调用执行器仍由 runtime 自身契约覆盖"
 
 [runtime.a32_guest_call_executor]
@@ -1047,7 +1047,7 @@ note = "DVM-31 已实现 AOSP EGL10/GL10 类形状、单 surface façade 状态�
 
 [session.profile_guest_lifecycle]
 status = "complete"
-test = "docs/adr/0022-profile-entry-scope-and-v2-only.md; tests/session/lifecycle_tests.cpp"
+test = "docs/adr/session.md#adr-0022; tests/session/lifecycle_tests.cpp"
 note = "历史 Profile phase lifecycle 已由 ADR-0022/DVM-25 删除；清理顺序与状态机契约由唯一 dex_activity lifecycle 延续"
 
 [profiles.java_method_dispatch]
@@ -1057,7 +1057,7 @@ note = "M5 WU-0245 要求 Profile Java method 显式声明 instance/static kind�
 
 [session.profile_guest_class_registry]
 status = "complete"
-test = "docs/adr/0022-profile-entry-scope-and-v2-only.md; tests/session/title_profile_tests.cpp"
+test = "docs/adr/session.md#adr-0022; tests/session/title_profile_tests.cpp"
 note = "历史 Profile class registry 装配已由 ADR-0022/DVM-25 删除；DexVM bridge 仍把真实解释类注册到 session JNI registry"
 
 [profiles.legacy_audio_java_declarations]
@@ -1228,7 +1228,17 @@ note = "DVM-7 注册/层级/布局/vtable/iftable 四步链接与懒结构预检
 [dexvm.boot_dex]
 status = "complete"
 test = "tests/dexvm/intrinsics_p1_tests.cpp; tests/frontend/data_directory_tests.cpp; tools.bootdex_builder_self_test; tools.android_payload_current; PvZ exact Profile reached-fault"
-note = "DVM-99/ADR-0030 交付固定 API 19 curated bootdex.jar：运行时对 jar 内 class_def 无 allowlist 全量装载，普通方法解释执行，精确 intrinsic method overlay；Enum.getSharedConstants 以 ACC_ENUM 字段和 ordinal 构造强根 typed array。DVM-100 增加固定 AOSP 输入、精确 class recipe、双目录确定性 DEX 重组、canonical JAR 和可重建校验；当前制品含 EnumSet 11 类、Executors fixed-pool 相关 35 类及 SecurityManager，后者只完成选类/装载和 AOSP `System.getSecurityManager()` null overlay，线程池语义尚未闭合。DVM-101 已闭合 Unsafe；PvZ 当前停于 DateFormat.format(Date)。完整 core/framework、multidex、动态 classpath 与 Android 系统服务仍不在此能力内。"
+note = "DVM-99/ADR-0030 交付固定 API 19 curated bootdex.jar：运行时对 jar 内 class_def 无 allowlist 全量装载，普通方法解释执行，精确 intrinsic method overlay；Enum.getSharedConstants 以 ACC_ENUM 字段和 ordinal 构造强根 typed array。DVM-100 增加固定 AOSP 输入、精确 class recipe、双目录确定性 DEX 重组、canonical JAR 和可重建校验。DVM-102 再选入日期格式化闭包 42 类，当前制品共 89 个 class_def，DEX/JAR SHA-256 分别为 `54cf68c55c9571d8cca343b2f7719996c5b2fcbeb137fa4edf58cd10cc54bd4e` / `00266a1c22c279310d422d8572f06fb4ebd1222fbb6dd24fc15b36c4fdb7e668`。DVM-101 已闭合 Unsafe；PvZ 越过 DateFormat 后停于 Externalizable。完整 core/framework、multidex、动态 classpath 与 Android 系统服务仍不在此能力内。"
+
+[dexvm.date_format_bootdex_audit]
+status = "complete"
+test = "tools.bootdex_builder_self_test; python3 tools/bootdex/build_bootdex.py audit"
+note = "DVM-102A/ADR-0032 从 pinned API 19 core.jar 冻结日期格式化候选闭包：42 个 class_def、128 个对象类型、1285 个 method_id、485 个 field_id 和 47 个 native 签名均有机器分类；ICU4C 51.1.0.1 来源/提交/archive hash/许可证、首批 Locale/时区集合、6 个保留 overlay 及 Date 序列化字段切换已固定。DVM-102B～H 已按该清单发布，审计清单与入口已统一至 api19.json / build_bootdex.py audit，继续作为类/native/overlay 增长门禁。"
+
+[dexvm.date_format_api19]
+status = "complete"
+test = "tests/dexvm/dvm87_tests.cpp; tests/dexvm/icu_formatter_runtime_tests.cpp; tests/dexvm/file_vfs_tests.cpp; tests/dexvm/gc_tests.cpp; tools.bootdex_builder_self_test; tools.android_payload_current; A6 gc_long 3/3; PvZ exact Profile reached-fault"
+note = "DVM-102 将 Format/DateFormat/SimpleDateFormat、NumberFormat/DecimalFormat、Date/Calendar/GregorianCalendar/TimeZone/SimpleTimeZone 行为迁入 pinned API 19 BootDex，删除旧 java_text 与日历行为副本。固定 ICU4C 51.1.0.1 common/i18n 实际静态链接，数据经哈希验证后嵌入；区域/货币/时区名称与整数格式化均使用 ICU。per-VM IcuFormatterRuntime 使用逻辑令牌并在 GC/teardown 释放。独立验收已修复默认时区 clone/reset/注入、逗号解析、窄名称、Locale 规范化、Matcher groupCount 与 BootDex 静态初值顺序，并加入反例回归。switch/threaded 覆盖 4 个 SimpleDateFormat ctor、DateFormat factories、zh/en、正负固定 offset、z/Z、format/parse、FieldPosition、attributed iterator 与 clone。complete 仅指该已测闭包；具名时区数据库、历史 DST、BigDecimal/BigInteger 算法、double/digit-list formatter 和完整 ICU 查询仍明确失败。"
 
 [dexvm.unsafe]
 status = "complete"

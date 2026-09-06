@@ -163,10 +163,6 @@ void DeliverMessage(dx::IntrinsicContext& call, dx::VmObjectRef handler,
 [[nodiscard]] dx::IntrinsicHandler WidgetNoopHandler();
 [[nodiscard]] dx::IntrinsicHandler WindowmanagerGetDefaultDisplayHandler(
     const Context& context);
-[[nodiscard]] dx::IntrinsicHandler PlatformDateGetTimeHandler();
-[[nodiscard]] dx::IntrinsicHandler PlatformDateGetYearHandler();
-[[nodiscard]] dx::IntrinsicHandler PlatformDateInitHandler(
-    const Context& context);
 [[nodiscard]] dx::IntrinsicHandler PlatformSystemCurrentTimeMillisHandler(
     const Context& context);
 [[nodiscard]] dx::IntrinsicHandler PlatformSystemExitHandler(

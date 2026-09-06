@@ -78,12 +78,6 @@ void BindPlatformCoreHandlers(
          android_intrinsics::PlatformSystemLoadLibraryHandler(android_context)},
         {"Ljava/lang/System;", "exit", "(I)V",
          android_intrinsics::PlatformSystemExitHandler(android_context)},
-        {"Ljava/util/Date;", "<init>", "()V",
-         android_intrinsics::PlatformDateInitHandler(android_context)},
-        {"Ljava/util/Date;", "getTime", "()J",
-         android_intrinsics::PlatformDateGetTimeHandler()},
-        {"Ljava/util/Date;", "getYear", "()I",
-         android_intrinsics::PlatformDateGetYearHandler()},
     };
     for (const auto& binding : bindings) {
         bool found = false;

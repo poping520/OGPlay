@@ -320,3 +320,6 @@ surface/video/widget 派发子系统。禁止恢复集中式 handler 容器、Po
 `android_guest_call_session_tests.cpp`、`android_guest_framework_platform_tests.cpp`、
 `android_guest_java_media_tests.cpp`、`api19_guest_process_tests.cpp`、
 `android_link_preflight_tests.cpp` 与 `native_activity_runner_tests.cpp`。
+
+DVM-102：DexVM bridge 不再安装 Date 初始化/毫秒/年份的 Android intrinsic patch；
+Date 与日历执行 BootDex，当前 epoch 毫秒仅由 CoreIntrinsicServices 接到统一 Clock。

@@ -2121,11 +2121,11 @@ namespace ogplay::runtime::dexvm::intrinsics {
                 }
                 if (descriptor->descriptor == "Ljava/util/Date;") {
                     const auto millis = call_.vm.Linker().FindFieldRecursive(
-                        owner, "millis", "J");
+                        owner, "milliseconds", "J");
                     if (!millis.has_value()) {
                         throw VmJavaThrow{
                             "Ljava/io/IOException;",
-                            "Date millis field is unavailable"
+                            "Date milliseconds field is unavailable"
                         };
                     }
                     std::vector<std::byte> payload;
@@ -2450,11 +2450,11 @@ namespace ogplay::runtime::dexvm::intrinsics {
                 }
                 if (descriptor->descriptor == "Ljava/util/Date;") {
                     const auto millis = call_.vm.Linker().FindFieldRecursive(
-                        owner, "millis", "J");
+                        owner, "milliseconds", "J");
                     if (!millis.has_value()) {
                         throw VmJavaThrow{
                             "Ljava/io/IOException;",
-                            "Date millis field is unavailable"
+                            "Date milliseconds field is unavailable"
                         };
                     }
                     const auto token =

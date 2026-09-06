@@ -19,6 +19,7 @@
 namespace ogplay::runtime::dexvm {
 
 class CollectionRuntime;
+class IcuFormatterRuntime;
 class IoRuntime;
 class NioRuntime;
 class NetworkRuntime;
@@ -398,6 +399,8 @@ public:
 
     [[nodiscard]] CollectionRuntime& Collections();
     [[nodiscard]] const CollectionRuntime& Collections() const;
+    [[nodiscard]] IcuFormatterRuntime& IcuFormatters();
+    [[nodiscard]] const IcuFormatterRuntime& IcuFormatters() const;
     [[nodiscard]] NioRuntime& NIO();
     [[nodiscard]] const NioRuntime& NIO() const;
     void SetNioRuntime(NioRuntime* runtime) noexcept;

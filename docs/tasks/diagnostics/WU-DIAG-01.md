@@ -4,7 +4,7 @@
 进程外触发一份有界、允许局部失败且不误报死锁的跨层现场。
 
 依赖：[Diagnostics 设计](../../design/diagnostics/README.md)、
-[ADR-0026](../../adr/0026-bounded-stall-snapshots.md)；复用 DVM-52 trace/Java 栈、
+[ADR-0026](../../adr/diagnostics.md#adr-0026)；复用 DVM-52 trace/Java 栈、
 NativeActivity GLES trace、futex/monitor 状态和 ADR-0025 teardown cancellation。
 
 ## 范围

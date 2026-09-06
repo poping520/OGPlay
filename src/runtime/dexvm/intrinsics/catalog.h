@@ -16,9 +16,9 @@ void AppendJavaIoFiles(std::vector<IntrinsicClassDecl>& catalog);
 void AppendJavaUtilZip(std::vector<IntrinsicClassDecl>& catalog);
 void AppendJavaUtilPlatform(std::vector<IntrinsicClassDecl>& catalog,
                             const CoreIntrinsicServices& services);
-void AppendJavaUtilAlgorithms(std::vector<IntrinsicClassDecl>& catalog,
-                              const CoreIntrinsicServices& services);
-void AppendJavaText(std::vector<IntrinsicClassDecl>& catalog);
+void AppendJavaUtilAlgorithms(std::vector<IntrinsicClassDecl>& catalog);
+void AppendJavaIcu(std::vector<IntrinsicClassDecl>& catalog,
+                   const CoreIntrinsicServices& services);
 void AppendJavaRegex(std::vector<IntrinsicClassDecl>& catalog);
 void AppendJavaConcurrent(std::vector<IntrinsicClassDecl>& catalog,
                           const CoreIntrinsicServices& services);
@@ -43,11 +43,11 @@ Declare_java_lang_Thread_UncaughtExceptionHandler();
 [[nodiscard]] IntrinsicClassDecl Declare_java_lang_String();
 [[nodiscard]] IntrinsicClassDecl Declare_java_lang_StringBuilder();
 [[nodiscard]] IntrinsicClassDecl Declare_java_lang_StringBuffer();
-[[nodiscard]] IntrinsicClassDecl Declare_java_lang_System();
+[[nodiscard]] IntrinsicClassDecl Declare_java_lang_System(
+    const CoreIntrinsicServices& services);
 [[nodiscard]] IntrinsicClassDecl Declare_java_io_PrintStream();
 [[nodiscard]] IntrinsicClassDecl Declare_java_lang_Math();
 [[nodiscard]] IntrinsicClassDecl Declare_java_util_Random();
-[[nodiscard]] IntrinsicClassDecl Declare_java_util_Date();
 [[nodiscard]] IntrinsicClassDecl Declare_java_lang_Class();
 [[nodiscard]] IntrinsicClassDecl Declare_java_lang_reflect_AnnotatedElement();
 [[nodiscard]] IntrinsicClassDecl Declare_java_lang_reflect_GenericDeclaration();

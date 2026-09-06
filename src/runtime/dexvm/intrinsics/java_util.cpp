@@ -1613,6 +1613,14 @@ IntrinsicClassDecl DeclareMapClass(std::string descriptor,
       });
   if (linked) {
     builder.VirtualMethod(
+        "eldest", "()Ljava/util/Map$Entry;",
+        [](IntrinsicContext &context) {
+          auto &map = context.vm.Collections().EnsureMap(context.receiver);
+          if (map.entries.empty()) return VmValue::Ref(VmObjectRef{});
+          return VmValue::Ref(NewEntry(context.vm, context.receiver,
+                                       map.entries.front().id));
+        });
+    builder.VirtualMethod(
         "removeEldestEntry", "(Ljava/util/Map$Entry;)Z",
         [](IntrinsicContext &) { return VmValue::Int(0); }, kAccProtected);
   }
@@ -2351,68 +2359,155 @@ IntrinsicClassDecl DeclarePlatformLocale(
         "Ljava/util/Locale;", "Ljava/lang/Object;",
         {"Ljava/lang/Cloneable;", "Ljava/io/Serializable;"},
         kAccPublic | kAccFinal);
-    builder.InstanceField("languageCode", "Ljava/lang/String;",
-                          kAccPrivate | kAccTransient);
-    builder.StaticField("ENGLISH", "Ljava/util/Locale;",
-                        kAccPublic | kAccFinal);
-    builder.ClassInitializer([](IntrinsicContext& call) {
-        const auto english =
-            call.vm.NewIntrinsicInstance("Ljava/util/Locale;");
-        call.vm.SetIntrinsicStaticRef(
-            "Ljava/util/Locale;", "ENGLISH", "Ljava/util/Locale;", english);
-        const auto field = call.vm.Linker().FindFieldRecursive(
-            call.vm.Model().ObjectClass(english), "languageCode",
-            "Ljava/lang/String;");
-        if (!field.has_value()) {
-            throw DexVmError(DexVmErrorReason::internal_invariant,
-                             "Locale.languageCode is not linked");
-        }
-        const auto language = call.vm.NewStringUtf8("en");
-        call.vm.Model().InstanceSlots(english)
-            [call.vm.Linker().Field(*field).slot] = {
-                language.Value(), SlotTag::ref};
-        return VmValue::Void();
-    });
+    struct Fields final {
+        IntrinsicFieldHandle language;
+        IntrinsicFieldHandle country;
+        IntrinsicFieldHandle variant;
+        IntrinsicFieldHandle script;
+    };
+    const Fields fields{
+        builder.BoundInstanceField("languageCode", "Ljava/lang/String;",
+                                   kAccPrivate | kAccTransient),
+        builder.BoundInstanceField("countryCode", "Ljava/lang/String;",
+                                   kAccPrivate | kAccTransient),
+        builder.BoundInstanceField("variantCode", "Ljava/lang/String;",
+                                   kAccPrivate | kAccTransient),
+        builder.BoundInstanceField("scriptCode", "Ljava/lang/String;",
+                                   kAccPrivate | kAccTransient)};
+    struct Constant final {
+        const char* name;
+        const char* language;
+        const char* country;
+    };
+    static constexpr Constant constants[]{
+        {"CANADA", "en", "CA"}, {"CANADA_FRENCH", "fr", "CA"},
+        {"CHINA", "zh", "CN"}, {"CHINESE", "zh", ""},
+        {"ENGLISH", "en", ""}, {"FRANCE", "fr", "FR"},
+        {"FRENCH", "fr", ""}, {"GERMAN", "de", ""},
+        {"GERMANY", "de", "DE"}, {"ITALIAN", "it", ""},
+        {"ITALY", "it", "IT"}, {"JAPAN", "ja", "JP"},
+        {"JAPANESE", "ja", ""}, {"KOREA", "ko", "KR"},
+        {"KOREAN", "ko", ""}, {"PRC", "zh", "CN"},
+        {"ROOT", "", ""}, {"SIMPLIFIED_CHINESE", "zh", "CN"},
+        {"TAIWAN", "zh", "TW"}, {"TRADITIONAL_CHINESE", "zh", "TW"},
+        {"UK", "en", "GB"}, {"US", "en", "US"}};
+    std::vector<IntrinsicFieldHandle> constant_fields;
+    constant_fields.reserve(std::size(constants));
+    for (const auto& constant : constants) {
+        constant_fields.push_back(builder.BoundStaticField(
+            constant.name, "Ljava/util/Locale;", kAccPublic | kAccFinal));
+    }
+    const auto initialize = [fields](IntrinsicContext& context,
+                                     const VmObjectRef object,
+                                     const std::string_view language,
+                                     const std::string_view country,
+                                     const std::string_view variant = {}) {
+        IntrinsicCall call(context);
+        std::string normalized_language(language), normalized_country(country);
+        for (auto& c : normalized_language) if (c >= 'A' && c <= 'Z') c += 'a' - 'A';
+        for (auto& c : normalized_country) if (c >= 'a' && c <= 'z') c -= 'a' - 'A';
+        if (normalized_language == "he") normalized_language = "iw";
+        if (normalized_language == "id") normalized_language = "in";
+        if (normalized_language == "yi") normalized_language = "ji";
+        call.SetRef(fields.language, object,
+                    call.Vm().NewStringUtf8(normalized_language));
+        call.SetRef(fields.country, object,
+                    call.Vm().NewStringUtf8(normalized_country));
+        call.SetRef(fields.variant, object,
+                    call.Vm().NewStringUtf8(variant));
+        call.SetRef(fields.script, object, call.Vm().NewStringUtf8(""));
+    };
+    builder.ClassInitializer(
+        [fields, constant_fields](IntrinsicContext& context) {
+            IntrinsicCall call(context);
+            for (std::size_t index = 0; index < std::size(constants); ++index) {
+                const auto locale = call.Vm().NewIntrinsicInstance(
+                    "Ljava/util/Locale;");
+                const std::array roots{locale};
+                const auto root_scope = call.Vm().ProtectReferences(roots);
+                call.SetRef(fields.language, locale,
+                            call.Vm().NewStringUtf8(constants[index].language));
+                call.SetRef(fields.country, locale,
+                            call.Vm().NewStringUtf8(constants[index].country));
+                call.SetRef(fields.variant, locale,
+                            call.Vm().NewStringUtf8(""));
+                call.SetRef(fields.script, locale,
+                            call.Vm().NewStringUtf8(""));
+                call.SetRef(constant_fields[index], locale);
+            }
+            return VmValue::Void();
+        });
+    builder.Constructor("(Ljava/lang/String;)V",
+        [initialize](IntrinsicContext& context) {
+            IntrinsicCall call(context);
+            const auto language = call.NonNullRef(0, "language");
+            initialize(context, call.Receiver(), call.Vm().StringUtf8(language), "");
+            return VmValue::Void();
+        });
+    builder.Constructor("(Ljava/lang/String;Ljava/lang/String;)V",
+        [initialize](IntrinsicContext& context) {
+            IntrinsicCall call(context);
+            initialize(context, call.Receiver(),
+                       call.Vm().StringUtf8(call.NonNullRef(0, "language")),
+                       call.Vm().StringUtf8(call.NonNullRef(1, "country")));
+            return VmValue::Void();
+        });
+    builder.Constructor(
+        "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)V",
+        [initialize](IntrinsicContext& context) {
+            IntrinsicCall call(context);
+            initialize(context, call.Receiver(),
+                       call.Vm().StringUtf8(call.NonNullRef(0, "language")),
+                       call.Vm().StringUtf8(call.NonNullRef(1, "country")),
+                       call.Vm().StringUtf8(call.NonNullRef(2, "variant")));
+            return VmValue::Void();
+        });
     builder.StaticMethod(
         "getDefault", "()Ljava/util/Locale;",
-        [services](IntrinsicContext& call) {
+        [services, fields](IntrinsicContext& context) {
+            IntrinsicCall call(context);
             const auto locale = services.singleton
                                     ? services.singleton(
-                                          call.vm, "locale",
+                                          call.Vm(), "locale",
                                           "Ljava/util/Locale;")
-                                    : call.vm.NewIntrinsicInstance(
+                                    : call.Vm().NewIntrinsicInstance(
                                           "Ljava/util/Locale;");
             const std::array roots{locale};
-            const auto root_scope = call.vm.ProtectReferences(roots);
-            const auto field = call.vm.Linker().FindFieldRecursive(
-                call.vm.Model().ObjectClass(locale), "languageCode",
-                "Ljava/lang/String;");
-            if (!field.has_value()) {
-                throw DexVmError(DexVmErrorReason::internal_invariant,
-                                 "Locale.languageCode is not linked");
-            }
-            auto& slot = call.vm.Model().InstanceSlots(locale)
-                [call.vm.Linker().Field(*field).slot];
-            if (slot.bits == 0) {
-                slot = {call.vm.NewStringUtf8(services.language).Value(),
-                        SlotTag::ref};
+            const auto root_scope = call.Vm().ProtectReferences(roots);
+            if (!call.GetRef(fields.language, locale).IsValid()) {
+                auto country = std::string{};
+                if (services.language == "en" && services.iso3_country == "USA") country = "US";
+                if (services.language == "zh" && services.iso3_country == "CHN") country = "CN";
+                call.SetRef(fields.language, locale,
+                            call.Vm().NewStringUtf8(services.language));
+                call.SetRef(fields.country, locale,
+                            call.Vm().NewStringUtf8(country));
+                call.SetRef(fields.variant, locale, call.Vm().NewStringUtf8(""));
+                call.SetRef(fields.script, locale, call.Vm().NewStringUtf8(""));
             }
             return VmValue::Ref(locale);
         });
+    builder.StaticMethod("setDefault", "(Ljava/util/Locale;)V",
+        [](IntrinsicContext&) -> VmValue {
+            throw VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
+                              "Locale.setDefault is session configured"};
+        }, kAccPublic | kAccStatic | kAccSynchronized);
     builder.FinalMethod(
         "getLanguage", "()Ljava/lang/String;",
-        [](IntrinsicContext& call) {
-            const auto field = call.vm.Linker().FindFieldRecursive(
-                call.vm.Model().ObjectClass(call.receiver), "languageCode",
-                "Ljava/lang/String;");
-            if (!field.has_value()) {
-                throw DexVmError(DexVmErrorReason::internal_invariant,
-                                 "Locale.languageCode is not linked");
-            }
-            return VmValue::Ref(VmObjectRef(
-                call.vm.Model().InstanceSlots(call.receiver)
-                    [call.vm.Linker().Field(*field).slot]
-                        .bits));
+        [fields](IntrinsicContext& context) {
+            return VmValue::Ref(IntrinsicCall(context).GetRef(fields.language));
+        });
+    builder.FinalMethod("getCountry", "()Ljava/lang/String;",
+        [fields](IntrinsicContext& context) {
+            return VmValue::Ref(IntrinsicCall(context).GetRef(fields.country));
+        });
+    builder.FinalMethod("getVariant", "()Ljava/lang/String;",
+        [fields](IntrinsicContext& context) {
+            return VmValue::Ref(IntrinsicCall(context).GetRef(fields.variant));
+        });
+    builder.FinalMethod("getScript", "()Ljava/lang/String;",
+        [fields](IntrinsicContext& context) {
+            return VmValue::Ref(IntrinsicCall(context).GetRef(fields.script));
         });
     builder.FinalMethod(
         "getISO3Language", "()Ljava/lang/String;",
@@ -2423,6 +2518,42 @@ IntrinsicClassDecl DeclarePlatformLocale(
         "getISO3Country", "()Ljava/lang/String;",
         [country = services.iso3_country](IntrinsicContext& call) {
             return VmValue::Ref(call.vm.NewStringUtf8(country));
+        });
+    builder.FinalOverrideMethod("toString", "()Ljava/lang/String;",
+        [fields](IntrinsicContext& context) {
+            IntrinsicCall call(context);
+            auto text = call.Vm().StringUtf8(call.GetRef(fields.language));
+            const auto country = call.Vm().StringUtf8(call.GetRef(fields.country));
+            const auto variant = call.Vm().StringUtf8(call.GetRef(fields.variant));
+            if (!country.empty() || !variant.empty()) text += "_" + country;
+            if (!variant.empty()) text += "_" + variant;
+            return VmValue::Ref(call.Vm().NewStringUtf8(text));
+        });
+    builder.FinalOverrideMethod("hashCode", "()I",
+        [fields](IntrinsicContext& context) {
+            IntrinsicCall call(context);
+            const auto text = call.Vm().StringUtf8(call.GetRef(fields.language)) +
+                              "_" + call.Vm().StringUtf8(call.GetRef(fields.country)) +
+                              "_" + call.Vm().StringUtf8(call.GetRef(fields.variant));
+            return VmValue::Int(JavaUtf8Hash(context, text));
+        });
+    builder.FinalOverrideMethod("equals", "(Ljava/lang/Object;)Z",
+        [fields](IntrinsicContext& context) {
+            IntrinsicCall call(context);
+            const auto other = call.Ref(0);
+            if (!other.IsValid() || call.Vm().Linker().Class(
+                    call.Vm().Model().ObjectClass(other)).descriptor !=
+                    "Ljava/util/Locale;") return VmValue::Int(0);
+            const auto same = [&](const IntrinsicFieldHandle field) {
+                return call.Vm().StringUtf8(call.GetRef(field)) ==
+                       call.Vm().StringUtf8(call.GetRef(field, other));
+            };
+            return VmValue::Int(same(fields.language) && same(fields.country) &&
+                                same(fields.variant) && same(fields.script));
+        });
+    builder.OverrideMethod("clone", "()Ljava/lang/Object;",
+        [](IntrinsicContext& context) {
+            return VmValue::Ref(context.vm.Model().CloneObject(context.receiver));
         });
     return std::move(builder).Build();
 }
@@ -2550,31 +2681,6 @@ void AppendJavaUtilPlatform(std::vector<IntrinsicClassDecl>& catalog,
 }
 
 }  // namespace ogplay::runtime::dexvm::intrinsics
-
-// ---- migrated from java_util_Date.cpp ----
-#include "catalog.h"
-#include "shared.h"
-
-#include "ogplay/runtime/dexvm/intrinsic_builder.h"
-
-namespace ogplay::runtime::dexvm::intrinsics {
-using namespace detail;
-
-IntrinsicClassDecl Declare_java_util_Date() {
-    auto builder = IntrinsicClassBuilder::Class(
-        "Ljava/util/Date;", "Ljava/lang/Object;",
-        {"Ljava/io/Serializable;", "Ljava/lang/Cloneable;",
-         "Ljava/lang/Comparable;"});
-    builder.InstanceField("millis", "J", kAccPrivate | kAccTransient);
-    builder.UnimplementedConstructor("()V");
-    builder.UnimplementedFinal("getTime", "()J");
-    builder.UnimplementedFinal("getYear", "()I");
-    auto result = std::move(builder).Build();
-    return result;
-}
-
-}  // namespace ogplay::runtime::dexvm::intrinsics
-
 
 // ---- migrated from java_util_Random.cpp ----
 #include "catalog.h"
@@ -3142,371 +3248,12 @@ IntrinsicClassDecl Dvm87DeclareCollections() {
     return std::move(builder).Build();
 }
 
-[[nodiscard]] constexpr std::int64_t Dvm87DaysFromCivil(
-    std::int32_t year, std::uint32_t month, std::uint32_t day) noexcept {
-    year -= month <= 2U;
-    const auto era = (year >= 0 ? year : year - 399) / 400;
-    const auto yoe = static_cast<std::uint32_t>(year - era * 400);
-    const auto adjusted = month > 2U ? month - 3U : month + 9U;
-    const auto doy = (153U * adjusted + 2U) / 5U + day - 1U;
-    const auto doe = yoe * 365U + yoe / 4U - yoe / 100U + doy;
-    return era * 146097LL + static_cast<std::int64_t>(doe) - 719468LL;
-}
-
-struct Dvm87CivilDate final {
-    std::int32_t year{};
-    std::uint32_t month{};
-    std::uint32_t day{};
-};
-
-[[nodiscard]] constexpr Dvm87CivilDate Dvm87CivilFromDays(
-    std::int64_t days) noexcept {
-    days += 719468LL;
-    const auto era = (days >= 0 ? days : days - 146096LL) / 146097LL;
-    const auto doe = static_cast<std::uint32_t>(days - era * 146097LL);
-    const auto yoe =
-        (doe - doe / 1460U + doe / 36524U - doe / 146096U) / 365U;
-    auto year = static_cast<std::int32_t>(yoe) +
-                static_cast<std::int32_t>(era * 400LL);
-    const auto doy = doe - (365U * yoe + yoe / 4U - yoe / 100U);
-    const auto mp = (5U * doy + 2U) / 153U;
-    const auto day = doy - (153U * mp + 2U) / 5U + 1U;
-    const auto month = mp < 10U ? mp + 3U : mp - 9U;
-    year += month <= 2U;
-    return {year, month, day};
-}
-
-struct Dvm87TimeZoneFields final {
-    IntrinsicFieldHandle id;
-    IntrinsicFieldHandle raw_offset;
-};
-
-struct Dvm87TimeZoneDeclaration final {
-    IntrinsicClassDecl declaration;
-    Dvm87TimeZoneFields fields;
-};
-
-Dvm87TimeZoneDeclaration Dvm87DeclareTimeZone() {
-    auto builder = IntrinsicClassBuilder::Class(
-        "Ljava/util/TimeZone;", "Ljava/lang/Object;",
-        {"Ljava/io/Serializable;", "Ljava/lang/Cloneable;"});
-    const Dvm87TimeZoneFields fields{
-        builder.BoundInstanceField("id", "Ljava/lang/String;"),
-        builder.BoundInstanceField("rawOffset", "I")};
-    const auto make_zone = [fields](IntrinsicContext& context,
-                                    const std::string& requested) {
-        std::int32_t offset{};
-        bool valid = requested == "GMT" || requested == "UTC";
-        if (requested.size() == 9U && requested.starts_with("GMT") &&
-            (requested[3] == '+' || requested[3] == '-') &&
-            requested[6] == ':') {
-            int hours{}, minutes{};
-            const auto hour_result = std::from_chars(
-                requested.data() + 4, requested.data() + 6, hours);
-            const auto minute_result = std::from_chars(
-                requested.data() + 7, requested.data() + 9, minutes);
-            valid = hour_result.ec == std::errc{} &&
-                    minute_result.ec == std::errc{} &&
-                    hours <= 23 && minutes <= 59;
-            if (valid) {
-                offset = (hours * 60 + minutes) * 60 * 1000;
-                if (requested[3] == '-') offset = -offset;
-            }
-        }
-        IntrinsicCall call(context);
-        const auto zone = call.Vm().NewIntrinsicInstance(
-            "Ljava/util/SimpleTimeZone;");
-        call.SetRef(fields.id, zone,
-                    call.Vm().NewStringUtf8(valid ? requested : "GMT"));
-        call.SetInt(fields.raw_offset, zone, valid ? offset : 0);
-        return zone;
-    };
-    builder.Constructor("()V", [fields](IntrinsicContext& context) {
-        IntrinsicCall call(context);
-        call.SetRef(fields.id, call.Vm().NewStringUtf8("GMT"));
-        call.SetInt(fields.raw_offset, 0);
-        return VmValue::Void();
-    }, kAccProtected);
-    builder.StaticMethod("getDefault", "()Ljava/util/TimeZone;",
-        [make_zone](IntrinsicContext& context) {
-            return VmValue::Ref(make_zone(context, "GMT"));
-        });
-    builder.StaticMethod("getTimeZone",
-        "(Ljava/lang/String;)Ljava/util/TimeZone;",
-        [make_zone](IntrinsicContext& context) {
-            const auto id = IntrinsicCall(context).NonNullRef(0, "id");
-            return VmValue::Ref(make_zone(context, context.vm.StringUtf8(id)));
-        });
-    builder.FinalMethod("getID", "()Ljava/lang/String;",
-        [fields](IntrinsicContext& context) {
-            return VmValue::Ref(IntrinsicCall(context).GetRef(fields.id));
-        });
-    builder.FinalMethod("setID", "(Ljava/lang/String;)V",
-        [fields](IntrinsicContext& context) {
-            IntrinsicCall call(context);
-            call.SetRef(fields.id, call.NonNullRef(0, "id"));
-            return VmValue::Void();
-        });
-    builder.VirtualMethod("getRawOffset", "()I",
-        [fields](IntrinsicContext& context) {
-            return VmValue::Int(
-                IntrinsicCall(context).GetInt(fields.raw_offset));
-        });
-    builder.VirtualMethod("setRawOffset", "(I)V",
-        [fields](IntrinsicContext& context) {
-            IntrinsicCall call(context);
-            call.SetInt(fields.raw_offset, call.Int(0));
-            return VmValue::Void();
-        });
-    builder.FinalMethod("getOffset", "(J)I",
-        [fields](IntrinsicContext& context) {
-            return VmValue::Int(
-                IntrinsicCall(context).GetInt(fields.raw_offset));
-        });
-    builder.VirtualMethod("useDaylightTime", "()Z",
-        [](IntrinsicContext&) { return VmValue::Int(0); });
-    builder.FinalMethod("inDaylightTime", "(Ljava/util/Date;)Z",
-        [](IntrinsicContext& context) {
-            if (!context.arguments[0].ref.IsValid()) Dvm87Null("date == null");
-            return VmValue::Int(0);
-        });
-    return {std::move(builder).Build(), fields};
-}
-
-IntrinsicClassDecl Dvm87DeclareSimpleTimeZone(
-    const Dvm87TimeZoneFields fields) {
-    auto builder = IntrinsicClassBuilder::Class(
-        "Ljava/util/SimpleTimeZone;", "Ljava/util/TimeZone;");
-    // TimeZone factories initialize inherited state through bound fields.
-    builder.Constructor("(ILjava/lang/String;)V",
-        [fields](IntrinsicContext& context) {
-            IntrinsicCall call(context);
-            call.SetInt(fields.raw_offset, call.Int(0));
-            call.SetRef(fields.id, call.NonNullRef(1, "id"));
-            return VmValue::Void();
-        });
-    return std::move(builder).Build();
-}
-
-struct Dvm87CalendarFields final {
-    IntrinsicFieldHandle millis;
-    IntrinsicFieldHandle zone;
-    IntrinsicFieldHandle lenient;
-};
-
-[[nodiscard]] std::int32_t Dvm87ZoneOffset(
-    IntrinsicContext& context, const Dvm87CalendarFields& fields) {
-    IntrinsicCall call(context);
-    const auto zone = call.GetRef(fields.zone);
-    if (!zone.IsValid()) return 0;
-    const auto result = Dvm87InvokeVirtual(
-        context, zone, "getRawOffset", "()I");
-    return result.has_value() ? result->AsInt() : 0;
-}
-
-struct Dvm87CalendarDeclaration final {
-    IntrinsicClassDecl declaration;
-    Dvm87CalendarFields fields;
-};
-
-Dvm87CalendarDeclaration Dvm87DeclareCalendar(
-    const CoreIntrinsicServices& services) {
-    auto builder = IntrinsicClassBuilder::Class(
-        "Ljava/util/Calendar;", "Ljava/lang/Object;",
-        {"Ljava/io/Serializable;", "Ljava/lang/Cloneable;"},
-        kAccPublic | kAccAbstract);
-    const Dvm87CalendarFields fields{
-        builder.BoundInstanceField("time", "J"),
-        builder.BoundInstanceField("zone", "Ljava/util/TimeZone;"),
-        builder.BoundInstanceField("lenient", "Z")};
-    constexpr std::array constants{
-        std::pair{"ERA", 0}, std::pair{"YEAR", 1},
-        std::pair{"MONTH", 2}, std::pair{"DATE", 5},
-        std::pair{"DAY_OF_MONTH", 5}, std::pair{"DAY_OF_WEEK", 7},
-        std::pair{"AM_PM", 9}, std::pair{"HOUR", 10},
-        std::pair{"HOUR_OF_DAY", 11}, std::pair{"MINUTE", 12},
-        std::pair{"SECOND", 13}, std::pair{"MILLISECOND", 14},
-        std::pair{"ZONE_OFFSET", 15}, std::pair{"DST_OFFSET", 16},
-        std::pair{"JANUARY", 0}, std::pair{"FEBRUARY", 1},
-        std::pair{"MARCH", 2}, std::pair{"APRIL", 3},
-        std::pair{"MAY", 4}, std::pair{"JUNE", 5},
-        std::pair{"JULY", 6}, std::pair{"AUGUST", 7},
-        std::pair{"SEPTEMBER", 8}, std::pair{"OCTOBER", 9},
-        std::pair{"NOVEMBER", 10}, std::pair{"DECEMBER", 11}};
-    for (const auto& [name, value] : constants)
-        builder.ConstantInt(name, "I", value);
-    builder.Constructor("(Ljava/util/TimeZone;)V",
-        [fields](IntrinsicContext& context) {
-            IntrinsicCall call(context);
-            call.SetLong(fields.millis, 0);
-            call.SetRef(fields.zone, call.NonNullRef(0, "zone"));
-            call.SetInt(fields.lenient, 1);
-            return VmValue::Void();
-        }, kAccProtected);
-    builder.StaticMethod("getInstance", "()Ljava/util/Calendar;",
-        [fields, now = services.current_time_millis](IntrinsicContext& context) {
-            IntrinsicCall call(context);
-            const auto zone_class =
-                call.Vm().Linker().ResolveDescriptor("Ljava/util/TimeZone;");
-            const auto get_default = call.Vm().Linker().FindDirectMethod(
-                zone_class, "getDefault", "()Ljava/util/TimeZone;");
-            const auto zone = call.Vm().Call(*get_default, {});
-            const auto calendar = call.Vm().NewIntrinsicInstance(
-                "Ljava/util/GregorianCalendar;");
-            call.SetRef(fields.zone, calendar, zone.value.ref);
-            call.SetLong(fields.millis, calendar, now ? now() : 0);
-            call.SetInt(fields.lenient, calendar, 1);
-            return VmValue::Ref(calendar);
-        });
-    builder.FinalMethod("getTimeInMillis", "()J",
-        [fields](IntrinsicContext& context) {
-            return VmValue::Long(IntrinsicCall(context).GetLong(fields.millis));
-        });
-    builder.FinalMethod("setTimeInMillis", "(J)V",
-        [fields](IntrinsicContext& context) {
-            IntrinsicCall call(context);
-            call.SetLong(fields.millis, call.Long(0));
-            return VmValue::Void();
-        });
-    builder.FinalMethod("getTimeZone", "()Ljava/util/TimeZone;",
-        [fields](IntrinsicContext& context) {
-            return VmValue::Ref(IntrinsicCall(context).GetRef(fields.zone));
-        });
-    builder.FinalMethod("setTimeZone", "(Ljava/util/TimeZone;)V",
-        [fields](IntrinsicContext& context) {
-            IntrinsicCall call(context);
-            call.SetRef(fields.zone, call.NonNullRef(0, "zone"));
-            return VmValue::Void();
-        });
-    builder.FinalMethod("setLenient", "(Z)V",
-        [fields](IntrinsicContext& context) {
-            IntrinsicCall call(context);
-            call.SetInt(fields.lenient, call.Int(0));
-            return VmValue::Void();
-        });
-    builder.FinalMethod("isLenient", "()Z",
-        [fields](IntrinsicContext& context) {
-            return VmValue::Int(IntrinsicCall(context).GetInt(fields.lenient));
-        });
-    builder.VirtualMethod("get", "(I)I",
-        [fields](IntrinsicContext& context) {
-            IntrinsicCall call(context);
-            const auto field = call.Int(0);
-            const auto local = call.GetLong(fields.millis) +
-                               Dvm87ZoneOffset(context, fields);
-            auto days = local / 86400000LL;
-            auto day_millis = local % 86400000LL;
-            if (day_millis < 0) { day_millis += 86400000LL; --days; }
-            const auto civil = Dvm87CivilFromDays(days);
-            switch (field) {
-                case 0: return VmValue::Int(civil.year <= 0 ? 0 : 1);
-                case 1: return VmValue::Int(civil.year <= 0 ? 1 - civil.year : civil.year);
-                case 2: return VmValue::Int(static_cast<std::int32_t>(civil.month) - 1);
-                case 5: return VmValue::Int(civil.day);
-                case 7: return VmValue::Int(
-                    static_cast<std::int32_t>((days + 4LL) % 7LL + 7LL) % 7 + 1);
-                case 9: return VmValue::Int(day_millis >= 43200000LL ? 1 : 0);
-                case 10: return VmValue::Int((day_millis / 3600000LL) % 12);
-                case 11: return VmValue::Int(static_cast<std::int32_t>(day_millis / 3600000LL));
-                case 12: return VmValue::Int(static_cast<std::int32_t>((day_millis / 60000LL) % 60));
-                case 13: return VmValue::Int(static_cast<std::int32_t>((day_millis / 1000LL) % 60));
-                case 14: return VmValue::Int(static_cast<std::int32_t>(day_millis % 1000LL));
-                case 15: return VmValue::Int(Dvm87ZoneOffset(context, fields));
-                case 16: return VmValue::Int(0);
-                default:
-                    throw VmJavaThrow{"Ljava/lang/IllegalArgumentException;",
-                                      "unsupported Calendar field"};
-            }
-        });
-    builder.VirtualMethod("set", "(IIIIII)V",
-        [fields](IntrinsicContext& context) {
-            IntrinsicCall call(context);
-            const auto millis = Dvm87DaysFromCivil(
-                call.Int(0), static_cast<std::uint32_t>(call.Int(1) + 1),
-                static_cast<std::uint32_t>(call.Int(2))) * 86400000LL +
-                call.Int(3) * 3600000LL + call.Int(4) * 60000LL +
-                call.Int(5) * 1000LL - Dvm87ZoneOffset(context, fields);
-            call.SetLong(fields.millis, millis);
-            return VmValue::Void();
-        });
-    builder.VirtualMethod("clear", "()V",
-        [fields](IntrinsicContext& context) {
-            IntrinsicCall(context).SetLong(fields.millis, 0);
-            return VmValue::Void();
-        });
-    builder.VirtualMethod("add", "(II)V",
-        [fields](IntrinsicContext& context) {
-            IntrinsicCall call(context);
-            std::int64_t unit{};
-            switch (call.Int(0)) {
-                case 5: unit = 86400000LL; break;
-                case 10: case 11: unit = 3600000LL; break;
-                case 12: unit = 60000LL; break;
-                case 13: unit = 1000LL; break;
-                case 14: unit = 1; break;
-                default:
-                    throw VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
-                                      "Calendar.add field is not provided"};
-            }
-            call.SetLong(fields.millis,
-                         call.GetLong(fields.millis) + unit * call.Int(1));
-            return VmValue::Void();
-        });
-    return {std::move(builder).Build(), fields};
-}
-
-IntrinsicClassDecl Dvm87DeclareGregorianCalendar(
-    const Dvm87CalendarFields fields,
-    const CoreIntrinsicServices& services) {
-    auto builder = IntrinsicClassBuilder::Class(
-        "Ljava/util/GregorianCalendar;", "Ljava/util/Calendar;");
-    const auto initialize = [fields, now = services.current_time_millis](
-                                IntrinsicContext& context,
-                                const VmObjectRef requested_zone) {
-        IntrinsicCall call(context);
-        auto zone = requested_zone;
-        if (!zone.IsValid()) {
-            const auto zone_class = call.Vm().Linker().ResolveDescriptor(
-                "Ljava/util/TimeZone;");
-            const auto get_default = call.Vm().Linker().FindDirectMethod(
-                zone_class, "getDefault", "()Ljava/util/TimeZone;");
-            const auto outcome = call.Vm().Call(*get_default, {});
-            if (outcome.exception.IsValid()) {
-                call.Vm().SetPendingException(outcome.exception);
-                return VmValue::Void();
-            }
-            zone = outcome.value.ref;
-        }
-        call.SetRef(fields.zone, zone);
-        call.SetLong(fields.millis, now ? now() : 0);
-        call.SetInt(fields.lenient, 1);
-        return VmValue::Void();
-    };
-    builder.Constructor("()V", [initialize](IntrinsicContext& context) {
-        return initialize(context, VmObjectRef{0});
-    });
-    builder.Constructor("(Ljava/util/TimeZone;)V",
-        [initialize](IntrinsicContext& context) {
-            return initialize(context,
-                              IntrinsicCall(context).NonNullRef(0, "zone"));
-        });
-    return std::move(builder).Build();
-}
-
 }  // namespace
 
-void AppendJavaUtilAlgorithms(std::vector<IntrinsicClassDecl>& catalog,
-                              const CoreIntrinsicServices& services) {
+void AppendJavaUtilAlgorithms(std::vector<IntrinsicClassDecl>& catalog) {
     catalog.push_back(Dvm87DeclareArraysArrayList());
     catalog.push_back(Dvm87DeclareArrays());
     catalog.push_back(Dvm87DeclareCollections());
-    auto timezone = Dvm87DeclareTimeZone();
-    catalog.push_back(std::move(timezone.declaration));
-    catalog.push_back(Dvm87DeclareSimpleTimeZone(timezone.fields));
-    auto calendar = Dvm87DeclareCalendar(services);
-    catalog.push_back(std::move(calendar.declaration));
-    catalog.push_back(Dvm87DeclareGregorianCalendar(
-        calendar.fields, services));
 }
 
 }  // namespace ogplay::runtime::dexvm::intrinsics

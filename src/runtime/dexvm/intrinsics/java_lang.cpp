@@ -1714,12 +1714,27 @@ VmValue FormatSequential(IntrinsicContext& context) {
             throw VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
                               "unterminated String.format conversion"};
         }
+        bool zero_pad = false;
+        std::size_t width = 0;
+        if (format[index] == u'0') {
+            zero_pad = true;
+            ++index;
+            while (index < format.size() && format[index] >= u'0' &&
+                   format[index] <= u'9') {
+                width = width * 10U + static_cast<std::size_t>(format[index] - u'0');
+                ++index;
+            }
+            if (index >= format.size()) {
+                throw VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
+                                  "unterminated String.format conversion"};
+            }
+        }
         const auto conversion = format[index];
         if (conversion == u'%') {
             output.push_back(u'%');
             continue;
         }
-        if (conversion != u'd' && conversion != u's') {
+        if (conversion != u'd' && conversion != u's' && conversion != u'c') {
             throw VmJavaThrow{
                 "Ljava/lang/UnsupportedOperationException;",
                 "String.format conversion is not provided: %" +
@@ -1732,8 +1747,22 @@ VmValue FormatSequential(IntrinsicContext& context) {
         const auto argument =
             model.GetObjectElement(arguments, argument_index++);
         if (conversion == u'd') {
-            output += Widen(
-                std::to_string(IntegralFormatValue(context, argument)));
+            auto rendered = std::to_string(IntegralFormatValue(context, argument));
+            if (rendered.size() < width) {
+                rendered.insert(0, width - rendered.size(), zero_pad ? '0' : ' ');
+            }
+            output += Widen(rendered);
+            continue;
+        }
+        if (conversion == u'c') {
+            if (!argument.IsValid() || context.vm.Linker().Class(
+                    model.ObjectClass(argument)).descriptor !=
+                    "Ljava/lang/Character;") {
+                throw VmJavaThrow{"Ljava/lang/IllegalArgumentException;",
+                                  "%c requires Character"};
+            }
+            const auto slots = model.InstanceSlots(argument);
+            output.push_back(static_cast<char16_t>(slots[0].bits));
             continue;
         }
         if (!argument.IsValid()) {
@@ -2040,6 +2069,20 @@ IntrinsicClassDecl Declare_java_lang_String() {
                 }
                 return VmValue::Ref(array);
             });
+    builder.FinalMethod("replace", "(CC)Ljava/lang/String;",
+        [](IntrinsicContext& context) {
+            auto value = Value(context, context.receiver);
+            const auto before = static_cast<char16_t>(context.arguments[0].AsInt());
+            const auto after = static_cast<char16_t>(context.arguments[1].AsInt());
+            bool changed = false;
+            for (auto& unit : value) {
+                if (unit == before) {
+                    unit = after;
+                    changed = true;
+                }
+            }
+            return changed ? Make(context, value) : VmValue::Ref(context.receiver);
+        });
     builder.FinalMethod("replace", "(Ljava/lang/CharSequence;Ljava/lang/CharSequence;)Ljava/lang/String;",
         [](IntrinsicContext& context) {
                 const auto value = Value(context, context.receiver);
@@ -2323,6 +2366,21 @@ namespace ogplay::runtime::dexvm::intrinsics::detail {
             static_cast<char16_t>(context.arguments[0].cat1 & 0xffffU);
         return BuilderSelf(context);
     });
+    builder.FinalMethod("append", "([C)" + self, [](IntrinsicContext& context) {
+        const auto array = RequireArray(context.arguments[0].ref);
+        context.vm.BuilderBuffer(context.receiver) += CharsValue(
+            context, array, 0, context.vm.Model().ArrayLength(array));
+        return BuilderSelf(context);
+    });
+    builder.FinalMethod("append", "([CII)" + self, [](IntrinsicContext& context) {
+        const auto array = RequireArray(context.arguments[0].ref);
+        const auto offset = context.arguments[1].AsInt();
+        const auto length = context.arguments[2].AsInt();
+        CheckRegion(context.vm.Model().ArrayLength(array), offset, length);
+        context.vm.BuilderBuffer(context.receiver) +=
+            CharsValue(context, array, offset, length);
+        return BuilderSelf(context);
+    });
     builder.FinalMethod("append", "(F)" + self, [](IntrinsicContext& context) {
         context.vm.BuilderBuffer(context.receiver) +=
             Widen(std::to_string(context.arguments[0].AsFloat()));
@@ -2438,7 +2496,7 @@ namespace {
 
 }  // namespace
 
-IntrinsicClassDecl Declare_java_lang_System() {
+IntrinsicClassDecl Declare_java_lang_System(const CoreIntrinsicServices& services) {
     auto builder = IntrinsicClassBuilder::Class("Ljava/lang/System;", "Ljava/lang/Object;");
     builder.StaticField("out", "Ljava/io/PrintStream;");
     builder.StaticField("err", "Ljava/io/PrintStream;");
@@ -2504,6 +2562,23 @@ IntrinsicClassDecl Declare_java_lang_System() {
                 return VmValue::Int(context.vm.Model().IdentityHashCode(
                     context.arguments[0].ref));
             });
+    const auto system_log = [](const core::LogLevel level) {
+        return [level](IntrinsicContext& context) {
+            IntrinsicCall call(context);
+            const auto message = call.Vm().StringUtf8(
+                call.NonNullRef(0, "message"));
+            if (auto* logger = call.Vm().Log(); logger != nullptr) {
+                logger->Write(level, "guest.java.lang.System", message);
+            }
+            return VmValue::Void();
+        };
+    };
+    for (const auto descriptor : {"(Ljava/lang/String;)V",
+                                  "(Ljava/lang/String;Ljava/lang/Throwable;)V"}) {
+        builder.StaticMethod("logI", descriptor, system_log(core::LogLevel::info));
+        builder.StaticMethod("logW", descriptor, system_log(core::LogLevel::warn));
+        builder.StaticMethod("logE", descriptor, system_log(core::LogLevel::error));
+    }
     // API 19 libcore has no installed SecurityManager. This is a source-
     // compatibility query, not a permission facade or host security hook.
     builder.StaticMethod("getSecurityManager", "()Ljava/lang/SecurityManager;",
@@ -2528,7 +2603,14 @@ IntrinsicClassDecl Declare_java_lang_System() {
                            ? VmValue::Ref(context.vm.NewStringUtf8(*previous))
                            : VmValue::Ref(VmObjectRef{});
                 });
-    builder.UnimplementedStatic("currentTimeMillis", "()J");
+    builder.StaticMethod("currentTimeMillis", "()J",
+        [now = services.current_time_millis](IntrinsicContext&) {
+            if (!now) {
+                throw VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
+                                  "System.currentTimeMillis needs an injected Clock"};
+            }
+            return VmValue::Long(now());
+        });
     builder.UnimplementedStatic("nanoTime", "()J");
     builder.UnimplementedStatic("load", "(Ljava/lang/String;)V");
     builder.UnimplementedStatic("loadLibrary", "(Ljava/lang/String;)V");

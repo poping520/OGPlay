@@ -351,6 +351,7 @@ DexUnitId DexClassLinker::RegisterDexUnit(
         for (const auto* field_list :
              {&data.static_fields, &data.instance_fields}) {
             const bool is_static = field_list == &data.static_fields;
+            std::vector<VmFieldId> dex_order;
             for (const auto& encoded : *field_list) {
                 const auto& field_id_entry = image_ref.fields[encoded.field_index];
                 LinkedField field;
@@ -377,10 +378,21 @@ DexUnitId DexClassLinker::RegisterDexUnit(
                     current.access_flags = field.access_flags;
                     current.is_wide = field.is_wide;
                     current.is_ref = field.is_ref;
+                    dex_order.push_back(*existing_field);
                 } else {
                     const auto field_id = impl_->AddField(std::move(field));
                     own_fields.push_back(field_id);
+                    dex_order.push_back(field_id);
                 }
+            }
+            if (is_static && merge_intrinsic) {
+                // encoded_array values are indexed by DEX declaration order,
+                // not by the order in which overlay fields were registered.
+                for (const auto field : stored.own_static_fields) {
+                    if (std::find(dex_order.begin(), dex_order.end(), field) == dex_order.end())
+                        dex_order.push_back(field);
+                }
+                stored.own_static_fields = std::move(dex_order);
             }
         }
         for (const auto* method_list :

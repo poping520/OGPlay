@@ -124,6 +124,7 @@ Asphalt 5（pilot title）删除 profile 全部 `native_call` 与 `[[java.class]
 | [DVM-99](DVM-99.md) | API 19 Boot DEX + EnumSet Pilot | 已完成 |
 | [DVM-100](DVM-100.md) | 可重复构建 API 19 BootDex | 已完成 |
 | [DVM-101](DVM-101.md) | API 19 Unsafe intrinsic 与受检堆位置 | 已完成 |
+| [DVM-102](DVM-102.md) | 日期格式化家族迁入 BootDex | 完成（具名时区/大数长尾除外） |
 
 ## 批次 4 · 更多 title 上 dexvm 路线（进行中）
 

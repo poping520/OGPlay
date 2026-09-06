@@ -490,14 +490,39 @@ TEST_CASE("dexvm core intrinsic catalog is unique and structurally stable") {
     const auto catalog = CoreIntrinsicCatalog();
     std::set<std::string> descriptors;
     const std::set<std::string> intentionally_unimplemented = {
+        // DVM-102: precise native failures frozen in api19.json (date_family_audit).
+        "Llibcore/icu/ICU;.addLikelySubtags(Ljava/lang/String;)Ljava/lang/String;",
+        "Llibcore/icu/ICU;.getAvailableBreakIteratorLocalesNative()[Ljava/lang/String;",
+        "Llibcore/icu/ICU;.getAvailableCalendarLocalesNative()[Ljava/lang/String;",
+        "Llibcore/icu/ICU;.getAvailableCollatorLocalesNative()[Ljava/lang/String;",
+        "Llibcore/icu/ICU;.getAvailableCurrencyCodes()[Ljava/lang/String;",
+        "Llibcore/icu/ICU;.getAvailableDateFormatLocalesNative()[Ljava/lang/String;",
+        "Llibcore/icu/ICU;.getAvailableLocalesNative()[Ljava/lang/String;",
+        "Llibcore/icu/ICU;.getAvailableNumberFormatLocalesNative()[Ljava/lang/String;",
+        "Llibcore/icu/ICU;.getCldrVersion()Ljava/lang/String;",
+        "Llibcore/icu/ICU;.getDisplayCountryNative(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;",
+        "Llibcore/icu/ICU;.getDisplayLanguageNative(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;",
+        "Llibcore/icu/ICU;.getDisplayScriptNative(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;",
+        "Llibcore/icu/ICU;.getDisplayVariantNative(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;",
+        "Llibcore/icu/ICU;.getISO3CountryNative(Ljava/lang/String;)Ljava/lang/String;",
+        "Llibcore/icu/ICU;.getISO3LanguageNative(Ljava/lang/String;)Ljava/lang/String;",
+        "Llibcore/icu/ICU;.getISOCountriesNative()[Ljava/lang/String;",
+        "Llibcore/icu/ICU;.getISOLanguagesNative()[Ljava/lang/String;",
+        "Llibcore/icu/ICU;.getIcuVersion()Ljava/lang/String;",
+        "Llibcore/icu/ICU;.getScript(Ljava/lang/String;)Ljava/lang/String;",
+        "Llibcore/icu/ICU;.getUnicodeVersion()Ljava/lang/String;",
+        "Llibcore/icu/ICU;.languageTagForLocale(Ljava/lang/String;)Ljava/lang/String;",
+        "Llibcore/icu/ICU;.localeForLanguageTag(Ljava/lang/String;Z)Ljava/lang/String;",
+        "Llibcore/icu/ICU;.toLowerCase(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;",
+        "Llibcore/icu/ICU;.toUpperCase(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;",
+        "Llibcore/icu/NativeDecimalFormat;.formatDigitList(JLjava/lang/String;Llibcore/icu/NativeDecimalFormat$FieldPositionIterator;)[C",
+        "Llibcore/icu/NativeDecimalFormat;.formatDouble(JDLlibcore/icu/NativeDecimalFormat$FieldPositionIterator;)[C",
+
         "Ljava/lang/System;.currentTimeMillis()J",
         "Ljava/lang/System;.nanoTime()J",
         "Ljava/lang/System;.load(Ljava/lang/String;)V",
         "Ljava/lang/System;.loadLibrary(Ljava/lang/String;)V",
         "Ljava/lang/System;.exit(I)V",
-        "Ljava/util/Date;.<init>()V",
-        "Ljava/util/Date;.getTime()J",
-        "Ljava/util/Date;.getYear()I",
         "Ljava/lang/AssertionError;.<init>"
         "(Ljava/lang/String;Ljava/lang/Throwable;)V",
         "Ljava/lang/AssertionError;.<init>(Ljava/lang/Object;)V",
@@ -632,10 +657,10 @@ TEST_CASE("dexvm core intrinsic catalog is unique and structurally stable") {
           });
     CHECK(signatures("Ljava/lang/Runnable;") ==
           std::set<std::pair<std::string, std::string>>{{"run", "()V"}});
-    CHECK(signatures("Ljava/lang/StringBuilder;").size() == 17U);
-    CHECK(signatures("Ljava/lang/StringBuffer;").size() == 17U);
+    CHECK(signatures("Ljava/lang/StringBuilder;").size() == 19U);
+    CHECK(signatures("Ljava/lang/StringBuffer;").size() == 19U);
     const auto string_signatures = signatures("Ljava/lang/String;");
-    CHECK(string_signatures.size() == 45U);
+    CHECK(string_signatures.size() == 46U);
     CHECK(string_signatures.contains({
         "toLowerCase", "(Ljava/util/Locale;)Ljava/lang/String;"}));
     CHECK(signatures("Ljava/lang/Integer;").size() == 37U);

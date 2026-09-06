@@ -9,6 +9,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <memory>
@@ -20,6 +21,7 @@
 
 #include "ogplay/core/capability_ledger.h"
 #include "ogplay/core/logger.h"
+#include "ogplay/loader/apk.h"
 #include "ogplay/audio/java_sound_pool_mixer.h"
 #include "ogplay/runtime/dexvm/class_linker.h"
 #include "ogplay/runtime/dexvm/intrinsic_builder.h"
@@ -39,6 +41,23 @@ using namespace ogplay::runtime::dexvm;
 constexpr const char* kPackage = "com.example.game";
 const std::vector<std::string> kWritableRoots{"/data/data/com.example.game",
                                               "/sdcard"};
+
+std::vector<std::uint8_t> DateBootDex() {
+    const auto path = std::filesystem::path(OGPLAY_SOURCE_DIR) /
+        "data/android/19/framework/bootdex.jar";
+    std::ifstream stream(path, std::ios::binary);
+    REQUIRE_MESSAGE(stream.good(), path.string());
+    const std::vector<char> raw{std::istreambuf_iterator<char>(stream),
+                                std::istreambuf_iterator<char>()};
+    std::vector<std::byte> archive_bytes(raw.size());
+    std::memcpy(archive_bytes.data(), raw.data(), raw.size());
+    const auto archive = ogplay::loader::ParseApkArchive(archive_bytes);
+    const auto dex = ogplay::loader::ReadApkEntry(
+        archive_bytes, archive, "classes.dex");
+    std::vector<std::uint8_t> result(dex.size());
+    std::memcpy(result.data(), dex.data(), dex.size());
+    return result;
+}
 
 std::vector<IntrinsicClassDecl> FileFilterTestIntrinsics() {
     std::vector<IntrinsicClassDecl> result;
@@ -363,12 +382,13 @@ struct FileVm final {
                     const bool include_android_catalog = true,
                     const InterpreterConfig config = {},
                     const std::span<const IntrinsicClassDecl>
-                        extra_intrinsics = {})
+                        extra_intrinsics = {},
+                    const bool include_boot_dex = false)
         : model(strings, arrays),
           context(std::make_shared<DexVmAndroidContext>()),
           io_file_system(vfs),
           interpreter(
-              [this, include_android_catalog,
+              [this, include_android_catalog, include_boot_dex,
                extra_intrinsics]() -> DexClassLinker& {
                   linker.RegisterIntrinsics(CoreIntrinsicCatalog());
                   if (include_android_catalog) {
@@ -376,6 +396,7 @@ struct FileVm final {
                           AndroidIntrinsicCatalog(context));
                   }
                   linker.RegisterIntrinsics(extra_intrinsics);
+                  if (include_boot_dex) linker.RegisterBootDex(DateBootDex());
                   linker.Link();
                   return linker;
               }(),
@@ -2142,7 +2163,7 @@ TEST_CASE("Object streams round trip default Serializable graphs") {
                                                          "switch");
         InterpreterConfig config;
         config.backend = backend;
-        FileVm vm(nullptr, false, config, extra);
+        FileVm vm(nullptr, false, config, extra, true);
 
         const auto field = [&](const std::string_view owner,
                                const std::string_view name,
@@ -2202,7 +2223,7 @@ TEST_CASE("Object streams round trip default Serializable graphs") {
 
         const auto date =
             vm.interpreter.NewIntrinsicInstance("Ljava/util/Date;");
-        set_bits(date, field("Ljava/util/Date;", "millis", "J"),
+        set_bits(date, field("Ljava/util/Date;", "milliseconds", "J"),
                  0x0102030405060708ULL);
 
         const auto node = vm.interpreter.NewIntrinsicInstance(
@@ -2294,7 +2315,7 @@ TEST_CASE("Object streams round trip default Serializable graphs") {
                            "Ljava/util/Date;"))));
         REQUIRE(restored_date.IsValid());
         CHECK(get_bits(restored_date,
-                       field("Ljava/util/Date;", "millis", "J")) ==
+                       field("Ljava/util/Date;", "milliseconds", "J")) ==
               0x0102030405060708ULL);
         CHECK(vm.CallOn(input, "readObject", "()Ljava/lang/Object;").ref ==
               restored);

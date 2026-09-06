@@ -17,7 +17,7 @@
 - [ui](ui/MODULE.md)：有界 Android View hierarchy/state、布局、绘制与 hit-test。
 - [integration](integration/MODULE.md)：无界面累计装配和出口报告。
 
-依赖方向由 [ADR-0013](../../docs/adr/0013-runtime-submodule-boundaries.md) 冻结；根契约只保留
+依赖方向由 [ADR-0013](../../docs/adr/runtime.md#adr-0013) 冻结；根契约只保留
 跨子模块总览，具体所有权和不变量以各子模块契约为准。
 
 ## 公共 API

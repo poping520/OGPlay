@@ -13,13 +13,13 @@ set(core_allowlist
     catalog.cpp
     java_classloading.cpp
     java_concurrent.cpp
+    java_icu.cpp
     java_io.cpp
     java_lang.cpp
     java_net.cpp
     java_nio.cpp
     java_reflect.cpp
     java_regex.cpp
-    java_text.cpp
     java_util.cpp
     java_xml.cpp
     java_zip.cpp)
@@ -103,7 +103,7 @@ endforeach()
 set(required_core_descriptors
     "Ljava/net/URL;"
     "Ljava/nio/charset/Charset;"
-    "Ljava/text/SimpleDateFormat;"
+    "Llibcore/icu/ICU;"
     "Ljava/util/Locale;"
     "Ljava/util/Timer;"
     "Ljavax/net/ssl/SSLContext;"
@@ -111,14 +111,31 @@ set(required_core_descriptors
     "Lorg/xml/sax/XMLReader;")
 file(READ "${core_dir}/java_net.cpp" java_net)
 file(READ "${core_dir}/java_nio.cpp" java_nio)
-file(READ "${core_dir}/java_text.cpp" java_text)
+file(READ "${core_dir}/java_icu.cpp" java_icu)
 file(READ "${core_dir}/java_util.cpp" java_util)
 file(READ "${core_dir}/java_xml.cpp" java_xml)
-set(core_platform_text "${java_net}${java_nio}${java_text}${java_util}${java_xml}")
+set(core_platform_text "${java_net}${java_nio}${java_icu}${java_util}${java_xml}")
 foreach(descriptor IN LISTS required_core_descriptors)
     string(FIND "${core_platform_text}" "${descriptor}" found)
     if(found EQUAL -1)
         message(FATAL_ERROR "Missing core-owned descriptor: ${descriptor}")
+    endif()
+endforeach()
+
+# DVM-102 keeps java.text/date/calendar behavior in BootDex. Core may expose
+# only the audited ICU/native and TimeZone platform boundaries.
+foreach(forbidden_descriptor IN ITEMS
+        "Ljava/text/Format;"
+        "Ljava/text/DateFormat;"
+        "Ljava/text/SimpleDateFormat;"
+        "Ljava/util/Date;"
+        "Ljava/util/Calendar;"
+        "Ljava/util/GregorianCalendar;"
+        "Ljava/util/SimpleTimeZone;")
+    string(FIND "${core_platform_text}" "${forbidden_descriptor}" found)
+    if(NOT found EQUAL -1)
+        message(FATAL_ERROR
+            "DVM-102 BootDex-owned descriptor remains in core intrinsic: ${forbidden_descriptor}")
     endif()
 endforeach()
 

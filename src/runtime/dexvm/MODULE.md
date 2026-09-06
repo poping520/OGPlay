@@ -73,6 +73,16 @@ intrinsic。解释应用 DEX 与受审 API 19 curated Boot DEX；完整平台库
   与稳定 entry id，结构修改递增 `mod_count`。guest ref 经同一具名 state table trace/sweep；
   `Object.clone` 只浅拷贝 sequence/map 内容，不复制 view/entry/iterator 游标。handler 不保存
   宿主容器指针，也不以 `VmObjectRef` 数值替代 Java equals/hashCode。
+- BootDex 与 intrinsic 字段合并后，own_static_fields 必须以 DEX 声明顺序为首部，
+  encoded_array 初始值逐项对应同序字段；不得让 overlay 声明顺序改变整数、wide 或引用初值。
+- `IcuFormatterRuntime`（DVM-102）：每 VM 持有 NativeDecimalFormat 的受检逻辑令牌与固定
+  ICU4C 51.1.0.1 DecimalFormat 资源；guest long 从不保存宿主地址。clone 独立复制，重复 close/失效令牌明确失败，
+  NativeDecimalFormat owner 清扫与 VM teardown 都释放资源。日期、日历和 pattern 算法归固定
+  API 19 BootDex；core 只保留审计登记的 LocaleData/ICU/TimeZone native 边界。
+  固定 ICU 数据经构建期哈希校验后嵌入，禁止文件/动态数据查找；LocaleData、货币、
+  时区名称和整数 format/parse 直接使用同版本 ICU，不维护手写区域/数字算法。
+  CoreIntrinsicServices.default_timezone（默认 GMT）仅用于 Java 默认时区未设置或被重置时，
+  getDefault/setDefault 共用 DEX 静态字段，clone 与缓存均按 VM 隔离。
 - `IoRuntime`（DVM-79/91）：统一拥有 java.io bytes/cursor/close/wrapper-adoption side state，
   随 owner 清扫。File 仅使用装配方注入的 `IoFileSystem`，具体 VFS 只在 integration adapter
   可见；工作目录、writable、rename、单级/递归建目录均为注入事实。相对 `File` 不读宿主 cwd，
@@ -116,7 +126,7 @@ intrinsic。解释应用 DEX 与受审 API 19 curated Boot DEX；完整平台库
   新 identity，仅复制 `vm_instance` slots 或数组元素；string/class/host-backed 明确失败。
   JNI `NewObject` 的 application identity 回入解释器时，经注入的 lazy layout resolver 建立完整实例槽并保留
   identity；intrinsic host object 仍属 external/专用 store。`String.format(String,Object[])` 只支持
-  顺序 `%s/%d` 和 `%%`；`%s` 支持 String/null/普通 Object 虚 `toString`，其他 conversion 明确失败，
+  顺序 `%s/%d/%c`、有界 `%02d` 和 `%%`；`%s` 支持 String/null/普通 Object 虚 `toString`，其他 conversion 明确失败，
   不借用 host printf/locale。
 - 生产 `JavaObjectModel` 经 `JavaObjectInterop` 复用 session `JniObjectArrayStore`，使
   DexVM/JNI 的 Object[] 创建、读写、clone、sweep 共用 identity/store；class identity 双向
@@ -280,8 +290,8 @@ array、caller、allocation、Clock/permit 与真实 BootDex atomic/AQS 初始�
   execution → thread runtime → context table；反向获取禁止。native 出向调用记入
   `native_depth`，仅用于 teardown 完整性，不禁止拥有独立 native stack/TLS 的线程停泊。
 - `IntrinsicMethodDecl::implementation` 与 `IntrinsicClassDecl::clinit_implementation` 是唯一
-  intrinsic 分发通道；linker 只搬运拥有型实现。System/Date 的 7 个平台动作在 integration
-  以成员指针补入 core 声明。
+  intrinsic 分发通道；linker 只搬运拥有型实现。System 的 5 个平台动作在 integration
+  以成员指针补入 core 声明；Date 不再有平台 handler。
 - 活跃 execution 只在 `Call`/`EnsureClassInitialized` 入口解析，随后沿 `Run`/`Step`/
   `StepThreaded`/`Tick` 及 invoke/field/init 路径显式传递；逐指令不得查 thread-local。
   `Execution()` 仅用于入口和异常/诊断/native 标记；`InterpreterExecutionScope` 保证调用期间

@@ -150,7 +150,7 @@ TEST_CASE("DexVM intrinsic state tables register trace sweep and clone hooks") {
                 (*state)[clone.Value()] = found->second;
             }
         }});
-    CHECK(fixture.vm.RegisteredIntrinsicSideTableCount() == 8);
+    CHECK(fixture.vm.RegisteredIntrinsicSideTableCount() == 9);
 
     const auto owner = fixture.vm.NewIntrinsicInstance("Lgc/RootBox;");
     const auto child = fixture.vm.NewIntrinsicInstance("Lgc/RootBox;");

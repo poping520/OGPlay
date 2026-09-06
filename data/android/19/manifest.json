@@ -41,7 +41,7 @@
     "path": "framework/bootdex.jar",
     "generator": "tools/bootdex/build_bootdex.py",
     "recipe": "tools/bootdex/api19.json",
-    "recipe_sha256": "615ac6e2a1bc8b8f4bdd908fd93149a721e77c3fc95543d985a7cb47773cd02d",
+    "recipe_sha256": "a9807a24019a26a82db4662ae599773ed77777eb96deeb524ab8027e4e43411e",
     "sources": [
       {
         "source_project": "platform/libcore",
@@ -49,15 +49,34 @@
         "source_jar_sha256": "996557954e45f7192b187b2394259bc8aca6e3946652e03b99d837432f83d1ef"
       }
     ],
-    "size": 84721,
-    "sha256": "8bb6a93b39704b8e78cbfb875032c7ceb415d4ca2250387a5a7f45b722c64386",
+    "size": 259381,
+    "sha256": "00266a1c22c279310d422d8572f06fb4ebd1222fbb6dd24fc15b36c4fdb7e668",
     "dex_entry": "classes.dex",
-    "dex_size": 84424,
-    "dex_sha256": "883d6899f5db22aae58eedcd4e5ac953e351c8a49676ea90b79596f225bd23b1",
-    "class_count": 47,
+    "dex_size": 259084,
+    "dex_sha256": "54cf68c55c9571d8cca343b2f7719996c5b2fcbeb137fa4edf58cd10cc54bd4e",
+    "class_count": 89,
     "selection_policy": "load-all",
     "notice": "notices/bootdex.jar.txt",
     "notice_sha256": "eee2a3e3ace26767b6290ad771ae9cf61ac729fb81db9306b2f5be63e4169235"
+  },
+  "icu": {
+    "source_project": "platform/external/icu4c",
+    "source_revision": "18668f3b015a110275f5cc9a8722b2f65f3333bf",
+    "version": "51.1.0.1",
+    "data_version": "51.1",
+    "path": "icu/icudt51l.dat",
+    "size": 14146832,
+    "sha256": "8275408cb7161606c9a1b55edf12df538a7110ad53103a00f8ac7ba5b092a96f",
+    "notices": [
+      {
+        "path": "notices/icu4c-license.html",
+        "sha256": "b82a5901d92c842c78feb7ffc757706967a23fd5e7658d30ea92abb169207867"
+      },
+      {
+        "path": "notices/icu4c-unicode-license.txt",
+        "sha256": "ecab49b0a28761bedcd38bc5a237a81acdfaacb655afea02c72ca1c120267749"
+      }
+    ]
   },
   "libraries": [
     {

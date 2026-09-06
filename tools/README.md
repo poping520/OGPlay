@@ -14,6 +14,17 @@ python3 tools/bootdex/build_bootdex.py check
 3.0.10 release，所有输入均校验固定 SHA-256。新增类时只修改 recipe 对应源 jar 的有序
 列表，运行时仍全量加载生成物中的 class_def。
 
+`api19.json` 的 `date_family_audit` 保存 DVM-102 日期闭包的依赖分类、native 边界与
+ICU 来源；其中 `boot_dex` 是主类清单的受检子集，外部依赖分类不得与主清单冲突。
+`audit` 校验固定 `core.jar`、全部引用分类与 native 签名，完整派生成员表写入
+`.local/dvm102-date-family-audit.json`。`--report` 可指定报告路径；`--emit-expectations`
+只打印观测指标供审阅，不修改冻结值。清单结构校验与审计自测统一由 builder 执行：
+
+```text
+python3 tools/bootdex/build_bootdex.py audit
+python3 tools/bootdex/build_bootdex.py --self-test
+```
+
 ## DexVM API-19 intrinsic 骨架
 
 `dexvm_api19_surface.py` 从 pinned Android 4.4.4 Java 源码抽取 public/protected
@@ -90,3 +101,11 @@ ANGLE 源码构建、打包、许可证归档和发布自测全部由独立的
 `third_party/angle-prebuilt`，也可用绝对 `OGPLAY_ANGLE_SDK_ROOT` 指向待发布包的根目录；
 CMake 会按宿主选择平台/CPU，并逐文件验证清单。普通 Debug 构建仍使用默认
 `OGPLAY_ANGLE_SDK_CONFIGURATION=release`。
+
+### 固定 ICU 数据嵌入
+
+DVM-102 的 `cmake/PinnedIcu.cmake` 按固定 archive SHA-256 取得 ICU4C 51.1.0.1，
+以原 Makefile.in 的对象清单构建 common/i18n；不搜索系统 ICU。
+`tools/bootdex/embed_icu_data.py <icudt51l.dat> <generated.cpp>` 校验发行数据 SHA-256
+后生成对齐的只读数据，CMake 自动运行。生成文件属于构建目录，不入库；运行时禁止
+ICU 文件/动态数据查找。macOS 已验证，Windows/Linux 仍需在对应环境完成构建验收。

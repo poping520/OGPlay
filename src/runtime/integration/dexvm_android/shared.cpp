@@ -34,12 +34,6 @@ namespace {
     return context->ui_tree.Get(OwnerTextNode(context, call))->text;
 }
 
-[[nodiscard]] std::int64_t DateMillis(dx::IntrinsicContext& call) {
-    const auto slots = call.vm.Model().InstanceSlots(call.receiver);
-    return static_cast<std::int64_t>(
-        (static_cast<std::uint64_t>(slots[1].bits) << 32U) | slots[0].bits);
-}
-
 [[nodiscard]] PreferenceMap& PreferencesOf(dx::IntrinsicContext& call,
                                            const Context& context) {
     const auto found = context->preference_names.find(call.receiver.Value());
@@ -429,41 +423,6 @@ dx::IntrinsicHandler WindowmanagerGetDefaultDisplayHandler(
     return dx::IntrinsicHandler([context](dx::IntrinsicContext& call) {
         return dx::VmValue::Ref(Singleton(
             call, context, "display", "Landroid/view/Display;"));
-    });
-}
-
-dx::IntrinsicHandler PlatformDateGetTimeHandler() {
-    return dx::IntrinsicHandler([](dx::IntrinsicContext& call) {
-        return dx::VmValue::Long(DateMillis(call));
-    });
-}
-
-dx::IntrinsicHandler PlatformDateGetYearHandler() {
-    return dx::IntrinsicHandler([](dx::IntrinsicContext& call) {
-        using days = std::chrono::days;
-        const auto time_point =
-            std::chrono::sys_days(std::chrono::January / 1 / 1970) +
-            std::chrono::milliseconds(DateMillis(call));
-        const std::chrono::year_month_day date(
-            std::chrono::floor<days>(time_point));
-        // Date.getYear is 1900-based.
-        return dx::VmValue::Int(
-            static_cast<std::int32_t>(static_cast<int>(date.year())) - 1900);
-    });
-}
-
-dx::IntrinsicHandler PlatformDateInitHandler(const Context& context) {
-    // java.util.Date over the same deterministic platform clock.
-    return dx::IntrinsicHandler([context](dx::IntrinsicContext& call) {
-        const auto millis =
-            1'400'000'000'000LL + context->uptime_millis.load();
-        const auto millis_bits = static_cast<std::uint64_t>(millis);
-        const auto slots = call.vm.Model().InstanceSlots(call.receiver);
-        slots[0] = {static_cast<std::uint32_t>(millis_bits & 0xffffffffULL),
-                    dx::SlotTag::wide_lo};
-        slots[1] = {static_cast<std::uint32_t>(millis_bits >> 32U),
-                    dx::SlotTag::wide_hi};
-        return dx::VmValue::Void();
     });
 }
 

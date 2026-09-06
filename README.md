@@ -67,7 +67,7 @@ Git submodule 提供，发行前须同步更新来源与许可证清单。
 ## 仓库入口
 
 - `AGENTS.md`：AI 与开发者共同遵守的规则
-- `docs/adr/`：只追加的架构决策
+- [`docs/adr/`](docs/adr/README.md)：按主题归并、保留编号的架构决策
 - `docs/modules/INDEX.md`：模块契约索引
 - `docs/tasks/`：按里程碑归档、可独立验收的 Work Unit
 - `capabilities.toml`：机器可读能力账本

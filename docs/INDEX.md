@@ -3,7 +3,7 @@
 ## 长期上下文
 
 - 规划：[roadmap/README.md](roadmap/README.md)（当前规范的唯一来源）
-- 架构决策：[adr/](adr/)
+- 架构决策：[按主题与编号检索](adr/README.md)
 - 长期方案设计：[design/dexvm/README.md](design/dexvm/README.md)（有界 DEX 解释器，ADR-0017，未启动）、
   [design/sandbox/README.md](design/sandbox/README.md)（每游戏持久沙盒，ADR-0020，未启动）、
   [design/launcher/README.md](design/launcher/README.md)（GUI 主面板基础版，未启动）

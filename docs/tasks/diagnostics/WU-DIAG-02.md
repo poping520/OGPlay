@@ -5,7 +5,7 @@ Windows、Linux 和 macOS 可重复执行的排障流程，同时在缺少符号
 
 依赖：[WU-DIAG-01](WU-DIAG-01.md)、
 [Diagnostics 设计](../../design/diagnostics/README.md)、
-[排查手册](../../playbook/TROUBLESHOOTING.md) 和 [ADR-0026](../../adr/0026-bounded-stall-snapshots.md)。
+[排查手册](../../playbook/TROUBLESHOOTING.md) 和 [ADR-0026](../../adr/diagnostics.md#adr-0026)。
 
 ## 范围
 

@@ -51,6 +51,7 @@ struct Dvm87MatcherFields final {
     IntrinsicFieldHandle end;
     IntrinsicFieldHandle matched;
     IntrinsicFieldHandle group;
+    IntrinsicFieldHandle groups;
 };
 
 [[nodiscard]] std::regex Dvm87Regex(IntrinsicContext& context,
@@ -106,6 +107,7 @@ struct Dvm87MatcherFields final {
         call.SetInt(matcher_fields.start, -1);
         call.SetInt(matcher_fields.end, -1);
         call.SetRef(matcher_fields.group, VmObjectRef{});
+        call.SetRef(matcher_fields.groups, VmObjectRef{});
         return false;
     }
     const auto start = search + static_cast<std::int32_t>(match.position());
@@ -114,6 +116,20 @@ struct Dvm87MatcherFields final {
     call.SetInt(matcher_fields.end, end);
     call.SetInt(matcher_fields.search, end == start ? end + 1 : end);
     call.SetRef(matcher_fields.group, context.vm.NewStringUtf8(match.str()));
+    const auto groups = context.vm.Model().NewObjectArray(
+        context.vm.Linker().ResolveDescriptor("[Ljava/lang/String;"),
+        context.vm.Linker().ResolveDescriptor("Ljava/lang/String;"),
+        static_cast<JniSize>(match.size()));
+    const std::array roots{groups};
+    const auto root_scope = context.vm.ProtectReferences(roots);
+    for (std::size_t index = 0; index < match.size(); ++index) {
+        if (match[index].matched) {
+            context.vm.Model().SetObjectElement(
+                groups, static_cast<JniSize>(index),
+                context.vm.NewStringUtf8(match[index].str()));
+        }
+    }
+    call.SetRef(matcher_fields.groups, groups);
     return true;
 }
 
@@ -206,7 +222,8 @@ Dvm87MatcherDeclaration Dvm87DeclareMatcher() {
         builder.BoundInstanceField("start", "I"),
         builder.BoundInstanceField("end", "I"),
         builder.BoundInstanceField("matched", "Z"),
-        builder.BoundInstanceField("group", "Ljava/lang/String;")};
+        builder.BoundInstanceField("group", "Ljava/lang/String;"),
+        builder.BoundInstanceField("groups", "[Ljava/lang/String;")};
     builder.FinalMethod("matches", "()Z",
         [fields](IntrinsicContext& context) {
             return VmValue::Int(Dvm87Match(
@@ -253,6 +270,23 @@ Dvm87MatcherDeclaration Dvm87DeclareMatcher() {
         [fields, require_match](IntrinsicContext& context) {
             IntrinsicCall call(context); require_match(call);
             return VmValue::Ref(call.GetRef(fields.group));
+        });
+    builder.FinalMethod("group", "(I)Ljava/lang/String;",
+        [fields, require_match](IntrinsicContext& context) {
+            IntrinsicCall call(context); require_match(call);
+            const auto groups = call.GetRef(fields.groups);
+            const auto index = call.Int(0);
+            if (index < 0 || index >= call.Vm().Model().ArrayLength(groups)) {
+                throw VmJavaThrow{"Ljava/lang/IndexOutOfBoundsException;",
+                                  "regex group index out of range"};
+            }
+            return VmValue::Ref(call.Vm().Model().GetObjectElement(groups, index));
+        });
+    builder.FinalMethod("groupCount", "()I",
+        [fields](IntrinsicContext& context) {
+            IntrinsicCall call(context);
+            return VmValue::Int(static_cast<std::int32_t>(
+                Dvm87Regex(context, call.GetRef(fields.pattern)).mark_count()));
         });
     const auto replace = [fields](IntrinsicContext& context,
                                                   const bool first) {

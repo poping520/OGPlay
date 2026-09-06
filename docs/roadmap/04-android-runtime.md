@@ -294,7 +294,7 @@ impl = "audio.track"                    # 宿主实现 id
 
 ## 7. DEX 执行：分级方案（需求 3.5）
 
-> **2026-08-11 更新**：是否投入 L2 已由 [ADR-0017](../adr/0017-bounded-dex-interpreter.md)
+> **2026-08-11 更新**：是否投入 L2 已由 [ADR-0017](../adr/dexvm.md#adr-0017)
 > 决定为"做"，方案全文见 [docs/design/dexvm/](../design/dexvm/README.md)。本节保留
 > 原始分析作为溯源；§7.1 的"薄 Java 层不需要 DEX"结论已被 M8 实证**修正**（见下），
 > §7.4 的 go/no-go 判定已被 ADR-0017 **取代**（测量只定排期与批次，不定做与不做）。

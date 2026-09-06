@@ -32,8 +32,14 @@ LIBRARIES = {
 NOTICES = {f"notices/{Path(path).name}.txt" for path in LIBRARIES}
 BOOT_DEX = "framework/bootdex.jar"
 BOOT_DEX_NOTICE = "notices/bootdex.jar.txt"
+ICU_DATA = "icu/icudt51l.dat"
+ICU_NOTICES = {
+    "notices/icu4c-license.html",
+    "notices/icu4c-unicode-license.txt",
+}
 PAYLOAD_FILES = LIBRARIES | NOTICES | {
-    BOOT_DEX, BOOT_DEX_NOTICE, "manifest.json", "source-manifest.xml"}
+    BOOT_DEX, BOOT_DEX_NOTICE, ICU_DATA, "manifest.json",
+    "source-manifest.xml"} | ICU_NOTICES
 SHA256 = re.compile(r"[0-9a-f]{64}")
 
 
@@ -107,6 +113,8 @@ def _validate_source_manifest(root: Path, source: dict[str, Any]) -> set[str]:
     }
     expected = {
         "platform/bionic": "081db840befec895fb86e709ae95832ade2d065c",
+        "platform/external/icu4c":
+            "18668f3b015a110275f5cc9a8722b2f65f3333bf",
         "platform/external/zlib":
             "a5c7131da47c991585a6c6ac0c063b6d7d56e3fc",
         "platform/libcore": "d49420b1b7edf8b3f27dabd3e1b7512a5502595e",
@@ -190,6 +198,38 @@ def validate(root: Path) -> None:
     if classes != selected:
         raise PayloadError("boot_dex exact class selection does not match")
 
+    icu = _mapping(manifest.get("icu"), "icu")
+    expected_icu = {
+        "source_project": "platform/external/icu4c",
+        "source_revision": "18668f3b015a110275f5cc9a8722b2f65f3333bf",
+        "version": "51.1.0.1",
+        "data_version": "51.1",
+        "path": ICU_DATA,
+        "size": 14146832,
+        "sha256":
+            "8275408cb7161606c9a1b55edf12df538a7110ad53103a00f8ac7ba5b092a96f",
+    }
+    for key, expected in expected_icu.items():
+        if icu.get(key) != expected:
+            raise PayloadError(f"icu.{key} does not match")
+    _validate_digest(root / ICU_DATA, icu.get("size"), icu.get("sha256"),
+                     "icu.data")
+    with (root / ICU_DATA).open("rb") as source_file:
+        if source_file.read(4) != bytes((0x20, 0x00, 0xda, 0x27)):
+            raise PayloadError("icu.data is not an ICU common-data archive")
+    notices = _items(icu.get("notices"), "icu.notices")
+    notice_entries = {
+        _text(_mapping(item, "icu.notice").get("path"), "icu.notice.path"):
+        _mapping(item, "icu.notice") for item in notices
+    }
+    if set(notice_entries) != ICU_NOTICES:
+        raise PayloadError("ICU notice file set does not match")
+    for relative, entry in notice_entries.items():
+        path = root / relative
+        if not path.is_file() or _digest(path) != _text(
+                entry.get("sha256"), f"icu.notice[{relative}].sha256"):
+            raise PayloadError(f"ICU notice does not match: {relative}")
+
     build = _mapping(manifest.get("build"), "build")
     expected_build = {
         "lunch_target": "aosp_arm-user",
@@ -252,7 +292,7 @@ def main() -> int:
         validate(args.root)
     except (OSError, PayloadError) as error:
         parser.error(str(error))
-    print("Android runtime payload validated: API 19, boot dex, 5 libraries")
+    print("Android runtime payload validated: API 19, boot dex, ICU 51.1, 5 libraries")
     return 0
 
 

@@ -22,6 +22,7 @@ include(GNUInstallDirs)
 include(cmake/CompilerWarnings.cmake)
 include(cmake/ThirdParty.cmake)
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
+include(cmake/PinnedIcu.cmake)
 
 function(ogplay_stage_angle_runtime target)
     if(NOT OGPLAY_ENABLE_ANGLE)
@@ -447,6 +448,7 @@ add_library(ogplay_runtime
     src/runtime/dexvm/class_name_codec.cpp
     src/runtime/dexvm/class_loader_facade.cpp
     src/runtime/dexvm/collection_runtime.cpp
+    src/runtime/dexvm/icu_formatter_runtime.cpp
     src/runtime/dexvm/io_runtime.cpp
     src/runtime/dexvm/network_runtime.cpp
     src/runtime/dexvm/unsafe_runtime.cpp
@@ -505,7 +507,7 @@ target_link_libraries(ogplay_runtime PUBLIC
     OGPlay::Audio OGPlay::Core OGPlay::Cpu OGPlay::Hal OGPlay::Loader OGPlay::Memory
     OGPlay::Video
 )
-target_link_libraries(ogplay_runtime PRIVATE OGPlay::Gles)
+target_link_libraries(ogplay_runtime PRIVATE OGPlay::Gles ogplay_icu_i18n ogplay_icu_data)
 target_include_directories(ogplay_runtime PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
     $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
@@ -868,6 +870,7 @@ if(OGPLAY_BUILD_TESTS)
         tests/dexvm/dex_code_tests.cpp
         tests/dexvm/interpreter_tests.cpp
         tests/dexvm/nio_runtime_tests.cpp
+        tests/dexvm/icu_formatter_runtime_tests.cpp
         tests/dexvm/unsafe_tests.cpp
         tests/dexvm/dvm87_tests.cpp
         tests/dexvm/observable_tests.cpp

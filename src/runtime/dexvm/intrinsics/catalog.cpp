@@ -20,11 +20,10 @@ std::vector<IntrinsicClassDecl> CoreIntrinsicCatalog(
         Declare_java_lang_String(),
         Declare_java_lang_StringBuilder(),
         Declare_java_lang_StringBuffer(),
-        Declare_java_lang_System(),
+        Declare_java_lang_System(services),
         Declare_java_io_PrintStream(),
         Declare_java_lang_Math(),
         Declare_java_util_Random(),
-        Declare_java_util_Date(),
         Declare_java_lang_Class(),
         Declare_java_lang_reflect_AnnotatedElement(),
         Declare_java_lang_reflect_GenericDeclaration(),
@@ -60,8 +59,8 @@ std::vector<IntrinsicClassDecl> CoreIntrinsicCatalog(
     AppendJavaNetPlatform(catalog, services);
     AppendJavaNio(catalog);
     AppendJavaUtilPlatform(catalog, services);
-    AppendJavaUtilAlgorithms(catalog, services);
-    AppendJavaText(catalog);
+    AppendJavaUtilAlgorithms(catalog);
+    AppendJavaIcu(catalog, services);
     AppendJavaRegex(catalog);
     AppendJavaConcurrent(catalog, services);
     AppendJavaXml(catalog, services);

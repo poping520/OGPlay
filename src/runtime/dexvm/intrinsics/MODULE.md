@@ -3,7 +3,7 @@
 intrinsic 的逻辑单位仍然是 Java class：每个 class 恰好一个直接位于正式
 `ogplay::runtime::dexvm::intrinsics` 命名空间的 `Declare_*()`，handler 与对应声明同址；
 物理文件只按 API family 聚合，不保留 `dvm80_*` 迁移命名空间或同名转发函数。
-目录固定为 `catalog.cpp` 加 `java_lang/classloading/reflect/io/util/text/regex/zip/nio/net/xml/
+目录固定为 `catalog.cpp` 加 `java_lang/classloading/reflect/io/util/icu/regex/zip/nio/net/xml/
 concurrent.cpp` 12 个 family TU。family 文件只向 `catalog.h` 暴露 `Append*()`，
 `catalog.cpp` 不感知 family 内具体 class，也不得包含行为。
 
@@ -19,10 +19,10 @@ overlay；不得为 `EnumSet/MiniEnumSet/HugeEnumSet` 增加 C++ 行为副本。
 
 `java.*`、`javax.net.*`、`javax.xml.*` 与 `org.xml.sax.*` 均由 core 发布；需要平台事实的
 Locale、Timer、SSL singleton 与 SAX handler 通过 `CoreIntrinsicServices` 窄接口注入；
-Locale 保持 API 19 的 final class 及 Cloneable/Serializable 直接接口关系，`ENGLISH`
-预定义对象由类初始化器创建并保存在静态强根中；`languageCode` 是对象持有的
-API 19 transient 字段，`getLanguage()` 返回该字段，默认 Locale 从会话注入的确定性
-两字母语言初始化且不读取宿主 locale；
+Locale 保持 API 19 的 final class 及 Cloneable/Serializable 直接接口关系；ROOT、US、
+ENGLISH、CHINESE 等 22 个预定义对象由类初始化器创建并保存在静态强根中。language/country/
+variant/script 使用 API 19 transient 字段，默认 Locale 从会话注入且按 VM 隔离，不读取宿主
+locale；首批 LocaleData 只接受 ROOT、en、en_US、zh、zh_CN，其余明确失败。
 `org.xmlpull.v1.XmlPullParser` 只发布 API 19 接口 shape，资源事件实现归 Android integration，
 core 不依赖 `DexVmAndroidContext`。
 Timer/TimerTask 仅保留 Java 参数、重复调度与取消入口；deadline、执行队列、Clock 和
@@ -33,18 +33,26 @@ cooperative next-frame task queue。
 Collection/List/Set/Map、Iterator/ListIterator、Queue/Deque、常用抽象基类以及
 ArrayList/LinkedList/ArrayDeque、HashMap/LinkedHashMap、HashSet/LinkedHashSet；既有
 Vector/Stack/Hashtable 也迁入同一 family。DVM-87 在同一 family 增加常用 Arrays/
-Collections 算法和固定 offset Calendar/TimeZone；handler 只做 Java 参数/异常边界与 virtual
+Collections 算法；handler 只做 Java 参数/异常边界与 virtual
 `equals/hashCode` 派发，sequence/map/view/entry/iterator 的宿主状态和生命周期统一委托
-`CollectionRuntime`。Tree/Sorted/Navigable、并发集合、完整算法长尾与 DST/locale 时区数据库
+`CollectionRuntime`。LinkedHashMap 的 API 19 `eldest()` 复用同一稳定 Entry，以供 BootDex
+BasicLruCache 使用。Tree/Sorted/Navigable、并发集合与完整算法长尾
 不在该 family 范围内，缺失能力必须继续明确失败。
 集合声明通过唯一 `AppendJavaUtilCollections()` 接入 catalog。
 API 19 `Observer`/`Observable` 也在该 family 发布：`Observable` 以实例字段持有既有
 `ArrayList` 与 changed flag，重复注册/删除沿用 guest `equals`；通知在 receiver monitor 内
 清标记并复制注册顺序快照，随后在 monitor 外虚派发 `Observer.update`。快照通过
 execution-local `RootScope` 跨回调保活，回调删除不改变本轮通知，回调异常原样传播。
-`java_text.cpp` 发布 `SimpleDateFormat → DateFormat → Format` 最小层级；指定 pattern/Locale
-构造器只校验 API 19 pattern 并保存 pattern 字段。NumberFormat、Calendar、DateFormatSymbols
-初始化及 format/parse 尚未闭合，不得据此伪造格式化或解析能力。
+`java_icu.cpp` 只发布 DVM-102 审计固定的 ICU native、NativeDecimalFormat 与 TimeZone 数据
+边界；Format/DateFormat/SimpleDateFormat、NumberFormat/DecimalFormat、Date/Calendar 及
+SimpleTimeZone 的类、字段和 Java 算法均来自 BootDex。formatter 的 Java long 只保存 per-VM
+逻辑令牌，clone/close/非法令牌、GC sweep 与 VM teardown 由 IcuFormatterRuntime 管理；
+未交付的具名时区数据库、大数/double formatter 和 ICU 查询明确失败。不得恢复 java_text.cpp
+或日期/日历 C++ 行为副本。区域字段、货币和时区名称必须调用固定 ICU 数据，数字 native
+必须委托真实 ICU formatter。TimeZone.getDefault 使用 DEX defaultTimeZone，与 Java
+setDefault 保持 clone/reset 语义；首次/重置只使用 CoreIntrinsicServices.default_timezone。
+Locale 构造规范化语言小写、区域大写与 he/id/yi 旧码；Matcher.groupCount 来自 pattern，
+不要求已有匹配。ICU 分配失败、非法输入和范围外操作分别映射为明确 Java 异常。
 
 `java_regex.cpp` 的 Pattern/Matcher 只承诺 String 输入与已登记 API 的 bounded regex 语义；
 非法语法/flag 必须抛 Java 异常，不伪造匹配。`java_concurrent.cpp` 的 FutureTask、串行 executor
@@ -136,7 +144,7 @@ API 19 guest 可确定的 `/`、`:`、`\n` 三个 separator 属性，不读取�
 `SecurityManager` 自身由 curated BootDex 提供 class shape，OGPlay 不安装 security
 manager、执行 permission 检查或接入宿主安全机制。
 `String.toLowerCase(Locale)` 对齐 API 19 的 null 检查和“内容未变则返回 receiver”语义；
-当前只接受 `Locale.ENGLISH` 的 ASCII 映射，其他 Locale 或需要 ICU 的非 ASCII 输入明确
+当前只接受英语 ASCII 映射，其他 Locale 或需要 ICU 的非 ASCII 输入明确
 抛 `UnsupportedOperationException`，不得读取宿主 locale 或伪造完整 Unicode case mapping。
 
 `java.lang.ClassLoader`、`java.lang.BootClassLoader` 与

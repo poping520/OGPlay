@@ -873,6 +873,30 @@ Interpreter::Interpreter(DexClassLinker& linker, JavaObjectModel& model,
                 state->nio_runtime->Duplicate(model.ToIdentity(clone), source_id, false);
             }
         }});
+    RegisterIntrinsicStateTable({
+        "icu-formatters", {},
+        [state = impl_.get(), &model](const VmObjectRef owner) {
+            const auto decimal_class = state->linker->FindClass(
+                "Llibcore/icu/NativeDecimalFormat;");
+            const auto decimal_address = decimal_class.has_value()
+                ? state->linker->FindFieldRecursive(
+                      *decimal_class, "address", "J")
+                : std::optional<VmFieldId>{};
+            if (!decimal_class.has_value() || !decimal_address.has_value() ||
+                model.ObjectClass(owner) != *decimal_class) {
+                return;
+            }
+            const auto& field = state->linker->Field(*decimal_address);
+            const auto slots = model.InstanceSlots(owner);
+            if (slots[field.slot].tag != SlotTag::wide_lo ||
+                slots[field.slot + 1U].tag != SlotTag::wide_hi) {
+                return;
+            }
+            const auto token = static_cast<std::uint64_t>(slots[field.slot].bits) |
+                (static_cast<std::uint64_t>(slots[field.slot + 1U].bits) << 32U);
+            state->icu_formatters.CloseIfPresent(token);
+        },
+        [](const VmObjectRef, const VmObjectRef) {}});
 
     const auto string_class = linker.FindClass("Ljava/lang/String;");
     const auto class_class = linker.FindClass("Ljava/lang/Class;");
@@ -892,6 +916,14 @@ CollectionRuntime& Interpreter::Collections() {
 
 const CollectionRuntime& Interpreter::Collections() const {
     return impl_->collections;
+}
+
+IcuFormatterRuntime& Interpreter::IcuFormatters() {
+    return impl_->icu_formatters;
+}
+
+const IcuFormatterRuntime& Interpreter::IcuFormatters() const {
+    return impl_->icu_formatters;
 }
 
 IoRuntime& Interpreter::IO() { return impl_->io; }
@@ -916,6 +948,7 @@ ZipRuntime& Interpreter::ZIP() { return impl_->zip; }
 const ZipRuntime& Interpreter::ZIP() const { return impl_->zip; }
 
 Interpreter::~Interpreter() {
+    impl_->icu_formatters.Clear();
     if (impl_->nio_runtime != &impl_->nio) {
         impl_->nio_runtime->SweepDomain(JniObjectDomain::dex_vm);
         impl_->nio_runtime->SetObjectModel(nullptr);

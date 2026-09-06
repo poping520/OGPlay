@@ -63,7 +63,8 @@ binding。`GLUtils` 读取 context 中既有 Bitmap backing；本层不拥有 GL
 - Android 平台 handler 的会话状态只从 `DexVmAndroidContext` 进入；core Java handler
   不得依赖该 context，迁移行为必须保持一致。
 - `AndroidCoreIntrinsicServices(context)` 是 core 所需 Locale/Timer/SSL/SAX 平台事实的
-  唯一适配入口；Android catalog 不得重新发布这些 Java family。
+  唯一适配入口；Android catalog 不得重新发布这些 Java family。DVM-102 的 Date 时钟只经
+  该 core 服务注入，Android 侧 DateMillis/DateYear/DateInitialize 重复实现已删除。
 - DVM-77 的 PackageManager 只发布当前 APK：`getApplicationInfo/getPackageInfo` 消费
   sealed Manifest 事实，`getApplicationLabel` 解析 literal/resource label，
   `checkPermission/hasSystemFeature` 只读取显式 granted/feature 集合。未知包、未知 flags

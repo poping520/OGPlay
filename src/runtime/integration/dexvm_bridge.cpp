@@ -1088,6 +1088,12 @@ DexVmGuestBridge::DexVmGuestBridge(
     }
     impl_->vm->SetLogger(logger);
     impl_->threads = std::make_unique<dx::VmThreadRuntime>(*impl_->vm);
+    session.Objects().ObjectArrays().SetSyntheticAssignability(
+        [bridge_state](JniObjectIdentity target, JniObjectIdentity source) {
+            const dx::VmExecutionLockScope guard(bridge_state->vm->ExecutionLock());
+            return bridge_state->linker.IsAssignable(
+                bridge_state->DexClassIdentity(target), bridge_state->DexClassIdentity(source));
+        });
     session.Fields().SetAccessHooks(JniFieldAccessHooks{
         [bridge_state](const JniObjectIdentity java_class,
                        const std::uint64_t thread) {
@@ -1246,6 +1252,7 @@ DexVmGuestBridge::~DexVmGuestBridge() {
     if (impl_->android_context) impl_->android_context->threads = nullptr;
     if (impl_->session) {
         impl_->session->Environment().SetMonitorHooks({});
+        impl_->session->Objects().ObjectArrays().SetSyntheticAssignability({});
         impl_->session->Fields().SetAccessHooks({});
     }
 }

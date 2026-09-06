@@ -330,3 +330,7 @@ NativeLibraryLoader 在 APK 未找到逻辑库时查找注入的 bundled 系统�
 构造器、JNI_OnLoad 和 class-loader 归属检查。DexVmGuestBridge 将 ThrowNew 的真实类和
 modified-UTF8 消息传回 Java；Throw 的已有 DexVM throwable 引用保持身份。bridge
 teardown 在 guest process 停止前排空 native owner 资源；算法只在 ARM libcrypto 执行。
+
+DVM-106：bridge 在启动前安装 JNI synthetic 数组类型兼容回调，使用同一 DexClassLinker
+判断 Object/Cloneable/Serializable、数组协变和 primitive 数组类型。JNI 数组锁外调用，
+guest 线程停止后撤销；不得将类型不相等简化为不兼容，也不得无条件放行数组写入。

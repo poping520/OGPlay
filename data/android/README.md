@@ -22,13 +22,18 @@ python tools/validate_android_payload.py --root data/android/19
 目标 AOSP tag、构建目标、源码仓库 clean/tag 状态和逐库 NOTICE；同时复核 BootDex recipe、
 精确 class descriptor 集与 canonical JAR。
 
-通常设备提取物只作为开发期 ABI oracle。DVM-105 按用户明确授权，临时纳入设备
-libcrypto.so 与 conscrypt.jar 中的 AES 字节码，用于本地运行；来源单列在
+通常设备提取物只作为开发期 ABI oracle。DVM-105 曾按用户授权临时使用设备
+libcrypto.so 与 conscrypt.jar 中的 AES 字节码；历史来源单列在
 manifest.cipher_native / boot_dex.sources，不冒充原 AOSP clean build。
-正式发行前应替换为自行构建的制品并重新验收。
+2026-09-07 用户撤回 ROM 版 libcrypto.so，当前源码 checkout 的运行 payload 缺少该库。
+后续自行构建后更新来源、哈希和来源校验约束并重新验收；完整 payload 校验保持严格，
+不以缺库状态冒充可发行制品。构建器仅消费显式准备的 data/android/19/lib/libcrypto.so，
+不从 .local 手机提取目录自动复制。
 
 JNI 桥构建：`python3 tools/bootdex/build_bootdex.py build-cipher`，然后重建 BootDex
-并执行 payload 校验。输入位置、工具链要求见 tools/bootdex/native/MODULE.md。
+并执行 payload 校验。输入位置、工具链要求见 src/guest/crypto/MODULE.md。
+DVM-106 的 Certificate/Harmony Java 从同一 pinned core.jar 选入；RSA/ECDSA 验签
+复用该 JNI 桥和 manifest.cipher_native，不另建证书库、配置或构建脚本。
 
 本地 oracle 使用 `tools/import_bionic_oracles.ps1 -SourceRoot <目录>` 导入到被 Git 忽略的
 `.local/bionic-oracle/`。工具只保存 API、相对路径、ELF 类型、体积和 SHA-256，不记录

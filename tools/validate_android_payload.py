@@ -197,7 +197,8 @@ def validate(root: Path) -> None:
         _validate_elf(path, "cipher library")
     if next(e for e in entries if e["path"] == "lib/libcrypto.so").get("sha256") != bootdex.CRYPTO_SHA256:
         raise PayloadError("Cipher libcrypto is not the pinned temporary device artifact")
-    if cipher.get("adapter_source_sha256") != bootdex.file_sha256(bootdex.ROOT / "tools/bootdex/native/cipher.c"):
+    if cipher.get("adapter_source") != "src/guest/crypto/crypto_jni.c" or \
+            cipher.get("adapter_source_sha256") != bootdex.file_sha256(bootdex.ROOT / "src/guest/crypto/crypto_jni.c"):
         raise PayloadError("Cipher adapter source is stale")
     if len(dex) < 0x70 or dex[:8] != b"dex\n035\0" or \
             struct.unpack_from("<I", dex, 0x20)[0] != len(dex) or \

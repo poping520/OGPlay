@@ -102,9 +102,9 @@ intrinsic。解释应用 DEX 与受审 API 19 curated Boot DEX；完整平台库
   普通 CAS 复用 Unsafe 与执行锁；同步器复用真实 guest 线程、park/monitor 与统一 Clock。
   Charset/String 标准六编码及 Locale 大小写调用固定 ICU；完整 Charset provider/encoder/
   decoder API 和完整数字 formatter 不因选类自动可用。
-- `BigIntRuntime`（DVM-104）：为 X500 ASN.1 标签键直接触达的 BigInt/NativeBN 提供每 VM
-  单调逻辑令牌和最多 64 位 magnitude；11 个分配/拷贝/比较/符号/转换原语受检，BigInt owner
-  的 bignum 字段清扫释放令牌，其余 24 个 native 明确失败。不是完整大数或密码学 backend。
+- `BigIntRuntime`（DVM-104/106）：为 ASN.1 标签键和证书长序列号提供每 VM 单调逻辑
+  令牌和规范化小端 magnitude。17 个分配/拷贝/比较/符号/编解码原语受检，单次输入最多
+  1 MiB；BigInt owner 清扫释放令牌，其余 18 个 native 明确失败。不提供大数密码学算术。
 - `ZipRuntime`（DVM-79）：管理 archive、当前 entry bytes/cursor 和 close 状态，复用 loader 的
   严格 ZIP parser/inflate，并由 intrinsic state-table hook 清扫。
 - `NetworkRuntime`（DVM-88）：管理 InetAddress endpoint、Socket、stream、datagram 的 per-VM

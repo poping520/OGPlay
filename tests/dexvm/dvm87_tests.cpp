@@ -1109,7 +1109,7 @@ TEST_CASE("DVM-103 all BootDex classes link and collection methods have no intri
         for (const auto method : f.linker.Class(type).own_direct_methods)
             CHECK(f.linker.Method(method).kind != MethodKind::intrinsic);
     }
-    CHECK(count == 566);
+    CHECK(count == 760);
 }
 
 TEST_CASE("DVM-103 bounded queues and Collections wrappers use API19 semantics") {
@@ -1376,7 +1376,7 @@ TEST_CASE("DVM-104 NativeBN tokens are isolated checked and swept with BigInt ow
     const auto field=f.linker.FindFieldRecursive(f.model.ObjectClass(owner),"bignum","J");REQUIRE(field);
     const auto slot=f.linker.Field(*field).slot;const auto slots=f.model.InstanceSlots(owner);
     const auto token=static_cast<std::uint64_t>(slots[slot].bits)|(static_cast<std::uint64_t>(slots[slot+1].bits)<<32U);
-    CHECK(f.vm.BigInts().Require(token).magnitude==(UINT64_C(1)<<63U));
+    CHECK(f.vm.BigInts().Require(token).LowLong()==(UINT64_C(1)<<63U));
     CHECK(f.vm.BigInts().Size()==baseline+1);
     const auto unsupported=f.Static("Ljava/math/NativeBN;", "BN_add", "(JJJ)V", {VmValue::Long(static_cast<std::int64_t>(token)),VmValue::Long(static_cast<std::int64_t>(token)),VmValue::Long(static_cast<std::int64_t>(token))}); REQUIRE(unsupported.exception.IsValid());
 
@@ -1461,4 +1461,99 @@ TEST_CASE("DVM-104 guest stream callbacks retain monitor exception identity and 
         state.SetInput(object,std::move(protocol)); state.BeginObjectInput(object);
         const auto available=f.Virtual(object,"available","()I"); f.RequireOk(available); CHECK(available.value.AsInt()==0); CHECK(*reads==1);
     }
+}
+
+TEST_CASE("DVM-106 BigInteger certificate values preserve long signed encodings") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        Dvm87Vm f(backend);
+        struct Case {
+            const char* bytes;
+            const char* decimal;
+            const char* hex;
+            int bits;
+        };
+        for (const auto& value : std::array{
+                 Case{"00", "0", "0", 0},
+                 Case{"01", "1", "1", 1},
+                 Case{"ff", "-1", "-1", 0},
+                 Case{"7f", "127", "7f", 7},
+                 Case{"0080", "128", "80", 8},
+                 Case{"80", "-128", "-80", 7},
+                 Case{"ff7f", "-129", "-81", 8},
+                 Case{"0100000000", "4294967296", "100000000", 33},
+                 Case{"ff00000000", "-4294967296", "-100000000", 32},
+                 Case{"00ffffffffffffffff", "18446744073709551615", "ffffffffffffffff", 64},
+                 Case{"010000000000000000", "18446744073709551616", "10000000000000000", 65},
+                 Case{"ff0000000000000000", "-18446744073709551616", "-10000000000000000", 64},
+                 Case{"00ffffffffffffffffffffffffffffffffffffffff",
+                      "1461501637330902918203684832716283019655932542975",
+                      "ffffffffffffffffffffffffffffffffffffffff", 160},
+                 Case{"8000000000000000000000000000000000000000",
+                      "-730750818665451459101842416358141509827966271488",
+                      "-8000000000000000000000000000000000000000", 159},
+                 Case{"1234567890abcdef1234567890abcdef12345678",
+                      "103929005307927756724354605802047639613112342136",
+                      "1234567890abcdef1234567890abcdef12345678", 157},
+             }) {
+            CAPTURE(value.decimal);
+            std::vector<std::byte> data;
+            for (std::size_t i = 0; value.bytes[i]; i += 2)
+                data.push_back(static_cast<std::byte>(
+                    std::stoul(std::string(value.bytes + i, 2), nullptr, 16)));
+            const auto array =
+                f.model.NewPrimitiveArray(f.linker.ResolveDescriptor("[B"), JniPrimitiveKind::byte,
+                                          static_cast<JniSize>(data.size()));
+            f.model.WriteByteRegion(array, 0, data);
+            const auto array_root = f.vm.ProtectReferences(std::array{array});
+            const auto integer = f.vm.NewIntrinsicInstance("Ljava/math/BigInteger;");
+            const auto root = f.vm.ProtectReferences(std::array{integer});
+            f.Construct(integer, "Ljava/math/BigInteger;", "([B)V", {VmValue::Ref(array)});
+            const auto decimal = f.Virtual(integer, "toString", "()Ljava/lang/String;");
+            f.RequireOk(decimal);
+            CHECK(f.vm.StringUtf8(decimal.value.ref) == value.decimal);
+            CHECK(f.Virtual(integer, "bitLength", "()I").value.AsInt() == value.bits);
+            const auto output = f.Virtual(integer, "toByteArray", "()[B");
+            f.RequireOk(output);
+            CHECK(f.model.ReadByteRegion(output.value.ref, 0,
+                                         f.model.ArrayLength(output.value.ref)) == data);
+            const auto hex =
+                f.Virtual(integer, "toString", "(I)Ljava/lang/String;", {VmValue::Int(16)});
+            f.RequireOk(hex);
+            CHECK(f.vm.StringUtf8(hex.value.ref) == value.hex);
+            static_cast<void>(f.vm.CollectGarbage());
+            CHECK(
+                f.vm.StringUtf8(f.Virtual(integer, "toString", "()Ljava/lang/String;").value.ref) ==
+                value.decimal);
+        }
+    }
+}
+
+TEST_CASE("DVM-106 NativeBN unsigned and limb codecs preserve magnitude and validate length") {
+    Dvm87Vm f;
+    const auto native = [&](const char* name,const char* sig,std::vector<VmValue> args) {
+        auto result=f.Static("Ljava/math/NativeBN;",name,sig,args); f.RequireOk(result); return result.value;
+    };
+    const auto token=native("BN_new","()J",{});
+    const auto bytes=f.model.NewPrimitiveArray(f.linker.ResolveDescriptor("[B"),JniPrimitiveKind::byte,9);
+    const auto bytes_root=f.vm.ProtectReferences(std::array{bytes});
+    const std::vector<std::byte> value{std::byte{0x80},std::byte{},std::byte{},std::byte{},std::byte{},std::byte{},std::byte{},std::byte{},std::byte{1}};
+    f.model.WriteByteRegion(bytes,0,value);
+    native("BN_bin2bn","([BIZJ)V",{VmValue::Ref(bytes),VmValue::Int(9),VmValue::Int(1),token});
+    CHECK(f.vm.StringUtf8(native("BN_bn2dec","(J)Ljava/lang/String;",{token}).ref)=="-2361183241434822606849");
+    CHECK(f.vm.StringUtf8(native("BN_bn2hex","(J)Ljava/lang/String;",{token}).ref)=="-800000000000000001");
+    const auto output=native("BN_bn2bin","(J)[B",{token}).ref;
+    CHECK(f.model.ReadByteRegion(output,0,f.model.ArrayLength(output))==value);
+    const auto invalid=f.Static("Ljava/math/NativeBN;","BN_bin2bn","([BIZJ)V",{VmValue::Ref(bytes),VmValue::Int(10),VmValue::Int(0),token});
+    REQUIRE(invalid.exception.IsValid());
+    CHECK(f.linker.Class(invalid.exception_class).descriptor=="Ljava/lang/ArrayIndexOutOfBoundsException;");
+    CHECK(f.vm.StringUtf8(native("BN_bn2dec","(J)Ljava/lang/String;",{token}).ref)=="-2361183241434822606849");
+    const auto words=f.model.NewPrimitiveArray(f.linker.ResolveDescriptor("[I"),JniPrimitiveKind::integer,4);
+    f.model.SetPrimitiveElement(words,0,UINT32_MAX);
+    f.model.SetPrimitiveElement(words,3,1);
+    native("litEndInts2bn","([IIZJ)V",{VmValue::Ref(words),VmValue::Int(4),VmValue::Int(0),token});
+    CHECK(f.vm.StringUtf8(native("BN_bn2hex","(J)Ljava/lang/String;",{token}).ref)=="10000000000000000FFFFFFFF");
+    CHECK(native("longInt","(J)J",{token}).AsLong()==UINT32_MAX);
+    native("putLongInt","(JJ)V",{token,VmValue::Long(0)});
+    CHECK(f.model.ArrayLength(native("BN_bn2bin","(J)[B",{token}).ref)==0);
+    native("BN_free","(J)V",{token});
 }

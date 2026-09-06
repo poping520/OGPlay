@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <stdexcept>
@@ -43,6 +44,10 @@ public:
     JniObjectArrayStore& operator=(const JniObjectArrayStore&) = delete;
     JniObjectArrayStore(JniObjectArrayStore&&) noexcept;
     JniObjectArrayStore& operator=(JniObjectArrayStore&&) noexcept;
+
+    // Install before use; clear after guest threads stop. Called outside array locks.
+    void SetSyntheticAssignability(
+        std::function<bool(JniObjectIdentity, JniObjectIdentity)> check);
 
     [[nodiscard]] JniObjectIdentity New(
         JniObjectIdentity element_class, JniSize length,

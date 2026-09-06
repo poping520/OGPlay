@@ -28,6 +28,7 @@ JniObjectArrayErrorReason JniObjectArrayError::Reason() const noexcept {
 class JniObjectArrayStore::Impl final {
 public:
     explicit Impl(const JniClassRegistry& classes) : classes_(&classes) {}
+    std::function<bool(JniObjectIdentity, JniObjectIdentity)> synthetic_assignability;
 
     [[nodiscard]] JniObjectIdentity New(
         const JniObjectIdentity element_class, const JniSize length,
@@ -82,9 +83,10 @@ public:
 
     void Set(const JniObjectIdentity array, const JniSize index,
              const std::optional<JniObjectValue>& value) {
+        // Class relationships belong to the VM; never enter it with our lock held.
+        ValidateValue(ElementClass(array), value);
         std::scoped_lock lock(mutex_);
         auto& entry = Require(array);
-        ValidateValue(entry.element_class, value);
         entry.elements[CheckedIndex(entry, index)] = value;
     }
 
@@ -118,7 +120,10 @@ private:
                       JniObjectArrayErrorReason::invalid_value);
         if (element_class.domain == JniObjectDomain::dex_vm ||
             value->java_class.domain == JniObjectDomain::dex_vm) {
-            if (element_class != value->java_class) {
+            const bool compatible = synthetic_assignability
+                ? synthetic_assignability(element_class, value->java_class)
+                : element_class == value->java_class;
+            if (!compatible) {
                 Fail(JniObjectArrayErrorReason::incompatible_element,
                      "JNI object array synthetic class is incompatible");
             }
@@ -168,6 +173,11 @@ JniObjectArrayStore::JniObjectArrayStore(JniObjectArrayStore&&) noexcept =
     default;
 JniObjectArrayStore& JniObjectArrayStore::operator=(
     JniObjectArrayStore&&) noexcept = default;
+
+void JniObjectArrayStore::SetSyntheticAssignability(
+    std::function<bool(JniObjectIdentity, JniObjectIdentity)> check) {
+    impl_->synthetic_assignability = std::move(check);
+}
 
 JniObjectIdentity JniObjectArrayStore::New(
     const JniObjectIdentity element_class, const JniSize length,

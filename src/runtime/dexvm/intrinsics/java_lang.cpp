@@ -377,6 +377,9 @@ IntrinsicClassDecl Declare_java_lang_Runtime() {
 
 IntrinsicClassDecl Declare_java_lang_Math() {
     auto builder = IntrinsicClassBuilder::Class("Ljava/lang/Math;", "Ljava/lang/Object;");
+    builder.StaticMethod("log", "(D)D", [](IntrinsicContext& c) {
+        return VmValue::Double(std::log(c.arguments[0].AsDouble()));
+    });
     builder.StaticMethod("abs", "(I)I",
         [](IntrinsicContext& context) {
                 const auto value = context.arguments[0].AsInt();
@@ -1622,26 +1625,162 @@ IntrinsicClassDecl Declare_java_lang_Character() {
 
 IntrinsicClassDecl Declare_java_math_NativeBN() {
     auto b = IntrinsicClassBuilder::Class("Ljava/math/NativeBN;");
-    b.StaticMethod("BN_new", "()J", [](IntrinsicContext& c) { return VmValue::Long(static_cast<std::int64_t>(c.vm.BigInts().New())); }, kAccPublic | kAccNative);
-    b.StaticMethod("BN_free", "(J)V", [](IntrinsicContext& c) { c.vm.BigInts().Free(static_cast<std::uint64_t>(c.arguments[0].AsLong())); return VmValue::Void(); }, kAccPublic | kAccNative);
-    const auto get = [](IntrinsicContext& c, std::size_t i) -> BigIntRuntime::Number& { return c.vm.BigInts().Require(static_cast<std::uint64_t>(c.arguments[i].AsLong())); };
-    b.StaticMethod("putULongInt", "(JJZ)V", [get](IntrinsicContext& c) { auto& n=get(c,0); n.magnitude=static_cast<std::uint64_t>(c.arguments[1].AsLong()); n.negative=n.magnitude && c.arguments[2].AsInt(); return VmValue::Void(); }, kAccPublic | kAccNative);
-    b.StaticMethod("putLongInt", "(JJ)V", [get](IntrinsicContext& c) { const auto v=c.arguments[1].AsLong(); auto& n=get(c,0); n.negative=v<0; n.magnitude=v<0?std::uint64_t{0}-static_cast<std::uint64_t>(v):static_cast<std::uint64_t>(v); return VmValue::Void(); }, kAccPublic | kAccNative);
-    b.StaticMethod("BN_copy", "(JJ)V", [get](IntrinsicContext& c) { get(c,0)=get(c,1); return VmValue::Void(); }, kAccPublic | kAccNative);
-    b.StaticMethod("BN_cmp", "(JJ)I", [get](IntrinsicContext& c) { const auto a=get(c,0), d=get(c,1); const auto am=a.negative&&a.magnitude, dm=d.negative&&d.magnitude; int order=a.magnitude<d.magnitude?-1:a.magnitude>d.magnitude?1:0; return VmValue::Int(am!=dm?(am?-1:1):(am?-order:order)); }, kAccPublic | kAccNative);
-    b.StaticMethod("sign", "(J)I", [get](IntrinsicContext& c) { const auto n=get(c,0); return VmValue::Int(n.magnitude?(n.negative?-1:1):0); }, kAccPublic | kAccNative);
-    b.StaticMethod("longInt", "(J)J", [get](IntrinsicContext& c) { const auto n=get(c,0); return VmValue::Long(std::bit_cast<std::int64_t>(n.negative?std::uint64_t{0}-n.magnitude:n.magnitude)); }, kAccPublic | kAccNative);
-    b.StaticMethod("bitLength", "(J)I", [get](IntrinsicContext& c) { const auto n=get(c,0); const auto bits=n.negative&&n.magnitude?n.magnitude-1:n.magnitude; return VmValue::Int(64-std::countl_zero(bits)); }, kAccPublic | kAccNative);
-    b.StaticMethod("BN_set_negative", "(JI)V", [get](IntrinsicContext& c) { auto& n=get(c,0); n.negative=n.magnitude&&c.arguments[1].AsInt(); return VmValue::Void(); }, kAccPublic | kAccNative);
-    b.StaticMethod("bn2litEndInts", "(J)[I", [get](IntrinsicContext& c) { const auto n=get(c,0); if (!n.magnitude) return VmValue::Ref(VmObjectRef{}); const int length=n.magnitude>>32U?2:1; const auto a=c.vm.Model().NewPrimitiveArray(c.vm.Linker().ResolveDescriptor("[I"),JniPrimitiveKind::integer,length); for(int i=0;i<length;++i)c.vm.Model().SetPrimitiveElement(a,i,(n.magnitude>>(static_cast<unsigned>(i)*32U))&UINT64_C(0xffffffff)); return VmValue::Ref(a); }, kAccPublic | kAccNative);
+    b.StaticMethod(
+        "BN_new", "()J",
+        [](IntrinsicContext& c) {
+            return VmValue::Long(static_cast<std::int64_t>(c.vm.BigInts().New()));
+        },
+        kAccPublic | kAccNative);
+    b.StaticMethod(
+        "BN_free", "(J)V",
+        [](IntrinsicContext& c) {
+            c.vm.BigInts().Free(static_cast<std::uint64_t>(c.arguments[0].AsLong()));
+            return VmValue::Void();
+        },
+        kAccPublic | kAccNative);
+    const auto get = [](IntrinsicContext& c, std::size_t i) -> BigIntRuntime::Number& {
+        return c.vm.BigInts().Require(static_cast<std::uint64_t>(c.arguments[i].AsLong()));
+    };
+    b.StaticMethod(
+        "putULongInt", "(JJZ)V",
+        [get](IntrinsicContext& c) {
+            get(c, 0).SetLong(static_cast<std::uint64_t>(c.arguments[1].AsLong()),
+                              c.arguments[2].AsInt() != 0);
+            return VmValue::Void();
+        },
+        kAccPublic | kAccNative);
+    b.StaticMethod(
+        "putLongInt", "(JJ)V",
+        [get](IntrinsicContext& c) {
+            const auto v = c.arguments[1].AsLong();
+            get(c, 0).SetLong(v < 0 ? std::uint64_t{0} - static_cast<std::uint64_t>(v)
+                                    : static_cast<std::uint64_t>(v),
+                              v < 0);
+            return VmValue::Void();
+        },
+        kAccPublic | kAccNative);
+    b.StaticMethod(
+        "BN_copy", "(JJ)V",
+        [get](IntrinsicContext& c) {
+            get(c, 0) = get(c, 1);
+            return VmValue::Void();
+        },
+        kAccPublic | kAccNative);
+    b.StaticMethod(
+        "BN_cmp", "(JJ)I",
+        [get](IntrinsicContext& c) { return VmValue::Int(get(c, 0).Compare(get(c, 1))); },
+        kAccPublic | kAccNative);
+    b.StaticMethod(
+        "sign", "(J)I",
+        [get](IntrinsicContext& c) {
+            const auto& n = get(c, 0);
+            return VmValue::Int(n.words.empty() ? 0 : n.negative ? -1 : 1);
+        },
+        kAccPublic | kAccNative);
+    b.StaticMethod(
+        "longInt", "(J)J",
+        [get](IntrinsicContext& c) {
+            const auto& n = get(c, 0);
+            return VmValue::Long(std::bit_cast<std::int64_t>(
+                n.negative ? std::uint64_t{0} - n.LowLong() : n.LowLong()));
+        },
+        kAccPublic | kAccNative);
+    b.StaticMethod(
+        "bitLength", "(J)I",
+        [get](IntrinsicContext& c) { return VmValue::Int(get(c, 0).BitLength()); },
+        kAccPublic | kAccNative);
+    b.StaticMethod(
+        "BN_set_negative", "(JI)V",
+        [get](IntrinsicContext& c) {
+            auto& n = get(c, 0);
+            n.negative = !n.words.empty() && c.arguments[1].AsInt();
+            return VmValue::Void();
+        },
+        kAccPublic | kAccNative);
+    b.StaticMethod(
+        "bn2litEndInts", "(J)[I",
+        [get](IntrinsicContext& c) {
+            const auto words = get(c, 0).words;
+            if (words.empty()) return VmValue::Ref(VmObjectRef{});
+            const auto a = c.vm.Model().NewPrimitiveArray(c.vm.Linker().ResolveDescriptor("[I"),
+                                                          JniPrimitiveKind::integer,
+                                                          static_cast<JniSize>(words.size()));
+            for (std::size_t i = 0; i < words.size(); ++i)
+                c.vm.Model().SetPrimitiveElement(a, static_cast<JniSize>(i), words[i]);
+            return VmValue::Ref(a);
+        },
+        kAccPublic | kAccNative);
+    const auto read_count = [](IntrinsicContext& c, JniPrimitiveKind kind) {
+        const auto a = IntrinsicCall(c).NonNullRef(0, "integer array");
+        const auto count = c.arguments[1].AsInt();
+        if (c.vm.Model().PrimitiveArrayKind(a) != kind)
+            throw VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "wrong integer array type"};
+        if (count < 0 || count > c.vm.Model().ArrayLength(a))
+            throw VmJavaThrow{"Ljava/lang/ArrayIndexOutOfBoundsException;", "integer input length"};
+        if (count > (kind == JniPrimitiveKind::integer ? 262144 : 1048576))
+            throw VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
+                              "integer input exceeds value codec limit"};
+        return count;
+    };
+    b.StaticMethod(
+        "BN_bin2bn", "([BIZJ)V",
+        [get, read_count](IntrinsicContext& c) {
+            const auto count = read_count(c, JniPrimitiveKind::byte);
+            const auto bytes = c.vm.Model().ReadByteRegion(c.arguments[0].ref, 0, count);
+            get(c, 3).SetBytes(bytes, c.arguments[2].AsInt() != 0, false);
+            return VmValue::Void();
+        },
+        kAccPublic | kAccNative);
+    b.StaticMethod(
+        "twosComp2bn", "([BIJ)V",
+        [get, read_count](IntrinsicContext& c) {
+            const auto count = read_count(c, JniPrimitiveKind::byte);
+            const auto bytes = c.vm.Model().ReadByteRegion(c.arguments[0].ref, 0, count);
+            get(c, 2).SetBytes(bytes, false, true);
+            return VmValue::Void();
+        },
+        kAccPublic | kAccNative);
+    b.StaticMethod(
+        "litEndInts2bn", "([IIZJ)V",
+        [get, read_count](IntrinsicContext& c) {
+            const auto count = read_count(c, JniPrimitiveKind::integer);
+            BigIntRuntime::Number value;
+            for (int i = 0; i < count; ++i)
+                value.words.push_back(static_cast<std::uint32_t>(
+                    c.vm.Model().GetPrimitiveElement(c.arguments[0].ref, i)));
+            value.negative = c.arguments[2].AsInt() != 0;
+            value.Normalize();
+            get(c, 3) = std::move(value);
+            return VmValue::Void();
+        },
+        kAccPublic | kAccNative);
+    b.StaticMethod(
+        "BN_bn2bin", "(J)[B",
+        [get](IntrinsicContext& c) {
+            const auto bytes = get(c, 0).Bytes();
+            const auto a = c.vm.Model().NewPrimitiveArray(c.vm.Linker().ResolveDescriptor("[B"),
+                                                          JniPrimitiveKind::byte,
+                                                          static_cast<JniSize>(bytes.size()));
+            c.vm.Model().WriteByteRegion(a, 0, bytes);
+            return VmValue::Ref(a);
+        },
+        kAccPublic | kAccNative);
+    b.StaticMethod(
+        "BN_bn2dec", "(J)Ljava/lang/String;",
+        [get](IntrinsicContext& c) {
+            return VmValue::Ref(c.vm.NewStringUtf8(get(c, 0).String(10)));
+        },
+        kAccPublic | kAccNative);
+    b.StaticMethod(
+        "BN_bn2hex", "(J)Ljava/lang/String;",
+        [get](IntrinsicContext& c) {
+            return VmValue::Ref(c.vm.NewStringUtf8(get(c, 0).String(16)));
+        },
+        kAccPublic | kAccNative);
     // BootDex admission requires every native signature to be classified.
     // Retain explicit failing declarations for the unsupported big-number API.
     b.UnimplementedStatic("BN_add", "(JJJ)V", kAccPublic | kAccNative);
     b.UnimplementedStatic("BN_add_word", "(JI)V", kAccPublic | kAccNative);
-    b.UnimplementedStatic("BN_bin2bn", "([BIZJ)V", kAccPublic | kAccNative);
-    b.UnimplementedStatic("BN_bn2bin", "(J)[B", kAccPublic | kAccNative);
-    b.UnimplementedStatic("BN_bn2dec", "(J)Ljava/lang/String;", kAccPublic | kAccNative);
-    b.UnimplementedStatic("BN_bn2hex", "(J)Ljava/lang/String;", kAccPublic | kAccNative);
     b.UnimplementedStatic("BN_dec2bn", "(JLjava/lang/String;)I", kAccPublic | kAccNative);
     b.UnimplementedStatic("BN_div", "(JJJJ)V", kAccPublic | kAccNative);
     b.UnimplementedStatic("BN_exp", "(JJJ)V", kAccPublic | kAccNative);
@@ -1658,8 +1797,6 @@ IntrinsicClassDecl Declare_java_math_NativeBN() {
     b.UnimplementedStatic("BN_nnmod", "(JJJ)V", kAccPublic | kAccNative);
     b.UnimplementedStatic("BN_shift", "(JJI)V", kAccPublic | kAccNative);
     b.UnimplementedStatic("BN_sub", "(JJJ)V", kAccPublic | kAccNative);
-    b.UnimplementedStatic("litEndInts2bn", "([IIZJ)V", kAccPublic | kAccNative);
-    b.UnimplementedStatic("twosComp2bn", "([BIJ)V", kAccPublic | kAccNative);
     return std::move(b).Build();
 }
 

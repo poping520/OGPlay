@@ -4,7 +4,7 @@ intrinsic 的逻辑单位仍然是 Java class：每个 class 恰好一个直接�
 `ogplay::runtime::dexvm::intrinsics` 命名空间的 `Declare_*()`，handler 与对应声明同址；
 物理文件只按 API family 聚合，不保留 `dvm80_*` 迁移命名空间或同名转发函数。
 目录固定为 `catalog.cpp` 加 `java_lang/classloading/reflect/io/util/icu/regex/zip/nio/net/xml/
-concurrent.cpp` 12 个 family TU。family 文件只向 `catalog.h` 暴露 `Append*()`，
+concurrent/crypto.cpp` 13 个 family TU。family 文件只向 `catalog.h` 暴露 `Append*()`，
 `catalog.cpp` 不感知 family 内具体 class，也不得包含行为。
 
 family TU 按 API 语义与共享状态聚合，以控制翻译单元数量。
@@ -180,8 +180,8 @@ native；同步器/原子数组经 DEX 调用既有 Unsafe、Thread、monitor �
 Charset 的六种标准编码具有 canonical name、相等/排序与真实编解码语义；String 具名和
 Charset 重载使用同一固定 ICU 转换，Locale 大小写同样由 ICU 提供。Memory 仅保留受检
 byte[] 的 short/int/long 大小端 codec，不开放 raw address。java_lang 的 NativeBN
-仅绑定 11 个最多 64 位 magnitude 原语，24 个其余 native 显式未实现；令牌由 BigIntRuntime
-按 VM 管理，owner GC/teardown 释放，不引入 OpenSSL/provider 或完整大数计算。
+绑定 17 个值原语（DVM-106 扩展长整数编解码），18 个其余 native 显式未实现；令牌由
+BigIntRuntime 按 VM 管理，owner GC/teardown 释放，不实现完整大数计算。
 
 DVM-104 的 ZIP 适配器调用 BootDex FilterInputStream 构造以保持源强引用；read/skip/available
 使用解压后 entry 游标，mark/reset 明确不支持，close 经父类关闭原始源且幂等。
@@ -192,5 +192,18 @@ java_crypto.cpp 仅提供 provider 配置、OS entropy service、JNI 声明和 c
 AES/ECB、CBC 的 NoPadding/PKCS5Padding 与 CTR/NoPadding 注册为 AndroidOpenSSL，AES
 默认别名指向 ECB/PKCS5Padding。普通 Cipher 方法无 intrinsic 副本。
 SecureRandom 的 OGPlayOS 服务调用 HAL CSPRNG，engineSetSeed 明确失败，不伪装 SHA1PRNG。
-RSA、证书、TLS、AES-GCM 和其他 transformation 未注册；AES AlgorithmParameters 编码
+RSA Cipher、TLS、AES-GCM 和其他 transformation 未注册；AES AlgorithmParameters 编码
 provider 未注册，AOSP engineGetParameters 按原代码返回 null。IvParameterSpec 可用。
+
+## DVM-106 Certificate
+
+Certificate/X509Certificate（含 javax 旧 API）、CertificateFactory、Harmony ASN.1/X.509/
+PKCS7/CertPath 的普通方法均执行 BootDex，verify 不允许 intrinsic overlay。
+Security 加入原版 DRLCertFactory；AndroidOpenSSL 注册 10 种仅验签的 SignatureSpi：
+SHA1/SHA224/SHA256/SHA384/SHA512 与 RSA PKCS#1 v1.5/ECDSA 的组合及标准 OID 别名。
+SPI 只保存普通 guest byte[] 公钥快照和 ByteArrayOutputStream，累计消息最多 1 MiB；
+engineInitVerify 真实解码验证公钥，engineVerify 经显式 JNI 调用 ARM EVP，并清空消息。
+签名生成、PSS/DSA/EdDSA、PKIX 信任判断、系统 CA/撤销/TLS 不注册或明确失败。
+公钥保留 Harmony X509PublicKey 的编码型 fallback，不宣称 RSA/EC KeyFactory 和数学参数接口。
+NativeBN 增加大小端数组、二补码和十/十六进制值转换；Math.log 为 Java 进制转换提供
+既有 Math 浮点原语边界，不在宿主实现证书 parser 或签名算法。

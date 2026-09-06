@@ -78,3 +78,27 @@ TEST_CASE("JNI object arrays reject invalid sizes indices and identities") {
     CHECK_THROWS_AS(static_cast<void>(arrays.Length(array)),
                     ogplay::runtime::JniObjectArrayError);
 }
+
+TEST_CASE("JNI object arrays delegate synthetic covariance outside storage locks") {
+    using namespace ogplay::runtime;
+    JniClassRegistry classes;
+    const auto object = classes.RegisterClass(Class("java/lang/Object"));
+    JniObjectArrayStore arrays(classes);
+    const JniObjectIdentity bytes{JniObjectDomain::dex_vm, 10};
+    const JniObjectIdentity integers{JniObjectDomain::dex_vm, 11};
+    const JniObjectValue byte_array{AllocateJniHostObjectIdentity(), bytes};
+    const auto objects = arrays.New(object, 1);
+    CHECK_THROWS_AS(arrays.Set(objects, 0, byte_array), JniObjectArrayError);
+    arrays.SetSyntheticAssignability([&](auto target, auto source) {
+        CHECK(arrays.Length(objects) == 1);  // Reentry would deadlock if Set retained its lock.
+        return target == object || target == source;
+    });
+    arrays.Set(objects, 0, byte_array);
+    CHECK(arrays.Get(objects, 0) == byte_array);
+    const auto typed = arrays.New(bytes, 1, byte_array);
+    CHECK_THROWS_AS(arrays.Set(typed, 0, JniObjectValue{AllocateJniHostObjectIdentity(), integers}),
+                    JniObjectArrayError);
+    CHECK(arrays.Get(typed, 0) == byte_array);
+    arrays.SetSyntheticAssignability({});
+    CHECK_THROWS_AS(arrays.Set(objects, 0, byte_array), JniObjectArrayError);
+}

@@ -1,4 +1,4 @@
-/* API 19 ARM guest JNI adapter. All AES operations execute in guest libcrypto.
+/* API 19 ARM guest JNI adapter. AES and signature algorithms execute in guest libcrypto.
  * JNI 1.6 table slots follow the Android JNI ABI; no host headers are used. */
 typedef unsigned int size_t;
 typedef long long jlong;
@@ -29,7 +29,10 @@ extern void ERR_clear_error(void);
 #define AES(bits, mode) extern const EVP_CIPHER *EVP_aes_##bits##_##mode(void);
 AES(128, ecb)
 AES(192, ecb)
-AES(256, ecb) AES(128, cbc) AES(192, cbc) AES(256, cbc) AES(128, ctr) AES(192, ctr) AES(256, ctr)
+AES(256, ecb)
+AES(128, cbc)
+AES(192, cbc)
+AES(256, cbc) AES(128, ctr) AES(192, ctr) AES(256, ctr)
 #define JNI(slot, type) ((type)((*env)[slot]))
     static void wipe32(unsigned char (*buffer)[32]) {
     volatile unsigned char *p = *buffer;
@@ -108,8 +111,10 @@ static const EVP_CIPHER *cipher(jlong token) {
         return EVP_aes_##bits##_##mode();
         CHOICE(1, 128, ecb)
         CHOICE(2, 192, ecb)
-        CHOICE(3, 256, ecb) CHOICE(4, 128, cbc) CHOICE(5, 192, cbc) CHOICE(6, 256, cbc)
-            CHOICE(7, 128, ctr) CHOICE(8, 192, ctr) CHOICE(9, 256, ctr)
+        CHOICE(3, 256, ecb)
+        CHOICE(4, 128, cbc)
+        CHOICE(5, 192, cbc)
+        CHOICE(6, 256, cbc) CHOICE(7, 128, ctr) CHOICE(8, 192, ctr) CHOICE(9, 256, ctr)
     }
     return (void *)0;
 }
@@ -335,6 +340,7 @@ int N(EVP_1CipherFinal_1ex)(JNIEnv *env, jobject cls, jlong token, jobject out, 
     for (int i = 0; i < 32; i++) wipe[i] = 0;
     return written;
 }
+static void release_crypto_locks(void);
 __attribute__((destructor)) static void release_contexts(void) {
     while (contexts) {
         Context *p = contexts;
@@ -342,4 +348,153 @@ __attribute__((destructor)) static void release_contexts(void) {
         EVP_CIPHER_CTX_free(p->evp);
         free(p);
     }
+    release_crypto_locks();
+}
+
+/* Stateless signature verification: Java owns DER/PEM parsing and fields.
+ * OpenSSL owns key decoding and the actual signature algorithm. */
+typedef struct env_md_ctx_st EVP_MD_CTX;
+typedef struct evp_pkey_st EVP_PKEY;
+typedef struct env_md_st EVP_MD;
+extern EVP_PKEY *d2i_PUBKEY(EVP_PKEY **, const unsigned char **, long);
+extern void EVP_PKEY_free(EVP_PKEY *);
+extern int EVP_PKEY_base_id(const EVP_PKEY *);
+extern int EVP_add_digest(const EVP_MD *);
+extern const EVP_MD *EVP_sha1(void);
+extern const EVP_MD *EVP_sha224(void);
+extern const EVP_MD *EVP_sha256(void);
+extern const EVP_MD *EVP_sha384(void);
+extern const EVP_MD *EVP_sha512(void);
+extern int CRYPTO_num_locks(void);
+extern void CRYPTO_set_locking_callback(void (*)(int, int, const char *, int));
+extern void CRYPTO_set_id_callback(unsigned long (*)(void));
+extern unsigned long pthread_self(void);
+static int *crypto_locks;
+static int crypto_lock_count;
+static void crypto_lock(int mode, int index, const char *file, int line) {
+    (void)file;
+    (void)line;
+    if (index < 0 || index >= crypto_lock_count) return;
+    if (mode & 1)
+        pthread_mutex_lock(&crypto_locks[index]);
+    else
+        pthread_mutex_unlock(&crypto_locks[index]);
+}
+int JNI_OnLoad(void *vm, void *reserved) {
+    (void)vm;
+    (void)reserved;
+    crypto_lock_count = CRYPTO_num_locks();
+    crypto_locks = malloc((size_t)crypto_lock_count * sizeof(int));
+    if (!crypto_locks) return -1;
+    for (int i = 0; i < crypto_lock_count; ++i) crypto_locks[i] = 0;
+    CRYPTO_set_locking_callback(crypto_lock);
+    CRYPTO_set_id_callback(pthread_self);
+    if (!EVP_add_digest(EVP_sha1()) || !EVP_add_digest(EVP_sha224()) ||
+        !EVP_add_digest(EVP_sha256()) || !EVP_add_digest(EVP_sha384()) ||
+        !EVP_add_digest(EVP_sha512()))
+        return -1;
+    return 0x00010006;
+}
+static unsigned char *encoded(JNIEnv *env, jobject array, int *count, const char *exception) {
+    *count = length(env, array);
+    if (*count < 0) return 0;
+    if (*count > 1048576) {
+        fail(env, exception, "encoded value exceeds 1 MiB limit");
+        return 0;
+    }
+    unsigned char *buffer = malloc((size_t)*count + 1);
+    if (!buffer)
+        fail(env, "java/lang/OutOfMemoryError", "encoded signature/key");
+    else if (*count)
+        read_bytes(env, array, 0, *count, buffer);
+    return buffer;
+}
+extern int strncmp(const char *, const char *, size_t);
+extern int EVP_DigestInit_ex(EVP_MD_CTX *, const EVP_MD *, void *);
+extern int EVP_DigestUpdate(EVP_MD_CTX *, const void *, size_t);
+extern int EVP_VerifyFinal(EVP_MD_CTX *, const unsigned char *, unsigned int, EVP_PKEY *);
+extern EVP_MD_CTX *EVP_MD_CTX_create(void);
+extern void EVP_MD_CTX_destroy(EVP_MD_CTX *);
+unsigned char N(verify_1signature)(JNIEnv *env, jobject cls, jobject spki, jobject message,
+                                   jobject signature, jobject algorithm) {
+    (void)cls;
+    if (!algorithm) {
+        fail(env, "java/lang/NullPointerException", "algorithm == null");
+        return 0;
+    }
+    const char *name = JNI(169, const char *(*)(JNIEnv *, jobject, void *))(env, algorithm, 0);
+    if (!name) return 0;
+    const char *rsa[] = {"SHA1withRSA", "SHA224withRSA", "SHA256withRSA", "SHA384withRSA",
+                         "SHA512withRSA"};
+    const char *ec[] = {"SHA1withECDSA", "SHA224withECDSA", "SHA256withECDSA", "SHA384withECDSA",
+                        "SHA512withECDSA"};
+    const EVP_MD *(*digests[])(void) = {EVP_sha1, EVP_sha224, EVP_sha256, EVP_sha384, EVP_sha512};
+    const EVP_MD *digest = 0;
+    int expected_type = 0;
+    for (int i = 0; i < 5; ++i) {
+        if (!strcmp(name, rsa[i])) {
+            expected_type = 6;
+            digest = digests[i]();
+        }
+        if (!strcmp(name, ec[i])) {
+            expected_type = 408;
+            digest = digests[i]();
+        }
+    }
+    JNI(170, void (*)(JNIEnv *, jobject, const char *))(env, algorithm, name);
+    if (!digest) {
+        fail(env, "java/security/NoSuchAlgorithmException", "unsupported verification algorithm");
+        return 0;
+    }
+    int key_size, message_size = 0, signature_size = 0;
+    unsigned char *key_bytes = encoded(env, spki, &key_size, "java/security/InvalidKeyException");
+    if (!key_bytes) return 0;
+    unsigned char *message_bytes = 0, *signature_bytes = 0;
+    EVP_MD_CTX *ctx = 0;
+    ERR_clear_error();
+    const unsigned char *cursor = key_bytes;
+    EVP_PKEY *key = d2i_PUBKEY(0, &cursor, key_size);
+    unsigned char valid = 0;
+    if (!key || cursor != key_bytes + key_size || EVP_PKEY_base_id(key) != expected_type) {
+        fail(env, "java/security/InvalidKeyException",
+             "invalid or incompatible public key SubjectPublicKeyInfo");
+        goto done;
+    }
+    /* Both null means engineInitVerify: validate the key without verifying data. */
+    if (!message && !signature) {
+        valid = 1;
+        goto done;
+    }
+    message_bytes = encoded(env, message, &message_size, "java/security/SignatureException");
+    if (!message_bytes) goto done;
+    signature_bytes = encoded(env, signature, &signature_size, "java/security/SignatureException");
+    if (!signature_bytes) goto done;
+    ctx = EVP_MD_CTX_create();
+    if (!ctx) {
+        fail(env, "java/lang/OutOfMemoryError", "signature digest context");
+        goto done;
+    }
+    if (!EVP_DigestInit_ex(ctx, digest, 0) ||
+        !EVP_DigestUpdate(ctx, message_bytes, (size_t)message_size)) {
+        fail(env, "java/security/SignatureException", "signature digest failed");
+        goto done;
+    }
+    int result = EVP_VerifyFinal(ctx, signature_bytes, (unsigned int)signature_size, key);
+    if (result < 0)
+        fail(env, "java/security/SignatureException", "signature verification failed");
+    else
+        valid = result == 1;
+done:
+    if (ctx) EVP_MD_CTX_destroy(ctx);
+    EVP_PKEY_free(key);
+    free(key_bytes);
+    free(message_bytes);
+    free(signature_bytes);
+    ERR_clear_error();
+    return valid;
+}
+static void release_crypto_locks(void) {
+    CRYPTO_set_locking_callback(0);
+    CRYPTO_set_id_callback(0);
+    free(crypto_locks);
 }

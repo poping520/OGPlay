@@ -1641,3 +1641,370 @@ TEST_CASE("DVM-105 AES uses BootDex and real guest libcrypto") {
         CHECK(vm.GuestNativeResourceCount() == 0);
     }
 }
+
+TEST_CASE("DVM-106 Certificate parses DER PEM and verifies RSA EC through guest OpenSSL") {
+    using namespace ogplay;
+    using namespace runtime::dexvm;
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        CAPTURE(backend == InterpreterBackend::threaded ? "threaded" : "switch");
+        runtime::VirtualFileSystem filesystem;
+        core::CapabilityLedger ledger;
+        core::Logger logger;
+        std::vector<std::vector<std::byte>> contents;
+        std::vector<runtime::BionicModuleSource> libraries;
+        for (const auto name : {"libc.so", "libm.so", "libdl.so", "libstdc++.so", "libz.so",
+                                "libcrypto.so", "libogplay_cipher.so"}) {
+            std::ifstream stream(std::string(OGPLAY_SOURCE_DIR) + "/data/android/19/lib/" + name,
+                                 std::ios::binary);
+            REQUIRE_MESSAGE(stream.good(), name);
+            std::vector<char> data{std::istreambuf_iterator<char>(stream), {}};
+            contents.emplace_back(data.size());
+            std::transform(data.begin(), data.end(), contents.back().begin(),
+                           [](char c) { return static_cast<std::byte>(c); });
+            libraries.push_back({name, contents.back()});
+        }
+        auto context = std::make_shared<runtime::DexVmAndroidContext>();
+        context->apk_bytes = {std::byte{0x50}, std::byte{0x4b}, std::byte{3}, std::byte{4}};
+        session::AndroidAppProcessRequest request;
+        request.manifest = AppManifest("fixture.MainActivity");
+        request.system_libraries = libraries;
+        request.dex_bytes = ReadDexFixture("cipher.dex");
+        request.boot_dex_bytes = test::ReadBootDex();
+        request.context = context;
+        request.dexvm.interpreter.backend = backend;
+        request.surface_width = 64;
+        request.surface_height = 36;
+        request.maximum_ticks_per_call = UINT64_C(100000000);
+#if defined(_WIN32)
+        request.backend = {gles::AngleRenderer::d3d11, gles::AngleDevice::hardware};
+#elif defined(__APPLE__)
+        request.backend = {gles::AngleRenderer::metal, gles::AngleDevice::hardware};
+#else
+        request.backend = {gles::AngleRenderer::vulkan, gles::AngleDevice::hardware};
+#endif
+        request.filesystem = &filesystem;
+        request.ledger = &ledger;
+        request.logger = &logger;
+        auto app = session::AndroidAppProcess::Create(std::move(request));
+        auto& vm = app->DexVm().Vm();
+        auto& linker = vm.Linker();
+        const auto direct = [&](const char* owner, const char* name, const char* desc,
+                                std::vector<VmValue> args) {
+            auto type = linker.FindClass(owner);
+            REQUIRE(type.has_value());
+            auto method = linker.FindDirectMethod(*type, name, desc);
+            REQUIRE_MESSAGE(method.has_value(), name);
+            auto result = vm.Call(*method, args);
+            REQUIRE_MESSAGE(!result.exception.IsValid(), result.exception_message);
+            return result.value;
+        };
+        const auto invoke = [&](VmObjectRef obj, const char* name, const char* desc,
+                                std::vector<VmValue> args) {
+            auto type = vm.Model().ObjectClass(obj);
+            auto slot = linker.FindVtableIndex(type, name, desc);
+            REQUIRE_MESSAGE(slot.has_value(), name);
+            args.insert(args.begin(), VmValue::Ref(obj));
+            auto result = vm.Call(linker.Class(type).vtable[*slot], args);
+            REQUIRE_MESSAGE(!result.exception.IsValid(), result.exception_message);
+            return result.value;
+        };
+        const auto array = [&](const std::vector<std::byte>& data) {
+            auto result = vm.Model().NewPrimitiveArray(linker.ResolveDescriptor("[B"),
+                                                       runtime::JniPrimitiveKind::byte,
+                                                       static_cast<runtime::JniSize>(data.size()));
+            vm.Model().WriteByteRegion(result, 0, data);
+            return result;
+        };
+        const auto file = [&](const char* name) {
+            std::ifstream input(
+                std::string(OGPLAY_SOURCE_DIR) + "/tests/fixtures/certificates/" + name,
+                std::ios::binary);
+            REQUIRE(input.good());
+            std::vector<char> chars{std::istreambuf_iterator<char>(input), {}};
+            std::vector<std::byte> result(chars.size());
+            std::transform(chars.begin(), chars.end(), result.begin(),
+                           [](char b) { return static_cast<std::byte>(b); });
+            return result;
+        };
+        const auto raw = [&](VmObjectRef object, const char* name, const char* desc,
+                             std::vector<VmValue> args) {
+            const auto type = vm.Model().ObjectClass(object);
+            const auto slot = linker.FindVtableIndex(type, name, desc);
+            REQUIRE_MESSAGE(slot.has_value(), name);
+            args.insert(args.begin(), VmValue::Ref(object));
+            return vm.Call(linker.Class(type).vtable[*slot], args);
+        };
+        const auto factory = direct("Ljava/security/cert/CertificateFactory;", "getInstance",
+                                    "(Ljava/lang/String;)Ljava/security/cert/CertificateFactory;",
+                                    {VmValue::Ref(vm.NewStringUtf8("X.509"))})
+                                 .ref;
+        const auto factory_root = vm.ProtectReferences(std::array{factory});
+        const auto stream = [&](const std::vector<std::byte>& data) {
+            const auto bytes = array(data);
+            const auto bytes_root = vm.ProtectReferences(std::array{bytes});
+            const auto input = vm.NewIntrinsicInstance("Ljava/io/ByteArrayInputStream;");
+            direct("Ljava/io/ByteArrayInputStream;", "<init>", "([B)V",
+                   {VmValue::Ref(input), VmValue::Ref(bytes)});
+            return input;
+        };
+        const auto parse = [&](const std::vector<std::byte>& data) {
+            return invoke(factory, "generateCertificate",
+                          "(Ljava/io/InputStream;)Ljava/security/cert/Certificate;",
+                          {VmValue::Ref(stream(data))})
+                .ref;
+        };
+        const auto read = [&](VmObjectRef bytes) {
+            return vm.Model().ReadByteRegion(bytes, 0, vm.Model().ArrayLength(bytes));
+        };
+        for (const auto stem : {"rsa", "ec"}) {
+            CAPTURE(stem);
+            const auto der = file((std::string(stem) + ".der").c_str());
+            const auto cert = parse(der);
+            const auto cert_root = vm.ProtectReferences(std::array{cert});
+            const auto pem = parse(file((std::string(stem) + ".pem").c_str()));
+            const auto pem_root = vm.ProtectReferences(std::array{pem});
+            CHECK(invoke(cert, "equals", "(Ljava/lang/Object;)Z", {VmValue::Ref(pem)}).AsInt() ==
+                  1);
+            CHECK(read(invoke(cert, "getEncoded", "()[B", {}).ref) == der);
+            CHECK(invoke(cert, "getVersion", "()I", {}).AsInt() ==
+                  (std::string(stem) == "rsa" ? 3 : 1));
+            CHECK(vm.StringUtf8(invoke(cert, "getType", "()Ljava/lang/String;", {}).ref) ==
+                  "X.509");
+            const auto serial = invoke(cert, "getSerialNumber", "()Ljava/math/BigInteger;", {}).ref;
+            const auto serial_root = vm.ProtectReferences(std::array{serial});
+            CHECK(
+                vm.StringUtf8(
+                    invoke(serial, "toString", "(I)Ljava/lang/String;", {VmValue::Int(16)}).ref) ==
+                (std::string(stem) == "rsa" ? "1234567890abcdef1234567890abcdef12345678" : "2a"));
+            CHECK(
+                !vm.StringUtf8(invoke(serial, "toString", "()Ljava/lang/String;", {}).ref).empty());
+            const auto issuer = invoke(cert, "getIssuerX500Principal",
+                                       "()Ljavax/security/auth/x500/X500Principal;", {})
+                                    .ref;
+            const auto issuer_root = vm.ProtectReferences(std::array{issuer});
+            const auto subject = invoke(cert, "getSubjectX500Principal",
+                                        "()Ljavax/security/auth/x500/X500Principal;", {})
+                                     .ref;
+            CHECK(invoke(issuer, "equals", "(Ljava/lang/Object;)Z", {VmValue::Ref(subject)})
+                      .AsInt() == 1);
+            CHECK(vm.StringUtf8(invoke(cert, "getSigAlgName", "()Ljava/lang/String;", {}).ref) ==
+                  (std::string(stem) == "rsa" ? "SHA256withRSA" : "SHA256withECDSA"));
+            const auto pub = invoke(cert, "getPublicKey", "()Ljava/security/PublicKey;", {}).ref;
+            const auto pub_root = vm.ProtectReferences(std::array{pub});
+            CHECK(vm.StringUtf8(invoke(pub, "getFormat", "()Ljava/lang/String;", {}).ref) ==
+                  "X.509");
+            invoke(cert, "verify", "(Ljava/security/PublicKey;)V", {VmValue::Ref(pub)});
+            invoke(cert, "verify", "(Ljava/security/PublicKey;Ljava/lang/String;)V",
+                   {VmValue::Ref(pub), VmValue::Ref(vm.NewStringUtf8("AndroidOpenSSL"))});
+            const auto bad_provider =
+                raw(cert, "verify", "(Ljava/security/PublicKey;Ljava/lang/String;)V",
+                    {VmValue::Ref(pub), VmValue::Ref(vm.NewStringUtf8("missing"))});
+            REQUIRE(bad_provider.exception.IsValid());
+            CHECK(linker.Class(bad_provider.exception_class).descriptor ==
+                  "Ljava/security/NoSuchProviderException;");
+            auto tampered = der;
+            tampered.back() ^= std::byte{1};
+            const auto invalid = parse(tampered);
+            const auto bad =
+                raw(invalid, "verify", "(Ljava/security/PublicKey;)V", {VmValue::Ref(pub)});
+            REQUIRE(bad.exception.IsValid());
+            CHECK(linker.Class(bad.exception_class).descriptor ==
+                  "Ljava/security/SignatureException;");
+            for (const auto milliseconds :
+                 {INT64_C(0), INT64_C(1900000000000), INT64_C(4102444800000)}) {
+                const auto date = vm.NewIntrinsicInstance("Ljava/util/Date;");
+                direct("Ljava/util/Date;", "<init>", "(J)V",
+                       {VmValue::Ref(date), VmValue::Long(milliseconds)});
+                const auto validity =
+                    raw(cert, "checkValidity", "(Ljava/util/Date;)V", {VmValue::Ref(date)});
+                if (milliseconds == INT64_C(1900000000000))
+                    CHECK(!validity.exception.IsValid());
+                else {
+                    REQUIRE(validity.exception.IsValid());
+                    CHECK(linker.Class(validity.exception_class).descriptor ==
+                          (milliseconds == 0
+                               ? "Ljava/security/cert/CertificateNotYetValidException;"
+                               : "Ljava/security/cert/CertificateExpiredException;"));
+                }
+            }
+            if (std::string(stem) == "rsa") {
+                CHECK(invoke(cert, "getBasicConstraints", "()I", {}).AsInt() == 1);
+                const auto usage = invoke(cert, "getKeyUsage", "()[Z", {}).ref;
+                CHECK(vm.Model().GetPrimitiveElement(usage, 0) == 1);
+                CHECK(vm.Model().GetPrimitiveElement(usage, 5) == 1);
+                const auto names =
+                    invoke(cert, "getSubjectAlternativeNames", "()Ljava/util/Collection;", {}).ref;
+                CHECK(invoke(names, "size", "()I", {}).AsInt() == 2);
+            }
+        }
+        auto bundle = file("rsa.pem");
+        const auto ec = file("ec.pem");
+        bundle.insert(bundle.end(), ec.begin(), ec.end());
+        const auto certs =
+            invoke(factory, "generateCertificates", "(Ljava/io/InputStream;)Ljava/util/Collection;",
+                   {VmValue::Ref(stream(bundle))})
+                .ref;
+        CHECK(invoke(certs, "size", "()I", {}).AsInt() == 2);
+        const auto issuer_cert = parse(file("rsa.der"));
+        const auto issuer_root = vm.ProtectReferences(std::array{issuer_cert});
+        const auto issuer_key =
+            invoke(issuer_cert, "getPublicKey", "()Ljava/security/PublicKey;", {}).ref;
+        const auto issuer_key_root = vm.ProtectReferences(std::array{issuer_key});
+        const auto leaf = parse(file("leaf.der"));
+        const auto leaf_root = vm.ProtectReferences(std::array{leaf});
+        invoke(leaf, "verify", "(Ljava/security/PublicKey;)V", {VmValue::Ref(issuer_key)});
+        const auto leaf_key = invoke(leaf, "getPublicKey", "()Ljava/security/PublicKey;", {}).ref;
+        const auto wrong_key =
+            raw(leaf, "verify", "(Ljava/security/PublicKey;)V", {VmValue::Ref(leaf_key)});
+        REQUIRE(wrong_key.exception.IsValid());
+        CHECK(linker.Class(wrong_key.exception_class).descriptor ==
+              "Ljava/security/SignatureException;");
+        const auto legacy = direct("Ljavax/security/cert/X509Certificate;", "getInstance",
+                                   "([B)Ljavax/security/cert/X509Certificate;",
+                                   {VmValue::Ref(array(file("rsa.der")))})
+                                .ref;
+        const auto legacy_root = vm.ProtectReferences(std::array{legacy});
+        CHECK(read(invoke(legacy, "getEncoded", "()[B", {}).ref) == file("rsa.der"));
+        invoke(legacy, "verify", "(Ljava/security/PublicKey;)V", {VmValue::Ref(issuer_key)});
+        const auto chain = vm.NewIntrinsicInstance("Ljava/util/ArrayList;");
+        const auto chain_root = vm.ProtectReferences(std::array{chain});
+        direct("Ljava/util/ArrayList;", "<init>", "()V", {VmValue::Ref(chain)});
+        invoke(chain, "add", "(Ljava/lang/Object;)Z", {VmValue::Ref(leaf)});
+        invoke(chain, "add", "(Ljava/lang/Object;)Z", {VmValue::Ref(issuer_cert)});
+        const auto path =
+            invoke(factory, "generateCertPath", "(Ljava/util/List;)Ljava/security/cert/CertPath;",
+                   {VmValue::Ref(chain)})
+                .ref;
+        const auto path_root = vm.ProtectReferences(std::array{path});
+        for (const auto encoding : {"PkiPath", "PKCS7"}) {
+            const auto der = invoke(path, "getEncoded", "(Ljava/lang/String;)[B",
+                                    {VmValue::Ref(vm.NewStringUtf8(encoding))})
+                                 .ref;
+            const auto der_root = vm.ProtectReferences(std::array{der});
+            const auto decoded =
+                invoke(factory, "generateCertPath",
+                       "(Ljava/io/InputStream;Ljava/lang/String;)Ljava/security/cert/CertPath;",
+                       {VmValue::Ref(stream(read(der))), VmValue::Ref(vm.NewStringUtf8(encoding))})
+                    .ref;
+            if (std::string_view(encoding) == "PkiPath")
+                CHECK(invoke(decoded, "equals", "(Ljava/lang/Object;)Z", {VmValue::Ref(path)})
+                          .AsInt() == 1);
+            else {  // PKCS7 contains a SET OF certificates; it does not preserve path order.
+                const auto list = invoke(decoded, "getCertificates", "()Ljava/util/List;", {}).ref;
+                const auto list_root = vm.ProtectReferences(std::array{list});
+                CHECK(invoke(list, "size", "()I", {}).AsInt() == 2);
+                CHECK(invoke(list, "contains", "(Ljava/lang/Object;)Z", {VmValue::Ref(leaf)})
+                          .AsInt() == 1);
+                CHECK(invoke(list, "contains", "(Ljava/lang/Object;)Z", {VmValue::Ref(issuer_cert)})
+                          .AsInt() == 1);
+            }
+        }
+        const auto bundle_der = file("chain.p7b");
+        const auto pkcs7 =
+            invoke(factory, "generateCertificates", "(Ljava/io/InputStream;)Ljava/util/Collection;",
+                   {VmValue::Ref(stream(bundle_der))})
+                .ref;
+        CHECK(invoke(pkcs7, "size", "()I", {}).AsInt() == 2);
+        std::ifstream vectors(std::string(OGPLAY_SOURCE_DIR) +
+                              "/tests/fixtures/certificates/signatures.txt");
+        REQUIRE(vectors.good());
+        const std::string message = "OGPlay certificate signature fixture\n";
+        std::vector<std::byte> message_bytes;
+        for (char ch : message) message_bytes.push_back(static_cast<std::byte>(ch));
+        std::string algorithm, signature_hex;
+        int vector_count = 0;
+        while (vectors >> algorithm >> signature_hex) {
+            ++vector_count;
+            CAPTURE(algorithm);
+            const bool rsa = algorithm.ends_with("RSA");
+            const auto cert = parse(file(rsa ? "rsa.der" : "ec.der"));
+            const auto cert_root = vm.ProtectReferences(std::array{cert});
+            const auto key = invoke(cert, "getPublicKey", "()Ljava/security/PublicKey;", {}).ref;
+            const auto key_root = vm.ProtectReferences(std::array{key});
+            const auto verifier = direct("Ljava/security/Signature;", "getInstance",
+                                         "(Ljava/lang/String;)Ljava/security/Signature;",
+                                         {VmValue::Ref(vm.NewStringUtf8(algorithm))})
+                                      .ref;
+            const auto verifier_root = vm.ProtectReferences(std::array{verifier});
+            invoke(verifier, "initVerify", "(Ljava/security/PublicKey;)V", {VmValue::Ref(key)});
+            std::vector<std::byte> sig;
+            for (std::size_t i = 0; i < signature_hex.size(); i += 2)
+                sig.push_back(
+                    static_cast<std::byte>(std::stoul(signature_hex.substr(i, 2), nullptr, 16)));
+            invoke(verifier, "update", "(B)V",
+                   {VmValue::Int(std::to_integer<int>(message_bytes[0]))});
+            invoke(verifier, "update", "([BII)V",
+                   {VmValue::Ref(array(message_bytes)), VmValue::Int(1),
+                    VmValue::Int(static_cast<int>(message_bytes.size()) - 1)});
+            static_cast<void>(vm.CollectGarbage());
+            CHECK(invoke(verifier, "verify", "([B)Z", {VmValue::Ref(array(sig))}).AsInt() == 1);
+            invoke(verifier, "update", "([B)V", {VmValue::Ref(array(message_bytes))});
+            CHECK(invoke(verifier, "verify", "([B)Z", {VmValue::Ref(array(sig))}).AsInt() ==
+                  1);  // Reset after success.
+            auto bad_message = message_bytes;
+            bad_message[0] ^= std::byte{1};
+            invoke(verifier, "update", "([B)V", {VmValue::Ref(array(bad_message))});
+            CHECK(invoke(verifier, "verify", "([B)Z", {VmValue::Ref(array(sig))}).AsInt() == 0);
+            invoke(verifier, "update", "([B)V", {VmValue::Ref(array(message_bytes))});
+            CHECK(invoke(verifier, "verify", "([B)Z", {VmValue::Ref(array(sig))}).AsInt() ==
+                  1);  // Reset after mismatch.
+        }
+        CHECK(vector_count == 10);
+        const auto verifier = direct("Ljava/security/Signature;", "getInstance",
+                                     "(Ljava/lang/String;)Ljava/security/Signature;",
+                                     {VmValue::Ref(vm.NewStringUtf8("SHA256withRSA"))})
+                                  .ref;
+        const auto verifier_root = vm.ProtectReferences(std::array{verifier});
+        const auto invalid_key =
+            vm.NewIntrinsicInstance("Lorg/apache/harmony/security/x509/X509PublicKey;");
+        direct("Lorg/apache/harmony/security/x509/X509PublicKey;", "<init>",
+               "(Ljava/lang/String;[B[B)V",
+               {VmValue::Ref(invalid_key), VmValue::Ref(vm.NewStringUtf8("RSA")),
+                VmValue::Ref(array({std::byte{1}})), VmValue::Ref(VmObjectRef{})});
+        const auto key_failure = raw(verifier, "initVerify", "(Ljava/security/PublicKey;)V",
+                                     {VmValue::Ref(invalid_key)});
+        REQUIRE(key_failure.exception.IsValid());
+        CHECK(linker.Class(key_failure.exception_class).descriptor ==
+              "Ljava/security/InvalidKeyException;");
+        invoke(verifier, "initVerify", "(Ljava/security/PublicKey;)V", {VmValue::Ref(issuer_key)});
+        invoke(verifier, "update", "([B)V", {VmValue::Ref(array(std::vector<std::byte>(1048576)))});
+        const auto limit_failure = raw(verifier, "update", "(B)V", {VmValue::Int(1)});
+        REQUIRE(limit_failure.exception.IsValid());
+        CHECK(linker.Class(limit_failure.exception_class).descriptor ==
+              "Ljava/security/SignatureException;");
+        const auto signature_type = linker.ResolveDescriptor("Ljava/security/Signature;");
+        const auto get_signature = linker.FindDirectMethod(
+            signature_type, "getInstance", "(Ljava/lang/String;)Ljava/security/Signature;");
+        REQUIRE(get_signature);
+        for (const auto unsupported : {"SHA256withRSA/PSS", "SHA256withDSA", "Ed25519"}) {
+            const auto failure =
+                vm.Call(*get_signature, std::array{VmValue::Ref(vm.NewStringUtf8(unsupported))});
+            REQUIRE(failure.exception.IsValid());
+            CHECK(linker.Class(failure.exception_class).descriptor ==
+                  "Ljava/security/NoSuchAlgorithmException;");
+        }
+        // JNI storage must apply VM covariance to arrays nested inside Object[].
+        const auto objects =
+            vm.Model().NewObjectArray(linker.ResolveDescriptor("[Ljava/lang/Object;"),
+                                      linker.ResolveDescriptor("Ljava/lang/Object;"), 1);
+        const auto objects_root = vm.ProtectReferences(std::array{objects});
+        const auto nested = vm.Model().NewObjectArray(linker.ResolveDescriptor("[[B"),
+                                                      linker.ResolveDescriptor("[B"), 1);
+        vm.Model().SetObjectElement(objects, 0, nested);
+        vm.Model().SetObjectElement(nested, 0, array(message_bytes));
+        const auto integers = vm.Model().NewPrimitiveArray(linker.ResolveDescriptor("[I"),
+                                                           runtime::JniPrimitiveKind::integer, 1);
+        CHECK_THROWS_AS(vm.Model().SetObjectElement(nested, 0, integers),
+                        runtime::JniObjectArrayError);
+        for (const auto& malformed :
+             {std::vector<std::byte>{}, std::vector<std::byte>{std::byte{0x30}, std::byte{0x80}},
+              std::vector<std::byte>{std::byte{1}, std::byte{2}}}) {
+            const auto result = raw(factory, "generateCertificate",
+                                    "(Ljava/io/InputStream;)Ljava/security/cert/Certificate;",
+                                    {VmValue::Ref(stream(malformed))});
+            REQUIRE(result.exception.IsValid());
+            CHECK(linker.Class(result.exception_class).descriptor ==
+                  "Ljava/security/cert/CertificateException;");
+        }
+    }
+}

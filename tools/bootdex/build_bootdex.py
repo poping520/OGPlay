@@ -14,6 +14,7 @@ import tempfile
 import urllib.request
 import zipfile
 from pathlib import Path
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(ROOT / "tools"))
@@ -473,6 +474,22 @@ def self_test() -> int:
         ensure_tool(destination, source.as_uri(), sha256(sample))
         if destination.read_bytes() != sample:
             raise BuildError("tool download failed")
+        # A withdrawn payload must not be resurrected from a device extraction.
+        fake_device = Path(work) / "device/framework"
+        (fake_device.parent / "lib").mkdir(parents=True)
+        (fake_device.parent / "lib/libcrypto.so").write_bytes(sample)
+        fake_manifest = Path(work) / "payload/manifest.json"
+        with patch.dict(globals(), {"MANIFEST": fake_manifest, "DEVICE": fake_device,
+                                   "CRYPTO_SHA256": sha256(sample)}):
+            try:
+                build_cipher()
+            except BuildError as error:
+                if "data/android/19/lib/libcrypto.so" not in str(error):
+                    raise
+            else:
+                raise BuildError("guest crypto build accepted withdrawn input")
+        if fake_manifest.parent.exists():
+            raise BuildError("guest crypto build restored withdrawn payload")
     print("BootDex builder self-test passed")
     return 0
 
@@ -481,9 +498,11 @@ CRYPTO_SHA256 = "3c7ea441e482f50244f74774bc7230449f82911831ceb4ce937ca176041e6f1
 
 def build_cipher() -> int:
     """Build the small ARM JNI adapter; keep temporary device provenance separate."""
-    crypto = DEVICE.parent / "lib/libcrypto.so"
+    # Never restore withdrawn ROM artifacts from the private device extraction.
+    crypto = MANIFEST.parent / "lib/libcrypto.so"
     if not crypto.is_file() or file_sha256(crypto) != CRYPTO_SHA256:
-        raise BuildError("missing or unexpected temporary device libcrypto.so")
+        raise BuildError("missing or unexpected data/android/19/lib/libcrypto.so; "
+                         "prepare the self-built API 19 ARM library and update its provenance/pin first")
     clang = shutil.which("clang")
     linker = shutil.which("ld.lld")
     if not linker:
@@ -491,7 +510,7 @@ def build_cipher() -> int:
         linker = str(candidates[0]) if candidates else None
     if not clang or not linker:
         raise BuildError("build-cipher requires clang with ARM support and ELF ld.lld")
-    source = ROOT / "tools/bootdex/native/cipher.c"
+    source = ROOT / "src/guest/crypto/crypto_jni.c"
     flags = ["--target=armv7a-linux-androideabi19", "-march=armv7-a", "-mfloat-abi=softfp",
              "-fPIC", "-ffreestanding", "-fno-stack-protector", "-O2", "-Wall", "-Wextra", "-Werror"]
     def compile_at(work: Path) -> bytes:
@@ -505,7 +524,6 @@ def build_cipher() -> int:
         library = compile_at(Path(a))
         if library != compile_at(Path(b)):
             raise BuildError("two guest Cipher builds differ")
-    (MANIFEST.parent / "lib/libcrypto.so").write_bytes(crypto.read_bytes())
     (MANIFEST.parent / "lib/libogplay_cipher.so").write_bytes(library)
     document = json.loads(MANIFEST.read_text(encoding="utf-8"))
     document["cipher_native"] = {
@@ -513,7 +531,7 @@ def build_cipher() -> int:
         "device": "MoKee Android 4.4.4 API 19 ARMv7, extracted 2026-09-06",
         "replacement": "Replace with a self-built API 19 ARM OpenSSL and update pinned hashes before distribution.",
         "generator": "tools/bootdex/build_bootdex.py build-cipher",
-        "adapter_source": "tools/bootdex/native/cipher.c",
+        "adapter_source": "src/guest/crypto/crypto_jni.c",
         "adapter_source_sha256": file_sha256(source),
         "notice": "notices/libcrypto.so.txt",
         "notice_sha256": file_sha256(MANIFEST.parent / "notices/libcrypto.so.txt"),
@@ -524,7 +542,7 @@ def build_cipher() -> int:
                       {"path": "lib/libogplay_cipher.so", "sha256": sha256(library), "size": len(library)}],
     }
     MANIFEST.write_text(json.dumps(document, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    print("Built deterministic API 19 ARM Cipher JNI adapter and staged temporary libcrypto")
+    print("Built deterministic API 19 ARM crypto JNI adapter using the prepared libcrypto")
     return 0
 
 

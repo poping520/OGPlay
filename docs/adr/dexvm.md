@@ -10,6 +10,10 @@
 - [ADR-0031 · API 19 Unsafe 逻辑位置与原子性](#adr-0031)
 - [ADR-0032 · API 19 日期格式化数据与平台边界](#adr-0032)
 - [ADR-0033 · 集合 BootDex 所有权与弱引用边界](#adr-0033)
+- [ADR-0034 · 后续 Luni 与平台边界](#adr-0034)
+- [ADR-0035 · Cipher AES 与 guest OpenSSL](#adr-0035)
+- [ADR-0036 · Certificate 与 guest OpenSSL 验签](#adr-0036)
+- [ADR-0037 · guest 生产源码与 crypto 制品来源](#adr-0037)
 
 <a id="adr-0017"></a>
 
@@ -406,3 +410,59 @@ FieldUpdater/ForkJoin 和证书验证不因类迁移宣称可用；PvZ 首错推
 真实随机 IV、两个 guest 线程和 GC/teardown。566 类全链接及普通 Cipher 方法所有权受检。
 完整 JCA、AES AlgorithmParameters 编码、wrap/unwrap 长尾、RSA、证书和 TLS 不在验收范围。
 真机当前已断开，未宣称完成手机对照或任何游戏 gate；本次验证平台为 macOS。
+
+<a id="adr-0036"></a>
+
+## ADR-0036 · Certificate 使用 Harmony Java 与 guest OpenSSL 验签
+
+- 状态：Accepted
+- 日期：2026-09-06
+- 关联：[DVM-106](../tasks/dexvm/DVM-106.md)、[ADR-0035](#adr-0035)
+- Supersedes：ADR-0034 对 NativeBN 仅 64 位值的限制、ADR-0035 对证书尚未接入的范围描述。
+
+### 决定
+
+- Certificate/X509Certificate/CertificateFactory、Harmony ASN.1/X.509/PKCS7 和证书路径
+  编解码从 pinned core.jar 选入 BootDex。复用既有 X500 和普通流，不引入宿主证书 parser，
+  不 overlay 普通 verify。javax.security.cert 旧入口同样复用 Java 委托。
+- Security 注册原版 DRLCertFactory。AndroidOpenSSL 以精简 SignatureSpi 注册 RSA
+  PKCS#1 v1.5/ECDSA 与 SHA1/224/256/384/512 的 10 个组合及 OID 别名；SPI 保存普通
+  guest 公钥编码快照和有界消息流，经同一 ARM JNI 桥调用真实 EVP 验签。
+  不导入完整 libjavacrypto、TLS 和 Conscrypt X509/BIO native 表面。
+- NativeBN 仅扩展值编解码至 17 个原语，输入最多 1 MiB。大数算术继续明确失败。
+  OpenSSL key/digest context 在单次 native 调用内释放；共用库安装真实 bionic pthread
+  锁和 identity 回调。Signature 累计输入同样限于 1 MiB，超限抛 SignatureException。
+- JNI object arrays 对 synthetic 类型通过锁外显式回调调用 DexVM 类型关系；bridge
+  持有同一执行锁，不按身份不等误拒绝嵌套数组，也不绕过不兼容写入检查。
+- 保留同一 api19.json、build_bootdex.py、cipher.c 和 manifest.cipher_native。
+  设备临时制品授权及后续自行构建替换要求延续 ADR-0035，bootdex.jar 继续不提交。
+
+### 验证与边界
+
+双后端覆盖 DER/PEM、长序列号、名字/有效期/扩展、公钥编码、旧 javax API、证书链验签、
+PkiPath/PKCS7 编解码、10 种摘要签名、篡改/错误公钥/未知算法/超限、GC 后复用；独立
+OpenSSL fixture 是验签 oracle。PKCS7 仅保证证书集合，PkiPath 保持路径顺序。
+
+签名验证成功不表示证书受信任；PKIX 验证/信任锚、系统 CA、撤销网络、TLS、签名生成、
+DSA/PSS/EdDSA 与 RSA Cipher 不包含。公钥使用 Harmony 编码型 fallback，不声明完整
+RSA/EC KeyFactory 或数学参数接口。未做真机、Windows/Linux 或游戏 gate 验收。
+
+<a id="adr-0037"></a>
+
+## ADR-0037 · guest 生产源码与 crypto 制品来源
+
+- 状态：Accepted
+- 日期：2026-09-07
+- 关联：[DVM-106](../tasks/dexvm/DVM-106.md)
+- Supersedes：ADR-0035/0036 中 guest JNI 源码位于 tools 及临时分发 ROM libcrypto 的条款。
+
+### 决定
+
+用户要求将 guest 生产代码移出工具目录，并撤回 ROM 提取的 libcrypto.so。
+自有 guest 源码统一归 src/guest；AES/验签桥位于 src/guest/crypto/crypto_jni.c，
+仅交叉编译至 ARM guest，不加入宿主 runtime 目标。构建编排保留 tools/bootdex/build_bootdex.py，
+库名 libogplay_cipher.so 和 data/android/19/lib 产物目录不变。
+
+build-cipher 只消费显式准备的 data/android/19/lib/libcrypto.so，不从 .local 设备目录恢复。
+现有 manifest 中来源/哈希是此前验收记录，完整 payload 校验在缺库时继续明确失败。
+待用户自行构建后再更新来源约束、哈希并重跑 crypto/payload 验收；不将缺库伪装为可发行。

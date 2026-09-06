@@ -41,7 +41,7 @@
     "path": "framework/bootdex.jar",
     "generator": "tools/bootdex/build_bootdex.py",
     "recipe": "tools/bootdex/api19.json",
-    "recipe_sha256": "b6bd3fffca3a737d7c45c7e35a49f9d90ff25e067d0317e761a4746967db5c40",
+    "recipe_sha256": "bc7889319adbf395bda6c199f046154aafc2c039e7eb25ca9ce23b05523e3c9d",
     "sources": [
       {
         "source_project": "platform/libcore",
@@ -54,12 +54,12 @@
         "source_jar_sha256": "43ab6b953bd5a9e25f0f0d4411a5aa3f0660d16954a0a84e95ad834558b21a1e"
       }
     ],
-    "size": 931101,
-    "sha256": "d5d94f2b2dd8eb8e490fe5213e5f9526f019f51391ad645783fde74ea2d1ce4d",
+    "size": 1131305,
+    "sha256": "be9f4fa912c0f9d36ae09b04887a96559340139fb398da16b08adc300cb5f5d2",
     "dex_entry": "classes.dex",
-    "dex_size": 930804,
-    "dex_sha256": "750f26ab7b2945c7f729dc4aeb15ac4b5253e805141cb9e021f61153a9b5d7f7",
-    "class_count": 566,
+    "dex_size": 1131008,
+    "dex_sha256": "ff8ab80ba4b51fc99d8b6f0e2a013204b6dc5f8ee5dfb32b43992762b4df3600",
+    "class_count": 760,
     "selection_policy": "load-all",
     "notice": "notices/bootdex.jar.txt",
     "notice_sha256": "fc3aef183f6fe9cea0faa0caab397c423bcf414d7843e8a5d51bd1dfd7684d3f"
@@ -150,8 +150,8 @@
     "device": "MoKee Android 4.4.4 API 19 ARMv7, extracted 2026-09-06",
     "replacement": "Replace with a self-built API 19 ARM OpenSSL and update pinned hashes before distribution.",
     "generator": "tools/bootdex/build_bootdex.py build-cipher",
-    "adapter_source": "tools/bootdex/native/cipher.c",
-    "adapter_source_sha256": "40550f9764fd5839ee3c0493b68836ff9e7eee5fcc649752179d6e6ca9f21425",
+    "adapter_source": "src/guest/crypto/crypto_jni.c",
+    "adapter_source_sha256": "10dd043e0869b347107e558b80c8b5bccd781d8e589147eeee0f597ad8a3e31b",
     "notice": "notices/libcrypto.so.txt",
     "notice_sha256": "257fe1b542f846557d0fc938f4206d6c9a6334e2b571fa020e51f96377537120",
     "compiler_sha256": "7f30f076d0e9c38f772a76449fca9da8cf97f6a3d43b94c90a00e4f9ce7ad39e",
@@ -176,8 +176,8 @@
       },
       {
         "path": "lib/libogplay_cipher.so",
-        "sha256": "3ea5aa9c63a141132462105e5f76053ede8114c4933a8e47c5deca1a63fc1fd4",
-        "size": 16156
+        "sha256": "348aa92712da9ebb4aafbe4f985c6eb256938c063f51f0e380ff1b489d4aaeba",
+        "size": 21660
       }
     ]
   }

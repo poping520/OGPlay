@@ -63,6 +63,8 @@ struct DexActivityLifecycleBindings final {
     // existing lifecycle hosts retain source compatibility.
     std::string application_descriptor{"Landroid/app/Application;"};
     std::shared_ptr<runtime::debug::DiagnosticState> diagnostics;
+    std::string
+        launcher_component_name; // Preserves manifest alias identity when present.
 };
 
 class DexActivityLifecycleError final : public std::runtime_error {

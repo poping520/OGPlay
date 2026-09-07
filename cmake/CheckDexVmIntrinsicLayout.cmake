@@ -182,10 +182,14 @@ endif()
 
 file(READ "${android_dir}/android_app.cpp" android_app)
 foreach(copied_method IN ITEMS "getPackageName" "getAssets" "getFilesDir")
-    string(FIND "${android_app}" "${copied_method}" found)
-    if(NOT found EQUAL -1)
+    # A virtual call from Activity (e.g. getLocalClassName) is legitimate.
+    # Reject copied declarations, not every mention of the inherited method.
+    string(REGEX MATCH
+        "builder[ \t\r\n]*\\.[ \t\r\n]*(FinalMethod|VirtualMethod)[ \t\r\n]*\\([ \t\r\n]*\"${copied_method}\""
+        copied_declaration "${android_app}")
+    if(copied_declaration)
         message(FATAL_ERROR
-            "Application declaration copied inherited Context method: ${copied_method}")
+            "Application/Activity declaration copied inherited Context method: ${copied_method}")
     endif()
 endforeach()
 

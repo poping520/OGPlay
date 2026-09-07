@@ -14,6 +14,14 @@ python3 tools/bootdex/build_bootdex.py check
 3.0.10 release，所有输入均校验固定 SHA-256。新增类时只修改 recipe 对应源 jar 的有序
 列表，运行时仍全量加载生成物中的 class_def。
 
+DVM-107 另选入 framework 的 Pair、SparseArray 家族、ComponentName 与 Parcelable 接口。
+其 ArrayUtils 在 API 19 原本属于 framework2.jar，本地改用
+`.local/aosp/framework/base/core/java/com/android/internal/util/ArrayUtils.java` 原始源码，
+通过 JDK 17（`javac --release 7 -g:none`）和本地 AOSP dx 编译。dx 输入为
+`.local/aosp/dalvik/dx/src` 与 `.local/aosp/libcore/dex/src/main/java`；Java 文件和两棵源码树
+均固定哈希，任何缺失/改动即失败。manifest 独立记录源码/编译输入来源，不冒充 jar。
+`build`/`check` 均执行两次独立编译、重组并核对 DEX 一致；无需 SDK 或额外 recipe。
+
 `api19.json` 的 `date_family_audit` 保存 DVM-102 日期闭包的依赖分类、native 边界与
 ICU 来源；`roots` 冻结原 42 类审计样本，不随依赖迁移扩大；其中 `boot_dex` 是主类清单的受检子集，外部依赖分类不得与主清单冲突。
 `audit` 校验固定 `core.jar`、全部引用分类与 native 签名，完整派生成员表写入

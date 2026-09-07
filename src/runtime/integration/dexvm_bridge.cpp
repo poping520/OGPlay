@@ -227,7 +227,6 @@ void RegisterAndroidOwnerAttachedStateTable(
             context->media_resources.erase(key);
             context->media_playing.erase(key);
             context->media_looping.erase(key);
-            context->intent_components.erase(key);
             context->intent_string_extras.erase(key);
             context->intent_int_extras.erase(key);
             context->intent_integer_array_list_extras.erase(owner);

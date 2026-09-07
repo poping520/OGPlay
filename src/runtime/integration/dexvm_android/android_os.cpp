@@ -1234,41 +1234,6 @@ Decl Declare_android_os_StatFs(const Context& context) {
 
 namespace ogplay::runtime::android_intrinsics {
 
-Decl Declare_android_os_Parcelable(const Context& context) {
-    static_cast<void>(context);
-    auto builder = dx::IntrinsicClassBuilder::Interface("Landroid/os/Parcelable;");
-    builder.ConstantInt(
-               "CONTENTS_FILE_DESCRIPTOR", "I", 1,
-               dx::kAccPublic | dx::kAccStatic | dx::kAccFinal)
-        .ConstantInt(
-            "PARCELABLE_WRITE_RETURN_VALUE", "I", 1,
-            dx::kAccPublic | dx::kAccStatic | dx::kAccFinal);
-    builder.VirtualMethod("describeContents", "()I", [](dx::IntrinsicContext&) -> dx::VmValue {
-        throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
-                              "Parcelable.describeContents is not implemented"};
-    }).VirtualMethod("writeToParcel", "(Landroid/os/Parcel;I)V",
-        [](dx::IntrinsicContext&) -> dx::VmValue {
-            throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
-                                  "Parcelable.writeToParcel is not implemented"};
-        });
-    return std::move(builder).Build();
-}
-
-Decl Declare_android_os_Parcelable_Creator(const Context& context) {
-    static_cast<void>(context);
-    auto builder = dx::IntrinsicClassBuilder::Interface("Landroid/os/Parcelable$Creator;");
-    builder.VirtualMethod("createFromParcel", "(Landroid/os/Parcel;)Ljava/lang/Object;",
-        [](dx::IntrinsicContext&) -> dx::VmValue {
-            throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
-                                  "Parcelable.Creator is not implemented"};
-        }).VirtualMethod("newArray", "(I)[Ljava/lang/Object;",
-        [](dx::IntrinsicContext&) -> dx::VmValue {
-            throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
-                                  "Parcelable.Creator is not implemented"};
-        });
-    return std::move(builder).Build();
-}
-
 Decl Declare_android_os_Bundle_1(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class(
         "Landroid/os/Bundle$1;", "Ljava/lang/Object;", {"Landroid/os/Parcelable$Creator;"});
@@ -1603,11 +1568,6 @@ void RegisterAndroidValueStateTables(
     vm.RegisterIntrinsicStateTable({
         "android.value",
         [context](const dexvm::VmObjectRef owner, const dexvm::VmRootVisitor& visit) {
-            if (const auto sparse = context->sparse_arrays.find(owner.Value());
-                sparse != context->sparse_arrays.end()) {
-                for (const auto& entry : sparse->second)
-                    if (entry.value.IsValid()) visit(entry.value);
-            }
             if (const auto bundle = context->bundles.find(owner.Value());
                 bundle != context->bundles.end()) {
                 for (const auto& [_, value] : bundle->second) {
@@ -1628,8 +1588,6 @@ void RegisterAndroidValueStateTables(
             }
         },
         [context](const dexvm::VmObjectRef owner) {
-            context->sparse_arrays.erase(owner.Value());
-            context->sparse_int_arrays.erase(owner.Value());
             context->paths.erase(owner.Value());
             context->parcels.erase(owner.Value());
             context->wake_locks.erase(owner.Value());

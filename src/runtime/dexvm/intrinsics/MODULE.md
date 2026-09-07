@@ -207,3 +207,8 @@ engineInitVerify 真实解码验证公钥，engineVerify 经显式 JNI 调用 AR
 公钥保留 Harmony X509PublicKey 的编码型 fallback，不宣称 RSA/EC KeyFactory 和数学参数接口。
 NativeBN 增加大小端数组、二补码和十/十六进制值转换；Math.log 为 Java 进制转换提供
 既有 Math 浮点原语边界，不在宿主实现证书 parser 或签名算法。
+
+DVM-107：framework Pair/Sparse/ComponentName 与 PrintWriter 的普通算法归 BootDex，
+StringBuilder/StringBuffer 共用 CharSequence 区间 append 原语：UTF-16 索引，虚派
+length/charAt、null 视为 "null"、自追加取原片段、越界不改变原 buffer。测试覆盖双后端
+ComponentName 的短名称打印与 UTF-16/null/自追加/异常边界。

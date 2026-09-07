@@ -1214,14 +1214,26 @@ Decl Declare_android_content_Context(const Context& context) {
             // explicit failure.
             const auto intent = call.arguments[0].ref;
             const auto component =
-                context->intent_components.find(intent.Value());
-            if (component == context->intent_components.end()) {
+                CallAndroidMethod(call.vm, intent, "getComponent",
+                                  "()Landroid/content/ComponentName;")
+                    .ref;
+            const auto roots = call.vm.ProtectReferences(std::array{component});
+            if (!component.IsValid())
+                throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
+                                      "startActivity requires an explicit component"};
+            const auto package = CallAndroidMethod(call.vm, component, "getPackageName",
+                                                   "()Ljava/lang/String;")
+                                     .ref;
+            if (call.vm.StringUtf8(package) != context->package_name)
                 throw dx::VmJavaThrow{
                     "Ljava/lang/UnsupportedOperationException;",
-                    "startActivity without an in-package component is outside "
-                    "the compatibility scope"};
-            }
-            context->pending_activity_descriptor = component->second;
+                    "startActivity outside this package is not supported"};
+            auto name =
+                call.vm.StringUtf8(CallAndroidMethod(call.vm, component, "getClassName",
+                                                     "()Ljava/lang/String;")
+                                       .ref);
+            std::replace(name.begin(), name.end(), '.', '/');
+            context->pending_activity_descriptor = "L" + name + ";";
             context->activity_switch_pending = true;
             context->current_intent = intent;
             return dx::VmValue::Void();
@@ -1480,6 +1492,8 @@ namespace {
 
 Decl Declare_android_content_Intent(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/content/Intent;", "Ljava/lang/Object;");
+    const auto component = builder.BoundInstanceField(
+        "mComponent", "Landroid/content/ComponentName;", dx::kAccPrivate);
     const auto action = builder.BoundInstanceField(
         "mAction", "Ljava/lang/String;", dx::kAccPrivate);
     const auto data = builder.BoundInstanceField(
@@ -1521,25 +1535,59 @@ Decl Declare_android_content_Intent(const Context& context) {
             fields.SetRef(data, call.arguments[1].ref);
             return dx::VmValue::Void();
         });
+    const auto set_class = [component](dx::IntrinsicContext& call) {
+        dx::IntrinsicCall fields(call);
+        const auto owner = fields.NonNullRef(0, "context");
+        const auto clazz = fields.NonNullRef(1, "class");
+        const auto package =
+            CallAndroidMethod(call.vm, owner, "getPackageName", "()Ljava/lang/String;")
+                .ref;
+        const auto roots = call.vm.ProtectReferences(std::array{package});
+        const auto name =
+            CallAndroidMethod(call.vm, clazz, "getName", "()Ljava/lang/String;").ref;
+        fields.SetRef(component, NewAndroidComponentName(call.vm, package, name));
+        return Self(call);
+    };
     builder.Constructor("(Landroid/content/Context;Ljava/lang/Class;)V",
-        [context](dx::IntrinsicContext& call) {
-            const auto class_object = call.arguments[1].ref;
-            const auto target = call.vm.Model().ClassOfClassObject(class_object);
-            context->intent_components[call.receiver.Value()] =
-                call.vm.Linker().Class(target).descriptor;
-            return dx::VmValue::Void();
-        });
-    builder.VirtualMethod("setClassName",
+                        [set_class](dx::IntrinsicContext& call) {
+                            static_cast<void>(set_class(call));
+                            return dx::VmValue::Void();
+                        });
+    builder.VirtualMethod(
+        "setClass",
+        "(Landroid/content/Context;Ljava/lang/Class;)Landroid/content/Intent;",
+        set_class);
+    builder.VirtualMethod(
+        "setClassName",
         "(Ljava/lang/String;Ljava/lang/String;)Landroid/content/Intent;",
-        [context](dx::IntrinsicContext& call) {
-            auto dotted = call.vm.StringUtf8(call.arguments[1].ref);
-            std::string descriptor = "L";
-            for (const auto unit : dotted) {
-                descriptor.push_back(unit == '.' ? '/' : unit);
-            }
-            descriptor.push_back(';');
-            context->intent_components[call.receiver.Value()] =
-                std::move(descriptor);
+        [component](dx::IntrinsicContext& call) {
+            dx::IntrinsicCall(call).SetRef(
+                component, NewAndroidComponentName(call.vm, call.arguments[0].ref,
+                                                   call.arguments[1].ref));
+            return Self(call);
+        });
+    builder.VirtualMethod(
+        "setClassName",
+        "(Landroid/content/Context;Ljava/lang/String;)Landroid/content/Intent;",
+        [component](dx::IntrinsicContext& call) {
+            const auto package =
+                CallAndroidMethod(call.vm, call.arguments[0].ref, "getPackageName",
+                                  "()Ljava/lang/String;")
+                    .ref;
+            dx::IntrinsicCall(call).SetRef(
+                component,
+                NewAndroidComponentName(call.vm, package, call.arguments[1].ref));
+            return Self(call);
+        });
+    builder.VirtualMethod("getComponent", "()Landroid/content/ComponentName;",
+                          [component](dx::IntrinsicContext& call) {
+                              return dx::VmValue::Ref(
+                                  dx::IntrinsicCall(call).GetRef(component));
+                          });
+    builder.VirtualMethod(
+        "setComponent", "(Landroid/content/ComponentName;)Landroid/content/Intent;",
+        [component](dx::IntrinsicContext& call) {
+            dx::IntrinsicCall(call).SetRef(component, call.arguments[0].ref);
             return Self(call);
         });
     builder.VirtualMethod("setAction",
@@ -1739,10 +1787,10 @@ Decl Declare_android_content_Intent(const Context& context) {
     builder.VirtualMethod("resolveType",
         "(Landroid/content/ContentResolver;)Ljava/lang/String;",
         resolve_type);
-    builder.VirtualMethod("resolveTypeIfNeeded",
-        "(Landroid/content/ContentResolver;)Ljava/lang/String;",
-        [context, type, resolve_type](dx::IntrinsicContext& call) {
-            if (context->intent_components.contains(call.receiver.Value())) {
+    builder.VirtualMethod(
+        "resolveTypeIfNeeded", "(Landroid/content/ContentResolver;)Ljava/lang/String;",
+        [component, type, resolve_type](dx::IntrinsicContext& call) {
+            if (dx::IntrinsicCall(call).GetRef(component).IsValid()) {
                 return dx::VmValue::Ref(
                     dx::IntrinsicCall(call).GetRef(type));
             }

@@ -401,7 +401,8 @@ struct OrchestratedApp final {
 
     explicit OrchestratedApp(const std::string& activity,
                              const bool has_launcher = true,
-                             const bool with_native = true) {
+                             const bool with_native = true,
+                             const std::string& launcher_alias = {}) {
         context->apk_bytes = {
             std::byte{0x50}, std::byte{0x4b}, std::byte{0x03}, std::byte{0x04}};
         const ogplay::runtime::BionicModuleSource system{
@@ -410,6 +411,13 @@ struct OrchestratedApp final {
         if (with_native) libraries.push_back(Library("liba.so", native_a));
         ogplay::session::AndroidAppProcessRequest request;
         request.manifest = AppManifest(activity, has_launcher);
+        if (!launcher_alias.empty()) {
+            auto filters = request.manifest.activity_components.front().intent_filters;
+            request.manifest.activity_components.front().intent_filters.clear();
+            request.manifest.activity_components.push_back(
+                {ogplay::loader::AndroidManifestComponentKind::activity_alias,
+                 launcher_alias, activity, true, std::move(filters)});
+        }
         request.native_libraries = std::move(libraries);
         request.system_libraries = std::span{&system, 1};
         request.dex_bytes = ReadDexFixture("application.dex");
@@ -2007,4 +2015,39 @@ TEST_CASE("DVM-106 Certificate parses DER PEM and verifies RSA EC through guest 
                   "Ljava/security/cert/CertificateException;");
         }
     }
+}
+
+TEST_CASE("DVM-107 manifest launcher alias retains its component identity") {
+    using namespace ogplay;
+    using namespace runtime::dexvm;
+    OrchestratedApp fixture("fixture.LauncherActivity", true, false,
+                            "fixture.StartAlias");
+    fixture.app->StartApplication();
+    REQUIRE(fixture.app->StartLauncherActivity().state ==
+            session::LifecycleRunState::running);
+    auto& bridge = fixture.app->DexVm();
+    const auto activity = fixture.context->activity;
+    CHECK(bridge.Linker().Class(bridge.Model().ObjectClass(activity)).descriptor ==
+          "Lfixture/LauncherActivity;");
+    const auto invoke = [&](VmObjectRef receiver, const char* name,
+                            const char* signature) {
+        const auto type = bridge.Model().ObjectClass(receiver);
+        const auto slot = bridge.Linker().FindVtableIndex(type, name, signature);
+        REQUIRE(slot.has_value());
+        const auto result = bridge.Vm().Call(bridge.Linker().Class(type).vtable[*slot],
+                                             std::array{VmValue::Ref(receiver)});
+        REQUIRE_MESSAGE(!result.exception.IsValid(), result.exception_message);
+        return result.value.ref;
+    };
+    CHECK(bridge.Vm().StringUtf8(invoke(activity, "getLocalClassName",
+                                        "()Ljava/lang/String;")) == "StartAlias");
+    const auto component =
+        invoke(activity, "getComponentName", "()Landroid/content/ComponentName;");
+    CHECK(bridge.Vm().StringUtf8(
+              invoke(component, "getClassName", "()Ljava/lang/String;")) ==
+          "fixture.StartAlias");
+    const auto intent = invoke(activity, "getIntent", "()Landroid/content/Intent;");
+    CHECK(invoke(intent, "getComponent", "()Landroid/content/ComponentName;") ==
+          component);
+    CHECK(fixture.app->Stop().state == session::LifecycleRunState::stopped);
 }

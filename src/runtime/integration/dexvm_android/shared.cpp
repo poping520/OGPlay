@@ -1528,3 +1528,41 @@ dx::VmObjectRef MakeMotionEvent(dx::Interpreter& vm,
 }
 
 }  // namespace ogplay::runtime
+
+namespace ogplay::runtime::android_intrinsics {
+dx::VmValue CallAndroidMethod(dx::Interpreter& vm, dx::VmObjectRef receiver,
+                              const char* name, const char* signature,
+                              std::vector<dx::VmValue> arguments) {
+    if (!receiver.IsValid())
+        throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;", name};
+    const auto type = vm.Model().ObjectClass(receiver);
+    const auto index = vm.Linker().FindVtableIndex(type, name, signature);
+    if (!index)
+        throw dx::DexVmError(dx::DexVmErrorReason::unresolved_reference, name);
+    arguments.insert(arguments.begin(), dx::VmValue::Ref(receiver));
+    const auto outcome = vm.Call(vm.Linker().Class(type).vtable[*index], arguments);
+    if (outcome.exception.IsValid())
+        throw dx::VmJavaThrow{vm.Linker().Class(outcome.exception_class).descriptor,
+                              outcome.exception_message, outcome.exception};
+    return outcome.value;
+}
+dx::VmObjectRef NewAndroidComponentName(dx::Interpreter& vm, dx::VmObjectRef package,
+                                        dx::VmObjectRef class_name) {
+    const auto inputs = vm.ProtectReferences(std::array{package, class_name});
+    constexpr auto descriptor = "Landroid/content/ComponentName;";
+    const auto object = vm.NewIntrinsicInstance(descriptor);
+    const auto roots = vm.ProtectReferences(std::array{object});
+    const auto type = vm.Linker().ResolveDescriptor(descriptor);
+    const auto init = vm.Linker().FindDirectMethod(
+        type, "<init>", "(Ljava/lang/String;Ljava/lang/String;)V");
+    if (!init)
+        throw dx::DexVmError(dx::DexVmErrorReason::unresolved_reference, descriptor);
+    const auto outcome =
+        vm.Call(*init, std::array{dx::VmValue::Ref(object), dx::VmValue::Ref(package),
+                                  dx::VmValue::Ref(class_name)});
+    if (outcome.exception.IsValid())
+        throw dx::VmJavaThrow{vm.Linker().Class(outcome.exception_class).descriptor,
+                              outcome.exception_message, outcome.exception};
+    return object;
+}
+} // namespace ogplay::runtime::android_intrinsics

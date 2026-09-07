@@ -91,6 +91,8 @@ public:
         const auto launcher = loader::ResolveLauncherComponent(manifest);
         launcher_descriptor = Descriptor(
             request.launcher_override.value_or(launcher.activity_class));
+        launcher_component_name =
+            request.launcher_override.value_or(launcher.component_name);
         application_descriptor = Descriptor(manifest.application_class);
 
         auto system = BuildSystemModules(request.api_level,
@@ -165,6 +167,7 @@ public:
         bindings.bridge = bridge.get();
         bindings.context = context;
         bindings.launcher_descriptor = launcher_descriptor;
+        bindings.launcher_component_name = launcher_component_name;
         bindings.application_descriptor = application_descriptor;
         bindings.open_surface = [this] { session->OpenManagedSurface(); };
         bindings.present_surface = [this] {
@@ -314,6 +317,7 @@ public:
     std::shared_ptr<runtime::debug::DiagnosticState> diagnostics;
     std::string application_descriptor;
     std::string launcher_descriptor;
+    std::string launcher_component_name;
     AndroidAppProcessState state{AndroidAppProcessState::created};
 };
 

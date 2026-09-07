@@ -294,6 +294,13 @@ namespace ogplay::session {
                 "activity <init>");
             AttachBaseContext(vm, linker, *activity_class, activity,
                               context.application_base_context, "Activity");
+            auto component_name = vm.Linker().Class(*activity_class).descriptor;
+            component_name = component_name.substr(1, component_name.size() - 2);
+            std::replace(component_name.begin(), component_name.end(), '/', '.');
+            if (!bindings_.launcher_component_name.empty())
+                component_name = bindings_.launcher_component_name;
+            runtime::AttachAndroidActivityIdentity(vm, bindings_.context, activity,
+                                                   component_name);
 
             // 04 §2 steps 5..7: interpreted lifecycle chain. An activity that
             // requested a switch (startActivity + finish) inside onCreate never
@@ -718,6 +725,12 @@ namespace ogplay::session {
                 "activity <init>");
             AttachBaseContext(vm, linker, *activity_class, activity,
                               context.application_base_context, "Activity");
+            auto component_name = vm.Linker().Class(*activity_class).descriptor;
+            component_name = component_name.substr(1, component_name.size() - 2);
+            std::replace(component_name.begin(), component_name.end(), '/', '.');
+            runtime::AttachAndroidActivityIdentity(vm, bindings_.context, activity,
+                                                   component_name);
+
             CallActivity("onCreate", "(Landroid/os/Bundle;)V",
                          {dx::VmValue::Ref(dx::VmObjectRef{})});
             if (context.pending_activity_descriptor.empty()) {

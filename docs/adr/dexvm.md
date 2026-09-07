@@ -14,6 +14,7 @@
 - [ADR-0035 · Cipher AES 与 guest OpenSSL](#adr-0035)
 - [ADR-0036 · Certificate 与 guest OpenSSL 验签](#adr-0036)
 - [ADR-0037 · guest 生产源码与 crypto 制品来源](#adr-0037)
+- [ADR-0038 · framework 值类归 BootDex，Activity 保持窄平台边界](#adr-0038)
 
 <a id="adr-0017"></a>
 
@@ -466,3 +467,36 @@ RSA/EC KeyFactory 或数学参数接口。未做真机、Windows/Linux 或游戏
 build-cipher 只消费显式准备的 data/android/19/lib/libcrypto.so，不从 .local 设备目录恢复。
 现有 manifest 中来源/哈希是此前验收记录，完整 payload 校验在缺库时继续明确失败。
 待用户自行构建后再更新来源约束、哈希并重跑 crypto/payload 验收；不将缺库伪装为可发行。
+
+<a id="adr-0038"></a>
+
+## ADR-0038 · framework 值类归 BootDex，Activity 保持窄平台边界
+
+- 状态：Accepted
+- 日期：2026-09-07
+- 关联：[DVM-107](../tasks/dexvm/DVM-107.md)
+- Supersedes：ADR-0029 中 SparseArray 使用 intrinsic state table 的归属。
+
+### 决定
+
+Pair、SparseArray/LongSparseArray/SparseIntArray/SparseBooleanArray/SparseLongArray、
+ContainerHelpers、ComponentName 与 Parcelable 三个接口从 pinned framework.jar 精确选入。
+删除原 Pair/Sparse/Parcelable 声明与 Sparse 侧表；对象字段和数组成为唯一状态，普通算法
+不加 overlay。ComponentName 打印依赖的 PrintWriter 从 pinned core.jar 一并选入。
+
+API 19 构建将 com.* 放入 framework2.jar；当前本地只有 core.jar/framework.jar。
+ArrayUtils 使用本地原始 frameworks/base Java 源码，以 JDK 17 的 --release 7 -g:none
+和原版 AOSP dx 编译。构建器固定 Java 文件及 dx/libcore-dex 源码树哈希，校验失败即停止；
+manifest 区分 jar 来源与源码编译来源，两次独立构建的 DEX 必须一致。
+配方和编排继续归 api19.json/build_bootdex.py，不新增审计脚本或配置副本。
+
+Activity/Intent/Parcel 继续保留窄 intrinsic。Activity 的 mComponent/mIntent 和 Intent 的
+mComponent 是普通强引用字段，启动和切换在 onCreate 前附加身份；根启动保留 manifest
+alias 名而非实例 Java 类名。getLocalClassName 按包名加点边界截取，getPreferences 虚派
+查询本地类名；setIntent 或原 Intent 改换 component 不改写已附加的 Activity component。
+同进程显式 startActivity 读取 ComponentName，跨包/隐式解析仍明确失败。
+
+StringBuilder/StringBuffer 仅补 ComponentName 所需的 CharSequence 区间 append 原语，
+采用 UTF-16 索引并虚派 length/charAt，支持 null 和自追加，越界不修改原 buffer。
+不迁入完整 framework、Activity/Context/Intent/Parcel、Binder 或系统服务；不扩展为
+manifest 通用组件解析器，非根 alias 的启动解析仍不在本次范围。

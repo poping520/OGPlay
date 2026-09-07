@@ -1228,7 +1228,7 @@ note = "DVM-7 注册/层级/布局/vtable/iftable 四步链接与懒结构预检
 [dexvm.boot_dex]
 status = "complete"
 test = "tests/dexvm/intrinsics_p1_tests.cpp; tests/frontend/data_directory_tests.cpp; tools.bootdex_builder_self_test; tools.android_payload_current; PvZ exact Profile reached-fault"
-note = "DVM-99..106 curated BootDex：日期、集合、普通流、X500、Cipher/JCA/Conscrypt AES 与 Certificate/Harmony/Signature 依赖共 760 个 class_def。760 类全链接，Cipher/Certificate/集合普通 Java 算法均归 DEX；精确边界 overlay 与显式 guest JNI 声明受审。固定 recipe 可确定性重建，DEX/JAR 身份见 data/android/19/manifest.json。Conscrypt 为用户授权的临时设备来源，区别于 pinned core.jar；完整 core/framework、multidex、动态 classpath 与 Android 系统服务未纳入。 2026-09-07 ROM libcrypto 已由用户撤回；实现和既有验收保留，当前 payload 缺库，须自行构建替换并更新来源/哈希后复验。"
+note = "DVM-99..107 curated BootDex：日期、集合、普通流、X500、Cipher/JCA/Conscrypt AES 与 Certificate/Harmony/Signature 及 framework 值类依赖共 774 个 class_def。774 类全链接，Cipher/Certificate/集合普通 Java 算法均归 DEX；精确边界 overlay 与显式 guest JNI 声明受审。固定 recipe 可确定性重建，DEX/JAR 身份见 data/android/19/manifest.json。Conscrypt 为用户授权的临时设备来源，区别于 pinned core.jar；完整 core/framework、multidex、动态 classpath 与 Android 系统服务未纳入。 2026-09-07 ROM libcrypto 已撤出 Git，后按用户再次授权恢复到本地临时使用，完整 payload 校验通过；仍须自行构建替换并更新来源/哈希后复验。"
 
 [dexvm.date_format_bootdex_audit]
 status = "complete"
@@ -1398,7 +1398,7 @@ note = "DVM-85 发布 API19 SystemClock、Looper/Handler/HandlerThread、CountDo
 [dexvm.android_value_services]
 status = "complete"
 test = "tests/dexvm/android_value_tests.cpp; tests/session/profile_entry_scope_tests.cpp; architecture.dexvm_intrinsic_layout"
-note = "DVM-86 发布 API19 Base64/SparseArray family/TypedValue/TextUtils、Color/RectF/Point/Path/PorterDuff/BitmapDrawable/ColorDrawable、Parcelable/Parcel/Bundle transport 与 PowerManager/WakeLock/Vibrator/Process；数据进入受检 side-table 和 GC trace，Bundle 自身持有的 byte array/Parcelable 为强边，Parcel 写入时快照 typed map。power/vibrator service 为稳定进程内 facade，不实现 Binder、fd/cross-process transport 或宿主设备动作"
+note = "DVM-86 发布 API19 Base64/SparseArray family/TypedValue/TextUtils、Color/RectF/Point/Path/PorterDuff/BitmapDrawable/ColorDrawable、Parcelable/Parcel/Bundle transport 与 PowerManager/WakeLock/Vibrator/Process；DVM-107 的 Pair/SparseArray family/Parcelable 已迁入 BootDex，普通字段/数组由 GC 追踪；其余值状态继续进入受检 side-table 和 GC trace，Bundle 自身持有的 byte array/Parcelable 为强边，Parcel 写入时快照 typed map。power/vibrator service 为稳定进程内 facade，不实现 Binder、fd/cross-process transport 或宿主设备动作"
 
 [dexvm.java_util_algorithms]
 status = "complete"
@@ -1483,7 +1483,7 @@ note = "WU2 固化 procdump/WinDbg/lldb 外部 dump、十进制/十六进制 hos
 [dexvm.collections_bootdex]
 status = "complete"
 test = "tests/dexvm/dvm87_tests.cpp; tests/dexvm/intrinsics_p1_tests.cpp; tests/dexvm/observable_tests.cpp"
-note = "DVM-103/ADR-0033 完成 API 19 Collection/List/Map 家族、Tree/Sorted/Navigable、Weak/Identity/Enum、concurrent 容器与内部类的精确选入；完整 BootDex 760 类可链接，集合自身方法无 intrinsic overlay，字段/数组为唯一存储。双后端覆盖基本操作、live view、fail-fast、clone、弱键清空入队与强引用存活。complete 指代码归属迁移，不代表 XML、任意序列化与并发长尾均实现。"
+note = "DVM-103/ADR-0033 完成 API 19 Collection/List/Map 家族、Tree/Sorted/Navigable、Weak/Identity/Enum、concurrent 容器与内部类的精确选入；完整 BootDex 774 类可链接，集合自身方法无 intrinsic overlay，字段/数组为唯一存储。双后端覆盖基本操作、live view、fail-fast、clone、弱键清空入队与强引用存活。complete 指代码归属迁移，不代表 XML、任意序列化与并发长尾均实现。"
 
 [dexvm.externalizable]
 status = "complete"
@@ -1503,9 +1503,19 @@ note = "DVM-104/106 为 X500 标签键与证书长序列号闭合 17 个 BigInt/
 [dexvm.cipher_aes]
 status = "complete"
 test = "tests/runtime/native_library_loader_tests.cpp; tests/dexvm/fixtures/cipher.dexasm; tests/dexvm/interpreter_tests.cpp; tests/runtime/jni_environment_tests.cpp; tools.android_payload_current"
-note = "DVM-105/ADR-0035 完成 AES 128/192/256：ECB/CBC 的 NoPadding/PKCS5Padding，CTR/NoPadding，裸 AES 默认 ECB/PKCS5Padding。Cipher/JCA/Conscrypt 普通 Java 逻辑由 BootDex 执行，11 个 native 经 guest ARM JNI 桥调用临时 API19 libcrypto；无宿主 AES 替代。双解释后端 NIST 向量、分段/原位/异常、IV reset、OS CSPRNG、两个真实 guest 线程、逻辑 token 与 GC/teardown 受检。JNI 原异常类型/消息及 Throwable cause 保持。complete 仅指该 AES 子集；自设随机 seed、AES AlgorithmParameters 编码、RSA Cipher/TLS、完整 JCA 与 wrap/unwrap 长尾未验收；手机断开，未跑本轮真机对照或游戏 gate。设备来源和构建器输出身份单独登记。 2026-09-07 ROM libcrypto 已由用户撤回；实现和既有验收保留，当前 payload 缺库，须自行构建替换并更新来源/哈希后复验。"
+note = "DVM-105/ADR-0035 完成 AES 128/192/256：ECB/CBC 的 NoPadding/PKCS5Padding，CTR/NoPadding，裸 AES 默认 ECB/PKCS5Padding。Cipher/JCA/Conscrypt 普通 Java 逻辑由 BootDex 执行，11 个 native 经 guest ARM JNI 桥调用临时 API19 libcrypto；无宿主 AES 替代。双解释后端 NIST 向量、分段/原位/异常、IV reset、OS CSPRNG、两个真实 guest 线程、逻辑 token 与 GC/teardown 受检。JNI 原异常类型/消息及 Throwable cause 保持。complete 仅指该 AES 子集；自设随机 seed、AES AlgorithmParameters 编码、RSA Cipher/TLS、完整 JCA 与 wrap/unwrap 长尾未验收；手机断开，未跑本轮真机对照或游戏 gate。设备来源和构建器输出身份单独登记。 2026-09-07 ROM libcrypto 已撤出 Git，后按用户再次授权恢复到本地临时使用，完整 payload 校验通过；仍须自行构建替换并更新来源/哈希后复验。"
 
 [dexvm.certificate_x509]
 status = "complete"
 test = "tests/runtime/native_library_loader_tests.cpp; tests/dexvm/dvm87_tests.cpp; tests/runtime/jni_object_array_tests.cpp; tools.android_payload_current"
-note = "DVM-106/ADR-0036 完成 Certificate/X509Certificate/CertificateFactory 与 Harmony ASN.1/X.509/PKCS7 选入；解析、属性、verify、javax 旧 API 和路径编解码执行 BootDex。AndroidOpenSSL 的有界 SignatureSpi 仅保留普通 guest 公钥快照和消息流，经 ARM JNI/EVP 真实验证 RSA PKCS#1 v1.5/ECDSA 与 SHA1/224/256/384/512 的 10 个组合，单条消息最多 1 MiB。DER/PEM/证书集合、长序列号、有效期/扩展、编码公钥、PkiPath/PKCS7、证书链/错误公钥/篡改/未知算法/超限及 GC 后复用双后端受检，JNI 嵌套数组使用 VM 类型关系并拒绝非法写入。complete 不代表 PKIX 信任、CA/撤销/TLS、签名生成、PSS/DSA/EdDSA、RSA Cipher 或 RSA/EC KeyFactory/数学公钥接口；未跑真机/跨平台/游戏 gate。 2026-09-07 ROM libcrypto 已由用户撤回；实现和既有验收保留，当前 payload 缺库，须自行构建替换并更新来源/哈希后复验。"
+note = "DVM-106/ADR-0036 完成 Certificate/X509Certificate/CertificateFactory 与 Harmony ASN.1/X.509/PKCS7 选入；解析、属性、verify、javax 旧 API 和路径编解码执行 BootDex。AndroidOpenSSL 的有界 SignatureSpi 仅保留普通 guest 公钥快照和消息流，经 ARM JNI/EVP 真实验证 RSA PKCS#1 v1.5/ECDSA 与 SHA1/224/256/384/512 的 10 个组合，单条消息最多 1 MiB。DER/PEM/证书集合、长序列号、有效期/扩展、编码公钥、PkiPath/PKCS7、证书链/错误公钥/篡改/未知算法/超限及 GC 后复用双后端受检，JNI 嵌套数组使用 VM 类型关系并拒绝非法写入。complete 不代表 PKIX 信任、CA/撤销/TLS、签名生成、PSS/DSA/EdDSA、RSA Cipher 或 RSA/EC KeyFactory/数学公钥接口；未跑真机/跨平台/游戏 gate。 2026-09-07 ROM libcrypto 已撤出 Git，后按用户再次授权恢复到本地临时使用，完整 payload 校验通过；仍须自行构建替换并更新来源/哈希后复验。"
+
+[dexvm.framework_value_bootdex]
+status = "complete"
+test = "tests/dexvm/android_value_tests.cpp; tests/dexvm/dvm87_tests.cpp; tools.bootdex_builder_self_test; tools.android_payload_current"
+note = "DVM-107/ADR-0038：Pair、五种 SparseArray、ContainerHelpers、ComponentName/CREATOR 与 Parcelable 三接口来自 pinned framework.jar；ArrayUtils 来自固定原始 Java 源码和 AOSP dx 输入，PrintWriter 来自 core.jar。774 类全链接，新增类无普通方法 overlay，旧 Pair/Sparse/Parcelable 声明和 Sparse 侧表删除。双后端检查删除压缩、排序、clone、宽整数、GC、短名称/Parcel/CREATOR/打印；StringBuilder/StringBuffer 补 UTF-16 CharSequence 区间 append 原语。完整 framework 和任意 PrintWriter formatter 长尾不因选类自动实现。"
+
+[dexvm.activity_component_identity]
+status = "complete"
+test = "tests/dexvm/android_value_tests.cpp; tests/runtime/native_library_loader_tests.cpp"
+note = "DVM-107：Activity.getLocalClassName/getComponentName/getPreferences/getIntent/setIntent 和 Intent 的 component setter/constructor 使用普通 mComponent/mIntent 字段。启动和切换在 onCreate 前附加组件，根 alias 保留 manifest 名；每实例 Intent 独立，替换 Intent 或变更其 component 不改 Activity 身份。双后端包名前缀/点边界/null/虚派和 GC 受检，真实启动 alias/切换 fixture 通过；隐式/跨包启动与一般 manifest resolver、非根 alias 解析仍明确不支持，不代表完整 Activity 或游戏 gate。"

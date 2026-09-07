@@ -37,7 +37,7 @@ database side-table；guest 引用经具名 GC state table trace，死亡 owner 
 使用确定性内部格式且只经注入 VFS 访问 `/data/data/<package>/databases/`，不得暴露宿主路径、
 调用宿主 SQLite 或扩展成 ContentProvider/Binder。SQLiteHelper 的 schema version 随内部格式
 持久化，首次创建与版本增长分别虚派 guest `onCreate`/`onUpgrade`；只把 `Stat` ENOENT 视作
-新库，其余 VFS 错误明确失败。未登记 SQL/selection 明确失败。Bundle/SparseArray/Parcel 的
+新库，其余 VFS 错误明确失败。未登记 SQL/selection 明确失败。Bundle/Parcel 的
 side-table object reference 必须作为 owner 的 GC 强边 trace。
 
 javax EGL/GL façade 遵循 DVM-31：`android_gl.cpp` 聚合该
@@ -222,7 +222,7 @@ binding。`GLUtils` 读取 context 中既有 Bitmap backing；本层不拥有 GL
 - scheduler side-table 持有的引用必须由 state-table trace 或 session scheduled-root 枚举；
   GC sweep 删除 owner 关联状态，session teardown 先 shutdown scheduler、唤醒 Looper，再
   join guest 线程。所有时钟推进必须调用 `AdvanceAndroidClock` 通知 waiter。
-- DVM-86 的 SparseArray、Path、Parcel 与 WakeLock 状态只存在于具名 intrinsic state table；
+- DVM-86 的 Path、Parcel 与 WakeLock 状态只存在于具名 intrinsic state table；
   Parcel 只传输受检 typed atom，Bundle 在写入时快照 typed map。Power/Vibrator/Process 不得
   调用 Binder、宿主设备或外部进程；未知 transport/type/action 必须明确失败。
 
@@ -249,3 +249,16 @@ ByteArrayInputStream([B) 构造器，不再向 IoRuntime 写内存流侧表。�
 
 DVM-105：AndroidCoreIntrinsicServices 注入 hal::FillSecureRandom，只提供 CSPRNG 字节，
 不执行 Cipher 算法。System.loadLibrary 可加载注入的 bundled 系统库。
+
+## DVM-107 framework 值类和 Activity 身份
+
+Pair、五种 SparseArray、ContainerHelpers/ArrayUtils、ComponentName 和 Parcelable 三接口
+属于 BootDex；Android catalog 不发布这些类，也不保留 Sparse 算法/侧表。普通字段与数组
+由统一 GC 追踪。Parcel 仍为已有的进程内 transport，ComponentName 的 Java CREATOR 使用它。
+Activity.mComponent/mIntent 和 Intent.mComponent 是唯一实例身份来源。生命周期在 onCreate
+前附加 component；getLocalClassName 虚派 getPackageName 后按包名加点边界截取，
+getPreferences 虚派 getLocalClassName/getSharedPreferences。setIntent 不重写 component，
+修改原 Intent 也不更改 Activity 已附加的组件；不同 Activity 不读取共享 current_intent。
+Intent 的 setClass/setClassName/setComponent 与构造器创建或保存真正的 ComponentName，
+resolveTypeIfNeeded/startActivity 读同一字段。隐式/跨包启动明确拒绝，未实现一般 manifest
+resolver；根 alias 身份由 session 显式传入。双后端定向证据见 DVM-107。

@@ -137,3 +137,8 @@ View override、reverse-Z fallback、capture 及取消路径；
 DVM-105：纯 Java APK 也建立 NativeLibraryLoader，用于平台 Java 类加载 bundled JNI。
 APK selected ABI 仍为空，application ELF 数仍为零。内部空 ARMv7 库视图只用于 API 19
 系统进程，不表示 APK 自带 native 库。
+
+DVM-107：根启动向 lifecycle 分别传实际 launcher descriptor 与 manifest component name，
+alias 只影响实例化目标，Activity 的组件身份保留 alias。Profile launcher override 使用
+显式覆盖类名。根启动和切换均在 attach base 后、onCreate 前附加 ComponentName/Intent；
+旧实例保留自己的引用，不从进程 current_intent 动态读取。非根 alias 解析不在本次范围。

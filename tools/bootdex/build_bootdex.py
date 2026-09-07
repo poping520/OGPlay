@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build, check and audit the curated API 19 BootDex from pinned AOSP jars."""
+"""Build, check and audit curated API 19 BootDex from pinned AOSP inputs."""
 
 from __future__ import annotations
 
@@ -34,9 +34,16 @@ NATIVE_DISPOSITIONS = ("required_backend", "explicit_failure")
 DEVICE = ROOT / ".local/android-device/20260906-cipher/system/framework"
 
 def source_path(source: str) -> Path:
+    if source == "ArrayUtils.java":
+        return AOSP / "framework/base/core/java/com/android/internal/util/ArrayUtils.java"
     return (DEVICE if source == "conscrypt.jar" else AOSP) / source
 
+DX_SOURCE_SHA256 = "cd59cf230b5fb22c38e084019b6575a3423feeae0f32e170c766c8eac305fe74"
+
 SOURCES = {
+    "ArrayUtils.java": (
+        "platform/frameworks/base",
+        "ddad05dbdbf2aaae35b13ee0cf5fa3c0156202e6d24a44d245a91acb06aabda3"),
     "conscrypt.jar": (
         "temporary-device/MoKee-API19-20260906/libcore-crypto",
         "43ab6b953bd5a9e25f0f0d4411a5aa3f0660d16954a0a84e95ad834558b21a1e"),
@@ -132,14 +139,41 @@ def run(command: list[str]) -> None:
         raise BuildError(result.stdout)
 
 
+def compile_array_utils(work: Path) -> Path:
+    # API 19 puts com.* in framework2.jar. Build this pure Java helper from
+    # its pinned original source when selecting it, without copying its logic.
+    roots = (AOSP / "dalvik/dx/src", AOSP / "libcore/dex/src/main/java")
+    sources = sorted(path for root in roots for path in root.rglob("*.java"))
+    digest = hashlib.sha256()
+    for path in sources:
+        digest.update(path.relative_to(AOSP).as_posix().encode("utf-8") +
+                      b"\0" + path.read_bytes() + b"\0")
+    if digest.hexdigest() != DX_SOURCE_SHA256:
+        raise BuildError("missing or unexpected local AOSP dx source tree")
+    dx_classes = work / "dx-classes"
+    java_classes = work / "java-classes"
+    dx_classes.mkdir()
+    java_classes.mkdir()
+    run(["javac", "--release", "7", "-g:none", "-encoding", "UTF-8",
+         "-d", str(dx_classes), *(str(path) for path in sources)])
+    run(["javac", "--release", "7", "-g:none", "-encoding", "UTF-8",
+         "-d", str(java_classes), str(source_path("ArrayUtils.java"))])
+    output = work / "array-utils.dex"
+    run(["java", "-cp", str(dx_classes), "com.android.dx.command.Main",
+         "--dex", "--output=" + str(output), str(java_classes)])
+    return output
+
+
 def assemble(recipe: dict[str, tuple[str, ...]], work: Path) -> bytes:
     smali_roots = []
     for source, classes in recipe.items():
-        destination = work / source[:-4]
+        destination = work / (source + "-smali")
+        source_input = (compile_array_utils(work) if source == "ArrayUtils.java"
+                        else source_path(source))
         run([
             "java", "-jar", str(SMALI / "baksmali.jar"), "disassemble",
             "--api", "19", "--jobs", "1", "--classes", ",".join(classes),
-            "--output", str(destination), str(source_path(source)),
+            "--output", str(destination), str(source_input),
         ])
         smali_roots.append(str(destination))
     output = work / "classes.dex"
@@ -194,8 +228,12 @@ def boot_metadata(jar: bytes, dex: bytes,
         "sources": [
             {
                 "source_project": SOURCES[source][0],
-                "source_jar": source,
-                "source_jar_sha256": SOURCES[source][1],
+                **({"source_file": source_path(source).relative_to(ROOT).as_posix(),
+                    "source_sha256": SOURCES[source][1],
+                    "compiler": "javac --release 7 -g:none; AOSP dx",
+                    "dx_sources_sha256": DX_SOURCE_SHA256}
+                   if source == "ArrayUtils.java" else
+                   {"source_jar": source, "source_jar_sha256": SOURCES[source][1]}),
             }
             for source in recipe
         ],
@@ -468,6 +506,16 @@ def self_test() -> int:
     if make_jar(sample) != make_jar(sample):
         raise BuildError("JAR output is not deterministic")
     with tempfile.TemporaryDirectory(prefix="ogplay-bootdex-tool-") as work:
+        with patch.dict(globals(), {"AOSP": Path(work) / "missing-aosp"}), \
+                patch(__name__ + ".run") as command:
+            try:
+                compile_array_utils(Path(work))
+            except BuildError as error:
+                if "dx source tree" not in str(error):
+                    raise
+            else:
+                raise BuildError("Java source build accepted unpinned dx inputs")
+            command.assert_not_called()
         source = Path(work) / "source.jar"
         destination = Path(work) / "downloaded.jar"
         source.write_bytes(sample)

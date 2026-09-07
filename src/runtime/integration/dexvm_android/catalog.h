@@ -115,8 +115,6 @@ namespace ogplay::runtime::android_intrinsics {
 [[nodiscard]] Decl Declare_android_os_Message(const Context& context);
 [[nodiscard]] Decl Declare_android_os_SystemClock(const Context& context);
 [[nodiscard]] Decl Declare_android_os_StatFs(const Context& context);
-[[nodiscard]] Decl Declare_android_os_Parcelable(const Context& context);
-[[nodiscard]] Decl Declare_android_os_Parcelable_Creator(const Context& context);
 [[nodiscard]] Decl Declare_android_os_Parcel(const Context& context);
 [[nodiscard]] Decl Declare_android_os_ParcelFileDescriptor(const Context& context);
 [[nodiscard]] Decl Declare_android_os_PowerManager(const Context& context);
@@ -137,12 +135,8 @@ namespace ogplay::runtime::android_intrinsics {
 [[nodiscard]] Decl Declare_android_text_TextUtils(const Context& context);
 [[nodiscard]] Decl Declare_android_util_Log(const Context& context);
 [[nodiscard]] Decl Declare_android_util_AndroidException(const Context& context);
-[[nodiscard]] Decl Declare_android_util_Pair(const Context& context);
 [[nodiscard]] Decl Declare_android_util_AttributeSet(const Context& context);
 [[nodiscard]] Decl Declare_android_util_Base64(const Context& context);
-[[nodiscard]] Decl Declare_android_util_SparseArray(const Context& context);
-[[nodiscard]] Decl Declare_android_util_SparseBooleanArray(const Context& context);
-[[nodiscard]] Decl Declare_android_util_SparseIntArray(const Context& context);
 [[nodiscard]] Decl Declare_android_util_TypedValue(const Context& context);
 [[nodiscard]] Decl Declare_android_util_DisplayMetrics(const Context& context);
 [[nodiscard]] Decl Declare_android_view_Display(const Context& context);

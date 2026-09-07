@@ -41,7 +41,7 @@
     "path": "framework/bootdex.jar",
     "generator": "tools/bootdex/build_bootdex.py",
     "recipe": "tools/bootdex/api19.json",
-    "recipe_sha256": "bc7889319adbf395bda6c199f046154aafc2c039e7eb25ca9ce23b05523e3c9d",
+    "recipe_sha256": "c7205fe2f9b918d26947a9cf3a0a7896653852336a1708a872d22bf470306d11",
     "sources": [
       {
         "source_project": "platform/libcore",
@@ -52,17 +52,29 @@
         "source_project": "temporary-device/MoKee-API19-20260906/libcore-crypto",
         "source_jar": "conscrypt.jar",
         "source_jar_sha256": "43ab6b953bd5a9e25f0f0d4411a5aa3f0660d16954a0a84e95ad834558b21a1e"
+      },
+      {
+        "source_project": "platform/frameworks/base",
+        "source_jar": "framework.jar",
+        "source_jar_sha256": "90fc9fd36b45db1810ecf51e40119222da081b552f9a64a6d0c09cac09f98a48"
+      },
+      {
+        "source_project": "platform/frameworks/base",
+        "source_file": ".local/aosp/framework/base/core/java/com/android/internal/util/ArrayUtils.java",
+        "source_sha256": "ddad05dbdbf2aaae35b13ee0cf5fa3c0156202e6d24a44d245a91acb06aabda3",
+        "compiler": "javac --release 7 -g:none; AOSP dx",
+        "dx_sources_sha256": "cd59cf230b5fb22c38e084019b6575a3423feeae0f32e170c766c8eac305fe74"
       }
     ],
-    "size": 1131305,
-    "sha256": "be9f4fa912c0f9d36ae09b04887a96559340139fb398da16b08adc300cb5f5d2",
+    "size": 1156133,
+    "sha256": "3b565d178a7a807865cf21f8d4a58411892906c35a864fcb804ce818f52204e6",
     "dex_entry": "classes.dex",
-    "dex_size": 1131008,
-    "dex_sha256": "ff8ab80ba4b51fc99d8b6f0e2a013204b6dc5f8ee5dfb32b43992762b4df3600",
-    "class_count": 760,
+    "dex_size": 1155836,
+    "dex_sha256": "b7c9e98d0755fab82f5ab9340b72134f73355f8561a29624e7a36a3c9949730f",
+    "class_count": 774,
     "selection_policy": "load-all",
     "notice": "notices/bootdex.jar.txt",
-    "notice_sha256": "fc3aef183f6fe9cea0faa0caab397c423bcf414d7843e8a5d51bd1dfd7684d3f"
+    "notice_sha256": "8942e34ad7fa9ce42a3f7adef1877efa6b0957ce7f9953c213901c201396b56c"
   },
   "icu": {
     "source_project": "platform/external/icu4c",

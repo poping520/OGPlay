@@ -2493,6 +2493,33 @@ namespace ogplay::runtime::dexvm::intrinsics::detail {
                                    : std::u16string(u"null");
             return BuilderSelf(context);
         });
+    builder.FinalMethod(
+        "append", "(Ljava/lang/CharSequence;II)" + self, [](IntrinsicContext& context) {
+            const auto source = context.arguments[0].ref;
+            const auto start = context.arguments[1].AsInt();
+            const auto end = context.arguments[2].AsInt();
+            // CharSequence indices are UTF-16 code units. Snapshot before
+            // appending so self-append and guest callbacks cannot invalidate
+            // the receiver's buffer reference.
+            if (start < 0 || end < start ||
+                end > (source.IsValid()
+                           ? InvokeGuest(context.vm, source, "length", "()I").AsInt()
+                           : 4)) {
+                throw VmJavaThrow{"Ljava/lang/IndexOutOfBoundsException;",
+                                  "invalid CharSequence append range"};
+            }
+            std::u16string text;
+            for (auto index = start; index < end; ++index) {
+                text.push_back(source.IsValid()
+                                   ? static_cast<char16_t>(
+                                         InvokeGuest(context.vm, source, "charAt",
+                                                     "(I)C", {VmValue::Int(index)})
+                                             .AsInt())
+                                   : u"null"[index]);
+            }
+            context.vm.BuilderBuffer(context.receiver) += text;
+            return BuilderSelf(context);
+        });
     builder.FinalMethod("append", "(Ljava/lang/Object;)" + self,
         [](IntrinsicContext& context) {
             const auto argument = context.arguments[0].ref;

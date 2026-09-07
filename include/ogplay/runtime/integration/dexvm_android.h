@@ -200,15 +200,6 @@ struct DexVmAndroidContext final {
     };
     std::unordered_map<std::uint32_t, SQLiteHelperState> sqlite_helpers;
 
-    struct SparseRefEntry final {
-        std::int32_t key{};
-        dexvm::VmObjectRef value;
-    };
-    std::unordered_map<std::uint32_t, std::vector<SparseRefEntry>> sparse_arrays;
-    std::unordered_map<std::uint32_t,
-                       std::vector<std::pair<std::int32_t, std::int32_t>>>
-        sparse_int_arrays;
-
     struct PathState final {
         enum class Verb : std::uint8_t { move, line, close, rect };
         struct Command final {
@@ -484,9 +475,8 @@ struct DexVmAndroidContext final {
     // Owned by the DexVm bridge; set once the interpreter exists.
     dexvm::VmThreadRuntime* threads{};
 
-    // Explicit intent component targets (class descriptors) and the pending
-    // activity switch consumed by the dex_activity lifecycle.
-    std::unordered_map<std::uint32_t, std::string> intent_components;
+    // Intent extras and the pending activity switch consumed by lifecycle.
+    // ComponentName identity lives in the ordinary Intent.mComponent field.
     std::unordered_map<std::uint32_t,
                        std::unordered_map<std::string, std::string>>
         intent_string_extras;
@@ -497,7 +487,7 @@ struct DexVmAndroidContext final {
              std::unordered_map<std::string, dexvm::VmObjectRef>>
         intent_integer_array_list_extras;
     std::string pending_activity_descriptor;
-    // Intent that launched the current/pending activity (getIntent()).
+    // Launch/handoff root; attached Activity.getIntent() reads its own mIntent.
     dexvm::VmObjectRef current_intent;
     // One live guest View object <-> one UiTree node. Runtime UI owns all
     // hierarchy/state/geometry; this integration layer alone owns guest refs
@@ -559,6 +549,13 @@ void RegisterAndroidAudioTrackStateTable(
 void RegisterAndroidValueStateTables(
     dexvm::Interpreter& vm,
     const std::shared_ptr<DexVmAndroidContext>& context);
+
+// Called after Activity base Context attachment, before onCreate. The component
+// name is the launch identity (possibly an alias), not necessarily the Java class.
+void AttachAndroidActivityIdentity(dexvm::Interpreter& vm,
+                                   const std::shared_ptr<DexVmAndroidContext>& context,
+                                   dexvm::VmObjectRef activity,
+                                   const std::string& component_name);
 void RegisterAndroidDatabaseStateTables(
     dexvm::Interpreter& vm,
     const std::shared_ptr<DexVmAndroidContext>& context);

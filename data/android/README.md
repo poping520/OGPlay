@@ -11,6 +11,9 @@ NOTICE 映射，以及 BootDex 的 recipe、输入和 DEX/JAR 身份；`19/sourc
 
 BootDex 的内容选择事实源是 `tools/bootdex/api19.json`；生成命令为
 `python3 tools/bootdex/build_bootdex.py build`。运行时全量加载 jar 内 class_def。
+DVM-107 包含 774 类：core.jar 745、framework.jar 12、Conscrypt 16，以及原版 Java
+源码编译的 ArrayUtils 1。来源/哈希独立记录于 manifest；构建要求见
+[工具说明](../../tools/README.md)。
 
 提交或发布前运行：
 
@@ -25,7 +28,8 @@ python tools/validate_android_payload.py --root data/android/19
 通常设备提取物只作为开发期 ABI oracle。DVM-105 曾按用户授权临时使用设备
 libcrypto.so 与 conscrypt.jar 中的 AES 字节码；历史来源单列在
 manifest.cipher_native / boot_dex.sources，不冒充原 AOSP clean build。
-2026-09-07 用户撤回 ROM 版 libcrypto.so，当前源码 checkout 的运行 payload 缺少该库。
+2026-09-07 用户撤回 ROM 版 libcrypto.so 的 Git 跟踪，随后再次授权恢复到本地临时使用；
+该库仍不提交，干净 checkout 须显式准备本地制品。
 后续自行构建后更新来源、哈希和来源校验约束并重新验收；完整 payload 校验保持严格，
 不以缺库状态冒充可发行制品。构建器仅消费显式准备的 data/android/19/lib/libcrypto.so，
 不从 .local 手机提取目录自动复制。

@@ -334,3 +334,7 @@ teardown 在 guest process 停止前排空 native owner 资源；算法只在 AR
 DVM-106：bridge 在启动前安装 JNI synthetic 数组类型兼容回调，使用同一 DexClassLinker
 判断 Object/Cloneable/Serializable、数组协变和 primitive 数组类型。JNI 数组锁外调用，
 guest 线程停止后撤销；不得将类型不相等简化为不兼容，也不得无条件放行数组写入。
+
+DVM-107：bridge 移除 Intent component 描述符侧表的清扫；组件引用归普通 Intent/Activity
+字段。AttachAndroidActivityIdentity 是 lifecycle 在 attach base 之后、onCreate 之前的
+唯一身份装配入口；ArrayUtils/Sparse/Pair/ComponentName 的算法不在 integration 实现。

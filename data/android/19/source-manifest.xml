@@ -3,7 +3,9 @@
   Minimal pinned manifest exported from the synced projects used by the
   runtime payload build and curated Boot DEX. The original manifest default was
   refs/tags/android-4.4.4_r2.0.1; each project revision below is the actual
-  checked-out HEAD observed in the partial source tree.
+  checked-out HEAD observed in the partial source tree. DVM-107 adds
+  frameworks/base and dalvik tag revisions resolved from the AOSP remote;
+  local Java/dx input hashes are recorded separately in boot_dex.sources.
 -->
 <manifest>
   <remote name="aosp" fetch=".." />
@@ -16,6 +18,8 @@
   <project path="external/compiler-rt" name="platform/external/compiler-rt" revision="7cba5f1d950495b02bc8da53d27bdbb1b0d4f117" />
   <project path="external/icu4c" name="platform/external/icu4c" revision="18668f3b015a110275f5cc9a8722b2f65f3333bf" />
   <project path="external/zlib" name="platform/external/zlib" revision="a5c7131da47c991585a6c6ac0c063b6d7d56e3fc" />
+  <project path="frameworks/base" name="platform/frameworks/base" revision="63ade05d76785975fc3292ca030abbaa1dda8891" />
+  <project path="dalvik" name="platform/dalvik" revision="36e356c96640775f0a3f167bd2426ea0f0093b8b" />
   <project path="libcore" name="platform/libcore" revision="d49420b1b7edf8b3f27dabd3e1b7512a5502595e" />
   <project path="prebuilts/clang/linux-x86/arm/3.3" name="platform/prebuilts/clang/linux-x86/arm/3.3" revision="2f6d2db9e2af3507d132cf5d286a42fe1d47f7bc" />
   <project path="prebuilts/clang/linux-x86/host/3.3" name="platform/prebuilts/clang/linux-x86/host/3.3" revision="bba7eb9ee3ec2af12b926023256dbe4799995645" />

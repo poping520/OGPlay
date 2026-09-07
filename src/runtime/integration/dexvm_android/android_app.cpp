@@ -27,6 +27,50 @@ Decl Declare_android_app_Application(const Context& context) {
 Decl Declare_android_app_Activity(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class(
         "Landroid/app/Activity;", "Landroid/view/ContextThemeWrapper;");
+    const auto component = builder.BoundInstanceField(
+        "mComponent", "Landroid/content/ComponentName;", dx::kAccPrivate);
+    const auto intent =
+        builder.BoundInstanceField("mIntent", "Landroid/content/Intent;", 0);
+    builder.VirtualMethod("getComponentName", "()Landroid/content/ComponentName;",
+                          [component](dx::IntrinsicContext& call) {
+                              return dx::VmValue::Ref(
+                                  dx::IntrinsicCall(call).GetRef(component));
+                          });
+    builder.VirtualMethod(
+        "getLocalClassName", "()Ljava/lang/String;",
+        [component](dx::IntrinsicContext& call) {
+            const auto package =
+                CallAndroidMethod(call.vm, call.receiver, "getPackageName",
+                                  "()Ljava/lang/String;")
+                    .ref;
+            const auto roots = call.vm.ProtectReferences(std::array{package});
+            const auto name =
+                CallAndroidMethod(call.vm, dx::IntrinsicCall(call).GetRef(component),
+                                  "getClassName", "()Ljava/lang/String;")
+                    .ref;
+            if (!package.IsValid()) {
+                throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;",
+                                      "Activity package name is null"};
+            }
+            const auto pkg = call.vm.Model().StringValue(package);
+            const auto cls = call.vm.Model().StringValue(name);
+            if (!cls.starts_with(pkg) || cls.size() <= pkg.size() ||
+                cls[pkg.size()] != '.')
+                return dx::VmValue::Ref(name);
+            return dx::VmValue::Ref(call.vm.Model().NewString(cls.substr(pkg.size() + 1)));
+        });
+    builder.VirtualMethod(
+        "getPreferences", "(I)Landroid/content/SharedPreferences;",
+        [](dx::IntrinsicContext& call) {
+            const auto name =
+                CallAndroidMethod(call.vm, call.receiver, "getLocalClassName",
+                                  "()Ljava/lang/String;")
+                    .ref;
+            return CallAndroidMethod(
+                call.vm, call.receiver, "getSharedPreferences",
+                "(Ljava/lang/String;I)Landroid/content/SharedPreferences;",
+                {dx::VmValue::Ref(name), call.arguments[0]});
+        });
     builder.Constructor("()V", [](dx::IntrinsicContext&) {
         return dx::VmValue::Void();
     });
@@ -164,15 +208,17 @@ Decl Declare_android_app_Activity(const Context& context) {
             }
             return dx::VmValue::Ref(ViewObjectForUiNode(*context, *found));
         });
-    builder.FinalMethod("getIntent", "()Landroid/content/Intent;",
-        [context](dx::IntrinsicContext& call) {
-            if (context->current_intent.IsValid()) {
-                return dx::VmValue::Ref(context->current_intent);
-            }
-            // Root activity launch: an empty intent with no extras.
-            return dx::VmValue::Ref(
-                call.vm.NewIntrinsicInstance("Landroid/content/Intent;"));
-        });
+    builder.VirtualMethod("getIntent", "()Landroid/content/Intent;",
+                          [intent](dx::IntrinsicContext& call) {
+                              return dx::VmValue::Ref(
+                                  dx::IntrinsicCall(call).GetRef(intent));
+                          });
+    builder.VirtualMethod("setIntent", "(Landroid/content/Intent;)V",
+                          [intent](dx::IntrinsicContext& call) {
+                              dx::IntrinsicCall(call).SetRef(intent,
+                                                             call.arguments[0].ref);
+                              return dx::VmValue::Void();
+                          });
     // The whole VM is the UI thread in the cooperative model, so the
     // runnable executes synchronously (matches Android semantics when the
     // caller is already on the UI thread).
@@ -599,3 +645,53 @@ std::optional<std::string> RetireSurfaceHolderGeneration(
 }
 
 }  // namespace ogplay::runtime
+
+namespace ogplay::runtime {
+void AttachAndroidActivityIdentity(dexvm::Interpreter& vm,
+                                   const std::shared_ptr<DexVmAndroidContext>& context,
+                                   dexvm::VmObjectRef activity,
+                                   const std::string& component_name) {
+    using namespace android_intrinsics;
+    const auto owner = vm.ProtectReferences(std::array{activity});
+    auto intent = context->current_intent;
+    if (!intent.IsValid()) {
+        intent = vm.NewIntrinsicInstance("Landroid/content/Intent;");
+        context->current_intent = intent;
+        const auto init = vm.Linker().FindDirectMethod(
+            vm.Linker().ResolveDescriptor("Landroid/content/Intent;"), "<init>", "()V");
+        if (!init)
+            throw dx::DexVmError(dx::DexVmErrorReason::unresolved_reference,
+                                 "Intent constructor");
+        const auto outcome = vm.Call(*init, std::array{dx::VmValue::Ref(intent)});
+        if (outcome.exception.IsValid())
+            throw dx::VmJavaThrow{vm.Linker().Class(outcome.exception_class).descriptor,
+                                  outcome.exception_message, outcome.exception};
+    }
+    const auto input = vm.ProtectReferences(std::array{intent});
+    auto component = CallAndroidMethod(vm, intent, "getComponent",
+                                       "()Landroid/content/ComponentName;")
+                         .ref;
+    if (!component.IsValid()) {
+        const auto package = vm.NewStringUtf8(context->package_name);
+        const auto package_root = vm.ProtectReferences(std::array{package});
+        component =
+            NewAndroidComponentName(vm, package, vm.NewStringUtf8(component_name));
+        static_cast<void>(CallAndroidMethod(
+            vm, intent, "setComponent",
+            "(Landroid/content/ComponentName;)Landroid/content/Intent;",
+            {dx::VmValue::Ref(component)}));
+    }
+    // The launch component is stable even if the Intent is subsequently replaced.
+    const auto store = [&](const char* name, const char* signature,
+                           dx::VmObjectRef value) {
+        const auto field = vm.Linker().FindFieldRecursive(
+            vm.Linker().ResolveDescriptor("Landroid/app/Activity;"), name, signature);
+        if (!field)
+            throw dx::DexVmError(dx::DexVmErrorReason::unresolved_reference, name);
+        vm.Model().InstanceSlots(activity)[vm.Linker().Field(*field).slot] = {
+            value.Value(), dx::SlotTag::ref};
+    };
+    store("mComponent", "Landroid/content/ComponentName;", component);
+    store("mIntent", "Landroid/content/Intent;", intent);
+}
+} // namespace ogplay::runtime

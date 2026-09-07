@@ -118,6 +118,8 @@ def _validate_source_manifest(root: Path, source: dict[str, Any]) -> set[str]:
         "platform/external/zlib":
             "a5c7131da47c991585a6c6ac0c063b6d7d56e3fc",
         "platform/libcore": "d49420b1b7edf8b3f27dabd3e1b7512a5502595e",
+        "platform/frameworks/base": "63ade05d76785975fc3292ca030abbaa1dda8891",
+        "platform/dalvik": "36e356c96640775f0a3f167bd2426ea0f0093b8b",
     }
     for name, revision in expected.items():
         if projects.get(name) != revision:

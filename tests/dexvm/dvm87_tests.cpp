@@ -5,6 +5,7 @@
 #include <chrono>
 #include <thread>
 #include "ogplay/runtime/dexvm/big_int_runtime.h"
+#include "ogplay/runtime/integration/dexvm_android.h"
 #include <cstring>
 #include <filesystem>
 #include <fstream>
@@ -52,6 +53,8 @@ struct Dvm87Vm final {
     JavaObjectModel model{strings, arrays};
     DexClassLinker linker;
     ogplay::core::CapabilityLedger ledger;
+    std::shared_ptr<DexVmAndroidContext> context{
+        std::make_shared<DexVmAndroidContext>()};
     Interpreter vm;
     VmThreadRuntime threads;
 
@@ -71,6 +74,7 @@ struct Dvm87Vm final {
               services.default_timezone = default_timezone;
               services.current_time_millis = [] { return 1704067200000LL; };
               linker.RegisterIntrinsics(CoreIntrinsicCatalog(services));
+              linker.RegisterIntrinsics(AndroidIntrinsicCatalog(context));
               linker.RegisterBootDex(Dvm102BootDex());
               auto callable = IntrinsicClassBuilder::Class(
                   "Ltest/Dvm87Callable;", "Ljava/lang/Object;",
@@ -1081,16 +1085,21 @@ TEST_CASE("DVM-103 all BootDex classes link and collection methods have no intri
         CAPTURE(std::string(descriptor));
         f.linker.EnsureClassLinked(type);
         ++count;
-        if (descriptor.starts_with("Ljavax/crypto/") ||
+        if (descriptor.starts_with("Landroid/") ||
+            descriptor == "Lcom/android/internal/util/ArrayUtils;" ||
+            descriptor.starts_with("Ljavax/crypto/") ||
             descriptor.starts_with("Lcom/android/org/conscrypt/OpenSSLCipher$") ||
             descriptor == "Lcom/android/org/conscrypt/OpenSSLCipher;" ||
-            descriptor.starts_with("Ljava/io/") || descriptor.starts_with("Ljava/beans/") ||
+            descriptor.starts_with("Ljava/io/") ||
+            descriptor.starts_with("Ljava/beans/") ||
             descriptor.starts_with("Ljava/util/concurrent/atomic/") ||
             descriptor.starts_with("Ljava/util/concurrent/CountDownLatch") ||
             descriptor.starts_with("Ljava/util/concurrent/Semaphore") ||
             descriptor.starts_with("Ljava/util/concurrent/CyclicBarrier") ||
-            descriptor.starts_with("Ljava/text/ChoiceFormat") || descriptor.starts_with("Ljava/text/MessageFormat") ||
-            descriptor.starts_with("Ljavax/security/auth/x500/") || descriptor.starts_with("Lorg/apache/harmony/security/")) {
+            descriptor.starts_with("Ljava/text/ChoiceFormat") ||
+            descriptor.starts_with("Ljava/text/MessageFormat") ||
+            descriptor.starts_with("Ljavax/security/auth/x500/") ||
+            descriptor.starts_with("Lorg/apache/harmony/security/")) {
             const auto check = [&](VmMethodId method) {
                 if (!(f.linker.Method(method).access_flags & kAccNative))
                     CHECK(f.linker.Method(method).kind != MethodKind::intrinsic);
@@ -1109,7 +1118,7 @@ TEST_CASE("DVM-103 all BootDex classes link and collection methods have no intri
         for (const auto method : f.linker.Class(type).own_direct_methods)
             CHECK(f.linker.Method(method).kind != MethodKind::intrinsic);
     }
-    CHECK(count == 760);
+    CHECK(count == 774);
 }
 
 TEST_CASE("DVM-103 bounded queues and Collections wrappers use API19 semantics") {

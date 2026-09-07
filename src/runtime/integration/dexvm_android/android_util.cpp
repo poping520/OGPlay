@@ -63,29 +63,6 @@ Decl Declare_android_util_Log(const Context& context) {
 }  // namespace ogplay::runtime::android_intrinsics
 
 
-// ---- migrated from android_util_Pair.cpp ----
-#include "catalog.h"
-
-namespace ogplay::runtime::android_intrinsics {
-
-Decl Declare_android_util_Pair(const Context& context) {
-    static_cast<void>(context);
-    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/util/Pair;", "Ljava/lang/Object;");
-    builder.InstanceField("first", "Ljava/lang/Object;");
-    builder.InstanceField("second", "Ljava/lang/Object;");
-    builder.Constructor("(Ljava/lang/Object;Ljava/lang/Object;)V",
-        [](dx::IntrinsicContext& call) {
-            const auto slots = call.vm.Model().InstanceSlots(call.receiver);
-            slots[0] = {call.arguments[0].ref.Value(), dx::SlotTag::ref};
-            slots[1] = {call.arguments[1].ref.Value(), dx::SlotTag::ref};
-            return dx::VmValue::Void();
-        });
-    return std::move(builder).Build();
-}
-
-}  // namespace ogplay::runtime::android_intrinsics
-
-
 namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_util_AttributeSet(const Context& context) {
@@ -150,24 +127,6 @@ constexpr std::int32_t kBase64UrlSafe = 8;
                               "bad base-64"};
     }
     return std::move(*output);
-}
-
-template <typename Entry>
-[[nodiscard]] auto SparseLowerBound(std::vector<Entry>& entries,
-                                    const std::int32_t key) {
-    return std::lower_bound(entries.begin(), entries.end(), key,
-        [](const Entry& entry, const std::int32_t value) {
-            return entry.key < value;
-        });
-}
-
-[[nodiscard]] auto IntSparseLowerBound(
-    std::vector<std::pair<std::int32_t, std::int32_t>>& entries,
-    const std::int32_t key) {
-    return std::lower_bound(entries.begin(), entries.end(), key,
-        [](const auto& entry, const std::int32_t value) {
-            return entry.first < value;
-        });
 }
 
 }  // namespace
@@ -244,153 +203,6 @@ Decl Declare_android_util_Base64(const Context& context) {
             call, DecodeBase64(text, call.arguments[3].AsInt())));
     });
     return std::move(builder).Build();
-}
-
-Decl Declare_android_util_SparseArray(const Context& context) {
-    auto builder = dx::IntrinsicClassBuilder::Class(
-        "Landroid/util/SparseArray;", "Ljava/lang/Object;", {},
-        dx::kAccPublic);
-    const auto init = [context](dx::IntrinsicContext& call) {
-        context->sparse_arrays.try_emplace(call.receiver.Value());
-        return dx::VmValue::Void();
-    };
-    builder.Constructor("()V", init).Constructor("(I)V", init);
-    const auto get = [context](dx::IntrinsicContext& call) {
-        auto& entries = context->sparse_arrays[call.receiver.Value()];
-        const auto found = SparseLowerBound(entries, call.arguments[0].AsInt());
-        if (found != entries.end() && found->key == call.arguments[0].AsInt())
-            return dx::VmValue::Ref(found->value);
-        return dx::VmValue::Ref(call.arguments.size() > 1U
-                                    ? call.arguments[1].ref
-                                    : dx::VmObjectRef{});
-    };
-    builder.FinalMethod("get", "(I)Ljava/lang/Object;", get)
-        .FinalMethod("get", "(ILjava/lang/Object;)Ljava/lang/Object;", get);
-    const auto put = [context](dx::IntrinsicContext& call) {
-        auto& entries = context->sparse_arrays[call.receiver.Value()];
-        const auto key = call.arguments[0].AsInt();
-        const auto found = SparseLowerBound(entries, key);
-        if (found != entries.end() && found->key == key) found->value = call.arguments[1].ref;
-        else entries.insert(found, {key, call.arguments[1].ref});
-        return dx::VmValue::Void();
-    };
-    builder.FinalMethod("put", "(ILjava/lang/Object;)V", put)
-        .FinalMethod("append", "(ILjava/lang/Object;)V", put);
-    const auto erase = [context](dx::IntrinsicContext& call) {
-        auto& entries = context->sparse_arrays[call.receiver.Value()];
-        const auto key = call.arguments[0].AsInt();
-        const auto found = SparseLowerBound(entries, key);
-        if (found != entries.end() && found->key == key) entries.erase(found);
-        return dx::VmValue::Void();
-    };
-    builder.FinalMethod("delete", "(I)V", erase).FinalMethod("remove", "(I)V", erase);
-    builder.FinalMethod("size", "()I", [context](dx::IntrinsicContext& call) {
-        return dx::VmValue::Int(static_cast<std::int32_t>(
-            context->sparse_arrays[call.receiver.Value()].size()));
-    });
-    builder.FinalMethod("keyAt", "(I)I", [context](dx::IntrinsicContext& call) {
-        const auto index = call.arguments[0].AsInt();
-        const auto& entries = context->sparse_arrays[call.receiver.Value()];
-        if (index < 0 || static_cast<std::size_t>(index) >= entries.size())
-            throw dx::VmJavaThrow{"Ljava/lang/ArrayIndexOutOfBoundsException;", "SparseArray index"};
-        return dx::VmValue::Int(entries[static_cast<std::size_t>(index)].key);
-    });
-    builder.FinalMethod("valueAt", "(I)Ljava/lang/Object;", [context](dx::IntrinsicContext& call) {
-        const auto index = call.arguments[0].AsInt();
-        const auto& entries = context->sparse_arrays[call.receiver.Value()];
-        if (index < 0 || static_cast<std::size_t>(index) >= entries.size())
-            throw dx::VmJavaThrow{"Ljava/lang/ArrayIndexOutOfBoundsException;", "SparseArray index"};
-        return dx::VmValue::Ref(entries[static_cast<std::size_t>(index)].value);
-    });
-    builder.FinalMethod("indexOfKey", "(I)I", [context](dx::IntrinsicContext& call) {
-        auto& entries = context->sparse_arrays[call.receiver.Value()];
-        const auto found = SparseLowerBound(entries, call.arguments[0].AsInt());
-        return dx::VmValue::Int(found != entries.end() && found->key == call.arguments[0].AsInt()
-            ? static_cast<std::int32_t>(found - entries.begin()) : -1);
-    });
-    builder.FinalMethod("clear", "()V", [context](dx::IntrinsicContext& call) {
-        context->sparse_arrays[call.receiver.Value()].clear();
-        return dx::VmValue::Void();
-    });
-    return std::move(builder).Build();
-}
-
-Decl Declare_android_util_SparseIntArray(const Context& context,
-                                         const std::string& descriptor,
-                                         const bool boolean_values) {
-    auto builder = dx::IntrinsicClassBuilder::Class(descriptor, "Ljava/lang/Object;");
-    const auto init = [context](dx::IntrinsicContext& call) {
-        context->sparse_int_arrays.try_emplace(call.receiver.Value());
-        return dx::VmValue::Void();
-    };
-    builder.Constructor("()V", init).Constructor("(I)V", init);
-    const auto value_descriptor = boolean_values ? "Z" : "I";
-    builder.FinalMethod("get", std::string("(I)") + value_descriptor,
-        [context](dx::IntrinsicContext& call) {
-            auto& entries = context->sparse_int_arrays[call.receiver.Value()];
-            const auto found = IntSparseLowerBound(entries, call.arguments[0].AsInt());
-            return dx::VmValue::Int(found != entries.end() && found->first == call.arguments[0].AsInt()
-                                        ? found->second : 0);
-        });
-    builder.FinalMethod("get", std::string("(I") + value_descriptor + ")" + value_descriptor,
-        [context](dx::IntrinsicContext& call) {
-            auto& entries = context->sparse_int_arrays[call.receiver.Value()];
-            const auto found = IntSparseLowerBound(entries, call.arguments[0].AsInt());
-            return dx::VmValue::Int(found != entries.end() && found->first == call.arguments[0].AsInt()
-                                        ? found->second : call.arguments[1].AsInt());
-        });
-    const auto put = [context, boolean_values](dx::IntrinsicContext& call) {
-        auto& entries = context->sparse_int_arrays[call.receiver.Value()];
-        const auto key = call.arguments[0].AsInt();
-        const auto value = boolean_values ? (call.arguments[1].AsInt() != 0 ? 1 : 0)
-                                          : call.arguments[1].AsInt();
-        const auto found = IntSparseLowerBound(entries, key);
-        if (found != entries.end() && found->first == key) found->second = value;
-        else entries.insert(found, {key, value});
-        return dx::VmValue::Void();
-    };
-    builder.FinalMethod("put", std::string("(I") + value_descriptor + ")V", put)
-        .FinalMethod("append", std::string("(I") + value_descriptor + ")V", put);
-    builder.FinalMethod("delete", "(I)V", [context](dx::IntrinsicContext& call) {
-        auto& entries = context->sparse_int_arrays[call.receiver.Value()];
-        const auto found = IntSparseLowerBound(entries, call.arguments[0].AsInt());
-        if (found != entries.end() && found->first == call.arguments[0].AsInt()) entries.erase(found);
-        return dx::VmValue::Void();
-    });
-    builder.FinalMethod("size", "()I", [context](dx::IntrinsicContext& call) {
-        return dx::VmValue::Int(static_cast<std::int32_t>(
-            context->sparse_int_arrays[call.receiver.Value()].size()));
-    });
-    builder.FinalMethod("keyAt", "(I)I", [context](dx::IntrinsicContext& call) {
-        const auto index = call.arguments[0].AsInt();
-        const auto& entries = context->sparse_int_arrays[call.receiver.Value()];
-        if (index < 0 || static_cast<std::size_t>(index) >= entries.size())
-            throw dx::VmJavaThrow{"Ljava/lang/ArrayIndexOutOfBoundsException;", "Sparse index"};
-        return dx::VmValue::Int(entries[static_cast<std::size_t>(index)].first);
-    });
-    builder.FinalMethod("valueAt", std::string("(I)") + value_descriptor,
-        [context](dx::IntrinsicContext& call) {
-            const auto index = call.arguments[0].AsInt();
-            const auto& entries = context->sparse_int_arrays[call.receiver.Value()];
-            if (index < 0 || static_cast<std::size_t>(index) >= entries.size())
-                throw dx::VmJavaThrow{"Ljava/lang/ArrayIndexOutOfBoundsException;", "Sparse index"};
-            return dx::VmValue::Int(entries[static_cast<std::size_t>(index)].second);
-        });
-    builder.FinalMethod("clear", "()V", [context](dx::IntrinsicContext& call) {
-        context->sparse_int_arrays[call.receiver.Value()].clear();
-        return dx::VmValue::Void();
-    });
-    return std::move(builder).Build();
-}
-
-Decl Declare_android_util_SparseBooleanArray(const Context& context) {
-    return Declare_android_util_SparseIntArray(
-        context, "Landroid/util/SparseBooleanArray;", true);
-}
-
-Decl Declare_android_util_SparseIntArray(const Context& context) {
-    return Declare_android_util_SparseIntArray(
-        context, "Landroid/util/SparseIntArray;", false);
 }
 
 Decl Declare_android_util_TypedValue(const Context& context) {

@@ -13,6 +13,13 @@ namespace dx = dexvm;
 using Decl = dexvm::IntrinsicClassDecl;
 using Context = std::shared_ptr<DexVmAndroidContext>;
 
+// Normal guest dispatch; preserve Java exception identity across the boundary.
+[[nodiscard]] dx::VmValue CallAndroidMethod(
+    dx::Interpreter& vm, dx::VmObjectRef receiver, const char* name,
+    const char* signature, std::vector<dx::VmValue> arguments = {});
+[[nodiscard]] dx::VmObjectRef NewAndroidComponentName(
+    dx::Interpreter& vm, dx::VmObjectRef package, dx::VmObjectRef class_name);
+
 // Helpers shared across handler batches; batch-local helpers stay private to
 // their translation unit.
 [[nodiscard]] dx::VmValue Self(dx::IntrinsicContext& call);

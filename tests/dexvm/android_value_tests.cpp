@@ -13,6 +13,7 @@
 #include "ogplay/runtime/dexvm/access_flags.h"
 #include "ogplay/runtime/dexvm/class_linker.h"
 #include "ogplay/runtime/dexvm/interpreter.h"
+#include "ogplay/runtime/dexvm/intrinsic_builder.h"
 #include "ogplay/runtime/dexvm/object_model.h"
 #include "ogplay/runtime/integration/dexvm_android.h"
 
@@ -31,14 +32,18 @@ struct AndroidValueVm final {
         std::make_shared<DexVmAndroidContext>()};
     Interpreter vm;
 
-    AndroidValueVm()
-        : vm([this]() -> DexClassLinker& {
-                 linker.RegisterIntrinsics(CoreIntrinsicCatalog());
-                 linker.RegisterIntrinsics(AndroidIntrinsicCatalog(context));
-                 ogplay::test::RegisterBootDex(linker);
-                 linker.Link();
-                 return linker;
-             }(), model, nullptr, ledger, {}) {
+    AndroidValueVm(InterpreterBackend backend = InterpreterBackend::switch_dispatch,
+                   const std::vector<IntrinsicClassDecl>& extras = {})
+        : vm(
+              [this, &extras]() -> DexClassLinker& {
+                  linker.RegisterIntrinsics(CoreIntrinsicCatalog());
+                  linker.RegisterIntrinsics(AndroidIntrinsicCatalog(context));
+                  ogplay::test::RegisterBootDex(linker);
+                  linker.RegisterIntrinsics(extras);
+                  linker.Link();
+                  return linker;
+              }(),
+              model, nullptr, ledger, {.backend = backend}) {
         RegisterAndroidValueStateTables(vm, context);
     }
 
@@ -611,13 +616,11 @@ TEST_CASE("DVM-86 value side tables sweep with their guest owners") {
     static_cast<void>(fixture.On(power, "newWakeLock",
         "(ILjava/lang/String;)Landroid/os/PowerManager$WakeLock;",
         {VmValue::Int(1), VmValue::Ref(fixture.vm.NewStringUtf8("sweep"))}));
-    REQUIRE_FALSE(fixture.context->sparse_arrays.empty());
     REQUIRE_FALSE(fixture.context->paths.empty());
     REQUIRE_FALSE(fixture.context->parcels.empty());
     REQUIRE_FALSE(fixture.context->wake_locks.empty());
     const auto result = fixture.vm.CollectGarbage("dvm86-value-state");
     CHECK(result.freed_objects >= 4U);
-    CHECK(fixture.context->sparse_arrays.empty());
     CHECK(fixture.context->paths.empty());
     CHECK(fixture.context->parcels.empty());
     CHECK(fixture.context->wake_locks.empty());
@@ -641,4 +644,416 @@ TEST_CASE("DVM-86 rooted Bundle traces byte arrays and Parcelable identities") {
                      {VmValue::Ref(fixture.vm.NewStringUtf8("payload"))}).ref ==
           bytes);
     CHECK(fixture.BytesOf(bytes) == "kept");
+}
+
+TEST_CASE(
+    "DVM-107 framework Pair and sparse containers execute Java on both backends") {
+    for (const auto backend :
+         {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        AndroidValueVm f(backend);
+        const auto a = f.vm.NewStringUtf8("equal");
+        const auto b = f.vm.NewStringUtf8("equal");
+        const auto pair =
+            f.Static("Landroid/util/Pair;", "create",
+                     "(Ljava/lang/Object;Ljava/lang/Object;)Landroid/util/Pair;",
+                     {VmValue::Ref(a), VmValue::Ref(VmObjectRef{})})
+                .ref;
+        const auto other =
+            f.New("Landroid/util/Pair;", "(Ljava/lang/Object;Ljava/lang/Object;)V",
+                  {VmValue::Ref(b), VmValue::Ref(VmObjectRef{})});
+        CHECK(f.On(pair, "equals", "(Ljava/lang/Object;)Z", {VmValue::Ref(other)})
+                  .AsInt() == 1);
+        CHECK(f.On(pair, "hashCode", "()I").AsInt() ==
+              f.On(other, "hashCode", "()I").AsInt());
+        CHECK(
+            f.On(pair, "equals", "(Ljava/lang/Object;)Z", {VmValue::Ref(VmObjectRef{})})
+                .AsInt() == 0);
+        for (const auto* descriptor :
+             {"Landroid/util/SparseArray;", "Landroid/util/LongSparseArray;"}) {
+            CAPTURE(descriptor);
+            const bool wide =
+                std::string(descriptor).find("LongSparse") != std::string::npos;
+            const auto sparse = f.New(descriptor, "(I)V", {VmValue::Int(0)});
+            const auto roots = f.vm.ProtectReferences(std::array{sparse, a, b, pair});
+            const auto key = [&](std::int64_t value) {
+                return wide ? VmValue::Long(value)
+                            : VmValue::Int(static_cast<std::int32_t>(value));
+            };
+            const auto put_sig =
+                wide ? "(JLjava/lang/Object;)V" : "(ILjava/lang/Object;)V";
+            const auto get_sig =
+                wide ? "(J)Ljava/lang/Object;" : "(I)Ljava/lang/Object;";
+            const auto delete_sig = wide ? "(J)V" : "(I)V";
+            const auto max_key = wide ? INT64_C(0x100000001) : INT64_C(0x7fffffff);
+            f.On(sparse, "append", put_sig, {key(max_key), VmValue::Ref(pair)});
+            f.On(sparse, "append", put_sig, {key(-7), VmValue::Ref(a)});
+            f.On(sparse, "put", put_sig, {key(0), VmValue::Ref(b)});
+            f.On(sparse, "delete", delete_sig, {key(0)});
+            CHECK(f.On(sparse, "size", "()I").AsInt() == 2);
+            const auto first_key =
+                f.On(sparse, "keyAt", wide ? "(I)J" : "(I)I", {VmValue::Int(0)});
+            CHECK((wide ? first_key.AsLong() : first_key.AsInt()) == -7);
+            CHECK(
+                f.On(sparse, "indexOfValue", "(Ljava/lang/Object;)I", {VmValue::Ref(b)})
+                    .AsInt() == -1);
+            CHECK(f.On(sparse, "get",
+                       wide ? "(JLjava/lang/Object;)Ljava/lang/Object;"
+                            : "(ILjava/lang/Object;)Ljava/lang/Object;",
+                       {key(0), VmValue::Ref(pair)})
+                      .ref == pair);
+            const auto clone_sig = std::string("()") + descriptor;
+            const auto clone = f.On(sparse, "clone", clone_sig.c_str()).ref;
+            const auto clone_root = f.vm.ProtectReferences(std::array{clone});
+            f.On(sparse, "clear", "()V");
+            CHECK(f.On(clone, "get", get_sig, {key(max_key)}).ref == pair);
+            CHECK(f.On(clone, "size", "()I").AsInt() == 2);
+            f.On(clone, "removeAt", "(I)V", {VmValue::Int(0)});
+            CHECK(f.On(clone, "size", "()I").AsInt() == 1);
+        }
+        for (const auto* descriptor :
+             {"Landroid/util/SparseIntArray;", "Landroid/util/SparseBooleanArray;",
+              "Landroid/util/SparseLongArray;"}) {
+            CAPTURE(descriptor);
+            const std::string name = descriptor;
+            const bool wide = name.find("Long") != std::string::npos;
+            const bool boolean = name.find("Boolean") != std::string::npos;
+            const auto sparse = f.New(descriptor, "(I)V", {VmValue::Int(0)});
+            const auto value = wide ? VmValue::Long(INT64_C(0x123456789))
+                                    : VmValue::Int(boolean ? 1 : -42);
+            const auto put_sig = wide ? "(IJ)V" : boolean ? "(IZ)V" : "(II)V";
+            f.On(sparse, "append", put_sig, {VmValue::Int(9), value});
+            f.On(sparse, "append", put_sig, {VmValue::Int(-9), value});
+            f.On(sparse, "delete", "(I)V", {VmValue::Int(9)});
+            CHECK(f.On(sparse, "size", "()I").AsInt() == 1);
+            CHECK(f.On(sparse, "keyAt", "(I)I", {VmValue::Int(0)}).AsInt() == -9);
+            const auto result = f.On(sparse, "get",
+                                     wide      ? "(I)J"
+                                     : boolean ? "(I)Z"
+                                               : "(I)I",
+                                     {VmValue::Int(-9)});
+            CHECK((wide ? result.AsLong() : result.AsInt()) ==
+                  (wide      ? INT64_C(0x123456789)
+                   : boolean ? 1
+                             : -42));
+            const auto clone_sig = std::string("()") + descriptor;
+            const auto clone = f.On(sparse, "clone", clone_sig.c_str()).ref;
+            f.On(sparse, "clear", "()V");
+            CHECK(f.On(clone, "size", "()I").AsInt() == 1);
+        }
+    }
+}
+
+TEST_CASE(
+    "DVM-107 sparse and Pair fields keep children alive and release deleted values") {
+    for (const auto backend :
+         {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        AndroidValueVm f(backend);
+        const auto sparse = f.New("Landroid/util/SparseArray;");
+        const auto roots = f.vm.ProtectReferences(std::array{sparse});
+        const auto child = f.New("Ljava/lang/Object;");
+        const auto pair =
+            f.New("Landroid/util/Pair;", "(Ljava/lang/Object;Ljava/lang/Object;)V",
+                  {VmValue::Ref(child), VmValue::Ref(VmObjectRef{})});
+        f.On(sparse, "put", "(ILjava/lang/Object;)V",
+             {VmValue::Int(3), VmValue::Ref(pair)});
+        CHECK(f.vm.MarkReachable().IsMarked(child));
+        static_cast<void>(f.vm.CollectGarbage("dvm107-sparse-strong-edge"));
+        CHECK(f.On(sparse, "get", "(I)Ljava/lang/Object;", {VmValue::Int(3)}).ref ==
+              pair);
+        f.On(sparse, "delete", "(I)V", {VmValue::Int(3)});
+        CHECK_FALSE(f.vm.MarkReachable().IsMarked(pair));
+        CHECK_FALSE(f.vm.MarkReachable().IsMarked(child));
+        static_cast<void>(f.vm.CollectGarbage("dvm107-sparse-deleted"));
+        CHECK(f.On(sparse, "size", "()I").AsInt() == 0);
+    }
+}
+
+TEST_CASE("DVM-107 ComponentName Java value and Parcel roundtrip") {
+    for (const auto backend :
+         {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        AndroidValueVm f(backend);
+        const auto component =
+            f.New("Landroid/content/ComponentName;",
+                  "(Ljava/lang/String;Ljava/lang/String;)V",
+                  {VmValue::Ref(f.vm.NewStringUtf8("fixture")),
+                   VmValue::Ref(f.vm.NewStringUtf8("fixture.sub.Main$Nested"))});
+        CHECK(f.vm.StringUtf8(
+                  f.On(component, "getShortClassName", "()Ljava/lang/String;").ref) ==
+              ".sub.Main$Nested");
+        CHECK(
+            f.vm.StringUtf8(
+                f.On(component, "flattenToShortString", "()Ljava/lang/String;").ref) ==
+            "fixture/.sub.Main$Nested");
+        const auto flat =
+            f.On(component, "flattenToString", "()Ljava/lang/String;").ref;
+        const auto parsed =
+            f.Static("Landroid/content/ComponentName;", "unflattenFromString",
+                     "(Ljava/lang/String;)Landroid/content/ComponentName;",
+                     {VmValue::Ref(flat)})
+                .ref;
+        CHECK(f.On(component, "equals", "(Ljava/lang/Object;)Z", {VmValue::Ref(parsed)})
+                  .AsInt() == 1);
+        CHECK(f.On(component, "compareTo", "(Landroid/content/ComponentName;)I",
+                   {VmValue::Ref(parsed)})
+                  .AsInt() == 0);
+        CHECK(f.On(component, "hashCode", "()I").AsInt() ==
+              f.On(parsed, "hashCode", "()I").AsInt());
+        CHECK_FALSE(f.Static("Landroid/content/ComponentName;", "unflattenFromString",
+                             "(Ljava/lang/String;)Landroid/content/ComponentName;",
+                             {VmValue::Ref(f.vm.NewStringUtf8("invalid"))})
+                        .ref.IsValid());
+        const auto shortened =
+            f.Static("Landroid/content/ComponentName;", "unflattenFromString",
+                     "(Ljava/lang/String;)Landroid/content/ComponentName;",
+                     {VmValue::Ref(f.vm.NewStringUtf8("fixture/.Main"))})
+                .ref;
+        CHECK(f.vm.StringUtf8(
+                  f.On(shortened, "getClassName", "()Ljava/lang/String;").ref) ==
+              "fixture.Main");
+        const auto parcel =
+            f.Static("Landroid/os/Parcel;", "obtain", "()Landroid/os/Parcel;").ref;
+        f.On(component, "writeToParcel", "(Landroid/os/Parcel;I)V",
+             {VmValue::Ref(parcel), VmValue::Int(0)});
+        f.On(parcel, "setDataPosition", "(I)V", {VmValue::Int(0)});
+        const auto restored = f.New("Landroid/content/ComponentName;",
+                                    "(Landroid/os/Parcel;)V", {VmValue::Ref(parcel)});
+        CHECK(
+            f.On(component, "equals", "(Ljava/lang/Object;)Z", {VmValue::Ref(restored)})
+                .AsInt() == 1);
+        CHECK(f.On(component, "describeContents", "()I").AsInt() == 0);
+        f.On(parcel, "setDataPosition", "(I)V", {VmValue::Int(0)});
+        const auto type = f.model.ObjectClass(component);
+        const auto creator_field = f.linker.FindFieldRecursive(
+            type, "CREATOR", "Landroid/os/Parcelable$Creator;");
+        REQUIRE(creator_field.has_value());
+        const auto creator = VmObjectRef(
+            f.linker.Class(type).static_storage[f.linker.Field(*creator_field).slot]);
+        const auto via_creator =
+            f.On(creator, "createFromParcel", "(Landroid/os/Parcel;)Ljava/lang/Object;",
+                 {VmValue::Ref(parcel)})
+                .ref;
+        CHECK(f.On(component, "equals", "(Ljava/lang/Object;)Z",
+                   {VmValue::Ref(via_creator)})
+                  .AsInt() == 1);
+        const auto array =
+            f.On(creator, "newArray", "(I)[Ljava/lang/Object;", {VmValue::Int(2)}).ref;
+        CHECK(f.model.ArrayLength(array) == 2);
+        CHECK(f.linker.Class(f.model.ObjectClass(array)).descriptor ==
+              "[Landroid/content/ComponentName;");
+        f.On(parcel, "recycle", "()V");
+        const auto output = f.New("Ljava/io/StringWriter;");
+        const auto printer = f.New("Ljava/io/PrintWriter;", "(Ljava/io/Writer;)V",
+                                   {VmValue::Ref(output)});
+        f.Static("Landroid/content/ComponentName;", "printShortString",
+                 "(Ljava/io/PrintWriter;Ljava/lang/String;Ljava/lang/String;)V",
+                 {VmValue::Ref(printer), VmValue::Ref(f.vm.NewStringUtf8("fixture")),
+                  VmValue::Ref(f.vm.NewStringUtf8("fixture.Main"))});
+        CHECK(f.vm.StringUtf8(f.On(output, "toString", "()Ljava/lang/String;").ref) ==
+              "fixture/.Main");
+        CHECK(f.On(printer, "checkError", "()Z").AsInt() == 0);
+    }
+}
+
+TEST_CASE(
+    "DVM-107 Activity local name and Intent identity follow the launch component") {
+    for (const auto backend :
+         {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        AndroidValueVm f(backend);
+        f.context->package_name = "fixture";
+        const auto base = f.New("Landroid/content/Context;");
+        const auto attach = [&](const char* name) {
+            const auto activity = f.New("Landroid/app/Activity;");
+            f.On(activity, "attachBaseContext", "(Landroid/content/Context;)V",
+                 {VmValue::Ref(base)});
+            f.context->current_intent = VmObjectRef{};
+            AttachAndroidActivityIdentity(f.vm, f.context, activity, name);
+            return activity;
+        };
+        const auto activity = attach("fixture.sub.LaunchAlias$Nested");
+        const auto roots = f.vm.ProtectReferences(std::array{activity, base});
+        const auto component =
+            f.On(activity, "getComponentName", "()Landroid/content/ComponentName;").ref;
+        const auto intent =
+            f.On(activity, "getIntent", "()Landroid/content/Intent;").ref;
+        CHECK(f.On(intent, "getComponent", "()Landroid/content/ComponentName;").ref ==
+              component);
+        CHECK(f.vm.StringUtf8(
+                  f.On(activity, "getLocalClassName", "()Ljava/lang/String;").ref) ==
+              "sub.LaunchAlias$Nested");
+        const auto second = attach("fixture.Second");
+        CHECK(f.On(activity, "getIntent", "()Landroid/content/Intent;").ref == intent);
+        CHECK(f.On(second, "getIntent", "()Landroid/content/Intent;").ref != intent);
+        f.On(intent, "setComponent",
+             "(Landroid/content/ComponentName;)Landroid/content/Intent;",
+             {VmValue::Ref(VmObjectRef{})});
+        f.On(activity, "setIntent", "(Landroid/content/Intent;)V",
+             {VmValue::Ref(VmObjectRef{})});
+        CHECK_FALSE(
+            f.On(activity, "getIntent", "()Landroid/content/Intent;").ref.IsValid());
+        static_cast<void>(f.vm.CollectGarbage("dvm107-activity-component"));
+        CHECK(f.On(activity, "getComponentName", "()Landroid/content/ComponentName;")
+                  .ref == component);
+        CHECK(f.vm.StringUtf8(
+                  f.On(activity, "getLocalClassName", "()Ljava/lang/String;").ref) ==
+              "sub.LaunchAlias$Nested");
+        for (const auto* name :
+             {"fixture2.Main", "other.Main", "fixture", "fixture.Main"}) {
+            const auto candidate = attach(name);
+            CHECK(
+                f.vm.StringUtf8(
+                    f.On(candidate, "getLocalClassName", "()Ljava/lang/String;").ref) ==
+                (std::string(name) == "fixture.Main" ? "Main" : name));
+        }
+        const auto unattached = f.New("Landroid/app/Activity;");
+        CHECK(f.OnOutcome(unattached, "getLocalClassName", "()Ljava/lang/String;")
+                  .exception.IsValid());
+        const auto prefs =
+            f.On(activity, "getPreferences", "(I)Landroid/content/SharedPreferences;",
+                 {VmValue::Int(0)})
+                .ref;
+        CHECK(prefs == f.On(activity, "getSharedPreferences",
+                            "(Ljava/lang/String;I)Landroid/content/SharedPreferences;",
+                            {VmValue::Ref(f.vm.NewStringUtf8("sub.LaunchAlias$Nested")),
+                             VmValue::Int(0)})
+                           .ref);
+    }
+}
+
+TEST_CASE("DVM-107 builder CharSequence range append uses UTF16 and validates before "
+          "mutation") {
+    for (const auto backend :
+         {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        AndroidValueVm f(backend);
+        for (const auto* descriptor :
+             {"Ljava/lang/StringBuilder;", "Ljava/lang/StringBuffer;"}) {
+            const auto builder = f.New(descriptor);
+            const auto signature =
+                std::string("(Ljava/lang/CharSequence;II)") + descriptor;
+            const auto text = f.model.NewString(u"a😀中z");
+            CHECK(f.On(builder, "append", signature.c_str(),
+                       {VmValue::Ref(text), VmValue::Int(1), VmValue::Int(4)})
+                      .ref == builder);
+            CHECK(f.model.StringValue(
+                      f.On(builder, "toString", "()Ljava/lang/String;").ref) ==
+                  u"😀中");
+            f.On(builder, "append", signature.c_str(),
+                 {VmValue::Ref(builder), VmValue::Int(0), VmValue::Int(2)});
+            f.On(builder, "append", signature.c_str(),
+                 {VmValue::Ref(VmObjectRef{}), VmValue::Int(1), VmValue::Int(3)});
+            CHECK(f.model.StringValue(
+                      f.On(builder, "toString", "()Ljava/lang/String;").ref) ==
+                  u"😀中😀ul");
+            for (const auto range :
+                 {std::pair{-1, 1}, std::pair{2, 1}, std::pair{0, 6}}) {
+                const auto result =
+                    f.OnOutcome(builder, "append", signature.c_str(),
+                                {VmValue::Ref(text), VmValue::Int(range.first),
+                                 VmValue::Int(range.second)});
+                REQUIRE(result.exception.IsValid());
+                CHECK(f.linker.Class(result.exception_class).descriptor ==
+                      "Ljava/lang/IndexOutOfBoundsException;");
+                CHECK(f.model.StringValue(
+                          f.On(builder, "toString", "()Ljava/lang/String;").ref) ==
+                      u"😀中😀ul");
+            }
+        }
+    }
+}
+
+TEST_CASE(
+    "DVM-107 Activity queries honor overrides and Intent setters use ComponentName") {
+    for (const auto backend :
+         {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        auto declaration = IntrinsicClassBuilder::Class("Ltest/NamedActivity;",
+                                                        "Landroid/app/Activity;");
+        declaration.Constructor("()V",
+                                [](IntrinsicContext&) { return VmValue::Void(); });
+        declaration.OverrideMethod(
+            "getPackageName", "()Ljava/lang/String;", [](IntrinsicContext& c) {
+                return VmValue::Ref(c.vm.NewStringUtf8("virtual"));
+            });
+        declaration.OverrideMethod(
+            "getLocalClassName", "()Ljava/lang/String;", [](IntrinsicContext& c) {
+                return VmValue::Ref(c.vm.NewStringUtf8("preferences-name"));
+            });
+        std::vector<IntrinsicClassDecl> extras;
+        extras.push_back(std::move(declaration).Build());
+        auto null_package = IntrinsicClassBuilder::Class("Ltest/NullPackageActivity;", "Landroid/app/Activity;");
+        null_package.Constructor("()V", [](IntrinsicContext&) { return VmValue::Void(); });
+        null_package.OverrideMethod("getPackageName", "()Ljava/lang/String;", [](IntrinsicContext&) { return VmValue::Ref(VmObjectRef{}); });
+        extras.push_back(std::move(null_package).Build());
+        AndroidValueVm f(backend, extras);
+        f.context->package_name = "fixture";
+        const auto activity = f.New("Ltest/NamedActivity;");
+        const auto base = f.New("Landroid/content/Context;");
+        f.On(activity, "attachBaseContext", "(Landroid/content/Context;)V",
+             {VmValue::Ref(base)});
+        AttachAndroidActivityIdentity(f.vm, f.context, activity, "virtual.RealName");
+        const auto null_activity = f.New("Ltest/NullPackageActivity;");
+        AttachAndroidActivityIdentity(f.vm, f.context, null_activity, "fixture.Main");
+        const auto null_result = f.OnOutcome(null_activity, "getLocalClassName", "()Ljava/lang/String;");
+        REQUIRE(null_result.exception.IsValid());
+        CHECK(f.linker.Class(null_result.exception_class).descriptor == "Ljava/lang/NullPointerException;");
+        // invoke-super equivalent: Activity's implementation still dispatches
+        // getPackageName.
+        const auto parent = f.linker.ResolveDescriptor("Landroid/app/Activity;");
+        const auto slot = f.linker.FindVtableIndex(parent, "getLocalClassName",
+                                                   "()Ljava/lang/String;");
+        REQUIRE(slot.has_value());
+        const auto local = f.vm.Call(f.linker.Class(parent).vtable[*slot],
+                                     std::array{VmValue::Ref(activity)});
+        REQUIRE_FALSE(local.exception.IsValid());
+        CHECK(f.vm.StringUtf8(local.value.ref) == "RealName");
+        const auto prefs =
+            f.On(activity, "getPreferences", "(I)Landroid/content/SharedPreferences;",
+                 {VmValue::Int(0)})
+                .ref;
+        CHECK(f.context->preference_names.at(prefs.Value()) == "preferences-name");
+        const auto clazz =
+            f.model.ClassObject(f.linker.ResolveDescriptor("Ltest/NamedActivity;"));
+        const auto intent = f.New("Landroid/content/Intent;",
+                                  "(Landroid/content/Context;Ljava/lang/Class;)V",
+                                  {VmValue::Ref(activity), VmValue::Ref(clazz)});
+        const auto component_name = [&] {
+            return f.On(intent, "getComponent", "()Landroid/content/ComponentName;")
+                .ref;
+        };
+        CHECK(
+            f.vm.StringUtf8(
+                f.On(component_name(), "getPackageName", "()Ljava/lang/String;").ref) ==
+            "virtual");
+        CHECK(f.vm.StringUtf8(
+                  f.On(component_name(), "getClassName", "()Ljava/lang/String;").ref) ==
+              "test.NamedActivity");
+        f.On(intent, "setClass",
+             "(Landroid/content/Context;Ljava/lang/Class;)Landroid/content/Intent;",
+             {VmValue::Ref(base), VmValue::Ref(clazz)});
+        CHECK(
+            f.vm.StringUtf8(
+                f.On(component_name(), "getPackageName", "()Ljava/lang/String;").ref) ==
+            "fixture");
+        f.On(intent, "setClassName",
+             "(Landroid/content/Context;Ljava/lang/String;)Landroid/content/Intent;",
+             {VmValue::Ref(base), VmValue::Ref(f.vm.NewStringUtf8("fixture.Next"))});
+        f.On(base, "startActivity", "(Landroid/content/Intent;)V",
+             {VmValue::Ref(intent)});
+        CHECK(f.context->pending_activity_descriptor == "Lfixture/Next;");
+        f.context->pending_activity_descriptor.clear();
+        f.context->activity_switch_pending = false;
+        f.On(intent, "setClassName",
+             "(Ljava/lang/String;Ljava/lang/String;)Landroid/content/Intent;",
+             {VmValue::Ref(f.vm.NewStringUtf8("external")),
+              VmValue::Ref(f.vm.NewStringUtf8(".Literal"))});
+        CHECK(f.vm.StringUtf8(
+                  f.On(component_name(), "getClassName", "()Ljava/lang/String;").ref) ==
+              ".Literal");
+        const auto rejected =
+            f.OnOutcome(base, "startActivity", "(Landroid/content/Intent;)V",
+                        {VmValue::Ref(intent)});
+        REQUIRE(rejected.exception.IsValid());
+        CHECK(f.linker.Class(rejected.exception_class).descriptor ==
+              "Ljava/lang/UnsupportedOperationException;");
+        CHECK_FALSE(f.context->activity_switch_pending);
+        CHECK(f.context->pending_activity_descriptor.empty());
+    }
 }

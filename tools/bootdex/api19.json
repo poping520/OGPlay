@@ -38,6 +38,7 @@
       "Ljava/io/ObjectStreamException;",
       "Ljava/io/ObjectStreamField;",
       "Ljava/io/OutputStream;",
+      "Ljava/io/PrintWriter;",
       "Ljava/io/PushbackInputStream;",
       "Ljava/io/PushbackReader;",
       "Ljava/io/Reader;",
@@ -764,6 +765,23 @@
       "Lcom/android/org/conscrypt/OpenSSLCipherContext;",
       "Lcom/android/org/conscrypt/OpenSSLProvider;",
       "Lcom/android/org/conscrypt/util/EmptyArray;"
+    ],
+    "framework.jar": [
+      "Landroid/content/ComponentName$1;",
+      "Landroid/content/ComponentName;",
+      "Landroid/os/Parcelable$ClassLoaderCreator;",
+      "Landroid/os/Parcelable$Creator;",
+      "Landroid/os/Parcelable;",
+      "Landroid/util/ContainerHelpers;",
+      "Landroid/util/LongSparseArray;",
+      "Landroid/util/Pair;",
+      "Landroid/util/SparseArray;",
+      "Landroid/util/SparseBooleanArray;",
+      "Landroid/util/SparseIntArray;",
+      "Landroid/util/SparseLongArray;"
+    ],
+    "ArrayUtils.java": [
+      "Lcom/android/internal/util/ArrayUtils;"
     ]
   },
   "date_family_audit": {

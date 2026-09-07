@@ -54,6 +54,7 @@ TEST_CASE("JNI object arrays enforce Java assignability") {
     } catch (const ogplay::runtime::JniObjectArrayError& error) {
         CHECK(error.Reason() ==
               ogplay::runtime::JniObjectArrayErrorReason::incompatible_element);
+        CHECK(std::string(error.what()).find("example/Other -> example/Base") != std::string::npos);
     }
     CHECK(classes.IsAssignableFrom(object, child));
     arrays.Delete(array);
@@ -89,7 +90,7 @@ TEST_CASE("JNI object arrays delegate synthetic covariance outside storage locks
     const JniObjectValue byte_array{AllocateJniHostObjectIdentity(), bytes};
     const auto objects = arrays.New(object, 1);
     CHECK_THROWS_AS(arrays.Set(objects, 0, byte_array), JniObjectArrayError);
-    arrays.SetSyntheticAssignability([&](auto target, auto source) {
+    arrays.SetAssignability([&](auto target, auto source) {
         CHECK(arrays.Length(objects) == 1);  // Reentry would deadlock if Set retained its lock.
         return target == object || target == source;
     });
@@ -99,6 +100,43 @@ TEST_CASE("JNI object arrays delegate synthetic covariance outside storage locks
     CHECK_THROWS_AS(arrays.Set(typed, 0, JniObjectValue{AllocateJniHostObjectIdentity(), integers}),
                     JniObjectArrayError);
     CHECK(arrays.Get(typed, 0) == byte_array);
-    arrays.SetSyntheticAssignability({});
+    arrays.SetAssignability({});
     CHECK_THROWS_AS(arrays.Set(objects, 0, byte_array), JniObjectArrayError);
+}
+
+TEST_CASE("JNI object arrays use authoritative VM results and strict host fallback") {
+    using namespace ogplay::runtime;
+    JniClassRegistry classes;
+    const auto object = classes.RegisterClass(Class("java/lang/Object"));
+    const auto contract = classes.RegisterClass(Class("example/Contract"));
+    const auto implementation = classes.RegisterClass(Class("example/Implementation", "java/lang/Object"));
+    const auto unrelated = classes.RegisterClass(Class("example/Unrelated", "java/lang/Object"));
+    JniObjectArrayStore arrays(classes);
+    const JniObjectValue value{AllocateJniHostObjectIdentity(), implementation};
+    const auto typed = arrays.New(contract, 1);
+    CHECK_THROWS_AS(arrays.Set(typed, 0, value), JniObjectArrayError);
+    arrays.SetAssignability([&](auto target, auto source) -> std::optional<bool> {
+        CHECK(arrays.Length(typed) == 1);  // Includes New's initial-value validation.
+        if (target == contract) return source == implementation;
+        if (target == implementation && source == implementation) return false;
+        return std::nullopt;
+    });
+    arrays.Set(typed, 0, value);
+    CHECK(arrays.Get(typed, 0) == value);
+    CHECK(arrays.Get(arrays.New(contract, 1, value), 0) == value);
+    CHECK_THROWS_AS(static_cast<void>(arrays.New(contract, 1, JniObjectValue{AllocateJniHostObjectIdentity(), unrelated})),
+                    JniObjectArrayError);
+    CHECK_THROWS_AS(arrays.Set(typed, 0, JniObjectValue{AllocateJniHostObjectIdentity(), unrelated}),
+                    JniObjectArrayError);
+    CHECK(arrays.Get(typed, 0) == value);
+    // false is authoritative even when the registry would accept the identity.
+    CHECK_THROWS_AS(static_cast<void>(arrays.New(implementation, 1, value)), JniObjectArrayError);
+    CHECK(arrays.Get(arrays.New(object, 1, value), 0) == value);
+    CHECK_THROWS_AS(static_cast<void>(arrays.New(unrelated, 1, value)), JniObjectArrayError);
+    const JniObjectIdentity synthetic{JniObjectDomain::dex_vm, 10};
+    const JniObjectValue nested{AllocateJniHostObjectIdentity(), synthetic};
+    CHECK(arrays.Get(arrays.New(synthetic, 1, nested), 0) == nested);
+    CHECK_THROWS_AS(static_cast<void>(arrays.New(object, 1, nested)), JniObjectArrayError);
+    arrays.SetAssignability({});
+    CHECK_THROWS_AS(arrays.Set(typed, 0, value), JniObjectArrayError);
 }

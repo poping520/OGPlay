@@ -46,8 +46,10 @@ public:
     JniObjectArrayStore& operator=(JniObjectArrayStore&&) noexcept;
 
     // Install before use; clear after guest threads stop. Called outside array locks.
-    void SetSyntheticAssignability(
-        std::function<bool(JniObjectIdentity, JniObjectIdentity)> check);
+    // A result is authoritative; nullopt leaves host-only types to the registry
+    // and synthetic types to strict identity comparison.
+    void SetAssignability(
+        std::function<std::optional<bool>(JniObjectIdentity, JniObjectIdentity)> check);
 
     [[nodiscard]] JniObjectIdentity New(
         JniObjectIdentity element_class, JniSize length,

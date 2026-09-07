@@ -842,8 +842,8 @@ note = "M8 WU-M8-003 绑定 NewString/GetStringLength/GetStringChars/ReleaseStri
 
 [runtime.jni_guest_arrays]
 status = "complete"
-test = "tests/runtime/jni_guest_instance_calls_tests.cpp; tests/runtime/jni_guest_bindings_tests.cpp; tests/dexvm/gc_tests.cpp"
-note = "M8 WU-M8-004 绑定 8 类 primitive 的 New/GetRegion/SetRegion/GetElements/ReleaseElements 共 40 槽与 NewObjectArray/GetObjectArrayElement/SetObjectArrayElement 3 槽；Elements 使用独立 4 MiB 有界 guest arena，严格实现 0/JNI_COMMIT/JNI_ABORT、wrong pointer 与 double release，object array 验证 initial/set assignability。LUI-10 增加 Get/ReleasePrimitiveArrayCritical 两槽，复用有界 copy lease 并以独立 critical access kind 严格配对。DVM-49 将 JniObjectArrayStore 上移为 session-owned JniGuestObjectRegistry 服务，并注入 DexVM object model，使 JNI/解释器共享 Object[] identity、元素事实与清扫生命周期"
+test = "tests/runtime/jni_guest_instance_calls_tests.cpp; tests/runtime/jni_guest_bindings_tests.cpp; tests/dexvm/gc_tests.cpp; tests/runtime/jni_object_array_tests.cpp; tests/runtime/native_library_loader_tests.cpp"
+note = "M8 WU-M8-004 绑定 8 类 primitive 的 New/GetRegion/SetRegion/GetElements/ReleaseElements 共 40 槽与 NewObjectArray/GetObjectArrayElement/SetObjectArrayElement 3 槽；Elements 使用独立 4 MiB 有界 guest arena，严格实现 0/JNI_COMMIT/JNI_ABORT、wrong pointer 与 double release，object array 验证 initial/set assignability。LUI-10 增加 Get/ReleasePrimitiveArrayCritical 两槽，复用有界 copy lease 并以独立 critical access kind 严格配对。DVM-49 将 JniObjectArrayStore 上移为 session-owned JniGuestObjectRegistry 服务，并注入 DexVM object model，使 JNI/解释器共享 Object[] identity、元素事实与清扫生命周期。DVM-111 将普通类/接口写入与 synthetic 数组统一委托 VM 类型关系；回调在数组锁外执行，nullopt 才回退原有检查，非法 initial/set 仍明确失败。真实 JNI bridge 的定时队列、接口继承、GC 与严格拒绝双后端受检。"
 
 [runtime.jni_guest_nonvirtual_calls]
 status = "complete"
@@ -1537,5 +1537,5 @@ note = "DVM-109/ADR-0040：新增 28 个 pinned core.jar 类至 818 类，Object
 
 [dexvm.scheduled_executor_bootdex]
 status = "complete"
-test = "tests/dexvm/dvm87_tests.cpp; tests/dexvm/interpreter_tests.cpp; tests/dexvm/unsafe_tests.cpp; tests/dexvm/vm_thread_tests.cpp; tests/dexvm/vm_monitor_tests.cpp; tests/dexvm/thread_intrinsic_tests.cpp; tests/dexvm/reflection_tests.cpp; tools.bootdex_builder_self_test; tools.android_payload_current"
-note = "DVM-110/ADR-0041：新增 26 个 pinned API19 类至 844 类，ScheduledThreadPoolExecutor/FutureTask、接口/异常、普通 Executors 包装类、completion service 和拒绝策略均执行原版 Java，删除旧 FutureTask/合成串行 executor/工厂 handler。双后端验证单次 Runnable/Callable、Clock 截止时间/FIFO、fixed-rate 与 fixed-delay、取消/超时/异常身份、removeOnCancel/purge、关闭策略矩阵、shutdownNow、两个真实 worker、普通工厂/invokeAny/invokeAll、仅队列持有任务的 GC 保活。worker 复用 Thread/AQS/Unsafe 和统一 Clock，不另建调度器，解释执行仍串行；修复接口数组到 Object[] 协变与 primitive 类型边界、threaded invoke 原异常身份。complete 仅指该闭包，privileged 工厂/动态安全上下文、高争用和硬实时精度未纳入，未跑游戏/真机/跨平台 gate。"
+test = "tests/runtime/native_library_loader_tests.cpp; tests/dexvm/dvm87_tests.cpp; tests/dexvm/interpreter_tests.cpp; tests/dexvm/unsafe_tests.cpp; tests/dexvm/vm_thread_tests.cpp; tests/dexvm/vm_monitor_tests.cpp; tests/dexvm/thread_intrinsic_tests.cpp; tests/dexvm/reflection_tests.cpp; tools.bootdex_builder_self_test; tools.android_payload_current"
+note = "DVM-110/ADR-0041：新增 26 个 pinned API19 类至 844 类，ScheduledThreadPoolExecutor/FutureTask、接口/异常、普通 Executors 包装类、completion service 和拒绝策略均执行原版 Java，删除旧 FutureTask/合成串行 executor/工厂 handler。双后端验证单次 Runnable/Callable、Clock 截止时间/FIFO、fixed-rate 与 fixed-delay、取消/超时/异常身份、removeOnCancel/purge、关闭策略矩阵、shutdownNow、两个真实 worker、普通工厂/invokeAny/invokeAll、仅队列持有任务的 GC 保活。worker 复用 Thread/AQS/Unsafe 和统一 Clock，不另建调度器，解释执行仍串行；修复接口数组到 Object[] 协变与 primitive 类型边界、threaded invoke 原异常身份。DVM-111 修复真实 JNI bridge 下 ScheduledFutureTask 写入 RunnableScheduledFuture[] 被仅父类链校验误拒绝的问题，原版 schedule/shutdownNow 已在共享数组存储下双后端验收。complete 仅指该闭包，privileged 工厂/动态安全上下文、高争用和硬实时精度未纳入，未跑游戏/真机/跨平台 gate。"

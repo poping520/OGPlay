@@ -304,7 +304,9 @@ struct ApplicationProcess final {
     std::unique_ptr<ogplay::runtime::DexVmGuestBridge> bridge;
     std::size_t globals_before_bridge{};
 
-    ApplicationProcess() {
+    explicit ApplicationProcess(
+        ogplay::runtime::dexvm::InterpreterBackend backend =
+            ogplay::runtime::dexvm::InterpreterBackend::switch_dispatch) {
         const std::array inputs{
             ogplay::loader::Elf32ModuleInput{
                 "liba.so", native_a,
@@ -335,7 +337,8 @@ struct ApplicationProcess final {
         globals_before_bridge = session->Environment().GlobalReferenceCount();
         bridge = std::make_unique<ogplay::runtime::DexVmGuestBridge>(
             *session, ReadDexFixture("application.dex"), catalog, context,
-            ledger, nullptr, ogplay::runtime::DexVmBridgeConfig{}, ogplay::test::ReadBootDex());
+            ledger, nullptr, ogplay::runtime::DexVmBridgeConfig{
+                .interpreter = {.backend = backend}}, ogplay::test::ReadBootDex());
         context->threads = &bridge->Threads();
     }
 
@@ -881,6 +884,102 @@ TEST_CASE("DexVM JNI classes retain intrinsic superclasses for object arrays") {
                                             UINT64_C(0x1234)},
                                            *object_identity}),
         runtime::JniObjectArrayError);
+}
+
+TEST_CASE("DVM-111 scheduled tasks use VM interface assignability in shared JNI arrays") {
+    using namespace ogplay;
+    using namespace runtime::dexvm;
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        ApplicationProcess fixture(backend);
+        auto& vm = fixture.bridge->Vm();
+        auto& linker = fixture.bridge->Linker();
+        auto& model = vm.Model();
+        std::vector<Interpreter::RootScope> roots;
+        struct StopWorkers final {
+            VmThreadRuntime& threads;
+            ~StopWorkers() { threads.Shutdown(); }
+        } stop_workers{fixture.bridge->Threads()};
+        {
+            VmExecutionLockScope lock(vm.ExecutionLock());
+            auto keep = [&](VmObjectRef ref) {
+                roots.push_back(vm.ProtectReferences(std::array{ref}));
+                return ref;
+            };
+            auto direct = [&](const char* owner, const char* name, const char* signature,
+                              std::vector<VmValue> args) {
+                const auto method = linker.FindDirectMethod(linker.ResolveDescriptor(owner), name, signature);
+                REQUIRE(method);
+                const auto result = vm.Call(*method, args);
+                REQUIRE_MESSAGE(!result.exception.IsValid(), result.exception_message);
+                return result.value;
+            };
+            auto call = [&](VmObjectRef receiver, const char* name, const char* signature,
+                            std::vector<VmValue> args = {}) {
+                const auto type = model.ObjectClass(receiver);
+                const auto slot = linker.FindVtableIndex(type, name, signature);
+                REQUIRE(slot);
+                args.insert(args.begin(), VmValue::Ref(receiver));
+                const auto result = vm.Call(linker.Class(type).vtable[*slot], args);
+                REQUIRE_MESSAGE(!result.exception.IsValid(), result.exception_message);
+                return result.value;
+            };
+            const auto pool = keep(vm.NewIntrinsicInstance("Ljava/util/concurrent/ScheduledThreadPoolExecutor;"));
+            direct("Ljava/util/concurrent/ScheduledThreadPoolExecutor;", "<init>", "(I)V",
+                   {VmValue::Ref(pool), VmValue::Int(1)});
+            const auto runnable = keep(vm.NewIntrinsicInstance("Ljava/lang/Thread;"));
+            direct("Ljava/lang/Thread;", "<init>", "()V", {VmValue::Ref(runnable)});
+            const auto unit = keep(direct("Ljava/util/concurrent/TimeUnit;", "valueOf",
+                "(Ljava/lang/String;)Ljava/util/concurrent/TimeUnit;",
+                {VmValue::Ref(vm.NewStringUtf8("DAYS"))}).ref);
+            // The real BootDex queue stores ScheduledFutureTask into RunnableScheduledFuture[].
+            const auto future = keep(call(pool, "schedule",
+                "(Ljava/lang/Runnable;JLjava/util/concurrent/TimeUnit;)Ljava/util/concurrent/ScheduledFuture;",
+                {VmValue::Ref(runnable), VmValue::Long(1), VmValue::Ref(unit)}).ref);
+            const auto task_type = model.ObjectClass(future);
+            for (const auto* descriptor : {"Ljava/util/concurrent/RunnableScheduledFuture;",
+                    "Ljava/util/concurrent/RunnableFuture;", "Ljava/util/concurrent/Future;",
+                    "Ljava/util/concurrent/Delayed;", "Ljava/lang/Comparable;", "Ljava/lang/Runnable;"}) {
+                const auto element = linker.ResolveDescriptor(descriptor);
+                CHECK(linker.IsAssignable(element, task_type));
+                const auto array = keep(model.NewObjectArray(
+                    linker.ResolveDescriptor(std::string("[") + descriptor), element, 1));
+                model.SetObjectElement(array, 0, future);
+                CHECK(model.GetObjectElement(array, 0) == future);
+            }
+            const auto element = linker.ResolveDescriptor("Ljava/util/concurrent/RunnableScheduledFuture;");
+            const auto typed = keep(model.NewObjectArray(
+                linker.ResolveDescriptor("[Ljava/util/concurrent/RunnableScheduledFuture;"), element, 1));
+            auto& arrays = fixture.session->Objects().ObjectArrays();
+            const auto host_only = fixture.session->Classes().RegisterClass(
+                {"fixture/HostOnly", "java/lang/Object", {}, {}});
+            const runtime::JniObjectValue host_value{runtime::AllocateJniHostObjectIdentity(), host_only};
+            const auto host_array = arrays.New(host_only, 1, host_value);
+            CHECK(arrays.Get(host_array, 0) == host_value);
+            CHECK_THROWS_AS(arrays.Set(model.ToIdentity(typed), 0, host_value), runtime::JniObjectArrayError);
+            arrays.Delete(host_array);
+            const auto task_identity = fixture.bridge->RegisteredClassIdentity(task_type);
+            const auto thread_identity = fixture.bridge->RegisteredClassIdentity(model.ObjectClass(runnable));
+            REQUIRE(task_identity);
+            REQUIRE(thread_identity);
+            const runtime::JniObjectValue value{model.ToIdentity(future), *task_identity};
+            // Native-side initial values and updates follow the same authoritative VM relation.
+            const auto native_array = arrays.New(arrays.ElementClass(model.ToIdentity(typed)), 1, value);
+            arrays.Set(model.ToIdentity(typed), 0, value);
+            CHECK_THROWS_AS(arrays.Set(model.ToIdentity(typed), 0,
+                runtime::JniObjectValue{model.ToIdentity(runnable), *thread_identity}), runtime::JniObjectArrayError);
+            CHECK(arrays.Get(model.ToIdentity(typed), 0) == value);
+            arrays.Delete(native_array);
+            static_cast<void>(vm.CollectGarbage());
+            CHECK(model.GetObjectElement(typed, 0) == future);
+            CHECK(call(future, "isDone", "()Z").AsInt() == 0);
+            const auto pending = keep(call(pool, "shutdownNow", "()Ljava/util/List;").ref);
+            CHECK(call(pending, "size", "()I").AsInt() == 1);
+            CHECK(call(pending, "get", "(I)Ljava/lang/Object;", {VmValue::Int(0)}).ref == future);
+            CHECK(call(future, "cancel", "(Z)Z", {VmValue::Int(0)}).AsInt() == 1);
+        }
+        fixture.bridge->Threads().Shutdown();
+        CHECK_FALSE(fixture.bridge->Threads().TakeFailure().has_value());
+    }
 }
 
 TEST_CASE("DexVM imports JNI-created application objects with instance slots") {

@@ -72,7 +72,6 @@ TEST_CASE("legacy Android platform identity installs one complete class group") 
         "android/provider/Settings$Secure",
         "android/os/Bundle",
         "android/view/ViewRoot",
-        "java/util/UUID",
     };
     for (const auto name : class_names) {
         CHECK(classes.FindClass(std::string{name}).has_value());
@@ -169,15 +168,7 @@ TEST_CASE("legacy Android platform identity installs one complete class group") 
                   "(Ljava/lang/String;)Ljava/lang/String;", property))) ==
           "fixture-device");
 
-    const auto uuid = std::get<JniReference>(invoke_static(
-        platform.uuid_class, "randomUUID", "()Ljava/util/UUID;"));
-    REQUIRE(environment.ResolveObjectForHle(kThread, uuid) == platform.uuid);
-    CHECK(ReadString(
-              environment, strings,
-              std::get<JniReference>(invoke_virtual(
-                  uuid, platform.uuid_class, "toString",
-                  "()Ljava/lang/String;"))) ==
-          "00000000-0000-4000-8000-000000000001");
+    CHECK_FALSE(classes.FindClass("java/util/UUID").has_value());
 
     const auto game = classes.RegisterClass(
         {"fixture/Game", {},

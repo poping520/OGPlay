@@ -903,7 +903,7 @@ note = "M8 WU-0367 让 NewObject 与 framework HLE 预注册 host object 共享�
 [runtime.android_legacy_platform_identity]
 status = "complete"
 test = "tests/runtime/android_guest_framework_platform_tests.cpp; Asphalt 6 exact bootstrap sampling"
-note = "M8 WU-0368 批量安装 APK 引用的 Build/VERSION 12 个字段、SystemProperties、Settings.Secure、Context/ContentResolver/Telephony、Activity、Bundle、ViewRoot 与 UUID；身份事实确定性注入，service/UUID 对象走共享 registry，offline tracking（track_launch/track_first_run 同口径）与 launch count 可查询"
+note = "M8 WU-0368 批量安装 APK 引用的 Build/VERSION 12 个字段、SystemProperties、Settings.Secure、Context/ContentResolver/Telephony、Activity、Bundle、ViewRoot 与 UUID；身份事实确定性注入，service 对象走共享 registry（DVM-108 已删除固定 UUID handler，UUID 改由 BootDex 与 OS CSPRNG 提供），offline tracking（track_launch/track_first_run 同口径）与 launch count 可查询"
 
 [runtime.jni_guest_library_load_plan]
 status = "complete"
@@ -1228,7 +1228,7 @@ note = "DVM-7 注册/层级/布局/vtable/iftable 四步链接与懒结构预检
 [dexvm.boot_dex]
 status = "complete"
 test = "tests/dexvm/intrinsics_p1_tests.cpp; tests/frontend/data_directory_tests.cpp; tools.bootdex_builder_self_test; tools.android_payload_current; PvZ exact Profile reached-fault"
-note = "DVM-99..107 curated BootDex：日期、集合、普通流、X500、Cipher/JCA/Conscrypt AES 与 Certificate/Harmony/Signature 及 framework 值类依赖共 774 个 class_def。774 类全链接，Cipher/Certificate/集合普通 Java 算法均归 DEX；精确边界 overlay 与显式 guest JNI 声明受审。固定 recipe 可确定性重建，DEX/JAR 身份见 data/android/19/manifest.json。Conscrypt 为用户授权的临时设备来源，区别于 pinned core.jar；完整 core/framework、multidex、动态 classpath 与 Android 系统服务未纳入。 2026-09-07 ROM libcrypto 已撤出 Git，后按用户再次授权恢复到本地临时使用，完整 payload 校验通过；仍须自行构建替换并更新来源/哈希后复验。"
+note = "DVM-99..108 curated BootDex：日期、集合、普通流、X500、Cipher/JCA/Conscrypt AES 与 Certificate/Harmony/Signature 及 framework 值类、UUID/MessageDigest/摘要流依赖共 790 个 class_def。790 类全链接，Cipher/Certificate/集合普通 Java 算法均归 DEX；精确边界 overlay 与显式 guest JNI 声明受审。固定 recipe 可确定性重建，DEX/JAR 身份见 data/android/19/manifest.json。Conscrypt 为用户授权的临时设备来源，区别于 pinned core.jar；完整 core/framework、multidex、动态 classpath 与 Android 系统服务未纳入。 2026-09-07 ROM libcrypto 已撤出 Git，后按用户再次授权恢复到本地临时使用，完整 payload 校验通过；仍须自行构建替换并更新来源/哈希后复验。"
 
 [dexvm.date_format_bootdex_audit]
 status = "complete"
@@ -1519,3 +1519,13 @@ note = "DVM-107/ADR-0038：Pair、五种 SparseArray、ContainerHelpers、Compon
 status = "complete"
 test = "tests/dexvm/android_value_tests.cpp; tests/runtime/native_library_loader_tests.cpp"
 note = "DVM-107：Activity.getLocalClassName/getComponentName/getPreferences/getIntent/setIntent 和 Intent 的 component setter/constructor 使用普通 mComponent/mIntent 字段。启动和切换在 onCreate 前附加组件，根 alias 保留 manifest 名；每实例 Intent 独立，替换 Intent 或变更其 component 不改 Activity 身份。双后端包名前缀/点边界/null/虚派和 GC 受检，真实启动 alias/切换 fixture 通过；隐式/跨包启动与一般 manifest resolver、非根 alias 解析仍明确不支持，不代表完整 Activity 或游戏 gate。"
+
+[dexvm.uuid_bootdex]
+status = "complete"
+test = "tests/runtime/native_library_loader_tests.cpp; tests/dexvm/android_value_tests.cpp; tests/runtime/android_guest_framework_platform_tests.cpp; tests/dexvm/dvm87_tests.cpp"
+note = "DVM-108/ADR-0039：原版 UUID 归 BootDex，无普通方法 overlay；删除旧 JNI 固定对象和 UUID 字符串。randomUUID 复用 OS CSPRNG，nameUUIDFromBytes 使用 guest EVP MD5。双后端验证 v1 字段、v3 已知值、v4 位型/重复调用、解析/比较/格式化、真实 guest 线程及 JNI 发布路径。String.indexOf(String,int) 补 UTF-16 边界。对象流缺通用私有 readObject 回调，UUID 反序列化明确 InvalidClassException，不返回未恢复 transient 缓存的对象；未运行游戏 gate。"
+
+[dexvm.message_digest]
+status = "complete"
+test = "tests/runtime/native_library_loader_tests.cpp; tests/dexvm/gc_tests.cpp; tests/dexvm/dvm87_tests.cpp; tests/dexvm/fixtures/cipher.dexasm; tools.android_payload_current"
+note = "DVM-108/ADR-0039：API19 原版 MessageDigest/Spi、DigestInputStream/DigestOutputStream 与 Conscrypt 的 MD5、SHA-1、SHA-256、SHA-384、SHA-512 归 BootDex。AndroidOpenSSL 注册原版别名/OID，7 个 guest JNI 入口调用 ARM libcrypto EVP；native update 使用最大 64 KiB scratch 分块，无消息累计长度上限。双后端已知向量、超 1 MiB 二进制、增量/reset/clone、ByteBuffer/输出偏移、摘要流与明确异常受检。ctx 普通 long 字段为唯一事实源，GC/teardown 按 cleanup/token 聚合，浅 clone 与字段别名存活时不释放，失败清理可重试。SHA-224 MessageDigest 未在原版 OpenSSLProvider 注册，HMAC/Mac、SHA-3 与完整 JCA/TLS 未纳入。libcrypto 和 bootdex.jar 仅本地制品，未做真机/跨平台/游戏验收。"

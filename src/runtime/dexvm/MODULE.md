@@ -365,3 +365,10 @@ DVM-107：framework Pair/Sparse/ComponentName 与 PrintWriter 的普通算法归
 StringBuilder/StringBuffer 共用 CharSequence 区间 append 原语：UTF-16 索引，虚派
 length/charAt、null 视为 "null"、自追加取原片段、越界不改变原 buffer。测试覆盖双后端
 ComponentName 的短名称打印与 UTF-16/null/自追加/异常边界。
+
+DVM-108：UUID/JCA MessageDigest 和 Conscrypt 摘要普通方法归 BootDex。
+TrackGuestNativeResourceField 仅接受实例 long 字段和 static (J)V cleanup，重复登记幂等，
+同字段冲突拒绝。普通字段为 mutable token 的唯一事实源；GC 按 (cleanup,token) 聚合全部
+已登记字段及 owner，仍有标记 owner 则保留，死亡字段清零，sweep 后调用 JNI 清理。
+浅 clone 共享 token 不提前释放，teardown 清零所有字段，失败与未尝试的 cleanup 保留可重试。
+JavaObjectModel.VisitLiveObjects 仅枚举已分配记录，调用者持 VM 锁，visitor 不得分配对象。

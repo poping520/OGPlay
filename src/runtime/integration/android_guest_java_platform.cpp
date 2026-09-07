@@ -355,21 +355,12 @@ AndroidGuestFrameworkPlatformSet InstallAndroidGuestFrameworkPlatform(
         {"android/os/Bundle", "java/lang/Object", {}, {}}));
     static_cast<void>(classes.RegisterClass(
         {"android/view/ViewRoot", "java/lang/Object", {}, {}}));
-    const auto uuid_class = classes.RegisterClass(
-        {"java/util/UUID", "java/lang/Object",
-         {{"randomUUID", "()Ljava/util/UUID;",
-           "framework.uuid.random", true},
-          {"toString", "()Ljava/lang/String;",
-           "framework.uuid.to_string", false}}, {}});
-
     const auto context = AllocateJniHostObjectIdentity();
     const auto content_resolver = AllocateJniHostObjectIdentity();
     const auto telephony = AllocateJniHostObjectIdentity();
-    const auto uuid = AllocateJniHostObjectIdentity();
     objects.Register(context, activity_class);
     objects.Register(content_resolver, content_resolver_class);
     objects.Register(telephony, telephony_class);
-    objects.Register(uuid, uuid_class);
 
     const auto set_string_field = [&](const JniObjectIdentity java_class,
                                       const char* name,
@@ -448,25 +439,11 @@ AndroidGuestFrameworkPlatformSet InstallAndroidGuestFrameworkPlatform(
             if (key != "android_id") return JniValue{JniReference{}};
             return PublishString(environment, strings, invocation, value);
         });
-    invocations.RegisterHandler(
-        "framework.uuid.random",
-        [&environment, uuid](const JniInvocation& invocation) {
-            return JniValue{environment.PublishLocalObject(
-                invocation.thread_id, uuid)};
-        });
-    invocations.RegisterHandler(
-        "framework.uuid.to_string",
-        [&environment, &strings](const JniInvocation& invocation) {
-            return PublishString(
-                environment, strings, invocation,
-                "00000000-0000-4000-8000-000000000001");
-        });
-
     static_cast<void>(object_class);
     static_cast<void>(properties_class);
     static_cast<void>(secure_class);
-    return {context_class, content_resolver_class, telephony_class, uuid_class,
-            context, content_resolver, telephony, uuid};
+    return {context_class, content_resolver_class, telephony_class,
+            context, content_resolver, telephony};
 }
 
 }  // namespace ogplay::runtime

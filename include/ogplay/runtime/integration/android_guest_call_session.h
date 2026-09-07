@@ -203,11 +203,9 @@ struct AndroidGuestFrameworkPlatformSet final {
     JniObjectIdentity context_class;
     JniObjectIdentity content_resolver_class;
     JniObjectIdentity telephony_class;
-    JniObjectIdentity uuid_class;
     JniObjectIdentity context;
     JniObjectIdentity content_resolver;
     JniObjectIdentity telephony;
-    JniObjectIdentity uuid;
 };
 
 [[nodiscard]] AndroidGuestFrameworkPlatformSet

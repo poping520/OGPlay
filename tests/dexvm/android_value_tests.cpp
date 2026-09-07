@@ -1057,3 +1057,64 @@ TEST_CASE(
         CHECK(f.context->pending_activity_descriptor.empty());
     }
 }
+
+TEST_CASE("DVM-108 UUID deserialization rejects skipped private readObject invariants") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        AndroidValueVm f(backend);
+        const auto uuid = f.Static("Ljava/util/UUID;", "fromString", "(Ljava/lang/String;)Ljava/util/UUID;", {VmValue::Ref(f.vm.NewStringUtf8("f81d4fae-7dec-11d0-a765-00a0c91e6bf6"))}).ref;
+        const auto buffer = f.New("Ljava/io/ByteArrayOutputStream;");
+        const auto out = f.New("Ljava/io/ObjectOutputStream;", "(Ljava/io/OutputStream;)V", {VmValue::Ref(buffer)});
+        f.On(out, "writeObject", "(Ljava/lang/Object;)V", {VmValue::Ref(uuid)});
+        f.On(out, "flush", "()V");
+        const auto bytes = f.On(buffer, "toByteArray", "()[B").ref;
+        const auto source = f.New("Ljava/io/ByteArrayInputStream;", "([B)V", {VmValue::Ref(bytes)});
+        const auto input = f.New("Ljava/io/ObjectInputStream;", "(Ljava/io/InputStream;)V", {VmValue::Ref(source)});
+        const auto result = f.OnOutcome(input, "readObject", "()Ljava/lang/Object;");
+        REQUIRE(result.exception.IsValid());
+        CHECK(f.linker.Class(result.exception_class).descriptor == "Ljava/io/InvalidClassException;");
+        CHECK(result.exception_message.find("custom readObject") != std::string::npos);
+    }
+}
+
+TEST_CASE("DVM-108 UUID values and UTF16 substring search follow API19") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        AndroidValueVm f(backend);
+        const auto failure = f.New("Ljava/security/ProviderException;", "(Ljava/lang/String;)V",
+                                   {VmValue::Ref(f.vm.NewStringUtf8("provider failed"))});
+        CHECK(f.linker.IsAssignable(f.linker.ResolveDescriptor("Ljava/lang/RuntimeException;"), f.model.ObjectClass(failure)));
+        CHECK(f.vm.StringUtf8(f.On(failure, "getMessage", "()Ljava/lang/String;").ref) == "provider failed");
+        const auto text = f.model.NewString(u"a😀中😀z");
+        const auto search = [&](std::u16string_view needle, int start) {
+            return f.On(text, "indexOf", "(Ljava/lang/String;I)I",
+                        {VmValue::Ref(f.model.NewString(std::u16string(needle))), VmValue::Int(start)}).AsInt();
+        };
+        CHECK(search(u"😀", -1) == 1);
+        CHECK(search(u"😀", 2) == 4);
+        CHECK(search(u"中", 4) == -1);
+        CHECK(search(u"", 100) == 7);
+        CHECK(search(u"z", 100) == -1);
+        const auto null_search = f.OnOutcome(text, "indexOf", "(Ljava/lang/String;I)I",
+                                            {VmValue::Ref(VmObjectRef{}), VmValue::Int(100)});
+        REQUIRE(null_search.exception.IsValid());
+        CHECK(f.linker.Class(null_search.exception_class).descriptor == "Ljava/lang/NullPointerException;");
+        const auto zero = f.New("Ljava/util/UUID;", "(JJ)V", {VmValue::Long(0), VmValue::Long(0)});
+        const auto negative = f.New("Ljava/util/UUID;", "(JJ)V", {VmValue::Long(INT64_MIN), VmValue::Long(-1)});
+        const auto equal = f.New("Ljava/util/UUID;", "(JJ)V", {VmValue::Long(INT64_MIN), VmValue::Long(-1)});
+        CHECK(f.On(negative, "getMostSignificantBits", "()J").AsLong() == INT64_MIN);
+        CHECK(f.On(negative, "getLeastSignificantBits", "()J").AsLong() == -1);
+        CHECK(f.vm.StringUtf8(f.On(negative, "toString", "()Ljava/lang/String;").ref) == "80000000-0000-0000-ffff-ffffffffffff");
+        CHECK(f.On(negative, "equals", "(Ljava/lang/Object;)Z", {VmValue::Ref(equal)}).AsInt() == 1);
+        CHECK(f.On(negative, "equals", "(Ljava/lang/Object;)Z", {VmValue::Ref(zero)}).AsInt() == 0);
+        CHECK(f.On(negative, "hashCode", "()I").AsInt() == f.On(equal, "hashCode", "()I").AsInt());
+        CHECK(f.On(negative, "compareTo", "(Ljava/util/UUID;)I", {VmValue::Ref(zero)}).AsInt() < 0);
+        CHECK(f.On(equal, "compareTo", "(Ljava/util/UUID;)I", {VmValue::Ref(negative)}).AsInt() == 0);
+        CHECK(f.On(negative, "variant", "()I").AsInt() == 7);
+        CHECK(f.On(zero, "variant", "()I").AsInt() == 0);
+        const auto parse = *f.linker.FindDirectMethod(f.linker.ResolveDescriptor("Ljava/util/UUID;"), "fromString", "(Ljava/lang/String;)Ljava/util/UUID;");
+        for (const auto* invalid : {"", "a-b-c-d", "a-b-c-d-e-f", "invalid-1-1-1-1"}) {
+            const auto result = f.vm.Call(parse, std::array{VmValue::Ref(f.vm.NewStringUtf8(invalid))});
+            REQUIRE(result.exception.IsValid());
+            CHECK(f.linker.IsAssignable(f.linker.ResolveDescriptor("Ljava/lang/IllegalArgumentException;"), result.exception_class));
+        }
+    }
+}

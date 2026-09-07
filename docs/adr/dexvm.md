@@ -500,3 +500,31 @@ StringBuilder/StringBuffer 仅补 ComponentName 所需的 CharSequence 区间 ap
 采用 UTF-16 索引并虚派 length/charAt，支持 null 和自追加，越界不修改原 buffer。
 不迁入完整 framework、Activity/Context/Intent/Parcel、Binder 或系统服务；不扩展为
 manifest 通用组件解析器，非根 alias 的启动解析仍不在本次范围。
+
+<a id="adr-0039"></a>
+
+## ADR-0039 · UUID 与摘要归 BootDex，mutable native token 归普通字段
+
+- 状态：Accepted
+- 日期：2026-09-07
+- 关联：[DVM-108](../tasks/dexvm/DVM-108.md)
+
+### 决定
+
+UUID/JCA MessageDigest/Spi、摘要流与 Conscrypt 的 MD5/SHA1/SHA256/SHA384/SHA512 从
+pinned core.jar 与既有临时 conscrypt.jar 精确选入。删除 legacy JNI 固定 UUID handler，
+Java/JNI 共用原版 UUID。randomUUID 复用已接通的 OS CSPRNG，nameUUIDFromBytes 使用 MD5。
+AndroidOpenSSL 仅登记原版摘要服务/别名/OID；7 个 NativeCrypto JNI 入口使用同一 guest
+adapter 的 EVP 实现。update 使用最大 64 KiB scratch 分块，不设消息累计长度上限。
+
+原版 OpenSSLMessageDigestJDK 持有 mutable ctx:J；它在初始化、clone、reset 和 final 中
+赋值。若另建 owner→token 副本或覆盖普通 Java 方法，会形成双重状态。因此增加通用
+字段资源登记：实例 long 字段 + static (J)V cleanup，GC 直接读对象字段，按 cleanup/token
+聚合所有 owner，最后 owner 死亡才在 sweep 后清理；teardown 清零字段再清理。
+浅 clone 和跨字段别名不提前释放，清理失败保留队列。native 使用单调逻辑 token 与
+registry/per-context mutex，不把 EVP 指针暴露给 Java。
+
+对象流不跳过私有 readObject 后返回无效对象：除既有 Date 特例和 Externalizable 协议外，
+此类反序列化明确 InvalidClassException。暂不扩展通用对象流回调，UUID 序列化可写，读取拒绝。
+原版 OpenSSLProvider 无 SHA-224 MessageDigest；现有 SHA224 验签不因此扩展为摘要服务。
+HMAC/Mac、SHA-3、其他 provider 或 TLS 未纳入。配方、构建工具和 ADR 继续合并维护。

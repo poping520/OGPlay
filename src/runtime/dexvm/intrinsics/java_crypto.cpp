@@ -70,7 +70,7 @@ IntrinsicClassDecl CryptoProvider() {
         Direct(vm, "Ljava/security/Provider;", "<init>", "(Ljava/lang/String;DLjava/lang/String;)V",
                {VmValue::Ref(c.receiver), VmValue::Ref(name), VmValue::Double(1.0),
                 VmValue::Ref(vm.NewStringUtf8(
-                    "OGPlay API 19 guest OpenSSL AES/signature verification; OS entropy"))});
+                    "OGPlay API 19 guest OpenSSL AES/digests/signature verification; OS entropy"))});
         for (const auto mode : {"ECB", "CBC", "CTR"}) {
             for (const auto padding : {"NoPadding", "PKCS5Padding"}) {
                 if (std::string_view(mode) == "CTR" && std::string_view(padding) != "NoPadding")
@@ -82,6 +82,20 @@ IntrinsicClassDecl CryptoProvider() {
         }
         Put(vm, c.receiver, "Cipher.AES", "org.ogplay.security.DefaultAes");
         Put(vm, c.receiver, "SecureRandom.OGPlayOS", "org.ogplay.security.OsRandom");
+        // Match API 19 OpenSSLProvider names, aliases and OIDs.
+        for (const auto& entry : std::array{
+                 std::array{"MD5", "MD5", "1.2.840.113549.2.5"},
+                 std::array{"SHA-1", "SHA1", "1.3.14.3.2.26"},
+                 std::array{"SHA-256", "SHA256", "2.16.840.1.101.3.4.2.1"},
+                 std::array{"SHA-384", "SHA384", "2.16.840.1.101.3.4.2.2"},
+                 std::array{"SHA-512", "SHA512", "2.16.840.1.101.3.4.2.3"}}) {
+            Put(vm, c.receiver, std::string("MessageDigest.") + entry[0],
+                std::string("com.android.org.conscrypt.OpenSSLMessageDigestJDK$") + entry[1]);
+            if (std::string_view(entry[0]) != entry[1])
+                Put(vm, c.receiver, std::string("Alg.Alias.MessageDigest.") + entry[1], entry[0]);
+            Put(vm, c.receiver, std::string("Alg.Alias.MessageDigest.") + entry[2], entry[0]);
+        }
+        Put(vm, c.receiver, "Alg.Alias.MessageDigest.SHA", "SHA-1");
         for (const auto& entry : kSignatures) {
             Put(vm, c.receiver, std::string("Signature.") + entry.algorithm,
                 std::string("org.ogplay.security.Verify") + entry.algorithm);
@@ -178,6 +192,11 @@ IntrinsicClassDecl NativeCryptoBoundary() {
     b.ClassInitializer([](IntrinsicContext& c) {
         Direct(c.vm, "Ljava/lang/System;", "loadLibrary", "(Ljava/lang/String;)V",
                {VmValue::Ref(c.vm.NewStringUtf8("ogplay_cipher"))});
+        const auto owner = c.vm.Linker().ResolveDescriptor("Lcom/android/org/conscrypt/OpenSSLMessageDigestJDK;");
+        const auto field = c.vm.Linker().FindFieldRecursive(owner, "ctx", "J");
+        const auto cleanup = c.vm.Linker().FindDirectMethod(c.vm.Linker().ResolveDescriptor(kNative), "EVP_MD_CTX_destroy", "(J)V");
+        if (!field || !cleanup) throw DexVmError(DexVmErrorReason::unresolved_reference, "digest resource metadata");
+        c.vm.TrackGuestNativeResourceField(*field, *cleanup);
         return VmValue::Void();
     });
     for (const auto& [name, signature] : std::array{
@@ -191,6 +210,13 @@ IntrinsicClassDecl NativeCryptoBoundary() {
              std::pair{"EVP_CipherInit_ex", "(JJ[B[BZ)V"},
              std::pair{"EVP_CipherUpdate", "(J[BI[BII)I"},
              std::pair{"EVP_CipherFinal_ex", "(J[BI)I"},
+             std::pair{"EVP_get_digestbyname", "(Ljava/lang/String;)J"},
+             std::pair{"EVP_MD_size", "(J)I"},
+             std::pair{"EVP_DigestInit", "(J)J"},
+             std::pair{"EVP_DigestUpdate", "(J[BII)V"},
+             std::pair{"EVP_DigestFinal", "(J[BI)I"},
+             std::pair{"EVP_MD_CTX_copy", "(J)J"},
+             std::pair{"EVP_MD_CTX_destroy", "(J)V"},
              std::pair{"verify_signature", "([B[B[BLjava/lang/String;)Z"}}) {
         b.GuestNativeStatic(name, signature);
     }

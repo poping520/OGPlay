@@ -73,3 +73,61 @@
     invoke-direct {v0}, Landroid/app/Activity;-><init>()V
     return-void
 .end method
+
+.class public Lfixture/UuidWorker;
+.super Ljava/lang/Thread;
+.field public completed:I
+.method public constructor <init>()V
+.registers 1
+    invoke-direct {v0}, Ljava/lang/Thread;-><init>()V
+    return-void
+.end method
+.method public run()V
+.registers 6
+    const/4 v0, 0
+    new-array v1, v0, [B
+:loop
+    invoke-static {}, Ljava/util/UUID;->randomUUID()Ljava/util/UUID;
+    move-result-object v2
+    invoke-virtual {v2}, Ljava/util/UUID;->version()I
+    move-result v3
+    const/4 v4, 4
+    if-ne v3, v4, :done
+    invoke-static {v1}, Ljava/util/UUID;->nameUUIDFromBytes([B)Ljava/util/UUID;
+    move-result-object v2
+    invoke-virtual {v2}, Ljava/util/UUID;->version()I
+    move-result v3
+    const/4 v4, 3
+    if-ne v3, v4, :done
+    add-int/lit8 v0, v0, 1
+    iput v0, v5, Lfixture/UuidWorker;->completed:I
+    const/16 v4, 16
+    if-lt v0, v4, :loop
+:done
+    return-void
+.end method
+.class public Lfixture/UuidThreads;
+.super Ljava/lang/Object;
+.method public static exercise()I
+.registers 4
+    new-instance v0, Lfixture/UuidWorker;
+    invoke-direct {v0}, Lfixture/UuidWorker;-><init>()V
+    new-instance v1, Lfixture/UuidWorker;
+    invoke-direct {v1}, Lfixture/UuidWorker;-><init>()V
+    invoke-virtual {v0}, Ljava/lang/Thread;->start()V
+    invoke-virtual {v1}, Ljava/lang/Thread;->start()V
+    invoke-virtual {v0}, Ljava/lang/Thread;->join()V
+    invoke-virtual {v1}, Ljava/lang/Thread;->join()V
+    iget v2, v0, Lfixture/UuidWorker;->completed:I
+    iget v3, v1, Lfixture/UuidWorker;->completed:I
+    add-int/2addr v2, v3
+    return v2
+.end method
+.method public static main([Ljava/lang/String;)V
+.registers 3
+    invoke-static {}, Lfixture/UuidThreads;->exercise()I
+    move-result v0
+    sget-object v1, Ljava/lang/System;->out:Ljava/io/PrintStream;
+    invoke-virtual {v1, v0}, Ljava/io/PrintStream;->println(I)V
+    return-void
+.end method

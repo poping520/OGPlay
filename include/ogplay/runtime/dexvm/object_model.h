@@ -122,6 +122,8 @@ public:
     [[nodiscard]] bool IsValidRef(VmObjectRef ref) const noexcept;
     [[nodiscard]] VmObjectRef FindIdentity(JniObjectIdentity identity) const noexcept;
     void VisitPermanentRoots(const RootVisitor& visitor) const;
+    // Inspection under the VM execution lock; visitor must not allocate objects.
+    void VisitLiveObjects(const RootVisitor& visitor) const;
     [[nodiscard]] GcMarkResult MarkReachable(
         const std::vector<VmObjectRef>& roots,
         const std::function<void(VmObjectRef, const RootVisitor&)>&

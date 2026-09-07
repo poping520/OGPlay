@@ -2322,6 +2322,17 @@ namespace ogplay::runtime::dexvm::intrinsics {
                         descriptor.descriptor
                     };
                 }
+                // A readObject-only class has no SC_WRITE_METHOD flag. Do not
+                // silently return an object whose transient invariants were skipped.
+                const auto read_callback = call_.vm.Linker().FindDirectMethod(
+                    java_class, "readObject", "(Ljava/io/ObjectInputStream;)V");
+                if (descriptor.descriptor != "Ljava/util/Date;" &&
+                    (descriptor.flags & kScExternalizable) == 0U && read_callback &&
+                    !call_.vm.Linker().Method(*read_callback).is_static &&
+                    (call_.vm.Linker().Method(*read_callback).access_flags & kAccPrivate)) {
+                    throw VmJavaThrow{"Ljava/io/InvalidClassException;",
+                                      "custom readObject is unsupported for " + descriptor.descriptor};
+                }
                 if ((descriptor.flags & kScWriteMethod) != 0U &&
                     descriptor.descriptor != "Ljava/util/Date;") {
                     throw VmJavaThrow{

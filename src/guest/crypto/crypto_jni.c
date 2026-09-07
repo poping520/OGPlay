@@ -1,4 +1,4 @@
-/* API 19 ARM guest JNI adapter. AES and signature algorithms execute in guest libcrypto.
+/* API 19 ARM guest JNI adapter. AES, digest and signature algorithms execute in guest libcrypto.
  * JNI 1.6 table slots follow the Android JNI ABI; no host headers are used. */
 typedef unsigned int size_t;
 typedef long long jlong;
@@ -341,6 +341,7 @@ int N(EVP_1CipherFinal_1ex)(JNIEnv *env, jobject cls, jlong token, jobject out, 
     return written;
 }
 static void release_crypto_locks(void);
+static void release_digests(void);
 __attribute__((destructor)) static void release_contexts(void) {
     while (contexts) {
         Context *p = contexts;
@@ -348,6 +349,7 @@ __attribute__((destructor)) static void release_contexts(void) {
         EVP_CIPHER_CTX_free(p->evp);
         free(p);
     }
+    release_digests();
     release_crypto_locks();
 }
 
@@ -497,4 +499,198 @@ static void release_crypto_locks(void) {
     CRYPTO_set_locking_callback(0);
     CRYPTO_set_id_callback(0);
     free(crypto_locks);
+}
+
+/* API 19 MessageDigest: Java owns the digest API and ctx field.
+ * Tokens are monotonically allocated, never native pointers. */
+extern const EVP_MD *EVP_md5(void);
+extern int EVP_DigestFinal_ex(EVP_MD_CTX *, unsigned char *, unsigned int *);
+extern int EVP_MD_CTX_copy_ex(EVP_MD_CTX *, const EVP_MD_CTX *);
+typedef struct Digest {
+    struct Digest *next;
+    int mutex, references, removed;
+    jlong token;
+    EVP_MD_CTX *evp;
+    int size;
+} Digest;
+static Digest *digests;
+static Digest *digest_context(JNIEnv *env, jlong token) {
+    pthread_mutex_lock(&registry_mutex);
+    Digest *p = digests;
+    while (p && p->token != token) p = p->next;
+    if (p) ++p->references;
+    pthread_mutex_unlock(&registry_mutex);
+    if (!p) fail(env, "java/lang/IllegalStateException", "invalid digest context token");
+    else pthread_mutex_lock(&p->mutex);
+    return p;
+}
+static void release_digest(Digest **address) {
+    Digest *p = *address;
+    if (!p) return;
+    pthread_mutex_unlock(&p->mutex);
+    pthread_mutex_lock(&registry_mutex);
+    int destroy = --p->references == 0 && p->removed;
+    pthread_mutex_unlock(&registry_mutex);
+    if (destroy) {
+        EVP_MD_CTX_destroy(p->evp);
+        free(p);
+    }
+}
+#define DIGEST Digest *p __attribute__((cleanup(release_digest))) = digest_context(env, token)
+typedef struct DigestAlgorithm {
+    const char *name, *upper;
+    const EVP_MD *(*evp)(void);
+    int size;
+} DigestAlgorithm;
+static const DigestAlgorithm digest_algorithms[] = {
+    {"md5", "MD5", EVP_md5, 16}, {"sha1", "SHA1", EVP_sha1, 20},
+    {"sha256", "SHA256", EVP_sha256, 32}, {"sha384", "SHA384", EVP_sha384, 48},
+    {"sha512", "SHA512", EVP_sha512, 64}
+};
+static const DigestAlgorithm *digest_algorithm(JNIEnv *env, jlong token) {
+    if (token >= 1 && token <= 5) return &digest_algorithms[token - 1];
+    fail(env, "java/lang/IllegalArgumentException", "unsupported digest algorithm token");
+    return 0;
+}
+static jlong publish_digest(JNIEnv *env, EVP_MD_CTX *evp, int size) {
+    Digest *p = malloc(sizeof(Digest));
+    if (!p) {
+        EVP_MD_CTX_destroy(evp);
+        fail(env, "java/lang/OutOfMemoryError", "digest context");
+        return 0;
+    }
+    p->mutex = p->references = p->removed = 0;
+    p->evp = evp;
+    p->size = size;
+    pthread_mutex_lock(&registry_mutex);
+    if (next_token == 0x7fffffffffffffffLL) {
+        pthread_mutex_unlock(&registry_mutex);
+        EVP_MD_CTX_destroy(evp);
+        free(p);
+        fail(env, "java/lang/OutOfMemoryError", "native token space exhausted");
+        return 0;
+    }
+    p->token = next_token++;
+    p->next = digests;
+    digests = p;
+    jlong result = p->token;
+    pthread_mutex_unlock(&registry_mutex);
+    return result;
+}
+jlong N(EVP_1get_1digestbyname)(JNIEnv *env, jobject cls, jobject name) {
+    (void)cls;
+    if (!name) {
+        fail(env, "java/lang/NullPointerException", "digest name == null");
+        return 0;
+    }
+    const char *text = JNI(169, const char *(*)(JNIEnv *, jobject, void *))(env, name, 0);
+    if (!text) return 0;
+    jlong result = 0;
+    for (int i = 0; i < 5; ++i)
+        if (!strcmp(text, digest_algorithms[i].name) || !strcmp(text, digest_algorithms[i].upper)) {
+            result = i + 1;
+            break;
+        }
+    JNI(170, void (*)(JNIEnv *, jobject, const char *))(env, name, text);
+    return result;
+}
+int N(EVP_1MD_1size)(JNIEnv *env, jobject cls, jlong algorithm) {
+    (void)cls;
+    const DigestAlgorithm *a = digest_algorithm(env, algorithm);
+    return a ? a->size : 0;
+}
+jlong N(EVP_1DigestInit)(JNIEnv *env, jobject cls, jlong algorithm) {
+    (void)cls;
+    const DigestAlgorithm *a = digest_algorithm(env, algorithm);
+    if (!a) return 0;
+    EVP_MD_CTX *evp = EVP_MD_CTX_create();
+    if (!evp) {
+        fail(env, "java/lang/OutOfMemoryError", "EVP digest context");
+        return 0;
+    }
+    if (!EVP_DigestInit_ex(evp, a->evp(), 0)) {
+        EVP_MD_CTX_destroy(evp);
+        fail(env, "java/security/ProviderException", "EVP digest initialization failed");
+        return 0;
+    }
+    return publish_digest(env, evp, a->size);
+}
+void N(EVP_1DigestUpdate)(JNIEnv *env, jobject cls, jlong token, jobject input, int offset, int count) {
+    (void)cls;
+    DIGEST;
+    if (!p || !range(env, input, offset, count)) return;
+    // Bound temporary memory, not the Java array or cumulative message length.
+    const int capacity = count < 65536 ? count : 65536;
+    unsigned char *data = malloc((size_t)capacity + 1);
+    if (!data) {
+        fail(env, "java/lang/OutOfMemoryError", "digest input buffer");
+        return;
+    }
+    int ok = 1;
+    while (count && ok) {
+        int chunk = count < capacity ? count : capacity;
+        read_bytes(env, input, offset, chunk, data);
+        ok = EVP_DigestUpdate(p->evp, data, (size_t)chunk);
+        offset += chunk;
+        count -= chunk;
+    }
+    free(data);
+    if (!ok) fail(env, "java/security/ProviderException", "EVP digest update failed");
+}
+void N(EVP_1MD_1CTX_1destroy)(JNIEnv *env, jobject cls, jlong token) {
+    (void)cls;
+    pthread_mutex_lock(&registry_mutex);
+    Digest **cursor = &digests;
+    while (*cursor && (*cursor)->token != token) cursor = &(*cursor)->next;
+    if (!*cursor) {
+        pthread_mutex_unlock(&registry_mutex);
+        fail(env, "java/lang/IllegalStateException", "invalid digest context token");
+        return;
+    }
+    Digest *p = *cursor;
+    *cursor = p->next;
+    p->removed = 1;
+    int destroy = p->references == 0;
+    pthread_mutex_unlock(&registry_mutex);
+    if (destroy) {
+        EVP_MD_CTX_destroy(p->evp);
+        free(p);
+    }
+}
+int N(EVP_1DigestFinal)(JNIEnv *env, jobject cls, jlong token, jobject output, int offset) {
+    DIGEST;
+    if (!p || !range(env, output, offset, p->size)) return 0;
+    unsigned char data[64];
+    unsigned int count = 0;
+    if (!EVP_DigestFinal_ex(p->evp, data, &count) || count != (unsigned int)p->size) {
+        fail(env, "java/security/ProviderException", "EVP digest final failed");
+        return 0;
+    }
+    write_bytes(env, output, offset, p->size, data);
+    N(EVP_1MD_1CTX_1destroy)(env, cls, token);
+    return p->size;
+}
+jlong N(EVP_1MD_1CTX_1copy)(JNIEnv *env, jobject cls, jlong token) {
+    (void)cls;
+    DIGEST;
+    if (!p) return 0;
+    EVP_MD_CTX *copy = EVP_MD_CTX_create();
+    if (!copy) {
+        fail(env, "java/lang/OutOfMemoryError", "digest copy");
+        return 0;
+    }
+    if (!EVP_MD_CTX_copy_ex(copy, p->evp)) {
+        EVP_MD_CTX_destroy(copy);
+        fail(env, "java/security/ProviderException", "EVP digest copy failed");
+        return 0;
+    }
+    return publish_digest(env, copy, p->size);
+}
+static void release_digests(void) {
+    while (digests) {
+        Digest *p = digests;
+        digests = p->next;
+        EVP_MD_CTX_destroy(p->evp);
+        free(p);
+    }
 }

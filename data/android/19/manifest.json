@@ -41,7 +41,7 @@
     "path": "framework/bootdex.jar",
     "generator": "tools/bootdex/build_bootdex.py",
     "recipe": "tools/bootdex/api19.json",
-    "recipe_sha256": "c7205fe2f9b918d26947a9cf3a0a7896653852336a1708a872d22bf470306d11",
+    "recipe_sha256": "140ca13f499a16918a0f6da0a815671b5e6c38875f2ac7b4cff744cbd18b1393",
     "sources": [
       {
         "source_project": "platform/libcore",
@@ -66,12 +66,12 @@
         "dx_sources_sha256": "cd59cf230b5fb22c38e084019b6575a3423feeae0f32e170c766c8eac305fe74"
       }
     ],
-    "size": 1156133,
-    "sha256": "3b565d178a7a807865cf21f8d4a58411892906c35a864fcb804ce818f52204e6",
+    "size": 1168389,
+    "sha256": "0858442dd051979d4eb630d1cb2f131f7917d3b89f2de43f58f05073c19b22c8",
     "dex_entry": "classes.dex",
-    "dex_size": 1155836,
-    "dex_sha256": "b7c9e98d0755fab82f5ab9340b72134f73355f8561a29624e7a36a3c9949730f",
-    "class_count": 774,
+    "dex_size": 1168092,
+    "dex_sha256": "3656b2b0bc98d63c84cf64795bb285b826dfbc081610225a149cff1e56cece00",
+    "class_count": 790,
     "selection_policy": "load-all",
     "notice": "notices/bootdex.jar.txt",
     "notice_sha256": "8942e34ad7fa9ce42a3f7adef1877efa6b0957ce7f9953c213901c201396b56c"
@@ -163,7 +163,7 @@
     "replacement": "Replace with a self-built API 19 ARM OpenSSL and update pinned hashes before distribution.",
     "generator": "tools/bootdex/build_bootdex.py build-cipher",
     "adapter_source": "src/guest/crypto/crypto_jni.c",
-    "adapter_source_sha256": "10dd043e0869b347107e558b80c8b5bccd781d8e589147eeee0f597ad8a3e31b",
+    "adapter_source_sha256": "049fa8d78b1416b36ae5686297e7411944fa4d3330ea133cef368f40913bb6ad",
     "notice": "notices/libcrypto.so.txt",
     "notice_sha256": "257fe1b542f846557d0fc938f4206d6c9a6334e2b571fa020e51f96377537120",
     "compiler_sha256": "7f30f076d0e9c38f772a76449fca9da8cf97f6a3d43b94c90a00e4f9ce7ad39e",
@@ -188,8 +188,8 @@
       },
       {
         "path": "lib/libogplay_cipher.so",
-        "sha256": "348aa92712da9ebb4aafbe4f985c6eb256938c063f51f0e380ff1b489d4aaeba",
-        "size": 21660
+        "sha256": "f47cf47971eba5d16c1379a162f00f3b5bc8b0fb8bf8aa8a87c54b70d6daa2d5",
+        "size": 28004
       }
     ]
   }

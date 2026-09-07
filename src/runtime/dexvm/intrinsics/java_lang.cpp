@@ -2342,6 +2342,14 @@ IntrinsicClassDecl Declare_java_lang_String() {
                                         ? -1
                                         : static_cast<std::int32_t>(found));
             });
+    builder.FinalMethod("indexOf", "(Ljava/lang/String;I)I", [](IntrinsicContext& context) {
+        const auto haystack = Value(context, context.receiver);
+        const auto needle = Value(context, IntrinsicCall(context).NonNullRef(0, "string"));
+        const auto start = std::min(haystack.size(), static_cast<std::size_t>(
+            std::max(0, context.arguments[1].AsInt())));
+        const auto found = haystack.find(needle, start);
+        return VmValue::Int(found == std::u16string::npos ? -1 : static_cast<std::int32_t>(found));
+    });
     builder.FinalMethod("lastIndexOf", "(I)I",
         [](IntrinsicContext& context) {
                 const auto haystack = Value(context, context.receiver);

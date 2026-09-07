@@ -329,6 +329,12 @@ VmObjectRef JavaObjectModel::FindIdentity(
                : VmObjectRef(found->second + 1U);
 }
 
+void JavaObjectModel::VisitLiveObjects(const RootVisitor& visitor) const {
+    for (std::size_t i = 0; i < impl_->records.size(); ++i) {
+        if (impl_->records[i].occupied) visitor(VmObjectRef(static_cast<std::uint32_t>(i + 1)));
+    }
+}
+
 void JavaObjectModel::VisitPermanentRoots(const RootVisitor& visitor) const {
     if (!visitor) return;
     for (const auto& [_, ref] : impl_->intern_table) visitor(ref);

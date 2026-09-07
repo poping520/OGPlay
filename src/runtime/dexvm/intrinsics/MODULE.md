@@ -212,3 +212,15 @@ DVM-107：framework Pair/Sparse/ComponentName 与 PrintWriter 的普通算法归
 StringBuilder/StringBuffer 共用 CharSequence 区间 append 原语：UTF-16 索引，虚派
 length/charAt、null 视为 "null"、自追加取原片段、越界不改变原 buffer。测试覆盖双后端
 ComponentName 的短名称打印与 UTF-16/null/自追加/异常边界。
+
+## DVM-108 UUID / MessageDigest
+
+UUID、MessageDigest/Spi、DigestInputStream/DigestOutputStream 与五种 Conscrypt 摘要
+普通方法由 BootDex 拥有。provider 配置注册 MD5、SHA-1、SHA-256、SHA-384、SHA-512
+及 API19 原版别名/OID；7 个显式 NativeCrypto JNI 声明复用 guest adapter。
+NativeCrypto 初始化注册摘要基类 ctx:J 的通用字段资源回收规则，不覆盖 reset/clone/digest。
+ProviderException 一并由 core.jar 提供，底层摘要/随机源失败保留正确 Java 异常类型。
+原版 provider 没有 SHA-224 MessageDigest；HMAC/Mac、SHA-3 未注册，未知算法明确失败。
+String.indexOf(String,int) 使用 UTF-16 索引，负起点归零，越过末尾的空串命中 length，null 拒绝。
+对象流对具有私有 readObject 的 Serializable 类型明确 InvalidClassException，避免跳过
+transient 初始化；既有 Date 窄实现与 Externalizable 回调保持，未建立通用 readObject 框架。

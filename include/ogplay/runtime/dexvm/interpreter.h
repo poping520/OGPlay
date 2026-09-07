@@ -372,6 +372,8 @@ public:
     void RegisterIntrinsicStateTable(IntrinsicStateTableHooks hooks);
     // Cleanup is queued during sweep and executed through JNI after GC finishes.
     void TrackGuestNativeResource(VmObjectRef owner, VmMethodId cleanup, std::int64_t token);
+    // Resource ownership follows an ordinary mutable Java long field, including clones.
+    void TrackGuestNativeResourceField(VmFieldId field, VmMethodId cleanup);
     void ReleaseGuestNativeResources(bool all = false);
     [[nodiscard]] std::size_t GuestNativeResourceCount() const;
 

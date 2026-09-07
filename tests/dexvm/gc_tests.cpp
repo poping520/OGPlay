@@ -32,8 +32,8 @@ struct GcVm final {
         std::make_shared<std::uint32_t>(0);
     Interpreter vm;
 
-    GcVm()
-        : vm([this]() -> DexClassLinker& {
+    GcVm(const std::vector<IntrinsicClassDecl>& extras = {})
+        : vm([this, &extras]() -> DexClassLinker& {
                  auto catalog = CoreIntrinsicCatalog();
                  auto builder =
                      IntrinsicClassBuilder::Class("Lgc/RootBox;");
@@ -49,6 +49,7 @@ struct GcVm final {
                      });
                  catalog.push_back(std::move(host).Build());
                  linker.RegisterIntrinsics(catalog);
+                 linker.RegisterIntrinsics(extras);
                  ogplay::test::RegisterBootDex(linker);
                  linker.Link();
                  return linker;
@@ -345,3 +346,66 @@ TEST_CASE("DexVM host state destructor runs exactly once only after death") {
 }
 
 }  // namespace
+
+TEST_CASE("DVM-108 field owned native resources follow mutation aliases and retry") {
+    std::vector<std::int64_t> released;
+    bool reject = false;
+    auto owner = IntrinsicClassBuilder::Class("Lgc/NativeOwner;");
+    owner.InstanceField("ctx", "J");
+    owner.InstanceField("other", "J");
+    owner.InstanceField("bad", "I");
+    owner.StaticField("global", "J");
+    owner.StaticMethod("cleanup", "(J)V", [&](IntrinsicContext& c) {
+        if (reject) throw VmJavaThrow{"Ljava/lang/IllegalStateException;", "retry cleanup"};
+        released.push_back(c.arguments[0].AsLong());
+        return VmValue::Void();
+    });
+    owner.StaticMethod("different", "(J)V", [](IntrinsicContext&) { return VmValue::Void(); });
+    owner.StaticMethod("invalid", "()V", [](IntrinsicContext&) { return VmValue::Void(); });
+    GcVm f({std::move(owner).Build()});
+    const auto type = f.linker.ResolveDescriptor("Lgc/NativeOwner;");
+    const auto field = *f.linker.FindFieldRecursive(type, "ctx", "J");
+    const auto other = *f.linker.FindFieldRecursive(type, "other", "J");
+    const auto cleanup = *f.linker.FindDirectMethod(type, "cleanup", "(J)V");
+    const auto different = *f.linker.FindDirectMethod(type, "different", "(J)V");
+    const auto invalid = *f.linker.FindDirectMethod(type, "invalid", "()V");
+    CHECK_THROWS_AS(f.vm.TrackGuestNativeResourceField(*f.linker.FindFieldRecursive(type, "bad", "I"), cleanup), DexVmError);
+    CHECK_THROWS_AS(f.vm.TrackGuestNativeResourceField(*f.linker.FindFieldRecursive(type, "global", "J"), cleanup), DexVmError);
+    CHECK_THROWS_AS(f.vm.TrackGuestNativeResourceField(field, invalid), DexVmError);
+    f.vm.TrackGuestNativeResourceField(field, cleanup);
+    f.vm.TrackGuestNativeResourceField(field, cleanup);
+    CHECK_THROWS_AS(f.vm.TrackGuestNativeResourceField(field, different), DexVmError);
+    f.vm.TrackGuestNativeResourceField(other, cleanup);
+    const auto a = f.vm.NewIntrinsicInstance("Lgc/NativeOwner;");
+    const auto a_root = f.vm.ProtectReferences(std::array{a});
+    const auto write = [&](VmObjectRef object, const char* name, std::int64_t value) {
+        const auto slot = f.linker.Field(*f.linker.FindFieldRecursive(type, name, "J")).slot;
+        auto slots = f.model.InstanceSlots(object);
+        const auto bits = static_cast<std::uint64_t>(value);
+        slots[slot].bits = static_cast<std::uint32_t>(bits);
+        slots[slot + 1].bits = static_cast<std::uint32_t>(bits >> 32U);
+    };
+    write(a, "ctx", INT64_C(0x123456789));
+    const auto b = f.vm.NewIntrinsicInstance("Lgc/NativeOwner;");
+    write(b, "other", INT64_C(0x123456789));
+    CHECK(f.vm.GuestNativeResourceCount() == 1);
+    static_cast<void>(f.vm.CollectGarbage());
+    CHECK(released.empty());
+    // Java destroyed the old token and wrote a new one: GC must see only the field.
+    write(a, "ctx", 42);
+    f.vm.ReleaseGuestNativeResources(true);
+    CHECK(released == std::vector<std::int64_t>{42});
+    CHECK(f.vm.GuestNativeResourceCount() == 0);
+    f.vm.ReleaseGuestNativeResources(true);
+    CHECK(released.size() == 1);
+    const auto c = f.vm.NewIntrinsicInstance("Lgc/NativeOwner;");
+    write(c, "ctx", 77);
+    static_cast<void>(f.vm.CloneObject(c));
+    reject = true;
+    CHECK_THROWS_AS(static_cast<void>(f.vm.CollectGarbage()), VmJavaThrow);
+    CHECK(f.vm.GuestNativeResourceCount() == 1);
+    reject = false;
+    f.vm.ReleaseGuestNativeResources();
+    CHECK(released == std::vector<std::int64_t>{42, 77});
+    CHECK(f.vm.GuestNativeResourceCount() == 0);
+}

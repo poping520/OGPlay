@@ -1,3 +1,6 @@
+#include <bit>
+#include <map>
+#include <set>
 #include "ogplay/runtime/dexvm/interpreter.h"
 
 #include <algorithm>
@@ -482,6 +485,7 @@ GcMarkResult Interpreter::MarkReachable() {
 
 GcSweepResult Interpreter::SweepGarbage(const GcMarkResult& mark) {
     VmExecutionLockScope lock_scope(impl_->execution_lock);
+    impl_->QueueFieldNativeResources(&mark);
     // The collector holds VmExecutionLock: publish cleared weak referents and
     // queue links without entering guest code or parking on a guest monitor.
     const auto reference = impl_->linker->FindClass("Ljava/lang/ref/Reference;");
@@ -540,6 +544,68 @@ GcSweepResult Interpreter::SweepGarbage(const GcMarkResult& mark) {
             }});
 }
 
+void Interpreter::TrackGuestNativeResourceField(VmFieldId field_id, VmMethodId cleanup) {
+    VmExecutionLockScope lock_scope(impl_->execution_lock);
+    const auto& field = Linker().Field(field_id);
+    const auto& method = Linker().Method(cleanup);
+    if (field.is_static || field.descriptor != "J" || !method.is_static || method.descriptor != "(J)V")
+        throw DexVmError(DexVmErrorReason::invalid_operand, "invalid native resource field");
+    for (const auto& rule : impl_->guest_native_resource_fields) {
+        if (rule.field == field_id) {
+            if (rule.cleanup != cleanup) throw DexVmError(DexVmErrorReason::invalid_operand, "conflicting native cleanup");
+            return;
+        }
+    }
+    impl_->guest_native_resource_fields.push_back({field_id, cleanup});
+}
+
+void Interpreter::Impl::QueueFieldNativeResources(const GcMarkResult* mark) {
+    std::map<std::pair<std::uint32_t, std::int64_t>, bool> tokens;
+    for (const auto& rule : guest_native_resource_fields) {
+        const auto& field = linker->Field(rule.field);
+        model->VisitLiveObjects([&](VmObjectRef owner) {
+            const auto type = model->ObjectClass(owner);
+            if (!type.IsValid() || model->Kind(owner) != VmObjectKind::vm_instance ||
+                !linker->IsAssignable(field.owner, type)) return;
+            auto slots = model->InstanceSlots(owner);
+            const auto token = std::bit_cast<std::int64_t>(std::uint64_t(slots[field.slot].bits) |
+                (std::uint64_t(slots[field.slot + 1].bits) << 32U));
+            if (token == 0) return;
+            const bool live = mark && mark->IsMarked(owner);
+            auto& retained = tokens[{rule.cleanup.Value(), token}];
+            retained = retained || live;
+            if (!live) {
+                slots[field.slot].bits = 0;
+                slots[field.slot + 1].bits = 0;
+            }
+        });
+    }
+    for (const auto& [key, live] : tokens) {
+        const auto cleanup = VmMethodId{key.first};
+        const auto token = key.second;
+        if (!live && std::none_of(pending_guest_cleanup.begin(), pending_guest_cleanup.end(),
+            [&](const auto& item) { return item.cleanup == cleanup && item.token == token; }))
+            pending_guest_cleanup.push_back({cleanup, token});
+    }
+}
+
+std::size_t Interpreter::Impl::FieldNativeResourceCount() const {
+    std::set<std::pair<std::uint32_t, std::int64_t>> tokens;
+    for (const auto& rule : guest_native_resource_fields) {
+        const auto& field = linker->Field(rule.field);
+        model->VisitLiveObjects([&](VmObjectRef owner) {
+            const auto type = model->ObjectClass(owner);
+            if (!type.IsValid() || model->Kind(owner) != VmObjectKind::vm_instance ||
+                !linker->IsAssignable(field.owner, type)) return;
+            const auto slots = model->InstanceSlots(owner);
+            const auto token = std::bit_cast<std::int64_t>(std::uint64_t(slots[field.slot].bits) |
+                (std::uint64_t(slots[field.slot + 1].bits) << 32U));
+            if (token) tokens.emplace(rule.cleanup.Value(), token);
+        });
+    }
+    return tokens.size();
+}
+
 void Interpreter::TrackGuestNativeResource(VmObjectRef owner, VmMethodId cleanup, std::int64_t token) {
     VmExecutionLockScope lock_scope(impl_->execution_lock);
     if (!owner.IsValid() || token <= 0 ||
@@ -548,11 +614,12 @@ void Interpreter::TrackGuestNativeResource(VmObjectRef owner, VmMethodId cleanup
 }
 std::size_t Interpreter::GuestNativeResourceCount() const {
     VmExecutionLockScope lock_scope(impl_->execution_lock);
-    return impl_->guest_native_resources.size() + impl_->pending_guest_cleanup.size();
+    return impl_->guest_native_resources.size() + impl_->pending_guest_cleanup.size() + impl_->FieldNativeResourceCount();
 }
 void Interpreter::ReleaseGuestNativeResources(const bool all) {
     VmExecutionLockScope lock_scope(impl_->execution_lock);
     if (all) {
+        impl_->QueueFieldNativeResources(nullptr);
         for (const auto& [owner, resource] : impl_->guest_native_resources) {
             static_cast<void>(owner);
             impl_->pending_guest_cleanup.push_back(resource);

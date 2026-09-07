@@ -74,6 +74,12 @@ intrinsic。解释应用 DEX 与受审 API 19 curated Boot DEX；完整平台库
   Observable/Observer 与 Random 均归 API 19 BootDex；对象字段和数组是唯一状态，
   不保留 CollectionRuntime 或集合 intrinsic。Tree/Sorted/Navigable、Weak/Identity/Enum
   及 concurrent 容器一并选入；迁移不承诺全部序列化、XML 或并发调度长尾。
+- 执行器（DVM-110）：ScheduledThreadPoolExecutor/FutureTask、执行器接口、普通工厂包装类、
+  completion service 与拒绝策略均归 BootDex，删除旧 FutureTask/串行 executor handler。
+  延时、FIFO、定频/定延迟、取消/中断、异常和 shutdown 策略由原版 Java 处理；队列、任务、
+  结果与等待者形成普通 GC 图。worker 是真实 guest/host 线程，Clock 与 AQS/Unsafe park
+  复用现有机制，不建立第二套 scheduler。普通单线程/固定池/定时池工厂受检，privileged
+  工厂、动态安全上下文和高争用压力测试未纳入，不改变单通道解释执行边界。
 - BootDex 与 intrinsic 字段合并后，own_static_fields 必须以 DEX 声明顺序为首部，
   encoded_array 初始值逐项对应同序字段；不得让 overlay 声明顺序改变整数、wide 或引用初值。
 - `IcuFormatterRuntime`（DVM-102）：每 VM 持有 NativeDecimalFormat 的受检逻辑令牌与固定
@@ -386,3 +392,8 @@ VMStack.getClasses 从当前执行栈跳过调用者和反射帧，为原版对�
 Modifier/Void/SoftReference/Proxy 普通逻辑来自 BootDex。未调用的 getFieldL、Proxy 的两个
 生成 native、VMStack 其余四个 native 显式未实现，触达记账失败。此迁移不扩展动态代理生成、
 自定义类加载器或宿主侧表对象的完整序列化状态。
+
+DVM-110：类型关系将接口视为引用类型，支持 Runnable[] → Object[] 协变；primitive class
+仅与自身可赋值，不因合成类形状而成为 Object 子类。threaded 的 intrinsic invoke 捕获
+VmJavaThrow 时必须保留 existing 身份，与 switch 后端一致，不重建已有 throwable。
+FutureTask 的 ExecutionException cause 以及其 GC 强边由原版结果字段与通用异常机制维护。

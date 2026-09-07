@@ -559,3 +559,28 @@ Modifier/Void/Proxy 的 Java 部分同批迁入；getFieldL 是原版未使用�
 
 不引入完整 Dalvik、动态代理生成或自定义 loader，也不宣称宿主侧表对象可以完整持久化。
 沿用统一 recipe/build_bootdex.py 和主题 ADR，不新增独立工具配置或 ADR 文件。
+
+<a id="adr-0041"></a>
+
+## ADR-0041 · 定时执行器与 FutureTask 执行原版 Java
+
+- 状态：Accepted
+- 日期：2026-09-08
+- 关联：[DVM-110](../tasks/dexvm/DVM-110.md)
+
+### 决定
+
+ScheduledThreadPoolExecutor 依赖 FutureTask 的可覆盖方法、runAndReset、等待者和取消状态。
+原有 intrinsic FutureTask 及合成串行执行器无法承接该协议，因此迁入原版 FutureTask、
+执行器接口/异常、普通 Executors 工厂包装类、completion service 和拒绝策略，共新增
+26 类至 844 类。删除对应普通 handler，不扩展 C++ 调度器。
+
+任务、队列、周期、结果和等待者只在 Java 字段中保存，GC 沿普通对象图追踪。定时队列使用
+统一 Clock 的 nanoTime，阻塞使用 AQS/Unsafe/Thread park；一个 guest worker 对应一个
+宿主线程，执行仍由 VmExecutionLock 串行。固定频率按上次计划截止时间续排，固定延迟按
+本次结束时间续排；关闭、取消、中断和异常处理均由 pinned API19 代码决定。
+
+补齐通用 VM 规则：接口数组可协变到 Object[]，primitive class 只与自身可赋值；
+threaded intrinsic invoke 保留已有异常身份，不能重建 FutureTask 结果里的 throwable。
+不选入 privileged 工厂/动态安全上下文，不宣称高争用或硬实时精度；Clock 保持现有毫秒
+精度与帧泵驱动，不引入新的宿主时间源。继续使用统一配方与主题 ADR。

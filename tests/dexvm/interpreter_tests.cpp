@@ -2672,6 +2672,16 @@ TEST_CASE("dexvm Object.clone is a shallow copy gated by Cloneable") {
         vm.linker.ResolveDescriptor("Ljava/io/Serializable;");
     CHECK(vm.linker.IsAssignable(cloneable, ints));
     CHECK(vm.linker.IsAssignable(serializable, ints));
+    // DVM-110: interface components are references even without a superclass.
+    const auto object = vm.linker.ResolveDescriptor("Ljava/lang/Object;");
+    const auto runnable = vm.linker.ResolveDescriptor("Ljava/lang/Runnable;");
+    const auto objects = vm.linker.ResolveDescriptor("[Ljava/lang/Object;");
+    const auto runnables = vm.linker.ResolveDescriptor("[Ljava/lang/Runnable;");
+    CHECK(vm.linker.IsAssignable(object, runnable));
+    CHECK(vm.linker.IsAssignable(objects, runnables));
+    CHECK_FALSE(vm.linker.IsAssignable(runnables, objects));
+    CHECK_FALSE(vm.linker.IsAssignable(objects, ints));
+    CHECK_FALSE(vm.linker.IsAssignable(object, vm.linker.ResolveDescriptor("I")));
     });
 }
 

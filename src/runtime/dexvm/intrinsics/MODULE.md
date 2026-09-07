@@ -46,9 +46,12 @@ Locale 构造规范化语言小写、区域大写与 he/id/yi 旧码；Matcher.g
 不要求已有匹配。ICU 分配失败、非法输入和范围外操作分别映射为明确 Java 异常。
 
 `java_regex.cpp` 的 Pattern/Matcher 只承诺 String 输入与已登记 API 的 bounded regex 语义；
-非法语法/flag 必须抛 Java 异常，不伪造匹配。`java_concurrent.cpp` 的 FutureTask、串行 executor
-和 atomic family 复用 `VmThreadRuntime` 的真实 Thread identity；不创建第二套 scheduler，
-不扩展到并行解释执行或 scheduled executor；concurrent 容器算法由 BootDex 拥有。
+非法语法/flag 必须抛 Java 异常，不伪造匹配。DVM-110 的 FutureTask、ThreadPoolExecutor、
+ScheduledThreadPoolExecutor、执行器接口/异常和普通 Executors 工厂包装类全部由 BootDex
+执行，删除 FutureTask、合成 SingleThreadExecutor 和工厂 overlay。任务/队列/结果/等待者
+仅存 Java 字段；不得创建宿主调度器或恢复任务侧表。定时任务消费统一 Clock 的 nanoTime，
+worker 经 ThreadFactory、Thread 和 VmThreadRuntime 创建真实线程，阻塞由 AQS/Unsafe
+park 释放执行锁。解释执行仍串行；privileged 工厂与安全上下文不在此次闭包。
 
 `java_concurrent.cpp` 同时声明 API 19 libdvm 的 `sun.misc.Unsafe`：同一静态强根单例、
 真实 caller loader 检查、受检字段/数组位置、int/long/reference 读写和 CAS 委托
@@ -56,7 +59,7 @@ Locale 构造规范化语言小写、区域大写与 he/id/yi 旧码；Matcher.g
 经 `CoreIntrinsicServices.current_time_millis` 与 monitor Clock 转换为单调 deadline。
 无时间源/溢出明确失败，permit/interrupt/teardown 不另建状态。Thread 补齐 API 19 private
 `parkBlocker` 对象字段，由 BootDex LockSupport 通过 Unsafe 读写并形成普通 GC 强边。`allocateInstance` 完成
-clinit 后跳过构造器，拒绝不可实例化类。此能力不代表 BootDex Executors 已闭合。
+clinit 后跳过构造器，拒绝不可实例化类。并发 family 仅保留 Unsafe 与 AtomicLong CS8 原语。
 
 `java_io.cpp` 保留文件/VFS、ObjectStreamClass 六个 VM 原语与 InputStreamReader 字符解码边界。
 DVM-104 的 Input/OutputStream、Reader/Writer、内存/Buffer/Filter/Data 等普通流来自

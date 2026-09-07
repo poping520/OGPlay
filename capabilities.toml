@@ -1228,7 +1228,7 @@ note = "DVM-7 注册/层级/布局/vtable/iftable 四步链接与懒结构预检
 [dexvm.boot_dex]
 status = "complete"
 test = "tests/dexvm/intrinsics_p1_tests.cpp; tests/frontend/data_directory_tests.cpp; tools.bootdex_builder_self_test; tools.android_payload_current; PvZ exact Profile reached-fault"
-note = "DVM-99..109 curated BootDex：日期、集合、普通流、X500、Cipher/JCA/Conscrypt AES 与 Certificate/Harmony/Signature 及 framework 值类、UUID/MessageDigest/摘要流和对象流依赖共 818 个 class_def。818 类全链接，Cipher/Certificate/集合普通 Java 算法均归 DEX；精确边界 overlay 与显式 guest JNI 声明受审。固定 recipe 可确定性重建，DEX/JAR 身份见 data/android/19/manifest.json。Conscrypt 为用户授权的临时设备来源，区别于 pinned core.jar；完整 core/framework、multidex、动态 classpath 与 Android 系统服务未纳入。 2026-09-07 ROM libcrypto 已撤出 Git，后按用户再次授权恢复到本地临时使用，完整 payload 校验通过；仍须自行构建替换并更新来源/哈希后复验。"
+note = "DVM-99..110 curated BootDex：日期、集合、普通流、X500、Cipher/JCA/Conscrypt AES 与 Certificate/Harmony/Signature 及 framework 值类、UUID/MessageDigest/摘要流和对象流、定时执行器依赖共 844 个 class_def。844 类全链接，Cipher/Certificate/集合普通 Java 算法均归 DEX；精确边界 overlay 与显式 guest JNI 声明受审。固定 recipe 可确定性重建，DEX/JAR 身份见 data/android/19/manifest.json。Conscrypt 为用户授权的临时设备来源，区别于 pinned core.jar；完整 core/framework、multidex、动态 classpath 与 Android 系统服务未纳入。 2026-09-07 ROM libcrypto 已撤出 Git，后按用户再次授权恢复到本地临时使用，完整 payload 校验通过；仍须自行构建替换并更新来源/哈希后复验。"
 
 [dexvm.date_format_bootdex_audit]
 status = "complete"
@@ -1413,7 +1413,7 @@ note = "DVM-87 发布 String 输入上的 Pattern compile/matches/quote 与 Matc
 [dexvm.java_concurrent_core]
 status = "complete"
 test = "tests/dexvm/dvm87_tests.cpp; tests/dexvm/thread_intrinsic_tests.cpp"
-note = "DVM-87 的 FutureTask、串行 executor 继续复用 VmThreadRuntime。DVM-104 普通 atomic/数组和 CountDownLatch/Semaphore/CyclicBarrier 改由 API 19 BootDex 执行，只保留 AtomicLong.VMSupportsCS8 native；真实线程阻塞/释放/中断、零超时/barrier break/reset 与原子回绕、引用 GC 受检。DVM-103 concurrent 容器和 ThreadLocal 来自 BootDex，容量限制、空队列、基本增删查与迭代定向受检；getAndAdd 按 Java 位宽回绕，nanoTime 只读统一 Clock，Runtime 发布单 guest 执行通道事实 1。完整定时/取消/高争用容器语义未全量验收，scheduled executor 仍 deferred。"
+note = "DVM-87 的 FutureTask、串行 executor 继续复用 VmThreadRuntime。DVM-104 普通 atomic/数组和 CountDownLatch/Semaphore/CyclicBarrier 改由 API 19 BootDex 执行，只保留 AtomicLong.VMSupportsCS8 native；真实线程阻塞/释放/中断、零超时/barrier break/reset 与原子回绕、引用 GC 受检。DVM-103 concurrent 容器和 ThreadLocal 来自 BootDex，容量限制、空队列、基本增删查与迭代定向受检；getAndAdd 按 Java 位宽回绕，nanoTime 只读统一 Clock，Runtime 发布单 guest 执行通道事实 1。DVM-110 将 FutureTask/普通 Executors 工厂/定时执行器改为原版 Java，单次/周期任务、取消/中断/异常与关闭策略受检；高争用容器、privileged 工厂与安全上下文仍未纳入。"
 
 [dexvm.java_network]
 status = "complete"
@@ -1534,3 +1534,8 @@ note = "DVM-108/ADR-0039：API19 原版 MessageDigest/Spi、DigestInputStream/Di
 status = "complete"
 test = "tests/dexvm/reflection_tests.cpp; tests/dexvm/file_vfs_tests.cpp; tests/dexvm/dvm87_tests.cpp; tests/dexvm/android_value_tests.cpp; tests/dexvm/gc_tests.cpp; tests/runtime/native_library_loader_tests.cpp; tools.bootdex_builder_self_test; tools.android_payload_current"
 note = "DVM-109/ADR-0040：新增 28 个 pinned core.jar 类至 818 类，ObjectInputStream/ObjectOutputStream/描述符与字段辅助类普通方法执行原版 Java，删除 C++ 对象协议与 IoRuntime handle 状态。ObjectStreamClass 六个 native 使用受检构造 token 与反射元数据；VMStack.getClasses 提供真实执行栈。双后端覆盖 UUID wire/缓存、默认 UID 独立向量、私有读写/GetField/PutField/替换回调、循环共享引用、八种基本数组/对象数组、Externalizable 协议 1/2、父类构造与回调异常身份。SoftReference 保留至内存压力后清除入队，显式 intern 弱保留 canonical 身份；源/目标/handle 均是普通 GC 图。静态初始化非 Error 包装 EIIE/cause，Error 保持身份、后续 NCDFE，反射 wide get 保留 Java 异常。complete 指该已测迁移范围；getFieldL、Proxy 生成和 VMStack 其余 native 显式未实现，宿主侧表对象完整持久化、动态代理/类加载器与对象流长尾未承诺；未跑游戏/跨平台 gate。"
+
+[dexvm.scheduled_executor_bootdex]
+status = "complete"
+test = "tests/dexvm/dvm87_tests.cpp; tests/dexvm/interpreter_tests.cpp; tests/dexvm/unsafe_tests.cpp; tests/dexvm/vm_thread_tests.cpp; tests/dexvm/vm_monitor_tests.cpp; tests/dexvm/thread_intrinsic_tests.cpp; tests/dexvm/reflection_tests.cpp; tools.bootdex_builder_self_test; tools.android_payload_current"
+note = "DVM-110/ADR-0041：新增 26 个 pinned API19 类至 844 类，ScheduledThreadPoolExecutor/FutureTask、接口/异常、普通 Executors 包装类、completion service 和拒绝策略均执行原版 Java，删除旧 FutureTask/合成串行 executor/工厂 handler。双后端验证单次 Runnable/Callable、Clock 截止时间/FIFO、fixed-rate 与 fixed-delay、取消/超时/异常身份、removeOnCancel/purge、关闭策略矩阵、shutdownNow、两个真实 worker、普通工厂/invokeAny/invokeAll、仅队列持有任务的 GC 保活。worker 复用 Thread/AQS/Unsafe 和统一 Clock，不另建调度器，解释执行仍串行；修复接口数组到 Object[] 协变与 primitive 类型边界、threaded invoke 原异常身份。complete 仅指该闭包，privileged 工厂/动态安全上下文、高争用和硬实时精度未纳入，未跑游戏/真机/跨平台 gate。"

@@ -169,7 +169,8 @@
                                     &linker->Method(target_id), frame.pc);
             } catch (const VmJavaThrow& thrown) {
                 ticks = execution.ticks;
-                ThrowJava(thrown.descriptor, thrown.message);
+                if (thrown.existing.IsValid()) SetPendingExisting(thrown.existing);
+                else ThrowJava(thrown.descriptor, thrown.message);
                 OGPLAY_RECORD_TRACE(DexVmTraceKind::method_exit, execution,
                                     nullptr, frame.pc, 0, 1);
                 goto yield;

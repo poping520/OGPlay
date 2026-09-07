@@ -243,6 +243,11 @@ bool DexClassLinker::IsAssignable(const DexClassId target,
     if (target == source) return true;
     const auto& target_class = impl_->ClassAt(target);
     const auto& source_class = impl_->ClassAt(source);
+    if (!IsRefDescriptor(target_class.descriptor) ||
+        !IsRefDescriptor(source_class.descriptor)) return false;
+    // Interfaces are reference types too: Runnable[] is assignable to Object[].
+    // Intrinsic interfaces need not encode an Object superclass.
+    if (target_class.descriptor == "Ljava/lang/Object;") return true;
     if (source_class.is_array) {
         // JLS 10.7 / AOSP TypeCheck: every array type is a subtype of
         // Object, Cloneable, and Serializable. Object.clone() uses

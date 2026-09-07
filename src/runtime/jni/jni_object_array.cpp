@@ -28,7 +28,7 @@ JniObjectArrayErrorReason JniObjectArrayError::Reason() const noexcept {
 class JniObjectArrayStore::Impl final {
 public:
     explicit Impl(const JniClassRegistry& classes) : classes_(&classes) {}
-    std::function<bool(JniObjectIdentity, JniObjectIdentity)> synthetic_assignability;
+    std::function<std::optional<bool>(JniObjectIdentity, JniObjectIdentity)> assignability;
 
     [[nodiscard]] JniObjectIdentity New(
         const JniObjectIdentity element_class, const JniSize length,
@@ -118,20 +118,23 @@ private:
         }
         ValidateClass(value->java_class,
                       JniObjectArrayErrorReason::invalid_value);
-        if (element_class.domain == JniObjectDomain::dex_vm ||
-            value->java_class.domain == JniObjectDomain::dex_vm) {
-            const bool compatible = synthetic_assignability
-                ? synthetic_assignability(element_class, value->java_class)
-                : element_class == value->java_class;
-            if (!compatible) {
-                Fail(JniObjectArrayErrorReason::incompatible_element,
-                     "JNI object array synthetic class is incompatible");
-            }
-            return;
+        const bool synthetic = element_class.domain == JniObjectDomain::dex_vm ||
+            value->java_class.domain == JniObjectDomain::dex_vm;
+        auto compatible = assignability
+            ? assignability(element_class, value->java_class) : std::nullopt;
+        if (!compatible.has_value()) {
+            compatible = synthetic ? element_class == value->java_class
+                : classes_->IsAssignableFrom(element_class, value->java_class);
         }
-        if (!classes_->IsAssignableFrom(element_class, value->java_class)) {
-            Fail(JniObjectArrayErrorReason::incompatible_element,
-                 "JNI object array value is not assignable to element class");
+        if (!*compatible) {
+            const auto class_name = [&](JniObjectIdentity identity) {
+                return identity.domain == JniObjectDomain::dex_vm
+                    ? "dex_vm class#" + std::to_string(identity.value)
+                    : classes_->ClassName(identity);
+            };
+            const auto message = "JNI object array value is not assignable to element class: " +
+                class_name(value->java_class) + " -> " + class_name(element_class);
+            Fail(JniObjectArrayErrorReason::incompatible_element, message.c_str());
         }
     }
 
@@ -174,9 +177,9 @@ JniObjectArrayStore::JniObjectArrayStore(JniObjectArrayStore&&) noexcept =
 JniObjectArrayStore& JniObjectArrayStore::operator=(
     JniObjectArrayStore&&) noexcept = default;
 
-void JniObjectArrayStore::SetSyntheticAssignability(
-    std::function<bool(JniObjectIdentity, JniObjectIdentity)> check) {
-    impl_->synthetic_assignability = std::move(check);
+void JniObjectArrayStore::SetAssignability(
+    std::function<std::optional<bool>(JniObjectIdentity, JniObjectIdentity)> check) {
+    impl_->assignability = std::move(check);
 }
 
 JniObjectIdentity JniObjectArrayStore::New(

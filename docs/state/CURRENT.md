@@ -1,7 +1,7 @@
 # 当前状态
 
-更新（2026-09-08）：[DVM-110](../tasks/dexvm/DVM-110.md) 完成定时执行器与 FutureTask
-迁移。DVM-109 已提交 `716206dc`，DVM-108 为 `0acf5ca0`。
+更新（2026-09-08）：DVM-110 定时执行器已提交 `d283144d`；
+[DVM-111](../tasks/dexvm/DVM-111.md) 修复 JNI 接口数组误拒绝定时任务。
 
 ## 当前能力
 
@@ -23,7 +23,7 @@
   解析、属性、公钥编码、链签名、异常与 GC 受检。不含 PKIX 信任、系统 CA/撤销、TLS 或签名生成。
 - **集合与流**：List/Collection/Map 家族、普通 atomic/AQS、工具/事件/beans、内存/包装
   IO、Reader/Writer、X500 和 key spec 来自 API 19 DEX；普通字段/数组为唯一状态。
-  JNI 嵌套数组使用同一 VM 类型关系。ObjectInputStream/ObjectOutputStream、描述符与辅助类
+  JNI 普通类/接口与嵌套数组使用同一 VM 类型关系。ObjectInputStream/ObjectOutputStream、描述符与辅助类
   执行原版 Java，删除 C++ 协议及 handle 副本；私有读写/替换回调、GetField/PutField、默认 UID、
   循环引用、八种基本数组/对象数组和 Externalizable 协议 1/2 受检。六个 native 只处理构造
   token/元数据；SoftReference 普通 GC 保留、压力下清除入队，String.intern 保持弱 canonical 身份。
@@ -44,14 +44,14 @@
 - **Activity 身份**：getLocalClassName/getComponentName/getPreferences 与每实例 Intent
   已接通，保留组件身份；setIntent 不改组件身份。
   UTF-16 append 依赖已补。一般组件解析和非根 alias 切换仍未扩展。
-- **Title**：PvZ getLocalClassName 已补，本轮未重跑游戏 gate；Tales 首错 LocationListener。
+- **Title**：PvZ 原命令已越过定时任务入队，当前首错 ServiceConnection（内购初始化），
+  尚未通过游戏 gate；Tales 首错 LocationListener。
   A6 既有 gc_long 三轮各 3000 帧，无 guest fault 且 clean shutdown。
 
 ## 最近验证
 
-- DVM-110：94 个定向用例、5 项门禁与 staging 通过，844 类全链接且
-  concurrent 普通方法无 overlay。BootDex 重建/check 与日期审计一致，详情见任务单。
-  证据 `.local/review/dvm110/`；历史验收保留于对应任务单，未运行全量测试。
+- DVM-111：47 个定向用例、3294 断言及 3 项门禁通过；修复前回归复现原错，原命令复跑越过。
+  证据 `.local/review/dvm111/`。DVM-110 的 94 用例、5 项门禁及制品验证见任务单。
 
 - 临时文件来自已核对 SHA-256 的 MoKee API 19 ARMv7 设备，存放于
   `.local/android-device/20260906-cipher/`。手机已断开；本轮未做手机对照，正式发行前

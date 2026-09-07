@@ -1087,11 +1087,18 @@ DexVmGuestBridge::DexVmGuestBridge(
     }
     impl_->vm->SetLogger(logger);
     impl_->threads = std::make_unique<dx::VmThreadRuntime>(*impl_->vm);
-    session.Objects().ObjectArrays().SetSyntheticAssignability(
-        [bridge_state](JniObjectIdentity target, JniObjectIdentity source) {
+    session.Objects().ObjectArrays().SetAssignability(
+        [bridge_state](JniObjectIdentity target, JniObjectIdentity source) -> std::optional<bool> {
             const dx::VmExecutionLockScope guard(bridge_state->vm->ExecutionLock());
-            return bridge_state->linker.IsAssignable(
-                bridge_state->DexClassIdentity(target), bridge_state->DexClassIdentity(source));
+            const auto resolve = [bridge_state](JniObjectIdentity identity) -> std::optional<dx::DexClassId> {
+                return identity.domain == JniObjectDomain::dex_vm
+                    ? bridge_state->DexClassIdentity(identity)
+                    : bridge_state->ClassForJniIdentity(identity);
+            };
+            const auto target_class = resolve(target);
+            const auto source_class = resolve(source);
+            if (!target_class || !source_class) return std::nullopt;
+            return bridge_state->linker.IsAssignable(*target_class, *source_class);
         });
     session.Fields().SetAccessHooks(JniFieldAccessHooks{
         [bridge_state](const JniObjectIdentity java_class,
@@ -1251,7 +1258,7 @@ DexVmGuestBridge::~DexVmGuestBridge() {
     if (impl_->android_context) impl_->android_context->threads = nullptr;
     if (impl_->session) {
         impl_->session->Environment().SetMonitorHooks({});
-        impl_->session->Objects().ObjectArrays().SetSyntheticAssignability({});
+        impl_->session->Objects().ObjectArrays().SetAssignability({});
         impl_->session->Fields().SetAccessHooks({});
     }
 }

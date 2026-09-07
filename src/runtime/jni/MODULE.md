@@ -40,6 +40,8 @@ Bionic、syscall、execution 或 integration。
 DVM-105：PendingExceptionMetadata 读取 pending identity，不清除异常或新增 local ref。
 ThrowNew 提供原类与 modified-UTF8 消息，Throw 保留原 identity；上层据此传播异常。
 
-DVM-106：ObjectArrayStore 的 synthetic 类型兼容性通过显式回调交给 VM，JNI 层不反向
-依赖 DexVM。回调在数组锁外执行；未安装时保持严格身份比较。只在 guest 启动前安装，
-停止线程后撤销，不允许与数组读写并发修改回调。不兼容写入保留原元素并明确失败。
+DVM-106/111：ObjectArrayStore 的类型兼容性通过显式 SetAssignability 回调交给 VM，
+覆盖普通类实现接口和 synthetic 数组协变，JNI 层不反向依赖 DexVM。回调在数组锁外执行；
+true/false 是最终结果，nullopt 或未安装时，host 类使用 registry 父类链、synthetic 类
+保持严格身份比较。只在 guest 启动前安装，停止线程后撤销，不允许与数组读写并发修改回调。
+initial/set 共用校验，不兼容写入保留原元素并携带源/目标类身份明确失败。

@@ -47,27 +47,10 @@ public:
                          std::span<const std::byte> bytes) = 0;
 };
 
-// Per-VM java.io state. Core stream semantics do not depend on Android;
-// Android assembly only injects the process guest VFS.
+// Per-VM file resources and character decoders, without guest reference edges.
+// Java stream/protocol state lives in BootDex objects; assembly injects guest VFS.
 class IoRuntime final {
 public:
-  struct SerializedFieldDescriptor final {
-    char type_code{};
-    std::string name;
-    std::string descriptor;
-  };
-  struct SerializedClassDescriptor final {
-    std::string descriptor;
-    std::uint32_t runtime_class{};
-    std::int64_t serial_version_uid{};
-    std::uint8_t flags{};
-    std::vector<SerializedFieldDescriptor> fields;
-    std::shared_ptr<SerializedClassDescriptor> super;
-  };
-  struct ObjectInputHandle final {
-    VmObjectRef object{0};
-    std::shared_ptr<SerializedClassDescriptor> class_descriptor;
-  };
   enum class DescriptorKind : std::uint8_t {
     vfs_path,
     apk_entry,
@@ -76,15 +59,12 @@ public:
     std::vector<std::byte> bytes;
     std::size_t cursor{};
     bool closed{};
-    VmObjectRef source{0};
   };
   struct OutputState final {
     std::string path;
     std::vector<std::byte> bytes;
     bool writable{true};
     bool closed{};
-    VmObjectRef sink{0};
-    std::size_t delivered{};
   };
   struct DecoderState final {
     std::shared_ptr<void> converter;
@@ -92,19 +72,6 @@ public:
     bool ended{};
   };
   DecoderState& Decoder(VmObjectRef owner) { return decoders_[owner.Value()]; }
-  struct ObjectInputState final {
-    std::size_t depth{};
-    std::size_t block_remaining{};
-    std::optional<std::uint8_t> pushback;
-    std::vector<ObjectInputHandle> handles;
-  };
-  struct ObjectOutputState final {
-    std::size_t depth{};
-    std::unordered_map<std::uint32_t, std::uint32_t> object_handles;
-    std::unordered_map<std::uint32_t, std::uint32_t> class_handles;
-    std::vector<VmObjectRef> handle_objects;
-    std::uint32_t next_handle{0x007e0000U};
-  };
   struct DescriptorState final {
     DescriptorKind kind{DescriptorKind::vfs_path};
     std::string source;
@@ -123,10 +90,6 @@ public:
   [[nodiscard]] InputState &Input(VmObjectRef owner);
   [[nodiscard]] InputState *FindInput(VmObjectRef owner) noexcept;
   void CloseInput(VmObjectRef owner);
-  void BeginObjectInput(VmObjectRef owner);
-  [[nodiscard]] ObjectInputState &ObjectInput(VmObjectRef owner);
-  void BeginObjectOutput(VmObjectRef owner);
-  [[nodiscard]] ObjectOutputState &ObjectOutput(VmObjectRef owner);
 
   std::shared_ptr<OutputState> SetOutput(VmObjectRef owner, OutputState state,
                                          bool close_underlying = true);
@@ -159,8 +122,6 @@ public:
   void WriteFile(std::string_view path, std::span<const std::byte> bytes);
 
   void Sweep(VmObjectRef owner);
-  void Trace(VmObjectRef owner,
-             const std::function<void(VmObjectRef)> &visitor) const;
 
 private:
   struct InputHandle final {
@@ -178,8 +139,6 @@ private:
   IoFileSystem *file_system_{};
   std::unordered_map<std::uint32_t, DecoderState> decoders_;
   std::unordered_map<std::uint32_t, InputHandle> inputs_;
-  std::unordered_map<std::uint32_t, ObjectInputState> object_inputs_;
-  std::unordered_map<std::uint32_t, ObjectOutputState> object_outputs_;
   std::unordered_map<std::uint32_t, OutputHandle> outputs_;
   std::unordered_map<std::uint32_t, DescriptorState> descriptors_;
 };

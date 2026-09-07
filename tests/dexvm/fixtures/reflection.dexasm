@@ -362,3 +362,45 @@
     move-result-object v0
     return-object v0
 .end method
+
+.class public Lreflect/FailingStaticField;
+.super Ljava/lang/Object;
+.field public static value:J
+.method static constructor <clinit>()V
+.registers 2
+    new-instance v0, Ljava/lang/IllegalStateException;
+    const-string v1, "field initializer failed"
+    invoke-direct {v0, v1}, Ljava/lang/IllegalStateException;-><init>(Ljava/lang/String;)V
+    throw v0
+.end method
+
+.class public Lreflect/InheritedClinit;
+.super Lreflect/InvokeStatics;
+
+.class public Lreflect/StackCaller;
+.super Ljava/lang/Object;
+.method public static outer()[Ljava/lang/Class;
+.registers 1
+    invoke-static {}, Lreflect/StackCaller;->inner()[Ljava/lang/Class;
+    move-result-object v0
+    return-object v0
+.end method
+.method public static inner()[Ljava/lang/Class;
+.registers 1
+    const/4 v0, -1
+    invoke-static {v0}, Ldalvik/system/VMStack;->getClasses(I)[Ljava/lang/Class;
+    move-result-object v0
+    return-object v0
+.end method
+
+.class public Lreflect/ErrorStaticField;
+.super Ljava/lang/Object;
+.field public static value:J
+.field public static failure:Ljava/lang/Error;
+.method static constructor <clinit>()V
+.registers 1
+    new-instance v0, Ljava/lang/Error;
+    invoke-direct {v0}, Ljava/lang/Error;-><init>()V
+    sput-object v0, Lreflect/ErrorStaticField;->failure:Ljava/lang/Error;
+    throw v0
+.end method

@@ -399,12 +399,8 @@ void Interpreter::Impl::EnsureInitialized(
         try {
             static_cast<void>(clinit_implementation(context));
         } catch (const VmJavaThrow& thrown) {
-            PublishClinitState(java_class, ClinitState::failed);
-            RecordTrace(DexVmTraceKind::class_init_fail, execution, nullptr,
-                        0, 0, java_class.Value());
             if (thrown.existing.IsValid()) owner->SetPendingException(thrown.existing);
             else ThrowJava(thrown.descriptor, thrown.message);
-            return;
         }
     }
 
@@ -413,15 +409,29 @@ void Interpreter::Impl::EnsureInitialized(
         linker->PrecheckMethod(*clinit);
         PushInterpretedFrame(execution, linker->Method(*clinit), {}, 0);
         const auto outcome = Run(execution, frames.size() - 1);
-        if (outcome.exception.IsValid()) {
-            PublishClinitState(java_class, ClinitState::failed);
-            RecordTrace(DexVmTraceKind::class_init_fail, execution, nullptr,
-                        0, 0, java_class.Value());
-            // Initialization failure is sticky NoClassDefFoundError for
-            // later users; the original throwable propagates now.
-            SetPending(outcome.exception);
-            return;
+        if (outcome.exception.IsValid()) SetPending(outcome.exception);
+    }
+    if (pending_exception.IsValid()) {
+        // AOSP Class.cpp / Exception.cpp: wrap non-Error initialization
+        // failures, preserve their identity as cause, and leave Errors intact.
+        const auto original = pending_exception;
+        const auto error = linker->ResolveDescriptor("Ljava/lang/Error;");
+        if (!linker->IsAssignable(error, model->ObjectClass(original))) {
+            const auto original_root = owner->ProtectReferences(std::array{original});
+            pending_exception = VmObjectRef{};
+            execution.pending_exception_class = DexClassId{};
+            const auto wrapper = owner->MakeThrowable("Ljava/lang/ExceptionInInitializerError;", "");
+            const auto wrapper_root = owner->ProtectReferences(std::array{wrapper});
+            const auto ctor = linker->FindDirectMethod(model->ObjectClass(wrapper), "<init>",
+                                                       "(Ljava/lang/Throwable;)V");
+            if (!ctor) throw DexVmError(DexVmErrorReason::internal_invariant,
+                                       "missing ExceptionInInitializerError constructor");
+            const auto result = owner->Call(*ctor, std::array{VmValue::Ref(wrapper), VmValue::Ref(original)});
+            SetPending(result.exception.IsValid() ? result.exception : wrapper);
         }
+        PublishClinitState(java_class, ClinitState::failed);
+        RecordTrace(DexVmTraceKind::class_init_fail, execution, nullptr, 0, 0, java_class.Value());
+        return;
     }
     PublishClinitState(java_class, ClinitState::initialized);
     RecordTrace(DexVmTraceKind::class_init_end, execution, nullptr, 0, 0,
@@ -822,10 +832,7 @@ Interpreter::Interpreter(DexClassLinker& linker, JavaObjectModel& model,
         }});
     RegisterIntrinsicStateTable({
         "io",
-        [state = impl_.get()](const VmObjectRef owner,
-                              const VmRootVisitor& visit) {
-            state->io.Trace(owner, visit);
-        },
+        {}, // File resources and decoders contain no Java references.
         [state = impl_.get()](const VmObjectRef owner) {
             state->io.Sweep(owner);
         },

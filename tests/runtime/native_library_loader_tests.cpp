@@ -2053,7 +2053,7 @@ TEST_CASE("DVM-107 manifest launcher alias retains its component identity") {
     CHECK(fixture.app->Stop().state == session::LifecycleRunState::stopped);
 }
 
-TEST_CASE("DVM-108 UUID and MessageDigest use BootDex with real guest crypto") {
+TEST_CASE("DVM-108/109 UUID MessageDigest and serialization use BootDex with real guest crypto") {
     using namespace ogplay;
     using namespace runtime::dexvm;
     for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
@@ -2145,6 +2145,87 @@ TEST_CASE("DVM-108 UUID and MessageDigest use BootDex with real guest crypto") {
         const auto digest = direct("Ljava/security/MessageDigest;", "getInstance", "(Ljava/lang/String;)Ljava/security/MessageDigest;", {VmValue::Ref(vm.NewStringUtf8("MD5"))}).ref;
         const auto digest_roots = vm.ProtectReferences(std::array{digest});
         const auto read = [&](VmObjectRef array) { return vm.Model().ReadByteRegion(array, 0, vm.Model().ArrayLength(array)); };
+        // DVM-109 exercises the same original Java object streams used by apps.
+        const auto roundtrip = [&](VmObjectRef value, const char* expected_wire = nullptr) {
+            const auto value_root = vm.ProtectReferences(std::array{value});
+            const auto sink = vm.NewIntrinsicInstance("Ljava/io/ByteArrayOutputStream;");
+            direct("Ljava/io/ByteArrayOutputStream;", "<init>", "()V", {VmValue::Ref(sink)});
+            const auto output = vm.NewIntrinsicInstance("Ljava/io/ObjectOutputStream;");
+            const auto output_roots = vm.ProtectReferences(std::array{sink, output});
+            direct("Ljava/io/ObjectOutputStream;", "<init>", "(Ljava/io/OutputStream;)V", {VmValue::Ref(output), VmValue::Ref(sink)});
+            invoke(output, "writeObject", "(Ljava/lang/Object;)V", {VmValue::Ref(value)});
+            invoke(output, "flush", "()V", {});
+            const auto wire = invoke(sink, "toByteArray", "()[B", {}).ref;
+            if (expected_wire) CHECK(read(wire) == read(bytes(expected_wire)));
+            const auto source = vm.NewIntrinsicInstance("Ljava/io/ByteArrayInputStream;");
+            direct("Ljava/io/ByteArrayInputStream;", "<init>", "([B)V", {VmValue::Ref(source), VmValue::Ref(wire)});
+            const auto input = vm.NewIntrinsicInstance("Ljava/io/ObjectInputStream;");
+            const auto input_roots = vm.ProtectReferences(std::array{source, input});
+            direct("Ljava/io/ObjectInputStream;", "<init>", "(Ljava/io/InputStream;)V", {VmValue::Ref(input), VmValue::Ref(source)});
+            static_cast<void>(vm.CollectGarbage("serialization-live-streams"));
+            return invoke(input, "readObject", "()Ljava/lang/Object;", {}).ref;
+        };
+        const auto field_value = [&](VmObjectRef object, const char* owner, const char* name) {
+            const auto field = linker.FindFieldRecursive(linker.ResolveDescriptor(owner), name, "I");
+            REQUIRE(field);
+            return static_cast<std::int32_t>(vm.Model().InstanceSlots(object)[linker.Field(*field).slot].bits);
+        };
+        const auto value = vm.NewIntrinsicInstance("Lfixture/SerializationValue;");
+        direct("Lfixture/SerializationValue;", "<init>", "()V", {VmValue::Ref(value)});
+        const auto next_field = linker.FindFieldRecursive(linker.ResolveDescriptor("Lfixture/SerializationValue;"), "next", "Ljava/lang/Object;");
+        REQUIRE(next_field);
+        vm.Model().InstanceSlots(value)[linker.Field(*next_field).slot] = {value.Value(), SlotTag::ref};
+        auto restored_value = roundtrip(value);
+        CHECK(restored_value != value);
+        CHECK(field_value(restored_value, "Lfixture/SerializationBase;", "inherited") == 17);
+        CHECK(field_value(restored_value, "Lfixture/SerializationValue;", "restored") == 73);
+        CHECK(vm.Model().InstanceSlots(restored_value)[linker.Field(*next_field).slot].bits == restored_value.Value());
+        const auto fields = vm.NewIntrinsicInstance("Lfixture/SerializationFields;");
+        direct("Lfixture/SerializationFields;", "<init>", "()V", {VmValue::Ref(fields)});
+        CHECK(field_value(roundtrip(fields), "Lfixture/SerializationFields;", "number") == 42);
+        const auto uid = direct("Ljava/io/ObjectStreamClass;", "lookup", "(Ljava/lang/Class;)Ljava/io/ObjectStreamClass;",
+            {VmValue::Ref(vm.Model().ClassObject(linker.ResolveDescriptor("Lfixture/DefaultUid;")))}).ref;
+        CHECK(invoke(uid, "getSerialVersionUID", "()J", {}).AsLong() == INT64_C(5156351520895513822));
+        const auto default_value = vm.NewIntrinsicInstance("Lfixture/DefaultUid;");
+        direct("Lfixture/DefaultUid;", "<init>", "()V", {VmValue::Ref(default_value)});
+        CHECK(vm.Model().ObjectClass(roundtrip(default_value)) == linker.ResolveDescriptor("Lfixture/DefaultUid;"));
+        const auto graph = vm.Model().NewObjectArray(linker.ResolveDescriptor("[Ljava/lang/Object;"), linker.ResolveDescriptor("Ljava/lang/Object;"), 3);
+        vm.Model().SetObjectElement(graph, 0, graph);
+        const auto shared_bytes = bytes("00ff010203");
+        vm.Model().SetObjectElement(graph, 1, shared_bytes);
+        vm.Model().SetObjectElement(graph, 2, shared_bytes);
+        const auto graph_copy = roundtrip(graph);
+        CHECK(vm.Model().GetObjectElement(graph_copy, 0) == graph_copy);
+        CHECK(vm.Model().GetObjectElement(graph_copy, 1) == vm.Model().GetObjectElement(graph_copy, 2));
+        CHECK(read(vm.Model().GetObjectElement(graph_copy, 1)) == read(bytes("00ff010203")));
+        const auto uuid_original = direct("Ljava/util/UUID;", "fromString", "(Ljava/lang/String;)Ljava/util/UUID;",
+            {VmValue::Ref(vm.NewStringUtf8("f81d4fae-7dec-11d0-a765-00a0c91e6bf6"))}).ref;
+        const auto restored_uuid = roundtrip(uuid_original, "aced00057372000e6a6176612e7574696c2e55554944bc9903f7986d852f0200024a000c6c65617374536967426974734a000b6d6f7374536967426974737870a76500a0c91e6bf6f81d4fae7dec11d0");
+        CHECK(invoke(restored_uuid, "version", "()I", {}).AsInt() == 1);
+        CHECK(invoke(restored_uuid, "timestamp", "()J", {}).AsLong() == INT64_C(130742845922168750));
+        for (const auto& [owner, expected] : std::array{
+                 std::pair{"Lfixture/SerializationResolve;", "resolved"},
+                 std::pair{"Lfixture/SerializationReplace;", "replaced"}}) {
+            const auto instance = vm.NewIntrinsicInstance(owner);
+            direct(owner, "<init>", "()V", {VmValue::Ref(instance)});
+            CHECK(vm.StringUtf8(roundtrip(instance)) == expected);
+        }
+        for (const auto& [descriptor, kind] : std::array{
+                 std::pair{"[Z", runtime::JniPrimitiveKind::boolean},
+                 std::pair{"[C", runtime::JniPrimitiveKind::character},
+                 std::pair{"[S", runtime::JniPrimitiveKind::short_integer},
+                 std::pair{"[I", runtime::JniPrimitiveKind::integer},
+                 std::pair{"[J", runtime::JniPrimitiveKind::long_integer},
+                 std::pair{"[F", runtime::JniPrimitiveKind::float_value},
+                 std::pair{"[D", runtime::JniPrimitiveKind::double_value}}) {
+            const auto array = vm.Model().NewPrimitiveArray(linker.ResolveDescriptor(descriptor), kind, 2);
+            vm.Model().SetPrimitiveElement(array, 0, 1);
+            vm.Model().SetPrimitiveElement(array, 1, descriptor[1] == 'Z' ? 0 : UINT64_C(0x0102030405060708));
+            const auto copy = roundtrip(array);
+            CHECK(vm.Model().ObjectClass(copy) == linker.ResolveDescriptor(descriptor));
+            CHECK(vm.Model().GetPrimitiveElement(copy, 0) == vm.Model().GetPrimitiveElement(array, 0));
+            CHECK(vm.Model().GetPrimitiveElement(copy, 1) == vm.Model().GetPrimitiveElement(array, 1));
+        }
         // Independent known answers, including binary input crossing many EVP blocks.
         for (const auto& vector : std::array{
             std::array{"MD5", "md5", "1.2.840.113549.2.5", "d41d8cd98f00b204e9800998ecf8427e", "900150983cd24fb0d6963f7d28e17f72", "3e2e51f419bcd80d9de0290be2de85ed"},

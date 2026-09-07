@@ -140,6 +140,7 @@ template <typename Meta>
 
 class ReflectionRuntime::Impl final {
 public:
+    std::vector<VmMethodId> serialization_constructors;
     Impl(Interpreter& interpreter, DexClassLinker& linker,
          JavaObjectModel& model)
         : interpreter(&interpreter), linker(&linker), model(&model),
@@ -818,6 +819,56 @@ VmObjectRef ReflectionRuntime::InvokeConstructor(
     return instance;
 }
 
+std::int64_t ReflectionRuntime::SerializationConstructor(DexClassId declaring_class) {
+    const auto initialized = impl_->interpreter->EnsureClassInitialized(declaring_class);
+    if (initialized.exception.IsValid())
+        throw VmJavaThrow{impl_->linker->Class(initialized.exception_class).descriptor,
+                          initialized.exception_message, initialized.exception};
+    const auto ctor = FindConstructor(declaring_class, {}, false);
+    if (!ctor) throw VmJavaThrow{"Ljava/lang/NoSuchMethodError;", "serialization constructor ()V"};
+    auto& tokens = impl_->serialization_constructors;
+    const auto found = std::find(tokens.begin(), tokens.end(), ctor->method);
+    if (found != tokens.end()) return static_cast<std::int64_t>(found - tokens.begin() + 1);
+    tokens.push_back(ctor->method);
+    return static_cast<std::int64_t>(tokens.size());
+}
+
+VmObjectRef ReflectionRuntime::NewSerializationInstance(DexClassId java_class, std::int64_t token) {
+    auto& linker = *impl_->linker;
+    linker.EnsureClassLinked(java_class);
+    impl_->RequireInstantiable(java_class);
+    const auto& tokens = impl_->serialization_constructors;
+    if (token <= 0 || static_cast<std::uint64_t>(token) > tokens.size())
+        throw VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "invalid serialization constructor token"};
+    const auto method = tokens[static_cast<std::size_t>(token - 1)];
+    if (!linker.IsAssignable(linker.Method(method).owner, java_class))
+        throw VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "unrelated serialization constructor"};
+    const auto initialized = impl_->interpreter->EnsureClassInitialized(java_class);
+    if (initialized.exception.IsValid()) {
+        impl_->interpreter->SetPendingException(initialized.exception);
+        return VmObjectRef{};
+    }
+    const auto instance = impl_->model->NewInstance(java_class, linker.Class(java_class).instance_slots);
+    const auto roots = impl_->interpreter->ProtectReferences(std::array{instance});
+    const auto result = impl_->interpreter->Call(method, std::array{VmValue::Ref(instance)});
+    if (result.exception.IsValid()) {
+        impl_->interpreter->SetPendingException(result.exception);
+        return VmObjectRef{};
+    }
+    return instance;
+}
+
+std::string_view ReflectionRuntime::MemberDescriptor(VmObjectRef wrapper) {
+    const auto type = impl_->linker->Class(impl_->model->ObjectClass(wrapper)).descriptor;
+    if (type == "Ljava/lang/reflect/Field;")
+        return impl_->linker->Field(FieldMetadata(wrapper).field).descriptor;
+    if (type == "Ljava/lang/reflect/Method;")
+        return impl_->linker->Method(MethodMetadata(wrapper).method).descriptor;
+    if (type == "Ljava/lang/reflect/Constructor;")
+        return impl_->linker->Method(ConstructorMetadata(wrapper).method).descriptor;
+    throw VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "expected reflection member"};
+}
+
 VmObjectRef ReflectionRuntime::NewInstance(
     const DexClassId java_class, const std::optional<DexClassId> caller) {
     impl_->RequireInstantiable(java_class);
@@ -864,8 +915,8 @@ VmValue ReflectionRuntime::GetField(
         const auto initialized =
             impl_->interpreter->EnsureClassInitialized(meta.declaring_class);
         if (initialized.exception.IsValid()) {
-            impl_->interpreter->SetPendingException(initialized.exception);
-            return VmValue::Void();
+            throw VmJavaThrow{impl_->linker->Class(initialized.exception_class).descriptor,
+                              initialized.exception_message, initialized.exception};
         }
     } else {
         if (!receiver.IsValid()) {

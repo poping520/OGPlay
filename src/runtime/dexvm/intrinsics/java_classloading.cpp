@@ -1,3 +1,4 @@
+#include "ogplay/runtime/dexvm/reflection.h"
 // DVM-80: API-family translation unit. Physical consolidation only.
 
 // ---- migrated from dalvik_system_PathClassLoader.cpp ----
@@ -179,4 +180,16 @@ IntrinsicClassDecl Declare_java_lang_ClassLoader() {
     return std::move(builder).Build();
 }
 
+IntrinsicClassDecl Declare_dalvik_system_VMStack() {
+    auto b = IntrinsicClassBuilder::Class("Ldalvik/system/VMStack;");
+    b.StaticMethod("getClasses", "(I)[Ljava/lang/Class;", [](IntrinsicContext& c) {
+        const auto limit = static_cast<std::uint32_t>(c.arguments[0].AsInt());
+        return VmValue::Ref(c.vm.Reflection().MaterializeTypeArray(c.vm.CallingStackClasses(1, limit)));
+    }, kAccPublic | kAccNative);
+    b.UnimplementedStatic("fillStackTraceElements", "(Ljava/lang/Thread;[Ljava/lang/StackTraceElement;)I", kAccPublic | kAccNative);
+    b.UnimplementedStatic("getThreadStackTrace", "(Ljava/lang/Thread;)[Ljava/lang/StackTraceElement;", kAccPublic | kAccNative);
+    b.UnimplementedStatic("getCallingClassLoader", "()Ljava/lang/ClassLoader;", kAccPublic | kAccNative);
+    b.UnimplementedStatic("getStackClass2", "()Ljava/lang/Class;", kAccPublic | kAccNative);
+    return std::move(b).Build();
+}
 }  // namespace ogplay::runtime::dexvm::intrinsics

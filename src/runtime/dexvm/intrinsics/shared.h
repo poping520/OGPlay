@@ -53,9 +53,11 @@ inline void AddThrowableCauseConstructors(IntrinsicClassBuilder& builder) {
 }
 
 [[nodiscard]] inline IntrinsicClassDecl DeclareSimpleThrowable(
-    const std::string_view descriptor, const std::string_view super_descriptor, bool with_cause = false) {
+    const std::string_view descriptor, const std::string_view super_descriptor, bool with_cause = false,
+    std::optional<std::int64_t> serial_uid = std::nullopt) {
     auto builder = IntrinsicClassBuilder::Class(
         std::string(descriptor), std::string(super_descriptor));
+    if (serial_uid) builder.ConstantInt("serialVersionUID", "J", *serial_uid, kAccPrivate);
     builder.Constructor("()V", [](IntrinsicContext&) { return VmValue::Void(); });
     builder.Constructor("(Ljava/lang/String;)V", [](IntrinsicContext& context) {
         context.vm.SetThrowableMessage(context.receiver,

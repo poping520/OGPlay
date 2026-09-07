@@ -528,3 +528,34 @@ registry/per-context mutex，不把 EVP 指针暴露给 Java。
 此类反序列化明确 InvalidClassException。暂不扩展通用对象流回调，UUID 序列化可写，读取拒绝。
 原版 OpenSSLProvider 无 SHA-224 MessageDigest；现有 SHA224 验签不因此扩展为摘要服务。
 HMAC/Mac、SHA-3、其他 provider 或 TLS 未纳入。配方、构建工具和 ADR 继续合并维护。
+
+<a id="adr-0040"></a>
+
+## ADR-0040 · 对象序列化协议归 BootDex，VM 仅提供构造与元数据原语
+
+- 状态：Accepted
+- 日期：2026-09-07
+- 关联：[DVM-109](../tasks/dexvm/DVM-109.md)
+
+### 决定
+
+将 ObjectInputStream/ObjectOutputStream、ObjectStreamClass、字段辅助类、异常及直接
+依赖从 pinned core.jar 精确选入，新增 28 类，共 818 类。协议、共享 handle、字段读写、
+私有回调与默认 serialVersionUID 算法执行原版 Java；删除 IoRuntime/C++ 对象流协议副本。
+本决定替代 ADR-0039 对私有 readObject 和 UUID 读取的暂时拒绝，UUID transient 缓存
+由自己的 readObject 恢复，不增加 UUID 或 Date 专用处理。默认 UID 的 SHA 复用 guest EVP。
+
+ObjectStreamClass 六个 native 对照 libcore/luni/src/main/native/java_io_ObjectStreamClass.cpp
+和 Dalvik JNI：签名读取唯一反射元数据，构造器采用 per-VM 受检逻辑 token；分配实际子类，
+只运行 Java 选定的无参构造器，异常保持身份，不套 InvocationTargetException。
+constructor lookup/hasClinit 触发初始化，hasClinit 依 AOSP 查找父类并清除查找失败；
+静态初始化非 Error 包装 EIIE 并保留 cause，Error 原样传播，后续访问 NCDFE。
+
+VMStack.getClasses 读取执行栈供原版 loader 查询；SoftReference 普通 GC 保留 referent，
+分配压力下清除仅软可达对象并入队。String.intern 以弱 canonical 表保持首次对象身份，
+DEX 常量提升为强根，清扫移除弱条目后才复用句柄。源/目标、描述符与 handle 是普通对象图。
+Modifier/Void/Proxy 的 Java 部分同批迁入；getFieldL 是原版未使用的遗留声明，Proxy 两个
+生成 native 和 VMStack 其余四个 native 均显式未实现，调用时记账失败。
+
+不引入完整 Dalvik、动态代理生成或自定义 loader，也不宣称宿主侧表对象可以完整持久化。
+沿用统一 recipe/build_bootdex.py 和主题 ADR，不新增独立工具配置或 ADR 文件。

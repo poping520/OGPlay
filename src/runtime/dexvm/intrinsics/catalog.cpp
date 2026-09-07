@@ -8,6 +8,8 @@ std::vector<IntrinsicClassDecl> CoreIntrinsicCatalog(
     std::vector<IntrinsicClassDecl> catalog{
         Declare_java_lang_Object(),
         Declare_java_lang_ClassLoader(),
+        Declare_java_lang_reflect_Proxy(),
+        Declare_dalvik_system_VMStack(),
         Declare_java_lang_BootClassLoader(),
         Declare_dalvik_system_PathClassLoader(),
         Declare_java_lang_Thread(),
@@ -29,7 +31,6 @@ std::vector<IntrinsicClassDecl> CoreIntrinsicCatalog(
         Declare_java_lang_reflect_Type(),
         Declare_java_lang_reflect_Member(),
         Declare_java_lang_reflect_AccessibleObject(),
-        Declare_java_lang_reflect_Modifier(),
         Declare_java_lang_reflect_Method(),
         Declare_java_lang_reflect_InvocationTargetException(),
         Declare_java_lang_reflect_Constructor(),

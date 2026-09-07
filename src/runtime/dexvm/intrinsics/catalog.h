@@ -37,6 +37,8 @@ void AppendJavaXml(std::vector<IntrinsicClassDecl>& catalog,
 
 [[nodiscard]] IntrinsicClassDecl Declare_java_lang_Object();
 [[nodiscard]] IntrinsicClassDecl Declare_java_lang_ClassLoader();
+[[nodiscard]] IntrinsicClassDecl Declare_java_lang_reflect_Proxy();
+[[nodiscard]] IntrinsicClassDecl Declare_dalvik_system_VMStack();
 [[nodiscard]] IntrinsicClassDecl Declare_java_lang_BootClassLoader();
 [[nodiscard]] IntrinsicClassDecl Declare_dalvik_system_PathClassLoader();
 [[nodiscard]] IntrinsicClassDecl Declare_java_lang_Thread();
@@ -60,7 +62,6 @@ Declare_java_lang_Thread_UncaughtExceptionHandler();
 [[nodiscard]] IntrinsicClassDecl Declare_java_lang_reflect_Type();
 [[nodiscard]] IntrinsicClassDecl Declare_java_lang_reflect_Member();
 [[nodiscard]] IntrinsicClassDecl Declare_java_lang_reflect_AccessibleObject();
-[[nodiscard]] IntrinsicClassDecl Declare_java_lang_reflect_Modifier();
 [[nodiscard]] IntrinsicClassDecl Declare_java_lang_reflect_Method();
 [[nodiscard]] IntrinsicClassDecl
 Declare_java_lang_reflect_InvocationTargetException();

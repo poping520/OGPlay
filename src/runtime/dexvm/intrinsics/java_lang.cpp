@@ -1151,6 +1151,7 @@ void AddNumberConversions(IntrinsicClassBuilder& builder, bool wide,
 
 IntrinsicClassDecl Declare_java_lang_Number() {
     auto builder = IntrinsicClassBuilder::Class("Ljava/lang/Number;", "Ljava/lang/Object;", {"Ljava/io/Serializable;"});
+    builder.ConstantInt("serialVersionUID", "J", INT64_C(-8742448824652078965), kAccPrivate);
     builder.Constructor("()V", [](IntrinsicContext&) { return VmValue::Void(); });
     const auto abstract = [](IntrinsicContext&) -> VmValue {
         throw VmJavaThrow{"Ljava/lang/AbstractMethodError;",
@@ -1965,6 +1966,10 @@ VmValue MapCase(IntrinsicContext& context, bool upper) {
 
 IntrinsicClassDecl Declare_java_lang_String() {
     auto builder = IntrinsicClassBuilder::Class("Ljava/lang/String;", "Ljava/lang/Object;", {"Ljava/lang/CharSequence;", "Ljava/lang/Comparable;", "Ljava/io/Serializable;"});
+    builder.ConstantInt("serialVersionUID", "J", INT64_C(-6849794470754667710), kAccPrivate);
+    builder.FinalMethod("intern", "()Ljava/lang/String;", [](IntrinsicContext& c) {
+        return VmValue::Ref(c.vm.Model().InternString(c.receiver));
+    }, kAccPublic | kAccNative);
     builder.Constructor("()V",
         [](IntrinsicContext& context) {
                 context.vm.Model().BindString(context.receiver, {});
@@ -2153,6 +2158,13 @@ IntrinsicClassDecl Declare_java_lang_String() {
                         ? 1
                         : 0);
             });
+    builder.FinalMethod("startsWith", "(Ljava/lang/String;I)Z", [](IntrinsicContext& c) {
+        const auto text = Value(c, c.receiver);
+        const auto prefix = Value(c, IntrinsicCall(c).NonNullRef(0, "prefix"));
+        const auto offset = c.arguments[1].AsInt();
+        return VmValue::Int(offset >= 0 && static_cast<std::size_t>(offset) <= text.size() &&
+                           std::u16string_view(text).substr(static_cast<std::size_t>(offset)).starts_with(prefix));
+    });
     builder.FinalMethod("endsWith", "(Ljava/lang/String;)Z",
         [](IntrinsicContext& context) {
                 return VmValue::Int(
@@ -4031,11 +4043,11 @@ IntrinsicClassDecl Declare_java_lang_ClassNotFoundException() {
 }
 
 IntrinsicClassDecl Declare_java_lang_Error() {
-    return DeclareSimpleThrowable("Ljava/lang/Error;", "Ljava/lang/Throwable;");
+    return DeclareSimpleThrowable("Ljava/lang/Error;", "Ljava/lang/Throwable;", false, INT64_C(4980196508277280342));
 }
 
 IntrinsicClassDecl Declare_java_lang_Exception() {
-    return DeclareSimpleThrowable("Ljava/lang/Exception;", "Ljava/lang/Throwable;", true);
+    return DeclareSimpleThrowable("Ljava/lang/Exception;", "Ljava/lang/Throwable;", true, INT64_C(-3387516993124229948));
 }
 
 IntrinsicClassDecl Declare_java_lang_IllegalArgumentException() {
@@ -4087,7 +4099,7 @@ IntrinsicClassDecl Declare_java_lang_OutOfMemoryError() {
 }
 
 IntrinsicClassDecl Declare_java_lang_RuntimeException() {
-    return DeclareSimpleThrowable("Ljava/lang/RuntimeException;", "Ljava/lang/Exception;", true);
+    return DeclareSimpleThrowable("Ljava/lang/RuntimeException;", "Ljava/lang/Exception;", true, INT64_C(-7034897190745766939));
 }
 
 IntrinsicClassDecl Declare_java_lang_StackOverflowError() {
@@ -4100,6 +4112,7 @@ IntrinsicClassDecl Declare_java_lang_StringIndexOutOfBoundsException() {
 
 IntrinsicClassDecl Declare_java_lang_Throwable() {
     auto builder = IntrinsicClassBuilder::Class("Ljava/lang/Throwable;", "Ljava/lang/Object;", {"Ljava/io/Serializable;"});
+    builder.ConstantInt("serialVersionUID", "J", INT64_C(-3042686055658047285), kAccPrivate);
     builder.Constructor("()V",
         [](IntrinsicContext &) { return VmValue::Void(); });
     builder.Constructor("(Ljava/lang/String;)V",

@@ -131,3 +131,117 @@
     invoke-virtual {v1, v0}, Ljava/io/PrintStream;->println(I)V
     return-void
 .end method
+
+# DVM-109: ordinary Java serialization callbacks and constructor semantics.
+.class public Lfixture/SerializationBase;
+.super Ljava/lang/Object;
+.field public inherited:I
+.method public constructor <init>()V
+.registers 2
+    invoke-direct {v1}, Ljava/lang/Object;-><init>()V
+    const/16 v0, 17
+    iput v0, v1, Lfixture/SerializationBase;->inherited:I
+    return-void
+.end method
+
+.class public Lfixture/SerializationValue;
+.super Lfixture/SerializationBase;
+.implements Ljava/io/Serializable;
+.field private static final serialVersionUID:J = 109
+.field public number:I
+.field public transient restored:I
+.field public next:Ljava/lang/Object;
+.method public constructor <init>()V
+.registers 2
+    invoke-direct {v1}, Lfixture/SerializationBase;-><init>()V
+    const/16 v0, 99
+    iput v0, v1, Lfixture/SerializationValue;->restored:I
+    return-void
+.end method
+.method private writeObject(Ljava/io/ObjectOutputStream;)V
+.registers 4
+    invoke-virtual {v3}, Ljava/io/ObjectOutputStream;->defaultWriteObject()V
+    const/16 v0, 73
+    invoke-virtual {v3, v0}, Ljava/io/ObjectOutputStream;->writeInt(I)V
+    return-void
+.end method
+.method private readObject(Ljava/io/ObjectInputStream;)V
+.registers 4
+    invoke-virtual {v3}, Ljava/io/ObjectInputStream;->defaultReadObject()V
+    invoke-virtual {v3}, Ljava/io/ObjectInputStream;->readInt()I
+    move-result v0
+    iput v0, v2, Lfixture/SerializationValue;->restored:I
+    return-void
+.end method
+
+.class public Lfixture/SerializationFields;
+.super Ljava/lang/Object;
+.implements Ljava/io/Serializable;
+.field private static final serialVersionUID:J = 110
+.field public number:I
+.method public constructor <init>()V
+.registers 1
+    invoke-direct {v0}, Ljava/lang/Object;-><init>()V
+    return-void
+.end method
+.method private writeObject(Ljava/io/ObjectOutputStream;)V
+.registers 5
+    invoke-virtual {v4}, Ljava/io/ObjectOutputStream;->putFields()Ljava/io/ObjectOutputStream$PutField;
+    move-result-object v0
+    const-string v1, "number"
+    const/16 v2, 42
+    invoke-virtual {v0, v1, v2}, Ljava/io/ObjectOutputStream$PutField;->put(Ljava/lang/String;I)V
+    invoke-virtual {v4}, Ljava/io/ObjectOutputStream;->writeFields()V
+    return-void
+.end method
+.method private readObject(Ljava/io/ObjectInputStream;)V
+.registers 5
+    invoke-virtual {v4}, Ljava/io/ObjectInputStream;->readFields()Ljava/io/ObjectInputStream$GetField;
+    move-result-object v0
+    const-string v1, "number"
+    const/4 v2, -1
+    invoke-virtual {v0, v1, v2}, Ljava/io/ObjectInputStream$GetField;->get(Ljava/lang/String;I)I
+    move-result v0
+    iput v0, v3, Lfixture/SerializationFields;->number:I
+    return-void
+.end method
+
+.class public Lfixture/DefaultUid;
+.super Ljava/lang/Object;
+.implements Ljava/io/Serializable;
+.field public number:I
+.method public constructor <init>()V
+.registers 1
+    invoke-direct {v0}, Ljava/lang/Object;-><init>()V
+    return-void
+.end method
+
+.class public Lfixture/SerializationResolve;
+.super Ljava/lang/Object;
+.implements Ljava/io/Serializable;
+.field private static final serialVersionUID:J = 111
+.method public constructor <init>()V
+.registers 1
+    invoke-direct {v0}, Ljava/lang/Object;-><init>()V
+    return-void
+.end method
+.method private readResolve()Ljava/lang/Object;
+.registers 2
+    const-string v0, "resolved"
+    return-object v0
+.end method
+
+.class public Lfixture/SerializationReplace;
+.super Ljava/lang/Object;
+.implements Ljava/io/Serializable;
+.field private static final serialVersionUID:J = 112
+.method public constructor <init>()V
+.registers 1
+    invoke-direct {v0}, Ljava/lang/Object;-><init>()V
+    return-void
+.end method
+.method private writeReplace()Ljava/lang/Object;
+.registers 2
+    const-string v0, "replaced"
+    return-object v0
+.end method

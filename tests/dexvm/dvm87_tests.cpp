@@ -985,7 +985,9 @@ TEST_CASE("DVM-103 Externalizable invokes public constructor and callbacks with 
         bool public_constructor = true;
         bool fail_write = false;
         bool fail_read = false;
+        int protocol = 2;
         SUBCASE("round trip") {}
+        SUBCASE("protocol 1 round trip") { protocol = 1; }
         SUBCASE("private constructor is rejected") { public_constructor = false; }
         SUBCASE("write callback preserves throwable identity") { fail_write = true; }
         SUBCASE("read callback preserves throwable identity") { fail_read = true; }
@@ -1021,7 +1023,7 @@ TEST_CASE("DVM-103 Externalizable invokes public constructor and callbacks with 
             invoke(c, out, "writeObject", "(Ljava/lang/Object;)V", {VmValue::Ref(c.receiver)});
             return VmValue::Void();
         });
-        builder.VirtualMethod("readExternal", "(Ljava/io/ObjectInput;)V", [value, self, invoke, fail_read, expected_failure](IntrinsicContext& c) {
+        builder.VirtualMethod("readExternal", "(Ljava/io/ObjectInput;)V", [value, self, invoke, fail_read, expected_failure, protocol](IntrinsicContext& c) {
             if (fail_read) {
                 *expected_failure = c.vm.NewIntrinsicInstance("Ljava/io/IOException;");
                 c.vm.SetPendingException(*expected_failure);
@@ -1030,6 +1032,10 @@ TEST_CASE("DVM-103 Externalizable invokes public constructor and callbacks with 
             const auto in = c.arguments[0].ref;
             IntrinsicCall(c).SetInt(value, invoke(c, in, "readInt", "()I").AsInt());
             IntrinsicCall(c).SetRef(self, invoke(c, in, "readObject", "()Ljava/lang/Object;").ref);
+            if (protocol == 1) { // Protocol 1 has no end-block marker: consume the whole custom payload.
+                CHECK(invoke(c, in, "readInt", "()I").AsInt() == 99);
+                CHECK(invoke(c, in, "readObject", "()Ljava/lang/Object;").ref == c.receiver);
+            }
             return VmValue::Void();
         });
         std::vector<IntrinsicClassDecl> extras{std::move(builder).Build()};
@@ -1041,15 +1047,15 @@ TEST_CASE("DVM-103 Externalizable invokes public constructor and callbacks with 
         f.Construct(bytes, "Ljava/io/ByteArrayOutputStream;", "()V");
         const auto out = f.vm.NewIntrinsicInstance("Ljava/io/ObjectOutputStream;");
         f.Construct(out, "Ljava/io/ObjectOutputStream;", "(Ljava/io/OutputStream;)V", {VmValue::Ref(bytes)});
+        f.RequireOk(f.Virtual(out, "useProtocolVersion", "(I)V", {VmValue::Int(protocol)}));
         const auto written = f.Virtual(out, "writeObject", "(Ljava/lang/Object;)V", {VmValue::Ref(object)});
         if (fail_write) { CHECK(written.exception == *expected_failure); continue; }
         f.RequireOk(written);
         f.RequireOk(f.Virtual(out, "writeObject", "(Ljava/lang/Object;)V", {VmValue::Ref(object)}));
         f.RequireOk(f.Virtual(out, "flush", "()V"));
-        const auto encoded = f.vm.IO().Output(out).bytes;
-        const auto raw = f.model.NewPrimitiveArray(f.linker.ResolveDescriptor("[B"),
-            JniPrimitiveKind::byte, static_cast<JniSize>(encoded.size()));
-        f.model.WriteByteRegion(raw, 0, encoded);
+        CHECK(f.vm.IO().FindOutput(out) == nullptr);
+        const auto encoded = f.Virtual(bytes, "toByteArray", "()[B"); f.RequireOk(encoded);
+        const auto raw = encoded.value.ref;
         const auto input = f.vm.NewIntrinsicInstance("Ljava/io/ByteArrayInputStream;");
         f.Construct(input, "Ljava/io/ByteArrayInputStream;", "([B)V", {VmValue::Ref(raw)});
         const auto in = f.vm.NewIntrinsicInstance("Ljava/io/ObjectInputStream;");
@@ -1086,6 +1092,11 @@ TEST_CASE("DVM-103 all BootDex classes link and collection methods have no intri
         f.linker.EnsureClassLinked(type);
         ++count;
         if (descriptor == "Ljava/util/UUID;" ||
+            descriptor == "Ljava/lang/Void;" ||
+            descriptor == "Ljava/lang/ref/SoftReference;" ||
+            descriptor == "Ljava/lang/reflect/Modifier;" ||
+            descriptor == "Ljava/lang/reflect/Proxy;" ||
+            descriptor == "Ldalvik/system/VMStack;" ||
             descriptor.starts_with("Ljava/security/MessageDigest") ||
             descriptor.starts_with("Ljava/security/Digest") ||
             descriptor == "Ljava/security/ProviderException;" ||
@@ -1123,7 +1134,7 @@ TEST_CASE("DVM-103 all BootDex classes link and collection methods have no intri
         for (const auto method : f.linker.Class(type).own_direct_methods)
             CHECK(f.linker.Method(method).kind != MethodKind::intrinsic);
     }
-    CHECK(count == 790);
+    CHECK(count == 818);
 }
 
 TEST_CASE("DVM-103 bounded queues and Collections wrappers use API19 semantics") {
@@ -1469,10 +1480,12 @@ TEST_CASE("DVM-104 guest stream callbacks retain monitor exception identity and 
         const auto result=f.Virtual(reader,"read","()I"); CHECK(result.exception==*failure); CHECK(*locked); CHECK(*reads==1);
         CHECK_FALSE(f.vm.Monitors().IsOwner(source,f.vm.CurrentContextToken()));
         // A stream whose header is available but whose next byte must not be read by available().
-        auto& state=f.vm.IO();
-        const auto object=f.vm.NewIntrinsicInstance("Ljava/io/ObjectInputStream;");
-        IoRuntime::InputState protocol; protocol.source=source;
-        state.SetInput(object,std::move(protocol)); state.BeginObjectInput(object);
+        const auto header = f.model.NewPrimitiveArray(f.linker.ResolveDescriptor("[B"), JniPrimitiveKind::byte, 4);
+        f.model.WriteByteRegion(header, 0, std::array{std::byte{0xac}, std::byte{0xed}, std::byte{0}, std::byte{5}});
+        const auto wire = f.vm.NewIntrinsicInstance("Ljava/io/ByteArrayInputStream;");
+        f.Construct(wire, "Ljava/io/ByteArrayInputStream;", "([B)V", {VmValue::Ref(header)});
+        const auto object = f.vm.NewIntrinsicInstance("Ljava/io/ObjectInputStream;");
+        f.Construct(object, "Ljava/io/ObjectInputStream;", "(Ljava/io/InputStream;)V", {VmValue::Ref(wire)});
         const auto available=f.Virtual(object,"available","()I"); f.RequireOk(available); CHECK(available.value.AsInt()==0); CHECK(*reads==1);
     }
 }

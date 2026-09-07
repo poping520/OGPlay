@@ -409,3 +409,50 @@ TEST_CASE("DVM-108 field owned native resources follow mutation aliases and retr
     CHECK(released == std::vector<std::int64_t>{42, 77});
     CHECK(f.vm.GuestNativeResourceCount() == 0);
 }
+
+TEST_CASE("DVM-109 soft references retain caches until pressure and interned strings stay canonical") {
+    GcVm f;
+    const auto construct = [&](const char* type, const char* descriptor, std::vector<VmValue> args) {
+        const auto object = f.vm.NewIntrinsicInstance(type);
+        args.insert(args.begin(), VmValue::Ref(object));
+        const auto method = f.linker.FindDirectMethod(f.linker.ResolveDescriptor(type), "<init>", descriptor);
+        REQUIRE(method);
+        const auto result = f.vm.Call(*method, args);
+        REQUIRE_MESSAGE(!result.exception.IsValid(), result.exception_message);
+        return object;
+    };
+    const auto queue = construct("Ljava/lang/ref/ReferenceQueue;", "()V", {});
+    const auto value = f.vm.NewIntrinsicInstance("Lgc/RootBox;");
+    const auto soft = construct("Ljava/lang/ref/SoftReference;", "(Ljava/lang/Object;Ljava/lang/ref/ReferenceQueue;)V",
+                                {VmValue::Ref(value), VmValue::Ref(queue)});
+    const auto roots = f.vm.ProtectReferences(std::array{soft, queue});
+    static_cast<void>(f.vm.CollectGarbage("ordinary"));
+    CHECK(f.model.IsValidRef(value));
+    const auto referent = f.linker.FindFieldRecursive(f.linker.ResolveDescriptor("Ljava/lang/ref/Reference;"), "referent", "Ljava/lang/Object;");
+    REQUIRE(referent);
+    CHECK(f.model.InstanceSlots(soft)[f.linker.Field(*referent).slot].bits == value.Value());
+    static_cast<void>(f.vm.CollectGarbage("pressure", true));
+    CHECK_FALSE(f.model.IsValidRef(value));
+    CHECK(f.model.InstanceSlots(soft)[f.linker.Field(*referent).slot].bits == 0);
+    const auto poll_slot = f.linker.FindVtableIndex(f.model.ObjectClass(queue), "poll", "()Ljava/lang/ref/Reference;");
+    REQUIRE(poll_slot);
+    const auto polled = f.vm.Call(f.linker.Class(f.model.ObjectClass(queue)).vtable[*poll_slot], std::array{VmValue::Ref(queue)});
+    REQUIRE(!polled.exception.IsValid());
+    CHECK(polled.value.ref == soft);
+    const auto one = f.model.NewString(u"dvm109-weak-intern-😀");
+    const auto two = f.model.NewString(u"dvm109-weak-intern-😀");
+    const auto string_type = f.linker.ResolveDescriptor("Ljava/lang/String;");
+    const auto intern_slot = f.linker.FindVtableIndex(string_type, "intern", "()Ljava/lang/String;");
+    REQUIRE(intern_slot);
+    const auto intern = f.linker.Class(string_type).vtable[*intern_slot];
+    CHECK(f.vm.Call(intern, std::array{VmValue::Ref(one)}).value.ref == one);
+    CHECK(f.vm.Call(intern, std::array{VmValue::Ref(two)}).value.ref == one);
+    static_cast<void>(f.vm.CollectGarbage());
+    CHECK_FALSE(f.model.IsValidRef(one));
+    CHECK_FALSE(f.model.IsValidRef(two));
+    const auto fresh = f.model.NewString(u"dvm109-weak-intern-😀");
+    CHECK(f.model.InternString(fresh) == fresh);
+    CHECK(f.model.InternString(u"dvm109-weak-intern-😀") == fresh); // Literal promotion.
+    static_cast<void>(f.vm.CollectGarbage());
+    CHECK(f.model.IsValidRef(fresh));
+}

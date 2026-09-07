@@ -28,6 +28,7 @@
 #include "ogplay/runtime/dexvm/interpreter.h"
 #include "ogplay/runtime/dexvm/io_runtime.h"
 #include "ogplay/runtime/dexvm/object_model.h"
+#include "ogplay/runtime/dexvm/vm_threads.h"
 #include "ogplay/runtime/integration/dexvm_android.h"
 #include "ogplay/runtime/integration/dexvm_io_vfs.h"
 #include "ogplay/runtime/vfs/sandbox_store.h"
@@ -390,7 +391,9 @@ struct FileVm final {
           interpreter(
               [this, include_android_catalog, include_boot_dex,
                extra_intrinsics]() -> DexClassLinker& {
-                  linker.RegisterIntrinsics(CoreIntrinsicCatalog());
+                  CoreIntrinsicServices services;
+                  services.current_time_millis = [] { return INT64_C(1704067200000); };
+                  linker.RegisterIntrinsics(CoreIntrinsicCatalog(services));
                   if (include_android_catalog) {
                       linker.RegisterIntrinsics(
                           AndroidIntrinsicCatalog(context));
@@ -1967,6 +1970,7 @@ TEST_CASE("Object streams round trip bounded API19 primitive and string data") {
         InterpreterConfig config;
         config.backend = backend;
         FileVm vm(nullptr, false, config);
+        VmThreadRuntime threads(vm.interpreter);
 
         const auto byte_output = vm.interpreter.NewIntrinsicInstance(
             "Ljava/io/ByteArrayOutputStream;");
@@ -2040,9 +2044,10 @@ TEST_CASE("Object streams round trip bounded API19 primitive and string data") {
             {VmValue::Ref(vm.interpreter.NewStringUtf8("slot"))}));
         static_cast<void>(vm.CallOn(output, "flush", "()V"));
 
-        const auto* output_state = vm.interpreter.IO().FindOutput(output);
-        REQUIRE(output_state != nullptr);
-        const auto encoded = output_state->bytes;
+        CHECK(vm.interpreter.IO().FindOutput(output) == nullptr);
+        static_cast<void>(vm.CallOn(output, "flush", "()V"));
+        const auto wire = vm.CallOn(byte_output, "toByteArray", "()[B").ref;
+        const auto encoded = vm.model.ReadByteRegion(wire, 0, vm.model.ArrayLength(wire));
         REQUIRE(encoded.size() > 4U);
         CHECK(encoded[0] == std::byte{0xac});
         CHECK(encoded[1] == std::byte{0xed});
@@ -2063,7 +2068,7 @@ TEST_CASE("Object streams round trip bounded API19 primitive and string data") {
             input, "<init>", "(Ljava/io/InputStream;)V",
             {VmValue::Ref(byte_input)}));
 
-        CHECK(vm.CallOn(input, "available", "()I").AsInt() == 1);
+        CHECK(vm.CallOn(input, "available", "()I").AsInt() == 359);
         CHECK(vm.CallOn(input, "readBoolean", "()Z").AsInt() == 1);
         CHECK(vm.CallOn(input, "readByte", "()B").AsInt() == -2);
         CHECK(vm.CallOn(input, "readShort", "()S").AsInt() == -32477);
@@ -2137,6 +2142,7 @@ TEST_CASE("Object streams round trip default Serializable graphs") {
         InterpreterConfig config;
         config.backend = backend;
         FileVm vm(nullptr, false, config, extra, true);
+        VmThreadRuntime threads(vm.interpreter);
 
         const auto field = [&](const std::string_view owner,
                                const std::string_view name,
@@ -2239,9 +2245,10 @@ TEST_CASE("Object streams round trip default Serializable graphs") {
             output, "writeObject", "(Ljava/lang/Object;)V",
             {VmValue::Ref(node)}));
 
-        const auto* output_state = vm.interpreter.IO().FindOutput(output);
-        REQUIRE(output_state != nullptr);
-        const auto encoded = output_state->bytes;
+        CHECK(vm.interpreter.IO().FindOutput(output) == nullptr);
+        static_cast<void>(vm.CallOn(output, "flush", "()V"));
+        const auto wire = vm.CallOn(byte_output, "toByteArray", "()[B").ref;
+        const auto encoded = vm.model.ReadByteRegion(wire, 0, vm.model.ArrayLength(wire));
         const auto bytes = vm.model.NewPrimitiveArray(
             vm.linker.ResolveDescriptor("[B"), JniPrimitiveKind::byte,
             static_cast<JniSize>(encoded.size()));
@@ -2297,6 +2304,7 @@ TEST_CASE("Object streams round trip default Serializable graphs") {
 
 TEST_CASE("Object streams reject nonserializable objects and invalid headers") {
     FileVm vm(nullptr, false);
+    VmThreadRuntime threads(vm.interpreter);
     const auto byte_output = vm.interpreter.NewIntrinsicInstance(
         "Ljava/io/ByteArrayOutputStream;");
     static_cast<void>(vm.CallOn(byte_output, "<init>", "()V"));
@@ -2310,7 +2318,7 @@ TEST_CASE("Object streams reject nonserializable objects and invalid headers") {
         {VmValue::Ref(output)});
     REQUIRE(unsupported.exception.IsValid());
     CHECK(vm.linker.Class(unsupported.exception_class).descriptor ==
-          "Ljava/io/IOException;");
+          "Ljava/io/NotSerializableException;");
 
     const auto invalid_bytes = vm.model.NewPrimitiveArray(
         vm.linker.ResolveDescriptor("[B"), JniPrimitiveKind::byte, 4);
@@ -2325,11 +2333,12 @@ TEST_CASE("Object streams reject nonserializable objects and invalid headers") {
         {VmValue::Ref(byte_input)});
     REQUIRE(invalid.exception.IsValid());
     CHECK(vm.linker.Class(invalid.exception_class).descriptor ==
-          "Ljava/io/IOException;");
+          "Ljava/io/StreamCorruptedException;");
 }
 
 TEST_CASE("ZipInputStream reads guest source bytes and dispatches entry operations") {
     FileVm vm(nullptr, false);
+    VmThreadRuntime threads(vm.interpreter);
     const std::vector<std::byte> payload{std::byte{'h'}, std::byte{'i'}, std::byte{'o'}, std::byte{'k'}};
     const auto archive = MakeStoredZip("save.dat", payload);
     const auto array_class = vm.linker.ResolveDescriptor("[B");

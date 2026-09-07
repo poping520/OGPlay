@@ -1215,3 +1215,79 @@ TEST_CASE("Dalvik system metadata closes nested enclosing and throws reflection"
     CHECK(vm.model.GetObjectElement(exceptions_one, 1) ==
           class_object("Ljava/lang/RuntimeException;"));
 }
+
+TEST_CASE("DVM-109 serialization native metadata and constructor tokens follow API19") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        ReflectionVm f("reflection.dex", backend);
+        auto& vm = f.interpreter;
+        auto& r = vm.Reflection();
+        const auto type = [&](const char* name) { return f.linker.ResolveDescriptor(name); };
+        const auto native = [&](const char* name, const char* signature, std::vector<VmValue> args) {
+            return f.Static("Ljava/io/ObjectStreamClass;", name, signature, std::move(args));
+        };
+        const auto declaring = type("Lreflect/DefaultTarget;");
+        const auto base = type("Ljava/lang/Object;");
+        const auto token = r.SerializationConstructor(base);
+        CHECK(r.SerializationConstructor(base) == token);
+        const auto created = r.NewSerializationInstance(declaring, token);
+        CHECK(f.model.ObjectClass(created) == declaring);
+        const auto ctor = r.FindConstructor(declaring, {}, false);
+        REQUIRE(ctor);
+        const auto wrapper = r.MaterializeConstructor(*ctor);
+        CHECK(vm.StringUtf8(Ref(native("getConstructorSignature", "(Ljava/lang/reflect/Constructor;)Ljava/lang/String;", {VmValue::Ref(wrapper)}))) == "()V");
+        const auto field = r.FindDeclaredField(type("Lreflect/InvokeStatics;"), "staticField");
+        REQUIRE(field);
+        CHECK(vm.StringUtf8(Ref(native("getFieldSignature", "(Ljava/lang/reflect/Field;)Ljava/lang/String;", {VmValue::Ref(r.MaterializeField(*field))}))) == "J");
+        const auto method = r.FindDeclaredMethod(type("Lreflect/InvokeStatics;"), "readInitialized", {});
+        REQUIRE(method);
+        CHECK(vm.StringUtf8(Ref(native("getMethodSignature", "(Ljava/lang/reflect/Method;)Ljava/lang/String;", {VmValue::Ref(r.MaterializeMethod(*method))}))) == "()I");
+        const auto has_clinit = [&](const char* name) {
+            return Int(native("hasClinit", "(Ljava/lang/Class;)Z", {VmValue::Ref(f.model.ClassObject(type(name)))}));
+        };
+        CHECK(has_clinit("Lreflect/InvokeStatics;") == 1);
+        CHECK(has_clinit("Lreflect/InheritedClinit;") == 1); // AOSP JNI searches the superclass.
+        CHECK(has_clinit("Lreflect/DefaultTarget;") == 0);
+        CHECK(has_clinit("Lreflect/FailingStaticField;") == 0); // AOSP clears the init failure.
+        CHECK_THROWS_AS(static_cast<void>(r.NewSerializationInstance(declaring, 0)), VmJavaThrow);
+        CHECK_THROWS_AS(static_cast<void>(r.NewSerializationInstance(declaring, INT64_MAX)), VmJavaThrow);
+        CHECK_THROWS_AS(static_cast<void>(r.NewSerializationInstance(type("Lreflect/AbstractTarget;"), token)), VmJavaThrow);
+        CHECK_THROWS_AS(static_cast<void>(r.NewSerializationInstance(type("[I"), token)), VmJavaThrow);
+        CHECK_THROWS_AS(static_cast<void>(r.SerializationConstructor(type("Lreflect/NoDefault;"))), VmJavaThrow);
+        const auto unrelated = r.SerializationConstructor(type("Lreflect/DefaultTarget;"));
+        CHECK_THROWS_AS(static_cast<void>(r.NewSerializationInstance(type("Lreflect/Base;"), unrelated)), VmJavaThrow);
+        const auto throwing = type("Lreflect/ThrowingDefault;");
+        const auto failure = native("newInstance", "(Ljava/lang/Class;J)Ljava/lang/Object;",
+                                    {VmValue::Ref(f.model.ClassObject(throwing)), VmValue::Long(r.SerializationConstructor(throwing))});
+        REQUIRE(failure.exception.IsValid());
+        CHECK(f.linker.Class(failure.exception_class).descriptor != "Ljava/lang/reflect/InvocationTargetException;");
+        const auto stack = Ref(f.Static("Lreflect/StackCaller;", "outer", "()[Ljava/lang/Class;"));
+        REQUIRE(f.model.ArrayLength(stack) == 1);
+        CHECK(f.model.ClassOfClassObject(f.model.GetObjectElement(stack, 0)) == type("Lreflect/StackCaller;"));
+    }
+}
+
+TEST_CASE("DVM-109 reflective wide field initialization failure preserves Java exception") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        ReflectionVm f("reflection.dex", backend);
+        const auto wrapper = FieldWrapper(f, "Lreflect/FailingStaticField;", "value");
+        const auto result = f.Virtual(wrapper, "getLong", "(Ljava/lang/Object;)J", {VmValue::Ref(VmObjectRef{})});
+        REQUIRE(result.exception.IsValid());
+        CHECK(f.linker.Class(result.exception_class).descriptor == "Ljava/lang/ExceptionInInitializerError;");
+        const auto roots = f.interpreter.ProtectReferences(std::array{result.exception});
+        static_cast<void>(f.interpreter.CollectGarbage("initializer-cause"));
+        const auto cause = Ref(f.Virtual(result.exception, "getCause", "()Ljava/lang/Throwable;"));
+        CHECK(f.linker.Class(f.model.ObjectClass(cause)).descriptor == "Ljava/lang/IllegalStateException;");
+        CHECK(f.interpreter.StringUtf8(Ref(f.Virtual(cause, "getMessage", "()Ljava/lang/String;"))) == "field initializer failed");
+        const auto second = f.Virtual(FieldWrapper(f, "Lreflect/FailingStaticField;", "value"),
+                                      "getLong", "(Ljava/lang/Object;)J", {VmValue::Ref(VmObjectRef{})});
+        ExpectException(f, second, "Ljava/lang/NoClassDefFoundError;");
+        const auto error_result = f.Virtual(FieldWrapper(f, "Lreflect/ErrorStaticField;", "value"),
+                                            "getLong", "(Ljava/lang/Object;)J", {VmValue::Ref(VmObjectRef{})});
+        ExpectException(f, error_result, "Ljava/lang/Error;");
+        const auto field = f.linker.FindFieldRecursive(f.linker.ResolveDescriptor("Lreflect/ErrorStaticField;"),
+                                                      "failure", "Ljava/lang/Error;");
+        REQUIRE(field);
+        CHECK(f.linker.Class(f.linker.Field(*field).owner).static_storage[f.linker.Field(*field).slot] ==
+              error_result.exception.Value());
+    }
+}

@@ -131,6 +131,7 @@ Asphalt 5（pilot title）删除 profile 全部 `native_call` 与 `[[java.class]
 | [DVM-106](DVM-106.md) | Certificate / Harmony / guest OpenSSL 验签 | 完成（PKIX/TLS 除外） |
 | [DVM-107](DVM-107.md) | Activity 组件身份与 framework 值类 BootDex | 完成（一般组件解析除外） |
 | [DVM-108](DVM-108.md) | UUID 与 API19 MessageDigest 全算法 BootDex | 完成（HMAC/额外 provider 除外） |
+| [DVM-109](DVM-109.md) | 原版对象流与序列化 VM 原语迁入 BootDex | 已完成 |
 
 ## 批次 4 · 更多 title 上 dexvm 路线（进行中）
 

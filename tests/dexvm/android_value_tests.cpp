@@ -15,6 +15,7 @@
 #include "ogplay/runtime/dexvm/interpreter.h"
 #include "ogplay/runtime/dexvm/intrinsic_builder.h"
 #include "ogplay/runtime/dexvm/object_model.h"
+#include "ogplay/runtime/dexvm/vm_threads.h"
 #include "ogplay/runtime/integration/dexvm_android.h"
 
 namespace {
@@ -1058,9 +1059,10 @@ TEST_CASE(
     }
 }
 
-TEST_CASE("DVM-108 UUID deserialization rejects skipped private readObject invariants") {
+TEST_CASE("DVM-109 UUID deserialization restores private readObject invariants") {
     for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
         AndroidValueVm f(backend);
+        VmThreadRuntime threads(f.vm);
         const auto uuid = f.Static("Ljava/util/UUID;", "fromString", "(Ljava/lang/String;)Ljava/util/UUID;", {VmValue::Ref(f.vm.NewStringUtf8("f81d4fae-7dec-11d0-a765-00a0c91e6bf6"))}).ref;
         const auto buffer = f.New("Ljava/io/ByteArrayOutputStream;");
         const auto out = f.New("Ljava/io/ObjectOutputStream;", "(Ljava/io/OutputStream;)V", {VmValue::Ref(buffer)});
@@ -1070,9 +1072,15 @@ TEST_CASE("DVM-108 UUID deserialization rejects skipped private readObject invar
         const auto source = f.New("Ljava/io/ByteArrayInputStream;", "([B)V", {VmValue::Ref(bytes)});
         const auto input = f.New("Ljava/io/ObjectInputStream;", "(Ljava/io/InputStream;)V", {VmValue::Ref(source)});
         const auto result = f.OnOutcome(input, "readObject", "()Ljava/lang/Object;");
-        REQUIRE(result.exception.IsValid());
-        CHECK(f.linker.Class(result.exception_class).descriptor == "Ljava/io/InvalidClassException;");
-        CHECK(result.exception_message.find("custom readObject") != std::string::npos);
+        REQUIRE_MESSAGE(!result.exception.IsValid(), result.exception_message);
+        const auto restored = result.value.ref;
+        CHECK(f.On(restored, "version", "()I").AsInt() == 1);
+        CHECK(f.On(restored, "variant", "()I").AsInt() == 2);
+        CHECK(f.On(restored, "timestamp", "()J").AsLong() == INT64_C(130742845922168750));
+        CHECK(f.On(restored, "clockSequence", "()I").AsInt() == 0x2765);
+        CHECK(f.On(restored, "node", "()J").AsLong() == INT64_C(0x00a0c91e6bf6));
+        CHECK(f.On(restored, "hashCode", "()I").AsInt() == f.On(uuid, "hashCode", "()I").AsInt());
+        CHECK(f.On(restored, "equals", "(Ljava/lang/Object;)Z", {VmValue::Ref(uuid)}).AsInt() == 1);
     }
 }
 
@@ -1097,6 +1105,19 @@ TEST_CASE("DVM-108 UUID values and UTF16 substring search follow API19") {
                                             {VmValue::Ref(VmObjectRef{}), VmValue::Int(100)});
         REQUIRE(null_search.exception.IsValid());
         CHECK(f.linker.Class(null_search.exception_class).descriptor == "Ljava/lang/NullPointerException;");
+        const auto prefix = [&](std::u16string_view value, int start) {
+            return f.On(text, "startsWith", "(Ljava/lang/String;I)Z",
+                        {VmValue::Ref(f.model.NewString(std::u16string(value))), VmValue::Int(start)}).AsInt();
+        };
+        CHECK(prefix(u"😀", 1) == 1);
+        CHECK(prefix(u"😀", 2) == 0);
+        CHECK(prefix(u"", 7) == 1);
+        CHECK(prefix(u"", 8) == 0);
+        CHECK(prefix(u"", -1) == 0);
+        const auto missing_prefix = f.OnOutcome(text, "startsWith", "(Ljava/lang/String;I)Z",
+                                               {VmValue::Ref(VmObjectRef{}), VmValue::Int(0)});
+        REQUIRE(missing_prefix.exception.IsValid());
+        CHECK(f.linker.Class(missing_prefix.exception_class).descriptor == "Ljava/lang/NullPointerException;");
         const auto zero = f.New("Ljava/util/UUID;", "(JJ)V", {VmValue::Long(0), VmValue::Long(0)});
         const auto negative = f.New("Ljava/util/UUID;", "(JJ)V", {VmValue::Long(INT64_MIN), VmValue::Long(-1)});
         const auto equal = f.New("Ljava/util/UUID;", "(JJ)V", {VmValue::Long(INT64_MIN), VmValue::Long(-1)});

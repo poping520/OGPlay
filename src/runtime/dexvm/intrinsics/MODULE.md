@@ -58,10 +58,10 @@ Locale 构造规范化语言小写、区域大写与 he/id/yi 旧码；Matcher.g
 `parkBlocker` 对象字段，由 BootDex LockSupport 通过 Unsafe 读写并形成普通 GC 强边。`allocateInstance` 完成
 clinit 后跳过构造器，拒绝不可实例化类。此能力不代表 BootDex Executors 已闭合。
 
-`java_io.cpp` 保留文件/VFS、有界 Object streams 与 InputStreamReader 字符解码边界。
+`java_io.cpp` 保留文件/VFS、ObjectStreamClass 六个 VM 原语与 InputStreamReader 字符解码边界。
 DVM-104 的 Input/OutputStream、Reader/Writer、内存/Buffer/Filter/Data 等普通流来自
 BootDex，状态只在 guest 字段/数组中；禁止恢复相关 handler 或 wrapper-adoption 侧表。
-FileDescriptor、对象协议状态与 ICU decoder 委托 per-VM IoRuntime，不回读 Android context。
+FileDescriptor 与 ICU decoder 委托 per-VM IoRuntime，不回读 Android context。
 FileReader 经真实 FileInputStream 构造后委托 InputStreamReader；后者以 Reader.lock 的
 source monitor 保护增量转换器，六个标准编码来自固定 ICU 51，close/GC/teardown 释放资源。
 逻辑描述符不保存宿主句柄；`FileInputStream.getFD()` 与借用描述符构造
@@ -79,17 +79,15 @@ execution-local `RootScope` 保活，宿主 `VmObjectRef` 容器本身不是 GC 
 `InputStream` 的默认 bulk read/skip 同样必须经 receiver vtable 派发；基类
 `available/close/mark` 使用 API 19 默认语义，`reset` 明确抛 `IOException`，不得要求自定义
 子类注册 `IoRuntime` 输入状态。
-`ObjectInputStream/ObjectOutputStream` 按 API 19 分别继承 `InputStream/OutputStream`，
-实现 `ObjectInput/ObjectOutput` 与 `ObjectStreamConstants`；`ObjectInput/ObjectOutput` 再继承
-`DataInput/DataOutput` 与 `AutoCloseable`。公开包装构造器保留 source/sink 的 guest 身份，
-经虚方法读取/写出而不接管其游标；IoRuntime 只存对象协议所需缓冲，校验/写入 stream header，并按 block-data wire format 实现继承的
-原始字节、基本类型、modified UTF、available/skip/flush/close 契约。对象协议支持 `null`、
-`String`、默认 `Serializable` 类层级、字段、循环/重复引用、枚举及 API 19 `Date` 自定义段；
-Serializable/Externalizable 及上述数据/对象 IO 接口均来自 BootDex。
-Externalizable 协议 2 使用显式 UID、公共无参构造器及虚派 writeExternal/readExternal，
-注册 handle 后才调用回调；同一流共享递归预算，未消费的 block/object 数据跳过到 end-block，
-回调异常原样传播。stream handle 中的 guest ref 必须经 `IoRuntime` trace。
-数组、Externalizable 协议 1、任意私有 `writeObject/readObject` hooks 和默认 UID 计算仍明确失败。
+DVM-109 的 ObjectInputStream/ObjectOutputStream、ObjectStreamClass、字段辅助类和
+异常来自 pinned core.jar；普通方法不得 overlay，源/目标、字段图与共享 handle 均由 Java
+字段/数组拥有和 GC 追踪。ObjectStreamClass 仅保留 getConstructorId/newInstance、三个成员
+签名 getter 与 hasClinit native；委托 ReflectionRuntime 的受检构造 token 和唯一元数据。
+默认 UID 的 SHA 使用已登记 guest EVP；私有 writeObject/readObject、GetField/PutField、
+readResolve/writeReplace、Externalizable 协议 1/2 与数组执行原版协议。
+ObjectOutputStream.getFieldL 是 AOSP 未使用的遗留 native 声明，显式未实现绑定，不提供假返回。
+Proxy 两个生成 native、VMStack 除 getClasses 以外四个 native 同样明确失败。
+普通对象图迁移不代表 Throwable 等宿主侧表对象的完整持久化，不能据此宣称所有平台对象可序列化。
 
 `java_zip.cpp` 聚合 `ZipEntry`/`ZipInputStream`。构造时经 guest read 读取源数据，
 archive/entry/cursor/close 状态只委托 per-VM `ZipRuntime`；ZIP32 结构校验、inflate
@@ -154,7 +152,7 @@ bounded role。lookup/link failure 保留为 CNFE cause；init EIIE 复用现有
 throwable identity，不由 intrinsic 重新物化。
 
 reflection shape 按一类一文件声明 `AnnotatedElement`、`GenericDeclaration`、`Type`、
-`Member`、`AccessibleObject`、`Modifier`、`Method`、`Constructor` 与 `Field`。
+`Member`、`AccessibleObject`、`Method`、`Constructor` 与 `Field`；Modifier 归 BootDex。
 `Class` 的结构、类型关系和 declared/public Method/Constructor/Field 查询只能调用
 linker/`ReflectionRuntime`，禁止读写 raw member id；public 聚合顺序固定为
 class → superclass → direct interface 递归。nested/enclosing 与 Throws 只消费 loader
@@ -173,7 +171,7 @@ DVM-67/68 的 Constructor/Class 实例化与 Field object/primitive 操作同样
 enclosing/member-local-anonymous 和 Method/Constructor Throws 只读 linker system
 metadata，禁止 `$` split 或 guest Annotation proxy。
 Method/Constructor/Field 的 API19 hashCode 与 exact toString 读取同一 immutable
-metadata；最小 `Modifier.toString(int)` 只提供 JLS 顺序格式化，不开启 generic surface。
+metadata；DVM-109 的 Modifier 执行原版 Java，不开启 generic surface。
 
 DVM-104：java_concurrent 删除普通 atomic 宿主算法，只保留 AtomicLong.VMSupportsCS8
 native；同步器/原子数组经 DEX 调用既有 Unsafe、Thread、monitor 与统一 Clock。
@@ -222,5 +220,8 @@ NativeCrypto 初始化注册摘要基类 ctx:J 的通用字段资源回收规则
 ProviderException 一并由 core.jar 提供，底层摘要/随机源失败保留正确 Java 异常类型。
 原版 provider 没有 SHA-224 MessageDigest；HMAC/Mac、SHA-3 未注册，未知算法明确失败。
 String.indexOf(String,int) 使用 UTF-16 索引，负起点归零，越过末尾的空串命中 length，null 拒绝。
-对象流对具有私有 readObject 的 Serializable 类型明确 InvalidClassException，避免跳过
-transient 初始化；既有 Date 窄实现与 Externalizable 回调保持，未建立通用 readObject 框架。
+DVM-109 已由原版对象流调用 UUID 私有 readObject，恢复 transient 缓存；删除旧拒绝与 Date 特例。
+String.intern 复用弱 canonical 表并保留 receiver 身份；startsWith(String,int) 按 UTF-16
+检查 offset/空串/null。String/Number/Throwable/Exception/RuntimeException/Error/IOException
+补齐 AOSP 的 serialVersionUID 常量，不伪造默认 UID。
+SoftReference 普通 GC 保留 referent，分配压力下可清除并入队；原版 ObjectStreamClass 缓存使用此语义。

@@ -326,6 +326,7 @@ public:
     // The interpreted class immediately outside the active intrinsic/native
     // boundary. Reflection uses this instead of treating Method as caller.
     [[nodiscard]] std::optional<DexClassId> CurrentCallerClass() const;
+    [[nodiscard]] std::vector<DexClassId> CallingStackClasses(std::size_t skip, std::size_t limit) const;
     void AttachNativeThread(std::uint64_t guest_thread_id,
                             std::uint64_t execution_token);
     void DetachNativeThread(std::uint64_t guest_thread_id,
@@ -378,10 +379,10 @@ public:
     [[nodiscard]] std::size_t GuestNativeResourceCount() const;
 
     [[nodiscard]] std::size_t RegisteredIntrinsicSideTableCount() const noexcept;
-    [[nodiscard]] GcMarkResult MarkReachable();
+    [[nodiscard]] GcMarkResult MarkReachable(bool clear_soft_references = false);
     [[nodiscard]] GcSweepResult SweepGarbage(const GcMarkResult& mark);
     [[nodiscard]] GcSweepResult CollectGarbage(
-        std::string_view trigger = "explicit_test");
+        std::string_view trigger = "explicit_test", bool clear_soft_references = false);
     [[nodiscard]] RootScope ProtectReferences(
         std::span<const VmObjectRef> references);
 

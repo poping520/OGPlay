@@ -114,6 +114,11 @@ public:
     [[nodiscard]] VmObjectRef NewInstance(
         DexClassId java_class, std::optional<DexClassId> caller);
 
+    // API19 serialization VM primitives; tokens are local opaque ordinals.
+    [[nodiscard]] std::int64_t SerializationConstructor(DexClassId declaring_class);
+    [[nodiscard]] VmObjectRef NewSerializationInstance(DexClassId java_class, std::int64_t token);
+    [[nodiscard]] std::string_view MemberDescriptor(VmObjectRef wrapper);
+
     [[nodiscard]] VmValue GetField(
         VmObjectRef wrapper, VmObjectRef receiver,
         std::optional<DexClassId> requested_type,

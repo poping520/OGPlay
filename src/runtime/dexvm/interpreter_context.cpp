@@ -463,23 +463,25 @@ void Interpreter::Impl::TraceIntrinsicSideTables(
     }
 }
 
-GcMarkResult Interpreter::MarkReachable() {
+GcMarkResult Interpreter::MarkReachable(const bool clear_soft_references) {
     VmExecutionLockScope lock_scope(impl_->execution_lock);
     std::vector<VmObjectRef> roots;
     VisitRoots([&](const VmObjectRef ref) {
         if (ref.IsValid()) roots.push_back(ref);
     });
     const auto reference = impl_->linker->FindClass("Ljava/lang/ref/Reference;");
+    const auto soft = impl_->linker->FindClass("Ljava/lang/ref/SoftReference;");
     std::optional<VmFieldId> referent;
     if (reference) referent = impl_->linker->FindFieldRecursive(
         *reference, "referent", "Ljava/lang/Object;");
     return impl_->model->MarkReachable(
         roots, [this](const VmObjectRef owner, const VmRootVisitor& visitor) {
             impl_->TraceIntrinsicSideTables(owner, visitor);
-        }, [this, reference, referent](DexClassId owner, std::size_t slot) {
+        }, [this, reference, referent, soft, clear_soft_references](DexClassId owner, std::size_t slot) {
             return reference && referent && owner.IsValid() &&
                 slot == impl_->linker->Field(*referent).slot &&
-                impl_->linker->IsAssignable(*reference, owner);
+                impl_->linker->IsAssignable(*reference, owner) &&
+                (clear_soft_references || !soft || !impl_->linker->IsAssignable(*soft, owner));
         });
 }
 
@@ -659,11 +661,11 @@ void Interpreter::ReleaseGuestNativeResources(const bool all) {
     }
 }
 
-GcSweepResult Interpreter::CollectGarbage(const std::string_view trigger) {
+GcSweepResult Interpreter::CollectGarbage(const std::string_view trigger, const bool clear_soft_references) {
     VmExecutionLockScope lock_scope(impl_->execution_lock);
     auto& execution = impl_->Execution();
     impl_->RecordTrace(DexVmTraceKind::gc_begin, execution);
-    const auto mark = MarkReachable();
+    const auto mark = MarkReachable(clear_soft_references);
     const auto swept = SweepGarbage(mark);
     ReleaseGuestNativeResources();
     impl_->RecordTrace(DexVmTraceKind::gc_end, execution, nullptr, 0, 0,
@@ -694,7 +696,7 @@ GcSweepResult Interpreter::CollectGarbage(const std::string_view trigger) {
 void Interpreter::Impl::PrepareSafeAllocation(
     const std::uint64_t request_bytes, const std::string_view trigger) {
     if (!model->ShouldCollectFor(request_bytes)) return;
-    static_cast<void>(owner->CollectGarbage(trigger));
+    static_cast<void>(owner->CollectGarbage(trigger, true));
 }
 
 std::uint32_t Interpreter::CurrentNativeDepth() const {
@@ -705,6 +707,19 @@ std::optional<DexClassId> Interpreter::CurrentCallerClass() const {
     const auto& frames = impl_->Execution().frames;
     if (frames.empty()) return std::nullopt;
     return frames.back().method->owner;
+}
+
+std::vector<DexClassId> Interpreter::CallingStackClasses(std::size_t skip, std::size_t limit) const {
+    VmExecutionLockScope lock_scope(impl_->execution_lock);
+    std::vector<DexClassId> result;
+    const auto& frames = impl_->Execution().frames;
+    for (auto it = frames.rbegin(); it != frames.rend() && result.size() < limit; ++it) {
+        if (skip) { --skip; continue; }
+        // AOSP dvmIsReflectionMethod filters Method only, not the whole package.
+        if (impl_->linker->Class(it->method->owner).descriptor == "Ljava/lang/reflect/Method;") continue;
+        result.push_back(it->method->owner);
+    }
+    return result;
 }
 
 void Interpreter::AttachNativeThread(const std::uint64_t guest_thread_id,

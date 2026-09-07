@@ -78,6 +78,7 @@ public:
     std::vector<ObjectArray> fallback_object_arrays;
     std::vector<std::uint32_t> free_fallback_object_arrays;
     std::unordered_map<std::u16string, VmObjectRef> intern_table;
+    std::unordered_map<std::u16string, VmObjectRef> weak_intern_table;
     std::unordered_map<std::uint32_t, VmObjectRef> class_objects;
     std::function<std::string(DexClassId)> class_descriptor_resolver;
 
@@ -500,6 +501,9 @@ GcSweepResult JavaObjectModel::Sweep(const GcMarkResult& mark,
         record.occupied = false;
         impl_->free_records.push_back(static_cast<std::uint32_t>(index));
     }
+    std::erase_if(impl_->weak_intern_table, [&](const auto& entry) {
+        return !mark.IsMarked(entry.second);
+    });
     return result;
 }
 
@@ -581,9 +585,18 @@ VmObjectRef JavaObjectModel::InternString(const std::u16string_view value) {
     const std::u16string key(value);
     const auto found = impl_->intern_table.find(key);
     if (found != impl_->intern_table.end()) return found->second;
-    const auto created = NewString(value);
+    const auto weak = impl_->weak_intern_table.find(key);
+    const auto created = weak == impl_->weak_intern_table.end() ? NewString(value) : weak->second;
+    impl_->weak_intern_table.erase(key);
     impl_->intern_table.emplace(key, created);
     return created;
+}
+
+VmObjectRef JavaObjectModel::InternString(const VmObjectRef value) {
+    const auto key = StringValue(value);
+    const auto strong = impl_->intern_table.find(key);
+    if (strong != impl_->intern_table.end()) return strong->second;
+    return impl_->weak_intern_table.emplace(key, value).first->second;
 }
 
 void JavaObjectModel::BindString(const VmObjectRef ref,

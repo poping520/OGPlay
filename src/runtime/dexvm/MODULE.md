@@ -84,18 +84,17 @@ intrinsic。解释应用 DEX 与受审 API 19 curated Boot DEX；完整平台库
   时区名称和整数 format/parse 直接使用同版本 ICU，不维护手写区域/数字算法。
   CoreIntrinsicServices.default_timezone（默认 GMT）仅用于 Java 默认时区未设置或被重置时，
   getDefault/setDefault 共用 DEX 静态字段，clone 与缓存均按 VM 隔离。
-- `IoRuntime`（DVM-79/91/104）：只拥有文件资源、对象流协议缓冲/handle 与增量字符解码器。
+- `IoRuntime`（DVM-79/91/104/109）：只拥有文件资源与增量字符解码器，不保存 Java 引用。
   Input/OutputStream、Reader/Writer、内存/Buffer/Filter/Data/Pushback/LineNumber/Sequence 流
   归 API 19 BootDex；字段和数组是唯一普通流状态，删除 wrapper-adoption 宿主转移接口。
-  Object streams 通过 guest 虚方法读取 source、写入 sink，保留底层对象身份；这些引用和
-  序列化 handle 经 owner trace，协议状态及 ICU converter 随 owner sweep/VM teardown 释放。
+  Object streams、描述符/字段辅助类的协议与 handle 均执行原版 Java，source/sink 和
+  handle 通过普通字段形成 GC 强边；禁止恢复 C++ 协议。ICU converter 随 owner sweep/VM teardown 释放。
   available 不等待底层新数据，嵌套调用抛回原 throwable；不重新创建异常。
   File 仅使用注入的 `IoFileSystem`，具体 VFS 在 integration adapter；相对路径不读宿主 cwd，
   mkdir 不递归，权限操作不伪造成功。逻辑 FileDescriptor 不保存 host/native fd，借用关系不变。
   InputStreamReader 使用固定 ICU 51 标准字符集增量解码，并持有 Reader.lock（source）的
   guest monitor；FileReader 经 FileInputStream 和该适配器读取。FileWriter 仍是有界文件适配器。
-  Externalizable 协议 2 保持公共无参构造、真实回调、共享递归深度/handle 与尾部跳过；
-  协议 1、数组、默认 UID 计算及任意私有 custom hooks 仍明确失败。
+  Externalizable 协议 1/2、数组、默认 UID、私有读写及替换回调均执行原版 Java。
 - 后续纯 Java 家族（DVM-104）：Objects/StringTokenizer/BitSet/MathContext、事件/beans、
   CountDownLatch/Semaphore/CyclicBarrier、普通 atomic/数组、ChoiceFormat/MessageFormat、
   X500 名字/DER 与指定 key spec 由 BootDex 拥有。AtomicLong 只保留 VMSupportsCS8 native，
@@ -169,8 +168,11 @@ intrinsic。解释应用 DEX 与受审 API 19 curated Boot DEX；完整平台库
   `CloneObject` 以新句柄浅拷贝实例槽/数组元素。GC 为精确、非移动、STW mark-sweep；记录保存
   `reserved_bytes`，回收预算并以确定性 LIFO 复用记录/实例槽/数组槽，访问空闲记录明确失败。
   BootDex WeakReference 的 Reference.referent 不参与强标记；STW 清扫前清空死 referent，
-  按 API 19 ReferenceQueue 链入队并唤醒等待者，不保留宿主弱引用侧表；Soft/Phantom 未选入。
-  intern string 与 Class object 为不朽强根，JNI weak global 非根且随目标清空；默认 heap 64 MiB，
+  按 API 19 ReferenceQueue 链入队并唤醒等待者，不保留宿主弱引用侧表。DVM-109 选入
+  SoftReference：普通 GC 保留 referent，分配压力 GC 清除仅软可达对象并入队；Phantom 未选入。
+  DEX 字符串常量与 Class object 为不朽强根；显式 String.intern 使用弱 canonical 表，保留
+  首次 receiver 身份，常量加载可提升为强根，清扫删除死条目后才复用 handle。
+  JNI weak global 非根且随目标清空；默认 heap 64 MiB，
   `SetEmergencyReserve` 仅供 OOM throwable。identity hash 独立于可复用句柄：普通对象使用
   不回收的 per-VM 序列，Class 按 descriptor 稳定派生。`Object.hashCode` 与
   `System.identityHashCode` 经 `IdentityHashCode` 使用该身份（后者绕过 override，null=0）；
@@ -372,3 +374,15 @@ TrackGuestNativeResourceField 仅接受实例 long 字段和 static (J)V cleanup
 已登记字段及 owner，仍有标记 owner 则保留，死亡字段清零，sweep 后调用 JNI 清理。
 浅 clone 共享 token 不提前释放，teardown 清零所有字段，失败与未尝试的 cleanup 保留可重试。
 JavaObjectModel.VisitLiveObjects 仅枚举已分配记录，调用者持 VM 锁，visitor 不得分配对象。
+
+DVM-109：ObjectStreamClass 的六个 native 委托 ReflectionRuntime，签名读取唯一成员
+元数据；构造器使用 per-VM 受检逻辑 token，分配实际子类后只调用指定无参父类构造器。
+首个非 Serializable 父类与访问检查由原版 Java 选择，不复制序列化策略；构造异常保持身份，
+不套 InvocationTargetException。JNI 风格 constructor lookup 和 hasClinit 触发初始化，
+hasClinit 沿类层级查询并按 AOSP 清除失败。静态初始化的非 Error 异常统一包装为
+ExceptionInInitializerError（cause 保持身份及 GC 强边）；Error 原样传播，后续访问 NCDFE。
+Field.get 的初始化失败通过 Java throw 传播，不能返回错误类型的 Void 值。
+VMStack.getClasses 从当前执行栈跳过调用者和反射帧，为原版对象流查询 loader；
+Modifier/Void/SoftReference/Proxy 普通逻辑来自 BootDex。未调用的 getFieldL、Proxy 的两个
+生成 native、VMStack 其余四个 native 显式未实现，触达记账失败。此迁移不扩展动态代理生成、
+自定义类加载器或宿主侧表对象的完整序列化状态。

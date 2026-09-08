@@ -24,6 +24,7 @@
 - [ADR-0045 · Bundle 与 Intent extras 归 Java 对象图](#adr-0045)
 - [ADR-0046 · Java 布局参数与 UI 布局输入分工](#adr-0046)
 - [ADR-0047 · Typeface Java 与字体后端描述符](#adr-0047)
+- [ADR-0048 · 文本外观的 Java 值对象与有界样式事实](#adr-0048)
 
 <a id="adr-0017"></a>
 
@@ -717,3 +718,21 @@ intrinsic 创建没有状态的 Typeface 占位对象。其 native 边界返回�
 字形使用该后端的回退字体。普通 TextView 引用归 Java 字段，渲染样式归 UiNode；
 不把字体描述符扩展成 Skia 对象，也不伪称支持外部字体。文件/asset 加载明确失败记账。
 Java nativeUnref 验证描述符后没有分配需要释放。Canvas/Paint 的完整字体 API 不在本次范围。
+
+<a id="adr-0048"></a>
+## ADR-0048 · 文本外观的 Java 值对象与有界样式事实
+
+2026-09-08，接受，DVM-121。
+
+文本外观依赖资源含义，不能把 attr id 硬当作它所引用的 style，也不能补一个空 handler。
+ARSC reader 保留原始 bag parent/items，Manifest 保留主题 id，session 负责 Activity
+实例前后的事实传递；资源解析、UI 值应用仍由 integration 的受检边界完成。
+
+ColorStateList、StateSet 与 R.attr 元数据归 BootDex，不建立 C++ 颜色列表副本。
+TextView 样式解析只消费相关属性，支持 APK parent/reference/attribute 链；平台主题仅
+投影本次登记的 hint/highlight/link 属性。已有 TypedValue Java 算法完成尺寸换算，
+已有 Typeface Java 工厂完成字体选择。常规色进入真实 renderer，其他颜色保持可查询字段。
+
+不迁入完整 TextView/Resources/AssetManager 或 framework-res；未登记的 framework 样式、
+selector 与 stateful 渲染、完整 theme 和文本特效不得伪造成功。所有引用链有界，
+可预判的类型/特性错误在发布 UI 外观前失败，guest override 自身异常保留原语义。

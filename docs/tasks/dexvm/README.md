@@ -142,6 +142,8 @@ Asphalt 5（pilot title）删除 profile 全部 `native_call` 与 `[[java.class]
 | [DVM-117](DVM-117.md) | Bundle 与 Intent 对象传递 | 已完成 |
 | [DVM-118](DVM-118.md) | 显示值与 Math 迁入 BootDex | 已完成 |
 | [DVM-119](DVM-119.md) | Java 布局参数与 RelativeLayout gravity | 完成 |
+| [DVM-120](DVM-120.md) | Typeface Java 与内置字体样式 | 完成 |
+| [DVM-121](DVM-121.md) | 文本外观与样式资源事实 | 完成 |
 
 ## 批次 4 · 更多 title 上 dexvm 路线（进行中）
 
@@ -158,5 +160,3 @@ Asphalt 6 自带 `GLSurfaceView` 所需的 EGL façade 与条件 swap pacer；�
 其余在办项（GC-B exact/长运行验收、诊断查询面的 MCP/CLI 消费、两款 title 的
 Scenario gate 与 profile 迁移）以 [`docs/state/CURRENT.md`](../../state/CURRENT.md)
 的滚动快照为准。
-
-| [DVM-120](DVM-120.md) | Typeface Java 与内置字体样式 | 完成 |

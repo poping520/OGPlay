@@ -237,16 +237,18 @@ struct ComponentFixture final {
     bool enabled{true};
     std::vector<std::vector<std::string>> filters;
     bool filter_has_data{};
+    std::optional<std::uint32_t> theme;
 };
 
 std::vector<std::byte> StartupManifest(
     const std::optional<std::string>& application_name,
     const std::vector<ComponentFixture>& components,
-    const bool application_enabled = true) {
+    const bool application_enabled = true,
+    std::optional<std::uint32_t> theme = std::nullopt) {
     std::vector<std::string> strings{
         "manifest", "package", "versionCode", "application", "name",
         "enabled", "targetActivity", "activity", "activity-alias",
-        "intent-filter", "action", "category", "service", "data", "org.example.game",
+        "intent-filter", "action", "category", "service", "data", "theme", "org.example.game",
         "http://schemas.android.com/apk/res/android"};
     const auto add = [&](const std::string& value) {
         if (std::find(strings.begin(), strings.end(), value) == strings.end()) {
@@ -278,6 +280,7 @@ std::vector<std::byte> StartupManifest(
                                  {index("versionCode"), 0xffffffffU, 0x10, 1,
                                   android_namespace}}));
     std::vector<Attribute> application_attributes;
+    if (theme) application_attributes.push_back({index("theme"), 0xffffffffU, 0x01, *theme, android_namespace});
     if (!application_enabled) {
         application_attributes.push_back({index("enabled"), 0xffffffffU, 0x12, 0, android_namespace});
     }
@@ -291,6 +294,7 @@ std::vector<std::byte> StartupManifest(
         std::vector<Attribute> attributes{
             {index("name"), index(component.name), 0x03,
              index(component.name), android_namespace}};
+        if (component.theme) attributes.push_back({index("theme"), 0xffffffffU, 0x01, *component.theme, android_namespace});
         if (!component.enabled) {
             attributes.push_back({index("enabled"), 0xffffffffU, 0x12, 0,
                                   android_namespace});
@@ -583,4 +587,19 @@ TEST_CASE("DVM-112 Manifest rejects duplicate or invalid service names") {
         {"service", "Bad.Name", {}, true, {}}}))), AndroidManifestStartupError);
     CHECK_THROWS_AS(static_cast<void>(ParseAndroidBinaryManifest(StartupManifest(std::nullopt, {
         {"service", "", {}, true, {}}}))), AndroidManifestStartupError);
+}
+
+TEST_CASE("DVM-121 Manifest retains application and Activity themes with alias inheritance") {
+    ComponentFixture activity;
+    activity.name = ".Main";
+    activity.theme = 0x7f030001U;
+    ComponentFixture alias;
+    alias.tag = "activity-alias"; alias.name = ".Alias"; alias.target = ".Main";
+    alias.theme = 0x7f030002U; // API19 alias does not override the target theme.
+    const auto facts = ogplay::loader::ParseAndroidBinaryManifest(
+        StartupManifest(std::nullopt, {activity, alias}, true, 0x01030007U));
+    CHECK(facts.application_theme == 0x01030007U);
+    REQUIRE(facts.activity_components.size() == 2);
+    CHECK(facts.activity_components[0].theme == 0x7f030001U);
+    CHECK_FALSE(facts.activity_components[1].theme.has_value());
 }

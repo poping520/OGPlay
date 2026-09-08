@@ -146,3 +146,7 @@ alias 只影响实例化目标，Activity 的组件身份保留 alias。Profile 
 DVM-112：AndroidAppProcess 把 sealed Manifest 的 application enabled 与 service 过滤器
 信息复制到同一 DexVmAndroidContext，并显式标记 inventory 已就绪；独立 VM 未装配时保持
 未知，不能把缺少信息当作服务不存在。服务信息不参与 Activity 启动或产生绑定状态。
+
+DVM-121：从 sealed Manifest 发布 application theme 与逐 Activity theme；alias 继承
+目标 Activity，0 回退 application。integration 在 Activity.onCreate 前应用对应资源 id，
+session 不解析 style/颜色或创建完整 Android Theme。

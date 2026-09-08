@@ -1,12 +1,12 @@
 # 当前状态
 
-更新（2026-09-08）：[DVM-120](../tasks/dexvm/DVM-120.md) 迁入 Typeface 与内置字体样式；
-继续推进 PvZ 的 TextView 外观缺口。
+更新（2026-09-08）：[DVM-121](../tasks/dexvm/DVM-121.md) 完成文本外观与样式资源；
+本轮收尾；下一缺口：Button 三参数构造器。
 
 ## 当前能力
 
 - **运行与发行**：按 exact Profile API 选择 bundled data；API 19 内置 pinned AOSP
-  五库、919 类 BootDex 与 ICU4C 51.1。ROM libcrypto 已按用户再次授权恢复到本地临时使用，
+  五库、923 类 BootDex 与 ICU4C 51.1。ROM libcrypto 已授权恢复到本地临时使用，
   未纳入 Git，哈希与清单一致。JNI 桥为 src/guest/crypto/crypto_jni.c；不自动恢复设备库。
   自行构建替换后须更新来源/哈希并复验。制品身份见
   [payload manifest](../../data/android/19/manifest.json)，bootdex.jar 继续不提交。
@@ -47,13 +47,13 @@
   UTF-16 append 依赖已补。一般组件解析和非根 alias 切换仍未扩展。
 - **服务查询**：ServiceConnection 来自 BootDex。resolveService 的 action-only/flags=0
   查询依据当前 APK 服务信息，无候选返回 null，未知或潜在匹配明确失败；无 Binder/支付。
-- **Title**：PvZ 已越过异常打印，当前首错 TextView.setTextAppearance；
+- **Title**：PvZ 已越过文本外观与字体设置，首错 Button 三参数构造器；
   尚未通过游戏 gate；Tales 首错 LocationListener。
 
 ## 最近验证
 
-- DVM-120：Android/UI/平台/P1/Unsafe 定向 128 用例、9,813 断言；全类链接
-  6,858 断言与 6 项门禁通过。证据 `.local/review/dvm120/`。
+- DVM-121：资源/平台/UI 定向 103 用例、8,861 断言；专项与全类链接
+  5 用例、7,122 断言及 6 项门禁通过。证据 `.local/review/dvm121/`。
 
 - MoKee API 19 ARMv7 临时文件（哈希已核对）：
   `.local/android-device/20260906-cipher/`。手机已断开；发行前
@@ -61,11 +61,11 @@
   仅构建 ogplay_tests 及 ogplay 依赖；未跑全量测试或 Windows/Linux 验收。
 - 已知门禁遗留：architecture.platform_boundaries 在既有 GUI process_manager.cpp:131
   平台分支失败，本轮未修改、未重跑该门禁。ADR 继续按 6 个主题维护，追加
-  [0047](../adr/dexvm.md#adr-0047)，不新增独立 ADR 文件。
+  [0048](../adr/dexvm.md#adr-0048)，不新增独立 ADR 文件。
 
 ## 下一步与边界
 
-1. 补齐文本外观与显示边界，继续推进 PvZ。
+1. 后续补 Button(Context,AttributeSet,int)，继续推进 PvZ。
 2. 自建 ARM libcrypto 替换临时制品；Windows/Linux、既有 GUI 门禁、DH 与 Diagnostics 验收。
 
 OGPlay 是老游戏兼容层；complete 只覆盖登记范围。具名时区/历史 DST、完整大数与 formatter、宿主资源对象持久化、Proxy 生成、privileged 执行器工厂/安全上下文、高争用集合、RSA Cipher、HMAC/Mac、SHA-3、完整 JCA/TLS/系统服务仍未交付。

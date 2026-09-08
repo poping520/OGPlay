@@ -172,7 +172,8 @@ binding。`GLUtils` 读取 context 中既有 Bitmap backing；本层不拥有 GL
   include 与 inline 最终进入相同 inflater。
 - UI resource resolver 复用唯一 ArscTable/APK reader，最多 16 层解析 reference，并支持默认
   配置的 ASCII string、color、px/dp/sp dimension、bitmap/color drawable；session density 未知
-  时显式使用 1.0 fallback。complex style bag、无命中 selector、非默认 qualifier 明确不承诺。
+  时显式使用 1.0 fallback。XML inflater style、无命中 selector、非默认 qualifier 明确不承诺；
+  TextView.setTextAppearance 的有界 style bag 解析见 DVM-121。
 - `Resources.getString(int)` 经同一 resolver 返回默认配置 UTF-8 string，缺失、引用环、错类型
   或损坏字符串统一抛 `Resources.NotFoundException`；`Context.getString(int)` 是 Context 的 final
   便利方法，经运行时 `getResources()` 虚派后调用它，wrapper/component 只继承、不重复声明。
@@ -296,3 +297,13 @@ DisplayMetrics.getDeviceDensity 查询进程注入 density。Resources.mMetrics 
 DVM-120：Typeface 普通方法与缓存归 BootDex；native 只提供内置字体有限不可变描述符。
 TextView 引用为 Java 字段，四种样式进入 UiNode 并驱动测量/绘制；family 使用内置
 回退字形，不宣称系统字体。外部字体加载记账失败，无 native 分配或侧表。
+
+DVM-121：ColorStateList/CREATOR、StateSet 与 R.attr 归 BootDex。TextView 颜色列表保存于
+普通字段，文本色/尺寸/字体进入 UiNode；hint/link/highlight 仅为可查询状态，不宣称
+对应交互/绘制。setTextAppearance 区分 attr metadata 与 style，后者支持 APK bag
+继承及简单资源/主题属性引用；完整验证后再调用 setter，保留 guest override 异常身份。
+平台只投影 AOSP legacy Theme 的 NoTitleBar/Black/Dialog/Light/Translucent 变体及
+Theme.Holo/DeviceDefault 的 hint/highlight/link。未知 framework 样式、selector XML、
+stateful 渲染、shadow/allCaps 明确失败并记账。TypedValue Java 做尺寸转换，Typeface
+Java 做字体选择；ContextWrapper 沿 base 查主题，循环/空 base 明确失败。
+Manifest theme 在 Activity 身份 attach 时经 setTheme 应用，不引入 Android Theme 服务。

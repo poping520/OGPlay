@@ -494,6 +494,8 @@ AndroidManifestFacts ParseAndroidBinaryManifest(const std::span<const std::byte>
                     facts.application_enabled =
                         ReadBooleanAttribute(*enabled, "application enabled");
                 }
+                if (const auto* theme = FindAttribute(attributes, "theme", kAndroidNamespace))
+                    facts.application_theme = ReadReferenceAttribute(*theme, "application theme");
                 if (const auto* icon =
                         FindAttribute(attributes, "icon", kAndroidNamespace)) {
                     facts.application_icon =
@@ -586,6 +588,10 @@ AndroidManifestFacts ParseAndroidBinaryManifest(const std::span<const std::byte>
                 if (const auto* enabled =
                         FindAttribute(attributes, "enabled", kAndroidNamespace)) {
                     component.enabled = ReadBooleanAttribute(*enabled, name + " enabled");
+                }
+                if (component.kind == AndroidManifestComponentKind::activity) {
+                    if (const auto* theme = FindAttribute(attributes, "theme", kAndroidNamespace))
+                        component.theme = ReadReferenceAttribute(*theme, "activity theme");
                 }
                 if (component.kind == AndroidManifestComponentKind::activity_alias) {
                     const auto* target =

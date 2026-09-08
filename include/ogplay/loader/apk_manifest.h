@@ -47,6 +47,7 @@ struct AndroidManifestActivityComponent final {
     std::optional<std::string> target_activity;
     bool enabled{true};
     std::vector<AndroidManifestIntentFilter> intent_filters;
+    std::optional<std::uint32_t> theme;
 };
 
 struct AndroidManifestLauncherComponent final {
@@ -82,6 +83,7 @@ struct AndroidManifestFacts final {
     std::optional<std::uint32_t> min_sdk;
     std::optional<std::uint32_t> target_sdk;
     std::optional<std::uint32_t> application_icon;
+    std::optional<std::uint32_t> application_theme;
     std::optional<AndroidManifestLabel> application_label;
     // Compatibility projection of the resolved launch target class. New
     // startup code should use ResolveLauncherComponent to retain alias identity.

@@ -353,3 +353,7 @@ bridge 不生成 ServiceConnection 回调或 Binder identity。ServiceConnection
 DVM-120：Typeface 普通方法与缓存归 BootDex；native 只提供内置字体有限不可变描述符。
 TextView 引用为 Java 字段，四种样式进入 UiNode 并驱动测量/绘制；family 使用内置
 回退字形，不宣称系统字体。外部字体加载记账失败，无 native 分配或侧表。
+
+DVM-121：Manifest theme 在 Activity 身份 attach 时经 setTheme 应用；TextView 资源解析
+只消费有界样式事实。ColorStateList/StateSet/R.attr 为 BootDex Java，颜色引用为普通字段。
+完整主题/selector/stateful 文本渲染及未登记样式明确失败，范围见 Android 子模块契约。

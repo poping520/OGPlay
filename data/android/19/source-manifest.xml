@@ -11,6 +11,7 @@
   <remote name="aosp" fetch=".." />
   <default revision="refs/tags/android-4.4.4_r2.0.1" remote="aosp" sync-j="4" />
 
+  <project path="abi/cpp" name="platform/abi/cpp" revision="18f1b5e28734183ff8073fe86dc46bc4ebba8a59" />
   <project path="bionic" name="platform/bionic" revision="081db840befec895fb86e709ae95832ade2d065c" />
   <project path="build" name="platform/build" revision="b34d556982095a8fe84273ffceadd80f41325acf">
     <copyfile src="core/root.mk" dest="Makefile" />
@@ -18,6 +19,7 @@
   <project path="external/compiler-rt" name="platform/external/compiler-rt" revision="7cba5f1d950495b02bc8da53d27bdbb1b0d4f117" />
   <project path="external/icu4c" name="platform/external/icu4c" revision="18668f3b015a110275f5cc9a8722b2f65f3333bf" />
   <project path="external/openssl" name="platform/external/openssl" revision="dd1da36b0baa39942f0aef42c4712ef0ad628a83" />
+  <project path="external/stlport" name="platform/external/stlport" revision="628e14d37c5b239839a466e81c74bf66255b770b" />
   <project path="external/zlib" name="platform/external/zlib" revision="a5c7131da47c991585a6c6ac0c063b6d7d56e3fc" />
   <project path="frameworks/base" name="platform/frameworks/base" revision="63ade05d76785975fc3292ca030abbaa1dda8891" />
   <project path="dalvik" name="platform/dalvik" revision="36e356c96640775f0a3f167bd2426ea0f0093b8b" />

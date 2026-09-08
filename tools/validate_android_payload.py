@@ -26,17 +26,23 @@ LIBRARIES = {
     "lib/libc.so",
     "lib/libcrypto.so",
     "lib/libdl.so",
+    "lib/libgabi++.so",
+    "lib/libicui18n.so",
+    "lib/libicuuc.so",
     "lib/libm.so",
     "lib/libogplay_cipher.so",
     "lib/libstdc++.so",
+    "lib/libstlport.so",
     "lib/libz.so",
 }
 NOTICES = {
     "notices/libc.so.txt",
     "notices/libcrypto.so.txt",
     "notices/libdl.so.txt",
+    "notices/libgabi++.so.txt",
     "notices/libm.so.txt",
     "notices/libstdc++.so.txt",
+    "notices/libstlport.so.txt",
     "notices/libz.so.txt",
 }
 BOOT_DEX = "framework/bootdex.jar"
@@ -121,11 +127,14 @@ def _validate_source_manifest(root: Path, source: dict[str, Any]) -> set[str]:
         for project in manifest.findall("project")
     }
     expected = {
+        "platform/abi/cpp": "18f1b5e28734183ff8073fe86dc46bc4ebba8a59",
         "platform/bionic": "081db840befec895fb86e709ae95832ade2d065c",
         "platform/external/icu4c":
             "18668f3b015a110275f5cc9a8722b2f65f3333bf",
         "platform/external/openssl":
             "dd1da36b0baa39942f0aef42c4712ef0ad628a83",
+        "platform/external/stlport":
+            "628e14d37c5b239839a466e81c74bf66255b770b",
         "platform/external/zlib":
             "a5c7131da47c991585a6c6ac0c063b6d7d56e3fc",
         "platform/libcore": "d49420b1b7edf8b3f27dabd3e1b7512a5502595e",
@@ -290,7 +299,10 @@ def validate(root: Path) -> None:
         if source_project == "ogplay":
             continue
         notice = _text(entry.get("notice"), f"{label}.notice")
-        if notice != f"notices/{Path(relative).name}.txt":
+        expected_notice = f"notices/{Path(relative).name}.txt"
+        if source_project == "platform/external/icu4c":
+            expected_notice = "notices/icu4c-license.html"
+        if notice != expected_notice:
             raise PayloadError(f"{label}.notice does not match")
         notice_path = root / notice
         if not notice_path.is_file():
@@ -310,7 +322,7 @@ def main() -> int:
         validate(args.root)
     except (OSError, PayloadError) as error:
         parser.error(str(error))
-    print("Android runtime payload validated: API 19, boot dex, ICU 51.1, 7 declared guest libraries")
+    print("Android runtime payload validated: API 19, boot dex, ICU 51.1, 11 declared guest libraries")
     return 0
 
 

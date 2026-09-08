@@ -1,7 +1,9 @@
 # Android guest 系统库数据目录
 
 发行版按 API 目录存放来自 AOSP 源码构建的系统库。当前已纳入 Android 4.4.4/API 19
-的 `aosp_arm-user` 五个 Bionic 库和一个由 AOSP OpenSSL 源码构建的 `libcrypto.so`；
+的 `aosp_arm-user` 五个 Bionic 库、AOSP OpenSSL 构建的 `libcrypto.so`，以及 ICU4C
+运行库 `libicuuc.so`/`libicui18n.so` 及其 ABI/STLport 依赖
+`libgabi++.so`/`libstlport.so`；
 `run-apk` 根据所选 Profile 自动读取 `19/lib/`，不接受
 外部系统库目录。
 
@@ -22,7 +24,8 @@ DVM-107 包含 774 类：core.jar 745、framework.jar 12、Conscrypt 16，以及
 python tools/validate_android_payload.py --root data/android/19
 ```
 
-校验器要求精确的五个 pinned Bionic 库及 `libcrypto.so`/`libogplay_cipher.so` 闭集，复核体积、SHA-256、ELF32/little-endian/ARM/DYN 身份、
+校验器要求精确的五个 pinned Bionic 库、`libcrypto.so`/`libogplay_cipher.so`、两个 ICU4C
+运行库及其 ABI/STLport 依赖（共四个库）的闭集，复核体积、SHA-256、ELF32/little-endian/ARM/DYN 身份、
 目标 AOSP tag、构建目标、源码仓库 clean/tag 状态和逐库 NOTICE；同时复核 BootDex recipe、
 精确 class descriptor 集与 canonical JAR。
 

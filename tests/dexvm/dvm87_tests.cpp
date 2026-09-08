@@ -1495,6 +1495,12 @@ TEST_CASE("DVM-103 all BootDex classes link and collection methods have no intri
             descriptor.starts_with("Ljavax/security/auth/x500/") ||
             descriptor.starts_with("Lorg/apache/harmony/security/")) {
             const auto check = [&](VmMethodId method) {
+                const auto& linked = f.linker.Method(method);
+                if (descriptor == "Landroid/app/backup/BackupManager;" &&
+                    linked.name == "checkServiceBinder" && linked.descriptor == "()V") {
+                    CHECK(linked.kind == MethodKind::intrinsic);
+                    return;
+                }
                 if (!(f.linker.Method(method).access_flags & kAccNative))
                     CHECK(f.linker.Method(method).kind != MethodKind::intrinsic);
             };
@@ -1511,7 +1517,7 @@ TEST_CASE("DVM-103 all BootDex classes link and collection methods have no intri
         for (const auto method : f.linker.Class(type).own_direct_methods)
             CHECK(f.linker.Method(method).kind != MethodKind::intrinsic);
     }
-    CHECK(count == 898);
+    CHECK(count == 900);
 }
 
 TEST_CASE("DVM-103 bounded queues and Collections wrappers use API19 semantics") {

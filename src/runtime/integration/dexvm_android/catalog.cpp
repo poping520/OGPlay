@@ -56,6 +56,7 @@ std::vector<dexvm::IntrinsicClassDecl> AndroidIntrinsicCatalog(
     using namespace android_intrinsics;
     return {
         Declare_android_app_Activity(context),
+        Declare_android_app_backup_BackupManager(context),
         Declare_android_app_AlertDialog_Builder(context),
         Declare_android_app_AlertDialog(context),
         Declare_android_app_Dialog(context),

@@ -14,12 +14,12 @@ Deprecated、Superseded；日期使用 `YYYY-MM-DD`。当前能力与实施进�
 | [图形、音频与视频](media.md) | 4 条决策 | [0003](media.md#adr-0003)、[0019](media.md#adr-0019)、[0021](media.md#adr-0021)、[0027](media.md#adr-0027) |
 | [会话、Profile 与持久沙盒](session.md) | 2 条决策 | [0020](session.md#adr-0020)、[0022](session.md#adr-0022) |
 | [可观测性、线程握手与退出](diagnostics.md) | 5 条决策 | [0006](diagnostics.md#adr-0006)、[0023](diagnostics.md#adr-0023)、[0024](diagnostics.md#adr-0024)、[0025](diagnostics.md#adr-0025)、[0026](diagnostics.md#adr-0026) |
-| [DexVM、BootDex 与 Java 平台边界](dexvm.md) | 17 条决策 | [0017](dexvm.md#adr-0017)、[0028](dexvm.md#adr-0028)、[0029](dexvm.md#adr-0029)、[0030](dexvm.md#adr-0030)、[0031](dexvm.md#adr-0031)、[0032](dexvm.md#adr-0032)、[0033](dexvm.md#adr-0033)、[0034](dexvm.md#adr-0034)、[0035](dexvm.md#adr-0035)、[0036](dexvm.md#adr-0036)、[0037](dexvm.md#adr-0037)、[0038](dexvm.md#adr-0038)、[0039](dexvm.md#adr-0039)、[0040](dexvm.md#adr-0040)、[0041](dexvm.md#adr-0041)、[0042](dexvm.md#adr-0042)、[0043](dexvm.md#adr-0043) |
+| [DexVM、BootDex 与 Java 平台边界](dexvm.md) | 18 条决策 | [0017](dexvm.md#adr-0017)、[0028](dexvm.md#adr-0028)、[0029](dexvm.md#adr-0029)、[0030](dexvm.md#adr-0030)、[0031](dexvm.md#adr-0031)、[0032](dexvm.md#adr-0032)、[0033](dexvm.md#adr-0033)、[0034](dexvm.md#adr-0034)、[0035](dexvm.md#adr-0035)、[0036](dexvm.md#adr-0036)、[0037](dexvm.md#adr-0037)、[0038](dexvm.md#adr-0038)、[0039](dexvm.md#adr-0039)、[0040](dexvm.md#adr-0040)、[0041](dexvm.md#adr-0041)、[0042](dexvm.md#adr-0042)、[0043](dexvm.md#adr-0043)、[0044](dexvm.md#adr-0044) |
 
 ## 维护方式
 
 - 查找历史编号使用上表，跨文档引用使用 `主题.md#adr-NNNN`；编号不随归并重排。
-- 新决策使用下一个全局编号（当前最大为 ADR-0043），在既有主题末尾追加；只有出现无法
+- 新决策使用下一个全局编号（当前最大为 ADR-0044），在既有主题末尾追加；只有出现无法
   归入现有主题的独立领域时才新增主题文件。每条记录前保留 `<a id="adr-NNNN"></a>`。
 - 条目标题使用二级标题，背景、决定、后果等使用三级标题；同步更新本索引和主题内目录。
 - 已有决策的实施补充保留原日期；有实质决策变化时追加新编号与精确替代关系，不能覆盖旧文。

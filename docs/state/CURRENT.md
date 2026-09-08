@@ -7,7 +7,9 @@
 ## 当前能力
 
 - **运行与发行**：按 exact Profile API 选择 bundled data；API 19 内置 pinned AOSP
-  五库、AOSP OpenSSL 自建的 `libcrypto.so`、923 类 BootDex 与 ICU4C 51.1。libcrypto
+  五库、AOSP OpenSSL 自建的 `libcrypto.so`、ICU4C 51.1 的
+  `libicuuc.so`/`libicui18n.so` 及其 `libgabi++.so`/`libstlport.so` 依赖、923 类 BootDex
+  与 ICU 数据。libcrypto
   固定为 `platform/external/openssl` 的 `android-4.4.4_r2.0.1` revision
   `dd1da36b0baa39942f0aef42c4712ef0ad628a83`，以 `aosp_arm-user` 构建；hash、NOTICE、
   pinned manifest 和 payload 校验约束已同步。JNI 桥为 src/guest/crypto/crypto_jni.c；

@@ -134,6 +134,52 @@
       "notice_sha256": "a3679db44f9415fedb394a494e89b71910f859cbd74aa2830fb6cf8cb9d7a37a"
     },
     {
+      "path": "lib/libgabi++.so",
+      "source_project": "platform/abi/cpp",
+      "size": 17512,
+      "sha256": "5b4e194fff8362cabef075bac8685eaa6ef6607a8e5c1af8e546226225994e8a",
+      "soname": "libgabi++.so",
+      "needed": [
+        "libc.so"
+      ],
+      "notice": "notices/libgabi++.so.txt",
+      "notice_sha256": "94b65cf0e057c4d2b3e5188197e7d4854abdba349def32e8ad7067d66ec6e418"
+    },
+    {
+      "path": "lib/libicui18n.so",
+      "source_project": "platform/external/icu4c",
+      "size": 1267112,
+      "sha256": "08596ab1ed097f953cc681e4cc61e69c1cea5f639e9014f5789265923ccd5149",
+      "soname": "libicui18n.so",
+      "needed": [
+        "libicuuc.so",
+        "libgabi++.so",
+        "libstlport.so",
+        "libc.so",
+        "libstdc++.so",
+        "libm.so"
+      ],
+      "notice": "notices/icu4c-license.html",
+      "notice_sha256": "b82a5901d92c842c78feb7ffc757706967a23fd5e7658d30ea92abb169207867"
+    },
+    {
+      "path": "lib/libicuuc.so",
+      "source_project": "platform/external/icu4c",
+      "size": 1008872,
+      "sha256": "1e47c2d57db1573ac4f6c09a8b1b815ed89a72d0686c032d0916644a44e9acfd",
+      "soname": "libicuuc.so",
+      "needed": [
+        "libdl.so",
+        "libgabi++.so",
+        "libstlport.so",
+        "libc.so",
+        "libstdc++.so",
+        "libm.so"
+      ],
+      "notice": "notices/icu4c-license.html",
+      "notice_sha256": "b82a5901d92c842c78feb7ffc757706967a23fd5e7658d30ea92abb169207867"
+    },
+    {
       "path": "lib/libm.so",
       "source_project": "platform/bionic",
       "size": 103624,
@@ -167,6 +213,20 @@
       ],
       "notice": "notices/libstdc++.so.txt",
       "notice_sha256": "f97199b1d75ba28d11eb3a1815ea20b036d12853c44380d2679aeb849a7ab7c8"
+    },
+    {
+      "path": "lib/libstlport.so",
+      "source_project": "platform/external/stlport",
+      "size": 210248,
+      "sha256": "0191487aef89c7a19eb9dc62d3a46168607d36e86d890e7225add109613163e9",
+      "soname": "libstlport.so",
+      "needed": [
+        "libc.so",
+        "libstdc++.so",
+        "libm.so"
+      ],
+      "notice": "notices/libstlport.so.txt",
+      "notice_sha256": "9d9030ac389c642482b48881bf3d299604e678df888bdd657de0aa1a91964d12"
     },
     {
       "path": "lib/libz.so",

@@ -491,6 +491,33 @@ namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_content_res_Resources(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/content/res/Resources;", "Ljava/lang/Object;");
+    const auto metrics = builder.BoundInstanceField(
+        "mMetrics", "Landroid/util/DisplayMetrics;", dx::kAccPrivate | dx::kAccFinal);
+    builder.VirtualMethod("getDisplayMetrics", "()Landroid/util/DisplayMetrics;",
+        [context, metrics](dx::IntrinsicContext& call) {
+            const dx::IntrinsicCall fields(call);
+            auto value = fields.GetRef(metrics);
+            if (!value.IsValid()) {
+                const auto owner = call.vm.Linker().ResolveDescriptor("Landroid/util/DisplayMetrics;");
+                const auto initialized = call.vm.EnsureClassInitialized(owner);
+                if (initialized.exception.IsValid())
+                    throw dx::VmJavaThrow{call.vm.Linker().Class(initialized.exception_class).descriptor,
+                                          initialized.exception_message, initialized.exception};
+                value = call.vm.NewIntrinsicInstance("Landroid/util/DisplayMetrics;");
+                const auto root = call.vm.ProtectReferences(std::array{value});
+                const auto constructor = call.vm.Linker().FindDirectMethod(owner, "<init>", "()V");
+                if (!constructor)
+                    throw dx::DexVmError(dx::DexVmErrorReason::internal_invariant,
+                                         "DisplayMetrics constructor is not linked");
+                const auto outcome = call.vm.Call(*constructor, std::array{dx::VmValue::Ref(value)});
+                if (outcome.exception.IsValid())
+                    throw dx::VmJavaThrow{call.vm.Linker().Class(outcome.exception_class).descriptor,
+                                          outcome.exception_message, outcome.exception};
+                fields.SetRef(metrics, value);
+            }
+            PopulateAndroidDisplayMetrics(call, context, value);
+            return dx::VmValue::Ref(value);
+        });
     builder.FinalMethod("getConfiguration", "()Landroid/content/res/Configuration;",
         [context](dx::IntrinsicContext& call) {
             const auto instance = Singleton(call, context, "configuration",

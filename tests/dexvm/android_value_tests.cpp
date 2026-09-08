@@ -294,6 +294,71 @@ TEST_CASE("DVM-117 Bundle Parcel snapshots and Java CREATOR retain ordinary refe
     }
 }
 
+TEST_CASE("DVM-118 Resources metrics share display facts and BootDex value semantics") {
+    for (const auto backend :
+         {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        AndroidValueVm f(backend);
+        f.context->surface_width = 960;
+        f.context->surface_height = 540;
+        f.context->ui_density = 1.5F;
+        f.context->ui_scaled_density = 1.75F;
+        const auto resources = f.vm.NewIntrinsicInstance("Landroid/content/res/Resources;");
+        const auto root = f.vm.ProtectReferences(std::array{resources});
+        const auto metrics = f.On(resources, "getDisplayMetrics", "()Landroid/util/DisplayMetrics;").ref;
+        const auto field = [&](VmObjectRef object, const char* name, const char* signature) {
+            const auto id = f.linker.FindFieldRecursive(f.model.ObjectClass(object), name, signature);
+            REQUIRE(id.has_value());
+            return f.model.InstanceSlots(object)[f.linker.Field(*id).slot].bits;
+        };
+        CHECK(f.linker.Class(f.model.ObjectClass(metrics)).is_boot_dex);
+        CHECK(field(metrics, "widthPixels", "I") == 960);
+        CHECK(field(metrics, "heightPixels", "I") == 540);
+        CHECK(field(metrics, "densityDpi", "I") == 240);
+        CHECK(std::bit_cast<float>(field(metrics, "density", "F")) == 1.5F);
+        CHECK(std::bit_cast<float>(field(metrics, "scaledDensity", "F")) == 1.75F);
+        CHECK(field(metrics, "noncompatDensity", "F") == field(metrics, "density", "F"));
+        static_cast<void>(f.vm.CollectGarbage("dvm118-resources-metrics"));
+        CHECK(f.On(resources, "getDisplayMetrics", "()Landroid/util/DisplayMetrics;").ref == metrics);
+        const auto other = f.New("Landroid/util/DisplayMetrics;");
+        const auto other_root = f.vm.ProtectReferences(std::array{other});
+        CHECK(field(other, "widthPixels", "I") == 0);
+        f.On(other, "setToDefaults", "()V");
+        CHECK(field(other, "densityDpi", "I") == 240);
+        CHECK(std::bit_cast<float>(field(other, "scaledDensity", "F")) == 1.5F);
+        const auto display = f.vm.NewIntrinsicInstance("Landroid/view/Display;");
+        f.On(display, "getMetrics", "(Landroid/util/DisplayMetrics;)V", {VmValue::Ref(other)});
+        CHECK(f.On(metrics, "equals", "(Ljava/lang/Object;)Z", {VmValue::Ref(other)}).AsInt() == 1);
+        CHECK(f.On(metrics, "hashCode", "()I").AsInt() == f.On(other, "hashCode", "()I").AsInt());
+        f.context->surface_width = 1280;
+        CHECK(f.On(resources, "getDisplayMetrics", "()Landroid/util/DisplayMetrics;").ref == metrics);
+        CHECK(field(metrics, "widthPixels", "I") == 1280);
+        CHECK(field(other, "widthPixels", "I") == 960);
+        f.On(other, "setTo", "(Landroid/util/DisplayMetrics;)V", {VmValue::Ref(metrics)});
+        CHECK(field(other, "widthPixels", "I") == 1280);
+        const auto apply = [&](int unit, float value, VmObjectRef target) {
+            return f.Static("Landroid/util/TypedValue;", "applyDimension",
+                "(IFLandroid/util/DisplayMetrics;)F",
+                {VmValue::Int(unit), VmValue::Float(value), VmValue::Ref(target)}).AsFloat();
+        };
+        CHECK(apply(0, 5.0F, VmObjectRef{}) == 5.0F);
+        CHECK(apply(1, 5.0F, metrics) == 7.5F);
+        CHECK(apply(2, 5.0F, metrics) == 8.75F);
+        CHECK(apply(3, 72.0F, metrics) == doctest::Approx(240.0F));
+        CHECK(apply(4, 1.0F, metrics) == 240.0F);
+        CHECK(apply(5, 25.4F, metrics) == doctest::Approx(240.0F));
+        CHECK(apply(99, 5.0F, metrics) == 0.0F);
+        CHECK(f.Static("Landroid/util/TypedValue;", "complexToDimensionPixelSize",
+                        "(ILandroid/util/DisplayMetrics;)I",
+                        {VmValue::Int(0x501), VmValue::Ref(metrics)}).AsInt() == 8);
+        CHECK(f.vm.StringUtf8(f.Static("Landroid/util/TypedValue;", "coerceToString",
+                "(II)Ljava/lang/String;", {VmValue::Int(18), VmValue::Int(1)}).ref) == "true");
+        const auto bad = f.OnOutcome(display, "getRealMetrics", "(Landroid/util/DisplayMetrics;)V",
+                                     {VmValue::Ref(VmObjectRef{})});
+        REQUIRE(bad.exception.IsValid());
+        CHECK(f.linker.Class(bad.exception_class).descriptor == "Ljava/lang/NullPointerException;");
+    }
+}
+
 TEST_CASE("DVM-97 action-only Intent follows the LocalBroadcastManager match chain") {
     AndroidValueVm fixture;
     const auto action = fixture.vm.NewStringUtf8("org.example.PLANT");

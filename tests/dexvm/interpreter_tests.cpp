@@ -1502,15 +1502,13 @@ TEST_CASE("dexvm java.lang interfaces are in lang family TU") {
 
 TEST_CASE("dexvm core handlers call directly") {
     Vm hit;
-    const auto hit_method =
-        hit.Static("Ljava/lang/Math;", "abs", "(I)I");
-    REQUIRE(hit.linker.Method(hit_method).implementation);
-    ExpectInt(hit.interpreter.Call(
-                  hit_method, std::vector<VmValue>{VmValue::Int(-9)}),
-              9);
-    ExpectInt(hit.interpreter.Call(
-                  hit_method, std::vector<VmValue>{VmValue::Int(-11)}),
-              11);
+    const auto method = hit.Static("Ljava/lang/Math;", "floor", "(D)D");
+    REQUIRE(hit.linker.Method(method).implementation);
+    for (const auto value : {-9.2, -11.2}) {
+        const auto outcome = hit.interpreter.Call(method, std::vector{VmValue::Double(value)});
+        REQUIRE_FALSE(outcome.exception.IsValid());
+        CHECK(outcome.value.AsDouble() == std::floor(value));
+    }
 }
 
 TEST_CASE("dexvm intrinsic builder binds implementations without a registry") {

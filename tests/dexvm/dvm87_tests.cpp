@@ -1469,7 +1469,8 @@ TEST_CASE("DVM-103 all BootDex classes link and collection methods have no intri
         CAPTURE(std::string(descriptor));
         f.linker.EnsureClassLinked(type);
         ++count;
-        if (descriptor == "Ljava/util/UUID;" ||
+        if (descriptor == "Ljava/lang/Math;" ||
+            descriptor == "Ljava/util/UUID;" ||
             descriptor == "Ljava/lang/Void;" ||
             descriptor == "Ljava/lang/ref/SoftReference;" ||
             descriptor == "Ljava/lang/reflect/Modifier;" ||
@@ -1496,6 +1497,11 @@ TEST_CASE("DVM-103 all BootDex classes link and collection methods have no intri
             descriptor.starts_with("Lorg/apache/harmony/security/")) {
             const auto check = [&](VmMethodId method) {
                 const auto& linked = f.linker.Method(method);
+                if (descriptor == "Landroid/util/DisplayMetrics;" &&
+                    linked.name == "getDeviceDensity" && linked.descriptor == "()I") {
+                    CHECK(linked.kind == MethodKind::intrinsic);
+                    return;
+                }
                 if (descriptor == "Landroid/os/Bundle;" &&
                     ((linked.name == "writeToParcel" && linked.descriptor == "(Landroid/os/Parcel;I)V") ||
                      (linked.name == "readFromParcel" && linked.descriptor == "(Landroid/os/Parcel;)V"))) {
@@ -1523,7 +1529,7 @@ TEST_CASE("DVM-103 all BootDex classes link and collection methods have no intri
         for (const auto method : f.linker.Class(type).own_direct_methods)
             CHECK(f.linker.Method(method).kind != MethodKind::intrinsic);
     }
-    CHECK(count == 910);
+    CHECK(count == 913);
 }
 
 TEST_CASE("DVM-103 bounded queues and Collections wrappers use API19 semantics") {

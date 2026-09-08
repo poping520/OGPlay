@@ -187,7 +187,6 @@ std::vector<dexvm::IntrinsicClassDecl> AndroidIntrinsicCatalog(
         Declare_android_util_Log(context),
         Declare_android_util_AttributeSet(context),
         Declare_android_util_Base64(context),
-        Declare_android_util_TypedValue(context),
         Declare_android_util_DisplayMetrics(context),
         Declare_android_view_Display(context),
         Declare_android_view_ContextThemeWrapper(context),

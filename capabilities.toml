@@ -1228,7 +1228,7 @@ note = "DVM-7 注册/层级/布局/vtable/iftable 四步链接与懒结构预检
 [dexvm.boot_dex]
 status = "complete"
 test = "tests/dexvm/intrinsics_p1_tests.cpp; tests/frontend/data_directory_tests.cpp; tools.bootdex_builder_self_test; tools.android_payload_current; PvZ exact Profile reached-fault"
-note = "DVM-99..117 curated BootDex：日期、集合、普通流、X500、Cipher/JCA/Conscrypt AES 与 Certificate/Harmony/Signature 及 framework 值类、UUID/MessageDigest/摘要流和对象流、定时执行器依赖、ServiceConnection 与 Throwable/StackTraceElement 家族、BackupManager/RestoreObserver 、Bundle/ArrayMap 家族共 910 个 class_def。910 类全链接，Cipher/Certificate/集合普通 Java 算法均归 DEX；精确边界 overlay 与显式 guest JNI 声明受审。固定 recipe 可确定性重建，DEX/JAR 身份见 data/android/19/manifest.json。Conscrypt 为用户授权的临时设备来源，区别于 pinned core.jar；完整 core/framework、multidex、动态 classpath 与 Android 系统服务未纳入。 2026-09-07 ROM libcrypto 已撤出 Git，后按用户再次授权恢复到本地临时使用，完整 payload 校验通过；仍须自行构建替换并更新来源/哈希后复验。"
+note = "DVM-99..118 curated BootDex：日期、集合、普通流、X500、Cipher/JCA/Conscrypt AES 与 Certificate/Harmony/Signature 及 framework 值类、UUID/MessageDigest/摘要流和对象流、定时执行器依赖、ServiceConnection 与 Throwable/StackTraceElement 家族、BackupManager/RestoreObserver 、Bundle/ArrayMap 家族、DisplayMetrics/TypedValue 与 Math 共 913 个 class_def。913 类全链接，Cipher/Certificate/集合普通 Java 算法均归 DEX；精确边界 overlay 与显式 guest JNI 声明受审。固定 recipe 可确定性重建，DEX/JAR 身份见 data/android/19/manifest.json。Conscrypt 为用户授权的临时设备来源，区别于 pinned core.jar；完整 core/framework、multidex、动态 classpath 与 Android 系统服务未纳入。 2026-09-07 ROM libcrypto 已撤出 Git，后按用户再次授权恢复到本地临时使用，完整 payload 校验通过；仍须自行构建替换并更新来源/哈希后复验。"
 
 [dexvm.date_format_bootdex_audit]
 status = "complete"
@@ -1549,6 +1549,16 @@ note = "DVM-109/ADR-0040：新增 28 个 pinned core.jar 类至 818 类，Object
 status = "complete"
 test = "tests/runtime/native_library_loader_tests.cpp; tests/dexvm/dvm87_tests.cpp; tests/dexvm/interpreter_tests.cpp; tests/dexvm/unsafe_tests.cpp; tests/dexvm/vm_thread_tests.cpp; tests/dexvm/vm_monitor_tests.cpp; tests/dexvm/thread_intrinsic_tests.cpp; tests/dexvm/reflection_tests.cpp; tools.bootdex_builder_self_test; tools.android_payload_current"
 note = "DVM-110/ADR-0041：新增 26 个 pinned API19 类至 844 类，ScheduledThreadPoolExecutor/FutureTask、接口/异常、普通 Executors 包装类、completion service 和拒绝策略均执行原版 Java，删除旧 FutureTask/合成串行 executor/工厂 handler。双后端验证单次 Runnable/Callable、Clock 截止时间/FIFO、fixed-rate 与 fixed-delay、取消/超时/异常身份、removeOnCancel/purge、关闭策略矩阵、shutdownNow、两个真实 worker、普通工厂/invokeAny/invokeAll、仅队列持有任务的 GC 保活。worker 复用 Thread/AQS/Unsafe 和统一 Clock，不另建调度器，解释执行仍串行；修复接口数组到 Object[] 协变与 primitive 类型边界、threaded invoke 原异常身份。DVM-111 修复真实 JNI bridge 下 ScheduledFutureTask 写入 RunnableScheduledFuture[] 被仅父类链校验误拒绝的问题，原版 schedule/shutdownNow 已在共享数组存储下双后端验收。complete 仅指该闭包，privileged 工厂/动态安全上下文、高争用和硬实时精度未纳入，未跑游戏/真机/跨平台 gate。"
+
+[dexvm.display_values_bootdex]
+status = "complete"
+test = "tests/dexvm/android_value_tests.cpp: DVM-118; tests/session/profile_entry_scope_tests.cpp"
+note = "DVM-118：DisplayMetrics/TypedValue 原版字段和普通方法执行 BootDex。Resources.getDisplayMetrics 返回每实例稳定 mMetrics，按 managed surface 的尺寸/density 刷新；Display getMetrics/getRealMetrics 同源。唯一私有 getDeviceDensity 边界读取注入 density 并校验范围。双后端验证 Java copy/defaults/equals/hashCode、GC、非兼容字段与 px/dp/sp/pt/in/mm 换算；无宿主显示器或 Android 系统资源配置能力扩展。"
+
+[dexvm.math_bootdex]
+status = "partial"
+test = "tests/dexvm/intrinsics_p1_tests.cpp: DVM-118; tests/dexvm/dvm87_tests.cpp: DVM-103"
+note = "DVM-118：Math 普通方法/常量/Random 状态来自 BootDex；24 个 native 按 AOSP java_lang_Math.cpp 对接宿主 libm。双后端复验 round(float/double) 的半值/NaN/Infinity/饱和转换、最小整数 abs、min/max NaN 与 signed zero、ulp/nextUp、随机数区间及 native 基本数值。未宣称 StrictMath/fdlibm 跨平台逐位一致或 libm 全输入误差认证。"
 
 [dexvm.bundle_bootdex]
 status = "partial"

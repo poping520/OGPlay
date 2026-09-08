@@ -233,53 +233,5 @@ Decl Declare_android_util_Base64(const Context& context) {
     return std::move(builder).Build();
 }
 
-Decl Declare_android_util_TypedValue(const Context& context) {
-    static_cast<void>(context);
-    auto builder = dx::IntrinsicClassBuilder::Class(
-        "Landroid/util/TypedValue;", "Ljava/lang/Object;");
-    for (const auto [name, value] : std::array{
-             std::pair{"TYPE_NULL", 0}, std::pair{"TYPE_REFERENCE", 1},
-             std::pair{"TYPE_ATTRIBUTE", 2}, std::pair{"TYPE_STRING", 3}, std::pair{"TYPE_FLOAT", 4},
-             std::pair{"TYPE_DIMENSION", 5}, std::pair{"TYPE_INT_DEC", 16},
-             std::pair{"TYPE_INT_HEX", 17}, std::pair{"TYPE_INT_BOOLEAN", 18},
-             std::pair{"TYPE_FRACTION", 6}, std::pair{"TYPE_FIRST_INT", 16},
-             std::pair{"TYPE_FIRST_COLOR_INT", 28}, std::pair{"TYPE_INT_COLOR_ARGB8", 28},
-             std::pair{"TYPE_INT_COLOR_RGB8", 29}, std::pair{"TYPE_INT_COLOR_ARGB4", 30},
-             std::pair{"TYPE_INT_COLOR_RGB4", 31}, std::pair{"TYPE_LAST_COLOR_INT", 31},
-             std::pair{"TYPE_LAST_INT", 31}, std::pair{"COMPLEX_UNIT_SHIFT", 0},
-             std::pair{"COMPLEX_UNIT_MASK", 15},
-             std::pair{"COMPLEX_UNIT_PX", 0}, std::pair{"COMPLEX_UNIT_DIP", 1},
-             std::pair{"COMPLEX_UNIT_SP", 2}, std::pair{"COMPLEX_UNIT_PT", 3},
-             std::pair{"COMPLEX_UNIT_IN", 4}, std::pair{"COMPLEX_UNIT_MM", 5}}) {
-        builder.ConstantInt(
-            name, "I", value,
-            dx::kAccPublic | dx::kAccStatic | dx::kAccFinal);
-    }
-    builder.InstanceField("type", "I").InstanceField("string", "Ljava/lang/CharSequence;")
-        .InstanceField("data", "I").InstanceField("assetCookie", "I")
-        .InstanceField("resourceId", "I").InstanceField("changingConfigurations", "I")
-        .InstanceField("density", "I");
-    builder.Constructor("()V", [](dx::IntrinsicContext&) { return dx::VmValue::Void(); });
-    builder.StaticMethod("applyDimension", "(IFLandroid/util/DisplayMetrics;)F",
-        [](dx::IntrinsicContext& call) {
-            const auto unit = call.arguments[0].AsInt();
-            const auto value = call.arguments[1].AsFloat();
-            const auto metrics = call.arguments[2].ref;
-            if (!metrics.IsValid()) throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;", "metrics"};
-            const auto slots = call.vm.Model().InstanceSlots(metrics);
-            const auto density = std::bit_cast<float>(slots[2].bits);
-            const auto scaled = std::bit_cast<float>(slots[4].bits);
-            const auto xdpi = std::bit_cast<float>(slots[5].bits);
-            float result = value;
-            if (unit == 1) result *= density;
-            else if (unit == 2) result *= scaled;
-            else if (unit == 3) result *= xdpi * (1.0F / 72.0F);
-            else if (unit == 4) result *= xdpi;
-            else if (unit == 5) result *= xdpi * (1.0F / 25.4F);
-            else if (unit != 0) return dx::VmValue::Float(0.0F);
-            return dx::VmValue::Float(result);
-        });
-    return std::move(builder).Build();
-}
 
 }  // namespace ogplay::runtime::android_intrinsics

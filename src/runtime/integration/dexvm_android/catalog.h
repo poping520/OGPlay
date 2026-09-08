@@ -121,6 +121,7 @@ namespace ogplay::runtime::android_intrinsics {
 [[nodiscard]] Decl Declare_android_os_ResultReceiver_MyRunnable(const Context& context);
 [[nodiscard]] Decl Declare_android_os_Vibrator(const Context& context);
 [[nodiscard]] Decl Declare_android_os_Process(const Context& context);
+[[nodiscard]] Decl Declare_android_provider_Settings_Secure(const Context& context);
 [[nodiscard]] Decl Declare_android_provider_Settings_System(const Context& context);
 [[nodiscard]] Decl Declare_android_telephony_PhoneStateListener(const Context& context);
 [[nodiscard]] Decl Declare_android_telephony_SmsManager(const Context& context);

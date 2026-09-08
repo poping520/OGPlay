@@ -4,9 +4,11 @@
 // The only code that touches a sandbox directory: everything above it sees
 // the VirtualFileSystem. Depends on the standard library alone.
 
+#include <cstddef>
 #include <cstdint>
 #include <filesystem>
 #include <memory>
+#include <optional>
 #include <span>
 #include <string>
 #include <string_view>
@@ -69,6 +71,13 @@ public:
     [[nodiscard]] std::uint64_t TemporaryFilesRemoved() const;
     // Diagnostic fact recorded in meta.toml; never used to pick behaviour.
     void RecordVersionCode(std::uint32_t version_code);
+    // Returns the sandbox-stable API 19 ANDROID_ID. The caller supplies
+    // exactly 64 bits of OS entropy; it is consumed only when an older or new
+    // sandbox has no identity yet. Persistence remains owned by this store.
+    [[nodiscard]] std::string EnsureAndroidId(
+        std::span<const std::byte> entropy);
+    // Empty for an untouched schema-1 sandbox.
+    [[nodiscard]] std::optional<std::string> AndroidId() const;
 
     // Host filename translation, exposed for its own tests: guest path
     // segments become host-safe names losslessly in both directions.

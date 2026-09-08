@@ -101,6 +101,9 @@ struct DexVmAndroidContext final {
     std::string device_software_version{"00"};
     std::string line_number;
     std::string network_operator{"00000"};
+    // Read-only subset of the API 19 secure settings table. This is distinct
+    // from app SharedPreferences and from telephony/serial identities.
+    std::map<std::string, std::string, std::less<>> secure_settings;
 
     // External storage facts: the guest-visible root and the real free
     // space of the backing host volume (filled by the frontend; 0 when no

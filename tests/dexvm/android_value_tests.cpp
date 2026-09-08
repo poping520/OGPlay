@@ -66,12 +66,19 @@ struct AndroidValueVm final {
     VmValue Static(const char* descriptor, const char* name,
                    const char* signature,
                    std::vector<VmValue> arguments = {}) {
+        const auto outcome = StaticOutcome(
+            descriptor, name, signature, std::move(arguments));
+        REQUIRE_MESSAGE(!outcome.exception.IsValid(), outcome.exception_message);
+        return outcome.value;
+    }
+
+    VmCallOutcome StaticOutcome(const char* descriptor, const char* name,
+                                const char* signature,
+                                std::vector<VmValue> arguments = {}) {
         const auto klass = linker.ResolveDescriptor(descriptor);
         const auto method = linker.FindDirectMethod(klass, name, signature);
         REQUIRE(method.has_value());
-        const auto outcome = vm.Call(*method, arguments);
-        REQUIRE_MESSAGE(!outcome.exception.IsValid(), outcome.exception_message);
-        return outcome.value;
+        return vm.Call(*method, arguments);
     }
 
     VmValue On(const VmObjectRef receiver, const char* name,
@@ -114,6 +121,56 @@ struct AndroidValueVm final {
 };
 
 }  // namespace
+
+TEST_CASE("DVM-128 Settings.Secure reads the injected API 19 identity") {
+    for (const auto backend :
+         {InterpreterBackend::switch_dispatch,
+          InterpreterBackend::threaded}) {
+        AndroidValueVm fixture(backend);
+        fixture.context->secure_settings.insert_or_assign(
+            "android_id", "0123456789abcdef");
+        const auto resolver = fixture.vm.NewIntrinsicInstance(
+            "Landroid/content/ContentResolver;");
+        const auto key = fixture.vm.NewStringUtf8("android_id");
+        const auto roots = fixture.vm.ProtectReferences(
+            std::array{resolver, key});
+        const auto read = [&] {
+            return fixture.Static(
+                "Landroid/provider/Settings$Secure;", "getString",
+                "(Landroid/content/ContentResolver;Ljava/lang/String;)"
+                "Ljava/lang/String;",
+                {VmValue::Ref(resolver), VmValue::Ref(key)}).ref;
+        };
+        CHECK(fixture.vm.StringUtf8(read()) == "0123456789abcdef");
+        static_cast<void>(fixture.vm.CollectGarbage("dvm128-secure-settings"));
+        CHECK(fixture.vm.StringUtf8(read()) == "0123456789abcdef");
+
+        const auto unknown = fixture.vm.NewStringUtf8("unknown_setting");
+        CHECK_FALSE(fixture.Static(
+            "Landroid/provider/Settings$Secure;", "getString",
+            "(Landroid/content/ContentResolver;Ljava/lang/String;)"
+            "Ljava/lang/String;",
+            {VmValue::Ref(resolver), VmValue::Ref(unknown)}).ref.IsValid());
+
+        const auto outcome = fixture.StaticOutcome(
+            "Landroid/provider/Settings$Secure;", "getString",
+            "(Landroid/content/ContentResolver;Ljava/lang/String;)"
+            "Ljava/lang/String;",
+            {VmValue::Ref(VmObjectRef{}), VmValue::Ref(key)});
+        REQUIRE(outcome.exception.IsValid());
+        CHECK(fixture.linker.Class(outcome.exception_class).descriptor ==
+              "Ljava/lang/NullPointerException;");
+
+        const auto null_name = fixture.StaticOutcome(
+            "Landroid/provider/Settings$Secure;", "getString",
+            "(Landroid/content/ContentResolver;Ljava/lang/String;)"
+            "Ljava/lang/String;",
+            {VmValue::Ref(resolver), VmValue::Ref(VmObjectRef{})});
+        REQUIRE(null_name.exception.IsValid());
+        CHECK(fixture.linker.Class(null_name.exception_class).descriptor ==
+              "Ljava/lang/NullPointerException;");
+    }
+}
 
 TEST_CASE("DVM-116 BackupManager Java reports absent backup service") {
     for (const auto backend :

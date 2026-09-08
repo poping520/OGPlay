@@ -5,6 +5,31 @@
 
 namespace ogplay::runtime::android_intrinsics {
 
+Decl Declare_android_provider_Settings_Secure(const Context& context) {
+    auto builder = dx::IntrinsicClassBuilder::Class(
+        "Landroid/provider/Settings$Secure;", "Ljava/lang/Object;");
+    builder.StaticMethod(
+        "getString",
+        "(Landroid/content/ContentResolver;Ljava/lang/String;)Ljava/lang/String;",
+        [context](dx::IntrinsicContext& call) {
+            if (!call.arguments[0].ref.IsValid()) {
+                throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;",
+                                      "resolver == null"};
+            }
+            if (!call.arguments[1].ref.IsValid()) {
+                throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;",
+                                      "name == null"};
+            }
+            const auto name = call.vm.StringUtf8(call.arguments[1].ref);
+            const auto found = context->secure_settings.find(name);
+            if (found == context->secure_settings.end()) {
+                return dx::VmValue::Ref(dx::VmObjectRef{});
+            }
+            return MakeString(call, found->second);
+        });
+    return std::move(builder).Build();
+}
+
 Decl Declare_android_provider_Settings_System(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/provider/Settings$System;", "Ljava/lang/Object;");
     // System settings table shares the session-lifetime preference store.

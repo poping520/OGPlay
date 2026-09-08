@@ -28,6 +28,8 @@ struct SandboxSession final {
     // Null when running ephemeral. Must outlive the VirtualFileSystem.
     std::unique_ptr<runtime::SandboxStore> store;
     std::filesystem::path root;
+    // Per-sandbox API 19 identity. Never derived from host hardware.
+    std::string android_id;
 
     [[nodiscard]] std::string Describe() const;
 };

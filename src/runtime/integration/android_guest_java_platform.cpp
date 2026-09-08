@@ -433,7 +433,7 @@ AndroidGuestFrameworkPlatformSet InstallAndroidGuestFrameworkPlatform(
     invocations.RegisterHandler(
         "framework.settings_secure.get_string",
         [&environment, &strings,
-         value = config.installation_id](const JniInvocation& invocation) {
+         value = config.android_id](const JniInvocation& invocation) {
             const auto key = ResolveAsciiString(
                 environment, strings, invocation, 1);
             if (key != "android_id") return JniValue{JniReference{}};

@@ -14,6 +14,8 @@ intrinsic。`catalog.cpp` 是唯一注册聚合点；平台类按 API 家族聚�
 `PrefsEditHandler(context)`）形式提供，捕获会话状态的工厂显式接收 context。
 资源、VFS、音频、视频、widget、线程与设备事实全部来自显式传入的
 `DexVmAndroidContext`，不得读取游戏身份或另建宿主状态。
+`Settings.Secure` 的只读子集由进程装配的 guest 平台配置初始化；不得读取宿主设备身份、
+复用 app SharedPreferences 或扩展成 SettingsProvider。
 普通内存/包装流的状态属于 BootDex 对象字段与数组，文件/对象协议边界属于 DexVM core；
 integration 装配只通过
 `DexVmIoVfsAdapter` 向 `IoRuntime` 注入窄文件接口。`java.util.zip` handle 与 archive

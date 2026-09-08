@@ -288,7 +288,8 @@ DVM-79 的 `DexVmIoVfsAdapter` 是 DexVM core `IoFileSystem` 与具体
   reference,unique code、background、fully-loaded、keyboard、managed-swap、离线
   tracking sink(launch/first-run 同口径记账)与启动计数进入线程安全可查询状态。legacy framework platform 一个批次声明
   Build/VERSION 全量 APK 引用字段、SystemProperties、Settings.Secure、Context/
-  ContentResolver/Telephony、Activity、Bundle、ViewRoot 与 UUID;static field 走统一
+  ContentResolver/Telephony、Activity、Bundle、ViewRoot 与 UUID；DVM-128 将
+  `Settings.Secure` 的 `ANDROID_ID` 改为独立沙盒配置并由 JNI/DexVM 共用；static field 走统一
   field store,service/UUID 对象走统一 object registry,未知 key 保留 Android 空值语义
   且不读取宿主隐私。宿主未实现的浏览器、商店、付费、在线服务与 trophy 回调必须带
   method descriptor 明确失败,禁止静默 no-op 或伪造成功。

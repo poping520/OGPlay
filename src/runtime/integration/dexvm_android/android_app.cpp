@@ -109,6 +109,14 @@ Decl Declare_android_app_Activity(const Context& context) {
                           dx::kAccProtected);
     builder.VirtualMethod("onDestroy", "()V", lifecycle_noop,
                           dx::kAccProtected);
+    builder.VirtualMethod("onWindowFocusChanged", "(Z)V", lifecycle_noop);
+    builder.VirtualMethod("hasWindowFocus", "()Z",
+        [context](dx::IntrinsicContext& call) {
+            return dx::VmValue::Int(
+                context->window_has_focus.load() &&
+                context->window_focus_activity.load() ==
+                    call.receiver.Value());
+        });
     builder.VirtualMethod("onConfigurationChanged",
         "(Landroid/content/res/Configuration;)V", lifecycle_noop);
     builder.FinalMethod("getWindow", "()Landroid/view/Window;",

@@ -122,6 +122,10 @@ binding。`GLUtils` 读取 context 中既有 Bitmap backing；本层不拥有 GL
 - API 19 `View$OnFocusChangeListener` 作为 public abstract interface 发布唯一
   `onFocusChange(View, boolean)` 方法签名，使 DEX `implements` 与 `invoke-interface` 走正常
   linker/virtual dispatch；没有具体焦点事件来源时不得伪造回调。
+- DVM-125 的 Activity/View `hasWindowFocus()` 只读 lifecycle 唯一窗口焦点事实：当前
+  Activity、稳定 DecorView 与 attached UiTree View 可见获焦，detached View 和旧 Activity
+  固定不可见；`Activity.onWindowFocusChanged(boolean)` 保持 API 19 public virtual，状态
+  更新不依赖 guest override 是否调用 `super`。该事实不等同 resumed 或控件焦点。
 - API 19 `View$OnSystemUiVisibilityChangeListener` 发布唯一 public abstract
   `onSystemUiVisibilityChange(int)`；Window decor View 身份稳定，system-UI request 与 listener
   作为 View 实例字段保存并由普通 GC 强边追踪。managed surface 没有 Android system bars/WMS

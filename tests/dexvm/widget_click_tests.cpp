@@ -926,7 +926,7 @@ TEST_CASE("dynamic ViewGroup hierarchy shares layout params and geometry") {
     CHECK_FALSE(vm.context->ui_tree.Get(*fixed_node)->parent.has_value());
 }
 
-TEST_CASE("window focus dispatch reaches attached descendant overrides") {
+TEST_CASE("direct View window focus callback does not dispatch descendants") {
     ClickVm vm;
     const auto root = vm.interpreter.NewIntrinsicInstance(
         "Landroid/widget/FrameLayout;");
@@ -951,9 +951,11 @@ TEST_CASE("window focus dispatch reaches attached descendant overrides") {
               {VmValue::Ref(child), VmValue::Int(0)});
 
     vm.CallOn(root, "onWindowFocusChanged", "(Z)V", {VmValue::Int(1)});
+    CHECK(focus_value("getFocusEvents") == 0);
+    vm.CallOn(child, "onWindowFocusChanged", "(Z)V", {VmValue::Int(1)});
     CHECK(focus_value("getFocusEvents") == 1);
     CHECK(focus_value("getLastFocus") == 1);
-    vm.CallOn(root, "onWindowFocusChanged", "(Z)V", {VmValue::Int(0)});
+    vm.CallOn(child, "onWindowFocusChanged", "(Z)V", {VmValue::Int(0)});
     CHECK(focus_value("getFocusEvents") == 2);
     CHECK(focus_value("getLastFocus") == 0);
 }

@@ -247,6 +247,49 @@ namespace ogplay::session {
         RequireOutcome(vm, vm.Call(target, arguments), name);
     }
 
+    void DexActivityLifecycle::SetWindowFocus(const bool has_focus) {
+        auto& context = *bindings_.context;
+        const auto activity = context.activity;
+        if (!activity.IsValid()) Fail("window focus has no Activity owner");
+        const auto owner = activity.Value();
+        if (context.window_has_focus.load() == has_focus &&
+            context.window_focus_activity.load() == owner) {
+            return;
+        }
+
+        // ViewRootImpl updates AttachInfo before dispatch. Keep the same
+        // observable ordering even when an override omits super.
+        context.window_focus_activity.store(owner);
+        context.window_has_focus.store(has_focus);
+        CallActivity("onWindowFocusChanged", "(Z)V",
+                     {dx::VmValue::Int(has_focus ? 1 : 0)});
+
+        std::vector<dx::VmObjectRef> attached;
+        std::vector<runtime::ui::UiNodeId> pending{
+            context.ui_tree.Root()};
+        while (!pending.empty()) {
+            const auto node = pending.back();
+            pending.pop_back();
+            const auto* state = context.ui_tree.Get(node);
+            if (state == nullptr) continue;
+            for (auto child = state->children.rbegin();
+                 child != state->children.rend(); ++child) {
+                pending.push_back(*child);
+            }
+            if (node == context.ui_tree.Root() ||
+                !context.ui_tree.IsAttached(node)) {
+                continue;
+            }
+            const auto view = runtime::ViewObjectForUiNode(context, node);
+            if (view.IsValid()) attached.push_back(view);
+        }
+        const auto roots = bindings_.bridge->Vm().ProtectReferences(attached);
+        for (const auto view : attached) {
+            CallOnView(view, "onWindowFocusChanged", "(Z)V",
+                       {dx::VmValue::Int(has_focus ? 1 : 0)});
+        }
+    }
+
     LifecycleFrameState DexActivityLifecycle::Start() {
         if (state_ != LifecycleRunState::ready) {
             Fail("dex_activity lifecycle started twice");
@@ -283,6 +326,7 @@ namespace ogplay::session {
             const auto activity = vm.Model().NewInstance(
                 *activity_class, linker.Class(*activity_class).instance_slots);
             context.activity = activity;
+            context.window_focus_activity.store(activity.Value());
             // The manifest launcher opened the process's single task, so it
             // stays the task root across later startActivity handoffs.
             context.task_root_activity = activity.Value();
@@ -384,8 +428,7 @@ namespace ogplay::session {
         }
         try {
             initial_focus_pending_ = false;
-            CallOnView(bindings_.context->content_view, "onWindowFocusChanged",
-                       "(Z)V", {dx::VmValue::Int(0)});
+            SetWindowFocus(false);
             CallActivity("onPause", "()V", {});
             if (bindings_.flush_persistent_state) {
                 bindings_.flush_persistent_state();
@@ -408,8 +451,7 @@ namespace ogplay::session {
         }
         try {
             CallActivity("onResume", "()V", {});
-            CallOnView(bindings_.context->content_view, "onWindowFocusChanged",
-                       "(Z)V", {dx::VmValue::Int(1)});
+            SetWindowFocus(true);
             suspended_ = false;
         } catch (...) {
             MarkFailed();
@@ -525,9 +567,7 @@ namespace ogplay::session {
             DispatchInput();
             PumpJavaThreads();
             if (initial_focus_pending_) {
-                CallOnView(bindings_.context->content_view,
-                           "onWindowFocusChanged", "(Z)V",
-                           {dx::VmValue::Int(1)});
+                if (activity_started_) SetWindowFocus(true);
                 initial_focus_pending_ = false;
             }
             PumpVideo();
@@ -679,6 +719,7 @@ namespace ogplay::session {
             // A never-started activity (finished inside its onCreate) only
             // receives onDestroy, as on the platform.
             if (activity_started_) {
+                SetWindowFocus(false);
                 CallActivity("onPause", "()V", {});
                 CallActivity("onStop", "()V", {});
             }
@@ -752,8 +793,7 @@ namespace ogplay::session {
                                    context.surface_height)),
                                dx::VmValue::Int(0), dx::VmValue::Int(0)
                            });
-                CallOnView(context.content_view, "onWindowFocusChanged",
-                           "(Z)V", {dx::VmValue::Int(1)});
+                if (activity_started_) SetWindowFocus(true);
             }
             // A replacement Activity installs a new SurfaceView generation.
             // Callbacks registered during onCreate must observe the already-open
@@ -803,9 +843,7 @@ namespace ogplay::session {
         phase("teardown.guest_callbacks");
         try {
             if (was_running && !suspended_) {
-                CallOnView(bindings_.context->content_view,
-                           "onWindowFocusChanged", "(Z)V",
-                           {dx::VmValue::Int(0)});
+                SetWindowFocus(false);
                 CallActivity("onPause", "()V", {});
             }
             if (was_running) {

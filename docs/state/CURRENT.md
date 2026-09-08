@@ -1,10 +1,11 @@
 # 当前状态
 
-更新（2026-09-08 续）：[DVM-121](../tasks/dexvm/DVM-121.md) 续闭合 PvZ
-PreferenceManager 缺口：SharedPreferences 三接口与 PreferenceManager 迁入
-BootDex（923→927 类），Impl 补齐 float、getAll 快照及独立 Editor 提交语义，
-覆盖 clear 顺序、null 删除、GC、加载重试；string-set 与 change-listener 明确失败
-并记账。原命令越过 dobyear/dobmonth 读取，停在 onResume 的 hasWindowFocus。
+更新（2026-09-08 续）：[DVM-125](../tasks/dexvm/DVM-125.md) 闭合 Activity/View
+窗口焦点查询与通知。DexActivityLifecycle 维护唯一事实，初始 onResume 为 false、Surface
+后下一帧获焦；状态先更新再虚派 Activity 与 attached View，切换/暂停恢复/Stop 去重。
+DecorView 与挂载树查询一致，分离 View、旧 Activity 为 false；override 无 super 不影响状态。
+原命令越过 `MainActivity.onResume → hasWindowFocus()`，新首错为后台线程调用
+`String.format(Locale,String,Object[])` 无法解析。
 Button/TextView 三参构造与 buttonStyle(Small) 默认样式投影、TextView compound
 drawables（measure/raster/文本带内缩）、UI kind 按真实继承链解析、RelativeLayout
 TRUE(-1) 规则按 AOSP rule > 0 视为无锚点。exact PvZ 实跑 `CreateDiscoveryStrip 3/4/8`
@@ -31,14 +32,17 @@ compound 支持四方向/空文本测量与定位、资源事务更新；默认�
   LocaleData、货币、数字 parse/字段、复杂大小写和裸 `zh`。具名时区与历史 DST 未纳入审计，
   明确失败；标准六字符集仍走无 ICU 的宿主有界实现。
 - **运行边界**：文件/VFS、资源 XML、Locale、URL codec、Intent/Context、平台 enum、
-  Activity 组件身份及 flags=0 的 action-only service 查询已接通。无 Binder/system_server、
+  Activity 组件身份、窗口焦点及 flags=0 的 action-only service 查询已接通。无 Binder/system_server、
   支付或完整 Android 系统；未知/潜在 native 或服务匹配不伪造成功。
-- **Title**：PvZ 已越过 InitXpromo 与 PreferenceManager/dobyear 读取，
-  首错 `MainActivity.onResume` 的 `hasWindowFocus()`；Tales 首错
+- **Title**：PvZ 已越过 InitXpromo、PreferenceManager 与 onResume 焦点查询，首错为
+  Nimble tracking 后台线程的 Locale `String.format` overload；Tales 首错
   LocationListener，均未通过游戏 gate。
 
 ## 最近验证
 
+- DVM-125：windows-msvc Release 构建；双后端焦点链 96 断言、初始 traversal/切换及
+  View 定向回归通过；相关架构门禁 4/5 通过。platform-boundaries 仍仅被既有 GUI
+  `process_manager.cpp:131` 阻塞。实跑日志 `.local/review/dvm125/pvz-run.log`。
 - DVM-122：NDK r25c ARMv7 API 19 两次构建一致；ELF ABI、SONAME、DT_NEEDED、payload、
   BootDex audit/self-test、Bionic profile、DVM-105/106/108 及大小写/结构定向回归通过。
   Windows Release 未下载、编译或链接 host ICU。
@@ -56,7 +60,7 @@ compound 支持四方向/空文本测量与定位、资源事务更新；默认�
 
 ## 下一步与边界
 
-1. 补 Activity `hasWindowFocus()`（PvZ onResume 的下一个缺口），继续推进 PvZ。
+1. 分析 PvZ 新首错 `String.format(Locale,String,Object[])`，继续推进 PvZ。
 2. 处理既有 GUI 门禁，补 macOS/Linux、DH 与 Diagnostics 验收。
 
 OGPlay 仅覆盖登记的老游戏进程能力。完整 formatter/大数、宿主资源持久化、Proxy 生成、

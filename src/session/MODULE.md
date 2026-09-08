@@ -46,7 +46,9 @@ Dex activity 每帧在 guest 回调前泵送主 Looper，到帧尾只通过
   与 AudioTrack position notification；音频回调只在生命周期解释器单写者线程执行，guest 异常使 lifecycle
   失败。首次 Surface traversal 前按 ADR-0024 冻结 onStart/onResume 后已存在的 worker
   context，并有限轮 yield，直到每个 worker 被观测到 park 或终止；期间新线程不追入，
-  超限写结构化 warn 后 fail-open。初始 focus 仍留到下一 frame，不并入握手。输入按
+  超限写结构化 warn 后 fail-open。初始 focus 仍留到下一 frame，不并入握手；窗口焦点
+  事实只由 lifecycle 写入，先更新再虚派 Activity 与 attached View，Suspend/Resume、
+  Activity 切换和 Stop 共用去重转换。输入按
   managed view 命中规则分发触摸与 click。pause 在 guest `onPause` 后调用持久状态 flush 回调；clean stop
   在线程停止后、guest finalizer 前再次调用，失败向上层传播。
   guest EGL swap 在 intrinsic 内 publish，不由 lifecycle 再次 present。lifecycle

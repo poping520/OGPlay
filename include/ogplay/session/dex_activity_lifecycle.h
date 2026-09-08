@@ -119,6 +119,9 @@ private:
     void AwaitInitialThreadQuiescence();
     void ServiceActivitySwitch();
     void EnsureRendererCallbacks();
+    // Publishes the sole window-focus fact before virtually notifying the
+    // Activity and every currently attached View. Repeated values are silent.
+    void SetWindowFocus(bool has_focus);
 
     DexActivityLifecycleBindings bindings_;
     std::vector<runtime::AndroidBoundaryInput> pending_input_;

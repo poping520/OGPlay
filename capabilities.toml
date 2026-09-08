@@ -1463,7 +1463,7 @@ note = "DVM-15 严格 resources.arsc 读取：resid↔(type,name,文件路径)�
 [session.dex_activity_lifecycle]
 status = "complete"
 test = "Asphalt 5 exact dexvm title-flow gate 3/3; tests/session/lifecycle_tests.cpp; tests/runtime/native_library_loader_tests.cpp"
-note = "DVM-18 生命周期反转模板：实例化 launcher→<clinit>→onCreate/onStart/onResume→onSizeChanged→focus→onSurfaceCreated/Changed→逐帧 onDrawFrame→输入经 MotionEvent/onTouchEvent→suspend/resume→surfaceDestroyed/onStop/onDestroy 接存量 teardown 顺序"
+note = "DVM-18 生命周期反转模板：实例化 launcher→<clinit>→onCreate/onStart/onResume→onSizeChanged→focus→onSurfaceCreated/Changed→逐帧 onDrawFrame→输入经 MotionEvent/onTouchEvent→suspend/resume→surfaceDestroyed/onStop/onDestroy 接存量 teardown 顺序；DVM-125 将窗口焦点收敛为 lifecycle 唯一事实，初始 onResume 为 false、Surface 后下一帧获焦，状态先于 Activity/attached View 虚回调发布并去重，Suspend/Resume、Activity 切换与 Stop 共用转换；DecorView/attached View 查询同步，detached View 与旧 Activity 为 false"
 
 [session.title_profile_v2]
 status = "complete"

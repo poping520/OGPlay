@@ -88,6 +88,7 @@ intrinsic。解释应用 DEX 与受审 API 19 curated Boot DEX；完整平台库
   API 19 BootDex；core 只保留审计登记的 LocaleData/ICU/TimeZone native 边界。
   固定 ICU 数据经构建期哈希校验后嵌入，禁止文件/动态数据查找；LocaleData、货币、
   时区名称和整数 format/parse 直接使用同版本 ICU，不维护手写区域/数字算法。
+  Locale ISO 语言/国家枚举也来自固定 ICU，缓存与防御性 clone 由 BootDex ICU Java 持有。
   CoreIntrinsicServices.default_timezone（默认 GMT）仅用于 Java 默认时区未设置或被重置时，
   getDefault/setDefault 共用 DEX 静态字段，clone 与缓存均按 VM 隔离。
 - `IoRuntime`（DVM-79/91/104/109）：只拥有文件资源与增量字符解码器，不保存 Java 引用。

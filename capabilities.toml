@@ -1235,6 +1235,11 @@ status = "complete"
 test = "tools.bootdex_builder_self_test; python3 tools/bootdex/build_bootdex.py audit"
 note = "DVM-102A/ADR-0032 从 pinned API 19 core.jar 冻结日期格式化候选闭包：42 个 class_def、128 个对象类型、1285 个 method_id、485 个 field_id 和 47 个 native 签名均有机器分类；ICU4C 51.1.0.1 来源/提交/archive hash/许可证、首批 Locale/时区集合、6 个保留 overlay 及 Date 序列化字段切换已固定。DVM-102B～H 已按该清单发布，审计清单与入口已统一至 api19.json / build_bootdex.py audit，继续作为类/native/overlay 增长门禁。"
 
+[dexvm.locale_iso_catalogs]
+status = "complete"
+test = "tests/dexvm/dvm87_tests.cpp: DVM-113 Locale ISO catalogs; python3 tools/bootdex/build_bootdex.py audit"
+note = "DVM-113 按 API 19 Locale→BootDex ICU Java→固定 ICU 51 接通 getISOLanguages/getISOCountries。完整枚举 559 个语言代码（含三字母）与 249 个国家代码，保持源顺序且不追加废弃别名；缓存、静态 GC 根与每次 clone 归 Java 字段/数组。数据不依赖宿主或默认 Locale；getAvailableLocales、ISO3 转换及 LocaleData 范围不包含。"
+
 [dexvm.date_format_api19]
 status = "complete"
 test = "tests/dexvm/dvm87_tests.cpp; tests/dexvm/icu_formatter_runtime_tests.cpp; tests/dexvm/file_vfs_tests.cpp; tests/dexvm/gc_tests.cpp; tools.bootdex_builder_self_test; tools.android_payload_current; A6 gc_long 3/3; PvZ exact Profile reached-fault"

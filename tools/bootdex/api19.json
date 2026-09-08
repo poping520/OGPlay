@@ -1060,6 +1060,8 @@
         "Llibcore/icu/ICU;->getCurrencyDisplayName(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;",
         "Llibcore/icu/ICU;->getCurrencyFractionDigits(Ljava/lang/String;)I",
         "Llibcore/icu/ICU;->getCurrencySymbol(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;",
+        "Llibcore/icu/ICU;->getISOCountriesNative()[Ljava/lang/String;",
+        "Llibcore/icu/ICU;->getISOLanguagesNative()[Ljava/lang/String;",
         "Llibcore/icu/ICU;->initLocaleDataNative(Ljava/lang/String;Llibcore/icu/LocaleData;)Z",
         "Llibcore/icu/NativeDecimalFormat;->applyPatternImpl(JZLjava/lang/String;)V",
         "Llibcore/icu/NativeDecimalFormat;->cloneImpl(J)J",
@@ -1093,8 +1095,6 @@
         "Llibcore/icu/ICU;->getDisplayVariantNative(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;",
         "Llibcore/icu/ICU;->getISO3CountryNative(Ljava/lang/String;)Ljava/lang/String;",
         "Llibcore/icu/ICU;->getISO3LanguageNative(Ljava/lang/String;)Ljava/lang/String;",
-        "Llibcore/icu/ICU;->getISOCountriesNative()[Ljava/lang/String;",
-        "Llibcore/icu/ICU;->getISOLanguagesNative()[Ljava/lang/String;",
         "Llibcore/icu/ICU;->getIcuVersion()Ljava/lang/String;",
         "Llibcore/icu/ICU;->getScript(Ljava/lang/String;)Ljava/lang/String;",
         "Llibcore/icu/ICU;->getUnicodeVersion()Ljava/lang/String;",
@@ -1120,7 +1120,7 @@
       "method_ids": 1285,
       "field_ids": 485,
       "native_methods": 47,
-      "classified_members_sha256": "df72574071d1c30d1a1a8d84ae8a1c2f8158df235c601fc0819a53d4ddd5b44d"
+      "classified_members_sha256": "c64267206f1ac29fa0f57d257288ec8d7fc4dea678e36fbec7edd77bd8581e6b"
     }
   }
 }

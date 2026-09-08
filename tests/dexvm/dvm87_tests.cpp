@@ -516,6 +516,89 @@ TEST_CASE("DVM-87 Calendar uses injected clock and fixed-offset zones") {
           8 * 60 * 60 * 1000);
 }
 
+TEST_CASE("DVM-113 Locale ISO catalogs use pinned ICU and independent Java clones") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch,
+                               InterpreterBackend::threaded}) {
+        for (const auto* language : {"zh", "en"}) {
+            Dvm87Vm f(backend, language);
+            struct Catalog {
+                const char* method;
+                const char* cache;
+                JniSize count;
+                std::uint64_t hash;
+                const char* present;
+                const char* absent;
+            };
+            // Golden counts and FNV-1a of null-delimited codes, in source order,
+            // from pinned ICU 51 common/uloc.cpp up to each list's first NULL.
+            // The language list contains three-letter codes, but excludes iw/in/ji.
+            for (const auto& catalog : {
+                     Catalog{"getISOLanguages", "isoLanguages", 559,
+                             0xd8abccb8fdfff723ULL, "fil", "iw"},
+                     Catalog{"getISOCountries", "isoCountries", 249,
+                             0x0589c3fab47c6b84ULL, "CN", "AN"}}) {
+                CAPTURE(catalog.method);
+                CAPTURE(language);
+                CAPTURE(backend);
+                const auto invoke = [&](const char* owner) {
+                    const auto result = f.Static(owner, catalog.method,
+                                                 "()[Ljava/lang/String;");
+                    Dvm87Vm::RequireOk(result);
+                    return result.value.ref;
+                };
+                const auto first = invoke("Ljava/util/Locale;");
+                const auto first_root = f.vm.ProtectReferences(std::array{first});
+                CHECK(f.model.ObjectClass(first) ==
+                      f.linker.ResolveDescriptor("[Ljava/lang/String;"));
+                REQUIRE(f.model.ArrayLength(first) == catalog.count);
+                std::uint64_t hash = 14695981039346656037ULL;
+                for (JniSize index = 0; index < catalog.count; ++index) {
+                    const auto code = f.vm.StringUtf8(f.model.GetObjectElement(first, index));
+                    for (const char byte : code)
+                        hash = (hash ^ static_cast<unsigned char>(byte)) * 1099511628211ULL;
+                    hash *= 1099511628211ULL; // Null separator.
+                }
+                CHECK(hash == catalog.hash);
+                // Exercise the caller's Arrays.asList(...).contains(...) path.
+                const auto list = f.Static("Ljava/util/Arrays;", "asList",
+                    "([Ljava/lang/Object;)Ljava/util/List;", {VmValue::Ref(first)});
+                Dvm87Vm::RequireOk(list);
+                const auto list_root = f.vm.ProtectReferences(std::array{list.value.ref});
+                for (const auto& [text, expected] : {
+                         std::pair{catalog.present, 1}, std::pair{catalog.absent, 0},
+                         std::pair{"not-an-ISO-code", 0}}) {
+                    const auto contains = f.Virtual(list.value.ref, "contains", "(Ljava/lang/Object;)Z",
+                        {VmValue::Ref(f.vm.NewStringUtf8(text))});
+                    Dvm87Vm::RequireOk(contains);
+                    CHECK(contains.value.AsInt() == expected);
+                }
+                const auto original = f.model.GetObjectElement(first, 0);
+                const auto direct = invoke("Llibcore/icu/ICU;");
+                const auto direct_root = f.vm.ProtectReferences(std::array{direct});
+                CHECK(direct != first);
+                CHECK(f.model.GetObjectElement(direct, 0) == original);
+                const auto cache = f.linker.FindFieldRecursive(
+                    f.linker.ResolveDescriptor("Llibcore/icu/ICU;"),
+                    catalog.cache, "[Ljava/lang/String;");
+                REQUIRE(cache.has_value());
+                const auto& field = f.linker.Field(*cache);
+                const auto cached = VmObjectRef(f.linker.Class(field.owner).static_storage[field.slot]);
+                CHECK(cached != first);
+                CHECK(cached != direct);
+                f.model.SetObjectElement(first, 0, f.vm.NewStringUtf8("changed"));
+                f.model.SetObjectElement(direct, 0, VmObjectRef{});
+                static_cast<void>(f.vm.CollectGarbage("iso-catalog-cache"));
+                const auto next = invoke("Ljava/util/Locale;");
+                CHECK(next != first);
+                CHECK(next != direct);
+                CHECK(f.model.GetObjectElement(next, 0) == original);
+                CHECK(f.model.ArrayLength(next) == catalog.count);
+                CHECK(f.model.GetObjectElement(cached, 0) == original);
+            }
+        }
+    }
+}
+
 TEST_CASE("DVM-87 Locale publishes ENGLISH and its injected default language") {
     Dvm87Vm fixture;
     const auto locale =

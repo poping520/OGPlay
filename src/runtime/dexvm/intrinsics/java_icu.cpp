@@ -9,6 +9,7 @@
 #include <unicode/dcfmtsym.h>
 #include <unicode/decimfmt.h>
 #include <unicode/dtptngen.h>
+#include <unicode/locid.h>
 #include <unicode/ucurr.h>
 #include <unicode/ures.h>
 #include <unicode/timezone.h>
@@ -329,6 +330,22 @@ void PopulateLocaleData(IntrinsicContext& context,
 
 IntrinsicClassDecl DeclareIcu(const LocaleDataFields fields) {
   auto builder = IntrinsicClassBuilder::Class("Llibcore/icu/ICU;");
+  for (const auto& [name, enumerate] : std::array{
+           std::pair{"getISOLanguagesNative", &icu::Locale::getISOLanguages},
+           std::pair{"getISOCountriesNative", &icu::Locale::getISOCountries}}) {
+    builder.StaticMethod(name, "()[Ljava/lang/String;",
+        [enumerate](IntrinsicContext& context) -> VmValue {
+          try {
+            InitializePinnedIcu();
+            std::vector<std::u16string> codes;
+            // Match libcore_icu_ICU.cpp: stop at the first null; retain ICU order.
+            for (auto entry = enumerate(); *entry; ++entry) {
+              codes.emplace_back(*entry, *entry + std::char_traits<char>::length(*entry));
+            }
+            return VmValue::Ref(StringArray(context.vm, codes));
+          } catch (const std::exception& error) { IcuFailure(error); }
+        }, kAccPrivate | kAccNative);
+  }
   builder.StaticMethod(
       "getBestDateTimePatternNative",
       "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;",
@@ -405,8 +422,6 @@ IntrinsicClassDecl DeclareIcu(const LocaleDataFields fields) {
       {"getDisplayVariantNative", "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;"},
       {"getISO3CountryNative", "(Ljava/lang/String;)Ljava/lang/String;"},
       {"getISO3LanguageNative", "(Ljava/lang/String;)Ljava/lang/String;"},
-      {"getISOCountriesNative", "()[Ljava/lang/String;"},
-      {"getISOLanguagesNative", "()[Ljava/lang/String;"},
       {"getIcuVersion", "()Ljava/lang/String;"},
       {"getScript", "(Ljava/lang/String;)Ljava/lang/String;"},
       {"getUnicodeVersion", "()Ljava/lang/String;"},

@@ -29,8 +29,10 @@ DVM-79 的 `DexVmIoVfsAdapter` 是 DexVM core `IoFileSystem` 与具体
   生成的 Virtual SO 符号元数据与 loader 完成映射和重定位，不构造
   `AndroidBoundaryHle`、ANGLE backend 或 surface runtime；报告 guest/boundary 模块及
   relocation 数，任一缺失导入明确失败。
-- `InitializeApi19GuestProcess` 事务映射统一 root TLS/thread-info/preinit、4 MiB 栈、
-  `SVC #1` 返回 trap 与空 property area,并只向受检 libc 导出槽发布地址;固定布局冲突、
+- `InitializeApi19GuestProcess` 事务映射统一 root TLS/thread-info/preinit、独立环境页、
+  4 MiB 栈、`SVC #1` 返回 trap 与空 property area，并只向受检 libc 导出槽发布地址；
+  环境页序列化经校验的 OGPlay API 19 配置，不读取宿主环境，
+  Java 查询再受检读取 Bionic 当前 `environ`，保证 native 修改后不形成影子快照；固定布局冲突、
   非法线程/进程名或写入失败必须回滚新增映射和导出槽。
 - `AndroidGuestProcess` 是 Android native 进程资源的底层所有者：rootless create 只接收
   API 19 system module closure，以 `libc.so` 建立 process-lifetime namespace，在没有

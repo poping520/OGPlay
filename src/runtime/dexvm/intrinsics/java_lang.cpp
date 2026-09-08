@@ -2850,6 +2850,64 @@ namespace {
     return context.vm.StringUtf8(reference);
 }
 
+void PropagateEnvironmentCall(Interpreter& vm,
+                              const VmCallOutcome& outcome) {
+    if (!outcome.exception.IsValid()) return;
+    throw VmJavaThrow{
+        vm.Linker().Class(outcome.exception_class).descriptor,
+        outcome.exception_message, outcome.exception};
+}
+
+[[nodiscard]] VmObjectRef NewEnvironmentMap(
+    Interpreter& vm,
+    const std::vector<std::pair<std::string, std::string>>& entries) {
+    const auto map_class = vm.Linker().ResolveDescriptor("Ljava/util/HashMap;");
+    PropagateEnvironmentCall(vm, vm.EnsureClassInitialized(map_class));
+    const auto map = vm.NewIntrinsicInstance("Ljava/util/HashMap;");
+    const auto map_root = vm.ProtectReferences(std::array{map});
+    const auto constructor = vm.Linker().FindDirectMethod(
+        map_class, "<init>", "()V");
+    if (!constructor) {
+        throw DexVmError(DexVmErrorReason::internal_invariant,
+                         "HashMap constructor is not linked");
+    }
+    const std::vector<VmValue> map_constructor_arguments{VmValue::Ref(map)};
+    PropagateEnvironmentCall(
+        vm, vm.Call(*constructor, map_constructor_arguments));
+    for (const auto& [name, value] : entries) {
+        const auto key = vm.NewStringUtf8(name);
+        const auto value_ref = vm.NewStringUtf8(value);
+        const auto item_roots = vm.ProtectReferences(
+            std::array{map, key, value_ref});
+        static_cast<void>(InvokeGuest(
+            vm, map, "put",
+            "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;",
+            {VmValue::Ref(key), VmValue::Ref(value_ref)}));
+    }
+
+    const auto environment_class = vm.Linker().ResolveDescriptor(
+        "Ljava/lang/System$SystemEnvironment;");
+    PropagateEnvironmentCall(
+        vm, vm.EnsureClassInitialized(environment_class));
+    const auto environment =
+        vm.NewIntrinsicInstance("Ljava/lang/System$SystemEnvironment;");
+    const auto environment_roots = vm.ProtectReferences(
+        std::array{map, environment});
+    const auto environment_constructor = vm.Linker().FindDirectMethod(
+        environment_class, "<init>", "(Ljava/util/Map;)V");
+    if (!environment_constructor) {
+        throw DexVmError(
+            DexVmErrorReason::internal_invariant,
+            "SystemEnvironment constructor is not linked");
+    }
+    const std::vector<VmValue> environment_constructor_arguments{
+        VmValue::Ref(environment), VmValue::Ref(map)};
+    PropagateEnvironmentCall(
+        vm, vm.Call(*environment_constructor,
+                    environment_constructor_arguments));
+    return environment;
+}
+
 }  // namespace
 
 IntrinsicClassDecl Declare_java_lang_System(const CoreIntrinsicServices& services) {
@@ -2949,6 +3007,33 @@ IntrinsicClassDecl Declare_java_lang_System(const CoreIntrinsicServices& service
                     return VmValue::Ref(VmObjectRef{});
                 }
                 return VmValue::Ref(context.vm.NewStringUtf8(*value));
+            });
+    builder.StaticMethod("getenv", "(Ljava/lang/String;)Ljava/lang/String;",
+        [lookup = services.environment_value](IntrinsicContext& context) {
+                const auto name_ref = context.arguments[0].ref;
+                if (!name_ref.IsValid()) {
+                    throw VmJavaThrow{"Ljava/lang/NullPointerException;",
+                                      "name == null"};
+                }
+                if (!lookup) {
+                    throw VmJavaThrow{
+                        "Ljava/lang/UnsupportedOperationException;",
+                        "System.getenv needs an attached guest process environment"};
+                }
+                const auto value = lookup(context.vm.StringUtf8(name_ref));
+                return value.has_value()
+                           ? VmValue::Ref(context.vm.NewStringUtf8(*value))
+                           : VmValue::Ref(VmObjectRef{});
+            });
+    builder.StaticMethod("getenv", "()Ljava/util/Map;",
+        [snapshot = services.environment_entries](IntrinsicContext& context) {
+                if (!snapshot) {
+                    throw VmJavaThrow{
+                        "Ljava/lang/UnsupportedOperationException;",
+                        "System.getenv needs an attached guest process environment"};
+                }
+                return VmValue::Ref(
+                    NewEnvironmentMap(context.vm, snapshot()));
             });
     builder.StaticMethod("setProperty", "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;",
         [](IntrinsicContext& context) {

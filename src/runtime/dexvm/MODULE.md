@@ -294,7 +294,8 @@ array、caller、allocation、Clock/permit 与真实 BootDex atomic/AQS 初始�
   同址定义 shape/handler。目录固定为 catalog 加 lang、classloading、reflect、io、util、regex、
   zip、nio、net、xml、concurrent 11 个 family TU；仅以 `Append*()` 暴露给 catalog，禁止
   misc/common/all 巨石或静态自注册。非 Android family 全归 core；平台事实只经
-  `CoreIntrinsicServices` 注入。API 19 java.lang shape 位于
+  `CoreIntrinsicServices` 注入；其中环境查询只能读取 integration 受检发布的 guest
+  Bionic `environ`，不得观察宿主环境。API 19 java.lang shape 位于
   `data/dexvm/api19-java-lang-surface.json`，由 `tools/dexvm_api19_surface.py` 校验、
   `tools/dexvm_stub_gen.py --surface` 生成 builder 骨架。
 

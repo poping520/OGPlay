@@ -6,6 +6,7 @@
 #include <doctest/doctest.h>
 
 #include <array>
+#include <algorithm>
 #include <bit>
 #include <cmath>
 #include <limits>
@@ -14,7 +15,9 @@
 #include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "ogplay/core/capability_ledger.h"
@@ -132,6 +135,101 @@ TEST_CASE("dexvm P1 String surface: trim/lower/startsWith/indexOf") {
   CHECK(vm.AsString(vm.CallStatic("substrings", "()Ljava/lang/String;")) ==
         "Rocks");
     ExpectInt(vm.CallStatic("compareIgnore", "()I"), 0);
+}
+
+TEST_CASE("dexvm System.getenv reads the injected guest process environment") {
+    CoreIntrinsicServices services;
+    const std::vector<std::pair<std::string, std::string>> entries{
+        {"PATH", "/system/bin"}, {"ANDROID_ROOT", "/system"}};
+    services.environment_value = [entries](const std::string_view name)
+        -> std::optional<std::string> {
+        const auto found = std::ranges::find(entries, name, &std::pair<
+            std::string, std::string>::first);
+        return found == entries.end() ? std::nullopt
+                                      : std::optional(found->second);
+    };
+    services.environment_entries = [entries] { return entries; };
+
+    for (const auto backend : {InterpreterBackend::switch_dispatch,
+                               InterpreterBackend::threaded}) {
+        INFO("backend=", backend == InterpreterBackend::threaded
+                             ? "threaded"
+                             : "switch");
+        Vm vm({.backend = backend}, true, services);
+        const auto string = [&vm](const std::string& value) {
+            return VmValue::Ref(vm.interpreter.NewStringUtf8(value));
+        };
+        const auto path = vm.CallStatic(
+            "getenv", "(Ljava/lang/String;)Ljava/lang/String;",
+            {string("PATH")}, "Ljava/lang/System;");
+        REQUIRE_FALSE(path.exception.IsValid());
+        REQUIRE(path.value.ref.IsValid());
+        CHECK(vm.interpreter.StringUtf8(path.value.ref) == "/system/bin");
+
+        const auto missing = vm.CallStatic(
+            "getenv", "(Ljava/lang/String;)Ljava/lang/String;",
+            {string("HOME")}, "Ljava/lang/System;");
+        REQUIRE_FALSE(missing.exception.IsValid());
+        CHECK_FALSE(missing.value.ref.IsValid());
+
+        const auto null_name = vm.CallStatic(
+            "getenv", "(Ljava/lang/String;)Ljava/lang/String;",
+            {VmValue::Ref(VmObjectRef{})}, "Ljava/lang/System;");
+        ExpectThrow(vm, null_name, "Ljava/lang/NullPointerException;",
+                    "name == null");
+
+        const auto all = vm.CallStatic(
+            "getenv", "()Ljava/util/Map;", {}, "Ljava/lang/System;");
+        REQUIRE_FALSE(all.exception.IsValid());
+        REQUIRE(all.value.ref.IsValid());
+        const auto all_root = vm.interpreter.ProtectReferences(
+            std::array{all.value.ref});
+        static_cast<void>(vm.interpreter.CollectGarbage());
+        CHECK(vm.linker.Class(vm.model.ObjectClass(all.value.ref)).descriptor ==
+              "Ljava/lang/System$SystemEnvironment;");
+        const auto type = vm.model.ObjectClass(all.value.ref);
+        const auto get = vm.linker.FindVtableIndex(
+            type, "get", "(Ljava/lang/Object;)Ljava/lang/Object;");
+        REQUIRE(get.has_value());
+        const std::vector<VmValue> get_arguments{
+            VmValue::Ref(all.value.ref), string("ANDROID_ROOT")};
+        const auto read = vm.interpreter.Call(
+            vm.linker.Class(type).vtable[*get],
+            get_arguments);
+        REQUIRE_FALSE(read.exception.IsValid());
+        REQUIRE(read.value.ref.IsValid());
+        CHECK(vm.interpreter.StringUtf8(read.value.ref) == "/system");
+
+        const auto integer_class =
+            vm.linker.ResolveDescriptor("Ljava/lang/Integer;");
+        const auto value_of = vm.linker.FindDirectMethod(
+            integer_class, "valueOf", "(I)Ljava/lang/Integer;");
+        REQUIRE(value_of.has_value());
+        const std::vector<VmValue> value_of_arguments{VmValue::Int(7)};
+        const auto integer = vm.interpreter.Call(
+            *value_of, value_of_arguments);
+        REQUIRE_FALSE(integer.exception.IsValid());
+        const std::vector<VmValue> wrong_key_arguments{
+            VmValue::Ref(all.value.ref), VmValue::Ref(integer.value.ref)};
+        const auto wrong_key = vm.interpreter.Call(
+            vm.linker.Class(type).vtable[*get], wrong_key_arguments);
+        REQUIRE(wrong_key.exception.IsValid());
+        CHECK(vm.linker.Class(wrong_key.exception_class).descriptor ==
+              "Ljava/lang/ClassCastException;");
+
+        const auto put = vm.linker.FindVtableIndex(
+            type, "put",
+            "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;");
+        REQUIRE(put.has_value());
+        const std::vector<VmValue> put_arguments{
+            VmValue::Ref(all.value.ref), string("PATH"), string("changed")};
+        const auto mutation = vm.interpreter.Call(
+            vm.linker.Class(type).vtable[*put],
+            put_arguments);
+        REQUIRE(mutation.exception.IsValid());
+        CHECK(vm.linker.Class(mutation.exception_class).descriptor ==
+              "Ljava/lang/UnsupportedOperationException;");
+    }
 }
 
 TEST_CASE("dexvm String.toLowerCase fast path preserves API19 value and identity") {

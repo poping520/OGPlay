@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <string>
 #include <utility>
+#include <vector>
 
 #include <doctest/doctest.h>
 
@@ -42,6 +43,15 @@ void MapLibcExport(ogplay::memory::AddressSpace& address_space) {
             ogplay::memory::PageProtection::write);
 }
 
+[[nodiscard]] std::string ReadCString(
+    const ogplay::memory::AddressSpace& address_space,
+    const ogplay::memory::GuestAddress address) {
+    const auto length = address_space.CStringLength(address, 4096U, 1U);
+    std::vector<std::byte> bytes(length);
+    address_space.Read(address, bytes, 1U);
+    return {reinterpret_cast<const char*>(bytes.data()), bytes.size()};
+}
+
 }  // namespace
 
 TEST_CASE("API 19 guest process publishes complete reusable startup memory") {
@@ -60,6 +70,14 @@ TEST_CASE("API 19 guest process publishes complete reusable startup memory") {
               ogplay::runtime::kApi19GuestStackSize - 64U));
     CHECK(process.return_trap ==
           ogplay::runtime::kApi19GuestReturnAddress);
+    CHECK(process.environment ==
+          ogplay::runtime::kApi19GuestEnvironmentAddress);
+    CHECK(Read32(bus, ogplay::runtime::kApi19GuestPreinitAddress.Add(8)) ==
+          process.environment.Value());
+    CHECK(ReadCString(
+              address_space,
+              ogplay::memory::GuestAddress{Read32(bus, process.environment)}) ==
+          "PATH=/sbin:/vendor/bin:/system/sbin:/system/bin:/system/xbin");
     CHECK(Read32(bus, ogplay::runtime::kApi19GuestThreadInfoAddress.Add(12)) ==
           ogplay::runtime::kApi19GuestStackAddress.Value());
     CHECK(Read32(bus, ogplay::runtime::kApi19GuestThreadInfoAddress.Add(16)) ==
@@ -99,6 +117,57 @@ TEST_CASE("API 19 guest process publishes complete reusable startup memory") {
                       name.size()) == "ogplay-profile");
 }
 
+TEST_CASE("API 19 guest process serializes one validated OGPlay environment") {
+    ogplay::memory::AddressSpace address_space;
+    ogplay::memory::CheckedMemoryBus bus(address_space);
+    MapLibcExport(address_space);
+    const auto environment = ogplay::runtime::GuestProcessEnvironment::Api19(
+        "/storage/emulated/0");
+
+    const auto process = ogplay::runtime::InitializeApi19GuestProcess(
+        address_space, bus, MakeNamespace(), {1, "ogplay", &environment});
+    std::vector<std::string> entries;
+    for (std::size_t index = 0;; ++index) {
+        const auto pointer = Read32(
+            bus, process.environment.Add(index * sizeof(std::uint32_t)));
+        if (pointer == 0U) break;
+        entries.push_back(ReadCString(
+            address_space, ogplay::memory::GuestAddress{pointer}));
+    }
+    CHECK(entries == std::vector<std::string>{
+                         "PATH=/sbin:/vendor/bin:/system/sbin:/system/bin:/system/xbin",
+                         "ANDROID_ROOT=/system",
+                         "ANDROID_DATA=/data",
+                         "EXTERNAL_STORAGE=/storage/emulated/0"});
+    CHECK_FALSE(environment.Find("HOME").has_value());
+    REQUIRE(environment.Find("EXTERNAL_STORAGE").has_value());
+    CHECK(*environment.Find("EXTERNAL_STORAGE") == "/storage/emulated/0");
+}
+
+TEST_CASE("guest process environment rejects invalid and ambiguous entries") {
+    using Entry = ogplay::runtime::GuestProcessEnvironmentEntry;
+    CHECK_THROWS_AS(
+        static_cast<void>(ogplay::runtime::GuestProcessEnvironment(
+            std::vector<Entry>{{"", "value"}})),
+        std::invalid_argument);
+    CHECK_THROWS_AS(
+        static_cast<void>(ogplay::runtime::GuestProcessEnvironment(
+            std::vector<Entry>{{"A=B", "value"}})),
+        std::invalid_argument);
+    CHECK_THROWS_AS(
+        static_cast<void>(ogplay::runtime::GuestProcessEnvironment(
+            std::vector<Entry>{{"A", "1"}, {"A", "2"}})),
+        std::invalid_argument);
+    CHECK_THROWS_AS(
+        static_cast<void>(
+            ogplay::runtime::GuestProcessEnvironment::Api19("relative")),
+        std::invalid_argument);
+    CHECK_THROWS_AS(
+        static_cast<void>(ogplay::runtime::GuestProcessEnvironment(
+            std::vector<Entry>{{"A", std::string(4096U, 'x')}})),
+        std::invalid_argument);
+}
+
 TEST_CASE("API 19 guest process rolls back a late fixed-layout collision") {
     ogplay::memory::AddressSpace address_space;
     ogplay::memory::CheckedMemoryBus bus(address_space);
@@ -122,6 +191,11 @@ TEST_CASE("API 19 guest process rolls back a late fixed-layout collision") {
     CHECK_THROWS_AS(
         address_space.ValidateMapped(
             {ogplay::runtime::kApi19GuestTlsAddress,
+             address_space.PageSize()}),
+        ogplay::memory::MemoryFault);
+    CHECK_THROWS_AS(
+        address_space.ValidateMapped(
+            {ogplay::runtime::kApi19GuestEnvironmentAddress,
              address_space.PageSize()}),
         ogplay::memory::MemoryFault);
     CHECK_THROWS_AS(

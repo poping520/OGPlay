@@ -1013,7 +1013,12 @@ note = "M5 WU-0257 让 guest GetByteArrayRegion 从统一 primitive array store 
 [runtime.api19_guest_process]
 status = "complete"
 test = "tests/runtime/api19_guest_process_tests.cpp; tests/runtime/native_activity_runner_tests.cpp"
-note = "M5 WU-0239 事务映射通用 API 19 root TLS/thread-info/preinit、栈、SVC 返回 trap 与 property area；失败回滚并保留 libc 导出槽"
+note = "M5 WU-0239 事务映射通用 API 19 root TLS/thread-info/preinit、栈、SVC 返回 trap 与 property area；DVM-127 增加独立环境页并将受检 OGPlay 配置序列化为 A32 envp；失败统一回滚并保留 libc 导出槽"
+
+[runtime.api19_guest_environment]
+status = "complete"
+test = "tests/runtime/api19_guest_process_tests.cpp; tests/dexvm/intrinsics_p1_tests.cpp; host PATH poisoned PvZ exact Profile reached Settings.Secure"
+note = "DVM-127 以每进程 OGPlay 配置初始化 PATH、ANDROID_ROOT、ANDROID_DATA、EXTERNAL_STORAGE，不继承宿主环境；Bionic environ 是运行时唯一权威，System.getenv(String)/getenv() 经 CoreIntrinsicServices 受检读取当前值，无参返回 BootDex SystemEnvironment 不可修改快照；条目、单项与总字节有界，畸形 environ 明确失败"
 
 [session.profile_native_execution]
 status = "complete"
@@ -1228,7 +1233,7 @@ note = "DVM-7 注册/层级/布局/vtable/iftable 四步链接与懒结构预检
 [dexvm.boot_dex]
 status = "complete"
 test = "tests/dexvm/intrinsics_p1_tests.cpp; tests/frontend/data_directory_tests.cpp; tools.bootdex_builder_self_test; tools.android_payload_current; PvZ exact Profile reached-fault"
-note = "DVM-99..126 curated BootDex：日期、集合、普通流、X500、Cipher/JCA/Conscrypt AES 与 Certificate/Harmony/Signature 及 framework 值类、UUID/MessageDigest/摘要流和对象流、定时执行器依赖、ServiceConnection、Throwable/StackTraceElement、BackupManager/RestoreObserver、Bundle/ArrayMap、显示/布局/文本值类及 API 19 Formatter 家族共 948 个 class_def。948 类全链接；String 保持 VM owner，两个 format overload 仅包装 guest Formatter。精确边界 overlay 与 guest JNI 声明受审，制品身份见 data/android/19/manifest.json。Conscrypt 为用户授权的临时设备来源；libcrypto 为 AOSP android-4.4.4_r2.0.1 自建 ARM 库。完整 core/framework、multidex、动态 classpath 与 Android 系统服务未纳入。"
+note = "DVM-99..127 curated BootDex：日期、集合、普通流、X500、Cipher/JCA/Conscrypt AES 与 Certificate/Harmony/Signature 及 framework 值类、UUID/MessageDigest/摘要流和对象流、定时执行器依赖、ServiceConnection、Throwable/StackTraceElement、BackupManager/RestoreObserver、Bundle/ArrayMap、显示/布局/文本值类、API 19 Formatter 与 SystemEnvironment 共 949 个 class_def。949 类全链接；String 保持 VM owner，两个 format overload 仅包装 guest Formatter；SystemEnvironment 保持 getenv Map 的不可修改与类型检查语义。精确边界 overlay 与 guest JNI 声明受审，制品身份见 data/android/19/manifest.json。Conscrypt 为用户授权的临时设备来源；libcrypto 为 AOSP android-4.4.4_r2.0.1 自建 ARM 库。完整 core/framework、multidex、动态 classpath 与 Android 系统服务未纳入。"
 
 [dexvm.string_format_api19]
 status = "partial"

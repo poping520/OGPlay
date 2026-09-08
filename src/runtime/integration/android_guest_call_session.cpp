@@ -548,6 +548,7 @@ struct AndroidGuestProcessStartup final {
     std::size_t application_module_count{};
     GuestProcFacts proc_facts;
     std::shared_ptr<debug::DiagnosticState> diagnostics;
+    std::shared_ptr<const GuestProcessEnvironment> initial_environment;
 };
 
 [[nodiscard]] AndroidGuestProcessStartup RootlessStartup(
@@ -572,7 +573,8 @@ struct AndroidGuestProcessStartup final {
             request.platform,
             0,
             request.proc_facts,
-            request.diagnostics};
+            request.diagnostics,
+            request.initial_environment};
 }
 
 [[nodiscard]] AndroidGuestProcessStartup LegacyStartup(
@@ -597,7 +599,8 @@ struct AndroidGuestProcessStartup final {
             request.platform,
             1,
             request.proc_facts,
-            request.diagnostics};
+            request.diagnostics,
+            {}};
 }
 
 }  // namespace
@@ -636,6 +639,11 @@ public:
               return result;
           }),
           filesystem_(request.filesystem),
+          initial_environment_(
+              request.initial_environment
+                  ? request.initial_environment
+                  : std::make_shared<const GuestProcessEnvironment>(
+                        GuestProcessEnvironment::Api19())),
           root_module_(request.root_module),
           maximum_ticks_(request.maximum_ticks_per_call),
           progress_(request.progress),
@@ -697,7 +705,7 @@ public:
 
         process_memory_ = InitializeApi19GuestProcess(
             address_space_, memory_bus_, loaded_.link_namespace,
-            {kRootThreadId, "ogplay-profile"});
+            {kRootThreadId, "ogplay-profile", initial_environment_.get()});
         lifecycle_.Register(kRootThreadId, process_memory_.thread_pointer);
         nio_.SetDirectMemoryAccess({
             [this](const std::uint32_t size) {
@@ -1521,6 +1529,58 @@ public:
     audio::OpenSlesPcmMixer& PcmPlayback() noexcept {
         return boundary_.PcmPlayback(); }
     VirtualFileSystem* Filesystem() noexcept { return filesystem_; }
+    std::vector<GuestProcessEnvironmentEntry> ProcessEnvironmentEntries()
+        const {
+        constexpr std::size_t kMaximumEntryBytes = 4096U;
+        constexpr std::size_t kMaximumTotalBytes = 64U * 1024U;
+        const auto symbol = loader::LookupElf32Symbol(
+            loaded_.link_namespace, "environ");
+        const auto vector_address = memory::GuestAddress{
+            address_space_.Read32(symbol.address)};
+        if (vector_address.IsNull()) {
+            throw AndroidGuestProcessError(
+                "guest process environ pointer is null");
+        }
+        std::vector<GuestProcessEnvironmentEntry> result;
+        std::size_t total_bytes{};
+        for (std::size_t index = 0;
+             index <= GuestProcessEnvironment::kMaximumEntries; ++index) {
+            const auto item = memory::GuestAddress{address_space_.Read32(
+                vector_address.Add(index * sizeof(std::uint32_t)))};
+            if (item.IsNull()) return result;
+            if (index == GuestProcessEnvironment::kMaximumEntries) {
+                throw AndroidGuestProcessError(
+                    "guest process environ is not terminated");
+            }
+            const auto length =
+                address_space_.CStringLength(item, kMaximumEntryBytes);
+            total_bytes += length + 1U;
+            if (total_bytes > kMaximumTotalBytes) {
+                throw AndroidGuestProcessError(
+                    "guest process environ exceeds its read boundary");
+            }
+            std::vector<std::byte> bytes(length);
+            address_space_.Read(item, bytes);
+            std::string text(reinterpret_cast<const char*>(bytes.data()),
+                             bytes.size());
+            const auto separator = text.find('=');
+            if (separator == std::string::npos) continue;
+            result.push_back({text.substr(0, separator),
+                              text.substr(separator + 1U)});
+        }
+        throw AndroidGuestProcessError(
+            "guest process environ is not terminated");
+    }
+    std::optional<std::string> ProcessEnvironmentValue(
+        const std::string_view name) const {
+        if (name.empty() || name.find('=') != std::string_view::npos) {
+            return std::nullopt;
+        }
+        for (const auto& entry : ProcessEnvironmentEntries()) {
+            if (entry.name == name) return entry.value;
+        }
+        return std::nullopt;
+    }
     void InitializeJniLibrary() {
         if (!running_) {
             throw AndroidGuestProcessError(
@@ -1842,6 +1902,7 @@ private:
         std::make_shared<cpu::DynarmicExecutionContext>(64);
     cpu::GuestThreadGroup threads_;
     VirtualFileSystem* filesystem_{};
+    std::shared_ptr<const GuestProcessEnvironment> initial_environment_;
     std::unique_ptr<FrameworkDirectAssetHle> direct_assets_;
     std::unique_ptr<GuestCloneThreadRuntime> clone_runtime_;
     std::unique_ptr<cpu::DynarmicCpu> root_cpu_;
@@ -2004,6 +2065,14 @@ audio::OpenSlesPcmMixer& AndroidGuestProcess::PcmPlayback() noexcept {
 }
 VirtualFileSystem* AndroidGuestProcess::Filesystem() noexcept {
     return impl_->Filesystem();
+}
+std::optional<std::string> AndroidGuestProcess::ProcessEnvironmentValue(
+    const std::string_view name) const {
+    return impl_->ProcessEnvironmentValue(name);
+}
+std::vector<GuestProcessEnvironmentEntry>
+AndroidGuestProcess::ProcessEnvironmentEntries() const {
+    return impl_->ProcessEnvironmentEntries();
 }
 std::optional<memory::GuestAddress> AndroidGuestProcess::FindNativeExport(
     const std::string_view class_name, const std::string_view method_name,

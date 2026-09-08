@@ -802,3 +802,21 @@ preferences_xml/VFS，不引入 android.app.SharedPreferencesImpl、QueuedWork �
 store；getAll 返回独立快照。Editor 缓冲随 guest owner GC 清理。apply 使用 API 19
 接口文档允许的同步 commit 兼容方式，不承诺异步写队列。string-set 与变更监听暂不
 支持，明确失败并记账；默认文件名及 Context 虚派交给 BootDex Java。
+
+<a id="adr-0053"></a>
+## ADR-0053 · API 19 guest 环境以 Bionic `environ` 为进程权威
+
+2026-09-08，接受，DVM-127。
+
+OGPlay 为每个 guest 进程创建独立、确定性的 API 19 初始环境；不继承宿主 shell、用户、
+区域或代理变量。首批只发布兼容层已有真实路径支撑的 `PATH`、`ANDROID_ROOT`、
+`ANDROID_DATA` 与 `EXTERNAL_STORAGE`。配置先经名称、重复项及容量校验，再以独立 guest
+页中的 A32 `envp` 传给 Bionic；初始化失败沿进程事务回滚。
+
+Bionic 初始化后的 `environ` 是该进程的唯一运行时权威。Java `System.getenv` 通过
+`CoreIntrinsicServices` 受检读取它，因此 native `setenv/putenv/unsetenv` 的成功变化不会与
+Java 形成旧快照。无参查询使用 AOSP `System$SystemEnvironment` 保持不可修改 Map 与类型
+检查语义。读取限制条目数、单项和总字节；畸形或未终止的 native 环境明确失败。
+
+新增变量必须先证明其 guest 资源存在；不得为某款游戏添加生产分支，也不得复制尚无支撑的
+`BOOTCLASSPATH`、ASEC、loop 或宿主 `LD_LIBRARY_PATH`。

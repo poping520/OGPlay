@@ -187,7 +187,8 @@ public:
 
     // Emergency reserve: lets the interpreter materialize the
     // OutOfMemoryError throwable itself after the budget is exhausted.
-    void SetEmergencyReserve(bool enabled) noexcept;
+    // Returns the previous mode so nested VM exception construction can restore it.
+    bool SetEmergencyReserve(bool enabled) noexcept;
 
     [[nodiscard]] std::uint64_t AllocatedBytes() const noexcept;
     [[nodiscard]] std::uint64_t ObjectCount() const noexcept;

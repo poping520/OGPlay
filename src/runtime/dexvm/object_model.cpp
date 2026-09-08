@@ -163,9 +163,14 @@ public:
     }
 
     bool emergency_reserve{};
+    std::uint64_t emergency_remaining{};
 
     void Reserve(const std::uint64_t bytes) {
         if (emergency_reserve) {
+            if (bytes > emergency_remaining)
+                throw DexVmError(DexVmErrorReason::heap_budget_exhausted,
+                                 "dexvm exception emergency reserve exhausted");
+            emergency_remaining -= bytes;
             allocated_bytes += bytes;
             return;
         }
@@ -966,8 +971,11 @@ DexClassId JavaObjectModel::ClassOfClassObject(const VmObjectRef ref) const {
     return DexClassId(static_cast<std::uint32_t>(record.host_state));
 }
 
-void JavaObjectModel::SetEmergencyReserve(const bool enabled) noexcept {
+bool JavaObjectModel::SetEmergencyReserve(const bool enabled) noexcept {
+    const auto previous = impl_->emergency_reserve;
+    if (enabled && !previous) impl_->emergency_remaining = 64U * 1024U;
     impl_->emergency_reserve = enabled;
+    return previous;
 }
 
 std::uint64_t JavaObjectModel::AllocatedBytes() const noexcept {

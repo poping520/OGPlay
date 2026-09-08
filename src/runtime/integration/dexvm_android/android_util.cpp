@@ -19,22 +19,23 @@ namespace ogplay::runtime::android_intrinsics {
 Decl Declare_android_util_AndroidException(const Context&) {
     auto builder = dx::IntrinsicClassBuilder::Class(
         "Landroid/util/AndroidException;", "Ljava/lang/Exception;");
-    builder.Constructor("()V", [](dx::IntrinsicContext&) {
+    builder.Constructor("()V", [](dx::IntrinsicContext& c) {
+        c.vm.InitializeThrowable(c.receiver);
         return dx::VmValue::Void();
     });
     builder.Constructor("(Ljava/lang/String;)V",
         [](dx::IntrinsicContext& call) {
-            call.vm.SetThrowableMessage(call.receiver, call.arguments[0].ref);
+            call.vm.InitializeThrowable(call.receiver, call.arguments[0].ref);
             return dx::VmValue::Void();
         });
     builder.Constructor(
         "(Ljava/lang/String;Ljava/lang/Throwable;)V",
         [](dx::IntrinsicContext& call) {
-            call.vm.SetThrowableMessage(call.receiver, call.arguments[0].ref);
+            call.vm.InitializeThrowable(call.receiver, call.arguments[0].ref);
             return dx::VmValue::Void();
         });
     builder.Constructor("(Ljava/lang/Exception;)V",
-        [](dx::IntrinsicContext&) { return dx::VmValue::Void(); });
+        [](dx::IntrinsicContext& c) { c.vm.InitializeThrowable(c.receiver); return dx::VmValue::Void(); });
     return std::move(builder).Build();
 }
 

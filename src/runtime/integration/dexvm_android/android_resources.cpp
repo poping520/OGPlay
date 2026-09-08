@@ -402,10 +402,10 @@ Decl Declare_android_content_res_Resources_NotFoundException(
         "Landroid/content/res/Resources$NotFoundException;",
         "Ljava/lang/RuntimeException;");
     builder.Constructor("()V",
-                        [](dx::IntrinsicContext&) { return dx::VmValue::Void(); });
+                        [](dx::IntrinsicContext& c) { c.vm.InitializeThrowable(c.receiver); return dx::VmValue::Void(); });
     builder.Constructor("(Ljava/lang/String;)V",
                         [](dx::IntrinsicContext& call) {
-                            call.vm.SetThrowableMessage(call.receiver,
+                            call.vm.InitializeThrowable(call.receiver,
                                                        call.arguments[0].ref);
                             return dx::VmValue::Void();
                         });

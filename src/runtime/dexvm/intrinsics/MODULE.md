@@ -93,10 +93,14 @@ DVM-109 的 ObjectInputStream/ObjectOutputStream、ObjectStreamClass、字段辅
 readResolve/writeReplace、Externalizable 协议 1/2 与数组执行原版协议。
 ObjectOutputStream.getFieldL 是 AOSP 未使用的遗留 native 声明，显式未实现绑定，不提供假返回。
 Proxy 两个生成 native、VMStack 除 getClasses 以外四个 native 同样明确失败。
-普通对象图迁移不代表 Throwable 等宿主侧表对象的完整持久化，不能据此宣称所有平台对象可序列化。
+DVM-115 将 Throwable、StackTraceElement、java.lang 异常家族及 IOException/InvocationTargetException
+迁入 BootDex；其对象图和私有对象流回调可持久化。其余宿主资源对象仍不因迁移自动可序列化。
 Throwable.getLocalizedMessage 虚调用 receiver.getMessage；toString 虚调用
 getLocalizedMessage，保留 null（仅类名）与空串（类名加冒号）的区别。子类覆盖进入
-正常 VM 调用，保持消息引用、GC 强根及原异常身份，禁止直接读取 detailMessage 绕过覆盖。
+正常 VM 调用，保持消息引用、GC 强根及原异常身份。java_lang.cpp 只保留 Throwable 的两个
+栈 native；PrintWriter/原因链/suppressed/重复帧输出归原版 Java。PrintStream 实现 Appendable
+到结构化输出的窄边界，空追加不产生输出；String.subSequence 委托 UTF-16 substring，
+全范围保留原引用。StackTraceElement 无 ordinary overlay，线程栈也复用其 Java 构造器。
 
 `java_zip.cpp` 聚合 `ZipEntry`/`ZipInputStream`。构造时经 guest read 读取源数据，
 archive/entry/cursor/close 状态只委托 per-VM `ZipRuntime`；ZIP32 结构校验、inflate
@@ -232,5 +236,5 @@ String.indexOf(String,int) 使用 UTF-16 索引，负起点归零，越过末尾
 DVM-109 已由原版对象流调用 UUID 私有 readObject，恢复 transient 缓存；删除旧拒绝与 Date 特例。
 String.intern 复用弱 canonical 表并保留 receiver 身份；startsWith(String,int) 按 UTF-16
 检查 offset/空串/null。String/Number/Throwable/Exception/RuntimeException/Error/IOException
-补齐 AOSP 的 serialVersionUID 常量，不伪造默认 UID。
+使用 AOSP 的 serialVersionUID 常量（Throwable 家族 DVM-115 起来自 DEX），不伪造默认 UID。
 SoftReference 普通 GC 保留 referent，分配压力下可清除并入队；原版 ObjectStreamClass 缓存使用此语义。

@@ -474,7 +474,10 @@ void Interpreter::Impl::PushInterpretedFrame(
     const std::span<const VmValue> arguments,
     const std::uint32_t caller_advance) {
     auto& frames = execution.frames;
-    if (frames.size() >= config.max_frames) {
+    // Reserve a small tail so a full Java stack can still construct its error.
+    const auto frame_limit = static_cast<std::size_t>(config.max_frames) +
+                             (execution.constructing_throwable ? 32U : 0U);
+    if (frames.size() >= frame_limit) {
         throw VmJavaThrow{"Ljava/lang/StackOverflowError;",
                           "frame depth " + std::to_string(frames.size())};
     }
@@ -759,7 +762,7 @@ VmCallOutcome Interpreter::Impl::Run(InterpreterExecutionState& execution,
             outcome.exception_class = pending_exception_class;
             const auto state = throwables.find(pending_exception.Value());
             if (state != throwables.end()) {
-                outcome.exception_message = state->second.message_utf8;
+                outcome.exception_message = (owner->ThrowableMessage(pending_exception).IsValid() ? owner->StringUtf8(owner->ThrowableMessage(pending_exception)) : std::string{});
                 outcome.exception_stack = state->second.stack;
             }
             pending_exception = VmObjectRef{};
@@ -807,13 +810,7 @@ Interpreter::Interpreter(DexClassLinker& linker, JavaObjectModel& model,
     impl_->nio.SetObjectModel(&model);
     RegisterIntrinsicStateTable({
         "throwable",
-        [state = impl_.get()](const VmObjectRef owner,
-                              const VmRootVisitor& visit) {
-            const auto found = state->throwables.find(owner.Value());
-            if (found == state->throwables.end()) return;
-            visit(found->second.message);
-            visit(found->second.cause);
-        },
+        {},
         [state = impl_.get()](const VmObjectRef owner) {
             state->throwables.erase(owner.Value());
         },
@@ -1049,7 +1046,7 @@ VmCallOutcome Interpreter::Call(const VmMethodId method_id,
                 const auto state =
                     impl_->throwables.find(pending_exception.Value());
                 if (state != impl_->throwables.end()) {
-                    outcome.exception_message = state->second.message_utf8;
+                    outcome.exception_message = (ThrowableMessage(pending_exception).IsValid() ? StringUtf8(ThrowableMessage(pending_exception)) : std::string{});
                     outcome.exception_stack = state->second.stack;
                 }
                 pending_exception = VmObjectRef{};
@@ -1131,7 +1128,7 @@ VmCallOutcome Interpreter::EnsureClassInitialized(const DexClassId java_class) {
         outcome.exception_class = pending_exception_class;
     const auto state = impl_->throwables.find(pending_exception.Value());
         if (state != impl_->throwables.end()) {
-            outcome.exception_message = state->second.message_utf8;
+            outcome.exception_message = (ThrowableMessage(pending_exception).IsValid() ? StringUtf8(ThrowableMessage(pending_exception)) : std::string{});
             outcome.exception_stack = state->second.stack;
         }
         pending_exception = VmObjectRef{};
@@ -1204,6 +1201,17 @@ std::string Interpreter::StringUtf8(const VmObjectRef string_ref) const {
 
 VmObjectRef Interpreter::MakeThrowable(const std::string_view descriptor,
                                        const std::string_view message) {
+    auto& constructing = impl_->Execution().constructing_throwable;
+    if (constructing) throw DexVmError(DexVmErrorReason::internal_invariant,
+                                       "recursive failure while constructing VM exception: " + std::string(descriptor));
+    struct ConstructionScope {
+        bool& active;
+        JavaObjectModel& model;
+        bool previous_reserve;
+        ConstructionScope(bool& value, JavaObjectModel& heap)
+            : active(value), model(heap), previous_reserve(heap.SetEmergencyReserve(true)) { active = true; }
+        ~ConstructionScope() { active = false; model.SetEmergencyReserve(previous_reserve); }
+    } scope(constructing, *impl_->model);
     const auto java_class = impl_->linker->FindClass(descriptor);
     if (!java_class.has_value()) {
         throw DexVmError(DexVmErrorReason::unknown_class,
@@ -1211,12 +1219,10 @@ VmObjectRef Interpreter::MakeThrowable(const std::string_view descriptor,
                              std::string(descriptor));
     }
     const auto throwable = impl_->AllocateInstance(*java_class);
-    auto& state = impl_->throwables[throwable.Value()];
-    state.message_utf8 = std::string(message);
-    if (!message.empty()) {
-        state.message = NewStringUtf8(message);
-    }
-    state.stack = impl_->CaptureStack();
+    const auto root = ProtectReferences(std::array{throwable});
+    const auto stack = impl_->CaptureStack();
+    InitializeThrowable(throwable, message.empty() ? VmObjectRef{} : NewStringUtf8(message));
+    impl_->throwables[throwable.Value()].stack = stack;
     return throwable;
 }
 
@@ -1224,30 +1230,108 @@ void Interpreter::SetPendingException(const VmObjectRef throwable) {
     impl_->SetPendingExisting(throwable);
 }
 
-void Interpreter::InitThrowableCause(VmObjectRef throwable, VmObjectRef cause) {
-    auto& state = impl_->throwables[throwable.Value()];
-    if (state.cause_initialized) throw VmJavaThrow{"Ljava/lang/IllegalStateException;", "cause already initialized"};
-    if (throwable == cause) throw VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "self-causation not permitted"};
-    state.cause = cause;
-    state.cause_initialized = true;
+namespace {
+Slot& ThrowableField(Interpreter& vm, const VmObjectRef throwable,
+                     const char* name, const char* descriptor) {
+    const auto type = vm.Linker().ResolveDescriptor("Ljava/lang/Throwable;");
+    const auto field = vm.Linker().FindFieldRecursive(type, name, descriptor);
+    if (!field) throw DexVmError(DexVmErrorReason::internal_invariant,
+                                 std::string("missing Throwable field: ") + name);
+    if (!vm.Linker().IsAssignable(type, vm.Model().ObjectClass(throwable)))
+        throw DexVmError(DexVmErrorReason::internal_invariant, "Throwable field receiver has wrong type");
+    auto slots = vm.Model().InstanceSlots(throwable);
+    const auto slot = vm.Linker().Field(*field).slot;
+    if (slot >= slots.size())
+        throw DexVmError(DexVmErrorReason::internal_invariant, "Throwable field slot is out of range");
+    return slots[slot];
 }
-VmObjectRef Interpreter::ThrowableCause(VmObjectRef throwable) const {
-    const auto found = impl_->throwables.find(throwable.Value());
-    return found == impl_->throwables.end() ? VmObjectRef{} : found->second.cause;
 }
 
-void Interpreter::SetThrowableMessage(const VmObjectRef throwable,
-                                      const VmObjectRef message) {
-    auto& state = impl_->throwables[throwable.Value()];
-    state.message = message;
-  state.message_utf8 = message.IsValid() ? StringUtf8(message) : std::string{};
+void Interpreter::InitializeThrowable(const VmObjectRef throwable, const VmObjectRef message) {
+    const auto root = ProtectReferences(std::array{throwable, message});
+    const auto ctor = impl_->linker->FindDirectMethod(
+        impl_->linker->ResolveDescriptor("Ljava/lang/Throwable;"), "<init>", "(Ljava/lang/String;)V");
+    if (!ctor) throw DexVmError(DexVmErrorReason::internal_invariant, "missing BootDex Throwable constructor");
+    const auto result = Call(*ctor, std::array{VmValue::Ref(throwable), VmValue::Ref(message)});
+    if (result.exception.IsValid()) throw VmJavaThrow{
+        impl_->linker->Class(result.exception_class).descriptor, result.exception_message, result.exception};
+}
+
+void Interpreter::InitThrowableCause(VmObjectRef throwable, VmObjectRef cause) {
+    auto& field = ThrowableField(*this, throwable, "cause", "Ljava/lang/Throwable;");
+    if (VmObjectRef(field.bits) != throwable)
+        throw VmJavaThrow{"Ljava/lang/IllegalStateException;", "cause already initialized"};
+    if (throwable == cause) throw VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "self-causation not permitted"};
+    field = {cause.Value(), SlotTag::ref};
+}
+VmObjectRef Interpreter::ThrowableCause(VmObjectRef throwable) const {
+    const auto cause = VmObjectRef(ThrowableField(*impl_->owner, throwable, "cause", "Ljava/lang/Throwable;").bits);
+    return cause == throwable ? VmObjectRef{} : cause;
+}
+
+void Interpreter::SetThrowableMessage(const VmObjectRef throwable, const VmObjectRef message) {
+    ThrowableField(*this, throwable, "detailMessage", "Ljava/lang/String;") = {message.Value(), SlotTag::ref};
 }
 
 VmObjectRef Interpreter::ThrowableMessage(const VmObjectRef throwable) const {
-    const auto state = impl_->throwables.find(throwable.Value());
-  if (state == impl_->throwables.end())
-    return VmObjectRef{};
-    return state->second.message;
+    return VmObjectRef(ThrowableField(*impl_->owner, throwable, "detailMessage", "Ljava/lang/String;").bits);
+}
+
+VmObjectRef Interpreter::CaptureThrowableStack() {
+    std::vector<std::pair<VmMethodId, std::uint32_t>> frames;
+    bool trim = true;
+    const auto type = impl_->linker->ResolveDescriptor("Ljava/lang/Throwable;");
+    for (auto it = impl_->Execution().frames.rbegin(); it != impl_->Execution().frames.rend(); ++it) {
+        // AOSP dvmFillInStackTrace removes the leading Throwable implementation frames.
+        if (trim && impl_->linker->IsAssignable(type, it->method->owner)) continue;
+        trim = false;
+        frames.emplace_back(it->method->id, it->pc);
+    }
+    const auto array = impl_->model->NewPrimitiveArray(
+        impl_->linker->ResolveDescriptor("[I"), JniPrimitiveKind::integer,
+        static_cast<JniSize>(frames.size() * 2));
+    for (std::size_t i = 0; i < frames.size(); ++i) {
+        impl_->model->SetPrimitiveElement(array, static_cast<JniSize>(i * 2), frames[i].first.Value());
+        impl_->model->SetPrimitiveElement(array, static_cast<JniSize>(i * 2 + 1), frames[i].second);
+    }
+    return array;
+}
+
+VmObjectRef Interpreter::MaterializeThrowableStack(const VmObjectRef snapshot) {
+    if (!snapshot.IsValid()) return VmObjectRef{}; // AOSP nativeGetStackTrace(null).
+    if (impl_->model->ObjectClass(snapshot) != impl_->linker->ResolveDescriptor("[I") ||
+        (impl_->model->ArrayLength(snapshot) % 2) != 0)
+        throw VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "invalid Throwable stack snapshot"};
+    const auto count = impl_->model->ArrayLength(snapshot) / 2;
+    const auto type = impl_->linker->ResolveDescriptor("Ljava/lang/StackTraceElement;");
+    const auto array = impl_->model->NewObjectArray(
+        impl_->linker->ResolveDescriptor("[Ljava/lang/StackTraceElement;"), type, count);
+    const auto roots = ProtectReferences(std::array{snapshot, array});
+    for (JniSize i = 0; i < count; ++i) {
+        const auto method_id = VmMethodId(static_cast<std::uint32_t>(impl_->model->GetPrimitiveElement(snapshot, i * 2)));
+        const auto& method = [&]() -> const LinkedMethod& {
+            try { return impl_->linker->Method(method_id); }
+            catch (const DexVmError& error) {
+                if (error.Reason() != DexVmErrorReason::invalid_member) throw;
+                throw VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "invalid method in Throwable stack snapshot"};
+            }
+        }();
+        const auto element = NewIntrinsicInstance("Ljava/lang/StackTraceElement;");
+        impl_->model->SetObjectElement(array, i, element);
+        const auto set = [&](const char* name, const char* descriptor, Slot value) {
+            const auto field = impl_->linker->FindFieldRecursive(type, name, descriptor);
+            if (!field) throw DexVmError(DexVmErrorReason::internal_invariant, "missing StackTraceElement field");
+            impl_->model->InstanceSlots(element)[impl_->linker->Field(*field).slot] = value;
+        };
+        auto declaring_class = impl_->linker->Class(method.owner).descriptor;
+        declaring_class = declaring_class.substr(1, declaring_class.size() - 2);
+        std::replace(declaring_class.begin(), declaring_class.end(), '/', '.');
+        set("declaringClass", "Ljava/lang/String;", {NewStringUtf8(declaring_class).Value(), SlotTag::ref});
+        set("methodName", "Ljava/lang/String;", {NewStringUtf8(method.name).Value(), SlotTag::ref});
+        set("fileName", "Ljava/lang/String;", {0, SlotTag::ref});
+        set("lineNumber", "I", {static_cast<std::uint32_t>(method.kind == MethodKind::native ? -2 : -1), SlotTag::cat1});
+    }
+    return array;
 }
 
 void Interpreter::SetLogger(core::Logger* logger) noexcept {

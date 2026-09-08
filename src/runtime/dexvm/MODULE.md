@@ -56,7 +56,7 @@ intrinsic。解释应用 DEX 与受审 API 19 curated Boot DEX；完整平台库
 ### Core intrinsic 与运行时状态
 
 - `CoreIntrinsicCatalog(services)`：聚合 `intrinsics/` 中按 API family 同址定义的声明和
-  handler，覆盖 Object/String/Class/Throwable、隐式异常层级、pinned
+  handler，覆盖 Object/String/Class、Throwable 栈 native、pinned
   libcore 的 7 个 `java.lang` 顶层接口（`Appendable`/`AutoCloseable`/`CharSequence`/
   `Cloneable`/`Comparable`/`Readable`/`Runnable`，统一位于 `java_lang.cpp`）。
   `Iterable` 和 java.io 序列化接口来自 BootDex。
@@ -69,7 +69,7 @@ intrinsic。解释应用 DEX 与受审 API 19 curated Boot DEX；完整平台库
   `NullPointerException`，非 enum/未命中抛 `IllegalArgumentException`。enum `values()` 经数组
   `Object.clone()` 浅拷贝。
   StringBuffer/StringBuilder 用 descriptor 参数化的同一声明；仅含 `()`/`(String)` 构造器的
-  简单 throwable 共用声明助手，特殊异常独立定义。
+  残留平台异常共用基类初始化入口；java.lang 异常家族来自 BootDex。
 - 集合家族（DVM-103）：List/Collection/Map、实现、视图、迭代器、Arrays/Collections、
   Observable/Observer 与 Random 均归 API 19 BootDex；对象字段和数组是唯一状态，
   不保留 CollectionRuntime 或集合 intrinsic。Tree/Sorted/Navigable、Weak/Identity/Enum
@@ -180,7 +180,8 @@ intrinsic。解释应用 DEX 与受审 API 19 curated Boot DEX；完整平台库
   DEX 字符串常量与 Class object 为不朽强根；显式 String.intern 使用弱 canonical 表，保留
   首次 receiver 身份，常量加载可提升为强根，清扫删除死条目后才复用 handle。
   JNI weak global 非根且随目标清空；默认 heap 64 MiB，
-  `SetEmergencyReserve` 仅供 OOM throwable。identity hash 独立于可复用句柄：普通对象使用
+  `SetEmergencyReserve` 为 VM 隐式异常构造提供最多 64 KiB 应急分配，嵌套不重置额度；
+  异常构造作用域恢复原模式，额外 32 个内部帧保证栈满时仍能构造 StackOverflowError。identity hash 独立于可复用句柄：普通对象使用
   不回收的 per-VM 序列，Class 按 descriptor 稳定派生。`Object.hashCode` 与
   `System.identityHashCode` 经 `IdentityHashCode` 使用该身份（后者绕过 override，null=0）；
   默认 `Object.toString`
@@ -368,9 +369,11 @@ DVM-104 的 ZIP 适配器调用 BootDex FilterInputStream 构造以保持源强�
   与 OS entropy service。OpenSSLCipherContext 构造绑定逻辑 token 和 owner。
 - GC sweep 只排队，结束 sweep 后经正常 native frame 执行 cleanup，保存/恢复当前异常
   和返回值；teardown 在 guest process 停止前释放余下资源。native context 不持 Java 引用。
-- Throwable initCause/getCause 复用 throwable 状态表的强边，拒绝自因与重复初始化。
-  getLocalizedMessage→getMessage、toString→getLocalizedMessage 遵循虚分派，
-  子类回调经正常 VM 调用保留异常身份；默认消息的 null/空串语义对齐 API 19。
+- DVM-115/ADR-0043：Throwable、StackTraceElement、java.lang 异常家族、IOException/
+  InvocationTargetException 共 53 类执行 BootDex。消息/cause/suppressed/栈为普通 Java 字段，
+  原状态表仅保存故障诊断栈；私有对象流回调正常持久化该对象图。nativeFillInStackTrace
+  保存方法 ID/dex PC int[]，nativeGetStackTrace 展开普通栈元素；不保存宿主指针，
+  无源文件/行号数据时显示 Unknown Source。消息、打印、重复帧与数组复制归原版 Java。
 
 DVM-107：framework Pair/Sparse/ComponentName 与 PrintWriter 的普通算法归 BootDex，
 StringBuilder/StringBuffer 共用 CharSequence 区间 append 原语：UTF-16 索引，虚派

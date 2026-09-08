@@ -304,14 +304,17 @@ TEST_CASE("dexvm Thread second priority declarations match API19 shape") {
     REQUIRE(destroy != thread->methods.end());
     CHECK((destroy->access_flags & 0x0010U) == 0U);
 
-    const auto stack = find_class("Ljava/lang/StackTraceElement;");
-    REQUIRE(stack != catalog.end());
+    DexClassLinker linker;
+    linker.RegisterIntrinsics(catalog);
+    ogplay::test::RegisterBootDex(linker);
+    linker.Link();
+    const auto stack = linker.ResolveDescriptor("Ljava/lang/StackTraceElement;");
+    REQUIRE(linker.Class(stack).is_boot_dex);
     for (const auto name : {"getClassName", "getMethodName", "getFileName",
-                            "getLineNumber", "isNativeMethod", "equals",
-                            "hashCode", "toString"}) {
-        CHECK(std::ranges::find_if(stack->methods, [&](const auto& method) {
-                  return method.name == name;
-              }) != stack->methods.end());
+                            "getLineNumber", "isNativeMethod", "equals", "hashCode", "toString"}) {
+        CHECK(std::ranges::any_of(linker.Class(stack).own_virtual_methods, [&](auto id) {
+            return linker.Method(id).name == name && linker.Method(id).kind == MethodKind::interpreted;
+        }));
     }
     CHECK(find_class("Ljava/lang/ThreadGroup;") != catalog.end());
 }

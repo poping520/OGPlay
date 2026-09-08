@@ -1314,9 +1314,6 @@ namespace ogplay::runtime::dexvm::intrinsics {
 namespace ogplay::runtime::dexvm::intrinsics {
     using namespace detail;
 
-    IntrinsicClassDecl Declare_java_io_IOException() {
-        return DeclareSimpleThrowable("Ljava/io/IOException;", "Ljava/lang/Exception;", false, INT64_C(7818375828146090155));
-    }
 } // namespace ogplay::runtime::dexvm::intrinsics
 
 
@@ -1330,7 +1327,34 @@ namespace ogplay::runtime::dexvm::intrinsics {
     using namespace detail;
 
     IntrinsicClassDecl Declare_java_io_PrintStream() {
-        auto builder = IntrinsicClassBuilder::Class("Ljava/io/PrintStream;", "Ljava/lang/Object;");
+        auto builder = IntrinsicClassBuilder::Class("Ljava/io/PrintStream;", "Ljava/lang/Object;", {"Ljava/lang/Appendable;"});
+        for (const auto* result : {"Ljava/io/PrintStream;", "Ljava/lang/Appendable;"}) {
+            builder.VirtualMethod("append", std::string("(Ljava/lang/CharSequence;)") + result,
+                [](IntrinsicContext& c) {
+                    const auto ref = c.arguments[0].ref;
+                    const auto text = ref.IsValid() ? InvokeGuest(c.vm, ref, "toString", "()Ljava/lang/String;").ref : c.vm.NewStringUtf8("null");
+                    const auto bytes = c.vm.StringUtf8(text);
+                    if (!bytes.empty()) GuestLine(c, bytes);
+                    return VmValue::Ref(c.receiver);
+                });
+            builder.VirtualMethod("append", std::string("(C)") + result,
+                [](IntrinsicContext& c) {
+                    const auto text = c.vm.Model().NewString(std::u16string(1, static_cast<char16_t>(c.arguments[0].AsInt())));
+                    const auto bytes = c.vm.StringUtf8(text);
+                    if (!bytes.empty()) GuestLine(c, bytes);
+                    return VmValue::Ref(c.receiver);
+                });
+            builder.VirtualMethod("append", std::string("(Ljava/lang/CharSequence;II)") + result,
+                [](IntrinsicContext& c) {
+                    const auto ref = c.arguments[0].ref.IsValid() ? c.arguments[0].ref : c.vm.NewStringUtf8("null");
+                    const auto part = InvokeGuest(c.vm, ref, "subSequence", "(II)Ljava/lang/CharSequence;",
+                        {c.arguments[1], c.arguments[2]}).ref;
+                    const auto text = InvokeGuest(c.vm, part, "toString", "()Ljava/lang/String;").ref;
+                    const auto bytes = c.vm.StringUtf8(text);
+                    if (!bytes.empty()) GuestLine(c, bytes);
+                    return VmValue::Ref(c.receiver);
+                });
+        }
         builder.FinalMethod("println", "(Ljava/lang/String;)V",
                             [](IntrinsicContext& context) {
                                 const auto argument = context.arguments[0].ref;

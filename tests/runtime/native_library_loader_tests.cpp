@@ -2311,6 +2311,46 @@ TEST_CASE("DVM-108/109 UUID MessageDigest and serialization use BootDex with rea
             static_cast<void>(vm.CollectGarbage("serialization-live-streams"));
             return invoke(input, "readObject", "()Ljava/lang/Object;", {}).ref;
         };
+        // DVM-115: real Java serialization includes Throwable's private callbacks and stack arrays.
+        {
+            const auto exception = vm.MakeThrowable("Ljava/lang/Exception;", "outer");
+            const auto exception_root = vm.ProtectReferences(std::array{exception});
+            const auto cause = vm.MakeThrowable("Ljava/lang/IllegalStateException;", "inner");
+            vm.InitThrowableCause(exception, cause);
+            invoke(exception, "addSuppressed", "(Ljava/lang/Throwable;)V", {VmValue::Ref(cause)});
+            const auto frame = vm.NewIntrinsicInstance("Ljava/lang/StackTraceElement;");
+            const auto frame_root = vm.ProtectReferences(std::array{frame});
+            direct("Ljava/lang/StackTraceElement;", "<init>", "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;I)V",
+                {VmValue::Ref(frame), VmValue::Ref(vm.NewStringUtf8("Probe")), VmValue::Ref(vm.NewStringUtf8("work")),
+                 VmValue::Ref(vm.NewStringUtf8("Probe.java")), VmValue::Int(42)});
+            const auto trace = vm.Model().NewObjectArray(linker.ResolveDescriptor("[Ljava/lang/StackTraceElement;"),
+                linker.ResolveDescriptor("Ljava/lang/StackTraceElement;"), 1);
+            vm.Model().SetObjectElement(trace, 0, frame);
+            invoke(exception, "setStackTrace", "([Ljava/lang/StackTraceElement;)V", {VmValue::Ref(trace)});
+            const auto copy = roundtrip(exception);
+            const auto copy_root = vm.ProtectReferences(std::array{copy});
+            CHECK(copy != exception);
+            CHECK(vm.StringUtf8(invoke(copy, "getMessage", "()Ljava/lang/String;", {}).ref) == "outer");
+            const auto copy_cause = invoke(copy, "getCause", "()Ljava/lang/Throwable;", {}).ref;
+            CHECK(copy_cause != cause);
+            CHECK(vm.StringUtf8(invoke(copy_cause, "getMessage", "()Ljava/lang/String;", {}).ref) == "inner");
+            const auto suppressed = invoke(copy, "getSuppressed", "()[Ljava/lang/Throwable;", {}).ref;
+            REQUIRE(vm.Model().ArrayLength(suppressed) == 1);
+            CHECK(vm.Model().GetObjectElement(suppressed, 0) == copy_cause);
+            const auto copy_trace = invoke(copy, "getStackTrace", "()[Ljava/lang/StackTraceElement;", {}).ref;
+            REQUIRE(vm.Model().ArrayLength(copy_trace) == 1);
+            CHECK(invoke(vm.Model().GetObjectElement(copy_trace, 0), "equals", "(Ljava/lang/Object;)Z", {VmValue::Ref(frame)}).AsInt() == 1);
+            const auto sink = vm.NewIntrinsicInstance("Ljava/io/StringWriter;");
+            const auto sink_root = vm.ProtectReferences(std::array{sink});
+            direct("Ljava/io/StringWriter;", "<init>", "()V", {VmValue::Ref(sink)});
+            const auto writer = vm.NewIntrinsicInstance("Ljava/io/PrintWriter;");
+            const auto writer_root = vm.ProtectReferences(std::array{writer});
+            direct("Ljava/io/PrintWriter;", "<init>", "(Ljava/io/Writer;)V", {VmValue::Ref(writer), VmValue::Ref(sink)});
+            invoke(copy, "printStackTrace", "(Ljava/io/PrintWriter;)V", {VmValue::Ref(writer)});
+            const auto printed = vm.StringUtf8(invoke(sink, "toString", "()Ljava/lang/String;", {}).ref);
+            CHECK(printed.find("java.lang.Exception: outer\n\tat Probe.work(Probe.java:42)\n") == 0);
+            CHECK(printed.find("Caused by: java.lang.IllegalStateException: inner") != std::string::npos);
+        }
         const auto field_value = [&](VmObjectRef object, const char* owner, const char* name) {
             const auto field = linker.FindFieldRecursive(linker.ResolveDescriptor(owner), name, "I");
             REQUIRE(field);

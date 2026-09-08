@@ -37,12 +37,13 @@ inline VmValue InvokeGuest(Interpreter& vm, VmObjectRef receiver,
 
 inline void AddThrowableCauseConstructors(IntrinsicClassBuilder& builder) {
     builder.Constructor("(Ljava/lang/String;Ljava/lang/Throwable;)V", [](IntrinsicContext& c) {
-        c.vm.SetThrowableMessage(c.receiver, c.arguments[0].ref);
+        c.vm.InitializeThrowable(c.receiver, c.arguments[0].ref);
         c.vm.InitThrowableCause(c.receiver, c.arguments[1].ref);
         return VmValue::Void();
     });
     builder.Constructor("(Ljava/lang/Throwable;)V", [](IntrinsicContext& c) {
         const auto cause = c.arguments[0].ref;
+        c.vm.InitializeThrowable(c.receiver);
         c.vm.InitThrowableCause(c.receiver, cause);
         if (cause.IsValid()) {
             const auto message = InvokeGuest(c.vm, cause, "toString", "()Ljava/lang/String;").ref;
@@ -58,9 +59,12 @@ inline void AddThrowableCauseConstructors(IntrinsicClassBuilder& builder) {
     auto builder = IntrinsicClassBuilder::Class(
         std::string(descriptor), std::string(super_descriptor));
     if (serial_uid) builder.ConstantInt("serialVersionUID", "J", *serial_uid, kAccPrivate);
-    builder.Constructor("()V", [](IntrinsicContext&) { return VmValue::Void(); });
+    builder.Constructor("()V", [](IntrinsicContext& context) {
+        context.vm.InitializeThrowable(context.receiver);
+        return VmValue::Void();
+    });
     builder.Constructor("(Ljava/lang/String;)V", [](IntrinsicContext& context) {
-        context.vm.SetThrowableMessage(context.receiver,
+        context.vm.InitializeThrowable(context.receiver,
                                        context.arguments[0].ref);
         return VmValue::Void();
     });
@@ -458,6 +462,8 @@ inline void CheckListIndex(const std::vector<VmObjectRef>& elements,
                 std::to_string(end) + ", length " +
                 std::to_string(value.size())};
     }
+    if (begin == 0 && static_cast<std::size_t>(end) == value.size())
+        return VmValue::Ref(context.receiver);
     return Make(context, value.substr(static_cast<std::size_t>(begin),
                                       static_cast<std::size_t>(end - begin)));
 }

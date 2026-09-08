@@ -929,7 +929,7 @@
       "Landroid/widget/LinearLayout$LayoutParams;",
       "Landroid/widget/RelativeLayout$LayoutParams;"
     ],
-    "ArrayUtils.java": [
+    "framework2.jar": [
       "Lcom/android/internal/util/ArrayUtils;"
     ]
   },
@@ -1052,7 +1052,6 @@
         "Ljava/util/Arrays;",
         "Ljava/util/Calendar;",
         "Ljava/util/Collection;",
-        "Ljava/util/Collections;",
         "Ljava/util/Comparator;",
         "Ljava/util/Currency;",
         "Ljava/util/Date;",
@@ -1141,6 +1140,8 @@
         "Llibcore/icu/ICU;->getISOCountriesNative()[Ljava/lang/String;",
         "Llibcore/icu/ICU;->getISOLanguagesNative()[Ljava/lang/String;",
         "Llibcore/icu/ICU;->initLocaleDataNative(Ljava/lang/String;Llibcore/icu/LocaleData;)Z",
+        "Llibcore/icu/ICU;->toLowerCase(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;",
+        "Llibcore/icu/ICU;->toUpperCase(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;",
         "Llibcore/icu/NativeDecimalFormat;->applyPatternImpl(JZLjava/lang/String;)V",
         "Llibcore/icu/NativeDecimalFormat;->cloneImpl(J)J",
         "Llibcore/icu/NativeDecimalFormat;->close(J)V",
@@ -1169,17 +1170,12 @@
         "Llibcore/icu/ICU;->getCldrVersion()Ljava/lang/String;",
         "Llibcore/icu/ICU;->getDisplayCountryNative(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;",
         "Llibcore/icu/ICU;->getDisplayLanguageNative(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;",
-        "Llibcore/icu/ICU;->getDisplayScriptNative(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;",
         "Llibcore/icu/ICU;->getDisplayVariantNative(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;",
         "Llibcore/icu/ICU;->getISO3CountryNative(Ljava/lang/String;)Ljava/lang/String;",
         "Llibcore/icu/ICU;->getISO3LanguageNative(Ljava/lang/String;)Ljava/lang/String;",
         "Llibcore/icu/ICU;->getIcuVersion()Ljava/lang/String;",
         "Llibcore/icu/ICU;->getScript(Ljava/lang/String;)Ljava/lang/String;",
         "Llibcore/icu/ICU;->getUnicodeVersion()Ljava/lang/String;",
-        "Llibcore/icu/ICU;->languageTagForLocale(Ljava/lang/String;)Ljava/lang/String;",
-        "Llibcore/icu/ICU;->localeForLanguageTag(Ljava/lang/String;Z)Ljava/lang/String;",
-        "Llibcore/icu/ICU;->toLowerCase(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;",
-        "Llibcore/icu/ICU;->toUpperCase(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;",
         "Llibcore/icu/NativeDecimalFormat;->formatDigitList(JLjava/lang/String;Llibcore/icu/NativeDecimalFormat$FieldPositionIterator;)[C",
         "Llibcore/icu/NativeDecimalFormat;->formatDouble(JDLlibcore/icu/NativeDecimalFormat$FieldPositionIterator;)[C"
       ]
@@ -1194,11 +1190,11 @@
     ],
     "expected": {
       "class_defs": 42,
-      "object_types": 128,
-      "method_ids": 1285,
-      "field_ids": 485,
-      "native_methods": 47,
-      "classified_members_sha256": "a1fbc7c125f118dc1f9dbb3b7011ce9ab16c095540bc3d8d0ca77d948f54fee4"
+      "object_types": 127,
+      "method_ids": 1273,
+      "field_ids": 479,
+      "native_methods": 44,
+      "classified_members_sha256": "517664cf60b3297e871a418926366cbd34f6269d03c39cb3275372d3ad0dc8b2"
     }
   }
 }

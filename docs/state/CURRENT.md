@@ -1,78 +1,50 @@
 # 当前状态
 
-更新（2026-09-08）：AOSP 4.4.4_r2.0.1 自建 `libcrypto.so` 已替换 API 19 payload 的
-临时 ROM 库；[DVM-121](../tasks/dexvm/DVM-121.md) 完成文本外观与样式资源；
-下一缺口：Button 三参数构造器。
+更新（2026-09-08）：[DVM-122](../tasks/dexvm/DVM-122.md) 已将 ICU 迁入 API 19
+guest；crypto/ICU 统一为 `libogplay_jni.so`，host ICU 与 `libogplay_cipher.so` 已删除，
+并按 pinned AOSP 4.4.4 补验语义。下一缺口为 Button 三参数构造器。
 
 ## 当前能力
 
-- **运行与发行**：按 exact Profile API 选择 bundled data；API 19 内置 pinned AOSP
-  五库、AOSP OpenSSL 自建的 `libcrypto.so`、ICU4C 51.1 的
-  `libicuuc.so`/`libicui18n.so` 及其 `libgabi++.so`/`libstlport.so` 依赖、923 类 BootDex
-  与 ICU 数据。libcrypto
-  固定为 `platform/external/openssl` 的 `android-4.4.4_r2.0.1` revision
-  `dd1da36b0baa39942f0aef42c4712ef0ad628a83`，以 `aosp_arm-user` 构建；hash、NOTICE、
-  pinned manifest 和 payload 校验约束已同步。JNI 桥为 src/guest/crypto/crypto_jni.c；
-  制品身份见 [payload manifest](../../data/android/19/manifest.json)，bootdex.jar 继续不提交。
-- **Cipher**：AES 128/192/256；ECB/CBC NoPadding/PKCS5Padding、CTR/NoPadding，
-  裸 AES 默认 ECB/PKCS5Padding。Java 算法归 BootDex，11 个 native 进入 guest OpenSSL；
-  分段/原位/异常、IV reset、OS 随机源、真实线程、GC/teardown 受检。
-- **UUID/摘要**：UUID、MessageDigest/Spi、DigestInputStream/DigestOutputStream 与 Conscrypt
-  MD5/SHA-1/SHA-256/SHA-384/SHA-512 执行 BootDex；7 个 JNI 入口调用 guest EVP。
-  分块 scratch 最多 64 KiB，无消息累计上限；增量/clone/摘要流受检。
-  GC/teardown 聚合共享 token，失败可重试。UUID v3 用 MD5、
-  v4 用 OS CSPRNG；旧固定 JNI UUID 已删除；原版 readObject 已恢复 UUID transient 缓存。
-- **Certificate**：Certificate/X509Certificate/CertificateFactory、Harmony ASN.1/X.509 与
-  PkiPath/PKCS7 执行 Java；10 个 RSA/ECDSA 摘要验签组合经 ARM EVP，单消息最多 1 MiB。
-  解析、属性、公钥编码、链签名、异常与 GC 受检。不含 PKIX 信任、系统 CA/撤销、TLS 或签名生成。
-- **集合与流**：List/Collection/Map 家族、普通 atomic/AQS、工具/事件/beans、内存/包装
-  IO、Reader/Writer、X500 和 key spec 来自 API 19 DEX；普通字段/数组为唯一状态。
-  JNI 普通类/接口与嵌套数组使用 VM 类型关系。ObjectInputStream/ObjectOutputStream、描述符与辅助类
-  执行原版 Java，删除 C++ 协议及 handle 副本；私有读写/替换回调、GetField/PutField、默认 UID、
-  循环引用、八种基本数组/对象数组和 Externalizable 协议 1/2 受检。六个 native 只处理构造
-  token/元数据；SoftReference 普通 GC 保留、压力下清除入队，String.intern 保持弱 canonical 身份。
-  静态初始化非 Error 包装 EIIE/cause，Error 保持身份，后续访问 NCDFE；反射 wide get 已修正。
-  Throwable/StackTraceElement 家族的消息、原因/抑制链、栈复制、打印及对象流已归 Java；
-  VM 仅保留两个栈 native，异常构造有 32 帧/64 KiB 应急空间。
-- **日期与值边界**：Format/DateFormat/SimpleDateFormat、NumberFormat/DecimalFormat、
-  Date/Calendar/TimeZone 执行 BootDex。标准六字符集
-  与 Locale 大小写、ISO 语言/国家代码枚举复用 ICU。BigInt/NativeBN 有 17 个值原语，支持长整数编码转换，
-  单次输入最多 1 MiB；其余 18 个 native 明确失败。
-- **执行器/VM**：ScheduledThreadPoolExecutor/FutureTask、接口/异常与普通工厂包装类
-  执行 BootDex；删除旧 FutureTask/串行 executor handler。单次/周期/FIFO、取消/中断、超时/
-  异常、关闭策略、两个 worker 与队列 GC 受检；invokeAny/invokeAll 已接通。任务存于 Java 字段，复用 AQS/Unsafe/统一 Clock；一个 guest 线程对应一个宿主线程，解释执行由 VmExecutionLock
-  串行，threaded 默认关闭。接口数组协变和 threaded 原异常身份已修正。
-  文件/VFS、资源 XML、Locale、URL/form codec、Intent/Context 与平台 enum 保持。
-- **framework 值类**：Pair、五种 SparseArray、ComponentName/CREATOR、Parcelable 接口、
-  ContainerHelpers/ArrayUtils、Bundle/ArrayMap 和 PrintWriter 执行 Java；旧 Sparse 侧表和迁移类声明已删除。
-  ArrayUtils 从固定原始 Java 源用本地 AOSP dx 编译，其余来自 pinned jar；来源单独记账。
-- **Activity 身份**：getLocalClassName/getComponentName/getPreferences 与每实例 Intent
-  已接通，保留组件身份；setIntent 不改组件身份。
-  UTF-16 append 依赖已补。一般组件解析和非根 alias 切换仍未扩展。
-- **服务查询**：ServiceConnection 来自 BootDex。resolveService 的 action-only/flags=0
-  查询依据当前 APK 服务信息，无候选返回 null，未知或潜在匹配明确失败；无 Binder/支付。
-- **Title**：PvZ 已越过文本外观与字体设置，首错 Button 三参数构造器；
-  尚未通过游戏 gate；Tales 首错 LocationListener。
+- **发行/guest JNI**：exact Profile API 选择 bundled data。API 19 含 pinned AOSP 五库、
+  AOSP OpenSSL `libcrypto.so`、ICU4C 51.1 库及依赖、923 类 BootDex 和 ICU 数据；来源、
+  hash、NOTICE、manifest 与 payload 校验已同步。crypto/ICU 保持源码模块边界，共用
+  JNI_OnLoad 和 `libogplay_jni.so`；ICU 只调用 guest C ABI 与 `icudt51l.dat`，host 不链接 ICU。
+  制品见 [manifest](../../data/android/19/manifest.json)；`bootdex.jar` 不提交。
+- **密码能力**：Cipher 支持 AES 128/192/256、ECB/CBC NoPadding/PKCS5Padding、CTR；
+  Digest 支持 MD5、SHA-1/256/384/512；RSA/ECDSA 摘要验签经 ARM EVP。Java 算法归
+  BootDex，native 调 guest OpenSSL；分段、clone、摘要流、证书解析/链签名、GC/teardown
+  已覆盖。不含 PKIX、系统 CA、TLS、签名生成、RSA Cipher、HMAC/Mac、SHA-3。
+- **BootDex/VM**：集合、atomic/AQS、IO/Reader/Writer、对象序列化、Throwable、反射、
+  executor、framework 值类、日期格式与值边界执行 API 19 Java；普通字段/数组为唯一状态，
+  JNI 使用 VM 类型关系。BigInt/NativeBN 仅开放 17 个已审计值原语，其余 native 明确失败。
+  SoftReference、String.intern、类初始化异常、接口数组协变与 threaded 异常身份已有回归。
+- **ICU**：Date/Number/DecimalFormat required_backend 经 guest JNI 调 ICU 51；覆盖 ISO 表、
+  LocaleData、货币、数字 parse/字段、复杂大小写和裸 `zh`。具名时区与历史 DST 未纳入审计，
+  明确失败；标准六字符集仍走无 ICU 的宿主有界实现。
+- **运行边界**：文件/VFS、资源 XML、Locale、URL codec、Intent/Context、平台 enum、
+  Activity 组件身份及 flags=0 的 action-only service 查询已接通。无 Binder/system_server、
+  支付或完整 Android 系统；未知/潜在 native 或服务匹配不伪造成功。
+- **Title**：PvZ 已越过文本外观与字体设置，首错 Button 三参数构造器；Tales 首错
+  LocationListener，均未通过游戏 gate。
 
 ## 最近验证
 
-- DVM-121：资源/平台/UI 定向 103 用例、8,861 断言；专项与全类链接
-  5 用例、7,122 断言及 6 项门禁通过。证据 `.local/review/dvm121/`。
-
-- libcrypto 已由 AOSP Android 4.4.4_r2.0.1 OpenSSL 源码构建替换临时 ROM 库；本轮仅完成
-  payload 源、hash、NOTICE 和来源校验约束更新，未重跑 ARM Cipher adapter 重链或游戏 gate。
-  macOS Release 使用 WARNINGS_AS_ERRORS=OFF，仅构建 ogplay_tests 及 ogplay 依赖；未跑全量测试或 Windows/Linux 验收。
-- 已知门禁遗留：architecture.platform_boundaries 在既有 GUI process_manager.cpp:131
-  平台分支失败，本轮未修改、未重跑该门禁。ADR 继续按 6 个主题维护，追加
-  [0048](../adr/dexvm.md#adr-0048)，不新增独立 ADR 文件。
+- DVM-122：NDK r25c ARMv7 API 19 两次构建一致；ELF ABI、SONAME、DT_NEEDED、payload、
+  BootDex audit/self-test、Bionic profile、DVM-105/106/108 及大小写/结构定向回归通过。
+  Windows Release 未下载、编译或链接 host ICU。
+- BootDex Throwable 定向测试仍 terminate，尚未归因；既有 GUI
+  `process_manager.cpp:131` 仍使 platform_boundaries 门禁失败。本轮未运行全量 CTest、
+  游戏 gate 或跨平台验收。最新架构记录为 [ADR-0050](../adr/dexvm.md#adr-0050)。
 
 ## 下一步与边界
 
-1. 后续补 Button(Context,AttributeSet,int)，继续推进 PvZ。
-2. 自建 ARM libcrypto 替换临时制品；Windows/Linux、既有 GUI 门禁、DH 与 Diagnostics 验收。
+1. 补 Button(Context, AttributeSet, int)，继续推进 PvZ。
+2. 处理既有 GUI 门禁，补 macOS/Linux、DH 与 Diagnostics 验收。
 
-OGPlay 是老游戏兼容层；complete 只覆盖登记范围。具名时区/历史 DST、完整大数与 formatter、宿主资源对象持久化、Proxy 生成、privileged 执行器工厂/安全上下文、高争用集合、RSA Cipher、HMAC/Mac、SHA-3、完整 JCA/TLS/系统服务仍未交付。
-长期限制见 [KNOWN-ISSUES](KNOWN-ISSUES.md)。
+OGPlay 仅覆盖登记的老游戏进程能力。完整 formatter/大数、宿主资源持久化、Proxy 生成、
+privileged executor 工厂/安全上下文和高争用集合仍未交付。长期限制见
+[KNOWN-ISSUES](KNOWN-ISSUES.md)。
 
 索引：[DexVM](../tasks/dexvm/README.md) · [APK Startup](../tasks/apk-startup/README.md) ·
 [Layout UI](../tasks/layoutui/README.md) · [Playbook](../playbook/README.md)

@@ -57,6 +57,7 @@ public:
     [[nodiscard]] JniObjectIdentity CreateModifiedUtf8(
         std::span<const std::uint8_t> encoded);
     void Delete(JniObjectIdentity string);
+    [[nodiscard]] bool Contains(JniObjectIdentity string) const noexcept;
 
     [[nodiscard]] JniSize Length(JniObjectIdentity string) const;
     [[nodiscard]] JniSize ModifiedUtf8Length(JniObjectIdentity string) const;

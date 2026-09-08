@@ -41,13 +41,13 @@ ThreadLocal 消费 Thread.localValues 和 wrapping atomic getAndAdd；System.nan
 DVM-118：Math 普通 Java 方法/常量/random 状态归 BootDex，java_lang.cpp 只保留
 API 19 定义的 24 个 libm native 原语。round、abs/min/max、符号位/ulp/scalb 等
 由原版 Java 决定；不把宿主 libm 声称为 StrictMath/fdlibm 的逐位一致实现。
-`java_icu.cpp` 只发布 DVM-102 审计固定的 ICU native、NativeDecimalFormat 与 TimeZone 数据
+`java_icu.cpp` 只发布 DVM-122 审计固定的 guest ICU native、NativeDecimalFormat 与 TimeZone 数据
 边界；Format/DateFormat/SimpleDateFormat、NumberFormat/DecimalFormat、Date/Calendar 及
 SimpleTimeZone 的类、字段和 Java 算法均来自 BootDex。formatter 的 Java long 只保存 per-VM
-逻辑令牌，clone/close/非法令牌、GC sweep 与 VM teardown 由 IcuFormatterRuntime 管理；
+逻辑令牌，clone/close/非法令牌由 `libogplay_jni.so` 管理，GC sweep 与 VM teardown 经 close 回收；
 未交付的具名时区数据库、大数/double formatter 和 ICU 查询明确失败。不得恢复 java_text.cpp
 或日期/日历 C++ 行为副本。区域字段、货币和时区名称必须调用固定 ICU 数据，数字 native
-必须委托真实 ICU formatter。TimeZone.getDefault 使用 DEX defaultTimeZone，与 Java
+必须经 guest JNI 委托 payload ICU formatter。TimeZone.getDefault 使用 DEX defaultTimeZone，与 Java
 setDefault 保持 clone/reset 语义；首次/重置只使用 CoreIntrinsicServices.default_timezone。
 Locale 构造规范化语言小写、区域大写与 he/id/yi 旧码；Matcher.groupCount 来自 pattern，
 不要求已有匹配。ICU 分配失败、非法输入和范围外操作分别映射为明确 Java 异常。
@@ -155,9 +155,8 @@ API 19 guest 可确定的 `/`、`:`、`\n` 三个 separator 属性，不读取�
 `System.getSecurityManager()` 按 pinned API 19 libcore 固定返回 null；
 `SecurityManager` 自身由 curated BootDex 提供 class shape，OGPlay 不安装 security
 manager、执行 permission 检查或接入宿主安全机制。
-`String.toLowerCase(Locale)` 对齐 API 19 的 null 检查和“内容未变则返回 receiver”语义；
-当前只接受英语 ASCII 映射，其他 Locale 或需要 ICU 的非 ASCII 输入明确
-抛 `UnsupportedOperationException`，不得读取宿主 locale 或伪造完整 Unicode case mapping。
+`String.toLowerCase/toUpperCase` 对齐 API 19 的 null 检查和“内容未变则返回 receiver”语义；
+英语/中文 ASCII 使用等价快速路径，其余输入调用 BootDex ICU 的 guest C ABI，不读取宿主 locale。
 
 `java.lang.ClassLoader`、`java.lang.BootClassLoader` 与
 `dalvik.system.PathClassLoader` 分别保持一类一文件；对象身份、parent 与 lookup/

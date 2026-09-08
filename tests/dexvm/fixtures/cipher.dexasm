@@ -245,3 +245,118 @@
     const-string v0, "replaced"
     return-object v0
 .end method
+
+# DVM-122 AOSP ICU differential regressions that require the real guest JNI path.
+.class public Lfixture/IcuRegression;
+.super Ljava/lang/Object;
+.method public static upperSharpS()Ljava/lang/String;
+.registers 2
+    const-string v0, "ß"
+    invoke-virtual {v0}, Ljava/lang/String;->toUpperCase()Ljava/lang/String;
+    move-result-object v0
+    return-object v0
+.end method
+.method public static turkishUpperI()Ljava/lang/String;
+.registers 3
+    new-instance v0, Ljava/util/Locale;
+    const-string v1, "tr"
+    invoke-direct {v0, v1}, Ljava/util/Locale;-><init>(Ljava/lang/String;)V
+    const-string v1, "i"
+    invoke-virtual {v1, v0}, Ljava/lang/String;->toUpperCase(Ljava/util/Locale;)Ljava/lang/String;
+    move-result-object v1
+    return-object v1
+.end method
+.method public static zhCurrencyCode()Ljava/lang/String;
+.registers 3
+    new-instance v0, Ljava/util/Locale;
+    const-string v1, "zh"
+    invoke-direct {v0, v1}, Ljava/util/Locale;-><init>(Ljava/lang/String;)V
+    invoke-static {v0}, Llibcore/icu/LocaleData;->get(Ljava/util/Locale;)Llibcore/icu/LocaleData;
+    move-result-object v0
+    iget-object v0, v0, Llibcore/icu/LocaleData;->internationalCurrencySymbol:Ljava/lang/String;
+    return-object v0
+.end method
+.method public static fractionFieldPosition()I
+.registers 8
+    new-instance v0, Ljava/text/DecimalFormat;
+    const-string v1, "0.00"
+    invoke-direct {v0, v1}, Ljava/text/DecimalFormat;-><init>(Ljava/lang/String;)V
+    new-instance v2, Ljava/text/FieldPosition;
+    const/4 v1, 1
+    invoke-direct {v2, v1}, Ljava/text/FieldPosition;-><init>(I)V
+    new-instance v3, Ljava/lang/StringBuffer;
+    invoke-direct {v3}, Ljava/lang/StringBuffer;-><init>()V
+    const-wide/16 v4, 12
+    invoke-virtual {v0, v4, v5, v3, v2}, Ljava/text/DecimalFormat;->format(JLjava/lang/StringBuffer;Ljava/text/FieldPosition;)Ljava/lang/StringBuffer;
+    invoke-virtual {v2}, Ljava/text/FieldPosition;->getBeginIndex()I
+    move-result v0
+    mul-int/lit8 v0, v0, 10
+    invoke-virtual {v2}, Ljava/text/FieldPosition;->getEndIndex()I
+    move-result v1
+    add-int/2addr v0, v1
+    return v0
+.end method
+.method public static groupingAttributeCount()I
+.registers 8
+    new-instance v0, Ljava/text/DecimalFormat;
+    const-string v1, "0,000"
+    invoke-direct {v0, v1}, Ljava/text/DecimalFormat;-><init>(Ljava/lang/String;)V
+    const-wide v1, 1234567
+    invoke-static {v1, v2}, Ljava/lang/Long;->valueOf(J)Ljava/lang/Long;
+    move-result-object v2
+    invoke-virtual {v0, v2}, Ljava/text/DecimalFormat;->formatToCharacterIterator(Ljava/lang/Object;)Ljava/text/AttributedCharacterIterator;
+    move-result-object v3
+    sget-object v4, Ljava/text/NumberFormat$Field;->GROUPING_SEPARATOR:Ljava/text/NumberFormat$Field;
+    const/4 v6, 0
+    const v7, 0xffff
+    invoke-interface {v3}, Ljava/text/AttributedCharacterIterator;->first()C
+    move-result v5
+:group_loop
+    if-eq v5, v7, :group_done
+    invoke-interface {v3, v4}, Ljava/text/AttributedCharacterIterator;->getAttribute(Ljava/text/AttributedCharacterIterator$Attribute;)Ljava/lang/Object;
+    move-result-object v1
+    if-eqz v1, :group_next
+    add-int/lit8 v6, v6, 1
+:group_next
+    invoke-interface {v3}, Ljava/text/AttributedCharacterIterator;->next()C
+    move-result v5
+    goto :group_loop
+:group_done
+    return v6
+.end method
+.method public static parsePositionSemantics()I
+.registers 6
+    new-instance v0, Ljava/text/DecimalFormat;
+    const-string v1, "0"
+    invoke-direct {v0, v1}, Ljava/text/DecimalFormat;-><init>(Ljava/lang/String;)V
+    new-instance v1, Ljava/text/ParsePosition;
+    const/4 v2, 0
+    invoke-direct {v1, v2}, Ljava/text/ParsePosition;-><init>(I)V
+    const/4 v2, 7
+    invoke-virtual {v1, v2}, Ljava/text/ParsePosition;->setErrorIndex(I)V
+    const-string v2, "12"
+    invoke-virtual {v0, v2, v1}, Ljava/text/DecimalFormat;->parse(Ljava/lang/String;Ljava/text/ParsePosition;)Ljava/lang/Number;
+    move-result-object v3
+    if-eqz v3, :parse_bad
+    invoke-virtual {v1}, Ljava/text/ParsePosition;->getIndex()I
+    move-result v3
+    const/4 v4, 2
+    if-ne v3, v4, :parse_bad
+    invoke-virtual {v1}, Ljava/text/ParsePosition;->getErrorIndex()I
+    move-result v3
+    const/4 v4, 7
+    if-ne v3, v4, :parse_bad
+    const/4 v3, -1
+    invoke-virtual {v1, v3}, Ljava/text/ParsePosition;->setIndex(I)V
+    invoke-virtual {v0, v2, v1}, Ljava/text/DecimalFormat;->parse(Ljava/lang/String;Ljava/text/ParsePosition;)Ljava/lang/Number;
+    move-result-object v3
+    if-nez v3, :parse_bad
+    invoke-virtual {v1}, Ljava/text/ParsePosition;->getErrorIndex()I
+    move-result v3
+    if-ne v3, v4, :parse_bad
+    const/4 v0, 1
+    return v0
+:parse_bad
+    const/4 v0, 0
+    return v0
+.end method

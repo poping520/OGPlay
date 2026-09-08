@@ -88,6 +88,15 @@ public:
             Fail("Android app process request is incomplete");
         }
         state = AndroidAppProcessState::package_ready;
+        const auto guest_jni = std::find_if(
+            request.system_libraries.begin(), request.system_libraries.end(),
+            [](const auto& source) { return source.name == "libogplay_jni.so"; });
+        if (guest_jni != request.system_libraries.end()) {
+            if (request.icu_data.empty())
+                Fail("API 19 guest JNI requires the pinned ICU data");
+            request.filesystem->PutFile("/system/usr/icu/icudt51l.dat",
+                                        request.icu_data, false);
+        }
         const auto launcher = loader::ResolveLauncherComponent(manifest);
         launcher_descriptor = Descriptor(
             request.launcher_override.value_or(launcher.activity_class));
@@ -173,6 +182,15 @@ public:
             *session, std::move(request.dex_bytes), catalog, context,
             *request.ledger, request.logger, request.dexvm,
             std::move(request.boot_dex_bytes));
+        if (guest_jni != request.system_libraries.end()) {
+            try {
+                static_cast<void>(native_libraries->LoadLibrary(
+                    "ogplay_jni", context->application_class_loader_token));
+            } catch (const runtime::NativeLibraryLoadError& error) {
+                Fail("API 19 guest JNI initialization failed: " +
+                     std::string(error.what()));
+            }
+        }
         context->threads = &bridge->Threads();
         if (request.configure_dex_vm) {
             request.configure_dex_vm(bridge->Vm());

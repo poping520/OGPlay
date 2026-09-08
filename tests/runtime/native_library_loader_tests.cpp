@@ -377,6 +377,19 @@ struct ApplicationProcess final {
             std::istreambuf_iterator<char>()};
 }
 
+[[nodiscard]] std::vector<std::byte> ReadPayloadBytes(
+    const std::string& relative) {
+    std::ifstream stream(std::string(OGPLAY_SOURCE_DIR) +
+                             "/data/android/19/" + relative,
+                         std::ios::binary);
+    if (!stream) throw std::runtime_error("missing payload file: " + relative);
+    const std::vector<char> raw{std::istreambuf_iterator<char>(stream), {}};
+    std::vector<std::byte> result(raw.size());
+    std::transform(raw.begin(), raw.end(), result.begin(),
+                   [](char value) { return static_cast<std::byte>(value); });
+    return result;
+}
+
 [[nodiscard]] ogplay::loader::AndroidManifestFacts AppManifest(
     const std::string& activity, const bool has_launcher = true) {
     ogplay::loader::AndroidManifestFacts manifest;
@@ -1479,7 +1492,8 @@ TEST_CASE("DVM-105 AES uses BootDex and real guest libcrypto") {
         std::vector<std::vector<std::byte>> contents;
         std::vector<runtime::BionicModuleSource> libraries;
         for (const auto name : {"libc.so", "libm.so", "libdl.so", "libstdc++.so", "libz.so",
-                                "libcrypto.so", "libogplay_cipher.so"}) {
+                                "libcrypto.so", "libgabi++.so", "libicui18n.so", "libicuuc.so",
+                                "libstlport.so", "libogplay_jni.so"}) {
             std::ifstream stream(std::string(OGPLAY_SOURCE_DIR) + "/data/android/19/lib/" + name,
                                  std::ios::binary);
             REQUIRE_MESSAGE(stream.good(), name);
@@ -1495,6 +1509,7 @@ TEST_CASE("DVM-105 AES uses BootDex and real guest libcrypto") {
         request.manifest = AppManifest("fixture.MainActivity");
         request.system_libraries = libraries;
         request.dex_bytes = ReadDexFixture("cipher.dex");
+        request.icu_data = ReadPayloadBytes("icu/icudt51l.dat");
         request.boot_dex_bytes = test::ReadBootDex();
         request.context = context;
         request.dexvm.interpreter.backend = backend;
@@ -1777,10 +1792,16 @@ TEST_CASE("DVM-105 AES uses BootDex and real guest libcrypto") {
         CHECK(linker.Method(allocate).kind == MethodKind::native);
         CHECK_FALSE(static_cast<bool>(linker.Method(allocate).implementation));
         const auto token = vm.Call(allocate, {}).value.AsLong();
-        CHECK_THROWS_AS(vm.Call(size, std::array{VmValue::Long(token)}), VmJavaThrow);
+        CHECK_THROWS_AS(static_cast<void>(vm.Call(
+                            size, std::array{VmValue::Long(token)})),
+                        VmJavaThrow);
         static_cast<void>(vm.Call(cleanup, std::array{VmValue::Long(token)}));
-        CHECK_THROWS_AS(vm.Call(cleanup, std::array{VmValue::Long(token)}), VmJavaThrow);
-        CHECK_THROWS_AS(vm.Call(size, std::array{VmValue::Long(0x123456789LL)}), VmJavaThrow);
+        CHECK_THROWS_AS(static_cast<void>(vm.Call(
+                            cleanup, std::array{VmValue::Long(token)})),
+                        VmJavaThrow);
+        CHECK_THROWS_AS(static_cast<void>(vm.Call(
+                            size, std::array{VmValue::Long(0x123456789LL)})),
+                        VmJavaThrow);
         CHECK(direct("Lfixture/CipherThreads;", "exercise", "()I", {}).AsInt() == 32);
         const auto before_gc = vm.GuestNativeResourceCount();
         CHECK(before_gc > 3);
@@ -1791,6 +1812,119 @@ TEST_CASE("DVM-105 AES uses BootDex and real guest libcrypto") {
         CHECK(read(invoke(cipher, "doFinal", "([B)[B",
                           {VmValue::Ref(bytes("00112233445566778899aabbccddeeff"))})
                        .ref) == read(bytes("69c4e0d86a7b0430d8cdb78070b4c55a")));
+        const auto iso = direct("Llibcore/icu/ICU;", "getISOLanguagesNative",
+                                "()[Ljava/lang/String;", {}).ref;
+        CHECK(vm.Model().ArrayLength(iso) == 559);
+        const auto countries = direct("Llibcore/icu/ICU;", "getISOCountriesNative",
+                                      "()[Ljava/lang/String;", {}).ref;
+        CHECK(vm.Model().ArrayLength(countries) == 249);
+        const auto locale = vm.NewStringUtf8("en_US");
+        const auto usd = vm.NewStringUtf8("USD");
+        const auto icu_roots = vm.ProtectReferences(std::array{locale, usd});
+        CHECK_FALSE(vm.StringUtf8(direct(
+            "Llibcore/icu/ICU;", "getBestDateTimePatternNative",
+            "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;",
+            {VmValue::Ref(vm.NewStringUtf8("yMd")), VmValue::Ref(locale)}).ref).empty());
+        CHECK(vm.StringUtf8(direct(
+            "Llibcore/icu/ICU;", "getCurrencyCode",
+            "(Ljava/lang/String;)Ljava/lang/String;",
+            {VmValue::Ref(vm.NewStringUtf8("US"))}).ref) == "USD");
+        CHECK_FALSE(vm.StringUtf8(direct(
+            "Llibcore/icu/ICU;", "getCurrencyDisplayName",
+            "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;",
+            {VmValue::Ref(locale), VmValue::Ref(usd)}).ref).empty());
+        CHECK(direct("Llibcore/icu/ICU;", "getCurrencyFractionDigits",
+                     "(Ljava/lang/String;)I", {VmValue::Ref(usd)}).AsInt() == 2);
+        CHECK_FALSE(vm.StringUtf8(direct(
+            "Llibcore/icu/ICU;", "getCurrencySymbol",
+            "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;",
+            {VmValue::Ref(locale), VmValue::Ref(usd)}).ref).empty());
+        const auto unknown_currency = vm.NewStringUtf8("ZZZ");
+        const auto unknown_roots = vm.ProtectReferences(std::array{unknown_currency});
+        CHECK_FALSE(direct(
+            "Llibcore/icu/ICU;", "getCurrencySymbol",
+            "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;",
+            {VmValue::Ref(locale), VmValue::Ref(unknown_currency)}).ref.IsValid());
+        CHECK(vm.StringUtf8(direct(
+            "Llibcore/icu/ICU;", "getCurrencyDisplayName",
+            "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;",
+            {VmValue::Ref(locale), VmValue::Ref(unknown_currency)}).ref) == "ZZZ");
+        CHECK(vm.StringUtf8(direct("Lfixture/IcuRegression;", "upperSharpS",
+                                   "()Ljava/lang/String;", {}).ref) == "SS");
+        CHECK(vm.StringUtf8(direct("Lfixture/IcuRegression;", "turkishUpperI",
+                                   "()Ljava/lang/String;", {}).ref) == "İ");
+        CHECK(vm.StringUtf8(direct("Lfixture/IcuRegression;", "zhCurrencyCode",
+                                   "()Ljava/lang/String;", {}).ref) == "XXX");
+        CHECK(direct("Lfixture/IcuRegression;", "fractionFieldPosition", "()I", {})
+                  .AsInt() == 35);
+        CHECK(direct("Lfixture/IcuRegression;", "groupingAttributeCount", "()I", {})
+                  .AsInt() == 2);
+        CHECK(direct("Lfixture/IcuRegression;", "parsePositionSemantics", "()I", {})
+                  .AsInt() == 1);
+        const auto string_class = linker.ResolveDescriptor("Ljava/lang/String;");
+        const auto string_array_class = linker.ResolveDescriptor("[Ljava/lang/String;");
+        const auto rows_class = linker.ResolveDescriptor("[[Ljava/lang/String;");
+        const auto row = vm.Model().NewObjectArray(string_array_class, string_class, 5);
+        vm.Model().SetObjectElement(row, 0, vm.NewStringUtf8("GMT"));
+        const auto rows = vm.Model().NewObjectArray(rows_class, string_array_class, 1);
+        vm.Model().SetObjectElement(rows, 0, row);
+        const auto zone_roots = vm.ProtectReferences(std::array{row, rows});
+        static_cast<void>(direct(
+            "Llibcore/icu/TimeZoneNames;", "fillZoneStrings",
+            "(Ljava/lang/String;[[Ljava/lang/String;)V",
+            {VmValue::Ref(locale), VmValue::Ref(rows)}));
+        CHECK(vm.Model().GetObjectElement(row, 1).IsValid());
+        const auto decimal = vm.NewIntrinsicInstance("Ljava/text/DecimalFormat;");
+        const auto decimal_roots = vm.ProtectReferences(std::array{decimal});
+        static_cast<void>(direct(
+            "Ljava/text/DecimalFormat;", "<init>", "(Ljava/lang/String;)V",
+            {VmValue::Ref(decimal), VmValue::Ref(vm.NewStringUtf8("0.00"))}));
+        CHECK(vm.StringUtf8(invoke(decimal, "format", "(J)Ljava/lang/String;",
+                                   {VmValue::Long(12)}).ref) == "12.00");
+        static_cast<void>(invoke(decimal, "applyPattern", "(Ljava/lang/String;)V",
+                                 {VmValue::Ref(vm.NewStringUtf8("000"))}));
+        CHECK(vm.StringUtf8(invoke(decimal, "toPattern", "()Ljava/lang/String;", {}).ref) ==
+              "#000");
+        CHECK(vm.StringUtf8(invoke(decimal, "format", "(J)Ljava/lang/String;",
+                                   {VmValue::Long(12)}).ref) == "012");
+        const auto parsed = invoke(decimal, "parse",
+                                   "(Ljava/lang/String;)Ljava/lang/Number;",
+                                   {VmValue::Ref(vm.NewStringUtf8("034"))}).ref;
+        CHECK(invoke(parsed, "longValue", "()J", {}).AsLong() == 34);
+        const auto decimal_fraction = vm.NewIntrinsicInstance("Ljava/text/DecimalFormat;");
+        const auto fraction_roots = vm.ProtectReferences(std::array{decimal_fraction});
+        static_cast<void>(direct(
+            "Ljava/text/DecimalFormat;", "<init>", "(Ljava/lang/String;)V",
+            {VmValue::Ref(decimal_fraction), VmValue::Ref(vm.NewStringUtf8("0.0"))}));
+        const auto parsed_fraction = invoke(
+            decimal_fraction, "parse", "(Ljava/lang/String;)Ljava/lang/Number;",
+            {VmValue::Ref(vm.NewStringUtf8("1.5"))}).ref;
+        CHECK(linker.Class(vm.Model().ObjectClass(parsed_fraction)).descriptor ==
+              "Ljava/lang/Double;");
+        CHECK(invoke(parsed_fraction, "doubleValue", "()D", {}).AsDouble() ==
+              doctest::Approx(1.5));
+        const auto cloned = invoke(decimal, "clone", "()Ljava/lang/Object;", {}).ref;
+        const auto clone_roots = vm.ProtectReferences(std::array{cloned});
+        CHECK(vm.StringUtf8(invoke(cloned, "format", "(J)Ljava/lang/String;",
+                                   {VmValue::Long(7)}).ref) == "007");
+        const auto date_format = vm.NewIntrinsicInstance("Ljava/text/SimpleDateFormat;");
+        const auto date = vm.NewIntrinsicInstance("Ljava/util/Date;");
+        const auto date_roots = vm.ProtectReferences(std::array{date_format, date});
+        static_cast<void>(direct(
+            "Ljava/text/SimpleDateFormat;", "<init>", "(Ljava/lang/String;)V",
+            {VmValue::Ref(date_format), VmValue::Ref(vm.NewStringUtf8("yyyy-MM-dd"))}));
+        static_cast<void>(direct("Ljava/util/Date;", "<init>", "(J)V",
+                                 {VmValue::Ref(date), VmValue::Long(0)}));
+        CHECK(vm.StringUtf8(invoke(date_format, "format",
+                                   "(Ljava/util/Date;)Ljava/lang/String;",
+                                   {VmValue::Ref(date)}).ref) == "1970-01-01");
+        const auto time_zone = linker.ResolveDescriptor("Ljava/util/TimeZone;");
+        const auto get_time_zone = linker.FindDirectMethod(
+            time_zone, "getTimeZone", "(Ljava/lang/String;)Ljava/util/TimeZone;");
+        REQUIRE(get_time_zone.has_value());
+        expect_exception(vm.Call(*get_time_zone,
+                                 std::array{VmValue::Ref(vm.NewStringUtf8("PST"))}),
+                         "Ljava/lang/UnsupportedOperationException;");
         vm.ReleaseGuestNativeResources(true);
         CHECK(vm.GuestNativeResourceCount() == 0);
     }
@@ -1807,7 +1941,8 @@ TEST_CASE("DVM-106 Certificate parses DER PEM and verifies RSA EC through guest 
         std::vector<std::vector<std::byte>> contents;
         std::vector<runtime::BionicModuleSource> libraries;
         for (const auto name : {"libc.so", "libm.so", "libdl.so", "libstdc++.so", "libz.so",
-                                "libcrypto.so", "libogplay_cipher.so"}) {
+                                "libcrypto.so", "libgabi++.so", "libicui18n.so", "libicuuc.so",
+                                "libstlport.so", "libogplay_jni.so"}) {
             std::ifstream stream(std::string(OGPLAY_SOURCE_DIR) + "/data/android/19/lib/" + name,
                                  std::ios::binary);
             REQUIRE_MESSAGE(stream.good(), name);
@@ -1823,6 +1958,7 @@ TEST_CASE("DVM-106 Certificate parses DER PEM and verifies RSA EC through guest 
         request.manifest = AppManifest("fixture.MainActivity");
         request.system_libraries = libraries;
         request.dex_bytes = ReadDexFixture("cipher.dex");
+        request.icu_data = ReadPayloadBytes("icu/icudt51l.dat");
         request.boot_dex_bytes = test::ReadBootDex();
         request.context = context;
         request.dexvm.interpreter.backend = backend;
@@ -2209,7 +2345,8 @@ TEST_CASE("DVM-108/109 UUID MessageDigest and serialization use BootDex with rea
         std::vector<std::vector<std::byte>> contents;
         std::vector<runtime::BionicModuleSource> libraries;
         for (const auto name : {"libc.so", "libm.so", "libdl.so", "libstdc++.so", "libz.so",
-                                "libcrypto.so", "libogplay_cipher.so"}) {
+                                "libcrypto.so", "libgabi++.so", "libicui18n.so", "libicuuc.so",
+                                "libstlport.so", "libogplay_jni.so"}) {
             std::ifstream stream(std::string(OGPLAY_SOURCE_DIR) + "/data/android/19/lib/" + name,
                                  std::ios::binary);
             REQUIRE_MESSAGE(stream.good(), name);
@@ -2225,6 +2362,7 @@ TEST_CASE("DVM-108/109 UUID MessageDigest and serialization use BootDex with rea
         request.manifest = AppManifest("fixture.MainActivity");
         request.system_libraries = libraries;
         request.dex_bytes = ReadDexFixture("cipher.dex");
+        request.icu_data = ReadPayloadBytes("icu/icudt51l.dat");
         request.boot_dex_bytes = test::ReadBootDex();
         request.context = context;
         request.dexvm.interpreter.backend = backend;

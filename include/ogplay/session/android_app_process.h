@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 #include <functional>
 #include <memory>
@@ -42,6 +43,7 @@ struct AndroidAppProcessRequest final {
     std::span<const runtime::BionicModuleSource> system_libraries;
     std::vector<std::uint8_t> boot_dex_bytes;
     std::vector<std::uint8_t> dex_bytes;
+    std::vector<std::byte> icu_data;
     std::shared_ptr<runtime::DexVmAndroidContext> context;
     std::optional<std::string> launcher_override;
     std::uint32_t api_level{19};

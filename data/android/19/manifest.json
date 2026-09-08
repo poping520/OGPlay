@@ -41,36 +41,34 @@
     "path": "framework/bootdex.jar",
     "generator": "tools/bootdex/build_bootdex.py",
     "recipe": "tools/bootdex/api19.json",
-    "recipe_sha256": "7c98b3879c20dcffff5f5b39e1720d13fae0434b2a6e2dacebff87e209790892",
+    "recipe_sha256": "af6cb8c54ef55946decbc8ad15849d1e40676d874b830fc40124b355d1ee4975",
     "sources": [
       {
         "source_project": "platform/libcore",
         "source_jar": "core.jar",
-        "source_jar_sha256": "996557954e45f7192b187b2394259bc8aca6e3946652e03b99d837432f83d1ef"
+        "source_jar_sha256": "60b6cdf3eded2fdf157c6166402477e4f72ade215b334817439960522c0e64ee"
       },
       {
-        "source_project": "temporary-device/MoKee-API19-20260906/libcore-crypto",
+        "source_project": "platform/libcore",
         "source_jar": "conscrypt.jar",
-        "source_jar_sha256": "43ab6b953bd5a9e25f0f0d4411a5aa3f0660d16954a0a84e95ad834558b21a1e"
+        "source_jar_sha256": "c7d0849cde38cd0d0dc99d89ee61bd33a65618567fc18171d6605dc6b8e15004"
       },
       {
         "source_project": "platform/frameworks/base",
         "source_jar": "framework.jar",
-        "source_jar_sha256": "90fc9fd36b45db1810ecf51e40119222da081b552f9a64a6d0c09cac09f98a48"
+        "source_jar_sha256": "422e232e121425268f04044f5349072ce42d7b4403267d21569e8ce70d07bc4b"
       },
       {
         "source_project": "platform/frameworks/base",
-        "source_file": ".local/aosp/framework/base/core/java/com/android/internal/util/ArrayUtils.java",
-        "source_sha256": "ddad05dbdbf2aaae35b13ee0cf5fa3c0156202e6d24a44d245a91acb06aabda3",
-        "compiler": "javac --release 7 -g:none; AOSP dx",
-        "dx_sources_sha256": "cd59cf230b5fb22c38e084019b6575a3423feeae0f32e170c766c8eac305fe74"
+        "source_jar": "framework2.jar",
+        "source_jar_sha256": "5866d4e62e5fe44ffaf6ff441b6c361baeb1f8b91e30bb555481ef13ef837973"
       }
     ],
-    "size": 1380365,
-    "sha256": "5baf2903cafcf44b678aa85fd7f19bcb0ed77c2f305d9331104a4ed5bf07f882",
+    "size": 1375873,
+    "sha256": "0c737f62dd629ae96dcad3cad4c98a34fe76e9a3c2dff4dea111322b97000122",
     "dex_entry": "classes.dex",
-    "dex_size": 1380068,
-    "dex_sha256": "b58faa5126a47667258026d0db2a7c837d2b13446af208751f7a9e55e00a662b",
+    "dex_size": 1375576,
+    "dex_sha256": "060dac87f4435ff3b9c04c44f9c709a4b99b5a3166db91ec0adc41915adead34",
     "class_count": 923,
     "selection_policy": "load-all",
     "notice": "notices/bootdex.jar.txt",
@@ -192,15 +190,56 @@
       "notice_sha256": "04d431d8c33eb0fa98bbb0bf04bce47e6ba14f165db44aa05243dd1c05000dbf"
     },
     {
-      "path": "lib/libogplay_cipher.so",
+      "path": "lib/libogplay_jni.so",
       "source_project": "ogplay",
-      "size": 28004,
-      "sha256": "f47cf47971eba5d16c1379a162f00f3b5bc8b0fb8bf8aa8a87c54b70d6daa2d5",
-      "soname": "libogplay_cipher.so",
+      "size": 59760,
+      "sha256": "b75b7346e0ceb31b16ef685ecad3d7f1f6f2a1a5b82a575b32f638938bbbab7b",
+      "soname": "libogplay_jni.so",
       "needed": [
         "libcrypto.so",
+        "libicui18n.so",
+        "libicuuc.so",
         "libc.so"
-      ]
+      ],
+      "build": {
+        "generator": "tools/bootdex/build_bootdex.py",
+        "generator_sha256": "ffc35e26c5bf86eafb077588b64b79f83830d9d903ca55a466151347c8f72f19",
+        "ndk_revision": "25.2.9519653",
+        "target": "armv7a-linux-androideabi19",
+        "language": "C11",
+        "sources": [
+          {
+            "path": "src/guest/crypto/crypto_jni.c",
+            "sha256": "a6c5077f42b46068060f818ca311704692466a893ed1e1781989e43ba3d163a3"
+          },
+          {
+            "path": "src/guest/icu/icu_jni.c",
+            "sha256": "984fa38200807b3e1e6ff357bb76e16a1c01f5186a6b2d9f44216e30a265e166"
+          },
+          {
+            "path": "src/guest/icu/icu51_capi.h",
+            "sha256": "dbe7a9363dac3e7b9e444d1918ae8b6d7b4585d55695fdb1d1d1cf37f56f8ffb"
+          }
+        ],
+        "inputs": [
+          {
+            "path": "lib/libcrypto.so",
+            "sha256": "7d38659dfd49d7a02d229a4712c5090fdfbdb3db9b6618b773bf86ace9703f2a"
+          },
+          {
+            "path": "lib/libicuuc.so",
+            "sha256": "1e47c2d57db1573ac4f6c09a8b1b815ed89a72d0686c032d0916644a44e9acfd"
+          },
+          {
+            "path": "lib/libicui18n.so",
+            "sha256": "08596ab1ed097f953cc681e4cc61e69c1cea5f639e9014f5789265923ccd5149"
+          },
+          {
+            "path": "icu/icudt51l.dat",
+            "sha256": "8275408cb7161606c9a1b55edf12df538a7110ad53103a00f8ac7ba5b092a96f"
+          }
+        ]
+      }
     },
     {
       "path": "lib/libstdc++.so",

@@ -1,6 +1,8 @@
-# 模块：BootDex guest crypto JNI
+# 模块：BootDex guest crypto JNI 源码
 
-crypto_jni.c 仅作为 API 19 ARM guest 共享库编译。使用 JNI 1.6 必要槽、API 19 bionic
+crypto_jni.c 与 `src/guest/icu/icu_jni.c` 统一编译为 API 19 ARM
+`libogplay_jni.so`。本目录只拥有 crypto 注册、状态和 OpenSSL 调用；唯一 JNI_OnLoad
+在本文件协调两个源码模块。使用 JNI 1.6 必要槽、API 19 bionic
 mutex ABI 与 OpenSSL EVP 不透明接口，无 OpenSSL 结构布局依赖；算法在 libcrypto 执行。
 
 算法与 context 使用逻辑 token；registry mutex、引用计数与 per-context mutex 保护
@@ -8,8 +10,9 @@ mutex ABI 与 OpenSSL EVP 不透明接口，无 OpenSSL 结构布局依赖；算
 输入/输出别名，临时明文与 key buffer 使用 volatile 清零。reset 明确恢复原始 IV，
 修复 OpenSSL CTR 传 null IV 时不复位的行为。
 
-构建：`python3 tools/bootdex/build_bootdex.py build-cipher`。需要支持 ARM 的 clang
-和 ELF ld.lld；无 NDK 的 macOS 可使用 Xcode clang 与 Rust bundled ld.lld。
+构建：`python tools/bootdex/build_bootdex.py build-guest-jni`。固定使用 NDK r25c 的
+ARMv7 API 19 clang/ld.lld，默认位于 `D:\01_software\android-sdk\ndk\r25c`，可用
+`OGPLAY_ANDROID_NDK` 指向同版本 NDK。
 两次构建必须字节一致；源码、工具链和输出哈希写入同一 payload manifest。
 输入仅从 `data/android/19/lib/libcrypto.so` 读取，构建器不从手机提取目录恢复文件。
 该输入固定为 AOSP `platform/external/openssl` 的
@@ -22,7 +25,7 @@ DVM-106 在同一库增加验签 JNI：SPKI 公钥经 d2i_PUBKEY 完整消费，
 Signature 状态；native 调用内创建的 key/digest context 在所有出口释放，不发布指针。
 错误公钥、算法、签名分别明确处理；每个编码输入最多 1 MiB。JNI_OnLoad 安装 OpenSSL
 API 19 锁与 pthread identity 回调，析构在 context 清理后撤销回调并释放锁。
-保留 build-cipher 名称、crypto_jni.c 和 manifest.libraries 条目，避免另建配置/工具链。
+Cipher、Digest、Signature 与 ICU 共用一个 manifest library 条目，不允许恢复独立 crypto SO。
 
 DVM-108 增加 7 个 MessageDigest JNI 入口：MD5/SHA1/SHA256/SHA384/SHA512 的
 algorithm lookup/size、init/update/final、ctx copy/destroy。算法和 context 使用逻辑 token，

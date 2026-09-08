@@ -1,8 +1,5 @@
 #include "catalog.h"
 #include "shared.h"
-#include "../icu_support.h"
-#include <unicode/ucnv.h>
-
 #include <array>
 #include <bit>
 #include <optional>
@@ -445,28 +442,74 @@ std::string CharsetName(Interpreter& vm, VmObjectRef charset) {
     return CanonicalCharset(vm.StringUtf8(detail::InvokeGuest(vm, charset, "name", "()Ljava/lang/String;").ref));
 }
 std::u16string DecodeCharset(std::span<const std::byte> bytes, const std::string& charset) {
-    InitializePinnedIcu(); UErrorCode status = U_ZERO_ERROR;
-    const std::unique_ptr<UConverter, decltype(&ucnv_close)> converter(ucnv_open(charset.c_str(), &status), ucnv_close);
-    CheckIcu(status);
-    if (bytes.size() > INT32_MAX) throw std::length_error("encoded string is too long");
-    const auto* input = reinterpret_cast<const char*>(bytes.data()); const auto count = static_cast<int32_t>(bytes.size());
-    const auto length = ucnv_toUChars(converter.get(), nullptr, 0, input, count, &status);
-    if (status != U_BUFFER_OVERFLOW_ERROR) CheckIcu(status);
-    status = U_ZERO_ERROR; std::u16string result(static_cast<std::size_t>(length), u'\0');
-    ucnv_toUChars(converter.get(), reinterpret_cast<UChar*>(result.data()), length, input, count, &status);
-    CheckIcu(status); return result;
+    if (charset == "UTF-8") return detail::Utf8DecodeReplace(bytes);
+    std::u16string result;
+    if (charset == "US-ASCII" || charset == "ISO-8859-1") {
+        result.reserve(bytes.size());
+        for (const auto byte : bytes) {
+            const auto value = static_cast<std::uint8_t>(byte);
+            result.push_back(charset == "US-ASCII" && value > 0x7fU
+                                 ? u'\ufffd' : static_cast<char16_t>(value));
+        }
+        return result;
+    }
+    bool big = charset != "UTF-16LE";
+    std::size_t offset{};
+    if (charset == "UTF-16" && bytes.size() >= 2U) {
+        const auto first = static_cast<std::uint8_t>(bytes[0]);
+        const auto second = static_cast<std::uint8_t>(bytes[1]);
+        if (first == 0xffU && second == 0xfeU) { big = false; offset = 2; }
+        else if (first == 0xfeU && second == 0xffU) { big = true; offset = 2; }
+    }
+    for (; offset + 1U < bytes.size(); offset += 2U) {
+        const auto a = static_cast<std::uint8_t>(bytes[offset]);
+        const auto b = static_cast<std::uint8_t>(bytes[offset + 1U]);
+        result.push_back(static_cast<char16_t>(big ? (a << 8U) | b : (b << 8U) | a));
+    }
+    if (offset != bytes.size()) result.push_back(u'\ufffd');
+    return result;
 }
 std::vector<std::byte> EncodeCharset(std::u16string_view text, const std::string& charset) {
-    InitializePinnedIcu(); UErrorCode status = U_ZERO_ERROR;
-    const std::unique_ptr<UConverter, decltype(&ucnv_close)> converter(ucnv_open(charset.c_str(), &status), ucnv_close);
-    CheckIcu(status); const UChar replacement = charset.starts_with("UTF-16") ? 0xfffd : '?'; ucnv_setSubstString(converter.get(), &replacement, 1, &status); CheckIcu(status);
-    if (text.size() > INT32_MAX) throw std::length_error("string is too long");
-    const auto* input = reinterpret_cast<const UChar*>(text.data()); const auto count = static_cast<int32_t>(text.size());
-    const auto length = ucnv_fromUChars(converter.get(), nullptr, 0, input, count, &status);
-    if (status != U_BUFFER_OVERFLOW_ERROR) CheckIcu(status);
-    status = U_ZERO_ERROR; std::vector<std::byte> result(static_cast<std::size_t>(length));
-    ucnv_fromUChars(converter.get(), reinterpret_cast<char*>(result.data()), length, input, count, &status);
-    CheckIcu(status); return result;
+    if (charset == "UTF-8") {
+        std::u16string sanitized(text);
+        for (std::size_t i = 0; i < sanitized.size(); ++i) {
+            const auto unit = sanitized[i];
+            if (unit >= 0xd800U && unit <= 0xdbffU &&
+                i + 1U < sanitized.size() && sanitized[i + 1U] >= 0xdc00U &&
+                sanitized[i + 1U] <= 0xdfffU) {
+                ++i;
+            } else if (unit >= 0xd800U && unit <= 0xdfffU) {
+                sanitized[i] = u'?';
+            }
+        }
+        return detail::Utf8Encode(sanitized);
+    }
+    std::vector<std::byte> result;
+    if (charset == "US-ASCII" || charset == "ISO-8859-1") {
+        result.reserve(text.size());
+        for (const auto unit : text)
+            result.push_back(static_cast<std::byte>(
+                unit <= (charset == "US-ASCII" ? 0x7fU : 0xffU) ? unit : '?'));
+        return result;
+    }
+    const bool big = charset != "UTF-16LE";
+    if (charset == "UTF-16") { result.push_back(std::byte{0xfe}); result.push_back(std::byte{0xff}); }
+    result.reserve(result.size() + text.size() * 2U);
+    for (std::size_t i = 0; i < text.size(); ++i) {
+        auto unit = text[i];
+        const bool pair = unit >= 0xd800U && unit <= 0xdbffU &&
+            i + 1U < text.size() && text[i + 1U] >= 0xdc00U &&
+            text[i + 1U] <= 0xdfffU;
+        if (unit >= 0xd800U && unit <= 0xdfffU && !pair) unit = u'\ufffd';
+        result.push_back(static_cast<std::byte>(big ? unit >> 8U : unit & 0xffU));
+        result.push_back(static_cast<std::byte>(big ? unit & 0xffU : unit >> 8U));
+        if (pair) {
+            unit = text[++i];
+            result.push_back(static_cast<std::byte>(big ? unit >> 8U : unit & 0xffU));
+            result.push_back(static_cast<std::byte>(big ? unit & 0xffU : unit >> 8U));
+        }
+    }
+    return result;
 }
 
 IntrinsicClassDecl DeclareMemoryArray() {

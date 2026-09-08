@@ -743,3 +743,34 @@ TextView 样式解析只消费相关属性，支持 APK parent/reference/attribu
 不迁入完整 TextView/Resources/AssetManager 或 framework-res；未登记的 framework 样式、
 selector 与 stateful 渲染、完整 theme 和文本特效不得伪造成功。所有引用链有界，
 可预判的类型/特性错误在发布 UI 外观前失败，guest override 自身异常保留原语义。
+
+<a id="adr-0049"></a>
+## ADR-0049 · ICU 归 API 19 guest 并统一 JNI 桥
+
+2026-09-08，接受，DVM-122。Supersedes：ADR-0033 的 host ICU 构建、嵌入数据与
+IcuFormatterRuntime，以及 DVM-105 的独立 `libogplay_cipher.so`。
+
+BootDex 审计所需 ICU native 必须执行 guest `libicuuc.so`/`libicui18n.so`，数据固定挂载为
+`/system/usr/icu/icudt51l.dat`。桥只声明并调用 ICU 51 C ABI，避免 NDK libc++ 与 API 19
+STLport C++ ABI 混用。formatter token 与 ICU 对象留在 guest；Java owner 清扫和 VM teardown
+经 close 回收。宿主不得下载、编译、链接 ICU，也不得嵌入 ICU 数据。
+
+crypto 与 ICU 保持独立源码模块，但由固定 NDK r25c ARMv7 API 19 工具链生成唯一
+`libogplay_jni.so` 和 JNI_OnLoad。构建器校验全部输入哈希、两次输出一致、ELF ABI、SONAME、
+DT_NEEDED；payload validator 对 manifest 事实复核。禁止恢复 `libogplay_cipher.so`，禁止引入
+完整 libjavacore。只有 `api19.json` required_backend 可注册；其他 native 必须保持明确失败。
+
+完整具名时区/历史 DST、大数及 double/digit-list formatter、完整 ICU 查询不随迁移扩大。
+标准六字符集解码和受限 Locale 大小写可保留宿主有界实现，但不得依赖 host ICU。
+
+<a id="adr-0050"></a>
+## ADR-0050 · guest ICU 桥按 pinned libcore 语义收紧
+
+2026-09-08，接受，DVM-122 补验。整数 formatter 继续只用 ICU 51 C ABI：按字段重复格式化并在
+integer 区间识别所有 grouping symbol，禁止调用 ICU C++ `FieldPositionIterator`。LocaleData 的
+日期 pattern、相对日、country 与货币从 common-data resource/C API 取得，不在宿主或 JNI 手写区域表。
+
+`parse` 在既有非 BigDecimal 边界内同时取得 ICU int64/double 结果并返回 API 19 Number 类型；
+复杂 Unicode case mapping 经 BootDex ICU guest native 调用 `u_strToLower/Upper`。common data 在
+`udata_setCommonData` 后禁用文件访问并立即初始化，卸载顺序固定为关闭对象、`u_cleanup`、释放数据。
+具名时区库仍不交付；任何非 GMT/UTC/custom-offset ID 明确失败，禁止静默降级为 GMT。

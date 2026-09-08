@@ -1233,7 +1233,7 @@ note = "DVM-99..121 curated BootDex：日期、集合、普通流、X500、Ciphe
 [dexvm.date_format_bootdex_audit]
 status = "complete"
 test = "tools.bootdex_builder_self_test; python3 tools/bootdex/build_bootdex.py audit"
-note = "DVM-102A/ADR-0032 从 pinned API 19 core.jar 冻结日期格式化候选闭包：42 个 class_def、128 个对象类型、1285 个 method_id、485 个 field_id 和 47 个 native 签名均有机器分类；ICU4C 51.1.0.1 来源/提交/archive hash/许可证、首批 Locale/时区集合、6 个保留 overlay 及 Date 序列化字段切换已固定。DVM-102B～H 已按该清单发布，审计清单与入口已统一至 api19.json / build_bootdex.py audit，继续作为类/native/overlay 增长门禁。"
+note = "DVM-102/122 从 pinned API 19 core.jar 冻结日期闭包：42 class_def、127 object types、1273 methods、479 fields、44 native；25 项 required_backend、19 项 explicit_failure 和 6 个 overlay 均由 api19.json/audit 门禁。ICU 51 来源、哈希、许可及 Locale/时区边界固定。"
 
 [dexvm.throwable_bootdex]
 status = "complete"
@@ -1242,13 +1242,18 @@ note = "DVM-115/ADR-0043 将 53 个 Throwable/StackTraceElement/java.lang 异常
 
 [dexvm.locale_iso_catalogs]
 status = "complete"
-test = "tests/dexvm/dvm87_tests.cpp: DVM-113 Locale ISO catalogs; python3 tools/bootdex/build_bootdex.py audit"
-note = "DVM-113 按 API 19 Locale→BootDex ICU Java→固定 ICU 51 接通 getISOLanguages/getISOCountries。完整枚举 559 个语言代码（含三字母）与 249 个国家代码，保持源顺序且不追加废弃别名；缓存、静态 GC 根与每次 clone 归 Java 字段/数组。数据不依赖宿主或默认 Locale；getAvailableLocales、ISO3 转换及 LocaleData 范围不包含。"
+test = "tests/runtime/native_library_loader_tests.cpp: DVM-105; python tools/bootdex/build_bootdex.py audit"
+note = "DVM-113/DVM-122 按 API 19 Locale→BootDex ICU Java→guest libogplay_jni.so→payload ICU 51 接通 getISOLanguages/getISOCountries。完整枚举 559 个语言代码（含三字母）与 249 个国家代码；缓存与 clone 归 Java。getAvailableLocales、ISO3 转换未纳入。"
 
 [dexvm.date_format_api19]
 status = "complete"
-test = "tests/dexvm/dvm87_tests.cpp; tests/dexvm/icu_formatter_runtime_tests.cpp; tests/dexvm/file_vfs_tests.cpp; tests/dexvm/gc_tests.cpp; tools.bootdex_builder_self_test; tools.android_payload_current; A6 gc_long 3/3; PvZ exact Profile reached-fault"
-note = "DVM-102 将 Format/DateFormat/SimpleDateFormat、NumberFormat/DecimalFormat、Date/Calendar/GregorianCalendar/TimeZone/SimpleTimeZone 行为迁入 pinned API 19 BootDex，删除旧 java_text 与日历行为副本。固定 ICU4C 51.1.0.1 common/i18n 实际静态链接，数据经哈希验证后嵌入；区域/货币/时区名称与整数格式化均使用 ICU。per-VM IcuFormatterRuntime 使用逻辑令牌并在 GC/teardown 释放。独立验收已修复默认时区 clone/reset/注入、逗号解析、窄名称、Locale 规范化、Matcher groupCount 与 BootDex 静态初值顺序，并加入反例回归。switch/threaded 覆盖 4 个 SimpleDateFormat ctor、DateFormat factories、zh/en、正负固定 offset、z/Z、format/parse、FieldPosition、attributed iterator 与 clone。complete 仅指该已测闭包；具名时区数据库、历史 DST、BigDecimal/BigInteger 算法、double/digit-list formatter 和完整 ICU 查询仍明确失败。"
+test = "tests/runtime/native_library_loader_tests.cpp: DVM-105; tests/dexvm/dvm87_tests.cpp: non-native shape/time-zone/static-field regressions; tools.bootdex_builder_self_test; tools.android_payload_current"
+note = "DVM-102/122 的日期与数字 Java 行为来自 pinned API 19 BootDex；25 个 required native 经统一 guest JNI 调用 ICU 51。LocaleData resource、货币 fallback、Long/Double parse、完整整数 FieldPosition/grouping 与 Unicode case mapping 已按 AOSP 对照受检。宿主不含 ICU runtime/data。具名时区/历史 DST、BigDecimal/BigInteger、double/digit-list formatter 和其余 ICU 查询仍明确失败。"
+
+[dexvm.guest_jni_api19]
+status = "complete"
+test = "tests/runtime/native_library_loader_tests.cpp: DVM-105/DVM-106/DVM-108; tests/runtime/bionic_profile_tests.cpp; python tools/validate_android_payload.py --root data/android/19; python tools/bootdex/build_bootdex.py build-guest-jni"
+note = "DVM-122 将 crypto/ICU 统一为 libogplay_jni.so 和单一 JNI_OnLoad。NDK r25c ARMv7 API19 重复构建一致；ELF ABI、SONAME、DT_NEEDED、输入/输出哈希受构建器和 validator 约束。ICU data 禁止文件回退并立即初始化，teardown 先 cleanup 再释放；未审计 native 明确失败，不引入 libjavacore。"
 
 [dexvm.unsafe]
 status = "complete"
@@ -1523,7 +1528,7 @@ note = "DVM-106/ADR-0036 完成 Certificate/X509Certificate/CertificateFactory �
 [dexvm.framework_value_bootdex]
 status = "complete"
 test = "tests/dexvm/android_value_tests.cpp; tests/dexvm/dvm87_tests.cpp; tools.bootdex_builder_self_test; tools.android_payload_current"
-note = "DVM-107/ADR-0038：Pair、五种 SparseArray、ContainerHelpers、ComponentName/CREATOR 与 Parcelable 三接口来自 pinned framework.jar；ArrayUtils 来自固定原始 Java 源码和 AOSP dx 输入，PrintWriter 来自 core.jar。774 类全链接，新增类无普通方法 overlay，旧 Pair/Sparse/Parcelable 声明和 Sparse 侧表删除。双后端检查删除压缩、排序、clone、宽整数、GC、短名称/Parcel/CREATOR/打印；StringBuilder/StringBuffer 补 UTF-16 CharSequence 区间 append 原语。完整 framework 和任意 PrintWriter formatter 长尾不因选类自动实现。"
+note = "DVM-107/ADR-0038：Pair、五种 SparseArray、ContainerHelpers、ComponentName/CREATOR 与 Parcelable 三接口来自 pinned framework.jar；ArrayUtils 从 pinned framework2.jar 精确选入，PrintWriter 来自 core.jar。774 类全链接，新增类无普通方法 overlay，旧 Pair/Sparse/Parcelable 声明和 Sparse 侧表删除。双后端检查删除压缩、排序、clone、宽整数、GC、短名称/Parcel/CREATOR/打印；StringBuilder/StringBuffer 补 UTF-16 CharSequence 区间 append 原语。完整 framework 和任意 PrintWriter formatter 长尾不因选类自动实现。"
 
 [dexvm.activity_component_identity]
 status = "complete"

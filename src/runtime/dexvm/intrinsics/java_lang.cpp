@@ -10,9 +10,6 @@
 
 #include "catalog.h"
 #include "shared.h"
-#include "../icu_support.h"
-#include <unicode/locid.h>
-
 #include "ogplay/runtime/dexvm/intrinsic_builder.h"
 
 namespace ogplay::runtime::dexvm::intrinsics {
@@ -1912,16 +1909,57 @@ VmValue FormatSequential(IntrinsicContext& context) {
     return Make(context, output);
 }
 
-VmValue MapCase(IntrinsicContext& context, bool upper) {
-    const auto locale = context.arguments[0].ref;
+VmValue InvokeGuestStatic(Interpreter& vm, const char* owner, const char* name,
+                          const char* signature, std::vector<VmValue> arguments = {}) {
+    const auto type = vm.Linker().ResolveDescriptor(owner);
+    const auto method = vm.Linker().FindDirectMethod(type, name, signature);
+    if (!method) throw DexVmError(DexVmErrorReason::unresolved_reference,
+                                  std::string(owner) + "->" + name + signature);
+    const auto result = vm.Call(*method, arguments);
+    if (result.exception.IsValid()) throw VmJavaThrow{
+        vm.Linker().Class(result.exception_class).descriptor,
+        result.exception_message, result.exception};
+    return result.value;
+}
+
+VmValue MapCase(IntrinsicContext& context, bool upper, VmObjectRef locale) {
     if (!locale.IsValid()) throw VmJavaThrow{"Ljava/lang/NullPointerException;", "locale == null"};
+    const auto roots = context.vm.ProtectReferences(std::array{context.receiver, locale});
     const auto language = detail::InvokeGuest(context.vm, locale, "getLanguage", "()Ljava/lang/String;");
     const auto locale_name = context.vm.StringUtf8(language.ref);
-    InitializePinnedIcu();
-    auto value = IcuString(Value(context, context.receiver));
-    if (upper) value.toUpper(icu::Locale(locale_name.c_str()));
-    else value.toLower(icu::Locale(locale_name.c_str()));
-    const auto result = FromIcu(value);
+    auto result = Value(context, context.receiver);
+    const bool simple_locale = locale_name.empty() || locale_name == "en" ||
+                               locale_name == "zh";
+    const bool simple_units = std::ranges::all_of(result, [upper](const char16_t unit) {
+        return unit < 0x80 ||
+               (!upper && ((unit >= 0x00c0U && unit <= 0x00d6U) ||
+                           (unit >= 0x00d8U && unit <= 0x00deU))) ||
+               (upper && ((unit >= 0x00e0U && unit <= 0x00f6U) ||
+                          (unit >= 0x00f8U && unit <= 0x00feU)));
+    });
+    if (!simple_locale || !simple_units) {
+        const auto java_locale_name = detail::InvokeGuest(
+            context.vm, locale, "toString", "()Ljava/lang/String;").ref;
+        const auto call_roots = context.vm.ProtectReferences(
+            std::array{context.receiver, locale, java_locale_name});
+        return InvokeGuestStatic(
+            context.vm, "Llibcore/icu/ICU;",
+            upper ? "toUpperCase" : "toLowerCase",
+            "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;",
+            {VmValue::Ref(context.receiver), VmValue::Ref(java_locale_name)});
+    }
+    for (auto& unit : result) {
+        if (unit >= u'A' && unit <= u'Z' && !upper)
+            unit = static_cast<char16_t>(unit - u'A' + u'a');
+        else if (unit >= u'a' && unit <= u'z' && upper)
+            unit = static_cast<char16_t>(unit - u'a' + u'A');
+        else if (!upper && ((unit >= 0x00c0U && unit <= 0x00d6U) ||
+                            (unit >= 0x00d8U && unit <= 0x00deU)))
+            unit = static_cast<char16_t>(unit + 0x20U);
+        else if (upper && ((unit >= 0x00e0U && unit <= 0x00f6U) ||
+                           (unit >= 0x00f8U && unit <= 0x00feU)))
+            unit = static_cast<char16_t>(unit - 0x20U);
+    }
     return result == Value(context, context.receiver) ? VmValue::Ref(context.receiver) : Make(context, result);
 }
 
@@ -2361,20 +2399,22 @@ IntrinsicClassDecl Declare_java_lang_String() {
         });
     builder.FinalMethod("toLowerCase", "()Ljava/lang/String;",
         [](IntrinsicContext& context) {
-                auto value = Value(context, context.receiver);
-                for (auto& unit : value) unit = AsciiLower(unit);
-                return Make(context, value);
+                const auto locale = InvokeGuestStatic(
+                    context.vm, "Ljava/util/Locale;", "getDefault",
+                    "()Ljava/util/Locale;").ref;
+                return MapCase(context, false, locale);
             });
     builder.FinalMethod(
         "toLowerCase", "(Ljava/util/Locale;)Ljava/lang/String;",
-        [](IntrinsicContext& context) { return MapCase(context, false); });
+        [](IntrinsicContext& context) { return MapCase(context, false, context.arguments[0].ref); });
     builder.FinalMethod("toUpperCase", "(Ljava/util/Locale;)Ljava/lang/String;",
-        [](IntrinsicContext& context) { return MapCase(context, true); });
+        [](IntrinsicContext& context) { return MapCase(context, true, context.arguments[0].ref); });
     builder.FinalMethod("toUpperCase", "()Ljava/lang/String;",
         [](IntrinsicContext& context) {
-                auto value = Value(context, context.receiver);
-                for (auto& unit : value) unit = AsciiUpper(unit);
-                return Make(context, value);
+                const auto locale = InvokeGuestStatic(
+                    context.vm, "Ljava/util/Locale;", "getDefault",
+                    "()Ljava/util/Locale;").ref;
+                return MapCase(context, true, locale);
             });
     builder.FinalMethod("trim", "()Ljava/lang/String;",
         [](IntrinsicContext& context) {

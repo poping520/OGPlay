@@ -191,7 +191,7 @@ IntrinsicClassDecl NativeCryptoBoundary() {
     auto b = IntrinsicClassBuilder::Class(kNative);
     b.ClassInitializer([](IntrinsicContext& c) {
         Direct(c.vm, "Ljava/lang/System;", "loadLibrary", "(Ljava/lang/String;)V",
-               {VmValue::Ref(c.vm.NewStringUtf8("ogplay_cipher"))});
+               {VmValue::Ref(c.vm.NewStringUtf8("ogplay_jni"))});
         const auto owner = c.vm.Linker().ResolveDescriptor("Lcom/android/org/conscrypt/OpenSSLMessageDigestJDK;");
         const auto field = c.vm.Linker().FindFieldRecursive(owner, "ctx", "J");
         const auto cleanup = c.vm.Linker().FindDirectMethod(c.vm.Linker().ResolveDescriptor(kNative), "EVP_MD_CTX_destroy", "(J)V");

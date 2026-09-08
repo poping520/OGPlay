@@ -67,7 +67,8 @@ public:
     bool closed{};
   };
   struct DecoderState final {
-    std::shared_ptr<void> converter;
+    std::string encoding;
+    std::vector<std::byte> encoded;
     std::deque<char16_t> pending;
     bool ended{};
   };

@@ -15,12 +15,8 @@ python3 tools/bootdex/build_bootdex.py check
 列表，运行时仍全量加载生成物中的 class_def。
 
 DVM-107 另选入 framework 的 Pair、SparseArray 家族、ComponentName 与 Parcelable 接口。
-其 ArrayUtils 在 API 19 原本属于 framework2.jar，本地改用
-`.local/aosp/framework/base/core/java/com/android/internal/util/ArrayUtils.java` 原始源码，
-通过 JDK 17（`javac --release 7 -g:none`）和本地 AOSP dx 编译。dx 输入为
-`.local/aosp/dalvik/dx/src` 与 `.local/aosp/libcore/dex/src/main/java`；Java 文件和两棵源码树
-均固定哈希，任何缺失/改动即失败。manifest 独立记录源码/编译输入来源，不冒充 jar。
-`build`/`check` 均执行两次独立编译、重组并核对 DEX 一致；无需 SDK 或额外 recipe。
+其 ArrayUtils 从 `.local/aosp/framework2.jar` 精确选入；该 JAR 与其他 BootDex 输入一样固定
+SHA-256。`build`/`check` 均执行两次独立重组并核对 DEX 一致；无需 SDK 或额外 recipe。
 
 `api19.json` 的 `date_family_audit` 保存 DVM-102 日期闭包的依赖分类、native 边界与
 ICU 来源；`roots` 冻结原 42 类审计样本，不随依赖迁移扩大；其中 `boot_dex` 是主类清单的受检子集，外部依赖分类不得与主清单冲突。
@@ -110,10 +106,10 @@ ANGLE 源码构建、打包、许可证归档和发布自测全部由独立的
 CMake 会按宿主选择平台/CPU，并逐文件验证清单。普通 Debug 构建仍使用默认
 `OGPLAY_ANGLE_SDK_CONFIGURATION=release`。
 
-### 固定 ICU 数据嵌入
+### API 19 guest JNI
 
-DVM-102 的 `cmake/PinnedIcu.cmake` 按固定 archive SHA-256 取得 ICU4C 51.1.0.1，
-以原 Makefile.in 的对象清单构建 common/i18n；不搜索系统 ICU。
-`tools/bootdex/embed_icu_data.py <icudt51l.dat> <generated.cpp>` 校验发行数据 SHA-256
-后生成对齐的只读数据，CMake 自动运行。生成文件属于构建目录，不入库；运行时禁止
-ICU 文件/动态数据查找。macOS 已验证，Windows/Linux 仍需在对应环境完成构建验收。
+`python tools/bootdex/build_bootdex.py build-guest-jni` 使用 NDK r25c ARMv7 API 19 clang
+把 `src/guest/crypto` 与 `src/guest/icu` 编译为唯一 `libogplay_jni.so`。构建器校验
+libcrypto、ICU 两库和 icudt51l.dat 输入哈希，执行两次独立构建，并检查 ELF32 ARM/DYN、
+SONAME 与精确 DT_NEEDED；两个 C 源和 ICU C ABI 头的哈希写入 manifest。工具链或输入不匹配
+即失败。宿主构建不下载、编译或链接 ICU。

@@ -21,9 +21,10 @@ namespace {
 
 constexpr std::array<std::string_view, 5> kGuestLibraries{
     "libc.so", "libm.so", "libdl.so", "libstdc++.so", "libz.so"};
-constexpr std::array<std::string_view, 7> kApi19GuestLibraries{
+constexpr std::array<std::string_view, 11> kApi19GuestLibraries{
     "libc.so", "libm.so", "libdl.so", "libstdc++.so", "libz.so",
-    "libcrypto.so", "libogplay_cipher.so"};
+    "libcrypto.so", "libgabi++.so", "libicui18n.so", "libicuuc.so",
+    "libstlport.so", "libogplay_jni.so"};
 constexpr BionicProfile kApi19{AndroidApi::api19, "4.4", "android/19",
                                kApi19GuestLibraries};
 constexpr BionicProfile kApi22{AndroidApi::api22, "5.1", "android/22",

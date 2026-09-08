@@ -30,7 +30,7 @@ LIBRARIES = {
     "lib/libicui18n.so",
     "lib/libicuuc.so",
     "lib/libm.so",
-    "lib/libogplay_cipher.so",
+    "lib/libogplay_jni.so",
     "lib/libstdc++.so",
     "lib/libstlport.so",
     "lib/libz.so",
@@ -98,16 +98,50 @@ def _validate_digest(path: Path, size: Any, digest: Any, label: str) -> None:
         raise PayloadError(f"{label} SHA-256 does not match")
 
 
-def _validate_elf(path: Path, label: str) -> None:
-    with path.open("rb") as source:
-        header = source.read(20)
-    if len(header) != 20 or header[:4] != b"\x7fELF":
+def _validate_elf(path: Path, label: str) -> tuple[str, list[str]]:
+    image = path.read_bytes()
+    header = image[:52]
+    if len(header) != 52 or header[:4] != b"\x7fELF":
         raise PayloadError(f"{label} is not ELF")
     if header[4:6] != bytes((1, 1)):
         raise PayloadError(f"{label} must be little-endian ELF32")
     elf_type, machine = struct.unpack_from("<HH", header, 16)
     if elf_type != 3 or machine != 40:
         raise PayloadError(f"{label} must be an ARM shared object")
+    phoff = struct.unpack_from("<I", header, 28)[0]
+    phentsize, phnum = struct.unpack_from("<HH", header, 42)
+    loads: list[tuple[int, int, int]] = []
+    dynamic: tuple[int, int] | None = None
+    for index in range(phnum):
+        offset = phoff + index * phentsize
+        p_type, p_offset, p_vaddr, _, p_filesz = struct.unpack_from("<IIIII", image, offset)
+        if p_type == 1:
+            loads.append((p_vaddr, p_offset, p_filesz))
+        elif p_type == 2:
+            dynamic = (p_offset, p_filesz)
+    if dynamic is None:
+        raise PayloadError(f"{label} has no PT_DYNAMIC")
+    entries: list[tuple[int, int]] = []
+    for offset in range(dynamic[0], dynamic[0] + dynamic[1], 8):
+        tag, value = struct.unpack_from("<II", image, offset)
+        if tag == 0: break
+        entries.append((tag, value))
+    strtab_address = next((value for tag, value in entries if tag == 5), None)
+    if strtab_address is None:
+        raise PayloadError(f"{label} has no DT_STRTAB")
+    strtab = next((file_offset + strtab_address - address
+                   for address, file_offset, size in loads
+                   if address <= strtab_address < address + size), None)
+    if strtab is None:
+        raise PayloadError(f"{label} DT_STRTAB is unmapped")
+    def text_at(index: int) -> str:
+        end = image.find(b"\0", strtab + index)
+        if end < 0: raise PayloadError(f"{label} has an invalid dynamic string")
+        return image[strtab + index:end].decode("ascii")
+    soname_values = [text_at(value) for tag, value in entries if tag == 14]
+    if len(soname_values) != 1:
+        raise PayloadError(f"{label} must have exactly one DT_SONAME")
+    return soname_values[0], [text_at(value) for tag, value in entries if tag == 1]
 
 
 def _validate_source_manifest(root: Path, source: dict[str, Any]) -> set[str]:
@@ -282,13 +316,53 @@ def validate(root: Path) -> None:
         label = f"libraries[{relative}]"
         path = root / relative
         _validate_digest(path, entry.get("size"), entry.get("sha256"), label)
-        _validate_elf(path, label)
-        if entry.get("soname") != Path(relative).name:
+        soname, actual_needed = _validate_elf(path, label)
+        if entry.get("soname") != Path(relative).name or soname != entry.get("soname"):
             raise PayloadError(f"{label}.soname does not match")
         needed = entry.get("needed")
         if not isinstance(needed, list) or not all(
                 isinstance(item, str) and item for item in needed):
             raise PayloadError(f"{label}.needed must be a string array")
+        if needed != actual_needed:
+            raise PayloadError(f"{label}.needed does not match DT_NEEDED")
+        if relative == "lib/libogplay_jni.so":
+            build = entry.get("build")
+            expected_sources = [
+                "src/guest/crypto/crypto_jni.c",
+                "src/guest/icu/icu_jni.c",
+                "src/guest/icu/icu51_capi.h",
+            ]
+            if not isinstance(build, dict) or build.get("ndk_revision") != "25.2.9519653" or \
+                    build.get("target") != "armv7a-linux-androideabi19" or \
+                    build.get("language") != "C11" or \
+                    build.get("generator") != "tools/bootdex/build_bootdex.py":
+                raise PayloadError(f"{label}.build is not the pinned NDK r25c recipe")
+            repository = root.parents[2]
+            generator = repository / build["generator"]
+            if build.get("generator_sha256") != _digest(generator):
+                raise PayloadError(f"{label}.build generator SHA-256 does not match")
+            sources = build.get("sources")
+            if not isinstance(sources, list) or \
+                    [item.get("path") for item in sources
+                     if isinstance(item, dict)] != expected_sources:
+                raise PayloadError(f"{label}.build sources do not match")
+            for source in sources:
+                source_path = repository / source["path"]
+                if source.get("sha256") != _digest(source_path):
+                    raise PayloadError(f"{label}.build source SHA-256 does not match")
+            inputs = build.get("inputs")
+            expected_inputs = {
+                path: libraries[path]["sha256"]
+                for path in ("lib/libcrypto.so", "lib/libicuuc.so",
+                             "lib/libicui18n.so")
+            }
+            icu = _mapping(manifest.get("icu"), "icu")
+            expected_inputs[icu["path"]] = icu["sha256"]
+            if not isinstance(inputs, list) or any(
+                    not isinstance(item, dict) for item in inputs) or \
+                    {item.get("path"): item.get("sha256")
+                     for item in inputs} != expected_inputs:
+                raise PayloadError(f"{label}.build input SHA-256 does not match manifest")
         source_project = _text(entry.get("source_project"),
                                f"{label}.source_project")
         if source_project.startswith("platform/"):

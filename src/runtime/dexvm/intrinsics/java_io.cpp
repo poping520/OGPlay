@@ -2,8 +2,6 @@
 
 // ---- migrated from java_io_EOFException.cpp ----
 #include "catalog.h"
-#include "../icu_support.h"
-#include <unicode/ucnv.h>
 #include "shared.h"
 
 #include "ogplay/runtime/dexvm/intrinsic_builder.h"
@@ -1453,9 +1451,11 @@ namespace ogplay::runtime::dexvm::intrinsics {
                 if (result.exception.IsValid()) throw VmJavaThrow{c.vm.Linker().Class(result.exception_class).descriptor, result.exception_message, result.exception};
                 IntrinsicCall(c).SetRef(source, c.arguments[0].ref);
                 IntrinsicCall(c).SetRef(encoding, c.vm.NewStringUtf8(name));
-                InitializePinnedIcu(); UErrorCode status = U_ZERO_ERROR;
-                auto* converter = ucnv_open(name.c_str(), &status); CheckIcu(status);
-                c.vm.IO().Decoder(c.receiver).converter = std::shared_ptr<void>(converter, [](void* p) { ucnv_close(static_cast<UConverter*>(p)); });
+                auto& decoder = c.vm.IO().Decoder(c.receiver);
+                decoder.encoding = std::move(name);
+                decoder.encoded.clear();
+                decoder.pending.clear();
+                decoder.ended = false;
                 return VmValue::Void();
             };
             b.Constructor("(Ljava/io/InputStream;)V", [construct](IntrinsicContext& c) { return construct(c, "UTF-8"); });
@@ -1468,16 +1468,23 @@ namespace ogplay::runtime::dexvm::intrinsics {
             const auto read = [source, closed](IntrinsicContext& c) -> std::int32_t {
                 if (IntrinsicCall(c).GetInt(closed)) throw VmJavaThrow{"Ljava/io/IOException;", "reader is closed"};
                 auto& state = c.vm.IO().Decoder(c.receiver);
-                if (!state.converter) throw VmJavaThrow{"Ljava/io/IOException;", "reader is uninitialized"};
+                if (state.encoding.empty()) throw VmJavaThrow{"Ljava/io/IOException;", "reader is uninitialized"};
                 while (state.pending.empty() && !state.ended) {
                     const auto value = detail::InvokeGuest(c.vm, IntrinsicCall(c).GetRef(source), "read", "()I").AsInt();
                     state.ended = value < 0;
-                    const char byte = static_cast<char>(value); const char* input = &byte;
-                    const char* end = input + (state.ended ? 0 : 1);
-                    UChar output[4]; auto* next = output; UErrorCode status = U_ZERO_ERROR;
-                    ucnv_toUnicode(static_cast<UConverter*>(state.converter.get()), &next, output + 4, &input, end, nullptr, state.ended, &status);
-                    CheckIcu(status);
-                    for (auto* unit = output; unit != next; ++unit) state.pending.push_back(static_cast<char16_t>(*unit));
+                    if (!state.ended) state.encoded.push_back(static_cast<std::byte>(value));
+                    std::size_t required = 1U;
+                    if (state.encoding.starts_with("UTF-16")) required = 2U;
+                    else if (state.encoding == "UTF-8" && !state.encoded.empty()) {
+                        const auto lead = static_cast<std::uint8_t>(state.encoded.front());
+                        required = lead < 0x80U ? 1U : (lead & 0xe0U) == 0xc0U ? 2U :
+                                   (lead & 0xf0U) == 0xe0U ? 3U : (lead & 0xf8U) == 0xf0U ? 4U : 1U;
+                    }
+                    if (state.encoded.size() >= required || (state.ended && !state.encoded.empty())) {
+                        const auto decoded = DecodeCharset(state.encoded, state.encoding);
+                        state.encoded.clear();
+                        for (const auto unit : decoded) state.pending.push_back(unit);
+                    }
                 }
                 if (state.pending.empty()) return -1;
                 const auto unit = state.pending.front(); state.pending.pop_front(); return unit;

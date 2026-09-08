@@ -41,6 +41,10 @@ ThreadLocal 消费 Thread.localValues 和 wrapping atomic getAndAdd；System.nan
 DVM-118：Math 普通 Java 方法/常量/random 状态归 BootDex，java_lang.cpp 只保留
 API 19 定义的 24 个 libm native 原语。round、abs/min/max、符号位/ulp/scalb 等
 由原版 Java 决定；不把宿主 libm 声称为 StrictMath/fdlibm 的逐位一致实现。
+DVM-126：`String` 保持 VM 特殊 UTF-16 owner，两个 `String.format` 只按 API 19 包装逻辑
+构造并调用 BootDex `Formatter`。格式解析、异常、Locale 与日期转换归原版 Java；
+`AbstractStringBuilder`/Appendable 继承面和 `IntegralToString.appendInt/Long` 仅桥接唯一 builder
+状态，不恢复 C++ format parser，也不宣称 double/BigDecimal formatter 长尾可用。
 `java_icu.cpp` 只发布 DVM-122 审计固定的 guest ICU native、NativeDecimalFormat 与 TimeZone 数据
 边界；Format/DateFormat/SimpleDateFormat、NumberFormat/DecimalFormat、Date/Calendar 及
 SimpleTimeZone 的类、字段和 Java 算法均来自 BootDex。formatter 的 Java long 只保存 per-VM

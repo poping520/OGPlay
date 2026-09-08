@@ -1228,7 +1228,12 @@ note = "DVM-7 注册/层级/布局/vtable/iftable 四步链接与懒结构预检
 [dexvm.boot_dex]
 status = "complete"
 test = "tests/dexvm/intrinsics_p1_tests.cpp; tests/frontend/data_directory_tests.cpp; tools.bootdex_builder_self_test; tools.android_payload_current; PvZ exact Profile reached-fault"
-note = "DVM-99..121 curated BootDex：日期、集合、普通流、X500、Cipher/JCA/Conscrypt AES 与 Certificate/Harmony/Signature 及 framework 值类、UUID/MessageDigest/摘要流和对象流、定时执行器依赖、ServiceConnection 与 Throwable/StackTraceElement 家族、BackupManager/RestoreObserver 、Bundle/ArrayMap 家族、DisplayMetrics/TypedValue 与 Math 及五类 LayoutParams 与 Typeface、ColorStateList/CREATOR、StateSet 与 R.attr 共 923 个 class_def。923 类全链接，Cipher/Certificate/集合普通 Java 算法均归 DEX；精确边界 overlay 与显式 guest JNI 声明受审。固定 recipe 可确定性重建，DEX/JAR 身份见 data/android/19/manifest.json。Conscrypt 为用户授权的临时设备来源，区别于 pinned core.jar；libcrypto 已替换为 AOSP android-4.4.4_r2.0.1 platform/external/openssl 的自建 ARM 库，来源 revision、哈希、许可证和 payload 校验约束已固定；完整 core/framework、multidex、动态 classpath 与 Android 系统服务未纳入。"
+note = "DVM-99..126 curated BootDex：日期、集合、普通流、X500、Cipher/JCA/Conscrypt AES 与 Certificate/Harmony/Signature 及 framework 值类、UUID/MessageDigest/摘要流和对象流、定时执行器依赖、ServiceConnection、Throwable/StackTraceElement、BackupManager/RestoreObserver、Bundle/ArrayMap、显示/布局/文本值类及 API 19 Formatter 家族共 948 个 class_def。948 类全链接；String 保持 VM owner，两个 format overload 仅包装 guest Formatter。精确边界 overlay 与 guest JNI 声明受审，制品身份见 data/android/19/manifest.json。Conscrypt 为用户授权的临时设备来源；libcrypto 为 AOSP android-4.4.4_r2.0.1 自建 ARM 库。完整 core/framework、multidex、动态 classpath 与 Android 系统服务未纳入。"
+
+[dexvm.string_format_api19]
+status = "partial"
+test = "tests/runtime/native_library_loader_tests.cpp: DVM-126; tests/dexvm/dvm87_tests.cpp: all BootDex classes link; tools.bootdex_builder_self_test; tools.android_payload_current; PvZ exact Profile reached-fault"
+note = "DVM-126 从 pinned core.jar 精确选入 Formatter、嵌套实现、Formattable 与格式异常族；格式解析、宽度/flag、虚 toString、Locale 和日期转换执行 API 19 Java。String 仍为 VM 特殊 UTF-16 owner，两个 String.format intrinsic 只实现 AOSP 包装链；AbstractStringBuilder/Appendable 与 IntegralToString 两个 append 原语共用 builder 状态。双后端覆盖 %tZ、%02d、默认/null Locale、异常与 GC。double/BigDecimal formatter、具名时区长尾仍受既有边界约束，因此能力为 partial。"
 
 [dexvm.date_format_bootdex_audit]
 status = "complete"

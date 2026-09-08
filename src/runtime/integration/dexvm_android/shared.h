@@ -19,6 +19,8 @@ using Context = std::shared_ptr<DexVmAndroidContext>;
     const char* signature, std::vector<dx::VmValue> arguments = {});
 [[nodiscard]] dx::VmObjectRef NewAndroidComponentName(
     dx::Interpreter& vm, dx::VmObjectRef package, dx::VmObjectRef class_name);
+[[nodiscard]] dx::VmObjectRef NewAndroidBundle(
+    dx::Interpreter& vm, dx::VmObjectRef source = dx::VmObjectRef{});
 
 // Helpers shared across handler batches; batch-local helpers stay private to
 // their translation unit.

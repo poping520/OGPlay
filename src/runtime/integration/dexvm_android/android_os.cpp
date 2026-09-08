@@ -241,169 +241,35 @@ Decl Declare_android_os_Build(const Context& context) {
 namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_os_Bundle(const Context& context) {
-    auto builder = dx::IntrinsicClassBuilder::Class(
-        "Landroid/os/Bundle;", "Ljava/lang/Object;", {"Landroid/os/Parcelable;"});
-    builder.StaticField(
-        "CREATOR", "Landroid/os/Parcelable$Creator;",
-        dx::kAccPublic | dx::kAccStatic | dx::kAccFinal);
-    builder.ClassInitializer([](dx::IntrinsicContext& call) {
-        call.vm.SetIntrinsicStaticRef(
-            "Landroid/os/Bundle;", "CREATOR", "Landroid/os/Parcelable$Creator;",
-            call.vm.NewIntrinsicInstance("Landroid/os/Bundle$1;"));
-        return dx::VmValue::Void();
-    });
-    builder.Constructor("()V",
-        [context](dx::IntrinsicContext& call) {
-            context->bundles.try_emplace(call.receiver.Value());
-            return dx::VmValue::Void();
-        });
-    builder.Constructor("(Landroid/os/Parcel;)V",
-        [context](dx::IntrinsicContext& call) {
-            auto& parcel = RequireParcel(call, context, call.arguments[0].ref);
-            const auto atom = ReadParcelAtom(
-                parcel, DexVmAndroidContext::ParcelAtom::Kind::object);
-            if (atom.text != "Bundle") {
-                context->bundles.try_emplace(call.receiver.Value());
-            } else {
-                context->bundles[call.receiver.Value()] = atom.bundle_values;
-            }
-            return dx::VmValue::Void();
-        });
-    builder.FinalMethod("get", "(Ljava/lang/String;)Ljava/lang/Object;",
-        [context](dx::IntrinsicContext& call) {
-            const auto bundle = context->bundles.find(call.receiver.Value());
-            if (bundle == context->bundles.end()) {
-                return dx::VmValue::Ref(dx::VmObjectRef{});
-            }
-            const auto value =
-                bundle->second.find(call.vm.StringUtf8(call.arguments[0].ref));
-            if (value == bundle->second.end()) {
-                return dx::VmValue::Ref(dx::VmObjectRef{});
-            }
-            if (const auto* text = std::get_if<std::string>(&value->second)) {
-                return MakeString(call, *text);
-            }
-            if (const auto* object =
-                    std::get_if<dx::VmObjectRef>(&value->second)) {
-                return dx::VmValue::Ref(*object);
-            }
-            return dx::VmValue::Ref(dx::VmObjectRef{});
-        });
-    builder.FinalMethod("getInt", "(Ljava/lang/String;)I",
-        [context](dx::IntrinsicContext& call) {
-            const auto& values = context->bundles[call.receiver.Value()];
-            const auto found =
-                values.find(call.vm.StringUtf8(call.arguments[0].ref));
-            const auto* value =
-                found == values.end()
-                    ? nullptr
-                    : std::get_if<std::int32_t>(&found->second);
-            return dx::VmValue::Int(value == nullptr ? 0 : *value);
-        });
-    builder.FinalMethod("getString", "(Ljava/lang/String;)Ljava/lang/String;",
-        [context](dx::IntrinsicContext& call) {
-            const auto& values = context->bundles[call.receiver.Value()];
-            const auto found =
-                values.find(call.vm.StringUtf8(call.arguments[0].ref));
-            const auto* value =
-                found == values.end()
-                    ? nullptr
-                    : std::get_if<std::string>(&found->second);
-            return value == nullptr ? dx::VmValue::Ref(dx::VmObjectRef{})
-                                    : MakeString(call, *value);
-        });
-    builder.FinalMethod("putString", "(Ljava/lang/String;Ljava/lang/String;)V",
-        [context](dx::IntrinsicContext& call) {
-            context->bundles[call.receiver.Value()]
-                            [call.vm.StringUtf8(call.arguments[0].ref)] =
-                call.vm.StringUtf8(call.arguments[1].ref);
-            return dx::VmValue::Void();
-        });
-    builder.FinalMethod("putInt", "(Ljava/lang/String;I)V",
-        [context](dx::IntrinsicContext& call) {
-            context->bundles[call.receiver.Value()]
-                            [call.vm.StringUtf8(call.arguments[0].ref)] =
-                call.arguments[1].AsInt();
-            return dx::VmValue::Void();
-        });
-    builder.FinalMethod("getLong", "(Ljava/lang/String;)J",
-        [context](dx::IntrinsicContext& call) {
-            const auto& values = context->bundles[call.receiver.Value()];
-            const auto found =
-                values.find(call.vm.StringUtf8(call.arguments[0].ref));
-            const auto* value =
-                found == values.end()
-                    ? nullptr
-                    : std::get_if<std::int64_t>(&found->second);
-            return dx::VmValue::Long(value == nullptr ? 0 : *value);
-        });
-    builder.FinalMethod("putLong", "(Ljava/lang/String;J)V",
-        [context](dx::IntrinsicContext& call) {
-            context->bundles[call.receiver.Value()]
-                            [call.vm.StringUtf8(call.arguments[0].ref)] =
-                call.arguments[1].AsLong();
-            return dx::VmValue::Void();
-        });
-    builder.FinalMethod("getByteArray", "(Ljava/lang/String;)[B",
-        [context](dx::IntrinsicContext& call) {
-            const auto& values = context->bundles[call.receiver.Value()];
-            const auto found =
-                values.find(call.vm.StringUtf8(call.arguments[0].ref));
-            const auto* value =
-                found == values.end()
-                    ? nullptr
-                    : std::get_if<dx::VmObjectRef>(&found->second);
-            return dx::VmValue::Ref(value == nullptr ? dx::VmObjectRef{}
-                                                     : *value);
-        });
-    builder.FinalMethod("putByteArray", "(Ljava/lang/String;[B)V",
-        [context](dx::IntrinsicContext& call) {
-            context->bundles[call.receiver.Value()]
-                            [call.vm.StringUtf8(call.arguments[0].ref)] =
-                call.arguments[1].ref;
-            return dx::VmValue::Void();
-        });
-    builder.FinalMethod("getParcelable",
-        "(Ljava/lang/String;)Landroid/os/Parcelable;",
-        [context](dx::IntrinsicContext& call) {
-            const auto& values = context->bundles[call.receiver.Value()];
-            const auto found = values.find(call.vm.StringUtf8(call.arguments[0].ref));
-            const auto* value = found == values.end()
-                                    ? nullptr
-                                    : std::get_if<dx::VmObjectRef>(&found->second);
-            return dx::VmValue::Ref(value == nullptr ? dx::VmObjectRef{} : *value);
-        });
-    builder.FinalMethod("putParcelable",
-        "(Ljava/lang/String;Landroid/os/Parcelable;)V",
-        [context](dx::IntrinsicContext& call) {
-            context->bundles[call.receiver.Value()]
-                            [call.vm.StringUtf8(call.arguments[0].ref)] =
-                call.arguments[1].ref;
-            return dx::VmValue::Void();
-        });
-    builder.FinalMethod("describeContents", "()I",
-        [](dx::IntrinsicContext&) { return dx::VmValue::Int(0); });
+    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/os/Bundle;");
+    const auto map = builder.BoundInstanceField("mMap", "Landroid/util/ArrayMap;", 0);
+    const auto parcelled = builder.BoundInstanceField("mParcelledData", "Landroid/os/Parcel;", 0);
+    const auto has_fds = builder.BoundInstanceField("mHasFds", "Z", dx::kAccPrivate);
+    const auto fds_known = builder.BoundInstanceField("mFdsKnown", "Z", dx::kAccPrivate);
+    // Preserve the existing in-process typed Parcel transport. Ordinary Bundle
+    // state, type checks, copy construction and CREATOR remain API 19 Java.
     builder.FinalMethod("writeToParcel", "(Landroid/os/Parcel;I)V",
         [context](dx::IntrinsicContext& call) {
-            auto& parcel = RequireParcel(call, context, call.arguments[0].ref);
+            static_cast<void>(RequireParcel(call, context, call.arguments[0].ref));
             DexVmAndroidContext::ParcelAtom atom;
             atom.kind = DexVmAndroidContext::ParcelAtom::Kind::object;
             atom.text = "Bundle";
-            atom.bundle_values = context->bundles[call.receiver.Value()];
-            WriteParcelAtom(parcel, std::move(atom));
+            atom.object = NewAndroidBundle(call.vm, call.receiver);
+            WriteParcelAtom(RequireParcel(call, context, call.arguments[0].ref), std::move(atom));
             return dx::VmValue::Void();
         });
-    builder.FinalMethod("containsKey", "(Ljava/lang/String;)Z",
-        [context](dx::IntrinsicContext& call) {
-            const auto& values = context->bundles[call.receiver.Value()];
-            return dx::VmValue::Int(
-                values.contains(call.vm.StringUtf8(call.arguments[0].ref))
-                    ? 1
-                    : 0);
-        });
-    builder.FinalMethod("clear", "()V",
-        [context](dx::IntrinsicContext& call) {
-            context->bundles[call.receiver.Value()].clear();
+    builder.FinalMethod("readFromParcel", "(Landroid/os/Parcel;)V",
+        [context, map, parcelled, has_fds, fds_known](dx::IntrinsicContext& call) {
+            const auto atom = ReadParcelAtom(RequireParcel(call, context, call.arguments[0].ref),
+                DexVmAndroidContext::ParcelAtom::Kind::object);
+            if (atom.text != "Bundle" || !atom.object.IsValid())
+                throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "Parcel is not a Bundle"};
+            const auto copy = NewAndroidBundle(call.vm, atom.object);
+            const dx::IntrinsicCall fields(call);
+            fields.SetRef(map, fields.GetRef(map, copy));
+            fields.SetRef(parcelled, dx::VmObjectRef{});
+            fields.SetInt(has_fds, fields.GetInt(has_fds, copy));
+            fields.SetInt(fds_known, fields.GetInt(fds_known, copy));
             return dx::VmValue::Void();
         });
     return std::move(builder).Build();
@@ -1234,32 +1100,6 @@ Decl Declare_android_os_StatFs(const Context& context) {
 
 namespace ogplay::runtime::android_intrinsics {
 
-Decl Declare_android_os_Bundle_1(const Context& context) {
-    auto builder = dx::IntrinsicClassBuilder::Class(
-        "Landroid/os/Bundle$1;", "Ljava/lang/Object;", {"Landroid/os/Parcelable$Creator;"});
-    builder.Constructor("()V", [](dx::IntrinsicContext&) { return dx::VmValue::Void(); });
-    builder.FinalMethod("createFromParcel", "(Landroid/os/Parcel;)Ljava/lang/Object;",
-        [context](dx::IntrinsicContext& call) {
-            auto& parcel = RequireParcel(call, context, call.arguments[0].ref);
-            const auto atom = ReadParcelAtom(parcel, DexVmAndroidContext::ParcelAtom::Kind::object);
-            if (atom.text != "Bundle") return dx::VmValue::Ref(dx::VmObjectRef{});
-            const auto result = call.vm.NewIntrinsicInstance("Landroid/os/Bundle;");
-            context->bundles[result.Value()] = atom.bundle_values;
-            return dx::VmValue::Ref(result);
-        });
-    builder.FinalMethod("newArray", "(I)[Ljava/lang/Object;",
-        [](dx::IntrinsicContext& call) {
-            const auto length = call.arguments[0].AsInt();
-            if (length < 0)
-                throw dx::VmJavaThrow{"Ljava/lang/NegativeArraySizeException;", "length"};
-            const auto element = call.vm.Linker().ResolveDescriptor("Ljava/lang/Object;");
-            return dx::VmValue::Ref(call.vm.Model().NewObjectArray(
-                call.vm.Linker().ResolveDescriptor("[Ljava/lang/Object;"), element,
-                static_cast<JniSize>(length)));
-        });
-    return std::move(builder).Build();
-}
-
 Decl Declare_android_os_Parcel(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/os/Parcel;", "Ljava/lang/Object;");
     builder.Constructor("()V", [context](dx::IntrinsicContext& call) {
@@ -1320,8 +1160,7 @@ Decl Declare_android_os_Parcel(const Context& context) {
                     call.vm.Model().ObjectClass(atom.object)).descriptor;
                 if (descriptor == "Landroid/os/Bundle;") {
                     atom.text = "Bundle";
-                    atom.bundle_values = context->bundles[atom.object.Value()];
-                    atom.object = dx::VmObjectRef{};
+                    atom.object = NewAndroidBundle(call.vm, atom.object);
                 }
             }
             WriteParcelAtom(parcel, std::move(atom));
@@ -1332,7 +1171,7 @@ Decl Declare_android_os_Parcel(const Context& context) {
             DexVmAndroidContext::ParcelAtom atom; atom.kind = DexVmAndroidContext::ParcelAtom::Kind::object;
             if (call.arguments[0].ref.IsValid()) {
                 atom.text = "Bundle";
-                atom.bundle_values = context->bundles[call.arguments[0].ref.Value()];
+                atom.object = NewAndroidBundle(call.vm, call.arguments[0].ref);
             }
             WriteParcelAtom(parcel, std::move(atom));
             return dx::VmValue::Void();
@@ -1366,18 +1205,14 @@ Decl Declare_android_os_Parcel(const Context& context) {
             const auto atom = ReadParcelAtom(RequireParcel(call, context, call.receiver),
                 DexVmAndroidContext::ParcelAtom::Kind::object);
             if (atom.text == "Bundle") {
-                const auto result = call.vm.NewIntrinsicInstance("Landroid/os/Bundle;");
-                context->bundles[result.Value()] = atom.bundle_values;
-                return dx::VmValue::Ref(result);
+                return dx::VmValue::Ref(NewAndroidBundle(call.vm, atom.object));
             }
             return dx::VmValue::Ref(atom.object);
         }).FinalMethod("readBundle", "()Landroid/os/Bundle;", [context](dx::IntrinsicContext& call) {
             const auto atom = ReadParcelAtom(RequireParcel(call, context, call.receiver),
                 DexVmAndroidContext::ParcelAtom::Kind::object);
             if (atom.text != "Bundle") return dx::VmValue::Ref(dx::VmObjectRef{});
-            const auto result = call.vm.NewIntrinsicInstance("Landroid/os/Bundle;");
-            context->bundles[result.Value()] = atom.bundle_values;
-            return dx::VmValue::Ref(result);
+            return dx::VmValue::Ref(NewAndroidBundle(call.vm, atom.object));
         });
     builder.FinalMethod("dataSize", "()I", [context](dx::IntrinsicContext& call) {
         const auto& parcel = RequireParcel(call, context, call.receiver);
@@ -1568,30 +1403,16 @@ void RegisterAndroidValueStateTables(
     vm.RegisterIntrinsicStateTable({
         "android.value",
         [context](const dexvm::VmObjectRef owner, const dexvm::VmRootVisitor& visit) {
-            if (const auto bundle = context->bundles.find(owner.Value());
-                bundle != context->bundles.end()) {
-                for (const auto& [_, value] : bundle->second) {
-                    if (const auto* ref = std::get_if<dexvm::VmObjectRef>(&value);
-                        ref != nullptr && ref->IsValid()) visit(*ref);
-                }
-            }
             if (const auto parcel = context->parcels.find(owner.Value());
                 parcel != context->parcels.end()) {
                 for (const auto& atom : parcel->second.atoms)
                     if (atom.object.IsValid()) visit(atom.object);
-                for (const auto& atom : parcel->second.atoms) {
-                    for (const auto& [_, value] : atom.bundle_values) {
-                        if (const auto* ref = std::get_if<dexvm::VmObjectRef>(&value);
-                            ref != nullptr && ref->IsValid()) visit(*ref);
-                    }
-                }
             }
         },
         [context](const dexvm::VmObjectRef owner) {
             context->paths.erase(owner.Value());
             context->parcels.erase(owner.Value());
             context->wake_locks.erase(owner.Value());
-            context->bundles.erase(owner.Value());
         }, {}});
 }
 

@@ -37,8 +37,8 @@ database side-table；guest 引用经具名 GC state table trace，死亡 owner 
 使用确定性内部格式且只经注入 VFS 访问 `/data/data/<package>/databases/`，不得暴露宿主路径、
 调用宿主 SQLite 或扩展成 ContentProvider/Binder。SQLiteHelper 的 schema version 随内部格式
 持久化，首次创建与版本增长分别虚派 guest `onCreate`/`onUpgrade`；只把 `Stat` ENOENT 视作
-新库，其余 VFS 错误明确失败。未登记 SQL/selection 明确失败。Bundle/Parcel 的
-side-table object reference 必须作为 owner 的 GC 强边 trace。
+新库，其余 VFS 错误明确失败。未登记 SQL/selection 明确失败。Parcel 的
+side-table object reference 必须作为 owner 的 GC 强边 trace；Bundle 已归普通 Java 对象图。
 
 javax EGL/GL façade 遵循 DVM-31：`android_gl.cpp` 聚合该
 家族的 Java handle 声明、handler、唯一
@@ -191,10 +191,9 @@ binding。`GLUtils` 读取 context 中既有 Bitmap backing；本层不拥有 GL
   `Intent` 的公开实例方法保持 API 19 的非 final 可覆盖形状，`IntentFilter` 匹配方法保持 final。
   scheme-specific-part/path pattern、隐式组件解析、ContentProvider/Binder 和系统广播仍明确
   不支持；不得猜测 content MIME 或因此伪造广播派发。
-- Intent extra 当前支持 String、Int 与 `ArrayList<Integer>`，三者共享一个逻辑 key 空间：
-  任一 typed put 覆盖旧类型；`getIntegerArrayListExtra` 命中时返回原 guest list 身份，缺失、
-  显式 null 或其他类型返回 null。list 是 Intent owner 的 GC 强边；`removeExtra` 从全部类型
-  分表删除该 key，空表随即释放，不存在的 key 无操作。
+- Intent extra 由普通 mExtras 字段指向 BootDex Bundle；String/int/Serializable/
+  Integer ArrayList 的 typed put/get/remove/hasExtra 委托 Java，类型覆盖/null 与装箱遵循
+  原版语义；getExtras 返回独立映射的浅副本，值保持身份。删除旧三种类型分表。
 - VideoView error listener 按 view 实例注册、替换或清除；没有具体异步错误事件时
   不伪造 `onError` 回调。pause/seek capability 只反映已打开 player；缺失 player
   的 completion 延迟到视频 pump，禁止从 `start()` 重入 guest。
@@ -223,7 +222,7 @@ binding。`GLUtils` 读取 context 中既有 Bitmap backing；本层不拥有 GL
   GC sweep 删除 owner 关联状态，session teardown 先 shutdown scheduler、唤醒 Looper，再
   join guest 线程。所有时钟推进必须调用 `AdvanceAndroidClock` 通知 waiter。
 - DVM-86 的 Path、Parcel 与 WakeLock 状态只存在于具名 intrinsic state table；
-  Parcel 只传输受检 typed atom，Bundle 在写入时快照 typed map。Power/Vibrator/Process 不得
+  Parcel 只传输受检 typed atom，Bundle 在写入时创建 Java 浅副本。Power/Vibrator/Process 不得
   调用 Binder、宿主设备或外部进程；未知 transport/type/action 必须明确失败。
 
 ## 依赖
@@ -278,3 +277,10 @@ DVM-116：BackupManager/RestoreObserver 来自 BootDex，仅私有 checkServiceB
 覆盖平台查询边界。进程没有 Android 备份服务，sService 保持 null 并记录
 `dexvm.backup_service`；非空服务注入抛 UOE。Java 决定通知不排队、恢复请求 -1、
 恢复会话 null，不发出成功/完成回调。不引入 Binder、备份传输器或系统服务类型反射。
+
+DVM-117：Bundle/CREATOR、ArrayMap/MapCollections 的普通状态与算法来自 BootDex。
+NewAndroidBundle 必须先初始化类，再调用原版构造器；ApplicationInfo 元数据调用 Java
+put 方法。仅 Bundle.writeToParcel/readFromParcel 对接原有 typed Parcel；atom 保存
+Java Bundle 浅副本的强引用，读取再复制映射，无宿主 BundleValue 副本。无效数据明确
+失败；Android 字节协议、Binder/FD 与 parcelled 长尾不在本范围。Log.w/e 的 Throwable
+参数由 Java PrintWriter/StringWriter 展开为结构化日志诊断。

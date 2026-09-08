@@ -1109,13 +1109,12 @@ TEST_CASE("DexVM Intent ArrayList extras trace children and sweep with owner") {
     CHECK(marked.IsMarked(intent));
     CHECK(marked.IsMarked(list));
     static_cast<void>(vm.CollectGarbage("intent-list-extra-edge"));
-    REQUIRE(fixture.context->intent_integer_array_list_extras.contains(
-        intent));
+    CHECK(vm.MarkReachable().IsMarked(list));
 
     vm.SetGcIntegration({});
     static_cast<void>(vm.CollectGarbage("intent-list-extra-owner-sweep"));
-    CHECK_FALSE(fixture.context->intent_integer_array_list_extras.contains(
-        intent));
+    CHECK_FALSE(vm.MarkReachable().IsMarked(intent));
+    CHECK_FALSE(vm.MarkReachable().IsMarked(list));
 }
 
 TEST_CASE("DexVM JNI fields share interpreter storage and reference identity") {

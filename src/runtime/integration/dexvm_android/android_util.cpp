@@ -44,9 +44,35 @@ Decl Declare_android_util_Log(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/util/Log;", "Ljava/lang/Object;");
     const auto log = [](const core::LogLevel level) {
         return dx::IntrinsicHandler([level](dx::IntrinsicContext& call) {
-            GuestLog(call, level,
-                     call.vm.StringUtf8(call.arguments[0].ref) + ": " +
-                         call.vm.StringUtf8(call.arguments[1].ref));
+            auto message = call.vm.StringUtf8(call.arguments[0].ref) + ": " +
+                           call.vm.StringUtf8(call.arguments[1].ref);
+            if (call.arguments.size() == 3 && call.arguments[2].ref.IsValid()) {
+                const auto construct = [&call](const char* descriptor, const char* signature,
+                                                std::vector<dx::VmValue> arguments = {}) {
+                    const auto object = call.vm.NewIntrinsicInstance(descriptor);
+                    const auto root = call.vm.ProtectReferences(std::array{object});
+                    const auto constructor = call.vm.Linker().FindDirectMethod(
+                        call.vm.Model().ObjectClass(object), "<init>", signature);
+                    if (!constructor)
+                        throw dx::DexVmError(dx::DexVmErrorReason::internal_invariant,
+                                             "log writer constructor is not linked");
+                    arguments.insert(arguments.begin(), dx::VmValue::Ref(object));
+                    const auto outcome = call.vm.Call(*constructor, arguments);
+                    if (outcome.exception.IsValid())
+                        throw dx::VmJavaThrow{call.vm.Linker().Class(outcome.exception_class).descriptor,
+                                              outcome.exception_message, outcome.exception};
+                    return object;
+                };
+                const auto text = construct("Ljava/io/StringWriter;", "()V");
+                const auto root = call.vm.ProtectReferences(std::array{text});
+                const auto writer = construct("Ljava/io/PrintWriter;", "(Ljava/io/Writer;)V",
+                                               {dx::VmValue::Ref(text)});
+                static_cast<void>(CallAndroidMethod(call.vm, call.arguments[2].ref,
+                    "printStackTrace", "(Ljava/io/PrintWriter;)V", {dx::VmValue::Ref(writer)}));
+                message += '\n' + call.vm.StringUtf8(
+                    CallAndroidMethod(call.vm, text, "toString", "()Ljava/lang/String;").ref);
+            }
+            GuestLog(call, level, message);
             return dx::VmValue::Int(0);
         });
     };
@@ -56,6 +82,7 @@ Decl Declare_android_util_Log(const Context& context) {
     builder.StaticMethod("e", "(Ljava/lang/String;Ljava/lang/String;)I", error);
     builder.StaticMethod("i", "(Ljava/lang/String;Ljava/lang/String;)I", log(core::LogLevel::info));
     builder.StaticMethod("w", "(Ljava/lang/String;Ljava/lang/String;)I", log(core::LogLevel::warn));
+    builder.StaticMethod("w", "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/Throwable;)I", log(core::LogLevel::warn));
     builder.StaticMethod("v", "(Ljava/lang/String;Ljava/lang/String;)I", debug);
     builder.StaticMethod("e", "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/Throwable;)I", error);
     return std::move(builder).Build();

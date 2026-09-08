@@ -1228,7 +1228,7 @@ note = "DVM-7 注册/层级/布局/vtable/iftable 四步链接与懒结构预检
 [dexvm.boot_dex]
 status = "complete"
 test = "tests/dexvm/intrinsics_p1_tests.cpp; tests/frontend/data_directory_tests.cpp; tools.bootdex_builder_self_test; tools.android_payload_current; PvZ exact Profile reached-fault"
-note = "DVM-99..116 curated BootDex：日期、集合、普通流、X500、Cipher/JCA/Conscrypt AES 与 Certificate/Harmony/Signature 及 framework 值类、UUID/MessageDigest/摘要流和对象流、定时执行器依赖、ServiceConnection 与 Throwable/StackTraceElement 家族、BackupManager/RestoreObserver 共 900 个 class_def。900 类全链接，Cipher/Certificate/集合普通 Java 算法均归 DEX；精确边界 overlay 与显式 guest JNI 声明受审。固定 recipe 可确定性重建，DEX/JAR 身份见 data/android/19/manifest.json。Conscrypt 为用户授权的临时设备来源，区别于 pinned core.jar；完整 core/framework、multidex、动态 classpath 与 Android 系统服务未纳入。 2026-09-07 ROM libcrypto 已撤出 Git，后按用户再次授权恢复到本地临时使用，完整 payload 校验通过；仍须自行构建替换并更新来源/哈希后复验。"
+note = "DVM-99..117 curated BootDex：日期、集合、普通流、X500、Cipher/JCA/Conscrypt AES 与 Certificate/Harmony/Signature 及 framework 值类、UUID/MessageDigest/摘要流和对象流、定时执行器依赖、ServiceConnection 与 Throwable/StackTraceElement 家族、BackupManager/RestoreObserver 、Bundle/ArrayMap 家族共 910 个 class_def。910 类全链接，Cipher/Certificate/集合普通 Java 算法均归 DEX；精确边界 overlay 与显式 guest JNI 声明受审。固定 recipe 可确定性重建，DEX/JAR 身份见 data/android/19/manifest.json。Conscrypt 为用户授权的临时设备来源，区别于 pinned core.jar；完整 core/framework、multidex、动态 classpath 与 Android 系统服务未纳入。 2026-09-07 ROM libcrypto 已撤出 Git，后按用户再次授权恢复到本地临时使用，完整 payload 校验通过；仍须自行构建替换并更新来源/哈希后复验。"
 
 [dexvm.date_format_bootdex_audit]
 status = "complete"
@@ -1408,7 +1408,7 @@ note = "DVM-85 发布 API19 SystemClock、Looper/Handler/HandlerThread、CountDo
 [dexvm.android_value_services]
 status = "complete"
 test = "tests/dexvm/android_value_tests.cpp; tests/session/profile_entry_scope_tests.cpp; architecture.dexvm_intrinsic_layout"
-note = "DVM-86 发布 API19 Base64/SparseArray family/TypedValue/TextUtils、Color/RectF/Point/Path/PorterDuff/BitmapDrawable/ColorDrawable、Parcelable/Parcel/Bundle transport 与 PowerManager/WakeLock/Vibrator/Process；DVM-107 的 Pair/SparseArray family/Parcelable 已迁入 BootDex，普通字段/数组由 GC 追踪；其余值状态继续进入受检 side-table 和 GC trace，Bundle 自身持有的 byte array/Parcelable 为强边，Parcel 写入时快照 typed map。power/vibrator service 为稳定进程内 facade，不实现 Binder、fd/cross-process transport 或宿主设备动作"
+note = "DVM-86 发布 API19 Base64/SparseArray family/TypedValue/TextUtils、Color/RectF/Point/Path/PorterDuff/BitmapDrawable/ColorDrawable、Parcelable/Parcel/Bundle transport 与 PowerManager/WakeLock/Vibrator/Process；DVM-107 的 Pair/SparseArray family/Parcelable 已迁入 BootDex，普通字段/数组由 GC 追踪；DVM-117 Bundle/ArrayMap 迁入 Java，Intent extras 归普通字段；其余值状态继续进入受检 side-table 和 GC trace，Parcel 写入时保存 Java Bundle 浅副本。power/vibrator service 为稳定进程内 facade，不实现 Binder、fd/cross-process transport 或宿主设备动作"
 
 [dexvm.java_util_algorithms]
 status = "complete"
@@ -1549,6 +1549,11 @@ note = "DVM-109/ADR-0040：新增 28 个 pinned core.jar 类至 818 类，Object
 status = "complete"
 test = "tests/runtime/native_library_loader_tests.cpp; tests/dexvm/dvm87_tests.cpp; tests/dexvm/interpreter_tests.cpp; tests/dexvm/unsafe_tests.cpp; tests/dexvm/vm_thread_tests.cpp; tests/dexvm/vm_monitor_tests.cpp; tests/dexvm/thread_intrinsic_tests.cpp; tests/dexvm/reflection_tests.cpp; tools.bootdex_builder_self_test; tools.android_payload_current"
 note = "DVM-110/ADR-0041：新增 26 个 pinned API19 类至 844 类，ScheduledThreadPoolExecutor/FutureTask、接口/异常、普通 Executors 包装类、completion service 和拒绝策略均执行原版 Java，删除旧 FutureTask/合成串行 executor/工厂 handler。双后端验证单次 Runnable/Callable、Clock 截止时间/FIFO、fixed-rate 与 fixed-delay、取消/超时/异常身份、removeOnCancel/purge、关闭策略矩阵、shutdownNow、两个真实 worker、普通工厂/invokeAny/invokeAll、仅队列持有任务的 GC 保活。worker 复用 Thread/AQS/Unsafe 和统一 Clock，不另建调度器，解释执行仍串行；修复接口数组到 Object[] 协变与 primitive 类型边界、threaded invoke 原异常身份。DVM-111 修复真实 JNI bridge 下 ScheduledFutureTask 写入 RunnableScheduledFuture[] 被仅父类链校验误拒绝的问题，原版 schedule/shutdownNow 已在共享数组存储下双后端验收。complete 仅指该闭包，privileged 工厂/动态安全上下文、高争用和硬实时精度未纳入，未跑游戏/真机/跨平台 gate。"
+
+[dexvm.bundle_bootdex]
+status = "partial"
+test = "tests/dexvm/android_value_tests.cpp: DVM-117; tests/dexvm/dvm87_tests.cpp: DVM-103; tests/session/profile_entry_scope_tests.cpp; tests/runtime/native_library_loader_tests.cpp"
+note = "DVM-117/ADR-0045：Bundle/CREATOR、ArrayMap/MapCollections 及内部类迁入 BootDex；Intent.mExtras 普通字段为唯一 extra 来源，String/int/Serializable/Integer ArrayList 的 typed put/get/remove/hasExtra 委托 Java，getExtras 为独立映射浅副本。旧 Bundle/Intent 类型侧表已删除，元数据由 Java Bundle 填充。两条 Bundle Parcel 传输入口维持既有进程内 typed atom，保存/读取 Java 浅副本并由 Parcel 强引用追踪；没有深序列化、Android 字节协议、Binder 或 FD transport。双后端覆盖对象身份/null/跨类型覆盖、碰撞/活视图、GC 和 CREATOR。"
 
 [dexvm.backup_service]
 status = "partial"

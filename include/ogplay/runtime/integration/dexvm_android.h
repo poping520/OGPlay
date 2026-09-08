@@ -161,15 +161,6 @@ struct DexVmAndroidContext final {
     // SharedPreferences/Editor instance handle -> preference file name.
     std::unordered_map<std::uint32_t, std::string> preference_names;
 
-  // Bundle values retain their Java kind and object identity. This store
-  // is shared by interpreted and native JNI callers through the DexVM
-  // intrinsic bridge.
-  using BundleValue =
-      std::variant<std::int32_t, std::int64_t, std::string, dexvm::VmObjectRef>;
-    std::unordered_map<std::uint32_t,
-                     std::unordered_map<std::string, BundleValue>>
-      bundles;
-
     // DVM-88 bounded SQLite value store. The serialized database image is
     // written through the process VFS; no host path or SQLite connection is
     // exposed to platform handlers.
@@ -235,7 +226,6 @@ struct DexVmAndroidContext final {
         std::string text;
         std::vector<std::byte> bytes;
         dexvm::VmObjectRef object;
-        std::unordered_map<std::string, BundleValue> bundle_values;
     };
     struct ParcelState final {
         std::vector<ParcelAtom> atoms;
@@ -480,17 +470,7 @@ struct DexVmAndroidContext final {
     // Owned by the DexVm bridge; set once the interpreter exists.
     dexvm::VmThreadRuntime* threads{};
 
-    // Intent extras and the pending activity switch consumed by lifecycle.
-    // ComponentName identity lives in the ordinary Intent.mComponent field.
-    std::unordered_map<std::uint32_t,
-                       std::unordered_map<std::string, std::string>>
-        intent_string_extras;
-    std::unordered_map<std::uint32_t,
-                       std::unordered_map<std::string, std::int32_t>>
-        intent_int_extras;
-    std::map<dexvm::VmObjectRef,
-             std::unordered_map<std::string, dexvm::VmObjectRef>>
-        intent_integer_array_list_extras;
+    // Intent component/extras live in ordinary mComponent/mExtras fields.
     std::string pending_activity_descriptor;
     // Launch/handoff root; attached Activity.getIntent() reads its own mIntent.
     dexvm::VmObjectRef current_intent;

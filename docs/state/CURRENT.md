@@ -1,9 +1,9 @@
 # 当前状态
 
-更新（2026-09-08 续）：[DVM-127](../tasks/dexvm/DVM-127.md) 完成 OGPlay 自有 API 19
-guest 环境。独立 A32 `envp` 初始化 `PATH/ANDROID_ROOT/ANDROID_DATA/EXTERNAL_STORAGE`，
-Bionic `environ` 为唯一运行时权威；`System.getenv` 双签名不读取宿主环境，无参返回 AOSP
-不可修改 Map。exact PvZ 已越过原缺口，新首错为 `Landroid/provider/Settings$Secure;`。
+更新（2026-09-09）：[DVM-128](../tasks/dexvm/DVM-128.md) 完成 API 19
+`Settings.Secure.getString` 与沙盒身份。`ANDROID_ID` 首次由 OS CSPRNG 生成 64 位十六进制值，
+持久沙盒跨启动稳定，ephemeral 每次重建；JNI/DexVM 共用配置且不读取宿主设备身份。
+exact PvZ 已越过该缺口，新首错为 fixed-font XML 非 ASCII 文本限制。
 Button/TextView 三参构造与 buttonStyle(Small) 默认样式投影、TextView compound
 drawables（measure/raster/文本带内缩）、UI kind 按真实继承链解析、RelativeLayout
 TRUE(-1) 规则按 AOSP rule > 0 视为无锚点。exact PvZ 实跑 `CreateDiscoveryStrip 3/4/8`
@@ -30,14 +30,18 @@ compound 支持四方向/空文本测量与定位、资源事务更新；默认�
   LocaleData、货币、数字 parse/字段、复杂大小写和裸 `zh`。具名时区与历史 DST 未纳入审计，
   明确失败；标准六字符集仍走无 ICU 的宿主有界实现。
 - **运行边界**：文件/VFS、资源 XML、Locale、URL codec、Intent/Context、平台 enum、
-  Activity 组件身份、窗口焦点及 flags=0 的 action-only service 查询已接通。无 Binder/system_server、
-  支付或完整 Android 系统；未知/潜在 native 或服务匹配不伪造成功。
-- **Title**：PvZ 已越过 InitXpromo、PreferenceManager 与 onResume 焦点查询，首错为
-  Nimble tracking 后台线程的 Locale `String.format` overload；Tales 首错
+  Activity 组件身份、窗口焦点、沙盒稳定 `ANDROID_ID` 及 flags=0 的 action-only service
+  查询已接通。无 Binder/system_server、SettingsProvider、支付或完整 Android 系统；未知/
+  潜在 native 或服务匹配不伪造成功。
+- **Title**：PvZ 已越过 InitXpromo、PreferenceManager、onResume 焦点、`System.getenv` 与
+  `Settings.Secure`，首错为 fixed-font XML 非 ASCII 文本；Tales 首错
   LocationListener，均未通过游戏 gate。
 
 ## 最近验证
 
+- DVM-128：macOS dev 构建；沙盒身份迁移/稳定 8、Settings.Secure 双后端/GC 30、JNI
+  平台一致性 58 断言通过。关闭 survey 的 exact PvZ 越过原缺口，新首错为 fixed-font XML
+  非 ASCII 文本限制。
 - DVM-127：macOS dev 构建；环境序列化 65、System.getenv 双后端 64、949 类全链接
   6951 断言及 intrinsic layout、BootDex build/check/self-test 通过。宿主 PATH 投毒下 exact PvZ 仍越过 getenv，
   新首错为 Settings.Secure。payload/audit 仍被既有本地 BootDex 输入/生成器改动阻塞。
@@ -45,9 +49,6 @@ compound 支持四方向/空文本测量与定位、资源事务更新；默认�
   StringBuilder/目录结构定向回归及相关 CTest 10/10 通过；platform-boundaries 仍仅被既有
   GUI 分支阻塞。exact PvZ 已越过 `%tZ`，新首错为 `System.getenv(String)`；日志
   `.local/review/dvm126/pvz-run.log`。
-- DVM-122：NDK r25c ARMv7 API 19 两次构建一致；ELF ABI、SONAME、DT_NEEDED、payload、
-  BootDex audit/self-test、Bionic profile、DVM-105/106/108 及大小写/结构定向回归通过。
-  Windows Release 未下载、编译或链接 host ICU。
 - DVM-121 续：BootDex check 与全类链接（927）、prefs/Context 邻域回归
   25/25（10,957 断言）通过；intrinsic layout、BootDex self-test、payload 三项门禁通过。
   exact PvZ 实跑日志 `.local/review/dvm121-prefs/pvz-run.log`。
@@ -58,11 +59,11 @@ compound 支持四方向/空文本测量与定位、资源事务更新；默认�
   在本 WU 前已失败（stash 验证与本次改动无关）；既有 GUI
   `process_manager.cpp:131` 仍使 platform_boundaries 门禁失败。本轮未运行全量 CTest、
   游戏 gate 或跨平台验收。
-  最新架构记录为 [ADR-0053](../adr/dexvm.md#adr-0053)。
+  最新架构记录为 [ADR-0054](../adr/dexvm.md#adr-0054)。
 
 ## 下一步与边界
 
-1. 分析 PvZ 新首错 `Landroid/provider/Settings$Secure;`，继续按通用 API 19 能力推进。
+1. 分析 fixed-font XML 非 ASCII 文本限制，继续按通用字体/资源能力推进 PvZ。
 2. 处理既有 GUI 门禁，补 macOS/Linux、DH 与 Diagnostics 验收。
 
 OGPlay 仅覆盖登记的老游戏进程能力。完整 formatter/大数、宿主资源持久化、Proxy 生成、

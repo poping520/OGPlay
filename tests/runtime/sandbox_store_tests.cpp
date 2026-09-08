@@ -5,8 +5,10 @@
 #include <doctest/doctest.h>
 
 #include <algorithm>
+#include <array>
 #include <filesystem>
 #include <fstream>
+#include <iterator>
 #include <string>
 #include <vector>
 
@@ -307,6 +309,14 @@ TEST_CASE("sandbox store rejects a meta.toml it did not write") {
     }
     CHECK_THROWS_AS(static_cast<void>(SandboxStore::Open(root.path, kPackage)),
                     VfsError);
+
+    {
+        std::ofstream output(meta, std::ios::trunc);
+        output << "schema = 2\npackage = \"" << kPackage
+               << "\"\nversion_code = 0\nandroid_id = \"ABC\"\n";
+    }
+    CHECK_THROWS_AS(static_cast<void>(SandboxStore::Open(root.path, kPackage)),
+                    VfsError);
 }
 
 TEST_CASE("sandbox store rejects ASCII case-folding conflicts on attach") {
@@ -336,6 +346,37 @@ TEST_CASE("sandbox store records the version code as a diagnostic fact") {
     auto reopened = SandboxStore::Open(root.path, kPackage);
     reopened->RecordVersionCode(133);
     CHECK(reopened->Package() == kPackage);
+}
+
+TEST_CASE("sandbox store migrates and preserves one API 19 ANDROID_ID") {
+    const TemporaryRoot root("android-id");
+    constexpr std::array<std::byte, 8> first{
+        std::byte{0x01}, std::byte{0x23}, std::byte{0x45}, std::byte{0x67},
+        std::byte{0x89}, std::byte{0xab}, std::byte{0xcd}, std::byte{0xef}};
+    constexpr std::array<std::byte, 8> ignored{
+        std::byte{0xff}, std::byte{0xee}, std::byte{0xdd}, std::byte{0xcc},
+        std::byte{0xbb}, std::byte{0xaa}, std::byte{0x99}, std::byte{0x88}};
+
+    {
+        auto store = SandboxStore::Open(root.path, kPackage);
+        CHECK(store->EnsureAndroidId(first) == "0123456789abcdef");
+        CHECK(store->EnsureAndroidId(ignored) == "0123456789abcdef");
+    }
+    auto reopened = SandboxStore::Open(root.path, kPackage);
+    CHECK(reopened->EnsureAndroidId(ignored) == "0123456789abcdef");
+
+    std::ifstream input(root.path / kPackage / "meta.toml");
+    const std::string meta{std::istreambuf_iterator<char>(input),
+                           std::istreambuf_iterator<char>()};
+    CHECK(meta.find("schema = 2") != std::string::npos);
+    CHECK(meta.find("android_id = \"0123456789abcdef\"") !=
+          std::string::npos);
+    const TemporaryRoot invalid_root("android-id-invalid");
+    auto invalid = SandboxStore::Open(invalid_root.path, kPackage);
+    CHECK_THROWS_AS(
+        static_cast<void>(
+            invalid->EnsureAndroidId(std::span{first}.first(7))),
+        VfsError);
 }
 
 TEST_CASE("sandbox store rejects an unusable package key") {

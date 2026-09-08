@@ -21,6 +21,14 @@ namespace {
     return "L" + name + ";";
 }
 
+[[nodiscard]] bool IsAndroidId(const std::string_view value) {
+    return value.size() == 16U &&
+           std::ranges::all_of(value, [](const char character) {
+               return (character >= '0' && character <= '9') ||
+                      (character >= 'a' && character <= 'f');
+           });
+}
+
 struct SystemModulePlan final {
     runtime::BionicModuleSet modules;
     std::vector<loader::Elf32ModuleInput> inputs;
@@ -87,6 +95,10 @@ public:
             request.maximum_ticks_per_call == 0 || request.ledger == nullptr) {
             Fail("Android app process request is incomplete");
         }
+        if (!IsAndroidId(request.platform.android_id)) {
+            Fail("Android app process requires a 64-bit lowercase hex "
+                 "ANDROID_ID");
+        }
         state = AndroidAppProcessState::package_ready;
         const auto guest_jni = std::find_if(
             request.system_libraries.begin(), request.system_libraries.end(),
@@ -110,6 +122,7 @@ public:
             std::make_shared<const runtime::GuestProcessEnvironment>(
                 runtime::GuestProcessEnvironment::Api19(
                     context->external_storage_root));
+        const auto android_id = request.platform.android_id;
         request.boundary_options.logger = request.logger;
         auto native_process = runtime::AndroidGuestProcess::Start(
             {request.api_level, system.inputs, request.backend,
@@ -137,6 +150,7 @@ public:
         context->encoded_audio_playback = &session->SoundPoolMixer();
         context->native_libraries = native_libraries.get();
         context->package_name = manifest.package;
+        context->secure_settings.insert_or_assign("android_id", android_id);
         context->package_resource_path =
             "/data/app/" + manifest.package + "-1.apk";
         if (!context->apk_bytes.empty()) {

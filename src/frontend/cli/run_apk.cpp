@@ -720,6 +720,7 @@ int RunApkCommand(const int argc, const char* const argv[],
         app_request.guest_call_slice_observer = guest_slice_observer;
         app_request.platform = {
             .installation_id = "ogplay-" + manifest.package,
+            .android_id = sandbox.android_id,
             .version_name = manifest.version_name.value_or("unknown")};
         app_request.dexvm = bridge_config;
         app_request.ledger = &dexvm_ledger;

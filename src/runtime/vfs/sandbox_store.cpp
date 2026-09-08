@@ -56,7 +56,8 @@ template <typename Integer>
 }
 constexpr std::string_view kMetaName = "meta.toml";
 constexpr std::string_view kOverlayName = "fs";
-constexpr int kMetaSchema = 1;
+constexpr int kLegacyMetaSchema = 1;
+constexpr int kIdentityMetaSchema = 2;
 // Host limits vary; this keeps the escaped form comfortably inside the
 // shortest of them instead of discovering it at write time.
 constexpr std::size_t kMaximumSegmentLength = 200;
@@ -113,6 +114,31 @@ void AppendEscaped(std::string& out, const char character) {
     if (character >= 'A' && character <= 'F') return character - 'A' + 10;
     if (character >= 'a' && character <= 'f') return character - 'a' + 10;
     return -1;
+}
+
+[[nodiscard]] bool IsAndroidId(const std::string_view value) {
+    if (value.size() != 16U) return false;
+    return std::ranges::all_of(value, [](const char character) {
+        return (character >= '0' && character <= '9') ||
+               (character >= 'a' && character <= 'f');
+    });
+}
+
+[[nodiscard]] std::string AndroidIdFromEntropy(
+    const std::span<const std::byte> entropy) {
+    if (entropy.size() != 8U) {
+        throw VfsError(kEinval,
+                       "ANDROID_ID entropy must contain exactly 8 bytes");
+    }
+    static constexpr std::string_view kHex = "0123456789abcdef";
+    std::string value;
+    value.reserve(16U);
+    for (const auto item : entropy) {
+        const auto byte = std::to_integer<std::uint8_t>(item);
+        value.push_back(kHex[byte >> 4U]);
+        value.push_back(kHex[byte & 0x0fU]);
+    }
+    return value;
 }
 
 [[nodiscard]] std::vector<std::string> SplitGuestPath(
@@ -177,6 +203,7 @@ public:
     std::uint64_t used_bytes{};
     std::uint64_t temporaries_removed{};
     std::uint32_t version_code{};
+    std::string android_id;
     // Guest path -> entry, ordered so enumeration is deterministic.
     std::map<std::string, SandboxEntry, std::less<>> entries;
 
@@ -360,6 +387,8 @@ public:
                 stored_package = unquote(value);
             } else if (key == "version_code") {
                 version_code = ParseMetaInteger<std::uint32_t>(value, key);
+            } else if (key == "android_id") {
+                android_id = unquote(value);
             } else {
                 // No guessing at migrations: an unknown key means this
                 // directory was written by something else.
@@ -367,7 +396,7 @@ public:
                                "sandbox meta.toml has an unknown key: " + key);
             }
         }
-        if (schema != kMetaSchema) {
+        if (schema != kLegacyMetaSchema && schema != kIdentityMetaSchema) {
             throw VfsError(kEinval,
                            "sandbox meta.toml schema is not supported; back "
                            "up and clear " + directory.string());
@@ -377,16 +406,30 @@ public:
                            "sandbox meta.toml belongs to " + stored_package +
                                ", not " + package);
         }
+        if (schema == kLegacyMetaSchema && !android_id.empty()) {
+            throw VfsError(kEinval,
+                           "sandbox schema 1 must not contain android_id");
+        }
+        if (schema == kIdentityMetaSchema && !IsAndroidId(android_id)) {
+            throw VfsError(kEinval,
+                           "sandbox meta.toml has a malformed android_id");
+        }
     }
 
     void WriteMeta() const {
         std::string text = "schema = ";
-        text.append(std::to_string(kMetaSchema));
+        text.append(std::to_string(android_id.empty() ? kLegacyMetaSchema
+                                                       : kIdentityMetaSchema));
         text.append("\npackage = \"");
         text.append(package);
         text.append("\"\nversion_code = ");
         text.append(std::to_string(version_code));
         text.push_back('\n');
+        if (!android_id.empty()) {
+            text.append("android_id = \"");
+            text.append(android_id);
+            text.append("\"\n");
+        }
         const auto target = directory / kMetaName;
         auto temporary = target;
         temporary += std::string(kTemporarySuffix);
@@ -653,6 +696,19 @@ void SandboxStore::RecordVersionCode(const std::uint32_t version_code) {
     if (impl_->version_code == version_code) return;
     impl_->version_code = version_code;
     impl_->WriteMeta();
+}
+
+std::string SandboxStore::EnsureAndroidId(
+    const std::span<const std::byte> entropy) {
+    if (!impl_->android_id.empty()) return impl_->android_id;
+    impl_->android_id = AndroidIdFromEntropy(entropy);
+    impl_->WriteMeta();
+    return impl_->android_id;
+}
+
+std::optional<std::string> SandboxStore::AndroidId() const {
+    if (impl_->android_id.empty()) return std::nullopt;
+    return impl_->android_id;
 }
 
 }  // namespace ogplay::runtime

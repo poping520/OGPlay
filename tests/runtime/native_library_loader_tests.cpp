@@ -462,6 +462,7 @@ struct OrchestratedApp final {
                            ogplay::gles::AngleDevice::hardware};
 #endif
         request.filesystem = &filesystem;
+        request.platform.android_id = "0123456789abcdef";
         request.ledger = &ledger;
         request.logger = &logger;
         request.dexvm.interpreter.backend = interpreter_backend;
@@ -1314,6 +1315,8 @@ TEST_CASE("AndroidAppProcess starts a manifest launcher without preloading app E
     CHECK(fixture.app->NativeProcess().ApplicationModuleCount() == 0U);
     CHECK(fixture.app->Context()->package_resource_path ==
           "/data/app/fixture-1.apk");
+    CHECK(fixture.app->Context()->secure_settings.at("android_id") ==
+          "0123456789abcdef");
     const auto apk = fixture.filesystem.Open(
         fixture.app->Context()->package_resource_path, {.read = true});
     std::array<std::byte, 4> apk_magic{};

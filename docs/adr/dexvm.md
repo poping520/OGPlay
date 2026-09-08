@@ -820,3 +820,20 @@ Java 形成旧快照。无参查询使用 AOSP `System$SystemEnvironment` 保持
 
 新增变量必须先证明其 guest 资源存在；不得为某款游戏添加生产分支，也不得复制尚无支撑的
 `BOOTCLASSPATH`、ASEC、loop 或宿主 `LD_LIBRARY_PATH`。
+
+<a id="adr-0054"></a>
+## ADR-0054 · `ANDROID_ID` 归沙盒平台身份配置所有
+
+2026-09-09，接受，DVM-128。
+
+OGPlay 不运行 SettingsProvider、Binder 或多用户系统，但仍按 API 19 数据语义为每个持久
+title 沙盒维护一个 64 位小写十六进制 `ANDROID_ID`。首次创建使用 HAL OS CSPRNG；值由
+`SandboxStore` 原子保存，跨进程启动稳定，清除沙盒后可变化。ephemeral 沙盒每次生成新值。
+这是一项隔离的兼容层身份，不读取宿主硬件，不跨 title 关联，也不得与 Build serial、
+telephony id 或旧 `installation_id` 混用。
+
+`meta.toml` schema 2 增加受检 `android_id`；schema 1 仅在首次初始化身份时显式迁移，未知
+schema、未知键及畸形身份仍明确失败。`AndroidGuestPlatformConfig.android_id` 是 JNI 与
+DexVM 的共同装配事实，DexVM 只保存只读 secure 子集。当前只实现实际命中的静态
+`Settings.Secure.getString`：未知键返回 `null`；写入、跨用户、观察者及整数便利接口不因
+本决定扩张。禁止用完整 framework Settings/ContentProvider 或静默占位替代该边界。

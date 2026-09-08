@@ -40,6 +40,8 @@ struct FrameworkLocaleConfig;
 
 struct AndroidGuestPlatformConfig final {
     std::string installation_id{"ogplay-installation"};
+    // API 19 Settings.Secure.ANDROID_ID: sandbox-stable 64-bit lowercase hex.
+    std::string android_id{"0000000000000000"};
     std::string version_name{"unknown"};
     std::string operator_name{"offline"};
     std::string line_number;

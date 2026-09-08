@@ -24,7 +24,8 @@ descriptor，不伪装落盘。
 幂等屏障，目录 `Truncate` 明确 `-EISDIR`。
 
 `SandboxStore`（`sandbox_store.h`）是**唯一接触沙盒目录的代码**：
-`<root>/<package>/` 下 `meta.toml` 记 schema/package/versionCode，`fs/` 与 guest
+`<root>/<package>/` 下 `meta.toml` 记 schema/package/versionCode 及沙盒稳定
+`ANDROID_ID`，`fs/` 与 guest
 绝对路径 1:1 镜像，用户可直接看懂、备份、手工删除单个存档。文件写一律
 tmp + 同目录 rename（崩溃只会留旧内容或新内容，不会半截）；装载时清理残留
 `*.__ogplay_tmp__` 并计数上报。删除底层文件用 `.__ogplay_tombstone__` 空文件
@@ -86,5 +87,6 @@ syscall 与 framework Asset 只能单向调用本模块。
 （写入不落、fsync 落、close 落、幂等）、元数据立即落盘、未 attach 时行为不变。
 `SandboxStore` 对应 `tests/runtime/sandbox_store_tests.cpp`（布局跨开启往返、
 原子替换与崩溃残留清理、转义双向无损、逃逸与保留后缀拒绝、字节/文件数配额
-`-ENOSPC`、tombstone 遮蔽与解除、非空目录 `-ENOTEMPTY`、meta.toml
-拒绝），全部在测试自建临时目录内进行，不触碰用户数据目录。
+`-ENOSPC`、tombstone 遮蔽与解除、非空目录 `-ENOTEMPTY`、meta.toml 拒绝、schema 1→2
+身份迁移、64 位十六进制校验与跨重开稳定），全部在测试自建临时目录内进行，不触碰用户
+数据目录。

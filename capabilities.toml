@@ -533,7 +533,7 @@ note = "ADR-0020 SBX-2 为 VFS 补齐 CreateDirectory/RemoveFile/RemoveDirectory
 [runtime.vfs_sandbox_persistence]
 status = "partial"
 test = "tests/runtime/sandbox_store_tests.cpp; tests/runtime/vfs_sandbox_tests.cpp; tests/runtime/preferences_xml_tests.cpp"
-note = "ADR-0020 SBX-1..3 交付 SandboxStore 与 VFS overlay；SBX-8 修复改写后删除的旧底层复活、创建窗口 tombstone 自相矛盾、unlink-open descriptor 复活和无变化 write-open 重写。SBX-12 让 meta 数字损坏统一走 VfsError，attach 前拒绝 ASCII 大小写折叠冲突；宿主布局使用 VFS 规范化小写路径。字节配额合并 store 与全部脏节点并在 write/truncate 返回 -ENOSPC，tombstone 不占 65536 活动项配额。close/fsync/pause/shutdown 与元数据落盘点均已接线；用户级真实游戏存档闭环尚未演示，因此保持 partial"
+note = "ADR-0020 SBX-1..3 交付 SandboxStore 与 VFS overlay；SBX-8/12 完成 tombstone、配额、meta 与路径硬化。DVM-128 让 schema 1 沙盒显式迁移至 schema 2，并以调用方 OS entropy 初始化和原子保存 64 位十六进制 ANDROID_ID；持久模式跨重开稳定。close/fsync/pause/shutdown 与元数据落盘点均已接线；用户级真实游戏存档闭环尚未演示，因此保持 partial"
 
 [runtime.vfs]
 status = "complete"
@@ -903,7 +903,12 @@ note = "M8 WU-0367 让 NewObject 与 framework HLE 预注册 host object 共享�
 [runtime.android_legacy_platform_identity]
 status = "complete"
 test = "tests/runtime/android_guest_framework_platform_tests.cpp; Asphalt 6 exact bootstrap sampling"
-note = "M8 WU-0368 批量安装 APK 引用的 Build/VERSION 12 个字段、SystemProperties、Settings.Secure、Context/ContentResolver/Telephony、Activity、Bundle、ViewRoot 与 UUID；身份事实确定性注入，service 对象走共享 registry（DVM-108 已删除固定 UUID handler，UUID 改由 BootDex 与 OS CSPRNG 提供），offline tracking（track_launch/track_first_run 同口径）与 launch count 可查询"
+note = "M8 WU-0368 批量安装 APK 引用的平台身份类与服务对象链；DVM-128 将 Settings.Secure ANDROID_ID 从 installation_id 分离，JNI 与 DexVM 共用沙盒平台配置。身份事实不读取宿主隐私；UUID 由 BootDex 与 OS CSPRNG 提供"
+
+[runtime.android_secure_settings]
+status = "complete"
+test = "tests/runtime/sandbox_store_tests.cpp; tests/dexvm/android_value_tests.cpp; tests/runtime/android_guest_framework_platform_tests.cpp; tests/runtime/native_library_loader_tests.cpp; exact PvZ reached fixed-font XML fault"
+note = "DVM-128 按 API 19 首次随机、跨沙盒生命周期稳定语义初始化 64 位小写十六进制 ANDROID_ID；Settings.Secure.getString 在 JNI/DexVM 读取同一独立配置，未知键返回 null，空参数抛 Java NPE。不含 Binder、SettingsProvider、写入、跨用户、观察者或完整 secure 表"
 
 [runtime.jni_guest_library_load_plan]
 status = "complete"

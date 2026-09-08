@@ -54,10 +54,12 @@ TEST_CASE("legacy Android platform identity installs one complete class group") 
     BindAndroidGuestJavaPlatformHandlers(
         invocations, environment, strings, arrays, state,
         {.installation_id = "fixture-device",
+         .android_id = "0123456789abcdef",
          .host_name = "fixture-model"});
     const auto platform = InstallAndroidGuestFrameworkPlatform(
         classes, invocations, environment, strings, fields, objects, kThread,
         {.installation_id = "fixture-device",
+         .android_id = "0123456789abcdef",
          .host_name = "fixture-model"});
 
     constexpr std::string_view class_names[]{
@@ -155,7 +157,7 @@ TEST_CASE("legacy Android platform identity installs one complete class group") 
               std::get<JniReference>(invoke_static(
                   secure, "getString",
                   "(Landroid/content/ContentResolver;Ljava/lang/String;)Ljava/lang/String;",
-                  secure_arguments))) == "fixture-device");
+                  secure_arguments))) == "0123456789abcdef");
 
     const auto properties = *classes.FindClass(
         "android/os/SystemProperties");

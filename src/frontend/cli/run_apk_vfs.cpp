@@ -3,11 +3,14 @@
 
 #include "run_apk_vfs.h"
 
+#include <array>
 #include <stdexcept>
 #include <string_view>
 #include <vector>
 
+#include "ogplay/core/encoding.h"
 #include "ogplay/frontend/user_data_dir.h"
+#include "ogplay/hal/host_environment.h"
 #include "ogplay/session/profile_vfs.h"
 
 namespace ogplay::frontend {
@@ -15,6 +18,12 @@ namespace {
 
 constexpr core::RateLimitPolicy kUnrestrictedLog{
     .mode = core::RateLimitMode::none};
+
+[[nodiscard]] std::array<std::byte, 8> AndroidIdEntropy() {
+    std::array<std::byte, 8> entropy{};
+    hal::FillSecureRandom(entropy);
+    return entropy;
+}
 
 [[nodiscard]] const session::ProfileMount* ExternalMount(
     const session::TitleProfile& profile) {
@@ -88,7 +97,11 @@ SandboxSession OpenSandbox(const SandboxOptions& options,
                            const std::string& package,
                            const std::uint32_t version_code) {
     SandboxSession session;
-    if (options.ephemeral) return session;
+    if (options.ephemeral) {
+        session.android_id = core::EncodeHex(
+            AndroidIdEntropy(), core::HexCase::lower);
+        return session;
+    }
     if (options.directory.has_value()) {
         session.root = *options.directory;
     } else {
@@ -102,6 +115,12 @@ SandboxSession OpenSandbox(const SandboxOptions& options,
     }
     try {
         session.store = runtime::SandboxStore::Open(session.root, package);
+        session.android_id = session.store->AndroidId().value_or("");
+        if (session.android_id.empty()) {
+            session.android_id =
+                session.store->EnsureAndroidId(AndroidIdEntropy());
+        }
+        session.store->RecordVersionCode(version_code);
     } catch (const runtime::VfsError& error) {
         // The repair action has to be in the message: the user owns this
         // directory and may well have edited it.
@@ -111,7 +130,6 @@ SandboxSession OpenSandbox(const SandboxOptions& options,
             " (back up and clear that directory, or pass "
             "--ephemeral-sandbox)");
     }
-    session.store->RecordVersionCode(version_code);
     return session;
 }
 

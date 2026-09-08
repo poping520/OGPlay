@@ -124,6 +124,11 @@ struct DexVmAndroidContext final {
 
     // Captured lifecycle facts.
     dexvm::VmObjectRef activity;
+    // DexActivityLifecycle is the sole writer of main-window focus. Queries
+    // and callbacks read the same fact; the owner token keeps retired
+    // Activity instances from observing the replacement window's focus.
+    std::atomic<bool> window_has_focus{false};
+    std::atomic<std::uint32_t> window_focus_activity{0};
     // Handle of the launcher activity that opened the process's single
     // task; Activity.isTaskRoot() answers against it. Stored as a plain
     // handle (not the ref) so a retired handoff shell keeps answering

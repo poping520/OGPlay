@@ -184,7 +184,9 @@ TEST_CASE("android intrinsic catalog is unique and directly bound") {
     });
   };
   CHECK(method_count("Landroid/app/Application;") == 2);
-  CHECK(method_count("Landroid/app/Activity;") == 30);
+  CHECK(method_count("Landroid/app/Activity;") == 32);
+  CHECK(has_method("Landroid/app/Activity;", "hasWindowFocus", "()Z"));
+  CHECK(has_method("Landroid/app/Activity;", "onWindowFocusChanged", "(Z)V"));
   CHECK(method_count("Landroid/app/Service;") == 13);
   CHECK(method_count("Landroid/content/Context;") == 24);
   CHECK(method_count("Landroid/content/ContextWrapper;") == 25);
@@ -213,6 +215,7 @@ TEST_CASE("android intrinsic catalog is unique and directly bound") {
   CHECK(method_count("Landroid/os/ResultReceiver;") == 5);
   CHECK(method_count("Landroid/os/ResultReceiver$MyRunnable;") == 2);
   CHECK(method_count("Landroid/view/View$OnFocusChangeListener;") == 1);
+  CHECK(has_method("Landroid/view/View;", "hasWindowFocus", "()Z"));
   CHECK(method_count("Landroid/content/pm/PackageManager;") == 6);
   CHECK(method_count("Landroid/widget/TextView;") == 33);
   CHECK(method_count("Ljavax/microedition/khronos/egl/EGL10;") == 25);

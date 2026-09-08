@@ -805,38 +805,20 @@ Decl Declare_android_view_View(const Context& context) {
         [](dx::IntrinsicContext&) { return dx::VmValue::Void(); },
         dx::kAccProtected);
     builder.VirtualMethod("onWindowFocusChanged", "(Z)V",
+        [](dx::IntrinsicContext&) { return dx::VmValue::Void(); });
+    builder.VirtualMethod("hasWindowFocus", "()Z",
         [context](dx::IntrinsicContext& call) {
+            if (!context->window_has_focus.load()) {
+                return dx::VmValue::Int(0);
+            }
+            const auto decor = context->singletons.find("window_decor_view");
+            if (decor != context->singletons.end() &&
+                decor->second == call.receiver) {
+                return dx::VmValue::Int(1);
+            }
             const auto node = FindViewUiNode(*context, call.receiver.Value());
-            if (!node.has_value()) return dx::VmValue::Void();
-            const auto* state = context->ui_tree.Get(*node);
-            if (state == nullptr || state->children.empty()) {
-                return dx::VmValue::Void();
-            }
-            std::vector<dx::VmObjectRef> children;
-            children.reserve(state->children.size());
-            for (const auto child_node : state->children) {
-                const auto child = ViewObjectForUiNode(*context, child_node);
-                if (child.IsValid()) children.push_back(child);
-            }
-            auto& linker = call.vm.Linker();
-            for (const auto child : children) {
-                const auto child_class = call.vm.Model().ObjectClass(child);
-                const auto method = linker.FindVtableIndex(
-                    child_class, "onWindowFocusChanged", "(Z)V");
-                if (!method.has_value()) {
-                    throw dx::VmJavaThrow{
-                        "Ljava/lang/IllegalStateException;",
-                        "child View has no onWindowFocusChanged(boolean)"};
-                }
-                const auto outcome = call.vm.Call(
-                    linker.Class(child_class).vtable[*method],
-                    std::vector{dx::VmValue::Ref(child), call.arguments[0]});
-                if (outcome.exception.IsValid()) {
-                    call.vm.SetPendingException(outcome.exception);
-                    return dx::VmValue::Void();
-                }
-            }
-            return dx::VmValue::Void();
+            return dx::VmValue::Int(
+                node.has_value() && context->ui_tree.IsAttached(*node));
         });
     builder.VirtualMethod("onTouchEvent", "(Landroid/view/MotionEvent;)Z",
         [](dx::IntrinsicContext&) { return dx::VmValue::Int(0); });

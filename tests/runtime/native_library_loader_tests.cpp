@@ -422,7 +422,10 @@ struct OrchestratedApp final {
                              const bool with_native = true,
                              const std::string& launcher_alias = {},
                              const std::vector<ogplay::loader::AndroidManifestServiceComponent>& services = {},
-                             const bool application_enabled = true) {
+                             const bool application_enabled = true,
+                             const ogplay::runtime::dexvm::InterpreterBackend
+                                 interpreter_backend =
+                                     ogplay::runtime::dexvm::InterpreterBackend::switch_dispatch) {
         context->apk_bytes = {
             std::byte{0x50}, std::byte{0x4b}, std::byte{0x03}, std::byte{0x04}};
         const ogplay::runtime::BionicModuleSource system{
@@ -461,6 +464,7 @@ struct OrchestratedApp final {
         request.filesystem = &filesystem;
         request.ledger = &ledger;
         request.logger = &logger;
+        request.dexvm.interpreter.backend = interpreter_backend;
         app = ogplay::session::AndroidAppProcess::Create(
             std::move(request));
     }
@@ -1395,6 +1399,133 @@ TEST_CASE("DVM-89 initial traversal without workers keeps focus deferred") {
     CHECK(fixture.CallStaticInt("Lfixture/HandshakeView;",
                                 "getFocusEvents") == 1);
     static_cast<void>(fixture.app->Stop());
+}
+
+TEST_CASE("DVM-125 lifecycle owns coherent Activity and View window focus") {
+    using namespace ogplay;
+    using runtime::dexvm::InterpreterBackend;
+    for (const auto backend : {InterpreterBackend::switch_dispatch,
+                               InterpreterBackend::threaded}) {
+        CAPTURE(backend == InterpreterBackend::threaded ? "threaded" :
+                                                         "switch");
+        OrchestratedApp fixture("fixture.WindowFocusActivity", true, false,
+                                {}, {}, true, backend);
+        fixture.app->StartApplication();
+        const auto started = fixture.app->StartLauncherActivity();
+        CHECK(started.state == session::LifecycleRunState::running);
+        const auto old_activity = fixture.context->activity;
+        const auto call_activity = [&](const runtime::dexvm::VmObjectRef receiver,
+                                       const char* name,
+                                       const char* descriptor) {
+            auto& bridge = fixture.app->DexVm();
+            const auto java_class = bridge.Vm().Model().ObjectClass(receiver);
+            const auto index = bridge.Linker().FindVtableIndex(
+                java_class, name, descriptor);
+            REQUIRE(index.has_value());
+            const auto outcome = bridge.Vm().Call(
+                bridge.Linker().Class(java_class).vtable[*index],
+                std::vector{runtime::dexvm::VmValue::Ref(receiver)});
+            REQUIRE_FALSE(outcome.exception.IsValid());
+            return outcome.value;
+        };
+        const auto call_static_void = [&](const char* owner,
+                                          const char* name) {
+            auto& bridge = fixture.app->DexVm();
+            const auto java_class = bridge.Linker().FindClass(owner);
+            REQUIRE(java_class.has_value());
+            const auto method = bridge.Linker().FindDirectMethod(
+                *java_class, name, "()V");
+            REQUIRE(method.has_value());
+            const auto outcome = bridge.Vm().Call(*method, {});
+            REQUIRE_FALSE(outcome.exception.IsValid());
+        };
+
+        // onResume runs before the first post-traversal focus message.
+        CHECK(fixture.CallStaticInt("Lfixture/WindowFocusActivity;",
+                                    "getResumeFocus") == 0);
+        CHECK(fixture.CallStaticInt("Lfixture/WindowFocusActivity;",
+                                    "hasCurrentFocus") == 0);
+        CHECK(fixture.CallStaticInt("Lfixture/WindowFocusActivity;",
+                                    "attachedHasFocus") == 0);
+        CHECK(fixture.CallStaticInt("Lfixture/WindowFocusActivity;",
+                                    "detachedHasFocus") == 0);
+        CHECK(fixture.CallStaticInt("Lfixture/WindowFocusActivity;",
+                                    "decorHasFocus") == 0);
+        CHECK(fixture.CallStaticInt("Lfixture/WindowFocusActivity;",
+                                    "getEvents") == 0);
+
+        static_cast<void>(fixture.app->ActivityLifecycle().StepFrame());
+        CHECK(fixture.CallStaticInt("Lfixture/WindowFocusActivity;",
+                                    "hasCurrentFocus") == 1);
+        CHECK(fixture.CallStaticInt("Lfixture/WindowFocusActivity;",
+                                    "attachedHasFocus") == 1);
+        CHECK(fixture.CallStaticInt("Lfixture/WindowFocusActivity;",
+                                    "detachedHasFocus") == 0);
+        CHECK(fixture.CallStaticInt("Lfixture/WindowFocusActivity;",
+                                    "decorHasFocus") == 1);
+        CHECK(fixture.CallStaticInt("Lfixture/WindowFocusActivity;",
+                                    "getEvents") == 1);
+        CHECK(fixture.CallStaticInt("Lfixture/WindowFocusActivity;",
+                                    "getQueried") == 1);
+        CHECK(fixture.CallStaticInt("Lfixture/WindowFocusView;",
+                                    "getEvents") == 1);
+        CHECK(fixture.CallStaticInt("Lfixture/WindowFocusView;",
+                                    "getQueried") == 1);
+        call_static_void("Lfixture/WindowFocusActivity;", "detachAttached");
+        CHECK(fixture.CallStaticInt("Lfixture/WindowFocusActivity;",
+                                    "attachedHasFocus") == 0);
+        CHECK(fixture.CallStaticInt("Lfixture/WindowFocusView;",
+                                    "getEvents") == 1);
+        call_static_void("Lfixture/WindowFocusActivity;", "attachAttached");
+        CHECK(fixture.CallStaticInt("Lfixture/WindowFocusActivity;",
+                                    "attachedHasFocus") == 1);
+        CHECK(fixture.CallStaticInt("Lfixture/WindowFocusView;",
+                                    "getEvents") == 1);
+
+        static_cast<void>(fixture.app->ActivityLifecycle().Suspend());
+        CHECK(fixture.CallStaticInt("Lfixture/WindowFocusActivity;",
+                                    "getEvents") == 2);
+        CHECK(fixture.CallStaticInt("Lfixture/WindowFocusActivity;",
+                                    "getLast") == 0);
+        CHECK(fixture.CallStaticInt("Lfixture/WindowFocusActivity;",
+                                    "getQueried") == 0);
+        CHECK(fixture.CallStaticInt("Lfixture/WindowFocusView;",
+                                    "getEvents") == 2);
+        CHECK(fixture.CallStaticInt("Lfixture/WindowFocusView;",
+                                    "getQueried") == 0);
+
+        static_cast<void>(fixture.app->ActivityLifecycle().Resume());
+        CHECK(fixture.CallStaticInt("Lfixture/WindowFocusActivity;",
+                                    "getResumeFocus") == 0);
+        CHECK(fixture.CallStaticInt("Lfixture/WindowFocusActivity;",
+                                    "getEvents") == 3);
+        CHECK(fixture.CallStaticInt("Lfixture/WindowFocusView;",
+                                    "getEvents") == 3);
+
+        static_cast<void>(call_activity(old_activity, "switchActivity", "()V"));
+        static_cast<void>(fixture.app->ActivityLifecycle().StepFrame());
+        CHECK(fixture.context->activity != old_activity);
+        CHECK(call_activity(old_activity, "hasWindowFocus", "()Z").AsInt() == 0);
+        CHECK(fixture.CallStaticInt("Lfixture/WindowFocusActivity;",
+                                    "getEvents") == 4);
+        CHECK(fixture.CallStaticInt("Lfixture/WindowFocusSecondActivity;",
+                                    "getResumeFocus") == 0);
+        CHECK(fixture.CallStaticInt("Lfixture/WindowFocusSecondActivity;",
+                                    "getEvents") == 1);
+        CHECK(fixture.CallStaticInt("Lfixture/WindowFocusSecondActivity;",
+                                    "getQueried") == 1);
+        CHECK(fixture.CallStaticInt("Lfixture/WindowFocusView;",
+                                    "getEvents") == 5);
+
+        const auto stopped = fixture.app->Stop();
+        CHECK(stopped.state == session::LifecycleRunState::stopped);
+        CHECK(fixture.CallStaticInt("Lfixture/WindowFocusSecondActivity;",
+                                    "getEvents") == 2);
+        CHECK(fixture.CallStaticInt("Lfixture/WindowFocusSecondActivity;",
+                                    "getQueried") == 0);
+        CHECK(fixture.CallStaticInt("Lfixture/WindowFocusView;",
+                                    "getEvents") == 6);
+    }
 }
 
 TEST_CASE("Activity.isTaskRoot is true for the launcher and false after a handoff") {

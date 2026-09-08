@@ -2564,6 +2564,49 @@ Decl Declare_android_content_pm_PackageManager(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class(
         "Landroid/content/pm/PackageManager;", "Ljava/lang/Object;", {},
         dx::kAccPublic | dx::kAccAbstract);
+    builder.VirtualMethod("resolveService",
+        "(Landroid/content/Intent;I)Landroid/content/pm/ResolveInfo;",
+        [context](dx::IntrinsicContext& call) {
+            const auto intent = dx::IntrinsicCall(call).NonNullRef(0, "intent");
+            const auto unsupported = [&call](const std::string& reason) -> void {
+                if (auto* ledger = call.vm.Ledger()) {
+                    ledger->RecordUnimplemented("dexvm.service_resolution", 0);
+                }
+                throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
+                                      "resolveService: " + reason};
+            };
+            if (call.arguments[1].AsInt() != 0) unsupported("only flags=0 is supported");
+            if (!context->service_inventory_known) unsupported("service inventory is unavailable");
+            // Only action-only queries are closed here. Read through the existing
+            // Intent API; do not maintain a second copy of Intent state.
+            for (const auto& [name, signature] : {
+                    std::pair{"getComponent", "()Landroid/content/ComponentName;"},
+                    std::pair{"getData", "()Landroid/net/Uri;"},
+                    std::pair{"getType", "()Ljava/lang/String;"},
+                    std::pair{"getCategories", "()Ljava/util/Set;"}}) {
+                if (CallAndroidMethod(call.vm, intent, name, signature).ref.IsValid()) {
+                    unsupported("only an action-only Intent is supported");
+                }
+            }
+            const auto action = CallAndroidMethod(call.vm, intent, "getAction", "()Ljava/lang/String;").ref;
+            if (!action.IsValid()) unsupported("an action is required");
+            const auto action_name = call.vm.StringUtf8(action);
+            if (context->application_enabled) {
+                for (const auto& service : context->service_components) {
+                    if (!service.enabled) continue;
+                    for (const auto& filter : service.intent_filters) {
+                        if (std::find(filter.actions.begin(), filter.actions.end(), action_name) ==
+                            filter.actions.end()) continue;
+                        // A possible local match is not an absent service. Data
+                        // constraints and positive ResolveInfo materialization are deferred.
+                        unsupported(filter.has_data ? "candidate requires data-filter resolution"
+                                                    : "positive service resolution is not implemented");
+                    }
+                }
+            }
+            // This process installs only its APK; there is no external service catalog.
+            return dx::VmValue::Ref(dx::VmObjectRef{});
+        });
     builder.ConstantInt(
                "GET_META_DATA", "I", kGetMetaData,
                dx::kAccPublic | dx::kAccStatic | dx::kAccFinal)

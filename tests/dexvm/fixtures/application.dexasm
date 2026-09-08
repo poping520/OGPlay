@@ -434,3 +434,60 @@
     invoke-virtual {v2, v0}, Landroid/app/Activity;->setContentView(Landroid/view/View;)V
     return-void
 .end method
+
+# DVM-112: optional service discovery must exit before the unavailable bind path.
+.class public Lfixture/ServiceProbe;
+.super Ljava/lang/Object;
+.implements Landroid/content/ServiceConnection;
+
+.field public static callbacks:I
+
+.method public constructor <init>()V
+.registers 1
+    invoke-direct {v0}, Ljava/lang/Object;-><init>()V
+    return-void
+.end method
+
+.method public onServiceConnected(Landroid/content/ComponentName;Landroid/os/IBinder;)V
+.registers 4
+    sget v0, Lfixture/ServiceProbe;->callbacks:I
+    add-int/lit8 v0, v0, 1
+    sput v0, Lfixture/ServiceProbe;->callbacks:I
+    return-void
+.end method
+
+.method public onServiceDisconnected(Landroid/content/ComponentName;)V
+.registers 3
+    sget v0, Lfixture/ServiceProbe;->callbacks:I
+    add-int/lit8 v0, v0, 1
+    sput v0, Lfixture/ServiceProbe;->callbacks:I
+    return-void
+.end method
+
+.method public static discover(Landroid/content/Context;Landroid/content/Intent;)I
+.registers 6
+    new-instance v0, Lfixture/ServiceProbe;
+    invoke-direct {v0}, Lfixture/ServiceProbe;-><init>()V
+    invoke-virtual {v4}, Landroid/content/Context;->getPackageManager()Landroid/content/pm/PackageManager;
+    move-result-object v1
+    const/4 v3, 0
+    invoke-virtual {v1, v5, v3}, Landroid/content/pm/PackageManager;->resolveService(Landroid/content/Intent;I)Landroid/content/pm/ResolveInfo;
+    move-result-object v2
+    if-eqz v2, :absent
+    invoke-virtual {v4, v5, v0, v3}, Landroid/content/Context;->bindService(Landroid/content/Intent;Landroid/content/ServiceConnection;I)Z
+    const/4 v0, 0
+    return v0
+:absent
+    sget v0, Lfixture/ServiceProbe;->callbacks:I
+    add-int/lit8 v0, v0, 1
+    return v0
+.end method
+
+.method public static exerciseCallbacks(Landroid/content/ServiceConnection;)I
+.registers 2
+    const/4 v0, 0
+    invoke-interface {v1, v0, v0}, Landroid/content/ServiceConnection;->onServiceConnected(Landroid/content/ComponentName;Landroid/os/IBinder;)V
+    invoke-interface {v1, v0}, Landroid/content/ServiceConnection;->onServiceDisconnected(Landroid/content/ComponentName;)V
+    sget v0, Lfixture/ServiceProbe;->callbacks:I
+    return v0
+.end method

@@ -141,6 +141,9 @@ public:
             context->application_meta_data.emplace(item.name, item.value);
         }
         context->requested_permissions = manifest.requested_permissions;
+        context->service_components = manifest.service_components;
+        context->application_enabled = manifest.application_enabled;
+        context->service_inventory_known = true;
         context->granted_permissions.insert(manifest.requested_permissions.begin(),
                                             manifest.requested_permissions.end());
         context->system_features.insert("android.hardware.touchscreen");

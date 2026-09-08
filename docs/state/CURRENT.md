@@ -1,12 +1,12 @@
 # 当前状态
 
-更新（2026-09-08）：DVM-110 定时执行器已提交 `d283144d`；
-[DVM-111](../tasks/dexvm/DVM-111.md) 修复 JNI 接口数组误拒绝定时任务。
+更新（2026-09-08）：[DVM-112](../tasks/dexvm/DVM-112.md) 补齐 ServiceConnection
+与有界服务查询。DVM-110/111 已提交 `d283144d`/`f7615b68`。
 
 ## 当前能力
 
 - **运行与发行**：按 exact Profile API 选择 bundled data；API 19 内置 pinned AOSP
-  五库、844 类 BootDex 与 ICU4C 51.1。ROM libcrypto 已按用户再次授权恢复到本地临时使用，
+  五库、845 类 BootDex 与 ICU4C 51.1。ROM libcrypto 已按用户再次授权恢复到本地临时使用，
   未纳入 Git，哈希与清单一致。JNI 桥源码为 src/guest/crypto/crypto_jni.c；构建器仍不自动恢复设备库。
   自行构建替换后须更新来源/哈希并复验。制品身份见
   [payload manifest](../../data/android/19/manifest.json)，bootdex.jar 继续不提交。
@@ -44,14 +44,16 @@
 - **Activity 身份**：getLocalClassName/getComponentName/getPreferences 与每实例 Intent
   已接通，保留组件身份；setIntent 不改组件身份。
   UTF-16 append 依赖已补。一般组件解析和非根 alias 切换仍未扩展。
-- **Title**：PvZ 原命令已越过定时任务入队，当前首错 ServiceConnection（内购初始化），
+- **服务查询**：ServiceConnection 来自 BootDex。resolveService 的 action-only/flags=0
+  查询依据当前 APK 服务信息，无候选返回 null，未知或潜在匹配明确失败；无 Binder/支付。
+- **Title**：PvZ 原命令已越过内购服务查询，当前首错 Locale.getISOLanguages；
   尚未通过游戏 gate；Tales 首错 LocationListener。
   A6 既有 gc_long 三轮各 3000 帧，无 guest fault 且 clean shutdown。
 
 ## 最近验证
 
-- DVM-111：47 个定向用例、3294 断言及 3 项门禁通过；修复前回归复现原错，原命令复跑越过。
-  证据 `.local/review/dvm111/`。DVM-110 的 94 用例、5 项门禁及制品验证见任务单。
+- DVM-112：回归 16/35 用例（有重叠）、staging 及 6 项门禁通过；制品重建一致。
+  证据 `.local/review/dvm112/`；历史验收见任务单。
 
 - 临时文件来自已核对 SHA-256 的 MoKee API 19 ARMv7 设备，存放于
   `.local/android-device/20260906-cipher/`。手机已断开；本轮未做手机对照，正式发行前
@@ -59,12 +61,12 @@
   仅构建 ogplay_tests 及 ogplay 依赖；未跑全量测试或 Windows/Linux 验收。
 - 已知门禁遗留：architecture.platform_boundaries 在既有 GUI process_manager.cpp:131
   平台分支失败，本轮未修改、未重跑该门禁。ADR 继续按 6 个主题维护，追加
-  [0041](../adr/dexvm.md#adr-0041)，不新增独立 ADR 文件。
+  [0042](../adr/dexvm.md#adr-0042)，不新增独立 ADR 文件。
 
 ## 下一步与边界
 
-1. 后续自行构建 API 19 ARM libcrypto，更新来源/哈希并复验，替换当前本地临时制品。
-2. Windows/Linux 发行验证与既有 GUI 门禁；继续 DH 主菜单和 Diagnostics 验收。
+1. 后续处理 Locale.getISOLanguages 及语言查询依赖。
+2. 自建 ARM libcrypto 替换临时制品；Windows/Linux、既有 GUI 门禁、DH 与 Diagnostics 验收。
 
 OGPlay 是老游戏兼容层；complete 只覆盖登记范围。具名时区/历史 DST、完整大数与
 formatter、宿主侧表对象完整持久化/对象流长尾、Proxy 生成、privileged 执行器工厂/安全上下文、高争用集合、RSA Cipher、HMAC/Mac、SHA-3、完整 JCA/TLS/系统服务仍未交付。

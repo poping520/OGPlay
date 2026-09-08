@@ -142,3 +142,7 @@ DVM-107：根启动向 lifecycle 分别传实际 launcher descriptor 与 manifes
 alias 只影响实例化目标，Activity 的组件身份保留 alias。Profile launcher override 使用
 显式覆盖类名。根启动和切换均在 attach base 后、onCreate 前附加 ComponentName/Intent；
 旧实例保留自己的引用，不从进程 current_intent 动态读取。非根 alias 解析不在本次范围。
+
+DVM-112：AndroidAppProcess 把 sealed Manifest 的 application enabled 与 service 过滤器
+信息复制到同一 DexVmAndroidContext，并显式标记 inventory 已就绪；独立 VM 未装配时保持
+未知，不能把缺少信息当作服务不存在。服务信息不参与 Activity 启动或产生绑定状态。

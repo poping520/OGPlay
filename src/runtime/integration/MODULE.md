@@ -344,3 +344,7 @@ DVM-107：bridge 移除 Intent component 描述符侧表的清扫；组件引用
 DVM-108：移除 legacy platform 的固定 UUID 类/对象/handler 及返回结构字段。
 UUID 由 BootDex 类经现有 JNI 发布和 invocation bridge 执行；不再用固定值替代随机生成。
 Java UUID.randomUUID 的 SecureRandom 继续由现有 OS entropy service 提供随机字节。
+
+DVM-112：服务查询通过 AndroidAppProcess 注入的 sealed Manifest 服务信息判断无候选；
+bridge 不生成 ServiceConnection 回调或 Binder identity。ServiceConnection 的 APK 实现类
+与两个 callback 的普通 invoke-interface 分派使用 BootDex 接口元数据。

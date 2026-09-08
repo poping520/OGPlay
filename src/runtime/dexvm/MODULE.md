@@ -397,3 +397,6 @@ DVM-110：类型关系将接口视为引用类型，支持 Runnable[] → Object
 仅与自身可赋值，不因合成类形状而成为 Object 子类。threaded 的 intrinsic invoke 捕获
 VmJavaThrow 时必须保留 existing 身份，与 switch 后端一致，不重建已有 throwable。
 FutureTask 的 ExecutionException cause 以及其 GC 强边由原版结果字段与通用异常机制维护。
+
+DVM-112：API19 ServiceConnection 接口选入 BootDex，沿用普通接口链接、分派与 GC。
+服务查询信息及未匹配结果属于上层平台边界，不在 DexVM core 引入服务目录或 Binder。

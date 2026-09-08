@@ -31,6 +31,14 @@ enum class AndroidManifestComponentKind : std::uint8_t {
 struct AndroidManifestIntentFilter final {
     std::vector<std::string> actions;
     std::vector<std::string> categories;
+    // Preserve the presence of constraints not parsed by the bounded resolver.
+    bool has_data{};
+};
+
+struct AndroidManifestServiceComponent final {
+    std::string name;
+    bool enabled{true};
+    std::vector<AndroidManifestIntentFilter> intent_filters;
 };
 
 struct AndroidManifestActivityComponent final {
@@ -85,6 +93,8 @@ struct AndroidManifestFacts final {
     std::vector<AndroidManifestActivityComponent> activity_components;
     std::vector<AndroidManifestMetaData> application_meta_data;
     std::vector<std::string> requested_permissions;
+    bool application_enabled{true};
+    std::vector<AndroidManifestServiceComponent> service_components;
 };
 
 [[nodiscard]] std::string NormalizeAndroidManifestClassName(

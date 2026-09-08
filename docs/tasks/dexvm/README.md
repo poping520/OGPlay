@@ -134,6 +134,7 @@ Asphalt 5（pilot title）删除 profile 全部 `native_call` 与 `[[java.class]
 | [DVM-109](DVM-109.md) | 原版对象流与序列化 VM 原语迁入 BootDex | 已完成 |
 | [DVM-110](DVM-110.md) | ScheduledThreadPoolExecutor 与 FutureTask 迁入 BootDex | 已完成 |
 | [DVM-111](DVM-111.md) | JNI 对象数组的接口可赋值关系 | 已完成 |
+| [DVM-112](DVM-112.md) | ServiceConnection 与有界服务查询 | 完成（无匹配查询） |
 
 ## 批次 4 · 更多 title 上 dexvm 路线（进行中）
 

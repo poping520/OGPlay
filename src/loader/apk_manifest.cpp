@@ -451,6 +451,7 @@ AndroidManifestFacts ParseAndroidBinaryManifest(const std::span<const std::byte>
     bool saw_application{};
     bool saw_uses_sdk{};
     std::optional<std::size_t> current_component;
+    std::optional<std::size_t> current_service;
     std::optional<AndroidManifestIntentFilter> current_intent_filter;
     while (cursor < bytes.size()) {
         const auto chunk = ReadChunk(bytes, cursor, "binary XML node");
@@ -488,6 +489,11 @@ AndroidManifestFacts ParseAndroidBinaryManifest(const std::span<const std::byte>
                         "binary AndroidManifest contains duplicate application");
                 }
                 saw_application = true;
+                if (const auto* enabled =
+                        FindAttribute(attributes, "enabled", kAndroidNamespace)) {
+                    facts.application_enabled =
+                        ReadBooleanAttribute(*enabled, "application enabled");
+                }
                 if (const auto* icon =
                         FindAttribute(attributes, "icon", kAndroidNamespace)) {
                     facts.application_icon =
@@ -612,29 +618,55 @@ AndroidManifestFacts ParseAndroidBinaryManifest(const std::span<const std::byte>
                 facts.activity_components.push_back(std::move(component));
                 current_component = facts.activity_components.size() - 1U;
                 current_intent_filter.reset();
-            } else if (name == "intent-filter" && current_component.has_value() &&
-                       !elements.empty() &&
+            } else if (name == "service" && elements.size() == 2 &&
+                       elements[1] == "application") {
+                const auto* service_name = FindAttribute(attributes, "name", kAndroidNamespace);
+                if (service_name == nullptr) {
+                    throw AndroidManifestStartupError(
+                        AndroidManifestStartupErrorReason::missing_component_name,
+                        "binary AndroidManifest service does not specify android:name");
+                }
+                AndroidManifestServiceComponent service;
+                service.name = NormalizeAndroidManifestClassName(
+                    facts.package, ReadStringAttribute(*service_name, strings, "service name"));
+                if (std::any_of(facts.service_components.begin(), facts.service_components.end(),
+                                [&](const auto& item) { return item.name == service.name; })) {
+                    throw AndroidManifestStartupError(
+                        AndroidManifestStartupErrorReason::duplicate_component,
+                        "binary AndroidManifest contains duplicate service " + service.name);
+                }
+                if (const auto* enabled = FindAttribute(attributes, "enabled", kAndroidNamespace)) {
+                    service.enabled = ReadBooleanAttribute(*enabled, "service enabled");
+                }
+                facts.service_components.push_back(std::move(service));
+                current_service = facts.service_components.size() - 1U;
+                current_intent_filter.reset();
+            } else if (name == "intent-filter" && (current_component || current_service) &&
+                       elements.size() == 3 &&
                        (elements.back() == "activity" ||
-                        elements.back() == "activity-alias")) {
+                        elements.back() == "activity-alias" || elements.back() == "service")) {
                 current_intent_filter.emplace();
-            } else if (name == "action" && current_component.has_value() &&
+            } else if (name == "action" && (current_component || current_service) &&
                        current_intent_filter.has_value() &&
-                       !elements.empty() &&
+                       elements.size() == 4 &&
                        elements.back() == "intent-filter") {
                 if (const auto* action_name =
                         FindAttribute(attributes, "name", kAndroidNamespace)) {
                     current_intent_filter->actions.push_back(ReadStringAttribute(
                         *action_name, strings, "action name"));
                 }
-            } else if (name == "category" && current_component.has_value() &&
+            } else if (name == "category" && (current_component || current_service) &&
                        current_intent_filter.has_value() &&
-                       !elements.empty() &&
+                       elements.size() == 4 &&
                        elements.back() == "intent-filter") {
                 if (const auto* category_name =
                         FindAttribute(attributes, "name", kAndroidNamespace)) {
                     current_intent_filter->categories.push_back(ReadStringAttribute(
                         *category_name, strings, "category name"));
                 }
+            } else if (name == "data" && current_intent_filter &&
+                       elements.size() == 4 && elements.back() == "intent-filter") {
+                current_intent_filter->has_data = true;
             } else if (elements.size() == 1 && name == "uses-sdk") {
                 if (saw_uses_sdk) {
                     throw std::runtime_error(
@@ -686,14 +718,19 @@ AndroidManifestFacts ParseAndroidBinaryManifest(const std::span<const std::byte>
             if (name != elements.back()) {
                 throw std::runtime_error("binary XML element nesting is invalid");
             }
-            if (name == "intent-filter" && current_component.has_value() &&
+            if (name == "intent-filter" && elements.size() == 4 &&
+                (current_component || current_service) &&
                 current_intent_filter.has_value()) {
-                facts.activity_components[*current_component].intent_filters.push_back(
-                    std::move(*current_intent_filter));
+                auto& filters = current_service
+                    ? facts.service_components[*current_service].intent_filters
+                    : facts.activity_components[*current_component].intent_filters;
+                filters.push_back(std::move(*current_intent_filter));
                 current_intent_filter.reset();
             } else if ((name == "activity" || name == "activity-alias") &&
-                       current_component.has_value()) {
+                       elements.size() == 3 && current_component.has_value()) {
                 current_component.reset();
+            } else if (name == "service" && elements.size() == 3) {
+                current_service.reset();
             }
             elements.pop_back();
         } else if (chunk.type == kResourceMapType) {

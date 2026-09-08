@@ -20,6 +20,10 @@
   resource id，label 严格区分 resource id 与字面量；DVM-77 继续按声明序提取去重的
   `uses-permission` 与 application `meta-data`，metadata 只接受 API19 string、integer、
   boolean、value/resource reference，不执行资源解析或猜测身份。
+  DVM-112 保留 application enabled、独立的 service 名称/enabled/过滤器事实；过滤器
+  保存 action/category 与 data 条件存在标记，不能将未解析的 data 条件当作没有条件。
+  service 名称沿用 API19 buildClassName，缺名/空名/非法名/重复声明明确失败；
+  服务不参与 Launcher 选择，本层不执行服务解析、实例化或生命周期。
 - `ParseBinaryXmlElements`：受检遍历通用 Android binary XML，按文档序返回标签、父索引
   与 generic typed attributes；每个 attribute 保留 namespace/name、value type/data 与
   raw/typed string。旧布局字段暂作单向兼容 adapter，新 widget 语义不得进入 loader。

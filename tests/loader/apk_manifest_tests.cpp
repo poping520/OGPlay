@@ -236,15 +236,17 @@ struct ComponentFixture final {
     std::optional<std::string> target;
     bool enabled{true};
     std::vector<std::vector<std::string>> filters;
+    bool filter_has_data{};
 };
 
 std::vector<std::byte> StartupManifest(
     const std::optional<std::string>& application_name,
-    const std::vector<ComponentFixture>& components) {
+    const std::vector<ComponentFixture>& components,
+    const bool application_enabled = true) {
     std::vector<std::string> strings{
         "manifest", "package", "versionCode", "application", "name",
         "enabled", "targetActivity", "activity", "activity-alias",
-        "intent-filter", "action", "category", "org.example.game",
+        "intent-filter", "action", "category", "service", "data", "org.example.game",
         "http://schemas.android.com/apk/res/android"};
     const auto add = [&](const std::string& value) {
         if (std::find(strings.begin(), strings.end(), value) == strings.end()) {
@@ -276,6 +278,9 @@ std::vector<std::byte> StartupManifest(
                                  {index("versionCode"), 0xffffffffU, 0x10, 1,
                                   android_namespace}}));
     std::vector<Attribute> application_attributes;
+    if (!application_enabled) {
+        application_attributes.push_back({index("enabled"), 0xffffffffU, 0x12, 0, android_namespace});
+    }
     if (application_name.has_value()) {
         application_attributes.push_back(
             {index("name"), index(*application_name), 0x03,
@@ -298,6 +303,10 @@ std::vector<std::byte> StartupManifest(
         Append(result, StartElement(index(component.tag), attributes));
         for (const auto& filter : component.filters) {
             Append(result, StartElement(index("intent-filter"), {}));
+            if (component.filter_has_data) {
+                Append(result, StartElement(index("data"), {}));
+                Append(result, EndElement(index("data")));
+            }
             for (const auto& value : filter) {
                 const auto tag = value.starts_with("android.intent.action.")
                                      ? "action"
@@ -532,4 +541,46 @@ TEST_CASE("binary AndroidManifest rejects hostile string pool offsets") {
     CHECK_THROWS_WITH(
         static_cast<void>(ogplay::loader::ParseAndroidBinaryManifest(invalid_size)),
         "AndroidManifest.xml is not one complete binary XML document");
+}
+
+TEST_CASE("DVM-112 Manifest preserves service facts independently of activities") {
+    using namespace ogplay::loader;
+    const auto facts = ParseAndroidBinaryManifest(StartupManifest(std::nullopt, {
+        {"service", ".Local", {}, true, {{"android.intent.action.LOCAL", "example.CATEGORY"}}, true},
+        {"activity", ".Main", {}, true, {{std::string(kMain), std::string(kLauncher)}}},
+        {"service", "Disabled", {}, false, {{"android.intent.action.DISABLED"}}},
+        {"service", "other.package.Plain", {}, true, {}},
+    }));
+    REQUIRE(facts.service_components.size() == 3);
+    CHECK(facts.application_enabled);
+    const auto& local = facts.service_components[0];
+    CHECK(local.name == "org.example.game.Local");
+    CHECK(local.enabled);
+    REQUIRE(local.intent_filters.size() == 1);
+    CHECK(local.intent_filters[0].actions == std::vector<std::string>{"android.intent.action.LOCAL"});
+    CHECK(local.intent_filters[0].categories == std::vector<std::string>{"example.CATEGORY"});
+    CHECK(local.intent_filters[0].has_data);
+    CHECK(facts.service_components[1].name == "org.example.game.Disabled");
+    CHECK_FALSE(facts.service_components[1].enabled);
+    CHECK_FALSE(facts.service_components[1].intent_filters[0].has_data);
+    CHECK(facts.service_components[2].name == "other.package.Plain");
+    CHECK(facts.service_components[2].intent_filters.empty());
+    REQUIRE(facts.activity_components.size() == 1);
+    CHECK(ResolveLauncherComponent(facts).activity_class == "org.example.game.Main");
+    CHECK_FALSE(facts.activity_components[0].intent_filters[0].has_data);
+    const auto disabled = ParseAndroidBinaryManifest(StartupManifest(std::nullopt, {
+        {"service", ".Local", {}, true, {{"android.intent.action.LOCAL"}}}}, false));
+    CHECK_FALSE(disabled.application_enabled);
+    CHECK(disabled.service_components[0].enabled);
+}
+
+TEST_CASE("DVM-112 Manifest rejects duplicate or invalid service names") {
+    using namespace ogplay::loader;
+    CHECK_THROWS_AS(static_cast<void>(ParseAndroidBinaryManifest(StartupManifest(std::nullopt, {
+        {"service", ".Local", {}, true, {}}, {"service", "Local", {}, true, {}}}))),
+        AndroidManifestStartupError);
+    CHECK_THROWS_AS(static_cast<void>(ParseAndroidBinaryManifest(StartupManifest(std::nullopt, {
+        {"service", "Bad.Name", {}, true, {}}}))), AndroidManifestStartupError);
+    CHECK_THROWS_AS(static_cast<void>(ParseAndroidBinaryManifest(StartupManifest(std::nullopt, {
+        {"service", "", {}, true, {}}}))), AndroidManifestStartupError);
 }

@@ -262,3 +262,11 @@ getPreferences 虚派 getLocalClassName/getSharedPreferences。setIntent 不重�
 Intent 的 setClass/setClassName/setComponent 与构造器创建或保存真正的 ComponentName，
 resolveTypeIfNeeded/startActivity 读同一字段。隐式/跨包启动明确拒绝，未实现一般 manifest
 resolver；根 alias 身份由 session 显式传入。双后端定向证据见 DVM-107。
+
+DVM-112：ServiceConnection 原版接口归 BootDex。PackageManager.resolveService 仅闭合
+非空 action、无 component/data/type/categories、flags=0 的查询；使用当前 APK 的服务
+信息，排除 disabled application/service 与 action 不匹配的过滤器，无候选返回 null。
+未装配 inventory、未知 flags/查询形态、潜在匹配（包括未解析 data 条件）以
+`dexvm.service_resolution` 记账并抛 UnsupportedOperationException；null Intent 抛 NPE。
+无外部安装包/平台服务目录，不按 action 或包名特判，不创建 ResolveInfo/绑定/回调状态。
+这不表示完整服务发现、返回类型反射、bindService/unbindService、Binder 或支付支持。

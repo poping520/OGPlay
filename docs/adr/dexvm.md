@@ -15,6 +15,10 @@
 - [ADR-0036 · Certificate 与 guest OpenSSL 验签](#adr-0036)
 - [ADR-0037 · guest 生产源码与 crypto 制品来源](#adr-0037)
 - [ADR-0038 · framework 值类归 BootDex，Activity 保持窄平台边界](#adr-0038)
+- [ADR-0039 · UUID 与摘要归 BootDex，mutable native token 归普通字段](#adr-0039)
+- [ADR-0040 · 对象序列化协议归 BootDex，VM 仅提供构造与元数据原语](#adr-0040)
+- [ADR-0041 · 定时执行器与 FutureTask 执行原版 Java](#adr-0041)
+- [ADR-0042 · 服务查询的有界无匹配结果](#adr-0042)
 
 <a id="adr-0017"></a>
 
@@ -584,3 +588,29 @@ ScheduledThreadPoolExecutor 依赖 FutureTask 的可覆盖方法、runAndReset�
 threaded intrinsic invoke 保留已有异常身份，不能重建 FutureTask 结果里的 throwable。
 不选入 privileged 工厂/动态安全上下文，不宣称高争用或硬实时精度；Clock 保持现有毫秒
 精度与帧泵驱动，不引入新的宿主时间源。继续使用统一配方与主题 ADR。
+
+<a id="adr-0042"></a>
+
+## ADR-0042 · 服务查询的有界无匹配结果
+
+- 状态：Accepted
+- 日期：2026-09-08
+- 关联：[DVM-112](../tasks/dexvm/DVM-112.md)
+
+### 决定
+
+ServiceConnection 是两个抽象回调组成的纯接口，选入 BootDex；其参数类型沿用既有
+ComponentName 与 IBinder 类型身份，不引入 Binder transport 或服务生命周期。
+
+PackageManager.resolveService 的查无结果必须来自事实，而非中性占位。loader 保存
+当前 APK 的 service 名称/enabled/过滤器 action/category/data 存在标记及 application
+enabled，由 AndroidAppProcess 注入唯一 context；没有注入时保持未知。运行环境只安装
+当前 APK，没有外部安装包服务目录。flags=0 且只有 action 的查询可排除 disabled 与 action
+不匹配的服务；无候选按 API19 返回 null。潜在匹配、未解析的 data 条件、未知 flags 或
+其他查询形态均记账并明确抛 Java 异常，不把未实现的解析能力当作不存在。
+
+### 边界
+
+当前闭包不物化 ResolveInfo/ServiceInfo，不支持其返回类型反射、正匹配解析、服务绑定、
+支付或完整 PackageManager。服务确实可匹配时须另开 WU 扩展元数据和行为，禁止返回
+虚假的服务对象、发出连接成功回调或加入游戏包名/action 特判。

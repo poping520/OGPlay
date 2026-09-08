@@ -15,6 +15,7 @@
 #include "ogplay/core/capability_ledger.h"
 #include "ogplay/core/logger.h"
 #include "ogplay/loader/elf.h"
+#include "ogplay/runtime/dexvm/access_flags.h"
 #include "ogplay/runtime/integration/dexvm_android.h"
 #include "ogplay/runtime/integration/dexvm_bridge.h"
 #include "ogplay/runtime/integration/native_library_loader.h"
@@ -406,7 +407,9 @@ struct OrchestratedApp final {
     explicit OrchestratedApp(const std::string& activity,
                              const bool has_launcher = true,
                              const bool with_native = true,
-                             const std::string& launcher_alias = {}) {
+                             const std::string& launcher_alias = {},
+                             const std::vector<ogplay::loader::AndroidManifestServiceComponent>& services = {},
+                             const bool application_enabled = true) {
         context->apk_bytes = {
             std::byte{0x50}, std::byte{0x4b}, std::byte{0x03}, std::byte{0x04}};
         const ogplay::runtime::BionicModuleSource system{
@@ -415,6 +418,8 @@ struct OrchestratedApp final {
         if (with_native) libraries.push_back(Library("liba.so", native_a));
         ogplay::session::AndroidAppProcessRequest request;
         request.manifest = AppManifest(activity, has_launcher);
+        request.manifest.service_components = services;
+        request.manifest.application_enabled = application_enabled;
         if (!launcher_alias.empty()) {
             auto filters = request.manifest.activity_components.front().intent_filters;
             request.manifest.activity_components.front().intent_filters.clear();
@@ -979,6 +984,48 @@ TEST_CASE("DVM-111 scheduled tasks use VM interface assignability in shared JNI 
         }
         fixture.bridge->Threads().Shutdown();
         CHECK_FALSE(fixture.bridge->Threads().TakeFailure().has_value());
+    }
+}
+
+TEST_CASE("DVM-112 BootDex ServiceConnection links and the shared bridge takes the absent branch") {
+    using namespace ogplay::runtime::dexvm;
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        ApplicationProcess f(backend);
+        f.context->service_inventory_known = true;
+        auto& vm = f.bridge->Vm();
+        auto& linker = f.bridge->Linker();
+        const auto contract = linker.ResolveDescriptor("Landroid/content/ServiceConnection;");
+        CHECK_FALSE(linker.Class(contract).is_intrinsic);
+        CHECK(linker.Class(contract).is_interface);
+        const auto class_flags = kAccPublic | kAccAbstract | kAccInterface;
+        CHECK((linker.Class(contract).access_flags & class_flags) == class_flags);
+        REQUIRE(linker.Class(contract).own_virtual_methods.size() == 2);
+        for (auto method : linker.Class(contract).own_virtual_methods) {
+            CHECK((linker.Method(method).access_flags & (kAccPublic | kAccAbstract)) ==
+                  (kAccPublic | kAccAbstract));
+        }
+        auto direct = [&](const char* owner, const char* name, const char* signature, std::vector<VmValue> args) {
+            const auto method = linker.FindDirectMethod(linker.ResolveDescriptor(owner), name, signature);
+            REQUIRE(method);
+            const auto result = vm.Call(*method, args);
+            REQUIRE_MESSAGE(!result.exception.IsValid(), result.exception_message);
+            return result.value;
+        };
+        const auto base = vm.NewIntrinsicInstance("Landroid/content/Context;");
+        const auto intent = vm.NewIntrinsicInstance("Landroid/content/Intent;");
+        const auto probe = vm.NewIntrinsicInstance("Lfixture/ServiceProbe;");
+        const auto roots = vm.ProtectReferences(std::array{base, intent, probe});
+        direct("Landroid/content/Intent;", "<init>", "(Ljava/lang/String;)V",
+            {VmValue::Ref(intent), VmValue::Ref(vm.NewStringUtf8("example.ABSENT"))});
+        direct("Lfixture/ServiceProbe;", "<init>", "()V", {VmValue::Ref(probe)});
+        CHECK(linker.IsAssignable(contract, vm.Model().ObjectClass(probe)));
+        CHECK(direct("Lfixture/ServiceProbe;", "discover",
+            "(Landroid/content/Context;Landroid/content/Intent;)I",
+            {VmValue::Ref(base), VmValue::Ref(intent)}).AsInt() == 1);
+        CHECK(f.ledger.Unimplemented().empty());
+        static_cast<void>(vm.CollectGarbage());
+        CHECK(direct("Lfixture/ServiceProbe;", "exerciseCallbacks", "(Landroid/content/ServiceConnection;)I",
+            {VmValue::Ref(probe)}).AsInt() == 2);
     }
 }
 
@@ -2506,5 +2553,23 @@ TEST_CASE("DVM-108/109 UUID MessageDigest and serialization use BootDex with rea
         // The cleared field also makes a later Java reset/finalizer safe.
         invoke(digest, "reset", "()V", {});
         static_cast<void>(app->Stop());
+    }
+}
+
+TEST_CASE("DVM-112 AndroidAppProcess installs sealed service discovery facts") {
+    for (const bool enabled : {false, true}) {
+        OrchestratedApp f("fixture.LauncherActivity", true, false, {},
+            {{"fixture.LocalService", false, {{{"fixture.SERVICE"}, {"fixture.CATEGORY"}, true}}}}, enabled);
+        const auto context = f.app->Context();
+        CHECK(context->service_inventory_known);
+        CHECK(context->application_enabled == enabled);
+        REQUIRE(context->service_components.size() == 1);
+        const auto& service = context->service_components[0];
+        CHECK(service.name == "fixture.LocalService");
+        CHECK_FALSE(service.enabled);
+        REQUIRE(service.intent_filters.size() == 1);
+        CHECK(service.intent_filters[0].actions == std::vector<std::string>{"fixture.SERVICE"});
+        CHECK(service.intent_filters[0].categories == std::vector<std::string>{"fixture.CATEGORY"});
+        CHECK(service.intent_filters[0].has_data);
     }
 }

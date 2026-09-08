@@ -839,6 +839,7 @@
     "framework.jar": [
       "Landroid/content/ComponentName$1;",
       "Landroid/content/ComponentName;",
+      "Landroid/content/ServiceConnection;",
       "Landroid/os/Parcelable$ClassLoaderCreator;",
       "Landroid/os/Parcelable$Creator;",
       "Landroid/os/Parcelable;",

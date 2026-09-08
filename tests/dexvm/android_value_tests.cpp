@@ -1139,3 +1139,74 @@ TEST_CASE("DVM-108 UUID values and UTF16 substring search follow API19") {
         }
     }
 }
+
+TEST_CASE("DVM-112 resolveService distinguishes absent candidates from unsupported queries") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        AndroidValueVm f(backend);
+        const auto base = f.New("Landroid/content/Context;");
+        const auto manager = f.On(base, "getPackageManager", "()Landroid/content/pm/PackageManager;").ref;
+        const auto intent = f.New("Landroid/content/Intent;", "(Ljava/lang/String;)V",
+            {VmValue::Ref(f.vm.NewStringUtf8("example.SERVICE"))});
+        const auto roots = f.vm.ProtectReferences(std::array{base, manager, intent});
+        auto query = [&](VmObjectRef value, int flags = 0) {
+            return f.OnOutcome(manager, "resolveService",
+                "(Landroid/content/Intent;I)Landroid/content/pm/ResolveInfo;",
+                {VmValue::Ref(value), VmValue::Int(flags)});
+        };
+        auto fail = [&](const VmCallOutcome& result, const char* type = "Ljava/lang/UnsupportedOperationException;") {
+            REQUIRE(result.exception.IsValid());
+            CHECK(f.linker.Class(result.exception_class).descriptor == type);
+        };
+        auto absent = [&] {
+            const auto result = query(intent);
+            REQUIRE_MESSAGE(!result.exception.IsValid(), result.exception_message);
+            CHECK_FALSE(result.value.ref.IsValid());
+        };
+        fail(query(VmObjectRef{}), "Ljava/lang/NullPointerException;");
+        fail(query(intent));  // Missing inventory is not an empty installed-service list.
+        f.context->service_inventory_known = true;
+        absent();
+        f.context->service_components = {
+            {"example.Plain", true, {}},
+            {"example.Other", true, {{{"example.OTHER"}, {}, false}}},
+            {"example.Disabled", false, {{{"example.SERVICE"}, {}, false}}},
+        };
+        absent();
+        CHECK(f.ledger.Unimplemented().size() == 1);
+        CHECK(f.ledger.Unimplemented()[0].id == "dexvm.service_resolution");
+        CHECK(f.ledger.Unimplemented()[0].count == 1);
+        f.context->service_components.push_back(
+            {"example.Candidate", true, {{{"example.SERVICE"}, {"example.EXTRA"}, false}}});
+        fail(query(intent));  // An Intent without categories can match a filter with categories.
+        f.context->service_components.back().intent_filters[0].has_data = true;
+        fail(query(intent));  // Data constraints cannot be silently discarded.
+        f.context->application_enabled = false;
+        absent();
+        f.context->application_enabled = true;
+        f.context->service_components.clear();
+        for (const int flags : {1, 128, -1}) fail(query(intent, flags));
+        const auto empty = f.New("Landroid/content/Intent;");
+        fail(query(empty));
+        f.On(intent, "setType", "(Ljava/lang/String;)Landroid/content/Intent;",
+             {VmValue::Ref(f.vm.NewStringUtf8("text/plain"))});
+        fail(query(intent));
+        f.On(intent, "setType", "(Ljava/lang/String;)Landroid/content/Intent;", {VmValue::Ref(VmObjectRef{})});
+        f.On(intent, "addCategory", "(Ljava/lang/String;)Landroid/content/Intent;",
+             {VmValue::Ref(f.vm.NewStringUtf8("example.CATEGORY"))});
+        fail(query(intent));
+        f.On(intent, "removeCategory", "(Ljava/lang/String;)V",
+             {VmValue::Ref(f.vm.NewStringUtf8("example.CATEGORY"))});
+        const auto uri = f.Static("Landroid/net/Uri;", "parse", "(Ljava/lang/String;)Landroid/net/Uri;",
+            {VmValue::Ref(f.vm.NewStringUtf8("content://example/value"))}).ref;
+        f.On(intent, "setData", "(Landroid/net/Uri;)Landroid/content/Intent;", {VmValue::Ref(uri)});
+        fail(query(intent));
+        f.On(intent, "setData", "(Landroid/net/Uri;)Landroid/content/Intent;", {VmValue::Ref(VmObjectRef{})});
+        f.On(intent, "setClassName", "(Ljava/lang/String;Ljava/lang/String;)Landroid/content/Intent;",
+            {VmValue::Ref(f.vm.NewStringUtf8("example")), VmValue::Ref(f.vm.NewStringUtf8("example.Local"))});
+        fail(query(intent));
+        f.On(intent, "setComponent", "(Landroid/content/ComponentName;)Landroid/content/Intent;", {VmValue::Ref(VmObjectRef{})});
+        static_cast<void>(f.vm.CollectGarbage());
+        absent();
+        CHECK(f.ledger.Unimplemented()[0].count == 11);
+    }
+}

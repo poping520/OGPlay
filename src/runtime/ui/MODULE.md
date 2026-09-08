@@ -30,6 +30,9 @@ SDL、ANGLE 或视频解码。
 - `RelativeLayout`：LayoutParams 保存 parent align/center 与 sibling above/below/left/right/
   align-edge 规则；横纵依赖图分别确定性解析且不依赖 document order，missing sibling、重复
   sibling id、同轴冲突与 cycle 明确失败。
+- DVM-119：RelativeLayout gravity 在相对定位后按含 margin 的非 GONE 子节点整体
+  边界平移，支持右/下/居中，默认 START/TOP 保留原定位。Java 参数经 integration
+  映射为 UiTree 布局输入快照；UI 不保存 guest 引用或读取 Java 字段。
 - `BuildUiRenderList` / `RasterizeUiOverlay`：从 resolved tree 生成 solid/bitmap/clip 命令，
   以整数 source-over 输出透明 RGBA8；`UiOverlayRenderer` 仅在 generation、metrics 或
   draw dirty 改变时重建。

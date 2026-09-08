@@ -1228,7 +1228,7 @@ note = "DVM-7 注册/层级/布局/vtable/iftable 四步链接与懒结构预检
 [dexvm.boot_dex]
 status = "complete"
 test = "tests/dexvm/intrinsics_p1_tests.cpp; tests/frontend/data_directory_tests.cpp; tools.bootdex_builder_self_test; tools.android_payload_current; PvZ exact Profile reached-fault"
-note = "DVM-99..118 curated BootDex：日期、集合、普通流、X500、Cipher/JCA/Conscrypt AES 与 Certificate/Harmony/Signature 及 framework 值类、UUID/MessageDigest/摘要流和对象流、定时执行器依赖、ServiceConnection 与 Throwable/StackTraceElement 家族、BackupManager/RestoreObserver 、Bundle/ArrayMap 家族、DisplayMetrics/TypedValue 与 Math 共 913 个 class_def。913 类全链接，Cipher/Certificate/集合普通 Java 算法均归 DEX；精确边界 overlay 与显式 guest JNI 声明受审。固定 recipe 可确定性重建，DEX/JAR 身份见 data/android/19/manifest.json。Conscrypt 为用户授权的临时设备来源，区别于 pinned core.jar；完整 core/framework、multidex、动态 classpath 与 Android 系统服务未纳入。 2026-09-07 ROM libcrypto 已撤出 Git，后按用户再次授权恢复到本地临时使用，完整 payload 校验通过；仍须自行构建替换并更新来源/哈希后复验。"
+note = "DVM-99..119 curated BootDex：日期、集合、普通流、X500、Cipher/JCA/Conscrypt AES 与 Certificate/Harmony/Signature 及 framework 值类、UUID/MessageDigest/摘要流和对象流、定时执行器依赖、ServiceConnection 与 Throwable/StackTraceElement 家族、BackupManager/RestoreObserver 、Bundle/ArrayMap 家族、DisplayMetrics/TypedValue 与 Math 及五类 LayoutParams 共 918 个 class_def。918 类全链接，Cipher/Certificate/集合普通 Java 算法均归 DEX；精确边界 overlay 与显式 guest JNI 声明受审。固定 recipe 可确定性重建，DEX/JAR 身份见 data/android/19/manifest.json。Conscrypt 为用户授权的临时设备来源，区别于 pinned core.jar；完整 core/framework、multidex、动态 classpath 与 Android 系统服务未纳入。 2026-09-07 ROM libcrypto 已撤出 Git，后按用户再次授权恢复到本地临时使用，完整 payload 校验通过；仍须自行构建替换并更新来源/哈希后复验。"
 
 [dexvm.date_format_bootdex_audit]
 status = "complete"
@@ -1549,6 +1549,11 @@ note = "DVM-109/ADR-0040：新增 28 个 pinned core.jar 类至 818 类，Object
 status = "complete"
 test = "tests/runtime/native_library_loader_tests.cpp; tests/dexvm/dvm87_tests.cpp; tests/dexvm/interpreter_tests.cpp; tests/dexvm/unsafe_tests.cpp; tests/dexvm/vm_thread_tests.cpp; tests/dexvm/vm_monitor_tests.cpp; tests/dexvm/thread_intrinsic_tests.cpp; tests/dexvm/reflection_tests.cpp; tools.bootdex_builder_self_test; tools.android_payload_current"
 note = "DVM-110/ADR-0041：新增 26 个 pinned API19 类至 844 类，ScheduledThreadPoolExecutor/FutureTask、接口/异常、普通 Executors 包装类、completion service 和拒绝策略均执行原版 Java，删除旧 FutureTask/合成串行 executor/工厂 handler。双后端验证单次 Runnable/Callable、Clock 截止时间/FIFO、fixed-rate 与 fixed-delay、取消/超时/异常身份、removeOnCancel/purge、关闭策略矩阵、shutdownNow、两个真实 worker、普通工厂/invokeAny/invokeAll、仅队列持有任务的 GC 保活。worker 复用 Thread/AQS/Unsafe 和统一 Clock，不另建调度器，解释执行仍串行；修复接口数组到 Object[] 协变与 primitive 类型边界、threaded invoke 原异常身份。DVM-111 修复真实 JNI bridge 下 ScheduledFutureTask 写入 RunnableScheduledFuture[] 被仅父类链校验误拒绝的问题，原版 schedule/shutdownNow 已在共享数组存储下双后端验收。complete 仅指该闭包，privileged 工厂/动态安全上下文、高争用和硬实时精度未纳入，未跑游戏/真机/跨平台 gate。"
+
+[dexvm.layout_params]
+status = "partial"
+test = "tests/dexvm/android_value_tests.cpp: DVM-119; tests/dexvm/widget_click_tests.cpp; tests/runtime/ui_tree_tests.cpp"
+note = "DVM-119/ADR-0046：通用/边距/Frame/Linear/Relative 五类 LayoutParams 执行 BootDex，删除四类旧声明和参数宿主副本。Java 字段/数组是唯一参数状态，apply/update/requestLayout 导入 UiTree 布局输入；参数赋值本身不自动发起布局。LTR 方向解析由 Java 执行，baseline/alignWithParent/动画等未实现行为明确失败。RelativeLayout gravity 在相对定位后按非 GONE 子节点含 margin 的整体边界平移，默认 START/TOP 保留定位。双后端覆盖构造/复制/字段修改、margin/gravity、错误及右下/居中整组定位。完整 XML StyledAttributes 构造、RTL UI、动画和完整 View framework 未纳入。"
 
 [dexvm.display_values_bootdex]
 status = "complete"

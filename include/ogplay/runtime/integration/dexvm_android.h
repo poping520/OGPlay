@@ -490,7 +490,6 @@ struct DexVmAndroidContext final {
     // Guest LayoutParams objects retain their typed host value independently
     // of attachment. A View points at its current params object; attaching or
     // updateViewLayout copies that value into the UiTree's sole layout fact.
-    std::unordered_map<std::uint32_t, ui::LayoutParams> ui_layout_params;
     std::unordered_map<std::uint32_t, dexvm::VmObjectRef>
         ui_view_layout_params;
     std::unordered_map<std::uint32_t, ui::ImageScaleType>

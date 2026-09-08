@@ -151,7 +151,6 @@ namespace ogplay::runtime::android_intrinsics {
 [[nodiscard]] Decl Declare_android_view_View_OnSystemUiVisibilityChangeListener(const Context& context);
 [[nodiscard]] Decl Declare_android_view_View_OnTouchListener(const Context& context);
 [[nodiscard]] Decl Declare_android_view_View(const Context& context);
-[[nodiscard]] Decl Declare_android_view_ViewGroup_LayoutParams(const Context& context);
 [[nodiscard]] Decl Declare_android_view_ViewGroup(const Context& context);
 [[nodiscard]] Decl Declare_android_view_ViewTreeObserver_OnGlobalLayoutListener(const Context& context);
 [[nodiscard]] Decl Declare_android_view_ViewTreeObserver(const Context& context);
@@ -168,15 +167,12 @@ namespace ogplay::runtime::android_intrinsics {
 [[nodiscard]] Decl Declare_android_widget_AbsoluteLayout(const Context& context);
 [[nodiscard]] Decl Declare_android_widget_Button(const Context& context);
 [[nodiscard]] Decl Declare_android_widget_EditText(const Context& context);
-[[nodiscard]] Decl Declare_android_widget_FrameLayout_LayoutParams(const Context& context);
 [[nodiscard]] Decl Declare_android_widget_FrameLayout(const Context& context);
 [[nodiscard]] Decl Declare_android_widget_ImageButton(const Context& context);
 [[nodiscard]] Decl Declare_android_widget_ImageView_ScaleType(const Context& context);
 [[nodiscard]] Decl Declare_android_widget_ImageView(const Context& context);
-[[nodiscard]] Decl Declare_android_widget_LinearLayout_LayoutParams(const Context& context);
 [[nodiscard]] Decl Declare_android_widget_LinearLayout(const Context& context);
 [[nodiscard]] Decl Declare_android_widget_ProgressBar(const Context& context);
-[[nodiscard]] Decl Declare_android_widget_RelativeLayout_LayoutParams(const Context& context);
 [[nodiscard]] Decl Declare_android_widget_RelativeLayout(const Context& context);
 [[nodiscard]] Decl Declare_android_widget_ScrollView(const Context& context);
 [[nodiscard]] Decl Declare_android_widget_TableLayout(const Context& context);

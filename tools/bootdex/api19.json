@@ -917,7 +917,12 @@
       "Landroid/util/SparseBooleanArray;",
       "Landroid/util/SparseIntArray;",
       "Landroid/util/SparseLongArray;",
-      "Landroid/util/TypedValue;"
+      "Landroid/util/TypedValue;",
+      "Landroid/view/ViewGroup$LayoutParams;",
+      "Landroid/view/ViewGroup$MarginLayoutParams;",
+      "Landroid/widget/FrameLayout$LayoutParams;",
+      "Landroid/widget/LinearLayout$LayoutParams;",
+      "Landroid/widget/RelativeLayout$LayoutParams;"
     ],
     "ArrayUtils.java": [
       "Lcom/android/internal/util/ArrayUtils;"

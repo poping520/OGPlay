@@ -655,6 +655,101 @@ Decl Declare_android_view_View_OnTouchListener(const Context& context) {
 #include "catalog.h"
 
 namespace ogplay::runtime::android_intrinsics {
+
+ui::LayoutParams ReadAndroidLayoutParams(dx::Interpreter& vm, const dx::VmObjectRef object) {
+    if (!object.IsValid())
+        throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;", "LayoutParams is null"};
+    const auto root = vm.ProtectReferences(std::array{object});
+    const auto type = vm.Model().ObjectClass(object);
+    const auto is = [&](const char* descriptor) {
+        return vm.Linker().IsAssignable(vm.Linker().ResolveDescriptor(descriptor), type);
+    };
+    if (!is("Landroid/view/ViewGroup$LayoutParams;"))
+        throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "object is not LayoutParams"};
+    const auto unsupported = [&](const char* message) -> void {
+        if (auto* ledger = vm.Ledger()) ledger->RecordUnimplemented("dexvm.layout_params", 0);
+        throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", message};
+    };
+    const auto bits = [&](const char* name, const char* descriptor) {
+        const auto field = vm.Linker().FindFieldRecursive(type, name, descriptor);
+        if (!field)
+            throw dx::DexVmError(dx::DexVmErrorReason::internal_invariant,
+                                 "LayoutParams field is missing: " + std::string(name));
+        return vm.Model().InstanceSlots(object)[vm.Linker().Field(*field).slot].bits;
+    };
+    const auto integer = [&](const char* name) { return std::bit_cast<std::int32_t>(bits(name, "I")); };
+    const auto dimension = [](std::int32_t value) -> ui::DimensionSpec {
+        if (value == -1) return {ui::SizeMode::MatchParent, 0};
+        if (value == -2) return {ui::SizeMode::WrapContent, 0};
+        if (value >= 0) return {ui::SizeMode::Fixed, value};
+        throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "invalid layout dimension"};
+    };
+    ui::LayoutParams result;
+    result.width = dimension(integer("width"));
+    result.height = dimension(integer("height"));
+    if (bits("layoutAnimationParameters", "Landroid/view/animation/LayoutAnimationController$AnimationParameters;") != 0)
+        unsupported("layout animation parameters are unsupported");
+    if (is("Landroid/view/ViewGroup$MarginLayoutParams;")) {
+        // The current UI traversal is LTR. Resolve start/end using API 19 Java.
+        static_cast<void>(CallAndroidMethod(vm, object, "resolveLayoutDirection", "(I)V", {dx::VmValue::Int(0)}));
+        result.margin = {integer("leftMargin"), integer("topMargin"),
+                         integer("rightMargin"), integer("bottomMargin")};
+    }
+    if (is("Landroid/widget/FrameLayout$LayoutParams;") ||
+        is("Landroid/widget/LinearLayout$LayoutParams;")) {
+        const auto gravity = integer("gravity");
+        if (gravity != -1) result.layout_gravity = static_cast<std::uint32_t>(gravity);
+    }
+    if (is("Landroid/widget/LinearLayout$LayoutParams;")) {
+        result.weight = std::bit_cast<float>(bits("weight", "F"));
+        if (!std::isfinite(result.weight) || result.weight < 0.0F)
+            throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "invalid layout weight"};
+    }
+    if (is("Landroid/widget/RelativeLayout$LayoutParams;")) {
+        if (bits("alignWithParent", "Z") != 0)
+            unsupported("RelativeLayout alignWithParent is unsupported");
+        const auto rules = CallAndroidMethod(vm, object, "getRules", "(I)[I", {dx::VmValue::Int(0)}).ref;
+        const auto rule = [&](int index) {
+            return static_cast<std::int32_t>(vm.Model().GetPrimitiveElement(rules, index));
+        };
+        if (rule(4) != 0) unsupported("RelativeLayout ALIGN_BASELINE is unsupported");
+        const auto sibling = [&](int index) -> std::optional<std::int32_t> {
+            const auto id = rule(index);
+            if (id == 0) return std::nullopt;
+            if (id < 0)
+                throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "sibling rule requires a positive id"};
+            return id;
+        };
+        auto& r = result.relative;
+        r.left_of = sibling(0); r.right_of = sibling(1);
+        r.above = sibling(2); r.below = sibling(3);
+        r.align_left = sibling(5); r.align_top = sibling(6);
+        r.align_right = sibling(7); r.align_bottom = sibling(8);
+        r.align_parent_left = rule(9) != 0; r.align_parent_top = rule(10) != 0;
+        r.align_parent_right = rule(11) != 0; r.align_parent_bottom = rule(12) != 0;
+        r.center_in_parent = rule(13) != 0;
+        r.center_horizontal = rule(14) != 0; r.center_vertical = rule(15) != 0;
+    }
+    return result;
+}
+
+void RefreshAndroidLayoutParams(dx::Interpreter& vm, const Context& context) {
+    const auto assigned = context->ui_view_layout_params;
+    std::vector<dx::VmObjectRef> refs;
+    for (const auto& [view, params] : assigned) {
+        refs.push_back(dx::VmObjectRef(view));
+        refs.push_back(params);
+    }
+    const auto roots = vm.ProtectReferences(refs);
+    for (const auto& [view, params] : assigned) {
+        const auto layout = ReadAndroidLayoutParams(vm, params);
+        const auto current = context->ui_view_layout_params.find(view);
+        const auto node = FindViewUiNode(*context, view);
+        if (node && current != context->ui_view_layout_params.end() && current->second == params)
+            context->ui_tree.Get(*node)->layout = layout;
+    }
+}
+
 namespace {
 
 ui::UiNodeId ViewNode(dx::IntrinsicContext& call, const Context& context) {
@@ -665,8 +760,9 @@ ui::UiNodeId ViewNode(dx::IntrinsicContext& call, const Context& context) {
         *context, call.receiver, UiClassForDescriptor(descriptor));
 }
 
-void EnsureLayout(const Context& context) {
+void EnsureLayout(dx::Interpreter& vm, const Context& context) {
     if (context->ui_tree.Get(context->ui_tree.Root())->layout_dirty) {
+        RefreshAndroidLayoutParams(vm, context);
         ui::LayoutUiTree(
             context->ui_tree,
             {static_cast<std::int32_t>(context->surface_width),
@@ -851,23 +947,21 @@ Decl Declare_android_view_View(const Context& context) {
                 context->ui_tree.Get(node)->android_id);
         });
     builder.FinalMethod("setId", "(I)V", ViewSetIdHandler(context));
+    builder.VirtualMethod("requestLayout", "()V", [context](dx::IntrinsicContext& call) {
+        RefreshAndroidLayoutParams(call.vm, context);
+        context->ui_tree.MarkLayoutDirty(ViewNode(call, context));
+        return dx::VmValue::Void();
+    });
     builder.FinalMethod("setLayoutParams", "(Landroid/view/ViewGroup$LayoutParams;)V",
         [context](dx::IntrinsicContext& call) {
             const auto node = ViewNode(call, context);
             const auto params = call.arguments[0].ref;
             if (!params.IsValid()) {
-                context->ui_view_layout_params.erase(call.receiver.Value());
-                context->ui_tree.Get(node)->layout = {};
+                throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "LayoutParams cannot be null"};
             } else {
-                const auto found =
-                    context->ui_layout_params.find(params.Value());
-                if (found == context->ui_layout_params.end()) {
-                    throw dx::VmJavaThrow{
-                        "Ljava/lang/IllegalArgumentException;",
-                        "LayoutParams is not initialized"};
-                }
+                const auto layout = ReadAndroidLayoutParams(call.vm, params);
                 context->ui_view_layout_params[call.receiver.Value()] = params;
-                context->ui_tree.Get(node)->layout = found->second;
+                context->ui_tree.Get(node)->layout = layout;
             }
             context->ui_tree.MarkLayoutDirty(node);
             return dx::VmValue::Void();
@@ -901,7 +995,7 @@ Decl Declare_android_view_View(const Context& context) {
         return dx::IntrinsicHandler(
             [context, member](dx::IntrinsicContext& call) {
                 const auto node = ViewNode(call, context);
-                EnsureLayout(context);
+                EnsureLayout(call.vm, context);
                 return dx::VmValue::Int(member(*context->ui_tree.Get(node)));
             });
     };
@@ -1041,39 +1135,6 @@ Decl Declare_android_view_View(const Context& context) {
 }  // namespace ogplay::runtime::android_intrinsics
 
 
-// ---- migrated from android_view_ViewGroup_LayoutParams.cpp ----
-#include "catalog.h"
-
-namespace ogplay::runtime::android_intrinsics {
-namespace {
-
-ui::DimensionSpec Dimension(const std::int32_t value) {
-    if (value == -1) return {ui::SizeMode::MatchParent, 0};
-    if (value == -2) return {ui::SizeMode::WrapContent, 0};
-    if (value >= 0) return {ui::SizeMode::Fixed, value};
-    throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;",
-                          "invalid LayoutParams dimension: " +
-                              std::to_string(value)};
-}
-
-}  // namespace
-
-Decl Declare_android_view_ViewGroup_LayoutParams(const Context& context) {
-    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/view/ViewGroup$LayoutParams;", "Ljava/lang/Object;");
-    builder.Constructor("(II)V",
-        [context](dx::IntrinsicContext& call) {
-            ui::LayoutParams params;
-            params.width = Dimension(call.arguments[0].AsInt());
-            params.height = Dimension(call.arguments[1].AsInt());
-            context->ui_layout_params[call.receiver.Value()] = params;
-            return dx::VmValue::Void();
-        });
-    return std::move(builder).Build();
-}
-
-}  // namespace ogplay::runtime::android_intrinsics
-
-
 // ---- migrated from android_view_ViewGroup.cpp ----
 #include "catalog.h"
 
@@ -1094,30 +1155,18 @@ ui::UiNodeId NodeFor(dx::IntrinsicContext& call, const Context& context,
     return EnsureViewUiNode(*context, view, UiClassForDescriptor(descriptor));
 }
 
-void ApplyParams(const Context& context, const dx::VmObjectRef view,
+void ApplyParams(dx::Interpreter& vm, const Context& context, const dx::VmObjectRef view,
                  const ui::UiNodeId node,
                  const std::optional<dx::VmObjectRef> params) {
     if (params.has_value()) {
-        if (!params->IsValid()) {
-            throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;",
-                                  "LayoutParams is null"};
-        }
-        const auto found = context->ui_layout_params.find(params->Value());
-        if (found == context->ui_layout_params.end()) {
-            throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;",
-                                  "LayoutParams is not initialized"};
-        }
-        context->ui_tree.Get(node)->layout = found->second;
+        context->ui_tree.Get(node)->layout = ReadAndroidLayoutParams(vm, *params);
         context->ui_view_layout_params[view.Value()] = *params;
         context->ui_tree.MarkLayoutDirty(node);
         return;
     }
     const auto assigned = context->ui_view_layout_params.find(view.Value());
-    if (assigned == context->ui_view_layout_params.end()) return;
-    const auto found = context->ui_layout_params.find(assigned->second.Value());
-    if (found != context->ui_layout_params.end()) {
-        context->ui_tree.Get(node)->layout = found->second;
-    }
+    if (assigned != context->ui_view_layout_params.end())
+        context->ui_tree.Get(node)->layout = ReadAndroidLayoutParams(vm, assigned->second);
 }
 
 dx::IntrinsicHandler AddHandler(const Context& context, const bool has_index,
@@ -1134,7 +1183,7 @@ dx::IntrinsicHandler AddHandler(const Context& context, const bool has_index,
         }
         std::optional<dx::VmObjectRef> params;
         if (has_params) params = call.arguments[argument].ref;
-        ApplyParams(context, child, child_node, params);
+        ApplyParams(call.vm, context, child, child_node, params);
         try {
             context->ui_tree.Attach(parent_node, child_node, index);
         } catch (const std::runtime_error& error) {
@@ -1218,7 +1267,7 @@ Decl Declare_android_view_ViewGroup(const Context& context) {
                 throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;",
                                       "view is not a child of this ViewGroup"};
             }
-            ApplyParams(context, child, node, call.arguments[1].ref);
+            ApplyParams(call.vm, context, child, node, call.arguments[1].ref);
             return dx::VmValue::Void();
         });
     return std::move(builder).Build();

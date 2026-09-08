@@ -141,6 +141,7 @@ Asphalt 5（pilot title）删除 profile 全部 `native_call` 与 `[[java.class]
 | [DVM-116](DVM-116.md) | BackupManager 无服务路径归 BootDex | 已完成 |
 | [DVM-117](DVM-117.md) | Bundle 与 Intent 对象传递 | 已完成 |
 | [DVM-118](DVM-118.md) | 显示值与 Math 迁入 BootDex | 已完成 |
+| [DVM-119](DVM-119.md) | Java 布局参数与 RelativeLayout gravity | 完成 |
 
 ## 批次 4 · 更多 title 上 dexvm 路线（进行中）
 

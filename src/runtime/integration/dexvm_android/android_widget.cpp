@@ -453,7 +453,40 @@ Decl Declare_android_widget_TextView(const Context& context) {
             context->ui_tree.MarkLayoutDirty(node);
             return dx::VmValue::Void();
         });
-    builder.FinalMethod("setTypeface", "(Landroid/graphics/Typeface;)V", WidgetNoopHandler());
+    const auto typeface = builder.BoundInstanceField("mTypeface", "Landroid/graphics/Typeface;", dx::kAccPrivate);
+    builder.VirtualMethod("getTypeface", "()Landroid/graphics/Typeface;", [typeface](dx::IntrinsicContext& call) {
+        return dx::VmValue::Ref(dx::IntrinsicCall(call).GetRef(typeface));
+    });
+    builder.VirtualMethod("setTypeface", "(Landroid/graphics/Typeface;)V", [context, typeface](dx::IntrinsicContext& call) {
+        const auto face = call.arguments[0].ref;
+        const auto style = face.IsValid()
+            ? CallAndroidMethod(call.vm, face, "getStyle", "()I").AsInt() : 0;
+        if (style < 0 || style > 3)
+            throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "invalid typeface style"};
+        dx::IntrinsicCall(call).SetRef(typeface, face);
+        const auto node = TextNode(call, context);
+        context->ui_tree.Get(node)->text_style = static_cast<std::uint32_t>(style);
+        context->ui_tree.MarkLayoutDirty(node);
+        return dx::VmValue::Void();
+    });
+    builder.VirtualMethod("setTypeface", "(Landroid/graphics/Typeface;I)V", [](dx::IntrinsicContext& call) {
+        auto face = call.arguments[0].ref;
+        const auto style = call.arguments[1].AsInt();
+        if (style > 0) {
+            const auto owner = call.vm.Linker().ResolveDescriptor("Landroid/graphics/Typeface;");
+            const auto method = call.vm.Linker().FindDirectMethod(owner,
+                face.IsValid() ? "create" : "defaultFromStyle",
+                face.IsValid() ? "(Landroid/graphics/Typeface;I)Landroid/graphics/Typeface;" : "(I)Landroid/graphics/Typeface;");
+            if (!method) throw dx::DexVmError(dx::DexVmErrorReason::internal_invariant, "Typeface factory missing");
+            const auto result = face.IsValid()
+                ? call.vm.Call(*method, std::array{dx::VmValue::Ref(face), dx::VmValue::Int(style)})
+                : call.vm.Call(*method, std::array{dx::VmValue::Int(style)});
+            if (result.exception.IsValid()) throw dx::VmJavaThrow{call.vm.Linker().Class(result.exception_class).descriptor, result.exception_message, result.exception};
+            face = result.value.ref;
+        }
+        const auto root = call.vm.ProtectReferences(std::array{face});
+        return CallAndroidMethod(call.vm, call.receiver, "setTypeface", "(Landroid/graphics/Typeface;)V", {dx::VmValue::Ref(face)});
+    });
     builder.FinalMethod("getPaint", "()Landroid/text/TextPaint;",
         [context](dx::IntrinsicContext& call) {
             return dx::VmValue::Ref(

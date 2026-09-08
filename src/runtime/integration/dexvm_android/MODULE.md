@@ -292,3 +292,7 @@ DisplayMetrics.getDeviceDensity 查询进程注入 density。Resources.mMetrics 
 实例引用，查询按当前 managed surface/density 刷新；Display.getMetrics/getRealMetrics
 使用同一填充入口，不读取宿主显示器。无兼容缩放时 noncompat 字段同源。TypedValue
 单位转换直接读取 Java 字段，删除基于旧槽位顺序的 C++ 算法。
+
+DVM-120：Typeface 普通方法与缓存归 BootDex；native 只提供内置字体有限不可变描述符。
+TextView 引用为 Java 字段，四种样式进入 UiNode 并驱动测量/绘制；family 使用内置
+回退字形，不宣称系统字体。外部字体加载记账失败，无 native 分配或侧表。

@@ -40,6 +40,7 @@ struct DrawText final {
     std::uint32_t rgba{};
     float size_px{8.0F};
     float alpha{1.0F};
+    std::uint32_t style{};
 };
 
 struct PushClip final { Rect rect; };
@@ -65,7 +66,7 @@ struct FixedTextMetrics final {
 // Deterministic built-in 5x7 uppercase/digit font. Lowercase folds to
 // uppercase; unsupported glyphs, multiline text and invalid sizes fail.
 [[nodiscard]] FixedTextMetrics MeasureFixedText(std::u16string_view text,
-                                                float size_px);
+                                                float size_px, std::uint32_t style = 0);
 
 [[nodiscard]] UiRenderList BuildUiRenderList(const UiTree& tree,
                                              const UiBitmapCache& bitmaps);

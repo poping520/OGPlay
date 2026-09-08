@@ -152,6 +152,7 @@ struct UiNode final {
     std::u16string text;
     std::uint32_t text_color{0xffffffffU};
     float text_size_px{8.0F};
+    std::uint32_t text_style{}; // Built-in font: BOLD=1, ITALIC=2.
     std::int32_t max_lines{1};
     LayoutParams layout;
     Insets padding;

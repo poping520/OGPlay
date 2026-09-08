@@ -1,3 +1,4 @@
+#include "boot_dex.h"
 #include <doctest/doctest.h>
 
 #include <cstdint>
@@ -75,6 +76,7 @@ struct Dvm87Vm final {
               services.current_time_millis = [] { return 1704067200000LL; };
               linker.RegisterIntrinsics(CoreIntrinsicCatalog(services));
               linker.RegisterIntrinsics(AndroidIntrinsicCatalog(context));
+              ogplay::test::BindBootDexPlatformNatives(linker);
               linker.RegisterBootDex(Dvm102BootDex());
               auto callable = IntrinsicClassBuilder::Class(
                   "Ltest/Dvm87Callable;", "Ljava/lang/Object;",
@@ -1529,7 +1531,7 @@ TEST_CASE("DVM-103 all BootDex classes link and collection methods have no intri
         for (const auto method : f.linker.Class(type).own_direct_methods)
             CHECK(f.linker.Method(method).kind != MethodKind::intrinsic);
     }
-    CHECK(count == 918);
+    CHECK(count == 919);
 }
 
 TEST_CASE("DVM-103 bounded queues and Collections wrappers use API19 semantics") {
@@ -1597,7 +1599,8 @@ TEST_CASE("DVM-103 deferred intrinsic interfaces preserve declaration order") {
         {"Ljava/io/Serializable;", "Ljava/lang/Cloneable;"});
     catalog.push_back(std::move(probe).Build());
     linker.RegisterIntrinsics(catalog);
-    linker.RegisterBootDex(Dvm102BootDex());
+    ogplay::test::BindBootDexPlatformNatives(linker);
+              linker.RegisterBootDex(Dvm102BootDex());
     linker.Link();
     const auto owner = linker.ResolveDescriptor("Ltest/InterfaceOrder;");
     const auto& interfaces = linker.Class(owner).direct_interfaces;

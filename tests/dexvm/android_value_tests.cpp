@@ -1546,3 +1546,59 @@ TEST_CASE("DVM-112 resolveService distinguishes absent candidates from unsupport
         CHECK(f.ledger.Unimplemented()[0].count == 11);
     }
 }
+
+TEST_CASE("DVM-120 Typeface Java cache and styles drive measured rendered text") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        AndroidValueVm f(backend);
+        const auto owner = f.linker.ResolveDescriptor("Landroid/graphics/Typeface;");
+        CHECK(f.linker.Class(owner).is_boot_dex);
+        std::array<VmObjectRef, 4> defaults;
+        for (int style = 0; style < 4; ++style) {
+            defaults[style] = f.Static("Landroid/graphics/Typeface;", "defaultFromStyle",
+                "(I)Landroid/graphics/Typeface;", {VmValue::Int(style)}).ref;
+            CHECK(f.On(defaults[style], "getStyle", "()I").AsInt() == style);
+            CHECK(f.On(defaults[style], "isBold", "()Z").AsInt() == (style & 1));
+            CHECK(f.On(defaults[style], "isItalic", "()Z").AsInt() == ((style >> 1) & 1));
+        }
+        const auto normal = defaults[0];
+        const auto create = [&](int style) {
+            return f.Static("Landroid/graphics/Typeface;", "create",
+                "(Landroid/graphics/Typeface;I)Landroid/graphics/Typeface;",
+                {VmValue::Ref(normal), VmValue::Int(style)}).ref;
+        };
+        CHECK(create(0) == normal);
+        const auto cached = create(3);
+        CHECK(create(3) == cached);
+        static_cast<void>(f.vm.CollectGarbage("dvm120-typeface-static-cache"));
+        CHECK(create(3) == cached);
+        f.Static("Landroid/graphics/Typeface;", "recreateDefaults", "()V");
+        CHECK(create(3) != cached);
+        CHECK(f.On(normal, "getStyle", "()I").AsInt() == 0);
+        const auto activity = f.New("Landroid/app/Activity;");
+        const auto text = f.New("Landroid/widget/TextView;", "(Landroid/content/Context;)V", {VmValue::Ref(activity)});
+        const auto root = f.vm.ProtectReferences(std::array{text});
+        f.On(text, "setText", "(Ljava/lang/CharSequence;)V", {VmValue::Ref(f.vm.NewStringUtf8("I"))});
+        const auto node = *FindViewUiNode(*f.context, text.Value());
+        f.context->ui_tree.Attach(f.context->ui_tree.Root(), node);
+        std::array<std::vector<std::uint8_t>, 4> pixels;
+        for (int style = 0; style < 4; ++style) {
+            f.On(text, "setTypeface", "(Landroid/graphics/Typeface;I)V",
+                 {VmValue::Ref(normal), VmValue::Int(style)});
+            const auto face = f.On(text, "getTypeface", "()Landroid/graphics/Typeface;").ref;
+            CHECK(f.On(face, "getStyle", "()I").AsInt() == style);
+            ui::LayoutUiTree(f.context->ui_tree, {32, 16});
+            const int extra = ((style & 1) ? 1 : 0) + ((style & 2) ? 2 : 0);
+            CHECK(f.context->ui_tree.Get(node)->measured.width == 5 + extra);
+            pixels[style] = ui::RasterizeUiOverlay(ui::BuildUiRenderList(f.context->ui_tree, {}), {32, 16}).rgba8;
+            if (style != 0) CHECK(pixels[style] != pixels[0]);
+        }
+        f.On(text, "setTypeface", "(Landroid/graphics/Typeface;)V", {VmValue::Ref(VmObjectRef{})});
+        CHECK_FALSE(f.On(text, "getTypeface", "()Landroid/graphics/Typeface;").ref.IsValid());
+        CHECK(f.context->ui_tree.Get(node)->text_style == 0);
+        const auto factory = *f.linker.FindDirectMethod(owner, "createFromFile", "(Ljava/lang/String;)Landroid/graphics/Typeface;");
+        const auto result = f.vm.Call(factory, std::array{VmValue::Ref(f.vm.NewStringUtf8("/font.ttf"))});
+        REQUIRE(result.exception.IsValid());
+        CHECK(f.linker.Class(result.exception_class).descriptor == "Ljava/lang/UnsupportedOperationException;");
+        CHECK(f.ledger.Unimplemented().back().id == "dexvm.typeface");
+    }
+}

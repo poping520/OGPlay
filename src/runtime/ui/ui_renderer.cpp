@@ -146,7 +146,7 @@ void AppendNode(const UiTree& tree, const UiNodeId id,
         }
     }
     if (!node.text.empty()) {
-        const auto metrics = MeasureFixedText(node.text, node.text_size_px);
+        const auto metrics = MeasureFixedText(node.text, node.text_size_px, node.text_style);
         const auto content = Rect{
             node.screen_frame.left + node.padding.left,
             node.screen_frame.top + node.padding.top,
@@ -165,7 +165,7 @@ void AppendNode(const UiTree& tree, const UiNodeId id,
             y = content.bottom - metrics.height;
         }
         out.emplace_back(DrawText{x, y, node.text, node.text_color,
-                                  node.text_size_px, node.alpha});
+                                  node.text_size_px, node.alpha, node.text_style});
     }
     for (const auto child : node.children) AppendNode(tree, child, bitmaps, out);
     out.emplace_back(PopClip{});
@@ -214,7 +214,8 @@ void PaintRect(UiOverlayFrame& frame, const Rect rect, const Rect clip,
 }  // namespace
 
 FixedTextMetrics MeasureFixedText(const std::u16string_view text,
-                                  const float size_px) {
+                                  const float size_px, const std::uint32_t style) {
+    if (style > 3U) throw std::runtime_error("invalid built-in font style");
     if (!std::isfinite(size_px) || size_px < 1.0F || size_px > 128.0F) {
         throw std::runtime_error("fixed-font text size is outside 1..128 px");
     }
@@ -230,7 +231,8 @@ FixedTextMetrics MeasureFixedText(const std::u16string_view text,
     const auto scale = std::max(1, static_cast<std::int32_t>(
                                        std::lround(size_px / 8.0F)));
     const auto cells = static_cast<std::int64_t>(text.size());
-    const auto width = text.empty() ? 0 : (cells * 6 - 1) * scale;
+    const auto extra = ((style & 1U) ? 1 : 0) + ((style & 2U) ? 2 : 0);
+    const auto width = text.empty() ? 0 : (cells * (6 + extra) - 1) * scale;
     if (width > std::numeric_limits<std::int32_t>::max()) {
         throw std::runtime_error("fixed-font measured width overflows");
     }
@@ -304,7 +306,9 @@ UiOverlayFrame RasterizeUiOverlay(const UiRenderList& commands,
                 Blend(dst, src[0], src[1], src[2], alpha);
             });
         } else if (const auto* text = std::get_if<DrawText>(&command)) {
-            const auto text_metrics = MeasureFixedText(text->text, text->size_px);
+            const auto text_metrics = MeasureFixedText(text->text, text->size_px, text->style);
+            const int bold = (text->style & 1U) ? 1 : 0;
+            const int italic = (text->style & 2U) ? 2 : 0;
             const auto alpha = static_cast<std::uint8_t>(
                 (static_cast<std::uint32_t>(text->rgba & 0xffU) *
                      AlphaByte(text->alpha) +
@@ -314,17 +318,20 @@ UiOverlayFrame RasterizeUiOverlay(const UiRenderList& commands,
                 const auto glyph = GlyphRows(text->text[index]);
                 const auto origin_x =
                     text->x + static_cast<std::int32_t>(index) *
-                                  6 * text_metrics.scale;
+                                  (6 + bold + italic) * text_metrics.scale;
                 for (std::int32_t row = 0; row < 7; ++row) {
-                    for (std::int32_t column = 0; column < 5; ++column) {
-                        if ((glyph[static_cast<std::size_t>(row)] &
-                             (1U << static_cast<unsigned>(4 - column))) == 0) {
+                    const auto row_bits = static_cast<unsigned>(glyph[static_cast<std::size_t>(row)]);
+                    const auto styled_bits = bold ? (row_bits << 1U) | row_bits : row_bits;
+                    for (std::int32_t column = 0; column < 5 + bold; ++column) {
+                        if ((styled_bits &
+                             (1U << static_cast<unsigned>(4 + bold - column))) == 0) {
                             continue;
                         }
+                        const auto skew = italic ? (6 - row) / 3 : 0;
                         const Rect pixel{
-                            origin_x + column * text_metrics.scale,
+                            origin_x + (column + skew) * text_metrics.scale,
                             text->y + row * text_metrics.scale,
-                            origin_x + (column + 1) * text_metrics.scale,
+                            origin_x + (column + skew + 1) * text_metrics.scale,
                             text->y + (row + 1) * text_metrics.scale};
                         PaintRect(frame, pixel, clips.back(),
                                   [text, alpha](auto, auto, auto* dst) {

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
@@ -8,6 +9,7 @@
 
 #include "ogplay/loader/apk.h"
 #include "ogplay/runtime/dexvm/class_linker.h"
+#include "ogplay/runtime/integration/dexvm_android.h"
 
 namespace ogplay::test {
 inline std::vector<std::uint8_t> ReadBootDex() {
@@ -25,7 +27,19 @@ inline std::vector<std::uint8_t> ReadBootDex() {
     std::memcpy(bytes.data(), dex.data(), dex.size());
     return bytes;
 }
+inline void BindBootDexPlatformNatives(runtime::dexvm::DexClassLinker& linker) {
+    // Core-only fixtures still load the full curated artifact. Its Typeface
+    // native boundary needs the real built-in backend, even when not exercised.
+    if (!linker.FindClass("Landroid/graphics/Typeface;")) {
+        const auto context = std::make_shared<runtime::DexVmAndroidContext>();
+        for (const auto& declaration : runtime::AndroidIntrinsicCatalog(context)) {
+            if (declaration.descriptor == "Landroid/graphics/Typeface;")
+                linker.RegisterIntrinsics(std::array{declaration});
+        }
+    }
+}
 inline void RegisterBootDex(runtime::dexvm::DexClassLinker& linker) {
+    BindBootDexPlatformNatives(linker);
     linker.RegisterBootDex(ReadBootDex());
 }
 }  // namespace ogplay::test

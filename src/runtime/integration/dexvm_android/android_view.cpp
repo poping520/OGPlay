@@ -715,9 +715,10 @@ ui::LayoutParams ReadAndroidLayoutParams(dx::Interpreter& vm, const dx::VmObject
         if (rule(4) != 0) unsupported("RelativeLayout ALIGN_BASELINE is unsupported");
         const auto sibling = [&](int index) -> std::optional<std::int32_t> {
             const auto id = rule(index);
-            if (id == 0) return std::nullopt;
-            if (id < 0)
-                throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "sibling rule requires a positive id"};
+            // RelativeLayout.LayoutParams.addRule(verb) stores TRUE (-1);
+            // the AOSP dependency graph only honours rule > 0, so a TRUE or
+            // otherwise non-positive sibling anchor behaves as "no anchor".
+            if (id <= 0) return std::nullopt;
             return id;
         };
         auto& r = result.relative;
@@ -753,11 +754,8 @@ void RefreshAndroidLayoutParams(dx::Interpreter& vm, const Context& context) {
 namespace {
 
 ui::UiNodeId ViewNode(dx::IntrinsicContext& call, const Context& context) {
-    const auto descriptor = call.vm.Linker()
-                                .Class(call.vm.Model().ObjectClass(call.receiver))
-                                .descriptor;
     return EnsureViewUiNode(
-        *context, call.receiver, UiClassForDescriptor(descriptor));
+        *context, call.receiver, UiClassForObject(call.vm, call.receiver));
 }
 
 void EnsureLayout(dx::Interpreter& vm, const Context& context) {
@@ -1149,10 +1147,7 @@ ui::UiNodeId NodeFor(dx::IntrinsicContext& call, const Context& context,
         throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;",
                               "ViewGroup child is null"};
     }
-    const auto descriptor = call.vm.Linker()
-                                .Class(call.vm.Model().ObjectClass(view))
-                                .descriptor;
-    return EnsureViewUiNode(*context, view, UiClassForDescriptor(descriptor));
+    return EnsureViewUiNode(*context, view, UiClassForObject(call.vm, view));
 }
 
 void ApplyParams(dx::Interpreter& vm, const Context& context, const dx::VmObjectRef view,

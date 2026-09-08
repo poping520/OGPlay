@@ -184,3 +184,14 @@
     sget v0, LTouchView;->lastAction:I
     return v0
 .end method
+
+# A guest subclass of a platform ViewGroup: its UI node kind must come from
+# the real inheritance chain, not the exact descriptor.
+.class public LTestPanel;
+.super Landroid/widget/LinearLayout;
+
+.method public constructor <init>(Landroid/content/Context;)V
+.registers 2
+    invoke-direct {v0, v1}, Landroid/widget/LinearLayout;-><init>(Landroid/content/Context;)V
+    return-void
+.end method

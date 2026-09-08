@@ -3,6 +3,12 @@
 // ---- migrated from android_widget_AbsoluteLayout_LayoutParams.cpp ----
 #include "catalog.h"
 
+// Defined by the TextView section below: constructor handler that also
+// resolves the framework default style carried by defStyleAttr.
+namespace ogplay::runtime::android_intrinsics {
+[[nodiscard]] dx::IntrinsicHandler ViewDefaultStyleInitHandler(const Context& context);
+}
+
 namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_widget_AbsoluteLayout_LayoutParams(const Context& context) {
@@ -39,6 +45,8 @@ Decl Declare_android_widget_Button(const Context& context) {
     static_cast<void>(context);
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/widget/Button;", "Landroid/widget/TextView;");
     builder.Constructor("(Landroid/content/Context;)V", ViewInitHandler(context));
+    builder.Constructor("(Landroid/content/Context;Landroid/util/AttributeSet;I)V",
+                        ViewDefaultStyleInitHandler(context));
     return std::move(builder).Build();
 }
 
@@ -136,12 +144,9 @@ Decl Declare_android_widget_ImageView(const Context& context) {
     builder.Constructor("(Landroid/content/Context;)V", ViewInitHandler(context));
     builder.FinalMethod("setImageResource", "(I)V",
         [context](dx::IntrinsicContext& call) {
-            const auto descriptor = call.vm.Linker()
-                                        .Class(call.vm.Model().ObjectClass(
-                                            call.receiver))
-                                        .descriptor;
             const auto node = EnsureViewUiNode(
-                *context, call.receiver, UiClassForDescriptor(descriptor));
+                *context, call.receiver,
+                UiClassForObject(call.vm, call.receiver));
             const auto resource_id =
                 static_cast<std::uint32_t>(call.arguments[0].AsInt());
             if (resource_id == 0U) {
@@ -170,12 +175,9 @@ Decl Declare_android_widget_ImageView(const Context& context) {
                 throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;",
                                       "unknown ImageView ScaleType"};
             }
-            const auto descriptor = call.vm.Linker()
-                                        .Class(call.vm.Model().ObjectClass(
-                                            call.receiver))
-                                        .descriptor;
             const auto node = EnsureViewUiNode(
-                *context, call.receiver, UiClassForDescriptor(descriptor));
+                *context, call.receiver,
+                UiClassForObject(call.vm, call.receiver));
             context->ui_tree.Get(node)->image_scale_type = found->second;
             context->ui_tree.MarkDrawDirty(node);
             return dx::VmValue::Void();
@@ -391,6 +393,11 @@ void MergeTextStyle(dx::Interpreter& vm, const Context& context, std::uint32_t i
         color(0x01010099, holo ? 0x6633b5e5U : 0x9983cc39U); // highlight
         color(0x0101009a, 0xff808080U); // hint
         color(0x0101009b, holo ? 0xff33b5e5U : light ? 0xff0000eeU : 0xff5c5cffU); // link
+        if (legacy) {
+            values[0x01010048U] = {0x01010048U, 1, 0x01030014U, {}}; // buttonStyle
+            values[0x01010049U] = {0x01010049U, 1, 0x01030016U, {}}; // buttonStyleSmall
+            values[0x01010045U] = {0x01010045U, 1, 0x01030047U, {}}; // textAppearanceSmallInverse
+        }
         return;
     }
     // Passing an attr id to obtainStyledAttributes(resid, attrs) does not
@@ -412,8 +419,8 @@ void MergeTextStyle(dx::Interpreter& vm, const Context& context, std::uint32_t i
     for (const auto& value : entry->bag) values[value.name] = value;
 }
 
-TextAttributes ResolveTextAppearance(dx::Interpreter& vm, const Context& context,
-                                      dx::VmObjectRef owner, std::uint32_t id) {
+TextAttributes ResolveTextTheme(dx::Interpreter& vm, const Context& context,
+                                dx::VmObjectRef owner) {
     if (!owner.IsValid()) throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;", "text appearance Context is null"};
     auto theme = context->application_theme;
     std::unordered_set<std::uint32_t> wrappers;
@@ -435,8 +442,14 @@ TextAttributes ResolveTextAppearance(dx::Interpreter& vm, const Context& context
     TextAttributes theme_values;
     std::unordered_set<std::uint32_t> seen;
     MergeTextStyle(vm, context, theme, theme_values, seen);
+    return theme_values;
+}
+
+TextAttributes ResolveTextAppearance(dx::Interpreter& vm, const Context& context,
+                                      dx::VmObjectRef owner, std::uint32_t id) {
+    const auto theme_values = ResolveTextTheme(vm, context, owner);
     auto values = theme_values;
-    seen.clear();
+    std::unordered_set<std::uint32_t> seen;
     MergeTextStyle(vm, context, id, values, seen);
     // Attribute references resolve against the theme, not against the overlay.
     for (const auto attr : {0x01010095U, 0x01010096U, 0x01010097U, 0x01010098U,
@@ -468,23 +481,160 @@ TextAttributes ResolveTextAppearance(dx::Interpreter& vm, const Context& context
 }
 
 ui::UiNodeId TextNode(dx::IntrinsicContext& call, const Context& context) {
-    const auto descriptor = call.vm.Linker()
-                                .Class(call.vm.Model().ObjectClass(call.receiver))
-                                .descriptor;
     return EnsureViewUiNode(
-        *context, call.receiver, UiClassForDescriptor(descriptor));
+        *context, call.receiver, UiClassForObject(call.vm, call.receiver));
 }
 
 std::uint32_t AndroidColorToRgba(const std::uint32_t argb) {
     return ((argb & 0x00ffffffU) << 8U) | (argb >> 24U);
 }
 
+// API 19 public.xml: android.R.attr.buttonStyle/buttonStyleSmall.
+constexpr std::uint32_t kButtonStyleAttr = 0x01010048U;
+constexpr std::uint32_t kButtonStyleSmallAttr = 0x01010049U;
+
 }  // namespace
+
+dx::IntrinsicHandler ViewDefaultStyleInitHandler(const Context& context) {
+    return dx::IntrinsicHandler(
+        [context](dx::IntrinsicContext& call) {
+            const auto owner = call.arguments[0].ref;
+            if (!owner.IsValid())
+                throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;", "View Context is null"};
+            const auto attrs = call.arguments[1].ref;
+            const auto def_style_attr = static_cast<std::uint32_t>(
+                call.arguments[2].AsInt());
+            if (attrs.IsValid()) {
+                if (auto* ledger = call.vm.Ledger()) {
+                    ledger->RecordUnimplemented(
+                        "dexvm.view_xml_attributes", 0);
+                }
+                throw dx::VmJavaThrow{
+                    "Ljava/lang/UnsupportedOperationException;",
+                    "constructing a View from an AttributeSet is unsupported"};
+            }
+            if (def_style_attr == 0U) return ViewInitHandler(context)(call);
+            if (def_style_attr != kButtonStyleAttr &&
+                def_style_attr != kButtonStyleSmallAttr) {
+                if (auto* ledger = call.vm.Ledger()) {
+                    ledger->RecordUnimplemented(
+                        "dexvm.view_default_style", 0);
+                }
+                throw dx::VmJavaThrow{
+                    "Ljava/lang/UnsupportedOperationException;",
+                    "defStyleAttr is outside the registered default-style projection"};
+            }
+            // Resolve against the actual constructor Context, including theme
+            // inheritance and aliases. Never silently replace an app override
+            // or a Holo/DeviceDefault widget with the legacy projection.
+            const auto theme = ResolveTextTheme(call.vm, context, owner);
+            const auto resolve = [&](std::uint32_t attr) {
+                const auto found = theme.find(attr);
+                if (found == theme.end())
+                    UnsupportedTextStyle(call.vm, "button theme attribute is outside the registered projection");
+                auto value = found->second;
+                std::unordered_set<std::uint64_t> seen;
+                while (value.value_type == 1 || value.value_type == 2) {
+                    const auto key = (static_cast<std::uint64_t>(value.value_type) << 32U) | value.value_data;
+                    if (seen.size() >= 16 || !seen.insert(key).second)
+                        UnsupportedTextStyle(call.vm, "button theme reference cycle or depth exceeds 16");
+                    if (value.value_type == 2) {
+                        const auto target = theme.find(value.value_data);
+                        if (target == theme.end())
+                            UnsupportedTextStyle(call.vm, "button theme attribute is unavailable");
+                        value = target->second;
+                    } else {
+                        const auto* target = context->arsc.FindById(value.value_data);
+                        if (!target || target->is_complex) break;
+                        value = {attr, target->value_type, target->value_data, target->string_value};
+                    }
+                }
+                return value;
+            };
+            const auto style = resolve(def_style_attr);
+            const auto appearance = resolve(0x01010045U);
+            if (style.value_type != 1 ||
+                (style.value_data != 0x01030014U && style.value_data != 0x01030016U) ||
+                appearance.value_type != 1 || appearance.value_data != 0x01030047U) {
+                UnsupportedTextStyle(call.vm, "button default style or text appearance is outside the registered projection");
+            }
+            // Default-style projection of pinned AOSP 4.4.4
+            // core/res/res/values/{themes,styles}.xml: theme maps
+            // buttonStyle(Small) to Widget.Button(.Small), which only adds a
+            // 9-patch background over Widget.Button's TextAppearance.Small
+            // chain (textSize 14sp) and textColor primary_text_light.
+            const auto resources = CallAndroidMethod(call.vm, owner, "getResources",
+                "()Landroid/content/res/Resources;").ref;
+            const auto resource_root =
+                call.vm.ProtectReferences(std::array{resources});
+            const auto metrics = CallAndroidMethod(
+                call.vm, resources, "getDisplayMetrics",
+                "()Landroid/util/DisplayMetrics;").ref;
+            const auto metrics_root =
+                call.vm.ProtectReferences(std::array{metrics});
+            const auto size = TextStatic(
+                call.vm, "Landroid/util/TypedValue;",
+                "complexToDimensionPixelSize",
+                "(ILandroid/util/DisplayMetrics;)I",
+                {dx::VmValue::Int(static_cast<std::int32_t>(
+                     (14U << 8U) | 0x02U)),
+                 dx::VmValue::Ref(metrics)}).AsInt();
+            try {
+                static_cast<void>(ui::MeasureFixedText(
+                    u"", static_cast<float>(size)));
+            } catch (const std::runtime_error& error) {
+                throw dx::VmJavaThrow{
+                    "Ljava/lang/IllegalArgumentException;", error.what()};
+            }
+            const auto node = TextNode(call, context);
+            auto* state = context->ui_tree.Get(node);
+            state->text_size_px = static_cast<float>(size);
+            state->text_color = AndroidColorToRgba(0xff000000U);
+            state->gravity = 0x11U;  // center_horizontal | center_vertical
+            context->ui_tree.SetClickable(node, true);
+            context->ui_tree.MarkLayoutDirty(node);
+            // The 9-patch button background has no renderer here; the gap
+            // stays queryable instead of being silently swallowed.
+            if (auto* ledger = call.vm.Ledger()) {
+                ledger->RecordUnimplemented(
+                    "dexvm.view_default_style.background", 0);
+            }
+            return dx::VmValue::Void();
+        });
+}
 
 Decl Declare_android_widget_TextView(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/widget/TextView;", "Landroid/view/View;");
     builder.Constructor("(Landroid/content/Context;)V",
                     ViewInitHandler(context));
+    builder.Constructor("(Landroid/content/Context;Landroid/util/AttributeSet;I)V",
+                    ViewDefaultStyleInitHandler(context));
+    builder.VirtualMethod("setCompoundDrawablesWithIntrinsicBounds", "(IIII)V",
+        [context](dx::IntrinsicContext& call) {
+            // AOSP resolves all four resources before calling the Drawable
+            // overload. A failed lookup must not publish a partial update.
+            std::array<ui::CompoundDrawable, 4> drawables{};
+            for (std::size_t index = 0; index < 4U; ++index) {
+                const auto resource_id = static_cast<std::uint32_t>(
+                    call.arguments[index].AsInt());
+                if (resource_id == 0U) {
+                    continue;
+                }
+                std::shared_ptr<const ui::UiBitmap> bitmap;
+                try {
+                    bitmap = ResolveUiDrawable(*context, resource_id);
+                } catch (const std::runtime_error& error) {
+                    throw dx::VmJavaThrow{
+                        "Landroid/content/res/Resources$NotFoundException;",
+                        error.what()};
+                }
+                drawables[index] = {resource_id, bitmap->width, bitmap->height};
+            }
+            const auto node = TextNode(call, context);
+            context->ui_tree.Get(node)->compound_drawables = drawables;
+            context->ui_tree.MarkLayoutDirty(node);
+            return dx::VmValue::Void();
+        });
     builder.FinalMethod("setText", "(Ljava/lang/CharSequence;)V",
         [context](dx::IntrinsicContext& call) {
             const auto value = call.arguments[0].ref;

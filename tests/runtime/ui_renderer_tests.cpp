@@ -249,3 +249,65 @@ TEST_CASE("ImageView scale types produce exact destinations and crop golden") {
               std::vector<std::uint8_t>{0, 255, 0, 255});
     }
 }
+
+TEST_CASE("compound drawables rasterize and inset the text band") {
+    ui::UiTree tree;
+    const auto button = tree.CreateNode(ui::UiClass::Button);
+    tree.Get(button)->text = u"AB";
+    tree.Get(button)->text_color = 0xffffffffU;
+    tree.Get(button)->compound_drawables[0] = {7, 2, 2};
+    tree.Attach(tree.Root(), button);
+    ui::LayoutUiTree(tree, {30, 20});
+    // "AB" measures 11 px; with the 2 px left drawable and the button's
+    // default 6/4 padding the wrap-content width is 11 + 2 + 12.
+    CHECK(tree.Get(button)->measured.width == 25);
+
+    auto red = std::make_shared<const ui::UiBitmap>(
+        ui::UiBitmap{2, 2, {255, 0, 0, 255, 255, 0, 0, 255,
+                            255, 0, 0, 255, 255, 0, 0, 255}});
+    const ui::UiBitmapCache bitmaps{{7, red}};
+    ui::UiOverlayRenderer renderer;
+    const auto& frame = renderer.Render(tree, bitmaps, {30, 20});
+    // Content box: y 4..11. The 2 px drawable is vertically centered in the
+    // 7 px content height: rows 6..7 (AOSP integer division truncates).
+    CHECK(Pixel(frame, 6, 6) == std::vector<std::uint8_t>{255, 0, 0, 255});
+    CHECK(Pixel(frame, 6, 8) != std::vector<std::uint8_t>{255, 0, 0, 255});
+    CHECK(Pixel(frame, 5, 7) != std::vector<std::uint8_t>{255, 0, 0, 255});
+    // The text band starts after the drawable; row 3 of "A" is full width.
+    CHECK(Pixel(frame, 8, 7) == std::vector<std::uint8_t>{255, 255, 255, 255});
+}
+
+TEST_CASE("DVM-123 compound drawables measure all axes and empty text") {
+    ui::UiTree tree;
+    const auto view = tree.CreateNode(ui::UiClass::TextView);
+    auto* node = tree.Get(view);
+    node->text = u"A";
+    node->compound_drawables = {{{1, 3, 19}, {2, 23, 2},
+                                 {3, 5, 11}, {4, 17, 4}}};
+    tree.Attach(tree.Root(), view);
+    ui::LayoutUiTree(tree, {100, 100});
+    CHECK(node->measured.width == 31);  // max(text, top, bottom) + left + right
+    CHECK(node->measured.height == 25); // max(text, left, right) + top + bottom
+    node->text.clear();
+    tree.MarkLayoutDirty(view);
+    ui::LayoutUiTree(tree, {100, 100});
+    CHECK(node->measured.width == 31);
+    CHECK(node->measured.height == 25);
+
+    ui::UiBitmapCache bitmaps;
+    for (const auto& drawable : node->compound_drawables) {
+        bitmaps.emplace(drawable.resource_id, std::make_shared<const ui::UiBitmap>(
+            ui::UiBitmap{drawable.width, drawable.height,
+                std::vector<std::uint8_t>(static_cast<std::size_t>(drawable.width * drawable.height) * 4, 255)}));
+    }
+    const std::array expected{ui::Rect{0, 2, 3, 21}, ui::Rect{3, 0, 26, 2},
+                              ui::Rect{26, 6, 31, 17}, ui::Rect{6, 21, 23, 25}};
+    std::size_t count{};
+    for (const auto& command : ui::BuildUiRenderList(tree, bitmaps)) {
+        if (const auto* bitmap = std::get_if<ui::DrawBitmap>(&command)) {
+            REQUIRE(count < expected.size());
+            CHECK(bitmap->rect == expected[count++]);
+        }
+    }
+    CHECK(count == 4);
+}

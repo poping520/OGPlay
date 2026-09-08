@@ -145,27 +145,83 @@ void AppendNode(const UiTree& tree, const UiNodeId id,
                                         found->second, node.alpha});
         }
     }
-    if (!node.text.empty()) {
+    if (!node.text.empty() ||
+        std::any_of(node.compound_drawables.begin(),
+                    node.compound_drawables.end(),
+                    [](const CompoundDrawable& drawable) {
+                        return drawable.resource_id != 0;
+                    })) {
         const auto metrics = MeasureFixedText(node.text, node.text_size_px, node.text_style);
         const auto content = Rect{
             node.screen_frame.left + node.padding.left,
             node.screen_frame.top + node.padding.top,
             node.screen_frame.right - node.padding.right,
             node.screen_frame.bottom - node.padding.bottom};
-        std::int32_t x = content.left;
-        std::int32_t y = content.top;
+        // API19 TextView: compound drawables sit on the content edges; the
+        // text is laid out inside the remaining band.
+        const auto& compound = node.compound_drawables;
+        const Rect text_content{content.left + compound[0].width,
+                                content.top + compound[1].height,
+                                content.right - compound[2].width,
+                                content.bottom - compound[3].height};
+        const auto drawable_rect =
+            [&text_content](const std::size_t index, const Rect content_box,
+                        const std::int32_t width, const std::int32_t height) {
+                if (width <= 0 || height <= 0) {
+                    return Rect{content_box.left, content_box.top,
+                                content_box.left, content_box.top};
+                }
+                const auto box_width = text_content.right - text_content.left;
+                const auto box_height = text_content.bottom - text_content.top;
+                switch (index) {
+                    case 0:  // left, vertically centered
+                        return Rect{content_box.left,
+                                    text_content.top + (box_height - height) / 2,
+                                    content_box.left + width,
+                                    text_content.top + (box_height - height) / 2 + height};
+                    case 1:  // top, horizontally centered
+                        return Rect{text_content.left + (box_width - width) / 2,
+                                    content_box.top,
+                                    text_content.left + (box_width - width) / 2 + width,
+                                    content_box.top + height};
+                    case 2:  // right, vertically centered
+                        return Rect{content_box.right - width,
+                                    text_content.top + (box_height - height) / 2,
+                                    content_box.right,
+                                    text_content.top + (box_height - height) / 2 + height};
+                    default:  // bottom, horizontally centered
+                        return Rect{text_content.left + (box_width - width) / 2,
+                                    content_box.bottom - height,
+                                    text_content.left + (box_width - width) / 2 + width,
+                                    content_box.bottom};
+                }
+            };
+        for (std::size_t index = 0; index < compound.size(); ++index) {
+            const auto& drawable = compound[index];
+            if (drawable.resource_id == 0) continue;
+            const auto found = bitmaps.find(drawable.resource_id);
+            if (found == bitmaps.end() || found->second == nullptr) continue;
+            out.emplace_back(DrawBitmap{
+                drawable_rect(index, content, found->second->width,
+                              found->second->height),
+                found->second, node.alpha});
+        }
+        std::int32_t x = text_content.left;
+        std::int32_t y = text_content.top;
         if ((node.gravity & 0x07U) == 0x01U) {
-            x += (content.right - content.left - metrics.width) / 2;
+            x += (text_content.right - text_content.left - metrics.width) / 2;
         } else if ((node.gravity & 0x07U) == 0x05U) {
-            x = content.right - metrics.width;
+            x = text_content.right - metrics.width;
         }
         if ((node.gravity & 0x70U) == 0x10U) {
-            y += (content.bottom - content.top - metrics.height) / 2;
+            y += (text_content.bottom - text_content.top - metrics.height) / 2;
         } else if ((node.gravity & 0x70U) == 0x50U) {
-            y = content.bottom - metrics.height;
+            y = text_content.bottom - metrics.height;
         }
-        out.emplace_back(DrawText{x, y, node.text, node.text_color,
-                                  node.text_size_px, node.alpha, node.text_style});
+        if (!node.text.empty()) {
+            out.emplace_back(DrawText{x, y, node.text, node.text_color,
+                                      node.text_size_px, node.alpha, node.text_style});
+        }
     }
     for (const auto child : node.children) AppendNode(tree, child, bitmaps, out);
     out.emplace_back(PopClip{});

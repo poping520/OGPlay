@@ -43,7 +43,7 @@ note = "LUI-2 建立 generation-scoped synthetic content root、唯一 hierarchy
 [runtime.ui_dexvm_binding]
 status = "complete"
 test = "tests/dexvm/widget_click_tests.cpp"
-note = "LUI-3 建立 live guest View object 与 UiNodeId 双向一一绑定；findViewById/getId/setId/visibility 只读写 UiTree，click/touch listener 以 node 为 key，旧 view_registry/widget_states 已删除"
+note = "LUI-3 建立 live guest View object 与 UiNodeId 双向一一绑定；findViewById/getId/setId/visibility 只读写 UiTree，click/touch listener 以 node 为 key，旧 view_registry/widget_states 已删除；DVM-121 使 UI kind 按 receiver 真实继承链解析，guest 子类继承基础控件布局行为"
 
 [runtime.ui_inflater]
 status = "complete"
@@ -88,12 +88,12 @@ note = "LUI-11 实现 horizontal/vertical LinearLayout 的 padding/margin/finite
 [runtime.ui_text_widgets]
 status = "complete"
 test = "tests/runtime/ui_renderer_tests.cpp; tests/dexvm/widget_click_tests.cpp"
-note = "LUI-12 将 TextView/Button text/textColor/textSize/gravity 收敛到 UiNode；内置 5x7 fixed font 共用 measure/raster；LUI-16 增加 text layout 后 overlay cache 重建与新像素回归；单行之外与未知字形明确失败"
+note = "LUI-12 将 TextView/Button text/textColor/textSize/gravity 收敛到 UiNode；内置 5x7 fixed font 共用 measure/raster；LUI-16 增加 text layout 后 overlay cache 重建与新像素回归；单行之外与未知字形明确失败；DVM-121 增加 compound drawables：四槽解析后事务发布，宽高计入四方向 intrinsic，空文本不漏算，图标在 compound padding 剩余带内居中；TextView API 保持 virtual。Button/TextView 三参构造按实际 Context/Resources 解析 legacy 默认样式及主题继承/别名；null Context、非空 attrs、未登记主题/样式/外观明确失败。9-patch 背景和状态色渲染仍未交付，不宣称完整主题外观"
 
 [runtime.ui_relative_layout]
 status = "complete"
 test = "tests/runtime/ui_tree_tests.cpp; tests/dexvm/widget_click_tests.cpp"
-note = "LUI-13 实现 parent align/center 与 sibling above/below/left/right/align-edge；横纵依赖图按 sibling android id 确定性解析，XML 与 Java addRule 共用 typed LayoutParams，missing/duplicate/conflict/cycle 明确失败"
+note = "LUI-13 实现 parent align/center 与 sibling above/below/left/right/align-edge；横纵依赖图按 sibling android id 确定性解析，XML 与 Java addRule 共用 typed LayoutParams，missing/duplicate/conflict/cycle 明确失败；DVM-121 按 AOSP rule > 0 过滤把 addRule(verb) 的 TRUE(-1) 及非正 sibling 锚点视为无锚点"
 
 [runtime.ui_include_resources_images]
 status = "complete"

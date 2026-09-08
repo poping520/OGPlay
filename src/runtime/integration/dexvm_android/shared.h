@@ -132,6 +132,10 @@ inline constexpr std::int32_t kGone = 8;
 [[nodiscard]] std::int32_t VisibilityOf(const DexVmAndroidContext& context,
                                         std::uint64_t handle);
 [[nodiscard]] ui::UiClass UiClassForDescriptor(std::string_view descriptor);
+// Resolves the platform widget kind by walking the receiver's real class
+// chain, so guest subclasses of framework widgets keep the base behaviour.
+[[nodiscard]] ui::UiClass UiClassForObject(dx::Interpreter& vm,
+                                           const dx::VmObjectRef view);
 void DeliverMessage(dx::IntrinsicContext& call, dx::VmObjectRef handler,
                     dx::VmObjectRef message);
 [[nodiscard]] dx::VmObjectRef MakeMessage(dx::IntrinsicContext& call,

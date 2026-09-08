@@ -774,3 +774,19 @@ integer 区间识别所有 grouping symbol，禁止调用 ICU C++ `FieldPosition
 复杂 Unicode case mapping 经 BootDex ICU guest native 调用 `u_strToLower/Upper`。common data 在
 `udata_setCommonData` 后禁用文件访问并立即初始化，卸载顺序固定为关闭对象、`u_cleanup`、释放数据。
 具名时区库仍不交付；任何非 GMT/UTC/custom-offset ID 明确失败，禁止静默降级为 GMT。
+
+<a id="adr-0051"></a>
+## ADR-0051 · 有界控件默认样式与 compound drawable
+
+2026-09-08，接受，DVM-121。延续 ADR-0048，不引入完整 framework-res 或 View framework。
+
+三参控件构造经调用方 Context 的主题、APK parent/alias 确认默认样式，再使用其 Resources
+解析尺寸；仅发布登记的 legacy Widget.Button(.Small)/TextAppearance.Small.Inverse 投影。
+未知主题、APK widget style 或文本外观覆盖必须明确失败，不能忽略并套用固定默认值。
+投影只承诺当前 enabled 文本、居中和 clickable；保留既有有界 Button 外观，9-patch 背景
+记入可查询缺口，状态色/完整字体与主题外观不随构造器支持扩大。
+
+compound drawable 的 Java API 形状归 TextView；integration 解析资源并在四槽全部成功后
+一次发布，UiTree 保存唯一尺寸/资源事实，runtime/ui 完成 measure/raster。失败不得留下
+部分 mutation；控件子类继承同一 API，禁止专属 Button 副本或游戏分支。guest onLayout、
+完整滚动与推广网络内容不属于初始化验收，后续按真实触发补齐。

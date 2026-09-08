@@ -4133,14 +4133,20 @@ IntrinsicClassDecl Declare_java_lang_Throwable() {
         [](IntrinsicContext &context) {
                 return VmValue::Ref(context.vm.ThrowableMessage(context.receiver));
             });
+    builder.VirtualMethod("getLocalizedMessage", "()Ljava/lang/String;",
+        [](IntrinsicContext& context) {
+            return InvokeGuest(context.vm, context.receiver,
+                               "getMessage", "()Ljava/lang/String;");
+        });
     builder.OverrideMethod("toString", "()Ljava/lang/String;",
         [](IntrinsicContext &context) {
                 auto& vm = context.vm;
+                const auto message = InvokeGuest(vm, context.receiver,
+                    "getLocalizedMessage", "()Ljava/lang/String;").ref;
                 const auto java_class = vm.Model().ObjectClass(context.receiver);
                 std::string rendered = DottedName(
                     java_class.IsValid() ? vm.Linker().Class(java_class).descriptor
                                          : std::string("<throwable>"));
-                const auto message = vm.ThrowableMessage(context.receiver);
                 if (message.IsValid()) {
                     rendered += ": " + vm.StringUtf8(message);
                 }

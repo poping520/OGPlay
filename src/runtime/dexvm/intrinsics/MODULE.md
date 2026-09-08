@@ -94,6 +94,9 @@ readResolve/writeReplace、Externalizable 协议 1/2 与数组执行原版协议
 ObjectOutputStream.getFieldL 是 AOSP 未使用的遗留 native 声明，显式未实现绑定，不提供假返回。
 Proxy 两个生成 native、VMStack 除 getClasses 以外四个 native 同样明确失败。
 普通对象图迁移不代表 Throwable 等宿主侧表对象的完整持久化，不能据此宣称所有平台对象可序列化。
+Throwable.getLocalizedMessage 虚调用 receiver.getMessage；toString 虚调用
+getLocalizedMessage，保留 null（仅类名）与空串（类名加冒号）的区别。子类覆盖进入
+正常 VM 调用，保持消息引用、GC 强根及原异常身份，禁止直接读取 detailMessage 绕过覆盖。
 
 `java_zip.cpp` 聚合 `ZipEntry`/`ZipInputStream`。构造时经 guest read 读取源数据，
 archive/entry/cursor/close 状态只委托 per-VM `ZipRuntime`；ZIP32 结构校验、inflate

@@ -3122,6 +3122,74 @@ TEST_CASE("DVM-105 guest native admission is explicit and has no intrinsic handl
     CHECK_THROWS_AS(rejected.RegisterIntrinsics(std::array{invalid}), DexVmError);
 }
 
+TEST_CASE("DVM-114 Throwable localized messages honor DEX overrides and preserve failures") {
+    WithEachBackend([](InterpreterConfig config) {
+        auto host = IntrinsicClassBuilder::Class("Lthrowable/Host;");
+        host.StaticMethod("collect", "()V", [](IntrinsicContext& context) {
+            static_cast<void>(context.vm.CollectGarbage("throwable-message-callback"));
+            return VmValue::Void();
+        });
+        Vm f(config, {}, {std::move(host).Build()});
+        auto& vm = f.interpreter;
+        const auto call = [&](const VmObjectRef receiver, const std::string& name) {
+            return f.CallStatic("LThrowableMessageProbe;", name,
+                name == "inherited" ? "(LMessageException;)Ljava/lang/String;"
+                                    : "(Ljava/lang/Throwable;)Ljava/lang/String;",
+                {VmValue::Ref(receiver)});
+        };
+        const auto text = [&](const VmCallOutcome& outcome) {
+            REQUIRE_MESSAGE(!outcome.exception.IsValid(), outcome.exception_message);
+            return vm.StringUtf8(outcome.value.ref);
+        };
+        const auto base = vm.NewIntrinsicInstance("Ljava/lang/Exception;");
+        const auto base_root = vm.ProtectReferences(std::array{base});
+        for (const auto* message : std::array<const char*, 3>{nullptr, "", "message 中文"}) {
+            const auto ref = message ? vm.NewStringUtf8(message) : VmObjectRef{};
+            vm.SetThrowableMessage(base, ref);
+            const auto localized = call(base, "localized");
+            REQUIRE_FALSE(localized.exception.IsValid());
+            CHECK(localized.value.ref == ref);
+            CHECK(text(call(base, "render")) ==
+                  std::string("java.lang.Exception") + (message ? std::string(": ") + message : ""));
+        }
+        const auto type = f.linker.ResolveDescriptor("LMessageException;");
+        f.linker.EnsureClassLinked(type);
+        const auto object = f.model.NewInstance(type, f.linker.Class(type).instance_slots);
+        const auto object_root = vm.ProtectReferences(std::array{object});
+        const auto message_field = f.linker.FindFieldRecursive(type, "message", "Ljava/lang/String;");
+        const auto failure_field = f.linker.FindFieldRecursive(type, "failure", "Ljava/lang/Throwable;");
+        REQUIRE(message_field.has_value());
+        REQUIRE(failure_field.has_value());
+        vm.SetThrowableMessage(object, vm.NewStringUtf8("stored message must not bypass override"));
+        for (const auto* message : std::array<const char*, 3>{nullptr, "", "overridden 中文"}) {
+            const auto ref = message ? vm.NewStringUtf8(message) : VmObjectRef{};
+            f.model.InstanceSlots(object)[f.linker.Field(*message_field).slot] =
+                Slot{ref.Value(), SlotTag::ref};
+            const auto localized = call(object, "inherited");
+            REQUIRE_FALSE(localized.exception.IsValid());
+            CHECK(localized.value.ref == ref);
+            CHECK(text(call(object, "render")) ==
+                  std::string("MessageException") + (message ? std::string(": ") + message : ""));
+        }
+        const auto child_type = f.linker.ResolveDescriptor("LLocalizedException;");
+        f.linker.EnsureClassLinked(child_type);
+        const auto child = f.model.NewInstance(child_type, f.linker.Class(child_type).instance_slots);
+        const auto child_root = vm.ProtectReferences(std::array{child});
+        CHECK(text(call(child, "inherited")) == "localized");
+        CHECK(text(call(child, "render")) == "LocalizedException: localized");
+
+        const auto failure = vm.MakeThrowable("Ljava/lang/IllegalArgumentException;", "callback failure");
+        f.model.InstanceSlots(object)[f.linker.Field(*failure_field).slot] =
+            Slot{failure.Value(), SlotTag::ref};
+        for (const auto* method : {"localized", "inherited", "render"}) {
+            const auto outcome = call(object, method);
+            CHECK(outcome.exception == failure);
+            CHECK(outcome.exception_message == "callback failure");
+        }
+        CHECK(text(call(base, "render")) == "java.lang.Exception: message 中文");
+    });
+}
+
 TEST_CASE("DVM-105 Throwable cause retains identity across GC and rejects overwrites") {
     Vm fixture;
     auto& vm = fixture.interpreter;

@@ -1422,6 +1422,56 @@
     return v0
 .end method
 
+# DVM-114: inherited Throwable calls must dispatch to application overrides.
+.class public LMessageException;
+.super Ljava/lang/Exception;
+.field public message:Ljava/lang/String;
+.field public failure:Ljava/lang/Throwable;
+
+.method public getMessage()Ljava/lang/String;
+.registers 2
+    invoke-static {}, Lthrowable/Host;->collect()V
+    iget-object v0, v1, LMessageException;->failure:Ljava/lang/Throwable;
+    if-eqz v0, :message
+    throw v0
+    :message
+    iget-object v0, v1, LMessageException;->message:Ljava/lang/String;
+    return-object v0
+.end method
+
+.class public LLocalizedException;
+.super LMessageException;
+
+.method public getLocalizedMessage()Ljava/lang/String;
+.registers 2
+    const-string v0, "localized"
+    return-object v0
+.end method
+
+.class public LThrowableMessageProbe;
+.super Ljava/lang/Object;
+
+.method public static localized(Ljava/lang/Throwable;)Ljava/lang/String;
+.registers 2
+    invoke-virtual {v1}, Ljava/lang/Throwable;->getLocalizedMessage()Ljava/lang/String;
+    move-result-object v0
+    return-object v0
+.end method
+
+.method public static inherited(LMessageException;)Ljava/lang/String;
+.registers 2
+    invoke-virtual {v1}, LMessageException;->getLocalizedMessage()Ljava/lang/String;
+    move-result-object v0
+    return-object v0
+.end method
+
+.method public static render(Ljava/lang/Throwable;)Ljava/lang/String;
+.registers 2
+    invoke-virtual {v1}, Ljava/lang/Throwable;->toString()Ljava/lang/String;
+    move-result-object v0
+    return-object v0
+.end method
+
 # DVM-52: enters a test-only intrinsic which snapshots the active caller.
 .class public LDiagnosticsProbe;
 .super Ljava/lang/Object;

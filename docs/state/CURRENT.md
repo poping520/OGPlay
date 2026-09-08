@@ -1,7 +1,7 @@
 # 当前状态
 
-更新（2026-09-08）：[DVM-113](../tasks/dexvm/DVM-113.md) 补齐 Locale ISO 枚举；
-DVM-112 服务查询已提交 `c7859ed5`。
+更新（2026-09-08）：[DVM-114](../tasks/dexvm/DVM-114.md) 补齐 Throwable 消息虚分派；
+DVM-112/113 已提交 `c7859ed5`/`f78c893d`。
 
 ## 当前能力
 
@@ -23,11 +23,12 @@ DVM-112 服务查询已提交 `c7859ed5`。
   解析、属性、公钥编码、链签名、异常与 GC 受检。不含 PKIX 信任、系统 CA/撤销、TLS 或签名生成。
 - **集合与流**：List/Collection/Map 家族、普通 atomic/AQS、工具/事件/beans、内存/包装
   IO、Reader/Writer、X500 和 key spec 来自 API 19 DEX；普通字段/数组为唯一状态。
-  JNI 普通类/接口与嵌套数组使用同一 VM 类型关系。ObjectInputStream/ObjectOutputStream、描述符与辅助类
+  JNI 普通类/接口与嵌套数组使用VM 类型关系。ObjectInputStream/ObjectOutputStream、描述符与辅助类
   执行原版 Java，删除 C++ 协议及 handle 副本；私有读写/替换回调、GetField/PutField、默认 UID、
   循环引用、八种基本数组/对象数组和 Externalizable 协议 1/2 受检。六个 native 只处理构造
   token/元数据；SoftReference 普通 GC 保留、压力下清除入队，String.intern 保持弱 canonical 身份。
-  静态初始化非 Error 包装 EIIE/cause，Error 保持身份，后续访问 NCDFE；反射 wide get 异常已修正。
+  静态初始化非 Error 包装 EIIE/cause，Error 保持身份，后续访问 NCDFE；反射 wide get 已修正。
+  Throwable 本地化消息及 toString 保留子类虚分派与原异常身份。
 - **日期与值边界**：Format/DateFormat/SimpleDateFormat、NumberFormat/DecimalFormat、
   Date/Calendar/TimeZone 执行 BootDex。标准六字符集
   与 Locale 大小写、ISO 语言/国家代码枚举复用 ICU。BigInt/NativeBN 扩展至 17 个值原语，支持长整数编码转换，
@@ -46,18 +47,17 @@ DVM-112 服务查询已提交 `c7859ed5`。
   UTF-16 append 依赖已补。一般组件解析和非根 alias 切换仍未扩展。
 - **服务查询**：ServiceConnection 来自 BootDex。resolveService 的 action-only/flags=0
   查询依据当前 APK 服务信息，无候选返回 null，未知或潜在匹配明确失败；无 Binder/支付。
-- **Title**：PvZ 已越过语言代码校验，当前首错 Throwable.getLocalizedMessage；
+- **Title**：PvZ 已越过本地化消息查询，当前首错 Throwable.printStackTrace(PrintWriter)；
   尚未通过游戏 gate；Tales 首错 LocationListener。
-  A6 既有 gc_long 三轮各 3000 帧，无 guest fault 且 clean shutdown。
 
 ## 最近验证
 
-- DVM-113：回归 19 用例/7338 断言、staging 及 6 项门禁通过；制品重建一致。
-  证据 `.local/review/dvm113/`；历史验收见任务单。
+- DVM-114：消息/继承 9 用例、P1 18 用例、近期 7 用例回归及 4 项门禁通过。
+  证据 `.local/review/dvm114/`；历史验收见任务单。
 
-- 临时文件来自已核对 SHA-256 的 MoKee API 19 ARMv7 设备，存放于
-  `.local/android-device/20260906-cipher/`。手机已断开；本轮未做手机对照，正式发行前
-  须自行构建替换临时制品。macOS Release 沿用既有 WARNINGS_AS_ERRORS=OFF，
+- MoKee API 19 ARMv7 临时文件（哈希已核对）：
+  `.local/android-device/20260906-cipher/`。手机已断开；发行前
+  须自行构建替换临时制品。macOS Release 使用 WARNINGS_AS_ERRORS=OFF，
   仅构建 ogplay_tests 及 ogplay 依赖；未跑全量测试或 Windows/Linux 验收。
 - 已知门禁遗留：architecture.platform_boundaries 在既有 GUI process_manager.cpp:131
   平台分支失败，本轮未修改、未重跑该门禁。ADR 继续按 6 个主题维护，追加
@@ -65,7 +65,7 @@ DVM-112 服务查询已提交 `c7859ed5`。
 
 ## 下一步与边界
 
-1. 后续处理 Throwable.getLocalizedMessage 的继承分派。
+1. 处理 Throwable.printStackTrace(PrintWriter) 的真实栈/原因链输出。
 2. 自建 ARM libcrypto 替换临时制品；Windows/Linux、既有 GUI 门禁、DH 与 Diagnostics 验收。
 
 OGPlay 是老游戏兼容层；complete 只覆盖登记范围。具名时区/历史 DST、完整大数与

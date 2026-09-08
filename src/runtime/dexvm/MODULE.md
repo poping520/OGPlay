@@ -369,6 +369,8 @@ DVM-104 的 ZIP 适配器调用 BootDex FilterInputStream 构造以保持源强�
 - GC sweep 只排队，结束 sweep 后经正常 native frame 执行 cleanup，保存/恢复当前异常
   和返回值；teardown 在 guest process 停止前释放余下资源。native context 不持 Java 引用。
 - Throwable initCause/getCause 复用 throwable 状态表的强边，拒绝自因与重复初始化。
+  getLocalizedMessage→getMessage、toString→getLocalizedMessage 遵循虚分派，
+  子类回调经正常 VM 调用保留异常身份；默认消息的 null/空串语义对齐 API 19。
 
 DVM-107：framework Pair/Sparse/ComponentName 与 PrintWriter 的普通算法归 BootDex，
 StringBuilder/StringBuffer 共用 CharSequence 区间 append 原语：UTF-16 索引，虚派

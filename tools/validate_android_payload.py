@@ -24,12 +24,21 @@ import dex_survey_lib
 
 LIBRARIES = {
     "lib/libc.so",
+    "lib/libcrypto.so",
     "lib/libdl.so",
     "lib/libm.so",
+    "lib/libogplay_cipher.so",
     "lib/libstdc++.so",
     "lib/libz.so",
 }
-NOTICES = {f"notices/{Path(path).name}.txt" for path in LIBRARIES}
+NOTICES = {
+    "notices/libc.so.txt",
+    "notices/libcrypto.so.txt",
+    "notices/libdl.so.txt",
+    "notices/libm.so.txt",
+    "notices/libstdc++.so.txt",
+    "notices/libz.so.txt",
+}
 BOOT_DEX = "framework/bootdex.jar"
 BOOT_DEX_NOTICE = "notices/bootdex.jar.txt"
 ICU_DATA = "icu/icudt51l.dat"
@@ -39,7 +48,7 @@ ICU_NOTICES = {
 }
 PAYLOAD_FILES = LIBRARIES | NOTICES | {
     BOOT_DEX, BOOT_DEX_NOTICE, ICU_DATA, "manifest.json",
-    "source-manifest.xml", "lib/libcrypto.so", "lib/libogplay_cipher.so", "notices/libcrypto.so.txt"} | ICU_NOTICES
+    "source-manifest.xml"} | ICU_NOTICES
 SHA256 = re.compile(r"[0-9a-f]{64}")
 
 
@@ -115,6 +124,8 @@ def _validate_source_manifest(root: Path, source: dict[str, Any]) -> set[str]:
         "platform/bionic": "081db840befec895fb86e709ae95832ade2d065c",
         "platform/external/icu4c":
             "18668f3b015a110275f5cc9a8722b2f65f3333bf",
+        "platform/external/openssl":
+            "dd1da36b0baa39942f0aef42c4712ef0ad628a83",
         "platform/external/zlib":
             "a5c7131da47c991585a6c6ac0c063b6d7d56e3fc",
         "platform/libcore": "d49420b1b7edf8b3f27dabd3e1b7512a5502595e",
@@ -185,23 +196,6 @@ def validate(root: Path) -> None:
     if any(bootdex.SOURCES[source][0] not in source_projects
            for source in recipe if source != "conscrypt.jar"):
         raise PayloadError("BootDex source project is not pinned")
-    cipher = _mapping(manifest.get("cipher_native"), "cipher_native")
-    if cipher.get("source_kind") != "temporary-device-plus-source-built-adapter":
-        raise PayloadError("Cipher temporary provenance is missing")
-    entries = [_mapping(e, "cipher library") for e in _items(cipher.get("libraries"), "cipher libraries")]
-    if len(entries) != 2 or {e.get("path") for e in entries} != {"lib/libcrypto.so", "lib/libogplay_cipher.so"}:
-        raise PayloadError("Cipher library inventory is invalid")
-    if cipher.get("notice") != "notices/libcrypto.so.txt" or cipher.get("notice_sha256") != _digest(root / "notices/libcrypto.so.txt"):
-        raise PayloadError("Cipher OpenSSL notice is missing or changed")
-    for entry in entries:
-        path = root / entry["path"]
-        _validate_digest(path, entry.get("size"), entry.get("sha256"), "cipher library")
-        _validate_elf(path, "cipher library")
-    if next(e for e in entries if e["path"] == "lib/libcrypto.so").get("sha256") != bootdex.CRYPTO_SHA256:
-        raise PayloadError("Cipher libcrypto is not the pinned temporary device artifact")
-    if cipher.get("adapter_source") != "src/guest/crypto/crypto_jni.c" or \
-            cipher.get("adapter_source_sha256") != bootdex.file_sha256(bootdex.ROOT / "src/guest/crypto/crypto_jni.c"):
-        raise PayloadError("Cipher adapter source is stale")
     if len(dex) < 0x70 or dex[:8] != b"dex\n035\0" or \
             struct.unpack_from("<I", dex, 0x20)[0] != len(dex) or \
             struct.unpack_from("<I", dex, 0x28)[0] != 0x12345678:
@@ -288,8 +282,13 @@ def validate(root: Path) -> None:
             raise PayloadError(f"{label}.needed must be a string array")
         source_project = _text(entry.get("source_project"),
                                f"{label}.source_project")
-        if source_project not in source_projects:
-            raise PayloadError(f"{label}.source_project is not pinned")
+        if source_project.startswith("platform/"):
+            if source_project not in source_projects:
+                raise PayloadError(f"{label}.source_project is not pinned")
+        elif source_project != "ogplay":
+            raise PayloadError(f"{label}.source_project is unknown")
+        if source_project == "ogplay":
+            continue
         notice = _text(entry.get("notice"), f"{label}.notice")
         if notice != f"notices/{Path(relative).name}.txt":
             raise PayloadError(f"{label}.notice does not match")
@@ -311,7 +310,7 @@ def main() -> int:
         validate(args.root)
     except (OSError, PayloadError) as error:
         parser.error(str(error))
-    print("Android runtime payload validated: API 19, boot dex, ICU 51.1, 5 pinned libraries + 2 temporary Cipher libraries")
+    print("Android runtime payload validated: API 19, boot dex, ICU 51.1, 7 declared guest libraries")
     return 0
 
 

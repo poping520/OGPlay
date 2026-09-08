@@ -1228,7 +1228,7 @@ note = "DVM-7 注册/层级/布局/vtable/iftable 四步链接与懒结构预检
 [dexvm.boot_dex]
 status = "complete"
 test = "tests/dexvm/intrinsics_p1_tests.cpp; tests/frontend/data_directory_tests.cpp; tools.bootdex_builder_self_test; tools.android_payload_current; PvZ exact Profile reached-fault"
-note = "DVM-99..121 curated BootDex：日期、集合、普通流、X500、Cipher/JCA/Conscrypt AES 与 Certificate/Harmony/Signature 及 framework 值类、UUID/MessageDigest/摘要流和对象流、定时执行器依赖、ServiceConnection 与 Throwable/StackTraceElement 家族、BackupManager/RestoreObserver 、Bundle/ArrayMap 家族、DisplayMetrics/TypedValue 与 Math 及五类 LayoutParams 与 Typeface、ColorStateList/CREATOR、StateSet 与 R.attr 共 923 个 class_def。923 类全链接，Cipher/Certificate/集合普通 Java 算法均归 DEX；精确边界 overlay 与显式 guest JNI 声明受审。固定 recipe 可确定性重建，DEX/JAR 身份见 data/android/19/manifest.json。Conscrypt 为用户授权的临时设备来源，区别于 pinned core.jar；完整 core/framework、multidex、动态 classpath 与 Android 系统服务未纳入。 2026-09-07 ROM libcrypto 已撤出 Git，后按用户再次授权恢复到本地临时使用，完整 payload 校验通过；仍须自行构建替换并更新来源/哈希后复验。"
+note = "DVM-99..121 curated BootDex：日期、集合、普通流、X500、Cipher/JCA/Conscrypt AES 与 Certificate/Harmony/Signature 及 framework 值类、UUID/MessageDigest/摘要流和对象流、定时执行器依赖、ServiceConnection 与 Throwable/StackTraceElement 家族、BackupManager/RestoreObserver 、Bundle/ArrayMap 家族、DisplayMetrics/TypedValue 与 Math 及五类 LayoutParams 与 Typeface、ColorStateList/CREATOR、StateSet 与 R.attr 共 923 个 class_def。923 类全链接，Cipher/Certificate/集合普通 Java 算法均归 DEX；精确边界 overlay 与显式 guest JNI 声明受审。固定 recipe 可确定性重建，DEX/JAR 身份见 data/android/19/manifest.json。Conscrypt 为用户授权的临时设备来源，区别于 pinned core.jar；libcrypto 已替换为 AOSP android-4.4.4_r2.0.1 platform/external/openssl 的自建 ARM 库，来源 revision、哈希、许可证和 payload 校验约束已固定；完整 core/framework、multidex、动态 classpath 与 Android 系统服务未纳入。"
 
 [dexvm.date_format_bootdex_audit]
 status = "complete"

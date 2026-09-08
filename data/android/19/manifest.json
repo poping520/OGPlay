@@ -109,6 +109,21 @@
       "notice_sha256": "ca5b0ccbc98bcc4a4f97ec73dd6ffeeda27de5ca7e49ad81dfc04729ec5dc53a"
     },
     {
+      "path": "lib/libcrypto.so",
+      "source_project": "platform/external/openssl",
+      "size": 953244,
+      "sha256": "7d38659dfd49d7a02d229a4712c5090fdfbdb3db9b6618b773bf86ace9703f2a",
+      "soname": "libcrypto.so",
+      "needed": [
+        "libc.so",
+        "libstdc++.so",
+        "libm.so",
+        "libdl.so"
+      ],
+      "notice": "notices/libcrypto.so.txt",
+      "notice_sha256": "257fe1b542f846557d0fc938f4206d6c9a6334e2b571fa020e51f96377537120"
+    },
+    {
       "path": "lib/libdl.so",
       "source_project": "platform/bionic",
       "size": 9220,
@@ -129,6 +144,17 @@
       ],
       "notice": "notices/libm.so.txt",
       "notice_sha256": "04d431d8c33eb0fa98bbb0bf04bce47e6ba14f165db44aa05243dd1c05000dbf"
+    },
+    {
+      "path": "lib/libogplay_cipher.so",
+      "source_project": "ogplay",
+      "size": 28004,
+      "sha256": "f47cf47971eba5d16c1379a162f00f3b5bc8b0fb8bf8aa8a87c54b70d6daa2d5",
+      "soname": "libogplay_cipher.so",
+      "needed": [
+        "libcrypto.so",
+        "libc.so"
+      ]
     },
     {
       "path": "lib/libstdc++.so",
@@ -156,41 +182,5 @@
       "notice": "notices/libz.so.txt",
       "notice_sha256": "60c2c920b6af058e3b9659a19e2e667985c9ac193d426309925077a511f32a45"
     }
-  ],
-  "cipher_native": {
-    "source_kind": "temporary-device-plus-source-built-adapter",
-    "device": "MoKee Android 4.4.4 API 19 ARMv7, extracted 2026-09-06",
-    "replacement": "Replace with a self-built API 19 ARM OpenSSL and update pinned hashes before distribution.",
-    "generator": "tools/bootdex/build_bootdex.py build-cipher",
-    "adapter_source": "src/guest/crypto/crypto_jni.c",
-    "adapter_source_sha256": "049fa8d78b1416b36ae5686297e7411944fa4d3330ea133cef368f40913bb6ad",
-    "notice": "notices/libcrypto.so.txt",
-    "notice_sha256": "257fe1b542f846557d0fc938f4206d6c9a6334e2b571fa020e51f96377537120",
-    "compiler_sha256": "7f30f076d0e9c38f772a76449fca9da8cf97f6a3d43b94c90a00e4f9ce7ad39e",
-    "linker_sha256": "0ba311a537cf5a03f7046849a4a6a5c54d8db827e35519d9ebcd8e61a862546b",
-    "compile_flags": [
-      "--target=armv7a-linux-androideabi19",
-      "-march=armv7-a",
-      "-mfloat-abi=softfp",
-      "-fPIC",
-      "-ffreestanding",
-      "-fno-stack-protector",
-      "-O2",
-      "-Wall",
-      "-Wextra",
-      "-Werror"
-    ],
-    "libraries": [
-      {
-        "path": "lib/libcrypto.so",
-        "sha256": "3c7ea441e482f50244f74774bc7230449f82911831ceb4ce937ca176041e6f17",
-        "size": 953268
-      },
-      {
-        "path": "lib/libogplay_cipher.so",
-        "sha256": "f47cf47971eba5d16c1379a162f00f3b5bc8b0fb8bf8aa8a87c54b70d6daa2d5",
-        "size": 28004
-      }
-    ]
-  }
+  ]
 }

@@ -522,7 +522,7 @@ def self_test() -> int:
         ensure_tool(destination, source.as_uri(), sha256(sample))
         if destination.read_bytes() != sample:
             raise BuildError("tool download failed")
-        # A withdrawn payload must not be resurrected from a device extraction.
+        # The builder must consume only the explicitly prepared, pinned payload.
         fake_device = Path(work) / "device/framework"
         (fake_device.parent / "lib").mkdir(parents=True)
         (fake_device.parent / "lib/libcrypto.so").write_bytes(sample)
@@ -535,22 +535,21 @@ def self_test() -> int:
                 if "data/android/19/lib/libcrypto.so" not in str(error):
                     raise
             else:
-                raise BuildError("guest crypto build accepted withdrawn input")
+                raise BuildError("guest crypto build accepted an unprepared input")
         if fake_manifest.parent.exists():
-            raise BuildError("guest crypto build restored withdrawn payload")
+            raise BuildError("guest crypto build restored an unprepared payload")
     print("BootDex builder self-test passed")
     return 0
 
 
-CRYPTO_SHA256 = "3c7ea441e482f50244f74774bc7230449f82911831ceb4ce937ca176041e6f17"
+CRYPTO_SHA256 = "7d38659dfd49d7a02d229a4712c5090fdfbdb3db9b6618b773bf86ace9703f2a"
 
 def build_cipher() -> int:
-    """Build the small ARM JNI adapter; keep temporary device provenance separate."""
-    # Never restore withdrawn ROM artifacts from the private device extraction.
+    """Build the small ARM JNI adapter from the pinned AOSP OpenSSL payload."""
     crypto = MANIFEST.parent / "lib/libcrypto.so"
     if not crypto.is_file() or file_sha256(crypto) != CRYPTO_SHA256:
         raise BuildError("missing or unexpected data/android/19/lib/libcrypto.so; "
-                         "prepare the self-built API 19 ARM library and update its provenance/pin first")
+                         "prepare the pinned AOSP API 19 ARM library first")
     clang = shutil.which("clang")
     linker = shutil.which("ld.lld")
     if not linker:
@@ -574,21 +573,12 @@ def build_cipher() -> int:
             raise BuildError("two guest Cipher builds differ")
     (MANIFEST.parent / "lib/libogplay_cipher.so").write_bytes(library)
     document = json.loads(MANIFEST.read_text(encoding="utf-8"))
-    document["cipher_native"] = {
-        "source_kind": "temporary-device-plus-source-built-adapter",
-        "device": "MoKee Android 4.4.4 API 19 ARMv7, extracted 2026-09-06",
-        "replacement": "Replace with a self-built API 19 ARM OpenSSL and update pinned hashes before distribution.",
-        "generator": "tools/bootdex/build_bootdex.py build-cipher",
-        "adapter_source": "src/guest/crypto/crypto_jni.c",
-        "adapter_source_sha256": file_sha256(source),
-        "notice": "notices/libcrypto.so.txt",
-        "notice_sha256": file_sha256(MANIFEST.parent / "notices/libcrypto.so.txt"),
-        "compiler_sha256": file_sha256(Path(clang).resolve()),
-        "linker_sha256": file_sha256(Path(linker).resolve()),
-        "compile_flags": flags,
-        "libraries": [{"path": "lib/libcrypto.so", "sha256": CRYPTO_SHA256, "size": crypto.stat().st_size},
-                      {"path": "lib/libogplay_cipher.so", "sha256": sha256(library), "size": len(library)}],
-    }
+    entries = {entry.get("path"): entry for entry in document.get("libraries", [])}
+    adapter = entries.get("lib/libogplay_cipher.so")
+    if not isinstance(adapter, dict):
+        raise BuildError("manifest is missing lib/libogplay_cipher.so")
+    adapter["size"] = len(library)
+    adapter["sha256"] = sha256(library)
     MANIFEST.write_text(json.dumps(document, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     print("Built deterministic API 19 ARM crypto JNI adapter using the prepared libcrypto")
     return 0

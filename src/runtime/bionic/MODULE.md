@@ -40,4 +40,5 @@ integration。线程和 syscall 只通过上层装配接入。
 
 DVM-105：API 19 guest 库增加 libcrypto.so 和 libogplay_cipher.so；API 22/23 保持五库。
 两库作为普通 ARM ELF 执行，依赖复用 pinned libc/libm/libdl/libstdc++，无宿主 EVP/AES
-替代。设备临时来源和源构建 JNI 桥单列 manifest.cipher_native，不冒充 AOSP 五库来源。
+替代。libcrypto 固定为 AOSP android-4.4.4_r2.0.1 的 platform/external/openssl 源码构建，
+源构建 JNI 桥及精确来源直接记录在 manifest.libraries。

@@ -12,9 +12,16 @@ namespace ogplay::loader {
 
 // Strict resources.arsc (ResTable) reader for the facts legacy titles
 // actually consume: resource id -> (type, entry name, typed simple value) and
-// (type, entry name) -> resource id. Complex/styled values, locales other
-// than the default configuration and attribute resolution are out of scope;
+// (type, entry name) -> resource id. Bag parent/items are retained; locales other
+// than the default configuration and attribute resolution belong to the caller;
 // malformed chunks fail loudly (same posture as ZIP/Manifest/DEX parsing).
+
+struct ArscBagValue final {
+    std::uint32_t name{};
+    std::uint8_t value_type{};
+    std::uint32_t value_data{};
+    std::optional<std::string> string_value;
+};
 
 struct ArscEntry final {
     std::uint32_t resource_id{};
@@ -23,9 +30,12 @@ struct ArscEntry final {
     // TYPE_STRING values carry the file path inside the APK.
     std::optional<std::string> string_value;
     // Simple Res_value is retained losslessly for UI string/color/dimension
-    // and reference resolution. Complex style bags remain out of scope.
+    // and reference resolution. Bag entries preserve the same typed values.
     std::uint8_t value_type{};
     std::uint32_t value_data{};
+    bool is_complex{};
+    std::uint32_t parent{};
+    std::vector<ArscBagValue> bag;
 };
 
 struct ArscTable final {

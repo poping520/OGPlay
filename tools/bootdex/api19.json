@@ -891,11 +891,14 @@
       "Lcom/android/org/conscrypt/util/EmptyArray;"
     ],
     "framework.jar": [
+      "Landroid/R$attr;",
       "Landroid/app/backup/BackupManager;",
       "Landroid/app/backup/RestoreObserver;",
       "Landroid/content/ComponentName$1;",
       "Landroid/content/ComponentName;",
       "Landroid/content/ServiceConnection;",
+      "Landroid/content/res/ColorStateList$1;",
+      "Landroid/content/res/ColorStateList;",
       "Landroid/graphics/Typeface;",
       "Landroid/os/Bundle$1;",
       "Landroid/os/Bundle;",
@@ -918,6 +921,7 @@
       "Landroid/util/SparseBooleanArray;",
       "Landroid/util/SparseIntArray;",
       "Landroid/util/SparseLongArray;",
+      "Landroid/util/StateSet;",
       "Landroid/util/TypedValue;",
       "Landroid/view/ViewGroup$LayoutParams;",
       "Landroid/view/ViewGroup$MarginLayoutParams;",

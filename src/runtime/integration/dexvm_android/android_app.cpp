@@ -712,5 +712,11 @@ void AttachAndroidActivityIdentity(dexvm::Interpreter& vm,
     };
     store("mComponent", "Landroid/content/ComponentName;", component);
     store("mIntent", "Landroid/content/Intent;", intent);
+    const auto theme = context->activity_themes.find(component_name);
+    const auto resource = theme == context->activity_themes.end()
+        ? context->application_theme : theme->second;
+    if (resource != 0)
+        static_cast<void>(CallAndroidMethod(vm, activity, "setTheme", "(I)V",
+            {dx::VmValue::Int(static_cast<std::int32_t>(resource))}));
 }
 } // namespace ogplay::runtime

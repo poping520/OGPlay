@@ -1228,7 +1228,7 @@ note = "DVM-7 注册/层级/布局/vtable/iftable 四步链接与懒结构预检
 [dexvm.boot_dex]
 status = "complete"
 test = "tests/dexvm/intrinsics_p1_tests.cpp; tests/frontend/data_directory_tests.cpp; tools.bootdex_builder_self_test; tools.android_payload_current; PvZ exact Profile reached-fault"
-note = "DVM-99..120 curated BootDex：日期、集合、普通流、X500、Cipher/JCA/Conscrypt AES 与 Certificate/Harmony/Signature 及 framework 值类、UUID/MessageDigest/摘要流和对象流、定时执行器依赖、ServiceConnection 与 Throwable/StackTraceElement 家族、BackupManager/RestoreObserver 、Bundle/ArrayMap 家族、DisplayMetrics/TypedValue 与 Math 及五类 LayoutParams 与 Typeface 共 919 个 class_def。919 类全链接，Cipher/Certificate/集合普通 Java 算法均归 DEX；精确边界 overlay 与显式 guest JNI 声明受审。固定 recipe 可确定性重建，DEX/JAR 身份见 data/android/19/manifest.json。Conscrypt 为用户授权的临时设备来源，区别于 pinned core.jar；完整 core/framework、multidex、动态 classpath 与 Android 系统服务未纳入。 2026-09-07 ROM libcrypto 已撤出 Git，后按用户再次授权恢复到本地临时使用，完整 payload 校验通过；仍须自行构建替换并更新来源/哈希后复验。"
+note = "DVM-99..121 curated BootDex：日期、集合、普通流、X500、Cipher/JCA/Conscrypt AES 与 Certificate/Harmony/Signature 及 framework 值类、UUID/MessageDigest/摘要流和对象流、定时执行器依赖、ServiceConnection 与 Throwable/StackTraceElement 家族、BackupManager/RestoreObserver 、Bundle/ArrayMap 家族、DisplayMetrics/TypedValue 与 Math 及五类 LayoutParams 与 Typeface、ColorStateList/CREATOR、StateSet 与 R.attr 共 923 个 class_def。923 类全链接，Cipher/Certificate/集合普通 Java 算法均归 DEX；精确边界 overlay 与显式 guest JNI 声明受审。固定 recipe 可确定性重建，DEX/JAR 身份见 data/android/19/manifest.json。Conscrypt 为用户授权的临时设备来源，区别于 pinned core.jar；完整 core/framework、multidex、动态 classpath 与 Android 系统服务未纳入。 2026-09-07 ROM libcrypto 已撤出 Git，后按用户再次授权恢复到本地临时使用，完整 payload 校验通过；仍须自行构建替换并更新来源/哈希后复验。"
 
 [dexvm.date_format_bootdex_audit]
 status = "complete"
@@ -1453,7 +1453,7 @@ note = "DVM-18 复用严格 binary XML reader 发布 aapt 保留的 START/TEXT/E
 [loader.arsc]
 status = "complete"
 test = "tests/dexvm/arsc_tests.cpp"
-note = "DVM-15 严格 resources.arsc 读取：resid↔(type,name,文件路径)双向查询，UTF-8/UTF-16 string pool，默认配置优先；复杂值/多 locale 明确不支持，越界即失败；本地 exact 交叉验证 0x7f040009→res/raw/raw_000.ogg 与 v1 人工 pattern 一致"
+note = "DVM-15 严格 resources.arsc 读取：resid↔(type,name,文件路径)双向查询，UTF-8/UTF-16 string pool，保留既有配置选择；DVM-121 保留复杂 bag parent/typed items，校验 entry/value/map 边界、重复键和字符串索引；多 locale/动态 qualifier 未扩展，越界即失败；本地 exact 交叉验证 0x7f040009→res/raw/raw_000.ogg 与 v1 人工 pattern 一致"
 
 [session.dex_activity_lifecycle]
 status = "complete"
@@ -1584,3 +1584,8 @@ note = "DVM-112/ADR-0042：ServiceConnection 原版双回调接口选入 BootDex
 status = "partial"
 test = "tests/dexvm/android_value_tests.cpp"
 note = "DVM-120 Typeface 的常量/缓存/工厂/样式/相等查询来自 BootDex；内置字体四样式通过有限不可变 native 描述符对接真实 measure/raster。family 保留身份并使用内置回退字形；TextView 保存 Java 引用，文件/asset 字体明确记账失败。不含 Skia、系统字体匹配或完整 Paint/Canvas 字体能力。"
+
+[dexvm.text_appearance]
+status = "partial"
+test = "tests/dexvm/android_value_tests.cpp; tests/dexvm/arsc_tests.cpp; tests/loader/apk_manifest_tests.cpp"
+note = "DVM-121 ColorStateList/CREATOR、StateSet、R.attr 来自 BootDex；Manifest theme 经 session 传入 Activity，TextView 支持 APK style parent/reference/attribute、直接颜色/尺寸/字体。平台注册部分主题的 hint/highlight/link 投影；attr ID 不冒充 style。普通字段保持颜色引用，真实 UI 消费文本色/尺寸/字体，hint/link/highlight 仅存储可查询。未登记 framework style、stateful 渲染/selector、shadow/allCaps 和完整主题明确失败。"

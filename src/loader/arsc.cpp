@@ -1,6 +1,7 @@
 #include "ogplay/loader/arsc.h"
 
 #include <algorithm>
+#include <unordered_set>
 
 #include "ogplay/core/byte_order.h"
 
@@ -214,13 +215,22 @@ ArscTable ParseArsc(const std::span<const std::uint8_t> bytes) {
                         Fail(sub.offset,
                              "resources.arsc type id is out of range");
                     }
+                    if (sub.header_size < 20 || entries_start < sub.header_size ||
+                        entries_start > sub.size || entry_count > (entries_start - sub.header_size) / 4U)
+                        Fail(sub.offset, "resources.arsc entry offset table escapes type chunk");
                     for (std::uint32_t index = 0; index < entry_count;
                          ++index) {
                         const auto entry_offset = reader.U32(
                             sub.Body() + static_cast<std::size_t>(index) * 4);
                         if (entry_offset == kNoEntry) continue;
+                        if (entry_offset > sub.size - entries_start ||
+                            sub.size - entries_start - entry_offset < 8U)
+                            Fail(sub.offset, "resources.arsc entry escapes type chunk");
                         const auto entry_base =
                             sub.offset + entries_start + entry_offset;
+                        const auto entry_size = reader.U16(entry_base);
+                        if (entry_size < 8 || entry_size > sub.End() - entry_base)
+                            Fail(entry_base, "resources.arsc invalid entry size");
                         const auto entry_flags = reader.U16(entry_base + 2);
                         const auto key_index = reader.U32(entry_base + 4);
                         if (key_index >= key_names.size()) {
@@ -234,16 +244,42 @@ ArscTable ParseArsc(const std::span<const std::uint8_t> bytes) {
                             index;
                         entry.type_name = type_names[type_id - 1];
                         entry.entry_name = key_names[key_index];
-                        if ((entry_flags & kEntryFlagComplex) == 0) {
-                            const auto value_base = entry_base + 8;
-                            const auto data_type =
-                                reader.U8(value_base + 3);
-                            const auto data = reader.U32(value_base + 4);
-                            entry.value_type = data_type;
-                            entry.value_data = data;
-                            if (data_type == kValueTypeString &&
-                                data < global_strings.size()) {
-                                entry.string_value = global_strings[data];
+                        const auto read_value = [&](std::size_t value_base) {
+                            if (value_base > sub.End() || sub.End() - value_base < 8U ||
+                                reader.U16(value_base) != 8 || reader.U8(value_base + 2) != 0)
+                                Fail(value_base, "resources.arsc invalid typed value");
+                            ArscBagValue value;
+                            value.value_type = reader.U8(value_base + 3);
+                            value.value_data = reader.U32(value_base + 4);
+                            if (value.value_type == kValueTypeString) {
+                                if (value.value_data >= global_strings.size())
+                                    Fail(value_base, "resources.arsc string index out of range");
+                                value.string_value = global_strings[value.value_data];
+                            }
+                            return value;
+                        };
+                        entry.is_complex = (entry_flags & kEntryFlagComplex) != 0;
+                        if (!entry.is_complex) {
+                            const auto value = read_value(entry_base + entry_size);
+                            entry.value_type = value.value_type;
+                            entry.value_data = value.value_data;
+                            entry.string_value = value.string_value;
+                        } else {
+                            if (entry_size < 16)
+                                Fail(entry_base, "resources.arsc truncated bag header");
+                            entry.parent = reader.U32(entry_base + 8);
+                            const auto count = reader.U32(entry_base + 12);
+                            const auto map_base = entry_base + entry_size;
+                            if (count > (sub.End() - map_base) / 12U)
+                                Fail(map_base, "resources.arsc bag items escape type chunk");
+                            std::unordered_set<std::uint32_t> names;
+                            for (std::uint32_t item = 0; item < count; ++item) {
+                                const auto item_base = map_base + static_cast<std::size_t>(item) * 12;
+                                auto value = read_value(item_base + 4);
+                                value.name = reader.U32(item_base);
+                                if (!names.insert(value.name).second)
+                                    Fail(item_base, "resources.arsc duplicate bag item");
+                                entry.bag.push_back(std::move(value));
                             }
                         }
                         // First (default) configuration wins; later configs

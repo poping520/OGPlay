@@ -208,7 +208,7 @@ TEST_CASE("android intrinsic catalog is unique and directly bound") {
   CHECK(method_count("Landroid/os/ResultReceiver$MyRunnable;") == 2);
   CHECK(method_count("Landroid/view/View$OnFocusChangeListener;") == 1);
   CHECK(method_count("Landroid/content/pm/PackageManager;") == 6);
-  CHECK(method_count("Landroid/widget/TextView;") == 17);
+  CHECK(method_count("Landroid/widget/TextView;") == 31);
   CHECK(method_count("Ljavax/microedition/khronos/egl/EGL10;") == 25);
   CHECK(method_count("Ljavax/microedition/khronos/egl/EGL10$Impl;") == 25);
 }

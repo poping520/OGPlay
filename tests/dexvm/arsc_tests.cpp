@@ -61,11 +61,11 @@ std::vector<std::uint8_t> Utf8Pool(
     return pool;
 }
 
-std::vector<std::uint8_t> SyntheticArsc() {
+std::vector<std::uint8_t> SyntheticArsc(bool bag = false) {
     // Global pool: one path string. Type pool: ["raw"]. Key pool:
     // ["raw_000", "raw_001"].
     const auto global = Utf8Pool({"res/raw/raw_000.ogg"});
-    const auto type_pool = Utf8Pool({"raw"});
+    const auto type_pool = Utf8Pool({bag ? "style" : "raw"});
     const auto key_pool = Utf8Pool({"raw_000", "raw_001"});
 
     // Type chunk: two entries, second one absent.
@@ -84,14 +84,20 @@ std::vector<std::uint8_t> SyntheticArsc() {
     PushU32(type_chunk, 0xFFFFFFFF);  // entry 1 absent
     const auto entries_start = type_chunk.size();
     PatchU32(type_chunk, 16, static_cast<std::uint32_t>(entries_start));
-    // entry 0: ResTable_entry + Res_value(TYPE_STRING -> global[0])
-    PushU16(type_chunk, 8);   // entry size
-    PushU16(type_chunk, 0);   // flags
-    PushU32(type_chunk, 0);   // key index -> "raw_000"
-    PushU16(type_chunk, 8);   // value size
-    type_chunk.push_back(0);  // res0
-    type_chunk.push_back(0x03);  // TYPE_STRING
-    PushU32(type_chunk, 0);      // global string 0
+    if (bag) {
+        PushU16(type_chunk, 16); PushU16(type_chunk, 1); PushU32(type_chunk, 0);
+        PushU32(type_chunk, 0x01030005); PushU32(type_chunk, 2);
+        PushU32(type_chunk, 0x01010095);
+        PushU16(type_chunk, 8); type_chunk.push_back(0); type_chunk.push_back(5);
+        PushU32(type_chunk, 0x00000e02); // 14sp
+        PushU32(type_chunk, 0x01010098);
+        PushU16(type_chunk, 8); type_chunk.push_back(0); type_chunk.push_back(0x1c);
+        PushU32(type_chunk, 0xff123456);
+    } else {
+        PushU16(type_chunk, 8); PushU16(type_chunk, 0); PushU32(type_chunk, 0);
+        PushU16(type_chunk, 8); type_chunk.push_back(0); type_chunk.push_back(3);
+        PushU32(type_chunk, 0);
+    }
     PatchU32(type_chunk, 4, static_cast<std::uint32_t>(type_chunk.size()));
 
     // Package chunk.
@@ -186,4 +192,31 @@ TEST_CASE("arsc reader agrees with the local exact APK when present") {
     CHECK(base->entry_name == "raw_000");
     REQUIRE(base->string_value.has_value());
     CHECK(*base->string_value == "res/raw/raw_000.ogg");
+}
+
+TEST_CASE("DVM-121 ARSC bags preserve parent and typed values and reject corrupt maps") {
+    const auto bytes = SyntheticArsc(true);
+    const auto table = ogplay::loader::ParseArsc(bytes);
+    const auto* style = table.FindById(0x7f010000);
+    REQUIRE(style != nullptr);
+    CHECK(style->is_complex);
+    CHECK(style->parent == 0x01030005);
+    REQUIRE(style->bag.size() == 2);
+    CHECK(style->bag[0].name == 0x01010095);
+    CHECK(style->bag[0].value_type == 5);
+    CHECK(style->bag[0].value_data == 0x00000e02);
+    CHECK(style->bag[1].value_data == 0xff123456);
+    auto corrupt = bytes;
+    const auto start = bytes.size() - 40;
+    PatchU32(corrupt, start + 12, 0xffffffffU);
+    CHECK_THROWS(ogplay::loader::ParseArsc(corrupt));
+    corrupt = bytes;
+    PatchU32(corrupt, start + 28, 0x01010095); // duplicate name
+    CHECK_THROWS(ogplay::loader::ParseArsc(corrupt));
+    corrupt = bytes;
+    corrupt[start + 20] = 7; // invalid Res_value size
+    CHECK_THROWS(ogplay::loader::ParseArsc(corrupt));
+    corrupt = bytes;
+    corrupt[start] = 8; // truncated ResTable_map_entry
+    CHECK_THROWS(ogplay::loader::ParseArsc(corrupt));
 }

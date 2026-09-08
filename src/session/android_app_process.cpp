@@ -136,6 +136,18 @@ public:
         context->application_class_name = manifest.application_class;
         context->application_label = manifest.application_label;
         context->application_icon = manifest.application_icon.value_or(0U);
+        context->application_theme = manifest.application_theme.value_or(0U);
+        context->activity_themes.clear();
+        for (const auto& component : manifest.activity_components) {
+            auto theme = component.theme.value_or(0U);
+            if (component.target_activity && !component.theme) {
+                for (const auto& target : manifest.activity_components)
+                    if (target.name == *component.target_activity)
+                        theme = target.theme.value_or(0U);
+            }
+            if (theme == 0) theme = context->application_theme;
+            context->activity_themes.emplace(component.name, theme);
+        }
         context->application_meta_data.clear();
         for (const auto& item : manifest.application_meta_data) {
             context->application_meta_data.emplace(item.name, item.value);

@@ -75,6 +75,8 @@ struct DexVmAndroidContext final {
     std::string application_class_name;
     std::optional<loader::AndroidManifestLabel> application_label;
     std::uint32_t application_icon{};
+    std::uint32_t application_theme{};
+    std::unordered_map<std::string, std::uint32_t> activity_themes;
     std::unordered_map<std::string, loader::AndroidManifestMetaDataValue>
         application_meta_data;
     std::vector<std::string> requested_permissions;

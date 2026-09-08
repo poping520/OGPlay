@@ -31,8 +31,9 @@
   UTF-8/UTF-16 string pool、chunk、attribute 和元素 nesting 全部受检，畸形输入明确失败。
 - `ParseArsc`：严格读取 resources.arsc（ResTable/string pool/package/type/entry），
   产出 resid ↔ (type, name, typed simple value/文件路径) 双向事实；Res_value type/data
-  原样保留给上层有界 string/color/dimension/reference resolver；默认配置优先，复杂值与多 locale
-  明确不支持，越界/截断即失败。
+  原样保留给上层有界 string/color/dimension/reference resolver；DVM-121 保留复杂 bag 的
+  parent/typed items，校验 entry/value/map 边界、重复键与字符串索引；沿用既有配置选择，
+  不扩展多 locale/动态 qualifier，越界/截断即失败。
 - `ReadApkArmNativeLibraries` / `ReadApkNativeLibraryInventory`：稳定枚举
   `lib/armeabi[-v7a]/*.so`，拥有解压字节与小写 SHA-256，并按 ABI、entry basename
   soname、`lib<logical>.so` logical name 建立不可变 inventory；此阶段不解析 ELF
@@ -148,3 +149,6 @@
 
 DVM-105：空 APK inventory 可建立空 ApkSelectedNativeLibraries 视图，以加载系统 JNI。
 非空 inventory 缺少指定 ABI 仍拒绝；ResolveApkProcessAbi 对空 inventory 的报错保持。
+
+DVM-121：Manifest application/Activity 的 theme 保留 resource id；activity-alias 不覆盖
+目标 Activity 的 theme。loader 不应用主题或展开资源继承，0/缺省回退由 session 处理。

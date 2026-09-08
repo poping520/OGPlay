@@ -906,6 +906,7 @@ TEST_CASE("dynamic ViewGroup hierarchy shares layout params and geometry") {
     vm.CallOn(replacement, "setMargins", "(IIII)V",
               {VmValue::Int(0), VmValue::Int(2), VmValue::Int(0),
                VmValue::Int(3)});
+    vm.CallOn(weighted, "requestLayout", "()V");
     CHECK(vm.CallOn(weighted, "getTop", "()I").AsInt() == 7);
     CHECK(vm.CallOn(fixed, "getTop", "()I").AsInt() == 20);
 
@@ -1233,6 +1234,7 @@ TEST_CASE("RelativeLayout Java rules update attached geometry") {
     vm.CallOn(dependent_params, "addRule", "(II)V",
               {VmValue::Int(1), VmValue::Int(0)});
     vm.CallOn(dependent_params, "addRule", "(I)V", {VmValue::Int(14)});
+    vm.CallOn(dependent, "requestLayout", "()V");
     CHECK(vm.CallOn(dependent, "getLeft", "()I").AsInt() == 47);
     CHECK(vm.CallOn(dependent, "getTop", "()I").AsInt() == 10);
 }

@@ -16,6 +16,7 @@ constexpr std::uint32_t kVerticalMask = 0x70;
 constexpr std::uint32_t kRight = 0x05;
 constexpr std::uint32_t kCenterHorizontal = 0x01;
 constexpr std::uint32_t kBottom = 0x50;
+constexpr std::uint32_t kTop = 0x30;
 constexpr std::uint32_t kCenterVertical = 0x10;
 
 [[nodiscard]] std::int32_t ClampSize(const std::int32_t desired,
@@ -436,6 +437,42 @@ void LayoutRelativeChildren(UiTree& tree, const UiNodeId id,
         static_cast<void>(resolve_horizontal(child_id));
         static_cast<void>(resolve_vertical(child_id));
     }
+    // RelativeLayout gravity moves the resolved children as one group.
+    // Default START/TOP preserves explicit parent/sibling positioning.
+    std::optional<Rect> group;
+    for (const auto child_id : parent.children) {
+        const auto& child = *tree.Get(child_id);
+        if (child.visibility == Visibility::Gone) continue;
+        const Rect bounds{lefts.at(child_id) - child.layout.margin.left,
+                          tops.at(child_id) - child.layout.margin.top,
+                          lefts.at(child_id) + child.measured.width + child.layout.margin.right,
+                          tops.at(child_id) + child.measured.height + child.layout.margin.bottom};
+        if (!group) group = bounds;
+        else {
+            group->left = std::min(group->left, bounds.left);
+            group->top = std::min(group->top, bounds.top);
+            group->right = std::max(group->right, bounds.right);
+            group->bottom = std::max(group->bottom, bounds.bottom);
+        }
+    }
+    std::int32_t offset_x{}, offset_y{};
+    const auto horizontal = parent.gravity & 0x00800007U;
+    const auto vertical = parent.gravity & kVerticalMask;
+    if (group && horizontal != 0 && horizontal != 0x00800003U) {
+        auto target = content_left;
+        const auto width = group->right - group->left;
+        if ((horizontal & kHorizontalMask) == kCenterHorizontal)
+            target += (content_right - content_left - width) / 2;
+        else if ((horizontal & kHorizontalMask) == kRight) target = content_right - width;
+        offset_x = target - group->left;
+    }
+    if (group && vertical != 0 && vertical != kTop) {
+        auto target = content_top;
+        const auto height = group->bottom - group->top;
+        if (vertical == kCenterVertical) target += (content_bottom - content_top - height) / 2;
+        else if (vertical == kBottom) target = content_bottom - height;
+        offset_y = target - group->top;
+    }
     for (const auto child_id : parent.children) {
         auto& child = *tree.Get(child_id);
         if (child.visibility == Visibility::Gone) {
@@ -443,8 +480,8 @@ void LayoutRelativeChildren(UiTree& tree, const UiNodeId id,
             child.screen_frame = {};
             continue;
         }
-        const auto left = lefts.at(child_id);
-        const auto top = tops.at(child_id);
+        const auto left = lefts.at(child_id) + offset_x;
+        const auto top = tops.at(child_id) + offset_y;
         child.frame = {left, top, left + child.measured.width,
                        top + child.measured.height};
         LayoutNode(tree, child_id, screen_x + left, screen_y + top);

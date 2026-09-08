@@ -359,6 +359,96 @@ TEST_CASE("DVM-118 Resources metrics share display facts and BootDex value seman
     }
 }
 
+TEST_CASE("DVM-119 Java layout params drive FrameLayout geometry and copy semantics") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        AndroidValueVm f(backend);
+        f.context->surface_width = 100;
+        f.context->surface_height = 100;
+        const auto activity = f.New("Landroid/app/Activity;");
+        const auto frame = f.New("Landroid/widget/FrameLayout;", "(Landroid/content/Context;)V",
+                                  {VmValue::Ref(activity)});
+        const auto frame_params = f.New("Landroid/view/ViewGroup$LayoutParams;", "(II)V",
+                                         {VmValue::Int(-1), VmValue::Int(-1)});
+        f.On(frame, "setLayoutParams", "(Landroid/view/ViewGroup$LayoutParams;)V",
+             {VmValue::Ref(frame_params)});
+        const auto child = f.New("Landroid/view/View;", "(Landroid/content/Context;)V",
+                                  {VmValue::Ref(activity)});
+        const auto params = f.New("Landroid/widget/FrameLayout$LayoutParams;", "(III)V",
+                                   {VmValue::Int(20), VmValue::Int(10), VmValue::Int(85)});
+        f.On(params, "setMargins", "(IIII)V",
+             {VmValue::Int(1), VmValue::Int(2), VmValue::Int(3), VmValue::Int(4)});
+        CHECK(f.linker.Class(f.model.ObjectClass(params)).is_boot_dex);
+        CHECK(f.linker.IsAssignable(f.linker.ResolveDescriptor("Landroid/view/ViewGroup$MarginLayoutParams;"),
+                                    f.model.ObjectClass(params)));
+        const auto copy = f.New("Landroid/widget/FrameLayout$LayoutParams;",
+                                "(Landroid/widget/FrameLayout$LayoutParams;)V", {VmValue::Ref(params)});
+        const auto copy_root = f.vm.ProtectReferences(std::array{copy});
+        const auto field = [&](VmObjectRef object, const char* name) -> Slot& {
+            const auto id = f.linker.FindFieldRecursive(f.model.ObjectClass(object), name, "I");
+            REQUIRE(id.has_value());
+            return f.model.InstanceSlots(object)[f.linker.Field(*id).slot];
+        };
+        CHECK(field(copy, "gravity").bits == 85);
+        CHECK(field(copy, "bottomMargin").bits == 4);
+        f.On(frame, "addView", "(Landroid/view/View;Landroid/view/ViewGroup$LayoutParams;)V",
+             {VmValue::Ref(child), VmValue::Ref(params)});
+        f.On(activity, "setContentView", "(Landroid/view/View;)V", {VmValue::Ref(frame)});
+        CHECK(f.On(child, "getLeft", "()I").AsInt() == 77);
+        CHECK(f.On(child, "getTop", "()I").AsInt() == 86);
+        CHECK(f.On(child, "getLayoutParams", "()Landroid/view/ViewGroup$LayoutParams;").ref == params);
+        field(params, "width").bits = 30;
+        f.On(child, "requestLayout", "()V");
+        CHECK(f.On(child, "getLeft", "()I").AsInt() == 67);
+        CHECK(f.On(child, "getWidth", "()I").AsInt() == 30);
+        CHECK(field(copy, "width").bits == 20);
+        const auto bad = f.OnOutcome(child, "setLayoutParams", "(Landroid/view/ViewGroup$LayoutParams;)V",
+                                     {VmValue::Ref(VmObjectRef{})});
+        REQUIRE(bad.exception.IsValid());
+        CHECK(f.linker.Class(bad.exception_class).descriptor == "Ljava/lang/IllegalArgumentException;");
+        const auto relative = f.New("Landroid/widget/RelativeLayout$LayoutParams;", "(II)V",
+                                    {VmValue::Int(10), VmValue::Int(10)});
+        f.On(relative, "addRule", "(I)V", {VmValue::Int(4)});
+        const auto baseline = f.OnOutcome(child, "setLayoutParams", "(Landroid/view/ViewGroup$LayoutParams;)V",
+                                          {VmValue::Ref(relative)});
+        REQUIRE(baseline.exception.IsValid());
+        CHECK(f.linker.Class(baseline.exception_class).descriptor == "Ljava/lang/UnsupportedOperationException;");
+        CHECK(f.On(child, "getLayoutParams", "()Landroid/view/ViewGroup$LayoutParams;").ref == params);
+        const auto invalid = f.OnOutcome(relative, "addRule", "(I)V", {VmValue::Int(22)});
+        REQUIRE(invalid.exception.IsValid());
+        CHECK(f.linker.Class(invalid.exception_class).descriptor == "Ljava/lang/ArrayIndexOutOfBoundsException;");
+        const auto group = f.New("Landroid/widget/RelativeLayout;", "(Landroid/content/Context;)V",
+                                  {VmValue::Ref(activity)});
+        const auto group_params = f.New("Landroid/view/ViewGroup$LayoutParams;", "(II)V",
+                                         {VmValue::Int(100), VmValue::Int(100)});
+        f.On(group, "setLayoutParams", "(Landroid/view/ViewGroup$LayoutParams;)V", {VmValue::Ref(group_params)});
+        const auto first = f.New("Landroid/view/View;", "(Landroid/content/Context;)V", {VmValue::Ref(activity)});
+        const auto second = f.New("Landroid/view/View;", "(Landroid/content/Context;)V", {VmValue::Ref(activity)});
+        f.On(first, "setId", "(I)V", {VmValue::Int(1001)});
+        const auto first_params = f.New("Landroid/widget/RelativeLayout$LayoutParams;", "(II)V",
+                                         {VmValue::Int(20), VmValue::Int(10)});
+        const auto second_params = f.New("Landroid/widget/RelativeLayout$LayoutParams;", "(II)V",
+                                          {VmValue::Int(10), VmValue::Int(10)});
+        f.On(second_params, "addRule", "(II)V", {VmValue::Int(1), VmValue::Int(1001)});
+        f.On(group, "addView", "(Landroid/view/View;Landroid/view/ViewGroup$LayoutParams;)V",
+             {VmValue::Ref(first), VmValue::Ref(first_params)});
+        f.On(group, "addView", "(Landroid/view/View;Landroid/view/ViewGroup$LayoutParams;)V",
+             {VmValue::Ref(second), VmValue::Ref(second_params)});
+        f.On(activity, "setContentView", "(Landroid/view/View;)V", {VmValue::Ref(group)});
+        CHECK(f.On(group, "getGravity", "()I").AsInt() == 0x00800033);
+        f.On(group, "setGravity", "(I)V", {VmValue::Int(85)});
+        CHECK(f.On(first, "getLeft", "()I").AsInt() == 70);
+        CHECK(f.On(second, "getLeft", "()I").AsInt() == 90);
+        CHECK(f.On(first, "getTop", "()I").AsInt() == 90);
+        f.On(group, "setGravity", "(I)V", {VmValue::Int(17)});
+        CHECK(f.On(first, "getLeft", "()I").AsInt() == 35);
+        CHECK(f.On(second, "getLeft", "()I").AsInt() == 55);
+        CHECK(f.On(first, "getTop", "()I").AsInt() == 45);
+        f.On(group, "setGravity", "(I)V", {VmValue::Int(0)});
+        CHECK(f.On(group, "getGravity", "()I").AsInt() == 0x00800033);
+        CHECK(f.On(first, "getLeft", "()I").AsInt() == 0);
+    }
+}
+
 TEST_CASE("DVM-97 action-only Intent follows the LocalBroadcastManager match chain") {
     AndroidValueVm fixture;
     const auto action = fixture.vm.NewStringUtf8("org.example.PLANT");

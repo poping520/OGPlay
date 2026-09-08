@@ -135,7 +135,7 @@ binding。`GLUtils` 读取 context 中既有 Bitmap backing；本层不拥有 GL
   旧 fullscreen/edge-row bounds 推导及 `LayoutViewFact/layout_views` 类型与存储均不存在。
 - Java 动态 `ViewGroup.addView/removeView/removeViews/updateViewLayout` 与
   `Activity.setContentView(View)` 直接维护同一 UiTree；LayoutParams object 保存
-  width/height/margin/weight 并在 attach/update 时复制到 node，View geometry getter 在 dirty
+  width/height/margin/weight 并在 attach/update/requestLayout 时复制到 node，View geometry getter 在 dirty
   traversal 后读取同一 resolved frame。已带非 content parent 的 view 明确拒绝。DVM-90
   以 live UiTree 等价于 AOSP `AttachInfo`：动态接入的 SurfaceView 子树仅在 parent 已 live 时
   建立 holder generation 并按 created→changed 分派，detach 前对 active holder 分派一次
@@ -147,9 +147,11 @@ binding。`GLUtils` 读取 context 中既有 Bitmap backing；本层不拥有 GL
 - `TextView.setText/getText` 与 Editable mutation 共用 UiNode text；textColor/textSize/gravity
   mutation 分别推进 draw/layout dirty。当前 fixed-font backend 只接受单行受支持字形，
   多行、未知字形或非法 size 明确抛 Java 异常且不发布部分 mutation。
-- RelativeLayout XML structural attrs 与 Java LayoutParams `addRule` 写入同一 typed rule；
-  attached params mutation 会推进 UiTree layout dirty。只覆盖 Android 4.4 常用 0..15 rule
-  中除 baseline 外的 parent/sibling 子集，baseline、RTL rule 与非法 anchor 明确失败。
+- DVM-119：LayoutParams/MarginLayoutParams 与 Frame/Linear/Relative 三类参数来自 BootDex，
+  width/height/margin/weight/gravity/rule 为普通字段/数组；删除 ui_layout_params 分表。
+  setLayoutParams/add/update/requestLayout 导入 UiTree 布局输入，Java 字段修改本身不
+  发起 traversal。LTR 规则解析由 Java 完成；baseline/alignWithParent/动画记账明确失败。
+  RelativeLayout.setGravity/getGravity 与真实整体平移共用 UiTree gravity，默认 START/TOP。
 - drawable resource 按 id 解码一次并缓存为 RGBA `UiBitmap`，renderer 不读取 APK、arsc
   或 guest object。
 - pointer dispatch 在 dirty 时先 traversal，按 clipped reverse draw order 选择 topmost

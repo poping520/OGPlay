@@ -223,7 +223,6 @@ void RegisterAndroidOwnerAttachedStateTable(
             context->media_resources.erase(key);
             context->media_playing.erase(key);
             context->media_looping.erase(key);
-            context->ui_layout_params.erase(key);
             context->ui_view_layout_params.erase(key);
             context->ui_image_scale_types.erase(key);
             context->video_completion.erase(key);

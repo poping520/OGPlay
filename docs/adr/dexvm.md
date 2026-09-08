@@ -22,6 +22,7 @@
 - [ADR-0043 · Throwable 协议归 BootDex，栈捕获归 VM](#adr-0043)
 - [ADR-0044 · BackupManager 保留 Java 无服务路径](#adr-0044)
 - [ADR-0045 · Bundle 与 Intent extras 归 Java 对象图](#adr-0045)
+- [ADR-0046 · Java 布局参数与 UI 布局输入分工](#adr-0046)
 
 <a id="adr-0017"></a>
 
@@ -683,3 +684,21 @@ Parcel 保持既有进程内 typed atom 契约，Bundle 只覆盖 writeToParcel/
 
 双后端验证覆盖/null、Serializable 与普通 boxed/string 的交叉读取、浅副本、
 ArrayMap 碰撞和活视图、Intent/Parcel GC 边、CREATOR 数组实际类型以及旧 API 回归。
+
+<a id="adr-0046"></a>
+## ADR-0046 · Java 布局参数与 UI 布局输入分工
+
+日期：2026-09-08；状态：采用。Supersedes：LayoutParams 由宿主 ui_layout_params
+侧表保存、setMargins/addRule 自动发布布局变更的约定。
+
+五类通用/边距/Frame/Linear/Relative 布局参数进入 BootDex，普通字段与数组是唯一
+Java 参数状态。View 保存原参数引用；setLayoutParams、add/updateViewLayout、
+requestLayout 及 dirty geometry 查询将这些字段转换为 UiTree 的布局输入快照。
+UiTree 仍唯一拥有 hierarchy、dirty 与测量/布局结果，不保存 guest 引用，也不执行 Java。
+去掉参数宿主副本；直接 Java 字段写入和 setMargins/addRule 本身不触发 traversal，
+调用方按 Android 契约请求布局。刷新跨 Java 回调必须保护引用，并重查当前绑定。
+
+当前 UI 为 LTR，start/end 的解析由原版参数类完成；仅发布渲染器能消费的规则，
+baseline、alignWithParent、动画等未实现语义明确记账并失败，不按游戏特判。
+RelativeLayout gravity 在原有 sibling/parent 解析之后整体平移子节点，保持相对位置；
+布局参数算法在 Java，真实显示行为继续归既有 UI 引擎，不迁入整个 framework View 系统。

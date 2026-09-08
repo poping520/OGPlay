@@ -235,7 +235,8 @@ DVM-79 的 `DexVmIoVfsAdapter` 是 DexVM core `IoFileSystem` 与具体
   返回同一 guest identity。tag→descriptor/class 来自固定通用 registry，`<merge>` children
   直接 attach synthetic content root，未知 structural tag/attribute 记账并明确失败。
   `setContentView(View)` 保留 Java 已构造 subtree；`ViewGroup` 动态 add/remove/update、
-  LayoutParams、padding/orientation/gravity 与 geometry getter 全部读写同一 UiTree。
+  LayoutParams 普通参数归 BootDex，apply/requestLayout 导入 UiTree 输入；
+  padding/orientation/gravity 与 geometry getter 仍共用唯一 UiTree。
   listener ref 仍只由 integration 以 UiNodeId 保存；
   `runOnUiThread` 在协作单线程模型下同步执行 runnable。
 - VideoView intrinsic（`dexvm_android/android_media.cpp`，ADR-0021）：

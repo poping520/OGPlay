@@ -24,6 +24,9 @@ using Context = std::shared_ptr<DexVmAndroidContext>;
 
 void PopulateAndroidDisplayMetrics(dx::IntrinsicContext& call, const Context& context,
                                    dx::VmObjectRef metrics);
+[[nodiscard]] ui::LayoutParams ReadAndroidLayoutParams(
+    dx::Interpreter& vm, dx::VmObjectRef params);
+void RefreshAndroidLayoutParams(dx::Interpreter& vm, const Context& context);
 
 // Helpers shared across handler batches; batch-local helpers stay private to
 // their translation unit.

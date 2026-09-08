@@ -137,7 +137,6 @@ namespace ogplay::runtime::android_intrinsics {
 [[nodiscard]] Decl Declare_android_util_AndroidException(const Context& context);
 [[nodiscard]] Decl Declare_android_util_AttributeSet(const Context& context);
 [[nodiscard]] Decl Declare_android_util_Base64(const Context& context);
-[[nodiscard]] Decl Declare_android_util_TypedValue(const Context& context);
 [[nodiscard]] Decl Declare_android_util_DisplayMetrics(const Context& context);
 [[nodiscard]] Decl Declare_android_view_Display(const Context& context);
 [[nodiscard]] Decl Declare_android_view_ContextThemeWrapper(const Context& context);

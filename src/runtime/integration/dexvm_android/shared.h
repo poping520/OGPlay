@@ -22,6 +22,9 @@ using Context = std::shared_ptr<DexVmAndroidContext>;
 [[nodiscard]] dx::VmObjectRef NewAndroidBundle(
     dx::Interpreter& vm, dx::VmObjectRef source = dx::VmObjectRef{});
 
+void PopulateAndroidDisplayMetrics(dx::IntrinsicContext& call, const Context& context,
+                                   dx::VmObjectRef metrics);
+
 // Helpers shared across handler batches; batch-local helpers stay private to
 // their translation unit.
 [[nodiscard]] dx::VmValue Self(dx::IntrinsicContext& call);

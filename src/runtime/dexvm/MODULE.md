@@ -405,4 +405,7 @@ VmJavaThrow 时必须保留 existing 身份，与 switch 后端一致，不重�
 FutureTask 的 ExecutionException cause 以及其 GC 强边由原版结果字段与通用异常机制维护。
 
 DVM-112：API19 ServiceConnection 接口选入 BootDex，沿用普通接口链接、分派与 GC。
+
+DVM-118：Math 的普通算法/随机数状态迁入 BootDex，24 个 native 按 AOSP 的 libm
+边界执行；两后端复验舍入、NaN、signed zero、整数边界与原语，不承诺 StrictMath。
 服务查询信息及未匹配结果属于上层平台边界，不在 DexVM core 引入服务目录或 Binder。

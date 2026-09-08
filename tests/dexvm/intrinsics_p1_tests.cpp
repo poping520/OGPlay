@@ -5,6 +5,9 @@
 #include <doctest/doctest.h>
 
 #include <array>
+#include <bit>
+#include <cmath>
+#include <limits>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -17,6 +20,7 @@
 #include "ogplay/core/logger.h"
 #include "ogplay/loader/apk.h"
 #include "ogplay/runtime/dexvm/class_linker.h"
+#include "ogplay/runtime/dexvm/access_flags.h"
 #include "ogplay/runtime/dexvm/interpreter.h"
 #include "ogplay/runtime/dexvm/io_runtime.h"
 #include "ogplay/runtime/dexvm/object_model.h"
@@ -62,11 +66,12 @@ struct Vm final {
     Interpreter interpreter;
 
     explicit Vm(const InterpreterConfig config = {},
-                const bool load_boot_dex = true)
+                const bool load_boot_dex = true,
+                const CoreIntrinsicServices& services = {})
       : model(strings, arrays), linker(),
           interpreter(
-              [this, load_boot_dex]() -> DexClassLinker& {
-                  linker.RegisterIntrinsics(CoreIntrinsicCatalog());
+              [this, load_boot_dex, &services]() -> DexClassLinker& {
+                  linker.RegisterIntrinsics(CoreIntrinsicCatalog(services));
                   if (load_boot_dex) linker.RegisterBootDex(ReadBootDex());
                   linker.RegisterDex(ReadFixture("p1.dex"));
                   linker.Link();
@@ -324,6 +329,74 @@ TEST_CASE("dexvm P1 System.arraycopy and Math") {
     Vm vm;
     ExpectInt(vm.CallStatic("copyArrays", "()I"), 40);
     ExpectInt(vm.CallStatic("mathMix", "()I"), 10);
+}
+
+TEST_CASE("DVM-118 Math uses API19 Java rounding and libm native primitives") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        CoreIntrinsicServices services;
+        services.current_time_millis = [] { return INT64_C(1400000000000); };
+        Vm vm({.backend = backend}, true, services);
+        const auto call = [&](const char* name, const char* signature, std::vector<VmValue> arguments) {
+            const auto outcome = vm.CallStatic(name, signature, std::move(arguments), "Ljava/lang/Math;");
+            REQUIRE_MESSAGE(!outcome.exception.IsValid(), outcome.exception_message);
+            return outcome.value;
+        };
+        const auto owner = vm.linker.ResolveDescriptor("Ljava/lang/Math;");
+        REQUIRE(vm.linker.Class(owner).is_boot_dex);
+        int natives{};
+        for (const auto method : vm.linker.Class(owner).own_direct_methods) {
+            const auto& linked = vm.linker.Method(method);
+            if (linked.access_flags & kAccNative) {
+                ++natives;
+                CHECK(linked.kind == MethodKind::intrinsic);
+                CHECK(static_cast<bool>(linked.implementation));
+            } else CHECK(linked.kind == MethodKind::interpreted);
+        }
+        CHECK(natives == 24);
+        const auto nan = std::numeric_limits<float>::quiet_NaN();
+        const auto inf = std::numeric_limits<float>::infinity();
+        for (const auto [value, expected] : std::array{
+                 std::pair{1.5F, 2}, std::pair{-1.5F, -1}, std::pair{-0.5F, 0},
+                 std::pair{nan, 0}, std::pair{inf, INT32_MAX}, std::pair{-inf, INT32_MIN}})
+            CHECK(call("round", "(F)I", {VmValue::Float(value)}).AsInt() == expected);
+        CHECK(call("round", "(D)J", {VmValue::Double(-1.5)}).AsLong() == -1);
+        CHECK(call("round", "(D)J", {VmValue::Double(inf)}).AsLong() == INT64_MAX);
+        CHECK(call("round", "(D)J", {VmValue::Double(-inf)}).AsLong() == INT64_MIN);
+        CHECK(call("round", "(D)J", {VmValue::Double(nan)}).AsLong() == 0);
+        CHECK(call("abs", "(I)I", {VmValue::Int(INT32_MIN)}).AsInt() == INT32_MIN);
+        CHECK(call("abs", "(J)J", {VmValue::Long(INT64_MIN)}).AsLong() == INT64_MIN);
+        CHECK(std::isnan(call("max", "(FF)F", {VmValue::Float(nan), VmValue::Float(1)}).AsFloat()));
+        CHECK(std::isnan(call("min", "(DD)D", {VmValue::Double(1), VmValue::Double(nan)}).AsDouble()));
+        CHECK(std::signbit(call("min", "(DD)D", {VmValue::Double(0), VmValue::Double(-0.0)}).AsDouble()));
+        CHECK_FALSE(std::signbit(call("max", "(FF)F", {VmValue::Float(-0.0F), VmValue::Float(0)}).AsFloat()));
+        struct Unary { const char* name; double input; double expected; };
+        for (const auto& test : std::array{
+                 Unary{"acos", 1, 0}, Unary{"asin", 0, 0}, Unary{"atan", 0, 0},
+                 Unary{"cbrt", -8, -2}, Unary{"ceil", -0.2, 0}, Unary{"cos", 0, 1},
+                 Unary{"cosh", 0, 1}, Unary{"exp", 0, 1}, Unary{"expm1", 0, 0},
+                 Unary{"floor", -0.2, -1}, Unary{"log", 1, 0}, Unary{"log10", 100, 2},
+                 Unary{"log1p", 0, 0}, Unary{"rint", 2.5, 2}, Unary{"sin", 0, 0},
+                 Unary{"sinh", 0, 0}, Unary{"sqrt", 4, 2}, Unary{"tan", 0, 0}, Unary{"tanh", 0, 0}}) {
+            CAPTURE(test.name);
+            CHECK(call(test.name, "(D)D", {VmValue::Double(test.input)}).AsDouble() ==
+                  doctest::Approx(test.expected));
+        }
+        CHECK(call("hypot", "(DD)D", {VmValue::Double(3), VmValue::Double(4)}).AsDouble() == 5);
+        CHECK(call("pow", "(DD)D", {VmValue::Double(2), VmValue::Double(10)}).AsDouble() == 1024);
+        CHECK(call("IEEEremainder", "(DD)D", {VmValue::Double(7), VmValue::Double(2)}).AsDouble() == -1);
+        CHECK(call("atan2", "(DD)D", {VmValue::Double(-0.0), VmValue::Double(-1)}).AsDouble() ==
+              doctest::Approx(-3.141592653589793));
+        CHECK(std::signbit(call("sin", "(D)D", {VmValue::Double(-0.0)}).AsDouble()));
+        CHECK(std::isnan(call("sqrt", "(D)D", {VmValue::Double(-1)}).AsDouble()));
+        CHECK(call("ulp", "(D)D", {VmValue::Double(1)}).AsDouble() == std::numeric_limits<double>::epsilon());
+        CHECK(call("nextUp", "(D)D", {VmValue::Double(1)}).AsDouble() ==
+              std::bit_cast<double>(UINT64_C(0x3ff0000000000001)));
+        for (int i = 0; i < 3; ++i) {
+            const auto random = call("random", "()D", {}).AsDouble();
+            CHECK(random >= 0.0);
+            CHECK(random < 1.0);
+        }
+    }
 }
 
 TEST_CASE("dexvm P1 System.out println reaches the structured logger") {

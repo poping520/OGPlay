@@ -284,3 +284,9 @@ put 方法。仅 Bundle.writeToParcel/readFromParcel 对接原有 typed Parcel�
 Java Bundle 浅副本的强引用，读取再复制映射，无宿主 BundleValue 副本。无效数据明确
 失败；Android 字节协议、Binder/FD 与 parcelled 长尾不在本范围。Log.w/e 的 Throwable
 参数由 Java PrintWriter/StringWriter 展开为结构化日志诊断。
+
+DVM-118：DisplayMetrics/TypedValue 的普通字段/算法来自 BootDex；仅私有
+DisplayMetrics.getDeviceDensity 查询进程注入 density。Resources.mMetrics 是稳定
+实例引用，查询按当前 managed surface/density 刷新；Display.getMetrics/getRealMetrics
+使用同一填充入口，不读取宿主显示器。无兼容缩放时 noncompat 字段同源。TypedValue
+单位转换直接读取 Java 字段，删除基于旧槽位顺序的 C++ 算法。

@@ -6,6 +6,7 @@
 
 #include <bit>
 #include <cmath>
+#include <limits>
 
 namespace ogplay::runtime::android_intrinsics {
 
@@ -87,20 +88,26 @@ void WriteMetric(dx::IntrinsicContext& call, const dx::VmObjectRef metrics,
         [call.vm.Linker().Field(*field).slot] = {bits, dx::SlotTag::cat1};
 }
 
-void PopulateMetrics(dx::IntrinsicContext& call, const Context& context) {
-    const auto metrics = call.arguments[0].ref;
-    if (!metrics.IsValid()) {
-        throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;",
-                              "Display metrics output is null"};
-    }
-    if (!std::isfinite(context->ui_density) || context->ui_density <= 0.0F ||
-        !std::isfinite(context->ui_scaled_density) ||
-        context->ui_scaled_density <= 0.0F) {
+[[nodiscard]] std::int32_t DeviceDensityDpi(const Context& context) {
+    const double dpi = static_cast<double>(context->ui_density) * 160.0;
+    if (!std::isfinite(dpi) || dpi < 1.0 ||
+        dpi > std::numeric_limits<std::int32_t>::max())
         throw dx::DexVmError(dx::DexVmErrorReason::internal_invariant,
                              "display density is invalid");
-    }
-    const auto density_dpi = static_cast<std::int32_t>(
-        std::lround(context->ui_density * 160.0F));
+    return static_cast<std::int32_t>(std::lround(dpi));
+}
+
+}  // namespace
+
+void PopulateAndroidDisplayMetrics(dx::IntrinsicContext& call, const Context& context,
+                                    const dx::VmObjectRef metrics) {
+    if (!metrics.IsValid())
+        throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;",
+                              "Display metrics output is null"};
+    if (!std::isfinite(context->ui_scaled_density) || context->ui_scaled_density <= 0.0F)
+        throw dx::DexVmError(dx::DexVmErrorReason::internal_invariant,
+                             "display scaled density is invalid");
+    const auto density_dpi = DeviceDensityDpi(context);
     const auto density_bits = std::bit_cast<std::uint32_t>(context->ui_density);
     const auto scaled_bits =
         std::bit_cast<std::uint32_t>(context->ui_scaled_density);
@@ -134,29 +141,12 @@ void PopulateMetrics(dx::IntrinsicContext& call, const Context& context) {
     write_float("noncompatYdpi", dpi_bits);
 }
 
-}  // namespace
-
 Decl Declare_android_util_DisplayMetrics(const Context& context) {
-    static_cast<void>(context);
-    auto builder = dx::IntrinsicClassBuilder::Class(
-        "Landroid/util/DisplayMetrics;", "Ljava/lang/Object;");
-    builder.Constructor("()V", [](dx::IntrinsicContext&) {
-        return dx::VmValue::Void();
-    });
-    builder.InstanceField("widthPixels", "I");
-    builder.InstanceField("heightPixels", "I");
-    builder.InstanceField("density", "F");
-    builder.InstanceField("densityDpi", "I");
-    builder.InstanceField("scaledDensity", "F");
-    builder.InstanceField("xdpi", "F");
-    builder.InstanceField("ydpi", "F");
-    builder.InstanceField("noncompatWidthPixels", "I");
-    builder.InstanceField("noncompatHeightPixels", "I");
-    builder.InstanceField("noncompatDensity", "F");
-    builder.InstanceField("noncompatDensityDpi", "I");
-    builder.InstanceField("noncompatScaledDensity", "F");
-    builder.InstanceField("noncompatXdpi", "F");
-    builder.InstanceField("noncompatYdpi", "F");
+    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/util/DisplayMetrics;");
+    builder.StaticMethod("getDeviceDensity", "()I",
+        [context](dx::IntrinsicContext&) {
+            return dx::VmValue::Int(DeviceDensityDpi(context));
+        }, dx::kAccPrivate);
     return std::move(builder).Build();
 }
 
@@ -182,7 +172,7 @@ Decl Declare_android_view_Display(const Context& context) {
         [](dx::IntrinsicContext&) { return dx::VmValue::Int(0); });
     const auto get_metrics = dx::IntrinsicHandler(
         [context](dx::IntrinsicContext& call) {
-            PopulateMetrics(call, context);
+            PopulateAndroidDisplayMetrics(call, context, call.arguments[0].ref);
             return dx::VmValue::Void();
         });
     builder.FinalMethod("getMetrics", "(Landroid/util/DisplayMetrics;)V",

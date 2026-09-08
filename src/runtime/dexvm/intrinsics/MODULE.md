@@ -37,6 +37,10 @@ cooperative next-frame task queue。
 执行，不允许重建 C++ 算法或集合侧表。WeakReference 的弱边/入队属于通用 VM GC 原语。
 ThreadLocal 消费 Thread.localValues 和 wrapping atomic getAndAdd；System.nanoTime 只读
 统一 Clock，Runtime.availableProcessors 发布单 guest 执行通道事实 1。
+
+DVM-118：Math 普通 Java 方法/常量/random 状态归 BootDex，java_lang.cpp 只保留
+API 19 定义的 24 个 libm native 原语。round、abs/min/max、符号位/ulp/scalb 等
+由原版 Java 决定；不把宿主 libm 声称为 StrictMath/fdlibm 的逐位一致实现。
 `java_icu.cpp` 只发布 DVM-102 审计固定的 ICU native、NativeDecimalFormat 与 TimeZone 数据
 边界；Format/DateFormat/SimpleDateFormat、NumberFormat/DecimalFormat、Date/Calendar 及
 SimpleTimeZone 的类、字段和 Java 算法均来自 BootDex。formatter 的 Java long 只保存 per-VM

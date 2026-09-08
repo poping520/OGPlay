@@ -376,82 +376,45 @@ IntrinsicClassDecl Declare_java_lang_Runtime() {
 }
 
 IntrinsicClassDecl Declare_java_lang_Math() {
-    auto builder = IntrinsicClassBuilder::Class("Ljava/lang/Math;", "Ljava/lang/Object;");
-    builder.StaticMethod("log", "(D)D", [](IntrinsicContext& c) {
-        return VmValue::Double(std::log(c.arguments[0].AsDouble()));
-    });
-    builder.StaticMethod("abs", "(I)I",
-        [](IntrinsicContext& context) {
-                const auto value = context.arguments[0].AsInt();
-                return VmValue::Int(value < 0 ? -value : value);
-            });
-    builder.StaticMethod("abs", "(J)J",
-        [](IntrinsicContext& context) {
-                const auto value = context.arguments[0].AsLong();
-                return VmValue::Long(value < 0 ? -value : value);
-            });
-    builder.StaticMethod("abs", "(F)F",
-        [](IntrinsicContext& context) {
-                return VmValue::Float(std::fabs(context.arguments[0].AsFloat()));
-            });
-    builder.StaticMethod("abs", "(D)D",
-        [](IntrinsicContext& context) {
-                return VmValue::Double(std::fabs(context.arguments[0].AsDouble()));
-            });
-    builder.StaticMethod("max", "(II)I",
-        [](IntrinsicContext& context) {
-            return VmValue::Int(
-                std::max(context.arguments[0].AsInt(), context.arguments[1].AsInt()));
-            });
-    builder.StaticMethod("min", "(JJ)J", [](IntrinsicContext& c) { return VmValue::Long(std::min(c.arguments[0].AsLong(),c.arguments[1].AsLong())); });
-    builder.StaticMethod("max", "(JJ)J", [](IntrinsicContext& c) { return VmValue::Long(std::max(c.arguments[0].AsLong(),c.arguments[1].AsLong())); });
-    builder.StaticMethod("min", "(II)I",
-        [](IntrinsicContext& context) {
-            return VmValue::Int(
-                std::min(context.arguments[0].AsInt(), context.arguments[1].AsInt()));
-            });
-    builder.StaticMethod("max", "(FF)F",
-        [](IntrinsicContext& context) {
-                return VmValue::Float(std::fmax(context.arguments[0].AsFloat(),
-                                                context.arguments[1].AsFloat()));
-            });
-    builder.StaticMethod("min", "(FF)F",
-        [](IntrinsicContext& context) {
-                return VmValue::Float(std::fmin(context.arguments[0].AsFloat(),
-                                                context.arguments[1].AsFloat()));
-            });
-    builder.StaticMethod("sqrt", "(D)D",
-        [](IntrinsicContext& context) {
-                return VmValue::Double(std::sqrt(context.arguments[0].AsDouble()));
-            });
-    builder.StaticMethod("sin", "(D)D",
-        [](IntrinsicContext& context) {
-                return VmValue::Double(std::sin(context.arguments[0].AsDouble()));
-            });
-    builder.StaticMethod("cos", "(D)D",
-        [](IntrinsicContext& context) {
-                return VmValue::Double(std::cos(context.arguments[0].AsDouble()));
-            });
-    builder.StaticMethod("atan2", "(DD)D",
-        [](IntrinsicContext& context) {
-                return VmValue::Double(std::atan2(context.arguments[0].AsDouble(),
-                                                  context.arguments[1].AsDouble()));
-            });
-    builder.StaticMethod("pow", "(DD)D",
-        [](IntrinsicContext& context) {
-                return VmValue::Double(std::pow(context.arguments[0].AsDouble(),
-                                                context.arguments[1].AsDouble()));
-            });
-    builder.StaticMethod("floor", "(D)D",
-        [](IntrinsicContext& context) {
-                return VmValue::Double(std::floor(context.arguments[0].AsDouble()));
-            });
-    builder.StaticMethod("ceil", "(D)D",
-        [](IntrinsicContext& context) {
-                return VmValue::Double(std::ceil(context.arguments[0].AsDouble()));
-            });
-    auto result = std::move(builder).Build();
-    return result;
+    auto builder = IntrinsicClassBuilder::Class("Ljava/lang/Math;");
+    // API 19 java_lang_Math.cpp delegates these native primitives to libm.
+    // Rounding, min/max, bit operations and random state remain original DEX.
+    const auto unary = [&](const char* name, double (*operation)(double)) {
+        builder.StaticMethod(name, "(D)D", [operation](IntrinsicContext& call) {
+            return VmValue::Double(operation(call.arguments[0].AsDouble()));
+        }, kAccPublic | kAccNative);
+    };
+    const auto binary = [&](const char* name, double (*operation)(double, double),
+                            std::uint32_t access = kAccPublic) {
+        builder.StaticMethod(name, "(DD)D", [operation](IntrinsicContext& call) {
+            return VmValue::Double(operation(call.arguments[0].AsDouble(), call.arguments[1].AsDouble()));
+        }, access | kAccNative);
+    };
+    unary("acos", std::acos);
+    unary("asin", std::asin);
+    unary("atan", std::atan);
+    binary("atan2", std::atan2);
+    unary("cbrt", std::cbrt);
+    unary("ceil", std::ceil);
+    unary("cos", std::cos);
+    unary("cosh", std::cosh);
+    unary("exp", std::exp);
+    unary("expm1", std::expm1);
+    unary("floor", std::floor);
+    binary("hypot", std::hypot);
+    binary("IEEEremainder", std::remainder);
+    unary("log", std::log);
+    unary("log10", std::log10);
+    unary("log1p", std::log1p);
+    binary("pow", std::pow);
+    unary("rint", std::rint);
+    unary("sin", std::sin);
+    unary("sinh", std::sinh);
+    unary("sqrt", std::sqrt);
+    unary("tan", std::tan);
+    unary("tanh", std::tanh);
+    binary("nextafter", std::nextafter, kAccPrivate);
+    return std::move(builder).Build();
 }
 
 }  // namespace ogplay::runtime::dexvm::intrinsics

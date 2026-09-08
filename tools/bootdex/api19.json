@@ -103,6 +103,7 @@
       "Ljava/lang/InterruptedException;",
       "Ljava/lang/Iterable;",
       "Ljava/lang/LinkageError;",
+      "Ljava/lang/Math;",
       "Ljava/lang/NegativeArraySizeException;",
       "Ljava/lang/NoClassDefFoundError;",
       "Ljava/lang/NoSuchFieldError;",
@@ -903,6 +904,7 @@
       "Landroid/util/ArrayMap$1;",
       "Landroid/util/ArrayMap;",
       "Landroid/util/ContainerHelpers;",
+      "Landroid/util/DisplayMetrics;",
       "Landroid/util/LongSparseArray;",
       "Landroid/util/MapCollections$ArrayIterator;",
       "Landroid/util/MapCollections$EntrySet;",
@@ -914,7 +916,8 @@
       "Landroid/util/SparseArray;",
       "Landroid/util/SparseBooleanArray;",
       "Landroid/util/SparseIntArray;",
-      "Landroid/util/SparseLongArray;"
+      "Landroid/util/SparseLongArray;",
+      "Landroid/util/TypedValue;"
     ],
     "ArrayUtils.java": [
       "Lcom/android/internal/util/ArrayUtils;"
@@ -998,6 +1001,7 @@
         "Ljava/lang/Exception;",
         "Ljava/lang/IllegalAccessException;",
         "Ljava/lang/IllegalArgumentException;",
+        "Ljava/lang/Math;",
         "Ljava/lang/NoSuchFieldError;",
         "Ljava/lang/NullPointerException;",
         "Ljava/lang/NumberFormatException;",
@@ -1090,7 +1094,6 @@
         "Ljava/lang/Float;",
         "Ljava/lang/Integer;",
         "Ljava/lang/Long;",
-        "Ljava/lang/Math;",
         "Ljava/lang/Number;",
         "Ljava/lang/Object;",
         "Ljava/lang/Short;",
@@ -1185,7 +1188,7 @@
       "method_ids": 1285,
       "field_ids": 485,
       "native_methods": 47,
-      "classified_members_sha256": "b65110dd1d1fbabd5af392b368ced35f621bc6b4d8ea7f829144b95be4ee466f"
+      "classified_members_sha256": "a1fbc7c125f118dc1f9dbb3b7011ce9ab16c095540bc3d8d0ca77d948f54fee4"
     }
   }
 }

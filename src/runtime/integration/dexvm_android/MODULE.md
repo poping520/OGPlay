@@ -71,6 +71,7 @@ binding。`GLUtils` 读取 context 中既有 Bitmap backing；本层不拥有 GL
   该 core 服务注入，Android 侧 DateMillis/DateYear/DateInitialize 重复实现已删除。
 - DVM-77 的 PackageManager 只发布当前 APK：`getApplicationInfo/getPackageInfo` 消费
   sealed Manifest 事实，`getApplicationLabel` 解析 literal/resource label，
+  resource label 作为 Unicode `CharSequence` 返回，不得经过 fixed-font 测量或字形限制；
   `checkPermission/hasSystemFeature` 只读取显式 granted/feature 集合。未知包、未知 flags
   与跨包查询不得扩展成安装包数据库或 Binder 服务。
 - process `Application`、attached base Context 与 descriptor 由 context 持有；

@@ -603,6 +603,25 @@ TEST_CASE("PackageManager P0 exposes only explicit current-package facts") {
     REQUIRE_FALSE(label.exception.IsValid());
     CHECK(vm.interpreter.StringUtf8(label.value.ref) == "OGPlay Game");
 
+    constexpr std::uint32_t kUnicodeLabel = 0x7f05004dU;
+    vm.context->application_label = kUnicodeLabel;
+    vm.context->arsc.entries.push_back(
+        {.resource_id = kUnicodeLabel,
+         .type_name = "string",
+         .entry_name = "app_name",
+         .string_value =
+             "\xE6\xA4\x8D\xE7\x89\xA9\xE5\xA4\xA7\xE6\x88\x98"
+             "\xE5\x83\xB5\xE5\xB0\xB8",
+         .value_type = 0x03});
+    const auto unicode_label = invoke(
+        "getApplicationLabel",
+        "(Landroid/content/pm/ApplicationInfo;)Ljava/lang/CharSequence;",
+        {VmValue::Ref(application.value.ref)});
+    REQUIRE_FALSE(unicode_label.exception.IsValid());
+    CHECK(vm.interpreter.StringUtf8(unicode_label.value.ref) ==
+          "\xE6\xA4\x8D\xE7\x89\xA9\xE5\xA4\xA7\xE6\x88\x98"
+          "\xE5\x83\xB5\xE5\xB0\xB8");
+
     const auto internet =
         vm.interpreter.NewStringUtf8("android.permission.INTERNET");
     const auto camera =

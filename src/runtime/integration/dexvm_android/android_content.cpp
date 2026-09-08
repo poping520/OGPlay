@@ -2655,8 +2655,8 @@ Decl Declare_android_content_pm_PackageManager(const Context& context) {
                         &*context->application_label)) {
                     return MakeString(call, *literal);
                 }
-                return dx::VmValue::Ref(call.vm.Model().NewString(
-                    ResolveUiString(
+                return dx::VmValue::Ref(call.vm.NewStringUtf8(
+                    ResolveResourceString(
                         *context,
                         std::get<std::uint32_t>(*context->application_label))));
             }

@@ -36,8 +36,6 @@ namespace ogplay::runtime::android_intrinsics {
 [[nodiscard]] Decl Declare_android_content_pm_PackageInfo(const Context& context);
 [[nodiscard]] Decl Declare_android_content_pm_PackageManager_NameNotFoundException(const Context& context);
 [[nodiscard]] Decl Declare_android_content_pm_PackageManager(const Context& context);
-[[nodiscard]] Decl Declare_android_content_SharedPreferences_Editor(const Context& context);
-[[nodiscard]] Decl Declare_android_content_SharedPreferences(const Context& context);
 [[nodiscard]] Decl Declare_android_content_SharedPreferencesEditorImpl(const Context& context);
 [[nodiscard]] Decl Declare_android_content_SharedPreferencesImpl(const Context& context);
 [[nodiscard]] Decl Declare_android_content_res_AssetManager(const Context& context);

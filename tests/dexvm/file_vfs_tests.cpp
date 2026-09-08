@@ -2441,6 +2441,88 @@ struct PrefsDriver final {
 
 }  // namespace
 
+TEST_CASE("PreferenceManager default preferences persist across sessions") {
+    const TemporaryRoot root("defaultprefs");
+    const auto open_default = [](FileVm& vm) {
+        vm.context->package_name = kPackage;
+        const auto context_object =
+            vm.interpreter.NewIntrinsicInstance("Landroid/content/Context;");
+        const auto manager = vm.linker.FindClass("Landroid/preference/PreferenceManager;");
+        REQUIRE(manager.has_value());
+        const auto method = vm.linker.FindDirectMethod(
+            *manager, "getDefaultSharedPreferences",
+            "(Landroid/content/Context;)Landroid/content/SharedPreferences;");
+        REQUIRE(method.has_value());
+        const auto outcome = vm.interpreter.Call(
+            *method, std::vector<VmValue>{VmValue::Ref(context_object)});
+        REQUIRE_MESSAGE(!outcome.exception.IsValid(),
+                        outcome.exception_message);
+        return outcome.value.ref;
+    };
+    {
+        auto store = SandboxStore::Open(root.path, kPackage);
+        FileVm vm(store.get());
+        const auto prefs = open_default(vm);
+        const auto editor = vm.CallOn(prefs, "edit",
+                                      "()Landroid/content/SharedPreferences$Editor;")
+                               .ref;
+        static_cast<void>(vm.CallOn(
+            editor, "putInt",
+            "(Ljava/lang/String;I)Landroid/content/SharedPreferences$Editor;",
+            {VmValue::Ref(vm.interpreter.NewStringUtf8("dobyear")),
+             VmValue::Int(2010)}));
+        static_cast<void>(vm.CallOn(editor, "putFloat",
+            "(Ljava/lang/String;F)Landroid/content/SharedPreferences$Editor;",
+            {VmValue::Ref(vm.interpreter.NewStringUtf8("volume")), VmValue::Float(0.625F)}));
+        CHECK(vm.CallOn(editor, "commit", "()Z").AsInt() == 1);
+        // The default entry maps to the platform file layout.
+        CHECK(vm.NativeRead("/data/data/com.example.game/shared_prefs/"
+                            "com.example.game_preferences.xml")
+                  .find("<int name=\"dobyear\" value=\"2010\" />") !=
+              std::string::npos);
+    }
+    {
+        auto store = SandboxStore::Open(root.path, kPackage);
+        FileVm vm(store.get());
+        const auto prefs = open_default(vm);
+        CHECK(vm.CallOn(prefs, "getInt", "(Ljava/lang/String;I)I",
+                        {VmValue::Ref(vm.interpreter.NewStringUtf8("dobyear")),
+                         VmValue::Int(0)})
+                  .AsInt() == 2010);
+        CHECK(vm.CallOn(prefs, "getFloat", "(Ljava/lang/String;F)F",
+            {VmValue::Ref(vm.interpreter.NewStringUtf8("volume")), VmValue::Float(0)}).AsFloat() == 0.625F);
+    }
+}
+
+TEST_CASE("SharedPreferences failed load is retried without publishing an empty store") {
+    const TemporaryRoot root("retry-prefs");
+    auto store = SandboxStore::Open(root.path, kPackage);
+    FileVm vm(store.get());
+    const auto base = vm.interpreter.NewIntrinsicInstance("Landroid/content/Context;");
+    const auto type = vm.model.ObjectClass(base);
+    const auto slot = vm.linker.FindVtableIndex(type, "getSharedPreferences",
+        "(Ljava/lang/String;I)Landroid/content/SharedPreferences;");
+    REQUIRE(slot.has_value());
+    const auto method = vm.linker.Class(type).vtable[*slot];
+    const std::string path = "/data/data/com.example.game/shared_prefs/broken.xml";
+    vm.vfs.CreateDirectory("/data/data/com.example.game/shared_prefs");
+    const auto write = [&](const std::string& xml) {
+        vm.interpreter.IO().WriteFile(path, std::as_bytes(std::span(xml.data(), xml.size())));
+    };
+    write("invalid XML");
+    for (int attempt = 0; attempt < 2; ++attempt) {
+        const auto outcome = vm.interpreter.Call(method, std::vector<VmValue>{VmValue::Ref(base),
+            VmValue::Ref(vm.interpreter.NewStringUtf8("broken")), VmValue::Int(0)});
+        REQUIRE(outcome.exception.IsValid());
+        CHECK_FALSE(vm.context->preferences_loaded["broken"]);
+    }
+    write("<?xml version=\"1.0\" encoding=\"utf-8\"?><map><int name=\"answer\" value=\"7\" /></map>");
+    PrefsDriver driver{vm};
+    const auto prefs = driver.Open("broken");
+    CHECK(vm.CallOn(prefs, "getInt", "(Ljava/lang/String;I)I",
+        {VmValue::Ref(vm.interpreter.NewStringUtf8("answer")), VmValue::Int(0)}).AsInt() == 7);
+}
+
 TEST_CASE("SharedPreferences persist as platform XML across sessions") {
     const TemporaryRoot root("prefs");
     {

@@ -80,8 +80,6 @@ std::vector<dexvm::IntrinsicClassDecl> AndroidIntrinsicCatalog(
         Declare_android_content_pm_PackageInfo(context),
         Declare_android_content_pm_PackageManager_NameNotFoundException(context),
         Declare_android_content_pm_PackageManager(context),
-        Declare_android_content_SharedPreferences_Editor(context),
-        Declare_android_content_SharedPreferences(context),
         Declare_android_content_SharedPreferencesEditorImpl(context),
         Declare_android_content_SharedPreferencesImpl(context),
         Declare_android_content_res_AssetFileDescriptor(context),

@@ -954,11 +954,14 @@ namespace {
 // Reads a preferences file once per name. Damaged XML is a real failure.
 void LoadPreferencesOnce(const Context& context, const std::string& name) {
     if (context->preferences_loaded[name]) return;
-    context->preferences_loaded[name] = true;
-    if (context->vfs == nullptr) return;
+    if (context->vfs == nullptr) {
+        context->preferences_loaded[name] = true;
+        return;
+    }
     try {
         context->preferences[name] =
             LoadPreferences(*context->vfs, PreferencesPathOf(context, name));
+        context->preferences_loaded[name] = true;
     } catch (const PreferencesXmlError& error) {
         throw dx::VmJavaThrow{
             "Ljava/lang/IllegalStateException;",
@@ -2683,40 +2686,9 @@ Decl Declare_android_content_pm_PackageManager(const Context& context) {
 }  // namespace ogplay::runtime::android_intrinsics
 
 
-// ---- migrated from android_content_SharedPreferences_Editor.cpp ----
-#include "catalog.h"
-
-namespace ogplay::runtime::android_intrinsics {
-
-Decl Declare_android_content_SharedPreferences_Editor(const Context& context) {
-    auto builder = dx::IntrinsicClassBuilder::Interface("Landroid/content/SharedPreferences$Editor;");
-    builder.FinalMethod("putBoolean", "(Ljava/lang/String;Z)Landroid/content/SharedPreferences$Editor;", PrefsEditorPutBooleanHandler(context));
-    builder.FinalMethod("putInt", "(Ljava/lang/String;I)Landroid/content/SharedPreferences$Editor;", PrefsEditorPutIntHandler(context));
-    builder.FinalMethod("putLong", "(Ljava/lang/String;J)Landroid/content/SharedPreferences$Editor;", PrefsEditorPutLongHandler(context));
-    builder.FinalMethod("putString", "(Ljava/lang/String;Ljava/lang/String;)Landroid/content/SharedPreferences$Editor;", PrefsEditorPutStringHandler(context));
-    builder.FinalMethod("commit", "()Z", PrefsEditorCommitHandler(context));
-    return std::move(builder).Build();
-}
-
-}  // namespace ogplay::runtime::android_intrinsics
-
-
-// ---- migrated from android_content_SharedPreferences.cpp ----
-#include "catalog.h"
-
-namespace ogplay::runtime::android_intrinsics {
-
-Decl Declare_android_content_SharedPreferences(const Context& context) {
-    auto builder = dx::IntrinsicClassBuilder::Interface("Landroid/content/SharedPreferences;");
-    builder.FinalMethod("edit", "()Landroid/content/SharedPreferences$Editor;", PrefsEditHandler(context));
-    builder.FinalMethod("getBoolean", "(Ljava/lang/String;Z)Z", PrefsGetBooleanHandler(context));
-    builder.FinalMethod("getInt", "(Ljava/lang/String;I)I", PrefsGetIntHandler(context));
-    builder.FinalMethod("getLong", "(Ljava/lang/String;J)J", PrefsGetLongHandler(context));
-    builder.FinalMethod("getString", "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;", PrefsGetStringHandler(context));
-    return std::move(builder).Build();
-}
-
-}  // namespace ogplay::runtime::android_intrinsics
+// android.content.SharedPreferences, $Editor and
+// $OnSharedPreferenceChangeListener keep their original AOSP interface shape
+// from BootDex; no intrinsic interface declarations remain here.
 
 
 // ---- migrated from android_content_SharedPreferencesEditorImpl.cpp ----
@@ -2725,11 +2697,20 @@ Decl Declare_android_content_SharedPreferences(const Context& context) {
 namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_content_SharedPreferencesEditorImpl(const Context& context) {
+    // The full BootDex Editor interface: each editor stages independent
+    // changes; commit/apply publish and persist synchronously. putStringSet
+    // is not representable in the checked preference subset and fails
+    // explicitly with accounting.
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/content/SharedPreferencesEditorImpl;", "Ljava/lang/Object;", {"Landroid/content/SharedPreferences$Editor;"});
     builder.FinalMethod("putBoolean", "(Ljava/lang/String;Z)Landroid/content/SharedPreferences$Editor;", PrefsEditorPutBooleanHandler(context));
     builder.FinalMethod("putInt", "(Ljava/lang/String;I)Landroid/content/SharedPreferences$Editor;", PrefsEditorPutIntHandler(context));
     builder.FinalMethod("putLong", "(Ljava/lang/String;J)Landroid/content/SharedPreferences$Editor;", PrefsEditorPutLongHandler(context));
+    builder.FinalMethod("putFloat", "(Ljava/lang/String;F)Landroid/content/SharedPreferences$Editor;", PrefsEditorPutFloatHandler(context));
     builder.FinalMethod("putString", "(Ljava/lang/String;Ljava/lang/String;)Landroid/content/SharedPreferences$Editor;", PrefsEditorPutStringHandler(context));
+    builder.FinalMethod("putStringSet", "(Ljava/lang/String;Ljava/util/Set;)Landroid/content/SharedPreferences$Editor;", PrefsUnsupportedHandler("dexvm.shared_preferences.string_set"));
+    builder.FinalMethod("remove", "(Ljava/lang/String;)Landroid/content/SharedPreferences$Editor;", PrefsEditorRemoveHandler(context));
+    builder.FinalMethod("clear", "()Landroid/content/SharedPreferences$Editor;", PrefsEditorClearHandler(context));
+    builder.FinalMethod("apply", "()V", PrefsEditorApplyHandler(context));
     builder.FinalMethod("commit", "()Z", PrefsEditorCommitHandler(context));
     return std::move(builder).Build();
 }
@@ -2743,12 +2724,23 @@ Decl Declare_android_content_SharedPreferencesEditorImpl(const Context& context)
 namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_content_SharedPreferencesImpl(const Context& context) {
+    // The full BootDex SharedPreferences interface: typed getters, contains
+    // and a boxed getAll read the same store; change listeners are never
+    // invoked, so registration fails explicitly with accounting instead of
+    // accepting a silent no-op, and getStringSet has no checked storage
+    // representation.
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/content/SharedPreferencesImpl;", "Ljava/lang/Object;", {"Landroid/content/SharedPreferences;"});
-    builder.FinalMethod("edit", "()Landroid/content/SharedPreferences$Editor;", PrefsEditHandler(context));
-    builder.FinalMethod("getBoolean", "(Ljava/lang/String;Z)Z", PrefsGetBooleanHandler(context));
+    builder.FinalMethod("getAll", "()Ljava/util/Map;", PrefsGetAllHandler(context));
+    builder.FinalMethod("getString", "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;", PrefsGetStringHandler(context));
+    builder.FinalMethod("getStringSet", "(Ljava/lang/String;Ljava/util/Set;)Ljava/util/Set;", PrefsUnsupportedHandler("dexvm.shared_preferences.string_set"));
     builder.FinalMethod("getInt", "(Ljava/lang/String;I)I", PrefsGetIntHandler(context));
     builder.FinalMethod("getLong", "(Ljava/lang/String;J)J", PrefsGetLongHandler(context));
-    builder.FinalMethod("getString", "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;", PrefsGetStringHandler(context));
+    builder.FinalMethod("getFloat", "(Ljava/lang/String;F)F", PrefsGetFloatHandler(context));
+    builder.FinalMethod("getBoolean", "(Ljava/lang/String;Z)Z", PrefsGetBooleanHandler(context));
+    builder.FinalMethod("contains", "(Ljava/lang/String;)Z", PrefsContainsHandler(context));
+    builder.FinalMethod("edit", "()Landroid/content/SharedPreferences$Editor;", PrefsEditHandler(context));
+    builder.FinalMethod("registerOnSharedPreferenceChangeListener", "(Landroid/content/SharedPreferences$OnSharedPreferenceChangeListener;)V", PrefsUnsupportedHandler("dexvm.shared_preferences.change_listeners"));
+    builder.FinalMethod("unregisterOnSharedPreferenceChangeListener", "(Landroid/content/SharedPreferences$OnSharedPreferenceChangeListener;)V", PrefsUnsupportedHandler("dexvm.shared_preferences.change_listeners"));
     return std::move(builder).Build();
 }
 

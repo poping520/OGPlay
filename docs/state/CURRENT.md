@@ -1,18 +1,21 @@
 # 当前状态
 
-更新（2026-09-08）：[DVM-121](../tasks/dexvm/DVM-121.md) 闭合 PvZ InitXpromo：
+更新（2026-09-08 续）：[DVM-121](../tasks/dexvm/DVM-121.md) 续闭合 PvZ
+PreferenceManager 缺口：SharedPreferences 三接口与 PreferenceManager 迁入
+BootDex（923→927 类），Impl 补齐 float、getAll 快照及独立 Editor 提交语义，
+覆盖 clear 顺序、null 删除、GC、加载重试；string-set 与 change-listener 明确失败
+并记账。原命令越过 dobyear/dobmonth 读取，停在 onResume 的 hasWindowFocus。
 Button/TextView 三参构造与 buttonStyle(Small) 默认样式投影、TextView compound
 drawables（measure/raster/文本带内缩）、UI kind 按真实继承链解析、RelativeLayout
 TRUE(-1) 规则按 AOSP rule > 0 视为无锚点。exact PvZ 实跑 `CreateDiscoveryStrip 3/4/8`
-完整输出并挂入 mFrameLayout 后置 GONE；下一缺口为 `android/preference/PreferenceManager`
-类缺失。
+完整输出并挂入 mFrameLayout 后置 GONE。
 compound 支持四方向/空文本测量与定位、资源事务更新；默认样式读取实际 Context
 主题和 Resources，未登记覆盖明确失败。
 
 ## 当前能力
 
 - **发行/guest JNI**：exact Profile API 选择 bundled data。API 19 含 pinned AOSP 五库、
-  AOSP OpenSSL `libcrypto.so`、ICU4C 51.1 库及依赖、923 类 BootDex 和 ICU 数据；来源、
+  AOSP OpenSSL `libcrypto.so`、ICU4C 51.1 库及依赖、927 类 BootDex 和 ICU 数据；来源、
   hash、NOTICE、manifest 与 payload 校验已同步。crypto/ICU 保持源码模块边界，共用
   JNI_OnLoad 和 `libogplay_jni.so`；ICU 只调用 guest C ABI 与 `icudt51l.dat`，host 不链接 ICU。
   制品见 [manifest](../../data/android/19/manifest.json)；`bootdex.jar` 不提交。
@@ -30,15 +33,18 @@ compound 支持四方向/空文本测量与定位、资源事务更新；默认�
 - **运行边界**：文件/VFS、资源 XML、Locale、URL codec、Intent/Context、平台 enum、
   Activity 组件身份及 flags=0 的 action-only service 查询已接通。无 Binder/system_server、
   支付或完整 Android 系统；未知/潜在 native 或服务匹配不伪造成功。
-- **Title**：PvZ 已越过 InitXpromo/DiscoveryStrip 初始化，首错
-  `android/preference/PreferenceManager` 类缺失；Tales 首错 LocationListener，
-  均未通过游戏 gate。
+- **Title**：PvZ 已越过 InitXpromo 与 PreferenceManager/dobyear 读取，
+  首错 `MainActivity.onResume` 的 `hasWindowFocus()`；Tales 首错
+  LocationListener，均未通过游戏 gate。
 
 ## 最近验证
 
 - DVM-122：NDK r25c ARMv7 API 19 两次构建一致；ELF ABI、SONAME、DT_NEEDED、payload、
   BootDex audit/self-test、Bionic profile、DVM-105/106/108 及大小写/结构定向回归通过。
   Windows Release 未下载、编译或链接 host ICU。
+- DVM-121 续：BootDex check 与全类链接（927）、prefs/Context 邻域回归
+  25/25（10,957 断言）通过；intrinsic layout、BootDex self-test、payload 三项门禁通过。
+  exact PvZ 实跑日志 `.local/review/dvm121-prefs/pvz-run.log`。
 - DVM-121：windows-msvc Release 构建；UI 56/56（1078 断言）、布局/样式 5/5
   （501 断言）及 intrinsic 门禁通过；原命令进入 InitXpromo 后的 onAdConfigCreate。
   隐藏树状态有独立回归。
@@ -46,11 +52,11 @@ compound 支持四方向/空文本测量与定位、资源事务更新；默认�
   在本 WU 前已失败（stash 验证与本次改动无关）；既有 GUI
   `process_manager.cpp:131` 仍使 platform_boundaries 门禁失败。本轮未运行全量 CTest、
   游戏 gate 或跨平台验收。
-  最新架构记录为 [ADR-0051](../adr/dexvm.md#adr-0051)。
+  最新架构记录为 [ADR-0052](../adr/dexvm.md#adr-0052)。
 
 ## 下一步与边界
 
-1. 补 `android/preference/PreferenceManager`（PvZ onCreate 在 InitXpromo 之后的下一个缺口），继续推进 PvZ。
+1. 补 Activity `hasWindowFocus()`（PvZ onResume 的下一个缺口），继续推进 PvZ。
 2. 处理既有 GUI 门禁，补 macOS/Linux、DH 与 Diagnostics 验收。
 
 OGPlay 仅覆盖登记的老游戏进程能力。完整 formatter/大数、宿主资源持久化、Proxy 生成、

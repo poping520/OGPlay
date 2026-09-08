@@ -322,3 +322,13 @@ setCompoundDrawablesWithIntrinsicBounds(IIII) 按 AOSP 声明为可覆盖的 Tex
 槽位与 measure/draw 语义见 runtime/ui MODULE，架构边界见 ADR-0051。
 RelativeLayout sibling 规则非正值（含 addRule(verb) 的 TRUE=-1）按 AOSP `rule > 0`
 过滤为无锚点。
+PreferenceManager 与 SharedPreferences/Editor/OnSharedPreferenceChangeListener
+接口使用 BootDex 原版 Java（927 类配方）；integration 不再声明这三个接口的
+intrinsic 副本。SharedPreferencesImpl/EditorImpl 支持 boolean/int/long/float/string，
+contains 读取已提交值，getAll 返回装箱 HashMap 快照并保护构建期间的 guest 引用。
+每次 edit 创建独立缓冲，put/remove/clear 仅在 commit/apply 发布；clear 先清旧值，
+再合并待写项，putString(null) 等同 remove。缓冲只含宿主标量/字符串，
+由 android.preference-editors 状态表随 Editor GC 清理；已提交 store/VFS XML 唯一。
+apply 按 API 19 允许的兼容方式同步持久化；string-set 与 change-listener 明确失败
+并记账。默认偏好经 Context 虚派打开，与显式命名入口共享对象缓存；加载失败不置
+loaded，后续打开继续报告错误或重试读取。边界见 ADR-0052。

@@ -1,15 +1,17 @@
 # 当前状态
 
-更新（2026-09-08）：[DVM-121](../tasks/dexvm/DVM-121.md) 完成文本外观与样式资源；
-本轮收尾；下一缺口：Button 三参数构造器。
+更新（2026-09-08）：AOSP 4.4.4_r2.0.1 自建 `libcrypto.so` 已替换 API 19 payload 的
+临时 ROM 库；[DVM-121](../tasks/dexvm/DVM-121.md) 完成文本外观与样式资源；
+下一缺口：Button 三参数构造器。
 
 ## 当前能力
 
 - **运行与发行**：按 exact Profile API 选择 bundled data；API 19 内置 pinned AOSP
-  五库、923 类 BootDex 与 ICU4C 51.1。ROM libcrypto 已授权恢复到本地临时使用，
-  未纳入 Git，哈希与清单一致。JNI 桥为 src/guest/crypto/crypto_jni.c；不自动恢复设备库。
-  自行构建替换后须更新来源/哈希并复验。制品身份见
-  [payload manifest](../../data/android/19/manifest.json)，bootdex.jar 继续不提交。
+  五库、AOSP OpenSSL 自建的 `libcrypto.so`、923 类 BootDex 与 ICU4C 51.1。libcrypto
+  固定为 `platform/external/openssl` 的 `android-4.4.4_r2.0.1` revision
+  `dd1da36b0baa39942f0aef42c4712ef0ad628a83`，以 `aosp_arm-user` 构建；hash、NOTICE、
+  pinned manifest 和 payload 校验约束已同步。JNI 桥为 src/guest/crypto/crypto_jni.c；
+  制品身份见 [payload manifest](../../data/android/19/manifest.json)，bootdex.jar 继续不提交。
 - **Cipher**：AES 128/192/256；ECB/CBC NoPadding/PKCS5Padding、CTR/NoPadding，
   裸 AES 默认 ECB/PKCS5Padding。Java 算法归 BootDex，11 个 native 进入 guest OpenSSL；
   分段/原位/异常、IV reset、OS 随机源、真实线程、GC/teardown 受检。
@@ -55,10 +57,9 @@
 - DVM-121：资源/平台/UI 定向 103 用例、8,861 断言；专项与全类链接
   5 用例、7,122 断言及 6 项门禁通过。证据 `.local/review/dvm121/`。
 
-- MoKee API 19 ARMv7 临时文件（哈希已核对）：
-  `.local/android-device/20260906-cipher/`。手机已断开；发行前
-  须自行构建替换临时制品。macOS Release 使用 WARNINGS_AS_ERRORS=OFF，
-  仅构建 ogplay_tests 及 ogplay 依赖；未跑全量测试或 Windows/Linux 验收。
+- libcrypto 已由 AOSP Android 4.4.4_r2.0.1 OpenSSL 源码构建替换临时 ROM 库；本轮仅完成
+  payload 源、hash、NOTICE 和来源校验约束更新，未重跑 ARM Cipher adapter 重链或游戏 gate。
+  macOS Release 使用 WARNINGS_AS_ERRORS=OFF，仅构建 ogplay_tests 及 ogplay 依赖；未跑全量测试或 Windows/Linux 验收。
 - 已知门禁遗留：architecture.platform_boundaries 在既有 GUI process_manager.cpp:131
   平台分支失败，本轮未修改、未重跑该门禁。ADR 继续按 6 个主题维护，追加
   [0048](../adr/dexvm.md#adr-0048)，不新增独立 ADR 文件。

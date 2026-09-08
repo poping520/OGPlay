@@ -445,7 +445,7 @@ FieldUpdater/ForkJoin 和证书验证不因类迁移宣称可用；PvZ 首错推
   锁和 identity 回调。Signature 累计输入同样限于 1 MiB，超限抛 SignatureException。
 - JNI object arrays 对 synthetic 类型通过锁外显式回调调用 DexVM 类型关系；bridge
   持有同一执行锁，不按身份不等误拒绝嵌套数组，也不绕过不兼容写入检查。
-- 保留同一 api19.json、build_bootdex.py、cipher.c 和 manifest.cipher_native。
+- 保留同一 api19.json、build_bootdex.py、cipher.c 和 manifest.libraries。
   设备临时制品授权及后续自行构建替换要求延续 ADR-0035，bootdex.jar 继续不提交。
 
 ### 验证与边界
@@ -477,6 +477,13 @@ RSA/EC KeyFactory 或数学参数接口。未做真机、Windows/Linux 或游戏
 build-cipher 只消费显式准备的 data/android/19/lib/libcrypto.so，不从 .local 设备目录恢复。
 现有 manifest 中来源/哈希是此前验收记录，完整 payload 校验在缺库时继续明确失败。
 待用户自行构建后再更新来源约束、哈希并重跑 crypto/payload 验收；不将缺库伪装为可发行。
+
+### 2026-09-08 实现记录
+
+`libcrypto.so` 已替换为 AOSP `platform/external/openssl` 的
+`android-4.4.4_r2.0.1` revision `dd1da36b0baa39942f0aef42c4712ef0ad628a83`
+在 `aosp_arm-user` 下执行 `make -B -j8 libcrypto` 的 ARM 产物。payload manifest、
+source-manifest、OpenSSL NOTICE 和校验器已切换到该来源；设备库不再是 libcrypto 的发行输入。
 
 <a id="adr-0038"></a>
 

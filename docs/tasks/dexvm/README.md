@@ -138,6 +138,7 @@ Asphalt 5（pilot title）删除 profile 全部 `native_call` 与 `[[java.class]
 | [DVM-113](DVM-113.md) | Locale ISO 语言与国家代码枚举 | 已完成 |
 | [DVM-114](DVM-114.md) | Throwable 本地化消息虚分派 | 已完成 |
 | [DVM-115](DVM-115.md) | Throwable 家族迁入 BootDex | 已完成 |
+| [DVM-116](DVM-116.md) | BackupManager 无服务路径归 BootDex | 已完成 |
 
 ## 批次 4 · 更多 title 上 dexvm 路线（进行中）
 

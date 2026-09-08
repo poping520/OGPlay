@@ -11,6 +11,25 @@
 
 namespace ogplay::runtime::android_intrinsics {
 
+Decl Declare_android_app_backup_BackupManager(const Context&) {
+    auto builder = dx::IntrinsicClassBuilder::Class(
+        "Landroid/app/backup/BackupManager;");
+    const auto service = builder.BoundStaticField(
+        "sService", "Landroid/app/backup/IBackupManager;", dx::kAccPrivate);
+    // This process has no Android backup service. API 19 Java owns the
+    // absent-service returns; no Binder lookup or backup job is simulated.
+    builder.StaticMethod("checkServiceBinder", "()V",
+        [service](dx::IntrinsicContext& call) {
+            if (auto* ledger = call.vm.Ledger())
+                ledger->RecordUnimplemented("dexvm.backup_service", 0);
+            if (dx::IntrinsicCall(call).GetRef(service).IsValid())
+                throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
+                                      "external backup service is unavailable"};
+            return dx::VmValue::Void();
+        }, dx::kAccPrivate);
+    return std::move(builder).Build();
+}
+
 Decl Declare_android_app_Application(const Context& context) {
     static_cast<void>(context);
     auto builder = dx::IntrinsicClassBuilder::Class(

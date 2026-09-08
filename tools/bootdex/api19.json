@@ -890,6 +890,8 @@
       "Lcom/android/org/conscrypt/util/EmptyArray;"
     ],
     "framework.jar": [
+      "Landroid/app/backup/BackupManager;",
+      "Landroid/app/backup/RestoreObserver;",
       "Landroid/content/ComponentName$1;",
       "Landroid/content/ComponentName;",
       "Landroid/content/ServiceConnection;",

@@ -273,3 +273,8 @@ DVM-112：ServiceConnection 原版接口归 BootDex。PackageManager.resolveServ
 
 DVM-115：残留 Android 异常构造器调用 VM 的 BootDex Throwable 基类初始化入口，
 消息、cause、suppressed 与异常栈归 Java 字段；不再向旧 Throwable 宿主侧表写入消息。
+
+DVM-116：BackupManager/RestoreObserver 来自 BootDex，仅私有 checkServiceBinder
+覆盖平台查询边界。进程没有 Android 备份服务，sService 保持 null 并记录
+`dexvm.backup_service`；非空服务注入抛 UOE。Java 决定通知不排队、恢复请求 -1、
+恢复会话 null，不发出成功/完成回调。不引入 Binder、备份传输器或系统服务类型反射。

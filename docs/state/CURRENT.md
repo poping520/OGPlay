@@ -1,12 +1,12 @@
 # 当前状态
 
-更新（2026-09-08）：[DVM-115](../tasks/dexvm/DVM-115.md) 将 Throwable 家族迁入 BootDex；
-继续推进 PvZ 的 BackupManager 缺口。
+更新（2026-09-08）：[DVM-116](../tasks/dexvm/DVM-116.md) 迁入 BackupManager 无服务路径；
+继续推进 PvZ 的 Serializable Intent extra 缺口。
 
 ## 当前能力
 
 - **运行与发行**：按 exact Profile API 选择 bundled data；API 19 内置 pinned AOSP
-  五库、898 类 BootDex 与 ICU4C 51.1。ROM libcrypto 已按用户再次授权恢复到本地临时使用，
+  五库、900 类 BootDex 与 ICU4C 51.1。ROM libcrypto 已按用户再次授权恢复到本地临时使用，
   未纳入 Git，哈希与清单一致。JNI 桥为 src/guest/crypto/crypto_jni.c；不自动恢复设备库。
   自行构建替换后须更新来源/哈希并复验。制品身份见
   [payload manifest](../../data/android/19/manifest.json)，bootdex.jar 继续不提交。
@@ -47,13 +47,13 @@
   UTF-16 append 依赖已补。一般组件解析和非根 alias 切换仍未扩展。
 - **服务查询**：ServiceConnection 来自 BootDex。resolveService 的 action-only/flags=0
   查询依据当前 APK 服务信息，无候选返回 null，未知或潜在匹配明确失败；无 Binder/支付。
-- **Title**：PvZ 已越过异常打印，当前首错 android.app.backup.BackupManager；
+- **Title**：PvZ 已越过异常打印，当前首错 Intent Serializable extra；
   尚未通过游戏 gate；Tales 首错 LocationListener。
 
 ## 最近验证
 
-- DVM-115：core 123 用例/137139 断言、反射/Android 定向回归、真实 JNI 对象流及门禁通过。
-  证据 `.local/review/dvm115/`；历史验收见任务单。
+- DVM-116：无服务路径/全类链接 2 用例、Android 20 用例及 6 项门禁通过。
+  证据 `.local/review/dvm116/`；历史验收见任务单。
 
 - MoKee API 19 ARMv7 临时文件（哈希已核对）：
   `.local/android-device/20260906-cipher/`。手机已断开；发行前
@@ -61,11 +61,11 @@
   仅构建 ogplay_tests 及 ogplay 依赖；未跑全量测试或 Windows/Linux 验收。
 - 已知门禁遗留：architecture.platform_boundaries 在既有 GUI process_manager.cpp:131
   平台分支失败，本轮未修改、未重跑该门禁。ADR 继续按 6 个主题维护，追加
-  [0043](../adr/dexvm.md#adr-0043)，不新增独立 ADR 文件。
+  [0044](../adr/dexvm.md#adr-0044)，不新增独立 ADR 文件。
 
 ## 下一步与边界
 
-1. 补齐 BackupManager 的无服务路径，继续按原命令推进 PvZ。
+1. 补齐 Intent 对象传递，继续按原命令推进 PvZ。
 2. 自建 ARM libcrypto 替换临时制品；Windows/Linux、既有 GUI 门禁、DH 与 Diagnostics 验收。
 
 OGPlay 是老游戏兼容层；complete 只覆盖登记范围。具名时区/历史 DST、完整大数与 formatter、宿主资源对象持久化、Proxy 生成、privileged 执行器工厂/安全上下文、高争用集合、RSA Cipher、HMAC/Mac、SHA-3、完整 JCA/TLS/系统服务仍未交付。

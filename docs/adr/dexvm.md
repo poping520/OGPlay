@@ -20,6 +20,7 @@
 - [ADR-0041 · 定时执行器与 FutureTask 执行原版 Java](#adr-0041)
 - [ADR-0042 · 服务查询的有界无匹配结果](#adr-0042)
 - [ADR-0043 · Throwable 协议归 BootDex，栈捕获归 VM](#adr-0043)
+- [ADR-0044 · BackupManager 保留 Java 无服务路径](#adr-0044)
 
 <a id="adr-0017"></a>
 
@@ -642,3 +643,23 @@ enabled，由 AndroidAppProcess 注入唯一 context；没有注入时保持未�
 GC、禁用 suppression/栈、错误参数；对象流在真实 guest SHA 后端验证普通异常图往返。
 不承诺 Android 所有带宿主资源对象可序列化，不引入系统服务或 native 宿主栈伪装。
 KitKat 原版循环 cause 打印行为与其余 Java 递归一样受 VM 栈/执行预算约束。
+
+<a id="adr-0044"></a>
+## ADR-0044 · BackupManager 保留 Java 无服务路径
+
+日期：2026-09-08；状态：采用。
+
+### 决定
+
+BackupManager/RestoreObserver 从固定 framework.jar 选入 BootDex。OGPlay 进程不提供
+Android 备份服务，因此只覆盖私有 checkServiceBinder() 平台查询入口，保持 sService
+为空并记账 dexvm.backup_service；不引入 ServiceManager、Binder 或 system_server。
+构造器与所有公开方法执行原版 Java：dataChanged 不排队，requestRestore 返回 -1，
+beginRestoreSession 返回 null。通知返回不表示备份成功；恢复失败不调用观察者。
+发现非空 sService 时明确抛 UnsupportedOperationException，不覆盖未知服务状态。
+
+### 验证与边界
+
+双后端验证 Java 字段/GC、实例与静态通知、失败码、无回调以及意外服务注入。
+只承诺无服务执行分支，不发布 IBackupManager/RestoreSession/RestoreSet 的服务实现
+或这些未选入类型的反射能力。远程备份、恢复和传输器仍未实现。

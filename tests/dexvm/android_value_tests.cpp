@@ -113,6 +113,71 @@ struct AndroidValueVm final {
 
 }  // namespace
 
+TEST_CASE("DVM-116 BackupManager Java reports absent backup service") {
+    for (const auto backend :
+         {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        int callbacks{};
+        auto observer = IntrinsicClassBuilder::Class(
+            "Ltest/BackupObserver;", "Landroid/app/backup/RestoreObserver;");
+        observer.Constructor("()V", [](IntrinsicContext&) { return VmValue::Void(); });
+        const auto callback = [&callbacks](IntrinsicContext&) {
+            ++callbacks;
+            return VmValue::Void();
+        };
+        observer.VirtualMethod("restoreStarting", "(I)V", callback);
+        observer.VirtualMethod("onUpdate", "(ILjava/lang/String;)V", callback);
+        observer.VirtualMethod("restoreFinished", "(I)V", callback);
+        AndroidValueVm f(backend, {std::move(observer).Build()});
+        const auto activity = f.New("Landroid/app/Activity;");
+        const auto manager = f.New("Landroid/app/backup/BackupManager;",
+                                   "(Landroid/content/Context;)V", {VmValue::Ref(activity)});
+        const auto manager_root = f.vm.ProtectReferences(std::array{manager});
+        const auto owner = f.model.ObjectClass(manager);
+        CHECK(f.linker.Class(owner).is_boot_dex);
+        const auto context = f.linker.FindFieldRecursive(
+            owner, "mContext", "Landroid/content/Context;");
+        REQUIRE(context.has_value());
+        CHECK(f.model.InstanceSlots(manager)[f.linker.Field(*context).slot].bits == activity.Value());
+        CHECK(f.vm.MarkReachable().IsMarked(activity));
+        static_cast<void>(f.vm.CollectGarbage("dvm116-manager-context"));
+        CHECK(f.model.ObjectClass(activity) == f.linker.ResolveDescriptor("Landroid/app/Activity;"));
+        f.On(manager, "dataChanged", "()V");
+        f.Static("Landroid/app/backup/BackupManager;", "dataChanged", "(Ljava/lang/String;)V",
+                 {VmValue::Ref(f.vm.NewStringUtf8("org.example.fixture"))});
+        f.Static("Landroid/app/backup/BackupManager;", "dataChanged", "(Ljava/lang/String;)V",
+                 {VmValue::Ref(VmObjectRef{})});
+        const auto receiver = f.New("Ltest/BackupObserver;");
+        const auto observer_root = f.vm.ProtectReferences(std::array{receiver});
+        CHECK(f.On(manager, "requestRestore", "(Landroid/app/backup/RestoreObserver;)I",
+                   {VmValue::Ref(receiver)}).AsInt() == -1);
+        CHECK(f.On(manager, "requestRestore", "(Landroid/app/backup/RestoreObserver;)I",
+                   {VmValue::Ref(VmObjectRef{})}).AsInt() == -1);
+        CHECK_FALSE(f.On(manager, "beginRestoreSession", "()Landroid/app/backup/RestoreSession;")
+                        .ref.IsValid());
+        CHECK(callbacks == 0);
+        const auto hits = f.ledger.Unimplemented();
+        REQUIRE(hits.size() == 1);
+        CHECK(hits[0].id == "dexvm.backup_service");
+        CHECK(hits[0].count == 6);
+        const auto service = f.linker.FindFieldRecursive(
+            owner, "sService", "Landroid/app/backup/IBackupManager;");
+        REQUIRE(service.has_value());
+        const auto slot = f.linker.Field(*service).slot;
+        CHECK(f.linker.Class(owner).static_storage[slot] == 0);
+        // Unexpected service injection must fail explicitly, never claim success.
+        f.linker.MutableClass(owner).static_storage[slot] = receiver.Value();
+        const auto unsupported = f.OnOutcome(manager, "dataChanged", "()V");
+        REQUIRE(unsupported.exception.IsValid());
+        CHECK(f.linker.Class(f.model.ObjectClass(unsupported.exception)).descriptor ==
+              "Ljava/lang/UnsupportedOperationException;");
+        CHECK(f.linker.Class(owner).static_storage[slot] == receiver.Value());
+        f.linker.MutableClass(owner).static_storage[slot] = 0;
+        const auto null_context = f.New("Landroid/app/backup/BackupManager;",
+                                        "(Landroid/content/Context;)V", {VmValue::Ref(VmObjectRef{})});
+        f.On(null_context, "dataChanged", "()V");
+    }
+}
+
 TEST_CASE("DVM-97 action-only Intent follows the LocalBroadcastManager match chain") {
     AndroidValueVm fixture;
     const auto action = fixture.vm.NewStringUtf8("org.example.PLANT");

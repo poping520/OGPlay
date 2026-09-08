@@ -560,6 +560,9 @@ TEST_CASE("UI resources resolve string color dimension and image state") {
     vm.context->arsc.entries = {
         {.resource_id = 100, .type_name = "string", .entry_name = "go",
          .string_value = "GO", .value_type = 0x03, .value_data = 0},
+        {.resource_id = 107, .type_name = "string", .entry_name = "unicode",
+         .string_value = "\xE6\xA4\x8D\xE7\x89\xA9",
+         .value_type = 0x03, .value_data = 0},
         {.resource_id = 101, .type_name = "color", .entry_name = "red",
          .value_type = 0x1c, .value_data = 0xffff0000U},
         {.resource_id = 102, .type_name = "color", .entry_name = "alias",
@@ -574,6 +577,10 @@ TEST_CASE("UI resources resolve string color dimension and image state") {
          .value_type = 0x01, .value_data = 105},
     };
     CHECK(ResolveUiString(*vm.context, 100) == u"GO");
+    CHECK(ResolveResourceString(*vm.context, 107) ==
+          "\xE6\xA4\x8D\xE7\x89\xA9");
+    CHECK_THROWS_WITH(static_cast<void>(ResolveUiString(*vm.context, 107)),
+                      "fixed-font XML text must use the supported ASCII subset");
     CHECK(ResolveUiColor(*vm.context, 102) == 0xff0000ffU);
     CHECK(ResolveUiDimension(*vm.context, 103, false) == 16);
     CHECK(ResolveUiDimension(*vm.context, 104, true) == 24);

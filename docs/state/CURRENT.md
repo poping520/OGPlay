@@ -1,9 +1,13 @@
 # 当前状态
 
-更新（2026-09-09）：[DVM-128](../tasks/dexvm/DVM-128.md) 完成 API 19
+更新（2026-09-09）：[DVM-129](../tasks/dexvm/DVM-129.md) 修复资源型 application label
+错误进入 fixed-font ASCII 限制的问题。`PackageManager.getApplicationLabel` 现按 AOSP
+返回 Unicode `CharSequence`，不触发 UI 字形测量；exact PvZ 已越过原错误，新首错为
+`Landroid/os/Build;->BRAND:Ljava/lang/String;`。
+[DVM-128](../tasks/dexvm/DVM-128.md) 完成 API 19
 `Settings.Secure.getString` 与沙盒身份。`ANDROID_ID` 首次由 OS CSPRNG 生成 64 位十六进制值，
 持久沙盒跨启动稳定，ephemeral 每次重建；JNI/DexVM 共用配置且不读取宿主设备身份。
-exact PvZ 已越过该缺口，新首错为 fixed-font XML 非 ASCII 文本限制。
+exact PvZ 已越过该缺口。
 Button/TextView 三参构造与 buttonStyle(Small) 默认样式投影、TextView compound
 drawables（measure/raster/文本带内缩）、UI kind 按真实继承链解析、RelativeLayout
 TRUE(-1) 规则按 AOSP rule > 0 视为无锚点。exact PvZ 实跑 `CreateDiscoveryStrip 3/4/8`
@@ -33,12 +37,15 @@ compound 支持四方向/空文本测量与定位、资源事务更新；默认�
   Activity 组件身份、窗口焦点、沙盒稳定 `ANDROID_ID` 及 flags=0 的 action-only service
   查询已接通。无 Binder/system_server、SettingsProvider、支付或完整 Android 系统；未知/
   潜在 native 或服务匹配不伪造成功。
-- **Title**：PvZ 已越过 InitXpromo、PreferenceManager、onResume 焦点、`System.getenv` 与
-  `Settings.Secure`，首错为 fixed-font XML 非 ASCII 文本；Tales 首错
+- **Title**：PvZ 已越过 InitXpromo、PreferenceManager、onResume 焦点、`System.getenv`、
+  `Settings.Secure` 与 Unicode application label，首错为 `Build.BRAND`；Tales 首错
   LocationListener，均未通过游戏 gate。
 
 ## 最近验证
 
+- DVM-129：macOS dev 受影响目标构建；PackageManager Unicode label 双后端与 UI fixed-font
+  边界共 2 项、188 断言通过。关闭 survey 的 exact PvZ 越过原错误，新首错为
+  `Landroid/os/Build;->BRAND:Ljava/lang/String;`，栈位于 S2S tracking worker。
 - DVM-128：macOS dev 构建；沙盒身份迁移/稳定 8、Settings.Secure 双后端/GC 30、JNI
   平台一致性 58 断言通过。关闭 survey 的 exact PvZ 越过原缺口，新首错为 fixed-font XML
   非 ASCII 文本限制。
@@ -63,7 +70,7 @@ compound 支持四方向/空文本测量与定位、资源事务更新；默认�
 
 ## 下一步与边界
 
-1. 分析 fixed-font XML 非 ASCII 文本限制，继续按通用字体/资源能力推进 PvZ。
+1. 对照 AOSP 分析并补齐实际命中的 `Build.BRAND` 只读字段，继续推进 PvZ。
 2. 处理既有 GUI 门禁，补 macOS/Linux、DH 与 Diagnostics 验收。
 
 OGPlay 仅覆盖登记的老游戏进程能力。完整 formatter/大数、宿主资源持久化、Proxy 生成、

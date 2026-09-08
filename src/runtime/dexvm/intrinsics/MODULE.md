@@ -23,6 +23,9 @@ Locale 保持 API 19 的 final class 及 Cloneable/Serializable 直接接口关�
 ENGLISH、CHINESE 等 22 个预定义对象由类初始化器创建并保存在静态强根中。language/country/
 variant/script 使用 API 19 transient 字段，默认 Locale 从会话注入且按 VM 隔离，不读取宿主
 locale；首批 LocaleData 只接受 ROOT、en、en_US、zh、zh_CN，其余明确失败。
+Locale.getISOLanguages/getISOCountries 转发到 BootDex ICU 的缓存/clone；两个 private
+native 使用固定 ICU 51 的完整 ISO 表（559 语言、249 国家），不按默认 Locale 过滤，
+不添加第一处 NULL 之后的废弃别名。缓存归 Java 静态字段，每次返回独立 String[]。
 `org.xmlpull.v1.XmlPullParser` 只发布 API 19 接口 shape，资源事件实现归 Android integration，
 core 不依赖 `DexVmAndroidContext`。
 Timer/TimerTask 仅保留 Java 参数、重复调度与取消入口；deadline、执行队列、Clock 和

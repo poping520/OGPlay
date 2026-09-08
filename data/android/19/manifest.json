@@ -41,7 +41,7 @@
     "path": "framework/bootdex.jar",
     "generator": "tools/bootdex/build_bootdex.py",
     "recipe": "tools/bootdex/api19.json",
-    "recipe_sha256": "7efa341a25738b5660d78edbd07bc652664157d8f784c317a196cd07396395d7",
+    "recipe_sha256": "e4fbe6bd355a28d6757c58cfbdcb4b2841109e5e5414b593489e6c65f19fd034",
     "sources": [
       {
         "source_project": "platform/libcore",

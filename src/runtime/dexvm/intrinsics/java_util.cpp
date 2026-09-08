@@ -160,6 +160,24 @@ IntrinsicClassDecl DeclarePlatformLocale(
             throw VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
                               "Locale.setDefault is session configured"};
         }, kAccPublic | kAccStatic | kAccSynchronized);
+    for (const auto* name : {"getISOLanguages", "getISOCountries"}) {
+        builder.StaticMethod(name, "()[Ljava/lang/String;",
+            [name](IntrinsicContext& context) {
+                auto& vm = context.vm;
+                // API 19 Locale delegates to ICU's Java cache and defensive clone.
+                const auto method = vm.Linker().FindDirectMethod(
+                    vm.Linker().ResolveDescriptor("Llibcore/icu/ICU;"),
+                    name, "()[Ljava/lang/String;");
+                if (!method) throw DexVmError(
+                    DexVmErrorReason::unresolved_reference,
+                    std::string("BootDex ICU method unavailable: ") + name);
+                const auto result = vm.Call(*method, {});
+                if (result.exception.IsValid()) throw VmJavaThrow{
+                    vm.Linker().Class(result.exception_class).descriptor,
+                    result.exception_message, result.exception};
+                return result.value;
+            });
+    }
     builder.FinalMethod(
         "getLanguage", "()Ljava/lang/String;",
         [fields](IntrinsicContext& context) {

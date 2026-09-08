@@ -18,7 +18,6 @@
 
 namespace ogplay::runtime::dexvm {
 
-class IcuFormatterRuntime;
 class BigIntRuntime;
 class IoRuntime;
 class NioRuntime;
@@ -412,8 +411,6 @@ public:
     [[nodiscard]] VmObjectRef CloneObject(VmObjectRef source);
 
     [[nodiscard]] BigIntRuntime& BigInts();
-    [[nodiscard]] IcuFormatterRuntime& IcuFormatters();
-    [[nodiscard]] const IcuFormatterRuntime& IcuFormatters() const;
     [[nodiscard]] NioRuntime& NIO();
     [[nodiscard]] const NioRuntime& NIO() const;
     void SetNioRuntime(NioRuntime* runtime) noexcept;

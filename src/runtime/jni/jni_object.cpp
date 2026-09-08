@@ -67,6 +67,13 @@ public:
         strings_.erase(found);
     }
 
+    [[nodiscard]] bool Contains(
+        const JniObjectIdentity string) const noexcept {
+        if (string.domain != JniObjectDomain::host) return false;
+        std::scoped_lock lock(mutex_);
+        return strings_.contains(string.value);
+    }
+
     [[nodiscard]] JniSize Length(const JniObjectIdentity string) const {
         std::scoped_lock lock(mutex_);
         return static_cast<JniSize>(CheckedSize(RequireString(string)->second
@@ -201,6 +208,9 @@ JniObjectIdentity JniStringStore::CreateModifiedUtf8(
 
 void JniStringStore::Delete(const JniObjectIdentity string) {
     impl_->Delete(string);
+}
+bool JniStringStore::Contains(const JniObjectIdentity string) const noexcept {
+    return impl_->Contains(string);
 }
 
 JniSize JniStringStore::Length(const JniObjectIdentity string) const {

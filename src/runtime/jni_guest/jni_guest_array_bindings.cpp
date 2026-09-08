@@ -19,6 +19,7 @@
 #include "ogplay/runtime/jni/jni_array.h"
 #include "ogplay/runtime/jni/jni_class_registry.h"
 #include "ogplay/runtime/jni/jni_environment.h"
+#include "ogplay/runtime/jni/jni_object.h"
 #include "ogplay/runtime/jni/jni_object_array.h"
 #include "jni_guest_memory.h"
 
@@ -350,11 +351,19 @@ private:
 };
 
 [[nodiscard]] std::optional<JniObjectValue> ResolveObjectValue(
-    JniEnvironment& environment, JniGuestObjectRegistry& objects,
+    JniEnvironment& environment, JniClassRegistry& classes,
+    JniStringStore& strings, JniGuestObjectRegistry& objects,
     const JniGuestCallFrame& frame, const std::uint32_t reference,
     const char* operation) {
     if (reference == 0U) return std::nullopt;
     const auto object = Resolve(environment, frame, reference, operation);
+    if (strings.Contains(object)) {
+        const auto java_class = classes.FindClass("java/lang/String");
+        if (!java_class.has_value()) {
+            throw JniGuestBindingError("java/lang/String is not registered");
+        }
+        return JniObjectValue{object, *java_class};
+    }
     return JniObjectValue{object, objects.ClassOf(object)};
 }
 
@@ -362,7 +371,8 @@ private:
 
 void BindJniGuestArraySlots(
     JniGuestCallDispatcher& dispatcher, JniEnvironment& environment,
-    JniClassRegistry& classes, JniPrimitiveArrayStore& arrays,
+    JniClassRegistry& classes, JniStringStore& strings,
+    JniPrimitiveArrayStore& arrays,
     JniGuestObjectRegistry& objects, memory::AddressSpace& address_space) {
     const auto leases = std::make_shared<PrimitiveArrayLeases>(
         environment, arrays, address_space);
@@ -504,7 +514,7 @@ void BindJniGuestArraySlots(
 
     dispatcher.BindEnvironment(
         Slot("NewObjectArray"),
-        [&environment, &classes, &objects,
+        [&environment, &classes, &strings, &objects,
          &object_arrays](const JniGuestCallFrame& frame) {
             const auto length = std::bit_cast<JniSize>(frame.registers[1]);
             const auto element_class = Resolve(
@@ -512,7 +522,8 @@ void BindJniGuestArraySlots(
             static_cast<void>(
                 classes.IsAssignableFrom(element_class, element_class));
             const auto initial = ResolveObjectValue(
-                environment, objects, frame, frame.registers[3],
+                environment, classes, strings, objects, frame,
+                frame.registers[3],
                 "NewObjectArray");
             const auto identity =
                 object_arrays.New(element_class, length, initial);
@@ -539,13 +550,14 @@ void BindJniGuestArraySlots(
         });
     dispatcher.BindEnvironment(
         Slot("SetObjectArrayElement"),
-        [&environment, &objects,
+        [&environment, &classes, &strings, &objects,
          &object_arrays](const JniGuestCallFrame& frame) {
             const auto array = Resolve(
                 environment, frame, frame.registers[1],
                 "SetObjectArrayElement");
             const auto value = ResolveObjectValue(
-                environment, objects, frame, frame.registers[3],
+                environment, classes, strings, objects, frame,
+                frame.registers[3],
                 "SetObjectArrayElement");
             object_arrays.Set(
                 array, std::bit_cast<JniSize>(frame.registers[2]), value);

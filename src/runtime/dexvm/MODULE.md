@@ -82,12 +82,10 @@ intrinsic。解释应用 DEX 与受审 API 19 curated Boot DEX；完整平台库
   工厂、动态安全上下文和高争用压力测试未纳入，不改变单通道解释执行边界。
 - BootDex 与 intrinsic 字段合并后，own_static_fields 必须以 DEX 声明顺序为首部，
   encoded_array 初始值逐项对应同序字段；不得让 overlay 声明顺序改变整数、wide 或引用初值。
-- `IcuFormatterRuntime`（DVM-102）：每 VM 持有 NativeDecimalFormat 的受检逻辑令牌与固定
-  ICU4C 51.1.0.1 DecimalFormat 资源；guest long 从不保存宿主地址。clone 独立复制，重复 close/失效令牌明确失败，
-  NativeDecimalFormat owner 清扫与 VM teardown 都释放资源。日期、日历和 pattern 算法归固定
-  API 19 BootDex；core 只保留审计登记的 LocaleData/ICU/TimeZone native 边界。
-  固定 ICU 数据经构建期哈希校验后嵌入，禁止文件/动态数据查找；LocaleData、货币、
-  时区名称和整数 format/parse 直接使用同版本 ICU，不维护手写区域/数字算法。
+- ICU（DVM-122）：日期、日历和 pattern 算法归固定 API 19 BootDex；审计登记的
+  LocaleData/ICU/TimeZone/NativeDecimalFormat native 经 guest JNI 调用 payload ICU4C 51。
+  formatter 逻辑令牌完全位于 guest SO，owner 清扫与 VM teardown 调用 close；宿主不保存 ICU 对象。
+  固定 ICU 数据挂载为 `/system/usr/icu/icudt51l.dat`，不得恢复嵌入数据或宿主 ICU 链接。
   Locale ISO 语言/国家枚举也来自固定 ICU，缓存与防御性 clone 由 BootDex ICU Java 持有。
   CoreIntrinsicServices.default_timezone（默认 GMT）仅用于 Java 默认时区未设置或被重置时，
   getDefault/setDefault 共用 DEX 静态字段，clone 与缓存均按 VM 隔离。
@@ -95,7 +93,8 @@ intrinsic。解释应用 DEX 与受审 API 19 curated Boot DEX；完整平台库
   Input/OutputStream、Reader/Writer、内存/Buffer/Filter/Data/Pushback/LineNumber/Sequence 流
   归 API 19 BootDex；字段和数组是唯一普通流状态，删除 wrapper-adoption 宿主转移接口。
   Object streams、描述符/字段辅助类的协议与 handle 均执行原版 Java，source/sink 和
-  handle 通过普通字段形成 GC 强边；禁止恢复 C++ 协议。ICU converter 随 owner sweep/VM teardown 释放。
+  handle 通过普通字段形成 GC 强边；禁止恢复 C++ 协议。字符解码为宿主自有的标准六字符集状态，
+  不链接 ICU converter。
   available 不等待底层新数据，嵌套调用抛回原 throwable；不重新创建异常。
   File 仅使用注入的 `IoFileSystem`，具体 VFS 在 integration adapter；相对路径不读宿主 cwd，
   mkdir 不递归，权限操作不伪造成功。逻辑 FileDescriptor 不保存 host/native fd，借用关系不变。

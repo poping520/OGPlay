@@ -4,10 +4,13 @@ typedef unsigned int size_t;
 typedef long long jlong;
 typedef void *jobject;
 typedef const void **JNIEnv;
+typedef const void **JavaVM;
 typedef struct evp_cipher_ctx_st EVP_CIPHER_CTX;
 typedef struct evp_cipher_st EVP_CIPHER;
 extern void *malloc(size_t);
 extern void free(void *);
+extern int ogplay_icu_on_load(JNIEnv *env);
+extern void ogplay_icu_release(void);
 /* bionic API 19 pthread_mutex_t is one 32-bit word; static initializer is 0. */
 extern int pthread_mutex_lock(int *);
 extern int pthread_mutex_unlock(int *);
@@ -351,6 +354,7 @@ __attribute__((destructor)) static void release_contexts(void) {
     }
     release_digests();
     release_crypto_locks();
+    ogplay_icu_release();
 }
 
 /* Stateless signature verification: Java owns DER/PEM parsing and fields.
@@ -382,9 +386,13 @@ static void crypto_lock(int mode, int index, const char *file, int line) {
     else
         pthread_mutex_unlock(&crypto_locks[index]);
 }
-int JNI_OnLoad(void *vm, void *reserved) {
-    (void)vm;
+int JNI_OnLoad(JavaVM *vm, void *reserved) {
     (void)reserved;
+    JNIEnv *env = 0;
+    if (((int (*)(JavaVM *, void **, int))((*vm)[6]))(
+            vm, (void **)&env, 0x00010006) != 0 ||
+        !env || !ogplay_icu_on_load(env))
+        return -1;
     crypto_lock_count = CRYPTO_num_locks();
     crypto_locks = malloc((size_t)crypto_lock_count * sizeof(int));
     if (!crypto_locks) return -1;

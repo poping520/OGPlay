@@ -7,6 +7,8 @@ import argparse
 import hashlib
 import io
 import json
+import os
+import re
 import subprocess
 import shutil
 import sys
@@ -31,28 +33,23 @@ AUDIT_REPORT = ROOT / ".local/dvm102-date-family-audit.json"
 CATEGORIES = ("boot_dex", "existing_vm_intrinsic", "native_boundary", "deferred")
 NATIVE_DISPOSITIONS = ("required_backend", "explicit_failure")
 
-DEVICE = ROOT / ".local/android-device/20260906-cipher/system/framework"
 
 def source_path(source: str) -> Path:
-    if source == "ArrayUtils.java":
-        return AOSP / "framework/base/core/java/com/android/internal/util/ArrayUtils.java"
-    return (DEVICE if source == "conscrypt.jar" else AOSP) / source
-
-DX_SOURCE_SHA256 = "cd59cf230b5fb22c38e084019b6575a3423feeae0f32e170c766c8eac305fe74"
+    return AOSP / source
 
 SOURCES = {
-    "ArrayUtils.java": (
-        "platform/frameworks/base",
-        "ddad05dbdbf2aaae35b13ee0cf5fa3c0156202e6d24a44d245a91acb06aabda3"),
     "conscrypt.jar": (
-        "temporary-device/MoKee-API19-20260906/libcore-crypto",
-        "43ab6b953bd5a9e25f0f0d4411a5aa3f0660d16954a0a84e95ad834558b21a1e"),
+        "platform/libcore",
+        "c7d0849cde38cd0d0dc99d89ee61bd33a65618567fc18171d6605dc6b8e15004"),
     "core.jar": (
         "platform/libcore",
-        "996557954e45f7192b187b2394259bc8aca6e3946652e03b99d837432f83d1ef"),
+        "60b6cdf3eded2fdf157c6166402477e4f72ade215b334817439960522c0e64ee"),
     "framework.jar": (
         "platform/frameworks/base",
-        "90fc9fd36b45db1810ecf51e40119222da081b552f9a64a6d0c09cac09f98a48"),
+        "422e232e121425268f04044f5349072ce42d7b4403267d21569e8ce70d07bc4b"),
+    "framework2.jar": (
+        "platform/frameworks/base",
+        "5866d4e62e5fe44ffaf6ff441b6c361baeb1f8b91e30bb555481ef13ef837973"),
 }
 TOOLS = {
     "baksmali.jar": (
@@ -139,42 +136,18 @@ def run(command: list[str]) -> None:
         raise BuildError(result.stdout)
 
 
-def compile_array_utils(work: Path) -> Path:
-    # API 19 puts com.* in framework2.jar. Build this pure Java helper from
-    # its pinned original source when selecting it, without copying its logic.
-    roots = (AOSP / "dalvik/dx/src", AOSP / "libcore/dex/src/main/java")
-    sources = sorted(path for root in roots for path in root.rglob("*.java"))
-    digest = hashlib.sha256()
-    for path in sources:
-        digest.update(path.relative_to(AOSP).as_posix().encode("utf-8") +
-                      b"\0" + path.read_bytes() + b"\0")
-    if digest.hexdigest() != DX_SOURCE_SHA256:
-        raise BuildError("missing or unexpected local AOSP dx source tree")
-    dx_classes = work / "dx-classes"
-    java_classes = work / "java-classes"
-    dx_classes.mkdir()
-    java_classes.mkdir()
-    run(["javac", "--release", "7", "-g:none", "-encoding", "UTF-8",
-         "-d", str(dx_classes), *(str(path) for path in sources)])
-    run(["javac", "--release", "7", "-g:none", "-encoding", "UTF-8",
-         "-d", str(java_classes), str(source_path("ArrayUtils.java"))])
-    output = work / "array-utils.dex"
-    run(["java", "-cp", str(dx_classes), "com.android.dx.command.Main",
-         "--dex", "--output=" + str(output), str(java_classes)])
-    return output
-
-
 def assemble(recipe: dict[str, tuple[str, ...]], work: Path) -> bytes:
     smali_roots = []
     for source, classes in recipe.items():
         destination = work / (source + "-smali")
-        source_input = (compile_array_utils(work) if source == "ArrayUtils.java"
-                        else source_path(source))
-        run([
-            "java", "-jar", str(SMALI / "baksmali.jar"), "disassemble",
-            "--api", "19", "--jobs", "1", "--classes", ",".join(classes),
-            "--output", str(destination), str(source_input),
-        ])
+        # Keep each command below the Windows command-line length limit.
+        for offset in range(0, len(classes), 100):
+            run([
+                "java", "-jar", str(SMALI / "baksmali.jar"), "disassemble",
+                "--api", "19", "--jobs", "1",
+                "--classes", ",".join(classes[offset:offset + 100]),
+                "--output", str(destination), str(source_path(source)),
+            ])
         smali_roots.append(str(destination))
     output = work / "classes.dex"
     run([
@@ -228,12 +201,8 @@ def boot_metadata(jar: bytes, dex: bytes,
         "sources": [
             {
                 "source_project": SOURCES[source][0],
-                **({"source_file": source_path(source).relative_to(ROOT).as_posix(),
-                    "source_sha256": SOURCES[source][1],
-                    "compiler": "javac --release 7 -g:none; AOSP dx",
-                    "dx_sources_sha256": DX_SOURCE_SHA256}
-                   if source == "ArrayUtils.java" else
-                   {"source_jar": source, "source_jar_sha256": SOURCES[source][1]}),
+                "source_jar": source,
+                "source_jar_sha256": SOURCES[source][1],
             }
             for source in recipe
         ],
@@ -468,6 +437,9 @@ def audit_date_family(report_path: Path, emit_expectations: bool = False) -> int
 def self_test() -> int:
     document = json.loads(RECIPE.read_text(encoding="utf-8"))
     load_recipe(document)
+    if any(source_path(source) != AOSP / source
+           for source in SOURCES if source.endswith(".jar")):
+        raise BuildError("BootDex jars must come from .local/aosp")
     if object_descriptor("[[Ljava/lang/String;") != "Ljava/lang/String;" or \
             object_descriptor("[I") is not None:
         raise BuildError("descriptor normalization failed")
@@ -506,16 +478,6 @@ def self_test() -> int:
     if make_jar(sample) != make_jar(sample):
         raise BuildError("JAR output is not deterministic")
     with tempfile.TemporaryDirectory(prefix="ogplay-bootdex-tool-") as work:
-        with patch.dict(globals(), {"AOSP": Path(work) / "missing-aosp"}), \
-                patch(__name__ + ".run") as command:
-            try:
-                compile_array_utils(Path(work))
-            except BuildError as error:
-                if "dx source tree" not in str(error):
-                    raise
-            else:
-                raise BuildError("Java source build accepted unpinned dx inputs")
-            command.assert_not_called()
         source = Path(work) / "source.jar"
         destination = Path(work) / "downloaded.jar"
         source.write_bytes(sample)
@@ -523,14 +485,11 @@ def self_test() -> int:
         if destination.read_bytes() != sample:
             raise BuildError("tool download failed")
         # The builder must consume only the explicitly prepared, pinned payload.
-        fake_device = Path(work) / "device/framework"
-        (fake_device.parent / "lib").mkdir(parents=True)
-        (fake_device.parent / "lib/libcrypto.so").write_bytes(sample)
         fake_manifest = Path(work) / "payload/manifest.json"
-        with patch.dict(globals(), {"MANIFEST": fake_manifest, "DEVICE": fake_device,
+        with patch.dict(globals(), {"MANIFEST": fake_manifest,
                                    "CRYPTO_SHA256": sha256(sample)}):
             try:
-                build_cipher()
+                build_guest_jni()
             except BuildError as error:
                 if "data/android/19/lib/libcrypto.so" not in str(error):
                     raise
@@ -543,50 +502,110 @@ def self_test() -> int:
 
 
 CRYPTO_SHA256 = "7d38659dfd49d7a02d229a4712c5090fdfbdb3db9b6618b773bf86ace9703f2a"
+ICUUC_SHA256 = "1e47c2d57db1573ac4f6c09a8b1b815ed89a72d0686c032d0916644a44e9acfd"
+ICUI18N_SHA256 = "08596ab1ed097f953cc681e4cc61e69c1cea5f639e9014f5789265923ccd5149"
+ICU_DATA_SHA256 = "8275408cb7161606c9a1b55edf12df538a7110ad53103a00f8ac7ba5b092a96f"
+NDK_REVISION = "25.2.9519653"
 
-def build_cipher() -> int:
-    """Build the small ARM JNI adapter from the pinned AOSP OpenSSL payload."""
-    crypto = MANIFEST.parent / "lib/libcrypto.so"
-    if not crypto.is_file() or file_sha256(crypto) != CRYPTO_SHA256:
-        raise BuildError("missing or unexpected data/android/19/lib/libcrypto.so; "
-                         "prepare the pinned AOSP API 19 ARM library first")
-    clang = shutil.which("clang")
-    linker = shutil.which("ld.lld")
-    if not linker:
-        candidates = sorted(Path.home().glob(".rustup/toolchains/stable-*/lib/rustlib/*/bin/gcc-ld/ld.lld"))
-        linker = str(candidates[0]) if candidates else None
-    if not clang or not linker:
-        raise BuildError("build-cipher requires clang with ARM support and ELF ld.lld")
-    source = ROOT / "src/guest/crypto/crypto_jni.c"
-    flags = ["--target=armv7a-linux-androideabi19", "-march=armv7-a", "-mfloat-abi=softfp",
-             "-fPIC", "-ffreestanding", "-fno-stack-protector", "-O2", "-Wall", "-Wextra", "-Werror"]
+def build_guest_jni() -> int:
+    """Build the unified API 19 ARM guest JNI library with NDK r25c."""
+    inputs = {
+        "lib/libcrypto.so": CRYPTO_SHA256,
+        "lib/libicuuc.so": ICUUC_SHA256,
+        "lib/libicui18n.so": ICUI18N_SHA256,
+        "icu/icudt51l.dat": ICU_DATA_SHA256,
+    }
+    for relative, expected in inputs.items():
+        path = MANIFEST.parent / relative
+        if not path.is_file() or file_sha256(path) != expected:
+            raise BuildError(f"missing or unexpected data/android/19/{relative}")
+    default_ndk = Path(r"D:\01_software\android-sdk\ndk\r25c")
+    ndk = Path(os.environ.get("OGPLAY_ANDROID_NDK", default_ndk))
+    properties = ndk / "source.properties"
+    if not properties.is_file() or f"Pkg.Revision = {NDK_REVISION}" not in properties.read_text(encoding="utf-8"):
+        raise BuildError("build-guest-jni requires Android NDK r25c (25.2.9519653); "
+                         "set OGPLAY_ANDROID_NDK if it is not at the documented path")
+    hosts = list((ndk / "toolchains/llvm/prebuilt").glob("*"))
+    if len(hosts) != 1:
+        raise BuildError("NDK r25c must contain exactly one host LLVM prebuilt")
+    tool_bin = hosts[0] / "bin"
+    suffix = ".exe" if os.name == "nt" else ""
+    driver_suffix = ".cmd" if os.name == "nt" else ""
+    clang = tool_bin / f"armv7a-linux-androideabi19-clang{driver_suffix}"
+    linker = tool_bin / f"ld.lld{suffix}"
+    readelf = tool_bin / f"llvm-readelf{suffix}"
+    for tool in (clang, linker, readelf):
+        if not tool.is_file():
+            raise BuildError(f"NDK tool is missing: {tool}")
+    sources = [ROOT / "src/guest/crypto/crypto_jni.c",
+               ROOT / "src/guest/icu/icu_jni.c"]
+    source_inputs = [*sources, ROOT / "src/guest/icu/icu51_capi.h"]
+    for source in source_inputs:
+        if not source.is_file():
+            raise BuildError(f"guest JNI source is missing: {source}")
+    flags = ["-march=armv7-a", "-mfloat-abi=softfp", "-fPIC", "-fno-stack-protector",
+             "-O2", "-std=c11", "-Wall", "-Wextra", "-Werror",
+             "-I" + str(ROOT / "src/guest/icu")]
     def compile_at(work: Path) -> bytes:
-        obj, library = work / "cipher.o", work / "libogplay_cipher.so"
-        run([clang, *flags, "-c", str(source), "-o", str(obj)])
-        run([linker, "-shared", "--hash-style=sysv", "-soname", library.name,
-             "-z", "max-page-size=4096", "--no-undefined", str(obj), str(crypto),
+        objects = []
+        for source in sources:
+            obj = work / (source.stem + ".o")
+            run([str(clang), *flags, "-c", str(source), "-o", str(obj)])
+            objects.append(obj)
+        library = work / "libogplay_jni.so"
+        run([str(linker), "-shared", "--hash-style=sysv", "-soname", library.name,
+             "-z", "max-page-size=4096", "--no-undefined", *map(str, objects),
+             str(MANIFEST.parent / "lib/libcrypto.so"),
+             str(MANIFEST.parent / "lib/libicui18n.so"),
+             str(MANIFEST.parent / "lib/libicuuc.so"),
              str(MANIFEST.parent / "lib/libc.so"), "-o", str(library)])
+        dynamic = subprocess.run([str(readelf), "-h", "-d", str(library)], check=True,
+                                 text=True, stdout=subprocess.PIPE).stdout
+        required = ("Class:                             ELF32", "Machine:                           ARM",
+                    "Type:                              DYN", "Library soname: [libogplay_jni.so]")
+        if any(value not in dynamic for value in required):
+            raise BuildError("guest JNI ELF ABI or SONAME check failed")
+        needed = re.findall(r"Shared library: \[([^]]+)\]", dynamic)
+        if needed != ["libcrypto.so", "libicui18n.so", "libicuuc.so", "libc.so"]:
+            raise BuildError(f"unexpected guest JNI DT_NEEDED: {needed}")
         return library.read_bytes()
     with tempfile.TemporaryDirectory() as a, tempfile.TemporaryDirectory() as b:
         library = compile_at(Path(a))
         if library != compile_at(Path(b)):
-            raise BuildError("two guest Cipher builds differ")
-    (MANIFEST.parent / "lib/libogplay_cipher.so").write_bytes(library)
+            raise BuildError("two guest JNI builds differ")
+    (MANIFEST.parent / "lib/libogplay_jni.so").write_bytes(library)
     document = json.loads(MANIFEST.read_text(encoding="utf-8"))
     entries = {entry.get("path"): entry for entry in document.get("libraries", [])}
-    adapter = entries.get("lib/libogplay_cipher.so")
+    adapter = entries.get("lib/libogplay_jni.so")
     if not isinstance(adapter, dict):
-        raise BuildError("manifest is missing lib/libogplay_cipher.so")
+        raise BuildError("manifest is missing lib/libogplay_jni.so")
     adapter["size"] = len(library)
     adapter["sha256"] = sha256(library)
-    MANIFEST.write_text(json.dumps(document, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    print("Built deterministic API 19 ARM crypto JNI adapter using the prepared libcrypto")
+    adapter["build"] = {
+        "generator": "tools/bootdex/build_bootdex.py",
+        "generator_sha256": file_sha256(Path(__file__)),
+        "ndk_revision": NDK_REVISION,
+        "target": "armv7a-linux-androideabi19",
+        "language": "C11",
+        "sources": [
+            {"path": source.relative_to(ROOT).as_posix(),
+             "sha256": file_sha256(source)}
+            for source in source_inputs
+        ],
+        "inputs": [
+            {"path": relative, "sha256": expected}
+            for relative, expected in inputs.items()
+        ],
+    }
+    MANIFEST.write_bytes(
+        (json.dumps(document, ensure_ascii=False, indent=2) + "\n").encode("utf-8"))
+    print(f"Built deterministic API 19 ARM guest JNI {sha256(library)} using NDK r25c")
     return 0
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("mode", nargs="?", choices=("build", "check", "audit", "build-cipher"))
+    parser.add_argument("mode", nargs="?", choices=("build", "check", "audit", "build-guest-jni"))
     parser.add_argument("--self-test", action="store_true")
     parser.add_argument("--report", type=Path, help="audit report destination")
     parser.add_argument("--emit-expectations", action="store_true",
@@ -602,8 +621,8 @@ def main() -> int:
                 arguments.report or AUDIT_REPORT, arguments.emit_expectations)
         if arguments.report is not None or arguments.emit_expectations:
             parser.error("--report and --emit-expectations require audit mode")
-        if arguments.mode == "build-cipher":
-            return build_cipher()
+        if arguments.mode == "build-guest-jni":
+            return build_guest_jni()
         jar, dex, recipe = build()
         manifest = manifest_bytes(boot_metadata(jar, dex, recipe))
         if arguments.mode == "build":

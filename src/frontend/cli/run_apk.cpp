@@ -696,6 +696,9 @@ int RunApkCommand(const int argc, const char* const argv[],
         app_request.system_libraries = system_sources;
         app_request.boot_dex_bytes = std::move(boot_dex_bytes);
         app_request.dex_bytes = std::move(dex_bytes);
+        app_request.icu_data = ReadBytes(
+            bundled_data.root / bionic.data_directory / "icu" /
+            "icudt51l.dat");
         app_request.context = dex_context;
         if (profile.runtime.entry.has_value()) {
             app_request.launcher_override =

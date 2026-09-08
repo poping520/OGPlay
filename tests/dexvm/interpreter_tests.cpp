@@ -514,8 +514,6 @@ TEST_CASE("dexvm core intrinsic catalog is unique and structurally stable") {
         "Llibcore/icu/ICU;.getUnicodeVersion()Ljava/lang/String;",
         "Llibcore/icu/ICU;.languageTagForLocale(Ljava/lang/String;)Ljava/lang/String;",
         "Llibcore/icu/ICU;.localeForLanguageTag(Ljava/lang/String;Z)Ljava/lang/String;",
-        "Llibcore/icu/ICU;.toLowerCase(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;",
-        "Llibcore/icu/ICU;.toUpperCase(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;",
         "Llibcore/icu/NativeDecimalFormat;.formatDigitList(JLjava/lang/String;Llibcore/icu/NativeDecimalFormat$FieldPositionIterator;)[C",
         "Llibcore/icu/NativeDecimalFormat;.formatDouble(JDLlibcore/icu/NativeDecimalFormat$FieldPositionIterator;)[C",
 

@@ -134,7 +134,7 @@ TEST_CASE("dexvm P1 String surface: trim/lower/startsWith/indexOf") {
     ExpectInt(vm.CallStatic("compareIgnore", "()I"), 0);
 }
 
-TEST_CASE("dexvm String.toLowerCase uses pinned ICU locale mapping and preserves unchanged identity") {
+TEST_CASE("dexvm String.toLowerCase fast path preserves API19 value and identity") {
     Vm vm;
     const auto locale_class =
         vm.linker.ResolveDescriptor("Ljava/util/Locale;");

@@ -1401,6 +1401,13 @@ void RegisterAndroidValueStateTables(
     const std::shared_ptr<DexVmAndroidContext>& context) {
     if (context == nullptr) return;
     vm.RegisterIntrinsicStateTable({
+        "android.preference-editors",
+        [](dexvm::VmObjectRef, const dexvm::VmRootVisitor&) {},
+        [context](const dexvm::VmObjectRef owner) {
+            if (context->preference_editors.erase(owner.Value()) != 0)
+                context->preference_names.erase(owner.Value());
+        }, {}});
+    vm.RegisterIntrinsicStateTable({
         "android.value",
         [context](const dexvm::VmObjectRef owner, const dexvm::VmRootVisitor& visit) {
             if (const auto parcel = context->parcels.find(owner.Value());

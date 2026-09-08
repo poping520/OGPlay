@@ -518,7 +518,7 @@ note = "ADR-0020 SBX-5 使 java.io File 家族与 native fopen 共用唯一 VFS/
 [runtime.preferences_persistence]
 status = "complete"
 test = "tests/runtime/preferences_xml_tests.cpp; tests/dexvm/file_vfs_tests.cpp"
-note = "ADR-0020 SBX-6 把 SharedPreferences 落成 /data/data/<pkg>/shared_prefs/<name>.xml 的 Android 同构 XML，经 VFS 普通文件通道读写并跨会话持久。受检子集 boolean/int/long/float/string；未知输入明确失败。SBX-10 只把 ENOENT 当首次运行，EIO/EACCES 不再静默清空；SBX-11 以 to_chars/from_chars 最短表示保证 float IEEE-754 往返。commit() 是该文件落盘点，pause/shutdown 另有 FlushAll 兜底"
+note = "ADR-0020 SBX-6 把 SharedPreferences 落成 /data/data/<pkg>/shared_prefs/<name>.xml 的 Android 同构 XML，经 VFS 普通文件通道读写并跨会话持久。受检子集 boolean/int/long/float/string；未知输入明确失败。SBX-10 只把 ENOENT 当首次运行，EIO/EACCES 不再静默清空；SBX-11 以 to_chars/from_chars 最短表示保证 float IEEE-754 往返。commit() 是该文件落盘点，pause/shutdown 另有 FlushAll 兜底。SharedPreferences/Editor/OnSharedPreferenceChangeListener 接口与 PreferenceManager 迁入 BootDex（927 类），Impl 支持五种标量与 contains/getAll 快照，独立 Editor 缓冲在 commit/apply 发布；clear 先于待写项，putString(null) 删除，缓冲随 GC 清理，加载失败可重试；apply 按 API 19 允许的兼容方式同步落盘；string-set 与 change-listener 明确失败并记账，默认入口与显式命名共享唯一对象缓存"
 
 [runtime.syscall_file_metadata]
 status = "partial"

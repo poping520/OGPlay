@@ -162,6 +162,13 @@ struct DexVmAndroidContext final {
     std::unordered_map<std::string, bool> preferences_loaded;
     // SharedPreferences/Editor instance handle -> preference file name.
     std::unordered_map<std::uint32_t, std::string> preference_names;
+    // Per-Editor pending changes; nullopt removes a key. Only commit/apply
+    // publishes these into the unique committed preference map. No guest refs.
+    struct PreferenceEditorState final {
+        std::unordered_map<std::string, std::optional<PreferenceValue>> modified;
+        bool clear{};
+    };
+    std::unordered_map<std::uint32_t, PreferenceEditorState> preference_editors;
 
     // DVM-88 bounded SQLite value store. The serialized database image is
     // written through the process VFS; no host path or SQLite connection is

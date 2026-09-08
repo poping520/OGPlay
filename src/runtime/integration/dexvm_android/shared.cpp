@@ -45,6 +45,28 @@ namespace {
     return context->preferences[found->second];
 }
 
+[[nodiscard]] DexVmAndroidContext::PreferenceEditorState& PreferenceEditsOf(
+    dx::IntrinsicContext& call, const Context& context) {
+    const auto found = context->preference_editors.find(call.receiver.Value());
+    if (found == context->preference_editors.end()) {
+        throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "Editor has no pending state"};
+    }
+    return found->second;
+}
+
+void CommitPreferenceChanges(dx::IntrinsicContext& call, const Context& context) {
+    auto& pending = PreferenceEditsOf(call, context);
+    auto& committed = PreferencesOf(call, context);
+    auto next = pending.clear ? PreferenceMap{} : committed;
+    for (const auto& [key, value] : pending.modified) {
+        if (value) next[key] = *value;
+        else next.erase(key);
+    }
+    committed.swap(next);
+    pending.modified.clear();
+    pending.clear = false;
+}
+
 [[nodiscard]] const dx::LinkedField& ApplicationInfoField(
     dx::IntrinsicContext& call, const dx::VmObjectRef object,
     const std::string_view name, const std::string_view descriptor) {
@@ -249,56 +271,67 @@ dx::IntrinsicHandler GraphicsNoopHandler() {
 dx::IntrinsicHandler PrefsEditHandler(const Context& context) {
     return dx::IntrinsicHandler([context](dx::IntrinsicContext& call) {
         const auto name = context->preference_names.at(call.receiver.Value());
-        const auto editor =
-            Singleton(call, context, "prefs_editor:" + name,
-                      "Landroid/content/SharedPreferencesEditorImpl;");
+        const auto editor = call.vm.NewIntrinsicInstance(
+            "Landroid/content/SharedPreferencesEditorImpl;");
         context->preference_names[editor.Value()] = name;
+        context->preference_editors.emplace(editor.Value(), DexVmAndroidContext::PreferenceEditorState{});
         return dx::VmValue::Ref(editor);
     });
 }
 
 dx::IntrinsicHandler PrefsEditorCommitHandler(const Context& context) {
     return dx::IntrinsicHandler([context](dx::IntrinsicContext& call) {
+        CommitPreferenceChanges(call, context);
         SavePreferences(call, context);
         return dx::VmValue::Int(1);
     });
 }
 
 dx::IntrinsicHandler PrefsEditorPutBooleanHandler(const Context& context) {
-    // Edits apply to the in-memory map immediately and commit() writes the
-    // XML back; no staged-rollback behaviour is claimed.
     return dx::IntrinsicHandler([context](dx::IntrinsicContext& call) {
-        PreferencesOf(call,
-                      context)[call.vm.StringUtf8(call.arguments[0].ref)] =
-            call.arguments[1].AsInt() != 0;
+        PreferenceEditsOf(call, context).modified[call.vm.StringUtf8(call.arguments[0].ref)] =
+            PreferenceValue{call.arguments[1].AsInt() != 0};
         return Self(call);
     });
 }
 
 dx::IntrinsicHandler PrefsEditorPutIntHandler(const Context& context) {
     return dx::IntrinsicHandler([context](dx::IntrinsicContext& call) {
-        PreferencesOf(call,
-                      context)[call.vm.StringUtf8(call.arguments[0].ref)] =
-            call.arguments[1].AsInt();
+        PreferenceEditsOf(call, context).modified[call.vm.StringUtf8(call.arguments[0].ref)] =
+            PreferenceValue{call.arguments[1].AsInt()};
         return Self(call);
     });
 }
 
 dx::IntrinsicHandler PrefsEditorPutLongHandler(const Context& context) {
     return dx::IntrinsicHandler([context](dx::IntrinsicContext& call) {
-        PreferencesOf(call,
-                      context)[call.vm.StringUtf8(call.arguments[0].ref)] =
-            call.arguments[1].AsLong();
+        PreferenceEditsOf(call, context).modified[call.vm.StringUtf8(call.arguments[0].ref)] =
+            PreferenceValue{call.arguments[1].AsLong()};
         return Self(call);
     });
 }
 
 dx::IntrinsicHandler PrefsEditorPutStringHandler(const Context& context) {
     return dx::IntrinsicHandler([context](dx::IntrinsicContext& call) {
-        PreferencesOf(call,
-                      context)[call.vm.StringUtf8(call.arguments[0].ref)] =
-            call.vm.StringUtf8(call.arguments[1].ref);
+        const auto value = call.arguments[1].ref;
+        PreferenceEditsOf(call, context).modified[call.vm.StringUtf8(call.arguments[0].ref)] =
+            value.IsValid() ? std::optional<PreferenceValue>{call.vm.StringUtf8(value)} : std::nullopt;
         return Self(call);
+    });
+}
+
+dx::IntrinsicHandler PrefsEditorPutFloatHandler(const Context& context) {
+    return dx::IntrinsicHandler([context](dx::IntrinsicContext& call) {
+        PreferenceEditsOf(call, context).modified[call.vm.StringUtf8(call.arguments[0].ref)] =
+            PreferenceValue{call.arguments[1].AsFloat()};
+        return Self(call);
+    });
+}
+
+dx::IntrinsicHandler PrefsGetFloatHandler(const Context& context) {
+    return dx::IntrinsicHandler([context](dx::IntrinsicContext& call) {
+        const auto value = PreferenceValueOf<float>(call, context, call.vm.StringUtf8(call.arguments[0].ref));
+        return dx::VmValue::Float(value.value_or(call.arguments[1].AsFloat()));
     });
 }
 
@@ -335,6 +368,145 @@ dx::IntrinsicHandler PrefsGetStringHandler(const Context& context) {
             return dx::VmValue::Ref(call.arguments[1].ref);
         }
         return MakeString(call, *value);
+    });
+}
+
+dx::IntrinsicHandler PrefsContainsHandler(const Context& context) {
+    return dx::IntrinsicHandler([context](dx::IntrinsicContext& call) {
+        const auto key = call.vm.StringUtf8(call.arguments[0].ref);
+        auto& store = PreferencesOf(call, context);
+        return dx::VmValue::Int(store.contains(key) ? 1 : 0);
+    });
+}
+
+namespace {
+
+[[nodiscard]] dx::VmObjectRef BoxedPreferenceValue(
+    dx::IntrinsicContext& call, const PreferenceValue& value) {
+    const auto box = [&call](const char* descriptor, const char* signature,
+                             std::vector<dx::VmValue> arguments) {
+        const auto type = call.vm.Linker().ResolveDescriptor(descriptor);
+        const auto method =
+            call.vm.Linker().FindDirectMethod(type, "valueOf", signature);
+        if (!method) {
+            throw dx::DexVmError(dx::DexVmErrorReason::internal_invariant,
+                                 "preference boxing factory is missing");
+        }
+        const auto outcome = call.vm.Call(*method, arguments);
+        if (outcome.exception.IsValid()) {
+            throw dx::VmJavaThrow{
+                call.vm.Linker().Class(outcome.exception_class).descriptor,
+                outcome.exception_message, outcome.exception};
+        }
+        return outcome.value.ref;
+    };
+    return std::visit(
+        [&box, &call](auto&& item) -> dx::VmObjectRef {
+            using T = std::decay_t<decltype(item)>;
+            if constexpr (std::is_same_v<T, bool>) {
+                return box("Ljava/lang/Boolean;", "(Z)Ljava/lang/Boolean;",
+                           {dx::VmValue::Int(item ? 1 : 0)});
+            } else if constexpr (std::is_same_v<T, std::int32_t>) {
+                return box("Ljava/lang/Integer;", "(I)Ljava/lang/Integer;",
+                           {dx::VmValue::Int(item)});
+            } else if constexpr (std::is_same_v<T, std::int64_t>) {
+                return box("Ljava/lang/Long;", "(J)Ljava/lang/Long;",
+                           {dx::VmValue::Long(item)});
+            } else if constexpr (std::is_same_v<T, float>) {
+                return box("Ljava/lang/Float;", "(F)Ljava/lang/Float;",
+                           {dx::VmValue::Float(item)});
+            } else {
+                return call.vm.NewStringUtf8(item);
+            }
+        },
+        value);
+}
+
+}  // namespace
+
+dx::IntrinsicHandler PrefsGetAllHandler(const Context& context) {
+    return dx::IntrinsicHandler([context](dx::IntrinsicContext& call) {
+        const auto values = PreferencesOf(call, context);
+        const auto map = call.vm.NewIntrinsicInstance("Ljava/util/HashMap;");
+        const auto map_root = call.vm.ProtectReferences(std::array{map});
+        {
+            const auto type = call.vm.Linker().ResolveDescriptor(
+                "Ljava/util/HashMap;");
+            const auto initialized =
+                call.vm.EnsureClassInitialized(type);
+            if (initialized.exception.IsValid()) {
+                throw dx::VmJavaThrow{
+                    call.vm.Linker()
+                        .Class(initialized.exception_class)
+                        .descriptor,
+                    initialized.exception_message, initialized.exception};
+            }
+            const auto constructor = call.vm.Linker().FindDirectMethod(
+                type, "<init>", "()V");
+            if (!constructor) {
+                throw dx::DexVmError(
+                    dx::DexVmErrorReason::internal_invariant,
+                    "HashMap constructor is not linked");
+            }
+            const auto outcome = call.vm.Call(
+                *constructor, std::vector<dx::VmValue>{dx::VmValue::Ref(map)});
+            if (outcome.exception.IsValid()) {
+                throw dx::VmJavaThrow{
+                    call.vm.Linker()
+                        .Class(outcome.exception_class)
+                        .descriptor,
+                    outcome.exception_message, outcome.exception};
+            }
+        }
+        for (const auto& [key, value] : values) {
+            const auto name = call.vm.NewStringUtf8(key);
+            const auto name_root = call.vm.ProtectReferences(std::array{name});
+            const auto boxed = BoxedPreferenceValue(call, value);
+            const auto boxed_root =
+                call.vm.ProtectReferences(std::array{boxed});
+            static_cast<void>(CallAndroidMethod(
+                call.vm, map, "put",
+                "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;",
+                {dx::VmValue::Ref(name), dx::VmValue::Ref(boxed)}));
+        }
+        return dx::VmValue::Ref(map);
+    });
+}
+
+dx::IntrinsicHandler PrefsEditorRemoveHandler(const Context& context) {
+    return dx::IntrinsicHandler([context](dx::IntrinsicContext& call) {
+        PreferenceEditsOf(call, context).modified[call.vm.StringUtf8(call.arguments[0].ref)] = std::nullopt;
+        return Self(call);
+    });
+}
+
+dx::IntrinsicHandler PrefsEditorClearHandler(const Context& context) {
+    return dx::IntrinsicHandler([context](dx::IntrinsicContext& call) {
+        PreferenceEditsOf(call, context).clear = true;
+        return Self(call);
+    });
+}
+
+dx::IntrinsicHandler PrefsEditorApplyHandler(const Context& context) {
+    return dx::IntrinsicHandler([context](dx::IntrinsicContext& call) {
+        // API19 SharedPreferences.Editor permits legacy implementations to
+        // delegate apply to commit. Keep the same publication/flush path;
+        // this bounded backend does not promise asynchronous disk writes.
+        CommitPreferenceChanges(call, context);
+        SavePreferences(call, context);
+        return dx::VmValue::Void();
+    });
+}
+
+dx::IntrinsicHandler PrefsUnsupportedHandler(const std::string category) {
+    return dx::IntrinsicHandler([category](dx::IntrinsicContext& call) -> dx::VmValue {
+        if (auto* ledger = call.vm.Ledger(); ledger != nullptr) {
+            ledger->RecordUnimplemented(category, 0);
+        }
+        throw dx::VmJavaThrow{
+            "Ljava/lang/UnsupportedOperationException;",
+            "SharedPreferences API is outside the checked preference "
+            "surface: " + category};
     });
 }
 

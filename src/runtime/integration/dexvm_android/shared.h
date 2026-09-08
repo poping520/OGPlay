@@ -161,14 +161,24 @@ void DeliverMessage(dx::IntrinsicContext& call, dx::VmObjectRef handler,
     const Context& context);
 [[nodiscard]] dx::IntrinsicHandler PrefsEditorPutLongHandler(
     const Context& context);
+[[nodiscard]] dx::IntrinsicHandler PrefsEditorPutFloatHandler(const Context& context);
 [[nodiscard]] dx::IntrinsicHandler PrefsEditorPutStringHandler(
     const Context& context);
 [[nodiscard]] dx::IntrinsicHandler PrefsGetBooleanHandler(
     const Context& context);
 [[nodiscard]] dx::IntrinsicHandler PrefsGetIntHandler(const Context& context);
 [[nodiscard]] dx::IntrinsicHandler PrefsGetLongHandler(const Context& context);
+[[nodiscard]] dx::IntrinsicHandler PrefsGetFloatHandler(const Context& context);
 [[nodiscard]] dx::IntrinsicHandler PrefsGetStringHandler(
     const Context& context);
+[[nodiscard]] dx::IntrinsicHandler PrefsContainsHandler(const Context& context);
+[[nodiscard]] dx::IntrinsicHandler PrefsGetAllHandler(const Context& context);
+[[nodiscard]] dx::IntrinsicHandler PrefsEditorRemoveHandler(const Context& context);
+[[nodiscard]] dx::IntrinsicHandler PrefsEditorClearHandler(const Context& context);
+[[nodiscard]] dx::IntrinsicHandler PrefsEditorApplyHandler(const Context& context);
+// Interface surface with no checked storage or callback truth: records the
+// named gap and fails instead of accepting a silent no-op.
+[[nodiscard]] dx::IntrinsicHandler PrefsUnsupportedHandler(std::string category);
 [[nodiscard]] dx::IntrinsicHandler SurfaceHolderAddCallbackHandler(
     const Context& context);
 [[nodiscard]] dx::IntrinsicHandler SurfaceHolderRemoveCallbackHandler(

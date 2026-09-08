@@ -790,3 +790,15 @@ compound drawable 的 Java API 形状归 TextView；integration 解析资源并�
 一次发布，UiTree 保存唯一尺寸/资源事实，runtime/ui 完成 measure/raster。失败不得留下
 部分 mutation；控件子类继承同一 API，禁止专属 Button 副本或游戏分支。guest onLayout、
 完整滚动与推广网络内容不属于初始化验收，后续按真实触发补齐。
+
+<a id="adr-0052"></a>
+## ADR-0052 · PreferenceManager Java 入口与偏好编辑提交边界
+
+2026-09-08，接受，DVM-121。PreferenceManager 与 SharedPreferences 三接口使用
+API 19 BootDex 原版声明/Java；具体 Impl 保留 integration intrinsic，复用唯一
+preferences_xml/VFS，不引入 android.app.SharedPreferencesImpl、QueuedWork 或系统服务。
+
+每次 edit 创建独立标量缓冲，commit/apply 先执行 clear 再合并修改、一次发布到已提交
+store；getAll 返回独立快照。Editor 缓冲随 guest owner GC 清理。apply 使用 API 19
+接口文档允许的同步 commit 兼容方式，不承诺异步写队列。string-set 与变更监听暂不
+支持，明确失败并记账；默认文件名及 Context 虚派交给 BootDex Java。

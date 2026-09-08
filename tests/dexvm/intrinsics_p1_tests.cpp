@@ -1,3 +1,4 @@
+#include "boot_dex.h"
 // java.* P1 intrinsic conformance (DVM-13). Pure-library expectations
 // follow the class-library documentation; System.arraycopy checks follow
 // AOSP vm/native/java_lang_System.cpp at the pinned baseline.
@@ -72,7 +73,10 @@ struct Vm final {
           interpreter(
               [this, load_boot_dex, &services]() -> DexClassLinker& {
                   linker.RegisterIntrinsics(CoreIntrinsicCatalog(services));
-                  if (load_boot_dex) linker.RegisterBootDex(ReadBootDex());
+                  if (load_boot_dex) {
+                      ogplay::test::BindBootDexPlatformNatives(linker);
+                      linker.RegisterBootDex(ReadBootDex());
+                  }
                   linker.RegisterDex(ReadFixture("p1.dex"));
                   linker.Link();
                   return linker;

@@ -158,3 +158,5 @@ Asphalt 6 自带 `GLSurfaceView` 所需的 EGL façade 与条件 swap pacer；�
 其余在办项（GC-B exact/长运行验收、诊断查询面的 MCP/CLI 消费、两款 title 的
 Scenario gate 与 profile 迁移）以 [`docs/state/CURRENT.md`](../../state/CURRENT.md)
 的滚动快照为准。
+
+| [DVM-120](DVM-120.md) | Typeface Java 与内置字体样式 | 完成 |

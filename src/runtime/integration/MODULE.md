@@ -349,3 +349,7 @@ Java UUID.randomUUID 的 SecureRandom 继续由现有 OS entropy service 提供�
 DVM-112：服务查询通过 AndroidAppProcess 注入的 sealed Manifest 服务信息判断无候选；
 bridge 不生成 ServiceConnection 回调或 Binder identity。ServiceConnection 的 APK 实现类
 与两个 callback 的普通 invoke-interface 分派使用 BootDex 接口元数据。
+
+DVM-120：Typeface 普通方法与缓存归 BootDex；native 只提供内置字体有限不可变描述符。
+TextView 引用为 Java 字段，四种样式进入 UiNode 并驱动测量/绘制；family 使用内置
+回退字形，不宣称系统字体。外部字体加载记账失败，无 native 分配或侧表。

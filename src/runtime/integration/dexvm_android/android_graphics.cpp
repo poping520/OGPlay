@@ -933,23 +933,53 @@ Decl Declare_android_graphics_drawable_ColorDrawable(const Context& context) {
 
 namespace ogplay::runtime::android_intrinsics {
 
-Decl Declare_android_graphics_Typeface(const Context& context) {
-    static_cast<void>(context);
-    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/graphics/Typeface;", "Ljava/lang/Object;");
-    builder.StaticField("SERIF", "Landroid/graphics/Typeface;");
-    builder.StaticMethod("defaultFromStyle", "(I)Landroid/graphics/Typeface;",
-        [](dx::IntrinsicContext& call) {
-            return dx::VmValue::Ref(
-                call.vm.NewIntrinsicInstance("Landroid/graphics/Typeface;"));
-        });
-    builder.ClassInitializer([](dx::IntrinsicContext& call) {
-        auto& vm = call.vm;
-        vm.SetIntrinsicStaticRef(
-            "Landroid/graphics/Typeface;", "SERIF",
-            "Landroid/graphics/Typeface;",
-            vm.NewIntrinsicInstance("Landroid/graphics/Typeface;"));
+namespace {
+// Immutable descriptors of the built-in bitmap-font backend, not guest pointers.
+// Families retain identity; rendering uses the documented built-in fallback face.
+int TypefaceToken(int family, int style) {
+    if (style < 0 || style > 3) style = 0;
+    return 1 + family * 4 + style;
+}
+int CheckTypefaceToken(int token) {
+    if (token < 1 || token > 16)
+        throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "invalid typeface descriptor"};
+    return token - 1;
+}
+}  // namespace
+
+Decl Declare_android_graphics_Typeface(const Context&) {
+    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/graphics/Typeface;");
+    constexpr auto flags = dx::kAccPrivate | dx::kAccNative;
+    builder.StaticMethod("nativeCreate", "(Ljava/lang/String;I)I", [](dx::IntrinsicContext& call) {
+        const auto name = call.arguments[0].ref.IsValid()
+            ? call.vm.StringUtf8(call.arguments[0].ref) : std::string{};
+        // API19 unknown family names fall back to the default face.
+        const int family = name == "sans-serif" ? 1 : name == "serif" ? 2 : name == "monospace" ? 3 : 0;
+        return dx::VmValue::Int(TypefaceToken(family, call.arguments[1].AsInt()));
+    }, flags);
+    builder.StaticMethod("nativeCreateFromTypeface", "(II)I", [](dx::IntrinsicContext& call) {
+        const auto token = call.arguments[0].AsInt();
+        const auto family = token == 0 ? 0 : CheckTypefaceToken(token) / 4;
+        return dx::VmValue::Int(TypefaceToken(family, call.arguments[1].AsInt()));
+    }, flags);
+    builder.StaticMethod("nativeGetStyle", "(I)I", [](dx::IntrinsicContext& call) {
+        return dx::VmValue::Int(CheckTypefaceToken(call.arguments[0].AsInt()) % 4);
+    }, flags);
+    builder.StaticMethod("nativeUnref", "(I)V", [](dx::IntrinsicContext& call) {
+        // Finite immutable descriptors own no allocation or native reference count.
+        static_cast<void>(CheckTypefaceToken(call.arguments[0].AsInt()));
         return dx::VmValue::Void();
-    });
+    }, flags);
+    builder.StaticMethod("nativeFreeCaches", "()V", [](dx::IntrinsicContext&) {
+        // Pinned framework extension: this backend owns no native font cache.
+        return dx::VmValue::Void();
+    }, flags);
+    const auto unsupported = [](dx::IntrinsicContext& call) -> dx::VmValue {
+        if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.typeface", 0);
+        throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "external font files are unsupported"};
+    };
+    builder.StaticMethod("nativeCreateFromAsset", "(Landroid/content/res/AssetManager;Ljava/lang/String;)I", unsupported, flags);
+    builder.StaticMethod("nativeCreateFromFile", "(Ljava/lang/String;)I", unsupported, flags);
     return std::move(builder).Build();
 }
 

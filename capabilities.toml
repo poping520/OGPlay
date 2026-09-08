@@ -1228,7 +1228,7 @@ note = "DVM-7 注册/层级/布局/vtable/iftable 四步链接与懒结构预检
 [dexvm.boot_dex]
 status = "complete"
 test = "tests/dexvm/intrinsics_p1_tests.cpp; tests/frontend/data_directory_tests.cpp; tools.bootdex_builder_self_test; tools.android_payload_current; PvZ exact Profile reached-fault"
-note = "DVM-99..119 curated BootDex：日期、集合、普通流、X500、Cipher/JCA/Conscrypt AES 与 Certificate/Harmony/Signature 及 framework 值类、UUID/MessageDigest/摘要流和对象流、定时执行器依赖、ServiceConnection 与 Throwable/StackTraceElement 家族、BackupManager/RestoreObserver 、Bundle/ArrayMap 家族、DisplayMetrics/TypedValue 与 Math 及五类 LayoutParams 共 918 个 class_def。918 类全链接，Cipher/Certificate/集合普通 Java 算法均归 DEX；精确边界 overlay 与显式 guest JNI 声明受审。固定 recipe 可确定性重建，DEX/JAR 身份见 data/android/19/manifest.json。Conscrypt 为用户授权的临时设备来源，区别于 pinned core.jar；完整 core/framework、multidex、动态 classpath 与 Android 系统服务未纳入。 2026-09-07 ROM libcrypto 已撤出 Git，后按用户再次授权恢复到本地临时使用，完整 payload 校验通过；仍须自行构建替换并更新来源/哈希后复验。"
+note = "DVM-99..120 curated BootDex：日期、集合、普通流、X500、Cipher/JCA/Conscrypt AES 与 Certificate/Harmony/Signature 及 framework 值类、UUID/MessageDigest/摘要流和对象流、定时执行器依赖、ServiceConnection 与 Throwable/StackTraceElement 家族、BackupManager/RestoreObserver 、Bundle/ArrayMap 家族、DisplayMetrics/TypedValue 与 Math 及五类 LayoutParams 与 Typeface 共 919 个 class_def。919 类全链接，Cipher/Certificate/集合普通 Java 算法均归 DEX；精确边界 overlay 与显式 guest JNI 声明受审。固定 recipe 可确定性重建，DEX/JAR 身份见 data/android/19/manifest.json。Conscrypt 为用户授权的临时设备来源，区别于 pinned core.jar；完整 core/framework、multidex、动态 classpath 与 Android 系统服务未纳入。 2026-09-07 ROM libcrypto 已撤出 Git，后按用户再次授权恢复到本地临时使用，完整 payload 校验通过；仍须自行构建替换并更新来源/哈希后复验。"
 
 [dexvm.date_format_bootdex_audit]
 status = "complete"
@@ -1579,3 +1579,8 @@ note = "DVM-116/ADR-0044：BackupManager/RestoreObserver 执行 pinned API 19 Ja
 status = "partial"
 test = "tests/loader/apk_manifest_tests.cpp; tests/dexvm/android_value_tests.cpp; tests/runtime/native_library_loader_tests.cpp; DVM-112"
 note = "DVM-112/ADR-0042：ServiceConnection 原版双回调接口选入 BootDex（845 类）；Manifest 保存 application enabled、service 名称/enabled/过滤器 action/category/data 存在标记，AndroidAppProcess 装配唯一 context。resolveService 仅接受非空 action、无 component/data/type/categories、flags=0 的查询，基于当前 APK 信息排除 disabled 与 action 不匹配项，无候选返回 null；没有外部安装包/平台服务目录。未装配信息、潜在匹配、data 条件或其他查询形态记账并抛 UnsupportedOperationException；null Intent 抛 NPE。双后端验证无匹配分支不绑定、不触发回调以及真实接口分派。正匹配/ResolveInfo/ServiceInfo/返回类型反射、bindService/unbindService、Binder 与支付未实现；能力保持 partial。"
+
+[dexvm.typeface]
+status = "partial"
+test = "tests/dexvm/android_value_tests.cpp"
+note = "DVM-120 Typeface 的常量/缓存/工厂/样式/相等查询来自 BootDex；内置字体四样式通过有限不可变 native 描述符对接真实 measure/raster。family 保留身份并使用内置回退字形；TextView 保存 Java 引用，文件/asset 字体明确记账失败。不含 Skia、系统字体匹配或完整 Paint/Canvas 字体能力。"

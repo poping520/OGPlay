@@ -60,7 +60,7 @@ void Measure(UiTree& tree, const UiNodeId id, const MeasureSpec width_spec,
                                   node.padding.bottom;
     if ((node.kind == UiClass::TextView || node.kind == UiClass::Button) &&
         !node.text.empty()) {
-        const auto text = MeasureFixedText(node.text, node.text_size_px);
+        const auto text = MeasureFixedText(node.text, node.text_size_px, node.text_style);
         desired_width = std::max(
             desired_width, text.width + node.padding.left + node.padding.right);
         desired_height = std::max(

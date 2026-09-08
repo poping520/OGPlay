@@ -23,6 +23,7 @@
 - [ADR-0044 · BackupManager 保留 Java 无服务路径](#adr-0044)
 - [ADR-0045 · Bundle 与 Intent extras 归 Java 对象图](#adr-0045)
 - [ADR-0046 · Java 布局参数与 UI 布局输入分工](#adr-0046)
+- [ADR-0047 · Typeface Java 与字体后端描述符](#adr-0047)
 
 <a id="adr-0017"></a>
 
@@ -702,3 +703,17 @@ UiTree 仍唯一拥有 hierarchy、dirty 与测量/布局结果，不保存 gues
 baseline、alignWithParent、动画等未实现语义明确记账并失败，不按游戏特判。
 RelativeLayout gravity 在原有 sibling/parent 解析之后整体平移子节点，保持相对位置；
 布局参数算法在 Java，真实显示行为继续归既有 UI 引擎，不迁入整个 framework View 系统。
+
+<a id="adr-0047"></a>
+## ADR-0047 · Typeface Java 与字体后端描述符
+
+2026-09-08，接受，DVM-120。
+
+原版 Typeface 的常量、缓存、equals/hash、样式查询与工厂应运行 Java；不再由
+intrinsic 创建没有状态的 Typeface 占位对象。其 native 边界返回有限不可变描述符，
+编码 family 与样式，既不是 guest 指针，也不拥有待释放的分配。
+
+现有内置 bitmap font 提供四种真实可测量/绘制的样式；family 维持逻辑身份，
+字形使用该后端的回退字体。普通 TextView 引用归 Java 字段，渲染样式归 UiNode；
+不把字体描述符扩展成 Skia 对象，也不伪称支持外部字体。文件/asset 加载明确失败记账。
+Java nativeUnref 验证描述符后没有分配需要释放。Canvas/Paint 的完整字体 API 不在本次范围。

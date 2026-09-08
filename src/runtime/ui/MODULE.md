@@ -65,3 +65,7 @@ RelativeLayout tests 锁定 parent/sibling/center、反向 document order 与 mi
 `tests/runtime/ui_renderer_tests.cpp` 锁定透明、bitmap、alpha overlap、Z-order、clip、
 visibility、layout 后 draw cache 刷新、固定字体 measure/text golden、Button content/background，以及五种
 ImageView scale destination 与 CENTER_CROP exact pixel golden。
+
+DVM-120：内置字体 BOLD 以行像素并集加粗、ITALIC 按行右移，四种样式共用测量与绘制
+的 advance/边界；半透明加粗像素只混合一次。text_style 随 UiNode dirty 一起失效。
+不依赖系统字体或 Skia，不承诺 Android 字体像素一致性。

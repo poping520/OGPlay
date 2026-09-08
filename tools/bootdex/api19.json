@@ -896,6 +896,7 @@
       "Landroid/content/ComponentName$1;",
       "Landroid/content/ComponentName;",
       "Landroid/content/ServiceConnection;",
+      "Landroid/graphics/Typeface;",
       "Landroid/os/Bundle$1;",
       "Landroid/os/Bundle;",
       "Landroid/os/Parcelable$ClassLoaderCreator;",

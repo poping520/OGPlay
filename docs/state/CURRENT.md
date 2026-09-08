@@ -1,12 +1,12 @@
 # 当前状态
 
-更新（2026-09-08）：[DVM-119](../tasks/dexvm/DVM-119.md) 迁入 Java 布局参数；
+更新（2026-09-08）：[DVM-120](../tasks/dexvm/DVM-120.md) 迁入 Typeface 与内置字体样式；
 继续推进 PvZ 的 TextView 外观缺口。
 
 ## 当前能力
 
 - **运行与发行**：按 exact Profile API 选择 bundled data；API 19 内置 pinned AOSP
-  五库、918 类 BootDex 与 ICU4C 51.1。ROM libcrypto 已按用户再次授权恢复到本地临时使用，
+  五库、919 类 BootDex 与 ICU4C 51.1。ROM libcrypto 已按用户再次授权恢复到本地临时使用，
   未纳入 Git，哈希与清单一致。JNI 桥为 src/guest/crypto/crypto_jni.c；不自动恢复设备库。
   自行构建替换后须更新来源/哈希并复验。制品身份见
   [payload manifest](../../data/android/19/manifest.json)，bootdex.jar 继续不提交。
@@ -52,8 +52,8 @@
 
 ## 最近验证
 
-- DVM-119：Android/UI/平台定向 101 用例、7,849 断言；Java 布局参数与全类链接
-  2 用例、7,107 断言及 6 项门禁通过。证据 `.local/review/dvm119/`。
+- DVM-120：Android/UI/平台/P1/Unsafe 定向 128 用例、9,813 断言；全类链接
+  6,858 断言与 6 项门禁通过。证据 `.local/review/dvm120/`。
 
 - MoKee API 19 ARMv7 临时文件（哈希已核对）：
   `.local/android-device/20260906-cipher/`。手机已断开；发行前
@@ -61,7 +61,7 @@
   仅构建 ogplay_tests 及 ogplay 依赖；未跑全量测试或 Windows/Linux 验收。
 - 已知门禁遗留：architecture.platform_boundaries 在既有 GUI process_manager.cpp:131
   平台分支失败，本轮未修改、未重跑该门禁。ADR 继续按 6 个主题维护，追加
-  [0046](../adr/dexvm.md#adr-0046)，不新增独立 ADR 文件。
+  [0047](../adr/dexvm.md#adr-0047)，不新增独立 ADR 文件。
 
 ## 下一步与边界
 

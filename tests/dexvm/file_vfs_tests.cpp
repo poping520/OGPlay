@@ -1,3 +1,4 @@
+#include "boot_dex.h"
 // java.io.File through the shared VFS (SBX-5, ADR-0020). Two things matter
 // here: a Java save and a native read see one filesystem, and File.mkdirs
 // reports the truth. The old handler returned true unconditionally without
@@ -399,7 +400,10 @@ struct FileVm final {
                           AndroidIntrinsicCatalog(context));
                   }
                   linker.RegisterIntrinsics(extra_intrinsics);
-                  if (include_boot_dex) linker.RegisterBootDex(DateBootDex());
+                  if (include_boot_dex) {
+                      ogplay::test::BindBootDexPlatformNatives(linker);
+                      linker.RegisterBootDex(DateBootDex());
+                  }
                   linker.Link();
                   return linker;
               }(),

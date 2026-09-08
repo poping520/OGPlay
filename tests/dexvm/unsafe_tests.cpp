@@ -1,3 +1,4 @@
+#include "boot_dex.h"
 #include <doctest/doctest.h>
 
 #include <array>
@@ -53,6 +54,7 @@ struct UnsafeVm {
                     ogplay::loader::ParseApkArchive(bytes), "classes.dex");
                 std::vector<std::uint8_t> data(dex.size());
                 std::memcpy(data.data(), dex.data(), dex.size());
+                ogplay::test::BindBootDexPlatformNatives(linker);
                 linker.RegisterBootDex(std::move(data));
             }
             linker.RegisterDex(ReadBytes(std::filesystem::path(OGPLAY_DEXVM_FIXTURE_DIR) / "unsafe.dex"));

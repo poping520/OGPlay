@@ -46,10 +46,7 @@ struct Frame final {
 };
 
 struct ThrowableState final {
-    VmObjectRef message;
-    VmObjectRef cause;
-    bool cause_initialized{};
-    std::string message_utf8;  // rendered lazily for diagnostics
+    // VM diagnostics only. Java Throwable fields own message, cause and stackState.
     std::vector<VmStackEntry> stack;
 };
 
@@ -68,6 +65,7 @@ struct InterpreterExecutionState final {
     // Depth of guest native frames this context currently has live on the
     // root guest stack (04 §1 outbound marshaling).
     std::uint32_t native_depth{};
+    bool constructing_throwable{};
     // Teardown handshake, read once per instruction by Tick().
     std::atomic<bool> stop_requested{false};
 };

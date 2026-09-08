@@ -15,7 +15,6 @@ std::vector<IntrinsicClassDecl> CoreIntrinsicCatalog(
         Declare_java_lang_Thread(),
         Declare_java_lang_Thread_UncaughtExceptionHandler(),
         Declare_java_lang_ThreadGroup(),
-        Declare_java_lang_StackTraceElement(),
         Declare_java_lang_Thread_State(),
         Declare_java_lang_Enum(),
         Declare_java_lang_String(),
@@ -32,7 +31,6 @@ std::vector<IntrinsicClassDecl> CoreIntrinsicCatalog(
         Declare_java_lang_reflect_Member(),
         Declare_java_lang_reflect_AccessibleObject(),
         Declare_java_lang_reflect_Method(),
-        Declare_java_lang_reflect_InvocationTargetException(),
         Declare_java_lang_reflect_Constructor(),
         Declare_java_lang_reflect_Field(),
         Declare_java_lang_reflect_Array(),
@@ -47,7 +45,6 @@ std::vector<IntrinsicClassDecl> CoreIntrinsicCatalog(
     AppendJavaLangThrowables(catalog);
 
     catalog.insert(catalog.end(), {
-        Declare_java_io_IOException(),
         Declare_java_io_FileNotFoundException(),
         Declare_java_io_UnsupportedEncodingException(),
         Declare_java_util_regex_PatternSyntaxException(),

@@ -395,6 +395,9 @@ public:
     // throwable. Preserves its object identity and side-table state.
     void SetPendingException(VmObjectRef throwable);
     void InitThrowableCause(VmObjectRef throwable, VmObjectRef cause);
+    void InitializeThrowable(VmObjectRef throwable, VmObjectRef message = VmObjectRef{});
+    [[nodiscard]] VmObjectRef CaptureThrowableStack();
+    [[nodiscard]] VmObjectRef MaterializeThrowableStack(VmObjectRef snapshot);
     [[nodiscard]] VmObjectRef ThrowableCause(VmObjectRef throwable) const;
     void SetThrowableMessage(VmObjectRef throwable, VmObjectRef message);
     [[nodiscard]] VmObjectRef ThrowableMessage(VmObjectRef throwable) const;

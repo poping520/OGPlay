@@ -45,7 +45,6 @@ void AppendJavaXml(std::vector<IntrinsicClassDecl>& catalog,
 [[nodiscard]] IntrinsicClassDecl
 Declare_java_lang_Thread_UncaughtExceptionHandler();
 [[nodiscard]] IntrinsicClassDecl Declare_java_lang_ThreadGroup();
-[[nodiscard]] IntrinsicClassDecl Declare_java_lang_StackTraceElement();
 [[nodiscard]] IntrinsicClassDecl Declare_java_lang_Thread_State();
 [[nodiscard]] IntrinsicClassDecl Declare_java_lang_Enum();
 [[nodiscard]] IntrinsicClassDecl Declare_java_lang_String();
@@ -63,12 +62,9 @@ Declare_java_lang_Thread_UncaughtExceptionHandler();
 [[nodiscard]] IntrinsicClassDecl Declare_java_lang_reflect_Member();
 [[nodiscard]] IntrinsicClassDecl Declare_java_lang_reflect_AccessibleObject();
 [[nodiscard]] IntrinsicClassDecl Declare_java_lang_reflect_Method();
-[[nodiscard]] IntrinsicClassDecl
-Declare_java_lang_reflect_InvocationTargetException();
 [[nodiscard]] IntrinsicClassDecl Declare_java_lang_reflect_Constructor();
 [[nodiscard]] IntrinsicClassDecl Declare_java_lang_reflect_Field();
 [[nodiscard]] IntrinsicClassDecl Declare_java_lang_reflect_Array();
-[[nodiscard]] IntrinsicClassDecl Declare_java_io_IOException();
 [[nodiscard]] IntrinsicClassDecl Declare_java_io_FileNotFoundException();
 [[nodiscard]] IntrinsicClassDecl Declare_java_io_UnsupportedEncodingException();
 [[nodiscard]] IntrinsicClassDecl Declare_java_util_regex_PatternSyntaxException();

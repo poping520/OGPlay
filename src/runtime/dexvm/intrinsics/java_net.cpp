@@ -192,7 +192,7 @@ namespace ogplay::runtime::dexvm::intrinsics {
                 }
                 call.SetRef(input, input_value);
                 call.SetInt(index, error_index);
-                call.Vm().SetThrowableMessage(call.Receiver(), reason);
+                call.Vm().InitializeThrowable(call.Receiver(), reason);
                 return VmValue::Void();
             };
             builder.Constructor("(Ljava/lang/String;Ljava/lang/String;)V", construct);

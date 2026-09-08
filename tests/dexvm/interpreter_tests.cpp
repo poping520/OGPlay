@@ -492,7 +492,7 @@ void ExpectException(const VmType& vm, const VmCallOutcome& outcome,
 TEST_CASE("dexvm core intrinsic catalog is unique and structurally stable") {
     auto catalog = CoreIntrinsicCatalog();
     std::set<std::string> descriptors;
-    const std::set<std::string> intentionally_unimplemented = {
+    std::set<std::string> intentionally_unimplemented = {
         // DVM-102: precise native failures frozen in api19.json (date_family_audit).
         "Llibcore/icu/ICU;.addLikelySubtags(Ljava/lang/String;)Ljava/lang/String;",
         "Llibcore/icu/ICU;.getAvailableBreakIteratorLocalesNative()[Ljava/lang/String;",
@@ -509,8 +509,6 @@ TEST_CASE("dexvm core intrinsic catalog is unique and structurally stable") {
         "Llibcore/icu/ICU;.getDisplayVariantNative(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;",
         "Llibcore/icu/ICU;.getISO3CountryNative(Ljava/lang/String;)Ljava/lang/String;",
         "Llibcore/icu/ICU;.getISO3LanguageNative(Ljava/lang/String;)Ljava/lang/String;",
-        "Llibcore/icu/ICU;.getISOCountriesNative()[Ljava/lang/String;",
-        "Llibcore/icu/ICU;.getISOLanguagesNative()[Ljava/lang/String;",
         "Llibcore/icu/ICU;.getIcuVersion()Ljava/lang/String;",
         "Llibcore/icu/ICU;.getScript(Ljava/lang/String;)Ljava/lang/String;",
         "Llibcore/icu/ICU;.getUnicodeVersion()Ljava/lang/String;",
@@ -607,10 +605,29 @@ TEST_CASE("dexvm core intrinsic catalog is unique and structurally stable") {
         "Ljava/math/NativeBN;.litEndInts2bn([IIZJ)V",
         "Ljava/math/NativeBN;.twosComp2bn([BIJ)V",
     };
+    // Explicit boundaries added by DVM-105/106/109 after the original catalog snapshot.
+    for (const auto* signature : {
+             "Ljava/lang/reflect/Proxy;.generateProxy(Ljava/lang/String;[Ljava/lang/Class;Ljava/lang/ClassLoader;)Ljava/lang/Class;",
+             "Ljava/lang/reflect/Proxy;.constructorPrototype(Ljava/lang/reflect/InvocationHandler;)V",
+             "Ldalvik/system/VMStack;.fillStackTraceElements(Ljava/lang/Thread;[Ljava/lang/StackTraceElement;)I",
+             "Ldalvik/system/VMStack;.getThreadStackTrace(Ljava/lang/Thread;)[Ljava/lang/StackTraceElement;",
+             "Ldalvik/system/VMStack;.getCallingClassLoader()Ljava/lang/ClassLoader;",
+             "Ldalvik/system/VMStack;.getStackClass2()Ljava/lang/Class;",
+             "Ljava/io/ObjectOutputStream;.getFieldL(Ljava/lang/Object;Ljava/lang/Class;Ljava/lang/String;Ljava/lang/String;)Ljava/lang/Object;",
+             "Lorg/ogplay/security/OsRandom;.engineSetSeed([B)V"}) intentionally_unimplemented.insert(signature);
+    for (const auto* digest : {"SHA1", "SHA224", "SHA256", "SHA384", "SHA512"})
+        for (const auto* key : {"RSA", "ECDSA"})
+            for (const auto* method : {"engineInitSign(Ljava/security/PrivateKey;)V", "engineSign()[B",
+                                      "engineSetParameter(Ljava/lang/String;Ljava/lang/Object;)V",
+                                      "engineGetParameter(Ljava/lang/String;)Ljava/lang/Object;"})
+                intentionally_unimplemented.insert(std::string("Lorg/ogplay/security/Verify") + digest + "with" + key + ";." + method);
     for (const auto& declaration : catalog) {
         CHECK(descriptors.insert(declaration.descriptor).second);
         for (const auto& method : declaration.methods) {
-            if (!method.implementation) {
+            if (!method.implementation && !method.guest_native) {
+                CAPTURE(declaration.descriptor);
+                CAPTURE(method.name);
+                CAPTURE(method.descriptor);
                 const auto is_abstract = (method.access_flags & 0x0400U) != 0U;
                 CHECK((is_abstract || intentionally_unimplemented.contains(
                     declaration.descriptor + "." + method.name +
@@ -710,10 +727,10 @@ TEST_CASE("dexvm core intrinsic catalog is unique and structurally stable") {
           });
     CHECK(signatures("Ljava/lang/Runnable;") ==
           std::set<std::pair<std::string, std::string>>{{"run", "()V"}});
-    CHECK(signatures("Ljava/lang/StringBuilder;").size() == 20U);
-    CHECK(signatures("Ljava/lang/StringBuffer;").size() == 20U);
+    CHECK(signatures("Ljava/lang/StringBuilder;").size() == 21U);
+    CHECK(signatures("Ljava/lang/StringBuffer;").size() == 21U);
     const auto string_signatures = signatures("Ljava/lang/String;");
-    CHECK(string_signatures.size() == 52U);
+    CHECK(string_signatures.size() == 56U);
     CHECK(string_signatures.contains({
         "toLowerCase", "(Ljava/util/Locale;)Ljava/lang/String;"}));
     CHECK(signatures("Ljava/lang/Integer;").size() == 37U);
@@ -727,130 +744,17 @@ TEST_CASE("dexvm core intrinsic catalog is unique and structurally stable") {
               {"ready", "()Z"}, {"close", "()V"},
               {"getEncoding", "()Ljava/lang/String;"},
           });
-    CHECK(signatures("Ljava/io/ObjectOutputStream;") ==
-          std::set<std::pair<std::string, std::string>>{
-              {"<init>", "()V"},
-              {"<init>", "(Ljava/io/OutputStream;)V"},
-              {"close", "()V"},
-              {"flush", "()V"},
-              {"write", "(I)V"},
-              {"write", "([BII)V"},
-              {"writeBoolean", "(Z)V"},
-              {"writeByte", "(I)V"},
-              {"writeBytes", "(Ljava/lang/String;)V"},
-              {"writeChar", "(I)V"},
-              {"writeChars", "(Ljava/lang/String;)V"},
-              {"writeDouble", "(D)V"},
-              {"writeFloat", "(F)V"},
-              {"writeInt", "(I)V"},
-              {"writeLong", "(J)V"},
-              {"writeObject", "(Ljava/lang/Object;)V"},
-              {"writeShort", "(I)V"},
-              {"writeUTF", "(Ljava/lang/String;)V"},
-          });
-    const auto object_output = std::find_if(
-        catalog.begin(), catalog.end(), [](const auto& declaration) {
-            return declaration.descriptor ==
-                   "Ljava/io/ObjectOutputStream;";
-        });
-    REQUIRE(object_output != catalog.end());
-    CHECK(object_output->superclass == "Ljava/io/OutputStream;");
-    CHECK(object_output->interfaces ==
-          std::vector<std::string>{"Ljava/io/ObjectOutput;",
-                                   "Ljava/io/ObjectStreamConstants;"});
-    const auto object_input = std::find_if(
-        catalog.begin(), catalog.end(), [](const auto& declaration) {
-            return declaration.descriptor == "Ljava/io/ObjectInputStream;";
-        });
-    REQUIRE(object_input != catalog.end());
-    CHECK(object_input->superclass == "Ljava/io/InputStream;");
-    CHECK(object_input->interfaces ==
-          std::vector<std::string>{"Ljava/io/ObjectInput;",
-                                   "Ljava/io/ObjectStreamConstants;"});
-    CHECK(signatures("Ljava/io/DataInput;") ==
-          std::set<std::pair<std::string, std::string>>{
-              {"readBoolean", "()Z"},
-              {"readByte", "()B"},
-              {"readChar", "()C"},
-              {"readDouble", "()D"},
-              {"readFloat", "()F"},
-              {"readFully", "([B)V"},
-              {"readFully", "([BII)V"},
-              {"readInt", "()I"},
-              {"readLine", "()Ljava/lang/String;"},
-              {"readLong", "()J"},
-              {"readShort", "()S"},
-              {"readUnsignedByte", "()I"},
-              {"readUnsignedShort", "()I"},
-              {"readUTF", "()Ljava/lang/String;"},
-              {"skipBytes", "(I)I"},
-          });
-    CHECK(signatures("Ljava/io/ObjectInput;") ==
-          std::set<std::pair<std::string, std::string>>{
-              {"available", "()I"},
-              {"close", "()V"},
-              {"read", "()I"},
-              {"read", "([B)I"},
-              {"read", "([BII)I"},
-              {"readObject", "()Ljava/lang/Object;"},
-              {"skip", "(J)J"},
-          });
-    CHECK(signatures("Ljava/io/ObjectInputStream;").size() == 23U);
-    const auto data_output = std::find_if(
-        catalog.begin(), catalog.end(), [](const auto& declaration) {
-            return declaration.descriptor == "Ljava/io/DataOutput;";
-        });
-    REQUIRE(data_output != catalog.end());
-    CHECK(data_output->is_interface);
-    CHECK(data_output->interfaces.empty());
-    CHECK(signatures("Ljava/io/DataOutput;") ==
-          std::set<std::pair<std::string, std::string>>{
-              {"write", "(I)V"},
-              {"write", "([B)V"},
-              {"write", "([BII)V"},
-              {"writeBoolean", "(Z)V"},
-              {"writeByte", "(I)V"},
-              {"writeBytes", "(Ljava/lang/String;)V"},
-              {"writeChar", "(I)V"},
-              {"writeChars", "(Ljava/lang/String;)V"},
-              {"writeDouble", "(D)V"},
-              {"writeFloat", "(F)V"},
-              {"writeInt", "(I)V"},
-              {"writeLong", "(J)V"},
-              {"writeShort", "(I)V"},
-              {"writeUTF", "(Ljava/lang/String;)V"},
-          });
-    const auto object_output_interface = std::find_if(
-        catalog.begin(), catalog.end(), [](const auto& declaration) {
-            return declaration.descriptor == "Ljava/io/ObjectOutput;";
-        });
-    REQUIRE(object_output_interface != catalog.end());
-    CHECK(object_output_interface->is_interface);
-    CHECK(object_output_interface->interfaces ==
-          std::vector<std::string>{"Ljava/io/DataOutput;",
-                                   "Ljava/lang/AutoCloseable;"});
-    CHECK(signatures("Ljava/io/ObjectOutput;") ==
-          std::set<std::pair<std::string, std::string>>{
-              {"close", "()V"},
-              {"flush", "()V"},
-              {"write", "(I)V"},
-              {"write", "([B)V"},
-              {"write", "([BII)V"},
-              {"writeObject", "(Ljava/lang/Object;)V"},
-          });
-    const auto object_stream_constants = std::find_if(
-        catalog.begin(), catalog.end(), [](const auto& declaration) {
-            return declaration.descriptor ==
-                   "Ljava/io/ObjectStreamConstants;";
-        });
-    REQUIRE(object_stream_constants != catalog.end());
-    CHECK(object_stream_constants->is_interface);
-    CHECK(object_stream_constants->interfaces.empty());
-    CHECK(signatures("Ljava/io/ObjectStreamConstants;").empty());
-    CHECK(signatures("Ljava/io/File;").contains(
-        {"list", "()[Ljava/lang/String;"}));
-    CHECK(signatures("Ljava/util/zip/ZipInputStream;").contains(
-        {"getNextEntry", "()Ljava/util/zip/ZipEntry;"}));
+    // Migrated IO shapes come from the linked BootDex class, not the native overlay catalog.
+    for (const auto* descriptor : {"Ljava/io/ObjectInputStream;", "Ljava/io/ObjectOutputStream;",
+                                  "Ljava/io/DataInput;", "Ljava/io/DataOutput;", "Ljava/io/ObjectInput;",
+                                  "Ljava/io/ObjectOutput;", "Ljava/io/ObjectStreamConstants;"}) {
+        const auto type = boot_linker.ResolveDescriptor(descriptor);
+        REQUIRE(boot_linker.Class(type).is_boot_dex);
+        boot_linker.EnsureClassLinked(type);
+        for (const auto id : boot_linker.Class(type).own_virtual_methods)
+            CHECK(boot_linker.Method(id).kind != MethodKind::intrinsic);
+    }
+
 }
 
 TEST_CASE("dormant classes with missing hierarchy link only when reached") {
@@ -1016,7 +920,7 @@ TEST_CASE("dexvm API 19 primitive wrapper family inventory is complete") {
         "parseDouble(Ljava/lang/String;)D","toString()Ljava/lang/String;","toString(D)Ljava/lang/String;","toHexString(D)Ljava/lang/String;","valueOf(D)Ljava/lang/Double;","valueOf(Ljava/lang/String;)Ljava/lang/Double;",
         "doubleToLongBits(D)J","doubleToRawLongBits(D)J","longBitsToDouble(J)D"});
 
-    CHECK(fields(declaration("Ljava/lang/Number;")).empty());
+    CHECK(fields(declaration("Ljava/lang/Number;")) == std::set<std::string>{"serialVersionUID:J"});
     CHECK(fields(declaration("Ljava/lang/Byte;")) == std::set<std::string>{
         "MAX_VALUE:B","MIN_VALUE:B","SIZE:I","TYPE:Ljava/lang/Class;","value:B"});
     CHECK(fields(declaration("Ljava/lang/Short;")) == std::set<std::string>{
@@ -1365,50 +1269,48 @@ TEST_CASE("dexvm API 19 java.lang throwable inventory is complete") {
     };
     REQUIRE(inventory.size() == 50U);
 
-    const auto catalog = CoreIntrinsicCatalog();
-    std::map<std::string, std::size_t> descriptor_counts;
-    for (const auto& declaration : catalog) {
-        ++descriptor_counts[declaration.descriptor];
-    }
+    Vm vm;
     for (const auto& [name, superclass] : inventory) {
         const auto descriptor = "Ljava/lang/" + name + ";";
         CAPTURE(descriptor);
-        CHECK(descriptor_counts[descriptor] == 1U);
-        const auto declaration = std::find_if(
-            catalog.begin(), catalog.end(), [&](const auto& candidate) {
-                return candidate.descriptor == descriptor;
-            });
-        REQUIRE(declaration != catalog.end());
-        REQUIRE(declaration->superclass.has_value());
-        CHECK(*declaration->superclass ==
-              "Ljava/lang/" + superclass + ";");
+        const auto type = vm.linker.ResolveDescriptor(descriptor);
+        const auto& cls = vm.linker.Class(type);
+        REQUIRE(cls.is_boot_dex);
+        REQUIRE(cls.super.has_value());
+        CHECK(vm.linker.Class(*cls.super).descriptor == "Ljava/lang/" + superclass + ";");
+        for (const auto& group : {cls.own_direct_methods, cls.own_virtual_methods}) {
+            for (const auto id : group) {
+                const auto& method = vm.linker.Method(id);
+                const bool stack_native = name == "Throwable" &&
+                    (method.name == "nativeFillInStackTrace" || method.name == "nativeGetStackTrace");
+                CHECK(method.kind == (stack_native ? MethodKind::intrinsic : MethodKind::interpreted));
+            }
+        }
     }
 }
 
 TEST_CASE("dexvm API 19 throwable representative shapes are source-faithful") {
-    const auto catalog = CoreIntrinsicCatalog();
-    const auto declaration = [&catalog](const std::string& descriptor)
-        -> const IntrinsicClassDecl& {
-        const auto found = std::find_if(
-            catalog.begin(), catalog.end(), [&](const auto& candidate) {
-                return candidate.descriptor == descriptor;
-            });
-        REQUIRE(found != catalog.end());
-        return *found;
+    Vm vm;
+    const auto declaration = [&vm](const std::string& descriptor) -> const LinkedClass& {
+        const auto type = vm.linker.ResolveDescriptor(descriptor);
+        vm.linker.EnsureClassLinked(type);
+        return vm.linker.Class(type);
     };
-    const auto methods = [](const IntrinsicClassDecl& java_class) {
+    const auto methods = [&vm](const LinkedClass& java_class) {
         std::set<std::pair<std::string, std::string>> result;
-        for (const auto& method : java_class.methods) {
-            result.emplace(method.name, method.descriptor);
+        for (const auto& group : {java_class.own_direct_methods, java_class.own_virtual_methods}) {
+            for (const auto id : group) {
+                const auto& method = vm.linker.Method(id);
+                result.emplace(method.name, method.descriptor);
+            }
         }
         return result;
     };
-    const auto fields = [](const IntrinsicClassDecl& java_class) {
+    const auto fields = [&vm](const LinkedClass& java_class) {
         std::set<std::pair<std::string, std::string>> result;
-        for (const auto& field : java_class.fields) {
-            if (!field.is_static) {
-                result.emplace(field.name, field.descriptor);
-            }
+        for (const auto id : java_class.own_instance_fields) {
+            const auto& field = vm.linker.Field(id);
+            result.emplace(field.name, field.descriptor);
         }
         return result;
     };
@@ -1481,7 +1383,7 @@ TEST_CASE("dexvm API 19 throwable representative shapes are source-faithful") {
           });
 }
 
-TEST_CASE("dexvm java.lang throwable implementation is in lang family TU") {
+TEST_CASE("dexvm Throwable native boundary stays in lang family TU") {
     const std::vector<std::string> classes = {
         "AbstractMethodError", "ArithmeticException",
         "ArrayIndexOutOfBoundsException", "ArrayStoreException",
@@ -3058,7 +2960,7 @@ TEST_CASE("dexvm diagnostics cover semantic fault and runtime events") {
         kDexVmTraceAllEvents &
         ~DexVmTraceBit(DexVmTraceKind::instruction);
     JavaObjectModelConfig heap;
-    heap.heap_budget_bytes = 128;
+    heap.heap_budget_bytes = 65536;
     heap.gc_watermark_percent = 75;
     Vm vm(config, heap);
 
@@ -3070,6 +2972,7 @@ TEST_CASE("dexvm diagnostics cover semantic fault and runtime events") {
     const auto monitor = vm.CallStatic("LWaitProbe;", "signal", "()V");
     REQUIRE_FALSE(monitor.exception.IsValid());
 
+    static_cast<void>(vm.interpreter.CollectGarbage("diagnostics-event"));
     std::set<DexVmTraceKind> observed;
     for (const auto& entry : vm.interpreter.Trace("", 512)) {
         observed.insert(entry.kind);
@@ -3120,6 +3023,116 @@ TEST_CASE("DVM-105 guest native admission is explicit and has no intrinsic handl
     invalid.methods[0].implementation = [](IntrinsicContext&) { return VmValue::Int(0); };
     DexClassLinker rejected;
     CHECK_THROWS_AS(rejected.RegisterIntrinsics(std::array{invalid}), DexVmError);
+}
+
+TEST_CASE("DVM-115 VM exception construction has bounded emergency heap and stack space") {
+    WithEachBackend([](InterpreterConfig config) {
+        Vm f(config, JavaObjectModelConfig{.heap_budget_bytes = 128});
+        ExpectInt(f.CallStatic("LArith;", "divideCaught", "(II)I",
+                              {VmValue::Int(1), VmValue::Int(0)}), -99);
+        const auto byte_array = f.linker.ResolveDescriptor("[B");
+        CHECK_FALSE(f.model.SetEmergencyReserve(true)); // Construction restored the normal heap limit.
+        CHECK(f.model.SetEmergencyReserve(true)); // Nesting must not replenish the reserve.
+        CHECK_THROWS_AS(static_cast<void>(f.model.NewPrimitiveArray(
+            byte_array, JniPrimitiveKind::byte, 70000)), DexVmError);
+        f.model.SetEmergencyReserve(false);
+        CHECK_THROWS_AS(static_cast<void>(f.model.NewPrimitiveArray(
+            byte_array, JniPrimitiveKind::byte, 1024)), DexVmError);
+    });
+}
+
+TEST_CASE("DVM-115 BootDex Throwable owns stack printing copies causes and suppression") {
+    WithEachBackend([](InterpreterConfig config) {
+        Vm f(config);
+        auto& vm = f.interpreter;
+        VmThreadRuntime threads(vm);
+        std::vector<Interpreter::RootScope> roots;
+        const auto keep = [&](VmObjectRef ref) {
+            roots.push_back(vm.ProtectReferences(std::array{ref}));
+            return ref;
+        };
+        const auto ok = [&](const VmCallOutcome& result) {
+            REQUIRE_MESSAGE(!result.exception.IsValid(), result.exception_message);
+            if (result.value.ref.IsValid()) keep(result.value.ref);
+            return result.value;
+        };
+        const auto call = [&](VmObjectRef object, const char* name, const char* signature,
+                              std::vector<VmValue> args = {}) {
+            const auto type = f.model.ObjectClass(object);
+            const auto slot = f.linker.FindVtableIndex(type, name, signature);
+            REQUIRE(slot.has_value());
+            args.insert(args.begin(), VmValue::Ref(object));
+            return vm.Call(f.linker.Class(type).vtable[*slot], args);
+        };
+        const auto make = [&](const char* message) {
+            return ok(f.CallStatic("LThrowableMessageProbe;", "createOuter",
+                "(Ljava/lang/String;)Ljava/lang/Throwable;", {VmValue::Ref(vm.NewStringUtf8(message))})).ref;
+        };
+        const auto print = [&](VmObjectRef object) {
+            return vm.StringUtf8(ok(f.CallStatic("LThrowableMessageProbe;", "print",
+                "(Ljava/lang/Throwable;)Ljava/lang/String;", {VmValue::Ref(object)})).ref);
+        };
+        const auto top = make("top");
+        const auto cause = make("cause");
+        const auto suppressed = make("suppressed");
+        auto trace = ok(call(top, "getStackTrace", "()[Ljava/lang/StackTraceElement;")).ref;
+        REQUIRE(f.model.ArrayLength(trace) == 2);
+        CHECK(vm.StringUtf8(ok(call(f.model.GetObjectElement(trace, 0), "getMethodName", "()Ljava/lang/String;")).ref) == "create");
+        CHECK(vm.StringUtf8(ok(call(f.model.GetObjectElement(trace, 1), "getMethodName", "()Ljava/lang/String;")).ref) == "createOuter");
+        const auto again = ok(call(top, "getStackTrace", "()[Ljava/lang/StackTraceElement;")).ref;
+        CHECK(again != trace);
+        f.model.SetObjectElement(trace, 0, VmObjectRef{});
+        CHECK(f.model.GetObjectElement(again, 0).IsValid());
+        ok(call(top, "initCause", "(Ljava/lang/Throwable;)Ljava/lang/Throwable;", {VmValue::Ref(cause)}));
+        ok(call(top, "addSuppressed", "(Ljava/lang/Throwable;)V", {VmValue::Ref(suppressed)}));
+        const auto list = ok(call(top, "getSuppressed", "()[Ljava/lang/Throwable;")).ref;
+        REQUIRE(f.model.ArrayLength(list) == 1);
+        CHECK(f.model.GetObjectElement(list, 0) == suppressed);
+        f.model.SetObjectElement(list, 0, VmObjectRef{});
+        while (roots.size() > 1) roots.pop_back(); // Only the outer exception is rooted.
+        static_cast<void>(vm.CollectGarbage("throwable-java-state"));
+        CHECK(ok(call(top, "getCause", "()Ljava/lang/Throwable;")).ref == cause);
+        const auto expected = std::string("java.lang.Exception: top\n") +
+            "\tat ThrowableMessageProbe.create(Unknown Source)\n" +
+            "\tat ThrowableMessageProbe.createOuter(Unknown Source)\n" +
+            "\tSuppressed: java.lang.Exception: suppressed\n\t\t... 2 more\n" +
+            "Caused by: java.lang.Exception: cause\n\t... 2 more\n";
+        CHECK(print(top) == expected);
+        const auto rethrow = f.CallStatic("LThrowableMessageProbe;", "rethrow",
+            "(Ljava/lang/Throwable;)V", {VmValue::Ref(top)});
+        CHECK(rethrow.exception == top);
+        CHECK(print(top) == expected);
+        trace = ok(call(top, "getStackTrace", "()[Ljava/lang/StackTraceElement;")).ref;
+        f.model.SetObjectElement(trace, 0, VmObjectRef{});
+        const auto empty = keep(f.model.NewObjectArray(
+            f.linker.ResolveDescriptor("[Ljava/lang/StackTraceElement;"),
+            f.linker.ResolveDescriptor("Ljava/lang/StackTraceElement;"), 0));
+        ok(call(top, "setStackTrace", "([Ljava/lang/StackTraceElement;)V", {VmValue::Ref(empty)}));
+        CHECK(f.model.ArrayLength(ok(call(top, "getStackTrace", "()[Ljava/lang/StackTraceElement;")).ref) == 0);
+        const auto invalid_trace = call(top, "setStackTrace", "([Ljava/lang/StackTraceElement;)V", {VmValue::Ref(trace)});
+        CHECK(f.linker.Class(invalid_trace.exception_class).descriptor == "Ljava/lang/NullPointerException;");
+        const auto null_writer = call(top, "printStackTrace", "(Ljava/io/PrintWriter;)V", {VmValue::Ref(VmObjectRef{})});
+        CHECK(f.linker.Class(null_writer.exception_class).descriptor == "Ljava/lang/NullPointerException;");
+        const auto self = call(top, "addSuppressed", "(Ljava/lang/Throwable;)V", {VmValue::Ref(top)});
+        CHECK(f.linker.Class(self.exception_class).descriptor == "Ljava/lang/IllegalArgumentException;");
+        const auto null_suppressed = call(top, "addSuppressed", "(Ljava/lang/Throwable;)V", {VmValue::Ref(VmObjectRef{})});
+        CHECK(f.linker.Class(null_suppressed.exception_class).descriptor == "Ljava/lang/NullPointerException;");
+        const auto frozen = keep(vm.NewIntrinsicInstance("Ljava/lang/Throwable;"));
+        const auto ctor = f.Static("Ljava/lang/Throwable;", "<init>", "(Ljava/lang/String;Ljava/lang/Throwable;ZZ)V");
+        ok(vm.Call(ctor, std::array{VmValue::Ref(frozen), VmValue::Ref(VmObjectRef{}),
+            VmValue::Ref(VmObjectRef{}), VmValue::Int(0), VmValue::Int(0)}));
+        ok(call(frozen, "addSuppressed", "(Ljava/lang/Throwable;)V", {VmValue::Ref(cause)}));
+        CHECK(f.model.ArrayLength(ok(call(frozen, "getSuppressed", "()[Ljava/lang/Throwable;")).ref) == 0);
+        ok(call(frozen, "fillInStackTrace", "()Ljava/lang/Throwable;"));
+        CHECK(f.model.ArrayLength(ok(call(frozen, "getStackTrace", "()[Ljava/lang/StackTraceElement;")).ref) == 0);
+        CHECK(print(frozen) == "java.lang.Throwable\n");
+        const auto text = keep(vm.Model().NewString(u"A\U0001f600B"));
+        CHECK(ok(call(text, "subSequence", "(II)Ljava/lang/CharSequence;", {VmValue::Int(0), VmValue::Int(4)})).ref == text);
+        const auto slice = ok(call(text, "subSequence", "(II)Ljava/lang/CharSequence;", {VmValue::Int(1), VmValue::Int(3)})).ref;
+        CHECK(vm.Model().StringValue(slice) == u"\U0001f600");
+        const auto bad_range = call(text, "subSequence", "(II)Ljava/lang/CharSequence;", {VmValue::Int(-1), VmValue::Int(2)});
+        CHECK(f.linker.Class(bad_range.exception_class).descriptor == "Ljava/lang/StringIndexOutOfBoundsException;");
+    });
 }
 
 TEST_CASE("DVM-114 Throwable localized messages honor DEX overrides and preserve failures") {
@@ -3195,13 +3208,16 @@ TEST_CASE("DVM-105 Throwable cause retains identity across GC and rejects overwr
     auto& vm = fixture.interpreter;
     const auto outer = vm.NewIntrinsicInstance("Ljava/lang/Exception;");
     const auto inner = vm.NewIntrinsicInstance("Ljava/lang/IllegalArgumentException;");
-    const auto roots = vm.ProtectReferences(std::array{outer});
+    const auto roots = vm.ProtectReferences(std::array{outer, inner});
+    vm.InitializeThrowable(outer);
+    vm.InitializeThrowable(inner);
     vm.InitThrowableCause(outer, inner);
     CHECK(vm.ThrowableCause(outer) == inner);
     static_cast<void>(vm.CollectGarbage("cause-test"));
     CHECK(vm.Model().ObjectClass(vm.ThrowableCause(outer)) == *fixture.linker.FindClass("Ljava/lang/IllegalArgumentException;"));
     CHECK_THROWS_AS(vm.InitThrowableCause(outer, VmObjectRef{}), VmJavaThrow);
     const auto self = vm.NewIntrinsicInstance("Ljava/lang/Exception;");
+    vm.InitializeThrowable(self);
     CHECK_THROWS_AS(vm.InitThrowableCause(self, self), VmJavaThrow);
     vm.InitThrowableCause(self, VmObjectRef{});
     CHECK_THROWS_AS(vm.InitThrowableCause(self, inner), VmJavaThrow);

@@ -19,6 +19,7 @@
 - [ADR-0040 · 对象序列化协议归 BootDex，VM 仅提供构造与元数据原语](#adr-0040)
 - [ADR-0041 · 定时执行器与 FutureTask 执行原版 Java](#adr-0041)
 - [ADR-0042 · 服务查询的有界无匹配结果](#adr-0042)
+- [ADR-0043 · Throwable 协议归 BootDex，栈捕获归 VM](#adr-0043)
 
 <a id="adr-0017"></a>
 
@@ -614,3 +615,30 @@ enabled，由 AndroidAppProcess 注入唯一 context；没有注入时保持未�
 当前闭包不物化 ResolveInfo/ServiceInfo，不支持其返回类型反射、正匹配解析、服务绑定、
 支付或完整 PackageManager。服务确实可匹配时须另开 WU 扩展元数据和行为，禁止返回
 虚假的服务对象、发出连接成功回调或加入游戏包名/action 特判。
+
+<a id="adr-0043"></a>
+## ADR-0043 · Throwable 协议归 BootDex，栈捕获归 VM
+
+日期：2026-09-08；状态：采用。Supersedes：ADR-0029 中 Throwable 消息/cause 由宿主
+状态表持有的约定；其他资源边界保持。
+
+### 决定
+
+- Throwable、StackTraceElement、50 类 java.lang 异常家族及 IOException/
+  InvocationTargetException 的构造、消息、cause/suppressed、打印和序列化执行 API 19 Java。
+  ordinary 字段与数组是唯一 Java 状态，移除普通方法 overlay。
+- nativeFillInStackTrace 保存当前 execution 的方法 ID/dex PC 对到普通 int[]，按 Dalvik
+  Exception.cpp 去除顶部 Throwable 实现帧。nativeGetStackTrace 展开为普通 StackTraceElement[]；
+  禁止 guest 保存宿主指针。尚未解码源文件/行号时使用 Unknown Source，不能把 dex PC 当行号。
+- VM 生成隐式异常时调用 BootDex Throwable 构造器；保留 32 个内部帧与每次最多 64 KiB
+  应急分配，作用域结束恢复。限制用于错误报告，不扩大应用通常的栈/堆预算；递归构造失败
+  明确终止。ThrowableState 仅保留原有故障诊断栈，不再保存消息/cause 或 Java 强引用。
+- 残留平台异常构造器调用同一基类初始化入口。PrintStream 仍为结构化输出边界，补齐
+  Appendable；空追加不生成日志。PrintWriter/StringWriter 及 Throwable 打印算法来自 Java。
+
+### 验证与边界
+
+双后端验证构造时捕获、rethrow 不改 Java 栈、独立数组、suppressed/cause、重复帧缩略、
+GC、禁用 suppression/栈、错误参数；对象流在真实 guest SHA 后端验证普通异常图往返。
+不承诺 Android 所有带宿主资源对象可序列化，不引入系统服务或 native 宿主栈伪装。
+KitKat 原版循环 cause 打印行为与其余 Java 递归一样受 VM 栈/执行预算约束。

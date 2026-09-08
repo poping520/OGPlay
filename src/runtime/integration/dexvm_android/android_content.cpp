@@ -510,9 +510,9 @@ Decl Declare_android_database_sqlite_SQLiteDatabase_CursorFactory(const Context&
 Decl Declare_android_database_SQLiteException(const Context&) {
     auto builder = dx::IntrinsicClassBuilder::Class(
         "Landroid/database/SQLException;", "Ljava/lang/RuntimeException;");
-    builder.Constructor("()V", [](dx::IntrinsicContext&) { return dx::VmValue::Void(); });
+    builder.Constructor("()V", [](dx::IntrinsicContext& c) { c.vm.InitializeThrowable(c.receiver); return dx::VmValue::Void(); });
     builder.Constructor("(Ljava/lang/String;)V", [](dx::IntrinsicContext& call) {
-        call.vm.SetThrowableMessage(call.receiver, call.arguments[0].ref);
+        call.vm.InitializeThrowable(call.receiver, call.arguments[0].ref);
         return dx::VmValue::Void();
     });
     return std::move(builder).Build();
@@ -1955,12 +1955,13 @@ Decl Declare_android_content_IntentFilter_MalformedMimeTypeException(
     auto builder = dx::IntrinsicClassBuilder::Class(
         "Landroid/content/IntentFilter$MalformedMimeTypeException;",
         "Landroid/util/AndroidException;", {}, dx::kAccPublic);
-    builder.Constructor("()V", [](dx::IntrinsicContext&) {
+    builder.Constructor("()V", [](dx::IntrinsicContext& c) {
+        c.vm.InitializeThrowable(c.receiver);
         return dx::VmValue::Void();
     });
     builder.Constructor("(Ljava/lang/String;)V",
         [](dx::IntrinsicContext& call) {
-            call.vm.SetThrowableMessage(call.receiver, call.arguments[0].ref);
+            call.vm.InitializeThrowable(call.receiver, call.arguments[0].ref);
             return dx::VmValue::Void();
         });
     return std::move(builder).Build();

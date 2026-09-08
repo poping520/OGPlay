@@ -19,11 +19,11 @@ using namespace detail;
 IntrinsicClassDecl Declare_java_util_regex_PatternSyntaxException() {
     auto builder = IntrinsicClassBuilder::Class("Ljava/util/regex/PatternSyntaxException;", "Ljava/lang/IllegalArgumentException;");
     builder.Constructor("()V",
-        [](IntrinsicContext &) { return VmValue::Void(); });
+        [](IntrinsicContext& c) { c.vm.InitializeThrowable(c.receiver); return VmValue::Void(); });
     builder.Constructor("(Ljava/lang/String;)V",
         [](IntrinsicContext& context) {
                 const auto message = context.arguments[0].ref;
-                context.vm.SetThrowableMessage(context.receiver, message);
+                context.vm.InitializeThrowable(context.receiver, message);
                 return VmValue::Void();
             });
     auto result = std::move(builder).Build();

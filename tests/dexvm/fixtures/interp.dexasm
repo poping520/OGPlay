@@ -1451,6 +1451,40 @@
 .class public LThrowableMessageProbe;
 .super Ljava/lang/Object;
 
+.method public static create(Ljava/lang/String;)Ljava/lang/Throwable;
+.registers 2
+    new-instance v0, Ljava/lang/Exception;
+    invoke-direct {v0, v1}, Ljava/lang/Exception;-><init>(Ljava/lang/String;)V
+    return-object v0
+.end method
+
+.method public static createOuter(Ljava/lang/String;)Ljava/lang/Throwable;
+.registers 2
+    invoke-static {v1}, LThrowableMessageProbe;->create(Ljava/lang/String;)Ljava/lang/Throwable;
+    move-result-object v0
+    return-object v0
+.end method
+
+.method public static rethrow(Ljava/lang/Throwable;)V
+.registers 1
+    throw v0
+.end method
+
+
+
+.method public static print(Ljava/lang/Throwable;)Ljava/lang/String;
+.registers 4
+    new-instance v0, Ljava/io/StringWriter;
+    invoke-direct {v0}, Ljava/io/StringWriter;-><init>()V
+    new-instance v1, Ljava/io/PrintWriter;
+    invoke-direct {v1, v0}, Ljava/io/PrintWriter;-><init>(Ljava/io/Writer;)V
+    invoke-virtual {v3, v1}, Ljava/lang/Throwable;->printStackTrace(Ljava/io/PrintWriter;)V
+    invoke-virtual {v1}, Ljava/io/PrintWriter;->flush()V
+    invoke-virtual {v0}, Ljava/io/StringWriter;->toString()Ljava/lang/String;
+    move-result-object v2
+    return-object v2
+.end method
+
 .method public static localized(Ljava/lang/Throwable;)Ljava/lang/String;
 .registers 2
     invoke-virtual {v1}, Ljava/lang/Throwable;->getLocalizedMessage()Ljava/lang/String;

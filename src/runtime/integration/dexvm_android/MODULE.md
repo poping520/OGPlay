@@ -270,3 +270,6 @@ DVM-112：ServiceConnection 原版接口归 BootDex。PackageManager.resolveServ
 `dexvm.service_resolution` 记账并抛 UnsupportedOperationException；null Intent 抛 NPE。
 无外部安装包/平台服务目录，不按 action 或包名特判，不创建 ResolveInfo/绑定/回调状态。
 这不表示完整服务发现、返回类型反射、bindService/unbindService、Binder 或支付支持。
+
+DVM-115：残留 Android 异常构造器调用 VM 的 BootDex Throwable 基类初始化入口，
+消息、cause、suppressed 与异常栈归 Java 字段；不再向旧 Throwable 宿主侧表写入消息。

@@ -725,10 +725,27 @@ TEST_CASE("dexvm core intrinsic catalog is unique and structurally stable") {
           });
     CHECK(signatures("Ljava/lang/Runnable;") ==
           std::set<std::pair<std::string, std::string>>{{"run", "()V"}});
-    CHECK(signatures("Ljava/lang/StringBuilder;").size() == 21U);
-    CHECK(signatures("Ljava/lang/StringBuffer;").size() == 21U);
+    CHECK(signatures("Ljava/lang/AbstractStringBuilder;").empty());
+    CHECK(signatures("Ljava/lang/IntegralToString;") ==
+          std::set<std::pair<std::string, std::string>>{
+              {"appendInt", "(Ljava/lang/AbstractStringBuilder;I)V"},
+              {"appendLong", "(Ljava/lang/AbstractStringBuilder;J)V"},
+          });
+    const auto abstract_builder =
+        boot_linker.ResolveDescriptor("Ljava/lang/AbstractStringBuilder;");
+    const auto string_builder =
+        boot_linker.ResolveDescriptor("Ljava/lang/StringBuilder;");
+    const auto& linked_builder = boot_linker.Class(string_builder);
+    REQUIRE(linked_builder.super.has_value());
+    CHECK(*linked_builder.super == abstract_builder);
+    CHECK(linked_builder.direct_interfaces == std::vector<DexClassId>{
+        boot_linker.ResolveDescriptor("Ljava/io/Serializable;"),
+        boot_linker.ResolveDescriptor("Ljava/lang/CharSequence;"),
+        boot_linker.ResolveDescriptor("Ljava/lang/Appendable;")});
+    CHECK(signatures("Ljava/lang/StringBuilder;").size() == 31U);
+    CHECK(signatures("Ljava/lang/StringBuffer;").size() == 31U);
     const auto string_signatures = signatures("Ljava/lang/String;");
-    CHECK(string_signatures.size() == 56U);
+    CHECK(string_signatures.size() == 57U);
     CHECK(string_signatures.contains({
         "toLowerCase", "(Ljava/util/Locale;)Ljava/lang/String;"}));
     CHECK(signatures("Ljava/lang/Integer;").size() == 37U);

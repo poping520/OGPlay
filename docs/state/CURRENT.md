@@ -1,11 +1,9 @@
 # 当前状态
 
-更新（2026-09-08 续）：[DVM-125](../tasks/dexvm/DVM-125.md) 闭合 Activity/View
-窗口焦点查询与通知。DexActivityLifecycle 维护唯一事实，初始 onResume 为 false、Surface
-后下一帧获焦；状态先更新再虚派 Activity 与 attached View，切换/暂停恢复/Stop 去重。
-DecorView 与挂载树查询一致，分离 View、旧 Activity 为 false；override 无 super 不影响状态。
-原命令越过 `MainActivity.onResume → hasWindowFocus()`，新首错为后台线程调用
-`String.format(Locale,String,Object[])` 无法解析。
+更新（2026-09-08 续）：[DVM-126](../tasks/dexvm/DVM-126.md) 保留 VM `String` owner，
+精确选入 API 19 Formatter 家族；两个 `String.format` 重载只桥接 guest Formatter。
+`%tZ`、`%02d`、Locale/null、异常与 GC 已双后端覆盖。原命令越过 Nimble `%tZ`，
+新首错为后台线程调用 `System.getenv(String)` 无法解析。
 Button/TextView 三参构造与 buttonStyle(Small) 默认样式投影、TextView compound
 drawables（measure/raster/文本带内缩）、UI kind 按真实继承链解析、RelativeLayout
 TRUE(-1) 规则按 AOSP rule > 0 视为无锚点。exact PvZ 实跑 `CreateDiscoveryStrip 3/4/8`
@@ -16,7 +14,7 @@ compound 支持四方向/空文本测量与定位、资源事务更新；默认�
 ## 当前能力
 
 - **发行/guest JNI**：exact Profile API 选择 bundled data。API 19 含 pinned AOSP 五库、
-  AOSP OpenSSL `libcrypto.so`、ICU4C 51.1 库及依赖、927 类 BootDex 和 ICU 数据；来源、
+  AOSP OpenSSL `libcrypto.so`、ICU4C 51.1 库及依赖、948 类 BootDex 和 ICU 数据；来源、
   hash、NOTICE、manifest 与 payload 校验已同步。crypto/ICU 保持源码模块边界，共用
   JNI_OnLoad 和 `libogplay_jni.so`；ICU 只调用 guest C ABI 与 `icudt51l.dat`，host 不链接 ICU。
   制品见 [manifest](../../data/android/19/manifest.json)；`bootdex.jar` 不提交。
@@ -43,6 +41,10 @@ compound 支持四方向/空文本测量与定位、资源事务更新；默认�
 - DVM-125：windows-msvc Release 构建；双后端焦点链 96 断言、初始 traversal/切换及
   View 定向回归通过；相关架构门禁 4/5 通过。platform-boundaries 仍仅被既有 GUI
   `process_manager.cpp:131` 阻塞。实跑日志 `.local/review/dvm125/pvz-run.log`。
+- DVM-126：windows-msvc Release 构建；双后端 Formatter 80 断言、948 类全链接、
+  StringBuilder/目录结构定向回归及相关 CTest 10/10 通过；platform-boundaries 仍仅被既有
+  GUI 分支阻塞。exact PvZ 已越过 `%tZ`，新首错为 `System.getenv(String)`；日志
+  `.local/review/dvm126/pvz-run.log`。
 - DVM-122：NDK r25c ARMv7 API 19 两次构建一致；ELF ABI、SONAME、DT_NEEDED、payload、
   BootDex audit/self-test、Bionic profile、DVM-105/106/108 及大小写/结构定向回归通过。
   Windows Release 未下载、编译或链接 host ICU。
@@ -60,7 +62,7 @@ compound 支持四方向/空文本测量与定位、资源事务更新；默认�
 
 ## 下一步与边界
 
-1. 分析 PvZ 新首错 `String.format(Locale,String,Object[])`，继续推进 PvZ。
+1. 分析 PvZ 新首错 `System.getenv(String)`，继续推进 PvZ。
 2. 处理既有 GUI 门禁，补 macOS/Linux、DH 与 Diagnostics 验收。
 
 OGPlay 仅覆盖登记的老游戏进程能力。完整 formatter/大数、宿主资源持久化、Proxy 生成、

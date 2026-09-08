@@ -18,6 +18,8 @@ std::vector<IntrinsicClassDecl> CoreIntrinsicCatalog(
         Declare_java_lang_Thread_State(),
         Declare_java_lang_Enum(),
         Declare_java_lang_String(),
+        Declare_java_lang_AbstractStringBuilder(),
+        Declare_java_lang_IntegralToString(),
         Declare_java_lang_StringBuilder(),
         Declare_java_lang_StringBuffer(),
         Declare_java_lang_System(services),

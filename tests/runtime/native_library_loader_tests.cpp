@@ -1612,6 +1612,174 @@ TEST_CASE("run-apk delegates application startup and never selects an ELF root")
     CHECK(gui.find("MatchApkTitleProfile") == std::string::npos);
 }
 
+TEST_CASE("DVM-126 String.format delegates Locale formatting to API19 Formatter") {
+    using namespace ogplay;
+    using namespace runtime::dexvm;
+    for (const auto backend : {InterpreterBackend::switch_dispatch,
+                               InterpreterBackend::threaded}) {
+        CAPTURE(backend == InterpreterBackend::threaded ? "threaded" : "switch");
+        runtime::VirtualFileSystem filesystem;
+        core::CapabilityLedger ledger;
+        core::Logger logger;
+        std::vector<std::vector<std::byte>> contents;
+        std::vector<runtime::BionicModuleSource> libraries;
+        for (const auto name : {
+                 "libc.so", "libm.so", "libdl.so", "libstdc++.so", "libz.so",
+                 "libcrypto.so", "libgabi++.so", "libicui18n.so", "libicuuc.so",
+                 "libstlport.so", "libogplay_jni.so"}) {
+            std::ifstream stream(std::string(OGPLAY_SOURCE_DIR) +
+                                     "/data/android/19/lib/" + name,
+                                 std::ios::binary);
+            REQUIRE_MESSAGE(stream.good(), name);
+            std::vector<char> data{std::istreambuf_iterator<char>(stream), {}};
+            contents.emplace_back(data.size());
+            std::transform(data.begin(), data.end(), contents.back().begin(),
+                           [](const char value) {
+                               return static_cast<std::byte>(value);
+                           });
+            libraries.push_back({name, contents.back()});
+        }
+        auto context = std::make_shared<runtime::DexVmAndroidContext>();
+        context->apk_bytes = {
+            std::byte{0x50}, std::byte{0x4b}, std::byte{3}, std::byte{4}};
+        session::AndroidAppProcessRequest request;
+        request.manifest = AppManifest("fixture.MainActivity");
+        request.system_libraries = libraries;
+        request.dex_bytes = ReadDexFixture("cipher.dex");
+        request.icu_data = ReadPayloadBytes("icu/icudt51l.dat");
+        request.boot_dex_bytes = test::ReadBootDex();
+        request.context = context;
+        request.dexvm.interpreter.backend = backend;
+        request.surface_width = 64;
+        request.surface_height = 36;
+        request.maximum_ticks_per_call = UINT64_C(100000000);
+#if defined(_WIN32)
+        request.backend = {gles::AngleRenderer::d3d11,
+                           gles::AngleDevice::hardware};
+#elif defined(__APPLE__)
+        request.backend = {gles::AngleRenderer::metal,
+                           gles::AngleDevice::hardware};
+#else
+        request.backend = {gles::AngleRenderer::vulkan,
+                           gles::AngleDevice::hardware};
+#endif
+        request.filesystem = &filesystem;
+        request.ledger = &ledger;
+        request.logger = &logger;
+        auto app = session::AndroidAppProcess::Create(std::move(request));
+        auto& vm = app->DexVm().Vm();
+        auto& linker = vm.Linker();
+        const auto direct = [&](const char* owner, const char* name,
+                                const char* descriptor,
+                                std::vector<VmValue> arguments) {
+            const auto type = linker.ResolveDescriptor(owner);
+            const auto method = linker.FindDirectMethod(
+                type, name, descriptor);
+            REQUIRE_MESSAGE(method.has_value(), name);
+            return vm.Call(*method, arguments);
+        };
+        const auto require_string = [&](const VmCallOutcome& outcome) {
+            REQUIRE_MESSAGE(!outcome.exception.IsValid(), outcome.exception_message);
+            return vm.StringUtf8(outcome.value.ref);
+        };
+        const auto expect_exception = [&](const VmCallOutcome& outcome,
+                                          const char* descriptor) {
+            INFO(outcome.exception_message);
+            REQUIRE(outcome.exception.IsValid());
+            CHECK(linker.Class(outcome.exception_class).descriptor == descriptor);
+        };
+
+        const auto formatter = linker.ResolveDescriptor("Ljava/util/Formatter;");
+        CHECK(linker.Class(formatter).is_boot_dex);
+        const auto formatter_format = linker.FindVtableIndex(
+            formatter, "format",
+            "(Ljava/lang/String;[Ljava/lang/Object;)Ljava/util/Formatter;");
+        REQUIRE(formatter_format.has_value());
+        CHECK(linker.Method(linker.Class(formatter).vtable[*formatter_format]).kind ==
+              MethodKind::interpreted);
+        const auto string_class = linker.ResolveDescriptor("Ljava/lang/String;");
+        const auto locale_overload = linker.FindDirectMethod(
+            string_class, "format",
+            "(Ljava/util/Locale;Ljava/lang/String;[Ljava/lang/Object;)Ljava/lang/String;");
+        REQUIRE(locale_overload.has_value());
+        CHECK(linker.Method(*locale_overload).kind == MethodKind::intrinsic);
+
+        const auto locale_class = linker.ResolveDescriptor("Ljava/util/Locale;");
+        const auto initialized = vm.EnsureClassInitialized(locale_class);
+        REQUIRE_MESSAGE(!initialized.exception.IsValid(), initialized.exception_message);
+        const auto us_field = linker.FindFieldRecursive(
+            locale_class, "US", "Ljava/util/Locale;");
+        REQUIRE(us_field.has_value());
+        const auto& linked_us = linker.Field(*us_field);
+        const auto us = VmObjectRef(
+            linker.Class(linked_us.owner).static_storage[linked_us.slot]);
+        REQUIRE(us.IsValid());
+        const auto calendar = direct(
+            "Ljava/util/Calendar;", "getInstance",
+            "()Ljava/util/Calendar;", {}).value.ref;
+        REQUIRE(calendar.IsValid());
+        const auto object_class = linker.ResolveDescriptor("Ljava/lang/Object;");
+        const auto object_array = linker.ResolveDescriptor("[Ljava/lang/Object;");
+        const auto zone_arguments = vm.Model().NewObjectArray(
+            object_array, object_class, 1);
+        vm.Model().SetObjectElement(zone_arguments, 0, calendar);
+        const auto zone_roots = vm.ProtectReferences(
+            std::array{us, calendar, zone_arguments});
+        const auto zone_result = direct(
+            "Ljava/lang/String;", "format",
+            "(Ljava/util/Locale;Ljava/lang/String;[Ljava/lang/Object;)Ljava/lang/String;",
+            {VmValue::Ref(us), VmValue::Ref(vm.NewStringUtf8("%tZ")),
+             VmValue::Ref(zone_arguments)});
+        CHECK(require_string(zone_result) == "GMT");
+        const auto result_roots = vm.ProtectReferences(
+            std::array{zone_result.value.ref});
+        static_cast<void>(vm.CollectGarbage("formatter-result"));
+        CHECK(vm.StringUtf8(zone_result.value.ref) == "GMT");
+
+        const auto integer = vm.NewIntrinsicInstance("Ljava/lang/Integer;");
+        vm.Model().InstanceSlots(integer)[0] = {7U, SlotTag::cat1};
+        const auto basic_arguments = vm.Model().NewObjectArray(
+            object_array, object_class, 2);
+        vm.Model().SetObjectElement(basic_arguments, 0, integer);
+        vm.Model().SetObjectElement(
+            basic_arguments, 1, vm.NewStringUtf8("ok"));
+        const auto basic_roots = vm.ProtectReferences(
+            std::array{integer, basic_arguments});
+        CHECK(require_string(direct(
+                  "Ljava/lang/String;", "format",
+                  "(Ljava/util/Locale;Ljava/lang/String;[Ljava/lang/Object;)Ljava/lang/String;",
+                  {VmValue::Ref(VmObjectRef{}),
+                   VmValue::Ref(vm.NewStringUtf8("%02d-%s-%%")),
+                   VmValue::Ref(basic_arguments)})) == "07-ok-%");
+        CHECK(require_string(direct(
+                  "Ljava/lang/String;", "format",
+                  "(Ljava/lang/String;[Ljava/lang/Object;)Ljava/lang/String;",
+                  {VmValue::Ref(vm.NewStringUtf8("%02d")),
+                   VmValue::Ref(basic_arguments)})) == "07");
+
+        expect_exception(direct(
+            "Ljava/lang/String;", "format",
+            "(Ljava/util/Locale;Ljava/lang/String;[Ljava/lang/Object;)Ljava/lang/String;",
+            {VmValue::Ref(us), VmValue::Ref(VmObjectRef{}),
+             VmValue::Ref(VmObjectRef{})}),
+            "Ljava/lang/NullPointerException;");
+        expect_exception(direct(
+            "Ljava/lang/String;", "format",
+            "(Ljava/util/Locale;Ljava/lang/String;[Ljava/lang/Object;)Ljava/lang/String;",
+            {VmValue::Ref(us), VmValue::Ref(vm.NewStringUtf8("%q")),
+             VmValue::Ref(VmObjectRef{})}),
+            "Ljava/util/UnknownFormatConversionException;");
+        const auto empty_arguments = vm.Model().NewObjectArray(
+            object_array, object_class, 0);
+        expect_exception(direct(
+            "Ljava/lang/String;", "format",
+            "(Ljava/util/Locale;Ljava/lang/String;[Ljava/lang/Object;)Ljava/lang/String;",
+            {VmValue::Ref(us), VmValue::Ref(vm.NewStringUtf8("%d")),
+             VmValue::Ref(empty_arguments)}),
+            "Ljava/util/MissingFormatArgumentException;");
+    }
+}
+
 TEST_CASE("DVM-105 AES uses BootDex and real guest libcrypto") {
     using namespace ogplay;
     using namespace runtime::dexvm;

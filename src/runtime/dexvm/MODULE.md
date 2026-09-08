@@ -148,9 +148,11 @@ intrinsic。解释应用 DEX 与受审 API 19 curated Boot DEX；完整平台库
   builder side state；集合 clone 由 DEX 复制字段/数组。`JavaObjectModel::CloneObject` 对照 AOSP `dvmCloneObject`，分配
   新 identity，仅复制 `vm_instance` slots 或数组元素；string/class/host-backed 明确失败。
   JNI `NewObject` 的 application identity 回入解释器时，经注入的 lazy layout resolver 建立完整实例槽并保留
-  identity；intrinsic host object 仍属 external/专用 store。`String.format(String,Object[])` 只支持
-  顺序 `%s/%d/%c`、有界 `%02d` 和 `%%`；`%s` 支持 String/null/普通 Object 虚 `toString`，其他 conversion 明确失败，
-  不借用 host printf/locale。
+  identity；intrinsic host object 仍属 external/专用 store。`String` 保持 VM 的唯一 UTF-16
+  owner；两个 `String.format` intrinsic 仅实现 API 19 `Locale.getDefault`/`StringBuilder`/
+  `Formatter` 包装链。格式解析、虚 `toString`、格式异常、Locale 与日期转换执行 BootDex，
+  `AbstractStringBuilder`/Appendable 和整数 append 只桥接既有 builder 状态；不借用 host
+  printf/locale。
 - 生产 `JavaObjectModel` 经 `JavaObjectInterop` 复用 session `JniObjectArrayStore`，使
   DexVM/JNI 的 Object[] 创建、读写、clone、sweep 共用 identity/store；class identity 双向
   适配由 integration 注入，不依赖 `JniClassRegistry`。仅 isolated fixture 使用内部 fallback。

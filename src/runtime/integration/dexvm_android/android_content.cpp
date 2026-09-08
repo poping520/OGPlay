@@ -1506,17 +1506,16 @@ Decl Declare_android_content_Intent(const Context& context) {
     // public Set contract and backs it with the existing core HashSet.
     const auto categories = builder.BoundInstanceField(
         "mOgplayCategories", "Ljava/util/Set;", dx::kAccPrivate);
-    const auto remove_extra = [context](const dx::VmObjectRef intent,
-                                        const std::string& name) {
-        const auto remove = [&name](auto& extras, const auto key) {
-            const auto values = extras.find(key);
-            if (values == extras.end()) return;
-            values->second.erase(name);
-            if (values->second.empty()) extras.erase(values);
-        };
-        remove(context->intent_string_extras, intent.Value());
-        remove(context->intent_int_extras, intent.Value());
-        remove(context->intent_integer_array_list_extras, intent);
+    const auto extras = builder.BoundInstanceField(
+        "mExtras", "Landroid/os/Bundle;", dx::kAccPrivate);
+    const auto ensure_extras = [extras](dx::IntrinsicContext& call) {
+        dx::IntrinsicCall fields(call);
+        auto bundle = fields.GetRef(extras);
+        if (!bundle.IsValid()) {
+            bundle = NewAndroidBundle(call.vm);
+            fields.SetRef(extras, bundle);
+        }
+        return bundle;
     };
     builder.Constructor("(Ljava/lang/String;)V",
         [action](dx::IntrinsicContext& call) {
@@ -1603,85 +1602,58 @@ Decl Declare_android_content_Intent(const Context& context) {
             fields.SetInt(flags, fields.GetInt(flags) | call.arguments[0].AsInt());
             return Self(call);
         });
-    builder.VirtualMethod("putExtra",
-        "(Ljava/lang/String;I)Landroid/content/Intent;",
-        [context, remove_extra](dx::IntrinsicContext& call) {
-            const auto intent = call.receiver;
-            const auto name = call.vm.StringUtf8(call.arguments[0].ref);
-            remove_extra(intent, name);
-            context->intent_int_extras[call.receiver.Value()]
-                [name] = call.arguments[1].AsInt();
+    const auto put = [ensure_extras](const char* method, const char* signature) {
+        return dx::IntrinsicHandler([ensure_extras, method, signature](dx::IntrinsicContext& call) {
+            const auto bundle = ensure_extras(call);
+            static_cast<void>(CallAndroidMethod(call.vm, bundle, method, signature,
+                                                 {call.arguments[0], call.arguments[1]}));
             return Self(call);
         });
-    builder.VirtualMethod("putExtra",
-        "(Ljava/lang/String;Ljava/lang/String;)Landroid/content/Intent;",
-        [context, remove_extra](dx::IntrinsicContext& call) {
-            const auto intent = call.receiver;
-            const auto name = call.vm.StringUtf8(call.arguments[0].ref);
-            const auto value = call.vm.StringUtf8(call.arguments[1].ref);
-            remove_extra(intent, name);
-            context->intent_string_extras[call.receiver.Value()]
-                [name] = value;
-            return Self(call);
+    };
+    builder.VirtualMethod("putExtra", "(Ljava/lang/String;I)Landroid/content/Intent;",
+                          put("putInt", "(Ljava/lang/String;I)V"));
+    builder.VirtualMethod("putExtra", "(Ljava/lang/String;Ljava/lang/String;)Landroid/content/Intent;",
+                          put("putString", "(Ljava/lang/String;Ljava/lang/String;)V"));
+    builder.VirtualMethod("putExtra", "(Ljava/lang/String;Ljava/io/Serializable;)Landroid/content/Intent;",
+                          put("putSerializable", "(Ljava/lang/String;Ljava/io/Serializable;)V"));
+    builder.VirtualMethod("putIntegerArrayListExtra", "(Ljava/lang/String;Ljava/util/ArrayList;)Landroid/content/Intent;",
+                          put("putIntegerArrayList", "(Ljava/lang/String;Ljava/util/ArrayList;)V"));
+    const auto get = [extras](const char* method, const char* signature) {
+        return dx::IntrinsicHandler([extras, method, signature](dx::IntrinsicContext& call) {
+            const auto bundle = dx::IntrinsicCall(call).GetRef(extras);
+            return bundle.IsValid()
+                       ? CallAndroidMethod(call.vm, bundle, method, signature, {call.arguments[0]})
+                       : dx::VmValue::Ref(dx::VmObjectRef{});
         });
-    builder.VirtualMethod(
-        "putIntegerArrayListExtra",
-        "(Ljava/lang/String;Ljava/util/ArrayList;)Landroid/content/Intent;",
-        [context, remove_extra](dx::IntrinsicContext& call) {
-            const auto intent = call.receiver;
-            const auto name = call.vm.StringUtf8(call.arguments[0].ref);
-            remove_extra(intent, name);
-            context->intent_integer_array_list_extras[intent][name] =
-                call.arguments[1].ref;
-            return Self(call);
-        });
-    builder.VirtualMethod("getStringExtra",
-        "(Ljava/lang/String;)Ljava/lang/String;",
-        [context](dx::IntrinsicContext& call) {
-            const auto extras =
-                context->intent_string_extras.find(call.receiver.Value());
-            if (extras != context->intent_string_extras.end()) {
-                const auto found = extras->second.find(
-                    call.vm.StringUtf8(call.arguments[0].ref));
-                if (found != extras->second.end()) {
-                    return MakeString(call, found->second);
-                }
-            }
-            return dx::VmValue::Ref(dx::VmObjectRef{});
-        });
+    };
+    builder.VirtualMethod("getStringExtra", "(Ljava/lang/String;)Ljava/lang/String;",
+                          get("getString", "(Ljava/lang/String;)Ljava/lang/String;"));
+    builder.VirtualMethod("getSerializableExtra", "(Ljava/lang/String;)Ljava/io/Serializable;",
+                          get("getSerializable", "(Ljava/lang/String;)Ljava/io/Serializable;"));
+    builder.VirtualMethod("getIntegerArrayListExtra", "(Ljava/lang/String;)Ljava/util/ArrayList;",
+                          get("getIntegerArrayList", "(Ljava/lang/String;)Ljava/util/ArrayList;"));
     builder.VirtualMethod("getIntExtra", "(Ljava/lang/String;I)I",
-        [context](dx::IntrinsicContext& call) {
-            const auto extras =
-                context->intent_int_extras.find(call.receiver.Value());
-            if (extras != context->intent_int_extras.end()) {
-                const auto found = extras->second.find(
-                    call.vm.StringUtf8(call.arguments[0].ref));
-                if (found != extras->second.end()) {
-                    return dx::VmValue::Int(found->second);
-                }
-            }
-            return dx::VmValue::Int(call.arguments[1].AsInt());
+        [extras](dx::IntrinsicContext& call) {
+            const auto bundle = dx::IntrinsicCall(call).GetRef(extras);
+            return bundle.IsValid()
+                       ? CallAndroidMethod(call.vm, bundle, "getInt", "(Ljava/lang/String;I)I",
+                                           {call.arguments[0], call.arguments[1]})
+                       : call.arguments[1];
         });
-    builder.VirtualMethod(
-        "getIntegerArrayListExtra",
-        "(Ljava/lang/String;)Ljava/util/ArrayList;",
-        [context](dx::IntrinsicContext& call) {
-            const auto extras = context->intent_integer_array_list_extras.find(
-                call.receiver);
-            if (extras == context->intent_integer_array_list_extras.end()) {
-                return dx::VmValue::Ref(dx::VmObjectRef{});
-            }
-            const auto found = extras->second.find(
-                call.vm.StringUtf8(call.arguments[0].ref));
-            return dx::VmValue::Ref(
-                found == extras->second.end() ? dx::VmObjectRef{}
-                                              : found->second);
+    builder.VirtualMethod("hasExtra", "(Ljava/lang/String;)Z",
+        [extras](dx::IntrinsicContext& call) {
+            const auto bundle = dx::IntrinsicCall(call).GetRef(extras);
+            return bundle.IsValid()
+                       ? CallAndroidMethod(call.vm, bundle, "containsKey", "(Ljava/lang/String;)Z",
+                                           {call.arguments[0]})
+                       : dx::VmValue::Int(0);
         });
     builder.VirtualMethod("removeExtra", "(Ljava/lang/String;)V",
-        [remove_extra](dx::IntrinsicContext& call) {
-            const auto intent = call.receiver;
-            const auto name = call.vm.StringUtf8(call.arguments[0].ref);
-            remove_extra(intent, name);
+        [extras](dx::IntrinsicContext& call) {
+            const auto bundle = dx::IntrinsicCall(call).GetRef(extras);
+            if (bundle.IsValid())
+                static_cast<void>(CallAndroidMethod(call.vm, bundle, "remove", "(Ljava/lang/String;)V",
+                                                     {call.arguments[0]}));
             return dx::VmValue::Void();
         });
     builder.VirtualMethod("addCategory",
@@ -1806,8 +1778,10 @@ Decl Declare_android_content_Intent(const Context& context) {
             return dx::VmValue::Int(dx::IntrinsicCall(call).GetInt(flags));
         });
     builder.VirtualMethod("getExtras", "()Landroid/os/Bundle;",
-        [](dx::IntrinsicContext&) {
-            return dx::VmValue::Ref(dx::VmObjectRef{});
+        [extras](dx::IntrinsicContext& call) {
+            const auto bundle = dx::IntrinsicCall(call).GetRef(extras);
+            return dx::VmValue::Ref(bundle.IsValid() ? NewAndroidBundle(call.vm, bundle)
+                                                   : dx::VmObjectRef{});
         });
     builder.VirtualMethod("setFlags", "(I)Landroid/content/Intent;",
         [flags](dx::IntrinsicContext& call) {

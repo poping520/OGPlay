@@ -172,14 +172,19 @@ dx::VmObjectRef MakeApplicationInfo(dx::IntrinsicContext& call,
         }
     }
     if (include_meta_data) {
-        const auto bundle =
-            call.vm.NewIntrinsicInstance("Landroid/os/Bundle;");
-        auto& values = context->bundles[bundle.Value()];
+        const auto info_root = call.vm.ProtectReferences(std::array{info});
+        const auto bundle = NewAndroidBundle(call.vm);
+        const auto bundle_root = call.vm.ProtectReferences(std::array{bundle});
         for (const auto& [name, value] : context->application_meta_data) {
+            const auto key = call.vm.NewStringUtf8(name);
+            const auto key_root = call.vm.ProtectReferences(std::array{key});
             if (const auto* integer = std::get_if<std::int32_t>(&value)) {
-                values.emplace(name, *integer);
+                static_cast<void>(CallAndroidMethod(call.vm, bundle, "putInt",
+                    "(Ljava/lang/String;I)V", {dx::VmValue::Ref(key), dx::VmValue::Int(*integer)}));
             } else {
-                values.emplace(name, std::get<std::string>(value));
+                static_cast<void>(CallAndroidMethod(call.vm, bundle, "putString",
+                    "(Ljava/lang/String;Ljava/lang/String;)V",
+                    {dx::VmValue::Ref(key), dx::VmValue::Ref(string(std::get<std::string>(value)))}));
             }
         }
         SetApplicationInfoRef(call, info, "metaData", "Landroid/os/Bundle;",
@@ -1546,6 +1551,29 @@ dx::VmValue CallAndroidMethod(dx::Interpreter& vm, dx::VmObjectRef receiver,
                               outcome.exception_message, outcome.exception};
     return outcome.value;
 }
+dx::VmObjectRef NewAndroidBundle(dx::Interpreter& vm, dx::VmObjectRef source) {
+    const auto source_root = vm.ProtectReferences(std::array{source});
+    const auto initialized = vm.EnsureClassInitialized(
+        vm.Linker().ResolveDescriptor("Landroid/os/Bundle;"));
+    if (initialized.exception.IsValid())
+        throw dx::VmJavaThrow{vm.Linker().Class(initialized.exception_class).descriptor,
+                              initialized.exception_message, initialized.exception};
+    const auto bundle = vm.NewIntrinsicInstance("Landroid/os/Bundle;");
+    const auto root = vm.ProtectReferences(std::array{bundle});
+    const auto constructor = vm.Linker().FindDirectMethod(vm.Model().ObjectClass(bundle),
+        "<init>", source.IsValid() ? "(Landroid/os/Bundle;)V" : "()V");
+    if (!constructor)
+        throw dx::DexVmError(dx::DexVmErrorReason::internal_invariant,
+                             "Bundle constructor is not linked");
+    std::vector arguments{dx::VmValue::Ref(bundle)};
+    if (source.IsValid()) arguments.push_back(dx::VmValue::Ref(source));
+    const auto outcome = vm.Call(*constructor, arguments);
+    if (outcome.exception.IsValid())
+        throw dx::VmJavaThrow{vm.Linker().Class(outcome.exception_class).descriptor,
+                              outcome.exception_message, outcome.exception};
+    return bundle;
+}
+
 dx::VmObjectRef NewAndroidComponentName(dx::Interpreter& vm, dx::VmObjectRef package,
                                         dx::VmObjectRef class_name) {
     const auto inputs = vm.ProtectReferences(std::array{package, class_name});

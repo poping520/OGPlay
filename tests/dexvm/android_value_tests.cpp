@@ -52,6 +52,8 @@ struct AndroidValueVm final {
                     const char* constructor = "()V",
                     std::vector<VmValue> arguments = {}) {
         const auto klass = linker.ResolveDescriptor(descriptor);
+        const auto initialized = vm.EnsureClassInitialized(klass);
+        REQUIRE_MESSAGE(!initialized.exception.IsValid(), initialized.exception_message);
         const auto object = vm.NewIntrinsicInstance(descriptor);
         const auto method = linker.FindDirectMethod(klass, "<init>", constructor);
         REQUIRE(method.has_value());
@@ -175,6 +177,120 @@ TEST_CASE("DVM-116 BackupManager Java reports absent backup service") {
         const auto null_context = f.New("Landroid/app/backup/BackupManager;",
                                         "(Landroid/content/Context;)V", {VmValue::Ref(VmObjectRef{})});
         f.On(null_context, "dataChanged", "()V");
+    }
+}
+
+TEST_CASE("DVM-117 Intent extras use BootDex Bundle identity copies and GC") {
+    for (const auto backend :
+         {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        AndroidValueVm f(backend);
+        const auto intent = f.New("Landroid/content/Intent;");
+        const auto intent_root = f.vm.ProtectReferences(std::array{intent});
+        CHECK_FALSE(f.On(intent, "getExtras", "()Landroid/os/Bundle;").ref.IsValid());
+        const auto key = f.vm.NewStringUtf8("payload");
+        const auto key_root = f.vm.ProtectReferences(std::array{key});
+        const auto payload = f.New("Ljava/util/HashMap;");
+        const auto child = f.vm.NewStringUtf8("retained");
+        f.On(payload, "put", "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;",
+             {VmValue::Ref(key), VmValue::Ref(child)});
+        CHECK(f.On(intent, "putExtra", "(Ljava/lang/String;Ljava/io/Serializable;)Landroid/content/Intent;",
+                   {VmValue::Ref(key), VmValue::Ref(payload)}).ref == intent);
+        CHECK(f.vm.MarkReachable().IsMarked(child));
+        static_cast<void>(f.vm.CollectGarbage("dvm117-intent-extras"));
+        CHECK(f.On(intent, "getSerializableExtra", "(Ljava/lang/String;)Ljava/io/Serializable;",
+                   {VmValue::Ref(key)}).ref == payload);
+        CHECK_FALSE(f.On(intent, "getStringExtra", "(Ljava/lang/String;)Ljava/lang/String;",
+                         {VmValue::Ref(key)}).ref.IsValid());
+        CHECK(f.On(intent, "getIntExtra", "(Ljava/lang/String;I)I",
+                   {VmValue::Ref(key), VmValue::Int(99)}).AsInt() == 99);
+        const auto copy = f.On(intent, "getExtras", "()Landroid/os/Bundle;").ref;
+        const auto copy_root = f.vm.ProtectReferences(std::array{copy});
+        CHECK(f.linker.Class(f.model.ObjectClass(copy)).is_boot_dex);
+        CHECK(f.On(copy, "getSerializable", "(Ljava/lang/String;)Ljava/io/Serializable;",
+                   {VmValue::Ref(key)}).ref == payload);
+        f.On(copy, "remove", "(Ljava/lang/String;)V", {VmValue::Ref(key)});
+        CHECK(f.On(intent, "hasExtra", "(Ljava/lang/String;)Z", {VmValue::Ref(key)}).AsInt() == 1);
+        CHECK(f.On(copy, "isEmpty", "()Z").AsInt() == 1);
+        const auto text = f.vm.NewStringUtf8("same identity");
+        f.On(intent, "putExtra", "(Ljava/lang/String;Ljava/lang/String;)Landroid/content/Intent;",
+             {VmValue::Ref(key), VmValue::Ref(text)});
+        CHECK(f.On(intent, "getSerializableExtra", "(Ljava/lang/String;)Ljava/io/Serializable;",
+                   {VmValue::Ref(key)}).ref == text);
+        CHECK_FALSE(f.vm.MarkReachable().IsMarked(payload));
+        f.On(intent, "putExtra", "(Ljava/lang/String;I)Landroid/content/Intent;",
+             {VmValue::Ref(key), VmValue::Int(42)});
+        const auto boxed = f.On(intent, "getSerializableExtra", "(Ljava/lang/String;)Ljava/io/Serializable;",
+                                {VmValue::Ref(key)}).ref;
+        CHECK(f.On(boxed, "intValue", "()I").AsInt() == 42);
+        f.On(intent, "putExtra", "(Ljava/lang/String;Ljava/io/Serializable;)Landroid/content/Intent;",
+             {VmValue::Ref(key), VmValue::Ref(VmObjectRef{})});
+        CHECK(f.On(intent, "hasExtra", "(Ljava/lang/String;)Z", {VmValue::Ref(key)}).AsInt() == 1);
+        CHECK_FALSE(f.On(intent, "getSerializableExtra", "(Ljava/lang/String;)Ljava/io/Serializable;",
+                         {VmValue::Ref(key)}).ref.IsValid());
+        f.On(intent, "removeExtra", "(Ljava/lang/String;)V", {VmValue::Ref(key)});
+        CHECK(f.On(intent, "hasExtra", "(Ljava/lang/String;)Z", {VmValue::Ref(key)}).AsInt() == 0);
+        // Android permits null keys. ArrayMap collision chains and live views
+        // are exercised through Bundle, including the cached array reuse path.
+        for (const char* name : {"Aa", "BB", "third"})
+            f.On(copy, "putInt", "(Ljava/lang/String;I)V",
+                 {VmValue::Ref(f.vm.NewStringUtf8(name)), VmValue::Int(7)});
+        f.On(copy, "putString", "(Ljava/lang/String;Ljava/lang/String;)V",
+             {VmValue::Ref(VmObjectRef{}), VmValue::Ref(text)});
+        CHECK(f.On(copy, "size", "()I").AsInt() == 4);
+        const auto keys = f.On(copy, "keySet", "()Ljava/util/Set;").ref;
+        const auto keys_root = f.vm.ProtectReferences(std::array{keys});
+        const auto iterator = f.On(keys, "iterator", "()Ljava/util/Iterator;").ref;
+        const auto iterator_root = f.vm.ProtectReferences(std::array{iterator});
+        int count{};
+        while (f.On(iterator, "hasNext", "()Z").AsInt()) {
+            f.On(iterator, "next", "()Ljava/lang/Object;");
+            f.On(iterator, "remove", "()V");
+            ++count;
+        }
+        CHECK(count == 4);
+        CHECK(f.On(copy, "isEmpty", "()Z").AsInt() == 1);
+    }
+}
+
+TEST_CASE("DVM-117 Bundle Parcel snapshots and Java CREATOR retain ordinary references") {
+    for (const auto backend :
+         {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        AndroidValueVm f(backend);
+        const auto parcel = f.Static("Landroid/os/Parcel;", "obtain", "()Landroid/os/Parcel;").ref;
+        const auto parcel_root = f.vm.ProtectReferences(std::array{parcel});
+        const auto bundle = f.New("Landroid/os/Bundle;");
+        const auto key = f.vm.NewStringUtf8("bytes");
+        const auto key_root = f.vm.ProtectReferences(std::array{key});
+        const auto bytes = f.Bytes("snapshot child");
+        f.On(bundle, "putSerializable", "(Ljava/lang/String;Ljava/io/Serializable;)V",
+             {VmValue::Ref(key), VmValue::Ref(bytes)});
+        f.On(bundle, "writeToParcel", "(Landroid/os/Parcel;I)V",
+             {VmValue::Ref(parcel), VmValue::Int(0)});
+        f.On(bundle, "clear", "()V");
+        CHECK(f.vm.MarkReachable().IsMarked(bytes));
+        CHECK_FALSE(f.vm.MarkReachable().IsMarked(bundle));
+        static_cast<void>(f.vm.CollectGarbage("dvm117-parcel-snapshot"));
+        f.On(parcel, "setDataPosition", "(I)V", {VmValue::Int(0)});
+        const auto type = f.linker.ResolveDescriptor("Landroid/os/Bundle;");
+        const auto creator_field = f.linker.FindFieldRecursive(type, "CREATOR", "Landroid/os/Parcelable$Creator;");
+        REQUIRE(creator_field.has_value());
+        const auto creator = VmObjectRef(f.linker.Class(type).static_storage[f.linker.Field(*creator_field).slot]);
+        const auto copy = f.On(creator, "createFromParcel", "(Landroid/os/Parcel;)Ljava/lang/Object;",
+                               {VmValue::Ref(parcel)}).ref;
+        const auto copy_root = f.vm.ProtectReferences(std::array{copy});
+        CHECK(f.BytesOf(f.On(copy, "getByteArray", "(Ljava/lang/String;)[B", {VmValue::Ref(key)}).ref) ==
+              "snapshot child");
+        const auto array = f.On(creator, "newArray", "(I)[Ljava/lang/Object;", {VmValue::Int(2)}).ref;
+        CHECK(f.linker.Class(f.model.ObjectClass(array)).descriptor == "[Landroid/os/Bundle;");
+        f.On(copy, "clear", "()V");
+        f.On(parcel, "setDataPosition", "(I)V", {VmValue::Int(0)});
+        const auto another = f.On(parcel, "readBundle", "()Landroid/os/Bundle;").ref;
+        CHECK(f.On(another, "getSerializable", "(Ljava/lang/String;)Ljava/io/Serializable;",
+                   {VmValue::Ref(key)}).ref == bytes);
+        f.On(parcel, "recycle", "()V");
+        // Retire the nested Bundle copy constructor's last Java return root.
+        CHECK(f.On(copy, "isEmpty", "()Z").AsInt() == 1);
+        CHECK_FALSE(f.vm.MarkReachable().IsMarked(bytes));
     }
 }
 

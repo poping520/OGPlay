@@ -1496,6 +1496,12 @@ TEST_CASE("DVM-103 all BootDex classes link and collection methods have no intri
             descriptor.starts_with("Lorg/apache/harmony/security/")) {
             const auto check = [&](VmMethodId method) {
                 const auto& linked = f.linker.Method(method);
+                if (descriptor == "Landroid/os/Bundle;" &&
+                    ((linked.name == "writeToParcel" && linked.descriptor == "(Landroid/os/Parcel;I)V") ||
+                     (linked.name == "readFromParcel" && linked.descriptor == "(Landroid/os/Parcel;)V"))) {
+                    CHECK(linked.kind == MethodKind::intrinsic);
+                    return;
+                }
                 if (descriptor == "Landroid/app/backup/BackupManager;" &&
                     linked.name == "checkServiceBinder" && linked.descriptor == "()V") {
                     CHECK(linked.kind == MethodKind::intrinsic);
@@ -1517,7 +1523,7 @@ TEST_CASE("DVM-103 all BootDex classes link and collection methods have no intri
         for (const auto method : f.linker.Class(type).own_direct_methods)
             CHECK(f.linker.Method(method).kind != MethodKind::intrinsic);
     }
-    CHECK(count == 900);
+    CHECK(count == 910);
 }
 
 TEST_CASE("DVM-103 bounded queues and Collections wrappers use API19 semantics") {

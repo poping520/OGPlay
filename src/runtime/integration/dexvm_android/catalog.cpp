@@ -155,7 +155,6 @@ std::vector<dexvm::IntrinsicClassDecl> AndroidIntrinsicCatalog(
         Declare_android_os_Build_VERSION(context),
         Declare_android_os_Build(context),
         Declare_android_os_Bundle(context),
-        Declare_android_os_Bundle_1(context),
         Declare_android_os_CountDownTimer(context),
         Declare_android_os_Environment(context),
         Declare_android_os_Handler(context),

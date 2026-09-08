@@ -220,9 +220,9 @@ DVM-79 的 `DexVmIoVfsAdapter` 是 DexVM core `IoFileSystem` 与具体
   `src/runtime/dexvm/MODULE.md`）；`java.util.Timer` 仍是帧边界协作队列。
   每个 `View` 的 `ViewTreeObserver` 身份稳定并保存/移除 global-layout listener；当前
   managed layout 尚不发布虚构的 global-layout 事件。
-- `Bundle` 在会话内按 key 保存 String/int/long/byte[] 的真实类型和对象身份，typed getter
-  对缺失键返回 Android 默认值，`containsKey`/`clear` 观察同一状态；解释 DEX 与 native
-  JNI 经同一 intrinsic handler 读写。
+- `Bundle`/ArrayMap 归 BootDex，Intent.mExtras 保存唯一 Bundle 引用，JNI 与解释执行
+  共享 Java 字段。typed getter、Serializable、覆盖/null 和浅副本由 Java 决定；GC 普通
+  字段追踪。Parcel 仅保留既有 typed atom 传输，保存/读取 Java Bundle 浅副本。
 - `URLEncoder.encode(String,String)` 实现 Java form URL encoding 的 UTF-8
   字节级契约（空格为 `+`、其余保留集外字节为大写 `%HH`），未知 charset 抛出
   `UnsupportedEncodingException`；这不扩大实际网络连接非目标范围。

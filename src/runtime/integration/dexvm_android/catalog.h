@@ -105,7 +105,6 @@ namespace ogplay::runtime::android_intrinsics {
 [[nodiscard]] Decl Declare_android_os_Build_VERSION(const Context& context);
 [[nodiscard]] Decl Declare_android_os_Build(const Context& context);
 [[nodiscard]] Decl Declare_android_os_Bundle(const Context& context);
-[[nodiscard]] Decl Declare_android_os_Bundle_1(const Context& context);
 [[nodiscard]] Decl Declare_android_os_CountDownTimer(const Context& context);
 [[nodiscard]] Decl Declare_android_os_Environment(const Context& context);
 [[nodiscard]] Decl Declare_android_os_Handler(const Context& context);

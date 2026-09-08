@@ -1,12 +1,12 @@
 # 当前状态
 
-更新（2026-09-08）：[DVM-116](../tasks/dexvm/DVM-116.md) 迁入 BackupManager 无服务路径；
-继续推进 PvZ 的 Serializable Intent extra 缺口。
+更新（2026-09-08）：[DVM-117](../tasks/dexvm/DVM-117.md) 迁入 Bundle/ArrayMap；
+继续推进 PvZ 的 Resources.getDisplayMetrics 缺口。
 
 ## 当前能力
 
 - **运行与发行**：按 exact Profile API 选择 bundled data；API 19 内置 pinned AOSP
-  五库、900 类 BootDex 与 ICU4C 51.1。ROM libcrypto 已按用户再次授权恢复到本地临时使用，
+  五库、910 类 BootDex 与 ICU4C 51.1。ROM libcrypto 已按用户再次授权恢复到本地临时使用，
   未纳入 Git，哈希与清单一致。JNI 桥为 src/guest/crypto/crypto_jni.c；不自动恢复设备库。
   自行构建替换后须更新来源/哈希并复验。制品身份见
   [payload manifest](../../data/android/19/manifest.json)，bootdex.jar 继续不提交。
@@ -40,20 +40,20 @@
   串行，threaded 默认关闭。接口数组协变和 threaded 原异常身份已修正。
   文件/VFS、资源 XML、Locale、URL/form codec、Intent/Context 与平台 enum 保持。
 - **framework 值类**：Pair、五种 SparseArray、ComponentName/CREATOR、Parcelable 接口、
-  ContainerHelpers/ArrayUtils 和 PrintWriter 执行 Java；旧 Sparse 侧表和迁移类声明已删除。
+  ContainerHelpers/ArrayUtils、Bundle/ArrayMap 和 PrintWriter 执行 Java；旧 Sparse 侧表和迁移类声明已删除。
   ArrayUtils 从固定原始 Java 源用本地 AOSP dx 编译，其余来自 pinned jar；来源单独记账。
 - **Activity 身份**：getLocalClassName/getComponentName/getPreferences 与每实例 Intent
   已接通，保留组件身份；setIntent 不改组件身份。
   UTF-16 append 依赖已补。一般组件解析和非根 alias 切换仍未扩展。
 - **服务查询**：ServiceConnection 来自 BootDex。resolveService 的 action-only/flags=0
   查询依据当前 APK 服务信息，无候选返回 null，未知或潜在匹配明确失败；无 Binder/支付。
-- **Title**：PvZ 已越过异常打印，当前首错 Intent Serializable extra；
+- **Title**：PvZ 已越过异常打印，当前首错 Resources.getDisplayMetrics；
   尚未通过游戏 gate；Tales 首错 LocationListener。
 
 ## 最近验证
 
-- DVM-116：无服务路径/全类链接 2 用例、Android 20 用例及 6 项门禁通过。
-  证据 `.local/review/dvm116/`；历史验收见任务单。
+- DVM-117：Android/平台 52 用例、全类链接、JNI GC 与 6 项门禁通过。
+  证据 `.local/review/dvm117/`；历史验收见任务单。
 
 - MoKee API 19 ARMv7 临时文件（哈希已核对）：
   `.local/android-device/20260906-cipher/`。手机已断开；发行前
@@ -61,11 +61,11 @@
   仅构建 ogplay_tests 及 ogplay 依赖；未跑全量测试或 Windows/Linux 验收。
 - 已知门禁遗留：architecture.platform_boundaries 在既有 GUI process_manager.cpp:131
   平台分支失败，本轮未修改、未重跑该门禁。ADR 继续按 6 个主题维护，追加
-  [0044](../adr/dexvm.md#adr-0044)，不新增独立 ADR 文件。
+  [0045](../adr/dexvm.md#adr-0045)，不新增独立 ADR 文件。
 
 ## 下一步与边界
 
-1. 补齐 Intent 对象传递，继续按原命令推进 PvZ。
+1. 补齐资源显示指标，继续按原命令推进 PvZ。
 2. 自建 ARM libcrypto 替换临时制品；Windows/Linux、既有 GUI 门禁、DH 与 Diagnostics 验收。
 
 OGPlay 是老游戏兼容层；complete 只覆盖登记范围。具名时区/历史 DST、完整大数与 formatter、宿主资源对象持久化、Proxy 生成、privileged 执行器工厂/安全上下文、高争用集合、RSA Cipher、HMAC/Mac、SHA-3、完整 JCA/TLS/系统服务仍未交付。

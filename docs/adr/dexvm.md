@@ -21,6 +21,7 @@
 - [ADR-0042 · 服务查询的有界无匹配结果](#adr-0042)
 - [ADR-0043 · Throwable 协议归 BootDex，栈捕获归 VM](#adr-0043)
 - [ADR-0044 · BackupManager 保留 Java 无服务路径](#adr-0044)
+- [ADR-0045 · Bundle 与 Intent extras 归 Java 对象图](#adr-0045)
 
 <a id="adr-0017"></a>
 
@@ -663,3 +664,22 @@ beginRestoreSession 返回 null。通知返回不表示备份成功；恢复失�
 双后端验证 Java 字段/GC、实例与静态通知、失败码、无回调以及意外服务注入。
 只承诺无服务执行分支，不发布 IBackupManager/RestoreSession/RestoreSet 的服务实现
 或这些未选入类型的反射能力。远程备份、恢复和传输器仍未实现。
+
+<a id="adr-0045"></a>
+## ADR-0045 · Bundle 与 Intent extras 归 Java 对象图
+
+日期：2026-09-08；状态：采用。Supersedes：既有 Bundle/Intent extra 宿主类型分表存储。
+
+Bundle/CREATOR、ArrayMap/MapCollections 及内部类直接选入 BootDex。Bundle 的映射、
+装箱、类型检查和复制由 Java 持有，Intent.mExtras 为唯一 extra 来源；Serializable
+进程内传递保持对象身份，不执行无意义的对象流往返。getExtras 返回原版浅副本，
+映射独立、键和值引用共享；GC 由普通字段/数组追踪。ApplicationInfo 也使用同一 Bundle。
+
+Parcel 保持既有进程内 typed atom 契约，Bundle 只覆盖 writeToParcel/readFromParcel
+两个传输入口：写入时创建 Java Bundle 浅副本，读取时再次复制映射，Parcel 只保留
+该副本的 guest 强引用。此模式不编码 Android 字节协议，不声称跨进程、Binder 或
+宿主文件描述符传输；尚未接通的原版 parcelled 分支仍明确失败。无源数据时不得伪造
+成功读取。与原先 Bundle typed snapshot 相同，嵌套对象身份共享，深序列化不在范围。
+
+双后端验证覆盖/null、Serializable 与普通 boxed/string 的交叉读取、浅副本、
+ArrayMap 碰撞和活视图、Intent/Parcel GC 边、CREATOR 数组实际类型以及旧 API 回归。

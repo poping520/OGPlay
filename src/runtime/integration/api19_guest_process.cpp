@@ -5,6 +5,7 @@
 #include <limits>
 #include <optional>
 #include <stdexcept>
+#include <string>
 #include <string_view>
 #include <vector>
 
@@ -62,11 +63,21 @@ Api19GuestProcessMemory InitializeApi19GuestProcess(
         memory_bus.Read32(exported.address, request.root_thread_id);
 
     const auto page_size = address_space.PageSize();
+    const auto default_environment = GuestProcessEnvironment::Api19();
+    const auto& environment = request.environment == nullptr
+                                  ? default_environment
+                                  : *request.environment;
+    if (environment.SerializedBytes() > page_size) {
+        throw std::invalid_argument(
+            "API 19 guest environment exceeds one guest page");
+    }
     const auto read_write =
         memory::PageProtection::read | memory::PageProtection::write;
     const memory::GuestRange thread_info{kApi19GuestThreadInfoAddress,
                                          page_size};
     const memory::GuestRange preinit{kApi19GuestPreinitAddress, page_size};
+    const memory::GuestRange environment_page{kApi19GuestEnvironmentAddress,
+                                               page_size};
     const memory::GuestRange stack{kApi19GuestStackAddress,
                                    kApi19GuestStackSize};
     const memory::GuestRange return_trap{kApi19GuestReturnAddress, page_size};
@@ -74,6 +85,7 @@ Api19GuestProcessMemory InitializeApi19GuestProcess(
                                            page_size};
     bool thread_info_mapped{};
     bool preinit_mapped{};
+    bool environment_mapped{};
     bool stack_mapped{};
     bool return_mapped{};
     bool property_mapped{};
@@ -85,6 +97,8 @@ Api19GuestProcessMemory InitializeApi19GuestProcess(
         thread_info_mapped = true;
         address_space.Map(preinit, read_write);
         preinit_mapped = true;
+        address_space.Map(environment_page, read_write);
+        environment_mapped = true;
         tls = CreateBionicTlsBlock(
             address_space, kApi19GuestTlsAddress,
             kApi19GuestThreadInfoAddress, kApi19GuestPreinitAddress);
@@ -111,7 +125,7 @@ Api19GuestProcessMemory InitializeApi19GuestProcess(
                 kApi19GuestTlsAddress.Value(), request.root_thread_id);
 
         const auto argv = kApi19GuestPreinitAddress.Add(0x40);
-        const auto envp = kApi19GuestPreinitAddress.Add(0x50);
+        const auto envp = kApi19GuestEnvironmentAddress;
         const auto auxv = kApi19GuestPreinitAddress.Add(0x60);
         const auto abort_message = kApi19GuestPreinitAddress.Add(0x80);
         const auto program_name = kApi19GuestPreinitAddress.Add(0xa0);
@@ -128,7 +142,21 @@ Api19GuestProcessMemory InitializeApi19GuestProcess(
                 abort_message.Value(), request.root_thread_id);
         Write32(memory_bus, argv, program_name.Value(), request.root_thread_id);
         Write32(memory_bus, argv.Add(4), 0, request.root_thread_id);
-        Write32(memory_bus, envp, 0, request.root_thread_id);
+        auto string_address = envp.Add(
+            (environment.Entries().size() + 1U) * sizeof(std::uint32_t));
+        for (std::size_t index = 0; index < environment.Entries().size();
+             ++index) {
+            const auto& entry = environment.Entries()[index];
+            Write32(memory_bus, envp.Add(index * sizeof(std::uint32_t)),
+                    string_address.Value(), request.root_thread_id);
+            const auto serialized = entry.name + "=" + entry.value;
+            WriteString(address_space, string_address, serialized,
+                        request.root_thread_id);
+            string_address = string_address.Add(serialized.size() + 1U);
+        }
+        Write32(memory_bus,
+                envp.Add(environment.Entries().size() * sizeof(std::uint32_t)),
+                0, request.root_thread_id);
         Write32(memory_bus, auxv, 25, request.root_thread_id);
         Write32(memory_bus, auxv.Add(4), random_bytes.Value(),
                 request.root_thread_id);
@@ -170,7 +198,8 @@ Api19GuestProcessMemory InitializeApi19GuestProcess(
 
         return {request.root_thread_id, tls->thread_pointer,
                 kApi19GuestStackAddress.Add(kApi19GuestStackSize - 64U),
-                kApi19GuestReturnAddress, kApi19GuestPropertyAreaAddress};
+                kApi19GuestReturnAddress, kApi19GuestPropertyAreaAddress,
+                envp};
     } catch (...) {
         if (export_written) {
             try {
@@ -183,6 +212,7 @@ Api19GuestProcessMemory InitializeApi19GuestProcess(
         if (return_mapped) address_space.Unmap(return_trap);
         if (stack_mapped) address_space.Unmap(stack);
         if (tls.has_value()) DestroyBionicTlsBlock(address_space, *tls);
+        if (environment_mapped) address_space.Unmap(environment_page);
         if (preinit_mapped) address_space.Unmap(preinit);
         if (thread_info_mapped) address_space.Unmap(thread_info);
         throw;

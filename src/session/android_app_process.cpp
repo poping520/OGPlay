@@ -106,6 +106,10 @@ public:
 
         auto system = BuildSystemModules(request.api_level,
                                          request.system_libraries);
+        auto guest_environment =
+            std::make_shared<const runtime::GuestProcessEnvironment>(
+                runtime::GuestProcessEnvironment::Api19(
+                    context->external_storage_root));
         request.boundary_options.logger = request.logger;
         auto native_process = runtime::AndroidGuestProcess::Start(
             {request.api_level, system.inputs, request.backend,
@@ -116,7 +120,7 @@ public:
              std::move(request.sound_resource_loader),
              std::move(request.guest_call_slice_observer),
              std::move(request.platform), request.proc_facts,
-             request.diagnostics});
+             request.diagnostics, std::move(guest_environment)});
         session = runtime::AndroidGuestCallSession::AdoptProcess(
             std::move(native_process));
         state = AndroidAppProcessState::native_process_ready;

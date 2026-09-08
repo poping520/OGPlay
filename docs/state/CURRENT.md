@@ -1,9 +1,9 @@
 # 当前状态
 
-更新（2026-09-08 续）：[DVM-126](../tasks/dexvm/DVM-126.md) 保留 VM `String` owner，
-精确选入 API 19 Formatter 家族；两个 `String.format` 重载只桥接 guest Formatter。
-`%tZ`、`%02d`、Locale/null、异常与 GC 已双后端覆盖。原命令越过 Nimble `%tZ`，
-新首错为后台线程调用 `System.getenv(String)` 无法解析。
+更新（2026-09-08 续）：[DVM-127](../tasks/dexvm/DVM-127.md) 完成 OGPlay 自有 API 19
+guest 环境。独立 A32 `envp` 初始化 `PATH/ANDROID_ROOT/ANDROID_DATA/EXTERNAL_STORAGE`，
+Bionic `environ` 为唯一运行时权威；`System.getenv` 双签名不读取宿主环境，无参返回 AOSP
+不可修改 Map。exact PvZ 已越过原缺口，新首错为 `Landroid/provider/Settings$Secure;`。
 Button/TextView 三参构造与 buttonStyle(Small) 默认样式投影、TextView compound
 drawables（measure/raster/文本带内缩）、UI kind 按真实继承链解析、RelativeLayout
 TRUE(-1) 规则按 AOSP rule > 0 视为无锚点。exact PvZ 实跑 `CreateDiscoveryStrip 3/4/8`
@@ -14,7 +14,7 @@ compound 支持四方向/空文本测量与定位、资源事务更新；默认�
 ## 当前能力
 
 - **发行/guest JNI**：exact Profile API 选择 bundled data。API 19 含 pinned AOSP 五库、
-  AOSP OpenSSL `libcrypto.so`、ICU4C 51.1 库及依赖、948 类 BootDex 和 ICU 数据；来源、
+  AOSP OpenSSL `libcrypto.so`、ICU4C 51.1 库及依赖、949 类 BootDex 和 ICU 数据；来源、
   hash、NOTICE、manifest 与 payload 校验已同步。crypto/ICU 保持源码模块边界，共用
   JNI_OnLoad 和 `libogplay_jni.so`；ICU 只调用 guest C ABI 与 `icudt51l.dat`，host 不链接 ICU。
   制品见 [manifest](../../data/android/19/manifest.json)；`bootdex.jar` 不提交。
@@ -38,9 +38,9 @@ compound 支持四方向/空文本测量与定位、资源事务更新；默认�
 
 ## 最近验证
 
-- DVM-125：windows-msvc Release 构建；双后端焦点链 96 断言、初始 traversal/切换及
-  View 定向回归通过；相关架构门禁 4/5 通过。platform-boundaries 仍仅被既有 GUI
-  `process_manager.cpp:131` 阻塞。实跑日志 `.local/review/dvm125/pvz-run.log`。
+- DVM-127：macOS dev 构建；环境序列化 65、System.getenv 双后端 64、949 类全链接
+  6951 断言及 intrinsic layout、BootDex build/check/self-test 通过。宿主 PATH 投毒下 exact PvZ 仍越过 getenv，
+  新首错为 Settings.Secure。payload/audit 仍被既有本地 BootDex 输入/生成器改动阻塞。
 - DVM-126：windows-msvc Release 构建；双后端 Formatter 80 断言、948 类全链接、
   StringBuilder/目录结构定向回归及相关 CTest 10/10 通过；platform-boundaries 仍仅被既有
   GUI 分支阻塞。exact PvZ 已越过 `%tZ`，新首错为 `System.getenv(String)`；日志
@@ -58,11 +58,11 @@ compound 支持四方向/空文本测量与定位、资源事务更新；默认�
   在本 WU 前已失败（stash 验证与本次改动无关）；既有 GUI
   `process_manager.cpp:131` 仍使 platform_boundaries 门禁失败。本轮未运行全量 CTest、
   游戏 gate 或跨平台验收。
-  最新架构记录为 [ADR-0052](../adr/dexvm.md#adr-0052)。
+  最新架构记录为 [ADR-0053](../adr/dexvm.md#adr-0053)。
 
 ## 下一步与边界
 
-1. 分析 PvZ 新首错 `System.getenv(String)`，继续推进 PvZ。
+1. 分析 PvZ 新首错 `Landroid/provider/Settings$Secure;`，继续按通用 API 19 能力推进。
 2. 处理既有 GUI 门禁，补 macOS/Linux、DH 与 Diagnostics 验收。
 
 OGPlay 仅覆盖登记的老游戏进程能力。完整 formatter/大数、宿主资源持久化、Proxy 生成、

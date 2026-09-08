@@ -156,6 +156,9 @@ priority 与 daemon 仅是明确有界的 guest fact。字段通过 builder 的�
 API 共用每 VM 属性表；默认只发布
 API 19 guest 可确定的 `/`、`:`、`\n` 三个 separator 属性，不读取宿主系统属性。
 未知 key 返回 null，null/空 key 与 null value 按 Java 异常语义失败。
+`System.getenv(String)` 与无参版本只经 `CoreIntrinsicServices` 读取当前 guest Bionic
+`environ`；前者保持 AOSP null/缺失语义，后者用 BootDex `System$SystemEnvironment`
+返回拒绝修改及非 String 查询的快照。两者均不得读取宿主进程环境。
 `System.getSecurityManager()` 按 pinned API 19 libcore 固定返回 null；
 `SecurityManager` 自身由 curated BootDex 提供 class shape，OGPlay 不安装 security
 manager、执行 permission 检查或接入宿主安全机制。

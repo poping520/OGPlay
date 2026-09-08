@@ -8,6 +8,7 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include "ogplay/loader/dex.h"
@@ -44,6 +45,10 @@ struct CoreIntrinsicServices final {
         timer_task_scheduled_execution_time;
     std::function<std::int64_t()> current_time_millis;
     std::function<void(VmObjectRef, VmObjectRef)> set_sax_content_handler;
+    std::function<std::optional<std::string>(std::string_view)>
+        environment_value;
+    std::function<std::vector<std::pair<std::string, std::string>>()>
+        environment_entries;
 };
 
 // Class linking: registration, hierarchy resolution, field layout, vtable

@@ -1,5 +1,9 @@
 #include "catalog.h"
+
+#include <stdexcept>
+
 #include "ogplay/hal/host_environment.h"
+#include "ogplay/runtime/integration/android_guest_call_session.h"
 
 namespace ogplay::runtime {
 
@@ -47,6 +51,25 @@ dexvm::CoreIntrinsicServices AndroidCoreIntrinsicServices(
     services.current_time_millis = [context] {
         return 1'400'000'000'000LL +
                context->uptime_millis.load(std::memory_order_relaxed);
+    };
+    services.environment_value = [context](const std::string_view name) {
+        if (context->session == nullptr) {
+            throw std::runtime_error(
+                "guest process environment is not attached");
+        }
+        return context->session->Process().ProcessEnvironmentValue(name);
+    };
+    services.environment_entries = [context] {
+        if (context->session == nullptr) {
+            throw std::runtime_error(
+                "guest process environment is not attached");
+        }
+        std::vector<std::pair<std::string, std::string>> result;
+        for (const auto& entry :
+             context->session->Process().ProcessEnvironmentEntries()) {
+            result.emplace_back(entry.name, entry.value);
+        }
+        return result;
     };
     return services;
 }

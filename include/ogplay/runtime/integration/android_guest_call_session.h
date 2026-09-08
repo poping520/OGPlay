@@ -19,6 +19,7 @@
 #include "ogplay/runtime/execution/guest_thread_runner.h"
 #include "ogplay/runtime/framework/framework_asset.h"
 #include "ogplay/runtime/boundary/android_boundary_hle.h"
+#include "ogplay/runtime/integration/guest_process_environment.h"
 #include "ogplay/runtime/jni/jni_class_registry.h"
 #include "ogplay/runtime/jni/jni_environment.h"
 #include "ogplay/runtime/vfs/vfs.h"
@@ -263,6 +264,7 @@ struct AndroidGuestProcessRequest final {
     AndroidGuestPlatformConfig platform{};
     GuestProcFacts proc_facts{};
     std::shared_ptr<debug::DiagnosticState> diagnostics;
+    std::shared_ptr<const GuestProcessEnvironment> initial_environment;
 };
 
 class AndroidGuestProcessError final : public std::runtime_error {
@@ -311,6 +313,10 @@ public:
     [[nodiscard]] audio::JavaSoundPoolMixer& SoundPoolMixer() noexcept;
     [[nodiscard]] audio::OpenSlesPcmMixer& PcmPlayback() noexcept;
     [[nodiscard]] VirtualFileSystem* Filesystem() noexcept;
+    [[nodiscard]] std::optional<std::string> ProcessEnvironmentValue(
+        std::string_view name) const;
+    [[nodiscard]] std::vector<GuestProcessEnvironmentEntry>
+    ProcessEnvironmentEntries() const;
     [[nodiscard]] std::optional<memory::GuestAddress> FindNativeExport(
         std::string_view class_name, std::string_view method_name,
         std::string_view descriptor) const;

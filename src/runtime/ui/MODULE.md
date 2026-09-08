@@ -29,7 +29,8 @@ SDL、ANGLE 或视频解码。
   参与可用空间和最终 frame；负值/NaN/Inf 明确失败。
 - `RelativeLayout`：LayoutParams 保存 parent align/center 与 sibling above/below/left/right/
   align-edge 规则；横纵依赖图分别确定性解析且不依赖 document order，missing sibling、重复
-  sibling id、同轴冲突与 cycle 明确失败。
+  sibling id、同轴冲突与 cycle 明确失败。sibling 规则值为非正数（含
+  `addRule(verb)` 写入的 TRUE=-1）时按 AOSP `rule > 0` 过滤语义视为无锚点。
 - DVM-119：RelativeLayout gravity 在相对定位后按含 margin 的非 GONE 子节点整体
   边界平移，支持右/下/居中，默认 START/TOP 保留原定位。Java 参数经 integration
   映射为 UiTree 布局输入快照；UI 不保存 guest 引用或读取 Java 字段。
@@ -38,7 +39,12 @@ SDL、ANGLE 或视频解码。
   draw dirty 改变时重建。
 - `TextView/Button`：UiNode 唯一保存 text、RGBA textColor、textSize、gravity 与单行边界；
   内置 5x7 ASCII 字形同时提供确定性 measure/raster，wrap_content 加入 padding，Button
-  提供固定 background/padding/clickable 默认语义。
+  提供固定 background/padding/clickable 默认语义。compound drawables 以资源 id +
+  resolved intrinsic 存于 UiNode（left/top/right/bottom）；measure 的内容宽为
+  max(text.width, top.width, bottom.width)+left.width+right.width，高为
+  max(text.height, left.height, right.height)+top.height+bottom.height，再加入 padding。
+  空文本仍计入全部图标。左右图标在扣除上下图标后的带内居中，上下图标在扣除左右
+  图标后的带内居中，使用 AOSP 整数除法；文本 gravity 在四边内缩后的区域生效。
 - `ImageView/ImageButton`：UiNode 保存 CENTER/CENTER_INSIDE/FIT_CENTER/FIT_XY/CENTER_CROP；
   render-list 在 node content box 内按 API19 对齐语义生成目标 rect，CPU raster 使用确定性
   nearest-neighbor scale，CENTER_CROP 仍由 node clip 裁切。

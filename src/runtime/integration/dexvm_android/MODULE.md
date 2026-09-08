@@ -307,3 +307,18 @@ Theme.Holo/DeviceDefault 的 hint/highlight/link。未知 framework 样式、sel
 stateful 渲染、shadow/allCaps 明确失败并记账。TypedValue Java 做尺寸转换，Typeface
 Java 做字体选择；ContextWrapper 沿 base 查主题，循环/空 base 明确失败。
 Manifest theme 在 Activity 身份 attach 时经 setTheme 应用，不引入 Android Theme 服务。
+
+DVM-121：guest View 的 UI kind 由 `UiClassForObject` 按 receiver 真实继承链解析，
+`UiClassForDescriptor` 仅作精确平台描述符表（补 ScrollView/AbsoluteLayout →
+FrameLayout，与 inflater 目录一致）。Button/TextView 的 `(Context, AttributeSet,
+int)` 构造经 `ViewDefaultStyleInitHandler`：attrs 非空、未知 defStyleAttr 明确失败
+并记账；buttonStyle/buttonStyleSmall 经实际 Context（含 wrapper）解析 legacy theme、
+APK 主题继承和别名，仅接受已登记的 Widget.Button(.Small)/Small.Inverse 投影：
+14sp、enabled primary_text_light、gravity center 与 clickable。尺寸读取该 Context 的
+Resources；null Context、未登记主题/样式/外观明确失败，禁止忽略 APK override。
+9-patch 背景登记为 `dexvm.view_default_style.background` 缺口，状态色渲染仍未实现。
+setCompoundDrawablesWithIntrinsicBounds(IIII) 按 AOSP 声明为可覆盖的 TextView 方法；
+四个资源全部解析成功后一次发布，缺资源抛真实 NotFoundException，保留旧槽位与 dirty。
+槽位与 measure/draw 语义见 runtime/ui MODULE，架构边界见 ADR-0051。
+RelativeLayout sibling 规则非正值（含 addRule(verb) 的 TRUE=-1）按 AOSP `rule > 0`
+过滤为无锚点。

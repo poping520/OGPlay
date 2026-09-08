@@ -129,11 +129,8 @@ Decl Declare_android_app_Activity(const Context& context) {
                 throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;",
                                       "content view is null"};
             }
-            const auto descriptor = call.vm.Linker()
-                                        .Class(call.vm.Model().ObjectClass(view))
-                                        .descriptor;
             const auto node = EnsureViewUiNode(
-                *context, view, UiClassForDescriptor(descriptor));
+                *context, view, UiClassForObject(call.vm, view));
             const auto parent = context->ui_tree.Get(node)->parent;
             if (parent.has_value() && *parent != context->ui_tree.Root()) {
                 throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;",

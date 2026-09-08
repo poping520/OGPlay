@@ -18,6 +18,7 @@
 #include "ogplay/runtime/dexvm/intrinsic_builder.h"
 #include "ogplay/runtime/dexvm/object_model.h"
 #include "ogplay/runtime/integration/dexvm_android.h"
+#include "ogplay/runtime/ui/ui_renderer.h"
 #include "ogplay/runtime/vfs/vfs.h"
 #include "ogplay/session/dex_activity_lifecycle.h"
 #include "ogplay/video/fake_video_player.h"
@@ -1237,4 +1238,257 @@ TEST_CASE("RelativeLayout Java rules update attached geometry") {
     vm.CallOn(dependent, "requestLayout", "()V");
     CHECK(vm.CallOn(dependent, "getLeft", "()I").AsInt() == 47);
     CHECK(vm.CallOn(dependent, "getTop", "()I").AsInt() == 10);
+}
+
+TEST_CASE("guest View subclass resolves the platform kind by inheritance") {
+    ClickVm vm;
+    const auto java_class = vm.linker.FindClass("LTestPanel;");
+    REQUIRE(java_class.has_value());
+    const auto initialized = vm.interpreter.EnsureClassInitialized(*java_class);
+    REQUIRE_FALSE(initialized.exception.IsValid());
+    const auto panel = vm.model.NewInstance(
+        *java_class, vm.linker.Class(*java_class).instance_slots);
+    vm.CallDirect(panel, "LTestPanel;", "<init>",
+                  "(Landroid/content/Context;)V", {VmValue::Ref(vm.activity)});
+    const auto node = FindViewUiNode(*vm.context, panel.Value());
+    REQUIRE(node.has_value());
+    CHECK(vm.context->ui_tree.Get(*node)->kind == ui::UiClass::LinearLayout);
+    vm.CallOn(panel, "setOrientation", "(I)V", {VmValue::Int(1)});
+    vm.CallOn(vm.activity, "setContentView", "(Landroid/view/View;)V",
+              {VmValue::Ref(panel)});
+    CHECK(vm.context->ui_tree.Get(*node)->orientation ==
+          ui::Orientation::Vertical);
+}
+
+TEST_CASE("Button three-argument constructor applies the pinned default style") {
+    ClickVm vm;
+    vm.CallOn(vm.activity, "attachBaseContext", "(Landroid/content/Context;)V",
+        {VmValue::Ref(vm.interpreter.NewIntrinsicInstance("Landroid/content/Context;"))});
+    vm.CallOn(vm.activity, "setTheme", "(I)V", {VmValue::Int(0x01030007)});
+    vm.context->ui_density = 2.0F;
+    vm.context->ui_scaled_density = 2.0F;
+    const auto button = vm.interpreter.NewIntrinsicInstance(
+        "Landroid/widget/Button;");
+    constexpr std::int32_t kButtonStyleSmall = 0x01010049;
+    vm.CallDirect(button, "Landroid/widget/Button;", "<init>",
+                  "(Landroid/content/Context;Landroid/util/AttributeSet;I)V",
+                  {VmValue::Ref(vm.activity), VmValue::Ref(VmObjectRef{}),
+                   VmValue::Int(kButtonStyleSmall)});
+    const auto node = FindViewUiNode(*vm.context, button.Value());
+    REQUIRE(node.has_value());
+    const auto* state = vm.context->ui_tree.Get(*node);
+    CHECK(state->kind == ui::UiClass::Button);
+    CHECK(state->text_size_px == 28.0F);  // 14sp at scaled density 2
+    CHECK(state->text_color == 0x000000ffU);  // primary_text_light
+    CHECK(state->gravity == 0x11U);
+    CHECK(state->clickable);
+
+    // defStyleAttr 0 keeps the plain one-argument defaults.
+    const auto plain = vm.interpreter.NewIntrinsicInstance(
+        "Landroid/widget/Button;");
+    vm.CallDirect(plain, "Landroid/widget/Button;", "<init>",
+                  "(Landroid/content/Context;Landroid/util/AttributeSet;I)V",
+                  {VmValue::Ref(vm.activity), VmValue::Ref(VmObjectRef{}),
+                   VmValue::Int(0)});
+    const auto plain_node = FindViewUiNode(*vm.context, plain.Value());
+    REQUIRE(plain_node.has_value());
+    const auto* plain_state = vm.context->ui_tree.Get(*plain_node);
+    CHECK(plain_state->text_size_px == 8.0F);
+    CHECK(plain_state->gravity == 0U);
+
+    // Unknown framework attrs and non-null AttributeSet fail explicitly.
+    const auto attributes =
+        vm.interpreter.NewStringUtf8("not an AttributeSet");
+    const auto reject = [&](const VmObjectRef attrs,
+                            const std::int32_t style) {
+        const auto target = vm.interpreter.NewIntrinsicInstance(
+            "Landroid/widget/Button;");
+        const auto button_class = vm.linker.FindClass("Landroid/widget/Button;");
+        const auto init = vm.linker.FindDirectMethod(
+            *button_class, "<init>",
+            "(Landroid/content/Context;Landroid/util/AttributeSet;I)V");
+        const auto outcome = vm.interpreter.Call(
+            *init, std::vector<VmValue>{VmValue::Ref(target),
+                                        VmValue::Ref(vm.activity),
+                                        VmValue::Ref(attrs),
+                                        VmValue::Int(style)});
+        CHECK(outcome.exception.IsValid());
+    };
+    reject(VmObjectRef{}, 0x01010044);  // unregistered framework attr
+    reject(attributes, 0x01010049);
+}
+
+TEST_CASE("DVM-123 Button constructor checks the supplied Context theme") {
+    ClickVm vm;
+    vm.CallOn(vm.activity, "attachBaseContext", "(Landroid/content/Context;)V",
+        {VmValue::Ref(vm.interpreter.NewIntrinsicInstance("Landroid/content/Context;"))});
+    const auto type = *vm.linker.FindClass("Landroid/widget/Button;");
+    const auto init = *vm.linker.FindDirectMethod(type, "<init>",
+        "(Landroid/content/Context;Landroid/util/AttributeSet;I)V");
+    const auto construct = [&](VmObjectRef owner) {
+        const auto view = vm.interpreter.NewIntrinsicInstance("Landroid/widget/Button;");
+        return vm.interpreter.Call(init, std::vector<VmValue>{VmValue::Ref(view),
+            VmValue::Ref(owner), VmValue::Ref(VmObjectRef{}), VmValue::Int(0x01010049)});
+    };
+    auto result = construct(VmObjectRef{});
+    REQUIRE(result.exception.IsValid());
+    CHECK(vm.linker.Class(result.exception_class).descriptor == "Ljava/lang/NullPointerException;");
+    vm.CallOn(vm.activity, "setTheme", "(I)V", {VmValue::Int(0x0103006b)}); // Holo is not legacy
+    result = construct(vm.activity);
+    REQUIRE(result.exception.IsValid());
+    CHECK(vm.linker.Class(result.exception_class).descriptor == "Ljava/lang/UnsupportedOperationException;");
+
+    // APK theme inheritance and an alias to the registered legacy style work.
+    vm.context->arsc.entries = {{.resource_id = 0x7f030001U, .type_name = "style",
+        .entry_name = "AppTheme", .is_complex = true, .parent = 0x01030007U,
+        .bag = {{0x01010049U, 2, 0x01010048U, {}}}}};
+    vm.CallOn(vm.activity, "setTheme", "(I)V", {VmValue::Int(0x7f030001)});
+    CHECK_FALSE(construct(vm.activity).exception.IsValid());
+    // An app-supplied widget style must not be ignored and replaced by 14sp.
+    vm.context->arsc.entries[0].bag[0] = {0x01010049U, 1, 0x7f030002U, {}};
+    result = construct(vm.activity);
+    REQUIRE(result.exception.IsValid());
+    CHECK(vm.linker.Class(result.exception_class).descriptor == "Ljava/lang/UnsupportedOperationException;");
+}
+
+TEST_CASE("compound drawables resolve resources and drive measure") {
+    ClickVm vm;
+    vm.context->arsc.entries = {
+        {.resource_id = 101, .type_name = "color", .entry_name = "red",
+         .value_type = 0x1c, .value_data = 0xffff0000U},
+    };
+    const auto button = vm.interpreter.NewIntrinsicInstance(
+        "Landroid/widget/Button;");
+    vm.CallOn(button, "setText", "(Ljava/lang/CharSequence;)V",
+              {VmValue::Ref(vm.interpreter.NewStringUtf8("Hi"))});
+    vm.CallOn(button, "setCompoundDrawablesWithIntrinsicBounds", "(IIII)V",
+              {VmValue::Int(101), VmValue::Int(0), VmValue::Int(0),
+               VmValue::Int(0)});
+    const auto node = FindViewUiNode(*vm.context, button.Value());
+    REQUIRE(node.has_value());
+    const auto* state = vm.context->ui_tree.Get(*node);
+    CHECK(state->compound_drawables[0] ==
+          ui::CompoundDrawable{101, 1, 1});
+    vm.CallOn(vm.activity, "setContentView", "(Landroid/view/View;)V",
+              {VmValue::Ref(button)});
+    // "Hi" measures 11 px at the 8 px fixed font; with the 1x1 left drawable
+    // and the button's default 6/4 padding the wrap-content width is 24.
+    CHECK(vm.CallOn(button, "getWidth", "()I").AsInt() == 24);
+
+    // Clearing with 0 removes the drawable from measure again.
+    vm.CallOn(button, "setCompoundDrawablesWithIntrinsicBounds", "(IIII)V",
+              {VmValue::Int(0), VmValue::Int(0), VmValue::Int(0),
+               VmValue::Int(0)});
+    CHECK(vm.context->ui_tree.Get(*node)->compound_drawables[0] ==
+          ui::CompoundDrawable{});
+    CHECK(vm.CallOn(button, "getWidth", "()I").AsInt() == 23);
+
+    // A missing resource surfaces as the real Java exception.
+    const auto button_class = vm.model.ObjectClass(button);
+    const auto method = vm.linker.FindVtableIndex(
+        button_class, "setCompoundDrawablesWithIntrinsicBounds", "(IIII)V");
+    REQUIRE(method.has_value());
+    const auto missing = vm.interpreter.Call(
+        vm.linker.Class(button_class).vtable[*method],
+        std::vector<VmValue>{VmValue::Ref(button), VmValue::Int(999),
+                             VmValue::Int(0), VmValue::Int(0),
+                             VmValue::Int(0)});
+    REQUIRE(missing.exception.IsValid());
+    CHECK(vm.linker.Class(missing.exception_class).descriptor ==
+          "Landroid/content/res/Resources$NotFoundException;");
+}
+
+TEST_CASE("RelativeLayout TRUE rules behave as absent sibling anchors") {
+    ClickVm vm;
+    const auto relative = vm.interpreter.NewIntrinsicInstance(
+        "Landroid/widget/RelativeLayout;");
+    const auto child = vm.interpreter.NewIntrinsicInstance(
+        "Landroid/view/View;");
+    const auto params = vm.interpreter.NewIntrinsicInstance(
+        "Landroid/widget/RelativeLayout$LayoutParams;");
+    vm.CallDirect(params, "Landroid/widget/RelativeLayout$LayoutParams;",
+                  "<init>", "(II)V", {VmValue::Int(5), VmValue::Int(5)});
+    // addRule(7) stores TRUE (-1) for ALIGN_RIGHT: no anchor, default slot.
+    vm.CallOn(params, "addRule", "(I)V", {VmValue::Int(7)});
+    vm.CallOn(relative, "addView",
+              "(Landroid/view/View;Landroid/view/ViewGroup$LayoutParams;)V",
+              {VmValue::Ref(child), VmValue::Ref(params)});
+    vm.CallOn(vm.activity, "setContentView", "(Landroid/view/View;)V",
+              {VmValue::Ref(relative)});
+    CHECK(vm.CallOn(child, "getLeft", "()I").AsInt() == 0);
+    CHECK(vm.CallOn(child, "getTop", "()I").AsInt() == 0);
+}
+
+TEST_CASE("DVM-123 compound drawable failure preserves state and virtual API shape") {
+    ClickVm vm;
+    vm.context->arsc.entries = {
+        {.resource_id = 101, .type_name = "color", .entry_name = "red",
+         .value_type = 0x1c, .value_data = 0xffff0000U}};
+    const auto view = vm.interpreter.NewIntrinsicInstance("Landroid/widget/Button;");
+    vm.CallOn(view, "setCompoundDrawablesWithIntrinsicBounds", "(IIII)V",
+        {VmValue::Int(101), VmValue::Int(0), VmValue::Int(0), VmValue::Int(0)});
+    const auto node = FindViewUiNode(*vm.context, view.Value());
+    REQUIRE(node.has_value());
+    const auto before = vm.context->ui_tree.Get(*node)->compound_drawables;
+    vm.context->ui_tree.ClearLayoutDirty();
+    vm.context->ui_tree.ClearDrawDirty();
+    const auto type = vm.model.ObjectClass(view);
+    const auto slot = vm.linker.FindVtableIndex(type, "setCompoundDrawablesWithIntrinsicBounds", "(IIII)V");
+    REQUIRE(slot.has_value());
+    const auto method = vm.linker.Class(type).vtable[*slot];
+    CHECK((vm.linker.Method(method).access_flags & kAccFinal) == 0);
+    const auto result = vm.interpreter.Call(method,
+        std::vector<VmValue>{VmValue::Ref(view), VmValue::Int(0), VmValue::Int(999),
+                             VmValue::Int(0), VmValue::Int(0)});
+    REQUIRE(result.exception.IsValid());
+    CHECK(vm.linker.Class(result.exception_class).descriptor ==
+          "Landroid/content/res/Resources$NotFoundException;");
+    CHECK(vm.context->ui_tree.Get(*node)->compound_drawables == before);
+    CHECK_FALSE(vm.context->ui_tree.Get(*node)->layout_dirty);
+    CHECK_FALSE(vm.context->ui_tree.Get(*node)->draw_dirty);
+}
+
+TEST_CASE("DVM-123 hidden dynamic strip retains hierarchy drawable and listener") {
+    ClickVm vm;
+    vm.CallOn(vm.activity, "attachBaseContext", "(Landroid/content/Context;)V",
+        {VmValue::Ref(vm.interpreter.NewIntrinsicInstance("Landroid/content/Context;"))});
+    vm.CallOn(vm.activity, "setTheme", "(I)V", {VmValue::Int(0x01030007)});
+    vm.context->arsc.entries = {{.resource_id = 101, .type_name = "color",
+        .entry_name = "icon", .value_type = 0x1c, .value_data = 0xffff0000U}};
+    const auto frame = vm.interpreter.NewIntrinsicInstance("Landroid/widget/FrameLayout;");
+    const auto group = vm.interpreter.NewIntrinsicInstance("Landroid/widget/RelativeLayout;");
+    const auto button = vm.interpreter.NewIntrinsicInstance("Landroid/widget/Button;");
+    const auto params = vm.interpreter.NewIntrinsicInstance("Landroid/widget/RelativeLayout$LayoutParams;");
+    vm.CallDirect(button, "Landroid/widget/Button;", "<init>",
+        "(Landroid/content/Context;Landroid/util/AttributeSet;I)V",
+        {VmValue::Ref(vm.activity), VmValue::Ref(VmObjectRef{}), VmValue::Int(0x01010049)});
+    vm.CallOn(button, "setCompoundDrawablesWithIntrinsicBounds", "(IIII)V",
+        {VmValue::Int(101), VmValue::Int(0), VmValue::Int(0), VmValue::Int(0)});
+    vm.CallOn(button, "setText", "(Ljava/lang/CharSequence;)V",
+        {VmValue::Ref(vm.interpreter.NewStringUtf8("More"))});
+    vm.CallOn(button, "setId", "(I)V", {VmValue::Int(2)});
+    const auto listener = vm.NewListener();
+    vm.CallOn(button, "setOnClickListener", "(Landroid/view/View$OnClickListener;)V",
+        {VmValue::Ref(listener)}); // Register while detached, then attach.
+    vm.CallDirect(params, "Landroid/widget/RelativeLayout$LayoutParams;", "<init>",
+        "(II)V", {VmValue::Int(-2), VmValue::Int(-2)});
+    vm.CallOn(params, "addRule", "(I)V", {VmValue::Int(7)});
+    vm.CallOn(group, "addView", "(Landroid/view/View;Landroid/view/ViewGroup$LayoutParams;)V",
+        {VmValue::Ref(button), VmValue::Ref(params)});
+    vm.CallOn(frame, "addView", "(Landroid/view/View;)V", {VmValue::Ref(group)});
+    vm.CallOn(vm.activity, "setContentView", "(Landroid/view/View;)V", {VmValue::Ref(frame)});
+    vm.CallOn(frame, "setVisibility", "(I)V", {VmValue::Int(8)});
+    const auto node = FindViewUiNode(*vm.context, button.Value());
+    REQUIRE(node.has_value());
+    CHECK(vm.context->ui_tree.IsAttached(*node));
+    CHECK(vm.context->ui_tree.Get(*node)->parent == FindViewUiNode(*vm.context, group.Value()));
+    CHECK(vm.context->ui_tree.FindByAndroidId(2) == node);
+    CHECK(vm.context->ui_click_listeners.at(*node) == listener);
+    CHECK(vm.context->ui_tree.Get(*node)->compound_drawables[0].resource_id == 101);
+    CHECK(vm.CallOn(frame, "getVisibility", "()I").AsInt() == 8);
+    CHECK_FALSE(vm.Click(1, 1).has_value());
+    CHECK(vm.CallStaticInt("getClicks") == 0);
+    ui::UiOverlayRenderer renderer;
+    const auto& hidden = renderer.Render(vm.context->ui_tree, vm.context->ui_bitmaps, {100, 100});
+    CHECK(hidden.rgba8 == std::vector<std::uint8_t>(100 * 100 * 4, 0));
 }

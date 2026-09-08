@@ -71,7 +71,9 @@ void ResetViewUiState(DexVmAndroidContext& context) {
 namespace ogplay::runtime::android_intrinsics {
 
 ui::UiClass UiClassForDescriptor(const std::string_view descriptor) {
-    if (descriptor == "Landroid/widget/FrameLayout;") {
+    if (descriptor == "Landroid/widget/FrameLayout;" ||
+        descriptor == "Landroid/widget/ScrollView;" ||
+        descriptor == "Landroid/widget/AbsoluteLayout;") {
         return ui::UiClass::FrameLayout;
     }
     if (descriptor == "Landroid/widget/LinearLayout;" ||
@@ -97,6 +99,23 @@ ui::UiClass UiClassForDescriptor(const std::string_view descriptor) {
     }
     if (descriptor == "Landroid/widget/VideoView;") {
         return ui::UiClass::VideoView;
+    }
+    return ui::UiClass::View;
+}
+
+ui::UiClass UiClassForObject(dexvm::Interpreter& vm,
+                             const dexvm::VmObjectRef view) {
+    if (!view.IsValid()) {
+        throw std::runtime_error("cannot classify a null guest View");
+    }
+    auto type = vm.Model().ObjectClass(view);
+    for (std::size_t depth = 0; depth < 64; ++depth) {
+        const auto& klass = vm.Linker().Class(type);
+        if (klass.descriptor == "Landroid/view/View;") break;
+        const auto kind = UiClassForDescriptor(klass.descriptor);
+        if (kind != ui::UiClass::View) return kind;
+        if (!klass.super.has_value()) break;
+        type = *klass.super;
     }
     return ui::UiClass::View;
 }

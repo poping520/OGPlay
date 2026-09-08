@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <compare>
@@ -135,6 +136,15 @@ struct LayoutParams final {
     RelativeRules relative;
 };
 
+// One compound drawable slot of a TextView: the resolved resource plus the
+// intrinsic size used by measure/draw. resource_id 0 means "unset".
+struct CompoundDrawable final {
+    std::uint32_t resource_id{};
+    std::int32_t width{};
+    std::int32_t height{};
+    constexpr auto operator<=>(const CompoundDrawable&) const = default;
+};
+
 struct UiNode final {
     UiNodeId id;
     std::optional<UiNodeId> parent;
@@ -148,6 +158,8 @@ struct UiNode final {
     std::uint32_t gravity{};
     std::uint32_t image_resource_id{};
     ImageScaleType image_scale_type{ImageScaleType::FitCenter};
+    // TextView compound drawables: left, top, right, bottom.
+    std::array<CompoundDrawable, 4> compound_drawables{};
     std::optional<std::uint32_t> background_color;
     std::u16string text;
     std::uint32_t text_color{0xffffffffU};

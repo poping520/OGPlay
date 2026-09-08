@@ -143,7 +143,7 @@ Asphalt 5（pilot title）删除 profile 全部 `native_call` 与 `[[java.class]
 | [DVM-118](DVM-118.md) | 显示值与 Math 迁入 BootDex | 已完成 |
 | [DVM-119](DVM-119.md) | Java 布局参数与 RelativeLayout gravity | 完成 |
 | [DVM-120](DVM-120.md) | Typeface Java 与内置字体样式 | 完成 |
-| [DVM-121](DVM-121.md) | 文本外观与样式资源事实 | 完成 |
+| [DVM-121](DVM-121.md) | 文本外观、控件样式与动态 View | 完成 |
 | [DVM-122](DVM-122.md) | API 19 guest ICU 与统一 JNI 桥 | 完成 |
 
 ## 批次 4 · 更多 title 上 dexvm 路线（进行中）

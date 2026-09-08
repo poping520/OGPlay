@@ -398,12 +398,8 @@ dx::IntrinsicHandler TelephonyFalseHandler() {
 
 dx::IntrinsicHandler ViewInitHandler(const Context& context) {
     return dx::IntrinsicHandler([context](dx::IntrinsicContext& call) {
-        const auto descriptor = call.vm.Linker()
-                                    .Class(call.vm.Model().ObjectClass(
-                                        call.receiver))
-                                    .descriptor;
         static_cast<void>(EnsureViewUiNode(
-            *context, call.receiver, UiClassForDescriptor(descriptor)));
+            *context, call.receiver, UiClassForObject(call.vm, call.receiver)));
         return dx::VmValue::Void();
     });
 }

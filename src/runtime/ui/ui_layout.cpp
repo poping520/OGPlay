@@ -58,14 +58,20 @@ void Measure(UiTree& tree, const UiNodeId id, const MeasureSpec width_spec,
                                  node.padding.right;
     std::int32_t desired_height = node.intrinsic.height + node.padding.top +
                                   node.padding.bottom;
-    if ((node.kind == UiClass::TextView || node.kind == UiClass::Button) &&
-        !node.text.empty()) {
+    if (node.kind == UiClass::TextView || node.kind == UiClass::Button) {
         const auto text = MeasureFixedText(node.text, node.text_size_px, node.text_style);
+        // API19 TextView.onMeasure/getDesiredHeight: top/bottom contribute
+        // to the text band's width; left/right contribute to its height.
+        // Compound padding is then added on both axes, even with empty text.
+        const auto& c = node.compound_drawables;
         desired_width = std::max(
-            desired_width, text.width + node.padding.left + node.padding.right);
+            desired_width,
+            std::max({text.width, c[1].width, c[3].width}) +
+                c[0].width + c[2].width + node.padding.left + node.padding.right);
         desired_height = std::max(
             desired_height,
-            text.height + node.padding.top + node.padding.bottom);
+            std::max({text.height, c[0].height, c[2].height}) +
+                c[1].height + c[3].height + node.padding.top + node.padding.bottom);
     }
     // Android View.getDefaultSize uses the bounded MeasureSpec size for a
     // plain leaf View. This lets a custom drawing/input View without explicit

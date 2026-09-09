@@ -493,6 +493,10 @@ public:
                                     RequireFrame(frame, symbol).GetString(args[0]), tid);
         }
         if (function_id == Id(Gles2Function::get_error)) {
+            if (const auto error = context_.Shared().TakeGuestError();
+                error != 0U) {
+                return error;
+            }
             return RequireFrame(frame, symbol).GetError();
         }
         if (function_id == Id(Gles2Function::is_enabled)) {

@@ -4082,6 +4082,10 @@ TEST_CASE("Android GLES boundary transfers buffer and texture resources") {
                     ogplay::gles::GlesTransferStateError);
     static_cast<void>(fixture.Call("libGLESv2.so", "glTexParameteri",
                                    {0x0de1U, 0x2801U, 0x2600U}));
+    CHECK(fixture.Call("libGLESv2.so", "glTexParameteri",
+                       {0x0de1U, 0x8191U, 0U}) == 0U);
+    CHECK(fixture.Call("libGLESv2.so", "glGetError") == 0x0500U);
+    CHECK(fixture.Call("libGLESv2.so", "glGetError") == 0U);
     fixture.bus.Write32(fixture.stack, 2, 1);
     fixture.bus.Write32(fixture.stack.Add(4), 0, 1);
     fixture.bus.Write32(fixture.stack.Add(8), 0x1908U, 1);

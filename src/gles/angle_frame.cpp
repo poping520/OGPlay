@@ -18,6 +18,15 @@
 #endif
 
 namespace ogplay::gles {
+
+GlesApiError::GlesApiError(const std::string_view operation,
+                           const std::uint32_t code)
+    : std::runtime_error(std::string(operation) +
+                         " failed with GLES error " + std::to_string(code)),
+      code_(code) {}
+
+std::uint32_t GlesApiError::Code() const noexcept { return code_; }
+
 namespace {
 
 constexpr std::uint32_t kEtc1Rgb8Oes = 0x8D64U;
@@ -551,7 +560,8 @@ void AngleFrame::TextureParameter(const std::uint32_t target,
                                   const std::uint32_t parameter,
                                   const std::int32_t value) {
 #if OGPLAY_HAS_ANGLE
-    glTexParameteri(target, parameter, value); RequireNoError("glTexParameteri");
+    glTexParameteri(target, parameter, value);
+    RequireNoError("glTexParameteri");
 #else
     static_cast<void>(target); static_cast<void>(parameter); static_cast<void>(value);
     throw EglLifecycleError(EglOperation::unavailable, 0);
@@ -1003,9 +1013,7 @@ void AngleFrame::RequireNoError(const char* const operation) const {
 #if OGPLAY_HAS_ANGLE
     const auto error = glGetError();
     if (error != GL_NO_ERROR) {
-        throw std::runtime_error(std::string(operation) +
-                                 " failed with GLES error " +
-                                 std::to_string(error));
+        throw GlesApiError(operation, error);
     }
 #else
     static_cast<void>(operation);

@@ -366,6 +366,39 @@ TEST_CASE("guest JNI object arrays enforce assignability and null semantics") {
         JniObjectArrayError);
 }
 
+TEST_CASE("DVM-141 JNI array publication registers actual types idempotently") {
+    using namespace ogplay::runtime;
+    InstanceFixture fixture;
+    const auto base = fixture.classes.RegisterClass({"fixture/Base", {}, {}, {}});
+    const auto child = fixture.classes.RegisterClass(
+        {"fixture/Child", "fixture/Base", {{"value", "()I", "publication.value", false}}, {}});
+    fixture.invocations.RegisterHandler("publication.value", [](const JniInvocation&) {
+        return JniValue{JniInt{42}};
+    });
+    const auto method = fixture.classes.GetMethodId(child, "value", "()I", false);
+    REQUIRE(method.has_value());
+    const JniObjectIdentity object{JniObjectDomain::dex_vm, 4508};
+    const auto array = fixture.objects.ObjectArrays().New(base, 2, JniObjectValue{object, child});
+    CHECK_THROWS_AS(static_cast<void>(fixture.objects.ClassOf(object)), JniGuestBindingError);
+    fixture.environment.AttachThread(InstanceFixture::thread_id);
+    const auto array_ref = fixture.environment.PublishLocalObject(InstanceFixture::thread_id, array);
+    const auto base_ref = fixture.environment.PublishLocalObject(InstanceFixture::thread_id, base);
+    fixture.dispatcher.Seal();
+    for (int i = 0; i < 2; ++i) {
+        const auto element = fixture.Call("GetObjectArrayElement", array_ref.Value(), 0);
+        CHECK(fixture.objects.ClassOf(object) == child);
+        CHECK(fixture.Call("CallIntMethodV", element, method->Value(), fixture.output.Value()) == 42);
+        const auto klass = JniReference{fixture.Call("GetObjectClass", element)};
+        CHECK(fixture.environment.ResolveObjectForHle(InstanceFixture::thread_id, klass) == child);
+        CHECK(fixture.Call("IsInstanceOf", element, base_ref.Value()) == 1);
+    }
+    CHECK_NOTHROW(fixture.objects.EnsureRegistered(object, child));
+    CHECK_THROWS_AS(fixture.objects.EnsureRegistered(object, base), JniGuestBindingError);
+    CHECK(fixture.objects.ClassOf(object) == child);
+    fixture.objects.ObjectArrays().Set(array, 1, std::nullopt);
+    CHECK(fixture.Call("GetObjectArrayElement", array_ref.Value(), 1) == 0);
+}
+
 TEST_CASE("guest JNI nonvirtual calls decode stacked normal V and A arguments") {
     using namespace ogplay::runtime;
     InstanceFixture fixture;

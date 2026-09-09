@@ -47,6 +47,16 @@ public:
         }
     }
 
+    void EnsureRegistered(const JniObjectIdentity object,
+                          const JniObjectIdentity java_class) {
+        Validate(object, java_class);
+        std::scoped_lock lock(mutex_);
+        const auto [entry, inserted] = objects_.emplace(Key(object), java_class);
+        if (!inserted && entry->second != java_class) {
+            throw JniGuestBindingError("JNI object publication has conflicting runtime classes");
+        }
+    }
+
     void Forget(const JniObjectIdentity object) {
         if (object.value == 0U) {
             throw JniGuestBindingError(
@@ -143,6 +153,10 @@ void JniGuestObjectRegistry::Register(const JniObjectIdentity object,
 }
 void JniGuestObjectRegistry::Forget(const JniObjectIdentity object) {
     impl_->Forget(object);
+}
+void JniGuestObjectRegistry::EnsureRegistered(const JniObjectIdentity object,
+                                             const JniObjectIdentity java_class) {
+    impl_->EnsureRegistered(object, java_class);
 }
 JniObjectIdentity JniGuestObjectRegistry::ClassOf(
     const JniObjectIdentity object) const {

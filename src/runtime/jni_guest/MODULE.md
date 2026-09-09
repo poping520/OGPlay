@@ -15,6 +15,9 @@ nonvirtual、monitor、JavaVM)与 root `JNI_OnLoad` 库生命周期。语义本�
 
 ## 不变量
 
+- DVM-141 `EnsureRegistered` 在注册表锁内幂等登记真实 runtime class；冲突明确失败，
+  不修改已有类型。GetObjectArrayElement 发布引用前使用元素携带的 java_class 登记，
+  不使用声明 component type 猜测；该表不是 GC root，VM sweep 仍负责 Forget。
 - guest-memory 标量和受限 C 字符串读取统一经过私有 `jni_guest_memory.h`；整数按 A32
   little-endian 解码，C 字符串继续保持 1024 字节上限与原有 binding error。
 - `GuestJniAbi` 把完整 233 槽 JNIEnv 与 8 槽 JavaVM 物化为 32 位 guest 函数表、对象和

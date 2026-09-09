@@ -1605,6 +1605,11 @@ status = "partial"
 test = "tests/dexvm/intrinsics_p1_tests.cpp: DVM-118; tests/dexvm/dvm87_tests.cpp: DVM-103"
 note = "DVM-118：Math 普通方法/常量/Random 状态来自 BootDex；24 个 native 按 AOSP java_lang_Math.cpp 对接宿主 libm。双后端复验 round(float/double) 的半值/NaN/Infinity/饱和转换、最小整数 abs、min/max NaN 与 signed zero、ulp/nextUp、随机数区间及 native 基本数值。未宣称 StrictMath/fdlibm 跨平台逐位一致或 libm 全输入误差认证。"
 
+[dexvm.jni_array_element_publication]
+status = "complete"
+test = "tests/runtime/jni_guest_instance_calls_tests.cpp: DVM-141; tests/runtime/native_library_loader_tests.cpp: DVM-141"
+note = "DVM-141 对象数组元素发布 JNI 引用前依据其真实 java_class 原子幂等注册；与 DexVmGuestBridge.PublishLocal 共用 EnsureRegistered，冲突明确失败，不放宽 ClassOf。双后端覆盖 Java Map→Object[]→JNI entrySet、重复发布、类型查询、local ref GC 保活及回收"
+
 [dexvm.intent_put_extras_bundle]
 status = "complete"
 test = "tests/dexvm/android_value_tests.cpp: DVM-140"

@@ -22,6 +22,8 @@ DVM-79 的 `DexVmIoVfsAdapter` 是 DexVM core `IoFileSystem` 与具体
 
 ## 不变量
 
+- DVM-141 DexVmGuestBridge.PublishLocal 共用 JNI EnsureRegistered，消除查找后注册的
+  竞争窗口；对象真实类型来自 VM，方法返回、字段读取与 native 参数复用该出口。
 - runner 只有在所有资源、引用、线程和生命周期闭环后才能报告成功。
 - Android guest call session 只在通用 A32 slice 边界调用显式 observer;observer 由上层
   注入,不得让 integration 直接依赖窗口后端或消费输入。

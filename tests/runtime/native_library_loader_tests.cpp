@@ -26,6 +26,9 @@
 #include "ogplay/runtime/jni/jni_object_array.h"
 #include "ogplay/runtime/jni_guest/jni_guest_abi.h"
 #include "ogplay/runtime/jni_guest/jni_guest_static_calls.h"
+#include "ogplay/runtime/jni_guest/jni_guest_bindings.h"
+#include "ogplay/cpu/interpreter.h"
+#include "ogplay/memory/bus.h"
 #include "ogplay/session/android_app_process.h"
 #include "ogplay/session/dex_activity_lifecycle.h"
 
@@ -1090,6 +1093,78 @@ TEST_CASE("DexVM bridge canonicalizes JNI jclass as the real Class object") {
     CHECK(round_trip == class_object);
     CHECK(fixture.bridge->Model().ClassOfClassObject(round_trip) ==
           *represented);
+}
+
+TEST_CASE("DVM-141 Java Map array elements become callable JNI receivers and GC roots") {
+    using namespace ogplay;
+    using namespace runtime::dexvm;
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        ApplicationProcess f(backend);
+        auto& vm = f.bridge->Vm();
+        auto& model = f.bridge->Model();
+        auto& linker = f.bridge->Linker();
+        auto& session = *f.session;
+        memory::AddressSpace memory;
+        memory::CheckedMemoryBus bus(memory);
+        cpu::InterpreterCpu cpu(bus);
+        runtime::GuestJniAbi abi(memory);
+        runtime::JniGuestCallDispatcher dispatcher(f.ledger);
+        runtime::JniJavaVm java_vm(session.Environment());
+        runtime::JniGuestBindingContext context{session.Environment(), session.Classes(),
+            session.Invocations(), session.Fields(), session.Strings(), session.Arrays(),
+            java_vm, session.Objects(), memory};
+        runtime::BindJniGuestSlots(dispatcher, context);
+        dispatcher.Seal();
+        const auto call = [&](const char* name, std::uint32_t r1, std::uint32_t r2 = 0) {
+            const auto slot = runtime::FindJniSlot(name);
+            REQUIRE(slot.has_value());
+            const auto target = bus.Read32(runtime::kJniGuestEnvironmentTable.Add(slot->Value() * 4U));
+            cpu::A32State state;
+            state.SetThreadId(1);
+            state.SetState(cpu::ExecutionState::thumb);
+            state.SetRegister(cpu::CoreRegister::pc, target & ~1U);
+            state.SetRegister(cpu::CoreRegister::r0, abi.Environment().Value());
+            state.SetRegister(cpu::CoreRegister::r1, r1);
+            state.SetRegister(cpu::CoreRegister::r2, r2);
+            cpu.SetState(state);
+            const auto stopped = cpu.Run(1);
+            REQUIRE(dispatcher.Handle(cpu, stopped));
+            return cpu.GetState().Register(cpu::CoreRegister::r0);
+        };
+        const auto map_class = linker.ResolveDescriptor("Ljava/util/HashMap;");
+        REQUIRE_FALSE(vm.EnsureClassInitialized(map_class).exception.IsValid());
+        const auto map = vm.NewIntrinsicInstance("Ljava/util/HashMap;");
+        const auto ctor = linker.FindDirectMethod(map_class, "<init>", "()V");
+        REQUIRE(ctor.has_value());
+        REQUIRE_FALSE(vm.Call(*ctor, std::array{VmValue::Ref(map)}).exception.IsValid());
+        const auto array = model.NewObjectArray(linker.ResolveDescriptor("[Ljava/lang/Object;"),
+                                               linker.ResolveDescriptor("Ljava/lang/Object;"), 1);
+        model.SetObjectElement(array, 0, map);
+        const auto array_ref = f.bridge->PublishLocal(array);
+        const auto identity = model.ToIdentity(map);
+        CHECK_THROWS_AS(static_cast<void>(session.Objects().ClassOf(identity)), runtime::JniGuestBindingError);
+        const auto element = call("GetObjectArrayElement", array_ref.Value());
+        const auto second = call("GetObjectArrayElement", array_ref.Value());
+        model.SetObjectElement(array, 0, VmObjectRef{});
+        static_cast<void>(vm.CollectGarbage("dvm141-element-local-root"));
+        const auto klass = session.Objects().ClassOf(identity);
+        CHECK(klass == *f.bridge->RegisteredClassIdentity(map_class));
+        const auto method = session.Classes().GetMethodId(klass, "entrySet", "()Ljava/util/Set;", false);
+        REQUIRE(method.has_value());
+        const auto entries = call("CallObjectMethodV", element, method->Value());
+        CHECK(entries != 0);
+        CHECK(call("GetObjectClass", element) != 0);
+        static_cast<void>(call("DeleteLocalRef", element));
+        static_cast<void>(call("DeleteLocalRef", second));
+        static_cast<void>(call("DeleteLocalRef", entries));
+        // Replace the interpreter's retained last object return with a scalar.
+        const auto size_slot = linker.FindVtableIndex(map_class, "size", "()I");
+        REQUIRE(size_slot.has_value());
+        REQUIRE_FALSE(vm.Call(linker.Class(map_class).vtable[*size_slot],
+                              std::array{VmValue::Ref(map)}).exception.IsValid());
+        static_cast<void>(vm.CollectGarbage("dvm141-released-element"));
+        CHECK_THROWS_AS(static_cast<void>(session.Objects().ClassOf(identity)), runtime::JniGuestBindingError);
+    }
 }
 
 TEST_CASE("DexVM JNI classes retain intrinsic superclasses for object arrays") {

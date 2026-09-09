@@ -341,14 +341,7 @@ public:
     const auto java_class = model->ObjectClass(ref);
     if (java_class.IsValid()) {
       const auto class_identity = JniClassIdentity(java_class);
-      try {
-        if (session->Objects().ClassOf(identity) != class_identity) {
-          throw DexVmBridgeError(
-              "DexVM object identity is published with another JNI class");
-        }
-      } catch (const JniGuestBindingError&) {
-        session->Objects().Register(identity, class_identity);
-      }
+      session->Objects().EnsureRegistered(identity, class_identity);
     }
     return session->Environment().PublishLocalObject(thread, identity);
     }

@@ -211,6 +211,7 @@ void RegisterAndroidOwnerAttachedStateTable(
             context->intent_filter_schemes.erase(key);
             context->intent_filter_authorities.erase(key);
             context->requested_orientations.erase(key);
+            context->gl_surface_render_modes.erase(key);
             context->surface_holders.erase(key);
             context->surface_callbacks.erase(key);
             context->active_surface_holders.erase(key);

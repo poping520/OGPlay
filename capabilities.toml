@@ -1418,7 +1418,7 @@ note = "DVM-71 扩展发布 API19 View.OnSystemUiVisibilityChangeListener 精确
 [dexvm.java_gles]
 status = "partial"
 test = "tests/dexvm/egl_facade_tests.cpp; tests/dexvm/nio_runtime_tests.cpp; tests/runtime/boundary/integration/android_boundary_hle_tests.cpp; tools/generate_java_gles_surface.py --check"
-note = "DVM-83 从固定 Android 4.4.4 源发布 GLES10/10Ext/11/11Ext/20、GLUtils、GLU 的 public static API 与 int 常量；可确定的 scalar/String/primitive-array/NIO Buffer 调用进入 sealed native GLES binding 和唯一 GuestGlContext，direct buffer 不复制，heap/view 输出 copy-back 且 cursor 不变，GLUtils 复用 Bitmap ARGB backing 上传 RGBA。Java wrapper 与 native catalog 无确定适配关系的方法逐项记账并抛 UnsupportedOperationException，因此能力保持 partial。"
+note = "DVM-83 从固定 Android 4.4.4 源发布 GLES10/10Ext/11/11Ext/20、GLUtils、GLU 的 public static API 与 int 常量；DVM-134 发布 GLSurfaceView 两个 render mode 常量及逐 view 的 set/get，非法值抛 IllegalArgumentException。可确定的 scalar/String/primitive-array/NIO Buffer 调用进入 sealed native GLES binding 和唯一 GuestGlContext，direct buffer 不复制，heap/view 输出 copy-back 且 cursor 不变，GLUtils 复用 Bitmap ARGB backing 上传 RGBA。render mode 不创建 GLThread/EGL surface；Java wrapper 与 native catalog 无确定适配关系的方法逐项记账并抛 UnsupportedOperationException，因此能力保持 partial。"
 
 [dexvm.audio_track]
 status = "complete"

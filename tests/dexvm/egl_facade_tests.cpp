@@ -28,7 +28,8 @@ struct EglVm final {
         std::make_shared<DexVmAndroidContext>()};
     Interpreter interpreter;
 
-    EglVm()
+    explicit EglVm(
+        const InterpreterBackend backend = InterpreterBackend::switch_dispatch)
         : interpreter([this]() -> DexClassLinker& {
               linker.RegisterIntrinsics(CoreIntrinsicCatalog());
               auto android = AndroidIntrinsicCatalog(context);
@@ -42,7 +43,7 @@ struct EglVm final {
               ogplay::test::RegisterBootDex(linker);
               linker.Link();
               return linker;
-          }(), model, nullptr, ledger, {}) {
+          }(), model, nullptr, ledger, {.backend = backend}) {
         const auto egl10 = linker.ResolveDescriptor(
             "Ljavax/microedition/khronos/egl/EGL10;");
         auto& linked = linker.Class(egl10);
@@ -65,14 +66,20 @@ struct EglVm final {
     VmValue CallOn(const VmObjectRef receiver, const char* name,
                    const char* descriptor,
                    std::vector<VmValue> arguments = {}) {
+        const auto outcome = CallOnOutcome(
+            receiver, name, descriptor, std::move(arguments));
+        REQUIRE_MESSAGE(!outcome.exception.IsValid(), outcome.exception_message);
+        return outcome.value;
+    }
+
+    VmCallOutcome CallOnOutcome(
+        const VmObjectRef receiver, const char* name, const char* descriptor,
+        std::vector<VmValue> arguments = {}) {
         const auto klass = model.ObjectClass(receiver);
         const auto index = linker.FindVtableIndex(klass, name, descriptor);
         REQUIRE(index.has_value());
         arguments.insert(arguments.begin(), VmValue::Ref(receiver));
-        const auto outcome =
-            interpreter.Call(linker.Class(klass).vtable[*index], arguments);
-        REQUIRE_MESSAGE(!outcome.exception.IsValid(), outcome.exception_message);
-        return outcome.value;
+        return interpreter.Call(linker.Class(klass).vtable[*index], arguments);
     }
 
     VmObjectRef IntArray(const std::vector<std::int32_t>& values) {
@@ -123,6 +130,28 @@ TEST_CASE("GLSurfaceView retains linked EGL policy identities") {
         {VmValue::Ref(VmObjectRef{})}));
     CHECK_FALSE(vm.context->egl_context_factory.IsValid());
     CHECK(vm.context->egl_config_chooser == policy);
+}
+
+TEST_CASE("DVM-134 GLSurfaceView stores validated render mode per view") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch,
+                               InterpreterBackend::threaded}) {
+        EglVm vm(backend);
+        const auto view = vm.interpreter.NewIntrinsicInstance(
+            "Landroid/opengl/GLSurfaceView;");
+        CHECK(vm.CallOn(view, "getRenderMode", "()I").AsInt() == 1);
+        static_cast<void>(vm.CallOn(
+            view, "setRenderMode", "(I)V", {VmValue::Int(0)}));
+        CHECK(vm.CallOn(view, "getRenderMode", "()I").AsInt() == 0);
+        static_cast<void>(vm.CallOn(
+            view, "setRenderMode", "(I)V", {VmValue::Int(1)}));
+        CHECK(vm.context->gl_surface_render_modes.at(view.Value()) == 1);
+
+        const auto invalid = vm.CallOnOutcome(
+            view, "setRenderMode", "(I)V", {VmValue::Int(2)});
+        REQUIRE(invalid.exception.IsValid());
+        CHECK(vm.linker.Class(invalid.exception_class).descriptor ==
+              "Ljava/lang/IllegalArgumentException;");
+    }
 }
 
 TEST_CASE("EGL facade publishes singleton interface hierarchy") {

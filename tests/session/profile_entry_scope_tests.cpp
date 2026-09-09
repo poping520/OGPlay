@@ -804,12 +804,27 @@ TEST_CASE("Configuration derives API19 screen layout from injected metrics") {
   vm.context->surface_height = 480;
   vm.context->ui_density = 1.0F;
   const auto configuration = get();
-  CHECK(read_field(configuration, "keyboard") == 1);
+  CHECK(vm.linker.Class(vm.model.ObjectClass(configuration)).is_boot_dex);
+  CHECK(read_field(configuration, "touchscreen") == 3);
+  CHECK(read_field(configuration, "keyboard") == 2);
+  CHECK(read_field(configuration, "keyboardHidden") == 1);
+  CHECK(read_field(configuration, "hardKeyboardHidden") == 1);
+  CHECK(read_field(configuration, "navigation") == 1);
+  CHECK(read_field(configuration, "navigationHidden") == 2);
+  CHECK(read_field(configuration, "orientation") == 2);
+  CHECK(read_field(configuration, "screenWidthDp") == 800);
+  CHECK(read_field(configuration, "screenHeightDp") == 480);
+  CHECK(read_field(configuration, "smallestScreenWidthDp") == 480);
+  CHECK(read_field(configuration, "densityDpi") == 160);
   CHECK(read_field(configuration, "screenLayout") == 0x10000023);
 
   vm.context->surface_width = 320;
   vm.context->surface_height = 480;
   CHECK(get() == configuration);
+  CHECK(read_field(configuration, "orientation") == 1);
+  CHECK(read_field(configuration, "screenWidthDp") == 320);
+  CHECK(read_field(configuration, "screenHeightDp") == 480);
+  CHECK(read_field(configuration, "smallestScreenWidthDp") == 320);
   CHECK(read_field(configuration, "screenLayout") == 0x12);
 
   vm.context->ui_density = 0.0F;

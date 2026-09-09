@@ -416,6 +416,93 @@ TEST_CASE("DVM-118 Resources metrics share display facts and BootDex value seman
     }
 }
 
+TEST_CASE("DVM-137 Configuration uses API19 Java shape and managed device facts") {
+    for (const auto backend :
+         {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        AndroidValueVm f(backend);
+        f.context->surface_width = 960;
+        f.context->surface_height = 540;
+        f.context->ui_density = 1.5F;
+        const auto resources =
+            f.vm.NewIntrinsicInstance("Landroid/content/res/Resources;");
+        const auto resources_root = f.vm.ProtectReferences(std::array{resources});
+        const auto field = [&](const VmObjectRef object, const char* name,
+                               const char* descriptor = "I") {
+            const auto id = f.linker.FindFieldRecursive(
+                f.model.ObjectClass(object), name, descriptor);
+            REQUIRE(id.has_value());
+            return f.model.InstanceSlots(object)[f.linker.Field(*id).slot].bits;
+        };
+        const auto configuration = f.On(
+            resources, "getConfiguration",
+            "()Landroid/content/res/Configuration;").ref;
+        const auto configuration_root =
+            f.vm.ProtectReferences(std::array{configuration});
+        const auto owner = f.model.ObjectClass(configuration);
+        CHECK(f.linker.Class(owner).is_boot_dex);
+        CHECK(field(configuration, "touchscreen") == 3);
+        CHECK(field(configuration, "keyboard") == 2);
+        CHECK(field(configuration, "keyboardHidden") == 1);
+        CHECK(field(configuration, "hardKeyboardHidden") == 1);
+        CHECK(field(configuration, "navigation") == 1);
+        CHECK(field(configuration, "navigationHidden") == 2);
+        CHECK(field(configuration, "orientation") == 2);
+        CHECK(field(configuration, "screenWidthDp") == 640);
+        CHECK(field(configuration, "screenHeightDp") == 360);
+        CHECK(field(configuration, "smallestScreenWidthDp") == 360);
+        CHECK(field(configuration, "densityDpi") == 240);
+        CHECK(field(configuration, "screenLayout") == 0x10000022);
+
+        const auto defaults = f.New("Landroid/content/res/Configuration;");
+        const auto defaults_root = f.vm.ProtectReferences(std::array{defaults});
+        CHECK(std::bit_cast<float>(field(defaults, "fontScale", "F")) == 1.0F);
+        CHECK(field(defaults, "keyboard") == 0);
+        CHECK(field(defaults, "orientation") == 0);
+        const auto copy = f.New(
+            "Landroid/content/res/Configuration;",
+            "(Landroid/content/res/Configuration;)V",
+            {VmValue::Ref(configuration)});
+        const auto copy_root = f.vm.ProtectReferences(std::array{copy});
+        CHECK(f.On(copy, "equals", "(Landroid/content/res/Configuration;)Z",
+                   {VmValue::Ref(configuration)}).AsInt() == 1);
+        CHECK(f.vm.StringUtf8(
+                  f.On(copy, "toString", "()Ljava/lang/String;").ref)
+                  .find("land") != std::string::npos);
+
+        const auto parcel = f.Static(
+            "Landroid/os/Parcel;", "obtain", "()Landroid/os/Parcel;").ref;
+        const auto parcel_root = f.vm.ProtectReferences(std::array{parcel});
+        f.On(configuration, "writeToParcel", "(Landroid/os/Parcel;I)V",
+             {VmValue::Ref(parcel), VmValue::Int(0)});
+        f.On(parcel, "setDataPosition", "(I)V", {VmValue::Int(0)});
+        const auto creator_id = f.linker.FindFieldRecursive(
+            owner, "CREATOR", "Landroid/os/Parcelable$Creator;");
+        REQUIRE(creator_id.has_value());
+        const auto creator = VmObjectRef(
+            f.linker.Class(owner)
+                .static_storage[f.linker.Field(*creator_id).slot]);
+        REQUIRE(creator.IsValid());
+        const auto restored = f.On(
+            creator, "createFromParcel",
+            "(Landroid/os/Parcel;)Ljava/lang/Object;",
+            {VmValue::Ref(parcel)}).ref;
+        CHECK(f.On(restored, "equals",
+                   "(Landroid/content/res/Configuration;)Z",
+                   {VmValue::Ref(configuration)}).AsInt() == 1);
+
+        static_cast<void>(f.vm.CollectGarbage("dvm137-configuration"));
+        CHECK(f.On(resources, "getConfiguration",
+                   "()Landroid/content/res/Configuration;").ref == configuration);
+        f.context->surface_width = 540;
+        f.context->surface_height = 960;
+        CHECK(f.On(resources, "getConfiguration",
+                   "()Landroid/content/res/Configuration;").ref == configuration);
+        CHECK(field(configuration, "orientation") == 1);
+        CHECK(field(configuration, "screenWidthDp") == 360);
+        CHECK(field(configuration, "screenHeightDp") == 640);
+    }
+}
+
 TEST_CASE("DVM-119 Java layout params drive FrameLayout geometry and copy semantics") {
     for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
         AndroidValueVm f(backend);

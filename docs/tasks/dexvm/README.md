@@ -150,6 +150,7 @@ Asphalt 5（pilot title）删除 profile 全部 `native_call` 与 `[[java.class]
 | [DVM-127](DVM-127.md) | API 19 guest 进程环境与 `System.getenv` | 完成 |
 | [DVM-128](DVM-128.md) | API 19 `Settings.Secure` 与沙盒身份 | 完成 |
 | [DVM-129](DVM-129.md) | Unicode application label 与 fixed-font 边界隔离 | 完成 |
+| [DVM-130](DVM-130.md) | JNI 平台入口统一进入 DexVM | 完成 |
 
 ## 批次 4 · 更多 title 上 dexvm 路线（进行中）
 

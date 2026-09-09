@@ -837,3 +837,18 @@ schema、未知键及畸形身份仍明确失败。`AndroidGuestPlatformConfig.a
 DexVM 的共同装配事实，DexVM 只保存只读 secure 子集。当前只实现实际命中的静态
 `Settings.Secure.getString`：未知键返回 `null`；写入、跨用户、观察者及整数便利接口不因
 本决定扩张。禁止用完整 framework Settings/ContentProvider 或静默占位替代该边界。
+
+<a id="adr-0055"></a>
+## ADR-0055 · 已迁移平台类的 JNI 与 Java 共用 VM 所有者
+
+2026-09-09，接受，DVM-130。
+
+guest 会话中已有 VM 实现的平台类由 DexVmGuestBridge 发布到 JNI，禁止提前安装同名
+HLE 方法以遮蔽解释调用。Build/SystemProperties/Bundle 普通 Java 归 BootDex；Context、
+Telephony、Settings.Secure、AudioTrack 等有界行为仍由现有 DexVM intrinsic 提供。
+JNI registry 只承担成员与身份映射，字段、服务 singleton、PCM player 映射不得有第二份状态。
+`activity.current` 使用生命周期当前 Activity，不另建宿主 Activity。
+
+已迁移类要求调用方装配 DexVM/BootDex；无 VM 的 native/HLE 会话明确缺失，不保留伪替身。
+本次不迁移无对应 VM 实现的 ViewRoot、应用兼容回调及独立 headless 契约 HLE，也不扩张
+Android 系统服务范围。定向测试通过不替代游戏 gate 或跨平台验收。

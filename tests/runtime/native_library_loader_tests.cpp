@@ -1261,7 +1261,16 @@ TEST_CASE("DVM-112 BootDex ServiceConnection links and the shared bridge takes t
         direct("Landroid/content/Intent;", "<init>", "(Ljava/lang/String;)V",
             {VmValue::Ref(intent), VmValue::Ref(vm.NewStringUtf8("example.ABSENT"))});
         direct("Lfixture/ServiceProbe;", "<init>", "()V", {VmValue::Ref(probe)});
-        CHECK(linker.IsAssignable(contract, vm.Model().ObjectClass(probe)));
+        const auto probe_class = vm.Model().ObjectClass(probe);
+        CHECK(linker.IsAssignable(contract, probe_class));
+        const auto contract_identity = f.bridge->RegisteredClassIdentity(contract);
+        const auto probe_identity = f.bridge->RegisteredClassIdentity(probe_class);
+        REQUIRE(contract_identity.has_value());
+        REQUIRE(probe_identity.has_value());
+        CHECK(f.session->Classes().GetInterfaces(*probe_identity) ==
+              std::vector{*contract_identity});
+        CHECK(f.session->Classes().IsAssignableFrom(*contract_identity,
+                                                    *probe_identity));
         CHECK(direct("Lfixture/ServiceProbe;", "discover",
             "(Landroid/content/Context;Landroid/content/Intent;)I",
             {VmValue::Ref(base), VmValue::Ref(intent)}).AsInt() == 1);

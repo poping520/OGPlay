@@ -159,6 +159,7 @@ Asphalt 5（pilot title）删除 profile 全部 `native_call` 与 `[[java.class]
 | [DVM-136](DVM-136.md) | API 19 OrientationEventListener | 完成 |
 | [DVM-137](DVM-137.md) | API 19 Configuration 迁入 BootDex | 完成 |
 | [DVM-138](DVM-138.md) | API 19 View 父级查询 | 完成 |
+| [DVM-139](DVM-139.md) | JNI 接口类型关系与虚派 | 完成 |
 
 ## 批次 4 · 更多 title 上 dexvm 路线（进行中）
 

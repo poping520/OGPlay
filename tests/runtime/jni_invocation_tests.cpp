@@ -118,3 +118,40 @@ TEST_CASE("JNI invocation rejects missing and wrong return handlers") {
             ogplay::runtime::JniArgumentSource::value_array)),
         ogplay::runtime::JniInvocationError);
 }
+
+TEST_CASE("JNI virtual invocation accepts an interface method ID") {
+    using namespace ogplay::runtime;
+    JniClassRegistry classes;
+    static_cast<void>(
+        classes.RegisterClass({"java/lang/Object", {}, {}, {}}));
+    const auto contract = classes.RegisterClass(
+        {"test/Contract",
+         {},
+         {{"value", "()I", "contract.value", false}},
+         {},
+         {},
+         true});
+    const auto implementation = classes.RegisterClass(
+        {"test/Implementation",
+         "java/lang/Object",
+         {{"value", "()I", "implementation.value", false}},
+         {},
+         {"test/Contract"}});
+    const auto unrelated = classes.RegisterClass(
+        {"test/Unrelated", "java/lang/Object",
+         {{"value", "()I", "unrelated.value", false}}, {}});
+    const auto method = classes.GetMethodId(contract, "value", "()I", false);
+    REQUIRE(method.has_value());
+    JniInvocationEngine engine(classes);
+    engine.RegisterHandler("implementation.value", [](const auto&) {
+        return JniValue{JniInt{42}};
+    });
+
+    CHECK(std::get<JniInt>(engine.InvokeVirtual(
+              1, JniReference{7}, implementation, *method, {},
+              JniArgumentSource::value_array)) == 42);
+    CHECK_THROWS_AS(static_cast<void>(engine.InvokeVirtual(
+                        1, JniReference{8}, unrelated, *method, {},
+                        JniArgumentSource::value_array)),
+                    JniInvocationError);
+}

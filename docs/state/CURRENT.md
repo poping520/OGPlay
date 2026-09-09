@@ -1,5 +1,10 @@
 # 当前状态
 
+更新（2026-09-09）：[DVM-139](../tasks/dexvm/DVM-139.md) 修复 DexVM→JNI 类发布丢失
+interface 图：assignability、interface MethodID 虚派与静态字段查找按 API 19 Dalvik 规则
+统一使用真实类型关系。exact PvZ 越过 `ITracking.setEnable(Z)V` 的错误 incompatibility，
+新首错为 `glTexParameteri failed with GLES error 1280`。
+
 更新（2026-09-09）：[DVM-138](../tasks/dexvm/DVM-138.md) 补齐 API 19
 `ViewParent.getParent` 接口形状、`ViewGroup` 类型关系与 public final `View.getParent()`；
 父级只读 UiTree 唯一 hierarchy，synthetic root 返回 null。exact PvZ 越过原首错，新首错为
@@ -45,10 +50,14 @@ TRUE(-1) 规则按 AOSP rule > 0 视为无锚点。exact PvZ 实跑 `CreateDisco
   Activity 组件身份、窗口焦点、沙盒稳定 `ANDROID_ID` 及 flags=0 的 action-only service
   查询已接通。无 Binder/system_server、SettingsProvider、支付或完整 Android 系统；未知/
   潜在 native 或服务匹配不伪造成功。
-- **Title**：PvZ exact 首错为 JNI receiver/dispatch class 不兼容；Tales 首错 LocationListener，均未通过
+- **Title**：PvZ exact 首错为 `glTexParameteri` GLES 1280；Tales 首错 LocationListener，均未通过
   游戏 gate。
 
 ## 最近验证
+
+- DVM-139：Windows Release 受影响目标构建；JNI interface graph、MethodID 虚派与
+  DexVM bridge 三组定向 7 项、80 断言通过。exact PvZ 越过原 JNI incompatibility，
+  新首错为 `glTexParameteri` GLES 1280。
 
 - DVM-138：Windows Release 受影响目标构建；双解释器父级查询、既有动态 hierarchy、
   Android catalog 与 BootDex 全类链接 4 项、10544 断言通过。exact PvZ 越过
@@ -67,7 +76,7 @@ TRUE(-1) 规则按 AOSP rule > 0 视为无锚点。exact PvZ 实跑 `CreateDisco
 
 ## 下一步与边界
 
-1. 归因 PvZ 新的 JNI receiver/dispatch class 不兼容错误，继续推进 title。
+1. 归因 PvZ `glTexParameteri` GLES 1280，继续推进 title。
 2. 处理既有 GUI 门禁，补 macOS/Linux、DH 与 Diagnostics 验收。
 
 OGPlay 仅覆盖登记的老游戏进程能力。完整 formatter/大数、宿主资源持久化、Proxy 生成、

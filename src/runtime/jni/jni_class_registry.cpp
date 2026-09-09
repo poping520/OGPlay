@@ -5,6 +5,7 @@
 #include <mutex>
 #include <set>
 #include <tuple>
+#include <unordered_set>
 #include <utility>
 
 #include "ogplay/runtime/jni/jni_object.h"
@@ -111,9 +112,29 @@ public:
             }
             superclass = found->second;
         }
+        std::vector<JniObjectIdentity> interfaces;
+        interfaces.reserve(declaration.interfaces.size());
+        std::unordered_set<std::uint64_t> unique_interfaces;
+        for (const auto& interface_name : declaration.interfaces) {
+            const auto found = classes_by_name_.find(interface_name);
+            if (found == classes_by_name_.end()) {
+                Fail(JniClassRegistryErrorReason::unknown_interface,
+                     "JNI interface must be registered first");
+            }
+            if (!RequireClass(found->second).is_interface) {
+                Fail(JniClassRegistryErrorReason::invalid_class,
+                     "JNI implemented type is not an interface");
+            }
+            if (!unique_interfaces.emplace(found->second.value).second) {
+                Fail(JniClassRegistryErrorReason::duplicate_interface,
+                     "JNI class contains a duplicate interface");
+            }
+            interfaces.push_back(found->second);
+        }
         EnsureIds(declaration.methods.size(), declaration.fields.size());
 
-        ClassEntry entry{declaration.name, superclass, {}, {}};
+        ClassEntry entry{declaration.name, superclass, std::move(interfaces),
+                         declaration.is_interface, {}, {}};
     for (std::size_t index = 0; index < declaration.methods.size(); ++index) {
             const JniMethodId id{next_method_id_++};
             const auto& method = declaration.methods[index];
@@ -220,18 +241,31 @@ public:
         return RequireClass(java_class).superclass;
     }
 
+  [[nodiscard]] std::vector<JniObjectIdentity>
+  Interfaces(const JniObjectIdentity java_class) const {
+        std::scoped_lock lock(mutex_);
+        return RequireClass(java_class).interfaces;
+    }
+
     [[nodiscard]] bool Assignable(const JniObjectIdentity target,
                                   JniObjectIdentity source) const {
         std::scoped_lock lock(mutex_);
         static_cast<void>(RequireClass(target));
-        while (true) {
-      if (source == target)
-        return true;
+        std::vector<JniObjectIdentity> pending{source};
+        std::unordered_set<std::uint64_t> visited;
+        while (!pending.empty()) {
+            source = pending.back();
+            pending.pop_back();
+            if (source == target) return true;
+            if (!visited.emplace(source.value).second) continue;
             const auto& source_entry = RequireClass(source);
-      if (!source_entry.superclass.has_value())
-        return false;
-            source = *source_entry.superclass;
+            if (source_entry.superclass.has_value()) {
+                pending.push_back(*source_entry.superclass);
+            }
+            pending.insert(pending.end(), source_entry.interfaces.begin(),
+                           source_entry.interfaces.end());
         }
+        return false;
     }
 
   [[nodiscard]] std::optional<JniMethodId> Method(JniObjectIdentity java_class,
@@ -242,6 +276,26 @@ public:
         static_cast<void>(ParseJniMethodDescriptor(descriptor));
         std::scoped_lock lock(mutex_);
         const bool constructor = name == "<init>";
+        if (!constructor && RequireClass(java_class).is_interface) {
+            std::vector<JniObjectIdentity> pending{java_class};
+            std::unordered_set<std::uint64_t> visited;
+            while (!pending.empty()) {
+                const auto current = pending.back();
+                pending.pop_back();
+                if (!visited.emplace(current.value).second) continue;
+                const auto& entry = RequireClass(current);
+                const auto found = entry.methods.find({name, descriptor});
+                if (found != entry.methods.end()) {
+                    const auto& resolved = methods_.at(found->second.Value());
+                    return resolved.declaration.is_static == is_static
+                               ? std::optional<JniMethodId>{found->second}
+                               : std::nullopt;
+                }
+                pending.insert(pending.end(), entry.interfaces.rbegin(),
+                               entry.interfaces.rend());
+            }
+            return std::nullopt;
+        }
         while (true) {
             const auto& entry = RequireClass(java_class);
             const auto found = entry.methods.find({name, descriptor});
@@ -264,14 +318,50 @@ public:
         ValidateMemberName(name);
         static_cast<void>(ParseJniFieldDescriptor(descriptor));
         std::scoped_lock lock(mutex_);
+        const MemberKey key{name, descriptor};
+        const auto declared_field = [&](const ClassEntry& entry) {
+            const auto found = entry.fields.find(key);
+            if (found == entry.fields.end()) {
+                return std::optional<JniFieldId>{};
+            }
+            const auto& resolved = fields_.at(found->second.Value());
+            return resolved.declaration.is_static == is_static
+                       ? std::optional<JniFieldId>{found->second}
+                       : std::optional<JniFieldId>{};
+        };
+        const auto interface_field =
+            [&](auto&& self, const JniObjectIdentity interface_class,
+                std::unordered_set<std::uint64_t>& visited)
+            -> std::optional<JniFieldId> {
+            if (!visited.emplace(interface_class.value).second) {
+                return std::nullopt;
+            }
+            const auto& entry = RequireClass(interface_class);
+            if (const auto found = declared_field(entry); found.has_value()) {
+                return found;
+            }
+            for (const auto parent : entry.interfaces) {
+                if (const auto found = self(self, parent, visited);
+                    found.has_value()) {
+                    return found;
+                }
+            }
+            return std::nullopt;
+        };
         while (true) {
             const auto& entry = RequireClass(java_class);
-            const auto found = entry.fields.find({name, descriptor});
-            if (found != entry.fields.end()) {
-                const auto& resolved = fields_.at(found->second.Value());
-                return resolved.declaration.is_static == is_static
-                           ? std::optional<JniFieldId>{found->second}
-                           : std::nullopt;
+            if (const auto found = declared_field(entry); found.has_value()) {
+                return found;
+            }
+            if (is_static) {
+                std::unordered_set<std::uint64_t> visited;
+                for (const auto interface_class : entry.interfaces) {
+                    if (const auto found = interface_field(
+                            interface_field, interface_class, visited);
+                        found.has_value()) {
+                        return found;
+                    }
+                }
             }
       if (!entry.superclass.has_value())
         return std::nullopt;
@@ -299,6 +389,8 @@ private:
     struct ClassEntry final {
         std::string name;
         std::optional<JniObjectIdentity> superclass;
+        std::vector<JniObjectIdentity> interfaces;
+        bool is_interface{};
         std::map<MemberKey, JniMethodId> methods;
         std::map<MemberKey, JniFieldId> fields;
     };
@@ -378,6 +470,11 @@ std::string JniClassRegistry::ClassName(
 std::optional<JniObjectIdentity>
 JniClassRegistry::GetSuperclass(const JniObjectIdentity java_class) const {
     return impl_->Superclass(java_class);
+}
+
+std::vector<JniObjectIdentity> JniClassRegistry::GetInterfaces(
+    const JniObjectIdentity java_class) const {
+    return impl_->Interfaces(java_class);
 }
 bool JniClassRegistry::IsAssignableFrom(const JniObjectIdentity target,
                                         const JniObjectIdentity source) const {

@@ -388,6 +388,10 @@ StringBuilder/StringBuffer 共用 CharSequence 区间 append 原语：UTF-16 索
 length/charAt、null 视为 "null"、自追加取原片段、越界不改变原 buffer。测试覆盖双后端
 ComponentName 的短名称打印与 UTF-16/null/自追加/异常边界。
 
+DVM-132：API 19 `android.net.Uri` 全部内部类与 `libcore.net.UriCodec` 归 BootDex，
+普通字段、解析、Builder 与编解码均执行原版 Java；String 只补其直接依赖的四参
+`regionMatches`。未触达的文件 URI 暴露与 canonical external-storage 分支保持明确缺口。
+
 DVM-108：UUID/JCA MessageDigest 和 Conscrypt 摘要普通方法归 BootDex。
 TrackGuestNativeResourceField 仅接受实例 long 字段和 static (J)V cleanup，重复登记幂等，
 同字段冲突拒绝。普通字段为 mutable token 的唯一事实源；GC 按 (cleanup,token) 聚合全部

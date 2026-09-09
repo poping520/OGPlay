@@ -155,7 +155,6 @@ std::vector<dexvm::IntrinsicClassDecl> AndroidIntrinsicCatalog(
         Declare_android_net_ConnectivityManager(context),
         Declare_android_net_NetworkInfo_State(context),
         Declare_android_net_NetworkInfo(context),
-        Declare_android_net_Uri(context),
         Declare_android_net_wifi_WifiInfo(context),
         Declare_android_net_wifi_WifiManager_WifiLock(context),
         Declare_android_net_wifi_WifiManager(context),

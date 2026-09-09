@@ -1,5 +1,10 @@
 # 当前状态
 
+更新（2026-09-09）：[DVM-132](../tasks/dexvm/DVM-132.md) 将 API 19
+`android.net.Uri` 全部内部类与 `UriCodec` 迁入 BootDex，删除 C++ 简化 parser 与镜像字段；
+query、Builder、UTF-8 编解码执行原版 Java。按范围暂不补 StrictMode 文件 URI 暴露及
+external-storage canonical 分支。
+
 更新（2026-09-09）：[DVM-131](../tasks/dexvm/DVM-131.md) 为致命 `invoke-*` 错误增加
 receiver 与有界类型化参数现场；直接读取原始 DEX prototype/源寄存器，非空对象直接虚派
 `toString()` 并有界打印返回内容，不改变正常调用热路径。
@@ -24,7 +29,7 @@ TRUE(-1) 规则按 AOSP rule > 0 视为无锚点。exact PvZ 实跑 `CreateDisco
 ## 当前能力
 
 - **发行/guest JNI**：exact Profile API 选择 bundled data。API 19 含 pinned AOSP 五库、
-  AOSP OpenSSL `libcrypto.so`、ICU4C 51.1 库及依赖、953 类 BootDex 和 ICU 数据；来源、
+  AOSP OpenSSL `libcrypto.so`、ICU4C 51.1 库及依赖、968 类 BootDex 和 ICU 数据；来源、
   hash、NOTICE、manifest 与 payload 校验已同步。crypto/ICU 保持源码模块边界，共用
   JNI_OnLoad 和 `libogplay_jni.so`；ICU 只调用 guest C ABI 与 `icudt51l.dat`，host 不链接 ICU。
   制品见 [manifest](../../data/android/19/manifest.json)；`bootdex.jar` 不提交。
@@ -49,18 +54,14 @@ TRUE(-1) 规则按 AOSP rule > 0 视为无锚点。exact PvZ 实跑 `CreateDisco
 
 ## 最近验证
 
+- DVM-132：windows-msvc Release 受影响目标构建；Uri/DVM-97/968 类全链接定向 5 项、
+  7427 断言，BootDex build/check、自测与架构三项通过。exact PvZ 首错仍为
+  `ContentResolver.query`，BootDex `Uri$StringUri.toString()` 已在参数诊断打印完整 URI。
+  payload 门禁仍因既有 guest JNI generator SHA 不一致失败；未跑全量或跨平台验收。
+
 - DVM-131：windows-msvc Release 受影响目标构建；fatal stack/参数双后端定向 2 项、100 断言，
   capabilities/documentation/intrinsic architecture 3 项通过。未跑游戏、全量或跨平台验收。
 
-- DVM-130：windows-msvc Release 构建；JNI/平台/音频定向 36 项、1682 断言与 intrinsic
-  架构检查通过。覆盖双解释器、GC、异常及实际 PCM 输出；未跑游戏、全量或跨平台验收。
-
-- DVM-129：macOS dev 受影响目标构建；PackageManager Unicode label 双后端与 UI fixed-font
-  边界共 2 项、188 断言通过。关闭 survey 的 exact PvZ 越过原错误，新首错为
-  `Landroid/os/Build;->BRAND:Ljava/lang/String;`，栈位于 S2S tracking worker。
-- DVM-128：macOS dev 构建；沙盒身份迁移/稳定 8、Settings.Secure 双后端/GC 30、JNI
-  平台一致性 58 断言通过。关闭 survey 的 exact PvZ 越过原缺口，新首错为 fixed-font XML
-  非 ASCII 文本限制。
 - BootDex Throwable 定向测试仍 terminate，尚未归因；DVM-120 Typeface 定向测试
   在本 WU 前已失败（stash 验证与本次改动无关）；既有 GUI
   `process_manager.cpp:131` 仍使 platform_boundaries 门禁失败。本轮未运行全量 CTest、
@@ -69,7 +70,7 @@ TRUE(-1) 规则按 AOSP rule > 0 视为无锚点。exact PvZ 实跑 `CreateDisco
 
 ## 下一步与边界
 
-1. Build 已迁入 BootDex；复跑 exact PvZ 确认迁移后的首错，继续推进。
+1. 补 `ContentResolver.query` 的有界无 provider 路径，继续推进 PvZ。
 2. 处理既有 GUI 门禁，补 macOS/Linux、DH 与 Diagnostics 验收。
 
 OGPlay 仅覆盖登记的老游戏进程能力。完整 formatter/大数、宿主资源持久化、Proxy 生成、

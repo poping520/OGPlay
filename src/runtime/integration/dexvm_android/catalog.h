@@ -82,7 +82,6 @@ namespace ogplay::runtime::android_intrinsics {
 [[nodiscard]] Decl Declare_android_net_ConnectivityManager(const Context& context);
 [[nodiscard]] Decl Declare_android_net_NetworkInfo_State(const Context& context);
 [[nodiscard]] Decl Declare_android_net_NetworkInfo(const Context& context);
-[[nodiscard]] Decl Declare_android_net_Uri(const Context& context);
 [[nodiscard]] Decl Declare_android_net_wifi_WifiInfo(const Context& context);
 [[nodiscard]] Decl Declare_android_net_wifi_WifiManager_WifiLock(const Context& context);
 [[nodiscard]] Decl Declare_android_net_wifi_WifiManager(const Context& context);

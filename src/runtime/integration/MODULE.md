@@ -267,13 +267,10 @@ DVM-79 的 `DexVmIoVfsAdapter` 是 DexVM core `IoFileSystem` 与具体
   与 no-op 语义,并按方法线程安全累计调用;master/per-music volume 是受检可查询状态。
   编号 sound resource 必须通过注入 loader 读取真实非空字节并受 JNI size 上限约束,
   不存在、负编号、空内容或无 loader 明确失败;不得把 Java no-op 解释成宿主播放成功。
-- legacy AudioTrack framework 批次实现 PCM16 mono/stereo 的受检 minimum-buffer、stream
-  constructor、play/pause/stop/release 与 byte-array region write;每个 track 以 host
-  object identity 隔离并发布 playing/paused/released/bytes-written 状态。非法 format、
-  mode、range、重复构造或 release 后调用明确失败；DVM-84 已把 write 与控制接入进程唯一
-  PCM mixer，不再只累计字节。ADR-0027 使 stream write 按构造 buffer 的未消费字节阻塞，
-  park 期间不持 media mutex；播放恢复、release/Stop/BeginTeardown 可中断，饱和不再抛越过
-  Java 边界的 C++ 异常。snapshot 同步发布成功 write/非零 write/peak/queued-byte 事实。
+- AudioTrack 的 JNI 构造、minimum-buffer、write/play/pause/stop/release 统一进入
+  DexVM Android 实现；player 映射只属于 `DexVmAndroidContext.audio_tracks`，实际 PCM
+  仍进入进程唯一 mixer。删除 legacy AudioTrack registry、handler 与播放侧表；stream
+  byte-budget 阻塞、VM 解锁、GC 释放和 teardown 中断沿用 VM/mixer 契约。
 - Virtual OpenSL ES PCM mixer 在 `RenderStereoAudio` 中位于 SoundPool zero-fill/mix 之后做
   additive mix，仍由上层向唯一 HAL output 提交一次。Object/Play/BufferQueue callback 经
   窄化事件队列交给专用 A32 guest thread/CPU/TLS/stack；该线程不隐式 attach JNI，callback
@@ -286,13 +283,15 @@ DVM-79 的 `DexVmIoVfsAdapter` 是 DexVM core `IoFileSystem` 与具体
 - 通用 platform Java handler 只发布请求显式注入的安装 id/版本和确定性离线运营商、
   Wi-Fi、网络、音频与固件事实;字节数组和 Java String 通过统一 store 发布为受检 local
   reference,unique code、background、fully-loaded、keyboard、managed-swap、离线
-  tracking sink(launch/first-run 同口径记账)与启动计数进入线程安全可查询状态。legacy framework platform 一个批次声明
-  Build/VERSION 全量 APK 引用字段、SystemProperties、Settings.Secure、Context/
-  ContentResolver/Telephony、Activity、Bundle、ViewRoot 与 UUID；DVM-128 将
-  `Settings.Secure` 的 `ANDROID_ID` 改为独立沙盒配置并由 JNI/DexVM 共用；static field 走统一
-  field store,service/UUID 对象走统一 object registry,未知 key 保留 Android 空值语义
-  且不读取宿主隐私。宿主未实现的浏览器、商店、付费、在线服务与 trophy 回调必须带
-  method descriptor 明确失败,禁止静默 no-op 或伪造成功。
+  tracking sink(launch/first-run 同口径记账)与启动计数进入线程安全可查询状态。
+  DVM-130：guest 会话的 Build/VERSION、SystemProperties、Bundle、Context/Activity、
+  ContentResolver、TelephonyManager、Settings.Secure 与 AudioTrack 由 VM 类目录发布到
+  JNI，不再预注册同名 HLE。Build/Bundle 普通 Java 来自 BootDex；SystemProperties 仅
+  保留 native 边界，其余有界 Android 行为仍由 DexVM intrinsic 提供。
+  字段只用 VM 存储，服务对象只用 VM singleton；`activity.current` 返回生命周期当前
+  Activity，无 Activity 返回 null。已迁移类要求装配 DexVM/BootDex，纯 native/HLE
+  会话不再提供旧替身。仅保留无 VM 实现的 ViewRoot 及 Object 注册依赖；独立 headless
+  契约 HLE、应用兼容回调不在本次迁移范围。未实现在线服务继续明确失败。
 - `NativeActivitySession` 只接受 API 19 ARMv7 当前入口,执行真实 Bionic 初始化、
   `ANativeActivity_onCreate`、glue child 与完整销毁回调;阶段可由可选 observer 查询。
 - guest child 异常必须唤醒同步生命周期 waiter,并在 root 继续执行、帧或输入边界转为带

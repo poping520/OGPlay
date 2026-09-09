@@ -1229,6 +1229,21 @@ DexVmGuestBridge::DexVmGuestBridge(
         }});
 
     impl_->RegisterDexClasses();
+    if (android_context != nullptr) {
+        session.Invocations().RegisterHandler(
+            "activity.current",
+            [bridge_state, weak_context = std::weak_ptr<DexVmAndroidContext>(android_context)](
+                const JniInvocation& invocation) -> JniValue {
+                const auto context = weak_context.lock();
+                if (!context || context->threads == nullptr) {
+                    throw DexVmBridgeError("activity.current requires a live DexVM");
+                }
+                const dx::VmExecutionLockScope guard(bridge_state->vm->ExecutionLock());
+                return JniValue{bridge_state->PublishLocal(context->activity,
+                                                          invocation.thread_id)};
+            });
+    }
+
 }
 
 DexVmGuestBridge::~DexVmGuestBridge() {

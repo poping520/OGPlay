@@ -100,54 +100,16 @@ private:
 
 class AndroidGuestLegacyMediaState final {
 public:
-    struct AudioTrackSnapshot final {
-        std::int32_t sample_rate{};
-        std::int32_t channels{};
-        std::int32_t buffer_size{};
-        std::uint64_t bytes_written{};
-        std::uint64_t write_calls{};
-        std::uint64_t nonzero_writes{};
-        std::int32_t peak_sample{};
-        std::size_t queued_bytes{};
-        bool playing{};
-        bool paused{};
-        bool released{};
-    };
-
-    void SetPcmPlayback(audio::OpenSlesPcmMixer* playback);
-
     void Record(std::string_view method);
     void SetMasterVolume(float volume);
     void SetMusicVolume(std::int32_t resource, float volume);
     [[nodiscard]] float MasterVolume() const;
     [[nodiscard]] float MusicVolume(std::int32_t resource) const;
     [[nodiscard]] std::uint64_t CallbackCount(std::string_view method) const;
-    [[nodiscard]] static std::int32_t MinimumAudioTrackBuffer(
-        std::int32_t sample_rate, std::int32_t channel_config,
-        std::int32_t encoding);
-    void ConfigureAudioTrack(JniObjectIdentity track, std::int32_t sample_rate,
-                             std::int32_t channel_config,
-                             std::int32_t encoding, std::int32_t buffer_size,
-                             std::int32_t mode);
-    void PauseAudioTrack(JniObjectIdentity track);
-    void PlayAudioTrack(JniObjectIdentity track);
-    void StopAudioTrack(JniObjectIdentity track);
-    void ReleaseAudioTrack(JniObjectIdentity track);
-    [[nodiscard]] std::int32_t WriteAudioTrack(
-        JniObjectIdentity track, std::span<const JniByte> bytes);
-    [[nodiscard]] AudioTrackSnapshot AudioTrack(
-        JniObjectIdentity track) const;
-
 private:
-    struct AudioTrackRecord final {
-        AudioTrackSnapshot snapshot;
-        audio::OpenSlesPcmMixer::PlayerId player{};
-    };
     mutable std::mutex mutex_;
     std::map<std::string, std::uint64_t, std::less<>> callback_counts_;
     std::map<std::int32_t, float> music_volumes_;
-    std::map<std::uint64_t, AudioTrackRecord> audio_tracks_;
-    audio::OpenSlesPcmMixer* pcm_playback_{};
     float master_volume_{1.0F};
 };
 
@@ -161,12 +123,6 @@ private:
     std::atomic<bool> exit_requested_{};
     std::atomic<std::uint64_t> exit_request_count_{};
 };
-
-// Installs the JNI-visible legacy media classes whose handlers are bound by
-// BindAndroidGuestJavaMediaHandlers. Idempotent so standalone tests and the
-// full call session share exactly one declaration.
-[[nodiscard]] JniObjectIdentity InstallAndroidGuestJavaMediaClasses(
-    JniClassRegistry& classes);
 
 void BindAndroidGuestJavaAudioHandlers(
     JniInvocationEngine& invocations,
@@ -202,21 +158,7 @@ void BindAndroidGuestJavaPlatformHandlers(
     AndroidGuestPlatformState& state,
     const AndroidGuestPlatformConfig& config);
 
-struct AndroidGuestFrameworkPlatformSet final {
-    JniObjectIdentity context_class;
-    JniObjectIdentity content_resolver_class;
-    JniObjectIdentity telephony_class;
-    JniObjectIdentity context;
-    JniObjectIdentity content_resolver;
-    JniObjectIdentity telephony;
-};
-
-[[nodiscard]] AndroidGuestFrameworkPlatformSet
-InstallAndroidGuestFrameworkPlatform(
-    JniClassRegistry& classes, JniInvocationEngine& invocations,
-    JniEnvironment& environment, JniStringStore& strings,
-    JniFieldStore& fields, JniGuestObjectRegistry& objects,
-    std::uint64_t thread_id, const AndroidGuestPlatformConfig& config);
+void InstallAndroidGuestFrameworkPlatform(JniClassRegistry& classes);
 
 // Virtual-device facts published to API 19 guest /proc files. Values are
 // explicit session configuration and never observations of the host machine.

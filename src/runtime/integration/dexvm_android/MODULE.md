@@ -16,6 +16,9 @@ intrinsic。`catalog.cpp` 是唯一注册聚合点；平台类按 API 家族聚�
 `DexVmAndroidContext`，不得读取游戏身份或另建宿主状态。
 `Settings.Secure` 的只读子集由进程装配的 guest 平台配置初始化；不得读取宿主设备身份、
 复用 app SharedPreferences 或扩展成 SettingsProvider。
+DVM-130：Context/Activity 服务、TelephonyManager、Settings.Secure、AudioTrack 的 JNI
+调用复用本 catalog 与 context；不得恢复 integration legacy 同名 handler 或服务/播放侧表。
+Build、Bundle 的 Java 归 BootDex；SystemProperties 的 C++ 声明只实现 native 边界。
 普通内存/包装流的状态属于 BootDex 对象字段与数组，文件/对象协议边界属于 DexVM core；
 integration 装配只通过
 `DexVmIoVfsAdapter` 向 `IoRuntime` 注入窄文件接口。`java.util.zip` handle 与 archive

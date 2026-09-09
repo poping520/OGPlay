@@ -902,8 +902,8 @@ note = "M8 WU-0367 让 NewObject 与 framework HLE 预注册 host object 共享�
 
 [runtime.android_legacy_platform_identity]
 status = "complete"
-test = "tests/runtime/android_guest_framework_platform_tests.cpp; Asphalt 6 exact bootstrap sampling"
-note = "M8 WU-0368 批量安装 APK 引用的平台身份类与服务对象链；DVM-128 将 Settings.Secure ANDROID_ID 从 installation_id 分离，JNI 与 DexVM 共用沙盒平台配置。身份事实不读取宿主隐私；UUID 由 BootDex 与 OS CSPRNG 提供"
+test = "tests/runtime/android_guest_framework_platform_tests.cpp; tests/runtime/native_library_loader_tests.cpp: JNI framework services use VM methods objects and state"
+note = "DVM-130 已删除 guest 会话同名平台 HLE；Build/SystemProperties/Bundle 归 BootDex，Context/Activity、ContentResolver、TelephonyManager、Settings.Secure 通过 JNI 进入 VM，共用字段与 singleton。纯 native/HLE 会话需要另行装配 DexVM/BootDex。历史 M8 WU-0368 批量安装平台身份类与服务对象链；DVM-128 将 Settings.Secure ANDROID_ID 从 installation_id 分离，JNI 与 DexVM 共用沙盒平台配置。身份事实不读取宿主隐私；UUID 由 BootDex 与 OS CSPRNG 提供"
 
 [runtime.android_secure_settings]
 status = "complete"
@@ -1037,8 +1037,8 @@ note = "M5 WU-0241/0313/0324 组合 Bionic guest process 与 Android HLE，接�
 
 [runtime.legacy_audio_track]
 status = "complete"
-test = "tests/runtime/android_guest_java_media_tests.cpp; tests/audio/open_sles_pcm_mixer_tests.cpp"
-note = "M8 WU-0374 以通用 state/HLE 闭合 PCM16 mono/stereo AudioTrack 七项 Java/JNI 调用；DVM-84 将 write/play/pause/stop/release 接入进程唯一 OpenSlesPcmMixer；DVM-93/ADR-0027 使 MODE_STREAM 按构造 buffer 的未消费字节可中断阻塞，播放恢复且 teardown 唤醒，队列饱和不再以 C++ 异常终结 guest worker；A6 用户实听通过"
+test = "tests/runtime/native_library_loader_tests.cpp: JNI AudioTrack uses the VM PCM player and lifecycle; tests/dexvm/audio_track_tests.cpp; tests/audio/open_sles_pcm_mixer_tests.cpp"
+note = "DVM-130 删除 legacy AudioTrack registry、handler 和播放侧表，JNI 复用 VM player 与进程 PCM mixer；双解释器 JNI 构造/写入/混音/控制已验证，无新游戏实测。历史 M8 WU-0374 以通用 state/HLE 闭合 PCM16 mono/stereo AudioTrack 七项 Java/JNI 调用；DVM-84 将 write/play/pause/stop/release 接入进程唯一 OpenSlesPcmMixer；DVM-93/ADR-0027 使 MODE_STREAM 按构造 buffer 的未消费字节可中断阻塞，播放恢复且 teardown 唤醒，队列饱和不再以 C++ 异常终结 guest worker；A6 用户实听通过"
 
 [runtime.host_managed_gl_surface]
 status = "complete"
@@ -1383,7 +1383,7 @@ note = "DVM-103 将 API 19 Observer/Observable 及 ArrayList 依赖迁入 BootDe
 [dexvm.jni_bridge]
 status = "complete"
 test = "tests/dexvm/interpreter_tests.cpp; tests/runtime/jni_class_registry_tests.cpp; tests/runtime/jni_guest_bindings_tests.cpp; tests/runtime/guest_thread_runner_tests.cpp; tests/runtime/native_library_loader_tests.cpp; Asphalt 5 exact dexvm title-flow gate 3/3; Asphalt 6 DVM-26 exact bootstrap"
-note = "DVM-14/15 descriptor 驱动 A32 soft-float 出向与 233 槽入向第三路由；DVM-50 按 execution context 选择独立 native thread，逐调用建立 JNI local frame，并从 r0:r1 解码 J/D 返回；DexVM ClassObject 与 JNI jclass 双向规范化为同一身份，JNI_OnLoad 可把 jclass 用作 Class instance receiver。DVM-82 绑定 NewDirectByteBuffer/GetDirectBufferAddress/GetDirectBufferCapacity，校验 guest range 并与 Java Buffer 共享 NioRuntime identity/address/capacity。DVM-89 发布 DEX 字段并以稳定 JniFieldId→VmFieldId 路由共享 instance/static 槽，GetFieldID 家族遵循类初始化，primitive/wide/reference 双向读写不建立影子状态。"
+note = "DVM-130 guest 平台 JNI 入口统一 VM 发布，删除同名 HLE 遮蔽；activity.current 返回生命周期 VM Activity，36 项定向测试 1682 断言通过。DVM-14/15 descriptor 驱动 A32 soft-float 出向与 233 槽入向第三路由；DVM-50 按 execution context 选择独立 native thread，逐调用建立 JNI local frame，并从 r0:r1 解码 J/D 返回；DexVM ClassObject 与 JNI jclass 双向规范化为同一身份，JNI_OnLoad 可把 jclass 用作 Class instance receiver。DVM-82 绑定 NewDirectByteBuffer/GetDirectBufferAddress/GetDirectBufferCapacity，校验 guest range 并与 Java Buffer 共享 NioRuntime identity/address/capacity。DVM-89 发布 DEX 字段并以稳定 JniFieldId→VmFieldId 路由共享 instance/static 槽，GetFieldID 家族遵循类初始化，primitive/wide/reference 双向读写不建立影子状态。"
 
 [dexvm.intrinsics_android_core]
 status = "partial"

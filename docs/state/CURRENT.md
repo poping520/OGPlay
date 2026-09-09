@@ -1,6 +1,10 @@
 # 当前状态
 
-更新（2026-09-09）：[DVM-129](../tasks/dexvm/DVM-129.md) 修复资源型 application label
+更新（2026-09-09）：[DVM-130](../tasks/dexvm/DVM-130.md) 将 guest 平台 JNI 入口统一到
+DexVM/BootDex，删除 Build/SystemProperties、Context/Activity 服务、Settings.Secure、Bundle、
+AudioTrack 的重复 HLE 与播放状态。纯 native/HLE 会话不再提供这些类，需装配 VM。
+
+此前 [DVM-129](../tasks/dexvm/DVM-129.md) 修复资源型 application label
 错误进入 fixed-font ASCII 限制的问题。`PackageManager.getApplicationLabel` 现按 AOSP
 返回 Unicode `CharSequence`，不触发 UI 字形测量；exact PvZ 已越过原错误，新首错为
 `Landroid/os/Build;->BRAND:Ljava/lang/String;`。
@@ -12,13 +16,11 @@ Button/TextView 三参构造与 buttonStyle(Small) 默认样式投影、TextView
 drawables（measure/raster/文本带内缩）、UI kind 按真实继承链解析、RelativeLayout
 TRUE(-1) 规则按 AOSP rule > 0 视为无锚点。exact PvZ 实跑 `CreateDiscoveryStrip 3/4/8`
 完整输出并挂入 mFrameLayout 后置 GONE。
-compound 支持四方向/空文本测量与定位、资源事务更新；默认样式读取实际 Context
-主题和 Resources，未登记覆盖明确失败。
 
 ## 当前能力
 
 - **发行/guest JNI**：exact Profile API 选择 bundled data。API 19 含 pinned AOSP 五库、
-  AOSP OpenSSL `libcrypto.so`、ICU4C 51.1 库及依赖、949 类 BootDex 和 ICU 数据；来源、
+  AOSP OpenSSL `libcrypto.so`、ICU4C 51.1 库及依赖、953 类 BootDex 和 ICU 数据；来源、
   hash、NOTICE、manifest 与 payload 校验已同步。crypto/ICU 保持源码模块边界，共用
   JNI_OnLoad 和 `libogplay_jni.so`；ICU 只调用 guest C ABI 与 `icudt51l.dat`，host 不链接 ICU。
   制品见 [manifest](../../data/android/19/manifest.json)；`bootdex.jar` 不提交。
@@ -38,10 +40,13 @@ compound 支持四方向/空文本测量与定位、资源事务更新；默认�
   查询已接通。无 Binder/system_server、SettingsProvider、支付或完整 Android 系统；未知/
   潜在 native 或服务匹配不伪造成功。
 - **Title**：PvZ 已越过 InitXpromo、PreferenceManager、onResume 焦点、`System.getenv`、
-  `Settings.Secure` 与 Unicode application label，首错为 `Build.BRAND`；Tales 首错
+  `Settings.Secure` 与 Unicode application label，上次实测首错为 `Build.BRAND`（迁移后未复跑）；Tales 首错
   LocationListener，均未通过游戏 gate。
 
 ## 最近验证
+
+- DVM-130：windows-msvc Release 构建；JNI/平台/音频定向 36 项、1682 断言与 intrinsic
+  架构检查通过。覆盖双解释器、GC、异常及实际 PCM 输出；未跑游戏、全量或跨平台验收。
 
 - DVM-129：macOS dev 受影响目标构建；PackageManager Unicode label 双后端与 UI fixed-font
   边界共 2 项、188 断言通过。关闭 survey 的 exact PvZ 越过原错误，新首错为
@@ -56,21 +61,15 @@ compound 支持四方向/空文本测量与定位、资源事务更新；默认�
   StringBuilder/目录结构定向回归及相关 CTest 10/10 通过；platform-boundaries 仍仅被既有
   GUI 分支阻塞。exact PvZ 已越过 `%tZ`，新首错为 `System.getenv(String)`；日志
   `.local/review/dvm126/pvz-run.log`。
-- DVM-121 续：BootDex check 与全类链接（927）、prefs/Context 邻域回归
-  25/25（10,957 断言）通过；intrinsic layout、BootDex self-test、payload 三项门禁通过。
-  exact PvZ 实跑日志 `.local/review/dvm121-prefs/pvz-run.log`。
-- DVM-121：windows-msvc Release 构建；UI 56/56（1078 断言）、布局/样式 5/5
-  （501 断言）及 intrinsic 门禁通过；原命令进入 InitXpromo 后的 onAdConfigCreate。
-  隐藏树状态有独立回归。
 - BootDex Throwable 定向测试仍 terminate，尚未归因；DVM-120 Typeface 定向测试
   在本 WU 前已失败（stash 验证与本次改动无关）；既有 GUI
   `process_manager.cpp:131` 仍使 platform_boundaries 门禁失败。本轮未运行全量 CTest、
   游戏 gate 或跨平台验收。
-  最新架构记录为 [ADR-0054](../adr/dexvm.md#adr-0054)。
+  最新架构记录为 [ADR-0055](../adr/dexvm.md#adr-0055)。
 
 ## 下一步与边界
 
-1. 对照 AOSP 分析并补齐实际命中的 `Build.BRAND` 只读字段，继续推进 PvZ。
+1. Build 已迁入 BootDex；复跑 exact PvZ 确认迁移后的首错，继续推进。
 2. 处理既有 GUI 门禁，补 macOS/Linux、DH 与 Diagnostics 验收。
 
 OGPlay 仅覆盖登记的老游戏进程能力。完整 formatter/大数、宿主资源持久化、Proxy 生成、

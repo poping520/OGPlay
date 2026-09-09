@@ -673,7 +673,6 @@ public:
         BindAndroidGuestJavaAudioHandlers(
             invocations_, sound_pool_,
             sound_pool_mixer_.Enabled() ? &sound_pool_mixer_ : nullptr);
-        media_state_.SetPcmPlayback(&boundary_.PcmPlayback());
         BindAndroidGuestJavaMediaHandlers(
             invocations_, environment_, strings_, arrays_, movie_state_,
             media_state_, request.sound_resource_loader);
@@ -793,10 +792,7 @@ public:
             throw AndroidGuestProcessError(
                 "Android guest root JNI thread attachment failed");
         }
-        static_cast<void>(InstallAndroidGuestFrameworkPlatform(
-            classes_, invocations_, environment_, strings_, fields_, objects_,
-            kRootThreadId, request.platform));
-        static_cast<void>(InstallAndroidGuestJavaMediaClasses(classes_));
+        InstallAndroidGuestFrameworkPlatform(classes_);
         Progress("process-memory-ready");
 
         clone_runtime_ = std::make_unique<GuestCloneThreadRuntime>(

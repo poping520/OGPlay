@@ -160,6 +160,10 @@ accelerometer，故原版构造得到 null sensor、canDetect=false，enable/dis
   对应 holder generation，不能关闭 host surface；`getHolder()` 只建立稳定 identity，实际
   activation 统一在子树 attach 时判定。生命周期事件日志不得限流，否则相同数量的新一代
   callback 会被误判为没有发生。
+- DVM-138 发布 API 19 `ViewParent` 的 `getParent()` 接口形状，`ViewGroup` 实现该接口；
+  `View.getParent()` 是 public final，并只读取 UiTree parent 后经现有反向绑定返回同一 guest
+  ViewGroup。detached View、无节点 View 及 synthetic ContentRoot 返回 null；不增加 `mParent`
+  字段/侧表，也不伪造 `ViewRootImpl` 或完整 ViewParent 方法面。
 - `TextView.setText/getText` 与 Editable mutation 共用 UiNode text；textColor/textSize/gravity
   mutation 分别推进 draw/layout dirty。当前 fixed-font backend 只接受单行受支持字形，
   多行、未知字形或非法 size 明确抛 Java 异常且不发布部分 mutation。

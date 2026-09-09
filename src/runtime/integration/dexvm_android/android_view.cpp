@@ -651,6 +651,23 @@ Decl Declare_android_view_View_OnTouchListener(const Context& context) {
 }  // namespace ogplay::runtime::android_intrinsics
 
 
+// ---- android.view.ViewParent (API 19 bounded type surface) ----
+#include "catalog.h"
+
+namespace ogplay::runtime::android_intrinsics {
+
+Decl Declare_android_view_ViewParent(const Context&) {
+    auto builder = dx::IntrinsicClassBuilder::Interface(
+        "Landroid/view/ViewParent;");
+    builder.UnimplementedVirtual(
+        "getParent", "()Landroid/view/ViewParent;",
+        dx::kAccPublic | dx::kAccAbstract);
+    return std::move(builder).Build();
+}
+
+}  // namespace ogplay::runtime::android_intrinsics
+
+
 // ---- migrated from android_view_View.cpp ----
 #include "catalog.h"
 
@@ -819,6 +836,23 @@ Decl Declare_android_view_View(const Context& context) {
             const auto node = FindViewUiNode(*context, call.receiver.Value());
             return dx::VmValue::Int(
                 node.has_value() && context->ui_tree.IsAttached(*node));
+        });
+    builder.FinalMethod("getParent", "()Landroid/view/ViewParent;",
+        [context](dx::IntrinsicContext& call) {
+            const auto node = FindViewUiNode(
+                *context, call.receiver.Value());
+            if (!node.has_value()) {
+                return dx::VmValue::Ref(dx::VmObjectRef{});
+            }
+            const auto parent = context->ui_tree.Get(*node)->parent;
+            if (!parent.has_value()) {
+                return dx::VmValue::Ref(dx::VmObjectRef{});
+            }
+            // The UiTree root is synthetic and deliberately has no guest
+            // ViewParent identity. Ordinary ViewGroup nodes map back to the
+            // exact guest object that performed addView/inflation.
+            return dx::VmValue::Ref(
+                ViewObjectForUiNode(*context, *parent));
         });
     builder.VirtualMethod("post", "(Ljava/lang/Runnable;)Z",
         [context](dx::IntrinsicContext& call) {
@@ -1194,7 +1228,9 @@ dx::IntrinsicHandler AddHandler(const Context& context, const bool has_index,
 }  // namespace
 
 Decl Declare_android_view_ViewGroup(const Context& context) {
-    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/view/ViewGroup;", "Landroid/view/View;");
+    auto builder = dx::IntrinsicClassBuilder::Class(
+        "Landroid/view/ViewGroup;", "Landroid/view/View;",
+        {"Landroid/view/ViewParent;"});
     builder.FinalMethod("addView", "(Landroid/view/View;)V",
                     AddHandler(context, false, false));
     builder.FinalMethod("addView", "(Landroid/view/View;I)V",

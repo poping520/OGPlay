@@ -146,6 +146,7 @@ namespace ogplay::runtime::android_intrinsics {
 [[nodiscard]] Decl Declare_android_view_View_OnFocusChangeListener(const Context& context);
 [[nodiscard]] Decl Declare_android_view_View_OnSystemUiVisibilityChangeListener(const Context& context);
 [[nodiscard]] Decl Declare_android_view_View_OnTouchListener(const Context& context);
+[[nodiscard]] Decl Declare_android_view_ViewParent(const Context& context);
 [[nodiscard]] Decl Declare_android_view_View(const Context& context);
 [[nodiscard]] Decl Declare_android_view_ViewGroup(const Context& context);
 [[nodiscard]] Decl Declare_android_view_ViewTreeObserver_OnGlobalLayoutListener(const Context& context);

@@ -503,6 +503,64 @@ TEST_CASE("DVM-137 Configuration uses API19 Java shape and managed device facts"
     }
 }
 
+TEST_CASE("DVM-138 View.getParent follows the live UiTree hierarchy") {
+    for (const auto backend :
+         {InterpreterBackend::switch_dispatch,
+          InterpreterBackend::threaded}) {
+        AndroidValueVm f(backend);
+        const auto activity = f.New("Landroid/app/Activity;");
+        const auto first_parent = f.New(
+            "Landroid/widget/RelativeLayout;",
+            "(Landroid/content/Context;)V", {VmValue::Ref(activity)});
+        const auto second_parent = f.New(
+            "Landroid/widget/FrameLayout;",
+            "(Landroid/content/Context;)V", {VmValue::Ref(activity)});
+        const auto child = f.New(
+            "Landroid/view/View;", "(Landroid/content/Context;)V",
+            {VmValue::Ref(activity)});
+
+        const auto view_parent =
+            f.linker.ResolveDescriptor("Landroid/view/ViewParent;");
+        CHECK(f.linker.Class(view_parent).is_interface);
+        CHECK(f.linker.IsAssignable(
+            view_parent, f.model.ObjectClass(first_parent)));
+        const auto method = f.linker.FindVtableIndex(
+            f.model.ObjectClass(child), "getParent",
+            "()Landroid/view/ViewParent;");
+        REQUIRE(method.has_value());
+        CHECK((f.linker.Method(
+                   f.linker.Class(f.model.ObjectClass(child))
+                       .vtable[*method])
+                   .access_flags &
+               (kAccPublic | kAccFinal)) ==
+              (kAccPublic | kAccFinal));
+
+        CHECK_FALSE(f.On(child, "getParent",
+                         "()Landroid/view/ViewParent;").ref.IsValid());
+        f.On(first_parent, "addView", "(Landroid/view/View;)V",
+             {VmValue::Ref(child)});
+        CHECK(f.On(child, "getParent",
+                   "()Landroid/view/ViewParent;").ref == first_parent);
+        f.On(first_parent, "removeView", "(Landroid/view/View;)V",
+             {VmValue::Ref(child)});
+        CHECK_FALSE(f.On(child, "getParent",
+                         "()Landroid/view/ViewParent;").ref.IsValid());
+        f.On(second_parent, "addView", "(Landroid/view/View;)V",
+             {VmValue::Ref(child)});
+        CHECK(f.On(child, "getParent",
+                   "()Landroid/view/ViewParent;").ref == second_parent);
+        f.On(second_parent, "removeViews", "(II)V",
+             {VmValue::Int(0), VmValue::Int(1)});
+        CHECK_FALSE(f.On(child, "getParent",
+                         "()Landroid/view/ViewParent;").ref.IsValid());
+
+        f.On(activity, "setContentView", "(Landroid/view/View;)V",
+             {VmValue::Ref(first_parent)});
+        CHECK_FALSE(f.On(first_parent, "getParent",
+                         "()Landroid/view/ViewParent;").ref.IsValid());
+    }
+}
+
 TEST_CASE("DVM-119 Java layout params drive FrameLayout geometry and copy semantics") {
     for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
         AndroidValueVm f(backend);

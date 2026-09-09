@@ -42,8 +42,8 @@ note = "LUI-2 建立 generation-scoped synthetic content root、唯一 hierarchy
 
 [runtime.ui_dexvm_binding]
 status = "complete"
-test = "tests/dexvm/widget_click_tests.cpp"
-note = "LUI-3 建立 live guest View object 与 UiNodeId 双向一一绑定；findViewById/getId/setId/visibility 只读写 UiTree，click/touch listener 以 node 为 key，旧 view_registry/widget_states 已删除；DVM-121 使 UI kind 按 receiver 真实继承链解析，guest 子类继承基础控件布局行为"
+test = "tests/dexvm/widget_click_tests.cpp; tests/dexvm/android_value_tests.cpp"
+note = "LUI-3 建立 live guest View object 与 UiNodeId 双向一一绑定；findViewById/getId/setId/visibility 只读写 UiTree，click/touch listener 以 node 为 key，旧 view_registry/widget_states 已删除；DVM-121 使 UI kind 按 receiver 真实继承链解析，guest 子类继承基础控件布局行为；DVM-138 发布 ViewParent.getParent 接口形状与 ViewGroup 类型关系，View.getParent public final 只从 UiTree parent 反查同一 guest parent，detached/synthetic root 返回 null，不建立第二套 mParent 状态或伪造 ViewRootImpl"
 
 [runtime.ui_inflater]
 status = "complete"

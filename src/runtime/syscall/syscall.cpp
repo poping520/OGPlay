@@ -415,7 +415,7 @@ void BindAndroidMemorySyscalls(A32SyscallDispatcher& dispatcher,
     constexpr std::uint32_t kMapFixed = 0x10;
     constexpr std::uint32_t kMapAnonymous = 0x20;
     struct State final {
-        std::uint32_t next_mapping{0x60000000};
+        std::mutex break_mutex;
         std::uint32_t current_break{0x50000000};
     };
     const auto state = std::make_shared<State>();
@@ -448,7 +448,7 @@ void BindAndroidMemorySyscalls(A32SyscallDispatcher& dispatcher,
     };
 
     dispatcher.Implement(
-        192, [&address_space, state, page_size, aligned_size,
+        192, [&address_space, page_size, aligned_size,
               protection](const A32SyscallFrame& frame) {
             try {
                 const auto size = aligned_size(frame.arguments[1]);
@@ -461,14 +461,13 @@ void BindAndroidMemorySyscalls(A32SyscallDispatcher& dispatcher,
                 if ((flags & kMapFixed) != 0) {
                     address = frame.arguments[0];
                     if (address % page_size != 0) return -kEinval;
+                    address_space.Map({memory::GuestAddress{address}, size},
+                                      protection(frame.arguments[2]));
                 } else {
-                    address = state->next_mapping;
-                    const auto end = static_cast<std::uint64_t>(address) + size;
-                    if (end > UINT32_MAX) return -kEnomem;
-                    state->next_mapping = static_cast<std::uint32_t>(end);
+                    address = address_space.MapAnywhere(
+                        {memory::GuestAddress{0x60000000U}, UINT64_C(0xa0000000)},
+                        size, protection(frame.arguments[2])).Value();
                 }
-                address_space.Map({memory::GuestAddress{address}, size},
-                                  protection(frame.arguments[2]));
                 return std::bit_cast<std::int32_t>(address);
             } catch (const std::invalid_argument&) {
                 return -kEinval;
@@ -546,6 +545,7 @@ void BindAndroidMemorySyscalls(A32SyscallDispatcher& dispatcher,
         });
     dispatcher.Implement(
         45, [&address_space, state, page_size](const A32SyscallFrame& frame) {
+            std::scoped_lock lock(state->break_mutex);
             const auto requested = frame.arguments[0];
             if (requested == 0) {
                 return std::bit_cast<std::int32_t>(state->current_break);

@@ -4,8 +4,48 @@
 #include <cstddef>
 #include <cstdint>
 #include <stdexcept>
+#include <thread>
+#include <set>
 
 #include "ogplay/memory/address_space.h"
+
+TEST_CASE("guest atomic first fit skips guards reuses holes and preserves failure state") {
+    using namespace ogplay::memory;
+    AddressSpace memory;
+    const GuestRange bounds{GuestAddress{0x10000}, 5 * 4096};
+    const auto rw = PageProtection::read | PageProtection::write;
+    memory.Map({GuestAddress{0x11000}, 4096}, PageProtection::none);
+    CHECK(memory.MapAnywhere(bounds, 8192, rw).Value() == 0x12000);
+    CHECK(memory.MapAnywhere(bounds, 4096, rw).Value() == 0x10000);
+    CHECK_THROWS_AS(memory.MapAnywhere(bounds, 8192, rw), std::bad_alloc);
+    CHECK_THROWS_AS(memory.MapAnywhere(bounds, 0, rw), std::invalid_argument);
+    CHECK_THROWS_AS(memory.MapAnywhere(bounds, 1, rw), std::invalid_argument);
+    CHECK(memory.MapAnywhere(bounds, 4096, rw).Value() == 0x14000);
+    memory.Write32(GuestAddress{0x12000}, 123);
+    memory.Unmap({GuestAddress{0x12000}, 8192});
+    CHECK(memory.MapAnywhere(bounds, 8192, rw).Value() == 0x12000);
+    CHECK(memory.Read32(GuestAddress{0x12000}) == 0);
+    CHECK_THROWS_AS(memory.Read8(GuestAddress{0x11000}), MemoryFault);
+    CHECK(memory.MapAnywhere({GuestAddress{0xfffff000}, 4096}, 4096, rw).Value() == 0xfffff000);
+    CHECK_THROWS_AS(memory.MapAnywhere(LowAddressGuard(), 4096, rw), std::bad_alloc);
+}
+
+TEST_CASE("guest atomic first fit serializes concurrent allocations") {
+    using namespace ogplay::memory;
+    AddressSpace memory;
+    std::array<GuestAddress, 16> addresses;
+    std::array<std::thread, 16> threads;
+    for (std::size_t i = 0; i < threads.size(); ++i) {
+        threads[i] = std::thread([&, i] {
+            addresses[i] = memory.MapAnywhere({GuestAddress{0x10000}, 16 * 4096},
+                                              4096, PageProtection::none);
+        });
+    }
+    for (auto& thread : threads) thread.join();
+    std::set<std::uint32_t> unique;
+    for (const auto address : addresses) unique.insert(address.Value());
+    CHECK(unique.size() == addresses.size());
+}
 
 TEST_CASE("guest address space reserves 4 GiB and enforces the low guard") {
     ogplay::memory::AddressSpace memory;

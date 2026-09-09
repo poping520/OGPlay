@@ -74,6 +74,35 @@ public:
             throw std::invalid_argument("low guest address guard cannot be mapped");
         }
         std::scoped_lock lock(mutex_);
+        MapLocked(range, protection);
+    }
+
+    GuestAddress MapAnywhere(const GuestRange& bounds, const std::uint64_t size,
+                             const PageProtection protection) {
+        ValidateProtection(protection);
+        ValidatePageRange(bounds);
+        if (size == 0 || size % page_size_ != 0) {
+            throw std::invalid_argument("unaligned or zero mapping size");
+        }
+        if (size > bounds.Size()) throw std::bad_alloc();
+        std::scoped_lock lock(mutex_);
+        const auto [first, last] = PageIndexes(bounds);
+        const auto needed = size / page_size_;
+        std::uint64_t run{};
+        for (auto page = first; page < last; ++page) {
+            if (mapped_[page] || static_cast<std::uint64_t>(page) * page_size_ < kGuestLowGuardSize) {
+                run = 0;
+            } else if (++run == needed) {
+                const GuestAddress address{static_cast<std::uint32_t>(
+                    (static_cast<std::uint64_t>(page) + 1U - needed) * page_size_)};
+                MapLocked({address, size}, protection);
+                return address;
+            }
+        }
+        throw std::bad_alloc();
+    }
+
+    void MapLocked(const GuestRange& range, const PageProtection protection) {
         const auto [first, last] = PageIndexes(range);
         if (std::any_of(mapped_.begin() + first, mapped_.begin() + last,
                         [](const bool mapped) { return mapped; })) {
@@ -502,6 +531,11 @@ std::uint64_t AddressSpace::ReservedSize() const noexcept { return impl_->Reserv
 std::uint64_t AddressSpace::PageSize() const noexcept { return impl_->PageSize(); }
 void AddressSpace::Map(const GuestRange& range, const PageProtection protection) {
     impl_->Map(range, protection);
+}
+
+GuestAddress AddressSpace::MapAnywhere(const GuestRange& bounds, const std::uint64_t size,
+                                      const PageProtection protection) {
+    return impl_->MapAnywhere(bounds, size, protection);
 }
 void AddressSpace::Protect(const GuestRange& range, const PageProtection protection) {
     impl_->Protect(range, protection);

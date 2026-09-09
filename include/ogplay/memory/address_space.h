@@ -121,6 +121,11 @@ public:
     [[nodiscard]] std::uint64_t ReservedSize() const noexcept;
     [[nodiscard]] std::uint64_t PageSize() const noexcept;
     void Map(const GuestRange& range, PageProtection protection);
+    // Atomically first-fit and map inside bounds; PROT_NONE is occupied.
+    // Throws bad_alloc when no contiguous free range exists.
+    [[nodiscard]] GuestAddress MapAnywhere(const GuestRange& bounds,
+                                          std::uint64_t size,
+                                          PageProtection protection);
     void Protect(const GuestRange& range, PageProtection protection);
     void Unmap(const GuestRange& range);
     void ValidateMapped(const GuestRange& range,

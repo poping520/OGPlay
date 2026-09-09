@@ -1,36 +1,28 @@
 # 当前状态
 
-更新（2026-09-09）：[SBX-13](../tasks/sandbox/SBX-13.md) 移除文件 IO 的 16 MiB
-请求拒绝限制，改为 64 KiB 分块。exact PvZ 诊断实跑的 40,531,351 字节 read 完整成功；
-后续仍有 guest fault：游戏 `new[]` 返回 null 后复制 45,047,808 字节到空目标，
-尚未定位该分配失败原因，不代表游戏启动通过。
+更新（2026-09-09）：[DVM-140](../tasks/dexvm/DVM-140.md) 补齐 Intent.putExtras(Bundle)，
+委托 BootDex Bundle.putAll；3 用例/414 断言通过。PvZ 新首错为
+`JNI guest receiver is not a registered instance`（第 1 帧）。
 
-更新（2026-09-09）：[BND-28](../tasks/boundary/BND-28.md) 将 ANGLE 原生 GLES error
-类型化并回送 GLES1/2 共用 guest 锁存，`glGetError` 首错优先、读取清除；宿主契约失败
-仍明确终止。exact PvZ 越过 `glTexParameteri` 1280，新首错为 `guest memory is unmapped`。
+更新（2026-09-09）：[SBX-14](../tasks/sandbox/SBX-14.md) 将匿名 mmap2 改为
+AddressSpace 账本锁内 first-fit 选址并映射；跳过全部已映射页，复用释放空洞，
+失败不消耗地址，brk 状态串行化。9 用例/65 断言通过；PvZ 越过原内存故障到第 1 帧。
+
+更新（2026-09-09）：[SBX-13](../tasks/sandbox/SBX-13.md) 移除文件 IO 的 16 MiB
+请求拒绝限制，改为 64 KiB 分块。40,531,351 字节 read 完整成功；后续 mmap
+撞固定 TLS 的原因及取证见任务单，修复由 SBX-14 接续。
+
+[BND-28](../tasks/boundary/BND-28.md)：ANGLE GLES error 回送共用 guest 锁存，
+glGetError 首错优先、读取清除，宿主契约错误仍终止。
 
 更新（2026-09-09）：[DVM-139](../tasks/dexvm/DVM-139.md) 修复 DexVM→JNI 类发布丢失
 interface 图：assignability、interface MethodID 虚派与静态字段查找按 API 19 Dalvik 规则
-统一使用真实类型关系。exact PvZ 越过 `ITracking.setEnable(Z)V` 的错误 incompatibility，
-新首错为 `glTexParameteri failed with GLES error 1280`。
+统一使用真实类型关系，越过 `ITracking.setEnable(Z)V` 错误 incompatibility。
 
-更新（2026-09-09）：[DVM-138](../tasks/dexvm/DVM-138.md) 补齐 API 19
-`ViewParent.getParent` 接口形状、`ViewGroup` 类型关系与 public final `View.getParent()`；
-父级只读 UiTree 唯一 hierarchy，synthetic root 返回 null。exact PvZ 越过原首错，新首错为
-`JNI receiver or dispatch class is incompatible with method`。
-
-更新（2026-09-09）：[DVM-137](../tasks/dexvm/DVM-137.md) 将 API 19 `Configuration`
-两类迁入 BootDex；Resources 保持稳定 identity 并注入 managed display/input 事实。原版
-默认、复制、比较、toString 与 Parcel 执行 Java。BootDex 为 972 类；exact PvZ 新首错为
-`View.getParent()Landroid/view/ViewParent;`。
-
-更新（2026-09-09）：[DVM-136](../tasks/dexvm/DVM-136.md) 将
-`OrientationEventListener` 迁入 BootDex；当前无 accelerometer，原版语义为
-canDetect=false 且 enable/disable 无回调。
-
-更新（2026-09-09）：[DVM-135](../tasks/dexvm/DVM-135.md) 为 `View` 补齐 API 19
-`post/postDelayed`，attached View 复用唯一主 Looper，detached action 按 guest 线程暂存并
-在 live-root safe point 转队。exact PvZ 新首错为缺少 `OrientationEventListener` 类层级。
+近期 framework 交付：UiTree 父级查询 [DVM-138](../tasks/dexvm/DVM-138.md)、
+BootDex Configuration [DVM-137](../tasks/dexvm/DVM-137.md)、无传感器的
+OrientationEventListener [DVM-136](../tasks/dexvm/DVM-136.md)、主 Looper 与
+detached action 暂存的 View.post/postDelayed [DVM-135](../tasks/dexvm/DVM-135.md)。
 
 Button/TextView 三参构造与 buttonStyle(Small) 默认样式投影、TextView compound
 drawables（measure/raster/文本带内缩）、UI kind 按真实继承链解析、RelativeLayout

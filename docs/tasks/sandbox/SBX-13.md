@@ -33,3 +33,22 @@
 首次错误地以裸位置参数传入用例名，doctest 未过滤，触发了额外用例；
 其中现有 BootDex 的 SystemProperties native 绑定等失败并终止。
 后续均显式使用 `--test-case`，不把该次误跑视作全量验收。
+
+## 后续内存故障诊断（2026-09-09）
+
+- SBX-13 已提交 `67f40177`，不含 BootDex。
+- exact 实跑 syscall 追踪：45,051,904 字节 mmap2 一次成功、随后 ENOMEM；
+  brk 扩到 1,387,307,008 仍成功；释放先前 40,534,016 与 45,051,904 字节映射后，
+  同尺寸 mmap2 仍连续 ENOMEM。
+- 临时保留 Map 原始异常，确认失败区间 `[0x68025000,0x6ab1c000)`，
+  原因 `guest memory range overlaps an existing mapping`，不是宿主提交内存失败。
+  API19 固定 TLS/thread-info/preinit/environment 在 `0x6a000000` 起，落在该区间。
+- 根因在 `BindAndroidMemorySyscalls`：从 `0x60000000` 单调推进 next_mapping，
+  不搜索空闲区、不避开固定映射；Map 成功前就推进游标，munmap 也不回收选择空间。
+  游戏私有 allocator 的 `0xa500f0` 调 mmap，`0xa50100..0xa5010c`
+  将 MAP_FAILED 转为 null，最终 `new[]` 的调用者没有检查 null 而 memcpy。
+- 修复方向：memory 层提供在同一把锁下查找空闲区并映射的原子接口，以真实映射账本
+  （含 PROT_NONE）避让；syscall 只选择地址策略，失败不消费游标，释放区可复用。
+  同时覆盖并发分配、固定映射冲突、释放重用和真实耗尽；不要靠迁移 TLS 或调大预算掩盖。
+- 本轮仅分析，临时 syscall/异常诊断已撤回并重新构建 ogplay。
+  提前抛异常取证的进程在 teardown 未退出，已终止本轮启动的该进程。

@@ -53,6 +53,8 @@ ANGLE surface；它不创建、替换或终止第二套 EGL surface。
 DVM-83 在同一 family TU 发布 API 19 `GLES10/10Ext/11/11Ext/20/GLUtils/GLU`；surface
 由固定 AOSP 源生成，Java 参数只经共享 `NioRuntime` 编组后调用 sealed native GLES
 binding。`GLUtils` 读取 context 中既有 Bitmap backing；本层不拥有 GL object state。
+DVM-134 的 `GLSurfaceView` render mode 是 owner-attached guest 事实，默认 continuous，
+仅 0/1 可设置；它不调度 GLThread 或新建 EGL surface/context。
 
 ## 不变量
 

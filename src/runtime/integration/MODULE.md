@@ -212,6 +212,8 @@ DVM-79 的 `DexVmIoVfsAdapter` 是 DexVM core `IoFileSystem` 与具体
   `GLSurfaceView` 发布 API19 `EGLContextFactory`/`EGLConfigChooser` interface shape；两个
   setter 保存原始 guest policy identity 并纳入 GC/session teardown，但在真实 reached
   behavior 要求前不越权调用 callback 或替换 managed EGL/ANGLE context。
+  DVM-134 的 render mode 以 view 身份保存并校验 API19 常量 0/1；mode 不创建 GLThread，
+  帧生产仍只归 lifecycle/managed surface。
   `IntentFilter` 按 identity 保存 case-sensitive、有序去重 scheme 与 API19
   host/wildcard/parsed-port authority 元数据；dynamic receiver 仍不伪造 sticky
   broadcast、Uri match 或未建立的广播派发。

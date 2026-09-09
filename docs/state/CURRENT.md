@@ -1,5 +1,9 @@
 # 当前状态
 
+更新（2026-09-09）：[DVM-134](../tasks/dexvm/DVM-134.md) 为 `GLSurfaceView` 补齐
+逐 view 的 API 19 render mode 常量/set/get 与非法值校验，不创建 GLThread/EGL surface。
+exact PvZ 新首错为 `FrameLayout.postDelayed(Runnable,long)`。
+
 更新（2026-09-09）：[DVM-133](../tasks/dexvm/DVM-133.md) 闭合 API 19
 `ContentResolver.query` 无 provider 分支：虚派读取 URI 后返回 null，不构造空 Cursor，
 不引入 ContentProvider/Binder。exact PvZ 新首错为 `MainView.setRenderMode(I)`。
@@ -54,13 +58,9 @@ TRUE(-1) 规则按 AOSP rule > 0 视为无锚点。exact PvZ 实跑 `CreateDisco
   6 项、3409 断言及架构三项通过。exact PvZ 越过 attribution provider 查询，
   新首错为 `MainView.setRenderMode(I)`；未跑全量、payload 或跨平台验收。
 
-- DVM-132：windows-msvc Release 受影响目标构建；Uri/DVM-97/968 类全链接定向 5 项、
-  7427 断言，BootDex build/check、自测与架构三项通过。exact PvZ 首错仍为
-  `ContentResolver.query`，BootDex `Uri$StringUri.toString()` 已在参数诊断打印完整 URI。
-  payload 门禁仍因既有 guest JNI generator SHA 不一致失败；未跑全量或跨平台验收。
-
-- DVM-131：windows-msvc Release 受影响目标构建；fatal stack/参数双后端定向 2 项、100 断言，
-  capabilities/documentation/intrinsic architecture 3 项通过。未跑游戏、全量或跨平台验收。
+- DVM-134：windows-msvc Release 受影响目标构建；双解释器 render-mode/EGL policy
+  定向 2 项、43 断言通过。exact PvZ 越过 `MainView.setRenderMode`，新首错为
+  `FrameLayout.postDelayed(Runnable,long)`；未跑全量、payload 或跨平台验收。
 
 - BootDex Throwable 定向测试仍 terminate，尚未归因；DVM-120 Typeface 定向测试
   在本 WU 前已失败（stash 验证与本次改动无关）；既有 GUI
@@ -70,7 +70,7 @@ TRUE(-1) 规则按 AOSP rule > 0 视为无锚点。exact PvZ 实跑 `CreateDisco
 
 ## 下一步与边界
 
-1. 分析 `MainView.setRenderMode(I)` 的 GLSurfaceView 继承/渲染线程语义，继续推进 PvZ。
+1. 分析 `FrameLayout.postDelayed(Runnable,long)` 的 View scheduler 委托，继续推进 PvZ。
 2. 处理既有 GUI 门禁，补 macOS/Linux、DH 与 Diagnostics 验收。
 
 OGPlay 仅覆盖登记的老游戏进程能力。完整 formatter/大数、宿主资源持久化、Proxy 生成、

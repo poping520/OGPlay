@@ -147,6 +147,9 @@ struct DexVmAndroidContext final {
     dexvm::VmObjectRef renderer;
     dexvm::VmObjectRef egl_context_factory;
     dexvm::VmObjectRef egl_config_chooser;
+    // GLSurfaceView render mode is guest-visible per view. Frame production
+    // remains owned by the lifecycle/managed-surface boundary.
+    std::unordered_map<std::uint32_t, std::int32_t> gl_surface_render_modes;
     dexvm::VmObjectRef content_view;
 
     // Shared guest filesystem: the single world view for Java File I/O and

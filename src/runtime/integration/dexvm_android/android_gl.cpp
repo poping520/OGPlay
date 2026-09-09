@@ -49,6 +49,8 @@ namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_opengl_GLSurfaceView(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/opengl/GLSurfaceView;", "Landroid/view/View;");
+    builder.ConstantInt("RENDERMODE_WHEN_DIRTY", "I", 0)
+        .ConstantInt("RENDERMODE_CONTINUOUSLY", "I", 1);
     builder.Constructor("(Landroid/content/Context;)V",
         [](dx::IntrinsicContext&) { return dx::VmValue::Void(); });
     builder.FinalMethod("setRenderer",
@@ -68,6 +70,24 @@ Decl Declare_android_opengl_GLSurfaceView(const Context& context) {
         [context](dx::IntrinsicContext& call) {
             context->egl_config_chooser = call.arguments[0].ref;
             return dx::VmValue::Void();
+        });
+    builder.VirtualMethod("setRenderMode", "(I)V",
+        [context](dx::IntrinsicContext& call) {
+            const auto mode = call.arguments[0].AsInt();
+            if (mode != 0 && mode != 1) {
+                throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;",
+                                      "renderMode"};
+            }
+            context->gl_surface_render_modes[call.receiver.Value()] = mode;
+            return dx::VmValue::Void();
+        });
+    builder.VirtualMethod("getRenderMode", "()I",
+        [context](dx::IntrinsicContext& call) {
+            const auto found = context->gl_surface_render_modes.find(
+                call.receiver.Value());
+            return dx::VmValue::Int(found == context->gl_surface_render_modes.end()
+                ? 1
+                : found->second);
         });
     builder.FinalMethod("requestRender", "()V",
         [](dx::IntrinsicContext&) { return dx::VmValue::Void(); });

@@ -107,7 +107,6 @@ std::vector<dexvm::IntrinsicClassDecl> AndroidIntrinsicCatalog(
         Declare_android_content_SharedPreferencesImpl(context),
         Declare_android_content_res_AssetFileDescriptor(context),
         Declare_android_content_res_AssetManager(context),
-        Declare_android_content_res_Configuration(context),
         Declare_android_content_res_Resources_NotFoundException(context),
         Declare_android_content_res_XmlResourceParser(context),
         Declare_android_content_res_XmlResourceParser_Impl(context),

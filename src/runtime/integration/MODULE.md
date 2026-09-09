@@ -221,8 +221,9 @@ DVM-79 的 `DexVmIoVfsAdapter` 是 DexVM core `IoFileSystem` 与具体
   `IntentFilter` 按 identity 保存 case-sensitive、有序去重 scheme 与 API19
   host/wildcard/parsed-port authority 元数据；dynamic receiver 仍不伪造 sticky
   broadcast、Uri match 或未建立的广播派发。
-  `Resources.getConfiguration()` 从注入 surface/density 按 API19 固定阈值发布
-  `screenLayout` size/long/compat bits；layout direction 未建立时保持 undefined。
+  `Configuration` 普通状态与算法来自 BootDex；`Resources.getConfiguration()` 保持稳定
+  identity，并从 managed surface/density/input 发布方向、dp、screenLayout 与设备输入事实。
+  layout direction 与动态配置变更未建立。
   `Thread.setPriority` 校验 Java 1..10 范围并保存 guest 优先级事实，不伪造宿主调度优先级。
   `Thread.start()` 交给 DexVM 线程运行时（真实宿主线程，见
   `src/runtime/dexvm/MODULE.md`）；`java.util.Timer` 仍是帧边界协作队列。

@@ -925,6 +925,8 @@
       "Landroid/content/SharedPreferences;",
       "Landroid/content/res/ColorStateList$1;",
       "Landroid/content/res/ColorStateList;",
+      "Landroid/content/res/Configuration$1;",
+      "Landroid/content/res/Configuration;",
       "Landroid/graphics/Typeface;",
       "Landroid/net/Uri$1;",
       "Landroid/net/Uri$AbstractHierarchicalUri;",

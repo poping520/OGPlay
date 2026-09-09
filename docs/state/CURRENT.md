@@ -1,30 +1,17 @@
 # 当前状态
 
-更新（2026-09-09）：[DVM-136](../tasks/dexvm/DVM-136.md) 将 API 19
-`OrientationEventListener` 两类迁入 BootDex；当前无 accelerometer backend，原版语义为
-canDetect=false 且 enable/disable 无回调。BootDex 为 970 类；exact PvZ 新首错为
-`Configuration.hardKeyboardHidden:I`。
+更新（2026-09-09）：[DVM-137](../tasks/dexvm/DVM-137.md) 将 API 19 `Configuration`
+两类迁入 BootDex；Resources 保持稳定 identity 并注入 managed display/input 事实。原版
+默认、复制、比较、toString 与 Parcel 执行 Java。BootDex 为 972 类；exact PvZ 新首错为
+`View.getParent()Landroid/view/ViewParent;`。
+
+更新（2026-09-09）：[DVM-136](../tasks/dexvm/DVM-136.md) 将
+`OrientationEventListener` 迁入 BootDex；当前无 accelerometer，原版语义为
+canDetect=false 且 enable/disable 无回调。
 
 更新（2026-09-09）：[DVM-135](../tasks/dexvm/DVM-135.md) 为 `View` 补齐 API 19
 `post/postDelayed`，attached View 复用唯一主 Looper，detached action 按 guest 线程暂存并
 在 live-root safe point 转队。exact PvZ 新首错为缺少 `OrientationEventListener` 类层级。
-
-更新（2026-09-09）：[DVM-133](../tasks/dexvm/DVM-133.md) 闭合 API 19
-`ContentResolver.query` 无 provider 分支：虚派读取 URI 后返回 null，不构造空 Cursor，
-不引入 ContentProvider/Binder。exact PvZ 新首错为 `MainView.setRenderMode(I)`。
-
-更新（2026-09-09）：[DVM-132](../tasks/dexvm/DVM-132.md) 将 API 19
-`android.net.Uri` 全部内部类与 `UriCodec` 迁入 BootDex，删除 C++ 简化 parser 与镜像字段；
-query、Builder、UTF-8 编解码执行原版 Java。按范围暂不补 StrictMode 文件 URI 暴露及
-external-storage canonical 分支。
-
-更新（2026-09-09）：[DVM-131](../tasks/dexvm/DVM-131.md) 为致命 `invoke-*` 错误增加
-receiver 与有界类型化参数现场；直接读取原始 DEX prototype/源寄存器，非空对象直接虚派
-`toString()` 并有界打印返回内容，不改变正常调用热路径。
-
-此前 [DVM-130](../tasks/dexvm/DVM-130.md) 将 guest 平台 JNI 入口统一到
-DexVM/BootDex，删除 Build/SystemProperties、Context/Activity 服务、Settings.Secure、Bundle、
-AudioTrack 的重复 HLE 与播放状态。纯 native/HLE 会话不再提供这些类，需装配 VM。
 
 Button/TextView 三参构造与 buttonStyle(Small) 默认样式投影、TextView compound
 drawables（measure/raster/文本带内缩）、UI kind 按真实继承链解析、RelativeLayout
@@ -34,7 +21,7 @@ TRUE(-1) 规则按 AOSP rule > 0 视为无锚点。exact PvZ 实跑 `CreateDisco
 ## 当前能力
 
 - **发行/guest JNI**：exact Profile API 选择 bundled data。API 19 含 pinned AOSP 五库、
-  AOSP OpenSSL `libcrypto.so`、ICU4C 51.1 库及依赖、970 类 BootDex 和 ICU 数据；来源、
+  AOSP OpenSSL `libcrypto.so`、ICU4C 51.1 库及依赖、972 类 BootDex 和 ICU 数据；来源、
   hash、NOTICE、manifest 与 payload 校验已同步。crypto/ICU 保持源码模块边界，共用
   JNI_OnLoad 和 `libogplay_jni.so`；ICU 只调用 guest C ABI 与 `icudt51l.dat`，host 不链接 ICU。
   制品见 [manifest](../../data/android/19/manifest.json)；`bootdex.jar` 不提交。
@@ -53,30 +40,25 @@ TRUE(-1) 规则按 AOSP rule > 0 视为无锚点。exact PvZ 实跑 `CreateDisco
   Activity 组件身份、窗口焦点、沙盒稳定 `ANDROID_ID` 及 flags=0 的 action-only service
   查询已接通。无 Binder/system_server、SettingsProvider、支付或完整 Android 系统；未知/
   潜在 native 或服务匹配不伪造成功。
-- **Title**：PvZ 已越过 InitXpromo、PreferenceManager、onResume 焦点、`System.getenv`、
-  `Settings.Secure` 与 Unicode application label，上次实测首错为 `Build.BRAND`（迁移后未复跑）；Tales 首错
-  LocationListener，均未通过游戏 gate。
+- **Title**：PvZ exact 首错为 `View.getParent()`；Tales 首错 LocationListener，均未通过
+  游戏 gate。
 
 ## 最近验证
 
-- DVM-135：windows-msvc Release 受影响目标构建；双解释器 View/Handler 定向
-  2 项、83 断言与 scheduler 文件回归 7 项、194 断言通过。exact PvZ 越过
-  `FrameLayout.postDelayed`，新首错为
-  `android.view.OrientationEventListener` 类层级缺失；未跑全量或跨平台验收。
-
-- DVM-136：BootDex build/check 为 970 类；双解释器无 sensor 语义 1 项、34 断言与
-  全类链接 1 项、7192 断言通过。exact PvZ 进入原版 enable 的无 sensor 分支，新首错为
-  `Configuration.hardKeyboardHidden:I`；未跑全量、payload 或跨平台验收。
+- DVM-137：Windows Release 受影响目标构建；BootDex build/check 972 类；双解释器
+  Configuration、既有 screenLayout/DisplayMetrics 与全类链接 4 项、7569 断言通过。
+  exact PvZ 越过 hidden/orientation 字段，新首错为 `View.getParent()`。
 
 - BootDex Throwable 定向测试仍 terminate，尚未归因；DVM-120 Typeface 定向测试
-  在本 WU 前已失败（stash 验证与本次改动无关）；既有 GUI
+  在本 WU 前已失败（stash 验证与本次改动无关）；payload 门禁仍因既有 guest JNI
+  generator SHA 不一致失败；既有 GUI
   `process_manager.cpp:131` 仍使 platform_boundaries 门禁失败。本轮未运行全量 CTest、
   游戏 gate 或跨平台验收。
   最新架构记录为 [ADR-0055](../adr/dexvm.md#adr-0055)。
 
 ## 下一步与边界
 
-1. 补齐 API 19 `Configuration.hardKeyboardHidden` 字段事实，继续推进 PvZ。
+1. 补齐 API 19 `View.getParent()` 与 `ViewParent` 类型关系，继续推进 PvZ。
 2. 处理既有 GUI 门禁，补 macOS/Linux、DH 与 Diagnostics 验收。
 
 OGPlay 仅覆盖登记的老游戏进程能力。完整 formatter/大数、宿主资源持久化、Proxy 生成、

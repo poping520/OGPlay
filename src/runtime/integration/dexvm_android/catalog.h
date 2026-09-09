@@ -40,7 +40,6 @@ namespace ogplay::runtime::android_intrinsics {
 [[nodiscard]] Decl Declare_android_content_SharedPreferencesImpl(const Context& context);
 [[nodiscard]] Decl Declare_android_content_res_AssetManager(const Context& context);
 [[nodiscard]] Decl Declare_android_content_res_AssetFileDescriptor(const Context& context);
-[[nodiscard]] Decl Declare_android_content_res_Configuration(const Context& context);
 [[nodiscard]] Decl Declare_android_content_res_Resources_NotFoundException(const Context& context);
 [[nodiscard]] Decl Declare_android_content_res_XmlResourceParser(const Context& context);
 [[nodiscard]] Decl Declare_android_content_res_XmlResourceParser_Impl(const Context& context);

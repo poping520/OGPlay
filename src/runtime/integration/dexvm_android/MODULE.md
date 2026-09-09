@@ -318,6 +318,11 @@ DisplayMetrics.getDeviceDensity 查询进程注入 density。Resources.mMetrics 
 使用同一填充入口，不读取宿主显示器。无兼容缩放时 noncompat 字段同源。TypedValue
 单位转换直接读取 Java 字段，删除基于旧槽位顺序的 C++ 算法。
 
+DVM-137：Configuration/CREATOR 的字段、默认值、复制、比较、字符串与 Parcel 协议来自
+BootDex。Resources.getConfiguration 首次执行原版构造器并保持稳定身份；查询时从 managed
+surface/density 刷新方向、dp、density、screenLayout，并发布桌面 touch/keyboard/navigation
+事实。不建立窗口旋转、输入热插拔或动态 onConfigurationChanged 管线。
+
 DVM-120：Typeface 普通方法与缓存归 BootDex；native 只提供内置字体有限不可变描述符。
 TextView 引用为 Java 字段，四种样式进入 UiNode 并驱动测量/绘制；family 使用内置
 回退字形，不宣称系统字体。外部字体加载记账失败，无 native 分配或侧表。

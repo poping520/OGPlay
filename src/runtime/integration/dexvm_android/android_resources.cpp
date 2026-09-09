@@ -208,22 +208,6 @@ Decl Declare_android_content_res_AssetManager(const Context& context) {
 }  // namespace ogplay::runtime::android_intrinsics
 
 
-// ---- migrated from android_content_res_Configuration.cpp ----
-#include "catalog.h"
-
-namespace ogplay::runtime::android_intrinsics {
-
-Decl Declare_android_content_res_Configuration(const Context& context) {
-    static_cast<void>(context);
-    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/content/res/Configuration;", "Ljava/lang/Object;");
-    builder.InstanceField("keyboard", "I");
-    builder.InstanceField("screenLayout", "I");
-    return std::move(builder).Build();
-}
-
-}  // namespace ogplay::runtime::android_intrinsics
-
-
 // ---- migrated from android_content_res_Resources.cpp ----
 #include "catalog.h"
 
@@ -244,19 +228,26 @@ constexpr std::int32_t kScreenLayoutLongNo = 0x10;
 constexpr std::int32_t kScreenLayoutLongYes = 0x20;
 constexpr std::int32_t kScreenLayoutCompatNeeded = 0x10000000;
 
-std::int32_t Api19ScreenLayout(
+struct Api19ConfigurationDisplayFacts final {
+    std::int32_t width_dp{};
+    std::int32_t height_dp{};
+    std::int32_t density_dpi{};
+    std::int32_t screen_layout{};
+};
+
+Api19ConfigurationDisplayFacts Api19ConfigurationFacts(
     const ogplay::runtime::DexVmAndroidContext& context) {
     if (context.surface_width == 0U || context.surface_height == 0U ||
         !std::isfinite(context.ui_density) || context.ui_density <= 0.0F) {
         throw std::invalid_argument(
             "Configuration requires positive surface metrics and density");
     }
-    const auto width_dp = static_cast<std::int32_t>(std::lround(
+    const auto layout_width_dp = static_cast<std::int32_t>(std::lround(
         static_cast<double>(context.surface_width) / context.ui_density));
-    const auto height_dp = static_cast<std::int32_t>(std::lround(
+    const auto layout_height_dp = static_cast<std::int32_t>(std::lround(
         static_cast<double>(context.surface_height) / context.ui_density));
-    const auto long_dp = std::max(width_dp, height_dp);
-    const auto short_dp = std::min(width_dp, height_dp);
+    const auto long_dp = std::max(layout_width_dp, layout_height_dp);
+    const auto short_dp = std::min(layout_width_dp, layout_height_dp);
 
     std::int32_t size{};
     bool is_long{};
@@ -281,7 +272,18 @@ std::int32_t Api19ScreenLayout(
     if (size < (layout & kScreenLayoutSizeMask)) {
         layout = (layout & ~kScreenLayoutSizeMask) | size;
     }
-    return layout;
+    const auto density_dpi = static_cast<double>(context.ui_density) * 160.0;
+    if (density_dpi > static_cast<double>(INT32_MAX)) {
+        throw std::invalid_argument("Configuration density exceeds API 19 range");
+    }
+    return {
+        static_cast<std::int32_t>(
+            static_cast<double>(context.surface_width) / context.ui_density),
+        static_cast<std::int32_t>(
+            static_cast<double>(context.surface_height) / context.ui_density),
+        static_cast<std::int32_t>(std::lround(density_dpi)),
+        layout,
+    };
 }
 
 void SetIntField(ogplay::runtime::dexvm::IntrinsicContext& call,
@@ -334,6 +336,40 @@ std::int32_t GetIntField(ogplay::runtime::dexvm::IntrinsicContext& call,
     return static_cast<std::int32_t>(
         call.vm.Model().InstanceSlots(object)[FieldSlot(call, object, name, "I")]
             .bits);
+}
+
+ogplay::runtime::dexvm::VmObjectRef ConfigurationSingleton(
+    ogplay::runtime::dexvm::IntrinsicContext& call,
+    const ogplay::runtime::android_intrinsics::Context& context) {
+    const auto found = context->singletons.find("configuration");
+    if (found != context->singletons.end()) return found->second;
+
+    const auto owner = call.vm.Linker().ResolveDescriptor(
+        "Landroid/content/res/Configuration;");
+    const auto initialized = call.vm.EnsureClassInitialized(owner);
+    if (initialized.exception.IsValid()) {
+        throw ogplay::runtime::dexvm::VmJavaThrow{
+            call.vm.Linker().Class(initialized.exception_class).descriptor,
+            initialized.exception_message, initialized.exception};
+    }
+    const auto instance = call.vm.NewIntrinsicInstance(
+        "Landroid/content/res/Configuration;");
+    const auto root = call.vm.ProtectReferences(std::array{instance});
+    const auto constructor =
+        call.vm.Linker().FindDirectMethod(owner, "<init>", "()V");
+    if (!constructor.has_value()) {
+        throw std::logic_error("Configuration constructor is not linked");
+    }
+    const auto outcome = call.vm.Call(
+        *constructor,
+        std::array{ogplay::runtime::dexvm::VmValue::Ref(instance)});
+    if (outcome.exception.IsValid()) {
+        throw ogplay::runtime::dexvm::VmJavaThrow{
+            call.vm.Linker().Class(outcome.exception_class).descriptor,
+            outcome.exception_message, outcome.exception};
+    }
+    context->singletons.emplace("configuration", instance);
+    return instance;
 }
 
 void RequireOpenXmlParser(
@@ -520,13 +556,27 @@ Decl Declare_android_content_res_Resources(const Context& context) {
         });
     builder.FinalMethod("getConfiguration", "()Landroid/content/res/Configuration;",
         [context](dx::IntrinsicContext& call) {
-            const auto instance = Singleton(call, context, "configuration",
-                "Landroid/content/res/Configuration;");
-            // keyboard = KEYBOARD_NOKEYS (1): desktop host has no guest
-            // keypad.
-            SetIntField(call, instance, "keyboard", 1);
-            SetIntField(call, instance, "screenLayout",
-                        Api19ScreenLayout(*context));
+            const auto instance = ConfigurationSingleton(call, context);
+            const auto display = Api19ConfigurationFacts(*context);
+            // The managed desktop surface exposes touch-style pointer input
+            // and an alphabetic host keyboard through the Android input path.
+            SetIntField(call, instance, "touchscreen", 3);          // FINGER
+            SetIntField(call, instance, "keyboard", 2);             // QWERTY
+            SetIntField(call, instance, "keyboardHidden", 1);       // NO
+            SetIntField(call, instance, "hardKeyboardHidden", 1);   // NO
+            SetIntField(call, instance, "navigation", 1);           // NONAV
+            SetIntField(call, instance, "navigationHidden", 2);     // YES
+            SetIntField(call, instance, "orientation",
+                        context->surface_width <= context->surface_height
+                            ? 1  // PORTRAIT
+                            : 2  // LANDSCAPE
+            );
+            SetIntField(call, instance, "screenWidthDp", display.width_dp);
+            SetIntField(call, instance, "screenHeightDp", display.height_dp);
+            SetIntField(call, instance, "smallestScreenWidthDp",
+                        std::min(display.width_dp, display.height_dp));
+            SetIntField(call, instance, "densityDpi", display.density_dpi);
+            SetIntField(call, instance, "screenLayout", display.screen_layout);
             return dx::VmValue::Ref(instance);
         });
     builder.FinalMethod("getIdentifier",

@@ -520,6 +520,11 @@ status = "complete"
 test = "tests/runtime/preferences_xml_tests.cpp; tests/dexvm/file_vfs_tests.cpp"
 note = "ADR-0020 SBX-6 把 SharedPreferences 落成 /data/data/<pkg>/shared_prefs/<name>.xml 的 Android 同构 XML，经 VFS 普通文件通道读写并跨会话持久。受检子集 boolean/int/long/float/string；未知输入明确失败。SBX-10 只把 ENOENT 当首次运行，EIO/EACCES 不再静默清空；SBX-11 以 to_chars/from_chars 最短表示保证 float IEEE-754 往返。commit() 是该文件落盘点，pause/shutdown 另有 FlushAll 兜底。SharedPreferences/Editor/OnSharedPreferenceChangeListener 接口与 PreferenceManager 迁入 BootDex（927 类），Impl 支持五种标量与 contains/getAll 快照，独立 Editor 缓冲在 commit/apply 发布；clear 先于待写项，putString(null) 删除，缓冲随 GC 清理，加载失败可重试；apply 按 API 19 允许的兼容方式同步落盘；string-set 与 change-listener 明确失败并记账，默认入口与显式命名共享唯一对象缓存"
 
+[runtime.syscall_anonymous_mapping]
+status = "partial"
+test = "tests/memory/address_space_tests.cpp; tests/runtime/syscall_tests.cpp"
+note = "SBX-14 匿名私有 mmap2 使用真实映射账本原子 first-fit，避开已占页（含 PROT_NONE），释放空洞可重用且失败不消耗地址；brk 状态串行化。非固定 hint 可忽略，MAP_FIXED 仍不支持覆盖已映射区，文件 mmap 未支持，故保持 partial"
+
 [runtime.syscall_large_file_io]
 status = "complete"
 test = "tests/runtime/syscall_tests.cpp"
@@ -1599,6 +1604,11 @@ note = "DVM-118：DisplayMetrics/TypedValue 原版字段和普通方法执行 Bo
 status = "partial"
 test = "tests/dexvm/intrinsics_p1_tests.cpp: DVM-118; tests/dexvm/dvm87_tests.cpp: DVM-103"
 note = "DVM-118：Math 普通方法/常量/Random 状态来自 BootDex；24 个 native 按 AOSP java_lang_Math.cpp 对接宿主 libm。双后端复验 round(float/double) 的半值/NaN/Infinity/饱和转换、最小整数 abs、min/max NaN 与 signed zero、ulp/nextUp、随机数区间及 native 基本数值。未宣称 StrictMath/fdlibm 跨平台逐位一致或 libm 全输入误差认证。"
+
+[dexvm.intent_put_extras_bundle]
+status = "complete"
+test = "tests/dexvm/android_value_tests.cpp: DVM-140"
+note = "DVM-140 Intent.putExtras(Bundle) 复用唯一 mExtras 并委托 BootDex Bundle.putAll，浅合并/同名覆盖/值身份与 null 异常遵循 API19，返回 this；双后端覆盖 GC 和源映射隔离。不包含 Intent 重载、replaceExtras 或系统广播"
 
 [dexvm.bundle_bootdex]
 status = "partial"

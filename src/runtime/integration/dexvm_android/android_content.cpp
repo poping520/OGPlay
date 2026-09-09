@@ -1639,6 +1639,13 @@ Decl Declare_android_content_Intent(const Context& context) {
             return Self(call);
         });
     };
+    builder.VirtualMethod("putExtras", "(Landroid/os/Bundle;)Landroid/content/Intent;",
+        [ensure_extras](dx::IntrinsicContext& call) {
+            const auto bundle = ensure_extras(call);
+            static_cast<void>(CallAndroidMethod(call.vm, bundle, "putAll",
+                "(Landroid/os/Bundle;)V", {call.arguments[0]}));
+            return Self(call);
+        });
     builder.VirtualMethod("putExtra", "(Ljava/lang/String;I)Landroid/content/Intent;",
                           put("putInt", "(Ljava/lang/String;I)V"));
     builder.VirtualMethod("putExtra", "(Ljava/lang/String;Ljava/lang/String;)Landroid/content/Intent;",

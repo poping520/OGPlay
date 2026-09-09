@@ -264,6 +264,35 @@ TEST_CASE("Android memory syscalls map protect unmap and grow brk safely") {
     CHECK_NOTHROW(memory.Write(ogplay::memory::GuestAddress{0x50000000}, marker));
 }
 
+TEST_CASE("Android mmap avoids occupied regions and reuses released space") {
+    ogplay::core::CapabilityLedger ledger;
+    auto dispatcher = ogplay::runtime::CreateAndroidArmSyscallDispatcher(ledger);
+    ogplay::memory::AddressSpace memory;
+    ogplay::runtime::BindAndroidMemorySyscalls(dispatcher, memory);
+    memory.Map({ogplay::memory::GuestAddress{0x60001000}, 4096},
+               ogplay::memory::PageProtection::none);
+    ogplay::runtime::A32SyscallFrame frame{};
+    frame.number = 192;
+    frame.arguments = {0, 8192, 3, 0x22, 0xffffffff, 0};
+    CHECK(dispatcher.Dispatch(frame) == 0x60002000);
+    frame.arguments[2] = 8;
+    CHECK(dispatcher.Dispatch(frame) == -22);
+    frame.arguments[2] = 3;
+    frame.arguments[1] = 4096;
+    CHECK(dispatcher.Dispatch(frame) == 0x60000000);
+    frame.number = 91;
+    frame.arguments[0] = 0x60002000;
+    frame.arguments[1] = 8192;
+    CHECK(dispatcher.Dispatch(frame) == 0);
+    frame.number = 192;
+    frame.arguments[0] = 0;
+    CHECK(dispatcher.Dispatch(frame) == 0x60002000);
+    frame.arguments[1] = 0xa0001000;
+    CHECK(dispatcher.Dispatch(frame) == -12);
+    frame.arguments[1] = 4096;
+    CHECK(dispatcher.Dispatch(frame) == 0x60004000);
+}
+
 TEST_CASE("Android madvise validates hints and discards writable pages") {
     ogplay::core::CapabilityLedger ledger;
     auto dispatcher =

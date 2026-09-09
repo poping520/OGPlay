@@ -10,6 +10,9 @@
 - `GuestRange`：64 位长度的半开区间，可表达完整 4 GiB 地址空间。
 - `LowAddressGuard()`：`0x00000000–0x0000ffff` 默认保留区间。
 - `AddressSpace`：4 GiB reservation 上的 Map/Unmap/Protect/Read/Write/Validate；
+  `MapAnywhere(bounds,size,protection)` 在同一账本锁内 first-fit 选址并 Map，
+  跳过低地址 guard 和全部已映射页（包括 PROT_NONE），无连续空间抛 bad_alloc。
+  复用 Map 的清零、宿主 backing、direct-page-table 与映射世代发布；失败不占 guest 页。
   `ValidateMapped` 只检查映射存在性，映射账本与页权限独立，因此 `PROT_NONE` guard page
   不会被误判为未映射；固定宽度标量访问在一次锁内完成验证与小端搬运；
   `CStringLength` 在一次锁内逐 guest 页验证并对连续宿主字节使用 `memchr`，越界页仍发布

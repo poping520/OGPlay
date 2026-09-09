@@ -237,6 +237,47 @@ TEST_CASE("DVM-116 BackupManager Java reports absent backup service") {
     }
 }
 
+TEST_CASE("DVM-140 Intent putExtras merges Java Bundle mappings without aliasing") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        AndroidValueVm f(backend);
+        const auto intent = f.New("Landroid/content/Intent;");
+        const auto source = f.New("Landroid/os/Bundle;");
+        const auto key = f.vm.NewStringUtf8("payload");
+        const auto keep = f.vm.NewStringUtf8("keep");
+        const auto roots = f.vm.ProtectReferences(std::array{intent, source, key, keep});
+        constexpr auto signature = "(Landroid/os/Bundle;)Landroid/content/Intent;";
+        CHECK(f.On(intent, "putExtras", signature, {VmValue::Ref(source)}).ref == intent);
+        CHECK(f.On(f.On(intent, "getExtras", "()Landroid/os/Bundle;").ref,
+                   "isEmpty", "()Z").AsInt() == 1);
+        f.On(intent, "putExtra", "(Ljava/lang/String;I)Landroid/content/Intent;",
+             {VmValue::Ref(key), VmValue::Int(1)});
+        f.On(intent, "putExtra", "(Ljava/lang/String;I)Landroid/content/Intent;",
+             {VmValue::Ref(keep), VmValue::Int(9)});
+        const auto payload = f.New("Ljava/util/HashMap;");
+        f.On(source, "putSerializable", "(Ljava/lang/String;Ljava/io/Serializable;)V",
+             {VmValue::Ref(key), VmValue::Ref(payload)});
+        CHECK(f.On(intent, "putExtras", signature, {VmValue::Ref(source)}).ref == intent);
+        f.On(source, "clear", "()V");
+        static_cast<void>(f.vm.CollectGarbage("dvm140-merged-extras"));
+        CHECK(f.On(intent, "getSerializableExtra", "(Ljava/lang/String;)Ljava/io/Serializable;",
+                   {VmValue::Ref(key)}).ref == payload);
+        CHECK(f.On(intent, "getIntExtra", "(Ljava/lang/String;I)I",
+                   {VmValue::Ref(keep), VmValue::Int(0)}).AsInt() == 9);
+        f.On(source, "putString", "(Ljava/lang/String;Ljava/lang/String;)V",
+             {VmValue::Ref(key), VmValue::Ref(VmObjectRef{})});
+        f.On(intent, "putExtras", signature, {VmValue::Ref(source)});
+        CHECK(f.On(intent, "hasExtra", "(Ljava/lang/String;)Z", {VmValue::Ref(key)}).AsInt() == 1);
+        CHECK_FALSE(f.On(intent, "getSerializableExtra", "(Ljava/lang/String;)Ljava/io/Serializable;",
+                         {VmValue::Ref(key)}).ref.IsValid());
+        for (const auto target : {intent, f.New("Landroid/content/Intent;")}) {
+            const auto outcome = f.OnOutcome(target, "putExtras", signature, {VmValue::Ref(VmObjectRef{})});
+            REQUIRE(outcome.exception.IsValid());
+            CHECK(f.linker.Class(outcome.exception_class).descriptor == "Ljava/lang/NullPointerException;");
+            CHECK(f.On(target, "getExtras", "()Landroid/os/Bundle;").ref.IsValid());
+        }
+    }
+}
+
 TEST_CASE("DVM-117 Intent extras use BootDex Bundle identity copies and GC") {
     for (const auto backend :
          {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {

@@ -222,6 +222,8 @@ accelerometer，故原版构造得到 null sensor、canDetect=false，enable/dis
 - Intent extra 由普通 mExtras 字段指向 BootDex Bundle；String/int/Serializable/
   Integer ArrayList 的 typed put/get/remove/hasExtra 委托 Java，类型覆盖/null 与装箱遵循
   原版语义；getExtras 返回独立映射的浅副本，值保持身份。删除旧三种类型分表。
+  DVM-140 `putExtras(Bundle)` 确保 mExtras 后调用原版 Bundle.putAll，合并覆盖而非
+  替换/别名，返回 this；null 参数让 Java 抛 NPE，保留先初始化 mExtras 的原版顺序。
 - VideoView error listener 按 view 实例注册、替换或清除；没有具体异步错误事件时
   不伪造 `onError` 回调。pause/seek capability 只反映已打开 player；缺失 player
   的 completion 延迟到视频 pump，禁止从 `start()` 重入 guest。

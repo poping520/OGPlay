@@ -41,35 +41,35 @@
     "path": "framework/bootdex.jar",
     "generator": "tools/bootdex/build_bootdex.py",
     "recipe": "tools/bootdex/api19.json",
-    "recipe_sha256": "a83600abc69c03bce001762c333651baaa97d5986381da2f777148efa69700b2",
+    "recipe_sha256": "63683b2f0dadbcffb9b7d4074ac619e5050e546abf002d840a71d51a718d4d6c",
     "sources": [
       {
         "source_project": "platform/libcore",
         "source_jar": "core.jar",
-        "source_jar_sha256": "996557954e45f7192b187b2394259bc8aca6e3946652e03b99d837432f83d1ef"
+        "source_jar_sha256": "60b6cdf3eded2fdf157c6166402477e4f72ade215b334817439960522c0e64ee"
       },
       {
         "source_project": "platform/libcore",
         "source_jar": "conscrypt.jar",
-        "source_jar_sha256": "43ab6b953bd5a9e25f0f0d4411a5aa3f0660d16954a0a84e95ad834558b21a1e"
+        "source_jar_sha256": "c7d0849cde38cd0d0dc99d89ee61bd33a65618567fc18171d6605dc6b8e15004"
       },
       {
         "source_project": "platform/frameworks/base",
         "source_jar": "framework.jar",
-        "source_jar_sha256": "90fc9fd36b45db1810ecf51e40119222da081b552f9a64a6d0c09cac09f98a48"
+        "source_jar_sha256": "422e232e121425268f04044f5349072ce42d7b4403267d21569e8ce70d07bc4b"
       },
       {
         "source_project": "platform/frameworks/base",
         "source_jar": "framework2.jar",
-        "source_jar_sha256": "b6aba8bec45e2a2faa7a4e1e8ae3d8e450259f7e28c8dae6ca2c31dc34e06bea"
+        "source_jar_sha256": "5866d4e62e5fe44ffaf6ff441b6c361baeb1f8b91e30bb555481ef13ef837973"
       }
     ],
-    "size": 1419273,
-    "sha256": "f00c235776c7a33bb132618952524bd5d5b2c1760a6df6fcb8bc3d56be87e758",
+    "size": 1418501,
+    "sha256": "79846498ae5243b625a8a8f52bf854d6eadec7068d84d91c0dab5a8dfd6fba19",
     "dex_entry": "classes.dex",
-    "dex_size": 1418976,
-    "dex_sha256": "c0107cd4212b8795d7580c7e1b07fc4f933341b4f0b7467e9902b9fbc9b94ffa",
-    "class_count": 949,
+    "dex_size": 1418204,
+    "dex_sha256": "89d7d925a2d4f7754059e71829b1caecd0f1e396e4b509d381b2434f7175e0da",
+    "class_count": 953,
     "selection_policy": "load-all",
     "notice": "notices/bootdex.jar.txt",
     "notice_sha256": "8942e34ad7fa9ce42a3f7adef1877efa6b0957ce7f9953c213901c201396b56c"

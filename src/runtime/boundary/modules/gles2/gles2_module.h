@@ -32,6 +32,17 @@ public:
 
     template <gles::GlesThunkId FunctionId>
     std::uint32_t Invoke(const A32CallFrame& call) {
+        try {
+            return InvokeChecked<FunctionId>(call);
+        } catch (const gles::GlesApiError& error) {
+            graphics_.gl_context.Shared().SetGuestError(error.Code());
+            return 0U;
+        }
+    }
+
+private:
+    template <gles::GlesThunkId FunctionId>
+    std::uint32_t InvokeChecked(const A32CallFrame& call) {
         const auto args = call.RegisterArguments();
         const auto symbol = gles::DescribeGlesFunction(
                                 gles::GlesApi::gles2, FunctionId).name;
@@ -104,7 +115,6 @@ public:
             std::string(symbol));
     }
 
-private:
     static constexpr std::size_t kMaximumGlesNameBytes = 4096;
 
     template <gles::GlesThunkId FunctionId>

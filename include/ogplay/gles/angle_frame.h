@@ -6,12 +6,23 @@
 #include <memory>
 #include <optional>
 #include <span>
+#include <stdexcept>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "ogplay/gles/egl_lifecycle.h"
 
 namespace ogplay::gles {
+
+class GlesApiError final : public std::runtime_error {
+public:
+    GlesApiError(std::string_view operation, std::uint32_t code);
+    [[nodiscard]] std::uint32_t Code() const noexcept;
+
+private:
+    std::uint32_t code_{};
+};
 
 struct AngleFrameInfo final {
     std::uint32_t width{};

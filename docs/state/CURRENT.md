@@ -1,5 +1,9 @@
 # 当前状态
 
+更新（2026-09-09）：[BND-28](../tasks/boundary/BND-28.md) 将 ANGLE 原生 GLES error
+类型化并回送 GLES1/2 共用 guest 锁存，`glGetError` 首错优先、读取清除；宿主契约失败
+仍明确终止。exact PvZ 越过 `glTexParameteri` 1280，新首错为 `guest memory is unmapped`。
+
 更新（2026-09-09）：[DVM-139](../tasks/dexvm/DVM-139.md) 修复 DexVM→JNI 类发布丢失
 interface 图：assignability、interface MethodID 虚派与静态字段查找按 API 19 Dalvik 规则
 统一使用真实类型关系。exact PvZ 越过 `ITracking.setEnable(Z)V` 的错误 incompatibility，
@@ -50,10 +54,13 @@ TRUE(-1) 规则按 AOSP rule > 0 视为无锚点。exact PvZ 实跑 `CreateDisco
   Activity 组件身份、窗口焦点、沙盒稳定 `ANDROID_ID` 及 flags=0 的 action-only service
   查询已接通。无 Binder/system_server、SettingsProvider、支付或完整 Android 系统；未知/
   潜在 native 或服务匹配不伪造成功。
-- **Title**：PvZ exact 首错为 `glTexParameteri` GLES 1280；Tales 首错 LocationListener，均未通过
+- **Title**：PvZ exact 首错为 `guest memory is unmapped`；Tales 首错 LocationListener，均未通过
   游戏 gate。
 
 ## 最近验证
+
+- BND-28：Windows Release 受影响目标构建；真实 ANGLE texture 定向 1 项、60 断言通过。
+  exact PvZ 越过 `glTexParameteri` GLES 1280，新首错为 `guest memory is unmapped`。
 
 - DVM-139：Windows Release 受影响目标构建；JNI interface graph、MethodID 虚派与
   DexVM bridge 三组定向 7 项、80 断言通过。exact PvZ 越过原 JNI incompatibility，
@@ -76,7 +83,7 @@ TRUE(-1) 规则按 AOSP rule > 0 视为无锚点。exact PvZ 实跑 `CreateDisco
 
 ## 下一步与边界
 
-1. 归因 PvZ `glTexParameteri` GLES 1280，继续推进 title。
+1. 归因 PvZ `guest memory is unmapped`，继续推进 title。
 2. 处理既有 GUI 门禁，补 macOS/Linux、DH 与 Diagnostics 验收。
 
 OGPlay 仅覆盖登记的老游戏进程能力。完整 formatter/大数、宿主资源持久化、Proxy 生成、

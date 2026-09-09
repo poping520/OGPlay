@@ -963,7 +963,12 @@ note = "M5 WU-0270 将真实 ANGLE vendor/renderer/version/extensions 发布到 
 [runtime.gles1_guest_error_latch]
 status = "complete"
 test = "tests/runtime/boundary/integration/android_boundary_hle_tests.cpp"
-note = "BND-26 追加：SharedGlState 提供 per-context guest 错误锁存（首错保留、Reset 清零），Gles1Module::Invoke 捕获 guest 非法枚举类 std::invalid_argument 转 GL_INVALID_ENUM 锁存并正常返回，glGetError 先排空锁存再查 ANGLE；宿主契约破坏（logic_error/runtime_error/GuestTransferError/MemoryFault）仍显式失败。INVALID_ENUM 为统一近似（个别规范为 INVALID_VALUE）；GLES2 维持直达后端的严格语义"
+note = "BND-26 追加：SharedGlState 提供 per-context guest 错误锁存（首错保留、Reset 清零），Gles1Module::Invoke 捕获 guest 非法枚举类 std::invalid_argument 转 GL_INVALID_ENUM 锁存并正常返回，glGetError 先排空锁存再查 ANGLE；宿主契约破坏（logic_error/runtime_error/GuestTransferError/MemoryFault）仍显式失败。INVALID_ENUM 为统一近似（个别规范为 INVALID_VALUE）。BND-28 进一步将 ANGLE 原生错误以精确 GLenum 回送 GLES1/2 共用锁存。"
+
+[runtime.gles2_guest_error_latch]
+status = "complete"
+test = "tests/runtime/boundary/integration/android_boundary_hle_tests.cpp; PvZ exact run-apk"
+note = "BND-28 将 AngleFrame 原生 GL error 类型化，Gles2Module 仅捕获该错误并锁存精确 GLenum；glGetError 首错优先且读取清除，guest memory/transfer/lifecycle/logic 失败仍不伪装为 GL error。PvZ 的 GLES2 GL_GENERATE_MIPMAP 保持 INVALID_ENUM，不再终止进程。"
 
 [runtime.gles1_generate_mipmap_state]
 status = "complete"

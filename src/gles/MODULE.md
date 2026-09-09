@@ -20,7 +20,7 @@
 - `AngleFrame`：在独占的真实 ANGLE pbuffer 上执行 viewport/color/depth/stencil clear、
   depth-range、line/polygon/stencil scalar state、shader/program、buffer allocation/subrange、
   texture、framebuffer/renderbuffer 生命周期与附着、vertex/uniform、query/state、draw 与
-  局部 readback 调用，并以
+  局部 readback 调用，并以 `GlesApiError` 保留原生 GL error code，供上层回送 guest；以
   受检 RGBA8
   全帧 readback 输出左上原点的确定帧；每个原生 GLES 调用都检查错误。
 - `DecodeEtc1Rgba8`：按 Khronos ETC1 64-bit block 规范解码 individual/differential、flip、
@@ -75,6 +75,8 @@
 ## 不变量
 
 - GLES 语义与能力来自 ANGLE，边界函数由 IDL 生成。
+- `GlesApiError` 只表达原生 GLES 状态机错误；guest 内存、搬运、生命周期和宿主逻辑故障
+  使用原有异常类型，调用方不得把两类失败混为 `glGetError`。
 - ETC1 上传优先使用 ANGLE 原生 `GL_OES_compressed_ETC1_RGB8_texture`，其次使用其显式
   lossy-decode 扩展；两者都不可用时才由通用 ETC1 解码器转为 RGBA8 后调用 ANGLE
   `glTexImage2D`。其他压缩格式不得借此伪造支持。

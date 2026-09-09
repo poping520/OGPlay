@@ -31,9 +31,7 @@ void ValidateVectorPayload(const std::int32_t count,
 void RequireShaderNoError(const char* const operation) {
     const auto error = glGetError();
     if (error != GL_NO_ERROR) {
-        throw std::runtime_error(std::string(operation) +
-                                 " failed with GLES error " +
-                                 std::to_string(error));
+        throw GlesApiError(operation, error);
     }
 }
 

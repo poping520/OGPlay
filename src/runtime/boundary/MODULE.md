@@ -90,8 +90,9 @@ boundary symbol 目录、跨 API 共享的 `GuestGlContext` 与 `A32CallFrame`�
 
 ## 总则(适用于全部 GLES handler)
 
-- 无当前 `AngleFrame`、非法枚举、非有限浮点或 ANGLE 原生错误必须明确失败;禁止静默
-  no-op、部分回写或伪造结果。
+- 无当前 `AngleFrame`、guest 搬运或宿主契约错误必须明确失败；ANGLE 原生 GLES API error
+  必须携带精确 GLenum 锁存到当前 guest context，由 `glGetError` 首错优先、读取清除，禁止
+  静默 no-op、部分回写或伪造结果。
 - process teardown 可通过显式 `RetireGuestGraphics` 永久封闭边界：后续 native/managed
   GLES 调用中性返回 0 且归类 idle，不进入 ANGLE；`eglSwapBuffers` 返回 false 并由同一
   guest thread 的 `eglGetError` 消费 `EGL_BAD_NATIVE_WINDOW`。该门只在 teardown 置位，
@@ -115,6 +116,10 @@ boundary symbol 目录、跨 API 共享的 `GuestGlContext` 与 `A32CallFrame`�
   name 只由同一个 ANGLE context 生成和删除。GLES1 的
   `glGetString(GL_VERSION/GL_EXTENSIONS)` 合成固定管线路径语义(版本
   `OpenGL ES-CM 1.1`,扩展恰为已实现能力),不透传 ES3 后端字符串。
+- GLES1/GLES2 调用 ANGLE 后的原生 GL error 共用上述 guest 锁存；module 只捕获携带精确
+  GLenum 的 `GlesApiError`，内存、生命周期和内部逻辑异常继续向上失败。GLES2
+  `glGetError` 与 GLES1 一样先排空锁存再查询 ANGLE，不把非法 GLES1-only 枚举伪装成
+  GLES2 能力。
 - framebuffer/renderbuffer binding、viewport/scissor、clear state 与共有 capability 也只有
   一份 shared shadow;viewport/scissor 的 guest query 返回该 logical shadow,不泄露超采样
   后的 native 坐标。高频 setter 先验证、执行 ANGLE、再原位窄范围提交,禁止为事务语义

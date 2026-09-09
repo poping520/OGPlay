@@ -214,6 +214,10 @@ DVM-79 的 `DexVmIoVfsAdapter` 是 DexVM core `IoFileSystem` 与具体
   behavior 要求前不越权调用 callback 或替换 managed EGL/ANGLE context。
   DVM-134 的 render mode 以 view 身份保存并校验 API19 常量 0/1；mode 不创建 GLThread，
   帧生产仍只归 lifecycle/managed surface。
+  DVM-135 的 View Runnable 复用会话唯一主 Looper；detached action 在 live content tree
+  出现后的 lifecycle safe point 才转队，pending 与 scheduled 引用共同进入 GC/session roots。
+  DVM-136 的 OrientationEventListener 使用 BootDex 原版 Java；在无 accelerometer backend
+  时显式报告不可检测并保持无回调，不把 requested orientation 冒充设备姿态。
   `IntentFilter` 按 identity 保存 case-sensitive、有序去重 scheme 与 API19
   host/wildcard/parsed-port authority 元数据；dynamic receiver 仍不伪造 sticky
   broadcast、Uri match 或未建立的广播派发。

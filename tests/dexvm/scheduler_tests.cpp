@@ -119,7 +119,8 @@ struct SchedulerVm final {
     Interpreter vm;
     VmThreadRuntime threads;
 
-    SchedulerVm()
+    explicit SchedulerVm(
+        const InterpreterBackend backend = InterpreterBackend::switch_dispatch)
         : vm([this]() -> DexClassLinker& {
                  linker.RegisterIntrinsics(
                      CoreIntrinsicCatalog(AndroidCoreIntrinsicServices(context)));
@@ -131,7 +132,7 @@ struct SchedulerVm final {
                  ogplay::test::RegisterBootDex(linker);
                  linker.Link();
                  return linker;
-             }(), model, nullptr, ledger, {}),
+             }(), model, nullptr, ledger, {.backend = backend}),
           threads(vm) {
         context->threads = &threads;
         vm.Monitors().SetTimeSource(
@@ -316,6 +317,61 @@ TEST_CASE("DVM-85 Handler queue is delayed ordered and removable") {
     CHECK(fixture.messages == std::vector<std::int32_t>{2, 1});
     CHECK(fixture.Direct("Landroid/os/SystemClock;", "uptimeMillis", "()J")
               .value.AsLong() == 10);
+}
+
+TEST_CASE("DVM-135 View posts through attached and detached main queues") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch,
+                               InterpreterBackend::threaded}) {
+        SchedulerVm fixture(backend);
+        const auto activity = fixture.New("Landroid/app/Activity;");
+        const auto frame = fixture.New("Landroid/widget/FrameLayout;");
+        fixture.ConstructAs(
+            frame, "Landroid/widget/FrameLayout;",
+            "(Landroid/content/Context;)V", {VmValue::Ref(activity)});
+        const auto runnable = fixture.New("Ltest/RecordingRunnable;");
+
+        const auto detached = fixture.Virtual(
+            frame, "postDelayed", "(Ljava/lang/Runnable;J)Z",
+            {VmValue::Ref(runnable), VmValue::Long(20)});
+        SchedulerVm::RequireOk(detached);
+        CHECK(detached.value.AsInt() == 1);
+        AdvanceAndroidClock(*fixture.context, 100);
+        CHECK_FALSE(PumpJavaThreads(fixture.vm, *fixture.context).has_value());
+        CHECK(fixture.runnable_calls.load() == 0);
+
+        SchedulerVm::RequireOk(fixture.Virtual(
+            activity, "setContentView", "(Landroid/view/View;)V",
+            {VmValue::Ref(frame)}));
+        CHECK_FALSE(PumpJavaThreads(fixture.vm, *fixture.context).has_value());
+        CHECK(fixture.runnable_calls.load() == 0);
+        AdvanceAndroidClock(*fixture.context, 19);
+        CHECK_FALSE(PumpJavaThreads(fixture.vm, *fixture.context).has_value());
+        CHECK(fixture.runnable_calls.load() == 0);
+        AdvanceAndroidClock(*fixture.context, 1);
+        CHECK_FALSE(PumpJavaThreads(fixture.vm, *fixture.context).has_value());
+        CHECK(fixture.runnable_calls.load() == 1);
+
+        const auto posted = fixture.Virtual(
+            frame, "post", "(Ljava/lang/Runnable;)Z",
+            {VmValue::Ref(runnable)});
+        SchedulerVm::RequireOk(posted);
+        CHECK(posted.value.AsInt() == 1);
+        CHECK(fixture.runnable_calls.load() == 1);
+        CHECK_FALSE(PumpJavaThreads(fixture.vm, *fixture.context).has_value());
+        CHECK(fixture.runnable_calls.load() == 2);
+
+        const auto attached_delayed = fixture.Virtual(
+            frame, "postDelayed", "(Ljava/lang/Runnable;J)Z",
+            {VmValue::Ref(runnable), VmValue::Long(10)});
+        SchedulerVm::RequireOk(attached_delayed);
+        CHECK(attached_delayed.value.AsInt() == 1);
+        AdvanceAndroidClock(*fixture.context, 9);
+        CHECK_FALSE(PumpJavaThreads(fixture.vm, *fixture.context).has_value());
+        CHECK(fixture.runnable_calls.load() == 2);
+        AdvanceAndroidClock(*fixture.context, 1);
+        CHECK_FALSE(PumpJavaThreads(fixture.vm, *fixture.context).has_value());
+        CHECK(fixture.runnable_calls.load() == 3);
+    }
 }
 
 TEST_CASE("DVM-85 Timer and CountDownTimer share the Android clock") {

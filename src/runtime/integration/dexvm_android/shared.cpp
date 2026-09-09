@@ -1127,6 +1127,81 @@ bool EnqueueHandlerWork(const Context& context, const dx::VmObjectRef looper,
     return true;
 }
 
+namespace {
+
+[[nodiscard]] dx::VmObjectRef EnsureViewRootHandler(
+    dx::Interpreter& vm, const Context& context) {
+    const auto looper = EnsureMainLooper(vm, context);
+    {
+        std::scoped_lock lock(context->scheduler_mutex);
+        if (context->view_root_handler.IsValid()) {
+            return context->view_root_handler;
+        }
+    }
+
+    const auto candidate =
+        vm.NewIntrinsicInstance("Landroid/os/Handler;");
+    std::scoped_lock lock(context->scheduler_mutex);
+    if (!context->view_root_handler.IsValid()) {
+        context->view_root_handler = candidate;
+        context->handler_loopers[candidate.Value()] = looper;
+    }
+    return context->view_root_handler;
+}
+
+void FlushPendingViewActions(dx::Interpreter& vm,
+                             DexVmAndroidContext& context) {
+    if (context.ui_tree.Get(context.ui_tree.Root())->children.empty()) return;
+
+    const auto shared = std::shared_ptr<DexVmAndroidContext>(
+        &context, [](DexVmAndroidContext*) {});
+    const auto looper = EnsureMainLooper(vm, shared);
+    const auto handler = EnsureViewRootHandler(vm, shared);
+    const auto token = vm.CurrentContextToken();
+    const auto now = context.uptime_millis.load();
+
+    std::scoped_lock lock(context.scheduler_mutex);
+    if (context.scheduler_shutdown) return;
+    for (const auto& action : context.pending_view_actions) {
+        if (action.context_token != token) continue;
+        EnqueueLocked(context,
+                      {SaturatingDeadline(now, action.delay_millis), 0,
+                       DexVmAndroidContext::ScheduledWorkKind::handler_runnable,
+                       looper, handler, handler, action.runnable,
+                       dx::VmObjectRef{}, 0, 0});
+    }
+    std::erase_if(context.pending_view_actions,
+                  [token](const auto& action) {
+                      return action.context_token == token;
+                  });
+}
+
+}  // namespace
+
+bool PostViewRunnable(dx::IntrinsicContext& call, const Context& context,
+                      const dx::VmObjectRef view,
+                      const dx::VmObjectRef runnable,
+                      const std::int64_t delay_millis) {
+    if (!runnable.IsValid()) {
+        throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;",
+                              "runnable == null"};
+    }
+    const auto node = FindViewUiNode(*context, view.Value());
+    if (node.has_value() && context->ui_tree.IsAttached(*node)) {
+        const auto looper = EnsureMainLooper(call, context);
+        const auto handler = EnsureViewRootHandler(call.vm, context);
+        return EnqueueHandlerWork(
+            context, looper, handler, runnable, dx::VmObjectRef{}, 0, true,
+            SaturatingDeadline(context->uptime_millis.load(), delay_millis));
+    }
+
+    std::scoped_lock lock(context->scheduler_mutex);
+    if (context->scheduler_shutdown) return false;
+    context->pending_view_actions.push_back(
+        {call.vm.CurrentContextToken(), runnable, delay_millis});
+    return true;
+}
+
 void RemoveHandlerWork(const Context& context,
                        const dx::VmObjectRef handler,
                        const std::optional<std::int32_t> what,
@@ -1574,6 +1649,7 @@ void ShutdownAndroidScheduler(DexVmAndroidContext& context) {
     context.scheduler_shutdown = true;
     for (auto& [_, looper] : context.loopers) looper.quitting = true;
     context.scheduled_work.clear();
+    context.pending_view_actions.clear();
     context.scheduler_changed.notify_all();
 }
 
@@ -1582,6 +1658,7 @@ std::optional<std::string> PumpJavaThreads(dx::Interpreter& vm,
     const auto main = android_intrinsics::EnsureMainLooper(
         vm, std::shared_ptr<DexVmAndroidContext>(&context,
                                                 [](DexVmAndroidContext*) {}));
+    android_intrinsics::FlushPendingViewActions(vm, context);
     if (const auto error =
             android_intrinsics::PumpLooperDue(vm, context, main);
         error.has_value()) {

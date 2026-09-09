@@ -968,6 +968,8 @@
       "Landroid/util/SparseLongArray;",
       "Landroid/util/StateSet;",
       "Landroid/util/TypedValue;",
+      "Landroid/view/OrientationEventListener$SensorEventListenerImpl;",
+      "Landroid/view/OrientationEventListener;",
       "Landroid/view/ViewGroup$LayoutParams;",
       "Landroid/view/ViewGroup$MarginLayoutParams;",
       "Landroid/widget/FrameLayout$LayoutParams;",

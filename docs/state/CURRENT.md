@@ -1,8 +1,13 @@
 # 当前状态
 
-更新（2026-09-09）：[DVM-134](../tasks/dexvm/DVM-134.md) 为 `GLSurfaceView` 补齐
-逐 view 的 API 19 render mode 常量/set/get 与非法值校验，不创建 GLThread/EGL surface。
-exact PvZ 新首错为 `FrameLayout.postDelayed(Runnable,long)`。
+更新（2026-09-09）：[DVM-136](../tasks/dexvm/DVM-136.md) 将 API 19
+`OrientationEventListener` 两类迁入 BootDex；当前无 accelerometer backend，原版语义为
+canDetect=false 且 enable/disable 无回调。BootDex 为 970 类；exact PvZ 新首错为
+`Configuration.hardKeyboardHidden:I`。
+
+更新（2026-09-09）：[DVM-135](../tasks/dexvm/DVM-135.md) 为 `View` 补齐 API 19
+`post/postDelayed`，attached View 复用唯一主 Looper，detached action 按 guest 线程暂存并
+在 live-root safe point 转队。exact PvZ 新首错为缺少 `OrientationEventListener` 类层级。
 
 更新（2026-09-09）：[DVM-133](../tasks/dexvm/DVM-133.md) 闭合 API 19
 `ContentResolver.query` 无 provider 分支：虚派读取 URI 后返回 null，不构造空 Cursor，
@@ -29,7 +34,7 @@ TRUE(-1) 规则按 AOSP rule > 0 视为无锚点。exact PvZ 实跑 `CreateDisco
 ## 当前能力
 
 - **发行/guest JNI**：exact Profile API 选择 bundled data。API 19 含 pinned AOSP 五库、
-  AOSP OpenSSL `libcrypto.so`、ICU4C 51.1 库及依赖、968 类 BootDex 和 ICU 数据；来源、
+  AOSP OpenSSL `libcrypto.so`、ICU4C 51.1 库及依赖、970 类 BootDex 和 ICU 数据；来源、
   hash、NOTICE、manifest 与 payload 校验已同步。crypto/ICU 保持源码模块边界，共用
   JNI_OnLoad 和 `libogplay_jni.so`；ICU 只调用 guest C ABI 与 `icudt51l.dat`，host 不链接 ICU。
   制品见 [manifest](../../data/android/19/manifest.json)；`bootdex.jar` 不提交。
@@ -54,13 +59,14 @@ TRUE(-1) 规则按 AOSP rule > 0 视为无锚点。exact PvZ 实跑 `CreateDisco
 
 ## 最近验证
 
-- DVM-133：windows-msvc Release 受影响目标构建；DVM-97/132/133 与 catalog 定向
-  6 项、3409 断言及架构三项通过。exact PvZ 越过 attribution provider 查询，
-  新首错为 `MainView.setRenderMode(I)`；未跑全量、payload 或跨平台验收。
+- DVM-135：windows-msvc Release 受影响目标构建；双解释器 View/Handler 定向
+  2 项、83 断言与 scheduler 文件回归 7 项、194 断言通过。exact PvZ 越过
+  `FrameLayout.postDelayed`，新首错为
+  `android.view.OrientationEventListener` 类层级缺失；未跑全量或跨平台验收。
 
-- DVM-134：windows-msvc Release 受影响目标构建；双解释器 render-mode/EGL policy
-  定向 2 项、43 断言通过。exact PvZ 越过 `MainView.setRenderMode`，新首错为
-  `FrameLayout.postDelayed(Runnable,long)`；未跑全量、payload 或跨平台验收。
+- DVM-136：BootDex build/check 为 970 类；双解释器无 sensor 语义 1 项、34 断言与
+  全类链接 1 项、7192 断言通过。exact PvZ 进入原版 enable 的无 sensor 分支，新首错为
+  `Configuration.hardKeyboardHidden:I`；未跑全量、payload 或跨平台验收。
 
 - BootDex Throwable 定向测试仍 terminate，尚未归因；DVM-120 Typeface 定向测试
   在本 WU 前已失败（stash 验证与本次改动无关）；既有 GUI
@@ -70,7 +76,7 @@ TRUE(-1) 规则按 AOSP rule > 0 视为无锚点。exact PvZ 实跑 `CreateDisco
 
 ## 下一步与边界
 
-1. 分析 `FrameLayout.postDelayed(Runnable,long)` 的 View scheduler 委托，继续推进 PvZ。
+1. 补齐 API 19 `Configuration.hardKeyboardHidden` 字段事实，继续推进 PvZ。
 2. 处理既有 GUI 门禁，补 macOS/Linux、DH 与 Diagnostics 验收。
 
 OGPlay 仅覆盖登记的老游戏进程能力。完整 formatter/大数、宿主资源持久化、Proxy 生成、

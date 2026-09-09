@@ -820,6 +820,21 @@ Decl Declare_android_view_View(const Context& context) {
             return dx::VmValue::Int(
                 node.has_value() && context->ui_tree.IsAttached(*node));
         });
+    builder.VirtualMethod("post", "(Ljava/lang/Runnable;)Z",
+        [context](dx::IntrinsicContext& call) {
+            return dx::VmValue::Int(PostViewRunnable(
+                call, context, call.receiver, call.arguments[0].ref, 0)
+                ? 1
+                : 0);
+        });
+    builder.VirtualMethod("postDelayed", "(Ljava/lang/Runnable;J)Z",
+        [context](dx::IntrinsicContext& call) {
+            return dx::VmValue::Int(PostViewRunnable(
+                call, context, call.receiver, call.arguments[0].ref,
+                call.arguments[1].AsLong())
+                ? 1
+                : 0);
+        });
     builder.VirtualMethod("onTouchEvent", "(Landroid/view/MotionEvent;)Z",
         [](dx::IntrinsicContext&) { return dx::VmValue::Int(0); });
     const auto unhandled_key = dx::IntrinsicHandler(

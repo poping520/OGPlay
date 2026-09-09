@@ -55,6 +55,9 @@ DVM-83 在同一 family TU 发布 API 19 `GLES10/10Ext/11/11Ext/20/GLUtils/GLU`�
 binding。`GLUtils` 读取 context 中既有 Bitmap backing；本层不拥有 GL object state。
 DVM-134 的 `GLSurfaceView` render mode 是 owner-attached guest 事实，默认 continuous，
 仅 0/1 可设置；它不调度 GLThread 或新建 EGL surface/context。
+DVM-136 的 `OrientationEventListener` 算法与状态来自 BootDex；当前 SensorManager 不发布
+accelerometer，故原版构造得到 null sensor、canDetect=false，enable/disable 不产生回调。
+不得用 requested orientation 或桌面窗口方向伪造传感器事件。
 
 ## 不变量
 
@@ -242,6 +245,9 @@ DVM-134 的 `GLSurfaceView` render mode 是 owner-attached guest 事实，默认
 - scheduler side-table 持有的引用必须由 state-table trace 或 session scheduled-root 枚举；
   GC sweep 删除 owner 关联状态，session teardown 先 shutdown scheduler、唤醒 Looper，再
   join guest 线程。所有时钟推进必须调用 `AdvanceAndroidClock` 通知 waiter。
+- DVM-135 的 `View.post/postDelayed` 只进入同一主 Looper scheduler。attached View 共用
+  ViewRoot handler identity；detached View 的 action 按 guest 线程暂存，到该线程下一次
+  live-root lifecycle safe point 才转队并开始计算 delay。不得同步执行或创建宿主 Timer。
 - DVM-86 的 Path、Parcel 与 WakeLock 状态只存在于具名 intrinsic state table；
   Parcel 只传输受检 typed atom，Bundle 在写入时创建 Java 浅副本。Power/Vibrator/Process 不得
   调用 Binder、宿主设备或外部进程；未知 transport/type/action 必须明确失败。

@@ -657,6 +657,76 @@ TEST_CASE("DVM-97 IntentFilter matches bounded MIME URI authority and categories
     CHECK(match(action, mime, uri, unmatched_categories) == -4);
 }
 
+TEST_CASE("DVM-132 API 19 Uri executes from BootDex on both interpreters") {
+    for (const auto backend :
+         {InterpreterBackend::switch_dispatch,
+          InterpreterBackend::threaded}) {
+        AndroidValueVm fixture(backend);
+        const auto text = fixture.vm.NewStringUtf8(
+            "content://user@cdn.example.com:443/plants/pea%20pod?kind=snow%20pea#leaf");
+        const auto uri = fixture.Static(
+            "Landroid/net/Uri;", "parse",
+            "(Ljava/lang/String;)Landroid/net/Uri;",
+            {VmValue::Ref(text)}).ref;
+
+        const auto owner = fixture.model.ObjectClass(uri);
+        CHECK(fixture.linker.Class(owner).descriptor ==
+              "Landroid/net/Uri$StringUri;");
+        CHECK(fixture.linker.Class(owner).is_boot_dex);
+        CHECK(fixture.vm.StringUtf8(
+            fixture.On(uri, "getScheme", "()Ljava/lang/String;").ref) ==
+              "content");
+        CHECK(fixture.vm.StringUtf8(
+            fixture.On(uri, "getHost", "()Ljava/lang/String;").ref) ==
+              "cdn.example.com");
+        CHECK(fixture.On(uri, "getPort", "()I").AsInt() == 443);
+        CHECK(fixture.vm.StringUtf8(
+            fixture.On(uri, "getPath", "()Ljava/lang/String;").ref) ==
+              "/plants/pea pod");
+        CHECK(fixture.vm.StringUtf8(
+            fixture.On(uri, "getQueryParameter",
+                       "(Ljava/lang/String;)Ljava/lang/String;",
+                       {VmValue::Ref(fixture.vm.NewStringUtf8("kind"))}).ref) ==
+              "snow pea");
+        CHECK(fixture.vm.StringUtf8(
+            fixture.On(uri, "toString", "()Ljava/lang/String;").ref) ==
+              fixture.vm.StringUtf8(text));
+        CHECK(fixture.On(
+            text, "regionMatches", "(ILjava/lang/String;II)Z",
+            {VmValue::Int(0), VmValue::Ref(text), VmValue::Int(0),
+             VmValue::Int(-1)}).AsInt() == 1);
+
+        const auto builder = fixture.On(
+            uri, "buildUpon", "()Landroid/net/Uri$Builder;").ref;
+        REQUIRE(builder.IsValid());
+        fixture.On(
+            builder, "appendPath",
+            "(Ljava/lang/String;)Landroid/net/Uri$Builder;",
+            {VmValue::Ref(fixture.vm.NewStringUtf8("winter mint"))});
+        fixture.On(
+            builder, "appendQueryParameter",
+            "(Ljava/lang/String;Ljava/lang/String;)Landroid/net/Uri$Builder;",
+            {VmValue::Ref(fixture.vm.NewStringUtf8("level")),
+             VmValue::Ref(fixture.vm.NewStringUtf8("1+2"))});
+        const auto built = fixture.On(
+            builder, "build", "()Landroid/net/Uri;").ref;
+        CHECK(fixture.vm.StringUtf8(
+            fixture.On(built, "toString", "()Ljava/lang/String;").ref) ==
+              "content://user@cdn.example.com:443/plants/pea%20pod/winter%20mint"
+              "?kind=snow%20pea&level=1%2B2#leaf");
+
+        const auto encoded = fixture.Static(
+            "Landroid/net/Uri;", "encode",
+            "(Ljava/lang/String;)Ljava/lang/String;",
+            {VmValue::Ref(fixture.vm.NewStringUtf8("雪 pea/+"))}).ref;
+        CHECK(fixture.vm.StringUtf8(encoded) == "%E9%9B%AA%20pea%2F%2B");
+        CHECK(fixture.vm.StringUtf8(fixture.Static(
+            "Landroid/net/Uri;", "decode",
+            "(Ljava/lang/String;)Ljava/lang/String;",
+            {VmValue::Ref(encoded)}).ref) == "雪 pea/+");
+    }
+}
+
 TEST_CASE("DVM-97 dynamic content MIME and malformed filters fail explicitly") {
     AndroidValueVm fixture;
     const auto content_uri = fixture.Static(

@@ -2076,6 +2076,32 @@ IntrinsicClassDecl Declare_java_lang_String() {
                     Value(context, context.receiver),
                     Value(context, context.arguments[0].ref), true));
             });
+    builder.FinalMethod("regionMatches", "(ILjava/lang/String;II)Z",
+        [](IntrinsicContext& context) {
+            const auto text = Value(context, context.receiver);
+            if (!context.arguments[1].ref.IsValid()) {
+                throw VmJavaThrow{"Ljava/lang/NullPointerException;",
+                                  "string == null"};
+            }
+            const auto other = Value(context, context.arguments[1].ref);
+            const auto this_offset = context.arguments[0].AsInt();
+            const auto other_offset = context.arguments[2].AsInt();
+            const auto length = context.arguments[3].AsInt();
+            if (other_offset < 0 ||
+                static_cast<std::int64_t>(other.size()) - other_offset < length ||
+                this_offset < 0 ||
+                static_cast<std::int64_t>(text.size()) - this_offset < length) {
+                return VmValue::Int(0);
+            }
+            if (length <= 0) return VmValue::Int(1);
+            return VmValue::Int(
+                text.compare(static_cast<std::size_t>(this_offset),
+                             static_cast<std::size_t>(length), other,
+                             static_cast<std::size_t>(other_offset),
+                             static_cast<std::size_t>(length)) == 0
+                    ? 1
+                    : 0);
+        });
     builder.FinalMethod("concat", "(Ljava/lang/String;)Ljava/lang/String;",
         [](IntrinsicContext& context) {
                 return Make(context, Value(context, context.receiver) +

@@ -1536,3 +1536,24 @@
     move-result v0
     return v0
 .end method
+
+.method static public captureVirtual(Ldiagnostics/Host;Ljava/lang/String;)I
+.registers 2
+    invoke-virtual {v0, v1}, Ldiagnostics/Host;->missing(Ljava/lang/String;)I
+    move-result v0
+    return v0
+.end method
+
+.method static public captureArgsRange(Ljava/lang/String;FIZBSCJD[Ljava/lang/String;)I
+.registers 12
+    invoke-static/range {v0 .. v11}, Ldiagnostics/Host;->missingRange(Ljava/lang/String;FIZBSCJD[Ljava/lang/String;)I
+    move-result v0
+    return v0
+.end method
+
+.method static public captureMany(IIIIIIIIIIIIIIIII)I
+.registers 17
+    invoke-static/range {v0 .. v16}, Ldiagnostics/Host;->missingMany(IIIIIIIIIIIIIIIII)I
+    move-result v0
+    return v0
+.end method

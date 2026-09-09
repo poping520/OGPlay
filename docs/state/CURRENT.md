@@ -1,6 +1,10 @@
 # 当前状态
 
-更新（2026-09-09）：[DVM-130](../tasks/dexvm/DVM-130.md) 将 guest 平台 JNI 入口统一到
+更新（2026-09-09）：[DVM-131](../tasks/dexvm/DVM-131.md) 为致命 `invoke-*` 错误增加
+receiver 与有界类型化参数现场；直接读取原始 DEX prototype/源寄存器，非空对象直接虚派
+`toString()` 并有界打印返回内容，不改变正常调用热路径。
+
+此前 [DVM-130](../tasks/dexvm/DVM-130.md) 将 guest 平台 JNI 入口统一到
 DexVM/BootDex，删除 Build/SystemProperties、Context/Activity 服务、Settings.Secure、Bundle、
 AudioTrack 的重复 HLE 与播放状态。纯 native/HLE 会话不再提供这些类，需装配 VM。
 
@@ -45,6 +49,9 @@ TRUE(-1) 规则按 AOSP rule > 0 视为无锚点。exact PvZ 实跑 `CreateDisco
 
 ## 最近验证
 
+- DVM-131：windows-msvc Release 受影响目标构建；fatal stack/参数双后端定向 2 项、100 断言，
+  capabilities/documentation/intrinsic architecture 3 项通过。未跑游戏、全量或跨平台验收。
+
 - DVM-130：windows-msvc Release 构建；JNI/平台/音频定向 36 项、1682 断言与 intrinsic
   架构检查通过。覆盖双解释器、GC、异常及实际 PCM 输出；未跑游戏、全量或跨平台验收。
 
@@ -54,13 +61,6 @@ TRUE(-1) 规则按 AOSP rule > 0 视为无锚点。exact PvZ 实跑 `CreateDisco
 - DVM-128：macOS dev 构建；沙盒身份迁移/稳定 8、Settings.Secure 双后端/GC 30、JNI
   平台一致性 58 断言通过。关闭 survey 的 exact PvZ 越过原缺口，新首错为 fixed-font XML
   非 ASCII 文本限制。
-- DVM-127：macOS dev 构建；环境序列化 65、System.getenv 双后端 64、949 类全链接
-  6951 断言及 intrinsic layout、BootDex build/check/self-test 通过。宿主 PATH 投毒下 exact PvZ 仍越过 getenv，
-  新首错为 Settings.Secure。payload/audit 仍被既有本地 BootDex 输入/生成器改动阻塞。
-- DVM-126：windows-msvc Release 构建；双后端 Formatter 80 断言、948 类全链接、
-  StringBuilder/目录结构定向回归及相关 CTest 10/10 通过；platform-boundaries 仍仅被既有
-  GUI 分支阻塞。exact PvZ 已越过 `%tZ`，新首错为 `System.getenv(String)`；日志
-  `.local/review/dvm126/pvz-run.log`。
 - BootDex Throwable 定向测试仍 terminate，尚未归因；DVM-120 Typeface 定向测试
   在本 WU 前已失败（stash 验证与本次改动无关）；既有 GUI
   `process_manager.cpp:131` 仍使 platform_boundaries 门禁失败。本轮未运行全量 CTest、

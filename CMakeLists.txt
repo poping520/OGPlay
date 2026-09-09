@@ -459,6 +459,7 @@ add_library(ogplay_runtime
     src/runtime/dexvm/class_linker.cpp
     src/runtime/dexvm/class_linker_resolve.cpp
     src/runtime/dexvm/diagnostics.cpp
+    src/runtime/dexvm/fault_invoke_diagnostics.cpp
     src/runtime/dexvm/fast_code.cpp
     ${OGPLAY_DEXVM_INTRINSIC_SOURCES}
     src/runtime/dexvm/gap_survey.cpp

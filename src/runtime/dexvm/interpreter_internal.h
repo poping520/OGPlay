@@ -69,6 +69,9 @@ struct InterpreterExecutionState final {
     std::atomic<bool> stop_requested{false};
 };
 
+void AppendFaultInvokeArguments(std::string& rendered, const Frame& frame,
+                                Interpreter& vm) noexcept;
+
 struct RawDexVmTraceEntry final {
     std::uint64_t sequence{};
     DexVmTraceKind kind{DexVmTraceKind::instruction};

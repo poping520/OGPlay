@@ -149,7 +149,8 @@ intrinsic。解释应用 DEX 与受审 API 19 curated Boot DEX；完整平台库
   新 identity，仅复制 `vm_instance` slots 或数组元素；string/class/host-backed 明确失败。
   JNI `NewObject` 的 application identity 回入解释器时，经注入的 lazy layout resolver 建立完整实例槽并保留
   identity；intrinsic host object 仍属 external/专用 store。`String` 保持 VM 的唯一 UTF-16
-  owner；两个 `String.format` intrinsic 仅实现 API 19 `Locale.getDefault`/`StringBuilder`/
+  owner，并提供受检 length/region 读取供不分配 guest 对象的有界诊断；两个 `String.format`
+  intrinsic 仅实现 API 19 `Locale.getDefault`/`StringBuilder`/
   `Formatter` 包装链。格式解析、虚 `toString`、格式异常、Locale 与日期转换执行 BootDex，
   `AbstractStringBuilder`/Appendable 和整数 append 只桥接既有 builder 状态；不借用 host
   printf/locale。
@@ -197,8 +198,12 @@ intrinsic。解释应用 DEX 与受审 API 19 curated Boot DEX；完整平台库
   `RequestStop(context)` 每指令检查并以 `thread_stopped` 退出；host join 后可用
   `UnwindStoppedExecutionContext` 清理重入遗留帧，未 stop 或尚有 native frame 时拒绝，活动栈
   也不能被 `DiscardExecutionContext` 丢弃。不可恢复 `DexVmError` 在清帧前附一次最多 64 帧的
-  guest stack（含 context/thread、opcode、可用 method index、descriptor 和 DEX PC），不依赖
-  diagnostics，也不暴露 host address。
+  guest stack（含 context/thread、opcode、可用 method index、descriptor 和 DEX PC）。故障指令
+  为 invoke 时直接从原始 method reference/prototype 与源寄存器输出 receiver 和最多 16 个
+  类型化参数；排版按 target/returns/receiver/arguments 分区并对齐参数类型。String 有界转义，
+  其他非空引用直接虚派 `toString()` 并有界打印返回 String；失败只降级该值。实际类型等于
+  声明类型时不重复 descriptor。thread context、fault instruction/invoke 与 guest stack 按
+  故障到帧列表分区。诊断不依赖 trace 开关，也不暴露 host address。
 - `InterpreterConfig::diagnostics` / `Interpreter::Trace`（DVM-52）：容量 0 时精确关闭；启用后
   使用固定事件 ring，记录 instruction、method、exception、class-init、monitor、native 和 GC
   的整数事实，支持采样及受检 filter/
@@ -286,7 +291,8 @@ array、caller、allocation、Clock/permit 与真实 BootDex atomic/AQS 初始�
   `class_linker.cpp`，解析与
   assignability 在 `class_linker_resolve.cpp`，预检与 FastCode 缓存入口在
   `method_precheck.cpp`，构建在 `fast_code.cpp`。
-- interpreter：主循环在 `interpreter.cpp`，threaded 循环以 `#include`
+- interpreter：主循环在 `interpreter.cpp`，致命 invoke 参数格式化在
+  `fault_invoke_diagnostics.cpp`；threaded 循环以 `#include`
   `interp_threaded_{straight,object,invoke}.inc` 组成；context/执行锁在
   `interpreter_context.cpp`，诊断在 `diagnostics.cpp`，gap survey 在 `gap_survey.cpp`，host thread
   生命周期在 `vm_threads.cpp`。

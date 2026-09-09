@@ -1,6 +1,7 @@
 #include "ogplay/runtime/syscall/syscall.h"
 
 #include "guest_path_reader.h"
+#include "file_transfer.h"
 #include <array>
 #include <bit>
 #include <chrono>
@@ -665,7 +666,6 @@ void BindAndroidFileSyscalls(A32SyscallDispatcher& dispatcher,
     constexpr std::int32_t kEinval = 22;
     constexpr std::int32_t kEoverflow = 75;
     constexpr std::int32_t kEnotsup = 95;
-    constexpr std::uint32_t kMaxIoSize = 16U * 1024U * 1024U;
     const auto read_path = [&address_space](const std::uint32_t raw_address) {
         return syscall_detail::ReadGuestPath(address_space, raw_address);
     };
@@ -728,47 +728,12 @@ void BindAndroidFileSyscalls(A32SyscallDispatcher& dispatcher,
             }
             return open(frame.arguments[1], frame.arguments[2]);
         });
-    dispatcher.Implement(
-        3, [&vfs, &address_space](const A32SyscallFrame& frame) {
-            const auto count = frame.arguments[2];
-            if (count > kMaxIoSize) return -kEinval;
-            try {
-                if (count == 0) return 0;
-                const memory::GuestAddress destination{frame.arguments[1]};
-                address_space.Validate({destination, count},
-                                       memory::AccessType::write,
-                                       frame.thread_id);
-                std::vector<std::byte> bytes(count);
-                const auto actual =
-                    vfs.Read(std::bit_cast<std::int32_t>(frame.arguments[0]), bytes);
-                address_space.Write(destination,
-                                    std::span<const std::byte>(bytes).first(actual),
-                                    frame.thread_id);
-                return static_cast<std::int32_t>(actual);
-            } catch (const memory::MemoryFault&) {
-                return -kEfault;
-            } catch (const VfsError& error) {
-                return -error.ErrorNumber();
-            }
-        });
-    dispatcher.Implement(
-        4, [&vfs, &address_space](const A32SyscallFrame& frame) {
-            const auto count = frame.arguments[2];
-            if (count > kMaxIoSize) return -kEinval;
-            try {
-                if (count == 0) return 0;
-                const memory::GuestAddress source{frame.arguments[1]};
-                std::vector<std::byte> bytes(count);
-                address_space.Read(source, bytes, frame.thread_id);
-                const auto actual = vfs.Write(
-                    std::bit_cast<std::int32_t>(frame.arguments[0]), bytes);
-                return static_cast<std::int32_t>(actual);
-            } catch (const memory::MemoryFault&) {
-                return -kEfault;
-            } catch (const VfsError& error) {
-                return -error.ErrorNumber();
-            }
-        });
+    dispatcher.Implement(3, [&vfs, &address_space](const A32SyscallFrame& frame) {
+        return syscall_detail::TransferFile(vfs, address_space, frame, false);
+    });
+    dispatcher.Implement(4, [&vfs, &address_space](const A32SyscallFrame& frame) {
+        return syscall_detail::TransferFile(vfs, address_space, frame, true);
+    });
     dispatcher.Implement(
         42, [&vfs, &address_space](const A32SyscallFrame& frame) {
             const memory::GuestAddress output{frame.arguments[0]};

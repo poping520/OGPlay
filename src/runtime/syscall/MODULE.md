@@ -19,6 +19,10 @@ exit/exit_group/clear-child-tid 所需的 guest 线程生命周期状态。
   真实驻留的 futex wait 为 advanced，查询、EOF/零字节、wake/yield、内存管理及默认均为
   idle。类别清单集中在 dispatcher，未知 family 禁止自动续期。
 - guest 地址必须经受检内存访问；时间源只使用统一 Clock。
+- `read/write/pread64/pwrite64` 共用 `file_transfer.h`，以 64 KiB 临时缓冲分块，
+  不再因请求超过 16 MiB 返回 `-EINVAL`；单次请求截到 `0x7ffff000`。
+  短传输即停止，后续块的内存/VFS 错误返回已完成字节，首块错误返回 errno。
+  定位 IO 沿用 seek/restore（不承诺并发原子性），错误路径同样恢复原 offset。
 - API 19 `nanosleep` 受检读取 32-bit timespec；只有非零请求实际 host sleep 后报告 advanced，
   零时长与错误为 idle。
 - API 19 futex wait 的 timeout 是 guest 32-bit 相对 timespec；超时返回 `-ETIMEDOUT`，

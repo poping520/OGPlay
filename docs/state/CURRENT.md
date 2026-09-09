@@ -1,5 +1,10 @@
 # 当前状态
 
+更新（2026-09-09）：[SBX-13](../tasks/sandbox/SBX-13.md) 移除文件 IO 的 16 MiB
+请求拒绝限制，改为 64 KiB 分块。exact PvZ 诊断实跑的 40,531,351 字节 read 完整成功；
+后续仍有 guest fault：游戏 `new[]` 返回 null 后复制 45,047,808 字节到空目标，
+尚未定位该分配失败原因，不代表游戏启动通过。
+
 更新（2026-09-09）：[BND-28](../tasks/boundary/BND-28.md) 将 ANGLE 原生 GLES error
 类型化并回送 GLES1/2 共用 guest 锁存，`glGetError` 首错优先、读取清除；宿主契约失败
 仍明确终止。exact PvZ 越过 `glTexParameteri` 1280，新首错为 `guest memory is unmapped`。

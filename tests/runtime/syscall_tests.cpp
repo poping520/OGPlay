@@ -1007,6 +1007,52 @@ TEST_CASE("Android access, rename and positional IO keep their contracts") {
     CHECK(fixture.Call(33, {0x20000, 0, 0, 0, 0, 0}) == -2);
 }
 
+TEST_CASE("Android large file IO exceeds sixteen MiB with bounded transfers") {
+    MetadataSyscallFixture fixture;
+    constexpr std::uint32_t size = 17U * 1024U * 1024U + 123U;
+    constexpr std::uint32_t base = 0x100000U;
+    fixture.memory.Map({GuestAddress{base}, 18U * 1024U * 1024U},
+        ogplay::memory::PageProtection::read | ogplay::memory::PageProtection::write);
+    std::vector<std::byte> expected(size);
+    for (std::size_t i = 0; i < expected.size(); ++i)
+        expected[i] = static_cast<std::byte>((i * 37U + i / 65536U) & 255U);
+    fixture.memory.Write(GuestAddress{base}, expected);
+    fixture.WriteString(0x20000, "/sdcard/large.bin");
+    const auto opened = fixture.Call(5, {0x20000, 0x42, 0, 0, 0, 0});
+    REQUIRE(opened >= 3);
+    const auto fd = static_cast<std::uint32_t>(opened);
+    for (const auto number : {4U, 181U}) {
+        REQUIRE(fixture.Call(number, {fd, base, size, 0, 0, 0}) == size);
+        CHECK(fixture.Call(19, {fd, 0, 1, 0, 0, 0}) == size);
+    }
+    for (const auto number : {180U, 3U}) {
+        std::vector<std::byte> zeros(size);
+        fixture.memory.Write(GuestAddress{base}, zeros);
+        if (number == 3U) REQUIRE(fixture.Call(19, {fd, 0, 0, 0, 0, 0}) == 0);
+        // EOF in the last transfer must return actual bytes, not the request.
+        REQUIRE(fixture.Call(number, {fd, base, size + 100U, 0, 0, 0}) == size);
+        fixture.memory.Read(GuestAddress{base}, zeros);
+        CHECK(zeros == expected);
+        CHECK(fixture.Call(19, {fd, 0, 1, 0, 0, 0}) == size);
+    }
+    CHECK(fixture.Call(180, {fd, 0, 1, 0, 0, 0}) == -14);
+    CHECK(fixture.Call(181, {fd, 0, 1, 0, 0, 0}) == -14);
+    CHECK(fixture.Call(19, {fd, 0, 1, 0, 0, 0}) == size);
+    // A fault after one completed chunk preserves that progress.
+    constexpr std::uint32_t tail = base + 18U * 1024U * 1024U - 65536U;
+    REQUIRE(fixture.Call(19, {fd, 0, 0, 0, 0, 0}) == 0);
+    CHECK(fixture.Call(3, {fd, tail, 131072, 0, 0, 0}) == 65536);
+    CHECK(fixture.Call(19, {fd, 0, 1, 0, 0, 0}) == 65536);
+    for (const auto number : {180U, 181U}) {
+        CHECK(fixture.Call(number, {fd, tail, 131072, 0, 0, 0}) == 65536);
+        CHECK(fixture.Call(19, {fd, 0, 1, 0, 0, 0}) == 65536);
+        CHECK(fixture.Call(number, {fd, base, 1, 0, 0, 0x80000000U}) == -22);
+        CHECK(fixture.Call(number, {9999, base, size, 0, 0, 0}) == -9);
+    }
+    CHECK(fixture.Call(4, {fd, tail, 131072, 0, 0, 0}) == 65536);
+    CHECK(fixture.Call(19, {fd, 0, 1, 0, 0, 0}) == 131072);
+}
+
 TEST_CASE("Android *at syscalls refuse relative paths instead of guessing") {
     MetadataSyscallFixture fixture;
     fixture.WriteString(0x20000, "relative/path");

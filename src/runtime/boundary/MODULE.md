@@ -280,6 +280,10 @@ boundary symbol 目录、跨 API 共享的 `GuestGlContext` 与 `A32CallFrame`�
 
 ## 测试
 
+BND-29：GLES2 enable/disable/isEnabled 只将 capability 前置枚举校验失败转为
+GlesApiError(GL_INVALID_ENUM)，复用共用错误锁存，错误调用不改变状态。
+无当前 ANGLE frame 仍先明确失败，禁止全局吞掉 std::invalid_argument。
+
 对应 `tests/runtime/boundary/integration/android_boundary_hle_tests.cpp`（同时覆盖独立 GLES
 分派组件）与 `tests/runtime/boundary/modules/gles1_fixed_tests.cpp`。architecture gate 递归
 扫描 `src/runtime/boundary/{core,services,modules,facade}` 下全部 implementation，并对

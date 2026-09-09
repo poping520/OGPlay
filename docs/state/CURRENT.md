@@ -1,16 +1,16 @@
 # 当前状态
 
-更新（2026-09-09）：[DVM-141](../tasks/dexvm/DVM-141.md) 数组元素 JNI 出口按真实类型
-原子幂等注册，bridge 共用该流程。PvZ 到第 2 帧，新首错 shared GL capability is invalid。
+更新（2026-09-09）：[BND-29](../tasks/boundary/BND-29.md) GLES2 非法 capability
+前置校验回送 GL_INVALID_ENUM；真实 ANGLE 定向 2 用例/99 断言通过。
+[DVM-141](../tasks/dexvm/DVM-141.md) 数组元素 JNI 出口按真实类型原子幂等注册已完成。
 [DVM-140](../tasks/dexvm/DVM-140.md) Intent.putExtras(Bundle) 委托 Java 浅合并。
 
 更新（2026-09-09）：[SBX-14](../tasks/sandbox/SBX-14.md) 将匿名 mmap2 改为
 AddressSpace 账本锁内 first-fit 选址并映射；跳过全部已映射页，复用释放空洞，
 失败不消耗地址，brk 状态串行化。9 用例/65 断言通过；PvZ 越过原内存故障到第 1 帧。
 
-更新（2026-09-09）：[SBX-13](../tasks/sandbox/SBX-13.md) 移除文件 IO 的 16 MiB
-请求拒绝限制，改为 64 KiB 分块。40,531,351 字节 read 完整成功；后续 mmap
-撞固定 TLS 的原因及取证见任务单，修复由 SBX-14 接续。
+[SBX-13](../tasks/sandbox/SBX-13.md)：文件 IO 改为 64 KiB 分块，解除 16 MiB 限制；
+40,531,351 字节 read 完整成功。
 
 [BND-28](../tasks/boundary/BND-28.md)：ANGLE GLES error 回送共用 guest 锁存，
 glGetError 首错优先、读取清除，宿主契约错误仍终止。

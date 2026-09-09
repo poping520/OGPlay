@@ -727,6 +727,50 @@ TEST_CASE("DVM-132 API 19 Uri executes from BootDex on both interpreters") {
     }
 }
 
+TEST_CASE("DVM-136 API 19 OrientationEventListener preserves absent sensor semantics") {
+    for (const auto backend :
+         {InterpreterBackend::switch_dispatch,
+          InterpreterBackend::threaded}) {
+        std::int32_t orientation_callbacks{};
+        auto listener = IntrinsicClassBuilder::Class(
+            "Ltest/OrientationListener;",
+            "Landroid/view/OrientationEventListener;");
+        listener.OverrideMethod(
+            "onOrientationChanged", "(I)V",
+            [&orientation_callbacks](IntrinsicContext&) {
+                ++orientation_callbacks;
+                return VmValue::Void();
+            });
+        AndroidValueVm fixture(backend, {std::move(listener).Build()});
+
+        const auto orientation_type = fixture.linker.ResolveDescriptor(
+            "Landroid/view/OrientationEventListener;");
+        CHECK(fixture.linker.Class(orientation_type).is_boot_dex);
+        const auto implementation_type = fixture.linker.ResolveDescriptor(
+            "Landroid/view/OrientationEventListener$SensorEventListenerImpl;");
+        CHECK(fixture.linker.Class(implementation_type).is_boot_dex);
+
+        const auto context = fixture.New("Landroid/content/Context;");
+        const auto object = fixture.vm.NewIntrinsicInstance(
+            "Ltest/OrientationListener;");
+        const auto constructor = fixture.linker.FindDirectMethod(
+            orientation_type, "<init>", "(Landroid/content/Context;)V");
+        REQUIRE(constructor.has_value());
+        const std::array constructor_arguments{
+            VmValue::Ref(object), VmValue::Ref(context)};
+        const auto constructed = fixture.vm.Call(
+            *constructor, constructor_arguments);
+        REQUIRE_MESSAGE(!constructed.exception.IsValid(),
+                        constructed.exception_message);
+
+        CHECK(fixture.On(object, "canDetectOrientation", "()Z").AsInt() == 0);
+        static_cast<void>(fixture.On(object, "enable", "()V"));
+        static_cast<void>(fixture.On(object, "enable", "()V"));
+        static_cast<void>(fixture.On(object, "disable", "()V"));
+        CHECK(orientation_callbacks == 0);
+    }
+}
+
 TEST_CASE("DVM-133 ContentResolver query returns null when no provider exists") {
     for (const auto backend :
          {InterpreterBackend::switch_dispatch,

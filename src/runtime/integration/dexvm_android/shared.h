@@ -71,6 +71,11 @@ dx::VmObjectRef OpenStream(dx::IntrinsicContext& call, const Context& context,
     const Context& context, dx::VmObjectRef looper, dx::VmObjectRef handler,
     dx::VmObjectRef payload, dx::VmObjectRef token, std::int32_t what,
     bool runnable, std::int64_t deadline_millis);
+[[nodiscard]] bool PostViewRunnable(dx::IntrinsicContext& call,
+                                    const Context& context,
+                                    dx::VmObjectRef view,
+                                    dx::VmObjectRef runnable,
+                                    std::int64_t delay_millis);
 void RemoveHandlerWork(const Context& context, dx::VmObjectRef handler,
                        std::optional<std::int32_t> what,
                        dx::VmObjectRef payload, bool runnable,

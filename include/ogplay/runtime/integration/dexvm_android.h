@@ -429,6 +429,12 @@ struct DexVmAndroidContext final {
         std::uint64_t generation{};
     };
 
+    struct PendingViewAction final {
+        std::uint64_t context_token{};
+        dexvm::VmObjectRef runnable{};
+        std::int64_t delay_millis{};
+    };
+
     struct LooperState final {
         std::uint64_t context_token{};
         dexvm::VmObjectRef thread{};
@@ -477,6 +483,12 @@ struct DexVmAndroidContext final {
     std::uint64_t next_scheduler_sequence{1};
     bool scheduler_shutdown{};
     dexvm::VmObjectRef main_looper;
+    // OGPlay has one managed ViewRoot. Its private Handler identity is shared
+    // by every attached View, matching API 19 AttachInfo dispatch ownership.
+    dexvm::VmObjectRef view_root_handler;
+    // API 19 ViewRootImpl keeps posts made by detached Views in a per-thread
+    // RunQueue until that thread next traverses a live ViewRoot.
+    std::vector<PendingViewAction> pending_view_actions;
     std::unordered_map<std::uint32_t, LooperState> loopers;
     std::unordered_map<std::uint64_t, dexvm::VmObjectRef> thread_loopers;
     std::unordered_map<std::uint32_t, dexvm::VmObjectRef> handler_loopers;

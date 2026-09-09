@@ -155,6 +155,8 @@ Asphalt 5（pilot title）删除 profile 全部 `native_call` 与 `[[java.class]
 | [DVM-132](DVM-132.md) | `android.net.Uri` 迁入 BootDex | 完成 |
 | [DVM-133](DVM-133.md) | ContentResolver 无 provider 查询 | 完成 |
 | [DVM-134](DVM-134.md) | GLSurfaceView render mode | 完成 |
+| [DVM-135](DVM-135.md) | View 主线程 Runnable 投递 | 完成 |
+| [DVM-136](DVM-136.md) | API 19 OrientationEventListener | 完成 |
 
 ## 批次 4 · 更多 title 上 dexvm 路线（进行中）
 

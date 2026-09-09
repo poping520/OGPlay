@@ -137,12 +137,16 @@ void VisitAndroidSessionRoots(const DexVmAndroidContext& context,
     {
         std::scoped_lock lock(context.scheduler_mutex);
         root(context.main_looper);
+        root(context.view_root_handler);
         for (const auto& work : context.scheduled_work) {
             root(work.looper);
             root(work.owner);
             root(work.target);
             root(work.payload);
             root(work.token);
+        }
+        for (const auto& action : context.pending_view_actions) {
+            root(action.runnable);
         }
     }
     for (const auto& [_, ref] : context.ui_node_to_object) root(ref);

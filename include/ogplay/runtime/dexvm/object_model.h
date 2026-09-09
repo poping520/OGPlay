@@ -144,6 +144,9 @@ public:
     [[nodiscard]] VmObjectRef NewString(std::u16string_view value);
     [[nodiscard]] VmObjectRef InternString(std::u16string_view value);
     [[nodiscard]] VmObjectRef InternString(VmObjectRef value);
+    [[nodiscard]] JniSize StringLength(VmObjectRef ref) const;
+    [[nodiscard]] std::u16string StringRegion(VmObjectRef ref, JniSize start,
+                                              JniSize length) const;
     [[nodiscard]] std::u16string StringValue(VmObjectRef ref) const;
     // Converts a freshly allocated vm_instance of the string class into a
     // real string record in place (same handle, new store-backed identity).

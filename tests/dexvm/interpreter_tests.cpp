@@ -96,6 +96,35 @@ struct Vm final {
     }
 };
 
+IntrinsicClassDecl DiagnosticSystemPropertiesOverlay() {
+    auto builder =
+        IntrinsicClassBuilder::Class("Landroid/os/SystemProperties;");
+    constexpr auto flags = kAccPrivate | kAccNative;
+    builder.StaticMethod(
+        "native_get", "(Ljava/lang/String;)Ljava/lang/String;",
+        [](IntrinsicContext&) { return VmValue::Ref(VmObjectRef{}); }, flags);
+    builder.StaticMethod(
+        "native_get",
+        "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;",
+        [](IntrinsicContext&) { return VmValue::Ref(VmObjectRef{}); }, flags);
+    builder.StaticMethod(
+        "native_get_int", "(Ljava/lang/String;I)I",
+        [](IntrinsicContext&) { return VmValue::Int(0); }, flags);
+    builder.StaticMethod(
+        "native_get_long", "(Ljava/lang/String;J)J",
+        [](IntrinsicContext&) { return VmValue::Long(0); }, flags);
+    builder.StaticMethod(
+        "native_get_boolean", "(Ljava/lang/String;Z)Z",
+        [](IntrinsicContext&) { return VmValue::Int(0); }, flags);
+    builder.StaticMethod(
+        "native_set", "(Ljava/lang/String;Ljava/lang/String;)V",
+        [](IntrinsicContext&) { return VmValue::Void(); }, flags);
+    builder.StaticMethod(
+        "native_add_change_callback", "()V",
+        [](IntrinsicContext&) { return VmValue::Void(); }, flags);
+    return std::move(builder).Build();
+}
+
 struct IntrinsicVm final {
     JniStringStore strings;
     JniPrimitiveArrayStore arrays;
@@ -2819,6 +2848,7 @@ TEST_CASE("dexvm fatal errors retain the interpreted guest call stack") {
         auto builder =
             IntrinsicClassBuilder::Class("Ldiagnostics/Host;");
         std::vector<IntrinsicClassDecl> catalog;
+        catalog.push_back(DiagnosticSystemPropertiesOverlay());
         catalog.push_back(std::move(builder).Build());
         Vm vm(config, JavaObjectModelConfig{}, std::move(catalog));
         VmThreadRuntime threads(vm.interpreter);
@@ -2839,7 +2869,7 @@ TEST_CASE("dexvm fatal errors retain the interpreted guest call stack") {
                       "context=1 guest_thread_id=1 thread=\"main\" "
                       "frames=2 shown=2") != std::string::npos);
             CHECK(message.find(
-                      "DexVM fault instruction: invoke-static opcode=0x71 "
+                      "DexVM fault instruction: invoke-static (opcode=0x71, "
                       "method_idx=") != std::string::npos);
             const auto inner = message.find(
                 "#0 at LDiagnosticsProbe;->capture()I (dex_pc=0)");
@@ -2869,6 +2899,140 @@ TEST_CASE("dexvm fatal errors retain the interpreted guest call stack") {
         const auto stacks = vm.interpreter.StackSnapshot();
         REQUIRE(stacks.size() == 1U);
         CHECK(stacks.front().frames.empty());
+    });
+}
+
+TEST_CASE("dexvm fatal invoke diagnostics render bounded typed arguments") {
+    WithEachBackend([](InterpreterConfig config) {
+        auto builder =
+            IntrinsicClassBuilder::Class("Ldiagnostics/Host;");
+        builder.FinalOverrideMethod(
+            "toString", "()Ljava/lang/String;",
+            [](IntrinsicContext& call) {
+                return VmValue::Ref(call.vm.NewStringUtf8("host-view"));
+            });
+        std::vector<IntrinsicClassDecl> catalog;
+        catalog.push_back(DiagnosticSystemPropertiesOverlay());
+        catalog.push_back(std::move(builder).Build());
+        Vm vm(config, JavaObjectModelConfig{}, std::move(catalog));
+
+        const auto text = vm.interpreter.NewStringUtf8("query\n\"value\"");
+        const auto receiver =
+            vm.interpreter.NewIntrinsicInstance("Ldiagnostics/Host;");
+        try {
+            static_cast<void>(vm.CallStatic(
+                "LDiagnosticsProbe;", "captureVirtual",
+                "(Ldiagnostics/Host;Ljava/lang/String;)I",
+                {VmValue::Ref(receiver), VmValue::Ref(text)}));
+            FAIL("missing virtual method must fail");
+        } catch (const DexVmError& error) {
+            const std::string message = error.what();
+            CHECK(message.find(
+                      "DexVM fault invoke:\n"
+                      "  target   : Ldiagnostics/Host;->missing\n"
+                      "  returns  : I") != std::string::npos);
+            CHECK(message.find("DexVM fault invoke:") <
+                  message.find("DexVM guest stack (innermost first):"));
+            CHECK(message.find(
+                      "receiver : Ldiagnostics/Host; = \"host-view\"") !=
+                  std::string::npos);
+            CHECK(message.find(
+                      "[ 0] Ljava/lang/String;           = "
+                      "\"query\\n\\\"value\\\"\"") != std::string::npos);
+        }
+
+        try {
+            static_cast<void>(vm.CallStatic(
+                "LDiagnosticsProbe;", "captureVirtual",
+                "(Ldiagnostics/Host;Ljava/lang/String;)I",
+                {VmValue::Ref(receiver), VmValue::Ref(VmObjectRef{})}));
+            FAIL("missing virtual method must fail");
+        } catch (const DexVmError& error) {
+            CHECK(std::string(error.what()).find(
+                      "[ 0] Ljava/lang/String;           = null") !=
+                  std::string::npos);
+        }
+
+        const auto string_class =
+            vm.linker.ResolveDescriptor("Ljava/lang/String;");
+        const auto array_class =
+            vm.linker.ResolveDescriptor("[Ljava/lang/String;");
+        const auto values = vm.model.NewObjectArray(array_class, string_class, 2);
+        vm.model.SetObjectElement(values, 0,
+                                  vm.interpreter.NewStringUtf8("first"));
+        vm.model.SetObjectElement(values, 1,
+                                  vm.interpreter.NewStringUtf8("second"));
+        try {
+            static_cast<void>(vm.CallStatic(
+                "LDiagnosticsProbe;", "captureArgsRange",
+                "(Ljava/lang/String;FIZBSCJD[Ljava/lang/String;)I",
+                {VmValue::Ref(text), VmValue::Float(1.5F), VmValue::Int(-7),
+                 VmValue::Int(1), VmValue::Int(-2), VmValue::Int(-300),
+                 VmValue::Int(65),
+                 VmValue::Long(INT64_C(4294967297)), VmValue::Double(-2.25),
+                 VmValue::Ref(values)}));
+            FAIL("missing range method must fail");
+        } catch (const DexVmError& error) {
+            const std::string message = error.what();
+            CHECK(message.find("DexVM fault instruction: invoke-static/range "
+                               "(opcode=0x77,") != std::string::npos);
+            CHECK(message.find("[ 0] Ljava/lang/String;           = "
+                               "\"query\\n\\\"value\\\"\"") !=
+                  std::string::npos);
+            CHECK(message.find("[ 1] F                            = 1.5") !=
+                  std::string::npos);
+            CHECK(message.find("[ 2] I                            = -7") !=
+                  std::string::npos);
+            CHECK(message.find("[ 3] Z                            = true") !=
+                  std::string::npos);
+            CHECK(message.find("[ 4] B                            = -2") !=
+                  std::string::npos);
+            CHECK(message.find("[ 5] S                            = -300") !=
+                  std::string::npos);
+            CHECK(message.find("[ 6] C                            = 65") !=
+                  std::string::npos);
+            CHECK(message.find("[ 7] J                            = 4294967297") !=
+                  std::string::npos);
+            CHECK(message.find("[ 8] D                            = -2.25") !=
+                  std::string::npos);
+            CHECK(message.find(
+                      "[ 9] [Ljava/lang/String;          = "
+                      "\"[Ljava/lang/String;@") != std::string::npos);
+        }
+
+        const auto long_text = vm.interpreter.NewStringUtf8(
+            std::string(120U, 'x'));
+        try {
+            static_cast<void>(vm.CallStatic(
+                "LDiagnosticsProbe;", "captureVirtual",
+                "(Ldiagnostics/Host;Ljava/lang/String;)I",
+                {VmValue::Ref(receiver), VmValue::Ref(long_text)}));
+            FAIL("missing virtual method must fail");
+        } catch (const DexVmError& error) {
+            CHECK(std::string(error.what()).find(
+                      std::string("[ 0] Ljava/lang/String;           = \"") +
+                      std::string(96U, 'x') + "\"... (length=120)") !=
+                  std::string::npos);
+        }
+
+        std::vector<VmValue> many;
+        for (std::int32_t value = 0; value < 17; ++value) {
+            many.push_back(VmValue::Int(value));
+        }
+        try {
+            static_cast<void>(vm.CallStatic(
+                "LDiagnosticsProbe;", "captureMany",
+                "(IIIIIIIIIIIIIIIII)I", std::move(many)));
+            FAIL("missing many-argument method must fail");
+        } catch (const DexVmError& error) {
+            const std::string message = error.what();
+            CHECK(message.find("[15] I                            = 15") !=
+                  std::string::npos);
+            CHECK(message.find("[16] I                            = 16") ==
+                  std::string::npos);
+            CHECK(message.find("... 1 arguments omitted") !=
+                  std::string::npos);
+        }
     });
 }
 

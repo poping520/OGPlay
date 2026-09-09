@@ -72,16 +72,17 @@ void AppendFaultInstruction(std::string& rendered, const Frame& frame) {
     const auto opcode = static_cast<std::uint8_t>(units[frame.pc] & 0xffU);
     const auto& info = gen::kDexOpcodeTable[opcode];
     rendered += "\nDexVM fault instruction: " + std::string(info.name) +
-                " opcode=" + HexByte(opcode);
+                " (opcode=" + HexByte(opcode);
     if (info.index_type == gen::DexIndexType::method_ref &&
         frame.pc + 1U < units.size()) {
-        rendered += " method_idx=" + std::to_string(units[frame.pc + 1U]);
+        rendered += ", method_idx=" + std::to_string(units[frame.pc + 1U]);
     }
-    rendered += " dex_pc=" + std::to_string(frame.pc);
+    rendered += ", dex_pc=" + std::to_string(frame.pc) + ")";
 }
 
 [[nodiscard]] std::string RenderFatalErrorWithGuestStack(
     const DexVmError& error, const DexClassLinker& linker,
+    Interpreter& vm,
     const InterpreterExecutionState& execution,
     const VmThreadRuntime* const threads) {
     std::string rendered = error.what();
@@ -90,8 +91,8 @@ void AppendFaultInstruction(std::string& rendered, const Frame& frame) {
     }
     const auto& frames = execution.frames;
     const auto shown = std::min(frames.size(), kMaximumFatalStackFrames);
-    rendered += kGuestStackHeader;
-    rendered += " context=" + std::to_string(execution.token);
+    rendered += "\nDexVM guest context: context=" +
+                std::to_string(execution.token);
     if (const auto thread = FindFatalThread(threads, execution.token);
         thread.has_value()) {
         rendered += " guest_thread_id=" +
@@ -102,7 +103,14 @@ void AppendFaultInstruction(std::string& rendered, const Frame& frame) {
     }
     rendered += " frames=" + std::to_string(frames.size()) +
                 " shown=" + std::to_string(shown);
-    if (!frames.empty()) AppendFaultInstruction(rendered, frames.back());
+    if (!frames.empty()) {
+        // toString diagnostics may push an interpreted frame and reallocate
+        // execution.frames, so retain a stable copy of the fault registers.
+        const auto fault_frame = frames.back();
+        AppendFaultInstruction(rendered, fault_frame);
+        AppendFaultInvokeArguments(rendered, fault_frame, vm);
+    }
+    rendered += kGuestStackHeader;
     auto frame = frames.rbegin();
     for (std::size_t index = 0; index < shown; ++index, ++frame) {
         const auto& method = *frame->method;
@@ -696,7 +704,7 @@ VmCallOutcome Interpreter::Impl::Run(InterpreterExecutionState& execution,
                 ThrowJava("Ljava/lang/NullPointerException;", error.what());
             } else {
                 const auto rendered = RenderFatalErrorWithGuestStack(
-                    error, *linker, execution, threads);
+                    error, *linker, *owner, execution, threads);
                 // The call is over: drop its frames so the context stays
                 // usable, and discardable once its thread is joined.
                 while (frames.size() > entry_depth) {

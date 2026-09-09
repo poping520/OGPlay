@@ -628,14 +628,30 @@ void JavaObjectModel::BindString(const VmObjectRef ref,
 }
 
 std::u16string JavaObjectModel::StringValue(const VmObjectRef ref) const {
+    const auto length = StringLength(ref);
+    return StringRegion(ref, 0, length);
+}
+
+JniSize JavaObjectModel::StringLength(const VmObjectRef ref) const {
     const auto& record = impl_->At(ref);
     if (record.kind != VmObjectKind::string &&
         record.kind != VmObjectKind::external) {
         Fail(DexVmErrorReason::object_model_failure,
              "object is not a string");
     }
-    const auto length = impl_->strings->Length(record.identity);
-    const auto units = impl_->strings->Region(record.identity, 0, length);
+    return impl_->strings->Length(record.identity);
+}
+
+std::u16string JavaObjectModel::StringRegion(const VmObjectRef ref,
+                                             const JniSize start,
+                                             const JniSize length) const {
+    const auto& record = impl_->At(ref);
+    if (record.kind != VmObjectKind::string &&
+        record.kind != VmObjectKind::external) {
+        Fail(DexVmErrorReason::object_model_failure,
+             "object is not a string");
+    }
+    const auto units = impl_->strings->Region(record.identity, start, length);
     return std::u16string(units.begin(), units.end());
 }
 

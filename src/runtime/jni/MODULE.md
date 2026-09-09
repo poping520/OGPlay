@@ -32,6 +32,9 @@ Bionic、syscall、execution 或 integration。
   short 与含参数 descriptor 的 long 名；Unicode 必须先转为 UTF-16 code unit 再转义。
 - object descriptor、DexVM internal class name 与 JNI native signature 共用
   `IsValidJniObjectClassName`，禁止各入口漂移出不同的斜杠/分段规则。
+- class registry 保存 direct interface 图；assignability 遍历父类与接口闭包。interface
+  `GetMethodID` 沿 super-interface 查找，虚派仍由 receiver 实际类选择实现；static field
+  可按 Dalvik 规则从 interface 查找，instance field 不跨 interface。
 
 ## 测试
 

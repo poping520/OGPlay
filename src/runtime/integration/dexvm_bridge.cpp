@@ -606,6 +606,14 @@ public:
             super.descriptor.substr(1, super.descriptor.size() - 2);
       }
     }
+    declaration.is_interface = linked.is_interface;
+    declaration.interfaces.reserve(linked.direct_interfaces.size());
+    for (const auto interface_id : linked.direct_interfaces) {
+      const auto &interface_class = linker.Class(interface_id);
+      static_cast<void>(RegisterClassForNative(interface_id));
+      declaration.interfaces.push_back(interface_class.descriptor.substr(
+          1, interface_class.descriptor.size() - 2));
+    }
     std::vector<std::pair<std::string, dx::VmMethodId>> handlers;
     const auto append_field = [&](const dx::VmFieldId field_id) {
       const auto& field = linker.Field(field_id);

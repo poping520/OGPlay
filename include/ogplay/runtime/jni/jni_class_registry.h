@@ -31,6 +31,8 @@ struct JniClassDeclaration final {
     std::optional<std::string> superclass;
     std::vector<JniMethodDeclaration> methods;
     std::vector<JniFieldDeclaration> fields;
+    std::vector<std::string> interfaces;
+    bool is_interface{};
 };
 
 struct JniResolvedMethod final {
@@ -50,7 +52,9 @@ struct JniResolvedField final {
 enum class JniClassRegistryErrorReason : std::uint8_t {
     invalid_class,
     unknown_superclass,
+    unknown_interface,
     duplicate_class,
+    duplicate_interface,
     invalid_member,
     duplicate_member,
     id_space_exhausted,
@@ -95,6 +99,8 @@ public:
   [[nodiscard]] std::string ClassName(JniObjectIdentity java_class) const;
   [[nodiscard]] std::optional<JniObjectIdentity>
   GetSuperclass(JniObjectIdentity java_class) const;
+  [[nodiscard]] std::vector<JniObjectIdentity>
+  GetInterfaces(JniObjectIdentity java_class) const;
     [[nodiscard]] bool IsAssignableFrom(JniObjectIdentity target,
                                         JniObjectIdentity source) const;
 

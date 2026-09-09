@@ -125,7 +125,8 @@ DVM-79 的 `DexVmIoVfsAdapter` 是 DexVM core `IoFileSystem` 与具体
   与嵌套 cause 分行输出，使无符号 guest fault 可反查到 Java 调用边界；
   入向把全部解释类/方法及 session 尚未拥有的 code-defined intrinsic 平台类注册进
   会话 `JniClassRegistry`(impl id `dexvm.m<id>`),
-  所有非数组类共用递归注册路径并保留 intrinsic/application 边界上的完整父类链，
+  所有非数组类共用递归注册路径并保留 intrinsic/application 边界上的完整父类与 direct
+  interface 图；interface MethodID 在合法实现类 receiver 上进入实际类虚派，
   JNI object array 与 `IsAssignableFrom` 不得看到第二套扁平类型事实；
   FindClass/GetStaticMethodID/CallStatic* 经不变的 233 槽 ABI 命中真实 DEX 事实
   并落入解释执行(第三路由)；class identity 注册不为每个 APK 类预占 JNI global

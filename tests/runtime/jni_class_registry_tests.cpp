@@ -48,6 +48,56 @@ TEST_CASE("JNI member lookup distinguishes static overloads and inheritance") {
     CHECK(classes.GetFieldId(derived, "count", "I", true).has_value());
 }
 
+TEST_CASE("JNI class registry follows interface graphs") {
+    using ogplay::runtime::JniClassRegistry;
+    JniClassRegistry classes;
+    const auto object =
+        classes.RegisterClass({"java/lang/Object", {}, {}, {}});
+    const auto root = classes.RegisterClass(
+        {"test/RootContract",
+         {},
+         {{"run", "()I", "root.run", false}},
+         {{"VERSION", "I", "root.version", true}},
+         {},
+         true});
+    const auto left = classes.RegisterClass(
+        {"test/LeftContract", {}, {}, {}, {"test/RootContract"}, true});
+    const auto right = classes.RegisterClass(
+        {"test/RightContract", {}, {}, {}, {"test/RootContract"}, true});
+    const auto diamond = classes.RegisterClass(
+        {"test/DiamondContract",
+         {},
+         {},
+         {},
+         {"test/LeftContract", "test/RightContract"},
+         true});
+    const auto implementation = classes.RegisterClass(
+        {"test/Implementation",
+         "java/lang/Object",
+         {{"run", "()I", "implementation.run", false}},
+         {},
+         {"test/DiamondContract"}});
+    const auto derived = classes.RegisterClass(
+        {"test/Derived", "test/Implementation", {}, {}});
+
+    CHECK(classes.GetInterfaces(object).empty());
+    CHECK(classes.GetInterfaces(diamond) ==
+          std::vector{left, right});
+    CHECK(classes.GetInterfaces(implementation) == std::vector{diamond});
+    CHECK(classes.IsAssignableFrom(root, diamond));
+    CHECK(classes.IsAssignableFrom(left, implementation));
+    CHECK(classes.IsAssignableFrom(right, derived));
+    CHECK(classes.IsAssignableFrom(root, derived));
+    CHECK_FALSE(classes.IsAssignableFrom(diamond, root));
+    CHECK(classes.GetMethodId(diamond, "run", "()I", false) ==
+          classes.GetMethodId(root, "run", "()I", false));
+    CHECK(classes.GetMethodId(derived, "run", "()I", false) ==
+          classes.GetMethodId(implementation, "run", "()I", false));
+    CHECK(classes.GetFieldId(derived, "VERSION", "I", true) ==
+          classes.GetFieldId(root, "VERSION", "I", true));
+    CHECK_FALSE(classes.GetFieldId(derived, "VERSION", "I", false));
+}
+
 TEST_CASE("JNI class registration validates transactionally") {
     ogplay::runtime::JniClassRegistry classes;
     CHECK_THROWS_AS(
@@ -70,6 +120,25 @@ TEST_CASE("JNI class registration validates transactionally") {
           {"test/BadSignature", {}, {{"run", "(V)V", "bad", false}}, {}})),
         ogplay::runtime::JniClassRegistryError);
     CHECK_FALSE(classes.FindClass("test/BadSignature").has_value());
+    const auto contract = classes.RegisterClass(
+        {"test/Contract", {}, {}, {}, {}, true});
+    static_cast<void>(contract);
+    CHECK_THROWS_AS(static_cast<void>(classes.RegisterClass(
+                        {"test/MissingInterface",
+                         {},
+                         {},
+                         {},
+                         {"test/Absent"}})),
+                    ogplay::runtime::JniClassRegistryError);
+    CHECK_FALSE(classes.FindClass("test/MissingInterface").has_value());
+    CHECK_THROWS_AS(static_cast<void>(classes.RegisterClass(
+                        {"test/DuplicateInterface",
+                         {},
+                         {},
+                         {},
+                         {"test/Contract", "test/Contract"}})),
+                    ogplay::runtime::JniClassRegistryError);
+    CHECK_FALSE(classes.FindClass("test/DuplicateInterface").has_value());
 }
 
 TEST_CASE(

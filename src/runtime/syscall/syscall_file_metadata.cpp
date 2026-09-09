@@ -19,6 +19,7 @@
 #include "ogplay/runtime/vfs/vfs.h"
 
 #include "guest_path_reader.h"
+#include "file_transfer.h"
 
 namespace ogplay::runtime {
 namespace {
@@ -252,58 +253,32 @@ void BindAndroidFileMetadataSyscalls(A32SyscallDispatcher& dispatcher,
     dispatcher.Implement(118, flush);  // fsync
     dispatcher.Implement(148, flush);  // fdatasync
 
-    // pread64/pwrite64 must not disturb the descriptor offset.
-    dispatcher.Implement(180, guarded([&vfs, &address_space](
-                                          const A32SyscallFrame& frame) {
-        const auto count = frame.arguments[2];
-        if (count > kMaxIoSize) return -kEinval;
-        const auto descriptor = std::bit_cast<std::int32_t>(
-            frame.arguments[0]);
+    // Preserve the descriptor position for both successful and failed IO.
+    const auto positional = [&vfs, &address_space](const A32SyscallFrame& frame, bool write) {
+        const auto descriptor = std::bit_cast<std::int32_t>(frame.arguments[0]);
         const auto offset = static_cast<std::uint64_t>(frame.arguments[4]) |
-                            (static_cast<std::uint64_t>(frame.arguments[5])
-                             << 32U);
-        const memory::GuestAddress destination{frame.arguments[1]};
-        address_space.Validate({destination, count},
-                               memory::AccessType::write, frame.thread_id);
+                            (static_cast<std::uint64_t>(frame.arguments[5]) << 32U);
+        if (offset > static_cast<std::uint64_t>(INT64_MAX)) return -kEinval;
         const auto saved = vfs.Seek(descriptor, 0, VfsSeekWhence::current);
-        static_cast<void>(vfs.Seek(
-            descriptor, static_cast<std::int64_t>(offset),
-            VfsSeekWhence::begin));
-        std::vector<std::byte> bytes(count);
-        const auto actual = vfs.Read(descriptor, bytes);
-        static_cast<void>(vfs.Seek(descriptor,
-                                   static_cast<std::int64_t>(saved),
+        static_cast<void>(vfs.Seek(descriptor, static_cast<std::int64_t>(offset),
                                    VfsSeekWhence::begin));
-        if (actual != 0) {
-            address_space.Write(destination,
-                                std::span<const std::byte>(bytes).first(actual),
-                                frame.thread_id);
+        std::int32_t result{};
+        try {
+            result = syscall_detail::TransferFile(vfs, address_space, frame, write);
+        } catch (...) {
+            static_cast<void>(vfs.Seek(descriptor, static_cast<std::int64_t>(saved),
+                                       VfsSeekWhence::begin));
+            throw;
         }
-        return static_cast<std::int32_t>(actual);
+        static_cast<void>(vfs.Seek(descriptor, static_cast<std::int64_t>(saved),
+                                   VfsSeekWhence::begin));
+        return result;
+    };
+    dispatcher.Implement(180, guarded([positional](const A32SyscallFrame& frame) {
+        return positional(frame, false);
     }));
-    dispatcher.Implement(181, guarded([&vfs, &address_space](
-                                          const A32SyscallFrame& frame) {
-        const auto count = frame.arguments[2];
-        if (count > kMaxIoSize) return -kEinval;
-        const auto descriptor = std::bit_cast<std::int32_t>(
-            frame.arguments[0]);
-        const auto offset = static_cast<std::uint64_t>(frame.arguments[4]) |
-                            (static_cast<std::uint64_t>(frame.arguments[5])
-                             << 32U);
-        std::vector<std::byte> bytes(count);
-        if (count != 0) {
-            address_space.Read(memory::GuestAddress{frame.arguments[1]}, bytes,
-                               frame.thread_id);
-        }
-        const auto saved = vfs.Seek(descriptor, 0, VfsSeekWhence::current);
-        static_cast<void>(vfs.Seek(
-            descriptor, static_cast<std::int64_t>(offset),
-            VfsSeekWhence::begin));
-        const auto actual = vfs.Write(descriptor, bytes);
-        static_cast<void>(vfs.Seek(descriptor,
-                                   static_cast<std::int64_t>(saved),
-                                   VfsSeekWhence::begin));
-        return static_cast<std::int32_t>(actual);
+    dispatcher.Implement(181, guarded([positional](const A32SyscallFrame& frame) {
+        return positional(frame, true);
     }));
 
     // getdents64(fd, dirp, count): fills whole records only, so a caller

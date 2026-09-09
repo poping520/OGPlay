@@ -1791,6 +1791,32 @@ TEST_CASE("shared texture bindings preserve independent GLES2 targets") {
     CHECK(fixture.Call("libEGL.so", "eglTerminate") == 1U);
 }
 
+TEST_CASE("BND-29 GLES2 invalid capabilities latch errors without changing state") {
+    REQUIRE(ogplay::gles::IsNativeAngleEglAvailable());
+    BoundaryFixture fixture;
+    REQUIRE(fixture.Call("libEGL.so", "eglMakeCurrent", {1, 3, 3, 4}) == 1);
+    CHECK(fixture.Call("libGLESv2.so", "glEnable", {0x0BE2U}) == 0);
+    for (const auto name : {"glEnable", "glDisable", "glIsEnabled"}) {
+        for (const auto cap : {0x0DE1U, 0xffffffffU}) {
+            CHECK(fixture.Call("libGLESv2.so", name, {cap}) == 0);
+            CHECK(fixture.Call("libGLESv2.so", "glIsEnabled", {0x0BE2U}) == 1);
+            CHECK(fixture.Call("libGLESv2.so", "glGetError") == 0x0500U);
+            CHECK(fixture.Call("libGLESv2.so", "glGetError") == 0);
+        }
+    }
+    CHECK(fixture.Call("libGLESv2.so", "glEnable", {0x0DE1U}) == 0);
+    CHECK(fixture.Call("libGLESv2.so", "glDisable", {0xffffffffU}) == 0);
+    CHECK(fixture.Call("libGLESv1_CM.so", "glGetError") == 0x0500U);
+    CHECK(fixture.Call("libGLESv2.so", "glGetError") == 0);
+    CHECK(fixture.Call("libGLESv2.so", "glDisable", {0x0BE2U}) == 0);
+    CHECK(fixture.Call("libGLESv2.so", "glIsEnabled", {0x0BE2U}) == 0);
+    CHECK(fixture.Call("libGLESv1_CM.so", "glEnable", {0x0DE1U}) == 0);
+    CHECK(fixture.Call("libGLESv1_CM.so", "glIsEnabled", {0x0DE1U}) == 1);
+    CHECK(fixture.Call("libGLESv1_CM.so", "glGetError") == 0);
+    CHECK(fixture.Call("libEGL.so", "eglTerminate") == 1);
+    CHECK_THROWS_AS(fixture.Call("libGLESv2.so", "glEnable", {0x0DE1U}), std::runtime_error);
+}
+
 TEST_CASE("Android boundary shares framebuffer raster and capability state") {
     if (!ogplay::gles::IsNativeAngleEglAvailable()) return;
     BoundaryFixture fixture;

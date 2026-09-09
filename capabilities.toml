@@ -975,6 +975,11 @@ status = "complete"
 test = "tests/runtime/boundary/integration/android_boundary_hle_tests.cpp"
 note = "BND-26 追加：SharedGlState 提供 per-context guest 错误锁存（首错保留、Reset 清零），Gles1Module::Invoke 捕获 guest 非法枚举类 std::invalid_argument 转 GL_INVALID_ENUM 锁存并正常返回，glGetError 先排空锁存再查 ANGLE；宿主契约破坏（logic_error/runtime_error/GuestTransferError/MemoryFault）仍显式失败。INVALID_ENUM 为统一近似（个别规范为 INVALID_VALUE）。BND-28 进一步将 ANGLE 原生错误以精确 GLenum 回送 GLES1/2 共用锁存。"
 
+[runtime.gles2_capability_errors]
+status = "complete"
+test = "tests/runtime/boundary/integration/android_boundary_hle_tests.cpp: BND-29"
+note = "BND-29 GLES2 enable/disable/isEnabled 非法 capability 前置校验类型化为 GL_INVALID_ENUM，复用共用 guest 首错锁存；查询返回 false，修改不改变状态。生命周期/内存/宿主错误不捕获；GLES1 Texture2D enable 语义不变"
+
 [runtime.gles2_guest_error_latch]
 status = "complete"
 test = "tests/runtime/boundary/integration/android_boundary_hle_tests.cpp; PvZ exact run-apk"

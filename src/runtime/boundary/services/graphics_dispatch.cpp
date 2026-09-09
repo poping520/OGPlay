@@ -499,15 +499,22 @@ public:
             }
             return RequireFrame(frame, symbol).GetError();
         }
-        if (function_id == Id(Gles2Function::is_enabled)) {
-            static_cast<void>(RequireFrame(frame, symbol));
-            return context_.Shared().Capability(args[0]) ? 1U : 0U;
-        }
-        if (function_id == Id(Gles2Function::enable) ||
+        if (function_id == Id(Gles2Function::is_enabled) ||
+            function_id == Id(Gles2Function::enable) ||
             function_id == Id(Gles2Function::disable)) {
+            auto& current = RequireFrame(frame, symbol);
+            // Only guest enum validation becomes a GL error; lifecycle and
+            // backend failures retain their original exception category.
+            try {
+                context_.Shared().ValidateCapability(args[0]);
+            } catch (const std::invalid_argument&) {
+                throw gles::GlesApiError(symbol, 0x0500U);
+            }
+            if (function_id == Id(Gles2Function::is_enabled)) {
+                return context_.Shared().Capability(args[0]) ? 1U : 0U;
+            }
             const auto enabled = function_id == Id(Gles2Function::enable);
-            context_.Shared().ValidateCapability(args[0]);
-            RequireFrame(frame, symbol).SetCapability(args[0], enabled);
+            current.SetCapability(args[0], enabled);
             context_.Shared().SetCapability(args[0], enabled);
             return 0;
         }

@@ -1,8 +1,8 @@
 # 当前状态
 
-更新（2026-09-09）：[DVM-140](../tasks/dexvm/DVM-140.md) 补齐 Intent.putExtras(Bundle)，
-委托 BootDex Bundle.putAll；3 用例/414 断言通过。PvZ 新首错为
-`JNI guest receiver is not a registered instance`（第 1 帧）。
+更新（2026-09-09）：[DVM-141](../tasks/dexvm/DVM-141.md) 数组元素 JNI 出口按真实类型
+原子幂等注册，bridge 共用该流程。PvZ 到第 2 帧，新首错 shared GL capability is invalid。
+[DVM-140](../tasks/dexvm/DVM-140.md) Intent.putExtras(Bundle) 委托 Java 浅合并。
 
 更新（2026-09-09）：[SBX-14](../tasks/sandbox/SBX-14.md) 将匿名 mmap2 改为
 AddressSpace 账本锁内 first-fit 选址并映射；跳过全部已映射页，复用释放空洞，

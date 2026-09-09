@@ -537,12 +537,15 @@ void BindJniGuestArraySlots(
         });
     dispatcher.BindEnvironment(
         Slot("GetObjectArrayElement"),
-        [&environment, &object_arrays](const JniGuestCallFrame& frame) {
+        [&environment, &object_arrays, &objects](const JniGuestCallFrame& frame) {
             const auto array = Resolve(
                 environment, frame, frame.registers[1],
                 "GetObjectArrayElement");
             const auto value = object_arrays.Get(
                 array, std::bit_cast<JniSize>(frame.registers[2]));
+            if (value.has_value()) {
+                objects.EnsureRegistered(value->object, value->java_class);
+            }
             return Word(value.has_value()
                             ? environment.PublishLocalObject(
                                   frame.thread_id, value->object).Value()

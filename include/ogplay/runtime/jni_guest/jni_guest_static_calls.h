@@ -26,6 +26,8 @@ public:
 
     [[nodiscard]] JniObjectIdentity Allocate(JniObjectIdentity java_class);
     void Register(JniObjectIdentity object, JniObjectIdentity java_class);
+    // Idempotent publication; a conflicting runtime class is an error.
+    void EnsureRegistered(JniObjectIdentity object, JniObjectIdentity java_class);
     void Forget(JniObjectIdentity object);
     [[nodiscard]] JniObjectIdentity ClassOf(JniObjectIdentity object) const;
     [[nodiscard]] JniObjectArrayStore& ObjectArrays() noexcept;

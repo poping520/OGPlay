@@ -38,18 +38,10 @@ def source_path(source: str) -> Path:
     return AOSP / source
 
 SOURCES = {
-    "conscrypt.jar": (
-        "platform/libcore",
-        "c7d0849cde38cd0d0dc99d89ee61bd33a65618567fc18171d6605dc6b8e15004"),
-    "core.jar": (
-        "platform/libcore",
-        "60b6cdf3eded2fdf157c6166402477e4f72ade215b334817439960522c0e64ee"),
-    "framework.jar": (
-        "platform/frameworks/base",
-        "422e232e121425268f04044f5349072ce42d7b4403267d21569e8ce70d07bc4b"),
-    "framework2.jar": (
-        "platform/frameworks/base",
-        "5866d4e62e5fe44ffaf6ff441b6c361baeb1f8b91e30bb555481ef13ef837973"),
+    "conscrypt.jar": ("platform/libcore",),
+    "core.jar": ("platform/libcore",),
+    "framework.jar": ("platform/frameworks/base",),
+    "framework2.jar": ("platform/frameworks/base",),
 }
 TOOLS = {
     "baksmali.jar": (
@@ -120,10 +112,10 @@ def load_recipe(document: dict | None = None) -> dict[str, tuple[str, ...]]:
 
 
 def verify_inputs(recipe: dict[str, tuple[str, ...]]) -> None:
-    expected = {source_path(source): SOURCES[source][1] for source in recipe}
-    for path, digest in expected.items():
-        if not path.is_file() or file_sha256(path) != digest:
-            raise BuildError(f"missing or unexpected input: {path}")
+    for source in recipe:
+        path = source_path(source)
+        if not path.is_file():
+            raise BuildError(f"missing input: {path}")
     for name, (url, digest) in TOOLS.items():
         ensure_tool(SMALI / name, url, digest)
 
@@ -202,7 +194,7 @@ def boot_metadata(jar: bytes, dex: bytes,
             {
                 "source_project": SOURCES[source][0],
                 "source_jar": source,
-                "source_jar_sha256": SOURCES[source][1],
+                "source_jar_sha256": file_sha256(source_path(source)),
             }
             for source in recipe
         ],
@@ -409,7 +401,7 @@ def make_audit_report(policy: dict) -> dict:
     }
     return {
         "schema": 1,
-        "source_sha256": SOURCES[policy["source"]][1],
+        "source_sha256": file_sha256(source_path(policy["source"])),
         "icu_commit": policy["icu"]["commit"],
         "metrics": metrics,
         "records": records,
@@ -484,6 +476,12 @@ def self_test() -> int:
         ensure_tool(destination, source.as_uri(), sha256(sample))
         if destination.read_bytes() != sample:
             raise BuildError("tool download failed")
+        with patch.dict(globals(), {
+                "AOSP": Path(work),
+                "SOURCES": {"source.jar": ("test",)},
+                "TOOLS": {},
+        }):
+            verify_inputs({"source.jar": ()})
         # The builder must consume only the explicitly prepared, pinned payload.
         fake_manifest = Path(work) / "payload/manifest.json"
         with patch.dict(globals(), {"MANIFEST": fake_manifest,

@@ -291,7 +291,9 @@ DVM-79 的 `DexVmIoVfsAdapter` 是 DexVM core `IoFileSystem` 与具体
   字段只用 VM 存储，服务对象只用 VM singleton；`activity.current` 返回生命周期当前
   Activity，无 Activity 返回 null。已迁移类要求装配 DexVM/BootDex，纯 native/HLE
   会话不再提供旧替身。仅保留无 VM 实现的 ViewRoot 及 Object 注册依赖；独立 headless
-  契约 HLE、应用兼容回调不在本次迁移范围。未实现在线服务继续明确失败。
+  契约 HLE、应用兼容回调不在本次迁移范围。DVM-133 的 ContentResolver 五参 query
+  只闭合当前无 provider 注册表时 API 19 返回 null 的分支；不创建 Cursor 或 provider。
+  未实现在线服务继续明确失败。
 - `NativeActivitySession` 只接受 API 19 ARMv7 当前入口,执行真实 Bionic 初始化、
   `ANativeActivity_onCreate`、glue child 与完整销毁回调;阶段可由可选 observer 查询。
 - guest child 异常必须唤醒同步生命周期 waiter,并在 root 继续执行、帧或输入边界转为带

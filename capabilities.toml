@@ -1395,6 +1395,11 @@ status = "partial"
 test = "tests/dexvm/android_value_tests.cpp; tests/session/profile_entry_scope_tests.cpp; PvZ exact Profile reached-fault"
 note = "DVM-97 闭合 support-v4 LocalBroadcastManager 所需 Intent action/type/data/scheme/categories/flags 与 IntentFilter action/MIME wildcard/scheme/authority/category 匹配，返回 API 19 match/error 常量；DVM-132 将 Uri 全部内部类与 UriCodec 迁入 API 19 BootDex，解析、query、Builder 与编解码执行原版 Java。StrictMode 文件 URI 暴露、external-storage canonical 分支、ContentProvider MIME、path/SSP pattern、manifest resolver 与系统广播未闭合并明确失败，因此能力保持 partial。"
 
+[dexvm.content_resolver_absent_provider]
+status = "complete"
+test = "tests/dexvm/android_value_tests.cpp; PvZ exact Profile reached-fault"
+note = "DVM-133 按 API 19 闭合 ContentResolver 五参 query 的无 provider 分支：非空 Uri 仍虚派读取 scheme/authority，当前无 ContentProvider 注册表时返回 null；null Uri 抛 NPE。complete 仅指 provider acquisition 失败路径，不提供空 Cursor、当前/外部 APK provider、Binder、六参 cancellation overload 或真实查询。"
+
 [dexvm.media_data_sources]
 status = "complete"
 test = "tests/dexvm/file_vfs_tests.cpp; tests/audio/mp3_tests.cpp; tests/audio/java_sound_pool_mixer_tests.cpp"

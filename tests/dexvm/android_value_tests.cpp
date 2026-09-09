@@ -727,6 +727,39 @@ TEST_CASE("DVM-132 API 19 Uri executes from BootDex on both interpreters") {
     }
 }
 
+TEST_CASE("DVM-133 ContentResolver query returns null when no provider exists") {
+    for (const auto backend :
+         {InterpreterBackend::switch_dispatch,
+          InterpreterBackend::threaded}) {
+        AndroidValueVm fixture(backend);
+        const auto resolver = fixture.vm.NewIntrinsicInstance(
+            "Landroid/content/ContentResolver;");
+        const auto uri_text = fixture.vm.NewStringUtf8(
+            "content://com.facebook.katana.provider.AttributionIdProvider");
+        const auto uri = fixture.Static(
+            "Landroid/net/Uri;", "parse",
+            "(Ljava/lang/String;)Landroid/net/Uri;",
+            {VmValue::Ref(uri_text)}).ref;
+        constexpr auto signature =
+            "(Landroid/net/Uri;[Ljava/lang/String;Ljava/lang/String;"
+            "[Ljava/lang/String;Ljava/lang/String;)Landroid/database/Cursor;";
+        const std::vector<VmValue> absent_query{
+            VmValue::Ref(uri), VmValue::Ref(VmObjectRef{}),
+            VmValue::Ref(VmObjectRef{}), VmValue::Ref(VmObjectRef{}),
+            VmValue::Ref(VmObjectRef{})};
+        CHECK_FALSE(fixture.On(
+            resolver, "query", signature, absent_query).ref.IsValid());
+
+        auto null_query = absent_query;
+        null_query[0] = VmValue::Ref(VmObjectRef{});
+        const auto outcome = fixture.OnOutcome(
+            resolver, "query", signature, std::move(null_query));
+        REQUIRE(outcome.exception.IsValid());
+        CHECK(fixture.linker.Class(outcome.exception_class).descriptor ==
+              "Ljava/lang/NullPointerException;");
+    }
+}
+
 TEST_CASE("DVM-97 dynamic content MIME and malformed filters fail explicitly") {
     AndroidValueVm fixture;
     const auto content_uri = fixture.Static(

@@ -5,6 +5,7 @@
 // ---- migrated from android_os_AsyncTask.cpp ----
 #include <array>
 #include <bit>
+#include <charconv>
 #include <cstddef>
 #include <limits>
 
@@ -55,6 +56,26 @@ void WriteParcelAtom(DexVmAndroidContext::ParcelState& parcel,
     if (atom.kind != expected)
         throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "Parcel type mismatch"};
     return atom;
+}
+
+[[nodiscard]] std::string_view BuildProperty(const std::string_view key) {
+    if (key == "ro.product.cpu.abi") return "armeabi";
+    if (key == "ro.build.tags") return "release-keys";
+    if (key == "ro.build.version.release") return "4.4.4";
+    if (key == "ro.build.version.sdk") return "19";
+    if (key == "ro.build.version.codename") return "REL";
+    return {};
+}
+
+template <typename Integer>
+[[nodiscard]] Integer ParseBuildProperty(const std::string_view value,
+                                         const Integer fallback) {
+    Integer parsed{};
+    const auto [end, error] = std::from_chars(
+        value.data(), value.data() + value.size(), parsed);
+    return error == std::errc{} && end == value.data() + value.size()
+               ? parsed
+               : fallback;
 }
 
 }  // namespace
@@ -195,48 +216,80 @@ Decl Declare_android_os_AsyncTask_Worker(const Context& context) {
 }
 }  // namespace ogplay::runtime::android_intrinsics
 
-// ---- migrated from android_os_Build_VERSION.cpp ----
+// ---- BootDex native boundary for android_os_SystemProperties.cpp ----
+
 #include "catalog.h"
 
 namespace ogplay::runtime::android_intrinsics {
 
-Decl Declare_android_os_Build_VERSION(const Context& context) {
-    static_cast<void>(context);
-    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/os/Build$VERSION;", "Ljava/lang/Object;");
-    builder.ConstantInt("SDK_INT", "I", 19);
-    builder.ConstantString("SDK", "19");
-    builder.ConstantString("RELEASE", "4.4.4");
+Decl Declare_android_os_SystemProperties(const Context&) {
+    auto builder = dx::IntrinsicClassBuilder::Class(
+        "Landroid/os/SystemProperties;");
+    constexpr auto flags = dx::kAccPrivate | dx::kAccNative;
+    builder.StaticMethod(
+        "native_get", "(Ljava/lang/String;)Ljava/lang/String;",
+        [](dx::IntrinsicContext& call) {
+            return MakeString(call, std::string(BuildProperty(
+                call.vm.StringUtf8(call.arguments[0].ref))));
+        }, flags);
+    builder.StaticMethod(
+        "native_get",
+        "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;",
+        [](dx::IntrinsicContext& call) {
+            const auto value = BuildProperty(
+                call.vm.StringUtf8(call.arguments[0].ref));
+            if (!value.empty()) return MakeString(call, std::string(value));
+            return dx::VmValue::Ref(call.arguments[1].ref.IsValid()
+                                        ? call.arguments[1].ref
+                                        : call.vm.NewStringUtf8(""));
+        }, flags);
+    builder.StaticMethod(
+        "native_get_int", "(Ljava/lang/String;I)I",
+        [](dx::IntrinsicContext& call) {
+            return dx::VmValue::Int(ParseBuildProperty<std::int32_t>(
+                BuildProperty(call.vm.StringUtf8(call.arguments[0].ref)),
+                call.arguments[1].AsInt()));
+        }, flags);
+    builder.StaticMethod(
+        "native_get_long", "(Ljava/lang/String;J)J",
+        [](dx::IntrinsicContext& call) {
+            return dx::VmValue::Long(ParseBuildProperty<std::int64_t>(
+                BuildProperty(call.vm.StringUtf8(call.arguments[0].ref)),
+                call.arguments[1].AsLong()));
+        }, flags);
+    builder.StaticMethod(
+        "native_get_boolean", "(Ljava/lang/String;Z)Z",
+        [](dx::IntrinsicContext& call) {
+            const auto value = BuildProperty(
+                call.vm.StringUtf8(call.arguments[0].ref));
+            if (value == "1" || value == "y" || value == "yes" ||
+                value == "true" || value == "on")
+                return dx::VmValue::Int(1);
+            if (value == "0" || value == "n" || value == "no" ||
+                value == "false" || value == "off")
+                return dx::VmValue::Int(0);
+            return dx::VmValue::Int(call.arguments[1].AsInt());
+        }, flags);
+    const auto unsupported = [](dx::IntrinsicContext& call) -> dx::VmValue {
+        if (auto* ledger = call.vm.Ledger())
+            ledger->RecordUnimplemented("dexvm.system_properties_write", 0);
+        throw dx::VmJavaThrow{
+            "Ljava/lang/UnsupportedOperationException;",
+            "system property mutation and callbacks are unsupported"};
+    };
+    builder.StaticMethod(
+        "native_set", "(Ljava/lang/String;Ljava/lang/String;)V",
+        unsupported, flags);
+    builder.StaticMethod("native_add_change_callback", "()V", unsupported,
+                         flags);
     return std::move(builder).Build();
 }
 
 }  // namespace ogplay::runtime::android_intrinsics
-
-
-// ---- migrated from android_os_Build.cpp ----
-#include "catalog.h"
-
-namespace ogplay::runtime::android_intrinsics {
-
-Decl Declare_android_os_Build(const Context& context) {
-    static_cast<void>(context);
-    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/os/Build;", "Ljava/lang/Object;");
-    builder.ConstantString("CPU_ABI", "armeabi");
-    builder.ConstantString("DEVICE", "unknown");
-    builder.ConstantString("MANUFACTURER", "unknown");
-    builder.ConstantString("MODEL", "unknown");
-    builder.ConstantString("PRODUCT", "unknown");
-    builder.ConstantString("TAGS", "release-keys");
-    return std::move(builder).Build();
-}
-
-}  // namespace ogplay::runtime::android_intrinsics
-
 
 // ---- migrated from android_os_Bundle.cpp ----
 // Bundle handlers store key/value pairs in the per-session bundle map
 // keyed by the receiver object handle.
-
-#include "catalog.h"
 
 namespace ogplay::runtime::android_intrinsics {
 

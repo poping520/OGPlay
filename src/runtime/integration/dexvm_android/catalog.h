@@ -100,8 +100,7 @@ namespace ogplay::runtime::android_intrinsics {
 [[nodiscard]] Decl Declare_android_os_AsyncTask(const Context& context);
 [[nodiscard]] Decl Declare_android_os_AsyncTask_Status(const Context& context);
 [[nodiscard]] Decl Declare_android_os_AsyncTask_Worker(const Context& context);
-[[nodiscard]] Decl Declare_android_os_Build_VERSION(const Context& context);
-[[nodiscard]] Decl Declare_android_os_Build(const Context& context);
+[[nodiscard]] Decl Declare_android_os_SystemProperties(const Context& context);
 [[nodiscard]] Decl Declare_android_os_Bundle(const Context& context);
 [[nodiscard]] Decl Declare_android_os_CountDownTimer(const Context& context);
 [[nodiscard]] Decl Declare_android_os_Environment(const Context& context);

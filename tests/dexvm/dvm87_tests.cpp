@@ -1192,6 +1192,50 @@ TEST_CASE("DVM-102 regression BootDex static values follow DEX field order") {
   CHECK(f.linker.Class(owner).static_storage[f.linker.Field(*field).slot] == 0U);
 }
 
+TEST_CASE("API19 Build family executes from BootDex without class intrinsics") {
+  for (const auto backend : {InterpreterBackend::switch_dispatch,
+                             InterpreterBackend::threaded}) {
+    Dvm87Vm f(backend);
+    for (const auto descriptor : {
+             "Landroid/os/Build;", "Landroid/os/Build$VERSION;",
+             "Landroid/os/Build$VERSION_CODES;"}) {
+      const auto type = f.linker.ResolveDescriptor(descriptor);
+      CAPTURE(std::string(descriptor));
+      CHECK(f.linker.Class(type).is_boot_dex);
+      for (const auto method : f.linker.Class(type).own_direct_methods)
+        CHECK(f.linker.Method(method).kind != MethodKind::intrinsic);
+      for (const auto method : f.linker.Class(type).own_virtual_methods)
+        CHECK(f.linker.Method(method).kind != MethodKind::intrinsic);
+      Dvm87Vm::RequireOk(f.vm.EnsureClassInitialized(type));
+    }
+    const auto string_field = [&](const std::string_view descriptor,
+                                  const std::string_view name) {
+      const auto type = f.linker.ResolveDescriptor(descriptor);
+      const auto field = f.linker.FindFieldRecursive(
+          type, std::string(name), "Ljava/lang/String;");
+      REQUIRE(field.has_value());
+      return f.vm.StringUtf8(VmObjectRef{static_cast<std::uint32_t>(
+          f.linker.Class(type).static_storage[f.linker.Field(*field).slot])});
+    };
+    const auto int_field = [&](const std::string_view descriptor,
+                               const std::string_view name) {
+      const auto type = f.linker.ResolveDescriptor(descriptor);
+      const auto field = f.linker.FindFieldRecursive(
+          type, std::string(name), "I");
+      REQUIRE(field.has_value());
+      return static_cast<std::int32_t>(
+          f.linker.Class(type).static_storage[f.linker.Field(*field).slot]);
+    };
+    CHECK(string_field("Landroid/os/Build;", "BRAND") == "unknown");
+    CHECK(string_field("Landroid/os/Build;", "CPU_ABI") == "armeabi");
+    CHECK(string_field("Landroid/os/Build;", "TAGS") == "release-keys");
+    CHECK(string_field("Landroid/os/Build$VERSION;", "RELEASE") == "4.4.4");
+    CHECK(string_field("Landroid/os/Build$VERSION;", "SDK") == "19");
+    CHECK(int_field("Landroid/os/Build$VERSION;", "SDK_INT") == 19);
+    CHECK(int_field("Landroid/os/Build$VERSION_CODES;", "KITKAT") == 19);
+  }
+}
+
 TEST_CASE("DVM-102 regression default timezone cloning reset and VM isolation") {
   for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
     Dvm87Vm f(backend);
@@ -1520,7 +1564,7 @@ TEST_CASE("DVM-103 all BootDex classes link and collection methods have no intri
         for (const auto method : f.linker.Class(type).own_direct_methods)
             CHECK(f.linker.Method(method).kind != MethodKind::intrinsic);
     }
-    CHECK(count == 949);
+    CHECK(count == 953);
 }
 
 TEST_CASE("DVM-103 bounded queues and Collections wrappers use API19 semantics") {

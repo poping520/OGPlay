@@ -207,6 +207,9 @@ binding。`GLUtils` 读取 context 中既有 Bitmap backing；本层不拥有 GL
   不支持；不得猜测 content MIME 或因此伪造广播派发。
 - DVM-132 的 `Uri` 及内部类来自 BootDex，integration 不再声明该类或保存 URI 镜像字段。
   `StrictMode.onFileUriExposed` 与 external-storage canonical 分支未闭合，触达时明确失败。
+- DVM-133 的 ContentResolver 五参 `query` 虚派读取 URI scheme/authority；当前没有任何
+  ContentProvider 注册，因此按 API 19 provider acquisition 失败返回 null。不得构造空
+  Cursor、读取宿主 provider，或由 authority 猜测查询结果。
 - Intent extra 由普通 mExtras 字段指向 BootDex Bundle；String/int/Serializable/
   Integer ArrayList 的 typed put/get/remove/hasExtra 委托 Java，类型覆盖/null 与装箱遵循
   原版语义；getExtras 返回独立映射的浅副本，值保持身份。删除旧三种类型分表。

@@ -1,5 +1,9 @@
 # 当前状态
 
+更新（2026-09-09）：[DVM-133](../tasks/dexvm/DVM-133.md) 闭合 API 19
+`ContentResolver.query` 无 provider 分支：虚派读取 URI 后返回 null，不构造空 Cursor，
+不引入 ContentProvider/Binder。exact PvZ 新首错为 `MainView.setRenderMode(I)`。
+
 更新（2026-09-09）：[DVM-132](../tasks/dexvm/DVM-132.md) 将 API 19
 `android.net.Uri` 全部内部类与 `UriCodec` 迁入 BootDex，删除 C++ 简化 parser 与镜像字段；
 query、Builder、UTF-8 编解码执行原版 Java。按范围暂不补 StrictMode 文件 URI 暴露及
@@ -13,14 +17,6 @@ receiver 与有界类型化参数现场；直接读取原始 DEX prototype/源�
 DexVM/BootDex，删除 Build/SystemProperties、Context/Activity 服务、Settings.Secure、Bundle、
 AudioTrack 的重复 HLE 与播放状态。纯 native/HLE 会话不再提供这些类，需装配 VM。
 
-此前 [DVM-129](../tasks/dexvm/DVM-129.md) 修复资源型 application label
-错误进入 fixed-font ASCII 限制的问题。`PackageManager.getApplicationLabel` 现按 AOSP
-返回 Unicode `CharSequence`，不触发 UI 字形测量；exact PvZ 已越过原错误，新首错为
-`Landroid/os/Build;->BRAND:Ljava/lang/String;`。
-[DVM-128](../tasks/dexvm/DVM-128.md) 完成 API 19
-`Settings.Secure.getString` 与沙盒身份。`ANDROID_ID` 首次由 OS CSPRNG 生成 64 位十六进制值，
-持久沙盒跨启动稳定，ephemeral 每次重建；JNI/DexVM 共用配置且不读取宿主设备身份。
-exact PvZ 已越过该缺口。
 Button/TextView 三参构造与 buttonStyle(Small) 默认样式投影、TextView compound
 drawables（measure/raster/文本带内缩）、UI kind 按真实继承链解析、RelativeLayout
 TRUE(-1) 规则按 AOSP rule > 0 视为无锚点。exact PvZ 实跑 `CreateDiscoveryStrip 3/4/8`
@@ -54,6 +50,10 @@ TRUE(-1) 规则按 AOSP rule > 0 视为无锚点。exact PvZ 实跑 `CreateDisco
 
 ## 最近验证
 
+- DVM-133：windows-msvc Release 受影响目标构建；DVM-97/132/133 与 catalog 定向
+  6 项、3409 断言及架构三项通过。exact PvZ 越过 attribution provider 查询，
+  新首错为 `MainView.setRenderMode(I)`；未跑全量、payload 或跨平台验收。
+
 - DVM-132：windows-msvc Release 受影响目标构建；Uri/DVM-97/968 类全链接定向 5 项、
   7427 断言，BootDex build/check、自测与架构三项通过。exact PvZ 首错仍为
   `ContentResolver.query`，BootDex `Uri$StringUri.toString()` 已在参数诊断打印完整 URI。
@@ -70,7 +70,7 @@ TRUE(-1) 规则按 AOSP rule > 0 视为无锚点。exact PvZ 实跑 `CreateDisco
 
 ## 下一步与边界
 
-1. 补 `ContentResolver.query` 的有界无 provider 路径，继续推进 PvZ。
+1. 分析 `MainView.setRenderMode(I)` 的 GLSurfaceView 继承/渲染线程语义，继续推进 PvZ。
 2. 处理既有 GUI 门禁，补 macOS/Linux、DH 与 Diagnostics 验收。
 
 OGPlay 仅覆盖登记的老游戏进程能力。完整 formatter/大数、宿主资源持久化、Proxy 生成、

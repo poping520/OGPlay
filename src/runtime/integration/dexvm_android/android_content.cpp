@@ -825,6 +825,32 @@ namespace {
 Decl Declare_android_content_ContentResolver(const Context& context) {
     static_cast<void>(context);
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/content/ContentResolver;", "Ljava/lang/Object;");
+    builder.FinalMethod(
+        "query",
+        "(Landroid/net/Uri;[Ljava/lang/String;Ljava/lang/String;"
+        "[Ljava/lang/String;Ljava/lang/String;)Landroid/database/Cursor;",
+        [](dx::IntrinsicContext& call) {
+            const auto uri = call.arguments[0].ref;
+            if (!uri.IsValid()) {
+                throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;",
+                                      "ContentResolver URI is null"};
+            }
+            const auto scheme = InvokeAndroidVirtual(
+                call, uri, "getScheme", "()Ljava/lang/String;");
+            if (!scheme.has_value())
+                return dx::VmValue::Ref(dx::VmObjectRef{});
+            if (!scheme->ref.IsValid() ||
+                call.vm.StringUtf8(scheme->ref) != "content") {
+                return dx::VmValue::Ref(dx::VmObjectRef{});
+            }
+            const auto authority = InvokeAndroidVirtual(
+                call, uri, "getAuthority", "()Ljava/lang/String;");
+            if (!authority.has_value())
+                return dx::VmValue::Ref(dx::VmObjectRef{});
+            // OGPlay has no registered ContentProvider process or Binder
+            // directory. API 19 returns null when provider acquisition fails.
+            return dx::VmValue::Ref(dx::VmObjectRef{});
+        });
     builder.FinalMethod("getType",
         "(Landroid/net/Uri;)Ljava/lang/String;",
         [](dx::IntrinsicContext& call) {

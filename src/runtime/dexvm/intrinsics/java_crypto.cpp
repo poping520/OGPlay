@@ -82,6 +82,11 @@ IntrinsicClassDecl CryptoProvider() {
         }
         Put(vm, c.receiver, "Cipher.AES", "org.ogplay.security.DefaultAes");
         Put(vm, c.receiver, "SecureRandom.OGPlayOS", "org.ogplay.security.OsRandom");
+        Put(vm, c.receiver, "SecureRandom.SHA1PRNG",
+            "com.android.org.conscrypt.OpenSSLRandom");
+        Put(vm, c.receiver, "SecureRandom.SHA1PRNG ImplementedIn", "Software");
+        Put(vm, c.receiver, "KeyGenerator.AES",
+            "org.ogplay.security.AesKeyGenerator");
         // Match API 19 OpenSSLProvider names, aliases and OIDs.
         for (const auto& entry : std::array{
                  std::array{"MD5", "MD5", "1.2.840.113549.2.5"},
@@ -168,6 +173,133 @@ IntrinsicClassDecl OsRandom(const CoreIntrinsicServices& services) {
     b.UnimplementedVirtual("engineSetSeed", "([B)V", kAccProtected);
     return std::move(b).Build();
 }
+IntrinsicClassDecl OpenSslRandom(const CoreIntrinsicServices& services) {
+    auto b = IntrinsicClassBuilder::Class(
+        "Lcom/android/org/conscrypt/OpenSSLRandom;",
+        "Ljava/security/SecureRandomSpi;", {"Ljava/io/Serializable;"});
+    const auto seeded = b.BoundInstanceField("seeded", "Z", kAccPrivate);
+    const auto ensure_seeded = [random = services.secure_random, seeded](IntrinsicContext& c) {
+        IntrinsicCall call(c);
+        if (call.GetInt(seeded)) return;
+        if (!random)
+            throw VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
+                              "OS secure random is not connected"};
+        std::vector<std::byte> bytes(32);
+        try {
+            random(bytes);
+        } catch (const std::exception&) {
+            throw VmJavaThrow{"Ljava/security/ProviderException;", "OS secure random failed"};
+        }
+        const auto seed = c.vm.Model().NewPrimitiveArray(
+            c.vm.Linker().ResolveDescriptor("[B"), JniPrimitiveKind::byte,
+            static_cast<JniSize>(bytes.size()));
+        const auto roots = c.vm.ProtectReferences(std::array{seed});
+        c.vm.Model().WriteByteRegion(seed, 0, bytes);
+        Direct(c.vm, kNative, "RAND_seed", "([B)V", {VmValue::Ref(seed)});
+        call.SetInt(seeded, 1);
+    };
+    b.Constructor("()V", [](IntrinsicContext&) { return VmValue::Void(); });
+    b.VirtualMethod("engineSetSeed", "([B)V", [ensure_seeded](IntrinsicContext& c) {
+        ensure_seeded(c);
+        return Direct(c.vm, kNative, "RAND_seed", "([B)V",
+                      {VmValue::Ref(IntrinsicCall(c).NonNullRef(0, "seed"))});
+    }, kAccProtected);
+    b.VirtualMethod("engineNextBytes", "([B)V", [ensure_seeded](IntrinsicContext& c) {
+        ensure_seeded(c);
+        return Direct(c.vm, kNative, "RAND_bytes", "([B)V",
+                      {VmValue::Ref(IntrinsicCall(c).NonNullRef(0, "output"))});
+    }, kAccProtected);
+    b.VirtualMethod("engineGenerateSeed", "(I)[B", [ensure_seeded](IntrinsicContext& c) {
+        const auto count = IntrinsicCall(c).Int(0);
+        if (count < 0) {
+            throw VmJavaThrow{"Ljava/lang/NegativeArraySizeException;",
+                              std::to_string(count)};
+        }
+        const auto output = c.vm.Model().NewPrimitiveArray(
+            c.vm.Linker().ResolveDescriptor("[B"), JniPrimitiveKind::byte,
+            count);
+        const auto roots = c.vm.ProtectReferences(std::array{output});
+        ensure_seeded(c);
+        Direct(c.vm, kNative, "RAND_bytes", "([B)V",
+               {VmValue::Ref(output)});
+        return VmValue::Ref(output);
+    }, kAccProtected);
+    return std::move(b).Build();
+}
+IntrinsicClassDecl AesKeyGenerator() {
+    auto b = IntrinsicClassBuilder::Class(
+        "Lorg/ogplay/security/AesKeyGenerator;", "Ljavax/crypto/KeyGeneratorSpi;");
+    const auto bits = b.BoundInstanceField("keySize", "I", kAccPrivate);
+    const auto random = b.BoundInstanceField(
+        "random", "Ljava/security/SecureRandom;", kAccPrivate);
+    b.Constructor("()V", [bits](IntrinsicContext& c) {
+        IntrinsicCall(c).SetInt(bits, 128);
+        return VmValue::Void();
+    });
+    const auto require_random = [](IntrinsicContext& c, VmObjectRef value) {
+        if (value.IsValid()) return value;
+        auto& vm = c.vm;
+        const auto type = vm.Linker().ResolveDescriptor("Ljava/security/SecureRandom;");
+        const auto value_object = vm.Model().NewInstance(
+            type, vm.Linker().Class(type).instance_slots);
+        const auto roots = vm.ProtectReferences(std::array{value_object});
+        Direct(vm, "Ljava/security/SecureRandom;", "<init>", "()V",
+               {VmValue::Ref(value_object)});
+        return value_object;
+    };
+    b.VirtualMethod(
+        "engineInit", "(ILjava/security/SecureRandom;)V",
+        [bits, random, require_random](IntrinsicContext& c) {
+            IntrinsicCall call(c);
+            const auto size = call.Int(0);
+            if (size != 128 && size != 192 && size != 256) {
+                throw VmJavaThrow{"Ljava/security/InvalidParameterException;",
+                                  "AES key size must be 128, 192, or 256 bits"};
+            }
+            call.SetInt(bits, size);
+            call.SetRef(random, require_random(c, call.Ref(1)));
+            return VmValue::Void();
+        }, kAccProtected);
+    b.VirtualMethod(
+        "engineInit", "(Ljava/security/SecureRandom;)V",
+        [random, require_random](IntrinsicContext& c) {
+            IntrinsicCall call(c);
+            call.SetRef(random, require_random(c, call.Ref(0)));
+            return VmValue::Void();
+        }, kAccProtected);
+    b.VirtualMethod(
+        "engineInit", "(Ljava/security/spec/AlgorithmParameterSpec;Ljava/security/SecureRandom;)V",
+        [](IntrinsicContext&) -> VmValue {
+            throw VmJavaThrow{"Ljava/security/InvalidAlgorithmParameterException;",
+                              "AES KeyGenerator parameters are not supported"};
+        }, kAccProtected);
+    b.VirtualMethod(
+        "engineGenerateKey", "()Ljavax/crypto/SecretKey;",
+        [bits, random, require_random](IntrinsicContext& c) {
+            IntrinsicCall call(c);
+            const auto source = require_random(c, call.GetRef(random));
+            call.SetRef(random, source);
+            const auto array = c.vm.Model().NewPrimitiveArray(
+                c.vm.Linker().ResolveDescriptor("[B"), JniPrimitiveKind::byte,
+                call.GetInt(bits) / 8);
+            const auto roots = c.vm.ProtectReferences(std::array{source, array});
+            InvokeGuest(c.vm, source, "nextBytes", "([B)V",
+                        {VmValue::Ref(array)});
+            const auto key_type = c.vm.Linker().ResolveDescriptor(
+                "Ljavax/crypto/spec/SecretKeySpec;");
+            const auto key = c.vm.Model().NewInstance(
+                key_type, c.vm.Linker().Class(key_type).instance_slots);
+            const auto algorithm = c.vm.NewStringUtf8("AES");
+            const auto key_roots = c.vm.ProtectReferences(
+                std::array{source, array, key, algorithm});
+            Direct(c.vm, "Ljavax/crypto/spec/SecretKeySpec;", "<init>",
+                   "([BLjava/lang/String;)V",
+                   {VmValue::Ref(key), VmValue::Ref(array),
+                    VmValue::Ref(algorithm)});
+            return VmValue::Ref(key);
+        }, kAccProtected);
+    return std::move(b).Build();
+}
 IntrinsicClassDecl CipherContext() {
     auto b = IntrinsicClassBuilder::Class("Lcom/android/org/conscrypt/OpenSSLCipherContext;");
     const auto field = b.BoundInstanceField("context", "J", kAccPrivate | kAccFinal);
@@ -217,6 +349,8 @@ IntrinsicClassDecl NativeCryptoBoundary() {
              std::pair{"EVP_DigestFinal", "(J[BI)I"},
              std::pair{"EVP_MD_CTX_copy", "(J)J"},
              std::pair{"EVP_MD_CTX_destroy", "(J)V"},
+             std::pair{"RAND_seed", "([B)V"},
+             std::pair{"RAND_bytes", "([B)V"},
              std::pair{"verify_signature", "([B[B[BLjava/lang/String;)Z"}}) {
         b.GuestNativeStatic(name, signature);
     }
@@ -298,6 +432,8 @@ void AppendJavaCrypto(std::vector<IntrinsicClassDecl>& catalog,
     catalog.push_back(CryptoProvider());
     catalog.push_back(DefaultAes());
     catalog.push_back(OsRandom(services));
+    catalog.push_back(OpenSslRandom(services));
+    catalog.push_back(AesKeyGenerator());
     catalog.push_back(NativeCryptoBoundary());
     catalog.push_back(CipherContext());
     for (const auto& entry : kSignatures) catalog.push_back(VerificationSpi(entry.algorithm));

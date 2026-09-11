@@ -1338,7 +1338,7 @@ note = "DVM-69/Chapter 11 closure 受检解析 Dalvik InnerClass/EnclosingClass/
 [dexvm.reflection_field_annotations]
 status = "partial"
 test = "tests/loader/dex_tests.cpp runtime-visible field marker annotation; tests/dexvm/reflection_tests.cpp Field runtime marker annotations dispatch on both backends"
-note = "字段 runtime-visible annotation 类型元数据贯通 loader/linker，Field.getAnnotation/isAnnotationPresent/getAnnotations/getDeclaredAnnotations 可物化零成员 marker annotation；API19 java.lang.annotation 十类进入 1051 类 BootDex。带成员 annotation 与完整 Annotation 契约仍明确不支持。"
+note = "字段 runtime-visible annotation 类型元数据贯通 loader/linker，Field.getAnnotation/isAnnotationPresent/getAnnotations/getDeclaredAnnotations 可物化零成员 marker annotation；API19 java.lang.annotation 十类进入 BootDex，DVM-147 再加入 KeyGenerator/KeyGeneratorSpi，当前共 1053 类。带成员 annotation 与完整 Annotation 契约仍明确不支持。"
 
 [dexvm.reflection_metadata_laziness]
 status = "complete"
@@ -1569,6 +1569,11 @@ note = "DVM-104/106 为 X500 标签键与证书长序列号闭合 17 个 BigInt/
 status = "complete"
 test = "tests/runtime/native_library_loader_tests.cpp; tests/dexvm/fixtures/cipher.dexasm; tests/dexvm/interpreter_tests.cpp; tests/runtime/jni_environment_tests.cpp; tools.android_payload_current"
 note = "DVM-105/ADR-0035 完成 AES 128/192/256：ECB/CBC 的 NoPadding/PKCS5Padding，CTR/NoPadding，裸 AES 默认 ECB/PKCS5Padding。Cipher/JCA/Conscrypt 普通 Java 逻辑由 BootDex 执行，11 个 native 经 guest ARM JNI 桥调用临时 API19 libcrypto；无宿主 AES 替代。双解释后端 NIST 向量、分段/原位/异常、IV reset、OS CSPRNG、两个真实 guest 线程、逻辑 token 与 GC/teardown 受检。JNI 原异常类型/消息及 Throwable cause 保持。complete 仅指该 AES 子集；自设随机 seed、AES AlgorithmParameters 编码、RSA Cipher/TLS、完整 JCA 与 wrap/unwrap 长尾未验收；手机断开，未跑本轮真机对照或游戏 gate。设备来源和构建器输出身份单独登记。 2026-09-07 ROM libcrypto 已撤出 Git，后按用户再次授权恢复到本地临时使用，完整 payload 校验通过；仍须自行构建替换并更新来源/哈希后复验。"
+
+[dexvm.jca_random_keygen]
+status = "complete"
+test = "tests/runtime/native_library_loader_tests.cpp: DVM-105; python tools/bootdex/build_bootdex.py build-guest-jni"
+note = "DVM-147 补齐 API19 AndroidOpenSSL SHA1PRNG 与 AES KeyGenerator。SHA1PRNG 首用时由统一 CSPRNG 注入熵，之后通过 guest ARM libcrypto RAND_seed/RAND_bytes；调用方 seed 只追加熵。AES KeyGenerator 支持 128/192/256 位并返回 BootDex SecretKeySpec。双解释器 seed/nextBytes/128 位生成受检，pvz-amaz 8.1.0 非 survey 实跑越过原 NoSuchAlgorithmException。其他 PRNG/KeyGenerator、Keystore、TLS 与完整 JCA provider 不在范围。"
 
 [dexvm.certificate_x509]
 status = "complete"

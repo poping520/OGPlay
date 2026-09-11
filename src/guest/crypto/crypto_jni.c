@@ -29,6 +29,8 @@ extern int EVP_CipherUpdate(EVP_CIPHER_CTX *, unsigned char *, int *, const unsi
 extern int EVP_CipherFinal_ex(EVP_CIPHER_CTX *, unsigned char *, int *);
 extern unsigned long ERR_get_error(void);
 extern void ERR_clear_error(void);
+extern void RAND_seed(const void *, int);
+extern int RAND_bytes(unsigned char *, int);
 #define AES(bits, mode) extern const EVP_CIPHER *EVP_aes_##bits##_##mode(void);
 AES(128, ecb)
 AES(192, ecb)
@@ -122,6 +124,33 @@ static const EVP_CIPHER *cipher(jlong token) {
     return (void *)0;
 }
 #define N(name) Java_com_android_org_conscrypt_NativeCrypto_##name
+void N(RAND_1seed)(JNIEnv *env, jobject cls, jobject seed) {
+    (void)cls;
+    int count = length(env, seed);
+    if (count < 0) return;
+    unsigned char buffer[4096];
+    for (int offset = 0; offset < count;) {
+        int chunk = count - offset < (int)sizeof(buffer) ? count - offset : (int)sizeof(buffer);
+        read_bytes(env, seed, offset, chunk, buffer);
+        RAND_seed(buffer, chunk);
+        offset += chunk;
+    }
+}
+void N(RAND_1bytes)(JNIEnv *env, jobject cls, jobject output) {
+    (void)cls;
+    int count = length(env, output);
+    if (count < 0) return;
+    unsigned char buffer[4096];
+    for (int offset = 0; offset < count;) {
+        int chunk = count - offset < (int)sizeof(buffer) ? count - offset : (int)sizeof(buffer);
+        if (RAND_bytes(buffer, chunk) != 1) {
+            fail(env, "java/security/ProviderException", "RAND_bytes failed");
+            return;
+        }
+        write_bytes(env, output, offset, chunk, buffer);
+        offset += chunk;
+    }
+}
 jlong N(EVP_1get_1cipherbyname)(JNIEnv *env, jobject cls, jobject name) {
     (void)cls;
     if (!name) {

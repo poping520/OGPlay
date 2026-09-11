@@ -689,6 +689,8 @@
       "Ljavax/crypto/Cipher;",
       "Ljavax/crypto/CipherSpi;",
       "Ljavax/crypto/IllegalBlockSizeException;",
+      "Ljavax/crypto/KeyGenerator;",
+      "Ljavax/crypto/KeyGeneratorSpi;",
       "Ljavax/crypto/NoSuchPaddingException;",
       "Ljavax/crypto/SecretKey;",
       "Ljavax/crypto/ShortBufferException;",

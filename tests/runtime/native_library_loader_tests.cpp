@@ -2181,6 +2181,34 @@ TEST_CASE("DVM-105 AES uses BootDex and real guest libcrypto") {
             vm.Model().WriteByteRegion(array, 0, data);
             return array;
         };
+        const auto secure_random = direct(
+            "Ljava/security/SecureRandom;", "getInstance",
+            "(Ljava/lang/String;)Ljava/security/SecureRandom;",
+            {VmValue::Ref(vm.NewStringUtf8("SHA1PRNG"))})
+                                       .ref;
+        const auto random_output = bytes("00000000000000000000000000000000");
+        const auto random_roots = vm.ProtectReferences(std::array{secure_random, random_output});
+        invoke(secure_random, "setSeed", "([B)V", {VmValue::Ref(bytes("01020304"))});
+        invoke(secure_random, "nextBytes", "([B)V", {VmValue::Ref(random_output)});
+        CHECK(vm.Model().ReadByteRegion(random_output, 0, 16) !=
+              std::vector<std::byte>(16, std::byte{0}));
+
+        const auto key_generator = direct(
+            "Ljavax/crypto/KeyGenerator;", "getInstance",
+            "(Ljava/lang/String;)Ljavax/crypto/KeyGenerator;",
+            {VmValue::Ref(vm.NewStringUtf8("AES"))})
+                                       .ref;
+        const auto generator_roots = vm.ProtectReferences(std::array{key_generator});
+        for (const auto bits : {128, 192, 256}) {
+            invoke(key_generator, "init", "(ILjava/security/SecureRandom;)V",
+                   {VmValue::Int(bits), VmValue::Ref(secure_random)});
+            const auto generated_key =
+                invoke(key_generator, "generateKey", "()Ljavax/crypto/SecretKey;", {}).ref;
+            const auto generated_roots = vm.ProtectReferences(std::array{generated_key});
+            const auto generated_bytes = invoke(generated_key, "getEncoded", "()[B", {}).ref;
+            CHECK(vm.Model().ArrayLength(generated_bytes) == bits / 8);
+        }
+
         const auto key_bytes = bytes("000102030405060708090a0b0c0d0e0f");
         const auto key = vm.NewIntrinsicInstance("Ljavax/crypto/spec/SecretKeySpec;");
         const auto key_roots = vm.ProtectReferences(std::array{key, key_bytes});

@@ -1,14 +1,14 @@
 # 当前状态
 
-- 反射字段、方法、构造器 metadata 已按成员类别独立按需构建；字段枚举不再被无关方法
-  参数/返回值/throws 中的缺失类型阻断。完整方法枚举仍明确要求其签名类型可用。pvz-amaz
-  8.1.0 关闭 survey 实跑已越过原 `JarFile` 反射卡点；当前前台后续缺口为
-  `SecureRandom SHA1PRNG` provider，KIWI_COMMAND 线程另命中 `Log.d(tag,msg,throwable)` 缺面。
+- [DVM-147](../tasks/dexvm/DVM-147.md) 已补齐 API 19 AndroidOpenSSL `SHA1PRNG` 与 AES
+  KeyGenerator：统一 CSPRNG 首次播种后由 guest ARM OpenSSL 产出随机字节。pvz-amaz 8.1.0
+  非 survey 实跑越过原 `NoSuchAlgorithmException`；当前后续缺口为 KIWI_COMMAND 线程的
+  `Log.d(tag,msg,throwable)`，其内层异常是 `resolveService` 暂只支持 `flags=0`。
 
 更新：2026-09-11。
 
 - BootDex-first 本地 Binder 已接通：IInterface/IBinder/Binder/Parcel、ResultReceiver 与内部
-  IResultReceiver 及协议异常共 20 个 class_def 来自固定 API 19 JAR，BootDex 现为 1051 类。Binder 普通
+  IResultReceiver 及协议异常共 20 个 class_def 来自固定 API 19 JAR，BootDex 现为 1053 类。Binder 普通
   transact/onTransact 与 Parcel/Bundle/Intent/ResultReceiver 协议执行原版 Java；integration
   仅保留身份/线程策略和唯一字节 backing/Binder 引用 native。外部服务 bind 返回缺席，失败绑定保留连接登记供
   unbind 清理，重复/未登记 unbind 明确失败；跨进程 Binder、驱动、BinderProxy 后端、FD 与系统服务仍不支持。
@@ -16,7 +16,7 @@
 ## 当前能力
 
 - **发行与 VM**：Profile 按 API 选择 bundled data。API 19 提供 AOSP guest 库、
-  OpenSSL、ICU 51.1、1051 类 BootDex 与 ICU 数据；来源和校验见
+  OpenSSL、ICU 51.1、1053 类 BootDex 与 ICU 数据；来源和校验见
   [manifest](../../data/android/19/manifest.json)。普通 Java 状态归字段/数组，JNI 使用
   VM 真实类型关系。
 - **Java/密码/ICU**：已覆盖常用集合、并发、IO、序列化、反射、framework 值类、日期与

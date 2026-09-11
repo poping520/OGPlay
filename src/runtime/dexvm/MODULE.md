@@ -74,6 +74,8 @@ switch/threaded 解释、异常、线程/monitor、反射及 `java.*` core intri
 - guest ICU 固定为 ICU4C 51 与 `/system/usr/icu/icudt51l.dat`；令牌在 guest SO，teardown 关闭。
   `BigIntRuntime` 只提供 ASN.1/证书所需子集，不提供大数密码算术。
 - DVM-142 的 PM 值类闭包归 BootDex；DVM-143 后 PackageManager 方法查询不依赖无关签名。
+- ArraySet/LruCache/Pools/Property、Point/Rect、MathUtils/Patterns 与 framework exception
+  归 BootDex；Point、Rect、AndroidException 不保留普通方法 overlay。
 
 ## 文件分工与不变量
 

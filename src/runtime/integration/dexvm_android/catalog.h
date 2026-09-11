@@ -48,9 +48,7 @@ namespace ogplay::runtime::android_intrinsics {
 [[nodiscard]] Decl Declare_android_graphics_Canvas(const Context& context);
 [[nodiscard]] Decl Declare_android_graphics_Matrix(const Context& context);
 [[nodiscard]] Decl Declare_android_graphics_Paint(const Context& context);
-[[nodiscard]] Decl Declare_android_graphics_Rect(const Context& context);
 [[nodiscard]] Decl Declare_android_graphics_RectF(const Context& context);
-[[nodiscard]] Decl Declare_android_graphics_Point(const Context& context);
 [[nodiscard]] Decl Declare_android_graphics_PointF(const Context& context);
 [[nodiscard]] Decl Declare_android_graphics_Path(const Context& context);
 [[nodiscard]] Decl Declare_android_graphics_Path_Direction(const Context& context);
@@ -128,7 +126,6 @@ namespace ogplay::runtime::android_intrinsics {
 [[nodiscard]] Decl Declare_android_text_TextWatcher(const Context& context);
 [[nodiscard]] Decl Declare_android_text_TextUtils(const Context& context);
 [[nodiscard]] Decl Declare_android_util_Log(const Context& context);
-[[nodiscard]] Decl Declare_android_util_AndroidException(const Context& context);
 [[nodiscard]] Decl Declare_android_util_AttributeSet(const Context& context);
 [[nodiscard]] Decl Declare_android_util_Base64(const Context& context);
 [[nodiscard]] Decl Declare_android_util_DisplayMetrics(const Context& context);

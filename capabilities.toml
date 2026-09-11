@@ -1257,12 +1257,12 @@ note = "DVM-7 注册/层级/布局/vtable/iftable 四步链接与懒结构预检
 
 [dexvm.boot_dex]
 status = "complete"
-test = "tests/dexvm/intrinsics_p1_tests.cpp; tests/dexvm/dvm87_tests.cpp; tests/dexvm/android_value_tests.cpp; tests/frontend/data_directory_tests.cpp; tools.bootdex_builder_self_test; tools.android_payload_current; PvZ exact Profile reached-fault"
+test = "tests/dexvm/intrinsics_p1_tests.cpp; tests/dexvm/bootdex_library_tests.cpp; tests/dexvm/android_value_tests.cpp; tests/frontend/data_directory_tests.cpp; tools.bootdex_builder_self_test; tools.android_payload_current; PvZ exact Profile reached-fault"
 note = "DVM-99..137 curated BootDex：日期、集合、普通流、X500、Cipher/JCA/Conscrypt AES 与 Certificate/Harmony/Signature 及 framework 值类、UUID/MessageDigest/摘要流和对象流、定时执行器依赖、ServiceConnection、Throwable/StackTraceElement、BackupManager/RestoreObserver、Bundle/ArrayMap、显示/布局/文本值类、API 19 Formatter、SystemEnvironment、Uri/UriCodec、OrientationEventListener 与 Configuration 共 972 个 class_def。972 类全链接；Configuration 字段、默认/复制/比较/toString/Parcel 来自原版 Java，Resources 注入 managed display/input，并按 AOSP updateConfiguration 兜底复用 VM 默认 Locale、调用 Java setLayoutDirection。TextUtils 当前只确认 ROOT/en/zh 的 LTR，其他 locale 在 likely-subtags 未接入时记账失败。方向监听器在无 accelerometer backend 时保持 canDetect=false 且不伪造回调。精确边界 overlay 与 guest JNI 声明受审，制品身份见 data/android/19/manifest.json。Conscrypt 为用户授权的临时设备来源；libcrypto 为 AOSP android-4.4.4_r2.0.1 自建 ARM 库。完整 core/framework、multidex、动态 classpath、动态设备配置、宿主传感器与 Android 系统服务未纳入。"
 
 [dexvm.string_format_api19]
 status = "partial"
-test = "tests/runtime/native_library_loader_tests.cpp: DVM-126; tests/dexvm/dvm87_tests.cpp: all BootDex classes link; tools.bootdex_builder_self_test; tools.android_payload_current; PvZ exact Profile reached-fault"
+test = "tests/runtime/native_library_loader_tests.cpp: DVM-126; tests/dexvm/bootdex_library_tests.cpp: all BootDex classes link; tools.bootdex_builder_self_test; tools.android_payload_current; PvZ exact Profile reached-fault"
 note = "DVM-126 从 pinned core.jar 精确选入 Formatter、嵌套实现、Formattable 与格式异常族；格式解析、宽度/flag、虚 toString、Locale 和日期转换执行 API 19 Java。String 仍为 VM 特殊 UTF-16 owner，两个 String.format intrinsic 只实现 AOSP 包装链；AbstractStringBuilder/Appendable 与 IntegralToString 两个 append 原语共用 builder 状态。双后端覆盖 %tZ、%02d、默认/null Locale、异常与 GC。double/BigDecimal formatter、具名时区长尾仍受既有边界约束，因此能力为 partial。"
 
 [dexvm.date_format_bootdex_audit]
@@ -1282,7 +1282,7 @@ note = "DVM-113/DVM-122 按 API 19 Locale→BootDex ICU Java→guest libogplay_j
 
 [dexvm.date_format_api19]
 status = "complete"
-test = "tests/runtime/native_library_loader_tests.cpp: DVM-105; tests/dexvm/dvm87_tests.cpp: non-native shape/time-zone/static-field regressions; tools.bootdex_builder_self_test; tools.android_payload_current"
+test = "tests/runtime/native_library_loader_tests.cpp: DVM-105; tests/dexvm/bootdex_library_tests.cpp: non-native shape/time-zone/static-field regressions; tools.bootdex_builder_self_test; tools.android_payload_current"
 note = "DVM-102/122 的日期与数字 Java 行为来自 pinned API 19 BootDex；25 个 required native 经统一 guest JNI 调用 ICU 51。LocaleData resource、货币 fallback、Long/Double parse、完整整数 FieldPosition/grouping 与 Unicode case mapping 已按 AOSP 对照受检。宿主不含 ICU runtime/data。具名时区/历史 DST、BigDecimal/BigInteger、double/digit-list formatter 和其余 ICU 查询仍明确失败。"
 
 [dexvm.guest_jni_api19]
@@ -1457,17 +1457,17 @@ note = "DVM-86 发布 API19 Base64/SparseArray family/TypedValue/TextUtils、Col
 
 [dexvm.java_util_algorithms]
 status = "complete"
-test = "tests/dexvm/dvm87_tests.cpp"
+test = "tests/dexvm/bootdex_library_tests.cpp"
 note = "DVM-103 将 Arrays/Collections、排序实现与包装视图迁入 pinned API 19 BootDex，删除对应 intrinsic；常用数组算法、sort/reverse/swap/fill/frequency/binarySearch 与 live unmodifiable view 定向受检。Locale 与 ICU 数据仍经既有边界，DVM-102 日期算法来自 BootDex；具名时区数据库和大数长尾仍 deferred。"
 
 [dexvm.java_regex]
 status = "complete"
-test = "tests/dexvm/dvm87_tests.cpp"
+test = "tests/dexvm/bootdex_library_tests.cpp"
 note = "DVM-87 发布 String 输入上的 Pattern compile/matches/quote 与 Matcher matches/find/reset/start/end/group/replace 核心语义；非法 pattern/flag 明确失败，完整 libcore Unicode/region/命名组不在 bounded surface"
 
 [dexvm.java_concurrent_core]
 status = "complete"
-test = "tests/dexvm/dvm87_tests.cpp; tests/dexvm/thread_intrinsic_tests.cpp"
+test = "tests/dexvm/bootdex_library_tests.cpp; tests/dexvm/thread_intrinsic_tests.cpp"
 note = "DVM-87 的 FutureTask、串行 executor 继续复用 VmThreadRuntime。DVM-104 普通 atomic/数组和 CountDownLatch/Semaphore/CyclicBarrier 改由 API 19 BootDex 执行，只保留 AtomicLong.VMSupportsCS8 native；真实线程阻塞/释放/中断、零超时/barrier break/reset 与原子回绕、引用 GC 受检。DVM-103 concurrent 容器和 ThreadLocal 来自 BootDex，容量限制、空队列、基本增删查与迭代定向受检；getAndAdd 按 Java 位宽回绕，nanoTime 只读统一 Clock，Runtime 发布单 guest 执行通道事实 1。DVM-110 将 FutureTask/普通 Executors 工厂/定时执行器改为原版 Java，单次/周期任务、取消/中断/异常与关闭策略受检；高争用容器、privileged 工厂与安全上下文仍未纳入。"
 
 [dexvm.java_network]
@@ -1537,22 +1537,22 @@ note = "WU2 固化 procdump/WinDbg/lldb 外部 dump、十进制/十六进制 hos
 
 [dexvm.collections_bootdex]
 status = "complete"
-test = "tests/dexvm/dvm87_tests.cpp; tests/dexvm/intrinsics_p1_tests.cpp; tests/dexvm/observable_tests.cpp"
+test = "tests/dexvm/bootdex_library_tests.cpp; tests/dexvm/intrinsics_p1_tests.cpp; tests/dexvm/observable_tests.cpp"
 note = "DVM-103/ADR-0033 完成 API 19 Collection/List/Map 家族、Tree/Sorted/Navigable、Weak/Identity/Enum、concurrent 容器与内部类的精确选入；完整 BootDex 774 类可链接，集合自身方法无 intrinsic overlay，字段/数组为唯一存储。双后端覆盖基本操作、live view、fail-fast、clone、弱键清空入队与强引用存活。complete 指代码归属迁移，不代表 XML、任意序列化与并发长尾均实现。"
 
 [dexvm.externalizable]
 status = "complete"
-test = "tests/dexvm/dvm87_tests.cpp"
+test = "tests/dexvm/bootdex_library_tests.cpp"
 note = "DVM-103 将 Serializable/Externalizable、DataInput/DataOutput、ObjectInput/ObjectOutput、ObjectStreamConstants 与序列化异常选入 BootDex；IoRuntime 闭合显式 UID 的 Externalizable 协议 2，公共无参构造、真实回调、primitive/object block、循环/共享 handle、尾部跳过和原异常身份双后端受检。DVM-109 已删除 IoRuntime 对象协议与 handle 副本，原版对象流承接协议 1/2、默认 UID、数组与私有回调；公共构造与原异常身份回归保留。"
 
 [dexvm.luni_value_io_bootdex]
 status = "complete"
-test = "tests/dexvm/dvm87_tests.cpp; tests/dexvm/file_vfs_tests.cpp; tests/dexvm/gc_tests.cpp; tools.bootdex_builder_self_test; tools.android_payload_current"
+test = "tests/dexvm/bootdex_library_tests.cpp; tests/dexvm/file_vfs_tests.cpp; tests/dexvm/gc_tests.cpp; tools.bootdex_builder_self_test; tools.android_payload_current"
 note = "DVM-104/ADR-0034 在一个 WU 内新增 131 类至 BootDex（共 521 类）：工具/事件/beans、同步器/普通 atomic、Choice/MessageFormat、内存/Buffer/Filter/Data/Reader/Writer、X500 名字/DER 与指定 key spec。删除对应普通流和 atomic intrinsic 及 IoRuntime wrapper-adoption；普通状态归 guest 字段/数组，对象流通过 guest source/sink 保持身份、GC 强边与原异常。InputStreamReader 固定 ICU 增量解码并持有源 monitor，FileReader 和 AssetManager 衔接真实构造；标准六字符集、畸形输入替换及 Locale 大小写有定向回归。complete 指登记范围的迁移，完整 formatter、Charset provider API、对象流 custom hooks/数组/默认 UID 与证书验证不包含。PvZ 关闭 survey 已越过 X500Principal，首错 CertificateException，仅 reached-fault。"
 
 [dexvm.native_bn_asn1]
 status = "complete"
-test = "tests/dexvm/dvm87_tests.cpp; tests/dexvm/gc_tests.cpp"
+test = "tests/dexvm/bootdex_library_tests.cpp; tests/dexvm/gc_tests.cpp"
 note = "DVM-104/106 为 X500 标签键与证书长序列号闭合 17 个 BigInt/NativeBN 值原语：原有分配/释放/拷贝/比较、long/符号/bitLength，新增大小端数组、二补码与十/十六进制编解码；输入最多 1 MiB。每 VM 单调逻辑令牌受检，BigInt owner GC 与 VM teardown 释放；长正负数、跨 32/64/160 位边界和 GC 后往返受检。其余 18 个 native 明确失败，不表示完整 BigInteger/BigDecimal 算术或宿主密码学实现。"
 
 [dexvm.cipher_aes]
@@ -1562,13 +1562,13 @@ note = "DVM-105/ADR-0035 完成 AES 128/192/256：ECB/CBC 的 NoPadding/PKCS5Pad
 
 [dexvm.certificate_x509]
 status = "complete"
-test = "tests/runtime/native_library_loader_tests.cpp; tests/dexvm/dvm87_tests.cpp; tests/runtime/jni_object_array_tests.cpp; tools.android_payload_current"
+test = "tests/runtime/native_library_loader_tests.cpp; tests/dexvm/bootdex_library_tests.cpp; tests/runtime/jni_object_array_tests.cpp; tools.android_payload_current"
 note = "DVM-106/ADR-0036 完成 Certificate/X509Certificate/CertificateFactory 与 Harmony ASN.1/X.509/PKCS7 选入；解析、属性、verify、javax 旧 API 和路径编解码执行 BootDex。AndroidOpenSSL 的有界 SignatureSpi 仅保留普通 guest 公钥快照和消息流，经 ARM JNI/EVP 真实验证 RSA PKCS#1 v1.5/ECDSA 与 SHA1/224/256/384/512 的 10 个组合，单条消息最多 1 MiB。DER/PEM/证书集合、长序列号、有效期/扩展、编码公钥、PkiPath/PKCS7、证书链/错误公钥/篡改/未知算法/超限及 GC 后复用双后端受检，JNI 嵌套数组使用 VM 类型关系并拒绝非法写入。complete 不代表 PKIX 信任、CA/撤销/TLS、签名生成、PSS/DSA/EdDSA、RSA Cipher 或 RSA/EC KeyFactory/数学公钥接口；未跑真机/跨平台/游戏 gate。 2026-09-07 ROM libcrypto 已撤出 Git，后按用户再次授权恢复到本地临时使用，完整 payload 校验通过；仍须自行构建替换并更新来源/哈希后复验。"
 
 [dexvm.framework_value_bootdex]
 status = "complete"
-test = "tests/dexvm/android_value_tests.cpp; tests/dexvm/dvm87_tests.cpp; tools.bootdex_builder_self_test; tools.android_payload_current"
-note = "DVM-107/ADR-0038：Pair、Sparse/ComponentName/Parcelable 等 framework 值类来自 pinned BootDex。DVM-142 将 PackageItemInfo/ApplicationInfo/ComponentInfo/ActivityInfo/ServiceInfo/ProviderInfo/ResolveInfo、PathPermission/PatternMatcher、Printer 及内部类迁入 BootDex，并删除 PackageItemInfo/ApplicationInfo intrinsic；当前 992 类全链接。DVM-143 令 getMethod/getDeclaredMethod 只解析同名参数候选，完整枚举才解析全类 metadata。完整 framework、正匹配服务物化和 PrintWriter formatter 长尾不因此实现。"
+test = "tests/dexvm/android_value_tests.cpp; tests/dexvm/bootdex_library_tests.cpp; tools.bootdex_builder_self_test; tools.android_payload_current"
+note = "DVM-107/ADR-0038：Pair、Sparse/ComponentName/Parcelable 等 framework 值类来自 pinned BootDex。DVM-142 将 PM Info/ResolveInfo 值类闭包迁入并删除对应 intrinsic；后续迁入 ArraySet/LruCache/Pools/Property、Point/Rect、MathUtils/Patterns 与 framework exception，删除 Point/Rect/AndroidException intrinsic，当前 1011 类全链接。DVM-143 令 getMethod/getDeclaredMethod 只解析同名参数候选，完整枚举才解析全类 metadata。完整 framework、Intent 与系统服务不因此实现。"
 
 [dexvm.activity_component_identity]
 status = "complete"
@@ -1577,22 +1577,22 @@ note = "DVM-107：Activity.getLocalClassName/getComponentName/getPreferences/get
 
 [dexvm.uuid_bootdex]
 status = "complete"
-test = "tests/runtime/native_library_loader_tests.cpp; tests/dexvm/android_value_tests.cpp; tests/runtime/android_guest_framework_platform_tests.cpp; tests/dexvm/dvm87_tests.cpp"
+test = "tests/runtime/native_library_loader_tests.cpp; tests/dexvm/android_value_tests.cpp; tests/runtime/android_guest_framework_platform_tests.cpp; tests/dexvm/bootdex_library_tests.cpp"
 note = "DVM-108/ADR-0039：原版 UUID 归 BootDex，无普通方法 overlay；删除旧 JNI 固定对象和 UUID 字符串。randomUUID 复用 OS CSPRNG，nameUUIDFromBytes 使用 guest EVP MD5。双后端验证 v1 字段、v3 已知值、v4 位型/重复调用、解析/比较/格式化、真实 guest 线程及 JNI 发布路径。String.indexOf(String,int) 补 UTF-16 边界。DVM-109 已通过原版 ObjectInputStream 调用 UUID 私有 readObject，恢复 transient 缓存，版本/variant/时间戳/hash 和独立 Java wire 向量受检；未运行游戏 gate。"
 
 [dexvm.message_digest]
 status = "complete"
-test = "tests/runtime/native_library_loader_tests.cpp; tests/dexvm/gc_tests.cpp; tests/dexvm/dvm87_tests.cpp; tests/dexvm/fixtures/cipher.dexasm; tools.android_payload_current"
+test = "tests/runtime/native_library_loader_tests.cpp; tests/dexvm/gc_tests.cpp; tests/dexvm/bootdex_library_tests.cpp; tests/dexvm/fixtures/cipher.dexasm; tools.android_payload_current"
 note = "DVM-108/ADR-0039：API19 原版 MessageDigest/Spi、DigestInputStream/DigestOutputStream 与 Conscrypt 的 MD5、SHA-1、SHA-256、SHA-384、SHA-512 归 BootDex。AndroidOpenSSL 注册原版别名/OID，7 个 guest JNI 入口调用 ARM libcrypto EVP；native update 使用最大 64 KiB scratch 分块，无消息累计长度上限。双后端已知向量、超 1 MiB 二进制、增量/reset/clone、ByteBuffer/输出偏移、摘要流与明确异常受检。ctx 普通 long 字段为唯一事实源，GC/teardown 按 cleanup/token 聚合，浅 clone 与字段别名存活时不释放，失败清理可重试。SHA-224 MessageDigest 未在原版 OpenSSLProvider 注册，HMAC/Mac、SHA-3 与完整 JCA/TLS 未纳入。libcrypto 和 bootdex.jar 仅本地制品，未做真机/跨平台/游戏验收。"
 
 [dexvm.object_stream_bootdex]
 status = "complete"
-test = "tests/dexvm/reflection_tests.cpp; tests/dexvm/file_vfs_tests.cpp; tests/dexvm/dvm87_tests.cpp; tests/dexvm/android_value_tests.cpp; tests/dexvm/gc_tests.cpp; tests/runtime/native_library_loader_tests.cpp; tools.bootdex_builder_self_test; tools.android_payload_current"
+test = "tests/dexvm/reflection_tests.cpp; tests/dexvm/file_vfs_tests.cpp; tests/dexvm/bootdex_library_tests.cpp; tests/dexvm/android_value_tests.cpp; tests/dexvm/gc_tests.cpp; tests/runtime/native_library_loader_tests.cpp; tools.bootdex_builder_self_test; tools.android_payload_current"
 note = "DVM-109/ADR-0040：新增 28 个 pinned core.jar 类至 818 类，ObjectInputStream/ObjectOutputStream/描述符与字段辅助类普通方法执行原版 Java，删除 C++ 对象协议与 IoRuntime handle 状态。ObjectStreamClass 六个 native 使用受检构造 token 与反射元数据；VMStack.getClasses 提供真实执行栈。双后端覆盖 UUID wire/缓存、默认 UID 独立向量、私有读写/GetField/PutField/替换回调、循环共享引用、八种基本数组/对象数组、Externalizable 协议 1/2、父类构造与回调异常身份。SoftReference 保留至内存压力后清除入队，显式 intern 弱保留 canonical 身份；源/目标/handle 均是普通 GC 图。静态初始化非 Error 包装 EIIE/cause，Error 保持身份、后续 NCDFE，反射 wide get 保留 Java 异常。complete 指该已测迁移范围；getFieldL、Proxy 生成和 VMStack 其余 native 显式未实现，宿主侧表对象完整持久化、动态代理/类加载器与对象流长尾未承诺；未跑游戏/跨平台 gate。"
 
 [dexvm.scheduled_executor_bootdex]
 status = "complete"
-test = "tests/runtime/native_library_loader_tests.cpp; tests/dexvm/dvm87_tests.cpp; tests/dexvm/interpreter_tests.cpp; tests/dexvm/unsafe_tests.cpp; tests/dexvm/vm_thread_tests.cpp; tests/dexvm/vm_monitor_tests.cpp; tests/dexvm/thread_intrinsic_tests.cpp; tests/dexvm/reflection_tests.cpp; tools.bootdex_builder_self_test; tools.android_payload_current"
+test = "tests/runtime/native_library_loader_tests.cpp; tests/dexvm/bootdex_library_tests.cpp; tests/dexvm/interpreter_tests.cpp; tests/dexvm/unsafe_tests.cpp; tests/dexvm/vm_thread_tests.cpp; tests/dexvm/vm_monitor_tests.cpp; tests/dexvm/thread_intrinsic_tests.cpp; tests/dexvm/reflection_tests.cpp; tools.bootdex_builder_self_test; tools.android_payload_current"
 note = "DVM-110/ADR-0041：新增 26 个 pinned API19 类至 844 类，ScheduledThreadPoolExecutor/FutureTask、接口/异常、普通 Executors 包装类、completion service 和拒绝策略均执行原版 Java，删除旧 FutureTask/合成串行 executor/工厂 handler。双后端验证单次 Runnable/Callable、Clock 截止时间/FIFO、fixed-rate 与 fixed-delay、取消/超时/异常身份、removeOnCancel/purge、关闭策略矩阵、shutdownNow、两个真实 worker、普通工厂/invokeAny/invokeAll、仅队列持有任务的 GC 保活。worker 复用 Thread/AQS/Unsafe 和统一 Clock，不另建调度器，解释执行仍串行；修复接口数组到 Object[] 协变与 primitive 类型边界、threaded invoke 原异常身份。DVM-111 修复真实 JNI bridge 下 ScheduledFutureTask 写入 RunnableScheduledFuture[] 被仅父类链校验误拒绝的问题，原版 schedule/shutdownNow 已在共享数组存储下双后端验收。complete 仅指该闭包，privileged 工厂/动态安全上下文、高争用和硬实时精度未纳入，未跑游戏/真机/跨平台 gate。"
 
 [dexvm.layout_params]
@@ -1607,7 +1607,7 @@ note = "DVM-118：DisplayMetrics/TypedValue 原版字段和普通方法执行 Bo
 
 [dexvm.math_bootdex]
 status = "partial"
-test = "tests/dexvm/intrinsics_p1_tests.cpp: DVM-118; tests/dexvm/dvm87_tests.cpp: DVM-103"
+test = "tests/dexvm/intrinsics_p1_tests.cpp: DVM-118; tests/dexvm/bootdex_library_tests.cpp: DVM-103"
 note = "DVM-118：Math 普通方法/常量/Random 状态来自 BootDex；24 个 native 按 AOSP java_lang_Math.cpp 对接宿主 libm。双后端复验 round(float/double) 的半值/NaN/Infinity/饱和转换、最小整数 abs、min/max NaN 与 signed zero、ulp/nextUp、随机数区间及 native 基本数值。未宣称 StrictMath/fdlibm 跨平台逐位一致或 libm 全输入误差认证。"
 
 [dexvm.jni_array_element_publication]
@@ -1622,12 +1622,12 @@ note = "DVM-140 Intent.putExtras(Bundle) 复用唯一 mExtras 并委托 BootDex 
 
 [dexvm.bundle_bootdex]
 status = "partial"
-test = "tests/dexvm/android_value_tests.cpp: DVM-117; tests/dexvm/dvm87_tests.cpp: DVM-103; tests/session/profile_entry_scope_tests.cpp; tests/runtime/native_library_loader_tests.cpp"
+test = "tests/dexvm/android_value_tests.cpp: DVM-117; tests/dexvm/bootdex_library_tests.cpp: DVM-103; tests/session/profile_entry_scope_tests.cpp; tests/runtime/native_library_loader_tests.cpp"
 note = "DVM-117/ADR-0045：Bundle/CREATOR、ArrayMap/MapCollections 及内部类迁入 BootDex；Intent.mExtras 普通字段为唯一 extra 来源，String/int/Serializable/Integer ArrayList 的 typed put/get/remove/hasExtra 委托 Java，getExtras 为独立映射浅副本。旧 Bundle/Intent 类型侧表已删除，元数据由 Java Bundle 填充。两条 Bundle Parcel 传输入口维持既有进程内 typed atom，保存/读取 Java 浅副本并由 Parcel 强引用追踪；没有深序列化、Android 字节协议、Binder 或 FD transport。双后端覆盖对象身份/null/跨类型覆盖、碰撞/活视图、GC 和 CREATOR。"
 
 [dexvm.backup_service]
 status = "partial"
-test = "tests/dexvm/android_value_tests.cpp: DVM-116; tests/dexvm/dvm87_tests.cpp: DVM-103"
+test = "tests/dexvm/android_value_tests.cpp: DVM-116; tests/dexvm/bootdex_library_tests.cpp: DVM-103"
 note = "DVM-116/ADR-0044：BackupManager/RestoreObserver 执行 pinned API 19 Java；仅私有 checkServiceBinder 覆盖不存在的 Android 备份服务查询并记账。dataChanged 不排队，requestRestore 返回 -1，beginRestoreSession 返回 null，无回调；非空服务注入明确抛 UOE。Java mContext 由 GC 追踪。远程备份/恢复、Binder、IBackupManager/RestoreSession/RestoreSet 服务及返回类型反射未实现。"
 
 [dexvm.service_resolution]

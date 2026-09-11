@@ -5,7 +5,7 @@
 ## 当前能力
 
 - **发行与 VM**：Profile 按 API 选择 bundled data。API 19 提供 AOSP guest 库、
-  OpenSSL、ICU 51.1、992 类 BootDex 与 ICU 数据；来源和校验见
+  OpenSSL、ICU 51.1、1011 类 BootDex 与 ICU 数据；来源和校验见
   [manifest](../../data/android/19/manifest.json)。普通 Java 状态归字段/数组，JNI 使用
   VM 真实类型关系。
 - **Java/密码/ICU**：已覆盖常用集合、并发、IO、序列化、反射、framework 值类、日期与
@@ -19,6 +19,8 @@
 
 ## 最近进展
 
+- BootDex 一次迁入 19 个小闭包 framework 纯 Java 类；Point、Rect、AndroidException 删除
+  重复 intrinsic，ArraySet 为后续 Intent 迁移补齐容器依赖。
 - [DVM-137](../tasks/dexvm/DVM-137.md)：Resources Configuration 现在发布同一 VM 的默认
   Locale，并由原版 Java 同步 layout-direction。
 - [DVM-143](../tasks/dexvm/DVM-143.md)：`getMethod/getDeclaredMethod` 改为按名称与参数定向

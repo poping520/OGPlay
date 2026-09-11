@@ -134,7 +134,7 @@ struct AndroidVm final {
 TEST_CASE("android intrinsic catalog is unique and directly bound") {
   auto context = std::make_shared<ogplay::runtime::DexVmAndroidContext>();
   const auto catalog = ogplay::runtime::AndroidIntrinsicCatalog(context);
-  CHECK(catalog.size() == 183);
+  CHECK(catalog.size() == 178);
 
   std::unordered_set<std::string> descriptors;
   for (const auto& declaration : catalog) {
@@ -195,7 +195,7 @@ TEST_CASE("android intrinsic catalog is unique and directly bound") {
   CHECK(has_method("Landroid/content/ContextWrapper;", "getMainLooper",
                    "()Landroid/os/Looper;"));
   CHECK(method_count("Landroid/view/ContextThemeWrapper;") == 4);
-  CHECK(method_count("Landroid/content/Intent;") == 38);
+  CHECK(method_count("Landroid/content/Intent;") == 39);
   CHECK(method_count("Landroid/content/IntentFilter;") == 24);
   CHECK(has_method("Landroid/content/Intent;", "resolveTypeIfNeeded",
                    "(Landroid/content/ContentResolver;)Ljava/lang/String;"));

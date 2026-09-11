@@ -166,6 +166,7 @@ Asphalt 5（pilot title）删除 profile 全部 `native_call` 与 `[[java.class]
 | [DVM-143](DVM-143.md) | `Class.getMethod` 定向解析 | 完成 |
 | [DVM-144](DVM-144.md) | BootDex-first 本地 Binder 与字节 Parcel | 完成 |
 | [DVM-145](DVM-145.md) | Field 运行时 marker annotation | 完成 |
+| [DVM-146](DVM-146.md) | 反射成员元数据独立按需构建 | 完成 |
 
 ## 批次 4 · 更多 title 上 dexvm 路线（进行中）
 

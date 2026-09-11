@@ -95,6 +95,7 @@ switch/threaded 解释、异常、线程/monitor、反射及 `java.*` core intri
 
 Field 支持 runtime-visible 零成员 marker annotation 的查询与数组物化；带成员 annotation 明确
 失败。未实现 generic reflection、完整 annotation proxy、动态 Proxy/defineClass/DexClassLoader、多 classpath
+反射字段、方法、构造器元数据按成员类别独立按需构建；字段查询不得解析无关方法签名。
 namespace、完整 Charset/PKIX/TLS/BigInt 及完整 Java/Android 平台。
 
 定向测试位于 `tests/dexvm/`：interpreter/fast-code/linker、reflection、GC、thread/monitor、IO/

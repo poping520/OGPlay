@@ -46,6 +46,9 @@ handler id、单类 TU 或 misc 巨石。非 Android family 归 core，平台事
 
 - AssetManager/Resources 只读 APK/ARSC/AXML；open 返回 core ByteArrayInputStream，openFd 仅接受
   STORED entry 并发布逻辑 FD+区间。缺失映射为 Java IOException/NotFoundException，不泄漏路径。
+- `Resources.getConfiguration()`的稳定对象以同一 VM `Locale.getDefault()`补齐 locale，并调用
+  BootDex `Configuration.setLayoutDirection`。当前 TextUtils 只确认 ROOT/en/zh 为 LTR；其他
+  locale 在 ICU likely-subtags 边界补齐前记账失败，不伪造方向。
 - Parcel 是进程内受限 transport；Bundle/ContentValues 等状态归 Java 字段。Parcel guest 引用是
   owner GC 强边；不支持 Binder/FD/完整 wire format。
 - SQLite 状态归 context table，文件只经 VFS，使用确定性内部格式。首次创建/版本增长虚派

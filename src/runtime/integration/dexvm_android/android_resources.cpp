@@ -577,6 +577,48 @@ Decl Declare_android_content_res_Resources(const Context& context) {
                         std::min(display.width_dp, display.height_dp));
             SetIntField(call, instance, "densityDpi", display.density_dpi);
             SetIntField(call, instance, "screenLayout", display.screen_layout);
+            auto locale = GetRefField(
+                call, instance, "locale", "Ljava/util/Locale;");
+            if (!locale.IsValid()) {
+                const auto locale_class = call.vm.Linker().ResolveDescriptor(
+                    "Ljava/util/Locale;");
+                const auto initialized =
+                    call.vm.EnsureClassInitialized(locale_class);
+                if (initialized.exception.IsValid()) {
+                    throw dx::VmJavaThrow{
+                        call.vm.Linker()
+                            .Class(initialized.exception_class)
+                            .descriptor,
+                        initialized.exception_message,
+                        initialized.exception};
+                }
+                const auto get_default = call.vm.Linker().FindDirectMethod(
+                    locale_class, "getDefault", "()Ljava/util/Locale;");
+                if (!get_default.has_value()) {
+                    throw dx::DexVmError(
+                        dx::DexVmErrorReason::internal_invariant,
+                        "Locale.getDefault is not linked");
+                }
+                const auto outcome = call.vm.Call(*get_default, {});
+                if (outcome.exception.IsValid()) {
+                    throw dx::VmJavaThrow{
+                        call.vm.Linker()
+                            .Class(outcome.exception_class)
+                            .descriptor,
+                        outcome.exception_message, outcome.exception};
+                }
+                locale = outcome.value.ref;
+                if (!locale.IsValid()) {
+                    throw dx::DexVmError(
+                        dx::DexVmErrorReason::internal_invariant,
+                        "Locale.getDefault returned null");
+                }
+                SetRefField(call, instance, "locale", "Ljava/util/Locale;",
+                            locale);
+            }
+            static_cast<void>(CallAndroidMethod(
+                call.vm, instance, "setLayoutDirection",
+                "(Ljava/util/Locale;)V", {dx::VmValue::Ref(locale)}));
             return dx::VmValue::Ref(instance);
         });
     builder.FinalMethod("getIdentifier",

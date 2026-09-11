@@ -38,7 +38,8 @@ struct AndroidValueVm final {
                    const std::vector<IntrinsicClassDecl>& extras = {})
         : vm(
               [this, &extras]() -> DexClassLinker& {
-                  linker.RegisterIntrinsics(CoreIntrinsicCatalog());
+                  linker.RegisterIntrinsics(CoreIntrinsicCatalog(
+                      AndroidCoreIntrinsicServices(context)));
                   linker.RegisterIntrinsics(AndroidIntrinsicCatalog(context));
                   ogplay::test::RegisterBootDex(linker);
                   linker.RegisterIntrinsics(extras);
@@ -493,7 +494,37 @@ TEST_CASE("DVM-137 Configuration uses API19 Java shape and managed device facts"
         CHECK(field(configuration, "screenHeightDp") == 360);
         CHECK(field(configuration, "smallestScreenWidthDp") == 360);
         CHECK(field(configuration, "densityDpi") == 240);
-        CHECK(field(configuration, "screenLayout") == 0x10000022);
+        CHECK(field(configuration, "screenLayout") == 0x10000062);
+        const auto default_locale = f.Static(
+            "Ljava/util/Locale;", "getDefault", "()Ljava/util/Locale;").ref;
+        REQUIRE(default_locale.IsValid());
+        CHECK(f.Static("Landroid/text/TextUtils;",
+                       "getLayoutDirectionFromLocale",
+                       "(Ljava/util/Locale;)I",
+                       {VmValue::Ref(default_locale)}).AsInt() == 0);
+        const auto unsupported_locale = f.New(
+            "Ljava/util/Locale;", "(Ljava/lang/String;)V",
+            {VmValue::Ref(f.vm.NewStringUtf8("fr"))});
+        const auto unsupported_direction = f.StaticOutcome(
+            "Landroid/text/TextUtils;", "getLayoutDirectionFromLocale",
+            "(Ljava/util/Locale;)I",
+            {VmValue::Ref(unsupported_locale)});
+        REQUIRE(unsupported_direction.exception.IsValid());
+        CHECK(f.linker.Class(unsupported_direction.exception_class).descriptor ==
+              "Ljava/lang/UnsupportedOperationException;");
+        REQUIRE_FALSE(f.ledger.Unimplemented().empty());
+        CHECK(f.ledger.Unimplemented().back().id ==
+              "dexvm.locale_layout_direction");
+        CHECK_MESSAGE(VmObjectRef(field(configuration, "locale",
+                                       "Ljava/util/Locale;")) == default_locale,
+                      "configuration locale=",
+                      field(configuration, "locale", "Ljava/util/Locale;"),
+                      " default locale=", default_locale.Value());
+        const auto rendered = f.vm.StringUtf8(
+            f.On(configuration, "toString", "()Ljava/lang/String;").ref);
+        CHECK(f.vm.StringUtf8(f.On(default_locale, "toString",
+                                  "()Ljava/lang/String;").ref) == "en_US");
+        CHECK(rendered.find("ldltr") != std::string::npos);
 
         const auto defaults = f.New("Landroid/content/res/Configuration;");
         const auto defaults_root = f.vm.ProtectReferences(std::array{defaults});
@@ -535,6 +566,8 @@ TEST_CASE("DVM-137 Configuration uses API19 Java shape and managed device facts"
         static_cast<void>(f.vm.CollectGarbage("dvm137-configuration"));
         CHECK(f.On(resources, "getConfiguration",
                    "()Landroid/content/res/Configuration;").ref == configuration);
+        CHECK(VmObjectRef(field(configuration, "locale",
+                                "Ljava/util/Locale;")) == default_locale);
         f.context->surface_width = 540;
         f.context->surface_height = 960;
         CHECK(f.On(resources, "getConfiguration",

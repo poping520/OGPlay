@@ -114,6 +114,25 @@ Decl Declare_android_text_TextUtils(const Context& context) {
             while (end > begin && static_cast<unsigned char>(value[end - 1U]) <= ' ') --end;
             return dx::VmValue::Int(static_cast<std::int32_t>(end - begin));
         });
+    builder.StaticMethod(
+        "getLayoutDirectionFromLocale", "(Ljava/util/Locale;)I",
+        [](dx::IntrinsicContext& call) {
+            const auto locale = call.arguments[0].ref;
+            if (!locale.IsValid()) return dx::VmValue::Int(0);
+            const auto language = CallAndroidMethod(
+                call.vm, locale, "getLanguage", "()Ljava/lang/String;").ref;
+            const auto code = call.vm.StringUtf8(language);
+            if (code.empty() || code == "en" || code == "zh") {
+                return dx::VmValue::Int(0);
+            }
+            if (auto* ledger = call.vm.Ledger(); ledger != nullptr) {
+                ledger->RecordUnimplemented(
+                    "dexvm.locale_layout_direction", 0);
+            }
+            throw dx::VmJavaThrow{
+                "Ljava/lang/UnsupportedOperationException;",
+                "layout direction is unavailable for locale " + code};
+        });
     builder.StaticMethod("substring", "(Ljava/lang/CharSequence;II)Ljava/lang/String;",
         [utf8](dx::IntrinsicContext& call) {
             if (!call.arguments[0].ref.IsValid())

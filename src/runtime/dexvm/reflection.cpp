@@ -20,7 +20,9 @@ namespace ogplay::runtime::dexvm {
 namespace {
 
 struct ClassReflectionMetadata final {
-    bool built{};
+    bool methods_built{};
+    bool constructors_built{};
+    bool fields_built{};
     std::vector<ReflectMethodMeta> methods;
     std::vector<ReflectConstructorMeta> constructors;
     std::vector<ReflectFieldMeta> fields;
@@ -147,11 +149,7 @@ public:
         : interpreter(&interpreter), linker(&linker), model(&model),
           codec(std::make_unique<ReflectionCodec>(interpreter, linker, model)) {}
 
-    ClassReflectionMetadata& Metadata(const DexClassId declaring_class) {
-        auto& result = metadata[declaring_class.Value()];
-        if (result.built) return result;
-        ClassReflectionMetadata pending;
-
+    void EnsureLinked(const DexClassId declaring_class) {
         try {
             linker->EnsureClassLinked(declaring_class);
         } catch (const DexVmError& error) {
@@ -161,6 +159,14 @@ public:
                     linker->Class(declaring_class).descriptor + ": " +
                     error.what());
         }
+    }
+
+    ClassReflectionMetadata& MethodMetadata(
+        const DexClassId declaring_class) {
+        auto& result = metadata[declaring_class.Value()];
+        if (result.methods_built) return result;
+        EnsureLinked(declaring_class);
+        ClassReflectionMetadata pending;
         // Descriptor resolution may synthesize classes and grow the linker
         // directory. Copy ids before doing so; never retain a LinkedClass
         // reference across ResolveDescriptor.
@@ -168,43 +174,65 @@ public:
             linker->Class(declaring_class).own_direct_methods;
         const auto virtual_methods =
             linker->Class(declaring_class).own_virtual_methods;
-        const auto static_fields =
-            linker->Class(declaring_class).own_static_fields;
-        const auto instance_fields =
-            linker->Class(declaring_class).own_instance_fields;
         for (const auto method_id : direct_methods) {
             const auto& method = linker->Method(method_id);
-            if (method.name == "<init>") {
-                const auto parsed = ClassNameCodec::ParseMethod(
-                    method.descriptor);
-                ReflectConstructorMeta item;
-                item.slot = static_cast<std::uint32_t>(
-                    pending.constructors.size());
-                item.method = method_id;
-                item.declaring_class = declaring_class;
-                item.access_flags = method.access_flags;
-                for (const auto& type : parsed.parameters) {
-                    item.parameter_types.push_back(
-                        linker->ResolveDescriptor(type));
-                }
-                item.exception_types =
-                    linker->ReflectionExceptionTypes(method_id);
-                pending.constructors.push_back(std::move(item));
-            } else if (method.name != "<clinit>") {
+            if (method.name != "<init>" && method.name != "<clinit>") {
                 AddMethodChecked(pending, declaring_class, method_id);
             }
         }
         for (const auto method_id : virtual_methods) {
             AddMethodChecked(pending, declaring_class, method_id);
         }
+        result.methods = std::move(pending.methods);
+        result.methods_built = true;
+        return result;
+    }
+
+    ClassReflectionMetadata& ConstructorMetadata(
+        const DexClassId declaring_class) {
+        auto& result = metadata[declaring_class.Value()];
+        if (result.constructors_built) return result;
+        EnsureLinked(declaring_class);
+        const auto direct_methods =
+            linker->Class(declaring_class).own_direct_methods;
+        std::vector<ReflectConstructorMeta> pending;
+        for (const auto method_id : direct_methods) {
+            const auto& method = linker->Method(method_id);
+            if (method.name != "<init>") continue;
+            const auto parsed = ClassNameCodec::ParseMethod(method.descriptor);
+            ReflectConstructorMeta item;
+            item.slot = static_cast<std::uint32_t>(pending.size());
+            item.method = method_id;
+            item.declaring_class = declaring_class;
+            item.access_flags = method.access_flags;
+            for (const auto& type : parsed.parameters) {
+                item.parameter_types.push_back(linker->ResolveDescriptor(type));
+            }
+            item.exception_types = linker->ReflectionExceptionTypes(method_id);
+            pending.push_back(std::move(item));
+        }
+        result.constructors = std::move(pending);
+        result.constructors_built = true;
+        return result;
+    }
+
+    ClassReflectionMetadata& FieldMetadata(
+        const DexClassId declaring_class) {
+        auto& result = metadata[declaring_class.Value()];
+        if (result.fields_built) return result;
+        EnsureLinked(declaring_class);
+        const auto static_fields = linker->Class(declaring_class).own_static_fields;
+        const auto instance_fields =
+            linker->Class(declaring_class).own_instance_fields;
+        ClassReflectionMetadata pending;
         for (const auto field_id : static_fields) {
             AddField(pending, declaring_class, field_id);
         }
         for (const auto field_id : instance_fields) {
             AddField(pending, declaring_class, field_id);
         }
-        pending.built = true;
-        result = std::move(pending);
+        result.fields = std::move(pending.fields);
+        result.fields_built = true;
         return result;
     }
 
@@ -506,17 +534,17 @@ ReflectionRuntime::~ReflectionRuntime() = default;
 
 std::span<const ReflectMethodMeta> ReflectionRuntime::DeclaredMethods(
     const DexClassId declaring_class) {
-    return impl_->Metadata(declaring_class).methods;
+    return impl_->MethodMetadata(declaring_class).methods;
 }
 
 std::span<const ReflectConstructorMeta>
 ReflectionRuntime::DeclaredConstructors(const DexClassId declaring_class) {
-    return impl_->Metadata(declaring_class).constructors;
+    return impl_->ConstructorMetadata(declaring_class).constructors;
 }
 
 std::span<const ReflectFieldMeta> ReflectionRuntime::DeclaredFields(
     const DexClassId declaring_class) {
-    return impl_->Metadata(declaring_class).fields;
+    return impl_->FieldMetadata(declaring_class).fields;
 }
 
 std::vector<ReflectMethodMeta> ReflectionRuntime::PublicMethods(

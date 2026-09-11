@@ -8,3 +8,9 @@
 .field public marked:I
 .runtime-annotation Lannotation/Marker;
 .field public plain:I
+
+.method private static unrelated(Ljava/util/jar/JarFile;)Ljava/security/cert/CertPath;
+.registers 2
+    const/4 v0, 0
+    return-object v0
+.end method

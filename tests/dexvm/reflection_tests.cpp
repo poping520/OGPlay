@@ -836,6 +836,11 @@ TEST_CASE("Field runtime marker annotations dispatch on both backends") {
                     "Ljava/lang/annotation/Annotation;")))});
         REQUIRE_FALSE(absent.exception.IsValid());
         CHECK_FALSE(absent.value.ref.IsValid());
+
+        CHECK_THROWS_AS(
+            static_cast<void>(vm.interpreter.Reflection().DeclaredMethods(
+                vm.linker.ResolveDescriptor("Lannotation/Subject;"))),
+            DexVmError);
     }
 }
 

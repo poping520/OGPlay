@@ -1,5 +1,10 @@
 # 当前状态
 
+- 反射字段、方法、构造器 metadata 已按成员类别独立按需构建；字段枚举不再被无关方法
+  参数/返回值/throws 中的缺失类型阻断。完整方法枚举仍明确要求其签名类型可用。pvz-amaz
+  8.1.0 关闭 survey 实跑已越过原 `JarFile` 反射卡点；当前前台后续缺口为
+  `SecureRandom SHA1PRNG` provider，KIWI_COMMAND 线程另命中 `Log.d(tag,msg,throwable)` 缺面。
+
 更新：2026-09-11。
 
 - BootDex-first 本地 Binder 已接通：IInterface/IBinder/Binder/Parcel、ResultReceiver 与内部

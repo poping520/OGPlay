@@ -1340,6 +1340,11 @@ status = "partial"
 test = "tests/loader/dex_tests.cpp runtime-visible field marker annotation; tests/dexvm/reflection_tests.cpp Field runtime marker annotations dispatch on both backends"
 note = "字段 runtime-visible annotation 类型元数据贯通 loader/linker，Field.getAnnotation/isAnnotationPresent/getAnnotations/getDeclaredAnnotations 可物化零成员 marker annotation；API19 java.lang.annotation 十类进入 1051 类 BootDex。带成员 annotation 与完整 Annotation 契约仍明确不支持。"
 
+[dexvm.reflection_metadata_laziness]
+status = "complete"
+test = "tests/dexvm/reflection_tests.cpp Field runtime marker annotations dispatch on both backends; reflection focused suite"
+note = "DVM-146 将字段、方法、构造器 reflection metadata 拆为独立按需缓存。getDeclaredFields/getFields/getDeclaredField/getField 只解析字段描述符，不受无关方法参数、返回值或 throws 缺失类型阻断；完整方法枚举仍按 Java 可见元数据要求明确失败。"
+
 [dexvm.object_model]
 status = "complete"
 test = "tests/dexvm/interpreter_tests.cpp; tests/dexvm/gc_tests.cpp; tests/runtime/jni_guest_bindings_tests.cpp"

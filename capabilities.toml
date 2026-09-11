@@ -1307,13 +1307,13 @@ note = "DVM-63/Chapter 11 closure 以 linker 唯一 class directory 交付稳定
 
 [dexvm.reflection_wrappers]
 status = "complete"
-test = "tests/dexvm/reflection_tests.cpp; wrapper fresh identity/equals/hashCode/exact toString/GC tests"
-note = "DVM-64/Chapter 11 closure 交付不可变 ReflectionMetadata 与唯一 wrapper factory：declaring Class + opaque declared-order ordinal，不暴露 Vm/Dex member id；Method/Constructor/Field 使用 API19 fresh identity、semantic equals 与匹配 hashCode，exact declaration toString 共享最小 Modifier JLS 顺序/array printable type；defensive arrays、per-wrapper accessible 与 GC 行为不变"
+test = "tests/dexvm/reflection_tests.cpp; tests/dexvm/android_value_tests.cpp: DVM-143"
+note = "DVM-64/Chapter 11 closure 交付不可变 ReflectionMetadata 与唯一 wrapper factory；Method/Constructor/Field 使用 API19 fresh identity、semantic equals/hashCode、declaration toString、defensive arrays 与 per-wrapper accessible，cache 不持 guest ref/host pointer。DVM-143 的 Method wrapper 以 VM 内部 method id 回查 metadata，使定向查询无需先建立整类 metadata；该字段不作为 Dex index 或 guest 能力暴露。"
 
 [dexvm.class_reflection_core]
 status = "complete"
-test = "tests/dexvm/reflection_tests.cpp; DVM-65 Class structural/member-query tests"
-note = "DVM-65/Chapter 11 closure 闭合 API19 Class：name/simple/canonical、public getClassLoader 的 primitive-null/bootstrap-facade 规则、两个 forName overload、component/super/direct interfaces/modifiers、分类、assignability/cast/toString 与 declared/public member 查询；nested/enclosing/throws、invoke/instantiation/Field/Array 分别由 DVM-66..69 闭合，generic/annotation 仍非目标"
+test = "tests/dexvm/reflection_tests.cpp; tests/dexvm/android_value_tests.cpp: DVM-143"
+note = "DVM-65 闭合 API19 Class 的名称、loader、forName、层级、分类、assignability/cast 与成员查询。DVM-143 将 getMethod/getDeclaredMethod 改为名称+参数定向扫描，只有同名候选在命中后解析返回/异常类型；getMethods/getDeclaredMethods 仍完整枚举。双后端验证无关方法引用缺失类型不阻断查询；generic/annotation 仍非目标。"
 
 [dexvm.reflection_invoke]
 status = "complete"
@@ -1568,7 +1568,7 @@ note = "DVM-106/ADR-0036 完成 Certificate/X509Certificate/CertificateFactory �
 [dexvm.framework_value_bootdex]
 status = "complete"
 test = "tests/dexvm/android_value_tests.cpp; tests/dexvm/dvm87_tests.cpp; tools.bootdex_builder_self_test; tools.android_payload_current"
-note = "DVM-107/ADR-0038：Pair、五种 SparseArray、ContainerHelpers、ComponentName/CREATOR 与 Parcelable 三接口来自 pinned framework.jar；ArrayUtils 从 pinned framework2.jar 精确选入，PrintWriter 来自 core.jar。774 类全链接，新增类无普通方法 overlay，旧 Pair/Sparse/Parcelable 声明和 Sparse 侧表删除。双后端检查删除压缩、排序、clone、宽整数、GC、短名称/Parcel/CREATOR/打印；StringBuilder/StringBuffer 补 UTF-16 CharSequence 区间 append 原语。完整 framework 和任意 PrintWriter formatter 长尾不因选类自动实现。"
+note = "DVM-107/ADR-0038：Pair、Sparse/ComponentName/Parcelable 等 framework 值类来自 pinned BootDex。DVM-142 将 PackageItemInfo/ApplicationInfo/ComponentInfo/ActivityInfo/ServiceInfo/ProviderInfo/ResolveInfo、PathPermission/PatternMatcher、Printer 及内部类迁入 BootDex，并删除 PackageItemInfo/ApplicationInfo intrinsic；当前 992 类全链接。DVM-143 令 getMethod/getDeclaredMethod 只解析同名参数候选，完整枚举才解析全类 metadata。完整 framework、正匹配服务物化和 PrintWriter formatter 长尾不因此实现。"
 
 [dexvm.activity_component_identity]
 status = "complete"
@@ -1633,7 +1633,7 @@ note = "DVM-116/ADR-0044：BackupManager/RestoreObserver 执行 pinned API 19 Ja
 [dexvm.service_resolution]
 status = "partial"
 test = "tests/loader/apk_manifest_tests.cpp; tests/dexvm/android_value_tests.cpp; tests/runtime/native_library_loader_tests.cpp; DVM-112"
-note = "DVM-112/ADR-0042：ServiceConnection 原版双回调接口选入 BootDex（845 类）；Manifest 保存 application enabled、service 名称/enabled/过滤器 action/category/data 存在标记，AndroidAppProcess 装配唯一 context。resolveService 仅接受非空 action、无 component/data/type/categories、flags=0 的查询，基于当前 APK 信息排除 disabled 与 action 不匹配项，无候选返回 null；没有外部安装包/平台服务目录。未装配信息、潜在匹配、data 条件或其他查询形态记账并抛 UnsupportedOperationException；null Intent 抛 NPE。双后端验证无匹配分支不绑定、不触发回调以及真实接口分派。正匹配/ResolveInfo/ServiceInfo/返回类型反射、bindService/unbindService、Binder 与支付未实现；能力保持 partial。"
+note = "DVM-112/ADR-0042：ServiceConnection 原版双回调接口选入 BootDex；Manifest 保存 application enabled、service 名称/enabled/过滤器 action/category/data 存在标记，AndroidAppProcess 装配唯一 context。resolveService 仅接受非空 action、无 component/data/type/categories、flags=0 的查询，基于当前 APK 信息排除 disabled 与 action 不匹配项，无候选返回 null；没有外部安装包/平台服务目录。未装配信息、潜在匹配、data 条件或其他查询形态记账并抛 UnsupportedOperationException；null Intent 抛 NPE。DVM-142 补齐 ResolveInfo/ServiceInfo 返回类型及相关值类，使 PackageManager 公共方法反射可解析；仍不物化正匹配结果。bindService/unbindService、Binder 与支付未实现；能力保持 partial。"
 
 [dexvm.typeface]
 status = "partial"

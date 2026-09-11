@@ -1,369 +1,103 @@
 # 子模块：runtime/integration/dexvm_android
 
-## 职责
+## 职责与装配
 
-提供 dex_activity 生命周期使用的 `android.*` 与 `javax.microedition.*` 平台
-intrinsic。`catalog.cpp` 是唯一注册聚合点；平台类按 API 家族聚合到一个源文件，
-每个类仍导出独立的 `Declare_<类名>(context)`，返回已经直接持有 handler 的
-不可变声明。这些入口直接位于正式 `ogplay::runtime::android_intrinsics` 命名空间，
-不得保留 `dvm80_*` 迁移命名空间或同名转发函数。Java handle 文件按 API family 与
-共享状态聚合，以控制翻译单元数量。
+为 dex_activity 提供受限 `android.*`/`javax.microedition.*` intrinsic，并把 session 已有资源、
+VFS、UI、ANGLE、媒体、线程与平台事实注入 DexVM。它是兼容边界，不是 Android 系统：不得引入
+Binder/system_server、安装包数据库、Play 服务或 title/厂商分支。
 
-声明与实现同址是唯一 handler 形态。`shared.h` 只暴露跨类共享 helper 与工厂；
-跨类复用的 handler 以 `shared.cpp` 中的工厂函数（如 `ViewInitHandler(context)`、
-`PrefsEditHandler(context)`）形式提供，捕获会话状态的工厂显式接收 context。
-资源、VFS、音频、视频、widget、线程与设备事实全部来自显式传入的
-`DexVmAndroidContext`，不得读取游戏身份或另建宿主状态。
-`Settings.Secure` 的只读子集由进程装配的 guest 平台配置初始化；不得读取宿主设备身份、
-复用 app SharedPreferences 或扩展成 SettingsProvider。
-DVM-130：Context/Activity 服务、TelephonyManager、Settings.Secure、AudioTrack 的 JNI
-调用复用本 catalog 与 context；不得恢复 integration legacy 同名 handler 或服务/播放侧表。
-Build、Bundle 的 Java 归 BootDex；SystemProperties 的 C++ 声明只实现 native 边界。
-普通内存/包装流的状态属于 BootDex 对象字段与数组，文件/对象协议边界属于 DexVM core；
-integration 装配只通过
-`DexVmIoVfsAdapter` 向 `IoRuntime` 注入窄文件接口。`java.util.zip` handle 与 archive
-状态同样属于 DexVM core 的 `ZipRuntime`；不得恢复 context stream/output/zip map。
-Android 平台 enum 统一使用 core `IntrinsicEnumBuilder`；Android family 只通过 object factory、
-逐常量初始化或完成回调附加 singleton、native payload 与 context side state。
-DVM-91 的 PFD/AFD 只包装 core 逻辑 FileDescriptor：PFD.open 只接受受检只读 VFS 文件，
-AssetManager.openFd 只接受 STORED APK entry 并发布 payload offset；MediaPlayer 把 FD 与
-区间规范化为 `EncodedAudioSource` 后交给进程唯一 mixer，不建立宿主 fd 或第二套播放器。
-`android.os` 的 Handler/Looper/HandlerThread/CountDownTimer/AsyncTask 与 core Timer 只经
-会话唯一 scheduler 排队：deadline 来自 `uptime_millis`，同 deadline 按 sequence FIFO。
-主 Looper 只在 lifecycle 安全点泵送，子 Looper 只在 `VmThreadRuntime` guest 线程执行；
-`Context.getMainLooper` 与 `Looper.getMainLooper` 返回同一进程稳定对象，`ContextWrapper`
-按 API 19 委托 base；禁止同步调用伪装 post、读取宿主墙钟或为 Timer 建第二套队列。
-API 19 `ResultReceiver` 仅闭合本地分支：Handler 非空时以内部 Runnable 投递同一 scheduler，
-为空时同步虚派 `onReceiveResult`；receiver/Handler/Bundle 均由普通对象字段保持 GC 可见。
-依赖 `IResultReceiver` 的 Binder/跨进程 Parcel transport 明确拒绝，不得返回伪成功。
+`catalog.cpp` 是唯一注册聚合点；每类唯一 `Declare_<类名>(context)`，shape/handler 在所属 API
+family TU 同址。`shared.*` 只放跨类 helper/factory；禁止静态自注册、转发命名空间、字符串
+handler id、单类 TU 或 misc 巨石。非 Android family 归 core，平台事实只经
+`DexVmAndroidContext`/`AndroidCoreIntrinsicServices` 注入。
 
-DVM-88 的 ContentValues/Cursor/SQLiteDatabase/SQLiteOpenHelper 状态属于本 context 的
-database side-table；guest 引用经具名 GC state table trace，死亡 owner sweep。数据库文件
-使用确定性内部格式且只经注入 VFS 访问 `/data/data/<package>/databases/`，不得暴露宿主路径、
-调用宿主 SQLite 或扩展成 ContentProvider/Binder。SQLiteHelper 的 schema version 随内部格式
-持久化，首次创建与版本增长分别虚派 guest `onCreate`/`onUpgrade`；只把 `Stat` ENOENT 视作
-新库，其余 VFS 错误明确失败。未登记 SQL/selection 明确失败。Parcel 的
-side-table object reference 必须作为 owner 的 GC 强边 trace；Bundle 已归普通 Java 对象图。
+## 全局不变量
 
-javax EGL/GL façade 遵循 DVM-31：`android_gl.cpp` 聚合该
-家族的 Java handle 声明、handler、唯一
-display/config/window-surface/context/currency 状态机和 swap pacer，把 guest
-`eglMakeCurrent`/`eglSwapBuffers`/`glGetString` 窄接到 session 已拥有的 managed
-ANGLE surface；它不创建、替换或终止第二套 EGL surface。
-DVM-83 在同一 family TU 发布 API 19 `GLES10/10Ext/11/11Ext/20/GLUtils/GLU`；surface
-由固定 AOSP 源生成，Java 参数只经共享 `NioRuntime` 编组后调用 sealed native GLES
-binding。`GLUtils` 读取 context 中既有 Bitmap backing；本层不拥有 GL object state。
-DVM-134 的 `GLSurfaceView` render mode 是 owner-attached guest 事实，默认 continuous，
-仅 0/1 可设置；它不调度 GLThread 或新建 EGL surface/context。
-DVM-136 的 `OrientationEventListener` 算法与状态来自 BootDex；当前 SensorManager 不发布
-accelerometer，故原版构造得到 null sensor、canDetect=false，enable/disable 不产生回调。
-不得用 requested orientation 或桌面窗口方向伪造传感器事件。
+- 依赖只向下；资源、路径、线程、设备与会话身份来自显式 context，不读取 host 环境或游戏身份。
+- 普通 Java 状态优先放 BootDex 字段/数组；host state 必须 owner-attached、具名 trace/sweep，clone
+  policy 明确。session root、对象 owner、UiNodeId 与 native token 不得混用。
+- guest 引用使用强类型包装；字段经 bound token，禁止裸 slot。flags 来自 `access_flags.h`；
+  override 显式声明，不复制继承成员。
+- 未实现必须记账并抛可捕获 Java 异常；禁止伪成功。日志使用结构化 logger，生命周期事件不得
+  限流到丢失代际事实。
+- 时间只经统一 Clock；一个 guest 线程对应一个 host 线程并共享 VM 锁。图形只走 ANGLE，窗口/
+  输入只走 SDL3。
 
-## 不变量
+## 平台边界
 
-- 每个类描述符只能由一个 `Declare_*()` 发布；同一 API 家族的多个
-  `Declare_*()` 必须同址于一个聚合 cpp，`catalog.cpp` 不包含行为。
-- 单类专用 handler 必须直接定义在对应 `Declare_*()`；禁止恢复按域填充函数
-  或全量 handler 容器。
-- catalog 返回的每个非抽象方法都直接持有 implementation；字符串 handler id 只
-  允许存在于 DVM-37 将删除的兼容实现中，不能进入最终声明。
-- 新类必须进入所属 API 家族的聚合文件；禁止新增单类翻译单元、misc、按 title
-  或按厂商聚合的实现文件。
-- 中性占位只能通过 `NeutralHandler(shorty)` 或 `PlaceholderString()` 显式生成；
-  引用返回值不能擅自伪造对象。
-- Android 平台 handler 的会话状态只从 `DexVmAndroidContext` 进入；core Java handler
-  不得依赖该 context，迁移行为必须保持一致。
-- `AndroidCoreIntrinsicServices(context)` 是 core 所需 Locale/Timer/SSL/SAX 与 guest
-  进程环境事实的
-  唯一适配入口；Android catalog 不得重新发布这些 Java family。DVM-102 的 Date 时钟只经
-  该 core 服务注入，Android 侧 DateMillis/DateYear/DateInitialize 重复实现已删除。
-- DVM-77 的 PackageManager 只发布当前 APK：`getApplicationInfo/getPackageInfo` 消费
-  sealed Manifest 事实，`getApplicationLabel` 解析 literal/resource label，
-  resource label 作为 Unicode `CharSequence` 返回，不得经过 fixed-font 测量或字形限制；
-  `checkPermission/hasSystemFeature` 只读取显式 granted/feature 集合。未知包、未知 flags
-  与跨包查询不得扩展成安装包数据库或 Binder 服务。
-- process `Application`、attached base Context 与 descriptor 由 context 持有；
-  `Context.getApplicationContext` 和 `Activity.getApplication` 必须返回同一稳定 Java root。
-  API 19 类型链固定为 Context→ContextWrapper→Application/Service/ContextThemeWrapper→
-  Activity，IntentService 继承 Service；wrapper 只保存一个 guest base 引用，生命周期在
-  `onCreate` 前完成一次性 attach，现有 Context 方法必须虚派委托 base，不复制资源或
-  service 状态。ContextThemeWrapper 只承诺有界 theme id，不引入 Instrumentation、
-  ActivityManager、service process 或完整 framework。
-- `Context.openFileInput/openFileOutput` 只接受 app `files` 目录下的单个文件名，包含 `/`
-  必须按 API 19 抛 `IllegalArgumentException`；`MODE_PRIVATE` 覆盖、`MODE_APPEND` 追加，实际
-  流状态与读写全部委托 core `FileInputStream/FileOutputStream` 和唯一 `IoRuntime`/VFS。
-  `ContextWrapper` 只虚派委托 base，不建立 Android 侧文件流状态或宿主文件句柄。
-- `AssetManager.open` 与 `Resources.openRawResource` 必须把 APK 内存字节发布为 core
-  `ByteArrayInputStream`；禁止实例化 API 19 抽象 `InputStream`。读取、游标和 close 状态只属于
-  唯一 `IoRuntime`，integration 不建立第二套资源流状态。
-- `Application/Activity/Service` declaration 只声明自身构造器、生命周期和真实 override，
-  禁止复制 Context/ContextWrapper 方法；`ContextWrapper` 的 `mBase` 转发必须逐项使用
-  `OverrideMethod`，继承与 declaring class 只由 linker 决定（ADR-0028）。
-- override callback 的 access flags 必须对齐 pinned Android 4.4.4 DEX 元数据。Protected
-  方法显式使用共享 `dx::kAccProtected`，不得依赖 builder 的 public 默认值；所有平台
-  class/member 声明均使用 `access_flags.h` 的 `dx::kAcc*`，不得复制直接量。当前门禁覆盖
-  Activity 生命周期、ContextWrapper/IntentService、View、AsyncTask、ResultReceiver 和
-  HandlerThread。此约束只校准已实现 API，不扩大 framework 范围。
-- owner-attached Android 状态统一经具名 state-table trace/sweep；session roots 不枚举 map key。
-  Context/Intent/receiver、value/database、surface/listener/UI、bitmap/canvas、media/video、
-  scheduler/AudioTrack 的死亡 owner 在句柄复用前清理，只有真实 child reference 形成强边；
-  process singleton、UiNodeId、resource/path/thread token 保持独立 identity（ADR-0029）。
-- `Context.getPackageResourcePath/getPackageCodePath` 分别遵循 API 19 同进程
-  `LoadedApk.getResDir/getAppDir` 语义；当前无 split APK，两者返回同一
-  `/data/app/<package>-1.apk` guest 路径。process 装配必须把原始 APK bytes 只读发布到该路径。
-  `getApplicationInfo` 返回进程稳定对象并与 PackageManager 共用 sealed Manifest/path
-  物化逻辑；`getCacheDir` 按需建立稳定 `/data/data/<package>/cache` File。ContextWrapper
-  只委托 base，禁止返回 frontend 宿主路径或把 `/apk` 资源目录冒充 APK 文件。
-- `AudioTrack.getNativeOutputSampleRate()` 返回会话构建时由音频后端配置注入的桌面 mixer
-  rate（默认共享桌面输出为 48 kHz）；该事实不从宿主音频线程回读。min/max
-  volume、position notification period/marker、投递基线与 listener 引用属于 track
-  side-table，listener 作为 GC root trace。生命周期帧泵只按共享 PCM mixer 的真实播放头
-  投递 marker/periodic callback；跨多期补发，pause/stop/flush/release 与 null listener
-  保持静默，禁止宿主音频线程直接进入 guest VM。
-- `AudioTrack` MODE_STREAM write 与 legacy 路径共享 ADR-0027 字节回压；等待 mixer 消费前
-  必须完整释放 `VmExecutionLock`，恢复后重新验证 owner/player。饱和不返回 0，release 或
-  teardown 中断返回 `ERROR_INVALID_OPERATION`；MODE_STATIC 仍为一次受检复制。
-- `SurfaceHolder$Impl.lockCanvas` 返回 holder 稳定 Canvas；仅 locked Canvas 可绘制，
-  unlockCanvasAndPost 发布软件帧并结束锁定。Bitmap/Canvas 均使用同一 ARGB word 语义。
-- `System.load/System.loadLibrary` 只经 context 注入的 process
-  `NativeLibraryLoader`，并始终携带稳定 application ClassLoader token；null 参数抛
-  `NullPointerException`，resolver/linker/JNI_OnLoad 失败映射为
-  `UnsatisfiedLinkError`，不得恢复 preloaded/no-op 成功。
-- 每个 live guest View object 与一个 live UiNode 一一绑定；hierarchy/id/visibility/
-  geometry 只写 `runtime/ui`，guest click/touch listener 只在本层以 UiNodeId 为 key 保存。
-- API 19 `View$OnFocusChangeListener` 作为 public abstract interface 发布唯一
-  `onFocusChange(View, boolean)` 方法签名，使 DEX `implements` 与 `invoke-interface` 走正常
-  linker/virtual dispatch；没有具体焦点事件来源时不得伪造回调。
-- DVM-125 的 Activity/View `hasWindowFocus()` 只读 lifecycle 唯一窗口焦点事实：当前
-  Activity、稳定 DecorView 与 attached UiTree View 可见获焦，detached View 和旧 Activity
-  固定不可见；`Activity.onWindowFocusChanged(boolean)` 保持 API 19 public virtual，状态
-  更新不依赖 guest override 是否调用 `super`。该事实不等同 resumed 或控件焦点。
-- API 19 `View$OnSystemUiVisibilityChangeListener` 发布唯一 public abstract
-  `onSystemUiVisibilityChange(int)`；Window decor View 身份稳定，system-UI request 与 listener
-  作为 View 实例字段保存并由普通 GC 强边追踪。managed surface 没有 Android system bars/WMS
-  effective-global 变化来源，注册不得立即回调，也不得伪造后续回调或引入 SystemUI/Binder。
-- `KeyEvent(action, keyCode)` 与 API 19 timed/meta 构造器保存 guest 可见 action/keyCode/
-  repeatCount/metaState；生命周期键输入以非空对象注入当前布局 Unicode。
-  `getUnicodeChar()` 返回事件布局字符，`getUnicodeChar(metaState)` 对 Android 常用字母、数字、
-  标点与不可打印键执行确定性映射。`View.dispatchKeyEvent` 对 DOWN/UP/MULTIPLE 调用接收者
-  实际 override；OnKeyListener、DispatcherState tracking/long-press 仍保持显式缺口。
-- drawable decode 的 intrinsic size 写入 UiNode；click adapter 只消费 `screen_frame`。
-  旧 fullscreen/edge-row bounds 推导及 `LayoutViewFact/layout_views` 类型与存储均不存在。
-- Java 动态 `ViewGroup.addView/removeView/removeViews/updateViewLayout` 与
-  `Activity.setContentView(View)` 直接维护同一 UiTree；LayoutParams object 保存
-  width/height/margin/weight 并在 attach/update/requestLayout 时复制到 node，View geometry getter 在 dirty
-  traversal 后读取同一 resolved frame。已带非 content parent 的 view 明确拒绝。DVM-90
-  以 live UiTree 等价于 AOSP `AttachInfo`：动态接入的 SurfaceView 子树仅在 parent 已 live 时
-  建立 holder generation 并按 created→changed 分派，detach 前对 active holder 分派一次
-  destroyed；detached 子树不提前收到事件，`removeCallback` 对后续 callback 快照生效。
-  host window surface 的 open/close 事实只归 Activity lifecycle 所有，子树 detach 只能结束
-  对应 holder generation，不能关闭 host surface；`getHolder()` 只建立稳定 identity，实际
-  activation 统一在子树 attach 时判定。生命周期事件日志不得限流，否则相同数量的新一代
-  callback 会被误判为没有发生。
-- DVM-138 发布 API 19 `ViewParent` 的 `getParent()` 接口形状，`ViewGroup` 实现该接口；
-  `View.getParent()` 是 public final，并只读取 UiTree parent 后经现有反向绑定返回同一 guest
-  ViewGroup。detached View、无节点 View 及 synthetic ContentRoot 返回 null；不增加 `mParent`
-  字段/侧表，也不伪造 `ViewRootImpl` 或完整 ViewParent 方法面。
-- `TextView.setText/getText` 与 Editable mutation 共用 UiNode text；textColor/textSize/gravity
-  mutation 分别推进 draw/layout dirty。当前 fixed-font backend 只接受单行受支持字形，
-  多行、未知字形或非法 size 明确抛 Java 异常且不发布部分 mutation。
-- DVM-119：LayoutParams/MarginLayoutParams 与 Frame/Linear/Relative 三类参数来自 BootDex，
-  width/height/margin/weight/gravity/rule 为普通字段/数组；删除 ui_layout_params 分表。
-  setLayoutParams/add/update/requestLayout 导入 UiTree 布局输入，Java 字段修改本身不
-  发起 traversal。LTR 规则解析由 Java 完成；baseline/alignWithParent/动画记账明确失败。
-  RelativeLayout.setGravity/getGravity 与真实整体平移共用 UiTree gravity，默认 START/TOP。
-- drawable resource 按 id 解码一次并缓存为 RGBA `UiBitmap`，renderer 不读取 APK、arsc
-  或 guest object。
-- pointer dispatch 在 dirty 时先 traversal，按 clipped reverse draw order 选择 topmost
-  enabled/visible listener node；OnTouchListener 与 click listener 均以 UiNodeId 调 guest。
-  gesture dispatch 分别返回 cumulative touch consumption、click eligibility 与 Activity
-  fallback；touch-only false 不得尝试不存在的 click listener。无 listener target 时，
-  可枚举命中点下 visible/enabled/attached 的 guest View，顺序固定为 reverse-Z、deepest-first；
-  session 只调用真实 guest `onTouchEvent` override，平台默认实现不冒充消费。
-  `findViewById/getId/setId` 必须经双向 binding 返回/修改同一 object/node identity；
-  subclass 不得重复声明 final 的 `View.setId/setPadding`，直接继承同一 handler；
-  content generation reset 同时清空两向 binding 与 listener，旧 node 不得继续可见。
-- `UiWidgetRegistry` 是 XML tag → dex descriptor/UiClass 唯一目录；inflater 只解释 generic
-  typed attrs，`<merge>` 只允许作为唯一 document root 且不创建 object/node。未知 tag、
-  非法 parent/root、未知 `layout_*` structural attr 必须记账或明确失败，禁止跳过并
-  re-parent children 后声称成功。
-- `<include>` 在 inflation 前按 layout resource 递归展开，具体 root 支持 id/visibility/
-  layout params override，merge root 直接接父级；depth 16、cycle、非法 child/override 明确失败，
-  include 与 inline 最终进入相同 inflater。
-- UI resource resolver 复用唯一 ArscTable/APK reader，最多 16 层解析 reference，并支持默认
-  配置的 ASCII string、color、px/dp/sp dimension、bitmap/color drawable；session density 未知
-  时显式使用 1.0 fallback。XML inflater style、无命中 selector、非默认 qualifier 明确不承诺；
-  TextView.setTextAppearance 的有界 style bag 解析见 DVM-121。
-- `Resources.getString(int)` 经同一 resolver 返回默认配置 UTF-8 string，缺失、引用环、错类型
-  或损坏字符串统一抛 `Resources.NotFoundException`；`Context.getString(int)` 是 Context 的 final
-  便利方法，经运行时 `getResources()` 虚派后调用它，wrapper/component 只继承、不重复声明。
-- `Resources.getXml(int)` 只经唯一 ArscTable 将 resid 解析为 sealed APK entry，再把严格
-  AXML pull events 物化为 guest 字段/数组持有的 `XmlResourceParser`；当前 API 19 有界面为
-  `getEventType/next/getName/getText/close`。缺失或畸形资源抛 `Resources.NotFoundException`，
-  parser 重复 close 幂等、关闭后读取失败；不得另建 native XmlBlock 或宿主 XML 状态。
-- ImageView XML/Java resource 与 scaleType setter 共用 UiNode/image cache；CENTER、CENTER_INSIDE、
-  FIT_CENTER、FIT_XY、CENTER_CROP 已闭合，matrix/fitStart/fitEnd 明确失败。
-- 动态 BroadcastReceiver 注册按发起调用的 Context 实例拥有；null receiver 只查询
-  sticky broadcast，未注册、重复或跨 Context 注销抛 `IllegalArgumentException`。
-  当前平台没有广播来源，因此不伪造 `onReceive` 派发。
-- DVM-97 的 `Intent` action/data/type/categories/flags 保存于普通 guest 字段；
-  `resolveTypeIfNeeded` 按 API 19 处理 explicit component/type，只有无显式 type 的
-  `content://` 才进入 resolver。`IntentFilter.match` 有界覆盖 action、MIME wildcard、
-  scheme、authority host/wildcard/port 与 categories，返回 API 19 match/error 常量。
-  category 快照只通过 guest iterator 读取 BootDex Set，不读取宿主集合状态。
-  `Intent` 的公开实例方法保持 API 19 的非 final 可覆盖形状，`IntentFilter` 匹配方法保持 final。
-  scheme-specific-part/path pattern、隐式组件解析、ContentProvider/Binder 和系统广播仍明确
-  不支持；不得猜测 content MIME 或因此伪造广播派发。
-- DVM-132 的 `Uri` 及内部类来自 BootDex，integration 不再声明该类或保存 URI 镜像字段。
-  `StrictMode.onFileUriExposed` 与 external-storage canonical 分支未闭合，触达时明确失败。
-- DVM-133 的 ContentResolver 五参 `query` 虚派读取 URI scheme/authority；当前没有任何
-  ContentProvider 注册，因此按 API 19 provider acquisition 失败返回 null。不得构造空
-  Cursor、读取宿主 provider，或由 authority 猜测查询结果。
-- Intent extra 由普通 mExtras 字段指向 BootDex Bundle；String/int/Serializable/
-  Integer ArrayList 的 typed put/get/remove/hasExtra 委托 Java，类型覆盖/null 与装箱遵循
-  原版语义；getExtras 返回独立映射的浅副本，值保持身份。删除旧三种类型分表。
-  DVM-140 `putExtras(Bundle)` 确保 mExtras 后调用原版 Bundle.putAll，合并覆盖而非
-  替换/别名，返回 this；null 参数让 Java 抛 NPE，保留先初始化 mExtras 的原版顺序。
-- VideoView error listener 按 view 实例注册、替换或清除；没有具体异步错误事件时
-  不伪造 `onError` 回调。pause/seek capability 只反映已打开 player；缺失 player
-  的 completion 延迟到视频 pump，禁止从 `start()` 重入 guest。
-- Activity 替换会关闭旧 SurfaceHolder generation 并清除其 holder/callback；新
-  generation 注册完成后接收仍存活 managed surface 的 created/changed，禁止跨
-  Activity 累积 callback。
-- API19 Window policy 保留稳定 `WindowManager.LayoutParams` identity；flags 按
-  mask 修改，soft-input mode/type 写入同一 guest-visible record。Activity requested
-  orientation 按 receiver identity 隔离且默认为 -1；宿主无 Binder/IME/旋转系统时
-  不得因为保存该状态而宣称宿主策略已生效。
-- `Display.getMetrics/getRealMetrics` 写入 caller-owned API19 `DisplayMetrics`；尺寸
-  来自唯一 managed surface，density 来自 context 注入，不读宿主私有显示器
-  信息。无 system decor/兼容缩放时 app/real/noncompat 事实相同。
-- EGL 规范内失败走 false/EGL_NO_* + last-error；单 surface、单 currency 模型被
-  破坏时必须记账并抛出，未知入口同样记账明确失败。
-- teardown 退役是单向状态：Java `eglSwapBuffers` 立即返回 false 并锁存
-  `EGL_BAD_NATIVE_WINDOW`，同时唤醒 swap pacer；普通运行状态仍遵循上述 EGL 失败契约。
-- guest swap 发布帧后进入条件帧屏障：driver 可运行时等下一次 lifecycle generation；
-  driver 经通用执行锁 observer 进入 guest 阻塞时立即放行；shutdown 同样唤醒。
-  observer 按注册的 driver 宿主线程 id 过滤，GLThread 自己释放执行锁不改变状态。
-  禁止退化为 publish+yield、墙钟超时或单次免停泊额度。
-- Java GLES direct Buffer 必须传当前 position 对应的原 guest address；heap/view/array
-  只能使用调用期 guest 临时内存，输出 copy-back 不移动 cursor。任何 Java 签名无法确定
-  映射到 native catalog 时必须记账并明确失败，禁止 neutral return。
-- scheduler side-table 持有的引用必须由 state-table trace 或 session scheduled-root 枚举；
-  GC sweep 删除 owner 关联状态，session teardown 先 shutdown scheduler、唤醒 Looper，再
-  join guest 线程。所有时钟推进必须调用 `AdvanceAndroidClock` 通知 waiter。
-- DVM-135 的 `View.post/postDelayed` 只进入同一主 Looper scheduler。attached View 共用
-  ViewRoot handler identity；detached View 的 action 按 guest 线程暂存，到该线程下一次
-  live-root lifecycle safe point 才转队并开始计算 delay。不得同步执行或创建宿主 Timer。
-- DVM-86 的 Path、Parcel 与 WakeLock 状态只存在于具名 intrinsic state table；
-  Parcel 只传输受检 typed atom，Bundle 在写入时创建 Java 浅副本。Power/Vibrator/Process 不得
-  调用 Binder、宿主设备或外部进程；未知 transport/type/action 必须明确失败。
+### Context、Intent、PackageManager
 
-## 依赖
+- Context→ContextWrapper→Application/Service/ContextThemeWrapper→Activity 类型链固定。process
+  Application、base Context、ClassLoader 与 descriptor 身份稳定；wrapper 只虚派委托 base。
+- Intent/Activity 的 component/intent 是普通字段唯一事实。显式同包启动受检；隐式/跨包启动、
+  一般 resolver、Instrumentation/ActivityManager 不支持。
+- PackageManager 只发布当前 APK：manifest/path/label/permission/feature 来自 sealed facts；未知包、
+  flags、跨包查询失败。DVM-142：PackageItemInfo/ApplicationInfo、Component/Activity/Service/
+  Provider/ResolveInfo、PathPermission/PatternMatcher/Printer 及内部类归 BootDex，删除前两者 intrinsic；
+  integration 只写受检字段。
+- `resolveService` 只接受非空 action、无 component/data/type/categories、flags=0，并查询当前 APK
+  inventory；确定无候选返回 null，未知条件/潜在匹配记账抛 UOE。仍不物化正匹配 ResolveInfo、
+  绑定服务或引入外部目录/Binder。DVM-143 保证定向反射不解析无关签名。
+- code/resource path 指向同一只读 `/data/app/<package>-1.apk`；cache/files 只在 app VFS。
+  openFileInput/Output 只接受单文件名，MODE_PRIVATE 覆盖、MODE_APPEND 追加。
+- Settings.Secure 只读稳定身份；SystemProperties 只实现受审 native 边界。
 
-本目录属于 runtime/integration，可依赖 dexvm、loader、framework、VFS、音视频等
-下层模块；任何下层模块不得反向依赖本目录。
+### 资源、Parcel、数据库
 
-## 测试
+- AssetManager/Resources 只读 APK/ARSC/AXML；open 返回 core ByteArrayInputStream，openFd 仅接受
+  STORED entry 并发布逻辑 FD+区间。缺失映射为 Java IOException/NotFoundException，不泄漏路径。
+- Parcel 是进程内受限 transport；Bundle/ContentValues 等状态归 Java 字段。Parcel guest 引用是
+  owner GC 强边；不支持 Binder/FD/完整 wire format。
+- SQLite 状态归 context table，文件只经 VFS，使用确定性内部格式。首次创建/版本增长虚派
+  onCreate/onUpgrade；只有 ENOENT 表示新库。未登记 SQL/selection 失败；不调用 host SQLite。
+- SharedPreferences 按 context/package 持久化 app XML；editor 与 listener 遵循普通对象和具名
+  state table 契约。
 
-`tests/session/profile_entry_scope_tests.cpp` 锁定 catalog 唯一性、直接绑定及
-Activity/Intent/Bundle/TextView 方法集合；`tests/dexvm/file_vfs_tests.cpp`、
-`videoview_tests.cpp`、`widget_click_tests.cpp` 锁定主要集成行为；后者同时锁定 system-UI
-接口形状、反射常量、逐 View request/listener identity 与无事件时不回调。
-`tests/dexvm/scheduler_tests.cpp` 锁定固定 Clock、FIFO/cancel、Context/ContextWrapper 主
-Looper 身份、Timer/CountDownTimer、HandlerThread 与 AsyncTask 的线程/回投语义。
-`tests/dexvm/android_value_tests.cpp` 锁定 Base64/Sparse、graphics value/Path、
-Parcel/Bundle snapshot、有界 power/vibrator，以及 DVM-97 LocalBroadcastManager 读取链和
-IntentFilter action/MIME/URI/authority/category 匹配。
+### UI、窗口、输入、图形
 
-DVM-104：AssetManager/Resources 的 OpenStream 创建 guest byte[] 并调用 BootDex
-ByteArrayInputStream([B) 构造器，不再向 IoRuntime 写内存流侧表。构造跨 nested guest call
-的临时对象需 RootScope 保活，异常保留原 throwable 身份。
+- 每个 live View 对应一个 UiNode；hierarchy/id/visibility/layout/text/style 写唯一 UiTree。
+  动态 add/remove/update、findViewById、LayoutParams 与 RelativeLayout 使用同一树；Java 字段修改
+  本身不触发 traversal。
+- Activity/DecorView/attached View 的焦点读取 lifecycle 唯一事实。无 Sensor/SystemUI/WMS 时不
+  伪造方向、焦点或 system-bar 回调。
+- SurfaceView holder 按 attach 与 host surface 形成 generation，严格 created→changed→destroyed；
+  detached 子树不提前收事件也不能关闭 host surface。Canvas post 发布软件帧，Bitmap/Canvas
+  统一 ARGB。
+- pointer 在 dirty 时先 layout，按 clipped reverse-Z/deepest-first 命中并虚派 listener/
+  onTouchEvent；键盘将 SDL scancode 转 API 19 keyCode/Unicode/meta/repeat。
+- GLES/EGL 只桥接 session 已有 ANGLE surface/context；不创建第二套状态。参数错误进入 guest GL
+  error 锁存，host 内存/生命周期契约故障仍硬失败。
 
-DVM-105：AndroidCoreIntrinsicServices 注入 hal::FillSecureRandom，只提供 CSPRNG 字节，
-不执行 Cipher 算法。System.loadLibrary 可加载注入的 bundled 系统库。
+### Looper、线程、回调
 
-## DVM-107 framework 值类和 Activity 身份
+- Handler/Looper/HandlerThread/Timer/AsyncTask 共用 scheduler；deadline 来自 uptime Clock，同
+  deadline 按 sequence FIFO。主 Looper 只在 lifecycle safe point 泵送，子 Looper 在对应 guest
+  host thread 执行；禁止同步调用伪装 post。
+- ResultReceiver 只支持本地分支：有 Handler 排队，无 Handler 同步虚派；Binder transport 拒绝。
+- Thread/JNI native 入口复用 core runtime 与同一 catalog/context；不得恢复第二套线程或服务表。
 
-Pair、五种 SparseArray、ContainerHelpers/ArrayUtils、ComponentName 和 Parcelable 三接口
-属于 BootDex；Android catalog 不发布这些类，也不保留 Sparse 算法/侧表。普通字段与数组
-由统一 GC 追踪。Parcel 仍为已有的进程内 transport，ComponentName 的 Java CREATOR 使用它。
-Activity.mComponent/mIntent 和 Intent.mComponent 是唯一实例身份来源。生命周期在 onCreate
-前附加 component；getLocalClassName 虚派 getPackageName 后按包名加点边界截取，
-getPreferences 虚派 getLocalClassName/getSharedPreferences。setIntent 不重写 component，
-修改原 Intent 也不更改 Activity 已附加的组件；不同 Activity 不读取共享 current_intent。
-Intent 的 setClass/setClassName/setComponent 与构造器创建或保存真正的 ComponentName，
-resolveTypeIfNeeded/startActivity 读同一字段。隐式/跨包启动明确拒绝，未实现一般 manifest
-resolver；根 alias 身份由 session 显式传入。双后端定向证据见 DVM-107。
+### 媒体、网络、设备、JNI
 
-DVM-112：ServiceConnection 原版接口归 BootDex。PackageManager.resolveService 仅闭合
-非空 action、无 component/data/type/categories、flags=0 的查询；使用当前 APK 的服务
-信息，排除 disabled application/service 与 action 不匹配的过滤器，无候选返回 null。
-未装配 inventory、未知 flags/查询形态、潜在匹配（包括未解析 data 条件）以
-`dexvm.service_resolution` 记账并抛 UnsupportedOperationException；null Intent 抛 NPE。
-无外部安装包/平台服务目录，不按 action 或包名特判，不创建 ResolveInfo/绑定/回调状态。
-这不表示完整服务发现、返回类型反射、bindService/unbindService、Binder 或支付支持。
+- MediaPlayer/VideoView 只消费受检资源、路径或逻辑 FD 区间并交给唯一 decoder/mixer；不创建
+  host fd/第二播放器。回调只来自真实生命周期/播放进度。
+- AudioTrack rate 来自 mixer；stream/static、marker/period、listener、pause/flush/release 使用
+  唯一状态。回压等待完整释放 VM 锁，恢复后复验 owner；host 音频线程不得进入 VM。
+- 网络只用 core 注入 policy/transport，默认离线；Connectivity/Wifi 仅发布已配置事实，不读取
+  host 网络、DNS、代理或证书。无传感器/电话来源时返回 API 允许的缺席结果，不伪造硬件。
+- System.load/loadLibrary 只经 process loader 并携带 application ClassLoader；失败映射 Java 异常，
+  禁止 no-op 成功。JNI 对象出口按真实 runtime class 原子幂等注册；数组元素不得猜声明类型。
+- native token 只存普通 Java long 字段；GC/teardown 经登记 cleanup 清理，不保存 host pointer，
+  不因浅 clone 提前释放共享 token。
 
-DVM-115：残留 Android 异常构造器调用 VM 的 BootDex Throwable 基类初始化入口，
-消息、cause、suppressed 与异常栈归 Java 字段；不再向旧 Throwable 宿主侧表写入消息。
+## BootDex、文件与测试
 
-DVM-116：BackupManager/RestoreObserver 来自 BootDex，仅私有 checkServiceBinder
-覆盖平台查询边界。进程没有 Android 备份服务，sService 保持 null 并记录
-`dexvm.backup_service`；非空服务注入抛 UOE。Java 决定通知不排队、恢复请求 -1、
-恢复会话 null，不发出成功/完成回调。不引入 Binder、备份传输器或系统服务类型反射。
+Bundle、Build、Uri、Configuration、OrientationEventListener、ResultReceiver、布局参数、framework/
+PM 值类等普通算法归 BootDex。catalog 只保留 native/平台事实边界，不重复发布 class 或普通方法；
+Java 工厂必须先初始化类再调用原版构造器。
 
-DVM-117：Bundle/CREATOR、ArrayMap/MapCollections 的普通状态与算法来自 BootDex。
-NewAndroidBundle 必须先初始化类，再调用原版构造器；ApplicationInfo 元数据调用 Java
-put 方法。仅 Bundle.writeToParcel/readFromParcel 对接原有 typed Parcel；atom 保存
-Java Bundle 浅副本的强引用，读取再复制映射，无宿主 BundleValue 副本。无效数据明确
-失败；Android 字节协议、Binder/FD 与 parcelled 长尾不在本范围。Log.w/e 的 Throwable
-参数由 Java PrintWriter/StringWriter 展开为结构化日志诊断。
+实现按 content/os/view/graphics/gl/media/database/device 等既有 family TU 分工；新增类进入既有
+family。明确缺口包括完整 Binder/system services、外部 package/service resolver、ContentProvider、
+完整 framework/UI/传感器、现代支付/社交/反作弊及手机端运行。
 
-DVM-118：DisplayMetrics/TypedValue 的普通字段/算法来自 BootDex；仅私有
-DisplayMetrics.getDeviceDensity 查询进程注入 density。Resources.mMetrics 是稳定
-实例引用，查询按当前 managed surface/density 刷新；Display.getMetrics/getRealMetrics
-使用同一填充入口，不读取宿主显示器。无兼容缩放时 noncompat 字段同源。TypedValue
-单位转换直接读取 Java 字段，删除基于旧槽位顺序的 C++ 算法。
-
-DVM-137：Configuration/CREATOR 的字段、默认值、复制、比较、字符串与 Parcel 协议来自
-BootDex。Resources.getConfiguration 首次执行原版构造器并保持稳定身份；查询时从 managed
-surface/density 刷新方向、dp、density、screenLayout，并发布桌面 touch/keyboard/navigation
-事实。不建立窗口旋转、输入热插拔或动态 onConfigurationChanged 管线。
-
-DVM-120：Typeface 普通方法与缓存归 BootDex；native 只提供内置字体有限不可变描述符。
-TextView 引用为 Java 字段，四种样式进入 UiNode 并驱动测量/绘制；family 使用内置
-回退字形，不宣称系统字体。外部字体加载记账失败，无 native 分配或侧表。
-
-DVM-121：ColorStateList/CREATOR、StateSet 与 R.attr 归 BootDex。TextView 颜色列表保存于
-普通字段，文本色/尺寸/字体进入 UiNode；hint/link/highlight 仅为可查询状态，不宣称
-对应交互/绘制。setTextAppearance 区分 attr metadata 与 style，后者支持 APK bag
-继承及简单资源/主题属性引用；完整验证后再调用 setter，保留 guest override 异常身份。
-平台只投影 AOSP legacy Theme 的 NoTitleBar/Black/Dialog/Light/Translucent 变体及
-Theme.Holo/DeviceDefault 的 hint/highlight/link。未知 framework 样式、selector XML、
-stateful 渲染、shadow/allCaps 明确失败并记账。TypedValue Java 做尺寸转换，Typeface
-Java 做字体选择；ContextWrapper 沿 base 查主题，循环/空 base 明确失败。
-Manifest theme 在 Activity 身份 attach 时经 setTheme 应用，不引入 Android Theme 服务。
-
-DVM-121：guest View 的 UI kind 由 `UiClassForObject` 按 receiver 真实继承链解析，
-`UiClassForDescriptor` 仅作精确平台描述符表（补 ScrollView/AbsoluteLayout →
-FrameLayout，与 inflater 目录一致）。Button/TextView 的 `(Context, AttributeSet,
-int)` 构造经 `ViewDefaultStyleInitHandler`：attrs 非空、未知 defStyleAttr 明确失败
-并记账；buttonStyle/buttonStyleSmall 经实际 Context（含 wrapper）解析 legacy theme、
-APK 主题继承和别名，仅接受已登记的 Widget.Button(.Small)/Small.Inverse 投影：
-14sp、enabled primary_text_light、gravity center 与 clickable。尺寸读取该 Context 的
-Resources；null Context、未登记主题/样式/外观明确失败，禁止忽略 APK override。
-9-patch 背景登记为 `dexvm.view_default_style.background` 缺口，状态色渲染仍未实现。
-setCompoundDrawablesWithIntrinsicBounds(IIII) 按 AOSP 声明为可覆盖的 TextView 方法；
-四个资源全部解析成功后一次发布，缺资源抛真实 NotFoundException，保留旧槽位与 dirty。
-槽位与 measure/draw 语义见 runtime/ui MODULE，架构边界见 ADR-0051。
-RelativeLayout sibling 规则非正值（含 addRule(verb) 的 TRUE=-1）按 AOSP `rule > 0`
-过滤为无锚点。
-PreferenceManager 与 SharedPreferences/Editor/OnSharedPreferenceChangeListener
-接口使用 BootDex 原版 Java（927 类配方）；integration 不再声明这三个接口的
-intrinsic 副本。SharedPreferencesImpl/EditorImpl 支持 boolean/int/long/float/string，
-contains 读取已提交值，getAll 返回装箱 HashMap 快照并保护构建期间的 guest 引用。
-每次 edit 创建独立缓冲，put/remove/clear 仅在 commit/apply 发布；clear 先清旧值，
-再合并待写项，putString(null) 等同 remove。缓冲只含宿主标量/字符串，
-由 android.preference-editors 状态表随 Editor GC 清理；已提交 store/VFS XML 唯一。
-apply 按 API 19 允许的兼容方式同步持久化；string-set 与 change-listener 明确失败
-并记账。默认偏好经 Context 虚派打开，与显式命名入口共享对象缓存；加载失败不置
-loaded，后续打开继续报告错误或重试读取。边界见 ADR-0052。
+定向测试位于 `tests/dexvm/android_*`、widget/layout/scheduler/egl、runtime JNI/native loader 与
+frontend lifecycle。行为变更覆盖 switch/threaded 及架构门禁；title 探索不等同 Scenario gate。

@@ -2503,46 +2503,6 @@ void RequireFlags(const std::int32_t flags, const std::int32_t supported,
 
 }  // namespace
 
-Decl Declare_android_content_pm_PackageItemInfo(const Context&) {
-    auto builder = dx::IntrinsicClassBuilder::Class(
-        "Landroid/content/pm/PackageItemInfo;", "Ljava/lang/Object;");
-    builder.Constructor("()V", [](dx::IntrinsicContext&) {
-        return dx::VmValue::Void();
-    });
-    builder.InstanceField("name", "Ljava/lang/String;")
-        .InstanceField("packageName", "Ljava/lang/String;")
-        .InstanceField("labelRes", "I")
-        .InstanceField("nonLocalizedLabel", "Ljava/lang/CharSequence;")
-        .InstanceField("icon", "I")
-        .InstanceField("logo", "I")
-        .InstanceField("metaData", "Landroid/os/Bundle;");
-    return std::move(builder).Build();
-}
-
-Decl Declare_android_content_pm_ApplicationInfo(const Context&) {
-    auto builder = dx::IntrinsicClassBuilder::Class(
-        "Landroid/content/pm/ApplicationInfo;",
-        "Landroid/content/pm/PackageItemInfo;");
-    builder.Constructor("()V", [](dx::IntrinsicContext&) {
-        return dx::VmValue::Void();
-    });
-    builder.InstanceField("taskAffinity", "Ljava/lang/String;")
-        .InstanceField("permission", "Ljava/lang/String;")
-        .InstanceField("processName", "Ljava/lang/String;")
-        .InstanceField("className", "Ljava/lang/String;")
-        .InstanceField("descriptionRes", "I")
-        .InstanceField("theme", "I")
-        .InstanceField("flags", "I")
-        .InstanceField("sourceDir", "Ljava/lang/String;")
-        .InstanceField("publicSourceDir", "Ljava/lang/String;")
-        .InstanceField("dataDir", "Ljava/lang/String;")
-        .InstanceField("nativeLibraryDir", "Ljava/lang/String;")
-        .InstanceField("uid", "I")
-        .InstanceField("targetSdkVersion", "I")
-        .InstanceField("enabled", "Z");
-    return std::move(builder).Build();
-}
-
 Decl Declare_android_content_pm_PackageInfo(const Context&) {
     auto builder = dx::IntrinsicClassBuilder::Class(
         "Landroid/content/pm/PackageInfo;", "Ljava/lang/Object;");

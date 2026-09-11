@@ -19,6 +19,45 @@
 
 namespace ogplay::runtime::android_intrinsics {
 
+namespace {
+void RequireAbsentService(dx::IntrinsicContext& call, const Context& context,
+                          dx::VmObjectRef intent) {
+    const auto unsupported = [&call](const std::string& reason) -> void {
+        if (auto* ledger = call.vm.Ledger())
+            ledger->RecordUnimplemented("dexvm.service_resolution", 0);
+        throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", reason};
+    };
+    if (!context->service_inventory_known) unsupported("service inventory is unavailable");
+    // Only action-only queries are closed here. Read through the existing
+    // Intent API; do not maintain a second copy of Intent state.
+    for (const auto& [name, signature] : {
+            std::pair{"getComponent", "()Landroid/content/ComponentName;"},
+            std::pair{"getData", "()Landroid/net/Uri;"},
+            std::pair{"getType", "()Ljava/lang/String;"},
+            std::pair{"getCategories", "()Ljava/util/Set;"}}) {
+        if (CallAndroidMethod(call.vm, intent, name, signature).ref.IsValid()) {
+            unsupported("only an action-only Intent is supported");
+        }
+    }
+    const auto action = CallAndroidMethod(call.vm, intent, "getAction", "()Ljava/lang/String;").ref;
+    if (!action.IsValid()) unsupported("an action is required");
+    const auto action_name = call.vm.StringUtf8(action);
+    if (context->application_enabled) {
+        for (const auto& service : context->service_components) {
+            if (!service.enabled) continue;
+            for (const auto& filter : service.intent_filters) {
+                if (std::find(filter.actions.begin(), filter.actions.end(), action_name) ==
+                    filter.actions.end()) continue;
+                // A possible local match is not an absent service. Data
+                // constraints and positive ResolveInfo materialization are deferred.
+                unsupported(filter.has_data ? "candidate requires data-filter resolution"
+                                            : "positive service resolution is not implemented");
+            }
+        }
+    }
+}
+}  // namespace
+
     Decl Declare_android_content_pm_PackageManager_NameNotFoundException(const Context& context);
 
     Decl Declare_android_content_DialogInterface_OnCancelListener(const Context& context) {
@@ -1272,6 +1311,36 @@ Decl Declare_android_content_Context(const Context& context) {
             // Sticky broadcast lookup: nothing pending on this platform.
             return dx::VmValue::Ref(dx::VmObjectRef{});
         });
+    builder.VirtualMethod(
+        "bindService",
+        "(Landroid/content/Intent;Landroid/content/ServiceConnection;I)Z",
+        [context](dx::IntrinsicContext& call) {
+            dx::IntrinsicCall fields(call);
+            const auto intent = fields.NonNullRef(0, "service");
+            const auto connection = call.arguments[1].ref;
+            if (!connection.IsValid())
+                throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "connection is null"};
+            // API19 dispatcher registration precedes resolution/bind failure.
+            auto& connections = context->service_connections[call.receiver.Value()];
+            if (std::find(connections.begin(), connections.end(), connection) == connections.end())
+                connections.push_back(connection);
+            RequireAbsentService(call, context, intent);
+            return dx::VmValue::Int(0);
+        });
+    builder.VirtualMethod(
+        "unbindService", "(Landroid/content/ServiceConnection;)V",
+        [context](dx::IntrinsicContext& call) -> dx::VmValue {
+            const auto connection = call.arguments[0].ref;
+            if (!connection.IsValid())
+                throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "connection is null"};
+            const auto found = context->service_connections.find(call.receiver.Value());
+            if (found == context->service_connections.end() ||
+                std::erase(found->second, connection) == 0)
+                throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;",
+                                      "ServiceConnection was not registered"};
+            if (found->second.empty()) context->service_connections.erase(found);
+            return dx::VmValue::Void();
+        });
     builder.VirtualMethod("unregisterReceiver",
         "(Landroid/content/BroadcastReceiver;)V",
         [context](dx::IntrinsicContext& call) {
@@ -1469,6 +1538,9 @@ Decl Declare_android_content_ContextWrapper(const Context& context) {
     delegate("getCacheDir", "()Ljava/io/File;");
     delegate("getResources", "()Landroid/content/res/Resources;");
     delegate("getSystemService", "(Ljava/lang/String;)Ljava/lang/Object;");
+    delegate("bindService",
+        "(Landroid/content/Intent;Landroid/content/ServiceConnection;I)Z");
+    delegate("unbindService", "(Landroid/content/ServiceConnection;)V");
     delegate("registerReceiver",
         "(Landroid/content/BroadcastReceiver;Landroid/content/IntentFilter;)"
         "Landroid/content/Intent;");
@@ -2173,34 +2245,7 @@ Decl Declare_android_content_pm_PackageManager(const Context& context) {
                                       "resolveService: " + reason};
             };
             if (call.arguments[1].AsInt() != 0) unsupported("only flags=0 is supported");
-            if (!context->service_inventory_known) unsupported("service inventory is unavailable");
-            // Only action-only queries are closed here. Read through the existing
-            // Intent API; do not maintain a second copy of Intent state.
-            for (const auto& [name, signature] : {
-                    std::pair{"getComponent", "()Landroid/content/ComponentName;"},
-                    std::pair{"getData", "()Landroid/net/Uri;"},
-                    std::pair{"getType", "()Ljava/lang/String;"},
-                    std::pair{"getCategories", "()Ljava/util/Set;"}}) {
-                if (CallAndroidMethod(call.vm, intent, name, signature).ref.IsValid()) {
-                    unsupported("only an action-only Intent is supported");
-                }
-            }
-            const auto action = CallAndroidMethod(call.vm, intent, "getAction", "()Ljava/lang/String;").ref;
-            if (!action.IsValid()) unsupported("an action is required");
-            const auto action_name = call.vm.StringUtf8(action);
-            if (context->application_enabled) {
-                for (const auto& service : context->service_components) {
-                    if (!service.enabled) continue;
-                    for (const auto& filter : service.intent_filters) {
-                        if (std::find(filter.actions.begin(), filter.actions.end(), action_name) ==
-                            filter.actions.end()) continue;
-                        // A possible local match is not an absent service. Data
-                        // constraints and positive ResolveInfo materialization are deferred.
-                        unsupported(filter.has_data ? "candidate requires data-filter resolution"
-                                                    : "positive service resolution is not implemented");
-                    }
-                }
-            }
+            RequireAbsentService(call, context, intent);
             // This process installs only its APK; there is no external service catalog.
             return dx::VmValue::Ref(dx::VmObjectRef{});
         });

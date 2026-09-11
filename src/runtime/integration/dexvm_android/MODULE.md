@@ -4,7 +4,7 @@
 
 为 dex_activity 提供受限 `android.*`/`javax.microedition.*` intrinsic，并把 session 已有资源、
 VFS、UI、ANGLE、媒体、线程与平台事实注入 DexVM。它是兼容边界，不是 Android 系统：不得引入
-Binder/system_server、安装包数据库、Play 服务或 title/厂商分支。
+跨进程 Binder/system_server、安装包数据库、Play 服务或 title/厂商分支。
 
 `catalog.cpp` 是唯一注册聚合点；每类唯一 `Declare_<类名>(context)`，shape/handler 在所属 API
 family TU 同址。`shared.*` 只放跨类 helper/factory；禁止静态自注册、转发命名空间、字符串
@@ -37,7 +37,9 @@ handler id、单类 TU 或 misc 巨石。非 Android family 归 core，平台事
   integration 只写受检字段。
 - `resolveService` 只接受非空 action、无 component/data/type/categories、flags=0，并查询当前 APK
   inventory；确定无候选返回 null，未知条件/潜在匹配记账抛 UOE。仍不物化正匹配 ResolveInfo、
-  绑定服务或引入外部目录/Binder。DVM-143 保证定向反射不解析无关签名。
+  本地服务生命周期或引入外部目录/跨进程 Binder。DVM-143 保证定向反射不解析无关签名。
+- bindService 复用同一缺席判定：未知 inventory/潜在匹配明确失败。API19 连接登记早于绑定
+  结果，false/失败后仍可解绑一次；ContextWrapper 委托 base，连接是 Context 的 GC 强边。
 - code/resource path 指向同一只读 `/data/app/<package>-1.apk`；cache/files 只在 app VFS。
   openFileInput/Output 只接受单文件名，MODE_PRIVATE 覆盖、MODE_APPEND 追加。
 - Settings.Secure 只读稳定身份；SystemProperties 只实现受审 native 边界。
@@ -49,8 +51,12 @@ handler id、单类 TU 或 misc 巨石。非 Android family 归 core，平台事
 - `Resources.getConfiguration()`的稳定对象以同一 VM `Locale.getDefault()`补齐 locale，并调用
   BootDex `Configuration.setLayoutDirection`。当前 TextUtils 只确认 ROOT/en/zh 为 LTR；其他
   locale 在 ICU likely-subtags 边界补齐前记账失败，不伪造方向。
-- Parcel 是进程内受限 transport；Bundle/ContentValues 等状态归 Java 字段。Parcel guest 引用是
-  owner GC 强边；不支持 Binder/FD/完整 wire format。
+- Parcel 的普通协议由 API 19 BootDex 执行；integration 只提供 VM 隔离的字节 backing、游标、
+  Binder 对象记录和生命周期。Binder 记录是 owner GC 强边，marshall 拒绝对象记录；FD 与远程
+  Binder 明确不支持。
+- Binder 线程策略按 execution context 保存，接口头保留 mask 与 API19 GATHER 位；仅记录，
+  不运行 StrictMode 检测。StrictMode 只提供 Parcel 所需的无 violation 查询/清理窄边界，
+  violation 编解码明确记账失败；Parcel 异常编码仍执行 BootDex。接口长度先受检再分配。
 - SQLite 状态归 context table，文件只经 VFS，使用确定性内部格式。首次创建/版本增长虚派
   onCreate/onUpgrade；只有 ENOENT 表示新库。未登记 SQL/selection 失败；不调用 host SQLite。
 - SharedPreferences 按 context/package 持久化 app XML；editor 与 listener 遵循普通对象和具名
@@ -76,7 +82,8 @@ handler id、单类 TU 或 misc 巨石。非 Android family 归 core，平台事
 - Handler/Looper/HandlerThread/Timer/AsyncTask 共用 scheduler；deadline 来自 uptime Clock，同
   deadline 按 sequence FIFO。主 Looper 只在 lifecycle safe point 泵送，子 Looper 在对应 guest
   host thread 执行；禁止同步调用伪装 post。
-- ResultReceiver 只支持本地分支：有 Handler 排队，无 Handler 同步虚派；Binder transport 拒绝。
+- ResultReceiver/IResultReceiver 普通协议来自 BootDex：有 Handler 排队、无 Handler 同步虚派，
+  Parcel 往返保持本地 Binder 端点身份；不创建远程 Binder scheduler。
 - Thread/JNI native 入口复用 core runtime 与同一 catalog/context；不得恢复第二套线程或服务表。
 
 ### 媒体、网络、设备、JNI
@@ -99,7 +106,7 @@ PM 值类等普通算法归 BootDex。catalog 只保留 native/平台事实边�
 Java 工厂必须先初始化类再调用原版构造器。
 
 实现按 content/os/view/graphics/gl/media/database/device 等既有 family TU 分工；新增类进入既有
-family。明确缺口包括完整 Binder/system services、外部 package/service resolver、ContentProvider、
+family。明确缺口包括跨进程 Binder/system services、外部 package/service resolver、ContentProvider、
 完整 framework/UI/传感器、现代支付/社交/反作弊及手机端运行。
 
 定向测试位于 `tests/dexvm/android_*`、widget/layout/scheduler/egl、runtime JNI/native loader 与

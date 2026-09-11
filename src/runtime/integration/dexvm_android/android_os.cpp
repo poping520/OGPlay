@@ -14,49 +14,6 @@
 namespace ogplay::runtime::android_intrinsics {
 namespace {
 
-[[nodiscard]] DexVmAndroidContext::ParcelState& RequireParcel(
-    dx::IntrinsicContext& call, const Context& context,
-    const dx::VmObjectRef parcel) {
-    static_cast<void>(call);
-    if (!parcel.IsValid())
-        throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;", "parcel"};
-    const auto found = context->parcels.find(parcel.Value());
-    if (found == context->parcels.end() || found->second.recycled)
-        throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "Parcel recycled"};
-    return found->second;
-}
-
-[[nodiscard]] std::size_t ParcelAtomBytes(
-    const DexVmAndroidContext::ParcelAtom& atom) {
-    using Kind = DexVmAndroidContext::ParcelAtom::Kind;
-    switch (atom.kind) {
-        case Kind::long_integer:
-        case Kind::double_value: return 8U;
-        case Kind::string: return 4U + atom.text.size();
-        case Kind::byte_array: return 4U + atom.bytes.size();
-        default: return 4U;
-    }
-}
-
-void WriteParcelAtom(DexVmAndroidContext::ParcelState& parcel,
-                     DexVmAndroidContext::ParcelAtom atom) {
-    if (parcel.position < parcel.atoms.size())
-        parcel.atoms[parcel.position] = std::move(atom);
-    else
-        parcel.atoms.push_back(std::move(atom));
-    ++parcel.position;
-}
-
-[[nodiscard]] DexVmAndroidContext::ParcelAtom ReadParcelAtom(
-    DexVmAndroidContext::ParcelState& parcel,
-    const DexVmAndroidContext::ParcelAtom::Kind expected) {
-    if (parcel.position >= parcel.atoms.size())
-        throw dx::VmJavaThrow{"Ljava/lang/IndexOutOfBoundsException;", "Parcel underflow"};
-    const auto& atom = parcel.atoms[parcel.position++];
-    if (atom.kind != expected)
-        throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "Parcel type mismatch"};
-    return atom;
-}
 
 [[nodiscard]] std::string_view BuildProperty(const std::string_view key) {
     if (key == "ro.product.cpu.abi") return "armeabi";
@@ -293,40 +250,6 @@ Decl Declare_android_os_SystemProperties(const Context&) {
 
 namespace ogplay::runtime::android_intrinsics {
 
-Decl Declare_android_os_Bundle(const Context& context) {
-    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/os/Bundle;");
-    const auto map = builder.BoundInstanceField("mMap", "Landroid/util/ArrayMap;", 0);
-    const auto parcelled = builder.BoundInstanceField("mParcelledData", "Landroid/os/Parcel;", 0);
-    const auto has_fds = builder.BoundInstanceField("mHasFds", "Z", dx::kAccPrivate);
-    const auto fds_known = builder.BoundInstanceField("mFdsKnown", "Z", dx::kAccPrivate);
-    // Preserve the existing in-process typed Parcel transport. Ordinary Bundle
-    // state, type checks, copy construction and CREATOR remain API 19 Java.
-    builder.FinalMethod("writeToParcel", "(Landroid/os/Parcel;I)V",
-        [context](dx::IntrinsicContext& call) {
-            static_cast<void>(RequireParcel(call, context, call.arguments[0].ref));
-            DexVmAndroidContext::ParcelAtom atom;
-            atom.kind = DexVmAndroidContext::ParcelAtom::Kind::object;
-            atom.text = "Bundle";
-            atom.object = NewAndroidBundle(call.vm, call.receiver);
-            WriteParcelAtom(RequireParcel(call, context, call.arguments[0].ref), std::move(atom));
-            return dx::VmValue::Void();
-        });
-    builder.FinalMethod("readFromParcel", "(Landroid/os/Parcel;)V",
-        [context, map, parcelled, has_fds, fds_known](dx::IntrinsicContext& call) {
-            const auto atom = ReadParcelAtom(RequireParcel(call, context, call.arguments[0].ref),
-                DexVmAndroidContext::ParcelAtom::Kind::object);
-            if (atom.text != "Bundle" || !atom.object.IsValid())
-                throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "Parcel is not a Bundle"};
-            const auto copy = NewAndroidBundle(call.vm, atom.object);
-            const dx::IntrinsicCall fields(call);
-            fields.SetRef(map, fields.GetRef(map, copy));
-            fields.SetRef(parcelled, dx::VmObjectRef{});
-            fields.SetInt(has_fds, fields.GetInt(has_fds, copy));
-            fields.SetInt(fds_known, fields.GetInt(fds_known, copy));
-            return dx::VmValue::Void();
-        });
-    return std::move(builder).Build();
-}
 
 }  // namespace ogplay::runtime::android_intrinsics
 
@@ -738,157 +661,6 @@ Decl Declare_android_os_Handler(const Context& context) {
 
 namespace ogplay::runtime::android_intrinsics {
 
-namespace dvm89_android_os_ResultReceiver {
-namespace {
-
-dx::VmValue Deliver(dx::IntrinsicContext& call,
-                    const dx::VmObjectRef receiver,
-                    const std::int32_t result_code,
-                    const dx::VmObjectRef result_data) {
-    auto& linker = call.vm.Linker();
-    const auto owner = call.vm.Model().ObjectClass(receiver);
-    const auto index = linker.FindVtableIndex(
-        owner, "onReceiveResult", "(ILandroid/os/Bundle;)V");
-    if (!index.has_value()) {
-        throw dx::VmJavaThrow{"Ljava/lang/AbstractMethodError;",
-                              "ResultReceiver.onReceiveResult"};
-    }
-    const auto outcome = call.vm.Call(
-        linker.Class(owner).vtable[*index],
-        std::vector<dx::VmValue>{dx::VmValue::Ref(receiver),
-                                 dx::VmValue::Int(result_code),
-                                 dx::VmValue::Ref(result_data)});
-    if (outcome.exception.IsValid()) {
-        call.vm.SetPendingException(outcome.exception);
-    }
-    return dx::VmValue::Void();
-}
-
-}  // namespace
-
-Decl Declare_android_os_ResultReceiver_MyRunnable(const Context& context) {
-    static_cast<void>(context);
-    auto builder = dx::IntrinsicClassBuilder::Class(
-        "Landroid/os/ResultReceiver$MyRunnable;", "Ljava/lang/Object;",
-        {"Ljava/lang/Runnable;"}, dx::kAccSuper);
-    const auto receiver = builder.BoundInstanceField(
-        "this$0", "Landroid/os/ResultReceiver;", 0x1010U);
-    const auto result_code =
-        builder.BoundInstanceField("mResultCode", "I", dx::kAccFinal);
-    const auto result_data = builder.BoundInstanceField(
-        "mResultData", "Landroid/os/Bundle;", dx::kAccFinal);
-    builder.Constructor(
-        "(Landroid/os/ResultReceiver;ILandroid/os/Bundle;)V",
-        [receiver, result_code, result_data](dx::IntrinsicContext& call) {
-            dx::IntrinsicCall fields(call);
-            fields.SetRef(receiver, call.arguments[0].ref);
-            fields.SetInt(result_code, call.arguments[1].AsInt());
-            fields.SetRef(result_data, call.arguments[2].ref);
-            return dx::VmValue::Void();
-        });
-    builder.VirtualMethod("run", "()V",
-        [receiver, result_code, result_data](dx::IntrinsicContext& call) {
-            dx::IntrinsicCall fields(call);
-            return Deliver(call, fields.GetRef(receiver),
-                           fields.GetInt(result_code),
-                           fields.GetRef(result_data));
-        });
-    return std::move(builder).Build();
-}
-
-Decl Declare_android_os_ResultReceiver(const Context& context) {
-    static_cast<void>(context);
-    auto builder = dx::IntrinsicClassBuilder::Class(
-        "Landroid/os/ResultReceiver;", "Ljava/lang/Object;",
-        {"Landroid/os/Parcelable;"});
-    const auto local =
-        builder.BoundInstanceField("mLocal", "Z", dx::kAccFinal);
-    const auto handler = builder.BoundInstanceField(
-        "mHandler", "Landroid/os/Handler;", dx::kAccFinal);
-    builder.Constructor("(Landroid/os/Handler;)V",
-        [local, handler](dx::IntrinsicContext& call) {
-            dx::IntrinsicCall fields(call);
-            fields.SetInt(local, 1);
-            fields.SetRef(handler, call.arguments[0].ref);
-            return dx::VmValue::Void();
-        });
-    builder.VirtualMethod("send", "(ILandroid/os/Bundle;)V",
-        [handler](dx::IntrinsicContext& call) {
-            const auto target_handler =
-                dx::IntrinsicCall(call).GetRef(handler);
-            if (!target_handler.IsValid()) {
-                return Deliver(call, call.receiver,
-                               call.arguments[0].AsInt(),
-                               call.arguments[1].ref);
-            }
-
-            const auto runnable = call.vm.NewIntrinsicInstance(
-                "Landroid/os/ResultReceiver$MyRunnable;");
-            auto& linker = call.vm.Linker();
-            const auto runnable_class = call.vm.Model().ObjectClass(runnable);
-            const auto constructor = linker.FindDirectMethod(
-                runnable_class, "<init>",
-                "(Landroid/os/ResultReceiver;ILandroid/os/Bundle;)V");
-            if (!constructor.has_value()) {
-                throw dx::DexVmError(
-                    dx::DexVmErrorReason::internal_invariant,
-                    "ResultReceiver MyRunnable constructor is unavailable");
-            }
-            auto outcome = call.vm.Call(
-                *constructor,
-                std::vector<dx::VmValue>{
-                    dx::VmValue::Ref(runnable),
-                    dx::VmValue::Ref(call.receiver), call.arguments[0],
-                    call.arguments[1]});
-            if (outcome.exception.IsValid()) {
-                call.vm.SetPendingException(outcome.exception);
-                return dx::VmValue::Void();
-            }
-
-            const auto handler_class =
-                call.vm.Model().ObjectClass(target_handler);
-            const auto post = linker.FindVtableIndex(
-                handler_class, "post", "(Ljava/lang/Runnable;)Z");
-            if (!post.has_value()) {
-                throw dx::VmJavaThrow{"Ljava/lang/AbstractMethodError;",
-                                      "Handler.post"};
-            }
-            outcome = call.vm.Call(
-                linker.Class(handler_class).vtable[*post],
-                std::vector<dx::VmValue>{dx::VmValue::Ref(target_handler),
-                                         dx::VmValue::Ref(runnable)});
-            if (outcome.exception.IsValid()) {
-                call.vm.SetPendingException(outcome.exception);
-            }
-            return dx::VmValue::Void();
-        });
-    builder.VirtualMethod(
-        "onReceiveResult", "(ILandroid/os/Bundle;)V",
-        [](dx::IntrinsicContext&) { return dx::VmValue::Void(); },
-        dx::kAccProtected);
-    builder.VirtualMethod("describeContents", "()I",
-        [](dx::IntrinsicContext&) { return dx::VmValue::Int(0); });
-    builder.VirtualMethod("writeToParcel", "(Landroid/os/Parcel;I)V",
-        [](dx::IntrinsicContext&) -> dx::VmValue {
-            throw dx::VmJavaThrow{
-                "Ljava/lang/UnsupportedOperationException;",
-                "ResultReceiver Binder parcel transport is not supported"};
-        });
-    return std::move(builder).Build();
-}
-
-}  // namespace dvm89_android_os_ResultReceiver
-
-Decl Declare_android_os_ResultReceiver(const Context& context) {
-    return dvm89_android_os_ResultReceiver::
-        Declare_android_os_ResultReceiver(context);
-}
-
-Decl Declare_android_os_ResultReceiver_MyRunnable(const Context& context) {
-    return dvm89_android_os_ResultReceiver::
-        Declare_android_os_ResultReceiver_MyRunnable(context);
-}
-
 Decl Declare_android_os_Handler_Callback(const Context&) {
     auto builder = dx::IntrinsicClassBuilder::Interface(
         "Landroid/os/Handler$Callback;");
@@ -969,9 +741,67 @@ Decl Declare_android_os_HandlerThread(const Context& context) {
 
 namespace ogplay::runtime::android_intrinsics {
 
-Decl Declare_android_os_IBinder(const Context& context) {
-    static_cast<void>(context);
-    auto builder = dx::IntrinsicClassBuilder::Interface("Landroid/os/IBinder;");
+
+Decl Declare_android_os_Binder(const Context& context) {
+    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/os/Binder;");
+    constexpr auto public_native = dx::kAccPublic | dx::kAccStatic |
+                                   dx::kAccFinal | dx::kAccNative;
+    constexpr auto private_native = dx::kAccPrivate | dx::kAccFinal |
+                                    dx::kAccNative;
+    builder.StaticMethod("getCallingPid", "()I",
+        [](dx::IntrinsicContext&) { return dx::VmValue::Int(1); }, public_native);
+    builder.StaticMethod("getCallingUid", "()I",
+        [context](dx::IntrinsicContext&) { return dx::VmValue::Int(static_cast<std::int32_t>(context->application_uid)); }, public_native);
+    builder.StaticMethod("clearCallingIdentity", "()J",
+        [context](dx::IntrinsicContext& call) {
+            auto& state = context->binder_threads[call.vm.CurrentContextToken()];
+            const auto previous = state.identity_token; state.identity_token = 0;
+            return dx::VmValue::Long(static_cast<std::int64_t>(previous));
+        }, public_native);
+    builder.StaticMethod("restoreCallingIdentity", "(J)V",
+        [context](dx::IntrinsicContext& call) {
+            context->binder_threads[call.vm.CurrentContextToken()].identity_token =
+                static_cast<std::uint64_t>(call.arguments[0].AsLong());
+            return dx::VmValue::Void();
+        }, public_native);
+    builder.StaticMethod("setThreadStrictModePolicy", "(I)V",
+        [context](dx::IntrinsicContext& call) {
+            context->binder_threads[call.vm.CurrentContextToken()].strict_mode_policy = call.arguments[0].AsInt();
+            return dx::VmValue::Void();
+        }, public_native);
+    builder.StaticMethod("getThreadStrictModePolicy", "()I",
+        [context](dx::IntrinsicContext& call) {
+            return dx::VmValue::Int(context->binder_threads[call.vm.CurrentContextToken()].strict_mode_policy);
+        }, public_native);
+    builder.StaticMethod("flushPendingCommands", "()V",
+        [](dx::IntrinsicContext&) { return dx::VmValue::Void(); }, public_native);
+    builder.StaticMethod("joinThreadPool", "()V",
+        [](dx::IntrinsicContext&) -> dx::VmValue {
+            throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "remote Binder thread pool is unsupported"};
+        }, public_native);
+    builder.DirectMethod("init", "()V",
+        [](dx::IntrinsicContext&) { return dx::VmValue::Void(); }, private_native);
+    builder.DirectMethod("destroy", "()V",
+        [](dx::IntrinsicContext&) { return dx::VmValue::Void(); }, private_native);
+    return std::move(builder).Build();
+}
+
+Decl Declare_android_os_StrictMode(const Context&) {
+    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/os/StrictMode;");
+    // Local-only Binder never runs StrictMode detectors. These are the narrow
+    // platform hooks used by the original Parcel exception protocol.
+    builder.StaticMethod("hasGatheredViolations", "()Z",
+        [](dx::IntrinsicContext&) { return dx::VmValue::Int(0); });
+    builder.StaticMethod("clearGatheredViolations", "()V",
+        [](dx::IntrinsicContext&) { return dx::VmValue::Void(); });
+    const auto unsupported = [](dx::IntrinsicContext& call) -> dx::VmValue {
+        if (auto* ledger = call.vm.Ledger())
+            ledger->RecordUnimplemented("dexvm.local_binder", 0);
+        throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
+                              "Binder StrictMode violation processing is unsupported"};
+    };
+    builder.StaticMethod("writeGatheredViolationsToParcel", "(Landroid/os/Parcel;)V", unsupported);
+    builder.StaticMethod("readAndHandleBinderCallViolations", "(Landroid/os/Parcel;)V", unsupported);
     return std::move(builder).Build();
 }
 
@@ -1153,140 +983,314 @@ Decl Declare_android_os_StatFs(const Context& context) {
 
 namespace ogplay::runtime::android_intrinsics {
 
+
 Decl Declare_android_os_Parcel(const Context& context) {
-    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/os/Parcel;", "Ljava/lang/Object;");
-    builder.Constructor("()V", [context](dx::IntrinsicContext& call) {
-        context->parcels[call.receiver.Value()] = {};
-        return dx::VmValue::Void();
-    }, dx::kAccPrivate);
-    builder.StaticMethod("obtain", "()Landroid/os/Parcel;", [context](dx::IntrinsicContext& call) {
-        const auto parcel = call.vm.NewIntrinsicInstance("Landroid/os/Parcel;");
-        context->parcels[parcel.Value()] = {};
-        return dx::VmValue::Ref(parcel);
-    });
-    builder.FinalMethod("recycle", "()V", [context](dx::IntrinsicContext& call) {
-        auto& parcel = context->parcels[call.receiver.Value()];
-        parcel.atoms.clear(); parcel.position = 0; parcel.recycled = true;
-        return dx::VmValue::Void();
-    });
-    const auto write_integer = [context](const DexVmAndroidContext::ParcelAtom::Kind kind) {
-        return dx::IntrinsicHandler([context, kind](dx::IntrinsicContext& call) {
-            auto& parcel = RequireParcel(call, context, call.receiver);
-            DexVmAndroidContext::ParcelAtom atom; atom.kind = kind;
-            atom.integer = kind == DexVmAndroidContext::ParcelAtom::Kind::integer
-                               ? call.arguments[0].AsInt() : call.arguments[0].AsLong();
-            WriteParcelAtom(parcel, std::move(atom)); return dx::VmValue::Void();
+    using Backing = DexVmAndroidContext::ParcelBacking;
+    constexpr std::size_t kMaxParcelBytes = 16U * 1024U * 1024U;
+    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/os/Parcel;");
+    const auto native_ptr = builder.BoundInstanceField(
+        "mNativePtr", "I", dx::kAccPrivate);
+    const auto owns = builder.BoundInstanceField(
+        "mOwnsNativeParcelObject", "Z", dx::kAccPrivate);
+
+    const auto require = [context](const std::int32_t raw) -> Backing& {
+        if (raw <= 0)
+            throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "invalid Parcel token"};
+        const auto found = context->parcel_backings.find(
+            static_cast<std::uint32_t>(raw));
+        if (found == context->parcel_backings.end())
+            throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "stale Parcel token"};
+        return found->second;
+    };
+    const auto resize = [](Backing& parcel, const std::size_t size) {
+        if (size > kMaxParcelBytes)
+            throw dx::VmJavaThrow{"Ljava/lang/OutOfMemoryError;", "Parcel exceeds OGPlay limit"};
+        parcel.bytes.resize(size);
+        if (parcel.position > size) parcel.position = size;
+        std::erase_if(parcel.binders, [size](const auto& record) {
+            return record.offset >= size || record.span > size - record.offset;
         });
     };
-    builder.FinalMethod("writeInt", "(I)V", write_integer(DexVmAndroidContext::ParcelAtom::Kind::integer))
-        .FinalMethod("writeLong", "(J)V", write_integer(DexVmAndroidContext::ParcelAtom::Kind::long_integer));
-    builder.FinalMethod("writeFloat", "(F)V", [context](dx::IntrinsicContext& call) {
-        auto& parcel = RequireParcel(call, context, call.receiver);
-        DexVmAndroidContext::ParcelAtom atom; atom.kind = DexVmAndroidContext::ParcelAtom::Kind::float_value;
-        atom.real = call.arguments[0].AsFloat(); WriteParcelAtom(parcel, std::move(atom));
-        return dx::VmValue::Void();
-    }).FinalMethod("writeDouble", "(D)V", [context](dx::IntrinsicContext& call) {
-        auto& parcel = RequireParcel(call, context, call.receiver);
-        DexVmAndroidContext::ParcelAtom atom; atom.kind = DexVmAndroidContext::ParcelAtom::Kind::double_value;
-        atom.real = call.arguments[0].AsDouble(); WriteParcelAtom(parcel, std::move(atom));
-        return dx::VmValue::Void();
-    }).FinalMethod("writeString", "(Ljava/lang/String;)V", [context](dx::IntrinsicContext& call) {
-        auto& parcel = RequireParcel(call, context, call.receiver);
-        DexVmAndroidContext::ParcelAtom atom; atom.kind = DexVmAndroidContext::ParcelAtom::Kind::string;
-        atom.integer = call.arguments[0].ref.IsValid() ? 0 : -1;
-        if (call.arguments[0].ref.IsValid()) atom.text = call.vm.StringUtf8(call.arguments[0].ref);
-        WriteParcelAtom(parcel, std::move(atom)); return dx::VmValue::Void();
-    }).FinalMethod("writeByteArray", "([B)V", [context](dx::IntrinsicContext& call) {
-        auto& parcel = RequireParcel(call, context, call.receiver);
-        DexVmAndroidContext::ParcelAtom atom; atom.kind = DexVmAndroidContext::ParcelAtom::Kind::byte_array;
-        atom.integer = call.arguments[0].ref.IsValid() ? 0 : -1;
-        if (call.arguments[0].ref.IsValid()) atom.bytes = call.vm.Model().ReadByteRegion(
-            call.arguments[0].ref, 0, call.vm.Model().ArrayLength(call.arguments[0].ref));
-        WriteParcelAtom(parcel, std::move(atom)); return dx::VmValue::Void();
-    }).FinalMethod("writeParcelable", "(Landroid/os/Parcelable;I)V",
-        [context](dx::IntrinsicContext& call) {
-            auto& parcel = RequireParcel(call, context, call.receiver);
-            DexVmAndroidContext::ParcelAtom atom; atom.kind = DexVmAndroidContext::ParcelAtom::Kind::object;
-            atom.object = call.arguments[0].ref;
-            if (atom.object.IsValid()) {
-                const auto descriptor = call.vm.Linker().Class(
-                    call.vm.Model().ObjectClass(atom.object)).descriptor;
-                if (descriptor == "Landroid/os/Bundle;") {
-                    atom.text = "Bundle";
-                    atom.object = NewAndroidBundle(call.vm, atom.object);
-                }
-            }
-            WriteParcelAtom(parcel, std::move(atom));
-            return dx::VmValue::Void();
-        }).FinalMethod("writeBundle", "(Landroid/os/Bundle;)V",
-        [context](dx::IntrinsicContext& call) {
-            auto& parcel = RequireParcel(call, context, call.receiver);
-            DexVmAndroidContext::ParcelAtom atom; atom.kind = DexVmAndroidContext::ParcelAtom::Kind::object;
-            if (call.arguments[0].ref.IsValid()) {
-                atom.text = "Bundle";
-                atom.object = NewAndroidBundle(call.vm, call.arguments[0].ref);
-            }
-            WriteParcelAtom(parcel, std::move(atom));
-            return dx::VmValue::Void();
+    const auto write = [resize](Backing& parcel, const std::span<const std::byte> bytes) {
+        if (bytes.size() > kMaxParcelBytes - parcel.position)
+            throw dx::VmJavaThrow{"Ljava/lang/OutOfMemoryError;", "Parcel exceeds OGPlay limit"};
+        const auto end = parcel.position + bytes.size();
+        if (end > parcel.bytes.size()) resize(parcel, end);
+        std::erase_if(parcel.binders, [start = parcel.position, end](const auto& record) {
+            return record.offset < end && start < record.offset + record.span;
         });
-    builder.FinalMethod("readInt", "()I", [context](dx::IntrinsicContext& call) {
-        return dx::VmValue::Int(static_cast<std::int32_t>(ReadParcelAtom(
-            RequireParcel(call, context, call.receiver), DexVmAndroidContext::ParcelAtom::Kind::integer).integer));
-    }).FinalMethod("readLong", "()J", [context](dx::IntrinsicContext& call) {
-        return dx::VmValue::Long(ReadParcelAtom(RequireParcel(call, context, call.receiver),
-            DexVmAndroidContext::ParcelAtom::Kind::long_integer).integer);
-    }).FinalMethod("readFloat", "()F", [context](dx::IntrinsicContext& call) {
-        return dx::VmValue::Float(static_cast<float>(ReadParcelAtom(RequireParcel(call, context, call.receiver),
-            DexVmAndroidContext::ParcelAtom::Kind::float_value).real));
-    }).FinalMethod("readDouble", "()D", [context](dx::IntrinsicContext& call) {
-        return dx::VmValue::Double(ReadParcelAtom(RequireParcel(call, context, call.receiver),
-            DexVmAndroidContext::ParcelAtom::Kind::double_value).real);
-    }).FinalMethod("readString", "()Ljava/lang/String;", [context](dx::IntrinsicContext& call) {
-        const auto atom = ReadParcelAtom(RequireParcel(call, context, call.receiver),
-            DexVmAndroidContext::ParcelAtom::Kind::string);
-        return atom.integer < 0 ? dx::VmValue::Ref(dx::VmObjectRef{}) : MakeString(call, atom.text);
-    }).FinalMethod("createByteArray", "()[B", [context](dx::IntrinsicContext& call) {
-        const auto atom = ReadParcelAtom(RequireParcel(call, context, call.receiver),
-            DexVmAndroidContext::ParcelAtom::Kind::byte_array);
-        if (atom.integer < 0) return dx::VmValue::Ref(dx::VmObjectRef{});
-        const auto result = call.vm.Model().NewPrimitiveArray(call.vm.Linker().ResolveDescriptor("[B"),
-            JniPrimitiveKind::byte, static_cast<JniSize>(atom.bytes.size()));
-        call.vm.Model().WriteByteRegion(result, 0, atom.bytes);
-        return dx::VmValue::Ref(result);
-    }).FinalMethod("readParcelable", "(Ljava/lang/ClassLoader;)Landroid/os/Parcelable;",
-        [context](dx::IntrinsicContext& call) {
-            const auto atom = ReadParcelAtom(RequireParcel(call, context, call.receiver),
-                DexVmAndroidContext::ParcelAtom::Kind::object);
-            if (atom.text == "Bundle") {
-                return dx::VmValue::Ref(NewAndroidBundle(call.vm, atom.object));
+        std::copy(bytes.begin(), bytes.end(), parcel.bytes.begin() +
+                  static_cast<std::ptrdiff_t>(parcel.position));
+        parcel.position = end;
+    };
+    const auto read = [](Backing& parcel, const std::size_t count) {
+        if (count > parcel.bytes.size() - std::min(parcel.position, parcel.bytes.size()))
+            throw dx::VmJavaThrow{"Ljava/lang/IndexOutOfBoundsException;", "Parcel underflow"};
+        const auto start = parcel.position;
+        parcel.position += count;
+        return std::span<const std::byte>(parcel.bytes).subspan(start, count);
+    };
+    const auto write32 = [write](Backing& parcel, const std::uint32_t value) {
+        const std::array bytes{std::byte(value), std::byte(value >> 8U),
+                               std::byte(value >> 16U), std::byte(value >> 24U)};
+        write(parcel, bytes);
+    };
+    const auto read32 = [read](Backing& parcel) {
+        const auto bytes = read(parcel, 4U);
+        return std::uint32_t(bytes[0]) | (std::uint32_t(bytes[1]) << 8U) |
+               (std::uint32_t(bytes[2]) << 16U) | (std::uint32_t(bytes[3]) << 24U);
+    };
+    const auto write64 = [write](Backing& parcel, const std::uint64_t value) {
+        std::array<std::byte, 8> bytes{};
+        for (std::size_t i = 0; i < bytes.size(); ++i)
+            bytes[i] = std::byte(value >> (i * 8U));
+        write(parcel, bytes);
+    };
+    const auto read64 = [read](Backing& parcel) {
+        const auto bytes = read(parcel, 8U);
+        std::uint64_t value{};
+        for (std::size_t i = 0; i < bytes.size(); ++i)
+            value |= std::uint64_t(bytes[i]) << (i * 8U);
+        return value;
+    };
+    const auto native_flags = dx::kAccPrivate | dx::kAccStatic | dx::kAccNative;
+
+    builder.DirectMethod("init", "(I)V",
+        [context, native_ptr, owns](dx::IntrinsicContext& call) {
+            if (call.arguments[0].AsInt() != 0)
+                throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
+                                      "imported Parcel holders are unsupported"};
+            auto token = context->next_parcel_token++;
+            if (token == 0 || context->parcel_backings.contains(token))
+                throw dx::VmJavaThrow{"Ljava/lang/OutOfMemoryError;", "Parcel token space exhausted"};
+            context->parcel_backings.emplace(token, Backing{});
+            context->parcel_owner_tokens[call.receiver.Value()] = token;
+            dx::IntrinsicCall fields(call);
+            fields.SetInt(native_ptr, static_cast<std::int32_t>(token));
+            fields.SetInt(owns, 1);
+            return dx::VmValue::Void();
+        }, dx::kAccPrivate | dx::kAccFinal);
+    builder.StaticMethod("nativeCreate", "()I", [](dx::IntrinsicContext&) -> dx::VmValue {
+        throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
+                              "bare Parcel allocation has no guest owner"};
+    }, native_flags);
+    builder.StaticMethod("nativeFreeBuffer", "(I)V", [require](dx::IntrinsicContext& call) {
+        auto& parcel = require(call.arguments[0].AsInt());
+        parcel.bytes.clear(); parcel.position = 0; parcel.binders.clear();
+        return dx::VmValue::Void();
+    }, native_flags);
+    builder.StaticMethod("nativeDestroy", "(I)V", [context](dx::IntrinsicContext& call) {
+        const auto token = static_cast<std::uint32_t>(call.arguments[0].AsInt());
+        context->parcel_backings.erase(token);
+        return dx::VmValue::Void();
+    }, native_flags);
+    builder.StaticMethod("nativeDataSize", "(I)I", [require](dx::IntrinsicContext& call) {
+        return dx::VmValue::Int(static_cast<std::int32_t>(require(call.arguments[0].AsInt()).bytes.size()));
+    }, native_flags);
+    builder.StaticMethod("nativeDataAvail", "(I)I", [require](dx::IntrinsicContext& call) {
+        const auto& p = require(call.arguments[0].AsInt());
+        return dx::VmValue::Int(static_cast<std::int32_t>(p.bytes.size() - std::min(p.position, p.bytes.size())));
+    }, native_flags);
+    builder.StaticMethod("nativeDataPosition", "(I)I", [require](dx::IntrinsicContext& call) {
+        return dx::VmValue::Int(static_cast<std::int32_t>(require(call.arguments[0].AsInt()).position));
+    }, native_flags);
+    builder.StaticMethod("nativeDataCapacity", "(I)I", [require](dx::IntrinsicContext& call) {
+        return dx::VmValue::Int(static_cast<std::int32_t>(require(call.arguments[0].AsInt()).bytes.capacity()));
+    }, native_flags);
+    builder.StaticMethod("nativeSetDataSize", "(II)V", [require, resize](dx::IntrinsicContext& call) {
+        if (call.arguments[1].AsInt() < 0) throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "size"};
+        resize(require(call.arguments[0].AsInt()), static_cast<std::size_t>(call.arguments[1].AsInt()));
+        return dx::VmValue::Void();
+    }, native_flags);
+    builder.StaticMethod("nativeSetDataPosition", "(II)V", [require](dx::IntrinsicContext& call) {
+        auto& p = require(call.arguments[0].AsInt());
+        const auto pos = call.arguments[1].AsInt();
+        if (pos < 0 || static_cast<std::size_t>(pos) > p.bytes.size())
+            throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "position"};
+        p.position = static_cast<std::size_t>(pos); return dx::VmValue::Void();
+    }, native_flags);
+    builder.StaticMethod("nativeSetDataCapacity", "(II)V", [require](dx::IntrinsicContext& call) {
+        auto& p = require(call.arguments[0].AsInt()); const auto size = call.arguments[1].AsInt();
+        if (size < 0 || static_cast<std::size_t>(size) > kMaxParcelBytes)
+            throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "capacity"};
+        p.bytes.reserve(static_cast<std::size_t>(size)); return dx::VmValue::Void();
+    }, native_flags);
+    builder.StaticMethod("nativePushAllowFds", "(IZ)Z", [require](dx::IntrinsicContext& call) {
+        auto& p = require(call.arguments[0].AsInt()); const bool old = p.allow_fds;
+        p.allow_fds = call.arguments[1].AsInt() != 0; return dx::VmValue::Int(old ? 1 : 0);
+    }, native_flags);
+    builder.StaticMethod("nativeRestoreAllowFds", "(IZ)V", [require](dx::IntrinsicContext& call) {
+        require(call.arguments[0].AsInt()).allow_fds = call.arguments[1].AsInt() != 0;
+        return dx::VmValue::Void();
+    }, native_flags);
+    builder.StaticMethod("nativeWriteInt", "(II)V", [require, write32](dx::IntrinsicContext& call) {
+        write32(require(call.arguments[0].AsInt()), static_cast<std::uint32_t>(call.arguments[1].AsInt()));
+        return dx::VmValue::Void();
+    }, native_flags);
+    builder.StaticMethod("nativeReadInt", "(I)I", [require, read32](dx::IntrinsicContext& call) {
+        return dx::VmValue::Int(static_cast<std::int32_t>(read32(require(call.arguments[0].AsInt()))));
+    }, native_flags);
+    builder.StaticMethod("nativeWriteLong", "(IJ)V", [require, write64](dx::IntrinsicContext& call) {
+        write64(require(call.arguments[0].AsInt()), static_cast<std::uint64_t>(call.arguments[1].AsLong()));
+        return dx::VmValue::Void();
+    }, native_flags);
+    builder.StaticMethod("nativeReadLong", "(I)J", [require, read64](dx::IntrinsicContext& call) {
+        return dx::VmValue::Long(static_cast<std::int64_t>(read64(require(call.arguments[0].AsInt()))));
+    }, native_flags);
+    builder.StaticMethod("nativeWriteFloat", "(IF)V", [require, write32](dx::IntrinsicContext& call) {
+        write32(require(call.arguments[0].AsInt()), std::bit_cast<std::uint32_t>(call.arguments[1].AsFloat()));
+        return dx::VmValue::Void();
+    }, native_flags);
+    builder.StaticMethod("nativeReadFloat", "(I)F", [require, read32](dx::IntrinsicContext& call) {
+        return dx::VmValue::Float(std::bit_cast<float>(read32(require(call.arguments[0].AsInt()))));
+    }, native_flags);
+    builder.StaticMethod("nativeWriteDouble", "(ID)V", [require, write64](dx::IntrinsicContext& call) {
+        write64(require(call.arguments[0].AsInt()), std::bit_cast<std::uint64_t>(call.arguments[1].AsDouble()));
+        return dx::VmValue::Void();
+    }, native_flags);
+    builder.StaticMethod("nativeReadDouble", "(I)D", [require, read64](dx::IntrinsicContext& call) {
+        return dx::VmValue::Double(std::bit_cast<double>(read64(require(call.arguments[0].AsInt()))));
+    }, native_flags);
+    builder.StaticMethod("nativeWriteString", "(ILjava/lang/String;)V",
+        [require, write32, write](dx::IntrinsicContext& call) {
+            auto& p = require(call.arguments[0].AsInt()); const auto ref = call.arguments[1].ref;
+            if (!ref.IsValid()) { write32(p, 0xffffffffU); return dx::VmValue::Void(); }
+            const auto value = call.vm.Model().StringValue(ref);
+            write32(p, static_cast<std::uint32_t>(value.size()));
+            for (const auto unit : value) {
+                const std::array bytes{std::byte(unit), std::byte(unit >> 8U)}; write(p, bytes);
             }
-            return dx::VmValue::Ref(atom.object);
-        }).FinalMethod("readBundle", "()Landroid/os/Bundle;", [context](dx::IntrinsicContext& call) {
-            const auto atom = ReadParcelAtom(RequireParcel(call, context, call.receiver),
-                DexVmAndroidContext::ParcelAtom::Kind::object);
-            if (atom.text != "Bundle") return dx::VmValue::Ref(dx::VmObjectRef{});
-            return dx::VmValue::Ref(NewAndroidBundle(call.vm, atom.object));
-        });
-    builder.FinalMethod("dataSize", "()I", [context](dx::IntrinsicContext& call) {
-        const auto& parcel = RequireParcel(call, context, call.receiver);
-        std::size_t bytes{}; for (const auto& atom : parcel.atoms) bytes += ParcelAtomBytes(atom);
-        return dx::VmValue::Int(static_cast<std::int32_t>(bytes));
-    }).FinalMethod("dataPosition", "()I", [context](dx::IntrinsicContext& call) {
-        const auto& parcel = RequireParcel(call, context, call.receiver);
-        std::size_t bytes{};
-        for (std::size_t i = 0; i < parcel.position; ++i) bytes += ParcelAtomBytes(parcel.atoms[i]);
-        return dx::VmValue::Int(static_cast<std::int32_t>(bytes));
-    }).FinalMethod("setDataPosition", "(I)V", [context](dx::IntrinsicContext& call) {
-        auto& parcel = RequireParcel(call, context, call.receiver);
-        const auto target = call.arguments[0].AsInt();
-        if (target < 0) throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "position"};
-        std::size_t bytes{}; std::size_t index{};
-        while (index < parcel.atoms.size() && bytes < static_cast<std::size_t>(target))
-            bytes += ParcelAtomBytes(parcel.atoms[index++]);
-        if (bytes != static_cast<std::size_t>(target))
-            throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "position is not an item boundary"};
-        parcel.position = index; return dx::VmValue::Void();
-    });
+            const std::array zero{std::byte{0}, std::byte{0}}; write(p, zero);
+            while ((p.position & 3U) != 0U) { const std::array pad{std::byte{0}}; write(p, pad); }
+            return dx::VmValue::Void();
+        }, native_flags);
+    builder.StaticMethod("nativeReadString", "(I)Ljava/lang/String;",
+        [require, read32, read](dx::IntrinsicContext& call) {
+            auto& p = require(call.arguments[0].AsInt()); const auto length = read32(p);
+            if (length == 0xffffffffU) return dx::VmValue::Ref(dx::VmObjectRef{});
+            if (length > (kMaxParcelBytes / 2U)) throw dx::VmJavaThrow{"Ljava/lang/IndexOutOfBoundsException;", "string length"};
+            std::u16string value; value.reserve(length);
+            for (std::uint32_t i = 0; i < length; ++i) { const auto b = read(p, 2U); value.push_back(char16_t(std::uint16_t(b[0]) | (std::uint16_t(b[1]) << 8U))); }
+            static_cast<void>(read(p, 2U)); while ((p.position & 3U) != 0U) static_cast<void>(read(p, 1U));
+            return dx::VmValue::Ref(call.vm.Model().NewString(value));
+        }, native_flags);
+    builder.StaticMethod("nativeWriteByteArray", "(I[BII)V",
+        [require, write32, write](dx::IntrinsicContext& call) {
+            auto& p = require(call.arguments[0].AsInt()); const auto array = call.arguments[1].ref;
+            const auto offset = call.arguments[2].AsInt(), length = call.arguments[3].AsInt();
+            if (!array.IsValid()) { write32(p, 0xffffffffU); return dx::VmValue::Void(); }
+            const auto total = call.vm.Model().ArrayLength(array);
+            if (offset < 0 || length < 0 || offset > total || length > total - offset)
+                throw dx::VmJavaThrow{"Ljava/lang/ArrayIndexOutOfBoundsException;", "byte array range"};
+            write32(p, static_cast<std::uint32_t>(length));
+            const auto bytes = call.vm.Model().ReadByteRegion(array, offset, length); write(p, bytes);
+            while ((p.position & 3U) != 0U) { const std::array pad{std::byte{0}}; write(p, pad); }
+            return dx::VmValue::Void();
+        }, native_flags);
+    builder.StaticMethod("nativeCreateByteArray", "(I)[B",
+        [require, read32, read](dx::IntrinsicContext& call) {
+            auto& p = require(call.arguments[0].AsInt()); const auto length = read32(p);
+            if (length == 0xffffffffU) return dx::VmValue::Ref(dx::VmObjectRef{});
+            if (length > kMaxParcelBytes) throw dx::VmJavaThrow{"Ljava/lang/IndexOutOfBoundsException;", "array length"};
+            const auto bytes = read(p, length);
+            const auto result = call.vm.Model().NewPrimitiveArray(call.vm.Linker().ResolveDescriptor("[B"), JniPrimitiveKind::byte, static_cast<JniSize>(length));
+            call.vm.Model().WriteByteRegion(result, 0, bytes);
+            while ((p.position & 3U) != 0U) static_cast<void>(read(p, 1U));
+            return dx::VmValue::Ref(result);
+        }, native_flags);
+    builder.StaticMethod("nativeWriteStrongBinder", "(ILandroid/os/IBinder;)V",
+        [require, write](dx::IntrinsicContext& call) {
+            auto& p = require(call.arguments[0].AsInt()); const auto offset = p.position;
+            std::array<std::byte, 16> flat{}; write(p, flat);
+            if (call.arguments[1].ref.IsValid()) p.binders.push_back({offset, flat.size(), call.arguments[1].ref});
+            return dx::VmValue::Void();
+        }, native_flags);
+    builder.StaticMethod("nativeReadStrongBinder", "(I)Landroid/os/IBinder;",
+        [require, read](dx::IntrinsicContext& call) {
+            auto& p = require(call.arguments[0].AsInt()); const auto offset = p.position;
+            static_cast<void>(read(p, 16U));
+            const auto it = std::find_if(p.binders.begin(), p.binders.end(), [offset](const auto& r) { return r.offset == offset; });
+            return dx::VmValue::Ref(it == p.binders.end() ? dx::VmObjectRef{} : it->binder);
+        }, native_flags);
+    builder.StaticMethod("nativeHasFileDescriptors", "(I)Z", [](dx::IntrinsicContext&) { return dx::VmValue::Int(0); }, native_flags);
+    const auto fd_unsupported = [](dx::IntrinsicContext&) -> dx::VmValue {
+        throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "Parcel file descriptors are unsupported"};
+    };
+    builder.StaticMethod("nativeWriteFileDescriptor", "(ILjava/io/FileDescriptor;)V", fd_unsupported, native_flags);
+    builder.StaticMethod("nativeReadFileDescriptor", "(I)Ljava/io/FileDescriptor;", fd_unsupported, native_flags);
+    constexpr auto package_native = dx::kAccStatic | dx::kAccNative;
+    builder.StaticMethod("openFileDescriptor", "(Ljava/lang/String;I)Ljava/io/FileDescriptor;", fd_unsupported, package_native);
+    builder.StaticMethod("dupFileDescriptor", "(Ljava/io/FileDescriptor;)Ljava/io/FileDescriptor;", fd_unsupported, package_native);
+    builder.StaticMethod("closeFileDescriptor", "(Ljava/io/FileDescriptor;)V", fd_unsupported, package_native);
+    builder.StaticMethod("clearFileDescriptor", "(Ljava/io/FileDescriptor;)V", fd_unsupported, package_native);
+    builder.StaticMethod("nativeMarshall", "(I)[B", [require](dx::IntrinsicContext& call) {
+        const auto& p = require(call.arguments[0].AsInt());
+        if (!p.binders.empty()) throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "cannot marshall Binder objects"};
+        const auto result = call.vm.Model().NewPrimitiveArray(call.vm.Linker().ResolveDescriptor("[B"), JniPrimitiveKind::byte, static_cast<JniSize>(p.bytes.size()));
+        call.vm.Model().WriteByteRegion(result, 0, p.bytes); return dx::VmValue::Ref(result);
+    }, native_flags);
+    builder.StaticMethod("nativeUnmarshall", "(I[BII)V", [require, resize](dx::IntrinsicContext& call) {
+        auto& p = require(call.arguments[0].AsInt()); const auto array = call.arguments[1].ref;
+        const auto offset = call.arguments[2].AsInt(), length = call.arguments[3].AsInt();
+        if (!array.IsValid()) throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;", "data"};
+        const auto total = call.vm.Model().ArrayLength(array);
+        if (offset < 0 || length < 0 || offset > total || length > total - offset)
+            throw dx::VmJavaThrow{"Ljava/lang/ArrayIndexOutOfBoundsException;", "unmarshall range"};
+        resize(p, static_cast<std::size_t>(length));
+        const auto bytes = call.vm.Model().ReadByteRegion(array, offset, length);
+        std::copy(bytes.begin(), bytes.end(), p.bytes.begin()); p.position = 0; p.binders.clear();
+        return dx::VmValue::Void();
+    }, native_flags);
+    builder.StaticMethod("nativeAppendFrom", "(IIII)V", [require, write](dx::IntrinsicContext& call) {
+        auto& target = require(call.arguments[0].AsInt()); auto& source = require(call.arguments[1].AsInt());
+        const auto offset = call.arguments[2].AsInt(), length = call.arguments[3].AsInt();
+        if (offset < 0 || length < 0 || static_cast<std::size_t>(offset) > source.bytes.size() ||
+            static_cast<std::size_t>(length) > source.bytes.size() - static_cast<std::size_t>(offset))
+            throw dx::VmJavaThrow{"Ljava/lang/IndexOutOfBoundsException;", "append range"};
+        const auto source_start = static_cast<std::size_t>(offset), source_end = source_start + static_cast<std::size_t>(length);
+        for (const auto& record : source.binders) {
+            const bool overlaps = record.offset < source_end && source_start < record.offset + record.span;
+            const bool contained = record.offset >= source_start && record.offset + record.span <= source_end;
+            if (overlaps && !contained) throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "partial Binder record append"};
+        }
+        const auto source_records = source.binders;
+        const auto target_start = target.position;
+        const std::vector copy(source.bytes.begin() + offset, source.bytes.begin() + offset + length);
+        write(target, copy);
+        for (const auto& record : source_records) if (record.offset >= source_start && record.offset + record.span <= source_end)
+            target.binders.push_back({target_start + record.offset - source_start, record.span, record.binder});
+        return dx::VmValue::Void();
+    }, native_flags);
+    builder.StaticMethod("nativeWriteInterfaceToken", "(ILjava/lang/String;)V",
+        [context, require, write32, write](dx::IntrinsicContext& call) {
+            auto& p = require(call.arguments[0].AsInt());
+            // API19 STRICT_MODE_PENALTY_GATHER. Recording a mask does not run detectors.
+            write32(p, static_cast<std::uint32_t>(context->binder_threads[
+                call.vm.CurrentContextToken()].strict_mode_policy) | 0x100U);
+            const auto value = call.vm.Model().StringValue(call.arguments[1].ref); write32(p, static_cast<std::uint32_t>(value.size()));
+            for (const auto unit : value) { const std::array bytes{std::byte(unit), std::byte(unit >> 8U)}; write(p, bytes); }
+            const std::array zero{std::byte{0}, std::byte{0}}; write(p, zero);
+            while ((p.position & 3U) != 0U) { const std::array pad{std::byte{0}}; write(p, pad); }
+            return dx::VmValue::Void();
+        }, native_flags);
+    builder.StaticMethod("nativeEnforceInterface", "(ILjava/lang/String;)V",
+        [context, require, read32, read](dx::IntrinsicContext& call) {
+            auto& p = require(call.arguments[0].AsInt());
+            const auto policy = read32(p);
+            const auto length = read32(p);
+            const auto remaining = p.bytes.size() - p.position;
+            if (length > kMaxParcelBytes / 2U ||
+                (static_cast<std::size_t>(length) + 1U) * 2U > remaining)
+                throw dx::VmJavaThrow{"Ljava/lang/SecurityException;", "invalid Binder interface length"};
+            std::u16string actual; actual.reserve(length);
+            for (std::uint32_t i = 0; i < length; ++i) { const auto b = read(p, 2U); actual.push_back(char16_t(std::uint16_t(b[0]) | (std::uint16_t(b[1]) << 8U))); }
+            static_cast<void>(read(p, 2U)); while ((p.position & 3U) != 0U) static_cast<void>(read(p, 1U));
+            if (actual != call.vm.Model().StringValue(call.arguments[1].ref))
+                throw dx::VmJavaThrow{"Ljava/lang/SecurityException;", "Binder interface mismatch"};
+            context->binder_threads[call.vm.CurrentContextToken()].strict_mode_policy =
+                static_cast<std::int32_t>(policy);
+            return dx::VmValue::Void();
+        }, native_flags);
     return std::move(builder).Build();
 }
 
@@ -1463,15 +1467,26 @@ void RegisterAndroidValueStateTables(
     vm.RegisterIntrinsicStateTable({
         "android.value",
         [context](const dexvm::VmObjectRef owner, const dexvm::VmRootVisitor& visit) {
-            if (const auto parcel = context->parcels.find(owner.Value());
-                parcel != context->parcels.end()) {
-                for (const auto& atom : parcel->second.atoms)
-                    if (atom.object.IsValid()) visit(atom.object);
+            if (const auto connections = context->service_connections.find(owner.Value());
+                connections != context->service_connections.end())
+                for (const auto connection : connections->second) visit(connection);
+            if (const auto token = context->parcel_owner_tokens.find(owner.Value());
+                token != context->parcel_owner_tokens.end()) {
+                if (const auto parcel = context->parcel_backings.find(token->second);
+                    parcel != context->parcel_backings.end()) {
+                    for (const auto& record : parcel->second.binders)
+                        if (record.binder.IsValid()) visit(record.binder);
+                }
             }
         },
         [context](const dexvm::VmObjectRef owner) {
+            context->service_connections.erase(owner.Value());
             context->paths.erase(owner.Value());
-            context->parcels.erase(owner.Value());
+            if (const auto token = context->parcel_owner_tokens.find(owner.Value());
+                token != context->parcel_owner_tokens.end()) {
+                context->parcel_backings.erase(token->second);
+                context->parcel_owner_tokens.erase(token);
+            }
             context->wake_locks.erase(owner.Value());
         }, {}});
 }

@@ -95,13 +95,13 @@ namespace ogplay::runtime::android_intrinsics {
 [[nodiscard]] Decl Declare_android_os_AsyncTask_Status(const Context& context);
 [[nodiscard]] Decl Declare_android_os_AsyncTask_Worker(const Context& context);
 [[nodiscard]] Decl Declare_android_os_SystemProperties(const Context& context);
-[[nodiscard]] Decl Declare_android_os_Bundle(const Context& context);
+[[nodiscard]] Decl Declare_android_os_Binder(const Context& context);
+[[nodiscard]] Decl Declare_android_os_StrictMode(const Context& context);
 [[nodiscard]] Decl Declare_android_os_CountDownTimer(const Context& context);
 [[nodiscard]] Decl Declare_android_os_Environment(const Context& context);
 [[nodiscard]] Decl Declare_android_os_Handler(const Context& context);
 [[nodiscard]] Decl Declare_android_os_Handler_Callback(const Context& context);
 [[nodiscard]] Decl Declare_android_os_HandlerThread(const Context& context);
-[[nodiscard]] Decl Declare_android_os_IBinder(const Context& context);
 [[nodiscard]] Decl Declare_android_os_Looper(const Context& context);
 [[nodiscard]] Decl Declare_android_os_Message(const Context& context);
 [[nodiscard]] Decl Declare_android_os_SystemClock(const Context& context);
@@ -110,8 +110,6 @@ namespace ogplay::runtime::android_intrinsics {
 [[nodiscard]] Decl Declare_android_os_ParcelFileDescriptor(const Context& context);
 [[nodiscard]] Decl Declare_android_os_PowerManager(const Context& context);
 [[nodiscard]] Decl Declare_android_os_PowerManager_WakeLock(const Context& context);
-[[nodiscard]] Decl Declare_android_os_ResultReceiver(const Context& context);
-[[nodiscard]] Decl Declare_android_os_ResultReceiver_MyRunnable(const Context& context);
 [[nodiscard]] Decl Declare_android_os_Vibrator(const Context& context);
 [[nodiscard]] Decl Declare_android_os_Process(const Context& context);
 [[nodiscard]] Decl Declare_android_provider_Settings_Secure(const Context& context);

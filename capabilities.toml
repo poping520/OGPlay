@@ -1621,9 +1621,14 @@ test = "tests/dexvm/android_value_tests.cpp: DVM-140"
 note = "DVM-140 Intent.putExtras(Bundle) 复用唯一 mExtras 并委托 BootDex Bundle.putAll，浅合并/同名覆盖/值身份与 null 异常遵循 API19，返回 this；双后端覆盖 GC 和源映射隔离。不包含 Intent 重载、replaceExtras 或系统广播"
 
 [dexvm.bundle_bootdex]
-status = "partial"
-test = "tests/dexvm/android_value_tests.cpp: DVM-117; tests/dexvm/bootdex_library_tests.cpp: DVM-103; tests/session/profile_entry_scope_tests.cpp; tests/runtime/native_library_loader_tests.cpp"
-note = "DVM-117/ADR-0045：Bundle/CREATOR、ArrayMap/MapCollections 及内部类迁入 BootDex；Intent.mExtras 普通字段为唯一 extra 来源，String/int/Serializable/Integer ArrayList 的 typed put/get/remove/hasExtra 委托 Java，getExtras 为独立映射浅副本。旧 Bundle/Intent 类型侧表已删除，元数据由 Java Bundle 填充。两条 Bundle Parcel 传输入口维持既有进程内 typed atom，保存/读取 Java 浅副本并由 Parcel 强引用追踪；没有深序列化、Android 字节协议、Binder 或 FD transport。双后端覆盖对象身份/null/跨类型覆盖、碰撞/活视图、GC 和 CREATOR。"
+status = "complete"
+test = "tests/dexvm/android_value_tests.cpp; tests/dexvm/scheduler_tests.cpp; tests/dexvm/bootdex_library_tests.cpp"
+note = "BootDex-first 本地 Binder WU：Bundle/Intent/ResultReceiver 的普通 Parcel 协议执行 API19 Java；唯一 C++ backend 保存对齐字节、游标与 Binder 对象记录。Bundle/Serializable 值按 wire 重建，ResultReceiver 经 IResultReceiver 本地 Binder 往返；FD、远程 Binder、系统服务仍明确不支持。"
+
+[dexvm.local_binder]
+status = "complete"
+test = "tests/dexvm/scheduler_tests.cpp; tests/dexvm/android_value_tests.cpp; tests/dexvm/bootdex_library_tests.cpp; architecture.dexvm_intrinsic_layout"
+note = "API19 IInterface/IBinder/Binder/Parcel/ResultReceiver/IResultReceiver 归 BootDex；Binder 普通 transact/queryLocalInterface/onTransact 保持 Java 虚派，integration 只保留身份、线程 StrictMode 与 Parcel 字节/本地引用 native。StrictMode 只提供禁用检测下的 Parcel 查询/清理边界，保留接口策略头且拒绝 violation 处理；API19 异常协议执行 BootDex。无 Binder 驱动、跨进程 IPC、BinderProxy 后端或系统服务。原规范八组完整验收仍以 DVM-144 的实测和待验项目为准。"
 
 [dexvm.backup_service]
 status = "partial"
@@ -1633,7 +1638,7 @@ note = "DVM-116/ADR-0044：BackupManager/RestoreObserver 执行 pinned API 19 Ja
 [dexvm.service_resolution]
 status = "partial"
 test = "tests/loader/apk_manifest_tests.cpp; tests/dexvm/android_value_tests.cpp; tests/runtime/native_library_loader_tests.cpp; DVM-112"
-note = "DVM-112/ADR-0042：ServiceConnection 原版双回调接口选入 BootDex；Manifest 保存 application enabled、service 名称/enabled/过滤器 action/category/data 存在标记，AndroidAppProcess 装配唯一 context。resolveService 仅接受非空 action、无 component/data/type/categories、flags=0 的查询，基于当前 APK 信息排除 disabled 与 action 不匹配项，无候选返回 null；没有外部安装包/平台服务目录。未装配信息、潜在匹配、data 条件或其他查询形态记账并抛 UnsupportedOperationException；null Intent 抛 NPE。DVM-142 补齐 ResolveInfo/ServiceInfo 返回类型及相关值类，使 PackageManager 公共方法反射可解析；仍不物化正匹配结果。bindService/unbindService、Binder 与支付未实现；能力保持 partial。"
+note = "DVM-112/ADR-0042：ServiceConnection 原版双回调接口选入 BootDex；Manifest 保存 application enabled、service 名称/enabled/过滤器 action/category/data 存在标记，AndroidAppProcess 装配唯一 context。resolveService 仅接受非空 action、无 component/data/type/categories、flags=0 的查询，基于当前 APK 信息排除 disabled 与 action 不匹配项，无候选返回 null；没有外部安装包/平台服务目录。未装配信息、潜在匹配、data 条件或其他查询形态记账并抛 UnsupportedOperationException；null Intent 抛 NPE。DVM-142 补齐 ResolveInfo/ServiceInfo 返回类型及相关值类，使 PackageManager 公共方法反射可解析；仍不物化正匹配结果。bindService 复用缺席判定并在返回 false 前登记连接，unbindService 清理登记且重复解绑明确失败；本地 Service 生命周期与支付未实现，能力保持 partial。"
 
 [dexvm.typeface]
 status = "partial"

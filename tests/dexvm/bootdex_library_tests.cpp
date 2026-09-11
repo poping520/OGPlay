@@ -1516,6 +1516,7 @@ TEST_CASE("DVM-103 all BootDex classes link and collection methods have no intri
             descriptor == "Ljava/security/ProviderException;" ||
             descriptor.starts_with("Lcom/android/org/conscrypt/OpenSSLMessageDigestJDK") ||
             descriptor.starts_with("Landroid/") ||
+            descriptor.starts_with("Lcom/android/internal/os/IResultReceiver") ||
             descriptor == "Lcom/android/internal/util/ArrayUtils;" ||
             descriptor.starts_with("Ljavax/crypto/") ||
             descriptor.starts_with("Lcom/android/org/conscrypt/OpenSSLCipher$") ||
@@ -1537,9 +1538,8 @@ TEST_CASE("DVM-103 all BootDex classes link and collection methods have no intri
                     CHECK(linked.kind == MethodKind::intrinsic);
                     return;
                 }
-                if (descriptor == "Landroid/os/Bundle;" &&
-                    ((linked.name == "writeToParcel" && linked.descriptor == "(Landroid/os/Parcel;I)V") ||
-                     (linked.name == "readFromParcel" && linked.descriptor == "(Landroid/os/Parcel;)V"))) {
+                if (descriptor == "Landroid/os/Parcel;" &&
+                    linked.name == "init" && linked.descriptor == "(I)V") {
                     CHECK(linked.kind == MethodKind::intrinsic);
                     return;
                 }
@@ -1564,7 +1564,7 @@ TEST_CASE("DVM-103 all BootDex classes link and collection methods have no intri
         for (const auto method : f.linker.Class(type).own_direct_methods)
             CHECK(f.linker.Method(method).kind != MethodKind::intrinsic);
     }
-    CHECK(count == 1021);
+    CHECK(count == 1041);
 }
 
 TEST_CASE("DVM-103 bounded queues and Collections wrappers use API19 semantics") {

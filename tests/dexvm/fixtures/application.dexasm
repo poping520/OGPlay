@@ -738,3 +738,85 @@
     sget v0, Lfixture/ServiceProbe;->callbacks:I
     return v0
 .end method
+
+
+# DVM-144: real application Binder endpoint and forced Java Proxy path.
+.class public Lfixture/EchoBinder;
+.super Landroid/os/Binder;
+.implements Landroid/os/IInterface;
+
+.method public constructor <init>()V
+.registers 2
+    invoke-direct {v1}, Landroid/os/Binder;-><init>()V
+    const-string v0, "fixture.echo"
+    invoke-virtual {v1, v1, v0}, Landroid/os/Binder;->attachInterface(Landroid/os/IInterface;Ljava/lang/String;)V
+    return-void
+.end method
+
+.method public asBinder()Landroid/os/IBinder;
+.registers 1
+    return-object v0
+.end method
+
+.method protected onTransact(ILandroid/os/Parcel;Landroid/os/Parcel;I)Z
+.registers 7
+    const/4 v0, 1
+    if-ne v3, v0, :other
+    const-string v0, "fixture.echo"
+    invoke-virtual {v4, v0}, Landroid/os/Parcel;->enforceInterface(Ljava/lang/String;)V
+    invoke-virtual {v4}, Landroid/os/Parcel;->readInt()I
+    move-result v1
+    add-int/lit8 v1, v1, 1
+    invoke-virtual {v5}, Landroid/os/Parcel;->writeNoException()V
+    invoke-virtual {v5, v1}, Landroid/os/Parcel;->writeInt(I)V
+    const/4 v0, 1
+    return v0
+:other
+    const/4 v0, 2
+    if-ne v3, v0, :base
+    new-instance v0, Ljava/lang/IllegalArgumentException;
+    const-string v1, "direct binder failure"
+    invoke-direct {v0, v1}, Ljava/lang/IllegalArgumentException;-><init>(Ljava/lang/String;)V
+    throw v0
+:base
+    invoke-super {v2, v3, v4, v5, v6}, Landroid/os/Binder;->onTransact(ILandroid/os/Parcel;Landroid/os/Parcel;I)Z
+    move-result v0
+    return v0
+.end method
+
+.class public Lfixture/ForcedProxyBinder;
+.super Lfixture/EchoBinder;
+
+.method public constructor <init>()V
+.registers 1
+    invoke-direct {v0}, Lfixture/EchoBinder;-><init>()V
+    return-void
+.end method
+
+.method public queryLocalInterface(Ljava/lang/String;)Landroid/os/IInterface;
+.registers 2
+    const/4 v0, 0
+    return-object v0
+.end method
+
+.class public Lfixture/EchoProxy;
+.super Ljava/lang/Object;
+
+.method public static echo(Landroid/os/IBinder;II)I
+.registers 8
+    invoke-static {}, Landroid/os/Parcel;->obtain()Landroid/os/Parcel;
+    move-result-object v0
+    invoke-static {}, Landroid/os/Parcel;->obtain()Landroid/os/Parcel;
+    move-result-object v1
+    const-string v2, "fixture.echo"
+    invoke-virtual {v0, v2}, Landroid/os/Parcel;->writeInterfaceToken(Ljava/lang/String;)V
+    invoke-virtual {v0, v6}, Landroid/os/Parcel;->writeInt(I)V
+    const/4 v2, 1
+    invoke-interface {v5, v2, v0, v1, v7}, Landroid/os/IBinder;->transact(ILandroid/os/Parcel;Landroid/os/Parcel;I)Z
+    invoke-virtual {v1}, Landroid/os/Parcel;->readException()V
+    invoke-virtual {v1}, Landroid/os/Parcel;->readInt()I
+    move-result v3
+    invoke-virtual {v0}, Landroid/os/Parcel;->recycle()V
+    invoke-virtual {v1}, Landroid/os/Parcel;->recycle()V
+    return v3
+.end method

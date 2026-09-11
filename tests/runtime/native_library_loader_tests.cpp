@@ -3371,3 +3371,62 @@ TEST_CASE("DVM-112 AndroidAppProcess installs sealed service discovery facts") {
         CHECK(service.intent_filters[0].has_data);
     }
 }
+
+
+TEST_CASE("DVM-144 application Proxy executes BootDex Binder transact and Java reply protocol") {
+    using namespace ogplay::runtime::dexvm;
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        ApplicationProcess f(backend);
+        auto& vm = f.bridge->Vm();
+        auto& linker = f.bridge->Linker();
+        const auto direct = [&](const char* owner, const char* name, const char* sig, std::vector<VmValue> args) {
+            const auto method = linker.FindDirectMethod(linker.ResolveDescriptor(owner), name, sig);
+            REQUIRE(method);
+            const auto result = vm.Call(*method, args);
+            REQUIRE_MESSAGE(!result.exception.IsValid(), result.exception_message);
+            return result.value;
+        };
+        const auto on = [&](VmObjectRef receiver, const char* name, const char* sig, std::vector<VmValue> args) {
+            const auto type = vm.Model().ObjectClass(receiver);
+            const auto index = linker.FindVtableIndex(type, name, sig);
+            REQUIRE(index);
+            args.insert(args.begin(), VmValue::Ref(receiver));
+            return vm.Call(linker.Class(type).vtable[*index], args);
+        };
+        const auto local = vm.NewIntrinsicInstance("Lfixture/EchoBinder;");
+        const auto remote_shape = vm.NewIntrinsicInstance("Lfixture/ForcedProxyBinder;");
+        const auto roots = vm.ProtectReferences(std::array{local, remote_shape});
+        direct("Lfixture/EchoBinder;", "<init>", "()V", {VmValue::Ref(local)});
+        direct("Lfixture/ForcedProxyBinder;", "<init>", "()V", {VmValue::Ref(remote_shape)});
+        const auto descriptor = vm.NewStringUtf8("fixture.echo");
+        CHECK(on(local, "queryLocalInterface", "(Ljava/lang/String;)Landroid/os/IInterface;", {VmValue::Ref(descriptor)}).value.ref == local);
+        CHECK_FALSE(on(remote_shape, "queryLocalInterface", "(Ljava/lang/String;)Landroid/os/IInterface;", {VmValue::Ref(descriptor)}).value.ref.IsValid());
+        for (const auto flags : {0, 1})
+            CHECK(direct("Lfixture/EchoProxy;", "echo", "(Landroid/os/IBinder;II)I",
+                         {VmValue::Ref(remote_shape), VmValue::Int(41), VmValue::Int(flags)}).AsInt() == 42);
+        CHECK_FALSE(linker.Class(linker.ResolveDescriptor("Lfixture/EchoBinder;")).is_intrinsic);
+        const auto binder = linker.ResolveDescriptor("Landroid/os/Binder;");
+        const auto transact_index = linker.FindVtableIndex(binder, "transact", "(ILandroid/os/Parcel;Landroid/os/Parcel;I)Z");
+        REQUIRE(transact_index);
+        CHECK(linker.Method(linker.Class(binder).vtable[*transact_index]).code.has_value());
+        const auto data = direct("Landroid/os/Parcel;", "obtain", "()Landroid/os/Parcel;", {}).ref;
+        const auto reply = direct("Landroid/os/Parcel;", "obtain", "()Landroid/os/Parcel;", {}).ref;
+        const auto parcels = vm.ProtectReferences(std::array{data, reply});
+        const auto invoke = [&](int code) {
+            return on(local, "transact", "(ILandroid/os/Parcel;Landroid/os/Parcel;I)Z",
+                      {VmValue::Int(code), VmValue::Ref(data), VmValue::Ref(reply), VmValue::Int(0)});
+        };
+        const auto unknown = invoke(99);
+        REQUIRE_FALSE(unknown.exception.IsValid());
+        CHECK(unknown.value.AsInt() == 0);
+        const auto failure = invoke(2);
+        REQUIRE(failure.exception.IsValid());
+        CHECK(linker.Class(failure.exception_class).descriptor == "Ljava/lang/IllegalArgumentException;");
+        CHECK(on(reply, "dataSize", "()I", {}).value.AsInt() == 0);
+        const auto info = invoke(0x5f4e5446);
+        REQUIRE_FALSE(info.exception.IsValid());
+        CHECK(info.value.AsInt() == 1);
+        CHECK(on(reply, "dataPosition", "()I", {}).value.AsInt() == 0);
+        CHECK(vm.StringUtf8(on(reply, "readString", "()Ljava/lang/String;", {}).value.ref) == "fixture.echo");
+    }
+}

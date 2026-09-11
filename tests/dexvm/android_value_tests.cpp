@@ -352,7 +352,7 @@ TEST_CASE("DVM-117 Intent extras use BootDex Bundle identity copies and GC") {
     }
 }
 
-TEST_CASE("DVM-117 Bundle Parcel snapshots and Java CREATOR retain ordinary references") {
+TEST_CASE("Binder BootDex Bundle Parcel uses the byte protocol and reconstructs values") {
     for (const auto backend :
          {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
         AndroidValueVm f(backend);
@@ -367,7 +367,7 @@ TEST_CASE("DVM-117 Bundle Parcel snapshots and Java CREATOR retain ordinary refe
         f.On(bundle, "writeToParcel", "(Landroid/os/Parcel;I)V",
              {VmValue::Ref(parcel), VmValue::Int(0)});
         f.On(bundle, "clear", "()V");
-        CHECK(f.vm.MarkReachable().IsMarked(bytes));
+        CHECK_FALSE(f.vm.MarkReachable().IsMarked(bytes));
         CHECK_FALSE(f.vm.MarkReachable().IsMarked(bundle));
         static_cast<void>(f.vm.CollectGarbage("dvm117-parcel-snapshot"));
         f.On(parcel, "setDataPosition", "(I)V", {VmValue::Int(0)});
@@ -385,12 +385,57 @@ TEST_CASE("DVM-117 Bundle Parcel snapshots and Java CREATOR retain ordinary refe
         f.On(copy, "clear", "()V");
         f.On(parcel, "setDataPosition", "(I)V", {VmValue::Int(0)});
         const auto another = f.On(parcel, "readBundle", "()Landroid/os/Bundle;").ref;
-        CHECK(f.On(another, "getSerializable", "(Ljava/lang/String;)Ljava/io/Serializable;",
-                   {VmValue::Ref(key)}).ref == bytes);
+        const auto another_bytes = f.On(
+            another, "getSerializable",
+            "(Ljava/lang/String;)Ljava/io/Serializable;",
+            {VmValue::Ref(key)}).ref;
+        CHECK(f.BytesOf(another_bytes) == "snapshot child");
         f.On(parcel, "recycle", "()V");
         // Retire the nested Bundle copy constructor's last Java return root.
         CHECK(f.On(copy, "isEmpty", "()Z").AsInt() == 1);
-        CHECK_FALSE(f.vm.MarkReachable().IsMarked(bytes));
+    }
+}
+
+TEST_CASE("Binder byte Parcel preserves API19 positions append and pure marshalling") {
+    for (const auto backend :
+         {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        AndroidValueVm f(backend);
+        const auto source = f.Static(
+            "Landroid/os/Parcel;", "obtain", "()Landroid/os/Parcel;").ref;
+        const auto target = f.Static(
+            "Landroid/os/Parcel;", "obtain", "()Landroid/os/Parcel;").ref;
+        const auto roots = f.vm.ProtectReferences(std::array{source, target});
+        const auto text = f.model.NewString(u"Parcel \U0001F331");
+        f.On(source, "writeInt", "(I)V", {VmValue::Int(0x12345678)});
+        f.On(source, "writeString", "(Ljava/lang/String;)V", {VmValue::Ref(text)});
+        const auto size = f.On(source, "dataSize", "()I").AsInt();
+        CHECK(size > 8);
+        CHECK((size & 3) == 0);
+        f.On(target, "appendFrom", "(Landroid/os/Parcel;II)V",
+             {VmValue::Ref(source), VmValue::Int(0), VmValue::Int(size)});
+        f.On(source, "recycle", "()V");
+        f.On(target, "setDataPosition", "(I)V", {VmValue::Int(0)});
+        CHECK(f.On(target, "readInt", "()I").AsInt() == 0x12345678);
+        CHECK(f.model.StringValue(
+                  f.On(target, "readString", "()Ljava/lang/String;").ref) ==
+              u"Parcel \U0001F331");
+        f.On(target, "setDataPosition", "(I)V", {VmValue::Int(0)});
+        const auto wire = f.On(target, "marshall", "()[B").ref;
+        CHECK(f.model.ArrayLength(wire) == size);
+
+        const auto token = f.vm.NewStringUtf8("example.echo");
+        const auto wrong = f.vm.NewStringUtf8("example.other");
+        f.On(target, "setDataSize", "(I)V", {VmValue::Int(0)});
+        f.On(target, "setDataPosition", "(I)V", {VmValue::Int(0)});
+        f.On(target, "writeInterfaceToken", "(Ljava/lang/String;)V",
+             {VmValue::Ref(token)});
+        f.On(target, "setDataPosition", "(I)V", {VmValue::Int(0)});
+        const auto mismatch = f.OnOutcome(
+            target, "enforceInterface", "(Ljava/lang/String;)V",
+            {VmValue::Ref(wrong)});
+        REQUIRE(mismatch.exception.IsValid());
+        CHECK(f.linker.Class(mismatch.exception_class).descriptor ==
+              "Ljava/lang/SecurityException;");
     }
 }
 
@@ -1381,12 +1426,14 @@ TEST_CASE("DVM-86 value side tables sweep with their guest owners") {
         "(ILjava/lang/String;)Landroid/os/PowerManager$WakeLock;",
         {VmValue::Int(1), VmValue::Ref(fixture.vm.NewStringUtf8("sweep"))}));
     REQUIRE_FALSE(fixture.context->paths.empty());
-    REQUIRE_FALSE(fixture.context->parcels.empty());
+    REQUIRE_FALSE(fixture.context->parcel_backings.empty());
     REQUIRE_FALSE(fixture.context->wake_locks.empty());
     const auto result = fixture.vm.CollectGarbage("dvm86-value-state");
     CHECK(result.freed_objects >= 4U);
     CHECK(fixture.context->paths.empty());
-    CHECK(fixture.context->parcels.empty());
+    // Parcel.obtain() may retain the recycled owner in the API 19 Java pool;
+    // its backing is released by recycle/nativeFreeBuffer and is safe to reuse.
+    CHECK(fixture.context->parcel_backings.size() <= 1U);
     CHECK(fixture.context->wake_locks.empty());
 }
 
@@ -2685,4 +2732,150 @@ TEST_CASE("DVM-121 SharedPreferences complete interfaces float snapshots and edi
         CHECK(f.On(prefs, "getFloat", "(Ljava/lang/String;F)F",
                    {VmValue::Ref(key), VmValue::Float(0)}).AsFloat() == 1.25F);
     }
+}
+
+
+TEST_CASE("DVM-144 Parcel exception headers preserve Java protocol and reject violations") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        AndroidValueVm f(backend);
+        const auto p = f.Static("Landroid/os/Parcel;", "obtain", "()Landroid/os/Parcel;").ref;
+        const auto roots = f.vm.ProtectReferences(std::array{p});
+        f.On(p, "writeNoException", "()V");
+        CHECK(f.On(p, "dataPosition", "()I").AsInt() == 4);
+        f.On(p, "setDataPosition", "(I)V", {VmValue::Int(0)});
+        f.On(p, "readException", "()V");
+        for (const auto type : {"Ljava/lang/SecurityException;", "Ljava/lang/IllegalArgumentException;",
+                                "Ljava/lang/NullPointerException;", "Ljava/lang/IllegalStateException;",
+                                "Landroid/os/BadParcelableException;"}) {
+            f.On(p, "setDataSize", "(I)V", {VmValue::Int(0)});
+            const auto error = f.New(type, "(Ljava/lang/String;)V", {VmValue::Ref(f.vm.NewStringUtf8("wire error"))});
+            f.On(p, "writeException", "(Ljava/lang/Exception;)V", {VmValue::Ref(error)});
+            f.On(p, "setDataPosition", "(I)V", {VmValue::Int(0)});
+            const auto result = f.OnOutcome(p, "readException", "()V");
+            REQUIRE(result.exception.IsValid());
+            CHECK(f.linker.Class(result.exception_class).descriptor == type);
+            CHECK(f.vm.StringUtf8(f.On(result.exception, "getMessage", "()Ljava/lang/String;").ref) == "wire error");
+        }
+        f.On(p, "setDataSize", "(I)V", {VmValue::Int(0)});
+        f.On(p, "writeInt", "(I)V", {VmValue::Int(-128)});
+        f.On(p, "writeInt", "(I)V", {VmValue::Int(4)});
+        f.On(p, "setDataPosition", "(I)V", {VmValue::Int(0)});
+        const auto violation = f.OnOutcome(p, "readException", "()V");
+        REQUIRE(violation.exception.IsValid());
+        CHECK(f.linker.Class(violation.exception_class).descriptor == "Ljava/lang/UnsupportedOperationException;");
+    }
+}
+
+TEST_CASE("DVM-144 Parcel interface policy and malformed lengths are bounded") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        AndroidValueVm f(backend);
+        const auto p = f.Static("Landroid/os/Parcel;", "obtain", "()Landroid/os/Parcel;").ref;
+        const auto descriptor = f.vm.NewStringUtf8("echo");
+        const auto roots = f.vm.ProtectReferences(std::array{p, descriptor});
+        f.Static("Landroid/os/Binder;", "setThreadStrictModePolicy", "(I)V", {VmValue::Int(7)});
+        f.On(p, "writeInterfaceToken", "(Ljava/lang/String;)V", {VmValue::Ref(descriptor)});
+        CHECK(f.On(p, "dataSize", "()I").AsInt() == 20);
+        f.On(p, "setDataPosition", "(I)V", {VmValue::Int(0)});
+        CHECK(f.On(p, "readInt", "()I").AsInt() == 0x107);
+        f.Static("Landroid/os/Binder;", "setThreadStrictModePolicy", "(I)V", {VmValue::Int(0)});
+        f.On(p, "setDataPosition", "(I)V", {VmValue::Int(0)});
+        f.On(p, "enforceInterface", "(Ljava/lang/String;)V", {VmValue::Ref(descriptor)});
+        CHECK(f.Static("Landroid/os/Binder;", "getThreadStrictModePolicy", "()I").AsInt() == 0x107);
+        for (const auto length : {-1, 0x7fffffff, 20}) {
+            f.On(p, "setDataSize", "(I)V", {VmValue::Int(0)});
+            f.On(p, "writeInt", "(I)V", {VmValue::Int(0)});
+            f.On(p, "writeInt", "(I)V", {VmValue::Int(length)});
+            f.On(p, "setDataPosition", "(I)V", {VmValue::Int(0)});
+            const auto result = f.OnOutcome(p, "enforceInterface", "(Ljava/lang/String;)V", {VmValue::Ref(descriptor)});
+            REQUIRE(result.exception.IsValid());
+            CHECK(f.linker.Class(result.exception_class).descriptor == "Ljava/lang/SecurityException;");
+        }
+    }
+}
+
+TEST_CASE("DVM-144 failed service binding retains a Context owned dispatcher until unbind") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        int callbacks = 0;
+        auto declaration = IntrinsicClassBuilder::Class("Ltest/AbsentConnection;", "Ljava/lang/Object;",
+                                                        {"Landroid/content/ServiceConnection;"});
+        declaration.Constructor("()V", [](IntrinsicContext&) { return VmValue::Void(); });
+        const auto callback = [&callbacks](IntrinsicContext&) { ++callbacks; return VmValue::Void(); };
+        declaration.VirtualMethod("onServiceConnected", "(Landroid/content/ComponentName;Landroid/os/IBinder;)V", callback);
+        declaration.VirtualMethod("onServiceDisconnected", "(Landroid/content/ComponentName;)V", callback);
+        AndroidValueVm f(backend, {std::move(declaration).Build()});
+        const auto base = f.New("Landroid/content/Context;");
+        const auto wrapper = f.New("Landroid/content/ContextWrapper;", "(Landroid/content/Context;)V", {VmValue::Ref(base)});
+        const auto connection = f.New("Ltest/AbsentConnection;");
+        const auto intent = f.New("Landroid/content/Intent;", "(Ljava/lang/String;)V", {VmValue::Ref(f.vm.NewStringUtf8("example.ABSENT"))});
+        const auto roots = f.vm.ProtectReferences(std::array{base, wrapper, intent});
+        f.context->service_inventory_known = true;
+        for (int i = 0; i < 2; ++i)
+            CHECK(f.On(wrapper, "bindService", "(Landroid/content/Intent;Landroid/content/ServiceConnection;I)Z",
+                       {VmValue::Ref(intent), VmValue::Ref(connection), VmValue::Int(1)}).AsInt() == 0);
+        CHECK(f.context->service_connections.at(base.Value()).size() == 1);
+        CHECK(callbacks == 0);
+        static_cast<void>(f.vm.CollectGarbage("absent-bind"));
+        CHECK(f.vm.MarkReachable().IsMarked(connection));
+        f.On(wrapper, "unbindService", "(Landroid/content/ServiceConnection;)V", {VmValue::Ref(connection)});
+        CHECK(f.context->service_connections.empty());
+        const auto twice = f.OnOutcome(wrapper, "unbindService", "(Landroid/content/ServiceConnection;)V", {VmValue::Ref(connection)});
+        REQUIRE(twice.exception.IsValid());
+        CHECK(f.linker.Class(twice.exception_class).descriptor == "Ljava/lang/IllegalArgumentException;");
+        f.context->service_components = {{"example.Local", true, {{{"example.ABSENT"}, {}, false}}}};
+        const auto local = f.OnOutcome(wrapper, "bindService", "(Landroid/content/Intent;Landroid/content/ServiceConnection;I)Z",
+                                      {VmValue::Ref(intent), VmValue::Ref(connection), VmValue::Int(1)});
+        REQUIRE(local.exception.IsValid());
+        CHECK(f.linker.Class(local.exception_class).descriptor == "Ljava/lang/UnsupportedOperationException;");
+        f.On(wrapper, "unbindService", "(Landroid/content/ServiceConnection;)V", {VmValue::Ref(connection)});
+    }
+}
+
+
+TEST_CASE("DVM-144 Binder Parcel references survive append and release on overwrite") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        AndroidValueVm f(backend);
+        const auto source = f.Static("Landroid/os/Parcel;", "obtain", "()Landroid/os/Parcel;").ref;
+        const auto target = f.Static("Landroid/os/Parcel;", "obtain", "()Landroid/os/Parcel;").ref;
+        const auto roots = f.vm.ProtectReferences(std::array{source, target});
+        const auto binder = f.New("Landroid/os/Binder;");
+        f.On(source, "writeStrongBinder", "(Landroid/os/IBinder;)V", {VmValue::Ref(binder)});
+        CHECK(f.On(source, "dataSize", "()I").AsInt() == 16);
+        const auto partial = f.OnOutcome(target, "appendFrom", "(Landroid/os/Parcel;II)V",
+                                        {VmValue::Ref(source), VmValue::Int(0), VmValue::Int(4)});
+        REQUIRE(partial.exception.IsValid());
+        f.On(target, "appendFrom", "(Landroid/os/Parcel;II)V",
+             {VmValue::Ref(source), VmValue::Int(0), VmValue::Int(16)});
+        f.On(source, "recycle", "()V");
+        static_cast<void>(f.vm.CollectGarbage("binder-append"));
+        CHECK(f.vm.MarkReachable().IsMarked(binder));
+        f.On(target, "setDataPosition", "(I)V", {VmValue::Int(0)});
+        CHECK(f.On(target, "readStrongBinder", "()Landroid/os/IBinder;").ref == binder);
+        CHECK(f.On(binder, "pingBinder", "()Z").AsInt() == 1);
+        REQUIRE(f.OnOutcome(target, "marshall", "()[B").exception.IsValid());
+        f.On(target, "setDataPosition", "(I)V", {VmValue::Int(0)});
+        f.On(target, "writeInt", "(I)V", {VmValue::Int(0)});
+        CHECK_FALSE(f.vm.MarkReachable().IsMarked(binder));
+        f.On(target, "recycle", "()V");
+    }
+}
+
+TEST_CASE("DVM-144 Binder identity and policy are isolated by execution context") {
+    AndroidValueVm f;
+    const auto worker = f.vm.CreateExecutionContext();
+    const auto type = f.linker.ResolveDescriptor("Landroid/os/Binder;");
+    const auto set = f.linker.FindDirectMethod(type, "setThreadStrictModePolicy", "(I)V");
+    const auto get = f.linker.FindDirectMethod(type, "getThreadStrictModePolicy", "()I");
+    REQUIRE(set);
+    REQUIRE(get);
+    f.Static("Landroid/os/Binder;", "setThreadStrictModePolicy", "(I)V", {VmValue::Int(7)});
+    CHECK(f.vm.Call(worker, *get, {}).value.AsInt() == 0);
+    const std::array args{VmValue::Int(9)};
+    REQUIRE_FALSE(f.vm.Call(worker, *set, args).exception.IsValid());
+    CHECK(f.Static("Landroid/os/Binder;", "getThreadStrictModePolicy", "()I").AsInt() == 7);
+    CHECK(f.vm.Call(worker, *get, {}).value.AsInt() == 9);
+    const auto identity = f.Static("Landroid/os/Binder;", "clearCallingIdentity", "()J").AsLong();
+    f.Static("Landroid/os/Binder;", "restoreCallingIdentity", "(J)V", {VmValue::Long(identity)});
+    CHECK(f.Static("Landroid/os/Binder;", "clearCallingIdentity", "()J").AsLong() == identity);
+    REQUIRE(f.StaticOutcome("Landroid/os/Binder;", "joinThreadPool", "()V").exception.IsValid());
+    f.vm.DiscardExecutionContext(worker);
 }

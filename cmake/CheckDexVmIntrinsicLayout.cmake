@@ -199,7 +199,7 @@ endforeach()
 foreach(source_and_minimum IN ITEMS
         "android_app.cpp:8"
         "android_content.cpp:1"
-        "android_os.cpp:7"
+        "android_os.cpp:6"
         "android_view.cpp:1")
     string(REPLACE ":" ";" pair "${source_and_minimum}")
     list(GET pair 0 source)

@@ -85,6 +85,9 @@ struct DexVmAndroidContext final {
     bool service_inventory_known{};
     bool application_enabled{true};
     std::vector<loader::AndroidManifestServiceComponent> service_components;
+    // API19 registers a dispatcher before an absent bind returns false.
+    // Connections are strong edges of the Context, removed on unbind/sweep.
+    std::unordered_map<std::uint32_t, std::vector<dexvm::VmObjectRef>> service_connections;
     std::unordered_set<std::string> granted_permissions;
     std::unordered_set<std::string> system_features;
     std::uint32_t surface_width{};
@@ -230,29 +233,26 @@ struct DexVmAndroidContext final {
     };
     std::unordered_map<std::uint32_t, PathState> paths;
 
-    struct ParcelAtom final {
-        enum class Kind : std::uint8_t {
-            integer,
-            long_integer,
-            float_value,
-            double_value,
-            string,
-            byte_array,
-            object
-        };
-        Kind kind{};
-        std::int64_t integer{};
-        double real{};
-        std::string text;
+    struct ParcelBinderRecord final {
+        std::size_t offset{};
+        std::size_t span{};
+        dexvm::VmObjectRef binder;
+    };
+    struct ParcelBacking final {
         std::vector<std::byte> bytes;
-        dexvm::VmObjectRef object;
-    };
-    struct ParcelState final {
-        std::vector<ParcelAtom> atoms;
         std::size_t position{};
-        bool recycled{};
+        std::vector<ParcelBinderRecord> binders;
+        bool allow_fds{true};
     };
-    std::unordered_map<std::uint32_t, ParcelState> parcels;
+    std::uint32_t next_parcel_token{1U};
+    std::unordered_map<std::uint32_t, ParcelBacking> parcel_backings;
+    std::unordered_map<std::uint32_t, std::uint32_t> parcel_owner_tokens;
+
+    struct BinderThreadState final {
+        std::int32_t strict_mode_policy{};
+        std::uint64_t identity_token{};
+    };
+    std::unordered_map<std::uint64_t, BinderThreadState> binder_threads;
 
     struct WakeLockState final {
         std::int32_t level_and_flags{};

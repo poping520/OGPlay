@@ -267,14 +267,34 @@ TEST_CASE("DVM-89 ResultReceiver dispatches locally and through its Handler") {
     REQUIRE(fixture.receiver_results.size() == 2);
     CHECK(fixture.receiver_results[1] == std::pair{9, bundle});
 
-    const auto parcel = fixture.New("Landroid/os/Parcel;");
-    fixture.ConstructAs(parcel, "Landroid/os/Parcel;", "()V");
-    const auto unsupported = fixture.Virtual(
+    const auto parcel_outcome = fixture.Direct(
+        "Landroid/os/Parcel;", "obtain", "()Landroid/os/Parcel;");
+    SchedulerVm::RequireOk(parcel_outcome);
+    const auto parcel = parcel_outcome.value.ref;
+    REQUIRE(parcel.IsValid());
+    const auto transport_roots = fixture.vm.ProtectReferences(
+        std::array{parcel, direct, bundle});
+    SchedulerVm::RequireOk(fixture.Virtual(
         direct, "writeToParcel", "(Landroid/os/Parcel;I)V",
-        {VmValue::Ref(parcel), VmValue::Int(0)});
-    REQUIRE(unsupported.exception.IsValid());
-    CHECK(fixture.linker.Class(unsupported.exception_class).descriptor ==
-          "Ljava/lang/UnsupportedOperationException;");
+        {VmValue::Ref(parcel), VmValue::Int(0)}));
+    SchedulerVm::RequireOk(fixture.Virtual(
+        parcel, "setDataPosition", "(I)V", {VmValue::Int(0)}));
+    const auto result_type = fixture.linker.ResolveDescriptor("Landroid/os/ResultReceiver;");
+    SchedulerVm::RequireOk(fixture.vm.EnsureClassInitialized(result_type));
+    const auto creator_field = fixture.linker.FindFieldRecursive(
+        result_type, "CREATOR", "Landroid/os/Parcelable$Creator;");
+    REQUIRE(creator_field.has_value());
+    const auto creator = VmObjectRef(fixture.linker.Class(result_type).static_storage[
+        fixture.linker.Field(*creator_field).slot]);
+    REQUIRE(creator.IsValid());
+    const auto transported = fixture.Virtual(
+        creator, "createFromParcel", "(Landroid/os/Parcel;)Ljava/lang/Object;",
+        {VmValue::Ref(parcel)}).value.ref;
+    SchedulerVm::RequireOk(fixture.Virtual(
+        transported, "send", "(ILandroid/os/Bundle;)V",
+        {VmValue::Int(11), VmValue::Ref(bundle)}));
+    REQUIRE(fixture.receiver_results.size() == 3);
+    CHECK(fixture.receiver_results[2] == std::pair{11, bundle});
 }
 
 TEST_CASE("DVM-85 Handler queue is delayed ordered and removable") {

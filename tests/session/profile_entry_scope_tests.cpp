@@ -47,7 +47,10 @@ struct Vm final {
     Vm()
         : interpreter(
               [this]() -> DexClassLinker& {
-                  auto catalog = CoreIntrinsicCatalog();
+                  auto context = std::make_shared<ogplay::runtime::DexVmAndroidContext>();
+                  auto catalog = CoreIntrinsicCatalog(AndroidCoreIntrinsicServices(context));
+                  const auto android = ogplay::runtime::AndroidIntrinsicCatalog(context);
+                  catalog.insert(catalog.end(), android.begin(), android.end());
                   IntrinsicClassDecl presets;
                   presets.descriptor = "LFixturePresets;";
                   presets.superclass = "Ljava/lang/Object;";
@@ -134,7 +137,7 @@ struct AndroidVm final {
 TEST_CASE("android intrinsic catalog is unique and directly bound") {
   auto context = std::make_shared<ogplay::runtime::DexVmAndroidContext>();
   const auto catalog = ogplay::runtime::AndroidIntrinsicCatalog(context);
-  CHECK(catalog.size() == 178);
+  CHECK(catalog.size() == 176);
 
   std::unordered_set<std::string> descriptors;
   for (const auto& declaration : catalog) {
@@ -188,8 +191,8 @@ TEST_CASE("android intrinsic catalog is unique and directly bound") {
   CHECK(has_method("Landroid/app/Activity;", "hasWindowFocus", "()Z"));
   CHECK(has_method("Landroid/app/Activity;", "onWindowFocusChanged", "(Z)V"));
   CHECK(method_count("Landroid/app/Service;") == 13);
-  CHECK(method_count("Landroid/content/Context;") == 24);
-  CHECK(method_count("Landroid/content/ContextWrapper;") == 25);
+  CHECK(method_count("Landroid/content/Context;") == 26);
+  CHECK(method_count("Landroid/content/ContextWrapper;") == 27);
   CHECK(has_method("Landroid/content/Context;", "getMainLooper",
                    "()Landroid/os/Looper;"));
   CHECK(has_method("Landroid/content/ContextWrapper;", "getMainLooper",
@@ -200,9 +203,10 @@ TEST_CASE("android intrinsic catalog is unique and directly bound") {
       "Landroid/content/IntentFilter;", "match",
       "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;"
       "Landroid/net/Uri;Ljava/util/Set;Ljava/lang/String;)I"));
-  CHECK(method_count("Landroid/os/Bundle;") == 2);
-  CHECK(method_count("Landroid/os/ResultReceiver;") == 5);
-  CHECK(method_count("Landroid/os/ResultReceiver$MyRunnable;") == 2);
+  CHECK_FALSE(descriptors.contains("Landroid/os/Bundle;"));
+  CHECK_FALSE(descriptors.contains("Landroid/os/IBinder;"));
+  CHECK_FALSE(descriptors.contains("Landroid/os/ResultReceiver;"));
+  CHECK(method_count("Landroid/os/Binder;") == 10);
   CHECK(method_count("Landroid/view/View$OnFocusChangeListener;") == 1);
   CHECK(has_method("Landroid/view/View;", "hasWindowFocus", "()Z"));
   CHECK(method_count("Landroid/content/pm/PackageManager;") == 6);

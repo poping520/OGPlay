@@ -1606,8 +1606,11 @@ TEST_CASE("Application failure prevents launcher construction and surface effect
     CHECK_THROWS_WITH_AS(
         static_cast<void>(lifecycle.Start()),
         doctest::Contains(
-            "Application onCreate raised an uncaught Java exception: "
-            "Ljava/lang/RuntimeException;: application failed"),
+            "Application onCreate failed: uncaught Java exception\n"
+            "  exception: Ljava/lang/RuntimeException;\n"
+            "  message: application failed\n"
+            "  stack trace:\n"
+            "    at Lfixture/ThrowingApplication;.onCreate (pc 7)"),
         session::DexActivityLifecycleError);
     CHECK_FALSE(opened);
     CHECK_FALSE(fixture.context->application.IsValid());

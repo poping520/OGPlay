@@ -17,17 +17,18 @@ TEST_CASE("guest atomic first fit skips guards reuses holes and preserves failur
     memory.Map({GuestAddress{0x11000}, 4096}, PageProtection::none);
     CHECK(memory.MapAnywhere(bounds, 8192, rw).Value() == 0x12000);
     CHECK(memory.MapAnywhere(bounds, 4096, rw).Value() == 0x10000);
-    CHECK_THROWS_AS(memory.MapAnywhere(bounds, 8192, rw), std::bad_alloc);
-    CHECK_THROWS_AS(memory.MapAnywhere(bounds, 0, rw), std::invalid_argument);
-    CHECK_THROWS_AS(memory.MapAnywhere(bounds, 1, rw), std::invalid_argument);
+    CHECK_THROWS_AS(static_cast<void>(memory.MapAnywhere(bounds, 8192, rw)), std::bad_alloc);
+    CHECK_THROWS_AS(static_cast<void>(memory.MapAnywhere(bounds, 0, rw)), std::invalid_argument);
+    CHECK_THROWS_AS(static_cast<void>(memory.MapAnywhere(bounds, 1, rw)), std::invalid_argument);
     CHECK(memory.MapAnywhere(bounds, 4096, rw).Value() == 0x14000);
     memory.Write32(GuestAddress{0x12000}, 123);
     memory.Unmap({GuestAddress{0x12000}, 8192});
     CHECK(memory.MapAnywhere(bounds, 8192, rw).Value() == 0x12000);
     CHECK(memory.Read32(GuestAddress{0x12000}) == 0);
-    CHECK_THROWS_AS(memory.Read8(GuestAddress{0x11000}), MemoryFault);
+    CHECK_THROWS_AS(static_cast<void>(memory.Read8(GuestAddress{0x11000})), MemoryFault);
     CHECK(memory.MapAnywhere({GuestAddress{0xfffff000}, 4096}, 4096, rw).Value() == 0xfffff000);
-    CHECK_THROWS_AS(memory.MapAnywhere(LowAddressGuard(), 4096, rw), std::bad_alloc);
+    CHECK_THROWS_AS(static_cast<void>(memory.MapAnywhere(LowAddressGuard(), 4096, rw)),
+                    std::bad_alloc);
 }
 
 TEST_CASE("guest atomic first fit serializes concurrent allocations") {

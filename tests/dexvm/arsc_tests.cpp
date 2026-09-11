@@ -209,14 +209,14 @@ TEST_CASE("DVM-121 ARSC bags preserve parent and typed values and reject corrupt
     auto corrupt = bytes;
     const auto start = bytes.size() - 40;
     PatchU32(corrupt, start + 12, 0xffffffffU);
-    CHECK_THROWS(ogplay::loader::ParseArsc(corrupt));
+    CHECK_THROWS(static_cast<void>(ogplay::loader::ParseArsc(corrupt)));
     corrupt = bytes;
     PatchU32(corrupt, start + 28, 0x01010095); // duplicate name
-    CHECK_THROWS(ogplay::loader::ParseArsc(corrupt));
+    CHECK_THROWS(static_cast<void>(ogplay::loader::ParseArsc(corrupt)));
     corrupt = bytes;
     corrupt[start + 20] = 7; // invalid Res_value size
-    CHECK_THROWS(ogplay::loader::ParseArsc(corrupt));
+    CHECK_THROWS(static_cast<void>(ogplay::loader::ParseArsc(corrupt)));
     corrupt = bytes;
     corrupt[start] = 8; // truncated ResTable_map_entry
-    CHECK_THROWS(ogplay::loader::ParseArsc(corrupt));
+    CHECK_THROWS(static_cast<void>(ogplay::loader::ParseArsc(corrupt)));
 }

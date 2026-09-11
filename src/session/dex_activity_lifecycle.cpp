@@ -27,12 +27,20 @@ namespace ogplay::session {
         [[nodiscard]] std::string RenderJavaException(
             const dx::DexClassLinker& linker,
             const dx::VmCallOutcome& outcome) {
-            std::string rendered = outcome.exception_class.IsValid()
-                                       ? linker.Class(outcome.exception_class)
-                                             .descriptor
-                                       : "<unknown Java exception>";
+            std::string rendered = "  exception: ";
+            rendered += outcome.exception_class.IsValid()
+                            ? linker.Class(outcome.exception_class).descriptor
+                            : "<unknown Java exception>";
             if (!outcome.exception_message.empty()) {
-                rendered += ": " + outcome.exception_message;
+                rendered += "\n  message: " + outcome.exception_message;
+            }
+            if (!outcome.exception_stack.empty()) {
+                rendered += "\n  stack trace:";
+                for (const auto& entry: outcome.exception_stack) {
+                    rendered += "\n    at " + entry.class_descriptor + "." +
+                                entry.method_name + " (pc " +
+                                std::to_string(entry.pc) + ")";
+                }
             }
             return rendered;
         }
@@ -41,15 +49,8 @@ namespace ogplay::session {
                             const dx::VmCallOutcome& outcome,
                             const std::string& what) {
             if (!outcome.exception.IsValid()) return;
-            std::string rendered =
-                    what + " raised an uncaught Java exception: " +
-                    RenderJavaException(vm.Linker(), outcome);
-            for (const auto& entry: outcome.exception_stack) {
-                rendered += "\n  at " + entry.class_descriptor + "." +
-                        entry.method_name + " (pc " +
-                        std::to_string(entry.pc) + ")";
-            }
-            Fail(rendered);
+            Fail(what + " failed: uncaught Java exception\n" +
+                 RenderJavaException(vm.Linker(), outcome));
         }
 
         void AttachBaseContext(dx::Interpreter& vm,
@@ -166,10 +167,8 @@ namespace ogplay::session {
                 method, std::vector<dx::VmValue>{dx::VmValue::Ref(receiver),
                                                  dx::VmValue::Ref(event)});
             if (outcome.exception.IsValid()) {
-                return {.error =
-                            "View onTouchEvent raised an uncaught Java "
-                            "exception: " +
-                            RenderJavaException(linker, outcome)};
+                return {.error = "View onTouchEvent failed: uncaught Java exception\n" +
+                                 RenderJavaException(linker, outcome)};
             }
             const bool handled = outcome.value.AsInt() != 0;
             return {.handled = handled,

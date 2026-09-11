@@ -1519,7 +1519,7 @@ namespace {
 
 }  // namespace
 
-Decl Declare_android_content_Intent(const Context& context) {
+Decl Declare_android_content_Intent(const Context&) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/content/Intent;", "Ljava/lang/Object;");
     const auto component = builder.BoundInstanceField(
         "mComponent", "Landroid/content/ComponentName;", dx::kAccPrivate);

@@ -30,6 +30,8 @@ Streamable HTTP transport，并把截图、输入和会话控制交给 agent/ses
 - 结构化日志报告 exact Profile、guest bootstrap、静态预置、JNI/lifecycle、首帧、进度和
   有序 teardown；帧进度以 debug 记录首帧和每 600 帧，长调用 observer 只读取既有 A32
   slice 事实。
+- CLI 顶层失败使用独立 `error [ogplay]` 块，并缩进保留底层多行诊断结构，避免与前序
+  结构化运行日志粘连。
 
 `run-apk` 默认为 APK 的 package 打开持久存档沙盒（ADR-0020）：根目录取
 `hal::HostUserDataDirectory()` + `sandbox/`，`--sandbox-dir` 显式指定，

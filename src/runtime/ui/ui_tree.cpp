@@ -148,7 +148,10 @@ void UiTree::SetVisibility(const UiNodeId node,
 }
 
 void UiTree::SetEnabled(const UiNodeId node, const bool enabled) {
-    Require(node).enabled = enabled;
+    auto& target = Require(node);
+    if (target.enabled == enabled) return;
+    target.enabled = enabled;
+    MarkAncestors(node, false, true);
 }
 
 void UiTree::SetClickable(const UiNodeId node, const bool clickable) {

@@ -56,6 +56,7 @@ Decl Declare_android_util_Log(const Context& context) {
     const auto debug = log(core::LogLevel::debug);
     const auto error = log(core::LogLevel::error);
     builder.StaticMethod("d", "(Ljava/lang/String;Ljava/lang/String;)I", debug);
+    builder.StaticMethod("d", "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/Throwable;)I", debug);
     builder.StaticMethod("e", "(Ljava/lang/String;Ljava/lang/String;)I", error);
     builder.StaticMethod("i", "(Ljava/lang/String;Ljava/lang/String;)I", log(core::LogLevel::info));
     builder.StaticMethod("w", "(Ljava/lang/String;Ljava/lang/String;)I", log(core::LogLevel::warn));

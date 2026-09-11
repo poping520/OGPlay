@@ -25,12 +25,17 @@ handler id、单类 TU 或 misc 巨石。非 Android family 归 core，平台事
 
 ## 平台边界
 
+`android.util.Log` 的 d/e/w Throwable 重载通过 guest `printStackTrace(PrintWriter)` 保留
+Java 异常文本，再进入统一结构化 logger；不吞异常、不写裸 stdout/stderr。
+
 ### Context、Intent、PackageManager
 
 - Context→ContextWrapper→Application/Service/ContextThemeWrapper→Activity 类型链固定。process
   Application、base Context、ClassLoader 与 descriptor 身份稳定；wrapper 只虚派委托 base。
 - Intent/Activity 的 component/intent 是普通字段唯一事实。显式同包启动受检；隐式/跨包启动、
   一般 resolver、Instrumentation/ActivityManager 不支持。
+- session 只创建顶层 Activity，因此 `Activity.isChild()` 返回 false；ActivityGroup/嵌入式
+  child Activity 不在兼容边界。
 - PackageManager 只发布当前 APK：manifest/path/label/permission/feature 来自 sealed facts；未知包、
   flags、跨包查询失败。DVM-142：PackageItemInfo/ApplicationInfo、Component/Activity/Service/
   Provider/ResolveInfo、PathPermission/PatternMatcher/Printer 及内部类归 BootDex，删除前两者 intrinsic；

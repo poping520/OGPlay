@@ -1146,6 +1146,35 @@ TEST_CASE("DVM-86 Base64 and sparse arrays preserve data semantics") {
     CHECK(fixture.On(ints, "get", "(I)I", {VmValue::Int(9)}).AsInt() == 42);
 }
 
+TEST_CASE("Log debug throwable overload renders without changing control flow") {
+    for (const auto backend :
+         {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        AndroidValueVm fixture(backend);
+        const auto message = fixture.vm.NewStringUtf8("failure detail");
+        const auto throwable = fixture.New(
+            "Ljava/lang/RuntimeException;", "(Ljava/lang/String;)V",
+            {VmValue::Ref(message)});
+        const auto tag = fixture.vm.NewStringUtf8("Kiwi");
+        const auto text = fixture.vm.NewStringUtf8("task failed");
+        const auto roots = fixture.vm.ProtectReferences(
+            std::array{tag, text, throwable});
+        CHECK(fixture.Static(
+                  "Landroid/util/Log;", "d",
+                  "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/Throwable;)I",
+                  {VmValue::Ref(tag), VmValue::Ref(text), VmValue::Ref(throwable)})
+                  .AsInt() == 0);
+    }
+}
+
+TEST_CASE("Activity top-level identity reports that it is not a child") {
+    for (const auto backend :
+         {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        AndroidValueVm fixture(backend);
+        const auto activity = fixture.New("Landroid/app/Activity;");
+        CHECK(fixture.On(activity, "isChild", "()Z").AsInt() == 0);
+    }
+}
+
 TEST_CASE("DVM-86 graphics value classes keep geometry and path state") {
     AndroidValueVm fixture;
     CHECK(fixture.Static("Landroid/graphics/Color;", "parseColor",

@@ -1575,6 +1575,16 @@ status = "complete"
 test = "tests/runtime/native_library_loader_tests.cpp: DVM-105; python tools/bootdex/build_bootdex.py build-guest-jni"
 note = "DVM-147 补齐 API19 AndroidOpenSSL SHA1PRNG 与 AES KeyGenerator。SHA1PRNG 首用时由统一 CSPRNG 注入熵，之后通过 guest ARM libcrypto RAND_seed/RAND_bytes；调用方 seed 只追加熵。AES KeyGenerator 支持 128/192/256 位并返回 BootDex SecretKeySpec。双解释器 seed/nextBytes/128 位生成受检，pvz-amaz 8.1.0 非 survey 实跑越过原 NoSuchAlgorithmException。其他 PRNG/KeyGenerator、Keystore、TLS 与完整 JCA provider 不在范围。"
 
+[dexvm.android_log]
+status = "complete"
+test = "tests/dexvm/android_value_tests.cpp: Log debug throwable overload"
+note = "API19 Log.d(String,String,Throwable) 复用既有 d/e/w 结构化日志 handler，并由 guest Throwable.printStackTrace(PrintWriter) 生成异常文本；双解释器精确签名调用受检，pvz-amaz 8.1.0 实跑越过原解析故障。其余 Log API 长尾不因此宣称完整。"
+
+[dexvm.activity_parent_identity]
+status = "complete"
+test = "tests/dexvm/android_value_tests.cpp: Activity top-level identity"
+note = "OGPlay session 只创建顶层 application Activity，Activity.isChild() 因而返回 false；双解释器受检。pvz-amaz 8.1.0 实跑越过原解析故障，约 90 秒无新 DexVM fault，但未产出首帧。ActivityGroup、嵌入式 child Activity 与完整 ActivityManager 不在范围。"
+
 [dexvm.certificate_x509]
 status = "complete"
 test = "tests/runtime/native_library_loader_tests.cpp; tests/dexvm/bootdex_library_tests.cpp; tests/runtime/jni_object_array_tests.cpp; tools.android_payload_current"

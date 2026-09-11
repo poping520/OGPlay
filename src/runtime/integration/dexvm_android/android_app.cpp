@@ -93,6 +93,12 @@ Decl Declare_android_app_Activity(const Context& context) {
     builder.Constructor("()V", [](dx::IntrinsicContext&) {
         return dx::VmValue::Void();
     });
+    // OGPlay only creates top-level application activities; embedded child
+    // activities and ActivityGroup are outside the process compatibility boundary.
+    builder.VirtualMethod(
+        "isChild", "()Z",
+        [](dx::IntrinsicContext&) { return dx::VmValue::Int(0); },
+        dx::kAccPublic | dx::kAccFinal);
     const auto lifecycle_noop = dx::IntrinsicHandler(
         [](dx::IntrinsicContext&) { return dx::VmValue::Void(); });
     builder.VirtualMethod("onCreate", "(Landroid/os/Bundle;)V", lifecycle_noop,

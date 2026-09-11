@@ -4,8 +4,9 @@
   KeyGenerator：统一 CSPRNG 首次播种后由 guest ARM OpenSSL 产出随机字节。pvz-amaz 8.1.0
   非 survey 实跑越过原 `NoSuchAlgorithmException`。随后补齐 `Log.d(tag,msg,throwable)`；
   后台异常已能正常记录且不再中止进程。session 的 Activity 均为顶层对象，`isChild()`
-  已按该事实返回 false；pvz-amaz 实跑越过原解析故障，等待约 90 秒未出现新 DexVM fault，
-  但也未产出首帧，本轮手动终止等待。
+  已按该事实返回 false。首帧握手的 host progress 等待现有单次 2ms、总计约 128ms 的
+  真正 wall-time 上限，常驻 runnable 服务线程不再阻断 Surface 回调；pvz-amaz 实跑已收到
+  `surfaceCreated/surfaceChanged`、进入 production mode，并成功呈现 1 帧后干净退出。
 
 更新：2026-09-11。
 

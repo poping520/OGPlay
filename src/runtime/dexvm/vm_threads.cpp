@@ -558,6 +558,24 @@ void VmThreadRuntime::Yield() {
     lock.ReacquireAfterBlocking(depth);
 }
 
+bool VmThreadRuntime::WaitForHostProgress(
+    const std::chrono::milliseconds timeout) {
+    std::unique_lock guard(impl_->mutex);
+    const auto runnable = [this] {
+        return std::ranges::any_of(impl_->records, [](const auto& entry) {
+            return entry.second->status == VmThreadStatus::created ||
+                   (entry.second->status == VmThreadStatus::running &&
+                    entry.second->wait_state == VmThreadWaitState::none);
+        });
+    };
+    if (!runnable()) return true;
+    const auto generation = impl_->progress_generation;
+    return impl_->changed.wait_for(guard, timeout, [this, generation, &runnable] {
+        return impl_->shutting_down ||
+               impl_->progress_generation != generation || !runnable();
+    });
+}
+
 void VmThreadRuntime::SetWaitState(
     const std::uint64_t context_token,
     const VmThreadWaitState wait_state) {

@@ -93,7 +93,8 @@ switch/threaded 解释、异常、线程/monitor、反射及 `java.*` core intri
 
 ## 尚未实现与测试
 
-未实现 generic reflection、annotation proxy、动态 Proxy/defineClass/DexClassLoader、多 classpath
+Field 支持 runtime-visible 零成员 marker annotation 的查询与数组物化；带成员 annotation 明确
+失败。未实现 generic reflection、完整 annotation proxy、动态 Proxy/defineClass/DexClassLoader、多 classpath
 namespace、完整 Charset/PKIX/TLS/BigInt 及完整 Java/Android 平台。
 
 定向测试位于 `tests/dexvm/`：interpreter/fast-code/linker、reflection、GC、thread/monitor、IO/

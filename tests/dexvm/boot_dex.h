@@ -33,7 +33,10 @@ inline void BindBootDexPlatformNatives(runtime::dexvm::DexClassLinker& linker) {
     if (!linker.FindClass("Landroid/graphics/Typeface;")) {
         const auto context = std::make_shared<runtime::DexVmAndroidContext>();
         for (const auto& declaration : runtime::AndroidIntrinsicCatalog(context)) {
-            if (declaration.descriptor == "Landroid/graphics/Typeface;")
+            if (declaration.descriptor == "Landroid/graphics/Typeface;" ||
+                declaration.descriptor == "Landroid/os/Binder;" ||
+                declaration.descriptor == "Landroid/os/Parcel;" ||
+                declaration.descriptor == "Landroid/os/SystemProperties;")
                 linker.RegisterIntrinsics(std::array{declaration});
         }
     }

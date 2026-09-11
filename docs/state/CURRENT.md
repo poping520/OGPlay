@@ -3,7 +3,7 @@
 更新：2026-09-11。
 
 - BootDex-first 本地 Binder 已接通：IInterface/IBinder/Binder/Parcel、ResultReceiver 与内部
-  IResultReceiver 及协议异常共 20 个 class_def 来自固定 API 19 JAR，BootDex 现为 1041 类。Binder 普通
+  IResultReceiver 及协议异常共 20 个 class_def 来自固定 API 19 JAR，BootDex 现为 1051 类。Binder 普通
   transact/onTransact 与 Parcel/Bundle/Intent/ResultReceiver 协议执行原版 Java；integration
   仅保留身份/线程策略和唯一字节 backing/Binder 引用 native。外部服务 bind 返回缺席，失败绑定保留连接登记供
   unbind 清理，重复/未登记 unbind 明确失败；跨进程 Binder、驱动、BinderProxy 后端、FD 与系统服务仍不支持。
@@ -11,7 +11,7 @@
 ## 当前能力
 
 - **发行与 VM**：Profile 按 API 选择 bundled data。API 19 提供 AOSP guest 库、
-  OpenSSL、ICU 51.1、1041 类 BootDex 与 ICU 数据；来源和校验见
+  OpenSSL、ICU 51.1、1051 类 BootDex 与 ICU 数据；来源和校验见
   [manifest](../../data/android/19/manifest.json)。普通 Java 状态归字段/数组，JNI 使用
   VM 真实类型关系。
 - **Java/密码/ICU**：已覆盖常用集合、并发、IO、序列化、反射、framework 值类、日期与

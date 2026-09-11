@@ -1,6 +1,10 @@
 # DVM-65..66 Class/reflection fixture. Declaration order and access flags are
 # intentional and form part of the reflection contract.
 
+.class public abstract interface annotation Lreflect/Marker;
+.super Ljava/lang/Object;
+.implements Ljava/lang/annotation/Annotation;
+
 .class public abstract interface Lreflect/BaseContract;
 .super Ljava/lang/Object;
 
@@ -66,6 +70,7 @@
 .implements Lreflect/ChildContract;
 
 .field public derivedField:I
+.runtime-annotation Lreflect/Marker;
 .field private hiddenDerived:I
 .field public booleanField:Z
 .field public byteField:B

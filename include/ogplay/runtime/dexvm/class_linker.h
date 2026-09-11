@@ -163,6 +163,11 @@ struct LinkedField final {
     bool is_wide{};
     bool is_ref{};
     std::uint16_t slot{};
+    struct RuntimeAnnotation final {
+        std::string descriptor;
+        bool has_elements{};
+    };
+    std::vector<RuntimeAnnotation> runtime_annotations;
 };
 
 struct LinkedMethod final {

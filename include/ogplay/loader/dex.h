@@ -120,6 +120,15 @@ struct DexMethodSystemMetadata final {
     std::vector<std::uint32_t> exception_type_indices;
 };
 
+struct DexRuntimeAnnotation final {
+    std::uint32_t type_index{};
+    bool has_elements{};
+};
+
+struct DexFieldRuntimeMetadata final {
+    std::vector<DexRuntimeAnnotation> annotations;
+};
+
 struct DexImage final {
     DexHeader header;
     std::vector<DexMapItem> map_items;
@@ -132,6 +141,7 @@ struct DexImage final {
     // Aligned with classes/methods above.
     std::vector<DexClassSystemMetadata> class_system_metadata;
     std::vector<DexMethodSystemMetadata> method_system_metadata;
+    std::vector<DexFieldRuntimeMetadata> field_runtime_metadata;
 
     [[nodiscard]] std::optional<DexMapItem> FindMapItem(
         DexMapItemType type) const noexcept;

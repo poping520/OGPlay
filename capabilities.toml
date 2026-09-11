@@ -1335,6 +1335,11 @@ status = "complete"
 test = "tests/dexvm/reflection_tests.cpp; tests/loader/dex_tests.cpp malformed encoded-value tests; dexasm/architecture tests"
 note = "DVM-69/Chapter 11 closure 受检解析 Dalvik InnerClass/EnclosingClass/EnclosingMethod/MemberClasses/Throws 为 host metadata；nested/enclosing/declared exceptions 不做 $ 猜测。encoded value kind/value_arg 按 DEX 精确 fail closed，reserved/超宽/array/annotation/null/boolean 非法形态有 malformed tests；不物化通用 annotation proxy"
 
+[dexvm.reflection_field_annotations]
+status = "partial"
+test = "tests/loader/dex_tests.cpp runtime-visible field marker annotation; tests/dexvm/reflection_tests.cpp Field runtime marker annotations dispatch on both backends"
+note = "字段 runtime-visible annotation 类型元数据贯通 loader/linker，Field.getAnnotation/isAnnotationPresent/getAnnotations/getDeclaredAnnotations 可物化零成员 marker annotation；API19 java.lang.annotation 十类进入 1051 类 BootDex。带成员 annotation 与完整 Annotation 契约仍明确不支持。"
+
 [dexvm.object_model]
 status = "complete"
 test = "tests/dexvm/interpreter_tests.cpp; tests/dexvm/gc_tests.cpp; tests/runtime/jni_guest_bindings_tests.cpp"

@@ -360,6 +360,14 @@ DexUnitId DexClassLinker::RegisterDexUnit(
                 field.is_static = is_static;
                 field.is_wide = IsWideDescriptor(field.descriptor);
                 field.is_ref = IsRefDescriptor(field.descriptor);
+                if (encoded.field_index < image_ref.field_runtime_metadata.size()) {
+                    for (const auto& annotation :
+                         image_ref.field_runtime_metadata[encoded.field_index].annotations) {
+                        field.runtime_annotations.push_back({
+                            image_ref.types[annotation.type_index].descriptor,
+                            annotation.has_elements});
+                    }
+                }
                 auto& own_fields = is_static ? stored.own_static_fields
                                              : stored.own_instance_fields;
                 const auto existing_field = std::find_if(
@@ -374,6 +382,7 @@ DexUnitId DexClassLinker::RegisterDexUnit(
                     current.access_flags = field.access_flags;
                     current.is_wide = field.is_wide;
                     current.is_ref = field.is_ref;
+                    current.runtime_annotations = std::move(field.runtime_annotations);
                     dex_order.push_back(*existing_field);
                 } else {
                     const auto field_id = impl_->AddField(std::move(field));

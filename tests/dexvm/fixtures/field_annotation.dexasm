@@ -1,0 +1,10 @@
+.class public abstract interface annotation Lannotation/Marker;
+.super Ljava/lang/Object;
+.implements Ljava/lang/annotation/Annotation;
+
+.class public Lannotation/Subject;
+.super Ljava/lang/Object;
+
+.field public marked:I
+.runtime-annotation Lannotation/Marker;
+.field public plain:I

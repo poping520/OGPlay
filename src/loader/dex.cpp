@@ -884,6 +884,7 @@ void ReadSystemAnnotationSet(const Reader& reader, const DexImage& image,
 void ReadSystemMetadata(const Reader& reader, DexImage& image) {
     image.class_system_metadata.resize(image.classes.size());
     image.method_system_metadata.resize(image.methods.size());
+    image.field_runtime_metadata.resize(image.fields.size());
     for (std::size_t class_index = 0; class_index < image.classes.size();
          ++class_index) {
         const auto directory = image.classes[class_index].annotations_offset;
@@ -894,7 +895,44 @@ void ReadSystemMetadata(const Reader& reader, DexImage& image) {
         const auto parameters_size = reader.U32(directory + 12U);
         ReadSystemAnnotationSet(reader, image, class_set,
                                 &image.class_system_metadata[class_index]);
-        const auto methods_at = static_cast<std::size_t>(directory) + 16U +
+        const auto fields_at = static_cast<std::size_t>(directory) + 16U;
+        for (std::uint32_t index = 0; index < fields_size; ++index) {
+            const auto at = fields_at + static_cast<std::size_t>(index) * 8U;
+            const auto field_index = reader.U32(at);
+            const auto set_offset = reader.U32(at + 4U);
+            if (field_index >= image.fields.size()) {
+                Fail(DexErrorReason::invalid_index, at,
+                     "DEX annotated field index is invalid");
+            }
+            if (set_offset == 0U) continue;
+            const auto count = reader.U32(set_offset);
+            auto& output = image.field_runtime_metadata[field_index].annotations;
+            for (std::uint32_t item_index = 0; item_index < count; ++item_index) {
+                const auto item = reader.U32(
+                    static_cast<std::size_t>(set_offset) + 4U +
+                    static_cast<std::size_t>(item_index) * 4U);
+                std::size_t item_at = item;
+                const auto visibility = reader.U8(item_at++);
+                const auto type_index = reader.Uleb128(item_at);
+                if (type_index >= image.types.size()) {
+                    Fail(DexErrorReason::invalid_index, item_at,
+                         "DEX annotation type index is invalid");
+                }
+                const auto element_count = reader.Uleb128(item_at);
+                for (std::uint32_t element = 0; element < element_count; ++element) {
+                    const auto name_index = reader.Uleb128(item_at);
+                    if (name_index >= image.strings.size()) {
+                        Fail(DexErrorReason::invalid_index, item_at,
+                             "DEX annotation element name index is invalid");
+                    }
+                    SkipEncodedValue(reader, item_at, 0U);
+                }
+                if (visibility == 1U) {
+                    output.push_back({type_index, element_count != 0U});
+                }
+            }
+        }
+        const auto methods_at = fields_at +
             static_cast<std::size_t>(fields_size) * 8U;
         for (std::uint32_t index = 0; index < methods_size; ++index) {
             const auto at = methods_at + static_cast<std::size_t>(index) * 8U;

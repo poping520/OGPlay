@@ -387,3 +387,17 @@ TEST_CASE("DEX system annotations reject invalid encoded values and value_arg") 
         static_cast<void>(ogplay::loader::ParseDex(invalid_argument)),
         ogplay::loader::DexError);
 }
+
+TEST_CASE("DEX parser preserves runtime-visible field marker annotations") {
+    const auto image = ogplay::loader::ParseDex(ReadDexFixture("reflection.dex"));
+    const auto field = std::find_if(image.fields.begin(), image.fields.end(),
+        [&](const auto& item) {
+            return image.strings[item.name_string_index].value == u"derivedField";
+        });
+    REQUIRE(field != image.fields.end());
+    const auto index = static_cast<std::size_t>(field - image.fields.begin());
+    REQUIRE(image.field_runtime_metadata[index].annotations.size() == 1U);
+    const auto& annotation = image.field_runtime_metadata[index].annotations[0];
+    CHECK(image.types[annotation.type_index].descriptor == "Lreflect/Marker;");
+    CHECK_FALSE(annotation.has_elements);
+}

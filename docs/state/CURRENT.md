@@ -5,7 +5,7 @@
 ## 当前能力
 
 - **发行与 VM**：Profile 按 API 选择 bundled data。API 19 提供 AOSP guest 库、
-  OpenSSL、ICU 51.1、972 类 BootDex 与 ICU 数据；来源和校验见
+  OpenSSL、ICU 51.1、992 类 BootDex 与 ICU 数据；来源和校验见
   [manifest](../../data/android/19/manifest.json)。普通 Java 状态归字段/数组，JNI 使用
   VM 真实类型关系。
 - **Java/密码/ICU**：已覆盖常用集合、并发、IO、序列化、反射、framework 值类、日期与
@@ -19,6 +19,10 @@
 
 ## 最近进展
 
+- [DVM-143](../tasks/dexvm/DVM-143.md)：`getMethod/getDeclaredMethod` 改为按名称与参数定向
+  查找，不再因无关方法签名里的缺失类型失败；PvZ 2.3.12 复跑完成加载任务。
+- [DVM-142](../tasks/dexvm/DVM-142.md)：一次迁入 ResolveInfo 所需 PM 值类闭包，删除
+  PackageItemInfo/ApplicationInfo intrinsic；PvZ 2.3.12 已越过原反射故障并完成加载任务。
 - [BND-29](../tasks/boundary/BND-29.md)：GLES2 非法 capability 前置回送
   `GL_INVALID_ENUM`；真实 ANGLE 定向 2 用例、99 断言通过。
 - [DVM-141](../tasks/dexvm/DVM-141.md)：JNI 数组元素出口按真实类型原子幂等注册。
@@ -31,13 +35,14 @@
 - Framework 近期完成 [DVM-135](../tasks/dexvm/DVM-135.md)～
   [DVM-138](../tasks/dexvm/DVM-138.md)：主 Looper/View.post、无传感器方向监听、
   Configuration 与 ViewParent。
-- CLI 错误现在独立分块；未捕获 Java 异常按阶段、exception、message、stack trace 显示。
+- CLI 错误独立分块且每次故障只打印一次；未捕获 Java 异常按阶段、exception、message、
+  stack trace 显示，MCP `guest_fault` 保持完整。
 
 ## 当前阻塞
 
-- PvZ 尚未通过游戏 gate：此前 exact Profile 已推进至首帧后的 `guest memory is unmapped`；
-  2026-09-11 当前无 Profile 启动路径在 `MainActivity.onCreateMainActivity` 因 null Locale
-  抛出 NPE。两条路径不可混为同一结论。
+- PvZ 尚未通过三轮 Scenario gate：2.3.12 无 Profile 路径已越过 PackageManager 反射故障并
+  完成加载任务，人工停止于 8568 帧；其他版本/Profile 的 null Locale 与 guest memory fault
+  仍需分别归因，不可混为同一结论。
 - Tales 首错仍为未实现的 `LocationListener`。
 - BootDex Throwable 定向测试仍 terminate；DVM-120 Typeface 定向测试存在既有失败。
 - payload 门禁仍有 guest JNI generator SHA 不一致；GUI `process_manager.cpp:131` 仍阻塞

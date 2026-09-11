@@ -98,8 +98,6 @@ std::vector<dexvm::IntrinsicClassDecl> AndroidIntrinsicCatalog(
         Declare_android_content_Intent(context),
         Declare_android_content_IntentFilter(context),
         Declare_android_content_IntentFilter_MalformedMimeTypeException(context),
-        Declare_android_content_pm_PackageItemInfo(context),
-        Declare_android_content_pm_ApplicationInfo(context),
         Declare_android_content_pm_PackageInfo(context),
         Declare_android_content_pm_PackageManager_NameNotFoundException(context),
         Declare_android_content_pm_PackageManager(context),

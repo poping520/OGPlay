@@ -920,11 +920,6 @@ int RunApkCommand(const int argc, const char* const argv[],
                 mcp_lifecycle = agent::McpLifecycleState::failed;
                 permitted_steps = 0U;
                 publish_session();
-                logger.Write(
-                    core::LogLevel::error, "frontend.run_apk",
-                    "APK guest execution failed",
-                    {.frame = driver.state().frame},
-                    {{"reason", std::string(error.what())}});
                 if (!mcp_manual_step) quit = true;
             }
             if (ShouldIdleSleepAfterFrameStep(frame_presented)) {

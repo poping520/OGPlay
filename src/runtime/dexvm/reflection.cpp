@@ -141,6 +141,7 @@ template <typename Meta>
 class ReflectionRuntime::Impl final {
 public:
     std::vector<VmMethodId> serialization_constructors;
+    std::unordered_map<std::uint32_t, ReflectMethodMeta> method_metadata;
     Impl(Interpreter& interpreter, DexClassLinker& linker,
          JavaObjectModel& model)
         : interpreter(&interpreter), linker(&linker), model(&model),
@@ -238,6 +239,53 @@ public:
                 error.Reason(), "reflection metadata method " + member +
                                     " failed: " + error.what());
         }
+    }
+
+    [[nodiscard]] bool MethodParametersMatch(
+        const VmMethodId method_id,
+        const std::span<const DexClassId> parameter_types) const {
+        const auto parsed = ClassNameCodec::ParseMethod(
+            linker->Method(method_id).descriptor);
+        if (parsed.parameters.size() != parameter_types.size()) return false;
+        for (std::size_t index = 0; index < parameter_types.size(); ++index) {
+            if (parsed.parameters[index] !=
+                linker->Class(parameter_types[index]).descriptor) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    [[nodiscard]] std::optional<ReflectMethodMeta> FindOwnMethod(
+        const DexClassId declaring_class, const std::string_view name,
+        const std::span<const DexClassId> parameter_types,
+        const bool public_only) {
+        linker->EnsureClassLinked(declaring_class);
+        const auto direct = linker->Class(declaring_class).own_direct_methods;
+        const auto virtuals = linker->Class(declaring_class).own_virtual_methods;
+        std::uint32_t slot{};
+        const auto search = [&](const auto& methods)
+            -> std::optional<ReflectMethodMeta> {
+            for (const auto method_id : methods) {
+                const auto& method = linker->Method(method_id);
+                if (method.name == "<init>" || method.name == "<clinit>") {
+                    continue;
+                }
+                const auto method_slot = slot++;
+                if (method.name != name ||
+                    (public_only && (method.access_flags & kAccPublic) == 0U) ||
+                    !MethodParametersMatch(method_id, parameter_types)) {
+                    continue;
+                }
+                ClassReflectionMetadata selected;
+                AddMethodChecked(selected, declaring_class, method_id);
+                selected.methods.front().slot = method_slot;
+                return selected.methods.front();
+            }
+            return std::nullopt;
+        };
+        if (auto found = search(direct); found.has_value()) return found;
+        return search(virtuals);
     }
 
     void AddField(ClassReflectionMetadata& target,
@@ -504,25 +552,18 @@ std::vector<ReflectFieldMeta> ReflectionRuntime::PublicFields(
 std::optional<ReflectMethodMeta> ReflectionRuntime::FindDeclaredMethod(
     const DexClassId declaring_class, const std::string_view name,
     const std::span<const DexClassId> parameter_types) {
-    for (const auto& meta : DeclaredMethods(declaring_class)) {
-        if (impl_->linker->Method(meta.method).name == name &&
-            SameParameters(meta, parameter_types)) {
-            return meta;
-        }
-    }
-    return std::nullopt;
+    return impl_->FindOwnMethod(declaring_class, name, parameter_types, false);
 }
 
 std::optional<ReflectMethodMeta> ReflectionRuntime::FindPublicMethod(
     const DexClassId java_class, const std::string_view name,
     const std::span<const DexClassId> parameter_types) {
-    for (const auto& meta : PublicMethods(java_class)) {
-        if (impl_->linker->Method(meta.method).name == name &&
-            SameParameters(meta, parameter_types)) {
-            return meta;
-        }
-    }
-    return std::nullopt;
+    std::optional<ReflectMethodMeta> result;
+    impl_->VisitPublicTypes(java_class, [&](const DexClassId current) {
+        if (result.has_value()) return;
+        result = impl_->FindOwnMethod(current, name, parameter_types, true);
+    });
+    return result;
 }
 
 std::optional<ReflectConstructorMeta> ReflectionRuntime::FindConstructor(
@@ -559,11 +600,12 @@ VmObjectRef ReflectionRuntime::MaterializeMethod(
     std::string_view stage = "allocate";
     try {
         const auto wrapper = impl_->Allocate("Ljava/lang/reflect/Method;");
+        impl_->method_metadata.insert_or_assign(meta.method.Value(), meta);
         stage = "common fields";
         impl_->CommonMemberFields(wrapper, meta.declaring_class, meta.slot);
         const auto& method = impl_->linker->Method(meta.method);
         WriteIntField(*impl_->linker, *impl_->model, wrapper, "methodDexIndex",
-                      0xffffffffU);
+                      meta.method.Value());
         stage = "name";
         WriteRefField(*impl_->linker, *impl_->model, wrapper, "name",
                       "Ljava/lang/String;",
@@ -658,12 +700,14 @@ VmObjectRef ReflectionRuntime::MaterializeTypeArray(
 
 const ReflectMethodMeta& ReflectionRuntime::MethodMetadata(
     const VmObjectRef wrapper) {
-    const auto declaring = impl_->model->ClassOfClassObject(ReadRefField(
-        *impl_->linker, *impl_->model, wrapper, "declaringClass",
-        "Ljava/lang/Class;"));
-    const auto methods = DeclaredMethods(declaring);
-    return MetadataBySlot(*impl_->linker, *impl_->model, wrapper, methods,
-                          "Method");
+    const auto method = ReadIntField(*impl_->linker, *impl_->model, wrapper,
+                                     "methodDexIndex");
+    const auto found = impl_->method_metadata.find(method);
+    if (found == impl_->method_metadata.end()) {
+        throw DexVmError(DexVmErrorReason::internal_invariant,
+                         "reflection Method metadata is missing");
+    }
+    return found->second;
 }
 
 const ReflectConstructorMeta& ReflectionRuntime::ConstructorMetadata(

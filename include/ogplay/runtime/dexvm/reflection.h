@@ -43,8 +43,8 @@ struct ReflectFieldMeta final {
     std::uint32_t access_flags{};
 };
 
-// Immutable member metadata plus the sole guest-wrapper factory. Reflection
-// slots are declaring-class-local opaque ordinals, never linker/Dex ids.
+// Immutable member metadata plus the sole guest-wrapper factory. Public guest
+// fields remain opaque; host lookup identity is never a raw pointer.
 class ReflectionRuntime final {
 public:
     ReflectionRuntime(Interpreter& interpreter, DexClassLinker& linker,

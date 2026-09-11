@@ -15,6 +15,7 @@
 #include "ogplay/runtime/dexvm/interpreter.h"
 #include "ogplay/runtime/dexvm/intrinsic_builder.h"
 #include "ogplay/runtime/dexvm/object_model.h"
+#include "ogplay/runtime/dexvm/reflection.h"
 #include "ogplay/runtime/dexvm/vm_threads.h"
 #include "ogplay/runtime/integration/dexvm_android.h"
 
@@ -1934,6 +1935,94 @@ TEST_CASE("DVM-112 resolveService distinguishes absent candidates from unsupport
         static_cast<void>(f.vm.CollectGarbage());
         absent();
         CHECK(f.ledger.Unimplemented()[0].count == 11);
+    }
+}
+
+TEST_CASE("DVM-142 PackageManager reflection resolves the BootDex ResolveInfo family") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch,
+                               InterpreterBackend::threaded}) {
+        AndroidValueVm f(backend);
+
+        for (const auto* descriptor : {
+                 "Landroid/content/pm/PackageItemInfo;",
+                 "Landroid/content/pm/ApplicationInfo;",
+                 "Landroid/content/pm/ComponentInfo;",
+                 "Landroid/content/pm/ActivityInfo;",
+                 "Landroid/content/pm/ServiceInfo;",
+                 "Landroid/content/pm/ProviderInfo;",
+                 "Landroid/content/pm/ResolveInfo;",
+             }) {
+            CHECK(f.New(descriptor).IsValid());
+        }
+
+        const auto pattern = f.vm.NewStringUtf8("/example");
+        CHECK(f.New("Landroid/os/PatternMatcher;", "(Ljava/lang/String;I)V",
+                    {VmValue::Ref(pattern), VmValue::Int(0)})
+                  .IsValid());
+        CHECK(f.New("Landroid/content/pm/PathPermission;",
+                    "(Ljava/lang/String;ILjava/lang/String;Ljava/lang/String;)V",
+                    {VmValue::Ref(pattern), VmValue::Int(0),
+                     VmValue::Ref(VmObjectRef{}), VmValue::Ref(VmObjectRef{})})
+                  .IsValid());
+
+        const auto class_array = f.model.NewObjectArray(
+            f.linker.ResolveDescriptor("[Ljava/lang/Class;"),
+            f.linker.ResolveDescriptor("Ljava/lang/Class;"), 1);
+        f.model.SetObjectElement(
+            class_array, 0,
+            f.model.ClassObject(
+                f.linker.ResolveDescriptor("Ljava/lang/String;")));
+        const auto package_manager_class = f.model.ClassObject(
+            f.linker.ResolveDescriptor("Landroid/content/pm/PackageManager;"));
+        const auto reflected = f.OnOutcome(
+            package_manager_class, "getMethod",
+            "(Ljava/lang/String;[Ljava/lang/Class;)Ljava/lang/reflect/Method;",
+            {VmValue::Ref(f.vm.NewStringUtf8("hasSystemFeature")),
+             VmValue::Ref(class_array)});
+        REQUIRE_MESSAGE(!reflected.exception.IsValid(),
+                        reflected.exception_message);
+        CHECK(reflected.value.ref.IsValid());
+    }
+}
+
+TEST_CASE("DVM-143 method lookup ignores unrelated unavailable signature types") {
+    auto builder = IntrinsicClassBuilder::Class(
+        "Ltest/SelectiveLookup;", "Ljava/lang/Object;");
+    builder.Constructor("()V", [](IntrinsicContext&) {
+        return VmValue::Void();
+    });
+    builder.VirtualMethod("wanted", "()I", [](IntrinsicContext&) {
+        return VmValue::Int(7);
+    });
+    builder.VirtualMethod(
+        "unrelated", "()Lmissing/UnavailableReturnType;",
+        [](IntrinsicContext&) { return VmValue::Ref(VmObjectRef{}); });
+    const std::vector<IntrinsicClassDecl> extras{
+        std::move(builder).Build()};
+
+    for (const auto backend : {InterpreterBackend::switch_dispatch,
+                               InterpreterBackend::threaded}) {
+        AndroidValueVm f(backend, extras);
+        const auto represented = f.model.ClassObject(
+            f.linker.ResolveDescriptor("Ltest/SelectiveLookup;"));
+        const auto lookup = [&](const char* operation) {
+            return f.OnOutcome(
+                represented, operation,
+                "(Ljava/lang/String;[Ljava/lang/Class;)Ljava/lang/reflect/Method;",
+                {VmValue::Ref(f.vm.NewStringUtf8("wanted")),
+                 VmValue::Ref(VmObjectRef{})});
+        };
+
+        const auto public_method = lookup("getMethod");
+        REQUIRE_MESSAGE(!public_method.exception.IsValid(),
+                        public_method.exception_message);
+        const auto declared_method = lookup("getDeclaredMethod");
+        REQUIRE_MESSAGE(!declared_method.exception.IsValid(),
+                        declared_method.exception_message);
+        CHECK(f.vm.StringUtf8(f.On(public_method.value.ref, "getName",
+                                   "()Ljava/lang/String;").ref) == "wanted");
+        CHECK(f.vm.Reflection().MethodMetadata(public_method.value.ref).method ==
+              f.vm.Reflection().MethodMetadata(declared_method.value.ref).method);
     }
 }
 

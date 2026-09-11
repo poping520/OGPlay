@@ -325,6 +325,23 @@ TEST_CASE("visible button with a listener receives the click") {
     CHECK_FALSE(vm.Click(40.0F, 95.0F).has_value());
     CHECK(vm.CallStaticInt("getClicks") == 1);
 }
+TEST_CASE("Button inherits View enabled state and disabled hit filtering") {
+    ClickVm vm;
+    vm.CallOn(vm.skip_button, "setOnClickListener",
+              "(Landroid/view/View$OnClickListener;)V",
+              {VmValue::Ref(vm.NewListener())});
+
+    CHECK(vm.CallOn(vm.skip_button, "isEnabled", "()Z").AsInt() == 1);
+    vm.CallOn(vm.skip_button, "setEnabled", "(Z)V", {VmValue::Int(0)});
+    CHECK(vm.CallOn(vm.skip_button, "isEnabled", "()Z").AsInt() == 0);
+    CHECK_FALSE(vm.Click(60.0F, 95.0F).has_value());
+    CHECK(vm.CallStaticInt("getClicks") == 0);
+
+    vm.CallOn(vm.skip_button, "setEnabled", "(Z)V", {VmValue::Int(1)});
+    CHECK(vm.CallOn(vm.skip_button, "isEnabled", "()Z").AsInt() == 1);
+    CHECK(vm.Click(60.0F, 95.0F).has_value());
+    CHECK(vm.CallStaticInt("getClicks") == 1);
+}
 TEST_CASE("UI hit test chooses the topmost resolved clickable node") {
     ClickVm vm;
     vm.CallOn(vm.skip_button, "setOnClickListener",

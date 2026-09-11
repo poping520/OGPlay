@@ -1066,6 +1066,21 @@ Decl Declare_android_view_View(const Context& context) {
     builder.FinalMethod("getVisibility", "()I", [context](dx::IntrinsicContext& call) {
         return dx::VmValue::Int(VisibilityOf(*context, call.receiver.Value()));
     });
+    builder.VirtualMethod("isEnabled", "()Z",
+        [context](dx::IntrinsicContext& call) {
+            const auto node = EnsureViewUiNode(
+                *context, call.receiver, ui::UiClass::View);
+            return dx::VmValue::Int(
+                context->ui_tree.Get(node)->enabled ? 1 : 0);
+        });
+    builder.VirtualMethod("setEnabled", "(Z)V",
+        [context](dx::IntrinsicContext& call) {
+            const auto node = EnsureViewUiNode(
+                *context, call.receiver, ui::UiClass::View);
+            context->ui_tree.SetEnabled(
+                node, call.arguments[0].AsInt() != 0);
+            return dx::VmValue::Void();
+        });
     builder.FinalMethod("setBackgroundColor", "(I)V",
         [context](dx::IntrinsicContext& call) {
             const auto node = ViewNode(call, context);

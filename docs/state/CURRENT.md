@@ -19,6 +19,8 @@
 
 ## 最近进展
 
+- [DVM-137](../tasks/dexvm/DVM-137.md)：Resources Configuration 现在发布同一 VM 的默认
+  Locale，并由原版 Java 同步 layout-direction。
 - [DVM-143](../tasks/dexvm/DVM-143.md)：`getMethod/getDeclaredMethod` 改为按名称与参数定向
   查找，不再因无关方法签名里的缺失类型失败；PvZ 2.3.12 复跑完成加载任务。
 - [DVM-142](../tasks/dexvm/DVM-142.md)：一次迁入 ResolveInfo 所需 PM 值类闭包，删除

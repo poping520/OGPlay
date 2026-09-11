@@ -797,6 +797,7 @@ TEST_CASE("DVM-97 IntentFilter matches bounded MIME URI authority and categories
         "Landroid/content/Intent;",
         "(Ljava/lang/String;Landroid/net/Uri;)V",
         {VmValue::Ref(action), VmValue::Ref(uri)});
+    CHECK(fixture.linker.Class(fixture.model.ObjectClass(intent)).is_boot_dex);
     fixture.On(intent, "setDataAndType",
                "(Landroid/net/Uri;Ljava/lang/String;)Landroid/content/Intent;",
                {VmValue::Ref(uri), VmValue::Ref(mime)});
@@ -807,6 +808,8 @@ TEST_CASE("DVM-97 IntentFilter matches bounded MIME URI authority and categories
     const auto categories =
         fixture.On(intent, "getCategories", "()Ljava/util/Set;").ref;
     REQUIRE(categories.IsValid());
+    CHECK(fixture.linker.Class(fixture.model.ObjectClass(categories)).descriptor ==
+          "Landroid/util/ArraySet;");
     CHECK(fixture.On(intent, "hasCategory", "(Ljava/lang/String;)Z",
                      {VmValue::Ref(category)}).AsInt() == 1);
     CHECK(fixture.On(
@@ -2123,6 +2126,99 @@ TEST_CASE("small framework Java values execute from BootDex") {
                   .AsInt() == 10);
 
     }
+}
+
+TEST_CASE("ClipData value objects execute from BootDex") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch,
+                               InterpreterBackend::threaded}) {
+        AndroidValueVm f(backend);
+        for (const auto* descriptor : {
+                 "Landroid/content/ClipData;",
+                 "Landroid/content/ClipData$Item;",
+                 "Landroid/content/ClipDescription;",
+             }) {
+            CAPTURE(descriptor);
+            CHECK(f.linker.Class(f.linker.ResolveDescriptor(descriptor)).is_boot_dex);
+        }
+
+        const auto label = f.vm.NewStringUtf8("label");
+        const auto first_text = f.vm.NewStringUtf8("first");
+        const auto clip = f.Static(
+            "Landroid/content/ClipData;", "newPlainText",
+            "(Ljava/lang/CharSequence;Ljava/lang/CharSequence;)"
+            "Landroid/content/ClipData;",
+            {VmValue::Ref(label), VmValue::Ref(first_text)}).ref;
+        CHECK(f.On(clip, "getItemCount", "()I").AsInt() == 1);
+        const auto description = f.On(
+            clip, "getDescription", "()Landroid/content/ClipDescription;").ref;
+        CHECK(f.On(description, "getLabel", "()Ljava/lang/CharSequence;").ref ==
+              label);
+        CHECK(f.On(description, "getMimeTypeCount", "()I").AsInt() == 1);
+        CHECK(f.vm.StringUtf8(f.On(description, "getMimeType", "(I)Ljava/lang/String;",
+                                   {VmValue::Int(0)}).ref) == "text/plain");
+        CHECK(f.On(description, "hasMimeType", "(Ljava/lang/String;)Z",
+                   {VmValue::Ref(f.vm.NewStringUtf8("text/*"))}).AsInt() == 1);
+
+        const auto first = f.On(
+            clip, "getItemAt", "(I)Landroid/content/ClipData$Item;",
+            {VmValue::Int(0)}).ref;
+        CHECK(f.On(first, "getText", "()Ljava/lang/CharSequence;").ref == first_text);
+        CHECK_FALSE(f.On(first, "getIntent", "()Landroid/content/Intent;").ref.IsValid());
+        CHECK_FALSE(f.On(first, "getUri", "()Landroid/net/Uri;").ref.IsValid());
+
+        const auto second_text = f.vm.NewStringUtf8("second");
+        const auto second = f.New(
+            "Landroid/content/ClipData$Item;", "(Ljava/lang/CharSequence;)V",
+            {VmValue::Ref(second_text)});
+        f.On(clip, "addItem", "(Landroid/content/ClipData$Item;)V",
+             {VmValue::Ref(second)});
+        CHECK(f.On(clip, "getItemCount", "()I").AsInt() == 2);
+        CHECK(f.On(clip, "getItemAt", "(I)Landroid/content/ClipData$Item;",
+                   {VmValue::Int(1)}).ref == second);
+
+        const auto intent = f.New("Landroid/content/Intent;");
+        CHECK(f.linker.Class(f.model.ObjectClass(intent)).is_boot_dex);
+        const auto package_name = f.vm.NewStringUtf8("org.example");
+        CHECK(f.On(intent, "setPackage",
+                   "(Ljava/lang/String;)Landroid/content/Intent;",
+                   {VmValue::Ref(package_name)}).ref == intent);
+        f.On(intent, "setClipData", "(Landroid/content/ClipData;)V",
+             {VmValue::Ref(clip)});
+        const auto bounds = f.New("Landroid/graphics/Rect;", "(IIII)V",
+                                  {VmValue::Int(1), VmValue::Int(2),
+                                   VmValue::Int(6), VmValue::Int(9)});
+        f.On(intent, "setSourceBounds", "(Landroid/graphics/Rect;)V",
+             {VmValue::Ref(bounds)});
+        const auto copy = f.New("Landroid/content/Intent;",
+                                "(Landroid/content/Intent;)V",
+                                {VmValue::Ref(intent)});
+        CHECK(f.On(copy, "getPackage", "()Ljava/lang/String;").ref == package_name);
+        CHECK(f.On(copy, "getClipData", "()Landroid/content/ClipData;").ref != clip);
+        CHECK(f.On(f.On(copy, "getClipData", "()Landroid/content/ClipData;").ref,
+                   "getItemCount", "()I").AsInt() == 2);
+        const auto copied_bounds =
+            f.On(copy, "getSourceBounds", "()Landroid/graphics/Rect;").ref;
+        CHECK(copied_bounds != bounds);
+        CHECK(f.On(copied_bounds, "width", "()I").AsInt() == 5);
+
+        const auto roots = f.vm.ProtectReferences(std::array{clip, intent, copy});
+        static_cast<void>(f.vm.CollectGarbage("clip-data-values"));
+        CHECK(f.On(clip, "getItemAt", "(I)Landroid/content/ClipData$Item;",
+                   {VmValue::Int(1)}).ref == second);
+    }
+}
+
+TEST_CASE("IntentSender intrinsic shell publishes only its platform type") {
+    AndroidValueVm f;
+    const auto type = f.linker.ResolveDescriptor("Landroid/content/IntentSender;");
+    const auto& klass = f.linker.Class(type);
+    CHECK_FALSE(klass.is_boot_dex);
+    CHECK(klass.super == f.linker.ResolveDescriptor("Ljava/lang/Object;"));
+    CHECK(f.linker.IsAssignable(
+        f.linker.ResolveDescriptor("Landroid/os/Parcelable;"), type));
+    CHECK(klass.own_direct_methods.empty());
+    CHECK(klass.own_virtual_methods.empty());
+    CHECK(klass.own_instance_fields.empty());
 }
 
 TEST_CASE("DVM-120 Typeface Java cache and styles drive measured rendered text") {

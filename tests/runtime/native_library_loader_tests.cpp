@@ -1439,6 +1439,12 @@ TEST_CASE("DexVM Intent ArrayList extras trace children and sweep with owner") {
     CHECK(vm.MarkReachable().IsMarked(list));
 
     vm.SetGcIntegration({});
+    const auto flags_index = linker.FindVtableIndex(
+        intent_class, "getFlags", "()I");
+    REQUIRE(flags_index.has_value());
+    outcome = vm.Call(linker.Class(intent_class).vtable[*flags_index],
+                      std::vector{runtime::dexvm::VmValue::Ref(intent)});
+    REQUIRE_MESSAGE(!outcome.exception.IsValid(), outcome.exception_message);
     static_cast<void>(vm.CollectGarbage("intent-list-extra-owner-sweep"));
     CHECK_FALSE(vm.MarkReachable().IsMarked(intent));
     CHECK_FALSE(vm.MarkReachable().IsMarked(list));

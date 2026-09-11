@@ -1,5 +1,12 @@
 # 当前状态
 
+- guest `NewStringUTF` 已与 API 19 Dalvik 对齐：null C 指针返回 null `jstring`，非空坏输入
+  仍明确失败并按层级保留 JNI slot、guest thread、LR/SP、r0-r3 与原始 cause。该差异曾使
+  pvz-amaz 8.1.0 的 `LoaderThread.runNative` 在 `lr=0x63125854` 错误终止；修复后实跑已
+  进入 `eadpLogEventRouter`。同一路径的 null Java String `GetStringUTFLength/Chars` 与
+  忽略 `jstr`、仅按 UTF pointer 释放的 `ReleaseStringUTFChars` 也已按 Dalvik 行为对齐；
+  pvz-amaz 已越过 EASP 事件、完成全部 LoadTask，人工停止时呈现 48 帧并干净退出。
+
 - [DVM-147](../tasks/dexvm/DVM-147.md) 已补齐 API 19 AndroidOpenSSL `SHA1PRNG` 与 AES
   KeyGenerator：统一 CSPRNG 首次播种后由 guest ARM OpenSSL 产出随机字节。pvz-amaz 8.1.0
   非 survey 实跑越过原 `NoSuchAlgorithmException`。随后补齐 `Log.d(tag,msg,throwable)`；

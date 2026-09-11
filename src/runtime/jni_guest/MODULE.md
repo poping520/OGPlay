@@ -42,7 +42,10 @@ nonvirtual、monitor、JavaVM)与 root `JNI_OnLoad` 库生命周期。语义本�
   `DirectByteBuffer` identity；地址/容量查询只消费同一 NIO side state，non-direct 分别
   返回 null/-1。非法地址、未知引用或发布失败不得留下 object/state 半提交。
 - `GetStaticMethodID` 只精确查询统一 class registry;`NewStringUTF` 使用受检 guest C
-  string、M3 Modified UTF-8 解码与统一 string store 后发布 local reference。
+  string、M3 Modified UTF-8 解码与统一 string store 后发布 local reference；遵循 API 19
+  Dalvik，null C 指针直接返回 null `jstring`。非空输入读取失败必须按层级排版保留 slot、
+  guest thread、LR/SP、r0-r3 与原始 cause，使动态注册 native 的外层 Java/JNI 上下文仍能
+  定位到具体 guest 调用点。
 - 10 种 `CallStatic*Method` 返回类型的普通、`V`、`A` 共 30 个槽按 method descriptor
   分别解码 A32 variadic、对齐 `va_list` 与 8 字节步长 `jvalue[]`,再进入统一 invocation
   engine;小整数符号/零扩展、float/double/long 双字返回及 void 均遵循 A32 guest ABI,
@@ -74,7 +77,10 @@ nonvirtual、monitor、JavaVM)与 root `JNI_OnLoad` 库生命周期。语义本�
 - modified UTF-8 访问族与 UTF-16 string 5 槽都解析统一 `JniStringStore`,并各用独立
   64 KiB copy-based guest arena;`isCopy` 明确写 true,lease 以 string identity +
   pointer + token 配对并 first-fit 回收,arena owner 不得在析构时反向访问可能已销毁的
-  string store。UTF-16 长度与 region 以 code unit 计,NewString 完整预检 guest input 并
+  string store。API 19 Dalvik 的 null modified-UTF8 string 兼容语义保持一致：length 返回 0、
+  chars 返回 null 且不改写 `isCopy`；`ReleaseStringUTFChars` 与 Dalvik 一样忽略 `jstr`，null
+  指针无操作，非空指针只按已发布 lease 身份释放，未知或重复指针继续明确失败。
+  UTF-16 长度与 region 以 code unit 计,NewString 完整预检 guest input 并
   在 reference 发布失败时删除 semantic object;坏引用/range/输出、wrong-string/double
   release 与 arena exhaustion 明确失败,Critical 两槽继续 unbound。
   两个 arena 共用 lease 分配、发布、配对与回收实现，编码/解码和 semantic store 操作不合并。

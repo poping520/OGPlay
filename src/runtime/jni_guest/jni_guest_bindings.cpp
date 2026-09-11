@@ -4,7 +4,9 @@
 #include <bit>
 #include <cstddef>
 #include <cstdint>
+#include <iomanip>
 #include <limits>
+#include <sstream>
 #include <span>
 #include <string>
 #include <string_view>
@@ -63,6 +65,30 @@ namespace {
 
 [[nodiscard]] JniGuestCallResult Reference(const JniReference value) {
     return Word(value.Value());
+}
+
+[[nodiscard]] std::string Hex32(const std::uint32_t value) {
+    std::ostringstream stream;
+    stream << "0x" << std::hex << std::setfill('0') << std::setw(8) << value;
+    return stream.str();
+}
+
+[[nodiscard]] std::string JniCallFailure(
+    const std::string_view slot, const JniGuestCallFrame& frame,
+    const std::string_view cause) {
+    return "JNI guest call failed:\n"
+           "  slot=" +
+           std::string(slot) + "\n"
+           "  guest_thread=" + std::to_string(frame.thread_id) + "\n"
+           "  call_site:\n"
+           "    lr=" + Hex32(frame.link_register) + "\n"
+           "    sp=" + Hex32(frame.stack_pointer.Value()) + "\n"
+           "  registers:\n"
+           "    r0=" + Hex32(frame.registers[0]) + "\n"
+           "    r1=" + Hex32(frame.registers[1]) + "\n"
+           "    r2=" + Hex32(frame.registers[2]) + "\n"
+           "    r3=" + Hex32(frame.registers[3]) + "\n"
+           "  cause:\n    " + std::string(cause);
 }
 
 void BindDirectBufferSlots(JniGuestCallDispatcher& dispatcher,
@@ -372,9 +398,18 @@ void BindJniGuestCoreSlots(JniGuestCallDispatcher& dispatcher,
         EnvironmentSlot("NewStringUTF"),
         [&environment, &strings,
          &address_space](const JniGuestCallFrame& frame) {
-            const auto text = ReadGuestCString(
-                address_space, memory::GuestAddress{frame.registers[1]},
-                frame.thread_id, "modified UTF-8");
+            if (frame.registers[1] == 0U) {
+                return Reference(JniReference{});
+            }
+            std::string text;
+            try {
+                text = ReadGuestCString(
+                    address_space, memory::GuestAddress{frame.registers[1]},
+                    frame.thread_id, "modified UTF-8");
+            } catch (const JniGuestBindingError& error) {
+                throw JniGuestBindingError(
+                    JniCallFailure("NewStringUTF", frame, error.what()));
+            }
             const std::vector<std::uint8_t> encoded(text.begin(), text.end());
             const auto identity = strings.CreateModifiedUtf8(encoded);
             try {

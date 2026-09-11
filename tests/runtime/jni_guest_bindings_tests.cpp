@@ -372,11 +372,34 @@ TEST_CASE("guest JNI NewStringUTF publishes a decoded local string") {
     REQUIRE(identity.has_value());
     CHECK(fixture.strings.Region(*identity, 0, 3) ==
           std::vector<ogplay::runtime::JniChar>{'A', 0, 'B'});
-    CHECK_THROWS_WITH_AS(
+
+    CHECK(fixture.CallEnvironment("NewStringUTF", 402U, 0U) == 0U);
+
+    const std::vector<std::byte> unterminated(1024U, std::byte{'A'});
+    fixture.memory.Write(fixture.output.Add(0x400U), unterminated);
+    try {
         static_cast<void>(
-            fixture.CallEnvironment("NewStringUTF", 402U, 0U)),
-        "JNI guest modified UTF-8 pointer is null",
-        ogplay::runtime::JniGuestBindingError);
+            fixture.CallEnvironment(
+                "NewStringUTF", 402U, fixture.output.Add(0x400U).Value()));
+        FAIL("unterminated NewStringUTF input did not fail");
+    } catch (const ogplay::runtime::JniGuestBindingError& error) {
+        const std::string_view message{error.what()};
+        CHECK(message.starts_with(
+            "JNI guest call failed:\n"
+            "  slot=NewStringUTF\n"
+            "  guest_thread=402\n"
+            "  call_site:\n"
+            "    lr=0x12345679\n"
+            "    sp=0x72000800\n"
+            "  registers:\n"));
+        CHECK(message.find("    r0=0x71200420\n") !=
+              std::string_view::npos);
+        CHECK(message.find("    r1=0x72000400\n") !=
+              std::string_view::npos);
+        CHECK(message.ends_with(
+            "  cause:\n"
+            "    JNI guest modified UTF-8 is not null-terminated"));
+    }
 }
 
 TEST_CASE("guest JNI modified UTF string family owns checked guest leases") {
@@ -394,6 +417,26 @@ TEST_CASE("guest JNI modified UTF string family owns checked guest leases") {
     CHECK(fixture.CallEnvironment(
               "GetStringUTFLength", thread_id, string.Value()) == 4U);
     const auto copy_flag = fixture.output.Add(0x200U);
+    fixture.memory.Write(
+        copy_flag, std::array<std::byte, 1>{std::byte{0x5a}}, thread_id);
+    CHECK(fixture.CallEnvironment(
+              "GetStringUTFLength", thread_id, 0U) == 0U);
+    CHECK(fixture.CallEnvironment(
+              "GetStringUTFChars", thread_id, 0U,
+              copy_flag.Value()) == 0U);
+    std::byte null_copied{};
+    fixture.memory.Read(copy_flag, std::span{&null_copied, 1}, thread_id);
+    CHECK(null_copied == std::byte{0x5a});
+    CHECK_NOTHROW(static_cast<void>(fixture.CallEnvironment(
+        "ReleaseStringUTFChars", thread_id, 0U, 0U)));
+
+    const auto null_owner_pointer = fixture.CallEnvironment(
+        "GetStringUTFChars", thread_id, string.Value());
+    REQUIRE(null_owner_pointer != 0U);
+    CHECK_NOTHROW(static_cast<void>(fixture.CallEnvironment(
+        "ReleaseStringUTFChars", thread_id, 0U,
+        null_owner_pointer)));
+
     const auto pointer = ogplay::memory::GuestAddress{
         fixture.CallEnvironment(
             "GetStringUTFChars", thread_id, string.Value(),

@@ -46,12 +46,14 @@ constexpr std::size_t kMaximumUtf16CodeUnits = 1024U * 1024U;
 }
 
 [[nodiscard]] JniObjectIdentity ResolveString(
-    JniEnvironment& environment, const JniGuestCallFrame& frame) {
+    JniEnvironment& environment, const JniGuestCallFrame& frame,
+    const std::string_view operation) {
     const auto identity = environment.ResolveObjectForHle(
         frame.thread_id, JniReference{frame.registers[1]});
     if (!identity.has_value()) {
         throw JniGuestBindingError(
-            "JNI guest string reference is null or invalid");
+            std::string(operation) +
+            " requires a non-null valid JNI string reference");
     }
     return *identity;
 }
@@ -111,6 +113,19 @@ public:
         return found;
     }
 
+    [[nodiscard]] Iterator RequirePointer(
+        const memory::GuestAddress pointer,
+        const std::string_view mismatch_error) {
+        const auto found = std::ranges::find_if(
+            leases_, [pointer](const GuestStringLease& lease) {
+                return lease.pointer == pointer;
+            });
+        if (found == leases_.end()) {
+            throw JniGuestBindingError(std::string(mismatch_error));
+        }
+        return found;
+    }
+
     void Erase(const Iterator lease) { leases_.erase(lease); }
 
 private:
@@ -144,7 +159,8 @@ public:
     }
 
     [[nodiscard]] std::uint32_t Acquire(const JniGuestCallFrame& frame) {
-        const auto string = ResolveString(*environment_, frame);
+        const auto string = ResolveString(
+            *environment_, frame, "GetStringUTFChars");
         auto access = strings_->Acquire(
             string, JniStringAccessKind::modified_utf8);
         access.modified_utf8.push_back(0U);
@@ -172,11 +188,11 @@ public:
     }
 
     void Release(const JniGuestCallFrame& frame) {
-        const auto string = ResolveString(*environment_, frame);
         const auto pointer = memory::GuestAddress{frame.registers[2]};
+        if (pointer.IsNull()) return;
         std::scoped_lock lock(mutex_);
-        const auto found = arena_.Require(
-            pointer, string,
+        const auto found = arena_.RequirePointer(
+            pointer,
             "ReleaseStringUTFChars pointer does not match an active lease");
         strings_->Release(found->string, found->token,
                           JniStringAccessKind::modified_utf8);
@@ -226,7 +242,8 @@ public:
     }
 
     [[nodiscard]] std::uint32_t Acquire(const JniGuestCallFrame& frame) {
-        const auto string = ResolveString(*environment_, frame);
+        const auto string = ResolveString(*environment_, frame,
+                                          "GetStringChars");
         const auto is_copy = memory::GuestAddress{frame.registers[2]};
         if (!is_copy.IsNull()) {
             address_space_->Validate(
@@ -251,7 +268,8 @@ public:
     }
 
     void Release(const JniGuestCallFrame& frame) {
-        const auto string = ResolveString(*environment_, frame);
+        const auto string = ResolveString(*environment_, frame,
+                                          "ReleaseStringChars");
         const auto pointer = memory::GuestAddress{frame.registers[2]};
         std::scoped_lock lock(mutex_);
         const auto found = arena_.Require(
@@ -280,12 +298,14 @@ void BindJniGuestModifiedUtf8Slots(
     dispatcher.BindEnvironment(
         Slot("GetStringUTFLength"),
         [&environment, &strings](const JniGuestCallFrame& frame) {
+            if (frame.registers[1] == 0U) return Int(0);
             return Int(strings.ModifiedUtf8Length(
-                ResolveString(environment, frame)));
+                ResolveString(environment, frame, "GetStringUTFLength")));
         });
     dispatcher.BindEnvironment(
         Slot("GetStringUTFChars"),
         [leases](const JniGuestCallFrame& frame) {
+            if (frame.registers[1] == 0U) return Word(0U);
             return Word(leases->Acquire(frame));
         });
     dispatcher.BindEnvironment(
@@ -298,7 +318,8 @@ void BindJniGuestModifiedUtf8Slots(
         Slot("GetStringUTFRegion"),
         [&environment, &strings,
          &address_space](const JniGuestCallFrame& frame) {
-            const auto string = ResolveString(environment, frame);
+            const auto string = ResolveString(
+                environment, frame, "GetStringUTFRegion");
             const auto start = std::bit_cast<JniSize>(frame.registers[2]);
             const auto length = std::bit_cast<JniSize>(frame.registers[3]);
             const auto bytes = strings.ModifiedUtf8Region(
@@ -366,7 +387,8 @@ void BindJniGuestUtf16Slots(
     dispatcher.BindEnvironment(
         Slot("GetStringLength"),
         [&environment, &strings](const JniGuestCallFrame& frame) {
-            return Int(strings.Length(ResolveString(environment, frame)));
+            return Int(strings.Length(
+                ResolveString(environment, frame, "GetStringLength")));
         });
     dispatcher.BindEnvironment(
         Slot("GetStringChars"),
@@ -403,7 +425,8 @@ void BindJniGuestUtf16Slots(
                     frame.thread_id);
             }
             const auto chars = strings.Region(
-                ResolveString(environment, frame), start, length);
+                ResolveString(environment, frame, "GetStringRegion"),
+                start, length);
             if (!chars.empty()) {
                 address_space.Write(
                     destination, EncodeUtf16(chars, false), frame.thread_id);

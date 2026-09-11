@@ -2,8 +2,10 @@
 
 - [DVM-147](../tasks/dexvm/DVM-147.md) 已补齐 API 19 AndroidOpenSSL `SHA1PRNG` 与 AES
   KeyGenerator：统一 CSPRNG 首次播种后由 guest ARM OpenSSL 产出随机字节。pvz-amaz 8.1.0
-  非 survey 实跑越过原 `NoSuchAlgorithmException`；当前后续缺口为 KIWI_COMMAND 线程的
-  `Log.d(tag,msg,throwable)`，其内层异常是 `resolveService` 暂只支持 `flags=0`。
+  非 survey 实跑越过原 `NoSuchAlgorithmException`。随后补齐 `Log.d(tag,msg,throwable)`；
+  后台异常已能正常记录且不再中止进程。session 的 Activity 均为顶层对象，`isChild()`
+  已按该事实返回 false；pvz-amaz 实跑越过原解析故障，等待约 90 秒未出现新 DexVM fault，
+  但也未产出首帧，本轮手动终止等待。
 
 更新：2026-09-11。
 

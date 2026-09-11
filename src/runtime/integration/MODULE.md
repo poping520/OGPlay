@@ -77,8 +77,10 @@ DVM-79 的 `DexVmIoVfsAdapter` 是 DexVM core `IoFileSystem` 与具体
   application ClassLoader token。调用期间 `NativeLibraryLoader` registry mutex 不跨
   constructor/JNI_OnLoad；JNI callback 直接回到 `DexVmGuestBridge::InvokeInterpreted`，
   `VmExecutionLock` 以 owner/depth 支持同宿主线程递归，因此 A JNI_OnLoad → Java → load B
-  不需释放 VM 状态；native guest-call executor 在重入时创建独立 CPU，并以外层暂停现场的
-  当前 SP 作为 nested 栈顶，禁止覆盖外层寄存器/栈帧。Java 边界只观察
+  不需释放 VM 状态；native guest-call executor 按 guest thread 与重入深度持久复用独立
+  CPU/JIT，并以外层暂停现场的当前 SP 作为 nested 栈顶：同层后续调用复用翻译缓存，
+  不同深度不得递归进入仍在运行的 CPU，也不得覆盖外层寄存器/栈帧；DexVM thread 释放时
+  必须同步回收其全部 nested executor。Java 边界只观察
   NPE/UnsatisfiedLinkError，底层 typed loader reason 仍保留给 host 测试与诊断。
 - legacy process 组合真实 Bionic namespace、API 19 process、syscall/clone、
   guest JNI ABI/core bindings 与 Android HLE,执行 guest init/fini 并只接受通用 A32

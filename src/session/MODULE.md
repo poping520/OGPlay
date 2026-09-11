@@ -67,6 +67,8 @@ Dex activity 每帧在 guest 回调前泵送主 Looper，到帧尾只通过
   线程前唤醒 pacer。surface callback 前按通用 render-driver 事实分流：intrinsic
   renderer 保留打开线程 GL currency；guest-owned GLSurfaceView 显式释放后交给其
   GLThread。
+  未捕获 Java 异常文本按失败阶段、exception、message、stack trace 分行输出；原始类描述符、
+  消息、方法与 pc 不改写。
 - `MapAndroidInput`：在 HAL 与 Android guest 边界把通用 USB HID/SDL 物理 scancode
   转为 API 19 keyCode，把左右 modifier/caps/num 转为 metaState，并保留当前布局 Unicode、
   repeatCount、scanCode 与 eventTime；未知物理键明确成为 `KEYCODE_UNKNOWN`。

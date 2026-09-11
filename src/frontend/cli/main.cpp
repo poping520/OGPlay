@@ -25,6 +25,16 @@ void Write(FILE* stream, const std::string_view text) {
     static_cast<void>(std::fwrite(text.data(), sizeof(char), text.size(), stream));
 }
 
+[[nodiscard]] std::string FormatError(const std::string_view message) {
+    std::string rendered{"\nerror [ogplay]\n  "};
+    for (const char character : message) {
+        rendered += character;
+        if (character == '\n') rendered += "  ";
+    }
+    rendered += '\n';
+    return rendered;
+}
+
 int Usage() {
     Write(stderr, "usage: ogplay --version | capabilities [path] | agent <method> | agent-stdio\n"
                   "       ogplay gui [--library-root <dir>] [--smoke-frames <count>]\n"
@@ -114,7 +124,7 @@ int main(const int argc, const char* const argv[]) {
             return 0;
         }
     } catch (const std::exception& error) {
-        Write(stderr, std::string("ogplay: ") + error.what() + "\n");
+        Write(stderr, FormatError(error.what()));
         return 1;
     }
     return Usage();

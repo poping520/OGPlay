@@ -357,8 +357,8 @@ TEST_CASE("DVM-110 shutdown honors delayed and periodic continuation policies") 
                 "(Ljava/lang/Runnable;JJLjava/util/concurrent/TimeUnit;)Ljava/util/concurrent/ScheduledFuture;",
                 {VmValue::Ref(s.Task(2)), VmValue::Long(10), VmValue::Long(10), VmValue::Ref(s.unit)}).ref);
             s.Call(pool, "shutdown", "()V");
-            CHECK(s.Call(once, "isCancelled", "()Z").AsInt() == !delayed);
-            CHECK(s.Call(repeating, "isCancelled", "()Z").AsInt() == !periodic);
+            CHECK((s.Call(once, "isCancelled", "()Z").AsInt() != 0) == !delayed);
+            CHECK((s.Call(repeating, "isCancelled", "()Z").AsInt() != 0) == !periodic);
             s.state->now = 10;
             if (delayed) s.Wait([&] { return s.Call(once, "isDone", "()Z").AsInt() != 0; });
             if (periodic) {
@@ -1817,7 +1817,7 @@ TEST_CASE("DVM-104 synchronizers park real guest threads and handle interruption
                 bool done=false;for(int i=0;i<3000;++i){if(finished->load()){done=true;break;}std::this_thread::sleep_for(std::chrono::milliseconds(1));}
                 if(!done)f.threads.Interrupt(thread);
                 f.threads.Join(thread);CHECK(done);CHECK(interrupted->load()==interrupt);const auto failure=f.threads.TakeFailure(); CHECK_MESSAGE(!failure, failure.value_or(""));
-                if(barrier) {const auto broken=f.Virtual(*sync,"isBroken","()Z");f.RequireOk(broken);CHECK(broken.value.AsInt()==interrupt);f.RequireOk(f.Virtual(*sync,"reset","()V"));}
+                if(barrier) {const auto broken=f.Virtual(*sync,"isBroken","()Z");f.RequireOk(broken);CHECK((broken.value.AsInt()!=0)==interrupt);f.RequireOk(f.Virtual(*sync,"reset","()V"));}
             }
         }
     }

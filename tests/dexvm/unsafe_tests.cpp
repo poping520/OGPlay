@@ -158,8 +158,8 @@ TEST_CASE("Unsafe fields share DEX storage and reject invalid locations") {
             CHECK(UnsafeVm::Ok(f.Virtual(object, "get", "()I")).AsInt() == 31);
         }
         for (const auto expected : {30, 31})
-            CHECK(UnsafeVm::Ok(f.Call("compareAndSwapInt", "(Ljava/lang/Object;JII)Z",
-                {VmValue::Ref(object), VmValue::Long(offset), VmValue::Int(expected), VmValue::Int(88)})).AsInt() == (expected == 31));
+            CHECK((UnsafeVm::Ok(f.Call("compareAndSwapInt", "(Ljava/lang/Object;JII)Z",
+                {VmValue::Ref(object), VmValue::Long(offset), VmValue::Int(expected), VmValue::Int(88)})).AsInt() != 0) == (expected == 31));
         CHECK(UnsafeVm::Ok(f.Virtual(object, "get", "()I")).AsInt() == 88);
         f.Throws(f.Call("getLong", "(Ljava/lang/Object;J)J", {VmValue::Ref(object), VmValue::Long(offset)}),
                  "Ljava/lang/IllegalArgumentException;");

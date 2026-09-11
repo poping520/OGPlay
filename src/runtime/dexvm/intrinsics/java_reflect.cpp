@@ -1122,6 +1122,69 @@ IntrinsicClassDecl Declare_java_lang_reflect_Field() {
             (context.vm.Reflection().FieldMetadata(context.receiver)
                  .access_flags & kAccSynthetic) != 0U ? 1 : 0);
     });
+    const auto find_annotation = [](IntrinsicContext& context)
+        -> const LinkedField::RuntimeAnnotation* {
+        const auto requested =
+            context.vm.Model().ClassOfClassObject(context.arguments[0].ref);
+        const auto& field = context.vm.Linker().Field(
+            context.vm.Reflection().FieldMetadata(context.receiver).field);
+        const auto& descriptor = context.vm.Linker().Class(requested).descriptor;
+        const auto found = std::find_if(
+            field.runtime_annotations.begin(), field.runtime_annotations.end(),
+            [&](const auto& item) { return item.descriptor == descriptor; });
+        return found == field.runtime_annotations.end() ? nullptr : &*found;
+    };
+    const auto materialize_annotation = [](IntrinsicContext& context,
+                                           const auto& annotation) {
+        if (annotation.has_elements) {
+            throw VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
+                              "annotation elements are not supported"};
+        }
+        const auto type = context.vm.Linker().ResolveDescriptor(
+            annotation.descriptor);
+        return context.vm.Model().NewInstance(
+            type, context.vm.Linker().Class(type).instance_slots);
+    };
+    builder.OverrideMethod(
+        "isAnnotationPresent", "(Ljava/lang/Class;)Z",
+        [find_annotation](IntrinsicContext& context) {
+            return VmValue::Int(find_annotation(context) != nullptr ? 1 : 0);
+        });
+    builder.OverrideMethod(
+        "getAnnotation", "(Ljava/lang/Class;)Ljava/lang/annotation/Annotation;",
+        [find_annotation, materialize_annotation](IntrinsicContext& context) {
+            const auto* annotation = find_annotation(context);
+            return VmValue::Ref(annotation == nullptr
+                ? VmObjectRef{}
+                : materialize_annotation(context, *annotation));
+        });
+    const auto get_annotations =
+        [materialize_annotation](IntrinsicContext& context) {
+            const auto& field = context.vm.Linker().Field(
+                context.vm.Reflection().FieldMetadata(context.receiver).field);
+            const auto annotation_class = context.vm.Linker().ResolveDescriptor(
+                "Ljava/lang/annotation/Annotation;");
+            const auto array_class = context.vm.Linker().ResolveDescriptor(
+                "[Ljava/lang/annotation/Annotation;");
+            const auto array = context.vm.Model().NewObjectArray(
+                array_class, annotation_class,
+                static_cast<JniSize>(field.runtime_annotations.size()));
+            for (JniSize index = 0;
+                 index < static_cast<JniSize>(field.runtime_annotations.size());
+                 ++index) {
+                context.vm.Model().SetObjectElement(
+                    array, index,
+                    materialize_annotation(context,
+                        field.runtime_annotations[static_cast<std::size_t>(index)]));
+            }
+            return VmValue::Ref(array);
+        };
+    builder.OverrideMethod("getAnnotations",
+                           "()[Ljava/lang/annotation/Annotation;",
+                           get_annotations);
+    builder.OverrideMethod("getDeclaredAnnotations",
+                           "()[Ljava/lang/annotation/Annotation;",
+                           get_annotations);
     builder.OverrideMethod("equals", "(Ljava/lang/Object;)Z",
         [](IntrinsicContext& context) {
             return VmValue::Int(context.vm.Reflection().SemanticallyEqual(

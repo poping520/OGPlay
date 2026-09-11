@@ -800,6 +800,45 @@ TEST_CASE("Method invoke dispatches and boxes identically on both backends") {
     }
 }
 
+TEST_CASE("Field runtime marker annotations dispatch on both backends") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch,
+                               InterpreterBackend::threaded}) {
+        ReflectionVm vm("field_annotation.dex", backend);
+        const auto field = FieldWrapper(
+            vm, "Lannotation/Subject;", "marked");
+        const auto marker = vm.linker.ResolveDescriptor("Lannotation/Marker;");
+        const auto marker_class = vm.model.ClassObject(marker);
+
+        const auto present = vm.Virtual(
+            field, "isAnnotationPresent", "(Ljava/lang/Class;)Z",
+            {VmValue::Ref(marker_class)});
+        REQUIRE_FALSE(present.exception.IsValid());
+        CHECK(present.value.AsInt() == 1);
+
+        const auto annotation = Ref(vm.Virtual(
+            field, "getAnnotation",
+            "(Ljava/lang/Class;)Ljava/lang/annotation/Annotation;",
+            {VmValue::Ref(marker_class)}));
+        CHECK(vm.model.ObjectClass(annotation) == marker);
+
+        const auto annotations = Ref(vm.Virtual(
+            field, "getDeclaredAnnotations",
+            "()[Ljava/lang/annotation/Annotation;"));
+        REQUIRE(vm.model.ArrayLength(annotations) == 1);
+        CHECK(vm.model.ObjectClass(
+                  vm.model.GetObjectElement(annotations, 0)) == marker);
+
+        const auto absent = vm.Virtual(
+            field, "getAnnotation",
+            "(Ljava/lang/Class;)Ljava/lang/annotation/Annotation;",
+            {VmValue::Ref(vm.model.ClassObject(
+                vm.linker.ResolveDescriptor(
+                    "Ljava/lang/annotation/Annotation;")))});
+        REQUIRE_FALSE(absent.exception.IsValid());
+        CHECK_FALSE(absent.value.ref.IsValid());
+    }
+}
+
 TEST_CASE("Method invoke honors caller access and preserves target throwable identity") {
     ReflectionVm vm("reflection.dex");
     const auto derived_class =

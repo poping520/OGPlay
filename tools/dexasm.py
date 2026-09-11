@@ -278,6 +278,7 @@ class FieldDecl:
     descriptor: str
     access_flags: int
     static_value: tuple[str, object] | None = None
+    runtime_annotations: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -360,6 +361,12 @@ class Parser:
                 self._require_class(current_class, line_number)
                 current_class.fields.append(
                     self._parse_field(tokens, line_number))
+            elif tokens[0] == ".runtime-annotation":
+                self._require_class(current_class, line_number)
+                if len(tokens) != 2 or not current_class.fields:
+                    raise DexAsmError(line_number,
+                                      ".runtime-annotation expects a preceding field")
+                current_class.fields[-1].runtime_annotations.append(tokens[1])
             elif tokens[0] == ".method":
                 self._require_class(current_class, line_number)
                 current_method = self._parse_method_header(
@@ -708,6 +715,8 @@ class Assembler:
                 self.pools.add_field(FieldRef(
                     declaration.descriptor, field_decl.name,
                     field_decl.descriptor))
+                for annotation in field_decl.runtime_annotations:
+                    self.pools.add_type(annotation)
                 if field_decl.static_value and \
                         field_decl.static_value[0] == "string":
                     self.pools.strings.add(field_decl.static_value[1])
@@ -1108,10 +1117,11 @@ class Assembler:
         return bytes(out)
 
     def _annotation_item(self, annotation_type: str,
-                         elements: list[tuple[str, bytes]]) -> bytes:
+                         elements: list[tuple[str, bytes]],
+                         visibility: int = 2) -> bytes:
         # annotation_element must be sorted by name_idx.
         elements.sort(key=lambda item: self.string_index[item[0]])
-        out = bytearray([2])  # VISIBILITY_SYSTEM
+        out = bytearray([visibility])
         out += uleb128(self.type_index[annotation_type])
         out += uleb128(len(elements))
         for name, encoded_value in elements:
@@ -1241,18 +1251,21 @@ class Assembler:
         # only the bounded directives above; it is not a generic annotation
         # compiler.
         class_annotation_items: dict[str, list[tuple[str, int]]] = {}
+        field_annotation_items: dict[tuple[str, str, str], list[tuple[str, int]]] = {}
         method_annotation_items: dict[tuple[str, str, str], int] = {}
         annotation_item_count = 0
         first_annotation_item_off = 0
 
         def append_annotation(annotation_type: str,
-                              elements: list[tuple[str, bytes]]) -> int:
+                              elements: list[tuple[str, bytes]],
+                              visibility: int = 2) -> int:
             nonlocal annotation_item_count, first_annotation_item_off
             offset = data_off + len(data)
             if annotation_item_count == 0:
                 first_annotation_item_off = offset
             annotation_item_count += 1
-            data.extend(self._annotation_item(annotation_type, elements))
+            data.extend(self._annotation_item(annotation_type, elements,
+                                              visibility))
             return offset
 
         for declaration in self.ordered_classes:
@@ -1293,6 +1306,12 @@ class Assembler:
                         declaration.member_classes))])))
             if items:
                 class_annotation_items[declaration.descriptor] = items
+            for field_decl in declaration.fields:
+                key = (declaration.descriptor, field_decl.name,
+                       field_decl.descriptor)
+                for annotation in field_decl.runtime_annotations:
+                    field_annotation_items.setdefault(key, []).append(
+                        (annotation, append_annotation(annotation, [], 1)))
             for method in declaration.methods:
                 if not method.throws_types:
                     continue
@@ -1307,6 +1326,7 @@ class Assembler:
                               first_annotation_item_off))
 
         class_annotation_sets: dict[str, int] = {}
+        field_annotation_sets: dict[tuple[str, str, str], int] = {}
         method_annotation_sets: dict[tuple[str, str, str], int] = {}
         annotation_set_count = 0
         first_annotation_set_off = 0
@@ -1326,6 +1346,8 @@ class Assembler:
 
         for descriptor, items in class_annotation_items.items():
             class_annotation_sets[descriptor] = append_annotation_set(items)
+        for field_key, items in field_annotation_items.items():
+            field_annotation_sets[field_key] = append_annotation_set(items)
         for method_key, item_offset in method_annotation_items.items():
             method_annotation_sets[method_key] = append_annotation_set(
                 [("Ldalvik/annotation/Throws;", item_offset)])
@@ -1337,6 +1359,13 @@ class Assembler:
         annotation_directory_count = 0
         first_annotation_directory_off = 0
         for declaration in self.ordered_classes:
+            annotated_fields = [
+                ((declaration.descriptor, item.name, item.descriptor),
+                 field_annotation_sets[(declaration.descriptor, item.name,
+                                        item.descriptor)])
+                for item in declaration.fields
+                if (declaration.descriptor, item.name, item.descriptor)
+                in field_annotation_sets]
             annotated_methods = [
                 ((declaration.descriptor, method.name, method.descriptor),
                  method_annotation_sets[(declaration.descriptor,
@@ -1345,8 +1374,9 @@ class Assembler:
                 if (declaration.descriptor, method.name, method.descriptor)
                 in method_annotation_sets]
             if declaration.descriptor not in class_annotation_sets and \
-                    not annotated_methods:
+                    not annotated_fields and not annotated_methods:
                 continue
+            annotated_fields.sort(key=lambda item: self.field_index[item[0]])
             annotated_methods.sort(
                 key=lambda item: self.method_index[item[0]])
             align4()
@@ -1357,7 +1387,11 @@ class Assembler:
             annotation_directory_offsets[declaration.descriptor] = offset
             data += struct.pack(
                 "<IIII", class_annotation_sets.get(
-                    declaration.descriptor, 0), 0, len(annotated_methods), 0)
+                    declaration.descriptor, 0), len(annotated_fields),
+                    len(annotated_methods), 0)
+            for field_key, set_offset in annotated_fields:
+                data += struct.pack(
+                    "<II", self.field_index[field_key], set_offset)
             for method_key, set_offset in annotated_methods:
                 data += struct.pack(
                     "<II", self.method_index[method_key], set_offset)

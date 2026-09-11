@@ -1,5 +1,10 @@
 # 当前状态
 
+- [WU-PERF-07](../tasks/optimization/WU-PERF-07.md) 已让 JNI 同步重入的 Dynarmic executor
+  按 guest thread 与重入深度持久复用；每层仍隔离寄存器/栈，DexVM thread 退出时回收。
+  pvz-amaz 8.1.0 的稳定期采样中 JIT 构造热点由 603/847 个样本降至 6 个；实跑
+  42.743 秒呈现 17660 帧，平均约 413 FPS，已消除原约 2.6 FPS 卡顿。
+
 - guest `NewStringUTF` 已与 API 19 Dalvik 对齐：null C 指针返回 null `jstring`，非空坏输入
   仍明确失败并按层级保留 JNI slot、guest thread、LR/SP、r0-r3 与原始 cause。该差异曾使
   pvz-amaz 8.1.0 的 `LoaderThread.runNative` 在 `lr=0x63125854` 错误终止；修复后实跑已

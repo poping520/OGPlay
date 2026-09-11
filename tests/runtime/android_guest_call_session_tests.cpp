@@ -22,8 +22,9 @@
 #include "ogplay/runtime/jni/jni_environment.h"
 #include "ogplay/runtime/jni/jni_invocation.h"
 #include "ogplay/runtime/jni/jni_object.h"
-#include "runtime/boundary/modules/module_catalog.h"
 #include "runtime/boundary/core/boundary_symbols.h"
+#include "runtime/boundary/modules/module_catalog.h"
+#include "runtime/integration/nested_guest_cpu_pool.h"
 
 namespace {
 
@@ -295,6 +296,41 @@ constexpr std::uint32_t kLibdlGlVertexPointerOffset = 0x810U;
 }
 
 }  // namespace
+
+TEST_CASE("nested guest CPU pool reuses JITs by thread and depth") {
+    ogplay::memory::AddressSpace memory;
+    ogplay::memory::CheckedMemoryBus bus(memory);
+    auto context =
+        std::make_shared<ogplay::cpu::DynarmicExecutionContext>(4U);
+    std::size_t configured{};
+    ogplay::runtime::detail::NestedGuestCpuPool pool(
+        bus, context, [&](ogplay::cpu::DynarmicCpu&) { ++configured; });
+
+    ogplay::cpu::A32State first_state;
+    first_state.SetThreadId(17U);
+    first_state.SetThreadPointer(
+        ogplay::memory::GuestAddress{0x12340000U});
+    first_state.SetRegister(ogplay::cpu::CoreRegister::r0, 1U);
+    auto* const first = &pool.Acquire(17U, 0U, first_state);
+
+    ogplay::cpu::A32State second_state;
+    second_state.SetThreadId(17U);
+    second_state.SetThreadPointer(
+        ogplay::memory::GuestAddress{0x12340000U});
+    second_state.SetRegister(ogplay::cpu::CoreRegister::r0, 2U);
+    auto* const reused = &pool.Acquire(17U, 0U, second_state);
+    CHECK(reused == first);
+    CHECK(reused->GetState().Register(ogplay::cpu::CoreRegister::r0) == 2U);
+
+    auto* const deeper = &pool.Acquire(17U, 1U, second_state);
+    CHECK(deeper != first);
+    CHECK(configured == 2U);
+    CHECK(pool.Stats().instances == 2U);
+    CHECK(pool.Stats().reuses == 1U);
+
+    pool.ReleaseThread(17U);
+    CHECK(pool.Stats().instances == 0U);
+}
 
 TEST_CASE("Android guest process starts and stops without an application ELF") {
     auto libc = MinimalLibcElf();

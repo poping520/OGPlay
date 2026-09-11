@@ -26,8 +26,8 @@
 #include "ogplay/runtime/debug/stall_diagnostics.h"
 #include "ogplay/runtime/execution/guest_clone_thread_runtime.h"
 #include "ogplay/runtime/execution/guest_lifecycle.h"
-#include "ogplay/runtime/integration/api19_guest_process.h"
 #include "ogplay/runtime/dexvm/nio_runtime.h"
+#include "ogplay/runtime/integration/api19_guest_process.h"
 #include "ogplay/runtime/jni_guest/jni_guest_abi.h"
 #include "ogplay/runtime/jni_guest/jni_guest_bindings.h"
 #include "ogplay/runtime/jni_guest/jni_guest_library_lifecycle.h"
@@ -42,6 +42,7 @@
 #include "ogplay/runtime/jni/jni_native_registry.h"
 #include "ogplay/runtime/jni/jni_object.h"
 #include "ogplay/runtime/syscall/arm_kernel_helpers.h"
+#include "runtime/integration/nested_guest_cpu_pool.h"
 
 namespace ogplay::runtime {
 namespace {
@@ -106,8 +107,13 @@ void InstallApi19ProcFiles(VirtualFileSystem& filesystem,
         std::as_bytes(std::span{meminfo.data(), meminfo.size()}), false);
 }
 
-thread_local std::unordered_map<const void*, cpu::Cpu*>
-    active_guest_call_cpus;
+struct ActiveGuestCall final {
+    cpu::Cpu* cpu{};
+    std::size_t depth{};
+};
+
+thread_local std::unordered_map<const void*, ActiveGuestCall>
+    active_guest_calls;
 
 [[nodiscard]] std::vector<GuestLifecycleModule> LifecycleModules(
     const loader::Elf32LoadedNamespace& loaded,
@@ -638,6 +644,9 @@ public:
               ConfigureFastHostCalls(*result);
               return result;
           }),
+          nested_guest_cpus_(
+              memory_bus_, execution_context_,
+              [this](cpu::DynarmicCpu& cpu) { ConfigureFastHostCalls(cpu); }),
           filesystem_(request.filesystem),
           initial_environment_(
               request.initial_environment
@@ -845,14 +854,13 @@ public:
             throw AndroidGuestProcessError(
                 "Android guest call session has no root CPU");
         }
-        std::unique_ptr<cpu::DynarmicCpu> nested_cpu;
         cpu::Cpu* target{};
         memory::GuestAddress stack_top;
         std::shared_ptr<DexVmThreadContext> dexvm_context;
         std::unique_lock<std::recursive_mutex> call_lock;
-        const auto active = active_guest_call_cpus.find(this);
-        if (active != active_guest_call_cpus.end()) {
-            const auto caller = active->second->GetState();
+        const auto active = active_guest_calls.find(this);
+        if (active != active_guest_calls.end()) {
+            const auto caller = active->second.cpu->GetState();
             const auto caller_sp =
                 caller.Register(cpu::CoreRegister::sp) & ~UINT32_C(7);
             if (caller_sp == 0U) {
@@ -860,14 +868,11 @@ public:
                     "nested Android guest call has no aligned caller stack");
             }
             stack_top = memory::GuestAddress{caller_sp};
-            nested_cpu = std::make_unique<cpu::DynarmicCpu>(
-                memory_bus_, execution_context_);
-            ConfigureFastHostCalls(*nested_cpu);
             cpu::A32State nested_state;
             nested_state.SetThreadId(caller.ThreadId());
             nested_state.SetThreadPointer(caller.ThreadPointer());
-            nested_cpu->SetState(nested_state);
-            target = nested_cpu.get();
+            target = &nested_guest_cpus_.Acquire(
+                caller.ThreadId(), active->second.depth, nested_state);
         } else if (frame.thread_id == kRootThreadId) {
             call_lock = std::unique_lock<std::recursive_mutex>(
                 guest_call_mutex_);
@@ -888,14 +893,17 @@ public:
             target = dexvm_context->cpu.get();
             stack_top = dexvm_context->stack_top;
         }
-        auto* const previous = active == active_guest_call_cpus.end()
-                                   ? nullptr
-                                   : active->second;
+        const auto previous = active == active_guest_calls.end()
+                                  ? ActiveGuestCall{}
+                                  : active->second;
         // Renewable frames must observe each HLE result in the slow consumer;
         // a fast host call continues inside Cpu::Run and cannot report its
         // progress category to the watchdog loop.
         if (frame.renewable_native_frame) target->SetHostCallHook({});
-        active_guest_call_cpus[this] = target;
+        active_guest_calls[this] = {
+            target, active == active_guest_calls.end()
+                        ? 0U
+                        : active->second.depth + 1U};
         const auto execution = diagnostics_
             ? diagnostics_->EnterExecution(
                   target->GetState().ThreadId(), frame.context_token,
@@ -940,13 +948,13 @@ public:
                     return HandleBoundary(cpu, stopped);
                 }, observer);
             if (frame.renewable_native_frame) ConfigureFastHostCalls(*target);
-            if (previous != nullptr) active_guest_call_cpus[this] = previous;
-            else active_guest_call_cpus.erase(this);
+            if (previous.cpu != nullptr) active_guest_calls[this] = previous;
+            else active_guest_calls.erase(this);
             return result;
         } catch (...) {
             if (frame.renewable_native_frame) ConfigureFastHostCalls(*target);
-            if (previous != nullptr) active_guest_call_cpus[this] = previous;
-            else active_guest_call_cpus.erase(this);
+            if (previous.cpu != nullptr) active_guest_calls[this] = previous;
+            else active_guest_calls.erase(this);
             throw;
         }
     }
@@ -1063,6 +1071,7 @@ public:
         }
         try {
             const std::scoped_lock call_lock(context->call_mutex);
+            nested_guest_cpus_.ReleaseThread(thread_id);
             if (context->jni_attached) {
                 static_cast<void>(java_vm_.DetachCurrentThread(thread_id));
             }
@@ -1897,6 +1906,7 @@ private:
     std::shared_ptr<cpu::DynarmicExecutionContext> execution_context_ =
         std::make_shared<cpu::DynarmicExecutionContext>(64);
     cpu::GuestThreadGroup threads_;
+    detail::NestedGuestCpuPool nested_guest_cpus_;
     VirtualFileSystem* filesystem_{};
     std::shared_ptr<const GuestProcessEnvironment> initial_environment_;
     std::unique_ptr<FrameworkDirectAssetHle> direct_assets_;

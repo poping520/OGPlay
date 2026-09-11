@@ -401,6 +401,7 @@ add_library(ogplay_runtime
     src/runtime/integration/guest_process_environment.cpp
     src/runtime/integration/api19_guest_process.cpp
     src/runtime/integration/android_guest_call_session.cpp
+    src/runtime/integration/nested_guest_cpu_pool.cpp
     src/runtime/integration/android_guest_java_movie.cpp
     src/runtime/integration/android_guest_java_platform.cpp
     src/runtime/integration/native_library_loader.cpp

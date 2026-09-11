@@ -356,6 +356,9 @@ DVM-107：bridge 移除 Intent component 描述符侧表的清扫；组件引用
 字段。AttachAndroidActivityIdentity 是 lifecycle 在 attach base 之后、onCreate 之前的
 唯一身份装配入口；ArrayUtils/Sparse/Pair/ComponentName 的算法不在 integration 实现。
 
+Point、Rect、AndroidException 的类形状、字段和普通算法归 BootDex，integration 不再声明
+同名 intrinsic；ArraySet 等纯 Java 工具类不引入宿主状态或平台服务。
+
 DVM-108：移除 legacy platform 的固定 UUID 类/对象/handler 及返回结构字段。
 UUID 由 BootDex 类经现有 JNI 发布和 invocation bridge 执行；不再用固定值替代随机生成。
 Java UUID.randomUUID 的 SecureRandom 继续由现有 OS entropy service 提供随机字节。

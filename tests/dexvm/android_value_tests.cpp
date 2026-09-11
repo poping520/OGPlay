@@ -2059,6 +2059,72 @@ TEST_CASE("DVM-143 method lookup ignores unrelated unavailable signature types")
     }
 }
 
+TEST_CASE("small framework Java values execute from BootDex") {
+    constexpr std::array migrated{
+        "Landroid/graphics/Point;",
+        "Landroid/graphics/Rect;",
+        "Landroid/util/AndroidException;",
+        "Landroid/util/AndroidRuntimeException;",
+        "Landroid/util/ArraySet;",
+        "Landroid/util/Base64DataException;",
+        "Landroid/util/LruCache;",
+        "Landroid/util/MathUtils;",
+        "Landroid/util/NoSuchPropertyException;",
+        "Landroid/util/Patterns;",
+        "Landroid/util/Pools$SimplePool;",
+        "Landroid/util/Property;",
+        "Landroid/util/TimeFormatException;",
+    };
+    for (const auto backend : {InterpreterBackend::switch_dispatch,
+                               InterpreterBackend::threaded}) {
+        AndroidValueVm f(backend);
+        for (const auto* descriptor : migrated) {
+            CAPTURE(descriptor);
+            CHECK(f.linker.Class(f.linker.ResolveDescriptor(descriptor)).is_boot_dex);
+        }
+
+        const auto first = f.vm.NewStringUtf8("first");
+        const auto second = f.vm.NewStringUtf8("second");
+        const auto set = f.New("Landroid/util/ArraySet;");
+        CHECK(f.On(set, "add", "(Ljava/lang/Object;)Z",
+                   {VmValue::Ref(first)}).AsInt() == 1);
+        CHECK(f.On(set, "add", "(Ljava/lang/Object;)Z",
+                   {VmValue::Ref(first)}).AsInt() == 0);
+        CHECK(f.On(set, "contains", "(Ljava/lang/Object;)Z",
+                   {VmValue::Ref(first)}).AsInt() == 1);
+
+        const auto cache = f.New("Landroid/util/LruCache;", "(I)V",
+                                 {VmValue::Int(1)});
+        CHECK_FALSE(f.On(cache, "put",
+                         "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;",
+                         {VmValue::Ref(first), VmValue::Ref(second)}).ref.IsValid());
+        CHECK(f.On(cache, "get", "(Ljava/lang/Object;)Ljava/lang/Object;",
+                   {VmValue::Ref(first)}).ref == second);
+
+        const auto pool = f.New("Landroid/util/Pools$SimplePool;", "(I)V",
+                                {VmValue::Int(1)});
+        CHECK(f.On(pool, "release", "(Ljava/lang/Object;)Z",
+                   {VmValue::Ref(first)}).AsInt() == 1);
+        CHECK(f.On(pool, "acquire", "()Ljava/lang/Object;").ref == first);
+
+        const auto point = f.New("Landroid/graphics/Point;", "(II)V",
+                                 {VmValue::Int(3), VmValue::Int(4)});
+        f.On(point, "negate", "()V");
+        CHECK(f.On(point, "equals", "(II)Z",
+                   {VmValue::Int(-3), VmValue::Int(-4)}).AsInt() == 1);
+        const auto rect = f.New("Landroid/graphics/Rect;", "(IIII)V",
+                                {VmValue::Int(1), VmValue::Int(2),
+                                 VmValue::Int(6), VmValue::Int(9)});
+        CHECK(f.On(rect, "width", "()I").AsInt() == 5);
+        CHECK(f.On(rect, "contains", "(II)Z",
+                   {VmValue::Int(3), VmValue::Int(4)}).AsInt() == 1);
+        CHECK(f.Static("Landroid/util/MathUtils;", "constrain", "(III)I",
+                       {VmValue::Int(12), VmValue::Int(0), VmValue::Int(10)})
+                  .AsInt() == 10);
+
+    }
+}
+
 TEST_CASE("DVM-120 Typeface Java cache and styles drive measured rendered text") {
     for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
         AndroidValueVm f(backend);

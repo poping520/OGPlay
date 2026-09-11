@@ -570,35 +570,6 @@ Decl Declare_android_graphics_Paint(const Context& context) {
 }  // namespace ogplay::runtime::android_intrinsics
 
 
-// ---- migrated from android_graphics_Rect.cpp ----
-#include "catalog.h"
-
-namespace ogplay::runtime::android_intrinsics {
-
-Decl Declare_android_graphics_Rect(const Context& context) {
-    static_cast<void>(context);
-    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/graphics/Rect;", "Ljava/lang/Object;");
-    builder.InstanceField("left", "I");
-    builder.InstanceField("top", "I");
-    builder.InstanceField("right", "I");
-    builder.InstanceField("bottom", "I");
-    builder.Constructor("()V", GraphicsNoopHandler());
-    builder.FinalMethod("width", "()I", [](dx::IntrinsicContext& call) {
-        const auto slots = call.vm.Model().InstanceSlots(call.receiver);
-        return dx::VmValue::Int(static_cast<std::int32_t>(slots[2].bits) -
-                                static_cast<std::int32_t>(slots[0].bits));
-    });
-    builder.FinalMethod("height", "()I", [](dx::IntrinsicContext& call) {
-        const auto slots = call.vm.Model().InstanceSlots(call.receiver);
-        return dx::VmValue::Int(static_cast<std::int32_t>(slots[3].bits) -
-                                static_cast<std::int32_t>(slots[1].bits));
-    });
-    return std::move(builder).Build();
-}
-
-}  // namespace ogplay::runtime::android_intrinsics
-
-
 // ---- migrated from android_graphics_Region_Op.cpp ----
 #include "catalog.h"
 
@@ -737,27 +708,6 @@ Decl Declare_android_graphics_RectF(const Context& context) {
         const auto dyv = call.arguments[1].AsFloat();
         for (const auto index : {0U, 2U}) s[index].bits = std::bit_cast<std::uint32_t>(std::bit_cast<float>(s[index].bits) + dxv);
         for (const auto index : {1U, 3U}) s[index].bits = std::bit_cast<std::uint32_t>(std::bit_cast<float>(s[index].bits) + dyv);
-        return dx::VmValue::Void();
-    });
-    return std::move(builder).Build();
-}
-
-Decl Declare_android_graphics_Point(const Context& context) {
-    static_cast<void>(context);
-    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/graphics/Point;", "Ljava/lang/Object;");
-    builder.InstanceField("x", "I").InstanceField("y", "I");
-    builder.Constructor("()V", GraphicsNoopHandler());
-    const auto set = [](dx::IntrinsicContext& call) {
-        const auto s = call.vm.Model().InstanceSlots(call.receiver);
-        s[0] = {static_cast<std::uint32_t>(call.arguments[0].AsInt()), dx::SlotTag::cat1};
-        s[1] = {static_cast<std::uint32_t>(call.arguments[1].AsInt()), dx::SlotTag::cat1};
-        return dx::VmValue::Void();
-    };
-    builder.Constructor("(II)V", set).FinalMethod("set", "(II)V", set);
-    builder.FinalMethod("offset", "(II)V", [](dx::IntrinsicContext& call) {
-        const auto s = call.vm.Model().InstanceSlots(call.receiver);
-        s[0].bits += static_cast<std::uint32_t>(call.arguments[0].AsInt());
-        s[1].bits += static_cast<std::uint32_t>(call.arguments[1].AsInt());
         return dx::VmValue::Void();
     });
     return std::move(builder).Build();

@@ -872,7 +872,7 @@ if(OGPLAY_BUILD_TESTS)
         tests/dexvm/interpreter_tests.cpp
         tests/dexvm/nio_runtime_tests.cpp
         tests/dexvm/unsafe_tests.cpp
-        tests/dexvm/dvm87_tests.cpp
+        tests/dexvm/bootdex_library_tests.cpp
         tests/dexvm/observable_tests.cpp
         tests/dexvm/dvm88_tests.cpp
         tests/dexvm/session_exit_tests.cpp

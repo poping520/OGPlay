@@ -217,6 +217,21 @@ TEST_CASE("dexvm isAlive tracks a running thread until teardown stops it") {
     CHECK_NOTHROW(vm.threads.Shutdown());
 }
 
+TEST_CASE("dexvm host progress wait is bounded by its wall-time budget") {
+    ThreadedVm vm;
+    const auto target = vm.Make("LThreadSpin;", "()Ljava/lang/Runnable;");
+    vm.threads.Start(target, "spin", vm.threads.AllocateThreadId());
+    REQUIRE(WaitFor(
+        [&] { return vm.StatusOf(target) == VmThreadStatus::running; }));
+
+    const auto started = std::chrono::steady_clock::now();
+    CHECK_FALSE(vm.threads.WaitForHostProgress(std::chrono::milliseconds(5)));
+    CHECK(std::chrono::steady_clock::now() - started <
+          std::chrono::seconds(1));
+
+    vm.threads.Shutdown();
+}
+
 TEST_CASE("dexvm stopped-context unwind requires the teardown handshake") {
     ThreadedVm vm;
     const auto context = vm.interpreter.CreateExecutionContext();

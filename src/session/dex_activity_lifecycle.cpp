@@ -682,7 +682,8 @@ namespace ogplay::session {
         };
         for (std::size_t round = 0;
              round < kInitialThreadQuiescenceYieldLimit; ++round) {
-            threads.Yield();
+            static_cast<void>(threads.WaitForHostProgress(
+                std::chrono::milliseconds(2)));
             observe();
             if (pending.empty()) return;
         }

@@ -55,6 +55,9 @@ switch/threaded 解释、异常、线程/monitor、反射及 `java.*` core intri
   明确失败，禁止读取宿主墙钟。
 - stop 每指令检查；shutdown 先 stop/join 再展开 context。class init 对同 context 重入，其他
   context 释放执行锁等待，完成/失败/teardown 均唤醒。
+- host lifecycle 的 worker-progress 等待使用显式 wall-time 上限，且不获取 execution lock；
+  常驻 runnable guest 不能阻断 Surface 等后续平台事件发布。普通 guest `Thread.yield()`
+  仍使用既有 `Yield()` 语义。
 
 ### Core intrinsic 与专用 runtime
 

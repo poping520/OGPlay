@@ -1,5 +1,6 @@
 #pragma once
 
+#include <chrono>
 #include <cstdint>
 #include <functional>
 #include <memory>
@@ -93,6 +94,12 @@ public:
     // A guest caller briefly releases the execution lock. A host caller waits
     // for one observable progress handoff from the runnable worker set.
     void Yield();
+
+    // Host lifecycle coordination only: waits at most the supplied host-time
+    // budget for a worker state/progress notification. It never acquires the
+    // VM execution lock, so a permanently runnable guest cannot trap the
+    // lifecycle before a platform event is published.
+    [[nodiscard]] bool WaitForHostProgress(std::chrono::milliseconds timeout);
 
     // Runtime-internal observable park state, keyed by execution context.
     // Monitor waits use this bridge so Snapshot() has one coherent surface

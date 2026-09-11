@@ -6,29 +6,182 @@
 
 #include "catalog.h"
 
+#include <charconv>
+#include <cctype>
+#include <cstdint>
+#include <cstring>
+#include <sstream>
+#include <algorithm>
+#include <limits>
+#include <string_view>
+
 #include "ogplay/core/encoding.h"
 
 namespace ogplay::runtime::android_intrinsics {
 
-Decl Declare_android_content_BroadcastReceiver(const Context& context) {
-    static_cast<void>(context);
-    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/content/BroadcastReceiver;", "Ljava/lang/Object;");
-    builder.Constructor("()V",
-        [](dx::IntrinsicContext&) { return dx::VmValue::Void(); });
-    builder.VirtualMethod("onReceive",
-        "(Landroid/content/Context;Landroid/content/Intent;)V",
-        [](dx::IntrinsicContext&) { return dx::VmValue::Void(); });
-    return std::move(builder).Build();
-}
+    Decl Declare_android_content_pm_PackageManager_NameNotFoundException(const Context& context);
+
+    Decl Declare_android_content_DialogInterface_OnCancelListener(const Context& context) {
+        static_cast<void>(context);
+        auto builder = dx::IntrinsicClassBuilder::Interface("Landroid/content/DialogInterface$OnCancelListener;");
+        return std::move(builder).Build();
+    }
+
+    Decl Declare_android_content_DialogInterface_OnClickListener(const Context& context) {
+        static_cast<void>(context);
+        auto builder = dx::IntrinsicClassBuilder::Interface("Landroid/content/DialogInterface$OnClickListener;");
+        return std::move(builder).Build();
+    }
+
+    Decl Declare_android_content_DialogInterface_OnDismissListener(const Context& context) {
+        static_cast<void>(context);
+        auto builder = dx::IntrinsicClassBuilder::Interface("Landroid/content/DialogInterface$OnDismissListener;");
+        return std::move(builder).Build();
+    }
+
+    Decl Declare_android_content_IntentSender(const Context&) {
+        return std::move(dx::IntrinsicClassBuilder::Class(
+            "Landroid/content/IntentSender;", "Ljava/lang/Object;",
+            {"Landroid/os/Parcelable;"})).Build();
+    }
+
+    Decl Declare_android_content_BroadcastReceiver(const Context& context) {
+        static_cast<void>(context);
+        auto builder = dx::IntrinsicClassBuilder::Class("Landroid/content/BroadcastReceiver;", "Ljava/lang/Object;");
+        builder.Constructor("()V",
+            [](dx::IntrinsicContext&) { return dx::VmValue::Void(); });
+        builder.VirtualMethod("onReceive",
+            "(Landroid/content/Context;Landroid/content/Intent;)V",
+            [](dx::IntrinsicContext&) { return dx::VmValue::Void(); });
+        return std::move(builder).Build();
+    }
+
+    // android.content.SharedPreferences, $Editor and
+    // $OnSharedPreferenceChangeListener keep their original AOSP interface shape
+    // from BootDex; no intrinsic interface declarations remain here.
+
+    Decl Declare_android_content_SharedPreferencesImpl(const Context& context) {
+        // The full BootDex SharedPreferences interface: typed getters, contains
+        // and a boxed getAll read the same store; change listeners are never
+        // invoked, so registration fails explicitly with accounting instead of
+        // accepting a silent no-op, and getStringSet has no checked storage
+        // representation.
+        auto builder = dx::IntrinsicClassBuilder::Class("Landroid/content/SharedPreferencesImpl;", "Ljava/lang/Object;", {"Landroid/content/SharedPreferences;"});
+        builder.FinalMethod("getAll", "()Ljava/util/Map;", PrefsGetAllHandler(context));
+        builder.FinalMethod("getString", "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;", PrefsGetStringHandler(context));
+        builder.FinalMethod("getStringSet", "(Ljava/lang/String;Ljava/util/Set;)Ljava/util/Set;", PrefsUnsupportedHandler("dexvm.shared_preferences.string_set"));
+        builder.FinalMethod("getInt", "(Ljava/lang/String;I)I", PrefsGetIntHandler(context));
+        builder.FinalMethod("getLong", "(Ljava/lang/String;J)J", PrefsGetLongHandler(context));
+        builder.FinalMethod("getFloat", "(Ljava/lang/String;F)F", PrefsGetFloatHandler(context));
+        builder.FinalMethod("getBoolean", "(Ljava/lang/String;Z)Z", PrefsGetBooleanHandler(context));
+        builder.FinalMethod("contains", "(Ljava/lang/String;)Z", PrefsContainsHandler(context));
+        builder.FinalMethod("edit", "()Landroid/content/SharedPreferences$Editor;", PrefsEditHandler(context));
+        builder.FinalMethod("registerOnSharedPreferenceChangeListener", "(Landroid/content/SharedPreferences$OnSharedPreferenceChangeListener;)V", PrefsUnsupportedHandler("dexvm.shared_preferences.change_listeners"));
+        builder.FinalMethod("unregisterOnSharedPreferenceChangeListener", "(Landroid/content/SharedPreferences$OnSharedPreferenceChangeListener;)V", PrefsUnsupportedHandler("dexvm.shared_preferences.change_listeners"));
+        return std::move(builder).Build();
+    }
+
+    Decl Declare_android_content_SharedPreferencesEditorImpl(const Context& context) {
+        // The full BootDex Editor interface: each editor stages independent
+        // changes; commit/apply publish and persist synchronously. putStringSet
+        // is not representable in the checked preference subset and fails
+        // explicitly with accounting.
+        auto builder = dx::IntrinsicClassBuilder::Class("Landroid/content/SharedPreferencesEditorImpl;", "Ljava/lang/Object;", {"Landroid/content/SharedPreferences$Editor;"});
+        builder.FinalMethod("putBoolean", "(Ljava/lang/String;Z)Landroid/content/SharedPreferences$Editor;", PrefsEditorPutBooleanHandler(context));
+        builder.FinalMethod("putInt", "(Ljava/lang/String;I)Landroid/content/SharedPreferences$Editor;", PrefsEditorPutIntHandler(context));
+        builder.FinalMethod("putLong", "(Ljava/lang/String;J)Landroid/content/SharedPreferences$Editor;", PrefsEditorPutLongHandler(context));
+        builder.FinalMethod("putFloat", "(Ljava/lang/String;F)Landroid/content/SharedPreferences$Editor;", PrefsEditorPutFloatHandler(context));
+        builder.FinalMethod("putString", "(Ljava/lang/String;Ljava/lang/String;)Landroid/content/SharedPreferences$Editor;", PrefsEditorPutStringHandler(context));
+        builder.FinalMethod("putStringSet", "(Ljava/lang/String;Ljava/util/Set;)Landroid/content/SharedPreferences$Editor;", PrefsUnsupportedHandler("dexvm.shared_preferences.string_set"));
+        builder.FinalMethod("remove", "(Ljava/lang/String;)Landroid/content/SharedPreferences$Editor;", PrefsEditorRemoveHandler(context));
+        builder.FinalMethod("clear", "()Landroid/content/SharedPreferences$Editor;", PrefsEditorClearHandler(context));
+        builder.FinalMethod("apply", "()V", PrefsEditorApplyHandler(context));
+        builder.FinalMethod("commit", "()Z", PrefsEditorCommitHandler(context));
+        return std::move(builder).Build();
+    }
+
+    namespace {
+        [[nodiscard]] std::optional<dx::VmValue> InvokeAndroidVirtual(
+            dx::IntrinsicContext& context, const dx::VmObjectRef receiver,
+            const std::string_view name, const std::string_view descriptor,
+            std::vector<dx::VmValue> arguments = {}) {
+            if (!receiver.IsValid()) {
+                throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;",
+                                      std::string(name) + " receiver is null"};
+            }
+            auto& linker = context.vm.Linker();
+            const auto java_class = context.vm.Model().ObjectClass(receiver);
+            const auto index = linker.FindVtableIndex(
+                java_class, std::string(name), std::string(descriptor));
+            if (!index.has_value()) {
+                throw dx::VmJavaThrow{"Ljava/lang/AbstractMethodError;",
+                                      std::string(name) + std::string(descriptor)};
+            }
+            arguments.insert(arguments.begin(), dx::VmValue::Ref(receiver));
+            const auto outcome = context.vm.Call(
+                linker.Class(java_class).vtable[*index], arguments);
+            if (outcome.exception.IsValid()) {
+                context.vm.SetPendingException(outcome.exception);
+                return std::nullopt;
+            }
+            return outcome.value;
+        }
+    }  // namespace
+
+    Decl Declare_android_content_ContentResolver(const Context& context) {
+        static_cast<void>(context);
+        auto builder = dx::IntrinsicClassBuilder::Class("Landroid/content/ContentResolver;", "Ljava/lang/Object;");
+        builder.FinalMethod(
+            "query",
+            "(Landroid/net/Uri;[Ljava/lang/String;Ljava/lang/String;"
+            "[Ljava/lang/String;Ljava/lang/String;)Landroid/database/Cursor;",
+            [](dx::IntrinsicContext& call) {
+                const auto uri = call.arguments[0].ref;
+                if (!uri.IsValid()) {
+                    throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;",
+                                          "ContentResolver URI is null"};
+                }
+                const auto scheme = InvokeAndroidVirtual(
+                    call, uri, "getScheme", "()Ljava/lang/String;");
+                if (!scheme.has_value())
+                    return dx::VmValue::Ref(dx::VmObjectRef{});
+                if (!scheme->ref.IsValid() ||
+                    call.vm.StringUtf8(scheme->ref) != "content") {
+                    return dx::VmValue::Ref(dx::VmObjectRef{});
+                }
+                const auto authority = InvokeAndroidVirtual(
+                    call, uri, "getAuthority", "()Ljava/lang/String;");
+                if (!authority.has_value())
+                    return dx::VmValue::Ref(dx::VmObjectRef{});
+                // OGPlay has no registered ContentProvider process or Binder
+                // directory. API 19 returns null when provider acquisition fails.
+                return dx::VmValue::Ref(dx::VmObjectRef{});
+            });
+        builder.FinalMethod("getType",
+            "(Landroid/net/Uri;)Ljava/lang/String;",
+            [](dx::IntrinsicContext& call) {
+                const auto uri = call.arguments[0].ref;
+                if (!uri.IsValid()) {
+                    throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;",
+                                          "ContentResolver URI is null"};
+                }
+                const auto scheme = InvokeAndroidVirtual(
+                    call, uri, "getScheme", "()Ljava/lang/String;");
+                if (!scheme.has_value() || !scheme->ref.IsValid() ||
+                    call.vm.StringUtf8(scheme->ref) != "content") {
+                    return dx::VmValue::Ref(dx::VmObjectRef{});
+                }
+                throw dx::VmJavaThrow{
+                    "Ljava/lang/UnsupportedOperationException;",
+                    "ContentProvider MIME resolution is outside OGPlay's "
+                    "single-process compatibility scope"};
+            });
+        return std::move(builder).Build();
+    }
 
 }  // namespace ogplay::runtime::android_intrinsics
 
 // ---- DVM-88: ContentValues, Cursor and bounded SQLite-on-VFS ------------
-
-#include <charconv>
-#include <cctype>
-#include <cstring>
-#include <sstream>
 
 namespace ogplay::runtime::android_intrinsics {
 namespace {
@@ -780,105 +933,7 @@ void RegisterAndroidDatabaseStateTables(
 
 }  // namespace ogplay::runtime
 
-namespace ogplay::runtime::android_intrinsics {
-Decl Declare_android_content_pm_PackageManager_NameNotFoundException(
-    const Context& context);
-}
-
-
-
-// ---- migrated from android_content_ContentResolver.cpp ----
-#include "catalog.h"
-
-namespace ogplay::runtime::android_intrinsics {
-
-namespace {
-
-[[nodiscard]] std::optional<dx::VmValue> InvokeAndroidVirtual(
-    dx::IntrinsicContext& context, const dx::VmObjectRef receiver,
-    const std::string_view name, const std::string_view descriptor,
-    std::vector<dx::VmValue> arguments = {}) {
-    if (!receiver.IsValid()) {
-        throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;",
-                              std::string(name) + " receiver is null"};
-    }
-    auto& linker = context.vm.Linker();
-    const auto java_class = context.vm.Model().ObjectClass(receiver);
-    const auto index = linker.FindVtableIndex(
-        java_class, std::string(name), std::string(descriptor));
-    if (!index.has_value()) {
-        throw dx::VmJavaThrow{"Ljava/lang/AbstractMethodError;",
-                              std::string(name) + std::string(descriptor)};
-    }
-    arguments.insert(arguments.begin(), dx::VmValue::Ref(receiver));
-    const auto outcome = context.vm.Call(
-        linker.Class(java_class).vtable[*index], arguments);
-    if (outcome.exception.IsValid()) {
-        context.vm.SetPendingException(outcome.exception);
-        return std::nullopt;
-    }
-    return outcome.value;
-}
-
-}  // namespace
-
-Decl Declare_android_content_ContentResolver(const Context& context) {
-    static_cast<void>(context);
-    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/content/ContentResolver;", "Ljava/lang/Object;");
-    builder.FinalMethod(
-        "query",
-        "(Landroid/net/Uri;[Ljava/lang/String;Ljava/lang/String;"
-        "[Ljava/lang/String;Ljava/lang/String;)Landroid/database/Cursor;",
-        [](dx::IntrinsicContext& call) {
-            const auto uri = call.arguments[0].ref;
-            if (!uri.IsValid()) {
-                throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;",
-                                      "ContentResolver URI is null"};
-            }
-            const auto scheme = InvokeAndroidVirtual(
-                call, uri, "getScheme", "()Ljava/lang/String;");
-            if (!scheme.has_value())
-                return dx::VmValue::Ref(dx::VmObjectRef{});
-            if (!scheme->ref.IsValid() ||
-                call.vm.StringUtf8(scheme->ref) != "content") {
-                return dx::VmValue::Ref(dx::VmObjectRef{});
-            }
-            const auto authority = InvokeAndroidVirtual(
-                call, uri, "getAuthority", "()Ljava/lang/String;");
-            if (!authority.has_value())
-                return dx::VmValue::Ref(dx::VmObjectRef{});
-            // OGPlay has no registered ContentProvider process or Binder
-            // directory. API 19 returns null when provider acquisition fails.
-            return dx::VmValue::Ref(dx::VmObjectRef{});
-        });
-    builder.FinalMethod("getType",
-        "(Landroid/net/Uri;)Ljava/lang/String;",
-        [](dx::IntrinsicContext& call) {
-            const auto uri = call.arguments[0].ref;
-            if (!uri.IsValid()) {
-                throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;",
-                                      "ContentResolver URI is null"};
-            }
-            const auto scheme = InvokeAndroidVirtual(
-                call, uri, "getScheme", "()Ljava/lang/String;");
-            if (!scheme.has_value() || !scheme->ref.IsValid() ||
-                call.vm.StringUtf8(scheme->ref) != "content") {
-                return dx::VmValue::Ref(dx::VmObjectRef{});
-            }
-            throw dx::VmJavaThrow{
-                "Ljava/lang/UnsupportedOperationException;",
-                "ContentProvider MIME resolution is outside OGPlay's "
-                "single-process compatibility scope"};
-        });
-    return std::move(builder).Build();
-}
-
-}  // namespace ogplay::runtime::android_intrinsics
-
-
 // ---- migrated from android_content_Context.cpp ----
-#include "catalog.h"
-
 namespace ogplay::runtime::android_intrinsics {
 
 namespace {
@@ -1433,434 +1488,7 @@ Decl Declare_android_content_ContextWrapper(const Context& context) {
 }  // namespace ogplay::runtime::android_intrinsics
 
 
-// ---- migrated from android_content_DialogInterface_OnCancelListener.cpp ----
-#include "catalog.h"
-
-namespace ogplay::runtime::android_intrinsics {
-
-Decl Declare_android_content_DialogInterface_OnCancelListener(const Context& context) {
-    static_cast<void>(context);
-    auto builder = dx::IntrinsicClassBuilder::Interface("Landroid/content/DialogInterface$OnCancelListener;");
-    return std::move(builder).Build();
-}
-
-}  // namespace ogplay::runtime::android_intrinsics
-
-
-// ---- migrated from android_content_DialogInterface_OnClickListener.cpp ----
-#include "catalog.h"
-
-namespace ogplay::runtime::android_intrinsics {
-
-Decl Declare_android_content_DialogInterface_OnClickListener(const Context& context) {
-    static_cast<void>(context);
-    auto builder = dx::IntrinsicClassBuilder::Interface("Landroid/content/DialogInterface$OnClickListener;");
-    return std::move(builder).Build();
-}
-
-}  // namespace ogplay::runtime::android_intrinsics
-
-
-// ---- migrated from android_content_DialogInterface_OnDismissListener.cpp ----
-#include "catalog.h"
-
-namespace ogplay::runtime::android_intrinsics {
-
-Decl Declare_android_content_DialogInterface_OnDismissListener(const Context& context) {
-    static_cast<void>(context);
-    auto builder = dx::IntrinsicClassBuilder::Interface("Landroid/content/DialogInterface$OnDismissListener;");
-    return std::move(builder).Build();
-}
-
-}  // namespace ogplay::runtime::android_intrinsics
-
-
-// ---- migrated from android_content_Intent.cpp ----
-// Intent keeps matching-visible references in ordinary guest fields so GC
-// traces them naturally. Component targets and the currently supported typed
-// extras remain owner-attached session metadata.
-
-#include "catalog.h"
-
-namespace ogplay::runtime::android_intrinsics {
-
-namespace {
-
-[[nodiscard]] dx::VmObjectRef InternIntentString(
-    dx::IntrinsicContext& call, const dx::VmObjectRef value) {
-    return value.IsValid()
-               ? call.vm.Model().InternString(
-                     call.vm.Model().StringValue(value))
-               : dx::VmObjectRef{};
-}
-
-[[nodiscard]] dx::VmObjectRef NewIntentCategorySet(
-    dx::IntrinsicContext& call) {
-    constexpr auto kHashSet = "Ljava/util/HashSet;";
-    const auto set = call.vm.NewIntrinsicInstance(kHashSet);
-    const std::array roots{set};
-    [[maybe_unused]] const auto root_scope =
-        call.vm.ProtectReferences(roots);
-    const auto java_class = call.vm.Linker().ResolveDescriptor(kHashSet);
-    const auto constructor =
-        call.vm.Linker().FindDirectMethod(java_class, "<init>", "()V");
-    if (!constructor.has_value()) {
-        throw dx::DexVmError(dx::DexVmErrorReason::internal_invariant,
-                             "HashSet constructor is not linked");
-    }
-    const std::array constructor_arguments{dx::VmValue::Ref(set)};
-    const auto outcome = call.vm.Call(*constructor, constructor_arguments);
-    if (outcome.exception.IsValid()) {
-        call.vm.SetPendingException(outcome.exception);
-        return dx::VmObjectRef{};
-    }
-    return set;
-}
-
-}  // namespace
-
-Decl Declare_android_content_Intent(const Context&) {
-    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/content/Intent;", "Ljava/lang/Object;");
-    const auto component = builder.BoundInstanceField(
-        "mComponent", "Landroid/content/ComponentName;", dx::kAccPrivate);
-    const auto action = builder.BoundInstanceField(
-        "mAction", "Ljava/lang/String;", dx::kAccPrivate);
-    const auto data = builder.BoundInstanceField(
-        "mData", "Landroid/net/Uri;", dx::kAccPrivate);
-    const auto type = builder.BoundInstanceField(
-        "mType", "Ljava/lang/String;", dx::kAccPrivate);
-    const auto flags = builder.BoundInstanceField(
-        "mFlags", "I", dx::kAccPrivate);
-    // API 19 stores ArraySet<String>. OGPlay intentionally exposes only the
-    // public Set contract and backs it with the existing core HashSet.
-    const auto categories = builder.BoundInstanceField(
-        "mOgplayCategories", "Ljava/util/Set;", dx::kAccPrivate);
-    const auto extras = builder.BoundInstanceField(
-        "mExtras", "Landroid/os/Bundle;", dx::kAccPrivate);
-    const auto ensure_extras = [extras](dx::IntrinsicContext& call) {
-        dx::IntrinsicCall fields(call);
-        auto bundle = fields.GetRef(extras);
-        if (!bundle.IsValid()) {
-            bundle = NewAndroidBundle(call.vm);
-            fields.SetRef(extras, bundle);
-        }
-        return bundle;
-    };
-    builder.Constructor("(Ljava/lang/String;)V",
-        [action](dx::IntrinsicContext& call) {
-            dx::IntrinsicCall(call).SetRef(
-                action, InternIntentString(call, call.arguments[0].ref));
-            return dx::VmValue::Void();
-        });
-    builder.Constructor("()V", [](dx::IntrinsicContext&) {
-        return dx::VmValue::Void();
-    });
-    builder.Constructor("(Ljava/lang/String;Landroid/net/Uri;)V",
-        [action, data](dx::IntrinsicContext& call) {
-            dx::IntrinsicCall fields(call);
-            fields.SetRef(action,
-                          InternIntentString(call, call.arguments[0].ref));
-            fields.SetRef(data, call.arguments[1].ref);
-            return dx::VmValue::Void();
-        });
-    const auto set_class = [component](dx::IntrinsicContext& call) {
-        dx::IntrinsicCall fields(call);
-        const auto owner = fields.NonNullRef(0, "context");
-        const auto clazz = fields.NonNullRef(1, "class");
-        const auto package =
-            CallAndroidMethod(call.vm, owner, "getPackageName", "()Ljava/lang/String;")
-                .ref;
-        const auto roots = call.vm.ProtectReferences(std::array{package});
-        const auto name =
-            CallAndroidMethod(call.vm, clazz, "getName", "()Ljava/lang/String;").ref;
-        fields.SetRef(component, NewAndroidComponentName(call.vm, package, name));
-        return Self(call);
-    };
-    builder.Constructor("(Landroid/content/Context;Ljava/lang/Class;)V",
-                        [set_class](dx::IntrinsicContext& call) {
-                            static_cast<void>(set_class(call));
-                            return dx::VmValue::Void();
-                        });
-    builder.VirtualMethod(
-        "setClass",
-        "(Landroid/content/Context;Ljava/lang/Class;)Landroid/content/Intent;",
-        set_class);
-    builder.VirtualMethod(
-        "setClassName",
-        "(Ljava/lang/String;Ljava/lang/String;)Landroid/content/Intent;",
-        [component](dx::IntrinsicContext& call) {
-            dx::IntrinsicCall(call).SetRef(
-                component, NewAndroidComponentName(call.vm, call.arguments[0].ref,
-                                                   call.arguments[1].ref));
-            return Self(call);
-        });
-    builder.VirtualMethod(
-        "setClassName",
-        "(Landroid/content/Context;Ljava/lang/String;)Landroid/content/Intent;",
-        [component](dx::IntrinsicContext& call) {
-            const auto package =
-                CallAndroidMethod(call.vm, call.arguments[0].ref, "getPackageName",
-                                  "()Ljava/lang/String;")
-                    .ref;
-            dx::IntrinsicCall(call).SetRef(
-                component,
-                NewAndroidComponentName(call.vm, package, call.arguments[1].ref));
-            return Self(call);
-        });
-    builder.VirtualMethod("getComponent", "()Landroid/content/ComponentName;",
-                          [component](dx::IntrinsicContext& call) {
-                              return dx::VmValue::Ref(
-                                  dx::IntrinsicCall(call).GetRef(component));
-                          });
-    builder.VirtualMethod(
-        "setComponent", "(Landroid/content/ComponentName;)Landroid/content/Intent;",
-        [component](dx::IntrinsicContext& call) {
-            dx::IntrinsicCall(call).SetRef(component, call.arguments[0].ref);
-            return Self(call);
-        });
-    builder.VirtualMethod("setAction",
-        "(Ljava/lang/String;)Landroid/content/Intent;",
-        [action](dx::IntrinsicContext& call) {
-            dx::IntrinsicCall(call).SetRef(
-                action, InternIntentString(call, call.arguments[0].ref));
-            return Self(call);
-        });
-    builder.VirtualMethod("addFlags", "(I)Landroid/content/Intent;",
-        [flags](dx::IntrinsicContext& call) {
-            dx::IntrinsicCall fields(call);
-            fields.SetInt(flags, fields.GetInt(flags) | call.arguments[0].AsInt());
-            return Self(call);
-        });
-    const auto put = [ensure_extras](const char* method, const char* signature) {
-        return dx::IntrinsicHandler([ensure_extras, method, signature](dx::IntrinsicContext& call) {
-            const auto bundle = ensure_extras(call);
-            static_cast<void>(CallAndroidMethod(call.vm, bundle, method, signature,
-                                                 {call.arguments[0], call.arguments[1]}));
-            return Self(call);
-        });
-    };
-    builder.VirtualMethod("putExtras", "(Landroid/os/Bundle;)Landroid/content/Intent;",
-        [ensure_extras](dx::IntrinsicContext& call) {
-            const auto bundle = ensure_extras(call);
-            static_cast<void>(CallAndroidMethod(call.vm, bundle, "putAll",
-                "(Landroid/os/Bundle;)V", {call.arguments[0]}));
-            return Self(call);
-        });
-    builder.VirtualMethod("putExtra", "(Ljava/lang/String;I)Landroid/content/Intent;",
-                          put("putInt", "(Ljava/lang/String;I)V"));
-    builder.VirtualMethod("putExtra", "(Ljava/lang/String;Ljava/lang/String;)Landroid/content/Intent;",
-                          put("putString", "(Ljava/lang/String;Ljava/lang/String;)V"));
-    builder.VirtualMethod("putExtra", "(Ljava/lang/String;Ljava/io/Serializable;)Landroid/content/Intent;",
-                          put("putSerializable", "(Ljava/lang/String;Ljava/io/Serializable;)V"));
-    builder.VirtualMethod("putIntegerArrayListExtra", "(Ljava/lang/String;Ljava/util/ArrayList;)Landroid/content/Intent;",
-                          put("putIntegerArrayList", "(Ljava/lang/String;Ljava/util/ArrayList;)V"));
-    const auto get = [extras](const char* method, const char* signature) {
-        return dx::IntrinsicHandler([extras, method, signature](dx::IntrinsicContext& call) {
-            const auto bundle = dx::IntrinsicCall(call).GetRef(extras);
-            return bundle.IsValid()
-                       ? CallAndroidMethod(call.vm, bundle, method, signature, {call.arguments[0]})
-                       : dx::VmValue::Ref(dx::VmObjectRef{});
-        });
-    };
-    builder.VirtualMethod("getStringExtra", "(Ljava/lang/String;)Ljava/lang/String;",
-                          get("getString", "(Ljava/lang/String;)Ljava/lang/String;"));
-    builder.VirtualMethod("getSerializableExtra", "(Ljava/lang/String;)Ljava/io/Serializable;",
-                          get("getSerializable", "(Ljava/lang/String;)Ljava/io/Serializable;"));
-    builder.VirtualMethod("getIntegerArrayListExtra", "(Ljava/lang/String;)Ljava/util/ArrayList;",
-                          get("getIntegerArrayList", "(Ljava/lang/String;)Ljava/util/ArrayList;"));
-    builder.VirtualMethod("getIntExtra", "(Ljava/lang/String;I)I",
-        [extras](dx::IntrinsicContext& call) {
-            const auto bundle = dx::IntrinsicCall(call).GetRef(extras);
-            return bundle.IsValid()
-                       ? CallAndroidMethod(call.vm, bundle, "getInt", "(Ljava/lang/String;I)I",
-                                           {call.arguments[0], call.arguments[1]})
-                       : call.arguments[1];
-        });
-    builder.VirtualMethod("hasExtra", "(Ljava/lang/String;)Z",
-        [extras](dx::IntrinsicContext& call) {
-            const auto bundle = dx::IntrinsicCall(call).GetRef(extras);
-            return bundle.IsValid()
-                       ? CallAndroidMethod(call.vm, bundle, "containsKey", "(Ljava/lang/String;)Z",
-                                           {call.arguments[0]})
-                       : dx::VmValue::Int(0);
-        });
-    builder.VirtualMethod("removeExtra", "(Ljava/lang/String;)V",
-        [extras](dx::IntrinsicContext& call) {
-            const auto bundle = dx::IntrinsicCall(call).GetRef(extras);
-            if (bundle.IsValid())
-                static_cast<void>(CallAndroidMethod(call.vm, bundle, "remove", "(Ljava/lang/String;)V",
-                                                     {call.arguments[0]}));
-            return dx::VmValue::Void();
-        });
-    builder.VirtualMethod("addCategory",
-        "(Ljava/lang/String;)Landroid/content/Intent;",
-        [categories](dx::IntrinsicContext& call) {
-            if (!call.arguments[0].ref.IsValid()) {
-                throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;",
-                                      "Intent category is null"};
-            }
-            const auto category =
-                InternIntentString(call, call.arguments[0].ref);
-            const std::array category_roots{category};
-            [[maybe_unused]] const auto category_root_scope =
-                call.vm.ProtectReferences(category_roots);
-            dx::IntrinsicCall fields(call);
-            auto set = fields.GetRef(categories);
-            if (!set.IsValid()) {
-                set = NewIntentCategorySet(call);
-                if (!set.IsValid()) return Self(call);
-                fields.SetRef(categories, set);
-            }
-            static_cast<void>(InvokeAndroidVirtual(
-                call, set, "add", "(Ljava/lang/Object;)Z",
-                {dx::VmValue::Ref(category)}));
-            return Self(call);
-        });
-    builder.VirtualMethod("removeCategory", "(Ljava/lang/String;)V",
-        [categories](dx::IntrinsicContext& call) {
-            dx::IntrinsicCall fields(call);
-            const auto set = fields.GetRef(categories);
-            if (!set.IsValid()) return dx::VmValue::Void();
-            if (!InvokeAndroidVirtual(
-                    call, set, "remove", "(Ljava/lang/Object;)Z",
-                    {dx::VmValue::Ref(call.arguments[0].ref)}).has_value()) {
-                return dx::VmValue::Void();
-            }
-            const auto size =
-                InvokeAndroidVirtual(call, set, "size", "()I");
-            if (size.has_value() && size->AsInt() == 0) {
-                fields.SetRef(categories, dx::VmObjectRef{});
-            }
-            return dx::VmValue::Void();
-        });
-    builder.VirtualMethod("hasCategory", "(Ljava/lang/String;)Z",
-        [categories](dx::IntrinsicContext& call) {
-            const auto set = dx::IntrinsicCall(call).GetRef(categories);
-            if (!set.IsValid()) return dx::VmValue::Int(0);
-            const auto result = InvokeAndroidVirtual(
-                call, set, "contains", "(Ljava/lang/Object;)Z",
-                {dx::VmValue::Ref(call.arguments[0].ref)});
-            return dx::VmValue::Int(
-                result.has_value() && result->AsInt() != 0 ? 1 : 0);
-        });
-    builder.VirtualMethod("getAction", "()Ljava/lang/String;",
-        [action](dx::IntrinsicContext& call) {
-            return dx::VmValue::Ref(dx::IntrinsicCall(call).GetRef(action));
-        });
-    builder.VirtualMethod("getData", "()Landroid/net/Uri;",
-        [data](dx::IntrinsicContext& call) {
-            return dx::VmValue::Ref(dx::IntrinsicCall(call).GetRef(data));
-        });
-    builder.VirtualMethod("getDataString", "()Ljava/lang/String;",
-        [data](dx::IntrinsicContext& call) {
-            const auto uri = dx::IntrinsicCall(call).GetRef(data);
-            if (!uri.IsValid()) return dx::VmValue::Ref(dx::VmObjectRef{});
-            const auto value = InvokeAndroidVirtual(
-                call, uri, "toString", "()Ljava/lang/String;");
-            return value.value_or(dx::VmValue::Ref(dx::VmObjectRef{}));
-        });
-    builder.VirtualMethod("getScheme", "()Ljava/lang/String;",
-        [data](dx::IntrinsicContext& call) {
-            const auto uri = dx::IntrinsicCall(call).GetRef(data);
-            if (!uri.IsValid()) return dx::VmValue::Ref(dx::VmObjectRef{});
-            const auto value = InvokeAndroidVirtual(
-                call, uri, "getScheme", "()Ljava/lang/String;");
-            return value.value_or(dx::VmValue::Ref(dx::VmObjectRef{}));
-        });
-    builder.VirtualMethod("getType", "()Ljava/lang/String;",
-        [type](dx::IntrinsicContext& call) {
-            return dx::VmValue::Ref(dx::IntrinsicCall(call).GetRef(type));
-        });
-    const auto resolve_type = [data, type](dx::IntrinsicContext& call) {
-        dx::IntrinsicCall fields(call);
-        const auto explicit_type = fields.GetRef(type);
-        if (explicit_type.IsValid()) return dx::VmValue::Ref(explicit_type);
-        const auto uri = fields.GetRef(data);
-        if (!uri.IsValid()) return dx::VmValue::Ref(dx::VmObjectRef{});
-        const auto scheme = InvokeAndroidVirtual(
-            call, uri, "getScheme", "()Ljava/lang/String;");
-        if (!scheme.has_value()) {
-            return dx::VmValue::Ref(dx::VmObjectRef{});
-        }
-        if (!scheme->ref.IsValid() ||
-            call.vm.StringUtf8(scheme->ref) != "content") {
-            return dx::VmValue::Ref(dx::VmObjectRef{});
-        }
-        const auto resolved = InvokeAndroidVirtual(
-            call, call.arguments[0].ref, "getType",
-            "(Landroid/net/Uri;)Ljava/lang/String;",
-            {dx::VmValue::Ref(uri)});
-        return resolved.value_or(dx::VmValue::Ref(dx::VmObjectRef{}));
-    };
-    builder.VirtualMethod("resolveType",
-        "(Landroid/content/ContentResolver;)Ljava/lang/String;",
-        resolve_type);
-    builder.VirtualMethod(
-        "resolveTypeIfNeeded", "(Landroid/content/ContentResolver;)Ljava/lang/String;",
-        [component, type, resolve_type](dx::IntrinsicContext& call) {
-            if (dx::IntrinsicCall(call).GetRef(component).IsValid()) {
-                return dx::VmValue::Ref(
-                    dx::IntrinsicCall(call).GetRef(type));
-            }
-            return resolve_type(call);
-        });
-    builder.VirtualMethod("getCategories", "()Ljava/util/Set;",
-        [categories](dx::IntrinsicContext& call) {
-            return dx::VmValue::Ref(
-                dx::IntrinsicCall(call).GetRef(categories));
-        });
-    builder.VirtualMethod("getFlags", "()I",
-        [flags](dx::IntrinsicContext& call) {
-            return dx::VmValue::Int(dx::IntrinsicCall(call).GetInt(flags));
-        });
-    builder.VirtualMethod("getExtras", "()Landroid/os/Bundle;",
-        [extras](dx::IntrinsicContext& call) {
-            const auto bundle = dx::IntrinsicCall(call).GetRef(extras);
-            return dx::VmValue::Ref(bundle.IsValid() ? NewAndroidBundle(call.vm, bundle)
-                                                   : dx::VmObjectRef{});
-        });
-    builder.VirtualMethod("setFlags", "(I)Landroid/content/Intent;",
-        [flags](dx::IntrinsicContext& call) {
-            dx::IntrinsicCall(call).SetInt(flags, call.arguments[0].AsInt());
-            return Self(call);
-        });
-    builder.VirtualMethod("setData",
-        "(Landroid/net/Uri;)Landroid/content/Intent;",
-        [data, type](dx::IntrinsicContext& call) {
-            dx::IntrinsicCall fields(call);
-            fields.SetRef(data, call.arguments[0].ref);
-            fields.SetRef(type, dx::VmObjectRef{});
-            return Self(call);
-        });
-    builder.VirtualMethod("setType",
-        "(Ljava/lang/String;)Landroid/content/Intent;",
-        [data, type](dx::IntrinsicContext& call) {
-            dx::IntrinsicCall fields(call);
-            fields.SetRef(data, dx::VmObjectRef{});
-            fields.SetRef(type, call.arguments[0].ref);
-            return Self(call);
-        });
-    builder.VirtualMethod("setDataAndType",
-        "(Landroid/net/Uri;Ljava/lang/String;)Landroid/content/Intent;",
-        [data, type](dx::IntrinsicContext& call) {
-            dx::IntrinsicCall fields(call);
-            fields.SetRef(data, call.arguments[0].ref);
-            fields.SetRef(type, call.arguments[1].ref);
-            return Self(call);
-        });
-    return std::move(builder).Build();
-}
-
-}  // namespace ogplay::runtime::android_intrinsics
-
-
 // ---- migrated from android_content_IntentFilter.cpp ----
-#include "catalog.h"
-
-#include <algorithm>
-#include <cstdint>
-#include <limits>
-#include <string_view>
 
 namespace {
 
@@ -2404,9 +2032,7 @@ Decl Declare_android_content_IntentFilter(const Context& context) {
 
 }  // namespace ogplay::runtime::android_intrinsics
 
-
 // ---- migrated from android_content_pm_PackageManager.cpp ----
-#include "catalog.h"
 
 namespace ogplay::runtime::android_intrinsics {
 
@@ -2673,67 +2299,6 @@ Decl Declare_android_content_pm_PackageManager(const Context& context) {
             return dx::VmValue::Int(
                 context->system_features.contains(feature) ? 1 : 0);
         });
-    return std::move(builder).Build();
-}
-
-}  // namespace ogplay::runtime::android_intrinsics
-
-
-// android.content.SharedPreferences, $Editor and
-// $OnSharedPreferenceChangeListener keep their original AOSP interface shape
-// from BootDex; no intrinsic interface declarations remain here.
-
-
-// ---- migrated from android_content_SharedPreferencesEditorImpl.cpp ----
-#include "catalog.h"
-
-namespace ogplay::runtime::android_intrinsics {
-
-Decl Declare_android_content_SharedPreferencesEditorImpl(const Context& context) {
-    // The full BootDex Editor interface: each editor stages independent
-    // changes; commit/apply publish and persist synchronously. putStringSet
-    // is not representable in the checked preference subset and fails
-    // explicitly with accounting.
-    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/content/SharedPreferencesEditorImpl;", "Ljava/lang/Object;", {"Landroid/content/SharedPreferences$Editor;"});
-    builder.FinalMethod("putBoolean", "(Ljava/lang/String;Z)Landroid/content/SharedPreferences$Editor;", PrefsEditorPutBooleanHandler(context));
-    builder.FinalMethod("putInt", "(Ljava/lang/String;I)Landroid/content/SharedPreferences$Editor;", PrefsEditorPutIntHandler(context));
-    builder.FinalMethod("putLong", "(Ljava/lang/String;J)Landroid/content/SharedPreferences$Editor;", PrefsEditorPutLongHandler(context));
-    builder.FinalMethod("putFloat", "(Ljava/lang/String;F)Landroid/content/SharedPreferences$Editor;", PrefsEditorPutFloatHandler(context));
-    builder.FinalMethod("putString", "(Ljava/lang/String;Ljava/lang/String;)Landroid/content/SharedPreferences$Editor;", PrefsEditorPutStringHandler(context));
-    builder.FinalMethod("putStringSet", "(Ljava/lang/String;Ljava/util/Set;)Landroid/content/SharedPreferences$Editor;", PrefsUnsupportedHandler("dexvm.shared_preferences.string_set"));
-    builder.FinalMethod("remove", "(Ljava/lang/String;)Landroid/content/SharedPreferences$Editor;", PrefsEditorRemoveHandler(context));
-    builder.FinalMethod("clear", "()Landroid/content/SharedPreferences$Editor;", PrefsEditorClearHandler(context));
-    builder.FinalMethod("apply", "()V", PrefsEditorApplyHandler(context));
-    builder.FinalMethod("commit", "()Z", PrefsEditorCommitHandler(context));
-    return std::move(builder).Build();
-}
-
-}  // namespace ogplay::runtime::android_intrinsics
-
-
-// ---- migrated from android_content_SharedPreferencesImpl.cpp ----
-#include "catalog.h"
-
-namespace ogplay::runtime::android_intrinsics {
-
-Decl Declare_android_content_SharedPreferencesImpl(const Context& context) {
-    // The full BootDex SharedPreferences interface: typed getters, contains
-    // and a boxed getAll read the same store; change listeners are never
-    // invoked, so registration fails explicitly with accounting instead of
-    // accepting a silent no-op, and getStringSet has no checked storage
-    // representation.
-    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/content/SharedPreferencesImpl;", "Ljava/lang/Object;", {"Landroid/content/SharedPreferences;"});
-    builder.FinalMethod("getAll", "()Ljava/util/Map;", PrefsGetAllHandler(context));
-    builder.FinalMethod("getString", "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;", PrefsGetStringHandler(context));
-    builder.FinalMethod("getStringSet", "(Ljava/lang/String;Ljava/util/Set;)Ljava/util/Set;", PrefsUnsupportedHandler("dexvm.shared_preferences.string_set"));
-    builder.FinalMethod("getInt", "(Ljava/lang/String;I)I", PrefsGetIntHandler(context));
-    builder.FinalMethod("getLong", "(Ljava/lang/String;J)J", PrefsGetLongHandler(context));
-    builder.FinalMethod("getFloat", "(Ljava/lang/String;F)F", PrefsGetFloatHandler(context));
-    builder.FinalMethod("getBoolean", "(Ljava/lang/String;Z)Z", PrefsGetBooleanHandler(context));
-    builder.FinalMethod("contains", "(Ljava/lang/String;)Z", PrefsContainsHandler(context));
-    builder.FinalMethod("edit", "()Landroid/content/SharedPreferences$Editor;", PrefsEditHandler(context));
-    builder.FinalMethod("registerOnSharedPreferenceChangeListener", "(Landroid/content/SharedPreferences$OnSharedPreferenceChangeListener;)V", PrefsUnsupportedHandler("dexvm.shared_preferences.change_listeners"));
-    builder.FinalMethod("unregisterOnSharedPreferenceChangeListener", "(Landroid/content/SharedPreferences$OnSharedPreferenceChangeListener;)V", PrefsUnsupportedHandler("dexvm.shared_preferences.change_listeners"));
     return std::move(builder).Build();
 }
 

@@ -28,9 +28,9 @@ namespace ogplay::runtime::android_intrinsics {
 [[nodiscard]] Decl Declare_android_content_DialogInterface_OnCancelListener(const Context& context);
 [[nodiscard]] Decl Declare_android_content_DialogInterface_OnClickListener(const Context& context);
 [[nodiscard]] Decl Declare_android_content_DialogInterface_OnDismissListener(const Context& context);
-[[nodiscard]] Decl Declare_android_content_Intent(const Context& context);
 [[nodiscard]] Decl Declare_android_content_IntentFilter(const Context& context);
 [[nodiscard]] Decl Declare_android_content_IntentFilter_MalformedMimeTypeException(const Context& context);
+[[nodiscard]] Decl Declare_android_content_IntentSender(const Context& context);
 [[nodiscard]] Decl Declare_android_content_pm_PackageInfo(const Context& context);
 [[nodiscard]] Decl Declare_android_content_pm_PackageManager_NameNotFoundException(const Context& context);
 [[nodiscard]] Decl Declare_android_content_pm_PackageManager(const Context& context);

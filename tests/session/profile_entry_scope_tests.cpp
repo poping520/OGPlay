@@ -195,22 +195,11 @@ TEST_CASE("android intrinsic catalog is unique and directly bound") {
   CHECK(has_method("Landroid/content/ContextWrapper;", "getMainLooper",
                    "()Landroid/os/Looper;"));
   CHECK(method_count("Landroid/view/ContextThemeWrapper;") == 4);
-  CHECK(method_count("Landroid/content/Intent;") == 39);
   CHECK(method_count("Landroid/content/IntentFilter;") == 24);
-  CHECK(has_method("Landroid/content/Intent;", "resolveTypeIfNeeded",
-                   "(Landroid/content/ContentResolver;)Ljava/lang/String;"));
   CHECK(has_method(
       "Landroid/content/IntentFilter;", "match",
       "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;"
       "Landroid/net/Uri;Ljava/util/Set;Ljava/lang/String;)I"));
-  const auto intent_declaration = std::ranges::find_if(
-      catalog, [](const auto& declaration) {
-        return declaration.descriptor == "Landroid/content/Intent;";
-      });
-  REQUIRE(intent_declaration != catalog.end());
-  for (const auto& method : intent_declaration->methods) {
-    CHECK((method.access_flags & ogplay::runtime::dexvm::kAccFinal) == 0U);
-  }
   CHECK(method_count("Landroid/os/Bundle;") == 2);
   CHECK(method_count("Landroid/os/ResultReceiver;") == 5);
   CHECK(method_count("Landroid/os/ResultReceiver$MyRunnable;") == 2);

@@ -212,7 +212,10 @@ DVM-104 的 ZIP 适配器调用 BootDex FilterInputStream 构造以保持源强�
 java_crypto.cpp 仅提供 provider 配置、OS entropy service、JNI 声明和 context owner 绑定。
 AES/ECB、CBC 的 NoPadding/PKCS5Padding 与 CTR/NoPadding 注册为 AndroidOpenSSL，AES
 默认别名指向 ECB/PKCS5Padding。普通 Cipher 方法无 intrinsic 副本。
-SecureRandom 的 OGPlayOS 服务调用 HAL CSPRNG，engineSetSeed 明确失败，不伪装 SHA1PRNG。
+SecureRandom 的 OGPlayOS 服务直接调用统一 HAL CSPRNG，engineSetSeed 明确失败。
+API 19 AndroidOpenSSL 的 SHA1PRNG 服务首次使用时从同一 CSPRNG 注入熵，再经 guest ARM
+OpenSSL `RAND_seed/RAND_bytes` 执行；调用方 seed 只追加熵。AES KeyGenerator 支持
+128/192/256 位并返回 BootDex SecretKeySpec，随机字节由所选 SecureRandom 产生。
 RSA Cipher、TLS、AES-GCM 和其他 transformation 未注册；AES AlgorithmParameters 编码
 provider 未注册，AOSP engineGetParameters 按原代码返回 null。IvParameterSpec 可用。
 

@@ -162,6 +162,28 @@ namespace ogplay::runtime::dexvm::intrinsics {
             return std::move(builder).Build();
         }
 
+        IntrinsicClassDecl DeclareProxySelector() {
+            auto builder = IntrinsicClassBuilder::Class(
+                "Ljava/net/ProxySelector;", "Ljava/lang/Object;", {},
+                kAccPublic | kAccAbstract);
+            builder.Constructor("()V", NoopVoid());
+            builder.StaticMethod(
+                "getDefault", "()Ljava/net/ProxySelector;",
+                [](IntrinsicContext&) {
+                    // OGPlay has no process-wide proxy service. Apache's API 19
+                    // route planner treats a null selector as a direct route.
+                    return VmValue::Ref(VmObjectRef{});
+                });
+            builder.UnimplementedStatic(
+                "setDefault", "(Ljava/net/ProxySelector;)V");
+            builder.UnimplementedVirtual(
+                "select", "(Ljava/net/URI;)Ljava/util/List;");
+            builder.UnimplementedVirtual(
+                "connectFailed",
+                "(Ljava/net/URI;Ljava/net/SocketAddress;Ljava/io/IOException;)V");
+            return std::move(builder).Build();
+        }
+
         [[noreturn]] void MalformedUrl(const std::string_view spec,
                                        const std::string_view reason) {
             throw VmJavaThrow{
@@ -1205,6 +1227,7 @@ namespace ogplay::runtime::dexvm::intrinsics {
     void AppendJavaNetPlatform(std::vector<IntrinsicClassDecl>& catalog,
                                const CoreIntrinsicServices& services) {
         catalog.push_back(DeclarePlatformHttpURLConnection());
+        catalog.push_back(DeclareProxySelector());
         catalog.push_back(DeclarePlatformUrl());
         catalog.push_back(DeclarePlatformUrlConnection());
         catalog.push_back(DeclarePlatformUrlEncoder());

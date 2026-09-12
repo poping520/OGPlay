@@ -1,5 +1,9 @@
 # 当前状态
 
+- `java.net.ProxySelector` 已增加无进程代理 intrinsic：`getDefault()` 返回 null，API 19
+  Apache RoutePlanner 因此选择直连；未加入 Proxy 相关 BootDex 类，也不读取宿主代理。
+  仅完成受影响目标编译，本轮按要求未执行测试或真实 APK 验证。
+
 - [DVM-153](../tasks/dexvm/DVM-153.md) 已把 API 19 URI 五类闭包迁入 BootDex并删除 URI/
   URISyntaxException overlay；双后端 URI 54 条、URI/File URI 331 条及全链接 8266 条断言
   通过，BootDex 为 1464 类。真实 APK 非 survey 双后端已越过 URI.create，当前首错为

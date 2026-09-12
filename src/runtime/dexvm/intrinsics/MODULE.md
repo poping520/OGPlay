@@ -89,6 +89,9 @@
 - InetAddress/Inet4Address/Inet6Address、地址缓存、InetSocketAddress 与 NetworkInterface 普通
   行为归 API 19 BootDex；IP 字节、hostName、scope 与 endpoint 字段是唯一状态。Posix 仅保留
   地址解析、受策略 DNS/反向查询及确定性 guest uname 边界；其余原生 OS 调用明确失败。
+- URI、内部 encoder、URISyntaxException 与 UrlUtils 普通行为归 BootDex；构造、create、
+  normalize/resolve/relativize、比较和对象流协议使用原版字段与算法。URL 仍使用现有有界
+  intrinsic，因此共用的 C++ URL 解析辅助函数继续保留。
 
 ## Locale、ICU、正则与密码
 

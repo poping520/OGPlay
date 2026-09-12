@@ -70,7 +70,8 @@ switch/threaded 解释、异常、线程/monitor、反射及 `java.*` core intri
   逻辑 FileDescriptor 不存 host fd。`ZipRuntime` 复用严格 ZIP parser/inflate。
 - `NetworkRuntime` 只经注入 policy/transport，默认离线；不读 host DNS/代理/证书、不在 core
   创建 socket。InetAddress 与 InetSocketAddress 状态归 BootDex 字段，NetworkRuntime 只保存
-  socket/stream/datagram 资源；URL 解析不触网，未授权或未实现 I/O 明确失败。
+  socket/stream/datagram 资源；URI 普通值语义归 BootDex，URL 解析不触网，未授权或未实现
+  I/O 明确失败。
 - `NioRuntime` 以对象 identity 保存 Buffer backing/cursor；heap/direct/view 共用 storage，backing
   array 是 GC 强边。direct memory 只经强类型 guest-address 接口，临时映射始终释放。
 - `UnsafeRuntime` 使用逻辑字段令牌；访问校验类型/对齐/边界，CAS 要求执行锁，引用写入保留

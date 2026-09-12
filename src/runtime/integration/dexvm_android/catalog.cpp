@@ -1,8 +1,10 @@
 #include "catalog.h"
 
+#include <algorithm>
 #include <stdexcept>
 
 #include "ogplay/hal/host_environment.h"
+#include "ogplay/loader/apk.h"
 #include "ogplay/runtime/integration/android_guest_call_session.h"
 
 namespace ogplay::runtime {
@@ -15,6 +17,29 @@ dexvm::CoreIntrinsicServices AndroidCoreIntrinsicServices(
     services.language = context->language;
     services.iso3_language = context->iso3_language;
     services.iso3_country = context->iso3_country;
+    services.classpath_resource = [context](
+        const dexvm::CoreIntrinsicServices::ClasspathLoader role,
+        const std::string_view name)
+        -> std::optional<std::vector<std::byte>> {
+        const auto read = [name](const std::vector<std::byte>& bytes,
+                                 const loader::ApkArchive& archive)
+            -> std::optional<std::vector<std::byte>> {
+            const auto found = std::find_if(
+                archive.entries.begin(), archive.entries.end(),
+                [name](const loader::ApkEntry& entry) {
+                    return entry.name == name;
+                });
+            if (found == archive.entries.end()) return std::nullopt;
+            return loader::ReadApkEntry(bytes, archive, std::string(name));
+        };
+        if (const auto boot = read(context->boot_classpath_bytes,
+                                   context->boot_classpath_archive)) {
+            return boot;
+        }
+        if (role == dexvm::CoreIntrinsicServices::ClasspathLoader::bootstrap)
+            return std::nullopt;
+        return read(context->apk_bytes, context->archive);
+    };
     services.singleton =
         [context](dexvm::Interpreter& vm, const std::string_view key,
                   const std::string_view descriptor) {

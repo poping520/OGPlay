@@ -4,6 +4,7 @@
 // ---- migrated from dalvik_system_PathClassLoader.cpp ----
 #include "catalog.h"
 
+#include <array>
 #include <utility>
 
 #include "ogplay/runtime/dexvm/intrinsic_builder.h"
@@ -92,7 +93,44 @@ struct ClassLoaderFields final {
 
 }  // namespace
 
-IntrinsicClassDecl Declare_java_lang_ClassLoader() {
+namespace {
+
+VmObjectRef ResourceInputStream(IntrinsicContext& context,
+                                const CoreIntrinsicServices& services,
+                                const CoreIntrinsicServices::ClasspathLoader loader,
+                                const std::string_view name) {
+    if (!services.classpath_resource) return VmObjectRef{};
+    const auto bytes = services.classpath_resource(loader, name);
+    if (!bytes.has_value()) return VmObjectRef{};
+    const auto array = context.vm.Model().NewPrimitiveArray(
+        context.vm.Linker().ResolveDescriptor("[B"), JniPrimitiveKind::byte,
+        static_cast<JniSize>(bytes->size()));
+    const auto roots = context.vm.ProtectReferences(std::array{array});
+    if (!bytes->empty()) context.vm.Model().WriteByteRegion(array, 0, *bytes);
+    const auto stream = context.vm.NewIntrinsicInstance(
+        "Ljava/io/ByteArrayInputStream;");
+    const auto stream_roots = context.vm.ProtectReferences(std::array{stream});
+    const auto constructor = context.vm.Linker().FindDirectMethod(
+        context.vm.Linker().ResolveDescriptor("Ljava/io/ByteArrayInputStream;"),
+        "<init>", "([B)V");
+    if (!constructor.has_value()) {
+        throw DexVmError(DexVmErrorReason::internal_invariant,
+                         "ByteArrayInputStream constructor is not linked");
+    }
+    const auto outcome = context.vm.Call(
+        *constructor, std::array{VmValue::Ref(stream), VmValue::Ref(array)});
+    if (outcome.exception.IsValid()) {
+        throw VmJavaThrow{
+            context.vm.Linker().Class(outcome.exception_class).descriptor,
+            outcome.exception_message, outcome.exception};
+    }
+    return stream;
+}
+
+}  // namespace
+
+IntrinsicClassDecl Declare_java_lang_ClassLoader(
+    const CoreIntrinsicServices& services) {
     auto builder = IntrinsicClassBuilder::Class(
         "Ljava/lang/ClassLoader;", "Ljava/lang/Object;", {},
         kAccPublic | kAccAbstract);
@@ -171,6 +209,17 @@ IntrinsicClassDecl Declare_java_lang_ClassLoader() {
                 call.NonNullRef(0, "className"));
             throw VmJavaThrow{"Ljava/lang/ClassNotFoundException;", name};
         }, kAccProtected);
+    builder.VirtualMethod(
+        "getResourceAsStream", "(Ljava/lang/String;)Ljava/io/InputStream;",
+        [services](IntrinsicContext& context) {
+            const auto name = context.vm.StringUtf8(
+                IntrinsicCall(context).NonNullRef(0, "resourceName"));
+            const auto role = ReceiverRole(context) == kBootstrapLoader
+                ? CoreIntrinsicServices::ClasspathLoader::bootstrap
+                : CoreIntrinsicServices::ClasspathLoader::application;
+            return VmValue::Ref(ResourceInputStream(
+                context, services, role, name));
+        });
     builder.VirtualMethod(
         "getResources", "(Ljava/lang/String;)Ljava/util/Enumeration;",
         [](IntrinsicContext& context) {

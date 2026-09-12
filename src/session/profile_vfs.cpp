@@ -109,6 +109,14 @@ std::vector<std::string> ProfileWritableRoots(const TitleProfile& profile) {
     return {"/data/data/" + profile.identity.package, "/sdcard"};
 }
 
+std::string ResolveProfileWorkingDirectory(const TitleProfile& profile) {
+    if (profile.data.has_value() &&
+        profile.data->working_directory.has_value()) {
+        return *profile.data->working_directory;
+    }
+    return "/";
+}
+
 ProfileVfsAssembly AssembleProfileVfs(
     const TitleProfile& profile,
     const std::span<const ProfileVfsMountInput> inputs,

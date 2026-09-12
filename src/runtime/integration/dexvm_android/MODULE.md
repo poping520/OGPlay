@@ -14,6 +14,8 @@ handler id、单类 TU 或 misc 巨石。非 Android family 归 core，平台事
 ## 全局不变量
 
 - 依赖只向下；资源、路径、线程、设备与会话身份来自显式 context，不读取 host 环境或游戏身份。
+- classpath resource provider 只读取 context 中已解析并封存的 BootDex/APK archive；bootstrap
+  不见 APK，application 按 parent-first 查询，资源字节不映射到宿主文件系统。
 - 普通 Java 状态优先放 BootDex 字段/数组；host state 必须 owner-attached、具名 trace/sweep，clone
   policy 明确。session root、对象 owner、UiNodeId 与 native token 不得混用。
 - guest 引用使用强类型包装；字段经 bound token，禁止裸 slot。flags 来自 `access_flags.h`；

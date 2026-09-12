@@ -39,6 +39,11 @@ struct ProfileVfsAssembly final {
 [[nodiscard]] std::vector<std::string> ProfileWritableRoots(
     const TitleProfile& profile);
 
+// Android processes always have a deterministic guest cwd. A Profile may
+// override it for titles whose relative paths are rooted in mounted data.
+[[nodiscard]] std::string ResolveProfileWorkingDirectory(
+    const TitleProfile& profile);
+
 class ProfileVfsError final : public std::runtime_error {
 public:
     using std::runtime_error::runtime_error;

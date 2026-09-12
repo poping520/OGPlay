@@ -216,12 +216,16 @@ def validate(root: Path) -> None:
 
     try:
         recipe = bootdex.load_recipe()
+        resource_recipe = bootdex.load_resources()
+        resources = bootdex.resource_payload(resource_recipe)
     except (bootdex.BuildError, OSError) as error:
         raise PayloadError(f"BootDex recipe is invalid: {error}") from error
     try:
         jar_bytes = (root / BOOT_DEX).read_bytes()
         with zipfile.ZipFile(root / BOOT_DEX) as archive:
-            if archive.namelist() != ["META-INF/MANIFEST.MF", "classes.dex"]:
+            expected_entries = ["META-INF/MANIFEST.MF", "classes.dex"] + \
+                sorted(resources)
+            if archive.namelist() != expected_entries:
                 raise PayloadError("boot_dex archive entries do not match")
             if archive.comment or \
                     archive.read("META-INF/MANIFEST.MF") != \
@@ -243,7 +247,7 @@ def validate(root: Path) -> None:
             struct.unpack_from("<I", dex, 0x20)[0] != len(dex) or \
             struct.unpack_from("<I", dex, 0x28)[0] != 0x12345678:
         raise PayloadError("boot_dex classes.dex is not canonical DEX 035")
-    if bootdex.make_jar(dex) != jar_bytes:
+    if bootdex.make_jar(dex, resources) != jar_bytes:
         raise PayloadError("boot_dex archive metadata is not canonical")
     try:
         classes = bootdex.class_names(dex)

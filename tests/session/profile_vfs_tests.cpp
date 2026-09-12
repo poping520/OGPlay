@@ -128,6 +128,20 @@ TEST_CASE("Profile VFS enforces manifest and working directory coverage") {
         ogplay::session::ProfileVfsError);
 }
 
+TEST_CASE("Profile working directory defaults to Android root and honors data override") {
+    ogplay::session::TitleProfile generic;
+    CHECK(ogplay::session::ResolveProfileWorkingDirectory(generic) == "/");
+
+    const auto configured = ProfileWithData();
+    CHECK(ogplay::session::ResolveProfileWorkingDirectory(configured) ==
+          "/sdcard/game");
+
+    ogplay::runtime::VirtualFileSystem filesystem;
+    filesystem.SetWorkingDirectory(
+        ogplay::session::ResolveProfileWorkingDirectory(generic));
+    CHECK(filesystem.WorkingDirectory() == "/");
+}
+
 TEST_CASE("Profile lifecycle flush adapter persists every dirty VFS node") {
     const auto root = std::filesystem::temp_directory_path() /
                       "ogplay-profile-vfs-lifecycle-flush";

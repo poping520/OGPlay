@@ -7,7 +7,7 @@ std::vector<IntrinsicClassDecl> CoreIntrinsicCatalog(
     using namespace intrinsics;
     std::vector<IntrinsicClassDecl> catalog{
         Declare_java_lang_Object(),
-        Declare_java_lang_ClassLoader(),
+        Declare_java_lang_ClassLoader(services),
         Declare_java_lang_reflect_Proxy(),
         Declare_dalvik_system_VMStack(),
         Declare_java_lang_BootClassLoader(),
@@ -24,7 +24,7 @@ std::vector<IntrinsicClassDecl> CoreIntrinsicCatalog(
         Declare_java_lang_Math(),
         Declare_java_lang_Runtime(),
         Declare_libcore_io_IoUtils(),
-        Declare_java_lang_Class(),
+        Declare_java_lang_Class(services),
         Declare_java_lang_reflect_AnnotatedElement(),
         Declare_java_lang_reflect_GenericDeclaration(),
         Declare_java_lang_reflect_Type(),

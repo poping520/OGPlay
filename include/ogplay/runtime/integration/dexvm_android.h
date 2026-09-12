@@ -63,6 +63,8 @@ struct DexVmAndroidContext final {
     loader::ArscTable arsc;
     std::vector<std::byte> apk_bytes;
     loader::ApkArchive archive;
+    std::vector<std::byte> boot_classpath_bytes;
+    loader::ApkArchive boot_classpath_archive;
     std::string package_name;
     // Guest-visible path of the installed APK. Context code/resource paths and
     // ApplicationInfo source paths expose this instead of leaking the

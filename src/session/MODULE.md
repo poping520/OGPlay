@@ -94,6 +94,8 @@ Dex activity 每帧在 guest 回调前泵送主 Looper，到帧尾只通过
   active SurfaceHolder、VideoView 或 holder Canvas producer。
 - `AssembleProfileVfs`：把已导入数据与 Profile mount 精确配对，在全新 VFS 中挂载并
   校验 required mount、manifest 和 working directory；
+  `ResolveProfileWorkingDirectory` 为普通 Android 进程提供 `/` 默认 guest cwd，Profile
+  显式数据目录仍优先；
   `FlushProfileVfsAtLifecycleBoundary` 是 pause/clean stop 共用的 `FlushAll` 适配点。
 - `ApplyProfileInput` / `ApplyProfileAudio` / `ResolveProfileSoundPoolPath`：只消费 Profile
   的通用 input id、source/path 与资源占位符，不按标题猜测。

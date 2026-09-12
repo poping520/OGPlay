@@ -58,19 +58,32 @@ void Measure(UiTree& tree, const UiNodeId id, const MeasureSpec width_spec,
                                  node.padding.right;
     std::int32_t desired_height = node.intrinsic.height + node.padding.top +
                                   node.padding.bottom;
-    if (node.kind == UiClass::TextView || node.kind == UiClass::Button) {
-        const auto text = MeasureFixedText(node.text, node.text_size_px, node.text_style);
+    desired_width = std::max(desired_width, node.minimum.width);
+    desired_height = std::max(desired_height, node.minimum.height);
+    if (node.kind == UiClass::TextView || node.kind == UiClass::EditText ||
+        node.kind == UiClass::Button) {
+        auto laid_out_value = node.text.empty() ? std::u16string(u"M")
+                                                : node.text;
+        if (node.max_lines > 1 && width_spec.mode != MeasureMode::Unspecified) {
+            const auto content_width = std::max(
+                1, width_spec.size - node.padding.left - node.padding.right);
+            laid_out_value = WrapFixedText(laid_out_value, node.text_size_px,
+                                           node.text_style, content_width,
+                                           node.max_lines);
+        }
+        const auto laid_out_text = MeasureFixedText(
+            laid_out_value, node.text_size_px, node.text_style);
         // API19 TextView.onMeasure/getDesiredHeight: top/bottom contribute
         // to the text band's width; left/right contribute to its height.
         // Compound padding is then added on both axes, even with empty text.
         const auto& c = node.compound_drawables;
         desired_width = std::max(
             desired_width,
-            std::max({text.width, c[1].width, c[3].width}) +
+            std::max({laid_out_text.width, c[1].width, c[3].width}) +
                 c[0].width + c[2].width + node.padding.left + node.padding.right);
         desired_height = std::max(
             desired_height,
-            std::max({text.height, c[0].height, c[2].height}) +
+            std::max({laid_out_text.height, c[0].height, c[2].height}) +
                 c[1].height + c[3].height + node.padding.top + node.padding.bottom);
     }
     // Android View.getDefaultSize uses the bounded MeasureSpec size for a
@@ -86,7 +99,8 @@ void Measure(UiTree& tree, const UiNodeId id, const MeasureSpec width_spec,
                 desired_height, std::max(0, height_spec.size));
         }
     }
-    if (node.kind == UiClass::LinearLayout) {
+    if (node.kind == UiClass::LinearLayout ||
+        node.kind == UiClass::TableLayout || node.kind == UiClass::TableRow) {
         const bool vertical = node.orientation == Orientation::Vertical;
         const auto main_spec = vertical ? height_spec : width_spec;
         std::int32_t total_main = 0;
@@ -201,6 +215,17 @@ void Measure(UiTree& tree, const UiNodeId id, const MeasureSpec width_spec,
             desired_height,
             (vertical ? total_main : max_cross) + node.padding.top +
                 node.padding.bottom);
+    } else if (node.kind == UiClass::ScrollView && !node.children.empty()) {
+        auto& child = *tree.Get(node.children.front());
+        const auto horizontal = node.padding.left + node.padding.right +
+                                child.layout.margin.left + child.layout.margin.right;
+        Measure(tree, node.children.front(),
+                ChildSpec(width_spec, horizontal, child.layout.width),
+                {MeasureMode::Unspecified, 0});
+        desired_width = std::max(desired_width, child.measured.width + horizontal);
+        desired_height = std::max(desired_height,
+                                  child.measured.height + node.padding.top +
+                                      node.padding.bottom);
     } else if (!node.children.empty()) {
         std::int32_t max_width = 0;
         std::int32_t max_height = 0;
@@ -237,6 +262,9 @@ void Measure(UiTree& tree, const UiNodeId id, const MeasureSpec width_spec,
         auto& child = *tree.Get(child_id);
         if (child.visibility == Visibility::Gone) continue;
         if (node.kind != UiClass::LinearLayout &&
+            node.kind != UiClass::TableLayout &&
+            node.kind != UiClass::TableRow &&
+            node.kind != UiClass::ScrollView &&
             (child.layout.width.mode == SizeMode::MatchParent ||
              child.layout.height.mode == SizeMode::MatchParent)) {
             const MeasureSpec final_width{MeasureMode::Exactly, node.measured.width};
@@ -291,6 +319,7 @@ void LayoutFrameChildren(UiTree& tree, const UiNodeId id,
             top = content_bottom - child.measured.height -
                   child.layout.margin.bottom;
         }
+        if (parent.kind == UiClass::ScrollView) top -= parent.scroll_y;
         child.frame = {left, top, left + child.measured.width,
                        top + child.measured.height};
         LayoutNode(tree, child_id, screen_x + left, screen_y + top);
@@ -595,7 +624,8 @@ void LayoutNode(UiTree& tree, const UiNodeId id, const std::int32_t screen_x,
     auto& node = *tree.Get(id);
     node.screen_frame = {screen_x, screen_y, screen_x + node.measured.width,
                          screen_y + node.measured.height};
-    if (node.kind == UiClass::LinearLayout) {
+    if (node.kind == UiClass::LinearLayout ||
+        node.kind == UiClass::TableLayout || node.kind == UiClass::TableRow) {
         if (node.orientation == Orientation::Horizontal) {
             LayoutHorizontalChildren(tree, id, screen_x, screen_y);
         } else {

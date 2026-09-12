@@ -57,6 +57,7 @@ Declare_java_lang_Thread_UncaughtExceptionHandler();
 [[nodiscard]] IntrinsicClassDecl Declare_java_io_PrintStream();
 [[nodiscard]] IntrinsicClassDecl Declare_java_lang_Math();
 [[nodiscard]] IntrinsicClassDecl Declare_java_lang_Runtime();
+[[nodiscard]] IntrinsicClassDecl Declare_libcore_io_IoUtils();
 [[nodiscard]] IntrinsicClassDecl Declare_java_lang_Class();
 [[nodiscard]] IntrinsicClassDecl Declare_java_lang_reflect_AnnotatedElement();
 [[nodiscard]] IntrinsicClassDecl Declare_java_lang_reflect_GenericDeclaration();

@@ -5,6 +5,8 @@
 #include "ogplay/runtime/debug/stall_diagnostics.h"
 
 #include <exception>
+#include <algorithm>
+#include <cmath>
 #include <unordered_set>
 #include <utility>
 
@@ -467,9 +469,91 @@ namespace ogplay::session {
 
     void DexActivityLifecycle::DispatchInput() {
         auto& vm = bindings_.bridge->Vm();
+        auto& context = *bindings_.context;
+        const auto notify_text_change = [&](const dx::VmObjectRef edit,
+                                            const runtime::ui::UiNodeId node,
+                                            const std::u16string& before,
+                                            const std::u16string& after) {
+            const auto found = context.text_watchers.find(edit.Value());
+            const auto old_text = vm.Model().NewString(before);
+            const auto new_text = vm.Model().NewString(after);
+            const auto roots = vm.ProtectReferences(std::array{edit, old_text,
+                                                               new_text});
+            const auto invoke = [&](const dx::VmObjectRef watcher,
+                                    const char* name, const char* descriptor,
+                                    std::vector<dx::VmValue> arguments) {
+                const auto owner = vm.Model().ObjectClass(watcher);
+                const auto index = vm.Linker().FindVtableIndex(owner, name,
+                                                               descriptor);
+                if (!index.has_value()) {
+                    Fail(std::string("TextWatcher has no ") + name);
+                }
+                arguments.insert(arguments.begin(), dx::VmValue::Ref(watcher));
+                RequireOutcome(vm,
+                               vm.Call(vm.Linker().Class(owner).vtable[*index],
+                                       arguments),
+                               name);
+            };
+            if (found != context.text_watchers.end()) {
+                for (const auto watcher : found->second) {
+                    invoke(watcher, "beforeTextChanged",
+                           "(Ljava/lang/CharSequence;III)V",
+                           {dx::VmValue::Ref(old_text), dx::VmValue::Int(0),
+                            dx::VmValue::Int(static_cast<std::int32_t>(before.size())),
+                            dx::VmValue::Int(static_cast<std::int32_t>(after.size()))});
+                }
+            }
+            context.ui_tree.Get(node)->text = after;
+            context.ui_tree.MarkLayoutDirty(node);
+            if (found != context.text_watchers.end()) {
+                const auto editable = vm.Call(
+                    vm.Linker().Class(vm.Model().ObjectClass(edit)).vtable[
+                        *vm.Linker().FindVtableIndex(vm.Model().ObjectClass(edit),
+                                                    "getText",
+                                                    "()Landroid/text/Editable;")],
+                    std::array{dx::VmValue::Ref(edit)}).value.ref;
+                const auto editable_root =
+                    vm.ProtectReferences(std::array{editable});
+                for (const auto watcher : found->second) {
+                    invoke(watcher, "onTextChanged",
+                           "(Ljava/lang/CharSequence;III)V",
+                           {dx::VmValue::Ref(new_text), dx::VmValue::Int(0),
+                            dx::VmValue::Int(static_cast<std::int32_t>(before.size())),
+                            dx::VmValue::Int(static_cast<std::int32_t>(after.size()))});
+                    invoke(watcher, "afterTextChanged",
+                           "(Landroid/text/Editable;)V",
+                           {dx::VmValue::Ref(editable)});
+                }
+            }
+        };
         for (const auto& input: pending_input_) {
             using Type = runtime::AndroidBoundaryInputType;
             if (input.type == Type::key) {
+                if (input.pressed && context.focused_edit_text.IsValid()) {
+                    const auto node = runtime::FindViewUiNode(
+                        context, context.focused_edit_text.Value());
+                    if (node.has_value()) {
+                        auto& state = *context.ui_tree.Get(*node);
+                        auto changed = state.text;
+                        if (input.code == 67 && !changed.empty()) {
+                            changed.pop_back();
+                        } else if (input.unicode_char > 0 &&
+                                   (!state.numeric_input ||
+                                    (input.unicode_char >= '0' &&
+                                     input.unicode_char <= '9')) &&
+                                   changed.size() < static_cast<std::size_t>(
+                                                        state.max_length)) {
+                            changed.push_back(static_cast<char16_t>(
+                                input.unicode_char));
+                        }
+                        if (changed != state.text) {
+                            const auto before = state.text;
+                            notify_text_change(context.focused_edit_text,
+                                               *node, before, changed);
+                            continue;
+                        }
+                    }
+                }
                 const auto key_event =
                     vm.NewIntrinsicInstance("Landroid/view/KeyEvent;");
                 const auto key_event_class =
@@ -522,6 +606,26 @@ namespace ogplay::session {
             // click eligibility are independent; an unconsumed touch-only DOWN
             // falls through to Activity and does not retain the gesture.
             if (action == kMotionActionDown) {
+                context.focused_edit_text = dx::VmObjectRef{};
+                scroll_view_handle_ = 0U;
+                scroll_last_y_ = pointer_y_;
+                const auto edit_class = vm.Linker().ResolveDescriptor(
+                    "Landroid/widget/EditText;");
+                for (const auto handle : runtime::FindTouchReceiversAt(
+                         context, pointer_x_, pointer_y_)) {
+                    const dx::VmObjectRef candidate{
+                        static_cast<std::uint32_t>(handle)};
+                    if (vm.Linker().IsAssignable(
+                            edit_class, vm.Model().ObjectClass(candidate))) {
+                        context.focused_edit_text = candidate;
+                    }
+                    const auto node = runtime::FindViewUiNode(context, handle);
+                    if (node.has_value() &&
+                        context.ui_tree.Get(*node)->kind ==
+                            runtime::ui::UiClass::ScrollView) {
+                        scroll_view_handle_ = handle;
+                    }
+                }
                 const auto hit = runtime::FindClickableViewAt(
                     *bindings_.context, pointer_x_, pointer_y_);
                 gesture_candidate_ = hit.value_or(0U);
@@ -529,6 +633,26 @@ namespace ogplay::session {
                 gesture_touch_consumed_ = false;
                 deep_touch_handle_ = 0U;
             }
+            if (action == kMotionActionMove && scroll_view_handle_ != 0U) {
+                const auto node = runtime::FindViewUiNode(
+                    context, scroll_view_handle_);
+                if (node.has_value()) {
+                    auto& scroll = *context.ui_tree.Get(*node);
+                    const auto content_height = scroll.children.empty()
+                        ? 0 : context.ui_tree.Get(scroll.children.front())->measured.height;
+                    const auto maximum = std::max(
+                        0, content_height - scroll.measured.height +
+                               scroll.padding.top + scroll.padding.bottom);
+                    scroll.scroll_y = std::clamp(
+                        scroll.scroll_y + static_cast<std::int32_t>(
+                            std::lround(scroll_last_y_ - pointer_y_)),
+                        0, maximum);
+                    scroll_last_y_ = pointer_y_;
+                    context.ui_tree.MarkLayoutDirty(*node);
+                    continue;
+                }
+            }
+            if (action == kMotionActionUp) scroll_view_handle_ = 0U;
             const bool had_listener_candidate = gesture_candidate_ != 0U;
             if (had_listener_candidate) {
                 const auto result = runtime::DispatchViewGestureEvent(
@@ -578,6 +702,24 @@ namespace ogplay::session {
                            "(Ljavax/microedition/khronos/opengles/GL10;)V",
                            {dx::VmValue::Ref(dx::VmObjectRef{})});
                 if (bindings_.present_surface) bindings_.present_surface();
+            } else if (bindings_.context->content_view.IsValid() &&
+                       bindings_.context->session != nullptr &&
+                       bindings_.context->ui_tree.Get(
+                           bindings_.context->ui_tree.Root())->draw_dirty) {
+                // A View-only Activity has no GLES producer to create the
+                // boundary frame that the frontend uses as the UI composition
+                // trigger. Publish an opaque window-sized software base when
+                // the retained tree is dirty; ComposePresentedFrame remains
+                // the single authority for layout and drawing.
+                const auto pixels =
+                    static_cast<std::size_t>(bindings_.context->surface_width) *
+                    bindings_.context->surface_height;
+                std::vector<std::uint8_t> rgba8(pixels * 4U, 0U);
+                for (std::size_t pixel = 0; pixel < pixels; ++pixel) {
+                    rgba8[pixel * 4U + 3U] = 0xffU;
+                }
+                bindings_.context->session->PublishSoftwareFrame(
+                    std::move(rgba8));
             }
             clock_.AdvanceFrames(1);
             runtime::AdvanceAndroidClock(*bindings_.context,

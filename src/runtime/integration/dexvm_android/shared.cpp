@@ -570,8 +570,9 @@ dx::IntrinsicHandler TelephonyFalseHandler() {
 
 dx::IntrinsicHandler ViewInitHandler(const Context& context) {
     return dx::IntrinsicHandler([context](dx::IntrinsicContext& call) {
-        static_cast<void>(EnsureViewUiNode(
-            *context, call.receiver, UiClassForObject(call.vm, call.receiver)));
+        const auto node = EnsureViewUiNode(
+            *context, call.receiver, UiClassForObject(call.vm, call.receiver));
+        InitializeDefaultViewBackground(call.vm, *context, call.receiver, node);
         return dx::VmValue::Void();
     });
 }
@@ -1429,9 +1430,19 @@ void RunAsyncWorker(dx::IntrinsicContext& call, const Context& context,
         task = found->second.task;
         params = found->second.params;
     }
-    const auto outcome = CallVirtual(
-        call.vm, task, "doInBackground", "([Ljava/lang/Object;)Ljava/lang/Object;",
-        {dx::VmValue::Ref(params)});
+    dx::VmCallOutcome outcome;
+    try {
+        outcome = CallVirtual(
+            call.vm, task, "doInBackground",
+            "([Ljava/lang/Object;)Ljava/lang/Object;",
+            {dx::VmValue::Ref(params)});
+    } catch (const dx::DexVmError&) {
+        if (auto* ledger = call.vm.Ledger()) {
+            ledger->RecordUnimplemented(
+                "dexvm.async_task.background_fault_bypass", 0);
+        }
+        outcome.value = dx::VmValue::Ref(dx::VmObjectRef{});
+    }
     if (outcome.exception.IsValid()) {
         call.vm.SetPendingException(outcome.exception);
         return;

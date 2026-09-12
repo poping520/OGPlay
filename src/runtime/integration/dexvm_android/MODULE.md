@@ -72,6 +72,12 @@ Java 异常文本，再进入统一结构化 logger；不吞异常、不写裸 s
 - 每个 live View 对应一个 UiNode；hierarchy/id/visibility/layout/text/style 写唯一 UiTree。
   动态 add/remove/update、findViewById、LayoutParams 与 RelativeLayout 使用同一树；Java 字段修改
   本身不触发 traversal。
+- `View.getBackground` 按 API 19 继承形状发布；setBackgroundResource/Drawable 与 getter 保持
+  同一 guest Drawable 身份。Button 构造和 XML inflation 建立非空默认背景，Drawable alpha
+  通过 callback node 触发重绘；普通无背景 View 返回 null。
+- XML inflation 在应用显式属性前投影 API 19 TextView/Button/EditText 默认文本大小、最小
+  尺寸、gravity/enabled/clickable，并解析 framework Large/Medium/Small textAppearance；显式
+  textSize 和属性继续覆盖默认值，UiTree 保持唯一权威状态。
 - Activity/DecorView/attached View 的焦点读取 lifecycle 唯一事实。无 Sensor/SystemUI/WMS 时不
   伪造方向、焦点或 system-bar 回调。
 - SurfaceView holder 按 attach 与 host surface 形成 generation，严格 created→changed→destroyed；

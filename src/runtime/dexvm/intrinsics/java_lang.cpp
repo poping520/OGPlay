@@ -369,6 +369,32 @@ IntrinsicClassDecl Declare_java_lang_Runtime() {
         // The interpreter exposes one execution lane under VmExecutionLock.
         return VmValue::Int(1);
     });
+    builder.VirtualMethod("addShutdownHook", "(Ljava/lang/Thread;)V",
+        [](IntrinsicContext& context) {
+            if (!context.arguments[0].ref.IsValid()) {
+                throw VmJavaThrow{"Ljava/lang/NullPointerException;",
+                                  "shutdown hook is null"};
+            }
+            if (auto* ledger = context.vm.Ledger()) {
+                ledger->RecordUnimplemented(
+                    "dexvm.runtime.shutdown_hook_registration", 0);
+            }
+            return VmValue::Void();
+        });
+    return std::move(builder).Build();
+}
+
+IntrinsicClassDecl Declare_libcore_io_IoUtils() {
+    auto builder = IntrinsicClassBuilder::Class("Llibcore/io/IoUtils;",
+                                                "Ljava/lang/Object;");
+    builder.StaticMethod("closeQuietly", "(Ljava/lang/AutoCloseable;)V",
+        [](IntrinsicContext& context) {
+            if (auto* ledger = context.vm.Ledger()) {
+                ledger->RecordUnimplemented(
+                    "dexvm.libcore.io_utils.close_quietly", 0);
+            }
+            return VmValue::Void();
+        });
     return std::move(builder).Build();
 }
 
@@ -3034,6 +3060,15 @@ IntrinsicClassDecl Declare_java_lang_System(const CoreIntrinsicServices& service
                 }
                 return VmValue::Ref(context.vm.NewStringUtf8(*value));
             });
+    builder.StaticMethod("getProperty",
+        "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;",
+        [](IntrinsicContext& context) {
+            const auto key = PropertyKey(context, context.arguments[0].ref);
+            const auto value = context.vm.GetSystemProperty(key);
+            return VmValue::Ref(value.has_value()
+                ? context.vm.NewStringUtf8(*value)
+                : context.arguments[1].ref);
+        });
     builder.StaticMethod("getenv", "(Ljava/lang/String;)Ljava/lang/String;",
         [lookup = services.environment_value](IntrinsicContext& context) {
                 const auto name_ref = context.arguments[0].ref;

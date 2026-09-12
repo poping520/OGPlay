@@ -37,14 +37,19 @@ SDL、ANGLE 或视频解码。
 - `BuildUiRenderList` / `RasterizeUiOverlay`：从 resolved tree 生成 solid/bitmap/clip 命令，
   以整数 source-over 输出透明 RGBA8；`UiOverlayRenderer` 仅在 generation、metrics 或
   draw dirty 改变时重建。
-- `TextView/Button`：UiNode 唯一保存 text、RGBA textColor、textSize、gravity 与单行边界；
-  内置 5x7 ASCII 字形同时提供确定性 measure/raster，wrap_content 加入 padding，Button
+- `TextView/Button`：UiNode 唯一保存 text、RGBA textColor、textSize、gravity 与行数边界；
+  内置 5x7 ASCII 大小写字形同时提供确定性 measure/raster，两者共用按词换行结果；空文本
+  控件仍保留一行字体高度。wrap_content 加入 padding，Button
   提供固定 background/padding/clickable 默认语义。compound drawables 以资源 id +
   resolved intrinsic 存于 UiNode（left/top/right/bottom）；measure 的内容宽为
   max(text.width, top.width, bottom.width)+left.width+right.width，高为
   max(text.height, left.height, right.height)+top.height+bottom.height，再加入 padding。
   空文本仍计入全部图标。左右图标在扣除上下图标后的带内居中，上下图标在扣除左右
   图标后的带内居中，使用 AOSP 整数除法；文本 gravity 在四边内缩后的区域生效。
+- View 背景的资源/颜色、逐 Drawable alpha 与 UiNode 绘制失效共用一份投影；解码像素可按
+  resource id 共享，Drawable 实例的 alpha/bounds 不共享。当前位图背景按目标 bounds 拉伸；
+  编译 PNG 的 `npTc` 两轴 stretch div 与 padding 进入共享 UiBitmap；光栅化保持四周固定区，
+  只缩放中心区。Drawable 的 alpha/bounds 仍是逐实例状态。
 - `ImageView/ImageButton`：UiNode 保存 CENTER/CENTER_INSIDE/FIT_CENTER/FIT_XY/CENTER_CROP；
   render-list 在 node content box 内按 API19 对齐语义生成目标 rect，CPU raster 使用确定性
   nearest-neighbor scale，CENTER_CROP 仍由 node clip 裁切。

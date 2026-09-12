@@ -26,6 +26,7 @@ std::vector<IntrinsicClassDecl> CoreIntrinsicCatalog(
         Declare_java_io_PrintStream(),
         Declare_java_lang_Math(),
         Declare_java_lang_Runtime(),
+        Declare_libcore_io_IoUtils(),
         Declare_java_lang_Class(),
         Declare_java_lang_reflect_AnnotatedElement(),
         Declare_java_lang_reflect_GenericDeclaration(),

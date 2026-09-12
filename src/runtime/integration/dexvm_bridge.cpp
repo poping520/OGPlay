@@ -150,6 +150,7 @@ void VisitAndroidSessionRoots(const DexVmAndroidContext& context,
         }
     }
     for (const auto& [_, ref] : context.ui_node_to_object) root(ref);
+    for (const auto& [_, ref] : context.ui_view_backgrounds) root(ref);
 }
 
 void RegisterAndroidOwnerAttachedStateTable(

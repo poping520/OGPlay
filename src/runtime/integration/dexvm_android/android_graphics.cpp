@@ -506,8 +506,38 @@ Decl Declare_android_graphics_Canvas(const Context& context) {
 namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_graphics_drawable_Drawable(const Context& context) {
-    static_cast<void>(context);
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/graphics/drawable/Drawable;", "Ljava/lang/Object;");
+    builder.VirtualMethod("setAlpha", "(I)V", [context](dx::IntrinsicContext& call) {
+        const auto alpha = call.arguments[0].AsInt();
+        if (alpha < 0 || alpha > 255) {
+            throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;",
+                                  "Drawable alpha is outside 0..255"};
+        }
+        auto& state = context->ui_drawables[call.receiver.Value()];
+        state.alpha = static_cast<std::uint8_t>(alpha);
+        if (state.callback_node.has_value() &&
+            context->ui_tree.Get(*state.callback_node) != nullptr) {
+            context->ui_tree.Get(*state.callback_node)->background_alpha =
+                static_cast<float>(alpha) / 255.0F;
+            context->ui_tree.MarkDrawDirty(*state.callback_node);
+        }
+        return dx::VmValue::Void();
+    });
+    builder.FinalMethod("setBounds", "(IIII)V", [context](dx::IntrinsicContext& call) {
+        const ui::Rect bounds{call.arguments[0].AsInt(), call.arguments[1].AsInt(),
+                              call.arguments[2].AsInt(), call.arguments[3].AsInt()};
+        if (bounds.right < bounds.left || bounds.bottom < bounds.top) {
+            throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;",
+                                  "Drawable bounds are inverted"};
+        }
+        auto& state = context->ui_drawables[call.receiver.Value()];
+        state.bounds = bounds;
+        if (state.callback_node.has_value() &&
+            context->ui_tree.Get(*state.callback_node) != nullptr) {
+            context->ui_tree.MarkDrawDirty(*state.callback_node);
+        }
+        return dx::VmValue::Void();
+    });
     return std::move(builder).Build();
 }
 

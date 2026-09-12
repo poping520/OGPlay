@@ -12,7 +12,6 @@ namespace {
 using Glyph = std::array<std::uint8_t, 7>;
 
 [[nodiscard]] Glyph GlyphRows(char16_t value) {
-    if (value >= u'a' && value <= u'z') value -= u'a' - u'A';
     switch (value) {
         case u' ': return {};
         case u'A': return {14, 17, 17, 31, 17, 17, 17};
@@ -41,6 +40,32 @@ using Glyph = std::array<std::uint8_t, 7>;
         case u'X': return {17, 17, 10, 4, 10, 17, 17};
         case u'Y': return {17, 17, 10, 4, 4, 4, 4};
         case u'Z': return {31, 1, 2, 4, 8, 16, 31};
+        case u'a': return {0, 0, 14, 1, 15, 17, 15};
+        case u'b': return {16, 16, 30, 17, 17, 17, 30};
+        case u'c': return {0, 0, 14, 16, 16, 17, 14};
+        case u'd': return {1, 1, 15, 17, 17, 17, 15};
+        case u'e': return {0, 0, 14, 17, 31, 16, 14};
+        case u'f': return {6, 8, 8, 30, 8, 8, 8};
+        case u'g': return {0, 0, 15, 17, 15, 1, 14};
+        case u'h': return {16, 16, 30, 17, 17, 17, 17};
+        case u'i': return {4, 0, 12, 4, 4, 4, 14};
+        case u'j': return {2, 0, 6, 2, 2, 18, 12};
+        case u'k': return {16, 16, 18, 20, 24, 20, 18};
+        case u'l': return {12, 4, 4, 4, 4, 4, 14};
+        case u'm': return {0, 0, 26, 21, 21, 21, 21};
+        case u'n': return {0, 0, 30, 17, 17, 17, 17};
+        case u'o': return {0, 0, 14, 17, 17, 17, 14};
+        case u'p': return {0, 0, 30, 17, 30, 16, 16};
+        case u'q': return {0, 0, 15, 17, 15, 1, 1};
+        case u'r': return {0, 0, 22, 25, 16, 16, 16};
+        case u's': return {0, 0, 15, 16, 14, 1, 30};
+        case u't': return {8, 8, 30, 8, 8, 9, 6};
+        case u'u': return {0, 0, 17, 17, 17, 19, 13};
+        case u'v': return {0, 0, 17, 17, 17, 10, 4};
+        case u'w': return {0, 0, 17, 17, 21, 21, 10};
+        case u'x': return {0, 0, 17, 10, 4, 10, 17};
+        case u'y': return {0, 0, 17, 17, 15, 1, 14};
+        case u'z': return {0, 0, 31, 2, 4, 8, 31};
         case u'0': return {14, 17, 19, 21, 25, 17, 14};
         case u'1': return {4, 12, 4, 4, 4, 4, 14};
         case u'2': return {14, 17, 1, 2, 4, 8, 31};
@@ -135,7 +160,15 @@ void AppendNode(const UiTree& tree, const UiNodeId id,
     out.emplace_back(PushClip{node.screen_frame});
     if (node.background_color.has_value()) {
         out.emplace_back(DrawSolidRect{node.screen_frame,
-                                       *node.background_color, node.alpha});
+                                       *node.background_color,
+                                       node.alpha * node.background_alpha});
+    }
+    if (node.background_resource_id != 0) {
+        const auto found = bitmaps.find(node.background_resource_id);
+        if (found != bitmaps.end() && found->second != nullptr) {
+            out.emplace_back(DrawBitmap{node.screen_frame, found->second,
+                                        node.alpha * node.background_alpha});
+        }
     }
     if (node.image_resource_id != 0) {
         const auto found = bitmaps.find(node.image_resource_id);
@@ -151,7 +184,7 @@ void AppendNode(const UiTree& tree, const UiNodeId id,
                     [](const CompoundDrawable& drawable) {
                         return drawable.resource_id != 0;
                     })) {
-        const auto metrics = MeasureFixedText(node.text, node.text_size_px, node.text_style);
+        auto rendered_text = node.text;
         const auto content = Rect{
             node.screen_frame.left + node.padding.left,
             node.screen_frame.top + node.padding.top,
@@ -164,6 +197,13 @@ void AppendNode(const UiTree& tree, const UiNodeId id,
                                 content.top + compound[1].height,
                                 content.right - compound[2].width,
                                 content.bottom - compound[3].height};
+        if (node.max_lines > 1 && !rendered_text.empty()) {
+            rendered_text = WrapFixedText(
+                rendered_text, node.text_size_px, node.text_style,
+                text_content.right - text_content.left, node.max_lines);
+        }
+        const auto metrics = MeasureFixedText(rendered_text, node.text_size_px,
+                                              node.text_style);
         const auto drawable_rect =
             [&text_content](const std::size_t index, const Rect content_box,
                         const std::int32_t width, const std::int32_t height) {
@@ -218,8 +258,8 @@ void AppendNode(const UiTree& tree, const UiNodeId id,
         } else if ((node.gravity & 0x70U) == 0x50U) {
             y = text_content.bottom - metrics.height;
         }
-        if (!node.text.empty()) {
-            out.emplace_back(DrawText{x, y, node.text, node.text_color,
+        if (!rendered_text.empty()) {
+            out.emplace_back(DrawText{x, y, rendered_text, node.text_color,
                                       node.text_size_px, node.alpha, node.text_style});
         }
     }
@@ -279,21 +319,89 @@ FixedTextMetrics MeasureFixedText(const std::u16string_view text,
         throw std::runtime_error("fixed-font text exceeds 1024 code units");
     }
     for (const auto unit : text) {
-        if (unit == u'\n' || unit == u'\r') {
-            throw std::runtime_error("multiline fixed-font text is unsupported");
-        }
+        if (unit == u'\n' || unit == u'\r') continue;
         static_cast<void>(GlyphRows(unit));
     }
     const auto scale = std::max(1, static_cast<std::int32_t>(
                                        std::lround(size_px / 8.0F)));
-    const auto cells = static_cast<std::int64_t>(text.size());
     const auto extra = ((style & 1U) ? 1 : 0) + ((style & 2U) ? 2 : 0);
-    const auto width = text.empty() ? 0 : (cells * (6 + extra) - 1) * scale;
+    std::int64_t columns = 0;
+    std::int64_t max_columns = 0;
+    std::int32_t lines = text.empty() ? 0 : 1;
+    for (const auto unit : text) {
+        if (unit == u'\n') {
+            max_columns = std::max(max_columns, columns);
+            columns = 0;
+            ++lines;
+        } else if (unit != u'\r') {
+            ++columns;
+        }
+    }
+    max_columns = std::max(max_columns, columns);
+    const auto width = max_columns == 0 ? 0 :
+        (max_columns * (6 + extra) - 1) * scale;
     if (width > std::numeric_limits<std::int32_t>::max()) {
         throw std::runtime_error("fixed-font measured width overflows");
     }
-    return {static_cast<std::int32_t>(width), text.empty() ? 0 : 7 * scale,
+    return {static_cast<std::int32_t>(width),
+            lines == 0 ? 0 : (lines * 8 - 1) * scale,
             scale};
+}
+
+std::u16string WrapFixedText(const std::u16string_view text,
+                             const float size_px, const std::uint32_t style,
+                             const std::int32_t width_px,
+                             const std::int32_t max_lines) {
+    if (text.empty() || max_lines <= 1 || width_px <= 0) {
+        return std::u16string(text);
+    }
+    const auto probe = MeasureFixedText(u"M", size_px, style);
+    const auto cell = std::max(1, probe.width + probe.scale);
+    const auto columns = std::max(1, width_px / cell);
+    std::u16string result;
+    result.reserve(text.size() + text.size() /
+                                   static_cast<std::size_t>(columns));
+    std::int32_t line = 1;
+    std::int32_t column = 0;
+    std::size_t index = 0;
+    while (index < text.size()) {
+        if (text[index] == u'\n') {
+            result.push_back(text[index++]);
+            column = 0;
+            ++line;
+            continue;
+        }
+        if (text[index] == u' ') {
+            if (column > 0) {
+                result.push_back(u' ');
+                ++column;
+            }
+            ++index;
+            continue;
+        }
+        auto end = index;
+        while (end < text.size() && text[end] != u' ' &&
+               text[end] != u'\n') {
+            ++end;
+        }
+        const auto length = static_cast<std::int32_t>(end - index);
+        if (column > 0 && column + length > columns && line < max_lines) {
+            if (!result.empty() && result.back() == u' ') result.pop_back();
+            result.push_back(u'\n');
+            column = 0;
+            ++line;
+        }
+        for (; index < end; ++index) {
+            if (column == columns && line < max_lines) {
+                result.push_back(u'\n');
+                column = 0;
+                ++line;
+            }
+            result.push_back(text[index]);
+            ++column;
+        }
+    }
+    return result;
 }
 
 UiRenderList BuildUiRenderList(const UiTree& tree,
@@ -345,12 +453,42 @@ UiOverlayFrame RasterizeUiOverlay(const UiRenderList& commands,
             PaintRect(frame, bitmap->rect, clips.back(),
                       [bitmap, destination_width, destination_height](
                           const auto x, const auto y, auto* dst) {
-                const auto bx = static_cast<std::int32_t>(
-                    static_cast<std::int64_t>(x - bitmap->rect.left) *
-                    bitmap->bitmap->width / destination_width);
-                const auto by = static_cast<std::int32_t>(
-                    static_cast<std::int64_t>(y - bitmap->rect.top) *
-                    bitmap->bitmap->height / destination_height);
+                const auto map_axis = [](const std::int32_t position,
+                                         const std::int32_t destination,
+                                         const std::int32_t source,
+                                         const std::array<std::int32_t, 2> divs) {
+                    if (divs[0] < 0 || divs[1] <= divs[0] ||
+                        divs[1] > source) {
+                        return static_cast<std::int32_t>(
+                            static_cast<std::int64_t>(position) * source /
+                            destination);
+                    }
+                    const auto leading = divs[0];
+                    const auto trailing = source - divs[1];
+                    if (position < leading) return position;
+                    if (position >= destination - trailing) {
+                        return source - (destination - position);
+                    }
+                    const auto stretch_destination = std::max(
+                        1, destination - leading - trailing);
+                    return divs[0] + static_cast<std::int32_t>(
+                        static_cast<std::int64_t>(position - leading) *
+                        (divs[1] - divs[0]) / stretch_destination);
+                };
+                const auto bx = bitmap->bitmap->nine_patch
+                    ? map_axis(x - bitmap->rect.left, destination_width,
+                               bitmap->bitmap->width,
+                               bitmap->bitmap->stretch_x)
+                    : static_cast<std::int32_t>(
+                          static_cast<std::int64_t>(x - bitmap->rect.left) *
+                          bitmap->bitmap->width / destination_width);
+                const auto by = bitmap->bitmap->nine_patch
+                    ? map_axis(y - bitmap->rect.top, destination_height,
+                               bitmap->bitmap->height,
+                               bitmap->bitmap->stretch_y)
+                    : static_cast<std::int32_t>(
+                          static_cast<std::int64_t>(y - bitmap->rect.top) *
+                          bitmap->bitmap->height / destination_height);
                 const auto offset =
                     (static_cast<std::size_t>(by) *
                          static_cast<std::size_t>(bitmap->bitmap->width) +
@@ -370,10 +508,18 @@ UiOverlayFrame RasterizeUiOverlay(const UiRenderList& commands,
                      AlphaByte(text->alpha) +
                  127U) /
                 255U);
+            std::int32_t column_index = 0;
+            std::int32_t line_index = 0;
             for (std::size_t index = 0; index < text->text.size(); ++index) {
+                if (text->text[index] == u'\n') {
+                    column_index = 0;
+                    ++line_index;
+                    continue;
+                }
+                if (text->text[index] == u'\r') continue;
                 const auto glyph = GlyphRows(text->text[index]);
                 const auto origin_x =
-                    text->x + static_cast<std::int32_t>(index) *
+                    text->x + column_index++ *
                                   (6 + bold + italic) * text_metrics.scale;
                 for (std::int32_t row = 0; row < 7; ++row) {
                     const auto row_bits = static_cast<unsigned>(glyph[static_cast<std::size_t>(row)]);
@@ -386,9 +532,9 @@ UiOverlayFrame RasterizeUiOverlay(const UiRenderList& commands,
                         const auto skew = italic ? (6 - row) / 3 : 0;
                         const Rect pixel{
                             origin_x + (column + skew) * text_metrics.scale,
-                            text->y + row * text_metrics.scale,
+                            text->y + (line_index * 8 + row) * text_metrics.scale,
                             origin_x + (column + skew + 1) * text_metrics.scale,
-                            text->y + (row + 1) * text_metrics.scale};
+                            text->y + (line_index * 8 + row + 1) * text_metrics.scale};
                         PaintRect(frame, pixel, clips.back(),
                                   [text, alpha](auto, auto, auto* dst) {
                                       Blend(dst,

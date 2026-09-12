@@ -26,6 +26,21 @@ Decl Declare_android_text_EditableImpl(const Context& context) {
     builder.FinalMethod("clear", "()V", EditableClearHandler(context));
     builder.FinalMethod("length", "()I", EditableLengthHandler(context));
     builder.FinalMethod("replace", "(IILjava/lang/CharSequence;)Landroid/text/Editable;", EditableReplaceHandler(context));
+    builder.FinalOverrideMethod("toString", "()Ljava/lang/String;",
+        [context](dx::IntrinsicContext& call) {
+            const auto owner = context->editable_owner.find(call.receiver.Value());
+            if (owner == context->editable_owner.end()) {
+                throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;",
+                                      "Editable has no owning EditText"};
+            }
+            const auto node = FindViewUiNode(*context, owner->second);
+            if (!node.has_value()) {
+                throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;",
+                                      "Editable owner is detached"};
+            }
+            return dx::VmValue::Ref(call.vm.Model().NewString(
+                context->ui_tree.Get(*node)->text));
+        });
     return std::move(builder).Build();
 }
 

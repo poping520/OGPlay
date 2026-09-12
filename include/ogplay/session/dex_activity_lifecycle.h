@@ -133,6 +133,8 @@ private:
     bool pointer_down_{};
     float pointer_x_{};
     float pointer_y_{};
+    std::uint64_t scroll_view_handle_{};
+    float scroll_last_y_{};
     // View that owns the current gesture. Click eligibility is captured
     // separately from cumulative OnTouchListener consumption.
     std::uint64_t gesture_candidate_{};

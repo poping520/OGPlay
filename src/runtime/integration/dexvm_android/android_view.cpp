@@ -1084,10 +1084,18 @@ Decl Declare_android_view_View(const Context& context) {
     builder.FinalMethod("setBackgroundColor", "(I)V",
         [context](dx::IntrinsicContext& call) {
             const auto node = ViewNode(call, context);
-            context->ui_tree.Get(node)->background_color =
-                AndroidColorToRgba(static_cast<std::uint32_t>(
-                    call.arguments[0].AsInt()));
-            context->ui_tree.MarkDrawDirty(node);
+            const auto color = AndroidColorToRgba(static_cast<std::uint32_t>(
+                call.arguments[0].AsInt()));
+            const auto drawable = call.vm.NewIntrinsicInstance(
+                "Landroid/graphics/drawable/ColorDrawable;");
+            context->ui_drawables[drawable.Value()] = {
+                .color = color, .callback_node = node};
+            context->ui_view_backgrounds[call.receiver.Value()] = drawable;
+            auto* state = context->ui_tree.Get(node);
+            state->background_color = color;
+            state->background_resource_id = 0;
+            state->background_alpha = 1.0F;
+            context->ui_tree.MarkLayoutDirty(node);
             return dx::VmValue::Void();
         });
     builder.FinalMethod("setBackgroundResource", "(I)V",
@@ -1096,21 +1104,65 @@ Decl Declare_android_view_View(const Context& context) {
             const auto resource_id =
                 static_cast<std::uint32_t>(call.arguments[0].AsInt());
             if (resource_id == 0U) {
-                context->ui_tree.Get(node)->background_color.reset();
+                context->ui_view_backgrounds.erase(call.receiver.Value());
+                auto* state = context->ui_tree.Get(node);
+                state->background_color.reset();
+                state->background_resource_id = 0;
+                state->background_alpha = 1.0F;
             } else {
+                std::shared_ptr<const ui::UiBitmap> bitmap;
                 try {
-                    context->ui_tree.Get(node)->background_color =
-                        ResolveUiColor(*context, resource_id);
+                    bitmap = ResolveUiDrawable(*context, resource_id);
                 } catch (const std::runtime_error& error) {
                     throw dx::VmJavaThrow{
                         "Landroid/content/res/Resources$NotFoundException;",
                         error.what()};
                 }
+                const auto drawable = call.vm.NewIntrinsicInstance(
+                    "Landroid/graphics/drawable/Drawable;");
+                context->ui_drawables[drawable.Value()] = {
+                    .resource_id = resource_id, .callback_node = node};
+                context->ui_view_backgrounds[call.receiver.Value()] = drawable;
+                auto* state = context->ui_tree.Get(node);
+                state->background_color.reset();
+                state->background_resource_id = resource_id;
+                state->background_alpha = 1.0F;
+                if (bitmap->nine_patch) {
+                    state->padding = bitmap->nine_patch_padding;
+                }
             }
-            context->ui_tree.MarkDrawDirty(node);
+            context->ui_tree.MarkLayoutDirty(node);
             return dx::VmValue::Void();
         });
-    builder.FinalMethod("setBackgroundDrawable", "(Landroid/graphics/drawable/Drawable;)V", WidgetNoopHandler());
+    builder.VirtualMethod("setBackgroundDrawable", "(Landroid/graphics/drawable/Drawable;)V",
+        [context](dx::IntrinsicContext& call) {
+            const auto node = ViewNode(call, context);
+            auto* view = context->ui_tree.Get(node);
+            const auto drawable = call.arguments[0].ref;
+            if (!drawable.IsValid()) {
+                context->ui_view_backgrounds.erase(call.receiver.Value());
+                view->background_color.reset();
+                view->background_resource_id = 0;
+                view->background_alpha = 1.0F;
+            } else {
+                auto& state = context->ui_drawables[drawable.Value()];
+                state.callback_node = node;
+                context->ui_view_backgrounds[call.receiver.Value()] = drawable;
+                view->background_color = state.color;
+                view->background_resource_id = state.resource_id;
+                view->background_alpha = static_cast<float>(state.alpha) / 255.0F;
+            }
+            context->ui_tree.MarkLayoutDirty(node);
+            return dx::VmValue::Void();
+        });
+    builder.VirtualMethod("getBackground", "()Landroid/graphics/drawable/Drawable;",
+        [context](dx::IntrinsicContext& call) {
+            static_cast<void>(ViewNode(call, context));
+            const auto found = context->ui_view_backgrounds.find(call.receiver.Value());
+            return dx::VmValue::Ref(found == context->ui_view_backgrounds.end()
+                                        ? dx::VmObjectRef{}
+                                        : found->second);
+        });
     builder.FinalMethod("setOnClickListener", "(Landroid/view/View$OnClickListener;)V",
         [context](dx::IntrinsicContext& call) {
             const auto node = EnsureViewUiNode(

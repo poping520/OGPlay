@@ -146,8 +146,10 @@ TEST_CASE("fixed UI font drives wrap-content measurement") {
     ui::LayoutUiTree(tree, {30, 20});
     CHECK(tree.Get(text)->measured == ui::Size{7, 9});
 
-    CHECK_THROWS_WITH((void)ui::MeasureFixedText(u"two\nlines", 8.0F),
-                      "multiline fixed-font text is unsupported");
+    CHECK(ui::MeasureFixedText(u"two\nlines", 8.0F) ==
+          ui::FixedTextMetrics{29, 15, 1});
+    CHECK(ui::WrapFixedText(u"one two", 8.0F, 0, 23, 4) ==
+          u"one\ntwo");
     CHECK_THROWS_WITH((void)ui::MeasureFixedText(u"中", 8.0F),
                       "unsupported fixed-font glyph");
 }
@@ -275,6 +277,27 @@ TEST_CASE("compound drawables rasterize and inset the text band") {
     CHECK(Pixel(frame, 5, 7) != std::vector<std::uint8_t>{255, 0, 0, 255});
     // The text band starts after the drawable; row 3 of "A" is full width.
     CHECK(Pixel(frame, 8, 7) == std::vector<std::uint8_t>{255, 255, 255, 255});
+}
+
+TEST_CASE("UI overlay preserves nine-patch fixed edges while stretching center") {
+    ui::UiTree tree;
+    const auto view = tree.CreateNode(ui::UiClass::View);
+    tree.Get(view)->background_resource_id = 9;
+    tree.Attach(tree.Root(), view);
+    auto bitmap = std::make_shared<ui::UiBitmap>();
+    bitmap->width = 3;
+    bitmap->height = 1;
+    bitmap->rgba8 = {255, 0, 0, 255, 0, 255, 0, 255,
+                     0, 0, 255, 255};
+    bitmap->nine_patch = true;
+    bitmap->stretch_x = {1, 2};
+    bitmap->stretch_y = {0, 1};
+    ui::LayoutUiTree(tree, {7, 1});
+    ui::UiOverlayRenderer renderer;
+    const auto& frame = renderer.Render(tree, {{9, bitmap}}, {7, 1});
+    CHECK(Pixel(frame, 0, 0) == std::vector<std::uint8_t>{255, 0, 0, 255});
+    CHECK(Pixel(frame, 3, 0) == std::vector<std::uint8_t>{0, 255, 0, 255});
+    CHECK(Pixel(frame, 6, 0) == std::vector<std::uint8_t>{0, 0, 255, 255});
 }
 
 TEST_CASE("DVM-123 compound drawables measure all axes and empty text") {

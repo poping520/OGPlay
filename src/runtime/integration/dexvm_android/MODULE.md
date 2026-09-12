@@ -34,8 +34,11 @@ Java 异常文本，再进入统一结构化 logger；不吞异常、不写裸 s
 
 - Context→ContextWrapper→Application/Service/ContextThemeWrapper→Activity 类型链固定。process
   Application、base Context、ClassLoader 与 descriptor 身份稳定；wrapper 只虚派委托 base。
-- Intent/Activity 的 component/intent 是普通字段唯一事实。显式同包启动受检；隐式/跨包启动、
-  一般 resolver、Instrumentation/ActivityManager 不支持。
+- Intent/Activity 的 component/intent 是普通字段唯一事实。显式同包启动受检；隐式启动仅在
+  sealed 当前 APK 内解析 action/category、无 data/type 且含 DEFAULT 的唯一 enabled Activity
+  filter。零匹配抛 ActivityNotFoundException，多匹配或 data/type 潜在匹配明确失败；跨包、
+  一般 resolver、chooser、Instrumentation/ActivityManager 不支持。activity-alias 保留组件身份，
+  实例化其 target Activity。
 - session 只创建顶层 Activity，因此 `Activity.isChild()` 返回 false；ActivityGroup/嵌入式
   child Activity 不在兼容边界。
 - PackageManager 只发布当前 APK：manifest/path/label/permission/feature 来自 sealed facts；未知包、

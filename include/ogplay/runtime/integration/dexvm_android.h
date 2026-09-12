@@ -85,7 +85,9 @@ struct DexVmAndroidContext final {
     // Installed service discovery is limited to the sealed current-APK facts.
     // An unconfigured standalone VM must not confuse missing metadata with absence.
     bool service_inventory_known{};
+    bool activity_inventory_known{};
     bool application_enabled{true};
+    std::vector<loader::AndroidManifestActivityComponent> activity_components;
     std::vector<loader::AndroidManifestServiceComponent> service_components;
     // API19 registers a dispatcher before an absent bind returns false.
     // Connections are strong edges of the Context, removed on unbind/sweep.
@@ -126,7 +128,7 @@ struct DexVmAndroidContext final {
     // activity handle: a finish() from an already retired activity can no
     // longer be mistaken for the session ending. Ask SessionExitRequested.
     std::atomic<std::uint32_t> finishing_activity{0};
-    // Raised with pending_activity_descriptor so the exit predicate can see
+    // Raised with the pending activity target so the exit predicate can see
     // an in-flight handoff without reading that string across threads.
     std::atomic<bool> activity_switch_pending{false};
 
@@ -509,6 +511,9 @@ struct DexVmAndroidContext final {
 
     // Intent component/extras live in ordinary mComponent/mExtras fields.
     std::string pending_activity_descriptor;
+    // Manifest component identity may differ from the instantiated class for
+    // an activity-alias.
+    std::string pending_activity_component_name;
     // Launch/handoff root; attached Activity.getIntent() reads its own mIntent.
     dexvm::VmObjectRef current_intent;
     // One live guest View object <-> one UiTree node. Runtime UI owns all

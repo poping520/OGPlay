@@ -6,6 +6,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -1879,7 +1880,9 @@ TEST_CASE(
         f.On(base, "startActivity", "(Landroid/content/Intent;)V",
              {VmValue::Ref(intent)});
         CHECK(f.context->pending_activity_descriptor == "Lfixture/Next;");
+        CHECK(f.context->pending_activity_component_name == "fixture.Next");
         f.context->pending_activity_descriptor.clear();
+        f.context->pending_activity_component_name.clear();
         f.context->activity_switch_pending = false;
         f.On(intent, "setClassName",
              "(Ljava/lang/String;Ljava/lang/String;)Landroid/content/Intent;",
@@ -1896,6 +1899,81 @@ TEST_CASE(
               "Ljava/lang/UnsupportedOperationException;");
         CHECK_FALSE(f.context->activity_switch_pending);
         CHECK(f.context->pending_activity_descriptor.empty());
+
+        f.context->activity_inventory_known = true;
+        f.context->activity_components = {
+            {ogplay::loader::AndroidManifestComponentKind::activity,
+             "fixture.RealActivity", std::nullopt, true,
+             {{{"fixture.OPEN"}, {"android.intent.category.DEFAULT"}, false}},
+             std::nullopt},
+            {ogplay::loader::AndroidManifestComponentKind::activity_alias,
+             "fixture.OpenAlias", std::optional<std::string>{"fixture.RealActivity"},
+             true,
+             {{{"fixture.ALIAS"}, {"android.intent.category.DEFAULT"}, false}},
+             std::nullopt}};
+        const auto implicit = f.New(
+            "Landroid/content/Intent;", "(Ljava/lang/String;)V",
+            {VmValue::Ref(f.vm.NewStringUtf8("fixture.ALIAS"))});
+        f.On(base, "startActivity", "(Landroid/content/Intent;)V",
+             {VmValue::Ref(implicit)});
+        CHECK(f.context->pending_activity_descriptor == "Lfixture/RealActivity;");
+        CHECK(f.context->pending_activity_component_name == "fixture.OpenAlias");
+        const auto resolved =
+            f.On(implicit, "getComponent", "()Landroid/content/ComponentName;").ref;
+        CHECK(f.vm.StringUtf8(
+                  f.On(resolved, "getClassName", "()Ljava/lang/String;").ref) ==
+              "fixture.OpenAlias");
+        f.context->pending_activity_descriptor.clear();
+        f.context->pending_activity_component_name.clear();
+        f.context->activity_switch_pending = false;
+
+        const auto missing = f.New(
+            "Landroid/content/Intent;", "(Ljava/lang/String;)V",
+            {VmValue::Ref(f.vm.NewStringUtf8("fixture.MISSING"))});
+        const auto missing_outcome = f.OnOutcome(
+            base, "startActivity", "(Landroid/content/Intent;)V",
+            {VmValue::Ref(missing)});
+        REQUIRE(missing_outcome.exception.IsValid());
+        CHECK(f.linker.Class(missing_outcome.exception_class).descriptor ==
+              "Landroid/content/ActivityNotFoundException;");
+        CHECK_FALSE(f.context->activity_switch_pending);
+
+        f.context->activity_components.front().intent_filters[0].categories.clear();
+        const auto no_default = f.New(
+            "Landroid/content/Intent;", "(Ljava/lang/String;)V",
+            {VmValue::Ref(f.vm.NewStringUtf8("fixture.OPEN"))});
+        const auto no_default_outcome = f.OnOutcome(
+            base, "startActivity", "(Landroid/content/Intent;)V",
+            {VmValue::Ref(no_default)});
+        REQUIRE(no_default_outcome.exception.IsValid());
+        CHECK(f.linker.Class(no_default_outcome.exception_class).descriptor ==
+              "Landroid/content/ActivityNotFoundException;");
+        f.context->activity_components.front().intent_filters[0].categories = {
+            "android.intent.category.DEFAULT"};
+
+        f.context->activity_components.push_back(
+            {ogplay::loader::AndroidManifestComponentKind::activity,
+             "fixture.OtherActivity", std::nullopt, true,
+             {{{"fixture.ALIAS"}, {"android.intent.category.DEFAULT"}, false}},
+             std::nullopt});
+        const auto ambiguous = f.New(
+            "Landroid/content/Intent;", "(Ljava/lang/String;)V",
+            {VmValue::Ref(f.vm.NewStringUtf8("fixture.ALIAS"))});
+        const auto ambiguous_outcome = f.OnOutcome(
+            base, "startActivity", "(Landroid/content/Intent;)V",
+            {VmValue::Ref(ambiguous)});
+        REQUIRE(ambiguous_outcome.exception.IsValid());
+        CHECK(f.linker.Class(ambiguous_outcome.exception_class).descriptor ==
+              "Ljava/lang/UnsupportedOperationException;");
+        CHECK_FALSE(f.context->activity_switch_pending);
+
+        f.context->activity_components.back().intent_filters[0].has_data = true;
+        const auto unique_again = f.New(
+            "Landroid/content/Intent;", "(Ljava/lang/String;)V",
+            {VmValue::Ref(f.vm.NewStringUtf8("fixture.ALIAS"))});
+        f.On(base, "startActivity", "(Landroid/content/Intent;)V",
+             {VmValue::Ref(unique_again)});
+        CHECK(f.context->pending_activity_descriptor == "Lfixture/RealActivity;");
     }
 }
 

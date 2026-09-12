@@ -180,8 +180,10 @@ public:
             context->application_meta_data.emplace(item.name, item.value);
         }
         context->requested_permissions = manifest.requested_permissions;
+        context->activity_components = manifest.activity_components;
         context->service_components = manifest.service_components;
         context->application_enabled = manifest.application_enabled;
+        context->activity_inventory_known = true;
         context->service_inventory_known = true;
         context->granted_permissions.insert(manifest.requested_permissions.begin(),
                                             manifest.requested_permissions.end());

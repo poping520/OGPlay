@@ -10,6 +10,11 @@ AES classes temporarily come from the user-provided MoKee API 19 device
 conscrypt.jar (2026-09-06); see manifest.json for the distinct provenance. Its source
 files retain their copyright and Apache License, Version 2.0 notices.
 
+The curated Terms/Restlet HTTP closure comes from the pinned API 19 ext.jar.
+It contains Apache HttpComponents-derived Android code plus Apache Commons
+Logging and Commons Codec classes; the exact source JAR hash and selected class
+set are recorded in manifest.json and tools/bootdex/api19.json.
+
 Apache Harmony
 Copyright 2006 The Apache Software Foundation
 

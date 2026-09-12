@@ -706,9 +706,11 @@ namespace ogplay::runtime::dexvm::intrinsics {
                 "Ljavax/net/ssl/HttpsURLConnection;",
                 "Ljava/net/HttpURLConnection;");
             builder.StaticMethod("setDefaultHostnameVerifier",
-                                 "(Ljavax/net/ssl/HostnameVerifier;)V", NoopVoid());
+                                 "(Ljavax/net/ssl/HostnameVerifier;)V",
+                                 NetworkUnsupported());
             builder.StaticMethod("setDefaultSSLSocketFactory",
-                                 "(Ljavax/net/ssl/SSLSocketFactory;)V", NoopVoid());
+                                 "(Ljavax/net/ssl/SSLSocketFactory;)V",
+                                 NetworkUnsupported());
             builder.FinalMethod("setRequestMethod", "(Ljava/lang/String;)V",
                                 NetworkUnsupported());
             builder.FinalMethod(
@@ -739,7 +741,7 @@ namespace ogplay::runtime::dexvm::intrinsics {
                 "init",
                 "([Ljavax/net/ssl/KeyManager;[Ljavax/net/ssl/TrustManager;"
                 "Ljava/security/SecureRandom;)V",
-                NoopVoid());
+                NetworkUnsupported());
             builder.FinalMethod(
                 "getSocketFactory", "()Ljavax/net/ssl/SSLSocketFactory;",
                 [services](IntrinsicContext& call) {

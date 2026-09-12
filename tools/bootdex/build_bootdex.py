@@ -40,6 +40,7 @@ def source_path(source: str) -> Path:
 SOURCES = {
     "conscrypt.jar": ("platform/libcore",),
     "core.jar": ("platform/libcore",),
+    "ext.jar": ("platform/external/apache-http",),
     "framework.jar": ("platform/frameworks/base",),
     "framework2.jar": ("platform/frameworks/base",),
 }

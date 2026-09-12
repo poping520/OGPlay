@@ -70,7 +70,9 @@
   File 只消费注入 VFS/工作目录；mkdir/mkdirs 分开，filter 虚派并传播异常，缺 IoFileSystem
   不与 ENOENT 混淆；setWritable 仅在既有可写对象上报告成功，不伪造权限改变。
 - InputStreamReader 用 Reader.lock 保护固定 ICU 六标准编码的增量转换，close/GC/teardown
-  回收。基类 bulk read/write 必须虚派子类，不能要求任意 guest 流存在宿主资源状态。
+  回收。OutputStreamWriter 使用同一编码集合写入真实 OutputStream，并传播 write/flush/close
+  异常；PrintStream 保持 OutputStream 继承并把字节写入结构化 guest 日志。基类 bulk
+  read/write 必须虚派子类，不能要求任意 guest 流存在宿主资源状态。
   ObjectStreamClass 仅保留六个受检反射原语；ObjectOutputStream.getFieldL、Proxy 生成和
   VMStack 除 getClasses 外的四个 native 明确失败。宿主资源不因迁入对象流自动可序列化。
 - ZIP 的 archive/entry/cursor/close 只用 ZipRuntime，ZIP32/inflate/CRC 复用严格 loader；
@@ -80,7 +82,8 @@
   guest-memory 接口，不退化为 heap 或保存宿主指针。Memory 仅提供受检 byte[] 整数 codec。
 - socket/stream/datagram 交 NetworkRuntime；默认离线，只有注入 policy/allowlist/transport
   才能连接，SSL factory 不扩大权限。form URL codec 用固定 Boost.URL、UTF-8、空格/+ 规则，
-  非法百分号和未支持 charset 抛异常。SAX 保留构造/handler 身份，未支持 parse 明确失败。
+  非法百分号和未支持 charset 抛异常。TLS context 初始化及默认 verifier/factory 修改未实现并
+  明确抛出，不静默接受配置。SAX 保留构造/handler 身份，未支持 parse 明确失败。
 
 ## Locale、ICU、正则与密码
 

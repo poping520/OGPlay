@@ -41,7 +41,7 @@
     "path": "framework/bootdex.jar",
     "generator": "tools/bootdex/build_bootdex.py",
     "recipe": "tools/bootdex/api19.json",
-    "recipe_sha256": "17c6a8adcd40ec21d77de39c2ff9e7c7f9c58ef28922bf724bd22afbeaee5eeb",
+    "recipe_sha256": "f1c3f3958a0e04189b4a351dfd084b40674863d36df7af07a89da70e8c23030c",
     "sources": [
       {
         "source_project": "platform/libcore",
@@ -54,6 +54,11 @@
         "source_jar_sha256": "c7d0849cde38cd0d0dc99d89ee61bd33a65618567fc18171d6605dc6b8e15004"
       },
       {
+        "source_project": "platform/external/apache-http",
+        "source_jar": "ext.jar",
+        "source_jar_sha256": "e95d35989f0e1b438b3b6fea2777a798a0398f457a32875cdadfe3e2573a4ca2"
+      },
+      {
         "source_project": "platform/frameworks/base",
         "source_jar": "framework.jar",
         "source_jar_sha256": "422e232e121425268f04044f5349072ce42d7b4403267d21569e8ce70d07bc4b"
@@ -64,15 +69,15 @@
         "source_jar_sha256": "5866d4e62e5fe44ffaf6ff441b6c361baeb1f8b91e30bb555481ef13ef837973"
       }
     ],
-    "size": 1659317,
-    "sha256": "3086ba1d8145846dbd633ae0762aafd8bdda174b9fe3e4425256d562fd8c0a85",
+    "size": 1993965,
+    "sha256": "406156e1c0a5dd0433d86f02810724b89169a60e1de1757a0efd86f079a0a688",
     "dex_entry": "classes.dex",
-    "dex_size": 1659020,
-    "dex_sha256": "03a6df4bc82dfa51a3a9280abce899d5730bdf1b2a34b3e4e0a71e27f61ec72d",
-    "class_count": 1076,
+    "dex_size": 1993668,
+    "dex_sha256": "e7eea3ea59c5f28119e3d55ae21d791a852aa3cf528f85716e8e455fa491b650",
+    "class_count": 1407,
     "selection_policy": "load-all",
     "notice": "notices/bootdex.jar.txt",
-    "notice_sha256": "8942e34ad7fa9ce42a3f7adef1877efa6b0957ce7f9953c213901c201396b56c"
+    "notice_sha256": "c5bf8c6efc379e6d5401a40fbf7810aedf9ee81dfa9f2deaa174faa97ded310a"
   },
   "icu": {
     "source_project": "platform/external/icu4c",

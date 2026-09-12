@@ -6,10 +6,12 @@
   Handler 清理与纯 Java timed hook 已定向验证。宿主 Stop 仍是取消路径；Runtime 其他
   native 与 Java finalization 尚未支持，未扩张声明。shutdown 定向及加载回归 12 用例、355 断言通过。
 
-- [DVM-149](../tasks/dexvm/DVM-149.md) 正在收口 Terms 交互一致性：ScrollView slop/CANCEL、
-  AsyncTask 原错传播、Drawable 旧 callback、统一文本事务、API 19 qualifier 顺序与软件帧
-  producer guard 已完成定向回归。真实 APK 移除降级后明确停在缺失 API 19 输入之外的
-  Apache `BasicHttpParams`；Dialog presentation 仍明确未实现，因此完整流程和新截图未验收。
+- [DVM-149](../tasks/dexvm/DVM-149.md) 的 Apache HTTP 阻塞已前移：固定 API 19 ext.jar
+  选入 329 类 Terms/Restlet 闭包（含 Commons Logging 反射实现），加两个 core 层级依赖后
+  本地 BootDex 为 1407 类且全链接。双后端验证 BasicHttpParams、Restlet HTTP client 构造
+  与日志写出；真实 APK 已输出 `Starting the Apache HTTP client`，当前首错为 Restlet
+  `Reference.normalize()` 缺 `StringBuilder.substring(II)`。TLS 配置仍明确不支持，完整在线
+  请求和 Dialog presentation 未验收；本地 bootdex.jar 不提交。
 
 - [DVM-148](../tasks/dexvm/DVM-148.md) 已完成：真实 PvZ 非 survey Terms 页面使用横屏资源、
   多行文本、表格权重、ScrollView 与 `npTc` NinePatch 正常布局合成；Button 从 View 继承
@@ -49,7 +51,7 @@
 ## 当前能力
 
 - **发行与 VM**：Profile 按 API 选择 bundled data。API 19 提供 AOSP guest 库、
-  OpenSSL、ICU 51.1、1076 类 BootDex 与 ICU 数据；来源和校验见
+  OpenSSL、ICU 51.1、本地验证用 1407 类 BootDex 与 ICU 数据；来源和校验见
   [manifest](../../data/android/19/manifest.json)。普通 Java 状态归字段/数组，JNI 使用
   VM 真实类型关系。
 - **Java/密码/ICU**：已覆盖常用集合、并发、IO、序列化、反射、framework 值类、日期与

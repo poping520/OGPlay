@@ -1325,7 +1325,28 @@ namespace ogplay::runtime::dexvm::intrinsics {
     using namespace detail;
 
     IntrinsicClassDecl Declare_java_io_PrintStream() {
-        auto builder = IntrinsicClassBuilder::Class("Ljava/io/PrintStream;", "Ljava/lang/Object;", {"Ljava/lang/Appendable;"});
+        auto builder = IntrinsicClassBuilder::Class("Ljava/io/PrintStream;", "Ljava/io/OutputStream;", {"Ljava/lang/Appendable;"});
+        builder.OverrideMethod("write", "(I)V", [](IntrinsicContext& c) {
+            const auto value = static_cast<char>(c.arguments[0].AsInt() & 0xff);
+            GuestLine(c, std::string(1, value));
+            return VmValue::Void();
+        });
+        builder.OverrideMethod("write", "([BII)V", [](IntrinsicContext& c) {
+            const auto array = c.arguments[0].ref;
+            if (!array.IsValid())
+                throw VmJavaThrow{"Ljava/lang/NullPointerException;", "buffer == null"};
+            const auto offset = c.arguments[1].AsInt();
+            const auto count = c.arguments[2].AsInt();
+            if (offset < 0 || count < 0 ||
+                static_cast<std::int64_t>(offset) + count >
+                    c.vm.Model().ArrayLength(array))
+                throw VmJavaThrow{"Ljava/lang/IndexOutOfBoundsException;", "write range"};
+            const auto bytes = c.vm.Model().ReadByteRegion(array, offset, count);
+            if (!bytes.empty())
+                GuestLine(c, std::string(
+                    reinterpret_cast<const char*>(bytes.data()), bytes.size()));
+            return VmValue::Void();
+        });
         for (const auto* result : {"Ljava/io/PrintStream;", "Ljava/lang/Appendable;"}) {
             builder.VirtualMethod("append", std::string("(Ljava/lang/CharSequence;)") + result,
                 [](IntrinsicContext& c) {
@@ -1526,6 +1547,125 @@ namespace ogplay::runtime::dexvm::intrinsics {
             return std::move(b).Build();
         }
 
+        IntrinsicClassDecl DeclareOutputStreamWriter() {
+            auto b = IntrinsicClassBuilder::Class(
+                "Ljava/io/OutputStreamWriter;", "Ljava/io/Writer;");
+            const auto target = b.BoundInstanceField(
+                "target", "Ljava/io/OutputStream;", kAccPrivate);
+            const auto encoding = b.BoundInstanceField(
+                "encoding", "Ljava/lang/String;", kAccPrivate);
+            const auto closed = b.BoundInstanceField("closed", "Z", kAccPrivate);
+            const auto construct = [target, encoding](IntrinsicContext& c,
+                                                       std::string name) {
+                if (!c.arguments[0].ref.IsValid())
+                    throw VmJavaThrow{"Ljava/lang/NullPointerException;", "output == null"};
+                const auto parent = c.vm.Linker().ResolveDescriptor("Ljava/io/Writer;");
+                const auto ctor = c.vm.Linker().FindDirectMethod(
+                    parent, "<init>", "(Ljava/lang/Object;)V");
+                const std::array args{VmValue::Ref(c.receiver), c.arguments[0]};
+                const auto result = c.vm.Call(*ctor, args);
+                if (result.exception.IsValid())
+                    throw VmJavaThrow{
+                        c.vm.Linker().Class(result.exception_class).descriptor,
+                        result.exception_message, result.exception};
+                IntrinsicCall(c).SetRef(target, c.arguments[0].ref);
+                IntrinsicCall(c).SetRef(encoding, c.vm.NewStringUtf8(std::move(name)));
+                return VmValue::Void();
+            };
+            b.Constructor("(Ljava/io/OutputStream;)V", [construct](IntrinsicContext& c) {
+                return construct(c, "UTF-8");
+            });
+            b.Constructor("(Ljava/io/OutputStream;Ljava/nio/charset/Charset;)V",
+                          [construct](IntrinsicContext& c) {
+                              return construct(c, CharsetName(c.vm, c.arguments[1].ref));
+                          });
+            b.Constructor("(Ljava/io/OutputStream;Ljava/lang/String;)V",
+                          [construct](IntrinsicContext& c) {
+                              if (!c.arguments[1].ref.IsValid())
+                                  throw VmJavaThrow{"Ljava/lang/NullPointerException;",
+                                                    "charset == null"};
+                              try {
+                                  return construct(c, CanonicalCharset(
+                                      c.vm.StringUtf8(c.arguments[1].ref)));
+                              } catch (const VmJavaThrow& e) {
+                                  if (e.descriptor ==
+                                          "Ljava/nio/charset/UnsupportedCharsetException;" ||
+                                      e.descriptor ==
+                                          "Ljava/nio/charset/IllegalCharsetNameException;")
+                                      throw VmJavaThrow{
+                                          "Ljava/io/UnsupportedEncodingException;", e.message};
+                                  throw;
+                              }
+                          });
+            const auto write = [target, encoding, closed](
+                                   IntrinsicContext& c, std::u16string_view text) {
+                if (IntrinsicCall(c).GetInt(closed))
+                    throw VmJavaThrow{"Ljava/io/IOException;", "writer is closed"};
+                const auto bytes = EncodeCharset(
+                    text, c.vm.StringUtf8(IntrinsicCall(c).GetRef(encoding)));
+                const auto array = c.vm.Model().NewPrimitiveArray(
+                    c.vm.Linker().ResolveDescriptor("[B"), JniPrimitiveKind::byte,
+                    static_cast<JniSize>(bytes.size()));
+                if (!bytes.empty())
+                    c.vm.Model().WriteByteRegion(array, 0, bytes);
+                detail::InvokeGuest(
+                    c.vm, IntrinsicCall(c).GetRef(target), "write", "([BII)V",
+                    {VmValue::Ref(array), VmValue::Int(0),
+                     VmValue::Int(static_cast<std::int32_t>(bytes.size()))});
+                return VmValue::Void();
+            };
+            b.OverrideMethod("write", "([CII)V", [write](IntrinsicContext& c) {
+                const auto array = c.arguments[0].ref;
+                if (!array.IsValid())
+                    throw VmJavaThrow{"Ljava/lang/NullPointerException;", "buffer == null"};
+                const auto offset = c.arguments[1].AsInt();
+                const auto count = c.arguments[2].AsInt();
+                if (offset < 0 || count < 0 ||
+                    static_cast<std::int64_t>(offset) + count >
+                        c.vm.Model().ArrayLength(array))
+                    throw VmJavaThrow{"Ljava/lang/IndexOutOfBoundsException;", "write range"};
+                std::u16string text;
+                text.reserve(static_cast<std::size_t>(count));
+                for (std::int32_t i = 0; i < count; ++i)
+                    text.push_back(static_cast<char16_t>(
+                        c.vm.Model().GetPrimitiveElement(array, offset + i)));
+                return write(c, text);
+            });
+            b.OverrideMethod("write", "(Ljava/lang/String;II)V",
+                             [write](IntrinsicContext& c) {
+                if (!c.arguments[0].ref.IsValid())
+                    throw VmJavaThrow{"Ljava/lang/NullPointerException;", "string == null"};
+                const auto& text = Value(c, c.arguments[0].ref);
+                const auto offset = c.arguments[1].AsInt();
+                const auto count = c.arguments[2].AsInt();
+                if (offset < 0 || count < 0 ||
+                    static_cast<std::int64_t>(offset) + count >
+                        static_cast<std::int64_t>(text.size()))
+                    throw VmJavaThrow{"Ljava/lang/IndexOutOfBoundsException;", "write range"};
+                return write(c, std::u16string_view(text).substr(offset, count));
+            });
+            b.OverrideMethod("flush", "()V", [target, closed](IntrinsicContext& c) {
+                if (IntrinsicCall(c).GetInt(closed))
+                    throw VmJavaThrow{"Ljava/io/IOException;", "writer is closed"};
+                detail::InvokeGuest(c.vm, IntrinsicCall(c).GetRef(target), "flush", "()V");
+                return VmValue::Void();
+            });
+            b.OverrideMethod("close", "()V", [target, closed](IntrinsicContext& c) {
+                if (!IntrinsicCall(c).GetInt(closed)) {
+                    detail::InvokeGuest(c.vm, IntrinsicCall(c).GetRef(target), "close", "()V");
+                    IntrinsicCall(c).SetInt(closed, 1);
+                }
+                return VmValue::Void();
+            });
+            b.VirtualMethod("getEncoding", "()Ljava/lang/String;",
+                            [encoding, closed](IntrinsicContext& c) {
+                return VmValue::Ref(IntrinsicCall(c).GetInt(closed)
+                                        ? VmObjectRef{}
+                                        : IntrinsicCall(c).GetRef(encoding));
+            });
+            return std::move(b).Build();
+        }
+
     } // namespace
 
     IntrinsicClassDecl Declare_java_io_ObjectStreamClass() {
@@ -1567,6 +1707,7 @@ namespace ogplay::runtime::dexvm::intrinsics {
 
     void AppendJavaIoStreams(std::vector<IntrinsicClassDecl>& catalog) {
         catalog.push_back(DeclareInputStreamReader());
+        catalog.push_back(DeclareOutputStreamWriter());
         catalog.push_back(Declare_java_io_ObjectOutputStream());
         catalog.push_back(Declare_java_io_ObjectStreamClass());
     }

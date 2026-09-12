@@ -78,7 +78,10 @@ Dex activity 每帧在 guest 回调前泵送主 Looper，到帧尾只通过
   实例化时把自身句柄发布为 `task_root_activity`（进程唯一 task 的根，
   `Activity.isTaskRoot()` 的判定依据），switch 到达的 Activity 不是根。
 - frontend 取回最终 present frame 后必须交 session `ComposePresentedFrame` 与 cached UI
-  overlay 做整数 source-over；screenshot/window 只读取返回结果，video 不依赖 UI。
+  overlay 做整数 source-over；纯 View Activity 在 UiTree dirty 且没有 guest renderer 时由
+  lifecycle 发布不透明软件基帧，再走同一合成入口。screenshot/window 只读取返回结果，
+  video 不依赖 UI。EditText 键盘编辑和 ScrollView 手势都更新 UiTree 的唯一状态，绘制、
+  裁剪与命中使用同一次布局产生的 frame。
 - touch DOWN 的 gesture ownership 与 click eligibility 独立：touch-only false 立即回退
   Activity，touch-only true 保持 capture；带 click listener 时未消费的 UP-inside 才 onClick，
   touch 消费则禁止 click。隐藏/删除/UP-outside 取消 click，hit-test 仍只读 UiTree frame。

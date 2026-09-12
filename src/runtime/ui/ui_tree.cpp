@@ -27,6 +27,13 @@ UiNodeId UiTree::CreateNode(const UiClass kind) {
         created->second.background_color = 0x404040ffU;
         created->second.padding = {6, 4, 6, 4};
         created->second.clickable = true;
+        created->second.max_lines = 1;
+    } else if (kind == UiClass::EditText) {
+        created->second.max_lines = 1;
+    } else if (kind == UiClass::TableLayout) {
+        created->second.orientation = Orientation::Vertical;
+    } else if (kind == UiClass::TableRow) {
+        created->second.orientation = Orientation::Horizontal;
     }
     return id;
 }

@@ -408,6 +408,9 @@ IntrinsicClassDecl Charset() {
     b.FinalMethod("compareTo", "(Ljava/nio/charset/Charset;)I", compare);
     b.VirtualMethod("compareTo", "(Ljava/lang/Object;)I", compare, kAccPublic | kAccBridge | kAccSynthetic);
     b.FinalMethod("name", "()Ljava/lang/String;", [name](IntrinsicContext& c) { return VmValue::Ref(IntrinsicCall(c).GetRef(name)); });
+    b.FinalMethod("displayName", "()Ljava/lang/String;", [name](IntrinsicContext& c) {
+        return VmValue::Ref(IntrinsicCall(c).GetRef(name));
+    });
     b.OverrideMethod("toString", "()Ljava/lang/String;", [name](IntrinsicContext& c) { return VmValue::Ref(IntrinsicCall(c).GetRef(name)); });
     b.OverrideMethod("hashCode", "()I", [name](IntrinsicContext& c) { return detail::InvokeGuest(c.vm, IntrinsicCall(c).GetRef(name), "hashCode", "()I"); });
     b.OverrideMethod("equals", "(Ljava/lang/Object;)Z", [name](IntrinsicContext& c) {

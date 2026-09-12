@@ -620,6 +620,33 @@ TEST_CASE("UI resources resolve string color dimension and image state") {
           ui::Insets{16, 16, 16, 16});
     CHECK(vm.context->ui_tree.Get(*text_node)->text_size_px == 24.0F);
 
+    std::vector<ogplay::loader::BinaryXmlElement> styled(3);
+    styled[0].name = "LinearLayout";
+    styled[1].name = "TextView";
+    styled[1].parent = 0;
+    styled[1].attributes = {
+        AndroidAttribute("textAppearance", 0x01, 0x01030044U)};
+    styled[2].name = "EditText";
+    styled[2].parent = 0;
+    styled[2].attributes = {
+        AndroidAttribute("textSize", 0x05, 0x00001e01U),
+        AndroidAttribute("enabled", 0x12, 0),
+        AndroidAttribute("clickable", 0x12, 1)};
+    const auto styled_root =
+        InflateUiElements(vm.interpreter, *vm.context, styled);
+    const auto root_node = FindViewUiNode(*vm.context, styled_root.Value());
+    REQUIRE(root_node.has_value());
+    REQUIRE(vm.context->ui_tree.Get(*root_node)->children.size() == 2);
+    const auto medium = vm.context->ui_tree.Get(
+        vm.context->ui_tree.Get(*root_node)->children[0]);
+    const auto edit = vm.context->ui_tree.Get(
+        vm.context->ui_tree.Get(*root_node)->children[1]);
+    CHECK(medium->text_size_px == 54.0F);  // 18sp at scaled density 3
+    CHECK(edit->text_size_px == 60.0F);    // 30dp at density 2
+    CHECK(edit->minimum.height == 96);     // Holo EditText 48dp floor
+    CHECK_FALSE(edit->enabled);
+    CHECK(edit->clickable);
+
     const auto image = vm.interpreter.NewIntrinsicInstance(
         "Landroid/widget/ImageView;");
     vm.CallOn(image, "setImageResource", "(I)V", {VmValue::Int(102)});
@@ -1204,13 +1231,34 @@ TEST_CASE("TextView Java state controls deterministic measure and draw state") {
     const auto method = vm.linker.FindVtableIndex(
         receiver_class, "setText", "(Ljava/lang/CharSequence;)V");
     REQUIRE(method.has_value());
-    const auto unsupported = vm.interpreter.Call(
+    const auto multiline = vm.interpreter.Call(
         vm.linker.Class(receiver_class).vtable[*method],
         std::vector<VmValue>{
             VmValue::Ref(text),
             VmValue::Ref(vm.interpreter.NewStringUtf8("two\nlines"))});
-    CHECK(unsupported.exception.IsValid());
-    CHECK(vm.context->ui_tree.Get(*node)->text == u"H");
+    CHECK_FALSE(multiline.exception.IsValid());
+    CHECK(vm.context->ui_tree.Get(*node)->text == u"two\nlines");
+}
+
+TEST_CASE("EditText Editable preserves identity text and watcher registration") {
+    ClickVm vm;
+    const auto edit = vm.interpreter.NewIntrinsicInstance(
+        "Landroid/widget/EditText;");
+    vm.CallOn(edit, "setText", "(Ljava/lang/CharSequence;)V",
+              {VmValue::Ref(vm.interpreter.NewStringUtf8("13"))});
+    const auto first = vm.CallOn(edit, "getText",
+                                 "()Landroid/text/Editable;").ref;
+    const auto second = vm.CallOn(edit, "getText",
+                                  "()Landroid/text/Editable;").ref;
+    CHECK(first == second);
+    const auto value = vm.CallOn(first, "toString", "()Ljava/lang/String;").ref;
+    CHECK(vm.model.StringValue(value) == u"13");
+
+    const auto watcher = vm.activity;
+    vm.CallOn(edit, "addTextChangedListener",
+              "(Landroid/text/TextWatcher;)V", {VmValue::Ref(watcher)});
+    REQUIRE(vm.context->text_watchers.contains(edit.Value()));
+    CHECK(vm.context->text_watchers.at(edit.Value()).front() == watcher);
 }
 
 TEST_CASE("RelativeLayout Java rules update attached geometry") {
@@ -1342,6 +1390,47 @@ TEST_CASE("Button three-argument constructor applies the pinned default style") 
     };
     reject(VmObjectRef{}, 0x01010044);  // unregistered framework attr
     reject(attributes, 0x01010049);
+}
+
+TEST_CASE("Button inherits View background identity and Drawable alpha invalidates") {
+    ClickVm vm;
+    const auto button = vm.interpreter.NewIntrinsicInstance(
+        "Landroid/widget/Button;");
+    vm.CallDirect(button, "Landroid/widget/Button;", "<init>",
+                  "(Landroid/content/Context;)V",
+                  {VmValue::Ref(vm.activity)});
+    const auto first = vm.CallOn(
+        button, "getBackground",
+        "()Landroid/graphics/drawable/Drawable;").ref;
+    REQUIRE(first.IsValid());
+    CHECK(vm.CallOn(button, "getBackground",
+                    "()Landroid/graphics/drawable/Drawable;").ref == first);
+    const auto node = FindViewUiNode(*vm.context, button.Value());
+    REQUIRE(node.has_value());
+    vm.context->ui_tree.ClearDrawDirty();
+    vm.CallOn(first, "setAlpha", "(I)V", {VmValue::Int(96)});
+    CHECK(vm.context->ui_tree.Get(*node)->background_alpha ==
+          doctest::Approx(96.0F / 255.0F));
+    CHECK(vm.context->ui_tree.Get(*node)->draw_dirty);
+
+    vm.context->arsc.entries = {
+        {.resource_id = 101, .type_name = "color", .entry_name = "red",
+         .value_type = 0x1c, .value_data = 0xffff0000U},
+    };
+    vm.CallOn(button, "setBackgroundResource", "(I)V", {VmValue::Int(101)});
+    const auto replacement = vm.CallOn(
+        button, "getBackground",
+        "()Landroid/graphics/drawable/Drawable;").ref;
+    REQUIRE(replacement.IsValid());
+    CHECK(replacement != first);
+    CHECK(vm.context->ui_tree.Get(*node)->background_resource_id == 101U);
+    CHECK(vm.context->ui_tree.Get(*node)->background_alpha == 1.0F);
+
+    const auto plain = vm.interpreter.NewIntrinsicInstance("Landroid/view/View;");
+    vm.CallDirect(plain, "Landroid/view/View;", "<init>",
+                  "(Landroid/content/Context;)V", {VmValue::Ref(vm.activity)});
+    CHECK_FALSE(vm.CallOn(plain, "getBackground",
+                          "()Landroid/graphics/drawable/Drawable;").ref.IsValid());
 }
 
 TEST_CASE("DVM-123 Button constructor checks the supplied Context theme") {

@@ -903,7 +903,14 @@ Decl Declare_android_widget_TextView(const Context& context) {
                 Singleton(call, context, "text_paint",
                           "Landroid/text/TextPaint;"));
         });
-    builder.FinalMethod("addTextChangedListener", "(Landroid/text/TextWatcher;)V", WidgetNoopHandler());
+    builder.FinalMethod("addTextChangedListener", "(Landroid/text/TextWatcher;)V",
+        [context](dx::IntrinsicContext& call) {
+            const auto watcher = call.arguments[0].ref;
+            if (watcher.IsValid()) {
+                context->text_watchers[call.receiver.Value()].push_back(watcher);
+            }
+            return dx::VmValue::Void();
+        });
     return std::move(builder).Build();
 }
 

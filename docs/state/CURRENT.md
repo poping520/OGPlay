@@ -1,5 +1,12 @@
 # 当前状态
 
+- [DVM-148](../tasks/dexvm/DVM-148.md) 已完成：真实 PvZ 非 survey Terms 页面使用横屏资源、
+  多行文本、表格权重、ScrollView 与 `npTc` NinePatch 正常布局合成；Button 从 View 继承
+  同一 Drawable 背景实例。真实输入 `13` 经 Editable/TextWatcher 由 guest 更新 accept
+  alpha，前后截图及日志已保存。授权的 addShutdownHook/IoUtils/ClassLoader/Apache HTTP
+  非 UI 临时绕过已记账，仍待后续独立完善。真机截图对照回归又补齐 XML widget 默认
+  尺寸、framework textAppearance、空文本行高、大小写字形和按词换行。
+
 - [WU-PERF-07](../tasks/optimization/WU-PERF-07.md) 已让 JNI 同步重入的 Dynarmic executor
   按 guest thread 与重入深度持久复用；每层仍隔离寄存器/栈，DexVM thread 退出时回收。
   pvz-amaz 8.1.0 的稳定期采样中 JIT 构造热点由 603/847 个样本降至 6 个；实跑
@@ -20,7 +27,7 @@
   真正 wall-time 上限，常驻 runnable 服务线程不再阻断 Surface 回调；pvz-amaz 实跑已收到
   `surfaceCreated/surfaceChanged`、进入 production mode，并成功呈现 1 帧后干净退出。
 
-更新：2026-09-11。
+更新：2026-09-12。
 
 - BootDex-first 本地 Binder 已接通：IInterface/IBinder/Binder/Parcel、ResultReceiver 与内部
   IResultReceiver 及协议异常共 20 个 class_def 来自固定 API 19 JAR，BootDex 现为 1053 类。Binder 普通

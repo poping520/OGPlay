@@ -33,8 +33,12 @@ enum class UiClass : std::uint8_t {
     View,
     FrameLayout,
     LinearLayout,
+    TableLayout,
+    TableRow,
+    ScrollView,
     RelativeLayout,
     TextView,
+    EditText,
     Button,
     ImageView,
     ImageButton,
@@ -161,17 +165,23 @@ struct UiNode final {
     // TextView compound drawables: left, top, right, bottom.
     std::array<CompoundDrawable, 4> compound_drawables{};
     std::optional<std::uint32_t> background_color;
+    std::uint32_t background_resource_id{};
+    float background_alpha{1.0F};
     std::u16string text;
     std::uint32_t text_color{0xffffffffU};
     float text_size_px{8.0F};
     std::uint32_t text_style{}; // Built-in font: BOLD=1, ITALIC=2.
-    std::int32_t max_lines{1};
+    std::int32_t max_lines{0x7fffffff};
+    std::int32_t max_length{0x7fffffff};
+    bool numeric_input{};
     LayoutParams layout;
     Insets padding;
     Size measured;
     Size intrinsic;
+    Size minimum;
     Rect frame;
     Rect screen_frame;
+    std::int32_t scroll_y{};
     float alpha{1.0F};
     bool layout_dirty{true};
     bool draw_dirty{true};

@@ -56,6 +56,18 @@ TEST_CASE("UI tree updates ids visibility and dirty propagation") {
     CHECK(tree.Get(child)->visibility == ui::Visibility::Visible);
 }
 
+TEST_CASE("empty text widget measurement retains one font line") {
+    ui::UiTree tree;
+    const auto edit = tree.CreateNode(ui::UiClass::EditText);
+    tree.Get(edit)->layout.width = {ui::SizeMode::WrapContent, 0};
+    tree.Get(edit)->layout.height = {ui::SizeMode::WrapContent, 0};
+    tree.Get(edit)->text_size_px = 30.0F;
+    tree.Attach(tree.Root(), edit);
+
+    ui::LayoutUiTree(tree, {100, 100});
+    CHECK(tree.Get(edit)->measured.height == 28);
+}
+
 TEST_CASE("UI tree destroy and generation reset invalidate old nodes") {
     ui::UiTree tree;
     const auto old_root = tree.Root();
@@ -170,6 +182,32 @@ TEST_CASE("horizontal LinearLayout removes GONE and preserves INVISIBLE space") 
     tree.SetVisibility(invisible, ui::Visibility::Gone);
     ui::LayoutUiTree(tree, {100, 80});
     CHECK(tree.Get(visible)->screen_frame == ui::Rect{40, 70, 60, 80});
+}
+
+TEST_CASE("ScrollView measures document height while clipping to viewport") {
+    ui::UiTree tree;
+    const auto scroll = tree.CreateNode(ui::UiClass::ScrollView);
+    tree.Get(scroll)->layout.width.mode = ui::SizeMode::MatchParent;
+    tree.Get(scroll)->layout.height.mode = ui::SizeMode::MatchParent;
+    const auto document = tree.CreateNode(ui::UiClass::LinearLayout);
+    tree.Get(document)->orientation = ui::Orientation::Vertical;
+    tree.Get(document)->layout.width.mode = ui::SizeMode::MatchParent;
+    tree.Get(document)->layout.height.mode = ui::SizeMode::WrapContent;
+    for (int index = 0; index < 3; ++index) {
+        const auto child = tree.CreateNode(ui::UiClass::View);
+        tree.Get(child)->layout.width.mode = ui::SizeMode::MatchParent;
+        tree.Get(child)->layout.height = {ui::SizeMode::Fixed, 30};
+        tree.Attach(document, child);
+    }
+    tree.Attach(scroll, document);
+    tree.Attach(tree.Root(), scroll);
+    ui::LayoutUiTree(tree, {100, 50});
+    CHECK(tree.Get(scroll)->measured == ui::Size{100, 50});
+    CHECK(tree.Get(document)->measured == ui::Size{100, 90});
+    tree.Get(scroll)->scroll_y = 40;
+    tree.MarkLayoutDirty(scroll);
+    ui::LayoutUiTree(tree, {100, 50});
+    CHECK(tree.Get(document)->screen_frame == ui::Rect{0, -40, 100, 50});
 }
 
 TEST_CASE("vertical LinearLayout distributes weight with padding and margins") {

@@ -238,6 +238,24 @@ ArscTable ParseArsc(const std::span<const std::uint8_t> bytes) {
                                  "resources.arsc entry key is out of range");
                         }
                         ArscEntry entry;
+                        const auto config_size = reader.U32(sub.offset + 20);
+                        if (config_size < 4 || 20U + config_size > sub.header_size) {
+                            Fail(sub.offset, "resources.arsc invalid configuration");
+                        }
+                        if (config_size >= 16) {
+                            entry.orientation = reader.U8(sub.offset + 32);
+                            entry.density = reader.U16(sub.offset + 34);
+                        }
+                        if (config_size >= 28) {
+                            entry.sdk_version = reader.U16(sub.offset + 44);
+                        }
+                        if (config_size >= 32) {
+                            entry.smallest_width_dp = reader.U16(sub.offset + 50);
+                        }
+                        if (config_size >= 36) {
+                            entry.screen_width_dp = reader.U16(sub.offset + 52);
+                            entry.screen_height_dp = reader.U16(sub.offset + 54);
+                        }
                         entry.resource_id =
                             (result.package_id << 24U) |
                             (static_cast<std::uint32_t>(type_id) << 16U) |
@@ -282,11 +300,7 @@ ArscTable ParseArsc(const std::span<const std::uint8_t> bytes) {
                                 entry.bag.push_back(std::move(value));
                             }
                         }
-                        // First (default) configuration wins; later configs
-                        // for the same id are ignored.
-                        if (result.FindById(entry.resource_id) == nullptr) {
-                            result.entries.push_back(std::move(entry));
-                        }
+                        result.entries.push_back(std::move(entry));
                     }
                 } else if (sub.type != kResTableTypeSpecType &&
                            sub.type != kResStringPoolType) {

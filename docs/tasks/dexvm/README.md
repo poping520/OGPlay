@@ -168,6 +168,7 @@ Asphalt 5（pilot title）删除 profile 全部 `native_call` 与 `[[java.class]
 | [DVM-145](DVM-145.md) | Field 运行时 marker annotation | 完成 |
 | [DVM-146](DVM-146.md) | 反射成员元数据独立按需构建 | 完成 |
 | [DVM-147](DVM-147.md) | API 19 SHA1PRNG 与 AES KeyGenerator | 完成 |
+| [DVM-148](DVM-148.md) | Terms 页面布局与文本输入闭环 | 完成 |
 
 ## 批次 4 · 更多 title 上 dexvm 路线（进行中）
 

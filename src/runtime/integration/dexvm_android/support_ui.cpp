@@ -57,6 +57,24 @@ dexvm::VmObjectRef ViewObjectForUiNode(const DexVmAndroidContext& context,
                                                      : found->second;
 }
 
+void InitializeDefaultViewBackground(dexvm::Interpreter& vm,
+                                     DexVmAndroidContext& context,
+                                     const dexvm::VmObjectRef view,
+                                     const ui::UiNodeId node) {
+    if (context.ui_tree.Get(node)->kind != ui::UiClass::Button ||
+        context.ui_view_backgrounds.contains(view.Value())) {
+        return;
+    }
+    const auto drawable =
+        vm.NewIntrinsicInstance("Landroid/graphics/drawable/Drawable;");
+    context.ui_view_backgrounds.emplace(view.Value(), drawable);
+    context.ui_drawables.emplace(
+        drawable.Value(),
+        DexVmAndroidContext::UiDrawableState{
+            .color = context.ui_tree.Get(node)->background_color,
+            .callback_node = node});
+}
+
 void ResetViewUiState(DexVmAndroidContext& context) {
     context.ui_tree.Reset();
     context.object_to_ui_node.clear();
@@ -64,6 +82,10 @@ void ResetViewUiState(DexVmAndroidContext& context) {
     context.ui_click_listeners.clear();
     context.ui_touch_listeners.clear();
     context.ui_view_layout_params.clear();
+    context.ui_view_backgrounds.clear();
+    context.ui_drawables.clear();
+    context.text_watchers.clear();
+    context.focused_edit_text = dexvm::VmObjectRef{};
 }
 
 }  // namespace ogplay::runtime
@@ -72,13 +94,13 @@ namespace ogplay::runtime::android_intrinsics {
 
 ui::UiClass UiClassForDescriptor(const std::string_view descriptor) {
     if (descriptor == "Landroid/widget/FrameLayout;" ||
-        descriptor == "Landroid/widget/ScrollView;" ||
         descriptor == "Landroid/widget/AbsoluteLayout;") {
         return ui::UiClass::FrameLayout;
     }
-    if (descriptor == "Landroid/widget/LinearLayout;" ||
-        descriptor == "Landroid/widget/TableLayout;" ||
-        descriptor == "Landroid/widget/TableRow;") {
+    if (descriptor == "Landroid/widget/ScrollView;") return ui::UiClass::ScrollView;
+    if (descriptor == "Landroid/widget/TableLayout;") return ui::UiClass::TableLayout;
+    if (descriptor == "Landroid/widget/TableRow;") return ui::UiClass::TableRow;
+    if (descriptor == "Landroid/widget/LinearLayout;") {
         return ui::UiClass::LinearLayout;
     }
     if (descriptor == "Landroid/widget/RelativeLayout;") {
@@ -89,6 +111,7 @@ ui::UiClass UiClassForDescriptor(const std::string_view descriptor) {
     }
     if (descriptor == "Landroid/widget/TextView;" ||
         descriptor == "Landroid/widget/EditText;") {
+        if (descriptor == "Landroid/widget/EditText;") return ui::UiClass::EditText;
         return ui::UiClass::TextView;
     }
     if (descriptor == "Landroid/widget/ImageView;") {
@@ -151,7 +174,7 @@ constexpr std::array<UiWidgetDescriptor, 16> kWidgets{{
     {"View", "Landroid/view/View;", ui::UiClass::View},
     {"TextView", "Landroid/widget/TextView;", ui::UiClass::TextView},
     {"Button", "Landroid/widget/Button;", ui::UiClass::Button},
-    {"EditText", "Landroid/widget/EditText;", ui::UiClass::TextView},
+    {"EditText", "Landroid/widget/EditText;", ui::UiClass::EditText},
     {"ImageView", "Landroid/widget/ImageView;", ui::UiClass::ImageView},
     {"ImageButton", "Landroid/widget/ImageButton;", ui::UiClass::ImageButton},
     {"ProgressBar", "Landroid/widget/ProgressBar;", ui::UiClass::View},
@@ -160,9 +183,9 @@ constexpr std::array<UiWidgetDescriptor, 16> kWidgets{{
     {"LinearLayout", "Landroid/widget/LinearLayout;", ui::UiClass::LinearLayout},
     {"FrameLayout", "Landroid/widget/FrameLayout;", ui::UiClass::FrameLayout},
     {"RelativeLayout", "Landroid/widget/RelativeLayout;", ui::UiClass::RelativeLayout},
-    {"TableLayout", "Landroid/widget/TableLayout;", ui::UiClass::LinearLayout},
-    {"TableRow", "Landroid/widget/TableRow;", ui::UiClass::LinearLayout},
-    {"ScrollView", "Landroid/widget/ScrollView;", ui::UiClass::FrameLayout},
+    {"TableLayout", "Landroid/widget/TableLayout;", ui::UiClass::TableLayout},
+    {"TableRow", "Landroid/widget/TableRow;", ui::UiClass::TableRow},
+    {"ScrollView", "Landroid/widget/ScrollView;", ui::UiClass::ScrollView},
     {"AbsoluteLayout", "Landroid/widget/AbsoluteLayout;", ui::UiClass::FrameLayout},
 }};
 
@@ -185,7 +208,38 @@ constexpr std::array<UiWidgetDescriptor, 16> kWidgets{{
         if (!seen.insert(resource_id).second) {
             throw std::runtime_error("UI resource reference cycle");
         }
-        const auto* entry = context.arsc.FindById(resource_id);
+        const loader::ArscEntry* entry = nullptr;
+        int best = std::numeric_limits<int>::min();
+        const auto width_dp = static_cast<int>(
+            std::lround(context.surface_width / context.ui_density));
+        const auto height_dp = static_cast<int>(
+            std::lround(context.surface_height / context.ui_density));
+        const auto smallest_dp = std::min(width_dp, height_dp);
+        const auto orientation = width_dp > height_dp ? 2U : 1U;
+        const auto density = static_cast<int>(
+            std::lround(context.ui_density * 160.0F));
+        for (const auto& candidate : context.arsc.entries) {
+            if (candidate.resource_id != resource_id ||
+                (candidate.sdk_version != 0 && candidate.sdk_version > 19) ||
+                (candidate.orientation != 0 &&
+                 candidate.orientation != orientation) ||
+                candidate.smallest_width_dp > smallest_dp ||
+                candidate.screen_width_dp > width_dp ||
+                candidate.screen_height_dp > height_dp) {
+                continue;
+            }
+            int score = candidate.orientation != 0 ? 1000000 : 0;
+            score += candidate.smallest_width_dp * 1000 +
+                     candidate.screen_width_dp + candidate.screen_height_dp;
+            if (candidate.density != 0) {
+                score += 100000 - std::abs(static_cast<int>(candidate.density) -
+                                           density);
+            }
+            if (score > best) {
+                best = score;
+                entry = &candidate;
+            }
+        }
         if (entry == nullptr) {
             throw std::runtime_error("UI resource id is missing: " +
                                      std::to_string(resource_id));
@@ -237,6 +291,66 @@ constexpr std::array<UiWidgetDescriptor, 16> kWidgets{{
     return static_cast<std::int32_t>(attribute.data);
 }
 
+void ApplyInflatedWidgetDefaults(const DexVmAndroidContext& context,
+                                 ui::UiNode& node) {
+    const auto dp = [&context](const float value) {
+        return static_cast<std::int32_t>(
+            std::lround(value * context.ui_density));
+    };
+    const auto sp = [&context](const float value) {
+        return value * context.ui_scaled_density;
+    };
+    if (node.kind == ui::UiClass::TextView) {
+        node.text_size_px = sp(14.0F);
+    } else if (node.kind == ui::UiClass::Button) {
+        node.text_size_px = sp(14.0F);
+        node.minimum.width = dp(64.0F);
+        node.minimum.height = dp(48.0F);
+        node.gravity = 0x11U;
+        node.clickable = true;
+    } else if (node.kind == ui::UiClass::EditText) {
+        node.text_size_px = sp(18.0F);
+        node.minimum.height = dp(48.0F);
+        node.gravity = 0x10U;
+        node.clickable = true;
+    }
+}
+
+void ApplyTextAppearance(const DexVmAndroidContext& context,
+                         ui::UiNode& node, const std::uint32_t resource_id) {
+    // API 19 public.xml and styles.xml: the six base text appearances differ
+    // here only by size; colors remain owned by the theme/app overrides.
+    switch (resource_id) {
+        case 0x01030042U:
+        case 0x01030043U:
+            node.text_size_px = 22.0F * context.ui_scaled_density;
+            return;
+        case 0x01030044U:
+        case 0x01030045U:
+            node.text_size_px = 18.0F * context.ui_scaled_density;
+            return;
+        case 0x01030046U:
+        case 0x01030047U:
+            node.text_size_px = 14.0F * context.ui_scaled_density;
+            return;
+        default: break;
+    }
+    const auto& style = ResolveEntry(context, resource_id);
+    if (!style.is_complex || style.type_name != "style") {
+        throw std::runtime_error("TextView textAppearance is not a style");
+    }
+    for (const auto& item : style.bag) {
+        if (item.name == 0x01010095U && item.value_type == kTypeDimension) {
+            node.text_size_px = static_cast<float>(
+                ComplexDimensionPx(context, item.value_data, true));
+        } else if (item.name == 0x01010098U &&
+                   item.value_type >= kTypeFirstColor &&
+                   item.value_type <= kTypeLastColor) {
+            node.text_color = AndroidColorToRgba(item.value_data);
+        }
+    }
+}
+
 [[nodiscard]] std::int32_t SiblingResourceId(
     const loader::BinaryXmlAttribute& attribute) {
     if (attribute.data == 0U ||
@@ -284,6 +398,10 @@ void ApplyAttribute(DexVmAndroidContext& context, const ui::UiNodeId node_id,
                          ? ui::Visibility::Visible
                          : attribute.data == 1U ? ui::Visibility::Invisible
                                                 : ui::Visibility::Gone);
+    } else if (name == "enabled") {
+        node.enabled = attribute.data != 0U;
+    } else if (name == "clickable") {
+        context.ui_tree.SetClickable(node_id, attribute.data != 0U);
     } else if (name == "layout_width") {
         const auto value = DimensionValue(context, attribute);
         node.layout.width = value == -1
@@ -306,9 +424,13 @@ void ApplyAttribute(DexVmAndroidContext& context, const ui::UiNodeId node_id,
         if (attribute.data > 1U) {
             throw std::runtime_error("unsupported UI orientation enum");
         }
-        node.orientation = attribute.data == 0U
+        node.orientation = node.kind == ui::UiClass::TableLayout
+                               ? ui::Orientation::Vertical
+                           : node.kind == ui::UiClass::TableRow
                                ? ui::Orientation::Horizontal
-                               : ui::Orientation::Vertical;
+                               : attribute.data == 0U
+                                     ? ui::Orientation::Horizontal
+                                     : ui::Orientation::Vertical;
     } else if (name == "layout_weight") {
         if (attribute.value_type != kTypeFloat) {
             throw std::runtime_error("UI layout_weight is not a float");
@@ -336,6 +458,10 @@ void ApplyAttribute(DexVmAndroidContext& context, const ui::UiNodeId node_id,
         node.layout.margin.right = DimensionValue(context, attribute);
     } else if (name == "layout_marginBottom") {
         node.layout.margin.bottom = DimensionValue(context, attribute);
+    } else if (name == "minWidth") {
+        node.minimum.width = DimensionValue(context, attribute);
+    } else if (name == "minHeight") {
+        node.minimum.height = DimensionValue(context, attribute);
     } else if (name == "text") {
         node.text = attribute.value_type == kTypeReference
                         ? ResolveUiString(context, attribute.data)
@@ -351,30 +477,48 @@ void ApplyAttribute(DexVmAndroidContext& context, const ui::UiNodeId node_id,
                                     ? AndroidColorToRgba(attribute.data)
                                     : throw std::runtime_error(
                                           "TextView textColor is not a color");
+    } else if (name == "textAppearance") {
+        if (attribute.value_type != kTypeReference || attribute.data == 0U) {
+            throw std::runtime_error(
+                "TextView textAppearance is not a resource reference");
+        }
+        ApplyTextAppearance(context, node, attribute.data);
     } else if (name == "textSize") {
         const auto size = static_cast<float>(
             DimensionValue(context, attribute, true));
         static_cast<void>(ui::MeasureFixedText(node.text, size));
         node.text_size_px = size;
     } else if (name == "singleLine") {
-        if (attribute.data == 0U) {
-            throw std::runtime_error("multiline TextView is unsupported");
-        }
-        node.max_lines = 1;
+        node.max_lines = attribute.data == 0U
+                             ? std::numeric_limits<std::int32_t>::max()
+                             : 1;
     } else if (name == "maxLines") {
-        if (attribute.data != 1U) {
-            throw std::runtime_error("multiline TextView is unsupported");
+        if (attribute.data == 0U ||
+            attribute.data > static_cast<std::uint32_t>(
+                                 std::numeric_limits<std::int32_t>::max())) {
+            throw std::runtime_error("TextView maxLines is out of range");
         }
-        node.max_lines = 1;
+        node.max_lines = static_cast<std::int32_t>(attribute.data);
+    } else if (name == "maxLength") {
+        if (attribute.data > static_cast<std::uint32_t>(
+                                 std::numeric_limits<std::int32_t>::max())) {
+            throw std::runtime_error("TextView maxLength is out of range");
+        }
+        node.max_length = static_cast<std::int32_t>(attribute.data);
+    } else if (name == "inputType") {
+        node.numeric_input = (attribute.data & 0x0fU) == 0x02U;
     } else if (name == "background") {
-        node.background_color =
-            attribute.value_type == kTypeReference
-                ? ResolveUiColor(context, attribute.data)
-                : attribute.value_type >= kTypeFirstColor &&
-                          attribute.value_type <= kTypeLastColor
-                      ? AndroidColorToRgba(attribute.data)
-                      : throw std::runtime_error(
-                            "UI background is not a color resource");
+        if (attribute.value_type == kTypeReference) {
+            static_cast<void>(ResolveUiDrawable(context, attribute.data));
+            node.background_color.reset();
+            node.background_resource_id = attribute.data;
+        } else if (attribute.value_type >= kTypeFirstColor &&
+                   attribute.value_type <= kTypeLastColor) {
+            node.background_color = AndroidColorToRgba(attribute.data);
+            node.background_resource_id = 0;
+        } else {
+            throw std::runtime_error("UI background is not a drawable resource");
+        }
     } else if (name == "layout_alignParentLeft") {
         node.layout.relative.align_parent_left = attribute.data != 0U;
     } else if (name == "layout_alignParentRight") {
@@ -498,6 +642,43 @@ std::shared_ptr<const ui::UiBitmap> ResolveUiDrawable(
             bitmap->rgba8.push_back(static_cast<std::uint8_t>(argb >> 8U));
             bitmap->rgba8.push_back(static_cast<std::uint8_t>(argb));
             bitmap->rgba8.push_back(static_cast<std::uint8_t>(argb >> 24U));
+        }
+        // Android's compiled nine-patch chunk is stored as big-endian words
+        // in the PNG. Keep stretch divisions and content padding beside the
+        // shared immutable pixels; Drawable alpha/bounds remain per instance.
+        const auto be32 = [&bytes](const std::size_t offset) {
+            const auto byte = [&bytes](const std::size_t at) {
+                return std::to_integer<std::uint32_t>(bytes[at]);
+            };
+            return (byte(offset) << 24U) | (byte(offset + 1) << 16U) |
+                   (byte(offset + 2) << 8U) | byte(offset + 3);
+        };
+        for (std::size_t offset = 8; offset + 12 <= bytes.size();) {
+            const auto size = be32(offset);
+            if (size > bytes.size() - offset - 12U) break;
+            if (std::to_integer<char>(bytes[offset + 4]) == 'n' &&
+                std::to_integer<char>(bytes[offset + 5]) == 'p' &&
+                std::to_integer<char>(bytes[offset + 6]) == 'T' &&
+                std::to_integer<char>(bytes[offset + 7]) == 'c' &&
+                size >= 48U &&
+                std::to_integer<unsigned>(bytes[offset + 9]) == 2U &&
+                std::to_integer<unsigned>(bytes[offset + 10]) == 2U) {
+                const auto data = offset + 8U;
+                bitmap->nine_patch = true;
+                bitmap->nine_patch_padding = {
+                    static_cast<std::int32_t>(be32(data + 12U)),
+                    static_cast<std::int32_t>(be32(data + 20U)),
+                    static_cast<std::int32_t>(be32(data + 16U)),
+                    static_cast<std::int32_t>(be32(data + 24U))};
+                bitmap->stretch_x = {
+                    static_cast<std::int32_t>(be32(data + 32U)),
+                    static_cast<std::int32_t>(be32(data + 36U))};
+                bitmap->stretch_y = {
+                    static_cast<std::int32_t>(be32(data + 40U)),
+                    static_cast<std::int32_t>(be32(data + 44U))};
+                break;
+            }
+            offset += 12U + size;
         }
     } else {
         throw std::runtime_error("UI resource is not a drawable");
@@ -738,6 +919,8 @@ dexvm::VmObjectRef InflateUiElements(
             const auto view = vm.NewIntrinsicInstance(widget->dex_descriptor);
             const auto node = context.ui_tree.CreateNode(widget->kind);
             BindViewToUiNode(context, view, node);
+            ApplyInflatedWidgetDefaults(context, *context.ui_tree.Get(node));
+            InitializeDefaultViewBackground(vm, context, view, node);
             std::uint32_t drawable_id = element.src;
             for (const auto& attribute : element.attributes) {
                 try {
@@ -750,6 +933,15 @@ dexvm::VmObjectRef InflateUiElements(
                     }
                     throw;
                 }
+            }
+            if (const auto* state = context.ui_tree.Get(node);
+                state->background_resource_id != 0U) {
+                const auto drawable = vm.NewIntrinsicInstance(
+                    "Landroid/graphics/drawable/Drawable;");
+                context.ui_drawables[drawable.Value()] = {
+                    .resource_id = state->background_resource_id,
+                    .callback_node = node};
+                context.ui_view_backgrounds[view.Value()] = drawable;
             }
             if (element.id != 0 &&
                 context.ui_tree.Get(node)->android_id < 0) {

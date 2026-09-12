@@ -54,6 +54,7 @@ IntrinsicClassDecl Declare_java_lang_BootClassLoader() {
 #include "ogplay/runtime/dexvm/class_name_codec.h"
 #include "ogplay/runtime/dexvm/intrinsic_builder.h"
 #include "ogplay/runtime/dexvm/interpreter.h"
+#include "shared.h"
 
 namespace ogplay::runtime::dexvm::intrinsics {
 namespace {
@@ -170,6 +171,49 @@ IntrinsicClassDecl Declare_java_lang_ClassLoader() {
                 call.NonNullRef(0, "className"));
             throw VmJavaThrow{"Ljava/lang/ClassNotFoundException;", name};
         }, kAccProtected);
+    builder.VirtualMethod(
+        "getResources", "(Ljava/lang/String;)Ljava/util/Enumeration;",
+        [](IntrinsicContext& context) {
+            static_cast<void>(IntrinsicCall(context).NonNullRef(0, "resourceName"));
+            if (auto* ledger = context.vm.Ledger()) {
+                ledger->RecordUnimplemented(
+                    "dexvm.classloader.resource_enumeration", 0);
+            }
+            const auto vector_class =
+                context.vm.Linker().ResolveDescriptor("Ljava/util/Vector;");
+            auto outcome = context.vm.EnsureClassInitialized(vector_class);
+            if (outcome.exception.IsValid()) {
+                throw VmJavaThrow{
+                    context.vm.Linker().Class(outcome.exception_class).descriptor,
+                    outcome.exception_message, outcome.exception};
+            }
+            const auto vector = context.vm.NewIntrinsicInstance("Ljava/util/Vector;");
+            const auto root = context.vm.ProtectReferences(std::array{vector});
+            const auto constructor = context.vm.Linker().FindDirectMethod(
+                vector_class, "<init>", "()V");
+            if (!constructor) {
+                throw DexVmError(DexVmErrorReason::internal_invariant,
+                                 "Vector constructor is not linked");
+            }
+            outcome = context.vm.Call(*constructor,
+                                      std::array{VmValue::Ref(vector)});
+            if (outcome.exception.IsValid()) {
+                throw VmJavaThrow{
+                    context.vm.Linker().Class(outcome.exception_class).descriptor,
+                    outcome.exception_message, outcome.exception};
+            }
+            return detail::InvokeGuest(context.vm, vector, "elements",
+                                       "()Ljava/util/Enumeration;");
+        });
+    builder.VirtualMethod(
+        "getResource", "(Ljava/lang/String;)Ljava/net/URL;",
+        [](IntrinsicContext& context) {
+            static_cast<void>(IntrinsicCall(context).NonNullRef(0, "resourceName"));
+            if (auto* ledger = context.vm.Ledger()) {
+                ledger->RecordUnimplemented("dexvm.classloader.resource_url", 0);
+            }
+            return VmValue::Ref(VmObjectRef{});
+        });
     builder.FinalMethod(
         "resolveClass", "(Ljava/lang/Class;)V",
         [](IntrinsicContext& context) {

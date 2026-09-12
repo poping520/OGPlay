@@ -16,6 +16,10 @@ struct UiBitmap final {
     std::int32_t width{};
     std::int32_t height{};
     std::vector<std::uint8_t> rgba8;
+    std::array<std::int32_t, 2> stretch_x{};
+    std::array<std::int32_t, 2> stretch_y{};
+    Insets nine_patch_padding{};
+    bool nine_patch{};
 };
 
 using UiBitmapCache =
@@ -63,10 +67,14 @@ struct FixedTextMetrics final {
     constexpr auto operator<=>(const FixedTextMetrics&) const = default;
 };
 
-// Deterministic built-in 5x7 uppercase/digit font. Lowercase folds to
-// uppercase; unsupported glyphs, multiline text and invalid sizes fail.
+// Deterministic built-in 5x7 ASCII font. Unsupported glyphs and invalid sizes
+// fail explicitly.
 [[nodiscard]] FixedTextMetrics MeasureFixedText(std::u16string_view text,
                                                 float size_px, std::uint32_t style = 0);
+[[nodiscard]] std::u16string WrapFixedText(std::u16string_view text,
+                                           float size_px, std::uint32_t style,
+                                           std::int32_t width_px,
+                                           std::int32_t max_lines);
 
 [[nodiscard]] UiRenderList BuildUiRenderList(const UiTree& tree,
                                              const UiBitmapCache& bitmaps);

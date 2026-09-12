@@ -266,6 +266,9 @@ struct DexVmAndroidContext final {
     // Editable instance handle -> owning EditText handle; the text itself
     // lives in the interpreter's builder buffer of the owner.
     std::unordered_map<std::uint32_t, std::uint32_t> editable_owner;
+    std::unordered_map<std::uint32_t, std::vector<dexvm::VmObjectRef>>
+        text_watchers;
+    dexvm::VmObjectRef focused_edit_text;
 
     // Cached service/singleton intrinsic instances by handler-defined key.
     std::unordered_map<std::string, dexvm::VmObjectRef> singletons;
@@ -526,6 +529,17 @@ struct DexVmAndroidContext final {
         ui_view_layout_params;
     std::unordered_map<std::uint32_t, ui::ImageScaleType>
         ui_image_scale_types;
+    struct UiDrawableState final {
+        std::uint32_t resource_id{};
+        std::optional<std::uint32_t> color;
+        std::uint8_t alpha{255};
+        ui::Rect bounds;
+        std::optional<ui::UiNodeId> callback_node;
+    };
+    // View owns the guest Drawable reference; immutable decoded pixels remain
+    // shared in ui_bitmaps while alpha/bounds stay per Drawable instance.
+    std::unordered_map<std::uint64_t, dexvm::VmObjectRef> ui_view_backgrounds;
+    std::unordered_map<std::uint64_t, UiDrawableState> ui_drawables;
     // VideoView -> OnCompletionListener. The guest video pump fires it once
     // at end of stream; fallback completion is also deferred to that boundary
     // so callbacks never run re-entrantly inside start().
@@ -685,6 +699,10 @@ void BindViewToUiNode(DexVmAndroidContext& context,
 [[nodiscard]] dexvm::VmObjectRef ViewObjectForUiNode(
     const DexVmAndroidContext& context, ui::UiNodeId node);
 void ResetViewUiState(DexVmAndroidContext& context);
+void InitializeDefaultViewBackground(dexvm::Interpreter& vm,
+                                     DexVmAndroidContext& context,
+                                     dexvm::VmObjectRef view,
+                                     ui::UiNodeId node);
 
 // True when the view's derived bounds contain the point (up-inside check of
 // a click gesture).

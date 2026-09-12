@@ -874,3 +874,21 @@ Runtime.exit 按原版先启动全部 hook 再 join；halt 跳过 hook。无限�
 纯 Java 会话的 root join 同样表示统一 Clock 的帧驱动阻塞。worker 的 timed wait 在该事实下
 复用既有串行 deadline 补时机制；不创建新计时源，也不让正常 runnable root 下的 worker
 自行推进时间。验证包括真实 LogManager Handler 清理、timed hook 与 Activity/Application 退出。
+
+
+<a id="adr-0057"></a>
+## ADR-0057 · Builder 字段唯一所有权与 String 快照边界
+
+2026-09-12，接受，DVM-151。
+
+AbstractStringBuilder、StringBuilder、StringBuffer 与 IntegralToString 一次性切换为固定 API 19
+BootDex；删除全部 builder 内容侧表和普通方法 overlay，不保留按方法渐进迁移开关。
+RealToString 的原生 digit generator 只读写原版字段；其余转换、追加与同步执行原版 Java。
+Character 暂留现有 wrapper 边界，五个 UTF-16 array 原语不读取 builder 字段或保存内容。
+
+String 仍使用现有 VM/JNI immutable UTF-16 store；内部 (II[C)V 构造将区间复制为独立快照。
+不声称物理共享 AOSP String.value 数组，也不在 String 中增加另一份 guest 字段表示。
+Builder 的 shared 标志、detach、capacity 与 count 均由原版 Java 决定；保守复制可能多一次
+分配，但已返回 String 的内容不受后续编辑影响。反射访问 String 私有 value/offset/count 及
+物理数组别名不是当前 VM String 契约。若以后迁移 String，必须统一 JNI store 和 GC owner，
+不得靠双写恢复影子数组。本次保留 builder 字段引用的精确 GC 强边和对象流原版序列化格式。

@@ -824,18 +824,6 @@ Interpreter::Interpreter(DexClassLinker& linker, JavaObjectModel& model,
         },
         {}});
     RegisterIntrinsicStateTable({
-        "builder", {},
-        [state = impl_.get()](const VmObjectRef owner) {
-            state->builders.erase(owner.Value());
-        },
-        [state = impl_.get()](const VmObjectRef source,
-                              const VmObjectRef clone) {
-            const auto found = state->builders.find(source.Value());
-            if (found != state->builders.end()) {
-                state->builders[clone.Value()] = found->second;
-            }
-        }});
-    RegisterIntrinsicStateTable({
         "io",
         {}, // File resources and decoders contain no Java references.
         [state = impl_.get()](const VmObjectRef owner) {
@@ -1330,10 +1318,6 @@ VmObjectRef Interpreter::CloneObject(const VmObjectRef source) {
         if (table.clone) table.clone(source, clone);
     }
     return clone;
-}
-
-std::u16string& Interpreter::BuilderBuffer(const VmObjectRef instance) {
-    return impl_->builders[instance.Value()];
 }
 
 std::optional<std::string> Interpreter::GetSystemProperty(

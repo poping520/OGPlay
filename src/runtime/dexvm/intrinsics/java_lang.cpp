@@ -1604,6 +1604,80 @@ IntrinsicClassDecl Declare_java_lang_Character() {
     builder.StaticMethod("highSurrogate", "(I)C", [](IntrinsicContext& c){return VmValue::Int(static_cast<std::uint16_t>(((c.arguments[0].AsInt()-0x10000)>>10)+0xd800));});
     builder.StaticMethod("lowSurrogate", "(I)C", [](IntrinsicContext& c){return VmValue::Int(static_cast<std::uint16_t>(((c.arguments[0].AsInt()-0x10000)&0x3ff)+0xdc00));});
     builder.StaticMethod("reverseBytes", "(C)C", [](IntrinsicContext& c){return VmValue::Int(ByteSwap(static_cast<std::uint16_t>(c.arguments[0].AsInt())));});
+    // UTF-16 array primitives for the pinned builder bytecode. No builder state.
+    builder.StaticMethod("toChars", "(I)[C", [](IntrinsicContext& c) {
+        const auto cp = c.arguments[0].AsInt();
+        if (cp < 0 || cp > 0x10ffff)
+            throw VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "invalid code point"};
+        const std::u16string text = cp < 0x10000
+            ? std::u16string(1, static_cast<char16_t>(cp))
+            : std::u16string{static_cast<char16_t>(0xd800 + ((cp - 0x10000) >> 10)),
+                             static_cast<char16_t>(0xdc00 + ((cp - 0x10000) & 0x3ff))};
+        const auto array = c.vm.Model().NewPrimitiveArray(
+            c.vm.Linker().ResolveDescriptor("[C"), JniPrimitiveKind::character,
+            static_cast<JniSize>(text.size()));
+        for (std::size_t i = 0; i < text.size(); ++i)
+            c.vm.Model().SetPrimitiveElement(array, static_cast<JniSize>(i), text[i]);
+        return VmValue::Ref(array);
+    });
+    const auto pair = [](char16_t h, char16_t l) {
+        return h >= 0xd800 && h <= 0xdbff && l >= 0xdc00 && l <= 0xdfff;
+    };
+    builder.StaticMethod("codePointAt", "([CII)I", [pair](IntrinsicContext& c) {
+        const auto array = RequireArray(c.arguments[0].ref);
+        const auto i = c.arguments[1].AsInt(), limit = c.arguments[2].AsInt();
+        if (i < 0 || i >= limit || limit > c.vm.Model().ArrayLength(array))
+            throw VmJavaThrow{"Ljava/lang/IndexOutOfBoundsException;", "invalid code point range"};
+        const auto text = CharsValue(c, array, i, std::min(2, limit - i));
+        return VmValue::Int(text.size() == 2 && pair(text[0], text[1])
+            ? 0x10000 + ((text[0] - 0xd800) << 10) + text[1] - 0xdc00 : text[0]);
+    });
+    builder.StaticMethod("codePointBefore", "([CI)I", [pair](IntrinsicContext& c) {
+        const auto array = RequireArray(c.arguments[0].ref);
+        const auto i = c.arguments[1].AsInt();
+        if (i < 1 || i > c.vm.Model().ArrayLength(array))
+            throw VmJavaThrow{"Ljava/lang/IndexOutOfBoundsException;", "invalid code point index"};
+        const auto n = std::min(2, i);
+        const auto text = CharsValue(c, array, i - n, n);
+        return VmValue::Int(n == 2 && pair(text[0], text[1])
+            ? 0x10000 + ((text[0] - 0xd800) << 10) + text[1] - 0xdc00 : text.back());
+    });
+    builder.StaticMethod("codePointCount", "([CII)I", [pair](IntrinsicContext& c) {
+        const auto array = RequireArray(c.arguments[0].ref);
+        const auto offset = c.arguments[1].AsInt(), count = c.arguments[2].AsInt();
+        const auto length = c.vm.Model().ArrayLength(array);
+        if (offset < 0 || count < 0 || offset > length || count > length - offset)
+            throw VmJavaThrow{"Ljava/lang/IndexOutOfBoundsException;", "invalid code point range"};
+        const auto text = CharsValue(c, array, offset, count);
+        int result = 0;
+        for (std::size_t i = 0; i < text.size(); ++i, ++result)
+            if (i + 1 < text.size() && pair(text[i], text[i + 1])) ++i;
+        return VmValue::Int(result);
+    });
+    builder.StaticMethod("offsetByCodePoints", "([CIIII)I", [pair](IntrinsicContext& c) {
+        const auto array = RequireArray(c.arguments[0].ref);
+        const auto start = c.arguments[1].AsInt(), count = c.arguments[2].AsInt();
+        auto index = c.arguments[3].AsInt();
+        auto offset = c.arguments[4].AsInt();
+        const auto length = c.vm.Model().ArrayLength(array);
+        if (start < 0 || count < 0 || start > length || count > length - start ||
+            index < start || index > start + count)
+            throw VmJavaThrow{"Ljava/lang/IndexOutOfBoundsException;", "invalid code point range"};
+        const auto text = CharsValue(c, array, start, count);
+        index -= start;
+        while (offset > 0 && index < count) {
+            if (index + 1 < count && pair(text[index], text[index + 1])) ++index;
+            ++index; --offset;
+        }
+        while (offset < 0 && index > 0) {
+            --index;
+            if (index > 0 && pair(text[index - 1], text[index])) --index;
+            ++offset;
+        }
+        if (offset != 0)
+            throw VmJavaThrow{"Ljava/lang/IndexOutOfBoundsException;", "code point offset out of range"};
+        return VmValue::Int(start + index);
+    });
     builder.ClassInitializer([](IntrinsicContext& c) { InitializeType(c, "Ljava/lang/Character;", "C"); return VmValue::Void(); });
     return std::move(builder).Build();
 }
@@ -2006,6 +2080,15 @@ IntrinsicClassDecl Declare_java_lang_String() {
                     CharsValue(context, array, 0, model.ArrayLength(array)));
                 return VmValue::Void();
             });
+    // String remains the VM/JNI immutable UTF-16 owner. Snapshot the input:
+    // builder fields/arrays remain the only mutable content source.
+    builder.Constructor("(II[C)V", [](IntrinsicContext& c) {
+        const auto array = RequireArray(c.arguments[2].ref);
+        const auto offset = c.arguments[0].AsInt(), count = c.arguments[1].AsInt();
+        CheckRegion(c.vm.Model().ArrayLength(array), offset, count);
+        c.vm.Model().BindString(c.receiver, CharsValue(c, array, offset, count));
+        return VmValue::Void();
+    }, 0);
     builder.Constructor("([CII)V",
         [](IntrinsicContext& context) {
                 auto& model = context.vm.Model();
@@ -2185,7 +2268,7 @@ IntrinsicClassDecl Declare_java_lang_String() {
                 return VmValue::Int(
                     haystack.find(needle) != std::u16string::npos ? 1 : 0);
             });
-    builder.FinalMethod("getChars", "(II[CI)V",
+    const IntrinsicHandler copy_chars =
         [](IntrinsicContext& context) {
                 auto& model = context.vm.Model();
                 const auto value = Value(context, context.receiver);
@@ -2213,7 +2296,9 @@ IntrinsicClassDecl Declare_java_lang_String() {
                         value[static_cast<std::size_t>(src_begin + index)]);
                 }
                 return VmValue::Void();
-            });
+            };
+    builder.FinalMethod("getChars", "(II[CI)V", copy_chars);
+    builder.FinalMethod("_getChars", "(II[CI)V", copy_chars, 0);
     builder.FinalMethod("toCharArray", "()[C",
         [](IntrinsicContext& context) {
                 auto& vm = context.vm;
@@ -2484,390 +2569,133 @@ IntrinsicClassDecl Declare_java_lang_String() {
 }  // namespace ogplay::runtime::dexvm::intrinsics
 
 
-// ---- migrated from java_lang_StringBuffer.cpp ----
-#include "catalog.h"
-#include "shared.h"
+namespace ogplay::runtime::dexvm::intrinsics {
 
-#include "ogplay/runtime/dexvm/intrinsic_builder.h"
-
-namespace ogplay::runtime::dexvm::intrinsics::detail {
-
-[[nodiscard]] IntrinsicClassDecl DeclareStringBuilderLike(
-    const std::string_view descriptor) {
-    const std::string self(descriptor);
-    auto builder = IntrinsicClassBuilder::Class(
-        self, "Ljava/lang/AbstractStringBuilder;",
-        {"Ljava/io/Serializable;", "Ljava/lang/CharSequence;",
-         "Ljava/lang/Appendable;"},
-        kAccPublic | kAccFinal);
-    builder.Constructor("()V", [](IntrinsicContext& context) {
-        context.vm.BuilderBuffer(context.receiver).clear();
-        return VmValue::Void();
-    });
-    builder.Constructor("(I)V", [](IntrinsicContext& context) {
-        context.vm.BuilderBuffer(context.receiver).clear();
-        return VmValue::Void();
-    });
-    builder.Constructor("(Ljava/lang/String;)V", [](IntrinsicContext& context) {
-        context.vm.BuilderBuffer(context.receiver) =
-            Value(context, context.arguments[0].ref);
-        return VmValue::Void();
-    });
-    builder.Constructor("(Ljava/lang/CharSequence;)V",
-        [](IntrinsicContext& context) {
-            const auto source = context.arguments[0].ref;
-            if (!source.IsValid()) {
-                throw VmJavaThrow{"Ljava/lang/NullPointerException;",
-                                  "sequence == null"};
-            }
-            const auto length = InvokeGuest(context.vm, source, "length", "()I").AsInt();
-            std::u16string text;
-            text.reserve(static_cast<std::size_t>(length));
-            for (auto index = 0; index < length; ++index) {
-                text.push_back(static_cast<char16_t>(InvokeGuest(
-                    context.vm, source, "charAt", "(I)C",
-                    {VmValue::Int(index)}).AsInt()));
-            }
-            context.vm.BuilderBuffer(context.receiver) = std::move(text);
-            return VmValue::Void();
-        });
-    builder.FinalMethod("append", "(Ljava/lang/String;)" + self,
-        [](IntrinsicContext& context) {
-            const auto argument = context.arguments[0].ref;
-            context.vm.BuilderBuffer(context.receiver) +=
-                argument.IsValid() ? Value(context, argument)
-                                   : std::u16string(u"null");
-            return BuilderSelf(context);
-        });
-    builder.FinalMethod(
-        "append", "(Ljava/lang/CharSequence;II)" + self, [](IntrinsicContext& context) {
-            const auto source = context.arguments[0].ref;
-            const auto start = context.arguments[1].AsInt();
-            const auto end = context.arguments[2].AsInt();
-            // CharSequence indices are UTF-16 code units. Snapshot before
-            // appending so self-append and guest callbacks cannot invalidate
-            // the receiver's buffer reference.
-            if (start < 0 || end < start ||
-                end > (source.IsValid()
-                           ? InvokeGuest(context.vm, source, "length", "()I").AsInt()
-                           : 4)) {
-                throw VmJavaThrow{"Ljava/lang/IndexOutOfBoundsException;",
-                                  "invalid CharSequence append range"};
-            }
-            std::u16string text;
-            for (auto index = start; index < end; ++index) {
-                text.push_back(source.IsValid()
-                                   ? static_cast<char16_t>(
-                                         InvokeGuest(context.vm, source, "charAt",
-                                                     "(I)C", {VmValue::Int(index)})
-                                             .AsInt())
-                                   : u"null"[index]);
-            }
-            context.vm.BuilderBuffer(context.receiver) += text;
-            return BuilderSelf(context);
-        });
-    builder.FinalMethod("append", "(Ljava/lang/CharSequence;)" + self,
-        [](IntrinsicContext& context) {
-            const auto source = context.arguments[0].ref;
-            const auto length = source.IsValid()
-                                    ? InvokeGuest(context.vm, source, "length", "()I").AsInt()
-                                    : 4;
-            std::u16string text;
-            text.reserve(static_cast<std::size_t>(length));
-            for (auto index = 0; index < length; ++index) {
-                text.push_back(source.IsValid()
-                                   ? static_cast<char16_t>(InvokeGuest(
-                                         context.vm, source, "charAt", "(I)C",
-                                         {VmValue::Int(index)}).AsInt())
-                                   : u"null"[index]);
-            }
-            context.vm.BuilderBuffer(context.receiver) += text;
-            return BuilderSelf(context);
-        });
-    builder.FinalMethod("append", "(Ljava/lang/Object;)" + self,
-        [](IntrinsicContext& context) {
-            const auto argument = context.arguments[0].ref;
-            auto& buffer = context.vm.BuilderBuffer(context.receiver);
-            if (!argument.IsValid()) {
-                buffer += u"null";
-            } else {
-                auto& model = context.vm.Model();
-                const auto kind = model.Kind(argument);
-                if (kind == VmObjectKind::string ||
-                    kind == VmObjectKind::external) {
-                    buffer += Value(context, argument);
-                } else {
-                    buffer += Widen("@" + std::to_string(argument.Value()));
-                }
-            }
-            return BuilderSelf(context);
-        });
-    builder.FinalMethod("append", "(I)" + self, [](IntrinsicContext& context) {
-        context.vm.BuilderBuffer(context.receiver) +=
-            Widen(std::to_string(context.arguments[0].AsInt()));
-        return BuilderSelf(context);
-    });
-    builder.FinalMethod("append", "(J)" + self, [](IntrinsicContext& context) {
-        context.vm.BuilderBuffer(context.receiver) +=
-            Widen(std::to_string(context.arguments[0].AsLong()));
-        return BuilderSelf(context);
-    });
-    builder.FinalMethod("append", "(Z)" + self, [](IntrinsicContext& context) {
-        context.vm.BuilderBuffer(context.receiver) +=
-            context.arguments[0].AsInt() != 0 ? u"true"
-                                              : std::u16string(u"false");
-        return BuilderSelf(context);
-    });
-    builder.FinalMethod("append", "(C)" + self, [](IntrinsicContext& context) {
-        context.vm.BuilderBuffer(context.receiver) +=
-            static_cast<char16_t>(context.arguments[0].cat1 & 0xffffU);
-        return BuilderSelf(context);
-    });
-    builder.FinalMethod("append", "([C)" + self, [](IntrinsicContext& context) {
-        const auto array = RequireArray(context.arguments[0].ref);
-        context.vm.BuilderBuffer(context.receiver) += CharsValue(
-            context, array, 0, context.vm.Model().ArrayLength(array));
-        return BuilderSelf(context);
-    });
-    builder.FinalMethod("append", "([CII)" + self, [](IntrinsicContext& context) {
-        const auto array = RequireArray(context.arguments[0].ref);
-        const auto offset = context.arguments[1].AsInt();
-        const auto length = context.arguments[2].AsInt();
-        CheckRegion(context.vm.Model().ArrayLength(array), offset, length);
-        context.vm.BuilderBuffer(context.receiver) +=
-            CharsValue(context, array, offset, length);
-        return BuilderSelf(context);
-    });
-    builder.FinalMethod("append", "(F)" + self, [](IntrinsicContext& context) {
-        context.vm.BuilderBuffer(context.receiver) +=
-            Widen(std::to_string(context.arguments[0].AsFloat()));
-        return BuilderSelf(context);
-    });
-    builder.FinalMethod("append", "(D)" + self, [](IntrinsicContext& context) {
-        context.vm.BuilderBuffer(context.receiver) +=
-            Widen(std::to_string(context.arguments[0].AsDouble()));
-        return BuilderSelf(context);
-    });
-    builder.FinalOverrideMethod("toString", "()Ljava/lang/String;",
-        [](IntrinsicContext& context) {
-            return Make(context, context.vm.BuilderBuffer(context.receiver));
-        });
-    builder.FinalMethod("length", "()I", [](IntrinsicContext& context) {
-        return VmValue::Int(static_cast<std::int32_t>(
-            context.vm.BuilderBuffer(context.receiver).size()));
-    });
-    builder.FinalMethod("charAt", "(I)C", [](IntrinsicContext& context) {
-        auto& buffer = context.vm.BuilderBuffer(context.receiver);
-        const auto index = context.arguments[0].AsInt();
-        CheckBuilderIndex(buffer, index);
-        return VmValue::Int(buffer[static_cast<std::size_t>(index)]);
-    });
-    builder.FinalMethod("setLength", "(I)V", [](IntrinsicContext& c) {
-        const auto length = c.arguments[0].AsInt();
-        if (length < 0) throw VmJavaThrow{"Ljava/lang/StringIndexOutOfBoundsException;", "negative length"};
-        c.vm.BuilderBuffer(c.receiver).resize(static_cast<std::size_t>(length), u'\0');
-        return VmValue::Void();
-    });
-    builder.FinalMethod("setCharAt", "(IC)V", [](IntrinsicContext& context) {
-        auto& buffer = context.vm.BuilderBuffer(context.receiver);
-        const auto index = context.arguments[0].AsInt();
-        CheckBuilderIndex(buffer, index);
-        buffer[static_cast<std::size_t>(index)] =
-            static_cast<char16_t>(context.arguments[1].cat1 & 0xffffU);
-        return VmValue::Void();
-    });
-    builder.FinalMethod("deleteCharAt", "(I)" + self,
-        [](IntrinsicContext& context) {
-            auto& buffer = context.vm.BuilderBuffer(context.receiver);
-            const auto index = context.arguments[0].AsInt();
-            CheckBuilderIndex(buffer, index);
-            buffer.erase(buffer.begin() + index);
-            return VmValue::Ref(context.receiver);
-        });
-    builder.FinalMethod("insert", "(IC)" + self, [](IntrinsicContext& context) {
-        auto& buffer = context.vm.BuilderBuffer(context.receiver);
-        const auto index = context.arguments[0].AsInt();
-        if (index < 0 || static_cast<std::size_t>(index) > buffer.size()) {
-            throw VmJavaThrow{"Ljava/lang/StringIndexOutOfBoundsException;",
-                              "insert offset " + std::to_string(index)};
+namespace {
+// Fixed scratch magnitude for the API19 native decimal generator (maximum
+// double exponent needs fewer than 1408 bits, as in AOSP cbigint's 22 limbs).
+// Never stored on a Java object or exposed as a general big-number facility.
+class DecimalMagnitude final {
+    std::array<std::uint32_t, 44> words_{};
+public:
+    DecimalMagnitude(std::uint64_t value = 0) {
+        words_[0] = static_cast<std::uint32_t>(value);
+        words_[1] = static_cast<std::uint32_t>(value >> 32);
+    }
+    void Multiply(unsigned factor) {
+        std::uint64_t carry = 0;
+        for (auto& word : words_) {
+            const auto product = std::uint64_t(word) * factor + carry;
+            word = static_cast<std::uint32_t>(product); carry = product >> 32;
         }
-        buffer.insert(buffer.begin() + index,
-                      static_cast<char16_t>(context.arguments[1].cat1 & 0xffffU));
-        return VmValue::Ref(context.receiver);
-    });
-    builder.FinalMethod("insert", "(ILjava/lang/String;)" + self,
-        [](IntrinsicContext& context) {
-            auto& buffer = context.vm.BuilderBuffer(context.receiver);
-            const auto index = context.arguments[0].AsInt();
-            if (index < 0 || static_cast<std::size_t>(index) > buffer.size()) {
-                throw VmJavaThrow{"Ljava/lang/StringIndexOutOfBoundsException;",
-                                  "invalid insert offset"};
+        if (carry) throw DexVmError(DexVmErrorReason::internal_invariant, "decimal scratch overflow");
+    }
+    DecimalMagnitude Shift(int bits) const {
+        auto result = *this;
+        for (int i = 0; i < bits; ++i) result.Multiply(2);
+        return result;
+    }
+    int Compare(const DecimalMagnitude& other) const {
+        for (std::size_t i = words_.size(); i-- > 0;)
+            if (words_[i] != other.words_[i]) return words_[i] < other.words_[i] ? -1 : 1;
+        return 0;
+    }
+    DecimalMagnitude Plus(const DecimalMagnitude& other) const {
+        auto result = *this;
+        std::uint64_t carry = 0;
+        for (std::size_t i = 0; i < words_.size(); ++i) {
+            const auto sum = std::uint64_t(words_[i]) + other.words_[i] + carry;
+            result.words_[i] = static_cast<std::uint32_t>(sum); carry = sum >> 32;
+        }
+        if (carry) throw DexVmError(DexVmErrorReason::internal_invariant, "decimal scratch overflow");
+        return result;
+    }
+    void Subtract(const DecimalMagnitude& other) {
+        std::uint64_t borrow = 0;
+        for (std::size_t i = 0; i < words_.size(); ++i) {
+            const auto sub = std::uint64_t(other.words_[i]) + borrow;
+            borrow = std::uint64_t(words_[i]) < sub;
+            words_[i] = static_cast<std::uint32_t>(std::uint64_t(words_[i]) - sub);
+        }
+        if (borrow) throw DexVmError(DexVmErrorReason::internal_invariant, "decimal scratch underflow");
+    }
+};
+} // namespace
+
+IntrinsicClassDecl Declare_java_lang_RealToString() {
+    auto builder = IntrinsicClassBuilder::Class("Ljava/lang/RealToString;",
+                                               "Ljava/lang/Object;", {}, kAccFinal);
+    const auto digits = builder.BoundInstanceField("digits", "[I", kAccPrivate | kAccFinal);
+    const auto count = builder.BoundInstanceField("digitCount", "I", kAccPrivate);
+    const auto first = builder.BoundInstanceField("firstK", "I", kAccPrivate);
+    builder.DirectMethod("bigIntDigitGenerator", "(JIZI)V",
+        [digits, count, first](IntrinsicContext& context) {
+            // Apache-2.0 AOSP libcore java_lang_RealToString.cpp, API 19:
+            // the same Burger/Dybvig intervals and rounding, using checked
+            // multiprecision values instead of cbigint limb scratch buffers.
+            // Only this original native digit generator lives on the host;
+            // presentation and all append operations remain Java bytecode.
+            const IntrinsicCall c(context);
+            const auto f = c.Long(0);
+            const auto e = c.Int(1), p = c.Int(3);
+            if (f <= 0 || f > (std::int64_t{1} << 53) || e < -1074 || e > 1023 ||
+                p < 1 || p > 53)
+                throw VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "invalid floating digit input"};
+            DecimalMagnitude r, s, plus, minus;
+            const bool boundary = static_cast<std::uint64_t>(f) == (std::uint64_t{1} << p);
+            if (e >= 0) {
+                minus = DecimalMagnitude(1).Shift(e);
+                if (!boundary) {
+                    r = DecimalMagnitude(f).Shift(e + 1); s = 2; plus = minus;
+                } else {
+                    r = DecimalMagnitude(f).Shift(e + 2); s = 4; plus = DecimalMagnitude(1).Shift(e + 1);
+                }
+            } else if (c.Int(2) != 0 || !boundary) {
+                r = DecimalMagnitude(f).Shift(1); s = DecimalMagnitude(1).Shift(1 - e); plus = minus = 1;
+            } else {
+                r = DecimalMagnitude(f).Shift(2); s = DecimalMagnitude(1).Shift(2 - e); plus = 2; minus = 1;
             }
-            const auto string = context.arguments[1].ref;
-            const auto text = string.IsValid() ? Value(context, string)
-                                               : std::u16string(u"null");
-            buffer.insert(static_cast<std::size_t>(index), text);
-            return VmValue::Ref(context.receiver);
-        });
-    builder.FinalMethod("insert", "(I[C)" + self,
-        [](IntrinsicContext& context) {
-            auto& buffer = context.vm.BuilderBuffer(context.receiver);
-            const auto index = context.arguments[0].AsInt();
-            if (index < 0 || static_cast<std::size_t>(index) > buffer.size()) {
-                throw VmJavaThrow{"Ljava/lang/StringIndexOutOfBoundsException;",
-                                  "invalid insert offset"};
+            const auto k = static_cast<int>(std::ceil((e + p - 1) * 0.30102999566398114 - 1e-10));
+            for (int i = 0; i < std::abs(k); ++i) {
+                if (k > 0) s.Multiply(10);
+                else { r.Multiply(10); plus.Multiply(10); minus.Multiply(10); }
             }
-            const auto array = RequireArray(context.arguments[1].ref);
-            buffer.insert(static_cast<std::size_t>(index), CharsValue(
-                context, array, 0, context.vm.Model().ArrayLength(array)));
-            return VmValue::Ref(context.receiver);
-        });
-    builder.FinalMethod("insert", "(I[CII)" + self,
-        [](IntrinsicContext& context) {
-            auto& buffer = context.vm.BuilderBuffer(context.receiver);
-            const auto index = context.arguments[0].AsInt();
-            const auto array = RequireArray(context.arguments[1].ref);
-            const auto offset = context.arguments[2].AsInt();
-            const auto length = context.arguments[3].AsInt();
-            if (index < 0 || static_cast<std::size_t>(index) > buffer.size()) {
-                throw VmJavaThrow{"Ljava/lang/StringIndexOutOfBoundsException;",
-                                  "invalid insert offset"};
+            int first_k = k;
+            if (r.Plus(plus).Compare(s) < 0) {
+                first_k = k - 1; r.Multiply(10); plus.Multiply(10); minus.Multiply(10);
             }
-            CheckRegion(context.vm.Model().ArrayLength(array), offset, length);
-            buffer.insert(static_cast<std::size_t>(index),
-                          CharsValue(context, array, offset, length));
-            return VmValue::Ref(context.receiver);
-        });
-    builder.FinalMethod("delete", "(II)" + self,
-        [](IntrinsicContext& context) {
-            auto& buffer = context.vm.BuilderBuffer(context.receiver);
-            const auto start = context.arguments[0].AsInt();
-            auto end = context.arguments[1].AsInt();
-            if (start < 0 || start > end ||
-                static_cast<std::size_t>(start) > buffer.size()) {
-                throw VmJavaThrow{"Ljava/lang/StringIndexOutOfBoundsException;",
-                                  "invalid delete range"};
+            const auto array = c.GetRef(digits);
+            const auto capacity = context.vm.Model().ArrayLength(array);
+            if (context.vm.Model().PrimitiveArrayKind(array) != JniPrimitiveKind::integer)
+                throw DexVmError(DexVmErrorReason::internal_invariant, "digit array is not int[]");
+            std::vector<int> generated;
+            for (;;) {
+                int digit = 0;
+                for (int bit = 3; bit >= 0; --bit) {
+                    const auto shifted = s.Shift(bit);
+                    if (r.Compare(shifted) >= 0) { r.Subtract(shifted); digit += 1 << bit; }
+                }
+                const bool low = r.Compare(minus) <= 0, high = r.Plus(plus).Compare(s) >= 0;
+                if (static_cast<JniSize>(generated.size()) >= capacity)
+                    throw DexVmError(DexVmErrorReason::internal_invariant, "digit array exhausted");
+                if (low || high) {
+                    if ((high && !low) || (high && low && r.Shift(1).Compare(s) >= 0)) ++digit;
+                    generated.push_back(digit);
+                    break;
+                }
+                generated.push_back(digit);
+                r.Multiply(10); plus.Multiply(10); minus.Multiply(10);
             }
-            end = std::min(end, static_cast<std::int32_t>(buffer.size()));
-            buffer.erase(static_cast<std::size_t>(start),
-                         static_cast<std::size_t>(end - start));
-            return VmValue::Ref(context.receiver);
-        });
-    builder.FinalMethod("indexOf", "(Ljava/lang/String;)I",
-        [](IntrinsicContext& context) {
-            const auto& buffer = context.vm.BuilderBuffer(context.receiver);
-            const auto found = buffer.find(Value(context, context.arguments[0].ref));
-            return VmValue::Int(found == std::u16string::npos
-                                    ? -1
-                                    : static_cast<std::int32_t>(found));
-        });
-    builder.FinalMethod(
-        "append", "(Ljava/lang/CharSequence;)Ljava/lang/Appendable;",
-        [](IntrinsicContext& context) {
-            const auto source = context.arguments[0].ref;
-            const auto length = source.IsValid()
-                                    ? InvokeGuest(context.vm, source, "length", "()I").AsInt()
-                                    : 4;
-            std::u16string text;
-            text.reserve(static_cast<std::size_t>(length));
-            for (auto index = 0; index < length; ++index) {
-                text.push_back(
-                    source.IsValid()
-                        ? static_cast<char16_t>(InvokeGuest(
-                              context.vm, source, "charAt", "(I)C",
-                              {VmValue::Int(index)}).AsInt())
-                        : u"null"[index]);
-            }
-            context.vm.BuilderBuffer(context.receiver) += text;
-            return VmValue::Ref(context.receiver);
-        }, kAccPublic | kAccFinal | kAccBridge | kAccSynthetic);
-    builder.FinalMethod(
-        "append", "(Ljava/lang/CharSequence;II)Ljava/lang/Appendable;",
-        [](IntrinsicContext& context) {
-            const auto source = context.arguments[0].ref;
-            const auto start = context.arguments[1].AsInt();
-            const auto end = context.arguments[2].AsInt();
-            const auto length = source.IsValid()
-                                    ? InvokeGuest(context.vm, source, "length", "()I").AsInt()
-                                    : 4;
-            if (start < 0 || end < start || end > length) {
-                throw VmJavaThrow{"Ljava/lang/IndexOutOfBoundsException;",
-                                  "invalid CharSequence append range"};
-            }
-            std::u16string text;
-            text.reserve(static_cast<std::size_t>(end - start));
-            for (auto index = start; index < end; ++index) {
-                text.push_back(
-                    source.IsValid()
-                        ? static_cast<char16_t>(InvokeGuest(
-                              context.vm, source, "charAt", "(I)C",
-                              {VmValue::Int(index)}).AsInt())
-                        : u"null"[index]);
-            }
-            context.vm.BuilderBuffer(context.receiver) += text;
-            return VmValue::Ref(context.receiver);
-        }, kAccPublic | kAccFinal | kAccBridge | kAccSynthetic);
-    builder.FinalMethod("append", "(C)Ljava/lang/Appendable;",
-        [](IntrinsicContext& context) {
-            context.vm.BuilderBuffer(context.receiver).push_back(
-                static_cast<char16_t>(context.arguments[0].AsInt()));
-            return VmValue::Ref(context.receiver);
-        }, kAccPublic | kAccFinal | kAccBridge | kAccSynthetic);
+            for (std::size_t i = 0; i < generated.size(); ++i)
+                context.vm.Model().SetPrimitiveElement(array, static_cast<JniSize>(i), generated[i]);
+            c.SetInt(count, static_cast<std::int32_t>(generated.size()));
+            c.SetInt(first, first_k);
+            return VmValue::Void();
+        }, kAccPrivate | kAccNative);
     return std::move(builder).Build();
 }
 
-}  // namespace ogplay::runtime::dexvm::intrinsics::detail
-
-namespace ogplay::runtime::dexvm::intrinsics {
-
-IntrinsicClassDecl Declare_java_lang_AbstractStringBuilder() {
-    return std::move(IntrinsicClassBuilder::Class(
-                         "Ljava/lang/AbstractStringBuilder;",
-                         "Ljava/lang/Object;", {}, kAccAbstract))
-        .Build();
-}
-
-IntrinsicClassDecl Declare_java_lang_IntegralToString() {
-    auto builder = IntrinsicClassBuilder::Class(
-        "Ljava/lang/IntegralToString;", "Ljava/lang/Object;", {}, kAccFinal);
-    builder.StaticMethod(
-        "appendInt", "(Ljava/lang/AbstractStringBuilder;I)V",
-        [](IntrinsicContext& context) {
-            context.vm.BuilderBuffer(context.arguments[0].ref) +=
-                Widen(std::to_string(context.arguments[1].AsInt()));
-            return VmValue::Void();
-        });
-    builder.StaticMethod(
-        "appendLong", "(Ljava/lang/AbstractStringBuilder;J)V",
-        [](IntrinsicContext& context) {
-            context.vm.BuilderBuffer(context.arguments[0].ref) +=
-                Widen(std::to_string(context.arguments[1].AsLong()));
-            return VmValue::Void();
-        });
-    return std::move(builder).Build();
-}
-
-IntrinsicClassDecl Declare_java_lang_StringBuffer() {
-    return detail::DeclareStringBuilderLike("Ljava/lang/StringBuffer;");
-}
-
-}  // namespace ogplay::runtime::dexvm::intrinsics
-
-
-// ---- migrated from java_lang_StringBuilder.cpp ----
-#include "catalog.h"
-#include "shared.h"
-
-#include "ogplay/runtime/dexvm/intrinsic_builder.h"
-
-namespace ogplay::runtime::dexvm::intrinsics {
-
-IntrinsicClassDecl Declare_java_lang_StringBuilder() {
-    return detail::DeclareStringBuilderLike("Ljava/lang/StringBuilder;");
-}
-
-}  // namespace ogplay::runtime::dexvm::intrinsics
-
+} // namespace ogplay::runtime::dexvm::intrinsics
 
 // ---- migrated from java_lang_System.cpp ----
 #include "catalog.h"

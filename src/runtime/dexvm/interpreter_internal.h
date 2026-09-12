@@ -120,7 +120,6 @@ public:
     std::uint64_t next_execution_token{2};
 
     std::unordered_map<std::uint32_t, ThrowableState> throwables;
-    std::unordered_map<std::uint32_t, std::u16string> builders;
     std::unordered_map<std::uint32_t, VmObjectRef> enum_constant_arrays;
     BigIntRuntime big_ints;
     struct GuestNativeResource final { VmMethodId cleanup; std::int64_t token; };

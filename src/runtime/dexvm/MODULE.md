@@ -115,3 +115,11 @@ Runtime singleton、hook List、shuttingDown 与 add/remove/exit/halt 普通方�
 context，通过 thread_stopped 展开而非 Java Throwable；退出后 Call 明确拒绝。RequestShutdown
 只发布停止和唤醒，不 join；进程所有者在 guest 栈退出后负责 Shutdown/join。Thread 未捕获
 异常仍走现有 handler/进程失败策略，不为 hook 吞异常。宿主取消不等于 Runtime.exit。
+
+### DVM-151 Builder
+
+AbstractStringBuilder/StringBuilder/StringBuffer、IntegralToString 与 RealToString 的普通 Java
+逻辑执行固定 API19 BootDex；前三者及 IntegralToString 无 intrinsic overlay。builder 的
+value/count/shared 是唯一状态，无宿主 builder map。String 内部构造按既有 immutable
+store 契约复制快照；GC 追踪 builder.value，Java 自行维护 shared/COW 与序列化 hooks。
+RealToString 只保留 bigIntDigitGenerator native，字段经绑定 handle，临时数值不跨调用保存。

@@ -1,5 +1,10 @@
 # 当前状态
 
+- [DVM-151](../tasks/dexvm/DVM-151.md) 已实现三个 builder 的 BootDex 切换：宿主 BuilderBuffer
+  与重复 intrinsic 已删除，value/count/shared 为唯一可变状态；12 个定向用例、14808 条断言通过。
+  本地 BootDex 为 1415 类，架构门禁通过。双后端真实 APK 非 survey 已越过 StringBuilder.substring，
+  当前首错前移至 InetAddress.getLocalHost；不宣称完整 Terms/在线请求已验收。
+
 - [DVM-150](../tasks/dexvm/DVM-150.md) 已替换 addShutdownHook 临时绕过：Runtime 的注册、
   移除和 exit/halt 协议执行原版 BootDex，System.exit 进入同一流程；退出码按 VM 保存，
   worker 不自 join，Application/Activity 显式退出后进程进入 stopped。真实 LogManager
@@ -9,8 +14,8 @@
 - [DVM-149](../tasks/dexvm/DVM-149.md) 的 Apache HTTP 阻塞已前移：固定 API 19 ext.jar
   选入 329 类 Terms/Restlet 闭包（含 Commons Logging 反射实现），加两个 core 层级依赖后
   本地 BootDex 为 1407 类且全链接。双后端验证 BasicHttpParams、Restlet HTTP client 构造
-  与日志写出；真实 APK 已输出 `Starting the Apache HTTP client`，当前首错为 Restlet
-  `Reference.normalize()` 缺 `StringBuilder.substring(II)`。TLS 配置仍明确不支持，完整在线
+  与日志写出；真实 APK 已输出 `Starting the Apache HTTP client`，当时首错为 Restlet
+  `Reference.normalize()` 缺 `StringBuilder.substring(II)`，现已由 DVM-151 越过。TLS 配置仍明确不支持，完整在线
   请求和 Dialog presentation 未验收；本地 bootdex.jar 不提交。
 
 - [DVM-148](../tasks/dexvm/DVM-148.md) 已完成：真实 PvZ 非 survey Terms 页面使用横屏资源、
@@ -51,7 +56,7 @@
 ## 当前能力
 
 - **发行与 VM**：Profile 按 API 选择 bundled data。API 19 提供 AOSP guest 库、
-  OpenSSL、ICU 51.1、本地验证用 1407 类 BootDex 与 ICU 数据；来源和校验见
+  OpenSSL、ICU 51.1、本地验证用 1415 类 BootDex 与 ICU 数据；来源和校验见
   [manifest](../../data/android/19/manifest.json)。普通 Java 状态归字段/数组，JNI 使用
   VM 真实类型关系。
 - **Java/密码/ICU**：已覆盖常用集合、并发、IO、序列化、反射、framework 值类、日期与

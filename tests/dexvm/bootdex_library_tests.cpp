@@ -1566,7 +1566,7 @@ TEST_CASE("DVM-103 all BootDex classes link and collection methods have no intri
         for (const auto method : f.linker.Class(type).own_direct_methods)
             CHECK(f.linker.Method(method).kind != MethodKind::intrinsic);
     }
-    CHECK(count == 1407);
+    CHECK(count == 1415);
 }
 
 TEST_CASE("DVM-149 Apache HTTP BootDex supports the Restlet startup object path") {
@@ -2358,5 +2358,37 @@ TEST_CASE("DVM-150 shutdown hook exceptions use the Thread uncaught handler") {
         CHECK(caught == 1);
         CHECK(exception == "Ljava/lang/IllegalStateException;");
         CHECK_FALSE(h.f.threads.TakeFailure().has_value());
+    }
+}
+
+
+TEST_CASE("DVM-151 StringBuffer monitor covers callbacks and releases on exception") {
+    for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        auto receiver = std::make_shared<VmObjectRef>();
+        auto observed = std::make_shared<bool>(false);
+        auto probe = IntrinsicClassBuilder::Class("Ltest/BuilderCallback;");
+        probe.OverrideMethod("toString", "()Ljava/lang/String;",
+            [receiver, observed](IntrinsicContext& c) -> VmValue {
+                *observed = c.vm.Monitors().IsOwner(*receiver, c.vm.CurrentContextToken());
+                throw VmJavaThrow{"Ljava/lang/IllegalStateException;", "callback failure"};
+            });
+        const std::vector<IntrinsicClassDecl> extras{std::move(probe).Build()};
+        Dvm87Vm f(backend, "en", "eng", "USA", "GMT", extras);
+        *receiver = f.vm.NewIntrinsicInstance("Ljava/lang/StringBuffer;");
+        f.Construct(*receiver, "Ljava/lang/StringBuffer;", "()V");
+        const auto object = f.vm.NewIntrinsicInstance("Ltest/BuilderCallback;");
+        const auto roots = f.vm.ProtectReferences(std::array{*receiver, object});
+        const auto token = f.vm.CurrentContextToken();
+        f.vm.Monitors().Enter(*receiver, token);
+        const auto outcome = f.Virtual(*receiver, "append", "(Ljava/lang/Object;)Ljava/lang/StringBuffer;", {VmValue::Ref(object)});
+        REQUIRE(outcome.exception.IsValid());
+        CHECK(f.linker.Class(outcome.exception_class).descriptor == "Ljava/lang/IllegalStateException;");
+        CHECK(*observed);
+        CHECK(f.vm.Monitors().Snapshot(*receiver).recursion == 1);
+        f.vm.Monitors().Exit(*receiver, token);
+        CHECK(f.vm.Monitors().Snapshot(*receiver).recursion == 0);
+        CHECK(f.Virtual(*receiver, "length", "()I").value.AsInt() == 0);
+        f.RequireOk(f.Virtual(*receiver, "append", "(C)Ljava/lang/StringBuffer;", {VmValue::Int('x')}));
+        CHECK(f.vm.StringUtf8(f.Virtual(*receiver, "toString", "()Ljava/lang/String;").value.ref) == "x");
     }
 }

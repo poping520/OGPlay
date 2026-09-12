@@ -515,8 +515,18 @@ Decl Declare_android_graphics_drawable_Drawable(const Context& context) {
         }
         auto& state = context->ui_drawables[call.receiver.Value()];
         state.alpha = static_cast<std::uint8_t>(alpha);
-        if (state.callback_node.has_value() &&
-            context->ui_tree.Get(*state.callback_node) != nullptr) {
+        const auto still_bound = [&]() {
+            if (!state.callback_node.has_value() ||
+                context->ui_tree.Get(*state.callback_node) == nullptr) {
+                return false;
+            }
+            const auto view = context->ui_node_to_object.find(*state.callback_node);
+            if (view == context->ui_node_to_object.end()) return false;
+            const auto current = context->ui_view_backgrounds.find(view->second.Value());
+            return current != context->ui_view_backgrounds.end() &&
+                   current->second == call.receiver;
+        }();
+        if (still_bound) {
             context->ui_tree.Get(*state.callback_node)->background_alpha =
                 static_cast<float>(alpha) / 255.0F;
             context->ui_tree.MarkDrawDirty(*state.callback_node);
@@ -532,8 +542,18 @@ Decl Declare_android_graphics_drawable_Drawable(const Context& context) {
         }
         auto& state = context->ui_drawables[call.receiver.Value()];
         state.bounds = bounds;
-        if (state.callback_node.has_value() &&
-            context->ui_tree.Get(*state.callback_node) != nullptr) {
+        const auto still_bound = [&]() {
+            if (!state.callback_node.has_value() ||
+                context->ui_tree.Get(*state.callback_node) == nullptr) {
+                return false;
+            }
+            const auto view = context->ui_node_to_object.find(*state.callback_node);
+            if (view == context->ui_node_to_object.end()) return false;
+            const auto current = context->ui_view_backgrounds.find(view->second.Value());
+            return current != context->ui_view_backgrounds.end() &&
+                   current->second == call.receiver;
+        }();
+        if (still_bound) {
             context->ui_tree.MarkDrawDirty(*state.callback_node);
         }
         return dx::VmValue::Void();

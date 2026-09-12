@@ -250,6 +250,7 @@ ArscTable ParseArsc(const std::span<const std::uint8_t> bytes) {
                             entry.sdk_version = reader.U16(sub.offset + 44);
                         }
                         if (config_size >= 32) {
+                            entry.screen_layout = reader.U8(sub.offset + 48);
                             entry.smallest_width_dp = reader.U16(sub.offset + 50);
                         }
                         if (config_size >= 36) {

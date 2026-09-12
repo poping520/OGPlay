@@ -105,6 +105,8 @@ void BindPlatformCoreHandlers(
     }
 }
 
+}  // namespace
+
 void VisitAndroidSessionRoots(const DexVmAndroidContext& context,
                               const dx::VmRootVisitor& visit) {
     const auto root = [&](const dx::VmObjectRef ref) {
@@ -198,6 +200,10 @@ void RegisterAndroidOwnerAttachedStateTable(
                 if (const auto found = context->ui_touch_listeners.find(node->second);
                     found != context->ui_touch_listeners.end()) visit_ref(found->second);
             }
+            if (const auto found = context->text_watchers.find(key);
+                found != context->text_watchers.end()) {
+                for (const auto watcher : found->second) visit_ref(watcher);
+            }
             if (const auto found = context->video_completion.find(key);
                 found != context->video_completion.end()) visit_ref(found->second);
             if (const auto found = context->video_errors.find(key);
@@ -231,6 +237,17 @@ void RegisterAndroidOwnerAttachedStateTable(
             context->media_looping.erase(key);
             context->ui_view_layout_params.erase(key);
             context->ui_image_scale_types.erase(key);
+            context->text_watchers.erase(key);
+            if (const auto background = context->ui_view_backgrounds.find(key);
+                background != context->ui_view_backgrounds.end()) {
+                if (auto state = context->ui_drawables.find(
+                        background->second.Value());
+                    state != context->ui_drawables.end()) {
+                    state->second.callback_node.reset();
+                }
+                context->ui_view_backgrounds.erase(background);
+            }
+            context->ui_drawables.erase(key);
             context->video_completion.erase(key);
             context->pending_video_completion.erase(key);
             context->video_errors.erase(key);
@@ -238,8 +255,6 @@ void RegisterAndroidOwnerAttachedStateTable(
         },
         {}});
 }
-
-}  // namespace
 
 class DexVmGuestBridge::Impl final {
 public:

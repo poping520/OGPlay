@@ -88,7 +88,7 @@ note = "LUI-11 实现 horizontal/vertical LinearLayout 的 padding/margin/finite
 [runtime.ui_text_widgets]
 status = "complete"
 test = "tests/runtime/ui_renderer_tests.cpp; tests/dexvm/widget_click_tests.cpp"
-note = "LUI-12 将 TextView/Button text/textColor/textSize/gravity 收敛到 UiNode；内置 5x7 fixed ASCII font 的大小写、按词换行与行高由 measure/raster 共用；DVM-121 增加 compound drawables。Button/TextView 三参构造按实际 Context/Resources 解析 legacy 默认样式及主题继承/别名。DVM-148 已接通 XML widget 默认尺寸、framework textAppearance、配置资源选择、多行排版、ScrollView、TableLayout/TableRow 权重、npTc NinePatch、View 背景 Drawable 身份/alpha 重绘，以及 EditText 数字输入、长度、焦点、Editable.toString/TextWatcher；真实 PvZ Terms 输入 13 后由 guest 更新 accept alpha。状态色列表和完整 Android 字体排版仍不在当前范围"
+note = "LUI-12 将 TextView/Button text/textColor/textSize/gravity 收敛到 UiNode；内置 5x7 fixed ASCII font 的大小写、按词换行与行高由 measure/raster 共用；DVM-121 增加 compound drawables。Button/TextView 三参构造按实际 Context/Resources 解析 legacy 默认样式及主题继承/别名。DVM-148 接通 Terms 所需布局、NinePatch、Drawable 和 EditText；DVM-149 增加 ScrollView 8dp slop/ACTION_CANCEL、背景旧 callback 解绑、统一文本编辑事务及 producer-aware 软件基帧。Dialog presentation、状态色列表和完整 Android 字体排版仍不在当前范围"
 
 [runtime.ui_relative_layout]
 status = "complete"
@@ -98,7 +98,12 @@ note = "LUI-13 实现 parent align/center 与 sibling above/below/left/right/ali
 [runtime.ui_include_resources_images]
 status = "complete"
 test = "tests/dexvm/ui_include_tests.cpp; tests/dexvm/widget_click_tests.cpp; tests/runtime/ui_renderer_tests.cpp; tests/dexvm/arsc_tests.cpp"
-note = "LUI-14 实现 include root/merge 展开、override、depth/cycle guard；Arsc simple type/data 驱动 16 层 string/color/dimen/reference 与 bitmap/color drawable resolver；ImageView XML/Java 共用五种 scaleType 和 exact crop raster。style/selector/qualifier 只按真实命中扩展，当前未命中且保持明确失败边界"
+note = "LUI-14 实现 include root/merge 展开、override、depth/cycle guard；Arsc simple type/data 驱动 16 层 string/color/dimen/reference 与 bitmap/color drawable resolver；ImageView XML/Java 共用五种 scaleType 和 exact crop raster。DVM-149 对已保留的 screenLayout size、方向、sw/w/h、density、SDK 按 API 19 顺序选择，配置变化使 drawable cache 失效；locale 等未保留 qualifier 仍明确在范围外"
+
+[runtime.ui_dialog_presentation]
+status = "unimplemented"
+test = "tests/dexvm/widget_click_tests.cpp"
+note = "DVM-149 禁止 AlertDialog.show 与 WebView.loadUrl 伪成功；Dialog show 记录 runtime.ui.dialog.presentation 后抛 UnsupportedOperationException。受控 modal UiTree 与外部 URI host policy 尚未实现"
 
 [runtime.ui_multi_title_convergence]
 status = "complete"

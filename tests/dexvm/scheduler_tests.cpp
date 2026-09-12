@@ -97,6 +97,21 @@ std::vector<IntrinsicClassDecl> TestCatalog(
             return VmValue::Void();
         });
     result.push_back(std::move(async).Build());
+    auto failing_async = IntrinsicClassBuilder::Class(
+        "Ltest/FailingAsyncTask;", "Landroid/os/AsyncTask;");
+    failing_async.OverrideMethod(
+        "doInBackground", "([Ljava/lang/Object;)Ljava/lang/Object;",
+        [](IntrinsicContext&) -> VmValue {
+            throw DexVmError(DexVmErrorReason::unresolved_reference,
+                             "missing HTTP capability");
+        });
+    failing_async.OverrideMethod(
+        "onPostExecute", "(Ljava/lang/Object;)V",
+        [async_post](IntrinsicContext&) {
+            ++*async_post;
+            return VmValue::Void();
+        });
+    result.push_back(std::move(failing_async).Build());
     return result;
 }
 
@@ -478,4 +493,24 @@ TEST_CASE("DVM-85 AsyncTask runs background work then posts to main") {
     const auto name = fixture.Virtual(
         status, "name", "()Ljava/lang/String;").value.ref;
     CHECK(fixture.vm.StringUtf8(name) == "FINISHED");
+}
+
+TEST_CASE("AsyncTask preserves background DexVmError and never posts null") {
+    SchedulerVm fixture;
+    const auto task = fixture.New("Ltest/FailingAsyncTask;");
+    fixture.ConstructAs(task, "Landroid/os/AsyncTask;", "()V");
+    const auto params = fixture.model.NewObjectArray(
+        fixture.linker.ResolveDescriptor("[Ljava/lang/Object;"),
+        fixture.Class("Ljava/lang/Object;"), 0);
+    SchedulerVm::RequireOk(fixture.Virtual(
+        task, "execute", "([Ljava/lang/Object;)Landroid/os/AsyncTask;",
+        {VmValue::Ref(params)}));
+    std::optional<std::string> failure;
+    REQUIRE(WaitFor([&] {
+        failure = PumpJavaThreads(fixture.vm, *fixture.context);
+        return failure.has_value();
+    }));
+    CHECK(failure->find("missing HTTP capability") != std::string::npos);
+    CHECK(fixture.async_post.load() == 0);
+    CHECK(fixture.ledger.Unimplemented().empty());
 }

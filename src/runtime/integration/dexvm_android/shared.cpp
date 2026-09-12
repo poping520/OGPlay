@@ -143,6 +143,103 @@ template <typename ValueType>
 
 }  // namespace
 
+bool ApplyTextEdit(dx::Interpreter& vm, DexVmAndroidContext& context,
+                   const dx::VmObjectRef view, const std::int32_t start,
+                   const std::int32_t before_count,
+                   const std::u16string& replacement) {
+    const auto node = EnsureViewUiNode(context, view, ui::UiClass::TextView);
+    auto* state = context.ui_tree.Get(node);
+    if (start < 0 || before_count < 0 ||
+        static_cast<std::size_t>(start) > state->text.size() ||
+        static_cast<std::size_t>(before_count) >
+            state->text.size() - static_cast<std::size_t>(start)) {
+        throw dx::VmJavaThrow{"Ljava/lang/IndexOutOfBoundsException;",
+                              "text replacement range is invalid"};
+    }
+    std::u16string filtered;
+    filtered.reserve(replacement.size());
+    for (const auto ch : replacement) {
+        if (!state->numeric_input || (ch >= u'0' && ch <= u'9')) {
+            filtered.push_back(ch);
+        }
+    }
+    const auto retained = state->text.size() -
+                          static_cast<std::size_t>(before_count);
+    const auto limit = state->max_length < 0
+        ? std::numeric_limits<std::size_t>::max()
+        : static_cast<std::size_t>(state->max_length);
+    if (retained >= limit) filtered.clear();
+    else if (filtered.size() > limit - retained) filtered.resize(limit - retained);
+
+    auto after = state->text;
+    after.replace(static_cast<std::size_t>(start),
+                  static_cast<std::size_t>(before_count), filtered);
+    if (after == state->text) return false;
+    try {
+        static_cast<void>(ui::MeasureFixedText(after, 8.0F));
+    } catch (const std::runtime_error& error) {
+        throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
+                              error.what()};
+    }
+
+    const auto before = state->text;
+    auto watchers = context.text_watchers[view.Value()];
+    const auto old_text = vm.Model().NewString(before);
+    const auto new_text = vm.Model().NewString(after);
+    std::vector<dx::VmObjectRef> roots{view, old_text, new_text};
+    roots.insert(roots.end(), watchers.begin(), watchers.end());
+    const auto root = vm.ProtectReferences(roots);
+    const auto invoke = [&](const dx::VmObjectRef watcher, const char* name,
+                            const char* descriptor,
+                            std::vector<dx::VmValue> arguments) {
+        const auto owner = vm.Model().ObjectClass(watcher);
+        const auto index = vm.Linker().FindVtableIndex(owner, name, descriptor);
+        if (!index.has_value()) {
+            throw dx::DexVmError(dx::DexVmErrorReason::invalid_member,
+                                 std::string("TextWatcher has no ") + name);
+        }
+        arguments.insert(arguments.begin(), dx::VmValue::Ref(watcher));
+        const auto outcome = vm.Call(vm.Linker().Class(owner).vtable[*index],
+                                     arguments);
+        if (outcome.exception.IsValid()) {
+            vm.SetPendingException(outcome.exception);
+            throw dx::VmJavaThrow{
+                outcome.exception_class.IsValid()
+                    ? vm.Linker().Class(outcome.exception_class).descriptor
+                    : "Ljava/lang/RuntimeException;",
+                outcome.exception_message, outcome.exception};
+        }
+    };
+    for (const auto watcher : watchers) {
+        invoke(watcher, "beforeTextChanged", "(Ljava/lang/CharSequence;III)V",
+               {dx::VmValue::Ref(old_text), dx::VmValue::Int(start),
+                dx::VmValue::Int(before_count),
+                dx::VmValue::Int(static_cast<std::int32_t>(filtered.size()))});
+    }
+    state = context.ui_tree.Get(node);
+    state->text = std::move(after);
+    context.ui_tree.MarkLayoutDirty(node);
+    dx::VmObjectRef editable{};
+    if (!watchers.empty()) {
+        const auto edit_text = vm.Linker().ResolveDescriptor(
+            "Landroid/widget/EditText;");
+        if (vm.Linker().IsAssignable(edit_text, vm.Model().ObjectClass(view))) {
+            editable = CallAndroidMethod(vm, view, "getText",
+                "()Landroid/text/Editable;").ref;
+        }
+    }
+    const auto editable_root = vm.ProtectReferences(std::array{editable});
+    for (const auto watcher : watchers) {
+        invoke(watcher, "onTextChanged", "(Ljava/lang/CharSequence;III)V",
+               {dx::VmValue::Ref(new_text), dx::VmValue::Int(start),
+                dx::VmValue::Int(before_count),
+                dx::VmValue::Int(static_cast<std::int32_t>(filtered.size()))});
+        invoke(watcher, "afterTextChanged", "(Landroid/text/Editable;)V",
+               {dx::VmValue::Ref(editable)});
+    }
+    return true;
+}
+
 dx::VmObjectRef MakeApplicationInfo(dx::IntrinsicContext& call,
                                     const Context& context,
                                     const bool include_meta_data) {
@@ -218,8 +315,12 @@ dx::VmObjectRef MakeApplicationInfo(dx::IntrinsicContext& call,
 dx::IntrinsicHandler EditableClearHandler(const Context& context) {
     return dx::IntrinsicHandler([context](dx::IntrinsicContext& call) {
         const auto node = OwnerTextNode(context, call);
-        context->ui_tree.Get(node)->text.clear();
-        context->ui_tree.MarkLayoutDirty(node);
+        const auto owner = dx::VmObjectRef(context->editable_owner.at(
+            call.receiver.Value()));
+        static_cast<void>(ApplyTextEdit(
+            call.vm, *context, owner, 0,
+            static_cast<std::int32_t>(context->ui_tree.Get(node)->text.size()),
+            {}));
         return dx::VmValue::Void();
     });
 }
@@ -243,20 +344,12 @@ dx::IntrinsicHandler EditableReplaceHandler(const Context& context) {
                 "Editable.replace range is invalid"};
         }
         const auto value = call.arguments[2].ref;
-        auto candidate = buffer;
-        candidate.replace(static_cast<std::size_t>(start),
-                          static_cast<std::size_t>(end - start),
-                          value.IsValid()
-                              ? call.vm.Model().StringValue(value)
-                              : std::u16string());
-        try {
-            static_cast<void>(ui::MeasureFixedText(candidate, 8.0F));
-        } catch (const std::runtime_error& error) {
-            throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
-                                  error.what()};
-        }
-        buffer = std::move(candidate);
-        context->ui_tree.MarkLayoutDirty(OwnerTextNode(context, call));
+        const auto owner = dx::VmObjectRef(context->editable_owner.at(
+            call.receiver.Value()));
+        static_cast<void>(ApplyTextEdit(
+            call.vm, *context, owner, start, end - start,
+            value.IsValid() ? call.vm.Model().StringValue(value)
+                            : std::u16string()));
         return Self(call);
     });
 }
@@ -1430,19 +1523,10 @@ void RunAsyncWorker(dx::IntrinsicContext& call, const Context& context,
         task = found->second.task;
         params = found->second.params;
     }
-    dx::VmCallOutcome outcome;
-    try {
-        outcome = CallVirtual(
-            call.vm, task, "doInBackground",
-            "([Ljava/lang/Object;)Ljava/lang/Object;",
-            {dx::VmValue::Ref(params)});
-    } catch (const dx::DexVmError&) {
-        if (auto* ledger = call.vm.Ledger()) {
-            ledger->RecordUnimplemented(
-                "dexvm.async_task.background_fault_bypass", 0);
-        }
-        outcome.value = dx::VmValue::Ref(dx::VmObjectRef{});
-    }
+    const auto outcome = CallVirtual(
+        call.vm, task, "doInBackground",
+        "([Ljava/lang/Object;)Ljava/lang/Object;",
+        {dx::VmValue::Ref(params)});
     if (outcome.exception.IsValid()) {
         call.vm.SetPendingException(outcome.exception);
         return;

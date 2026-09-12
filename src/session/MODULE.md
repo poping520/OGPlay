@@ -89,6 +89,9 @@ Dex activity 每帧在 guest 回调前泵送主 Looper，到帧尾只通过
   只有消费 DOWN 的实际 receiver 才建立 MOVE/UP capture，未消费事件再回退
   `Activity.onTouchEvent`。receiver detach 或 Activity switch 清空 capture，禁止旧 View
   跨 generation 收事件。
+- ScrollView 仅在可滚动且累计位移超过 `8dp` slop 后接管；接管向原 listener/deep target
+  发送 `ACTION_CANCEL` 并撤销 click/capture。纯 View 软件基帧发布前确认不存在 renderer、
+  active SurfaceHolder、VideoView 或 holder Canvas producer。
 - `AssembleProfileVfs`：把已导入数据与 Profile mount 精确配对，在全新 VFS 中挂载并
   校验 required mount、manifest 和 working directory；
   `FlushProfileVfsAtLifecycleBoundary` 是 pause/clean stop 共用的 `FlushAll` 适配点。

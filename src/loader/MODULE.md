@@ -33,7 +33,8 @@
   产出 resid ↔ (type, name, typed simple value/文件路径) 双向事实；Res_value type/data
   原样保留给上层有界 string/color/dimension/reference resolver；DVM-121 保留复杂 bag 的
   parent/typed items，校验 entry/value/map 边界、重复键与字符串索引；DVM-148 同时保留
-  orientation、density、SDK 与屏幕 dp 配置事实，由上层按当前设备选择候选；仍不扩展
+  orientation、density、SDK、screenLayout size 与屏幕 dp 配置事实，由上层按固定 API 19
+  的 qualifier 优先级选择候选；仍不扩展
   locale/动态 qualifier，越界/截断即失败。
 - `ReadApkArmNativeLibraries` / `ReadApkNativeLibraryInventory`：稳定枚举
   `lib/armeabi[-v7a]/*.so`，拥有解压字节与小写 SHA-256，并按 ABI、entry basename

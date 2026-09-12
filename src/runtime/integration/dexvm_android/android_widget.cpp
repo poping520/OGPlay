@@ -647,8 +647,10 @@ Decl Declare_android_widget_TextView(const Context& context) {
                                       error.what()};
             }
             const auto node = TextNode(call, context);
-            context->ui_tree.Get(node)->text = std::move(text);
-            context->ui_tree.MarkLayoutDirty(node);
+            static_cast<void>(ApplyTextEdit(
+                call.vm, *context, call.receiver, 0,
+                static_cast<std::int32_t>(
+                    context->ui_tree.Get(node)->text.size()), text));
             return dx::VmValue::Void();
         });
     builder.FinalMethod("getText", "()Ljava/lang/CharSequence;",

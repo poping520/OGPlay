@@ -759,12 +759,16 @@ TEST_CASE("dexvm core intrinsic catalog is unique and structurally stable") {
           });
     CHECK(signatures("Ljava/lang/Runnable;") ==
           std::set<std::pair<std::string, std::string>>{{"run", "()V"}});
-    CHECK(signatures("Ljava/lang/AbstractStringBuilder;").empty());
-    CHECK(signatures("Ljava/lang/IntegralToString;") ==
-          std::set<std::pair<std::string, std::string>>{
-              {"appendInt", "(Ljava/lang/AbstractStringBuilder;I)V"},
-              {"appendLong", "(Ljava/lang/AbstractStringBuilder;J)V"},
-          });
+    for (const auto* owner : {"Ljava/lang/AbstractStringBuilder;", "Ljava/lang/IntegralToString;",
+                              "Ljava/lang/StringBuilder;", "Ljava/lang/StringBuffer;"}) {
+        CHECK_FALSE(descriptors.contains(owner));
+        const auto& type = boot_linker.Class(boot_linker.ResolveDescriptor(owner));
+        CHECK(type.is_boot_dex);
+        for (auto method : type.own_direct_methods)
+            CHECK(boot_linker.Method(method).kind == MethodKind::interpreted);
+        for (auto method : type.own_virtual_methods)
+            CHECK(boot_linker.Method(method).kind == MethodKind::interpreted);
+    }
     const auto abstract_builder =
         boot_linker.ResolveDescriptor("Ljava/lang/AbstractStringBuilder;");
     const auto string_builder =
@@ -773,13 +777,11 @@ TEST_CASE("dexvm core intrinsic catalog is unique and structurally stable") {
     REQUIRE(linked_builder.super.has_value());
     CHECK(*linked_builder.super == abstract_builder);
     CHECK(linked_builder.direct_interfaces == std::vector<DexClassId>{
-        boot_linker.ResolveDescriptor("Ljava/io/Serializable;"),
+        boot_linker.ResolveDescriptor("Ljava/lang/Appendable;"),
         boot_linker.ResolveDescriptor("Ljava/lang/CharSequence;"),
-        boot_linker.ResolveDescriptor("Ljava/lang/Appendable;")});
-    CHECK(signatures("Ljava/lang/StringBuilder;").size() == 31U);
-    CHECK(signatures("Ljava/lang/StringBuffer;").size() == 31U);
+        boot_linker.ResolveDescriptor("Ljava/io/Serializable;")});
     const auto string_signatures = signatures("Ljava/lang/String;");
-    CHECK(string_signatures.size() == 57U);
+    CHECK(string_signatures.size() == 60U);
     CHECK(string_signatures.contains({
         "toLowerCase", "(Ljava/util/Locale;)Ljava/lang/String;"}));
     CHECK(signatures("Ljava/lang/Integer;").size() == 37U);
@@ -1009,7 +1011,9 @@ TEST_CASE("dexvm API 19 primitive wrapper family inventory is complete") {
         "isSpaceChar(C)Z","isSpaceChar(I)Z","isSpace(C)Z","isISOControl(C)Z","isISOControl(I)Z",
         "toLowerCase(C)C","toLowerCase(I)I","toUpperCase(C)C","toUpperCase(I)I",
         "isHighSurrogate(C)Z","isLowSurrogate(C)Z","isSurrogatePair(CC)Z","isValidCodePoint(I)Z","isBmpCodePoint(I)Z",
-        "isSupplementaryCodePoint(I)Z","charCount(I)I","toCodePoint(CC)I","highSurrogate(I)C","lowSurrogate(I)C","reverseBytes(C)C"});
+        "isSupplementaryCodePoint(I)Z","charCount(I)I","toCodePoint(CC)I","highSurrogate(I)C","lowSurrogate(I)C","reverseBytes(C)C",
+        "toChars(I)[C", "codePointAt([CII)I", "codePointBefore([CI)I",
+        "codePointCount([CII)I", "offsetByCodePoints([CIIII)I"});
     CHECK(fields(character).size() == 66U);
 }
 

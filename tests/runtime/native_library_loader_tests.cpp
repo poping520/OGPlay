@@ -3099,6 +3099,28 @@ TEST_CASE("DVM-108/109 UUID MessageDigest and serialization use BootDex with rea
             static_cast<void>(vm.CollectGarbage("serialization-live-streams"));
             return invoke(input, "readObject", "()Ljava/lang/Object;", {}).ref;
         };
+        // DVM-151: builder hooks require the same real SHA/serialization backend.
+        for (const auto* owner : {"Ljava/lang/StringBuilder;", "Ljava/lang/StringBuffer;"}) {
+            CAPTURE(owner);
+            const auto builder = vm.NewIntrinsicInstance(owner);
+            const auto root = vm.ProtectReferences(std::array{builder});
+            const auto text = vm.Model().NewString(std::u16string_view(u"A😀 B", 5));
+            direct(owner, "<init>", "(Ljava/lang/String;)V", {VmValue::Ref(builder), VmValue::Ref(text)});
+            invoke(builder, "ensureCapacity", "(I)V", {VmValue::Int(80)});
+            const auto capacity = invoke(builder, "capacity", "()I", {}).AsInt();
+            const auto snapshot = vm.Model().StringValue(invoke(builder, "toString", "()Ljava/lang/String;", {}).ref);
+            const auto copy = roundtrip(builder);
+            const auto copy_root = vm.ProtectReferences(std::array{copy});
+            CHECK(copy != builder);
+            CHECK(vm.Model().ObjectClass(copy) == vm.Model().ObjectClass(builder));
+            CHECK(vm.Model().StringValue(invoke(copy, "toString", "()Ljava/lang/String;", {}).ref) == snapshot);
+            CHECK(invoke(copy, "capacity", "()I", {}).AsInt() == capacity);
+            static_cast<void>(vm.CollectGarbage("builder-roundtrip"));
+            const auto signature = std::string("(C)") + owner;
+            invoke(copy, "append", signature.c_str(), {VmValue::Int('!')});
+            CHECK(vm.Model().StringValue(invoke(builder, "toString", "()Ljava/lang/String;", {}).ref) == snapshot);
+            CHECK(vm.Model().StringValue(invoke(copy, "toString", "()Ljava/lang/String;", {}).ref) == snapshot + u"!");
+        }
         // DVM-115: real Java serialization includes Throwable's private callbacks and stack arrays.
         {
             const auto exception = vm.MakeThrowable("Ljava/lang/Exception;", "outer");

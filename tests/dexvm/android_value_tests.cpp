@@ -35,7 +35,8 @@ struct AndroidValueVm final {
     Interpreter vm;
 
     AndroidValueVm(InterpreterBackend backend = InterpreterBackend::switch_dispatch,
-                   const std::vector<IntrinsicClassDecl>& extras = {})
+                   const std::vector<IntrinsicClassDecl>& extras = {},
+                   bool force_all_bridge = false)
         : vm(
               [this, &extras]() -> DexClassLinker& {
                   linker.RegisterIntrinsics(CoreIntrinsicCatalog(
@@ -46,7 +47,7 @@ struct AndroidValueVm final {
                   linker.Link();
                   return linker;
               }(),
-              model, nullptr, ledger, {.backend = backend}) {
+              model, nullptr, ledger, {.backend = backend, .force_all_bridge = force_all_bridge}) {
         RegisterAndroidValueStateTables(vm, context);
     }
 
@@ -2907,4 +2908,153 @@ TEST_CASE("DVM-144 Binder identity and policy are isolated by execution context"
     CHECK(f.Static("Landroid/os/Binder;", "clearCallingIdentity", "()J").AsLong() == identity);
     REQUIRE(f.StaticOutcome("Landroid/os/Binder;", "joinThreadPool", "()V").exception.IsValid());
     f.vm.DiscardExecutionContext(worker);
+}
+
+
+TEST_CASE("DVM-151 BootDex builders own UTF16 fields capacity and immutable snapshots") {
+    for (const bool bridge : {false, true})
+    for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        AndroidValueVm f(backend, {}, bridge);
+        for (const auto* owner : {"Ljava/lang/StringBuilder;", "Ljava/lang/StringBuffer;"}) {
+            CAPTURE(owner);
+            const auto b = f.New(owner);
+            const auto root = f.vm.ProtectReferences(std::array{b});
+            const auto invoke = [&](const char* name, const std::string& sig, std::vector<VmValue> args = {}) {
+                return f.On(b, name, sig.c_str(), args);
+            };
+            const auto text = [&] { return f.model.StringValue(invoke("toString", "()Ljava/lang/String;").ref); };
+            CHECK(invoke("capacity", "()I").AsInt() == 16);
+            const auto append = std::string("(Ljava/lang/String;)") + owner;
+            const auto literal = f.vm.NewStringUtf8("/getLatest/unknown/0/terms-1.9-137%2Ctermsapi-1.2/com.popcap.pvz_na/Android/false/0/ageSensitive");
+            CHECK(invoke("append", append, {VmValue::Ref(literal)}).ref == b);
+            CHECK(f.vm.StringUtf8(invoke("substring", "(II)Ljava/lang/String;", {VmValue::Int(0), VmValue::Int(3)}).ref) == "/ge");
+            CHECK(f.vm.StringUtf8(invoke("substring", "(I)Ljava/lang/String;", {VmValue::Int(0)}).ref) == f.vm.StringUtf8(literal));
+            CHECK(f.vm.StringUtf8(invoke("subSequence", "(II)Ljava/lang/CharSequence;", {VmValue::Int(0), VmValue::Int(3)}).ref) == "/ge");
+            invoke("setLength", "(I)V", {VmValue::Int(0)});
+            invoke("trimToSize", "()V");
+            CHECK(invoke("capacity", "()I").AsInt() == 0);
+            invoke("ensureCapacity", "(I)V", {VmValue::Int(16)});
+            invoke("append", append, {VmValue::Ref(f.vm.NewStringUtf8("abcdefghijklmnop"))});
+            const auto snapshot = invoke("toString", "()Ljava/lang/String;").ref;
+            const auto snapshot_root = f.vm.ProtectReferences(std::array{snapshot});
+            const auto field = f.linker.FindFieldRecursive(f.model.ObjectClass(b), "value", "[C");
+            REQUIRE(field.has_value());
+            const auto backing = VmObjectRef(f.model.InstanceSlots(b)[f.linker.Field(*field).slot].bits);
+            CHECK(f.vm.MarkReachable().IsMarked(backing));
+            invoke("setCharAt", "(IC)V", {VmValue::Int(0), VmValue::Int('Z')});
+            CHECK(f.model.StringValue(snapshot) == u"abcdefghijklmnop");
+            const auto detached = VmObjectRef(f.model.InstanceSlots(b)[f.linker.Field(*field).slot].bits);
+            CHECK(detached != backing);
+            static_cast<void>(f.vm.CollectGarbage());
+            CHECK(text() == u"Zbcdefghijklmnop");
+            invoke("append", std::string("(C)") + owner, {VmValue::Int('q')});
+            CHECK(invoke("capacity", "()I").AsInt() == 26); // API 19 append growth: 1.5x + 2
+            invoke("ensureCapacity", "(I)V", {VmValue::Int(27)});
+            CHECK(invoke("capacity", "()I").AsInt() == 54); // ensureCapacity: 2x + 2
+            invoke("setLength", "(I)V", {VmValue::Int(1)});
+            invoke("setLength", "(I)V", {VmValue::Int(3)});
+            CHECK(text() == std::u16string({u'Z', 0, 0}));
+            invoke("setLength", "(I)V", {VmValue::Int(0)});
+            invoke("append", append, {VmValue::Ref(f.model.NewString(u"A😀B"))});
+            CHECK(invoke("length", "()I").AsInt() == 4);
+            CHECK(invoke("charAt", "(I)C", {VmValue::Int(1)}).AsInt() == 0xd83d);
+            CHECK(invoke("codePointAt", "(I)I", {VmValue::Int(1)}).AsInt() == 0x1f600);
+            CHECK(invoke("codePointBefore", "(I)I", {VmValue::Int(3)}).AsInt() == 0x1f600);
+            CHECK(invoke("codePointCount", "(II)I", {VmValue::Int(0), VmValue::Int(4)}).AsInt() == 3);
+            CHECK(invoke("offsetByCodePoints", "(II)I", {VmValue::Int(0), VmValue::Int(2)}).AsInt() == 3);
+            invoke("reverse", std::string("()") + owner);
+            CHECK(text() == u"B😀A");
+            invoke("insert", std::string("(ILjava/lang/String;)") + owner, {VmValue::Int(1), VmValue::Ref(f.vm.NewStringUtf8("xy"))});
+            invoke("delete", std::string("(II)") + owner, {VmValue::Int(1), VmValue::Int(3)});
+            invoke("replace", std::string("(IILjava/lang/String;)") + owner, {VmValue::Int(0), VmValue::Int(1), VmValue::Ref(f.vm.NewStringUtf8("C"))});
+            CHECK(text() == u"C😀A");
+            invoke("appendCodePoint", std::string("(I)") + owner, {VmValue::Int(0x1f601)});
+            CHECK(text() == u"C😀A😁");
+            const auto unchanged = text();
+            const auto bad = f.OnOutcome(b, "substring", "(II)Ljava/lang/String;", {VmValue::Int(-1), VmValue::Int(2)});
+            REQUIRE(bad.exception.IsValid());
+            CHECK(f.linker.Class(bad.exception_class).descriptor == "Ljava/lang/StringIndexOutOfBoundsException;");
+            CHECK(text() == unchanged);
+        }
+    }
+}
+
+TEST_CASE("DVM-151 builder integer and floating appends execute original conversion classes") {
+    for (const bool bridge : {false, true})
+    for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        AndroidValueVm f(backend, {}, bridge);
+        VmThreadRuntime threads(f.vm);
+        for (const auto* owner : {"Ljava/lang/StringBuilder;", "Ljava/lang/StringBuffer;"}) {
+            const auto b = f.New(owner);
+            const auto root = f.vm.ProtectReferences(std::array{b});
+            const auto check = [&](const char* type, VmValue value, const char* expected) {
+                f.On(b, "setLength", "(I)V", {VmValue::Int(0)});
+                const auto sig = std::string("(") + type + ")" + owner;
+                CHECK(f.On(b, "append", sig.c_str(), {value}).ref == b);
+                CHECK(f.vm.StringUtf8(f.On(b, "toString", "()Ljava/lang/String;").ref) == expected);
+            };
+            check("I", VmValue::Int(INT32_MIN), "-2147483648");
+            check("I", VmValue::Int(INT32_MAX), "2147483647");
+            check("J", VmValue::Long(INT64_MIN), "-9223372036854775808");
+            check("J", VmValue::Long(INT64_MAX), "9223372036854775807");
+            check("I", VmValue::Int(0), "0");
+            check("F", VmValue::Float(1.5f), "1.5");
+            check("F", VmValue::Float(std::bit_cast<float>(std::uint32_t{1})), "1.4E-45");
+            check("F", VmValue::Float(std::bit_cast<float>(std::uint32_t{0x7f7fffff})), "3.4028235E38");
+            check("D", VmValue::Double(-0.0), "-0.0");
+            check("D", VmValue::Double(1e100), "1.0E100");
+            check("D", VmValue::Double(-1e100), "-1.0E100");
+            check("D", VmValue::Double(1.234123412431233E107), "1.234123412431233E107");
+            check("D", VmValue::Double(std::bit_cast<double>(std::uint64_t{0x7fefffffffffffff})), "1.7976931348623157E308");
+            check("D", VmValue::Double(std::bit_cast<double>(std::uint64_t{0x0010000000000000})), "2.2250738585072014E-308");
+            check("D", VmValue::Double(std::bit_cast<double>(std::uint64_t{2})), "1.0E-323");
+            check("D", VmValue::Double(std::bit_cast<double>(std::uint64_t{1})), "4.9E-324");
+            check("D", VmValue::Double(std::bit_cast<double>(std::uint64_t{0x7ff0000000000000})), "Infinity");
+            check("D", VmValue::Double(std::bit_cast<double>(std::uint64_t{0x7ff8000000000000})), "NaN");
+        }
+    }
+}
+
+
+TEST_CASE("DVM-151 builders retain constructor null array and bridge contracts") {
+    for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        AndroidValueVm f(backend);
+        VmThreadRuntime threads(f.vm);
+        for (const auto* owner : {"Ljava/lang/StringBuilder;", "Ljava/lang/StringBuffer;"}) {
+            const auto b = f.New(owner, "(I)V", {VmValue::Int(0)});
+            const auto root = f.vm.ProtectReferences(std::array{b});
+            const auto text = [&] { return f.model.StringValue(f.On(b, "toString", "()Ljava/lang/String;").ref); };
+            const auto expect_exception = [&](const VmCallOutcome& result, const char* exception) {
+                REQUIRE(result.exception.IsValid());
+                CHECK(f.linker.Class(result.exception_class).descriptor == exception);
+            };
+            const auto raw = f.vm.NewIntrinsicInstance(owner);
+            expect_exception(f.StaticOutcome(owner, "<init>", "(I)V", {VmValue::Ref(raw), VmValue::Int(-1)}), "Ljava/lang/NegativeArraySizeException;");
+            for (auto ctor : {"(Ljava/lang/String;)V", "(Ljava/lang/CharSequence;)V"}) {
+                const auto object = f.vm.NewIntrinsicInstance(owner);
+                expect_exception(f.StaticOutcome(owner, "<init>", ctor, {VmValue::Ref(object), VmValue::Ref(VmObjectRef{})}), "Ljava/lang/NullPointerException;");
+            }
+            CHECK(f.On(b, "append", "(Ljava/lang/CharSequence;)Ljava/lang/Appendable;", {VmValue::Ref(VmObjectRef{})}).ref == b);
+            CHECK(text() == u"null");
+            const auto chars = f.On(f.model.NewString(u"x😀y"), "toCharArray", "()[C").ref;
+            const auto chars_root = f.vm.ProtectReferences(std::array{chars});
+            const auto append_array = std::string("([CII)") + owner;
+            f.On(b, "append", append_array.c_str(), {VmValue::Ref(chars), VmValue::Int(1), VmValue::Int(2)});
+            CHECK(text() == u"null😀");
+            const auto before = text();
+            expect_exception(f.OnOutcome(b, "append", append_array.c_str(), {VmValue::Ref(chars), VmValue::Int(3), VmValue::Int(2)}), "Ljava/lang/ArrayIndexOutOfBoundsException;");
+            CHECK(text() == before);
+            f.On(b, "getChars", "(II[CI)V", {VmValue::Int(4), VmValue::Int(6), VmValue::Ref(chars), VmValue::Int(0)});
+            CHECK(f.model.GetPrimitiveElement(chars, 0) == 0xd83d);
+            CHECK(f.model.GetPrimitiveElement(chars, 1) == 0xde00);
+            CHECK(f.On(b, "indexOf", "(Ljava/lang/String;)I", {VmValue::Ref(f.vm.NewStringUtf8("ll"))}).AsInt() == 2);
+            CHECK(f.On(b, "lastIndexOf", "(Ljava/lang/String;)I", {VmValue::Ref(f.vm.NewStringUtf8("l"))}).AsInt() == 3);
+            const auto copied = f.New(owner, "(Ljava/lang/CharSequence;)V", {VmValue::Ref(b)});
+            CHECK(f.model.StringValue(f.On(copied, "toString", "()Ljava/lang/String;").ref) == before);
+            f.On(b, "deleteCharAt", (std::string("(I)") + owner).c_str(), {VmValue::Int(4)});
+            CHECK(f.On(b, "charAt", "(I)C", {VmValue::Int(4)}).AsInt() == 0xde00); // code unit, not a code point
+            expect_exception(f.OnOutcome(b, "setLength", "(I)V", {VmValue::Int(-1)}), "Ljava/lang/StringIndexOutOfBoundsException;");
+            expect_exception(f.OnOutcome(b, "appendCodePoint", (std::string("(I)") + owner).c_str(), {VmValue::Int(0x110000)}), "Ljava/lang/IllegalArgumentException;");
+        }
+    }
 }

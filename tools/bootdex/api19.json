@@ -78,6 +78,7 @@
       "Ljava/io/WriteAbortedException;",
       "Ljava/io/Writer;",
       "Ljava/lang/AbstractMethodError;",
+      "Ljava/lang/AbstractStringBuilder;",
       "Ljava/lang/ArithmeticException;",
       "Ljava/lang/ArrayIndexOutOfBoundsException;",
       "Ljava/lang/ArrayStoreException;",
@@ -101,6 +102,8 @@
       "Ljava/lang/IndexOutOfBoundsException;",
       "Ljava/lang/InstantiationError;",
       "Ljava/lang/InstantiationException;",
+      "Ljava/lang/IntegralToString$1;",
+      "Ljava/lang/IntegralToString;",
       "Ljava/lang/InternalError;",
       "Ljava/lang/InterruptedException;",
       "Ljava/lang/Iterable;",
@@ -115,6 +118,8 @@
       "Ljava/lang/NullPointerException;",
       "Ljava/lang/NumberFormatException;",
       "Ljava/lang/OutOfMemoryError;",
+      "Ljava/lang/RealToString$1;",
+      "Ljava/lang/RealToString;",
       "Ljava/lang/ReflectiveOperationException;",
       "Ljava/lang/Runtime;",
       "Ljava/lang/RuntimeException;",
@@ -123,6 +128,8 @@
       "Ljava/lang/SecurityManager;",
       "Ljava/lang/StackOverflowError;",
       "Ljava/lang/StackTraceElement;",
+      "Ljava/lang/StringBuffer;",
+      "Ljava/lang/StringBuilder;",
       "Ljava/lang/StringIndexOutOfBoundsException;",
       "Ljava/lang/System$SystemEnvironment;",
       "Ljava/lang/ThreadDeath;",
@@ -740,6 +747,7 @@
       "Llibcore/icu/TimeZoneNames;",
       "Llibcore/io/Base64;",
       "Llibcore/io/Streams;",
+      "Llibcore/math/MathUtils;",
       "Llibcore/net/UriCodec;",
       "Llibcore/util/BasicLruCache;",
       "Llibcore/util/EmptyArray;",
@@ -1502,6 +1510,8 @@
         "Ljava/lang/NullPointerException;",
         "Ljava/lang/NumberFormatException;",
         "Ljava/lang/RuntimeException;",
+        "Ljava/lang/StringBuffer;",
+        "Ljava/lang/StringBuilder;",
         "Ljava/lang/Throwable;",
         "Ljava/lang/UnsupportedOperationException;",
         "Ljava/lang/ref/WeakReference;",
@@ -1538,7 +1548,6 @@
         "Ljava/util/Arrays;",
         "Ljava/util/Calendar;",
         "Ljava/util/Collection;",
-        "Ljava/util/Collections;",
         "Ljava/util/Comparator;",
         "Ljava/util/Currency;",
         "Ljava/util/Date;",
@@ -1567,6 +1576,7 @@
         "Llibcore/icu/TimeZoneNames$1;",
         "Llibcore/icu/TimeZoneNames$ZoneStringsCache;",
         "Llibcore/icu/TimeZoneNames;",
+        "Llibcore/math/MathUtils;",
         "Llibcore/util/BasicLruCache;",
         "Llibcore/util/Objects;"
       ],
@@ -1594,8 +1604,6 @@
         "Ljava/lang/Object;",
         "Ljava/lang/Short;",
         "Ljava/lang/String;",
-        "Ljava/lang/StringBuffer;",
-        "Ljava/lang/StringBuilder;",
         "Ljava/lang/System;",
         "Ljava/lang/reflect/Array;",
         "Ljava/lang/reflect/Field;",
@@ -1613,8 +1621,7 @@
         "Ljava/math/BigDecimal$1;",
         "Ljava/math/Logical;",
         "Ljava/math/Multiplication;",
-        "Ljava/math/Primality;",
-        "Llibcore/math/MathUtils;"
+        "Ljava/math/Primality;"
       ]
     },
     "native_methods": {
@@ -1681,7 +1688,7 @@
       "method_ids": 1273,
       "field_ids": 479,
       "native_methods": 44,
-      "classified_members_sha256": "517664cf60b3297e871a418926366cbd34f6269d03c39cb3275372d3ad0dc8b2"
+      "classified_members_sha256": "a1e0205dfe8b072d2baf29a95ea43edde2aefb6c571cfd834ddbaa5dc1825c48"
     }
   }
 }

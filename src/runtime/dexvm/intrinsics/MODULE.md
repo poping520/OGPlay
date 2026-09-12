@@ -19,9 +19,11 @@
 
 ## lang、线程与退出
 
-- String 的 UTF-16、builder 状态由 VM 唯一拥有；format 委托 BootDex Formatter，大小写
-  使用固定 ICU（等价 ASCII 快路允许）。substring/indexOf/append 保留 API19 索引、null、
-  原引用和自追加语义；CharSequence append 虚派 length/charAt，越界不得修改 buffer。
+- String 的 UTF-16 由 VM/JNI 唯一拥有；内部 char[] 构造复制不可变快照，_getChars 只复制区间。
+  三个 builder 与 IntegralToString 普通方法归 BootDex，value/count/shared 是唯一可变事实源，
+  无 builder map、clone/sweep 或普通方法 overlay。RealToString 仅保留受检 native digit generator；
+  scratch 为有界局部值，digits/digitCount/firstK 用绑定字段。Character 现有 wrapper 边界补齐
+  五个 UTF-16 array 原语，无 builder 状态；详见 DVM-151 / ADR-0057。
 - Math 普通方法/常量/random 归 BootDex，仅保留 24 个 libm native；不宣称 fdlibm 逐位一致。
   Throwable/StackTraceElement/异常家族归 BootDex，仅保留两个栈 native；消息虚派、原异常
   身份、cause/suppressed 与输出格式归 Java。PrintStream 只接结构化输出，空追加不输出。

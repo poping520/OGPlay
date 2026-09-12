@@ -412,7 +412,7 @@ public:
     [[nodiscard]] core::Logger* Log() const noexcept;
 
     // Object.clone: model-level shallow copy plus intrinsic side tables
-    // (builder/resource) keyed by the source handle.
+    // (resource) keyed by the source handle.
     [[nodiscard]] VmObjectRef CloneObject(VmObjectRef source);
 
     [[nodiscard]] BigIntRuntime& BigInts();
@@ -427,7 +427,6 @@ public:
     [[nodiscard]] const ZipRuntime& ZIP() const;
 
     // Intrinsic instance side state.
-    [[nodiscard]] std::u16string& BuilderBuffer(VmObjectRef instance);
 
     // Writes a reference into an intrinsic static field (System.out etc.).
     void SetIntrinsicStaticRef(std::string_view class_descriptor,

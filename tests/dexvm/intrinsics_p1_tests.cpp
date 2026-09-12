@@ -1,4 +1,5 @@
 #include "boot_dex.h"
+#include "ogplay/runtime/dexvm/vm_threads.h"
 // java.* P1 intrinsic conformance (DVM-13). Pure-library expectations
 // follow the class-library documentation; System.arraycopy checks follow
 // AOSP vm/native/java_lang_System.cpp at the pinned baseline.
@@ -68,6 +69,7 @@ struct Vm final {
     ogplay::core::CapabilityLedger ledger;
     ogplay::core::Logger logger;
     Interpreter interpreter;
+    VmThreadRuntime threads;
 
     explicit Vm(const InterpreterConfig config = {},
                 const bool load_boot_dex = true,
@@ -84,7 +86,7 @@ struct Vm final {
                   linker.Link();
                   return linker;
               }(),
-              model, nullptr, ledger, config) {
+              model, nullptr, ledger, config), threads(interpreter) {
         interpreter.SetLogger(&logger);
     }
 

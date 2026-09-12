@@ -1566,7 +1566,113 @@ TEST_CASE("DVM-103 all BootDex classes link and collection methods have no intri
         for (const auto method : f.linker.Class(type).own_direct_methods)
             CHECK(f.linker.Method(method).kind != MethodKind::intrinsic);
     }
-    CHECK(count == 1041);
+    CHECK(count == 1407);
+}
+
+TEST_CASE("DVM-149 Apache HTTP BootDex supports the Restlet startup object path") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch,
+                               InterpreterBackend::threaded}) {
+        Dvm87Vm f(backend);
+
+        const auto params =
+            f.vm.NewIntrinsicInstance("Lorg/apache/http/params/BasicHttpParams;");
+        f.Construct(params, "Lorg/apache/http/params/BasicHttpParams;", "()V");
+        const auto key = f.vm.NewStringUtf8("ogplay.dvm149");
+        const auto value = f.vm.NewStringUtf8("restlet");
+        auto result = f.Virtual(
+            params, "setParameter",
+            "(Ljava/lang/String;Ljava/lang/Object;)Lorg/apache/http/params/HttpParams;",
+            {VmValue::Ref(key), VmValue::Ref(value)});
+        f.RequireOk(result);
+        CHECK(result.value.ref == params);
+        result = f.Virtual(params, "getParameter",
+                           "(Ljava/lang/String;)Ljava/lang/Object;",
+                           {VmValue::Ref(key)});
+        f.RequireOk(result);
+        CHECK(result.value.ref == value);
+
+        f.RequireOk(f.Static(
+            "Lorg/apache/http/params/HttpConnectionParams;", "setTcpNoDelay",
+            "(Lorg/apache/http/params/HttpParams;Z)V",
+            {VmValue::Ref(params), VmValue::Int(1)}));
+        f.RequireOk(f.Static(
+            "Lorg/apache/http/params/HttpConnectionParams;", "setConnectionTimeout",
+            "(Lorg/apache/http/params/HttpParams;I)V",
+            {VmValue::Ref(params), VmValue::Int(15000)}));
+        f.RequireOk(f.Static(
+            "Lorg/apache/http/params/HttpConnectionParams;", "setSoTimeout",
+            "(Lorg/apache/http/params/HttpParams;I)V",
+            {VmValue::Ref(params), VmValue::Int(15000)}));
+
+        const auto registry =
+            f.vm.NewIntrinsicInstance("Lorg/apache/http/conn/scheme/SchemeRegistry;");
+        f.Construct(registry, "Lorg/apache/http/conn/scheme/SchemeRegistry;", "()V");
+        result = f.Static(
+            "Lorg/apache/http/conn/scheme/PlainSocketFactory;", "getSocketFactory",
+            "()Lorg/apache/http/conn/scheme/PlainSocketFactory;");
+        f.RequireOk(result);
+        const auto socket_factory = result.value.ref;
+        const auto scheme = f.vm.NewIntrinsicInstance("Lorg/apache/http/conn/scheme/Scheme;");
+        f.Construct(scheme, "Lorg/apache/http/conn/scheme/Scheme;",
+                    "(Ljava/lang/String;Lorg/apache/http/conn/scheme/SocketFactory;I)V",
+                    {VmValue::Ref(f.vm.NewStringUtf8("http")),
+                     VmValue::Ref(socket_factory), VmValue::Int(80)});
+        result = f.Virtual(
+            registry, "register",
+            "(Lorg/apache/http/conn/scheme/Scheme;)Lorg/apache/http/conn/scheme/Scheme;",
+            {VmValue::Ref(scheme)});
+        f.RequireOk(result);
+        CHECK_FALSE(result.value.ref.IsValid());
+
+        const auto manager = f.vm.NewIntrinsicInstance(
+            "Lorg/apache/http/impl/conn/tsccm/ThreadSafeClientConnManager;");
+        f.Construct(
+            manager,
+            "Lorg/apache/http/impl/conn/tsccm/ThreadSafeClientConnManager;",
+            "(Lorg/apache/http/params/HttpParams;Lorg/apache/http/conn/scheme/SchemeRegistry;)V",
+            {VmValue::Ref(params), VmValue::Ref(registry)});
+        const auto client =
+            f.vm.NewIntrinsicInstance("Lorg/apache/http/impl/client/DefaultHttpClient;");
+        f.Construct(
+            client, "Lorg/apache/http/impl/client/DefaultHttpClient;",
+            "(Lorg/apache/http/conn/ClientConnectionManager;Lorg/apache/http/params/HttpParams;)V",
+            {VmValue::Ref(manager), VmValue::Ref(params)});
+        result = f.Virtual(client, "getParams", "()Lorg/apache/http/params/HttpParams;");
+        f.RequireOk(result);
+        CHECK(result.value.ref == params);
+
+        const auto bytes =
+            f.vm.NewIntrinsicInstance("Ljava/io/ByteArrayOutputStream;");
+        f.Construct(bytes, "Ljava/io/ByteArrayOutputStream;", "()V");
+        const auto writer =
+            f.vm.NewIntrinsicInstance("Ljava/io/OutputStreamWriter;");
+        f.Construct(writer, "Ljava/io/OutputStreamWriter;",
+                    "(Ljava/io/OutputStream;)V", {VmValue::Ref(bytes)});
+        const auto message = f.vm.NewStringUtf8("Starting the Apache HTTP client");
+        f.RequireOk(f.Virtual(writer, "write", "(Ljava/lang/String;)V",
+                              {VmValue::Ref(message)}));
+        f.RequireOk(f.Virtual(writer, "flush", "()V"));
+        result = f.Virtual(bytes, "toByteArray", "()[B");
+        f.RequireOk(result);
+        const auto encoded = f.vm.Model().ReadByteRegion(
+            result.value.ref, 0, f.vm.Model().ArrayLength(result.value.ref));
+        CHECK(std::string(reinterpret_cast<const char*>(encoded.data()),
+                          encoded.size()) == "Starting the Apache HTTP client");
+
+        result = f.Static("Ljavax/net/ssl/SSLContext;", "getInstance",
+                          "(Ljava/lang/String;)Ljavax/net/ssl/SSLContext;",
+                          {VmValue::Ref(f.vm.NewStringUtf8("TLS"))});
+        f.RequireOk(result);
+        const auto ssl_init = f.Virtual(
+            result.value.ref, "init",
+            "([Ljavax/net/ssl/KeyManager;[Ljavax/net/ssl/TrustManager;"
+            "Ljava/security/SecureRandom;)V",
+            {VmValue::Ref(VmObjectRef{}), VmValue::Ref(VmObjectRef{}),
+             VmValue::Ref(VmObjectRef{})});
+        REQUIRE(ssl_init.exception.IsValid());
+        CHECK(f.linker.Class(ssl_init.exception_class).descriptor ==
+              "Ljava/lang/UnsupportedOperationException;");
+    }
 }
 
 TEST_CASE("DVM-103 bounded queues and Collections wrappers use API19 semantics") {

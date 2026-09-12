@@ -3,6 +3,7 @@
 # enters the same System.loadLibrary handler to load B.
 .class public Lfixture/Aps5;
 .super Ljava/lang/Object;
+.field public static exitCode:I
 
 .method static public start()V
 .registers 1
@@ -13,6 +14,11 @@
 
 .method static public callback()V
 .registers 1
+    sget v0, Lfixture/Aps5;->exitCode:I
+    if-eqz v0, :load_b
+    invoke-static {v0}, Ljava/lang/System;->exit(I)V
+    return-void
+:load_b
     const-string v0, "b"
     invoke-static {v0}, Ljava/lang/System;->loadLibrary(Ljava/lang/String;)V
     return-void

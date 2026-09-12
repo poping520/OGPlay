@@ -25,6 +25,7 @@
 - [ADR-0046 · Java 布局参数与 UI 布局输入分工](#adr-0046)
 - [ADR-0047 · Typeface Java 与字体后端描述符](#adr-0047)
 - [ADR-0048 · 文本外观的 Java 值对象与有界样式事实](#adr-0048)
+- [ADR-0056 · Runtime hook 状态归 BootDex，显式退出归 guest 进程边界](#adr-0056)
 
 <a id="adr-0017"></a>
 
@@ -852,3 +853,24 @@ JNI registry 只承担成员与身份映射，字段、服务 singleton、PCM pl
 已迁移类要求调用方装配 DexVM/BootDex；无 VM 的 native/HLE 会话明确缺失，不保留伪替身。
 本次不迁移无对应 VM 实现的 ViewRoot、应用兼容回调及独立 headless 契约 HLE，也不扩张
 Android 系统服务范围。定向测试通过不替代游戏 gate 或跨平台验收。
+
+
+<a id="adr-0056"></a>
+## ADR-0056 · Runtime hook 状态归 BootDex，显式退出归 guest 进程边界
+
+2026-09-12，接受，DVM-150。
+
+Runtime 的普通方法和注册引用图采用固定 API 19 core.jar；不复制 Java 列表、检查顺序和
+同步协议。Thread.hasBeenStarted/start/join 复用既有唯一线程状态，hook 不另建执行器。
+System.exit 委托 Runtime.exit，平台只绑定 nativeExit。nativeExit 保存 per-VM 退出码，
+通过非 Java 的 thread_stopped 控制展开停止 guest；禁止调用宿主 exit 或在 worker 中 join 自己。
+进程所有者接收退出状态后完成原有线程 join、持久化与资源销毁；已退出 VM 不再接受 Java 调用。
+
+宿主 Stop 保持取消语义，不自动视作 Java 正常退出，也不新增 non-daemon 自动退出。
+Runtime.exit 按原版先启动全部 hook 再 join；halt 跳过 hook。无限等待、重入等待仍可阻塞
+正常 exit，不伪造超时成功。现有 Thread 未捕获异常策略继续适用；Java finalization 尚未
+支持时拒绝启用 runFinalizersOnExit(true)。其余 Runtime native 不因类迁入而自动声明支持。
+
+纯 Java 会话的 root join 同样表示统一 Clock 的帧驱动阻塞。worker 的 timed wait 在该事实下
+复用既有串行 deadline 补时机制；不创建新计时源，也不让正常 runnable root 下的 worker
+自行推进时间。验证包括真实 LogManager Handler 清理、timed hook 与 Activity/Application 退出。

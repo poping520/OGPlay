@@ -79,8 +79,8 @@ void BindPlatformCoreHandlers(
          android_intrinsics::PlatformSystemLoadHandler(android_context)},
         {"Ljava/lang/System;", "loadLibrary", "(Ljava/lang/String;)V",
          android_intrinsics::PlatformSystemLoadLibraryHandler(android_context)},
-        {"Ljava/lang/System;", "exit", "(I)V",
-         android_intrinsics::PlatformSystemExitHandler(android_context)},
+        {"Ljava/lang/Runtime;", "nativeExit", "(I)V",
+         android_intrinsics::PlatformRuntimeNativeExitHandler(android_context)},
     };
     for (const auto& binding : bindings) {
         bool found = false;
@@ -1167,6 +1167,11 @@ DexVmGuestBridge::DexVmGuestBridge(
                 AdvanceAndroidClock(*android_context, delta_millis);
             });
         impl_->vm->Monitors().SetClockDriverBlockedProbe([android_context] {
+            // Runtime.exit joins hooks on the lifecycle clock driver, also
+            // in headless/pure Java sessions with no EGL pacer. Timed hooks
+            // must use the same unified Clock fast-forward as timed root waits.
+            if (android_context->threads && android_context->threads->RootIsJoining())
+                return true;
             const auto pacer = TryEglSwapPacerSnapshot(*android_context);
             return pacer.has_value() && pacer->attached &&
                    pacer->driver_blocked && !pacer->shutdown &&

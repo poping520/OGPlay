@@ -428,7 +428,8 @@ struct OrchestratedApp final {
                              const bool application_enabled = true,
                              const ogplay::runtime::dexvm::InterpreterBackend
                                  interpreter_backend =
-                                     ogplay::runtime::dexvm::InterpreterBackend::switch_dispatch) {
+                                     ogplay::runtime::dexvm::InterpreterBackend::switch_dispatch,
+                             const std::string& application_class = "android.app.Application") {
         context->apk_bytes = {
             std::byte{0x50}, std::byte{0x4b}, std::byte{0x03}, std::byte{0x04}};
         const ogplay::runtime::BionicModuleSource system{
@@ -437,6 +438,7 @@ struct OrchestratedApp final {
         if (with_native) libraries.push_back(Library("liba.so", native_a));
         ogplay::session::AndroidAppProcessRequest request;
         request.manifest = AppManifest(activity, has_launcher);
+        request.manifest.application_class = application_class;
         request.manifest.service_components = services;
         request.manifest.application_enabled = application_enabled;
         if (!launcher_alias.empty()) {
@@ -3457,4 +3459,93 @@ TEST_CASE("DVM-144 application Proxy executes BootDex Binder transact and Java r
         CHECK(on(reply, "dataPosition", "()I", {}).value.AsInt() == 0);
         CHECK(vm.StringUtf8(on(reply, "readString", "()Ljava/lang/String;", {}).value.ref) == "fixture.echo");
     }
+}
+
+
+TEST_CASE("DVM-150 Java exit unwinds Activity startup and stops the guest process") {
+    using namespace ogplay;
+    OrchestratedApp fixture("fixture.ExitActivity");
+    fixture.app->StartApplication();
+    const auto stopped = fixture.app->StartLauncherActivity();
+    CHECK(stopped.state == session::LifecycleRunState::stopped);
+    CHECK(fixture.app->State() == session::AndroidAppProcessState::stopped);
+    CHECK(fixture.app->DexVm().Vm().ExitCode() == 29);
+    CHECK(runtime::SessionExitRequested(*fixture.app->Context()));
+    CHECK_FALSE(fixture.app->NativeProcess().Running());
+    CHECK(fixture.app->Stop().state == session::LifecycleRunState::stopped);
+}
+
+TEST_CASE("DVM-150 Java exit cannot be caught by Application onCreate") {
+    using namespace ogplay;
+    ApplicationProcess fixture;
+    session::DexActivityLifecycleBindings bindings;
+    bindings.bridge = fixture.bridge.get();
+    bindings.context = fixture.context;
+    bindings.application_descriptor = "Lfixture/ExitApplication;";
+    bindings.launcher_descriptor = "Lfixture/LauncherActivity;";
+    bool opened = false;
+    bindings.open_surface = [&] { opened = true; };
+    session::DexActivityLifecycle lifecycle(std::move(bindings));
+    const auto state = lifecycle.Start();
+    CHECK(state.state == session::LifecycleRunState::stopped);
+    CHECK(fixture.bridge->Vm().ExitCode() == 31);
+    CHECK(fixture.bridge->Vm().GetSystemProperty("shutdown.hook") == "done");
+    CHECK(fixture.context->uptime_millis.load() >= 10);
+    CHECK_FALSE(opened);
+}
+
+
+TEST_CASE("DVM-150 AndroidAppProcess does not launch after Application exits") {
+    using namespace ogplay;
+    OrchestratedApp fixture("fixture.LauncherActivity", true, false, "", {}, true,
+        runtime::dexvm::InterpreterBackend::switch_dispatch, "fixture.ExitApplication");
+    fixture.app->StartApplication();
+    CHECK(fixture.app->State() == session::AndroidAppProcessState::stopped);
+    CHECK(fixture.app->StartLauncherActivity().state == session::LifecycleRunState::stopped);
+    CHECK(fixture.app->DexVm().Vm().ExitCode() == 31);
+    CHECK_FALSE(fixture.app->NativeProcess().Running());
+    CHECK_FALSE(fixture.app->Context()->activity.IsValid());
+}
+
+TEST_CASE("DVM-150 Runtime exit propagates through guest JNI OnLoad reentry") {
+    using namespace ogplay;
+    auto libc = LibcElf();
+    auto a = AppElf({"liba.so", "libc.so", runtime::kJniVersion1_6, true, true});
+    std::array inputs{
+        loader::Elf32ModuleInput{"liba.so", a, memory::GuestAddress{0x20000000U}},
+        loader::Elf32ModuleInput{"libc.so", libc, memory::GuestAddress{0x10000000U}},
+    };
+    runtime::VirtualFileSystem filesystem;
+    auto session = runtime::AndroidGuestCallSession::Start(
+        {19, "liba.so", inputs, {}, 64, 36, UINT64_C(200000), 1, &filesystem, {}});
+    loader::ApkNativeLibraryInventory inventory{{Library("liba.so", a)}};
+    auto selected = loader::SelectApkNativeLibraries(inventory, loader::AndroidArmAbi::armeabi_v7a);
+    runtime::NativeLibraryLoader libraries(session->Process(), selected);
+    auto context = std::make_shared<runtime::DexVmAndroidContext>();
+    context->session = session.get();
+    context->native_libraries = &libraries;
+    core::CapabilityLedger ledger;
+    auto catalog = runtime::AndroidIntrinsicCatalog(context);
+    auto bridge = std::make_unique<runtime::DexVmGuestBridge>(
+        *session, ReadDexFixture("aps5.dex"), catalog, context, ledger,
+        nullptr, runtime::DexVmBridgeConfig{}, ogplay::test::ReadBootDex());
+    const auto type = bridge->Linker().ResolveDescriptor("Lfixture/Aps5;");
+    const auto initialized = bridge->Vm().EnsureClassInitialized(type);
+    REQUIRE_FALSE(initialized.exception.IsValid());
+    bridge->Vm().SetStaticFieldBits("Lfixture/Aps5;", "exitCode", "I", 37);
+    const auto start = bridge->Linker().FindDirectMethod(type, "start", "()V");
+    REQUIRE(start.has_value());
+    bool returned = false;
+    try {
+        static_cast<void>(bridge->Vm().Call(*start, {}));
+        returned = true;
+    } catch (const runtime::dexvm::DexVmError& error) {
+        CHECK(error.Reason() == runtime::dexvm::DexVmErrorReason::thread_stopped);
+    }
+    CHECK_FALSE(returned);
+    CHECK(bridge->Vm().ExitCode() == 37);
+    CHECK(runtime::SessionExitRequested(*context));
+    bridge.reset();
+    session->Stop();
+    CHECK_FALSE(session->Running());
 }

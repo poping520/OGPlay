@@ -116,6 +116,7 @@
       "Ljava/lang/NumberFormatException;",
       "Ljava/lang/OutOfMemoryError;",
       "Ljava/lang/ReflectiveOperationException;",
+      "Ljava/lang/Runtime;",
       "Ljava/lang/RuntimeException;",
       "Ljava/lang/RuntimePermission;",
       "Ljava/lang/SecurityException;",

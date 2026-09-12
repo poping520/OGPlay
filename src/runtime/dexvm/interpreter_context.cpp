@@ -249,6 +249,28 @@ void Interpreter::RequestStop(const InterpreterExecutionContext& context) {
     impl_->clinit_changed.notify_all();
 }
 
+std::optional<std::int32_t> Interpreter::ExitCode() const noexcept {
+    const auto code = impl_->exit_code.load(std::memory_order_acquire);
+    if (code == INT64_C(0x100000000)) return std::nullopt;
+    return static_cast<std::int32_t>(code);
+}
+
+void Interpreter::Exit(const std::int32_t code) {
+    VmExecutionLockScope lock_scope(impl_->execution_lock);
+    auto expected = INT64_C(0x100000000);
+    impl_->exit_code.compare_exchange_strong(expected, code,
+                                             std::memory_order_acq_rel);
+    {
+        const std::lock_guard guard(impl_->executions_mutex);
+        for (const auto& [_, execution] : impl_->executions)
+            execution->stop_requested.store(true, std::memory_order_relaxed);
+    }
+    impl_->clinit_changed.notify_all();
+    if (impl_->threads) impl_->threads->RequestShutdown();
+    throw DexVmError(DexVmErrorReason::thread_stopped,
+                     "guest Runtime.nativeExit(" + std::to_string(code) + ")");
+}
+
 void Interpreter::UnwindStoppedExecutionContext(
     const InterpreterExecutionContext& context) {
     VmExecutionLockScope lock_scope(impl_->execution_lock);

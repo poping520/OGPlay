@@ -956,6 +956,10 @@ ReflectionRuntime& Interpreter::Reflection() noexcept {
 VmCallOutcome Interpreter::Call(const VmMethodId method_id,
                                 const std::span<const VmValue> arguments) {
     VmExecutionLockScope lock_scope(impl_->execution_lock);
+    if (ExitCode().has_value()) {
+        throw DexVmError(DexVmErrorReason::thread_stopped,
+                         "guest VM has exited");
+    }
     auto& execution = impl_->Execution();
     InterpreterExecutionScope execution_scope(impl_.get(), execution);
     auto& frames = execution.frames;

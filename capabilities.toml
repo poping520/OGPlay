@@ -1679,3 +1679,9 @@ note = "DVM-120 Typeface 的常量/缓存/工厂/样式/相等查询来自 BootD
 status = "partial"
 test = "tests/dexvm/android_value_tests.cpp; tests/dexvm/arsc_tests.cpp; tests/loader/apk_manifest_tests.cpp"
 note = "DVM-121 ColorStateList/CREATOR、StateSet、R.attr 来自 BootDex；Manifest theme 经 session 传入 Activity，TextView 支持 APK style parent/reference/attribute、直接颜色/尺寸/字体。平台注册部分主题的 hint/highlight/link 投影；attr ID 不冒充 style。普通字段保持颜色引用，真实 UI 消费文本色/尺寸/字体，hint/link/highlight 仅存储可查询。未登记 framework style、stateful 渲染/selector、shadow/allCaps 和完整主题明确失败。"
+
+
+[dexvm.runtime_shutdown_hooks]
+status = "complete"
+test = "tests/dexvm/bootdex_library_tests.cpp; tests/runtime/native_library_loader_tests.cpp; DVM-150"
+note = "API19 Runtime add/removeShutdownHook/exit/halt 执行 BootDex 原版 Java，hook List 为真实 GC 强根；System.exit 共用协议，nativeExit 保存 per-VM 退出码并停止执行，owner 回收避免 worker 自 join。root join 复用统一 Clock 补时；真实 LogManager Handler.close、timed hook、Java catch 无法吞退出、VM 隔离定向受检。complete 仅指注册与显式退出闭环；宿主 Stop 仍为取消，未提供 non-daemon 自动退出、hook 超时完成或 Java finalization，Runtime gc/堆统计/nativeLoad 不在此能力范围。"

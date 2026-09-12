@@ -355,32 +355,32 @@ using namespace detail;
 
 IntrinsicClassDecl Declare_java_lang_Runtime() {
     auto builder = IntrinsicClassBuilder::Class("Ljava/lang/Runtime;", "Ljava/lang/Object;");
-    const auto current = builder.BoundStaticField(
-        "currentRuntime", "Ljava/lang/Runtime;", kAccPrivate | kAccFinal);
-    builder.ClassInitializer([current](IntrinsicContext& context) {
-        IntrinsicCall(context).SetRef(current,
-            context.vm.NewIntrinsicInstance("Ljava/lang/Runtime;"));
-        return VmValue::Void();
-    });
-    builder.StaticMethod("getRuntime", "()Ljava/lang/Runtime;", [current](IntrinsicContext& context) {
-        return VmValue::Ref(IntrinsicCall(context).GetRef(current));
-    });
+    // Runtime state and shutdown-hook protocol belong to pinned API 19 DEX.
     builder.VirtualMethod("availableProcessors", "()I", [](IntrinsicContext&) {
         // The interpreter exposes one execution lane under VmExecutionLock.
         return VmValue::Int(1);
     });
-    builder.VirtualMethod("addShutdownHook", "(Ljava/lang/Thread;)V",
-        [](IntrinsicContext& context) {
-            if (!context.arguments[0].ref.IsValid()) {
-                throw VmJavaThrow{"Ljava/lang/NullPointerException;",
-                                  "shutdown hook is null"};
-            }
-            if (auto* ledger = context.vm.Ledger()) {
-                ledger->RecordUnimplemented(
-                    "dexvm.runtime.shutdown_hook_registration", 0);
-            }
-            return VmValue::Void();
-        });
+    builder.StaticMethod("nativeExit", "(I)V", [](IntrinsicContext& context) -> VmValue {
+        context.vm.Exit(context.arguments[0].AsInt());
+    }, kAccPrivate | kAccNative);
+    // These unrelated native boundaries remain explicitly unsupported.
+    builder.UnimplementedStatic("nativeLoad",
+        "(Ljava/lang/String;Ljava/lang/ClassLoader;Ljava/lang/String;)Ljava/lang/String;",
+        kAccPrivate | kAccNative);
+    for (const auto* name : {"freeMemory", "totalMemory", "maxMemory"}) {
+        builder.UnimplementedVirtual(name, "()J", kAccPublic | kAccNative);
+    }
+    builder.UnimplementedVirtual("gc", "()V", kAccPublic | kAccNative);
+    builder.UnimplementedVirtual("runFinalization", "()V");
+    builder.StaticMethod("runFinalizersOnExit", "(Z)V", [](IntrinsicContext& context) {
+        if (context.arguments[0].AsInt() != 0) {
+            if (auto* ledger = context.vm.Ledger())
+                ledger->RecordUnimplemented("dexvm.runtime.finalizers_on_exit", 0);
+            throw VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
+                              "Java finalization on exit is not implemented"};
+        }
+        return VmValue::Void();
+    });
     return std::move(builder).Build();
 }
 
@@ -3122,7 +3122,12 @@ IntrinsicClassDecl Declare_java_lang_System(const CoreIntrinsicServices& service
     });
     builder.UnimplementedStatic("load", "(Ljava/lang/String;)V");
     builder.UnimplementedStatic("loadLibrary", "(Ljava/lang/String;)V");
-    builder.UnimplementedStatic("exit", "(I)V");
+    builder.StaticMethod("exit", "(I)V", [](IntrinsicContext& context) {
+        const auto runtime = InvokeGuestDirect(context.vm, "Ljava/lang/Runtime;", "getRuntime",
+                                    "()Ljava/lang/Runtime;", {}).ref;
+        return InvokeGuest(context.vm, runtime, "exit", "(I)V",
+                           {context.arguments[0]});
+    });
     builder.ClassInitializer(
         [](IntrinsicContext& context) {
                 auto& vm = context.vm;

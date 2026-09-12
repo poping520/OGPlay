@@ -550,7 +550,12 @@ TEST_CASE("dexvm core intrinsic catalog is unique and structurally stable") {
         "Ljava/lang/System;.nanoTime()J",
         "Ljava/lang/System;.load(Ljava/lang/String;)V",
         "Ljava/lang/System;.loadLibrary(Ljava/lang/String;)V",
-        "Ljava/lang/System;.exit(I)V",
+        "Ljava/lang/Runtime;.nativeLoad(Ljava/lang/String;Ljava/lang/ClassLoader;Ljava/lang/String;)Ljava/lang/String;",
+        "Ljava/lang/Runtime;.freeMemory()J",
+        "Ljava/lang/Runtime;.totalMemory()J",
+        "Ljava/lang/Runtime;.maxMemory()J",
+        "Ljava/lang/Runtime;.gc()V",
+        "Ljava/lang/Runtime;.runFinalization()V",
         "Ljava/lang/AssertionError;.<init>"
         "(Ljava/lang/String;Ljava/lang/Throwable;)V",
         "Ljava/lang/AssertionError;.<init>(Ljava/lang/Object;)V",

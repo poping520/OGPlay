@@ -207,7 +207,7 @@ bool ApplyTextEdit(dx::Interpreter& vm, DexVmAndroidContext& context,
     const Context& context);
 [[nodiscard]] dx::IntrinsicHandler PlatformSystemCurrentTimeMillisHandler(
     const Context& context);
-[[nodiscard]] dx::IntrinsicHandler PlatformSystemExitHandler(
+[[nodiscard]] dx::IntrinsicHandler PlatformRuntimeNativeExitHandler(
     const Context& context);
 [[nodiscard]] dx::IntrinsicHandler PlatformSystemLoadHandler(
     const Context& context);

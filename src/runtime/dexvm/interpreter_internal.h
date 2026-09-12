@@ -106,6 +106,7 @@ public:
     core::CapabilityLedger* ledger{};
     InterpreterConfig config;
     InterpreterStats stats;
+    std::atomic<std::int64_t> exit_code{INT64_C(0x100000000)};
 
     // Guards the context table only. Execution() resolves the active state
     // from thread-local routing or the cached default, so the hot path never

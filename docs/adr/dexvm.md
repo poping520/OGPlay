@@ -905,3 +905,13 @@ API 19 BootDex。IP 字节、hostname、scope 与 endpoint 只存在 guest 字�
 Libcore 保留原版 Os/Posix 转发形状。宿主仅实现 Android 常量、数字地址转换、经
 NetworkPolicy/NetworkTransport 授权的名称查询及确定性 guest uname。不得读取宿主机器身份、
 DNS 或网卡；未支持的 Posix、NetworkInterface ioctl 和可达性路径明确失败。
+
+<a id="adr-0059"></a>
+## ADR-0059 · URI 普通值语义归固定 API 19 BootDex
+
+2026-09-12，接受，DVM-153。
+
+URI、内部 encoder、URISyntaxException 与 UrlUtils 一次切换为 BootDex，删除 URI 的 C++
+字段投影和部分解析算法。URI 的全部可变缓存、解析结果和序列化协议只由原版 Java 字段维护。
+URL 尚未迁移，继续执行现有有界 intrinsic；它仍使用的 ParseUri C++ 辅助函数不属于 URI
+状态，保留到 URL 后续迁移。URI 新闭包没有 native 或宿主网络边界。

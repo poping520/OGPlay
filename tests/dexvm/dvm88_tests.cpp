@@ -287,6 +287,46 @@ TEST_CASE("DVM-152 API 19 InetAddress owns address state and uses bounded DNS") 
     }
 }
 
+TEST_CASE("DVM-153 API 19 URI parses creates normalizes and resolves in BootDex") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch,
+                               InterpreterBackend::threaded}) {
+        CAPTURE(backend == InterpreterBackend::threaded ? "threaded" : "switch");
+        Dvm88Vm fixture(backend);
+        const auto input = fixture.vm.NewStringUtf8(
+            "http://chillingo-terms.chillingocloud.com/a/../getLatest?q=x%20y#f");
+        const auto uri = fixture.Static(
+            "Ljava/net/URI;", "create", "(Ljava/lang/String;)Ljava/net/URI;",
+            {VmValue::Ref(input)}).ref;
+        CHECK(fixture.vm.StringUtf8(fixture.On(
+                  uri, "getHost", "()Ljava/lang/String;").ref) ==
+              "chillingo-terms.chillingocloud.com");
+        CHECK(fixture.vm.StringUtf8(fixture.On(
+                  uri, "getPath", "()Ljava/lang/String;").ref) == "/a/../getLatest");
+        CHECK(fixture.vm.StringUtf8(fixture.On(
+                  uri, "getQuery", "()Ljava/lang/String;").ref) == "q=x y");
+        const auto normalized = fixture.On(
+            uri, "normalize", "()Ljava/net/URI;").ref;
+        CHECK(fixture.vm.StringUtf8(fixture.On(
+                  normalized, "toString", "()Ljava/lang/String;").ref) ==
+              "http://chillingo-terms.chillingocloud.com/getLatest?q=x%20y#f");
+        const auto resolved = fixture.On(
+            normalized, "resolve", "(Ljava/lang/String;)Ljava/net/URI;",
+            {VmValue::Ref(fixture.vm.NewStringUtf8("terms.json"))}).ref;
+        CHECK(fixture.vm.StringUtf8(fixture.On(
+                  resolved, "toString", "()Ljava/lang/String;").ref) ==
+              "http://chillingo-terms.chillingocloud.com/terms.json");
+        CHECK(fixture.On(uri, "equals", "(Ljava/lang/Object;)Z",
+                         {VmValue::Ref(uri)}).AsInt() == 1);
+
+        const auto invalid = fixture.StaticOutcome(
+            "Ljava/net/URI;", "create", "(Ljava/lang/String;)Ljava/net/URI;",
+            {VmValue::Ref(fixture.vm.NewStringUtf8("http://bad host/"))});
+        REQUIRE(invalid.exception.IsValid());
+        CHECK(fixture.linker.Class(invalid.exception_class).descriptor ==
+              "Ljava/lang/IllegalArgumentException;");
+    }
+}
+
 TEST_CASE("DVM-88 URL form codecs match API 19 UTF-8 behavior") {
     for (const auto backend : {InterpreterBackend::switch_dispatch,
                                InterpreterBackend::threaded}) {

@@ -39,6 +39,7 @@ struct ArscEntry final {
     std::uint8_t orientation{};
     std::uint16_t density{};
     std::uint16_t sdk_version{};
+    std::uint8_t screen_layout{};
     std::uint16_t smallest_width_dp{};
     std::uint16_t screen_width_dp{};
     std::uint16_t screen_height_dp{};

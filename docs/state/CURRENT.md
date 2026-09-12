@@ -1,5 +1,10 @@
 # 当前状态
 
+- [DVM-149](../tasks/dexvm/DVM-149.md) 正在收口 Terms 交互一致性：ScrollView slop/CANCEL、
+  AsyncTask 原错传播、Drawable 旧 callback、统一文本事务、API 19 qualifier 顺序与软件帧
+  producer guard 已完成定向回归。真实 APK 移除降级后明确停在缺失 API 19 输入之外的
+  Apache `BasicHttpParams`；Dialog presentation 仍明确未实现，因此完整流程和新截图未验收。
+
 - [DVM-148](../tasks/dexvm/DVM-148.md) 已完成：真实 PvZ 非 survey Terms 页面使用横屏资源、
   多行文本、表格权重、ScrollView 与 `npTc` NinePatch 正常布局合成；Button 从 View 继承
   同一 Drawable 背景实例。真实输入 `13` 经 Editable/TextWatcher 由 guest 更新 accept

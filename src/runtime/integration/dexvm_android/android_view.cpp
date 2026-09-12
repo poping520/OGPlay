@@ -12,6 +12,30 @@ namespace ogplay::runtime::android_intrinsics {
 
 namespace {
 
+void ReplaceViewBackgroundBinding(DexVmAndroidContext& context,
+                                  const dx::VmObjectRef view,
+                                  const ui::UiNodeId node,
+                                  const dx::VmObjectRef drawable) {
+    const auto old = context.ui_view_backgrounds.find(view.Value());
+    if (old != context.ui_view_backgrounds.end()) {
+        const auto state = context.ui_drawables.find(old->second.Value());
+        if (state != context.ui_drawables.end() &&
+            state->second.callback_node == node) {
+            state->second.callback_node.reset();
+        }
+    }
+    if (!drawable.IsValid()) {
+        context.ui_view_backgrounds.erase(view.Value());
+        return;
+    }
+    context.ui_drawables[drawable.Value()].callback_node = node;
+    context.ui_view_backgrounds[view.Value()] = drawable;
+}
+
+}  // namespace
+
+namespace {
+
 bool CallContextWrapperConstructor(dx::IntrinsicContext& context,
                                    const dx::VmObjectRef base) {
     auto& linker = context.vm.Linker();
@@ -1088,9 +1112,8 @@ Decl Declare_android_view_View(const Context& context) {
                 call.arguments[0].AsInt()));
             const auto drawable = call.vm.NewIntrinsicInstance(
                 "Landroid/graphics/drawable/ColorDrawable;");
-            context->ui_drawables[drawable.Value()] = {
-                .color = color, .callback_node = node};
-            context->ui_view_backgrounds[call.receiver.Value()] = drawable;
+            context->ui_drawables[drawable.Value()] = {.color = color};
+            ReplaceViewBackgroundBinding(*context, call.receiver, node, drawable);
             auto* state = context->ui_tree.Get(node);
             state->background_color = color;
             state->background_resource_id = 0;
@@ -1104,7 +1127,8 @@ Decl Declare_android_view_View(const Context& context) {
             const auto resource_id =
                 static_cast<std::uint32_t>(call.arguments[0].AsInt());
             if (resource_id == 0U) {
-                context->ui_view_backgrounds.erase(call.receiver.Value());
+                ReplaceViewBackgroundBinding(*context, call.receiver, node,
+                                             dx::VmObjectRef{});
                 auto* state = context->ui_tree.Get(node);
                 state->background_color.reset();
                 state->background_resource_id = 0;
@@ -1121,8 +1145,9 @@ Decl Declare_android_view_View(const Context& context) {
                 const auto drawable = call.vm.NewIntrinsicInstance(
                     "Landroid/graphics/drawable/Drawable;");
                 context->ui_drawables[drawable.Value()] = {
-                    .resource_id = resource_id, .callback_node = node};
-                context->ui_view_backgrounds[call.receiver.Value()] = drawable;
+                    .resource_id = resource_id};
+                ReplaceViewBackgroundBinding(*context, call.receiver, node,
+                                             drawable);
                 auto* state = context->ui_tree.Get(node);
                 state->background_color.reset();
                 state->background_resource_id = resource_id;
@@ -1140,14 +1165,15 @@ Decl Declare_android_view_View(const Context& context) {
             auto* view = context->ui_tree.Get(node);
             const auto drawable = call.arguments[0].ref;
             if (!drawable.IsValid()) {
-                context->ui_view_backgrounds.erase(call.receiver.Value());
+                ReplaceViewBackgroundBinding(*context, call.receiver, node,
+                                             dx::VmObjectRef{});
                 view->background_color.reset();
                 view->background_resource_id = 0;
                 view->background_alpha = 1.0F;
             } else {
                 auto& state = context->ui_drawables[drawable.Value()];
-                state.callback_node = node;
-                context->ui_view_backgrounds[call.receiver.Value()] = drawable;
+                ReplaceViewBackgroundBinding(*context, call.receiver, node,
+                                             drawable);
                 view->background_color = state.color;
                 view->background_resource_id = state.resource_id;
                 view->background_alpha = static_cast<float>(state.alpha) / 255.0F;

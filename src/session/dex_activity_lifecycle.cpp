@@ -17,6 +17,7 @@ namespace ogplay::session {
         constexpr std::int32_t kMotionActionDown = 0;
         constexpr std::int32_t kMotionActionUp = 1;
         constexpr std::int32_t kMotionActionMove = 2;
+        constexpr std::int32_t kMotionActionCancel = 3;
         constexpr std::int32_t kKeyActionDown = 0;
         constexpr std::int32_t kKeyActionUp = 1;
         constexpr std::int64_t kMillisPerFrame = 16;
@@ -140,6 +141,14 @@ namespace ogplay::session {
             context->application_descriptor.clear();
             throw;
         }
+    }
+
+    bool ShouldInterceptScrollGesture(const std::int32_t scroll_range,
+                                      const float down_y,
+                                      const float current_y,
+                                      const float density) noexcept {
+        return scroll_range > 0 && density > 0.0F &&
+               std::abs(current_y - down_y) > 8.0F * density;
     }
 
     DeepTouchDispatchResult DispatchDeepTouchEvent(
@@ -470,62 +479,6 @@ namespace ogplay::session {
     void DexActivityLifecycle::DispatchInput() {
         auto& vm = bindings_.bridge->Vm();
         auto& context = *bindings_.context;
-        const auto notify_text_change = [&](const dx::VmObjectRef edit,
-                                            const runtime::ui::UiNodeId node,
-                                            const std::u16string& before,
-                                            const std::u16string& after) {
-            const auto found = context.text_watchers.find(edit.Value());
-            const auto old_text = vm.Model().NewString(before);
-            const auto new_text = vm.Model().NewString(after);
-            const auto roots = vm.ProtectReferences(std::array{edit, old_text,
-                                                               new_text});
-            const auto invoke = [&](const dx::VmObjectRef watcher,
-                                    const char* name, const char* descriptor,
-                                    std::vector<dx::VmValue> arguments) {
-                const auto owner = vm.Model().ObjectClass(watcher);
-                const auto index = vm.Linker().FindVtableIndex(owner, name,
-                                                               descriptor);
-                if (!index.has_value()) {
-                    Fail(std::string("TextWatcher has no ") + name);
-                }
-                arguments.insert(arguments.begin(), dx::VmValue::Ref(watcher));
-                RequireOutcome(vm,
-                               vm.Call(vm.Linker().Class(owner).vtable[*index],
-                                       arguments),
-                               name);
-            };
-            if (found != context.text_watchers.end()) {
-                for (const auto watcher : found->second) {
-                    invoke(watcher, "beforeTextChanged",
-                           "(Ljava/lang/CharSequence;III)V",
-                           {dx::VmValue::Ref(old_text), dx::VmValue::Int(0),
-                            dx::VmValue::Int(static_cast<std::int32_t>(before.size())),
-                            dx::VmValue::Int(static_cast<std::int32_t>(after.size()))});
-                }
-            }
-            context.ui_tree.Get(node)->text = after;
-            context.ui_tree.MarkLayoutDirty(node);
-            if (found != context.text_watchers.end()) {
-                const auto editable = vm.Call(
-                    vm.Linker().Class(vm.Model().ObjectClass(edit)).vtable[
-                        *vm.Linker().FindVtableIndex(vm.Model().ObjectClass(edit),
-                                                    "getText",
-                                                    "()Landroid/text/Editable;")],
-                    std::array{dx::VmValue::Ref(edit)}).value.ref;
-                const auto editable_root =
-                    vm.ProtectReferences(std::array{editable});
-                for (const auto watcher : found->second) {
-                    invoke(watcher, "onTextChanged",
-                           "(Ljava/lang/CharSequence;III)V",
-                           {dx::VmValue::Ref(new_text), dx::VmValue::Int(0),
-                            dx::VmValue::Int(static_cast<std::int32_t>(before.size())),
-                            dx::VmValue::Int(static_cast<std::int32_t>(after.size()))});
-                    invoke(watcher, "afterTextChanged",
-                           "(Landroid/text/Editable;)V",
-                           {dx::VmValue::Ref(editable)});
-                }
-            }
-        };
         for (const auto& input: pending_input_) {
             using Type = runtime::AndroidBoundaryInputType;
             if (input.type == Type::key) {
@@ -547,9 +500,18 @@ namespace ogplay::session {
                                 input.unicode_char));
                         }
                         if (changed != state.text) {
-                            const auto before = state.text;
-                            notify_text_change(context.focused_edit_text,
-                                               *node, before, changed);
+                            const auto before_size = state.text.size();
+                            if (changed.size() < before_size) {
+                                static_cast<void>(runtime::android_intrinsics::ApplyTextEdit(
+                                    vm, context, context.focused_edit_text,
+                                    static_cast<std::int32_t>(before_size - 1),
+                                    1, {}));
+                            } else {
+                                static_cast<void>(runtime::android_intrinsics::ApplyTextEdit(
+                                    vm, context, context.focused_edit_text,
+                                    static_cast<std::int32_t>(before_size), 0,
+                                    std::u16string(1, changed.back())));
+                            }
                             continue;
                         }
                     }
@@ -608,6 +570,8 @@ namespace ogplay::session {
             if (action == kMotionActionDown) {
                 context.focused_edit_text = dx::VmObjectRef{};
                 scroll_view_handle_ = 0U;
+                scroll_dragging_ = false;
+                scroll_start_y_ = pointer_y_;
                 scroll_last_y_ = pointer_y_;
                 const auto edit_class = vm.Linker().ResolveDescriptor(
                     "Landroid/widget/EditText;");
@@ -643,16 +607,52 @@ namespace ogplay::session {
                     const auto maximum = std::max(
                         0, content_height - scroll.measured.height +
                                scroll.padding.top + scroll.padding.bottom);
-                    scroll.scroll_y = std::clamp(
-                        scroll.scroll_y + static_cast<std::int32_t>(
-                            std::lround(scroll_last_y_ - pointer_y_)),
-                        0, maximum);
-                    scroll_last_y_ = pointer_y_;
-                    context.ui_tree.MarkLayoutDirty(*node);
+                    if (!scroll_dragging_ && ShouldInterceptScrollGesture(
+                            maximum, scroll_start_y_, pointer_y_,
+                            context.ui_density)) {
+                        // Once the ancestor ScrollView intercepts, Android
+                        // cancels the original child target. This revokes both
+                        // its touch capture and click eligibility.
+                        if (gesture_candidate_ != 0U) {
+                            const auto cancelled = runtime::DispatchViewGestureEvent(
+                                vm, context, gesture_candidate_,
+                                kMotionActionCancel, pointer_x_, pointer_y_,
+                                gesture_click_eligible_, gesture_touch_consumed_);
+                            if (cancelled.error.has_value()) Fail(*cancelled.error);
+                        }
+                        if (deep_touch_handle_ != 0U) {
+                            const auto cancelled = DispatchDeepTouchEvent(
+                                vm, context, kMotionActionCancel, pointer_x_,
+                                pointer_y_, deep_touch_handle_);
+                            if (cancelled.error.has_value()) Fail(*cancelled.error);
+                        }
+                        gesture_candidate_ = 0U;
+                        gesture_click_eligible_ = false;
+                        gesture_touch_consumed_ = false;
+                        deep_touch_handle_ = 0U;
+                        scroll_dragging_ = true;
+                    }
+                    if (scroll_dragging_) {
+                        const auto previous = scroll.scroll_y;
+                        scroll.scroll_y = std::clamp(
+                            scroll.scroll_y + static_cast<std::int32_t>(
+                                std::lround(scroll_last_y_ - pointer_y_)),
+                            0, maximum);
+                        scroll_last_y_ = pointer_y_;
+                        if (scroll.scroll_y != previous) {
+                            context.ui_tree.MarkLayoutDirty(*node);
+                        }
+                        continue;
+                    }
+                }
+            }
+            if (action == kMotionActionUp) {
+                scroll_view_handle_ = 0U;
+                if (scroll_dragging_) {
+                    scroll_dragging_ = false;
                     continue;
                 }
             }
-            if (action == kMotionActionUp) scroll_view_handle_ = 0U;
             const bool had_listener_candidate = gesture_candidate_ != 0U;
             if (had_listener_candidate) {
                 const auto result = runtime::DispatchViewGestureEvent(
@@ -702,7 +702,11 @@ namespace ogplay::session {
                            "(Ljavax/microedition/khronos/opengles/GL10;)V",
                            {dx::VmValue::Ref(dx::VmObjectRef{})});
                 if (bindings_.present_surface) bindings_.present_surface();
-            } else if (bindings_.context->content_view.IsValid() &&
+            } else if (!bindings_.context->renderer.IsValid() &&
+                       bindings_.context->active_surface_holders.empty() &&
+                       bindings_.context->video_views.empty() &&
+                       bindings_.context->holder_canvases.empty() &&
+                       bindings_.context->content_view.IsValid() &&
                        bindings_.context->session != nullptr &&
                        bindings_.context->ui_tree.Get(
                            bindings_.context->ui_tree.Root())->draw_dirty) {

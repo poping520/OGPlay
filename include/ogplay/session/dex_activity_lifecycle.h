@@ -34,6 +34,10 @@ struct DeepTouchDispatchResult final {
     runtime::DexVmAndroidContext& context, std::int32_t action, float x,
     float y, std::uint64_t captured_view);
 
+[[nodiscard]] bool ShouldInterceptScrollGesture(
+    std::int32_t scroll_range, float down_y, float current_y,
+    float density) noexcept;
+
 // dex_activity lifecycle template (docs/design/dexvm/04-integration.md §2):
 // the real interpreted onCreate/onStart/onResume drive the title; the host
 // render loop calls the captured Renderer's onDrawFrame; input dispatches
@@ -134,7 +138,9 @@ private:
     float pointer_x_{};
     float pointer_y_{};
     std::uint64_t scroll_view_handle_{};
+    float scroll_start_y_{};
     float scroll_last_y_{};
+    bool scroll_dragging_{};
     // View that owns the current gesture. Click eligibility is captured
     // separately from cumulative OnTouchListener consumption.
     std::uint64_t gesture_candidate_{};

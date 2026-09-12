@@ -514,6 +514,9 @@ struct DexVmAndroidContext final {
     // and callbacks keyed by UiNodeId.
     ui::UiTree ui_tree;
     ui::UiBitmapCache ui_bitmaps;
+    std::uint32_t ui_bitmap_config_width{};
+    std::uint32_t ui_bitmap_config_height{};
+    std::uint32_t ui_bitmap_config_density_bits{};
     ui::UiOverlayRenderer ui_overlay_renderer;
     std::unordered_map<std::uint64_t, ui::UiNodeId> object_to_ui_node;
     std::unordered_map<ui::UiNodeId, dexvm::VmObjectRef, ui::UiNodeIdHash>
@@ -620,6 +623,8 @@ using UiLayoutLoader = std::function<std::vector<loader::BinaryXmlElement>(
     bool scaled);
 [[nodiscard]] std::shared_ptr<const ui::UiBitmap> ResolveUiDrawable(
     DexVmAndroidContext& context, std::uint32_t resource_id);
+[[nodiscard]] const loader::ArscEntry& ResolveUiResourceEntry(
+    const DexVmAndroidContext& context, std::uint32_t resource_id);
 
 // Installs/removes the generic VmExecutionLock blocking observer for the
 // lifecycle thread. The observer filters by the registered host thread id;
@@ -704,6 +709,15 @@ void InitializeDefaultViewBackground(dexvm::Interpreter& vm,
                                      dexvm::VmObjectRef view,
                                      ui::UiNodeId node);
 
+// Applies one filtered text replacement and synchronously delivers the API 19
+// TextWatcher transaction on the guest thread.
+namespace android_intrinsics {
+bool ApplyTextEdit(dexvm::Interpreter& vm, DexVmAndroidContext& context,
+                   dexvm::VmObjectRef view, std::int32_t start,
+                   std::int32_t before_count,
+                   const std::u16string& replacement);
+}  // namespace android_intrinsics
+
 // True when the view's derived bounds contain the point (up-inside check of
 // a click gesture).
 [[nodiscard]] bool ViewContainsPoint(DexVmAndroidContext& context,
@@ -781,6 +795,11 @@ PumpJavaThreads(dexvm::Interpreter &vm, DexVmAndroidContext &context);
 void RegisterAndroidSchedulerStateTable(
     dexvm::Interpreter& vm,
     const std::shared_ptr<DexVmAndroidContext>& context);
+void RegisterAndroidOwnerAttachedStateTable(
+    dexvm::Interpreter& vm,
+    const std::shared_ptr<DexVmAndroidContext>& context);
+void VisitAndroidSessionRoots(const DexVmAndroidContext& context,
+                              const dexvm::VmRootVisitor& visit);
 
 // True when the guest asked for the session to end: System.exit(), or the
 // activity that currently owns the screen finished itself with no successor

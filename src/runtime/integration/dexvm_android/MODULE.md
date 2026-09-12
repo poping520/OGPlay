@@ -74,7 +74,10 @@ Java 异常文本，再进入统一结构化 logger；不吞异常、不写裸 s
   本身不触发 traversal。
 - `View.getBackground` 按 API 19 继承形状发布；setBackgroundResource/Drawable 与 getter 保持
   同一 guest Drawable 身份。Button 构造和 XML inflation 建立非空默认背景，Drawable alpha
-  通过 callback node 触发重绘；普通无背景 View 返回 null。
+  通过仍为当前背景的 callback node 触发重绘；替换/清空会解除旧 callback，普通无背景
+  View 返回 null。
+- `TextView.setText`、`Editable.clear/replace` 与宿主 EditText 按键共用一个 integration
+  文本事务；数字/长度过滤、变更区间、watcher 快照、同步回调和失效只有这一份权威实现。
 - XML inflation 在应用显式属性前投影 API 19 TextView/Button/EditText 默认文本大小、最小
   尺寸、gravity/enabled/clickable，并解析 framework Large/Medium/Small textAppearance；显式
   textSize 和属性继续覆盖默认值，UiTree 保持唯一权威状态。
@@ -93,6 +96,8 @@ Java 异常文本，再进入统一结构化 logger；不吞异常、不写裸 s
 - Handler/Looper/HandlerThread/Timer/AsyncTask 共用 scheduler；deadline 来自 uptime Clock，同
   deadline 按 sequence FIFO。主 Looper 只在 lifecycle safe point 泵送，子 Looper 在对应 guest
   host thread 执行；禁止同步调用伪装 post。
+- AsyncTask worker 的 `DexVmError` 保留原始线程故障并终止该路径，不转换成 null 结果，
+  不继续调用 `onPostExecute`。Dialog/Web 内容尚未实现的 presentation 明确失败并记账。
 - ResultReceiver/IResultReceiver 普通协议来自 BootDex：有 Handler 排队、无 Handler 同步虚派，
   Parcel 往返保持本地 Binder 端点身份；不创建远程 Binder scheduler。
 - Thread/JNI native 入口复用 core runtime 与同一 catalog/context；不得恢复第二套线程或服务表。

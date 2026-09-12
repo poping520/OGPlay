@@ -4,6 +4,7 @@
 #include "ogplay/runtime/integration/dexvm_android.h"
 
 #include <stdexcept>
+#include <tuple>
 
 namespace ogplay::runtime {
 
@@ -201,7 +202,9 @@ constexpr std::array<UiWidgetDescriptor, 16> kWidgets{{
     return ((argb & 0x00ffffffU) << 8U) | (argb >> 24U);
 }
 
-[[nodiscard]] const loader::ArscEntry& ResolveEntry(
+}  // namespace
+
+[[nodiscard]] const loader::ArscEntry& ResolveUiResourceEntry(
     const DexVmAndroidContext& context, std::uint32_t resource_id) {
     std::unordered_set<std::uint32_t> seen;
     for (std::size_t depth = 0; depth < 16; ++depth) {
@@ -209,7 +212,6 @@ constexpr std::array<UiWidgetDescriptor, 16> kWidgets{{
             throw std::runtime_error("UI resource reference cycle");
         }
         const loader::ArscEntry* entry = nullptr;
-        int best = std::numeric_limits<int>::min();
         const auto width_dp = static_cast<int>(
             std::lround(context.surface_width / context.ui_density));
         const auto height_dp = static_cast<int>(
@@ -218,6 +220,57 @@ constexpr std::array<UiWidgetDescriptor, 16> kWidgets{{
         const auto orientation = width_dp > height_dp ? 2U : 1U;
         const auto density = static_cast<int>(
             std::lround(context.ui_density * 160.0F));
+        const auto long_dp = std::max(width_dp, height_dp);
+        const auto short_dp = std::min(width_dp, height_dp);
+        const auto screen_size = long_dp < 470 ? 1U
+            : long_dp >= 960 && short_dp >= 720 ? 4U
+            : long_dp >= 640 && short_dp >= 480 ? 3U : 2U;
+        const auto density_better = [density](const std::uint16_t lhs,
+                                              const std::uint16_t rhs) {
+            if (lhs == rhs) return false;
+            int high = lhs != 0 ? lhs : 160;
+            int low = rhs != 0 ? rhs : 160;
+            bool lhs_high = true;
+            if (low > high) {
+                std::swap(low, high);
+                lhs_high = false;
+            }
+            const int requested = density != 0 ? density : 160;
+            if (requested >= high) return lhs_high;
+            if (low >= requested) return !lhs_high;
+            return (((2 * low) - requested) * high >
+                    requested * requested) ? !lhs_high : lhs_high;
+        };
+        const auto better = [&](const loader::ArscEntry& lhs,
+                                const loader::ArscEntry& rhs) {
+            if (lhs.smallest_width_dp != rhs.smallest_width_dp)
+                return lhs.smallest_width_dp > rhs.smallest_width_dp;
+            const auto lhs_delta = width_dp - lhs.screen_width_dp +
+                                   height_dp - lhs.screen_height_dp;
+            const auto rhs_delta = width_dp - rhs.screen_width_dp +
+                                   height_dp - rhs.screen_height_dp;
+            if (lhs_delta != rhs_delta) return lhs_delta < rhs_delta;
+            auto lhs_size = lhs.screen_layout & 0x0fU;
+            auto rhs_size = rhs.screen_layout & 0x0fU;
+            const auto lhs_raw_size = lhs_size;
+            const auto rhs_raw_size = rhs_size;
+            if (screen_size >= 2U) {
+                if (lhs_size == 0U) lhs_size = 2U;
+                if (rhs_size == 0U) rhs_size = 2U;
+            }
+            if (lhs_size != rhs_size) return lhs_size > rhs_size;
+            if (lhs_raw_size != rhs_raw_size) return lhs_raw_size != 0U;
+            if (lhs.orientation != rhs.orientation)
+                return lhs.orientation != 0U;
+            if (lhs.density != rhs.density)
+                return density_better(lhs.density, rhs.density);
+            if (lhs.sdk_version != rhs.sdk_version)
+                return lhs.sdk_version > rhs.sdk_version;
+            return std::tie(lhs.screen_layout, lhs.value_type, lhs.value_data,
+                            lhs.string_value) <
+                   std::tie(rhs.screen_layout, rhs.value_type, rhs.value_data,
+                            rhs.string_value);
+        };
         for (const auto& candidate : context.arsc.entries) {
             if (candidate.resource_id != resource_id ||
                 (candidate.sdk_version != 0 && candidate.sdk_version > 19) ||
@@ -225,18 +278,12 @@ constexpr std::array<UiWidgetDescriptor, 16> kWidgets{{
                  candidate.orientation != orientation) ||
                 candidate.smallest_width_dp > smallest_dp ||
                 candidate.screen_width_dp > width_dp ||
-                candidate.screen_height_dp > height_dp) {
+                candidate.screen_height_dp > height_dp ||
+                ((candidate.screen_layout & 0x0fU) != 0U &&
+                 (candidate.screen_layout & 0x0fU) > screen_size)) {
                 continue;
             }
-            int score = candidate.orientation != 0 ? 1000000 : 0;
-            score += candidate.smallest_width_dp * 1000 +
-                     candidate.screen_width_dp + candidate.screen_height_dp;
-            if (candidate.density != 0) {
-                score += 100000 - std::abs(static_cast<int>(candidate.density) -
-                                           density);
-            }
-            if (score > best) {
-                best = score;
+            if (entry == nullptr || better(candidate, *entry)) {
                 entry = &candidate;
             }
         }
@@ -252,6 +299,8 @@ constexpr std::array<UiWidgetDescriptor, 16> kWidgets{{
     }
     throw std::runtime_error("UI resource reference depth exceeds 16");
 }
+
+namespace {
 
 [[nodiscard]] std::int32_t ComplexDimensionPx(
     const DexVmAndroidContext& context, const std::uint32_t data,
@@ -335,7 +384,7 @@ void ApplyTextAppearance(const DexVmAndroidContext& context,
             return;
         default: break;
     }
-    const auto& style = ResolveEntry(context, resource_id);
+    const auto& style = ResolveUiResourceEntry(context, resource_id);
     if (!style.is_complex || style.type_name != "style") {
         throw std::runtime_error("TextView textAppearance is not a style");
     }
@@ -574,7 +623,7 @@ void ApplyAttribute(DexVmAndroidContext& context, const ui::UiNodeId node_id,
 
 std::string ResolveResourceString(const DexVmAndroidContext& context,
                                   const std::uint32_t resource_id) {
-    const auto& entry = ResolveEntry(context, resource_id);
+        const auto& entry = ResolveUiResourceEntry(context, resource_id);
     if (entry.value_type != kTypeString || !entry.string_value.has_value()) {
         throw std::runtime_error("resource is not a string");
     }
@@ -588,7 +637,7 @@ std::u16string ResolveUiString(const DexVmAndroidContext& context,
 
 std::uint32_t ResolveUiColor(const DexVmAndroidContext& context,
                              const std::uint32_t resource_id) {
-    const auto& entry = ResolveEntry(context, resource_id);
+    const auto& entry = ResolveUiResourceEntry(context, resource_id);
     if (entry.value_type < kTypeFirstColor ||
         entry.value_type > kTypeLastColor) {
         throw std::runtime_error("UI resource is not a color");
@@ -599,7 +648,7 @@ std::uint32_t ResolveUiColor(const DexVmAndroidContext& context,
 std::int32_t ResolveUiDimension(const DexVmAndroidContext& context,
                                 const std::uint32_t resource_id,
                                 const bool scaled) {
-    const auto& entry = ResolveEntry(context, resource_id);
+    const auto& entry = ResolveUiResourceEntry(context, resource_id);
     if (entry.value_type != kTypeDimension) {
         throw std::runtime_error("UI resource is not a dimension");
     }
@@ -611,11 +660,20 @@ std::shared_ptr<const ui::UiBitmap> ResolveUiDrawable(
     if (resource_id == 0U) {
         throw std::runtime_error("UI drawable resource id is null");
     }
+    const auto density_bits = std::bit_cast<std::uint32_t>(context.ui_density);
+    if (context.ui_bitmap_config_width != context.surface_width ||
+        context.ui_bitmap_config_height != context.surface_height ||
+        context.ui_bitmap_config_density_bits != density_bits) {
+        context.ui_bitmaps.clear();
+        context.ui_bitmap_config_width = context.surface_width;
+        context.ui_bitmap_config_height = context.surface_height;
+        context.ui_bitmap_config_density_bits = density_bits;
+    }
     if (const auto cached = context.ui_bitmaps.find(resource_id);
         cached != context.ui_bitmaps.end()) {
         return cached->second;
     }
-    const auto& drawable = ResolveEntry(context, resource_id);
+    const auto& drawable = ResolveUiResourceEntry(context, resource_id);
     auto bitmap = std::make_shared<ui::UiBitmap>();
     if (drawable.value_type >= kTypeFirstColor &&
         drawable.value_type <= kTypeLastColor) {
@@ -845,7 +903,7 @@ private:
 
 [[nodiscard]] std::vector<loader::BinaryXmlElement> LoadLayout(
     const DexVmAndroidContext& context, const std::uint32_t layout_id) {
-    const auto& entry = ResolveEntry(context, layout_id);
+    const auto& entry = ResolveUiResourceEntry(context, layout_id);
     if (entry.type_name != "layout" || !entry.string_value.has_value()) {
         throw std::runtime_error("UI resource is not a layout file");
     }
@@ -936,6 +994,14 @@ dexvm::VmObjectRef InflateUiElements(
             }
             if (const auto* state = context.ui_tree.Get(node);
                 state->background_resource_id != 0U) {
+                const auto old = context.ui_view_backgrounds.find(view.Value());
+                if (old != context.ui_view_backgrounds.end()) {
+                    auto old_state = context.ui_drawables.find(old->second.Value());
+                    if (old_state != context.ui_drawables.end() &&
+                        old_state->second.callback_node == node) {
+                        old_state->second.callback_node.reset();
+                    }
+                }
                 const auto drawable = vm.NewIntrinsicInstance(
                     "Landroid/graphics/drawable/Drawable;");
                 context.ui_drawables[drawable.Value()] = {
@@ -1147,6 +1213,7 @@ ViewGestureDispatchResult DispatchViewGestureEvent(
     const float y, bool click_eligible, bool touch_consumed) {
     constexpr std::int32_t kActionDown = 0;
     constexpr std::int32_t kActionUp = 1;
+    constexpr std::int32_t kActionCancel = 3;
     const auto touch = InvokeViewOnTouch(vm, context, handle, action, x, y);
     if (touch.error.has_value()) {
         return {.error = touch.error};
@@ -1162,6 +1229,12 @@ ViewGestureDispatchResult DispatchViewGestureEvent(
                found->second.IsValid();
     }();
     if (action == kActionDown) click_eligible = has_live_click;
+    if (action == kActionCancel) {
+        return {.handled = touch_consumed || click_eligible,
+                .keep_capture = false,
+                .click_eligible = false,
+                .touch_consumed = touch_consumed};
+    }
     if (action == kActionUp) {
         if (!touch_consumed && click_eligible && has_live_click &&
             ViewContainsPoint(context, handle, x, y)) {

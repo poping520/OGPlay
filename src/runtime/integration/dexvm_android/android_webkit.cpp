@@ -40,11 +40,11 @@ Decl Declare_android_webkit_WebView(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/webkit/WebView;", "Landroid/view/ViewGroup;");
     builder.Constructor("(Landroid/content/Context;)V", ViewInitHandler(context));
     builder.FinalMethod("loadUrl", "(Ljava/lang/String;)V",
-        [](dx::IntrinsicContext& call) {
-            GuestLog(call, core::LogLevel::warn,
-                     "WebView.loadUrl dropped (web content is a non-goal): " +
-                         call.vm.StringUtf8(call.arguments[0].ref));
-            return dx::VmValue::Void();
+        [](dx::IntrinsicContext& call) -> dx::VmValue {
+            throw dx::VmJavaThrow{
+                "Ljava/lang/UnsupportedOperationException;",
+                "WebView content is outside the bounded UI implementation: " +
+                    call.vm.StringUtf8(call.arguments[0].ref)};
         });
     builder.FinalMethod("getSettings", "()Landroid/webkit/WebSettings;",
         [context](dx::IntrinsicContext& call) {

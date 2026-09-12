@@ -3,6 +3,7 @@
 
 #include <doctest/doctest.h>
 
+#include <array>
 #include <filesystem>
 #include <fstream>
 #include <memory>
@@ -77,6 +78,8 @@ struct ClickVm final {
     std::int32_t key_multiple_events{};
     std::int32_t last_key_code{};
     std::int32_t system_ui_visibility_events{};
+    std::vector<std::string> text_events;
+    std::array<std::int32_t, 3> last_text_range{};
     Interpreter interpreter;
     VmObjectRef activity;
     VmObjectRef video_view;
@@ -134,6 +137,34 @@ struct ClickVm final {
                       });
                   test_catalog.push_back(
                       std::move(system_ui_listener).Build());
+                  auto text_watcher = IntrinsicClassBuilder::Class(
+                      "LRecordingTextWatcher;", "Ljava/lang/Object;",
+                      {"Landroid/text/TextWatcher;"});
+                  text_watcher.VirtualMethod(
+                      "beforeTextChanged", "(Ljava/lang/CharSequence;III)V",
+                      [this](IntrinsicContext& call) {
+                          text_events.emplace_back("before");
+                          last_text_range = {call.arguments[1].AsInt(),
+                                             call.arguments[2].AsInt(),
+                                             call.arguments[3].AsInt()};
+                          return VmValue::Void();
+                      });
+                  text_watcher.VirtualMethod(
+                      "onTextChanged", "(Ljava/lang/CharSequence;III)V",
+                      [this](IntrinsicContext& call) {
+                          text_events.emplace_back("on");
+                          last_text_range = {call.arguments[1].AsInt(),
+                                             call.arguments[2].AsInt(),
+                                             call.arguments[3].AsInt()};
+                          return VmValue::Void();
+                      });
+                  text_watcher.VirtualMethod(
+                      "afterTextChanged", "(Landroid/text/Editable;)V",
+                      [this](IntrinsicContext&) {
+                          text_events.emplace_back("after");
+                          return VmValue::Void();
+                      });
+                  test_catalog.push_back(std::move(text_watcher).Build());
                   linker.RegisterIntrinsics(test_catalog);
                   linker.RegisterDex(ReadFixture("widgetclick.dex"));
                   ogplay::test::RegisterBootDex(linker);
@@ -146,6 +177,11 @@ struct ClickVm final {
         context->vfs = &vfs;
         context->video_player_factory = FakeFactory();
         interpreter.SetLogger(&logger);
+        RegisterAndroidOwnerAttachedStateTable(interpreter, context);
+        interpreter.SetGcIntegration({
+            {}, {}, [state = context](const VmRootVisitor& visit) {
+                VisitAndroidSessionRoots(*state, visit);
+            }});
         vfs.MountHostDirectory(
             "/sdcard",
             std::filesystem::path{OGPLAY_SOURCE_DIR} / "tests/fixtures/video");
@@ -730,6 +766,44 @@ TEST_CASE("touch consumption and click eligibility stay independent") {
     }
 }
 
+TEST_CASE("Scroll interception cancels a child click after touch slop") {
+    ClickVm vm;
+    const auto listener = vm.NewListener();
+    const auto node = FindViewUiNode(*vm.context, vm.skip_button.Value());
+    REQUIRE(node.has_value());
+    vm.context->ui_touch_listeners[*node] = listener;
+    vm.context->ui_click_listeners[*node] = listener;
+    vm.SetTouchResult(false);
+
+    auto result = DispatchViewGestureEvent(
+        vm.interpreter, *vm.context, vm.skip_button.Value(), 0,
+        60.0F, 95.0F, false, false);
+    REQUIRE(result.keep_capture);
+    CHECK_FALSE(ogplay::session::ShouldInterceptScrollGesture(
+        100, 95.0F, 88.0F, 1.0F));
+    CHECK_FALSE(ogplay::session::ShouldInterceptScrollGesture(
+        0, 95.0F, 70.0F, 1.0F));
+    CHECK(ogplay::session::ShouldInterceptScrollGesture(
+        100, 95.0F, 86.0F, 1.0F));
+
+    result = DispatchViewGestureEvent(
+        vm.interpreter, *vm.context, vm.skip_button.Value(), 3,
+        60.0F, 86.0F, result.click_eligible, result.touch_consumed);
+    CHECK_FALSE(result.keep_capture);
+    CHECK_FALSE(result.click_eligible);
+    CHECK(vm.CallStaticInt("getTouches") == 2);
+    CHECK(vm.CallStaticInt("getClicks") == 0);
+
+    // A separate tap remains one DOWN/UP pair and clicks once.
+    result = DispatchViewGestureEvent(
+        vm.interpreter, *vm.context, vm.skip_button.Value(), 0,
+        60.0F, 95.0F, false, false);
+    result = DispatchViewGestureEvent(
+        vm.interpreter, *vm.context, vm.skip_button.Value(), 1,
+        60.0F, 95.0F, result.click_eligible, result.touch_consumed);
+    CHECK(vm.CallStaticInt("getClicks") == 1);
+}
+
 TEST_CASE("deep View override captures a listener-free touch gesture") {
     ClickVm vm;
     const auto view = vm.NewTouchView();
@@ -1254,11 +1328,37 @@ TEST_CASE("EditText Editable preserves identity text and watcher registration") 
     const auto value = vm.CallOn(first, "toString", "()Ljava/lang/String;").ref;
     CHECK(vm.model.StringValue(value) == u"13");
 
-    const auto watcher = vm.activity;
+    const auto watcher = vm.interpreter.NewIntrinsicInstance(
+        "LRecordingTextWatcher;");
     vm.CallOn(edit, "addTextChangedListener",
               "(Landroid/text/TextWatcher;)V", {VmValue::Ref(watcher)});
     REQUIRE(vm.context->text_watchers.contains(edit.Value()));
     CHECK(vm.context->text_watchers.at(edit.Value()).front() == watcher);
+    vm.CallOn(vm.activity, "setContentView", "(Landroid/view/View;)V",
+              {VmValue::Ref(edit)});
+    static_cast<void>(vm.interpreter.CollectGarbage("text-watcher-owner"));
+
+    const auto node = FindViewUiNode(*vm.context, edit.Value());
+    REQUIRE(node.has_value());
+    vm.context->ui_tree.Get(*node)->numeric_input = true;
+    vm.context->ui_tree.Get(*node)->max_length = 3;
+    vm.CallOn(first, "replace", "(IILjava/lang/CharSequence;)Landroid/text/Editable;",
+              {VmValue::Int(1), VmValue::Int(2),
+               VmValue::Ref(vm.interpreter.NewStringUtf8("x45"))});
+    CHECK(vm.context->ui_tree.Get(*node)->text == u"145");
+    CHECK(vm.text_events == std::vector<std::string>{"before", "on", "after"});
+    CHECK(vm.last_text_range == std::array<std::int32_t, 3>{1, 1, 2});
+
+    vm.text_events.clear();
+    vm.CallOn(first, "clear", "()V");
+    CHECK(vm.context->ui_tree.Get(*node)->text.empty());
+    CHECK(vm.text_events == std::vector<std::string>{"before", "on", "after"});
+
+    vm.text_events.clear();
+    vm.CallOn(edit, "setText", "(Ljava/lang/CharSequence;)V",
+              {VmValue::Ref(vm.interpreter.NewStringUtf8("9z876"))});
+    CHECK(vm.context->ui_tree.Get(*node)->text == u"987");
+    CHECK(vm.text_events == std::vector<std::string>{"before", "on", "after"});
 }
 
 TEST_CASE("RelativeLayout Java rules update attached geometry") {
@@ -1425,12 +1525,98 @@ TEST_CASE("Button inherits View background identity and Drawable alpha invalidat
     CHECK(replacement != first);
     CHECK(vm.context->ui_tree.Get(*node)->background_resource_id == 101U);
     CHECK(vm.context->ui_tree.Get(*node)->background_alpha == 1.0F);
+    vm.context->ui_tree.ClearDrawDirty();
+    vm.CallOn(first, "setAlpha", "(I)V", {VmValue::Int(12)});
+    CHECK(vm.context->ui_tree.Get(*node)->background_alpha == 1.0F);
+    CHECK_FALSE(vm.context->ui_tree.Get(*node)->draw_dirty);
+    vm.CallOn(vm.activity, "setContentView", "(Landroid/view/View;)V",
+              {VmValue::Ref(button)});
+    static_cast<void>(vm.interpreter.CollectGarbage("replaced-background"));
+    CHECK_FALSE(vm.context->ui_drawables.contains(first.Value()));
+    CHECK(vm.context->ui_drawables.contains(replacement.Value()));
 
     const auto plain = vm.interpreter.NewIntrinsicInstance("Landroid/view/View;");
     vm.CallDirect(plain, "Landroid/view/View;", "<init>",
                   "(Landroid/content/Context;)V", {VmValue::Ref(vm.activity)});
     CHECK_FALSE(vm.CallOn(plain, "getBackground",
                           "()Landroid/graphics/drawable/Drawable;").ref.IsValid());
+}
+
+TEST_CASE("API 19 resource qualifiers use ordered matching independent of table order") {
+    ClickVm vm;
+    vm.context->surface_width = 800;
+    vm.context->surface_height = 480;
+    vm.context->ui_density = 1.0F;
+    const auto candidate = [](const std::uint32_t id,
+                              const std::uint32_t value) {
+        return ogplay::loader::ArscEntry{.resource_id = id, .type_name = "color",
+            .entry_name = "candidate", .value_type = 0x1c,
+            .value_data = value};
+    };
+    auto def = candidate(201, 1);
+    auto portrait = candidate(201, 2); portrait.orientation = 1;
+    auto land = candidate(201, 3); land.orientation = 2;
+    auto normal = candidate(202, 4); normal.screen_layout = 2;
+    auto large = candidate(202, 5); large.screen_layout = 3;
+    auto xlarge = candidate(202, 6); xlarge.screen_layout = 4;
+    auto sdk18 = candidate(203, 7); sdk18.sdk_version = 18;
+    auto sdk19 = candidate(203, 8); sdk19.sdk_version = 19;
+    auto d240 = candidate(204, 9); d240.density = 240;
+    auto d320 = candidate(204, 10); d320.density = 320;
+    auto width = candidate(205, 11); width.screen_width_dp = 600;
+    auto height = candidate(205, 12); height.screen_height_dp = 400;
+    auto sw = candidate(205, 13); sw.smallest_width_dp = 320;
+    auto base_bitmap = candidate(206, 0xffff0000U);
+    auto dense_bitmap = candidate(206, 0xff0000ffU); dense_bitmap.density = 320;
+    vm.context->arsc.entries = {def, portrait, land, normal, large, xlarge,
+                                sdk18, sdk19, d240, d320, width, height, sw,
+                                base_bitmap, dense_bitmap};
+    const auto verify = [&] {
+        CHECK(ResolveUiResourceEntry(*vm.context, 201).value_data == 3);
+        CHECK(ResolveUiResourceEntry(*vm.context, 202).value_data == 5);
+        CHECK(ResolveUiResourceEntry(*vm.context, 203).value_data == 8);
+        CHECK(ResolveUiResourceEntry(*vm.context, 204).value_data == 9);
+        CHECK(ResolveUiResourceEntry(*vm.context, 205).value_data == 13);
+    };
+    verify();
+    std::reverse(vm.context->arsc.entries.begin(),
+                 vm.context->arsc.entries.end());
+    verify();
+    CHECK(ResolveUiDrawable(*vm.context, 206)->rgba8[0] == 0xff);
+    vm.context->ui_density = 2.0F;
+    CHECK(ResolveUiDrawable(*vm.context, 206)->rgba8[2] == 0xff);
+}
+
+TEST_CASE("unsupported dialog and WebView presentation fail explicitly") {
+    ClickVm vm;
+    const auto invoke = [&](const VmObjectRef receiver, const char* name,
+                            const char* descriptor,
+                            std::vector<VmValue> arguments = {}) {
+        const auto owner = vm.model.ObjectClass(receiver);
+        const auto index = vm.linker.FindVtableIndex(owner, name, descriptor);
+        REQUIRE(index.has_value());
+        arguments.insert(arguments.begin(), VmValue::Ref(receiver));
+        return vm.interpreter.Call(vm.linker.Class(owner).vtable[*index],
+                                   arguments);
+    };
+    const auto dialog = vm.interpreter.NewIntrinsicInstance(
+        "Landroid/app/AlertDialog;");
+    const auto dialog_result = invoke(dialog, "show", "()V");
+    REQUIRE(dialog_result.exception.IsValid());
+    CHECK(vm.linker.Class(dialog_result.exception_class).descriptor ==
+          "Ljava/lang/UnsupportedOperationException;");
+    REQUIRE(vm.ledger.Unimplemented().size() == 1);
+    CHECK(vm.ledger.Unimplemented().front().id ==
+          "runtime.ui.dialog.presentation");
+
+    const auto web = vm.interpreter.NewIntrinsicInstance(
+        "Landroid/webkit/WebView;");
+    const auto web_result = invoke(
+        web, "loadUrl", "(Ljava/lang/String;)V",
+        {VmValue::Ref(vm.interpreter.NewStringUtf8("https://example.invalid"))});
+    REQUIRE(web_result.exception.IsValid());
+    CHECK(vm.linker.Class(web_result.exception_class).descriptor ==
+          "Ljava/lang/UnsupportedOperationException;");
 }
 
 TEST_CASE("DVM-123 Button constructor checks the supplied Context theme") {

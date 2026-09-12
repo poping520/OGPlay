@@ -156,6 +156,14 @@ void DeliverMessage(dx::IntrinsicContext& call, dx::VmObjectRef handler,
     const Context& context);
 [[nodiscard]] dx::IntrinsicHandler EditableReplaceHandler(
     const Context& context);
+
+// Single writer for TextView/EditText mutations. Every source (host keys,
+// setText and Editable methods) uses the same filters and guest TextWatcher
+// transaction.
+bool ApplyTextEdit(dx::Interpreter& vm, DexVmAndroidContext& context,
+                   dx::VmObjectRef view, std::int32_t start,
+                   std::int32_t before_count,
+                   const std::u16string& replacement);
 [[nodiscard]] dx::IntrinsicHandler GraphicsNoopHandler();
 [[nodiscard]] dx::IntrinsicHandler PrefsEditHandler(const Context& context);
 [[nodiscard]] dx::IntrinsicHandler PrefsEditorCommitHandler(

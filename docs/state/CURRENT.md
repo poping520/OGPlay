@@ -1,5 +1,10 @@
 # 当前状态
 
+- [DVM-152](../tasks/dexvm/DVM-152.md) 已把 API 19 InetAddress 地址闭包迁入 BootDex，删除
+  NetworkRuntime 地址/endpoint 侧表；双后端地址与 DNS 定向 62 条断言、DVM-88 252 条断言
+  及架构门禁通过。BootDex 为 1459 类。真实 APK 非 survey 双后端已越过 getLocalHost，
+  当前首错前移至 `java.net.URI.create(String)`；不宣称 Terms 或在线请求完成。
+
 - [DVM-151](../tasks/dexvm/DVM-151.md) 已实现三个 builder 的 BootDex 切换：宿主 BuilderBuffer
   与重复 intrinsic 已删除，value/count/shared 为唯一可变状态；12 个定向用例、14808 条断言通过。
   本地 BootDex 为 1415 类，架构门禁通过。双后端真实 APK 非 survey 已越过 StringBuilder.substring，
@@ -56,7 +61,7 @@
 ## 当前能力
 
 - **发行与 VM**：Profile 按 API 选择 bundled data。API 19 提供 AOSP guest 库、
-  OpenSSL、ICU 51.1、本地验证用 1415 类 BootDex 与 ICU 数据；来源和校验见
+  OpenSSL、ICU 51.1、本地验证用 1459 类 BootDex 与 ICU 数据；来源和校验见
   [manifest](../../data/android/19/manifest.json)。普通 Java 状态归字段/数组，JNI 使用
   VM 真实类型关系。
 - **Java/密码/ICU**：已覆盖常用集合、并发、IO、序列化、反射、framework 值类、日期与

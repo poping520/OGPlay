@@ -1524,6 +1524,7 @@ TEST_CASE("DVM-103 all BootDex classes link and collection methods have no intri
             descriptor.starts_with("Lcom/android/org/conscrypt/OpenSSLCipher$") ||
             descriptor == "Lcom/android/org/conscrypt/OpenSSLCipher;" ||
             descriptor.starts_with("Ljava/io/") ||
+            descriptor.starts_with("Ljava/net/") ||
             descriptor.starts_with("Ljava/beans/") ||
             descriptor.starts_with("Ljava/util/concurrent/") ||
             descriptor.starts_with("Ljava/util/concurrent/CountDownLatch") ||
@@ -1566,7 +1567,7 @@ TEST_CASE("DVM-103 all BootDex classes link and collection methods have no intri
         for (const auto method : f.linker.Class(type).own_direct_methods)
             CHECK(f.linker.Method(method).kind != MethodKind::intrinsic);
     }
-    CHECK(count == 1415);
+    CHECK(count == 1459);
 }
 
 TEST_CASE("DVM-149 Apache HTTP BootDex supports the Restlet startup object path") {

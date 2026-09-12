@@ -39,30 +39,11 @@ std::vector<std::string> NetworkRuntime::Resolve(const std::string_view host) {
     return result;
 }
 
-void NetworkRuntime::SetAddress(const VmObjectRef owner, std::string host,
-                                std::string address) {
-    addresses_[owner.Value()] =
-        Endpoint{std::move(host), std::move(address), 0};
-}
-
-const NetworkRuntime::Endpoint& NetworkRuntime::Address(
-    const VmObjectRef owner) const {
-    const auto found = addresses_.find(owner.Value());
-    if (found == addresses_.end())
-        throw NetworkRuntimeError("InetAddress state is unavailable");
-    return found->second;
-}
-
-void NetworkRuntime::SetEndpoint(const VmObjectRef owner, Endpoint endpoint) {
-    endpoints_[owner.Value()] = std::move(endpoint);
-}
-
-const NetworkRuntime::Endpoint& NetworkRuntime::GetEndpoint(
-    const VmObjectRef owner) const {
-    const auto found = endpoints_.find(owner.Value());
-    if (found == endpoints_.end())
-        throw NetworkRuntimeError("socket address state is unavailable");
-    return found->second;
+std::string NetworkRuntime::Reverse(const std::string_view address) {
+    RequireAllowed(address, false, false);
+    auto result = transport_->Reverse(address);
+    if (result.empty()) throw NetworkRuntimeError("address has no reverse name");
+    return result;
 }
 
 void NetworkRuntime::CreateSocket(const VmObjectRef owner, const bool tls) {
@@ -138,8 +119,6 @@ void NetworkRuntime::Shutdown() noexcept {
         socket.closed = true;
         socket.connected = false;
     }
-    addresses_.clear();
-    endpoints_.clear();
     sockets_.clear();
     streams_.clear();
     packets_.clear();
@@ -189,8 +168,6 @@ void NetworkRuntime::Trace(const VmObjectRef owner,
 
 void NetworkRuntime::Sweep(const VmObjectRef owner) noexcept {
     CloseSocket(owner);
-    addresses_.erase(owner.Value());
-    endpoints_.erase(owner.Value());
     sockets_.erase(owner.Value());
     streams_.erase(owner.Value());
     packets_.erase(owner.Value());

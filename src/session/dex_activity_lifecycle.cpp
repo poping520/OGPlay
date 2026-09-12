@@ -855,6 +855,8 @@ namespace ogplay::session {
         while (!context.pending_activity_descriptor.empty()) {
             const auto descriptor =
                     std::exchange(context.pending_activity_descriptor, {});
+            const auto pending_component =
+                    std::exchange(context.pending_activity_component_name, {});
             context.activity_switch_pending = false;
             const auto departing = context.activity.Value();
             if (auto* logger = bindings_.bridge->Vm().Log(); logger != nullptr) {
@@ -916,9 +918,12 @@ namespace ogplay::session {
                 "activity <init>");
             AttachBaseContext(vm, linker, *activity_class, activity,
                               context.application_base_context, "Activity");
-            auto component_name = vm.Linker().Class(*activity_class).descriptor;
-            component_name = component_name.substr(1, component_name.size() - 2);
-            std::replace(component_name.begin(), component_name.end(), '/', '.');
+            auto component_name = pending_component;
+            if (component_name.empty()) {
+                component_name = vm.Linker().Class(*activity_class).descriptor;
+                component_name = component_name.substr(1, component_name.size() - 2);
+                std::replace(component_name.begin(), component_name.end(), '/', '.');
+            }
             runtime::AttachAndroidActivityIdentity(vm, bindings_.context, activity,
                                                    component_name);
 

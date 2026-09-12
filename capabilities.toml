@@ -1608,7 +1608,7 @@ note = "DVM-107/ADR-0038：Pair、Sparse/ComponentName/Parcelable 等 framework 
 [dexvm.activity_component_identity]
 status = "complete"
 test = "tests/dexvm/android_value_tests.cpp; tests/runtime/native_library_loader_tests.cpp"
-note = "DVM-107：Activity.getLocalClassName/getComponentName/getPreferences/getIntent/setIntent 和 Intent 的 component setter/constructor 使用普通 mComponent/mIntent 字段。启动和切换在 onCreate 前附加组件，根 alias 保留 manifest 名；每实例 Intent 独立，替换 Intent 或变更其 component 不改 Activity 身份。双后端包名前缀/点边界/null/虚派和 GC 受检，真实启动 alias/切换 fixture 通过；隐式/跨包启动与一般 manifest resolver、非根 alias 解析仍明确不支持，不代表完整 Activity 或游戏 gate。"
+note = "DVM-107：Activity.getLocalClassName/getComponentName/getPreferences/getIntent/setIntent 和 Intent 的 component setter/constructor 使用普通 mComponent/mIntent 字段。启动和切换在 onCreate 前附加组件，alias 保留 manifest 组件名并实例化 target；每实例 Intent 独立，替换 Intent 或变更其 component 不改 Activity 身份。当前 APK 内隐式启动只解析 action/category、无 data/type、含 DEFAULT 的唯一 enabled Activity filter，成功后固定 Component；零匹配抛 ActivityNotFoundException，多匹配及 data/type 潜在匹配明确失败。双后端受检，真实 PvZ 已由 Terms Accept 越过 OBBActivity handoff，首错前移至 Context.checkPermission(String,int,int)。跨包、chooser 与一般 manifest resolver 仍不支持，不代表完整 Activity 或游戏 gate。"
 
 [dexvm.uuid_bootdex]
 status = "complete"

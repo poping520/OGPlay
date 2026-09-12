@@ -1,5 +1,10 @@
 # 当前状态
 
+- 当前 APK 内 Activity 隐式启动已闭合无 data/type 的唯一 action/category+DEFAULT 匹配：
+  Manifest enabled、零/多匹配、activity-alias 组件/target 双身份均受检，解析后 Component
+  固定回 Intent。真实 PvZ 已越过 Terms Accept 后的 OBBActivity handoff，不再正常停机；
+  新首错为 `Context.checkPermission(String,int,int)` 缺失。
+
 - `Class.getResourceAsStream` 与 `ClassLoader.getResourceAsStream` 已接通 sealed classpath：
   bootstrap 读取受审 BootDex 资源，application 按 parent-first 再读当前 APK；API 19
   `logging.properties` 已进入 BootDex 白名单并返回真实 `ByteArrayInputStream`。真实 PvZ

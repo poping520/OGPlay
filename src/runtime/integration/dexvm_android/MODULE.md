@@ -127,3 +127,7 @@ family。明确缺口包括跨进程 Binder/system services、外部 package/ser
 
 定向测试位于 `tests/dexvm/android_*`、widget/layout/scheduler/egl、runtime JNI/native loader 与
 frontend lifecycle。行为变更覆盖 switch/threaded 及架构门禁；title 探索不等同 Scenario gate。
+
+
+DVM-150：shared 的 PlatformRuntimeNativeExitHandler 仅绑定 Runtime.nativeExit，发布会话
+退出标记并调用 VM 的不可返回 Exit；不能再把 System.exit 实现为设置标记后返回。

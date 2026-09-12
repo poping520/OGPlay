@@ -104,3 +104,11 @@ namespace、完整 Charset/PKIX/TLS/BigInt 及完整 Java/Android 平台。
 定向测试位于 `tests/dexvm/`：interpreter/fast-code/linker、reflection、GC、thread/monitor、IO/
 network/NIO/Unsafe、BootDex 双后端与 dexasm readback。只构建受影响目标并运行相关用例；完整
 验收与 title gate 按顶层约定执行。
+
+### DVM-150 Runtime shutdown
+
+Runtime singleton、hook List、shuttingDown 与 add/remove/exit/halt 普通方法由 pinned BootDex
+拥有；不得建立 C++ hook 注册表。nativeExit 保存 per-VM 有符号退出码，停止所有已有 execution
+context，通过 thread_stopped 展开而非 Java Throwable；退出后 Call 明确拒绝。RequestShutdown
+只发布停止和唤醒，不 join；进程所有者在 guest 栈退出后负责 Shutdown/join。Thread 未捕获
+异常仍走现有 handler/进程失败策略，不为 hook 吞异常。宿主取消不等于 Runtime.exit。

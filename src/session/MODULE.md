@@ -162,3 +162,10 @@ inventory 已就绪；独立 VM 未装配时保持
 DVM-121：从 sealed Manifest 发布 application theme 与逐 Activity theme；alias 继承
 目标 Activity，0 回退 application。integration 在 Activity.onCreate 前应用对应资源 id，
 session 不解析 style/颜色或创建完整 Android Theme。
+
+
+DVM-150：显式 guest Runtime/System.exit 先完成 BootDex hook 协议，halt 跳过 hook；VM 退出码
+已发布的生命周期调用展开进入 Stop，不计为 guest fault。Application 内退出后不再启动
+launcher；已退出 VM 的 Stop 不再调用 Java 生命周期回调。宿主 Stop 仍是已有取消/回收路径，
+不隐式运行 hook；没有最后 non-daemon 线程结束自动退出或 hook 超时成功语义。挂起的原版
+hook 可阻塞正常 exit，强制取消不能宣称正常 hook 完成。详见 ADR-0056。

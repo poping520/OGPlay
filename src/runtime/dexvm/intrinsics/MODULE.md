@@ -1,253 +1,111 @@
 # 模块：runtime/dexvm/intrinsics
 
-intrinsic 的逻辑单位仍然是 Java class：每个 class 恰好一个直接位于正式
-`ogplay::runtime::dexvm::intrinsics` 命名空间的 `Declare_*()`，handler 与对应声明同址；
-物理文件只按 API family 聚合，不保留 `dvm80_*` 迁移命名空间或同名转发函数。
-目录固定为 `catalog.cpp` 加 `java_lang/classloading/reflect/io/util/icu/regex/zip/nio/net/xml/
-concurrent/crypto.cpp` 13 个 family TU。family 文件只向 `catalog.h` 暴露 `Append*()`，
-`catalog.cpp` 不感知 family 内具体 class，也不得包含行为。
+## 职责与装配
 
-family TU 按 API 语义与共享状态聚合，以控制翻译单元数量。
-禁止新增 `misc`/`common`/`all` 等无语义聚合文件、字符串 core handler id、
-全局静态自注册，以及 android.* 声明和行为顺手修改。
-class/member access flag 必须使用 `access_flags.h` 的共享 `kAcc*` 常量组合，禁止在
-family TU 中写裸十六进制访问标志；反射过滤使用同一头文件中单独命名的 Java modifier mask。
-平台 enum 必须通过 `IntrinsicEnumBuilder` 在链接前生成常量字段、`$VALUES`、类初始化器
-及精确类型的 `values/valueOf`；普通扩展只声明常量，payload 使用显式回调。
-curated Boot DEX 内的纯 Java enum 消费 `java.lang.Enum.getSharedConstants` 通用 VM
-overlay；不得为 `EnumSet/MiniEnumSet/HugeEnumSet` 增加 C++ 行为副本。
+发布 Java core 的 VM/native 边界；纯 Java 算法执行 pinned API 19 BootDex。
+依赖、对象/GC 与线程总契约见 [DexVM](../MODULE.md)，平台装配见
+[integration](../../integration/MODULE.md)，能力范围见 [capabilities](../../../../capabilities.toml)。
 
-`java.*`、`javax.net.*`、`javax.xml.*` 与 `org.xml.sax.*` 均由 core 发布；需要平台事实的
-Locale、Timer、SSL singleton 与 SAX handler 通过 `CoreIntrinsicServices` 窄接口注入；
-Locale 保持 API 19 的 final class 及 Cloneable/Serializable 直接接口关系；ROOT、US、
-ENGLISH、CHINESE 等 22 个预定义对象由类初始化器创建并保存在静态强根中。language/country/
-variant/script 使用 API 19 transient 字段，默认 Locale 从会话注入且按 VM 隔离，不读取宿主
-locale；首批 LocaleData 只接受 ROOT、en、en_US、zh、zh_CN，其余明确失败。
-Locale.getISOLanguages/getISOCountries 转发到 BootDex ICU 的缓存/clone；两个 private
-native 使用固定 ICU 51 的完整 ISO 表（559 语言、249 国家），不按默认 Locale 过滤，
-不添加第一处 NULL 之后的废弃别名。缓存归 Java 静态字段，每次返回独立 String[]。
-`org.xmlpull.v1.XmlPullParser` 只发布 API 19 接口 shape，资源事件实现归 Android integration，
-core 不依赖 `DexVmAndroidContext`。
-Timer/TimerTask 仅保留 Java 参数、重复调度与取消入口；deadline、执行队列、Clock 和
-生命周期由注入的 scheduler 窄接口拥有。core 禁止反向读取 Android context 或恢复
-cooperative next-frame task queue。
+- 每个 Java class 只有一个正式命名空间内的 `Declare_*()`，声明与 handler 同址。
+  物理文件固定为 catalog 加 lang/classloading/reflect/io/util/icu/regex/zip/nio/net/xml/
+  concurrent/crypto 13 个 family TU；family 只向 catalog.h 暴露 Append*，catalog 不含行为。
+- 禁止迁移转发层、misc/common/all TU、字符串 handler id、静态自注册和 android.* 行为。
+  flags 只用 access_flags.h 的 kAcc*；反射 modifier mask 使用对应命名常量。
+- java.*、javax.net/xml 与 org.xml.sax 归 core；平台事实只经 CoreIntrinsicServices 注入，
+  不读取 DexVmAndroidContext 或宿主 locale、环境、网络。XmlPullParser 仅声明接口。
+- 普通 Java 状态只在 guest 字段/数组；资源交给 per-VM runtime，不重建算法或影子侧表。
+  跨 nested guest call 的新引用必须用 RootScope；宿主 VmObjectRef 容器不是 GC 根。
+  未支持的方法记账并明确失败，不能用默认值伪造能力。
 
-`java_util.cpp` 只保留 Locale 与 Timer/TimerTask 的宿主边界。Collection/List/Map、所有
-选入的容器/视图/迭代器、Arrays/Collections、Observable/Observer 与 Random 由 BootDex
-执行，不允许重建 C++ 算法或集合侧表。WeakReference 的弱边/入队属于通用 VM GC 原语。
-ThreadLocal 消费 Thread.localValues 和 wrapping atomic getAndAdd；System.nanoTime 只读
-统一 Clock，Runtime.availableProcessors 发布单 guest 执行通道事实 1。
+## lang、线程与退出
 
-DVM-118：Math 普通 Java 方法/常量/random 状态归 BootDex，java_lang.cpp 只保留
-API 19 定义的 24 个 libm native 原语。round、abs/min/max、符号位/ulp/scalb 等
-由原版 Java 决定；不把宿主 libm 声称为 StrictMath/fdlibm 的逐位一致实现。
-DVM-126：`String` 保持 VM 特殊 UTF-16 owner，两个 `String.format` 只按 API 19 包装逻辑
-构造并调用 BootDex `Formatter`。格式解析、异常、Locale 与日期转换归原版 Java；
-`AbstractStringBuilder`/Appendable 继承面和 `IntegralToString.appendInt/Long` 仅桥接唯一 builder
-状态，不恢复 C++ format parser，也不宣称 double/BigDecimal formatter 长尾可用。
-`java_icu.cpp` 只发布 DVM-122 审计固定的 guest ICU native、NativeDecimalFormat 与 TimeZone 数据
-边界；Format/DateFormat/SimpleDateFormat、NumberFormat/DecimalFormat、Date/Calendar 及
-SimpleTimeZone 的类、字段和 Java 算法均来自 BootDex。formatter 的 Java long 只保存 per-VM
-逻辑令牌，clone/close/非法令牌由 `libogplay_jni.so` 管理，GC sweep 与 VM teardown 经 close 回收；
-未交付的具名时区数据库、大数/double formatter 和 ICU 查询明确失败。不得恢复 java_text.cpp
-或日期/日历 C++ 行为副本。区域字段、货币和时区名称必须调用固定 ICU 数据，数字 native
-必须经 guest JNI 委托 payload ICU formatter。TimeZone.getDefault 使用 DEX defaultTimeZone，与 Java
-setDefault 保持 clone/reset 语义；首次/重置只使用 CoreIntrinsicServices.default_timezone。
-Locale 构造规范化语言小写、区域大写与 he/id/yi 旧码；Matcher.groupCount 来自 pattern，
-不要求已有匹配。ICU 分配失败、非法输入和范围外操作分别映射为明确 Java 异常。
+- String 的 UTF-16、builder 状态由 VM 唯一拥有；format 委托 BootDex Formatter，大小写
+  使用固定 ICU（等价 ASCII 快路允许）。substring/indexOf/append 保留 API19 索引、null、
+  原引用和自追加语义；CharSequence append 虚派 length/charAt，越界不得修改 buffer。
+- Math 普通方法/常量/random 归 BootDex，仅保留 24 个 libm native；不宣称 fdlibm 逐位一致。
+  Throwable/StackTraceElement/异常家族归 BootDex，仅保留两个栈 native；消息虚派、原异常
+  身份、cause/suppressed 与输出格式归 Java。PrintStream 只接结构化输出，空追加不输出。
+- Thread 声明字段和 Java 校验；start 虚派 this.run，基类 run 才虚派 target。
+  线程、identity、sleep/join/park/interrupt 只用 VmThreadRuntime/monitor；纳秒向上取整到
+  统一毫秒 Clock。priority/daemon 仅为 guest fact，不映射宿主调度或自动退出。
+- Thread 字段用预绑定 handle/IntrinsicCall，禁止裸槽和逐调用 descriptor 查找。
+  contextClassLoader 受 GC 追踪：root 为 application loader，子线程继承，setter 允许 null。
+  实例 uncaught handler 优先于默认 handler；handler 自身异常按 API19 忽略，无 handler
+  保留进程致命诊断。ThreadGroup 仅 bounded system/main、名称和存活枚举，结束后 group 为 null。
+  线程栈来自本 VM safe-point snapshot，不伪造完整 ThreadGroup/State。
+- Runtime 的单例、hook List、shuttingDown、add/remove/exit/halt 执行原版 Java；System.exit
+  委托 Runtime.exit，nativeExit 进入 Interpreter.Exit，不能返回 guest 或直接退出宿主。
+  宿主 Stop 保持取消语义；availableProcessors 保留单执行通道事实 1。
+  Runtime gc/内存统计/nativeLoad/runFinalization 尚未支持；runFinalizersOnExit(true) 立即
+  记账抛 UnsupportedOperationException，false 保持未启用。见 [DVM-150](../../../../docs/tasks/dexvm/DVM-150.md)。
+- System 属性共用 per-VM 表，默认只发布三个 separator，参数按 Java 校验；getenv 只读取
+  注入的 guest Bionic environ，无参版本返回原版不可修改快照。getSecurityManager 固定 null，
+  不安装宿主权限系统；nanoTime 只用统一 Clock。Class.desiredAssertionStatus 默认 false。
+- 平台 enum 用 IntrinsicEnumBuilder 在链接前生成字段、$VALUES、clinit、values/valueOf；
+  BootDex enum 复用 Enum.getSharedConstants，禁止 EnumSet 的 C++ 副本。顶层接口只声明
+  已登记 shape，Thread.UncaughtExceptionHandler 归 Thread family。
 
-`java_regex.cpp` 的 Pattern/Matcher 只承诺 String 输入与已登记 API 的 bounded regex 语义；
-非法语法/flag 必须抛 Java 异常，不伪造匹配。DVM-110 的 FutureTask、ThreadPoolExecutor、
-ScheduledThreadPoolExecutor、执行器接口/异常和普通 Executors 工厂包装类全部由 BootDex
-执行，删除 FutureTask、合成 SingleThreadExecutor 和工厂 overlay。任务/队列/结果/等待者
-仅存 Java 字段；不得创建宿主调度器或恢复任务侧表。定时任务消费统一 Clock 的 nanoTime，
-worker 经 ThreadFactory、Thread 和 VmThreadRuntime 创建真实线程，阻塞由 AQS/Unsafe
-park 释放执行锁。解释执行仍串行；privileged 工厂与安全上下文不在此次闭包。
+## 类加载、反射、集合与并发
 
-`java_concurrent.cpp` 同时声明 API 19 libdvm 的 `sun.misc.Unsafe`：同一静态强根单例、
-真实 caller loader 检查、受检字段/数组位置、int/long/reference 读写和 CAS 委托
-`UnsafeRuntime`；handler 不操作裸槽。`park/unpark` 复用 Thread，absolute epoch 毫秒
-经 `CoreIntrinsicServices.current_time_millis` 与 monitor Clock 转换为单调 deadline。
-无时间源/溢出明确失败，permit/interrupt/teardown 不另建状态。Thread 补齐 API 19 private
-`parkBlocker` 对象字段，由 BootDex LockSupport 通过 Unsafe 读写并形成普通 GC 强边。`allocateInstance` 完成
-clinit 后跳过构造器，拒绝不可实例化类。并发 family 仅保留 Unsafe 与 AtomicLong CS8 原语。
+- ClassLoader/BootClassLoader/PathClassLoader 身份、parent、lookup/initiate 只用
+  ClassLoaderFacade；自定义 loader 仍映射唯一 application namespace，动态 classpath 拒绝。
+  Class.forName 使用真实 caller；三参 null 映射 API19 system loader。CNFE 保留 cause，
+  clinit EIIE 保留原 throwable。完整约束见 [DexVM](../MODULE.md)。
+- Class/Method/Constructor/Field/reflect.Array 只委托 linker、ReflectionRuntime、ReflectionCodec
+  和 typed array store；不读写 raw member id。public 聚合按 class→superclass→direct interface；
+  nested/enclosing/Throws 只读 Dalvik metadata，禁止名称拆分猜测、generic/annotation proxy。
+  invoke/实例化/字段读写保留类型转换和原异常引用；Modifier 与对象流普通协议归 BootDex。
+- 集合、迭代器、Arrays/Collections、Random、ThreadLocal、普通 atomic/同步器和
+  FutureTask/ThreadPoolExecutor/ScheduledThreadPoolExecutor/普通 Executors 都执行 BootDex。
+  队列、任务、等待者只存 Java 字段；不恢复宿主集合、任务侧表或独立 executor。
+- Unsafe 单例与 caller loader 受检；读写/CAS/数组位置委托 UnsafeRuntime，park/unpark
+  复用 Thread，absolute epoch 经注入时间转单调 deadline。无 Clock/溢出明确失败；
+  allocateInstance 先 clinit 再跳过构造器。并发 family 只保留 Unsafe 与 AtomicLong CS8。
+  Timer/TimerTask 的 deadline、队列、Clock、取消和生命周期交注入 scheduler；不反向读 context。
 
-`java_io.cpp` 保留文件/VFS、ObjectStreamClass 六个 VM 原语与 InputStreamReader 字符解码边界。
-DVM-104 的 Input/OutputStream、Reader/Writer、内存/Buffer/Filter/Data 等普通流来自
-BootDex，状态只在 guest 字段/数组中；禁止恢复相关 handler 或 wrapper-adoption 侧表。
-FileDescriptor 与 ICU decoder 委托 per-VM IoRuntime，不回读 Android context。
-FileReader 经真实 FileInputStream 构造后委托 InputStreamReader；后者以 Reader.lock 的
-source monitor 保护增量转换器，六个标准编码来自固定 ICU 51，close/GC/teardown 释放资源。
-逻辑描述符不保存宿主句柄；`FileInputStream.getFD()` 与借用描述符构造
-共享输入状态和读游标，`FileOutputStream.getFD()` 同样共享输出状态，两者关闭时都必须
-区分拥有与借用关系。`File` 路径/对象、访问、类型、过滤列表与文件 rename 语义以
-pinned API 19 libcore 为准；相对绝对化只消费 `IoRuntime` 注入的 guest 工作目录，`mkdir`
-与 `mkdirs` 必须分别保持单级和递归语义。`FilenameFilter`/`FileFilter` 通过 guest virtual
-`accept` 过滤直接子项并传播回调异常。VFS 尚无权限位修改能力，`setWritable(true)` 只在
-目标已存在且本来可写时成功，其他请求明确失败，不得伪造权限变更。
-未注入 `IoFileSystem` 与普通 ENOENT 不得合并：前者必须抛明确 Java 异常。filter、排序、
-比较等 handler 若把新 guest 引用带过 nested guest call，必须使用 interpreter 的
-execution-local `RootScope` 保活，宿主 `VmObjectRef` 容器本身不是 GC 根。
-`OutputStream` 的默认 bulk write 必须经 receiver vtable 派发到子类 override；基类
-`flush/close` 是 no-op，禁止直接假设任意 guest 子类都在 `IoRuntime` 中拥有输出状态。
-`InputStream` 的默认 bulk read/skip 同样必须经 receiver vtable 派发；基类
-`available/close/mark` 使用 API 19 默认语义，`reset` 明确抛 `IOException`，不得要求自定义
-子类注册 `IoRuntime` 输入状态。
-DVM-109 的 ObjectInputStream/ObjectOutputStream、ObjectStreamClass、字段辅助类和
-异常来自 pinned core.jar；普通方法不得 overlay，源/目标、字段图与共享 handle 均由 Java
-字段/数组拥有和 GC 追踪。ObjectStreamClass 仅保留 getConstructorId/newInstance、三个成员
-签名 getter 与 hasClinit native；委托 ReflectionRuntime 的受检构造 token 和唯一元数据。
-默认 UID 的 SHA 使用已登记 guest EVP；私有 writeObject/readObject、GetField/PutField、
-readResolve/writeReplace、Externalizable 协议 1/2 与数组执行原版协议。
-ObjectOutputStream.getFieldL 是 AOSP 未使用的遗留 native 声明，显式未实现绑定，不提供假返回。
-Proxy 两个生成 native、VMStack 除 getClasses 以外四个 native 同样明确失败。
-DVM-115 将 Throwable、StackTraceElement、java.lang 异常家族及 IOException/InvocationTargetException
-迁入 BootDex；其对象图和私有对象流回调可持久化。其余宿主资源对象仍不因迁移自动可序列化。
-Throwable.getLocalizedMessage 虚调用 receiver.getMessage；toString 虚调用
-getLocalizedMessage，保留 null（仅类名）与空串（类名加冒号）的区别。子类覆盖进入
-正常 VM 调用，保持消息引用、GC 强根及原异常身份。java_lang.cpp 只保留 Throwable 的两个
-栈 native；PrintWriter/原因链/suppressed/重复帧输出归原版 Java。PrintStream 实现 Appendable
-到结构化输出的窄边界，空追加不产生输出；String.subSequence 委托 UTF-16 substring，
-全范围保留原引用。StackTraceElement 无 ordinary overlay，线程栈也复用其 Java 构造器。
+## IO、NIO 与网络
 
-`java_zip.cpp` 聚合 `ZipEntry`/`ZipInputStream`。构造时经 guest read 读取源数据，
-archive/entry/cursor/close 状态只委托 per-VM `ZipRuntime`；ZIP32 结构校验、inflate
-与 CRC 继续复用 loader 的严格实现。该 family 不得在 Android context 恢复 ZIP side map。
+- 普通 stream/reader/writer、内存/过滤/缓冲流与对象流归 BootDex；资源归 IoRuntime。
+  FileDescriptor 是逻辑身份，共享 FD 的读写游标与借用/拥有关闭语义一致，不保存宿主句柄。
+  File 只消费注入 VFS/工作目录；mkdir/mkdirs 分开，filter 虚派并传播异常，缺 IoFileSystem
+  不与 ENOENT 混淆；setWritable 仅在既有可写对象上报告成功，不伪造权限改变。
+- InputStreamReader 用 Reader.lock 保护固定 ICU 六标准编码的增量转换，close/GC/teardown
+  回收。基类 bulk read/write 必须虚派子类，不能要求任意 guest 流存在宿主资源状态。
+  ObjectStreamClass 仅保留六个受检反射原语；ObjectOutputStream.getFieldL、Proxy 生成和
+  VMStack 除 getClasses 外的四个 native 明确失败。宿主资源不因迁入对象流自动可序列化。
+- ZIP 的 archive/entry/cursor/close 只用 ZipRuntime，ZIP32/inflate/CRC 复用严格 loader；
+  FilterInputStream 持源强引用，close 幂等关闭源，mark/reset 明确不支持。
+- Buffer/Charset 的 handler 只做类型/异常边界；cursor/backing/view/字节序交 NioRuntime。
+  typed view 共享 backing 并隐藏不匹配 array，保持 concrete class；direct buffer 只用强类型
+  guest-memory 接口，不退化为 heap 或保存宿主指针。Memory 仅提供受检 byte[] 整数 codec。
+- socket/stream/datagram 交 NetworkRuntime；默认离线，只有注入 policy/allowlist/transport
+  才能连接，SSL factory 不扩大权限。form URL codec 用固定 Boost.URL、UTF-8、空格/+ 规则，
+  非法百分号和未支持 charset 抛异常。SAX 保留构造/handler 身份，未支持 parse 明确失败。
 
-`java_nio.cpp`（DVM-82）聚合 API 19 Buffer family、ByteOrder、Buffer exception 与 Charset。
-handler 只做 descriptor/array/异常边界，cursor、heap/direct/view backing、字节序与 GC 生命周期
-统一委托 `NioRuntime`。typed view 必须共享 backing 且隐藏不匹配类型的原始 array；direct
-buffer 不保存宿主指针，只消费 integration 注入的强类型 guest-memory 窄接口。同类型 view
-沿用 receiver concrete class，direct buffer 不得退化成 heap class。
+## Locale、ICU、正则与密码
 
-`java_net.cpp`（DVM-88）聚合 URL/SSL 既有 shape 与 InetAddress、Socket、Datagram、
-SocketFactory family。socket/stream/packet 状态只委托 per-VM `NetworkRuntime`；默认 policy
-离线，只有显式 allowlist 与注入 transport 才能发起连接。handler 不调用宿主 socket/DNS，
-不读取 Android network service，也不以 no-op 伪造连接、TLS 或 datagram 成功。
-`SocketFactory.getDefault/createSocket` 与 SSL factory 只创建受同一 policy 管理的 socket。
-`URLEncoder/URLDecoder` 是无网络副作用的 API 19 form codec：UTF-8 字节的百分号编解码使用
-仓库固定的 `third_party/ext-boost` Boost.URL，空格与 `+` 保持
-`application/x-www-form-urlencoded` 语义；非法 `%` 与未交付 charset 必须抛 Java 异常。
+- Locale 保持 API19 类型/字段与 22 个静态强根常量，默认值按 VM 注入；大小写和 he/id/yi
+  规范化遵循原版。LocaleData 首批只接受 ROOT/en/en_US/zh/zh_CN；ISO native 用固定 ICU51
+  的 559 语言/249 国家表，不过滤或越过 NULL，Java 缓存每次返回 clone。
+- Date/Calendar/Format/NumberFormat/TimeZone 普通状态和算法归 BootDex；TimeZone default
+  只消费注入值且保持 clone/reset。ICU 数字/日期能力走固定 guest ICU，不恢复 java_text TU；
+  formatter long 仅存 per-VM token，guest JNI 管 clone/close/错误，GC/teardown 回收。
+  Pattern/Matcher 只承诺 String 与登记 regex 语义，groupCount 不要求已有匹配。
+- crypto family 只管 provider、熵、JNI 和资源 owner。AES ECB/CBC 的 NoPadding/PKCS5Padding
+  及 CTR/NoPadding、128/192/256 KeyGenerator 已登记；Cipher 普通方法无 overlay。
+  OGPlayOS 用 HAL CSPRNG 且拒绝 setSeed；SHA1PRNG 首次由同一 CSPRNG 播种，后续执行
+  guest RAND_seed/RAND_bytes，调用方 seed 仅追加熵。IvParameterSpec 可用。
+- Certificate/ASN.1/X.509/PKCS7/CertPath、UUID、MessageDigest 普通协议归 BootDex。
+  证书 verify 不允许 overlay；SHA1/224/256/384/512 × RSA PKCS#1 v1.5/ECDSA 的 10 个
+  验签 SPI 用普通字段保存公钥/最多 1 MiB 消息，真实解码后调用 guest ARM EVP，验后清空。
+  摘要仅 MD5/SHA1/SHA256/SHA384/SHA512；NativeBN 只保留 17 个值原语和 per-VM token。
+- 未登记能力明确失败：完整大数/double formatter、具名时区历史、privileged executor、
+  完整 ThreadGroup/反射长尾、RSA Cipher/GCM/其他 transformation、签名生成、PKIX/系统 CA/
+  撤销/TLS、HMAC/SHA3/独立 SHA224 摘要。AES AlgorithmParameters provider 未注册，原版
+  engineGetParameters 可返回 null；公钥仅编码 fallback，不宣称数学参数/KeyFactory 能力。
 
-`java_lang.cpp` 中的 interface 段覆盖 pinned libcore `java.lang` 顶层 8 个
-interface；方法表按 Luni 源码建模。已有 `CharSequence.length` handler 保持
-不变，其余接口方法（含 `Readable.read(CharBuffer)`）为显式
-`UnimplementedVirtual`，不伪造成功。嵌套的 `Thread.UncaughtExceptionHandler`
-由 Thread family 独占，`java.lang.annotation` 不纳入。
+## 验证入口
 
-`java_lang.cpp` 中的 Thread 段是 pinned libcore `Thread.java`/`VMThread.java` 的 core
-façade：声明 Java-visible fields 并负责参数校验/Java exception，生命周期、
-execution context、parking、interrupt、sleep/join 与 identity mapping 全部委托
-`VmThreadRuntime`/`VmMonitorTable`。`start()` 必须 virtual-dispatch `this.run()`；
-基类 `run()` 才 virtual-dispatch target Runnable。纳秒在统一毫秒 Clock 上向上取整；
-priority 与 daemon 仅是明确有界的 guest fact。字段通过 builder 的预绑定 handle
-访问，handler 参数与字段值统一走 `IntrinsicCall`，不得恢复逐调用 descriptor 查找和
-裸 instance slot 编解码。`contextClassLoader` 同样是受 GC 追踪的声明式字段：root 默认
-指向唯一 application loader，新 Thread 继承创建者，显式 setter 可保存 null；不得因此
-创建新的 class directory 或定义权限。uncaught handler 的 instance/static 引用均由对象图
-追踪并按 VM 隔离；异常退出时显式 handler 优先于默认 handler，回调异常按 API 19 忽略，
-均为空才保留进程致命诊断。ThreadGroup fallback 在其 family 发布前不伪造。
-线程诊断把既有 safe-point stack snapshot 投影为 guest `StackTraceElement[]`，全量查询只
-枚举本 VM 存活 Thread 并写入真实 HashMap。bounded ThreadGroup 提供稳定 system/main
-身份、名称与存活线程枚举；Thread 继承 main group，终止后 getter 返回 null，`toString`
-严格输出 `Thread[name,priority,groupName]`。不借此宣称完整 ThreadGroup/Thread.State。
-
-`java.lang.System` 的 `getProperty`/`setProperty` 与 primitive wrapper property
-API 共用每 VM 属性表；默认只发布
-API 19 guest 可确定的 `/`、`:`、`\n` 三个 separator 属性，不读取宿主系统属性。
-未知 key 返回 null，null/空 key 与 null value 按 Java 异常语义失败。
-`System.getenv(String)` 与无参版本只经 `CoreIntrinsicServices` 读取当前 guest Bionic
-`environ`；前者保持 AOSP null/缺失语义，后者用 BootDex `System$SystemEnvironment`
-返回拒绝修改及非 String 查询的快照。两者均不得读取宿主进程环境。
-`System.getSecurityManager()` 按 pinned API 19 libcore 固定返回 null；
-`SecurityManager` 自身由 curated BootDex 提供 class shape，OGPlay 不安装 security
-manager、执行 permission 检查或接入宿主安全机制。
-`String.toLowerCase/toUpperCase` 对齐 API 19 的 null 检查和“内容未变则返回 receiver”语义；
-英语/中文 ASCII 使用等价快速路径，其余输入调用 BootDex ICU 的 guest C ABI，不读取宿主 locale。
-
-`java.lang.ClassLoader`、`java.lang.BootClassLoader` 与
-`dalvik.system.PathClassLoader` 分别保持一类一文件；对象身份、parent 与 lookup/
-initiate 状态委托 `ClassLoaderFacade`。动态 classpath 构造器显式未实现，自定义
-ClassLoader 仅映射到唯一 application namespace，不获得第二套 class directory。
-`Class.forName(String)` 从 interpreter 活跃 frame 取得真实 caller loader 并初始化；
-三参数版本将 null 映射到 API19 system loader，并只接受 boot/application/custom 的
-bounded role。lookup/link failure 保留为 CNFE cause；init EIIE 复用现有 guest
-throwable identity，不由 intrinsic 重新物化。
-
-reflection shape 按一类一文件声明 `AnnotatedElement`、`GenericDeclaration`、`Type`、
-`Member`、`AccessibleObject`、`Method`、`Constructor` 与 `Field`；Modifier 归 BootDex。
-`Class` 的结构、类型关系和 declared/public Method/Constructor/Field 查询只能调用
-linker/`ReflectionRuntime`，禁止读写 raw member id；public 聚合顺序固定为
-class → superclass → direct interface 递归。nested/enclosing 与 Throws 只消费 loader
-输出的 Dalvik system metadata；generic 与 annotation proxy 明确不实现。
-OGPlay 不提供 Dalvik assertion-control 启动参数，`Class.desiredAssertionStatus()` 固定返回
-API 19 无匹配规则时的默认值 `false`。
-
-DVM-66 将 `Method.invoke` 降为 `ReflectionRuntime` 的薄入口：handler 不手写
-unbox/boxing 或 target id，统一使用 `ReflectionCodec`、真实 interpreted caller
-和 declared invoke category。`InvocationTargetException.target` 是普通 guest reference field，
-`getTargetException/getCause` 保留原 throwable identity 并由 GC 普通对象图追踪。
-
-DVM-67/68 的 Constructor/Class 实例化与 Field object/primitive 操作同样是
-`ReflectionRuntime` 薄入口；`reflect.Array` 的单维/多维创建和 object/primitive
-访问使用真实 typed array store 与同一 ReflectionCodec。DVM-69 的 Class nested/
-enclosing/member-local-anonymous 和 Method/Constructor Throws 只读 linker system
-metadata，禁止 `$` split 或 guest Annotation proxy。
-Method/Constructor/Field 的 API19 hashCode 与 exact toString 读取同一 immutable
-metadata；DVM-109 的 Modifier 执行原版 Java，不开启 generic surface。
-
-DVM-104：java_concurrent 删除普通 atomic 宿主算法，只保留 AtomicLong.VMSupportsCS8
-native；同步器/原子数组经 DEX 调用既有 Unsafe、Thread、monitor 与统一 Clock。
-Charset 的六种标准编码具有 canonical name、相等/排序与真实编解码语义；String 具名和
-Charset 重载使用同一固定 ICU 转换，Locale 大小写同样由 ICU 提供。Memory 仅保留受检
-byte[] 的 short/int/long 大小端 codec，不开放 raw address。java_lang 的 NativeBN
-绑定 17 个值原语（DVM-106 扩展长整数编解码），18 个其余 native 显式未实现；令牌由
-BigIntRuntime 按 VM 管理，owner GC/teardown 释放，不实现完整大数计算。
-
-DVM-104 的 ZIP 适配器调用 BootDex FilterInputStream 构造以保持源强引用；read/skip/available
-使用解压后 entry 游标，mark/reset 明确不支持，close 经父类关闭原始源且幂等。
-
-## DVM-105 Java crypto
-
-java_crypto.cpp 仅提供 provider 配置、OS entropy service、JNI 声明和 context owner 绑定。
-AES/ECB、CBC 的 NoPadding/PKCS5Padding 与 CTR/NoPadding 注册为 AndroidOpenSSL，AES
-默认别名指向 ECB/PKCS5Padding。普通 Cipher 方法无 intrinsic 副本。
-SecureRandom 的 OGPlayOS 服务直接调用统一 HAL CSPRNG，engineSetSeed 明确失败。
-API 19 AndroidOpenSSL 的 SHA1PRNG 服务首次使用时从同一 CSPRNG 注入熵，再经 guest ARM
-OpenSSL `RAND_seed/RAND_bytes` 执行；调用方 seed 只追加熵。AES KeyGenerator 支持
-128/192/256 位并返回 BootDex SecretKeySpec，随机字节由所选 SecureRandom 产生。
-RSA Cipher、TLS、AES-GCM 和其他 transformation 未注册；AES AlgorithmParameters 编码
-provider 未注册，AOSP engineGetParameters 按原代码返回 null。IvParameterSpec 可用。
-
-## DVM-106 Certificate
-
-Certificate/X509Certificate（含 javax 旧 API）、CertificateFactory、Harmony ASN.1/X.509/
-PKCS7/CertPath 的普通方法均执行 BootDex，verify 不允许 intrinsic overlay。
-Security 加入原版 DRLCertFactory；AndroidOpenSSL 注册 10 种仅验签的 SignatureSpi：
-SHA1/SHA224/SHA256/SHA384/SHA512 与 RSA PKCS#1 v1.5/ECDSA 的组合及标准 OID 别名。
-SPI 只保存普通 guest byte[] 公钥快照和 ByteArrayOutputStream，累计消息最多 1 MiB；
-engineInitVerify 真实解码验证公钥，engineVerify 经显式 JNI 调用 ARM EVP，并清空消息。
-签名生成、PSS/DSA/EdDSA、PKIX 信任判断、系统 CA/撤销/TLS 不注册或明确失败。
-公钥保留 Harmony X509PublicKey 的编码型 fallback，不宣称 RSA/EC KeyFactory 和数学参数接口。
-NativeBN 增加大小端数组、二补码和十/十六进制值转换；Math.log 为 Java 进制转换提供
-既有 Math 浮点原语边界，不在宿主实现证书 parser 或签名算法。
-
-DVM-107：framework Pair/Sparse/ComponentName 与 PrintWriter 的普通算法归 BootDex，
-StringBuilder/StringBuffer 共用 CharSequence 区间 append 原语：UTF-16 索引，虚派
-length/charAt、null 视为 "null"、自追加取原片段、越界不改变原 buffer。测试覆盖双后端
-ComponentName 的短名称打印与 UTF-16/null/自追加/异常边界。
-
-## DVM-108 UUID / MessageDigest
-
-UUID、MessageDigest/Spi、DigestInputStream/DigestOutputStream 与五种 Conscrypt 摘要
-普通方法由 BootDex 拥有。provider 配置注册 MD5、SHA-1、SHA-256、SHA-384、SHA-512
-及 API19 原版别名/OID；7 个显式 NativeCrypto JNI 声明复用 guest adapter。
-NativeCrypto 初始化注册摘要基类 ctx:J 的通用字段资源回收规则，不覆盖 reset/clone/digest。
-ProviderException 一并由 core.jar 提供，底层摘要/随机源失败保留正确 Java 异常类型。
-原版 provider 没有 SHA-224 MessageDigest；HMAC/Mac、SHA-3 未注册，未知算法明确失败。
-String.indexOf(String,int) 使用 UTF-16 索引，负起点归零，越过末尾的空串命中 length，null 拒绝。
-DVM-109 已由原版对象流调用 UUID 私有 readObject，恢复 transient 缓存；删除旧拒绝与 Date 特例。
-String.intern 复用弱 canonical 表并保留 receiver 身份；startsWith(String,int) 按 UTF-16
-检查 offset/空串/null。String/Number/Throwable/Exception/RuntimeException/Error/IOException
-使用 AOSP 的 serialVersionUID 常量（Throwable 家族 DVM-115 起来自 DEX），不伪造默认 UID。
-SoftReference 普通 GC 保留 referent，分配压力下可清除并入队；原版 ObjectStreamClass 缓存使用此语义。
+[DexVM 工作单](../../../../docs/tasks/dexvm/README.md)保存迁移和验收历史；定向测试见
+[tests/dexvm](../../../../tests/dexvm/)，架构门禁为 architecture.dexvm_intrinsic_layout。
+行为改动覆盖 switch/threaded；只构建受影响目标，不因文档调整运行构建或测试。

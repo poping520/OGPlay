@@ -122,7 +122,10 @@ public:
     // Teardown: request every live thread to unwind, wake every parked
     // thread, then join all host threads. Idempotent.
     void Shutdown();
+    // Non-blocking half of Shutdown; safe from a guest worker/native exit.
+    void RequestShutdown();
     [[nodiscard]] bool ShuttingDown() const;
+    [[nodiscard]] bool RootIsJoining() const;
 
 private:
     class Impl;

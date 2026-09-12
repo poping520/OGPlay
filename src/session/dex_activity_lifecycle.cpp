@@ -422,6 +422,7 @@ namespace ogplay::session {
 
             state_ = LifecycleRunState::running;
         } catch (...) {
+            if (bindings_.bridge->Vm().ExitCode().has_value()) return Stop();
             MarkFailed();
             RethrowFatalThreadFailure();
             throw;
@@ -449,6 +450,7 @@ namespace ogplay::session {
                     "suspend.complete", false);
             }
         } catch (...) {
+            if (bindings_.bridge->Vm().ExitCode().has_value()) return Stop();
             MarkFailed();
             throw;
         }
@@ -464,6 +466,7 @@ namespace ogplay::session {
             SetWindowFocus(true);
             suspended_ = false;
         } catch (...) {
+            if (bindings_.bridge->Vm().ExitCode().has_value()) return Stop();
             MarkFailed();
             throw;
         }
@@ -733,6 +736,7 @@ namespace ogplay::session {
                 runtime::AdvanceEglSwapPacer(*bindings_.context);
             }
         } catch (...) {
+            if (bindings_.bridge->Vm().ExitCode().has_value()) return Stop();
             MarkFailed();
             RethrowFatalThreadFailure();
             throw;
@@ -980,7 +984,8 @@ namespace ogplay::session {
             }
         };
         phase("teardown.begin");
-        const bool was_running = state_ == LifecycleRunState::running;
+        const bool was_running = state_ == LifecycleRunState::running &&
+                                 !bindings_.bridge->Vm().ExitCode().has_value();
         // Device services and the graphics boundary outlive guest callbacks on
         // Android. OGPlay owns both in-process, so retire graphics and publish
         // cancellation before onPause can wait for a render-thread handshake.
@@ -1021,7 +1026,8 @@ namespace ogplay::session {
             }
         } catch (const std::exception&) {
             // Teardown continues; the guest still gets finalized below.
-            state_ = LifecycleRunState::failed;
+            if (!bindings_.bridge->Vm().ExitCode().has_value())
+                state_ = LifecycleRunState::failed;
         }
         // 04 §2 step 10: guest Java threads are interrupted and joined before
         // the native side is finalized, so no interpreted frame can still be

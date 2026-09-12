@@ -307,6 +307,11 @@ public:
     // once per instruction, so a guest loop cannot ignore it.
     void RequestStop(const InterpreterExecutionContext& context);
 
+    // Runtime.nativeExit: stop this VM without joining the calling thread.
+    // The process owner performs teardown after the guest stack unwinds.
+    [[noreturn]] void Exit(std::int32_t code);
+    [[nodiscard]] std::optional<std::int32_t> ExitCode() const noexcept;
+
     // Completes teardown after the context's host thread has been joined.
     // Native/A32 re-entry can observe thread_stopped below an outer Java
     // frame, so joining is the ownership proof that makes dropping those

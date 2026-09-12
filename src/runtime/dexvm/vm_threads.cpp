@@ -700,6 +700,24 @@ bool VmThreadRuntime::ShuttingDown() const {
     return impl_->shutting_down;
 }
 
+void VmThreadRuntime::RequestShutdown() {
+    {
+        const std::lock_guard guard(impl_->mutex);
+        impl_->shutting_down = true;
+        for (const auto& [_, record] : impl_->records) {
+            if (record->host) impl_->vm->RequestStop(record->context);
+        }
+    }
+    impl_->vm->Monitors().Shutdown();
+    impl_->changed.notify_all();
+}
+
+bool VmThreadRuntime::RootIsJoining() const {
+    const std::lock_guard guard(impl_->mutex);
+    return !impl_->shutting_down &&
+           impl_->root_wait_state == VmThreadWaitState::joining;
+}
+
 void VmThreadRuntime::Shutdown() {
     std::vector<VmThreadRecord*> live;
     {

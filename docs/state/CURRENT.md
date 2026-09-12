@@ -1,5 +1,11 @@
 # 当前状态
 
+- [DVM-150](../tasks/dexvm/DVM-150.md) 已替换 addShutdownHook 临时绕过：Runtime 的注册、
+  移除和 exit/halt 协议执行原版 BootDex，System.exit 进入同一流程；退出码按 VM 保存，
+  worker 不自 join，Application/Activity 显式退出后进程进入 stopped。真实 LogManager
+  Handler 清理与纯 Java timed hook 已定向验证。宿主 Stop 仍是取消路径；Runtime 其他
+  native 与 Java finalization 尚未支持，未扩张声明。shutdown 定向及加载回归 12 用例、355 断言通过。
+
 - [DVM-149](../tasks/dexvm/DVM-149.md) 正在收口 Terms 交互一致性：ScrollView slop/CANCEL、
   AsyncTask 原错传播、Drawable 旧 callback、统一文本事务、API 19 qualifier 顺序与软件帧
   producer guard 已完成定向回归。真实 APK 移除降级后明确停在缺失 API 19 输入之外的
@@ -8,8 +14,8 @@
 - [DVM-148](../tasks/dexvm/DVM-148.md) 已完成：真实 PvZ 非 survey Terms 页面使用横屏资源、
   多行文本、表格权重、ScrollView 与 `npTc` NinePatch 正常布局合成；Button 从 View 继承
   同一 Drawable 背景实例。真实输入 `13` 经 Editable/TextWatcher 由 guest 更新 accept
-  alpha，前后截图及日志已保存。授权的 addShutdownHook/IoUtils/ClassLoader/Apache HTTP
-  非 UI 临时绕过已记账，仍待后续独立完善。真机截图对照回归又补齐 XML widget 默认
+  alpha，前后截图及日志已保存。addShutdownHook 绕过已由 DVM-150 替换；
+  IoUtils/ClassLoader 非 UI 临时绕过仍待后续独立完善。真机截图对照回归又补齐 XML widget 默认
   尺寸、framework textAppearance、空文本行高、大小写字形和按词换行。
 
 - [WU-PERF-07](../tasks/optimization/WU-PERF-07.md) 已让 JNI 同步重入的 Dynarmic executor
@@ -35,7 +41,7 @@
 更新：2026-09-12。
 
 - BootDex-first 本地 Binder 已接通：IInterface/IBinder/Binder/Parcel、ResultReceiver 与内部
-  IResultReceiver 及协议异常共 20 个 class_def 来自固定 API 19 JAR，BootDex 现为 1053 类。Binder 普通
+  IResultReceiver 及协议异常共 20 个 class_def 来自固定 API 19 JAR，BootDex 现为 1076 类。Binder 普通
   transact/onTransact 与 Parcel/Bundle/Intent/ResultReceiver 协议执行原版 Java；integration
   仅保留身份/线程策略和唯一字节 backing/Binder 引用 native。外部服务 bind 返回缺席，失败绑定保留连接登记供
   unbind 清理，重复/未登记 unbind 明确失败；跨进程 Binder、驱动、BinderProxy 后端、FD 与系统服务仍不支持。
@@ -43,7 +49,7 @@
 ## 当前能力
 
 - **发行与 VM**：Profile 按 API 选择 bundled data。API 19 提供 AOSP guest 库、
-  OpenSSL、ICU 51.1、1053 类 BootDex 与 ICU 数据；来源和校验见
+  OpenSSL、ICU 51.1、1076 类 BootDex 与 ICU 数据；来源和校验见
   [manifest](../../data/android/19/manifest.json)。普通 Java 状态归字段/数组，JNI 使用
   VM 真实类型关系。
 - **Java/密码/ICU**：已覆盖常用集合、并发、IO、序列化、反射、framework 值类、日期与

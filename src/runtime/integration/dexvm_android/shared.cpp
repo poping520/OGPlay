@@ -702,10 +702,10 @@ dx::IntrinsicHandler PlatformSystemCurrentTimeMillisHandler(
     });
 }
 
-dx::IntrinsicHandler PlatformSystemExitHandler(const Context& context) {
-    return dx::IntrinsicHandler([context](dx::IntrinsicContext&) {
+dx::IntrinsicHandler PlatformRuntimeNativeExitHandler(const Context& context) {
+    return dx::IntrinsicHandler([context](dx::IntrinsicContext& call) -> dx::VmValue {
         context->exit_requested = true;
-        return dx::VmValue::Void();
+        call.vm.Exit(call.arguments[0].AsInt());
     });
 }
 

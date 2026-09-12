@@ -402,17 +402,26 @@ void AndroidAppProcess::StartApplication() {
     if (impl_->state != AndroidAppProcessState::dex_vm_ready) {
         Fail("Application startup requires DexVmReady state");
     }
-    static_cast<void>(StartDexApplication(
-        *impl_->bridge, impl_->context, impl_->application_descriptor));
+    try {
+        static_cast<void>(StartDexApplication(
+            *impl_->bridge, impl_->context, impl_->application_descriptor));
+    } catch (...) {
+        if (!impl_->bridge->Vm().ExitCode().has_value()) throw;
+        static_cast<void>(Stop());
+        return;
+    }
     impl_->state = AndroidAppProcessState::application_started;
 }
 
 LifecycleFrameState AndroidAppProcess::StartLauncherActivity() {
+    if (impl_->state == AndroidAppProcessState::stopped &&
+        impl_->bridge->Vm().ExitCode().has_value()) return impl_->lifecycle->State();
     if (impl_->state != AndroidAppProcessState::application_started) {
         Fail("launcher startup requires ApplicationStarted state");
     }
     const auto result = impl_->lifecycle->Start();
-    impl_->state = AndroidAppProcessState::activity_resumed;
+    impl_->state = impl_->bridge->Vm().ExitCode().has_value()
+        ? AndroidAppProcessState::stopped : AndroidAppProcessState::activity_resumed;
     return result;
 }
 

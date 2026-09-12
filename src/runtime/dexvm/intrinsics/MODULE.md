@@ -92,6 +92,9 @@
 - URI、内部 encoder、URISyntaxException 与 UrlUtils 普通行为归 BootDex；构造、create、
   normalize/resolve/relativize、比较和对象流协议使用原版字段与算法。URL 仍使用现有有界
   intrinsic，因此共用的 C++ URL 解析辅助函数继续保留。
+- ProxySelector 只登记无进程代理的薄 shape；getDefault 返回 null，供 API19 Apache
+  RoutePlanner 明确选择直连。setDefault/select/connectFailed 未提供代理服务并明确失败，
+  不读取宿主代理，不引入 Proxy 相关 BootDex 类。
 
 ## Locale、ICU、正则与密码
 

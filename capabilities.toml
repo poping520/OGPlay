@@ -1488,12 +1488,12 @@ note = "DVM-87 的 FutureTask、串行 executor 继续复用 VmThreadRuntime。D
 [dexvm.java_network]
 status = "complete"
 test = "tests/dexvm/dvm88_tests.cpp"
-note = "DVM-153 将 URI、内部 encoder、URISyntaxException 与 UrlUtils 迁入 API 19 BootDex，构造/create、raw/decoded component、normalize/resolve/relativize、比较及对象流协议执行原版 Java；补齐 UrlUtils 所需 String.lastIndexOf(int,int)。DVM-152 将 InetAddress 地址闭包迁入 BootDex并删除 NetworkRuntime 地址/endpoint 侧表。Posix 仅接通 Android 常量、数字地址、policy-gated DNS/反向查询和确定性 guest uname，其余 OS native 明确失败。DVM-88 的 socket/stream/datagram 资源仍由 NetworkRuntime 管理且默认离线；URL 保持现有有界值语义。"
+note = "ProxySelector 采用无进程代理 intrinsic，getDefault 返回 null，使 API19 Apache RoutePlanner 选择直连；不读取宿主代理且未加入 Proxy 相关 BootDex 类，本轮仅完成编译、未执行行为测试。DVM-153 将 URI、内部 encoder、URISyntaxException 与 UrlUtils 迁入 API 19 BootDex，构造/create、raw/decoded component、normalize/resolve/relativize、比较及对象流协议执行原版 Java；补齐 UrlUtils 所需 String.lastIndexOf(int,int)。DVM-152 将 InetAddress 地址闭包迁入 BootDex并删除 NetworkRuntime 地址/endpoint 侧表。Posix 仅接通 Android 常量、数字地址、policy-gated DNS/反向查询和确定性 guest uname，其余 OS native 明确失败。DVM-88 的 socket/stream/datagram 资源仍由 NetworkRuntime 管理且默认离线；URL 保持现有有界值语义。"
 
 [dexvm.apache_http_bootdex]
 status = "partial"
 test = "tests/dexvm/bootdex_library_tests.cpp: DVM-149"
-note = "DVM-149 从固定 API19 ext.jar 选入 Terms/Restlet 有界闭包 329 类：Apache HTTP 303、Commons Logging 19、Commons Codec 7；反射加载的 LogFactoryImpl、WeakHashtable、Jdk14Logger、SimpleLog 显式入集，另补 core PrivilegedAction 与 ConnectException。1407 类 BootDex 全链接，BasicHttpParams、HTTP 参数、SchemeRegistry、ThreadSafeClientConnManager、DefaultHttpClient 与日志写出双后端受检；真实 APK 已越过 BasicHttpParams 并记录 Starting the Apache HTTP client，DVM-153 后首错前移至 ProxySelector.getDefault。java.net 仍受 NetworkRuntime policy/transport 约束；TLS context 初始化和默认 SSL 配置明确失败。APK 额外的 URLEncodedUtils、ByteArrayEntity 不在本 Terms 闭包，完整 Apache/TLS/在线请求未验收。"
+note = "DVM-149 从固定 API19 ext.jar 选入 Terms/Restlet 有界闭包 329 类：Apache HTTP 303、Commons Logging 19、Commons Codec 7；反射加载的 LogFactoryImpl、WeakHashtable、Jdk14Logger、SimpleLog 显式入集，另补 core PrivilegedAction 与 ConnectException。1407 类 BootDex 全链接，BasicHttpParams、HTTP 参数、SchemeRegistry、ThreadSafeClientConnManager、DefaultHttpClient 与日志写出双后端受检；真实 APK 已越过 BasicHttpParams 并记录 Starting the Apache HTTP client。DVM-153 后的 ProxySelector.getDefault 首错已增加直连薄 intrinsic，但尚未真实 APK 复验。java.net 仍受 NetworkRuntime policy/transport 约束；TLS context 初始化和默认 SSL 配置明确失败。APK 额外的 URLEncodedUtils、ByteArrayEntity 不在本 Terms 闭包，完整 Apache/TLS/在线请求未验收。"
 
 [dexvm.sqlite_vfs]
 status = "complete"

@@ -327,6 +327,18 @@ TEST_CASE("DVM-153 API 19 URI parses creates normalizes and resolves in BootDex"
     }
 }
 
+TEST_CASE("ProxySelector reports no process-wide proxy service") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch,
+                               InterpreterBackend::threaded}) {
+        CAPTURE(backend == InterpreterBackend::threaded ? "threaded" : "switch");
+        Dvm88Vm fixture(backend);
+        const auto selector = fixture.Static(
+            "Ljava/net/ProxySelector;", "getDefault",
+            "()Ljava/net/ProxySelector;");
+        CHECK_FALSE(selector.ref.IsValid());
+    }
+}
+
 TEST_CASE("DVM-88 URL form codecs match API 19 UTF-8 behavior") {
     for (const auto backend : {InterpreterBackend::switch_dispatch,
                                InterpreterBackend::threaded}) {

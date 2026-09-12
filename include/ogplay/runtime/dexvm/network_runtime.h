@@ -26,6 +26,12 @@ struct NetworkPolicy final {
     bool allow_tls{};
     bool allow_datagram{};
     std::unordered_set<std::string> allowed_hosts;
+    // Deterministic API 19 guest identity; never the host computer's identity.
+    struct HostIdentity final {
+        std::string sysname, nodename, release, version, machine;
+    };
+    std::optional<HostIdentity> host_identity{
+        HostIdentity{"Linux", "localhost", "3.4.0", "API 19", "armv7l"}};
 };
 
 struct NetworkDatagram final {
@@ -40,6 +46,9 @@ public:
     virtual ~NetworkTransport() = default;
     [[nodiscard]] virtual std::vector<std::string>
     Resolve(std::string_view host) = 0;
+    [[nodiscard]] virtual std::string Reverse(std::string_view) {
+        throw NetworkRuntimeError("reverse lookup is not provided by transport");
+    }
     [[nodiscard]] virtual std::uint64_t Connect(
         std::string_view host, std::uint16_t port, bool tls) = 0;
     virtual void Send(std::uint64_t channel,
@@ -81,11 +90,7 @@ public:
     void Configure(NetworkPolicy policy, NetworkTransport* transport) noexcept;
     [[nodiscard]] const NetworkPolicy& Policy() const noexcept;
     [[nodiscard]] std::vector<std::string> Resolve(std::string_view host);
-
-    void SetAddress(VmObjectRef owner, std::string host, std::string address);
-    [[nodiscard]] const Endpoint& Address(VmObjectRef owner) const;
-    void SetEndpoint(VmObjectRef owner, Endpoint endpoint);
-    [[nodiscard]] const Endpoint& GetEndpoint(VmObjectRef owner) const;
+    [[nodiscard]] std::string Reverse(std::string_view address);
 
     void CreateSocket(VmObjectRef owner, bool tls = false);
     void Connect(VmObjectRef owner, Endpoint endpoint);
@@ -111,8 +116,6 @@ private:
     void RequireAllowed(std::string_view host, bool tls, bool datagram) const;
     NetworkPolicy policy_;
     NetworkTransport* transport_{};
-    std::unordered_map<std::uint32_t, Endpoint> addresses_;
-    std::unordered_map<std::uint32_t, Endpoint> endpoints_;
     std::unordered_map<std::uint32_t, Socket> sockets_;
     struct Stream final { VmObjectRef socket; bool output{}; };
     std::unordered_map<std::uint32_t, Stream> streams_;

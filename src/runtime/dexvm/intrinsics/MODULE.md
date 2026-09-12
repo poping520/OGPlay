@@ -86,6 +86,9 @@
   才能连接，SSL factory 不扩大权限。form URL codec 用固定 Boost.URL、UTF-8、空格/+ 规则，
   非法百分号和未支持 charset 抛异常。TLS context 初始化及默认 verifier/factory 修改未实现并
   明确抛出，不静默接受配置。SAX 保留构造/handler 身份，未支持 parse 明确失败。
+- InetAddress/Inet4Address/Inet6Address、地址缓存、InetSocketAddress 与 NetworkInterface 普通
+  行为归 API 19 BootDex；IP 字节、hostName、scope 与 endpoint 字段是唯一状态。Posix 仅保留
+  地址解析、受策略 DNS/反向查询及确定性 guest uname 边界；其余原生 OS 调用明确失败。
 
 ## Locale、ICU、正则与密码
 

@@ -3,7 +3,7 @@
 // ---- migrated from java_net_MalformedURLException.cpp ----
 #include "catalog.h"
 #include "shared.h"
-
+#include "api19_os_constants.h"
 #include "ogplay/runtime/dexvm/intrinsic_builder.h"
 
 // ---- migrated from dexvm_android java.net / javax.net.ssl ----
@@ -14,6 +14,7 @@
 #include <cctype>
 #include <cstdint>
 #include <optional>
+#include <span>
 #include <string_view>
 
 #include <boost/url/encode.hpp>
@@ -757,6 +758,266 @@ namespace ogplay::runtime::dexvm::intrinsics {
         }
 
         [[noreturn]] void ThrowNetwork(const NetworkRuntimeError& error);
+        NetworkRuntime::Endpoint EndpointFrom(IntrinsicContext& call,
+                                              VmObjectRef address,
+                                              std::int32_t port);
+
+        VmValue InvokeDirect(Interpreter& vm, const char* owner, const char* name,
+                             const char* signature, std::vector<VmValue> arguments) {
+            const auto method = vm.Linker().FindDirectMethod(
+                vm.Linker().ResolveDescriptor(owner), name, signature);
+            if (!method) throw DexVmError(DexVmErrorReason::unresolved_reference,
+                                          std::string(owner) + "->" + name + signature);
+            const auto outcome = vm.Call(*method, arguments);
+            if (outcome.exception.IsValid()) throw VmJavaThrow{
+                vm.Linker().Class(outcome.exception_class).descriptor,
+                outcome.exception_message, outcome.exception};
+            return outcome.value;
+        }
+
+        VmObjectRef NewAddress(Interpreter& vm, std::span<const std::byte> bytes,
+                               VmObjectRef host = VmObjectRef{0}) {
+            const auto array = vm.Model().NewPrimitiveArray(
+                vm.Linker().ResolveDescriptor("[B"), JniPrimitiveKind::byte,
+                static_cast<JniSize>(bytes.size()));
+            vm.Model().WriteByteRegion(array, 0, bytes);
+            const auto roots = vm.ProtectReferences(std::array{array, host});
+            return InvokeDirect(vm, "Ljava/net/InetAddress;", "getByAddress",
+                                "(Ljava/lang/String;[B)Ljava/net/InetAddress;",
+                                {VmValue::Ref(host), VmValue::Ref(array)}).ref;
+        }
+
+        std::optional<std::vector<std::byte>> ParseAddress(const std::string_view value) {
+            auto ipv4 = [](const std::string_view input)
+                    -> std::optional<std::array<std::byte, 4>> {
+                std::array<std::byte, 4> bytes{};
+                std::size_t offset{};
+                for (std::size_t part = 0; part < 4; ++part) {
+                    const auto end = part == 3 ? input.size() : input.find('.', offset);
+                    if (end == std::string_view::npos || end == offset) return std::nullopt;
+                    unsigned value{};
+                    const auto [last, error] = std::from_chars(input.data() + offset,
+                                                               input.data() + end, value);
+                    if (error != std::errc{} || last != input.data() + end || value > 255)
+                        return std::nullopt;
+                    bytes[part] = static_cast<std::byte>(value);
+                    offset = end + 1;
+                }
+                if (offset != input.size() + 1) return std::nullopt;
+                return bytes;
+            };
+            if (const auto parsed = ipv4(value))
+                return std::vector<std::byte>(parsed->begin(), parsed->end());
+
+            std::string_view text = value;
+            if (text.size() > 2 && text.front() == '[' && text.back() == ']')
+                text = text.substr(1, text.size() - 2);
+            if (text.find(':') == std::string_view::npos) return std::nullopt;
+            auto parse_words = [&ipv4](std::string_view input,
+                                       std::vector<std::uint16_t>& output) {
+                if (input.empty()) return true;
+                std::size_t offset{};
+                while (offset < input.size()) {
+                    const auto end = input.find(':', offset);
+                    const auto token = input.substr(offset, end == std::string_view::npos
+                                                                ? input.size() - offset : end - offset);
+                    if (token.empty()) return false;
+                    if (token.find('.') != std::string_view::npos) {
+                        const auto tail = ipv4(token);
+                        if (!tail) return false;
+                        output.push_back(static_cast<std::uint16_t>(
+                            (std::to_integer<unsigned>((*tail)[0]) << 8) |
+                            std::to_integer<unsigned>((*tail)[1])));
+                        output.push_back(static_cast<std::uint16_t>(
+                            (std::to_integer<unsigned>((*tail)[2]) << 8) |
+                            std::to_integer<unsigned>((*tail)[3])));
+                    } else {
+                        if (token.size() > 4) return false;
+                        unsigned word{};
+                        const auto [last, error] = std::from_chars(
+                            token.data(), token.data() + token.size(), word, 16);
+                        if (error != std::errc{} || last != token.data() + token.size()) return false;
+                        output.push_back(static_cast<std::uint16_t>(word));
+                    }
+                    if (end == std::string_view::npos) break;
+                    offset = end + 1;
+                }
+                return true;
+            };
+            const auto compression = text.find("::");
+            if (compression != std::string_view::npos &&
+                text.find("::", compression + 2) != std::string_view::npos) return std::nullopt;
+            std::vector<std::uint16_t> left, right;
+            if (compression == std::string_view::npos) {
+                if (!parse_words(text, left) || left.size() != 8) return std::nullopt;
+            } else {
+                if (!parse_words(text.substr(0, compression), left) ||
+                    !parse_words(text.substr(compression + 2), right) ||
+                    left.size() + right.size() >= 8) return std::nullopt;
+            }
+            std::array<std::uint16_t, 8> words{};
+            std::copy(left.begin(), left.end(), words.begin());
+            std::copy(right.begin(), right.end(), words.end() - static_cast<std::ptrdiff_t>(right.size()));
+            std::vector<std::byte> result(16);
+            for (std::size_t i = 0; i < words.size(); ++i) {
+                result[i * 2] = static_cast<std::byte>(words[i] >> 8);
+                result[i * 2 + 1] = static_cast<std::byte>(words[i]);
+            }
+            return result;
+        }
+
+        std::string NumericAddress(Interpreter& vm, const VmObjectRef address) {
+            const auto bytes_ref = detail::InvokeGuest(vm, address, "getAddress", "()[B").ref;
+            const auto bytes = vm.Model().ReadByteRegion(
+                bytes_ref, 0, vm.Model().ArrayLength(bytes_ref));
+            if (bytes.size() == 4) {
+                return std::to_string(std::to_integer<unsigned>(bytes[0])) + "." +
+                       std::to_string(std::to_integer<unsigned>(bytes[1])) + "." +
+                       std::to_string(std::to_integer<unsigned>(bytes[2])) + "." +
+                       std::to_string(std::to_integer<unsigned>(bytes[3]));
+            }
+            if (bytes.size() == 16) {
+                std::array<std::uint16_t, 8> words{};
+                for (std::size_t i = 0; i < words.size(); ++i)
+                    words[i] = static_cast<std::uint16_t>(
+                        (std::to_integer<unsigned>(bytes[i * 2]) << 8) |
+                        std::to_integer<unsigned>(bytes[i * 2 + 1]));
+                std::size_t best_start = 8, best_length{};
+                for (std::size_t i = 0; i < 8;) {
+                    if (words[i] != 0) { ++i; continue; }
+                    const auto start = i;
+                    while (i < 8 && words[i] == 0) ++i;
+                    if (i - start > best_length && i - start >= 2) {
+                        best_start = start; best_length = i - start;
+                    }
+                }
+                std::string result;
+                for (std::size_t i = 0; i < 8;) {
+                    if (i == best_start) {
+                        result += "::"; i += best_length;
+                    } else {
+                        if (!result.empty() && result.back() != ':') result += ':';
+                        char buffer[5]{};
+                        const auto converted = std::to_chars(buffer, buffer + sizeof(buffer), words[i], 16);
+                        result.append(buffer, converted.ptr); ++i;
+                    }
+                }
+                return result;
+            }
+            throw DexVmError(DexVmErrorReason::internal_invariant,
+                             "InetAddress has invalid byte length");
+        }
+
+        [[noreturn]] void ThrowGai(Interpreter& vm, const std::string_view function,
+                                   const std::string_view message) {
+            const auto function_ref = vm.NewStringUtf8(function);
+            const auto function_root = vm.ProtectReferences(std::array{function_ref});
+            const auto exception = vm.NewIntrinsicInstance("Llibcore/io/GaiException;");
+            const auto exception_root = vm.ProtectReferences(std::array{exception});
+            InvokeDirect(vm, "Llibcore/io/GaiException;", "<init>",
+                         "(Ljava/lang/String;I)V",
+                         {VmValue::Ref(exception), VmValue::Ref(function_ref), VmValue::Int(8)});
+            throw VmJavaThrow{"Llibcore/io/GaiException;", std::string(message), exception};
+        }
+
+        void AppendAddressNatives(std::vector<IntrinsicClassDecl>& catalog) {
+            auto constants = IntrinsicClassBuilder::Class(
+                "Llibcore/io/OsConstants;", "Ljava/lang/Object;", {}, kAccPublic | kAccFinal);
+            std::vector<std::pair<IntrinsicFieldHandle, std::int32_t>> fields;
+            fields.reserve(kApi19OsConstants.size());
+            for (const auto& value : kApi19OsConstants)
+                fields.emplace_back(constants.BoundStaticField(
+                    std::string(value.name), "I", kAccPublic | kAccStatic | kAccFinal), value.value);
+            constants.StaticMethod("initConstants", "()V",
+                [fields = std::move(fields)](IntrinsicContext& call) {
+                    const IntrinsicCall c(call);
+                    for (const auto& [field, value] : fields) c.SetInt(field, value);
+                    return VmValue::Void();
+                }, kAccPrivate | kAccStatic | kAccNative);
+            catalog.push_back(std::move(constants).Build());
+
+            auto posix = IntrinsicClassBuilder::Class(
+                "Llibcore/io/Posix;", "Ljava/lang/Object;", {"Llibcore/io/Os;"},
+                kAccPublic | kAccFinal);
+            #include "api19_posix_natives.inc"
+            posix.VirtualMethod("getaddrinfo", "(Ljava/lang/String;Llibcore/io/StructAddrinfo;)[Ljava/net/InetAddress;",
+                [](IntrinsicContext& call) {
+                    const auto host_ref = call.arguments[0].ref;
+                    const auto host = call.vm.StringUtf8(host_ref);
+                    std::vector<std::string> values;
+                    const bool numeric_input = ParseAddress(host).has_value();
+                    if (numeric_input) values.push_back(host);
+                    else {
+                        try { values = call.vm.Network().Resolve(host); }
+                        catch (const NetworkRuntimeError& error) { ThrowGai(call.vm, "getaddrinfo", error.what()); }
+                    }
+                    const auto array = call.vm.Model().NewObjectArray(
+                        call.vm.Linker().ResolveDescriptor("[Ljava/net/InetAddress;"),
+                        call.vm.Linker().ResolveDescriptor("Ljava/net/InetAddress;"),
+                        static_cast<JniSize>(values.size()));
+                    const auto roots = call.vm.ProtectReferences(std::array{array, host_ref});
+                    for (std::size_t i = 0; i < values.size(); ++i) {
+                        const auto bytes = ParseAddress(values[i]);
+                        if (!bytes) ThrowGai(call.vm, "getaddrinfo", "transport returned a non-numeric address");
+                        call.vm.Model().SetObjectElement(array, static_cast<JniSize>(i),
+                            NewAddress(call.vm, *bytes, numeric_input ? VmObjectRef{0} : host_ref));
+                    }
+                    return VmValue::Ref(array);
+                }, kAccPublic | kAccNative);
+            posix.VirtualMethod("inet_pton", "(ILjava/lang/String;)Ljava/net/InetAddress;",
+                [](IntrinsicContext& call) {
+                    const auto parsed = ParseAddress(call.vm.StringUtf8(call.arguments[1].ref));
+                    return VmValue::Ref(parsed ? NewAddress(call.vm, *parsed) : VmObjectRef{0});
+                }, kAccPublic | kAccNative);
+            posix.VirtualMethod("getnameinfo", "(Ljava/net/InetAddress;I)Ljava/lang/String;",
+                [](IntrinsicContext& call) {
+                    const auto numeric = NumericAddress(call.vm, call.arguments[0].ref);
+                    if ((call.arguments[1].AsInt() & 2) != 0)
+                        return VmValue::Ref(call.vm.NewStringUtf8(numeric));
+                    try { return VmValue::Ref(call.vm.NewStringUtf8(call.vm.Network().Reverse(numeric))); }
+                    catch (const NetworkRuntimeError& error) { ThrowGai(call.vm, "getnameinfo", error.what()); }
+                }, kAccPublic | kAccNative);
+            posix.VirtualMethod("uname", "()Llibcore/io/StructUtsname;",
+                [](IntrinsicContext& call) {
+                    const auto& identity = call.vm.Network().Policy().host_identity;
+                    if (!identity) throw VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
+                                                     "guest host identity is not configured"};
+                    const auto result = call.vm.NewIntrinsicInstance("Llibcore/io/StructUtsname;");
+                    const auto result_root = call.vm.ProtectReferences(std::array{result});
+                    const auto sysname = call.vm.NewStringUtf8(identity->sysname);
+                    const auto sysname_root = call.vm.ProtectReferences(std::array{sysname});
+                    const auto nodename = call.vm.NewStringUtf8(identity->nodename);
+                    const auto nodename_root = call.vm.ProtectReferences(std::array{nodename});
+                    const auto release = call.vm.NewStringUtf8(identity->release);
+                    const auto release_root = call.vm.ProtectReferences(std::array{release});
+                    const auto version = call.vm.NewStringUtf8(identity->version);
+                    const auto version_root = call.vm.ProtectReferences(std::array{version});
+                    const auto machine = call.vm.NewStringUtf8(identity->machine);
+                    const auto machine_root = call.vm.ProtectReferences(std::array{machine});
+                    InvokeDirect(call.vm, "Llibcore/io/StructUtsname;", "<init>",
+                        "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)V",
+                        {VmValue::Ref(result), VmValue::Ref(sysname), VmValue::Ref(nodename),
+                         VmValue::Ref(release), VmValue::Ref(version), VmValue::Ref(machine)});
+                    return VmValue::Ref(result);
+                }, kAccPublic | kAccNative);
+            posix.VirtualMethod("gai_strerror", "(I)Ljava/lang/String;",
+                [](IntrinsicContext& call) { return VmValue::Ref(call.vm.NewStringUtf8("name or service not known")); },
+                kAccPublic | kAccNative);
+            catalog.push_back(std::move(posix).Build());
+        }
+
+        NetworkRuntime::Endpoint SocketEndpoint(IntrinsicContext& call, VmObjectRef socket_address) {
+            if (!socket_address.IsValid())
+                throw VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "endpoint is null"};
+            if (!call.vm.Linker().IsAssignable(call.vm.Linker().ResolveDescriptor("Ljava/net/InetSocketAddress;"),
+                                               call.vm.Model().ObjectClass(socket_address)))
+                throw VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "unsupported SocketAddress"};
+            const auto address = detail::InvokeGuest(call.vm, socket_address, "getAddress", "()Ljava/net/InetAddress;").ref;
+            if (!address.IsValid())
+                throw VmJavaThrow{"Ljava/net/UnknownHostException;", "unresolved socket endpoint"};
+            const auto port = detail::InvokeGuest(call.vm, socket_address, "getPort", "()I").AsInt();
+            return EndpointFrom(call, address, port);
+        }
 
         NetworkRuntime::Endpoint HostEndpoint(IntrinsicContext& call,
                                               VmObjectRef host_ref,
@@ -829,7 +1090,10 @@ namespace ogplay::runtime::dexvm::intrinsics {
                     "address is null"
                 };
             try {
-                auto endpoint = call.vm.Network().Address(address);
+                const auto numeric = detail::InvokeGuest(call.vm, address, "getHostAddress", "()Ljava/lang/String;").ref;
+                const auto numeric_root = call.vm.ProtectReferences(std::array{numeric});
+                const auto host = detail::InvokeGuest(call.vm, address, "getHostName", "()Ljava/lang/String;").ref;
+                NetworkRuntime::Endpoint endpoint{call.vm.StringUtf8(host), call.vm.StringUtf8(numeric), 0};
                 endpoint.port = static_cast<std::uint16_t>(port);
                 return endpoint;
             } catch (const NetworkRuntimeError& error) { ThrowNetwork(error); }
@@ -852,82 +1116,6 @@ namespace ogplay::runtime::dexvm::intrinsics {
             } catch (const NetworkRuntimeError& error) {
                 throw VmJavaThrow{"Ljava/net/UnknownHostException;", error.what()};
             }
-        }
-
-        IntrinsicClassDecl DeclareInetAddress() {
-            auto builder = IntrinsicClassBuilder::Class("Ljava/net/InetAddress;",
-                                                        "Ljava/lang/Object;");
-            builder.StaticMethod("getByName",
-                                 "(Ljava/lang/String;)Ljava/net/InetAddress;",
-                                 [](IntrinsicContext& call) {
-                                     const auto host = call.vm.StringUtf8(call.arguments[0].ref);
-                                     try {
-                                         const auto addresses = call.vm.Network().Resolve(host);
-                                         const auto result = call.vm.NewIntrinsicInstance(
-                                             "Ljava/net/InetAddress;");
-                                         call.vm.Network().SetAddress(result, host, addresses.front());
-                                         return VmValue::Ref(result);
-                                     } catch (const NetworkRuntimeError& error) {
-                                         throw VmJavaThrow{
-                                             "Ljava/net/UnknownHostException;",
-                                             error.what()
-                                         };
-                                     }
-                                 });
-            builder.FinalMethod("getHostName", "()Ljava/lang/String;",
-                                [](IntrinsicContext& call) {
-                                    try {
-                                        return VmValue::Ref(call.vm.NewStringUtf8(
-                                            call.vm.Network().Address(call.receiver).host));
-                                    } catch (const NetworkRuntimeError& error) { ThrowNetwork(error); }
-                                });
-            builder.FinalMethod("getHostAddress", "()Ljava/lang/String;",
-                                [](IntrinsicContext& call) {
-                                    try {
-                                        return VmValue::Ref(call.vm.NewStringUtf8(
-                                            call.vm.Network().Address(call.receiver).address));
-                                    } catch (const NetworkRuntimeError& error) { ThrowNetwork(error); }
-                                });
-            return std::move(builder).Build();
-        }
-
-        IntrinsicClassDecl DeclareSocketAddress() {
-            return std::move(IntrinsicClassBuilder::Class(
-                "Ljava/net/SocketAddress;", "Ljava/lang/Object;")).Build();
-        }
-
-        IntrinsicClassDecl DeclareInetSocketAddress() {
-            auto builder = IntrinsicClassBuilder::Class(
-                "Ljava/net/InetSocketAddress;", "Ljava/net/SocketAddress;");
-            builder.Constructor("(Ljava/lang/String;I)V", [](IntrinsicContext& call) {
-                call.vm.Network().SetEndpoint(
-                    call.receiver,
-                    HostEndpoint(call, call.arguments[0].ref,
-                                 call.arguments[1].AsInt()));
-                return VmValue::Void();
-            });
-            builder.Constructor("(Ljava/net/InetAddress;I)V",
-                                [](IntrinsicContext& call) {
-                                    call.vm.Network().SetEndpoint(
-                                        call.receiver,
-                                        EndpointFrom(call, call.arguments[0].ref,
-                                                     call.arguments[1].AsInt()));
-                                    return VmValue::Void();
-                                });
-            builder.FinalMethod("getPort", "()I", [](IntrinsicContext& call) {
-                try {
-                    return VmValue::Int(call.vm.Network().GetEndpoint(
-                        call.receiver).port);
-                } catch (const NetworkRuntimeError& error) { ThrowNetwork(error); }
-            });
-            builder.FinalMethod("getHostName", "()Ljava/lang/String;",
-                                [](IntrinsicContext& call) {
-                                    try {
-                                        return VmValue::Ref(call.vm.NewStringUtf8(
-                                            call.vm.Network().GetEndpoint(call.receiver).host));
-                                    } catch (const NetworkRuntimeError& error) { ThrowNetwork(error); }
-                                });
-            return std::move(builder).Build();
         }
 
         IntrinsicClassDecl DeclareSocketInputStream() {
@@ -1006,7 +1194,7 @@ namespace ogplay::runtime::dexvm::intrinsics {
             builder.FinalMethod("connect", "(Ljava/net/SocketAddress;)V", [](IntrinsicContext& call) {
                 try {
                     call.vm.Network().Connect(call.receiver,
-                                              call.vm.Network().GetEndpoint(call.arguments[0].ref));
+                                              SocketEndpoint(call, call.arguments[0].ref));
                 } catch (const NetworkRuntimeError& error) { ThrowNetwork(error); }
                 return VmValue::Void();
             });
@@ -1149,18 +1337,6 @@ namespace ogplay::runtime::dexvm::intrinsics {
 
         using namespace detail;
 
-        IntrinsicClassDecl DeclareSocketException() {
-            return DeclareSimpleThrowable("Ljava/net/SocketException;", "Ljava/io/IOException;");
-        }
-
-        IntrinsicClassDecl DeclareSocketTimeoutException() {
-            return DeclareSimpleThrowable("Ljava/net/SocketTimeoutException;", "Ljava/io/IOException;");
-        }
-
-        IntrinsicClassDecl DeclareUnknownHostException() {
-            return DeclareSimpleThrowable("Ljava/net/UnknownHostException;", "Ljava/io/IOException;");
-        }
-
         IntrinsicClassDecl DeclareMalformedURLException() {
             return DeclareSimpleThrowable("Ljava/net/MalformedURLException;", "Ljava/io/IOException;");
         }
@@ -1182,9 +1358,7 @@ namespace ogplay::runtime::dexvm::intrinsics {
         catalog.push_back(DeclareSslSocketFactory(services));
         catalog.push_back(DeclareTrustManager());
         catalog.push_back(DeclareX509TrustManager());
-        catalog.push_back(DeclareInetAddress());
-        catalog.push_back(DeclareSocketAddress());
-        catalog.push_back(DeclareInetSocketAddress());
+        AppendAddressNatives(catalog);
         catalog.push_back(DeclareSocketInputStream());
         catalog.push_back(DeclareSocketOutputStream());
         catalog.push_back(DeclareSocket(false));
@@ -1193,9 +1367,6 @@ namespace ogplay::runtime::dexvm::intrinsics {
         catalog.push_back(DeclareSocketFactory(services));
         catalog.push_back(DeclareSocket(true));
 
-        catalog.push_back(DeclareSocketException());
-        catalog.push_back(DeclareSocketTimeoutException());
-        catalog.push_back(DeclareUnknownHostException());
         catalog.push_back(DeclareMalformedURLException());
     }
 } // namespace ogplay::runtime::dexvm::intrinsics

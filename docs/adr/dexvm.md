@@ -892,3 +892,16 @@ Builder 的 shared 标志、detach、capacity 与 count 均由原版 Java 决定
 分配，但已返回 String 的内容不受后续编辑影响。反射访问 String 私有 value/offset/count 及
 物理数组别名不是当前 VM String 契约。若以后迁移 String，必须统一 JNI store 和 GC owner，
 不得靠双写恢复影子数组。本次保留 builder 字段引用的精确 GC 强边和对象流原版序列化格式。
+
+<a id="adr-0058"></a>
+## ADR-0058 · 地址对象归 BootDex，网络资源归受控宿主边界
+
+2026-09-12，接受，DVM-152。
+
+InetAddress 家族、AddressCache、InetSocketAddress 与 NetworkInterface 一次性切换为固定
+API 19 BootDex。IP 字节、hostname、scope 与 endpoint 只存在 guest 字段；NetworkRuntime
+删除地址对象侧表，只保存 socket、stream 和 datagram 等不可由普通 Java 表示的资源。
+
+Libcore 保留原版 Os/Posix 转发形状。宿主仅实现 Android 常量、数字地址转换、经
+NetworkPolicy/NetworkTransport 授权的名称查询及确定性 guest uname。不得读取宿主机器身份、
+DNS 或网卡；未支持的 Posix、NetworkInterface ioctl 和可达性路径明确失败。

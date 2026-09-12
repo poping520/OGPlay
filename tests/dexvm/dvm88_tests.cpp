@@ -13,6 +13,7 @@
 #include "ogplay/runtime/dexvm/intrinsic_builder.h"
 #include "ogplay/runtime/dexvm/network_runtime.h"
 #include "ogplay/runtime/dexvm/object_model.h"
+#include "ogplay/runtime/dexvm/vm_monitors.h"
 #include "ogplay/runtime/integration/dexvm_android.h"
 #include "ogplay/runtime/vfs/vfs.h"
 
@@ -115,6 +116,7 @@ struct Dvm88Vm final {
               return linker;
           }(), model, nullptr, ledger, InterpreterConfig{.backend = backend}) {
         RegisterAndroidDatabaseStateTables(vm, context);
+        vm.Monitors().SetTimeSource([] { return std::int64_t{1000}; });
         vfs.CreateDirectory("/data");
         vfs.CreateDirectory("/data/data");
         vfs.CreateDirectory("/data/data/test.game");
@@ -235,6 +237,54 @@ TEST_CASE("DVM-88 network runtime closes live channels during teardown") {
     }
     CHECK(transport.closed == 7);
     CHECK(transport.close_count == 1);
+}
+
+TEST_CASE("DVM-152 API 19 InetAddress owns address state and uses bounded DNS") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch,
+                               InterpreterBackend::threaded}) {
+        CAPTURE(backend == InterpreterBackend::threaded ? "threaded" : "switch");
+        Dvm88Vm fixture(backend);
+
+        const auto ipv4 = fixture.Static(
+            "Ljava/net/InetAddress;", "getByName",
+            "(Ljava/lang/String;)Ljava/net/InetAddress;",
+            {VmValue::Ref(fixture.vm.NewStringUtf8("192.0.2.9"))}).ref;
+        CHECK(fixture.linker.Class(fixture.model.ObjectClass(ipv4)).descriptor ==
+              "Ljava/net/Inet4Address;");
+        CHECK(fixture.vm.StringUtf8(fixture.On(
+                  ipv4, "getHostAddress", "()Ljava/lang/String;").ref) == "192.0.2.9");
+        const auto endpoint = fixture.New(
+            "Ljava/net/InetSocketAddress;", "(Ljava/net/InetAddress;I)V",
+            {VmValue::Ref(ipv4), VmValue::Int(8080)});
+        const auto endpoint_roots = fixture.vm.ProtectReferences(std::array{ipv4, endpoint});
+        static_cast<void>(fixture.vm.CollectGarbage("dvm152_endpoint_fields"));
+        CHECK(fixture.On(endpoint, "getAddress", "()Ljava/net/InetAddress;").ref == ipv4);
+        CHECK(fixture.On(endpoint, "getPort", "()I").AsInt() == 8080);
+
+        const auto ipv6 = fixture.Static(
+            "Ljava/net/InetAddress;", "getByName",
+            "(Ljava/lang/String;)Ljava/net/InetAddress;",
+            {VmValue::Ref(fixture.vm.NewStringUtf8("2001:db8::1"))}).ref;
+        CHECK(fixture.linker.Class(fixture.model.ObjectClass(ipv6)).descriptor ==
+              "Ljava/net/Inet6Address;");
+        CHECK(fixture.vm.StringUtf8(fixture.On(
+                  ipv6, "getHostAddress", "()Ljava/lang/String;").ref) == "2001:db8::1");
+
+        FakeNetwork transport;
+        fixture.vm.Network().Configure(
+            {true, false, false, {"game.test"}}, &transport);
+        const auto posix = fixture.New("Llibcore/io/Posix;");
+        const auto hints = fixture.New("Llibcore/io/StructAddrinfo;");
+        const auto addresses = fixture.On(
+            posix, "getaddrinfo",
+            "(Ljava/lang/String;Llibcore/io/StructAddrinfo;)[Ljava/net/InetAddress;",
+            {VmValue::Ref(fixture.vm.NewStringUtf8("game.test")), VmValue::Ref(hints)}).ref;
+        REQUIRE(fixture.model.ArrayLength(addresses) == 1);
+        const auto resolved = fixture.model.GetObjectElement(addresses, 0);
+        CHECK(transport.resolved == "game.test");
+        CHECK(fixture.vm.StringUtf8(fixture.On(
+                  resolved, "getHostAddress", "()Ljava/lang/String;").ref) == "203.0.113.7");
+    }
 }
 
 TEST_CASE("DVM-88 URL form codecs match API 19 UTF-8 behavior") {

@@ -402,10 +402,8 @@ int RunApkCommand(const int argc, const char* const argv[],
     runtime::VirtualFileSystem filesystem;
     MountExternalDirectory(profile, external_directory, filesystem);
     AttachSandbox(sandbox, profile, filesystem, logger);
-    if (profile.data.has_value() &&
-        profile.data->working_directory.has_value()) {
-        filesystem.SetWorkingDirectory(*profile.data->working_directory);
-    }
+    filesystem.SetWorkingDirectory(
+        session::ResolveProfileWorkingDirectory(profile));
     const auto& bionic = runtime::SelectBionicProfile(profile.runtime.api_level);
     const auto system_directory =
         bundled_data.root / bionic.data_directory / "lib";
@@ -642,7 +640,7 @@ int RunApkCommand(const int argc, const char* const argv[],
             loader::ReadApkEntry(apk_bytes, archive, "classes.dex");
         std::vector<std::uint8_t> dex_bytes(dex_entry.size());
         std::memcpy(dex_bytes.data(), dex_entry.data(), dex_entry.size());
-        const auto boot_archive_bytes = ReadBytes(
+        auto boot_archive_bytes = ReadBytes(
             bundled_data.root / bionic.data_directory / "framework" /
             "bootdex.jar");
         const auto boot_archive =
@@ -652,6 +650,8 @@ int RunApkCommand(const int argc, const char* const argv[],
         std::vector<std::uint8_t> boot_dex_bytes(boot_entry.size());
         std::memcpy(boot_dex_bytes.data(), boot_entry.data(),
                     boot_entry.size());
+        dex_context->boot_classpath_archive = boot_archive;
+        dex_context->boot_classpath_bytes = std::move(boot_archive_bytes);
         runtime::DexVmBridgeConfig bridge_config;
         if (profile.runtime.dexvm.has_value()) {
             bridge_config.heap.heap_budget_bytes =

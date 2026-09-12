@@ -52,7 +52,9 @@
 - ClassLoader/BootClassLoader/PathClassLoader 身份、parent、lookup/initiate 只用
   ClassLoaderFacade；自定义 loader 仍映射唯一 application namespace，动态 classpath 拒绝。
   Class.forName 使用真实 caller；三参 null 映射 API19 system loader。CNFE 保留 cause，
-  clinit EIIE 保留原 throwable。完整约束见 [DexVM](../MODULE.md)。
+  clinit EIIE 保留原 throwable。Class 相对/绝对资源名与 ClassLoader 根资源名经注入的
+  bootstrap/APK sealed archive 查询并返回真实 ByteArrayInputStream；缺失返回 null。
+  完整约束见 [DexVM](../MODULE.md)。
 - Class/Method/Constructor/Field/reflect.Array 只委托 linker、ReflectionRuntime、ReflectionCodec
   和 typed array store；不读写 raw member id。public 聚合按 class→superclass→direct interface；
   nested/enclosing/Throws 只读 Dalvik metadata，禁止名称拆分猜测、generic/annotation proxy。

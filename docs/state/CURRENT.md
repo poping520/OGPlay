@@ -1,5 +1,14 @@
 # 当前状态
 
+- `Class.getResourceAsStream` 与 `ClassLoader.getResourceAsStream` 已接通 sealed classpath：
+  bootstrap 读取受审 BootDex 资源，application 按 parent-first 再读当前 APK；API 19
+  `logging.properties` 已进入 BootDex 白名单并返回真实 `ByteArrayInputStream`。真实 PvZ
+  已越过 LogManager 初始化，首错回到默认离线策略的 DNS `EAI_NONAME`。
+
+- `run-apk` 现在为无 Profile/未声明数据目录的 Android 进程设置 `/` 作为确定性 guest
+  working directory，Profile 显式目录仍优先；Java 相对 `File` 路径不再因 cwd 缺席抛
+  `UnsupportedOperationException`。已补 session/VFS 定向回归。
+
 - `java.net.ProxySelector` 已增加无进程代理 intrinsic：`getDefault()` 返回 null，API 19
   Apache RoutePlanner 因此选择直连；未加入 Proxy 相关 BootDex 类，也不读取宿主代理。
   仅完成受影响目标编译，本轮按要求未执行测试或真实 APK 验证。

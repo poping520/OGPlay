@@ -90,8 +90,9 @@ def load_recipe(document: dict | None = None) -> dict[str, tuple[str, ...]]:
     if document is None:
         document = json.loads(RECIPE.read_text(encoding="utf-8"))
     if not isinstance(document, dict) or set(document) != {
-            "api_level", "classes", "date_family_audit"}:
-        raise BuildError("recipe must contain api_level, classes and date_family_audit")
+            "api_level", "classes", "resources", "date_family_audit"}:
+        raise BuildError(
+            "recipe must contain api_level, classes, resources and date_family_audit")
     if document["api_level"] != 19 or not isinstance(document["classes"], dict):
         raise BuildError("recipe must describe API 19 classes")
     result = {}
@@ -109,6 +110,27 @@ def load_recipe(document: dict | None = None) -> dict[str, tuple[str, ...]]:
     if not result or len(all_classes) != len(set(all_classes)):
         raise BuildError("recipe has no classes or contains duplicates")
     validate_date_family_audit(document["date_family_audit"], result)
+    load_resources(document)
+    return result
+
+
+def load_resources(document: dict | None = None) -> dict[str, tuple[str, ...]]:
+    if document is None:
+        document = json.loads(RECIPE.read_text(encoding="utf-8"))
+    resources = document.get("resources")
+    if not isinstance(resources, dict) or not resources:
+        raise BuildError("resources must be a non-empty object")
+    result = {}
+    for source, names in resources.items():
+        if source not in SOURCES or not isinstance(names, list) or not names:
+            raise BuildError(f"invalid resource list: {source}")
+        values = tuple(names)
+        if values != tuple(sorted(set(values))) or any(
+                not isinstance(name, str) or not name or name.startswith("/") or
+                "/../" in f"/{name}/" or "/./" in f"/{name}/"
+                for name in values):
+            raise BuildError(f"invalid resource list: {source}")
+        result[source] = values
     return result
 
 
@@ -156,12 +178,14 @@ def class_names(dex: bytes) -> tuple[str, ...]:
                         for item in parsed.classes))
 
 
-def make_jar(dex: bytes) -> bytes:
+def make_jar(dex: bytes, resources: dict[str, bytes] | None = None) -> bytes:
     output = io.BytesIO()
     with zipfile.ZipFile(output, "w", compression=zipfile.ZIP_STORED) as archive:
-        for name, content in (
+        entries = [
                 ("META-INF/MANIFEST.MF", JAR_MANIFEST),
-                ("classes.dex", dex)):
+                ("classes.dex", dex)]
+        entries.extend(sorted((resources or {}).items()))
+        for name, content in entries:
             info = zipfile.ZipInfo(name, (1980, 1, 1, 0, 0, 0))
             info.compress_type = zipfile.ZIP_STORED
             info.create_system = 3
@@ -170,8 +194,26 @@ def make_jar(dex: bytes) -> bytes:
     return output.getvalue()
 
 
+def resource_payload(
+        recipe: dict[str, tuple[str, ...]]) -> dict[str, bytes]:
+    resources = {}
+    for source, names in recipe.items():
+        with zipfile.ZipFile(source_path(source)) as archive:
+            for name in names:
+                try:
+                    content = archive.read(name)
+                except KeyError as error:
+                    raise BuildError(
+                        f"missing resource {name} in {source}") from error
+                if name in resources:
+                    raise BuildError(f"duplicate resource: {name}")
+                resources[name] = content
+    return resources
+
+
 def build() -> tuple[bytes, bytes, dict[str, tuple[str, ...]]]:
     recipe = load_recipe()
+    resource_recipe = load_resources()
     verify_inputs(recipe)
     with tempfile.TemporaryDirectory(prefix="ogplay-bootdex-a-") as first, \
             tempfile.TemporaryDirectory(prefix="ogplay-bootdex-b-") as second:
@@ -181,7 +223,8 @@ def build() -> tuple[bytes, bytes, dict[str, tuple[str, ...]]]:
     selected = tuple(sorted(item for values in recipe.values() for item in values))
     if class_names(dex) != selected:
         raise BuildError("generated classes differ from recipe")
-    return make_jar(dex), dex, recipe
+    resources = resource_payload(resource_recipe)
+    return make_jar(dex, resources), dex, recipe
 
 
 def boot_metadata(jar: bytes, dex: bytes,

@@ -1,6 +1,8 @@
 #include "boot_dex.h"
+#include <cstddef>
 #include <fstream>
 #include <iterator>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -34,9 +36,10 @@ struct LoaderVm final {
     Interpreter interpreter;
 
     explicit LoaderVm(
-        const InterpreterBackend backend = InterpreterBackend::switch_dispatch)
-        : interpreter([this]() -> DexClassLinker& {
-              const auto catalog = CoreIntrinsicCatalog();
+        const InterpreterBackend backend = InterpreterBackend::switch_dispatch,
+        CoreIntrinsicServices services = {})
+        : interpreter([this, &services]() -> DexClassLinker& {
+              const auto catalog = CoreIntrinsicCatalog(std::move(services));
               linker.RegisterIntrinsics(catalog);
               linker.RegisterDex(ReadFixture("interp.dex"));
               ogplay::test::RegisterBootDex(linker);
@@ -106,6 +109,52 @@ void ExpectClassNotFound(LoaderVm& vm, const VmCallOutcome& outcome) {
 }
 
 }  // namespace
+
+TEST_CASE("Class and ClassLoader resource streams preserve loader and package semantics") {
+    CoreIntrinsicServices services;
+    services.classpath_resource = [](
+        const CoreIntrinsicServices::ClasspathLoader loader,
+        const std::string_view name)
+        -> std::optional<std::vector<std::byte>> {
+        if (loader == CoreIntrinsicServices::ClasspathLoader::bootstrap &&
+            name == "java/lang/boot.txt") {
+            return std::vector<std::byte>{std::byte{'b'}};
+        }
+        if (loader == CoreIntrinsicServices::ClasspathLoader::application &&
+            name == "app.txt") {
+            return std::vector<std::byte>{std::byte{'a'}};
+        }
+        return std::nullopt;
+    };
+    LoaderVm vm(InterpreterBackend::switch_dispatch, std::move(services));
+    const auto read = [&](const VmObjectRef stream) {
+        REQUIRE(stream.IsValid());
+        return vm.Virtual(stream, "read", "()I").value.AsInt();
+    };
+
+    const auto string_class = vm.model.ClassObject(
+        vm.linker.ResolveDescriptor("Ljava/lang/String;"));
+    const auto boot_stream = Ref(vm.Virtual(
+        string_class, "getResourceAsStream",
+        "(Ljava/lang/String;)Ljava/io/InputStream;",
+        {VmValue::Ref(vm.String("boot.txt"))}));
+    CHECK(read(boot_stream) == 'b');
+    CHECK(read(boot_stream) == -1);
+
+    const auto counter_class = vm.model.ClassObject(
+        vm.linker.ResolveDescriptor("LCounter;"));
+    const auto app_stream = Ref(vm.Virtual(
+        counter_class, "getResourceAsStream",
+        "(Ljava/lang/String;)Ljava/io/InputStream;",
+        {VmValue::Ref(vm.String("/app.txt"))}));
+    CHECK(read(app_stream) == 'a');
+
+    const auto boot_loader = vm.interpreter.ClassLoaders().BootstrapLoader();
+    CHECK_FALSE(Ref(vm.Virtual(
+        boot_loader, "getResourceAsStream",
+        "(Ljava/lang/String;)Ljava/io/InputStream;",
+        {VmValue::Ref(vm.String("app.txt"))})).IsValid());
+}
 
 TEST_CASE("ClassLoader system and bootstrap facades have stable API19 identity") {
     LoaderVm vm;

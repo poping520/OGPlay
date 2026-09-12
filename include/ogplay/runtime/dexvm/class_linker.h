@@ -1,6 +1,7 @@
 #pragma once
 
 #include <compare>
+#include <cstddef>
 #include <cstdint>
 #include <functional>
 #include <memory>
@@ -28,6 +29,10 @@ using HostStateDestructor = std::function<void(std::uint64_t)>;
 // Narrow host facts needed by Java/JRE intrinsic families that used to live
 // in dexvm_android. Callbacks keep core independent from DexVmAndroidContext.
 struct CoreIntrinsicServices final {
+    enum class ClasspathLoader : std::uint8_t { bootstrap, application };
+    std::function<std::optional<std::vector<std::byte>>(
+        ClasspathLoader, std::string_view)>
+        classpath_resource;
     std::function<void(std::span<std::byte>)> secure_random;
     std::string language{"en"};
     std::string default_timezone{"GMT"};

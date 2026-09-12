@@ -20,7 +20,8 @@ switch/threaded 解释、异常、线程/monitor、反射及 `java.*` core intri
   move-result；对照 API 19 `CodeVerify.cpp`，不做全量数据流。
 - 每 VM 只有稳定 application `PathClassLoader` 与 boot loader；application→boot→null。
   `findLoadedClass` 不链接/初始化/合成，`loadClass` 校验 binary name；`Class.forName` 使用真实
-  caller loader。无动态定义、多 namespace 或自定义加载权限。
+  caller loader。classpath stream 只经注入的 sealed bootstrap/APK 资源源，application
+  parent-first；不开放宿主文件、动态定义、多 namespace 或自定义加载权限。
 - `ReflectionRuntime` 是 Method/Constructor/Field metadata 与 wrapper 的唯一工厂；cache 不持
   guest ref，wrapper 可回收。DVM-143：`getMethod/getDeclaredMethod` 按名称和参数沿本类、父类、
   接口定向查找，只解析同名候选，命中后才解析返回/异常类型；`getMethods` 等枚举接口才建立

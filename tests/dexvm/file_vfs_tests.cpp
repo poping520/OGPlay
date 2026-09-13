@@ -795,13 +795,22 @@ TEST_CASE("FileOutputStream public constructors and writes match on both backend
             append, "<init>", "(Ljava/lang/String;Z)V",
             {VmValue::Ref(vm.interpreter.NewStringUtf8("/sdcard/save.dat")),
              VmValue::Int(1)}));
+        const auto append_peer = vm.interpreter.NewIntrinsicInstance(
+            "Ljava/io/FileOutputStream;");
+        static_cast<void>(vm.CallOn(
+            append_peer, "<init>", "(Ljava/lang/String;Z)V",
+            {VmValue::Ref(vm.interpreter.NewStringUtf8("/sdcard/save.dat")),
+             VmValue::Int(1)}));
         static_cast<void>(vm.CallOn(append, "write", "(I)V",
                                     {VmValue::Int('!')}));
         static_cast<void>(vm.CallOn(
             append, "write", "([BII)V",
             {VmValue::Ref(bytes), VmValue::Int(1), VmValue::Int(2)}));
+        static_cast<void>(vm.CallOn(append_peer, "write", "(I)V",
+                                    {VmValue::Int('C')}));
+        static_cast<void>(vm.CallOn(append_peer, "close", "()V"));
         static_cast<void>(vm.CallOn(append, "close", "()V"));
-        CHECK(vm.NativeRead("/sdcard/save.dat") == "base!AB");
+        CHECK(vm.NativeRead("/sdcard/save.dat") == "base!ABC");
 
         const auto truncate = vm.interpreter.NewIntrinsicInstance(
             "Ljava/io/FileOutputStream;");
@@ -814,6 +823,10 @@ TEST_CASE("FileOutputStream public constructors and writes match on both backend
         const auto fd = vm.CallOn(
             truncate, "getFD", "()Ljava/io/FileDescriptor;").ref;
         REQUIRE(fd.IsValid());
+        const auto* descriptor = vm.interpreter.IO().FindDescriptor(fd);
+        REQUIRE(descriptor != nullptr);
+        REQUIRE(descriptor->file != nullptr);
+        CHECK(vm.interpreter.IO().FileOffset(truncate) == 1);
         CHECK(vm.BoolOn(fd, "valid"));
         static_cast<void>(vm.CallOn(fd, "sync", "()V"));
         CHECK(vm.NativeRead("/sdcard/save.dat") == "N");
@@ -825,6 +838,7 @@ TEST_CASE("FileOutputStream public constructors and writes match on both backend
             {VmValue::Ref(fd)}));
         static_cast<void>(vm.CallOn(borrowed, "write", "(I)V",
                                     {VmValue::Int('D')}));
+        CHECK(vm.interpreter.IO().FileOffset(truncate) == 2);
         static_cast<void>(vm.CallOn(borrowed, "close", "()V"));
         CHECK(vm.BoolOn(fd, "valid"));
         CHECK(vm.NativeRead("/sdcard/save.dat") == "ND");
@@ -911,6 +925,10 @@ TEST_CASE("FileInputStream public API shares descriptor position on both backend
         const auto fd = vm.CallOn(
             input, "getFD", "()Ljava/io/FileDescriptor;").ref;
         REQUIRE(fd.IsValid());
+        const auto* descriptor = vm.interpreter.IO().FindDescriptor(fd);
+        REQUIRE(descriptor != nullptr);
+        REQUIRE(descriptor->file != nullptr);
+        CHECK(vm.interpreter.IO().FileOffset(input) == 1);
 
         const auto borrowed = vm.interpreter.NewIntrinsicInstance(
             "Ljava/io/FileInputStream;");
@@ -925,6 +943,7 @@ TEST_CASE("FileInputStream public API shares descriptor position on both backend
               std::vector<std::byte>{std::byte{'b'}, std::byte{'c'}});
         CHECK(vm.CallOn(borrowed, "skip", "(J)J",
                         {VmValue::Long(1)}).AsLong() == 1);
+        CHECK(vm.interpreter.IO().FileOffset(input) == 4);
         CHECK(vm.CallOn(input, "read", "()I").AsInt() == 'e');
         static_cast<void>(vm.CallOn(borrowed, "close", "()V"));
         CHECK(vm.BoolOn(fd, "valid"));

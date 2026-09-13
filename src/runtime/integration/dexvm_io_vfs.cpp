@@ -162,4 +162,75 @@ void DexVmIoVfsAdapter::WriteFile(const std::string_view path,
   }
 }
 
+std::int32_t DexVmIoVfsAdapter::OpenHandle(
+    const std::string_view path, const bool read, const bool write,
+    const bool create, const bool truncate) {
+  try {
+    return file_system_.Open(
+        path, {.read = read, .write = write, .create = create,
+               .truncate = truncate});
+  } catch (const VfsError& error) {
+    throw dexvm::IoRuntimeError(error.what());
+  }
+}
+
+dexvm::IoFileInfo DexVmIoVfsAdapter::HandleInfo(
+    const std::int32_t handle) const {
+  try {
+    const auto info = file_system_.DescriptorInfo(handle);
+    return {info.size, info.is_directory, info.writable};
+  } catch (const VfsError& error) {
+    throw dexvm::IoRuntimeError(error.what());
+  }
+}
+
+std::size_t DexVmIoVfsAdapter::ReadHandle(
+    const std::int32_t handle, const std::span<std::byte> destination) {
+  try {
+    return file_system_.Read(handle, destination);
+  } catch (const VfsError& error) {
+    throw dexvm::IoRuntimeError(error.what());
+  }
+}
+
+std::size_t DexVmIoVfsAdapter::WriteHandle(
+    const std::int32_t handle, const std::span<const std::byte> source) {
+  try {
+    return file_system_.Write(handle, source);
+  } catch (const VfsError& error) {
+    throw dexvm::IoRuntimeError(error.what());
+  }
+}
+
+std::uint64_t DexVmIoVfsAdapter::SeekHandle(
+    const std::int32_t handle, const std::int64_t offset,
+    const SeekWhence whence) {
+  const auto translated =
+      whence == SeekWhence::begin
+          ? VfsSeekWhence::begin
+          : whence == SeekWhence::current ? VfsSeekWhence::current
+                                           : VfsSeekWhence::end;
+  try {
+    return file_system_.Seek(handle, offset, translated);
+  } catch (const VfsError& error) {
+    throw dexvm::IoRuntimeError(error.what());
+  }
+}
+
+void DexVmIoVfsAdapter::FlushHandle(const std::int32_t handle) {
+  try {
+    file_system_.Flush(handle);
+  } catch (const VfsError& error) {
+    throw dexvm::IoRuntimeError(error.what());
+  }
+}
+
+void DexVmIoVfsAdapter::CloseHandle(const std::int32_t handle) {
+  try {
+    file_system_.Close(handle);
+  } catch (const VfsError& error) {
+    throw dexvm::IoRuntimeError(error.what());
+  }
+}
+
 } // namespace ogplay::runtime

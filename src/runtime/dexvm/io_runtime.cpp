@@ -1,5 +1,6 @@
 #include "ogplay/runtime/dexvm/io_runtime.h"
 
+#include <algorithm>
 #include <utility>
 
 namespace ogplay::runtime::dexvm {
@@ -133,6 +134,15 @@ IoRuntime::FindDescriptor(const VmObjectRef owner) noexcept {
 
 void IoRuntime::SyncDescriptor(const VmObjectRef owner) {
   auto &descriptor = Descriptor(owner);
+  if (descriptor.file != nullptr) {
+    if (!descriptor.file->writable || descriptor.file->closed) {
+      throw IoRuntimeError("file descriptor is not writable");
+    }
+    if (file_system_ == nullptr)
+      throw IoRuntimeError("guest filesystem is unavailable");
+    file_system_->FlushHandle(descriptor.file->handle);
+    return;
+  }
   if (descriptor.output == nullptr || descriptor.output->closed ||
       !descriptor.output->writable) {
     throw IoRuntimeError("file descriptor is not writable");
@@ -149,6 +159,149 @@ void IoRuntime::CloseDescriptor(const VmObjectRef owner) noexcept {
     found->second.closed = true;
     if (found->second.input != nullptr) found->second.input->closed = true;
     if (found->second.output != nullptr) found->second.output->closed = true;
+    if (found->second.file != nullptr && !found->second.file->closed) {
+      try {
+        if (file_system_ != nullptr)
+          file_system_->CloseHandle(found->second.file->handle);
+      } catch (const IoRuntimeError&) {
+      }
+      found->second.file->closed = true;
+    }
+  }
+}
+
+std::shared_ptr<IoRuntime::OpenFileDescription> IoRuntime::OpenFile(
+    std::string path, const bool readable, const bool writable,
+    const bool append, const bool truncate) {
+  if (!readable && !writable) {
+    throw IoRuntimeError("file descriptor has no access mode");
+  }
+  if (file_system_ == nullptr)
+    throw IoRuntimeError("guest filesystem is unavailable");
+  auto file = std::make_shared<OpenFileDescription>();
+  file->path = std::move(path);
+  file->readable = readable;
+  file->writable = writable;
+  file->append = append;
+  file->handle = file_system_->OpenHandle(file->path, readable, writable,
+                                          writable, truncate);
+  try {
+    if (append)
+      static_cast<void>(file_system_->SeekHandle(
+          file->handle, 0, IoFileSystem::SeekWhence::end));
+  } catch (...) {
+    try {
+      file_system_->CloseHandle(file->handle);
+    } catch (const IoRuntimeError&) {
+    }
+    throw;
+  }
+  return file;
+}
+
+void IoRuntime::BindFileStream(
+    const VmObjectRef owner, std::shared_ptr<OpenFileDescription> file,
+    const bool close_underlying) {
+  if (file == nullptr) throw IoRuntimeError("file descriptor has no state");
+  file_streams_[owner.Value()] = {
+      std::move(file), false, close_underlying};
+}
+
+namespace {
+IoRuntime::OpenFileDescription& RequireFile(
+    auto& streams,
+    const VmObjectRef owner) {
+  const auto found = streams.find(owner.Value());
+  if (found == streams.end() || found->second.closed ||
+      found->second.file->closed) {
+    throw IoRuntimeError("file stream is closed or was never opened");
+  }
+  return *found->second.file;
+}
+}  // namespace
+
+std::size_t IoRuntime::FileAvailable(const VmObjectRef owner) const {
+  const auto found = file_streams_.find(owner.Value());
+  if (found == file_streams_.end() || found->second.closed ||
+      found->second.file->closed || !found->second.file->readable) {
+    throw IoRuntimeError("file stream is closed or not readable");
+  }
+  if (file_system_ == nullptr)
+    throw IoRuntimeError("guest filesystem is unavailable");
+  const auto size = file_system_->HandleInfo(found->second.file->handle).size;
+  const auto offset = file_system_->SeekHandle(
+      found->second.file->handle, 0, IoFileSystem::SeekWhence::current);
+  return static_cast<std::size_t>(size > offset ? size - offset : 0U);
+}
+
+std::size_t IoRuntime::ReadFileStream(
+    const VmObjectRef owner, const std::span<std::byte> destination) {
+  auto& file = RequireFile(file_streams_, owner);
+  if (!file.readable) throw IoRuntimeError("file descriptor is not readable");
+  if (file_system_ == nullptr)
+    throw IoRuntimeError("guest filesystem is unavailable");
+  return file_system_->ReadHandle(file.handle, destination);
+}
+
+std::uint64_t IoRuntime::SkipFileStream(const VmObjectRef owner,
+                                        const std::uint64_t count) {
+  auto& file = RequireFile(file_streams_, owner);
+  if (!file.readable) throw IoRuntimeError("file descriptor is not readable");
+  if (file_system_ == nullptr)
+    throw IoRuntimeError("guest filesystem is unavailable");
+  const auto before = file_system_->SeekHandle(
+      file.handle, 0, IoFileSystem::SeekWhence::current);
+  const auto size = file_system_->HandleInfo(file.handle).size;
+  const auto available = size > before ? size - before : 0U;
+  const auto amount = std::min(count, available);
+  static_cast<void>(file_system_->SeekHandle(
+      file.handle, static_cast<std::int64_t>(amount),
+      IoFileSystem::SeekWhence::current));
+  return amount;
+}
+
+std::uint64_t IoRuntime::FileOffset(const VmObjectRef owner) const {
+  const auto found = file_streams_.find(owner.Value());
+  if (found == file_streams_.end() || found->second.closed ||
+      found->second.file->closed || file_system_ == nullptr) {
+    throw IoRuntimeError("file stream is closed or was never opened");
+  }
+  return file_system_->SeekHandle(found->second.file->handle, 0,
+                                  IoFileSystem::SeekWhence::current);
+}
+
+void IoRuntime::WriteFileStream(
+    const VmObjectRef owner, const std::span<const std::byte> source) {
+  auto& file = RequireFile(file_streams_, owner);
+  if (!file.writable) throw IoRuntimeError("file descriptor is not writable");
+  if (file_system_ == nullptr)
+    throw IoRuntimeError("guest filesystem is unavailable");
+  if (file.append)
+    static_cast<void>(file_system_->SeekHandle(
+        file.handle, 0, IoFileSystem::SeekWhence::end));
+  std::size_t cursor = 0;
+  while (cursor < source.size()) {
+    const auto amount = file_system_->WriteHandle(
+        file.handle, source.subspan(cursor));
+    if (amount == 0) throw IoRuntimeError("file write made no progress");
+    cursor += amount;
+  }
+}
+
+void IoRuntime::FlushFileStream(const VmObjectRef owner) {
+  auto& file = RequireFile(file_streams_, owner);
+  if (file.writable) file_system_->FlushHandle(file.handle);
+}
+
+void IoRuntime::CloseFileStream(const VmObjectRef owner) {
+  const auto found = file_streams_.find(owner.Value());
+  if (found == file_streams_.end() || found->second.closed) return;
+  found->second.closed = true;
+  if (found->second.close_underlying && !found->second.file->closed) {
+    if (file_system_ == nullptr)
+      throw IoRuntimeError("guest filesystem is unavailable");
+    file_system_->CloseHandle(found->second.file->handle);
+    found->second.file->closed = true;
   }
 }
 
@@ -207,6 +360,7 @@ void IoRuntime::Sweep(const VmObjectRef owner) {
   decoders_.erase(owner.Value());
   inputs_.erase(owner.Value());
   outputs_.erase(owner.Value());
+  file_streams_.erase(owner.Value());
   descriptors_.erase(owner.Value());
 }
 

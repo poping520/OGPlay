@@ -67,8 +67,10 @@ switch/threaded 解释、异常、线程/monitor、反射及 `java.*` core intri
   经 bound token 访问；flags 统一来自 `access_flags.h`。
 - 集合、并发、IO/对象流、日期、framework 值类、Throwable、Uri、UUID/JCA、Cipher/证书等普通
   Java 逻辑归 BootDex；字段/数组是唯一状态。native 仅保留受审边界，不得恢复重复 C++ 算法。
-- `IoRuntime` 只持文件资源与增量解码状态，文件仅走注入 `IoFileSystem`；相对路径不读 host cwd，
-  逻辑 FileDescriptor 不存 host fd。`ZipRuntime` 复用严格 ZIP parser/inflate。
+- `IoRuntime` 只持文件资源与增量解码状态，文件仅走注入 `IoFileSystem`；FIS/FOS 的
+  OpenFileDescription 保存隔离的 VFS descriptor 与访问模式，同一逻辑 FileDescriptor 共享
+  VFS offset。相对路径不读 host cwd，逻辑 FileDescriptor 不存 host fd。`ZipRuntime` 复用严格
+  ZIP parser/inflate。
 - `NetworkRuntime` 只经注入 policy/transport，默认离线；不读 host DNS/代理/证书、不在 core
   创建 socket。InetAddress 与 InetSocketAddress 状态归 BootDex 字段，NetworkRuntime 只保存
   socket/stream/datagram 资源；URI 普通值语义归 BootDex，URL 解析不触网，未授权或未实现

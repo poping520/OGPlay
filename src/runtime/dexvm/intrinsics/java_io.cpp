@@ -864,22 +864,25 @@ namespace ogplay::runtime::dexvm::intrinsics {
                         }
                         path = ChildFilePath(*working_directory, path);
                     }
-                    const auto bytes = call.vm.IO().ReadFile(path);
-                    if (!bytes.has_value()) {
+                    std::shared_ptr<IoRuntime::OpenFileDescription> file;
+                    try {
+                        file = call.vm.IO().OpenFile(path, true, false, false,
+                                                     false);
+                    } catch (const IoRuntimeError&) {
                         throw VmJavaThrow{
                             "Ljava/io/FileNotFoundException;",
                             "file not found: " + path
                         };
                     }
-                    auto input = call.vm.IO().SetInput(
-                        call.receiver, {*bytes, 0, false});
                     const auto descriptor =
                             call.vm.NewIntrinsicInstance("Ljava/io/FileDescriptor;");
                     call.vm.IO().SetDescriptor(
                         descriptor, {
                             IoRuntime::DescriptorKind::vfs_path, path, 0, false,
-                            std::move(input), {}
+                            {}, {}, file
                         });
+                    call.vm.IO().BindFileStream(call.receiver, std::move(file),
+                                                true);
                     typed.SetRef(fd, descriptor);
                     typed.SetInt(should_close, 1);
                     return VmValue::Void();
@@ -895,23 +898,17 @@ namespace ogplay::runtime::dexvm::intrinsics {
                                     IntrinsicCall typed(call);
                                     const auto descriptor_ref = typed.NonNullRef(0, "fd");
                                     auto* descriptor = call.vm.IO().FindDescriptor(descriptor_ref);
-                                    if (descriptor == nullptr || descriptor->closed ||
-                                        (descriptor->input == nullptr && descriptor->output != nullptr)) {
-                                        call.vm.IO().SetInput(call.receiver, {{}, 0, true}, false);
-                                    } else if (descriptor->input != nullptr) {
-                                        call.vm.IO().ShareInput(call.receiver, descriptor->input, false);
-                                    } else if (descriptor->kind == IoRuntime::DescriptorKind::vfs_path) {
-                                        const auto bytes = call.vm.IO().ReadFile(descriptor->source);
-                                        auto input = call.vm.IO().SetInput(
-                                            call.receiver,
-                                            {
-                                                bytes.has_value() ? *bytes : std::vector<std::byte>{}, 0,
-                                                !bytes.has_value()
-                                            },
-                                            false);
-                                        descriptor->input = std::move(input);
+                                    if (descriptor != nullptr && !descriptor->closed &&
+                                        descriptor->file != nullptr &&
+                                        descriptor->file->readable) {
+                                        call.vm.IO().BindFileStream(
+                                            call.receiver, descriptor->file, false);
                                     } else {
-                                        call.vm.IO().SetInput(call.receiver, {{}, 0, true}, false);
+                                        auto invalid = std::make_shared<
+                                            IoRuntime::OpenFileDescription>();
+                                        invalid->closed = true;
+                                        call.vm.IO().BindFileStream(
+                                            call.receiver, std::move(invalid), false);
                                     }
                                     typed.SetRef(fd, descriptor_ref);
                                     typed.SetInt(should_close, 0);
@@ -920,9 +917,8 @@ namespace ogplay::runtime::dexvm::intrinsics {
             // 返回无需阻塞即可读取的估计字节数。
             builder.OverrideMethod("available", "()I", [](IntrinsicContext& call) {
                 try {
-                    const auto& input = call.vm.IO().Input(call.receiver);
                     return VmValue::Int(static_cast<std::int32_t>(
-                        input.bytes.size() - input.cursor));
+                        call.vm.IO().FileAvailable(call.receiver)));
                 } catch (const IoRuntimeError& error) {
                     IoFailure(error);
                 }
@@ -943,10 +939,12 @@ namespace ogplay::runtime::dexvm::intrinsics {
             // 读取一个字节，流结束时返回 -1。
             builder.OverrideMethod("read", "()I", [](IntrinsicContext& call) {
                 try {
-                    auto& input = call.vm.IO().Input(call.receiver);
-                    if (input.cursor >= input.bytes.size()) return VmValue::Int(-1);
-                    return VmValue::Int(
-                        static_cast<std::uint8_t>(input.bytes[input.cursor++]));
+                    std::byte value{};
+                    if (call.vm.IO().ReadFileStream(call.receiver,
+                                                    std::span{&value, 1}) == 0) {
+                        return VmValue::Int(-1);
+                    }
+                    return VmValue::Int(static_cast<std::uint8_t>(value));
                 } catch (const IoRuntimeError& error) {
                     IoFailure(error);
                 }
@@ -968,16 +966,14 @@ namespace ogplay::runtime::dexvm::intrinsics {
                     };
                 }
                 try {
-                    auto& input = call.vm.IO().Input(call.receiver);
                     if (length == 0) return VmValue::Int(0);
-                    const auto remaining = input.bytes.size() - input.cursor;
-                    if (remaining == 0) return VmValue::Int(-1);
-                    const auto amount = std::min<std::size_t>(
-                        static_cast<std::size_t>(length), remaining);
-                    call.vm.Model().WriteByteRegion(
-                        array, offset,
-                        std::span(input.bytes).subspan(input.cursor, amount));
-                    input.cursor += amount;
+                    std::vector<std::byte> bytes(
+                        static_cast<std::size_t>(length));
+                    const auto amount = call.vm.IO().ReadFileStream(
+                        call.receiver, bytes);
+                    if (amount == 0) return VmValue::Int(-1);
+                    call.vm.Model().WriteByteRegion(array, offset,
+                                                    std::span(bytes).first(amount));
                     return VmValue::Int(static_cast<std::int32_t>(amount));
                 } catch (const IoRuntimeError& error) {
                     IoFailure(error);
@@ -990,12 +986,10 @@ namespace ogplay::runtime::dexvm::intrinsics {
                     throw VmJavaThrow{"Ljava/io/IOException;", "byteCount < 0"};
                 }
                 try {
-                    auto& input = call.vm.IO().Input(call.receiver);
-                    const auto amount = std::min<std::uint64_t>(
-                        static_cast<std::uint64_t>(requested),
-                        input.bytes.size() - input.cursor);
-                    input.cursor += static_cast<std::size_t>(amount);
-                    return VmValue::Long(static_cast<std::int64_t>(amount));
+                    return VmValue::Long(static_cast<std::int64_t>(
+                        call.vm.IO().SkipFileStream(
+                            call.receiver,
+                            static_cast<std::uint64_t>(requested))));
                 } catch (const IoRuntimeError& error) {
                     IoFailure(error);
                 }
@@ -1004,7 +998,7 @@ namespace ogplay::runtime::dexvm::intrinsics {
             builder.OverrideMethod("close", "()V",
                                    [fd, should_close](IntrinsicContext& call) {
                                        IntrinsicCall typed(call);
-                                       call.vm.IO().CloseInput(call.receiver);
+                                       call.vm.IO().CloseFileStream(call.receiver);
                                        const auto descriptor = typed.GetRef(fd);
                                        if (typed.GetInt(should_close) != 0) {
                                            if (descriptor.IsValid()) call.vm.IO().CloseDescriptor(descriptor);
@@ -1094,26 +1088,22 @@ namespace ogplay::runtime::dexvm::intrinsics {
                         path = ChildFilePath(*working_directory, path);
                     }
                     const auto append = has_append && typed.Int(1) != 0;
-                    std::vector<std::byte> bytes;
-                    if (append) {
-                        if (const auto existing = call.vm.IO().ReadFile(path))
-                            bytes = *existing;
-                    }
+                    std::shared_ptr<IoRuntime::OpenFileDescription> file;
                     try {
-                        // API 19 在构造时即创建文件，并按 append 选择保留或截断原内容。
-                        call.vm.IO().WriteFile(path, bytes);
+                        file = call.vm.IO().OpenFile(path, false, true, append,
+                                                     !append);
                     } catch (const IoRuntimeError& error) {
                         throw VmJavaThrow{"Ljava/io/FileNotFoundException;", error.what()};
                     }
-                    auto output = call.vm.IO().SetOutput(
-                        call.receiver, {path, std::move(bytes), true, false});
                     const auto descriptor =
                             call.vm.NewIntrinsicInstance("Ljava/io/FileDescriptor;");
                     call.vm.IO().SetDescriptor(
                         descriptor, {
                             IoRuntime::DescriptorKind::vfs_path, path, 0, false,
-                            {}, std::move(output)
+                            {}, {}, file
                         });
+                    call.vm.IO().BindFileStream(call.receiver, std::move(file),
+                                                true);
                     typed.SetRef(fd, descriptor);
                     typed.SetInt(should_close, 1);
                     return VmValue::Void();
@@ -1134,26 +1124,17 @@ namespace ogplay::runtime::dexvm::intrinsics {
                                     IntrinsicCall typed(call);
                                     const auto descriptor_ref = typed.NonNullRef(0, "fd");
                                     auto* descriptor = call.vm.IO().FindDescriptor(descriptor_ref);
-                                    if (descriptor == nullptr || descriptor->closed) {
-                                        call.vm.IO().SetOutput(call.receiver, {{}, {}, false, false}, false);
-                                    } else if (descriptor->output != nullptr) {
-                                        call.vm.IO().ShareOutput(call.receiver, descriptor->output, false);
+                                    if (descriptor != nullptr && !descriptor->closed &&
+                                        descriptor->file != nullptr &&
+                                        descriptor->file->writable) {
+                                        call.vm.IO().BindFileStream(
+                                            call.receiver, descriptor->file, false);
                                     } else {
-                                        std::vector<std::byte> bytes;
-                                        if (descriptor->kind == IoRuntime::DescriptorKind::vfs_path) {
-                                            if (const auto existing = call.vm.IO().ReadFile(descriptor->source))
-                                                bytes = *existing;
-                                        }
-                                        auto output = call.vm.IO().SetOutput(
-                                            call.receiver,
-                                            {
-                                                descriptor->kind == IoRuntime::DescriptorKind::vfs_path
-                                                    ? descriptor->source
-                                                    : std::string{},
-                                                std::move(bytes), false, false
-                                            },
-                                            false);
-                                        descriptor->output = std::move(output);
+                                        auto invalid = std::make_shared<
+                                            IoRuntime::OpenFileDescription>();
+                                        invalid->closed = true;
+                                        call.vm.IO().BindFileStream(
+                                            call.receiver, std::move(invalid), false);
                                     }
                                     typed.SetRef(fd, descriptor_ref);
                                     typed.SetInt(should_close, 0);
@@ -1162,8 +1143,10 @@ namespace ogplay::runtime::dexvm::intrinsics {
             // 写入一个字节的低八位。
             builder.OverrideMethod("write", "(I)V", [](IntrinsicContext& call) {
                 try {
-                    call.vm.IO().Output(call.receiver).bytes.push_back(
-                        static_cast<std::byte>(call.arguments[0].AsInt() & 0xff));
+                    const auto value = static_cast<std::byte>(
+                        call.arguments[0].AsInt() & 0xff);
+                    call.vm.IO().WriteFileStream(call.receiver,
+                                                 std::span{&value, 1});
                 } catch (const IoRuntimeError& error) {
                     IoFailure(error);
                 }
@@ -1186,9 +1169,8 @@ namespace ogplay::runtime::dexvm::intrinsics {
                     };
                 }
                 try {
-                    auto& output = call.vm.IO().Output(call.receiver);
                     const auto bytes = call.vm.Model().ReadByteRegion(array, offset, length);
-                    output.bytes.insert(output.bytes.end(), bytes.begin(), bytes.end());
+                    call.vm.IO().WriteFileStream(call.receiver, bytes);
                 } catch (const IoRuntimeError& error) {
                     IoFailure(error);
                 }
@@ -1211,7 +1193,7 @@ namespace ogplay::runtime::dexvm::intrinsics {
                                    [fd, should_close](IntrinsicContext& call) {
                                        IntrinsicCall typed(call);
                                        try {
-                                           call.vm.IO().FlushOutput(call.receiver, true);
+                                           call.vm.IO().CloseFileStream(call.receiver);
                                        } catch (const IoRuntimeError& error) {
                                            IoFailure(error);
                                        }

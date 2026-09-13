@@ -70,7 +70,8 @@
 ## IO、NIO 与网络
 
 - 普通 stream/reader/writer、内存/过滤/缓冲流与对象流归 BootDex；资源归 IoRuntime。
-  FileDescriptor 是逻辑身份，共享 FD 的读写游标与借用/拥有关闭语义一致，不保存宿主句柄。
+  FileDescriptor 是逻辑身份；FIS/FOS 通过共享 OpenFileDescription 直连 VFS descriptor，
+  同一 FD 的流共享 VFS offset，append 每次写前定位末尾，借用/拥有关闭语义一致，不保存宿主句柄。
   File 只消费注入 VFS/工作目录；mkdir/mkdirs 分开，filter 虚派并传播异常，缺 IoFileSystem
   不与 ENOENT 混淆；setWritable 仅在既有可写对象上报告成功，不伪造权限改变。
 - InputStreamReader 用 Reader.lock 保护固定 ICU 六标准编码的增量转换，close/GC/teardown

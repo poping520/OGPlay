@@ -25,6 +25,20 @@ public:
   ReadFile(std::string_view path) const override;
   void WriteFile(std::string_view path,
                  std::span<const std::byte> bytes) override;
+  [[nodiscard]] std::int32_t OpenHandle(
+      std::string_view path, bool read, bool write, bool create,
+      bool truncate) override;
+  [[nodiscard]] dexvm::IoFileInfo HandleInfo(
+      std::int32_t handle) const override;
+  [[nodiscard]] std::size_t ReadHandle(
+      std::int32_t handle, std::span<std::byte> destination) override;
+  [[nodiscard]] std::size_t WriteHandle(
+      std::int32_t handle, std::span<const std::byte> source) override;
+  [[nodiscard]] std::uint64_t SeekHandle(
+      std::int32_t handle, std::int64_t offset,
+      SeekWhence whence) override;
+  void FlushHandle(std::int32_t handle) override;
+  void CloseHandle(std::int32_t handle) override;
 
 private:
   VirtualFileSystem &file_system_;

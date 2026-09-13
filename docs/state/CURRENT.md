@@ -1,5 +1,10 @@
 # 当前状态
 
+- IO BootDex 迁移第一阶段已建立共享 OpenFileDescription：FileInputStream/FileOutputStream
+  直接使用隔离 VFS descriptor，同一 FileDescriptor 的流共享 VFS offset，append 每次写前定位
+  末尾，借用/拥有关闭保持原语义。IO 与 Android descriptor 定向 294 条断言通过；真实 PvZ
+  行为未扩张，仍停在下一阶段的 `FileInputStream.getChannel()`。
+
 - API 19 XML `style` 已按先于显式属性的顺序进入 inflater：基础 TextAppearance reference
   与 `progressBarStyleHorizontal` theme attr 走受限 framework 投影，未知 style 仍明确失败；
   定向 29 条断言通过。真实 PvZ 已越过原 inflation 异常并进入 OBB 文件复制，新首错为

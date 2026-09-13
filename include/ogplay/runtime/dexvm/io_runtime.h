@@ -29,6 +29,7 @@ struct IoFileInfo final {
 
 class IoFileSystem {
 public:
+  enum class SeekWhence : std::uint8_t { begin, current, end };
   virtual ~IoFileSystem() = default;
   [[nodiscard]] virtual std::optional<IoFileInfo>
   Stat(std::string_view path) const = 0;
@@ -45,6 +46,18 @@ public:
   ReadFile(std::string_view path) const = 0;
   virtual void WriteFile(std::string_view path,
                          std::span<const std::byte> bytes) = 0;
+  [[nodiscard]] virtual std::int32_t OpenHandle(
+      std::string_view path, bool read, bool write, bool create,
+      bool truncate) = 0;
+  [[nodiscard]] virtual IoFileInfo HandleInfo(std::int32_t handle) const = 0;
+  [[nodiscard]] virtual std::size_t ReadHandle(
+      std::int32_t handle, std::span<std::byte> destination) = 0;
+  [[nodiscard]] virtual std::size_t WriteHandle(
+      std::int32_t handle, std::span<const std::byte> source) = 0;
+  [[nodiscard]] virtual std::uint64_t SeekHandle(
+      std::int32_t handle, std::int64_t offset, SeekWhence whence) = 0;
+  virtual void FlushHandle(std::int32_t handle) = 0;
+  virtual void CloseHandle(std::int32_t handle) = 0;
 };
 
 // Per-VM file resources and character decoders, without guest reference edges.
@@ -73,6 +86,14 @@ public:
     bool ended{};
   };
   DecoderState& Decoder(VmObjectRef owner) { return decoders_[owner.Value()]; }
+  struct OpenFileDescription final {
+    std::string path;
+    std::int32_t handle{-1};
+    bool readable{};
+    bool writable{};
+    bool append{};
+    bool closed{};
+  };
   struct DescriptorState final {
     DescriptorKind kind{DescriptorKind::vfs_path};
     std::string source;
@@ -80,6 +101,7 @@ public:
     bool closed{};
     std::shared_ptr<InputState> input;
     std::shared_ptr<OutputState> output;
+    std::shared_ptr<OpenFileDescription> file;
   };
   void SetFileSystem(IoFileSystem *file_system) noexcept;
   [[nodiscard]] bool HasFileSystem() const noexcept;
@@ -109,6 +131,22 @@ public:
   void SyncDescriptor(VmObjectRef owner);
   void CloseDescriptor(VmObjectRef owner) noexcept;
 
+  [[nodiscard]] std::shared_ptr<OpenFileDescription>
+  OpenFile(std::string path, bool readable, bool writable, bool append,
+           bool truncate);
+  void BindFileStream(VmObjectRef owner,
+                      std::shared_ptr<OpenFileDescription> file,
+                      bool close_underlying);
+  [[nodiscard]] std::size_t FileAvailable(VmObjectRef owner) const;
+  [[nodiscard]] std::size_t ReadFileStream(VmObjectRef owner,
+                                           std::span<std::byte> destination);
+  [[nodiscard]] std::uint64_t SkipFileStream(VmObjectRef owner,
+                                             std::uint64_t count);
+  [[nodiscard]] std::uint64_t FileOffset(VmObjectRef owner) const;
+  void WriteFileStream(VmObjectRef owner, std::span<const std::byte> source);
+  void FlushFileStream(VmObjectRef owner);
+  void CloseFileStream(VmObjectRef owner);
+
   [[nodiscard]] std::optional<IoFileInfo> Stat(std::string_view path) const;
   [[nodiscard]] std::optional<std::vector<std::string>>
   List(std::string_view path) const;
@@ -137,10 +175,17 @@ private:
     bool close_underlying{true};
   };
 
+  struct FileStreamHandle final {
+    std::shared_ptr<OpenFileDescription> file;
+    bool closed{};
+    bool close_underlying{true};
+  };
+
   IoFileSystem *file_system_{};
   std::unordered_map<std::uint32_t, DecoderState> decoders_;
   std::unordered_map<std::uint32_t, InputHandle> inputs_;
   std::unordered_map<std::uint32_t, OutputHandle> outputs_;
+  std::unordered_map<std::uint32_t, FileStreamHandle> file_streams_;
   std::unordered_map<std::uint32_t, DescriptorState> descriptors_;
 };
 

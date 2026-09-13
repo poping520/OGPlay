@@ -142,7 +142,7 @@ public:
 
   [[nodiscard]] std::shared_ptr<OpenFileDescription>
   OpenFile(std::string path, bool readable, bool writable, bool append,
-           bool truncate);
+           bool truncate, bool create);
   void BindFileStream(VmObjectRef owner,
                       std::shared_ptr<OpenFileDescription> file,
                       bool close_underlying);

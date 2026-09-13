@@ -1,11 +1,10 @@
 # 当前状态
 
-- 普通文件 IO 流改造已闭合：FIS/FOS/RandomAccessFile/FileDescriptor/FileChannel 共用
-  OpenFileDescription 和真实 VFS descriptor，覆盖共享 offset、append、定位、截断、同步、
-  唯一 channel 与关闭；VFS errno 保真穿透资源边界。FileChannel 有界 transferTo 保持源位置，
-  不伪造 mmap。双后端文件流定向 288 条断言通过；真实 PvZ 已完成配置文件复制并越过
-  `getChannel`，新首错为独立平台缺口 `Context.getObbDir()`。mmap/lock 与 Posix socket 长尾
-  不属于普通流闭合，仍明确失败。
+- [DVM-154](../tasks/dexvm/DVM-154.md) 已把 File/FIS/FOS/FileReader/FileWriter/RAF、channel、
+  FileChannelImpl/NioUtils、IoBridge/IoUtils/CloseGuard 普通方法迁入 1503 类 API 19 BootDex；
+  Posix 文件子集经唯一 OpenFileDescription 接入 VFS 并保真 ErrnoException。FileChannelImpl
+  仅保留 file-to-file transfer 边界，通用 mmap/锁/socket 长尾明确失败。双后端 286 条、
+  全链接 8421 条断言及 BootDex/架构门禁通过；真实 PvZ 首错保持独立的 Context.getObbDir。
 
 - API 19 XML `style` 已按先于显式属性的顺序进入 inflater：基础 TextAppearance reference
   与 `progressBarStyleHorizontal` theme attr 走受限 framework 投影，未知 style 仍明确失败；

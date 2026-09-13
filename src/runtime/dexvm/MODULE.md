@@ -67,7 +67,8 @@ switch/threaded 解释、异常、线程/monitor、反射及 `java.*` core intri
   经 bound token 访问；flags 统一来自 `access_flags.h`。
 - 集合、并发、IO/对象流、日期、framework 值类、Throwable、Uri、UUID/JCA、Cipher/证书等普通
   Java 逻辑归 BootDex；字段/数组是唯一状态。native 仅保留受审边界，不得恢复重复 C++ 算法。
-- `IoRuntime` 只持文件资源与增量解码状态，文件仅走注入 `IoFileSystem`；FIS/FOS 的
+- `IoRuntime` 只持文件资源与增量解码状态，文件仅走注入 `IoFileSystem`；API 19
+  File/FIS/FOS/RAF/FileChannelImpl 普通算法来自 BootDex，Posix 文件 native 是唯一入口。FIS/FOS 的
   OpenFileDescription 保存隔离的 VFS descriptor 与访问模式，同一逻辑 FileDescriptor 共享
   VFS offset；FileChannel 的当前受检操作也只消费该状态，定位传输保持源 offset 且不伪造 mmap。
   RandomAccessFile 的定位、长度与截断同样走该 descriptor；IoFileSystem 错误携带真实 VFS errno。

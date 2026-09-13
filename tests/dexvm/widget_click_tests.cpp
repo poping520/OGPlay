@@ -59,6 +59,12 @@ using namespace ogplay::runtime::dexvm;
     };
 }
 
+[[nodiscard]] ogplay::loader::BinaryXmlAttribute StyleAttribute(
+    const std::uint8_t type, const std::uint32_t data) {
+    return ogplay::loader::BinaryXmlAttribute{
+        .name = "style", .value_type = type, .data = data};
+}
+
 // Surface 100x100 with the videoview.xml shape: a fullscreen VideoView and
 // a bottom bar (paddingTop 4, centered horizontally) holding two 20x10
 // image buttons. Bar: y 86..100, buttons at y 90..100, x 30..50 and 50..70.
@@ -656,32 +662,47 @@ TEST_CASE("UI resources resolve string color dimension and image state") {
           ui::Insets{16, 16, 16, 16});
     CHECK(vm.context->ui_tree.Get(*text_node)->text_size_px == 24.0F);
 
-    std::vector<ogplay::loader::BinaryXmlElement> styled(3);
+    std::vector<ogplay::loader::BinaryXmlElement> styled(5);
     styled[0].name = "LinearLayout";
     styled[1].name = "TextView";
     styled[1].parent = 0;
-    styled[1].attributes = {
-        AndroidAttribute("textAppearance", 0x01, 0x01030044U)};
-    styled[2].name = "EditText";
+    styled[1].attributes = {StyleAttribute(0x01, 0x01030046U)};
+    styled[2].name = "TextView";
     styled[2].parent = 0;
-    styled[2].attributes = {
+    styled[2].attributes = {StyleAttribute(0x01, 0x01030046U),
+                            AndroidAttribute("textSize", 0x05, 0x00001202U)};
+    styled[3].name = "EditText";
+    styled[3].parent = 0;
+    styled[3].attributes = {
         AndroidAttribute("textSize", 0x05, 0x00001e01U),
         AndroidAttribute("enabled", 0x12, 0),
         AndroidAttribute("clickable", 0x12, 1)};
+    styled[4].name = "ProgressBar";
+    styled[4].parent = 0;
+    styled[4].attributes = {StyleAttribute(0x02, 0x01010078U)};
     const auto styled_root =
         InflateUiElements(vm.interpreter, *vm.context, styled);
     const auto root_node = FindViewUiNode(*vm.context, styled_root.Value());
     REQUIRE(root_node.has_value());
-    REQUIRE(vm.context->ui_tree.Get(*root_node)->children.size() == 2);
-    const auto medium = vm.context->ui_tree.Get(
+    REQUIRE(vm.context->ui_tree.Get(*root_node)->children.size() == 4);
+    const auto small = vm.context->ui_tree.Get(
         vm.context->ui_tree.Get(*root_node)->children[0]);
-    const auto edit = vm.context->ui_tree.Get(
+    const auto overridden = vm.context->ui_tree.Get(
         vm.context->ui_tree.Get(*root_node)->children[1]);
-    CHECK(medium->text_size_px == 54.0F);  // 18sp at scaled density 3
+    const auto edit = vm.context->ui_tree.Get(
+        vm.context->ui_tree.Get(*root_node)->children[2]);
+    CHECK(small->text_size_px == 42.0F);       // Small is 14sp
+    CHECK(overridden->text_size_px == 54.0F);  // explicit 18sp wins
     CHECK(edit->text_size_px == 60.0F);    // 30dp at density 2
     CHECK(edit->minimum.height == 96);     // Holo EditText 48dp floor
     CHECK_FALSE(edit->enabled);
     CHECK(edit->clickable);
+
+    styled[4].attributes = {StyleAttribute(0x02, 0x01010077U)};
+    CHECK_THROWS_WITH(
+        static_cast<void>(
+            InflateUiElements(vm.interpreter, *vm.context, styled)),
+        "UI style resource is outside the registered API 19 projection");
 
     const auto image = vm.interpreter.NewIntrinsicInstance(
         "Landroid/widget/ImageView;");

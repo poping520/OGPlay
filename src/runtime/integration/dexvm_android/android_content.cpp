@@ -1147,6 +1147,27 @@ Decl Declare_android_content_Context(const Context& context) {
                 call, context, "package_manager",
                 "Landroid/content/pm/PackageManager;"));
         });
+    builder.VirtualMethod(
+        "checkPermission", "(Ljava/lang/String;II)I",
+        [context](dx::IntrinsicContext& call) {
+            const auto permission = call.arguments[0].ref;
+            if (!permission.IsValid()) {
+                throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;",
+                                      "permission is null"};
+            }
+            constexpr std::int32_t kGuestProcessId = 1;
+            constexpr std::int32_t kPermissionGranted = 0;
+            constexpr std::int32_t kPermissionDenied = -1;
+            const auto self = call.arguments[1].AsInt() == kGuestProcessId &&
+                              call.arguments[2].AsInt() ==
+                                  static_cast<std::int32_t>(
+                                      context->application_uid);
+            return dx::VmValue::Int(
+                self && context->granted_permissions.contains(
+                            call.vm.StringUtf8(permission))
+                    ? kPermissionGranted
+                    : kPermissionDenied);
+        });
     builder.VirtualMethod("getApplicationContext", "()Landroid/content/Context;",
         [context](dx::IntrinsicContext& call) {
             // One guest process owns one application Context; Activity
@@ -1643,6 +1664,7 @@ Decl Declare_android_content_ContextWrapper(const Context& context) {
     delegate("getApplicationInfo",
              "()Landroid/content/pm/ApplicationInfo;");
     delegate("getPackageManager", "()Landroid/content/pm/PackageManager;");
+    delegate("checkPermission", "(Ljava/lang/String;II)I");
     delegate("getApplicationContext", "()Landroid/content/Context;");
     delegate("getFilesDir", "()Ljava/io/File;");
     delegate("openFileInput",

@@ -1,5 +1,15 @@
 # 当前状态
 
+- API 19 XML `style` 已按先于显式属性的顺序进入 inflater：基础 TextAppearance reference
+  与 `progressBarStyleHorizontal` theme attr 走受限 framework 投影，未知 style 仍明确失败；
+  定向 29 条断言通过。真实 PvZ 已越过原 inflation 异常并进入 OBB 文件复制，新首错为
+  `FileInputStream.getChannel()` 未解析；ProgressBar 状态/绘制不在本轮范围。
+
+- `Context.checkPermission(String,int,int)` 已按单 guest 进程边界接通：self PID/UID 只从
+  Manifest granted-permission 集合查询，ContextWrapper 委托同一 base，外部身份/未授权
+  返回 denied，null 明确失败。双后端定向通过；真实 PvZ 已越过 GET_ACCOUNTS 与
+  WRITE_EXTERNAL_STORAGE 检查；随后出现的 style 首错已由上述投影越过。
+
 - 当前 APK 内 Activity 隐式启动已闭合无 data/type 的唯一 action/category+DEFAULT 匹配：
   Manifest enabled、零/多匹配、activity-alias 组件/target 双身份均受检，解析后 Component
   固定回 Intent。真实 PvZ 已越过 Terms Accept 后的 OBBActivity handoff，不再正常停机；
@@ -73,7 +83,7 @@
   真正 wall-time 上限，常驻 runnable 服务线程不再阻断 Surface 回调；pvz-amaz 实跑已收到
   `surfaceCreated/surfaceChanged`、进入 production mode，并成功呈现 1 帧后干净退出。
 
-更新：2026-09-12。
+更新：2026-09-13。
 
 - BootDex-first 本地 Binder 已接通：IInterface/IBinder/Binder/Parcel、ResultReceiver 与内部
   IResultReceiver 及协议异常共 20 个 class_def 来自固定 API 19 JAR，BootDex 现为 1076 类。Binder 普通

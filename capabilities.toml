@@ -47,8 +47,8 @@ note = "LUI-3 建立 live guest View object 与 UiNodeId 双向一一绑定；fi
 
 [runtime.ui_inflater]
 status = "complete"
-test = "tests/dexvm/widget_click_tests.cpp"
-note = "LUI-4 以固定 UiWidgetDescriptor registry 从 generic typed AXML 构造 guest object + UiTree；普通 root/merge attach synthetic content root，非法 parent/root、nested merge、unknown structural tag/attr 事务失败且不发布部分 tree"
+test = "tests/dexvm/widget_click_tests.cpp: 29 focused assertions; PvZ non-survey reached-fault"
+note = "LUI-4 以固定 UiWidgetDescriptor registry 从 generic typed AXML 构造 guest object + UiTree；普通 root/merge attach synthetic content root，非法 parent/root、nested merge、unknown structural tag/attr 事务失败且不发布部分 tree。API 19 XML style 在显式属性前应用：基础 TextAppearance reference 与 ProgressBar progressBarStyleHorizontal theme attr 属于已登记投影，未知 style 明确失败；ProgressBar 状态与绘制未因此扩张。"
 
 [runtime.ui_frame_layout]
 status = "complete"
@@ -1594,6 +1594,11 @@ note = "API19 Log.d(String,String,Throwable) 复用既有 d/e/w 结构化日志 
 status = "complete"
 test = "tests/dexvm/android_value_tests.cpp: Activity top-level identity"
 note = "OGPlay session 只创建顶层 application Activity，Activity.isChild() 因而返回 false；双解释器受检。pvz-amaz 8.1.0 实跑越过原解析故障，约 90 秒无新 DexVM fault，但未产出首帧。ActivityGroup、嵌入式 child Activity 与完整 ActivityManager 不在范围。"
+
+[dexvm.context_permission_check]
+status = "complete"
+test = "tests/session/profile_entry_scope_tests.cpp: Context permission checks use the explicit guest process grant set; PvZ non-survey reached-fault"
+note = "API 19 Context.checkPermission(String,int,int) 在单 guest 进程内校验固定 self PID 与 application UID，并查询 AndroidAppProcess 从 sealed Manifest 注入的 granted-permission 集合；ContextWrapper 委托 base。外部身份和未授予权限返回 PERMISSION_DENIED，null 抛 IllegalArgumentException。真实 PvZ 已越过 GET_ACCOUNTS/WRITE_EXTERNAL_STORAGE 自身权限检查并进入 OBB 布局加载。不实现 UID/包数据库、运行时权限 UI、Binder caller 或 calling/enforce/URI 权限长尾。"
 
 [dexvm.certificate_x509]
 status = "complete"

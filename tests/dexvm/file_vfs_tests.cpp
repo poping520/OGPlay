@@ -1448,6 +1448,41 @@ TEST_CASE("Context files and cache directories are inherited stable and VFS back
     CHECK(vm.CallOn(base, "getCacheDir", "()Ljava/io/File;").ref == cache);
 }
 
+TEST_CASE("Context OBB directories follow API 19 external package layout") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch,
+                               InterpreterBackend::threaded}) {
+        CAPTURE(backend == InterpreterBackend::threaded ? "threaded" :
+                                                         "switch");
+        InterpreterConfig config;
+        config.backend = backend;
+        FileVm vm(nullptr, true, config);
+        const auto base =
+            vm.interpreter.NewIntrinsicInstance("Landroid/content/Context;");
+        const auto activity =
+            vm.interpreter.NewIntrinsicInstance("Landroid/app/Activity;");
+        static_cast<void>(vm.CallOn(
+            activity, "attachBaseContext", "(Landroid/content/Context;)V",
+            {VmValue::Ref(base)}));
+
+        const auto obb =
+            vm.CallOn(activity, "getObbDir", "()Ljava/io/File;").ref;
+        REQUIRE(obb.IsValid());
+        CHECK(vm.CallOn(base, "getObbDir", "()Ljava/io/File;").ref == obb);
+        const auto path = vm.CallOn(
+            obb, "getPath", "()Ljava/lang/String;").ref;
+        CHECK(vm.interpreter.StringUtf8(path) ==
+              "/sdcard/Android/obb/com.example.game");
+        CHECK(vm.vfs.Stat("/sdcard/Android/obb/com.example.game")
+                  .is_directory);
+
+        const auto dirs = vm.CallOn(
+            activity, "getObbDirs", "()[Ljava/io/File;").ref;
+        REQUIRE(dirs.IsValid());
+        CHECK(vm.model.ArrayLength(dirs) == 1);
+        CHECK(vm.model.GetObjectElement(dirs, 0) == obb);
+    }
+}
+
 TEST_CASE("Context private file streams use the app files directory on both backends") {
     for (const auto backend : {InterpreterBackend::switch_dispatch,
                                InterpreterBackend::threaded}) {
@@ -1544,6 +1579,13 @@ TEST_CASE("Context internal directories return null when VFS is unavailable") {
                     .ref.IsValid());
     CHECK_FALSE(vm.CallOn(context, "getCacheDir", "()Ljava/io/File;")
                     .ref.IsValid());
+    CHECK_FALSE(vm.CallOn(context, "getObbDir", "()Ljava/io/File;")
+                    .ref.IsValid());
+    const auto obb_dirs =
+        vm.CallOn(context, "getObbDirs", "()[Ljava/io/File;").ref;
+    REQUIRE(obb_dirs.IsValid());
+    CHECK(vm.model.ArrayLength(obb_dirs) == 1);
+    CHECK_FALSE(vm.model.GetObjectElement(obb_dirs, 0).IsValid());
     const auto outcome = vm.CallOnOutcome(
         context, "openFileInput",
         "(Ljava/lang/String;)Ljava/io/FileInputStream;",

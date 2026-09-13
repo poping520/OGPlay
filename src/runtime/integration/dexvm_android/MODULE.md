@@ -56,6 +56,8 @@ Java 异常文本，再进入统一结构化 logger；不吞异常、不写裸 s
   结果，false/失败后仍可解绑一次；ContextWrapper 委托 base，连接是 Context 的 GC 强边。
 - code/resource path 指向同一只读 `/data/app/<package>-1.apk`；cache/files 只在 app VFS。
   openFileInput/Output 只接受单文件名，MODE_PRIVATE 覆盖、MODE_APPEND 追加。
+- `getObbDir(s)` 按 API 19 返回 primary external 下的
+  `/Android/obb/<package>`，经 VFS overlay 建目录；ContextWrapper 只委托 base。
 - Settings.Secure 只读稳定身份；SystemProperties 只实现受审 native 边界。
 
 ### 资源、Parcel、数据库

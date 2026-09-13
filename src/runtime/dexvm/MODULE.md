@@ -82,6 +82,8 @@ switch/threaded 解释、异常、线程/monitor、反射及 `java.*` core intri
   I/O 明确失败。
 - `ProxySelector` 是明确的无进程代理薄边界：`getDefault()` 返回 null，使 API 19 Apache
   RoutePlanner 选择直连；不读取宿主代理，也不登记 `Proxy`/默认 selector 的 BootDex 闭包。
+- `System.lineSeparator` 在类初始化时通过初始 `line.separator` property 冻结，后续 property
+  修改不影响 `lineSeparator()`；System 仍是 VM 启动及 native 平台边界，不整体迁入 BootDex。
 - `NioRuntime` 以对象 identity 保存 Buffer backing/cursor；heap/direct/view 共用 storage，backing
   array 是 GC 强边。direct memory 只经强类型 guest-address 接口，临时映射始终释放。
 - `UnsafeRuntime` 使用逻辑字段令牌；访问校验类型/对齐/边界，CAS 要求执行锁，引用写入保留

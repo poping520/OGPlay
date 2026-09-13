@@ -2807,6 +2807,9 @@ IntrinsicClassDecl Declare_java_lang_System(const CoreIntrinsicServices& service
     auto builder = IntrinsicClassBuilder::Class("Ljava/lang/System;", "Ljava/lang/Object;");
     builder.StaticField("out", "Ljava/io/PrintStream;");
     builder.StaticField("err", "Ljava/io/PrintStream;");
+    const auto line_separator = builder.BoundStaticField(
+        "lineSeparator", "Ljava/lang/String;",
+        kAccPrivate | kAccStatic | kAccFinal);
     builder.StaticMethod("arraycopy", "(Ljava/lang/Object;ILjava/lang/Object;II)V",
         [](IntrinsicContext &context) {
                 auto& model = context.vm.Model();
@@ -2910,6 +2913,11 @@ IntrinsicClassDecl Declare_java_lang_System(const CoreIntrinsicServices& service
                 ? context.vm.NewStringUtf8(*value)
                 : context.arguments[1].ref);
         });
+    builder.StaticMethod("lineSeparator", "()Ljava/lang/String;",
+        [line_separator](IntrinsicContext& context) {
+            return VmValue::Ref(
+                IntrinsicCall(context).GetRef(line_separator));
+        });
     builder.StaticMethod("getenv", "(Ljava/lang/String;)Ljava/lang/String;",
         [lookup = services.environment_value](IntrinsicContext& context) {
                 const auto name_ref = context.arguments[0].ref;
@@ -2970,15 +2978,22 @@ IntrinsicClassDecl Declare_java_lang_System(const CoreIntrinsicServices& service
                            {context.arguments[0]});
     });
     builder.ClassInitializer(
-        [](IntrinsicContext& context) {
-                auto& vm = context.vm;
+        [line_separator](IntrinsicContext& context) {
+            auto& vm = context.vm;
             vm.SetIntrinsicStaticRef("Ljava/lang/System;", "out",
                                      "Ljava/io/PrintStream;",
                     vm.NewIntrinsicInstance("Ljava/io/PrintStream;"));
             vm.SetIntrinsicStaticRef("Ljava/lang/System;", "err",
                                      "Ljava/io/PrintStream;",
                     vm.NewIntrinsicInstance("Ljava/io/PrintStream;"));
-                return VmValue::Void();
+            const auto key = vm.NewStringUtf8("line.separator");
+            const auto roots = vm.ProtectReferences(std::array{key});
+            const auto value = InvokeGuestDirect(
+                vm, "Ljava/lang/System;", "getProperty",
+                "(Ljava/lang/String;)Ljava/lang/String;",
+                {VmValue::Ref(key)}).ref;
+            IntrinsicCall(context).SetRef(line_separator, value);
+            return VmValue::Void();
             });
     auto result = std::move(builder).Build();
     return result;

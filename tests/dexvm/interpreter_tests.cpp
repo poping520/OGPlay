@@ -2116,6 +2116,8 @@ TEST_CASE("dexvm System properties are deterministic and mutable") {
     const auto set = vm.Static(
         "Ljava/lang/System;", "setProperty",
         "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;");
+    const auto line_separator = vm.Static(
+        "Ljava/lang/System;", "lineSeparator", "()Ljava/lang/String;");
     const auto string = [&vm](const std::string& value) {
         return VmValue::Ref(vm.interpreter.NewStringUtf8(value));
     };
@@ -2138,6 +2140,19 @@ TEST_CASE("dexvm System properties are deterministic and mutable") {
     const auto missing = get_property("ogplay.missing");
     REQUIRE_FALSE(missing.exception.IsValid());
     CHECK_FALSE(missing.value.ref.IsValid());
+
+    const auto frozen_separator = vm.interpreter.Call(line_separator, {});
+    REQUIRE_FALSE(frozen_separator.exception.IsValid());
+    REQUIRE(frozen_separator.value.ref.IsValid());
+    CHECK(vm.interpreter.StringUtf8(frozen_separator.value.ref) == "\n");
+    static_cast<void>(vm.interpreter.Call(
+        set, std::vector<VmValue>{string("line.separator"), string("changed")}));
+    CHECK(vm.interpreter.StringUtf8(get_property("line.separator").value.ref) ==
+          "changed");
+    const auto repeated_separator = vm.interpreter.Call(line_separator, {});
+    REQUIRE_FALSE(repeated_separator.exception.IsValid());
+    CHECK(repeated_separator.value.ref == frozen_separator.value.ref);
+    CHECK(vm.interpreter.StringUtf8(repeated_separator.value.ref) == "\n");
 
     const auto first = vm.interpreter.Call(
         set, std::vector<VmValue>{string("ogplay.test"), string("first")});

@@ -143,6 +143,12 @@ public:
   [[nodiscard]] std::uint64_t SkipFileStream(VmObjectRef owner,
                                              std::uint64_t count);
   [[nodiscard]] std::uint64_t FileOffset(VmObjectRef owner) const;
+  [[nodiscard]] std::uint64_t FileSize(VmObjectRef owner) const;
+  void SetFileOffset(VmObjectRef owner, std::uint64_t offset);
+  [[nodiscard]] std::uint64_t TransferFile(VmObjectRef source,
+                                           std::uint64_t position,
+                                           std::uint64_t count,
+                                           VmObjectRef target);
   void WriteFileStream(VmObjectRef owner, std::span<const std::byte> source);
   void FlushFileStream(VmObjectRef owner);
   void CloseFileStream(VmObjectRef owner);

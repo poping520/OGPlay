@@ -69,7 +69,8 @@ switch/threaded 解释、异常、线程/monitor、反射及 `java.*` core intri
   Java 逻辑归 BootDex；字段/数组是唯一状态。native 仅保留受审边界，不得恢复重复 C++ 算法。
 - `IoRuntime` 只持文件资源与增量解码状态，文件仅走注入 `IoFileSystem`；FIS/FOS 的
   OpenFileDescription 保存隔离的 VFS descriptor 与访问模式，同一逻辑 FileDescriptor 共享
-  VFS offset。相对路径不读 host cwd，逻辑 FileDescriptor 不存 host fd。`ZipRuntime` 复用严格
+  VFS offset；FileChannel 的当前受检操作也只消费该状态，定位传输保持源 offset 且不伪造 mmap。
+  相对路径不读 host cwd，逻辑 FileDescriptor 不存 host fd。`ZipRuntime` 复用严格
   ZIP parser/inflate。
 - `NetworkRuntime` 只经注入 policy/transport，默认离线；不读 host DNS/代理/证书、不在 core
   创建 socket。InetAddress 与 InetSocketAddress 状态归 BootDex 字段，NetworkRuntime 只保存

@@ -936,6 +936,25 @@ namespace ogplay::runtime::dexvm::intrinsics {
                                     }
                                     return VmValue::Ref(descriptor);
                                 });
+            builder.FinalMethod("getChannel", "()Ljava/nio/channels/FileChannel;",
+                                [fd](IntrinsicContext& call) {
+                                    const auto descriptor =
+                                        IntrinsicCall(call).GetRef(fd);
+                                    const auto* state =
+                                        call.vm.IO().FindDescriptor(descriptor);
+                                    if (state == nullptr || state->closed ||
+                                        state->file == nullptr ||
+                                        state->file->closed) {
+                                        throw VmJavaThrow{"Ljava/io/IOException;",
+                                                          "stream is closed"};
+                                    }
+                                    const auto channel = call.vm.NewIntrinsicInstance(
+                                        "Ljava/nio/channels/FileChannel;");
+                                    call.vm.IO().BindFileStream(channel,
+                                                                state->file,
+                                                                true);
+                                    return VmValue::Ref(channel);
+                                });
             // 读取一个字节，流结束时返回 -1。
             builder.OverrideMethod("read", "()I", [](IntrinsicContext& call) {
                 try {
@@ -1020,7 +1039,9 @@ namespace ogplay::runtime::dexvm::intrinsics {
             });
             builder.FinalMethod("valid", "()Z", [](IntrinsicContext& call) {
                 const auto* descriptor = call.vm.IO().FindDescriptor(call.receiver);
-                return VmValue::Int(descriptor != nullptr && !descriptor->closed);
+                return VmValue::Int(
+                    descriptor != nullptr && !descriptor->closed &&
+                    (descriptor->file == nullptr || !descriptor->file->closed));
             });
             builder.FinalMethod("sync", "()V", [](IntrinsicContext& call) {
                 try {
@@ -1187,6 +1208,25 @@ namespace ogplay::runtime::dexvm::intrinsics {
                                         };
                                     }
                                     return VmValue::Ref(descriptor);
+                                });
+            builder.FinalMethod("getChannel", "()Ljava/nio/channels/FileChannel;",
+                                [fd](IntrinsicContext& call) {
+                                    const auto descriptor =
+                                        IntrinsicCall(call).GetRef(fd);
+                                    const auto* state =
+                                        call.vm.IO().FindDescriptor(descriptor);
+                                    if (state == nullptr || state->closed ||
+                                        state->file == nullptr ||
+                                        state->file->closed) {
+                                        throw VmJavaThrow{"Ljava/io/IOException;",
+                                                          "stream is closed"};
+                                    }
+                                    const auto channel = call.vm.NewIntrinsicInstance(
+                                        "Ljava/nio/channels/FileChannel;");
+                                    call.vm.IO().BindFileStream(channel,
+                                                                state->file,
+                                                                true);
+                                    return VmValue::Ref(channel);
                                 });
             // 刷新数据并按所有权关闭底层逻辑文件描述符。
             builder.OverrideMethod("close", "()V",

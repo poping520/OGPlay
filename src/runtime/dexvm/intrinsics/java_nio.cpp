@@ -9,6 +9,7 @@
 
 #include "ogplay/runtime/dexvm/intrinsic_builder.h"
 #include "ogplay/runtime/dexvm/interpreter.h"
+#include "ogplay/runtime/dexvm/io_runtime.h"
 #include "ogplay/runtime/dexvm/nio_runtime.h"
 
 namespace ogplay::runtime::dexvm::intrinsics {
@@ -81,6 +82,81 @@ IntrinsicClassDecl DeclareBuffer() {
         if (s.read_only) throw VmJavaThrow{"Ljava/nio/ReadOnlyBufferException;", "read-only buffer"};
         if (!s.array.IsValid()) throw VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "buffer has no array"};
         return VmValue::Int(s.array_offset);
+    });
+    return std::move(b).Build();
+}
+
+IntrinsicClassDecl DeclareFileChannel() {
+    auto b = IntrinsicClassBuilder::Class(
+        "Ljava/nio/channels/FileChannel;", "Ljava/lang/Object;",
+        {"Ljava/nio/channels/WritableByteChannel;"},
+        kAccPublic);
+    b.FinalMethod("size", "()J", [](IntrinsicContext& c) {
+        try {
+            return VmValue::Long(static_cast<std::int64_t>(
+                c.vm.IO().FileSize(c.receiver)));
+        } catch (const IoRuntimeError& error) {
+            throw VmJavaThrow{"Ljava/io/IOException;", error.what()};
+        }
+    });
+    b.FinalMethod("position", "()J", [](IntrinsicContext& c) {
+        try {
+            return VmValue::Long(static_cast<std::int64_t>(
+                c.vm.IO().FileOffset(c.receiver)));
+        } catch (const IoRuntimeError& error) {
+            throw VmJavaThrow{"Ljava/io/IOException;", error.what()};
+        }
+    });
+    b.FinalMethod("position", "(J)Ljava/nio/channels/FileChannel;",
+                  [](IntrinsicContext& c) {
+        const auto position = c.arguments[0].AsLong();
+        if (position < 0)
+            throw VmJavaThrow{"Ljava/lang/IllegalArgumentException;",
+                              "position < 0"};
+        try {
+            c.vm.IO().SetFileOffset(c.receiver,
+                                    static_cast<std::uint64_t>(position));
+            return VmValue::Ref(c.receiver);
+        } catch (const IoRuntimeError& error) {
+            throw VmJavaThrow{"Ljava/io/IOException;", error.what()};
+        }
+    });
+    b.FinalMethod(
+        "transferTo", "(JJLjava/nio/channels/WritableByteChannel;)J",
+        [](IntrinsicContext& c) {
+            const auto position = c.arguments[0].AsLong();
+            const auto count = c.arguments[1].AsLong();
+            const auto target = c.arguments[2].ref;
+            if (position < 0 || count < 0)
+                throw VmJavaThrow{"Ljava/lang/IllegalArgumentException;",
+                                  "position or count is negative"};
+            if (!target.IsValid())
+                throw VmJavaThrow{"Ljava/lang/NullPointerException;",
+                                  "target == null"};
+            try {
+                return VmValue::Long(static_cast<std::int64_t>(
+                    c.vm.IO().TransferFile(
+                        c.receiver, static_cast<std::uint64_t>(position),
+                        static_cast<std::uint64_t>(count), target)));
+            } catch (const IoRuntimeError& error) {
+                throw VmJavaThrow{"Ljava/io/IOException;", error.what()};
+            }
+        });
+    b.FinalMethod("isOpen", "()Z", [](IntrinsicContext& c) {
+        try {
+            static_cast<void>(c.vm.IO().FileOffset(c.receiver));
+            return VmValue::Int(1);
+        } catch (const IoRuntimeError&) {
+            return VmValue::Int(0);
+        }
+    });
+    b.FinalMethod("close", "()V", [](IntrinsicContext& c) {
+        try {
+            c.vm.IO().CloseFileStream(c.receiver);
+        } catch (const IoRuntimeError& error) {
+            throw VmJavaThrow{"Ljava/io/IOException;", error.what()};
+        }
+        return VmValue::Void();
     });
     return std::move(b).Build();
 }
@@ -552,6 +628,18 @@ void AppendJavaNio(std::vector<IntrinsicClassDecl>& catalog) {
     catalog.push_back(Exception("Ljava/nio/BufferUnderflowException;", "Ljava/lang/RuntimeException;"));
     catalog.push_back(Exception("Ljava/nio/InvalidMarkException;", "Ljava/lang/IllegalStateException;"));
     catalog.push_back(Exception("Ljava/nio/ReadOnlyBufferException;", "Ljava/lang/UnsupportedOperationException;"));
+    auto channel = IntrinsicClassBuilder::Interface(
+        "Ljava/nio/channels/Channel;");
+    channel.UnimplementedVirtual("isOpen", "()Z", kAccPublic | kAccAbstract);
+    channel.UnimplementedVirtual("close", "()V", kAccPublic | kAccAbstract);
+    catalog.push_back(std::move(channel).Build());
+    auto writable_channel = IntrinsicClassBuilder::Interface(
+        "Ljava/nio/channels/WritableByteChannel;",
+        {"Ljava/nio/channels/Channel;"});
+    writable_channel.UnimplementedVirtual("write", "(Ljava/nio/ByteBuffer;)I",
+                                          kAccPublic | kAccAbstract);
+    catalog.push_back(std::move(writable_channel).Build());
+    catalog.push_back(DeclareFileChannel());
     catalog.push_back(DeclareBuffer());
     catalog.push_back(DeclareByteOrder());
     catalog.push_back(DeclareByteBuffer());

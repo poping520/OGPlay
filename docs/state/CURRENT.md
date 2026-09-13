@@ -1,5 +1,10 @@
 # 当前状态
 
+- API 19 `Context.getObbDir(s)` 已按 primary external 的
+  `/Android/obb/<package>` 接入 VFS overlay，ContextWrapper 仅委托 base；双后端覆盖路径、
+  建目录、稳定 File 身份与 unavailable null 语义。真实 PvZ 已越过方法解析，后续独立首错为
+  `Helper.deflateObb` 分配约 52 MiB byte array 时触发 64 MiB DexVM heap budget 的 OOM。
+
 - [DVM-154](../tasks/dexvm/DVM-154.md) 已把 File/FIS/FOS/FileReader/FileWriter/RAF、channel、
   FileChannelImpl/NioUtils、IoBridge/IoUtils/CloseGuard 普通方法迁入 1503 类 API 19 BootDex；
   Posix 文件子集经唯一 OpenFileDescription 接入 VFS 并保真 ErrnoException。FileChannelImpl

@@ -191,8 +191,8 @@ TEST_CASE("android intrinsic catalog is unique and directly bound") {
   CHECK(has_method("Landroid/app/Activity;", "hasWindowFocus", "()Z"));
   CHECK(has_method("Landroid/app/Activity;", "onWindowFocusChanged", "(Z)V"));
   CHECK(method_count("Landroid/app/Service;") == 13);
-  CHECK(method_count("Landroid/content/Context;") == 27);
-  CHECK(method_count("Landroid/content/ContextWrapper;") == 28);
+  CHECK(method_count("Landroid/content/Context;") == 29);
+  CHECK(method_count("Landroid/content/ContextWrapper;") == 30);
   CHECK(has_method("Landroid/content/Context;", "checkPermission",
                    "(Ljava/lang/String;II)I"));
   CHECK(has_method("Landroid/content/ContextWrapper;", "checkPermission",
@@ -201,6 +201,12 @@ TEST_CASE("android intrinsic catalog is unique and directly bound") {
                    "()Landroid/os/Looper;"));
   CHECK(has_method("Landroid/content/ContextWrapper;", "getMainLooper",
                    "()Landroid/os/Looper;"));
+  CHECK(has_method("Landroid/content/Context;", "getObbDir",
+                   "()Ljava/io/File;"));
+  CHECK(has_method("Landroid/content/Context;", "getObbDirs",
+                   "()[Ljava/io/File;"));
+  CHECK(has_method("Landroid/content/ContextWrapper;", "getObbDir",
+                   "()Ljava/io/File;"));
   CHECK(method_count("Landroid/view/ContextThemeWrapper;") == 4);
   CHECK(method_count("Landroid/content/IntentFilter;") == 24);
   CHECK(has_method(

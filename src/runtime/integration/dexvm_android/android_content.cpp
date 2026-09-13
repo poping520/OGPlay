@@ -1071,6 +1071,17 @@ namespace {
     return file;
 }
 
+[[nodiscard]] dx::VmObjectRef SingleFileArray(
+    dx::IntrinsicContext& call, const dx::VmObjectRef file) {
+    const auto array_class =
+        call.vm.Linker().ResolveDescriptor("[Ljava/io/File;");
+    const auto file_class =
+        call.vm.Linker().ResolveDescriptor("Ljava/io/File;");
+    const auto array = call.vm.Model().NewObjectArray(array_class, file_class, 1);
+    call.vm.Model().SetObjectElement(array, 0, file);
+    return array;
+}
+
 // Reads a preferences file once per name. Damaged XML is a real failure.
 void LoadPreferencesOnce(const Context& context, const std::string& name) {
     if (context->preferences_loaded[name]) return;
@@ -1571,6 +1582,21 @@ Decl Declare_android_content_Context(const Context& context) {
             slots[0] = {call.vm.NewStringUtf8(path).Value(), dx::SlotTag::ref};
             return dx::VmValue::Ref(file);
         });
+    builder.VirtualMethod("getObbDir", "()Ljava/io/File;",
+        [context](dx::IntrinsicContext& call) {
+            const auto path = context->external_storage_root +
+                              "/Android/obb/" + context->package_name;
+            return dx::VmValue::Ref(ContextDirectory(
+                call, context, path, "context_obb_directory"));
+        });
+    builder.VirtualMethod("getObbDirs", "()[Ljava/io/File;",
+        [context](dx::IntrinsicContext& call) {
+            const auto path = context->external_storage_root +
+                              "/Android/obb/" + context->package_name;
+            return dx::VmValue::Ref(SingleFileArray(
+                call, ContextDirectory(call, context, path,
+                                       "context_obb_directory")));
+        });
     builder.VirtualMethod("startService",
         "(Landroid/content/Intent;)Landroid/content/ComponentName;",
         [](dx::IntrinsicContext& call) {
@@ -1688,6 +1714,8 @@ Decl Declare_android_content_ContextWrapper(const Context& context) {
     delegate("getMainLooper", "()Landroid/os/Looper;");
     delegate("sendBroadcast", "(Landroid/content/Intent;)V");
     delegate("getExternalFilesDir", "(Ljava/lang/String;)Ljava/io/File;");
+    delegate("getObbDir", "()Ljava/io/File;");
+    delegate("getObbDirs", "()[Ljava/io/File;");
     delegate("startService",
         "(Landroid/content/Intent;)Landroid/content/ComponentName;");
     return std::move(builder).Build();

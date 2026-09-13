@@ -970,6 +970,48 @@ TEST_CASE("FileInputStream public API shares descriptor position on both backend
     }
 }
 
+TEST_CASE("FileChannel transferTo copies a bounded range and preserves source position") {
+  for (const auto backend : {InterpreterBackend::switch_dispatch,
+                             InterpreterBackend::threaded}) {
+    CAPTURE(backend == InterpreterBackend::threaded ? "threaded" : "switch");
+    InterpreterConfig config;
+    config.backend = backend;
+    FileVm vm(nullptr, true, config);
+    vm.vfs.CreateDirectory("/sdcard");
+    vm.JavaWrite("/sdcard/source.dat", "abcdef");
+
+    const auto input = vm.interpreter.NewIntrinsicInstance(
+        "Ljava/io/FileInputStream;");
+    static_cast<void>(vm.CallOn(
+        input, "<init>", "(Ljava/lang/String;)V",
+        {VmValue::Ref(vm.interpreter.NewStringUtf8("/sdcard/source.dat"))}));
+    const auto output = vm.interpreter.NewIntrinsicInstance(
+        "Ljava/io/FileOutputStream;");
+    static_cast<void>(vm.CallOn(
+        output, "<init>", "(Ljava/lang/String;)V",
+        {VmValue::Ref(vm.interpreter.NewStringUtf8("/sdcard/target.dat"))}));
+    const auto source_channel = vm.CallOn(
+        input, "getChannel", "()Ljava/nio/channels/FileChannel;").ref;
+    const auto target_channel = vm.CallOn(
+        output, "getChannel", "()Ljava/nio/channels/FileChannel;").ref;
+
+    CHECK(vm.CallOn(source_channel, "size", "()J").AsLong() == 6);
+    CHECK(vm.CallOn(source_channel, "position", "()J").AsLong() == 0);
+    CHECK(vm.CallOn(
+        source_channel, "transferTo",
+        "(JJLjava/nio/channels/WritableByteChannel;)J",
+        {VmValue::Long(1), VmValue::Long(3),
+         VmValue::Ref(target_channel)}).AsLong() == 3);
+    CHECK(vm.CallOn(source_channel, "position", "()J").AsLong() == 0);
+    CHECK(vm.CallOn(target_channel, "position", "()J").AsLong() == 3);
+    CHECK(vm.NativeRead("/sdcard/target.dat") == "bcd");
+
+    static_cast<void>(vm.CallOn(source_channel, "close", "()V"));
+    CHECK_FALSE(vm.BoolOn(source_channel, "isOpen"));
+    static_cast<void>(vm.CallOn(target_channel, "close", "()V"));
+  }
+}
+
 TEST_CASE("FileInputStream rejects null and missing sources") {
     FileVm vm;
     vm.vfs.CreateDirectory("/sdcard");

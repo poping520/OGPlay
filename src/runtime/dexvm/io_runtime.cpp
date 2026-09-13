@@ -1,6 +1,8 @@
 #include "ogplay/runtime/dexvm/io_runtime.h"
 
 #include <algorithm>
+#include <array>
+#include <limits>
 #include <utility>
 
 namespace ogplay::runtime::dexvm {
@@ -268,6 +270,83 @@ std::uint64_t IoRuntime::FileOffset(const VmObjectRef owner) const {
   }
   return file_system_->SeekHandle(found->second.file->handle, 0,
                                   IoFileSystem::SeekWhence::current);
+}
+
+std::uint64_t IoRuntime::FileSize(const VmObjectRef owner) const {
+  const auto& file = RequireFile(file_streams_, owner);
+  if (file_system_ == nullptr)
+    throw IoRuntimeError("guest filesystem is unavailable");
+  return file_system_->HandleInfo(file.handle).size;
+}
+
+void IoRuntime::SetFileOffset(const VmObjectRef owner,
+                              const std::uint64_t offset) {
+  auto& file = RequireFile(file_streams_, owner);
+  if (file_system_ == nullptr)
+    throw IoRuntimeError("guest filesystem is unavailable");
+  if (offset > static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max()))
+    throw IoRuntimeError("file offset is not representable");
+  static_cast<void>(file_system_->SeekHandle(
+      file.handle, static_cast<std::int64_t>(offset),
+      IoFileSystem::SeekWhence::begin));
+}
+
+std::uint64_t IoRuntime::TransferFile(const VmObjectRef source,
+                                      const std::uint64_t position,
+                                      const std::uint64_t count,
+                                      const VmObjectRef target) {
+  auto& source_file = RequireFile(file_streams_, source);
+  auto& target_file = RequireFile(file_streams_, target);
+  if (!source_file.readable)
+    throw IoRuntimeError("source file descriptor is not readable");
+  if (!target_file.writable)
+    throw IoRuntimeError("target file descriptor is not writable");
+  if (file_system_ == nullptr)
+    throw IoRuntimeError("guest filesystem is unavailable");
+  if (position > static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max()))
+    throw IoRuntimeError("file position is not representable");
+  const auto original = file_system_->SeekHandle(
+      source_file.handle, 0, IoFileSystem::SeekWhence::current);
+  const auto restore = [&] {
+    static_cast<void>(file_system_->SeekHandle(
+        source_file.handle, static_cast<std::int64_t>(original),
+        IoFileSystem::SeekWhence::begin));
+  };
+  try {
+    const auto size = file_system_->HandleInfo(source_file.handle).size;
+    if (position >= size || count == 0) return 0;
+    static_cast<void>(file_system_->SeekHandle(
+        source_file.handle, static_cast<std::int64_t>(position),
+        IoFileSystem::SeekWhence::begin));
+    auto remaining = std::min(count, size - position);
+    std::uint64_t transferred{};
+    std::array<std::byte, 64U * 1024U> buffer{};
+    while (remaining != 0) {
+      const auto requested = static_cast<std::size_t>(
+          std::min<std::uint64_t>(remaining, buffer.size()));
+      const auto read = file_system_->ReadHandle(
+          source_file.handle, std::span(buffer).first(requested));
+      if (read == 0) break;
+      if (target_file.append)
+        static_cast<void>(file_system_->SeekHandle(
+            target_file.handle, 0, IoFileSystem::SeekWhence::end));
+      std::size_t written{};
+      while (written < read) {
+        const auto amount = file_system_->WriteHandle(
+            target_file.handle,
+            std::span<const std::byte>(buffer).subspan(written, read - written));
+        if (amount == 0) throw IoRuntimeError("file transfer made no progress");
+        written += amount;
+      }
+      transferred += read;
+      remaining -= read;
+    }
+    restore();
+    return transferred;
+  } catch (...) {
+    try { restore(); } catch (const IoRuntimeError&) {}
+    throw;
+  }
 }
 
 void IoRuntime::WriteFileStream(

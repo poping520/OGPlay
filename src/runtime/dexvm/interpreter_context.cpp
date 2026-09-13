@@ -689,6 +689,7 @@ GcSweepResult Interpreter::CollectGarbage(const std::string_view trigger, const 
     impl_->RecordTrace(DexVmTraceKind::gc_begin, execution);
     const auto mark = MarkReachable(clear_soft_references);
     const auto swept = SweepGarbage(mark);
+    impl_->model->AdjustTargetAfterGc();
     ReleaseGuestNativeResources();
     impl_->RecordTrace(DexVmTraceKind::gc_end, execution, nullptr, 0, 0,
                        swept.freed_bytes);
@@ -706,6 +707,10 @@ GcSweepResult Interpreter::CollectGarbage(const std::string_view trigger, const 
             "trigger=" + std::string(trigger) +
                 " live_bytes=" + std::to_string(mark.live_bytes) +
                 " freed_bytes=" + std::to_string(swept.freed_bytes) +
+                " target_bytes=" +
+                std::to_string(impl_->model->HeapTargetBytes()) +
+                " growth_limit_bytes=" +
+                std::to_string(impl_->model->HeapGrowthLimitBytes()) +
                 " live_objects=" + std::to_string(mark.live_objects) +
                 " freed_objects=" + std::to_string(swept.freed_objects) +
                 " host_destructors_run=" +
@@ -718,7 +723,11 @@ GcSweepResult Interpreter::CollectGarbage(const std::string_view trigger, const 
 void Interpreter::Impl::PrepareSafeAllocation(
     const std::uint64_t request_bytes, const std::string_view trigger) {
     if (!model->ShouldCollectFor(request_bytes)) return;
-    static_cast<void>(owner->CollectGarbage(trigger, true));
+    static_cast<void>(owner->CollectGarbage(trigger, false));
+    if (model->GrowFor(request_bytes)) return;
+    static_cast<void>(owner->CollectGarbage(
+        std::string(trigger) + "-before-oom", true));
+    static_cast<void>(model->GrowFor(request_bytes));
 }
 
 std::uint32_t Interpreter::CurrentNativeDepth() const {

@@ -1358,7 +1358,7 @@ note = "DVM-8 建立统一 VmObjectRef 句柄空间，字符串与基元数组�
 [dexvm.gc]
 status = "partial"
 test = "tests/dexvm/gc_tests.cpp; tests/dexvm/android_value_tests.cpp; tests/dexvm/scheduler_tests.cpp; tests/dexvm/audio_track_tests.cpp; tools.title_profiles_current; tools.scenarios_current"
-note = "DVM-42..49 已交付精确非移动 STW 标记清除与具名 IntrinsicStateTableHooks。DVM-95/ADR-0029 新增强类型 OwnedStateTable，强制唯一名称、trace policy、sweep 与可选 clone；Android owner-attached family 删除兼容 key roots，只以 owner 标记触发 child trace，并在 handle 复用前 sweep。process/session 根与非对象 identity 分离；title 长运行 gate 未重跑，能力诚实保持 partial；DVM-103 删除集合侧表，WeakReference.referent 不参与强标记，死 referent 清空、入队后解除 queue 关联并唤醒 wait-set；弱键/重复 enqueue/通知有定向回归，Soft/Phantom 仍不在范围。"
+note = "DVM-42..49 已交付精确非移动 STW 标记清除与具名 IntrinsicStateTableHooks。DVM-95/ADR-0029 新增强类型 OwnedStateTable，强制唯一名称、trace policy、sweep 与可选 clone；Android owner-attached family 删除兼容 key roots，只以 owner 标记触发 child trace，并在 handle 复用前 sweep。ADR-0060 将固定预算改为 initial target/growth limit/maximum 三层堆，按普通 GC→增长→before-OOM GC 分配，GC 后按 live set/utilization/min-max-free 调整；旧 Profile 堆字段直接拒绝。无 Profile 的真实 PvZ 已越过约 104 MiB 峰值。process/session 根与非对象 identity 分离；title 长运行 gate 未重跑，能力诚实保持 partial；DVM-103 删除集合侧表，WeakReference.referent 不参与强标记，死 referent 清空、入队后解除 queue 关联并唤醒 wait-set；弱键/重复 enqueue/通知有定向回归，Soft/Phantom 仍不在范围。"
 
 [dexvm.interpreter_core]
 status = "complete"

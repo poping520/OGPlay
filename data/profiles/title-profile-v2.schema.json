@@ -59,11 +59,17 @@
           "type": "object",
           "additionalProperties": false,
           "properties": {
-            "heap_budget_bytes": {
-              "type": "integer", "minimum": 1048576, "maximum": 1073741824
-            },
-            "gc_watermark_percent": {
-              "type": "integer", "minimum": 0, "maximum": 100
+            "heap": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "initial_target_bytes": { "type": "integer", "minimum": 1048576, "maximum": 1073741824 },
+                "growth_limit_bytes": { "type": "integer", "minimum": 1048576, "maximum": 1073741824 },
+                "maximum_bytes": { "type": "integer", "minimum": 1048576, "maximum": 1073741824 },
+                "target_utilization_percent": { "type": "integer", "minimum": 1, "maximum": 100 },
+                "min_free_bytes": { "type": "integer", "minimum": 1048576, "maximum": 1073741824 },
+                "max_free_bytes": { "type": "integer", "minimum": 1048576, "maximum": 1073741824 }
+              }
             },
             "max_frames": { "type": "integer", "minimum": 16, "maximum": 65536 },
             "ticks_per_call": {

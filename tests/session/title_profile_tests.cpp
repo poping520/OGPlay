@@ -96,6 +96,32 @@ TEST_CASE("Title Profile v2 validates the DexVM interpreter backend") {
                   "runtime.dexvm.interpreter must be switch or threaded");
 }
 
+TEST_CASE("Title Profile decodes the growable DexVM heap policy") {
+    auto text = BaseProfile();
+    text += "[runtime.dexvm]\n"
+            "[runtime.dexvm.heap]\n"
+            "initial_target_bytes = 33554432\n"
+            "growth_limit_bytes = 268435456\n"
+            "maximum_bytes = 536870912\n"
+            "target_utilization_percent = 70\n"
+            "min_free_bytes = 1048576\n"
+            "max_free_bytes = 4194304\n";
+    const auto profile = ogplay::session::LoadTitleProfileText(
+        text, "org.example.game");
+    REQUIRE(profile.runtime.dexvm.has_value());
+    const auto& heap = profile.runtime.dexvm->heap;
+    CHECK(heap.initial_target_bytes == 33554432U);
+    CHECK(heap.growth_limit_bytes == 268435456U);
+    CHECK(heap.maximum_bytes == 536870912U);
+    CHECK(heap.target_utilization_percent == 70U);
+    CHECK(heap.min_free_bytes == 1048576U);
+    CHECK(heap.max_free_bytes == 4194304U);
+
+    auto legacy = BaseProfile();
+    legacy += "[runtime.dexvm]\nheap_budget_bytes = 67108864\n";
+    CheckRejected(legacy, "runtime.dexvm has unknown field heap_budget_bytes");
+}
+
 TEST_CASE("Title Profile v2 decodes entry override and audited preset") {
     const auto profile = ogplay::session::LoadTitleProfileText(
         ScopedProfile(), "org.example.game");

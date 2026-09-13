@@ -637,19 +637,32 @@ ProfileRuntime DecodeProfileRuntime(const TomlValue::Table& root,
     if (const auto* dexvm = NativeOptional(table, "dexvm"); dexvm != nullptr) {
         const auto& dexvm_table = NativeAs<NativeTable>(*dexvm, "runtime.dexvm");
         NativeKeys(dexvm_table, "runtime.dexvm",
-                   {"heap_budget_bytes", "gc_watermark_percent", "max_frames",
-                    "ticks_per_call", "interpreter"}, {});
+                   {"heap", "max_frames", "ticks_per_call", "interpreter"}, {});
         ProfileRuntime::DexVm budget;
-        if (const auto* heap = NativeOptional(dexvm_table, "heap_budget_bytes")) {
-            budget.heap_budget_bytes = static_cast<std::uint64_t>(NativeInteger(
-                *heap, "runtime.dexvm.heap_budget_bytes", 1U << 20U,
-                1U << 30U));
-        }
-        if (const auto* watermark =
-                NativeOptional(dexvm_table, "gc_watermark_percent")) {
-            budget.gc_watermark_percent = static_cast<std::uint32_t>(
-                NativeInteger(*watermark,
-                              "runtime.dexvm.gc_watermark_percent", 0, 100));
+        if (const auto* heap = NativeOptional(dexvm_table, "heap")) {
+            const auto& table = NativeAs<NativeTable>(*heap, "runtime.dexvm.heap");
+            NativeKeys(table, "runtime.dexvm.heap",
+                       {"initial_target_bytes", "growth_limit_bytes",
+                        "maximum_bytes", "target_utilization_percent",
+                        "min_free_bytes", "max_free_bytes"}, {});
+            const auto read = [&](const char* key, std::uint64_t& value) {
+                if (const auto* item = NativeOptional(table, key))
+                    value = static_cast<std::uint64_t>(NativeInteger(
+                        *item, std::string("runtime.dexvm.heap.") + key,
+                        1U << 20U, 1U << 30U));
+            };
+            read("initial_target_bytes", budget.heap.initial_target_bytes);
+            read("growth_limit_bytes", budget.heap.growth_limit_bytes);
+            read("maximum_bytes", budget.heap.maximum_bytes);
+            read("min_free_bytes", budget.heap.min_free_bytes);
+            read("max_free_bytes", budget.heap.max_free_bytes);
+            if (const auto* item = NativeOptional(table, "target_utilization_percent"))
+                budget.heap.target_utilization_percent = static_cast<std::uint32_t>(
+                    NativeInteger(*item, "runtime.dexvm.heap.target_utilization_percent", 1, 100));
+            if (budget.heap.initial_target_bytes > budget.heap.growth_limit_bytes ||
+                budget.heap.growth_limit_bytes > budget.heap.maximum_bytes ||
+                budget.heap.min_free_bytes > budget.heap.max_free_bytes)
+                throw TitleProfileError("runtime.dexvm.heap limits are inconsistent");
         }
         if (const auto* frames = NativeOptional(dexvm_table, "max_frames")) {
             budget.max_frames = static_cast<std::uint32_t>(NativeInteger(

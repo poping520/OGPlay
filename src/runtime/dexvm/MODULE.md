@@ -37,6 +37,8 @@ switch/threaded 解释、异常、线程/monitor、反射及 `java.*` core intri
   intern/Class 与 integration roots。持 guest ref 的 intrinsic 状态用具名 state table trace/sweep；
   嵌套调用的新引用用 `RootScope`。Weak/SoftReference、JNI weak、intern 与 identity hash 遵循
   API 19；异常构造有 64 KiB 应急区。
+- 堆按 ADR-0060 区分 initial target、growth limit 与 maximum：越过当前目标先 GC，再增长，
+  越过增长上限时执行 before-OOM GC 后才失败；GC 后按 live set、利用率和 min/max free 调整目标。
 - `Interpreter::Call` 返回值或未捕获 Java 异常；寄存器带类别 tag，默认 512 帧。invoke 只有
   interpreted/intrinsic/native bridge 三路；缺实现记账失败。致命故障附有界 guest stack、指令、
   target/参数诊断，不依赖 trace，也不输出 host 地址。

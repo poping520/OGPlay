@@ -267,14 +267,30 @@ def _validate_runtime(value: Any, schema: int) -> None:
     if "dexvm" in table:
         dexvm = _table(table["dexvm"], "runtime.dexvm")
         _keys(dexvm, "runtime.dexvm",
-              {"heap_budget_bytes", "gc_watermark_percent", "max_frames",
-               "ticks_per_call", "interpreter"}, set())
-        if "heap_budget_bytes" in dexvm:
-            _integer(dexvm["heap_budget_bytes"],
-                     "runtime.dexvm.heap_budget_bytes", 1 << 20, 1 << 30)
-        if "gc_watermark_percent" in dexvm:
-            _integer(dexvm["gc_watermark_percent"],
-                     "runtime.dexvm.gc_watermark_percent", 0, 100)
+              {"heap", "max_frames", "ticks_per_call", "interpreter"}, set())
+        if "heap" in dexvm:
+            heap = _table(dexvm["heap"], "runtime.dexvm.heap")
+            _keys(heap, "runtime.dexvm.heap",
+                  {"initial_target_bytes", "growth_limit_bytes",
+                   "maximum_bytes", "target_utilization_percent",
+                   "min_free_bytes", "max_free_bytes"}, set())
+            values = {}
+            for key in {"initial_target_bytes", "growth_limit_bytes",
+                        "maximum_bytes", "min_free_bytes", "max_free_bytes"}:
+                if key in heap:
+                    values[key] = _integer(
+                        heap[key], f"runtime.dexvm.heap.{key}",
+                        1 << 20, 1 << 30)
+            if "target_utilization_percent" in heap:
+                _integer(heap["target_utilization_percent"],
+                         "runtime.dexvm.heap.target_utilization_percent", 1, 100)
+            initial = values.get("initial_target_bytes", 64 << 20)
+            growth = values.get("growth_limit_bytes", 512 << 20)
+            maximum = values.get("maximum_bytes", 1024 << 20)
+            minimum_free = values.get("min_free_bytes", 2 << 20)
+            maximum_free = values.get("max_free_bytes", 8 << 20)
+            if initial > growth or growth > maximum or minimum_free > maximum_free:
+                raise ProfileError("runtime.dexvm.heap limits are inconsistent")
         if "max_frames" in dexvm:
             _integer(dexvm["max_frames"], "runtime.dexvm.max_frames", 16,
                      65536)

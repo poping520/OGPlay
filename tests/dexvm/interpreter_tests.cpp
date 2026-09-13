@@ -2728,30 +2728,46 @@ TEST_CASE("dexvm tick budget exhaustion is a fatal structured error") {
 TEST_CASE("dexvm heap budget exhaustion surfaces OutOfMemoryError") {
     WithEachBackend([](InterpreterConfig config) {
     JavaObjectModelConfig model_config;
-    model_config.heap_budget_bytes = 40;
+    model_config.initial_heap_target_bytes = 40;
+    model_config.heap_growth_limit_bytes = 40;
+    model_config.maximum_heap_bytes = 40;
+    model_config.min_free_bytes = 0;
+    model_config.max_free_bytes = 0;
     Vm vm(config, model_config);
     const auto outcome = vm.CallStatic("LFlow;", "sumArray", "()I");
     ExpectException(vm, outcome, "Ljava/lang/OutOfMemoryError;");
     });
 }
 
-TEST_CASE("dexvm GC watermark bounds allocation and zero disables collection") {
+TEST_CASE("dexvm heap grows after collection before reporting exhaustion") {
+    WithEachBackend([](InterpreterConfig config) {
+    JavaObjectModelConfig heap;
+    heap.initial_heap_target_bytes = 40;
+    heap.heap_growth_limit_bytes = 256;
+    heap.maximum_heap_bytes = 512;
+    heap.min_free_bytes = 0;
+    heap.max_free_bytes = 32;
+    Vm vm(config, heap);
+    ExpectInt(vm.CallStatic("LFlow;", "sumArray", "()I"), 24);
+    CHECK(vm.model.HeapTargetBytes() > heap.initial_heap_target_bytes);
+    CHECK(vm.model.HeapTargetBytes() <= heap.heap_growth_limit_bytes);
+    CHECK(vm.interpreter.Stats().gc_collections > 0);
+    });
+}
+
+TEST_CASE("dexvm target utilization bounds allocation after collection") {
     WithEachBackend([](InterpreterConfig config) {
     JavaObjectModelConfig enabled;
-    enabled.heap_budget_bytes = 128;
-    enabled.gc_watermark_percent = 75;
+    enabled.initial_heap_target_bytes = 96;
+    enabled.heap_growth_limit_bytes = 128;
+    enabled.maximum_heap_bytes = 128;
+    enabled.min_free_bytes = 16;
+    enabled.max_free_bytes = 32;
     Vm collecting(config, enabled);
     ExpectInt(collecting.CallStatic("LFlow;", "gcChurn", "()I"), 10);
     CHECK(collecting.interpreter.Stats().gc_collections > 0);
     CHECK(collecting.interpreter.Stats().gc_freed_bytes > 0);
-    CHECK(collecting.model.AllocatedBytes() <= enabled.heap_budget_bytes);
-
-    JavaObjectModelConfig disabled = enabled;
-    disabled.gc_watermark_percent = 0;
-    Vm gc_a(config, disabled);
-    const auto outcome = gc_a.CallStatic("LFlow;", "gcChurn", "()I");
-    ExpectException(gc_a, outcome, "Ljava/lang/OutOfMemoryError;");
-    CHECK(gc_a.interpreter.Stats().gc_collections == 0);
+    CHECK(collecting.model.AllocatedBytes() <= enabled.heap_growth_limit_bytes);
     });
 }
 
@@ -3146,8 +3162,11 @@ TEST_CASE("dexvm diagnostics cover semantic fault and runtime events") {
         kDexVmTraceAllEvents &
         ~DexVmTraceBit(DexVmTraceKind::instruction);
     JavaObjectModelConfig heap;
-    heap.heap_budget_bytes = 65536;
-    heap.gc_watermark_percent = 75;
+    heap.initial_heap_target_bytes = 65536;
+    heap.heap_growth_limit_bytes = 131072;
+    heap.maximum_heap_bytes = 131072;
+    heap.min_free_bytes = 4096;
+    heap.max_free_bytes = 16384;
     Vm vm(config, heap);
 
     ExpectInt(vm.CallStatic("LClinitUser;", "read", "()I"), 55);
@@ -3213,7 +3232,12 @@ TEST_CASE("DVM-105 guest native admission is explicit and has no intrinsic handl
 
 TEST_CASE("DVM-115 VM exception construction has bounded emergency heap and stack space") {
     WithEachBackend([](InterpreterConfig config) {
-        Vm f(config, JavaObjectModelConfig{.heap_budget_bytes = 128});
+        Vm f(config, JavaObjectModelConfig{
+                         .initial_heap_target_bytes = 128,
+                         .heap_growth_limit_bytes = 128,
+                         .maximum_heap_bytes = 128,
+                         .min_free_bytes = 0,
+                         .max_free_bytes = 0});
         ExpectInt(f.CallStatic("LArith;", "divideCaught", "(II)I",
                               {VmValue::Int(1), VmValue::Int(0)}), -99);
         const auto byte_array = f.linker.ResolveDescriptor("[B");

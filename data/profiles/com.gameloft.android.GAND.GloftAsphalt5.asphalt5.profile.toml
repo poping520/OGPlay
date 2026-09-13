@@ -20,10 +20,15 @@ height = 480
 # cumulative allocation until GC-B lands (stage 4). Measured: title flow +
 # language switch + race load peak below 300 MiB.
 [runtime.dexvm]
-heap_budget_bytes = 536870912
-gc_watermark_percent = 75
 max_frames = 512
 ticks_per_call = 200000000
+[runtime.dexvm.heap]
+initial_target_bytes = 67108864
+growth_limit_bytes = 536870912
+maximum_bytes = 1073741824
+target_utilization_percent = 75
+min_free_bytes = 2097152
+max_free_bytes = 8388608
 [quirks]
 enabled = ["gles1_material_front_face"]
 [quirks.gles1_material_front_face]

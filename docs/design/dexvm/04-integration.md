@@ -216,9 +216,11 @@ api_level = 19
 lifecycle = "dex_activity"
 maximum_ticks_per_call = 1000000000
 [runtime.dexvm]
-heap_budget_bytes = 67108864     # 受检范围显式声明
 max_frames = 512
 ticks_per_call = 200000000
+[runtime.dexvm.heap]
+initial_target_bytes = 67108864
+growth_limit_bytes = 536870912
 [data]
 working_directory = "/sdcard/example"
 mounts = [ { guest = "/sdcard/example", source = "external", required = true } ]

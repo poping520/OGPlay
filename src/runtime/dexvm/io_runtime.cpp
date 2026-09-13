@@ -174,7 +174,7 @@ void IoRuntime::CloseDescriptor(const VmObjectRef owner) noexcept {
 
 std::shared_ptr<IoRuntime::OpenFileDescription> IoRuntime::OpenFile(
     std::string path, const bool readable, const bool writable,
-    const bool append, const bool truncate) {
+    const bool append, const bool truncate, const bool create) {
   if (!readable && !writable) {
     throw IoRuntimeError("file descriptor has no access mode");
   }
@@ -186,7 +186,7 @@ std::shared_ptr<IoRuntime::OpenFileDescription> IoRuntime::OpenFile(
   file->writable = writable;
   file->append = append;
   file->handle = file_system_->OpenHandle(file->path, readable, writable,
-                                          writable, truncate);
+                                          create, truncate);
   try {
     if (append)
       static_cast<void>(file_system_->SeekHandle(

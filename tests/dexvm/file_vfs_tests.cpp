@@ -826,7 +826,7 @@ TEST_CASE("FileOutputStream public constructors and writes match on both backend
         const auto* descriptor = vm.interpreter.IO().FindDescriptor(fd);
         REQUIRE(descriptor != nullptr);
         REQUIRE(descriptor->file != nullptr);
-        CHECK(vm.interpreter.IO().FileOffset(truncate) == 1);
+        CHECK(vm.interpreter.IO().FileOffset(fd) == 1);
         CHECK(vm.BoolOn(fd, "valid"));
         static_cast<void>(vm.CallOn(fd, "sync", "()V"));
         CHECK(vm.NativeRead("/sdcard/save.dat") == "N");
@@ -838,7 +838,7 @@ TEST_CASE("FileOutputStream public constructors and writes match on both backend
             {VmValue::Ref(fd)}));
         static_cast<void>(vm.CallOn(borrowed, "write", "(I)V",
                                     {VmValue::Int('D')}));
-        CHECK(vm.interpreter.IO().FileOffset(truncate) == 2);
+        CHECK(vm.interpreter.IO().FileOffset(fd) == 2);
         static_cast<void>(vm.CallOn(borrowed, "close", "()V"));
         CHECK(vm.BoolOn(fd, "valid"));
         CHECK(vm.NativeRead("/sdcard/save.dat") == "ND");
@@ -928,7 +928,7 @@ TEST_CASE("FileInputStream public API shares descriptor position on both backend
         const auto* descriptor = vm.interpreter.IO().FindDescriptor(fd);
         REQUIRE(descriptor != nullptr);
         REQUIRE(descriptor->file != nullptr);
-        CHECK(vm.interpreter.IO().FileOffset(input) == 1);
+        CHECK(vm.interpreter.IO().FileOffset(fd) == 1);
 
         const auto borrowed = vm.interpreter.NewIntrinsicInstance(
             "Ljava/io/FileInputStream;");
@@ -943,7 +943,7 @@ TEST_CASE("FileInputStream public API shares descriptor position on both backend
               std::vector<std::byte>{std::byte{'b'}, std::byte{'c'}});
         CHECK(vm.CallOn(borrowed, "skip", "(J)J",
                         {VmValue::Long(1)}).AsLong() == 1);
-        CHECK(vm.interpreter.IO().FileOffset(input) == 4);
+        CHECK(vm.interpreter.IO().FileOffset(fd) == 4);
         CHECK(vm.CallOn(input, "read", "()I").AsInt() == 'e');
         static_cast<void>(vm.CallOn(borrowed, "close", "()V"));
         CHECK(vm.BoolOn(fd, "valid"));

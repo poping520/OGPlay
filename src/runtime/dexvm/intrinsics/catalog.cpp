@@ -45,7 +45,6 @@ std::vector<IntrinsicClassDecl> CoreIntrinsicCatalog(
     AppendJavaLangThrowables(catalog);
 
     catalog.insert(catalog.end(), {
-        Declare_java_io_FileNotFoundException(),
         Declare_java_io_UnsupportedEncodingException(),
         Declare_java_util_regex_PatternSyntaxException(),
         Declare_java_io_EOFException(),

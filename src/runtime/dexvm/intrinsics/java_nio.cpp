@@ -86,78 +86,37 @@ IntrinsicClassDecl DeclareBuffer() {
     return std::move(b).Build();
 }
 
-IntrinsicClassDecl DeclareFileChannel() {
-    auto b = IntrinsicClassBuilder::Class(
-        "Ljava/nio/channels/FileChannel;", "Ljava/lang/Object;",
-        {"Ljava/nio/channels/WritableByteChannel;"},
-        kAccPublic);
-    b.FinalMethod("size", "()J", [](IntrinsicContext& c) {
-        try {
-            return VmValue::Long(static_cast<std::int64_t>(
-                c.vm.IO().FileSize(c.receiver)));
-        } catch (const IoRuntimeError& error) {
-            throw VmJavaThrow{"Ljava/io/IOException;", error.what()};
-        }
-    });
-    b.FinalMethod("position", "()J", [](IntrinsicContext& c) {
-        try {
-            return VmValue::Long(static_cast<std::int64_t>(
-                c.vm.IO().FileOffset(c.receiver)));
-        } catch (const IoRuntimeError& error) {
-            throw VmJavaThrow{"Ljava/io/IOException;", error.what()};
-        }
-    });
-    b.FinalMethod("position", "(J)Ljava/nio/channels/FileChannel;",
-                  [](IntrinsicContext& c) {
-        const auto position = c.arguments[0].AsLong();
-        if (position < 0)
-            throw VmJavaThrow{"Ljava/lang/IllegalArgumentException;",
-                              "position < 0"};
-        try {
-            c.vm.IO().SetFileOffset(c.receiver,
-                                    static_cast<std::uint64_t>(position));
-            return VmValue::Ref(c.receiver);
-        } catch (const IoRuntimeError& error) {
-            throw VmJavaThrow{"Ljava/io/IOException;", error.what()};
-        }
-    });
-    b.FinalMethod(
-        "transferTo", "(JJLjava/nio/channels/WritableByteChannel;)J",
+VmObjectRef FileChannelDescriptor(IntrinsicContext& c, VmObjectRef channel) {
+    const auto field = c.vm.Linker().FindFieldRecursive(
+        c.vm.Model().ObjectClass(channel), "fd", "Ljava/io/FileDescriptor;");
+    if (!field) throw DexVmError{DexVmErrorReason::internal_invariant,
+                                 "FileChannelImpl.fd is unavailable"};
+    return VmObjectRef(c.vm.Model().InstanceSlots(channel)[
+        c.vm.Linker().Field(*field).slot].bits);
+}
+
+IntrinsicClassDecl DeclareFileChannelTransferBoundary() {
+    auto b = IntrinsicClassBuilder::Class("Ljava/nio/FileChannelImpl;");
+    b.VirtualMethod("transferTo",
+        "(JJLjava/nio/channels/WritableByteChannel;)J",
         [](IntrinsicContext& c) {
             const auto position = c.arguments[0].AsLong();
             const auto count = c.arguments[1].AsLong();
-            const auto target = c.arguments[2].ref;
-            if (position < 0 || count < 0)
-                throw VmJavaThrow{"Ljava/lang/IllegalArgumentException;",
-                                  "position or count is negative"};
-            if (!target.IsValid())
-                throw VmJavaThrow{"Ljava/lang/NullPointerException;",
-                                  "target == null"};
+            if (position < 0 || count < 0) throw VmJavaThrow{
+                "Ljava/lang/IllegalArgumentException;", "negative transfer range"};
+            if (!c.arguments[2].ref.IsValid()) throw VmJavaThrow{
+                "Ljava/lang/NullPointerException;", "target == null"};
             try {
                 return VmValue::Long(static_cast<std::int64_t>(
                     c.vm.IO().TransferFile(
-                        c.receiver, static_cast<std::uint64_t>(position),
-                        static_cast<std::uint64_t>(count), target)));
+                        FileChannelDescriptor(c, c.receiver),
+                        static_cast<std::uint64_t>(position),
+                        static_cast<std::uint64_t>(count),
+                        FileChannelDescriptor(c, c.arguments[2].ref))));
             } catch (const IoRuntimeError& error) {
                 throw VmJavaThrow{"Ljava/io/IOException;", error.what()};
             }
-        });
-    b.FinalMethod("isOpen", "()Z", [](IntrinsicContext& c) {
-        try {
-            static_cast<void>(c.vm.IO().FileOffset(c.receiver));
-            return VmValue::Int(1);
-        } catch (const IoRuntimeError&) {
-            return VmValue::Int(0);
-        }
-    });
-    b.FinalMethod("close", "()V", [](IntrinsicContext& c) {
-        try {
-            c.vm.IO().CloseFileStream(c.receiver);
-        } catch (const IoRuntimeError& error) {
-            throw VmJavaThrow{"Ljava/io/IOException;", error.what()};
-        }
-        return VmValue::Void();
-    });
+        }, kAccPublic);
     return std::move(b).Build();
 }
 
@@ -628,18 +587,6 @@ void AppendJavaNio(std::vector<IntrinsicClassDecl>& catalog) {
     catalog.push_back(Exception("Ljava/nio/BufferUnderflowException;", "Ljava/lang/RuntimeException;"));
     catalog.push_back(Exception("Ljava/nio/InvalidMarkException;", "Ljava/lang/IllegalStateException;"));
     catalog.push_back(Exception("Ljava/nio/ReadOnlyBufferException;", "Ljava/lang/UnsupportedOperationException;"));
-    auto channel = IntrinsicClassBuilder::Interface(
-        "Ljava/nio/channels/Channel;");
-    channel.UnimplementedVirtual("isOpen", "()Z", kAccPublic | kAccAbstract);
-    channel.UnimplementedVirtual("close", "()V", kAccPublic | kAccAbstract);
-    catalog.push_back(std::move(channel).Build());
-    auto writable_channel = IntrinsicClassBuilder::Interface(
-        "Ljava/nio/channels/WritableByteChannel;",
-        {"Ljava/nio/channels/Channel;"});
-    writable_channel.UnimplementedVirtual("write", "(Ljava/nio/ByteBuffer;)I",
-                                          kAccPublic | kAccAbstract);
-    catalog.push_back(std::move(writable_channel).Build());
-    catalog.push_back(DeclareFileChannel());
     catalog.push_back(DeclareBuffer());
     catalog.push_back(DeclareByteOrder());
     catalog.push_back(DeclareByteBuffer());
@@ -664,6 +611,7 @@ void AppendJavaNio(std::vector<IntrinsicClassDecl>& catalog) {
     }
     catalog.push_back(Charset());
     catalog.push_back(DeclareMemoryArray());
+    catalog.push_back(DeclareFileChannelTransferBoundary());
 }
 
 }  // namespace ogplay::runtime::dexvm::intrinsics

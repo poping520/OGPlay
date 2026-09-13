@@ -70,6 +70,7 @@ switch/threaded 解释、异常、线程/monitor、反射及 `java.*` core intri
 - `IoRuntime` 只持文件资源与增量解码状态，文件仅走注入 `IoFileSystem`；FIS/FOS 的
   OpenFileDescription 保存隔离的 VFS descriptor 与访问模式，同一逻辑 FileDescriptor 共享
   VFS offset；FileChannel 的当前受检操作也只消费该状态，定位传输保持源 offset 且不伪造 mmap。
+  RandomAccessFile 的定位、长度与截断同样走该 descriptor；IoFileSystem 错误携带真实 VFS errno。
   相对路径不读 host cwd，逻辑 FileDescriptor 不存 host fd。`ZipRuntime` 复用严格
   ZIP parser/inflate。
 - `NetworkRuntime` 只经注入 policy/transport，默认离线；不读 host DNS/代理/证书、不在 core

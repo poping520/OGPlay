@@ -291,6 +291,14 @@ void IoRuntime::SetFileOffset(const VmObjectRef owner,
       IoFileSystem::SeekWhence::begin));
 }
 
+void IoRuntime::SetFileSize(const VmObjectRef owner, const std::uint64_t size) {
+  auto& file = RequireFile(file_streams_, owner);
+  if (!file.writable) throw IoRuntimeError("file descriptor is not writable");
+  if (file_system_ == nullptr)
+    throw IoRuntimeError("guest filesystem is unavailable");
+  file_system_->TruncateHandle(file.handle, size);
+}
+
 std::uint64_t IoRuntime::TransferFile(const VmObjectRef source,
                                       const std::uint64_t position,
                                       const std::uint64_t count,

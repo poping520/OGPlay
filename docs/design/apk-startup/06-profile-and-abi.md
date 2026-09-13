@@ -91,9 +91,10 @@ so_sha256 = ["..."]
 api_level = 19
 
 [runtime.dexvm]
-heap_budget_bytes = 536870912
 max_frames = 512
 ticks_per_call = 200000000
+[runtime.dexvm.heap]
+growth_limit_bytes = 536870912
 
 [quirks]
 enabled = ["..."]

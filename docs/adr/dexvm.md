@@ -915,3 +915,19 @@ URI、内部 encoder、URISyntaxException 与 UrlUtils 一次切换为 BootDex�
 字段投影和部分解析算法。URI 的全部可变缓存、解析结果和序列化协议只由原版 Java 字段维护。
 URL 尚未迁移，继续执行现有有界 intrinsic；它仍使用的 ParseUri C++ 辅助函数不属于 URI
 状态，保留到 URL 后续迁移。URI 新闭包没有 native 或宿主网络边界。
+
+<a id="adr-0060"></a>
+## ADR-0060 · DexVM 堆采用 Dalvik 式目标增长而非固定预算
+
+2026-09-13，接受。Supersedes ADR-0017 中“默认 64 MiB 固定预算”和 GC-B 设计中的
+`heap_budget_bytes/gc_watermark_percent` 配置裁决。
+
+DexVM 堆区分初始目标、普通增长上限与绝对安全上限。64 MiB 仅是初始 GC 目标；分配越过
+目标时先做普通 GC，仍不足则在增长上限内扩展目标，越过增长上限时再做一次 before-OOM
+完整 GC，最后才抛 `OutOfMemoryError`。GC 后目标由 live set、利用率及 min/max free 区间
+重新计算；增长只改变记账目标，不预留或提交宿主内存。
+
+默认初始目标 64 MiB、增长上限 512 MiB、绝对上限 1 GiB、目标利用率 75%、空闲区间
+2..8 MiB。Profile 配置改为 `[runtime.dexvm.heap]`，旧的两个平面字段直接拒绝，不保留兼容
+解释。宿主分配失败映射为 Java OOM；所有判断只依赖确定性字节记账。不得以游戏分支或单次
+大数组豁免绕过该状态机。

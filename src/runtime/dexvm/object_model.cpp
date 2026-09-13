@@ -66,6 +66,7 @@ public:
     JniPrimitiveArrayStore* arrays{};
     JavaObjectInterop interop;
     JavaObjectModelConfig config;
+    std::uint64_t heap_target_bytes{};
 
     std::vector<Record> records;
     std::vector<std::uint32_t> free_records;
@@ -174,13 +175,30 @@ public:
             allocated_bytes += bytes;
             return;
         }
-        if (allocated_bytes + bytes > config.heap_budget_bytes) {
+        if (bytes > heap_target_bytes ||
+            allocated_bytes > heap_target_bytes - bytes) {
+            if (bytes <= config.heap_growth_limit_bytes &&
+                allocated_bytes <= config.heap_growth_limit_bytes - bytes) {
+                const auto required = allocated_bytes + bytes;
+                const auto with_slop =
+                    required > UINT64_MAX - config.max_free_bytes
+                        ? UINT64_MAX
+                        : required + config.max_free_bytes;
+                heap_target_bytes = std::min(
+                    config.heap_growth_limit_bytes,
+                    std::max(required, with_slop));
+            }
+        }
+        if (bytes > heap_target_bytes ||
+            allocated_bytes > heap_target_bytes - bytes) {
             throw DexVmError(DexVmErrorReason::heap_budget_exhausted,
                              "dexvm heap budget exhausted: allocated " +
                                  std::to_string(allocated_bytes) +
                                  " bytes, requested " + std::to_string(bytes) +
-                                 ", budget " +
-                                 std::to_string(config.heap_budget_bytes));
+                                 ", target " +
+                                 std::to_string(heap_target_bytes) +
+                                 ", growth limit " +
+                                 std::to_string(config.heap_growth_limit_bytes));
         }
         allocated_bytes += bytes;
     }
@@ -204,10 +222,17 @@ JavaObjectModel::JavaObjectModel(JniStringStore& strings,
     impl_->strings = &strings;
     impl_->arrays = &arrays;
     impl_->config = config;
+    impl_->heap_target_bytes = config.initial_heap_target_bytes;
     impl_->interop = std::move(interop);
-    if (config.gc_watermark_percent > 100U) {
-        throw std::invalid_argument("DexVM GC watermark must be in 0..100");
-    }
+    if (config.initial_heap_target_bytes == 0U ||
+        config.initial_heap_target_bytes > config.heap_growth_limit_bytes ||
+        config.heap_growth_limit_bytes > config.maximum_heap_bytes)
+        throw std::invalid_argument("DexVM heap limits must satisfy initial <= growth <= maximum");
+    if (config.target_utilization_percent == 0U ||
+        config.target_utilization_percent > 100U)
+        throw std::invalid_argument("DexVM target utilization must be in 1..100");
+    if (config.min_free_bytes > config.max_free_bytes)
+        throw std::invalid_argument("DexVM heap free range is inverted");
 }
 
 JavaObjectModel::~JavaObjectModel() = default;
@@ -1000,22 +1025,55 @@ std::uint64_t JavaObjectModel::AllocatedBytes() const noexcept {
 std::uint64_t JavaObjectModel::ObjectCount() const noexcept {
     return impl_->object_count;
 }
-std::uint64_t JavaObjectModel::HeapBudgetBytes() const noexcept {
-    return impl_->config.heap_budget_bytes;
+std::uint64_t JavaObjectModel::HeapTargetBytes() const noexcept {
+    return impl_->heap_target_bytes;
 }
 
-std::uint32_t JavaObjectModel::GcWatermarkPercent() const noexcept {
-    return impl_->config.gc_watermark_percent;
+std::uint64_t JavaObjectModel::HeapGrowthLimitBytes() const noexcept {
+    return impl_->config.heap_growth_limit_bytes;
 }
 
 bool JavaObjectModel::ShouldCollectFor(
     const std::uint64_t request_bytes) const noexcept {
-    const auto percent = impl_->config.gc_watermark_percent;
-    if (percent == 0U) return false;
-    const auto watermark =
-        (impl_->config.heap_budget_bytes * percent) / 100ULL;
-    return request_bytes > watermark ||
-           impl_->allocated_bytes > watermark - request_bytes;
+    return request_bytes > impl_->heap_target_bytes ||
+           impl_->allocated_bytes > impl_->heap_target_bytes - request_bytes;
+}
+
+void JavaObjectModel::AdjustTargetAfterGc() noexcept {
+    const auto live = impl_->allocated_bytes;
+    const auto utilization = impl_->config.target_utilization_percent;
+    auto target = live > UINT64_MAX / 100U
+                      ? UINT64_MAX
+                      : (live * 100U + utilization - 1U) / utilization;
+    const auto add = [](const std::uint64_t left, const std::uint64_t right) {
+        return left > UINT64_MAX - right ? UINT64_MAX : left + right;
+    };
+    target = std::clamp(target, add(live, impl_->config.min_free_bytes),
+                        add(live, impl_->config.max_free_bytes));
+    impl_->heap_target_bytes =
+        std::min(target, impl_->config.heap_growth_limit_bytes);
+}
+
+bool JavaObjectModel::GrowFor(const std::uint64_t request_bytes) noexcept {
+    if (request_bytes > impl_->config.heap_growth_limit_bytes ||
+        impl_->allocated_bytes >
+            impl_->config.heap_growth_limit_bytes - request_bytes)
+        return false;
+    const auto projected = impl_->allocated_bytes + request_bytes;
+    const auto utilization = impl_->config.target_utilization_percent;
+    auto target = projected > UINT64_MAX / 100U
+                      ? UINT64_MAX
+                      : (projected * 100U + utilization - 1U) / utilization;
+    const auto add = [](const std::uint64_t left, const std::uint64_t right) {
+        return left > UINT64_MAX - right ? UINT64_MAX : left + right;
+    };
+    target = std::clamp(target,
+                        add(projected, impl_->config.min_free_bytes),
+                        add(projected, impl_->config.max_free_bytes));
+    impl_->heap_target_bytes = std::max(
+        impl_->heap_target_bytes,
+        std::min(target, impl_->config.heap_growth_limit_bytes));
+    return true;
 }
 
 std::uint64_t JavaObjectModel::EstimateInstanceBytes(

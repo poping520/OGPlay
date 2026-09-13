@@ -681,6 +681,11 @@ VmCallOutcome Interpreter::Impl::Run(InterpreterExecutionState& execution,
         } catch (const VmJavaThrow& thrown) {
             if (thrown.existing.IsValid()) owner->SetPendingException(thrown.existing);
             else ThrowJava(thrown.descriptor, thrown.message);
+        } catch (const std::bad_alloc&) {
+            model->SetEmergencyReserve(true);
+            ThrowJava("Ljava/lang/OutOfMemoryError;",
+                      "host allocation failed inside DexVM heap");
+            model->SetEmergencyReserve(false);
         } catch (const DexVmError& error) {
             if (error.Reason() == DexVmErrorReason::heap_budget_exhausted) {
                 // The OutOfMemoryError object itself must still allocate;

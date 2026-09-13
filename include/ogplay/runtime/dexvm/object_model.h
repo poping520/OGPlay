@@ -50,8 +50,12 @@ enum class VmObjectKind : std::uint8_t {
 };
 
 struct JavaObjectModelConfig final {
-    std::uint64_t heap_budget_bytes{64ULL * 1024ULL * 1024ULL};
-    std::uint32_t gc_watermark_percent{75};
+    std::uint64_t initial_heap_target_bytes{64ULL * 1024ULL * 1024ULL};
+    std::uint64_t heap_growth_limit_bytes{512ULL * 1024ULL * 1024ULL};
+    std::uint64_t maximum_heap_bytes{1024ULL * 1024ULL * 1024ULL};
+    std::uint32_t target_utilization_percent{75};
+    std::uint64_t min_free_bytes{2ULL * 1024ULL * 1024ULL};
+    std::uint64_t max_free_bytes{8ULL * 1024ULL * 1024ULL};
 };
 
 // Session-owned JNI object services used to keep interpreted and native
@@ -195,9 +199,11 @@ public:
 
     [[nodiscard]] std::uint64_t AllocatedBytes() const noexcept;
     [[nodiscard]] std::uint64_t ObjectCount() const noexcept;
-    [[nodiscard]] std::uint64_t HeapBudgetBytes() const noexcept;
-    [[nodiscard]] std::uint32_t GcWatermarkPercent() const noexcept;
+    [[nodiscard]] std::uint64_t HeapTargetBytes() const noexcept;
+    [[nodiscard]] std::uint64_t HeapGrowthLimitBytes() const noexcept;
     [[nodiscard]] bool ShouldCollectFor(std::uint64_t request_bytes) const noexcept;
+    void AdjustTargetAfterGc() noexcept;
+    [[nodiscard]] bool GrowFor(std::uint64_t request_bytes) noexcept;
 
     [[nodiscard]] static std::uint64_t EstimateInstanceBytes(
         std::uint16_t slot_count) noexcept;

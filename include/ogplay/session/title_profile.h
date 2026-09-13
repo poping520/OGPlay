@@ -71,8 +71,14 @@ struct ProfileRuntime final {
             threaded,
         };
 
-        std::uint64_t heap_budget_bytes{64ULL * 1024ULL * 1024ULL};
-        std::uint32_t gc_watermark_percent{75};
+        struct Heap final {
+            std::uint64_t initial_target_bytes{64ULL * 1024ULL * 1024ULL};
+            std::uint64_t growth_limit_bytes{512ULL * 1024ULL * 1024ULL};
+            std::uint64_t maximum_bytes{1024ULL * 1024ULL * 1024ULL};
+            std::uint32_t target_utilization_percent{75};
+            std::uint64_t min_free_bytes{2ULL * 1024ULL * 1024ULL};
+            std::uint64_t max_free_bytes{8ULL * 1024ULL * 1024ULL};
+        } heap;
         std::uint32_t max_frames{512};
         std::uint64_t ticks_per_call{kDefaultMaximumTicksPerCall};
         Interpreter interpreter{Interpreter::switch_dispatch};

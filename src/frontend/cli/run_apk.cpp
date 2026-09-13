@@ -654,10 +654,14 @@ int RunApkCommand(const int argc, const char* const argv[],
         dex_context->boot_classpath_bytes = std::move(boot_archive_bytes);
         runtime::DexVmBridgeConfig bridge_config;
         if (profile.runtime.dexvm.has_value()) {
-            bridge_config.heap.heap_budget_bytes =
-                profile.runtime.dexvm->heap_budget_bytes;
-            bridge_config.heap.gc_watermark_percent =
-                profile.runtime.dexvm->gc_watermark_percent;
+            const auto& heap = profile.runtime.dexvm->heap;
+            bridge_config.heap.initial_heap_target_bytes = heap.initial_target_bytes;
+            bridge_config.heap.heap_growth_limit_bytes = heap.growth_limit_bytes;
+            bridge_config.heap.maximum_heap_bytes = heap.maximum_bytes;
+            bridge_config.heap.target_utilization_percent =
+                heap.target_utilization_percent;
+            bridge_config.heap.min_free_bytes = heap.min_free_bytes;
+            bridge_config.heap.max_free_bytes = heap.max_free_bytes;
             bridge_config.interpreter.max_frames =
                 profile.runtime.dexvm->max_frames;
             bridge_config.interpreter.tick_budget =

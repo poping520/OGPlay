@@ -167,6 +167,7 @@ constexpr std::string_view kAndroidNamespace =
 constexpr std::uint8_t kTypeDimension = 0x05;
 constexpr std::uint8_t kTypeFloat = 0x04;
 constexpr std::uint8_t kTypeReference = 0x01;
+constexpr std::uint8_t kTypeAttribute = 0x02;
 constexpr std::uint8_t kTypeString = 0x03;
 constexpr std::uint8_t kTypeFirstColor = 0x1c;
 constexpr std::uint8_t kTypeLastColor = 0x1f;
@@ -400,6 +401,29 @@ void ApplyTextAppearance(const DexVmAndroidContext& context,
     }
 }
 
+void ApplyStyleAttribute(const DexVmAndroidContext& context,
+                         const UiWidgetDescriptor& widget, ui::UiNode& node,
+                         const loader::BinaryXmlAttribute& attribute) {
+    if (attribute.value_type == kTypeAttribute &&
+        attribute.data == 0x01010078U &&
+        widget.dex_descriptor == "Landroid/widget/ProgressBar;") {
+        // API 19 R.attr.progressBarStyleHorizontal. All registered API 19
+        // platform themes resolve it to the horizontal ProgressBar family.
+        // Progress state/rendering is a separate widget capability; accepting
+        // this constructor style must not imply that capability.
+        return;
+    }
+    if (attribute.value_type == kTypeReference &&
+        (node.kind == ui::UiClass::TextView ||
+         node.kind == ui::UiClass::Button ||
+         node.kind == ui::UiClass::EditText)) {
+        ApplyTextAppearance(context, node, attribute.data);
+        return;
+    }
+    throw std::runtime_error(
+        "UI style resource is outside the registered API 19 projection");
+}
+
 [[nodiscard]] std::int32_t SiblingResourceId(
     const loader::BinaryXmlAttribute& attribute) {
     if (attribute.data == 0U ||
@@ -428,10 +452,7 @@ void ApplyTextAppearance(const DexVmAndroidContext& context,
 void ApplyAttribute(DexVmAndroidContext& context, const ui::UiNodeId node_id,
                     const loader::BinaryXmlAttribute& attribute,
                     std::uint32_t& drawable_id) {
-    if (attribute.namespace_uri.empty() && attribute.name == "style") {
-        throw std::runtime_error(
-            "UI style resource is unsupported without a matched fixture");
-    }
+    if (attribute.namespace_uri.empty() && attribute.name == "style") return;
     if (attribute.namespace_uri != kAndroidNamespace) return;
     auto& node = *context.ui_tree.Get(node_id);
     const auto& name = attribute.name;
@@ -980,7 +1001,35 @@ dexvm::VmObjectRef InflateUiElements(
             ApplyInflatedWidgetDefaults(context, *context.ui_tree.Get(node));
             InitializeDefaultViewBackground(vm, context, view, node);
             std::uint32_t drawable_id = element.src;
+            const loader::BinaryXmlAttribute* style = nullptr;
             for (const auto& attribute : element.attributes) {
+                if (!attribute.namespace_uri.empty() ||
+                    attribute.name != "style") {
+                    continue;
+                }
+                if (style != nullptr) {
+                    throw std::runtime_error(
+                        "UI element has duplicate style attributes");
+                }
+                style = &attribute;
+            }
+            if (style != nullptr) {
+                try {
+                    ApplyStyleAttribute(context, *widget,
+                                        *context.ui_tree.Get(node), *style);
+                } catch (const std::runtime_error&) {
+                    if (auto* ledger = vm.Ledger(); ledger != nullptr) {
+                        ledger->RecordUnimplemented(
+                            "runtime.ui.inflate.attribute.style", 0);
+                    }
+                    throw;
+                }
+            }
+            for (const auto& attribute : element.attributes) {
+                if (attribute.namespace_uri.empty() &&
+                    attribute.name == "style") {
+                    continue;
+                }
                 try {
                     ApplyAttribute(context, node, attribute, drawable_id);
                 } catch (const std::runtime_error&) {

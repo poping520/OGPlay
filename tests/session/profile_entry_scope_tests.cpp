@@ -187,12 +187,16 @@ TEST_CASE("android intrinsic catalog is unique and directly bound") {
     });
   };
   CHECK(method_count("Landroid/app/Application;") == 2);
-  CHECK(method_count("Landroid/app/Activity;") == 32);
+  CHECK(method_count("Landroid/app/Activity;") == 33);
   CHECK(has_method("Landroid/app/Activity;", "hasWindowFocus", "()Z"));
   CHECK(has_method("Landroid/app/Activity;", "onWindowFocusChanged", "(Z)V"));
   CHECK(method_count("Landroid/app/Service;") == 13);
-  CHECK(method_count("Landroid/content/Context;") == 26);
-  CHECK(method_count("Landroid/content/ContextWrapper;") == 27);
+  CHECK(method_count("Landroid/content/Context;") == 27);
+  CHECK(method_count("Landroid/content/ContextWrapper;") == 28);
+  CHECK(has_method("Landroid/content/Context;", "checkPermission",
+                   "(Ljava/lang/String;II)I"));
+  CHECK(has_method("Landroid/content/ContextWrapper;", "checkPermission",
+                   "(Ljava/lang/String;II)I"));
   CHECK(has_method("Landroid/content/Context;", "getMainLooper",
                    "()Landroid/os/Looper;"));
   CHECK(has_method("Landroid/content/ContextWrapper;", "getMainLooper",
@@ -467,6 +471,52 @@ TEST_CASE("Context package manager has one process identity") {
   CHECK(from_context.value.ref == from_activity.value.ref);
   CHECK(vm.linker.Class(vm.model.ObjectClass(from_activity.value.ref))
             .descriptor == "Landroid/content/pm/PackageManager;");
+}
+
+TEST_CASE("Context permission checks use the explicit guest process grant set") {
+  for (const auto backend : {InterpreterBackend::switch_dispatch,
+                             InterpreterBackend::threaded}) {
+    InterpreterConfig config;
+    config.backend = backend;
+    AndroidVm vm(config);
+    vm.context->application_uid = 10000U;
+    vm.context->granted_permissions.insert("android.permission.GET_ACCOUNTS");
+    const auto base =
+        vm.interpreter.NewIntrinsicInstance("Landroid/content/Context;");
+    const auto activity =
+        vm.interpreter.NewIntrinsicInstance("Landroid/app/Activity;");
+    vm.AttachBase(activity, base);
+    const auto granted =
+        vm.interpreter.NewStringUtf8("android.permission.GET_ACCOUNTS");
+    const auto denied =
+        vm.interpreter.NewStringUtf8("android.permission.CAMERA");
+    const auto check = [&](const VmObjectRef receiver,
+                           const VmObjectRef permission, const std::int32_t pid,
+                           const std::int32_t uid) {
+      return vm.interpreter.Call(
+          vm.Virtual("Landroid/content/Context;", "checkPermission",
+                     "(Ljava/lang/String;II)I"),
+          std::vector{VmValue::Ref(receiver), VmValue::Ref(permission),
+                      VmValue::Int(pid), VmValue::Int(uid)});
+    };
+
+    auto outcome = check(base, granted, 1, 10000);
+    REQUIRE_FALSE(outcome.exception.IsValid());
+    CHECK(outcome.value.AsInt() == 0);
+    outcome = check(activity, granted, 1, 10000);
+    REQUIRE_FALSE(outcome.exception.IsValid());
+    CHECK(outcome.value.AsInt() == 0);
+    CHECK(check(base, denied, 1, 10000).value.AsInt() == -1);
+    CHECK(check(base, granted, 2, 10000).value.AsInt() == -1);
+    CHECK(check(base, granted, 1, 10001).value.AsInt() == -1);
+
+    outcome = check(base, VmObjectRef{}, 1, 10000);
+    REQUIRE(outcome.exception.IsValid());
+    CHECK(vm.linker.Class(outcome.exception_class).descriptor ==
+          "Ljava/lang/IllegalArgumentException;");
+    vm.context->granted_permissions.clear();
+    CHECK(check(base, granted, 1, 10000).value.AsInt() == -1);
+  }
 }
 
 TEST_CASE("PackageManager P0 exposes only explicit current-package facts") {

@@ -45,6 +45,10 @@ Java 异常文本，再进入统一结构化 logger；不吞异常、不写裸 s
   flags、跨包查询失败。DVM-142：PackageItemInfo/ApplicationInfo、Component/Activity/Service/
   Provider/ResolveInfo、PathPermission/PatternMatcher/Printer 及内部类归 BootDex，删除前两者 intrinsic；
   integration 只写受检字段。
+- `Context.checkPermission(String,int,int)` 只回答 guest self PID/UID，并与 PackageManager
+  共用 Manifest granted-permission 集合；外部身份和未授予权限返回 denied，null permission
+  抛 IllegalArgumentException。ContextWrapper 按 API 19 委托 base；不建立 UID 数据库或
+  运行时授权系统。
 - `resolveService` 只接受非空 action、无 component/data/type/categories、flags=0，并查询当前 APK
   inventory；确定无候选返回 null，未知条件/潜在匹配记账抛 UOE。仍不物化正匹配 ResolveInfo、
   本地服务生命周期或引入外部目录/跨进程 Binder。DVM-143 保证定向反射不解析无关签名。
@@ -85,7 +89,8 @@ Java 异常文本，再进入统一结构化 logger；不吞异常、不写裸 s
   文本事务；数字/长度过滤、变更区间、watcher 快照、同步回调和失效只有这一份权威实现。
 - XML inflation 在应用显式属性前投影 API 19 TextView/Button/EditText 默认文本大小、最小
   尺寸、gravity/enabled/clickable，并解析 framework Large/Medium/Small textAppearance；显式
-  textSize 和属性继续覆盖默认值，UiTree 保持唯一权威状态。
+  `style` 先于 XML 显式属性应用，TextAppearance 基础样式与 ProgressBar horizontal theme attr
+  属于已登记投影，未知 style 明确失败；textSize 和属性继续覆盖默认值，UiTree 保持唯一权威状态。
 - Activity/DecorView/attached View 的焦点读取 lifecycle 唯一事实。无 Sensor/SystemUI/WMS 时不
   伪造方向、焦点或 system-bar 回调。
 - SurfaceView holder 按 attach 与 host surface 形成 generation，严格 created→changed→destroyed；

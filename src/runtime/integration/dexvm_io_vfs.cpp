@@ -158,7 +158,8 @@ void DexVmIoVfsAdapter::WriteFile(const std::string_view path,
   } catch (const VfsError &error) {
     CloseIfOpen(file_system_, descriptor);
     throw dexvm::IoRuntimeError("cannot write " + std::string(path) + ": " +
-                                error.what());
+                                    error.what(),
+                                error.ErrorNumber());
   }
 }
 
@@ -170,7 +171,7 @@ std::int32_t DexVmIoVfsAdapter::OpenHandle(
         path, {.read = read, .write = write, .create = create,
                .truncate = truncate});
   } catch (const VfsError& error) {
-    throw dexvm::IoRuntimeError(error.what());
+    throw dexvm::IoRuntimeError(error.what(), error.ErrorNumber());
   }
 }
 
@@ -180,7 +181,7 @@ dexvm::IoFileInfo DexVmIoVfsAdapter::HandleInfo(
     const auto info = file_system_.DescriptorInfo(handle);
     return {info.size, info.is_directory, info.writable};
   } catch (const VfsError& error) {
-    throw dexvm::IoRuntimeError(error.what());
+    throw dexvm::IoRuntimeError(error.what(), error.ErrorNumber());
   }
 }
 
@@ -189,7 +190,7 @@ std::size_t DexVmIoVfsAdapter::ReadHandle(
   try {
     return file_system_.Read(handle, destination);
   } catch (const VfsError& error) {
-    throw dexvm::IoRuntimeError(error.what());
+    throw dexvm::IoRuntimeError(error.what(), error.ErrorNumber());
   }
 }
 
@@ -198,7 +199,7 @@ std::size_t DexVmIoVfsAdapter::WriteHandle(
   try {
     return file_system_.Write(handle, source);
   } catch (const VfsError& error) {
-    throw dexvm::IoRuntimeError(error.what());
+    throw dexvm::IoRuntimeError(error.what(), error.ErrorNumber());
   }
 }
 
@@ -213,7 +214,7 @@ std::uint64_t DexVmIoVfsAdapter::SeekHandle(
   try {
     return file_system_.Seek(handle, offset, translated);
   } catch (const VfsError& error) {
-    throw dexvm::IoRuntimeError(error.what());
+    throw dexvm::IoRuntimeError(error.what(), error.ErrorNumber());
   }
 }
 
@@ -221,7 +222,16 @@ void DexVmIoVfsAdapter::FlushHandle(const std::int32_t handle) {
   try {
     file_system_.Flush(handle);
   } catch (const VfsError& error) {
-    throw dexvm::IoRuntimeError(error.what());
+    throw dexvm::IoRuntimeError(error.what(), error.ErrorNumber());
+  }
+}
+
+void DexVmIoVfsAdapter::TruncateHandle(const std::int32_t handle,
+                                       const std::uint64_t size) {
+  try {
+    file_system_.Truncate(handle, size);
+  } catch (const VfsError& error) {
+    throw dexvm::IoRuntimeError(error.what(), error.ErrorNumber());
   }
 }
 
@@ -229,7 +239,7 @@ void DexVmIoVfsAdapter::CloseHandle(const std::int32_t handle) {
   try {
     file_system_.Close(handle);
   } catch (const VfsError& error) {
-    throw dexvm::IoRuntimeError(error.what());
+    throw dexvm::IoRuntimeError(error.what(), error.ErrorNumber());
   }
 }
 

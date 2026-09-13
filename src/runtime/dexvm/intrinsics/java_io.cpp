@@ -846,6 +846,8 @@ namespace ogplay::runtime::dexvm::intrinsics {
                 "fd", "Ljava/io/FileDescriptor;", kAccPrivate);
             const auto should_close =
                     builder.BoundInstanceField("shouldClose", "Z", kAccPrivate | kAccFinal);
+            const auto channel = builder.BoundInstanceField(
+                "channel", "Ljava/nio/channels/FileChannel;", kAccPrivate);
             const auto open_path = [fd, should_close](const bool file_argument) {
                 return [fd, should_close, file_argument](IntrinsicContext& call) {
                     IntrinsicCall typed(call);
@@ -937,9 +939,13 @@ namespace ogplay::runtime::dexvm::intrinsics {
                                     return VmValue::Ref(descriptor);
                                 });
             builder.FinalMethod("getChannel", "()Ljava/nio/channels/FileChannel;",
-                                [fd](IntrinsicContext& call) {
+                                [fd, should_close, channel](IntrinsicContext& call) {
+                                    IntrinsicCall typed(call);
+                                    const auto existing = typed.GetRef(channel);
+                                    if (existing.IsValid())
+                                        return VmValue::Ref(existing);
                                     const auto descriptor =
-                                        IntrinsicCall(call).GetRef(fd);
+                                        typed.GetRef(fd);
                                     const auto* state =
                                         call.vm.IO().FindDescriptor(descriptor);
                                     if (state == nullptr || state->closed ||
@@ -948,12 +954,13 @@ namespace ogplay::runtime::dexvm::intrinsics {
                                         throw VmJavaThrow{"Ljava/io/IOException;",
                                                           "stream is closed"};
                                     }
-                                    const auto channel = call.vm.NewIntrinsicInstance(
+                                    const auto new_channel = call.vm.NewIntrinsicInstance(
                                         "Ljava/nio/channels/FileChannel;");
-                                    call.vm.IO().BindFileStream(channel,
+                                    call.vm.IO().BindFileStream(new_channel,
                                                                 state->file,
-                                                                true);
-                                    return VmValue::Ref(channel);
+                                                                typed.GetInt(should_close) != 0);
+                                    typed.SetRef(channel, new_channel);
+                                    return VmValue::Ref(new_channel);
                                 });
             // 读取一个字节，流结束时返回 -1。
             builder.OverrideMethod("read", "()I", [](IntrinsicContext& call) {
@@ -1088,6 +1095,8 @@ namespace ogplay::runtime::dexvm::intrinsics {
                 "fd", "Ljava/io/FileDescriptor;", kAccPrivate);
             const auto should_close =
                     builder.BoundInstanceField("shouldClose", "Z", kAccPrivate | kAccFinal);
+            const auto channel = builder.BoundInstanceField(
+                "channel", "Ljava/nio/channels/FileChannel;", kAccPrivate);
 
             const auto open_path = [fd, should_close](const bool file_argument,
                                                       const bool has_append) {
@@ -1210,9 +1219,13 @@ namespace ogplay::runtime::dexvm::intrinsics {
                                     return VmValue::Ref(descriptor);
                                 });
             builder.FinalMethod("getChannel", "()Ljava/nio/channels/FileChannel;",
-                                [fd](IntrinsicContext& call) {
+                                [fd, should_close, channel](IntrinsicContext& call) {
+                                    IntrinsicCall typed(call);
+                                    const auto existing = typed.GetRef(channel);
+                                    if (existing.IsValid())
+                                        return VmValue::Ref(existing);
                                     const auto descriptor =
-                                        IntrinsicCall(call).GetRef(fd);
+                                        typed.GetRef(fd);
                                     const auto* state =
                                         call.vm.IO().FindDescriptor(descriptor);
                                     if (state == nullptr || state->closed ||
@@ -1221,12 +1234,13 @@ namespace ogplay::runtime::dexvm::intrinsics {
                                         throw VmJavaThrow{"Ljava/io/IOException;",
                                                           "stream is closed"};
                                     }
-                                    const auto channel = call.vm.NewIntrinsicInstance(
+                                    const auto new_channel = call.vm.NewIntrinsicInstance(
                                         "Ljava/nio/channels/FileChannel;");
-                                    call.vm.IO().BindFileStream(channel,
+                                    call.vm.IO().BindFileStream(new_channel,
                                                                 state->file,
-                                                                true);
-                                    return VmValue::Ref(channel);
+                                                                typed.GetInt(should_close) != 0);
+                                    typed.SetRef(channel, new_channel);
+                                    return VmValue::Ref(new_channel);
                                 });
             // 刷新数据并按所有权关闭底层逻辑文件描述符。
             builder.OverrideMethod("close", "()V",
@@ -1246,6 +1260,181 @@ namespace ogplay::runtime::dexvm::intrinsics {
                                        }
                                        return VmValue::Void();
                                    });
+            return std::move(builder).Build();
+        }
+
+        IntrinsicClassDecl DeclareRandomAccessFile() {
+            auto builder = IntrinsicClassBuilder::Class(
+                "Ljava/io/RandomAccessFile;", "Ljava/lang/Object;",
+                {"Ljava/io/DataInput;", "Ljava/io/DataOutput;", "Ljava/io/Closeable;"});
+            const auto fd = builder.BoundInstanceField(
+                "fd", "Ljava/io/FileDescriptor;", kAccPrivate);
+            const auto channel = builder.BoundInstanceField(
+                "channel", "Ljava/nio/channels/FileChannel;", kAccPrivate);
+            const auto open = [fd](const bool file_argument) {
+                return [fd, file_argument](IntrinsicContext& call) {
+                    IntrinsicCall typed(call);
+                    const auto source = typed.NonNullRef(0, file_argument ? "file" : "path");
+                    auto path = file_argument ? FilePath(call, source)
+                                              : call.vm.StringUtf8(source);
+                    if (!IsAbsoluteFilePath(path)) {
+                        const auto cwd = call.vm.IO().WorkingDirectory();
+                        if (!cwd) throw VmJavaThrow{
+                            "Ljava/lang/UnsupportedOperationException;",
+                            "guest working directory is unavailable"};
+                        path = ChildFilePath(*cwd, path);
+                    }
+                    const auto mode = call.vm.StringUtf8(typed.NonNullRef(1, "mode"));
+                    const bool writable = mode == "rw" || mode == "rws" || mode == "rwd";
+                    if (mode != "r" && !writable)
+                        throw VmJavaThrow{"Ljava/lang/IllegalArgumentException;",
+                                          "mode must be r, rw, rws, or rwd"};
+                    try {
+                        auto file = call.vm.IO().OpenFile(
+                            path, true, writable, false, false);
+                        const auto descriptor = call.vm.NewIntrinsicInstance(
+                            "Ljava/io/FileDescriptor;");
+                        call.vm.IO().SetDescriptor(descriptor, {
+                            IoRuntime::DescriptorKind::vfs_path, path, 0, false,
+                            {}, {}, file});
+                        call.vm.IO().BindFileStream(call.receiver,
+                                                    std::move(file), true);
+                        typed.SetRef(fd, descriptor);
+                        return VmValue::Void();
+                    } catch (const IoRuntimeError& error) {
+                        throw VmJavaThrow{"Ljava/io/FileNotFoundException;",
+                                          error.what()};
+                    }
+                };
+            };
+            builder.Constructor("(Ljava/io/File;Ljava/lang/String;)V", open(true));
+            builder.Constructor("(Ljava/lang/String;Ljava/lang/String;)V", open(false));
+            builder.FinalMethod("getFD", "()Ljava/io/FileDescriptor;",
+                [fd](IntrinsicContext& call) {
+                    return VmValue::Ref(IntrinsicCall(call).GetRef(fd));
+                });
+            builder.FinalMethod("getFilePointer", "()J", [](IntrinsicContext& call) {
+                try { return VmValue::Long(static_cast<std::int64_t>(
+                    call.vm.IO().FileOffset(call.receiver))); }
+                catch (const IoRuntimeError& error) { IoFailure(error); }
+            });
+            builder.FinalMethod("length", "()J", [](IntrinsicContext& call) {
+                try { return VmValue::Long(static_cast<std::int64_t>(
+                    call.vm.IO().FileSize(call.receiver))); }
+                catch (const IoRuntimeError& error) { IoFailure(error); }
+            });
+            builder.FinalMethod("seek", "(J)V", [](IntrinsicContext& call) {
+                const auto offset = call.arguments[0].AsLong();
+                if (offset < 0) throw VmJavaThrow{"Ljava/io/IOException;",
+                                                  "offset < 0"};
+                try { call.vm.IO().SetFileOffset(
+                    call.receiver, static_cast<std::uint64_t>(offset)); }
+                catch (const IoRuntimeError& error) { IoFailure(error); }
+                return VmValue::Void();
+            });
+            builder.FinalMethod("setLength", "(J)V", [](IntrinsicContext& call) {
+                const auto size = call.arguments[0].AsLong();
+                if (size < 0) throw VmJavaThrow{"Ljava/lang/IllegalArgumentException;",
+                                                "newLength < 0"};
+                try { call.vm.IO().SetFileSize(
+                    call.receiver, static_cast<std::uint64_t>(size)); }
+                catch (const IoRuntimeError& error) { IoFailure(error); }
+                return VmValue::Void();
+            });
+            builder.FinalMethod("skipBytes", "(I)I", [](IntrinsicContext& call) {
+                const auto count = call.arguments[0].AsInt();
+                if (count <= 0) return VmValue::Int(0);
+                try { return VmValue::Int(static_cast<std::int32_t>(
+                    call.vm.IO().SkipFileStream(
+                        call.receiver, static_cast<std::uint64_t>(count)))); }
+                catch (const IoRuntimeError& error) { IoFailure(error); }
+            });
+            builder.FinalMethod("read", "()I", [](IntrinsicContext& call) {
+                try {
+                    std::byte value{};
+                    if (call.vm.IO().ReadFileStream(call.receiver,
+                                                    std::span{&value, 1}) == 0)
+                        return VmValue::Int(-1);
+                    return VmValue::Int(static_cast<std::uint8_t>(value));
+                } catch (const IoRuntimeError& error) { IoFailure(error); }
+            });
+            const auto read_array = [](const bool whole) {
+                return [whole](IntrinsicContext& call) {
+                    const auto array = call.arguments[0].ref;
+                    if (!array.IsValid()) throw VmJavaThrow{
+                        "Ljava/lang/NullPointerException;", "buffer == null"};
+                    const auto offset = whole ? 0 : call.arguments[1].AsInt();
+                    const auto length = whole ? call.vm.Model().ArrayLength(array)
+                                              : call.arguments[2].AsInt();
+                    if (offset < 0 || length < 0 ||
+                        static_cast<std::int64_t>(offset) + length >
+                            call.vm.Model().ArrayLength(array))
+                        throw VmJavaThrow{"Ljava/lang/IndexOutOfBoundsException;",
+                                          "read range exceeds array"};
+                    try {
+                        if (length == 0) return VmValue::Int(0);
+                        std::vector<std::byte> bytes(static_cast<std::size_t>(length));
+                        const auto amount = call.vm.IO().ReadFileStream(call.receiver, bytes);
+                        if (amount == 0) return VmValue::Int(-1);
+                        call.vm.Model().WriteByteRegion(
+                            array, offset, std::span(bytes).first(amount));
+                        return VmValue::Int(static_cast<std::int32_t>(amount));
+                    } catch (const IoRuntimeError& error) { IoFailure(error); }
+                };
+            };
+            builder.FinalMethod("read", "([B)I", read_array(true));
+            builder.FinalMethod("read", "([BII)I", read_array(false));
+            builder.FinalMethod("write", "(I)V", [](IntrinsicContext& call) {
+                const auto value = static_cast<std::byte>(call.arguments[0].AsInt() & 0xff);
+                try { call.vm.IO().WriteFileStream(call.receiver,
+                                                   std::span{&value, 1}); }
+                catch (const IoRuntimeError& error) { IoFailure(error); }
+                return VmValue::Void();
+            });
+            const auto write_array = [](const bool whole) {
+                return [whole](IntrinsicContext& call) {
+                    const auto array = call.arguments[0].ref;
+                    if (!array.IsValid()) throw VmJavaThrow{
+                        "Ljava/lang/NullPointerException;", "buffer == null"};
+                    const auto offset = whole ? 0 : call.arguments[1].AsInt();
+                    const auto length = whole ? call.vm.Model().ArrayLength(array)
+                                              : call.arguments[2].AsInt();
+                    if (offset < 0 || length < 0 ||
+                        static_cast<std::int64_t>(offset) + length >
+                            call.vm.Model().ArrayLength(array))
+                        throw VmJavaThrow{"Ljava/lang/IndexOutOfBoundsException;",
+                                          "write range exceeds array"};
+                    try { call.vm.IO().WriteFileStream(
+                        call.receiver,
+                        call.vm.Model().ReadByteRegion(array, offset, length)); }
+                    catch (const IoRuntimeError& error) { IoFailure(error); }
+                    return VmValue::Void();
+                };
+            };
+            builder.FinalMethod("write", "([B)V", write_array(true));
+            builder.FinalMethod("write", "([BII)V", write_array(false));
+            builder.FinalMethod("getChannel", "()Ljava/nio/channels/FileChannel;",
+                [fd, channel](IntrinsicContext& call) {
+                    IntrinsicCall typed(call);
+                    const auto existing = typed.GetRef(channel);
+                    if (existing.IsValid()) return VmValue::Ref(existing);
+                    const auto result = call.vm.NewIntrinsicInstance(
+                        "Ljava/nio/channels/FileChannel;");
+                    const auto* descriptor = call.vm.IO().FindDescriptor(
+                        typed.GetRef(fd));
+                    if (descriptor == nullptr || descriptor->file == nullptr ||
+                        descriptor->file->closed)
+                        throw VmJavaThrow{"Ljava/io/IOException;", "file is closed"};
+                    call.vm.IO().BindFileStream(result, descriptor->file, true);
+                    typed.SetRef(channel, result);
+                    return VmValue::Ref(result);
+                });
+            builder.FinalMethod("close", "()V", [fd](IntrinsicContext& call) {
+                try { call.vm.IO().CloseFileStream(call.receiver); }
+                catch (const IoRuntimeError& error) { IoFailure(error); }
+                call.vm.IO().CloseDescriptor(IntrinsicCall(call).GetRef(fd));
+                return VmValue::Void();
+            });
             return std::move(builder).Build();
         }
 
@@ -1319,6 +1508,7 @@ namespace ogplay::runtime::dexvm::intrinsics {
         catalog.push_back(DeclareFileDescriptor());
         catalog.push_back(DeclareFileInputStream());
         catalog.push_back(DeclareFileOutputStream());
+        catalog.push_back(DeclareRandomAccessFile());
         catalog.push_back(DeclareFileReader());
         catalog.push_back(DeclareFileWriter());
     }

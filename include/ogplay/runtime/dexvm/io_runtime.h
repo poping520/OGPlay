@@ -18,7 +18,15 @@ namespace ogplay::runtime::dexvm {
 
 class IoRuntimeError : public std::runtime_error {
 public:
-  using std::runtime_error::runtime_error;
+  explicit IoRuntimeError(std::string message,
+                          std::int32_t error_number = 5)
+      : std::runtime_error(std::move(message)), error_number_(error_number) {}
+  [[nodiscard]] std::int32_t ErrorNumber() const noexcept {
+    return error_number_;
+  }
+
+private:
+  std::int32_t error_number_{};
 };
 
 struct IoFileInfo final {
@@ -57,6 +65,7 @@ public:
   [[nodiscard]] virtual std::uint64_t SeekHandle(
       std::int32_t handle, std::int64_t offset, SeekWhence whence) = 0;
   virtual void FlushHandle(std::int32_t handle) = 0;
+  virtual void TruncateHandle(std::int32_t handle, std::uint64_t size) = 0;
   virtual void CloseHandle(std::int32_t handle) = 0;
 };
 
@@ -145,6 +154,7 @@ public:
   [[nodiscard]] std::uint64_t FileOffset(VmObjectRef owner) const;
   [[nodiscard]] std::uint64_t FileSize(VmObjectRef owner) const;
   void SetFileOffset(VmObjectRef owner, std::uint64_t offset);
+  void SetFileSize(VmObjectRef owner, std::uint64_t size);
   [[nodiscard]] std::uint64_t TransferFile(VmObjectRef source,
                                            std::uint64_t position,
                                            std::uint64_t count,

@@ -74,6 +74,8 @@
   同一 FD 的流共享 VFS offset，append 每次写前定位末尾，借用/拥有关闭语义一致，不保存宿主句柄。
   FileChannel 当前受检的 size/position/transferTo/close 复用同一状态；transferTo 以有界缓冲
   复制并恢复源 offset，不用虚假 MappedByteBuffer 冒充文件 mmap。
+  RandomAccessFile 的路径/模式、基础字节读写、seek/getFilePointer、length/setLength、FD/channel
+  也复用该状态；VFS errno 通过 IoRuntimeError 保真，Java 边界再翻译为对应 IOException。
   File 只消费注入 VFS/工作目录；mkdir/mkdirs 分开，filter 虚派并传播异常，缺 IoFileSystem
   不与 ENOENT 混淆；setWritable 仅在既有可写对象上报告成功，不伪造权限改变。
 - InputStreamReader 用 Reader.lock 保护固定 ICU 六标准编码的增量转换，close/GC/teardown

@@ -38,6 +38,7 @@ public:
       std::int32_t handle, std::int64_t offset,
       SeekWhence whence) override;
   void FlushHandle(std::int32_t handle) override;
+  void TruncateHandle(std::int32_t handle, std::uint64_t size) override;
   void CloseHandle(std::int32_t handle) override;
 
 private:

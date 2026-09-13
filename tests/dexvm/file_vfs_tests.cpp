@@ -994,6 +994,10 @@ TEST_CASE("FileChannel transferTo copies a bounded range and preserves source po
         input, "getChannel", "()Ljava/nio/channels/FileChannel;").ref;
     const auto target_channel = vm.CallOn(
         output, "getChannel", "()Ljava/nio/channels/FileChannel;").ref;
+    CHECK(vm.CallOn(input, "getChannel",
+                    "()Ljava/nio/channels/FileChannel;").ref == source_channel);
+    CHECK(vm.CallOn(output, "getChannel",
+                    "()Ljava/nio/channels/FileChannel;").ref == target_channel);
 
     CHECK(vm.CallOn(source_channel, "size", "()J").AsLong() == 6);
     CHECK(vm.CallOn(source_channel, "position", "()J").AsLong() == 0);
@@ -1008,7 +1012,58 @@ TEST_CASE("FileChannel transferTo copies a bounded range and preserves source po
 
     static_cast<void>(vm.CallOn(source_channel, "close", "()V"));
     CHECK_FALSE(vm.BoolOn(source_channel, "isOpen"));
+    CHECK_FALSE(vm.BoolOn(vm.CallOn(
+        input, "getFD", "()Ljava/io/FileDescriptor;").ref, "valid"));
     static_cast<void>(vm.CallOn(target_channel, "close", "()V"));
+  }
+}
+
+TEST_CASE("DexVM IO adapter preserves VFS errno on descriptor failures") {
+    VirtualFileSystem vfs;
+    DexVmIoVfsAdapter adapter(vfs);
+    try {
+        static_cast<void>(adapter.OpenHandle(
+            "/missing", true, false, false, false));
+        FAIL("missing VFS file unexpectedly opened");
+    } catch (const IoRuntimeError& error) {
+        CHECK(error.ErrorNumber() == 2);
+    }
+    try {
+        std::byte value{};
+        static_cast<void>(adapter.ReadHandle(12345, std::span{&value, 1}));
+        FAIL("invalid VFS descriptor unexpectedly read");
+    } catch (const IoRuntimeError& error) {
+        CHECK(error.ErrorNumber() == 9);
+    }
+}
+
+TEST_CASE("RandomAccessFile shares VFS position and supports resize") {
+  for (const auto backend : {InterpreterBackend::switch_dispatch,
+                             InterpreterBackend::threaded}) {
+    InterpreterConfig config;
+    config.backend = backend;
+    FileVm vm(nullptr, true, config);
+    vm.vfs.CreateDirectory("/sdcard");
+    vm.JavaWrite("/sdcard/random.dat", "abcdef");
+    const auto file = vm.interpreter.NewIntrinsicInstance(
+        "Ljava/io/RandomAccessFile;");
+    static_cast<void>(vm.CallOn(
+        file, "<init>", "(Ljava/lang/String;Ljava/lang/String;)V",
+        {VmValue::Ref(vm.interpreter.NewStringUtf8("/sdcard/random.dat")),
+         VmValue::Ref(vm.interpreter.NewStringUtf8("rw"))}));
+    CHECK(vm.CallOn(file, "length", "()J").AsLong() == 6);
+    static_cast<void>(vm.CallOn(file, "seek", "(J)V", {VmValue::Long(2)}));
+    CHECK(vm.CallOn(file, "read", "()I").AsInt() == 'c');
+    static_cast<void>(vm.CallOn(file, "write", "(I)V", {VmValue::Int('X')}));
+    CHECK(vm.CallOn(file, "getFilePointer", "()J").AsLong() == 4);
+    static_cast<void>(vm.CallOn(file, "setLength", "(J)V", {VmValue::Long(4)}));
+    CHECK(vm.CallOn(file, "length", "()J").AsLong() == 4);
+    CHECK(vm.NativeRead("/sdcard/random.dat") == "abcX");
+    const auto channel = vm.CallOn(
+        file, "getChannel", "()Ljava/nio/channels/FileChannel;").ref;
+    CHECK(vm.CallOn(channel, "position", "()J").AsLong() == 4);
+    static_cast<void>(vm.CallOn(file, "close", "()V"));
+    CHECK_FALSE(vm.BoolOn(channel, "isOpen"));
   }
 }
 

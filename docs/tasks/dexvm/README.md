@@ -23,6 +23,7 @@ Asphalt 5（pilot title）删除 profile 全部 `native_call` 与 `[[java.class]
 
 | WU | 一句话目标 | 状态 |
 | --- | --- | --- |
+| [DVM-154](DVM-154.md) | 文件 IO 家族与 FileChannel 迁入 BootDex | 规划完成，待实施 |
 | [DVM-151](DVM-151.md) | 三个 builder 的 Java 行为与状态迁入 BootDex | 完成 |
 | [DVM-1](DVM-1.md) | AOSP Dalvik 本地参考资料说明 | 完成 |
 | [DVM-2](DVM-2.md) | dex_dependency_survey 题库静态测量工具 | 完成 |

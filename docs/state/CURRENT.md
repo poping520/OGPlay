@@ -9,7 +9,9 @@
   GC 后依 live set、75% 利用率与 2..8 MiB 空闲区间调整目标；intrinsic 在安全点之间可在
   growth limit 内增长。Profile 只接受 `[runtime.dexvm.heap]`，旧字段明确拒绝。
 - 无 Profile 的真实 PvZ 已越过两份约 52 MiB 数组形成的约 104 MiB 峰值，不再触发固定预算
-  OOM；后续独立首错为 `System.lineSeparator()` 未解析。
+  OOM。API 19 `System.lineSeparator` 现从初始 property 冻结，后续 property 修改不改变返回值；
+  真实 PvZ 已越过 `Properties.store`、切换到 PvZActivity、加载三份 native 库并进入主循环。
+  人工停止时暴露既有独立 teardown 缺口：`JNI monitor thread is not a DexVM thread`。
 - API 19 `Context.getObbDir(s)` 已按 `/sdcard/Android/obb/<package>` 接入 VFS overlay，
   ContextWrapper 仅委托 base；双后端覆盖路径、目录创建、稳定 File 身份及 unavailable null。
 - [DVM-154](../tasks/dexvm/DVM-154.md) 已把 File/FIS/FOS/FileReader/FileWriter/RAF、channel、

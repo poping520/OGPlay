@@ -90,7 +90,9 @@ private:
                        const AndroidBoundaryGles1LegacyState& legacy,
                        memory::AddressSpace& address_space,
                        std::span<const std::uint32_t> texture_units,
-                       std::uint32_t maximum_index, std::uint64_t thread_id);
+                       std::uint32_t maximum_index, std::uint64_t thread_id,
+                       std::span<const std::uint32_t> flat_vertices = {},
+                       std::span<const std::uint32_t> flat_provoking = {});
     void ApplyUniforms(gles::AngleFrame& frame, const Program& program,
                        const AndroidBoundaryGles1State& core,
                        const AndroidBoundaryGles1LegacyState& legacy,
@@ -108,6 +110,8 @@ private:
         client_array_staging_;
     std::vector<std::byte> element_staging_;
     std::vector<std::uint16_t> draw_array_indices_;
+    std::vector<std::uint32_t> flat_vertices_;
+    std::vector<std::uint32_t> flat_provoking_;
     std::uint32_t current_palette_matrix_{};
     bool allow_single_stage_texcoord_fallback_{true};
 };

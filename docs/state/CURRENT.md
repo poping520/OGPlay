@@ -4,15 +4,16 @@
 
 ## 最近进展
 
-- [BND-33](../tasks/boundary/BND-33.md) 已完成报告 WU-1：Native EGL registry 为每个
+- [BND-33](../tasks/boundary/BND-33.md) 已完成报告 WU-1、WU-2：Native EGL registry 为每个
   Context/Surface 组合持有真实 ANGLE backing，闭合 share group、draw/read、Context 状态、
   GL/EGL error、延迟销毁、双宿主线程 current/接管及 Terminate/重初始化。稳定 proc thunk
   在调用时按当前 guest thread 的 ES1/ES2 Context 转发，查询无需 current。修正 Native EGL
   config 的 `EGL_NONE`/零值区分，补齐已支持 surface 的 core 查询属性并将 swap interval
   限定为已宣告的 0..1；GLES1 normal matrix 改为 modelview 上三阶逆转置，
-  `GL_NORMALIZE`/`GL_RESCALE_NORMAL` 已进入真实 shader。Windows 定向 `*EGL*` 26/26、
-  `*GLES1*` 20/20、`*GLES2*` 13/13 通过。flat shading、Java EGL 复用、GLES3/扩展
-  属后续 WU，尚未完成。
+  `GL_NORMALIZE`/`GL_RESCALE_NORMAL` 已进入真实 shader；flat triangle/strip/fan 按最后顶点
+  展开 provoking color/normal，覆盖 DrawArrays、client/VBO DrawElements。像素、独立数学参考
+  与 Context 状态恢复通过，Windows `ctest -R "GLES1|GLES2|EGL"` 57/57 通过。Java EGL
+  复用、GLES3/扩展属后续 WU，尚未完成。
 - [ADR-0061](../adr/media.md#adr-0061) 已接受每 Context/Surface registry；ANGLE lifecycle
   已支持显式 ES client version、native share context 与 registry identity。真实 ANGLE 测试
   证明共享 texture 可跨 Context 查询，4×3 红色与 2×2 绿色 pbuffer 内容互不污染；Native
@@ -20,7 +21,7 @@
 - 已形成 [EGL/GLES 修复交接报告](../design/boundary/04-egl-gles-repair-report.md)，
   按用户要求将执行计划合并为默认 4 个 WU：Native EGL 整体修复、GLES1 绘制、
   Java EGL、GLES3/Java GLES30/选定扩展；设计与测试并入所属 WU，保留全部问题及验收条件。
-  本次仅文档，尚未实施修复。
+  WU-1、WU-2 已实施，WU-3、WU-4 待执行。
 - [BND-32](../tasks/boundary/BND-32.md) 已补齐 9 个缺失的 EGL 1.4 core 导出，
   `libEGL.so` 达到 34/34 core 名称；wait 路径同步真实 ANGLE context，pixmap、OpenVG
   client buffer 与 texture-capable pbuffer 仍以规范 EGL error 明确拒绝。
@@ -87,11 +88,9 @@
 ## 验证状态
 
 - GLES 完整性静态审计：本地 API19 AOSP 头文件与项目目录比对为 GLES1 145/145、
-  GLES2 142/142、EGL core 34/34；GLES3 新增 104 项未发布。多 EGLContext/Surface
-  仍复用唯一 ANGLE frame 与 GL 状态，入口覆盖不代表完整 Android GLES 语义。
-  本轮直接复核代码另确认：proc-address 在查询时固定 GLES family，未实现 AOSP 的调用时
-  current-context 转发；GLES1 shade model 仅保存/查询，draw 未消费。normal matrix 与
-  normalize/rescale 已由 BND-33 修正并通过定向测试，尚缺独立数学参考和像素回归。
+  GLES2 142/142、EGL core 34/34；GLES3 新增 104 项未发布。BND-33 WU-1 已改为每
+  Context/Surface ANGLE backing 与调用时 current-context proc 转发；WU-2 已让 shade model
+  进入 draw 转换，normal matrix、normalize/rescale、独立数学参考和真实像素回归均通过。
 - 可增长堆的增长、目标利用率、硬上限 OOM 和新 Profile schema 已完成双后端定向验证。
 - Title Profile 三个正式文件通过 schema 与独立校验器。
 - `architecture.capabilities_monotonic`、`architecture.dexvm_intrinsic_layout` 已通过；其余相关

@@ -5,6 +5,7 @@
 #include <atomic>
 #include <bit>
 #include <chrono>
+#include <cmath>
 #include <cstdint>
 #include <exception>
 #include <limits>
@@ -3609,6 +3610,101 @@ TEST_CASE("GLES1 lighting preserves diffuse material alpha for blending") {
     fixture.boundary.CloseManagedSurface();
 }
 
+TEST_CASE("GLES1 flat shading uses provoking colors for triangles strip and fan") {
+    if (!ogplay::gles::IsNativeAngleEglAvailable()) return;
+    BoundaryFixture fixture;
+    fixture.boundary.OpenManagedSurface();
+    CHECK(fixture.Call("libGLESv1_CM.so", "glViewport",
+                       {0U, 0U, 4U, 3U}) == 0U);
+    const auto vertices = fixture.output.Add(0x600U);
+    const auto colors = fixture.output.Add(0x700U);
+    const auto indices = fixture.output.Add(0x780U);
+    CHECK(fixture.Call("libGLESv1_CM.so", "glVertexPointer",
+                       {3U, 0x1406U, 0U, vertices.Value()}) == 0U);
+    CHECK(fixture.Call("libGLESv1_CM.so", "glColorPointer",
+                       {4U, 0x1401U, 0U, colors.Value()}) == 0U);
+    CHECK(fixture.Call("libGLESv1_CM.so", "glEnableClientState",
+                       {ogplay::runtime::detail::kGles1VertexArray}) == 0U);
+    CHECK(fixture.Call("libGLESv1_CM.so", "glEnableClientState",
+                       {ogplay::runtime::detail::kGles1ColorArray}) == 0U);
+    constexpr std::array<std::array<std::byte, 4>, 4> vertex_colors{
+        std::array{std::byte{0xff}, std::byte{}, std::byte{}, std::byte{0xff}},
+        std::array{std::byte{}, std::byte{0xff}, std::byte{}, std::byte{0xff}},
+        std::array{std::byte{}, std::byte{}, std::byte{0xff}, std::byte{0xff}},
+        std::array{std::byte{0xff}, std::byte{0xff}, std::byte{}, std::byte{0xff}}};
+    for (std::size_t index = 0; index < vertex_colors.size(); ++index) {
+        fixture.memory.Write(colors.Add(index * 4U), vertex_colors[index], 1U);
+        fixture.memory.Write(indices.Add(index),
+                             std::array{static_cast<std::byte>(index)}, 1U);
+    }
+    const auto write_vertices = [&](const std::span<const float> values) {
+        for (std::size_t index = 0; index < values.size(); ++index) {
+            fixture.bus.Write32(vertices.Add(index * 4U),
+                                std::bit_cast<std::uint32_t>(values[index]), 1U);
+        }
+    };
+    const auto render = [&](const std::uint32_t mode,
+                            const std::uint32_t count,
+                            const bool elements,
+                            const std::uint32_t shade) {
+        CHECK(fixture.Call("libGLESv1_CM.so", "glShadeModel", {shade}) == 0U);
+        CHECK(fixture.Call("libGLESv1_CM.so", "glClearColor",
+                           {0U, 0U, 0U,
+                            std::bit_cast<std::uint32_t>(1.0F)}) == 0U);
+        CHECK(fixture.Call("libGLESv1_CM.so", "glClear", {0x00004000U}) == 0U);
+        if (elements) {
+            CHECK(fixture.Call("libGLESv1_CM.so", "glDrawElements",
+                               {mode, count, 0x1401U, indices.Value()}) == 0U);
+        } else {
+            CHECK(fixture.Call("libGLESv1_CM.so", "glDrawArrays",
+                               {mode, 0U, count}) == 0U);
+        }
+        fixture.boundary.PresentManagedSurface();
+        const auto frame = fixture.boundary.TakeLatestFrame();
+        REQUIRE(frame.has_value());
+        return frame->rgba8;
+    };
+    const auto verify_difference = [&](const std::vector<std::uint8_t>& smooth,
+                                       const std::vector<std::uint8_t>& flat) {
+        REQUIRE(smooth.size() == flat.size());
+        std::size_t different{};
+        for (std::size_t index = 0; index < smooth.size(); index += 4U) {
+            if (smooth[index] != flat[index] ||
+                smooth[index + 1U] != flat[index + 1U] ||
+                smooth[index + 2U] != flat[index + 2U]) {
+                ++different;
+            }
+        }
+        CHECK(different >= 2U);
+    };
+
+    constexpr std::array triangle{
+        -1.0F, -1.0F, 0.0F, 1.0F, -1.0F, 0.0F, 0.0F, 1.0F, 0.0F};
+    write_vertices(triangle);
+    const auto triangle_smooth = render(0x0004U, 3U, false, 0x1D01U);
+    const auto triangle_flat = render(0x0004U, 3U, false, 0x1D00U);
+    verify_difference(triangle_smooth, triangle_flat);
+    const auto center = (1U * 4U + 2U) * 4U;
+    CHECK(triangle_flat[center] < 20U);
+    CHECK(triangle_flat[center + 1U] < 20U);
+    CHECK(triangle_flat[center + 2U] > 230U);
+
+    constexpr std::array strip{
+        -1.0F, -1.0F, 0.0F, 1.0F, -1.0F, 0.0F,
+        -1.0F, 1.0F, 0.0F, 1.0F, 1.0F, 0.0F};
+    write_vertices(strip);
+    verify_difference(render(0x0005U, 4U, false, 0x1D01U),
+                      render(0x0005U, 4U, false, 0x1D00U));
+
+    constexpr std::array fan{
+        -1.0F, -1.0F, 0.0F, 1.0F, -1.0F, 0.0F,
+        1.0F, 1.0F, 0.0F, -1.0F, 1.0F, 0.0F};
+    write_vertices(fan);
+    verify_difference(render(0x0006U, 4U, true, 0x1D01U),
+                      render(0x0006U, 4U, true, 0x1D00U));
+    fixture.boundary.CloseManagedSurface();
+}
+
 TEST_CASE("GLES1 normalize changes lit pixels after inverse-transpose normal transform") {
     if (!ogplay::gles::IsNativeAngleEglAvailable()) return;
     BoundaryFixture fixture;
@@ -3685,6 +3781,22 @@ TEST_CASE("GLES1 normalize changes lit pixels after inverse-transpose normal tra
     CHECK(scaled_without_rescale < unnormalized);
     CHECK(scaled_with_rescale > scaled_without_rescale * 3U);
     CHECK(scaled_with_rescale == doctest::Approx(unnormalized).epsilon(0.12));
+    CHECK(fixture.Call("libGLESv1_CM.so", "glDisable", {0x803AU}) == 0U);
+    CHECK(fixture.Call("libGLESv1_CM.so", "glEnable", {0x0BA1U}) == 0U);
+    CHECK(fixture.Call("libGLESv1_CM.so", "glLoadIdentity") == 0U);
+    CHECK(fixture.Call(
+              "libGLESv1_CM.so", "glScalef",
+              {std::bit_cast<std::uint32_t>(2.0F),
+               std::bit_cast<std::uint32_t>(1.0F),
+               std::bit_cast<std::uint32_t>(0.5F)}) == 0U);
+    constexpr float inverse_sqrt_two = 0.70710678118F;
+    CHECK(fixture.Call(
+              "libGLESv1_CM.so", "glNormal3f",
+              {std::bit_cast<std::uint32_t>(inverse_sqrt_two), 0U,
+               std::bit_cast<std::uint32_t>(inverse_sqrt_two)}) == 0U);
+    const auto non_uniform = render_red();
+    const auto reference_z = 2.0F / std::sqrt(0.25F + 4.0F);
+    CHECK(non_uniform == doctest::Approx(reference_z * 255.0F).epsilon(0.04));
     fixture.boundary.CloseManagedSurface();
 }
 
@@ -4106,11 +4218,17 @@ TEST_CASE("Android EGL restores GLES1 matrices with the current context") {
     CHECK(fixture.Call(
               "libGLESv1_CM.so", "glTranslatef",
               {std::bit_cast<std::uint32_t>(1.0F), 0U, 0U}) == 0U);
+    CHECK(fixture.Call("libGLESv1_CM.so", "glShadeModel", {0x1D00U}) == 0U);
+    CHECK(fixture.Call("libGLESv1_CM.so", "glEnable", {0x0BA1U}) == 0U);
     CHECK(translation_x() == doctest::Approx(1.0F));
 
     REQUIRE(fixture.Call("libEGL.so", "eglMakeCurrent",
                          {1U, surface, surface, context_b}) == 1U);
     CHECK(translation_x() == doctest::Approx(0.0F));
+    CHECK(fixture.Call("libGLESv1_CM.so", "glGetIntegerv",
+                       {0x0B54U, matrix.Value()}) == 0U);
+    CHECK(fixture.bus.Read32(matrix, 1U) == 0x1D01U);
+    CHECK(fixture.Call("libGLESv1_CM.so", "glIsEnabled", {0x0BA1U}) == 0U);
     CHECK(fixture.Call(
               "libGLESv1_CM.so", "glTranslatef",
               {std::bit_cast<std::uint32_t>(4.0F), 0U, 0U}) == 0U);
@@ -4119,6 +4237,10 @@ TEST_CASE("Android EGL restores GLES1 matrices with the current context") {
     REQUIRE(fixture.Call("libEGL.so", "eglMakeCurrent",
                          {1U, surface, surface, context_a}) == 1U);
     CHECK(translation_x() == doctest::Approx(1.0F));
+    CHECK(fixture.Call("libGLESv1_CM.so", "glGetIntegerv",
+                       {0x0B54U, matrix.Value()}) == 0U);
+    CHECK(fixture.bus.Read32(matrix, 1U) == 0x1D00U);
+    CHECK(fixture.Call("libGLESv1_CM.so", "glIsEnabled", {0x0BA1U}) == 1U);
 }
 
 TEST_CASE("Android boundary teardown retirement seals GLES and EGL swap") {

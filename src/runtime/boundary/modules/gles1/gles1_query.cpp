@@ -724,6 +724,7 @@ void BindAndroidBoundaryGles1Textures(
             false, thread_id);
         const auto names = ReadGuestNames(input);
         require_frame("glDeleteBuffers").DeleteBuffers(names);
+        state.DeleteBufferData(names);
         auto next = state.TransferState();
         const auto bound = next.Snapshot();
         if (std::ranges::find(names, bound.array_buffer) != names.end())
@@ -733,7 +734,7 @@ void BindAndroidBoundaryGles1Textures(
         state.SetTransferState(std::move(next));
         return 0U;
     });
-    dispatch.Bind("glBufferData", [&address_space, require_frame](
+    dispatch.Bind("glBufferData", [&state, &address_space, require_frame](
                                       const auto arguments,
                                       const std::uint64_t thread_id) {
         const auto size = Gles1ResourceCount(arguments[1], "glBufferData");
@@ -745,9 +746,12 @@ void BindAndroidBoundaryGles1Textures(
                         input.IsNull() ? std::nullopt
                                        : std::optional{input.Bytes()},
                         arguments[3]);
+        state.SetBufferData(arguments[0], input.IsNull()
+            ? std::nullopt
+            : std::optional<std::span<const std::byte>>{input.Bytes()});
         return 0U;
     });
-    dispatch.Bind("glBufferSubData", [&address_space, require_frame](
+    dispatch.Bind("glBufferSubData", [&state, &address_space, require_frame](
                                          const auto arguments,
                                          const std::uint64_t thread_id) {
         const auto offset = Gles1ResourceCount(arguments[1], "glBufferSubData offset");
@@ -758,6 +762,7 @@ void BindAndroidBoundaryGles1Textures(
         require_frame("glBufferSubData")
             .BufferSubData(arguments[0], static_cast<std::int32_t>(offset),
                            input.Bytes());
+        state.SetBufferSubData(arguments[0], offset, input.Bytes());
         return 0U;
     });
     dispatch.Bind("glReadPixels", [&state, &address_space, require_frame](

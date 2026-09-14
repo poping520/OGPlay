@@ -190,6 +190,8 @@ R 编号是问题编号；以下 WU-1..4 是报告内执行编号，不占用正
 | WU-3 | 让 Java EGL10/EGL14 复用 Native registry 并支持已闭合的 EGL 行为。 | R7 的 Java EGL 部分 | WU-1 |
 | WU-4 | 闭合 GLES3 Native/Java 调用面、版本能力声明和选定扩展。 | R6、R7 剩余部分 | WU-1、WU-2、WU-3 |
 
+执行状态（2026-09-14）：WU-1、WU-2 已完成；WU-3、WU-4 待执行。
+
 各 WU 的内部范围与出口：
 
 - **WU-1**：基线复核、ownership ADR、契约更新与 registry 改造一起做；同时闭合

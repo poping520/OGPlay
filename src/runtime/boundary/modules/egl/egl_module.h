@@ -64,6 +64,10 @@ private:
         std::map<std::uint32_t, std::unique_ptr<gles::AngleFrame>> frames;
         GuestGlContext guest_state;
         std::unique_ptr<detail::AndroidBoundaryGles1MatrixState> gles1_matrices;
+        std::uint32_t gles1_shade_model{
+            detail::kGles1SmoothShadeModel};
+        bool gles1_normalize{};
+        bool gles1_rescale_normal{};
         bool destroy_pending{};
     };
 

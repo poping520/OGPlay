@@ -286,9 +286,54 @@ void AndroidBoundaryGles1State::Reset() {
     hints_.fill(kGles1DontCare);
     shared_->Reset();
     capabilities_.clear();
+    buffer_contents_.clear();
     logic_operation_ = 0x1503U;
     matrices_.Reset();
     fixed_->Reset();
+}
+
+void AndroidBoundaryGles1State::SetBufferData(
+    const std::uint32_t target,
+    const std::optional<std::span<const std::byte>> bytes) {
+    const auto bindings = TransferState().Snapshot();
+    const auto buffer = target == 0x8892U ? bindings.array_buffer
+                                          : bindings.element_array_buffer;
+    if (buffer == 0U) return;
+    if (!bytes.has_value()) {
+        buffer_contents_[buffer] = std::nullopt;
+    } else {
+        buffer_contents_[buffer] = std::vector(bytes->begin(), bytes->end());
+    }
+}
+
+void AndroidBoundaryGles1State::SetBufferSubData(
+    const std::uint32_t target, const std::size_t offset,
+    const std::span<const std::byte> bytes) {
+    const auto bindings = TransferState().Snapshot();
+    const auto buffer = target == 0x8892U ? bindings.array_buffer
+                                          : bindings.element_array_buffer;
+    const auto found = buffer_contents_.find(buffer);
+    if (buffer == 0U || found == buffer_contents_.end() ||
+        !found->second.has_value() ||
+        offset > found->second->size() ||
+        bytes.size() > found->second->size() - offset) {
+        return;
+    }
+    std::ranges::copy(bytes, found->second->begin() +
+                                 static_cast<std::ptrdiff_t>(offset));
+}
+
+void AndroidBoundaryGles1State::DeleteBufferData(
+    const std::span<const std::uint32_t> buffers) noexcept {
+    for (const auto buffer : buffers) buffer_contents_.erase(buffer);
+}
+
+const std::vector<std::byte>* AndroidBoundaryGles1State::BufferContents(
+    const std::uint32_t buffer) const noexcept {
+    const auto found = buffer_contents_.find(buffer);
+    return found == buffer_contents_.end() || !found->second.has_value()
+               ? nullptr
+               : &*found->second;
 }
 
 void AndroidBoundaryGles1State::SetShadeModel(const std::uint32_t mode) {

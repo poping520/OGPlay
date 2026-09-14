@@ -163,8 +163,9 @@ boundary symbol 目录、跨 API 共享的 `GuestGlContext` 与 `A32CallFrame`�
 - GLES1 `glViewport`/`glScissor` 直接转发当前 `AngleFrame`,与 GLES2 共用受检超采样坐标
   换算;`glClearColor`/`glClearDepthf`/`glClear` 逐位解码 guest 参数并转发真实 ANGLE
   clear state,不得仅宿主缓存或静默过滤未知 bit;`glShadeModel` 只接受
-  `GL_FLAT`/`GL_SMOOTH`,写入独立 fixed-pipeline context state；flat provoking-vertex
-  光栅语义仍待 draw 转换消费。
+  `GL_FLAT`/`GL_SMOOTH`,写入独立 fixed-pipeline context state；flat triangle/strip/fan 在
+  顶点准备阶段展开为独立三角形，并以每个 primitive 的最后顶点提供 provoking color/normal；
+  client/VBO array 与 `DrawArrays`/`DrawElements` 必须保持同一规则。
 - GLES1 scalar state 批次把 17 个无指针标量入口直接交给当前 `AngleFrame`;GLboolean、
   GLint、GLfloat 分别按非零、位模式有符号值和浮点位型解码。buffer/pixel-store 同时事务
   更新独立 GLES1 transfer state;GLES1-only hint 与 capability 进入受检可重置

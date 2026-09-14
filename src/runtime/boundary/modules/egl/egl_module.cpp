@@ -186,11 +186,23 @@ void EglModule::ActivateStateForHostThread(
             old->second.guest_state = context_.graphics.gl_context;
             old->second.gles1_matrices->CopyValuesFrom(
                 context_.gles1_state.Matrices());
+            old->second.gles1_shade_model =
+                context_.gles1_state.ShadeModel();
+            old->second.gles1_normalize =
+                context_.gles1_state.Capability(0x0BA1U);
+            old->second.gles1_rescale_normal =
+                context_.gles1_state.Capability(0x803AU);
         }
     }
     context_.graphics.gl_context = contexts_.at(target).guest_state;
     context_.gles1_state.Matrices().CopyValuesFrom(
         *contexts_.at(target).gles1_matrices);
+    context_.gles1_state.SetShadeModel(
+        contexts_.at(target).gles1_shade_model);
+    context_.gles1_state.SetCapability(
+        0x0BA1U, contexts_.at(target).gles1_normalize);
+    context_.gles1_state.SetCapability(
+        0x803AU, contexts_.at(target).gles1_rescale_normal);
     active_shadow_context_ = target;
 }
 
@@ -582,12 +594,24 @@ std::uint32_t EglModule::ExecuteExport(const A32CallFrame& call) {
                 old->second.guest_state = graphics.gl_context;
                 old->second.gles1_matrices->CopyValuesFrom(
                     context_.gles1_state.Matrices());
+                old->second.gles1_shade_model =
+                    context_.gles1_state.ShadeModel();
+                old->second.gles1_normalize =
+                    context_.gles1_state.Capability(0x0BA1U);
+                old->second.gles1_rescale_normal =
+                    context_.gles1_state.Capability(0x803AU);
             }
         }
         if (!release) {
             graphics.gl_context = contexts_.at(args[3]).guest_state;
             context_.gles1_state.Matrices().CopyValuesFrom(
                 *contexts_.at(args[3]).gles1_matrices);
+            context_.gles1_state.SetShadeModel(
+                contexts_.at(args[3]).gles1_shade_model);
+            context_.gles1_state.SetCapability(
+                0x0BA1U, contexts_.at(args[3]).gles1_normalize);
+            context_.gles1_state.SetCapability(
+                0x803AU, contexts_.at(args[3]).gles1_rescale_normal);
             active_shadow_context_ = args[3];
         } else if (active_shadow_context_ == previous_context) {
             active_shadow_context_ = 0U;

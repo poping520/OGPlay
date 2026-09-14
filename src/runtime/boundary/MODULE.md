@@ -124,10 +124,14 @@ boundary symbol 目录、跨 API 共享的 `GuestGlContext` 与 `A32CallFrame`�
   name 只由同一个 ANGLE context 生成和删除。GLES1 的
   `glGetString(GL_VERSION/GL_EXTENSIONS)` 合成固定管线路径语义(版本
   `OpenGL ES-CM 1.1`,扩展恰为已实现能力),不透传 ES3 后端字符串。
-- GLES1/GLES2 调用 ANGLE 后的原生 GL error 共用上述 guest 锁存；module 只捕获携带精确
+- GLES2 `glGetString(GL_EXTENSIONS)` 同样只发布 guest 边界可执行的 ETC1/PVRTC
+  压缩格式与已验证 RGBA8 能力，不透传没有 guest thunk/编组契约的 ANGLE 扩展；
+  vendor/renderer/version/shading-language 仍来自当前 ANGLE Context。
+- GLES1/GLES2 调用 ANGLE 后的原生 GL error 共用上述 guest 锁存；module 捕获携带精确
   GLenum 的 `GlesApiError`，内存、生命周期和内部逻辑异常继续向上失败。GLES2
   `glGetError` 与 GLES1 一样先排空锁存再查询 ANGLE，不把非法 GLES1-only 枚举伪装成
-  GLES2 能力。
+  GLES2 能力。负 count/first/stride/imageSize 等已校验数值参数必须类型化为
+  `GL_INVALID_VALUE`，不得落入 GLES1 的兼容性 `invalid_argument`→`GL_INVALID_ENUM` 兜底。
 - framebuffer/renderbuffer binding、viewport/scissor、clear state 与共有 capability 也只有
   一份 shared shadow;viewport/scissor 的 guest query 返回该 logical shadow,不泄露超采样
   后的 native 坐标。高频 setter 先验证、执行 ANGLE、再原位窄范围提交,禁止为事务语义

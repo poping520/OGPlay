@@ -1601,9 +1601,9 @@ TEST_CASE("Android GLES1 publishes and directly binds KitKat Bounds wrappers") {
 
     const std::array negative{3U, 0x1406U, 0U, fixture.output.Value(),
                               UINT32_MAX};
-    CHECK_THROWS_WITH_AS(BoundaryCallAddress(fixture, address->Value(), negative),
-                         "GLES1 Bounds count cannot be negative",
-                         std::invalid_argument);
+    CHECK(BoundaryCallAddress(fixture, address->Value(), negative) == 0U);
+    CHECK(fixture.Call("libGLESv1_CM.so", "glGetError") == 0x0501U);
+    CHECK(fixture.Call("libGLESv1_CM.so", "glGetError") == 0U);
     const std::array crossing{
         3U, 0x1406U, 0U,
         fixture.output.Add(fixture.memory.PageSize() - 4U).Value(), 2U};
@@ -1938,6 +1938,25 @@ TEST_CASE("BND-29 GLES2 invalid capabilities latch errors without changing state
     CHECK(fixture.Call("libGLESv1_CM.so", "glGetError") == 0);
     CHECK(fixture.Call("libEGL.so", "eglTerminate", {1U}) == 1);
     CHECK_THROWS_AS(fixture.Call("libGLESv2.so", "glEnable", {0x0DE1U}), std::runtime_error);
+}
+
+TEST_CASE("GLES draw negative ranges latch INVALID_VALUE across API families") {
+    REQUIRE(ogplay::gles::IsNativeAngleEglAvailable());
+    BoundaryFixture fixture;
+    PrepareNativeEgl(fixture);
+    REQUIRE(fixture.Call("libEGL.so", "eglMakeCurrent", {1, 3, 3, 4}) == 1);
+
+    for (const auto library : {"libGLESv1_CM.so", "libGLESv2.so"}) {
+        CAPTURE(library);
+        CHECK(fixture.Call(library, "glDrawArrays",
+                           {0x0004U, 0U, 0xFFFFFFFFU}) == 0U);
+        CHECK(fixture.Call(library, "glGetError") == 0x0501U);
+        CHECK(fixture.Call(library, "glGetError") == 0U);
+        CHECK(fixture.Call(library, "glDrawElements",
+                           {0x0004U, 0xFFFFFFFFU, 0x1403U, 0U}) == 0U);
+        CHECK(fixture.Call(library, "glGetError") == 0x0501U);
+        CHECK(fixture.Call(library, "glGetError") == 0U);
+    }
 }
 
 TEST_CASE("Android boundary shares framebuffer raster and capability state") {
@@ -2541,7 +2560,7 @@ TEST_CASE("Android boundary publishes GLES1 core without silent handlers") {
         CHECK(fixture.Call("libGLESv1_CM.so", "glGenTextures",
                            {std::bit_cast<std::uint32_t>(-1),
                             fixture.output.Value()}) == 0U);
-        CHECK(fixture.Call("libGLESv1_CM.so", "glGetError") == 0x0500U);
+        CHECK(fixture.Call("libGLESv1_CM.so", "glGetError") == 0x0501U);
         CHECK(fixture.Call("libGLESv1_CM.so", "glGetError") == 0U);
         CHECK_THROWS_AS(
             fixture.Call(
@@ -2580,7 +2599,7 @@ TEST_CASE("Android boundary publishes GLES1 core without silent handlers") {
         CHECK(fixture.Call("libGLESv1_CM.so", "glIsBuffer", {buffer}) == 1U);
         CHECK(fixture.Call("libGLESv1_CM.so", "glBufferData",
                            {0x8892U, 0xFFFFFFFFU, 0U, 0x88E4U}) == 0U);
-        CHECK(fixture.Call("libGLESv1_CM.so", "glGetError") == 0x0500U);
+        CHECK(fixture.Call("libGLESv1_CM.so", "glGetError") == 0x0501U);
         CHECK(fixture.Call("libGLESv1_CM.so", "glGetError") == 0U);
         CHECK(fixture.Call("libGLESv1_CM.so", "glDeleteBuffers",
                            {1U, buffer_names.Value()}) == 0U);
@@ -2833,7 +2852,7 @@ TEST_CASE("Android boundary publishes GLES1 core without silent handlers") {
         fixture.bus.Write32(fixture.stack.Add(8U), 0xFFFFFFFFU, 1U);
         CHECK(fixture.Call("libGLESv1_CM.so", "glCompressedTexImage2D",
                            {0x0DE1U, 0U, 0x8D64U, 4U}) == 0U);
-        CHECK(fixture.Call("libGLESv1_CM.so", "glGetError") == 0x0500U);
+        CHECK(fixture.Call("libGLESv1_CM.so", "glGetError") == 0x0501U);
         CHECK(fixture.Call("libGLESv1_CM.so", "glGetError") == 0U);
         const auto vertices = fixture.output.Add(0x400U);
         const std::array vertex_values{
@@ -2984,7 +3003,7 @@ TEST_CASE("Android boundary publishes GLES1 core without silent handlers") {
             ogplay::gles::GuestTransferError);
         CHECK(fixture.Call("libGLESv1_CM.so", "glDrawArrays",
                            {0x0004U, 0U, 0xFFFFFFFFU}) == 0U);
-        CHECK(fixture.Call("libGLESv1_CM.so", "glGetError") == 0x0500U);
+        CHECK(fixture.Call("libGLESv1_CM.so", "glGetError") == 0x0501U);
         CHECK(fixture.Call("libGLESv1_CM.so", "glGetError") == 0U);
         CHECK(fixture.Call("libGLESv1_CM.so", "glDisableClientState",
                            {ogplay::runtime::detail::kGles1NormalArray}) == 0U);
@@ -3126,8 +3145,17 @@ TEST_CASE("GLES1 cube map textures bind upload and sample the fixed pipeline") {
     BoundaryFixture fixture;
     if (!ogplay::gles::IsNativeAngleEglAvailable()) return;
     fixture.boundary.OpenManagedSurface();
-    const auto version = fixture.Call(
+    const auto renderer = fixture.Call(
         "libGLESv1_CM.so", "glGetString", {0x1F01U});
+    REQUIRE(renderer != 0U);
+    const auto renderer_length = fixture.memory.CStringLength(
+        ogplay::memory::GuestAddress{renderer}, 256U, 1U);
+    std::string renderer_text(renderer_length, '\0');
+    fixture.memory.Read(ogplay::memory::GuestAddress{renderer},
+                        std::as_writable_bytes(std::span(renderer_text)), 1U);
+    CHECK(renderer_text != "OpenGL ES-CM 1.1");
+    const auto version = fixture.Call(
+        "libGLESv1_CM.so", "glGetString", {0x1F02U});
     REQUIRE(version != 0U);
     const auto version_length = fixture.memory.CStringLength(
         ogplay::memory::GuestAddress{version}, 64U, 1U);
@@ -3153,6 +3181,20 @@ TEST_CASE("GLES1 cube map textures bind upload and sample the fixed pipeline") {
               std::string::npos);
     }
     CHECK(extension_text.ends_with(' '));
+
+    const auto gles2_extensions = fixture.Call(
+        "libGLESv2.so", "glGetString", {0x1F03U});
+    REQUIRE(gles2_extensions != 0U);
+    const auto gles2_extension_length = fixture.memory.CStringLength(
+        ogplay::memory::GuestAddress{gles2_extensions}, 4096U, 1U);
+    std::string gles2_extension_text(gles2_extension_length, '\0');
+    fixture.memory.Read(ogplay::memory::GuestAddress{gles2_extensions},
+                        std::as_writable_bytes(std::span(gles2_extension_text)), 1U);
+    CHECK(gles2_extension_text ==
+          "GL_OES_compressed_ETC1_RGB8_texture "
+          "GL_IMG_texture_compression_pvrtc "
+          "GL_OES_rgb8_rgba8 ");
+    CHECK(gles2_extension_text.find("GL_OES_texture_3D") == std::string::npos);
 
     const auto names = fixture.output.Add(0x300U);
     CHECK(fixture.Call("libGLESv1_CM.so", "glGenTextures",

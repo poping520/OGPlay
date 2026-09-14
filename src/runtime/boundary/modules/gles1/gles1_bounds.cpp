@@ -31,7 +31,7 @@ constexpr std::uint32_t kTexture0 = 0x84C0U;
                                         const std::int32_t stride,
                                         const std::int32_t count) {
     if (count < 0) {
-        throw std::invalid_argument("GLES1 Bounds count cannot be negative");
+        throw gles::GlesApiError("GLES1 Bounds draw", 0x0501U);
     }
     if (count == 0) return 0U;
     const auto packed = static_cast<std::uint64_t>(size) * ScalarBytes(type);
@@ -52,18 +52,26 @@ std::uint32_t Gles1Module::InvokeBounds(
     const std::uint32_t type, const std::int32_t stride,
     const std::uint32_t pointer, const std::int32_t count,
     const std::string_view operation) {
-    auto next = draw_state_.PreparePointer(
-        array, client_texture, size, type, stride, pointer,
-        core_state_.TransferState().Snapshot().array_buffer);
-    const auto bytes = ClientBytes(size, type, stride, count);
-    if (next.buffer == 0U && pointer != 0U && bytes != 0U) {
-        calls_.address_space.Validate(
-            {memory::GuestAddress{pointer}, bytes}, memory::AccessType::read,
-            call.ThreadId());
+    try {
+        auto next = draw_state_.PreparePointer(
+            array, client_texture, size, type, stride, pointer,
+            core_state_.TransferState().Snapshot().array_buffer);
+        const auto bytes = ClientBytes(size, type, stride, count);
+        if (next.buffer == 0U && pointer != 0U && bytes != 0U) {
+            calls_.address_space.Validate(
+                {memory::GuestAddress{pointer}, bytes}, memory::AccessType::read,
+                call.ThreadId());
+        }
+        static_cast<void>(graphics_.RequireFrame(operation));
+        draw_state_.CommitPointer(array, client_texture, next);
+        return 0U;
+    } catch (const gles::GlesApiError& error) {
+        graphics_.gl_context.Shared().SetGuestError(error.Code());
+        return 0U;
+    } catch (const std::invalid_argument&) {
+        graphics_.gl_context.Shared().SetGuestError(0x0500U);
+        return 0U;
     }
-    static_cast<void>(graphics_.RequireFrame(operation));
-    draw_state_.CommitPointer(array, client_texture, next);
-    return 0U;
 }
 
 std::uint32_t Gles1Module::ColorPointerBounds(const A32CallFrame& call) {

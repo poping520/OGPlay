@@ -204,7 +204,7 @@ void BindAndroidBoundaryGles1Remaining(gles::GlesDispatchTable& dispatch,
                                                                                const auto thread) {
         const auto size = Signed(a[7]);
         if (size < 0)
-            throw std::invalid_argument("glCompressedTexSubImage2D imageSize is negative");
+            throw gles::GlesApiError("glCompressedTexSubImage2D", 0x0501U);
         const auto input = gles::GuestBuffer::Prepare(
             address_space, memory::GuestAddress{a[8]}, static_cast<std::size_t>(size),
             gles::GuestTransferDirection::input, false, thread);

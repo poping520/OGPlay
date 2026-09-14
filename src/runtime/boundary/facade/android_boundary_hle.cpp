@@ -140,7 +140,7 @@ public:
                 // The extension list advertises exactly what this boundary
                 // implements.
                 switch (parameter) {
-                case 0x1F01U:
+                case 0x1F02U:
                     return std::string{"OpenGL ES-CM 1.1"};
                 case 0x1F03U:
                     return std::string{

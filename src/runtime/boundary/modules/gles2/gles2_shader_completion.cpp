@@ -139,6 +139,8 @@ std::uint32_t Gles2Module::GetShaderSource(const A32CallFrame& call) {
 
 std::uint32_t Gles2Module::GetUniformfv(const A32CallFrame& call) {
     const auto arguments = call.Arguments();
+    graphics_.gl_context.Shared().transfer.SetUniformElementCount(arguments[0], Signed(arguments[1]),
+        graphics_.RequireFrame("glGetUniformfv").UniformQueryCount(arguments[0], Signed(arguments[1])));
     auto prepared = Prepare(calls_, graphics_, 75U, call);
     auto& output = Pointer(prepared, 2U);
     const auto values = graphics_.RequireFrame("glGetUniformfv")
@@ -150,6 +152,8 @@ std::uint32_t Gles2Module::GetUniformfv(const A32CallFrame& call) {
 
 std::uint32_t Gles2Module::GetUniformiv(const A32CallFrame& call) {
     const auto arguments = call.Arguments();
+    graphics_.gl_context.Shared().transfer.SetUniformElementCount(arguments[0], Signed(arguments[1]),
+        graphics_.RequireFrame("glGetUniformiv").UniformQueryCount(arguments[0], Signed(arguments[1])));
     auto prepared = Prepare(calls_, graphics_, 76U, call);
     auto& output = Pointer(prepared, 2U);
     const auto values = graphics_.RequireFrame("glGetUniformiv")

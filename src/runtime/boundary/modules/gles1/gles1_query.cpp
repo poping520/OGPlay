@@ -1,4 +1,5 @@
 #include "gles1_query.h"
+#include "gles1_fixed.h"
 
 #include <algorithm>
 #include <array>
@@ -103,6 +104,9 @@ void WriteGuestNames(gles::GuestBuffer& output,
     const AndroidBoundaryGles1LegacyState& legacy) {
     const auto transfer = core.TransferState().Snapshot();
     switch (pname) {
+    case 0x8842U: return 32;  // GL_MAX_PALETTE_MATRICES_OES
+    case 0x86A4U: return 4;   // GL_MAX_VERTEX_UNITS_OES
+    case 0x8843U: return static_cast<std::int32_t>(core.Matrices().PaletteIndex());
     case 0x0BA0U: return static_cast<std::int32_t>(core.Matrices().Mode());
     case 0x0BA3U:
         return static_cast<std::int32_t>(
@@ -284,7 +288,12 @@ std::uint32_t AndroidBoundaryGles1MapBufferState::Map(
             "glMapBufferOES access must be GL_WRITE_ONLY_OES");
     }
     const auto buffer = BoundBuffer(core, target);
-    if (buffer == 0U || mappings_.contains(buffer)) {
+    const auto key = (static_cast<std::uint64_t>(core.Shared().resource_group) << 32U) | buffer;
+    if (const auto old = mappings_.find(key); old != mappings_.end() &&
+        !frame.HasMappedBufferPointerOes(target, kBufferMapPointerOes)) {
+        Release(old->second.guest_address, old->second.size); mappings_.erase(old);
+    }
+    if (buffer == 0U || mappings_.contains(key)) {
         throw std::invalid_argument(
             "glMapBufferOES requires an unmapped bound buffer");
     }
@@ -308,26 +317,39 @@ std::uint32_t AndroidBoundaryGles1MapBufferState::Map(
         static_cast<void>(frame.UnmapBufferOes(target));
         throw;
     }
-    mappings_.emplace(buffer, Mapping{guest_address, size, host_address});
+    mappings_.emplace(key, Mapping{guest_address, size, host_address});
     return guest_address;
 }
 
+void AndroidBoundaryGles1MapBufferState::RetireShareGroup(const std::uint32_t group) noexcept {
+    std::erase_if(mappings_, [&](const auto& entry) {
+        if ((entry.first >> 32U) != group) return false;
+        Release(entry.second.guest_address, entry.second.size); return true;
+    });
+}
+
 bool AndroidBoundaryGles1MapBufferState::Unmap(
-    gles::AngleFrame& frame, const AndroidBoundaryGles1State& core,
+    gles::AngleFrame& frame, AndroidBoundaryGles1State& core,
     memory::AddressSpace& address_space, const std::uint32_t target,
     const std::uint64_t thread_id) {
     const auto buffer = BoundBuffer(core, target);
-    const auto found = mappings_.find(buffer);
+    const auto key = (static_cast<std::uint64_t>(core.Shared().resource_group) << 32U) | buffer;
+    const auto found = mappings_.find(key);
     if (found == mappings_.end()) {
         throw std::invalid_argument(
             "glUnmapBufferOES requires a mapped bound buffer");
     }
     const auto mapping = found->second;
+    if (frame.MappedBufferPointerOes(target, kBufferMapPointerOes) != mapping.host_address) {
+        Release(mapping.guest_address, mapping.size); mappings_.erase(found);
+        throw gles::GlesApiError("glUnmapBufferOES stale mapping", 0x0502U);
+    }
     if (mapping.size != 0U) {
         address_space.Read(
             memory::GuestAddress{mapping.guest_address},
             std::span<std::byte>{mapping.host_address, mapping.size}, thread_id);
     }
+    core.SetBufferData(target, std::span<const std::byte>{mapping.host_address, mapping.size});
     const auto intact = frame.UnmapBufferOes(target);
     mappings_.erase(found);
     Release(mapping.guest_address, mapping.size);
@@ -341,12 +363,15 @@ std::uint32_t AndroidBoundaryGles1MapBufferState::Pointer(
         throw std::invalid_argument("glGetBufferPointervOES pname is invalid");
     }
     const auto buffer = BoundBuffer(core, target);
+    const auto key = (static_cast<std::uint64_t>(core.Shared().resource_group) << 32U) | buffer;
     if (!frame.HasMappedBufferPointerOes(target, parameter)) return 0U;
-    const auto found = mappings_.find(buffer);
+    const auto found = mappings_.find(key);
     if (found == mappings_.end()) {
         throw std::logic_error(
             "ANGLE mapped buffer has no guest arena identity");
     }
+    if (frame.MappedBufferPointerOes(target, parameter) != found->second.host_address)
+        throw gles::GlesApiError("glGetBufferPointervOES stale identity", 0x0502U);
     return found->second.guest_address;
 }
 
@@ -609,7 +634,8 @@ void BindAndroidBoundaryGles1Legacy(
             case 0x0BA6U:
             case 0x0BA7U:
             case 0x0BA8U: count = 16U; break;
-            case 0x0B00U: count = 4U; break;
+            case 0x0B00U: case 0x0B66U: count = 4U; break;
+            case 0x0B62U: case 0x0B63U: case 0x0B64U: case 0x0B65U: count = 1U; break;
             case 0x0BC1U:
             case 0x0BC2U:
             case 0x84E1U:
@@ -642,6 +668,8 @@ void BindAndroidBoundaryGles1Legacy(
                     values.assign(matrix.begin(), matrix.end());
                     break;
                 }
+                case 0x0B62U: case 0x0B63U: case 0x0B64U: case 0x0B65U: case 0x0B66U:
+                    values = core.Fixed().Fog(arguments[0]); break;
                 case 0x0B00U:
                     values.assign(legacy.Color().begin(), legacy.Color().end());
                     break;
@@ -768,6 +796,10 @@ void BindAndroidBoundaryGles1Textures(
     dispatch.Bind("glReadPixels", [&state, &address_space, require_frame](
                                       const auto arguments,
                                       const std::uint64_t thread_id) {
+        if (state.TransferState().BoundBuffer(0x88EBU) != 0U) {
+            require_frame("glReadPixels").TransferPixelBuffer(gles::AngleFrame::PixelBufferOperation::read, arguments);
+            return 0U;
+        }
         const auto resolution = state.TransferState().Resolve(
             {.function_name = "glReadPixels", .parameter_name = "pixels",
              .expression = "pixel_bytes(width,height,format,type)",
@@ -780,13 +812,22 @@ void BindAndroidBoundaryGles1Textures(
             address_space, memory::GuestAddress{arguments[6]},
             resolution->element_count, gles::GuestTransferDirection::output,
             false, thread_id);
+        const auto layout = state.TransferState().PixelLayout2D(true,
+            SignedTextureValue(arguments[2]), SignedTextureValue(arguments[3]), arguments[4], arguments[5]);
+        std::vector<memory::ValidatedGuestWrite> rows;
+        for (std::uint32_t row = 0; row < layout.rows; ++row)
+            rows.push_back(address_space.PreflightWrite({memory::GuestAddress{arguments[6]}.Add(
+                layout.offset + row * layout.stride), layout.row_bytes}, thread_id));
         require_frame("glReadPixels")
             .ReadPixels(SignedTextureValue(arguments[0]),
                         SignedTextureValue(arguments[1]),
                         SignedTextureValue(arguments[2]),
                         SignedTextureValue(arguments[3]), arguments[4],
                         arguments[5], output.WritableBytes());
-        output.Commit();
+        for (std::uint32_t row = 0; row < layout.rows; ++row)
+            address_space.WritePrevalidated(rows[row], output.Bytes().subspan(
+                static_cast<std::size_t>(layout.offset + row * layout.stride),
+                static_cast<std::size_t>(layout.row_bytes)));
         return 0U;
     });
     dispatch.Bind(

@@ -29,6 +29,36 @@ std::uint32_t GlesApiError::Code() const noexcept { return code_; }
 
 namespace {
 
+#if OGPLAY_HAS_ANGLE
+// Software-decompressed images are tightly packed host bytes, independent of guest unpack state.
+class ScopedTightUnpack final {
+public:
+    explicit ScopedTightUnpack(bool es3) : es3_(es3) {
+        glGetIntegerv(GL_UNPACK_ALIGNMENT, &alignment_);
+        glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+        if (es3_) {
+            glGetIntegerv(0x88EFU, &buffer_);
+            glBindBuffer(0x88ECU, 0U);
+            for (std::size_t i = 0; i < names_.size(); ++i) {
+                glGetIntegerv(names_[i], &values_[i]); glPixelStorei(names_[i], 0);
+            }
+        }
+    }
+    ~ScopedTightUnpack() {
+        glPixelStorei(GL_UNPACK_ALIGNMENT, alignment_);
+        if (es3_) {
+            for (std::size_t i = 0; i < names_.size(); ++i) glPixelStorei(names_[i], values_[i]);
+            glBindBuffer(0x88ECU, static_cast<GLuint>(buffer_));
+        }
+    }
+private:
+    bool es3_;
+    GLint alignment_{4}, buffer_{};
+    static constexpr std::array<GLenum, 5> names_{0x0CF2U, 0x0CF3U, 0x0CF4U, 0x806EU, 0x806DU};
+    std::array<GLint, 5> values_{};
+};
+#endif
+
 constexpr std::uint32_t kEtc1Rgb8Oes = 0x8D64U;
 constexpr std::uint32_t kEtc1Rgb8LossyDecodeAngle = 0x9690U;
 
@@ -61,6 +91,20 @@ AngleFrame AngleFrame::CreatePbuffer(const AngleBackend backend,
     auto lifecycle = EglLifecycle::CreatePbuffer(
         *api, backend, width, height, client_version, share_context);
     return AngleFrame(std::move(api), std::move(lifecycle), width, height);
+}
+
+AngleFrame AngleFrame::CreateContext(std::shared_ptr<EglDisplayResources> display,
+    const int client_version, const EglHandle share_context) {
+    auto lifecycle = EglLifecycle::CreateContext(std::move(display), client_version,
+                                                 share_context);
+    return AngleFrame(nullptr, std::move(lifecycle), 0U, 0U);
+}
+
+void AngleFrame::BindSurfaces(std::shared_ptr<EglSurfaceResources> draw,
+                              std::shared_ptr<EglSurfaceResources> read) {
+    const auto width = draw->Width(), height = draw->Height();
+    lifecycle_.BindSurfaces(std::move(draw), std::move(read));
+    width_ = width; height_ = height;
 }
 
 AngleFrame::AngleFrame(std::unique_ptr<EglApi> api, EglLifecycle lifecycle,
@@ -489,11 +533,16 @@ bool AngleFrame::UnmapBufferOes(const std::uint32_t target) {
 
 bool AngleFrame::HasMappedBufferPointerOes(
     const std::uint32_t target, const std::uint32_t parameter) {
+    return MappedBufferPointerOes(target, parameter) != nullptr;
+}
+
+std::byte* AngleFrame::MappedBufferPointerOes(
+    const std::uint32_t target, const std::uint32_t parameter) {
 #if OGPLAY_HAS_ANGLE
     void* mapped{};
     glGetBufferPointervOES(target, parameter, &mapped);
     RequireNoError("glGetBufferPointervOES");
-    return mapped != nullptr;
+    return static_cast<std::byte*>(mapped);
 #else
     static_cast<void>(target); static_cast<void>(parameter);
     throw EglLifecycleError(EglOperation::unavailable, 0);
@@ -591,6 +640,8 @@ void AngleFrame::TextureParameterFloat(const std::uint32_t target,
 
 std::int32_t AngleFrame::GetTextureParameterInteger(
     const std::uint32_t target, const std::uint32_t parameter) {
+    if (parameter == 0x1004U || parameter == 0x8E46U || parameter == 0x8B9DU)
+        throw GlesApiError("unpublished vector texture query", 0x0500U);
 #if OGPLAY_HAS_ANGLE
     GLint value{};
     glGetTexParameteriv(target, parameter, &value);
@@ -604,6 +655,8 @@ std::int32_t AngleFrame::GetTextureParameterInteger(
 
 float AngleFrame::GetTextureParameterFloat(
     const std::uint32_t target, const std::uint32_t parameter) {
+    if (parameter == 0x1004U || parameter == 0x8E46U || parameter == 0x8B9DU)
+        throw GlesApiError("unpublished vector texture query", 0x0500U);
 #if OGPLAY_HAS_ANGLE
     GLfloat value{};
     glGetTexParameterfv(target, parameter, &value);
@@ -675,6 +728,7 @@ void AngleFrame::CompressedTextureImage2D(
                 static_cast<std::uint32_t>(width),
                 static_cast<std::uint32_t>(height),
                 static_cast<std::uint8_t>(bpp), opaque, data);
+            const ScopedTightUnpack unpack(lifecycle_.Info().client_version >= 3);
             glTexImage2D(target, level, GL_RGBA, width, height, border,
                          GL_RGBA, GL_UNSIGNED_BYTE, rgba.data());
             RequireNoError("glTexImage2D decoded PVRTC");
@@ -696,7 +750,8 @@ void AngleFrame::CompressedTextureImage2D(
                 const auto rgba = DecodeEtc1Rgba8(
                     static_cast<std::uint32_t>(width),
                     static_cast<std::uint32_t>(height), data);
-                glTexImage2D(target, level, GL_RGBA, width, height, border,
+                const ScopedTightUnpack unpack(lifecycle_.Info().client_version >= 3);
+            glTexImage2D(target, level, GL_RGBA, width, height, border,
                              GL_RGBA, GL_UNSIGNED_BYTE, rgba.data());
                 RequireNoError("glTexImage2D decoded ETC1");
                 return;
@@ -774,6 +829,7 @@ void AngleFrame::CompressedTextureSubImage2D(
             static_cast<std::uint32_t>(width),
             static_cast<std::uint32_t>(height),
             static_cast<std::uint8_t>(bpp), opaque, data);
+        const ScopedTightUnpack unpack(lifecycle_.Info().client_version >= 3);
         glTexSubImage2D(target, level, x_offset, y_offset, width, height,
                         GL_RGBA, GL_UNSIGNED_BYTE, rgba.data());
         RequireNoError("glTexSubImage2D decoded PVRTC");
@@ -790,6 +846,7 @@ void AngleFrame::CompressedTextureSubImage2D(
             const auto rgba = DecodeEtc1Rgba8(
                 static_cast<std::uint32_t>(width),
                 static_cast<std::uint32_t>(height), data);
+            const ScopedTightUnpack unpack(lifecycle_.Info().client_version >= 3);
             glTexSubImage2D(target, level, x_offset, y_offset, width, height,
                             GL_RGBA, GL_UNSIGNED_BYTE, rgba.data());
             RequireNoError("glTexSubImage2D decoded ETC1");
@@ -959,6 +1016,31 @@ void AngleFrame::ReadRgba8(std::vector<std::uint8_t>& result) {
     }
     result.resize(static_cast<std::size_t>(pixels * kChannels));
 #if OGPLAY_HAS_ANGLE
+    // Presentation uses host memory with a tight layout even when the guest
+    // has a PBO and non-default pixel-store state bound.
+    GLint pack_alignment{};
+    glGetIntegerv(GL_PACK_ALIGNMENT, &pack_alignment);
+    glPixelStorei(GL_PACK_ALIGNMENT, 1);
+    const bool es3 = lifecycle_.Info().client_version >= 3;
+    constexpr std::array<GLenum, 3> pack_names{0x0D02U, 0x0D03U, 0x0D04U};
+    std::array<GLint, 3> pack_values{};
+    GLint pack_buffer{};
+    if (es3) {
+        glGetIntegerv(0x88EDU, &pack_buffer);
+        glBindBuffer(0x88EBU, 0U);
+        for (std::size_t index = 0; index < pack_names.size(); ++index) {
+            glGetIntegerv(pack_names[index], &pack_values[index]);
+            glPixelStorei(pack_names[index], 0);
+        }
+    }
+    const auto restore_pack = [&] {
+        glPixelStorei(GL_PACK_ALIGNMENT, pack_alignment);
+        if (es3) {
+            for (std::size_t index = 0; index < pack_names.size(); ++index)
+                glPixelStorei(pack_names[index], pack_values[index]);
+            glBindBuffer(0x88EBU, static_cast<GLuint>(pack_buffer));
+        }
+    };
     const auto* extensions = reinterpret_cast<const char*>(glGetString(GL_EXTENSIONS));
     const auto reverse_rows = HasExtension(
         extensions, "GL_ANGLE_pack_reverse_row_order");
@@ -980,8 +1062,10 @@ void AngleFrame::ReadRgba8(std::vector<std::uint8_t>& result) {
                           previous_reverse_rows);
             static_cast<void>(glGetError());
         }
+        restore_pack();
         throw;
     }
+    restore_pack();
     if (reverse_rows) {
         glPixelStorei(GL_PACK_REVERSE_ROW_ORDER_ANGLE, previous_reverse_rows);
         RequireNoError("restore GL_PACK_REVERSE_ROW_ORDER_ANGLE");

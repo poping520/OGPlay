@@ -4,6 +4,8 @@
 #include <filesystem>
 #include <iomanip>
 #include <limits>
+#include <map>
+#include <mutex>
 #include <optional>
 #include <sstream>
 #include <string_view>
@@ -12,6 +14,7 @@
 #include "ogplay/hal/host_environment.h"
 
 #if OGPLAY_HAS_ANGLE
+
 #define EGL_EGLEXT_PROTOTYPES 1
 #include <EGL/egl.h>
 #include <EGL/eglext.h>
@@ -20,6 +23,12 @@
 
 namespace ogplay::gles {
 namespace {
+
+#if OGPLAY_HAS_ANGLE
+std::mutex native_display_mutex;
+struct DisplayReference final { std::size_t count{}; int major{}, minor{}; };
+std::map<EglHandle, DisplayReference> native_display_references;
+#endif
 
 [[nodiscard]] std::string_view OperationName(const EglOperation operation) {
     switch (operation) {
@@ -153,6 +162,14 @@ public:
     }
 
     bool Initialize(const EglHandle display, int& major, int& minor) override {
+        std::scoped_lock lock(native_display_mutex);
+        auto& reference = native_display_references[display];
+        if (reference.count != 0U) {
+            ++reference.count;
+            major = reference.major; minor = reference.minor;
+            driver_environment_.reset();
+            return true;
+        }
         EGLint native_major{};
         EGLint native_minor{};
         const auto result = eglInitialize(ReinterpretHandle<EGLDisplay>(display),
@@ -160,6 +177,8 @@ public:
         driver_environment_.reset();
         major = native_major;
         minor = native_minor;
+        if (result == EGL_TRUE) reference = {1U, major, minor};
+        else native_display_references.erase(display);
         return result == EGL_TRUE;
     }
 
@@ -227,6 +246,12 @@ public:
     }
 
     bool Terminate(const EglHandle display) override {
+        std::scoped_lock lock(native_display_mutex);
+        const auto found = native_display_references.find(display);
+        if (found != native_display_references.end()) {
+            if (--found->second.count != 0U) return true;
+            native_display_references.erase(found);
+        }
         return eglTerminate(ReinterpretHandle<EGLDisplay>(display)) == EGL_TRUE;
     }
 
@@ -257,6 +282,225 @@ std::uint32_t EglLifecycleError::NativeError() const noexcept {
 
 EglLifecycle::EglLifecycle(EglApi& api, EglContextInfo info) noexcept
     : api_(&api), info_(std::move(info)) {}
+
+std::shared_ptr<EglDisplayResources> EglDisplayResources::Create(const AngleBackend backend) {
+    auto result = std::shared_ptr<EglDisplayResources>(new EglDisplayResources);
+    result->api_ = CreateNativeAngleEglApi();
+    result->info_.backend = backend;
+    result->display_ = result->api_->GetPlatformDisplay(backend);
+    if (!result->display_) ThrowLastError(*result->api_, EglOperation::get_platform_display);
+    if (!result->api_->Initialize(result->display_, result->info_.egl_major,
+                                  result->info_.egl_minor))
+        ThrowLastError(*result->api_, EglOperation::initialize);
+    result->initialized_ = true;
+    if (!result->api_->ChoosePbufferConfig(result->display_, result->config_))
+        ThrowLastError(*result->api_, EglOperation::choose_config);
+    return result;
+}
+
+EglDisplayResources::~EglDisplayResources() {
+    if (initialized_) static_cast<void>(api_->Terminate(display_));
+}
+
+std::shared_ptr<EglSurfaceResources> EglSurfaceResources::Create(
+    std::shared_ptr<EglDisplayResources> display, const std::uint32_t width,
+    const std::uint32_t height, const std::uint32_t texture_format, const bool mipmap) {
+    auto result = std::shared_ptr<EglSurfaceResources>(new EglSurfaceResources);
+    result->display_ = std::move(display);
+    result->width_ = width; result->height_ = height;
+    auto& api = result->display_->Api();
+#if OGPLAY_HAS_ANGLE
+    const EGLint attributes[]{EGL_WIDTH, static_cast<EGLint>(width), EGL_HEIGHT,
+        static_cast<EGLint>(height), EGL_TEXTURE_FORMAT, static_cast<EGLint>(texture_format),
+        EGL_TEXTURE_TARGET, texture_format == EGL_NO_TEXTURE ? EGL_NO_TEXTURE : EGL_TEXTURE_2D,
+        EGL_MIPMAP_TEXTURE, mipmap ? EGL_TRUE : EGL_FALSE, EGL_NONE};
+    result->surface_ = ReinterpretHandle<EglHandle>(eglCreatePbufferSurface(
+        ReinterpretHandle<EGLDisplay>(result->Display()),
+        ReinterpretHandle<EGLConfig>(result->display_->Config()), attributes));
+#else
+    static_cast<void>(texture_format); static_cast<void>(mipmap);
+    result->surface_ = api.CreatePbufferSurface(result->Display(), result->display_->Config(), width, height);
+#endif
+    if (!result->surface_) ThrowLastError(api, EglOperation::create_surface);
+    return result;
+}
+
+EglSurfaceResources::~EglSurfaceResources() {
+    if (surface_) static_cast<void>(display_->Api().DestroySurface(Display(), surface_));
+}
+
+#if OGPLAY_HAS_ANGLE
+namespace {
+template <typename Function> Function EglExtension(const char* name) {
+    const auto function = reinterpret_cast<Function>(eglGetProcAddress(name));
+    if (!function) throw EglLifecycleError(EglOperation::unavailable, EGL_BAD_MATCH);
+    return function;
+}
+void CheckEgl(const EGLBoolean result, EglApi& api) {
+    if (result != EGL_TRUE) ThrowLastError(api, EglOperation::unavailable);
+}
+}
+#endif
+
+std::string EglDisplayResources::Extensions() const {
+#if OGPLAY_HAS_ANGLE
+    const auto* text = eglQueryString(ReinterpretHandle<EGLDisplay>(display_), EGL_EXTENSIONS);
+    if (!text) ThrowLastError(*api_, EglOperation::unavailable);
+    return text;
+#else
+    return {};
+#endif
+}
+
+std::int32_t EglDisplayResources::ConfigAttribute(const std::uint32_t name) const {
+#if OGPLAY_HAS_ANGLE
+    EGLint value{};
+    CheckEgl(eglGetConfigAttrib(ReinterpretHandle<EGLDisplay>(display_),
+        ReinterpretHandle<EGLConfig>(config_), static_cast<EGLint>(name), &value), *api_);
+    return value;
+#else
+    static_cast<void>(name); throw EglLifecycleError(EglOperation::unavailable, 0);
+#endif
+}
+
+EglHandle EglDisplayResources::CreateSync(const std::uint32_t type,
+    const std::span<const std::int32_t> attributes) {
+#if OGPLAY_HAS_ANGLE
+    const auto sync = EglExtension<PFNEGLCREATESYNCKHRPROC>("eglCreateSyncKHR")(
+        ReinterpretHandle<EGLDisplay>(display_), type, attributes.data());
+    if (!sync) ThrowLastError(*api_, EglOperation::unavailable);
+    return ReinterpretHandle<EglHandle>(sync);
+#else
+    static_cast<void>(type); static_cast<void>(attributes);
+    throw EglLifecycleError(EglOperation::unavailable, 0);
+#endif
+}
+void EglDisplayResources::DestroySync(const EglHandle sync) {
+#if OGPLAY_HAS_ANGLE
+    CheckEgl(EglExtension<PFNEGLDESTROYSYNCKHRPROC>("eglDestroySyncKHR")(
+        ReinterpretHandle<EGLDisplay>(display_), ReinterpretHandle<EGLSyncKHR>(sync)), *api_);
+#else
+    static_cast<void>(sync); throw EglLifecycleError(EglOperation::unavailable, 0);
+#endif
+}
+std::uint32_t EglDisplayResources::ClientWaitSync(const EglHandle sync,
+    const std::uint32_t flags, const std::uint64_t timeout) {
+#if OGPLAY_HAS_ANGLE
+    const auto value = EglExtension<PFNEGLCLIENTWAITSYNCKHRPROC>("eglClientWaitSyncKHR")(
+        ReinterpretHandle<EGLDisplay>(display_), ReinterpretHandle<EGLSyncKHR>(sync), flags, timeout);
+    if (!value) ThrowLastError(*api_, EglOperation::unavailable);
+    return static_cast<std::uint32_t>(value);
+#else
+    static_cast<void>(sync); static_cast<void>(flags); static_cast<void>(timeout);
+    throw EglLifecycleError(EglOperation::unavailable, 0);
+#endif
+}
+std::int32_t EglDisplayResources::SyncAttribute(const EglHandle sync, const std::uint32_t name) {
+#if OGPLAY_HAS_ANGLE
+    EGLint value{};
+    CheckEgl(EglExtension<PFNEGLGETSYNCATTRIBKHRPROC>("eglGetSyncAttribKHR")(
+        ReinterpretHandle<EGLDisplay>(display_), ReinterpretHandle<EGLSyncKHR>(sync), name, &value), *api_);
+    return value;
+#else
+    static_cast<void>(sync); static_cast<void>(name); throw EglLifecycleError(EglOperation::unavailable, 0);
+#endif
+}
+void EglDisplayResources::WaitSync(const EglHandle sync, const std::uint32_t flags) {
+#if OGPLAY_HAS_ANGLE
+    CheckEgl(EglExtension<PFNEGLWAITSYNCKHRPROC>("eglWaitSyncKHR")(
+        ReinterpretHandle<EGLDisplay>(display_), ReinterpretHandle<EGLSyncKHR>(sync), static_cast<EGLint>(flags)), *api_);
+#else
+    static_cast<void>(sync); static_cast<void>(flags); throw EglLifecycleError(EglOperation::unavailable, 0);
+#endif
+}
+EglHandle EglDisplayResources::CreateImage(const EglHandle context,
+    const std::uint32_t target, const std::uint32_t buffer,
+    const std::span<const std::int32_t> attributes) {
+#if OGPLAY_HAS_ANGLE
+    const auto image = EglExtension<PFNEGLCREATEIMAGEKHRPROC>("eglCreateImageKHR")(
+        ReinterpretHandle<EGLDisplay>(display_), ReinterpretHandle<EGLContext>(context), target,
+        ReinterpretHandle<EGLClientBuffer>(static_cast<std::uintptr_t>(buffer)), attributes.data());
+    if (!image) ThrowLastError(*api_, EglOperation::unavailable);
+    return ReinterpretHandle<EglHandle>(image);
+#else
+    static_cast<void>(context); static_cast<void>(target); static_cast<void>(buffer); static_cast<void>(attributes);
+    throw EglLifecycleError(EglOperation::unavailable, 0);
+#endif
+}
+void EglDisplayResources::SignalSync(const EglHandle sync, const std::uint32_t mode) {
+#if OGPLAY_HAS_ANGLE
+    CheckEgl(EglExtension<PFNEGLSIGNALSYNCKHRPROC>("eglSignalSyncKHR")(
+        ReinterpretHandle<EGLDisplay>(display_), ReinterpretHandle<EGLSyncKHR>(sync), mode), *api_);
+#else
+    static_cast<void>(sync); static_cast<void>(mode); throw EglLifecycleError(EglOperation::unavailable, 0);
+#endif
+}
+void EglDisplayResources::DestroyImage(const EglHandle image) {
+#if OGPLAY_HAS_ANGLE
+    CheckEgl(EglExtension<PFNEGLDESTROYIMAGEKHRPROC>("eglDestroyImageKHR")(
+        ReinterpretHandle<EGLDisplay>(display_), ReinterpretHandle<EGLImageKHR>(image)), *api_);
+#else
+    static_cast<void>(image); throw EglLifecycleError(EglOperation::unavailable, 0);
+#endif
+}
+void EglDisplayResources::SwapInterval(const std::int32_t interval) {
+#if OGPLAY_HAS_ANGLE
+    CheckEgl(eglSwapInterval(ReinterpretHandle<EGLDisplay>(display_), interval), *api_);
+#else
+    static_cast<void>(interval); throw EglLifecycleError(EglOperation::unavailable, 0);
+#endif
+}
+void EglSurfaceResources::BindTexture(const bool bind) {
+#if OGPLAY_HAS_ANGLE
+    const auto display = ReinterpretHandle<EGLDisplay>(Display());
+    const auto surface = ReinterpretHandle<EGLSurface>(surface_);
+    CheckEgl(bind ? eglBindTexImage(display, surface, EGL_BACK_BUFFER) :
+                   eglReleaseTexImage(display, surface, EGL_BACK_BUFFER), display_->Api());
+#else
+    static_cast<void>(bind); throw EglLifecycleError(EglOperation::unavailable, 0);
+#endif
+}
+void EglSurfaceResources::SetAttribute(const std::uint32_t name, const std::int32_t value) {
+#if OGPLAY_HAS_ANGLE
+    CheckEgl(eglSurfaceAttrib(ReinterpretHandle<EGLDisplay>(Display()),
+        ReinterpretHandle<EGLSurface>(surface_), static_cast<EGLint>(name), value), display_->Api());
+#else
+    static_cast<void>(name); static_cast<void>(value); throw EglLifecycleError(EglOperation::unavailable, 0);
+#endif
+}
+void EglSurfaceResources::SwapBuffers() {
+#if OGPLAY_HAS_ANGLE
+    CheckEgl(eglSwapBuffers(ReinterpretHandle<EGLDisplay>(Display()),
+        ReinterpretHandle<EGLSurface>(surface_)), display_->Api());
+#else
+    throw EglLifecycleError(EglOperation::unavailable, 0);
+#endif
+}
+
+EglLifecycle EglLifecycle::CreateContext(std::shared_ptr<EglDisplayResources> display,
+    const int client_version, const EglHandle share_context) {
+    auto& api = display->Api();
+    EglLifecycle result(api, display->Info());
+    result.registry_display_ = std::move(display);
+    result.display_ = result.registry_display_->Display();
+    result.info_.client_version = client_version;
+    if (!api.BindOpenGlesApi()) ThrowLastError(api, EglOperation::bind_api);
+    result.context_ = api.CreateContext(result.display_, result.registry_display_->Config(),
+                                        client_version, share_context);
+    if (!result.context_) ThrowLastError(api, EglOperation::create_context);
+    return result;
+}
+
+void EglLifecycle::BindSurfaces(std::shared_ptr<EglSurfaceResources> draw,
+                               std::shared_ptr<EglSurfaceResources> read) {
+    if (!registry_display_ || !draw || !read || draw->Display() != display_ ||
+        read->Display() != display_) throw std::logic_error("EGL surface/display mismatch");
+    if (!api_->MakeCurrent(display_, draw->Surface(), read->Surface(), context_))
+        ThrowLastError(*api_, EglOperation::make_current);
+    draw_ = std::move(draw); read_ = std::move(read);
+    info_.width = draw_->Width(); info_.height = draw_->Height();
+    current_ = true;
+}
 
 EglLifecycle EglLifecycle::CreatePbuffer(EglApi& api,
                                          const AngleBackend backend,
@@ -325,7 +569,9 @@ EglLifecycle::EglLifecycle(EglLifecycle&& other) noexcept
       context_(std::exchange(other.context_, 0)),
       surface_(std::exchange(other.surface_, 0)),
       initialized_(std::exchange(other.initialized_, false)),
-      current_(std::exchange(other.current_, false)) {}
+      current_(std::exchange(other.current_, false)),
+      registry_display_(std::move(other.registry_display_)),
+      draw_(std::move(other.draw_)), read_(std::move(other.read_)) {}
 
 EglLifecycle& EglLifecycle::operator=(EglLifecycle&& other) noexcept {
     if (this == &other) {
@@ -339,6 +585,8 @@ EglLifecycle& EglLifecycle::operator=(EglLifecycle&& other) noexcept {
     surface_ = std::exchange(other.surface_, 0);
     initialized_ = std::exchange(other.initialized_, false);
     current_ = std::exchange(other.current_, false);
+    registry_display_ = std::move(other.registry_display_);
+    draw_ = std::move(other.draw_); read_ = std::move(other.read_);
     return *this;
 }
 
@@ -355,6 +603,7 @@ EglHandle EglLifecycle::NativeContext() const noexcept { return context_; }
 EglHandle EglLifecycle::NativeSurface() const noexcept { return surface_; }
 
 void EglLifecycle::BindCurrentOnCallingThread() {
+    if (registry_display_) { BindSurfaces(draw_, read_); return; }
     if (api_ == nullptr || display_ == 0 || context_ == 0 || surface_ == 0) {
         throw std::logic_error("EGL lifecycle is not initialized");
     }
@@ -375,6 +624,7 @@ void EglLifecycle::ReleaseCurrent() {
         ThrowLastError(*api_, EglOperation::make_current);
     }
     current_ = false;
+    if (registry_display_) { draw_.reset(); read_.reset(); }
 }
 
 void EglLifecycle::Reset() noexcept {
@@ -399,6 +649,7 @@ void EglLifecycle::Reset() noexcept {
     surface_ = 0;
     initialized_ = false;
     current_ = false;
+    draw_.reset(); read_.reset(); registry_display_.reset();
 }
 
 bool IsNativeAngleEglAvailable() noexcept {

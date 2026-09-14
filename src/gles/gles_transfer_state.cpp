@@ -212,6 +212,8 @@ constexpr std::uint32_t kElementArrayBuffer = 0x8893;
     case 0x8625:  // GL_VERTEX_ATTRIB_ARRAY_TYPE
     case 0x886A:  // GL_VERTEX_ATTRIB_ARRAY_NORMALIZED
     case 0x889F:  // GL_VERTEX_ATTRIB_ARRAY_BUFFER_BINDING
+    case 0x88FD:  // GL_VERTEX_ATTRIB_ARRAY_INTEGER
+    case 0x88FE:  // GL_VERTEX_ATTRIB_ARRAY_DIVISOR
         return 1;
     default:
         throw GlesTransferStateError("unsupported GLES vertex attribute query");
@@ -225,6 +227,12 @@ constexpr std::uint32_t kElementArrayBuffer = 0x8893;
     case 0x2801:  // GL_TEXTURE_MIN_FILTER
     case 0x2802:  // GL_TEXTURE_WRAP_S
     case 0x2803:  // GL_TEXTURE_WRAP_T
+    case 0x8072:  // GL_TEXTURE_WRAP_R
+    case 0x813A: case 0x813B:  // MIN/MAX_LOD
+    case 0x813C: case 0x813D:  // BASE/MAX_LEVEL
+    case 0x884C: case 0x884D:  // COMPARE_MODE/FUNC
+    case 0x8E42: case 0x8E43: case 0x8E44: case 0x8E45:  // SWIZZLE_R/G/B/A
+    case 0x912F: case 0x82DF:  // IMMUTABLE_FORMAT/LEVELS
         return 1;
     default:
         throw GlesTransferStateError("unsupported GLES texture parameter shape");
@@ -253,7 +261,9 @@ void GlesTransferState::PixelStore(const std::uint32_t pname,
         value = static_cast<std::uint32_t>(alignment);
     } else if (pname == 0x0D02U || pname == 0x0D03U || pname == 0x0D04U) {
         if (alignment < 0) throw GlesTransferStateError("GLES pixel store value must not be negative");
-        // Pack row/skip state does not affect the GLES3 upload paths owned here.
+        auto& value = pname == 0x0D02U ? pack_row_length_ :
+                      pname == 0x0D03U ? pack_skip_rows_ : pack_skip_pixels_;
+        value = static_cast<std::uint32_t>(alignment);
     } else {
         throw GlesTransferStateError("unsupported GLES pixel store name");
     }
@@ -265,16 +275,54 @@ void GlesTransferState::BindBuffer(const std::uint32_t target,
         array_buffer_ = buffer;
     } else if (target == kElementArrayBuffer) {
         element_array_buffer_ = buffer;
+    } else if (target == 0x8A11U || target == 0x88EBU || target == 0x88ECU ||
+               target == 0x8F36U || target == 0x8F37U || target == 0x8C8EU) {
+        other_buffers_[target] = buffer;
     } else {
         throw GlesTransferStateError("unsupported GLES transfer buffer target");
     }
 }
 
+std::uint32_t GlesTransferState::BoundBuffer(const std::uint32_t target) const {
+    if (target == kArrayBuffer) return array_buffer_;
+    if (target == kElementArrayBuffer) return element_array_buffer_;
+    const auto found = other_buffers_.find(target);
+    return found == other_buffers_.end() ? 0U : found->second;
+}
+
+void GlesTransferState::DeleteBuffers(const std::span<const std::uint32_t> names) {
+    for (const auto name : names) {
+        if (array_buffer_ == name) array_buffer_ = 0U;
+        if (element_array_buffer_ == name) element_array_buffer_ = 0U;
+        for (auto& [target, binding] : other_buffers_) {
+            static_cast<void>(target); if (binding == name) binding = 0U;
+        }
+    }
+}
+
+PixelTransferLayout GlesTransferState::PixelLayout2D(const bool pack,
+    const std::int32_t width, const std::int32_t height,
+    const std::uint32_t format, const std::uint32_t type) const {
+    if (width < 0 || height < 0) throw GlesTransferStateError("negative pixel dimensions");
+    if (width == 0 || height == 0) return {};
+    const auto pixel = PixelSize(format, type);
+    const auto row_length = pack ? pack_row_length_ : unpack_row_length_;
+    const auto stride = core::AlignUp(CheckedMultiply(row_length == 0U ?
+        static_cast<std::uint32_t>(width) : row_length, pixel),
+        pack ? pack_alignment_ : unpack_alignment_);
+    if (!stride) throw GlesTransferStateError("pixel row stride overflow");
+    const auto offset = CheckedAdd(CheckedMultiply(pack ? pack_skip_rows_ : unpack_skip_rows_, *stride),
+        CheckedMultiply(pack ? pack_skip_pixels_ : unpack_skip_pixels_, pixel));
+    const auto row_bytes = CheckedMultiply(static_cast<std::uint32_t>(width), pixel);
+    return {offset, *stride, row_bytes,
+        CheckedAdd(offset, CheckedAdd(CheckedMultiply(static_cast<std::uint32_t>(height - 1), *stride), row_bytes)),
+        static_cast<std::uint32_t>(height)};
+}
+
 void GlesTransferState::SetQueryElementCount(const std::uint32_t pname,
                                              const std::uint64_t count) {
-    if (count == 0) {
-        throw GlesTransferStateError("GLES query element count must not be zero");
-    }
+    if (count == 0U && pname != 0x86A3U && pname != 0x8DF8U && pname != 0x87FFU)
+        throw GlesTransferStateError("only variable-length query lists may be empty");
     query_counts_[pname] = count;
 }
 
@@ -350,12 +398,12 @@ std::optional<GlesLengthResolution> GlesTransferState::Resolve(
         std::size_t width_index{};
         std::size_t format_index{};
         std::size_t type_index{};
-        std::uint32_t alignment = unpack_alignment_;
+
         if (request.function_name == "glReadPixels") {
             width_index = 2;
             format_index = 4;
             type_index = 5;
-            alignment = pack_alignment_;
+
         } else if (request.function_name == "glTexImage2D") {
             width_index = 3;
             format_index = 6;
@@ -372,10 +420,11 @@ std::optional<GlesLengthResolution> GlesTransferState::Resolve(
         }
         return GlesLengthResolution{
             GlesLengthDisposition::transfer,
-            PixelBytes(static_cast<std::int32_t>(request.arguments[width_index]),
+            PixelLayout2D(request.function_name == "glReadPixels",
+                       static_cast<std::int32_t>(request.arguments[width_index]),
                        static_cast<std::int32_t>(request.arguments[width_index + 1]),
                        request.arguments[format_index],
-                       request.arguments[type_index], alignment)};
+                       request.arguments[type_index]).bytes};
     }
     if (request.expression == "index_bytes(count,type)") {
         if (request.arguments.size() != 4) {

@@ -628,12 +628,12 @@ note = "M4 已在三平台完成真实 pbuffer 生命周期、guest 边界、SDL
 [gles.egl_lifecycle]
 status = "partial"
 test = "tests/gles/egl_lifecycle_tests.cpp; tests/gles/angle_frame_tests.cpp"
-note = "M4 完成可注入生命周期、精确 EGL 错误和逆序回滚；M5 WU-0286 为 pbuffer EGL config 请求并验证 RGBA8+D24S8；2026-09-14 BND-33 WU-1 将对象表接到每 Context/Surface 的真实 ANGLE backing，闭合 native share group、独立 pbuffer、draw/read、Context 状态、稳定 proc thunk、双宿主线程 current/接管、延迟销毁及 Terminate/重初始化；BND-32 补齐 34/34 EGL 1.4 core 名称。完整窗口系统交换仍未实现，因此保持 partial"
+note = "BND-34 将一个 guest Context 映射到唯一 eager native Context，Surface 独立持有 pbuffer，Display 引用计数；原生 draw/read、逆序绑定共享源、延迟销毁与线程接力有定向回归。KHR image/sync 与 texture pbuffer 按 ANGLE 能力发布；完整 Android 窗口系统未实现，整体保持 partial。"
 
 [runtime.egl_api19_base_boundary]
 status = "complete"
 test = "tests/runtime/boundary/integration/android_boundary_hle_tests.cpp; runtime.android_link_preflight; runtime.bionic_virtual_so_late_import; architecture.boundary_hot_path"
-note = "BND-17 在 direct {fn,EglModule*} 路径增加 13 个 API19 基础 EGL 入口；per-guest-thread sticky error/current/API、稳定 query strings 与 pbuffer metadata 均有 focused gate；BND-33 的独立稳定 proc thunk 在调用时按 current EGLContext client version 转发 GLES1/GLES2，查询无需 current，直接 ELF import 保留 SONAME 语义；BND-32 发布完整 34 个 EGL 1.4 core 入口，未支持的 pixmap/OpenVG/texture-pbuffer 路径返回明确 EGL error"
+note = "34/34 EGL 1.4 core 名称与稳定 proc thunk；BND-34 修复 Context/Surface 分离及共享组生命周期，texture pbuffer 调用真实 ANGLE，swap 发布 draw 默认 framebuffer 后恢复 read surface/FBO。Pixmap/OpenVG 明确不支持，此项 complete 仅指已定义基础边界。"
 
 [gles.idl_codegen]
 status = "partial"
@@ -653,7 +653,7 @@ note = "BND-33 WU-4 从 Android 4.4.4 gl3.h 对 gl2.h 精确差分 104 个新增
 [runtime.gles3_api19_boundary]
 status = "complete"
 test = "tests/runtime/boundary/integration/android_boundary_hle_tests.cpp; tests/gles/gles_dispatch_tests.cpp"
-note = "BND-33 WU-4 已让 EGL 创建真实 ES3 Context并在libGLESv2.so发布104项delta；104项全部进入真实ANGLE，普通3D texture按unpack状态受界搬运，多指针query先完整预检，sync和map-buffer使用guest identity/arena隔离host指针；Java GLES30由同一生成catalog与managed桥发布"
+note = "104 项 delta 已进入真实 ANGLE。BND-34 修复共享组 map/sync、VAO bind/delete 与整数属性恢复、ES3 buffer target、PBO/pack/unpack、UBO 可变长与 sampler/64 位查询；uniform shape 从共享 native program 刷新。目录/handler 覆盖不是全量 GLES conformance。"
 
 [gles.guest_transfer]
 status = "complete"
@@ -1233,17 +1233,17 @@ note = "M5 WU-0264 按 GLES1 规范绑定 7 个 lighting/material/fog 入口并�
 [gles.gles1_extension_catalog]
 status = "complete"
 test = "tools.gles1_extensions_catalog_current"
-note = "M5 WU-0231 以固定 ANGLE extension header 建立 GL_OES_matrix_palette/mapbuffer 各三项入口；显式 thunk_id 保持既有 extension/core ID"
+note = "BND-34 在保留既有 thunk_id 的基础上追加 glLoadPaletteFromModelViewMatrixOES；GL_OES_matrix_palette 四入口及 GL_OES_mapbuffer 三入口与固定 header 核对。"
 
 [runtime.gles1_extension_boundary]
 status = "complete"
 test = "tests/runtime/boundary/integration/android_boundary_hle_tests.cpp"
-note = "M5 WU-0232 发布 matrix-palette 三项 trap；后续以 ANGLE map ↔ 0x72000000 guest arena 双向复制真实实现 GL_OES_mapbuffer 三项，Tales 已越过强符号拒载"
+note = "BND-34 将 matrix palette 四入口接入真实加权变换；OES mapbuffer 按 share group 隔离 guest arena，校验 native mapping 存活后回写。扩展全集不在此项完成范围。"
 
 [runtime.gles1_matrix_palette_state]
 status = "partial"
 test = "tests/runtime/boundary/integration/android_boundary_hle_tests.cpp; bounded exact-APK one-frame run-apk smoke"
-note = "M5 WU-0275 为三个 GL_OES_matrix_palette 入口实现受检可重置状态并接入 client-state；完整 palette matrix stack 与 skinning draw 转换尚未实现且启用时明确失败"
+note = "BND-34 实现 32 个 Context 独立 palette matrix、最多 4 权重、有界 RAM/VBO 取数及位置/法线变换；双权重真实像素、关闭对照及 Context 切换回归通过。仍未执行 matrix palette 全量一致性套件，保留 partial。"
 
 [tools.dex_dependency_survey]
 status = "complete"
@@ -1715,3 +1715,8 @@ note = "DVM-121 ColorStateList/CREATOR、StateSet、R.attr 来自 BootDex；Mani
 status = "complete"
 test = "tests/dexvm/bootdex_library_tests.cpp; tests/runtime/native_library_loader_tests.cpp; DVM-150"
 note = "API19 Runtime add/removeShutdownHook/exit/halt 执行 BootDex 原版 Java，hook List 为真实 GC 强根；System.exit 共用协议，nativeExit 保存 per-VM 退出码并停止执行，owner 回收避免 worker 自 join。root join 复用统一 Clock 补时；真实 LogManager Handler.close、timed hook、Java catch 无法吞退出、VM 隔离定向受检。complete 仅指注册与显式退出闭环；宿主 Stop 仍为取消，未提供 non-daemon 自动退出、hook 超时完成或 Java finalization，Runtime gc/堆统计/nativeLoad 不在此能力范围。"
+
+[runtime.egl_khr_object_boundary]
+status = "partial"
+test = "tests/runtime/boundary/integration/android_boundary_hle_tests.cpp: BND34 EGL fences images and texture pbuffers use real ANGLE objects"
+note = "BND-34 发布 8 个 KHR sync/image handler 及两个 OES image target thunk，使用 guest identity 与真实 ANGLE 对象。Windows D3D11 实测 reusable sync、GL texture image、texture pbuffer；fence/wait 等只按后端实际支持宣告；Android native-buffer/native-fence FD/presentation-time 未发布。"

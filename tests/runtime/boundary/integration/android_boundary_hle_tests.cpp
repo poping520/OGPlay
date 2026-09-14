@@ -691,8 +691,8 @@ TEST_CASE("Android EGL query strings and pbuffer attributes use guest memory") {
                        {1U, 3U, 0x3056U, size.Value()}) == 1U);
     CHECK(fixture.bus.Read32(size, 1U) == 32U);
     const std::array surface_queries{
-        std::pair{0x3028U, 1U}, std::pair{0x3080U, 0x3038U},
-        std::pair{0x3081U, 0x3038U}, std::pair{0x3082U, 0U},
+        std::pair{0x3028U, 1U}, std::pair{0x3080U, 0x305CU},
+        std::pair{0x3081U, 0x305CU}, std::pair{0x3082U, 0U},
         std::pair{0x3083U, 0U}, std::pair{0x3086U, 0x3084U},
         std::pair{0x3093U, 0x3095U}, std::pair{0x3099U, 0x309AU}};
     for (const auto& [attribute, expected] : surface_queries) {
@@ -920,7 +920,7 @@ TEST_CASE("Android EGL creates ES3 and routes vertex array core calls") {
     CHECK(valid_wait);
     CHECK(fixture.Call("libGLESv2.so", "glDeleteSync", {sync}) == 0U);
     CHECK(fixture.Call("libGLESv2.so", "glIsSync", {sync}) == 0U);
-    CHECK(fixture.Call("libGLESv2.so", "glGetError") == 0x0501U);
+    CHECK(fixture.Call("libGLESv2.so", "glGetError") == 0U);
     CHECK(fixture.Call("libGLESv2.so", "glGetError") == 0U);
 
     const auto buffer_name = fixture.output.Add(96U);
@@ -3550,10 +3550,10 @@ TEST_CASE("GLES1 cube map textures bind upload and sample the fixed pipeline") {
     std::string gles2_extension_text(gles2_extension_length, '\0');
     fixture.memory.Read(ogplay::memory::GuestAddress{gles2_extensions},
                         std::as_writable_bytes(std::span(gles2_extension_text)), 1U);
-    CHECK(gles2_extension_text ==
+    CHECK(gles2_extension_text.starts_with(
           "GL_OES_compressed_ETC1_RGB8_texture "
           "GL_IMG_texture_compression_pvrtc "
-          "GL_OES_rgb8_rgba8 ");
+          "GL_OES_rgb8_rgba8 "));
     CHECK(gles2_extension_text.find("GL_OES_texture_3D") == std::string::npos);
 
     const auto names = fixture.output.Add(0x300U);
@@ -3988,7 +3988,7 @@ TEST_CASE("GLES1 clip plane discards fixed pipeline fragments") {
 TEST_CASE("Android boundary publishes required GLES1 extensions separately") {
     BoundaryFixture fixture;
     CHECK(ogplay::gles::GlesFunctionCount(
-              ogplay::gles::GlesApi::gles1_extensions) == 6);
+              ogplay::gles::GlesApi::gles1_extensions) == 7);
     CHECK(ogplay::gles::FindGlesFunction(
               ogplay::gles::GlesApi::gles1_extensions,
               "glCurrentPaletteMatrixOES") == 0U);
@@ -4045,11 +4045,9 @@ TEST_CASE("Android boundary publishes required GLES1 extensions separately") {
                        {ogplay::runtime::detail::kGles1VertexArray}) == 0U);
     CHECK(fixture.Call("libGLESv1_CM.so", "glEnableClientState",
                        {ogplay::runtime::detail::kGles1MatrixIndexArray}) == 0U);
-    CHECK_THROWS_WITH_AS(
-        fixture.Call("libGLESv1_CM.so", "glDrawArrays",
-                     {0x0000U, 0U, 1U}),
-        "GLES1 matrix-palette skinning draw conversion is not implemented",
-        std::runtime_error);
+    CHECK(fixture.Call("libGLESv1_CM.so", "glEnable", {0x8840U}) == 0U);
+    CHECK(fixture.Call("libGLESv1_CM.so", "glDrawArrays", {0x0000U, 0U, 1U}) == 0U);
+    CHECK(fixture.Call("libGLESv1_CM.so", "glGetError") == 0x0502U);
     fixture.boundary.CloseManagedSurface();
 }
 
@@ -4999,10 +4997,8 @@ TEST_CASE("GLES2 completion covers shader uniform and vertex query lifecycle") {
 
     CHECK(fixture.Call("libGLESv2.so", "glUseProgram", {0U}) == 0U);
     CHECK(fixture.Call("libGLESv2.so", "glDeleteProgram", {program}) == 0U);
-    CHECK_THROWS_WITH_AS(
-        fixture.Call("libGLESv2.so", "glGetUniformfv",
-                     {program, tint, query.Value()}),
-        "GLES uniform shape is not registered", std::runtime_error);
+    CHECK(fixture.Call("libGLESv2.so", "glGetUniformfv", {program, tint, query.Value()}) == 0U);
+    CHECK(fixture.Call("libGLESv2.so", "glGetError") == 0x0501U);
     CHECK(fixture.Call("libGLESv2.so", "glDeleteShader", {vertex}) == 0U);
     CHECK(fixture.Call("libGLESv2.so", "glDeleteShader", {fragment}) == 0U);
     fixture.boundary.CloseManagedSurface();
@@ -5187,4 +5183,457 @@ TEST_CASE("Android boundary supersamples without changing guest surface size") {
     CHECK(frame->rgba8[1] == doctest::Approx(64).epsilon(0.02));
     CHECK(frame->rgba8[2] == doctest::Approx(128).epsilon(0.02));
     CHECK(fixture.Call("libEGL.so", "eglTerminate", {1}) == 1);
+}
+
+
+namespace {
+std::uint32_t AuditGl(BoundaryFixture& f, const std::string_view name,
+                      const std::initializer_list<std::uint32_t> args = {}) {
+    const auto entry = f.boundary.Symbols().Lookup("libGLESv2.so", name);
+    REQUIRE(entry.has_value());
+    return BoundaryCallAddress(f, entry->Value(), {args.begin(), args.size()});
+}
+std::uint32_t AuditSurface(BoundaryFixture& f) {
+    f.bus.Write32(f.output, 0x3057U, 1U); f.bus.Write32(f.output.Add(4), 4U, 1U);
+    f.bus.Write32(f.output.Add(8), 0x3056U, 1U); f.bus.Write32(f.output.Add(12), 4U, 1U);
+    f.bus.Write32(f.output.Add(16), 0x3038U, 1U);
+    const auto value = f.Call("libEGL.so", "eglCreatePbufferSurface", {1, 2, f.output.Value()});
+    REQUIRE(value != 0U); return value;
+}
+std::uint32_t AuditContext(BoundaryFixture& f, const std::uint32_t version = 3U,
+                           const std::uint32_t share = 0U) {
+    f.bus.Write32(f.output, 0x3098U, 1U); f.bus.Write32(f.output.Add(4), version, 1U);
+    f.bus.Write32(f.output.Add(8), 0x3038U, 1U);
+    const auto value = f.Call("libEGL.so", "eglCreateContext", {1, 2, share, f.output.Value()});
+    REQUIRE(value != 0U); return value;
+}
+void AuditBind(BoundaryFixture& f, const std::uint32_t c, const std::uint32_t d,
+               const std::uint32_t r = 0U) {
+    REQUIRE(f.Call("libEGL.so", "eglMakeCurrent", {1, d, r == 0U ? d : r, c}) == 1U);
+}
+std::uint32_t AuditName(BoundaryFixture& f, const std::string_view gen) {
+    AuditGl(f, gen, {1U, f.output.Add(128).Value()});
+    return f.bus.Read32(f.output.Add(128), 1U);
+}
+std::uint32_t AuditInteger(BoundaryFixture& f, const std::uint32_t pname) {
+    AuditGl(f, "glGetIntegerv", {pname, f.output.Add(128).Value()});
+    return f.bus.Read32(f.output.Add(128), 1U);
+}
+std::uint32_t AuditPixel(BoundaryFixture& f) {
+    AuditGl(f, "glReadPixels", {0, 0, 1, 1, 0x1908, 0x1401, f.output.Add(160).Value()});
+    REQUIRE(AuditGl(f, "glGetError") == 0U);
+    return f.bus.Read32(f.output.Add(160), 1U);
+}
+}
+
+TEST_CASE("BND34 GLES1 matrix palette performs weighted transforms and restores contexts") {
+    if (!ogplay::gles::IsNativeAngleEglAvailable()) return;
+    BoundaryFixture f;
+    REQUIRE(f.Call("libEGL.so", "eglInitialize", {1, 0, 0}) == 1U);
+    const auto surface = AuditSurface(f), context = AuditContext(f, 1U);
+    AuditBind(f, context, surface);
+    const auto gl = [&](std::string_view name, std::initializer_list<std::uint32_t> args = {}) {
+        const auto entry = f.boundary.Symbols().Lookup("libGLESv1_CM.so", name);
+        REQUIRE(entry.has_value());
+        return BoundaryCallAddress(f, entry->Value(), {args.begin(), args.size()});
+    };
+    const auto word = [](float value) { return std::bit_cast<std::uint32_t>(value); };
+    const auto vertices = f.output.Add(256), weights = f.output.Add(384), indices = f.output.Add(448);
+    const std::array positions{-5.0F, -1.0F, -1.0F, -1.0F, -5.0F, 3.0F};
+    for (std::size_t i = 0; i < positions.size(); ++i) f.bus.Write32(vertices.Add(i * 4), word(positions[i]), 1U);
+    for (std::size_t i = 0; i < 6; ++i) f.bus.Write32(weights.Add(i * 4), word(0.5F), 1U);
+    f.bus.Write32(indices, 0x01000100U, 1U); f.bus.Write32(indices.Add(4), 0x00000100U, 1U);
+    gl("glVertexPointer", {2, 0x1406, 0, vertices.Value()});
+    gl("glWeightPointerOES", {2, 0x1406, 0, weights.Value()});
+    gl("glMatrixIndexPointerOES", {2, 0x1401, 0, indices.Value()});
+    gl("glEnableClientState", {0x8074}); gl("glEnableClientState", {0x86AD}); gl("glEnableClientState", {0x8844});
+    gl("glColor4f", {word(1), 0, 0, word(1)});
+    gl("glMatrixMode", {0x8840}); gl("glTranslatef", {word(2), 0, 0});
+    gl("glCurrentPaletteMatrixOES", {1});
+    gl("glMatrixMode", {0x1700}); gl("glTranslatef", {word(6), 0, 0});
+    gl("glLoadPaletteFromModelViewMatrixOES"); gl("glLoadIdentity");
+    const auto draw = [&] {
+        gl("glClearColor", {0, 0, 0, word(1)}); gl("glClear", {0x4000});
+        gl("glDrawArrays", {4, 0, 3});
+        gl("glReadPixels", {0, 0, 1, 1, 0x1908, 0x1401, f.output.Add(512).Value()});
+        REQUIRE(gl("glGetError") == 0U);
+        return f.bus.Read32(f.output.Add(512), 1U);
+    };
+    CHECK(draw() == 0xFF000000U);
+    gl("glEnable", {0x8840}); CHECK(draw() == 0xFF0000FFU);
+    const auto other = AuditContext(f, 1U);
+    AuditBind(f, other, surface); gl("glCurrentPaletteMatrixOES", {7});
+    AuditBind(f, context, surface);
+    gl("glGetIntegerv", {0x8843, f.output.Add(520).Value()}); CHECK(f.bus.Read32(f.output.Add(520), 1U) == 1U);
+    CHECK(draw() == 0xFF0000FFU);
+    gl("glDisable", {0x8840}); CHECK(draw() == 0xFF000000U);
+    gl("glPixelStorei", {0x0D05, 8});
+    for (std::uint32_t i = 0; i < 16; i += 4) f.bus.Write32(f.output.Add(600 + i), 0xAABBCCDDU, 1U);
+    gl("glReadPixels", {0, 0, 1, 2, 0x1908, 0x1401, f.output.Add(600).Value()});
+    CHECK(f.bus.Read32(f.output.Add(604), 1U) == 0xAABBCCDDU);
+    CHECK(f.bus.Read32(f.output.Add(608), 1U) == 0xFF000000U);
+    CHECK(f.bus.Read32(f.output.Add(612), 1U) == 0xAABBCCDDU);
+    CHECK(gl("glGetError") == 0U);
+}
+
+TEST_CASE("BND34 ES3 mapping flush ranges arena reuse and VAO deletion remain coherent") {
+    if (!ogplay::gles::IsNativeAngleEglAvailable()) return;
+    BoundaryFixture f;
+    REQUIRE(f.Call("libEGL.so", "eglInitialize", {1, 0, 0}) == 1U);
+    const auto surface = AuditSurface(f), context = AuditContext(f);
+    AuditBind(f, context, surface);
+    const auto data = f.output.Add(640);
+    f.bus.Write32(data, 0x11223344U, 1U); f.bus.Write32(data.Add(4), 0x55667788U, 1U);
+    const auto buffer = AuditName(f, "glGenBuffers");
+    AuditGl(f, "glBindBuffer", {0x8892, buffer}); AuditGl(f, "glBufferData", {0x8892, 8, data.Value(), 0x88E8});
+    const auto mapped = AuditGl(f, "glMapBufferRange", {0x8892, 0, 8, 0x12}); REQUIRE(mapped != 0U);
+    f.bus.Write32(ogplay::memory::GuestAddress{mapped}, 0xABCDEF12U, 1U);
+    AuditGl(f, "glFlushMappedBufferRange", {0x8892, 0, 4});
+    f.bus.Write32(ogplay::memory::GuestAddress{mapped}, 0x98765432U, 1U);
+    REQUIRE(AuditGl(f, "glUnmapBuffer", {0x8892}) == 1U);
+    const auto read = AuditGl(f, "glMapBufferRange", {0x8892, 0, 8, 1}); REQUIRE(read != 0U);
+    CHECK(f.bus.Read32(ogplay::memory::GuestAddress{read}, 1U) == 0xABCDEF12U);
+    // Keep this mapping alive while repeatedly mapping a second buffer: the arena must reuse gaps.
+    const auto second = AuditName(f, "glGenBuffers");
+    AuditGl(f, "glBindBuffer", {0x8892, second}); AuditGl(f, "glBufferData", {0x8892, 2U * 1024U * 1024U, 0, 0x88E8});
+    for (unsigned i = 0; i < 10; ++i) {
+        REQUIRE(AuditGl(f, "glMapBufferRange", {0x8892, 0, 2U * 1024U * 1024U, 2}) != 0U);
+        REQUIRE(AuditGl(f, "glUnmapBuffer", {0x8892}) == 1U);
+    }
+    AuditGl(f, "glBindBuffer", {0x8892, buffer}); REQUIRE(AuditGl(f, "glUnmapBuffer", {0x8892}) == 1U);
+    const auto vao = AuditName(f, "glGenVertexArrays"); AuditGl(f, "glBindVertexArray", {vao});
+    AuditGl(f, "glBindBuffer", {0x8893, buffer}); AuditGl(f, "glEnableVertexAttribArray", {0});
+    AuditGl(f, "glVertexAttribI4ui", {3, 0xFFFFFFFFU, 0xABCDEF12U, 7, 9});
+    AuditGl(f, "glVertexAttribDivisor", {3, 2});
+    f.bus.Write32(data, 0U, 1U); f.bus.Write32(data.Add(4), 0U, 1U);
+    f.Call("libGLESv1_CM.so", "glBindBuffer", {0x8892, 0});
+    f.Call("libGLESv1_CM.so", "glVertexPointer", {2, 0x1406, 0, data.Value()});
+    f.Call("libGLESv1_CM.so", "glEnableClientState", {0x8074});
+    f.Call("libGLESv1_CM.so", "glDrawArrays", {0, 0, 1});
+    CHECK(AuditInteger(f, 0x85B5) == vao);
+    AuditGl(f, "glGetVertexAttribIuiv", {3, 0x8626, data.Value()});
+    CHECK(f.bus.Read32(data, 1U) == 0xFFFFFFFFU); CHECK(f.bus.Read32(data.Add(4), 1U) == 0xABCDEF12U);
+    AuditGl(f, "glGetVertexAttribiv", {3, 0x88FE, data.Value()}); CHECK(f.bus.Read32(data, 1U) == 2U);
+    f.bus.Write32(data, vao, 1U); AuditGl(f, "glDeleteVertexArrays", {1, data.Value()});
+    CHECK(AuditInteger(f, 0x85B5) == 0U); CHECK(AuditInteger(f, 0x8895) == 0U);
+    AuditGl(f, "glGetVertexAttribiv", {0, 0x8622, data.Value()}); CHECK(f.bus.Read32(data, 1U) == 0U);
+    AuditGl(f, "glViewport", {1, 2, 3, 4});
+    f.bus.Write32(data.Add(32), 0xDEADBEEFU, 1U);
+    AuditGl(f, "glGetInteger64v", {0x0BA2, data.Value()});
+    for (std::uint32_t i = 0; i < 4; ++i) {
+        CHECK(f.bus.Read32(data.Add(i * 8), 1U) == i + 1U);
+        CHECK(f.bus.Read32(data.Add(i * 8 + 4), 1U) == 0U);
+    }
+    CHECK(f.bus.Read32(data.Add(32), 1U) == 0xDEADBEEFU);
+    CHECK(AuditGl(f, "glGetError") == 0U);
+}
+
+TEST_CASE("BND34 EGL swap presents draw surface and preserves read framebuffer") {
+    if (!ogplay::gles::IsNativeAngleEglAvailable()) return;
+    BoundaryFixture f;
+    REQUIRE(f.Call("libEGL.so", "eglInitialize", {1, 0, 0}) == 1U);
+    const auto window = f.Call("libEGL.so", "eglCreateWindowSurface", {1, 2, 3, 0}); REQUIRE(window != 0U);
+    const auto read_surface = AuditSurface(f), context = AuditContext(f);
+    AuditBind(f, context, window, read_surface);
+    AuditGl(f, "glClearColor", {0x3F800000U, 0, 0, 0x3F800000U}); AuditGl(f, "glClear", {0x4000});
+    const auto texture = AuditName(f, "glGenTextures"), framebuffer = AuditName(f, "glGenFramebuffers");
+    AuditGl(f, "glBindTexture", {0x0DE1, texture}); f.bus.Write32(f.output.Add(700), 0xFF00FF00U, 1U);
+    AuditGl(f, "glTexImage2D", {0x0DE1, 0, 0x1908, 1, 1, 0, 0x1908, 0x1401, f.output.Add(700).Value()});
+    AuditGl(f, "glBindFramebuffer", {0x8CA8, framebuffer});
+    AuditGl(f, "glFramebufferTexture2D", {0x8CA8, 0x8CE0, 0x0DE1, texture, 0});
+    CHECK(AuditPixel(f) == 0xFF00FF00U);
+    REQUIRE(f.Call("libEGL.so", "eglSwapBuffers", {1, window}) == 1U);
+    const auto frame = f.boundary.TakeLatestFrame(); REQUIRE(frame.has_value());
+    REQUIRE(frame->rgba8.size() >= 4); CHECK(frame->rgba8[0] == 255U); CHECK(frame->rgba8[1] == 0U);
+    CHECK(AuditInteger(f, 0x8CAA) == framebuffer); CHECK(AuditInteger(f, 0x8CA6) == 0U);
+    CHECK(AuditPixel(f) == 0xFF00FF00U);
+}
+
+TEST_CASE("BND34 GLES1 mappings survive releasing a different context") {
+    if (!ogplay::gles::IsNativeAngleEglAvailable()) return;
+    BoundaryFixture f;
+    REQUIRE(f.Call("libEGL.so", "eglInitialize", {1, 0, 0}) == 1U);
+    const auto surface = AuditSurface(f), a = AuditContext(f, 1U), b = AuditContext(f, 1U);
+    const auto map = [&] {
+        f.Call("libGLESv1_CM.so", "glGenBuffers", {1, f.output.Add(256).Value()});
+        const auto buffer = f.bus.Read32(f.output.Add(256), 1U);
+        f.Call("libGLESv1_CM.so", "glBindBuffer", {0x8892, buffer});
+        f.Call("libGLESv1_CM.so", "glBufferData", {0x8892, 16, 0, 0x88E8});
+        const auto pointer = f.Call("libGLESv1_CM.so", "glMapBufferOES", {0x8892, 0x88B9});
+        REQUIRE(pointer != 0U); return std::pair{buffer, pointer};
+    };
+    AuditBind(f, a, surface); const auto first = map();
+    AuditBind(f, b, surface); const auto second = map();
+    REQUIRE(first.first == second.first); CHECK(first.second != second.second);
+    f.bus.Write32(ogplay::memory::GuestAddress{first.second}, 0x12345678U, 1U);
+    f.bus.Write32(ogplay::memory::GuestAddress{second.second}, 0x90ABCDEFU, 1U);
+    REQUIRE(f.Call("libEGL.so", "eglReleaseThread") == 1U);
+    AuditBind(f, a, surface);
+    f.Call("libGLESv1_CM.so", "glGetBufferPointervOES", {0x8892, 0x88BD, f.output.Add(256).Value()});
+    CHECK(f.bus.Read32(f.output.Add(256), 1U) == first.second);
+    REQUIRE(f.Call("libGLESv1_CM.so", "glUnmapBufferOES", {0x8892}) == 1U);
+    AuditBind(f, b, surface);
+    REQUIRE(f.Call("libGLESv1_CM.so", "glUnmapBufferOES", {0x8892}) == 1U);
+    CHECK(f.Call("libGLESv1_CM.so", "glGetError") == 0U);
+}
+
+TEST_CASE("BND34 EGL separates context state surface content and read surface") {
+    if (!ogplay::gles::IsNativeAngleEglAvailable()) return;
+    BoundaryFixture f;
+    REQUIRE(f.Call("libEGL.so", "eglInitialize", {1}) == 1U);
+    const auto a = AuditContext(f), b = AuditContext(f);
+    const auto x = AuditSurface(f), y = AuditSurface(f);
+    AuditBind(f, a, x);
+    AuditGl(f, "glEnable", {0x0BE2});
+    AuditGl(f, "glClearColor", {0x3F800000, 0, 0, 0x3F800000});
+    AuditGl(f, "glClear", {0x4000});
+    AuditBind(f, a, y);
+    CHECK(AuditGl(f, "glIsEnabled", {0x0BE2}) == 1U);
+    AuditGl(f, "glClearColor", {0, 0x3F800000, 0, 0x3F800000});
+    AuditGl(f, "glClear", {0x4000});
+    AuditBind(f, b, x);
+    CHECK(AuditGl(f, "glIsEnabled", {0x0BE2}) == 0U);
+    CHECK(AuditPixel(f) == 0xFF0000FFU);
+    AuditBind(f, a, y, x);
+    CHECK(AuditPixel(f) == 0xFF0000FFU);
+    const auto texture = AuditName(f, "glGenTextures");
+    AuditGl(f, "glBindTexture", {0x0DE1, texture});
+    AuditGl(f, "glCopyTexImage2D", {0x0DE1, 0, 0x1908, 0, 0, 1, 1, 0});
+    const auto framebuffer = AuditName(f, "glGenFramebuffers");
+    AuditGl(f, "glBindFramebuffer", {0x8D40, framebuffer});
+    AuditGl(f, "glFramebufferTexture2D", {0x8D40, 0x8CE0, 0x0DE1, texture, 0});
+    CHECK(AuditPixel(f) == 0xFF0000FFU);
+}
+
+TEST_CASE("BND34 EGL share group survives reverse bind order and source deletion") {
+    if (!ogplay::gles::IsNativeAngleEglAvailable()) return;
+    BoundaryFixture f;
+    REQUIRE(f.Call("libEGL.so", "eglInitialize", {1}) == 1U);
+    const auto a = AuditContext(f), b = AuditContext(f, 3U, a);
+    const auto surface = AuditSurface(f);
+    AuditBind(f, b, surface);
+    const auto texture = AuditName(f, "glGenTextures");
+    AuditGl(f, "glBindTexture", {0x0DE1, texture});
+    AuditBind(f, a, surface);
+    CHECK(AuditGl(f, "glIsTexture", {texture}) == 1U);
+    REQUIRE(f.Call("libEGL.so", "eglMakeCurrent", {1, 0, 0, 0}) == 1U);
+    REQUIRE(f.Call("libEGL.so", "eglDestroyContext", {1, a}) == 1U);
+    AuditBind(f, b, surface);
+    CHECK(AuditGl(f, "glIsTexture", {texture}) == 1U);
+}
+
+TEST_CASE("BND34 GLES1 isolates light fog and client arrays between contexts") {
+    if (!ogplay::gles::IsNativeAngleEglAvailable()) return;
+    BoundaryFixture f;
+    REQUIRE(f.Call("libEGL.so", "eglInitialize", {1}) == 1U);
+    const auto a = AuditContext(f, 1), b = AuditContext(f, 1), surface = AuditSurface(f);
+    AuditBind(f, a, surface);
+    f.Call("libGLESv1_CM.so", "glFogf", {0x0B62, 0x40000000});
+    f.Call("libGLESv1_CM.so", "glLightf", {0x4000, 0x1205, 0x41000000});
+    f.Call("libGLESv1_CM.so", "glEnableClientState", {0x8074});
+    AuditBind(f, b, surface);
+    f.Call("libGLESv1_CM.so", "glGetFloatv", {0x0B62, f.output.Value()});
+    CHECK(f.bus.Read32(f.output, 1) == 0x3F800000U);
+    CHECK(f.Call("libGLESv1_CM.so", "glIsEnabled", {0x8074}) == 0U);
+    AuditBind(f, a, surface);
+    f.Call("libGLESv1_CM.so", "glGetFloatv", {0x0B62, f.output.Value()});
+    CHECK(f.bus.Read32(f.output, 1) == 0x40000000U);
+    f.Call("libGLESv1_CM.so", "glGetLightfv", {0x4000, 0x1205, f.output.Value()});
+    CHECK(f.bus.Read32(f.output, 1) == 0x41000000U);
+    CHECK(f.Call("libGLESv1_CM.so", "glIsEnabled", {0x8074}) == 1U);
+}
+
+TEST_CASE("BND34 ES3 queries respect scalar and variable output extents") {
+    if (!ogplay::gles::IsNativeAngleEglAvailable()) return;
+    BoundaryFixture f;
+    REQUIRE(f.Call("libEGL.so", "eglInitialize", {1}) == 1U);
+    const auto context = AuditContext(f), surface = AuditSurface(f);
+    AuditBind(f, context, surface);
+    const auto sampler = AuditName(f, "glGenSamplers");
+    const auto tail = f.output.Add(f.memory.PageSize() - 4);
+    AuditGl(f, "glGetSamplerParameteriv", {sampler, 0x2800, tail.Value()});
+    CHECK(f.bus.Read32(tail, 1) == 0x2601U);
+    AuditGl(f, "glGetSamplerParameterfv", {sampler, 0x813B, tail.Value()});
+    CHECK(AuditGl(f, "glGetError") == 0U);
+    f.bus.Write32(tail, 0xDEADBEEFU, 1U);
+    AuditGl(f, "glGetSamplerParameteriv", {sampler, 0x1004, tail.Value()});
+    CHECK(AuditGl(f, "glGetError") == 0x0500U); CHECK(f.bus.Read32(tail, 1U) == 0xDEADBEEFU);
+    AuditGl(f, "glSamplerParameterfv", {sampler, 0x1004, tail.Value()});
+    CHECK(AuditGl(f, "glGetError") == 0x0500U);
+    AuditGl(f, "glGetTexParameterfv", {0x0DE1, 0x1004, tail.Value()});
+    CHECK(AuditGl(f, "glGetError") == 0x0500U); CHECK(f.bus.Read32(tail, 1U) == 0xDEADBEEFU);
+    const auto tex = AuditName(f, "glGenTextures"); AuditGl(f, "glBindTexture", {0x0DE1, tex});
+    f.bus.Write32(f.output.Add(256), 0x812FU, 1U);
+    AuditGl(f, "glTexParameteriv", {0x0DE1, 0x8072, f.output.Add(256).Value()});
+    AuditGl(f, "glGetTexParameteriv", {0x0DE1, 0x8072, tail.Value()}); CHECK(f.bus.Read32(tail, 1U) == 0x812FU);
+    AuditGl(f, "glTexParameterf", {0x0DE1, 0x813A, 0x40600000U});
+    AuditGl(f, "glGetTexParameterfv", {0x0DE1, 0x813A, tail.Value()}); CHECK(f.bus.Read32(tail, 1U) == 0x40600000U);
+    CHECK(AuditGl(f, "glGetError") == 0U);
+    const auto compile = [&](const std::uint32_t type, const std::string_view source) {
+        const auto shader = AuditGl(f, "glCreateShader", {type});
+        WriteGuestString(f, f.output.Add(512), source);
+        f.bus.Write32(f.output.Add(256), f.output.Add(512).Value(), 1);
+        AuditGl(f, "glShaderSource", {shader, 1, f.output.Add(256).Value(), 0});
+        AuditGl(f, "glCompileShader", {shader});
+        AuditGl(f, "glGetShaderiv", {shader, 0x8B81, f.output.Value()});
+        REQUIRE(f.bus.Read32(f.output, 1) == 1U);
+        return shader;
+    };
+    const auto vertex = compile(0x8B31, "#version 300 es\nlayout(std140) uniform U{vec4 a;vec4 b;};uniform mat4 m;void main(){gl_Position=m*(a+b);}");
+    const auto fragment = compile(0x8B30, "#version 300 es\nprecision highp float;out vec4 c;void main(){c=vec4(1);}");
+    const auto program = AuditGl(f, "glCreateProgram");
+    AuditGl(f, "glAttachShader", {program, vertex});
+    AuditGl(f, "glAttachShader", {program, fragment});
+    AuditGl(f, "glLinkProgram", {program});
+    AuditGl(f, "glGetProgramiv", {program, 0x8B82, f.output.Value()});
+    REQUIRE(f.bus.Read32(f.output, 1) == 1U);
+    AuditGl(f, "glGetProgramInfoLog", {program, 32, 0, f.output.Add(800).Value()});
+    WriteGuestString(f, f.output.Add(256), "U");
+    const auto block = AuditGl(f, "glGetUniformBlockIndex", {program, f.output.Add(256).Value()});
+    AuditGl(f, "glGetActiveUniformBlockiv", {program, block, 0x8A42, f.output.Value()});
+    REQUIRE(f.bus.Read32(f.output, 1) == 2U);
+    f.bus.Write32(f.output.Add(8), 0xDEADBEEFU, 1);
+    AuditGl(f, "glGetActiveUniformBlockiv", {program, block, 0x8A43, f.output.Value()});
+    CHECK(f.bus.Read32(f.output, 1) != f.bus.Read32(f.output.Add(4), 1));
+    CHECK(f.bus.Read32(f.output.Add(8), 1) == 0xDEADBEEFU);
+    CHECK(AuditGl(f, "glGetError") == 0U);
+    const auto count = AuditInteger(f, 0x821D);
+    CHECK(count >= 3U);
+    CHECK(AuditGl(f, "glGetStringi", {0x1F03, count}) == 0U);
+    CHECK(AuditGl(f, "glGetError") == 0x0501U);
+    WriteGuestString(f, f.output.Add(256), "m");
+    const auto location = AuditGl(f, "glGetUniformLocation", {program, f.output.Add(256).Value()});
+    REQUIRE(location != 0xFFFFFFFFU);
+    const auto shared = AuditContext(f, 3U, context);
+    AuditBind(f, shared, surface);
+    f.bus.Write32(f.output.Add(64), 0xABCDEF12U, 1U);
+    AuditGl(f, "glGetUniformfv", {program, location, f.output.Value()});
+    for (std::uint32_t i = 0; i < 16; ++i) CHECK(f.bus.Read32(f.output.Add(i * 4), 1U) == 0U);
+    CHECK(f.bus.Read32(f.output.Add(64), 1U) == 0xABCDEF12U);
+    CHECK(AuditGl(f, "glGetError") == 0U);
+}
+
+TEST_CASE("BND34 ES3 buffers VAOs pixel stores and map identities are isolated") {
+    if (!ogplay::gles::IsNativeAngleEglAvailable()) return;
+    BoundaryFixture f;
+    REQUIRE(f.Call("libEGL.so", "eglInitialize", {1}) == 1U);
+    const auto a = AuditContext(f), b = AuditContext(f), surface = AuditSurface(f);
+    AuditBind(f, a, surface);
+    const auto buffer_a = AuditName(f, "glGenBuffers");
+    AuditGl(f, "glBindBuffer", {0x8A11, buffer_a});
+    AuditGl(f, "glBufferData", {0x8A11, 64, 0, 0x88E8});
+    const auto mapped_a = AuditGl(f, "glMapBufferRange", {0x8A11, 0, 64, 2});
+    REQUIRE(mapped_a != 0U);
+    f.bus.Write32(ogplay::memory::GuestAddress{mapped_a}, 0x12345678U, 1);
+    AuditBind(f, b, surface);
+    const auto buffer_b = AuditName(f, "glGenBuffers");
+    REQUIRE(buffer_a == buffer_b);
+    AuditGl(f, "glBindBuffer", {0x8A11, buffer_b});
+    AuditGl(f, "glBufferData", {0x8A11, 64, 0, 0x88E8});
+    const auto mapped_b = AuditGl(f, "glMapBufferRange", {0x8A11, 0, 64, 2});
+    REQUIRE(mapped_b != 0U); CHECK(mapped_a != mapped_b);
+    CHECK(AuditGl(f, "glUnmapBuffer", {0x8A11}) == 1U);
+    AuditBind(f, a, surface);
+    CHECK(AuditGl(f, "glUnmapBuffer", {0x8A11}) == 1U);
+    const auto vao_a = AuditName(f, "glGenVertexArrays"), vao_b = AuditName(f, "glGenVertexArrays");
+    AuditGl(f, "glBindVertexArray", {vao_a});
+    AuditGl(f, "glBindBuffer", {0x8893, buffer_a});
+    AuditGl(f, "glEnableVertexAttribArray", {0});
+    AuditGl(f, "glBindVertexArray", {vao_b});
+    CHECK(AuditInteger(f, 0x8895) == 0U);
+    AuditGl(f, "glBindVertexArray", {vao_a});
+    CHECK(AuditInteger(f, 0x8895) == buffer_a);
+    AuditGl(f, "glGetVertexAttribiv", {0, 0x8622, f.output.Value()});
+    CHECK(f.bus.Read32(f.output, 1) == 1U);
+    AuditGl(f, "glBindBuffer", {0x88EC, buffer_a});
+    AuditGl(f, "glBufferData", {0x88EC, 64, 0, 0x88E8});
+    const auto texture = AuditName(f, "glGenTextures");
+    AuditGl(f, "glBindTexture", {0x806F, texture});
+    AuditGl(f, "glTexImage3D", {0x806F, 0, 0x8058, 1, 1, 1, 0, 0x1908, 0x1401, 4});
+    CHECK(AuditGl(f, "glGetError") == 0U);
+    AuditGl(f, "glBindBuffer", {0x88EC, 0});
+    AuditGl(f, "glPixelStorei", {0x0D02, 4});
+    AuditGl(f, "glPixelStorei", {0x0D03, 1});
+    AuditGl(f, "glPixelStorei", {0x0D04, 1});
+    AuditGl(f, "glClearColor", {0x3F800000, 0, 0, 0x3F800000});
+    AuditGl(f, "glClear", {0x4000});
+    for (std::uint32_t i = 0; i < 64; i += 4) f.bus.Write32(f.output.Add(256 + i), 0xAABBCCDDU, 1);
+    AuditGl(f, "glReadPixels", {0, 0, 1, 2, 0x1908, 0x1401, f.output.Add(256).Value()});
+    CHECK(f.bus.Read32(f.output.Add(256), 1) == 0xAABBCCDDU);
+    CHECK(f.bus.Read32(f.output.Add(276), 1) == 0xFF0000FFU);
+    CHECK(f.bus.Read32(f.output.Add(280), 1) == 0xAABBCCDDU);
+    CHECK(f.bus.Read32(f.output.Add(292), 1) == 0xFF0000FFU);
+    CHECK(AuditGl(f, "glGetError") == 0U);
+}
+
+
+TEST_CASE("BND34 EGL fences images and texture pbuffers use real ANGLE objects") {
+    if (!ogplay::gles::IsNativeAngleEglAvailable()) return;
+    BoundaryFixture f;
+    const auto egl = [&](const std::string_view name, const std::initializer_list<std::uint32_t> args) {
+        const auto entry = f.boundary.Symbols().Lookup("libEGL.so", name);
+        REQUIRE(entry.has_value());
+        return BoundaryCallAddress(f, entry->Value(), {args.begin(), args.size()});
+    };
+    REQUIRE(egl("eglInitialize", {1}) == 1U);
+    const auto context = AuditContext(f), surface = AuditSurface(f);
+    AuditBind(f, context, surface);
+    const auto extension_address = ogplay::memory::GuestAddress{egl("eglQueryString", {1, 0x3055})};
+    std::string extensions;
+    for (std::uint32_t i = 0; ; ++i) {
+        const auto byte = f.bus.Read8(extension_address.Add(i), 1);
+        if (byte == 0U) break;
+        extensions.push_back(static_cast<char>(byte));
+    }
+    const bool reusable = extensions.find("EGL_KHR_reusable_sync") != std::string::npos;
+    const auto sync_type = reusable ? 0x30FAU : 0x30F9U;
+    const auto sync = egl("eglCreateSyncKHR", {1, sync_type, 0});
+    INFO("EGL create sync error: ", egl("eglGetError", {}));
+    REQUIRE(sync != 0U);
+    if (reusable) {
+        CHECK(egl("eglClientWaitSyncKHR", {1, sync, 0, 0, 0, 0}) == 0x30F5U);
+        CHECK(egl("eglSignalSyncKHR", {1, sync, 0x30F2}) == 1U);
+    }
+    CHECK(egl("eglGetSyncAttribKHR", {1, sync, 0x30F7, f.output.Value()}) == 1U);
+    CHECK(f.bus.Read32(f.output, 1) == sync_type);
+    CHECK(egl("eglClientWaitSyncKHR", {1, sync, 1, 0, 0xFFFFFFFFU, 0xFFFFFFFFU}) == 0x30F6U);
+    CHECK(egl("eglDestroySyncKHR", {1, sync}) == 1U);
+    CHECK(egl("eglDestroySyncKHR", {1, sync}) == 0U);
+    CHECK(egl("eglGetError", {}) == 0x300CU);
+    const auto texture = AuditName(f, "glGenTextures");
+    AuditGl(f, "glBindTexture", {0x0DE1, texture});
+    f.bus.Write32(f.output.Add(256), 0xFF112233U, 1);
+    AuditGl(f, "glTexImage2D", {0x0DE1, 0, 0x1908, 1, 1, 0, 0x1908, 0x1401, f.output.Add(256).Value()});
+    f.bus.Write32(f.output, 0x30D2, 1); f.bus.Write32(f.output.Add(4), 1, 1);
+    f.bus.Write32(f.output.Add(8), 0x3038, 1);
+    const auto image = egl("eglCreateImageKHR", {1, context, 0x30B1, texture, f.output.Value()});
+    REQUIRE(image != 0U);
+    const auto sibling = AuditName(f, "glGenTextures");
+    AuditGl(f, "glBindTexture", {0x0DE1, sibling});
+    AuditGl(f, "glEGLImageTargetTexture2DOES", {0x0DE1, image});
+    REQUIRE(AuditGl(f, "glGetError") == 0U);
+    CHECK(egl("eglDestroyImageKHR", {1, image}) == 1U);
+    const auto framebuffer = AuditName(f, "glGenFramebuffers");
+    AuditGl(f, "glBindFramebuffer", {0x8D40, framebuffer});
+    AuditGl(f, "glFramebufferTexture2D", {0x8D40, 0x8CE0, 0x0DE1, sibling, 0});
+    CHECK(AuditPixel(f) == 0xFF112233U);
+    AuditGl(f, "glBindFramebuffer", {0x8D40, 0});
+    const std::array<std::uint32_t, 11> attributes{0x3057, 4, 0x3056, 4, 0x3080, 0x305E,
+                                                0x3081, 0x305F, 0x3082, 0, 0x3038};
+    for (std::size_t i = 0; i < attributes.size(); ++i) f.bus.Write32(f.output.Add(i * 4), attributes[i], 1);
+    const auto textured = egl("eglCreatePbufferSurface", {1, 2, f.output.Value()});
+    REQUIRE(textured != 0U);
+    AuditBind(f, context, textured);
+    AuditGl(f, "glClearColor", {0, 0x3F800000, 0, 0x3F800000});
+    AuditGl(f, "glClear", {0x4000});
+    AuditBind(f, context, surface);
+    const auto bound_texture = AuditName(f, "glGenTextures");
+    AuditGl(f, "glBindTexture", {0x0DE1, bound_texture});
+    REQUIRE(egl("eglBindTexImage", {1, textured, 0x3084}) == 1U);
+    AuditGl(f, "glBindFramebuffer", {0x8D40, framebuffer});
+    AuditGl(f, "glFramebufferTexture2D", {0x8D40, 0x8CE0, 0x0DE1, bound_texture, 0});
+    CHECK(AuditPixel(f) == 0xFF00FF00U);
+    CHECK(egl("eglReleaseTexImage", {1, textured, 0x3084}) == 1U);
+    CHECK(egl("eglSwapInterval", {1, 99}) == 1U);
+    CHECK(egl("eglSwapInterval", {1, 0xFFFFFFFFU}) == 1U);
 }

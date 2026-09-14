@@ -31,10 +31,19 @@ public:
     using std::runtime_error::runtime_error;
 };
 
+struct PixelTransferLayout final {
+    std::uint64_t offset{}, stride{}, row_bytes{}, bytes{};
+    std::uint32_t rows{};
+};
+
 class GlesTransferState final : public GlesLengthResolver {
 public:
     void PixelStore(std::uint32_t pname, std::int32_t alignment);
     void BindBuffer(std::uint32_t target, std::uint32_t buffer);
+    [[nodiscard]] std::uint32_t BoundBuffer(std::uint32_t target) const;
+    void DeleteBuffers(std::span<const std::uint32_t> names);
+    [[nodiscard]] PixelTransferLayout PixelLayout2D(bool pack, std::int32_t width,
+        std::int32_t height, std::uint32_t format, std::uint32_t type) const;
     void SetQueryElementCount(std::uint32_t pname, std::uint64_t count);
     void SetUniformElementCount(std::uint32_t program, std::int32_t location,
                                 std::uint64_t count);
@@ -57,6 +66,8 @@ private:
     std::uint32_t unpack_skip_pixels_{};
     std::uint32_t unpack_skip_rows_{};
     std::uint32_t unpack_skip_images_{};
+    std::uint32_t pack_row_length_{}, pack_skip_pixels_{}, pack_skip_rows_{};
+    std::map<std::uint32_t, std::uint32_t> other_buffers_;
     std::map<std::uint32_t, std::uint64_t> query_counts_;
     std::map<std::pair<std::uint32_t, std::int32_t>, std::uint64_t>
         uniform_counts_;

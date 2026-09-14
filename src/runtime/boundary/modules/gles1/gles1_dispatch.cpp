@@ -17,6 +17,16 @@
 #include "gles1_support.h"
 
 namespace ogplay::runtime::detail {
+
+void AndroidBoundaryGles1State::CopyValuesFrom(const AndroidBoundaryGles1State& other) {
+    shade_model_ = other.shade_model_;
+    hints_ = other.hints_;
+    capabilities_ = other.capabilities_;
+    buffer_contents_ = other.buffer_contents_;
+    logic_operation_ = other.logic_operation_;
+    matrices_.CopyValuesFrom(other.matrices_);
+    *fixed_ = *other.fixed_;
+}
 namespace {
 constexpr std::size_t kMaximumMatrixStackDepth = 32;
 constexpr std::uint32_t kGles1Texture2d = 0x0DE1U;
@@ -75,6 +85,7 @@ void RequireTextureBindingTarget(const std::uint32_t target) {
     case 0x0B20U:  // GL_LINE_SMOOTH
     case 0x809DU:  // GL_MULTISAMPLE
     case 0x809FU:  // GL_SAMPLE_ALPHA_TO_ONE
+    case 0x8840U:  // GL_MATRIX_PALETTE_OES
         return true;
     default:
         return (capability >= 0x3000U && capability <= 0x3005U) ||
@@ -130,6 +141,8 @@ void AndroidBoundaryGles1MatrixState::CopyValuesFrom(
     modelview_ = source.modelview_;
     projection_ = source.projection_;
     textures_ = source.textures_;
+    palettes_ = source.palettes_;
+    palette_index_ = source.palette_index_;
 }
 
 void AndroidBoundaryGles1MatrixState::Reset() {
@@ -137,6 +150,20 @@ void AndroidBoundaryGles1MatrixState::Reset() {
     modelview_.assign(1, Gles1IdentityMatrix());
     projection_.assign(1, Gles1IdentityMatrix());
     for (auto& texture : textures_) texture.assign(1, Gles1IdentityMatrix());
+    for (auto& palette : palettes_) palette.assign(1, Gles1IdentityMatrix());
+    palette_index_ = 0U;
+}
+
+void AndroidBoundaryGles1MatrixState::SelectPalette(const std::uint32_t index) {
+    if (index >= palettes_.size()) throw gles::GlesApiError("glCurrentPaletteMatrixOES", 0x0501U);
+    palette_index_ = index;
+}
+void AndroidBoundaryGles1MatrixState::LoadPaletteFromModelview() {
+    palettes_[palette_index_].back() = modelview_.back();
+}
+const Gles1Matrix& AndroidBoundaryGles1MatrixState::Palette(const std::uint32_t index) const {
+    if (index >= palettes_.size()) throw gles::GlesApiError("matrix palette index", 0x0502U);
+    return palettes_[index].back();
 }
 
 void AndroidBoundaryGles1MatrixState::SetMode(const std::uint32_t mode) {
@@ -160,7 +187,7 @@ void AndroidBoundaryGles1MatrixState::Load(
 
 void AndroidBoundaryGles1MatrixState::Push() {
     auto& stack = CurrentStack();
-    if (stack.size() >= kMaximumMatrixStackDepth) {
+    if (stack.size() >= (mode_ == 0x8840U ? 1U : kMaximumMatrixStackDepth)) {
         throw std::overflow_error("GLES1 matrix stack overflow");
     }
     stack.push_back(stack.back());
@@ -247,6 +274,7 @@ std::size_t AndroidBoundaryGles1MatrixState::StackDepth(
 
 std::vector<Gles1Matrix>&
 AndroidBoundaryGles1MatrixState::CurrentStack() noexcept {
+    if (mode_ == 0x8840U) return palettes_[palette_index_];
     if (mode_ == kGles1Projection) return projection_;
     if (mode_ == kGles1Texture) {
         return textures_.at(ActiveTexture() - 0x84C0U);
@@ -256,6 +284,7 @@ AndroidBoundaryGles1MatrixState::CurrentStack() noexcept {
 
 const std::vector<Gles1Matrix>& AndroidBoundaryGles1MatrixState::Stack(
     const std::uint32_t mode, const std::uint32_t texture) const {
+    if (mode == 0x8840U) return palettes_[palette_index_];
     if (mode == kGles1Modelview) return modelview_;
     if (mode == kGles1Projection) return projection_;
     if (mode == kGles1Texture) return textures_.at(texture - 0x84C0U);
@@ -286,7 +315,7 @@ void AndroidBoundaryGles1State::Reset() {
     hints_.fill(kGles1DontCare);
     shared_->Reset();
     capabilities_.clear();
-    buffer_contents_.clear();
+    buffer_contents_ = std::make_shared<BufferContentsMap>();
     logic_operation_ = 0x1503U;
     matrices_.Reset();
     fixed_->Reset();
@@ -300,9 +329,9 @@ void AndroidBoundaryGles1State::SetBufferData(
                                           : bindings.element_array_buffer;
     if (buffer == 0U) return;
     if (!bytes.has_value()) {
-        buffer_contents_[buffer] = std::nullopt;
+        (*buffer_contents_)[buffer] = std::nullopt;
     } else {
-        buffer_contents_[buffer] = std::vector(bytes->begin(), bytes->end());
+        (*buffer_contents_)[buffer] = std::vector(bytes->begin(), bytes->end());
     }
 }
 
@@ -312,8 +341,8 @@ void AndroidBoundaryGles1State::SetBufferSubData(
     const auto bindings = TransferState().Snapshot();
     const auto buffer = target == 0x8892U ? bindings.array_buffer
                                           : bindings.element_array_buffer;
-    const auto found = buffer_contents_.find(buffer);
-    if (buffer == 0U || found == buffer_contents_.end() ||
+    const auto found = buffer_contents_->find(buffer);
+    if (buffer == 0U || found == buffer_contents_->end() ||
         !found->second.has_value() ||
         offset > found->second->size() ||
         bytes.size() > found->second->size() - offset) {
@@ -325,13 +354,13 @@ void AndroidBoundaryGles1State::SetBufferSubData(
 
 void AndroidBoundaryGles1State::DeleteBufferData(
     const std::span<const std::uint32_t> buffers) noexcept {
-    for (const auto buffer : buffers) buffer_contents_.erase(buffer);
+    for (const auto buffer : buffers) buffer_contents_->erase(buffer);
 }
 
 const std::vector<std::byte>* AndroidBoundaryGles1State::BufferContents(
     const std::uint32_t buffer) const noexcept {
-    const auto found = buffer_contents_.find(buffer);
-    return found == buffer_contents_.end() || !found->second.has_value()
+    const auto found = buffer_contents_->find(buffer);
+    return found == buffer_contents_->end() || !found->second.has_value()
                ? nullptr
                : &*found->second;
 }

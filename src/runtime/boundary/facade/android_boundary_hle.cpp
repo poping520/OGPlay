@@ -99,7 +99,7 @@ public:
               &ServiceReadCString, &ServiceReadShaderSources,
               &ServiceCurrentFrame, &ServiceActivateContext},
           egl_context_{graphics_context_, api_routing_, symbols_, descriptors_,
-                       gles1_state_},
+                       gles1_state_, gles1_draw_state_, gles1_legacy_state_},
           android_module_(call_services_, android_services_),
           egl_module_(call_services_, egl_context_),
           gles1_module_(call_services_, graphics_context_, gles1_state_,
@@ -147,13 +147,19 @@ public:
                 switch (parameter) {
                 case 0x1F02U:
                     return std::string{"OpenGL ES-CM 1.1"};
-                case 0x1F03U:
-                    return std::string{
+                case 0x1F03U: {
+                    auto result = std::string{
                         "GL_OES_texture_cube_map "
                         "GL_OES_compressed_ETC1_RGB8_texture "
                         "GL_IMG_texture_compression_pvrtc "
+                        "GL_OES_matrix_palette "
                         "GL_OES_mapbuffer "
                         "GL_OES_rgb8_rgba8 "};
+                    const auto extensions = GuestGlesExtensions(RequireFrame("glGetString"));
+                    if (std::ranges::find(extensions, "GL_OES_EGL_image") != extensions.end())
+                        result += "GL_OES_EGL_image ";
+                    return result;
+                }
                 default:
                     return RequireFrame("glGetString").GetString(parameter);
                 }
@@ -182,6 +188,11 @@ public:
         SealBindings();
     }
     void MapThunks() {
+        graphics_context_.retire_share_group = [](void* owner, const std::uint32_t group) {
+            auto& self = *static_cast<Impl*>(owner);
+            self.gles1_map_buffer_state_.RetireShareGroup(group);
+            self.gles3_module_.RetireShareGroup(group);
+        };
         thunk_arena_.Map(descriptors_.size());
         const auto* open_sles = AndroidBoundaryCatalog(AndroidApi::api19)
                                     .FindModule("libOpenSLES.so");
@@ -316,6 +327,8 @@ public:
         gl_owner_.reset();
         angle_frame_.reset();
         managed_surface_ = false;
+        gles1_map_buffer_state_.RetireShareGroup(gl_context_.ShareGroup());
+        gles3_module_.RetireShareGroup(gl_context_.ShareGroup());
         ResetGuestGraphics();
         frame_service_.SetRenderTargetReady(false);
     }
@@ -656,6 +669,12 @@ private:
             egl, name, egl_module_);
         OGPLAY_EGL_BOUNDARY_EXPORTS(OGPLAY_BIND_EGL)
 #undef OGPLAY_BIND_EGL
+#define OGPLAY_BIND_IMAGE(name, id, count, method) \
+        BindExport<EglModule, &EglModule::method, count, true>(require("libGLESv1_CM.so"), name, egl_module_); \
+        BindExport<EglModule, &EglModule::method, count, true>(require("libGLESv2.so"), name, egl_module_);
+        OGPLAY_GLES_IMAGE_EXPORTS(OGPLAY_BIND_IMAGE)
+#undef OGPLAY_BIND_IMAGE
+
         const auto& gles1 = require("libGLESv1_CM.so");
         BindGles1Core(gles1, std::make_index_sequence<
                                   gles::generated::gles1::kFunctions.size()>{});
@@ -893,7 +912,6 @@ private:
         gles1_state_.Reset();
         gles1_legacy_state_.Reset();
         gles1_draw_state_.Reset();
-        gles1_map_buffer_state_.Reset();
     }
     void RecordGpuCall(const std::size_t descriptor_index,
                        const std::array<std::uint32_t, 4>& args,

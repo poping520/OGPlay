@@ -4,6 +4,14 @@
 
 ## 最近进展
 
+- [BND-34](../tasks/boundary/BND-34.md) 已修复本轮 EGL/GLES 核心审计缺陷：唯一 native
+  Context、独立 Surface、eager share，完整 GLES1 shadow/palette、VAO/整数属性恢复，
+  ES3 PBO/row-skip、查询长度与 share-group map 生命周期。新增 KHR/OES image/sync
+  及 texture pbuffer，窗口 swap 正确选取 draw 默认 FBO 并恢复 read binding。100 项相关
+  图形回归与 7 项生成/架构 gates 通过；未运行全量测试。整体 GLES 完整性仍受
+  [ADR-0063](../adr/media.md#adr-0063) 的 Android 系统对象/厂商扩展边界限制，未做 CTS
+  或缺失 SO 压缩包的完整 ABI 核验，不能据此宣称“全部 Android GLES 功能已完成”。
+
 - [BND-33](../tasks/boundary/BND-33.md) WU-4 已闭合：新增 API 19 GLES3 相对 GLES2 的
   104 项机器可核对 delta IDL，生成链识别 `GLint64`/`GLuint64`/`GLsync` 与二级指针；
   DexVM 从固定 AOSP 源发布 GLES30 类、常量和 overload surface。ADR-0062 冻结本 WU
@@ -43,10 +51,11 @@
 
 ## 验证状态
 
-- GLES 完整性静态审计：本地 API19 AOSP 头文件与项目目录比对为 GLES1 145/145、
-  GLES2 142/142、EGL core 34/34；GLES3 新增 104 项未发布。BND-33 WU-1 已改为每
-  Context/Surface ANGLE backing 与调用时 current-context proc 转发；WU-2 已让 shade model
-  进入 draw 转换，normal matrix、normalize/rescale、独立数学参考和真实像素回归均通过。
+- [GLES 当前代码静态审计](../design/boundary/05-egl-gles-current-audit.md)：本地 API19
+  AOSP 名称集合核对为 GLES1 145/145、GLES2 142/142、GLES3 delta 104/104、EGL core
+  34/34，GLES3 已发布。仍发现 Context/Surface backing 所有权、share 首次绑定顺序、
+  GLES1 状态隔离、ES3 buffer/pixel 搬运、query 输出长度与扩展宣告缺口；目录或 WU 完成
+  不代表全规范实现。本次仅静态审计，未重新运行构建、图形回归或 CTS。
 - 可增长堆的增长、目标利用率、硬上限 OOM 和新 Profile schema 已完成双后端定向验证。
 - Title Profile 三个正式文件通过 schema 与独立校验器。
 - `architecture.capabilities_monotonic`、`architecture.dexvm_intrinsic_layout` 已通过；其余相关

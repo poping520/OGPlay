@@ -318,8 +318,25 @@ GlesApiError(GL_INVALID_ENUM)，复用共用错误锁存，错误调用不改变
 BND-24 以 API19 exact APK 的 `eglGetProcAddress + 142/142 GLES2 core` 导入面复验
 catalog provider 和 concrete handler，关闭 survey 的 bounded run 已越过 native load、
 JNI_OnLoad 与 OpenGL 边界。ADR-0062 已将 API19 GLES3 纳入目标：`libGLESv2.so` 发布
-104 项 delta，当前 93 项已进入真实 ANGLE handler，其余保持明确失败；厂商 extension
+104 项 delta，104 项均已进入真实 ANGLE handler；厂商 extension
 全集仍不发布。
 
 Android/EGL/GLES2 sealed export 的 `if constexpr` 分派在 MSVC 下只对模板定义与显式
 实例化范围关闭 C4702；全局 `/W4 /WX` 保持启用，fallback 仍必须明确抛错。
+
+
+## BND-34 当前契约
+
+EGL Context、Surface、Display 按 [ADR-0063](../../../docs/adr/media.md#adr-0063) 分离所有权。
+Context 创建时建立 native share；所有 GLES1 fixed/legacy/client-array 和可编程 VAO shadow
+按 Context 保存。texture 元数据与 GLES1 VBO 内容共享持有；map/sync identity 以 share group
+隔离，最后成员销毁通过显式回调退役，eglReleaseThread 不清空其他 Context 的映射。
+
+EGL core 名称保持 34 项；增加 8 个 KHR sync/image 入口，以及两种 OES image target 的
+受检 guest thunk。驱动不支持的扩展不发布。texture pbuffer 使用真实 native 绑定，swap
+保存/恢复 guest read framebuffer 和 read surface，仅发布 draw surface 默认颜色缓冲。
+GLES1 matrix palette 四入口执行有界加权变换，保留固定管线 ANGLE shader 和 Context 隔离。
+
+回归见 integration `BND34*`。Pixmap/OpenVG、Android native-buffer/native-fence FD、
+presentation-time 与任意厂商扩展仍不是本模块已发布能力；整体 Android GLES 完整性不能
+由 core 函数个数或本次回归替代。

@@ -46,6 +46,7 @@ struct GraphicsBoundaryContext final {
         void*, const std::array<std::uint32_t, 4>&, std::uint64_t){};
     gles::AngleFrame* (*current_frame)(void*, std::string_view){};
     void (*activate_context)(void*){};
+    void (*retire_share_group)(void*, std::uint32_t){};
 
     [[nodiscard]] gles::AngleFrame& RequireFrame(
         const std::string_view operation) const {

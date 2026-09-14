@@ -14,3 +14,15 @@
 104/104 项均已进入真实 ANGLE。普通/压缩 3D texture 按 ES3 unpack 状态计算 guest 范围；
 多指针 query 先预检全部输出再提交；transform-feedback 与 uniform 名称数组逐项受界读取；
 map-buffer 通过 `0x78000000` guest arena 隔离 host 指针，并在 flush/unmap 时回写。
+
+
+## BND-34 安全与状态修复
+
+UBO ACTIVE_UNIFORM_INDICES 先查询真实元素数；sampler/vertex/64 位 state query 精确分配。
+Uniform 查询从 native program 刷新宽度。二维与三维 PBO 地址是 buffer offset，普通 guest
+pixel 指针按 row/skip 计算范围。VAO bind/delete 同步属性和 element buffer shadow；整数
+属性与 divisor 保存原类型。map identity 使用 share-group + GLuint，验证 native mapped
+状态后才能访问保存的 host 指针；arena 重用空闲区，显式 flush 只提交指定范围，unmap
+不得再次覆盖它，share group 最后成员销毁时退役其 map/sync 记录。
+
+扩展数量、glGetString、glGetStringi 共用受检发布清单，禁止透传整个 ANGLE extension list。

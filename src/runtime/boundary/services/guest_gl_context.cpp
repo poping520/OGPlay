@@ -25,7 +25,7 @@ constexpr std::uint32_t kTexture2dArray = 0x8C1AU;
 }
 
 void RequireFramebufferTarget(const std::uint32_t target) {
-    if (target != 0x8D40U) {
+    if (target != 0x8D40U && target != 0x8CA8U && target != 0x8CA9U) {
         throw std::invalid_argument("shared GL framebuffer target is invalid");
     }
 }
@@ -41,6 +41,7 @@ void RequireCommonCapability(const std::uint32_t capability) {
     case 0x0BE2U: case 0x0B44U: case 0x0B71U: case 0x0BD0U:
     case 0x8037U: case 0x809EU: case 0x80A0U: case 0x0C11U:
     case 0x0B90U:
+    case 0x8C89U: case 0x8D69U:  // ES3 rasterizer discard / fixed primitive restart
         return;
     default:
         throw std::invalid_argument("shared GL capability is invalid");
@@ -90,10 +91,10 @@ std::uint32_t SharedGlState::BoundTexture(
 void SharedGlState::DeleteTextures(
     const std::span<const std::uint32_t> textures) noexcept {
     for (const auto texture : textures) {
-        std::erase_if(generate_mipmap_, [texture](const auto& entry) {
+        std::erase_if(objects_->generate_mipmap, [texture](const auto& entry) {
             return entry.first.texture == texture;
         });
-        std::erase_if(texture_base_formats_, [texture](const auto& entry) {
+        std::erase_if(objects_->texture_base_formats, [texture](const auto& entry) {
             return entry.first.texture == texture;
         });
         for (auto& [binding, bound] : bound_textures_) {
@@ -106,7 +107,7 @@ void SharedGlState::DeleteTextures(
 void SharedGlState::SetTextureBaseFormat(const std::uint32_t target,
                                          const std::uint32_t format) {
     const auto binding_target = TextureBindingTargetForMetadata(target);
-    texture_base_formats_[{BoundTexture(binding_target), binding_target}] =
+    objects_->texture_base_formats[{BoundTexture(binding_target), binding_target}] =
         format;
 }
 
@@ -118,23 +119,23 @@ std::optional<std::uint32_t> SharedGlState::TextureBaseFormat(
 std::optional<std::uint32_t> SharedGlState::TextureBaseFormat(
     const std::uint32_t texture_unit, const std::uint32_t target) const {
     const auto binding_target = TextureBindingTargetForMetadata(target);
-    const auto found = texture_base_formats_.find(
+    const auto found = objects_->texture_base_formats.find(
         {BoundTexture(texture_unit, binding_target), binding_target});
-    if (found == texture_base_formats_.end()) return std::nullopt;
+    if (found == objects_->texture_base_formats.end()) return std::nullopt;
     return found->second;
 }
 
 void SharedGlState::SetGenerateMipmap(const std::uint32_t target,
                                       const bool enabled) {
     const auto binding_target = TextureBindingTargetForMetadata(target);
-    generate_mipmap_[{BoundTexture(binding_target), binding_target}] = enabled;
+    objects_->generate_mipmap[{BoundTexture(binding_target), binding_target}] = enabled;
 }
 
 bool SharedGlState::GenerateMipmapEnabled(const std::uint32_t target) const {
     const auto binding_target = TextureBindingTargetForMetadata(target);
-    const auto found = generate_mipmap_.find(
+    const auto found = objects_->generate_mipmap.find(
         {BoundTexture(binding_target), binding_target});
-    return found != generate_mipmap_.end() && found->second;
+    return found != objects_->generate_mipmap.end() && found->second;
 }
 
 void SharedGlState::ValidateFramebufferTarget(
@@ -145,7 +146,8 @@ void SharedGlState::ValidateFramebufferTarget(
 void SharedGlState::BindFramebuffer(const std::uint32_t target,
                                     const std::uint32_t framebuffer) {
     ValidateFramebufferTarget(target);
-    framebuffer_ = framebuffer;
+    if (target != 0x8CA8U) framebuffer_ = framebuffer;
+    if (target != 0x8CA9U) read_framebuffer_ = framebuffer;
 }
 
 void SharedGlState::ValidateRenderbufferTarget(
@@ -161,6 +163,7 @@ void SharedGlState::BindRenderbuffer(const std::uint32_t target,
 
 void SharedGlState::DeleteFramebuffers(
     const std::span<const std::uint32_t> framebuffers) noexcept {
+    if (std::ranges::find(framebuffers, read_framebuffer_) != framebuffers.end()) read_framebuffer_ = 0U;
     if (std::ranges::find(framebuffers, framebuffer_) != framebuffers.end()) {
         framebuffer_ = 0U;
     }
@@ -257,9 +260,9 @@ void SharedGlState::Reset() noexcept {
     transfer = {};
     active_texture = 0x84C0U;
     bound_textures_.clear();
-    texture_base_formats_.clear();
-    generate_mipmap_.clear();
+    objects_ = std::make_shared<ObjectMetadata>();
     framebuffer_ = 0U;
+    read_framebuffer_ = 0U;
     renderbuffer_ = 0U;
     viewport_ = {};
     scissor_ = {};
@@ -320,6 +323,7 @@ GuestGlRenderer GuestGlContext::SelectDrawRenderer(
 void GuestGlContext::Reset() noexcept {
     shared_.Reset();
     native_.Reset();
+    programmable_ = {};
 }
 
 }  // namespace ogplay::runtime

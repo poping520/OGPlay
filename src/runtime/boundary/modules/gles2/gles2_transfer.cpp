@@ -11,6 +11,7 @@
 #include "ogplay/gles/gles_call_preparation.h"
 #include "ogplay/gles/guest_transfer.h"
 #include "runtime/boundary/services/gles_transfer_io.h"
+#include "runtime/boundary/services/graphics_dispatch.h"
 
 namespace ogplay::runtime {
 namespace {
@@ -78,6 +79,11 @@ std::uint32_t Gles2Module::BufferSubData(const A32CallFrame& call) {
 
 std::uint32_t Gles2Module::CompressedTexImage2D(const A32CallFrame& call) {
     const auto arguments = call.Arguments();
+    if (graphics_.gl_context.Shared().transfer.BoundBuffer(0x88ECU) != 0U) {
+        graphics_.RequireFrame("glCompressedTexImage2D").TransferPixelBuffer(
+            gles::AngleFrame::PixelBufferOperation::compressed2d, arguments);
+        return 0U;
+    }
     auto prepared = Prepare(calls_, graphics_, 21U, call);
     graphics_.RequireFrame("glCompressedTexImage2D")
         .CompressedTextureImage2D(arguments[0], Signed(arguments[1]), arguments[2],
@@ -91,6 +97,11 @@ std::uint32_t Gles2Module::CompressedTexImage2D(const A32CallFrame& call) {
 
 std::uint32_t Gles2Module::CompressedTexSubImage2D(const A32CallFrame& call) {
     const auto arguments = call.Arguments();
+    if (graphics_.gl_context.Shared().transfer.BoundBuffer(0x88ECU) != 0U) {
+        graphics_.RequireFrame("glCompressedTexSubImage2D").TransferPixelBuffer(
+            gles::AngleFrame::PixelBufferOperation::compressed_sub2d, arguments);
+        return 0U;
+    }
     auto prepared = Prepare(calls_, graphics_, 22U, call);
     graphics_.RequireFrame("glCompressedTexSubImage2D")
         .CompressedTextureSubImage2D(arguments[0], Signed(arguments[1]), Signed(arguments[2]),
@@ -123,6 +134,8 @@ std::uint32_t Gles2Module::CopyTexSubImage2D(const A32CallFrame& call) {
 
 std::uint32_t Gles2Module::GetBooleanv(const A32CallFrame& call) {
     const auto arguments = call.Arguments();
+    graphics_.gl_context.Shared().transfer.SetQueryElementCount(arguments[0],
+        graphics_.RequireFrame("glGetBooleanv").StateQueryCount(arguments[0]));
     auto prepared = Prepare(calls_, graphics_, 58U, call);
     auto& output = OnlyPointer(prepared);
     const auto values =
@@ -142,10 +155,13 @@ std::uint32_t Gles2Module::GetBufferParameteriv(const A32CallFrame& call) {
 
 std::uint32_t Gles2Module::GetFloatv(const A32CallFrame& call) {
     const auto arguments = call.Arguments();
+    graphics_.gl_context.Shared().transfer.SetQueryElementCount(arguments[0],
+        graphics_.RequireFrame("glGetFloatv").StateQueryCount(arguments[0]));
     auto prepared = Prepare(calls_, graphics_, 61U, call);
     auto& output = OnlyPointer(prepared);
-    const auto values =
-        graphics_.RequireFrame("glGetFloatv").GetFloats(arguments[0], output.Size() / 4U);
+    const auto values = arguments[0] == 0x821DU
+        ? std::vector<float>{static_cast<float>(GuestGlesExtensions(graphics_.RequireFrame("glGetFloatv")).size())}
+        : graphics_.RequireFrame("glGetFloatv").GetFloats(arguments[0], output.Size() / 4U);
     WriteFloats(output, values);
     return 0U;
 }

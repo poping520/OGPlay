@@ -40,6 +40,12 @@
       ]
     },
     {
+      "name": "glLoadPaletteFromModelViewMatrixOES",
+      "thunk_id": 6,
+      "return": "void",
+      "parameters": []
+    },
+    {
       "name": "glMapBufferOES",
       "thunk_id": 4,
       "return": "void*",

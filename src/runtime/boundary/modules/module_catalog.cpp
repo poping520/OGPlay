@@ -32,7 +32,9 @@ constexpr std::array kAndroidExports{
 constexpr std::array kEglExports{
     OGPLAY_EGL_BOUNDARY_EXPORTS(OGPLAY_NAMED_METADATA)};
 constexpr std::array kGles1BoundsExports{
-    OGPLAY_GLES1_BOUNDS_EXPORTS(OGPLAY_NAMED_METADATA)};
+    OGPLAY_GLES1_BOUNDS_EXPORTS(OGPLAY_NAMED_METADATA)
+    OGPLAY_GLES_IMAGE_EXPORTS(OGPLAY_NAMED_METADATA)};
+constexpr std::array kGlesImageExports{OGPLAY_GLES_IMAGE_EXPORTS(OGPLAY_NAMED_METADATA)};
 constexpr std::array kLogExports{
     OGPLAY_LOG_BOUNDARY_EXPORTS(OGPLAY_NAMED_METADATA)};
 #define OGPLAY_OPENSLES_METADATA(name, id, count, kind, method)                 \
@@ -128,7 +130,7 @@ BoundaryCatalog BuildCatalog(const AndroidApi api) {
                   kGles1BoundsExports);
     constexpr std::array gles2_apis{gles::GlesApi::gles2,
                                     gles::GlesApi::gles3};
-    AddGlesModule(modules, storage, "libGLESv2.so", gles2_apis);
+    AddGlesModule(modules, storage, "libGLESv2.so", gles2_apis, kGlesImageExports);
     AddNamedModule(modules, storage, "liblog.so", kLogExports);
     AddOpenSlesModule(modules, storage);
     return BoundaryCatalog(api, modules);
@@ -201,6 +203,8 @@ std::vector<HleThunkDescriptor> BuildAndroidBoundaryDescriptors(
         result.push_back({override_.library, override_.symbol,
                           override_.local_id, override_.parameter_count});
     }
+    for (const auto& entry : kGlesImageExports)
+        result.push_back({"$egl.proc", entry.name, 0U, entry.parameter_count});
     std::set<std::string_view> proc_names;
     for (const auto api : {gles::GlesApi::gles1,
                            gles::GlesApi::gles1_extensions,

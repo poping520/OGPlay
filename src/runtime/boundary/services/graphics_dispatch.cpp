@@ -29,6 +29,11 @@ namespace {
 
 constexpr memory::GuestAddress kQueryStringPage{0x70001000U};
 constexpr std::uint32_t kQueryStringSlotBytes = 1024;
+constexpr std::uint32_t kQueryStringSlotCount = 5;
+constexpr std::string_view kGuestGles2Extensions =
+    "GL_OES_compressed_ETC1_RGB8_texture "
+    "GL_IMG_texture_compression_pvrtc "
+    "GL_OES_rgb8_rgba8 ";
 constexpr std::uint32_t kArrayBuffer = 0x8892U;
 constexpr std::uint32_t kElementArrayBuffer = 0x8893U;
 constexpr std::uint32_t kStreamDraw = 0x88E0U;
@@ -94,8 +99,9 @@ std::uint32_t QueryStringOffset(const std::uint32_t parameter) {
     case 0x1f00U: return 0;
     case 0x1f01U: return kQueryStringSlotBytes;
     case 0x1f02U: return kQueryStringSlotBytes * 2U;
-    case 0x8b8cU: return kQueryStringSlotBytes * 3U;
-    default: throw std::invalid_argument("unsupported GLES string query");
+    case 0x1f03U: return kQueryStringSlotBytes * 3U;
+    case 0x8b8cU: return kQueryStringSlotBytes * 4U;
+    default: throw gles::GlesApiError("glGetString", 0x0500U);
     }
 }
 [[nodiscard]] std::size_t VertexAttribScalarBytes(const std::uint32_t type) {
@@ -104,7 +110,7 @@ std::uint32_t QueryStringOffset(const std::uint32_t parameter) {
     case kShort: case kUnsignedShort: return 2U;
     case kFloat: case kFixed: return 4U;
     default:
-        throw std::invalid_argument("GLES2 vertex attribute type is unsupported");
+        throw gles::GlesApiError("glVertexAttribPointer", 0x0500U);
     }
 }
 [[nodiscard]] std::uint64_t ClientArrayBytes(const std::int32_t size,
@@ -316,12 +322,10 @@ public:
             const auto stride = std::bit_cast<std::int32_t>(a32_call.Argument(4));
             const auto pointer = a32_call.Argument(5);
             if (size < 1 || size > 4) {
-                throw std::invalid_argument(
-                    "GLES2 vertex attribute size is outside 1..4");
+                throw gles::GlesApiError(symbol, 0x0501U);
             }
             if (stride < 0) {
-                throw std::invalid_argument(
-                    "GLES2 vertex attribute stride is negative");
+                throw gles::GlesApiError(symbol, 0x0501U);
             }
             static_cast<void>(VertexAttribScalarBytes(type));
             std::array<std::uint32_t, 6> all{
@@ -489,8 +493,12 @@ public:
             return 0;
         }
         if (function_id == Id(Gles2Function::get_string)) {
-            return WriteQueryString(args[0],
-                                    RequireFrame(frame, symbol).GetString(args[0]), tid);
+            if (args[0] == 0x1F03U) {
+                static_cast<void>(RequireFrame(frame, symbol));
+                return WriteQueryString(args[0], kGuestGles2Extensions, tid);
+            }
+            return WriteQueryString(
+                args[0], RequireFrame(frame, symbol).GetString(args[0]), tid);
         }
         if (function_id == Id(Gles2Function::get_error)) {
             if (const auto error = context_.Shared().TakeGuestError();
@@ -546,7 +554,7 @@ public:
             const auto first = std::bit_cast<std::int32_t>(args[1]);
             const auto count = std::bit_cast<std::int32_t>(args[2]);
             if (first < 0 || count < 0) {
-                throw std::invalid_argument("GLES2 draw array range is negative");
+                throw gles::GlesApiError(symbol, 0x0501U);
             }
             if (count == 0) return 0;
             const auto maximum = static_cast<std::uint64_t>(first) +
@@ -565,7 +573,7 @@ public:
             const auto count = std::bit_cast<std::int32_t>(args[1]);
             const auto type = args[2];
             if (count < 0) {
-                throw std::invalid_argument("GLES2 draw element count is negative");
+                throw gles::GlesApiError(symbol, 0x0501U);
             }
             if (count == 0) return 0;
             auto call = PrepareCall(function_id, args, tid);
@@ -716,8 +724,7 @@ private:
 
     static void RequireAttributeIndex(const std::uint32_t index) {
         if (index >= kMaximumVertexAttributes) {
-            throw std::invalid_argument(
-                "GLES2 vertex attribute index is outside 0..15");
+            throw gles::GlesApiError("GLES2 vertex attribute", 0x0501U);
         }
     }
 
@@ -860,13 +867,14 @@ private:
 
     void EnsureQueryStringPage() {
         if (query_string_page_mapped_) return;
-        if (address_space_.PageSize() < kQueryStringSlotBytes * 4U) {
-            throw std::length_error("guest page is too small for GLES query strings");
+        const auto region_bytes = address_space_.PageSize() * 2U;
+        if (region_bytes < kQueryStringSlotBytes * kQueryStringSlotCount) {
+            throw std::length_error("guest region is too small for GLES query strings");
         }
-        address_space_.Map({kQueryStringPage, address_space_.PageSize()},
+        address_space_.Map({kQueryStringPage, region_bytes},
                            memory::PageProtection::read |
                                memory::PageProtection::write);
-        address_space_.Protect({kQueryStringPage, address_space_.PageSize()},
+        address_space_.Protect({kQueryStringPage, region_bytes},
                                memory::PageProtection::read);
         query_string_page_mapped_ = true;
     }
@@ -886,17 +894,17 @@ private:
                 static_cast<unsigned char>(character)));
         }
         bytes.push_back(std::byte{});
-        const auto page = memory::GuestRange{kQueryStringPage,
-                                              address_space_.PageSize()};
-        address_space_.Protect(page, memory::PageProtection::read |
+        const auto region = memory::GuestRange{kQueryStringPage,
+                                                address_space_.PageSize() * 2U};
+        address_space_.Protect(region, memory::PageProtection::read |
                                          memory::PageProtection::write);
         try {
             address_space_.Write(kQueryStringPage.Add(offset), bytes, tid);
         } catch (...) {
-            address_space_.Protect(page, memory::PageProtection::read);
+            address_space_.Protect(region, memory::PageProtection::read);
             throw;
         }
-        address_space_.Protect(page, memory::PageProtection::read);
+        address_space_.Protect(region, memory::PageProtection::read);
         return kQueryStringPage.Add(offset).Value();
     }
 

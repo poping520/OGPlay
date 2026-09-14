@@ -98,8 +98,7 @@ void RequireTextureBindingTarget(const std::uint32_t target) {
     const std::uint64_t thread_id, const std::string_view operation) {
     const auto count = std::bit_cast<std::int32_t>(count_word);
     if (count < 0) {
-        throw std::invalid_argument(std::string(operation) +
-                                    " count cannot be negative");
+        throw gles::GlesApiError(operation, 0x0501U);
     }
     return gles::GuestBuffer::Prepare(
         address_space, memory::GuestAddress{address},

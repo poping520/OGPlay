@@ -252,7 +252,7 @@ Gles1ClientArray AndroidBoundaryGles1DrawState::PreparePointer(
     const std::int32_t stride, const std::uint32_t pointer,
     const std::uint32_t buffer) const {
     if (stride < 0) {
-        throw std::invalid_argument("GLES1 client array stride is negative");
+        throw gles::GlesApiError("GLES1 client array pointer", 0x0501U);
     }
     static_cast<void>(ScalarBytes(type));
     if ((array == kGles1VertexArray || array == kGles1TextureCoordArray) &&
@@ -743,7 +743,7 @@ void AndroidBoundaryGles1DrawState::DrawArrays(
     const std::int32_t first, const std::int32_t count,
     const std::uint64_t thread_id) {
     if (first < 0 || count < 0) {
-        throw std::invalid_argument("GLES1 draw array range is negative");
+        throw gles::GlesApiError("glDrawArrays", 0x0501U);
     }
     if (!Array(kGles1VertexArray, kTexture0).enabled) {
         throw std::runtime_error("GLES1 draw requires GL_VERTEX_ARRAY");
@@ -789,7 +789,7 @@ void AndroidBoundaryGles1DrawState::DrawElements(
     memory::AddressSpace& address_space, const std::uint32_t mode,
     const std::int32_t count, const std::uint32_t type,
     const std::uint32_t indices, const std::uint64_t thread_id) {
-    if (count < 0) throw std::invalid_argument("GLES1 draw element count is negative");
+    if (count < 0) throw gles::GlesApiError("glDrawElements", 0x0501U);
     if (type != kUnsignedByte && type != kUnsignedShort) {
         throw std::invalid_argument("GLES1 draw index type is unsupported");
     }

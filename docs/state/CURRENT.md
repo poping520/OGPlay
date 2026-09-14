@@ -4,6 +4,9 @@
 
 ## 最近进展
 
+- [BND-31](../tasks/boundary/BND-31.md) 修正 GLES1 VERSION/RENDERER 枚举，GLES2
+  扩展串只发布 guest 边界真实支持的 ETC1/PVRTC/RGBA8，并让 GLES1/GLES2 负 draw
+  与已覆盖 GLsizei 参数统一锁存 `GL_INVALID_VALUE`；GLES 定向 51/51 通过。
 - [BND-30](../tasks/boundary/BND-30.md) 已补齐已发布 GLES1 core fixed draw 的 LIGHT0..7、
   specular/shininess、spot/衰减、双面材质与 color-material，并实现 GL_BLEND/GL_DECAL
   texture environment。未宣告的 matrix-palette skinning 继续明确失败；最多两个纹理 stage

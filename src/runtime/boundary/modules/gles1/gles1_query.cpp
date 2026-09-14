@@ -81,8 +81,7 @@ void WriteGuestBooleans(
     const std::uint32_t word, const std::string_view operation) {
     const auto count = std::bit_cast<std::int32_t>(word);
     if (count < 0) {
-        throw std::invalid_argument(std::string(operation) +
-                                    " count cannot be negative");
+        throw gles::GlesApiError(operation, 0x0501U);
     }
     return static_cast<std::size_t>(count);
 }
@@ -792,7 +791,7 @@ void BindAndroidBoundaryGles1Textures(
             const std::uint64_t thread_id) {
             const auto image_size = SignedTextureValue(arguments[6]);
             if (image_size < 0) {
-                throw std::invalid_argument("GLES1 compressed image size is negative");
+                throw gles::GlesApiError("glCompressedTexImage2D", 0x0501U);
             }
             auto data = gles::GuestBuffer::Prepare(
                 address_space, memory::GuestAddress{arguments[7]},

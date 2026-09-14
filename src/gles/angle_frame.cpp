@@ -54,9 +54,12 @@ constexpr std::uint32_t kEtc1Rgb8LossyDecodeAngle = 0x9690U;
 
 AngleFrame AngleFrame::CreatePbuffer(const AngleBackend backend,
                                      const std::uint32_t width,
-                                     const std::uint32_t height) {
+                                     const std::uint32_t height,
+                                     const int client_version,
+                                     const EglHandle share_context) {
     auto api = CreateNativeAngleEglApi();
-    auto lifecycle = EglLifecycle::CreatePbuffer(*api, backend, width, height);
+    auto lifecycle = EglLifecycle::CreatePbuffer(
+        *api, backend, width, height, client_version, share_context);
     return AngleFrame(std::move(api), std::move(lifecycle), width, height);
 }
 
@@ -76,6 +79,10 @@ void AngleFrame::BindCurrentOnCallingThread() {
 
 void AngleFrame::ReleaseCurrent() {
     lifecycle_.ReleaseCurrent();
+}
+
+EglHandle AngleFrame::NativeContext() const noexcept {
+    return lifecycle_.NativeContext();
 }
 
 void AngleFrame::Viewport(const std::int32_t x, const std::int32_t y,

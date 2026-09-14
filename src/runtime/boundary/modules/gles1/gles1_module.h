@@ -38,6 +38,8 @@ public:
 
     template <gles::GlesApi Api, gles::GlesThunkId Id>
     std::uint32_t Invoke(const A32CallFrame& call) {
+        std::scoped_lock execution_lock(graphics_.execution_mutex);
+        graphics_.ActivateCurrentContext();
         constexpr bool draw_call = Api == gles::GlesApi::gles1 &&
                                    (Id == 35U || Id == 36U);
         const auto symbol = gles::DescribeGlesFunction(Api, Id).name;
@@ -50,8 +52,7 @@ public:
                     GuestGlRenderer::programmable) {
                     const auto result = graphics_.gles_dispatch.Dispatch(
                         Id == 35U ? 40U : 41U, call,
-                        graphics_.angle_frame.has_value()
-                            ? &*graphics_.angle_frame : nullptr);
+                        graphics_.CurrentFrame(symbol));
                     if (!result.has_value()) {
                         throw std::logic_error(
                             "selected programmable draw has no GLES2 handler");

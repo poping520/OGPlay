@@ -183,12 +183,14 @@ public:
     }
 
     EglHandle CreateContext(const EglHandle display, const EglHandle config,
-                            const int client_version) override {
+                            const int client_version,
+                            const EglHandle share_context) override {
         const EGLint attributes[]{EGL_CONTEXT_CLIENT_VERSION, client_version,
                                   EGL_NONE};
         return ReinterpretHandle<EglHandle>(eglCreateContext(
             ReinterpretHandle<EGLDisplay>(display),
-            ReinterpretHandle<EGLConfig>(config), EGL_NO_CONTEXT, attributes));
+            ReinterpretHandle<EGLConfig>(config),
+            ReinterpretHandle<EGLContext>(share_context), attributes));
     }
 
     EglHandle CreatePbufferSurface(const EglHandle display,
@@ -259,7 +261,9 @@ EglLifecycle::EglLifecycle(EglApi& api, EglContextInfo info) noexcept
 EglLifecycle EglLifecycle::CreatePbuffer(EglApi& api,
                                          const AngleBackend backend,
                                          const std::uint32_t width,
-                                         const std::uint32_t height) {
+                                         const std::uint32_t height,
+                                         const int client_version,
+                                         const EglHandle share_context) {
     static_cast<void>(AngleBackendName(backend));
     constexpr auto kMaxDimension =
         static_cast<std::uint32_t>((std::numeric_limits<int>::max)());
@@ -268,8 +272,11 @@ EglLifecycle EglLifecycle::CreatePbuffer(EglApi& api,
         throw std::invalid_argument(
             "EGL pbuffer dimensions must fit a positive EGLint");
     }
+    if (client_version < 1 || client_version > 3) {
+        throw std::invalid_argument("EGL client version must be 1, 2 or 3");
+    }
     EglLifecycle lifecycle(api, {.backend = backend,
-                                 .client_version = 2,
+                                 .client_version = client_version,
                                  .width = width,
                                  .height = height});
     lifecycle.display_ = api.GetPlatformDisplay(backend);
@@ -290,7 +297,8 @@ EglLifecycle EglLifecycle::CreatePbuffer(EglApi& api,
         ThrowLastError(api, EglOperation::bind_api);
     }
     lifecycle.context_ = api.CreateContext(
-        lifecycle.display_, config, lifecycle.info_.client_version);
+        lifecycle.display_, config, lifecycle.info_.client_version,
+        share_context);
     if (lifecycle.context_ == 0) {
         ThrowLastError(api, EglOperation::create_context);
     }
@@ -341,6 +349,10 @@ const EglContextInfo& EglLifecycle::Info() const noexcept {
 bool EglLifecycle::IsCurrent() const noexcept {
     return current_;
 }
+
+EglHandle EglLifecycle::NativeDisplay() const noexcept { return display_; }
+EglHandle EglLifecycle::NativeContext() const noexcept { return context_; }
+EglHandle EglLifecycle::NativeSurface() const noexcept { return surface_; }
 
 void EglLifecycle::BindCurrentOnCallingThread() {
     if (api_ == nullptr || display_ == 0 || context_ == 0 || surface_ == 0) {

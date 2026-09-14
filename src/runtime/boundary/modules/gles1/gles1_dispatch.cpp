@@ -124,6 +124,14 @@ AndroidBoundaryGles1MatrixState::AndroidBoundaryGles1MatrixState(
     Reset();
 }
 
+void AndroidBoundaryGles1MatrixState::CopyValuesFrom(
+    const AndroidBoundaryGles1MatrixState& source) {
+    mode_ = source.mode_;
+    modelview_ = source.modelview_;
+    projection_ = source.projection_;
+    textures_ = source.textures_;
+}
+
 void AndroidBoundaryGles1MatrixState::Reset() {
     mode_ = kGles1Modelview;
     modelview_.assign(1, Gles1IdentityMatrix());

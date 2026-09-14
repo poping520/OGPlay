@@ -99,10 +99,31 @@ enum class TextureFormatClass : std::int32_t {
     const std::uint32_t texture = kTexture0) {
     return core.Matrices().Current(mode, texture);
 }
-[[nodiscard]] std::array<float, 9> UpperMatrix3(
-    const Gles1Matrix& matrix) noexcept {
-    return {matrix[0], matrix[1], matrix[2], matrix[4], matrix[5],
-            matrix[6], matrix[8], matrix[9], matrix[10]};
+[[nodiscard]] std::array<float, 9> NormalMatrix(
+    const Gles1Matrix& matrix) {
+    const float a00 = matrix[0], a01 = matrix[4], a02 = matrix[8];
+    const float a10 = matrix[1], a11 = matrix[5], a12 = matrix[9];
+    const float a20 = matrix[2], a21 = matrix[6], a22 = matrix[10];
+    const float c00 = a11 * a22 - a12 * a21;
+    const float c01 = a12 * a20 - a10 * a22;
+    const float c02 = a10 * a21 - a11 * a20;
+    const float c10 = a02 * a21 - a01 * a22;
+    const float c11 = a00 * a22 - a02 * a20;
+    const float c12 = a01 * a20 - a00 * a21;
+    const float c20 = a01 * a12 - a02 * a11;
+    const float c21 = a02 * a10 - a00 * a12;
+    const float c22 = a00 * a11 - a01 * a10;
+    const float determinant = a00 * c00 + a01 * c01 + a02 * c02;
+    if (!std::isfinite(determinant) || std::abs(determinant) < 1.0e-20F) {
+        throw std::runtime_error(
+            "GLES1 normal matrix requires an invertible modelview");
+    }
+    const float inverse_determinant = 1.0F / determinant;
+    return {c00 * inverse_determinant, c10 * inverse_determinant,
+            c20 * inverse_determinant, c01 * inverse_determinant,
+            c11 * inverse_determinant, c21 * inverse_determinant,
+            c02 * inverse_determinant, c12 * inverse_determinant,
+            c22 * inverse_determinant};
 }
 [[nodiscard]] std::uint32_t MaximumIndex(
     const std::span<const std::byte> bytes, const std::uint32_t type) {
@@ -404,7 +425,7 @@ AndroidBoundaryGles1DrawState::EnsureProgram(
         "u_material_back_ambient", "u_material_back_diffuse",
         "u_material_back_specular", "u_material_back_emission",
         "u_material_back_shininess", "u_light_model_two_side",
-        "u_color_material",
+        "u_color_material", "u_normalize_normal", "u_rescale_normal",
         "u_has_color", "u_has_normal", "u_has_point_size", "u_lighting", "u_point_size",
         "u_point_size_min", "u_point_size_max", "u_point_distance_attenuation",
         "u_fog_enabled",
@@ -545,7 +566,7 @@ void AndroidBoundaryGles1DrawState::ApplyUniforms(
         sampled_targets) {
     const auto modelview = MatrixFor(core, kGles1Modelview);
     const auto projection = MatrixFor(core, kGles1Projection);
-    const auto normal = UpperMatrix3(modelview);
+    const auto normal = NormalMatrix(modelview);
     const auto uniform = [&program](const std::string_view name) {
         return program.uniforms.at(std::string{name});
     };
@@ -561,6 +582,15 @@ void AndroidBoundaryGles1DrawState::ApplyUniforms(
     set_matrix("u_modelview", modelview);
     set_matrix("u_projection", projection);
     frame.UniformMatrix3(uniform("u_normal_matrix"), 1, false, normal);
+    const bool normalize = core.Capability(0x0BA1U);
+    const bool rescale = core.Capability(0x803AU);
+    frame.Uniform1f(uniform("u_normalize_normal"), normalize ? 1.0F : 0.0F);
+    const float rescale_factor = rescale
+        ? std::sqrt(modelview[2] * modelview[2] +
+                    modelview[6] * modelview[6] +
+                    modelview[10] * modelview[10])
+        : 1.0F;
+    frame.Uniform1f(uniform("u_rescale_normal"), rescale_factor);
     const auto& color = legacy.Color();
     frame.Uniform4f(uniform("u_current_color"), color[0], color[1], color[2],
                     color[3]);

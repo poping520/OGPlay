@@ -32,10 +32,15 @@ public:
 
     template <gles::GlesThunkId FunctionId>
     std::uint32_t Invoke(const A32CallFrame& call) {
+        std::scoped_lock execution_lock(graphics_.execution_mutex);
+        graphics_.ActivateCurrentContext();
         try {
             return InvokeChecked<FunctionId>(call);
         } catch (const gles::GlesApiError& error) {
             graphics_.gl_context.Shared().SetGuestError(error.Code());
+            return 0U;
+        } catch (const std::invalid_argument&) {
+            graphics_.gl_context.Shared().SetGuestError(0x0500U);
             return 0U;
         }
     }
@@ -63,9 +68,7 @@ private:
             return *shader_program;
         }
         if (const auto resources = graphics_.gles_dispatch.Dispatch(
-                FunctionId, call,
-                graphics_.angle_frame.has_value()
-                    ? &*graphics_.angle_frame : nullptr);
+                FunctionId, call, graphics_.CurrentFrame(symbol));
             resources.has_value()) {
             if constexpr (FunctionId == 40U || FunctionId == 41U) {
                 graphics_.frames.RecordDraw();

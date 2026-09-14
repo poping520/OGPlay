@@ -7,6 +7,7 @@
 - [ADR-0019 · 桌面呈现管线与零拷贝方向](#adr-0019)
 - [ADR-0021 · VideoView 真实播放与 FFmpeg 运行时加载](#adr-0021)
 - [ADR-0027 · AudioTrack stream 按构造缓冲字节回压](#adr-0027)
+- [ADR-0061 · EGL 对象 registry 与每 Context 图形状态](#adr-0061)
 
 <a id="adr-0003"></a>
 
@@ -154,3 +155,38 @@ PCM 后面；队满也不会杀死 guest audio worker。位置回调中的重入
 一样只有在播放已释放足够字节时才返回；测试不得依赖无限队列。共享 backend 暴露 queued
 bytes 与 blocking-writer 数，legacy snapshot 另记录成功 write 次数、非零 write、sample peak
 和当前积压，供机器验收与后续受控诊断投影复用。
+
+<a id="adr-0061"></a>
+
+## ADR-0061 · EGL 对象 registry 与每 Context 图形状态
+
+- 状态：Accepted
+- 日期：2026-09-14
+- Supersedes：`src/runtime/boundary/MODULE.md` 中“进程唯一 GuestGlContext、唯一 ANGLE
+  surface/context”设计；ADR-0003 的 ANGLE/SDL3 选型保持不变。
+
+### 背景
+
+Native EGL 虽已有 Context/Surface 句柄表，但所有句柄仍落到同一 `GuestGlContext` 与
+`AngleFrame`。不共享 Context 因而错误地共享对象名和状态，share context 只保存元数据，
+draw/read surface 也没有独立 backing。单一全局线程 owner 还会拒绝两个线程分别绑定不同
+Context 的合法关系。
+
+### 决定
+
+进程只保留一个权威 EGL registry。registry 分别拥有 display/config、Context、Surface 和
+share group；每个 Context 拥有独立 guest 状态与 ANGLE context，Surface 独立拥有 backing。
+纹理、buffer、renderbuffer、shader/program 等对象由 ANGLE share context 共享，binding、
+viewport、错误锁存、固定管线矩阵和 transfer state 均按 Context 隔离。current 关系按 guest
+线程保存，同一 Context 同时只能属于一个线程；失败绑定不得改动调用线程原绑定。
+
+Java EGL10/EGL14 只保存 Java wrapper 与 native registry handle 的映射，不建立第二套对象、
+current 或 error 事实。直接 ELF import 保留 SONAME API family；proc-address 返回稳定
+forwarder，调用时根据调用线程 current Context 的 client version 分派。
+
+### 后果
+
+宿主可继续串行执行 GL 命令，但不能再用进程级 owner 表示 EGL 合法性。managed surface 是
+registry 中由 lifecycle 创建的 window 类对象；SDL presentation 与 FrameService ownership
+不变。Context/Surface 的实际 ANGLE 引用直到 pending destroy 且不再 current 才释放；
+Terminate 清理线程绑定并允许随后重新初始化。

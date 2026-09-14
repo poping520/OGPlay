@@ -138,6 +138,8 @@ uniform vec4 u_texture1_matrix1;
 uniform vec4 u_texture1_matrix2;
 uniform vec4 u_texture1_matrix3;
 uniform mat3 u_normal_matrix;
+uniform float u_normalize_normal;
+uniform float u_rescale_normal;
 uniform vec4 u_current_color;
 uniform vec4 u_current_normal;
 uniform vec4 u_global_ambient;
@@ -229,8 +231,10 @@ void main() {
   vec4 eye = transform(u_modelview0, u_modelview1, u_modelview2,
                        u_modelview3, a_position);
   vec4 base = mix(u_current_color, a_color, u_has_color);
-  vec3 normal = normalize(u_normal_matrix *
-      mix(u_current_normal.xyz, a_normal, u_has_normal));
+  vec3 normal = u_normal_matrix *
+      mix(u_current_normal.xyz, a_normal, u_has_normal);
+  normal *= u_rescale_normal;
+  normal = mix(normal, normalize(normal), u_normalize_normal);
   vec4 frontLit = illuminate(normal, base, u_material_front_ambient,
       u_material_front_diffuse, u_material_front_specular,
       u_material_front_emission, u_material_front_shininess, eye.xyz);

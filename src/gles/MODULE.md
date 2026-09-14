@@ -13,8 +13,10 @@
 - `AngleBackendName`：输出可用于配置、日志与 Agent 查询的稳定 renderer/device 名称。
 - `EglApi`：不泄漏原生 EGL 类型的最小调用面；生产实现转调 ANGLE，测试可注入确定性
   失败。调用方必须保证 API 对象比使用它的 `EglLifecycle` 存活更久。
-- `EglLifecycle::CreatePbuffer`：创建 ANGLE display、RGBA8+D24S8 EGL config、GLES2 context
-  和 pbuffer surface 并设为当前；`EglContextInfo` 暴露实际 EGL 版本、后端和尺寸事实。
+- `EglLifecycle::CreatePbuffer`：创建 ANGLE display、RGBA8+D24S8 EGL config、指定 ES 版本
+  context 和 pbuffer surface 并设为当前；可传入同 display 的 native share context，
+  `NativeDisplay/NativeContext/NativeSurface` 只向上层 EGL registry 暴露强类型整数 identity，
+  不向 guest 泄漏 host 指针；`EglContextInfo` 暴露实际 EGL 版本、后端和尺寸事实。
 - `EglLifecycle::{ReleaseCurrent,BindCurrentOnCallingThread}`：显式释放并在受控调用线程
   重新绑定同一 context/surface，供 host-managed surface 的 GL currency 合法接力。
 - `AngleFrame`：在独占的真实 ANGLE pbuffer 上执行 viewport/color/depth/stencil clear、

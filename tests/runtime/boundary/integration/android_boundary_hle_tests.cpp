@@ -540,6 +540,59 @@ TEST_CASE("Android EGL proc address resolves sealed public thunks") {
                        {name.Value(), 0U, 0U, 0U}) == 0U);
 }
 
+TEST_CASE("Android EGL routes proc addresses by current context version") {
+    BoundaryFixture fixture;
+    REQUIRE(fixture.Call("libEGL.so", "eglInitialize", {1U}) == 1U);
+
+    const auto pbuffer_attributes = fixture.output;
+    fixture.bus.Write32(pbuffer_attributes, 0x3057U, 1U);
+    fixture.bus.Write32(pbuffer_attributes.Add(4U), 16U, 1U);
+    fixture.bus.Write32(pbuffer_attributes.Add(8U), 0x3056U, 1U);
+    fixture.bus.Write32(pbuffer_attributes.Add(12U), 16U, 1U);
+    fixture.bus.Write32(pbuffer_attributes.Add(16U), 0x3038U, 1U);
+    const auto surface = fixture.Call(
+        "libEGL.so", "eglCreatePbufferSurface",
+        {1U, 2U, pbuffer_attributes.Value(), 0U});
+    REQUIRE(surface == 3U);
+
+    const auto es1 = fixture.Call("libEGL.so", "eglCreateContext",
+                                  {1U, 2U, 0U, 0U});
+    const auto context_attributes = fixture.output.Add(32U);
+    fixture.bus.Write32(context_attributes, 0x3098U, 1U);
+    fixture.bus.Write32(context_attributes.Add(4U), 2U, 1U);
+    fixture.bus.Write32(context_attributes.Add(8U), 0x3038U, 1U);
+    const auto es2 = fixture.Call(
+        "libEGL.so", "eglCreateContext",
+        {1U, 2U, 0U, context_attributes.Value()});
+    REQUIRE(es1 == 4U);
+    REQUIRE(es2 == 5U);
+
+    const auto name = fixture.output.Add(64U);
+    WriteGuestString(fixture, name, "glGetString");
+    REQUIRE(fixture.Call("libEGL.so", "eglMakeCurrent",
+                         {1U, surface, surface, es1}) == 1U);
+    CHECK(fixture.Call("libEGL.so", "eglGetProcAddress",
+                       {name.Value(), 0U, 0U, 0U}) ==
+          fixture.boundary.Symbols()
+              .Lookup("libGLESv1_CM.so", "glGetString")
+              ->Value());
+    CHECK(FastBoundaryCall(fixture, "libEGL.so", "eglGetProcAddress",
+                           {name.Value(), 0U, 0U, 0U}, 2U) == 0U);
+
+    REQUIRE(fixture.Call("libEGL.so", "eglMakeCurrent",
+                         {1U, surface, surface, es2}) == 1U);
+    CHECK(fixture.Call("libEGL.so", "eglGetProcAddress",
+                       {name.Value(), 0U, 0U, 0U}) ==
+          fixture.boundary.Symbols()
+              .Lookup("libGLESv2.so", "glGetString")
+              ->Value());
+
+    REQUIRE(fixture.Call("libEGL.so", "eglMakeCurrent", {1U, 0U, 0U, 0U}) ==
+            1U);
+    CHECK(fixture.Call("libEGL.so", "eglGetProcAddress",
+                       {name.Value(), 0U, 0U, 0U}) == 0U);
+}
+
 TEST_CASE("Android EGL errors and API binding are isolated by guest thread") {
     BoundaryFixture fixture;
     CHECK(FastBoundaryCall(fixture, "libEGL.so", "eglBindAPI",

@@ -87,7 +87,7 @@ public:
                          &ServiceRecordGpuCall},
           android_services_{address_space_},
           graphics_context_{
-              backend_, layout_, gl_context_, gles_dispatch_,
+              backend_, layout_, gl_context_, api_routing_, gles_dispatch_,
               angle_frame_, gl_owner_,
               managed_surface_, frame_service_,
               this, &ServiceRequireFrame, &ServiceInitializeGuestGlDefaults,
@@ -95,7 +95,7 @@ public:
               &ServiceResetGuestGraphics,
               &ServiceWrite32, &ServiceWriteRequired32,
               &ServiceReadCString, &ServiceReadShaderSources},
-          egl_context_{graphics_context_, symbols_},
+          egl_context_{graphics_context_, api_routing_, symbols_},
           android_module_(call_services_, android_services_),
           egl_module_(call_services_, egl_context_),
           gles1_module_(call_services_, graphics_context_, gles1_state_,
@@ -775,6 +775,7 @@ private:
     BoundaryFastRouter fast_router_;
     FrameService frame_service_;
     GuestGlContext gl_context_;
+    GlApiRouting api_routing_;
     AndroidBoundaryGles gles_dispatch_;
     detail::AndroidBoundaryGles1State gles1_state_;
     detail::AndroidBoundaryGles1DrawState gles1_draw_state_;

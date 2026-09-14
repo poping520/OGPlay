@@ -4,6 +4,10 @@
 
 ## 最近进展
 
+- Native EGL 现以独立线程安全路由状态跟踪每个 guest thread 的 current Context client
+  version；`eglGetProcAddress` 按 ES1/ES2 Context 选择对应 GLES family，同名入口不再固定
+  偏向 GLES2，已初始化但未绑定 Context 时明确返回 null。直接 ELF import 保持 SONAME
+  语义，未引入 GLES3 或第二套 graphics state。
 - Native EGL 已从固定 context=4/surface=3 升级为对象表：Context/Window/Pbuffer 使用独立
   identity，校验初始化、config、client version、对象类型和线程占用，支持 share-root 记账与
   current 对象延迟销毁；ChooseConfig/GetConfigAttrib 返回 RGBA8+D24S8、window+pbuffer、

@@ -1098,6 +1098,10 @@ DexVmGuestBridge::DexVmGuestBridge(
         impl_->io_file_system = std::make_unique<DexVmIoVfsAdapter>(
             *android_context->vfs);
         impl_->vm->IO().SetFileSystem(impl_->io_file_system.get());
+        if (const auto working_directory = impl_->vm->IO().WorkingDirectory()) {
+            static_cast<void>(impl_->vm->SetSystemProperty(
+                "user.dir", *working_directory));
+        }
     }
     impl_->vm->SetLogger(logger);
     impl_->threads = std::make_unique<dx::VmThreadRuntime>(*impl_->vm);

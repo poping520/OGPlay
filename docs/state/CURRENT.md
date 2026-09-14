@@ -1,9 +1,14 @@
 # 当前状态
 
-更新：2026-09-13。
+更新：2026-09-14。
 
 ## 最近进展
 
+- DexVM 现提供 API 19 `java.home`、`java.io.tmpdir`、`user.dir` 初始 property；Android
+  bridge 在 Java 执行前以 guest VFS working directory 覆盖 `user.dir`。真实 PvZ Terms/
+  Restlet 启动已不再触发 `File.join` null receiver，并继续进入离线 HTTP 失败路径。
+- Libcore `Posix.mkdir/remove/rename` 现保留 VFS 真实 errno，不再把父目录缺失误报为 EEXIST；
+  API 19 `File.mkdirs()` 可按 ENOENT 递归，真实 PvZ 已越过 Nimble 必需目录创建。
 - DexVM 已按 ADR-0060 从固定 64 MiB 预算切换为可增长堆：默认 64 MiB 初始目标、
   512 MiB growth limit、1 GiB maximum，按普通 GC→增长→before-OOM GC→OOM 执行。
   GC 后依 live set、75% 利用率与 2..8 MiB 空闲区间调整目标；intrinsic 在安全点之间可在

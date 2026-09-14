@@ -640,13 +640,13 @@ ProfileRuntime DecodeProfileRuntime(const TomlValue::Table& root,
                    {"heap", "max_frames", "ticks_per_call", "interpreter"}, {});
         ProfileRuntime::DexVm budget;
         if (const auto* heap = NativeOptional(dexvm_table, "heap")) {
-            const auto& table = NativeAs<NativeTable>(*heap, "runtime.dexvm.heap");
-            NativeKeys(table, "runtime.dexvm.heap",
+            const auto& heap_table = NativeAs<NativeTable>(*heap, "runtime.dexvm.heap");
+            NativeKeys(heap_table, "runtime.dexvm.heap",
                        {"initial_target_bytes", "growth_limit_bytes",
                         "maximum_bytes", "target_utilization_percent",
                         "min_free_bytes", "max_free_bytes"}, {});
             const auto read = [&](const char* key, std::uint64_t& value) {
-                if (const auto* item = NativeOptional(table, key))
+                if (const auto* item = NativeOptional(heap_table, key))
                     value = static_cast<std::uint64_t>(NativeInteger(
                         *item, std::string("runtime.dexvm.heap.") + key,
                         1U << 20U, 1U << 30U));
@@ -656,7 +656,7 @@ ProfileRuntime DecodeProfileRuntime(const TomlValue::Table& root,
             read("maximum_bytes", budget.heap.maximum_bytes);
             read("min_free_bytes", budget.heap.min_free_bytes);
             read("max_free_bytes", budget.heap.max_free_bytes);
-            if (const auto* item = NativeOptional(table, "target_utilization_percent"))
+            if (const auto* item = NativeOptional(heap_table, "target_utilization_percent"))
                 budget.heap.target_utilization_percent = static_cast<std::uint32_t>(
                     NativeInteger(*item, "runtime.dexvm.heap.target_utilization_percent", 1, 100));
             if (budget.heap.initial_target_bytes > budget.heap.growth_limit_bytes ||

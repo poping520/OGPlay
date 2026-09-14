@@ -310,7 +310,11 @@ struct ApplicationProcess final {
 
     explicit ApplicationProcess(
         ogplay::runtime::dexvm::InterpreterBackend backend =
-            ogplay::runtime::dexvm::InterpreterBackend::switch_dispatch) {
+            ogplay::runtime::dexvm::InterpreterBackend::switch_dispatch,
+        const std::optional<std::string_view> working_directory = std::nullopt) {
+        if (working_directory.has_value()) {
+            filesystem.SetWorkingDirectory(*working_directory);
+        }
         const std::array inputs{
             ogplay::loader::Elf32ModuleInput{
                 "liba.so", native_a,
@@ -337,6 +341,7 @@ struct ApplicationProcess final {
             std::make_shared<ogplay::runtime::DexVmAndroidContext>();
         context->session = session.get();
         context->native_libraries = libraries.get();
+        if (working_directory.has_value()) context->vfs = &filesystem;
         auto catalog = ogplay::runtime::AndroidIntrinsicCatalog(context);
         globals_before_bridge = session->Environment().GlobalReferenceCount();
         bridge = std::make_unique<ogplay::runtime::DexVmGuestBridge>(
@@ -369,6 +374,15 @@ struct ApplicationProcess final {
         return outcome.value.AsInt();
     }
 };
+
+TEST_CASE("DexVM bridge publishes the guest VFS working directory") {
+    ApplicationProcess application{
+        ogplay::runtime::dexvm::InterpreterBackend::switch_dispatch,
+        "/data/game"};
+
+    CHECK(application.bridge->Vm().GetSystemProperty("user.dir") ==
+          "/data/game");
+}
 
 [[nodiscard]] std::vector<std::uint8_t> ReadDexFixture(
     const std::string& name) {

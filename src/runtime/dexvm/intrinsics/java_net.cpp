@@ -1041,22 +1041,36 @@ namespace ogplay::runtime::dexvm::intrinsics {
                 }, kAccPublic | kAccNative);
             posix.VirtualMethod("mkdir", "(Ljava/lang/String;I)V",
                 [](IntrinsicContext& call) {
-                    if (!call.vm.IO().MakeDirectory(
-                            call.vm.StringUtf8(call.arguments[0].ref)))
-                        ThrowErrno(call.vm, "mkdir", 17);
+                    try {
+                        call.vm.IO().MakeDirectory(
+                            call.vm.StringUtf8(call.arguments[0].ref));
+                    } catch (const IoRuntimeError& error) {
+                        ThrowErrno(call.vm, "mkdir", error.ErrorNumber(),
+                                   error.what());
+                    }
                     return VmValue::Void();
                 }, kAccPublic | kAccNative);
             posix.VirtualMethod("remove", "(Ljava/lang/String;)V",
                 [](IntrinsicContext& call) {
-                    if (!call.vm.IO().Delete(call.vm.StringUtf8(call.arguments[0].ref)))
-                        ThrowErrno(call.vm, "remove", 2);
+                    try {
+                        call.vm.IO().Delete(
+                            call.vm.StringUtf8(call.arguments[0].ref));
+                    } catch (const IoRuntimeError& error) {
+                        ThrowErrno(call.vm, "remove", error.ErrorNumber(),
+                                   error.what());
+                    }
                     return VmValue::Void();
                 }, kAccPublic | kAccNative);
             posix.VirtualMethod("rename", "(Ljava/lang/String;Ljava/lang/String;)V",
                 [](IntrinsicContext& call) {
-                    if (!call.vm.IO().Rename(call.vm.StringUtf8(call.arguments[0].ref),
-                                             call.vm.StringUtf8(call.arguments[1].ref)))
-                        ThrowErrno(call.vm, "rename", 2);
+                    try {
+                        call.vm.IO().Rename(
+                            call.vm.StringUtf8(call.arguments[0].ref),
+                            call.vm.StringUtf8(call.arguments[1].ref));
+                    } catch (const IoRuntimeError& error) {
+                        ThrowErrno(call.vm, "rename", error.ErrorNumber(),
+                                   error.what());
+                    }
                     return VmValue::Void();
                 }, kAccPublic | kAccNative);
             posix.VirtualMethod("ioctlInt", "(Ljava/io/FileDescriptor;ILlibcore/util/MutableInt;)I",

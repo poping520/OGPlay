@@ -53,14 +53,11 @@ std::optional<std::string> DexVmIoVfsAdapter::WorkingDirectory() const {
   return file_system_.WorkingDirectory();
 }
 
-bool DexVmIoVfsAdapter::MakeDirectory(const std::string_view path) {
-  if (Stat(path).has_value())
-    return false;
+void DexVmIoVfsAdapter::MakeDirectory(const std::string_view path) {
   try {
     file_system_.CreateDirectory(path);
-    return true;
-  } catch (const VfsError &) {
-    return false;
+  } catch (const VfsError &error) {
+    throw dexvm::IoRuntimeError(error.what(), error.ErrorNumber());
   }
 }
 
@@ -92,29 +89,25 @@ bool DexVmIoVfsAdapter::CreateFile(const std::string_view path) {
   return true;
 }
 
-bool DexVmIoVfsAdapter::Delete(const std::string_view path) {
-  const auto info = Stat(path);
-  if (!info.has_value())
-    return false;
+void DexVmIoVfsAdapter::Delete(const std::string_view path) {
   try {
-    if (info->is_directory) {
+    const auto info = file_system_.Stat(path);
+    if (info.is_directory) {
       file_system_.RemoveDirectory(path);
     } else {
       file_system_.RemoveFile(path);
     }
-    return true;
-  } catch (const VfsError &) {
-    return false;
+  } catch (const VfsError &error) {
+    throw dexvm::IoRuntimeError(error.what(), error.ErrorNumber());
   }
 }
 
-bool DexVmIoVfsAdapter::Rename(const std::string_view from,
+void DexVmIoVfsAdapter::Rename(const std::string_view from,
                                const std::string_view to) {
   try {
     file_system_.Rename(from, to);
-    return true;
-  } catch (const VfsError &) {
-    return false;
+  } catch (const VfsError &error) {
+    throw dexvm::IoRuntimeError(error.what(), error.ErrorNumber());
   }
 }
 

@@ -74,6 +74,8 @@ switch/threaded 解释、异常、线程/monitor、反射及 `java.*` core intri
   OpenFileDescription 保存隔离的 VFS descriptor 与访问模式，同一逻辑 FileDescriptor 共享
   VFS offset；FileChannel 的当前受检操作也只消费该状态，定位传输保持源 offset 且不伪造 mmap。
   RandomAccessFile 的定位、长度与截断同样走该 descriptor；IoFileSystem 错误携带真实 VFS errno。
+  `Posix.mkdir/remove/rename` 不经 bool 降级，VFS 的 ENOENT/EEXIST/EACCES/ENOSPC 等原样构造
+  `ErrnoException`，使原版 `File.mkdirs()` 能在 ENOENT 时递归创建父目录。
   相对路径不读 host cwd，逻辑 FileDescriptor 不存 host fd。`ZipRuntime` 复用严格
   ZIP parser/inflate。
 - `NetworkRuntime` 只经注入 policy/transport，默认离线；不读 host DNS/代理/证书、不在 core
@@ -84,6 +86,8 @@ switch/threaded 解释、异常、线程/monitor、反射及 `java.*` core intri
   RoutePlanner 选择直连；不读取宿主代理，也不登记 `Proxy`/默认 selector 的 BootDex 闭包。
 - `System.lineSeparator` 在类初始化时通过初始 `line.separator` property 冻结，后续 property
   修改不影响 `lineSeparator()`；System 仍是 VM 启动及 native 平台边界，不整体迁入 BootDex。
+- API 19 初始 property 固定提供 guest `java.home`、`java.io.tmpdir` 与 `user.dir`；Android
+  bridge 在执行任何 Java 代码前以 VFS working directory 覆盖 `user.dir`，禁止读取宿主 cwd。
 - `NioRuntime` 以对象 identity 保存 Buffer backing/cursor；heap/direct/view 共用 storage，backing
   array 是 GC 强边。direct memory 只经强类型 guest-address 接口，临时映射始终释放。
 - `UnsafeRuntime` 使用逻辑字段令牌；访问校验类型/对齐/边界，CAS 要求执行锁，引用写入保留

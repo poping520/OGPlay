@@ -1021,6 +1021,15 @@ TEST_CASE("FileChannel transferTo copies a bounded range and preserves source po
 TEST_CASE("DexVM IO adapter preserves VFS errno on descriptor failures") {
     VirtualFileSystem vfs;
     DexVmIoVfsAdapter adapter(vfs);
+    const auto expect_errno = [](const std::int32_t expected,
+                                 const auto& operation) {
+        try {
+            operation();
+            FAIL("VFS operation unexpectedly succeeded");
+        } catch (const IoRuntimeError& error) {
+            CHECK(error.ErrorNumber() == expected);
+        }
+    };
     try {
         static_cast<void>(adapter.OpenHandle(
             "/missing", true, false, false, false));
@@ -1035,6 +1044,17 @@ TEST_CASE("DexVM IO adapter preserves VFS errno on descriptor failures") {
     } catch (const IoRuntimeError& error) {
         CHECK(error.ErrorNumber() == 9);
     }
+
+    expect_errno(2, [&] { adapter.MakeDirectory("/missing/child"); });
+    vfs.CreateDirectory("/data");
+    expect_errno(17, [&] { adapter.MakeDirectory("/data"); });
+    expect_errno(2, [&] { adapter.Delete("/data/missing"); });
+    expect_errno(2, [&] { adapter.Rename("/data/missing", "/data/new"); });
+
+    const TemporaryRoot root("adapter-errno");
+    auto store = SandboxStore::Open(root.path, kPackage);
+    vfs.AttachSandbox(*store, std::array<std::string, 1>{"/data"});
+    expect_errno(13, [&] { adapter.MakeDirectory("/system/blocked"); });
 }
 
 TEST_CASE("RandomAccessFile shares VFS position and supports resize") {
@@ -1105,6 +1125,8 @@ TEST_CASE("File first-batch path and object semantics match on both backends") {
         vm.vfs.CreateDirectory("/data");
         vm.vfs.CreateDirectory("/data/game");
         vm.vfs.SetWorkingDirectory("/data/game");
+        static_cast<void>(
+            vm.interpreter.SetSystemProperty("user.dir", "/data/game"));
 
         const auto relative = vm.NewFile("saves/.slot");
         CHECK(vm.interpreter.StringUtf8(

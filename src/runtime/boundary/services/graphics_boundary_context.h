@@ -14,6 +14,7 @@
 #include "ogplay/gles/gles_dispatch.h"
 #include "ogplay/gles/supersample.h"
 #include "runtime/boundary/services/graphics_dispatch.h"
+#include "runtime/boundary/services/gl_api_routing.h"
 #include "runtime/boundary/services/guest_gl_context.h"
 #include "runtime/boundary/services/frame_service.h"
 
@@ -23,6 +24,7 @@ struct GraphicsBoundaryContext final {
     gles::AngleBackend& backend;
     gles::SupersampleLayout& layout;
     GuestGlContext& gl_context;
+    GlApiRouting& api_routing;
     AndroidBoundaryGles& gles_dispatch;
     std::optional<gles::AngleFrame>& angle_frame;
     std::optional<std::thread::id>& gl_owner;

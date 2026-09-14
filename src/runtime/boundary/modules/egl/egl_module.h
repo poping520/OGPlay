@@ -17,6 +17,7 @@ namespace ogplay::runtime {
 
 struct EglBoundaryContext final {
     GraphicsBoundaryContext& graphics;
+    GlApiRouting& api_routing;
     std::span<const BionicHleSymbol> symbols;
 };
 

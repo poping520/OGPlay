@@ -24,5 +24,4 @@ crash-*/
 /games/
 /user-data/
 
-# DEMO 仅作本地知识参照，不进入正式版仓库
-/docs/demo/
+bootdex.jar

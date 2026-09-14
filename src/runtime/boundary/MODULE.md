@@ -79,7 +79,11 @@
   或宣告未实现 extension。native EGL display/config 仍是进程稳定事实，但 context/surface
   使用单调句柄对象表；对象记录 client version/share root、类型/尺寸、current owner、交换间隔
   与 pending-destroy。所有对象入口校验 initialize/display/config/type，current 对象销毁延迟到
-  解绑；pbuffer 的真实 ANGLE attachment 与查询尺寸一致。宿主仍只有一个串行 GL execution
+  解绑；独立 `GlApiRouting` 按 guest thread 保存 current Context 的 client version，
+  `eglGetProcAddress` 只从当前版本对应的 GLES family 解析同名 thunk；已初始化但无 current
+  Context 时返回 null，不再固定偏向 GLES2。直接 ELF import 仍由 SONAME 确定 API family，
+  GLES1/GLES2 在当前兼容层内继续共享底层 Context 状态。pbuffer 的真实 ANGLE attachment
+  与查询尺寸一致。宿主仍只有一个串行 GL execution
   lane，跨 host thread 抢占返回 `EGL_BAD_ACCESS`，不模拟并行 GPU context 调度。
 
 Android native 边界:`android_boundary_hle` session facade、GLES2/GLES1 边界组件、

@@ -174,11 +174,14 @@ std::uint32_t EglModule::ResolveProcAddress(
         requested[index] = static_cast<char>(
             std::to_integer<unsigned char>(bytes[index]));
     }
-    constexpr std::array preferred_libraries{
-        std::string_view{"libGLESv2.so"},
-        std::string_view{"libGLESv1_CM.so"},
-        std::string_view{"libEGL.so"},
-    };
+    const auto current_version = context_.api_routing.CurrentVersion(thread_id);
+    if (current_version.has_value() && *current_version == 0U) return 0U;
+    const auto preferred_gles =
+        current_version.has_value() && *current_version == 1U
+            ? std::string_view{"libGLESv1_CM.so"}
+            : std::string_view{"libGLESv2.so"};
+    const std::array preferred_libraries{
+        preferred_gles, std::string_view{"libEGL.so"}};
     for (const auto library : preferred_libraries) {
         for (const auto& symbol : context_.symbols) {
             if (symbol.kind == BoundarySymbolKind::function &&
@@ -211,6 +214,7 @@ std::uint32_t EglModule::ExecuteExport(const A32CallFrame& call) {
         if (args[2] != 0U) graphics.Write32(args[2], 4U, tid);
         std::scoped_lock lock(mutex_);
         initialized_ = true;
+        context_.api_routing.Activate();
         return 1U;
     }
     if constexpr (FunctionId == 2U) {
@@ -378,6 +382,8 @@ std::uint32_t EglModule::ExecuteExport(const A32CallFrame& call) {
             if (args[2] != args[1]) ++surfaces_.at(args[2]).current_count;
         }
         CollectRetiredObjectsLocked();
+        if (release) context_.api_routing.Release(tid);
+        else context_.api_routing.Bind(tid, contexts_.at(args[3]).client_version);
         return 1U;
     }
     if constexpr (FunctionId == 7U) {
@@ -445,6 +451,7 @@ std::uint32_t EglModule::ExecuteExport(const A32CallFrame& call) {
         surfaces_.clear();
         next_surface_ = 3U;
         next_context_ = 4U;
+        context_.api_routing.Deactivate();
         return 1U;
     }
     if constexpr (FunctionId == 12U) return TakeError(tid);
@@ -539,6 +546,7 @@ std::uint32_t EglModule::ExecuteExport(const A32CallFrame& call) {
             threads_.erase(tid);
             CollectRetiredObjectsLocked();
         }
+        context_.api_routing.Release(tid);
         if (release_native) graphics.ReleaseManagedSurfaceFromCallingThread();
         return 1U;
     }

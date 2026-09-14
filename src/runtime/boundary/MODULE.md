@@ -199,13 +199,14 @@ boundary symbol 目录、跨 API 共享的 `GuestGlContext` 与 `A32CallFrame`�
   light0、texture、fog 与 alpha-test 状态。`glDrawArrays` 以受检 `GLushort` 顺序索引
   等价执行,超过 65535 明确失败。当前 renderer 支持最多两个实际启用 `GL_TEXTURE_2D`
   的单元,按单元编号以各自 coordinate array、sampler、texture matrix、base format 和
-  environment 逐级应用 MODULATE/REPLACE/ADD/COMBINE,`GL_PREVIOUS` 读取上一 stage
+  environment 逐级应用 MODULATE/REPLACE/ADD/BLEND/DECAL/COMBINE,`GL_PREVIOUS` 读取上一 stage
   输出;active/client active texture 只决定后续状态写入位置。BND-27 将坐标来源与采样
   stage 分开解析：优先 stage 自有 array；单 stage 且全局仅有一个有效 array 时允许通用
-  回退，多 stage 缺失自有 array 则明确失败，禁止跨 stage 共享。超过两个单元、DECAL/BLEND、
-  其他 environment 或 opaque EBO 配合 guest client array 必须明确失败。lighting 的
-  ambient/diffuse 只计算 RGB,输出 alpha 取 diffuse material alpha;light0 与 modelview
-  上三阶 normal matrix 保持现有 partial。level-0 base format 按 texture object 保存并随
+  回退，多 stage 缺失自有 array 则明确失败，禁止跨 stage 共享。超过两个单元、
+  其他 environment 或 opaque EBO 配合 guest client array 必须明确失败。lighting 消费
+  LIGHT0..7 的 ambient/diffuse/specular、position、spot 与衰减，以及前后材质、emission、
+  shininess、two-side 和 color-material；输出 alpha 取 diffuse material alpha。modelview
+  上三阶 normal matrix 仍是现有近似。level-0 base format 按 texture object 保存并随
   delete/reset 清理,未知格式不得猜测组合语义。
 - `glPointSizePointerOES` 保存调用时 array-buffer binding；启用 point-size array 后内部
   vertex shader 从该 attribute 选择每顶点 point size，再应用 distance attenuation/min/max。

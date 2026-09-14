@@ -141,11 +141,27 @@ uniform mat3 u_normal_matrix;
 uniform vec4 u_current_color;
 uniform vec4 u_current_normal;
 uniform vec4 u_global_ambient;
-uniform vec4 u_light_ambient;
-uniform vec4 u_light_diffuse;
-uniform vec4 u_light_position;
-uniform vec4 u_material_ambient;
-uniform vec4 u_material_diffuse;
+uniform float u_light_enabled[8];
+uniform vec4 u_light_ambient[8];
+uniform vec4 u_light_diffuse[8];
+uniform vec4 u_light_specular[8];
+uniform vec4 u_light_position[8];
+uniform vec4 u_light_spot_direction[8];
+uniform vec4 u_light_attenuation[8];
+uniform float u_light_spot_exponent[8];
+uniform float u_light_spot_cutoff_cos[8];
+uniform vec4 u_material_front_ambient;
+uniform vec4 u_material_front_diffuse;
+uniform vec4 u_material_front_specular;
+uniform vec4 u_material_front_emission;
+uniform float u_material_front_shininess;
+uniform vec4 u_material_back_ambient;
+uniform vec4 u_material_back_diffuse;
+uniform vec4 u_material_back_specular;
+uniform vec4 u_material_back_emission;
+uniform float u_material_back_shininess;
+uniform float u_light_model_two_side;
+uniform float u_color_material;
 uniform float u_has_color;
 uniform float u_has_normal;
 uniform float u_lighting;
@@ -156,6 +172,7 @@ uniform float u_point_size_max;
 uniform vec4 u_point_distance_attenuation;
 uniform vec4 u_clip_plane[6];
 varying vec4 v_color;
+varying vec4 v_back_color;
 varying vec2 v_texcoord0;
 varying vec2 v_texcoord1;
 varying float v_fog_distance;
@@ -164,22 +181,65 @@ varying vec3 v_clip_distance1;
 vec4 transform(vec4 c0, vec4 c1, vec4 c2, vec4 c3, vec4 value) {
   return c0 * value.x + c1 * value.y + c2 * value.z + c3 * value.w;
 }
+vec4 illuminate(vec3 normal, vec4 vertexColor, vec4 materialAmbient,
+                vec4 materialDiffuse, vec4 materialSpecular,
+                vec4 materialEmission, float materialShininess, vec3 eyePosition) {
+  if (u_color_material > 0.5) {
+    materialAmbient = vertexColor;
+    materialDiffuse = vertexColor;
+  }
+  vec3 rgb = materialEmission.rgb + materialAmbient.rgb * u_global_ambient.rgb;
+  for (int i = 0; i < 8; ++i) {
+    if (u_light_enabled[i] > 0.5) {
+      vec3 delta = u_light_position[i].w == 0.0
+          ? u_light_position[i].xyz
+          : u_light_position[i].xyz - eyePosition;
+      float distanceToLight = length(delta);
+      vec3 lightDirection = normalize(delta);
+      float diffuseFactor = max(dot(normal, lightDirection), 0.0);
+      vec3 contribution = materialAmbient.rgb * u_light_ambient[i].rgb;
+      contribution += materialDiffuse.rgb * u_light_diffuse[i].rgb * diffuseFactor;
+      if (diffuseFactor > 0.0) {
+        vec3 halfVector = normalize(lightDirection + normalize(-eyePosition));
+        float specularFactor = pow(max(dot(normal, halfVector), 0.0),
+                                   materialShininess);
+        contribution += materialSpecular.rgb * u_light_specular[i].rgb *
+                        specularFactor;
+      }
+      float spot = 1.0;
+      if (u_light_spot_cutoff_cos[i] > -0.9999) {
+        float spotCos = dot(normalize(u_light_spot_direction[i].xyz),
+                            -lightDirection);
+        spot = spotCos >= u_light_spot_cutoff_cos[i]
+            ? pow(max(spotCos, 0.0), u_light_spot_exponent[i]) : 0.0;
+      }
+      float attenuation = 1.0;
+      if (u_light_position[i].w != 0.0) {
+        attenuation = 1.0 / max(u_light_attenuation[i].x +
+            u_light_attenuation[i].y * distanceToLight +
+            u_light_attenuation[i].z * distanceToLight * distanceToLight,
+            0.000001);
+      }
+      rgb += contribution * spot * attenuation;
+    }
+  }
+  return vec4(clamp(rgb, 0.0, 1.0), clamp(materialDiffuse.a, 0.0, 1.0));
+}
 void main() {
   vec4 eye = transform(u_modelview0, u_modelview1, u_modelview2,
                        u_modelview3, a_position);
   vec4 base = mix(u_current_color, a_color, u_has_color);
   vec3 normal = normalize(u_normal_matrix *
       mix(u_current_normal.xyz, a_normal, u_has_normal));
-  vec3 light = u_light_position.w == 0.0
-      ? normalize(u_light_position.xyz)
-      : normalize(u_light_position.xyz - eye.xyz);
-  vec3 litRgb = u_material_ambient.rgb *
-                    (u_global_ambient.rgb + u_light_ambient.rgb) +
-                u_material_diffuse.rgb * u_light_diffuse.rgb *
-                    max(dot(normal, light), 0.0);
-  vec4 lit = vec4(clamp(litRgb, 0.0, 1.0),
-                  clamp(u_material_diffuse.a, 0.0, 1.0));
-  v_color = mix(base, lit, u_lighting);
+  vec4 frontLit = illuminate(normal, base, u_material_front_ambient,
+      u_material_front_diffuse, u_material_front_specular,
+      u_material_front_emission, u_material_front_shininess, eye.xyz);
+  vec4 backLit = illuminate(-normal, base, u_material_back_ambient,
+      u_material_back_diffuse, u_material_back_specular,
+      u_material_back_emission, u_material_back_shininess, eye.xyz);
+  v_color = mix(base, frontLit, u_lighting);
+  v_back_color = mix(base, mix(frontLit, backLit, u_light_model_two_side),
+                     u_lighting);
   v_texcoord0 = transform(u_texture0_matrix0, u_texture0_matrix1,
                           u_texture0_matrix2, u_texture0_matrix3, a_texcoord0).xy;
   v_texcoord1 = transform(u_texture1_matrix0, u_texture1_matrix1,
@@ -235,6 +295,7 @@ uniform int u_alpha_function;
 uniform float u_alpha_reference;
 uniform float u_clip_enabled[6];
 varying vec4 v_color;
+varying vec4 v_back_color;
 varying vec2 v_texcoord0;
 varying vec2 v_texcoord1;
 varying float v_fog_distance;
@@ -305,6 +366,13 @@ vec4 applyStage(vec4 previous, vec4 texel, int stage) {
   } else if (environment == 260) {
     if (format != 0) color.rgb = min(color.rgb + texel.rgb, vec3(1.0));
     if (format != 1) color.a *= texel.a;
+  } else if (environment == 3042) {
+    if (format != 0)
+      color.rgb = mix(color.rgb, u_environment_color[stage].rgb, texel.rgb);
+    if (format != 1) color.a *= texel.a;
+  } else if (environment == 8449) {
+    if (format == 2) color.rgb = mix(color.rgb, texel.rgb, texel.a);
+    else if (format != 0) color.rgb = texel.rgb;
   } else {
     if (format != 0) color.rgb *= texel.rgb;
     if (format != 1) color.a *= texel.a;
@@ -318,7 +386,7 @@ void main() {
       (u_clip_enabled[3] > 0.5 && v_clip_distance1.x < 0.0) ||
       (u_clip_enabled[4] > 0.5 && v_clip_distance1.y < 0.0) ||
       (u_clip_enabled[5] > 0.5 && v_clip_distance1.z < 0.0)) discard;
-  vec4 color = v_color;
+  vec4 color = gl_FrontFacing ? v_color : v_back_color;
   if (u_texture_enabled[0] > 0.5)
     color = applyStage(color, texture2D(u_texture0, v_texcoord0), 0);
   if (u_texture_enabled[1] > 0.5)

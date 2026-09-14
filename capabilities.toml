@@ -1018,12 +1018,12 @@ note = "WU-0339 原样 vendor 固定 commit 的 PowerVR Native SDK PVRTDecompres
 [runtime.gles1_legacy_fixed_state]
 status = "partial"
 test = "tests/runtime/boundary/integration/android_boundary_hle_tests.cpp; bounded exact-APK run-apk smoke"
-note = "M5 WU-0272 闭合 legacy 状态；WU-0284 增加格式敏感 texture environment；WU-0285 支持两个启用单元按 GL_PREVIOUS 逐级组合并隔离每单元 texture matrix，DECAL/BLEND 和第三 stage 仍未实现"
+note = "M5 WU-0272 闭合 legacy 状态；WU-0284 增加格式敏感 texture environment；WU-0285 支持两个启用单元按 GL_PREVIOUS 逐级组合并隔离每单元 texture matrix；BND-30 补齐 GL_BLEND/GL_DECAL 绘制语义。第三 stage 仍未实现"
 
 [runtime.gles1_client_array_draw]
 status = "partial"
 test = "tests/runtime/boundary/integration/android_boundary_hle_tests.cpp; bounded exact-APK one-frame run-apk smoke"
-note = "M5 WU-0274 闭合目标 client-array/draw 并获得首帧；WU-0285 支持两个启用单元逐级 draw，并让 lighting alpha 遵循 diffuse material alpha；WU-0291 复用 client/index 暂存并以验证候选原子提交 pointer 状态；BND-27 对单 stage 唯一错位坐标数组作受检回退并拒绝多 stage 共享；仍限两个 stage、light0 与近似 normal matrix"
+note = "M5 WU-0274 闭合目标 client-array/draw 并获得首帧；WU-0285 支持两个启用单元逐级 draw，并让 lighting alpha 遵循 diffuse material alpha；WU-0291 复用 client/index 暂存并以验证候选原子提交 pointer 状态；BND-27 对单 stage 唯一错位坐标数组作受检回退并拒绝多 stage 共享；BND-30 让 LIGHT0..7、specular/shininess、spot/衰减、双面材质及 color-material 进入 fixed shader。仍限两个 stage，normal matrix 仍为近似"
 
 [runtime.gles1_texture_coordinate_resolution]
 status = "complete"

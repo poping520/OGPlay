@@ -1078,7 +1078,7 @@ note = "DVM-31 批次 A 把 host-managed ANGLE currency 显式释放并按调用
 [dexvm.egl_facade]
 status = "partial"
 test = "tests/dexvm/egl_facade_tests.cpp; tests/dexvm/vm_monitor_tests.cpp; tests/runtime/boundary/integration/android_boundary_hle_tests.cpp; data/scenarios/asphalt6.bootstrap.scenario.toml"
-note = "DVM-31 已实现 AOSP EGL10/GL10 类形状、单 surface façade 状态机、GL currency 接力、managed present 与条件 swap pacer；driver 可运行时一帧一 swap，driver guest 阻塞时由通用 observer 放行。DVM-39 后 A6 可见启动 gate 三轮同哈希通过；A5 四检查点与改动前 HEAD 逐位相同但历史期望哈希已漂移，A5 exact gate 仍未宣告通过"
+note = "DVM-31 已实现 AOSP EGL10/GL10 类形状、单 surface façade 状态机、GL currency 接力、managed present 与条件 swap pacer；DVM-155 补齐 getConfigs/currentContext、context/string/surface 查询与 releaseThread，全部读取既有 façade/session 事实并按调用线程限制 current identity。pbuffer/pixmap/copy/wait、shared context、EGL14/GLES30 仍未实现，因此保持 partial"
 
 [session.profile_guest_lifecycle]
 status = "complete"

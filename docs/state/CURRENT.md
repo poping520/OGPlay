@@ -4,6 +4,9 @@
 
 ## 最近进展
 
+- [DVM-155](../tasks/dexvm/DVM-155.md) 已补齐 Java EGL10 的 config/current context、
+  context/string/surface 查询与 release-thread；结果来自既有 façade/session 事实，不新增
+  ANGLE Context。pbuffer、shared context、EGL14/GLES30 仍明确未实现。
 - [BND-31](../tasks/boundary/BND-31.md) 修正 GLES1 VERSION/RENDERER 枚举，GLES2
   扩展串只发布 guest 边界真实支持的 ETC1/PVRTC/RGBA8，并让 GLES1/GLES2 负 draw
   与已覆盖 GLsizei 参数统一锁存 `GL_INVALID_VALUE`；GLES 定向 51/51 通过。
@@ -20,9 +23,6 @@
   current 对象延迟销毁；ChooseConfig/GetConfigAttrib 返回 RGBA8+D24S8、window+pbuffer、
   ES1/ES2 的真实闭集，pbuffer 查询尺寸与实际 ANGLE attachment 一致。宿主 GL execution lane
   仍串行，跨线程抢占明确返回 EGL_BAD_ACCESS。
-- 完成 Android 4.4.4 GLES 静态完整性审计：ROM 动态符号覆盖 EGL 25/48、GLES1
-  158/292、GLES2 142/367；核心入口闭集不等于规范语义完整。多 Context/共享、ES3、
-  EGL 生命周期与部分 fixed pipeline 仍有缺口，发现 GLES1 版本字符串枚举误用；本轮未改代码或运行图形测试。
 - Application `meta-data` 已对齐 API 19 `PackageParser`：`android:value` 资源引用经 ARSC
   解析后按 String/Boolean/Integer 写入 Bundle，`android:resource` 独立保留资源 ID；PvZ 的
   Nimble verification 字符串不再被误装为 Integer。

@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <memory>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include "ogplay/core/capability_ledger.h"
@@ -272,6 +273,11 @@ TEST_CASE("EGL facade performs two-pass config selection and context state") {
     const auto config_class = vm.linker.ResolveDescriptor(
         "Ljavax/microedition/khronos/egl/EGLConfig;");
     const auto configs = vm.model.NewObjectArray(config_array_class, config_class, 1);
+    CHECK(vm.CallOn(egl, "eglGetConfigs",
+                    "(Ljavax/microedition/khronos/egl/EGLDisplay;[Ljavax/microedition/khronos/egl/EGLConfig;I[I)Z",
+                    {VmValue::Ref(display), VmValue::Ref(configs),
+                     VmValue::Int(1), VmValue::Ref(count)}).AsInt() == 1);
+    CHECK(vm.model.GetPrimitiveElement(count, 0) == 1);
     CHECK(vm.CallOn(egl, "eglChooseConfig",
                     "(Ljavax/microedition/khronos/egl/EGLDisplay;[I[Ljavax/microedition/khronos/egl/EGLConfig;I[I)Z",
                     {VmValue::Ref(display), VmValue::Ref(attributes),
@@ -287,6 +293,45 @@ TEST_CASE("EGL facade performs two-pass config selection and context state") {
          VmValue::Ref(context_attributes)}).ref;
     REQUIRE(context.IsValid());
     CHECK(vm.context->egl.contexts.at(context.Value()) == 2);
+
+    const auto query = vm.IntArray({0});
+    CHECK(vm.CallOn(egl, "eglQueryContext",
+                    "(Ljavax/microedition/khronos/egl/EGLDisplay;Ljavax/microedition/khronos/egl/EGLContext;I[I)Z",
+                    {VmValue::Ref(display), VmValue::Ref(context),
+                     VmValue::Int(0x3098), VmValue::Ref(query)}).AsInt() == 1);
+    CHECK(vm.model.GetPrimitiveElement(query, 0) == 2);
+    const auto version = vm.CallOn(
+        egl, "eglQueryString",
+        "(Ljavax/microedition/khronos/egl/EGLDisplay;I)Ljava/lang/String;",
+        {VmValue::Ref(display), VmValue::Int(0x3054)}).ref;
+    CHECK(vm.interpreter.StringUtf8(version) == "1.4 OGPlay");
+    const auto extensions = vm.CallOn(
+        egl, "eglQueryString",
+        "(Ljavax/microedition/khronos/egl/EGLDisplay;I)Ljava/lang/String;",
+        {VmValue::Ref(display), VmValue::Int(0x3055)}).ref;
+    CHECK(vm.interpreter.StringUtf8(extensions).empty());
+
+    CHECK(vm.CallOn(egl, "eglGetCurrentContext",
+                    "()Ljavax/microedition/khronos/egl/EGLContext;").ref ==
+          vm.context->egl.no_context);
+    vm.context->egl.current_context = context;
+    vm.context->egl.current_thread = std::this_thread::get_id();
+    CHECK(vm.CallOn(egl, "eglGetCurrentContext",
+                    "()Ljavax/microedition/khronos/egl/EGLContext;").ref == context);
+    vm.context->egl.current_context = VmObjectRef{};
+    vm.context->egl.current_thread.reset();
+    CHECK(vm.CallOn(egl, "eglReleaseThread", "()Z").AsInt() == 1);
+
+    vm.context->surface_width = 800;
+    vm.context->surface_height = 480;
+    vm.context->egl.window_surface = vm.interpreter.NewIntrinsicInstance(
+        "Ljavax/microedition/khronos/egl/EGLSurface;");
+    CHECK(vm.CallOn(egl, "eglQuerySurface",
+                    "(Ljavax/microedition/khronos/egl/EGLDisplay;Ljavax/microedition/khronos/egl/EGLSurface;I[I)Z",
+                    {VmValue::Ref(display),
+                     VmValue::Ref(vm.context->egl.window_surface),
+                     VmValue::Int(0x3057), VmValue::Ref(query)}).AsInt() == 1);
+    CHECK(vm.model.GetPrimitiveElement(query, 0) == 800);
 }
 
 TEST_CASE("EGL facade reports unknown config attributes through EGL error") {

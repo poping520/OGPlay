@@ -102,7 +102,9 @@ Java 异常文本，再进入统一结构化 logger；不吞异常、不写裸 s
 - pointer 在 dirty 时先 layout，按 clipped reverse-Z/deepest-first 命中并虚派 listener/
   onTouchEvent；键盘将 SDL scancode 转 API 19 keyCode/Unicode/meta/repeat。
 - GLES/EGL 只桥接 session 已有 ANGLE surface/context；不创建第二套状态。参数错误进入 guest GL
-  error 锁存，host 内存/生命周期契约故障仍硬失败。
+  error 锁存，host 内存/生命周期契约故障仍硬失败。EGL10 config/context/surface/string 查询
+  只读取既有 façade 与 session 尺寸；current identity 按调用线程可见，release 复用唯一
+  managed-surface currency。pbuffer/shared context/EGL14/GLES30 不因查询闭合而伪装可用。
 
 ### Looper、线程、回调
 

@@ -326,6 +326,28 @@ dx::IntrinsicHandler EglGetConfigAttribHandler(const Context& context) {
     };
 }
 
+dx::IntrinsicHandler EglGetConfigsHandler(const Context& context) {
+    return [context](dx::IntrinsicContext& call) {
+        if (!ValidateDisplay(context, call.arguments[0].ref)) return Bool(false);
+        RequireInitialized(call, context);
+        const auto configs = call.arguments[1].ref;
+        const auto size = call.arguments[2].AsInt();
+        const auto count = call.arguments[3].ref;
+        if (size < 0 || !count.IsValid() ||
+            call.vm.Model().ArrayLength(count) < 1 ||
+            (configs.IsValid() && call.vm.Model().ArrayLength(configs) < size)) {
+            SetError(context, kBadParameter);
+            return Bool(false);
+        }
+        SetIntElement(call, count, 0, 1);
+        if (configs.IsValid() && size > 0) {
+            call.vm.Model().SetObjectElement(
+                configs, 0, EnsureConfig(call, context));
+        }
+        return Bool(true);
+    };
+}
+
 dx::IntrinsicHandler EglCreateContextHandler(const Context& context) {
     return [context](dx::IntrinsicContext& call) {
         if (!ValidateDisplay(context, call.arguments[0].ref)) return dx::VmValue::Ref(context->egl.no_context);
@@ -439,14 +461,121 @@ dx::IntrinsicHandler EglSwapBuffersHandler(const Context& context) {
 }
 
 dx::IntrinsicHandler EglGetCurrentDisplayHandler(const Context& context) {
-    return [context](dx::IntrinsicContext&) { return dx::VmValue::Ref(context->egl.current_display.IsValid() ? context->egl.current_display : context->egl.no_display); };
+    return [context](dx::IntrinsicContext&) {
+        const auto current = context->egl.current_thread.has_value() &&
+                             *context->egl.current_thread == std::this_thread::get_id();
+        return dx::VmValue::Ref(current ? context->egl.current_display
+                                        : context->egl.no_display);
+    };
+}
+
+dx::IntrinsicHandler EglGetCurrentContextHandler(const Context& context) {
+    return [context](dx::IntrinsicContext&) {
+        const auto current = context->egl.current_thread.has_value() &&
+                             *context->egl.current_thread == std::this_thread::get_id();
+        return dx::VmValue::Ref(current ? context->egl.current_context
+                                        : context->egl.no_context);
+    };
 }
 
 dx::IntrinsicHandler EglGetCurrentSurfaceHandler(const Context& context) {
     return [context](dx::IntrinsicContext& call) {
         const auto which = call.arguments[0].AsInt();
         if (which != 0x3059 && which != 0x305A) { SetError(context, kBadParameter); return dx::VmValue::Ref(context->egl.no_surface); }
-        return dx::VmValue::Ref(context->egl.current_surface.IsValid() ? context->egl.current_surface : context->egl.no_surface);
+        const auto current = context->egl.current_thread.has_value() &&
+                             *context->egl.current_thread == std::this_thread::get_id();
+        return dx::VmValue::Ref(current ? context->egl.current_surface
+                                        : context->egl.no_surface);
+    };
+}
+
+dx::IntrinsicHandler EglQueryContextHandler(const Context& context) {
+    return [context](dx::IntrinsicContext& call) {
+        if (!ValidateDisplay(context, call.arguments[0].ref)) return Bool(false);
+        RequireInitialized(call, context);
+        const auto found = context->egl.contexts.find(call.arguments[1].ref.Value());
+        if (found == context->egl.contexts.end()) {
+            SetError(context, kBadContext);
+            return Bool(false);
+        }
+        const auto output = call.arguments[3].ref;
+        if (!output.IsValid() || call.vm.Model().ArrayLength(output) < 1) {
+            SetError(context, kBadParameter);
+            return Bool(false);
+        }
+        if (call.arguments[2].AsInt() != 0x3098) {
+            SetError(context, kBadAttribute);
+            return Bool(false);
+        }
+        SetIntElement(call, output, 0, found->second);
+        return Bool(true);
+    };
+}
+
+dx::IntrinsicHandler EglQueryStringHandler(const Context& context) {
+    return [context](dx::IntrinsicContext& call) {
+        if (!ValidateDisplay(context, call.arguments[0].ref)) {
+            return dx::VmValue::Ref(dx::VmObjectRef{});
+        }
+        RequireInitialized(call, context);
+        switch (call.arguments[1].AsInt()) {
+        case 0x3053: return MakeString(call, "OGPlay");
+        case 0x3054: return MakeString(call, "1.4 OGPlay");
+        case 0x3055: return MakeString(call, "");
+        case 0x308D: return MakeString(call, "OpenGL_ES");
+        default:
+            SetError(context, kBadParameter);
+            return dx::VmValue::Ref(dx::VmObjectRef{});
+        }
+    };
+}
+
+dx::IntrinsicHandler EglQuerySurfaceHandler(const Context& context) {
+    return [context](dx::IntrinsicContext& call) {
+        if (!ValidateDisplay(context, call.arguments[0].ref)) return Bool(false);
+        RequireInitialized(call, context);
+        if (call.arguments[1].ref != context->egl.window_surface) {
+            SetError(context, kBadSurface);
+            return Bool(false);
+        }
+        const auto output = call.arguments[3].ref;
+        if (!output.IsValid() || call.vm.Model().ArrayLength(output) < 1) {
+            SetError(context, kBadParameter);
+            return Bool(false);
+        }
+        switch (call.arguments[2].AsInt()) {
+        case 0x3056:
+            SetIntElement(call, output, 0,
+                          static_cast<std::int32_t>(context->surface_height));
+            break;
+        case 0x3057:
+            SetIntElement(call, output, 0,
+                          static_cast<std::int32_t>(context->surface_width));
+            break;
+        case 0x3086: SetIntElement(call, output, 0, 0x3084); break;
+        default:
+            SetError(context, kBadAttribute);
+            return Bool(false);
+        }
+        return Bool(true);
+    };
+}
+
+dx::IntrinsicHandler EglReleaseThreadHandler(const Context& context) {
+    return [context](dx::IntrinsicContext& call) {
+        if (!context->egl.current_thread.has_value() ||
+            *context->egl.current_thread != std::this_thread::get_id()) {
+            return Bool(true);
+        }
+        if (context->session == nullptr) {
+            ModelFailure(call, "guest session is absent");
+        }
+        context->session->ReleaseManagedSurfaceFromCallingThread();
+        context->egl.current_display = dx::VmObjectRef{};
+        context->egl.current_surface = dx::VmObjectRef{};
+        context->egl.current_context = dx::VmObjectRef{};
+        context->egl.current_thread.reset();
+        return Bool(true);
     };
 }
 
@@ -1050,12 +1179,18 @@ Decl Declare_javax_microedition_khronos_egl_EGL10_Impl(const Context& context) {
     builder.FinalMethod("eglDestroyContext", "(Ljavax/microedition/khronos/egl/EGLDisplay;Ljavax/microedition/khronos/egl/EGLContext;)Z", EglDestroyContextHandler(context));
     builder.FinalMethod("eglDestroySurface", "(Ljavax/microedition/khronos/egl/EGLDisplay;Ljavax/microedition/khronos/egl/EGLSurface;)Z", EglDestroySurfaceHandler(context));
     builder.FinalMethod("eglGetConfigAttrib", "(Ljavax/microedition/khronos/egl/EGLDisplay;Ljavax/microedition/khronos/egl/EGLConfig;I[I)Z", EglGetConfigAttribHandler(context));
+    builder.FinalMethod("eglGetConfigs", "(Ljavax/microedition/khronos/egl/EGLDisplay;[Ljavax/microedition/khronos/egl/EGLConfig;I[I)Z", EglGetConfigsHandler(context));
+    builder.FinalMethod("eglGetCurrentContext", "()Ljavax/microedition/khronos/egl/EGLContext;", EglGetCurrentContextHandler(context));
     builder.FinalMethod("eglGetCurrentDisplay", "()Ljavax/microedition/khronos/egl/EGLDisplay;", EglGetCurrentDisplayHandler(context));
     builder.FinalMethod("eglGetCurrentSurface", "(I)Ljavax/microedition/khronos/egl/EGLSurface;", EglGetCurrentSurfaceHandler(context));
     builder.FinalMethod("eglGetDisplay", "(Ljava/lang/Object;)Ljavax/microedition/khronos/egl/EGLDisplay;", EglGetDisplayHandler(context));
     builder.FinalMethod("eglGetError", "()I", EglGetErrorHandler(context));
     builder.FinalMethod("eglInitialize", "(Ljavax/microedition/khronos/egl/EGLDisplay;[I)Z", EglInitializeHandler(context));
     builder.FinalMethod("eglMakeCurrent", "(Ljavax/microedition/khronos/egl/EGLDisplay;Ljavax/microedition/khronos/egl/EGLSurface;Ljavax/microedition/khronos/egl/EGLSurface;Ljavax/microedition/khronos/egl/EGLContext;)Z", EglMakeCurrentHandler(context));
+    builder.FinalMethod("eglQueryContext", "(Ljavax/microedition/khronos/egl/EGLDisplay;Ljavax/microedition/khronos/egl/EGLContext;I[I)Z", EglQueryContextHandler(context));
+    builder.FinalMethod("eglQueryString", "(Ljavax/microedition/khronos/egl/EGLDisplay;I)Ljava/lang/String;", EglQueryStringHandler(context));
+    builder.FinalMethod("eglQuerySurface", "(Ljavax/microedition/khronos/egl/EGLDisplay;Ljavax/microedition/khronos/egl/EGLSurface;I[I)Z", EglQuerySurfaceHandler(context));
+    builder.FinalMethod("eglReleaseThread", "()Z", EglReleaseThreadHandler(context));
     builder.FinalMethod("eglSwapBuffers", "(Ljavax/microedition/khronos/egl/EGLDisplay;Ljavax/microedition/khronos/egl/EGLSurface;)Z", EglSwapBuffersHandler(context));
     builder.FinalMethod("eglTerminate", "(Ljavax/microedition/khronos/egl/EGLDisplay;)Z", EglTerminateHandler(context));
     const auto gap = [&](const char* name, const char* descriptor) {
@@ -1064,12 +1199,6 @@ Decl Declare_javax_microedition_khronos_egl_EGL10_Impl(const Context& context) {
     gap("eglCopyBuffers", "(Ljavax/microedition/khronos/egl/EGLDisplay;Ljavax/microedition/khronos/egl/EGLSurface;Ljava/lang/Object;)Z");
     gap("eglCreatePbufferSurface", "(Ljavax/microedition/khronos/egl/EGLDisplay;Ljavax/microedition/khronos/egl/EGLConfig;[I)Ljavax/microedition/khronos/egl/EGLSurface;");
     gap("eglCreatePixmapSurface", "(Ljavax/microedition/khronos/egl/EGLDisplay;Ljavax/microedition/khronos/egl/EGLConfig;Ljava/lang/Object;[I)Ljavax/microedition/khronos/egl/EGLSurface;");
-    gap("eglGetConfigs", "(Ljavax/microedition/khronos/egl/EGLDisplay;[Ljavax/microedition/khronos/egl/EGLConfig;I[I)Z");
-    gap("eglGetCurrentContext", "()Ljavax/microedition/khronos/egl/EGLContext;");
-    gap("eglQueryContext", "(Ljavax/microedition/khronos/egl/EGLDisplay;Ljavax/microedition/khronos/egl/EGLContext;I[I)Z");
-    gap("eglQueryString", "(Ljavax/microedition/khronos/egl/EGLDisplay;I)Ljava/lang/String;");
-    gap("eglQuerySurface", "(Ljavax/microedition/khronos/egl/EGLDisplay;Ljavax/microedition/khronos/egl/EGLSurface;I[I)Z");
-    gap("eglReleaseThread", "()Z");
     gap("eglWaitGL", "()Z");
     gap("eglWaitNative", "(ILjava/lang/Object;)Z");
     return std::move(builder).Build();

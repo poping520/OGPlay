@@ -87,6 +87,13 @@ public:
     void BindTexture(std::uint32_t target, std::uint32_t texture);
     [[nodiscard]] std::uint32_t BoundTexture(std::uint32_t target) const;
     void DeleteTextures(std::span<const std::uint32_t> textures) noexcept;
+    void SetBufferData(std::uint32_t target,
+                       std::optional<std::span<const std::byte>> bytes);
+    void SetBufferSubData(std::uint32_t target, std::size_t offset,
+                          std::span<const std::byte> bytes);
+    void DeleteBufferData(std::span<const std::uint32_t> buffers) noexcept;
+    [[nodiscard]] const std::vector<std::byte>* BufferContents(
+        std::uint32_t buffer) const noexcept;
     void SetTextureBaseFormat(std::uint32_t target, std::uint32_t format);
     [[nodiscard]] std::optional<std::uint32_t> TextureBaseFormat(
         std::uint32_t target) const;
@@ -117,6 +124,8 @@ private:
                                        kGles1DontCare, kGles1DontCare,
                                        kGles1DontCare};
     std::map<std::uint64_t, bool> capabilities_;
+    std::map<std::uint32_t, std::optional<std::vector<std::byte>>>
+        buffer_contents_;
     std::uint32_t logic_operation_{0x1503U};
     AndroidBoundaryGles1MatrixState matrices_;
     std::unique_ptr<AndroidBoundaryGles1FixedState> fixed_;

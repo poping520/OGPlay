@@ -130,6 +130,35 @@ enum class TextureFormatClass : std::int32_t {
     return gles_io::MaximumGuestIndex(bytes, type,
                                       "GLES1 draw index type is unsupported");
 }
+void BuildFlatTriangles(const std::uint32_t mode,
+                        const std::span<const std::uint32_t> input,
+                        std::vector<std::uint32_t>& vertices,
+                        std::vector<std::uint32_t>& provoking) {
+    vertices.clear();
+    provoking.clear();
+    const auto append = [&](const std::uint32_t a, const std::uint32_t b,
+                            const std::uint32_t c) {
+        vertices.insert(vertices.end(), {a, b, c});
+        provoking.insert(provoking.end(), 3U, c);
+    };
+    if (mode == 0x0004U) {  // GL_TRIANGLES
+        for (std::size_t index = 0; index + 2U < input.size(); index += 3U) {
+            append(input[index], input[index + 1U], input[index + 2U]);
+        }
+    } else if (mode == 0x0005U) {  // GL_TRIANGLE_STRIP
+        for (std::size_t index = 0; index + 2U < input.size(); ++index) {
+            if ((index & 1U) == 0U) {
+                append(input[index], input[index + 1U], input[index + 2U]);
+            } else {
+                append(input[index + 1U], input[index], input[index + 2U]);
+            }
+        }
+    } else if (mode == 0x0006U) {  // GL_TRIANGLE_FAN
+        for (std::size_t index = 1; index + 1U < input.size(); ++index) {
+            append(input[0], input[index], input[index + 1U]);
+        }
+    }
+}
 [[nodiscard]] std::int32_t Signed(const std::uint32_t value) noexcept {
     return std::bit_cast<std::int32_t>(value);
 }
@@ -489,7 +518,9 @@ void AndroidBoundaryGles1DrawState::PrepareArrays(
     const AndroidBoundaryGles1LegacyState& legacy,
     memory::AddressSpace& address_space,
     const std::span<const std::uint32_t> texture_units,
-    const std::uint32_t maximum_index, const std::uint64_t thread_id) {
+    const std::uint32_t maximum_index, const std::uint64_t thread_id,
+    const std::span<const std::uint32_t> flat_vertices,
+    const std::span<const std::uint32_t> flat_provoking) {
     if (Array(kGles1MatrixIndexArray, kTexture0).enabled ||
         Array(kGles1WeightArray, kTexture0).enabled) {
         throw std::runtime_error(
@@ -508,6 +539,55 @@ void AndroidBoundaryGles1DrawState::PrepareArrays(
                 "GLES1 enabled client array has no pointer definition");
         }
         std::uint32_t offset = array.pointer;
+        if (!flat_vertices.empty()) {
+            const auto packed = static_cast<std::size_t>(array.size) *
+                                ScalarBytes(array.type);
+            const auto stride = array.stride == 0
+                                    ? packed
+                                    : static_cast<std::size_t>(array.stride);
+            std::span<const std::byte> source_bytes;
+            std::size_t source_offset{};
+            if (array.buffer == 0U) {
+                source_bytes = gles::PrepareGuestInput(
+                    address_space, memory::GuestAddress{array.pointer},
+                    ArrayBytes(array, maximum_index), false,
+                    client_array_staging_[index], thread_id);
+            } else {
+                const auto* contents = core.BufferContents(array.buffer);
+                if (contents == nullptr) {
+                    throw std::runtime_error(
+                        "GLES1 flat shading requires defined buffer contents");
+                }
+                source_bytes = *contents;
+                source_offset = array.pointer;
+            }
+            const auto& sources = index == 1U || index == 2U
+                                      ? flat_provoking
+                                      : flat_vertices;
+            std::vector<std::byte> expanded(sources.size() * packed);
+            for (std::size_t vertex = 0; vertex < sources.size(); ++vertex) {
+                const auto source = static_cast<std::size_t>(sources[vertex]);
+                const auto begin = source_offset + source * stride;
+                if (begin > source_bytes.size() ||
+                    packed > source_bytes.size() - begin) {
+                    throw std::runtime_error(
+                        "GLES1 flat shading array exceeds buffer contents");
+                }
+                std::ranges::copy_n(
+                    source_bytes.begin() + static_cast<std::ptrdiff_t>(begin),
+                    packed,
+                    expanded.begin() + static_cast<std::ptrdiff_t>(vertex * packed));
+            }
+            frame.BindBuffer(kArrayBuffer, program.buffers[index]);
+            frame.BufferData(kArrayBuffer,
+                             static_cast<std::uint32_t>(expanded.size()),
+                             expanded, kStaticDraw);
+            offset = 0U;
+            frame.VertexAttributePointer(static_cast<std::uint32_t>(location),
+                                         array.size, array.type, normalized,
+                                         0, offset);
+            return;
+        }
         if (array.buffer == 0U) {
             const auto transfer = gles::PrepareGuestInput(
                 address_space, memory::GuestAddress{array.pointer},
@@ -788,27 +868,47 @@ void AndroidBoundaryGles1DrawState::DrawArrays(
     const auto sampled_targets = SampledTextureTargets(core, texture_units);
     auto& program = EnsureProgram(frame, sampled_targets);
     frame.UseProgram(program.name);
+    std::vector<std::uint32_t> source_indices(static_cast<std::size_t>(count));
+    for (std::int32_t index = 0; index < count; ++index) {
+        source_indices[static_cast<std::size_t>(index)] =
+            static_cast<std::uint32_t>(first + index);
+    }
+    const bool flat = core.ShadeModel() == kGles1FlatShadeModel &&
+                      (mode == 0x0004U || mode == 0x0005U || mode == 0x0006U);
+    if (flat) {
+        BuildFlatTriangles(mode, source_indices, flat_vertices_,
+                           flat_provoking_);
+    } else {
+        flat_vertices_.clear();
+        flat_provoking_.clear();
+    }
     PrepareArrays(frame, program, core, legacy, address_space, texture_units,
-                  static_cast<std::uint32_t>(maximum), thread_id);
+                  static_cast<std::uint32_t>(maximum), thread_id,
+                  flat_vertices_, flat_provoking_);
     ApplyUniforms(frame, program, core, legacy, texture_units, sampled_targets);
     if (maximum > (std::numeric_limits<std::uint16_t>::max)()) {
         throw std::length_error("GLES1 emulated draw-array index exceeds GLushort");
     }
-    const auto index_count = static_cast<std::size_t>(count);
+    const auto index_count = flat ? flat_vertices_.size()
+                                  : static_cast<std::size_t>(count);
     if (draw_array_indices_.size() < index_count) {
         draw_array_indices_.resize(index_count);
     }
     const auto draw_indices = std::span(draw_array_indices_).first(index_count);
-    for (std::int32_t index = 0; index < count; ++index) {
-        draw_indices[static_cast<std::size_t>(index)] =
-            static_cast<std::uint16_t>(first + index);
+    for (std::size_t index = 0; index < index_count; ++index) {
+        draw_indices[index] = flat
+            ? static_cast<std::uint16_t>(index)
+            : static_cast<std::uint16_t>(
+                  first + static_cast<std::int32_t>(index));
     }
     frame.BindBuffer(kElementArrayBuffer, program.buffers.back());
     frame.BufferData(kElementArrayBuffer,
                      static_cast<std::uint32_t>(draw_indices.size() *
                                                 sizeof(std::uint16_t)),
                      std::as_bytes(draw_indices), kStaticDraw);
-    frame.DrawElements(mode, count, kUnsignedShort, 0U);
+    frame.DrawElements(flat ? 0x0004U : mode,
+                       static_cast<std::int32_t>(index_count),
+                       kUnsignedShort, 0U);
     frame.BindBuffer(kElementArrayBuffer,
                      core.TransferState().Snapshot().element_array_buffer);
 }
@@ -838,24 +938,37 @@ void AndroidBoundaryGles1DrawState::DrawElements(
             false, element_staging_, thread_id);
         maximum = MaximumIndex(transferred, type);
     } else {
-        for (const auto kind : {kGles1VertexArray, kGles1NormalArray,
-                                kGles1ColorArray}) {
-            const auto& array = Array(kind, kTexture0);
-            if (array.enabled && array.buffer == 0U) {
-                throw std::runtime_error(
-                    "GLES1 cannot bound guest client arrays from an opaque element buffer");
+        const auto* contents = core.BufferContents(guest_element_buffer);
+        const auto bytes = static_cast<std::size_t>(count) * ScalarBytes(type);
+        if (contents != nullptr && indices <= contents->size() &&
+            bytes <= contents->size() - indices) {
+            transferred = std::span<const std::byte>(*contents).subspan(indices,
+                                                                        bytes);
+            maximum = MaximumIndex(transferred, type);
+        } else if (core.ShadeModel() == kGles1FlatShadeModel &&
+                   (mode == 0x0004U || mode == 0x0005U || mode == 0x0006U)) {
+            throw std::runtime_error(
+                "GLES1 draw indices exceed defined element buffer contents");
+        } else {
+            for (const auto kind : {kGles1VertexArray, kGles1NormalArray,
+                                    kGles1ColorArray}) {
+                const auto& array = Array(kind, kTexture0);
+                if (array.enabled && array.buffer == 0U) {
+                    throw std::runtime_error(
+                        "GLES1 cannot bound guest client arrays from an opaque element buffer");
+                }
             }
-        }
-        const auto texture_units = DrawTextureUnits(core);
-        const auto coordinate_units =
-            ResolveTextureCoordinateUnits(texture_units);
-        for (const auto coordinate_unit :
-             std::span(coordinate_units).first(texture_units.size())) {
-            const auto& array = Array(kGles1TextureCoordArray,
-                                      coordinate_unit);
-            if (array.enabled && array.buffer == 0U) {
-                throw std::runtime_error(
-                    "GLES1 cannot bound guest client arrays from an opaque element buffer");
+            const auto texture_units = DrawTextureUnits(core);
+            const auto coordinate_units =
+                ResolveTextureCoordinateUnits(texture_units);
+            for (const auto coordinate_unit :
+                 std::span(coordinate_units).first(texture_units.size())) {
+                const auto& array = Array(kGles1TextureCoordArray,
+                                          coordinate_unit);
+                if (array.enabled && array.buffer == 0U) {
+                    throw std::runtime_error(
+                        "GLES1 cannot bound guest client arrays from an opaque element buffer");
+                }
             }
         }
     }
@@ -863,10 +976,49 @@ void AndroidBoundaryGles1DrawState::DrawElements(
     const auto sampled_targets = SampledTextureTargets(core, texture_units);
     auto& program = EnsureProgram(frame, sampled_targets);
     frame.UseProgram(program.name);
+    const bool flat = core.ShadeModel() == kGles1FlatShadeModel &&
+                      (mode == 0x0004U || mode == 0x0005U || mode == 0x0006U);
+    if (flat) {
+        std::vector<std::uint32_t> source_indices(
+            static_cast<std::size_t>(count));
+        for (std::size_t index = 0; index < source_indices.size(); ++index) {
+            source_indices[index] = type == kUnsignedByte
+                ? std::to_integer<std::uint8_t>(transferred[index])
+                : static_cast<std::uint32_t>(
+                      std::to_integer<std::uint8_t>(transferred[index * 2U])) |
+                  (static_cast<std::uint32_t>(std::to_integer<std::uint8_t>(
+                       transferred[index * 2U + 1U])) << 8U);
+        }
+        BuildFlatTriangles(mode, source_indices, flat_vertices_,
+                           flat_provoking_);
+        if (flat_vertices_.size() >
+            (std::numeric_limits<std::uint16_t>::max)()) {
+            throw std::length_error("GLES1 flat draw expansion exceeds GLushort");
+        }
+    } else {
+        flat_vertices_.clear();
+        flat_provoking_.clear();
+    }
     PrepareArrays(frame, program, core, legacy, address_space, texture_units,
-                  maximum, thread_id);
+                  maximum, thread_id, flat_vertices_, flat_provoking_);
     ApplyUniforms(frame, program, core, legacy, texture_units, sampled_targets);
-    if (guest_element_buffer == 0U) {
+    if (flat) {
+        const auto count_flat = flat_vertices_.size();
+        if (draw_array_indices_.size() < count_flat) {
+            draw_array_indices_.resize(count_flat);
+        }
+        const auto draw_indices =
+            std::span(draw_array_indices_).first(count_flat);
+        for (std::size_t index = 0; index < count_flat; ++index) {
+            draw_indices[index] = static_cast<std::uint16_t>(index);
+        }
+        frame.BindBuffer(kElementArrayBuffer, program.buffers.back());
+        frame.BufferData(kElementArrayBuffer,
+                         static_cast<std::uint32_t>(draw_indices.size_bytes()),
+                         std::as_bytes(draw_indices), kStaticDraw);
+        frame.DrawElements(0x0004U, static_cast<std::int32_t>(count_flat),
+                           kUnsignedShort, 0U);
+    } else if (guest_element_buffer == 0U) {
         frame.BindBuffer(kElementArrayBuffer, program.buffers.back());
         frame.BufferData(kElementArrayBuffer,
                          static_cast<std::uint32_t>(transferred.size()),

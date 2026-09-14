@@ -24,6 +24,11 @@ GLES1 绘制、Java EGL 与 GLES3/选定扩展。
   的 ES1/ES2 current Context 转发；直接 ELF import 继续保留 SONAME 语义。
 - 两个真实宿主线程可同时 current 不同 Context；同一 Context 抢占失败不破坏原绑定，释放后
   可接管。Terminate 对其他线程的 current 对象延迟回收，线程释放后可重新初始化 display。
+- GLES1 `GL_FLAT` 在 CPU 顶点准备阶段把 triangle/strip/fan 展开为独立三角形，并按每个
+  primitive 的最后顶点复制 provoking color/normal；`DrawArrays`、client-index 与 buffer-index
+  `DrawElements` 均走同一转换。`GL_SMOOTH` 保持原生插值路径。
+- 非均匀缩放下的斜法线结果已用独立逆转置数学参考校验；normalize/rescale 开关与
+  GLES1 Context 切换恢复均有真实 ANGLE 回归，GLES2 Context 不受 GLES1 fixed state 污染。
 
 ## 验证
 
@@ -34,11 +39,11 @@ GLES1 绘制、Java EGL 与 GLES3/选定扩展。
 - `ogplay_tests --test-case='EGL lifecycle*'`：7/7，64/64 断言通过。
 - `ogplay_tests --test-case='ANGLE pbuffer contexts share resources but keep framebuffer content'`：
   1/1，36/36 断言通过。
+- `ctest -R "GLES1|GLES2|EGL"`：57/57 通过。
 
 ## 后续 WU
 
-- WU-2 的 flat shading 像素语义及新增数学/像素回归。
 - WU-3 Java EGL10/EGL14 复用 Native registry。
 - WU-4 GLES3 104 项、Java GLES30 与选定扩展。
 
-WU-1 状态：完成。BND-33 总任务仍进行中。
+WU-1、WU-2 状态：完成。BND-33 总任务仍进行中。

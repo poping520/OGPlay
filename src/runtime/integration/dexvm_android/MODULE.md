@@ -101,10 +101,12 @@ Java 异常文本，再进入统一结构化 logger；不吞异常、不写裸 s
   统一 ARGB。
 - pointer 在 dirty 时先 layout，按 clipped reverse-Z/deepest-first 命中并虚派 listener/
   onTouchEvent；键盘将 SDL scancode 转 API 19 keyCode/Unicode/meta/repeat。
-- GLES/EGL 只桥接 session 已有 ANGLE surface/context；不创建第二套状态。参数错误进入 guest GL
-  error 锁存，host 内存/生命周期契约故障仍硬失败。EGL10 config/context/surface/string 查询
-  只读取既有 façade 与 session 尺寸；current identity 按调用线程可见，release 复用唯一
-  managed-surface currency。pbuffer/shared context/EGL14/GLES30 不因查询闭合而伪装可用。
+- GLES/EGL 通过 session 的 managed 冷入口调用 Native EGL/GLES binding；不创建第二套状态。
+  参数错误进入 guest error 锁存，host 内存/生命周期契约故障仍硬失败。Java EGL10 与
+  API19 EGL14 的 display/config/context/surface wrapper 只映射 Native EGL registry 句柄；
+  current identity、错误、延迟销毁、pbuffer 与 shared context 均以 registry 为准。EGL14
+  数组 overload 必须校验 offset 并只回写指定切片。pixmap、client buffer 与 texture pbuffer
+  等 Native 已明确拒绝的入口保留精确 EGL error；GLES30 仍属于后续 WU-4。
 
 ### Looper、线程、回调
 

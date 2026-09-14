@@ -63,7 +63,10 @@
   `Gles1Module`，shared service 不反向依赖 concrete module。
   DVM-83 增加的 managed GLES 冷入口按 API/name/参数数校验 sealed catalog，并直接调用
   同一 `{slow,self}` binding；它只服务 Java 参数适配，不定义或转发任何 native export
-  实现，也不创建另一份 graphics state。
+  实现，也不创建另一份 graphics state。WU-3 的 managed EGL 冷入口遵循相同约束，Java
+  EGL10/EGL14 与 native import 共用 `EglModule` registry、thread current 与 sticky error。
+  managed window surface 存在时，pbuffer 仍按 registry 对象持有独立 ANGLE backing；切换
+  回 managed window 才重新绑定 lifecycle frame。
 - `liblog.so` 的 export surface 固定为 Android 4.4.4 target `system/core/liblog`
   (`logd_write.c + logprint.c + event_tag_map.c`) 的 23 个 global API。`LogModule final`
   只依赖显式 `LogBoundaryContext`：guest address 始终由 `AddressSpace` 搬运，event tag map

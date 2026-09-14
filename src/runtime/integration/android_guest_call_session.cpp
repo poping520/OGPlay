@@ -1624,6 +1624,12 @@ public:
         const std::uint64_t thread_id) {
         return boundary_.InvokeManagedGles(api, name, arguments, thread_id);
     }
+    std::uint32_t InvokeManagedEgl(
+        const std::string_view name,
+        const std::span<const std::uint32_t> arguments,
+        const std::uint64_t thread_id) {
+        return boundary_.InvokeManagedEgl(name, arguments, thread_id);
+    }
     void PresentManagedSurface() { boundary_.PresentManagedSurface(); }
     void CloseManagedSurface() { boundary_.CloseManagedSurface(); }
     void PushInput(const AndroidBoundaryInput& input) {
@@ -2107,6 +2113,12 @@ std::uint32_t AndroidGuestProcess::InvokeManagedGles(
     const std::uint64_t thread_id) {
     return impl_->InvokeManagedGles(api, name, arguments, thread_id);
 }
+std::uint32_t AndroidGuestProcess::InvokeManagedEgl(
+    const std::string_view name,
+    const std::span<const std::uint32_t> arguments,
+    const std::uint64_t thread_id) {
+    return impl_->InvokeManagedEgl(name, arguments, thread_id);
+}
 void AndroidGuestProcess::PresentManagedSurface() { impl_->PresentManagedSurface(); }
 void AndroidGuestProcess::CloseManagedSurface() { impl_->CloseManagedSurface(); }
 void AndroidGuestProcess::PushInput(const AndroidBoundaryInput& input) { impl_->PushInput(input); }
@@ -2264,6 +2276,12 @@ std::uint32_t AndroidGuestCallSession::InvokeManagedGles(
     const std::span<const std::uint32_t> arguments,
     const std::uint64_t thread_id) {
     return process_->InvokeManagedGles(api, name, arguments, thread_id);
+}
+std::uint32_t AndroidGuestCallSession::InvokeManagedEgl(
+    const std::string_view name,
+    const std::span<const std::uint32_t> arguments,
+    const std::uint64_t thread_id) {
+    return process_->InvokeManagedEgl(name, arguments, thread_id);
 }
 void AndroidGuestCallSession::PresentManagedSurface() { process_->PresentManagedSurface(); }
 void AndroidGuestCallSession::CloseManagedSurface() { process_->CloseManagedSurface(); }

@@ -264,6 +264,34 @@ public:
         RecordGpuCall(index, call.RegisterArguments(), binding.gpu);
         return result;
     }
+    [[nodiscard]] std::uint32_t InvokeManagedEgl(
+        const std::string_view name,
+        const std::span<const std::uint32_t> arguments,
+        const std::uint64_t thread_id) {
+        const auto found = std::ranges::find_if(
+            descriptors_, [&](const auto& descriptor) {
+                return descriptor.library == "libEGL.so" &&
+                       descriptor.name == name;
+            });
+        if (found == descriptors_.end()) {
+            throw std::invalid_argument(
+                "managed EGL entry is outside the API 19 catalog: " +
+                std::string(name));
+        }
+        if (arguments.size() != found->parameter_count) {
+            throw std::invalid_argument(
+                "managed EGL argument count does not match catalog: " +
+                std::string(name));
+        }
+        if (guest_graphics_retired_.load(std::memory_order_acquire)) return 0U;
+        const auto index = static_cast<std::size_t>(
+            std::distance(descriptors_.begin(), found));
+        const auto& binding = fast_router_.Entry(index);
+        const A32CallFrame call(arguments, thread_id);
+        const auto result = binding.slow(binding.self, call);
+        RecordGpuCall(index, call.RegisterArguments(), binding.gpu);
+        return result;
+    }
     void RetireGuestGraphics() noexcept {
         guest_graphics_retired_.store(true, std::memory_order_release);
         egl_module_.RetireGuestGraphics();
@@ -927,6 +955,12 @@ std::uint32_t AndroidBoundaryHle::InvokeManagedGles(
     const std::span<const std::uint32_t> arguments,
     const std::uint64_t thread_id) {
     return impl_->InvokeManagedGles(api, name, arguments, thread_id);
+}
+std::uint32_t AndroidBoundaryHle::InvokeManagedEgl(
+    const std::string_view name,
+    const std::span<const std::uint32_t> arguments,
+    const std::uint64_t thread_id) {
+    return impl_->InvokeManagedEgl(name, arguments, thread_id);
 }
 void AndroidBoundaryHle::RetireGuestGraphics() noexcept {
     impl_->RetireGuestGraphics();

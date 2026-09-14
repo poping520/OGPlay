@@ -4062,6 +4062,82 @@ TEST_CASE("Android EGL and GLES boundary produces a guest frame") {
     CHECK(fixture.Call("libEGL.so", "eglTerminate", {1}) == 1);
 }
 
+TEST_CASE("Java EGL bridge and native EGL share pbuffer context registry") {
+    if (!ogplay::gles::IsNativeAngleEglAvailable()) return;
+    BoundaryFixture fixture;
+    fixture.boundary.OpenManagedSurface();
+    constexpr std::uint64_t thread_id = 0x33U;
+    const auto attributes = fixture.output.Add(0x100U);
+    fixture.bus.Write32(attributes, 0x3057U, 1U);
+    fixture.bus.Write32(attributes.Add(4U), 2U, 1U);
+    fixture.bus.Write32(attributes.Add(8U), 0x3056U, 1U);
+    fixture.bus.Write32(attributes.Add(12U), 2U, 1U);
+    fixture.bus.Write32(attributes.Add(16U), 0x3038U, 1U);
+    const auto context_attributes = fixture.output.Add(0x140U);
+    fixture.bus.Write32(context_attributes, 0x3098U, 1U);
+    fixture.bus.Write32(context_attributes.Add(4U), 2U, 1U);
+    fixture.bus.Write32(context_attributes.Add(8U), 0x3038U, 1U);
+
+    CHECK(fixture.boundary.InvokeManagedEgl(
+              "eglGetDisplay", std::array{0U}, thread_id) == 1U);
+    CHECK(fixture.boundary.InvokeManagedEgl(
+              "eglInitialize", std::array{1U, 0U, 0U}, thread_id) == 1U);
+    const auto surface = fixture.boundary.InvokeManagedEgl(
+        "eglCreatePbufferSurface",
+        std::array{1U, 2U, attributes.Value()}, thread_id);
+    REQUIRE(surface != 0U);
+    const auto context = fixture.boundary.InvokeManagedEgl(
+        "eglCreateContext",
+        std::array{1U, 2U, 0U, context_attributes.Value()}, thread_id);
+    REQUIRE(context != 0U);
+    CHECK(fixture.boundary.InvokeManagedEgl(
+              "eglMakeCurrent",
+              std::array{1U, surface, surface, context}, thread_id) == 1U);
+
+    CHECK(FastBoundaryCall(fixture, "libEGL.so", "eglGetCurrentContext",
+                           {}, thread_id) == context);
+    CHECK(fixture.boundary.InvokeManagedGles(
+              ogplay::gles::GlesApi::gles2, "glClearColor",
+              std::array{std::bit_cast<std::uint32_t>(0.25F),
+                         std::bit_cast<std::uint32_t>(0.5F),
+                         std::bit_cast<std::uint32_t>(0.75F),
+                         std::bit_cast<std::uint32_t>(1.0F)},
+              thread_id) == 0U);
+    CHECK(fixture.boundary.InvokeManagedGles(
+              ogplay::gles::GlesApi::gles2, "glClear",
+              std::array{0x00004000U}, thread_id) == 0U);
+    const auto pixels = fixture.output.Add(0x180U);
+    CHECK(fixture.boundary.InvokeManagedGles(
+              ogplay::gles::GlesApi::gles2, "glReadPixels",
+              std::array{0U, 0U, 1U, 1U, 0x1908U, 0x1401U,
+                         pixels.Value()}, thread_id) == 0U);
+    std::array<std::byte, 4> rgba{};
+    fixture.memory.Read(pixels, rgba, 1U);
+    CHECK(std::to_integer<std::uint8_t>(rgba[0]) ==
+          doctest::Approx(64).epsilon(0.04));
+    CHECK(std::to_integer<std::uint8_t>(rgba[1]) ==
+          doctest::Approx(128).epsilon(0.04));
+    CHECK(std::to_integer<std::uint8_t>(rgba[2]) ==
+          doctest::Approx(191).epsilon(0.04));
+
+    const auto shared = FastBoundaryCall(
+        fixture, "libEGL.so", "eglCreateContext",
+        {1U, 2U, context, context_attributes.Value()}, thread_id);
+    REQUIRE(shared != 0U);
+    CHECK(fixture.boundary.InvokeManagedEgl(
+              "eglMakeCurrent", std::array{1U, 0U, 0U, 0U},
+              thread_id) == 1U);
+    CHECK(FastBoundaryCall(fixture, "libEGL.so", "eglDestroyContext",
+                           {1U, shared}, thread_id) == 1U);
+    CHECK(fixture.boundary.InvokeManagedEgl(
+              "eglDestroyContext", std::array{1U, context}, thread_id) == 1U);
+    CHECK(fixture.boundary.InvokeManagedEgl(
+              "eglDestroySurface", std::array{1U, surface}, thread_id) == 1U);
+    CHECK(fixture.boundary.InvokeManagedEgl(
+              "eglTerminate", std::array{1U}, thread_id) == 1U);
+    fixture.boundary.CloseManagedSurface();
+}
+
 TEST_CASE("Android EGL registry isolates pbuffer content and honors share groups") {
     if (!ogplay::gles::IsNativeAngleEglAvailable()) return;
     BoundaryFixture fixture;

@@ -477,8 +477,27 @@ std::uint32_t EglModule::ExecuteExport(const A32CallFrame& call) {
                 }
             }
         }
-        if (graphics.managed_surface) {
+        bool use_managed_surface{};
+        if (!release && graphics.managed_surface) {
+            std::scoped_lock lock(mutex_);
+            use_managed_surface =
+                surfaces_.at(args[1]).kind == SurfaceKind::window &&
+                surfaces_.at(args[2]).kind == SurfaceKind::window;
+        }
+        if (use_managed_surface) {
             if (!graphics.angle_frame.has_value()) { SetError(tid, kEglBadNativeWindow); return 0U; }
+            std::scoped_lock lock(mutex_);
+            const auto old = threads_.find(tid);
+            if (old != threads_.end() && old->second.context != 0U) {
+                auto& old_context = contexts_.at(old->second.context);
+                const auto old_frame = old_context.frames.find(
+                    old_context.current_bound_surface);
+                if (old_frame != old_context.frames.end()) {
+                    old_frame->second->ReleaseCurrent();
+                }
+            }
+            graphics.angle_frame->BindCurrentOnCallingThread();
+            graphics.gl_owner = std::this_thread::get_id();
         } else {
             std::scoped_lock lock(mutex_);
             auto& thread = threads_[tid];
@@ -691,8 +710,7 @@ std::uint32_t EglModule::ExecuteExport(const A32CallFrame& call) {
             std::scoped_lock lock(mutex_);
             if (!initialized_) { threads_[tid].error = kEglNotInitialized; return 0U; }
             const auto current = threads_.find(tid);
-            if (current != threads_.end() && current->second.context != 0U &&
-                !graphics.managed_surface) {
+            if (current != threads_.end() && current->second.context != 0U) {
                 auto& context = contexts_.at(current->second.context);
                 const auto frame = context.frames.find(
                     context.current_bound_surface);
@@ -823,8 +841,7 @@ std::uint32_t EglModule::ExecuteExport(const A32CallFrame& call) {
         {
             std::scoped_lock lock(mutex_);
             const auto found = threads_.find(tid);
-            if (found != threads_.end() && found->second.context != 0U &&
-                !graphics.managed_surface) {
+            if (found != threads_.end() && found->second.context != 0U) {
                 auto& context = contexts_.at(found->second.context);
                 const auto frame = context.frames.find(
                     context.current_bound_surface);

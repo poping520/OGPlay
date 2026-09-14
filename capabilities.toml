@@ -1076,9 +1076,9 @@ test = "tests/gles/egl_lifecycle_tests.cpp; tests/runtime/boundary/integration/a
 note = "DVM-31 批次 A 把 host-managed ANGLE currency 显式释放并按调用线程受检绑定；同线程释放后可接力，跨线程抢夺明确失败"
 
 [dexvm.egl_facade]
-status = "partial"
+status = "complete"
 test = "tests/dexvm/egl_facade_tests.cpp; tests/dexvm/vm_monitor_tests.cpp; tests/runtime/boundary/integration/android_boundary_hle_tests.cpp; data/scenarios/asphalt6.bootstrap.scenario.toml"
-note = "DVM-31 已实现 AOSP EGL10/GL10 类形状、单 surface façade 状态机、GL currency 接力、managed present 与条件 swap pacer；DVM-155 补齐 getConfigs/currentContext、context/string/surface 查询与 releaseThread，全部读取既有 façade/session 事实并按调用线程限制 current identity。pbuffer/pixmap/copy/wait、shared context、EGL14/GLES30 仍未实现，因此保持 partial"
+note = "BND-33 WU-3 让 Java EGL10 与 API19 EGL14 通过 managed 冷入口复用 Native EGL registry；wrapper identity、thread current、sticky error、延迟销毁、pbuffer、shared context、数组 offset 与 teardown 已闭合，pixmap/client-buffer/texture-pbuffer 按 Native 能力以规范 EGL error 明确拒绝。GLES30 单独由 WU-4 记账"
 
 [session.profile_guest_lifecycle]
 status = "complete"

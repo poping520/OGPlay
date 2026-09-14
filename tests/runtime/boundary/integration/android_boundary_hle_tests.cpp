@@ -524,6 +524,58 @@ TEST_CASE("Android EGL publishes and implements API 19 base query surface") {
     CHECK(fixture.Call("libEGL.so", "eglGetError") == 0x300CU);
 }
 
+TEST_CASE("Android EGL publishes the complete EGL 1.4 core surface") {
+    BoundaryFixture fixture;
+    static constexpr std::array<std::string_view, 9> core{
+        "eglCreatePixmapSurface", "eglCopyBuffers", "eglSurfaceAttrib",
+        "eglBindTexImage", "eglReleaseTexImage", "eglWaitGL",
+        "eglWaitNative", "eglWaitClient", "eglCreatePbufferFromClientBuffer"};
+    for (const auto symbol : core) {
+        CAPTURE(symbol);
+        CHECK(fixture.boundary.Symbols().Lookup("libEGL.so", symbol).has_value());
+    }
+    REQUIRE(fixture.Call("libEGL.so", "eglInitialize", {1U}) == 1U);
+    CHECK(fixture.Call("libEGL.so", "eglCreatePixmapSurface", {1U, 2U, 1U, 0U}) == 0U);
+    CHECK(fixture.Call("libEGL.so", "eglGetError") == 0x300AU);
+    const auto client_buffer_entry = fixture.boundary.Symbols().Lookup(
+        "libEGL.so", "eglCreatePbufferFromClientBuffer");
+    REQUIRE(client_buffer_entry.has_value());
+    const std::array client_buffer_args{1U, 0x3096U, 1U, 2U, 0U};
+    CHECK(BoundaryCallAddress(fixture, client_buffer_entry->Value(), client_buffer_args) == 0U);
+    CHECK(fixture.Call("libEGL.so", "eglGetError") == 0x3009U);
+    CHECK(fixture.Call("libEGL.so", "eglWaitNative", {0U}) == 0U);
+    CHECK(fixture.Call("libEGL.so", "eglGetError") == 0x300CU);
+    CHECK(fixture.Call("libEGL.so", "eglWaitNative", {0x305BU}) == 1U);
+
+    if (!ogplay::gles::IsNativeAngleEglAvailable()) return;
+    const auto attributes = fixture.output;
+    fixture.bus.Write32(attributes, 0x3057U, 1U);
+    fixture.bus.Write32(attributes.Add(4U), 8U, 1U);
+    fixture.bus.Write32(attributes.Add(8U), 0x3056U, 1U);
+    fixture.bus.Write32(attributes.Add(12U), 8U, 1U);
+    fixture.bus.Write32(attributes.Add(16U), 0x3038U, 1U);
+    const auto surface = fixture.Call("libEGL.so", "eglCreatePbufferSurface",
+                                      {1U, 2U, attributes.Value()});
+    const auto context = fixture.Call("libEGL.so", "eglCreateContext", {1U, 2U, 0U, 0U});
+    REQUIRE(surface != 0U);
+    REQUIRE(context != 0U);
+    REQUIRE(fixture.Call("libEGL.so", "eglMakeCurrent",
+                         {1U, surface, surface, context}) == 1U);
+    CHECK(fixture.Call("libEGL.so", "eglWaitGL") == 1U);
+    CHECK(fixture.Call("libEGL.so", "eglWaitClient") == 1U);
+    CHECK(fixture.Call("libEGL.so", "eglSurfaceAttrib",
+                       {1U, surface, 0x3093U, 0x3095U}) == 1U);
+    CHECK(fixture.Call("libEGL.so", "eglSurfaceAttrib",
+                       {1U, surface, 0x3093U, 0x3094U}) == 0U);
+    CHECK(fixture.Call("libEGL.so", "eglGetError") == 0x3009U);
+    CHECK(fixture.Call("libEGL.so", "eglBindTexImage", {1U, surface, 0x3084U}) == 0U);
+    CHECK(fixture.Call("libEGL.so", "eglGetError") == 0x3009U);
+    CHECK(fixture.Call("libEGL.so", "eglReleaseTexImage", {1U, surface, 0U}) == 0U);
+    CHECK(fixture.Call("libEGL.so", "eglGetError") == 0x300CU);
+    CHECK(fixture.Call("libEGL.so", "eglCopyBuffers", {1U, surface, 1U}) == 0U);
+    CHECK(fixture.Call("libEGL.so", "eglGetError") == 0x300AU);
+}
+
 TEST_CASE("Android EGL proc address resolves sealed public thunks") {
     BoundaryFixture fixture;
     const auto name = fixture.output;

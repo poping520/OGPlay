@@ -27,7 +27,9 @@ constexpr std::uint32_t kEglBadAccess = 0x3002U;
 constexpr std::uint32_t kEglBadAttribute = 0x3004U;
 constexpr std::uint32_t kEglBadConfig = 0x3005U;
 constexpr std::uint32_t kEglBadContext = 0x3006U;
+constexpr std::uint32_t kEglBadCurrentSurface = 0x3007U;
 constexpr std::uint32_t kEglBadDisplay = 0x3008U;
+constexpr std::uint32_t kEglBadNativePixmap = 0x300AU;
 constexpr std::uint32_t kEglBadNativeWindow = 0x300BU;
 constexpr std::uint32_t kEglBadParameter = 0x300CU;
 constexpr std::uint32_t kEglBadSurface = 0x300DU;
@@ -66,6 +68,13 @@ constexpr std::uint32_t kEglRenderableType = 0x3040U;
 constexpr std::uint32_t kEglConformant = 0x3042U;
 constexpr std::uint32_t kEglContextClientType = 0x3097U;
 constexpr std::uint32_t kEglContextClientVersion = 0x3098U;
+constexpr std::uint32_t kEglBackBuffer = 0x3084U;
+constexpr std::uint32_t kEglCoreNativeEngine = 0x305BU;
+constexpr std::uint32_t kEglOpenVgImage = 0x3096U;
+constexpr std::uint32_t kEglSwapBehavior = 0x3093U;
+constexpr std::uint32_t kEglBufferDestroyed = 0x3095U;
+constexpr std::uint32_t kEglMultisampleResolve = 0x3099U;
+constexpr std::uint32_t kEglMultisampleResolveDefault = 0x309AU;
 constexpr std::uint32_t kEglOpenGlEsApi = 0x30A0U;
 constexpr std::uint32_t kEglDontCare = 0xFFFFFFFFU;
 constexpr std::uint32_t kEglWindowBit = 0x0004U;
@@ -618,6 +627,64 @@ std::uint32_t EglModule::ExecuteExport(const A32CallFrame& call) {
         surfaces_.emplace(handle, SurfaceState{kFakeDisplay, kFakeConfig,
             SurfaceKind::pbuffer, width, height});
         return handle;
+    }
+    if constexpr (FunctionId == 25U) {
+        if (args[0] != kFakeDisplay) { SetError(tid, kEglBadDisplay); return 0U; }
+        if (args[1] != kFakeConfig) { SetError(tid, kEglBadConfig); return 0U; }
+        if (args[3] != 0U && calls_.address_space.Read32(memory::GuestAddress{args[3]}, tid) != kEglNone) {
+            SetError(tid, kEglBadAttribute); return 0U;
+        }
+        { std::scoped_lock lock(mutex_); if (!initialized_) { threads_[tid].error = kEglNotInitialized; return 0U; } }
+        SetError(tid, kEglBadNativePixmap); return 0U;
+    }
+    if constexpr (FunctionId == 26U) {
+        if (args[0] != kFakeDisplay) { SetError(tid, kEglBadDisplay); return 0U; }
+        { std::scoped_lock lock(mutex_);
+          if (!initialized_) { threads_[tid].error = kEglNotInitialized; return 0U; }
+          if (!surfaces_.contains(args[1])) { threads_[tid].error = kEglBadSurface; return 0U; } }
+        SetError(tid, kEglBadNativePixmap); return 0U;
+    }
+    if constexpr (FunctionId == 27U) {
+        if (args[0] != kFakeDisplay) { SetError(tid, kEglBadDisplay); return 0U; }
+        std::scoped_lock lock(mutex_);
+        if (!initialized_) { threads_[tid].error = kEglNotInitialized; return 0U; }
+        if (!surfaces_.contains(args[1])) { threads_[tid].error = kEglBadSurface; return 0U; }
+        if ((args[2] == kEglSwapBehavior && args[3] == kEglBufferDestroyed) ||
+            (args[2] == kEglMultisampleResolve && args[3] == kEglMultisampleResolveDefault)) return 1U;
+        threads_[tid].error = (args[2] == kEglSwapBehavior || args[2] == kEglMultisampleResolve)
+                                  ? kEglBadMatch : kEglBadAttribute;
+        return 0U;
+    }
+    if constexpr (FunctionId == 28U || FunctionId == 29U) {
+        if (args[0] != kFakeDisplay) { SetError(tid, kEglBadDisplay); return 0U; }
+        std::scoped_lock lock(mutex_);
+        if (!initialized_) { threads_[tid].error = kEglNotInitialized; return 0U; }
+        if (!surfaces_.contains(args[1])) { threads_[tid].error = kEglBadSurface; return 0U; }
+        if (args[2] != kEglBackBuffer) { threads_[tid].error = kEglBadParameter; return 0U; }
+        threads_[tid].error = kEglBadMatch; return 0U;
+    }
+    if constexpr (FunctionId == 30U || FunctionId == 32U) {
+        { std::scoped_lock lock(mutex_); const auto current = threads_.find(tid);
+          if (current == threads_.end() || current->second.context == 0U || current->second.draw_surface == 0U) {
+              threads_[tid].error = kEglBadCurrentSurface; return 0U;
+          } }
+        if (!graphics.angle_frame.has_value()) { SetError(tid, kEglBadCurrentSurface); return 0U; }
+        graphics.angle_frame->Finish(); return 1U;
+    }
+    if constexpr (FunctionId == 31U) {
+        if (args[0] != kEglCoreNativeEngine) { SetError(tid, kEglBadParameter); return 0U; }
+        return 1U;
+    }
+    if constexpr (FunctionId == 33U) {
+        if (args[0] != kFakeDisplay) { SetError(tid, kEglBadDisplay); return 0U; }
+        if (call.Argument(3) != kFakeConfig) { SetError(tid, kEglBadConfig); return 0U; }
+        if (args[1] != kEglOpenVgImage || args[2] == 0U) { SetError(tid, kEglBadParameter); return 0U; }
+        const auto attributes = call.Argument(4);
+        if (attributes != 0U && calls_.address_space.Read32(memory::GuestAddress{attributes}, tid) != kEglNone) {
+            SetError(tid, kEglBadAttribute); return 0U;
+        }
+        { std::scoped_lock lock(mutex_); if (!initialized_) { threads_[tid].error = kEglNotInitialized; return 0U; } }
+        SetError(tid, kEglBadMatch); return 0U;
     }
     throw std::logic_error("unbound concrete libEGL export");
 }

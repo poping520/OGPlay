@@ -4,6 +4,9 @@
 
 ## 最近进展
 
+- [BND-32](../tasks/boundary/BND-32.md) 已补齐 9 个缺失的 EGL 1.4 core 导出，
+  `libEGL.so` 达到 34/34 core 名称；wait 路径同步真实 ANGLE context，pixmap、OpenVG
+  client buffer 与 texture-capable pbuffer 仍以规范 EGL error 明确拒绝。
 - [DVM-155](../tasks/dexvm/DVM-155.md) 已补齐 Java EGL10 的 config/current context、
   context/string/surface 查询与 release-thread；结果来自既有 façade/session 事实，不新增
   ANGLE Context。pbuffer、shared context、EGL14/GLES30 仍明确未实现。

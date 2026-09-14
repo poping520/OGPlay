@@ -26,4 +26,13 @@
     X("eglQueryAPI", 21, 0, QueryApi)                                         \
     X("eglReleaseThread", 22, 0, ReleaseThread)                               \
     X("eglSwapInterval", 23, 2, SwapInterval)                                 \
-    X("eglCreatePbufferSurface", 24, 3, CreatePbufferSurface)
+    X("eglCreatePbufferSurface", 24, 3, CreatePbufferSurface)                 \
+    X("eglCreatePixmapSurface", 25, 4, CreatePixmapSurface)                  \
+    X("eglCopyBuffers", 26, 3, CopyBuffers)                                  \
+    X("eglSurfaceAttrib", 27, 4, SurfaceAttrib)                              \
+    X("eglBindTexImage", 28, 3, BindTexImage)                                \
+    X("eglReleaseTexImage", 29, 3, ReleaseTexImage)                          \
+    X("eglWaitGL", 30, 0, WaitGl)                                            \
+    X("eglWaitNative", 31, 1, WaitNative)                                    \
+    X("eglWaitClient", 32, 0, WaitClient)                                    \
+    X("eglCreatePbufferFromClientBuffer", 33, 5, CreatePbufferFromClientBuffer)

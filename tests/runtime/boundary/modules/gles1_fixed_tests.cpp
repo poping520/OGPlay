@@ -211,3 +211,20 @@ TEST_CASE("GLES1 fixed matrix and scalar completion is directly bound") {
               "mix(u_point_size, a_point_size, u_has_point_size)") !=
           std::string_view::npos);
 }
+
+TEST_CASE("GLES1 fixed shaders consume the complete core lighting and texture modes") {
+    const auto vertex = ogplay::runtime::detail::kGles1FixedVertexShader;
+    CHECK(vertex.find("u_light_enabled[8]") != std::string_view::npos);
+    CHECK(vertex.find("u_light_specular[8]") != std::string_view::npos);
+    CHECK(vertex.find("u_light_spot_direction[8]") != std::string_view::npos);
+    CHECK(vertex.find("u_light_attenuation[8]") != std::string_view::npos);
+    CHECK(vertex.find("materialShininess") != std::string_view::npos);
+    CHECK(vertex.find("u_light_model_two_side") != std::string_view::npos);
+    CHECK(vertex.find("u_color_material") != std::string_view::npos);
+
+    const auto fragment = ogplay::runtime::detail::kGles1FixedFragmentShader;
+    CHECK(fragment.find("environment == 3042") != std::string_view::npos);
+    CHECK(fragment.find("environment == 8449") != std::string_view::npos);
+    CHECK(fragment.find("gl_FrontFacing ? v_color : v_back_color") !=
+          std::string_view::npos);
+}

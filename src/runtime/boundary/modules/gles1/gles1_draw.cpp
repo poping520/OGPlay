@@ -2,8 +2,10 @@
 
 #include <algorithm>
 #include <bit>
+#include <cmath>
 #include <cstddef>
 #include <limits>
+#include <numbers>
 #include <span>
 #include <stdexcept>
 #include <string>
@@ -33,6 +35,8 @@ constexpr std::uint32_t kModulate = 0x2100U;
 constexpr std::uint32_t kReplace = 0x1E01U;
 constexpr std::uint32_t kAdd = 0x0104U;
 constexpr std::uint32_t kCombine = 0x8570U;
+constexpr std::uint32_t kBlend = 0x0BE2U;
+constexpr std::uint32_t kDecal = 0x2101U;
 
 enum class TextureFormatClass : std::int32_t {
     alpha,
@@ -394,8 +398,13 @@ AndroidBoundaryGles1DrawState::EnsureProgram(
         "u_modelview0", "u_modelview1", "u_modelview2", "u_modelview3",
         "u_projection0", "u_projection1", "u_projection2", "u_projection3",
         "u_normal_matrix", "u_current_color", "u_current_normal",
-        "u_global_ambient", "u_light_ambient", "u_light_diffuse",
-        "u_light_position", "u_material_ambient", "u_material_diffuse",
+        "u_global_ambient", "u_material_front_ambient",
+        "u_material_front_diffuse", "u_material_front_specular",
+        "u_material_front_emission", "u_material_front_shininess",
+        "u_material_back_ambient", "u_material_back_diffuse",
+        "u_material_back_specular", "u_material_back_emission",
+        "u_material_back_shininess", "u_light_model_two_side",
+        "u_color_material",
         "u_has_color", "u_has_normal", "u_has_point_size", "u_lighting", "u_point_size",
         "u_point_size_min", "u_point_size_max", "u_point_distance_attenuation",
         "u_fog_enabled",
@@ -408,6 +417,17 @@ AndroidBoundaryGles1DrawState::EnsureProgram(
     for (std::size_t plane = 0; plane < 6U; ++plane) {
         const auto suffix = "[" + std::to_string(plane) + "]";
         for (const auto* base : {"u_clip_plane", "u_clip_enabled"}) {
+            const auto name = std::string{base} + suffix;
+            program.uniforms[name] = frame.GetUniformLocation(program.name, name);
+        }
+    }
+    for (std::size_t light = 0; light < 8U; ++light) {
+        const auto suffix = "[" + std::to_string(light) + "]";
+        for (const auto* base : {"u_light_enabled", "u_light_ambient",
+                                 "u_light_diffuse", "u_light_specular",
+                                 "u_light_position", "u_light_spot_direction",
+                                 "u_light_attenuation", "u_light_spot_exponent",
+                                 "u_light_spot_cutoff_cos"}) {
             const auto name = std::string{base} + suffix;
             program.uniforms[name] = frame.GetUniformLocation(program.name, name);
         }
@@ -553,11 +573,54 @@ void AndroidBoundaryGles1DrawState::ApplyUniforms(
         frame.Uniform4f(uniform(name), value[0], value[1], value[2], value[3]);
     };
     set4("u_global_ambient", fixed.LightModel(kGles1LightModelAmbient));
-    set4("u_light_ambient", fixed.Light(0x4000U, kGles1LightAmbient));
-    set4("u_light_diffuse", fixed.Light(0x4000U, 0x1201U));
-    set4("u_light_position", fixed.Light(0x4000U, kGles1LightPosition));
-    set4("u_material_ambient", fixed.Material(kGles1LightAmbient));
-    set4("u_material_diffuse", fixed.Material(0x1201U));
+    const auto set_material = [&fixed, &set4, &frame, &uniform](
+                                  const std::string_view prefix,
+                                  const std::uint32_t face) {
+        set4(std::string{prefix} + "_ambient", fixed.Material(face, 0x1200U));
+        set4(std::string{prefix} + "_diffuse", fixed.Material(face, 0x1201U));
+        set4(std::string{prefix} + "_specular", fixed.Material(face, 0x1202U));
+        set4(std::string{prefix} + "_emission", fixed.Material(face, 0x1600U));
+        frame.Uniform1f(uniform(std::string{prefix} + "_shininess"),
+                        fixed.Material(face, 0x1601U)[0]);
+    };
+    set_material("u_material_front", 0x0404U);
+    set_material("u_material_back", 0x0405U);
+    frame.Uniform1f(uniform("u_light_model_two_side"),
+                    fixed.LightModel(0x0B52U)[0] != 0.0F ? 1.0F : 0.0F);
+    frame.Uniform1f(uniform("u_color_material"),
+                    core.Capability(0x0B57U) ? 1.0F : 0.0F);
+    for (std::size_t index = 0; index < 8U; ++index) {
+        const auto light = 0x4000U + static_cast<std::uint32_t>(index);
+        const auto suffix = "[" + std::to_string(index) + "]";
+        const auto indexed = [&suffix](const std::string_view name) {
+            return std::string{name} + suffix;
+        };
+        frame.Uniform1f(uniform(indexed("u_light_enabled")),
+                        core.Capability(light) ? 1.0F : 0.0F);
+        for (const auto [name, pname] :
+             {std::pair{"u_light_ambient", 0x1200U},
+              std::pair{"u_light_diffuse", 0x1201U},
+              std::pair{"u_light_specular", 0x1202U},
+              std::pair{"u_light_position", 0x1203U}}) {
+            const auto& value = fixed.Light(light, pname);
+            frame.Uniform4f(uniform(indexed(name)), value[0], value[1],
+                            value[2], value[3]);
+        }
+        const auto& direction = fixed.Light(light, 0x1204U);
+        frame.Uniform4f(uniform(indexed("u_light_spot_direction")),
+                        direction[0], direction[1], direction[2], 0.0F);
+        const auto& constant = fixed.Light(light, 0x1207U);
+        const auto& linear = fixed.Light(light, 0x1208U);
+        const auto& quadratic = fixed.Light(light, 0x1209U);
+        frame.Uniform4f(uniform(indexed("u_light_attenuation")),
+                        constant[0], linear[0], quadratic[0], 0.0F);
+        frame.Uniform1f(uniform(indexed("u_light_spot_exponent")),
+                        fixed.Light(light, 0x1205U)[0]);
+        const auto cutoff = fixed.Light(light, 0x1206U)[0];
+        frame.Uniform1f(uniform(indexed("u_light_spot_cutoff_cos")),
+                        cutoff == 180.0F ? -1.0F
+                                         : std::cos(cutoff * std::numbers::pi_v<float> / 180.0F));
+    }
     frame.Uniform1f(uniform("u_has_color"),
                     Array(kGles1ColorArray, kTexture0).enabled ? 1.0F : 0.0F);
     frame.Uniform1f(uniform("u_has_normal"),
@@ -609,7 +672,8 @@ void AndroidBoundaryGles1DrawState::ApplyUniforms(
             legacy.TextureEnvironment(
                 texture, kGles1TextureEnvironmentMode)[0]);
         if (environment != kModulate && environment != kReplace &&
-            environment != kAdd && environment != kCombine) {
+            environment != kAdd && environment != kCombine &&
+            environment != kBlend && environment != kDecal) {
             throw std::runtime_error(
                 "GLES1 draw does not implement texture environment mode " +
                 std::to_string(environment));

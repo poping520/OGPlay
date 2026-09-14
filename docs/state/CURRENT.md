@@ -4,6 +4,10 @@
 
 ## 最近进展
 
+- [BND-30](../tasks/boundary/BND-30.md) 已补齐已发布 GLES1 core fixed draw 的 LIGHT0..7、
+  specular/shininess、spot/衰减、双面材质与 color-material，并实现 GL_BLEND/GL_DECAL
+  texture environment。未宣告的 matrix-palette skinning 继续明确失败；最多两个纹理 stage
+  与近似 normal matrix 仍记为 partial。
 - Native EGL 现以独立线程安全路由状态跟踪每个 guest thread 的 current Context client
   version；`eglGetProcAddress` 按 ES1/ES2 Context 选择对应 GLES family，同名入口不再固定
   偏向 GLES2，已初始化但未绑定 Context 时明确返回 null。直接 ELF import 保持 SONAME

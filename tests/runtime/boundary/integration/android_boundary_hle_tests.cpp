@@ -2955,6 +2955,15 @@ TEST_CASE("Android boundary publishes GLES1 core without silent handlers") {
         }
         CHECK(fixture.Call("libGLESv1_CM.so", "glDrawArrays",
                            {0x0004U, 0U, 3U}) == 0U);
+        for (const auto mode : {0x0BE2U, 0x2101U}) {
+            CHECK(fixture.Call(
+                      "libGLESv1_CM.so", "glTexEnvi",
+                      {ogplay::runtime::detail::kGles1TextureEnvironment,
+                       ogplay::runtime::detail::kGles1TextureEnvironmentMode,
+                       mode}) == 0U);
+            CHECK(fixture.Call("libGLESv1_CM.so", "glDrawArrays",
+                               {0x0004U, 0U, 3U}) == 0U);
+        }
         CHECK(fixture.Call("libGLESv1_CM.so", "glDisable",
                            {0x0DE1U}) == 0U);
         CHECK(fixture.Call(

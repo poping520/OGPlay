@@ -72,7 +72,8 @@
   `guest.liblog` 且 message 必有 `[guest]` 前缀；不得直接访问 host filesystem、伪造
   kernel logger device 或让 C++ exception 跨越 fast callback。message 与 structured
   `guest_log_tag` 必须从同一份未移动 tag 值构造，不得依赖 C++ 参数求值顺序。
-- `libEGL.so` 在原有 surface/context/present 入口外发布 API19 游戏所需的 13 个基础
+- `libEGL.so` 发布完整 34 个 EGL 1.4 core 函数；在原有 surface/context/present 入口外，
+  API19 游戏所需的 13 个基础
   query/thread/proc-address/pbuffer API。`EglModule final` 自有 per-guest-thread sticky error、
   current/bound API 与稳定 query-string pages；只读 `EglBoundaryContext` 可在
   `eglGetProcAddress` 冷路径解析 sealed public callable，未知扩展返回 null，绝不修改 hot table
@@ -85,6 +86,9 @@
   GLES1/GLES2 在当前兼容层内继续共享底层 Context 状态。pbuffer 的真实 ANGLE attachment
   与查询尺寸一致。宿主仍只有一个串行 GL execution
   lane，跨 host thread 抢占返回 `EGL_BAD_ACCESS`，不模拟并行 GPU context 调度。
+  `eglWaitGL`/`eglWaitClient` 同步当前 ANGLE context；pixmap、OpenVG client buffer 与
+  texture-capable pbuffer 尚无底层能力，对应 core 入口完整校验后明确返回 EGL error，
+  不创建伪对象或静默成功。
 
 Android native 边界:`android_boundary_hle` session facade、GLES2/GLES1 边界组件、
 boundary symbol 目录、跨 API 共享的 `GuestGlContext` 与 `A32CallFrame`。本模块把 guest

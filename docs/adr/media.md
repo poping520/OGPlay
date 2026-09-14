@@ -190,3 +190,36 @@ forwarder，调用时根据调用线程 current Context 的 client version 分�
 registry 中由 lifecycle 创建的 window 类对象；SDL presentation 与 FrameService ownership
 不变。Context/Surface 的实际 ANGLE 引用直到 pending destroy 且不再 current 才释放；
 Terminate 清理线程绑定并允许随后重新初始化。
+
+<a id="adr-0062"></a>
+
+## ADR-0062 · API 19 GLES3 边界与扩展发布规则
+
+- 状态：Accepted
+- 日期：2026-09-14
+- Supersedes：[旧 EGL/GLES 设计](../design/boundary/03-egl-gles-api19-completion.md)
+  中“不扩展到 GLES3”的范围；ADR-0003、ADR-0061 的 ANGLE 与 registry 决策保持不变。
+
+### 背景
+
+Android 4.4.4 已公开 GLES30，AOSP `GLES3/gl3.h` 相比 GLES2 增加 104 个 core 入口。当前
+ANGLE lifecycle 可创建 ES3 Context，但 guest catalog、A32 宽参数、Native handler 和 Java
+GLES30 尚未形成一致调用面。直接透传宿主版本或扩展字符串会声明 guest 无法执行的能力。
+
+### 决定
+
+`libGLESv2.so` 同时承载 GLES2 core 与 GLES3 新增 core，调用按当前 EGL Context 的 client
+version 校验。104 项新增入口使用独立声明式 catalog，保留 `GLint64`、`GLuint64`、`GLsync`
+和二级指针形状；A32 调用按 AAPCS 对齐重建 64 位值，sync/map 返回值必须使用受检 guest
+identity，禁止暴露 host 指针。Java GLES30 复用同一 catalog、Native handler、EGL registry
+和 `GuestGlContext`，只负责 Java 数组/NIO/long 的准确编组。
+
+本 WU 的扩展发布清单冻结为空：API 19 GLES3 core 不依赖额外扩展即可闭合；现有 GLES1
+的 OES 子集与 GLES2 的压缩纹理能力保持原清单。后续扩展必须逐项具备 guest thunk、编组、
+真实行为与失败测试后另作 ADR 追加，ANGLE 导出符号或驱动字符串本身不构成发布依据。
+
+### 后果
+
+ES1/ES2 Context 继续只接受各自版本允许的调用和版本字符串。ES3 完成前能力保持 partial；
+catalog 名称完整不能替代 Native/Java 行为验收。proc-address 可为已接通的 ES3 core 返回稳定
+forwarder，并在调用时按当前线程 Context 版本路由。

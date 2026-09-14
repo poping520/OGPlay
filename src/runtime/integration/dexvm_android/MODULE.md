@@ -106,7 +106,8 @@ Java 异常文本，再进入统一结构化 logger；不吞异常、不写裸 s
   API19 EGL14 的 display/config/context/surface wrapper 只映射 Native EGL registry 句柄；
   current identity、错误、延迟销毁、pbuffer 与 shared context 均以 registry 为准。EGL14
   数组 overload 必须校验 offset 并只回写指定切片。pixmap、client buffer 与 texture pbuffer
-  等 Native 已明确拒绝的入口保留精确 EGL error；GLES30 仍属于后续 WU-4。
+  等 Native 已明确拒绝的入口保留精确 EGL error。WU-4 已从 AOSP 发布 GLES30 类、常量与
+  overload surface；方法按 GLES3 delta catalog 记账，Native handler 未闭合项继续明确失败。
 
 ### Looper、线程、回调
 

@@ -51,14 +51,14 @@
   只拥有 guest 参数搬运、错误状态与 `0x71d00000` 有界只读返回区；ELF namespace、handle
   和 sealed Virtual SO 查询由 integration 通过 `BionicDynamicLinkHooks` 注入。失败返回
   null/-1 并由同一 guest thread 的下一次 `dlerror()` 消费，禁止把 lookup 失败变成 trap。
-- Android/EGL/GLES1/GLES2/log 以普通 `final` module type 实例化并在 seal 时一次 type
+- Android/EGL/GLES1/GLES2/GLES3/log 以普通 `final` module type 实例化并在 seal 时一次 type
   erase；descriptor 只保留 module-local id 与签名冷数据。每个 active export 在 seal 时
   直接生成 `{export-specific fn, concrete module*}`，fast/slow transport 共用该 handler；
   调用期不再读取 SONAME/local id，不经过 module-level route、`HleRoute` 或全局 id。
   export 实现体必须位于 concrete module，禁止转发到 `AndroidBoundaryHle::Impl::Invoke*`；
   Android looper/input 状态由 Android module 自有。module 不持有整个 session `Impl`，
   而是分别构造注入 bounded call transport、Android memory service 与 graphics context；
-  EGL/GLES1/GLES2 由同一个 `GraphicsBoundaryContext` 引用唯一 `GuestGlContext`、ANGLE
+  EGL/GLES1/GLES2/GLES3 由同一个 `GraphicsBoundaryContext` 引用唯一 `GuestGlContext`、ANGLE
   frame/context 和 graphics state，不复制状态。GLES1 私有 fixed/draw state 直接注入
   `Gles1Module`，shared service 不反向依赖 concrete module。
   DVM-83 增加的 managed GLES 冷入口按 API/name/参数数校验 sealed catalog，并直接调用
@@ -317,7 +317,9 @@ GlesApiError(GL_INVALID_ENUM)，复用共用错误锁存，错误调用不改变
 
 BND-24 以 API19 exact APK 的 `eglGetProcAddress + 142/142 GLES2 core` 导入面复验
 catalog provider 和 concrete handler，关闭 survey 的 bounded run 已越过 native load、
-JNI_OnLoad 与 OpenGL 边界；厂商 extension 全集与 GLES3 仍是明确非目标。
+JNI_OnLoad 与 OpenGL 边界。ADR-0062 已将 API19 GLES3 纳入目标：`libGLESv2.so` 发布
+104 项 delta，当前 93 项已进入真实 ANGLE handler，其余保持明确失败；厂商 extension
+全集仍不发布。
 
 Android/EGL/GLES2 sealed export 的 `if constexpr` 分派在 MSVC 下只对模板定义与显式
 实例化范围关闭 C4702；全局 `/W4 /WX` 保持启用，fallback 仍必须明确抛错。

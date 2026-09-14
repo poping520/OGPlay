@@ -89,6 +89,7 @@ namespace ogplay::runtime::android_intrinsics {
 [[nodiscard]] Decl Declare_android_opengl_GLES11(const Context& context);
 [[nodiscard]] Decl Declare_android_opengl_GLES11Ext(const Context& context);
 [[nodiscard]] Decl Declare_android_opengl_GLES20(const Context& context);
+[[nodiscard]] Decl Declare_android_opengl_GLES30(const Context& context);
 [[nodiscard]] Decl Declare_android_opengl_GLUtils(const Context& context);
 [[nodiscard]] Decl Declare_android_opengl_GLU(const Context& context);
 [[nodiscard]] Decl Declare_android_os_AsyncTask(const Context& context);

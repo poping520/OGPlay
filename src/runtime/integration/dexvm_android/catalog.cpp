@@ -187,6 +187,7 @@ std::vector<dexvm::IntrinsicClassDecl> AndroidIntrinsicCatalog(
         Declare_android_opengl_GLES11(context),
         Declare_android_opengl_GLES11Ext(context),
         Declare_android_opengl_GLES20(context),
+        Declare_android_opengl_GLES30(context),
         Declare_android_opengl_GLUtils(context),
         Declare_android_opengl_GLU(context),
         Declare_android_os_AsyncTask(context),

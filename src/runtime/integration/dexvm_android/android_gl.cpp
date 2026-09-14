@@ -1088,6 +1088,17 @@ dx::IntrinsicHandler JavaGlesHandler(const Context& context,
             }
             const auto& type = types[index];
             const auto& value = call.arguments[index];
+            if (type == "J" || type == "D") {
+                const bool padded = (arguments.size() & 1U) != 0U;
+                if (padded) arguments.push_back(0U);
+                arguments.push_back(static_cast<std::uint32_t>(value.wide));
+                arguments.push_back(static_cast<std::uint32_t>(value.wide >> 32U));
+                const auto result = marshal(index + 1U);
+                arguments.pop_back();
+                arguments.pop_back();
+                if (padded) arguments.pop_back();
+                return result;
+            }
             if (type.size() == 1U) {
                 arguments.push_back(value.cat1);
                 const auto result = marshal(index + 1U);
@@ -2033,6 +2044,11 @@ Decl Declare_android_opengl_EGL14(const Context& context) {
             });
     }
     return std::move(builder).Build();
+}
+Decl Declare_android_opengl_GLES30(const Context& context) {
+    return DeclareJavaGlesClass(context, "Landroid/opengl/GLES30;", "Landroid/opengl/GLES20;",
+        gles::GlesApi::gles3, generated_java_gles::kGLES30Methods,
+        generated_java_gles::kGLES30Constants);
 }
 
 dx::IntrinsicHandler EglWaitHandler(const Context& context,

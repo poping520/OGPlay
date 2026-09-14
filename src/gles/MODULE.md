@@ -87,7 +87,9 @@
   `glTexImage2D`。未知压缩枚举不得借该回退伪造成功。
 - IDL 标量不得携带搬运元数据；所有指针必须具有 direction/nullable/count，禁止生成器
   猜测 guest 内存长度。
-- GLES1.1/GLES2 core 目录必须分别与固定 ANGLE 头文件的 145/142 个入口完全一致；扩展
+- GLES1.1/GLES2 core 目录必须分别与固定 ANGLE 头文件的 145/142 个入口完全一致；
+  GLES3 delta 目录必须与 API 19 `gl3.h` 相对 `gl2.h` 的 104 个新增入口一致，并保留
+  64 位整数、sync identity 与二级指针 ABI 形状；扩展
   子集目录中的每个函数也必须存在于固定 ANGLE extension header；
   API-specific namespace 不得混淆函数 ID；二级指针保留
   indirection，宿主指针返回使用专门返回类型，禁止按 32 位标量误传。

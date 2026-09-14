@@ -8,6 +8,7 @@
 #include "ogplay/gles/generated/gles2_catalog.h"
 #include "ogplay/gles/generated/gles1_catalog.h"
 #include "ogplay/gles/generated/gles1_extensions_catalog.h"
+#include "ogplay/gles/generated/gles3_catalog.h"
 
 namespace ogplay::gles {
 namespace {
@@ -46,6 +47,7 @@ GlesFunctionInfo DescribeInCatalog(const Functions& functions,
             .name = function.name,
             .return_type = function.return_type,
             .parameter_count = function.parameter_count,
+            .abi_word_count = function.abi_word_count,
             .pointer_parameter_count = pointer_count};
 }
 
@@ -54,7 +56,9 @@ GlesFunctionInfo DescribeInCatalog(const Functions& functions,
                                                const std::string_view name,
                                                const std::uint64_t thread_id) {
     std::ostringstream stream;
-    stream << "unimplemented " << (api == GlesApi::gles2 ? "GLES2" : "GLES1")
+    const auto api_name = api == GlesApi::gles3 ? "GLES3" :
+                          api == GlesApi::gles2 ? "GLES2" : "GLES1";
+    stream << "unimplemented " << api_name
            << " call " << name << " (thunk " << id
            << ", guest thread " << thread_id << ')';
     return stream.str();
@@ -133,6 +137,7 @@ GlesFunctionInfo GlesDispatchTable::Describe(const GlesThunkId id) {
             .name = function.name,
             .return_type = function.return_type,
             .parameter_count = function.parameter_count,
+            .abi_word_count = function.abi_word_count,
             .pointer_parameter_count = pointer_count};
 }
 
@@ -245,6 +250,7 @@ std::size_t GlesFunctionCount(const GlesApi api) noexcept {
     case GlesApi::gles1_extensions:
         return generated::gles1_extensions::kFunctions.size();
     case GlesApi::gles2: return generated::gles2::kFunctions.size();
+    case GlesApi::gles3: return generated::gles3::kFunctions.size();
     }
     return 0;
 }
@@ -258,6 +264,8 @@ std::optional<GlesThunkId> FindGlesFunction(
         return FindInCatalog(generated::gles1_extensions::kFunctions, name);
     case GlesApi::gles2:
         return FindInCatalog(generated::gles2::kFunctions, name);
+    case GlesApi::gles3:
+        return FindInCatalog(generated::gles3::kFunctions, name);
     }
     return std::nullopt;
 }
@@ -275,6 +283,9 @@ GlesFunctionInfo DescribeGlesFunction(const GlesApi api,
     case GlesApi::gles2:
         return DescribeInCatalog(generated::gles2::kFunctions,
                                  generated::gles2::kParameters, id, "GLES2");
+    case GlesApi::gles3:
+        return DescribeInCatalog(generated::gles3::kFunctions,
+                                 generated::gles3::kParameters, id, "GLES3");
     }
     throw GlesDispatchError("unknown GLES API catalog");
 }

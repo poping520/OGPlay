@@ -34,13 +34,20 @@ constexpr std::uint32_t kElementArrayBuffer = 0x8893;
     switch (format) {
     case 0x1906:  // GL_ALPHA
     case 0x1909:  // GL_LUMINANCE
+    case 0x1902:  // GL_DEPTH_COMPONENT
+    case 0x1903:  // GL_RED
+    case 0x8D94:  // GL_RED_INTEGER
         return 1;
     case 0x190A:  // GL_LUMINANCE_ALPHA
+    case 0x8227:  // GL_RG
+    case 0x8228:  // GL_RG_INTEGER
         return 2;
     case 0x1907:  // GL_RGB
+    case 0x8D98:  // GL_RGB_INTEGER
         return 3;
     case 0x1908:  // GL_RGBA
     case 0x80E1:  // GL_BGRA_EXT
+    case 0x8D99:  // GL_RGBA_INTEGER
         return 4;
     default:
         throw GlesTransferStateError("unsupported GLES pixel format");
@@ -51,11 +58,15 @@ constexpr std::uint32_t kElementArrayBuffer = 0x8893;
                                       const std::uint32_t type) {
     switch (type) {
     case 0x1401:  // GL_UNSIGNED_BYTE
+    case 0x1400:  // GL_BYTE
         return Components(format);
     case 0x1403:  // GL_UNSIGNED_SHORT
+    case 0x1402:  // GL_SHORT
+    case 0x140B:  // GL_HALF_FLOAT
     case 0x8D61:  // GL_HALF_FLOAT_OES
         return CheckedMultiply(Components(format), 2);
     case 0x1405:  // GL_UNSIGNED_INT
+    case 0x1404:  // GL_INT
     case 0x1406:  // GL_FLOAT
         return CheckedMultiply(Components(format), 4);
     case 0x8363:  // GL_UNSIGNED_SHORT_5_6_5
@@ -70,6 +81,13 @@ constexpr std::uint32_t kElementArrayBuffer = 0x8893;
                 "GLES packed RGBA pixels require GL_RGBA or GL_BGRA_EXT");
         }
         return 2;
+    case 0x8368:  // GL_UNSIGNED_INT_2_10_10_10_REV
+    case 0x8C3B:  // GL_UNSIGNED_INT_10F_11F_11F_REV
+    case 0x8C3E:  // GL_UNSIGNED_INT_5_9_9_9_REV
+    case 0x84FA:  // GL_UNSIGNED_INT_24_8
+        return 4;
+    case 0x8DAD:  // GL_FLOAT_32_UNSIGNED_INT_24_8_REV
+        return 8;
     default:
         throw GlesTransferStateError("unsupported GLES pixel type");
     }
@@ -94,6 +112,26 @@ constexpr std::uint32_t kElementArrayBuffer = 0x8893;
     const auto stride = *aligned;
     return CheckedAdd(
         CheckedMultiply(static_cast<std::uint32_t>(height - 1), stride), row);
+}
+
+[[nodiscard]] std::uint64_t PixelBytes3D(
+    const std::int32_t width, const std::int32_t height,
+    const std::int32_t depth, const std::uint32_t format,
+    const std::uint32_t type, const std::uint32_t alignment) {
+    if (width < 0 || height < 0 || depth < 0) {
+        throw GlesTransferStateError("GLES pixel dimensions must not be negative");
+    }
+    if (width == 0 || height == 0 || depth == 0) return 0U;
+    const auto row = CheckedMultiply(static_cast<std::uint32_t>(width),
+                                     PixelSize(format, type));
+    const auto aligned = core::AlignUp(row, alignment);
+    if (!aligned.has_value()) {
+        throw GlesTransferStateError("GLES pixel row alignment overflow");
+    }
+    const auto preceding_rows = CheckedMultiply(
+        CheckedMultiply(static_cast<std::uint32_t>(depth),
+                        static_cast<std::uint32_t>(height)), 1U) - 1U;
+    return CheckedAdd(CheckedMultiply(preceding_rows, *aligned), row);
 }
 
 [[nodiscard]] std::uint64_t IndexSize(const std::uint32_t type) {
@@ -197,13 +235,25 @@ constexpr std::uint32_t kElementArrayBuffer = 0x8893;
 
 void GlesTransferState::PixelStore(const std::uint32_t pname,
                                    const std::int32_t alignment) {
-    if (alignment != 1 && alignment != 2 && alignment != 4 && alignment != 8) {
-        throw GlesTransferStateError("GLES pixel alignment must be 1, 2, 4 or 8");
-    }
     if (pname == kPackAlignment) {
+        if (alignment != 1 && alignment != 2 && alignment != 4 && alignment != 8)
+            throw GlesTransferStateError("GLES pixel alignment must be 1, 2, 4 or 8");
         pack_alignment_ = static_cast<std::uint32_t>(alignment);
     } else if (pname == kUnpackAlignment) {
+        if (alignment != 1 && alignment != 2 && alignment != 4 && alignment != 8)
+            throw GlesTransferStateError("GLES pixel alignment must be 1, 2, 4 or 8");
         unpack_alignment_ = static_cast<std::uint32_t>(alignment);
+    } else if (pname == 0x0CF2U || pname == 0x806EU || pname == 0x0CF4U ||
+               pname == 0x0CF3U || pname == 0x806DU) {
+        if (alignment < 0) throw GlesTransferStateError("GLES pixel store value must not be negative");
+        auto& value = pname == 0x0CF2U ? unpack_row_length_ :
+                      pname == 0x806EU ? unpack_image_height_ :
+                      pname == 0x0CF4U ? unpack_skip_pixels_ :
+                      pname == 0x0CF3U ? unpack_skip_rows_ : unpack_skip_images_;
+        value = static_cast<std::uint32_t>(alignment);
+    } else if (pname == 0x0D02U || pname == 0x0D03U || pname == 0x0D04U) {
+        if (alignment < 0) throw GlesTransferStateError("GLES pixel store value must not be negative");
+        // Pack row/skip state does not affect the GLES3 upload paths owned here.
     } else {
         throw GlesTransferStateError("unsupported GLES pixel store name");
     }
@@ -253,8 +303,45 @@ GlesTransferStateSnapshot GlesTransferState::Snapshot() const noexcept {
             .unpack_alignment = unpack_alignment_,
             .array_buffer = array_buffer_,
             .element_array_buffer = element_array_buffer_,
+            .unpack_row_length = unpack_row_length_,
+            .unpack_image_height = unpack_image_height_,
+            .unpack_skip_pixels = unpack_skip_pixels_,
+            .unpack_skip_rows = unpack_skip_rows_,
+            .unpack_skip_images = unpack_skip_images_,
             .query_shapes = query_counts_.size(),
             .uniform_shapes = uniform_counts_.size()};
+}
+
+std::uint64_t GlesTransferState::UnpackBytes3D(
+    const std::int32_t width, const std::int32_t height,
+    const std::int32_t depth, const std::uint32_t format,
+    const std::uint32_t type) const {
+    if (depth < 0) {
+        throw GlesTransferStateError("GLES pixel depth must not be negative");
+    }
+    if (depth == 0) return 0U;
+    if (width < 0 || height < 0 || depth < 0) {
+        throw GlesTransferStateError("GLES pixel dimensions must not be negative");
+    }
+    if (width == 0 || height == 0 || depth == 0) return 0U;
+    const auto pixel = PixelSize(format, type);
+    const auto stored_width = unpack_row_length_ == 0U
+        ? static_cast<std::uint32_t>(width) : unpack_row_length_;
+    const auto stored_height = unpack_image_height_ == 0U
+        ? static_cast<std::uint32_t>(height) : unpack_image_height_;
+    const auto row_bytes = CheckedMultiply(stored_width, pixel);
+    const auto row_stride = core::AlignUp(row_bytes, unpack_alignment_);
+    if (!row_stride.has_value()) throw GlesTransferStateError("GLES pixel row alignment overflow");
+    const auto image_stride = CheckedMultiply(stored_height, *row_stride);
+    const auto start = CheckedAdd(
+        CheckedAdd(CheckedMultiply(unpack_skip_images_, image_stride),
+                   CheckedMultiply(unpack_skip_rows_, *row_stride)),
+        CheckedMultiply(unpack_skip_pixels_, pixel));
+    const auto body = CheckedAdd(
+        CheckedAdd(CheckedMultiply(static_cast<std::uint32_t>(depth - 1), image_stride),
+                   CheckedMultiply(static_cast<std::uint32_t>(height - 1), *row_stride)),
+        CheckedMultiply(static_cast<std::uint32_t>(width), pixel));
+    return CheckedAdd(start, body);
 }
 
 std::optional<GlesLengthResolution> GlesTransferState::Resolve(

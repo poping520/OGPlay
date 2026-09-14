@@ -29,6 +29,14 @@ GLES1 绘制、Java EGL 与 GLES3/选定扩展。
   `DrawElements` 均走同一转换。`GL_SMOOTH` 保持原生插值路径。
 - 非均匀缩放下的斜法线结果已用独立逆转置数学参考校验；normalize/rescale 开关与
   GLES1 Context 切换恢复均有真实 ANGLE 回归，GLES2 Context 不受 GLES1 fixed state 污染。
+- Java EGL10 与 API19 EGL14 已通过 managed EGL 冷入口复用 Native EGL registry；wrapper
+  只保存 native handle 映射，current、sticky error、延迟销毁及 teardown 不再另立事实。
+- EGL10/EGL14 均支持真实 pbuffer 与 shared context；EGL14 的数组 overload 校验 offset
+  并只回写目标切片。pixmap、client buffer 与 texture pbuffer 继续由 Native EGL 以规范
+  error 明确拒绝。
+- Java/native 交叉回归在同一 guest thread 观察同一 current context，并通过 Java GLES
+  clear/readback 验证 pbuffer 真实绘制；managed window lifecycle 存在时 pbuffer backing
+  仍保持独立。
 
 ## 验证
 
@@ -39,11 +47,11 @@ GLES1 绘制、Java EGL 与 GLES3/选定扩展。
 - `ogplay_tests --test-case='EGL lifecycle*'`：7/7，64/64 断言通过。
 - `ogplay_tests --test-case='ANGLE pbuffer contexts share resources but keep framebuffer content'`：
   1/1，36/36 断言通过。
-- `ctest -R "GLES1|GLES2|EGL"`：57/57 通过。
+- `ctest -R "GLES1|GLES2|EGL"`：60/60 通过。
+- `ctest -R "WU-3|Java EGL bridge|EGL facade"`：7/7 通过。
 
 ## 后续 WU
 
-- WU-3 Java EGL10/EGL14 复用 Native registry。
 - WU-4 GLES3 104 项、Java GLES30 与选定扩展。
 
-WU-1、WU-2 状态：完成。BND-33 总任务仍进行中。
+WU-1、WU-2、WU-3 状态：完成。BND-33 总任务仍进行中。

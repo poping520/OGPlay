@@ -170,6 +170,12 @@ namespace ogplay::runtime::android_intrinsics {
 [[nodiscard]] Decl Declare_android_widget_TextView(const Context& context);
 [[nodiscard]] Decl Declare_android_widget_Toast(const Context& context);
 [[nodiscard]] Decl Declare_android_widget_VideoView(const Context& context);
+[[nodiscard]] Decl Declare_android_opengl_EGL14(const Context& context);
+[[nodiscard]] Decl Declare_android_opengl_EGLObjectHandle(const Context& context);
+[[nodiscard]] Decl Declare_android_opengl_EGLConfig(const Context& context);
+[[nodiscard]] Decl Declare_android_opengl_EGLContext(const Context& context);
+[[nodiscard]] Decl Declare_android_opengl_EGLDisplay(const Context& context);
+[[nodiscard]] Decl Declare_android_opengl_EGLSurface(const Context& context);
 [[nodiscard]] Decl Declare_javax_microedition_khronos_egl_EGLConfig(const Context& context);
 [[nodiscard]] Decl Declare_javax_microedition_khronos_egl_EGL(const Context& context);
 [[nodiscard]] Decl Declare_javax_microedition_khronos_egl_EGL10(const Context& context);

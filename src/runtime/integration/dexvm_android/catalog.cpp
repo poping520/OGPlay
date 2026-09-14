@@ -268,6 +268,12 @@ std::vector<dexvm::IntrinsicClassDecl> AndroidIntrinsicCatalog(
         Declare_android_widget_TextView(context),
         Declare_android_widget_Toast(context),
         Declare_android_widget_VideoView(context),
+        Declare_android_opengl_EGL14(context),
+        Declare_android_opengl_EGLObjectHandle(context),
+        Declare_android_opengl_EGLConfig(context),
+        Declare_android_opengl_EGLContext(context),
+        Declare_android_opengl_EGLDisplay(context),
+        Declare_android_opengl_EGLSurface(context),
         Declare_javax_microedition_khronos_egl_EGLConfig(context),
         Declare_javax_microedition_khronos_opengles_GL10(context),
         // Historical compatibility tail. DVM-61 decouples Java identity hash

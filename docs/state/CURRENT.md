@@ -21,13 +21,14 @@
 - 已形成 [EGL/GLES 修复交接报告](../design/boundary/04-egl-gles-repair-report.md)，
   按用户要求将执行计划合并为默认 4 个 WU：Native EGL 整体修复、GLES1 绘制、
   Java EGL、GLES3/Java GLES30/选定扩展；设计与测试并入所属 WU，保留全部问题及验收条件。
-  WU-1、WU-2 已实施，WU-3、WU-4 待执行。
+  WU-1、WU-2、WU-3 已实施，WU-4 待执行。WU-3 让 Java EGL10 与 API19 EGL14 通过
+  managed 冷入口复用 Native EGL registry，闭合 pbuffer、shared context、wrapper identity、
+  数组 offset、错误与 teardown，并以 Java/native 交叉 current 及真实 pbuffer 绘制回归锁定。
 - [BND-32](../tasks/boundary/BND-32.md) 已补齐 9 个缺失的 EGL 1.4 core 导出，
   `libEGL.so` 达到 34/34 core 名称；wait 路径同步真实 ANGLE context，pixmap、OpenVG
   client buffer 与 texture-capable pbuffer 仍以规范 EGL error 明确拒绝。
-- [DVM-155](../tasks/dexvm/DVM-155.md) 已补齐 Java EGL10 的 config/current context、
-  context/string/surface 查询与 release-thread；结果来自既有 façade/session 事实，不新增
-  ANGLE Context。pbuffer、shared context、EGL14/GLES30 仍明确未实现。
+- [DVM-155](../tasks/dexvm/DVM-155.md) 的 Java EGL10 查询面已由 BND-33 WU-3 扩展为
+  EGL10/EGL14 共用 Native registry；pbuffer 与 shared context 已闭合。GLES30 仍待 WU-4。
 - [BND-31](../tasks/boundary/BND-31.md) 修正 GLES1 VERSION/RENDERER 枚举，GLES2
   扩展串只发布 guest 边界真实支持的 ETC1/PVRTC/RGBA8，并让 GLES1/GLES2 负 draw
   与已覆盖 GLsizei 参数统一锁存 `GL_INVALID_VALUE`；GLES 定向 51/51 通过。

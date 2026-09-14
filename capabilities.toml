@@ -628,7 +628,7 @@ note = "M4 已在三平台完成真实 pbuffer 生命周期、guest 边界、SDL
 [gles.egl_lifecycle]
 status = "partial"
 test = "tests/gles/egl_lifecycle_tests.cpp; tests/gles/angle_frame_tests.cpp"
-note = "M4 完成可注入生命周期、精确 EGL 错误和逆序回滚；M5 WU-0286 为 pbuffer EGL config 请求并验证 RGBA8+D24S8；窗口 surface 仍待后续里程碑"
+note = "M4 完成可注入生命周期、精确 EGL 错误和逆序回滚；M5 WU-0286 为 pbuffer EGL config 请求并验证 RGBA8+D24S8；2026-09-14 native boundary 增加 context/surface 对象表、配置属性匹配、client version/share-root、线程 current 占用、延迟销毁及 pbuffer 实际尺寸一致性。宿主 GL execution lane 仍串行，完整窗口系统交换与并行 context 调度未实现，因此保持 partial"
 
 [runtime.egl_api19_base_boundary]
 status = "complete"

@@ -76,7 +76,11 @@
   query/thread/proc-address/pbuffer API。`EglModule final` 自有 per-guest-thread sticky error、
   current/bound API 与稳定 query-string pages；只读 `EglBoundaryContext` 可在
   `eglGetProcAddress` 冷路径解析 sealed public callable，未知扩展返回 null，绝不修改 hot table
-  或宣告未实现 extension。
+  或宣告未实现 extension。native EGL display/config 仍是进程稳定事实，但 context/surface
+  使用单调句柄对象表；对象记录 client version/share root、类型/尺寸、current owner、交换间隔
+  与 pending-destroy。所有对象入口校验 initialize/display/config/type，current 对象销毁延迟到
+  解绑；pbuffer 的真实 ANGLE attachment 与查询尺寸一致。宿主仍只有一个串行 GL execution
+  lane，跨 host thread 抢占返回 `EGL_BAD_ACCESS`，不模拟并行 GPU context 调度。
 
 Android native 边界:`android_boundary_hle` session facade、GLES2/GLES1 边界组件、
 boundary symbol 目录、跨 API 共享的 `GuestGlContext` 与 `A32CallFrame`。本模块把 guest

@@ -4,6 +4,14 @@
 
 ## 最近进展
 
+- Native EGL 已从固定 context=4/surface=3 升级为对象表：Context/Window/Pbuffer 使用独立
+  identity，校验初始化、config、client version、对象类型和线程占用，支持 share-root 记账与
+  current 对象延迟销毁；ChooseConfig/GetConfigAttrib 返回 RGBA8+D24S8、window+pbuffer、
+  ES1/ES2 的真实闭集，pbuffer 查询尺寸与实际 ANGLE attachment 一致。宿主 GL execution lane
+  仍串行，跨线程抢占明确返回 EGL_BAD_ACCESS。
+- 完成 Android 4.4.4 GLES 静态完整性审计：ROM 动态符号覆盖 EGL 25/48、GLES1
+  158/292、GLES2 142/367；核心入口闭集不等于规范语义完整。多 Context/共享、ES3、
+  EGL 生命周期与部分 fixed pipeline 仍有缺口，发现 GLES1 版本字符串枚举误用；本轮未改代码或运行图形测试。
 - Application `meta-data` 已对齐 API 19 `PackageParser`：`android:value` 资源引用经 ARSC
   解析后按 String/Boolean/Integer 写入 Bundle，`android:resource` 独立保留资源 ID；PvZ 的
   Nimble verification 字符串不再被误装为 Integer。

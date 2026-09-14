@@ -87,7 +87,7 @@ void AddGlesModule(std::vector<BoundaryModuleDefinition>& modules,
             module_exports.push_back({
                 function.name,
                 local_id,
-                static_cast<std::uint8_t>(function.parameter_count), {},
+                static_cast<std::uint8_t>(function.abi_word_count), {},
                 BoundaryExportKind::public_function,
                 memory::GuestAddress{}, 4U});
         }
@@ -126,7 +126,8 @@ BoundaryCatalog BuildCatalog(const AndroidApi api) {
                                    gles::GlesApi::gles1_extensions};
     AddGlesModule(modules, storage, "libGLESv1_CM.so", gles1_apis,
                   kGles1BoundsExports);
-    constexpr std::array gles2_apis{gles::GlesApi::gles2};
+    constexpr std::array gles2_apis{gles::GlesApi::gles2,
+                                    gles::GlesApi::gles3};
     AddGlesModule(modules, storage, "libGLESv2.so", gles2_apis);
     AddNamedModule(modules, storage, "liblog.so", kLogExports);
     AddOpenSlesModule(modules, storage);
@@ -203,7 +204,8 @@ std::vector<HleThunkDescriptor> BuildAndroidBoundaryDescriptors(
     std::set<std::string_view> proc_names;
     for (const auto api : {gles::GlesApi::gles1,
                            gles::GlesApi::gles1_extensions,
-                           gles::GlesApi::gles2}) {
+                           gles::GlesApi::gles2,
+                           gles::GlesApi::gles3}) {
         for (std::size_t index = 0; index < gles::GlesFunctionCount(api);
              ++index) {
             const auto function = gles::DescribeGlesFunction(
@@ -211,7 +213,7 @@ std::vector<HleThunkDescriptor> BuildAndroidBoundaryDescriptors(
             if (!proc_names.insert(function.name).second) continue;
             result.push_back({"$egl.proc", function.name, 0U,
                               static_cast<std::uint8_t>(
-                                  function.parameter_count)});
+                                  function.abi_word_count)});
         }
     }
     return result;

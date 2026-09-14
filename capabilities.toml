@@ -645,6 +645,16 @@ status = "complete"
 test = "tools/generate_gles_api.py --idl data/gles/gles2.json --output <generated> --check --verify-header third_party/angle-prebuilt/include/GLES2/gl2.h"
 note = "M4 GLES2 core 142 个入口和 397 个参数全部进入有序 IDL；输入输出、可空、长度表达式及一/二级指针形状显式可查"
 
+[gles.gles3_delta_catalog]
+status = "complete"
+test = "tools.gles3_catalog_current; tests/gles/gles_dispatch_tests.cpp"
+note = "BND-33 WU-4 从 Android 4.4.4 gl3.h 对 gl2.h 精确差分 104 个新增 core 入口，声明式 IDL 保留 GLint64/GLuint64/GLsync、指针方向与二级指针形状；catalog 完整不表示 Native handler 或 Java GLES30 行为已闭合"
+
+[runtime.gles3_api19_boundary]
+status = "complete"
+test = "tests/runtime/boundary/integration/android_boundary_hle_tests.cpp; tests/gles/gles_dispatch_tests.cpp"
+note = "BND-33 WU-4 已让 EGL 创建真实 ES3 Context并在libGLESv2.so发布104项delta；104项全部进入真实ANGLE，普通3D texture按unpack状态受界搬运，多指针query先完整预检，sync和map-buffer使用guest identity/arena隔离host指针；Java GLES30由同一生成catalog与managed桥发布"
+
 [gles.guest_transfer]
 status = "complete"
 test = "tests/gles/guest_transfer_tests.cpp"

@@ -281,6 +281,61 @@ public:
                     std::uint32_t format, std::uint32_t type,
                     std::span<std::byte> output);
     void ReadRgba8(std::vector<std::uint8_t>& output);
+    [[nodiscard]] std::uint32_t InvokeGles3Scalar(
+        std::uint16_t function_id, std::span<const std::uint32_t> arguments);
+    void InvokeGles3Names(std::uint16_t function_id,
+                          std::span<std::uint32_t> names);
+    void InvokeGles3Words(std::uint16_t function_id,
+                          std::span<const std::uint32_t> arguments,
+                          std::span<std::uint32_t> words);
+    [[nodiscard]] std::string GetStringIndexed(std::uint32_t name,
+                                                std::uint32_t index);
+    [[nodiscard]] std::int32_t GetFragDataLocation(
+        std::uint32_t program, std::string_view name);
+    [[nodiscard]] std::uint32_t GetUniformBlockIndex(
+        std::uint32_t program, std::string_view name);
+    [[nodiscard]] std::int64_t GetGles3Integer64(
+        std::uint16_t function_id, std::span<const std::uint32_t> arguments);
+    void InvokeGles3Bytes(std::uint16_t function_id,
+                          std::span<const std::uint32_t> arguments,
+                          std::span<const std::byte> bytes);
+    [[nodiscard]] std::uintptr_t FenceSync(std::uint32_t condition,
+                                            std::uint32_t flags);
+    void DeleteSync(std::uintptr_t sync);
+    [[nodiscard]] bool IsSync(std::uintptr_t sync);
+    [[nodiscard]] std::uint32_t ClientWaitSync(std::uintptr_t sync,
+                                                std::uint32_t flags,
+                                                std::uint64_t timeout);
+    void WaitSync(std::uintptr_t sync, std::uint32_t flags,
+                  std::uint64_t timeout);
+    [[nodiscard]] std::vector<std::int32_t> GetSyncValues(
+        std::uintptr_t sync, std::uint32_t pname, std::int32_t buffer_size,
+        std::int32_t& length);
+    void InvokeGles3Offset(std::uint16_t function_id,
+                           std::span<const std::uint32_t> arguments);
+    [[nodiscard]] std::string GetActiveUniformBlockName(
+        std::uint32_t program, std::uint32_t index, std::int32_t buffer_size);
+    [[nodiscard]] std::vector<std::int32_t> GetActiveUniformValues(
+        std::uint32_t program, std::span<const std::uint32_t> indices,
+        std::uint32_t pname);
+    [[nodiscard]] std::vector<std::byte> GetProgramBinary(
+        std::uint32_t program, std::int32_t buffer_size,
+        std::int32_t& length, std::uint32_t& format);
+    [[nodiscard]] AngleActiveVariable GetTransformFeedbackVarying(
+        std::uint32_t program, std::uint32_t index);
+    [[nodiscard]] std::vector<std::uint32_t> GetUniformIndices(
+        std::uint32_t program, std::span<const std::string> names);
+    [[nodiscard]] std::vector<std::uint32_t> GetUniformUnsigned(
+        std::uint32_t program, std::int32_t location, std::size_t count);
+    void TransformFeedbackVaryings(std::uint32_t program,
+        std::span<const std::string> names, std::uint32_t buffer_mode);
+    void TextureImage3D(std::uint16_t function_id,
+        std::span<const std::uint32_t> arguments,
+        std::optional<std::span<const std::byte>> pixels);
+    [[nodiscard]] std::byte* MapBufferRange(std::uint32_t target,
+        std::int32_t offset, std::int32_t length, std::uint32_t access);
+    [[nodiscard]] bool UnmapBuffer(std::uint32_t target);
+    [[nodiscard]] std::uint32_t BoundBuffer(std::uint32_t target);
     [[nodiscard]] std::vector<std::uint8_t> ReadRgba8();
     [[nodiscard]] AngleFrameInfo Info() const noexcept;
 

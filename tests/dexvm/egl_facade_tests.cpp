@@ -509,7 +509,8 @@ TEST_CASE("DVM-83 publishes the API 19 Java GLES link surface") {
     const std::array classes{
         "Landroid/opengl/GLES10;", "Landroid/opengl/GLES10Ext;",
         "Landroid/opengl/GLES11;", "Landroid/opengl/GLES11Ext;",
-        "Landroid/opengl/GLES20;", "Landroid/opengl/GLUtils;",
+        "Landroid/opengl/GLES20;", "Landroid/opengl/GLES30;",
+        "Landroid/opengl/GLUtils;",
         "Landroid/opengl/GLU;"};
     for (const auto descriptor : classes) {
         CAPTURE(descriptor);
@@ -520,6 +521,11 @@ TEST_CASE("DVM-83 publishes the API 19 Java GLES link surface") {
     CHECK(vm.linker.FindDirectMethod(gles20, "<init>", "()V").has_value());
     CHECK(vm.linker.FindDirectMethod(
         gles20, "glBufferData", "(IILjava/nio/Buffer;I)V").has_value());
+    const auto gles30 = vm.linker.ResolveDescriptor("Landroid/opengl/GLES30;");
+    CHECK(vm.linker.FindDirectMethod(gles30, "glBindVertexArray", "(I)V")
+              .has_value());
+    CHECK(vm.linker.FindDirectMethod(gles30, "glGetStringi", "(II)Ljava/lang/String;")
+              .has_value());
     CHECK(vm.linker.FindDirectMethod(
         gles20, "glShaderSource", "(ILjava/lang/String;)V").has_value());
     const auto utils = vm.linker.ResolveDescriptor("Landroid/opengl/GLUtils;");

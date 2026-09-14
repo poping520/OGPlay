@@ -4,65 +4,20 @@
 
 ## 最近进展
 
-- [BND-33](../tasks/boundary/BND-33.md) 已完成报告 WU-1、WU-2：Native EGL registry 为每个
-  Context/Surface 组合持有真实 ANGLE backing，闭合 share group、draw/read、Context 状态、
-  GL/EGL error、延迟销毁、双宿主线程 current/接管及 Terminate/重初始化。稳定 proc thunk
-  在调用时按当前 guest thread 的 ES1/ES2 Context 转发，查询无需 current。修正 Native EGL
-  config 的 `EGL_NONE`/零值区分，补齐已支持 surface 的 core 查询属性并将 swap interval
-  限定为已宣告的 0..1；GLES1 normal matrix 改为 modelview 上三阶逆转置，
-  `GL_NORMALIZE`/`GL_RESCALE_NORMAL` 已进入真实 shader；flat triangle/strip/fan 按最后顶点
-  展开 provoking color/normal，覆盖 DrawArrays、client/VBO DrawElements。像素、独立数学参考
-  与 Context 状态恢复通过，Windows `ctest -R "GLES1|GLES2|EGL"` 57/57 通过。Java EGL
-  复用、GLES3/扩展属后续 WU，尚未完成。
-- [ADR-0061](../adr/media.md#adr-0061) 已接受每 Context/Surface registry；ANGLE lifecycle
-  已支持显式 ES client version、native share context 与 registry identity。真实 ANGLE 测试
-  证明共享 texture 可跨 Context 查询，4×3 红色与 2×2 绿色 pbuffer 内容互不污染；Native
-  boundary registry 已接线，并覆盖独立 Context 状态、draw/read backing 与延迟销毁。
-- 已形成 [EGL/GLES 修复交接报告](../design/boundary/04-egl-gles-repair-report.md)，
-  按用户要求将执行计划合并为默认 4 个 WU：Native EGL 整体修复、GLES1 绘制、
-  Java EGL、GLES3/Java GLES30/选定扩展；设计与测试并入所属 WU，保留全部问题及验收条件。
-  WU-1、WU-2、WU-3 已实施，WU-4 待执行。WU-3 让 Java EGL10 与 API19 EGL14 通过
-  managed 冷入口复用 Native EGL registry，闭合 pbuffer、shared context、wrapper identity、
-  数组 offset、错误与 teardown，并以 Java/native 交叉 current 及真实 pbuffer 绘制回归锁定。
-- [BND-32](../tasks/boundary/BND-32.md) 已补齐 9 个缺失的 EGL 1.4 core 导出，
-  `libEGL.so` 达到 34/34 core 名称；wait 路径同步真实 ANGLE context，pixmap、OpenVG
-  client buffer 与 texture-capable pbuffer 仍以规范 EGL error 明确拒绝。
-- [DVM-155](../tasks/dexvm/DVM-155.md) 的 Java EGL10 查询面已由 BND-33 WU-3 扩展为
-  EGL10/EGL14 共用 Native registry；pbuffer 与 shared context 已闭合。GLES30 仍待 WU-4。
-- [BND-31](../tasks/boundary/BND-31.md) 修正 GLES1 VERSION/RENDERER 枚举，GLES2
-  扩展串只发布 guest 边界真实支持的 ETC1/PVRTC/RGBA8，并让 GLES1/GLES2 负 draw
-  与已覆盖 GLsizei 参数统一锁存 `GL_INVALID_VALUE`；GLES 定向 51/51 通过。
-- [BND-30](../tasks/boundary/BND-30.md) 已补齐已发布 GLES1 core fixed draw 的 LIGHT0..7、
-  specular/shininess、spot/衰减、双面材质与 color-material，并实现 GL_BLEND/GL_DECAL
-  texture environment。未宣告的 matrix-palette skinning 继续明确失败；最多两个纹理 stage
-  仍限两个纹理 stage；normal matrix 已由 BND-33 修正，flat shading 仍记为 partial。
-- Native EGL 现以独立线程安全路由状态跟踪每个 guest thread 的 current Context client
-  version；`eglGetProcAddress` 按 ES1/ES2 Context 选择对应 GLES family，同名入口不再固定
-  偏向 GLES2，已初始化但未绑定 Context 时明确返回 null。直接 ELF import 保持 SONAME
-  语义，未引入 GLES3 或第二套 graphics state。
-- Native EGL 已从固定 context=4/surface=3 升级为对象表：Context/Window/Pbuffer 使用独立
-  identity，校验初始化、config、client version、对象类型和线程占用，支持 share-root 记账与
-  current 对象延迟销毁；ChooseConfig/GetConfigAttrib 返回 RGBA8+D24S8、window+pbuffer、
-  ES1/ES2 的真实闭集，pbuffer 查询尺寸与实际 ANGLE attachment 一致。宿主 GL execution lane
-  仍串行，跨线程抢占明确返回 EGL_BAD_ACCESS。
-- Application `meta-data` 已对齐 API 19 `PackageParser`：`android:value` 资源引用经 ARSC
-  解析后按 String/Boolean/Integer 写入 Bundle，`android:resource` 独立保留资源 ID；PvZ 的
-  Nimble verification 字符串不再被误装为 Integer。
-- DexVM 现提供 API 19 `java.home`、`java.io.tmpdir`、`user.dir` 初始 property；Android
-  bridge 在 Java 执行前以 guest VFS working directory 覆盖 `user.dir`。真实 PvZ Terms/
-  Restlet 启动已不再触发 `File.join` null receiver，并继续进入离线 HTTP 失败路径。
-- Libcore `Posix.mkdir/remove/rename` 现保留 VFS 真实 errno，不再把父目录缺失误报为 EEXIST；
-  API 19 `File.mkdirs()` 可按 ENOENT 递归，真实 PvZ 已越过 Nimble 必需目录创建。
-- DexVM 已按 ADR-0060 从固定 64 MiB 预算切换为可增长堆：默认 64 MiB 初始目标、
-  512 MiB growth limit、1 GiB maximum，按普通 GC→增长→before-OOM GC→OOM 执行。
-  GC 后依 live set、75% 利用率与 2..8 MiB 空闲区间调整目标；intrinsic 在安全点之间可在
-  growth limit 内增长。Profile 只接受 `[runtime.dexvm.heap]`，旧字段明确拒绝。
-- 无 Profile 的真实 PvZ 已越过两份约 52 MiB 数组形成的约 104 MiB 峰值，不再触发固定预算
-  OOM。API 19 `System.lineSeparator` 现从初始 property 冻结，后续 property 修改不改变返回值；
-  真实 PvZ 已越过 `Properties.store`、切换到 PvZActivity、加载三份 native 库并进入主循环。
-  人工停止时暴露既有独立 teardown 缺口：`JNI monitor thread is not a DexVM thread`。
-- API 19 `Context.getObbDir(s)` 已按 `/sdcard/Android/obb/<package>` 接入 VFS overlay，
-  ContextWrapper 仅委托 base；双后端覆盖路径、目录创建、稳定 File 身份及 unavailable null。
+- [BND-33](../tasks/boundary/BND-33.md) WU-4 已闭合：新增 API 19 GLES3 相对 GLES2 的
+  104 项机器可核对 delta IDL，生成链识别 `GLint64`/`GLuint64`/`GLsync` 与二级指针；
+  DexVM 从固定 AOSP 源发布 GLES30 类、常量和 overload surface。ADR-0062 冻结本 WU
+  扩展清单为空，并要求 ES3 复用 `libGLESv2.so`、EGL registry 与唯一 Context 状态。
+  Native 104 项 handler、A32 宽值/sync identity 及真实 draw/query/error 均已接通。
+  后续批次已让 EGL config 宣告 ES3 bit、创建真实 client-version 3 Context，并把 104 项
+  delta 发布到 `libGLESv2.so` 与稳定 proc 清单；其中 38 个标量、8 个 name lifecycle、
+  29 个单指针 word-array handler，并继续闭合 indexed string、64 位 query、压缩 3D texture
+  与 program binary，并接通 sync guest identity 及 buffer-offset draw/attribute。
+  A32/Java 64 位实参已按 AAPCS 偶数字槽拆装；真实 VAO、`glGetStringi`、64 位 query 与
+  fence create/wait/delete 回归通过。最后 11 项普通 texture3D、多指针 query、
+  transform-feedback 字符串和 map-buffer 已闭合；真实 map round-trip 与 3D upload 回归通过。
+
+
 - [DVM-154](../tasks/dexvm/DVM-154.md) 已把 File/FIS/FOS/FileReader/FileWriter/RAF、channel、
   FileChannelImpl/NioUtils、IoBridge/IoUtils/CloseGuard 普通方法迁入 1503 类 API 19 BootDex。
   Posix 文件子集经唯一 OpenFileDescription 接入 VFS；FileChannelImpl 仅保留 bounded

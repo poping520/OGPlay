@@ -97,6 +97,7 @@ constexpr std::uint32_t kEglWindowBit = 0x0004U;
 constexpr std::uint32_t kEglPbufferBit = 0x0001U;
 constexpr std::uint32_t kEglOpenGlEsBit = 0x0001U;
 constexpr std::uint32_t kEglOpenGlEs2Bit = 0x0004U;
+constexpr std::uint32_t kEglOpenGlEs3Bit = 0x0040U;
 constexpr std::uint32_t kEglRgbBuffer = 0x308EU;
 constexpr memory::GuestAddress kEglStringPage{0x71C00000U};
 constexpr std::size_t kMaximumProcNameBytes = 1024U;
@@ -348,7 +349,9 @@ std::uint32_t EglModule::ExecuteExport(const A32CallFrame& call) {
                 else if (attribute == kEglSurfaceType) matches &= value == kEglDontCare ||
                     (value & ~(kEglWindowBit | kEglPbufferBit)) == 0U;
                 else if (attribute == kEglRenderableType || attribute == kEglConformant) matches &=
-                    value == kEglDontCare || (value & ~(kEglOpenGlEsBit | kEglOpenGlEs2Bit)) == 0U;
+                    value == kEglDontCare ||
+                    (value & ~(kEglOpenGlEsBit | kEglOpenGlEs2Bit |
+                               kEglOpenGlEs3Bit)) == 0U;
                 else if (attribute == kEglConfigCaveat ||
                          attribute == kEglTransparentType ||
                          attribute == kEglNativeVisualType) {
@@ -389,7 +392,9 @@ std::uint32_t EglModule::ExecuteExport(const A32CallFrame& call) {
         case kEglDepthSize: value = 24U; break;
         case kEglStencilSize: value = 8U; break;
         case kEglSurfaceType: value = kEglWindowBit | kEglPbufferBit; break;
-        case kEglRenderableType: case kEglConformant: value = kEglOpenGlEsBit | kEglOpenGlEs2Bit; break;
+        case kEglRenderableType: case kEglConformant:
+            value = kEglOpenGlEsBit | kEglOpenGlEs2Bit | kEglOpenGlEs3Bit;
+            break;
         case kEglMaxPbufferWidth: case kEglMaxPbufferHeight: value = 4096U; break;
         case kEglMaxPbufferPixels: value = 4096U * 4096U; break;
         case kEglMinSwapInterval: value = 0U; break;
@@ -437,7 +442,7 @@ std::uint32_t EglModule::ExecuteExport(const A32CallFrame& call) {
             }
             if (!terminated) { SetError(tid, kEglBadAttribute); return 0U; }
         }
-        if (version != 1U && version != 2U) { SetError(tid, kEglBadAttribute); return 0U; }
+        if (version < 1U || version > 3U) { SetError(tid, kEglBadAttribute); return 0U; }
         std::scoped_lock lock(mutex_);
         if (!initialized_) { threads_[tid].error = kEglNotInitialized; return 0U; }
         if (args[2] != 0U && !contexts_.contains(args[2])) { threads_[tid].error = kEglBadContext; return 0U; }
@@ -539,7 +544,7 @@ std::uint32_t EglModule::ExecuteExport(const A32CallFrame& call) {
                             graphics.backend,
                             surface.width * graphics.layout.factor,
                             surface.height * graphics.layout.factor,
-                            2,
+                            static_cast<int>(target.client_version),
                             share_native));
                     const auto logical_width = static_cast<std::int32_t>(surface.width);
                     const auto logical_height = static_cast<std::int32_t>(surface.height);
@@ -577,7 +582,8 @@ std::uint32_t EglModule::ExecuteExport(const A32CallFrame& call) {
                             graphics.backend,
                             read_surface.width * graphics.layout.factor,
                             read_surface.height * graphics.layout.factor,
-                            2, frame->second->NativeContext()));
+                            static_cast<int>(target.client_version),
+                            frame->second->NativeContext()));
                     read_frame->ReleaseCurrent();
                     target.frames.emplace(
                         args[2], std::make_unique<gles::AngleFrame>(

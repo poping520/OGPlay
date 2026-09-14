@@ -1,6 +1,6 @@
 # Android 4.4.4 EGL/GLES 问题修复报告
 
-日期：2026-09-14。状态：执行中；WU-1 已完成。
+日期：2026-09-14。状态：执行中；WU-1、WU-2、WU-3 已完成，WU-4 进行中。
 
 执行规模：默认 4 个 WU；设计、失败复现、实现和验收纳入所属 WU，不按函数或文件额外拆单。
 
@@ -190,7 +190,8 @@ R 编号是问题编号；以下 WU-1..4 是报告内执行编号，不占用正
 | WU-3 | 让 Java EGL10/EGL14 复用 Native registry 并支持已闭合的 EGL 行为。 | R7 的 Java EGL 部分 | WU-1 |
 | WU-4 | 闭合 GLES3 Native/Java 调用面、版本能力声明和选定扩展。 | R6、R7 剩余部分 | WU-1、WU-2、WU-3 |
 
-执行状态（2026-09-14）：WU-1、WU-2、WU-3 已完成；WU-4 待执行。
+执行状态（2026-09-14）：WU-1、WU-2、WU-3、WU-4 已完成；WU-4 的 catalog、Java
+GLES30 surface、ES3 Context/路由及 104/104 Native handler 已闭合，选定扩展清单为空。
 
 各 WU 的内部范围与出口：
 

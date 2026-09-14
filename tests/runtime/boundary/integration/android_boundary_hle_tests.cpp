@@ -863,6 +863,114 @@ TEST_CASE("Android EGL permits distinct host-thread contexts and safe handoff") 
     CHECK(results[7] != results[8]);
 }
 
+TEST_CASE("Android EGL creates ES3 and routes vertex array core calls") {
+    if (!ogplay::gles::IsNativeAngleEglAvailable()) return;
+    BoundaryFixture fixture;
+    REQUIRE(fixture.Call("libEGL.so", "eglInitialize", {1U}) == 1U);
+
+    const auto surface_attributes = fixture.output;
+    fixture.bus.Write32(surface_attributes, 0x3057U, 1U);
+    fixture.bus.Write32(surface_attributes.Add(4U), 4U, 1U);
+    fixture.bus.Write32(surface_attributes.Add(8U), 0x3056U, 1U);
+    fixture.bus.Write32(surface_attributes.Add(12U), 4U, 1U);
+    fixture.bus.Write32(surface_attributes.Add(16U), 0x3038U, 1U);
+    const auto surface = fixture.Call("libEGL.so", "eglCreatePbufferSurface",
+                                      {1U, 2U, surface_attributes.Value()});
+
+    const auto context_attributes = fixture.output.Add(32U);
+    fixture.bus.Write32(context_attributes, 0x3098U, 1U);
+    fixture.bus.Write32(context_attributes.Add(4U), 3U, 1U);
+    fixture.bus.Write32(context_attributes.Add(8U), 0x3038U, 1U);
+    const auto context = fixture.Call("libEGL.so", "eglCreateContext",
+                                      {1U, 2U, 0U,
+                                       context_attributes.Value()});
+    REQUIRE(surface != 0U);
+    REQUIRE(context != 0U);
+    REQUIRE(fixture.Call("libEGL.so", "eglMakeCurrent",
+                         {1U, surface, surface, context}) == 1U);
+
+    const auto name = fixture.output.Add(64U);
+    CHECK(fixture.Call("libGLESv2.so", "glGenVertexArrays",
+                       {1U, name.Value()}) == 0U);
+    const auto vao = fixture.bus.Read32(name, 1U);
+    CHECK(vao != 0U);
+    CHECK(fixture.Call("libGLESv2.so", "glIsVertexArray", {vao}) == 0U);
+    CHECK(fixture.Call("libGLESv2.so", "glBindVertexArray", {vao}) == 0U);
+    CHECK(fixture.Call("libGLESv2.so", "glIsVertexArray", {vao}) == 1U);
+    CHECK(fixture.Call("libGLESv2.so", "glDeleteVertexArrays",
+                       {1U, name.Value()}) == 0U);
+    const auto integer64 = fixture.output.Add(72U);
+    CHECK(fixture.Call("libGLESv2.so", "glGetInteger64v",
+                       {0x8D6BU, integer64.Value()}) == 0U);
+    const bool integer64_nonzero = fixture.bus.Read32(integer64, 1U) != 0U ||
+                                   fixture.bus.Read32(integer64.Add(4U), 1U) != 0U;
+    CHECK(integer64_nonzero);
+    const auto extension = fixture.Call("libGLESv2.so", "glGetStringi",
+                                        {0x1F03U, 0U});
+    CHECK(extension != 0U);
+    CHECK(fixture.bus.Read8(ogplay::memory::GuestAddress{extension}, 1U) != 0U);
+    const auto sync = fixture.Call("libGLESv2.so", "glFenceSync",
+                                   {0x9117U, 0U});
+    REQUIRE(sync != 0U);
+    CHECK(fixture.Call("libGLESv2.so", "glIsSync", {sync}) == 1U);
+    const auto wait = fixture.Call("libGLESv2.so", "glClientWaitSync",
+                                   {sync, 0U, 0U, 0U});
+    const bool valid_wait = wait == 0x911AU || wait == 0x911BU ||
+                            wait == 0x911CU;
+    CHECK(valid_wait);
+    CHECK(fixture.Call("libGLESv2.so", "glDeleteSync", {sync}) == 0U);
+    CHECK(fixture.Call("libGLESv2.so", "glIsSync", {sync}) == 0U);
+    CHECK(fixture.Call("libGLESv2.so", "glGetError") == 0x0501U);
+    CHECK(fixture.Call("libGLESv2.so", "glGetError") == 0U);
+
+    const auto buffer_name = fixture.output.Add(96U);
+    REQUIRE(fixture.Call("libGLESv2.so", "glGenBuffers",
+                         {1U, buffer_name.Value()}) == 0U);
+    const auto buffer = fixture.bus.Read32(buffer_name, 1U);
+    REQUIRE(buffer != 0U);
+    CHECK(fixture.Call("libGLESv2.so", "glBindBuffer",
+                       {0x8892U, buffer}) == 0U);
+    CHECK(fixture.Call("libGLESv2.so", "glBufferData",
+                       {0x8892U, 16U, 0U, 0x88E8U}) == 0U);
+    const auto mapped = fixture.Call("libGLESv2.so", "glMapBufferRange",
+                                     {0x8892U, 0U, 16U, 0x0002U});
+    REQUIRE(mapped >= 0x78000000U);
+    fixture.bus.Write32(ogplay::memory::GuestAddress{mapped}, 0x12345678U, 1U);
+    const auto pointer_out = fixture.output.Add(112U);
+    CHECK(fixture.Call("libGLESv2.so", "glGetBufferPointerv",
+                       {0x8892U, 0x88BDU, pointer_out.Value()}) == 0U);
+    CHECK(fixture.bus.Read32(pointer_out, 1U) == mapped);
+    CHECK(fixture.Call("libGLESv2.so", "glUnmapBuffer", {0x8892U}) == 1U);
+    CHECK(fixture.Call("libGLESv2.so", "glGetError") == 0U);
+    const auto remapped = fixture.Call("libGLESv2.so", "glMapBufferRange",
+                                       {0x8892U, 0U, 16U, 0x0001U});
+    REQUIRE(remapped >= 0x78000000U);
+    CHECK(fixture.bus.Read32(ogplay::memory::GuestAddress{remapped}, 1U) ==
+          0x12345678U);
+    CHECK(fixture.Call("libGLESv2.so", "glUnmapBuffer", {0x8892U}) == 1U);
+    CHECK(fixture.Call("libGLESv2.so", "glGetError") == 0U);
+
+    const auto texture_name = fixture.output.Add(128U);
+    REQUIRE(fixture.Call("libGLESv2.so", "glGenTextures",
+                         {1U, texture_name.Value()}) == 0U);
+    CHECK(fixture.Call("libGLESv2.so", "glGetError") == 0U);
+    CHECK(fixture.Call("libGLESv2.so", "glBindTexture",
+                       {0x806FU, fixture.bus.Read32(texture_name, 1U)}) == 0U);
+    CHECK(fixture.Call("libGLESv2.so", "glGetError") == 0U);
+    const auto pixels = fixture.output.Add(144U);
+    for (std::uint32_t index = 0; index < 8U; ++index)
+        fixture.bus.Write8(pixels.Add(index), static_cast<std::uint8_t>(index), 1U);
+    fixture.bus.Write32(fixture.stack, 1U, 1U);
+    fixture.bus.Write32(fixture.stack.Add(4U), 2U, 1U);
+    fixture.bus.Write32(fixture.stack.Add(8U), 0U, 1U);
+    fixture.bus.Write32(fixture.stack.Add(12U), 0x1908U, 1U);
+    fixture.bus.Write32(fixture.stack.Add(16U), 0x1401U, 1U);
+    fixture.bus.Write32(fixture.stack.Add(20U), pixels.Value(), 1U);
+    CHECK(fixture.Call("libGLESv2.so", "glTexImage3D",
+                       {0x806FU, 0U, 0x8058U, 1U}) == 0U);
+    CHECK(fixture.Call("libGLESv2.so", "glGetError") == 0U);
+}
+
 TEST_CASE("Android EGL terminate retires current objects before reinitialize") {
     if (!ogplay::gles::IsNativeAngleEglAvailable()) return;
     BoundaryFixture fixture;

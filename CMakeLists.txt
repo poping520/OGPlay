@@ -255,6 +255,7 @@ add_library(ogplay_gles
     src/gles/angle_backend.cpp
     src/gles/angle_frame.cpp
     src/gles/angle_frame_framebuffer.cpp
+    src/gles/angle_frame_gles3.cpp
     src/gles/angle_frame_shader.cpp
     src/gles/angle_frame_state.cpp
     src/gles/egl_lifecycle.cpp
@@ -269,6 +270,8 @@ add_library(ogplay_gles
 set(OGPLAY_GLES_GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
 set(OGPLAY_GLES2_CATALOG
     "${OGPLAY_GLES_GENERATED_DIR}/ogplay/gles/generated/gles2_catalog.h")
+set(OGPLAY_GLES3_CATALOG
+    "${OGPLAY_GLES_GENERATED_DIR}/ogplay/gles/generated/gles3_catalog.h")
 set(OGPLAY_GLES1_CATALOG
     "${OGPLAY_GLES_GENERATED_DIR}/ogplay/gles/generated/gles1_catalog.h")
 set(OGPLAY_GLES1_EXTENSIONS_CATALOG
@@ -285,6 +288,19 @@ add_custom_command(
     VERBATIM
 )
 add_custom_target(ogplay_gles_codegen DEPENDS "${OGPLAY_GLES2_CATALOG}")
+add_custom_command(
+    OUTPUT "${OGPLAY_GLES3_CATALOG}"
+    COMMAND ${Python3_EXECUTABLE}
+        "${CMAKE_CURRENT_SOURCE_DIR}/tools/generate_gles_api.py"
+        --idl "${CMAKE_CURRENT_SOURCE_DIR}/data/gles/gles3.json"
+        --output "${OGPLAY_GLES3_CATALOG}"
+    DEPENDS
+        "${CMAKE_CURRENT_SOURCE_DIR}/tools/generate_gles_api.py"
+        "${CMAKE_CURRENT_SOURCE_DIR}/data/gles/gles3.json"
+    VERBATIM
+)
+add_custom_target(ogplay_gles3_codegen DEPENDS "${OGPLAY_GLES3_CATALOG}")
+add_dependencies(ogplay_gles_codegen ogplay_gles3_codegen)
 set(OGPLAY_DEXVM_OPCODE_TABLE
     "${OGPLAY_GLES_GENERATED_DIR}/ogplay/runtime/dexvm/generated/opcode_table.h")
 add_custom_command(
@@ -1101,6 +1117,18 @@ if(OGPLAY_BUILD_TESTS)
                 ${OGPLAY_ANGLE_SDK_ROOT}/include/GLES2/gl2.h
     )
     set_tests_properties(tools.gles2_catalog_current PROPERTIES LABELS tools)
+
+    add_test(
+        NAME tools.gles3_catalog_current
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/generate_gles_api.py
+            --idl ${CMAKE_CURRENT_SOURCE_DIR}/data/gles/gles3.json
+            --output ${OGPLAY_GLES3_CATALOG}
+            --check
+            --verify-header
+                ${OGPLAY_ANGLE_SDK_ROOT}/include/GLES3/gl3.h
+    )
+    set_tests_properties(tools.gles3_catalog_current PROPERTIES LABELS tools)
 
     add_test(
         NAME tools.gles1_catalog_current

@@ -2,56 +2,60 @@
 
 ## 目标
 
-按 `docs/design/boundary/04-egl-gles-repair-report.md` 的四个 WU 闭合 Native EGL、
-GLES1 绘制、Java EGL 与 GLES3/选定扩展。
+按 [EGL/GLES 边界修复报告](../../design/boundary/04-egl-gles-repair-report.md) 闭合
+Native EGL、GLES1 绘制、Java EGL 及 API 19 GLES3 调用面。选定扩展清单由
+[ADR-0062](../../adr/media.md#adr-0062) 冻结为空。
 
-## 当前交付
+## 最终交付
 
-- 已追加 [ADR-0061](../../adr/media.md#adr-0061)，以唯一 EGL registry、每 Context 状态和
-  独立 Surface backing 替代旧的进程唯一 Context/Surface 设计。
-- ANGLE lifecycle 已接受明确 client version 与 native share context，并公开仅供 registry
-  使用的 native identity；真实 ANGLE 回归验证两个不同尺寸 pbuffer 的内容隔离及 texture
-  share group 可见性。
-- Native EGL config 正确区分 `EGL_NONE` 与数值零，补齐已支持 surface 的 EGL 1.4
-  查询属性，并让 swap interval 只接受 config 宣告的 0..1。
-- GLES1 normal matrix 使用 modelview 上三阶逆转置；`GL_NORMALIZE`、
-  `GL_RESCALE_NORMAL` 在 fixed shader 中分别控制单位化与比例补偿；真实 ANGLE 像素
-  回归验证关闭、normalize、统一缩放及 rescale 四种结果存在规范要求的差异。
-- Native EGL registry 已为每个 Context/Surface 组合持有真实 ANGLE backing；不共享与
-  share group、Context viewport/GL error、不同尺寸 pbuffer 内容、draw/read 分离、共享创建者
-  销毁后的资源存活及 current 对象延迟销毁均有 guest 定向回归。
-- `eglGetProcAddress` 返回独立稳定 thunk，查询不依赖 current Context，调用时按 guest thread
-  的 ES1/ES2 current Context 转发；直接 ELF import 继续保留 SONAME 语义。
-- 两个真实宿主线程可同时 current 不同 Context；同一 Context 抢占失败不破坏原绑定，释放后
-  可接管。Terminate 对其他线程的 current 对象延迟回收，线程释放后可重新初始化 display。
-- GLES1 `GL_FLAT` 在 CPU 顶点准备阶段把 triangle/strip/fan 展开为独立三角形，并按每个
-  primitive 的最后顶点复制 provoking color/normal；`DrawArrays`、client-index 与 buffer-index
-  `DrawElements` 均走同一转换。`GL_SMOOTH` 保持原生插值路径。
-- 非均匀缩放下的斜法线结果已用独立逆转置数学参考校验；normalize/rescale 开关与
-  GLES1 Context 切换恢复均有真实 ANGLE 回归，GLES2 Context 不受 GLES1 fixed state 污染。
-- Java EGL10 与 API19 EGL14 已通过 managed EGL 冷入口复用 Native EGL registry；wrapper
-  只保存 native handle 映射，current、sticky error、延迟销毁及 teardown 不再另立事实。
-- EGL10/EGL14 均支持真实 pbuffer 与 shared context；EGL14 的数组 overload 校验 offset
-  并只回写目标切片。pixmap、client buffer 与 texture pbuffer 继续由 Native EGL 以规范
-  error 明确拒绝。
-- Java/native 交叉回归在同一 guest thread 观察同一 current context，并通过 Java GLES
-  clear/readback 验证 pbuffer 真实绘制；managed window lifecycle 存在时 pbuffer backing
-  仍保持独立。
+### WU-1 · Native EGL
+
+- [ADR-0061](../../adr/media.md#adr-0061) 定义唯一 EGL registry。每个 Context/Surface
+  组合持有真实 ANGLE backing，Context 状态、Surface 内容和 share group 生命周期分离。
+- EGL config、属性解析、pbuffer、draw/read surface、共享 Context、current 线程所有权、
+  延迟销毁、terminate/reinitialize 及稳定 proc thunk 均按 guest thread 路由。
+- 两个宿主线程可同时绑定不同 Context；同一 Context 不能被并发抢占，释放后可以接管。
+
+### WU-2 · GLES1 绘制
+
+- `GL_FLAT` 将 triangle/strip/fan 展开为独立三角形，并复制每个 primitive 最后顶点的
+  provoking color/normal；arrays、client indices 和 buffer indices 共用该转换。
+- normal matrix 使用 modelview 上三阶逆转置；`GL_NORMALIZE` 与 `GL_RESCALE_NORMAL`
+  分别执行单位化和比例补偿。GLES1 Context 切换恢复 fixed state，GLES2 不受污染。
+
+### WU-3 · Java EGL
+
+- Java EGL10 与 API 19 EGL14 通过 managed 冷入口复用 Native registry；wrapper 只保存
+  native handle identity，current、sticky error、延迟销毁和 teardown 只有一份事实。
+- EGL10/EGL14 支持真实 pbuffer 和 shared context；EGL14 数组 overload 校验 offset 并只
+  回写目标切片。pixmap、client buffer 与 texture pbuffer 以规范 EGL error 明确拒绝。
+- Java/native 交叉调用在同一 guest thread 共享 current Context，并可通过 Java GLES 在
+  pbuffer 上真实绘制和读回。
+
+### WU-4 · GLES3 Native/Java
+
+- 从本地 AOSP 4.4.4 `GLES3/gl3.h` 与 `GLES2/gl2.h` 精确生成 104 项 delta IDL；生成器保留
+  指针方向、二级指针、`GLint64`、`GLuint64`、`GLsync` 及 A32 AAPCS 偶数字槽对齐。
+- EGL config 宣告 ES3 bit，并创建真实 client-version 3 ANGLE Context；104/104 新增 core
+  入口由 `libGLESv2.so` 发布，直接导入与 `eglGetProcAddress` 共用版本路由。
+- 标量、对象名、word-array、字符串、64 位查询、program binary、sync、buffer offset、
+  3D texture、多输出查询和 transform-feedback 名称数组均进入真实 ANGLE。所有 guest
+  指针先完整预检，输出仅在调用成功后提交。
+- `GLsync` 使用 guest handle；map-buffer 使用 `0x78000000` 有界 guest arena，并在
+  flush/unmap 时同步写入，均不向 32 位 guest 暴露 host 指针。
+- 普通 3D texture 按 ES3 unpack alignment、row length、image height 和 skip 状态计算受检
+  搬运范围；shared texture state 支持 3D 与 2D array target。
+- DexVM 从固定 AOSP 签名生成并发布 `android.opengl.GLES30` 常量和 overload surface，
+  复用同一 Native GLES3 catalog 与 managed marshaller。
 
 ## 验证
 
 - `cmake --build --preset windows-msvc --target ogplay_tests`：通过。
-- `ogplay_tests --test-case='*EGL*'`：26/26，623/623 断言通过。
-- `ogplay_tests --test-case='*GLES1*'`：20/20，1624/1624 断言通过。
-- `ogplay_tests --test-case='*GLES2*'`：13/13，737/737 断言通过。
-- `ogplay_tests --test-case='EGL lifecycle*'`：7/7，64/64 断言通过。
-- `ogplay_tests --test-case='ANGLE pbuffer contexts share resources but keep framebuffer content'`：
-  1/1，36/36 断言通过。
-- `ctest -R "GLES1|GLES2|EGL"`：60/60 通过。
-- `ctest -R "WU-3|Java EGL bridge|EGL facade"`：7/7 通过。
+- WU-4 的 GLES1/GLES2/GLES3/EGL、catalog 与三项 architecture 定向集：66/66 通过。
+- 真实 ES3 回归覆盖 VAO、64 位查询、indexed string、sync lifecycle、map-buffer round-trip
+  与 3D texture upload。
+- `git diff --check`：通过。
 
-## 后续 WU
+## 状态
 
-- WU-4 GLES3 104 项、Java GLES30 与选定扩展。
-
-WU-1、WU-2、WU-3 状态：完成。BND-33 总任务仍进行中。
+WU-1、WU-2、WU-3、WU-4 均已完成，BND-33 完成。

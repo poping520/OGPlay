@@ -14,10 +14,11 @@ from typing import Any, Sequence
 
 SCALAR_TYPES = {
     "GLbitfield", "GLboolean", "GLbyte", "GLclampf", "GLenum", "GLfloat",
-    "GLchar", "GLint", "GLintptr", "GLshort", "GLsizei", "GLsizeiptr", "GLubyte",
+    "GLchar", "GLint", "GLint64", "GLintptr", "GLshort", "GLsizei", "GLsizeiptr", "GLsync", "GLubyte",
+    "GLuint64",
     "GLclampx", "GLfixed", "GLuint", "GLushort", "void",
 }
-RETURN_TYPES = SCALAR_TYPES | {"const GLubyte*", "void*"}
+RETURN_TYPES = SCALAR_TYPES | {"const GLubyte*", "GLsync", "void*"}
 DIRECTIONS = {"in", "out", "inout"}
 
 
@@ -36,8 +37,8 @@ def validate_idl(document: Any) -> dict[str, Any]:
         raise IdlError("IDL root must be an object")
     if document.get("schema_version") != 1:
         raise IdlError("schema_version must be 1")
-    if document.get("api") not in {"gles1", "gles1_extensions", "gles2"}:
-        raise IdlError("api must be gles1, gles1_extensions or gles2")
+    if document.get("api") not in {"gles1", "gles1_extensions", "gles2", "gles3"}:
+        raise IdlError("api must be gles1, gles1_extensions, gles2 or gles3")
     if document.get("header_scope", "complete") not in {"complete", "subset"}:
         raise IdlError("header_scope must be complete or subset")
     _require_string(document.get("library"), "library")
@@ -128,12 +129,21 @@ def generate_header(document: dict[str, Any]) -> str:
     for function in functions:
         offset = len(parameters)
         parameters.extend(function["parameters"])
+        abi_words = 0
+        for parameter in function["parameters"]:
+            if parameter["type"] in {"GLint64", "GLuint64"} and not parameter.get("pointer", False):
+                if abi_words % 2:
+                    abi_words += 1
+                abi_words += 2
+            else:
+                abi_words += 1
         function_rows.append(
             "    {" + ", ".join((
                 _cpp_string(function["name"]),
                 _cpp_string(function["return"]),
                 str(offset) + "U",
                 str(len(function["parameters"])) + "U",
+                str(abi_words) + "U",
             )) + "},"
         )
     parameter_rows: list[str] = []
@@ -160,7 +170,8 @@ def generate_header(document: dict[str, Any]) -> str:
         "    std::size_t indirection{};", "    bool nullable{};", "};", "",
         "struct FunctionSpec final {", "    std::string_view name;",
         "    std::string_view return_type;", "    std::size_t parameter_offset{};",
-        "    std::size_t parameter_count{};", "};", "",
+        "    std::size_t parameter_count{};", "    std::size_t abi_word_count{};",
+        "};", "",
         f"inline constexpr std::string_view kApi = {_cpp_string(api)};",
         f"inline constexpr std::string_view kLibrary = {_cpp_string(document['library'])};",
         f"inline constexpr std::array<ParameterSpec, {len(parameters)}> kParameters{{{{",

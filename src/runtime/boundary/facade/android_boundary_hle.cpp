@@ -25,6 +25,7 @@
 #include "ogplay/gles/generated/gles1_catalog.h"
 #include "ogplay/gles/generated/gles1_extensions_catalog.h"
 #include "ogplay/gles/generated/gles2_catalog.h"
+#include "ogplay/gles/generated/gles3_catalog.h"
 #include "ogplay/gles/guest_transfer.h"
 #include "ogplay/gles/supersample.h"
 #include "runtime/boundary/services/graphics_dispatch.h"
@@ -52,6 +53,7 @@
 #include "runtime/boundary/modules/gles1/gles1_query.h"
 #include "runtime/boundary/modules/gles1/gles1_remaining.h"
 #include "runtime/boundary/modules/gles2/gles2_module.h"
+#include "runtime/boundary/modules/gles3/gles3_module.h"
 #include "runtime/boundary/modules/log/log_exports.h"
 #include "runtime/boundary/modules/log/log_module.h"
 #include "runtime/boundary/modules/module_catalog.h"
@@ -104,6 +106,7 @@ public:
                         gles1_legacy_state_, gles1_draw_state_,
                         gles1_dispatch_, gles1_extensions_dispatch_),
           gles2_module_(call_services_, graphics_context_),
+          gles3_module_(call_services_, graphics_context_),
           log_context_{address_space_, options.logger, this,
                        &ServiceRecordFastFault, options.guest_file_owner,
                        options.read_guest_file},
@@ -188,6 +191,7 @@ public:
         MapOpenSlesStaticAbi(address_space_, *open_sles);
         open_sles_module_.MapGuestObjectArena();
         gles1_map_buffer_state_.MapGuestArena(address_space_);
+        gles3_module_.MapGuestArena();
         libdl_override_module_.MapErrorArena();
     }
 
@@ -240,12 +244,13 @@ public:
                                         std::string(name));
         }
         const auto& metadata = gles::DescribeGlesFunction(api, *function);
-        if (arguments.size() != metadata.parameter_count) {
+        if (arguments.size() != metadata.abi_word_count) {
             throw std::invalid_argument("managed GLES argument count does not match catalog: " +
                                         std::string(name));
         }
         if (guest_graphics_retired_.load(std::memory_order_acquire)) return 0U;
-        const std::string_view library = api == gles::GlesApi::gles2
+        const std::string_view library =
+            (api == gles::GlesApi::gles2 || api == gles::GlesApi::gles3)
                                              ? "libGLESv2.so"
                                              : "libGLESv1_CM.so";
         const auto found = std::ranges::find_if(
@@ -515,7 +520,7 @@ private:
     [[nodiscard]] const BoundaryHotEntry* ProcTarget(
         const ProcForwarder& proc, const std::uint64_t thread_id) const {
         const auto version = api_routing_.CurrentVersion(thread_id);
-        if (!version.has_value() || (*version != 1U && *version != 2U)) {
+        if (!version.has_value() || *version < 1U || *version > 3U) {
             return nullptr;
         }
         const auto library = *version == 1U
@@ -617,6 +622,17 @@ private:
                           gles2_module_), ...);
     }
 
+    template <std::size_t... Index>
+    void BindGles3(const BoundaryModuleDescriptor& descriptor,
+                   std::index_sequence<Index...>) {
+        (BindExport<Gles3Module,
+                    &Gles3Module::template Invoke<static_cast<gles::GlesThunkId>(Index)>,
+                    gles::generated::gles3::kFunctions[Index].abi_word_count,
+                    true>(descriptor,
+                          gles::generated::gles3::kFunctions[Index].name,
+                          gles3_module_), ...);
+    }
+
     void SealBindings() {
         fast_router_.Resize(descriptors_.size());
         const auto& catalog = AndroidBoundaryCatalog(AndroidApi::api19);
@@ -654,6 +670,8 @@ private:
         const auto& gles2 = require("libGLESv2.so");
         BindGles2(gles2, std::make_index_sequence<
                               gles::generated::gles2::kFunctions.size()>{});
+        BindGles3(gles2, std::make_index_sequence<
+                              gles::generated::gles3::kFunctions.size()>{});
         const auto& log = require("liblog.so");
 #define OGPLAY_BIND_LOG(name, id, count, method)                                \
         BindExport<LogModule, &LogModule::method, count, false>(                \
@@ -916,6 +934,7 @@ private:
     EglModule egl_module_;
     Gles1Module gles1_module_;
     Gles2Module gles2_module_;
+    Gles3Module gles3_module_;
     std::vector<ProcForwarder> proc_forwarders_;
     LogBoundaryContext log_context_;
     LogModule log_module_;

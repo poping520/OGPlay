@@ -23,6 +23,28 @@ TEST_CASE("generated GLES2 catalog has stable complete lookup") {
     CHECK_FALSE(ogplay::gles::GlesDispatchTable::Find("glMissing"));
 }
 
+TEST_CASE("generated GLES3 delta catalog matches API 19 core additions") {
+    using ogplay::gles::DescribeGlesFunction;
+    using ogplay::gles::FindGlesFunction;
+    using ogplay::gles::GlesApi;
+    using ogplay::gles::GlesFunctionCount;
+
+    CHECK(GlesFunctionCount(GlesApi::gles3) == 104);
+    const auto wait_sync = FindGlesFunction(GlesApi::gles3, "glWaitSync");
+    REQUIRE(wait_sync);
+    const auto wait_info = DescribeGlesFunction(GlesApi::gles3, *wait_sync);
+    CHECK(wait_info.parameter_count == 3);
+    CHECK(wait_info.abi_word_count == 4);
+    CHECK(wait_info.pointer_parameter_count == 0);
+
+    const auto uniform_indices =
+        FindGlesFunction(GlesApi::gles3, "glGetUniformIndices");
+    REQUIRE(uniform_indices);
+    CHECK(DescribeGlesFunction(GlesApi::gles3, *uniform_indices)
+              .pointer_parameter_count == 2);
+    CHECK_FALSE(FindGlesFunction(GlesApi::gles3, "glClear"));
+}
+
 TEST_CASE("GLES2 dispatch invokes only an explicitly bound exact handler") {
     ogplay::gles::GlesDispatchTable dispatch;
     const auto clear = ogplay::gles::GlesDispatchTable::Find("glClear");

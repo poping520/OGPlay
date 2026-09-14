@@ -9,13 +9,15 @@ from pathlib import Path
 
 from dexvm_api19_surface import parse_java, split_top_level, strip_source
 
-CLASSES = ("GLES10", "GLES10Ext", "GLES11", "GLES11Ext", "GLES20",
+CLASSES = ("GLES10", "GLES10Ext", "GLES11", "GLES11Ext", "GLES20", "GLES30",
            "GLUtils", "GLU")
 
 
-def constant_values(text: str) -> dict[str, int]:
+def constant_values(text: str,
+                    inherited: dict[str, int] | None = None) -> dict[str, int]:
     clean = strip_source(text)
-    values: dict[str, int] = {}
+    values: dict[str, int] = dict(inherited or {})
+    declared: set[str] = set()
     declarations = re.findall(
         r"public\s+static\s+final\s+int\s+([^;]+);", clean)
     pending: list[tuple[str, str]] = []
@@ -23,7 +25,9 @@ def constant_values(text: str) -> dict[str, int]:
         for variable in split_top_level(declaration):
             if "=" in variable:
                 name, expression = variable.split("=", 1)
-                pending.append((name.strip(), expression.strip()))
+                name = name.strip()
+                declared.add(name)
+                pending.append((name, expression.strip()))
     while pending:
         next_pending: list[tuple[str, str]] = []
         progressed = False
@@ -44,7 +48,7 @@ def constant_values(text: str) -> dict[str, int]:
             names = ", ".join(name for name, _ in next_pending)
             raise ValueError(f"cannot evaluate Java GLES constants: {names}")
         pending = next_pending
-    return values
+    return {name: values[name] for name in declared}
 
 
 def render(source_root: Path) -> str:
@@ -61,6 +65,7 @@ def render(source_root: Path) -> str:
         "struct MethodSpec final { const char* name; const char* descriptor; };",
         "struct ConstantSpec final { const char* name; std::int32_t value; };",
     ]
+    inherited_constants: dict[str, int] = {}
     for class_name in CLASSES:
         path = source_root / "android" / "opengl" / f"{class_name}.java"
         text = path.read_text(encoding="utf-8")
@@ -69,7 +74,8 @@ def render(source_root: Path) -> str:
                    if "public" in method["modifiers"] and
                    "static" in method["modifiers"] and
                    method["name"] != "<init>"]
-        values = constant_values(text)
+        values = constant_values(text, inherited_constants)
+        inherited_constants.update(values)
         lines.append(f"inline constexpr MethodSpec k{class_name}Methods[] = {{")
         for method in methods:
             lines.append(f'    {{"{method["name"]}", "{method["descriptor"]}"}},')

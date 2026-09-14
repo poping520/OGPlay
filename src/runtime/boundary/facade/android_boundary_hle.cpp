@@ -137,6 +137,11 @@ public:
             [this](const std::string_view operation) -> gles::AngleFrame& {
                 return RequireFrame(operation);
             });
+        detail::BindAndroidBoundaryGles1FramebufferObject(
+            gles1_extensions_dispatch_, gles1_state_, address_space_,
+            [this](const std::string_view operation) -> gles::AngleFrame& {
+                return RequireFrame(operation);
+            });
         detail::BindAndroidBoundaryGles1Queries(
             gles1_dispatch_, gles1_query_strings_,
             [this](const std::uint32_t parameter) {
@@ -154,6 +159,7 @@ public:
                         "GL_IMG_texture_compression_pvrtc "
                         "GL_OES_matrix_palette "
                         "GL_OES_mapbuffer "
+                        "GL_OES_framebuffer_object "
                         "GL_OES_rgb8_rgba8 "};
                     const auto extensions = GuestGlesExtensions(RequireFrame("glGetString"));
                     if (std::ranges::find(extensions, "GL_OES_EGL_image") != extensions.end())

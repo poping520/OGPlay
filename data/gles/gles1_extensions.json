@@ -4,9 +4,12 @@
   "library": "libGLESv1_CM.so",
   "header_scope": "subset",
   "functions": [
+    {"name":"glBindFramebufferOES","thunk_id":0,"return":"void","parameters":[{"name":"target","type":"GLenum"},{"name":"framebuffer","type":"GLuint"}]},
+    {"name":"glBindRenderbufferOES","thunk_id":1,"return":"void","parameters":[{"name":"target","type":"GLenum"},{"name":"renderbuffer","type":"GLuint"}]},
+    {"name":"glCheckFramebufferStatusOES","thunk_id":2,"return":"GLenum","parameters":[{"name":"target","type":"GLenum"}]},
     {
       "name": "glCurrentPaletteMatrixOES",
-      "thunk_id": 0,
+      "thunk_id": 3,
       "return": "void",
       "parameters": [
         {
@@ -15,9 +18,16 @@
         }
       ]
     },
+    {"name":"glDeleteFramebuffersOES","thunk_id":4,"return":"void","parameters":[{"name":"n","type":"GLsizei"},{"name":"framebuffers","type":"GLuint","pointer":true,"direction":"in","nullable":false,"count":"arg0"}]},
+    {"name":"glDeleteRenderbuffersOES","thunk_id":5,"return":"void","parameters":[{"name":"n","type":"GLsizei"},{"name":"renderbuffers","type":"GLuint","pointer":true,"direction":"in","nullable":false,"count":"arg0"}]},
+    {"name":"glFramebufferRenderbufferOES","thunk_id":6,"return":"void","parameters":[{"name":"target","type":"GLenum"},{"name":"attachment","type":"GLenum"},{"name":"renderbuffertarget","type":"GLenum"},{"name":"renderbuffer","type":"GLuint"}]},
+    {"name":"glFramebufferTexture2DOES","thunk_id":7,"return":"void","parameters":[{"name":"target","type":"GLenum"},{"name":"attachment","type":"GLenum"},{"name":"textarget","type":"GLenum"},{"name":"texture","type":"GLuint"},{"name":"level","type":"GLint"}]},
+    {"name":"glGenFramebuffersOES","thunk_id":8,"return":"void","parameters":[{"name":"n","type":"GLsizei"},{"name":"framebuffers","type":"GLuint","pointer":true,"direction":"out","nullable":false,"count":"arg0"}]},
+    {"name":"glGenRenderbuffersOES","thunk_id":9,"return":"void","parameters":[{"name":"n","type":"GLsizei"},{"name":"renderbuffers","type":"GLuint","pointer":true,"direction":"out","nullable":false,"count":"arg0"}]},
+    {"name":"glGenerateMipmapOES","thunk_id":10,"return":"void","parameters":[{"name":"target","type":"GLenum"}]},
     {
       "name": "glGetBufferPointervOES",
-      "thunk_id": 3,
+      "thunk_id": 11,
       "return": "void",
       "parameters": [
         {
@@ -39,15 +49,19 @@
         }
       ]
     },
+    {"name":"glGetFramebufferAttachmentParameterivOES","thunk_id":12,"return":"void","parameters":[{"name":"target","type":"GLenum"},{"name":"attachment","type":"GLenum"},{"name":"pname","type":"GLenum"},{"name":"params","type":"GLint","pointer":true,"direction":"out","nullable":false,"count":"1"}]},
+    {"name":"glGetRenderbufferParameterivOES","thunk_id":13,"return":"void","parameters":[{"name":"target","type":"GLenum"},{"name":"pname","type":"GLenum"},{"name":"params","type":"GLint","pointer":true,"direction":"out","nullable":false,"count":"1"}]},
+    {"name":"glIsFramebufferOES","thunk_id":14,"return":"GLboolean","parameters":[{"name":"framebuffer","type":"GLuint"}]},
+    {"name":"glIsRenderbufferOES","thunk_id":15,"return":"GLboolean","parameters":[{"name":"renderbuffer","type":"GLuint"}]},
     {
       "name": "glLoadPaletteFromModelViewMatrixOES",
-      "thunk_id": 6,
+      "thunk_id": 16,
       "return": "void",
       "parameters": []
     },
     {
       "name": "glMapBufferOES",
-      "thunk_id": 4,
+      "thunk_id": 17,
       "return": "void*",
       "parameters": [
         {
@@ -62,7 +76,7 @@
     },
     {
       "name": "glMatrixIndexPointerOES",
-      "thunk_id": 1,
+      "thunk_id": 18,
       "return": "void",
       "parameters": [
         {
@@ -87,9 +101,10 @@
         }
       ]
     },
+    {"name":"glRenderbufferStorageOES","thunk_id":19,"return":"void","parameters":[{"name":"target","type":"GLenum"},{"name":"internalformat","type":"GLenum"},{"name":"width","type":"GLsizei"},{"name":"height","type":"GLsizei"}]},
     {
       "name": "glUnmapBufferOES",
-      "thunk_id": 5,
+      "thunk_id": 20,
       "return": "GLboolean",
       "parameters": [
         {
@@ -100,7 +115,7 @@
     },
     {
       "name": "glWeightPointerOES",
-      "thunk_id": 2,
+      "thunk_id": 21,
       "return": "void",
       "parameters": [
         {

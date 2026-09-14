@@ -419,6 +419,99 @@ void BindAndroidBoundaryGles1MapBuffer(
         });
 }
 
+void BindAndroidBoundaryGles1FramebufferObject(
+    gles::GlesDispatchTable& extensions, AndroidBoundaryGles1State& core,
+    memory::AddressSpace& address_space,
+    AndroidBoundaryFrameResolver require_frame) {
+    if (!require_frame) throw std::invalid_argument("GLES1 FBO frame resolver is missing");
+    auto bind_names = [&address_space, require_frame](const char* name, bool framebuffer) {
+        return [&address_space, require_frame, name, framebuffer](const auto a,
+                                                                  const std::uint64_t tid) {
+            const auto count = Gles1ResourceCount(a[0], name);
+            auto output = gles::GuestBuffer::Prepare(
+                address_space, memory::GuestAddress{a[1]}, count * 4U,
+                gles::GuestTransferDirection::output, false, tid);
+            const auto names = framebuffer ? require_frame(name).GenerateFramebuffers(count)
+                                           : require_frame(name).GenerateRenderbuffers(count);
+            WriteGuestNames(output, names);
+            return 0U;
+        };
+    };
+    extensions.Bind("glGenFramebuffersOES", bind_names("glGenFramebuffersOES", true));
+    extensions.Bind("glGenRenderbuffersOES", bind_names("glGenRenderbuffersOES", false));
+    auto delete_names = [&address_space, &core, require_frame](const char* name, bool framebuffer) {
+        return [&address_space, &core, require_frame, name, framebuffer](const auto a,
+                                                                         const std::uint64_t tid) {
+            const auto count = Gles1ResourceCount(a[0], name);
+            const auto input = gles::GuestBuffer::Prepare(
+                address_space, memory::GuestAddress{a[1]}, count * 4U,
+                gles::GuestTransferDirection::input, false, tid);
+            const auto names = ReadGuestNames(input);
+            if (framebuffer) {
+                require_frame(name).DeleteFramebuffers(names);
+                core.Shared().DeleteFramebuffers(names);
+            } else {
+                require_frame(name).DeleteRenderbuffers(names);
+                core.Shared().DeleteRenderbuffers(names);
+            }
+            return 0U;
+        };
+    };
+    extensions.Bind("glDeleteFramebuffersOES", delete_names("glDeleteFramebuffersOES", true));
+    extensions.Bind("glDeleteRenderbuffersOES", delete_names("glDeleteRenderbuffersOES", false));
+    extensions.Bind("glBindFramebufferOES", [&core, require_frame](const auto a, const auto) {
+        core.Shared().ValidateFramebufferTarget(a[0]);
+        require_frame("glBindFramebufferOES").BindFramebuffer(a[0], a[1]);
+        core.Shared().BindFramebuffer(a[0], a[1]); return 0U;
+    });
+    extensions.Bind("glBindRenderbufferOES", [&core, require_frame](const auto a, const auto) {
+        core.Shared().ValidateRenderbufferTarget(a[0]);
+        require_frame("glBindRenderbufferOES").BindRenderbuffer(a[0], a[1]);
+        core.Shared().BindRenderbuffer(a[0], a[1]); return 0U;
+    });
+    extensions.Bind("glIsFramebufferOES", [require_frame](const auto a, const auto) {
+        return require_frame("glIsFramebufferOES").IsFramebuffer(a[0]) ? 1U : 0U;
+    });
+    extensions.Bind("glIsRenderbufferOES", [require_frame](const auto a, const auto) {
+        return require_frame("glIsRenderbufferOES").IsRenderbuffer(a[0]) ? 1U : 0U;
+    });
+    extensions.Bind("glCheckFramebufferStatusOES", [require_frame](const auto a, const auto) {
+        return require_frame("glCheckFramebufferStatusOES").CheckFramebufferStatus(a[0]);
+    });
+    extensions.Bind("glRenderbufferStorageOES", [require_frame](const auto a, const auto) {
+        require_frame("glRenderbufferStorageOES").RenderbufferStorage(
+            a[0], a[1], std::bit_cast<std::int32_t>(a[2]), std::bit_cast<std::int32_t>(a[3]));
+        return 0U;
+    });
+    extensions.Bind("glFramebufferRenderbufferOES", [require_frame](const auto a, const auto) {
+        require_frame("glFramebufferRenderbufferOES").FramebufferRenderbuffer(a[0], a[1], a[2], a[3]);
+        return 0U;
+    });
+    extensions.Bind("glFramebufferTexture2DOES", [require_frame](const auto a, const auto) {
+        require_frame("glFramebufferTexture2DOES").FramebufferTexture2D(
+            a[0], a[1], a[2], a[3], std::bit_cast<std::int32_t>(a[4])); return 0U;
+    });
+    extensions.Bind("glGenerateMipmapOES", [require_frame](const auto a, const auto) {
+        require_frame("glGenerateMipmapOES").GenerateMipmap(a[0]); return 0U;
+    });
+    auto bind_query = [&address_space, require_frame](const char* name, bool framebuffer) {
+        return [&address_space, require_frame, name, framebuffer](const auto a,
+                                                                  const std::uint64_t tid) {
+            auto output = gles::GuestBuffer::Prepare(
+                address_space, memory::GuestAddress{a[framebuffer ? 3U : 2U]}, 4U,
+                gles::GuestTransferDirection::output, false, tid);
+            const auto value = framebuffer
+                ? require_frame(name).GetFramebufferAttachmentParameter(a[0], a[1], a[2])
+                : require_frame(name).GetRenderbufferParameter(a[0], a[1]);
+            const std::array values{value}; WriteGuestIntegers(output, values); return 0U;
+        };
+    };
+    extensions.Bind("glGetFramebufferAttachmentParameterivOES",
+                    bind_query("glGetFramebufferAttachmentParameterivOES", true));
+    extensions.Bind("glGetRenderbufferParameterivOES",
+                    bind_query("glGetRenderbufferParameterivOES", false));
+}
+
 void BindAndroidBoundaryGles1Queries(
     gles::GlesDispatchTable& dispatch,
     AndroidBoundaryGles1QueryStrings& strings,

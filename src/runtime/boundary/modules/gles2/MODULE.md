@@ -7,3 +7,5 @@
 查询在 native 写入前预检准确的输出范围。uniform 查询从真实共享 program 获取宽度；
 program/shader 查询保留 GL error，允许可空的 info-log length 指针。测试：integration
 `GLES2*`、`BND34 ES3*`。扩展查询采用 graphics service 的统一清单。
+ES3 Context 复用的 glVertexAttribPointer 接受 HALF_FLOAT、INT/UNSIGNED_INT 与 packed
+2_10_10_10 类型；packed 类型要求 size=4，ES2 Context 仍保持原枚举范围。

@@ -991,7 +991,8 @@ dx::IntrinsicHandler EglTerminateHandler(const Context& context) {
 dx::IntrinsicHandler GlGetStringHandler(const Context& context) {
     return [context](dx::IntrinsicContext& call) {
         const auto parameter = static_cast<std::uint32_t>(call.arguments[0].AsInt());
-        if (parameter != 0x1F00 && parameter != 0x1F01 && parameter != 0x1F02 && parameter != 0x1F03) {
+        if (parameter != 0x1F00 && parameter != 0x1F01 && parameter != 0x1F02 &&
+            parameter != 0x1F03 && parameter != 0x8B8C) {
             Record(call, "dexvm.gl10.glGetString." + std::to_string(parameter));
             throw std::runtime_error("GL10.glGetString parameter is unsupported");
         }
@@ -1050,6 +1051,74 @@ dx::IntrinsicHandler JavaGlesHandler(const Context& context,
             descriptor = std::move(descriptor)](dx::IntrinsicContext& call) {
         if (name == "glGetString") return GlGetStringHandler(context)(call);
         if (context->session == nullptr) ModelFailure(call, "guest session is absent");
+        if (name == "glGetStringi" && descriptor == "(II)Ljava/lang/String;") {
+            const std::array args{call.arguments[0].cat1, call.arguments[1].cat1};
+            if (context->session->InvokeManagedGles(api, name, args) == 0U)
+                return dx::VmValue::Ref(dx::VmObjectRef{});
+            std::istringstream stream(context->session->ManagedGlString(0x1F03U));
+            std::string extension;
+            for (std::int32_t index = 0; index <= call.arguments[1].AsInt(); ++index) {
+                if (!(stream >> extension)) {
+                    return dx::VmValue::Ref(dx::VmObjectRef{});
+                }
+            }
+            return MakeString(call, extension);
+        }
+        if (name == "glFenceSync" && descriptor == "(II)J") {
+            const std::array args{call.arguments[0].cat1, call.arguments[1].cat1};
+            return dx::VmValue::Long(context->session->InvokeManagedGles(
+                api, name, args));
+        }
+        if (name == "glMapBufferRange" && descriptor == "(IIII)Ljava/nio/Buffer;") {
+            const auto length = call.arguments[2].AsInt();
+            const std::array args{call.arguments[0].cat1, call.arguments[1].cat1,
+                                  call.arguments[2].cat1, call.arguments[3].cat1};
+            const auto address = context->session->InvokeManagedGles(api, name, args);
+            if (address == 0U) return dx::VmValue::Ref(dx::VmObjectRef{});
+            const auto buffer = call.vm.NewIntrinsicInstance("Ljava/nio/DirectByteBuffer;");
+            call.vm.NIO().WrapDirect(call.vm.Model().ToIdentity(buffer),
+                                     memory::GuestAddress{address}, length);
+            return dx::VmValue::Ref(buffer);
+        }
+        if (name == "glTransformFeedbackVaryings" &&
+            descriptor == "(I[Ljava/lang/String;I)V") {
+            const auto array = call.arguments[1].ref;
+            if (!array.IsValid()) throw dx::VmJavaThrow{
+                "Ljava/lang/NullPointerException;", "transform feedback varyings are null"};
+            const auto count = call.vm.Model().ArrayLength(array);
+            std::vector<std::uint32_t> pointers(static_cast<std::size_t>(count));
+            std::function<std::uint32_t(std::int32_t)> marshal_names;
+            marshal_names = [&](const std::int32_t index) -> std::uint32_t {
+                if (index == count) {
+                    std::vector<std::byte> bytes(pointers.size() * sizeof(std::uint32_t));
+                    for (std::size_t i = 0; i < pointers.size(); ++i)
+                        for (std::size_t byte = 0; byte < 4U; ++byte)
+                            bytes[i * 4U + byte] = static_cast<std::byte>(pointers[i] >> (byte * 8U));
+                    return context->session->NIO().WithTemporaryGuestMemory(
+                        bytes, false, [&](const memory::GuestAddress address) {
+                            const std::array args{
+                                call.arguments[0].cat1, static_cast<std::uint32_t>(count),
+                                address.Value(), call.arguments[2].cat1};
+                            return context->session->InvokeManagedGles(
+                                api, name, args);
+                        });
+                }
+                const auto string = call.vm.Model().GetObjectElement(array, index);
+                if (!string.IsValid()) throw dx::VmJavaThrow{
+                    "Ljava/lang/NullPointerException;", "transform feedback varying is null"};
+                const auto text = call.vm.StringUtf8(string);
+                std::vector<std::byte> bytes(text.size() + 1U);
+                for (std::size_t i = 0; i < text.size(); ++i)
+                    bytes[i] = static_cast<std::byte>(text[i]);
+                return context->session->NIO().WithTemporaryGuestMemory(
+                    bytes, false, [&](const memory::GuestAddress address) {
+                        pointers[static_cast<std::size_t>(index)] = address.Value();
+                        return marshal_names(index + 1);
+                    });
+            };
+            static_cast<void>(marshal_names(0));
+            return dx::VmValue::Void();
+        }
         if (name == "glShaderSource" && descriptor == "(ILjava/lang/String;)V") {
             auto text = call.vm.StringUtf8(call.arguments[1].ref);
             std::vector<std::byte> bytes;

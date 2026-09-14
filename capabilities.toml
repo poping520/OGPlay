@@ -628,12 +628,12 @@ note = "M4 已在三平台完成真实 pbuffer 生命周期、guest 边界、SDL
 [gles.egl_lifecycle]
 status = "partial"
 test = "tests/gles/egl_lifecycle_tests.cpp; tests/gles/angle_frame_tests.cpp"
-note = "M4 完成可注入生命周期、精确 EGL 错误和逆序回滚；M5 WU-0286 为 pbuffer EGL config 请求并验证 RGBA8+D24S8；2026-09-14 native boundary 增加 context/surface 对象表、配置属性匹配、client version/share-root、线程 current 占用、延迟销毁、pbuffer 实际尺寸一致性及按 current Context client version 的 proc-address GLES family 路由；BND-32 补齐 34/34 EGL 1.4 core 名称，wait 同步当前 ANGLE context，范围外 pixmap/OpenVG client buffer/texture-capable pbuffer 明确失败。宿主 GL execution lane 仍串行，完整窗口系统交换与并行 context 调度未实现，因此保持 partial"
+note = "M4 完成可注入生命周期、精确 EGL 错误和逆序回滚；M5 WU-0286 为 pbuffer EGL config 请求并验证 RGBA8+D24S8；2026-09-14 BND-33 WU-1 将对象表接到每 Context/Surface 的真实 ANGLE backing，闭合 native share group、独立 pbuffer、draw/read、Context 状态、稳定 proc thunk、双宿主线程 current/接管、延迟销毁及 Terminate/重初始化；BND-32 补齐 34/34 EGL 1.4 core 名称。完整窗口系统交换仍未实现，因此保持 partial"
 
 [runtime.egl_api19_base_boundary]
 status = "complete"
 test = "tests/runtime/boundary/integration/android_boundary_hle_tests.cpp; runtime.android_link_preflight; runtime.bionic_virtual_so_late_import; architecture.boundary_hot_path"
-note = "BND-17 在 direct {fn,EglModule*} 路径增加 13 个 API19 基础 EGL 入口；per-guest-thread sticky error/current/API、稳定 query strings、pbuffer metadata 与 sealed public thunk proc resolver 均有 focused gate；2026-09-14 proc resolver 按 current EGLContext client version 选择 GLES1/GLES2 family，解绑后不猜测版本；BND-32 发布完整 34 个 EGL 1.4 core 入口，未支持的 pixmap/OpenVG/texture-pbuffer 路径返回明确 EGL error"
+note = "BND-17 在 direct {fn,EglModule*} 路径增加 13 个 API19 基础 EGL 入口；per-guest-thread sticky error/current/API、稳定 query strings 与 pbuffer metadata 均有 focused gate；BND-33 的独立稳定 proc thunk 在调用时按 current EGLContext client version 转发 GLES1/GLES2，查询无需 current，直接 ELF import 保留 SONAME 语义；BND-32 发布完整 34 个 EGL 1.4 core 入口，未支持的 pixmap/OpenVG/texture-pbuffer 路径返回明确 EGL error"
 
 [gles.idl_codegen]
 status = "partial"
@@ -1023,7 +1023,7 @@ note = "M5 WU-0272 闭合 legacy 状态；WU-0284 增加格式敏感 texture env
 [runtime.gles1_client_array_draw]
 status = "partial"
 test = "tests/runtime/boundary/integration/android_boundary_hle_tests.cpp; bounded exact-APK one-frame run-apk smoke"
-note = "M5 WU-0274 闭合目标 client-array/draw 并获得首帧；WU-0285 支持两个启用单元逐级 draw，并让 lighting alpha 遵循 diffuse material alpha；WU-0291 复用 client/index 暂存并以验证候选原子提交 pointer 状态；BND-27 对单 stage 唯一错位坐标数组作受检回退并拒绝多 stage 共享；BND-30 让 LIGHT0..7、specular/shininess、spot/衰减、双面材质及 color-material 进入 fixed shader。仍限两个 stage，normal matrix 仍为近似"
+note = "M5 WU-0274 闭合目标 client-array/draw 并获得首帧；WU-0285 支持两个启用单元逐级 draw，并让 lighting alpha 遵循 diffuse material alpha；WU-0291 复用 client/index 暂存并以验证候选原子提交 pointer 状态；BND-27 对单 stage 唯一错位坐标数组作受检回退并拒绝多 stage 共享；BND-30 让 LIGHT0..7、specular/shininess、spot/衰减、双面材质及 color-material 进入 fixed shader。BND-33 将 normal matrix 修正为 modelview 上三阶逆转置，并让 GL_NORMALIZE/GL_RESCALE_NORMAL 控制法线长度。仍限两个 stage，GL_FLAT provoking-vertex 光栅语义尚未闭合"
 
 [runtime.gles1_texture_coordinate_resolution]
 status = "complete"

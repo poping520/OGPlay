@@ -55,8 +55,9 @@ public:
 
     ogplay::gles::EglHandle CreateContext(
         const ogplay::gles::EglHandle, const ogplay::gles::EglHandle,
-        const int) override {
+        const int, const ogplay::gles::EglHandle share_context) override {
         calls.emplace_back("context");
+        last_share_context = share_context;
         return fail_at_ == FailAt::context ? 0 : kContext;
     }
 
@@ -103,6 +104,7 @@ public:
     static constexpr ogplay::gles::EglHandle kSurface = 40;
     static constexpr std::uint32_t kError = 0x3001;
     std::vector<std::string> calls;
+    ogplay::gles::EglHandle last_share_context{};
 
 private:
     FailAt fail_at_;
@@ -154,6 +156,17 @@ TEST_CASE("EGL lifecycle move transfers sole cleanup responsibility") {
         CHECK(second.IsCurrent());
     }
     CHECK(std::count(api.calls.begin(), api.calls.end(), "terminate") == 1);
+}
+
+TEST_CASE("EGL lifecycle forwards client version and share context") {
+    FakeEglApi api;
+    auto lifecycle = ogplay::gles::EglLifecycle::CreatePbuffer(
+        api, kBackend, 8, 6, 1, 0x1234U);
+    CHECK(lifecycle.Info().client_version == 1);
+    CHECK(lifecycle.NativeDisplay() == FakeEglApi::kDisplay);
+    CHECK(lifecycle.NativeContext() == FakeEglApi::kContext);
+    CHECK(lifecycle.NativeSurface() == FakeEglApi::kSurface);
+    CHECK(api.last_share_context == 0x1234U);
 }
 
 TEST_CASE("EGL lifecycle explicitly releases and rebinds currency") {

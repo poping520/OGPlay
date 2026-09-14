@@ -5,12 +5,16 @@
 #include <map>
 #include <mutex>
 #include <optional>
+#include <memory>
+#include <thread>
 #include <span>
 
 #include "ogplay/runtime/boundary/boundary_symbol.h"
 #include "runtime/boundary/core/a32_call_frame.h"
 #include "runtime/boundary/core/boundary_binding.h"
+#include "runtime/boundary/core/boundary_symbols.h"
 #include "runtime/boundary/modules/egl/egl_exports.h"
+#include "runtime/boundary/modules/gles1/gles1_dispatch.h"
 #include "runtime/boundary/services/graphics_boundary_context.h"
 
 namespace ogplay::runtime {
@@ -19,6 +23,8 @@ struct EglBoundaryContext final {
     GraphicsBoundaryContext& graphics;
     GlApiRouting& api_routing;
     std::span<const BionicHleSymbol> symbols;
+    std::span<const detail::HleThunkDescriptor> descriptors;
+    detail::AndroidBoundaryGles1State& gles1_state;
 };
 
 class EglModule final {
@@ -27,6 +33,9 @@ public:
               EglBoundaryContext& context) noexcept;
     [[nodiscard]] BoundaryCallServices& CallServices() noexcept;
     void RetireGuestGraphics() noexcept;
+    [[nodiscard]] gles::AngleFrame* CurrentFrameForHostThread(
+        std::thread::id host_thread, std::string_view operation = {});
+    void ActivateStateForHostThread(std::thread::id host_thread);
 
 #define OGPLAY_DECLARE_EGL(name, id, count, method) \
     std::uint32_t method(const A32CallFrame& call);
@@ -49,6 +58,12 @@ private:
         std::uint32_t client_version{2U};
         std::uint32_t share_context{};
         std::optional<std::uint64_t> current_thread;
+        std::optional<std::thread::id> current_host_thread;
+        std::uint32_t current_draw_surface{};
+        std::uint32_t current_bound_surface{};
+        std::map<std::uint32_t, std::unique_ptr<gles::AngleFrame>> frames;
+        GuestGlContext guest_state;
+        std::unique_ptr<detail::AndroidBoundaryGles1MatrixState> gles1_matrices;
         bool destroy_pending{};
     };
 
@@ -85,6 +100,7 @@ private:
     bool strings_mapped_{};
     std::uint32_t next_surface_{3U};
     std::uint32_t next_context_{4U};
+    std::uint32_t active_shadow_context_{};
     std::atomic<bool> guest_graphics_retired_{false};
 };
 

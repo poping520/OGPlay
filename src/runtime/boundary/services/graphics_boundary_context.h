@@ -30,6 +30,7 @@ struct GraphicsBoundaryContext final {
     std::optional<std::thread::id>& gl_owner;
     bool& managed_surface;
     FrameService& frames;
+    std::mutex& execution_mutex;
     void* owner{};
     gles::AngleFrame& (*require_frame)(void*, std::string_view){};
     void (*initialize_defaults)(void*){};
@@ -43,6 +44,8 @@ struct GraphicsBoundaryContext final {
                                 std::uint64_t, std::string_view){};
     std::vector<std::string> (*read_shader_sources)(
         void*, const std::array<std::uint32_t, 4>&, std::uint64_t){};
+    gles::AngleFrame* (*current_frame)(void*, std::string_view){};
+    void (*activate_context)(void*){};
 
     [[nodiscard]] gles::AngleFrame& RequireFrame(
         const std::string_view operation) const {
@@ -72,6 +75,14 @@ struct GraphicsBoundaryContext final {
         const std::array<std::uint32_t, 4>& arguments,
         const std::uint64_t thread_id) const {
         return read_shader_sources(owner, arguments, thread_id);
+    }
+    [[nodiscard]] gles::AngleFrame* CurrentFrame(
+        const std::string_view operation = {}) const {
+        return current_frame == nullptr ? nullptr
+                                        : current_frame(owner, operation);
+    }
+    void ActivateCurrentContext() const {
+        if (activate_context != nullptr) activate_context(owner);
     }
 };
 

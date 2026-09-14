@@ -113,3 +113,37 @@ TEST_CASE("ANGLE uniform discovery accepts OES texture 3D samplers") {
     CHECK(uniforms.front().location ==
           frame.GetUniformLocation(program, "texture"));
 }
+
+TEST_CASE("ANGLE pbuffer contexts share resources but keep framebuffer content") {
+    if (!ogplay::gles::IsNativeAngleEglAvailable()) return;
+    const ogplay::gles::AngleBackend backend{
+        kNativeRenderer, ogplay::gles::AngleDevice::hardware};
+    auto first = ogplay::gles::AngleFrame::CreatePbuffer(backend, 4, 3);
+    const auto textures = first.GenerateTextures(1U);
+    REQUIRE(textures.size() == 1U);
+    first.BindTexture(0x0DE1U, textures.front());
+    first.ClearColor(1.0F, 0.0F, 0.0F, 1.0F);
+    first.Clear(0x00004000U);
+    first.ReleaseCurrent();
+
+    auto second = ogplay::gles::AngleFrame::CreatePbuffer(
+        backend, 2, 2, 2, first.NativeContext());
+    CHECK(second.IsTexture(textures.front()));
+    second.ClearColor(0.0F, 1.0F, 0.0F, 1.0F);
+    second.Clear(0x00004000U);
+    const auto green = second.ReadRgba8();
+    second.ReleaseCurrent();
+
+    first.BindCurrentOnCallingThread();
+    const auto red = first.ReadRgba8();
+    REQUIRE(red.size() == 4U * 3U * 4U);
+    REQUIRE(green.size() == 2U * 2U * 4U);
+    for (std::size_t offset = 0; offset < red.size(); offset += 4U) {
+        CHECK(red[offset] == 255U);
+        CHECK(red[offset + 1U] == 0U);
+    }
+    for (std::size_t offset = 0; offset < green.size(); offset += 4U) {
+        CHECK(green[offset] == 0U);
+        CHECK(green[offset + 1U] == 255U);
+    }
+}

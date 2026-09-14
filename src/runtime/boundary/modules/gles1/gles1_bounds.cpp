@@ -52,6 +52,8 @@ std::uint32_t Gles1Module::InvokeBounds(
     const std::uint32_t type, const std::int32_t stride,
     const std::uint32_t pointer, const std::int32_t count,
     const std::string_view operation) {
+    std::scoped_lock execution_lock(graphics_.execution_mutex);
+    graphics_.ActivateCurrentContext();
     try {
         auto next = draw_state_.PreparePointer(
             array, client_texture, size, type, stride, pointer,

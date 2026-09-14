@@ -45,7 +45,8 @@ public:
     virtual bool BindOpenGlesApi() = 0;
     [[nodiscard]] virtual EglHandle CreateContext(EglHandle display,
                                                   EglHandle config,
-                                                  int client_version) = 0;
+                                                  int client_version,
+                                                  EglHandle share_context) = 0;
     [[nodiscard]] virtual EglHandle CreatePbufferSurface(
         EglHandle display, EglHandle config, std::uint32_t width,
         std::uint32_t height) = 0;
@@ -73,7 +74,9 @@ class EglLifecycle final {
 public:
     static EglLifecycle CreatePbuffer(EglApi& api, AngleBackend backend,
                                       std::uint32_t width,
-                                      std::uint32_t height);
+                                      std::uint32_t height,
+                                      int client_version = 2,
+                                      EglHandle share_context = 0);
 
     ~EglLifecycle();
     EglLifecycle(const EglLifecycle&) = delete;
@@ -83,6 +86,9 @@ public:
 
     [[nodiscard]] const EglContextInfo& Info() const noexcept;
     [[nodiscard]] bool IsCurrent() const noexcept;
+    [[nodiscard]] EglHandle NativeDisplay() const noexcept;
+    [[nodiscard]] EglHandle NativeContext() const noexcept;
+    [[nodiscard]] EglHandle NativeSurface() const noexcept;
     void BindCurrentOnCallingThread();
     void ReleaseCurrent();
 

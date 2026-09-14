@@ -53,7 +53,9 @@ class AngleFrame final {
 public:
     static AngleFrame CreatePbuffer(AngleBackend backend,
                                     std::uint32_t width,
-                                    std::uint32_t height);
+                                    std::uint32_t height,
+                                    int client_version = 2,
+                                    EglHandle share_context = 0);
 
     ~AngleFrame();
     AngleFrame(const AngleFrame&) = delete;
@@ -63,6 +65,7 @@ public:
 
     void BindCurrentOnCallingThread();
     void ReleaseCurrent();
+    [[nodiscard]] EglHandle NativeContext() const noexcept;
 
     void Viewport(std::int32_t x, std::int32_t y,
                   std::int32_t width, std::int32_t height);

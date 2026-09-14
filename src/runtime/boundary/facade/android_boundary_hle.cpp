@@ -89,13 +89,15 @@ public:
           graphics_context_{
               backend_, layout_, gl_context_, api_routing_, gles_dispatch_,
               angle_frame_, gl_owner_,
-              managed_surface_, frame_service_,
+              managed_surface_, frame_service_, graphics_execution_mutex_,
               this, &ServiceRequireFrame, &ServiceInitializeGuestGlDefaults,
               &ServiceReleaseManagedSurface, &ServicePublishFrame,
               &ServiceResetGuestGraphics,
               &ServiceWrite32, &ServiceWriteRequired32,
-              &ServiceReadCString, &ServiceReadShaderSources},
-          egl_context_{graphics_context_, api_routing_, symbols_},
+              &ServiceReadCString, &ServiceReadShaderSources,
+              &ServiceCurrentFrame, &ServiceActivateContext},
+          egl_context_{graphics_context_, api_routing_, symbols_, descriptors_,
+                       gles1_state_},
           android_module_(call_services_, android_services_),
           egl_module_(call_services_, egl_context_),
           gles1_module_(call_services_, graphics_context_, gles1_state_,
@@ -307,7 +309,8 @@ public:
             static_cast<std::size_t>(descriptor - descriptors_.data());
         if (guest_graphics_retired_.load(std::memory_order_acquire) &&
             (descriptor->library == "libGLESv1_CM.so" ||
-             descriptor->library == "libGLESv2.so")) {
+             descriptor->library == "libGLESv2.so" ||
+             descriptor->library == "$egl.proc")) {
             auto state = cpu.GetState();
             state.SetRegister(cpu::CoreRegister::r0, 0U);
             cpu.SetState(state);
@@ -401,6 +404,19 @@ private:
         void* owner, const std::string_view operation) {
         return static_cast<Impl*>(owner)->RequireFrame(operation);
     }
+    static gles::AngleFrame* ServiceCurrentFrame(
+        void* owner, const std::string_view operation) {
+        auto& self = *static_cast<Impl*>(owner);
+        if (auto* frame = self.egl_module_.CurrentFrameForHostThread(
+                std::this_thread::get_id(), operation); frame != nullptr) {
+            return frame;
+        }
+        return self.angle_frame_.has_value() ? &*self.angle_frame_ : nullptr;
+    }
+    static void ServiceActivateContext(void* owner) {
+        static_cast<Impl*>(owner)->egl_module_.ActivateStateForHostThread(
+            std::this_thread::get_id());
+    }
     static void ServiceInitializeGuestGlDefaults(void* owner) {
         static_cast<Impl*>(owner)->InitializeGuestGlDefaults();
     }
@@ -459,6 +475,61 @@ private:
         fast_router_.Entry(slot) = {
             &InvokeBoundaryFast<Module, Method, ParameterCount, Gpu>, &module,
             &InvokeBoundarySlow<Module, Method>, Gpu};
+    }
+
+    struct ProcForwarder final {
+        Impl* owner{};
+        std::string_view name;
+        std::uint8_t parameter_count{};
+        std::size_t slot{};
+    };
+
+    [[nodiscard]] const BoundaryHotEntry* ProcTarget(
+        const ProcForwarder& proc, const std::uint64_t thread_id) const {
+        const auto version = api_routing_.CurrentVersion(thread_id);
+        if (!version.has_value() || (*version != 1U && *version != 2U)) {
+            return nullptr;
+        }
+        const auto library = *version == 1U
+                                 ? std::string_view{"libGLESv1_CM.so"}
+                                 : std::string_view{"libGLESv2.so"};
+        const auto found = std::ranges::find_if(
+            descriptors_, [&](const auto& descriptor) {
+                return descriptor.library == library &&
+                       descriptor.name == proc.name;
+            });
+        if (found == descriptors_.end()) return nullptr;
+        return &fast_router_.Entry(static_cast<std::size_t>(
+            std::distance(descriptors_.begin(), found)));
+    }
+
+    static std::uint32_t InvokeProcSlow(void* userdata,
+                                        const A32CallFrame& call) {
+        const auto& proc = *static_cast<ProcForwarder*>(userdata);
+        const auto* target = proc.owner->ProcTarget(proc, call.ThreadId());
+        if (target == nullptr) return 0U;
+        return target->slow(target->self, call);
+    }
+
+    static cpu::HostCallResult InvokeProcFast(
+        void* userdata, cpu::A32HostCallContext& context) noexcept {
+        if (userdata == nullptr) return cpu::HostCallResult::unhandled;
+        const auto& proc = *static_cast<ProcForwarder*>(userdata);
+        if (proc.owner->guest_graphics_retired_.load(
+                std::memory_order_acquire)) {
+            context.registers[0] = 0U;
+            return cpu::HostCallResult::handled;
+        }
+        try {
+            const A32CallFrame call(proc.owner->address_space_, context,
+                                    proc.parameter_count);
+            context.registers[0] = InvokeProcSlow(userdata, call);
+            proc.owner->RecordGpuCall(proc.slot, call.RegisterArguments(), true);
+            return cpu::HostCallResult::handled;
+        } catch (...) {
+            proc.owner->fault_store_.RecordCurrent(context);
+            return cpu::HostCallResult::fault;
+        }
     }
 
     template <typename Module, auto Method, std::size_t ParameterCount,
@@ -578,6 +649,20 @@ private:
                      false>(library, symbol, libdl_override_module_);
         OGPLAY_LIBDL_GUEST_SYMBOL_OVERRIDE_EXPORTS(OGPLAY_BIND_LIBDL_OVERRIDE)
 #undef OGPLAY_BIND_LIBDL_OVERRIDE
+        const auto proc_count = static_cast<std::size_t>(std::ranges::count_if(
+            descriptors_, [](const auto& descriptor) {
+                return descriptor.library == "$egl.proc";
+            }));
+        proc_forwarders_.reserve(proc_count);
+        for (std::size_t slot = 0; slot < descriptors_.size(); ++slot) {
+            const auto& descriptor = descriptors_[slot];
+            if (descriptor.library != "$egl.proc") continue;
+            proc_forwarders_.push_back(
+                {this, descriptor.name, descriptor.parameter_count, slot});
+            auto& proc = proc_forwarders_.back();
+            fast_router_.Entry(slot) = {
+                &InvokeProcFast, &proc, &InvokeProcSlow, true};
+        }
         const auto hot = fast_router_.Entries();
         if (std::any_of(hot.begin(), hot.end(),
                         [](const auto& entry) {
@@ -736,6 +821,10 @@ private:
         return result;
     }
     gles::AngleFrame& RequireFrame(const std::string_view operation) {
+        if (auto* current = egl_module_.CurrentFrameForHostThread(
+                std::this_thread::get_id(), operation); current != nullptr) {
+            return *current;
+        }
         if (!angle_frame_.has_value()) {
             throw std::runtime_error(std::string(operation) + " has no current ANGLE frame");
         }
@@ -790,6 +879,7 @@ private:
     std::optional<std::thread::id> gl_owner_;
     bool managed_surface_{};
     std::atomic<bool> guest_graphics_retired_{false};
+    std::mutex graphics_execution_mutex_;
     BoundaryCallServices call_services_;
     AndroidBoundaryServices android_services_;
     GraphicsBoundaryContext graphics_context_;
@@ -798,6 +888,7 @@ private:
     EglModule egl_module_;
     Gles1Module gles1_module_;
     Gles2Module gles2_module_;
+    std::vector<ProcForwarder> proc_forwarders_;
     LogBoundaryContext log_context_;
     LogModule log_module_;
     audio::OpenSlesPcmMixer open_sles_mixer_;

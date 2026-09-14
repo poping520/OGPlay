@@ -79,12 +79,15 @@
   `eglGetProcAddress` 冷路径解析 sealed public callable，未知扩展返回 null，绝不修改 hot table
   或宣告未实现 extension。native EGL display/config 仍是进程稳定事实，但 context/surface
   使用单调句柄对象表；对象记录 client version/share root、类型/尺寸、current owner、交换间隔
-  与 pending-destroy。所有对象入口校验 initialize/display/config/type，current 对象销毁延迟到
-  解绑；独立 `GlApiRouting` 按 guest thread 保存 current Context 的 client version，
-  `eglGetProcAddress` 只从当前版本对应的 GLES family 解析同名 thunk；已初始化但无 current
-  Context 时返回 null，不再固定偏向 GLES2。直接 ELF import 仍由 SONAME 确定 API family，
-  GLES1/GLES2 在当前兼容层内继续共享底层 Context 状态。pbuffer 的真实 ANGLE attachment
-  与查询尺寸一致。宿主仍只有一个串行 GL execution
+  与 pending-destroy。每个 Context/Surface 组合拥有真实 ANGLE backing，同一 Context 的
+  draw/read surface 可分别绑定；共享 Context 将 native share identity 传入 ANGLE。所有对象
+  入口校验 initialize/display/config/type，current 对象销毁延迟到解绑；独立 `GlApiRouting`
+  按 guest thread 保存 current Context 的 client version，
+  `eglGetProcAddress` 为已支持 GLES 名称解析独立稳定 thunk，查询无需 current Context；调用
+  thunk 时读取 guest thread 的 current client version 并转发到对应 sealed GLES family。
+  无 current 时调用返回零。直接 ELF import 仍由 SONAME 确定 API family，
+  GLES1/GLES2 的 guest 状态随 current Context 保存和恢复。pbuffer 的真实 ANGLE attachment
+  与查询尺寸一致。宿主允许不同 host thread 分别持有不同 current Context；
   lane，跨 host thread 抢占返回 `EGL_BAD_ACCESS`，不模拟并行 GPU context 调度。
   `eglWaitGL`/`eglWaitClient` 同步当前 ANGLE context；pixmap、OpenVG client buffer 与
   texture-capable pbuffer 尚无底层能力，对应 core 入口完整校验后明确返回 EGL error，
@@ -160,7 +163,8 @@ boundary symbol 目录、跨 API 共享的 `GuestGlContext` 与 `A32CallFrame`�
 - GLES1 `glViewport`/`glScissor` 直接转发当前 `AngleFrame`,与 GLES2 共用受检超采样坐标
   换算;`glClearColor`/`glClearDepthf`/`glClear` 逐位解码 guest 参数并转发真实 ANGLE
   clear state,不得仅宿主缓存或静默过滤未知 bit;`glShadeModel` 只接受
-  `GL_FLAT`/`GL_SMOOTH`,写入独立 fixed-pipeline context state 供后续 draw 转换消费。
+  `GL_FLAT`/`GL_SMOOTH`,写入独立 fixed-pipeline context state；flat provoking-vertex
+  光栅语义仍待 draw 转换消费。
 - GLES1 scalar state 批次把 17 个无指针标量入口直接交给当前 `AngleFrame`;GLboolean、
   GLint、GLfloat 分别按非零、位模式有符号值和浮点位型解码。buffer/pixel-store 同时事务
   更新独立 GLES1 transfer state;GLES1-only hint 与 capability 进入受检可重置
@@ -213,8 +217,9 @@ boundary symbol 目录、跨 API 共享的 `GuestGlContext` 与 `A32CallFrame`�
   回退，多 stage 缺失自有 array 则明确失败，禁止跨 stage 共享。超过两个单元、
   其他 environment 或 opaque EBO 配合 guest client array 必须明确失败。lighting 消费
   LIGHT0..7 的 ambient/diffuse/specular、position、spot 与衰减，以及前后材质、emission、
-  shininess、two-side 和 color-material；输出 alpha 取 diffuse material alpha。modelview
-  上三阶 normal matrix 仍是现有近似。level-0 base format 按 texture object 保存并随
+  shininess、two-side 和 color-material；输出 alpha 取 diffuse material alpha。法线使用
+  modelview 上三阶逆转置；`GL_NORMALIZE` 控制单位化，`GL_RESCALE_NORMAL` 按 modelview
+  比例补偿，两者关闭时保留变换后长度。level-0 base format 按 texture object 保存并随
   delete/reset 清理,未知格式不得猜测组合语义。
 - `glPointSizePointerOES` 保存调用时 array-buffer binding；启用 point-size array 后内部
   vertex shader 从该 attribute 选择每顶点 point size，再应用 distance attenuation/min/max。

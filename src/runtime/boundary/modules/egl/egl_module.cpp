@@ -63,12 +63,28 @@ constexpr std::uint32_t kEglSamples = 0x3031U;
 constexpr std::uint32_t kEglSampleBuffers = 0x3032U;
 constexpr std::uint32_t kEglSurfaceType = 0x3033U;
 constexpr std::uint32_t kEglTransparentType = 0x3034U;
+constexpr std::uint32_t kEglTransparentBlueValue = 0x3035U;
+constexpr std::uint32_t kEglTransparentGreenValue = 0x3036U;
+constexpr std::uint32_t kEglTransparentRedValue = 0x3037U;
+constexpr std::uint32_t kEglLuminanceSize = 0x303DU;
+constexpr std::uint32_t kEglAlphaMaskSize = 0x303EU;
 constexpr std::uint32_t kEglColorBufferType = 0x303FU;
 constexpr std::uint32_t kEglRenderableType = 0x3040U;
 constexpr std::uint32_t kEglConformant = 0x3042U;
 constexpr std::uint32_t kEglContextClientType = 0x3097U;
 constexpr std::uint32_t kEglContextClientVersion = 0x3098U;
+constexpr std::uint32_t kEglMinSwapInterval = 0x303BU;
+constexpr std::uint32_t kEglMaxSwapInterval = 0x303CU;
+constexpr std::uint32_t kEglLargestPbuffer = 0x3058U;
+constexpr std::uint32_t kEglTextureFormat = 0x3080U;
+constexpr std::uint32_t kEglTextureTarget = 0x3081U;
+constexpr std::uint32_t kEglMipmapTexture = 0x3082U;
+constexpr std::uint32_t kEglMipmapLevel = 0x3083U;
 constexpr std::uint32_t kEglBackBuffer = 0x3084U;
+constexpr std::uint32_t kEglRenderBuffer = 0x3086U;
+constexpr std::uint32_t kEglHorizontalResolution = 0x3090U;
+constexpr std::uint32_t kEglVerticalResolution = 0x3091U;
+constexpr std::uint32_t kEglPixelAspectRatio = 0x3092U;
 constexpr std::uint32_t kEglCoreNativeEngine = 0x305BU;
 constexpr std::uint32_t kEglOpenVgImage = 0x3096U;
 constexpr std::uint32_t kEglSwapBehavior = 0x3093U;
@@ -119,6 +135,65 @@ void EglModule::RetireGuestGraphics() noexcept {
     guest_graphics_retired_.store(true, std::memory_order_release);
 }
 
+gles::AngleFrame* EglModule::CurrentFrameForHostThread(
+    const std::thread::id host_thread, const std::string_view operation) {
+    std::scoped_lock lock(mutex_);
+    for (auto& [handle, context] : contexts_) {
+        static_cast<void>(handle);
+        if (context.current_host_thread == host_thread &&
+            context.current_draw_surface != 0U) {
+            auto surface = context.current_draw_surface;
+            if (operation == "glReadPixels") {
+                for (const auto& [thread_id, thread] : threads_) {
+                    static_cast<void>(thread_id);
+                    if (thread.context == handle) {
+                        surface = thread.read_surface;
+                        break;
+                    }
+                }
+            }
+            const auto frame = context.frames.find(surface);
+            if (frame == context.frames.end()) return nullptr;
+            if (context.current_bound_surface != surface) {
+                const auto bound = context.frames.find(
+                    context.current_bound_surface);
+                if (bound != context.frames.end()) {
+                    bound->second->ReleaseCurrent();
+                }
+                frame->second->BindCurrentOnCallingThread();
+                context.current_bound_surface = surface;
+            }
+            return frame->second.get();
+        }
+    }
+    return nullptr;
+}
+
+void EglModule::ActivateStateForHostThread(
+    const std::thread::id host_thread) {
+    std::scoped_lock lock(mutex_);
+    std::uint32_t target{};
+    for (const auto& [handle, context] : contexts_) {
+        if (context.current_host_thread == host_thread) {
+            target = handle;
+            break;
+        }
+    }
+    if (target == 0U || target == active_shadow_context_) return;
+    if (active_shadow_context_ != 0U) {
+        const auto old = contexts_.find(active_shadow_context_);
+        if (old != contexts_.end()) {
+            old->second.guest_state = context_.graphics.gl_context;
+            old->second.gles1_matrices->CopyValuesFrom(
+                context_.gles1_state.Matrices());
+        }
+    }
+    context_.graphics.gl_context = contexts_.at(target).guest_state;
+    context_.gles1_state.Matrices().CopyValuesFrom(
+        *contexts_.at(target).gles1_matrices);
+    active_shadow_context_ = target;
+}
+
 void EglModule::SetError(const std::uint64_t thread_id,
                          const std::uint32_t error) {
     std::scoped_lock lock(mutex_);
@@ -141,6 +216,13 @@ void EglModule::CollectRetiredObjectsLocked() {
     std::erase_if(surfaces_, [](const auto& entry) {
         return entry.second.destroy_pending && entry.second.current_count == 0U;
     });
+    for (auto& [handle, context] : contexts_) {
+        static_cast<void>(handle);
+        std::erase_if(context.frames, [&](const auto& frame) {
+            return frame.first != context.current_draw_surface &&
+                   !surfaces_.contains(frame.first);
+        });
+    }
 }
 
 std::uint32_t EglModule::PublishQueryString(const std::uint32_t name,
@@ -183,20 +265,18 @@ std::uint32_t EglModule::ResolveProcAddress(
         requested[index] = static_cast<char>(
             std::to_integer<unsigned char>(bytes[index]));
     }
-    const auto current_version = context_.api_routing.CurrentVersion(thread_id);
-    if (current_version.has_value() && *current_version == 0U) return 0U;
-    const auto preferred_gles =
-        current_version.has_value() && *current_version == 1U
-            ? std::string_view{"libGLESv1_CM.so"}
-            : std::string_view{"libGLESv2.so"};
-    const std::array preferred_libraries{
-        preferred_gles, std::string_view{"libEGL.so"}};
-    for (const auto library : preferred_libraries) {
-        for (const auto& symbol : context_.symbols) {
-            if (symbol.kind == BoundarySymbolKind::function &&
-                symbol.library == library && symbol.symbol == requested) {
-                return symbol.address.Value();
-            }
+    for (std::size_t index = 0; index < context_.descriptors.size(); ++index) {
+        const auto& descriptor = context_.descriptors[index];
+        if (descriptor.library == "$egl.proc" &&
+            descriptor.name == requested) {
+            return kBionicHleThunkBegin +
+                   static_cast<std::uint32_t>(index * 4U) + 1U;
+        }
+    }
+    for (const auto& symbol : context_.symbols) {
+        if (symbol.kind == BoundarySymbolKind::function &&
+            symbol.library == "libEGL.so" && symbol.symbol == requested) {
+            return symbol.address.Value();
         }
     }
     return 0U;
@@ -257,6 +337,22 @@ std::uint32_t EglModule::ExecuteExport(const A32CallFrame& call) {
                     (value & ~(kEglWindowBit | kEglPbufferBit)) == 0U;
                 else if (attribute == kEglRenderableType || attribute == kEglConformant) matches &=
                     value == kEglDontCare || (value & ~(kEglOpenGlEsBit | kEglOpenGlEs2Bit)) == 0U;
+                else if (attribute == kEglConfigCaveat ||
+                         attribute == kEglTransparentType ||
+                         attribute == kEglNativeVisualType) {
+                    matches &= value == kEglDontCare || value == kEglNone;
+                } else if (attribute == kEglColorBufferType) {
+                    matches &= value == kEglDontCare || value == kEglRgbBuffer;
+                } else if (attribute == kEglNativeRenderable) {
+                    matches &= value == kEglDontCare || value == 0U;
+                } else if (attribute == kEglNativeVisualId ||
+                           attribute == kEglLuminanceSize ||
+                           attribute == kEglAlphaMaskSize ||
+                           attribute == kEglTransparentRedValue ||
+                           attribute == kEglTransparentGreenValue ||
+                           attribute == kEglTransparentBlueValue) {
+                    matches &= value == kEglDontCare || value == 0U;
+                }
                 else { SetError(tid, kEglBadAttribute); return 0U; }
                 cursor = cursor.Add(8U);
             }
@@ -284,10 +380,16 @@ std::uint32_t EglModule::ExecuteExport(const A32CallFrame& call) {
         case kEglRenderableType: case kEglConformant: value = kEglOpenGlEsBit | kEglOpenGlEs2Bit; break;
         case kEglMaxPbufferWidth: case kEglMaxPbufferHeight: value = 4096U; break;
         case kEglMaxPbufferPixels: value = 4096U * 4096U; break;
+        case kEglMinSwapInterval: value = 0U; break;
+        case kEglMaxSwapInterval: value = 1U; break;
         case kEglColorBufferType: value = kEglRgbBuffer; break;
-        case kEglConfigCaveat: case kEglLevel: case kEglNativeRenderable:
-        case kEglNativeVisualId: case kEglNativeVisualType: case kEglSamples:
-        case kEglSampleBuffers: case kEglTransparentType: value = 0U; break;
+        case kEglConfigCaveat: case kEglNativeVisualType:
+        case kEglTransparentType: value = kEglNone; break;
+        case kEglLevel: case kEglNativeRenderable: case kEglNativeVisualId:
+        case kEglSamples: case kEglSampleBuffers: case kEglLuminanceSize:
+        case kEglAlphaMaskSize: case kEglTransparentRedValue:
+        case kEglTransparentGreenValue: case kEglTransparentBlueValue:
+            value = 0U; break;
         default: SetError(tid, kEglBadAttribute); return 0U;
         }
         if (args[3] == 0U) { SetError(tid, kEglBadParameter); return 0U; }
@@ -328,10 +430,20 @@ std::uint32_t EglModule::ExecuteExport(const A32CallFrame& call) {
         if (!initialized_) { threads_[tid].error = kEglNotInitialized; return 0U; }
         if (args[2] != 0U && !contexts_.contains(args[2])) { threads_[tid].error = kEglBadContext; return 0U; }
         const auto handle = next_context_++;
-        contexts_.emplace(handle, ContextState{kFakeDisplay, kFakeConfig, version, args[2]});
+        ContextState state;
+        state.display = kFakeDisplay;
+        state.config = kFakeConfig;
+        state.client_version = version;
+        state.share_context = args[2];
+        state.guest_state = GuestGlContext{handle};
+        const auto inserted = contexts_.emplace(handle, std::move(state)).first;
+        inserted->second.gles1_matrices =
+            std::make_unique<detail::AndroidBoundaryGles1MatrixState>(
+                inserted->second.guest_state.Shared());
         return handle;
     }
     if constexpr (FunctionId == 6U) {
+        std::scoped_lock execution_lock(graphics.execution_mutex);
         if (args[0] != kFakeDisplay) { SetError(tid, kEglBadDisplay); return 0U; }
         const bool release = args[1] == 0U && args[2] == 0U && args[3] == 0U;
         if (!release && (args[1] == 0U || args[2] == 0U || args[3] == 0U)) {
@@ -347,48 +459,139 @@ std::uint32_t EglModule::ExecuteExport(const A32CallFrame& call) {
                 if (draw == surfaces_.end() || read == surfaces_.end() || draw->second.destroy_pending || read->second.destroy_pending) {
                     threads_[tid].error = kEglBadSurface; return 0U;
                 }
-                if ((context->second.current_thread.has_value() && *context->second.current_thread != tid) ||
-                    (graphics.gl_owner.has_value() && *graphics.gl_owner != std::this_thread::get_id())) {
+                if (context->second.current_thread.has_value() &&
+                    *context->second.current_thread != tid) {
                     threads_[tid].error = kEglBadAccess; return 0U;
                 }
             }
         }
         if (graphics.managed_surface) {
             if (!graphics.angle_frame.has_value()) { SetError(tid, kEglBadNativeWindow); return 0U; }
-        } else if (!release && !graphics.angle_frame.has_value()) {
-            std::uint32_t width{}; std::uint32_t height{};
-            { std::scoped_lock lock(mutex_); width = surfaces_.at(args[1]).width; height = surfaces_.at(args[1]).height; }
-            graphics.angle_frame.emplace(gles::AngleFrame::CreatePbuffer(
-                graphics.backend, width * graphics.layout.factor, height * graphics.layout.factor));
-            graphics.gl_owner = std::this_thread::get_id();
-            graphics.InitializeGuestGlDefaults();
-            const auto logical_width = static_cast<std::int32_t>(width);
-            const auto logical_height = static_cast<std::int32_t>(height);
-            const std::array<std::int32_t, 4> logical{
-                0, 0, logical_width, logical_height};
-            graphics.angle_frame->Viewport(
-                0, 0, logical_width * static_cast<std::int32_t>(graphics.layout.factor),
-                logical_height * static_cast<std::int32_t>(graphics.layout.factor));
-            graphics.angle_frame->Scissor(
-                0, 0, logical_width * static_cast<std::int32_t>(graphics.layout.factor),
-                logical_height * static_cast<std::int32_t>(graphics.layout.factor));
-            graphics.gl_context.Shared().SetViewport(logical);
-            graphics.gl_context.Shared().SetScissor(logical);
-            graphics.frames.SetRenderTargetReady(true);
-        } else if (release && graphics.gl_owner.has_value()) {
-            graphics.ReleaseManagedSurfaceFromCallingThread();
+        } else {
+            std::scoped_lock lock(mutex_);
+            auto& thread = threads_[tid];
+            const auto old_context_handle = thread.context;
+            const auto old_surface_handle = thread.draw_surface;
+            if (old_context_handle != 0U &&
+                (release || old_context_handle != args[3] ||
+                 old_surface_handle != args[1])) {
+                auto& old_context = contexts_.at(old_context_handle);
+                const auto old_frame = old_context.frames.find(old_surface_handle);
+                if (old_frame != old_context.frames.end()) {
+                    const auto native_error = old_frame->second->GetError();
+                    if (native_error != 0U) {
+                        graphics.gl_context.Shared().SetGuestError(native_error);
+                    }
+                    old_frame->second->ReleaseCurrent();
+                }
+                old_context.current_host_thread.reset();
+                old_context.current_draw_surface = 0U;
+                old_context.current_bound_surface = 0U;
+            }
+            if (!release &&
+                (old_context_handle != args[3] || old_surface_handle != args[1])) {
+                auto& target = contexts_.at(args[3]);
+                auto frame = target.frames.find(args[1]);
+                if (frame == target.frames.end()) {
+                    const auto& surface = surfaces_.at(args[1]);
+                    gles::EglHandle share_native{};
+                    if (!target.frames.empty()) {
+                        share_native = target.frames.begin()->second->NativeContext();
+                    } else if (target.share_context != 0U) {
+                        auto& share = contexts_.at(target.share_context);
+                        if (!share.frames.empty()) {
+                            share_native = share.frames.begin()->second->NativeContext();
+                        }
+                    }
+                    auto created = std::make_unique<gles::AngleFrame>(
+                        gles::AngleFrame::CreatePbuffer(
+                            graphics.backend,
+                            surface.width * graphics.layout.factor,
+                            surface.height * graphics.layout.factor,
+                            2,
+                            share_native));
+                    const auto logical_width = static_cast<std::int32_t>(surface.width);
+                    const auto logical_height = static_cast<std::int32_t>(surface.height);
+                    const std::array<std::int32_t, 4> logical{
+                        0, 0, logical_width, logical_height};
+                    created->Viewport(0, 0,
+                        logical_width * static_cast<std::int32_t>(graphics.layout.factor),
+                        logical_height * static_cast<std::int32_t>(graphics.layout.factor));
+                    created->Scissor(0, 0,
+                        logical_width * static_cast<std::int32_t>(graphics.layout.factor),
+                        logical_height * static_cast<std::int32_t>(graphics.layout.factor));
+                    target.guest_state.Shared().SetViewport(logical);
+                    target.guest_state.Shared().SetScissor(logical);
+                    frame = target.frames.emplace(args[1], std::move(created)).first;
+                    graphics.frames.SetRenderTargetReady(true);
+                } else {
+                    frame->second->BindCurrentOnCallingThread();
+                    const auto& viewport = target.guest_state.Shared().Viewport();
+                    const auto& scissor = target.guest_state.Shared().Scissor();
+                    const auto factor = static_cast<std::int32_t>(
+                        graphics.layout.factor);
+                    frame->second->Viewport(viewport[0] * factor,
+                                            viewport[1] * factor,
+                                            viewport[2] * factor,
+                                            viewport[3] * factor);
+                    frame->second->Scissor(scissor[0] * factor,
+                                           scissor[1] * factor,
+                                           scissor[2] * factor,
+                                           scissor[3] * factor);
+                }
+                if (args[2] != args[1] && !target.frames.contains(args[2])) {
+                    const auto& read_surface = surfaces_.at(args[2]);
+                    auto read_frame = std::make_unique<gles::AngleFrame>(
+                        gles::AngleFrame::CreatePbuffer(
+                            graphics.backend,
+                            read_surface.width * graphics.layout.factor,
+                            read_surface.height * graphics.layout.factor,
+                            2, frame->second->NativeContext()));
+                    read_frame->ReleaseCurrent();
+                    target.frames.emplace(
+                        args[2], std::make_unique<gles::AngleFrame>(
+                            std::move(*read_frame)));
+                    frame->second->BindCurrentOnCallingThread();
+                }
+                target.current_host_thread = std::this_thread::get_id();
+                target.current_draw_surface = args[1];
+                target.current_bound_surface = args[1];
+            }
         }
         std::scoped_lock lock(mutex_);
         auto& state = threads_[tid];
-        if (state.context != 0U) contexts_.at(state.context).current_thread.reset();
+        const auto previous_context = state.context;
+        if (state.context != 0U) {
+            contexts_.at(state.context).current_thread.reset();
+        }
         if (state.draw_surface != 0U) --surfaces_.at(state.draw_surface).current_count;
         if (state.read_surface != 0U && state.read_surface != state.draw_surface) --surfaces_.at(state.read_surface).current_count;
         state.display = release ? 0U : args[0]; state.draw_surface = release ? 0U : args[1];
         state.read_surface = release ? 0U : args[2]; state.context = release ? 0U : args[3];
         if (!release) {
             contexts_.at(args[3]).current_thread = tid;
+            contexts_.at(args[3]).current_host_thread = std::this_thread::get_id();
+            contexts_.at(args[3]).current_draw_surface = args[1];
             ++surfaces_.at(args[1]).current_count;
             if (args[2] != args[1]) ++surfaces_.at(args[2]).current_count;
+        }
+        if (active_shadow_context_ != 0U &&
+            active_shadow_context_ != args[3]) {
+            const auto old = contexts_.find(active_shadow_context_);
+            if (old != contexts_.end()) {
+                old->second.guest_state = graphics.gl_context;
+                old->second.gles1_matrices->CopyValuesFrom(
+                    context_.gles1_state.Matrices());
+            }
+        }
+        if (!release) {
+            graphics.gl_context = contexts_.at(args[3]).guest_state;
+            context_.gles1_state.Matrices().CopyValuesFrom(
+                *contexts_.at(args[3]).gles1_matrices);
+            active_shadow_context_ = args[3];
+        } else if (active_shadow_context_ == previous_context) {
+            active_shadow_context_ = 0U;
+            graphics.gl_context.Reset();
         }
         CollectRetiredObjectsLocked();
         if (release) context_.api_routing.Release(tid);
@@ -403,9 +606,20 @@ std::uint32_t EglModule::ExecuteExport(const A32CallFrame& call) {
             if (!initialized_) { threads_[tid].error = kEglNotInitialized; return 0U; }
             const auto surface = surfaces_.find(args[1]);
             if (surface == surfaces_.end()) { threads_[tid].error = kEglBadSurface; return 0U; }
-            if (args[2] == kEglWidth) value = surface->second.width;
-            else if (args[2] == kEglHeight) value = surface->second.height;
-            else { threads_[tid].error = kEglBadAttribute; return 0U; }
+            switch (args[2]) {
+            case kEglWidth: value = surface->second.width; break;
+            case kEglHeight: value = surface->second.height; break;
+            case kEglConfigId: value = 1U; break;
+            case kEglLargestPbuffer: case kEglMipmapTexture:
+            case kEglMipmapLevel: value = 0U; break;
+            case kEglTextureFormat: case kEglTextureTarget: value = kEglNone; break;
+            case kEglRenderBuffer: value = kEglBackBuffer; break;
+            case kEglSwapBehavior: value = kEglBufferDestroyed; break;
+            case kEglMultisampleResolve: value = kEglMultisampleResolveDefault; break;
+            case kEglHorizontalResolution: case kEglVerticalResolution:
+            case kEglPixelAspectRatio: value = kEglDontCare; break;
+            default: threads_[tid].error = kEglBadAttribute; return 0U;
+            }
         }
         if (args[3] == 0U) { SetError(tid, kEglBadParameter); return 0U; }
         graphics.Write32(args[3], value, tid);
@@ -421,8 +635,12 @@ std::uint32_t EglModule::ExecuteExport(const A32CallFrame& call) {
           if (!initialized_) { threads_[tid].error = kEglNotInitialized; return 0U; }
           if (found == surfaces_.end()) { threads_[tid].error = kEglBadSurface; return 0U; }
           if (threads_[tid].draw_surface != args[1]) { threads_[tid].error = kEglBadSurface; return 0U; } }
-        if (!graphics.angle_frame.has_value()) { SetError(tid, kEglBadSurface); return 0U; }
-        graphics.PublishFrame();
+        auto* frame = graphics.CurrentFrame();
+        if (frame == nullptr) { SetError(tid, kEglBadSurface); return 0U; }
+        SurfaceKind kind{};
+        { std::scoped_lock lock(mutex_); kind = surfaces_.at(args[1]).kind; }
+        if (kind == SurfaceKind::window) graphics.PublishFrame();
+        else frame->Finish();
         return 1U;
     }
     if constexpr (FunctionId == 9U) {
@@ -442,24 +660,58 @@ std::uint32_t EglModule::ExecuteExport(const A32CallFrame& call) {
         found->second.destroy_pending = true; CollectRetiredObjectsLocked(); return 1U;
     }
     if constexpr (FunctionId == 11U) {
+        std::scoped_lock execution_lock(graphics.execution_mutex);
         if (args[0] != kFakeDisplay) { SetError(tid, kEglBadDisplay); return 0U; }
+        gles::AngleFrame* release_frame{};
         {
             std::scoped_lock lock(mutex_);
             if (!initialized_) { threads_[tid].error = kEglNotInitialized; return 0U; }
+            const auto current = threads_.find(tid);
+            if (current != threads_.end() && current->second.context != 0U &&
+                !graphics.managed_surface) {
+                auto& context = contexts_.at(current->second.context);
+                const auto frame = context.frames.find(
+                    context.current_bound_surface);
+                if (frame != context.frames.end()) {
+                    release_frame = frame->second.get();
+                }
+            }
         }
+        if (release_frame != nullptr) release_frame->ReleaseCurrent();
         if (!graphics.managed_surface) {
             graphics.gl_owner.reset();
             graphics.angle_frame.reset();
-            graphics.ResetGuestGraphics();
             graphics.frames.SetRenderTargetReady(false);
         }
         std::scoped_lock lock(mutex_);
         initialized_ = false;
-        threads_.clear();
-        contexts_.clear();
-        surfaces_.clear();
-        next_surface_ = 3U;
-        next_context_ = 4U;
+        for (auto& [handle, context] : contexts_) {
+            static_cast<void>(handle);
+            context.destroy_pending = true;
+        }
+        for (auto& [handle, surface] : surfaces_) {
+            static_cast<void>(handle);
+            surface.destroy_pending = true;
+        }
+        const auto current = threads_.find(tid);
+        if (current != threads_.end() && current->second.context != 0U) {
+            auto& context = contexts_.at(current->second.context);
+            context.current_thread.reset();
+            context.current_host_thread.reset();
+            context.current_draw_surface = 0U;
+            context.current_bound_surface = 0U;
+            --surfaces_.at(current->second.draw_surface).current_count;
+            if (current->second.read_surface != current->second.draw_surface) {
+                --surfaces_.at(current->second.read_surface).current_count;
+            }
+        }
+        threads_.erase(tid);
+        CollectRetiredObjectsLocked();
+        if (active_shadow_context_ != 0U &&
+            !contexts_.contains(active_shadow_context_)) {
+            active_shadow_context_ = 0U;
+            graphics.ResetGuestGraphics();
+        }
         context_.api_routing.Deactivate();
         return 1U;
     }
@@ -542,21 +794,43 @@ std::uint32_t EglModule::ExecuteExport(const A32CallFrame& call) {
         return threads_[tid].bound_api;
     }
     if constexpr (FunctionId == 22U) {
-        bool release_native{};
+        std::scoped_lock execution_lock(graphics.execution_mutex);
+        gles::AngleFrame* release_frame{};
         {
             std::scoped_lock lock(mutex_);
             const auto found = threads_.find(tid);
-            release_native = found != threads_.end() && found->second.context != 0U && graphics.gl_owner.has_value();
+            if (found != threads_.end() && found->second.context != 0U &&
+                !graphics.managed_surface) {
+                auto& context = contexts_.at(found->second.context);
+                const auto frame = context.frames.find(
+                    context.current_bound_surface);
+                if (frame != context.frames.end()) release_frame = frame->second.get();
+            }
+        }
+        if (release_frame != nullptr) release_frame->ReleaseCurrent();
+        else if (graphics.managed_surface && graphics.gl_owner.has_value())
+            graphics.ReleaseManagedSurfaceFromCallingThread();
+        {
+            std::scoped_lock lock(mutex_);
+            const auto found = threads_.find(tid);
             if (found != threads_.end() && found->second.context != 0U) {
-                contexts_.at(found->second.context).current_thread.reset();
+                const auto context_handle = found->second.context;
+                auto& context = contexts_.at(context_handle);
+                context.current_thread.reset();
+                context.current_host_thread.reset();
+                context.current_draw_surface = 0U;
+                context.current_bound_surface = 0U;
                 --surfaces_.at(found->second.draw_surface).current_count;
                 if (found->second.read_surface != found->second.draw_surface) --surfaces_.at(found->second.read_surface).current_count;
+                if (active_shadow_context_ == context_handle) {
+                    active_shadow_context_ = 0U;
+                    graphics.ResetGuestGraphics();
+                }
             }
             threads_.erase(tid);
             CollectRetiredObjectsLocked();
         }
         context_.api_routing.Release(tid);
-        if (release_native) graphics.ReleaseManagedSurfaceFromCallingThread();
         return 1U;
     }
     if constexpr (FunctionId == 23U) {
@@ -565,7 +839,7 @@ std::uint32_t EglModule::ExecuteExport(const A32CallFrame& call) {
             return 0U;
         }
         const auto interval = std::bit_cast<std::int32_t>(args[1]);
-        if (interval < 0) {
+        if (interval < 0 || interval > 1) {
             SetError(tid, kEglBadParameter);
             return 0U;
         }
@@ -668,8 +942,9 @@ std::uint32_t EglModule::ExecuteExport(const A32CallFrame& call) {
           if (current == threads_.end() || current->second.context == 0U || current->second.draw_surface == 0U) {
               threads_[tid].error = kEglBadCurrentSurface; return 0U;
           } }
-        if (!graphics.angle_frame.has_value()) { SetError(tid, kEglBadCurrentSurface); return 0U; }
-        graphics.angle_frame->Finish(); return 1U;
+        auto* frame = graphics.CurrentFrame();
+        if (frame == nullptr) { SetError(tid, kEglBadCurrentSurface); return 0U; }
+        frame->Finish(); return 1U;
     }
     if constexpr (FunctionId == 31U) {
         if (args[0] != kEglCoreNativeEngine) { SetError(tid, kEglBadParameter); return 0U; }

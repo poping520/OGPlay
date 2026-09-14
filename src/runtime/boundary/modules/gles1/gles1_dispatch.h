@@ -53,6 +53,7 @@ public:
     [[nodiscard]] const Gles1Matrix& Current(
         std::uint32_t mode, std::uint32_t texture) const;
     [[nodiscard]] std::size_t StackDepth(std::uint32_t mode) const;
+    void CopyValuesFrom(const AndroidBoundaryGles1MatrixState& source);
 
 private:
     [[nodiscard]] std::vector<Gles1Matrix>& CurrentStack() noexcept;

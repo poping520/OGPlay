@@ -200,6 +200,20 @@ std::vector<HleThunkDescriptor> BuildAndroidBoundaryDescriptors(
         result.push_back({override_.library, override_.symbol,
                           override_.local_id, override_.parameter_count});
     }
+    std::set<std::string_view> proc_names;
+    for (const auto api : {gles::GlesApi::gles1,
+                           gles::GlesApi::gles1_extensions,
+                           gles::GlesApi::gles2}) {
+        for (std::size_t index = 0; index < gles::GlesFunctionCount(api);
+             ++index) {
+            const auto function = gles::DescribeGlesFunction(
+                api, static_cast<gles::GlesThunkId>(index));
+            if (!proc_names.insert(function.name).second) continue;
+            result.push_back({"$egl.proc", function.name, 0U,
+                              static_cast<std::uint8_t>(
+                                  function.parameter_count)});
+        }
+    }
     return result;
 }
 

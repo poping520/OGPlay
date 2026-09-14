@@ -406,8 +406,11 @@ std::optional<std::string> IoRuntime::WorkingDirectory() const {
                                  : std::nullopt;
 }
 
-bool IoRuntime::MakeDirectory(const std::string_view path) {
-  return file_system_ != nullptr && file_system_->MakeDirectory(path);
+void IoRuntime::MakeDirectory(const std::string_view path) {
+  if (file_system_ == nullptr) {
+    throw IoRuntimeError("guest filesystem is unavailable");
+  }
+  file_system_->MakeDirectory(path);
 }
 
 bool IoRuntime::MakeDirectories(const std::string_view path) {
@@ -421,13 +424,19 @@ bool IoRuntime::CreateFile(const std::string_view path) {
   return file_system_->CreateFile(path);
 }
 
-bool IoRuntime::Delete(const std::string_view path) {
-  return file_system_ != nullptr && file_system_->Delete(path);
+void IoRuntime::Delete(const std::string_view path) {
+  if (file_system_ == nullptr) {
+    throw IoRuntimeError("guest filesystem is unavailable");
+  }
+  file_system_->Delete(path);
 }
 
-bool IoRuntime::Rename(const std::string_view from,
+void IoRuntime::Rename(const std::string_view from,
                        const std::string_view to) {
-  return file_system_ != nullptr && file_system_->Rename(from, to);
+  if (file_system_ == nullptr) {
+    throw IoRuntimeError("guest filesystem is unavailable");
+  }
+  file_system_->Rename(from, to);
 }
 
 std::optional<std::vector<std::byte>>

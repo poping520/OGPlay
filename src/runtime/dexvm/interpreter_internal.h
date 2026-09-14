@@ -138,8 +138,11 @@ public:
     std::unique_ptr<UnsafeRuntime> unsafe;
     std::unordered_map<std::string, std::string> system_properties{
         {"file.separator", "/"},
+        {"java.home", "/system"},
+        {"java.io.tmpdir", "/tmp"},
         {"line.separator", "\n"},
         {"path.separator", ":"},
+        {"user.dir", "/"},
     };
     std::vector<IntrinsicStateTableHooks> intrinsic_state_tables;
     core::Logger* logger{};

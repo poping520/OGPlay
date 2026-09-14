@@ -44,12 +44,11 @@ public:
   [[nodiscard]] virtual std::optional<std::vector<std::string>>
   List(std::string_view path) const = 0;
   [[nodiscard]] virtual std::optional<std::string> WorkingDirectory() const = 0;
-  [[nodiscard]] virtual bool MakeDirectory(std::string_view path) = 0;
+  virtual void MakeDirectory(std::string_view path) = 0;
   [[nodiscard]] virtual bool MakeDirectories(std::string_view path) = 0;
   [[nodiscard]] virtual bool CreateFile(std::string_view path) = 0;
-  [[nodiscard]] virtual bool Delete(std::string_view path) = 0;
-  [[nodiscard]] virtual bool Rename(std::string_view from,
-                                    std::string_view to) = 0;
+  virtual void Delete(std::string_view path) = 0;
+  virtual void Rename(std::string_view from, std::string_view to) = 0;
   [[nodiscard]] virtual std::optional<std::vector<std::byte>>
   ReadFile(std::string_view path) const = 0;
   virtual void WriteFile(std::string_view path,
@@ -167,11 +166,11 @@ public:
   [[nodiscard]] std::optional<std::vector<std::string>>
   List(std::string_view path) const;
   [[nodiscard]] std::optional<std::string> WorkingDirectory() const;
-  [[nodiscard]] bool MakeDirectory(std::string_view path);
+  void MakeDirectory(std::string_view path);
   [[nodiscard]] bool MakeDirectories(std::string_view path);
   [[nodiscard]] bool CreateFile(std::string_view path);
-  [[nodiscard]] bool Delete(std::string_view path);
-  [[nodiscard]] bool Rename(std::string_view from, std::string_view to);
+  void Delete(std::string_view path);
+  void Rename(std::string_view from, std::string_view to);
   [[nodiscard]] std::optional<std::vector<std::byte>>
   ReadFile(std::string_view path) const;
   void WriteFile(std::string_view path, std::span<const std::byte> bytes);

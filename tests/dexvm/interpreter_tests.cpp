@@ -2129,8 +2129,11 @@ TEST_CASE("dexvm System properties are deterministic and mutable") {
     for (const auto& [key, expected] :
          std::vector<std::pair<std::string, std::string>>{
              {"file.separator", "/"},
+             {"java.home", "/system"},
+             {"java.io.tmpdir", "/tmp"},
              {"line.separator", "\n"},
-             {"path.separator", ":"}}) {
+             {"path.separator", ":"},
+             {"user.dir", "/"}}) {
         const auto outcome = get_property(key);
         REQUIRE_FALSE(outcome.exception.IsValid());
         REQUIRE(outcome.value.ref.IsValid());

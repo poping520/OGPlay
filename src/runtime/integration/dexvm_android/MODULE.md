@@ -44,7 +44,8 @@ Java 异常文本，再进入统一结构化 logger；不吞异常、不写裸 s
 - PackageManager 只发布当前 APK：manifest/path/label/permission/feature 来自 sealed facts；未知包、
   flags、跨包查询失败。DVM-142：PackageItemInfo/ApplicationInfo、Component/Activity/Service/
   Provider/ResolveInfo、PathPermission/PatternMatcher/Printer 及内部类归 BootDex，删除前两者 intrinsic；
-  integration 只写受检字段。
+  integration 只写受检字段。Application `meta-data` 按 API 19 区分 `android:value` 与
+  `android:resource`：前者解析 ARSC typed value 后写入对应 Bundle 类型，后者保留 resource id。
 - `Context.checkPermission(String,int,int)` 只回答 guest self PID/UID，并与 PackageManager
   共用 Manifest granted-permission 集合；外部身份和未授予权限返回 denied，null permission
   抛 IllegalArgumentException。ContextWrapper 按 API 19 委托 base；不建立 UID 数据库或

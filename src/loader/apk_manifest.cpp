@@ -348,13 +348,15 @@ AndroidManifestMetaDataValue ReadMetaDataValue(
     if (attribute.data_type == kStringType) {
         return ReadStringAttribute(attribute, strings, name);
     }
+    if (attribute.data_type == kReferenceType && attribute.data != 0U) {
+        return AndroidManifestMetaDataValueReference{attribute.data};
+    }
     if (attribute.data_type == kIntegerDecimalType ||
-        attribute.data_type == kIntegerHexType ||
-        attribute.data_type == kReferenceType) {
+        attribute.data_type == kIntegerHexType) {
         return static_cast<std::int32_t>(attribute.data);
     }
     if (attribute.data_type == kIntegerBooleanType && attribute.data <= 1U) {
-        return static_cast<std::int32_t>(attribute.data);
+        return attribute.data != 0U;
     }
     throw std::runtime_error("binary AndroidManifest meta-data " +
                              std::string(name) +
@@ -554,9 +556,10 @@ AndroidManifestFacts ParseAndroidBinaryManifest(const std::span<const std::byte>
                          ? ReadMetaDataValue(*metadata_value, strings,
                                              decoded_name)
                          : AndroidManifestMetaDataValue{
-                               static_cast<std::int32_t>(ReadReferenceAttribute(
-                                   *metadata_resource,
-                                   "application meta-data resource"))}});
+                               AndroidManifestMetaDataResourceReference{
+                                   ReadReferenceAttribute(
+                                       *metadata_resource,
+                                       "application meta-data resource")}}});
             } else if ((name == "activity" || name == "activity-alias") &&
                        elements.size() == 2 && elements[1] == "application") {
                 const auto* component_name =

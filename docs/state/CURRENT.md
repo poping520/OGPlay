@@ -4,6 +4,9 @@
 
 ## 最近进展
 
+- Application `meta-data` 已对齐 API 19 `PackageParser`：`android:value` 资源引用经 ARSC
+  解析后按 String/Boolean/Integer 写入 Bundle，`android:resource` 独立保留资源 ID；PvZ 的
+  Nimble verification 字符串不再被误装为 Integer。
 - DexVM 现提供 API 19 `java.home`、`java.io.tmpdir`、`user.dir` 初始 property；Android
   bridge 在 Java 执行前以 guest VFS working directory 覆盖 `user.dir`。真实 PvZ Terms/
   Restlet 启动已不再触发 `File.join` null receiver，并继续进入离线 HTTP 失败路径。

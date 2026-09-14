@@ -544,6 +544,19 @@ TEST_CASE("PackageManager P0 exposes only explicit current-package facts") {
         "com.example.configuration", std::string("live"));
     vm.context->application_meta_data.emplace("com.example.number",
                                                std::int32_t{42});
+    vm.context->application_meta_data.emplace("com.example.enabled", true);
+    vm.context->application_meta_data.emplace(
+        "com.example.resolved",
+        ogplay::loader::AndroidManifestMetaDataValueReference{0x7f050001U});
+    vm.context->application_meta_data.emplace(
+        "com.example.resource",
+        ogplay::loader::AndroidManifestMetaDataResourceReference{0x7f050001U});
+    vm.context->arsc.entries.push_back(
+        {.resource_id = 0x7f050001U,
+         .type_name = "string",
+         .entry_name = "metadata_value",
+         .string_value = "false",
+         .value_type = 0x03U});
     vm.context->requested_permissions = {"android.permission.INTERNET"};
     vm.context->granted_permissions.insert("android.permission.INTERNET");
     vm.context->system_features.insert("android.hardware.touchscreen");
@@ -618,6 +631,32 @@ TEST_CASE("PackageManager P0 exposes only explicit current-package facts") {
         std::vector{VmValue::Ref(metadata), VmValue::Ref(metadata_key)});
     REQUIRE_FALSE(metadata_value.exception.IsValid());
     CHECK(vm.interpreter.StringUtf8(metadata_value.value.ref) == "live");
+    const auto metadata_string_reference_key =
+        vm.interpreter.NewStringUtf8("com.example.resolved");
+    const auto metadata_string_reference = vm.interpreter.Call(
+        vm.Virtual("Landroid/os/Bundle;", "getString",
+                   "(Ljava/lang/String;)Ljava/lang/String;"),
+        std::vector{VmValue::Ref(metadata),
+                    VmValue::Ref(metadata_string_reference_key)});
+    REQUIRE_FALSE(metadata_string_reference.exception.IsValid());
+    CHECK(vm.interpreter.StringUtf8(metadata_string_reference.value.ref) ==
+          "false");
+    const auto metadata_boolean_key =
+        vm.interpreter.NewStringUtf8("com.example.enabled");
+    const auto metadata_boolean = vm.interpreter.Call(
+        vm.Virtual("Landroid/os/Bundle;", "getBoolean",
+                   "(Ljava/lang/String;)Z"),
+        std::vector{VmValue::Ref(metadata), VmValue::Ref(metadata_boolean_key)});
+    REQUIRE_FALSE(metadata_boolean.exception.IsValid());
+    CHECK(metadata_boolean.value.AsInt() == 1);
+    const auto metadata_resource_key =
+        vm.interpreter.NewStringUtf8("com.example.resource");
+    const auto metadata_resource = vm.interpreter.Call(
+        vm.Virtual("Landroid/os/Bundle;", "getInt", "(Ljava/lang/String;)I"),
+        std::vector{VmValue::Ref(metadata), VmValue::Ref(metadata_resource_key)});
+    REQUIRE_FALSE(metadata_resource.exception.IsValid());
+    CHECK(static_cast<std::uint32_t>(metadata_resource.value.AsInt()) ==
+          0x7f050001U);
 
     const auto without_metadata = invoke(
         "getApplicationInfo",

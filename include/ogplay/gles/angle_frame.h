@@ -51,6 +51,20 @@ struct AngleUniformValueCount final {
 
 class AngleFrame final {
 public:
+    [[nodiscard]] int ClientVersion() const noexcept { return lifecycle_.Info().client_version; }
+    [[nodiscard]] std::byte* MappedBufferPointer(std::uint32_t target);
+    [[nodiscard]] std::byte* MappedBufferPointerOes(std::uint32_t target, std::uint32_t parameter);
+    enum class PixelBufferOperation {
+        image2d, sub2d, image3d, sub3d, read,
+        compressed2d, compressed_sub2d, compressed3d, compressed_sub3d
+    };
+    void TransferPixelBuffer(PixelBufferOperation operation,
+                             std::span<const std::uint32_t> arguments);
+    void BindEglImage(std::uint32_t target, std::uintptr_t image, bool renderbuffer);
+    static AngleFrame CreateContext(std::shared_ptr<EglDisplayResources> display,
+                                   int client_version, EglHandle share_context = 0);
+    void BindSurfaces(std::shared_ptr<EglSurfaceResources> draw,
+                      std::shared_ptr<EglSurfaceResources> read);
     static AngleFrame CreatePbuffer(AngleBackend backend,
                                     std::uint32_t width,
                                     std::uint32_t height,
@@ -65,6 +79,7 @@ public:
 
     void BindCurrentOnCallingThread();
     void ReleaseCurrent();
+    void MarkNotCurrent() noexcept { lifecycle_.MarkNotCurrent(); }
     [[nodiscard]] EglHandle NativeContext() const noexcept;
 
     void Viewport(std::int32_t x, std::int32_t y,
@@ -105,6 +120,7 @@ public:
                                                std::size_t maximum_bytes);
     [[nodiscard]] std::vector<AngleUniformValueCount>
     DiscoverUniformValueCounts(std::uint32_t program);
+    [[nodiscard]] std::uint32_t UniformQueryCount(std::uint32_t program, std::int32_t location);
     [[nodiscard]] std::int32_t GetAttribLocation(std::uint32_t program,
                                                   const std::string& name);
     [[nodiscard]] std::int32_t GetUniformLocation(std::uint32_t program,
@@ -294,8 +310,10 @@ public:
         std::uint32_t program, std::string_view name);
     [[nodiscard]] std::uint32_t GetUniformBlockIndex(
         std::uint32_t program, std::string_view name);
-    [[nodiscard]] std::int64_t GetGles3Integer64(
-        std::uint16_t function_id, std::span<const std::uint32_t> arguments);
+    [[nodiscard]] std::size_t StateQueryCount(std::uint32_t pname);
+    [[nodiscard]] std::vector<std::int64_t> GetGles3Integer64(
+        std::uint16_t function_id, std::span<const std::uint32_t> arguments,
+        std::size_t count);
     void InvokeGles3Bytes(std::uint16_t function_id,
                           std::span<const std::uint32_t> arguments,
                           std::span<const std::byte> bytes);

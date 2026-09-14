@@ -68,6 +68,16 @@ public:
             }
             graphics_.gl_context.Native().BeginFixedDraw();
             try {
+                auto& frame = graphics_.RequireFrame(symbol);
+                if (frame.ClientVersion() >= 3) {
+                    auto& state = graphics_.gl_context.Programmable();
+                    if (state.fixed_vertex_array == 0U) {
+                        std::array<std::uint32_t, 1> names{};
+                        frame.InvokeGles3Names(34U, names); state.fixed_vertex_array = names[0];
+                    }
+                    const std::array args{state.fixed_vertex_array};
+                    static_cast<void>(frame.InvokeGles3Scalar(6U, args));
+                }
                 const auto result = dispatch.Invoke(
                     Id, call.Arguments(), call.ThreadId());
                 graphics_.gles_dispatch.RestoreNativeState(

@@ -19,6 +19,12 @@ class AddressSpace;
 
 namespace ogplay::runtime {
 
+inline constexpr std::array<std::string_view, 3> kGuestGlesExtensions{
+    "GL_OES_compressed_ETC1_RGB8_texture",
+    "GL_IMG_texture_compression_pvrtc",
+    "GL_OES_rgb8_rgba8"};
+
+[[nodiscard]] std::vector<std::string_view> GuestGlesExtensions(gles::AngleFrame& frame);
 class GuestGlContext;
 class A32CallFrame;
 

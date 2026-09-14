@@ -41,7 +41,7 @@
   C++ 目录；构建与测试均检查生成物没有漂移，并与固定 ANGLE `GLES/gl.h` / `gl2.h`
   分别核对 GLES1.1 core 145 项与 GLES2 core 142 项入口集合。
 - header subset 模式只允许目录声明固定 header 中真实存在的入口，用于隔离的标准扩展
-  catalog；GLES1 扩展目录覆盖 `GL_OES_matrix_palette` 3 项与 `GL_OES_mapbuffer` 3 项。
+  catalog；GLES1 扩展目录覆盖 `GL_OES_matrix_palette` 4 项与 `GL_OES_mapbuffer` 3 项。
   可选 `thunk_id` 在名称排序事实源中固定追加入口的分派顺序，必须全量、唯一且从零连续。
 - `GuestBuffer::Prepare`：input 由单次 Read 完成验证与复制；output/inout 在 ANGLE 前取得
   带映射世代的 write preflight 并建立有大小上限的宿主暂存；输出只能显式 `Commit`，
@@ -183,3 +183,19 @@
 ## 测试
 
 `tests/gles/` 契约测试及软件后端黄金帧。
+
+
+## BND-34 对象和搬运契约
+
+- `EglDisplayResources` 共享 display/config；`EglSurfaceResources` 独立拥有像素存储；
+  `EglLifecycle::CreateContext` 创建唯一 native Context，`BindSurfaces` 绑定 draw/read。
+  `MarkNotCurrent` 仅清除旧对象的 currency 记录，不能解绑已经切换到的新 Context。
+- native display initialize/terminate 按实际句柄计数；KHR sync/image 与 texture pbuffer
+  调用真实 ANGLE，失败保留 native error，不接受 Android guest native-buffer 裸指针。
+- `StateQueryCount` 统一向量和变长查询；uniform 查询每次从当前共享 program 元数据取得
+  真实宽度，避免跨 Context/relink/binary 后的旧 shadow 长度导致越界。
+- ES3 所有 core buffer target、2D/3D PBO offset 和 pack/unpack row/skip 均有明确分支。
+  guest readback 只提交像素行，保留 padding；内部呈现和压缩解码暂时使用紧密 host 布局，
+  完成后恢复 guest pixel-store/PBO 状态。
+- 依据 [ADR-0063](../../docs/adr/media.md#adr-0063)。验证在 boundary integration 的
+  `BND34*`、原 EGL/GLES/ANGLE 定向用例与 catalog gates；不宣称完整 Android 窗口系统。

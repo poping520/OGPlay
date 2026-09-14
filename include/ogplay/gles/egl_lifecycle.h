@@ -3,6 +3,8 @@
 #include <cstdint>
 #include <memory>
 #include <stdexcept>
+#include <span>
+#include <string>
 
 #include "ogplay/gles/angle_backend.h"
 
@@ -70,8 +72,64 @@ struct EglContextInfo final {
     bool operator==(const EglContextInfo&) const = default;
 };
 
+// Registry-owned display and surfaces. Contexts may outlive the handle of
+// their share source, and surfaces are not owned by any particular context.
+class EglDisplayResources final {
+public:
+    static std::shared_ptr<EglDisplayResources> Create(AngleBackend backend);
+    ~EglDisplayResources();
+    EglApi& Api() const noexcept { return *api_; }
+    EglHandle Display() const noexcept { return display_; }
+    EglHandle Config() const noexcept { return config_; }
+    const EglContextInfo& Info() const noexcept { return info_; }
+    std::string Extensions() const;
+    std::int32_t ConfigAttribute(std::uint32_t name) const;
+    EglHandle CreateSync(std::uint32_t type, std::span<const std::int32_t> attributes);
+    void DestroySync(EglHandle sync);
+    std::uint32_t ClientWaitSync(EglHandle sync, std::uint32_t flags, std::uint64_t timeout);
+    std::int32_t SyncAttribute(EglHandle sync, std::uint32_t name);
+    void WaitSync(EglHandle sync, std::uint32_t flags);
+    void SignalSync(EglHandle sync, std::uint32_t mode);
+    EglHandle CreateImage(EglHandle context, std::uint32_t target, std::uint32_t buffer,
+                          std::span<const std::int32_t> attributes);
+    void DestroyImage(EglHandle image);
+    void SwapInterval(std::int32_t interval);
+private:
+    EglDisplayResources() = default;
+    std::unique_ptr<EglApi> api_;
+    EglHandle display_{};
+    EglHandle config_{};
+    EglContextInfo info_{};
+    bool initialized_{};
+};
+
+class EglSurfaceResources final {
+public:
+    static std::shared_ptr<EglSurfaceResources> Create(
+        std::shared_ptr<EglDisplayResources> display,
+        std::uint32_t width, std::uint32_t height,
+        std::uint32_t texture_format = 0x305CU, bool mipmap = false);
+    ~EglSurfaceResources();
+    EglHandle Surface() const noexcept { return surface_; }
+    EglHandle Display() const noexcept { return display_->Display(); }
+    std::uint32_t Width() const noexcept { return width_; }
+    std::uint32_t Height() const noexcept { return height_; }
+    void BindTexture(bool bind);
+    void SetAttribute(std::uint32_t name, std::int32_t value);
+    void SwapBuffers();
+private:
+    EglSurfaceResources() = default;
+    std::shared_ptr<EglDisplayResources> display_;
+    EglHandle surface_{};
+    std::uint32_t width_{}, height_{};
+};
+
 class EglLifecycle final {
 public:
+    static EglLifecycle CreateContext(std::shared_ptr<EglDisplayResources> display,
+        int client_version, EglHandle share_context = 0);
+    void BindSurfaces(std::shared_ptr<EglSurfaceResources> draw,
+                      std::shared_ptr<EglSurfaceResources> read);
     static EglLifecycle CreatePbuffer(EglApi& api, AngleBackend backend,
                                       std::uint32_t width,
                                       std::uint32_t height,
@@ -91,6 +149,7 @@ public:
     [[nodiscard]] EglHandle NativeSurface() const noexcept;
     void BindCurrentOnCallingThread();
     void ReleaseCurrent();
+    void MarkNotCurrent() noexcept { current_ = false; draw_.reset(); read_.reset(); }
 
 private:
     EglLifecycle(EglApi& api, EglContextInfo info) noexcept;
@@ -103,6 +162,8 @@ private:
     EglHandle surface_{};
     bool initialized_{};
     bool current_{};
+    std::shared_ptr<EglDisplayResources> registry_display_;
+    std::shared_ptr<EglSurfaceResources> draw_, read_;
 };
 
 [[nodiscard]] bool IsNativeAngleEglAvailable() noexcept;

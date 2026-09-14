@@ -91,19 +91,29 @@ std::uint32_t UniformValueCount(const std::uint32_t type) {
     case GL_FLOAT:
     case GL_INT:
     case GL_BOOL:
+    case 0x1405U: // unsigned int
+    case 0x8B62U: case 0x8DC1U: case 0x8DC4U: case 0x8DC5U:
+    case 0x8DCAU: case 0x8DCBU: case 0x8DCCU: case 0x8DCFU:
+    case 0x8DD2U: case 0x8DD3U: case 0x8DD4U: case 0x8DD7U:
     case GL_SAMPLER_2D:
     case GL_SAMPLER_CUBE:
     case GL_SAMPLER_3D_OES: return 1U;
+    case 0x8DC6U:
     case GL_FLOAT_VEC2:
     case GL_INT_VEC2:
     case GL_BOOL_VEC2: return 2U;
+    case 0x8DC7U:
     case GL_FLOAT_VEC3:
     case GL_INT_VEC3:
     case GL_BOOL_VEC3: return 3U;
+    case 0x8DC8U:
     case GL_FLOAT_VEC4:
     case GL_INT_VEC4:
     case GL_BOOL_VEC4:
     case GL_FLOAT_MAT2: return 4U;
+    case 0x8B65U: case 0x8B67U: return 6U;
+    case 0x8B66U: case 0x8B69U: return 8U;
+    case 0x8B68U: case 0x8B6AU: return 12U;
     case GL_FLOAT_MAT3: return 9U;
     case GL_FLOAT_MAT4: return 16U;
     default:
@@ -265,6 +275,14 @@ std::vector<AngleUniformValueCount> AngleFrame::DiscoverUniformValueCounts(
     static_cast<void>(program);
     throw EglLifecycleError(EglOperation::unavailable, 0);
 #endif
+}
+
+std::uint32_t AngleFrame::UniformQueryCount(const std::uint32_t program, const std::int32_t location) {
+    if (location < 0 || GetProgramParameter(program, 0x8B82U) == 0)
+        throw GlesApiError("uniform query", 0x0502U);
+    for (const auto& uniform : DiscoverUniformValueCounts(program))
+        if (uniform.location == location) return uniform.value_count;
+    throw GlesApiError("uniform query location", 0x0502U);
 }
 
 void AngleFrame::ReleaseShaderCompiler() {

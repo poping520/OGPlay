@@ -27,12 +27,13 @@ class AndroidBoundaryGles1MapBufferState final {
 public:
     void MapGuestArena(memory::AddressSpace& address_space);
     void Reset() noexcept;
+    void RetireShareGroup(std::uint32_t group) noexcept;
     [[nodiscard]] std::uint32_t Map(
         gles::AngleFrame& frame, const AndroidBoundaryGles1State& core,
         memory::AddressSpace& address_space, std::uint32_t target,
         std::uint32_t access, std::uint64_t thread_id);
     [[nodiscard]] bool Unmap(
-        gles::AngleFrame& frame, const AndroidBoundaryGles1State& core,
+        gles::AngleFrame& frame, AndroidBoundaryGles1State& core,
         memory::AddressSpace& address_space, std::uint32_t target,
         std::uint64_t thread_id);
     [[nodiscard]] std::uint32_t Pointer(
@@ -54,7 +55,7 @@ private:
     void Release(std::uint32_t guest_address, std::uint32_t size) noexcept;
 
     bool arena_mapped_{};
-    std::map<std::uint32_t, Mapping> mappings_;
+    std::map<std::uint64_t, Mapping> mappings_;
     std::vector<FreeRange> free_ranges_;
 };
 
@@ -97,9 +98,9 @@ class AndroidBoundaryGles1LegacyState final {
 public:
     AndroidBoundaryGles1LegacyState();
     AndroidBoundaryGles1LegacyState(
-        const AndroidBoundaryGles1LegacyState&) = delete;
+        const AndroidBoundaryGles1LegacyState&) = default;
     AndroidBoundaryGles1LegacyState& operator=(
-        const AndroidBoundaryGles1LegacyState&) = delete;
+        const AndroidBoundaryGles1LegacyState&) = default;
 
     void Reset();
     void ValidateAlphaFunction(std::uint32_t function,

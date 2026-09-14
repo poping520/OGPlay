@@ -87,7 +87,7 @@ std::uint32_t Gles2Module::GetVertexAttribfv(const A32CallFrame& call) {
     auto prepared = Prepare(calls_, graphics_, 78U, call);
     auto& output = OnlyPointer(prepared);
     std::vector<float> values;
-    if (arguments[1] == kCurrentVertexAttribute) {
+    if (arguments[1] == kCurrentVertexAttribute || arguments[1] == 0x88FDU || arguments[1] == 0x88FEU) {
         values = graphics_.RequireFrame("glGetVertexAttribfv")
                      .GetVertexAttributeFloats(arguments[0], arguments[1],
                                                output.Size() / sizeof(std::uint32_t));
@@ -105,7 +105,7 @@ std::uint32_t Gles2Module::GetVertexAttribiv(const A32CallFrame& call) {
     auto prepared = Prepare(calls_, graphics_, 79U, call);
     auto& output = OnlyPointer(prepared);
     std::vector<std::int32_t> values;
-    if (arguments[1] == kCurrentVertexAttribute) {
+    if (arguments[1] == kCurrentVertexAttribute || arguments[1] == 0x88FDU || arguments[1] == 0x88FEU) {
         values = graphics_.RequireFrame("glGetVertexAttribiv")
                      .GetVertexAttributeIntegers(arguments[0], arguments[1],
                                                  output.Size() / sizeof(std::uint32_t));

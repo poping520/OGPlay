@@ -1,11 +1,13 @@
 #pragma once
 
 #include <array>
+#include <memory>
 #include <compare>
 #include <cstdint>
 #include <map>
 #include <optional>
 #include <span>
+#include <vector>
 
 #include "ogplay/gles/gles_transfer_state.h"
 
@@ -28,6 +30,8 @@ struct TextureObjectKey final {
 };
 
 struct SharedGlState final {
+    std::uint32_t resource_group{1U};
+    void ShareObjectsFrom(const SharedGlState& source) { objects_ = source.objects_; }
     gles::GlesTransferState transfer;
     std::uint32_t active_texture{0x84C0U};
 
@@ -53,6 +57,7 @@ struct SharedGlState final {
     void DeleteFramebuffers(std::span<const std::uint32_t> framebuffers) noexcept;
     void DeleteRenderbuffers(std::span<const std::uint32_t> renderbuffers) noexcept;
     [[nodiscard]] std::uint32_t Framebuffer() const noexcept;
+    [[nodiscard]] std::uint32_t ReadFramebuffer() const noexcept { return read_framebuffer_; }
     [[nodiscard]] std::uint32_t Renderbuffer() const noexcept;
     void SetViewport(std::array<std::int32_t, 4> viewport) noexcept;
     void SetScissor(std::array<std::int32_t, 4> scissor) noexcept;
@@ -80,9 +85,13 @@ struct SharedGlState final {
 
 private:
     std::map<TextureBindingKey, std::uint32_t> bound_textures_;
-    std::map<TextureObjectKey, std::uint32_t> texture_base_formats_;
-    std::map<TextureObjectKey, bool> generate_mipmap_;
+    struct ObjectMetadata {
+        std::map<TextureObjectKey, std::uint32_t> texture_base_formats;
+        std::map<TextureObjectKey, bool> generate_mipmap;
+    };
+    std::shared_ptr<ObjectMetadata> objects_{std::make_shared<ObjectMetadata>()};
     std::uint32_t framebuffer_{};
+    std::uint32_t read_framebuffer_{};
     std::uint32_t renderbuffer_{};
     std::array<std::int32_t, 4> viewport_{};
     std::array<std::int32_t, 4> scissor_{};
@@ -105,11 +114,53 @@ private:
     bool fixed_draw_active_{};
 };
 
+struct ProgrammableAttribute final {
+    std::int32_t size{4};
+    std::uint32_t type{0x1406U};
+    bool normalized{};
+    std::int32_t stride{};
+    std::uint32_t pointer{}, buffer{};
+    bool enabled{}, defined{};
+    std::uint32_t definition_lr{}, enable_lr{};
+    std::array<float, 4> current{0.0F, 0.0F, 0.0F, 1.0F};
+    bool integer{};
+    std::uint32_t divisor{};
+    std::uint32_t current_kind{};  // 0 float, 1 signed integer, 2 unsigned integer
+    std::array<std::uint32_t, 4> integer_current{};
+};
+
+struct ProgrammableGlState final {
+    std::array<ProgrammableAttribute, 16> attributes{};
+    std::map<std::uint32_t, std::array<ProgrammableAttribute, 16>> vertex_arrays;
+    std::uint32_t vertex_array{};
+    std::uint32_t fixed_vertex_array{};
+    std::vector<std::uint32_t> staging_buffers;
+    std::vector<std::vector<std::byte>> client_array_staging;
+    std::uint32_t index_staging_buffer{};
+    void BindVertexArray(std::uint32_t name) {
+        vertex_arrays[vertex_array] = attributes;
+        const auto constants = attributes;
+        attributes = vertex_arrays[name];
+        for (std::size_t i = 0; i < attributes.size(); ++i) {
+            attributes[i].current = constants[i].current;
+            attributes[i].current_kind = constants[i].current_kind;
+            attributes[i].integer_current = constants[i].integer_current;
+        }
+        vertex_array = name;
+    }
+};
+
 class GuestGlContext final {
 public:
     explicit GuestGlContext(GuestGlContextId id = 1U);
 
     [[nodiscard]] GuestGlContextId Id() const noexcept;
+    ProgrammableGlState& Programmable() noexcept { return programmable_; }
+    const ProgrammableGlState& Programmable() const noexcept { return programmable_; }
+    void SetShareGroup(std::uint32_t group) noexcept { share_group_ = group; shared_.resource_group = group; }
+    [[nodiscard]] std::uint32_t ShareGroup() const noexcept {
+        return share_group_ == 0U ? id_ : share_group_;
+    }
     [[nodiscard]] SharedGlState& Shared() noexcept;
     [[nodiscard]] const SharedGlState& Shared() const noexcept;
     [[nodiscard]] NativeGlState& Native() noexcept;
@@ -121,8 +172,10 @@ public:
 
 private:
     GuestGlContextId id_{};
+    std::uint32_t share_group_{};
     SharedGlState shared_;
     NativeGlState native_;
+    ProgrammableGlState programmable_;
 };
 
 }  // namespace ogplay::runtime

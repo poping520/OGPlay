@@ -54,6 +54,10 @@ public:
         std::uint32_t mode, std::uint32_t texture) const;
     [[nodiscard]] std::size_t StackDepth(std::uint32_t mode) const;
     void CopyValuesFrom(const AndroidBoundaryGles1MatrixState& source);
+    void SelectPalette(std::uint32_t index);
+    void LoadPaletteFromModelview();
+    [[nodiscard]] const Gles1Matrix& Palette(std::uint32_t index) const;
+    [[nodiscard]] std::uint32_t PaletteIndex() const noexcept { return palette_index_; }
 
 private:
     [[nodiscard]] std::vector<Gles1Matrix>& CurrentStack() noexcept;
@@ -66,6 +70,8 @@ private:
     std::vector<Gles1Matrix> modelview_;
     std::vector<Gles1Matrix> projection_;
     std::array<std::vector<Gles1Matrix>, 32> textures_;
+    std::array<std::vector<Gles1Matrix>, 32> palettes_;
+    std::uint32_t palette_index_{};
 };
 
 class AndroidBoundaryGles1State final {
@@ -73,7 +79,9 @@ public:
     AndroidBoundaryGles1State();
     explicit AndroidBoundaryGles1State(SharedGlState& shared);
     ~AndroidBoundaryGles1State();
+    void CopyValuesFrom(const AndroidBoundaryGles1State& other);
     void Reset();
+    void ShareBuffersFrom(const AndroidBoundaryGles1State& source) { buffer_contents_ = source.buffer_contents_; }
     void SetShadeModel(std::uint32_t mode);
     [[nodiscard]] std::uint32_t ShadeModel() const noexcept;
     [[nodiscard]] const gles::GlesTransferState& TransferState() const noexcept;
@@ -124,8 +132,8 @@ private:
                                        kGles1DontCare, kGles1DontCare,
                                        kGles1DontCare};
     std::map<std::uint64_t, bool> capabilities_;
-    std::map<std::uint32_t, std::optional<std::vector<std::byte>>>
-        buffer_contents_;
+    using BufferContentsMap = std::map<std::uint32_t, std::optional<std::vector<std::byte>>>;
+    std::shared_ptr<BufferContentsMap> buffer_contents_{std::make_shared<BufferContentsMap>()};
     std::uint32_t logic_operation_{0x1503U};
     AndroidBoundaryGles1MatrixState matrices_;
     std::unique_ptr<AndroidBoundaryGles1FixedState> fixed_;

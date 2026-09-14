@@ -4,6 +4,7 @@
 #include <bit>
 #include <cmath>
 #include <cstddef>
+#include <cstring>
 #include <limits>
 #include <numbers>
 #include <span>
@@ -521,16 +522,88 @@ void AndroidBoundaryGles1DrawState::PrepareArrays(
     const std::uint32_t maximum_index, const std::uint64_t thread_id,
     const std::span<const std::uint32_t> flat_vertices,
     const std::span<const std::uint32_t> flat_provoking) {
-    if (Array(kGles1MatrixIndexArray, kTexture0).enabled ||
-        Array(kGles1WeightArray, kTexture0).enabled) {
-        throw std::runtime_error(
-            "GLES1 matrix-palette skinning draw conversion is not implemented");
-    }
+    const bool palette = core.Capability(0x8840U);
+    const auto& matrix_indices = Array(kGles1MatrixIndexArray, kTexture0);
+    const auto& weights = Array(kGles1WeightArray, kTexture0);
+    if (palette && (!matrix_indices.enabled || !weights.enabled ||
+                    matrix_indices.size != weights.size || weights.size == 0))
+        throw gles::GlesApiError("GLES1 matrix palette arrays", 0x0502U);
+    const auto read_array = [&](const Gles1ClientArray& array) {
+        const auto size = ArrayBytes(array, maximum_index);
+        if (size > gles::kDefaultGuestTransferLimit)
+            throw std::length_error("GLES1 palette array exceeds transfer limit");
+        if (array.buffer == 0U) {
+            auto input = gles::GuestBuffer::Prepare(address_space,
+                memory::GuestAddress{array.pointer}, size,
+                gles::GuestTransferDirection::input, false, thread_id);
+            return std::vector<std::byte>(input.Bytes().begin(), input.Bytes().end());
+        }
+        const auto* bytes = core.BufferContents(array.buffer);
+        if (bytes == nullptr || array.pointer > bytes->size() ||
+            size > bytes->size() - array.pointer)
+            throw gles::GlesApiError("GLES1 palette buffer range", 0x0502U);
+        return std::vector<std::byte>(bytes->begin() + array.pointer,
+                                     bytes->begin() + array.pointer + size);
+    };
+    const auto component = [](const Gles1ClientArray& array,
+                               const std::vector<std::byte>& bytes,
+                               const std::uint32_t vertex, const std::uint32_t column,
+                               const bool normal) -> float {
+        const auto scalar = ScalarBytes(array.type);
+        const auto stride = array.stride == 0 ? scalar * array.size : array.stride;
+        const auto* data = bytes.data() + vertex * stride + column * scalar;
+        if (array.type == kFloat) { float value; std::memcpy(&value, data, 4); return value; }
+        if (array.type == kFixed) { std::int32_t value; std::memcpy(&value, data, 4); return static_cast<float>(value) / 65536.0F; }
+        if (array.type == kByte) { std::int8_t value; std::memcpy(&value, data, 1); return normal ? (std::max)(-1.0F, value / 127.0F) : value; }
+        if (array.type == kShort) { std::int16_t value; std::memcpy(&value, data, 2); return normal ? (std::max)(-1.0F, value / 32767.0F) : value; }
+        return static_cast<float>(std::to_integer<std::uint8_t>(*data));
+    };
+    const auto index_bytes = palette ? read_array(matrix_indices) : std::vector<std::byte>{};
+    const auto weight_bytes = palette ? read_array(weights) : std::vector<std::byte>{};
     const auto prepare = [&](const std::size_t index,
                              const Gles1ClientArray& array,
                              const bool normalized) {
         const auto location = program.attributes[index];
         if (location < 0) return;
+        if (palette && index <= 1U) {
+            const bool normal = index == 1U;
+            if (!normal && !array.enabled) return;
+            const auto source = array.enabled ? read_array(array) : std::vector<std::byte>{};
+            const auto sources = normal ? flat_provoking : flat_vertices;
+            const auto count = sources.empty() ? static_cast<std::size_t>(maximum_index) + 1U : sources.size();
+            if (count > gles::kDefaultGuestTransferLimit / 16U)
+                throw std::length_error("GLES1 palette output exceeds transfer limit");
+            std::vector<float> transformed(count * 4U, 0.0F);
+            for (std::size_t v = 0; v < count; ++v) {
+                const auto vertex = sources.empty() ? static_cast<std::uint32_t>(v) : sources[v];
+                std::array<float, 4> input{0, 0, 0, normal ? 0.0F : 1.0F};
+                if (array.enabled) {
+                    for (std::int32_t c = 0; c < array.size; ++c)
+                        input[c] = component(array, source, vertex, c, normal);
+                } else std::ranges::copy(legacy.Normal(), input.begin());
+                for (std::int32_t unit = 0; unit < weights.size; ++unit) {
+                    const auto matrix_index = static_cast<std::uint32_t>(component(matrix_indices, index_bytes, vertex, unit, false));
+                    const auto weight = component(weights, weight_bytes, vertex, unit, false);
+                    const auto& matrix = core.Matrices().Palette(matrix_index);
+                    if (normal) {
+                        const auto nm = NormalMatrix(matrix);
+                        for (std::size_t row = 0; row < 3; ++row)
+                            for (std::size_t col = 0; col < 3; ++col)
+                                transformed[v * 4 + row] += weight * nm[col * 3 + row] * input[col];
+                    } else {
+                        for (std::size_t row = 0; row < 4; ++row)
+                            for (std::size_t col = 0; col < 4; ++col)
+                                transformed[v * 4 + row] += weight * matrix[col * 4 + row] * input[col];
+                    }
+                }
+            }
+            frame.BindBuffer(kArrayBuffer, program.buffers[index]);
+            const auto bytes = std::as_bytes(std::span(transformed));
+            frame.BufferData(kArrayBuffer, static_cast<std::uint32_t>(bytes.size()), bytes, kStaticDraw);
+            frame.VertexAttributePointer(static_cast<std::uint32_t>(location), normal ? 3 : 4, kFloat, false, 16, 0);
+            frame.SetVertexAttributeEnabled(static_cast<std::uint32_t>(location), true);
+            return;
+        }
         frame.SetVertexAttributeEnabled(static_cast<std::uint32_t>(location),
                                         array.enabled);
         if (!array.enabled) return;
@@ -644,7 +717,7 @@ void AndroidBoundaryGles1DrawState::ApplyUniforms(
     const std::span<const std::uint32_t> texture_units,
     const std::array<std::uint32_t, kGles1MaximumDrawTextureUnits>&
         sampled_targets) {
-    const auto modelview = MatrixFor(core, kGles1Modelview);
+    const auto modelview = core.Capability(0x8840U) ? Gles1IdentityMatrix() : MatrixFor(core, kGles1Modelview);
     const auto projection = MatrixFor(core, kGles1Projection);
     const auto normal = NormalMatrix(modelview);
     const auto uniform = [&program](const std::string_view name) {
@@ -734,7 +807,7 @@ void AndroidBoundaryGles1DrawState::ApplyUniforms(
     frame.Uniform1f(uniform("u_has_color"),
                     Array(kGles1ColorArray, kTexture0).enabled ? 1.0F : 0.0F);
     frame.Uniform1f(uniform("u_has_normal"),
-                    Array(kGles1NormalArray, kTexture0).enabled ? 1.0F : 0.0F);
+                    (core.Capability(0x8840U) || Array(kGles1NormalArray, kTexture0).enabled) ? 1.0F : 0.0F);
     frame.Uniform1f(uniform("u_has_point_size"),
                     Array(kGles1PointSizeArray, kTexture0).enabled ? 1.0F : 0.0F);
     frame.Uniform1f(uniform("u_lighting"),
@@ -1098,6 +1171,8 @@ void BindAndroidBoundaryGles1Draw(
                                         const std::uint64_t thread_id) {
         std::uint32_t array{};
         switch (arguments[0]) {
+        case 0x8849U: array = kGles1MatrixIndexArray; break;
+        case 0x86ACU: array = kGles1WeightArray; break;
         case 0x808EU: array = kGles1VertexArray; break;
         case 0x808FU: array = kGles1NormalArray; break;
         case 0x8090U: array = kGles1ColorArray; break;
@@ -1135,10 +1210,17 @@ void BindAndroidBoundaryGles1Draw(
         return 0U;
     });
     extensions.Bind("glCurrentPaletteMatrixOES",
-                    [&draw, require_frame](const auto arguments, const auto) {
+                    [&draw, &core, require_frame](const auto arguments, const auto) {
         AndroidBoundaryGles1DrawState::ValidateCurrentPaletteMatrix(arguments[0]);
         static_cast<void>(require_frame("glCurrentPaletteMatrixOES"));
         draw.SetCurrentPaletteMatrix(arguments[0]);
+        core.Matrices().SelectPalette(arguments[0]);
+        return 0U;
+    });
+    extensions.Bind("glLoadPaletteFromModelViewMatrixOES",
+                    [&core, require_frame](const auto, const auto) {
+        static_cast<void>(require_frame("glLoadPaletteFromModelViewMatrixOES"));
+        core.Matrices().LoadPaletteFromModelview();
         return 0U;
     });
     const auto set_palette_pointer =

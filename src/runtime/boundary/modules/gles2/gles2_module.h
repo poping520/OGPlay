@@ -34,8 +34,16 @@ public:
     std::uint32_t Invoke(const A32CallFrame& call) {
         std::scoped_lock execution_lock(graphics_.execution_mutex);
         graphics_.ActivateCurrentContext();
+        if constexpr (FunctionId == 70U || FunctionId == 65U) {
+            if (call.Argument(2) == 0U)
+                throw std::invalid_argument("GL object query requires a guest output pointer");
+        }
         try {
             return InvokeChecked<FunctionId>(call);
+        } catch (const gles::GlesTransferStateError&) {
+            if constexpr (FunctionId == 72U || FunctionId == 73U || FunctionId == 107U || FunctionId == 109U) {
+                graphics_.gl_context.Shared().SetGuestError(0x0500U); return 0U;
+            } else throw;
         } catch (const gles::GlesApiError& error) {
             graphics_.gl_context.Shared().SetGuestError(error.Code());
             return 0U;
@@ -320,12 +328,14 @@ private:
             graphics_.frames.RecordShaderCompile();
             return 0;
         }
-        if constexpr (FunctionId == 70U) {
-            const auto value = graphics_.RequireFrame(symbol)
-                                   .GetShaderParameter(args[0], args[1]);
-            graphics_.WriteRequired32(
-                args[2], std::bit_cast<std::uint32_t>(value), tid, symbol);
-            return 0;
+        if constexpr (FunctionId == 70U || FunctionId == 65U) {
+            auto output = gles::GuestBuffer::Prepare(calls_.address_space, memory::GuestAddress{args[2]},
+                4U, gles::GuestTransferDirection::output, false, tid);
+            auto& frame = graphics_.RequireFrame(symbol);
+            const auto value = std::bit_cast<std::uint32_t>(FunctionId == 70U
+                ? frame.GetShaderParameter(args[0], args[1]) : frame.GetProgramParameter(args[0], args[1]));
+            for (std::size_t i = 0; i < 4; ++i) output.WritableBytes()[i] = static_cast<std::byte>(value >> (i * 8U));
+            output.Commit(); return 0U;
         }
         if constexpr (FunctionId == 32U) {
             graphics_.RequireFrame(symbol).DeleteShader(args[0]);
@@ -353,13 +363,7 @@ private:
             graphics_.frames.RecordProgramLink();
             return 0;
         }
-        if constexpr (FunctionId == 65U) {
-            const auto value = graphics_.RequireFrame(symbol)
-                                   .GetProgramParameter(args[0], args[1]);
-            graphics_.WriteRequired32(
-                args[2], std::bit_cast<std::uint32_t>(value), tid, symbol);
-            return 0;
-        }
+
         if constexpr (FunctionId == 57U) {
             return std::bit_cast<std::uint32_t>(graphics_.RequireFrame(symbol)
                 .GetAttribLocation(args[0], graphics_.ReadCString(

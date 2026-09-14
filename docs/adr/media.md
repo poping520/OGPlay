@@ -223,3 +223,44 @@ identity，禁止暴露 host 指针。Java GLES30 复用同一 catalog、Native 
 ES1/ES2 Context 继续只接受各自版本允许的调用和版本字符串。ES3 完成前能力保持 partial；
 catalog 名称完整不能替代 Native/Java 行为验收。proc-address 可为已接通的 ES3 core 返回稳定
 forwarder，并在调用时按当前线程 Context 版本路由。
+
+
+<a id="adr-0063"></a>
+
+## ADR-0063 · EGL 对象独立所有权与受检扩展
+
+- 状态：Accepted
+- 日期：2026-09-14
+- Supersedes：ADR-0061 的 Context/Surface 组合 backing；ADR-0062 的新增扩展空清单。
+- 依据：[BND-34](../tasks/boundary/BND-34.md) 与当前代码审计。
+
+### 决定
+
+一个 guest Context 对应一个 eager native Context，一个 Surface 对应一个独立 native pbuffer。
+Display 资源被两者共享持有，native display 的 initialize/terminate 成对引用计数。MakeCurrent
+只绑定现有对象的 draw/read surface；Context 共享在创建时建立，不依赖首次绑定顺序或共享源
+句柄后续存活。固定管线和可编程 shadow 按 Context 保存，共享对象元数据按 share group 持有。
+最后一个 Context 退役时回收该组 guest map/sync identity，释放 current 不等于销毁对象。
+
+GLES2/3 的 extensions、indexed strings 和数量查询使用同一受检清单。新增 EGL KHR sync、
+reusable sync、wait sync、GL texture/renderbuffer image 只在实际 ANGLE 后端支持时发布；
+GL_OES_EGL_image 使用 guest image identity，禁止将 guest 指针转为 host image。
+GLES1 matrix palette 补齐四个标准入口，CPU 只做有界数组搬运与加权顶点/法线变换，绘制仍由
+现有 ANGLE shader 完成，不引入 GLES 到桌面 GL 转译。32 个 palette matrix 与最多 4 个权重
+按 Context 保存，数组可来自 guest RAM 或共享 VBO。
+
+pbuffer 的 EGL texture 绑定及 mipmap 属性调用真实 ANGLE；swap interval 传给 ANGLE。
+窗口 swap 从 draw surface 默认 framebuffer 取帧，然后恢复原 read surface/FBO，交给现有
+SDL 呈现链。此实现不声称控制桌面合成器的实际垂直同步时刻。
+
+### 范围和后果
+
+目标仍是游戏进程兼容层，不是完整 Android 图形系统。Pixmap/OpenVG client buffer 不属于
+当前 EGL config 支持面，继续返回明确 EGL error。Android native-buffer、native-fence FD、
+presentation-time 与厂商扩展全集没有可用的 guest 系统对象契约，本次不发布、不伪造成功；
+后续必须按真实游戏调用和明确对象契约追加实现。Windows 当前 D3D11 ANGLE 实测没有
+EGL_KHR_fence_sync，但有 EGL_KHR_reusable_sync；前者不能因入口存在就宣告可用。
+
+接口目录完整与定向回归通过均不是 Android CTS/Khronos conformance 认证。完整性账本保留
+整体 partial 状态；本任务只记录逐项实现和机器可验证的行为，未提供的 Android SO 包也不能
+声称完成了 ELF dynsym/ABI 全量比对。

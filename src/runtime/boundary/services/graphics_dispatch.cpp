@@ -30,10 +30,6 @@ namespace {
 constexpr memory::GuestAddress kQueryStringPage{0x70001000U};
 constexpr std::uint32_t kQueryStringSlotBytes = 1024;
 constexpr std::uint32_t kQueryStringSlotCount = 5;
-constexpr std::string_view kGuestGles2Extensions =
-    "GL_OES_compressed_ETC1_RGB8_texture "
-    "GL_IMG_texture_compression_pvrtc "
-    "GL_OES_rgb8_rgba8 ";
 constexpr std::uint32_t kArrayBuffer = 0x8892U;
 constexpr std::uint32_t kElementArrayBuffer = 0x8893U;
 constexpr std::uint32_t kStreamDraw = 0x88E0U;
@@ -135,6 +131,13 @@ std::uint32_t QueryStringOffset(const std::uint32_t parameter) {
 
 }  // namespace
 
+std::vector<std::string_view> GuestGlesExtensions(gles::AngleFrame& frame) {
+    std::vector<std::string_view> values(kGuestGlesExtensions.begin(), kGuestGlesExtensions.end());
+    const auto native = " " + frame.GetString(0x1F03U) + " ";
+    if (native.find(" GL_OES_EGL_image ") != std::string::npos) values.push_back("GL_OES_EGL_image");
+    return values;
+}
+
 class AndroidBoundaryGles::Impl final {
 public:
     Impl(memory::AddressSpace& address_space, GuestGlContext& context)
@@ -173,13 +176,7 @@ public:
             const auto names = ReadWords(Pointer(call));
             if (function_id == Id(Gles2Function::delete_buffers)) {
                 RequireFrame(frame, symbol).DeleteBuffers(names);
-                const auto bound = context_.Shared().transfer.Snapshot();
-                if (std::ranges::find(names, bound.array_buffer) != names.end()) {
-                    context_.Shared().transfer.BindBuffer(0x8892U, 0);
-                }
-                if (std::ranges::find(names, bound.element_array_buffer) != names.end()) {
-                    context_.Shared().transfer.BindBuffer(0x8893U, 0);
-                }
+                context_.Shared().transfer.DeleteBuffers(names);
             } else if (function_id == Id(Gles2Function::delete_textures)) {
                 RequireFrame(frame, symbol).DeleteTextures(names);
                 context_.Shared().DeleteTextures(names);
@@ -272,6 +269,11 @@ public:
             for (std::size_t index = 4; index < all.size(); ++index) {
                 all[index] = a32_call.Argument(index);
             }
+            if (context_.Shared().transfer.BoundBuffer(0x88ECU) != 0U) {
+                RequireFrame(frame, symbol).TransferPixelBuffer(
+                    gles::AngleFrame::PixelBufferOperation::image2d, all);
+                return 0U;
+            }
             auto call = PrepareCall(function_id, all, tid);
             const auto& pixels = Pointer(call);
             RequireFrame(frame, symbol).TextureImage2D(
@@ -291,6 +293,11 @@ public:
             for (std::size_t index = 4; index < all.size(); ++index) {
                 all[index] = a32_call.Argument(index);
             }
+            if (context_.Shared().transfer.BoundBuffer(0x88ECU) != 0U) {
+                RequireFrame(frame, symbol).TransferPixelBuffer(
+                    gles::AngleFrame::PixelBufferOperation::sub2d, all);
+                return 0U;
+            }
             auto call = PrepareCall(function_id, all, tid);
             RequireFrame(frame, symbol).TextureSubImage2D(
                 all[0], std::bit_cast<std::int32_t>(all[1]),
@@ -305,12 +312,12 @@ public:
             function_id == Id(Gles2Function::disable_vertex_attrib_array)) {
             const auto index = args[0];
             RequireAttributeIndex(index);
-            attributes_[index].enabled =
+            context_.Programmable().attributes[index].enabled =
                 function_id == Id(Gles2Function::enable_vertex_attrib_array);
-            attributes_[index].enable_lr =
+            context_.Programmable().attributes[index].enable_lr =
                 a32_call.LinkRegister();
             RequireFrame(frame, symbol).SetVertexAttributeEnabled(
-                index, attributes_[index].enabled);
+                index, context_.Programmable().attributes[index].enabled);
             return 0;
         }
         if (function_id == Id(Gles2Function::vertex_attrib_pointer)) {
@@ -337,19 +344,23 @@ public:
                     "glVertexAttribPointer expected a deferred pointer");
             }
             const auto buffer = context_.Shared().transfer.Snapshot().array_buffer;
-            const auto current = attributes_[index].current;
-            attributes_[index] = {
+            const auto saved_attribute = context_.Programmable().attributes[index];
+            const auto current = saved_attribute.current;
+            context_.Programmable().attributes[index] = {
                 .size = size,
                 .type = type,
                 .normalized = normalized,
                 .stride = stride,
                 .pointer = pointer,
                 .buffer = buffer,
-                .enabled = attributes_[index].enabled,
+                .enabled = context_.Programmable().attributes[index].enabled,
                 .defined = true,
                 .definition_lr = a32_call.LinkRegister(),
-                .enable_lr = attributes_[index].enable_lr,
+                .enable_lr = context_.Programmable().attributes[index].enable_lr,
                 .current = current,
+                .divisor = saved_attribute.divisor,
+                .current_kind = saved_attribute.current_kind,
+                .integer_current = saved_attribute.integer_current,
             };
             if (buffer != 0U) {
                 RequireFrame(frame, symbol).VertexAttributePointer(
@@ -435,7 +446,8 @@ public:
                 std::bit_cast<float>(a32_call.Argument(4))};
             RequireFrame(frame, symbol).VertexAttribute4f(
                 args[0], current[0], current[1], current[2], current[3]);
-            attributes_[args[0]].current = current;
+            context_.Programmable().attributes[args[0]].current = current;
+            context_.Programmable().attributes[args[0]].current_kind = 0U;
             return 0;
         }
         if (function_id == Id(Gles2Function::get_active_attrib) ||
@@ -465,6 +477,19 @@ public:
             return 0;
         }
         if (function_id == Id(Gles2Function::get_integerv)) {
+            context_.Shared().transfer.SetQueryElementCount(args[0],
+                RequireFrame(frame, symbol).StateQueryCount(args[0]));
+            if (args[0] == 0x821DU) {
+                // Validate the version/pname in the driver, then publish only
+                // extensions with a complete guest boundary.
+                static_cast<void>(RequireFrame(frame, symbol).GetIntegers(args[0], 1U));
+                auto output = gles::GuestBuffer::Prepare(address_space_,
+                    memory::GuestAddress{args[1]}, 4U,
+                    gles::GuestTransferDirection::output, false, tid);
+                const std::array count{static_cast<std::uint32_t>(GuestGlesExtensions(RequireFrame(frame, symbol)).size())};
+                WriteWords(output, count);
+                return 0U;
+            }
             auto call = PrepareCall(function_id, std::span(args).first<2>(), tid);
             auto& output = Pointer(call);
             std::vector<std::uint32_t> words;
@@ -495,7 +520,11 @@ public:
         if (function_id == Id(Gles2Function::get_string)) {
             if (args[0] == 0x1F03U) {
                 static_cast<void>(RequireFrame(frame, symbol));
-                return WriteQueryString(args[0], kGuestGles2Extensions, tid);
+                std::string value;
+                for (const auto extension : GuestGlesExtensions(RequireFrame(frame, symbol))) {
+                    value.append(extension); value.push_back(' ');
+                }
+                return WriteQueryString(args[0], value, tid);
             }
             return WriteQueryString(
                 args[0], RequireFrame(frame, symbol).GetString(args[0]), tid);
@@ -603,7 +632,7 @@ public:
             const auto maximum = MaximumGuestIndex(indices, type);
             StageClientAttributes(current, maximum, tid);
             EnsureIndexStagingBuffer(current);
-            current.BindBuffer(kElementArrayBuffer, index_staging_buffer_);
+            current.BindBuffer(kElementArrayBuffer, context_.Programmable().index_staging_buffer);
             current.BufferData(kElementArrayBuffer,
                                static_cast<std::uint32_t>(indices.size()),
                                indices, kStreamDraw);
@@ -616,22 +645,38 @@ public:
                 args[0], args[1], args[2], args[3],
                 a32_call.Argument(4), a32_call.Argument(5),
                 a32_call.Argument(6)};
+            if (context_.Shared().transfer.BoundBuffer(0x88EBU) != 0U) {
+                RequireFrame(frame, symbol).TransferPixelBuffer(
+                    gles::AngleFrame::PixelBufferOperation::read, all);
+                return 0U;
+            }
             auto call = PrepareCall(function_id, all, tid);
             auto& output = Pointer(call);
+            const auto layout = context_.Shared().transfer.PixelLayout2D(true,
+                std::bit_cast<std::int32_t>(all[2]), std::bit_cast<std::int32_t>(all[3]), all[4], all[5]);
+            std::vector<memory::ValidatedGuestWrite> rows;
+            for (std::uint32_t row = 0; row < layout.rows; ++row) {
+                rows.push_back(address_space_.PreflightWrite({memory::GuestAddress{all[6]}.Add(
+                    layout.offset + row * layout.stride), layout.row_bytes}, tid));
+            }
             RequireFrame(frame, symbol).ReadPixels(
                 std::bit_cast<std::int32_t>(all[0]),
                 std::bit_cast<std::int32_t>(all[1]),
                 std::bit_cast<std::int32_t>(all[2]),
                 std::bit_cast<std::int32_t>(all[3]), all[4], all[5],
                 output.WritableBytes());
-            output.Commit();
+            for (std::uint32_t row = 0; row < layout.rows; ++row) {
+                address_space_.WritePrevalidated(rows[row], output.Bytes().subspan(
+                    static_cast<std::size_t>(layout.offset + row * layout.stride),
+                    static_cast<std::size_t>(layout.row_bytes)));
+            }
             return 0;
         }
         return std::nullopt;
     }
 
     [[nodiscard]] bool HasEnabledVertexAttribute() const noexcept {
-        return std::ranges::any_of(attributes_, [](const Attribute& attribute) {
+        return std::ranges::any_of(context_.Programmable().attributes, [](const Attribute& attribute) {
             return attribute.enabled && attribute.defined;
         });
     }
@@ -639,13 +684,14 @@ public:
     void SetVertexAttributeValue(const std::uint32_t index,
                                  const std::array<float, 4> value) {
         RequireAttributeIndex(index);
-        attributes_[index].current = value;
+        context_.Programmable().attributes[index].current = value;
+        context_.Programmable().attributes[index].current_kind = 0U;
     }
 
     [[nodiscard]] std::int32_t VertexAttributeParameter(
         const std::uint32_t index, const std::uint32_t parameter) const {
         RequireAttributeIndex(index);
-        const auto& attribute = attributes_[index];
+        const auto& attribute = context_.Programmable().attributes[index];
         switch (parameter) {
         case 0x8622U: return attribute.enabled ? 1 : 0;
         case 0x8623U: return attribute.size;
@@ -662,7 +708,7 @@ public:
     [[nodiscard]] std::uint32_t VertexAttributePointerIdentity(
         const std::uint32_t index) const {
         RequireAttributeIndex(index);
-        return attributes_[index].pointer;
+        return context_.Programmable().attributes[index].pointer;
     }
 
     [[nodiscard]] gles::GlesTransferStateSnapshot TransferState() const noexcept {
@@ -671,6 +717,10 @@ public:
 
     void RestoreNativeState(gles::AngleFrame& frame) {
         const auto& shared = context_.Shared();
+        if (frame.ClientVersion() >= 3) {
+            const std::array words{context_.Programmable().vertex_array};
+            static_cast<void>(frame.InvokeGles3Scalar(6U, words));
+        }
         frame.UseProgram(shared.CurrentProgram());
         for (const auto& [binding, texture] : shared.TextureBindings()) {
             frame.ActiveTexture(binding.texture_unit);
@@ -678,18 +728,34 @@ public:
         }
         frame.ActiveTexture(shared.active_texture);
         frame.BindFramebuffer(0x8D40U, shared.Framebuffer());
-        for (std::size_t index = 0; index < attributes_.size(); ++index) {
-            const auto& attribute = attributes_[index];
+        if (frame.ClientVersion() >= 3) frame.BindFramebuffer(0x8CA8U, shared.ReadFramebuffer());
+        for (std::size_t index = 0; index < context_.Programmable().attributes.size(); ++index) {
+            const auto& attribute = context_.Programmable().attributes[index];
             if (attribute.defined && attribute.buffer != 0U) {
                 frame.BindBuffer(kArrayBuffer, attribute.buffer);
+                if (attribute.integer) {
+                    const std::array words{static_cast<std::uint32_t>(index),
+                        static_cast<std::uint32_t>(attribute.size), attribute.type,
+                        static_cast<std::uint32_t>(attribute.stride), attribute.pointer};
+                    frame.InvokeGles3Offset(102U, words);
+                } else {
                 frame.VertexAttributePointer(
                     static_cast<std::uint32_t>(index), attribute.size,
                     attribute.type, attribute.normalized, attribute.stride,
                     attribute.pointer);
+                }
             }
             frame.SetVertexAttributeEnabled(static_cast<std::uint32_t>(index),
                                             attribute.enabled);
-            frame.VertexAttribute4f(
+            if (frame.ClientVersion() >= 3) {
+                const std::array words{static_cast<std::uint32_t>(index), attribute.divisor};
+                static_cast<void>(frame.InvokeGles3Scalar(97U, words));
+            }
+            if (attribute.current_kind != 0U && frame.ClientVersion() >= 3) {
+                const std::array args{static_cast<std::uint32_t>(index)};
+                auto words = attribute.integer_current;
+                frame.InvokeGles3Words(attribute.current_kind == 1U ? 99U : 101U, args, words);
+            } else frame.VertexAttribute4f(
                 static_cast<std::uint32_t>(index), attribute.current[0],
                 attribute.current[1], attribute.current[2],
                 attribute.current[3]);
@@ -701,26 +767,14 @@ public:
 
     void Reset() noexcept {
         context_.Reset();
-        attributes_ = {};
-        staging_buffers_.clear();
-        client_array_staging_.clear();
-        index_staging_buffer_ = 0;
+        context_.Programmable().attributes = {};
+        context_.Programmable().staging_buffers.clear();
+        context_.Programmable().client_array_staging.clear();
+        context_.Programmable().index_staging_buffer = 0;
     }
 
 private:
-    struct Attribute final {
-        std::int32_t size{4};
-        std::uint32_t type{kFloat};
-        bool normalized{};
-        std::int32_t stride{};
-        std::uint32_t pointer{};
-        std::uint32_t buffer{};
-        bool enabled{};
-        bool defined{};
-        std::uint32_t definition_lr{};
-        std::uint32_t enable_lr{};
-        std::array<float, 4> current{0.0F, 0.0F, 0.0F, 1.0F};
-    };
+    using Attribute = ProgrammableAttribute;
 
     static void RequireAttributeIndex(const std::uint32_t index) {
         if (index >= kMaximumVertexAttributes) {
@@ -729,22 +783,22 @@ private:
     }
 
     [[nodiscard]] bool HasEnabledClientAttribute() const noexcept {
-        return std::ranges::any_of(attributes_, [](const Attribute& attribute) {
+        return std::ranges::any_of(context_.Programmable().attributes, [](const Attribute& attribute) {
             return attribute.enabled && attribute.defined &&
                    attribute.buffer == 0U;
         });
     }
 
     void EnsureStagingBuffers(gles::AngleFrame& frame) {
-        if (!staging_buffers_.empty()) return;
-        staging_buffers_ = frame.GenerateBuffers(kMaximumVertexAttributes);
-        client_array_staging_.resize(kMaximumVertexAttributes);
+        if (!context_.Programmable().staging_buffers.empty()) return;
+        context_.Programmable().staging_buffers = frame.GenerateBuffers(kMaximumVertexAttributes);
+        context_.Programmable().client_array_staging.resize(kMaximumVertexAttributes);
     }
 
     void EnsureIndexStagingBuffer(gles::AngleFrame& frame) {
-        if (index_staging_buffer_ != 0U) return;
+        if (context_.Programmable().index_staging_buffer != 0U) return;
         const auto buffers = frame.GenerateBuffers(1);
-        index_staging_buffer_ = buffers.front();
+        context_.Programmable().index_staging_buffer = buffers.front();
     }
 
     void StageClientAttributes(gles::AngleFrame& frame,
@@ -752,8 +806,8 @@ private:
                                const std::uint64_t thread_id) {
         if (!HasEnabledClientAttribute()) return;
         EnsureStagingBuffers(frame);
-        for (std::size_t index = 0; index < attributes_.size(); ++index) {
-            const auto& attribute = attributes_[index];
+        for (std::size_t index = 0; index < context_.Programmable().attributes.size(); ++index) {
+            const auto& attribute = context_.Programmable().attributes[index];
             if (!attribute.enabled || !attribute.defined ||
                 attribute.buffer != 0U) {
                 continue;
@@ -764,7 +818,7 @@ private:
             try {
                 transfer = gles::PrepareGuestInput(
                     address_space_, memory::GuestAddress{attribute.pointer},
-                    bytes, false, client_array_staging_[index], thread_id);
+                    bytes, false, context_.Programmable().client_array_staging[index], thread_id);
             } catch (const gles::GuestTransferError& error) {
                 throw gles::GuestTransferError(
                     "GLES2 client attribute " + std::to_string(index) +
@@ -778,7 +832,7 @@ private:
                     std::to_string(attribute.definition_lr) +
                     " enable_lr=" + std::to_string(attribute.enable_lr));
             }
-            frame.BindBuffer(kArrayBuffer, staging_buffers_[index]);
+            frame.BindBuffer(kArrayBuffer, context_.Programmable().staging_buffers[index]);
             frame.BufferData(kArrayBuffer,
                              static_cast<std::uint32_t>(transfer.size()),
                              transfer, kStreamDraw);
@@ -910,10 +964,6 @@ private:
 
     memory::AddressSpace& address_space_;
     GuestGlContext& context_;
-    std::array<Attribute, kMaximumVertexAttributes> attributes_{};
-    std::vector<std::uint32_t> staging_buffers_;
-    std::vector<std::vector<std::byte>> client_array_staging_;
-    std::uint32_t index_staging_buffer_{};
     bool query_string_page_mapped_{};
 };
 

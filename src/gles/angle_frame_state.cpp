@@ -274,6 +274,20 @@ void AngleFrame::Flush() {
 #endif
 }
 
+std::size_t AngleFrame::StateQueryCount(const std::uint32_t pname) {
+    switch (pname) {
+    case 0x0B70U: case 0x0D3AU: case 0x846DU: case 0x846EU: return 2U;
+    case 0x0BA2U: case 0x0C10U: case 0x0C22U: case 0x0C23U: case 0x8005U: return 4U;
+    case 0x86A3U: case 0x8DF8U: case 0x87FFU: {
+        const auto count = GetIntegers(pname == 0x86A3U ? 0x86A2U :
+                                      pname == 0x8DF8U ? 0x8DF9U : 0x87FEU, 1U).front();
+        if (count < 0 || count > 16384) throw std::length_error("GLES query shape exceeds limit");
+        return static_cast<std::size_t>(count);
+    }
+    default: return 1U;
+    }
+}
+
 std::vector<std::int32_t> AngleFrame::GetIntegers(
     const std::uint32_t parameter, const std::size_t count) {
     if (count > static_cast<std::size_t>((std::numeric_limits<std::int32_t>::max)())) {

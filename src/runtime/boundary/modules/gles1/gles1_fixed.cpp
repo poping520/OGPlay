@@ -471,8 +471,16 @@ std::optional<std::int32_t> Gles1ClientArrayInteger(
     const std::uint32_t pname, const AndroidBoundaryGles1DrawState& draw,
     const AndroidBoundaryGles1LegacyState& legacy) {
     std::uint32_t array{};
-    enum class Field { size, type, stride } field{};
+    enum class Field { size, type, stride, buffer } field{};
     switch (pname) {
+    case 0x8846U: array = kGles1MatrixIndexArray; field = Field::size; break;
+    case 0x8847U: array = kGles1MatrixIndexArray; field = Field::type; break;
+    case 0x8848U: array = kGles1MatrixIndexArray; field = Field::stride; break;
+    case 0x8B9EU: array = kGles1MatrixIndexArray; field = Field::buffer; break;
+    case 0x86ABU: array = kGles1WeightArray; field = Field::size; break;
+    case 0x86A9U: array = kGles1WeightArray; field = Field::type; break;
+    case 0x86AAU: array = kGles1WeightArray; field = Field::stride; break;
+    case 0x889EU: array = kGles1WeightArray; field = Field::buffer; break;
     case 0x807AU: array = kGles1VertexArray; field = Field::size; break;
     case 0x807BU: array = kGles1VertexArray; field = Field::type; break;
     case 0x807CU: array = kGles1VertexArray; field = Field::stride; break;
@@ -490,6 +498,7 @@ std::optional<std::int32_t> Gles1ClientArrayInteger(
                              ? legacy.ClientActiveTexture()
                              : kTexture0;
     const auto& state = draw.Array(array, texture);
+    if (field == Field::buffer) return static_cast<std::int32_t>(state.buffer);
     if (field == Field::size) return state.size;
     if (field == Field::stride) return state.stride;
     return static_cast<std::int32_t>(state.type);

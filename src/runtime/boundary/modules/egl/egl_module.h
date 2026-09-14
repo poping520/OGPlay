@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <map>
 #include <mutex>
+#include <optional>
 #include <span>
 
 #include "ogplay/runtime/boundary/boundary_symbol.h"
@@ -41,6 +42,27 @@ private:
         std::uint32_t context{};
     };
 
+    struct ContextState final {
+        std::uint32_t display{};
+        std::uint32_t config{};
+        std::uint32_t client_version{2U};
+        std::uint32_t share_context{};
+        std::optional<std::uint64_t> current_thread;
+        bool destroy_pending{};
+    };
+
+    enum class SurfaceKind : std::uint8_t { window, pbuffer };
+    struct SurfaceState final {
+        std::uint32_t display{};
+        std::uint32_t config{};
+        SurfaceKind kind{SurfaceKind::window};
+        std::uint32_t width{};
+        std::uint32_t height{};
+        std::uint32_t swap_interval{1U};
+        std::uint32_t current_count{};
+        bool destroy_pending{};
+    };
+
     template <std::uint16_t FunctionId>
     std::uint32_t ExecuteExport(const A32CallFrame& call);
 
@@ -50,16 +72,18 @@ private:
         std::uint32_t name, std::uint64_t thread_id);
     [[nodiscard]] std::uint32_t ResolveProcAddress(
         GuestCString name, std::uint64_t thread_id) const;
+    void CollectRetiredObjectsLocked();
 
     BoundaryCallServices& calls_;
     EglBoundaryContext& context_;
     std::mutex mutex_;
     std::map<std::uint64_t, ThreadState> threads_;
+    std::map<std::uint32_t, ContextState> contexts_;
+    std::map<std::uint32_t, SurfaceState> surfaces_;
     bool initialized_{};
     bool strings_mapped_{};
-    std::int32_t swap_interval_{1};
-    std::uint32_t pbuffer_width_{};
-    std::uint32_t pbuffer_height_{};
+    std::uint32_t next_surface_{3U};
+    std::uint32_t next_context_{4U};
     std::atomic<bool> guest_graphics_retired_{false};
 };
 

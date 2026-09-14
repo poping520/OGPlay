@@ -198,6 +198,14 @@ std::uint32_t BoundaryCallAddress(
     return fixture.cpu.GetState().Register(ogplay::cpu::CoreRegister::r0);
 }
 
+void PrepareNativeEgl(BoundaryFixture& fixture) {
+    REQUIRE(fixture.Call("libEGL.so", "eglInitialize", {1U}) == 1U);
+    REQUIRE(fixture.Call("libEGL.so", "eglCreateWindowSurface",
+                         {1U, 2U, 1U, 0U}) == 3U);
+    REQUIRE(fixture.Call("libEGL.so", "eglCreateContext",
+                         {1U, 2U, 0U, 0U}) == 4U);
+}
+
 }  // namespace
 
 TEST_CASE("Android boundary progress table is conservative by family") {
@@ -490,6 +498,10 @@ TEST_CASE("Android EGL publishes and implements API 19 base query surface") {
         CHECK(fixture.boundary.Symbols().Lookup("libEGL.so", symbol).has_value());
     }
 
+    REQUIRE(fixture.Call("libEGL.so", "eglInitialize", {1U}) == 1U);
+    REQUIRE(fixture.Call("libEGL.so", "eglCreateContext",
+                         {1U, 2U, 0U, 0U}) == 4U);
+
     const auto count = fixture.output;
     const auto configs = fixture.output.Add(4U);
     CHECK(fixture.Call("libEGL.so", "eglGetConfigs",
@@ -500,7 +512,7 @@ TEST_CASE("Android EGL publishes and implements API 19 base query surface") {
     const auto query = fixture.output.Add(32U);
     CHECK(fixture.Call("libEGL.so", "eglQueryContext",
                        {1U, 4U, 0x3098U, query.Value()}) == 1U);
-    CHECK(fixture.bus.Read32(query, 1U) == 2U);
+    CHECK(fixture.bus.Read32(query, 1U) == 1U);
     CHECK(fixture.Call("libEGL.so", "eglQueryAPI") == 0x30A0U);
     CHECK(fixture.Call("libEGL.so", "eglGetCurrentContext") == 0U);
     CHECK(fixture.Call("libEGL.so", "eglGetCurrentDisplay") == 0U);
@@ -508,7 +520,8 @@ TEST_CASE("Android EGL publishes and implements API 19 base query surface") {
                        {99U, 4U, 0x3098U, query.Value()}) == 0U);
     CHECK(fixture.Call("libEGL.so", "eglGetError") == 0x3008U);
     CHECK(fixture.Call("libEGL.so", "eglGetConfigs",
-                       {1U, 0U, 0U, 0U}) == 1U);
+                       {1U, 0U, 0U, 0U}) == 0U);
+    CHECK(fixture.Call("libEGL.so", "eglGetError") == 0x300CU);
 }
 
 TEST_CASE("Android EGL proc address resolves sealed public thunks") {
@@ -545,6 +558,7 @@ TEST_CASE("Android EGL errors and API binding are isolated by guest thread") {
 
 TEST_CASE("Android EGL query strings and pbuffer attributes use guest memory") {
     BoundaryFixture fixture;
+    REQUIRE(fixture.Call("libEGL.so", "eglInitialize", {1U}) == 1U);
     const auto vendor = fixture.Call("libEGL.so", "eglQueryString",
                                      {1U, 0x3053U, 0U, 0U});
     REQUIRE(vendor != 0U);
@@ -567,7 +581,57 @@ TEST_CASE("Android EGL query strings and pbuffer attributes use guest memory") {
                        {1U, 3U, 0x3056U, size.Value()}) == 1U);
     CHECK(fixture.bus.Read32(size, 1U) == 32U);
     CHECK(fixture.Call("libEGL.so", "eglSwapInterval",
-                       {1U, 0U, 0U, 0U}) == 1U);
+                       {1U, 0U, 0U, 0U}) == 0U);
+    CHECK(fixture.Call("libEGL.so", "eglGetError") == 0x300DU);
+}
+
+TEST_CASE("Android EGL owns distinct objects and defers current destruction") {
+    BoundaryFixture fixture;
+    CHECK(fixture.Call("libEGL.so", "eglCreateContext", {1U, 2U}) == 0U);
+    CHECK(fixture.Call("libEGL.so", "eglGetError") == 0x3001U);
+    REQUIRE(fixture.Call("libEGL.so", "eglInitialize", {1U}) == 1U);
+
+    const auto context_attributes = fixture.output;
+    fixture.bus.Write32(context_attributes, 0x3098U, 1U);
+    fixture.bus.Write32(context_attributes.Add(4U), 2U, 1U);
+    fixture.bus.Write32(context_attributes.Add(8U), 0x3038U, 1U);
+    const auto first_context = fixture.Call(
+        "libEGL.so", "eglCreateContext",
+        {1U, 2U, 0U, context_attributes.Value()});
+    const auto second_context = fixture.Call(
+        "libEGL.so", "eglCreateContext",
+        {1U, 2U, first_context, context_attributes.Value()});
+    CHECK(first_context == 4U);
+    CHECK(second_context == 5U);
+
+    const auto surface_attributes = fixture.output.Add(32U);
+    fixture.bus.Write32(surface_attributes, 0x3057U, 1U);
+    fixture.bus.Write32(surface_attributes.Add(4U), 7U, 1U);
+    fixture.bus.Write32(surface_attributes.Add(8U), 0x3056U, 1U);
+    fixture.bus.Write32(surface_attributes.Add(12U), 5U, 1U);
+    fixture.bus.Write32(surface_attributes.Add(16U), 0x3038U, 1U);
+    const auto first_surface = fixture.Call(
+        "libEGL.so", "eglCreatePbufferSurface",
+        {1U, 2U, surface_attributes.Value()});
+    const auto second_surface = fixture.Call(
+        "libEGL.so", "eglCreateWindowSurface", {1U, 2U, 1U, 0U});
+    CHECK(first_surface == 3U);
+    CHECK(second_surface == 4U);
+
+    REQUIRE(fixture.Call("libEGL.so", "eglMakeCurrent",
+                         {1U, first_surface, first_surface, first_context}) == 1U);
+    CHECK(fixture.Call("libEGL.so", "eglDestroyContext",
+                       {1U, first_context}) == 1U);
+    CHECK(fixture.Call("libEGL.so", "eglDestroySurface",
+                       {1U, first_surface}) == 1U);
+    CHECK(fixture.Call("libEGL.so", "eglQueryContext",
+                       {1U, first_context, 0x3098U,
+                        fixture.output.Add(128U).Value()}) == 1U);
+    REQUIRE(fixture.Call("libEGL.so", "eglMakeCurrent", {1U, 0U, 0U, 0U}) == 1U);
+    CHECK(fixture.Call("libEGL.so", "eglQueryContext",
+                       {1U, first_context, 0x3098U,
+                        fixture.output.Add(128U).Value()}) == 0U);
+    CHECK(fixture.Call("libEGL.so", "eglGetError") == 0x3006U);
 }
 
 TEST_CASE("libc overrides use equivalent export-specific fast and slow bindings") {
@@ -1470,6 +1534,7 @@ TEST_CASE("Android GLES1 publishes and directly binds KitKat Bounds wrappers") {
     }
     if (!ogplay::gles::IsNativeAngleEglAvailable()) return;
 
+    PrepareNativeEgl(fixture);
     CHECK(fixture.Call("libEGL.so", "eglMakeCurrent", {1U, 3U, 3U, 4U}) == 1U);
     const auto address = fixture.boundary.Symbols().Lookup(
         "libGLESv1_CM.so", "glVertexPointerBounds");
@@ -1622,6 +1687,7 @@ TEST_CASE("GLES1 shade model state validates and resets") {
 TEST_CASE("Android boundary shares GLES object namespace and texture state") {
     if (!ogplay::gles::IsNativeAngleEglAvailable()) return;
     BoundaryFixture fixture;
+    PrepareNativeEgl(fixture);
     CHECK(fixture.Call("libEGL.so", "eglMakeCurrent", {1, 3, 3, 4}) == 1);
 
     const auto names = fixture.output;
@@ -1657,12 +1723,13 @@ TEST_CASE("Android boundary shares GLES object namespace and texture state") {
     fixture.bus.Write32(names.Add(12U), from_gles1, 1);
     static_cast<void>(fixture.Call("libGLESv1_CM.so", "glDeleteTextures",
                                    {1U, names.Add(12U).Value()}));
-    CHECK(fixture.Call("libEGL.so", "eglTerminate") == 1U);
+    CHECK(fixture.Call("libEGL.so", "eglTerminate", {1U}) == 1U);
 }
 
 TEST_CASE("DVM-83 managed Java GLES calls share native texture state") {
     if (!ogplay::gles::IsNativeAngleEglAvailable()) return;
     BoundaryFixture fixture;
+    PrepareNativeEgl(fixture);
     CHECK(fixture.Call("libEGL.so", "eglMakeCurrent", {1, 3, 3, 4}) == 1U);
     const auto names = fixture.output;
     static_cast<void>(fixture.Call("libGLESv2.so", "glGenTextures",
@@ -1679,12 +1746,13 @@ TEST_CASE("DVM-83 managed Java GLES calls share native texture state") {
         static_cast<void>(fixture.boundary.InvokeManagedGles(
             ogplay::gles::GlesApi::gles2, "glNoSuchEntry", {}, 1U));
     }()), std::invalid_argument);
-    CHECK(fixture.Call("libEGL.so", "eglTerminate") == 1U);
+    CHECK(fixture.Call("libEGL.so", "eglTerminate", {1U}) == 1U);
 }
 
 TEST_CASE("GLES2 active texture selects the GLES1 texture matrix unit") {
     if (!ogplay::gles::IsNativeAngleEglAvailable()) return;
     BoundaryFixture fixture;
+    PrepareNativeEgl(fixture);
     CHECK(fixture.Call("libEGL.so", "eglMakeCurrent", {1, 3, 3, 4}) == 1U);
     const auto output = fixture.output;
 
@@ -1715,12 +1783,13 @@ TEST_CASE("GLES2 active texture selects the GLES1 texture matrix unit") {
           doctest::Approx(2.0F));
     CHECK(std::bit_cast<float>(fixture.bus.Read32(output.Add(56U), 1U)) ==
           doctest::Approx(3.0F));
-    CHECK(fixture.Call("libEGL.so", "eglTerminate") == 1U);
+    CHECK(fixture.Call("libEGL.so", "eglTerminate", {1U}) == 1U);
 }
 
 TEST_CASE("shared texture bindings preserve independent GLES2 targets") {
     if (!ogplay::gles::IsNativeAngleEglAvailable()) return;
     BoundaryFixture fixture;
+    PrepareNativeEgl(fixture);
     CHECK(fixture.Call("libEGL.so", "eglMakeCurrent", {1, 3, 3, 4}) == 1U);
     const auto output = fixture.output;
     CHECK(fixture.Call("libGLESv2.so", "glGenTextures",
@@ -1788,12 +1857,13 @@ TEST_CASE("shared texture bindings preserve independent GLES2 targets") {
     CHECK_FALSE(metadata.TextureBaseFormat(0x8513U).has_value());
     CHECK(metadata.GenerateMipmapEnabled(0x0DE1U));
     CHECK_FALSE(metadata.GenerateMipmapEnabled(0x8513U));
-    CHECK(fixture.Call("libEGL.so", "eglTerminate") == 1U);
+    CHECK(fixture.Call("libEGL.so", "eglTerminate", {1U}) == 1U);
 }
 
 TEST_CASE("BND-29 GLES2 invalid capabilities latch errors without changing state") {
     REQUIRE(ogplay::gles::IsNativeAngleEglAvailable());
     BoundaryFixture fixture;
+    PrepareNativeEgl(fixture);
     REQUIRE(fixture.Call("libEGL.so", "eglMakeCurrent", {1, 3, 3, 4}) == 1);
     CHECK(fixture.Call("libGLESv2.so", "glEnable", {0x0BE2U}) == 0);
     for (const auto name : {"glEnable", "glDisable", "glIsEnabled"}) {
@@ -1813,13 +1883,14 @@ TEST_CASE("BND-29 GLES2 invalid capabilities latch errors without changing state
     CHECK(fixture.Call("libGLESv1_CM.so", "glEnable", {0x0DE1U}) == 0);
     CHECK(fixture.Call("libGLESv1_CM.so", "glIsEnabled", {0x0DE1U}) == 1);
     CHECK(fixture.Call("libGLESv1_CM.so", "glGetError") == 0);
-    CHECK(fixture.Call("libEGL.so", "eglTerminate") == 1);
+    CHECK(fixture.Call("libEGL.so", "eglTerminate", {1U}) == 1);
     CHECK_THROWS_AS(fixture.Call("libGLESv2.so", "glEnable", {0x0DE1U}), std::runtime_error);
 }
 
 TEST_CASE("Android boundary shares framebuffer raster and capability state") {
     if (!ogplay::gles::IsNativeAngleEglAvailable()) return;
     BoundaryFixture fixture;
+    PrepareNativeEgl(fixture);
     CHECK(fixture.Call("libEGL.so", "eglMakeCurrent", {1, 3, 3, 4}) == 1);
     const auto output = fixture.output;
 
@@ -1859,6 +1930,7 @@ TEST_CASE("Android boundary shares framebuffer raster and capability state") {
 TEST_CASE("supersample cross API queries preserve logical raster state") {
     if (!ogplay::gles::IsNativeAngleEglAvailable()) return;
     BoundaryFixture fixture(2U);
+    PrepareNativeEgl(fixture);
     CHECK(fixture.Call("libEGL.so", "eglMakeCurrent", {1, 3, 3, 4}) == 1U);
     const auto output = fixture.output;
 
@@ -1891,12 +1963,13 @@ TEST_CASE("supersample cross API queries preserve logical raster state") {
     CHECK(fixture.bus.Read32(output.Add(52U), 1U) == 4U);
     CHECK(fixture.bus.Read32(output.Add(56U), 1U) == 50U);
     CHECK(fixture.bus.Read32(output.Add(60U), 1U) == 60U);
-    CHECK(fixture.Call("libEGL.so", "eglTerminate") == 1U);
+    CHECK(fixture.Call("libEGL.so", "eglTerminate", {1U}) == 1U);
 }
 
 TEST_CASE("new GL context exposes logical default raster state") {
     if (!ogplay::gles::IsNativeAngleEglAvailable()) return;
     BoundaryFixture fixture(2U);
+    PrepareNativeEgl(fixture);
     CHECK(fixture.Call("libEGL.so", "eglMakeCurrent", {1, 3, 3, 4}) == 1U);
     const auto output = fixture.output;
 
@@ -1924,7 +1997,7 @@ TEST_CASE("new GL context exposes logical default raster state") {
     constexpr auto kDither = UINT32_C(0x0BD0);
     CHECK(fixture.Call("libGLESv2.so", "glIsEnabled", {kDither}) == 1U);
     CHECK(fixture.Call("libGLESv1_CM.so", "glIsEnabled", {kDither}) == 1U);
-    CHECK(fixture.Call("libEGL.so", "eglTerminate") == 1U);
+    CHECK(fixture.Call("libEGL.so", "eglTerminate", {1U}) == 1U);
 }
 
 TEST_CASE("GLES1 matrix state composes and bounds stacks") {
@@ -3408,6 +3481,7 @@ TEST_CASE("Android looper publishes command and input poll sources") {
 TEST_CASE("Android EGL and GLES boundary produces a guest frame") {
     if (!ogplay::gles::IsNativeAngleEglAvailable()) return;
     BoundaryFixture fixture;
+    PrepareNativeEgl(fixture);
     CHECK(fixture.Call("libEGL.so", "eglMakeCurrent", {1, 3, 3, 4}) == 1);
     static_cast<void>(fixture.Call("libGLESv2.so", "glViewport", {0, 0, 4, 3}));
     static_cast<void>(fixture.Call("libGLESv2.so", "glClearColor",
@@ -3495,10 +3569,8 @@ TEST_CASE("Android boundary owns a managed GLSurface frame lifecycle") {
     REQUIRE(recycled.has_value());
     CHECK(recycled->sequence == 2);
     CHECK(recycled->rgba8.data() == first_storage);
-    CHECK_THROWS_WITH_AS(
-        fixture.Call("libEGL.so", "eglMakeCurrent", {1, 3, 3, 4}),
-        "guest EGL cannot replace a host-managed ANGLE surface",
-        std::runtime_error);
+    CHECK(fixture.Call("libEGL.so", "eglMakeCurrent", {1, 3, 3, 4}) == 0U);
+    CHECK(fixture.Call("libEGL.so", "eglGetError") == 0x3001U);
     fixture.boundary.CloseManagedSurface();
     CHECK(fixture.boundary.RenderTargets().empty());
     CHECK_THROWS_WITH_AS(
@@ -3551,6 +3623,7 @@ TEST_CASE("managed GLSurface currency supports explicit cross-thread handoff") {
 TEST_CASE("Android GLES boundary compiles and links guest shader sources") {
     if (!ogplay::gles::IsNativeAngleEglAvailable()) return;
     BoundaryFixture fixture;
+    PrepareNativeEgl(fixture);
     CHECK(fixture.Call("libEGL.so", "eglMakeCurrent", {1, 3, 3, 4}) == 1);
 
     constexpr std::string_view vertex_source =
@@ -4021,6 +4094,7 @@ TEST_CASE("GLES2 completion covers shader uniform and vertex query lifecycle") {
 TEST_CASE("Android GLES boundary transfers buffer and texture resources") {
     if (!ogplay::gles::IsNativeAngleEglAvailable()) return;
     BoundaryFixture fixture;
+    PrepareNativeEgl(fixture);
     CHECK(fixture.Call("libEGL.so", "eglMakeCurrent", {1, 3, 3, 4}) == 1);
     const auto names = fixture.output;
     const auto buffer_data = fixture.output.Add(0x100);
@@ -4162,6 +4236,7 @@ TEST_CASE("Android boundary supersamples without changing guest surface size") {
     if (!ogplay::gles::IsNativeAngleEglAvailable()) return;
 
     BoundaryFixture fixture(2);
+    PrepareNativeEgl(fixture);
     CHECK(fixture.Call("libEGL.so", "eglMakeCurrent", {1, 3, 3, 4}) == 1);
     CHECK(fixture.Call("libEGL.so", "eglQuerySurface",
                        {1, 3, 0x3057U, fixture.output.Value()}) == 1);

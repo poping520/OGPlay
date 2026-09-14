@@ -1,100 +1,77 @@
-# Android 4.4.4 GLES 功能完整性复核
+# Android 4.4.4 GLES 完整性开发要求
 
-日期：2026-09-14，2026-09-15 按 BND-35 更新。依据当前工作区源码与 `.local/aosp/`，不使用会话记忆。
-状态文档、任务单和 MODULE 用于理解契约，不作为实现已经正确的证明。
+## 目标
 
-## 结论
+本开发单用于约束 OGPlay 的 API 19 GLES/EGL 兼容边界。目标不是复现完整 Android 图形
+系统，而是让游戏进程直接调用、且已纳入支持范围的 GLES/EGL 能力具备一致的 ABI、参数、
+错误、状态和生命周期语义。
 
-当前实现已闭合本报告发现且属于 OGPlay 游戏进程兼容层范围的具体缺陷：ES3 共用
-`glVertexAttribPointer` 类型语义、Java GLES30 关键返回/数组桥接，以及 GLES1
-`GL_OES_framebuffer_object` 全部 15 个独立 ABI 与行为入口。Native 核心名称集合保持齐全，
-Context/Surface/share-group 已有实质实现。
+核心名称、Java 方法或扩展出现在目录中，只证明入口可发现，不代表行为完整。任何能力只有在
+符号发布、扩展查询、实际执行和机器可判定测试一致时才能记为完成。
 
-OGPlay 不是 Android 模拟器。依据 ADR-0063，真实 Android ANativeWindow/BufferQueue、
-native-buffer/native-fence FD、设备厂商 config/扩展全集不属于本项目能力目标，不能再作为
-待修复缺陷。catalog complete 仍只表示已声明范围完整，不等同 CTS/Khronos 规范认证。
+## 范围
 
-原始结论来自静态审计；BND-35 后执行了受影响目标构建、GLES1 FBO/ES3/Java GLES 定向
-回归及 catalog/能力单调性门禁。未运行全量测试、CTS、Khronos 一致性测试或游戏场景，
-也没有穷尽所有参数组合和驱动差异。
+### 范围内
 
-## 核心名称集合：独立核对结果
+- Android 4.4.4 GLES1、GLES2、GLES3 core 中由游戏进程直接调用的入口。
+- EGL 1.0–1.4 core 中兼容层可用独立 Context、Surface 和 share group 实现的入口。
+- 已选择发布的 GLES/EGL 扩展及其独立 ABI。
+- Java GLES wrapper 到唯一 native GLES/EGL boundary 的参数和返回值桥接。
+- guest 指针、数组、Buffer、字符串、64 位值、对象句柄和错误状态的受检搬运。
+- Context、线程、share group、对象和映射的状态归属及销毁语义。
 
-| 本地 AOSP 基线 | 项目入口 | 结果 |
-| --- | --- | --- |
-| `framework/native/opengl/include/GLES/gl.h` | `data/gles/gles1.json` | 145/145，集合相等 |
-| `framework/native/opengl/include/GLES2/gl2.h` | `data/gles/gles2.json` | 142/142，集合相等 |
-| `GLES3/gl3.h` 减去 `GLES2/gl2.h` | `data/gles/gles3.json` | 104/104，集合相等 |
-| `libs/EGL/egl_entries.in` 的 EGL 1.0–1.4 core | `egl_exports.h` | 34/34 均发布 |
+### 范围外
 
-GLES3 core 共 246 项，其中 142 项复用 GLES2。上述统计不是唯一 GL 符号的跨版本相加，
-也不证明合法枚举、错误、内存搬运、shader、并发或所有 Java overload 都正确。
-本地 GLES/glext.h 与 GLES2/gl2ext.h 分别有 140、121 个扩展函数原型；
-这些是头文件声明，不是每台 Android 4.4 设备必须提供的能力全集。
+依据 ADR-0063 和“OGPlay 不是 Android 模拟器”的边界，以下内容不作为本开发单的问题点：
 
-## 原审计问题及处置
+- ANativeWindow、BufferQueue、Binder、system_server 或 Android 原生交换链。
+- Android native buffer、native fence FD、presentation-time 系统集成。
+- OpenVG、native pixmap 和完整 Android 窗口系统互操作。
+- 复刻某一真实设备的 EGLConfig、GPU 驱动或厂商扩展全集。
+- 未经目标游戏直接调用证据支持的现代支付、社交、反作弊或系统服务能力。
 
-### 1. ES3 复用的 glVertexAttribPointer 类型范围：已修复
+范围外入口必须不发布或明确失败，禁止伪造成功。若实际游戏证据要求扩张以上边界，应先新增
+ADR，不得在图形模块中隐式引入 Android 系统对象。
 
-`VertexAttribScalarBytes` 现按当前 Context client version 校验。ES3 接受 HALF_FLOAT、
-INT/UNSIGNED_INT、INT_2_10_10_10_REV 与 UNSIGNED_INT_2_10_10_10_REV；packed 类型要求
-size=4。ES2 仍保持原合法类型集合。定向回归在真实 ES3 Context、绑定 VBO 后覆盖五种新增类型。
+## 开发问题
 
-### 2. Java GLES30 关键返回值/参数桥接：已修复
+### 1. GLES3 共用入口必须采用 GLES3 语义
 
-`JavaGlesHandler` 现为 `glGetStringi` 返回受检 Java String，为 `glMapBufferRange` 返回包装
-guest mapping 的 DirectByteBuffer，为 `glFenceSync` 返回 long，并把非空 String[] 逐项转换为
-有界 guest C string/pointer array 后调用 native handler。GLES20 `glGetString` 同时接受
-GL_SHADING_LANGUAGE_VERSION（0x8B8C）。其他尚无确定 native 适配关系的方法继续明确失败；
-`dexvm.java_gles` 因此保持 partial，而不是伪报整个 Java GLES 完成。
+GLES3 相对 GLES2 的新增入口齐全，不代表两者共用的 142 个入口自动满足 GLES3。
+所有共用入口必须按当前 Context client version 校验枚举、参数和状态。
 
-### 3. EGL 设备/系统互操作差异：按 ADR-0063 排除，不作为缺陷
+`glVertexAttribPointer` 在 ES3 Context 中必须支持：
 
-`src/runtime/boundary/modules/egl/egl_module.cpp` 的以下差异属于兼容层边界：
+- GL_HALF_FLOAT；
+- GL_INT、GL_UNSIGNED_INT；
+- GL_INT_2_10_10_10_REV、GL_UNSIGNED_INT_2_10_10_10_REV。
 
-- 配置固定为单个 RGBA8/D24S8、samples=0 的 config；不提供真实设备的配置集合、
-  RGB565 或 EGL MSAA 配置选择。单配置本身不自动构成 EGL 规范违规，但不能复现设备能力。
-- renderable/conformant 表示 boundary 可请求的 client version；native Context 创建仍以真实后端
-  结果为准，不能把 config 位当作一致性认证。
-- `eglCreateWindowSurface` 只校验 native window 非零，尺寸取全局 graphics layout；
-  没有按 native-window 身份建立独立 Android 窗口关系。实际 backing 由 pbuffer 创建，
-  swap 经 readback/PublishFrame 呈现，不等同 ANativeWindow/BufferQueue 的原生交换链。
-- `eglCreatePixmapSurface`、`eglCopyBuffers` 拒绝 native pixmap，
-  `eglCreatePbufferFromClientBuffer` 无成功路径；这些 Android 系统/非 GLES 游戏进程对象不扩入边界。
-- 普通 pbuffer、texture pbuffer、bind/release texture、KHR image/sync 已有真实调用路径，
-  不能沿用此前“全未实现”的判断。
+两种 packed 类型只允许 size=4。ES2 Context 不得因共用实现而错误接受 ES3-only 类型。
+VBO offset 和 client pointer 必须保持不同的内存语义。
 
-### 4. 扩展采用受检白名单：符合边界，FBO 缺口已修复
+### 2. Java GLES 方法必须按签名完整桥接
 
-GLES2/3：`graphics_dispatch.h/.cpp` 发布 ETC1、PVRTC、rgb8_rgba8，按后端追加 OES_EGL_image。
-GLES1：`facade/android_boundary_hle.cpp` 发布 cube_map、matrix_palette、mapbuffer，并由 BND-35
-新增 framebuffer_object 全部 15 项。draw_texture 等未实现扩展不发布、不伪造成功。
+生成 Java 方法目录只负责发布 API surface。`JavaGlesHandler` 必须针对不能由通用
+void/int/boolean adapter 表达的签名提供专用桥接，至少包括：
 
-EGL：`GuestExtensionsLocked` 仅发布 get_all_proc_addresses，加上后端支持的七项 KHR
-sync/image 扩展。不提供完整 Android presentation_time、image_native_buffer、recordable
-等能力。`eglCreateImageKHR` 仅允许 GL texture/cubemap/renderbuffer target，明确拒绝
-Android native buffer。未发布的扩展不得因 ANGLE 自身支持就算作 guest 支持。
+- `glGetStringi`：native 结果转换为 Java String，非法 name/index 保留 GL error；
+- `glMapBufferRange`：返回包装 guest mapping 的 direct Buffer，不暴露 host pointer；
+- `glFenceSync`：以 Java long 保留 guest sync identity；
+- `glTransformFeedbackVaryings`：逐项校验 String[]，构造有界 C string pointer array；
+- GLES20 `glGetString(GL_SHADING_LANGUAGE_VERSION)`。
 
-本地 AOSP `framework/native/opengl/libs/EGL/eglApi.cpp` 明确区分：
-presentation_time 是 wrapper 内建；部分扩展依赖驱动；native_fence_sync 等入口还受到
-面向第三方的过滤。故“所有头文件/厂商扩展”不是统一 Android 4.4 设备能力要求，
-这些 Android 系统互操作面受 ADR-0063 排除，不列入 OGPlay 游戏进程兼容层完成条件。
+native 调用失败时不得先产生 Java 成功对象。临时字符串、指针数组和 direct Buffer 的生命期
+必须覆盖 native 调用，映射失效后不得继续访问。其余没有可靠 adapter 的签名必须记账并明确
+抛出异常。
 
-### 5. GLES1 GL_OES_framebuffer_object ABI 与行为桥接：已修复
+### 3. 已发布扩展必须具备完整独立 ABI
 
-原根因为项目已有 GLES2 framebuffer/renderbuffer 后端，却没有建立 GLES1 独立 OES ABI。
-BND-35 已按精确名称补齐，未在 loader 中通用剥离 OES 后缀，也未建立第二套对象状态。
+扩展函数的 OES/KHR 后缀是独立 ELF 符号，不能依赖 loader 通用剥离后缀映射到 core 名称。
+直接导入、`dlsym` 和 `eglGetProcAddress` 必须解析到同一 concrete handler。
 
-本地 AOSP `framework/native/opengl/include/GLES/glext.h:699` 定义该扩展，
-`libs/GLES_CM/glext_api.in:166` 包含 glGenRenderbuffersOES 等 wrapper，
-经 `GLES_CM/gl.cpp:162` 和 `libs/Android.mk:83` 构建进 libGLESv1_CM。
-项目 `data/gles/gles1_extensions.json` 现登记 matrix_palette/mapbuffer 七入口及 OES FBO
-十五入口，共 22 项；facade 将其发布到 libGLESv1_CM.so，直接导入、dlsym 与
-eglGetProcAddress 共用同一 sealed symbol 路径。
+GLES1 `GL_OES_framebuffer_object` 必须完整提供以下 15 项：
 
-该扩展族共 15 项，均有不带 OES 后缀的 GLES2 core 对应函数：
-
-| 范围 | 已交付入口 |
+| 范围 | 入口 |
 | --- | --- |
 | Renderbuffer 对象 | glIsRenderbufferOES、glBindRenderbufferOES、glDeleteRenderbuffersOES、glGenRenderbuffersOES |
 | Renderbuffer 存储/查询 | glRenderbufferStorageOES、glGetRenderbufferParameterivOES |
@@ -102,37 +79,49 @@ eglGetProcAddress 共用同一 sealed symbol 路径。
 | FBO 完整性/附件 | glCheckFramebufferStatusOES、glFramebufferRenderbufferOES、glFramebufferTexture2DOES、glGetFramebufferAttachmentParameterivOES |
 | Mipmap | glGenerateMipmapOES |
 
-15 项 concrete handler 复用 ANGLE framebuffer/renderbuffer 操作与唯一 GuestGlContext，名称
-生成/删除同步 share-group 元数据，参数输出经受检 guest buffer 搬运。只有整族 handler 完成后
-才发布 GL_OES_framebuffer_object 字符串。定向回归覆盖全部符号可见性以及 framebuffer
-生成、绑定、`glIsFramebufferOES` 和删除生命周期；更完整的绘制组合由后续场景按需验证。
+该扩展必须复用现有 ANGLE framebuffer/renderbuffer 操作、唯一 GuestGlContext 和 share-group
+对象元数据，不得建立第二套资源状态。只有全部入口可执行后才能发布
+`GL_OES_framebuffer_object` 扩展字符串。
 
-`capabilities.toml` 的 `gles.gles1_extension_catalog` 与
-`runtime.gles1_extension_boundary` 已同步记录 BND-35，状态保持 complete（选定扩展范围）。
+其他扩展采用受检白名单：未选择实现的扩展不属于缺陷，但不得泄漏 ANGLE 后端扩展字符串或
+只发布名称而缺少行为。
 
-## Context 和多版本：已有实质实现，但不足以宣称完整
+### 4. EGL 声明必须与兼容层事实一致
 
-- EGL registry 保存 per-thread current/error，Context 有独立 native Context，Surface
-  独立 backing，make-current 绑定不同 draw/read surface；实现占用检查与延迟退役。
-- share 在创建时传真实 native share Context，guest 对象元数据按 share group 共享；
-  GLES1 fixed/legacy/palette 状态随 Context 保存恢复。
-- client version 1/2/3 均接受：ES1 通过 ES2 ANGLE Context 加自有固定管线 shader，
-  ES2/ES3 创建对应 native 版本；ES3 delta 共用 libGLESv2.so。
-- GLES3 handler 检查当前版本为 3；GLES1 绘制最多两个 texture stage。
-  两个 stage 是实现上限，不能仅凭该上限认定 GLES1 最低规范违规。
-- 当前没有本轮完整多线程、跨版本 share、context-loss、所有状态切换和驱动一致性证据。
-  不把未验证项目表述成已确认缺陷，也不因已有若干回归就推断全规范正确。
+EGL core 入口即使全部发布，也必须准确表达兼容层能力：
 
-## 当前剩余验证边界
+- Context client version 以真实后端创建结果为准；
+- Surface、draw/read binding、thread current 和延迟销毁必须相互独立；
+- share Context 必须在 native 创建时建立真实 share 关系；
+- pbuffer、texture pbuffer、bind/release texture 和已选 KHR image/sync 必须走真实调用路径；
+- 不支持的 pixmap、client buffer 或系统对象路径返回准确 EGL error；
+- 扩展字符串只能来自 guest 已实现白名单，不得透传整个 ANGLE 列表。
 
-1. 针对全部 core 的“签名、合法枚举、错误、输出长度、状态归属”行为矩阵仍可继续扩充；
-   这是测试深度，不是已知代码缺陷。
-2. 在受支持后端运行适当的一致性子集；全量测试仍需用户明确要求。
-3. 目标 APK 如出现新的强导入或实际扩展调用，按游戏进程直接调用证据新增 Work Unit；
-   不预先实现全部厂商扩展。
-4. 任何 ANativeWindow/BufferQueue、native-buffer/fence FD 或完整设备 config 诉求都属于范围扩张，
-   必须先修改 ADR，不能作为本报告的普通修复项。
+兼容层使用 pbuffer/readback/PublishFrame 向 SDL3 呈现是允许的实现方式，不要求模拟
+ANativeWindow/BufferQueue；但不得将其描述成 Android 原生交换链。
 
-已核对 `capabilities.toml`：catalog/core boundary 的 complete 表示登记范围完成；java_gles、
-GLES1 部分绘制及 EGL KHR 边界仍按各自契约保持 partial。BND-35 没有把局部完成提升为
-“完整 Android 4.4.4 GLES/EGL”声明。
+### 5. 建立行为完整性矩阵
+
+对支持范围内的每个 core 和扩展入口，至少核对：
+
+- 精确 native/Java 签名和 A32 ABI；
+- 合法与非法枚举、数值范围及对应 GL/EGL error；
+- guest 输入、输出长度、nullable 和 offset；
+- Context、thread、share group 或对象所有权；
+- 创建、绑定、查询、删除及 context switch 后的状态；
+- 失败时不部分提交输出、不伪造成功。
+
+新增游戏适配前，应一次性检查目标 ABI 全部 SO 的 GL/EGL 未定义符号和依赖作用域，避免按
+首次失败逐个补符号。
+
+## 验收要求
+
+- GLES1/2/3 与 EGL core 名称集合通过固定 API 19 基线比较。
+- GLES1 OES FBO 全部符号通过强导入、`dlsym` 与 `eglGetProcAddress` 定向检查。
+- OES FBO 覆盖对象生成/删除、storage、attachment、status、查询、绘制读回和 Context 切换。
+- ES3 vertex pointer 覆盖所有新增类型、packed size 限制、VBO offset，并有 ES2 关闭对照。
+- Java GLES30 覆盖 String、Buffer、long、String[] 的真实调用和失败路径。
+- Context/share-group/thread/mapping 生命周期使用定向测试，不以 `IsBound` 代替行为验证。
+- 修改只构建受影响目标并运行相关测试；除非用户明确要求，不运行全量测试。
+- 受支持后端可运行适当的 Khronos/一致性子集，但不得因未运行完整 CTS 就伪称规范认证。
+- 能力变化同步更新 `capabilities.toml`、相关 MODULE 和 `docs/state/CURRENT.md`。

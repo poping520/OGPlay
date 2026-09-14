@@ -19,7 +19,8 @@
   已声明 target，no-launcher/非法 alias 以 typed error 失败。`application` icon 保留
   resource id，label 严格区分 resource id 与字面量；DVM-77 继续按声明序提取去重的
   `uses-permission` 与 application `meta-data`，metadata 只接受 API19 string、integer、
-  boolean、value/resource reference，不执行资源解析或猜测身份。
+  boolean、value/resource reference；两种 reference 保留独立身份，由运行时仅解析
+  `android:value`，`android:resource` 继续发布 resource id。
   DVM-112 保留 application enabled、独立的 service 名称/enabled/过滤器事实；过滤器
   保存 action/category 与 data 条件存在标记，不能将未解析的 data 条件当作没有条件。
   service 名称沿用 API19 buildClassName，缺名/空名/非法名/重复声明明确失败；

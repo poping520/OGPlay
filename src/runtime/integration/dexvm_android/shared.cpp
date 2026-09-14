@@ -297,13 +297,47 @@ dx::VmObjectRef MakeApplicationInfo(dx::IntrinsicContext& call,
         for (const auto& [name, value] : context->application_meta_data) {
             const auto key = call.vm.NewStringUtf8(name);
             const auto key_root = call.vm.ProtectReferences(std::array{key});
-            if (const auto* integer = std::get_if<std::int32_t>(&value)) {
+            const auto put_integer = [&](const std::int32_t integer) {
                 static_cast<void>(CallAndroidMethod(call.vm, bundle, "putInt",
-                    "(Ljava/lang/String;I)V", {dx::VmValue::Ref(key), dx::VmValue::Int(*integer)}));
-            } else {
+                    "(Ljava/lang/String;I)V",
+                    {dx::VmValue::Ref(key), dx::VmValue::Int(integer)}));
+            };
+            const auto put_boolean = [&](const bool boolean) {
+                static_cast<void>(CallAndroidMethod(call.vm, bundle, "putBoolean",
+                    "(Ljava/lang/String;Z)V",
+                    {dx::VmValue::Ref(key), dx::VmValue::Int(boolean ? 1 : 0)}));
+            };
+            const auto put_string = [&](const std::string& text) {
                 static_cast<void>(CallAndroidMethod(call.vm, bundle, "putString",
                     "(Ljava/lang/String;Ljava/lang/String;)V",
-                    {dx::VmValue::Ref(key), dx::VmValue::Ref(string(std::get<std::string>(value)))}));
+                    {dx::VmValue::Ref(key), dx::VmValue::Ref(string(text))}));
+            };
+            if (const auto* integer = std::get_if<std::int32_t>(&value)) {
+                put_integer(*integer);
+            } else if (const auto* boolean = std::get_if<bool>(&value)) {
+                put_boolean(*boolean);
+            } else if (const auto* text = std::get_if<std::string>(&value)) {
+                put_string(*text);
+            } else if (const auto* reference =
+                           std::get_if<loader::AndroidManifestMetaDataValueReference>(
+                               &value)) {
+                const auto& resolved =
+                    ResolveUiResourceEntry(*context, reference->resource_id);
+                if (resolved.value_type == 0x03U && resolved.string_value) {
+                    put_string(*resolved.string_value);
+                } else if (resolved.value_type == 0x12U) {
+                    put_boolean(resolved.value_data != 0U);
+                } else if (resolved.value_type >= 0x10U &&
+                           resolved.value_type <= 0x1fU) {
+                    put_integer(static_cast<std::int32_t>(resolved.value_data));
+                } else {
+                    throw std::runtime_error(
+                        "application meta-data value resource has unsupported type");
+                }
+            } else {
+                put_integer(static_cast<std::int32_t>(
+                    std::get<loader::AndroidManifestMetaDataResourceReference>(value)
+                        .resource_id));
             }
         }
         SetApplicationInfoRef(call, info, "metaData", "Landroid/os/Bundle;",

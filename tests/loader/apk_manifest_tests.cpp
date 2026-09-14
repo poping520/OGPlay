@@ -173,6 +173,7 @@ std::vector<std::byte> PackageFactsManifest(const bool invalid_metadata = false)
         "org.example.game", "android.permission.INTERNET",
         "com.example.configuration", "live", "com.example.number",
         "com.example.resource", "com.example.enabled",
+        "com.example.value-reference",
         "http://schemas.android.com/apk/res/android"};
     const auto index = [&](const std::string_view value) {
         const auto found = std::find(strings.begin(), strings.end(), value);
@@ -209,6 +210,12 @@ std::vector<std::byte> PackageFactsManifest(const bool invalid_metadata = false)
             {{index("name"), index("com.example.number"), 0x03,
               index("com.example.number"), android_namespace},
              {index("value"), 0xffffffffU, 0x10, 42,
+              android_namespace}}));
+        Append(result, EndElement(index("meta-data")));
+        Append(result, StartElement(index("meta-data"),
+            {{index("name"), index("com.example.value-reference"), 0x03,
+              index("com.example.value-reference"), android_namespace},
+             {index("value"), 0xffffffffU, 0x01, 0x7f05004fU,
               android_namespace}}));
         Append(result, EndElement(index("meta-data")));
         Append(result, StartElement(index("meta-data"),
@@ -489,14 +496,15 @@ TEST_CASE("binary AndroidManifest exposes package permission and application met
         PackageFactsManifest());
     REQUIRE(facts.requested_permissions.size() == 1U);
     CHECK(facts.requested_permissions.front() == "android.permission.INTERNET");
-    REQUIRE(facts.application_meta_data.size() == 4U);
+    REQUIRE(facts.application_meta_data.size() == 5U);
     CHECK(facts.application_meta_data[0].name == "com.example.configuration");
     CHECK(std::get<std::string>(facts.application_meta_data[0].value) == "live");
     CHECK(std::get<std::int32_t>(facts.application_meta_data[1].value) == 42);
-    CHECK(static_cast<std::uint32_t>(
-              std::get<std::int32_t>(facts.application_meta_data[2].value)) ==
-          0x7f030001U);
-    CHECK(std::get<std::int32_t>(facts.application_meta_data[3].value) == 1);
+    CHECK(std::get<ogplay::loader::AndroidManifestMetaDataValueReference>(
+              facts.application_meta_data[2].value).resource_id == 0x7f05004fU);
+    CHECK(std::get<ogplay::loader::AndroidManifestMetaDataResourceReference>(
+              facts.application_meta_data[3].value).resource_id == 0x7f030001U);
+    CHECK(std::get<bool>(facts.application_meta_data[4].value));
     CHECK_THROWS_WITH(
         static_cast<void>(ogplay::loader::ParseAndroidBinaryManifest(
             PackageFactsManifest(true))),

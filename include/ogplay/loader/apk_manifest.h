@@ -15,8 +15,18 @@
 namespace ogplay::loader {
 
 using AndroidManifestLabel = std::variant<std::uint32_t, std::string>;
+struct AndroidManifestMetaDataValueReference final {
+    std::uint32_t resource_id{};
+};
+
+struct AndroidManifestMetaDataResourceReference final {
+    std::uint32_t resource_id{};
+};
+
 using AndroidManifestMetaDataValue =
-    std::variant<std::int32_t, std::string>;
+    std::variant<std::int32_t, bool, std::string,
+                 AndroidManifestMetaDataValueReference,
+                 AndroidManifestMetaDataResourceReference>;
 
 struct AndroidManifestMetaData final {
     std::string name;

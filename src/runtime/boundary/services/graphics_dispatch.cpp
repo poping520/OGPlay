@@ -100,21 +100,35 @@ std::uint32_t QueryStringOffset(const std::uint32_t parameter) {
     default: throw gles::GlesApiError("glGetString", 0x0500U);
     }
 }
-[[nodiscard]] std::size_t VertexAttribScalarBytes(const std::uint32_t type) {
+[[nodiscard]] std::size_t VertexAttribScalarBytes(const std::uint32_t type,
+                                                  const std::uint32_t version,
+                                                  const std::int32_t size) {
     switch (type) {
     case kByte: case kUnsignedByte: return 1U;
     case kShort: case kUnsignedShort: return 2U;
     case kFloat: case kFixed: return 4U;
+    case 0x140BU:  // GL_HALF_FLOAT
+        if (version >= 3U) return 2U;
+        break;
+    case 0x1404U:  // GL_INT
+    case 0x1405U:  // GL_UNSIGNED_INT
+        if (version >= 3U) return 4U;
+        break;
+    case 0x8D9FU:  // GL_INT_2_10_10_10_REV
+    case 0x8368U:  // GL_UNSIGNED_INT_2_10_10_10_REV
+        if (version >= 3U && size == 4) return 1U;
+        break;
     default:
-        throw gles::GlesApiError("glVertexAttribPointer", 0x0500U);
+        break;
     }
+    throw gles::GlesApiError("glVertexAttribPointer", 0x0500U);
 }
 [[nodiscard]] std::uint64_t ClientArrayBytes(const std::int32_t size,
                                              const std::uint32_t type,
                                              const std::int32_t stride,
                                              const std::uint32_t maximum_index) {
     const auto packed =
-        static_cast<std::uint64_t>(size) * VertexAttribScalarBytes(type);
+        static_cast<std::uint64_t>(size) * VertexAttribScalarBytes(type, 2U, size);
     const auto step = stride == 0 ? packed : static_cast<std::uint64_t>(stride);
     if (maximum_index != 0U &&
         step > ((std::numeric_limits<std::uint64_t>::max)() - packed) /
@@ -334,7 +348,8 @@ public:
             if (stride < 0) {
                 throw gles::GlesApiError(symbol, 0x0501U);
             }
-            static_cast<void>(VertexAttribScalarBytes(type));
+            const auto client_version = RequireFrame(frame, symbol).ClientVersion();
+            static_cast<void>(VertexAttribScalarBytes(type, client_version, size));
             std::array<std::uint32_t, 6> all{
                 args[0], args[1], args[2], args[3],
                 static_cast<std::uint32_t>(stride), pointer};

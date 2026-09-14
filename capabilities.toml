@@ -1233,12 +1233,12 @@ note = "M5 WU-0264 按 GLES1 规范绑定 7 个 lighting/material/fog 入口并�
 [gles.gles1_extension_catalog]
 status = "complete"
 test = "tools.gles1_extensions_catalog_current"
-note = "BND-34 在保留既有 thunk_id 的基础上追加 glLoadPaletteFromModelViewMatrixOES；GL_OES_matrix_palette 四入口及 GL_OES_mapbuffer 三入口与固定 header 核对。"
+note = "BND-35 将目录扩为 22 项：matrix_palette 四入口、mapbuffer 三入口及 framebuffer_object 十五入口，与 API19 固定 header 核对。"
 
 [runtime.gles1_extension_boundary]
 status = "complete"
 test = "tests/runtime/boundary/integration/android_boundary_hle_tests.cpp"
-note = "BND-34 将 matrix palette 四入口接入真实加权变换；OES mapbuffer 按 share group 隔离 guest arena，校验 native mapping 存活后回写。扩展全集不在此项完成范围。"
+note = "BND-35 补齐 GL_OES_framebuffer_object 十五个独立 ABI/thunk/handler，复用唯一 ANGLE framebuffer/renderbuffer 与 share-group 元数据；其他扩展全集不在此项完成范围。"
 
 [runtime.gles1_matrix_palette_state]
 status = "partial"
@@ -1473,7 +1473,7 @@ note = "DVM-71 扩展发布 API19 View.OnSystemUiVisibilityChangeListener 精确
 [dexvm.java_gles]
 status = "partial"
 test = "tests/dexvm/egl_facade_tests.cpp; tests/dexvm/nio_runtime_tests.cpp; tests/runtime/boundary/integration/android_boundary_hle_tests.cpp; tools/generate_java_gles_surface.py --check"
-note = "DVM-83 从固定 Android 4.4.4 源发布 GLES10/10Ext/11/11Ext/20、GLUtils、GLU 的 public static API 与 int 常量；DVM-134 发布 GLSurfaceView 两个 render mode 常量及逐 view 的 set/get，非法值抛 IllegalArgumentException。可确定的 scalar/String/primitive-array/NIO Buffer 调用进入 sealed native GLES binding 和唯一 GuestGlContext，direct buffer 不复制，heap/view 输出 copy-back 且 cursor 不变，GLUtils 复用 Bitmap ARGB backing 上传 RGBA。render mode 不创建 GLThread/EGL surface；Java wrapper 与 native catalog 无确定适配关系的方法逐项记账并抛 UnsupportedOperationException，因此能力保持 partial。"
+note = "DVM-83 发布 API19 Java GLES surface；BND-35 为 GLES30 indexed String、mapped direct Buffer、sync long、transform-feedback String[] 增加专用桥接，并允许 GLES20 SHADING_LANGUAGE_VERSION。其余无确定 native 适配关系的方法仍明确失败，因此能力保持 partial。"
 
 [dexvm.audio_track]
 status = "complete"

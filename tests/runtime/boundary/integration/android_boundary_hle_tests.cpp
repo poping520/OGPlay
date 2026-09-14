@@ -932,6 +932,14 @@ TEST_CASE("Android EGL creates ES3 and routes vertex array core calls") {
                        {0x8892U, buffer}) == 0U);
     CHECK(fixture.Call("libGLESv2.so", "glBufferData",
                        {0x8892U, 16U, 0U, 0x88E8U}) == 0U);
+    fixture.bus.Write32(fixture.stack, 0U, 1U);
+    fixture.bus.Write32(fixture.stack.Add(4U), 0U, 1U);
+    for (const auto type : {0x140BU, 0x1404U, 0x1405U, 0x8D9FU, 0x8368U}) {
+        CAPTURE(type);
+        CHECK(fixture.Call("libGLESv2.so", "glVertexAttribPointer",
+                           {0U, 4U, type, 0U}) == 0U);
+        CHECK(fixture.Call("libGLESv2.so", "glGetError") == 0U);
+    }
     const auto mapped = fixture.Call("libGLESv2.so", "glMapBufferRange",
                                      {0x8892U, 0U, 16U, 0x0002U});
     REQUIRE(mapped >= 0x78000000U);
@@ -3988,16 +3996,16 @@ TEST_CASE("GLES1 clip plane discards fixed pipeline fragments") {
 TEST_CASE("Android boundary publishes required GLES1 extensions separately") {
     BoundaryFixture fixture;
     CHECK(ogplay::gles::GlesFunctionCount(
-              ogplay::gles::GlesApi::gles1_extensions) == 7);
+              ogplay::gles::GlesApi::gles1_extensions) == 22);
     CHECK(ogplay::gles::FindGlesFunction(
               ogplay::gles::GlesApi::gles1_extensions,
-              "glCurrentPaletteMatrixOES") == 0U);
+              "glCurrentPaletteMatrixOES") == 3U);
     CHECK(ogplay::gles::FindGlesFunction(
               ogplay::gles::GlesApi::gles1_extensions,
-              "glMatrixIndexPointerOES") == 1U);
+              "glMatrixIndexPointerOES") == 18U);
     CHECK(ogplay::gles::FindGlesFunction(
               ogplay::gles::GlesApi::gles1_extensions,
-              "glWeightPointerOES") == 2U);
+              "glWeightPointerOES") == 21U);
     for (const auto name : {"glCurrentPaletteMatrixOES",
                             "glGetBufferPointervOES",
                             "glMapBufferOES",
@@ -4014,6 +4022,29 @@ TEST_CASE("Android boundary publishes required GLES1 extensions separately") {
         "glCurrentPaletteMatrixOES has no current ANGLE frame",
         std::runtime_error);
     fixture.boundary.OpenManagedSurface();
+    for (const auto name : {
+             "glBindFramebufferOES", "glBindRenderbufferOES",
+             "glCheckFramebufferStatusOES", "glDeleteFramebuffersOES",
+             "glDeleteRenderbuffersOES", "glFramebufferRenderbufferOES",
+             "glFramebufferTexture2DOES", "glGenFramebuffersOES",
+             "glGenRenderbuffersOES", "glGenerateMipmapOES",
+             "glGetFramebufferAttachmentParameterivOES",
+             "glGetRenderbufferParameterivOES", "glIsFramebufferOES",
+             "glIsRenderbufferOES"}) {
+        CAPTURE(name);
+        CHECK(fixture.boundary.Symbols().Lookup("libGLESv1_CM.so", name).has_value());
+    }
+    const auto framebuffer_out = fixture.output.Add(0x40U);
+    CHECK(fixture.Call("libGLESv1_CM.so", "glGenFramebuffersOES",
+                       {1U, framebuffer_out.Value()}) == 0U);
+    const auto framebuffer = fixture.bus.Read32(framebuffer_out, 1U);
+    REQUIRE(framebuffer != 0U);
+    CHECK(fixture.Call("libGLESv1_CM.so", "glBindFramebufferOES",
+                       {0x8D40U, framebuffer}) == 0U);
+    CHECK(fixture.Call("libGLESv1_CM.so", "glIsFramebufferOES",
+                       {framebuffer}) == 1U);
+    CHECK(fixture.Call("libGLESv1_CM.so", "glDeleteFramebuffersOES",
+                       {1U, framebuffer_out.Value()}) == 0U);
     CHECK(fixture.Call("libGLESv1_CM.so", "glCurrentPaletteMatrixOES",
                        {3U}) == 0U);
     CHECK(fixture.Call("libGLESv1_CM.so", "glMatrixIndexPointerOES",

@@ -164,6 +164,11 @@ void BindAndroidBoundaryGles1MapBuffer(
     memory::AddressSpace& address_space,
     AndroidBoundaryFrameResolver require_frame);
 
+void BindAndroidBoundaryGles1FramebufferObject(
+    gles::GlesDispatchTable& extension_dispatch,
+    AndroidBoundaryGles1State& core, memory::AddressSpace& address_space,
+    AndroidBoundaryFrameResolver require_frame);
+
 void BindAndroidBoundaryGles1Legacy(
     gles::GlesDispatchTable& dispatch,
     AndroidBoundaryGles1LegacyState& legacy,

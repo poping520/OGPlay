@@ -4,12 +4,17 @@
 
 ## 最近进展
 
+- [BND-35](../tasks/boundary/BND-35.md) 已闭合 GLES 完整性复核中的可执行反例：ES3
+  共用 vertex pointer 类型范围、Java GLES30 indexed String/direct Buffer/sync long/String[]
+  桥接及 GLES20 shading-language string；GLES1 新增 GL_OES_framebuffer_object 全部 15 个
+  独立 ABI/thunk/handler，并与扩展字符串一致。EGL native window/BufferQueue、设备 config
+  集合和未选扩展仍受 ADR-0063 边界限制，不宣称完整 Android 设备 GLES。
+
 - 当前源码与本地 AOSP 4.4.4 的[独立完整性复核](../design/boundary/06-gles-api19-completeness-review.md)
   确认核心名称集合 GLES1 145/145、GLES2 142/142、GLES3 delta 104/104、EGL 34/34。
-  仍发现 ES3 共用 vertex pointer 类型白名单、Java GLES30 返回值/String[] 桥接缺口；
-  EGL 配置、窗口互操作及扩展仅为子集。GLES1 OES FBO 扩展族缺少 15 项 ABI 入口
-  及行为桥接，会阻塞依赖这些强符号的应用 SO 加载；报告已列出完整修复与验收范围。
-  仅静态审计，未构建、运行测试或变更能力状态。
+  原审计发现的 ES3 共用 vertex pointer、Java GLES30 返回值/String[] 与 GLES1 OES FBO
+  15 项 ABI/行为缺口已由 BND-35 修复。EGL 设备 config 全集、ANativeWindow/BufferQueue
+  和 Android native-buffer/fence 属于 ADR-0063 排除范围，不再记为待修复缺陷。
 
 - [BND-34](../tasks/boundary/BND-34.md) 已修复本轮 EGL/GLES 核心审计缺陷：唯一 native
   Context、独立 Surface、eager share，完整 GLES1 shadow/palette、VAO/整数属性恢复，
@@ -59,7 +64,8 @@
 ## 验证状态
 
 - [GLES 最新完整性复核](../design/boundary/06-gles-api19-completeness-review.md)：核心名称
-  齐全，但 ES3 共用入口和 Java 方法桥接仍有代码级缺口，不代表全规范实现。
+  齐全，原 ES3 共用入口、Java 方法桥接及 GLES1 OES FBO 缺口已由 BND-35 修复；
+  catalog complete 仍不代表 CTS/Khronos 全规范认证。
   [此前审计](../design/boundary/05-egl-gles-current-audit.md)中的 Context/Surface 所有权、
   share 顺序及状态隔离问题已有 BND-34 修复记录，不能继续直接作为现存缺陷。
   最新复核仅静态审计，未重新运行构建、图形回归或 CTS。

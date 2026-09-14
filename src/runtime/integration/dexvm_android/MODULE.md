@@ -111,6 +111,9 @@ Java 异常文本，再进入统一结构化 logger；不吞异常、不写裸 s
 
 ### Looper、线程、回调
 
+GLES30 的 indexed string、sync long、mapped direct Buffer 与 transform-feedback String[]
+使用专用返回/参数适配；GLES20 glGetString 接受 SHADING_LANGUAGE_VERSION。
+
 - Handler/Looper/HandlerThread/Timer/AsyncTask 共用 scheduler；deadline 来自 uptime Clock，同
   deadline 按 sequence FIFO。主 Looper 只在 lifecycle safe point 泵送，子 Looper 在对应 guest
   host thread 执行；禁止同步调用伪装 post。

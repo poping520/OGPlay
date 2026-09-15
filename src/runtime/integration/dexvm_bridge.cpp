@@ -160,6 +160,7 @@ void VisitAndroidSessionRoots(const DexVmAndroidContext& context,
         for (const auto& action : context.pending_view_actions) {
             root(action.runnable);
         }
+        for (const auto event : context.gl_surface_events) root(event);
     }
     for (const auto& [_, ref] : context.ui_node_to_object) root(ref);
     for (const auto& [_, ref] : context.ui_view_backgrounds) root(ref);
@@ -233,6 +234,8 @@ void RegisterAndroidOwnerAttachedStateTable(
             context->intent_filter_authorities.erase(key);
             context->requested_orientations.erase(key);
             context->gl_surface_render_modes.erase(key);
+            context->gl_surface_client_versions.erase(key);
+            context->gl_surface_config_specs.erase(key);
             context->surface_holders.erase(key);
             context->surface_callbacks.erase(key);
             context->active_surface_holders.erase(key);

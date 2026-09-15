@@ -210,6 +210,40 @@ TEST_CASE("DVM-134 GLSurfaceView stores validated render mode per view") {
     }
 }
 
+TEST_CASE("BND37 GLSurfaceView publishes API19 context config and GL queue entrypoints") {
+    EglVm vm;
+    const auto view = vm.interpreter.NewIntrinsicInstance(
+        "Landroid/opengl/GLSurfaceView;");
+    static_cast<void>(vm.CallOn(
+        view, "setEGLContextClientVersion", "(I)V", {VmValue::Int(2)}));
+    CHECK(vm.context->gl_surface_client_versions.at(view.Value()) == 2);
+
+    static_cast<void>(vm.CallOn(
+        view, "setEGLConfigChooser", "(Z)V", {VmValue::Int(1)}));
+    CHECK(vm.context->gl_surface_config_specs.at(view.Value()) ==
+          std::vector<std::int32_t>{8, 8, 8, 8, 16, 0});
+    static_cast<void>(vm.CallOn(
+        view, "setEGLConfigChooser", "(IIIIII)V",
+        {VmValue::Int(5), VmValue::Int(6), VmValue::Int(5),
+         VmValue::Int(0), VmValue::Int(24), VmValue::Int(8)}));
+    CHECK(vm.context->gl_surface_config_specs.at(view.Value()) ==
+          std::vector<std::int32_t>{5, 6, 5, 0, 24, 8});
+
+    const auto runnable = vm.interpreter.NewIntrinsicInstance(
+        "Ljava/lang/Object;");
+    static_cast<void>(vm.CallOn(
+        view, "queueEvent", "(Ljava/lang/Runnable;)V",
+        {VmValue::Ref(runnable)}));
+    REQUIRE(vm.context->gl_surface_events.size() == 1U);
+    CHECK(vm.context->gl_surface_events.front() == runnable);
+
+    const auto invalid = vm.CallOnOutcome(
+        view, "setEGLContextClientVersion", "(I)V", {VmValue::Int(4)});
+    REQUIRE(invalid.exception.IsValid());
+    CHECK(vm.linker.Class(invalid.exception_class).descriptor ==
+          "Ljava/lang/IllegalArgumentException;");
+}
+
 TEST_CASE("EGL facade publishes singleton interface hierarchy") {
     EglVm vm;
     const auto egl = vm.CallStatic(

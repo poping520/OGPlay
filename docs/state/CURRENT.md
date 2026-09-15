@@ -4,6 +4,11 @@
 
 ## 最近进展
 
+- [BND-37](../tasks/boundary/BND-37.md) 已补齐 GLSurfaceView 的 Context version、boolean/
+  六整数 config chooser 与 `queueEvent`；事件保活后由 lifecycle 在 current GL 渲染线程、
+  renderer callback 前按 FIFO 执行。定向 3/3 tests、60 assertions 通过；GLU、复杂 Java
+  GLES descriptor 与 WHEN_DIRTY 调度仍待后续。
+
 - [BND-36](../tasks/boundary/BND-36.md) 已修复复核确认的首批 EGL/GLES 行为缺陷：
   `eglTerminate` 保留各线程 current 资源、允许重复终止和重新初始化；Java EGL wrapper
   随 native destroy 退役并可重取 Display；GLES1 奇异矩阵非光照绘制、fog Alpha/反向区间、

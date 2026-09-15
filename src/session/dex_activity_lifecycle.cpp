@@ -701,6 +701,14 @@ namespace ogplay::session {
             ServiceActivitySwitch();
             EnsureRendererCallbacks();
             if (renderer_ready_) {
+                std::vector<dx::VmObjectRef> gl_events;
+                {
+                    std::scoped_lock lock(bindings_.context->scheduler_mutex);
+                    gl_events.swap(bindings_.context->gl_surface_events);
+                }
+                for (const auto event : gl_events) {
+                    CallOnView(event, "run", "()V", {});
+                }
                 CallOnView(bindings_.context->renderer, "onDrawFrame",
                            "(Ljavax/microedition/khronos/opengles/GL10;)V",
                            {dx::VmValue::Ref(dx::VmObjectRef{})});

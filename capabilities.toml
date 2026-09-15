@@ -1465,6 +1465,11 @@ status = "complete"
 test = "tests/dexvm/android_value_tests.cpp: DVM-156; Angry Birds reached Context.getFileStreamPath"
 note = "API 19 LocationListener、Criteria、Location 与稳定 LocationManager 薄层已发布；无 provider、无历史位置，更新订阅与移除记录 dexvm.location_updates 后明确失败。不读取宿主位置，不运行 Binder/system_server，不产生位置回调或虚假坐标。"
 
+[dexvm.keyguard_facade]
+status = "complete"
+test = "tests/dexvm/android_value_tests.cpp: DVM-166; Angry Birds no-Profile reached RelativeLayout.addView(View,int,int)"
+note = "DVM-166 发布 API 19 非缓存 KeyguardManager facade，三项只读查询统一从进程级 AndroidKeyguardStateProvider 读取快照；当前未注入 provider 时明确表示无锁屏。后续宿主行为只能替换 provider，不引入 IWindowManager、Binder 或 system_server。"
+
 [dexvm.context_file_stream_path]
 status = "complete"
 test = "tests/dexvm/file_vfs_tests.cpp: Context private file streams use the app files directory on both backends; Angry Birds reached JNI CallObjectMethodV return mismatch"

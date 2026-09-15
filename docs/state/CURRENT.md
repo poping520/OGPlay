@@ -21,6 +21,9 @@
 - [DVM-165](../tasks/dexvm/DVM-165.md)：按 KitKat 为 targetSdk 1..13 补齐旧 JNI direct-reference
   app-bug 兼容，严格模式不变且违规用法输出明确 warn；Angry Birds 无 Profile 已越过原
   `nativeUpdate` JNI 引用失效，运行 1258 帧后由游戏正常返回 false。
+- [DVM-166](../tasks/dexvm/DVM-166.md)：补齐 API 19 KeyguardManager 有界 facade；当前桌面状态
+  固定为未锁屏，三项查询统一经可替换 provider，为后续宿主行为接入保留单一边界；Angry
+  Birds 无 Profile 已越过原构造失败，下一独立首错为 `RelativeLayout.addView(View,int,int)`。
 - BND-34..39 已闭合本轮 EGL/GLES 核心审计、Java EGL/GLES 桥接、GLSurfaceView、GLU、
   `dl_unwind_find_exidx` 与相关行为缺口；核心名称覆盖不等同 CTS/Khronos 完整认证。
 
@@ -30,6 +33,7 @@
   类型关系；targetSdk 1..13 单独启用 AOSP 旧 JNI direct-reference 兼容并警告。文件 IO 通过
   Libcore Posix 进入唯一 VFS；完整 mmap/lock、系统 CA 和 Java 长尾仍明确失败。
 - **Android**：只覆盖当前 APK 直接需要的 Context、Activity、资源、文件、设置及有限服务；
+  Keyguard 当前发布无锁屏事实并预留宿主状态 provider；
   不运行 Binder system_server、Play 服务、跨包解析、支付或完整 Android 系统。
 - **网络**：Apache HTTP Java 类可链接不代表在线可用；socket 仍受 NetworkRuntime policy/
   transport 控制；默认 SSL 状态已闭合，但真实 TLS/PKIX 未实现。`URLEncodedUtils` 尚未纳入。
@@ -39,7 +43,8 @@
 ## 验证快照
 
 - Windows Release 仅构建受影响目标；BootDex 当前为 1531 类。
-- JNI 定向回归 54 cases / 1608 assertions；Angry Birds exact smoke 1259 presented frames。
+- JNI 定向回归 54 cases / 1608 assertions；DVM-166 双解释器 58 assertions；Angry Birds
+  keyguard 修复实跑已到下一独立 Java API 缺口。
 - 既有 BootDex 全链接测试：8602 assertions；能力清单解析通过。
 - 图形 catalog/定向回归通过不代表 CTS/Khronos 或全部厂商扩展认证。
 - `data/android/19/framework/` 为本地生成产物，不纳入版本控制。

@@ -149,6 +149,9 @@ extension string 与错误锁存以 native registry 为唯一事实。
   host 网络、DNS、代理或证书。无传感器/电话来源时返回 API 允许的缺席结果，不伪造硬件。
 - location 仅发布 API 19 listener/值类型形状与稳定 manager facade；无 provider、无历史位置，
   更新注册/移除明确记账失败，不接入宿主坐标、Binder 服务或产生回调。
+- KeyguardManager 是不缓存的 API 19 系统服务 facade；三项只读锁屏查询读取进程级
+  `AndroidKeyguardStateProvider` 快照。未注入 provider 时明确表示桌面兼容层没有锁屏，后续
+  宿主接入只能替换 provider，不得把 Binder、WindowManagerService 或宿主查询散入 Java handler。
 - System.load/loadLibrary 只经 process loader 并携带 application ClassLoader；失败映射 Java 异常，
   禁止 no-op 成功。JNI 对象出口按真实 runtime class 原子幂等注册；数组元素不得猜声明类型。
 - native token 只存普通 Java long 字段；GC/teardown 经登记 cleanup 清理，不保存 host pointer，

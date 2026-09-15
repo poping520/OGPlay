@@ -44,6 +44,15 @@ class VirtualFileSystem;
 // boot-age baseline so SystemClock is device-relative rather than process-relative.
 inline constexpr std::int64_t kDefaultAndroidDeviceUptimeMillis = 60'000;
 
+struct AndroidKeyguardState final {
+    bool locked{};
+    bool secure{};
+    bool restricted_input{};
+};
+
+using AndroidKeyguardStateProvider =
+    std::function<AndroidKeyguardState()>;
+
 // android.* intrinsic surface for the dex_activity lifecycle
 // (docs/design/dexvm/03-platform-intrinsics.md §4). The catalog is a
 // code-defined immutable list; handlers bind to the running guest session
@@ -112,6 +121,10 @@ struct DexVmAndroidContext final {
     std::string device_software_version{"00"};
     std::string line_number;
     std::string network_operator{"00000"};
+    // Host-independent default: OGPlay has no lock screen. A frontend may
+    // replace this process-lifetime provider with a host-backed snapshot
+    // without changing the Android facade or introducing Binder/system_server.
+    AndroidKeyguardStateProvider keyguard_state_provider;
     // Read-only subset of the API 19 secure settings table. This is distinct
     // from app SharedPreferences and from telephony/serial identities.
     std::map<std::string, std::string, std::less<>> secure_settings;

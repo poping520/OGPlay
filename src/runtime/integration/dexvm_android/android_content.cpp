@@ -1444,6 +1444,11 @@ Decl Declare_android_content_Context(const Context& context) {
                 return dx::VmValue::Ref(Singleton(
                     call, context, "vibrator", "Landroid/os/Vibrator;"));
             }
+            if (name == "keyguard") {
+                // API 19 ContextImpl intentionally does not cache this facade.
+                return dx::VmValue::Ref(call.vm.NewIntrinsicInstance(
+                    "Landroid/app/KeyguardManager;"));
+            }
             throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
                                   "system service is not provided: " + name};
         });

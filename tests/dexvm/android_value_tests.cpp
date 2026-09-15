@@ -1181,6 +1181,46 @@ TEST_CASE("DVM-156 location facade links listeners and exposes no location sourc
     }
 }
 
+TEST_CASE("DVM-166 keyguard facade reads the replaceable platform snapshot") {
+    for (const auto backend :
+         {InterpreterBackend::switch_dispatch,
+          InterpreterBackend::threaded}) {
+        AndroidValueVm fixture(backend);
+        const auto context = fixture.New("Landroid/content/Context;");
+        const auto service_name = fixture.vm.NewStringUtf8("keyguard");
+        const auto manager = fixture.On(
+            context, "getSystemService",
+            "(Ljava/lang/String;)Ljava/lang/Object;",
+            {VmValue::Ref(service_name)}).ref;
+        REQUIRE(manager.IsValid());
+        CHECK(fixture.model.ObjectClass(manager) ==
+              fixture.linker.ResolveDescriptor(
+                  "Landroid/app/KeyguardManager;"));
+        CHECK(fixture.On(manager, "isKeyguardLocked", "()Z").AsInt() == 0);
+        CHECK(fixture.On(manager, "isKeyguardSecure", "()Z").AsInt() == 0);
+        CHECK(fixture.On(manager, "inKeyguardRestrictedInputMode", "()Z")
+                  .AsInt() == 0);
+
+        const auto second = fixture.On(
+            context, "getSystemService",
+            "(Ljava/lang/String;)Ljava/lang/Object;",
+            {VmValue::Ref(service_name)}).ref;
+        CHECK(second.IsValid());
+        CHECK(second != manager);
+
+        fixture.context->keyguard_state_provider = [] {
+            return AndroidKeyguardState{
+                .locked = true,
+                .secure = true,
+                .restricted_input = true};
+        };
+        CHECK(fixture.On(manager, "isKeyguardLocked", "()Z").AsInt() == 1);
+        CHECK(fixture.On(manager, "isKeyguardSecure", "()Z").AsInt() == 1);
+        CHECK(fixture.On(manager, "inKeyguardRestrictedInputMode", "()Z")
+                  .AsInt() == 1);
+    }
+}
+
 TEST_CASE("DVM-133 ContentResolver query returns null when no provider exists") {
     for (const auto backend :
          {InterpreterBackend::switch_dispatch,

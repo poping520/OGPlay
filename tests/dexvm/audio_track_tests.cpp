@@ -360,6 +360,62 @@ TEST_CASE("AudioTrack periodic notifications follow mixer head boundaries") {
     CHECK(fixture.recorder.periodic.size() == 4U);
 }
 
+TEST_CASE("AudioTrack notification getters expose persistent configured state") {
+    AudioTrackVm fixture;
+    const auto track = fixture.NewTrack(4000, 4, 2, 800, 1);
+
+    CHECK(fixture.CallOn(
+              track, "getPositionNotificationPeriod", "()I").AsInt() == 0);
+    CHECK(fixture.CallOn(
+              track, "getNotificationMarkerPosition", "()I").AsInt() == 0);
+    CHECK(fixture.CallOn(
+              track, "setPositionNotificationPeriod", "(I)I",
+              {VmValue::Int(17)}).AsInt() == 0);
+    CHECK(fixture.CallOn(
+              track, "setNotificationMarkerPosition", "(I)I",
+              {VmValue::Int(23)}).AsInt() == 0);
+    CHECK(fixture.CallOn(
+              track, "getPositionNotificationPeriod", "()I").AsInt() == 17);
+    CHECK(fixture.CallOn(
+              track, "getNotificationMarkerPosition", "()I").AsInt() == 23);
+
+    CHECK(fixture.CallOn(
+              track, "setPositionNotificationPeriod", "(I)I",
+              {VmValue::Int(-1)}).AsInt() == -2);
+    CHECK(fixture.CallOn(
+              track, "setNotificationMarkerPosition", "(I)I",
+              {VmValue::Int(-1)}).AsInt() == -2);
+    CHECK(fixture.CallOn(
+              track, "getPositionNotificationPeriod", "()I").AsInt() == 17);
+    CHECK(fixture.CallOn(
+              track, "getNotificationMarkerPosition", "()I").AsInt() == 23);
+
+    static_cast<void>(fixture.CallOn(track, "pause", "()V"));
+    static_cast<void>(fixture.CallOn(track, "flush", "()V"));
+    static_cast<void>(fixture.CallOn(track, "stop", "()V"));
+    CHECK(fixture.CallOn(
+              track, "getPositionNotificationPeriod", "()I").AsInt() == 17);
+    CHECK(fixture.CallOn(
+              track, "getNotificationMarkerPosition", "()I").AsInt() == 23);
+
+    static_cast<void>(fixture.CallOn(track, "release", "()V"));
+    const auto released_period = fixture.CallOnOutcome(
+        track, "getPositionNotificationPeriod", "()I");
+    REQUIRE(released_period.exception.IsValid());
+    CHECK(fixture.linker.Class(fixture.model.ObjectClass(
+              released_period.exception)).descriptor ==
+          "Ljava/lang/IllegalStateException;");
+
+    const auto uninitialized =
+        fixture.vm.NewIntrinsicInstance("Landroid/media/AudioTrack;");
+    const auto uninitialized_marker = fixture.CallOnOutcome(
+        uninitialized, "getNotificationMarkerPosition", "()I");
+    REQUIRE(uninitialized_marker.exception.IsValid());
+    CHECK(fixture.linker.Class(fixture.model.ObjectClass(
+              uninitialized_marker.exception)).descriptor ==
+          "Ljava/lang/IllegalStateException;");
+}
+
 TEST_CASE("AudioTrack marker notification fires once and rearms on set") {
     AudioTrackVm fixture;
     constexpr std::int32_t buffer_size = 800;

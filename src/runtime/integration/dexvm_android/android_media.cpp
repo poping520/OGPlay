@@ -347,6 +347,11 @@ Decl Declare_android_media_AudioTrack(const Context& context) {
                 context->pcm_playback->PositionFrames(state->player);
             return dx::VmValue::Int(0);
         });
+    builder.FinalMethod("getPositionNotificationPeriod", "()I",
+        [context](dx::IntrinsicContext& call) {
+            return dx::VmValue::Int(
+                Require(context, call).notification_period);
+        });
     builder.FinalMethod("setNotificationMarkerPosition", "(I)I",
         [context](dx::IntrinsicContext& call) {
             auto* state = Find(context, call.receiver);
@@ -358,6 +363,10 @@ Decl Declare_android_media_AudioTrack(const Context& context) {
             state->marker_position = marker;
             state->marker_fired = false;
             return dx::VmValue::Int(0);
+        });
+    builder.FinalMethod("getNotificationMarkerPosition", "()I",
+        [context](dx::IntrinsicContext& call) {
+            return dx::VmValue::Int(Require(context, call).marker_position);
         });
     builder.FinalMethod(
         "setPlaybackPositionUpdateListener",

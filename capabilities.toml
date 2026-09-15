@@ -1498,12 +1498,12 @@ note = "DVM-83 发布 API19 Java GLES surface；BND-35/BND-38 为 GLES30 indexed
 [dexvm.audio_track]
 status = "complete"
 test = "tests/dexvm/audio_track_tests.cpp; tests/runtime/android_guest_java_media_tests.cpp; tests/audio/open_sles_pcm_mixer_tests.cpp"
-note = "DVM-84 发布 API 19 AudioFormat 常用 PCM 常量与 AudioTrack ctor/min-buffer/state/play/pause/stop/flush/release、byte/short write、volume 和真实 frame playback head；DVM-89 按该 head 在 lifecycle 帧泵投递 marker/periodic notification，支持跨多期补发、重入 write 与异常上浮，native output sample rate 由会话按后端 mixer 配置注入；DVM-93/ADR-0027 统一 DexVM/legacy STREAM 的构造 buffer 字节回压，DexVM park 释放执行锁并由播放/release/teardown 唤醒，A6 用户实听通过；PCM8/16 mono/stereo STREAM/STATIC 与 OpenSL ES、legacy Java/JNI 共用唯一 mixer"
+note = "DVM-84 发布 API 19 AudioFormat 常用 PCM 常量与 AudioTrack ctor/min-buffer/state/play/pause/stop/flush/release、byte/short write、volume 和真实 frame playback head；DVM-89 按该 head 在 lifecycle 帧泵投递 marker/periodic notification，支持跨多期补发、重入 write 与异常上浮，native output sample rate 由会话按后端 mixer 配置注入；DVM-159 补齐 notification marker/period 对称 getter，读取唯一 setter 状态且未初始化/释放后抛 IllegalStateException；DVM-93/ADR-0027 统一 DexVM/legacy STREAM 的构造 buffer 字节回压，DexVM park 释放执行锁并由播放/release/teardown 唤醒，A6 用户实听通过；PCM8/16 mono/stereo STREAM/STATIC 与 OpenSL ES、legacy Java/JNI 共用唯一 mixer"
 
 [dexvm.android_scheduler]
 status = "complete"
 test = "tests/dexvm/scheduler_tests.cpp; tests/dexvm/thread_intrinsic_tests.cpp; tests/dexvm/vm_monitor_tests.cpp; tests/session/lifecycle_tests.cpp"
-note = "DVM-85 发布 API19 SystemClock、Looper/Handler/HandlerThread、CountDownTimer 与 bounded AsyncTask，并将 core Timer/TimerTask 迁入会话唯一 uptime_millis scheduler；队列按 deadline/sequence 确定排序，Context/ContextWrapper 与 Looper.getMainLooper 共用进程稳定主 Looper，主 Looper在 lifecycle 安全点泵送，子 Looper/AsyncTask 使用 VmThreadRuntime，GC 与 shutdown 生命周期闭合。DVM-135 让 View.post/postDelayed 复用该主队列，attached View 共用 ViewRoot handler identity，detached action 在 live root safe point 转队后开始 delay。不模拟设备 suspend、Binder MessageQueue 或 AsyncTask Executor 并行策略"
+note = "DVM-85 发布 API19 SystemClock、Looper/Handler/HandlerThread、CountDownTimer 与 bounded AsyncTask，并将 core Timer/TimerTask 迁入会话唯一 uptime_millis scheduler；DVM-160 让该 Clock 以确定性 60 秒虚拟设备 boot-age 起步，不再把 APK 进程创建误作设备启动，无 suspend 模型时 uptimeMillis/elapsedRealtime 共用该事实；队列按 deadline/sequence 确定排序，Context/ContextWrapper 与 Looper.getMainLooper 共用进程稳定主 Looper，主 Looper在 lifecycle 安全点泵送，子 Looper/AsyncTask 使用 VmThreadRuntime，GC 与 shutdown 生命周期闭合。DVM-135 让 View.post/postDelayed 复用该主队列，attached View 共用 ViewRoot handler identity，detached action 在 live root safe point 转队后开始 delay。不模拟设备 suspend、Binder MessageQueue 或 AsyncTask Executor 并行策略"
 
 [dexvm.android_value_services]
 status = "complete"

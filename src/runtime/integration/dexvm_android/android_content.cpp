@@ -1133,6 +1133,31 @@ void LoadPreferencesOnce(const Context& context, const std::string& name) {
 
 Decl Declare_android_content_Context(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/content/Context;", "Ljava/lang/Object;");
+    constexpr std::int32_t kGuestProcessId = 1;
+    constexpr std::int32_t kPermissionGranted = 0;
+    constexpr std::int32_t kPermissionDenied = -1;
+    const auto require_permission = [](dx::IntrinsicContext& call,
+                                       const std::size_t index) {
+        const auto permission = call.arguments[index].ref;
+        if (!permission.IsValid()) {
+            throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;",
+                                  "permission is null"};
+        }
+        return call.vm.StringUtf8(permission);
+    };
+    const auto check_permission =
+        [context, require_permission](dx::IntrinsicContext& call,
+                                      const std::size_t permission_index,
+                                      const std::int32_t pid,
+                                      const std::int32_t uid) {
+            const auto permission = require_permission(call, permission_index);
+            const auto self = pid == kGuestProcessId &&
+                              uid == static_cast<std::int32_t>(
+                                         context->application_uid);
+            return self && context->granted_permissions.contains(permission)
+                       ? kPermissionGranted
+                       : kPermissionDenied;
+        };
     builder.ConstantInt(
                "MODE_PRIVATE", "I", 0,
                dx::kAccPublic | dx::kAccStatic | dx::kAccFinal)
@@ -1188,24 +1213,74 @@ Decl Declare_android_content_Context(const Context& context) {
         });
     builder.VirtualMethod(
         "checkPermission", "(Ljava/lang/String;II)I",
-        [context](dx::IntrinsicContext& call) {
-            const auto permission = call.arguments[0].ref;
-            if (!permission.IsValid()) {
-                throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;",
-                                      "permission is null"};
-            }
-            constexpr std::int32_t kGuestProcessId = 1;
-            constexpr std::int32_t kPermissionGranted = 0;
-            constexpr std::int32_t kPermissionDenied = -1;
-            const auto self = call.arguments[1].AsInt() == kGuestProcessId &&
-                              call.arguments[2].AsInt() ==
-                                  static_cast<std::int32_t>(
-                                      context->application_uid);
-            return dx::VmValue::Int(
-                self && context->granted_permissions.contains(
-                            call.vm.StringUtf8(permission))
-                    ? kPermissionGranted
-                    : kPermissionDenied);
+        [check_permission](dx::IntrinsicContext& call) {
+            return dx::VmValue::Int(check_permission(
+                call, 0U, call.arguments[1].AsInt(),
+                call.arguments[2].AsInt()));
+        });
+    builder.VirtualMethod(
+        "checkCallingPermission", "(Ljava/lang/String;)I",
+        [require_permission](dx::IntrinsicContext& call) {
+            static_cast<void>(require_permission(call, 0U));
+            return dx::VmValue::Int(kPermissionDenied);
+        });
+    builder.VirtualMethod(
+        "checkCallingOrSelfPermission", "(Ljava/lang/String;)I",
+        [context, check_permission](dx::IntrinsicContext& call) {
+            return dx::VmValue::Int(check_permission(
+                call, 0U, kGuestProcessId,
+                static_cast<std::int32_t>(context->application_uid)));
+        });
+    const auto enforce = [](dx::IntrinsicContext& call,
+                            const std::string& permission,
+                            const std::int32_t result, const bool self_too,
+                            const std::int32_t uid,
+                            const std::size_t message_index) {
+        if (result == kPermissionGranted) return dx::VmValue::Void();
+        std::string message;
+        if (call.arguments[message_index].ref.IsValid()) {
+            message = call.vm.StringUtf8(call.arguments[message_index].ref) +
+                      ": ";
+        }
+        message += self_too ? "Neither user " : "uid ";
+        message += std::to_string(uid);
+        message += self_too ? " nor current process has " : " does not have ";
+        message += permission + ".";
+        throw dx::VmJavaThrow{"Ljava/lang/SecurityException;", message};
+    };
+    builder.VirtualMethod(
+        "enforcePermission", "(Ljava/lang/String;IILjava/lang/String;)V",
+        [check_permission, require_permission,
+         enforce](dx::IntrinsicContext& call) {
+            const auto permission = require_permission(call, 0U);
+            const auto uid = call.arguments[2].AsInt();
+            return enforce(call, permission,
+                           check_permission(call, 0U,
+                                            call.arguments[1].AsInt(), uid),
+                           false, uid, 3U);
+        });
+    builder.VirtualMethod(
+        "enforceCallingPermission",
+        "(Ljava/lang/String;Ljava/lang/String;)V",
+        [context, require_permission,
+         enforce](dx::IntrinsicContext& call) {
+            const auto permission = require_permission(call, 0U);
+            return enforce(call, permission, kPermissionDenied, false,
+                           static_cast<std::int32_t>(
+                               context->application_uid),
+                           1U);
+        });
+    builder.VirtualMethod(
+        "enforceCallingOrSelfPermission",
+        "(Ljava/lang/String;Ljava/lang/String;)V",
+        [context, check_permission, require_permission,
+         enforce](dx::IntrinsicContext& call) {
+            const auto permission = require_permission(call, 0U);
+            const auto uid = static_cast<std::int32_t>(
+                context->application_uid);
+            return enforce(call, permission,
+                           check_permission(call, 0U, kGuestProcessId, uid),
+                           true, uid, 1U);
         });
     builder.VirtualMethod("getApplicationContext", "()Landroid/content/Context;",
         [context](dx::IntrinsicContext& call) {
@@ -1731,6 +1806,14 @@ Decl Declare_android_content_ContextWrapper(const Context& context) {
              "()Landroid/content/pm/ApplicationInfo;");
     delegate("getPackageManager", "()Landroid/content/pm/PackageManager;");
     delegate("checkPermission", "(Ljava/lang/String;II)I");
+    delegate("checkCallingPermission", "(Ljava/lang/String;)I");
+    delegate("checkCallingOrSelfPermission", "(Ljava/lang/String;)I");
+    delegate("enforcePermission",
+             "(Ljava/lang/String;IILjava/lang/String;)V");
+    delegate("enforceCallingPermission",
+             "(Ljava/lang/String;Ljava/lang/String;)V");
+    delegate("enforceCallingOrSelfPermission",
+             "(Ljava/lang/String;Ljava/lang/String;)V");
     delegate("getApplicationContext", "()Landroid/content/Context;");
     delegate("getFilesDir", "()Ljava/io/File;");
     delegate("getFileStreamPath",

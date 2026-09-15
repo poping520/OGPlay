@@ -1678,7 +1678,7 @@ note = "DVM-108/ADR-0039：API19 原版 MessageDigest/Spi、DigestInputStream/Di
 [dexvm.hmac_sha1]
 status = "complete"
 test = "tests/runtime/native_library_loader_tests.cpp; tools/bootdex/build_bootdex.py check"
-note = "DVM-169 将 API19 原版 Mac/MacSpi 纳入 BootDex，AndroidOpenSSL 仅注册 HmacSHA1 及原版别名；有界 SPI 通过 guest ARM libcrypto EVP 增量计算，不累计消息，native token 复用统一 GC/teardown。双解释器 RFC 向量通过，Angry Birds 已越过原 Mac 类缺口；其他 Mac 算法、完整 provider 与 TLS 未纳入。"
+note = "DVM-169 将 API19 原版 Mac/MacSpi 与 OpenSSLMac HmacSHA1 精确闭包纳入 BootDex，删除临时自定义 HMAC SPI；AndroidOpenSSL 仅注册已接通算法及原版别名，AOSP 签名 NativeCrypto 通过 guest ARM libcrypto EVP 增量计算，不累计消息，逻辑 token 复用统一 GC/teardown。双解释器 RFC 向量通过，Angry Birds 已越过原 Mac 类缺口；BKS/KeyStore、BouncyCastle、其他 Mac 与 TLS 未纳入。"
 
 [dexvm.object_stream_bootdex]
 status = "complete"

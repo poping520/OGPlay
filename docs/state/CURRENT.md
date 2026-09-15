@@ -29,8 +29,8 @@
 - [DVM-168](../tasks/dexvm/DVM-168.md)：Java EGL10/EGL14 按 native handle 回填多配置，
   对桌面 RGBA8888 超集配置发布 RGB565 guest 查询投影；Angry Birds 已越过 `No config chosen`
   并进入 `MyRenderer.onSurfaceChanged`，下一独立首错为缺少 `javax.crypto.Mac`。
-- [DVM-169](../tasks/dexvm/DVM-169.md)：API 19 原版 `Mac/MacSpi` 进入 BootDex，AndroidOpenSSL
-  以有界 guest libcrypto SPI 提供 HmacSHA1；Angry Birds 已越过原类缺口，下一独立问题为
+- [DVM-169](../tasks/dexvm/DVM-169.md)：API 19 原版 `Mac/MacSpi` 与 Conscrypt `OpenSSLMac`
+  精确闭包进入 BootDex，AOSP 签名 NativeCrypto 接入 guest libcrypto；Angry Birds 已越过原类缺口，下一独立问题为
   GLThread 调用 `runOnUiThread` 时没有 Looper，并残留 pending exception。
 - [DVM-170](../tasks/dexvm/DVM-170.md)：`Activity.runOnUiThread` 按 root/worker context 分流，
   worker 进入主 Looper；guest native token 在 root JNI detach 前统一释放。Angry Birds 已越过
@@ -42,8 +42,9 @@
 
 - **VM/Java**：DexVM 使用受审 API 19 BootDex；普通 Java 状态归字段/数组，JNI 使用真实 VM
   类型关系；targetSdk 1..13 单独启用 AOSP 旧 JNI direct-reference 兼容并警告。文件 IO 通过
-  Libcore Posix 进入唯一 VFS；Mac/MacSpi 公开语义来自 BootDex，当前仅 HmacSHA1 接入 guest
-  libcrypto；完整 mmap/lock、系统 CA 和 Java 长尾仍明确失败。
+  Libcore Posix 进入唯一 VFS；Mac/MacSpi 与 HmacSHA1 SPI 来自原版 BootDex/Conscrypt，当前
+  支持集合经 AOSP 签名 NativeCrypto 接入 guest libcrypto；完整 mmap/lock、系统 CA 和 Java
+  长尾仍明确失败。
 - **Android**：只覆盖当前 APK 直接需要的 Context、Activity、资源、文件、设置及有限服务；
   Keyguard 当前发布无锁屏事实并预留宿主状态 provider；
   不运行 Binder system_server、Play 服务、跨包解析、支付或完整 Android 系统。
@@ -55,10 +56,10 @@
 
 ## 验证快照
 
-- Windows Release 仅构建受影响目标；BootDex 当前为 1533 类。
+- Windows Release 仅构建受影响目标；BootDex 当前为 1539 类。
 - JNI 定向回归 54 cases / 1608 assertions；DVM-166/167 双解释器分别通过 58/44 assertions；
   DVM-168 EGL10/EGL14 定向回归 6 cases / 314 assertions；Angry Birds 已进入 renderer 的
-  `onSurfaceChanged`；DVM-169 双解释器加密回归 1 case / 1640 assertions；DVM-170 双解释器
+  `onSurfaceChanged`；DVM-169 双解释器加密回归 1 case / 1646 assertions；DVM-170 双解释器
   1 case / 16 assertions；真实 APK 已推进至 `java.security.KeyStore` 缺口。
 - 既有 BootDex 全链接测试：8602 assertions；能力清单解析通过。
 - 图形 catalog/定向回归通过不代表 CTS/Khronos 或全部厂商扩展认证。

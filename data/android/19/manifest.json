@@ -41,7 +41,7 @@
     "path": "framework/bootdex.jar",
     "generator": "tools/bootdex/build_bootdex.py",
     "recipe": "tools/bootdex/api19.json",
-    "recipe_sha256": "3c3ee3c5ab9a148b466181e281daf973e266843200d53a1f9fe73cbe205c9565",
+    "recipe_sha256": "737a54619393d12178267af6c1c90b837fc3fe4578106bdfa6e6c5a4790bd114",
     "sources": [
       {
         "source_project": "platform/libcore",
@@ -69,12 +69,12 @@
         "source_jar_sha256": "5866d4e62e5fe44ffaf6ff441b6c361baeb1f8b91e30bb555481ef13ef837973"
       }
     ],
-    "size": 2237444,
-    "sha256": "877729b3e5a6e01d61e884b6908e0ff31c9d2022e3630d33cf0d083643d3b0bf",
+    "size": 2244484,
+    "sha256": "b94ab55316251a9c32b1475464c04cb13f386a06f2666cfe2c73d1e2fed6b750",
     "dex_entry": "classes.dex",
-    "dex_size": 2233876,
-    "dex_sha256": "eb3939f85a3ec7adc883f709ae10ca756332c52b0d6ada72ea3d6f9d627312ae",
-    "class_count": 1533,
+    "dex_size": 2240916,
+    "dex_sha256": "46f4aab9b38d1979598392784fb2d16beb11a329ceb079209c8ea79a78231123",
+    "class_count": 1539,
     "selection_policy": "load-all",
     "notice": "notices/bootdex.jar.txt",
     "notice_sha256": "c5bf8c6efc379e6d5401a40fbf7810aedf9ee81dfa9f2deaa174faa97ded310a"
@@ -197,8 +197,8 @@
     {
       "path": "lib/libogplay_jni.so",
       "source_project": "ogplay",
-      "size": 65792,
-      "sha256": "ac2d6118fcda1c206a7a4329f00956c4a71dd787475adba396c10e6fe5c9eeaf",
+      "size": 67364,
+      "sha256": "990c978efbbe4ebf47360f00dec0fa0fd3ed47d8e80c90523801880bdee5649e",
       "soname": "libogplay_jni.so",
       "needed": [
         "libcrypto.so",
@@ -215,7 +215,7 @@
         "sources": [
           {
             "path": "src/guest/crypto/crypto_jni.c",
-            "sha256": "3558726043d94fdd1e4910c5bcdb41847f974c20692206a0946a426e3dfd022f"
+            "sha256": "5455204831882cb78e32c83049969bc9779adf20dceb35cae32939faee639fe4"
           },
           {
             "path": "src/guest/icu/icu_jni.c",

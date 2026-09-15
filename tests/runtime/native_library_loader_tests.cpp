@@ -2638,6 +2638,11 @@ TEST_CASE("DVM-105/169 AES and HmacSHA1 use BootDex and real guest libcrypto") {
         CHECK(vm.StringUtf8(invoke(
                   mac_provider, "getName", "()Ljava/lang/String;", {}).ref) ==
               "AndroidOpenSSL");
+        CHECK(vm.StringUtf8(invoke(
+                  mac_provider, "getProperty",
+                  "(Ljava/lang/String;)Ljava/lang/String;",
+                  {VmValue::Ref(vm.NewStringUtf8("Mac.HmacSHA1"))}).ref) ==
+              "com.android.org.conscrypt.OpenSSLMac$HmacSHA1");
         vm.ReleaseGuestNativeResources(true);
         CHECK(vm.GuestNativeResourceCount() == 0);
     }

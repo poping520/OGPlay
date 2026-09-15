@@ -24,6 +24,8 @@ Android API 的详细行为以 [dexvm_android](dexvm_android/MODULE.md)为准；
   AndroidGuestCallSession.Start 是 legacy adapter；AdoptProcess 仅包装既有 owner。
 - /proc/meminfo 是启动时写入 VFS 的只读 GuestProcFacts 快照：受检 total/free，Buffers/
   Swap 为 0，Cached 为 total/4；不读取宿主内存或动态刷新。
+- `dl_unwind_find_exidx` 按 PC 查询 process-owned namespace 的实际 load range，返回所属模块
+  经 load bias 重定位的 `PT_ARM_EXIDX` 地址与 8-byte 表项数；初始和动态模块共用 linker 锁。
 - libdl handle 表归 process。dlopen 只解析 guest basename，nullptr 为 RTLD_DEFAULT，
   libhgl.so 映射 sealed libGLESv2.so；dlsym 先查 handle scope，boundary 可回退 LookupAny，
   DEFAULT 先 sealed catalog 再 global namespace。dlclose 只减引用，不卸载；未知库/符号/

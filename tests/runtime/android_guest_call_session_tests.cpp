@@ -157,7 +157,7 @@ constexpr std::uint32_t kLibdlGlVertexPointerOffset = 0x810U;
 [[nodiscard]] std::vector<std::byte> LibdlDefaultLibcElf() {
     auto bytes = MinimalLibcElf();
     bytes.resize(0x2000U, std::byte{});
-    Put16(bytes, 44U, 3U);
+    Put16(bytes, 44U, 4U);
     Put32(bytes, 68U, 0x1000U);
     Put32(bytes, 72U, 0x1000U);
     Put32(bytes, 76U, 6U);
@@ -169,6 +169,14 @@ constexpr std::uint32_t kLibdlGlVertexPointerOffset = 0x810U;
     Put32(bytes, 136U, 0x1000U);
     Put32(bytes, 140U, 5U);
     Put32(bytes, 144U, 0x1000U);
+    Put32(bytes, 148U, ogplay::loader::kElfProgramArmExidx);
+    Put32(bytes, 152U, 0x900U);
+    Put32(bytes, 156U, 0x10900U);
+    Put32(bytes, 160U, 0U);
+    Put32(bytes, 164U, 16U);
+    Put32(bytes, 168U, 16U);
+    Put32(bytes, 172U, 4U);
+    Put32(bytes, 176U, 4U);
     const auto put_string = [&](const std::uint32_t offset,
                                 const std::string_view text) {
         for (std::size_t index = 0; index < text.size(); ++index) {
@@ -602,6 +610,12 @@ TEST_CASE("libdl process service exposes RTLD_DEFAULT and the host GL alias") {
     // counted reference.
     CHECK(invoke("dlclose", {0xffffffffU, 0U, 0U, 0U}) == 0U);
     CHECK(invoke("dlclose", {hgl, 0U, 0U, 0U}) == 0U);
+
+    constexpr std::uint32_t kCountAddress = 0x10010280U;
+    CHECK(invoke("dl_unwind_find_exidx",
+                 {0x10010200U, kCountAddress, 0U, 0U}) == 0x10010900U);
+    CHECK(invoke("dl_unwind_find_exidx",
+                 {0x50000000U, kCountAddress, 0U, 0U}) == 0U);
     process->Stop();
 }
 

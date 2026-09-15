@@ -4,6 +4,11 @@
 
 ## 最近进展
 
+- [BND-39](../tasks/boundary/BND-39.md) 已覆盖 API 19 `libdl.so` 的
+  `dl_unwind_find_exidx` linker stub：按 PC 查询初始及动态 ELF 的重定位 `PT_ARM_EXIDX`。
+  Windows Release 构建、4 项 libdl 定向测试（67 assertions）和 boundary hot-path 门禁通过；
+  Angry Birds 已越过原 recursive terminate/SIGABRT，首错前移至独立的 LocationListener 缺口。
+
 - [BND-38](../tasks/boundary/BND-38.md) 已合并闭合本轮审计剩余缺口：GLU 专用适配、复杂
   Java GLES 查询、GLSurfaceView WHEN_DIRTY、Java EGL extension/error、四种 Bitmap.Config、
   GLES1 light/line flat 及 GLES3 WRITE-only mapping。定向 23/23 tests、1229 assertions 与

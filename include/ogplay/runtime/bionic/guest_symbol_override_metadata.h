@@ -12,7 +12,8 @@
     X("libdl.so", "dlopen", 0, 2, Dlopen)                                   \
     X("libdl.so", "dlsym", 1, 2, Dlsym)                                     \
     X("libdl.so", "dlclose", 2, 1, Dlclose)                                 \
-    X("libdl.so", "dlerror", 3, 0, Dlerror)
+    X("libdl.so", "dlerror", 3, 0, Dlerror)                                 \
+    X("libdl.so", "dl_unwind_find_exidx", 4, 2, DlUnwindFindExidx)
 
 #define OGPLAY_GUEST_SYMBOL_OVERRIDE_EXPORTS(X)                               \
     OGPLAY_LIBC_GUEST_SYMBOL_OVERRIDE_EXPORTS(X)                              \

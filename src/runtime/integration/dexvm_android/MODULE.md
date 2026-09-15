@@ -112,6 +112,8 @@ Java 异常文本，再进入统一结构化 logger；不吞异常、不写裸 s
 - GLES/EGL 通过 session 的 managed 冷入口调用 Native EGL/GLES binding；不创建第二套状态。
   参数错误进入 guest error 锁存，host 内存/生命周期契约故障仍硬失败。Java EGL10 与
   API19 EGL14 的 display/config/context/surface wrapper 只映射 Native EGL registry 句柄；
+  config 数组逐 native handle 建立 wrapper；桌面配置为请求颜色格式的超集时，wrapper 可在
+  `eglGetConfigAttrib` 投影该次显式请求的颜色位数，但 context/surface 始终使用真实 native handle；
   current identity、错误、延迟销毁、pbuffer 与 shared context 均以 registry 为准。EGL14
   数组 overload 必须校验 offset 并只回写指定切片。pixmap、client buffer 与 texture pbuffer
   等 Native 已明确拒绝的入口保留精确 EGL error。WU-4 已从 AOSP 发布 GLES30 类、常量与

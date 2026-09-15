@@ -26,6 +26,9 @@
 - [DVM-167](../tasks/dexvm/DVM-167.md)：按 API 19 补齐 ViewGroup width/height addView 重载，
   RelativeLayout 虚派生成自身 BootDex 参数并复用唯一 attach 路径；Angry Birds 下一独立首错
   已推进到 GLSurfaceView `BaseConfigChooser` 的 `No config chosen`。
+- [DVM-168](../tasks/dexvm/DVM-168.md)：Java EGL10/EGL14 按 native handle 回填多配置，
+  对桌面 RGBA8888 超集配置发布 RGB565 guest 查询投影；Angry Birds 已越过 `No config chosen`
+  并进入 `MyRenderer.onSurfaceChanged`，下一独立首错为缺少 `javax.crypto.Mac`。
 - BND-34..39 已闭合本轮 EGL/GLES 核心审计、Java EGL/GLES 桥接、GLSurfaceView、GLU、
   `dl_unwind_find_exidx` 与相关行为缺口；核心名称覆盖不等同 CTS/Khronos 完整认证。
 
@@ -40,13 +43,15 @@
 - **网络**：Apache HTTP Java 类可链接不代表在线可用；socket 仍受 NetworkRuntime policy/
   transport 控制；默认 SSL 状态已闭合，但真实 TLS/PKIX 未实现。`URLEncodedUtils` 尚未纳入。
 - **图形/UI**：ANGLE GLES 与 SDL3 窗口输入已接通；完整 framework 排版、Dialog/Web 展示、
-  传感器和系统 UI 不在当前范围。
+  传感器和系统 UI 不在当前范围。Java EGL config wrapper 保留真实 native handle，并可对宿主
+  颜色格式超集投影 guest 显式请求位数。
 
 ## 验证快照
 
 - Windows Release 仅构建受影响目标；BootDex 当前为 1531 类。
 - JNI 定向回归 54 cases / 1608 assertions；DVM-166/167 双解释器分别通过 58/44 assertions；
-  Angry Birds 已进入 GLSurfaceView EGL 配置选择。
+  DVM-168 EGL10/EGL14 定向回归 6 cases / 314 assertions；Angry Birds 已进入 renderer 的
+  `onSurfaceChanged`，当前停在 `javax.crypto.Mac` 类缺口。
 - 既有 BootDex 全链接测试：8602 assertions；能力清单解析通过。
 - 图形 catalog/定向回归通过不代表 CTS/Khronos 或全部厂商扩展认证。
 - `data/android/19/framework/` 为本地生成产物，不纳入版本控制。

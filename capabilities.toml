@@ -1103,7 +1103,7 @@ note = "DVM-31 批次 A 把 host-managed ANGLE currency 显式释放并按调用
 [dexvm.egl_facade]
 status = "complete"
 test = "tests/dexvm/egl_facade_tests.cpp; tests/dexvm/vm_monitor_tests.cpp; tests/runtime/boundary/integration/android_boundary_hle_tests.cpp; data/scenarios/asphalt6.bootstrap.scenario.toml"
-note = "BND-33 WU-3 让 Java EGL10 与 API19 EGL14 通过 managed 冷入口复用 Native EGL registry；BND-36 使 destroy 成功立即退役 wrapper，并支持 terminate 后原 Display 重新 initialize；BND-38 使 wrapper 参数失败锁存同一 per-thread native error，并让 EGL_EXTENSIONS 返回 native 发布清单。thread current、延迟销毁、pbuffer、shared context 与数组 offset 复用 Native registry；pixmap/client-buffer/texture-pbuffer 按 Native 能力明确拒绝。"
+note = "BND-33 WU-3 让 Java EGL10 与 API19 EGL14 通过 managed 冷入口复用 Native EGL registry；BND-36 使 destroy 成功立即退役 wrapper，并支持 terminate 后原 Display 重新 initialize；BND-38 使 wrapper 参数失败锁存同一 per-thread native error，并让 EGL_EXTENSIONS 返回 native 发布清单。DVM-168 按容量回填多 config wrapper，并在 native 颜色格式为请求超集时投影显式请求位数，context/surface 仍使用真实 native handle。thread current、延迟销毁、pbuffer、shared context 与数组 offset 复用 Native registry；pixmap/client-buffer/texture-pbuffer 按 Native 能力明确拒绝。"
 
 [session.profile_guest_lifecycle]
 status = "complete"

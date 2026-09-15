@@ -1069,6 +1069,29 @@ DexVmGuestBridge::DexVmGuestBridge(
     impl_->android_context = android_context;
     impl_->owner = this;
 
+    const auto target_sdk = android_context != nullptr
+                                ? android_context->target_sdk_version
+                                : 0U;
+    const bool legacy_jni_references =
+        UsesLegacyJniAppBugCompatibility(target_sdk);
+    session.Environment().ConfigureLegacyLocalReferenceCompatibility(
+        legacy_jni_references,
+        [logger, target_sdk](const std::uint64_t thread,
+                             const JniReference reference,
+                             const JniObjectIdentity object) {
+            if (logger == nullptr) return;
+            logger->Write(
+                core::LogLevel::warn, "runtime.jni.legacy_reference",
+                "APK is using Android's targetSdk <= 13 legacy JNI direct-"
+                "reference compatibility; retaining a local reference past "
+                "its native call violates modern JNI rules",
+                {.guest_thread = thread},
+                {{"target_sdk", static_cast<std::uint64_t>(target_sdk)},
+                 {"reference", static_cast<std::uint64_t>(reference.Value())},
+                 {"object", object.value}},
+                {.mode = core::RateLimitMode::none});
+        });
+
     auto core_catalog = dx::CoreIntrinsicCatalog(
         AndroidCoreIntrinsicServices(android_context));
     BindPlatformCoreHandlers(core_catalog, android_context);

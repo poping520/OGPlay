@@ -565,6 +565,11 @@ status = "complete"
 test = "tests/runtime/headless_jni_contract_tests.cpp"
 note = "M3 范围完成：233 槽 ABI 全冻结，208 个常用 JNIEnv 与 4 个 JavaVM 槽有真实行为，低频槽继续可观测 trap；累计样本覆盖双向调用、引用、异常及 native 工作线程 attach/HLE callback/detach"
 
+[runtime.jni_legacy_app_bug_compat]
+status = "complete"
+test = "tests/runtime/jni_tests.cpp; Angry Birds exact local startup reproduction"
+note = "DVM-165 对齐 Android 4.4.4：仅 targetSdkVersion 1..13 启用 direct-style JNI local reference，稳定按对象复用 32-bit handle；失效 direct handle 可解析但不计入 GC roots，首次跨 frame 重发输出含 targetSdk/reference/object/thread 的 runtime.jni.legacy_reference warn。严格模式仍拒绝失效或跨线程 local reference，不使用 Profile/title 分支。"
+
 [runtime.jni_missing_handler_diagnostics]
 status = "complete"
 test = "tests/runtime/jni_invocation_tests.cpp; tests/runtime/framework_lifecycle_tests.cpp; tests/runtime/android_guest_call_session_tests.cpp; tests/runtime/jni_guest_instance_calls_tests.cpp; tests/runtime/jni_guest_bindings_tests.cpp"

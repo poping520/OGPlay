@@ -89,6 +89,8 @@ public:
                       std::size_t initial_local_capacity = 16);
     void DetachThread(std::uint64_t thread_id);
     [[nodiscard]] bool IsThreadAttached(std::uint64_t thread_id) const;
+    void ConfigureLegacyLocalReferenceCompatibility(
+        bool enabled, JniReferenceTable::LegacyReferenceWarning warning = {});
 
     [[nodiscard]] JniInt GetVersion(std::uint64_t thread_id) const;
     void EnsureLocalCapacity(std::uint64_t thread_id,

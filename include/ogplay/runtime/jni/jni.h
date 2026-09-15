@@ -153,9 +153,16 @@ struct JniReferenceLimits final {
     std::size_t weak_global{4096};
 };
 
+[[nodiscard]] constexpr bool UsesLegacyJniAppBugCompatibility(
+    const std::uint32_t target_sdk_version) noexcept {
+    return target_sdk_version > 0U && target_sdk_version <= 13U;
+}
+
 class JniReferenceTable final {
 public:
     using RootVisitor = std::function<void(JniObjectIdentity)>;
+    using LegacyReferenceWarning =
+        std::function<void(std::uint64_t, JniReference, JniObjectIdentity)>;
     explicit JniReferenceTable(JniReferenceLimits limits = {});
     ~JniReferenceTable();
     JniReferenceTable(const JniReferenceTable&) = delete;
@@ -167,6 +174,8 @@ public:
                       std::size_t initial_local_capacity = 16);
     void DetachThread(std::uint64_t thread_id);
     [[nodiscard]] bool IsThreadAttached(std::uint64_t thread_id) const;
+    void ConfigureLegacyLocalReferenceCompatibility(
+        bool enabled, LegacyReferenceWarning warning = {});
 
     void EnsureLocalCapacity(std::uint64_t thread_id,
                              std::size_t additional_capacity);

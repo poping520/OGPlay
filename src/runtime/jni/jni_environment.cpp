@@ -258,6 +258,12 @@ JniInt JniEnvironment::GetVersion(const std::uint64_t thread_id) const {
     return kJniVersion1_6;
 }
 
+void JniEnvironment::ConfigureLegacyLocalReferenceCompatibility(
+    const bool enabled, JniReferenceTable::LegacyReferenceWarning warning) {
+    references_.ConfigureLegacyLocalReferenceCompatibility(enabled,
+                                                            std::move(warning));
+}
+
 void JniEnvironment::EnsureLocalCapacity(
     const std::uint64_t thread_id, const std::size_t additional_capacity) {
     RequireAllowed(thread_id, "EnsureLocalCapacity");

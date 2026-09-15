@@ -7,6 +7,7 @@
 #include <limits>
 #include <map>
 #include <mutex>
+#include <set>
 #include <string>
 #include <utility>
 #include <vector>
@@ -315,7 +316,7 @@ public:
         const auto found = threads_.find(thread_id);
         if (found == threads_.end()) InvalidThread();
         for (const auto& frame : found->second.frames) {
-            for (const auto handle : frame.handles) entries_.erase(handle);
+            for (const auto handle : frame.handles) RetireLocalLocked(handle);
         }
         threads_.erase(found);
     }
@@ -323,6 +324,19 @@ public:
     [[nodiscard]] bool IsThreadAttached(const std::uint64_t thread_id) const {
         std::scoped_lock lock(mutex_);
         return threads_.contains(thread_id);
+    }
+
+    void ConfigureLegacyLocalReferenceCompatibility(
+        const bool enabled, LegacyReferenceWarning warning) {
+        std::scoped_lock lock(mutex_);
+        legacy_local_compatibility_ = enabled;
+        legacy_warning_ = std::move(warning);
+        if (!enabled) {
+            legacy_direct_handles_.clear();
+            legacy_direct_objects_.clear();
+            legacy_active_counts_.clear();
+            warned_legacy_reissues_.clear();
+        }
     }
 
     void EnsureLocalCapacity(const std::uint64_t thread_id,
@@ -364,7 +378,7 @@ public:
         }
 
         for (const auto handle : thread.frames.back().handles) {
-            entries_.erase(handle);
+            RetireLocalLocked(handle);
         }
         thread.frames.pop_back();
         if (!object.has_value()) return JniReference{};
@@ -408,7 +422,10 @@ public:
         auto& thread = Thread(thread_id);
         auto found = RequireEntry(reference);
         if (found->second.kind != JniReferenceKind::local) WrongKind();
-        if (found->second.owner_thread != thread_id) InvalidReference();
+        if (!legacy_local_compatibility_ &&
+            found->second.owner_thread != thread_id) {
+            InvalidReference();
+        }
         auto frame = std::find_if(
             thread.frames.begin(), thread.frames.end(),
             [&](const LocalFrame& candidate) {
@@ -418,7 +435,7 @@ public:
         if (frame == thread.frames.end()) InvalidReference();
         frame->handles.erase(std::find(frame->handles.begin(), frame->handles.end(),
                                        reference.Value()));
-        entries_.erase(found);
+        RetireLocalLocked(reference.Value());
     }
 
     void DeleteGlobal(const JniReference reference) {
@@ -587,7 +604,30 @@ private:
         // AttachThread/PushLocalFrame guarantee their requested capacity but
         // JNI permits the VM to grow a frame beyond it while resources remain.
         if (frame.handles.size() == frame.capacity) ++frame.capacity;
-        const auto reference = AddEntry(JniReferenceKind::local, object, thread_id);
+        JniReference reference;
+        if (legacy_local_compatibility_) {
+            const auto key = std::pair{static_cast<std::uint8_t>(object.domain),
+                                       object.value};
+            const auto direct = legacy_direct_handles_.find(key);
+            if (direct == legacy_direct_handles_.end()) {
+                reference = AllocateHandle();
+                legacy_direct_handles_.emplace(key, reference.Value());
+                legacy_direct_objects_.emplace(reference.Value(), object);
+            } else {
+                reference = JniReference{direct->second};
+                if (legacy_active_counts_[reference.Value()] == 0 &&
+                    warned_legacy_reissues_.insert(reference.Value()).second &&
+                    legacy_warning_) {
+                    legacy_warning_(thread_id, reference, object);
+                }
+            }
+            ++legacy_active_counts_[reference.Value()];
+            entries_.insert_or_assign(
+                reference.Value(),
+                Entry{JniReferenceKind::local, object, thread_id});
+        } else {
+            reference = AddEntry(JniReferenceKind::local, object, thread_id);
+        }
         frame.handles.push_back(reference.Value());
         return reference;
     }
@@ -596,6 +636,10 @@ private:
         const std::uint64_t thread_id, const JniReference reference) const {
         static_cast<void>(Thread(thread_id));
         if (reference.IsNull()) return std::nullopt;
+        if (legacy_local_compatibility_) {
+            const auto direct = legacy_direct_objects_.find(reference.Value());
+            if (direct != legacy_direct_objects_.end()) return direct->second;
+        }
         const auto found = entries_.find(reference.Value());
         if (found == entries_.end()) InvalidReference();
         if (found->second.kind == JniReferenceKind::local &&
@@ -603,6 +647,20 @@ private:
             InvalidReference();
         }
         return found->second.object;
+    }
+
+    void RetireLocalLocked(const std::uint32_t handle) {
+        const auto found = entries_.find(handle);
+        if (found == entries_.end()) return;
+        if (legacy_local_compatibility_) {
+            auto active = legacy_active_counts_.find(handle);
+            if (active != legacy_active_counts_.end() && active->second > 1) {
+                --active->second;
+                return;
+            }
+            legacy_active_counts_.erase(handle);
+        }
+        entries_.erase(found);
     }
 
     void DeleteShared(const JniReference reference, const JniReferenceKind kind,
@@ -619,6 +677,13 @@ private:
     mutable std::mutex mutex_;
     std::map<std::uint32_t, Entry> entries_;
     std::map<std::uint64_t, ThreadState> threads_;
+    std::map<std::pair<std::uint8_t, std::uint64_t>, std::uint32_t>
+        legacy_direct_handles_;
+    std::map<std::uint32_t, JniObjectIdentity> legacy_direct_objects_;
+    std::map<std::uint32_t, std::size_t> legacy_active_counts_;
+    std::set<std::uint32_t> warned_legacy_reissues_;
+    bool legacy_local_compatibility_{};
+    LegacyReferenceWarning legacy_warning_;
     std::uint64_t next_handle_{1};
     std::size_t global_count_{};
     std::size_t weak_count_{};
@@ -642,6 +707,12 @@ void JniReferenceTable::DetachThread(const std::uint64_t thread_id) {
 
 bool JniReferenceTable::IsThreadAttached(const std::uint64_t thread_id) const {
     return impl_->IsThreadAttached(thread_id);
+}
+
+void JniReferenceTable::ConfigureLegacyLocalReferenceCompatibility(
+    const bool enabled, LegacyReferenceWarning warning) {
+    impl_->ConfigureLegacyLocalReferenceCompatibility(enabled,
+                                                       std::move(warning));
 }
 
 void JniReferenceTable::EnsureLocalCapacity(

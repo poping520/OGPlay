@@ -13,6 +13,7 @@
 #include <doctest/doctest.h>
 
 #include "ogplay/core/capability_ledger.h"
+#include "ogplay/core/encoding.h"
 #include "ogplay/core/logger.h"
 #include "ogplay/loader/elf.h"
 #include "ogplay/runtime/dexvm/access_flags.h"
@@ -2118,7 +2119,7 @@ TEST_CASE("DVM-126 String.format delegates Locale formatting to API19 Formatter"
     }
 }
 
-TEST_CASE("DVM-105 AES uses BootDex and real guest libcrypto") {
+TEST_CASE("DVM-105/169 AES and HmacSHA1 use BootDex and real guest libcrypto") {
     using namespace ogplay;
     using namespace runtime::dexvm;
     for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
@@ -2590,6 +2591,53 @@ TEST_CASE("DVM-105 AES uses BootDex and real guest libcrypto") {
         expect_exception(vm.Call(*get_time_zone,
                                  std::array{VmValue::Ref(vm.NewStringUtf8("PST"))}),
                          "Ljava/lang/UnsupportedOperationException;");
+        const auto hmac_key_bytes = bytes(
+            "0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b");
+        const auto hmac_key = vm.NewIntrinsicInstance(
+            "Ljavax/crypto/spec/SecretKeySpec;");
+        const auto hmac_key_roots = vm.ProtectReferences(
+            std::array{hmac_key_bytes, hmac_key});
+        direct("Ljavax/crypto/spec/SecretKeySpec;", "<init>",
+               "([BLjava/lang/String;)V",
+               {VmValue::Ref(hmac_key), VmValue::Ref(hmac_key_bytes),
+                VmValue::Ref(vm.NewStringUtf8("HmacSHA1"))});
+        const auto mac = direct(
+            "Ljavax/crypto/Mac;", "getInstance",
+            "(Ljava/lang/String;)Ljavax/crypto/Mac;",
+            {VmValue::Ref(vm.NewStringUtf8("HmacSHA1"))}).ref;
+        const auto mac_roots = vm.ProtectReferences(std::array{mac});
+        for (const auto alias_name : {"HMAC-SHA1", "HMAC/SHA1",
+                                      "1.2.840.113549.2.7"}) {
+            const auto alias_mac = direct(
+                "Ljavax/crypto/Mac;", "getInstance",
+                "(Ljava/lang/String;)Ljavax/crypto/Mac;",
+                {VmValue::Ref(vm.NewStringUtf8(alias_name))}).ref;
+            const auto hmac_alias_roots =
+                vm.ProtectReferences(std::array{alias_mac});
+            CHECK(alias_mac.IsValid());
+        }
+        invoke(mac, "init", "(Ljava/security/Key;)V",
+               {VmValue::Ref(hmac_key)});
+        const auto hi_there = bytes("4869205468657265");
+        const auto hmac_input_roots = vm.ProtectReferences(std::array{hi_there});
+        invoke(mac, "update", "([BII)V",
+               {VmValue::Ref(hi_there), VmValue::Int(0), VmValue::Int(3)});
+        const auto hmac = invoke(mac, "doFinal", "([B)[B",
+                                 {VmValue::Ref(bytes("5468657265"))}).ref;
+        INFO(core::EncodeHex(read(hmac), core::HexCase::lower));
+        CHECK(read(hmac) == read(bytes(
+            "b617318655057264e28bc0b6fb378c8ef146be00")));
+        CHECK(read(invoke(mac, "doFinal", "([B)[B",
+                          {VmValue::Ref(hi_there)}).ref) == read(hmac));
+        invoke(mac, "update", "([B)V", {VmValue::Ref(hi_there)});
+        invoke(mac, "reset", "()V", {});
+        CHECK(read(invoke(mac, "doFinal", "([B)[B",
+                          {VmValue::Ref(hi_there)}).ref) == read(hmac));
+        const auto mac_provider = invoke(
+            mac, "getProvider", "()Ljava/security/Provider;", {}).ref;
+        CHECK(vm.StringUtf8(invoke(
+                  mac_provider, "getName", "()Ljava/lang/String;", {}).ref) ==
+              "AndroidOpenSSL");
         vm.ReleaseGuestNativeResources(true);
         CHECK(vm.GuestNativeResourceCount() == 0);
     }

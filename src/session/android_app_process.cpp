@@ -234,6 +234,10 @@ public:
         };
         bindings.finalize_guest = [this] {
             if (host.before_process_stop) host.before_process_stop();
+            // Native-backed Java objects (Mac, streams, etc.) run their guest
+            // cleanup through JNI. The lifecycle has already joined worker
+            // threads here, while the root JNI thread is still attached.
+            bridge->Vm().ReleaseGuestNativeResources(true);
             session->Stop();
         };
         bindings.close_surface = [this] { session->CloseManagedSurface(); };

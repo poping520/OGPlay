@@ -798,6 +798,8 @@
       "Ljavax/crypto/IllegalBlockSizeException;",
       "Ljavax/crypto/KeyGenerator;",
       "Ljavax/crypto/KeyGeneratorSpi;",
+      "Ljavax/crypto/Mac;",
+      "Ljavax/crypto/MacSpi;",
       "Ljavax/crypto/NoSuchPaddingException;",
       "Ljavax/crypto/SecretKey;",
       "Ljavax/crypto/ShortBufferException;",

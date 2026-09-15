@@ -87,6 +87,10 @@ IntrinsicClassDecl CryptoProvider() {
         Put(vm, c.receiver, "SecureRandom.SHA1PRNG ImplementedIn", "Software");
         Put(vm, c.receiver, "KeyGenerator.AES",
             "org.ogplay.security.AesKeyGenerator");
+        Put(vm, c.receiver, "Mac.HmacSHA1", "org.ogplay.security.HmacSha1");
+        Put(vm, c.receiver, "Alg.Alias.Mac.1.2.840.113549.2.7", "HmacSHA1");
+        Put(vm, c.receiver, "Alg.Alias.Mac.HMAC-SHA1", "HmacSHA1");
+        Put(vm, c.receiver, "Alg.Alias.Mac.HMAC/SHA1", "HmacSHA1");
         // Match API 19 OpenSSLProvider names, aliases and OIDs.
         for (const auto& entry : std::array{
                  std::array{"MD5", "MD5", "1.2.840.113549.2.5"},
@@ -300,6 +304,104 @@ IntrinsicClassDecl AesKeyGenerator() {
         }, kAccProtected);
     return std::move(b).Build();
 }
+IntrinsicClassDecl HmacSha1() {
+    auto b = IntrinsicClassBuilder::Class(
+        "Lorg/ogplay/security/HmacSha1;", "Ljavax/crypto/MacSpi;");
+    const auto context = b.BoundInstanceField("context", "J", kAccPrivate);
+    b.Constructor("()V", [](IntrinsicContext&) { return VmValue::Void(); });
+    b.VirtualMethod("engineGetMacLength", "()I",
+                    [](IntrinsicContext&) { return VmValue::Int(20); },
+                    kAccProtected);
+    b.VirtualMethod(
+        "engineInit",
+        "(Ljava/security/Key;Ljava/security/spec/AlgorithmParameterSpec;)V",
+        [context](IntrinsicContext& c) {
+            IntrinsicCall call(c);
+            const auto key = call.NonNullRef(0, "key");
+            if (call.Ref(1).IsValid()) {
+                throw VmJavaThrow{
+                    "Ljava/security/InvalidAlgorithmParameterException;",
+                    "HmacSHA1 does not accept parameters"};
+            }
+            const auto secret = c.vm.Linker().ResolveDescriptor(
+                "Ljavax/crypto/SecretKey;");
+            if (!c.vm.Linker().IsAssignable(
+                    secret, c.vm.Model().ObjectClass(key))) {
+                throw VmJavaThrow{"Ljava/security/InvalidKeyException;",
+                                  "key must be a SecretKey"};
+            }
+            const auto encoded = InvokeGuest(c.vm, key, "getEncoded", "()[B").ref;
+            if (!encoded.IsValid()) {
+                throw VmJavaThrow{"Ljava/security/InvalidKeyException;",
+                                  "key cannot be encoded"};
+            }
+            const auto old = call.GetLong(context);
+            if (old != 0) {
+                Direct(c.vm, kNative, "HMAC_SHA1_destroy", "(J)V",
+                       {VmValue::Long(old)});
+                call.SetLong(context, 0);
+            }
+            const auto token = Direct(c.vm, kNative, "HMAC_SHA1_init", "([B)J",
+                                      {VmValue::Ref(encoded)}).AsLong();
+            if (token == 0) {
+                throw VmJavaThrow{"Ljava/security/InvalidKeyException;",
+                                  "HmacSHA1 initialization failed"};
+            }
+            call.SetLong(context, token);
+            return VmValue::Void();
+        },
+        kAccProtected);
+    const auto require_context = [context](IntrinsicContext& c) {
+        const auto token = IntrinsicCall(c).GetLong(context);
+        if (token == 0) {
+            throw VmJavaThrow{"Ljava/lang/IllegalStateException;",
+                              "HmacSHA1 is not initialized"};
+        }
+        return token;
+    };
+    b.VirtualMethod(
+        "engineUpdate", "(B)V",
+        [require_context](IntrinsicContext& c) {
+            const auto input = c.vm.Model().NewPrimitiveArray(
+                c.vm.Linker().ResolveDescriptor("[B"), JniPrimitiveKind::byte, 1);
+            c.vm.Model().SetPrimitiveElement(
+                input, 0, static_cast<std::uint32_t>(c.arguments[0].AsInt()));
+            Direct(c.vm, kNative, "HMAC_SHA1_update", "(J[BII)V",
+                   {VmValue::Long(require_context(c)), VmValue::Ref(input),
+                    VmValue::Int(0), VmValue::Int(1)});
+            return VmValue::Void();
+        },
+        kAccProtected);
+    b.VirtualMethod(
+        "engineUpdate", "([BII)V",
+        [require_context](IntrinsicContext& c) {
+            IntrinsicCall call(c);
+            Direct(c.vm, kNative, "HMAC_SHA1_update", "(J[BII)V",
+                   {VmValue::Long(require_context(c)),
+                    VmValue::Ref(call.NonNullRef(0, "input")), c.arguments[1],
+                    c.arguments[2]});
+            return VmValue::Void();
+        },
+        kAccProtected);
+    b.VirtualMethod(
+        "engineDoFinal", "()[B",
+        [require_context](IntrinsicContext& c) {
+            const auto output = c.vm.Model().NewPrimitiveArray(
+                c.vm.Linker().ResolveDescriptor("[B"), JniPrimitiveKind::byte, 20);
+            Direct(c.vm, kNative, "HMAC_SHA1_final", "(J[B)V",
+                   {VmValue::Long(require_context(c)), VmValue::Ref(output)});
+            return VmValue::Ref(output);
+        },
+        kAccProtected);
+    b.VirtualMethod(
+        "engineReset", "()V",
+        [require_context](IntrinsicContext& c) {
+            return Direct(c.vm, kNative, "HMAC_SHA1_reset", "(J)V",
+                          {VmValue::Long(require_context(c))});
+        },
+        kAccProtected);
+    return std::move(b).Build();
+}
 IntrinsicClassDecl CipherContext() {
     auto b = IntrinsicClassBuilder::Class("Lcom/android/org/conscrypt/OpenSSLCipherContext;");
     const auto field = b.BoundInstanceField("context", "J", kAccPrivate | kAccFinal);
@@ -329,6 +431,18 @@ IntrinsicClassDecl NativeCryptoBoundary() {
         const auto cleanup = c.vm.Linker().FindDirectMethod(c.vm.Linker().ResolveDescriptor(kNative), "EVP_MD_CTX_destroy", "(J)V");
         if (!field || !cleanup) throw DexVmError(DexVmErrorReason::unresolved_reference, "digest resource metadata");
         c.vm.TrackGuestNativeResourceField(*field, *cleanup);
+        const auto hmac = c.vm.Linker().ResolveDescriptor(
+            "Lorg/ogplay/security/HmacSha1;");
+        const auto hmac_field = c.vm.Linker().FindFieldRecursive(
+            hmac, "context", "J");
+        const auto hmac_cleanup = c.vm.Linker().FindDirectMethod(
+            c.vm.Linker().ResolveDescriptor(kNative),
+            "HMAC_SHA1_destroy", "(J)V");
+        if (!hmac_field || !hmac_cleanup) {
+            throw DexVmError(DexVmErrorReason::unresolved_reference,
+                             "HMAC resource metadata");
+        }
+        c.vm.TrackGuestNativeResourceField(*hmac_field, *hmac_cleanup);
         return VmValue::Void();
     });
     for (const auto& [name, signature] : std::array{
@@ -349,6 +463,11 @@ IntrinsicClassDecl NativeCryptoBoundary() {
              std::pair{"EVP_DigestFinal", "(J[BI)I"},
              std::pair{"EVP_MD_CTX_copy", "(J)J"},
              std::pair{"EVP_MD_CTX_destroy", "(J)V"},
+             std::pair{"HMAC_SHA1_init", "([B)J"},
+             std::pair{"HMAC_SHA1_update", "(J[BII)V"},
+             std::pair{"HMAC_SHA1_final", "(J[B)V"},
+             std::pair{"HMAC_SHA1_reset", "(J)V"},
+             std::pair{"HMAC_SHA1_destroy", "(J)V"},
              std::pair{"RAND_seed", "([B)V"},
              std::pair{"RAND_bytes", "([B)V"},
              std::pair{"verify_signature", "([B[B[BLjava/lang/String;)Z"}}) {
@@ -434,6 +553,7 @@ void AppendJavaCrypto(std::vector<IntrinsicClassDecl>& catalog,
     catalog.push_back(OsRandom(services));
     catalog.push_back(OpenSslRandom(services));
     catalog.push_back(AesKeyGenerator());
+    catalog.push_back(HmacSha1());
     catalog.push_back(NativeCryptoBoundary());
     catalog.push_back(CipherContext());
     for (const auto& entry : kSignatures) catalog.push_back(VerificationSpi(entry.algorithm));

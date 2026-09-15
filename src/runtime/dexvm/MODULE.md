@@ -84,6 +84,11 @@ switch/threaded 解释、异常、线程/monitor、反射及 `java.*` core intri
   I/O 明确失败。
 - `ProxySelector` 是明确的无进程代理薄边界：`getDefault()` 返回 null，使 API 19 Apache
   RoutePlanner 选择直连；不读取宿主代理，也不登记 `Proxy`/默认 selector 的 BootDex 闭包。
+- URLConnection/HttpURLConnection/HttpsURLConnection 的请求属性、超时、method 和默认
+  socket factory/hostname verifier 状态来自 API 19 BootDex；core 只 overlay connect/
+  disconnect/input 与 SSL factory/context 的 NetworkRuntime 边界。默认 NetworkPolicy disabled；
+  没有 TLS transport 时 cipher suite 为空，分层 socket 创建抛 SocketException，不伪造握手或
+  证书。真实 policy-gated TLS/PKIX 与剩余 SSL provider 普通状态迁移属于后续阶段。
 - `System.lineSeparator` 在类初始化时通过初始 `line.separator` property 冻结，后续 property
   修改不影响 `lineSeparator()`；System 仍是 VM 启动及 native 平台边界，不整体迁入 BootDex。
 - API 19 初始 property 固定提供 guest `java.home`、`java.io.tmpdir` 与 `user.dir`；Android
@@ -102,8 +107,9 @@ switch/threaded 解释、异常、线程/monitor、反射及 `java.*` core intri
 - API 19 Settings 公开 Java API 归 BootDex，包括 moved-key 路由、数值转换与异常；只有私有
   NameValueCache 的有界存储访问由 Android integration overlay，不引入 provider/Binder。
 - API 19 ext.jar 的 Terms/Restlet Apache HTTP 闭包归 BootDex；Commons Logging 的反射实现类
-  显式列入配方。HTTP socket 仍只经 NetworkRuntime，TLS 初始化和全局 SSL 配置在未实现时
-  明确失败，不因类可解析而宣称完整 Apache 客户端或 TLS。
+  显式列入配方，`org.apache.http.entity` 的 12 个类完整入集。HTTP socket 仍只经
+  NetworkRuntime，TLS 初始化和全局 SSL 配置在未实现时明确失败，不因类可解析而宣称完整
+  Apache 客户端或 TLS。
 
 ## 文件分工与不变量
 

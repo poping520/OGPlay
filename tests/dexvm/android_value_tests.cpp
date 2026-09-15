@@ -1041,6 +1041,81 @@ TEST_CASE("DVM-136 API 19 OrientationEventListener preserves absent sensor seman
     }
 }
 
+TEST_CASE("DVM-156 location facade links listeners and exposes no location source") {
+    for (const auto backend :
+         {InterpreterBackend::switch_dispatch,
+          InterpreterBackend::threaded}) {
+        auto listener = IntrinsicClassBuilder::Class(
+            "Ltest/LocationListener;", "Ljava/lang/Object;",
+            {"Landroid/location/LocationListener;"});
+        listener.Constructor("()V", [](IntrinsicContext&) {
+            return VmValue::Void();
+        });
+        listener.VirtualMethod(
+            "onLocationChanged", "(Landroid/location/Location;)V",
+            [](IntrinsicContext&) { return VmValue::Void(); });
+        listener.VirtualMethod(
+            "onStatusChanged",
+            "(Ljava/lang/String;ILandroid/os/Bundle;)V",
+            [](IntrinsicContext&) { return VmValue::Void(); });
+        listener.VirtualMethod(
+            "onProviderEnabled", "(Ljava/lang/String;)V",
+            [](IntrinsicContext&) { return VmValue::Void(); });
+        listener.VirtualMethod(
+            "onProviderDisabled", "(Ljava/lang/String;)V",
+            [](IntrinsicContext&) { return VmValue::Void(); });
+
+        AndroidValueVm fixture(backend, {std::move(listener).Build()});
+        const auto context = fixture.New("Landroid/content/Context;");
+        const auto service_name = fixture.vm.NewStringUtf8("location");
+        const auto manager = fixture.On(
+            context, "getSystemService",
+            "(Ljava/lang/String;)Ljava/lang/Object;",
+            {VmValue::Ref(service_name)}).ref;
+        REQUIRE(manager.IsValid());
+        CHECK(fixture.On(
+            context, "getSystemService",
+            "(Ljava/lang/String;)Ljava/lang/Object;",
+            {VmValue::Ref(service_name)}).ref == manager);
+        CHECK(fixture.model.ObjectClass(manager) ==
+              fixture.linker.ResolveDescriptor(
+                  "Landroid/location/LocationManager;"));
+
+        const auto criteria = fixture.New("Landroid/location/Criteria;");
+        CHECK_FALSE(fixture.On(
+            manager, "getBestProvider",
+            "(Landroid/location/Criteria;Z)Ljava/lang/String;",
+            {VmValue::Ref(criteria), VmValue::Int(1)}).ref.IsValid());
+        const auto provider = fixture.vm.NewStringUtf8("gps");
+        CHECK_FALSE(fixture.On(
+            manager, "getLastKnownLocation",
+            "(Ljava/lang/String;)Landroid/location/Location;",
+            {VmValue::Ref(provider)}).ref.IsValid());
+
+        const auto callback = fixture.New("Ltest/LocationListener;");
+        const auto request = fixture.OnOutcome(
+            manager, "requestLocationUpdates",
+            "(Ljava/lang/String;JFLandroid/location/LocationListener;"
+            "Landroid/os/Looper;)V",
+            {VmValue::Ref(provider), VmValue::Long(0), VmValue::Float(0.0F),
+             VmValue::Ref(callback), VmValue::Ref(VmObjectRef{})});
+        REQUIRE(request.exception.IsValid());
+        CHECK(fixture.linker.Class(request.exception_class).descriptor ==
+              "Ljava/lang/UnsupportedOperationException;");
+        const auto remove = fixture.OnOutcome(
+            manager, "removeUpdates",
+            "(Landroid/location/LocationListener;)V",
+            {VmValue::Ref(callback)});
+        REQUIRE(remove.exception.IsValid());
+        CHECK(fixture.linker.Class(remove.exception_class).descriptor ==
+              "Ljava/lang/UnsupportedOperationException;");
+        const auto hits = fixture.ledger.Unimplemented();
+        REQUIRE(hits.size() == 1);
+        CHECK(hits[0].id == "dexvm.location_updates");
+        CHECK(hits[0].count == 2);
+    }
+}
+
 TEST_CASE("DVM-133 ContentResolver query returns null when no provider exists") {
     for (const auto backend :
          {InterpreterBackend::switch_dispatch,

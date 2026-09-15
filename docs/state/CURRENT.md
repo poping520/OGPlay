@@ -4,6 +4,11 @@
 
 ## 最近进展
 
+- [DVM-156](../tasks/dexvm/DVM-156.md) 已增加无位置源的 API 19 location 薄层：完整
+  `LocationListener` 接口形状、稳定 manager、无 provider/历史位置语义，更新订阅明确失败。
+  双后端 62 assertions 与 intrinsic 架构门禁通过；Angry Birds 首错推进至独立的
+  `Context.getFileStreamPath(String)` 缺口。
+
 - [BND-39](../tasks/boundary/BND-39.md) 已覆盖 API 19 `libdl.so` 的
   `dl_unwind_find_exidx` linker stub：按 PC 查询初始及动态 ELF 的重定位 `PT_ARM_EXIDX`。
   Windows Release 构建、4 项 libdl 定向测试（67 assertions）和 boundary hot-path 门禁通过；

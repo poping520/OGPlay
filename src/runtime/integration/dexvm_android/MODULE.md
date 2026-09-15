@@ -139,6 +139,8 @@ extension string 与错误锁存以 native registry 为唯一事实。
   唯一状态。回压等待完整释放 VM 锁，恢复后复验 owner；host 音频线程不得进入 VM。
 - 网络只用 core 注入 policy/transport，默认离线；Connectivity/Wifi 仅发布已配置事实，不读取
   host 网络、DNS、代理或证书。无传感器/电话来源时返回 API 允许的缺席结果，不伪造硬件。
+- location 仅发布 API 19 listener/值类型形状与稳定 manager facade；无 provider、无历史位置，
+  更新注册/移除明确记账失败，不接入宿主坐标、Binder 服务或产生回调。
 - System.load/loadLibrary 只经 process loader 并携带 application ClassLoader；失败映射 Java 异常，
   禁止 no-op 成功。JNI 对象出口按真实 runtime class 原子幂等注册；数组元素不得猜声明类型。
 - native token 只存普通 Java long 字段；GC/teardown 经登记 cleanup 清理，不保存 host pointer，

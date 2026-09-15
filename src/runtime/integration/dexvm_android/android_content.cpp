@@ -1306,6 +1306,11 @@ Decl Declare_android_content_Context(const Context& context) {
                     call, context, "sensor",
                     "Landroid/hardware/SensorManager;"));
             }
+            if (name == "location") {
+                return dx::VmValue::Ref(Singleton(
+                    call, context, "location",
+                    "Landroid/location/LocationManager;"));
+            }
             if (name == "connectivity") {
                 return dx::VmValue::Ref(Singleton(
                     call, context, "connectivity",

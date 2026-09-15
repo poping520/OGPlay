@@ -5,6 +5,79 @@
 
 namespace ogplay::runtime::android_intrinsics {
 
+Decl Declare_android_location_LocationListener(const Context& context) {
+    static_cast<void>(context);
+    auto builder = dx::IntrinsicClassBuilder::Interface(
+        "Landroid/location/LocationListener;");
+    builder.UnimplementedVirtual(
+        "onLocationChanged", "(Landroid/location/Location;)V",
+        dx::kAccPublic | dx::kAccAbstract);
+    builder.UnimplementedVirtual(
+        "onStatusChanged",
+        "(Ljava/lang/String;ILandroid/os/Bundle;)V",
+        dx::kAccPublic | dx::kAccAbstract);
+    builder.UnimplementedVirtual(
+        "onProviderEnabled", "(Ljava/lang/String;)V",
+        dx::kAccPublic | dx::kAccAbstract);
+    builder.UnimplementedVirtual(
+        "onProviderDisabled", "(Ljava/lang/String;)V",
+        dx::kAccPublic | dx::kAccAbstract);
+    return std::move(builder).Build();
+}
+
+Decl Declare_android_location_Criteria(const Context& context) {
+    static_cast<void>(context);
+    auto builder = dx::IntrinsicClassBuilder::Class(
+        "Landroid/location/Criteria;", "Ljava/lang/Object;",
+        {"Landroid/os/Parcelable;"});
+    builder.Constructor("()V", NeutralHandler('V'));
+    return std::move(builder).Build();
+}
+
+Decl Declare_android_location_Location(const Context& context) {
+    static_cast<void>(context);
+    auto builder = dx::IntrinsicClassBuilder::Class(
+        "Landroid/location/Location;", "Ljava/lang/Object;",
+        {"Landroid/os/Parcelable;"});
+    builder.Constructor("(Ljava/lang/String;)V", NeutralHandler('V'));
+    return std::move(builder).Build();
+}
+
+Decl Declare_android_location_LocationManager(const Context& context) {
+    static_cast<void>(context);
+    auto builder = dx::IntrinsicClassBuilder::Class(
+        "Landroid/location/LocationManager;", "Ljava/lang/Object;");
+    const auto unsupported_updates = [](dx::IntrinsicContext& call)
+        -> dx::VmValue {
+        if (auto* ledger = call.vm.Ledger()) {
+            ledger->RecordUnimplemented("dexvm.location_updates", 0);
+        }
+        throw dx::VmJavaThrow{
+            "Ljava/lang/UnsupportedOperationException;",
+            "location updates are outside the compatibility scope"};
+    };
+    builder.VirtualMethod(
+        "getBestProvider",
+        "(Landroid/location/Criteria;Z)Ljava/lang/String;",
+        [](dx::IntrinsicContext&) {
+            return dx::VmValue::Ref(dx::VmObjectRef{});
+        });
+    builder.VirtualMethod(
+        "getLastKnownLocation",
+        "(Ljava/lang/String;)Landroid/location/Location;",
+        [](dx::IntrinsicContext&) {
+            return dx::VmValue::Ref(dx::VmObjectRef{});
+        });
+    builder.VirtualMethod(
+        "requestLocationUpdates",
+        "(Ljava/lang/String;JFLandroid/location/LocationListener;"
+        "Landroid/os/Looper;)V", unsupported_updates);
+    builder.VirtualMethod(
+        "removeUpdates", "(Landroid/location/LocationListener;)V",
+        unsupported_updates);
+    return std::move(builder).Build();
+}
+
 Decl Declare_android_provider_Settings_Secure(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class(
         "Landroid/provider/Settings$Secure;", "Ljava/lang/Object;");

@@ -65,6 +65,10 @@ namespace ogplay::runtime::android_intrinsics {
 [[nodiscard]] Decl Declare_android_hardware_SensorEvent(const Context& context);
 [[nodiscard]] Decl Declare_android_hardware_SensorEventListener(const Context& context);
 [[nodiscard]] Decl Declare_android_hardware_SensorManager(const Context& context);
+[[nodiscard]] Decl Declare_android_location_LocationListener(const Context& context);
+[[nodiscard]] Decl Declare_android_location_Criteria(const Context& context);
+[[nodiscard]] Decl Declare_android_location_Location(const Context& context);
+[[nodiscard]] Decl Declare_android_location_LocationManager(const Context& context);
 [[nodiscard]] Decl Declare_android_media_AudioManager(const Context& context);
 [[nodiscard]] Decl Declare_android_media_AudioFormat(const Context& context);
 [[nodiscard]] Decl Declare_android_media_AudioTrack(const Context& context);

@@ -1,8 +1,14 @@
 # 当前状态
 
-更新：2026-09-14。
+更新：2026-09-15。
 
 ## 最近进展
+
+- [BND-36](../tasks/boundary/BND-36.md) 已修复复核确认的首批 EGL/GLES 行为缺陷：
+  `eglTerminate` 保留各线程 current 资源、允许重复终止和重新初始化；Java EGL wrapper
+  随 native destroy 退役并可重取 Display；GLES1 奇异矩阵非光照绘制、fog Alpha/反向区间、
+  投影纹理 Q、双面 PRIMARY_COLOR、DrawArrays/flat 的 16 位限制已闭合；超采样不再缩放
+  用户 FBO。定向 49/49 tests、2501 assertions 通过，未运行全量测试或 CTS。
 
 - [DIAG-3](../tasks/diagnostics/DIAG-3.md) 已补齐 native fatal 终止链：
   `tgkill(SIGABRT)` 保存 signal/target/PC/LR 并按默认 action 终止进程组；fd 1/2 与
@@ -63,6 +69,7 @@
 
 - [GLES 最新完整性复核](../design/boundary/06-gles-api19-completeness-review.md)：核心名称
   齐全，原 ES3 共用入口、Java 方法桥接及 GLES1 OES FBO 缺口已由 BND-35 修复；
+  EGL terminate 与首批固定管线/超采样行为缺口已由 BND-36 修复；
   catalog complete 仍不代表 CTS/Khronos 全规范认证。
   [此前审计](../design/boundary/05-egl-gles-current-audit.md)中的 Context/Surface 所有权、
   share 顺序及状态隔离问题已有 BND-34 修复记录，不能继续直接作为现存缺陷。

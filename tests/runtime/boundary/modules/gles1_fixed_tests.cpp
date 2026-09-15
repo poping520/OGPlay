@@ -227,4 +227,12 @@ TEST_CASE("GLES1 fixed shaders consume the complete core lighting and texture mo
     CHECK(fragment.find("environment == 8449") != std::string_view::npos);
     CHECK(fragment.find("gl_FrontFacing ? v_color : v_back_color") !=
           std::string_view::npos);
+    CHECK(fragment.find("applyStage(vec4 previous, vec4 texel, vec4 primary") !=
+          std::string_view::npos);
+    CHECK(fragment.find("texture2DProj(u_texture0, v_texcoord0), primary, 0") !=
+          std::string_view::npos);
+    CHECK(fragment.find("color.rgb = mix(u_fog_color.rgb, color.rgb, fog)") !=
+          std::string_view::npos);
+    CHECK(fragment.find("fogDenominator < 0.0 ? -0.00001 : 0.00001") !=
+          std::string_view::npos);
 }

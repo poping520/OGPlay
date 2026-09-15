@@ -89,14 +89,17 @@ private:
                 std::bit_cast<std::int32_t>(args[1]),
                 std::bit_cast<std::int32_t>(args[2]),
                 std::bit_cast<std::int32_t>(args[3])};
+            const auto raster_factor =
+                graphics_.gl_context.Shared().Framebuffer() == 0U
+                    ? graphics_.layout.factor : 1U;
             const auto x = detail::ScaleAndroidBoundaryViewportComponent(
-                std::bit_cast<std::int32_t>(args[0]), graphics_.layout.factor);
+                std::bit_cast<std::int32_t>(args[0]), raster_factor);
             const auto y = detail::ScaleAndroidBoundaryViewportComponent(
-                std::bit_cast<std::int32_t>(args[1]), graphics_.layout.factor);
+                std::bit_cast<std::int32_t>(args[1]), raster_factor);
             const auto width = detail::ScaleAndroidBoundaryViewportComponent(
-                std::bit_cast<std::int32_t>(args[2]), graphics_.layout.factor);
+                std::bit_cast<std::int32_t>(args[2]), raster_factor);
             const auto height = detail::ScaleAndroidBoundaryViewportComponent(
-                std::bit_cast<std::int32_t>(args[3]), graphics_.layout.factor);
+                std::bit_cast<std::int32_t>(args[3]), raster_factor);
             if constexpr (FunctionId == 141U) {
                 graphics_.RequireFrame(symbol).Viewport(x, y, width, height);
                 graphics_.gl_context.Shared().SetViewport(logical);

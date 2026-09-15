@@ -710,23 +710,12 @@ std::uint32_t EglModule::ExecuteExport(const A32CallFrame& call) {
     if constexpr (FunctionId == 11U) {
         std::scoped_lock execution_lock(graphics.execution_mutex);
         if (args[0] != kFakeDisplay) { SetError(tid, kEglBadDisplay); return 0U; }
-        gles::AngleFrame* release_frame{};
-        {
-            std::scoped_lock lock(mutex_);
-            if (!initialized_) { threads_[tid].error = kEglNotInitialized; return 0U; }
-            const auto current = threads_.find(tid);
-            if (current != threads_.end() && current->second.context != 0U) {
-                auto& context = contexts_.at(current->second.context);
-                release_frame = context.frame.get();
-            }
-        }
-        if (release_frame != nullptr) release_frame->ReleaseCurrent();
-        if (!graphics.managed_surface) {
-            graphics.gl_owner.reset();
-            graphics.angle_frame.reset();
-            graphics.frames.SetRenderTargetReady(false);
-        }
         std::scoped_lock lock(mutex_);
+        // EGL 1.4 keeps resources that are current to any thread alive until
+        // they are subsequently released. Termination does not unbind the
+        // caller, invalidate another thread's current route, or fail merely
+        // because this display was already terminated.
+        if (!initialized_) return 1U;
         initialized_ = false;
         RetireExtensionsLocked();
         for (auto& [handle, context] : contexts_) {
@@ -737,26 +726,12 @@ std::uint32_t EglModule::ExecuteExport(const A32CallFrame& call) {
             static_cast<void>(handle);
             surface.destroy_pending = true;
         }
-        const auto current = threads_.find(tid);
-        if (current != threads_.end() && current->second.context != 0U) {
-            auto& context = contexts_.at(current->second.context);
-            context.current_thread.reset();
-            context.current_host_thread.reset();
-            context.current_draw_surface = 0U;
-            context.current_bound_surface = 0U;
-            --surfaces_.at(current->second.draw_surface).current_count;
-            if (current->second.read_surface != current->second.draw_surface) {
-                --surfaces_.at(current->second.read_surface).current_count;
-            }
-        }
-        threads_.erase(tid);
         CollectRetiredObjectsLocked();
         if (active_shadow_context_ != 0U &&
             !contexts_.contains(active_shadow_context_)) {
             active_shadow_context_ = 0U;
             graphics.ResetGuestGraphics();
         }
-        context_.api_routing.Deactivate();
         return 1U;
     }
     if constexpr (FunctionId == 12U) return TakeError(tid);

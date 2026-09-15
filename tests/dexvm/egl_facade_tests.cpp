@@ -432,6 +432,15 @@ TEST_CASE("WU-3 EGL14 arrays pbuffer and shared context use native registry") {
         "Landroid/opengl/EGL14;", "eglTerminate",
         "(Landroid/opengl/EGLDisplay;)Z",
         {VmValue::Ref(display)}).AsInt() == 1);
+    CHECK(vm.CallStatic(
+        "Landroid/opengl/EGL14;", "eglInitialize",
+        "(Landroid/opengl/EGLDisplay;[II[II)Z",
+        {VmValue::Ref(display), VmValue::Ref(VmObjectRef{}), VmValue::Int(0),
+         VmValue::Ref(VmObjectRef{}), VmValue::Int(0)}).AsInt() == 1);
+    CHECK(vm.CallStatic(
+        "Landroid/opengl/EGL14;", "eglTerminate",
+        "(Landroid/opengl/EGLDisplay;)Z",
+        {VmValue::Ref(display)}).AsInt() == 1);
 
     const auto egl10 = vm.CallStatic(
         "Ljavax/microedition/khronos/egl/EGLContext;", "getEGL",
@@ -497,6 +506,14 @@ TEST_CASE("WU-3 EGL14 arrays pbuffer and shared context use native registry") {
         egl10, "eglDestroySurface",
         "(Ljavax/microedition/khronos/egl/EGLDisplay;Ljavax/microedition/khronos/egl/EGLSurface;)Z",
         {VmValue::Ref(display10), VmValue::Ref(surface10)}).AsInt() == 1);
+    CHECK(vm.CallOn(
+        egl10, "eglTerminate",
+        "(Ljavax/microedition/khronos/egl/EGLDisplay;)Z",
+        {VmValue::Ref(display10)}).AsInt() == 1);
+    CHECK(vm.CallOn(
+        egl10, "eglInitialize",
+        "(Ljavax/microedition/khronos/egl/EGLDisplay;[I)Z",
+        {VmValue::Ref(display10), VmValue::Ref(VmObjectRef{})}).AsInt() == 1);
     CHECK(vm.CallOn(
         egl10, "eglTerminate",
         "(Ljavax/microedition/khronos/egl/EGLDisplay;)Z",

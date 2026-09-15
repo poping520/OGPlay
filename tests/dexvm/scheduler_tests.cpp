@@ -314,6 +314,10 @@ TEST_CASE("DVM-89 ResultReceiver dispatches locally and through its Handler") {
 
 TEST_CASE("DVM-85 Handler queue is delayed ordered and removable") {
     SchedulerVm fixture;
+    CHECK(fixture.Direct("Landroid/os/SystemClock;", "uptimeMillis", "()J")
+              .value.AsLong() == kDefaultAndroidDeviceUptimeMillis);
+    CHECK(fixture.Direct("Landroid/os/SystemClock;", "elapsedRealtime", "()J")
+              .value.AsLong() == kDefaultAndroidDeviceUptimeMillis);
     const auto handler = fixture.New("Ltest/RecordingHandler;");
     fixture.ConstructAs(handler, "Landroid/os/Handler;", "()V");
     const auto runnable = fixture.New("Ltest/RecordingRunnable;");
@@ -351,7 +355,8 @@ TEST_CASE("DVM-85 Handler queue is delayed ordered and removable") {
     CHECK_FALSE(PumpJavaThreads(fixture.vm, *fixture.context).has_value());
     CHECK(fixture.messages == std::vector<std::int32_t>{2, 1});
     CHECK(fixture.Direct("Landroid/os/SystemClock;", "uptimeMillis", "()J")
-              .value.AsLong() == 10);
+              .value.AsLong() ==
+          kDefaultAndroidDeviceUptimeMillis + 10);
 }
 
 TEST_CASE("DVM-135 View posts through attached and detached main queues") {

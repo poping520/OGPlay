@@ -4,6 +4,17 @@
 
 ## 最近进展
 
+- [DVM-160](../tasks/dexvm/DVM-160.md) 已让 API 19 SystemClock 从确定性的虚拟设备
+  60 秒 boot-age 起步，不再随 APK 进程创建归零；uptime/elapsedRealtime 与 scheduler
+  继续使用唯一时间事实。Clock 定向 31 assertions、AudioTrack 回归 304 assertions 及
+  Windows Release 构建通过；Angry Birds 已越过 Flurry `remove(-1)`，首错推进到独立的
+  `Settings.System.getString(ContentResolver,String)` 缺口。
+
+- [DVM-159](../tasks/dexvm/DVM-159.md) 已按 API 19 补齐 AudioTrack notification period/
+  marker getter：返回现有 setter 的唯一对象状态，默认 0，pause/stop/flush 保持，未初始化或
+  release 后抛 IllegalStateException。定向测试 52 assertions 与 Windows Release 构建通过；
+  Angry Birds 无 Profile 实跑超过 10 秒，已越过原 getter 缺口。
+
 - [DVM-158](../tasks/dexvm/DVM-158.md) 已对齐 API 19 非 CheckJNI Dalvik 的通用 JNI 行为：
   CallObjectMethod 普通/V/A 可调用 void 实例方法，真实执行后返回 null，不依赖 Profile；
   其他返回族错配仍严格失败。定向测试及 Windows Release 构建通过；Angry Birds 已越过

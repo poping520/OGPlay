@@ -40,6 +40,10 @@ class AndroidGuestCallSession;
 class NativeLibraryLoader;
 class VirtualFileSystem;
 
+// The Android device exists before an APK process starts. Keep a deterministic
+// boot-age baseline so SystemClock is device-relative rather than process-relative.
+inline constexpr std::int64_t kDefaultAndroidDeviceUptimeMillis = 60'000;
+
 // android.* intrinsic surface for the dex_activity lifecycle
 // (docs/design/dexvm/03-platform-intrinsics.md §4). The catalog is a
 // code-defined immutable list; handlers bind to the running guest session
@@ -119,7 +123,8 @@ struct DexVmAndroidContext final {
     std::uint64_t external_free_bytes{};
 
     // Deterministic time published by the lifecycle driver (unified Clock).
-    std::atomic<std::int64_t> uptime_millis{0};
+    std::atomic<std::int64_t> uptime_millis{
+        kDefaultAndroidDeviceUptimeMillis};
     // System.exit(): the guest asked for the process, not an activity.
     std::atomic<bool> exit_requested{false};
     // Activity.finish() retires one activity. An installer shell finishing

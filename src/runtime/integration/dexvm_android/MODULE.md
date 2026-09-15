@@ -125,7 +125,8 @@ extension string 与错误锁存以 native registry 为唯一事实。
 
 - Handler/Looper/HandlerThread/Timer/AsyncTask 共用 scheduler；deadline 来自 uptime Clock，同
   deadline 按 sequence FIFO。主 Looper 只在 lifecycle safe point 泵送，子 Looper 在对应 guest
-  host thread 执行；禁止同步调用伪装 post。
+  host thread 执行；禁止同步调用伪装 post。Android 设备先于 APK 进程存在，统一 Clock 默认带
+  确定性的 60 秒 boot-age；无 suspend 模型时 uptimeMillis 与 elapsedRealtime 共用该时间事实。
 - AsyncTask worker 的 `DexVmError` 保留原始线程故障并终止该路径，不转换成 null 结果，
   不继续调用 `onPostExecute`。Dialog/Web 内容尚未实现的 presentation 明确失败并记账。
 - ResultReceiver/IResultReceiver 普通协议来自 BootDex：有 Handler 排队、无 Handler 同步虚派，
@@ -137,7 +138,8 @@ extension string 与错误锁存以 native registry 为唯一事实。
 - MediaPlayer/VideoView 只消费受检资源、路径或逻辑 FD 区间并交给唯一 decoder/mixer；不创建
   host fd/第二播放器。回调只来自真实生命周期/播放进度。
 - AudioTrack rate 来自 mixer；stream/static、marker/period、listener、pause/flush/release 使用
-  唯一状态。回压等待完整释放 VM 锁，恢复后复验 owner；host 音频线程不得进入 VM。
+  唯一状态；notification marker/period getter 返回同一 setter 状态，默认 0，释放或未初始化
+  时抛 IllegalStateException。回压等待完整释放 VM 锁，恢复后复验 owner；host 音频线程不得进入 VM。
 - 网络只用 core 注入 policy/transport，默认离线；Connectivity/Wifi 仅发布已配置事实，不读取
   host 网络、DNS、代理或证书。无传感器/电话来源时返回 API 允许的缺席结果，不伪造硬件。
 - location 仅发布 API 19 listener/值类型形状与稳定 manager facade；无 provider、无历史位置，

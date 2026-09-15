@@ -34,6 +34,7 @@ Asphalt 5（pilot title）删除 profile 全部 `native_call` 与 `[[java.class]
 | [DVM-164](DVM-164.md) | URLConnection BootDex 与禁用网络边界 | 完成 |
 | [DVM-166](DVM-166.md) | KeyguardManager 有界服务 facade | 完成 |
 | [DVM-167](DVM-167.md) | ViewGroup width/height addView 重载 | 完成 |
+| [DVM-168](DVM-168.md) | Java EGL 多配置与 RGB565 投影 | 完成 |
 | [DVM-151](DVM-151.md) | 三个 builder 的 Java 行为与状态迁入 BootDex | 完成 |
 | [DVM-1](DVM-1.md) | AOSP Dalvik 本地参考资料说明 | 完成 |
 | [DVM-2](DVM-2.md) | dex_dependency_survey 题库静态测量工具 | 完成 |

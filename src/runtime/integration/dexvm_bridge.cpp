@@ -137,7 +137,6 @@ void VisitAndroidSessionRoots(const DexVmAndroidContext& context,
     root(context.current_intent);
     for (const auto& [_, value] : context.singletons) root(value);
     root(context.egl.display);
-    root(context.egl.config);
     root(context.egl.no_display);
     root(context.egl.no_context);
     root(context.egl.no_surface);
@@ -145,7 +144,12 @@ void VisitAndroidSessionRoots(const DexVmAndroidContext& context,
     root(context.egl.current_display);
     root(context.egl.current_surface);
     root(context.egl.current_context);
+    key_root(context.egl.configs);
     key_root(context.egl.contexts);
+    key_root(context.egl.surfaces);
+    key_root(context.egl.egl14_configs);
+    key_root(context.egl.egl14_contexts);
+    key_root(context.egl.egl14_surfaces);
     {
         std::scoped_lock lock(context.scheduler_mutex);
         root(context.main_looper);

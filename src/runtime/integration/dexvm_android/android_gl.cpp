@@ -222,7 +222,14 @@ void SetError(const Context& context, const std::int32_t error) {
 }
 
 [[nodiscard]] bool IsConfig(const Context& context, const dx::VmObjectRef ref) {
-    return ref.IsValid() && ref == context->egl.config;
+    return ref.IsValid() && context->egl.configs.contains(ref.Value());
+}
+
+[[nodiscard]] std::uint32_t ConfigHandle(
+    const std::unordered_map<std::uint32_t, std::uint32_t>& configs,
+    const dx::VmObjectRef ref) {
+    const auto found = configs.find(ref.Value());
+    return found == configs.end() ? 0U : found->second;
 }
 
 void LatchEglError(dx::IntrinsicContext& call, const Context& context,
@@ -257,6 +264,25 @@ void SetIntElement(dx::IntrinsicContext& call, const dx::VmObjectRef array,
                    const std::int32_t index, const std::int32_t value) {
     call.vm.Model().SetPrimitiveElement(
         array, index, static_cast<std::uint32_t>(value));
+}
+
+void PreserveRequestedColorSizes(
+    dx::IntrinsicContext& call, const dx::VmObjectRef attributes,
+    const std::int32_t offset, const dx::VmObjectRef config,
+    std::unordered_map<std::uint32_t,
+        std::unordered_map<std::int32_t, std::int32_t>>& overrides) {
+    if (!attributes.IsValid()) return;
+    const auto length = call.vm.Model().ArrayLength(attributes);
+    for (auto index = offset; index + 1 < length; index += 2) {
+        const auto attribute = IntElement(call, attributes, index);
+        if (attribute == kNone) break;
+        if (attribute >= 0x3021 && attribute <= 0x3024) {
+            const auto requested = IntElement(call, attributes, index + 1);
+            if (requested != kDontCare) {
+                overrides[config.Value()][attribute] = requested;
+            }
+        }
+    }
 }
 
 [[nodiscard]] std::optional<bool> AttributeListMatches(
@@ -310,12 +336,12 @@ void RequireInitialized(dx::IntrinsicContext& call, const Context& context) {
 }
 
 [[nodiscard]] dx::VmObjectRef EnsureConfig(dx::IntrinsicContext& call,
-                                           const Context& context) {
-    if (!context->egl.config.IsValid()) {
-        context->egl.config = call.vm.NewIntrinsicInstance(
-            "Ljavax/microedition/khronos/egl/EGLConfig;");
-    }
-    return context->egl.config;
+                                           const Context& context,
+                                           const std::uint32_t handle) {
+    const auto wrapper = call.vm.NewIntrinsicInstance(
+        "Ljavax/microedition/khronos/egl/EGLConfig;");
+    context->egl.configs.emplace(wrapper.Value(), handle);
+    return wrapper;
 }
 
 [[nodiscard]] std::uint64_t EglThreadId(dx::IntrinsicContext& call) {
@@ -509,7 +535,12 @@ dx::IntrinsicHandler EglChooseConfigHandler(const Context& context) {
                 [&](const std::uint32_t attributes) {
                     return WithIntArray(call, context, count, true,
                         [&](const std::uint32_t count_address) {
-                            std::array<std::byte, 4> config_bytes{};
+                            const auto capacity = configs.IsValid() && size > 0
+                                ? std::min<std::int32_t>(
+                                      size, call.vm.Model().ArrayLength(configs))
+                                : 0;
+                            std::vector<std::byte> config_bytes(
+                                static_cast<std::size_t>(capacity) * 4U);
                             std::vector<std::byte> config_output;
                             const auto result = context->session->NIO().WithTemporaryGuestMemory(
                                 config_bytes, true,
@@ -517,23 +548,28 @@ dx::IntrinsicHandler EglChooseConfigHandler(const Context& context) {
                                     return NativeEgl(call, context, "eglChooseConfig",
                                         std::array{context->egl.native_display,
                                                    attributes,
-                                                   configs.IsValid() && size > 0
+                                                   capacity > 0
                                                        ? config_address.Value() : 0U,
-                                                   static_cast<std::uint32_t>(size),
+                                                   static_cast<std::uint32_t>(capacity),
                                                    count_address});
                                 }, &config_output);
-                            if (result != 0U && configs.IsValid() && size > 0 &&
-                                call.vm.Model().ArrayLength(configs) > 0) {
-                                std::uint32_t handle{};
-                                for (std::size_t byte = 0; byte < 4U; ++byte) {
-                                    handle |= static_cast<std::uint32_t>(
-                                        std::to_integer<std::uint8_t>(config_output[byte]))
-                                              << (byte * 8U);
-                                }
-                                if (handle != 0U) {
-                                    const auto wrapper = EnsureConfig(call, context);
-                                    context->egl.native_config = handle;
-                                    call.vm.Model().SetObjectElement(configs, 0, wrapper);
+                            if (result != 0U && capacity > 0) {
+                                for (std::int32_t index = 0; index < capacity; ++index) {
+                                    std::uint32_t handle{};
+                                    for (std::size_t byte = 0; byte < 4U; ++byte)
+                                        handle |= static_cast<std::uint32_t>(
+                                            std::to_integer<std::uint8_t>(config_output[
+                                                static_cast<std::size_t>(index) * 4U + byte]))
+                                                  << (byte * 8U);
+                                    if (handle != 0U) {
+                                        const auto wrapper =
+                                            EnsureConfig(call, context, handle);
+                                        call.vm.Model().SetObjectElement(
+                                            configs, index, wrapper);
+                                        PreserveRequestedColorSizes(
+                                            call, call.arguments[1].ref, 0,
+                                            wrapper, context->egl.config_attribute_overrides);
+                                    }
                                 }
                             }
                             return Bool(result != 0U);
@@ -554,7 +590,11 @@ dx::IntrinsicHandler EglChooseConfigHandler(const Context& context) {
             if (call.vm.Model().ArrayLength(configs) < 1) {
                 LatchEglError(call, context, kBadParameter); return Bool(false);
             }
-            call.vm.Model().SetObjectElement(configs, 0, EnsureConfig(call, context));
+            const auto wrapper = EnsureConfig(call, context, 1U);
+            call.vm.Model().SetObjectElement(configs, 0, wrapper);
+            PreserveRequestedColorSizes(
+                call, call.arguments[1].ref, 0, wrapper,
+                context->egl.config_attribute_overrides);
         }
         return Bool(true);
     };
@@ -566,20 +606,32 @@ dx::IntrinsicHandler EglGetConfigAttribHandler(const Context& context) {
         if (!IsConfig(context, call.arguments[1].ref)) {
             LatchEglError(call, context, kBadConfig); return Bool(false);
         }
-        if (context->session != nullptr) {
-            return WithIntArray(call, context, call.arguments[3].ref, true,
-                [&](const std::uint32_t output) {
-                    return Bool(NativeEgl(call, context, "eglGetConfigAttrib",
-                        std::array{context->egl.native_display,
-                                   context->egl.native_config,
-                                   call.arguments[2].cat1, output}) != 0U);
-                });
-        }
         const auto output = call.arguments[3].ref;
         if (!output.IsValid() || call.vm.Model().ArrayLength(output) < 1) {
             LatchEglError(call, context, kBadParameter); return Bool(false);
         }
         const auto attribute = call.arguments[2].AsInt();
+        const auto config = call.arguments[1].ref;
+        if (const auto config_overrides =
+                context->egl.config_attribute_overrides.find(config.Value());
+            config_overrides != context->egl.config_attribute_overrides.end()) {
+            if (const auto value = config_overrides->second.find(attribute);
+                value != config_overrides->second.end()) {
+                SetIntElement(call, output, 0, value->second);
+                return Bool(true);
+            }
+        }
+        if (context->session != nullptr) {
+            const auto result = WithIntArray(call, context, output, true,
+                [&](const std::uint32_t output) {
+                    return Bool(NativeEgl(call, context, "eglGetConfigAttrib",
+                        std::array{context->egl.native_display,
+                                   ConfigHandle(context->egl.configs,
+                                                call.arguments[1].ref),
+                                   call.arguments[2].cat1, output}) != 0U);
+                });
+            return result;
+        }
         const auto fact = kConfigFacts.find(attribute);
         if (fact == kConfigFacts.end()) {
             Record(call, "dexvm.egl_facade.config_attribute." + std::to_string(attribute));
@@ -599,30 +651,35 @@ dx::IntrinsicHandler EglGetConfigsHandler(const Context& context) {
             if (size < 0 || !count.IsValid()) return Bool(false);
             return WithIntArray(call, context, count, true,
                 [&](const std::uint32_t count_address) {
-                    std::array<std::byte, 4> config_bytes{};
+                    const auto capacity = configs.IsValid() && size > 0
+                        ? std::min<std::int32_t>(
+                              size, call.vm.Model().ArrayLength(configs))
+                        : 0;
+                    std::vector<std::byte> config_bytes(
+                        static_cast<std::size_t>(capacity) * 4U);
                     std::vector<std::byte> config_output;
                     const auto result = context->session->NIO().WithTemporaryGuestMemory(
                         config_bytes, true,
                         [&](const memory::GuestAddress config_address) {
                             return NativeEgl(call, context, "eglGetConfigs",
                                 std::array{context->egl.native_display,
-                                           configs.IsValid() && size > 0
+                                           capacity > 0
                                                ? config_address.Value() : 0U,
-                                           static_cast<std::uint32_t>(size),
+                                           static_cast<std::uint32_t>(capacity),
                                            count_address});
                         }, &config_output);
-                    if (result != 0U && configs.IsValid() && size > 0) {
-                        const auto wrapper = EnsureConfig(call, context);
-                        std::uint32_t handle{};
-                        for (std::size_t byte = 0; byte < 4U; ++byte) {
-                            handle |= static_cast<std::uint32_t>(
-                                std::to_integer<std::uint8_t>(
-                                    config_output[byte])) << (byte * 8U);
-                        }
-                        if (handle != 0U) {
-                            context->egl.native_config = handle;
-                            call.vm.Model().SetObjectElement(configs, 0,
-                                                             wrapper);
+                    if (result != 0U && capacity > 0) {
+                        for (std::int32_t index = 0; index < capacity; ++index) {
+                            std::uint32_t handle{};
+                            for (std::size_t byte = 0; byte < 4U; ++byte)
+                                handle |= static_cast<std::uint32_t>(
+                                    std::to_integer<std::uint8_t>(config_output[
+                                        static_cast<std::size_t>(index) * 4U + byte]))
+                                          << (byte * 8U);
+                            if (handle != 0U)
+                                call.vm.Model().SetObjectElement(
+                                    configs, index,
+                                    EnsureConfig(call, context, handle));
                         }
                     }
                     return Bool(result != 0U);
@@ -641,7 +698,7 @@ dx::IntrinsicHandler EglGetConfigsHandler(const Context& context) {
         SetIntElement(call, count, 0, 1);
         if (configs.IsValid() && size > 0) {
             call.vm.Model().SetObjectElement(
-                configs, 0, EnsureConfig(call, context));
+                configs, 0, EnsureConfig(call, context, 1U));
         }
         return Bool(true);
     };
@@ -667,7 +724,9 @@ dx::IntrinsicHandler EglCreateContextHandler(const Context& context) {
                     const auto handle = NativeEgl(call, context,
                         "eglCreateContext",
                         std::array{context->egl.native_display,
-                                   context->egl.native_config, share_handle,
+                                   ConfigHandle(context->egl.configs,
+                                                call.arguments[1].ref),
+                                   share_handle,
                                    attributes});
                     if (handle == 0U) {
                         return dx::VmValue::Ref(context->egl.no_context);
@@ -720,7 +779,8 @@ dx::IntrinsicHandler EglCreateWindowSurfaceHandler(const Context& context) {
                     const auto handle = NativeEgl(call, context,
                         "eglCreateWindowSurface",
                         std::array{context->egl.native_display,
-                                   context->egl.native_config,
+                                   ConfigHandle(context->egl.configs,
+                                                call.arguments[1].ref),
                                    holder.Value(), attribute_address});
                     if (handle == 0U) {
                         return dx::VmValue::Ref(context->egl.no_surface);
@@ -751,7 +811,9 @@ dx::IntrinsicHandler EglCreatePbufferSurfaceHandler(const Context& context) {
                 const auto handle = NativeEgl(call, context,
                     "eglCreatePbufferSurface",
                     std::array{context->egl.native_display,
-                               context->egl.native_config, attributes});
+                               ConfigHandle(context->egl.configs,
+                                            call.arguments[1].ref),
+                               attributes});
                 if (handle == 0U) {
                     return dx::VmValue::Ref(context->egl.no_surface);
                 }
@@ -1068,7 +1130,10 @@ dx::IntrinsicHandler EglTerminateHandler(const Context& context) {
                 std::array{context->egl.native_display});
             if (result != 0U) {
                 context->egl.native_display = 0U;
-                context->egl.native_config = 0U;
+                context->egl.configs.clear();
+                context->egl.egl14_configs.clear();
+                context->egl.config_attribute_overrides.clear();
+                context->egl.egl14_config_attribute_overrides.clear();
                 context->egl.contexts.clear();
                 context->egl.surfaces.clear();
                 context->egl.window_surface = dx::VmObjectRef{};
@@ -1732,6 +1797,16 @@ dx::IntrinsicHandler EglUnsupportedHandler(std::string method) {
     return object;
 }
 
+[[nodiscard]] dx::VmObjectRef EnsureEgl14Config(
+    dx::IntrinsicContext& call,
+    DexVmAndroidContext::EglFacadeState& egl,
+    const std::uint32_t handle) {
+    const auto wrapper = call.vm.NewIntrinsicInstance(
+        "Landroid/opengl/EGLConfig;");
+    egl.egl14_configs.emplace(wrapper.Value(), handle);
+    return wrapper;
+}
+
 dx::IntrinsicHandler Egl14SimpleHandler(const Context& context,
                                         std::string name) {
     return [context, name = std::move(name)](dx::IntrinsicContext& call) {
@@ -1790,7 +1865,10 @@ dx::IntrinsicHandler Egl14SimpleHandler(const Context& context,
                 egl.egl14_contexts.clear();
                 egl.egl14_surfaces.clear();
                 egl.native_display = 0U;
-                egl.native_config = 0U;
+                egl.configs.clear();
+                egl.egl14_configs.clear();
+                egl.config_attribute_overrides.clear();
+                egl.egl14_config_attribute_overrides.clear();
             }
             return Bool(result != 0U);
         }
@@ -1856,6 +1934,10 @@ dx::IntrinsicHandler Egl14CreateContextHandler(const Context& context) {
         if (!ValidateEgl14Display(call, context, call.arguments[0].ref)) {
             return dx::VmValue::Ref(egl.egl14_no_context);
         }
+        if (ConfigHandle(egl.egl14_configs, call.arguments[1].ref) == 0U) {
+            LatchEglError(call, context, kBadConfig);
+            return dx::VmValue::Ref(egl.egl14_no_context);
+        }
         const auto share = call.arguments[2].ref;
         const auto found = egl.egl14_contexts.find(share.Value());
         if (share != egl.egl14_no_context && found == egl.egl14_contexts.end()) {
@@ -1868,7 +1950,9 @@ dx::IntrinsicHandler Egl14CreateContextHandler(const Context& context) {
             call.arguments[4].AsInt(), false,
             [&](const std::uint32_t attributes) {
                 const auto handle = NativeEgl(call, context, "eglCreateContext",
-                    std::array{egl.native_display, egl.native_config,
+                    std::array{egl.native_display,
+                               ConfigHandle(egl.egl14_configs,
+                                            call.arguments[1].ref),
                                share_handle, attributes});
                 if (handle == 0U) return dx::VmValue::Ref(egl.egl14_no_context);
                 const auto wrapper = call.vm.NewIntrinsicInstance(
@@ -1885,12 +1969,18 @@ dx::IntrinsicHandler Egl14CreatePbufferHandler(const Context& context) {
         if (!ValidateEgl14Display(call, context, call.arguments[0].ref)) {
             return dx::VmValue::Ref(egl.egl14_no_surface);
         }
+        if (ConfigHandle(egl.egl14_configs, call.arguments[1].ref) == 0U) {
+            LatchEglError(call, context, kBadConfig);
+            return dx::VmValue::Ref(egl.egl14_no_surface);
+        }
         return WithIntArrayOffset(call, context, call.arguments[2].ref,
             call.arguments[3].AsInt(), false,
             [&](const std::uint32_t attributes) {
                 const auto handle = NativeEgl(call, context,
                     "eglCreatePbufferSurface",
-                    std::array{egl.native_display, egl.native_config,
+                    std::array{egl.native_display,
+                               ConfigHandle(egl.egl14_configs,
+                                            call.arguments[1].ref),
                                attributes});
                 if (handle == 0U) return dx::VmValue::Ref(egl.egl14_no_surface);
                 const auto wrapper = call.vm.NewIntrinsicInstance(
@@ -1907,6 +1997,10 @@ dx::IntrinsicHandler Egl14CreateWindowHandler(const Context& context) {
         if (!ValidateEgl14Display(call, context, call.arguments[0].ref)) {
             return dx::VmValue::Ref(egl.egl14_no_surface);
         }
+        if (ConfigHandle(egl.egl14_configs, call.arguments[1].ref) == 0U) {
+            LatchEglError(call, context, kBadConfig);
+            return dx::VmValue::Ref(egl.egl14_no_surface);
+        }
         if (!call.arguments[2].ref.IsValid()) {
             LatchEglError(call, context, kBadNativeWindow);
             return dx::VmValue::Ref(egl.egl14_no_surface);
@@ -1916,7 +2010,9 @@ dx::IntrinsicHandler Egl14CreateWindowHandler(const Context& context) {
             [&](const std::uint32_t attributes) {
                 const auto handle = NativeEgl(call, context,
                     "eglCreateWindowSurface",
-                    std::array{egl.native_display, egl.native_config,
+                    std::array{egl.native_display,
+                               ConfigHandle(egl.egl14_configs,
+                                            call.arguments[1].ref),
                                call.arguments[2].ref.Value(), attributes});
                 if (handle == 0U) return dx::VmValue::Ref(egl.egl14_no_surface);
                 const auto wrapper = call.vm.NewIntrinsicInstance(
@@ -1993,8 +2089,34 @@ dx::IntrinsicHandler Egl14QueryValueHandler(const Context& context,
         if (!ValidateEgl14Display(call, context, call.arguments[0].ref)) {
             return Bool(false);
         }
-        std::uint32_t handle = egl.native_config;
-        if (name == "eglQueryContext") {
+        std::uint32_t handle{};
+        if (name == "eglGetConfigAttrib") {
+            handle = ConfigHandle(egl.egl14_configs, call.arguments[1].ref);
+            if (handle == 0U) {
+                LatchEglError(call, context, kBadConfig); return Bool(false);
+            }
+            if (const auto config_overrides =
+                    egl.egl14_config_attribute_overrides.find(
+                        call.arguments[1].ref.Value());
+                config_overrides !=
+                    egl.egl14_config_attribute_overrides.end()) {
+                if (const auto value = config_overrides->second.find(
+                        call.arguments[2].AsInt());
+                    value != config_overrides->second.end()) {
+                    const auto output = call.arguments[3].ref;
+                    const auto offset = call.arguments[4].AsInt();
+                    if (!output.IsValid() || offset < 0 ||
+                        offset >= call.vm.Model().ArrayLength(output)) {
+                        throw dx::VmJavaThrow{
+                            "Ljava/lang/IllegalArgumentException;",
+                            "EGL output offset is outside the array"};
+                    }
+                    SetIntElement(call, call.arguments[3].ref,
+                                  offset, value->second);
+                    return Bool(true);
+                }
+            }
+        } else if (name == "eglQueryContext") {
             const auto found = egl.egl14_contexts.find(call.arguments[1].ref.Value());
             if (found == egl.egl14_contexts.end()) {
                 LatchEglError(call, context, kBadContext); return Bool(false);
@@ -2043,7 +2165,13 @@ dx::IntrinsicHandler Egl14ConfigsHandler(const Context& context,
                 call.arguments[count_index].ref,
                 call.arguments[count_offset_index].AsInt(), true,
                 [&](const std::uint32_t count_address) {
-                    std::array<std::byte, 4> config_bytes{};
+                    const auto available = configs.IsValid()
+                        ? call.vm.Model().ArrayLength(configs) - configs_offset
+                        : 0;
+                    const auto capacity = configs.IsValid() && size > 0
+                        ? std::min<std::int32_t>(size, available) : 0;
+                    std::vector<std::byte> config_bytes(
+                        static_cast<std::size_t>(capacity) * 4U);
                     std::vector<std::byte> output;
                     const auto result = context->session->NIO().WithTemporaryGuestMemory(
                         config_bytes, true,
@@ -2051,32 +2179,38 @@ dx::IntrinsicHandler Egl14ConfigsHandler(const Context& context,
                             if (choose) {
                                 return NativeEgl(call, context, "eglChooseConfig",
                                     std::array{egl.native_display, attributes,
-                                        configs.IsValid() && size > 0
+                                        capacity > 0
                                             ? config_address.Value() : 0U,
-                                        static_cast<std::uint32_t>(size),
+                                        static_cast<std::uint32_t>(capacity),
                                         count_address});
                             }
                             return NativeEgl(call, context, "eglGetConfigs",
                                 std::array{egl.native_display,
-                                    configs.IsValid() && size > 0
+                                    capacity > 0
                                         ? config_address.Value() : 0U,
-                                    static_cast<std::uint32_t>(size),
+                                    static_cast<std::uint32_t>(capacity),
                                     count_address});
                         }, &output);
-                    if (result != 0U && configs.IsValid() && size > 0) {
-                        std::uint32_t handle{};
-                        for (std::size_t byte = 0; byte < 4U; ++byte) {
-                            handle |= static_cast<std::uint32_t>(
-                                std::to_integer<std::uint8_t>(output[byte]))
-                                      << (byte * 8U);
-                        }
-                        if (handle != 0U) {
-                            egl.native_config = handle;
-                            const auto wrapper = EnsureEgl14Object(
-                                call, egl.egl14_config,
-                                "Landroid/opengl/EGLConfig;");
-                            call.vm.Model().SetObjectElement(
-                                configs, configs_offset, wrapper);
+                    if (result != 0U && capacity > 0) {
+                        for (std::int32_t index = 0; index < capacity; ++index) {
+                            std::uint32_t handle{};
+                            for (std::size_t byte = 0; byte < 4U; ++byte)
+                                handle |= static_cast<std::uint32_t>(
+                                    std::to_integer<std::uint8_t>(output[
+                                        static_cast<std::size_t>(index) * 4U + byte]))
+                                          << (byte * 8U);
+                            if (handle != 0U) {
+                                const auto wrapper =
+                                    EnsureEgl14Config(call, egl, handle);
+                                call.vm.Model().SetObjectElement(
+                                    configs, configs_offset + index,
+                                    wrapper);
+                                if (choose)
+                                    PreserveRequestedColorSizes(
+                                        call, call.arguments[1].ref,
+                                        call.arguments[2].AsInt(), wrapper,
+                                        egl.egl14_config_attribute_overrides);
+                            }
                         }
                     }
                     return Bool(result != 0U);
@@ -2745,7 +2879,9 @@ Decl Declare_android_opengl_EGL14(const Context& context) {
                 [&](const std::uint32_t attributes) {
                     const auto handle = NativeEgl(call, context,
                         "eglCreatePixmapSurface",
-                        std::array{egl.native_display, egl.native_config,
+                        std::array{egl.native_display,
+                                   ConfigHandle(egl.egl14_configs,
+                                                call.arguments[1].ref),
                                    call.arguments[2].cat1, attributes});
                     if (handle == 0U) {
                         return dx::VmValue::Ref(egl.egl14_no_surface);
@@ -2766,7 +2902,9 @@ Decl Declare_android_opengl_EGL14(const Context& context) {
                     const auto handle = NativeEgl(call, context,
                         "eglCreatePbufferFromClientBuffer",
                         std::array{egl.native_display, call.arguments[1].cat1,
-                                   call.arguments[2].cat1, egl.native_config,
+                                   call.arguments[2].cat1,
+                                   ConfigHandle(egl.egl14_configs,
+                                                call.arguments[3].ref),
                                    attributes});
                     if (handle == 0U) {
                         return dx::VmValue::Ref(egl.egl14_no_surface);
@@ -2829,7 +2967,8 @@ dx::IntrinsicHandler EglCreatePixmapHandler(const Context& context) {
                 const auto result = NativeEgl(call, context,
                     "eglCreatePixmapSurface",
                     std::array{context->egl.native_display,
-                               context->egl.native_config,
+                               ConfigHandle(context->egl.configs,
+                                            call.arguments[1].ref),
                                call.arguments[2].ref.Value(), attributes});
                 return dx::VmValue::Ref(result == 0U
                     ? context->egl.no_surface : dx::VmObjectRef{});
@@ -2857,7 +2996,8 @@ dx::IntrinsicHandler EglCopyBuffersHandler(const Context& context) {
     if (object == egl.egl14_no_display || object == egl.egl14_no_context ||
         object == egl.egl14_no_surface) return 0U;
     if (object == egl.egl14_display) return egl.native_display;
-    if (object == egl.egl14_config) return egl.native_config;
+    if (const auto found = egl.egl14_configs.find(object.Value());
+        found != egl.egl14_configs.end()) return found->second;
     if (const auto found = egl.egl14_contexts.find(object.Value());
         found != egl.egl14_contexts.end()) return found->second;
     if (const auto found = egl.egl14_surfaces.find(object.Value());

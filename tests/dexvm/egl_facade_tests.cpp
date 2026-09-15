@@ -824,7 +824,9 @@ TEST_CASE("EGL facade performs two-pass config selection and context state") {
     CHECK(vm.model.GetPrimitiveElement(versions, 0) == 1);
     CHECK(vm.model.GetPrimitiveElement(versions, 1) == 4);
 
-    const auto attributes = vm.IntArray({0x3024, 8, 0x3025, 24,
+    const auto attributes = vm.IntArray({0x3024, 5, 0x3023, 6,
+                                         0x3022, 5, 0x3021, 0,
+                                         0x3025, 0, 0x3026, 0,
                                          0x3033, 0x04, 0x3038});
     const auto count = vm.IntArray({0});
     CHECK(vm.CallOn(egl, "eglChooseConfig",
@@ -849,6 +851,12 @@ TEST_CASE("EGL facade performs two-pass config selection and context state") {
                      VmValue::Ref(configs), VmValue::Int(1), VmValue::Ref(count)}).AsInt() == 1);
     const auto config = vm.model.GetObjectElement(configs, 0);
     REQUIRE(config.IsValid());
+    const auto projected = vm.IntArray({-1});
+    CHECK(vm.CallOn(egl, "eglGetConfigAttrib",
+                    "(Ljavax/microedition/khronos/egl/EGLDisplay;Ljavax/microedition/khronos/egl/EGLConfig;I[I)Z",
+                    {VmValue::Ref(display), VmValue::Ref(config),
+                     VmValue::Int(0x3024), VmValue::Ref(projected)}).AsInt() == 1);
+    CHECK(vm.model.GetPrimitiveElement(projected, 0) == 5);
     const auto context_attributes = vm.IntArray({12440, 2, 0x3038});
     const auto context = vm.CallOn(
         egl, "eglCreateContext",

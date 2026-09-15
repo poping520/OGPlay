@@ -86,6 +86,8 @@ public:
     void ReleaseManagedSurfaceFromCallingThread();
     [[nodiscard]] bool ManagedSurfaceIsOpen() const noexcept;
     [[nodiscard]] std::string ManagedGlString(std::uint32_t parameter);
+    [[nodiscard]] std::string ManagedEglString(std::uint32_t parameter);
+    void LatchManagedEglError(std::uint64_t thread_id, std::uint32_t error);
     [[nodiscard]] std::uint32_t InvokeManagedGles(
         gles::GlesApi api, std::string_view name,
         std::span<const std::uint32_t> arguments,

@@ -24,5 +24,7 @@ pixel 指针按 row/skip 计算范围。VAO bind/delete 同步属性和 element 
 属性与 divisor 保存原类型。map identity 使用 share-group + GLuint，验证 native mapped
 状态后才能访问保存的 host 指针；arena 重用空闲区，显式 flush 只提交指定范围，unmap
 不得再次覆盖它，share group 最后成员销毁时退役其 map/sync 记录。
+WRITE-only 且未 invalidate 的 mapping 内部升级为 READ|WRITE host access 以预取旧内容，
+guest access 身份仍为 WRITE-only，保证局部修改不会覆盖未修改字节。
 
 扩展数量、glGetString、glGetStringi 共用受检发布清单，禁止透传整个 ANGLE extension list。

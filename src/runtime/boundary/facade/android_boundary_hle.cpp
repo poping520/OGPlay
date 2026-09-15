@@ -251,6 +251,13 @@ public:
     [[nodiscard]] std::string ManagedGlString(const std::uint32_t parameter) {
         return RequireFrame("managed glGetString").GetString(parameter);
     }
+    [[nodiscard]] std::string ManagedEglString(const std::uint32_t parameter) {
+        return egl_module_.QueryStringValue(parameter);
+    }
+    void LatchManagedEglError(const std::uint64_t thread_id,
+                              const std::uint32_t error) {
+        egl_module_.LatchError(thread_id, error);
+    }
     [[nodiscard]] std::uint32_t InvokeManagedGles(
         const gles::GlesApi api, const std::string_view name,
         const std::span<const std::uint32_t> arguments,
@@ -992,6 +999,14 @@ bool AndroidBoundaryHle::ManagedSurfaceIsOpen() const noexcept {
 std::string AndroidBoundaryHle::ManagedGlString(
     const std::uint32_t parameter) {
     return impl_->ManagedGlString(parameter);
+}
+std::string AndroidBoundaryHle::ManagedEglString(
+    const std::uint32_t parameter) {
+    return impl_->ManagedEglString(parameter);
+}
+void AndroidBoundaryHle::LatchManagedEglError(
+    const std::uint64_t thread_id, const std::uint32_t error) {
+    impl_->LatchManagedEglError(thread_id, error);
 }
 std::uint32_t AndroidBoundaryHle::InvokeManagedGles(
     const gles::GlesApi api, const std::string_view name,

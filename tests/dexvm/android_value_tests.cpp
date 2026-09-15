@@ -1358,6 +1358,7 @@ TEST_CASE("Bitmap Config matches the API 19 enum and native mapping") {
         {VmValue::Int(2), VmValue::Int(2), VmValue::Ref(constants[1])}).ref;
     REQUIRE(bitmap.IsValid());
     REQUIRE(fixture.context->bitmaps.contains(bitmap.Value()));
+    CHECK(fixture.context->bitmaps.at(bitmap.Value()).config == 3);
     CHECK(fixture.context->bitmaps.at(bitmap.Value()).argb ==
           std::vector<std::uint32_t>(4, 0U));
     const auto pixels = fixture.model.NewPrimitiveArray(

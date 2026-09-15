@@ -681,11 +681,50 @@ AndroidBoundaryGles1FixedState::PointDistanceAttenuation() const noexcept {
     return point_distance_attenuation_;
 }
 
+std::vector<float> TransformGles1LightParameter(
+    const std::uint32_t pname, const std::span<const float> values,
+    const Gles1Matrix& modelview) {
+    std::vector<float> result(values.begin(), values.end());
+    if (pname == kGles1LightPosition) {
+        for (std::size_t row = 0; row < 4; ++row) {
+            result[row] = 0.0F;
+            for (std::size_t column = 0; column < 4; ++column) {
+                result[row] += modelview[column * 4U + row] * values[column];
+            }
+        }
+    } else if (pname == kSpotDirection) {
+        const float a00 = modelview[0], a01 = modelview[4], a02 = modelview[8];
+        const float a10 = modelview[1], a11 = modelview[5], a12 = modelview[9];
+        const float a20 = modelview[2], a21 = modelview[6], a22 = modelview[10];
+        const float c00 = a11 * a22 - a12 * a21;
+        const float c01 = a12 * a20 - a10 * a22;
+        const float c02 = a10 * a21 - a11 * a20;
+        const float c10 = a02 * a21 - a01 * a22;
+        const float c11 = a00 * a22 - a02 * a20;
+        const float c12 = a01 * a20 - a00 * a21;
+        const float c20 = a01 * a12 - a02 * a11;
+        const float c21 = a02 * a10 - a00 * a12;
+        const float c22 = a00 * a11 - a01 * a10;
+        const float determinant = a00 * c00 + a01 * c01 + a02 * c02;
+        if (!std::isfinite(determinant) || std::abs(determinant) < 1.0e-20F) {
+            throw std::invalid_argument(
+                "GLES1 spot direction modelview matrix is singular");
+        }
+        const float inverse = 1.0F / determinant;
+        result = {
+            (c00 * values[0] + c01 * values[1] + c02 * values[2]) * inverse,
+            (c10 * values[0] + c11 * values[1] + c12 * values[2]) * inverse,
+            (c20 * values[0] + c21 * values[1] + c22 * values[2]) * inverse};
+    }
+    return result;
+}
+
 void BindAndroidBoundaryGles1FixedState(gles::GlesDispatchTable& dispatch,
                                          AndroidBoundaryGles1FixedState& state,
                                          memory::AddressSpace& address_space,
                                          AndroidBoundaryFrameResolver require_frame,
-                                         SharedGlState* const shared) {
+                                         SharedGlState* const shared,
+                                         AndroidBoundaryGles1MatrixState* const matrices) {
     if (!require_frame) {
         throw std::invalid_argument("GLES1 fixed-state binding is incomplete");
     }
@@ -765,12 +804,14 @@ void BindAndroidBoundaryGles1FixedState(gles::GlesDispatchTable& dispatch,
         state.SetLight(arguments[0], arguments[1], value);
         return 0U;
     });
-    dispatch.Bind("glLightfv", [&state, &address_space, require_frame](
+    dispatch.Bind("glLightfv", [&state, &address_space, require_frame, matrices](
                                    const auto arguments, const std::uint64_t thread_id) {
         const auto values =
             ReadGuestFloats(address_space, arguments[2], LightCount(arguments[1]), thread_id);
         static_cast<void>(require_frame("glLightfv"));
-        state.SetLight(arguments[0], arguments[1], values);
+        state.SetLight(arguments[0], arguments[1],
+            matrices == nullptr ? values : TransformGles1LightParameter(
+                arguments[1], values, matrices->Current()));
         return 0U;
     });
     dispatch.Bind("glMaterialf",

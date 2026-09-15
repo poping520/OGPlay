@@ -5359,6 +5359,23 @@ TEST_CASE("BND34 ES3 mapping flush ranges arena reuse and VAO deletion remain co
     AuditGl(f, "glFlushMappedBufferRange", {0x8892, 0, 4});
     f.bus.Write32(ogplay::memory::GuestAddress{mapped}, 0x98765432U, 1U);
     REQUIRE(AuditGl(f, "glUnmapBuffer", {0x8892}) == 1U);
+    const auto preserved = AuditName(f, "glGenBuffers");
+    AuditGl(f, "glBindBuffer", {0x8892, preserved});
+    AuditGl(f, "glBufferData", {0x8892, 8, data.Value(), 0x88E8});
+    const auto write_only = AuditGl(
+        f, "glMapBufferRange", {0x8892, 0, 8, 0x2});
+    REQUIRE(write_only != 0U);
+    f.bus.Write32(ogplay::memory::GuestAddress{write_only}, 0xDEADBEEFU, 1U);
+    REQUIRE(AuditGl(f, "glUnmapBuffer", {0x8892}) == 1U);
+    const auto verify_preserved = AuditGl(
+        f, "glMapBufferRange", {0x8892, 0, 8, 0x1});
+    REQUIRE(verify_preserved != 0U);
+    CHECK(f.bus.Read32(ogplay::memory::GuestAddress{verify_preserved}, 1U) ==
+          0xDEADBEEFU);
+    CHECK(f.bus.Read32(ogplay::memory::GuestAddress{verify_preserved}.Add(4U),
+                       1U) == 0x55667788U);
+    REQUIRE(AuditGl(f, "glUnmapBuffer", {0x8892}) == 1U);
+    AuditGl(f, "glBindBuffer", {0x8892, buffer});
     const auto read = AuditGl(f, "glMapBufferRange", {0x8892, 0, 8, 1}); REQUIRE(read != 0U);
     CHECK(f.bus.Read32(ogplay::memory::GuestAddress{read}, 1U) == 0xABCDEF12U);
     // Keep this mapping alive while repeatedly mapping a second buffer: the arena must reuse gaps.

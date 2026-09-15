@@ -11,6 +11,21 @@
 #include <utility>
 
 namespace ogplay::session {
+
+bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
+    const auto view = context.gl_surface_renderer_view;
+    const auto mode = context.gl_surface_render_modes.find(view.Value());
+    if (mode == context.gl_surface_render_modes.end() || mode->second == 1) {
+        return true;
+    }
+    const auto requested = context.gl_surface_render_requests.find(view.Value());
+    if (requested == context.gl_surface_render_requests.end() ||
+        !requested->second) {
+        return false;
+    }
+    requested->second = false;
+    return true;
+}
     namespace {
         namespace dx = ogplay::runtime::dexvm;
 
@@ -709,10 +724,13 @@ namespace ogplay::session {
                 for (const auto event : gl_events) {
                     CallOnView(event, "run", "()V", {});
                 }
-                CallOnView(bindings_.context->renderer, "onDrawFrame",
-                           "(Ljavax/microedition/khronos/opengles/GL10;)V",
-                           {dx::VmValue::Ref(dx::VmObjectRef{})});
-                if (bindings_.present_surface) bindings_.present_surface();
+                const bool draw = ConsumeGlSurfaceDrawRequest(*bindings_.context);
+                if (draw) {
+                    CallOnView(bindings_.context->renderer, "onDrawFrame",
+                               "(Ljavax/microedition/khronos/opengles/GL10;)V",
+                               {dx::VmValue::Ref(dx::VmObjectRef{})});
+                    if (bindings_.present_surface) bindings_.present_surface();
+                }
             } else if (!bindings_.context->renderer.IsValid() &&
                        bindings_.context->active_surface_holders.empty() &&
                        bindings_.context->video_views.empty() &&

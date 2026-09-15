@@ -234,6 +234,10 @@ void RegisterAndroidOwnerAttachedStateTable(
             context->intent_filter_authorities.erase(key);
             context->requested_orientations.erase(key);
             context->gl_surface_render_modes.erase(key);
+            context->gl_surface_render_requests.erase(key);
+            if (context->gl_surface_renderer_view.Value() == key) {
+                context->gl_surface_renderer_view = dexvm::VmObjectRef{};
+            }
             context->gl_surface_client_versions.erase(key);
             context->gl_surface_config_specs.erase(key);
             context->surface_holders.erase(key);

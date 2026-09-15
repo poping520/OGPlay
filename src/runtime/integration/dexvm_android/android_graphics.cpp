@@ -57,6 +57,22 @@ constexpr std::array kConfigs{
     return static_cast<std::int32_t>(slots[linked.slot].bits);
 }
 
+[[nodiscard]] std::int32_t BitmapConfigValue(
+    dx::IntrinsicContext& call, const dx::VmObjectRef config) {
+    if (!config.IsValid()) {
+        throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;",
+                              "createBitmap config is null"};
+    }
+    const auto config_class = call.vm.Linker().ResolveDescriptor(
+        "Landroid/graphics/Bitmap$Config;");
+    if (!call.vm.Linker().IsAssignable(
+            config_class, call.vm.Model().ObjectClass(config))) {
+        throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;",
+                              "createBitmap config has the wrong type"};
+    }
+    return ReadIntField(call.vm, config, "nativeInt");
+}
+
 }  // namespace
 
 Decl Declare_android_graphics_Bitmap_Config(const Context& context) {
@@ -138,7 +154,7 @@ namespace {
     dx::IntrinsicContext& call, const Context& context,
     const dx::VmObjectRef array, const std::int32_t offset,
     const std::int32_t stride, const std::int32_t width,
-    const std::int32_t height) {
+    const std::int32_t height, const dx::VmObjectRef config) {
     auto& model = call.vm.Model();
     if (!array.IsValid()) {
         throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;",
@@ -163,6 +179,7 @@ namespace {
     DexVmAndroidContext::BitmapState state;
     state.width = width;
     state.height = height;
+    state.config = BitmapConfigValue(call, config);
     state.argb.resize(static_cast<std::size_t>(width) *
                       static_cast<std::size_t>(height));
     for (std::int32_t row = 0; row < height; ++row) {
@@ -184,17 +201,7 @@ namespace {
     dx::IntrinsicContext& call, const Context& context,
     const std::int32_t width, const std::int32_t height,
     const dx::VmObjectRef config) {
-    if (!config.IsValid()) {
-        throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;",
-                              "createBitmap config is null"};
-    }
-    const auto config_class = call.vm.Linker().ResolveDescriptor(
-        "Landroid/graphics/Bitmap$Config;");
-    if (!call.vm.Linker().IsAssignable(
-            config_class, call.vm.Model().ObjectClass(config))) {
-        throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;",
-                              "createBitmap config has the wrong type"};
-    }
+    const auto config_value = BitmapConfigValue(call, config);
     if (width <= 0 || height <= 0) {
         throw dx::VmJavaThrow{
             "Ljava/lang/IllegalArgumentException;",
@@ -206,6 +213,7 @@ namespace {
     DexVmAndroidContext::BitmapState state;
     state.width = width;
     state.height = height;
+    state.config = config_value;
     state.argb.resize(pixel_count);
     const auto instance =
         call.vm.NewIntrinsicInstance("Landroid/graphics/Bitmap;");
@@ -231,7 +239,7 @@ Decl Declare_android_graphics_Bitmap(const Context& context) {
             const auto width = call.arguments[1].AsInt();
             const auto height = call.arguments[2].AsInt();
             return MakeBitmapFromArray(call, context, array, 0, width, width,
-                                       height);
+                                       height, call.arguments[3].ref);
         });
     builder.StaticMethod("createBitmap",
         "([IIIIILandroid/graphics/Bitmap$Config;)Landroid/graphics/Bitmap;",
@@ -242,7 +250,7 @@ Decl Declare_android_graphics_Bitmap(const Context& context) {
             const auto width = call.arguments[3].AsInt();
             const auto height = call.arguments[4].AsInt();
             return MakeBitmapFromArray(call, context, array, offset, stride,
-                                       width, height);
+                                        width, height, call.arguments[5].ref);
         });
     builder.FinalMethod("getWidth", "()I",
         [context](dx::IntrinsicContext& call) {

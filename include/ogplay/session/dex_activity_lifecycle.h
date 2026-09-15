@@ -38,6 +38,10 @@ struct DeepTouchDispatchResult final {
     std::int32_t scroll_range, float down_y, float current_y,
     float density) noexcept;
 
+// Returns whether this frame should draw and consumes one WHEN_DIRTY request.
+[[nodiscard]] bool ConsumeGlSurfaceDrawRequest(
+    runtime::DexVmAndroidContext& context);
+
 // dex_activity lifecycle template (docs/design/dexvm/04-integration.md §2):
 // the real interpreted onCreate/onStart/onResume drive the title; the host
 // render loop calls the captured Renderer's onDrawFrame; input dispatches

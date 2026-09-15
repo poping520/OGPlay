@@ -65,6 +65,11 @@ void BindAndroidBoundaryGles1FixedState(gles::GlesDispatchTable& dispatch,
                                         AndroidBoundaryGles1FixedState& state,
                                         memory::AddressSpace& address_space,
                                         AndroidBoundaryFrameResolver require_frame,
-                                        SharedGlState* shared = nullptr);
+                                        SharedGlState* shared = nullptr,
+                                        AndroidBoundaryGles1MatrixState* matrices = nullptr);
+
+[[nodiscard]] std::vector<float> TransformGles1LightParameter(
+    std::uint32_t pname, std::span<const float> values,
+    const Gles1Matrix& modelview);
 
 } // namespace ogplay::runtime::detail

@@ -115,6 +115,12 @@ GLES30 的 indexed string、sync long、mapped direct Buffer 与 transform-feedb
 使用专用返回/参数适配；GLES20 glGetString 接受 SHADING_LANGUAGE_VERSION。
 GLSurfaceView 保存逐 View 的 Context version/config 请求；`queueEvent` 保活 Runnable 并由
 lifecycle 在 current GL 渲染线程、renderer callback 前按 FIFO 执行，禁止同步伪装或空返回。
+`requestRender` 与 WHEN_DIRTY 使用逐 View 单次消费请求，事件执行不依赖绘帧。
+GLU 的 error string、look-at、ortho、perspective、project/unproject 采用 API19 专用数学与
+GL10 虚调用适配，不进入 native GLES symbol 目录；数组 offset 与失败不回写均显式受检。
+Java GLES 的 String 返回、active query、uniform block/transform-feedback 名称及 String[]
+uniform index 使用专用适配；GLUtils 按四种 API19 Bitmap.Config 编码。EGL Java facade 的
+extension string 与错误锁存以 native registry 为唯一事实。
 
 - Handler/Looper/HandlerThread/Timer/AsyncTask 共用 scheduler；deadline 来自 uptime Clock，同
   deadline 按 sequence FIFO。主 Looper 只在 lifecycle safe point 泵送，子 Looper 在对应 guest

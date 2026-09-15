@@ -48,8 +48,10 @@ Java 异常文本，再进入统一结构化 logger；不吞异常、不写裸 s
   `android:resource`：前者解析 ARSC typed value 后写入对应 Bundle 类型，后者保留 resource id。
 - `Context.checkPermission(String,int,int)` 只回答 guest self PID/UID，并与 PackageManager
   共用 Manifest granted-permission 集合；外部身份和未授予权限返回 denied，null permission
-  抛 IllegalArgumentException。ContextWrapper 按 API 19 委托 base；不建立 UID 数据库或
-  运行时授权系统。
+  抛 IllegalArgumentException。无跨进程 Binder 时 `checkCallingPermission` 按 API 19 防泄漏
+  语义始终 denied，`checkCallingOrSelfPermission` 检查 self；三种 enforce 复用同一判定并在
+  拒绝时抛 SecurityException。ContextWrapper 全部委托 base；不建立 UID 数据库、Binder caller
+  或运行时授权系统。
 - `resolveService` 只接受非空 action、无 component/data/type/categories、flags=0，并查询当前 APK
   inventory；确定无候选返回 null，未知条件/潜在匹配记账抛 UOE。仍不物化正匹配 ResolveInfo、
   本地服务生命周期或引入外部目录/跨进程 Binder。DVM-143 保证定向反射不解析无关签名。

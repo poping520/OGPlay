@@ -516,7 +516,61 @@ TEST_CASE("Context permission checks use the explicit guest process grant set") 
     CHECK(check(base, granted, 2, 10000).value.AsInt() == -1);
     CHECK(check(base, granted, 1, 10001).value.AsInt() == -1);
 
+    const auto check_calling = [&](const VmObjectRef receiver,
+                                   const VmObjectRef permission,
+                                   const bool self_too) {
+      const auto name = self_too ? "checkCallingOrSelfPermission"
+                                 : "checkCallingPermission";
+      return vm.interpreter.Call(
+          vm.Virtual("Landroid/content/Context;", name,
+                     "(Ljava/lang/String;)I"),
+          std::vector{VmValue::Ref(receiver), VmValue::Ref(permission)});
+    };
+    CHECK(check_calling(base, granted, true).value.AsInt() == 0);
+    CHECK(check_calling(activity, granted, true).value.AsInt() == 0);
+    CHECK(check_calling(base, denied, true).value.AsInt() == -1);
+    CHECK(check_calling(base, granted, false).value.AsInt() == -1);
+
+    const auto enforce = [&](const VmObjectRef receiver,
+                             const VmObjectRef permission,
+                             const bool self_too) {
+      const auto name = self_too ? "enforceCallingOrSelfPermission"
+                                 : "enforceCallingPermission";
+      return vm.interpreter.Call(
+          vm.Virtual("Landroid/content/Context;", name,
+                     "(Ljava/lang/String;Ljava/lang/String;)V"),
+          std::vector{VmValue::Ref(receiver), VmValue::Ref(permission),
+                      VmValue::Ref(VmObjectRef{})});
+    };
+    outcome = enforce(activity, granted, true);
+    CHECK_FALSE(outcome.exception.IsValid());
+    outcome = enforce(base, denied, true);
+    REQUIRE(outcome.exception.IsValid());
+    CHECK(vm.linker.Class(outcome.exception_class).descriptor ==
+          "Ljava/lang/SecurityException;");
+    outcome = enforce(base, granted, false);
+    REQUIRE(outcome.exception.IsValid());
+    CHECK(vm.linker.Class(outcome.exception_class).descriptor ==
+          "Ljava/lang/SecurityException;");
+    const auto enforce_explicit = [&](const std::int32_t pid) {
+      return vm.interpreter.Call(
+          vm.Virtual("Landroid/content/Context;", "enforcePermission",
+                     "(Ljava/lang/String;IILjava/lang/String;)V"),
+          std::vector{VmValue::Ref(base), VmValue::Ref(granted),
+                      VmValue::Int(pid), VmValue::Int(10000),
+                      VmValue::Ref(VmObjectRef{})});
+    };
+    CHECK_FALSE(enforce_explicit(1).exception.IsValid());
+    outcome = enforce_explicit(2);
+    REQUIRE(outcome.exception.IsValid());
+    CHECK(vm.linker.Class(outcome.exception_class).descriptor ==
+          "Ljava/lang/SecurityException;");
+
     outcome = check(base, VmObjectRef{}, 1, 10000);
+    REQUIRE(outcome.exception.IsValid());
+    CHECK(vm.linker.Class(outcome.exception_class).descriptor ==
+          "Ljava/lang/IllegalArgumentException;");
+    outcome = check_calling(base, VmObjectRef{}, true);
     REQUIRE(outcome.exception.IsValid());
     CHECK(vm.linker.Class(outcome.exception_class).descriptor ==
           "Ljava/lang/IllegalArgumentException;");

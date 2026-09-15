@@ -1637,8 +1637,8 @@ note = "OGPlay session 只创建顶层 application Activity，Activity.isChild()
 
 [dexvm.context_permission_check]
 status = "complete"
-test = "tests/session/profile_entry_scope_tests.cpp: Context permission checks use the explicit guest process grant set; PvZ non-survey reached-fault"
-note = "API 19 Context.checkPermission(String,int,int) 在单 guest 进程内校验固定 self PID 与 application UID，并查询 AndroidAppProcess 从 sealed Manifest 注入的 granted-permission 集合；ContextWrapper 委托 base。外部身份和未授予权限返回 PERMISSION_DENIED，null 抛 IllegalArgumentException。真实 PvZ 已越过 GET_ACCOUNTS/WRITE_EXTERNAL_STORAGE 自身权限检查并进入 OBB 布局加载。不实现 UID/包数据库、运行时权限 UI、Binder caller 或 calling/enforce/URI 权限长尾。"
+test = "tests/session/profile_entry_scope_tests.cpp: Context permission checks use the explicit guest process grant set; architecture.dexvm_intrinsic_layout; PvZ non-survey reached-fault; Angry Birds no-Profile reached ByteArrayEntity"
+note = "API 19 Context.checkPermission(String,int,int) 在单 guest 进程内校验固定 self PID 与 application UID，并查询 AndroidAppProcess 从 sealed Manifest 注入的 granted-permission 集合。DVM-162 补齐 calling/self 与 enforce 家族：无跨进程 Binder 时 checkCallingPermission 按 AOSP 防泄漏语义始终 denied，checkCallingOrSelfPermission 使用 self，enforce 拒绝时抛 SecurityException；ContextWrapper 全部委托 base。null 抛 IllegalArgumentException。真实 PvZ 与 Angry Birds 已越过对应权限检查。不实现 UID/包数据库、运行时权限 UI、Binder caller 或 URI 权限长尾。"
 
 [dexvm.certificate_x509]
 status = "complete"

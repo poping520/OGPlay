@@ -4,6 +4,12 @@
 
 ## 最近进展
 
+- [DVM-162](../tasks/dexvm/DVM-162.md) 已按 API 19 补齐 Context calling/self 与 enforce
+  权限家族：无 Binder IPC 时 calling-only 保持 denied，calling-or-self 使用 guest self 身份，
+  所有判定共用 Manifest granted-permission 集合，Wrapper 委托 base。双解释器 122 assertions、
+  架构门禁和 Windows Release 构建通过；Angry Birds 无 Profile 实跑已越过原缺口，首错推进到
+  `org.apache.http.entity.ByteArrayEntity` 类闭包。
+
 - [DVM-161](../tasks/dexvm/DVM-161.md) 已将 API 19 Settings 公开 API 迁入 AOSP BootDex：
   System/Secure/Global 的 moved-key 路由、类型转换和异常执行原版 Java，C++ 只保留私有
   NameValueCache 有界存储，不引入 Binder/SettingsProvider。定向测试、架构门禁、BootDex

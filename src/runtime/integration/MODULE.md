@@ -66,6 +66,9 @@ Android API 的详细行为以 [dexvm_android](dexvm_android/MODULE.md)为准；
   native 执行释放 VM 锁，JNI 回调重获；executor 按 thread 和重入深度复用 CPU/JIT，同层复用
   缓存、不同深度隔离现场，nested 使用 suspended SP/TLS，线程退出回收全部 executor。
   JNI monitor 使用 VM token/对象身份，与 Java synchronized 共享状态；TID 受 Bionic 16-bit 限制。
+- Manifest `targetSdkVersion` 为 1..13 时，DexVM bridge 按 KitKat
+  `workAroundAppJniBugs` 启用 JNI direct-reference 兼容；其余版本保持严格 local frame。
+  兼容触发输出结构化 warn，不得由 Profile/title 分支启用。
 - renewable native frame 只在真实 futex park、正字节 IO、present、audio enqueue、JNI 重入
   等可观测进展时续 watchdog；查询/EOF/wake/yield/内存管理和空转不续期。
   JNI 重入进展判别的有界限制见 [ADR-0023](../../../docs/adr/diagnostics.md#adr-0023)。

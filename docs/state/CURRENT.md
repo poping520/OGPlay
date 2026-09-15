@@ -17,16 +17,18 @@
   状态迁入 AOSP BootDex，C++ 只保留外部 I/O 边界；NetworkPolicy 默认 disabled。Angry Birds
   已越过原 getter 缺口。当前 BootDex 1531 类，全链接 8602 assertions 通过。
 - AudioTrack position callback 回填 PCM 后不在唯一 mixer 消费线程继续同步补发过期通知，
-  消除 `AudioTrack.write` 回压自锁；Angry Birds 已推进至 frame 1072，下一独立首错为
-  `nativeUpdate` 当前线程 JNI 引用失效。
+  消除 `AudioTrack.write` 回压自锁。
+- [DVM-165](../tasks/dexvm/DVM-165.md)：按 KitKat 为 targetSdk 1..13 补齐旧 JNI direct-reference
+  app-bug 兼容，严格模式不变且违规用法输出明确 warn；Angry Birds 无 Profile 已越过原
+  `nativeUpdate` JNI 引用失效，运行 1258 帧后由游戏正常返回 false。
 - BND-34..39 已闭合本轮 EGL/GLES 核心审计、Java EGL/GLES 桥接、GLSurfaceView、GLU、
   `dl_unwind_find_exidx` 与相关行为缺口；核心名称覆盖不等同 CTS/Khronos 完整认证。
 
 ## 当前边界
 
 - **VM/Java**：DexVM 使用受审 API 19 BootDex；普通 Java 状态归字段/数组，JNI 使用真实 VM
-  类型关系。文件 IO 通过 Libcore Posix 进入唯一 VFS；完整 mmap/lock、系统 CA 和 Java 长尾
-  仍明确失败。
+  类型关系；targetSdk 1..13 单独启用 AOSP 旧 JNI direct-reference 兼容并警告。文件 IO 通过
+  Libcore Posix 进入唯一 VFS；完整 mmap/lock、系统 CA 和 Java 长尾仍明确失败。
 - **Android**：只覆盖当前 APK 直接需要的 Context、Activity、资源、文件、设置及有限服务；
   不运行 Binder system_server、Play 服务、跨包解析、支付或完整 Android 系统。
 - **网络**：Apache HTTP Java 类可链接不代表在线可用；socket 仍受 NetworkRuntime policy/
@@ -37,6 +39,7 @@
 ## 验证快照
 
 - Windows Release 仅构建受影响目标；BootDex 当前为 1531 类。
+- JNI 定向回归 54 cases / 1608 assertions；Angry Birds exact smoke 1259 presented frames。
 - 既有 BootDex 全链接测试：8602 assertions；能力清单解析通过。
 - 图形 catalog/定向回归通过不代表 CTS/Khronos 或全部厂商扩展认证。
 - `data/android/19/framework/` 为本地生成产物，不纳入版本控制。

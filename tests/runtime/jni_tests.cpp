@@ -178,3 +178,43 @@ TEST_CASE("JNI global and weak references share identity without hiding errors")
                         7, {ogplay::runtime::JniObjectDomain::host, 0})),
                     ogplay::runtime::JniReferenceError);
 }
+
+TEST_CASE("JNI legacy app-bug mode reuses direct locals without rooting them") {
+    using namespace ogplay::runtime;
+    CHECK_FALSE(UsesLegacyJniAppBugCompatibility(0));
+    CHECK(UsesLegacyJniAppBugCompatibility(1));
+    CHECK(UsesLegacyJniAppBugCompatibility(13));
+    CHECK_FALSE(UsesLegacyJniAppBugCompatibility(14));
+    JniReferenceTable references;
+    references.AttachThread(11);
+    references.AttachThread(22);
+    const JniObjectIdentity object{JniObjectDomain::dex_vm, 77};
+    std::vector<std::uint64_t> warnings;
+    references.ConfigureLegacyLocalReferenceCompatibility(
+        true, [&warnings](const std::uint64_t thread, JniReference,
+                          JniObjectIdentity) { warnings.push_back(thread); });
+
+    references.PushLocalFrame(11, 1);
+    const auto stale = references.NewLocal(11, object);
+    static_cast<void>(references.PopLocalFrame(11));
+    CHECK(references.LocalCount(11) == 0);
+    CHECK(references.Resolve(11, stale) == object);
+    CHECK(references.Resolve(22, stale) == object);
+    CHECK(warnings.empty());
+
+    references.PushLocalFrame(11, 1);
+    const auto reissued = references.NewLocal(11, object);
+    CHECK(reissued == stale);
+    CHECK(warnings == std::vector<std::uint64_t>{11});
+    static_cast<void>(references.PopLocalFrame(11));
+
+    std::vector<JniObjectIdentity> roots;
+    references.VisitRoots([&roots](const JniObjectIdentity root) {
+        roots.push_back(root);
+    });
+    CHECK(roots.empty());
+
+    references.ConfigureLegacyLocalReferenceCompatibility(false);
+    CHECK_THROWS_AS(static_cast<void>(references.Resolve(11, stale)),
+                    JniReferenceError);
+}

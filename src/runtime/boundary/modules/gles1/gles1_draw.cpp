@@ -226,19 +226,19 @@ SampledTextureTargets(
         if (sampled_targets[stage] != kTextureCubeMap) continue;
         const auto suffix = std::to_string(stage);
         vertex = SubstituteShaderToken(
-            vertex, "varying vec2 v_texcoord" + suffix + ";",
+            vertex, "varying vec4 v_texcoord" + suffix + ";",
             "varying vec3 v_texcoord" + suffix + ";");
         vertex = SubstituteShaderToken(
-            vertex, "a_texcoord" + suffix + ").xy;",
+            vertex, "a_texcoord" + suffix + ");",
             "a_texcoord" + suffix + ").xyz;");
         fragment = SubstituteShaderToken(
             fragment, "uniform sampler2D u_texture" + suffix + ";",
             "uniform samplerCube u_texture" + suffix + ";");
         fragment = SubstituteShaderToken(
-            fragment, "varying vec2 v_texcoord" + suffix + ";",
+            fragment, "varying vec4 v_texcoord" + suffix + ";",
             "varying vec3 v_texcoord" + suffix + ";");
         fragment = SubstituteShaderToken(
-            fragment, "texture2D(u_texture" + suffix + ", v_texcoord" + suffix + ")",
+            fragment, "texture2DProj(u_texture" + suffix + ", v_texcoord" + suffix + ")",
             "textureCube(u_texture" + suffix + ", v_texcoord" + suffix + ")");
     }
     return {std::move(vertex), std::move(fragment)};
@@ -719,7 +719,11 @@ void AndroidBoundaryGles1DrawState::ApplyUniforms(
         sampled_targets) {
     const auto modelview = core.Capability(0x8840U) ? Gles1IdentityMatrix() : MatrixFor(core, kGles1Modelview);
     const auto projection = MatrixFor(core, kGles1Projection);
-    const auto normal = NormalMatrix(modelview);
+    const auto normal = core.Capability(0x0B50U)
+        ? NormalMatrix(modelview)
+        : std::array<float, 9>{1.0F, 0.0F, 0.0F,
+                               0.0F, 1.0F, 0.0F,
+                               0.0F, 0.0F, 1.0F};
     const auto uniform = [&program](const std::string_view name) {
         return program.uniforms.at(std::string{name});
     };
@@ -959,31 +963,10 @@ void AndroidBoundaryGles1DrawState::DrawArrays(
                   static_cast<std::uint32_t>(maximum), thread_id,
                   flat_vertices_, flat_provoking_);
     ApplyUniforms(frame, program, core, legacy, texture_units, sampled_targets);
-    if (maximum > (std::numeric_limits<std::uint16_t>::max)()) {
-        throw std::length_error("GLES1 emulated draw-array index exceeds GLushort");
-    }
     const auto index_count = flat ? flat_vertices_.size()
                                   : static_cast<std::size_t>(count);
-    if (draw_array_indices_.size() < index_count) {
-        draw_array_indices_.resize(index_count);
-    }
-    const auto draw_indices = std::span(draw_array_indices_).first(index_count);
-    for (std::size_t index = 0; index < index_count; ++index) {
-        draw_indices[index] = flat
-            ? static_cast<std::uint16_t>(index)
-            : static_cast<std::uint16_t>(
-                  first + static_cast<std::int32_t>(index));
-    }
-    frame.BindBuffer(kElementArrayBuffer, program.buffers.back());
-    frame.BufferData(kElementArrayBuffer,
-                     static_cast<std::uint32_t>(draw_indices.size() *
-                                                sizeof(std::uint16_t)),
-                     std::as_bytes(draw_indices), kStaticDraw);
-    frame.DrawElements(flat ? 0x0004U : mode,
-                       static_cast<std::int32_t>(index_count),
-                       kUnsignedShort, 0U);
-    frame.BindBuffer(kElementArrayBuffer,
-                     core.TransferState().Snapshot().element_array_buffer);
+    frame.DrawArrays(flat ? 0x0004U : mode, flat ? 0 : first,
+                     static_cast<std::int32_t>(index_count));
 }
 
 void AndroidBoundaryGles1DrawState::DrawElements(
@@ -1064,10 +1047,6 @@ void AndroidBoundaryGles1DrawState::DrawElements(
         }
         BuildFlatTriangles(mode, source_indices, flat_vertices_,
                            flat_provoking_);
-        if (flat_vertices_.size() >
-            (std::numeric_limits<std::uint16_t>::max)()) {
-            throw std::length_error("GLES1 flat draw expansion exceeds GLushort");
-        }
     } else {
         flat_vertices_.clear();
         flat_provoking_.clear();
@@ -1077,20 +1056,7 @@ void AndroidBoundaryGles1DrawState::DrawElements(
     ApplyUniforms(frame, program, core, legacy, texture_units, sampled_targets);
     if (flat) {
         const auto count_flat = flat_vertices_.size();
-        if (draw_array_indices_.size() < count_flat) {
-            draw_array_indices_.resize(count_flat);
-        }
-        const auto draw_indices =
-            std::span(draw_array_indices_).first(count_flat);
-        for (std::size_t index = 0; index < count_flat; ++index) {
-            draw_indices[index] = static_cast<std::uint16_t>(index);
-        }
-        frame.BindBuffer(kElementArrayBuffer, program.buffers.back());
-        frame.BufferData(kElementArrayBuffer,
-                         static_cast<std::uint32_t>(draw_indices.size_bytes()),
-                         std::as_bytes(draw_indices), kStaticDraw);
-        frame.DrawElements(0x0004U, static_cast<std::int32_t>(count_flat),
-                           kUnsignedShort, 0U);
+        frame.DrawArrays(0x0004U, 0, static_cast<std::int32_t>(count_flat));
     } else if (guest_element_buffer == 0U) {
         frame.BindBuffer(kElementArrayBuffer, program.buffers.back());
         frame.BufferData(kElementArrayBuffer,

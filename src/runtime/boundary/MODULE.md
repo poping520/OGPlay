@@ -212,8 +212,8 @@ boundary symbol 目录、跨 API 共享的 `GuestGlContext` 与 `A32CallFrame`�
   VBO/EBO,guest buffer binding 在内部上传后恢复;暂存只复用宿主高水位容量,每次 draw
   仍重新预检读取,pointer 更新以已验证候选在 current frame 成功后提交。固定管线通过
   内部 GLES2 shader 消费 modelview/projection/texture matrix、current/array color、
-  light0、texture、fog 与 alpha-test 状态。`glDrawArrays` 以受检 `GLushort` 顺序索引
-  等价执行,超过 65535 明确失败。当前 renderer 支持最多两个实际启用 `GL_TEXTURE_2D`
+  light0、texture、fog 与 alpha-test 状态。`glDrawArrays` 直接以无索引路径执行；flat
+  triangle 展开后也以连续顶点绘制，不引入 `GLushort` 或 65535 上限。当前 renderer 支持最多两个实际启用 `GL_TEXTURE_2D`
   的单元,按单元编号以各自 coordinate array、sampler、texture matrix、base format 和
   environment 逐级应用 MODULATE/REPLACE/ADD/BLEND/DECAL/COMBINE,`GL_PREVIOUS` 读取上一 stage
   输出;active/client active texture 只决定后续状态写入位置。BND-27 将坐标来源与采样
@@ -290,7 +290,8 @@ boundary symbol 目录、跨 API 共享的 `GuestGlContext` 与 `A32CallFrame`�
   variadic/callback 等复杂 ABI 可保留显式 custom wrapper。
 - `glGetString` 只为样例使用的真实 ANGLE core 字符串建立有界只读 guest 槽;integer
   query、draw indices 与 readback 输出复用 transfer state,draw 成功后由主 HLE 更新指标。
-- 超采样倍率必须在创建任何 ANGLE 资源前完整验证;viewport 缩放溢出明确失败,guest
+- 超采样倍率必须在创建任何 ANGLE 资源前完整验证;只有默认 framebuffer 的 viewport/scissor
+  按倍率缩放，用户 FBO 保持 guest 像素尺寸；缩放溢出明确失败,guest
   `eglQuerySurface` 不得泄漏内部渲染尺寸,GPU 查询不得把逻辑尺寸伪装成真实 target。
 - host-managed surface 明确表示 GLSurfaceView 等 Java lifecycle 拥有的 ANGLE pbuffer;
   open/present/close 必须严格配对,guest EGL 不得替换或终止该 surface,帧仍走统一

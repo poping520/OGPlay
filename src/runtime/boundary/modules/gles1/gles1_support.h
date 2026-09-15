@@ -175,8 +175,8 @@ uniform vec4 u_point_distance_attenuation;
 uniform vec4 u_clip_plane[6];
 varying vec4 v_color;
 varying vec4 v_back_color;
-varying vec2 v_texcoord0;
-varying vec2 v_texcoord1;
+varying vec4 v_texcoord0;
+varying vec4 v_texcoord1;
 varying float v_fog_distance;
 varying vec3 v_clip_distance0;
 varying vec3 v_clip_distance1;
@@ -245,9 +245,9 @@ void main() {
   v_back_color = mix(base, mix(frontLit, backLit, u_light_model_two_side),
                      u_lighting);
   v_texcoord0 = transform(u_texture0_matrix0, u_texture0_matrix1,
-                          u_texture0_matrix2, u_texture0_matrix3, a_texcoord0).xy;
+                          u_texture0_matrix2, u_texture0_matrix3, a_texcoord0);
   v_texcoord1 = transform(u_texture1_matrix0, u_texture1_matrix1,
-                          u_texture1_matrix2, u_texture1_matrix3, a_texcoord1).xy;
+                          u_texture1_matrix2, u_texture1_matrix3, a_texcoord1);
   v_fog_distance = abs(eye.z);
   v_clip_distance0 = vec3(dot(eye, u_clip_plane[0]),
                           dot(eye, u_clip_plane[1]),
@@ -300,8 +300,8 @@ uniform float u_alpha_reference;
 uniform float u_clip_enabled[6];
 varying vec4 v_color;
 varying vec4 v_back_color;
-varying vec2 v_texcoord0;
-varying vec2 v_texcoord1;
+varying vec4 v_texcoord0;
+varying vec4 v_texcoord1;
 varying float v_fog_distance;
 varying vec3 v_clip_distance0;
 varying vec3 v_clip_distance1;
@@ -338,22 +338,22 @@ float combineAlpha(int mode, float a, float b, float c) {
   if (mode == 34165) return a * c + b * (1.0 - c);
   return a - b;
 }
-vec4 applyStage(vec4 previous, vec4 texel, int stage) {
+vec4 applyStage(vec4 previous, vec4 texel, vec4 primary, int stage) {
   vec4 color = previous;
   int environment = u_texture_environment[stage];
   int format = u_texture_format[stage];
   if (environment == 34160) {
-    vec4 rs0 = sourceValue(u_source_rgb0[stage], texel, v_color, previous,
+    vec4 rs0 = sourceValue(u_source_rgb0[stage], texel, primary, previous,
                            u_environment_color[stage]);
-    vec4 rs1 = sourceValue(u_source_rgb1[stage], texel, v_color, previous,
+    vec4 rs1 = sourceValue(u_source_rgb1[stage], texel, primary, previous,
                            u_environment_color[stage]);
-    vec4 rs2 = sourceValue(u_source_rgb2[stage], texel, v_color, previous,
+    vec4 rs2 = sourceValue(u_source_rgb2[stage], texel, primary, previous,
                            u_environment_color[stage]);
-    vec4 as0 = sourceValue(u_source_alpha0[stage], texel, v_color, previous,
+    vec4 as0 = sourceValue(u_source_alpha0[stage], texel, primary, previous,
                            u_environment_color[stage]);
-    vec4 as1 = sourceValue(u_source_alpha1[stage], texel, v_color, previous,
+    vec4 as1 = sourceValue(u_source_alpha1[stage], texel, primary, previous,
                            u_environment_color[stage]);
-    vec4 as2 = sourceValue(u_source_alpha2[stage], texel, v_color, previous,
+    vec4 as2 = sourceValue(u_source_alpha2[stage], texel, primary, previous,
                            u_environment_color[stage]);
     color.rgb = clamp(combineRgb(u_combine_rgb[stage],
         rgbOperand(u_operand_rgb0[stage], rs0),
@@ -391,16 +391,20 @@ void main() {
       (u_clip_enabled[4] > 0.5 && v_clip_distance1.y < 0.0) ||
       (u_clip_enabled[5] > 0.5 && v_clip_distance1.z < 0.0)) discard;
   vec4 color = gl_FrontFacing ? v_color : v_back_color;
+  vec4 primary = color;
   if (u_texture_enabled[0] > 0.5)
-    color = applyStage(color, texture2D(u_texture0, v_texcoord0), 0);
+    color = applyStage(color, texture2DProj(u_texture0, v_texcoord0), primary, 0);
   if (u_texture_enabled[1] > 0.5)
-    color = applyStage(color, texture2D(u_texture1, v_texcoord1), 1);
-  float fog = clamp((u_fog_end - v_fog_distance) /
-                    max(u_fog_end - u_fog_start, 0.00001), 0.0, 1.0);
+    color = applyStage(color, texture2DProj(u_texture1, v_texcoord1), primary, 1);
+  float fogDenominator = u_fog_end - u_fog_start;
+  if (abs(fogDenominator) < 0.00001)
+    fogDenominator = fogDenominator < 0.0 ? -0.00001 : 0.00001;
+  float fog = clamp((u_fog_end - v_fog_distance) / fogDenominator, 0.0, 1.0);
   if (u_fog_mode == 1) fog = clamp(exp(-u_fog_density * v_fog_distance), 0.0, 1.0);
   if (u_fog_mode == 2) { float d = u_fog_density * v_fog_distance;
                          fog = clamp(exp(-(d * d)), 0.0, 1.0); }
-  if (u_fog_enabled > 0.5) color = mix(u_fog_color, color, fog);
+  if (u_fog_enabled > 0.5)
+    color.rgb = mix(u_fog_color.rgb, color.rgb, fog);
   bool pass = true;
   if (u_alpha_function == 512) pass = false;
   else if (u_alpha_function == 513) pass = color.a < u_alpha_reference;

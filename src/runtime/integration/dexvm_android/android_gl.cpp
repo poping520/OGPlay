@@ -391,6 +391,11 @@ dx::IntrinsicHandler EglInitializeHandler(const Context& context) {
     return [context](dx::IntrinsicContext& call) {
         if (!ValidateDisplay(context, call.arguments[0].ref)) return Bool(false);
         if (context->session != nullptr) {
+            if (context->egl.native_display == 0U) {
+                context->egl.native_display = NativeEgl(
+                    call, context, "eglGetDisplay", std::array{0U});
+                if (context->egl.native_display == 0U) return Bool(false);
+            }
             const auto versions = call.arguments[1].ref;
             if (versions.IsValid() && call.vm.Model().ArrayLength(versions) < 2) {
                 return Bool(false);
@@ -693,6 +698,7 @@ dx::IntrinsicHandler EglDestroySurfaceHandler(const Context& context) {
             if (found == context->egl.surfaces.end()) return Bool(false);
             const auto result = NativeEgl(call, context, "eglDestroySurface",
                 std::array{context->egl.native_display, found->second});
+            if (result != 0U) context->egl.surfaces.erase(found);
             return Bool(result != 0U);
         }
         if (call.arguments[1].ref != context->egl.window_surface) { SetError(context, kBadSurface); return Bool(false); }
@@ -710,6 +716,7 @@ dx::IntrinsicHandler EglDestroyContextHandler(const Context& context) {
             if (found == context->egl.contexts.end()) return Bool(false);
             const auto result = NativeEgl(call, context, "eglDestroyContext",
                 std::array{context->egl.native_display, found->second});
+            if (result != 0U) context->egl.contexts.erase(found);
             return Bool(result != 0U);
         }
         if (!context->egl.contexts.contains(ref.Value())) { SetError(context, kBadContext); return Bool(false); }
@@ -1399,6 +1406,11 @@ dx::IntrinsicHandler Egl14SimpleHandler(const Context& context,
                                     "Landroid/opengl/EGLDisplay;"));
         }
         if (name == "eglInitialize") {
+            if (egl.native_display == 0U) {
+                egl.native_display = NativeEgl(
+                    call, context, "eglGetDisplay", std::array{0U});
+                if (egl.native_display == 0U) return Bool(false);
+            }
             const auto major = WithIntArrayOffset(
                 call, context, call.arguments[1].ref,
                 call.arguments[2].AsInt(), true,
@@ -1555,6 +1567,7 @@ dx::IntrinsicHandler Egl14ObjectHandler(const Context& context,
             if (found == egl.egl14_contexts.end()) return Bool(false);
             const auto result = NativeEgl(call, context, name,
                 std::array{egl.native_display, found->second});
+            if (result != 0U) egl.egl14_contexts.erase(found);
             return Bool(result != 0U);
         }
         if (name == "eglDestroySurface" || name == "eglSwapBuffers") {
@@ -1562,6 +1575,9 @@ dx::IntrinsicHandler Egl14ObjectHandler(const Context& context,
             if (found == egl.egl14_surfaces.end()) return Bool(false);
             const auto result = NativeEgl(call, context, name,
                 std::array{egl.native_display, found->second});
+            if (result != 0U && name == "eglDestroySurface") {
+                egl.egl14_surfaces.erase(found);
+            }
             return Bool(result != 0U);
         }
         if (name == "eglMakeCurrent") {

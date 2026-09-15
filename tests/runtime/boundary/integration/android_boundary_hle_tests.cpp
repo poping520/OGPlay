@@ -3282,8 +3282,16 @@ TEST_CASE("Android boundary publishes GLES1 core without silent handlers") {
                    0x1E01U}) == 0U);
         CHECK(fixture.Call("libGLESv1_CM.so", "glEnable",
                            {0x0DE1U}) == 0U);
+        CHECK(fixture.Call("libGLESv1_CM.so", "glMatrixMode",
+                           {0x1700U}) == 0U);
+        CHECK(fixture.Call("libGLESv1_CM.so", "glLoadIdentity") == 0U);
+        CHECK(fixture.Call(
+                  "libGLESv1_CM.so", "glScalef",
+                  {std::bit_cast<std::uint32_t>(1.0F),
+                   std::bit_cast<std::uint32_t>(1.0F), 0U}) == 0U);
         CHECK(fixture.Call("libGLESv1_CM.so", "glDrawArrays",
                            {0x0004U, 0U, 3U}) == 0U);
+        CHECK(fixture.Call("libGLESv1_CM.so", "glLoadIdentity") == 0U);
         CHECK(fixture.Call("libGLESv1_CM.so", "glActiveTexture",
                            {0x84C1U}) == 0U);
         CHECK(fixture.Call("libGLESv1_CM.so", "glBindTexture",
@@ -4197,6 +4205,35 @@ TEST_CASE("Android EGL and GLES boundary produces a guest frame") {
     CHECK(frame->rgba8[1] == doctest::Approx(128).epsilon(0.02));
     CHECK(frame->rgba8[2] == doctest::Approx(191).epsilon(0.02));
     CHECK(fixture.Call("libEGL.so", "eglTerminate", {1}) == 1);
+}
+
+TEST_CASE("BND36 eglTerminate preserves current resources and permits reinitialize") {
+    if (!ogplay::gles::IsNativeAngleEglAvailable()) return;
+    BoundaryFixture fixture;
+    PrepareNativeEgl(fixture);
+    constexpr std::uint64_t thread_id = 0x36U;
+    CHECK(FastBoundaryCall(fixture, "libEGL.so", "eglMakeCurrent",
+                           {1U, 3U, 3U, 4U}, thread_id) == 1U);
+
+    CHECK(FastBoundaryCall(fixture, "libEGL.so", "eglTerminate",
+                           {1U}, thread_id) == 1U);
+    CHECK(FastBoundaryCall(fixture, "libEGL.so", "eglTerminate",
+                           {1U}, thread_id) == 1U);
+    CHECK(FastBoundaryCall(fixture, "libEGL.so", "eglGetCurrentContext",
+                           {}, thread_id) == 4U);
+    CHECK(FastBoundaryCall(fixture, "libGLESv2.so", "glClearColor",
+                           {0U, 0U, 0U,
+                            std::bit_cast<std::uint32_t>(1.0F)},
+                           thread_id) == 0U);
+
+    CHECK(FastBoundaryCall(fixture, "libEGL.so", "eglInitialize",
+                           {1U, 0U, 0U}, thread_id) == 1U);
+    CHECK(FastBoundaryCall(fixture, "libEGL.so", "eglMakeCurrent",
+                           {1U, 0U, 0U, 0U}, thread_id) == 1U);
+    CHECK(FastBoundaryCall(fixture, "libEGL.so", "eglGetCurrentContext",
+                           {}, thread_id) == 0U);
+    CHECK(FastBoundaryCall(fixture, "libEGL.so", "eglTerminate",
+                           {1U}, thread_id) == 1U);
 }
 
 TEST_CASE("Java EGL bridge and native EGL share pbuffer context registry") {

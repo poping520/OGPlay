@@ -633,12 +633,12 @@ note = "M4 已在三平台完成真实 pbuffer 生命周期、guest 边界、SDL
 [gles.egl_lifecycle]
 status = "partial"
 test = "tests/gles/egl_lifecycle_tests.cpp; tests/gles/angle_frame_tests.cpp"
-note = "BND-34 将一个 guest Context 映射到唯一 eager native Context，Surface 独立持有 pbuffer，Display 引用计数；原生 draw/read、逆序绑定共享源、延迟销毁与线程接力有定向回归。KHR image/sync 与 texture pbuffer 按 ANGLE 能力发布；完整 Android 窗口系统未实现，整体保持 partial。"
+note = "BND-34 将一个 guest Context 映射到唯一 eager native Context，Surface 独立持有 pbuffer，Display 引用计数；BND-36 使 terminate 保留所有线程 current 资源到合法解绑、重复 terminate 成功并允许重新 initialize。KHR image/sync 与 texture pbuffer 按 ANGLE 能力发布；完整 Android 窗口系统未实现，整体保持 partial。"
 
 [runtime.egl_api19_base_boundary]
 status = "complete"
 test = "tests/runtime/boundary/integration/android_boundary_hle_tests.cpp; runtime.android_link_preflight; runtime.bionic_virtual_so_late_import; architecture.boundary_hot_path"
-note = "34/34 EGL 1.4 core 名称与稳定 proc thunk；BND-34 修复 Context/Surface 分离及共享组生命周期，texture pbuffer 调用真实 ANGLE，swap 发布 draw 默认 framebuffer 后恢复 read surface/FBO。Pixmap/OpenVG 明确不支持，此项 complete 仅指已定义基础边界。"
+note = "34/34 EGL 1.4 core 名称与稳定 proc thunk；BND-34 修复 Context/Surface 分离及共享组生命周期，BND-36 修复 terminate current 保留、重复终止与重新初始化。texture pbuffer 调用真实 ANGLE，swap 发布 draw 默认 framebuffer 后恢复 read surface/FBO。Pixmap/OpenVG 明确不支持，此项 complete 仅指已定义基础边界。"
 
 [gles.idl_codegen]
 status = "partial"
@@ -1093,7 +1093,7 @@ note = "DVM-31 批次 A 把 host-managed ANGLE currency 显式释放并按调用
 [dexvm.egl_facade]
 status = "complete"
 test = "tests/dexvm/egl_facade_tests.cpp; tests/dexvm/vm_monitor_tests.cpp; tests/runtime/boundary/integration/android_boundary_hle_tests.cpp; data/scenarios/asphalt6.bootstrap.scenario.toml"
-note = "BND-33 WU-3 让 Java EGL10 与 API19 EGL14 通过 managed 冷入口复用 Native EGL registry；wrapper identity、thread current、sticky error、延迟销毁、pbuffer、shared context、数组 offset 与 teardown 已闭合，pixmap/client-buffer/texture-pbuffer 按 Native 能力以规范 EGL error 明确拒绝。GLES30 单独由 WU-4 记账"
+note = "BND-33 WU-3 让 Java EGL10 与 API19 EGL14 通过 managed 冷入口复用 Native EGL registry；BND-36 使 destroy 成功立即退役 wrapper，并支持 terminate 后原 Display 重新 initialize。thread current、sticky error、延迟销毁、pbuffer、shared context 与数组 offset 复用 Native registry；pixmap/client-buffer/texture-pbuffer 按 Native 能力明确拒绝。GLES30 单独由 WU-4 记账"
 
 [session.profile_guest_lifecycle]
 status = "complete"

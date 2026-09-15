@@ -841,17 +841,19 @@ void BindAndroidBoundaryGles1Core(
                 std::bit_cast<std::int32_t>(arguments[1]),
                 std::bit_cast<std::int32_t>(arguments[2]),
                 std::bit_cast<std::int32_t>(arguments[3])};
+            const auto factor = state.Shared().Framebuffer() == 0U
+                ? supersample_factor : 1U;
             require_frame("glViewport").Viewport(ScaleAndroidBoundaryViewportComponent(
                               std::bit_cast<std::int32_t>(arguments[0]),
-                              supersample_factor),
+                              factor),
                           ScaleAndroidBoundaryViewportComponent(
                               std::bit_cast<std::int32_t>(arguments[1]),
-                              supersample_factor),
+                              factor),
                           ScaleAndroidBoundaryViewportComponent(
                               std::bit_cast<std::int32_t>(arguments[2]),
-                              supersample_factor),
+                              factor),
                           ScaleAndroidBoundaryViewportComponent(
-                              std::bit_cast<std::int32_t>(arguments[3]), supersample_factor));
+                              std::bit_cast<std::int32_t>(arguments[3]), factor));
             state.Shared().SetViewport(logical);
             return 0U;
         });
@@ -864,17 +866,19 @@ void BindAndroidBoundaryGles1Core(
                 std::bit_cast<std::int32_t>(arguments[1]),
                 std::bit_cast<std::int32_t>(arguments[2]),
                 std::bit_cast<std::int32_t>(arguments[3])};
+            const auto factor = state.Shared().Framebuffer() == 0U
+                ? supersample_factor : 1U;
             require_frame("glScissor").Scissor(ScaleAndroidBoundaryViewportComponent(
                              std::bit_cast<std::int32_t>(arguments[0]),
-                             supersample_factor),
+                             factor),
                          ScaleAndroidBoundaryViewportComponent(
                              std::bit_cast<std::int32_t>(arguments[1]),
-                             supersample_factor),
+                             factor),
                          ScaleAndroidBoundaryViewportComponent(
                              std::bit_cast<std::int32_t>(arguments[2]),
-                             supersample_factor),
+                             factor),
                          ScaleAndroidBoundaryViewportComponent(
-                             std::bit_cast<std::int32_t>(arguments[3]), supersample_factor));
+                             std::bit_cast<std::int32_t>(arguments[3]), factor));
             state.Shared().SetScissor(logical);
             return 0U;
         });

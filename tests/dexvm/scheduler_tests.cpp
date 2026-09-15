@@ -359,6 +359,32 @@ TEST_CASE("DVM-85 Handler queue is delayed ordered and removable") {
           kDefaultAndroidDeviceUptimeMillis + 10);
 }
 
+TEST_CASE("DVM-170 Activity runOnUiThread posts workers to the main Looper") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch,
+                               InterpreterBackend::threaded}) {
+        SchedulerVm fixture(backend);
+        const auto activity = fixture.New("Landroid/app/Activity;");
+        const auto runnable = fixture.New("Ltest/RecordingRunnable;");
+        const auto activity_type = fixture.Class("Landroid/app/Activity;");
+        const auto slot = fixture.linker.FindVtableIndex(
+            activity_type, "runOnUiThread", "(Ljava/lang/Runnable;)V");
+        REQUIRE(slot.has_value());
+        const auto method = fixture.linker.Class(activity_type).vtable[*slot];
+
+        const auto worker = fixture.vm.CreateExecutionContext();
+        const std::array arguments{VmValue::Ref(activity),
+                                   VmValue::Ref(runnable)};
+        SchedulerVm::RequireOk(fixture.vm.Call(worker, method, arguments));
+        CHECK(fixture.runnable_calls.load() == 0);
+        CHECK_FALSE(PumpJavaThreads(fixture.vm, *fixture.context).has_value());
+        CHECK(fixture.runnable_calls.load() == 1);
+        fixture.vm.DiscardExecutionContext(worker);
+
+        SchedulerVm::RequireOk(fixture.vm.Call(method, arguments));
+        CHECK(fixture.runnable_calls.load() == 2);
+    }
+}
+
 TEST_CASE("DVM-135 View posts through attached and detached main queues") {
     for (const auto backend : {InterpreterBackend::switch_dispatch,
                                InterpreterBackend::threaded}) {

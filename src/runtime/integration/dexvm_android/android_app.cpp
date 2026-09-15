@@ -275,15 +275,27 @@ Decl Declare_android_app_Activity(const Context& context) {
                                                              call.arguments[0].ref);
                               return dx::VmValue::Void();
                           });
-    // The whole VM is the UI thread in the cooperative model, so the
-    // runnable executes synchronously (matches Android semantics when the
-    // caller is already on the UI thread).
+    // API 19 Activity runs inline only on the main thread. Calls from a guest
+    // worker (notably GLSurfaceView.GLThread) are posted to the main Looper and
+    // dispatched by the lifecycle safe-point pump.
     builder.FinalMethod("runOnUiThread", "(Ljava/lang/Runnable;)V",
-        [](dx::IntrinsicContext& call) {
+        [context](dx::IntrinsicContext& call) {
             const auto runnable = call.arguments[0].ref;
             if (!runnable.IsValid()) {
                 throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;",
                                       "runOnUiThread action is null"};
+            }
+            if (call.vm.CurrentContextToken() != 1U) {
+                const auto main = EnsureMainLooper(call, context);
+                if (!EnqueueHandlerWork(
+                        context, main, call.receiver, runnable,
+                        dx::VmObjectRef{}, 0, true,
+                        context->uptime_millis.load())) {
+                    throw dx::VmJavaThrow{
+                        "Ljava/lang/IllegalStateException;",
+                        "main Looper is not accepting work"};
+                }
+                return dx::VmValue::Void();
             }
             auto& vm = call.vm;
             auto& linker = vm.Linker();
@@ -298,9 +310,9 @@ Decl Declare_android_app_Activity(const Context& context) {
                 vm.Call(linker.Class(runnable_class).vtable[*index],
                         std::vector<dx::VmValue>{dx::VmValue::Ref(runnable)});
             if (outcome.exception.IsValid()) {
-                throw dx::VmJavaThrow{"Ljava/lang/RuntimeException;",
-                                      "runOnUiThread raised: " +
-                                          outcome.exception_message};
+                throw dx::VmJavaThrow{
+                    linker.Class(outcome.exception_class).descriptor,
+                    outcome.exception_message, outcome.exception};
             }
             return dx::VmValue::Void();
         });

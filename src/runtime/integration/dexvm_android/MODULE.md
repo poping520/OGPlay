@@ -136,6 +136,8 @@ extension string 与错误锁存以 native registry 为唯一事实。
   deadline 按 sequence FIFO。主 Looper 只在 lifecycle safe point 泵送，子 Looper 在对应 guest
   host thread 执行；禁止同步调用伪装 post。Android 设备先于 APK 进程存在，统一 Clock 默认带
   确定性的 60 秒 boot-age；无 suspend 模型时 uptimeMillis 与 elapsedRealtime 共用该时间事实。
+- `Activity.runOnUiThread` 仅在 root context 同步虚派 Runnable；guest worker 投递进程唯一主
+  Looper。teardown 在 worker join 后、root JNI detach 前释放 guest native token。
 - AsyncTask worker 的 `DexVmError` 保留原始线程故障并终止该路径，不转换成 null 结果，
   不继续调用 `onPostExecute`。Dialog/Web 内容尚未实现的 presentation 明确失败并记账。
 - ResultReceiver/IResultReceiver 普通协议来自 BootDex：有 Handler 排队、无 Handler 同步虚派，
@@ -158,6 +160,8 @@ extension string 与错误锁存以 native registry 为唯一事实。
   宿主接入只能替换 provider，不得把 Binder、WindowManagerService 或宿主查询散入 Java handler。
 - System.load/loadLibrary 只经 process loader 并携带 application ClassLoader；失败映射 Java 异常，
   禁止 no-op 成功。JNI 对象出口按真实 runtime class 原子幂等注册；数组元素不得猜声明类型。
+- JCA `Mac/MacSpi` 公开行为来自 API 19 BootDex；当前 AndroidOpenSSL 仅注册 HmacSHA1，
+  增量计算经 guest ARM libcrypto 有界 SPI，native token 复用统一 GC/teardown 清理。
 - native token 只存普通 Java long 字段；GC/teardown 经登记 cleanup 清理，不保存 host pointer，
   不因浅 clone 提前释放共享 token。
 

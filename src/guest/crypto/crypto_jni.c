@@ -374,6 +374,7 @@ int N(EVP_1CipherFinal_1ex)(JNIEnv *env, jobject cls, jlong token, jobject out, 
 }
 static void release_crypto_locks(void);
 static void release_digests(void);
+static void release_hmacs(void);
 __attribute__((destructor)) static void release_contexts(void) {
     while (contexts) {
         Context *p = contexts;
@@ -382,6 +383,7 @@ __attribute__((destructor)) static void release_contexts(void) {
         free(p);
     }
     release_digests();
+    release_hmacs();
     release_crypto_locks();
     ogplay_icu_release();
 }
@@ -728,6 +730,190 @@ static void release_digests(void) {
         Digest *p = digests;
         digests = p->next;
         EVP_MD_CTX_destroy(p->evp);
+        free(p);
+    }
+}
+
+/* Bounded API 19 HmacSHA1 state. Public Mac/MacSpi behavior stays in BootDex;
+ * this registry owns only incremental guest OpenSSL contexts and key pads. */
+typedef struct HmacSha1 {
+    struct HmacSha1 *next;
+    int mutex, references, removed;
+    jlong token;
+    EVP_MD_CTX *inner;
+    unsigned char ipad[64], opad[64];
+} HmacSha1;
+static HmacSha1 *hmacs;
+static int hmac_reset(HmacSha1 *p) {
+    return EVP_DigestInit_ex(p->inner, EVP_sha1(), 0) &&
+           EVP_DigestUpdate(p->inner, p->ipad, sizeof(p->ipad));
+}
+static HmacSha1 *hmac_context(JNIEnv *env, jlong token) {
+    pthread_mutex_lock(&registry_mutex);
+    HmacSha1 *p = hmacs;
+    while (p && p->token != token) p = p->next;
+    if (p) ++p->references;
+    pthread_mutex_unlock(&registry_mutex);
+    if (!p) fail(env, "java/lang/IllegalStateException", "invalid HmacSHA1 token");
+    else pthread_mutex_lock(&p->mutex);
+    return p;
+}
+static void release_hmac(HmacSha1 **address) {
+    HmacSha1 *p = *address;
+    if (!p) return;
+    pthread_mutex_unlock(&p->mutex);
+    pthread_mutex_lock(&registry_mutex);
+    int destroy = --p->references == 0 && p->removed;
+    pthread_mutex_unlock(&registry_mutex);
+    if (destroy) {
+        EVP_MD_CTX_destroy(p->inner);
+        volatile unsigned char *wipe = p->ipad;
+        for (int i = 0; i < 128; ++i) wipe[i] = 0;
+        free(p);
+    }
+}
+#define HMAC_SHA1 HmacSha1 *p __attribute__((cleanup(release_hmac))) = hmac_context(env, token)
+jlong N(HMAC_1SHA1_1init)(JNIEnv *env, jobject cls, jobject key) {
+    (void)cls;
+    int key_size = length(env, key);
+    if (key_size < 0) return 0;
+    HmacSha1 *p = malloc(sizeof(HmacSha1));
+    if (!p) {
+        fail(env, "java/lang/OutOfMemoryError", "HmacSHA1 context");
+        return 0;
+    }
+    p->inner = EVP_MD_CTX_create();
+    if (!p->inner) {
+        free(p);
+        fail(env, "java/lang/OutOfMemoryError", "HmacSHA1 digest context");
+        return 0;
+    }
+    unsigned char normalized[64];
+    for (int i = 0; i < 64; ++i) normalized[i] = 0;
+    if (key_size <= 64) {
+        if (key_size) read_bytes(env, key, 0, key_size, normalized);
+    } else {
+        EVP_MD_CTX *hash = EVP_MD_CTX_create();
+        unsigned char buffer[4096];
+        unsigned int hashed = 0;
+        int ok = hash && EVP_DigestInit_ex(hash, EVP_sha1(), 0);
+        for (int offset = 0; ok && offset < key_size;) {
+            int chunk = key_size - offset < (int)sizeof(buffer)
+                ? key_size - offset : (int)sizeof(buffer);
+            read_bytes(env, key, offset, chunk, buffer);
+            ok = EVP_DigestUpdate(hash, buffer, (size_t)chunk);
+            offset += chunk;
+        }
+        if (ok) ok = EVP_DigestFinal_ex(hash, normalized, &hashed) && hashed == 20;
+        if (hash) EVP_MD_CTX_destroy(hash);
+        if (!ok) {
+            EVP_MD_CTX_destroy(p->inner);
+            free(p);
+            fail(env, "java/security/InvalidKeyException", "HmacSHA1 key hashing failed");
+            return 0;
+        }
+    }
+    for (int i = 0; i < 64; ++i) {
+        p->ipad[i] = normalized[i] ^ 0x36;
+        p->opad[i] = normalized[i] ^ 0x5c;
+        normalized[i] = 0;
+    }
+    p->mutex = p->references = p->removed = 0;
+    if (!hmac_reset(p)) {
+        EVP_MD_CTX_destroy(p->inner);
+        free(p);
+        fail(env, "java/security/ProviderException", "HmacSHA1 initialization failed");
+        return 0;
+    }
+    pthread_mutex_lock(&registry_mutex);
+    if (next_token == 0x7fffffffffffffffLL) {
+        pthread_mutex_unlock(&registry_mutex);
+        EVP_MD_CTX_destroy(p->inner);
+        free(p);
+        fail(env, "java/lang/OutOfMemoryError", "native token space exhausted");
+        return 0;
+    }
+    p->token = next_token++;
+    p->next = hmacs;
+    hmacs = p;
+    jlong result = p->token;
+    pthread_mutex_unlock(&registry_mutex);
+    return result;
+}
+void N(HMAC_1SHA1_1update)(JNIEnv *env, jobject cls, jlong token,
+                           jobject input, int offset, int count) {
+    (void)cls;
+    HMAC_SHA1;
+    if (!p || !range(env, input, offset, count)) return;
+    unsigned char buffer[4096];
+    int ok = 1;
+    while (count && ok) {
+        int chunk = count < (int)sizeof(buffer) ? count : (int)sizeof(buffer);
+        read_bytes(env, input, offset, chunk, buffer);
+        ok = EVP_DigestUpdate(p->inner, buffer, (size_t)chunk);
+        offset += chunk;
+        count -= chunk;
+    }
+    if (!ok) fail(env, "java/security/ProviderException", "HmacSHA1 update failed");
+}
+void N(HMAC_1SHA1_1final)(JNIEnv *env, jobject cls, jlong token, jobject output) {
+    (void)cls;
+    HMAC_SHA1;
+    if (!p || !range(env, output, 0, 20)) return;
+    unsigned char inner[20], result[20];
+    unsigned int inner_size = 0, result_size = 0;
+    EVP_MD_CTX *outer = EVP_MD_CTX_create();
+    int ok = outer && EVP_DigestFinal_ex(p->inner, inner, &inner_size) &&
+             inner_size == 20 && EVP_DigestInit_ex(outer, EVP_sha1(), 0) &&
+             EVP_DigestUpdate(outer, p->opad, sizeof(p->opad)) &&
+             EVP_DigestUpdate(outer, inner, sizeof(inner)) &&
+             EVP_DigestFinal_ex(outer, result, &result_size) && result_size == 20 &&
+             hmac_reset(p);
+    if (outer) EVP_MD_CTX_destroy(outer);
+    if (ok) write_bytes(env, output, 0, 20, result);
+    else fail(env, "java/security/ProviderException", "HmacSHA1 final failed");
+    volatile unsigned char *wipe_inner = inner;
+    volatile unsigned char *wipe_result = result;
+    for (int i = 0; i < 20; ++i) {
+        wipe_inner[i] = 0;
+        wipe_result[i] = 0;
+    }
+}
+void N(HMAC_1SHA1_1reset)(JNIEnv *env, jobject cls, jlong token) {
+    (void)cls;
+    HMAC_SHA1;
+    if (p && !hmac_reset(p))
+        fail(env, "java/security/ProviderException", "HmacSHA1 reset failed");
+}
+void N(HMAC_1SHA1_1destroy)(JNIEnv *env, jobject cls, jlong token) {
+    (void)cls;
+    pthread_mutex_lock(&registry_mutex);
+    HmacSha1 **cursor = &hmacs;
+    while (*cursor && (*cursor)->token != token) cursor = &(*cursor)->next;
+    if (!*cursor) {
+        pthread_mutex_unlock(&registry_mutex);
+        fail(env, "java/lang/IllegalStateException", "invalid HmacSHA1 token");
+        return;
+    }
+    HmacSha1 *p = *cursor;
+    *cursor = p->next;
+    p->removed = 1;
+    int destroy = p->references == 0;
+    pthread_mutex_unlock(&registry_mutex);
+    if (destroy) {
+        EVP_MD_CTX_destroy(p->inner);
+        volatile unsigned char *wipe = p->ipad;
+        for (int i = 0; i < 128; ++i) wipe[i] = 0;
+        free(p);
+    }
+}
+static void release_hmacs(void) {
+    while (hmacs) {
+        HmacSha1 *p = hmacs;
+        hmacs = p->next;
+        EVP_MD_CTX_destroy(p->inner);
+        volatile unsigned char *wipe = p->ipad;
+        for (int i = 0; i < 128; ++i) wipe[i] = 0;
         free(p);
     }
 }

@@ -225,7 +225,6 @@ namespace ogplay::runtime::dexvm::intrinsics {
             builder.FinalMethod("disconnect", "()V", NetworkUnsupported());
             builder.FinalMethod("getInputStream", "()Ljava/io/InputStream;",
                                 NetworkUnsupported());
-            builder.FinalMethod("setConnectTimeout", "(I)V", NetworkUnsupported());
             return std::move(builder).Build();
         }
 
@@ -642,31 +641,6 @@ namespace ogplay::runtime::dexvm::intrinsics {
             builder.StaticMethod(
                 "decode", "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;",
                 FormCodec(false, true));
-            return std::move(builder).Build();
-        }
-
-        IntrinsicClassDecl DeclareHostnameVerifier() {
-            return std::move(IntrinsicClassBuilder::Interface(
-                        "Ljavax/net/ssl/HostnameVerifier;"))
-                    .Build();
-        }
-
-        IntrinsicClassDecl DeclareHttpsURLConnection() {
-            auto builder = IntrinsicClassBuilder::Class(
-                "Ljavax/net/ssl/HttpsURLConnection;",
-                "Ljava/net/HttpURLConnection;");
-            builder.StaticMethod("setDefaultHostnameVerifier",
-                                 "(Ljavax/net/ssl/HostnameVerifier;)V",
-                                 NetworkUnsupported());
-            builder.StaticMethod("setDefaultSSLSocketFactory",
-                                 "(Ljavax/net/ssl/SSLSocketFactory;)V",
-                                 NetworkUnsupported());
-            builder.FinalMethod("setRequestMethod", "(Ljava/lang/String;)V",
-                                NetworkUnsupported());
-            builder.FinalMethod(
-                "setRequestProperty",
-                "(Ljava/lang/String;Ljava/lang/String;)V", NetworkUnsupported());
-            builder.FinalMethod("getResponseCode", "()I", NetworkUnsupported());
             return std::move(builder).Build();
         }
 
@@ -1214,6 +1188,24 @@ namespace ogplay::runtime::dexvm::intrinsics {
                                             } catch (const NetworkRuntimeError& error) { ThrowNetwork(error); }
                                             return VmValue::Ref(socket);
                                         });
+            const auto no_cipher_suites = [](IntrinsicContext& call) {
+                return VmValue::Ref(call.vm.Model().NewObjectArray(
+                    call.vm.Linker().ResolveDescriptor("[Ljava/lang/String;"),
+                    call.vm.Linker().ResolveDescriptor("Ljava/lang/String;"),
+                    0));
+            };
+            builder.FinalMethod("getDefaultCipherSuites",
+                                "()[Ljava/lang/String;", no_cipher_suites);
+            builder.FinalMethod("getSupportedCipherSuites",
+                                "()[Ljava/lang/String;", no_cipher_suites);
+            builder.FinalMethod(
+                "createSocket",
+                "(Ljava/net/Socket;Ljava/lang/String;IZ)Ljava/net/Socket;",
+                [](IntrinsicContext&) -> VmValue {
+                    throw VmJavaThrow{
+                        "Ljava/net/SocketException;",
+                        "TLS layering is unavailable while networking is disabled"};
+                });
             return std::move(builder).Build();
         }
 
@@ -1507,8 +1499,6 @@ namespace ogplay::runtime::dexvm::intrinsics {
         catalog.push_back(DeclarePlatformUrlConnection());
         catalog.push_back(DeclarePlatformUrlEncoder());
         catalog.push_back(DeclarePlatformUrlDecoder());
-        catalog.push_back(DeclareHostnameVerifier());
-        catalog.push_back(DeclareHttpsURLConnection());
         catalog.push_back(DeclareKeyManager());
         catalog.push_back(DeclareSslContext(services));
         catalog.push_back(DeclareSslSocketFactory(services));

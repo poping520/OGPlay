@@ -1558,6 +1558,13 @@ TEST_CASE("DVM-103 all BootDex classes link and collection methods have no intri
                     CHECK(linked.kind == MethodKind::intrinsic);
                     return;
                 }
+                if (descriptor == "Ljava/net/HttpURLConnection;" &&
+                    (linked.name == "connect" ||
+                     linked.name == "disconnect" ||
+                     linked.name == "getInputStream")) {
+                    CHECK(linked.kind == MethodKind::intrinsic);
+                    return;
+                }
                 if (!(f.linker.Method(method).access_flags & kAccNative))
                     CHECK(f.linker.Method(method).kind != MethodKind::intrinsic);
             };
@@ -1574,7 +1581,7 @@ TEST_CASE("DVM-103 all BootDex classes link and collection methods have no intri
         for (const auto method : f.linker.Class(type).own_direct_methods)
             CHECK(f.linker.Method(method).kind != MethodKind::intrinsic);
     }
-    CHECK(count == 1511);
+    CHECK(count == 1531);
 }
 
 TEST_CASE("DVM-149 Apache HTTP BootDex supports the Restlet startup object path") {
@@ -1666,6 +1673,66 @@ TEST_CASE("DVM-149 Apache HTTP BootDex supports the Restlet startup object path"
             result.value.ref, 0, f.vm.Model().ArrayLength(result.value.ref));
         CHECK(std::string(reinterpret_cast<const char*>(encoded.data()),
                           encoded.size()) == "Starting the Apache HTTP client");
+
+        result = f.Static(
+            "Ljavax/net/ssl/HttpsURLConnection;",
+            "getDefaultSSLSocketFactory",
+            "()Ljavax/net/ssl/SSLSocketFactory;");
+        f.RequireOk(result);
+        REQUIRE(result.value.ref.IsValid());
+        const auto default_factory = result.value.ref;
+        const auto https_class = f.linker.ResolveDescriptor(
+            "Ljavax/net/ssl/HttpsURLConnection;");
+        const auto https_getter = f.linker.FindDirectMethod(
+            https_class, "getDefaultSSLSocketFactory",
+            "()Ljavax/net/ssl/SSLSocketFactory;");
+        REQUIRE(https_getter.has_value());
+        CHECK(f.linker.Method(*https_getter).kind == MethodKind::interpreted);
+        const auto url_connection = f.linker.ResolveDescriptor(
+            "Ljava/net/URLConnection;");
+        const auto timeout = f.linker.FindVtableIndex(
+            url_connection, "setConnectTimeout", "(I)V");
+        REQUIRE(timeout.has_value());
+        CHECK(f.linker.Method(
+                  f.linker.Class(url_connection).vtable[*timeout]).kind ==
+              MethodKind::interpreted);
+        result = f.Static(
+            "Ljavax/net/ssl/HttpsURLConnection;",
+            "getDefaultSSLSocketFactory",
+            "()Ljavax/net/ssl/SSLSocketFactory;");
+        f.RequireOk(result);
+        CHECK(result.value.ref == default_factory);
+        result = f.Virtual(default_factory, "getSupportedCipherSuites",
+                           "()[Ljava/lang/String;");
+        f.RequireOk(result);
+        CHECK(f.model.ArrayLength(result.value.ref) == 0);
+        result = f.Static(
+            "Ljavax/net/ssl/HttpsURLConnection;",
+            "setDefaultSSLSocketFactory",
+            "(Ljavax/net/ssl/SSLSocketFactory;)V",
+            {VmValue::Ref(VmObjectRef{})});
+        REQUIRE(result.exception.IsValid());
+        CHECK(f.linker.Class(result.exception_class).descriptor ==
+              "Ljava/lang/IllegalArgumentException;");
+        result = f.Static(
+            "Ljavax/net/ssl/HttpsURLConnection;",
+            "getDefaultHostnameVerifier",
+            "()Ljavax/net/ssl/HostnameVerifier;");
+        f.RequireOk(result);
+        CHECK(result.value.ref.IsValid());
+
+        const auto plain_socket =
+            f.vm.NewIntrinsicInstance("Ljava/net/Socket;");
+        f.Construct(plain_socket, "Ljava/net/Socket;", "()V");
+        const auto offline_tls = f.Virtual(
+            default_factory, "createSocket",
+            "(Ljava/net/Socket;Ljava/lang/String;IZ)Ljava/net/Socket;",
+            {VmValue::Ref(plain_socket),
+             VmValue::Ref(f.vm.NewStringUtf8("example.invalid")),
+             VmValue::Int(443), VmValue::Int(1)});
+        REQUIRE(offline_tls.exception.IsValid());
+        CHECK(f.linker.Class(offline_tls.exception_class).descriptor ==
+              "Ljava/net/SocketException;");
 
         result = f.Static("Ljavax/net/ssl/SSLContext;", "getInstance",
                           "(Ljava/lang/String;)Ljavax/net/ssl/SSLContext;",

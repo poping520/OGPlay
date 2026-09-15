@@ -510,6 +510,77 @@ TEST_CASE("Android file syscalls transfer checked guest bytes through VFS") {
     CHECK(dispatcher.Dispatch(frame) == -14);
 }
 
+TEST_CASE("guest stderr and dev log writev are captured with endpoint facts") {
+    ogplay::core::CapabilityLedger ledger;
+    auto dispatcher =
+        ogplay::runtime::CreateAndroidArmSyscallDispatcher(ledger);
+    ogplay::runtime::VirtualFileSystem vfs;
+    ogplay::memory::AddressSpace memory;
+    memory.Map({ogplay::memory::GuestAddress{0x10000}, memory.PageSize()},
+               ogplay::memory::PageProtection::read |
+                   ogplay::memory::PageProtection::write);
+    std::vector<ogplay::runtime::GuestIoRecord> records;
+    ogplay::runtime::BindAndroidFileSyscalls(
+        dispatcher, vfs, memory,
+        [&records](const ogplay::runtime::GuestIoRecord& record) {
+            records.push_back(record);
+        });
+
+    const std::array stderr_bytes{std::byte{'f'}, std::byte{'a'},
+                                  std::byte{'t'}, std::byte{'a'},
+                                  std::byte{'l'}};
+    memory.Write(ogplay::memory::GuestAddress{0x10100}, stderr_bytes, 9U);
+    ogplay::runtime::A32SyscallFrame frame;
+    frame.number = 4U;
+    frame.thread_id = 9U;
+    frame.arguments = {2U, 0x10100U, 5U};
+    CHECK(dispatcher.Dispatch(frame) == 5);
+    REQUIRE(records.size() == 1U);
+    CHECK(records.back().stream == ogplay::runtime::GuestIoStream::stderr_stream);
+    CHECK(records.back().endpoint == "stderr");
+    CHECK(records.back().payload ==
+          std::vector<std::byte>(stderr_bytes.begin(), stderr_bytes.end()));
+
+    const std::array path{std::byte{'/'}, std::byte{'d'}, std::byte{'e'},
+                          std::byte{'v'}, std::byte{'/'}, std::byte{'l'},
+                          std::byte{'o'}, std::byte{'g'}, std::byte{'/'},
+                          std::byte{'m'}, std::byte{'a'}, std::byte{'i'},
+                          std::byte{'n'}, std::byte{0}};
+    memory.Write(ogplay::memory::GuestAddress{0x10200}, path, 9U);
+    frame.number = 5U;
+    frame.arguments = {0x10200U, 1U};
+    const auto log_fd = dispatcher.Dispatch(frame);
+    REQUIRE(log_fd > 2);
+
+    const std::array priority{std::byte{6}};
+    const std::array tag{std::byte{'l'}, std::byte{'i'}, std::byte{'b'},
+                         std::byte{'c'}, std::byte{0}};
+    const std::array message{std::byte{'s'}, std::byte{'t'}, std::byte{'a'},
+                             std::byte{'c'}, std::byte{'k'}, std::byte{0}};
+    memory.Write(ogplay::memory::GuestAddress{0x10300}, priority, 9U);
+    memory.Write(ogplay::memory::GuestAddress{0x10310}, tag, 9U);
+    memory.Write(ogplay::memory::GuestAddress{0x10320}, message, 9U);
+    const auto put_word = [&memory](const std::uint32_t address,
+                                    const std::uint32_t value) {
+        std::array<std::byte, 4> bytes{};
+        for (std::size_t index = 0; index < 4; ++index) {
+            bytes[index] = static_cast<std::byte>(value >> (index * 8U));
+        }
+        memory.Write(ogplay::memory::GuestAddress{address}, bytes, 9U);
+    };
+    put_word(0x10400, 0x10300); put_word(0x10404, 1);
+    put_word(0x10408, 0x10310); put_word(0x1040c, 5);
+    put_word(0x10410, 0x10320); put_word(0x10414, 6);
+    frame.number = 146U;
+    frame.arguments = {static_cast<std::uint32_t>(log_fd), 0x10400U, 3U};
+    CHECK(dispatcher.Dispatch(frame) == 12);
+    REQUIRE(records.size() == 2U);
+    CHECK(records.back().stream == ogplay::runtime::GuestIoStream::android_log);
+    CHECK(records.back().endpoint == "/dev/log/main");
+    CHECK(records.back().payload.size() == 12U);
+    CHECK(records.back().payload.front() == std::byte{6});
+}
+
 TEST_CASE("Android pipe syscall publishes a working descriptor pair") {
     ogplay::core::CapabilityLedger ledger;
     auto dispatcher =

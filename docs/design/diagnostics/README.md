@@ -203,8 +203,8 @@ Release 不要求常态携带大体积 PDB。ANGLE/驱动无符号时只报告�
 
 | WU | 范围 | 独立收益 | 机器验收 |
 | --- | --- | --- | --- |
-| [WU1 · 进程内停滞诊断闭环](../../tasks/diagnostics/WU-DIAG-01.md) | 公共 snapshot DTO/schema/steady time；D2–D6 事实源；复用 DVM/GLES trace；D1 coordinator；D8 OS/MCP/CLI 触发、部分快照、隐私与容量限制；同步 ADR-0026、MODULE 和 capabilities | 主循环停滞后无需重编译或临时消费代码，可从进程外限时取得 guest 语义现场 | ring 关闭态/溢出/并发快照；wait-set 不误判 cycle；双执行路径与 tombstone；子进程停滞后 OS 触发限时落盘；busy section 部分成功；stop→join 无 detach/UAF；schema、隐私和配额可判定 |
-| [WU2 · 宿主栈与排障工作流](../../tasks/diagnostics/WU-DIAG-02.md) | D7/D9 外部 dump、host_tid 对齐、符号构建和无符号模块判读；跨文档与能力账本最终一致性收口 | 从 WU1 的 guest 语义现场继续定位到宿主原生模块/偏移，形成可复用的完整排障流程 | fixture dump/文本验证 host_tid 对齐；procdump/WinDbg/lldb 手册可执行；无符号模块不猜函数；诊断构建说明、文档链接和能力账本一致 |
+| [WU1 · 进程内停滞诊断闭环](../../tasks/diagnostics/DIAG-1.md) | 公共 snapshot DTO/schema/steady time；D2–D6 事实源；复用 DVM/GLES trace；D1 coordinator；D8 OS/MCP/CLI 触发、部分快照、隐私与容量限制；同步 ADR-0026、MODULE 和 capabilities | 主循环停滞后无需重编译或临时消费代码，可从进程外限时取得 guest 语义现场 | ring 关闭态/溢出/并发快照；wait-set 不误判 cycle；双执行路径与 tombstone；子进程停滞后 OS 触发限时落盘；busy section 部分成功；stop→join 无 detach/UAF；schema、隐私和配额可判定 |
+| [WU2 · 宿主栈与排障工作流](../../tasks/diagnostics/DIAG-2.md) | D7/D9 外部 dump、host_tid 对齐、符号构建和无符号模块判读；跨文档与能力账本最终一致性收口 | 从 WU1 的 guest 语义现场继续定位到宿主原生模块/偏移，形成可复用的完整排障流程 | fixture dump/文本验证 host_tid 对齐；procdump/WinDbg/lldb 手册可执行；无符号模块不猜函数；诊断构建说明、文档链接和能力账本一致 |
 
 ADR-0025 已用于 teardown cancellation，本设计使用 **ADR-0026**。WU1 必须随代码同步
 对应 MODULE.md、capabilities 和 schema 契约；WU2 只做宿主工具链及跨文档一致性收口，

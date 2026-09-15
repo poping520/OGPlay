@@ -64,3 +64,9 @@ Windows 定向诊断构建使用 `windows-msvc` 预设并保留对应配置目�
 区分宿主取消、`exit` 和 `exit_group`，最后用 request PC/LR、stop、寄存器与 code 窗口定位
 guest SO。`exit_group` 会标记全部 live 线程，`affected_guest` 不一定等于 requester；不要把
 受影响线程误判为发起线程。code 不可读时仍以 request PC/LR 为事实，不按相邻符号猜测。
+
+`origin=signal_termination` 时先读其前面的 `guest.stderr` / `guest.kernel_log`：C++ terminate、
+stack protector 和 libc fatal 往往先写原始原因，再通过 `tgkill(SIGABRT)` 终止。回溯每帧的
+`pc` 已清除 Thumb bit，`lr` 保留原值；`stop=end_of_frame_chain/unreadable_frame_record/
+non_monotonic` 是证据边界，不应继续按栈内相似地址猜帧。当前只实现 SIGABRT 默认 fatal
+action，不代表完整 POSIX signal handler 语义。

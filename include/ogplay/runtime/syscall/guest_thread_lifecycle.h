@@ -21,6 +21,7 @@ enum class GuestThreadExitOrigin : std::uint8_t {
     host_request,
     syscall_exit,
     syscall_exit_group,
+    signal_termination,
 };
 
 struct GuestThreadExitRequest final {
@@ -29,6 +30,8 @@ struct GuestThreadExitRequest final {
     std::uint32_t syscall_number{};
     std::uint32_t program_counter{};
     std::uint32_t link_register{};
+    std::uint32_t signal_number{};
+    std::uint64_t target_thread_id{};
 
     bool operator==(const GuestThreadExitRequest&) const = default;
 };

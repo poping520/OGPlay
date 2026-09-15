@@ -324,7 +324,7 @@ HeadlessBionicRunReport RunHeadlessBionicEntry(
     BindAndroidTimeSyscalls(dispatcher, clock, address_space);
     BindAndroidMemorySyscalls(dispatcher, address_space);
     BindAndroidThreadSyscalls(dispatcher, futex_table, memory_bus);
-    BindAndroidSignalSyscalls(dispatcher, address_space);
+    BindAndroidSignalSyscalls(dispatcher, address_space, &lifecycle);
     BindAndroidProcessSyscalls(
         dispatcher, address_space,
         [&vma_annotations, &vma_annotations_mutex](

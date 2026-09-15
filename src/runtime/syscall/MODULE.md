@@ -40,6 +40,12 @@ exit/exit_group/clear-child-tid 所需的 guest 线程生命周期状态。
 - 线程状态只能按 running → exit-requested → exited → reap 前进。exit-requested 必须持久保存
   来源（host/exit/exit_group）、requester、退出码和 syscall PC/LR；进程组退出的每个受影响
   线程共享同一请求事实，供即时错误与后续诊断读取。
+- 有 lifecycle 注入时，`tgkill(tgid, tid, SIGABRT)` 执行 bounded default fatal action：
+  以退出码 134 请求全 guest 进程退出，并保留 signal/target/syscall PC/LR。signal 0 只校验
+  thread；未实现一般 handler 投递，其他非零信号返回 `-ENOSYS`，不得静默吞掉。
+- fd 1/2 与 `/dev/log/*` 是注入式诊断端点：`write`/`writev` 先受检搬运 guest bytes，再交给
+  上层 sink；内核日志使用进程内 synthetic descriptor，不访问宿主设备。单次 payload 上限
+  1 MiB，iovec 上限 64，普通 descriptor 仍走同一 VFS。
 
 ## 测试
 

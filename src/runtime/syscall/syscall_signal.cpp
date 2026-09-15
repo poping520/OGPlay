@@ -99,7 +99,8 @@ void WriteMask(memory::AddressSpace& address_space,
 }  // namespace
 
 void BindAndroidSignalSyscalls(A32SyscallDispatcher& dispatcher,
-                               memory::AddressSpace& address_space) {
+                               memory::AddressSpace& address_space,
+                               GuestThreadLifecycle* lifecycle) {
     const auto state = std::make_shared<SignalState>();
     const auto bind_mask = [&dispatcher, &address_space, state](
                                const std::uint32_t number,
@@ -213,6 +214,37 @@ void BindAndroidSignalSyscalls(A32SyscallDispatcher& dispatcher,
                 return -kEfault;
             } catch (const std::exception&) {
                 return -kEinval;
+            }
+        });
+
+    dispatcher.Implement(
+        268, [lifecycle](const A32SyscallFrame& frame) {
+            constexpr std::uint32_t kSigAbrt = 6U;
+            const auto target = static_cast<std::uint64_t>(frame.arguments[1]);
+            const auto signal = frame.arguments[2];
+            if (frame.thread_id == 0U || target == 0U) return -kEsrch;
+            if (signal > 64U) return -kEinval;
+            if (lifecycle == nullptr) return -kEsrch;
+            try {
+                static_cast<void>(lifecycle->State(target));
+                if (signal == 0U) return 0;
+                // The bounded signal model currently has no guest handler
+                // delivery. SIGABRT's default action is process termination,
+                // which is the behavior required by bionic abort(). Other
+                // signals remain explicit ENOSYS instead of being swallowed.
+                if (signal != kSigAbrt) return -kLinuxEnosys;
+                lifecycle->RequestExitGroup(
+                    frame.thread_id, 128 + static_cast<std::int32_t>(signal),
+                    {.origin = GuestThreadExitOrigin::signal_termination,
+                     .requesting_thread_id = frame.thread_id,
+                     .syscall_number = frame.number,
+                     .program_counter = frame.program_counter,
+                     .link_register = frame.link_register,
+                     .signal_number = signal,
+                     .target_thread_id = target});
+                return 0;
+            } catch (const GuestThreadLifecycleError&) {
+                return -kEsrch;
             }
         });
 }

@@ -1,9 +1,9 @@
-# WU-DIAG-02 · 宿主栈与排障工作流
+# DIAG-2 · 宿主栈与排障工作流
 
-目标：把 WU-DIAG-01 的 guest 语义现场与进程外宿主 native dump 按 `host_tid` 对齐，形成
+目标：把 DIAG-1 的 guest 语义现场与进程外宿主 native dump 按 `host_tid` 对齐，形成
 Windows、Linux 和 macOS 可重复执行的排障流程，同时在缺少符号时保持事实边界。
 
-依赖：[WU-DIAG-01](WU-DIAG-01.md)、
+依赖：[DIAG-1](DIAG-1.md)、
 [Diagnostics 设计](../../design/diagnostics/README.md)、
 [排查手册](../../playbook/TROUBLESHOOTING.md) 和 [ADR-0026](../../adr/diagnostics.md#adr-0026)。
 
@@ -31,6 +31,6 @@ Windows、Linux 和 macOS 可重复执行的排障流程，同时在缺少符号
 
 - 不在 OGPlay 核心中引入 `SuspendThread` + DbgHelp、任意 pthread unwind 或常驻采样器。
 - 不解析、修复或伪造第三方 ANGLE、SDL、驱动内部符号。
-- 不把宿主栈替代 WU-DIAG-01 的 guest wait、lifecycle 和 boundary 事实。
+- 不把宿主栈替代 DIAG-1 的 guest wait、lifecycle 和 boundary 事实。
 
 状态：已完成。

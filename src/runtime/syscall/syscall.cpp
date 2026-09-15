@@ -9,9 +9,12 @@
 #include <cstdint>
 #include <limits>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <thread>
+#include <unordered_map>
 #include <utility>
+#include <vector>
 
 namespace ogplay::runtime {
 namespace {
@@ -661,7 +664,8 @@ void BindAndroidThreadSyscalls(A32SyscallDispatcher& dispatcher,
 
 void BindAndroidFileSyscalls(A32SyscallDispatcher& dispatcher,
                              VirtualFileSystem& vfs,
-                             memory::AddressSpace& address_space) {
+                             memory::AddressSpace& address_space,
+                             GuestIoSink io_sink) {
     constexpr std::int32_t kEfault = 14;
     constexpr std::int32_t kEinval = 22;
     constexpr std::int32_t kEoverflow = 75;
@@ -692,11 +696,26 @@ void BindAndroidFileSyscalls(A32SyscallDispatcher& dispatcher,
                               (flags & kTruncate) != 0,
                               (flags & kDirectory) != 0};
     };
-    const auto open = [&vfs, read_path, options](const std::uint32_t path,
-                                                 const std::uint32_t flags) {
+    struct DiagnosticDescriptors final {
+        std::mutex mutex;
+        std::unordered_map<std::int32_t, std::string> paths;
+        std::int32_t next{0x40000000};
+    };
+    const auto diagnostic_descriptors =
+        std::make_shared<DiagnosticDescriptors>();
+    const auto open = [&vfs, read_path, options, io_sink,
+                       diagnostic_descriptors](const std::uint32_t path,
+                                                const std::uint32_t flags) {
         try {
             const auto guest_path = read_path(path);
             const auto open_options = options(flags);
+            if (io_sink && guest_path.starts_with("/dev/log/") &&
+                open_options.write) {
+                std::scoped_lock lock(diagnostic_descriptors->mutex);
+                const auto descriptor = diagnostic_descriptors->next++;
+                diagnostic_descriptors->paths.emplace(descriptor, guest_path);
+                return descriptor;
+            }
             return vfs.Open(guest_path, open_options);
         } catch (const memory::MemoryFault&) {
             return -kEfault;
@@ -731,8 +750,120 @@ void BindAndroidFileSyscalls(A32SyscallDispatcher& dispatcher,
     dispatcher.Implement(3, [&vfs, &address_space](const A32SyscallFrame& frame) {
         return syscall_detail::TransferFile(vfs, address_space, frame, false);
     });
-    dispatcher.Implement(4, [&vfs, &address_space](const A32SyscallFrame& frame) {
+    const auto emit = [&address_space, io_sink, diagnostic_descriptors](
+                          const A32SyscallFrame& frame,
+                          const std::int32_t descriptor,
+                          const memory::GuestAddress address,
+                          const std::size_t size) -> std::optional<std::int32_t> {
+        GuestIoStream stream{};
+        std::string endpoint;
+        if (descriptor == 1 || descriptor == 2) {
+            stream = descriptor == 1 ? GuestIoStream::stdout_stream
+                                     : GuestIoStream::stderr_stream;
+            endpoint = descriptor == 1 ? "stdout" : "stderr";
+        } else {
+            std::scoped_lock lock(diagnostic_descriptors->mutex);
+            const auto found = diagnostic_descriptors->paths.find(descriptor);
+            if (found == diagnostic_descriptors->paths.end()) return std::nullopt;
+            stream = GuestIoStream::android_log;
+            endpoint = found->second;
+        }
+        if (!io_sink) return -9;
+        constexpr std::size_t kMaximumDiagnosticWrite = 1024U * 1024U;
+        if (size > kMaximumDiagnosticWrite) return -kEinval;
+        try {
+            std::vector<std::byte> payload(size);
+            if (!payload.empty()) {
+                address_space.Read(address, payload, frame.thread_id);
+            }
+            io_sink({stream, std::move(endpoint), std::move(payload),
+                     frame.thread_id});
+            return static_cast<std::int32_t>(size);
+        } catch (const memory::MemoryFault&) {
+            return -kEfault;
+        }
+    };
+    dispatcher.Implement(4, [&vfs, &address_space, emit](const A32SyscallFrame& frame) {
+        const auto fd = std::bit_cast<std::int32_t>(frame.arguments[0]);
+        if (const auto captured = emit(frame, fd,
+                                       memory::GuestAddress{frame.arguments[1]},
+                                       frame.arguments[2])) {
+            return *captured;
+        }
         return syscall_detail::TransferFile(vfs, address_space, frame, true);
+    });
+    dispatcher.Implement(146, [&vfs, &address_space, io_sink,
+                               diagnostic_descriptors](const A32SyscallFrame& frame) {
+        constexpr std::size_t kMaximumVectors = 64U;
+        const auto count = static_cast<std::size_t>(frame.arguments[2]);
+        if (count > kMaximumVectors) return -kEinval;
+        const auto fd = std::bit_cast<std::int32_t>(frame.arguments[0]);
+        std::int32_t total{};
+        std::optional<GuestIoStream> diagnostic_stream;
+        std::string diagnostic_endpoint;
+        if (fd == 1 || fd == 2) {
+            diagnostic_stream = fd == 1 ? GuestIoStream::stdout_stream
+                                        : GuestIoStream::stderr_stream;
+            diagnostic_endpoint = fd == 1 ? "stdout" : "stderr";
+        } else {
+            std::scoped_lock lock(diagnostic_descriptors->mutex);
+            const auto found = diagnostic_descriptors->paths.find(fd);
+            if (found != diagnostic_descriptors->paths.end()) {
+                diagnostic_stream = GuestIoStream::android_log;
+                diagnostic_endpoint = found->second;
+            }
+        }
+        std::vector<std::byte> diagnostic_payload;
+        for (std::size_t index = 0; index < count; ++index) {
+            try {
+                std::array<std::byte, 8> encoded{};
+                address_space.Read(
+                    memory::GuestAddress{frame.arguments[1]}.Add(index * 8U),
+                    encoded, frame.thread_id);
+                const auto word = [&encoded](const std::size_t offset) {
+                    std::uint32_t value{};
+                    for (std::size_t byte = 0; byte < 4; ++byte) {
+                        value |= static_cast<std::uint32_t>(
+                                     std::to_integer<std::uint8_t>(encoded[offset + byte]))
+                                 << static_cast<unsigned>(byte * 8U);
+                    }
+                    return value;
+                };
+                const auto length = word(4);
+                if (length > 1024U * 1024U ||
+                    length > static_cast<std::uint32_t>(
+                                 std::numeric_limits<std::int32_t>::max() - total)) {
+                    return -kEoverflow;
+                }
+                std::vector<std::byte> bytes(length);
+                if (!bytes.empty()) {
+                    address_space.Read(memory::GuestAddress{word(0)}, bytes,
+                                       frame.thread_id);
+                }
+                if (diagnostic_stream) {
+                    diagnostic_payload.insert(diagnostic_payload.end(),
+                                              bytes.begin(), bytes.end());
+                } else {
+                    const auto actual = vfs.Write(fd, bytes);
+                    total += static_cast<std::int32_t>(actual);
+                    if (actual != bytes.size()) return total;
+                    continue;
+                }
+                total += static_cast<std::int32_t>(length);
+            } catch (const memory::MemoryFault&) {
+                return total == 0 ? -kEfault : total;
+            } catch (const std::overflow_error&) {
+                return total == 0 ? -kEfault : total;
+            } catch (const VfsError& error) {
+                return total == 0 ? -error.ErrorNumber() : total;
+            }
+        }
+        if (diagnostic_stream) {
+            if (!io_sink) return -9;
+            io_sink({*diagnostic_stream, std::move(diagnostic_endpoint),
+                     std::move(diagnostic_payload), frame.thread_id});
+        }
+        return total;
     });
     dispatcher.Implement(
         42, [&vfs, &address_space](const A32SyscallFrame& frame) {
@@ -766,9 +897,14 @@ void BindAndroidFileSyscalls(A32SyscallDispatcher& dispatcher,
                 return -error.ErrorNumber();
             }
         });
-    dispatcher.Implement(6, [&vfs](const A32SyscallFrame& frame) {
+    dispatcher.Implement(6, [&vfs, diagnostic_descriptors](const A32SyscallFrame& frame) {
+        const auto descriptor = std::bit_cast<std::int32_t>(frame.arguments[0]);
+        {
+            std::scoped_lock lock(diagnostic_descriptors->mutex);
+            if (diagnostic_descriptors->paths.erase(descriptor) != 0U) return 0;
+        }
         try {
-            vfs.Close(std::bit_cast<std::int32_t>(frame.arguments[0]));
+            vfs.Close(descriptor);
             return 0;
         } catch (const VfsError& error) {
             return -error.ErrorNumber();

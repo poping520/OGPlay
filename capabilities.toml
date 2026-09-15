@@ -1,5 +1,10 @@
 # 状态只能按 unimplemented -> stub -> partial -> complete 前进。
 
+[runtime.guest_fatal_diagnostics]
+status = "complete"
+test = "tests/runtime/syscall_signal_tests.cpp; tests/runtime/syscall_tests.cpp; tests/runtime/guest_thread_runner_tests.cpp; Angry Birds exact local startup reproduction"
+note = "DIAG-3 捕获 fd1/fd2 与 KitKat /dev/log write/writev payload，tgkill(SIGABRT) 以 default fatal action 保存 signal/target/PC/LR 并请求进程组退出，A32 native 失败从 r11 有界展开 GCC frame record；真实 APK 已输出 io::IOException、recursive terminate、SIGABRT 和 6 层有效 guest 帧。complete 仅指该 fatal 诊断闭环，不包含一般 signal handler 投递、内核 logger 设备或无 frame pointer 启发式展开。"
+
 [runtime.virtual_so_boundary]
 status = "complete"
 test = "tests/runtime/bionic_profile_tests.cpp; tests/runtime/android_link_preflight_tests.cpp; tests/runtime/boundary/integration/android_boundary_hle_tests.cpp; cmake/CheckBoundaryHotPath.cmake"
@@ -1568,7 +1573,7 @@ note = "M5 WU-0233 用生产 Bionic namespace/Android boundary 在不执行 gues
 [debug.stall_snapshot]
 status = "complete"
 test = "tests/runtime/stall_diagnostics_tests.cpp; tests/cpu/futex_tests.cpp; tests/runtime/syscall_tests.cpp; tests/runtime/guest_thread_lifecycle_tests.cpp; tests/runtime/guest_thread_runner_tests.cpp; tests/agent/mcp_protocol_tests.cpp"
-note = "ADR-0026 进程内闭环：schema-1 txt/JSON 汇总 lifecycle、execution/PC、DVM/Java 栈、GLES、futex/monitor/pacer 与 syscall/native 定容环；busy 独立降级，monitor 分开 entry waiter 与 notify wait set 且仅凭 entry→owner 环确认 cycle；支持 teardown timeout、Windows event/POSIX self-pipe、CLI/MCP、原子落盘、脱敏、当前用户 ACL、单文件/总目录配额和 stop→join。WU-DIAG-03 进一步让 guest lifecycle 持久保存 host/exit/exit_group 来源、requester、退出码和 syscall PC/LR；即时 native 失败报告包含 Java 方法/context、调用 target/tick 与统一 A32 stop/寄存器/指令现场。真实停滞子进程的进程外触发场景按用户决定延期补验，不代表实现缺失"
+note = "ADR-0026 进程内闭环：schema-1 txt/JSON 汇总 lifecycle、execution/PC、DVM/Java 栈、GLES、futex/monitor/pacer 与 syscall/native 定容环；busy 独立降级，monitor 分开 entry waiter 与 notify wait set 且仅凭 entry→owner 环确认 cycle；支持 teardown timeout、Windows event/POSIX self-pipe、CLI/MCP、原子落盘、脱敏、当前用户 ACL、单文件/总目录配额和 stop→join。DIAG-3 进一步让 guest lifecycle 持久保存 host/exit/exit_group 来源、requester、退出码和 syscall PC/LR；即时 native 失败报告包含 Java 方法/context、调用 target/tick 与统一 A32 stop/寄存器/指令现场。真实停滞子进程的进程外触发场景按用户决定延期补验，不代表实现缺失"
 
 [debug.host_stack_workflow]
 status = "complete"

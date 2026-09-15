@@ -267,6 +267,15 @@ Decl Declare_android_widget_RelativeLayout(const Context& context) {
         context->ui_tree.Get(node)->gravity = 0x00800033U; // START | TOP
         return result;
     });
+    builder.OverrideMethod(
+        "generateDefaultLayoutParams",
+        "()Landroid/view/ViewGroup$LayoutParams;",
+        [](dx::IntrinsicContext& call) {
+            return dx::VmValue::Ref(NewAndroidLayoutParams(
+                call.vm, "Landroid/widget/RelativeLayout$LayoutParams;", -2,
+                -2));
+        },
+        dx::kAccProtected);
     builder.VirtualMethod("getGravity", "()I", [context](dx::IntrinsicContext& call) {
         const auto node = EnsureViewUiNode(*context, call.receiver, ui::UiClass::RelativeLayout);
         return dx::VmValue::Int(static_cast<std::int32_t>(context->ui_tree.Get(node)->gravity));

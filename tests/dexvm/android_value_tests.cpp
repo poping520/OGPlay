@@ -838,6 +838,42 @@ TEST_CASE("DVM-119 Java layout params drive FrameLayout geometry and copy semant
     }
 }
 
+TEST_CASE("DVM-167 ViewGroup width-height add uses virtual default params") {
+    for (const auto backend :
+         {InterpreterBackend::switch_dispatch,
+          InterpreterBackend::threaded}) {
+        AndroidValueVm f(backend);
+        const auto activity = f.New("Landroid/app/Activity;");
+        const auto relative = f.New(
+            "Landroid/widget/RelativeLayout;",
+            "(Landroid/content/Context;)V", {VmValue::Ref(activity)});
+        const auto child = f.New(
+            "Landroid/view/View;", "(Landroid/content/Context;)V",
+            {VmValue::Ref(activity)});
+
+        f.On(relative, "addView", "(Landroid/view/View;II)V",
+             {VmValue::Ref(child), VmValue::Int(-1), VmValue::Int(-1)});
+        const auto params = f.On(
+            child, "getLayoutParams",
+            "()Landroid/view/ViewGroup$LayoutParams;").ref;
+        REQUIRE(params.IsValid());
+        CHECK(f.model.ObjectClass(params) ==
+              f.linker.ResolveDescriptor(
+                  "Landroid/widget/RelativeLayout$LayoutParams;"));
+        const auto field = [&](const char* name) -> std::int32_t {
+            const auto id = f.linker.FindFieldRecursive(
+                f.model.ObjectClass(params), name, "I");
+            REQUIRE(id.has_value());
+            return static_cast<std::int32_t>(
+                f.model.InstanceSlots(params)[f.linker.Field(*id).slot].bits);
+        };
+        CHECK(field("width") == -1);
+        CHECK(field("height") == -1);
+        CHECK(f.On(child, "getParent",
+                   "()Landroid/view/ViewParent;").ref == relative);
+    }
+}
+
 TEST_CASE("DVM-97 action-only Intent follows the LocalBroadcastManager match chain") {
     AndroidValueVm fixture;
     const auto action = fixture.vm.NewStringUtf8("org.example.PLANT");

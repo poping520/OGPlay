@@ -21,6 +21,9 @@ using Context = std::shared_ptr<DexVmAndroidContext>;
     dx::Interpreter& vm, dx::VmObjectRef package, dx::VmObjectRef class_name);
 [[nodiscard]] dx::VmObjectRef NewAndroidBundle(
     dx::Interpreter& vm, dx::VmObjectRef source = dx::VmObjectRef{});
+[[nodiscard]] dx::VmObjectRef NewAndroidLayoutParams(
+    dx::Interpreter& vm, const char* descriptor, std::int32_t width,
+    std::int32_t height);
 
 void PopulateAndroidDisplayMetrics(dx::IntrinsicContext& call, const Context& context,
                                    dx::VmObjectRef metrics);

@@ -36,7 +36,8 @@
 - `BindAndroidThreadSyscalls`：把 `futex WAIT/WAKE` 装配到 M1 真线程 FutexTable，支持
   PRIVATE flag、精确 WAKE N、值不匹配和受检地址错误；`sched_yield` 让出宿主线程。
 - `BindAndroidSignalSyscalls`：按 guest thread 隔离 legacy/RT signal mask 与 alternate
-  signal stack；不可屏蔽信号、stack 启停、指针/尺寸和 Linux errno 均受检。
+  signal stack；不可屏蔽信号、stack 启停、指针/尺寸和 Linux errno 均受检；有 lifecycle
+  注入时 `tgkill(SIGABRT)` 执行 bounded default fatal action 并保留完整终止请求事实。
 - `BindAndroidProcessSyscalls`：实现 API 23 allocator 使用的 `PR_SET_VMA_ANON_NAME`；
   `PROT_NONE` 范围也按映射存在性校验，名称通过显式 sink 进入运行报告而非丢弃。
 - `BindAndroidArmPrivateSyscalls`：将 `__ARM_NR_set_tls` 绑定显式的当前 guest 线程

@@ -117,3 +117,33 @@ TEST_CASE("ARM sigaltstack stores enabled and disabled thread state") {
     frame.arguments[0] = 0x20000U;
     CHECK(dispatcher.Dispatch(frame) == -14);
 }
+
+TEST_CASE("ARM tgkill SIGABRT records signal termination and exits process") {
+    ogplay::core::CapabilityLedger ledger;
+    auto dispatcher =
+        ogplay::runtime::CreateAndroidArmSyscallDispatcher(ledger);
+    ogplay::memory::AddressSpace memory;
+    ogplay::runtime::GuestThreadLifecycle lifecycle;
+    lifecycle.Register(71U);
+    lifecycle.RegisterChild(71U, 72U, ogplay::memory::GuestAddress{0},
+                            ogplay::memory::GuestAddress{0});
+    ogplay::runtime::BindAndroidSignalSyscalls(dispatcher, memory, &lifecycle);
+
+    ogplay::runtime::A32SyscallFrame frame;
+    frame.number = 268U;
+    frame.thread_id = 71U;
+    frame.arguments = {1000U, 71U, 6U};
+    frame.program_counter = 0x12345678U;
+    frame.link_register = 0x87654321U;
+    CHECK(dispatcher.Dispatch(frame) == 0);
+    for (const auto thread : {71U, 72U}) {
+        const auto state = lifecycle.State(thread);
+        CHECK(state.status == ogplay::runtime::GuestThreadStatus::exit_requested);
+        CHECK(state.exit_code == 134);
+        CHECK(state.exit_request.origin ==
+              ogplay::runtime::GuestThreadExitOrigin::signal_termination);
+        CHECK(state.exit_request.signal_number == 6U);
+        CHECK(state.exit_request.target_thread_id == 71U);
+        CHECK(state.exit_request.program_counter == 0x12345678U);
+    }
+}

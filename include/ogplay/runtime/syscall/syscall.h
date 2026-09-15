@@ -93,6 +93,17 @@ struct GuestVmaAnnotation final {
 using GuestVmaAnnotationSink =
     std::function<void(const GuestVmaAnnotation&)>;
 
+enum class GuestIoStream : std::uint8_t { stdout_stream, stderr_stream, android_log };
+
+struct GuestIoRecord final {
+    GuestIoStream stream{GuestIoStream::stdout_stream};
+    std::string endpoint;
+    std::vector<std::byte> payload;
+    std::uint64_t thread_id{};
+};
+
+using GuestIoSink = std::function<void(const GuestIoRecord&)>;
+
 class GuestThreadCloneCommitter final {
 public:
     GuestThreadCloneCommitter(GuestThreadLifecycle& lifecycle,
@@ -168,7 +179,8 @@ void BindAndroidThreadSyscalls(A32SyscallDispatcher& dispatcher,
                                cpu::FutexTable& futex_table,
                                memory::MemoryBus& memory_bus);
 void BindAndroidSignalSyscalls(A32SyscallDispatcher& dispatcher,
-                               memory::AddressSpace& address_space);
+                               memory::AddressSpace& address_space,
+                               GuestThreadLifecycle* lifecycle = nullptr);
 void BindAndroidProcessSyscalls(A32SyscallDispatcher& dispatcher,
                                 memory::AddressSpace& address_space,
                                 GuestVmaAnnotationSink vma_annotation_sink);
@@ -190,6 +202,7 @@ void BindAndroidFileMetadataSyscalls(A32SyscallDispatcher& dispatcher,
 
 void BindAndroidFileSyscalls(A32SyscallDispatcher& dispatcher,
                              VirtualFileSystem& vfs,
-                             memory::AddressSpace& address_space);
+                             memory::AddressSpace& address_space,
+                             GuestIoSink io_sink = {});
 
 }  // namespace ogplay::runtime

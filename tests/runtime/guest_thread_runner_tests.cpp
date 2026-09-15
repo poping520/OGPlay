@@ -523,6 +523,47 @@ TEST_CASE("guest exit syscall report keeps syscall and call-site evidence") {
     }
 }
 
+TEST_CASE("guest SIGABRT report includes signal and bounded FP backtrace") {
+    RunnerFixture fixture;
+    SupervisorLoopCpu cpu{0U};
+    fixture.Start(96U);
+    ogplay::runtime::BindAndroidSignalSyscalls(
+        fixture.dispatcher, fixture.memory, &fixture.lifecycle);
+    auto state = fixture.cpu.GetState();
+    state.SetRegister(ogplay::cpu::CoreRegister::r7, 268U);
+    state.SetRegister(ogplay::cpu::CoreRegister::r0, 1000U);
+    state.SetRegister(ogplay::cpu::CoreRegister::r1, 96U);
+    state.SetRegister(ogplay::cpu::CoreRegister::r2, 6U);
+    state.SetRegister(ogplay::cpu::CoreRegister::r11,
+                      fixture.stack.Add(128).Value());
+    fixture.bus.Write32(fixture.stack.Add(124),
+                        fixture.stack.Add(160).Value());
+    fixture.bus.Write32(fixture.stack.Add(128), 0x60123001U);
+    fixture.bus.Write32(fixture.stack.Add(156), 0U);
+    fixture.bus.Write32(fixture.stack.Add(160), 0x60234001U);
+    cpu.SetState(state);
+    const ogplay::runtime::A32GuestCallFrame frame{
+        fixture.code, {1000U, 96U, 6U, 0U}, {}, 96U, false};
+
+    try {
+        static_cast<void>(ogplay::runtime::InvokeA32GuestCall(
+            cpu, fixture.dispatcher, fixture.lifecycle, fixture.memory, frame,
+            fixture.stack.Add(fixture.memory.PageSize()), fixture.code.Add(64),
+            4U));
+        FAIL("SIGABRT unexpectedly returned");
+    } catch (const ogplay::runtime::A32GuestCallError& error) {
+        const std::string message = error.what();
+        INFO(message);
+        CHECK(message.find("origin=signal_termination code=134") !=
+              std::string::npos);
+        CHECK(message.find("number=6(SIGABRT) target_guest=96") !=
+              std::string::npos);
+        CHECK(message.find("backtrace: #0") != std::string::npos);
+        CHECK(message.find("#1 pc=0x60123000 lr=0x60123001") !=
+              std::string::npos);
+    }
+}
+
 TEST_CASE("A32 guest call selects Thumb state from the target address") {
     RunnerFixture fixture;
     fixture.bus.Write16(fixture.code, 0x3001U);         // adds r0, #1

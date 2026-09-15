@@ -648,6 +648,7 @@ public:
               memory_bus_, execution_context_,
               [this](cpu::DynarmicCpu& cpu) { ConfigureFastHostCalls(cpu); }),
           filesystem_(request.filesystem),
+          logger_(request.boundary_options.logger),
           initial_environment_(
               request.initial_environment
                   ? request.initial_environment
@@ -1473,7 +1474,7 @@ public:
         BindAndroidMemorySyscalls(dispatcher_, address_space_);
         BindAndroidThreadSyscalls(
             dispatcher_, futex_table_, memory_bus_);
-        BindAndroidSignalSyscalls(dispatcher_, address_space_);
+        BindAndroidSignalSyscalls(dispatcher_, address_space_, &lifecycle_);
         BindAndroidProcessSyscalls(
             dispatcher_, address_space_,
             [this](const GuestVmaAnnotation& annotation) {
@@ -1481,7 +1482,56 @@ public:
                 vma_annotations_.push_back(annotation);
             });
         BindAndroidFileSyscalls(
-            dispatcher_, *filesystem_, address_space_);
+            dispatcher_, *filesystem_, address_space_,
+            [this](const GuestIoRecord& record) {
+                if (logger_ == nullptr) return;
+                auto level = record.stream == GuestIoStream::stderr_stream
+                                 ? core::LogLevel::error
+                                 : core::LogLevel::info;
+                std::size_t begin{};
+                std::string tag;
+                if (record.stream == GuestIoStream::android_log &&
+                    !record.payload.empty()) {
+                    const auto priority = std::to_integer<std::uint8_t>(
+                        record.payload.front());
+                    level = priority >= 7U ? core::LogLevel::fatal
+                          : priority >= 6U ? core::LogLevel::error
+                          : priority >= 5U ? core::LogLevel::warn
+                          : priority >= 4U ? core::LogLevel::info
+                                           : core::LogLevel::debug;
+                    begin = 1U;
+                    while (begin < record.payload.size() &&
+                           record.payload[begin] != std::byte{}) {
+                        tag.push_back(static_cast<char>(
+                            std::to_integer<unsigned char>(record.payload[begin++])));
+                    }
+                    if (begin < record.payload.size()) ++begin;
+                }
+                std::string message;
+                message.reserve(record.payload.size() - begin);
+                for (std::size_t index = begin; index < record.payload.size(); ++index) {
+                    const auto byte = std::to_integer<unsigned char>(record.payload[index]);
+                    if (byte == 0U) continue;
+                    message.push_back(byte == '\r' ? '\n' : static_cast<char>(byte));
+                }
+                while (!message.empty() &&
+                       (message.back() == '\n' || message.back() == '\0')) {
+                    message.pop_back();
+                }
+                if (message.empty()) message = "<empty guest write>";
+                const auto category = record.stream == GuestIoStream::stderr_stream
+                                          ? "guest.stderr"
+                                      : record.stream == GuestIoStream::stdout_stream
+                                          ? "guest.stdout"
+                                          : "guest.kernel_log";
+                logger_->Write(level, category,
+                               tag.empty() ? "[guest] " + message
+                                           : "[guest] " + tag + ": " + message,
+                               {.guest_thread = record.thread_id},
+                               {{"guest_io_endpoint", record.endpoint},
+                                {"guest_io_bytes",
+                                 static_cast<std::uint64_t>(record.payload.size())}});
+            });
         BindAndroidFileMetadataSyscalls(
             dispatcher_, *filesystem_, address_space_);
         BindAndroidThreadLifecycleSyscalls(dispatcher_, lifecycle_);
@@ -1914,6 +1964,7 @@ private:
     cpu::GuestThreadGroup threads_;
     detail::NestedGuestCpuPool nested_guest_cpus_;
     VirtualFileSystem* filesystem_{};
+    core::Logger* logger_{};
     std::shared_ptr<const GuestProcessEnvironment> initial_environment_;
     std::unique_ptr<FrameworkDirectAssetHle> direct_assets_;
     std::unique_ptr<GuestCloneThreadRuntime> clone_runtime_;

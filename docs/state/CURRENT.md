@@ -4,7 +4,14 @@
 
 ## 最近进展
 
-- [WU-DIAG-03](../tasks/diagnostics/WU-DIAG-03.md) 已把 A32 native 调用中的 guest 退出从
+- [DIAG-3](../tasks/diagnostics/DIAG-3.md) 已补齐 native fatal 终止链：
+  `tgkill(SIGABRT)` 保存 signal/target/PC/LR 并按默认 action 终止进程组；fd 1/2 与
+  `/dev/log/*` 的 `write/writev` 进入结构化 guest 日志；退出报告从 r11 有界展开 A32
+  FP/LR 链。真实 APK 已直接显示 `io::IOException`、recursive terminate、SIGABRT 及
+  6 层有效 guest 帧，证明此前 `exit_group(1)` 只是 abort 的后备终止。一般 signal handler
+  投递仍不在本能力内。
+
+- [DIAG-3](../tasks/diagnostics/DIAG-3.md) 已把 A32 native 调用中的 guest 退出从
   固定短句升级为可追溯现场：lifecycle 保留 host/exit/exit_group、requester、退出码和
   syscall PC/LR；即时错误同时输出 Java native 方法/context、调用 target/tick、最后 stop、
   核心寄存器及可读指令窗口。退出行为不变，生产代码无 title 分支。
@@ -28,20 +35,6 @@
   图形回归与 7 项生成/架构 gates 通过；未运行全量测试。整体 GLES 完整性仍受
   [ADR-0063](../adr/media.md#adr-0063) 的 Android 系统对象/厂商扩展边界限制，未做 CTS
   或缺失 SO 压缩包的完整 ABI 核验，不能据此宣称“全部 Android GLES 功能已完成”。
-
-- [BND-33](../tasks/boundary/BND-33.md) WU-4 已闭合：新增 API 19 GLES3 相对 GLES2 的
-  104 项机器可核对 delta IDL，生成链识别 `GLint64`/`GLuint64`/`GLsync` 与二级指针；
-  DexVM 从固定 AOSP 源发布 GLES30 类、常量和 overload surface。ADR-0062 冻结本 WU
-  扩展清单为空，并要求 ES3 复用 `libGLESv2.so`、EGL registry 与唯一 Context 状态。
-  Native 104 项 handler、A32 宽值/sync identity 及真实 draw/query/error 均已接通。
-  后续批次已让 EGL config 宣告 ES3 bit、创建真实 client-version 3 Context，并把 104 项
-  delta 发布到 `libGLESv2.so` 与稳定 proc 清单；其中 38 个标量、8 个 name lifecycle、
-  29 个单指针 word-array handler，并继续闭合 indexed string、64 位 query、压缩 3D texture
-  与 program binary，并接通 sync guest identity 及 buffer-offset draw/attribute。
-  A32/Java 64 位实参已按 AAPCS 偶数字槽拆装；真实 VAO、`glGetStringi`、64 位 query 与
-  fence create/wait/delete 回归通过。最后 11 项普通 texture3D、多指针 query、
-  transform-feedback 字符串和 map-buffer 已闭合；真实 map round-trip 与 3D upload 回归通过。
-
 
 - [DVM-154](../tasks/dexvm/DVM-154.md) 已把 File/FIS/FOS/FileReader/FileWriter/RAF、channel、
   FileChannelImpl/NioUtils、IoBridge/IoUtils/CloseGuard 普通方法迁入 1503 类 API 19 BootDex。

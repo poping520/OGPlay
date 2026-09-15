@@ -42,6 +42,7 @@ namespace {
     case GuestThreadExitOrigin::host_request: return "host_request";
     case GuestThreadExitOrigin::syscall_exit: return "syscall_exit";
     case GuestThreadExitOrigin::syscall_exit_group: return "syscall_exit_group";
+    case GuestThreadExitOrigin::signal_termination: return "signal_termination";
     }
     return "unknown";
 }
@@ -61,6 +62,11 @@ namespace {
         << " code=" << lifecycle_state.exit_code
         << " affected_guest=" << lifecycle_state.thread_id
         << " requester_guest=" << request.requesting_thread_id << "\n";
+    if (request.signal_number != 0U) {
+        out << "  signal:    number=" << request.signal_number;
+        if (request.signal_number == 6U) out << "(SIGABRT)";
+        out << " target_guest=" << request.target_thread_id << "\n";
+    }
     if (request.syscall_number != 0U) {
         out << "  request:   syscall=" << request.syscall_number;
         if (request.syscall_number == 1U) out << "(exit)";
@@ -319,6 +325,52 @@ std::string DescribeA32GuestStop(const cpu::RunResult& stopped,
               hex32(state.Register(cpu::CoreRegister::r12)) + " sp=" +
               hex32(state.Register(cpu::CoreRegister::sp)) + " lr=" +
               hex32(state.Register(cpu::CoreRegister::lr));
+    const auto initial_fp = state.Register(cpu::CoreRegister::r11);
+    result += "\n  backtrace: #0 pc=" +
+              hex32(state.Register(cpu::CoreRegister::pc)) + " lr=" +
+              hex32(state.Register(cpu::CoreRegister::lr)) + " fp=" +
+              hex32(initial_fp);
+    auto frame_pointer = initial_fp;
+    constexpr std::size_t kMaximumFrames = 16;
+    for (std::size_t frame = 1; frame < kMaximumFrames && frame_pointer != 0U;
+         ++frame) {
+        try {
+            // GCC's API 19 ARM frame record points r11 at the saved LR:
+            // [fp - 4] is the previous r11 and [fp] is the return address.
+            if (frame_pointer < 4U || (frame_pointer & 3U) != 0U) break;
+            std::array<std::byte, 8> record{};
+            address_space.Read(memory::GuestAddress{frame_pointer - 4U}, record,
+                               state.ThreadId());
+            const auto word = [&record](const std::size_t offset) {
+                std::uint32_t value{};
+                for (std::size_t byte = 0; byte < 4; ++byte) {
+                    value |= static_cast<std::uint32_t>(
+                                 std::to_integer<std::uint8_t>(record[offset + byte]))
+                             << static_cast<unsigned>(byte * 8U);
+                }
+                return value;
+            };
+            const auto previous = word(0);
+            const auto saved_lr = word(4);
+            if (previous == 0U && saved_lr < 4096U) {
+                result += "\n             stop=end_of_frame_chain";
+                break;
+            }
+            result += "\n             #" + std::to_string(frame) +
+                      " pc=" + hex32(saved_lr & ~1U) +
+                      " lr=" + hex32(saved_lr) + " fp=" + hex32(previous);
+            if (previous == 0U) break;
+            if (previous <= frame_pointer || previous - frame_pointer > 1024U * 1024U) {
+                result += " stop=non_monotonic";
+                break;
+            }
+            frame_pointer = previous;
+        } catch (const memory::MemoryFault&) {
+            result += "\n             stop=unreadable_frame_record fp=" +
+                      hex32(frame_pointer);
+            break;
+        }
+    }
     try {
         const auto code_start = stopped.pc.Subtract(8U);
         std::array<std::byte, 24> code{};

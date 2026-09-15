@@ -40,6 +40,8 @@ public:
     [[nodiscard]] gles::AngleFrame* CurrentFrameForHostThread(
         std::thread::id host_thread, std::string_view operation = {});
     void ActivateStateForHostThread(std::thread::id host_thread);
+    [[nodiscard]] std::string QueryStringValue(std::uint32_t name);
+    void LatchError(std::uint64_t thread_id, std::uint32_t error);
 
 #define OGPLAY_DECLARE_EGL(name, id, count, method) \
     std::uint32_t method(const A32CallFrame& call);

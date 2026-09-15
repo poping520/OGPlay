@@ -4,6 +4,11 @@
 
 ## 最近进展
 
+- [BND-38](../tasks/boundary/BND-38.md) 已合并闭合本轮审计剩余缺口：GLU 专用适配、复杂
+  Java GLES 查询、GLSurfaceView WHEN_DIRTY、Java EGL extension/error、四种 Bitmap.Config、
+  GLES1 light/line flat 及 GLES3 WRITE-only mapping。定向 23/23 tests、1229 assertions 与
+  2 项架构门禁通过；未运行全量测试或 CTS/Khronos。
+
 - [BND-37](../tasks/boundary/BND-37.md) 已补齐 GLSurfaceView 的 Context version、boolean/
   六整数 config chooser 与 `queueEvent`；事件保活后由 lifecycle 在 current GL 渲染线程、
   renderer callback 前按 FIFO 执行。定向 3/3 tests、60 assertions 通过；GLU、复杂 Java

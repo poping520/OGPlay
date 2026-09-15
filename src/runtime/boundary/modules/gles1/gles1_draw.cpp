@@ -131,7 +131,7 @@ enum class TextureFormatClass : std::int32_t {
     return gles_io::MaximumGuestIndex(bytes, type,
                                       "GLES1 draw index type is unsupported");
 }
-void BuildFlatTriangles(const std::uint32_t mode,
+void BuildFlatPrimitives(const std::uint32_t mode,
                         const std::span<const std::uint32_t> input,
                         std::vector<std::uint32_t>& vertices,
                         std::vector<std::uint32_t>& provoking) {
@@ -142,7 +142,21 @@ void BuildFlatTriangles(const std::uint32_t mode,
         vertices.insert(vertices.end(), {a, b, c});
         provoking.insert(provoking.end(), 3U, c);
     };
-    if (mode == 0x0004U) {  // GL_TRIANGLES
+    const auto append_line = [&](const std::uint32_t a, const std::uint32_t b) {
+        vertices.insert(vertices.end(), {a, b});
+        provoking.insert(provoking.end(), 2U, b);
+    };
+    if (mode == 0x0001U) {  // GL_LINES
+        for (std::size_t index = 0; index + 1U < input.size(); index += 2U)
+            append_line(input[index], input[index + 1U]);
+    } else if (mode == 0x0002U) {  // GL_LINE_LOOP
+        for (std::size_t index = 0; index + 1U < input.size(); ++index)
+            append_line(input[index], input[index + 1U]);
+        if (input.size() > 1U) append_line(input.back(), input.front());
+    } else if (mode == 0x0003U) {  // GL_LINE_STRIP
+        for (std::size_t index = 0; index + 1U < input.size(); ++index)
+            append_line(input[index], input[index + 1U]);
+    } else if (mode == 0x0004U) {  // GL_TRIANGLES
         for (std::size_t index = 0; index + 2U < input.size(); index += 3U) {
             append(input[index], input[index + 1U], input[index + 2U]);
         }
@@ -951,9 +965,9 @@ void AndroidBoundaryGles1DrawState::DrawArrays(
             static_cast<std::uint32_t>(first + index);
     }
     const bool flat = core.ShadeModel() == kGles1FlatShadeModel &&
-                      (mode == 0x0004U || mode == 0x0005U || mode == 0x0006U);
+                      mode >= 0x0001U && mode <= 0x0006U;
     if (flat) {
-        BuildFlatTriangles(mode, source_indices, flat_vertices_,
+        BuildFlatPrimitives(mode, source_indices, flat_vertices_,
                            flat_provoking_);
     } else {
         flat_vertices_.clear();
@@ -965,7 +979,8 @@ void AndroidBoundaryGles1DrawState::DrawArrays(
     ApplyUniforms(frame, program, core, legacy, texture_units, sampled_targets);
     const auto index_count = flat ? flat_vertices_.size()
                                   : static_cast<std::size_t>(count);
-    frame.DrawArrays(flat ? 0x0004U : mode, flat ? 0 : first,
+    frame.DrawArrays(flat ? (mode <= 0x0003U ? 0x0001U : 0x0004U) : mode,
+                     flat ? 0 : first,
                      static_cast<std::int32_t>(index_count));
 }
 
@@ -1033,7 +1048,7 @@ void AndroidBoundaryGles1DrawState::DrawElements(
     auto& program = EnsureProgram(frame, sampled_targets);
     frame.UseProgram(program.name);
     const bool flat = core.ShadeModel() == kGles1FlatShadeModel &&
-                      (mode == 0x0004U || mode == 0x0005U || mode == 0x0006U);
+                      mode >= 0x0001U && mode <= 0x0006U;
     if (flat) {
         std::vector<std::uint32_t> source_indices(
             static_cast<std::size_t>(count));
@@ -1045,7 +1060,7 @@ void AndroidBoundaryGles1DrawState::DrawElements(
                   (static_cast<std::uint32_t>(std::to_integer<std::uint8_t>(
                        transferred[index * 2U + 1U])) << 8U);
         }
-        BuildFlatTriangles(mode, source_indices, flat_vertices_,
+        BuildFlatPrimitives(mode, source_indices, flat_vertices_,
                            flat_provoking_);
     } else {
         flat_vertices_.clear();
@@ -1056,7 +1071,8 @@ void AndroidBoundaryGles1DrawState::DrawElements(
     ApplyUniforms(frame, program, core, legacy, texture_units, sampled_targets);
     if (flat) {
         const auto count_flat = flat_vertices_.size();
-        frame.DrawArrays(0x0004U, 0, static_cast<std::int32_t>(count_flat));
+        frame.DrawArrays(mode <= 0x0003U ? 0x0001U : 0x0004U, 0,
+                         static_cast<std::int32_t>(count_flat));
     } else if (guest_element_buffer == 0U) {
         frame.BindBuffer(kElementArrayBuffer, program.buffers.back());
         frame.BufferData(kElementArrayBuffer,

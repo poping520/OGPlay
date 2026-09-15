@@ -6,6 +6,8 @@ share group 与 guest sync/image identity。一个 Context 只拥有一个 nativ
 GraphicsBoundaryContext 显式回调清理 guest map/sync 记录，禁止依赖 GLES 模块内部实现。
 Display terminate 不隐式解绑任何线程；current 资源保留到后续解绑，重复 terminate 成功，
 重新 initialize 后可创建新对象。
+Java EGL10/EGL14 查询与 native 共用实际扩展字符串；wrapper 参数校验失败也写入同一
+per-thread native error 槽，禁止 Java 层返回失败却让 eglGetError 仍报告成功。
 
 依赖 boundary core/services 和底层 gles。扩展必须按实际 ANGLE 能力发布，guest 指针先受检，
 禁止把 guest native-buffer 或 image 数值直接当 host 指针。测试：integration `BND34 EGL*`

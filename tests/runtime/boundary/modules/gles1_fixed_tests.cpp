@@ -103,6 +103,22 @@ TEST_CASE("GLES1 single-face material quirk is required when disabled") {
                          ogplay::runtime::detail::kGles1MaterialShininess)[0] == 32.0F);
 }
 
+TEST_CASE("BND39 GLES1 light position and spot direction capture modelview") {
+    using namespace ogplay::runtime::detail;
+    auto matrix = Gles1IdentityMatrix();
+    matrix[12] = 4.0F;
+    matrix[13] = -2.0F;
+    matrix[0] = 2.0F;
+    const auto position = TransformGles1LightParameter(
+        kGles1LightPosition, std::array{1.0F, 2.0F, 3.0F, 1.0F}, matrix);
+    CHECK(position == std::vector<float>{6.0F, 0.0F, 3.0F, 1.0F});
+    const auto direction = TransformGles1LightParameter(
+        0x1204U, std::array{1.0F, 0.0F, 0.0F}, matrix);
+    CHECK(direction[0] == doctest::Approx(0.5F));
+    CHECK(direction[1] == doctest::Approx(0.0F));
+    CHECK(direction[2] == doctest::Approx(0.0F));
+}
+
 TEST_CASE("GLES1 lighting material and fog handlers are explicit") {
     ogplay::memory::AddressSpace address_space;
     ogplay::gles::GlesDispatchTable dispatch{ogplay::gles::GlesApi::gles1};

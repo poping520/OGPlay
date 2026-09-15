@@ -157,6 +157,8 @@ struct DexVmAndroidContext final {
     // GLSurfaceView render mode is guest-visible per view. Frame production
     // remains owned by the lifecycle/managed-surface boundary.
     std::unordered_map<std::uint32_t, std::int32_t> gl_surface_render_modes;
+    dexvm::VmObjectRef gl_surface_renderer_view;
+    std::unordered_map<std::uint32_t, bool> gl_surface_render_requests;
     std::unordered_map<std::uint32_t, std::int32_t> gl_surface_client_versions;
     std::unordered_map<std::uint32_t, std::vector<std::int32_t>>
         gl_surface_config_specs;
@@ -406,6 +408,8 @@ struct DexVmAndroidContext final {
         std::int32_t height{};
         std::vector<std::uint32_t> argb;
         bool recycled{};
+        // android.graphics.Bitmap.Config nativeInt (API 19 values 1/3/4/5).
+        std::int32_t config{5};
     };
     std::unordered_map<std::uint32_t, BitmapState> bitmaps;
 

@@ -67,7 +67,9 @@ Dex activity 每帧在 guest 回调前泵送主 Looper，到帧尾只通过
   guest 阻塞原语时由执行锁 observer 放行 GLThread。停止在 shutdown/join guest Java
   线程前唤醒 pacer。surface callback 前按通用 render-driver 事实分流：intrinsic
   renderer 保留打开线程 GL currency；guest-owned GLSurfaceView 显式释放后交给其
-  GLThread。GLSurfaceView queueEvent 在 renderer callback 前由同一 current GL 线程排空。
+  GLThread。GLSurfaceView queueEvent 在 renderer callback 前由同一 current GL 线程排空；
+  continuous 每帧绘制，WHEN_DIRTY 仅在初始帧或 requestRender 后消费一次绘制请求，事件
+  即使不触发绘制也会执行。
   未捕获 Java 异常文本按失败阶段、exception、message、stack trace 分行输出；原始类描述符、
   消息、方法与 pc 不改写。
 - `MapAndroidInput`：在 HAL 与 Android guest 边界把通用 USB HID/SDL 物理 scancode

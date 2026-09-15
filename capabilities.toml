@@ -658,7 +658,7 @@ note = "BND-33 WU-4 从 Android 4.4.4 gl3.h 对 gl2.h 精确差分 104 个新增
 [runtime.gles3_api19_boundary]
 status = "complete"
 test = "tests/runtime/boundary/integration/android_boundary_hle_tests.cpp; tests/gles/gles_dispatch_tests.cpp"
-note = "104 项 delta 已进入真实 ANGLE。BND-34 修复共享组 map/sync、VAO bind/delete 与整数属性恢复、ES3 buffer target、PBO/pack/unpack、UBO 可变长与 sampler/64 位查询；uniform shape 从共享 native program 刷新。目录/handler 覆盖不是全量 GLES conformance。"
+note = "104 项 delta 已进入真实 ANGLE。BND-34 修复共享组 map/sync、VAO、PBO/pack/unpack、UBO 与查询；BND-38 为无 invalidate 的 WRITE-only mapping 内部预取旧内容，保证局部更新不破坏未修改字节。目录/handler 覆盖不是全量 GLES conformance。"
 
 [gles.guest_transfer]
 status = "complete"
@@ -1038,7 +1038,7 @@ note = "M5 WU-0272 闭合 legacy 状态；WU-0284 增加格式敏感 texture env
 [runtime.gles1_client_array_draw]
 status = "partial"
 test = "tests/runtime/boundary/integration/android_boundary_hle_tests.cpp; bounded exact-APK one-frame run-apk smoke"
-note = "M5 WU-0274 闭合目标 client-array/draw 并获得首帧；WU-0285 支持两个启用单元逐级 draw，并让 lighting alpha 遵循 diffuse material alpha；WU-0291 复用 client/index 暂存并以验证候选原子提交 pointer 状态；BND-27 对单 stage 唯一错位坐标数组作受检回退并拒绝多 stage 共享；BND-30 让 LIGHT0..7、specular/shininess、spot/衰减、双面材质及 color-material 进入 fixed shader。BND-33 WU-2 将 normal matrix 修正为 modelview 上三阶逆转置，让 GL_NORMALIZE/GL_RESCALE_NORMAL 控制法线长度，并以 primitive 最后顶点闭合 triangle/strip/fan 的 GL_FLAT DrawArrays/DrawElements 光栅语义。仍限两个 texture stage"
+note = "M5 WU-0274 闭合目标 client-array/draw 并获得首帧；BND-30 让 LIGHT0..7、双面材质及 color-material 进入 fixed shader；BND-33 修正 normal matrix；BND-36 移除 DrawArrays 16 位限制；BND-38 让 light position/direction 设置时捕获 modelview，并补齐 line/strip/loop 的 GL_FLAT。仍限两个 texture stage"
 
 [runtime.gles1_texture_coordinate_resolution]
 status = "complete"
@@ -1093,7 +1093,7 @@ note = "DVM-31 批次 A 把 host-managed ANGLE currency 显式释放并按调用
 [dexvm.egl_facade]
 status = "complete"
 test = "tests/dexvm/egl_facade_tests.cpp; tests/dexvm/vm_monitor_tests.cpp; tests/runtime/boundary/integration/android_boundary_hle_tests.cpp; data/scenarios/asphalt6.bootstrap.scenario.toml"
-note = "BND-33 WU-3 让 Java EGL10 与 API19 EGL14 通过 managed 冷入口复用 Native EGL registry；BND-36 使 destroy 成功立即退役 wrapper，并支持 terminate 后原 Display 重新 initialize。thread current、sticky error、延迟销毁、pbuffer、shared context 与数组 offset 复用 Native registry；pixmap/client-buffer/texture-pbuffer 按 Native 能力明确拒绝。GLES30 单独由 WU-4 记账"
+note = "BND-33 WU-3 让 Java EGL10 与 API19 EGL14 通过 managed 冷入口复用 Native EGL registry；BND-36 使 destroy 成功立即退役 wrapper，并支持 terminate 后原 Display 重新 initialize；BND-38 使 wrapper 参数失败锁存同一 per-thread native error，并让 EGL_EXTENSIONS 返回 native 发布清单。thread current、延迟销毁、pbuffer、shared context 与数组 offset 复用 Native registry；pixmap/client-buffer/texture-pbuffer 按 Native 能力明确拒绝。"
 
 [session.profile_guest_lifecycle]
 status = "complete"
@@ -1233,7 +1233,7 @@ note = "M5 WU-0263 批量绑定目标初始化路径的 7 个 GLES1 浮点矩阵
 [runtime.gles1_lighting_material_fog_state]
 status = "complete"
 test = "tests/runtime/boundary/modules/gles1_fixed_tests.cpp; bounded exact-APK run-apk smoke"
-note = "M5 WU-0264 按 GLES1 规范绑定 7 个 lighting/material/fog 入口并保存可重置受检状态；macOS-arm64 ANGLE CTest 405 项中行为测试全过，exact-APK 暴露 GL_FRONT material face 兼容边界"
+note = "M5 WU-0264 按 GLES1 规范绑定 7 个 lighting/material/fog 入口并保存可重置受检状态；BND-38 使 position 与 spot direction 在设置时按当前 modelview 转为 eye space。exact-APK 暴露 GL_FRONT material face 兼容边界"
 
 [gles.gles1_extension_catalog]
 status = "complete"
@@ -1476,9 +1476,9 @@ test = "tests/dexvm/widget_click_tests.cpp; tests/session/profile_entry_scope_te
 note = "DVM-71 扩展发布 API19 View.OnSystemUiVisibilityChangeListener 精确接口形状、九个反射可见常量、稳定 Window decor View 与逐 View request/listener 实例状态；listener 由普通对象字段形成 GC 强边，注册不立即回调。桌面 managed surface 无 Android system bars/WMS effective-global 事件源，因此不伪造回调且能力保持 partial。"
 
 [dexvm.java_gles]
-status = "partial"
+status = "complete"
 test = "tests/dexvm/egl_facade_tests.cpp; tests/dexvm/nio_runtime_tests.cpp; tests/runtime/boundary/integration/android_boundary_hle_tests.cpp; tools/generate_java_gles_surface.py --check"
-note = "DVM-83 发布 API19 Java GLES surface；BND-35 为 GLES30 indexed String、mapped direct Buffer、sync long、transform-feedback String[] 增加专用桥接，并允许 GLES20 SHADING_LANGUAGE_VERSION；BND-37 补齐 GLSurfaceView Context/config 入口与 current GL 线程 queueEvent。GLU、复杂 descriptor 与 WHEN_DIRTY 调度仍未闭合，因此能力保持 partial。"
+note = "DVM-83 发布 API19 Java GLES surface；BND-35/BND-38 为 GLES30 indexed String、mapped direct Buffer、sync long、String[]、info log/source、active/uniform-block/transform-feedback 查询增加专用桥接；BND-37/BND-38 补齐 GLSurfaceView Context/config、current GL 线程 queueEvent 与 requestRender/WHEN_DIRTY；BND-38 专用实现 GLU 六类方法，并让 GLUtils 按 API19 四种 Bitmap.Config 转换。complete 限于已发布 API19 Java GLES/GLU/GLUtils 与 managed surface 边界，不代表 CTS/Khronos 认证。"
 
 [dexvm.audio_track]
 status = "complete"

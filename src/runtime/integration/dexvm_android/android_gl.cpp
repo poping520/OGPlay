@@ -57,6 +57,8 @@ Decl Declare_android_opengl_GLSurfaceView(const Context& context) {
         "(Landroid/opengl/GLSurfaceView$Renderer;)V",
         [context](dx::IntrinsicContext& call) {
             context->renderer = call.arguments[0].ref;
+            context->gl_surface_renderer_view = call.receiver;
+            context->gl_surface_render_requests[call.receiver.Value()] = true;
             return dx::VmValue::Void();
         });
     builder.FinalMethod("setEGLContextFactory",
@@ -121,7 +123,10 @@ Decl Declare_android_opengl_GLSurfaceView(const Context& context) {
                 : found->second);
         });
     builder.FinalMethod("requestRender", "()V",
-        [](dx::IntrinsicContext&) { return dx::VmValue::Void(); });
+        [context](dx::IntrinsicContext& call) {
+            context->gl_surface_render_requests[call.receiver.Value()] = true;
+            return dx::VmValue::Void();
+        });
     builder.FinalMethod("queueEvent", "(Ljava/lang/Runnable;)V",
         [context](dx::IntrinsicContext& call) {
             const auto runnable = call.arguments[0].ref;
@@ -156,6 +161,7 @@ Decl Declare_android_opengl_GLSurfaceView(const Context& context) {
 #include <bit>
 #include <cstdint>
 #include <functional>
+#include <numbers>
 #include <optional>
 #include <span>
 #include <stdexcept>
@@ -219,13 +225,25 @@ void SetError(const Context& context, const std::int32_t error) {
     return ref.IsValid() && ref == context->egl.config;
 }
 
-[[nodiscard]] bool ValidateDisplay(const Context& context,
+void LatchEglError(dx::IntrinsicContext& call, const Context& context,
+                   std::uint32_t error);
+
+[[nodiscard]] bool ValidateDisplay(dx::IntrinsicContext& call,
+                                   const Context& context,
                                    const dx::VmObjectRef ref) {
     if (!IsDisplay(context, ref)) {
-        SetError(context, kBadDisplay);
+        LatchEglError(call, context, kBadDisplay);
         return false;
     }
     return true;
+}
+
+[[nodiscard]] bool ValidateEgl14Display(dx::IntrinsicContext& call,
+                                        const Context& context,
+                                        const dx::VmObjectRef display) {
+    if (display.IsValid() && display == context->egl.egl14_display) return true;
+    LatchEglError(call, context, kBadDisplay);
+    return false;
 }
 
 [[nodiscard]] std::int32_t IntElement(dx::IntrinsicContext& call,
@@ -250,7 +268,7 @@ void SetIntElement(dx::IntrinsicContext& call, const dx::VmObjectRef array,
         const auto attribute = IntElement(call, list, index++);
         if (attribute == kNone) return true;
         if (index >= length) {
-            SetError(context, kBadAttribute);
+            LatchEglError(call, context, kBadAttribute);
             return std::nullopt;
         }
         const auto requested = IntElement(call, list, index++);
@@ -258,7 +276,7 @@ void SetIntElement(dx::IntrinsicContext& call, const dx::VmObjectRef array,
         if (fact == kConfigFacts.end()) {
             Record(call, "dexvm.egl_facade.config_attribute." +
                              std::to_string(attribute));
-            SetError(context, kBadAttribute);
+            LatchEglError(call, context, kBadAttribute);
             return std::nullopt;
         }
         if (requested == kDontCare) continue;
@@ -273,11 +291,12 @@ void SetIntElement(dx::IntrinsicContext& call, const dx::VmObjectRef array,
             return false;
         }
     }
-    SetError(context, kBadAttribute);
+    LatchEglError(call, context, kBadAttribute);
     return std::nullopt;
 }
 
 void RequireInitialized(dx::IntrinsicContext& call, const Context& context) {
+    if (context->session != nullptr) return;
     if (!context->egl.initialized) ModelFailure(call, "display is not initialized");
 }
 
@@ -317,6 +336,15 @@ void RequireInitialized(dx::IntrinsicContext& call, const Context& context) {
     }
     return context->session->InvokeManagedEgl(
         name, arguments, EglThreadId(call));
+}
+
+void LatchEglError(dx::IntrinsicContext& call, const Context& context,
+                   const std::uint32_t error) {
+    if (context->session != nullptr) {
+        context->session->LatchManagedEglError(EglThreadId(call), error);
+    } else {
+        SetError(context, static_cast<std::int32_t>(error));
+    }
 }
 
 template <typename Function>
@@ -418,7 +446,7 @@ dx::IntrinsicHandler EglGetDisplayHandler(const Context& context) {
     return [context](dx::IntrinsicContext& call) {
         if (call.arguments[0].ref.IsValid()) {
             Record(call, "dexvm.egl_facade.non_default_display");
-            SetError(context, kBadParameter);
+            LatchEglError(call, context, kBadParameter);
             return dx::VmValue::Ref(context->egl.no_display);
         }
         const auto display = EnsureDisplay(call, context);
@@ -435,7 +463,7 @@ dx::IntrinsicHandler EglGetDisplayHandler(const Context& context) {
 
 dx::IntrinsicHandler EglInitializeHandler(const Context& context) {
     return [context](dx::IntrinsicContext& call) {
-        if (!ValidateDisplay(context, call.arguments[0].ref)) return Bool(false);
+        if (!ValidateDisplay(call, context, call.arguments[0].ref)) return Bool(false);
         if (context->session != nullptr) {
             if (context->egl.native_display == 0U) {
                 context->egl.native_display = NativeEgl(
@@ -459,7 +487,7 @@ dx::IntrinsicHandler EglInitializeHandler(const Context& context) {
         const auto versions = call.arguments[1].ref;
         if (versions.IsValid()) {
             if (call.vm.Model().ArrayLength(versions) < 2) {
-                SetError(context, kBadParameter); return Bool(false);
+                LatchEglError(call, context, kBadParameter); return Bool(false);
             }
             SetIntElement(call, versions, 0, 1); SetIntElement(call, versions, 1, 4);
         }
@@ -470,7 +498,7 @@ dx::IntrinsicHandler EglInitializeHandler(const Context& context) {
 
 dx::IntrinsicHandler EglChooseConfigHandler(const Context& context) {
     return [context](dx::IntrinsicContext& call) {
-        if (!ValidateDisplay(context, call.arguments[0].ref)) return Bool(false);
+        if (!ValidateDisplay(call, context, call.arguments[0].ref)) return Bool(false);
         if (context->session != nullptr) {
             const auto size = call.arguments[3].AsInt();
             const auto configs = call.arguments[2].ref;
@@ -516,7 +544,7 @@ dx::IntrinsicHandler EglChooseConfigHandler(const Context& context) {
         const auto size = call.arguments[3].AsInt();
         const auto num = call.arguments[4].ref;
         if (size < 0 || !num.IsValid() || call.vm.Model().ArrayLength(num) < 1) {
-            SetError(context, kBadParameter); return Bool(false);
+            LatchEglError(call, context, kBadParameter); return Bool(false);
         }
         const auto matches = AttributeListMatches(call, context, call.arguments[1].ref);
         if (!matches.has_value()) return Bool(false);
@@ -524,7 +552,7 @@ dx::IntrinsicHandler EglChooseConfigHandler(const Context& context) {
         const auto configs = call.arguments[2].ref;
         if (*matches && configs.IsValid() && size > 0) {
             if (call.vm.Model().ArrayLength(configs) < 1) {
-                SetError(context, kBadParameter); return Bool(false);
+                LatchEglError(call, context, kBadParameter); return Bool(false);
             }
             call.vm.Model().SetObjectElement(configs, 0, EnsureConfig(call, context));
         }
@@ -534,9 +562,9 @@ dx::IntrinsicHandler EglChooseConfigHandler(const Context& context) {
 
 dx::IntrinsicHandler EglGetConfigAttribHandler(const Context& context) {
     return [context](dx::IntrinsicContext& call) {
-        if (!ValidateDisplay(context, call.arguments[0].ref)) return Bool(false);
+        if (!ValidateDisplay(call, context, call.arguments[0].ref)) return Bool(false);
         if (!IsConfig(context, call.arguments[1].ref)) {
-            SetError(context, kBadConfig); return Bool(false);
+            LatchEglError(call, context, kBadConfig); return Bool(false);
         }
         if (context->session != nullptr) {
             return WithIntArray(call, context, call.arguments[3].ref, true,
@@ -549,13 +577,13 @@ dx::IntrinsicHandler EglGetConfigAttribHandler(const Context& context) {
         }
         const auto output = call.arguments[3].ref;
         if (!output.IsValid() || call.vm.Model().ArrayLength(output) < 1) {
-            SetError(context, kBadParameter); return Bool(false);
+            LatchEglError(call, context, kBadParameter); return Bool(false);
         }
         const auto attribute = call.arguments[2].AsInt();
         const auto fact = kConfigFacts.find(attribute);
         if (fact == kConfigFacts.end()) {
             Record(call, "dexvm.egl_facade.config_attribute." + std::to_string(attribute));
-            SetError(context, kBadAttribute); return Bool(false);
+            LatchEglError(call, context, kBadAttribute); return Bool(false);
         }
         SetIntElement(call, output, 0, fact->second); return Bool(true);
     };
@@ -563,7 +591,7 @@ dx::IntrinsicHandler EglGetConfigAttribHandler(const Context& context) {
 
 dx::IntrinsicHandler EglGetConfigsHandler(const Context& context) {
     return [context](dx::IntrinsicContext& call) {
-        if (!ValidateDisplay(context, call.arguments[0].ref)) return Bool(false);
+        if (!ValidateDisplay(call, context, call.arguments[0].ref)) return Bool(false);
         if (context->session != nullptr) {
             const auto configs = call.arguments[1].ref;
             const auto size = call.arguments[2].AsInt();
@@ -607,7 +635,7 @@ dx::IntrinsicHandler EglGetConfigsHandler(const Context& context) {
         if (size < 0 || !count.IsValid() ||
             call.vm.Model().ArrayLength(count) < 1 ||
             (configs.IsValid() && call.vm.Model().ArrayLength(configs) < size)) {
-            SetError(context, kBadParameter);
+            LatchEglError(call, context, kBadParameter);
             return Bool(false);
         }
         SetIntElement(call, count, 0, 1);
@@ -621,9 +649,9 @@ dx::IntrinsicHandler EglGetConfigsHandler(const Context& context) {
 
 dx::IntrinsicHandler EglCreateContextHandler(const Context& context) {
     return [context](dx::IntrinsicContext& call) {
-        if (!ValidateDisplay(context, call.arguments[0].ref)) return dx::VmValue::Ref(context->egl.no_context);
+        if (!ValidateDisplay(call, context, call.arguments[0].ref)) return dx::VmValue::Ref(context->egl.no_context);
         RequireInitialized(call, context);
-        if (!IsConfig(context, call.arguments[1].ref)) { SetError(context, kBadConfig); return dx::VmValue::Ref(context->egl.no_context); }
+        if (!IsConfig(context, call.arguments[1].ref)) { LatchEglError(call, context, kBadConfig); return dx::VmValue::Ref(context->egl.no_context); }
         const auto share = call.arguments[2].ref;
         if (context->session != nullptr) {
             std::uint32_t share_handle{};
@@ -661,10 +689,10 @@ dx::IntrinsicHandler EglCreateContextHandler(const Context& context) {
                        IntElement(call, attributes, 2) == kNone) {
                 version = IntElement(call, attributes, 1);
             } else {
-                SetError(context, kBadAttribute); return dx::VmValue::Ref(context->egl.no_context);
+                LatchEglError(call, context, kBadAttribute); return dx::VmValue::Ref(context->egl.no_context);
             }
         }
-        if (version != 1 && version != 2) { SetError(context, kBadAttribute); return dx::VmValue::Ref(context->egl.no_context); }
+        if (version != 1 && version != 2) { LatchEglError(call, context, kBadAttribute); return dx::VmValue::Ref(context->egl.no_context); }
         const auto instance = call.vm.NewIntrinsicInstance("Ljavax/microedition/khronos/egl/EGLContext;");
         context->egl.contexts.emplace(instance.Value(), version);
         return dx::VmValue::Ref(instance);
@@ -673,15 +701,15 @@ dx::IntrinsicHandler EglCreateContextHandler(const Context& context) {
 
 dx::IntrinsicHandler EglCreateWindowSurfaceHandler(const Context& context) {
     return [context](dx::IntrinsicContext& call) {
-        if (!ValidateDisplay(context, call.arguments[0].ref)) return dx::VmValue::Ref(context->egl.no_surface);
+        if (!ValidateDisplay(call, context, call.arguments[0].ref)) return dx::VmValue::Ref(context->egl.no_surface);
         RequireInitialized(call, context);
-        if (!IsConfig(context, call.arguments[1].ref)) { SetError(context, kBadConfig); return dx::VmValue::Ref(context->egl.no_surface); }
+        if (!IsConfig(context, call.arguments[1].ref)) { LatchEglError(call, context, kBadConfig); return dx::VmValue::Ref(context->egl.no_surface); }
         const auto holder = call.arguments[2].ref;
         const auto registered_holder = std::find_if(
             context->surface_holders.begin(), context->surface_holders.end(),
             [holder](const auto& entry) { return entry.second == holder; });
         if (!holder.IsValid() || registered_holder == context->surface_holders.end()) {
-            SetError(context, kBadNativeWindow); return dx::VmValue::Ref(context->egl.no_surface);
+            LatchEglError(call, context, kBadNativeWindow); return dx::VmValue::Ref(context->egl.no_surface);
         }
         if (context->session == nullptr || !context->session->ManagedSurfaceIsOpen()) ModelFailure(call, "managed surface is not open");
         if (context->egl.window_surface.IsValid()) ModelFailure(call, "a second window surface is unsupported");
@@ -705,7 +733,7 @@ dx::IntrinsicHandler EglCreateWindowSurfaceHandler(const Context& context) {
                 });
         }
         if (attributes.IsValid() && (call.vm.Model().ArrayLength(attributes) != 1 || IntElement(call, attributes, 0) != kNone)) {
-            SetError(context, kBadAttribute); return dx::VmValue::Ref(context->egl.no_surface);
+            LatchEglError(call, context, kBadAttribute); return dx::VmValue::Ref(context->egl.no_surface);
         }
         context->egl.window_surface = call.vm.NewIntrinsicInstance("Ljavax/microedition/khronos/egl/EGLSurface;");
         return dx::VmValue::Ref(context->egl.window_surface);
@@ -714,7 +742,7 @@ dx::IntrinsicHandler EglCreateWindowSurfaceHandler(const Context& context) {
 
 dx::IntrinsicHandler EglCreatePbufferSurfaceHandler(const Context& context) {
     return [context](dx::IntrinsicContext& call) {
-        if (!ValidateDisplay(context, call.arguments[0].ref) ||
+        if (!ValidateDisplay(call, context, call.arguments[0].ref) ||
             !IsConfig(context, call.arguments[1].ref)) {
             return dx::VmValue::Ref(context->egl.no_surface);
         }
@@ -737,17 +765,19 @@ dx::IntrinsicHandler EglCreatePbufferSurfaceHandler(const Context& context) {
 
 dx::IntrinsicHandler EglDestroySurfaceHandler(const Context& context) {
     return [context](dx::IntrinsicContext& call) {
-        if (!ValidateDisplay(context, call.arguments[0].ref)) return Bool(false);
+        if (!ValidateDisplay(call, context, call.arguments[0].ref)) return Bool(false);
         if (context->session != nullptr) {
             const auto found = context->egl.surfaces.find(
                 call.arguments[1].ref.Value());
-            if (found == context->egl.surfaces.end()) return Bool(false);
+            if (found == context->egl.surfaces.end()) {
+                LatchEglError(call, context, kBadSurface); return Bool(false);
+            }
             const auto result = NativeEgl(call, context, "eglDestroySurface",
                 std::array{context->egl.native_display, found->second});
             if (result != 0U) context->egl.surfaces.erase(found);
             return Bool(result != 0U);
         }
-        if (call.arguments[1].ref != context->egl.window_surface) { SetError(context, kBadSurface); return Bool(false); }
+        if (call.arguments[1].ref != context->egl.window_surface) { LatchEglError(call, context, kBadSurface); return Bool(false); }
         if (context->egl.current_surface == context->egl.window_surface) ModelFailure(call, "current surface cannot be destroyed");
         context->egl.window_surface = dx::VmObjectRef{}; return Bool(true);
     };
@@ -755,17 +785,19 @@ dx::IntrinsicHandler EglDestroySurfaceHandler(const Context& context) {
 
 dx::IntrinsicHandler EglDestroyContextHandler(const Context& context) {
     return [context](dx::IntrinsicContext& call) {
-        if (!ValidateDisplay(context, call.arguments[0].ref)) return Bool(false);
+        if (!ValidateDisplay(call, context, call.arguments[0].ref)) return Bool(false);
         const auto ref = call.arguments[1].ref;
         if (context->session != nullptr) {
             const auto found = context->egl.contexts.find(ref.Value());
-            if (found == context->egl.contexts.end()) return Bool(false);
+            if (found == context->egl.contexts.end()) {
+                LatchEglError(call, context, kBadContext); return Bool(false);
+            }
             const auto result = NativeEgl(call, context, "eglDestroyContext",
                 std::array{context->egl.native_display, found->second});
             if (result != 0U) context->egl.contexts.erase(found);
             return Bool(result != 0U);
         }
-        if (!context->egl.contexts.contains(ref.Value())) { SetError(context, kBadContext); return Bool(false); }
+        if (!context->egl.contexts.contains(ref.Value())) { LatchEglError(call, context, kBadContext); return Bool(false); }
         if (context->egl.current_context == ref) ModelFailure(call, "current context cannot be destroyed");
         context->egl.contexts.erase(ref.Value()); return Bool(true);
     };
@@ -773,7 +805,7 @@ dx::IntrinsicHandler EglDestroyContextHandler(const Context& context) {
 
 dx::IntrinsicHandler EglMakeCurrentHandler(const Context& context) {
     return [context](dx::IntrinsicContext& call) {
-        if (!ValidateDisplay(context, call.arguments[0].ref)) return Bool(false);
+        if (!ValidateDisplay(call, context, call.arguments[0].ref)) return Bool(false);
         const auto draw = call.arguments[1].ref; const auto read = call.arguments[2].ref; const auto egl_context = call.arguments[3].ref;
         const bool unbind = draw == context->egl.no_surface && read == context->egl.no_surface && egl_context == context->egl.no_context;
         if (context->session != nullptr) {
@@ -814,14 +846,16 @@ dx::IntrinsicHandler EglMakeCurrentHandler(const Context& context) {
 dx::IntrinsicHandler EglSwapBuffersHandler(const Context& context) {
     return [context](dx::IntrinsicContext& call) {
         if (context->egl.surface_retired.load(std::memory_order_acquire)) {
-            SetError(context, kBadNativeWindow);
+            LatchEglError(call, context, kBadNativeWindow);
             return Bool(false);
         }
-        if (!ValidateDisplay(context, call.arguments[0].ref)) return Bool(false);
+        if (!ValidateDisplay(call, context, call.arguments[0].ref)) return Bool(false);
         if (context->session != nullptr) {
             const auto found = context->egl.surfaces.find(
                 call.arguments[1].ref.Value());
-            if (found == context->egl.surfaces.end()) return Bool(false);
+            if (found == context->egl.surfaces.end()) {
+                LatchEglError(call, context, kBadSurface); return Bool(false);
+            }
             const auto result = NativeEgl(call, context, "eglSwapBuffers",
                 std::array{context->egl.native_display, found->second});
             if (result != 0U) PaceEglSwap(*context, call.vm.ExecutionLock());
@@ -830,7 +864,7 @@ dx::IntrinsicHandler EglSwapBuffersHandler(const Context& context) {
         if (call.arguments[1].ref != context->egl.current_surface ||
             !context->egl.current_thread.has_value() ||
             *context->egl.current_thread != std::this_thread::get_id()) {
-            SetError(context, kBadSurface); return Bool(false);
+            LatchEglError(call, context, kBadSurface); return Bool(false);
         }
         if (context->session == nullptr) ModelFailure(call, "guest session is absent");
         context->session->PresentManagedSurface();
@@ -879,7 +913,7 @@ dx::IntrinsicHandler EglGetCurrentSurfaceHandler(const Context& context) {
                           std::array{call.arguments[0].cat1}),
                 context->egl.no_surface));
         }
-        if (which != 0x3059 && which != 0x305A) { SetError(context, kBadParameter); return dx::VmValue::Ref(context->egl.no_surface); }
+        if (which != 0x3059 && which != 0x305A) { LatchEglError(call, context, kBadParameter); return dx::VmValue::Ref(context->egl.no_surface); }
         const auto current = context->egl.current_thread.has_value() &&
                              *context->egl.current_thread == std::this_thread::get_id();
         return dx::VmValue::Ref(current ? context->egl.current_surface
@@ -889,11 +923,13 @@ dx::IntrinsicHandler EglGetCurrentSurfaceHandler(const Context& context) {
 
 dx::IntrinsicHandler EglQueryContextHandler(const Context& context) {
     return [context](dx::IntrinsicContext& call) {
-        if (!ValidateDisplay(context, call.arguments[0].ref)) return Bool(false);
+        if (!ValidateDisplay(call, context, call.arguments[0].ref)) return Bool(false);
         if (context->session != nullptr) {
             const auto found = context->egl.contexts.find(
                 call.arguments[1].ref.Value());
-            if (found == context->egl.contexts.end()) return Bool(false);
+            if (found == context->egl.contexts.end()) {
+                LatchEglError(call, context, kBadContext); return Bool(false);
+            }
             return WithIntArray(call, context, call.arguments[3].ref, true,
                 [&](const std::uint32_t output) {
                     return Bool(NativeEgl(call, context, "eglQueryContext",
@@ -904,16 +940,16 @@ dx::IntrinsicHandler EglQueryContextHandler(const Context& context) {
         RequireInitialized(call, context);
         const auto found = context->egl.contexts.find(call.arguments[1].ref.Value());
         if (found == context->egl.contexts.end()) {
-            SetError(context, kBadContext);
+            LatchEglError(call, context, kBadContext);
             return Bool(false);
         }
         const auto output = call.arguments[3].ref;
         if (!output.IsValid() || call.vm.Model().ArrayLength(output) < 1) {
-            SetError(context, kBadParameter);
+            LatchEglError(call, context, kBadParameter);
             return Bool(false);
         }
         if (call.arguments[2].AsInt() != 0x3098) {
-            SetError(context, kBadAttribute);
+            LatchEglError(call, context, kBadAttribute);
             return Bool(false);
         }
         SetIntElement(call, output, 0, found->second);
@@ -923,7 +959,7 @@ dx::IntrinsicHandler EglQueryContextHandler(const Context& context) {
 
 dx::IntrinsicHandler EglQueryStringHandler(const Context& context) {
     return [context](dx::IntrinsicContext& call) {
-        if (!ValidateDisplay(context, call.arguments[0].ref)) {
+        if (!ValidateDisplay(call, context, call.arguments[0].ref)) {
             return dx::VmValue::Ref(dx::VmObjectRef{});
         }
         RequireInitialized(call, context);
@@ -936,10 +972,12 @@ dx::IntrinsicHandler EglQueryStringHandler(const Context& context) {
         switch (call.arguments[1].AsInt()) {
         case 0x3053: return MakeString(call, "OGPlay");
         case 0x3054: return MakeString(call, "1.4 OGPlay");
-        case 0x3055: return MakeString(call, "");
+        case 0x3055: return MakeString(call, context->session != nullptr
+            ? context->session->ManagedEglString(0x3055U)
+            : std::string{"EGL_KHR_get_all_proc_addresses "});
         case 0x308D: return MakeString(call, "OpenGL_ES");
         default:
-            SetError(context, kBadParameter);
+            LatchEglError(call, context, kBadParameter);
             return dx::VmValue::Ref(dx::VmObjectRef{});
         }
     };
@@ -947,11 +985,13 @@ dx::IntrinsicHandler EglQueryStringHandler(const Context& context) {
 
 dx::IntrinsicHandler EglQuerySurfaceHandler(const Context& context) {
     return [context](dx::IntrinsicContext& call) {
-        if (!ValidateDisplay(context, call.arguments[0].ref)) return Bool(false);
+        if (!ValidateDisplay(call, context, call.arguments[0].ref)) return Bool(false);
         if (context->session != nullptr) {
             const auto found = context->egl.surfaces.find(
                 call.arguments[1].ref.Value());
-            if (found == context->egl.surfaces.end()) return Bool(false);
+            if (found == context->egl.surfaces.end()) {
+                LatchEglError(call, context, kBadSurface); return Bool(false);
+            }
             return WithIntArray(call, context, call.arguments[3].ref, true,
                 [&](const std::uint32_t output) {
                     return Bool(NativeEgl(call, context, "eglQuerySurface",
@@ -961,12 +1001,12 @@ dx::IntrinsicHandler EglQuerySurfaceHandler(const Context& context) {
         }
         RequireInitialized(call, context);
         if (call.arguments[1].ref != context->egl.window_surface) {
-            SetError(context, kBadSurface);
+            LatchEglError(call, context, kBadSurface);
             return Bool(false);
         }
         const auto output = call.arguments[3].ref;
         if (!output.IsValid() || call.vm.Model().ArrayLength(output) < 1) {
-            SetError(context, kBadParameter);
+            LatchEglError(call, context, kBadParameter);
             return Bool(false);
         }
         switch (call.arguments[2].AsInt()) {
@@ -980,7 +1020,7 @@ dx::IntrinsicHandler EglQuerySurfaceHandler(const Context& context) {
             break;
         case 0x3086: SetIntElement(call, output, 0, 0x3084); break;
         default:
-            SetError(context, kBadAttribute);
+            LatchEglError(call, context, kBadAttribute);
             return Bool(false);
         }
         return Bool(true);
@@ -1022,7 +1062,7 @@ dx::IntrinsicHandler EglGetErrorHandler(const Context& context) {
 
 dx::IntrinsicHandler EglTerminateHandler(const Context& context) {
     return [context](dx::IntrinsicContext& call) {
-        if (!ValidateDisplay(context, call.arguments[0].ref)) return Bool(false);
+        if (!ValidateDisplay(call, context, call.arguments[0].ref)) return Bool(false);
         if (context->session != nullptr) {
             const auto result = NativeEgl(call, context, "eglTerminate",
                 std::array{context->egl.native_display});
@@ -1096,6 +1136,72 @@ dx::IntrinsicHandler GlGetStringHandler(const Context& context) {
                           "Java GLES return adapter is unavailable"};
 }
 
+[[nodiscard]] std::int32_t ManagedGlQueryInt(
+    dx::IntrinsicContext& call, const Context& context, const gles::GlesApi api,
+    const std::string_view name, const std::uint32_t object,
+    const std::uint32_t parameter) {
+    static_cast<void>(call);
+    std::array<std::byte, 4> bytes{};
+    std::vector<std::byte> output;
+    static_cast<void>(context->session->NIO().WithTemporaryGuestMemory(
+        bytes, true, [&](const memory::GuestAddress address) {
+            const std::array args{object, parameter, address.Value()};
+            return context->session->InvokeManagedGles(api, name, args);
+        }, &output));
+    std::uint32_t value{};
+    for (std::size_t index = 0; index < 4U; ++index) {
+        value |= static_cast<std::uint32_t>(
+            std::to_integer<std::uint8_t>(output[index])) << (index * 8U);
+    }
+    return static_cast<std::int32_t>(value);
+}
+
+void SetJavaIntOutput(dx::IntrinsicContext& call, const dx::VmObjectRef output,
+                      const std::int32_t offset, const std::int32_t value) {
+    if (!output.IsValid()) {
+        throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;",
+                              "GLES integer output is null"};
+    }
+    const auto identity = call.vm.Model().ToIdentity(output);
+    if (call.vm.NIO().Contains(identity)) {
+        const auto snapshot = call.vm.NIO().Snapshot(identity);
+        if (snapshot.element != dx::NioElementKind::int_value || offset < 0 ||
+            snapshot.position + offset >= snapshot.limit) {
+            throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;",
+                                  "GLES IntBuffer has no remaining element"};
+        }
+        call.vm.NIO().PutScalar(identity, dx::NioElementKind::int_value,
+                                (snapshot.position + offset) * 4, value);
+        return;
+    }
+    const auto length = call.vm.Model().ArrayLength(output);
+    if (offset < 0 || offset >= length) {
+        throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;",
+                              "GLES integer output offset is outside the array"};
+    }
+    call.vm.Model().SetPrimitiveElement(output, offset,
+                                        static_cast<std::uint32_t>(value));
+}
+
+[[nodiscard]] std::string ManagedGlObjectString(
+    dx::IntrinsicContext& call, const Context& context, const gles::GlesApi api,
+    const std::string_view get_name, const std::string_view query_name,
+    const std::uint32_t object, const std::uint32_t length_parameter) {
+    const auto maximum = std::max(1, ManagedGlQueryInt(
+        call, context, api, query_name, object, length_parameter));
+    std::vector<std::byte> bytes(static_cast<std::size_t>(maximum));
+    std::vector<std::byte> output;
+    static_cast<void>(context->session->NIO().WithTemporaryGuestMemory(
+        bytes, true, [&](const memory::GuestAddress address) {
+            const std::array args{object, static_cast<std::uint32_t>(maximum),
+                                  0U, address.Value()};
+            return context->session->InvokeManagedGles(api, get_name, args);
+        }, &output));
+    const auto terminator = std::ranges::find(output, std::byte{});
+    return std::string(reinterpret_cast<const char*>(output.data()),
+                       static_cast<std::size_t>(terminator - output.begin()));
+}
+
 dx::IntrinsicHandler JavaGlesHandler(const Context& context,
                                      const gles::GlesApi api,
                                      std::string name,
@@ -1132,6 +1238,146 @@ dx::IntrinsicHandler JavaGlesHandler(const Context& context,
             call.vm.NIO().WrapDirect(call.vm.Model().ToIdentity(buffer),
                                      memory::GuestAddress{address}, length);
             return dx::VmValue::Ref(buffer);
+        }
+        if (descriptor == "(I)Ljava/lang/String;" &&
+            (name == "glGetProgramInfoLog" || name == "glGetShaderInfoLog" ||
+             name == "glGetShaderSource")) {
+            const bool program = name == "glGetProgramInfoLog";
+            const auto query = program ? "glGetProgramiv" : "glGetShaderiv";
+            const auto parameter = name == "glGetShaderSource" ? 0x8B88U : 0x8B84U;
+            return MakeString(call, ManagedGlObjectString(
+                call, context, api, name, query, call.arguments[0].cat1,
+                parameter));
+        }
+        if ((name == "glGetActiveAttrib" || name == "glGetActiveUniform" ||
+             name == "glGetTransformFeedbackVarying") &&
+            descriptor.ends_with(")Ljava/lang/String;")) {
+            const bool buffer_form = descriptor.find("Ljava/nio/IntBuffer;") !=
+                                     std::string::npos;
+            const auto size_ref = call.arguments[2].ref;
+            const auto type_ref = call.arguments[buffer_form ? 3U : 4U].ref;
+            const auto size_offset = buffer_form ? 0 : call.arguments[3].AsInt();
+            const auto type_offset = buffer_form ? 0 : call.arguments[5].AsInt();
+            const auto max_parameter = name == "glGetActiveAttrib" ? 0x8B8AU :
+                name == "glGetActiveUniform" ? 0x8B87U : 0x8C76U;
+            const auto maximum = std::max(1, ManagedGlQueryInt(
+                call, context, api, "glGetProgramiv", call.arguments[0].cat1,
+                max_parameter));
+            std::array<std::byte, 4> zeros{};
+            std::vector<std::byte> size_bytes, type_bytes, name_bytes;
+            std::vector<std::byte> name_input(static_cast<std::size_t>(maximum));
+            static_cast<void>(context->session->NIO().WithTemporaryGuestMemory(
+                zeros, true, [&](const memory::GuestAddress size_address) {
+                    return context->session->NIO().WithTemporaryGuestMemory(
+                        zeros, true, [&](const memory::GuestAddress type_address) {
+                            return context->session->NIO().WithTemporaryGuestMemory(
+                                name_input, true, [&](const memory::GuestAddress name_address) {
+                                    const std::array args{
+                                        call.arguments[0].cat1, call.arguments[1].cat1,
+                                        static_cast<std::uint32_t>(maximum), 0U,
+                                        size_address.Value(), type_address.Value(),
+                                        name_address.Value()};
+                                    return context->session->InvokeManagedGles(api, name, args);
+                                }, &name_bytes);
+                        }, &type_bytes);
+                }, &size_bytes));
+            const auto decode = [](const std::vector<std::byte>& bytes) {
+                std::uint32_t value{};
+                for (std::size_t i = 0; i < 4U; ++i)
+                    value |= static_cast<std::uint32_t>(
+                        std::to_integer<std::uint8_t>(bytes[i])) << (i * 8U);
+                return static_cast<std::int32_t>(value);
+            };
+            SetJavaIntOutput(call, size_ref, size_offset, decode(size_bytes));
+            SetJavaIntOutput(call, type_ref, type_offset, decode(type_bytes));
+            const auto end = std::ranges::find(name_bytes, std::byte{});
+            return MakeString(call, std::string(
+                reinterpret_cast<const char*>(name_bytes.data()),
+                static_cast<std::size_t>(end - name_bytes.begin())));
+        }
+        if (name == "glGetActiveUniformBlockName" &&
+            descriptor == "(II)Ljava/lang/String;") {
+            std::array<std::byte, 4> length_input{};
+            std::vector<std::byte> length_output;
+            static_cast<void>(context->session->NIO().WithTemporaryGuestMemory(
+                length_input, true, [&](const memory::GuestAddress address) {
+                    const std::array args{call.arguments[0].cat1,
+                        call.arguments[1].cat1, 0x8A41U, address.Value()};
+                    return context->session->InvokeManagedGles(
+                        api, "glGetActiveUniformBlockiv", args);
+                }, &length_output));
+            std::uint32_t maximum{};
+            for (std::size_t byte = 0; byte < 4U; ++byte)
+                maximum |= static_cast<std::uint32_t>(std::to_integer<std::uint8_t>(
+                    length_output[byte])) << (byte * 8U);
+            maximum = std::max(1U, maximum);
+            std::vector<std::byte> name_input(maximum), name_output;
+            static_cast<void>(context->session->NIO().WithTemporaryGuestMemory(
+                name_input, true, [&](const memory::GuestAddress address) {
+                    const std::array args{call.arguments[0].cat1,
+                        call.arguments[1].cat1, maximum, 0U, address.Value()};
+                    return context->session->InvokeManagedGles(api, name, args);
+                }, &name_output));
+            const auto end = std::ranges::find(name_output, std::byte{});
+            return MakeString(call, std::string(
+                reinterpret_cast<const char*>(name_output.data()),
+                static_cast<std::size_t>(end - name_output.begin())));
+        }
+        if (name == "glGetUniformIndices" &&
+            descriptor.starts_with("(I[Ljava/lang/String;")) {
+            const auto names = call.arguments[1].ref;
+            if (!names.IsValid()) throw dx::VmJavaThrow{
+                "Ljava/lang/NullPointerException;", "uniform names are null"};
+            const auto count = call.vm.Model().ArrayLength(names);
+            std::vector<std::uint32_t> pointers(static_cast<std::size_t>(count));
+            std::vector<std::int32_t> indices(static_cast<std::size_t>(count));
+            std::function<void(std::int32_t)> marshal_names;
+            marshal_names = [&](const std::int32_t index) {
+                if (index < count) {
+                    const auto string = call.vm.Model().GetObjectElement(names, index);
+                    if (!string.IsValid()) throw dx::VmJavaThrow{
+                        "Ljava/lang/NullPointerException;", "uniform name is null"};
+                    const auto text = call.vm.StringUtf8(string);
+                    std::vector<std::byte> bytes(text.size() + 1U);
+                    std::ranges::transform(text, bytes.begin(),
+                        [](const char c) { return static_cast<std::byte>(c); });
+                    static_cast<void>(context->session->NIO().WithTemporaryGuestMemory(
+                        bytes, false, [&](const memory::GuestAddress address) {
+                            pointers[static_cast<std::size_t>(index)] = address.Value();
+                            marshal_names(index + 1);
+                            return 0U;
+                        }));
+                    return;
+                }
+                std::vector<std::byte> pointer_bytes(pointers.size() * 4U);
+                for (std::size_t i = 0; i < pointers.size(); ++i)
+                    for (std::size_t byte = 0; byte < 4U; ++byte)
+                        pointer_bytes[i * 4U + byte] =
+                            static_cast<std::byte>(pointers[i] >> (byte * 8U));
+                std::vector<std::byte> output_bytes(indices.size() * 4U);
+                std::vector<std::byte> copied;
+                static_cast<void>(context->session->NIO().WithTemporaryGuestMemory(
+                    pointer_bytes, false, [&](const memory::GuestAddress pointer_address) {
+                        return context->session->NIO().WithTemporaryGuestMemory(
+                            output_bytes, true, [&](const memory::GuestAddress output_address) {
+                                const std::array args{call.arguments[0].cat1,
+                                    static_cast<std::uint32_t>(count), pointer_address.Value(),
+                                    output_address.Value()};
+                                return context->session->InvokeManagedGles(api, name, args);
+                            }, &copied);
+                    }));
+                for (std::int32_t i = 0; i < count; ++i) {
+                    std::uint32_t value{};
+                    for (std::size_t byte = 0; byte < 4U; ++byte)
+                        value |= static_cast<std::uint32_t>(std::to_integer<std::uint8_t>(
+                            copied[static_cast<std::size_t>(i) * 4U + byte])) << (byte * 8U);
+                    SetJavaIntOutput(call, call.arguments[2].ref,
+                        descriptor.ends_with("[II)V") ? call.arguments[3].AsInt() + i : i,
+                        static_cast<std::int32_t>(value));
+                }
+            };
+            marshal_names(0);
+            return dx::VmValue::Void();
         }
         if (name == "glTransformFeedbackVaryings" &&
             descriptor == "(I[Ljava/lang/String;I)V") {
@@ -1331,15 +1577,56 @@ dx::IntrinsicHandler JavaGlesHandler(const Context& context,
     return found->second;
 }
 
-[[nodiscard]] std::vector<std::byte> RgbaPixels(
-    const DexVmAndroidContext::BitmapState& bitmap) {
-    std::vector<std::byte> bytes(bitmap.argb.size() * 4U);
+[[nodiscard]] std::vector<std::byte> GlBitmapPixels(
+    const DexVmAndroidContext::BitmapState& bitmap, const std::uint32_t format,
+    const std::uint32_t type) {
+    const bool unsigned_byte = type == 0x1401U;
+    const auto bytes_per_pixel = unsigned_byte
+        ? (format == 0x1906U ? 1U : format == 0x190AU ? 2U : 4U) : 2U;
+    std::vector<std::byte> bytes(bitmap.argb.size() * bytes_per_pixel);
     for (std::size_t index = 0; index < bitmap.argb.size(); ++index) {
         const auto pixel = bitmap.argb[index];
-        bytes[index * 4U] = static_cast<std::byte>(pixel >> 16U);
-        bytes[index * 4U + 1U] = static_cast<std::byte>(pixel >> 8U);
-        bytes[index * 4U + 2U] = static_cast<std::byte>(pixel);
-        bytes[index * 4U + 3U] = static_cast<std::byte>(pixel >> 24U);
+        if (unsigned_byte && format == 0x1906U) {
+            bytes[index] = static_cast<std::byte>(pixel >> 24U);
+        } else if (unsigned_byte && format == 0x190AU && bitmap.config == 3) {
+            const auto packed = static_cast<std::uint16_t>(
+                ((pixel >> 19U) & 0x1FU) << 11U |
+                ((pixel >> 10U) & 0x3FU) << 5U | ((pixel >> 3U) & 0x1FU));
+            bytes[index * 2U] = static_cast<std::byte>(packed);
+            bytes[index * 2U + 1U] = static_cast<std::byte>(packed >> 8U);
+        } else if (unsigned_byte && format == 0x190AU && bitmap.config == 4) {
+            const auto packed = static_cast<std::uint16_t>(
+                ((pixel >> 20U) & 0xFU) << 12U |
+                ((pixel >> 12U) & 0xFU) << 8U |
+                ((pixel >> 4U) & 0xFU) << 4U | ((pixel >> 28U) & 0xFU));
+            bytes[index * 2U] = static_cast<std::byte>(packed);
+            bytes[index * 2U + 1U] = static_cast<std::byte>(packed >> 8U);
+        } else if (type == 0x8363U) {
+            const auto packed = static_cast<std::uint16_t>(
+                ((pixel >> 19U) & 0x1FU) << 11U |
+                ((pixel >> 10U) & 0x3FU) << 5U | ((pixel >> 3U) & 0x1FU));
+            bytes[index * 2U] = static_cast<std::byte>(packed);
+            bytes[index * 2U + 1U] = static_cast<std::byte>(packed >> 8U);
+        } else if (type == 0x8033U) {
+            const auto packed = static_cast<std::uint16_t>(
+                ((pixel >> 20U) & 0xFU) << 12U |
+                ((pixel >> 12U) & 0xFU) << 8U |
+                ((pixel >> 4U) & 0xFU) << 4U | ((pixel >> 28U) & 0xFU));
+            bytes[index * 2U] = static_cast<std::byte>(packed);
+            bytes[index * 2U + 1U] = static_cast<std::byte>(packed >> 8U);
+        } else if (type == 0x8034U) {
+            const auto packed = static_cast<std::uint16_t>(
+                ((pixel >> 19U) & 0x1FU) << 11U |
+                ((pixel >> 11U) & 0x1FU) << 6U |
+                ((pixel >> 3U) & 0x1FU) << 1U | ((pixel >> 31U) & 0x1U));
+            bytes[index * 2U] = static_cast<std::byte>(packed);
+            bytes[index * 2U + 1U] = static_cast<std::byte>(packed >> 8U);
+        } else {
+            bytes[index * 4U] = static_cast<std::byte>(pixel >> 16U);
+            bytes[index * 4U + 1U] = static_cast<std::byte>(pixel >> 8U);
+            bytes[index * 4U + 2U] = static_cast<std::byte>(pixel);
+            bytes[index * 4U + 3U] = static_cast<std::byte>(pixel >> 24U);
+        }
     }
     return bytes;
 }
@@ -1355,8 +1642,15 @@ dx::IntrinsicHandler GlUtilsTextureHandler(const Context& context,
         const auto& bitmap = GlBitmap(context, call.arguments[bitmap_index].ref);
         constexpr std::uint32_t kRgba = 0x1908U;
         constexpr std::uint32_t kUnsignedByte = 0x1401U;
-        auto format = kRgba;
-        auto type = kUnsignedByte;
+        constexpr std::uint32_t kAlpha = 0x1906U;
+        constexpr std::uint32_t kRgb = 0x1907U;
+        constexpr std::uint32_t kUnsignedShort565 = 0x8363U;
+        constexpr std::uint32_t kUnsignedShort4444 = 0x8033U;
+        constexpr std::uint32_t kUnsignedShort5551 = 0x8034U;
+        constexpr std::uint32_t kLuminanceAlpha = 0x190AU;
+        auto format = bitmap.config == 1 ? kAlpha : bitmap.config == 3 ? kRgb : kRgba;
+        auto type = bitmap.config == 3 ? kUnsignedShort565 :
+                    bitmap.config == 4 ? kUnsignedShort4444 : kUnsignedByte;
         if (!sub_image && bitmap_index == 3U) {
             format = call.arguments[2].cat1;
             if (descriptor == "(IIILandroid/graphics/Bitmap;II)V") {
@@ -1366,11 +1660,19 @@ dx::IntrinsicHandler GlUtilsTextureHandler(const Context& context,
             format = call.arguments[5].cat1;
             type = call.arguments[6].cat1;
         }
-        if (format != kRgba || type != kUnsignedByte) {
+        const bool compatible =
+            ((bitmap.config == 1 || bitmap.config == 5) &&
+             (type == kUnsignedByte || type == kUnsignedShort4444 ||
+              type == kUnsignedShort565 || type == kUnsignedShort5551)) ||
+            ((bitmap.config == 3 || bitmap.config == 4) &&
+             (type == kUnsignedShort4444 || type == kUnsignedShort565 ||
+              type == kUnsignedShort5551 ||
+              (type == kUnsignedByte && format == kLuminanceAlpha)));
+        if (!compatible) {
             throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;",
-                                  "GLUtils supports ARGB_8888 as RGBA/UNSIGNED_BYTE"};
+                                  "GLUtils format/type is incompatible with Bitmap.Config"};
         }
-        const auto pixels = RgbaPixels(bitmap);
+        const auto pixels = GlBitmapPixels(bitmap, format, type);
         static_cast<void>(context->session->NIO().WithTemporaryGuestMemory(
             pixels, false, [&](const memory::GuestAddress address) {
                 if (sub_image) {
@@ -1443,6 +1745,7 @@ dx::IntrinsicHandler Egl14SimpleHandler(const Context& context,
         }
         if (name == "eglGetDisplay") {
             if (call.arguments[0].AsInt() != 0) {
+                LatchEglError(call, context, kBadParameter);
                 return dx::VmValue::Ref(egl.egl14_no_display);
             }
             egl.native_display = NativeEgl(call, context, name, std::array{0U});
@@ -1450,6 +1753,12 @@ dx::IntrinsicHandler Egl14SimpleHandler(const Context& context,
                 ? egl.egl14_no_display
                 : EnsureEgl14Object(call, egl.egl14_display,
                                     "Landroid/opengl/EGLDisplay;"));
+        }
+        if ((name == "eglInitialize" || name == "eglTerminate" ||
+             name == "eglQueryString" || name == "eglSwapInterval") &&
+            !ValidateEgl14Display(call, context, call.arguments[0].ref)) {
+            return name == "eglQueryString"
+                ? dx::VmValue::Ref(dx::VmObjectRef{}) : Bool(false);
         }
         if (name == "eglInitialize") {
             if (egl.native_display == 0U) {
@@ -1494,7 +1803,7 @@ dx::IntrinsicHandler Egl14SimpleHandler(const Context& context,
             switch (call.arguments[1].AsInt()) {
             case 0x3053: return MakeString(call, "OGPlay");
             case 0x3054: return MakeString(call, "1.4 OGPlay");
-            case 0x3055: return MakeString(call, "");
+            case 0x3055: return MakeString(call, context->session->ManagedEglString(0x3055U));
             case 0x308D: return MakeString(call, "OpenGL_ES");
             default: return dx::VmValue::Ref(dx::VmObjectRef{});
             }
@@ -1544,8 +1853,15 @@ dx::IntrinsicHandler Egl14SimpleHandler(const Context& context,
 dx::IntrinsicHandler Egl14CreateContextHandler(const Context& context) {
     return [context](dx::IntrinsicContext& call) {
         auto& egl = context->egl;
+        if (!ValidateEgl14Display(call, context, call.arguments[0].ref)) {
+            return dx::VmValue::Ref(egl.egl14_no_context);
+        }
         const auto share = call.arguments[2].ref;
         const auto found = egl.egl14_contexts.find(share.Value());
+        if (share != egl.egl14_no_context && found == egl.egl14_contexts.end()) {
+            LatchEglError(call, context, kBadContext);
+            return dx::VmValue::Ref(egl.egl14_no_context);
+        }
         const auto share_handle = share == egl.egl14_no_context
             ? 0U : found == egl.egl14_contexts.end() ? 0U : found->second;
         return WithIntArrayOffset(call, context, call.arguments[3].ref,
@@ -1566,6 +1882,9 @@ dx::IntrinsicHandler Egl14CreateContextHandler(const Context& context) {
 dx::IntrinsicHandler Egl14CreatePbufferHandler(const Context& context) {
     return [context](dx::IntrinsicContext& call) {
         auto& egl = context->egl;
+        if (!ValidateEgl14Display(call, context, call.arguments[0].ref)) {
+            return dx::VmValue::Ref(egl.egl14_no_surface);
+        }
         return WithIntArrayOffset(call, context, call.arguments[2].ref,
             call.arguments[3].AsInt(), false,
             [&](const std::uint32_t attributes) {
@@ -1585,7 +1904,11 @@ dx::IntrinsicHandler Egl14CreatePbufferHandler(const Context& context) {
 dx::IntrinsicHandler Egl14CreateWindowHandler(const Context& context) {
     return [context](dx::IntrinsicContext& call) {
         auto& egl = context->egl;
+        if (!ValidateEgl14Display(call, context, call.arguments[0].ref)) {
+            return dx::VmValue::Ref(egl.egl14_no_surface);
+        }
         if (!call.arguments[2].ref.IsValid()) {
+            LatchEglError(call, context, kBadNativeWindow);
             return dx::VmValue::Ref(egl.egl14_no_surface);
         }
         return WithIntArrayOffset(call, context, call.arguments[3].ref,
@@ -1608,9 +1931,14 @@ dx::IntrinsicHandler Egl14ObjectHandler(const Context& context,
                                         std::string name) {
     return [context, name = std::move(name)](dx::IntrinsicContext& call) {
         auto& egl = context->egl;
+        if (!ValidateEgl14Display(call, context, call.arguments[0].ref)) {
+            return Bool(false);
+        }
         if (name == "eglDestroyContext") {
             const auto found = egl.egl14_contexts.find(call.arguments[1].ref.Value());
-            if (found == egl.egl14_contexts.end()) return Bool(false);
+            if (found == egl.egl14_contexts.end()) {
+                LatchEglError(call, context, kBadContext); return Bool(false);
+            }
             const auto result = NativeEgl(call, context, name,
                 std::array{egl.native_display, found->second});
             if (result != 0U) egl.egl14_contexts.erase(found);
@@ -1618,7 +1946,9 @@ dx::IntrinsicHandler Egl14ObjectHandler(const Context& context,
         }
         if (name == "eglDestroySurface" || name == "eglSwapBuffers") {
             const auto found = egl.egl14_surfaces.find(call.arguments[1].ref.Value());
-            if (found == egl.egl14_surfaces.end()) return Bool(false);
+            if (found == egl.egl14_surfaces.end()) {
+                LatchEglError(call, context, kBadSurface); return Bool(false);
+            }
             const auto result = NativeEgl(call, context, name,
                 std::array{egl.native_display, found->second});
             if (result != 0U && name == "eglDestroySurface") {
@@ -1633,14 +1963,24 @@ dx::IntrinsicHandler Egl14ObjectHandler(const Context& context,
                 const auto found = map.find(ref.Value());
                 return found == map.end() ? 0U : found->second;
             };
+            const auto draw = handle(egl.egl14_surfaces, call.arguments[1].ref,
+                                     egl.egl14_no_surface);
+            const auto read = handle(egl.egl14_surfaces, call.arguments[2].ref,
+                                     egl.egl14_no_surface);
+            const auto current = handle(egl.egl14_contexts, call.arguments[3].ref,
+                                        egl.egl14_no_context);
+            if (call.arguments[1].ref != egl.egl14_no_surface && draw == 0U) {
+                LatchEglError(call, context, kBadSurface); return Bool(false);
+            }
+            if (call.arguments[2].ref != egl.egl14_no_surface && read == 0U) {
+                LatchEglError(call, context, kBadSurface); return Bool(false);
+            }
+            if (call.arguments[3].ref != egl.egl14_no_context && current == 0U) {
+                LatchEglError(call, context, kBadContext); return Bool(false);
+            }
             return Bool(NativeEgl(call, context, name,
                 std::array{egl.native_display,
-                    handle(egl.egl14_surfaces, call.arguments[1].ref,
-                           egl.egl14_no_surface),
-                    handle(egl.egl14_surfaces, call.arguments[2].ref,
-                           egl.egl14_no_surface),
-                    handle(egl.egl14_contexts, call.arguments[3].ref,
-                           egl.egl14_no_context)}) != 0U);
+                    draw, read, current}) != 0U);
         }
         throw std::logic_error("unsupported EGL14 object handler: " + name);
     };
@@ -1650,14 +1990,21 @@ dx::IntrinsicHandler Egl14QueryValueHandler(const Context& context,
                                             std::string name) {
     return [context, name = std::move(name)](dx::IntrinsicContext& call) {
         auto& egl = context->egl;
+        if (!ValidateEgl14Display(call, context, call.arguments[0].ref)) {
+            return Bool(false);
+        }
         std::uint32_t handle = egl.native_config;
         if (name == "eglQueryContext") {
             const auto found = egl.egl14_contexts.find(call.arguments[1].ref.Value());
-            if (found == egl.egl14_contexts.end()) return Bool(false);
+            if (found == egl.egl14_contexts.end()) {
+                LatchEglError(call, context, kBadContext); return Bool(false);
+            }
             handle = found->second;
         } else if (name == "eglQuerySurface") {
             const auto found = egl.egl14_surfaces.find(call.arguments[1].ref.Value());
-            if (found == egl.egl14_surfaces.end()) return Bool(false);
+            if (found == egl.egl14_surfaces.end()) {
+                LatchEglError(call, context, kBadSurface); return Bool(false);
+            }
             handle = found->second;
         }
         return WithIntArrayOffset(call, context, call.arguments[3].ref,
@@ -1674,6 +2021,9 @@ dx::IntrinsicHandler Egl14ConfigsHandler(const Context& context,
                                          const bool choose) {
     return [context, choose](dx::IntrinsicContext& call) {
         auto& egl = context->egl;
+        if (!ValidateEgl14Display(call, context, call.arguments[0].ref)) {
+            return Bool(false);
+        }
         const auto configs_index = choose ? 3U : 1U;
         const auto configs_offset_index = choose ? 4U : 2U;
         const auto size_index = choose ? 5U : 3U;
@@ -1879,9 +2229,13 @@ Decl Declare_android_opengl_GLUtils(const Context& context) {
         if (name == "getInternalFormat" || name == "getType") {
             builder.StaticMethod(method.name, method.descriptor,
                 [context, name](dx::IntrinsicContext& call) {
-                    static_cast<void>(GlBitmap(context, call.arguments[0].ref));
-                    return dx::VmValue::Int(name == "getInternalFormat"
-                                                ? 0x1908 : 0x1401);
+                    const auto& bitmap = GlBitmap(context, call.arguments[0].ref);
+                    if (name == "getInternalFormat") {
+                        return dx::VmValue::Int(bitmap.config == 1 ? 0x1906 :
+                                               bitmap.config == 3 ? 0x1907 : 0x1908);
+                    }
+                    return dx::VmValue::Int(bitmap.config == 3 ? 0x8363 :
+                                           bitmap.config == 4 ? 0x8033 : 0x1401);
                 });
         } else if (name == "texImage2D") {
             builder.StaticMethod(method.name, method.descriptor,
@@ -1919,10 +2273,281 @@ Decl Declare_android_opengl_GLUtils(const Context& context) {
     }
     return std::move(builder).Build();
 }
+
+namespace {
+
+dx::VmValue GluString(dx::IntrinsicContext& call, const std::int32_t error) {
+    const char* text = nullptr;
+    switch (error) {
+    case 0: text = "no error"; break;
+    case 0x0500: text = "invalid enum"; break;
+    case 0x0501: text = "invalid value"; break;
+    case 0x0502: text = "invalid operation"; break;
+    case 0x0503: text = "stack overflow"; break;
+    case 0x0504: text = "stack underflow"; break;
+    case 0x0505: text = "out of memory"; break;
+    default: return dx::VmValue::Ref(dx::VmObjectRef{});
+    }
+    return MakeString(call, text);
+}
+
+void GluCall(dx::IntrinsicContext& call, const dx::VmObjectRef receiver,
+             const std::string_view name, const std::string_view descriptor,
+             std::vector<dx::VmValue> arguments) {
+    if (!receiver.IsValid()) {
+        throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;", "gl == null"};
+    }
+    auto& linker = call.vm.Linker();
+    const auto klass = call.vm.Model().ObjectClass(receiver);
+    const auto index = linker.FindVtableIndex(
+        klass, std::string{name}, std::string{descriptor});
+    if (!index.has_value()) {
+        throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;",
+                              "GL10 method is unavailable"};
+    }
+    arguments.insert(arguments.begin(), dx::VmValue::Ref(receiver));
+    const auto outcome = call.vm.Call(linker.Class(klass).vtable[*index], arguments);
+    if (outcome.exception.IsValid()) {
+        throw dx::VmJavaThrow{"Ljava/lang/RuntimeException;",
+                              "GL10 method failed"};
+    }
+}
+
+std::array<float, 16> GluReadMatrix(dx::IntrinsicContext& call,
+                                    const dx::VmObjectRef array,
+                                    const std::int32_t offset) {
+    if (!array.IsValid()) {
+        throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;", "matrix == null"};
+    }
+    if (offset < 0 || call.vm.Model().ArrayLength(array) - offset < 16) {
+        throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;",
+                              "matrix offset is outside the array"};
+    }
+    std::array<float, 16> result{};
+    for (std::int32_t index = 0; index < 16; ++index) {
+        result[static_cast<std::size_t>(index)] = std::bit_cast<float>(
+            static_cast<std::uint32_t>(call.vm.Model().GetPrimitiveElement(
+                array, offset + index)));
+    }
+    return result;
+}
+
+std::array<std::int32_t, 4> GluReadViewport(dx::IntrinsicContext& call,
+                                           const dx::VmObjectRef array,
+                                           const std::int32_t offset) {
+    if (!array.IsValid()) {
+        throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;", "viewport == null"};
+    }
+    if (offset < 0 || call.vm.Model().ArrayLength(array) - offset < 4) {
+        throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;",
+                              "viewport offset is outside the array"};
+    }
+    std::array<std::int32_t, 4> result{};
+    for (std::int32_t index = 0; index < 4; ++index) {
+        result[static_cast<std::size_t>(index)] = static_cast<std::int32_t>(
+            call.vm.Model().GetPrimitiveElement(array, offset + index));
+    }
+    return result;
+}
+
+std::array<float, 16> GluMultiply(const std::array<float, 16>& left,
+                                  const std::array<float, 16>& right) {
+    std::array<float, 16> result{};
+    for (std::size_t column = 0; column < 4; ++column) {
+        for (std::size_t row = 0; row < 4; ++row) {
+            for (std::size_t inner = 0; inner < 4; ++inner) {
+                result[column * 4U + row] +=
+                    left[inner * 4U + row] * right[column * 4U + inner];
+            }
+        }
+    }
+    return result;
+}
+
+std::array<float, 4> GluMultiply(const std::array<float, 16>& matrix,
+                                 const std::array<float, 4>& vector) {
+    std::array<float, 4> result{};
+    for (std::size_t row = 0; row < 4; ++row) {
+        for (std::size_t column = 0; column < 4; ++column) {
+            result[row] += matrix[column * 4U + row] * vector[column];
+        }
+    }
+    return result;
+}
+
+std::optional<std::array<float, 16>> GluInverse(
+    const std::array<float, 16>& matrix) {
+    std::array<std::array<double, 8>, 4> rows{};
+    for (std::size_t row = 0; row < 4; ++row) {
+        for (std::size_t column = 0; column < 4; ++column) {
+            rows[row][column] = matrix[column * 4U + row];
+        }
+        rows[row][row + 4U] = 1.0;
+    }
+    for (std::size_t column = 0; column < 4; ++column) {
+        std::size_t pivot = column;
+        for (std::size_t row = column + 1U; row < 4; ++row) {
+            if (std::abs(rows[row][column]) > std::abs(rows[pivot][column])) pivot = row;
+        }
+        if (std::abs(rows[pivot][column]) < 1.0e-20) return std::nullopt;
+        std::swap(rows[pivot], rows[column]);
+        const auto divisor = rows[column][column];
+        for (auto& value : rows[column]) value /= divisor;
+        for (std::size_t row = 0; row < 4; ++row) {
+            if (row == column) continue;
+            const auto factor = rows[row][column];
+            for (std::size_t index = 0; index < 8; ++index) {
+                rows[row][index] -= factor * rows[column][index];
+            }
+        }
+    }
+    std::array<float, 16> result{};
+    for (std::size_t row = 0; row < 4; ++row) {
+        for (std::size_t column = 0; column < 4; ++column) {
+            result[column * 4U + row] = static_cast<float>(rows[row][column + 4U]);
+        }
+    }
+    return result;
+}
+
+void GluWriteVector(dx::IntrinsicContext& call, const dx::VmObjectRef array,
+                    const std::int32_t offset,
+                    const std::span<const float> values) {
+    if (!array.IsValid()) {
+        throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;", "output == null"};
+    }
+    if (offset < 0 || call.vm.Model().ArrayLength(array) - offset <
+                          static_cast<std::int32_t>(values.size())) {
+        throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;",
+                              "output offset is outside the array"};
+    }
+    for (std::size_t index = 0; index < values.size(); ++index) {
+        call.vm.Model().SetPrimitiveElement(
+            array, offset + static_cast<std::int32_t>(index),
+            std::bit_cast<std::uint32_t>(values[index]));
+    }
+}
+
+}  // namespace
+
 Decl Declare_android_opengl_GLU(const Context& context) {
-    return DeclareJavaGlesClass(context, "Landroid/opengl/GLU;", "Ljava/lang/Object;",
-        gles::GlesApi::gles1, generated_java_gles::kGLUMethods,
-        generated_java_gles::kGLUConstants);
+    static_cast<void>(context);
+    auto builder = dx::IntrinsicClassBuilder::Class(
+        "Landroid/opengl/GLU;", "Ljava/lang/Object;");
+    builder.StaticMethod("gluErrorString", "(I)Ljava/lang/String;",
+        [](dx::IntrinsicContext& call) { return GluString(call, call.arguments[0].AsInt()); });
+    builder.StaticMethod("gluOrtho2D", "(Ljavax/microedition/khronos/opengles/GL10;FFFF)V",
+        [](dx::IntrinsicContext& call) {
+            GluCall(call, call.arguments[0].ref, "glOrthof", "(FFFFFF)V",
+                {call.arguments[1], call.arguments[2], call.arguments[3],
+                 call.arguments[4], dx::VmValue::Float(-1.0F),
+                 dx::VmValue::Float(1.0F)});
+            return dx::VmValue::Void();
+        });
+    builder.StaticMethod("gluPerspective", "(Ljavax/microedition/khronos/opengles/GL10;FFFF)V",
+        [](dx::IntrinsicContext& call) {
+            const auto near_value = call.arguments[3].AsFloat();
+            const auto top = near_value * std::tan(
+                call.arguments[1].AsFloat() * std::numbers::pi_v<float> / 360.0F);
+            const auto bottom = -top;
+            const auto left = bottom * call.arguments[2].AsFloat();
+            const auto right = top * call.arguments[2].AsFloat();
+            GluCall(call, call.arguments[0].ref, "glFrustumf", "(FFFFFF)V",
+                {dx::VmValue::Float(left), dx::VmValue::Float(right),
+                 dx::VmValue::Float(bottom), dx::VmValue::Float(top),
+                 call.arguments[3], call.arguments[4]});
+            return dx::VmValue::Void();
+        });
+    builder.StaticMethod("gluLookAt", "(Ljavax/microedition/khronos/opengles/GL10;FFFFFFFFF)V",
+        [](dx::IntrinsicContext& call) {
+            const std::array eye{call.arguments[1].AsFloat(), call.arguments[2].AsFloat(),
+                                 call.arguments[3].AsFloat()};
+            std::array forward{call.arguments[4].AsFloat() - eye[0],
+                               call.arguments[5].AsFloat() - eye[1],
+                               call.arguments[6].AsFloat() - eye[2]};
+            const std::array up{call.arguments[7].AsFloat(), call.arguments[8].AsFloat(),
+                                call.arguments[9].AsFloat()};
+            const auto normalize = [](std::array<float, 3>& value) {
+                const auto length = std::hypot(value[0], value[1], value[2]);
+                if (length == 0.0F) return false;
+                for (auto& component : value) component /= length;
+                return true;
+            };
+            if (!normalize(forward)) {
+                throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;",
+                                      "eye and center coincide"};
+            }
+            std::array side{forward[1] * up[2] - forward[2] * up[1],
+                            forward[2] * up[0] - forward[0] * up[2],
+                            forward[0] * up[1] - forward[1] * up[0]};
+            if (!normalize(side)) {
+                throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;",
+                                      "up vector is parallel to view"};
+            }
+            const std::array actual_up{
+                side[1] * forward[2] - side[2] * forward[1],
+                side[2] * forward[0] - side[0] * forward[2],
+                side[0] * forward[1] - side[1] * forward[0]};
+            std::array<float, 16> rotation{
+                side[0], actual_up[0], -forward[0], 0.0F,
+                side[1], actual_up[1], -forward[1], 0.0F,
+                side[2], actual_up[2], -forward[2], 0.0F,
+                0.0F, 0.0F, 0.0F, 1.0F};
+            std::array<float, 16> translation{
+                1.0F, 0.0F, 0.0F, 0.0F, 0.0F, 1.0F, 0.0F, 0.0F,
+                0.0F, 0.0F, 1.0F, 0.0F, -eye[0], -eye[1], -eye[2], 1.0F};
+            const auto matrix = GluMultiply(rotation, translation);
+            const auto array = call.vm.Model().NewPrimitiveArray(
+                call.vm.Linker().ResolveDescriptor("[F"),
+                JniPrimitiveKind::float_value, 16);
+            for (std::int32_t index = 0; index < 16; ++index) {
+                call.vm.Model().SetPrimitiveElement(
+                    array, index, std::bit_cast<std::uint32_t>(
+                                      matrix[static_cast<std::size_t>(index)]));
+            }
+            GluCall(call, call.arguments[0].ref, "glMultMatrixf", "([FI)V",
+                    {dx::VmValue::Ref(array), dx::VmValue::Int(0)});
+            return dx::VmValue::Void();
+        });
+    builder.StaticMethod("gluProject", "(FFF[FI[FI[II[FI)I",
+        [](dx::IntrinsicContext& call) {
+            const auto model = GluReadMatrix(call, call.arguments[3].ref,
+                                             call.arguments[4].AsInt());
+            const auto projection = GluReadMatrix(call, call.arguments[5].ref,
+                                                  call.arguments[6].AsInt());
+            const auto viewport = GluReadViewport(call, call.arguments[7].ref,
+                                                  call.arguments[8].AsInt());
+            const auto clip = GluMultiply(GluMultiply(projection, model),
+                std::array{call.arguments[0].AsFloat(), call.arguments[1].AsFloat(),
+                           call.arguments[2].AsFloat(), 1.0F});
+            if (clip[3] == 0.0F) return dx::VmValue::Int(0);
+            const auto inverse_w = 1.0F / clip[3];
+            const std::array output{
+                viewport[0] + viewport[2] * (clip[0] * inverse_w + 1.0F) * 0.5F,
+                viewport[1] + viewport[3] * (clip[1] * inverse_w + 1.0F) * 0.5F,
+                (clip[2] * inverse_w + 1.0F) * 0.5F};
+            GluWriteVector(call, call.arguments[9].ref, call.arguments[10].AsInt(), output);
+            return dx::VmValue::Int(1);
+        });
+    builder.StaticMethod("gluUnProject", "(FFF[FI[FI[II[FI)I",
+        [](dx::IntrinsicContext& call) {
+            const auto model = GluReadMatrix(call, call.arguments[3].ref,
+                                             call.arguments[4].AsInt());
+            const auto projection = GluReadMatrix(call, call.arguments[5].ref,
+                                                  call.arguments[6].AsInt());
+            const auto viewport = GluReadViewport(call, call.arguments[7].ref,
+                                                  call.arguments[8].AsInt());
+            const auto inverse = GluInverse(GluMultiply(projection, model));
+            if (!inverse.has_value() || viewport[2] == 0 || viewport[3] == 0)
+                return dx::VmValue::Int(0);
+            const auto output = GluMultiply(*inverse, std::array{
+                2.0F * (call.arguments[0].AsFloat() - viewport[0]) / viewport[2] - 1.0F,
+                2.0F * (call.arguments[1].AsFloat() - viewport[1]) / viewport[3] - 1.0F,
+                2.0F * call.arguments[2].AsFloat() - 1.0F, 1.0F});
+            GluWriteVector(call, call.arguments[9].ref, call.arguments[10].AsInt(), output);
+            return dx::VmValue::Int(1);
+        });
+    return std::move(builder).Build();
 }
 
 Decl Declare_android_opengl_EGL14(const Context& context) {

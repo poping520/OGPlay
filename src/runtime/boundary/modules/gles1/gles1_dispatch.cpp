@@ -562,7 +562,8 @@ void BindAndroidBoundaryGles1Core(
         throw std::invalid_argument("GLES1 boundary binding is incomplete");
     }
     BindAndroidBoundaryGles1FixedState(
-        dispatch, state.Fixed(), address_space, require_frame, &state.Shared());
+        dispatch, state.Fixed(), address_space, require_frame, &state.Shared(),
+        &state.Matrices());
     dispatch.Bind(
         "glGenTextures",
         [&address_space, require_frame](

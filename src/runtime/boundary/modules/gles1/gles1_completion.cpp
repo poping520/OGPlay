@@ -316,7 +316,10 @@ void BindAndroidBoundaryGles1Completion(gles::GlesDispatchTable& dispatch,
     });
     bind_fixed_vector(
         "glLightxv", [](const auto a) { return LightCount(a[1]); },
-        [&fixed](const auto a, const auto& v) { fixed.SetLight(a[0], a[1], v); });
+        [&fixed, &core](const auto a, const auto& v) {
+            fixed.SetLight(a[0], a[1], TransformGles1LightParameter(
+                a[1], v, core.Matrices().Current()));
+        });
     dispatch.Bind("glMaterialx", [&fixed, require_frame](const auto a, const auto) {
         const std::array value{Fixed(a[2])};
         static_cast<void>(require_frame("glMaterialx"));

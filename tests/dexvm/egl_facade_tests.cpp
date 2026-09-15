@@ -17,6 +17,7 @@
 #include "ogplay/runtime/integration/android_guest_call_session.h"
 #include "ogplay/runtime/dexvm/nio_runtime.h"
 #include "ogplay/runtime/vfs/vfs.h"
+#include "ogplay/session/dex_activity_lifecycle.h"
 
 namespace {
 
@@ -97,6 +98,31 @@ struct EglVm final {
         for (std::size_t index = 0; index < values.size(); ++index) {
             model.SetPrimitiveElement(array, static_cast<JniSize>(index),
                                       static_cast<std::uint32_t>(values[index]));
+        }
+        return array;
+    }
+
+    VmObjectRef FloatArray(const std::vector<float>& values) {
+        const auto klass = linker.ResolveDescriptor("[F");
+        const auto array = model.NewPrimitiveArray(
+            klass, JniPrimitiveKind::float_value,
+            static_cast<JniSize>(values.size()));
+        for (std::size_t index = 0; index < values.size(); ++index) {
+            model.SetPrimitiveElement(
+                array, static_cast<JniSize>(index),
+                std::bit_cast<std::uint32_t>(values[index]));
+        }
+        return array;
+    }
+
+    VmObjectRef StringArray(const std::vector<std::u16string>& values) {
+        const auto array = model.NewObjectArray(
+            linker.ResolveDescriptor("[Ljava/lang/String;"),
+            linker.ResolveDescriptor("Ljava/lang/String;"),
+            static_cast<JniSize>(values.size()));
+        for (std::size_t index = 0; index < values.size(); ++index) {
+            model.SetObjectElement(array, static_cast<JniSize>(index),
+                                   model.NewString(values[index]));
         }
         return array;
     }
@@ -236,12 +262,77 @@ TEST_CASE("BND37 GLSurfaceView publishes API19 context config and GL queue entry
         {VmValue::Ref(runnable)}));
     REQUIRE(vm.context->gl_surface_events.size() == 1U);
     CHECK(vm.context->gl_surface_events.front() == runnable);
+    static_cast<void>(vm.CallOn(view, "setRenderMode", "(I)V",
+                                {VmValue::Int(0)}));
+    static_cast<void>(vm.CallOn(view, "requestRender", "()V"));
+    CHECK(vm.context->gl_surface_render_requests.at(view.Value()));
+    vm.context->gl_surface_renderer_view = view;
+    CHECK(ogplay::session::ConsumeGlSurfaceDrawRequest(*vm.context));
+    CHECK_FALSE(ogplay::session::ConsumeGlSurfaceDrawRequest(*vm.context));
+    static_cast<void>(vm.CallOn(view, "requestRender", "()V"));
+    CHECK(ogplay::session::ConsumeGlSurfaceDrawRequest(*vm.context));
+    static_cast<void>(vm.CallOn(view, "setRenderMode", "(I)V",
+                                {VmValue::Int(1)}));
+    CHECK(ogplay::session::ConsumeGlSurfaceDrawRequest(*vm.context));
+    CHECK(ogplay::session::ConsumeGlSurfaceDrawRequest(*vm.context));
 
     const auto invalid = vm.CallOnOutcome(
         view, "setEGLContextClientVersion", "(I)V", {VmValue::Int(4)});
     REQUIRE(invalid.exception.IsValid());
     CHECK(vm.linker.Class(invalid.exception_class).descriptor ==
           "Ljava/lang/IllegalArgumentException;");
+}
+
+TEST_CASE("BND38 GLU project and unproject follow API19 matrix and offset semantics") {
+    EglVm vm;
+    const auto error = vm.CallStatic(
+        "Landroid/opengl/GLU;", "gluErrorString", "(I)Ljava/lang/String;",
+        {VmValue::Int(0x0502)}).ref;
+    CHECK(vm.interpreter.StringUtf8(error) == "invalid operation");
+    CHECK_FALSE(vm.CallStatic(
+        "Landroid/opengl/GLU;", "gluErrorString", "(I)Ljava/lang/String;",
+        {VmValue::Int(0x7fffffff)}).ref.IsValid());
+    const std::vector<float> identity{
+        1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
+    const auto model = vm.FloatArray(identity);
+    const auto projection = vm.FloatArray(identity);
+    const auto viewport = vm.IntArray({10, 20, 200, 100});
+    const auto window = vm.FloatArray({-1, -1, -1, -1, -1});
+    CHECK(vm.CallStatic(
+        "Landroid/opengl/GLU;", "gluProject", "(FFF[FI[FI[II[FI)I",
+        {VmValue::Float(0.0F), VmValue::Float(0.0F), VmValue::Float(0.0F),
+         VmValue::Ref(model), VmValue::Int(0), VmValue::Ref(projection),
+         VmValue::Int(0), VmValue::Ref(viewport), VmValue::Int(0),
+         VmValue::Ref(window), VmValue::Int(1)}).AsInt() == 1);
+    CHECK(std::bit_cast<float>(static_cast<std::uint32_t>(
+              vm.model.GetPrimitiveElement(window, 1))) ==
+          doctest::Approx(110.0F));
+    CHECK(std::bit_cast<float>(static_cast<std::uint32_t>(
+              vm.model.GetPrimitiveElement(window, 2))) ==
+          doctest::Approx(70.0F));
+    CHECK(std::bit_cast<float>(static_cast<std::uint32_t>(
+              vm.model.GetPrimitiveElement(window, 3))) ==
+          doctest::Approx(0.5F));
+
+    const auto object = vm.FloatArray({-1, -1, -1, -1, -1});
+    CHECK(vm.CallStatic(
+        "Landroid/opengl/GLU;", "gluUnProject", "(FFF[FI[FI[II[FI)I",
+        {VmValue::Float(110.0F), VmValue::Float(70.0F), VmValue::Float(0.5F),
+         VmValue::Ref(model), VmValue::Int(0), VmValue::Ref(projection),
+         VmValue::Int(0), VmValue::Ref(viewport), VmValue::Int(0),
+         VmValue::Ref(object), VmValue::Int(1)}).AsInt() == 1);
+    for (std::int32_t index = 1; index < 4; ++index) {
+        CHECK(std::bit_cast<float>(static_cast<std::uint32_t>(
+                  vm.model.GetPrimitiveElement(object, index))) ==
+              doctest::Approx(0.0F));
+    }
+    const auto singular = vm.FloatArray(std::vector<float>(16, 0.0F));
+    CHECK(vm.CallStatic(
+        "Landroid/opengl/GLU;", "gluUnProject", "(FFF[FI[FI[II[FI)I",
+        {VmValue::Float(0), VmValue::Float(0), VmValue::Float(0),
+         VmValue::Ref(singular), VmValue::Int(0), VmValue::Ref(projection),
+         VmValue::Int(0), VmValue::Ref(viewport), VmValue::Int(0),
+         VmValue::Ref(object), VmValue::Int(1)}).AsInt() == 0);
 }
 
 TEST_CASE("EGL facade publishes singleton interface hierarchy") {
@@ -352,6 +443,28 @@ TEST_CASE("WU-3 EGL14 arrays pbuffer and shared context use native registry") {
     CHECK(vm.model.GetPrimitiveElement(major, 0) == UINT32_MAX);
     CHECK(vm.model.GetPrimitiveElement(major, 1) == 1U);
     CHECK(vm.model.GetPrimitiveElement(minor, 1) == 4U);
+    const auto native_extensions = vm.CallStatic(
+        "Landroid/opengl/EGL14;", "eglQueryString",
+        "(Landroid/opengl/EGLDisplay;I)Ljava/lang/String;",
+        {VmValue::Ref(display), VmValue::Int(0x3055)}).ref;
+    CHECK(vm.interpreter.StringUtf8(native_extensions).find(
+              "EGL_KHR_get_all_proc_addresses") != std::string::npos);
+    const auto foreign_display = vm.interpreter.NewIntrinsicInstance(
+        "Landroid/opengl/EGLDisplay;");
+    CHECK_FALSE(vm.CallStatic(
+        "Landroid/opengl/EGL14;", "eglQueryString",
+        "(Landroid/opengl/EGLDisplay;I)Ljava/lang/String;",
+        {VmValue::Ref(foreign_display), VmValue::Int(0x3055)}).ref.IsValid());
+    CHECK(vm.CallStatic("Landroid/opengl/EGL14;", "eglGetError", "()I").AsInt() ==
+          0x3008);
+    const auto foreign_surface = vm.interpreter.NewIntrinsicInstance(
+        "Landroid/opengl/EGLSurface;");
+    CHECK(vm.CallStatic(
+        "Landroid/opengl/EGL14;", "eglDestroySurface",
+        "(Landroid/opengl/EGLDisplay;Landroid/opengl/EGLSurface;)Z",
+        {VmValue::Ref(display), VmValue::Ref(foreign_surface)}).AsInt() == 0);
+    CHECK(vm.CallStatic("Landroid/opengl/EGL14;", "eglGetError", "()I").AsInt() ==
+          0x300D);
 
     const auto attributes = vm.IntArray(
         {0, 0x3024, 8, 0x3033, 0x0001, 0x3038});
@@ -391,7 +504,7 @@ TEST_CASE("WU-3 EGL14 arrays pbuffer and shared context use native registry") {
          VmValue::Ref(surface_attributes), VmValue::Int(1)}).ref;
     REQUIRE(surface.IsValid());
     const auto context_attributes = vm.IntArray(
-        {0, 0x3098, 2, 0x3038});
+        {0, 0x3098, 3, 0x3038});
     const auto first = vm.CallStatic(
         "Landroid/opengl/EGL14;", "eglCreateContext",
         "(Landroid/opengl/EGLDisplay;Landroid/opengl/EGLConfig;Landroid/opengl/EGLContext;[II)Landroid/opengl/EGLContext;",
@@ -418,6 +531,67 @@ TEST_CASE("WU-3 EGL14 arrays pbuffer and shared context use native registry") {
                    std::bit_cast<std::uint32_t>(0.5F),
                    std::bit_cast<std::uint32_t>(0.75F),
                    std::bit_cast<std::uint32_t>(1.0F)}, thread_id) == 0U);
+
+    const auto vertex = vm.CallStatic(
+        "Landroid/opengl/GLES20;", "glCreateShader", "(I)I",
+        {VmValue::Int(0x8B31)}).AsInt();
+    const auto source = vm.model.NewString(
+        u"attribute vec4 aPos; uniform float uScale; void main(){ gl_Position=aPos*uScale; }");
+    static_cast<void>(vm.CallStatic(
+        "Landroid/opengl/GLES20;", "glShaderSource", "(ILjava/lang/String;)V",
+        {VmValue::Int(vertex), VmValue::Ref(source)}));
+    static_cast<void>(vm.CallStatic(
+        "Landroid/opengl/GLES20;", "glCompileShader", "(I)V",
+        {VmValue::Int(vertex)}));
+    const auto returned_source = vm.CallStatic(
+        "Landroid/opengl/GLES20;", "glGetShaderSource", "(I)Ljava/lang/String;",
+        {VmValue::Int(vertex)}).ref;
+    CHECK(vm.interpreter.StringUtf8(returned_source).find("uScale") != std::string::npos);
+    CHECK(vm.interpreter.StringUtf8(vm.CallStatic(
+        "Landroid/opengl/GLES20;", "glGetShaderInfoLog", "(I)Ljava/lang/String;",
+        {VmValue::Int(vertex)}).ref).empty());
+
+    const auto fragment = vm.CallStatic(
+        "Landroid/opengl/GLES20;", "glCreateShader", "(I)I",
+        {VmValue::Int(0x8B30)}).AsInt();
+    const auto fragment_source = vm.model.NewString(
+        u"precision mediump float; void main(){ gl_FragColor=vec4(1.0); }");
+    static_cast<void>(vm.CallStatic(
+        "Landroid/opengl/GLES20;", "glShaderSource", "(ILjava/lang/String;)V",
+        {VmValue::Int(fragment), VmValue::Ref(fragment_source)}));
+    static_cast<void>(vm.CallStatic(
+        "Landroid/opengl/GLES20;", "glCompileShader", "(I)V",
+        {VmValue::Int(fragment)}));
+    const auto program = vm.CallStatic(
+        "Landroid/opengl/GLES20;", "glCreateProgram", "()I").AsInt();
+    for (const auto shader : {vertex, fragment}) {
+        static_cast<void>(vm.CallStatic(
+            "Landroid/opengl/GLES20;", "glAttachShader", "(II)V",
+            {VmValue::Int(program), VmValue::Int(shader)}));
+    }
+    static_cast<void>(vm.CallStatic(
+        "Landroid/opengl/GLES20;", "glLinkProgram", "(I)V",
+        {VmValue::Int(program)}));
+    CHECK(vm.interpreter.StringUtf8(vm.CallStatic(
+        "Landroid/opengl/GLES20;", "glGetProgramInfoLog", "(I)Ljava/lang/String;",
+        {VmValue::Int(program)}).ref).empty());
+    const auto size = vm.IntArray({-1});
+    const auto type = vm.IntArray({-1});
+    const auto active = vm.CallStatic(
+        "Landroid/opengl/GLES20;", "glGetActiveUniform",
+        "(II[II[II)Ljava/lang/String;",
+        {VmValue::Int(program), VmValue::Int(0), VmValue::Ref(size),
+         VmValue::Int(0), VmValue::Ref(type), VmValue::Int(0)}).ref;
+    CHECK(vm.interpreter.StringUtf8(active) == "uScale");
+    CHECK(vm.model.GetPrimitiveElement(size, 0) == 1U);
+    CHECK(vm.model.GetPrimitiveElement(type, 0) == 0x1406U);
+    const auto indices = vm.IntArray({-1});
+    static_cast<void>(vm.CallStatic(
+        "Landroid/opengl/GLES30;", "glGetUniformIndices",
+        "(I[Ljava/lang/String;[II)V",
+        {VmValue::Int(program), VmValue::Ref(vm.StringArray({u"uScale"})),
+         VmValue::Ref(indices), VmValue::Int(0)}));
+    CHECK(vm.model.GetPrimitiveElement(indices, 0) != 0xffffffffU);
     CHECK(session->InvokeManagedGles(
         ogplay::gles::GlesApi::gles2, "glClear",
         std::array{0x00004000U}, thread_id) == 0U);
@@ -595,6 +769,18 @@ TEST_CASE("DVM-83 publishes the API 19 Java GLES link surface") {
     CHECK(vm.CallStatic("Landroid/opengl/GLUtils;", "getType",
                         "(Landroid/graphics/Bitmap;)I",
                         {VmValue::Ref(bitmap)}).AsInt() == 0x1401);
+    for (const auto [config, format, type] : {
+             std::array<std::int32_t, 3>{1, 0x1906, 0x1401},
+             std::array<std::int32_t, 3>{3, 0x1907, 0x8363},
+             std::array<std::int32_t, 3>{4, 0x1908, 0x8033}}) {
+        vm.context->bitmaps.at(bitmap.Value()).config = config;
+        CHECK(vm.CallStatic("Landroid/opengl/GLUtils;", "getInternalFormat",
+                            "(Landroid/graphics/Bitmap;)I",
+                            {VmValue::Ref(bitmap)}).AsInt() == format);
+        CHECK(vm.CallStatic("Landroid/opengl/GLUtils;", "getType",
+                            "(Landroid/graphics/Bitmap;)I",
+                            {VmValue::Ref(bitmap)}).AsInt() == type);
+    }
     const auto error = vm.CallStatic("Landroid/opengl/GLUtils;",
         "getEGLErrorString", "(I)Ljava/lang/String;",
         {VmValue::Int(0x3004)}).ref;
@@ -688,7 +874,8 @@ TEST_CASE("EGL facade performs two-pass config selection and context state") {
         egl, "eglQueryString",
         "(Ljavax/microedition/khronos/egl/EGLDisplay;I)Ljava/lang/String;",
         {VmValue::Ref(display), VmValue::Int(0x3055)}).ref;
-    CHECK(vm.interpreter.StringUtf8(extensions).empty());
+    CHECK(vm.interpreter.StringUtf8(extensions).find(
+              "EGL_KHR_get_all_proc_addresses") != std::string::npos);
 
     CHECK(vm.CallOn(egl, "eglGetCurrentContext",
                     "()Ljavax/microedition/khronos/egl/EGLContext;").ref ==

@@ -177,6 +177,19 @@ std::string EglModule::GuestExtensionsLocked() {
     return result;
 }
 
+std::string EglModule::QueryStringValue(const std::uint32_t name) {
+    std::scoped_lock lock(mutex_);
+    if (name == kEglExtensions) return GuestExtensionsLocked();
+    const auto* published = FindPublishedString(name);
+    if (published == nullptr) throw std::invalid_argument("invalid EGL query string name");
+    return std::string(published->value);
+}
+
+void EglModule::LatchError(const std::uint64_t thread_id,
+                           const std::uint32_t error) {
+    SetError(thread_id, error);
+}
+
 BoundaryCallServices& EglModule::CallServices() noexcept { return calls_; }
 
 void EglModule::RetireGuestGraphics() noexcept {

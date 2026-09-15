@@ -613,14 +613,21 @@ private:
                 }
                 const auto guest = AllocateMapping(static_cast<std::uint32_t>(length));
                 if (guest == 0U) { graphics_.gl_context.Shared().SetGuestError(0x0505U); return 0U; }
+                const auto guest_access = call.Argument(3);
+                const bool preserve_contents =
+                    (guest_access & 0x0002U) != 0U &&
+                    (guest_access & (0x0004U | 0x0008U)) == 0U;
+                const auto host_access = preserve_contents
+                    ? guest_access | 0x0001U : guest_access;
                 auto* host = frame.MapBufferRange(call.Argument(0),
-                    call.Scalar<std::int32_t>(1), length, call.Argument(3));
+                    call.Scalar<std::int32_t>(1), length, host_access);
                 if (host == nullptr) return 0U;
                 try {
-                if ((call.Argument(3) & 0x0001U) != 0U && length != 0)
+                if (((guest_access & 0x0001U) != 0U || preserve_contents) &&
+                    length != 0)
                     calls_.address_space.Write(memory::GuestAddress{guest},
                         {host, static_cast<std::size_t>(length)}, call.ThreadId());
-                mappings_.emplace(buffer, Mapping{guest, static_cast<std::uint32_t>(length), host, call.Argument(3)});
+                mappings_.emplace(buffer, Mapping{guest, static_cast<std::uint32_t>(length), host, guest_access});
                 } catch (...) { static_cast<void>(frame.UnmapBuffer(call.Argument(0))); throw; }
                 return guest;
             } else {

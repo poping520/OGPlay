@@ -3,6 +3,8 @@
 // ---- migrated from android_provider_Settings_System.cpp ----
 #include "catalog.h"
 
+#include <type_traits>
+
 namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_location_LocationListener(const Context& context) {
@@ -78,52 +80,83 @@ Decl Declare_android_location_LocationManager(const Context& context) {
     return std::move(builder).Build();
 }
 
-Decl Declare_android_provider_Settings_Secure(const Context& context) {
+Decl Declare_android_provider_Settings_NameValueCache(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class(
-        "Landroid/provider/Settings$Secure;", "Ljava/lang/Object;");
-    builder.StaticMethod(
-        "getString",
-        "(Landroid/content/ContentResolver;Ljava/lang/String;)Ljava/lang/String;",
-        [context](dx::IntrinsicContext& call) {
-            if (!call.arguments[0].ref.IsValid()) {
-                throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;",
-                                      "resolver == null"};
-            }
-            if (!call.arguments[1].ref.IsValid()) {
-                throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;",
-                                      "name == null"};
-            }
+        "Landroid/provider/Settings$NameValueCache;", "Ljava/lang/Object;");
+    const auto get_command = builder.BoundInstanceField(
+        "mCallGetCommand", "Ljava/lang/String;", dx::kAccPrivate | dx::kAccFinal);
+    const auto set_command = builder.BoundInstanceField(
+        "mCallSetCommand", "Ljava/lang/String;", dx::kAccPrivate | dx::kAccFinal);
+    const auto table_name = [](dx::IntrinsicContext& call,
+                               const dx::IntrinsicFieldHandle command) {
+        const auto value = dx::IntrinsicCall(call).GetRef(command);
+        if (!value.IsValid()) return std::string{};
+        const auto text = call.vm.StringUtf8(value);
+        const auto separator = text.find('_');
+        return separator == std::string::npos ? std::string{}
+                                              : text.substr(separator + 1U);
+    };
+    const auto require_argument = [](dx::IntrinsicContext& call,
+                                     const std::size_t index,
+                                     const std::string_view name) {
+        if (!call.arguments[index].ref.IsValid()) {
+            throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;",
+                                  std::string(name) + " == null"};
+        }
+    };
+    builder.FinalMethod(
+        "getStringForUser",
+        "(Landroid/content/ContentResolver;Ljava/lang/String;I)Ljava/lang/String;",
+        [context, get_command, table_name,
+         require_argument](dx::IntrinsicContext& call) {
+            require_argument(call, 0U, "resolver");
+            require_argument(call, 1U, "name");
             const auto name = call.vm.StringUtf8(call.arguments[1].ref);
-            const auto found = context->secure_settings.find(name);
-            if (found == context->secure_settings.end()) {
+            const auto table = table_name(call, get_command);
+            if (table == "secure") {
+                const auto found = context->secure_settings.find(name);
+                return found == context->secure_settings.end()
+                           ? dx::VmValue::Ref(dx::VmObjectRef{})
+                           : MakeString(call, found->second);
+            }
+            const auto store = context->preferences.find(
+                "__android.settings." + table);
+            if (store == context->preferences.end()) {
                 return dx::VmValue::Ref(dx::VmObjectRef{});
             }
-            return MakeString(call, found->second);
-        });
-    return std::move(builder).Build();
-}
-
-Decl Declare_android_provider_Settings_System(const Context& context) {
-    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/provider/Settings$System;", "Ljava/lang/Object;");
-    // System settings table shares the session-lifetime preference store.
-    builder.StaticMethod("getInt", "(Landroid/content/ContentResolver;Ljava/lang/String;I)I",
-        [context](dx::IntrinsicContext& call) {
-            const auto key = call.vm.StringUtf8(call.arguments[1].ref);
-            auto& store = context->preferences["__android.settings.system"];
-            const auto found = store.find(key);
-            if (found != store.end()) {
-                if (const auto* value = std::get_if<std::int32_t>(
-                        &found->second)) {
-                    return dx::VmValue::Int(*value);
-                }
+            const auto found = store->second.find(name);
+            if (found == store->second.end()) {
+                return dx::VmValue::Ref(dx::VmObjectRef{});
             }
-            return dx::VmValue::Int(call.arguments[2].AsInt());
+            const auto value = std::visit(
+                [](const auto& item) {
+                    using T = std::decay_t<decltype(item)>;
+                    if constexpr (std::is_same_v<T, std::string>) return item;
+                    else if constexpr (std::is_same_v<T, bool>) {
+                        return std::string(item ? "1" : "0");
+                    } else return std::to_string(item);
+                }, found->second);
+            return MakeString(call, value);
         });
-    builder.StaticMethod("putInt", "(Landroid/content/ContentResolver;Ljava/lang/String;I)Z",
-        [context](dx::IntrinsicContext& call) {
-            const auto key = call.vm.StringUtf8(call.arguments[1].ref);
-            context->preferences["__android.settings.system"][key] =
-                call.arguments[2].AsInt();
+    builder.FinalMethod(
+        "putStringForUser",
+        "(Landroid/content/ContentResolver;Ljava/lang/String;Ljava/lang/String;I)Z",
+        [context, set_command, table_name,
+         require_argument](dx::IntrinsicContext& call) {
+            require_argument(call, 0U, "resolver");
+            require_argument(call, 1U, "name");
+            const auto table = table_name(call, set_command);
+            if (table != "system") {
+                if (auto* ledger = call.vm.Ledger()) {
+                    ledger->RecordUnimplemented(
+                        "dexvm.settings_privileged_write", 0);
+                }
+                return dx::VmValue::Int(0);
+            }
+            const auto name = call.vm.StringUtf8(call.arguments[1].ref);
+            auto& store = context->preferences["__android.settings.system"];
+            if (!call.arguments[2].ref.IsValid()) store.erase(name);
+            else store[name] = call.vm.StringUtf8(call.arguments[2].ref);
             return dx::VmValue::Int(1);
         });
     return std::move(builder).Build();

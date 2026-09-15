@@ -99,6 +99,8 @@ switch/threaded 解释、异常、线程/monitor、反射及 `java.*` core intri
   BootDex；integration 只覆盖 Binder 身份/线程策略 native 与 Parcel 字节/引用 native 边界。
 - ArraySet/LruCache/Pools/Property、Point/Rect、MathUtils/Patterns 与 framework exception
   归 BootDex；Point、Rect、AndroidException 不保留普通方法 overlay。
+- API 19 Settings 公开 Java API 归 BootDex，包括 moved-key 路由、数值转换与异常；只有私有
+  NameValueCache 的有界存储访问由 Android integration overlay，不引入 provider/Binder。
 - API 19 ext.jar 的 Terms/Restlet Apache HTTP 闭包归 BootDex；Commons Logging 的反射实现类
   显式列入配方。HTTP socket 仍只经 NetworkRuntime，TLS 初始化和全局 SSL 配置在未实现时
   明确失败，不因类可解析而宣称完整 Apache 客户端或 TLS。

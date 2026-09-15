@@ -176,6 +176,71 @@ TEST_CASE("DVM-128 Settings.Secure reads the injected API 19 identity") {
     }
 }
 
+TEST_CASE("Settings BootDex routes moved keys through the bounded store") {
+    for (const auto backend :
+         {InterpreterBackend::switch_dispatch,
+          InterpreterBackend::threaded}) {
+        AndroidValueVm fixture(backend);
+        fixture.context->secure_settings.insert_or_assign(
+            "android_id", "0123456789abcdef");
+        const auto resolver = fixture.vm.NewIntrinsicInstance(
+            "Landroid/content/ContentResolver;");
+        const auto android_id = fixture.vm.NewStringUtf8("android_id");
+        const auto volume = fixture.vm.NewStringUtf8("volume_music");
+        const auto text = fixture.vm.NewStringUtf8("17");
+        const auto roots = fixture.vm.ProtectReferences(
+            std::array{resolver, android_id, volume, text});
+
+        const auto get_string =
+            "(Landroid/content/ContentResolver;Ljava/lang/String;)"
+            "Ljava/lang/String;";
+        const auto moved = fixture.Static(
+            "Landroid/provider/Settings$System;", "getString", get_string,
+            {VmValue::Ref(resolver), VmValue::Ref(android_id)}).ref;
+        CHECK(fixture.vm.StringUtf8(moved) == "0123456789abcdef");
+        CHECK(fixture.Static(
+                  "Landroid/provider/Settings$Secure;", "putString",
+                  "(Landroid/content/ContentResolver;Ljava/lang/String;"
+                  "Ljava/lang/String;)Z",
+                  {VmValue::Ref(resolver), VmValue::Ref(android_id),
+                   VmValue::Ref(text)}).AsInt() == 0);
+
+        CHECK(fixture.Static(
+                  "Landroid/provider/Settings$System;", "putString",
+                  "(Landroid/content/ContentResolver;Ljava/lang/String;"
+                  "Ljava/lang/String;)Z",
+                  {VmValue::Ref(resolver), VmValue::Ref(volume),
+                   VmValue::Ref(text)}).AsInt() == 1);
+        const auto stored = fixture.Static(
+            "Landroid/provider/Settings$System;", "getString", get_string,
+            {VmValue::Ref(resolver), VmValue::Ref(volume)}).ref;
+        CHECK(fixture.vm.StringUtf8(stored) == "17");
+        CHECK(fixture.Static(
+                  "Landroid/provider/Settings$System;", "getInt",
+                  "(Landroid/content/ContentResolver;Ljava/lang/String;I)I",
+                  {VmValue::Ref(resolver), VmValue::Ref(volume),
+                   VmValue::Int(3)}).AsInt() == 17);
+
+        const auto system_class = fixture.linker.ResolveDescriptor(
+            "Landroid/provider/Settings$System;");
+        const auto public_get = fixture.linker.FindDirectMethod(
+            system_class, "getString", get_string);
+        REQUIRE(public_get.has_value());
+        CHECK(fixture.linker.Method(*public_get).kind ==
+              MethodKind::interpreted);
+        const auto cache_class = fixture.linker.ResolveDescriptor(
+            "Landroid/provider/Settings$NameValueCache;");
+        const auto store_get = fixture.linker.FindVtableIndex(
+            cache_class, "getStringForUser",
+            "(Landroid/content/ContentResolver;Ljava/lang/String;I)"
+            "Ljava/lang/String;");
+        REQUIRE(store_get.has_value());
+        CHECK(fixture.linker.Method(
+                  fixture.linker.Class(cache_class).vtable[*store_get]).kind ==
+              MethodKind::intrinsic);
+    }
+}
+
 TEST_CASE("DVM-116 BackupManager Java reports absent backup service") {
     for (const auto backend :
          {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {

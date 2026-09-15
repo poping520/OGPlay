@@ -942,8 +942,8 @@ note = "DVM-130 已删除 guest 会话同名平台 HLE；Build/SystemProperties/
 
 [runtime.android_secure_settings]
 status = "complete"
-test = "tests/runtime/sandbox_store_tests.cpp; tests/dexvm/android_value_tests.cpp; tests/runtime/android_guest_framework_platform_tests.cpp; tests/runtime/native_library_loader_tests.cpp; exact PvZ reached fixed-font XML fault"
-note = "DVM-128 按 API 19 首次随机、跨沙盒生命周期稳定语义初始化 64 位小写十六进制 ANDROID_ID；Settings.Secure.getString 在 JNI/DexVM 读取同一独立配置，未知键返回 null，空参数抛 Java NPE。不含 Binder、SettingsProvider、写入、跨用户、观察者或完整 secure 表"
+test = "tests/runtime/sandbox_store_tests.cpp; tests/dexvm/android_value_tests.cpp; tests/dexvm/bootdex_library_tests.cpp; tests/runtime/android_guest_framework_platform_tests.cpp; tests/runtime/native_library_loader_tests.cpp; architecture.dexvm_intrinsic_layout; Angry Birds no-Profile run-apk reached checkCallingOrSelfPermission"
+note = "DVM-128 按 API 19 首次随机、跨沙盒生命周期稳定语义初始化 64 位小写十六进制 ANDROID_ID。DVM-161 将 Settings System/Secure/Global 公开 API、类型转换与 moved-key 路由迁入 AOSP BootDex，仅 overlay 私有 NameValueCache 有界存储；Secure 读取稳定身份，System 支持隔离进程内字符串读写，未知键返回 null，Secure/Global 特权写入记账并返回 false。不含 Binder、SettingsProvider、跨用户、观察者、宿主设置或完整设置表"
 
 [runtime.jni_guest_library_load_plan]
 status = "complete"

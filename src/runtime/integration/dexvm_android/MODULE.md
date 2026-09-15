@@ -60,7 +60,10 @@ Java 异常文本，再进入统一结构化 logger；不吞异常、不写裸 s
   File 且不创建目标，后两者按 MODE_PRIVATE 覆盖、MODE_APPEND 追加。
 - `getObbDir(s)` 按 API 19 返回 primary external 下的
   `/Android/obb/<package>`，经 VFS overlay 建目录；ContextWrapper 只委托 base。
-- Settings.Secure 只读稳定身份；SystemProperties 只实现受审 native 边界。
+- Settings.System/Secure/Global 的公开 API、类型转换和 moved-key 路由来自 API 19 BootDex；
+  integration 只 overlay 私有 NameValueCache 存储边界。Secure 读取稳定沙盒身份，System 使用
+  隔离进程内表；Secure/Global 特权写入记账并返回 false。不实现 Binder SettingsProvider、
+  跨用户、观察者或宿主设置。SystemProperties 只实现受审 native 边界。
 
 ### 资源、Parcel、数据库
 

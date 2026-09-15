@@ -4,6 +4,12 @@
 
 ## 最近进展
 
+- [DVM-161](../tasks/dexvm/DVM-161.md) 已将 API 19 Settings 公开 API 迁入 AOSP BootDex：
+  System/Secure/Global 的 moved-key 路由、类型转换和异常执行原版 Java，C++ 只保留私有
+  NameValueCache 有界存储，不引入 Binder/SettingsProvider。定向测试、架构门禁、BootDex
+  1511 类检查及 Windows Release 构建通过；Angry Birds 无 Profile 实跑已越过
+  `Settings.System.getString`，首错推进到 `Context.checkCallingOrSelfPermission(String)`。
+
 - [DVM-160](../tasks/dexvm/DVM-160.md) 已让 API 19 SystemClock 从确定性的虚拟设备
   60 秒 boot-age 起步，不再随 APK 进程创建归零；uptime/elapsedRealtime 与 scheduler
   继续使用唯一时间事实。Clock 定向 31 assertions、AudioTrack 回归 304 assertions 及
@@ -85,7 +91,8 @@
   或缺失 SO 压缩包的完整 ABI 核验，不能据此宣称“全部 Android GLES 功能已完成”。
 
 - [DVM-154](../tasks/dexvm/DVM-154.md) 已把 File/FIS/FOS/FileReader/FileWriter/RAF、channel、
-  FileChannelImpl/NioUtils、IoBridge/IoUtils/CloseGuard 普通方法迁入 1503 类 API 19 BootDex。
+  FileChannelImpl/NioUtils、IoBridge/IoUtils/CloseGuard 普通方法迁入 API 19 BootDex；DVM-161
+  加入 Settings 全家族后当前共 1511 类。
   Posix 文件子集经唯一 OpenFileDescription 接入 VFS；FileChannelImpl 仅保留 bounded
   file-to-file transfer 边界，通用 mmap/锁/socket 长尾明确失败。
 - API 19 XML style、Terms UI、Context permission、隐式 Activity 切换、LogManager resource、

@@ -1058,6 +1058,34 @@ namespace {
     return stream;
 }
 
+[[nodiscard]] dx::VmObjectRef NewContextFile(
+    dx::IntrinsicContext& call, const std::string& path) {
+    const auto path_ref = call.vm.NewStringUtf8(path);
+    const std::array path_references{path_ref};
+    [[maybe_unused]] const auto path_roots =
+        call.vm.ProtectReferences(path_references);
+    const auto file = call.vm.NewIntrinsicInstance("Ljava/io/File;");
+    const std::array file_references{file};
+    [[maybe_unused]] const auto file_roots =
+        call.vm.ProtectReferences(file_references);
+    const auto file_class = call.vm.Model().ObjectClass(file);
+    const auto constructor = call.vm.Linker().FindDirectMethod(
+        file_class, "<init>", "(Ljava/lang/String;)V");
+    if (!constructor.has_value()) {
+        throw dx::DexVmError(
+            dx::DexVmErrorReason::internal_invariant,
+            "java.io.File(String) constructor is unavailable");
+    }
+    const std::array constructor_arguments{
+        dx::VmValue::Ref(file), dx::VmValue::Ref(path_ref)};
+    const auto outcome = call.vm.Call(*constructor, constructor_arguments);
+    if (outcome.exception.IsValid()) {
+        call.vm.SetPendingException(outcome.exception);
+        return dx::VmObjectRef{};
+    }
+    return file;
+}
+
 [[nodiscard]] dx::VmObjectRef ContextDirectory(
     dx::IntrinsicContext& call, const Context& context,
     const std::string& path, const std::string& singleton_key) {
@@ -1195,6 +1223,13 @@ Decl Declare_android_content_Context(const Context& context) {
             const auto path = ContextFilesPath(context);
             return dx::VmValue::Ref(ContextDirectory(
                 call, context, path, "context_files_directory"));
+        });
+    builder.VirtualMethod(
+        "getFileStreamPath", "(Ljava/lang/String;)Ljava/io/File;",
+        [context](dx::IntrinsicContext& call) {
+            return dx::VmValue::Ref(NewContextFile(
+                call, ContextFilePath(
+                    call, context, call.arguments[0].ref)));
         });
     builder.VirtualMethod(
         "openFileInput", "(Ljava/lang/String;)Ljava/io/FileInputStream;",
@@ -1698,6 +1733,8 @@ Decl Declare_android_content_ContextWrapper(const Context& context) {
     delegate("checkPermission", "(Ljava/lang/String;II)I");
     delegate("getApplicationContext", "()Landroid/content/Context;");
     delegate("getFilesDir", "()Ljava/io/File;");
+    delegate("getFileStreamPath",
+             "(Ljava/lang/String;)Ljava/io/File;");
     delegate("openFileInput",
              "(Ljava/lang/String;)Ljava/io/FileInputStream;");
     delegate("openFileOutput",

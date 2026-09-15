@@ -1525,6 +1525,24 @@ TEST_CASE("Context private file streams use the app files directory on both back
             activity, "attachBaseContext", "(Landroid/content/Context;)V",
             {VmValue::Ref(base)}));
         const auto name = vm.interpreter.NewStringUtf8("slot.dat");
+        const auto file_path_descriptor =
+            "(Ljava/lang/String;)Ljava/io/File;";
+        const auto stream_file = vm.CallOn(
+            activity, "getFileStreamPath", file_path_descriptor,
+            {VmValue::Ref(name)}).ref;
+        REQUIRE(stream_file.IsValid());
+        CHECK(vm.linker.Class(vm.model.ObjectClass(stream_file)).descriptor ==
+              "Ljava/io/File;");
+        CHECK(vm.interpreter.StringUtf8(vm.CallOn(
+            stream_file, "getPath", "()Ljava/lang/String;").ref) ==
+              "/data/data/com.example.game/files/slot.dat");
+        CHECK(vm.CallOn(stream_file, "exists", "()Z").AsInt() == 0);
+        const auto base_stream_file = vm.CallOn(
+            base, "getFileStreamPath", file_path_descriptor,
+            {VmValue::Ref(name)}).ref;
+        CHECK(base_stream_file != stream_file);
+        CHECK(vm.CallOn(base_stream_file, "equals", "(Ljava/lang/Object;)Z",
+                        {VmValue::Ref(stream_file)}).AsInt() == 1);
         const auto output_descriptor =
             "(Ljava/lang/String;I)Ljava/io/FileOutputStream;";
         const auto input_descriptor =
@@ -1541,6 +1559,7 @@ TEST_CASE("Context private file streams use the app files directory on both back
         static_cast<void>(vm.CallOn(output, "close", "()V"));
         CHECK(vm.NativeRead(
                   "/data/data/com.example.game/files/slot.dat") == "A");
+        CHECK(vm.CallOn(stream_file, "exists", "()Z").AsInt() == 1);
 
         output = vm.CallOn(
             activity, "openFileOutput", output_descriptor,
@@ -1586,6 +1605,13 @@ TEST_CASE("Context private file streams use the app files directory on both back
             "openFileInput", input_descriptor,
             {VmValue::Ref(vm.interpreter.NewStringUtf8("nested/slot.dat"))},
             "Ljava/lang/IllegalArgumentException;");
+        expect_exception(
+            "getFileStreamPath", file_path_descriptor,
+            {VmValue::Ref(vm.interpreter.NewStringUtf8("nested/slot.dat"))},
+            "Ljava/lang/IllegalArgumentException;");
+        expect_exception("getFileStreamPath", file_path_descriptor,
+                         {VmValue::Ref(VmObjectRef{})},
+                         "Ljava/lang/NullPointerException;");
         expect_exception("openFileOutput", output_descriptor,
                          {VmValue::Ref(VmObjectRef{}), VmValue::Int(0)},
                          "Ljava/lang/NullPointerException;");

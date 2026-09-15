@@ -136,6 +136,43 @@ public:
 
 }  // namespace
 
+TEST_CASE("guest JNI object-call void follows API 19 Dalvik behavior") {
+    using namespace ogplay::runtime;
+
+    const auto prepare = [](InstanceFixture& fixture, JniInt& calls) {
+        const auto java_class = fixture.classes.RegisterClass(
+            {"fixture/AudioOutput", {},
+             {{"startOutput", "()V", "audio.start", false}}, {}});
+        fixture.invocations.RegisterHandler(
+            "audio.start", [&calls](const JniInvocation&) {
+                ++calls;
+                return JniValue{std::monostate{}};
+            });
+        fixture.environment.AttachThread(InstanceFixture::thread_id);
+        const auto object = fixture.objects.Allocate(java_class);
+        const auto reference = fixture.environment.PublishLocalObject(
+            InstanceFixture::thread_id, object);
+        fixture.WriteString(0x100U, "startOutput");
+        fixture.WriteString(0x140U, "()V");
+        const auto class_reference = fixture.environment.PublishLocalObject(
+            InstanceFixture::thread_id, java_class);
+        fixture.dispatcher.Seal();
+        const auto method = fixture.Call(
+            "GetMethodID", class_reference.Value(),
+            fixture.output.Add(0x100U).Value(),
+            fixture.output.Add(0x140U).Value());
+        return std::pair{reference, method};
+    };
+
+    JniInt calls{};
+    InstanceFixture fixture;
+    const auto [object, method] = prepare(fixture, calls);
+    CHECK(fixture.Call("CallObjectMethod", object.Value(), method) == 0U);
+    CHECK(fixture.Call("CallObjectMethodV", object.Value(), method, 0U) == 0U);
+    CHECK(fixture.Call("CallObjectMethodA", object.Value(), method, 0U) == 0U);
+    CHECK(calls == 3);
+}
+
 TEST_CASE("guest JNI class object and instance call family dispatches exact methods") {
     using namespace ogplay::runtime;
     InstanceFixture fixture;

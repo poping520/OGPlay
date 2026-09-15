@@ -930,6 +930,11 @@ status = "complete"
 test = "tests/runtime/jni_guest_instance_calls_tests.cpp"
 note = "M8 WU-0367 让 NewObject 与 framework HLE 预注册 host object 共享会话级精确 class registry；GetObjectClass、IsInstanceOf 与 30 个 instance call 槽统一查询，FindClass 返回的 jclass 可作为 java.lang.Class receiver，错误对象明确失败"
 
+[runtime.jni_guest_object_call_void_compat]
+status = "complete"
+test = "tests/runtime/jni_guest_instance_calls_tests.cpp: guest JNI object-call void follows API 19 Dalvik behavior; Angry Birds run-apk smoke"
+note = "DVM-158 对齐 API 19 非 CheckJNI Dalvik：CallObjectMethod/CallObjectMethodV/CallObjectMethodA 可执行 descriptor 为 void 的实例方法、丢弃结果并返回 null。该行为是通用 JNI 兼容语义，不依赖 Title Profile；其他返回族错配仍明确失败。"
+
 [runtime.android_legacy_platform_identity]
 status = "complete"
 test = "tests/runtime/android_guest_framework_platform_tests.cpp; tests/runtime/native_library_loader_tests.cpp: JNI framework services use VM methods objects and state"
@@ -1454,6 +1459,11 @@ note = "SharedPreferences 已于 ADR-0020 SBX-6 改为 shared_prefs XML 持久�
 status = "complete"
 test = "tests/dexvm/android_value_tests.cpp: DVM-156; Angry Birds reached Context.getFileStreamPath"
 note = "API 19 LocationListener、Criteria、Location 与稳定 LocationManager 薄层已发布；无 provider、无历史位置，更新订阅与移除记录 dexvm.location_updates 后明确失败。不读取宿主位置，不运行 Binder/system_server，不产生位置回调或虚假坐标。"
+
+[dexvm.context_file_stream_path]
+status = "complete"
+test = "tests/dexvm/file_vfs_tests.cpp: Context private file streams use the app files directory on both backends; Angry Birds reached JNI CallObjectMethodV return mismatch"
+note = "DVM-157 按 API 19 发布 Context.getFileStreamPath(String) 与 ContextWrapper base 委托；名称校验、应用 files 路径和 openFileInput/Output 共用唯一 VFS 事实，返回 BootDex File 新对象且不创建目标文件。"
 
 [dexvm.intent_filter_matching]
 status = "partial"

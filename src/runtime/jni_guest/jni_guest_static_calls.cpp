@@ -515,17 +515,24 @@ void BindInstanceCall(
             const auto receiver_class = objects->ClassOf(*identity);
             const auto method =
                 classes.ResolveMethod(JniMethodId{frame.registers[2]});
-            if (!ResultMatches(method.layout.result.kind, type.result)) {
+            const auto object_call_void =
+                type.result == JniTypeKind::object &&
+                method.layout.result.kind == JniTypeKind::void_value;
+            if (!ResultMatches(method.layout.result.kind, type.result) &&
+                !object_call_void) {
                 throw JniGuestBindingError(
                     name + " return type does not match method descriptor");
             }
             const auto arguments = ReadArguments(
                 address_space, frame, method.layout, source);
-            return EncodeResult(
-                invocations.InvokeVirtual(
-                    frame.thread_id, receiver, receiver_class, method.id,
-                    arguments, source),
-                method.layout.result.kind);
+            const auto result = invocations.InvokeVirtual(
+                frame.thread_id, receiver, receiver_class, method.id,
+                arguments, source);
+            if (object_call_void) {
+                return EncodeResult(JniValue{JniReference{}},
+                                    JniTypeKind::object);
+            }
+            return EncodeResult(result, method.layout.result.kind);
         });
 }
 

@@ -4,6 +4,17 @@
 
 ## 最近进展
 
+- [DVM-158](../tasks/dexvm/DVM-158.md) 已对齐 API 19 非 CheckJNI Dalvik 的通用 JNI 行为：
+  CallObjectMethod 普通/V/A 可调用 void 实例方法，真实执行后返回 null，不依赖 Profile；
+  其他返回族错配仍严格失败。定向测试及 Windows Release 构建通过；Angry Birds 已越过
+  `startOutput()V`，首错推进到独立的
+  `AudioTrack.getPositionNotificationPeriod()I` 缺口。
+
+- [DVM-157](../tasks/dexvm/DVM-157.md) 已按 API 19 补齐 `Context.getFileStreamPath`：复用
+  私有 files VFS 与 BootDex File 构造，ContextWrapper 只委托 base，查询不创建目标文件。
+  双后端文件定向测试 104 assertions 与 intrinsic 架构门禁通过；Angry Birds 首错推进至
+  独立的 JNI `CallObjectMethodV` 返回类型不匹配。
+
 - [DVM-156](../tasks/dexvm/DVM-156.md) 已增加无位置源的 API 19 location 薄层：完整
   `LocationListener` 接口形状、稳定 manager、无 provider/历史位置语义，更新订阅明确失败。
   双后端 62 assertions 与 intrinsic 架构门禁通过；Angry Birds 首错推进至独立的

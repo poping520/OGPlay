@@ -56,7 +56,8 @@ Java 异常文本，再进入统一结构化 logger；不吞异常、不写裸 s
 - bindService 复用同一缺席判定：未知 inventory/潜在匹配明确失败。API19 连接登记早于绑定
   结果，false/失败后仍可解绑一次；ContextWrapper 委托 base，连接是 Context 的 GC 强边。
 - code/resource path 指向同一只读 `/data/app/<package>-1.apk`；cache/files 只在 app VFS。
-  openFileInput/Output 只接受单文件名，MODE_PRIVATE 覆盖、MODE_APPEND 追加。
+  getFileStreamPath 与 openFileInput/Output 共用单文件名校验和 files 路径；前者返回 BootDex
+  File 且不创建目标，后两者按 MODE_PRIVATE 覆盖、MODE_APPEND 追加。
 - `getObbDir(s)` 按 API 19 返回 primary external 下的
   `/Android/obb/<package>`，经 VFS overlay 建目录；ContextWrapper 只委托 base。
 - Settings.Secure 只读稳定身份；SystemProperties 只实现受审 native 边界。

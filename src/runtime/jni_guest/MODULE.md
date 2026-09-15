@@ -74,6 +74,9 @@ nonvirtual、monitor、JavaVM)与 root `JNI_OnLoad` 库生命周期。语义本�
   assignability、argument/return 校验;未声明 class/method、伪 receiver 或返回类型
   不匹配必须明确失败。`GetMethodID`/`GetStaticMethodID` 的未声明诊断必须同时包含
   registry 中的 class name、method name 与 descriptor，不得只打印无法定位 owner 的签名。
+  DVM-158 按 API 19 非 CheckJNI Dalvik 通用兼容语义，允许 CallObjectMethod/ V / A
+  调用 void 实例方法：方法照常执行、结果丢弃并返回 null；不依赖 Profile，其他返回族
+  错配继续明确失败。
 - modified UTF-8 访问族与 UTF-16 string 5 槽都解析统一 `JniStringStore`,并各用独立
   64 KiB copy-based guest arena;`isCopy` 明确写 true,lease 以 string identity +
   pointer + token 配对并 first-fit 回收,arena owner 不得在析构时反向访问可能已销毁的

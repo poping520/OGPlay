@@ -57,6 +57,8 @@ Android API 的详细行为以 [dexvm_android](dexvm_android/MODULE.md)为准；
 - native 出向按 descriptor 编 A32 soft-float 帧：r0=JNIEnv、r1=receiver/jclass，64 位偶对齐、
   栈 8 字节对齐，J/D 返回 r0:r1。先 RegisterNatives，再 Java_ 导出，再记账失败；已解析
   目标的 CPU/JNI fault 不得降级为未注册，诊断保留 class/method/signature/thread 与原 cause。
+  DexVM native 的所有已解析调用失败还必须保留 context token，并以缩进 cause 原样承载
+  execution 层的退出来源、syscall 与 A32 现场，不能由上层重新拼成信息更少的摘要。
   入向复用 233 槽 ABI；Java 异常按 JNI 置 pending，原 throwable 和 modified-UTF8 消息保留。
 - 每个 guest Java thread 有独立 A32 CPU/栈、Bionic TLS/thread-info/TID、JNI attach/local frame。
   native 执行释放 VM 锁，JNI 回调重获；executor 按 thread 和重入深度复用 CPU/JIT，同层复用

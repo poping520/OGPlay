@@ -16,12 +16,30 @@ enum class GuestThreadStatus : std::uint8_t {
     exited,
 };
 
+enum class GuestThreadExitOrigin : std::uint8_t {
+    none,
+    host_request,
+    syscall_exit,
+    syscall_exit_group,
+};
+
+struct GuestThreadExitRequest final {
+    GuestThreadExitOrigin origin{GuestThreadExitOrigin::host_request};
+    std::uint64_t requesting_thread_id{};
+    std::uint32_t syscall_number{};
+    std::uint32_t program_counter{};
+    std::uint32_t link_register{};
+
+    bool operator==(const GuestThreadExitRequest&) const = default;
+};
+
 struct GuestThreadRuntimeState final {
     std::uint64_t thread_id{};
     memory::GuestAddress thread_pointer{0};
     memory::GuestAddress clear_child_tid{0};
     std::int32_t exit_code{};
     GuestThreadStatus status{GuestThreadStatus::running};
+    GuestThreadExitRequest exit_request{};
 
     bool operator==(const GuestThreadRuntimeState&) const = default;
 };
@@ -65,8 +83,13 @@ public:
     void SetClearChildTid(std::uint64_t thread_id,
                           memory::GuestAddress address);
     void RequestExit(std::uint64_t thread_id, std::int32_t exit_code);
+    void RequestExit(std::uint64_t thread_id, std::int32_t exit_code,
+                     GuestThreadExitRequest request);
     void RequestExitGroup(std::uint64_t requesting_thread_id,
                           std::int32_t exit_code);
+    void RequestExitGroup(std::uint64_t requesting_thread_id,
+                          std::int32_t exit_code,
+                          GuestThreadExitRequest request);
     [[nodiscard]] GuestThreadRuntimeState CompleteExit(
         std::uint64_t thread_id);
     [[nodiscard]] GuestThreadExitCompletion CompleteExit(

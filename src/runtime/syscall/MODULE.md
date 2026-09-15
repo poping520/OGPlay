@@ -37,7 +37,9 @@ exit/exit_group/clear-child-tid 所需的 guest 线程生命周期状态。
   因此验证后完成即等价于同步。
 - `pipe` 必须先验证完整两元素输出数组，再原子创建 VFS descriptor pair；发布失败回收
   两端，不泄漏半完成状态。
-- 线程状态只能按 running → exit-requested → exited → reap 前进。
+- 线程状态只能按 running → exit-requested → exited → reap 前进。exit-requested 必须持久保存
+  来源（host/exit/exit_group）、requester、退出码和 syscall PC/LR；进程组退出的每个受影响
+  线程共享同一请求事实，供即时错误与后续诊断读取。
 
 ## 测试
 

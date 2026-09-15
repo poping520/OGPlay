@@ -35,6 +35,44 @@ namespace {
            DescribeA32GuestStop(stopped, state, address_space);
 }
 
+[[nodiscard]] std::string_view ExitOriginName(
+    const GuestThreadExitOrigin origin) noexcept {
+    switch (origin) {
+    case GuestThreadExitOrigin::none: return "none";
+    case GuestThreadExitOrigin::host_request: return "host_request";
+    case GuestThreadExitOrigin::syscall_exit: return "syscall_exit";
+    case GuestThreadExitOrigin::syscall_exit_group: return "syscall_exit_group";
+    }
+    return "unknown";
+}
+
+[[nodiscard]] std::string DescribeGuestCallExit(
+    const A32GuestCallFrame& frame, const std::uint64_t consumed,
+    const cpu::RunResult& stopped, const cpu::A32State& state,
+    const GuestThreadRuntimeState& lifecycle_state,
+    const memory::AddressSpace& address_space) {
+    const auto& request = lifecycle_state.exit_request;
+    std::ostringstream out;
+    out << "A32 guest call terminated by a guest thread exit request:\n"
+        << "  call:      target=0x" << std::hex << std::setw(8)
+        << std::setfill('0') << frame.target.Value()
+        << " consumed=" << std::dec << consumed << " ticks\n"
+        << "  exit:      origin=" << ExitOriginName(request.origin)
+        << " code=" << lifecycle_state.exit_code
+        << " affected_guest=" << lifecycle_state.thread_id
+        << " requester_guest=" << request.requesting_thread_id << "\n";
+    if (request.syscall_number != 0U) {
+        out << "  request:   syscall=" << request.syscall_number;
+        if (request.syscall_number == 1U) out << "(exit)";
+        if (request.syscall_number == 248U) out << "(exit_group)";
+        out << " pc=0x" << std::hex << std::setw(8) << std::setfill('0')
+            << request.program_counter << " lr=0x" << std::setw(8)
+            << request.link_register << "\n";
+    }
+    out << DescribeA32GuestStop(stopped, state, address_space);
+    return out.str();
+}
+
 }  // namespace
 
 SupervisorCallProgress ConsumeAndroidArmSupervisorCall(
@@ -166,8 +204,9 @@ A32GuestCallResult InvokeA32GuestCall(
         }
         const auto current = lifecycle.State(state.ThreadId());
         if (current.status != GuestThreadStatus::running) {
-            throw A32GuestCallError(
-                "A32 guest call requested thread exit before returning");
+            throw A32GuestCallError(DescribeGuestCallExit(
+                frame, consumed, stopped, cpu.GetState(), current,
+                address_space));
         }
         auto updated = cpu.GetState();
         updated.SetThreadPointer(current.thread_pointer);

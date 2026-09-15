@@ -56,3 +56,11 @@ Windows 定向诊断构建使用 `windows-msvc` 预设并保留对应配置目�
 | `register vX out of range`，而 X 比方法声明的寄存器数只大 1 | `GetWide(vN)` 需要 `vN`/`vN+1`，越界消息报的是 `vN+1` | 先核对方法的 `registers`/`ins`，再怀疑 precheck 规则（k22b 类 bug 有先例） |
 | 缺资源条目时抛宿主 C++ 异常，游戏直接崩 | 游戏期望的是可捕获的 Java 异常 | 平台侧缺失必须抛游戏真能 catch 的异常（如 `AssetManager.open` 缺条目抛 `java.io.IOException`），既不伪造成功也不炸宿主 |
 | 长时运行后 GC 预算耗尽 | 瞬态资源数组把 GC-A 预算打满（Asphalt 5 换语言/进赛道路径实测） | 先按 profile `[runtime.dexvm]` 兜住并记录，根治靠精确标记清除（GC-B），不要在解释器里打特例 |
+
+## Native 调用中的 guest 退出
+
+`A32 guest call terminated by a guest thread exit request` 报告分三层读取：先用
+`class/method/descriptor/context_token` 确认 Java→native 边界，再看 `origin/code/requester`
+区分宿主取消、`exit` 和 `exit_group`，最后用 request PC/LR、stop、寄存器与 code 窗口定位
+guest SO。`exit_group` 会标记全部 live 线程，`affected_guest` 不一定等于 requester；不要把
+受影响线程误判为发起线程。code 不可读时仍以 request PC/LR 为事实，不按相邻符号猜测。

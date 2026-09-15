@@ -1222,6 +1222,7 @@ std::optional<std::string> PumpAndroidAudioTracks(
         }
 
         const auto listener = state.position_listener;
+        const auto player = state.player;
         const auto period = state.notification_period;
         const auto prior_head = state.last_notified_head;
         const bool marker_due = state.marker_position > 0 &&
@@ -1247,9 +1248,25 @@ std::optional<std::string> PumpAndroidAudioTracks(
                 found->second.last_notified_head != head) {
                 break;
             }
+            const auto queued_before =
+                context.pcm_playback->QueuedBytes(found->second.player);
             const auto error =
                 invoke(listener, handle, "onPeriodicNotification");
             if (error.has_value()) return error;
+            found = context.audio_tracks.find(handle);
+            if (found == context.audio_tracks.end() ||
+                found->second.player != player) {
+                break;
+            }
+            // Position callbacks run synchronously on the lifecycle thread,
+            // which is also the only frontend consumer of this mixer.  If a
+            // callback refills the stream, replaying more overdue callbacks
+            // in the same pump can fill the byte budget and block forever:
+            // the consumer cannot run until this pump returns.
+            if (context.pcm_playback->QueuedBytes(found->second.player) >
+                queued_before) {
+                break;
+            }
         }
     }
     return std::nullopt;

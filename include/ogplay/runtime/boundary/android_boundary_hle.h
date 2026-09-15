@@ -50,12 +50,18 @@ struct AndroidBoundaryFrame final {
 };
 
 struct BionicDynamicLinkHooks final {
+    struct ArmExidx final {
+        std::uint32_t address{};
+        std::uint32_t entry_count{};
+    };
+
     void* owner{};
     std::uint32_t (*open)(void*, std::string_view, std::uint32_t,
                           std::uint64_t){};
     std::uint32_t (*symbol)(void*, std::uint32_t, std::string_view,
                             std::uint64_t){};
     std::int32_t (*close)(void*, std::uint32_t, std::uint64_t){};
+    ArmExidx (*find_exidx)(void*, std::uint32_t, std::uint64_t){};
 };
 
 struct AndroidBoundaryOptions final {

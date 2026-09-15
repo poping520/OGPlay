@@ -1142,6 +1142,11 @@ public:
                 const std::uint64_t thread_id) {
                 return static_cast<Impl*>(userdata)->DynamicClose(
                     handle, thread_id);
+            },
+            +[](void* userdata, const std::uint32_t pc,
+                const std::uint64_t thread_id) {
+                return static_cast<Impl*>(userdata)->DynamicFindExidx(
+                    pc, thread_id);
             }};
         options.open_sles_callbacks = {
             owner, +[](void* userdata, const OpenSlesGuestCallback& callback) {
@@ -1274,6 +1279,39 @@ public:
         }
         if (--state->references == 0U) state->open = false;
         return 0;
+    }
+
+    BionicDynamicLinkHooks::ArmExidx DynamicFindExidx(
+        const std::uint32_t pc, const std::uint64_t thread_id) const {
+        static_cast<void>(thread_id);
+        std::scoped_lock lock(dynamic_link_mutex_);
+        const auto address = memory::GuestAddress{pc};
+        for (std::size_t index = 0;
+             index < loaded_.link_namespace.modules.size(); ++index) {
+            const auto& module = loaded_.link_namespace.modules[index];
+            if (!std::ranges::any_of(
+                    module.load_ranges, [address](const auto& range) {
+                        return range.Contains(address);
+                    })) {
+                continue;
+            }
+            const auto lifecycle = std::ranges::find(
+                lifecycle_modules_, index,
+                &GuestLifecycleModule::module_index);
+            if (lifecycle == lifecycle_modules_.end() ||
+                !lifecycle->lifecycle.arm_exidx.has_value()) {
+                return {};
+            }
+            const auto& exidx = *lifecycle->lifecycle.arm_exidx;
+            const auto relocated = static_cast<std::uint64_t>(
+                lifecycle->load_bias.Value()) + exidx.address.Value();
+            if (relocated > UINT32_MAX) {
+                throw loader::LinkError("ARM exidx address wraps");
+            }
+            return {static_cast<std::uint32_t>(relocated),
+                    exidx.entry_count};
+        }
+        return {};
     }
 
     void EnqueueOpenSlesCallback(const OpenSlesGuestCallback& callback) {

@@ -106,6 +106,17 @@ public:
         return address.Value();
     }
 
+    std::uint32_t DlUnwindFindExidx(const A32CallFrame& call) {
+        BionicDynamicLinkHooks::ArmExidx result{};
+        if (hooks_.owner != nullptr && hooks_.find_exidx != nullptr) {
+            result = hooks_.find_exidx(hooks_.owner, call.Argument(0),
+                                       call.ThreadId());
+        }
+        calls_.address_space.Write32(memory::GuestAddress{call.Argument(1)},
+                                     result.entry_count, call.ThreadId());
+        return result.address;
+    }
+
 private:
     [[nodiscard]] std::string ReadCString(
         const std::uint32_t address, const std::uint64_t thread_id,

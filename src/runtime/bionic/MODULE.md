@@ -3,13 +3,13 @@
 ## 职责
 
 - `GuestSymbolOverrideDescriptor` 只描述真实 guest ELF export 的宿主覆盖；五个 libc
-  memory override 与四个 libdl linker-service override 均与 Virtual SO catalog 分离，
+  memory override 与五个 libdl linker-service override 均与 Virtual SO catalog 分离，
   ELF ownership 始终属于真实 guest `libc.so`/`libdl.so`。
 - override metadata 同时生成 descriptor 与 concrete handler binding；每个 export 使用
   自己的 A32 参数个数，调用期不得通过共享 PC 或 function id 选择实现。
 - API 19 `libdl.so` 的公开入口本质上依赖进程 linker；`LibdlOverrideModule` 负责 guest
-  字符串搬运和逐 guest thread 的 `dlerror` 消费式缓冲，只通过窄 hooks 请求上层 namespace
-  打开、查符号和关闭 handle，不反向依赖 integration。
+  字符串/指针搬运和逐 guest thread 的 `dlerror` 消费式缓冲，只通过窄 hooks 请求上层
+  namespace 打开、查符号、关闭 handle，以及按 PC 查询 ARM exidx，不反向依赖 integration。
 - `BionicHleSymbolProvider` 的 `Lookup` 保持 (library, symbol) 精确 scope；`LookupAny`
   只服务 `RTLD_DEFAULT` 全进程语义，按 catalog 顺序返回首个命中，不做版本或弱符号裁决。
 
@@ -24,7 +24,8 @@ integration。线程和 syscall 只通过上层装配接入。
 ## 不变量
 
 - 普通符号默认执行真实 guest Bionic，选择性拦截必须有显式声明和真实 handler；
-  `libdl` 四入口必须进入 process linker service，不得执行设备 linker 才能解释的 guest stub。
+  `libdl` 五入口必须进入 process linker service，不得执行设备 linker 才能解释的 guest stub；
+  `dl_unwind_find_exidx` 返回所属模块经 load bias 重定位后的 `PT_ARM_EXIDX` 和表项数。
 - TLS slot、自指针、thread info 与 API profile 必须精确。
 - profile 只接受 Android API 19、22、23。
 - `BuildBionicModuleSet` 只从 ELF `DT_NEEDED` 递归选择 profile 声明的真实 guest 库；HLE

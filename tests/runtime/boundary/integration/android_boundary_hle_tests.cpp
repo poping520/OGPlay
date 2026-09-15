@@ -1097,6 +1097,7 @@ TEST_CASE("libdl overrides bridge process lookup and consume per-thread errors")
         std::uint32_t flags{};
         std::uint64_t thread{};
         bool fail_open{};
+        std::uint32_t unwind_pc{};
     } probe;
     const ogplay::runtime::BionicDynamicLinkHooks hooks{
         &probe,
@@ -1124,6 +1125,13 @@ TEST_CASE("libdl overrides bridge process lookup and consume per-thread errors")
                 throw std::runtime_error("invalid test handle");
             }
             return 0;
+        },
+        +[](void* owner, const std::uint32_t pc, const std::uint64_t thread) {
+            auto& state = *static_cast<Probe*>(owner);
+            state.unwind_pc = pc;
+            state.thread = thread;
+            return ogplay::runtime::BionicDynamicLinkHooks::ArmExidx{
+                0x60012000U, 37U};
         }};
     BoundaryFixture fixture(1U, nullptr, hooks);
     WriteGuestString(fixture, fixture.output, "/system/lib/libGLESv1_CM.so");
@@ -1139,6 +1147,15 @@ TEST_CASE("libdl overrides bridge process lookup and consume per-thread errors")
           0x70000101U);
     CHECK(probe.symbol == "glVertexPointer");
     CHECK(fixture.Call("libdl.so", "dlclose", {handle, 0U, 0U, 0U}) == 0U);
+
+    const auto count = fixture.output.Add(128U);
+    fixture.memory.Write32(count, 0xffffffffU, 1U);
+    CHECK(fixture.Call("libdl.so", "dl_unwind_find_exidx",
+                       {0x60001004U, count.Value(), 0U, 0U}) ==
+          0x60012000U);
+    CHECK(fixture.memory.Read32(count, 1U) == 37U);
+    CHECK(probe.unwind_pc == 0x60001004U);
+    CHECK(probe.thread == 1U);
 
     probe.fail_open = true;
     CHECK(fixture.Call("libdl.so", "dlopen",

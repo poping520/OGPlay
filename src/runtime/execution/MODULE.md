@@ -29,6 +29,8 @@ JNI、framework 或 integration。
   observer 接收当前调用实际累计 tick，SVC 安全边界同样报告该累计值；回调次数不得被解释
   为 tick。切片不得改变总 tick 预算。未处理 trap、提前线程退出和预算耗尽均明确失败；
   预算耗尽诊断必须包含 consumed tick、PC 与 LR，供 exact-title 定位有限但昂贵的 guest 路径。
+  guest 在调用中请求退出时，报告必须保留调用 target/累计 tick、退出来源/码/requester、
+  syscall PC/LR，以及统一 A32 stop、寄存器和可读时的指令窗口；不得折叠为固定短句。
   JNI native 帧可显式参与 watchdog 续期，但只有分发结果为 `handled_advanced`（真实 park、
   正字节数据 I/O、present/audio enqueue 或 JNI 重入）才续期；查询、EOF、wake/yield、内存
   管理及未分类的已处理边界均为 `handled_idle`，不得因经过边界清零。exit request 检查仍

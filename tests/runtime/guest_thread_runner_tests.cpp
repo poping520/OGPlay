@@ -463,7 +463,7 @@ TEST_CASE("exit request preempts a renewably progressing native call") {
         fixture.code, {}, {}, 94U, true};
     std::uint32_t advanced_boundaries{};
 
-    CHECK_THROWS_WITH_AS(
+    try {
         static_cast<void>(ogplay::runtime::InvokeA32GuestCall(
             cpu, fixture.dispatcher, fixture.lifecycle, fixture.memory, frame,
             fixture.stack.Add(fixture.memory.PageSize()), fixture.code.Add(64),
@@ -474,10 +474,53 @@ TEST_CASE("exit request preempts a renewably progressing native call") {
                     fixture.lifecycle.RequestExit(94U, 0);
                 }
                 return ogplay::runtime::SupervisorCallProgress::handled_advanced;
-            })),
-        "A32 guest call requested thread exit before returning",
-        ogplay::runtime::A32GuestCallError);
+            }));
+        FAIL("exit request unexpectedly returned to the guest caller");
+    } catch (const ogplay::runtime::A32GuestCallError& error) {
+        const std::string message = error.what();
+        INFO(message);
+        CHECK(message.find("terminated by a guest thread exit request") !=
+              std::string::npos);
+        CHECK(message.find("call:      target=0x00010000 consumed=3 ticks") !=
+              std::string::npos);
+        CHECK(message.find("origin=host_request code=0 affected_guest=94 ") !=
+              std::string::npos);
+        CHECK(message.find("requester_guest=94") != std::string::npos);
+        CHECK(message.find("stop:      pc=0x00012000") != std::string::npos);
+        CHECK(message.find("registers: r0=") != std::string::npos);
+    }
     CHECK(advanced_boundaries == 3U);
+}
+
+TEST_CASE("guest exit syscall report keeps syscall and call-site evidence") {
+    RunnerFixture fixture;
+    SupervisorLoopCpu cpu{0U};
+    fixture.Start(95U);
+    ogplay::runtime::BindAndroidThreadLifecycleSyscalls(
+        fixture.dispatcher, fixture.lifecycle);
+    auto state = fixture.cpu.GetState();
+    state.SetRegister(ogplay::cpu::CoreRegister::r7, 1U);
+    state.SetRegister(ogplay::cpu::CoreRegister::r0, 23U);
+    state.SetRegister(ogplay::cpu::CoreRegister::lr, 0x60123001U);
+    cpu.SetState(state);
+    const ogplay::runtime::A32GuestCallFrame frame{
+        fixture.code, {23U, 0U, 0U, 0U}, {}, 95U, false};
+
+    try {
+        static_cast<void>(ogplay::runtime::InvokeA32GuestCall(
+            cpu, fixture.dispatcher, fixture.lifecycle, fixture.memory, frame,
+            fixture.stack.Add(fixture.memory.PageSize()), fixture.code.Add(64),
+            4U));
+        FAIL("exit syscall unexpectedly returned to the guest caller");
+    } catch (const ogplay::runtime::A32GuestCallError& error) {
+        const std::string message = error.what();
+        INFO(message);
+        CHECK(message.find("origin=syscall_exit code=23") != std::string::npos);
+        CHECK(message.find("syscall=1(exit)") != std::string::npos);
+        CHECK(message.find("pc=0x00012000 lr=0x00010040") !=
+              std::string::npos);
+        CHECK(message.find("thread:    guest=95") != std::string::npos);
+    }
 }
 
 TEST_CASE("A32 guest call selects Thumb state from the target address") {

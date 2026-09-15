@@ -25,6 +25,9 @@ TEST_CASE("guest thread lifecycle advances explicit per-thread states") {
     CHECK(state.clear_child_tid ==
           ogplay::memory::GuestAddress{0x10020U});
     CHECK(state.exit_code == 3);
+    CHECK(state.exit_request.origin ==
+          ogplay::runtime::GuestThreadExitOrigin::host_request);
+    CHECK(state.exit_request.requesting_thread_id == 12);
     CHECK(lifecycle.CompleteExit(12).status ==
           ogplay::runtime::GuestThreadStatus::exited);
     CHECK(lifecycle.Reap(12).thread_id == 12);
@@ -45,6 +48,27 @@ TEST_CASE("exit group marks every live guest thread with one result") {
         CHECK(state.status ==
               ogplay::runtime::GuestThreadStatus::exit_requested);
         CHECK(state.exit_code == 9);
+    }
+}
+
+TEST_CASE("guest lifecycle retains the complete syscall exit origin") {
+    ogplay::runtime::GuestThreadLifecycle lifecycle;
+    lifecycle.Register(24);
+    lifecycle.Register(25);
+    lifecycle.RequestExitGroup(
+        24, 17,
+        {.origin = ogplay::runtime::GuestThreadExitOrigin::syscall_exit_group,
+         .requesting_thread_id = 24,
+         .syscall_number = 248,
+         .program_counter = 0x60123450U,
+         .link_register = 0x60123001U});
+    for (const auto& state : lifecycle.States()) {
+        CHECK(state.exit_request.origin ==
+              ogplay::runtime::GuestThreadExitOrigin::syscall_exit_group);
+        CHECK(state.exit_request.requesting_thread_id == 24);
+        CHECK(state.exit_request.syscall_number == 248);
+        CHECK(state.exit_request.program_counter == 0x60123450U);
+        CHECK(state.exit_request.link_register == 0x60123001U);
     }
 }
 

@@ -104,6 +104,14 @@ void GuestThreadLifecycle::SetClearChildTid(
 
 void GuestThreadLifecycle::RequestExit(const std::uint64_t thread_id,
                                        const std::int32_t exit_code) {
+    RequestExit(thread_id, exit_code,
+                {.origin = GuestThreadExitOrigin::host_request,
+                 .requesting_thread_id = thread_id});
+}
+
+void GuestThreadLifecycle::RequestExit(const std::uint64_t thread_id,
+                                       const std::int32_t exit_code,
+                                       GuestThreadExitRequest request) {
     std::scoped_lock lock(impl_->mutex);
     auto& state = impl_->Require(thread_id);
     if (state.status == GuestThreadStatus::exited) {
@@ -111,11 +119,20 @@ void GuestThreadLifecycle::RequestExit(const std::uint64_t thread_id,
     }
     state.exit_code = exit_code;
     state.status = GuestThreadStatus::exit_requested;
+    state.exit_request = request;
 }
 
 void GuestThreadLifecycle::RequestExitGroup(
     const std::uint64_t requesting_thread_id,
     const std::int32_t exit_code) {
+    RequestExitGroup(requesting_thread_id, exit_code,
+                     {.origin = GuestThreadExitOrigin::host_request,
+                      .requesting_thread_id = requesting_thread_id});
+}
+
+void GuestThreadLifecycle::RequestExitGroup(
+    const std::uint64_t requesting_thread_id,
+    const std::int32_t exit_code, GuestThreadExitRequest request) {
     std::scoped_lock lock(impl_->mutex);
     const auto& requester = impl_->Require(requesting_thread_id);
     if (requester.status == GuestThreadStatus::exited) {
@@ -126,6 +143,7 @@ void GuestThreadLifecycle::RequestExitGroup(
         if (state.status == GuestThreadStatus::exited) continue;
         state.exit_code = exit_code;
         state.status = GuestThreadStatus::exit_requested;
+        state.exit_request = request;
     }
 }
 

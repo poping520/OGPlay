@@ -32,6 +32,16 @@ constexpr std::uint32_t kDexVmNativeContextSlots = 32;
 
 namespace dx = ogplay::runtime::dexvm;
 
+[[nodiscard]] std::string IndentDiagnostic(const std::string_view text,
+                                           const std::string_view indent) {
+    std::string result{indent};
+    for (const char character : text) {
+        result += character;
+        if (character == '\n') result += indent;
+    }
+    return result;
+}
+
 struct DescriptorWalk final {
     const std::string& descriptor;
     std::size_t index{1};  // past '('
@@ -976,6 +986,16 @@ public:
                 frame.target = *target;
                 result = session->Invoke(frame);
             }
+        } catch (const AndroidGuestCallSessionError& error) {
+            execution_lock.ReacquireAfterBlocking(execution_depth);
+            throw AndroidGuestProcessError(
+                "DexVM native invocation failed:\n"
+                "  class=" + class_name + "\n  method=" + method.name +
+                "\n  descriptor=" + method.descriptor +
+                "\n  guest_thread=" + std::to_string(process_thread) +
+                "\n  context_token=" +
+                std::to_string(frame.context_token) +
+                "\n  cause:\n" + IndentDiagnostic(error.what(), "    "));
         } catch (...) {
             execution_lock.ReacquireAfterBlocking(execution_depth);
             throw;

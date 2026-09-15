@@ -4,6 +4,11 @@
 
 ## 最近进展
 
+- [WU-DIAG-03](../tasks/diagnostics/WU-DIAG-03.md) 已把 A32 native 调用中的 guest 退出从
+  固定短句升级为可追溯现场：lifecycle 保留 host/exit/exit_group、requester、退出码和
+  syscall PC/LR；即时错误同时输出 Java native 方法/context、调用 target/tick、最后 stop、
+  核心寄存器及可读指令窗口。退出行为不变，生产代码无 title 分支。
+
 - [BND-35](../tasks/boundary/BND-35.md) 已闭合 GLES 完整性复核中的可执行反例：ES3
   共用 vertex pointer 类型范围、Java GLES30 indexed String/direct Buffer/sync long/String[]
   桥接及 GLES20 shading-language string；GLES1 新增 GL_OES_framebuffer_object 全部 15 个

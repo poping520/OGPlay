@@ -49,7 +49,12 @@ void BindAndroidThreadLifecycleSyscalls(
             try {
                 thread_lifecycle.RequestExit(
                     frame.thread_id,
-                    std::bit_cast<std::int32_t>(frame.arguments[0]));
+                    std::bit_cast<std::int32_t>(frame.arguments[0]),
+                    {.origin = GuestThreadExitOrigin::syscall_exit,
+                     .requesting_thread_id = frame.thread_id,
+                     .syscall_number = frame.number,
+                     .program_counter = frame.program_counter,
+                     .link_register = frame.link_register});
                 return 0;
             } catch (const GuestThreadLifecycleError&) {
                 return -kEsrch;
@@ -60,7 +65,12 @@ void BindAndroidThreadLifecycleSyscalls(
             try {
                 thread_lifecycle.RequestExitGroup(
                     frame.thread_id,
-                    std::bit_cast<std::int32_t>(frame.arguments[0]));
+                    std::bit_cast<std::int32_t>(frame.arguments[0]),
+                    {.origin = GuestThreadExitOrigin::syscall_exit_group,
+                     .requesting_thread_id = frame.thread_id,
+                     .syscall_number = frame.number,
+                     .program_counter = frame.program_counter,
+                     .link_register = frame.link_register});
                 return 0;
             } catch (const GuestThreadLifecycleError&) {
                 return -kEsrch;

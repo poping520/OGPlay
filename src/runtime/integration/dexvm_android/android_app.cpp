@@ -11,6 +11,32 @@
 
 namespace ogplay::runtime::android_intrinsics {
 
+Decl Declare_android_app_KeyguardManager(const Context& context) {
+    auto builder = dx::IntrinsicClassBuilder::Class(
+        "Landroid/app/KeyguardManager;", "Ljava/lang/Object;");
+    const auto state = [context] {
+        return context->keyguard_state_provider
+                   ? context->keyguard_state_provider()
+                   : AndroidKeyguardState{};
+    };
+    builder.VirtualMethod(
+        "isKeyguardLocked", "()Z",
+        [state](dx::IntrinsicContext&) {
+            return dx::VmValue::Int(state().locked ? 1 : 0);
+        });
+    builder.VirtualMethod(
+        "isKeyguardSecure", "()Z",
+        [state](dx::IntrinsicContext&) {
+            return dx::VmValue::Int(state().secure ? 1 : 0);
+        });
+    builder.VirtualMethod(
+        "inKeyguardRestrictedInputMode", "()Z",
+        [state](dx::IntrinsicContext&) {
+            return dx::VmValue::Int(state().restricted_input ? 1 : 0);
+        });
+    return std::move(builder).Build();
+}
+
 Decl Declare_android_app_backup_BackupManager(const Context&) {
     auto builder = dx::IntrinsicClassBuilder::Class(
         "Landroid/app/backup/BackupManager;");

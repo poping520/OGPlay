@@ -1687,8 +1687,8 @@ note = "DVM-110/ADR-0041：新增 26 个 pinned API19 类至 844 类，Scheduled
 
 [dexvm.layout_params]
 status = "partial"
-test = "tests/dexvm/android_value_tests.cpp: DVM-119; tests/dexvm/widget_click_tests.cpp; tests/runtime/ui_tree_tests.cpp"
-note = "DVM-119/ADR-0046：通用/边距/Frame/Linear/Relative 五类 LayoutParams 执行 BootDex，删除四类旧声明和参数宿主副本。Java 字段/数组是唯一参数状态，apply/update/requestLayout 导入 UiTree 布局输入；参数赋值本身不自动发起布局。LTR 方向解析由 Java 执行，baseline/alignWithParent/动画等未实现行为明确失败。RelativeLayout gravity 在相对定位后按非 GONE 子节点含 margin 的整体边界平移，默认 START/TOP 保留定位。双后端覆盖构造/复制/字段修改、margin/gravity、错误及右下/居中整组定位。完整 XML StyledAttributes 构造、RTL UI、动画和完整 View framework 未纳入。"
+test = "tests/dexvm/android_value_tests.cpp: DVM-119/DVM-167; tests/dexvm/widget_click_tests.cpp; tests/runtime/ui_tree_tests.cpp; Angry Birds no-Profile reached GLSurfaceView config selection"
+note = "DVM-119/ADR-0046：通用/边距/Frame/Linear/Relative 五类 LayoutParams 执行 BootDex，删除四类旧声明和参数宿主副本。Java 字段/数组是唯一参数状态，apply/update/requestLayout 导入 UiTree 布局输入；参数赋值本身不自动发起布局。DVM-167 按 API19 发布 ViewGroup.addView(View,width,height)：虚派默认参数工厂，RelativeLayout 生成自身参数类型，写 BootDex width/height 后委托唯一 index+params attach 路径。LTR 方向解析由现有 UI 模型提供，baseline/alignWithParent/动画等未实现行为明确失败。RelativeLayout gravity 在相对定位后按非 GONE 子节点含 margin 的整体边界平移，默认 START/TOP 保留定位。完整 XML StyledAttributes 构造、其余容器默认参数覆盖、RTL UI、动画和完整 View framework 未纳入。"
 
 [dexvm.display_values_bootdex]
 status = "complete"

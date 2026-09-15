@@ -1318,16 +1318,74 @@ dx::IntrinsicHandler AddHandler(const Context& context, const bool has_index,
     };
 }
 
+dx::VmObjectRef GenerateDefaultLayoutParams(dx::IntrinsicContext& call) {
+    const auto params = CallAndroidMethod(
+        call.vm, call.receiver, "generateDefaultLayoutParams",
+        "()Landroid/view/ViewGroup$LayoutParams;").ref;
+    if (!params.IsValid()) {
+        throw dx::VmJavaThrow{
+            "Ljava/lang/IllegalArgumentException;",
+            "generateDefaultLayoutParams() cannot return null"};
+    }
+    return params;
+}
+
+void SetLayoutDimension(dx::IntrinsicContext& call,
+                        const dx::VmObjectRef params,
+                        const char* name,
+                        const std::int32_t value) {
+    const auto field = call.vm.Linker().FindFieldRecursive(
+        call.vm.Model().ObjectClass(params), name, "I");
+    if (!field) {
+        throw dx::DexVmError(dx::DexVmErrorReason::internal_invariant,
+                             std::string("LayoutParams field is missing: ") +
+                                 name);
+    }
+    const auto& linked = call.vm.Linker().Field(*field);
+    call.vm.Model().InstanceSlots(params)[linked.slot] = {
+        static_cast<std::uint32_t>(value), dx::SlotTag::cat1};
+}
+
+dx::IntrinsicHandler AddWithDimensionsHandler() {
+    return [](dx::IntrinsicContext& call) {
+        const auto child = call.arguments[0].ref;
+        if (!child.IsValid()) {
+            throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;",
+                                  "ViewGroup child is null"};
+        }
+        const auto params = GenerateDefaultLayoutParams(call);
+        const auto roots = call.vm.ProtectReferences(std::array{child, params});
+        SetLayoutDimension(call, params, "width", call.arguments[1].AsInt());
+        SetLayoutDimension(call, params, "height", call.arguments[2].AsInt());
+        static_cast<void>(CallAndroidMethod(
+            call.vm, call.receiver, "addView",
+            "(Landroid/view/View;ILandroid/view/ViewGroup$LayoutParams;)V",
+            {dx::VmValue::Ref(child), dx::VmValue::Int(-1),
+             dx::VmValue::Ref(params)}));
+        return dx::VmValue::Void();
+    };
+}
+
 }  // namespace
 
 Decl Declare_android_view_ViewGroup(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class(
         "Landroid/view/ViewGroup;", "Landroid/view/View;",
         {"Landroid/view/ViewParent;"});
+    builder.VirtualMethod(
+        "generateDefaultLayoutParams",
+        "()Landroid/view/ViewGroup$LayoutParams;",
+        [](dx::IntrinsicContext& call) {
+            return dx::VmValue::Ref(NewAndroidLayoutParams(
+                call.vm, "Landroid/view/ViewGroup$LayoutParams;", -2, -2));
+        },
+        dx::kAccProtected);
     builder.FinalMethod("addView", "(Landroid/view/View;)V",
                     AddHandler(context, false, false));
     builder.FinalMethod("addView", "(Landroid/view/View;I)V",
                     AddHandler(context, true, false));
+    builder.FinalMethod("addView", "(Landroid/view/View;II)V",
+                        AddWithDimensionsHandler());
     builder.FinalMethod(
         "addView",
         "(Landroid/view/View;ILandroid/view/ViewGroup$LayoutParams;)V",

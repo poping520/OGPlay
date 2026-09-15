@@ -107,6 +107,8 @@ Java 异常文本，再进入统一结构化 logger；不吞异常、不写裸 s
   统一 ARGB。
 - pointer 在 dirty 时先 layout，按 clipped reverse-Z/deepest-first 命中并虚派 listener/
   onTouchEvent；键盘将 SDL scancode 转 API 19 keyCode/Unicode/meta/repeat。
+- ViewGroup 的 width/height `addView` 重载虚派容器默认 LayoutParams，写入 BootDex 字段后委托
+  唯一 index+params attach 路径；RelativeLayout 生成自身参数类型，不在 UiTree 复制参数对象。
 - GLES/EGL 通过 session 的 managed 冷入口调用 Native EGL/GLES binding；不创建第二套状态。
   参数错误进入 guest error 锁存，host 内存/生命周期契约故障仍硬失败。Java EGL10 与
   API19 EGL14 的 display/config/context/surface wrapper 只映射 Native EGL registry 句柄；

@@ -1967,4 +1967,32 @@ dx::VmObjectRef NewAndroidComponentName(dx::Interpreter& vm, dx::VmObjectRef pac
                               outcome.exception_message, outcome.exception};
     return object;
 }
+
+dx::VmObjectRef NewAndroidLayoutParams(dx::Interpreter& vm,
+                                       const char* descriptor,
+                                       const std::int32_t width,
+                                       const std::int32_t height) {
+    const auto type = vm.Linker().ResolveDescriptor(descriptor);
+    const auto initialized = vm.EnsureClassInitialized(type);
+    if (initialized.exception.IsValid())
+        throw dx::VmJavaThrow{
+            vm.Linker().Class(initialized.exception_class).descriptor,
+            initialized.exception_message, initialized.exception};
+    const auto object = vm.NewIntrinsicInstance(descriptor);
+    const auto roots = vm.ProtectReferences(std::array{object});
+    const auto constructor =
+        vm.Linker().FindDirectMethod(type, "<init>", "(II)V");
+    if (!constructor)
+        throw dx::DexVmError(dx::DexVmErrorReason::unresolved_reference,
+                             std::string(descriptor) + "-><init>(II)V");
+    const auto outcome = vm.Call(
+        *constructor,
+        std::array{dx::VmValue::Ref(object), dx::VmValue::Int(width),
+                   dx::VmValue::Int(height)});
+    if (outcome.exception.IsValid())
+        throw dx::VmJavaThrow{
+            vm.Linker().Class(outcome.exception_class).descriptor,
+            outcome.exception_message, outcome.exception};
+    return object;
+}
 } // namespace ogplay::runtime::android_intrinsics

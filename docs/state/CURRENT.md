@@ -22,8 +22,10 @@
   app-bug 兼容，严格模式不变且违规用法输出明确 warn；Angry Birds 无 Profile 已越过原
   `nativeUpdate` JNI 引用失效，运行 1258 帧后由游戏正常返回 false。
 - [DVM-166](../tasks/dexvm/DVM-166.md)：补齐 API 19 KeyguardManager 有界 facade；当前桌面状态
-  固定为未锁屏，三项查询统一经可替换 provider，为后续宿主行为接入保留单一边界；Angry
-  Birds 无 Profile 已越过原构造失败，下一独立首错为 `RelativeLayout.addView(View,int,int)`。
+  固定为未锁屏，三项查询统一经可替换 provider，为后续宿主行为接入保留单一边界。
+- [DVM-167](../tasks/dexvm/DVM-167.md)：按 API 19 补齐 ViewGroup width/height addView 重载，
+  RelativeLayout 虚派生成自身 BootDex 参数并复用唯一 attach 路径；Angry Birds 下一独立首错
+  已推进到 GLSurfaceView `BaseConfigChooser` 的 `No config chosen`。
 - BND-34..39 已闭合本轮 EGL/GLES 核心审计、Java EGL/GLES 桥接、GLSurfaceView、GLU、
   `dl_unwind_find_exidx` 与相关行为缺口；核心名称覆盖不等同 CTS/Khronos 完整认证。
 
@@ -43,8 +45,8 @@
 ## 验证快照
 
 - Windows Release 仅构建受影响目标；BootDex 当前为 1531 类。
-- JNI 定向回归 54 cases / 1608 assertions；DVM-166 双解释器 58 assertions；Angry Birds
-  keyguard 修复实跑已到下一独立 Java API 缺口。
+- JNI 定向回归 54 cases / 1608 assertions；DVM-166/167 双解释器分别通过 58/44 assertions；
+  Angry Birds 已进入 GLSurfaceView EGL 配置选择。
 - 既有 BootDex 全链接测试：8602 assertions；能力清单解析通过。
 - 图形 catalog/定向回归通过不代表 CTS/Khronos 或全部厂商扩展认证。
 - `data/android/19/framework/` 为本地生成产物，不纳入版本控制。

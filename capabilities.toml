@@ -1478,7 +1478,7 @@ note = "DVM-71 扩展发布 API19 View.OnSystemUiVisibilityChangeListener 精确
 [dexvm.java_gles]
 status = "partial"
 test = "tests/dexvm/egl_facade_tests.cpp; tests/dexvm/nio_runtime_tests.cpp; tests/runtime/boundary/integration/android_boundary_hle_tests.cpp; tools/generate_java_gles_surface.py --check"
-note = "DVM-83 发布 API19 Java GLES surface；BND-35 为 GLES30 indexed String、mapped direct Buffer、sync long、transform-feedback String[] 增加专用桥接，并允许 GLES20 SHADING_LANGUAGE_VERSION。其余无确定 native 适配关系的方法仍明确失败，因此能力保持 partial。"
+note = "DVM-83 发布 API19 Java GLES surface；BND-35 为 GLES30 indexed String、mapped direct Buffer、sync long、transform-feedback String[] 增加专用桥接，并允许 GLES20 SHADING_LANGUAGE_VERSION；BND-37 补齐 GLSurfaceView Context/config 入口与 current GL 线程 queueEvent。GLU、复杂 descriptor 与 WHEN_DIRTY 调度仍未闭合，因此能力保持 partial。"
 
 [dexvm.audio_track]
 status = "complete"

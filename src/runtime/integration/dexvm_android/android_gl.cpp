@@ -71,6 +71,37 @@ Decl Declare_android_opengl_GLSurfaceView(const Context& context) {
             context->egl_config_chooser = call.arguments[0].ref;
             return dx::VmValue::Void();
         });
+    builder.FinalMethod("setEGLContextClientVersion", "(I)V",
+        [context](dx::IntrinsicContext& call) {
+            const auto version = call.arguments[0].AsInt();
+            if (version < 1 || version > 3) {
+                throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;",
+                                      "unsupported EGL context client version"};
+            }
+            context->gl_surface_client_versions[call.receiver.Value()] = version;
+            return dx::VmValue::Void();
+        });
+    builder.FinalMethod("setEGLConfigChooser", "(Z)V",
+        [context](dx::IntrinsicContext& call) {
+            context->gl_surface_config_specs[call.receiver.Value()] =
+                {8, 8, 8, 8, call.arguments[0].AsInt() != 0 ? 16 : 0, 0};
+            return dx::VmValue::Void();
+        });
+    builder.FinalMethod("setEGLConfigChooser", "(IIIIII)V",
+        [context](dx::IntrinsicContext& call) {
+            std::vector<std::int32_t> values;
+            values.reserve(6U);
+            for (const auto& argument : call.arguments) {
+                if (argument.AsInt() < 0) {
+                    throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;",
+                                          "negative EGL config component"};
+                }
+                values.push_back(argument.AsInt());
+            }
+            context->gl_surface_config_specs[call.receiver.Value()] =
+                std::move(values);
+            return dx::VmValue::Void();
+        });
     builder.VirtualMethod("setRenderMode", "(I)V",
         [context](dx::IntrinsicContext& call) {
             const auto mode = call.arguments[0].AsInt();
@@ -91,6 +122,21 @@ Decl Declare_android_opengl_GLSurfaceView(const Context& context) {
         });
     builder.FinalMethod("requestRender", "()V",
         [](dx::IntrinsicContext&) { return dx::VmValue::Void(); });
+    builder.FinalMethod("queueEvent", "(Ljava/lang/Runnable;)V",
+        [context](dx::IntrinsicContext& call) {
+            const auto runnable = call.arguments[0].ref;
+            if (!runnable.IsValid()) {
+                throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;",
+                                      "runnable must not be null"};
+            }
+            std::scoped_lock lock(context->scheduler_mutex);
+            if (context->scheduler_shutdown) {
+                throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;",
+                                      "GL thread is stopped"};
+            }
+            context->gl_surface_events.push_back(runnable);
+            return dx::VmValue::Void();
+        });
     // Render pause/resume is owned by the lifecycle driver.
     const auto lifecycle_noop = dx::IntrinsicHandler(
         [](dx::IntrinsicContext&) { return dx::VmValue::Void(); });

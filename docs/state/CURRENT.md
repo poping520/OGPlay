@@ -16,6 +16,9 @@
 - [DVM-164](../tasks/dexvm/DVM-164.md)：URLConnection/HTTP/HTTPS 请求状态和默认 SSL
   状态迁入 AOSP BootDex，C++ 只保留外部 I/O 边界；NetworkPolicy 默认 disabled。Angry Birds
   已越过原 getter 缺口。当前 BootDex 1531 类，全链接 8602 assertions 通过。
+- AudioTrack position callback 回填 PCM 后不在唯一 mixer 消费线程继续同步补发过期通知，
+  消除 `AudioTrack.write` 回压自锁；Angry Birds 已推进至 frame 1072，下一独立首错为
+  `nativeUpdate` 当前线程 JNI 引用失效。
 - BND-34..39 已闭合本轮 EGL/GLES 核心审计、Java EGL/GLES 桥接、GLSurfaceView、GLU、
   `dl_unwind_find_exidx` 与相关行为缺口；核心名称覆盖不等同 CTS/Khronos 完整认证。
 

@@ -57,7 +57,9 @@
   source frame 计数，stop 复位，pause 仅冻结。
 - AudioTrack MODE_STREAM 使用 mixer 的可中断 blocking enqueue：未消费字节（首 buffer 已播放
   frame 除外）与本次 write 之和不得超过构造 buffer budget；播放、clear、destroy 唤醒
-  writer，process teardown 粘性中断。queue item capacity 只作内存护栏，不定义正常延迟。
+  writer，process teardown 粘性中断。position callback 若同步回填 PCM，同一次 lifecycle pump
+  不继续补发过期 periodic callback，避免唯一 mixer 消费线程在自己的回压上阻塞。queue item
+  capacity 只作内存护栏，不定义正常延迟。
 
 ## 禁止
 

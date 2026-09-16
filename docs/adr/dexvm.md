@@ -26,6 +26,7 @@
 - [ADR-0047 · Typeface Java 与字体后端描述符](#adr-0047)
 - [ADR-0048 · 文本外观的 Java 值对象与有界样式事实](#adr-0048)
 - [ADR-0056 · Runtime hook 状态归 BootDex，显式退出归 guest 进程边界](#adr-0056)
+- [ADR-0064 · 通用 KeyStore 使用自有 BKS Provider 与既有 guest crypto](#adr-0064)
 
 <a id="adr-0017"></a>
 
@@ -931,3 +932,40 @@ DexVM 堆区分初始目标、普通增长上限与绝对安全上限。64 MiB �
 2..8 MiB。Profile 配置改为 `[runtime.dexvm.heap]`，旧的两个平面字段直接拒绝，不保留兼容
 解释。宿主分配失败映射为 Java OOM；所有判断只依赖确定性字节记账。不得以游戏分支或单次
 大数组豁免绕过该状态机。
+
+<a id="adr-0064"></a>
+## ADR-0064 · 通用 KeyStore 使用自有 BKS Provider 与既有 guest crypto
+
+- 状态：Accepted（架构方向确认，实施尚未开始）
+- 日期：2026-09-16
+- 关联：[KeyStore 开发规划](../design/dexvm/13-keystore.md)
+- Supersedes：无；延续 ADR-0030、0035、0036、0037、0049 的 Java/native 所有权。
+
+### 背景
+
+当前 KeyStore 缺失暴露的是通用 Java 安全能力缺口。仅满足空库初始化或跳过某个 SDK
+构造器不能提供真实兼容性。项目已有 guest libcrypto、JCA、证书和 VFS 基础，用户要求
+不引入 BouncyCastle 运行时库，并从长期能力建设出发实现。
+
+### 决定
+
+保留 API 19 原版 KeyStore/KeyStoreSpi 及相关公开类；新增自有 Java Provider 与 BKS SPI，
+经固定编译工具进入 BootDex。条目、状态、格式和异常归 guest Java；必要密码原语经现有
+libogplay_jni.so 调用 guest libcrypto；持久化只使用调用方流和既有 VFS。
+新生产目录必须有 MODULE.md，不把生产算法藏入构建脚本或 C++ intrinsic。
+
+正式默认类型保持 API 19 的 BKS。只有真实条目、文件互操作和密钥保护主链验收后才注册
+默认 BKS 服务并配置 keystore.type；中间成果不得冒充完整 BKS。Provider 使用自有身份，
+不冒充 BC，也不引入宿主 JVM、系统 AndroidKeyStore、Binder 或硬件密钥服务。
+BC 仅可作为隔离测试 oracle/参考，不进入生产依赖。
+
+验收包括 API 状态、证书及私钥/对称密钥、密码保护、BKS 版本差异、外部双向互读、真实
+跨会话持久化和失败/资源生命周期。分阶段实施不缩减这些最终条件；算法和格式支持范围
+在能力账本单独列明。游戏触发案例只用于集成验证，不定义通用实现的分支或验收边界。
+
+### 后果
+
+减少新增运行时依赖，同时由项目承担 BKS codec、历史兼容和测试维护成本。
+PKCS12/JKS 等格式后续各自实现，不能替换默认类型以规避 BKS。
+KeyStore 不承担 PKIX、系统 CA 或 TLS；网络链另行验收，保持默认网络策略和明确失败。
+上线 TLS 的后端版本与维护策略需要独立设计，不自动继承旧版离线 crypto 的选择。

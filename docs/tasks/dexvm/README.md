@@ -4,6 +4,9 @@
 本专项把设计展开为可分片执行的 WU 批次；编号沿用子系统缩写 `DVM-N`，
 创建后不移动、不重编号，依赖用文件名声明。
 
+后续能力规划：[KeyStore 通用能力](../../design/dexvm/13-keystore.md)（ADR-0064，尚未实施）。
+开发单元、依赖和验收见该文档 KS-01..09；启动时分配正式 DVM 工作单，不以游戏单条调用为范围。
+
 ## 目标
 
 Asphalt 5（pilot title）删除 profile 全部 `native_call` 与 `[[java.class]]` 段，

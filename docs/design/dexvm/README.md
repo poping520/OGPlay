@@ -46,6 +46,7 @@ API 19 目标同代）为本地参考基线——目录类数据机器比对、�
 | [10 · 解释器 v2 threaded 内核](10-interpreter-threaded.md) | 预解码 + 线程化分派的第二内核：与旧 switch 内核并存可切换，bridge 渐进迁移，tick 逐位等价 |
 | [11 · Class、Reflection 与 ClassLoader](11-class-reflection-loader.md) | API 19 class metadata、单 ClassLoader façade 与 reflection 闭环 |
 | [12 · API 19 能力栈与 intrinsic 布局收敛](12-api19-capability-stack.md) | family TU 收敛、Context 类型体系、NIO、Java GLES、AudioTrack、Clock 与后续能力顺序 |
+| [13 · KeyStore 通用能力开发规划](13-keystore.md) | 原版 JCA、自有 BKS Provider、真实密钥与持久化、互操作验收和 TLS 边界；尚未实施 |
 
 ## 启动条件与当前状态
 

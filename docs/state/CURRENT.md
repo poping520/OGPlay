@@ -1,9 +1,12 @@
 # 当前状态
 
-更新：2026-09-15。
+更新：2026-09-16。
 
 ## 最近进展
 
+- [KeyStore 通用能力规划](../design/dexvm/13-keystore.md)已落地：原版 JCA、自有 BKS
+  Provider、既有 guest crypto，覆盖真实密钥保护、文件互操作及持久化；ADR-0064 确认方向。
+  当前仅规划，KS-01..09 尚未实施；KeyStore、BKS 与 TLS/PKIX 的运行时能力状态未变。
 - Angry Birds 无 Profile 兼容链已依次越过 `dl_unwind_find_exidx`、location 薄层、
   `Context.getFileStreamPath`、旧 Dalvik JNI Object-call/void、AudioTrack notification getter、
   Flurry boot-age、Settings moved-key 和 Context calling/self 权限检查。

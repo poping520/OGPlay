@@ -4,6 +4,8 @@ crypto_jni.c 与 `src/guest/icu/icu_jni.c` 统一编译为 API 19 ARM
 `libogplay_jni.so`。本目录只拥有 crypto 注册、状态和 OpenSSL 调用；唯一 JNI_OnLoad
 在本文件协调两个源码模块。使用 JNI 1.6 必要槽、API 19 bionic
 mutex ABI 与 OpenSSL EVP 不透明接口，无 OpenSSL 结构布局依赖；算法在 libcrypto 执行。
+API 19 payload 同时提供同一 AOSP revision 构建的 `libssl.so`；它是 OpenSSL 运行库的一部分，
+当前 Java/TLS 能力边界仍由上层模块约束。
 
 算法与 context 使用逻辑 token；registry mutex、引用计数与 per-context mutex 保护
 查找/执行/释放。Java owner GC、teardown 释放资源，库析构兜底。独立 buffer 支持
@@ -19,6 +21,10 @@ ARMv7 API 19 clang/ld.lld，默认位于 `D:\01_software\android-sdk\ndk\r25c`�
 `android-4.4.4_r2.0.1` commit `dd1da36b0baa39942f0aef42c4712ef0ad628a83`
 以 `aosp_arm-user`、`make -B -j8 libcrypto` 构建的 ARM ELF；来源、哈希和许可证由
 payload manifest/validator 共同校验。缺库或哈希不符时构建与完整 payload 校验明确失败。
+
+同一源码 revision 的 `libssl.so` 以 `aosp_arm-user`、`make -B -j8 libssl` 构建，
+SHA-256 为 `8b1a7d20e405ff73edcaad592cf846f8e28b78bb446874208d65990b16d79734`；
+它与 `libcrypto.so` 共用 OpenSSL NOTICE，来源和哈希由 payload manifest/validator 校验。
 
 DVM-106 在同一库增加验签 JNI：SPKI 公钥经 d2i_PUBKEY 完整消费，EVP_Digest/Verify
 执行 RSA PKCS#1 v1.5 或 ECDSA，摘要为 SHA1/224/256/384/512。Java 拥有证书解析与

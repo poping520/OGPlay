@@ -135,6 +135,21 @@
       "notice_sha256": "257fe1b542f846557d0fc938f4206d6c9a6334e2b571fa020e51f96377537120"
     },
     {
+      "path": "lib/libssl.so",
+      "source_project": "platform/external/openssl",
+      "size": 249516,
+      "sha256": "8b1a7d20e405ff73edcaad592cf846f8e28b78bb446874208d65990b16d79734",
+      "soname": "libssl.so",
+      "needed": [
+        "libcrypto.so",
+        "libc.so",
+        "libstdc++.so",
+        "libm.so"
+      ],
+      "notice": "notices/libcrypto.so.txt",
+      "notice_sha256": "257fe1b542f846557d0fc938f4206d6c9a6334e2b571fa020e51f96377537120"
+    },
+    {
       "path": "lib/libdl.so",
       "source_project": "platform/bionic",
       "size": 9220,

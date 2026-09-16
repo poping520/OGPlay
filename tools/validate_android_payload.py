@@ -163,6 +163,8 @@ def _validate_source_manifest(root: Path, source: dict[str, Any]) -> set[str]:
     expected = {
         "platform/abi/cpp": "18f1b5e28734183ff8073fe86dc46bc4ebba8a59",
         "platform/bionic": "081db840befec895fb86e709ae95832ade2d065c",
+        "platform/external/apache-http":
+            "d8895c4ccee0979e658a76d9c92e842e3f83d0cd",
         "platform/external/icu4c":
             "18668f3b015a110275f5cc9a8722b2f65f3333bf",
         "platform/external/openssl":

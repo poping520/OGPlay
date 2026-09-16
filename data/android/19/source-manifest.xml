@@ -6,6 +6,7 @@
   checked-out HEAD observed in the partial source tree. DVM-107 adds
   frameworks/base and dalvik tag revisions resolved from the AOSP remote;
   local Java/dx input hashes are recorded separately in boot_dex.sources.
+  DVM-171 pins external/apache-http because ext.jar remains a BootDex input.
 -->
 <manifest>
   <remote name="aosp" fetch=".." />
@@ -17,6 +18,7 @@
     <copyfile src="core/root.mk" dest="Makefile" />
   </project>
   <project path="external/compiler-rt" name="platform/external/compiler-rt" revision="7cba5f1d950495b02bc8da53d27bdbb1b0d4f117" />
+  <project path="external/apache-http" name="platform/external/apache-http" revision="d8895c4ccee0979e658a76d9c92e842e3f83d0cd" />
   <project path="external/icu4c" name="platform/external/icu4c" revision="18668f3b015a110275f5cc9a8722b2f65f3333bf" />
   <project path="external/openssl" name="platform/external/openssl" revision="dd1da36b0baa39942f0aef42c4712ef0ad628a83" />
   <project path="external/stlport" name="platform/external/stlport" revision="628e14d37c5b239839a466e81c74bf66255b770b" />

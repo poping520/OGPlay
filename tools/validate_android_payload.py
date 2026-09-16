@@ -33,6 +33,7 @@ LIBRARIES = {
     "lib/libm.so",
     "lib/libogplay_jni.so",
     "lib/libstdc++.so",
+    "lib/libssl.so",
     "lib/libstlport.so",
     "lib/libz.so",
 }
@@ -387,8 +388,12 @@ def validate(root: Path) -> None:
             continue
         notice = _text(entry.get("notice"), f"{label}.notice")
         expected_notice = f"notices/{Path(relative).name}.txt"
-        if source_project == "platform/external/icu4c":
-            expected_notice = "notices/icu4c-license.html"
+        if source_project in {"platform/external/icu4c", "platform/external/openssl"}:
+            # ICU and OpenSSL publish shared package-level license notices.
+            if source_project == "platform/external/icu4c":
+                expected_notice = "notices/icu4c-license.html"
+            else:
+                expected_notice = "notices/libcrypto.so.txt"
         if notice != expected_notice:
             raise PayloadError(f"{label}.notice does not match")
         notice_path = root / notice
@@ -409,7 +414,7 @@ def main() -> int:
         validate(args.root)
     except (OSError, PayloadError) as error:
         parser.error(str(error))
-    print("Android runtime payload validated: API 19, boot dex, ICU 51.1, 11 declared guest libraries")
+    print("Android runtime payload validated: API 19, boot dex, ICU 51.1, 12 declared guest libraries")
     return 0
 
 

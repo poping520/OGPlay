@@ -13,6 +13,8 @@
   BootDex，删除 C++ 手工类壳；原版 217 个 native 中 26 个沿用既有后端、1 个为初始化适配、
   190 个明确失败。资源登记归 VM，私有验签移出原版 ABI；初始化失败传播和 payload 来源
   固定均已受检。BootDex 现为 1542 类。
+- API 19 bundled OpenSSL payload 现包含同一 AOSP 4.4.4_r2.0.1 `aosp_arm-user` 构建的
+  `libcrypto.so` 与 `libssl.so`；TLS/PKIX 的上层能力边界保持不变。
 - [KeyStore 通用能力规划](../design/dexvm/13-keystore.md)按 ADR-0064 实施，约定范围已验收；TLS/PKIX、系统 CA、
   AndroidKeyStore、DSA 与签名生成仍明确不在本次范围。
 - Angry Birds 无 Profile 兼容链已依次越过 `dl_unwind_find_exidx`、location 薄层、

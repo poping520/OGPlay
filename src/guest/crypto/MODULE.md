@@ -33,3 +33,8 @@ algorithm lookup/size、init/update/final、ctx copy/destroy。算法和 context
 每次 update 分块读取 Java byte[]，scratch 最多 64 KiB，无累计消息长度上限。
 final 消费 context，Java 清零 ctx 字段；GC/teardown 通过同一 destroy 释放。
 registry/per-context mutex、引用计数与库析构兜底沿用 Cipher 约定；MD5 不在宿主实现。
+
+DVM-171 使用固定 JAR 的原版 `NativeCrypto` 类和全部 native descriptor；本模块只导出当前
+26 个已实现后端及受限 `clinit`。`clinit` 验证 `JNI_OnLoad` 已完成线程回调和摘要注册，
+不初始化或发布 TLS。OGPlay 私有证书验签导出归 `NativeVerification.verify`；digest/HMAC/
+OpenSSLKey 的字段 token 清理由 VM 统一登记，registry、锁、GC/teardown 语义不变。

@@ -796,7 +796,11 @@ dx::IntrinsicHandler PlatformSystemLoadLibraryHandler(
         context, "libraryName",
         [](NativeLibraryLoader& libraries, const std::string_view name,
            const JavaClassLoaderToken class_loader) {
-            static_cast<void>(libraries.LoadLibrary(name, class_loader));
+            // API 19 Conscrypt names its platform JNI library "javacrypto".
+            // OGPlay intentionally ships the audited crypto/ICU JNI subset in
+            // the single process-owned libogplay_jni.so instead.
+            const auto resolved = name == "javacrypto" ? std::string_view{"ogplay_jni"} : name;
+            static_cast<void>(libraries.LoadLibrary(resolved, class_loader));
         });
 }
 

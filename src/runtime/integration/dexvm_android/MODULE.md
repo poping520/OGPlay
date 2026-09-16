@@ -160,6 +160,8 @@ extension string 与错误锁存以 native registry 为唯一事实。
   宿主接入只能替换 provider，不得把 Binder、WindowManagerService 或宿主查询散入 Java handler。
 - System.load/loadLibrary 只经 process loader 并携带 application ClassLoader；失败映射 Java 异常，
   禁止 no-op 成功。JNI 对象出口按真实 runtime class 原子幂等注册；数组元素不得猜声明类型。
+- 固定 API 19 Conscrypt 请求的 `javacrypto` 只在此系统库边界解析到统一 `ogplay_jni`；
+  其余应用库名称不改写，加载失败仍抛 `UnsatisfiedLinkError`。
 - JCA `Mac/MacSpi` 与 HmacSHA1 SPI 均来自 API 19 BootDex/Conscrypt；当前 AndroidOpenSSL 仅
   注册已接通算法，计算经 AOSP 签名的 `NativeCrypto` 进入 guest ARM libcrypto，native token
   复用统一 GC/teardown 清理。BKS/KeyStore、BouncyCastle 与 TLS 不在当前边界。

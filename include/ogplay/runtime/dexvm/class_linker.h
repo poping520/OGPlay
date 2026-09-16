@@ -151,6 +151,9 @@ struct IntrinsicClassDecl final {
     std::optional<std::string> superclass;
     std::vector<std::string> interfaces;
     bool is_interface{};
+    // The BootDex class is the sole definition; every native declaration in
+    // that class is admitted to guest JNI without duplicating its member list.
+    bool admit_boot_native_methods{};
     std::uint32_t access_flags{};
     std::vector<IntrinsicMethodDecl> methods;
     std::vector<IntrinsicFieldDecl> fields;
@@ -227,6 +230,7 @@ struct LinkedClass final {
     bool is_boot_dex{};
     bool is_interface{};
     bool is_array{};
+    bool admit_boot_native_methods{};
     std::string array_element_descriptor;
     std::uint16_t instance_slots{};
     std::vector<VmFieldId> own_instance_fields;

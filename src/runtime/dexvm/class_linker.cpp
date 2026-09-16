@@ -153,6 +153,7 @@ void DexClassLinker::RegisterIntrinsics(
         linked.descriptor = declaration.descriptor;
         linked.is_intrinsic = true;
         linked.is_interface = declaration.is_interface;
+        linked.admit_boot_native_methods = declaration.admit_boot_native_methods;
         linked.defining_loader = kBootstrapLoader;
         linked.initiating_loader_mask = LoaderMask(kBootstrapLoader);
         linked.access_flags = declaration.access_flags;
@@ -487,7 +488,8 @@ DexUnitId DexClassLinker::RegisterDexUnit(
                         stored.clinit = current.id;
                     }
                 } else {
-                    if (method.kind == MethodKind::native && boot) {
+                    if (method.kind == MethodKind::native && boot &&
+                        !stored.admit_boot_native_methods) {
                         Fail(DexVmErrorReason::invalid_member,
                              "curated boot dex contains an unbound native "
                              "method: " + stored.descriptor + "." +

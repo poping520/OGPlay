@@ -121,6 +121,10 @@ namespace ogplay::runtime::dexvm {
             std::string name, std::string descriptor,
             std::uint32_t access_flags = kAccPublic | kAccNative);
 
+        // Admit the native declarations supplied by the matching BootDex
+        // class. This does not define or replace the class or its methods.
+        IntrinsicClassBuilder& AdmitBootNativeMethods();
+
         IntrinsicClassBuilder& VirtualMethod(std::string name,
                                              std::string descriptor,
                                              IntrinsicHandler handler,

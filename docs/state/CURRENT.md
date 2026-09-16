@@ -4,6 +4,9 @@
 
 ## 最近进展
 
+- [DVM-171](../tasks/dexvm/DVM-171.md)：固定 API 19 原版 `NativeCrypto` 及精确依赖进入
+  BootDex，删除 C++ 手工类壳；原版 217 个 native 中 26 个沿用既有后端、1 个为初始化适配、
+  190 个明确失败。资源登记归 VM，私有验签移出原版 ABI。BootDex 现为 1542 类。
 - [KeyStore 通用能力规划](../design/dexvm/13-keystore.md)已落地：原版 JCA、自有 BKS
   Provider、既有 guest crypto，覆盖真实密钥保护、文件互操作及持久化；ADR-0064 确认方向。
   当前仅规划，KS-01..09 尚未实施；KeyStore、BKS 与 TLS/PKIX 的运行时能力状态未变。
@@ -59,7 +62,7 @@
 
 ## 验证快照
 
-- Windows Release 仅构建受影响目标；BootDex 当前为 1539 类。
+- Windows Release 仅构建受影响目标；BootDex 当前为 1542 类。
 - JNI 定向回归 54 cases / 1608 assertions；DVM-166/167 双解释器分别通过 58/44 assertions；
   DVM-168 EGL10/EGL14 定向回归 6 cases / 314 assertions；Angry Birds 已进入 renderer 的
   `onSurfaceChanged`；DVM-169 双解释器加密回归 1 case / 1646 assertions；DVM-170 双解释器

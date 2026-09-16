@@ -6,6 +6,7 @@ namespace ogplay::runtime::dexvm::intrinsics {
 namespace {
 using namespace detail;
 constexpr auto kNative = "Lcom/android/org/conscrypt/NativeCrypto;";
+constexpr auto kVerificationNative = "Lorg/ogplay/security/NativeVerification;";
 constexpr auto kProvider = "Lcom/android/org/conscrypt/OpenSSLProvider;";
 
 struct SignatureAlgorithm {
@@ -324,66 +325,14 @@ IntrinsicClassDecl CipherContext() {
         0);
     return std::move(b).Build();
 }
-IntrinsicClassDecl NativeCryptoBoundary() {
+IntrinsicClassDecl NativeVerificationBoundary() {
+    auto b = IntrinsicClassBuilder::Class(kVerificationNative);
+    b.GuestNativeStatic("verify", "([B[B[BLjava/lang/String;)Z");
+    return std::move(b).Build();
+}
+IntrinsicClassDecl NativeCryptoGuestAdmission() {
     auto b = IntrinsicClassBuilder::Class(kNative);
-    b.ClassInitializer([](IntrinsicContext& c) {
-        Direct(c.vm, "Ljava/lang/System;", "loadLibrary", "(Ljava/lang/String;)V",
-               {VmValue::Ref(c.vm.NewStringUtf8("ogplay_jni"))});
-        const auto owner = c.vm.Linker().ResolveDescriptor("Lcom/android/org/conscrypt/OpenSSLMessageDigestJDK;");
-        const auto field = c.vm.Linker().FindFieldRecursive(owner, "ctx", "J");
-        const auto cleanup = c.vm.Linker().FindDirectMethod(c.vm.Linker().ResolveDescriptor(kNative), "EVP_MD_CTX_destroy", "(J)V");
-        if (!field || !cleanup) throw DexVmError(DexVmErrorReason::unresolved_reference, "digest resource metadata");
-        c.vm.TrackGuestNativeResourceField(*field, *cleanup);
-        const auto hmac_context = c.vm.Linker().FindFieldRecursive(
-            c.vm.Linker().ResolveDescriptor(
-                "Lcom/android/org/conscrypt/OpenSSLDigestContext;"),
-            "context", "J");
-        const auto hmac_cleanup = c.vm.Linker().FindDirectMethod(
-            c.vm.Linker().ResolveDescriptor(kNative),
-            "EVP_MD_CTX_destroy", "(J)V");
-        const auto mac_key = c.vm.Linker().FindFieldRecursive(
-            c.vm.Linker().ResolveDescriptor(
-                "Lcom/android/org/conscrypt/OpenSSLKey;"),
-            "ctx", "J");
-        const auto key_cleanup = c.vm.Linker().FindDirectMethod(
-            c.vm.Linker().ResolveDescriptor(kNative), "EVP_PKEY_free", "(J)V");
-        if (!hmac_context || !hmac_cleanup || !mac_key || !key_cleanup) {
-            throw DexVmError(DexVmErrorReason::unresolved_reference,
-                             "HMAC resource metadata");
-        }
-        c.vm.TrackGuestNativeResourceField(*hmac_context, *hmac_cleanup);
-        c.vm.TrackGuestNativeResourceField(*mac_key, *key_cleanup);
-        return VmValue::Void();
-    });
-    for (const auto& [name, signature] : std::array{
-             std::pair{"EVP_get_cipherbyname", "(Ljava/lang/String;)J"},
-             std::pair{"EVP_CIPHER_CTX_new", "()J"}, std::pair{"EVP_CIPHER_CTX_cleanup", "(J)V"},
-             std::pair{"EVP_CIPHER_CTX_block_size", "(J)I"},
-             std::pair{"get_EVP_CIPHER_CTX_buf_len", "(J)I"},
-             std::pair{"EVP_CIPHER_CTX_set_padding", "(JZ)V"},
-             std::pair{"EVP_CIPHER_CTX_set_key_length", "(JI)V"},
-             std::pair{"EVP_CIPHER_iv_length", "(J)I"},
-             std::pair{"EVP_CipherInit_ex", "(JJ[B[BZ)V"},
-             std::pair{"EVP_CipherUpdate", "(J[BI[BII)I"},
-             std::pair{"EVP_CipherFinal_ex", "(J[BI)I"},
-             std::pair{"EVP_get_digestbyname", "(Ljava/lang/String;)J"},
-             std::pair{"EVP_MD_size", "(J)I"},
-             std::pair{"EVP_DigestInit", "(J)J"},
-             std::pair{"EVP_DigestUpdate", "(J[BII)V"},
-             std::pair{"EVP_DigestFinal", "(J[BI)I"},
-             std::pair{"EVP_MD_CTX_copy", "(J)J"},
-             std::pair{"EVP_MD_CTX_create", "()J"},
-             std::pair{"EVP_MD_CTX_init", "(J)V"},
-             std::pair{"EVP_MD_CTX_destroy", "(J)V"},
-             std::pair{"EVP_PKEY_new_mac_key", "(I[B)J"},
-             std::pair{"EVP_PKEY_free", "(J)V"},
-             std::pair{"EVP_DigestSignInit", "(JJJ)V"},
-             std::pair{"EVP_DigestSignFinal", "(J)[B"},
-             std::pair{"RAND_seed", "([B)V"},
-             std::pair{"RAND_bytes", "([B)V"},
-             std::pair{"verify_signature", "([B[B[BLjava/lang/String;)Z"}}) {
-        b.GuestNativeStatic(name, signature);
-    }
+    b.AdmitBootNativeMethods();
     return std::move(b).Build();
 }
 IntrinsicClassDecl VerificationSpi(const std::string& algorithm) {
@@ -403,7 +352,7 @@ IntrinsicClassDecl VerificationSpi(const std::string& algorithm) {
                 throw VmJavaThrow{"Ljava/security/InvalidKeyException;",
                                   "public key has no encoding"};
             const auto roots = c.vm.ProtectReferences(std::array{data});
-            Direct(c.vm, kNative, "verify_signature", "([B[B[BLjava/lang/String;)Z",
+            Direct(c.vm, kVerificationNative, "verify", "([B[B[BLjava/lang/String;)Z",
                    {VmValue::Ref(data), VmValue::Ref(VmObjectRef{}), VmValue::Ref(VmObjectRef{}),
                     VmValue::Ref(c.vm.NewStringUtf8(algorithm))});
             call.SetRef(key, c.vm.Model().CloneObject(data));
@@ -442,7 +391,7 @@ IntrinsicClassDecl VerificationSpi(const std::string& algorithm) {
             const auto bytes = InvokeGuest(c.vm, stream, "toByteArray", "()[B").ref;
             const auto roots = c.vm.ProtectReferences(std::array{bytes});
             InvokeGuest(c.vm, stream, "reset", "()V");
-            return Direct(c.vm, kNative, "verify_signature", "([B[B[BLjava/lang/String;)Z",
+            return Direct(c.vm, kVerificationNative, "verify", "([B[B[BLjava/lang/String;)Z",
                           {VmValue::Ref(call.GetRef(key)), VmValue::Ref(bytes),
                            VmValue::Ref(signature), VmValue::Ref(c.vm.NewStringUtf8(algorithm))});
         },
@@ -464,7 +413,8 @@ void AppendJavaCrypto(std::vector<IntrinsicClassDecl>& catalog,
     catalog.push_back(OsRandom(services));
     catalog.push_back(OpenSslRandom(services));
     catalog.push_back(AesKeyGenerator());
-    catalog.push_back(NativeCryptoBoundary());
+    catalog.push_back(NativeCryptoGuestAdmission());
+    catalog.push_back(NativeVerificationBoundary());
     catalog.push_back(CipherContext());
     for (const auto& entry : kSignatures) catalog.push_back(VerificationSpi(entry.algorithm));
 }

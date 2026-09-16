@@ -3,6 +3,10 @@
 日期：2026-09-16。状态：方向确认，尚未实施。
 架构决定：[ADR-0064](../../adr/dexvm.md#adr-0064)。
 
+前置依赖：[DVM-171](../../tasks/dexvm/DVM-171.md) 已将固定 API 19 原版 `NativeCrypto`
+迁入 BootDex，并保留统一 guest JNI/资源生命周期边界。该迁移只稳定 Conscrypt ABI，未实现
+本规划要求的 KeyStore/BKS、密钥编码、PKIX 或 TLS；下述完整验收要求不变。
+
 ## 1. 目标与完成边界
 
 补齐游戏进程可调用的通用 Java KeyStore 能力：通过 AOSP JCA API 管理真实证书和

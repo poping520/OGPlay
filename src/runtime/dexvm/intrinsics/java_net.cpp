@@ -92,15 +92,6 @@ namespace ogplay::runtime::dexvm::intrinsics {
                      static_cast<std::int64_t>((info.size + 511U) / 512U))});
             return result;
         }
-        IntrinsicHandler NetworkUnsupported() {
-            return [](IntrinsicContext&) -> VmValue {
-                throw VmJavaThrow{
-                    "Ljava/lang/UnsupportedOperationException;",
-                    "HTTP networking is unavailable in the bounded java.net "
-                    "facade"
-                };
-            };
-        }
 
         IntrinsicHandler NoopVoid() {
             return [](IntrinsicContext&) { return VmValue::Void(); };
@@ -219,13 +210,10 @@ namespace ogplay::runtime::dexvm::intrinsics {
         }
 
         IntrinsicClassDecl DeclarePlatformHttpURLConnection() {
-            auto builder = IntrinsicClassBuilder::Class(
-                "Ljava/net/HttpURLConnection;", "Ljava/net/URLConnection;");
-            builder.FinalMethod("connect", "()V", NetworkUnsupported());
-            builder.FinalMethod("disconnect", "()V", NetworkUnsupported());
-            builder.FinalMethod("getInputStream", "()Ljava/io/InputStream;",
-                                NetworkUnsupported());
-            return std::move(builder).Build();
+            return std::move(IntrinsicClassBuilder::Class(
+                        "Ljava/net/HttpURLConnection;",
+                        "Ljava/net/URLConnection;"))
+                    .Build();
         }
 
         IntrinsicClassDecl DeclareProxySelector() {
@@ -471,10 +459,25 @@ namespace ogplay::runtime::dexvm::intrinsics {
                         "network policy is offline for " + host_text
                     };
                 }
-                throw VmJavaThrow{
-                    "Ljava/lang/UnsupportedOperationException;",
-                    "HTTP URLConnection is not implemented"
-                };
+                const char* descriptor = protocol_text == "https"
+                    ? "Lorg/ogplay/security/OgPlayHttpsURLConnection;"
+                    : protocol_text == "http"
+                        ? "Lorg/ogplay/security/OgPlayHttpURLConnection;"
+                        : nullptr;
+                if (descriptor == nullptr) {
+                    throw VmJavaThrow{
+                        "Ljava/lang/UnsupportedOperationException;",
+                        "URLConnection protocol is not implemented"
+                    };
+                }
+                auto connection = call.Vm().NewIntrinsicInstance(descriptor);
+                const auto roots = call.Vm().ProtectReferences(
+                    std::array{connection, call.Receiver()});
+                InvokeDirect(call.Vm(), descriptor, "<init>",
+                             "(Ljava/net/URL;)V",
+                             {VmValue::Ref(connection),
+                              VmValue::Ref(call.Receiver())});
+                return VmValue::Ref(connection);
             };
             builder.FinalMethod("openConnection", "()Ljava/net/URLConnection;",
                                 open_connection);
@@ -641,42 +644,6 @@ namespace ogplay::runtime::dexvm::intrinsics {
             builder.StaticMethod(
                 "decode", "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;",
                 FormCodec(false, true));
-            return std::move(builder).Build();
-        }
-
-        IntrinsicClassDecl DeclareKeyManager() {
-            return std::move(IntrinsicClassBuilder::Interface(
-                        "Ljavax/net/ssl/KeyManager;"))
-                    .Build();
-        }
-
-        IntrinsicClassDecl DeclareSslContext(
-            const CoreIntrinsicServices& services) {
-            auto builder = IntrinsicClassBuilder::Class(
-                "Ljavax/net/ssl/SSLContext;", "Ljava/lang/Object;");
-            builder.StaticMethod(
-                "getInstance",
-                "(Ljava/lang/String;)Ljavax/net/ssl/SSLContext;",
-                [](IntrinsicContext& call) {
-                    return VmValue::Ref(call.vm.NewIntrinsicInstance(
-                        "Ljavax/net/ssl/SSLContext;"));
-                });
-            builder.FinalMethod(
-                "init",
-                "([Ljavax/net/ssl/KeyManager;[Ljavax/net/ssl/TrustManager;"
-                "Ljava/security/SecureRandom;)V",
-                NetworkUnsupported());
-            builder.FinalMethod(
-                "getSocketFactory", "()Ljavax/net/ssl/SSLSocketFactory;",
-                [services](IntrinsicContext& call) {
-                    if (services.singleton) {
-                        return VmValue::Ref(services.singleton(
-                            call.vm, "ssl_socket_factory",
-                            "Ljavax/net/ssl/SSLSocketFactory;"));
-                    }
-                    return VmValue::Ref(call.vm.NewIntrinsicInstance(
-                        "Ljavax/net/ssl/SSLSocketFactory;"));
-                });
             return std::move(builder).Build();
         }
 
@@ -1137,6 +1104,13 @@ namespace ogplay::runtime::dexvm::intrinsics {
             catalog.push_back(std::move(posix).Build());
         }
 
+        NetworkRuntime::Endpoint EndpointFrom(IntrinsicContext& call,
+                                              const VmObjectRef address,
+                                              const std::int32_t port);
+        NetworkRuntime::Endpoint HostEndpoint(IntrinsicContext& call,
+                                              VmObjectRef host_ref,
+                                              std::int32_t port);
+
         NetworkRuntime::Endpoint SocketEndpoint(IntrinsicContext& call, VmObjectRef socket_address) {
             if (!socket_address.IsValid())
                 throw VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "endpoint is null"};
@@ -1144,82 +1118,19 @@ namespace ogplay::runtime::dexvm::intrinsics {
                                                call.vm.Model().ObjectClass(socket_address)))
                 throw VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "unsupported SocketAddress"};
             const auto address = detail::InvokeGuest(call.vm, socket_address, "getAddress", "()Ljava/net/InetAddress;").ref;
-            if (!address.IsValid())
-                throw VmJavaThrow{"Ljava/net/UnknownHostException;", "unresolved socket endpoint"};
             const auto port = detail::InvokeGuest(call.vm, socket_address, "getPort", "()I").AsInt();
-            return EndpointFrom(call, address, port);
+            if (address.IsValid())
+                return EndpointFrom(call, address, port);
+            const auto host = detail::InvokeGuest(call.vm, socket_address, "getHostName",
+                                                  "()Ljava/lang/String;").ref;
+            if (!host.IsValid())
+                throw VmJavaThrow{"Ljava/net/UnknownHostException;", "unresolved socket endpoint"};
+            return HostEndpoint(call, host, port);
         }
 
         NetworkRuntime::Endpoint HostEndpoint(IntrinsicContext& call,
                                               VmObjectRef host_ref,
                                               std::int32_t port);
-
-        IntrinsicClassDecl DeclareSslSocketFactory(
-            const CoreIntrinsicServices& services) {
-            auto builder = IntrinsicClassBuilder::Class(
-                "Ljavax/net/ssl/SSLSocketFactory;", "Ljavax/net/SocketFactory;");
-            builder.StaticMethod("getDefault", "()Ljavax/net/SocketFactory;",
-                                 [services](IntrinsicContext& call) {
-                                     if (services.singleton) {
-                                         return VmValue::Ref(services.singleton(
-                                             call.vm, "ssl_socket_factory",
-                                             "Ljavax/net/ssl/SSLSocketFactory;"));
-                                     }
-                                     return VmValue::Ref(call.vm.NewIntrinsicInstance(
-                                         "Ljavax/net/ssl/SSLSocketFactory;"));
-                                 });
-            builder.FinalOverrideMethod("createSocket", "()Ljava/net/Socket;",
-                                        [](IntrinsicContext& call) {
-                                            const auto socket = call.vm.NewIntrinsicInstance(
-                                                "Ljavax/net/ssl/SSLSocket;");
-                                            call.vm.Network().CreateSocket(socket, true);
-                                            return VmValue::Ref(socket);
-                                        });
-            builder.FinalOverrideMethod("createSocket",
-                                        "(Ljava/lang/String;I)Ljava/net/Socket;",
-                                        [](IntrinsicContext& call) {
-                                            const auto socket = call.vm.NewIntrinsicInstance(
-                                                "Ljavax/net/ssl/SSLSocket;");
-                                            call.vm.Network().CreateSocket(socket, true);
-                                            try {
-                                                call.vm.Network().Connect(socket,
-                                                                          HostEndpoint(call, call.arguments[0].ref,
-                                                                              call.arguments[1].AsInt()));
-                                            } catch (const NetworkRuntimeError& error) { ThrowNetwork(error); }
-                                            return VmValue::Ref(socket);
-                                        });
-            const auto no_cipher_suites = [](IntrinsicContext& call) {
-                return VmValue::Ref(call.vm.Model().NewObjectArray(
-                    call.vm.Linker().ResolveDescriptor("[Ljava/lang/String;"),
-                    call.vm.Linker().ResolveDescriptor("Ljava/lang/String;"),
-                    0));
-            };
-            builder.FinalMethod("getDefaultCipherSuites",
-                                "()[Ljava/lang/String;", no_cipher_suites);
-            builder.FinalMethod("getSupportedCipherSuites",
-                                "()[Ljava/lang/String;", no_cipher_suites);
-            builder.FinalMethod(
-                "createSocket",
-                "(Ljava/net/Socket;Ljava/lang/String;IZ)Ljava/net/Socket;",
-                [](IntrinsicContext&) -> VmValue {
-                    throw VmJavaThrow{
-                        "Ljava/net/SocketException;",
-                        "TLS layering is unavailable while networking is disabled"};
-                });
-            return std::move(builder).Build();
-        }
-
-        IntrinsicClassDecl DeclareTrustManager() {
-            return std::move(IntrinsicClassBuilder::Interface(
-                        "Ljavax/net/ssl/TrustManager;"))
-                    .Build();
-        }
-
-        IntrinsicClassDecl DeclareX509TrustManager() {
-            return std::move(IntrinsicClassBuilder::Interface(
-                        "Ljavax/net/ssl/X509TrustManager;"))
-                    .Build();
-        }
 
         [[noreturn]] void ThrowNetwork(const NetworkRuntimeError& error) {
             throw VmJavaThrow{"Ljava/net/SocketException;", error.what()};
@@ -1275,19 +1186,35 @@ namespace ogplay::runtime::dexvm::intrinsics {
                 const auto offset = call.arguments[1].AsInt();
                 const auto length = call.arguments[2].AsInt();
                 detail::CheckRegion(call.vm.Model().ArrayLength(array), offset, length);
+                const auto depth = call.vm.ExecutionLock().ReleaseForBlocking();
                 try {
                     const auto bytes = call.vm.Network().ReadStream(
                         call.receiver, static_cast<std::size_t>(length));
+                    call.vm.ExecutionLock().ReacquireAfterBlocking(depth);
                     if (bytes.empty()) return VmValue::Int(-1);
                     call.vm.Model().WriteByteRegion(array, offset, bytes);
                     return VmValue::Int(static_cast<std::int32_t>(bytes.size()));
-                } catch (const NetworkRuntimeError& error) { ThrowNetwork(error); }
+                } catch (const NetworkRuntimeError& error) {
+                    call.vm.ExecutionLock().ReacquireAfterBlocking(depth);
+                    ThrowNetwork(error);
+                } catch (...) {
+                    call.vm.ExecutionLock().ReacquireAfterBlocking(depth);
+                    throw;
+                }
             });
             builder.FinalOverrideMethod("read", "()I", [](IntrinsicContext& call) {
+                const auto depth = call.vm.ExecutionLock().ReleaseForBlocking();
                 try {
                     const auto bytes = call.vm.Network().ReadStream(call.receiver, 1);
+                    call.vm.ExecutionLock().ReacquireAfterBlocking(depth);
                     return VmValue::Int(bytes.empty() ? -1 : static_cast<std::uint8_t>(bytes.front()));
-                } catch (const NetworkRuntimeError& error) { ThrowNetwork(error); }
+                } catch (const NetworkRuntimeError& error) {
+                    call.vm.ExecutionLock().ReacquireAfterBlocking(depth);
+                    ThrowNetwork(error);
+                } catch (...) {
+                    call.vm.ExecutionLock().ReacquireAfterBlocking(depth);
+                    throw;
+                }
             });
             return std::move(builder).Build();
         }
@@ -1300,68 +1227,100 @@ namespace ogplay::runtime::dexvm::intrinsics {
                 const auto offset = call.arguments[1].AsInt();
                 const auto length = call.arguments[2].AsInt();
                 detail::CheckRegion(call.vm.Model().ArrayLength(array), offset, length);
+                const auto depth = call.vm.ExecutionLock().ReleaseForBlocking();
                 try {
                     call.vm.Network().WriteStream(call.receiver,
                                                   call.vm.Model().ReadByteRegion(array, offset, length));
+                    call.vm.ExecutionLock().ReacquireAfterBlocking(depth);
                     return VmValue::Void();
-                } catch (const NetworkRuntimeError& error) { ThrowNetwork(error); }
+                } catch (const NetworkRuntimeError& error) {
+                    call.vm.ExecutionLock().ReacquireAfterBlocking(depth);
+                    ThrowNetwork(error);
+                } catch (...) {
+                    call.vm.ExecutionLock().ReacquireAfterBlocking(depth);
+                    throw;
+                }
             });
             builder.FinalOverrideMethod("write", "(I)V", [](IntrinsicContext& call) {
                 const auto byte = static_cast<std::byte>(call.arguments[0].AsInt());
+                const auto depth = call.vm.ExecutionLock().ReleaseForBlocking();
                 try {
                     call.vm.Network().WriteStream(call.receiver,
                                                   std::span(&byte, 1));
+                    call.vm.ExecutionLock().ReacquireAfterBlocking(depth);
                     return VmValue::Void();
-                } catch (const NetworkRuntimeError& error) { ThrowNetwork(error); }
+                } catch (const NetworkRuntimeError& error) {
+                    call.vm.ExecutionLock().ReacquireAfterBlocking(depth);
+                    ThrowNetwork(error);
+                } catch (...) {
+                    call.vm.ExecutionLock().ReacquireAfterBlocking(depth);
+                    throw;
+                }
             });
             builder.FinalOverrideMethod("flush", "()V", NoopVoid());
             return std::move(builder).Build();
         }
 
-        IntrinsicClassDecl DeclareSocket(const bool tls) {
-            const auto descriptor = tls ? "Ljavax/net/ssl/SSLSocket;" : "Ljava/net/Socket;";
-            const auto superclass = tls ? "Ljava/net/Socket;" : "Ljava/lang/Object;";
-            auto builder = IntrinsicClassBuilder::Class(descriptor, superclass);
-            if (tls) {
-                // SSLSocket inherits the bounded Socket surface. Instances are created
-                // by SSLSocketFactory with the TLS bit already set in NetworkRuntime.
-                return std::move(builder).Build();
-            }
-            builder.Constructor("()V", [tls](IntrinsicContext& call) {
-                call.vm.Network().CreateSocket(call.receiver, tls);
-                return VmValue::Void();
-            });
-            builder.Constructor("(Ljava/lang/String;I)V", [tls](IntrinsicContext& call) {
-                call.vm.Network().CreateSocket(call.receiver, tls);
+        IntrinsicClassDecl DeclareSocket() {
+            auto builder = IntrinsicClassBuilder::Class(
+                "Ljava/net/Socket;", "Ljava/lang/Object;");
+            const auto connect_owner = [](IntrinsicContext& call, NetworkRuntime::Endpoint endpoint) {
+                const auto depth = call.vm.ExecutionLock().ReleaseForBlocking();
                 try {
-                    call.vm.Network().Connect(call.receiver,
-                                              HostEndpoint(call, call.arguments[0].ref,
-                                                           call.arguments[1].AsInt()));
-                } catch (const NetworkRuntimeError& error) { ThrowNetwork(error); }
+                    call.vm.Network().Connect(call.receiver, std::move(endpoint));
+                    call.vm.ExecutionLock().ReacquireAfterBlocking(depth);
+                } catch (const NetworkRuntimeError& error) {
+                    call.vm.ExecutionLock().ReacquireAfterBlocking(depth);
+                    ThrowNetwork(error);
+                } catch (...) {
+                    call.vm.ExecutionLock().ReacquireAfterBlocking(depth);
+                    throw;
+                }
+            };
+            builder.Constructor("()V", [](IntrinsicContext& call) {
+                call.vm.Network().CreateSocket(call.receiver, false);
                 return VmValue::Void();
             });
-            builder.FinalMethod("connect", "(Ljava/net/SocketAddress;)V", [](IntrinsicContext& call) {
+            builder.Constructor("(Ljava/lang/String;I)V", [connect_owner](IntrinsicContext& call) {
+                call.vm.Network().CreateSocket(call.receiver, false);
+                connect_owner(call, HostEndpoint(call, call.arguments[0].ref,
+                                                 call.arguments[1].AsInt()));
+                return VmValue::Void();
+            });
+            builder.Constructor("(Ljava/net/InetAddress;I)V", [connect_owner](IntrinsicContext& call) {
+                call.vm.Network().CreateSocket(call.receiver, false);
+                connect_owner(call, EndpointFrom(call, call.arguments[0].ref,
+                                                 call.arguments[1].AsInt()));
+                return VmValue::Void();
+            });
+            builder.VirtualMethod("connect", "(Ljava/net/SocketAddress;)V",
+                                  [connect_owner](IntrinsicContext& call) {
+                connect_owner(call, SocketEndpoint(call, call.arguments[0].ref));
+                return VmValue::Void();
+            });
+            builder.VirtualMethod("connect", "(Ljava/net/SocketAddress;I)V",
+                                  [connect_owner](IntrinsicContext& call) {
                 try {
-                    call.vm.Network().Connect(call.receiver,
-                                              SocketEndpoint(call, call.arguments[0].ref));
+                    call.vm.Network().SetTimeout(call.receiver, call.arguments[1].AsInt());
                 } catch (const NetworkRuntimeError& error) { ThrowNetwork(error); }
+                connect_owner(call, SocketEndpoint(call, call.arguments[0].ref));
                 return VmValue::Void();
             });
-            builder.FinalMethod("getInputStream", "()Ljava/io/InputStream;", [](IntrinsicContext& call) {
+            builder.VirtualMethod("getInputStream", "()Ljava/io/InputStream;", [](IntrinsicContext& call) {
                 const auto stream = call.vm.NewIntrinsicInstance(
                     "Ljava/net/SocketInputStream;");
                 try { call.vm.Network().BindStream(stream, call.receiver, false); } catch (const
                     NetworkRuntimeError& error) { ThrowNetwork(error); }
                 return VmValue::Ref(stream);
             });
-            builder.FinalMethod("getOutputStream", "()Ljava/io/OutputStream;", [](IntrinsicContext& call) {
+            builder.VirtualMethod("getOutputStream", "()Ljava/io/OutputStream;", [](IntrinsicContext& call) {
                 const auto stream = call.vm.NewIntrinsicInstance(
                     "Ljava/net/SocketOutputStream;");
                 try { call.vm.Network().BindStream(stream, call.receiver, true); } catch (const
                     NetworkRuntimeError& error) { ThrowNetwork(error); }
                 return VmValue::Ref(stream);
             });
-            builder.FinalMethod("isConnected", "()Z", [](IntrinsicContext& call) {
+            builder.VirtualMethod("isConnected", "()Z", [](IntrinsicContext& call) {
                 try {
                     return VmValue::Int(call.vm.Network().GetSocket(
                                             call.receiver).connected
@@ -1369,7 +1328,7 @@ namespace ogplay::runtime::dexvm::intrinsics {
                                             : 0);
                 } catch (const NetworkRuntimeError& error) { ThrowNetwork(error); }
             });
-            builder.FinalMethod("isClosed", "()Z", [](IntrinsicContext& call) {
+            builder.VirtualMethod("isClosed", "()Z", [](IntrinsicContext& call) {
                 try {
                     return VmValue::Int(call.vm.Network().GetSocket(
                                             call.receiver).closed
@@ -1377,9 +1336,25 @@ namespace ogplay::runtime::dexvm::intrinsics {
                                             : 0);
                 } catch (const NetworkRuntimeError& error) { ThrowNetwork(error); }
             });
-            builder.FinalMethod("close", "()V", [](IntrinsicContext& call) {
+            builder.VirtualMethod("close", "()V", [](IntrinsicContext& call) {
                 call.vm.Network().CloseSocket(call.receiver);
                 return VmValue::Void();
+            });
+            builder.VirtualMethod("getPort", "()I", [](IntrinsicContext& call) {
+                try {
+                    return VmValue::Int(call.vm.Network().GetSocket(call.receiver).endpoint.port);
+                } catch (const NetworkRuntimeError& error) { ThrowNetwork(error); }
+            });
+            builder.VirtualMethod("setSoTimeout", "(I)V", [](IntrinsicContext& call) {
+                try {
+                    call.vm.Network().SetTimeout(call.receiver, call.arguments[0].AsInt());
+                } catch (const NetworkRuntimeError& error) { ThrowNetwork(error); }
+                return VmValue::Void();
+            });
+            builder.VirtualMethod("getSoTimeout", "()I", [](IntrinsicContext& call) {
+                try {
+                    return VmValue::Int(call.vm.Network().GetSocket(call.receiver).timeout_ms);
+                } catch (const NetworkRuntimeError& error) { ThrowNetwork(error); }
             });
             return std::move(builder).Build();
         }
@@ -1499,19 +1474,13 @@ namespace ogplay::runtime::dexvm::intrinsics {
         catalog.push_back(DeclarePlatformUrlConnection());
         catalog.push_back(DeclarePlatformUrlEncoder());
         catalog.push_back(DeclarePlatformUrlDecoder());
-        catalog.push_back(DeclareKeyManager());
-        catalog.push_back(DeclareSslContext(services));
-        catalog.push_back(DeclareSslSocketFactory(services));
-        catalog.push_back(DeclareTrustManager());
-        catalog.push_back(DeclareX509TrustManager());
         AppendAddressNatives(catalog);
         catalog.push_back(DeclareSocketInputStream());
         catalog.push_back(DeclareSocketOutputStream());
-        catalog.push_back(DeclareSocket(false));
+        catalog.push_back(DeclareSocket());
         catalog.push_back(DeclareDatagramPacket());
         catalog.push_back(DeclareDatagramSocket());
         catalog.push_back(DeclareSocketFactory(services));
-        catalog.push_back(DeclareSocket(true));
 
         catalog.push_back(DeclareMalformedURLException());
     }

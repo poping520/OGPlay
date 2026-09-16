@@ -54,10 +54,20 @@ void NetworkRuntime::Connect(const VmObjectRef owner, Endpoint endpoint) {
     auto& socket = GetSocket(owner);
     if (socket.closed) throw NetworkRuntimeError("socket is closed");
     RequireAllowed(endpoint.host, socket.tls, false);
-    socket.channel = transport_->Connect(endpoint.host, endpoint.port,
-                                         socket.tls);
+    // tls is a policy bit only; the injected transport always carries raw bytes.
+    socket.channel = transport_->Connect(endpoint.host, endpoint.port, false);
     socket.endpoint = std::move(endpoint);
     socket.connected = true;
+}
+
+void NetworkRuntime::RequireTls(const std::string_view host) {
+    RequireAllowed(host, true, false);
+}
+
+void NetworkRuntime::SetTimeout(const VmObjectRef owner,
+                                const std::int32_t timeout_ms) {
+    if (timeout_ms < 0) throw NetworkRuntimeError("timeout is negative");
+    GetSocket(owner).timeout_ms = timeout_ms;
 }
 
 NetworkRuntime::Socket& NetworkRuntime::GetSocket(const VmObjectRef owner) {
@@ -90,7 +100,7 @@ std::vector<std::byte> NetworkRuntime::ReadStream(const VmObjectRef stream,
         throw NetworkRuntimeError("network input stream is unavailable");
     const auto& socket = GetSocket(found->second.socket);
     if (socket.closed) throw NetworkRuntimeError("socket is closed");
-    return transport_->Receive(socket.channel, maximum);
+    return transport_->Receive(socket.channel, maximum, socket.timeout_ms);
 }
 
 void NetworkRuntime::WriteStream(const VmObjectRef stream,

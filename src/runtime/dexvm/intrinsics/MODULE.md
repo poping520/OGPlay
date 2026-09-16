@@ -92,8 +92,9 @@
   guest-memory 接口，不退化为 heap 或保存宿主指针。Memory 仅提供受检 byte[] 整数 codec。
 - socket/stream/datagram 交 NetworkRuntime；默认离线，只有注入 policy/allowlist/transport
   才能连接，SSL factory 不扩大权限。form URL codec 用固定 Boost.URL、UTF-8、空格/+ 规则，
-  非法百分号和未支持 charset 抛异常。TLS context 初始化及默认 verifier/factory 修改未实现并
-  明确抛出，不静默接受配置。SAX 保留构造/handler 身份，未支持 parse 明确失败。
+  非法百分号和未支持 charset 抛异常。客户端 TLS 由 OGPlayJSSE 经 raw transport 与 guest
+  libssl 内存 BIO 执行；握手在首次 `SSL_do_handshake` 仍可能 `SSL_ERROR_SYSCALL`，不能静默
+  成功。SAX 保留构造/handler 身份，未支持 parse 明确失败。
 - InetAddress/Inet4Address/Inet6Address、地址缓存、InetSocketAddress 与 NetworkInterface 普通
   行为归 API 19 BootDex；IP 字节、hostName、scope 与 endpoint 字段是唯一状态。Posix 仅保留
   地址解析、受策略 DNS/反向查询及确定性 guest uname 边界；其余原生 OS 调用明确失败。
@@ -125,13 +126,16 @@
   验签 SPI 用普通字段保存公钥/最多 1 MiB 消息，真实解码后调用 guest ARM EVP，验后清空。
   摘要仅 MD5/SHA1/SHA256/SHA384/SHA512；NativeBN 只保留 17 个值原语和 per-VM token。
 - 未登记能力明确失败：NativeCrypto 的 ENGINE/RSA/EC/X509/TLS 长尾、完整大数/double formatter、具名时区历史、privileged executor、
-  完整 ThreadGroup/反射长尾、RSA Cipher/GCM/其他 transformation、签名生成、PKIX/系统 CA/
-  撤销/TLS、HMAC/SHA3/独立 SHA224 摘要。AES AlgorithmParameters provider 未注册，原版
+  完整 ThreadGroup/反射长尾、RSA Cipher/GCM/其他 transformation、签名生成、通用 CertPathValidator.PKIX、
+  撤销检查、HMAC/SHA3/独立 SHA224 摘要。TrustManager 路径验证与只读 AndroidCAStore 已由
+  OGPlayJSSE 交付；客户端 TLS 握手未闭合，SSLEngine/server TLS 明确失败。AES AlgorithmParameters provider 未注册，原版
   engineGetParameters 可返回 null；公钥仅编码 fallback，不宣称数学参数/KeyFactory 能力。
 - KeyStore/KeyStoreSpi 及公开嵌套类已进入 BootDex；自有 `OGPlayKeyStore` 已注册 BKS 并设为
   默认类型，BKS v0/v1/v2、标准/历史 key PBE、AES RAW、RSA/EC PKCS#8 与 API19 双向互操作
   已受检。CallbackHandler 实际取密码、同 store 双线程、磁盘跨 session 重载及应用沙盒隔离
-  已受检；complete 仅指 DVM-172 约定的软件 KeyStore/BKS 与算法集合。
+  已受检；complete 仅指 DVM-172 约定的软件 KeyStore/BKS 与算法集合。DVM-173 增加
+  OGPlayJSSE：PKIX TrustManagerFactory、真实路径验证与只读 AndroidCAStore；客户端 TLS
+  握手尚未闭合。
 
 ## 验证入口
 

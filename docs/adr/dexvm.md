@@ -27,6 +27,8 @@
 - [ADR-0048 · 文本外观的 Java 值对象与有界样式事实](#adr-0048)
 - [ADR-0056 · Runtime hook 状态归 BootDex，显式退出归 guest 进程边界](#adr-0056)
 - [ADR-0064 · 通用 KeyStore 使用自有 BKS Provider 与既有 guest crypto](#adr-0064)
+- [ADR-0065 · NativeCrypto 类身份归固定 BootDex，native 按类显式准入](#adr-0065)
+- [ADR-0066 · TLS 保留 AOSP API，采用自有 Provider 与进程内底座](#adr-0066)
 
 <a id="adr-0017"></a>
 
@@ -986,3 +988,35 @@ KeyStore 不承担 PKIX、系统 CA 或 TLS；网络链另行验收，保持默�
 `<clinit>` 不替换；受限 native `clinit` 复用 `JNI_OnLoad` 已完成的线程回调和当前算法注册，
 不引入 libjavacrypto/libssl 或据 TLS 名称表发布 TLS。字段型 native token 的资源规则在 VM
 统一装配，OGPlay 私有验签放在独立私有类，不污染原版 ABI。
+
+
+<a id="adr-0066"></a>
+## ADR-0066 · TLS 保留 AOSP API，采用自有 Provider 与进程内底座
+
+- 状态：Accepted（架构方向；TLS 能力尚未实现）
+- 日期：2026-09-16
+- 关联：[DVM-173](../tasks/dexvm/DVM-173.md)、[完整规划](../design/dexvm/14-tls-trust.md)
+- 延续 ADR-0064、0065；不改变原版 NativeCrypto 类身份和当前未实现入口的失败行为。
+
+### 背景
+
+KeyStore 已闭合，同源 libssl/libcrypto 已入 payload。用户明确要求公开 API 对齐 AOSP，
+内部服务最小化自研，不复制 Android 系统。AndroidCAStore/AndroidKeyStore 类型本身对应用
+可见，简化只适用于内部底座，不能伪造可观察语义。
+
+### 决定
+
+原版 javax.net.ssl 公开 API 进入 BootDex，自有 OGPlayJSSE Java Provider 管理普通状态。
+内部验证与 TLS 调用私有 JNI，统一 guest libssl/libcrypto；BIO 只交换密文，实际网络仍经
+唯一 NetworkRuntime policy/raw transport，不在宿主重复实现 TLS，不新增 Binder/daemon。
+AndroidCAStore 采用可追溯版本化 CA 包和 API19 只读视图；AndroidKeyStore 不是 TLS 前置，
+需要时另交付应用隔离软件服务，不冒充硬件保护。Provider 身份和所有支持边界如实发布。
+
+信任、主机名、网络授权分别验证；自定义 guest manager 必须真实执行。旧版库可用于本地
+兼容开发，在线发布须完成版本维护与补丁审计；替换后端须评估旧 native ABI，不能直接覆盖。
+
+### 后果
+
+减少 Android 系统依赖，但项目承担 Java SPI、BIO/线程生命周期、CA 更新和后端维护责任。
+先交付显式/默认信任，再交付本地 TLS/HTTPS，最后受控在线；完整 PKIX、AndroidKeyStore、
+SSLEngine 与 server TLS 独立记账。本记录不把任何未实现能力提升为 complete。

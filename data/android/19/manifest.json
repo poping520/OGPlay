@@ -41,7 +41,7 @@
     "path": "framework/bootdex.jar",
     "generator": "tools/bootdex/build_bootdex.py",
     "recipe": "tools/bootdex/api19.json",
-    "recipe_sha256": "a35b79ac14825bad382f6bc8e71ac19a1cf331ae463a4b3a97c1e2f4b7d2b932",
+    "recipe_sha256": "73006f38c598f22e449571d19dc8d0da0e2afcf230a54b0b0165cdbcd43beda7",
     "sources": [
       {
         "source_project": "platform/libcore",
@@ -71,18 +71,18 @@
       {
         "source_project": "OGPlay",
         "source_root": "src/guest/crypto/java",
-        "source_sha256": "61f4b8dc6cb1bf87a2c41876bf96de00f33b4ea85a8fdbeb24bbabd00557b663",
+        "source_sha256": "7a401112214eadc2deb150da9de90a6cd5b39dd7fe576cc3bd684e0e3bc3450e",
         "javac": "17.0.2",
         "android_jar_sha256": "4032a201eeb1d0430c7d9f1075151dd280427de5ca9e36f734f464ab605cb690",
         "d8_sha256": "d9e6acde0cb6f2453d6835b52c31d2066054394fb79e91115dd4978bde6afd16"
       }
     ],
-    "size": 2293040,
-    "sha256": "936b5900605fb0bb9a8ffc35cff4f95e700a18a226f8a1edc90e5a730b0749d5",
+    "size": 2346976,
+    "sha256": "8544e70f491633fba96247ff24781fb370eea318c9f6caa4cb47c792f8650153",
     "dex_entry": "classes.dex",
-    "dex_size": 2289472,
-    "dex_sha256": "78d9b7ebf717a80012d87493c6f55189e55a655df292395bae1d1680a57224d0",
-    "class_count": 1572,
+    "dex_size": 2343408,
+    "dex_sha256": "9074a459abb03156b9858a4fd5fff87b4d040927771e8bdd9442b7d7184f5a0b",
+    "class_count": 1635,
     "selection_policy": "load-all",
     "notice": "notices/bootdex.jar.txt",
     "notice_sha256": "c5bf8c6efc379e6d5401a40fbf7810aedf9ee81dfa9f2deaa174faa97ded310a"
@@ -220,8 +220,8 @@
     {
       "path": "lib/libogplay_jni.so",
       "source_project": "ogplay",
-      "size": 73312,
-      "sha256": "448c536622ac46e6d3538f0437ce475205a516324fca2731af0f38c264b65bda",
+      "size": 106984,
+      "sha256": "c7843db73bdc9780b85cf954d2c309b6347f399d6d3b0dacb44f46c41bda864a",
       "soname": "libogplay_jni.so",
       "needed": [
         "libcrypto.so",
@@ -231,14 +231,22 @@
       ],
       "build": {
         "generator": "tools/bootdex/build_bootdex.py",
-        "generator_sha256": "6c5f2cb9ddd490dd898728b7a08abcd6c11aefaf50e4233efab5b9afa1358dd4",
+        "generator_sha256": "af3d6e772ec1d54af54d3e6363874140ce5ab82dabfea376f0cdb448a3d9fe99",
         "ndk_revision": "25.2.9519653",
         "target": "armv7a-linux-androideabi19",
         "language": "C11",
         "sources": [
           {
             "path": "src/guest/crypto/crypto_jni.c",
-            "sha256": "15eba395603b5cd7b8ca2fe690949c69b4dda6df139fe832c40713ed310784ca"
+            "sha256": "51ce78ebb928bf3dbb30220118ec44056ba72c3150813b5b709c94a6c4d97f64"
+          },
+          {
+            "path": "src/guest/crypto/trust_jni.c",
+            "sha256": "417cbf3d50d55c963fb8e34beaa5afb185998a685791aa0bd7e3c12f58fc7e53"
+          },
+          {
+            "path": "src/guest/crypto/tls_jni.c",
+            "sha256": "340511eaa00e00c7f3219ade2b3c42d718ee6d63ef5ec546925c1133e2384de9"
           },
           {
             "path": "src/guest/icu/icu_jni.c",
@@ -253,6 +261,10 @@
           {
             "path": "lib/libcrypto.so",
             "sha256": "7d38659dfd49d7a02d229a4712c5090fdfbdb3db9b6618b773bf86ace9703f2a"
+          },
+          {
+            "path": "lib/libssl.so",
+            "sha256": "8b1a7d20e405ff73edcaad592cf846f8e28b78bb446874208d65990b16d79734"
           },
           {
             "path": "lib/libicuuc.so",

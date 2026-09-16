@@ -26,6 +26,9 @@
 #include "ogplay/runtime/dexvm/object_model.h"
 #include "ogplay/runtime/dexvm/vm_threads.h"
 #include "ogplay/runtime/dexvm/vm_monitors.h"
+#include "ogplay/runtime/vfs/vfs.h"
+#include "ogplay/runtime/integration/dexvm_io_vfs.h"
+#include "tls_fixtures.h"
 
 namespace {
 
@@ -59,6 +62,8 @@ struct Dvm87Vm final {
         std::make_shared<DexVmAndroidContext>()};
     Interpreter vm;
     VmThreadRuntime threads;
+    VirtualFileSystem vfs;
+    DexVmIoVfsAdapter io_file_system{vfs};
 
     explicit Dvm87Vm(
         const InterpreterBackend backend = InterpreterBackend::switch_dispatch,
@@ -94,7 +99,10 @@ struct Dvm87Vm final {
               linker.Link();
               return linker;
           }(), model, nullptr, ledger, InterpreterConfig{.backend = backend}),
-          threads(vm) {}
+          threads(vm) {
+        ogplay::test::InstallCaPack(vfs);
+        vm.IO().SetFileSystem(&io_file_system);
+    }
 
     ~Dvm87Vm() { threads.Shutdown(); }
 
@@ -1610,7 +1618,7 @@ TEST_CASE("DVM-103 all BootDex classes link and collection methods have no intri
         for (const auto method : f.linker.Class(type).own_direct_methods)
             CHECK(f.linker.Method(method).kind != MethodKind::intrinsic);
     }
-    CHECK(count == 1572);
+    CHECK(count == 1635);
 }
 
 TEST_CASE("DVM-149 Apache HTTP BootDex supports the Restlet startup object path") {
@@ -1703,13 +1711,6 @@ TEST_CASE("DVM-149 Apache HTTP BootDex supports the Restlet startup object path"
         CHECK(std::string(reinterpret_cast<const char*>(encoded.data()),
                           encoded.size()) == "Starting the Apache HTTP client");
 
-        result = f.Static(
-            "Ljavax/net/ssl/HttpsURLConnection;",
-            "getDefaultSSLSocketFactory",
-            "()Ljavax/net/ssl/SSLSocketFactory;");
-        f.RequireOk(result);
-        REQUIRE(result.value.ref.IsValid());
-        const auto default_factory = result.value.ref;
         const auto https_class = f.linker.ResolveDescriptor(
             "Ljavax/net/ssl/HttpsURLConnection;");
         const auto https_getter = f.linker.FindDirectMethod(
@@ -1727,16 +1728,6 @@ TEST_CASE("DVM-149 Apache HTTP BootDex supports the Restlet startup object path"
               MethodKind::interpreted);
         result = f.Static(
             "Ljavax/net/ssl/HttpsURLConnection;",
-            "getDefaultSSLSocketFactory",
-            "()Ljavax/net/ssl/SSLSocketFactory;");
-        f.RequireOk(result);
-        CHECK(result.value.ref == default_factory);
-        result = f.Virtual(default_factory, "getSupportedCipherSuites",
-                           "()[Ljava/lang/String;");
-        f.RequireOk(result);
-        CHECK(f.model.ArrayLength(result.value.ref) == 0);
-        result = f.Static(
-            "Ljavax/net/ssl/HttpsURLConnection;",
             "setDefaultSSLSocketFactory",
             "(Ljavax/net/ssl/SSLSocketFactory;)V",
             {VmValue::Ref(VmObjectRef{})});
@@ -1749,19 +1740,13 @@ TEST_CASE("DVM-149 Apache HTTP BootDex supports the Restlet startup object path"
             "()Ljavax/net/ssl/HostnameVerifier;");
         f.RequireOk(result);
         CHECK(result.value.ref.IsValid());
-
-        const auto plain_socket =
-            f.vm.NewIntrinsicInstance("Ljava/net/Socket;");
-        f.Construct(plain_socket, "Ljava/net/Socket;", "()V");
-        const auto offline_tls = f.Virtual(
-            default_factory, "createSocket",
-            "(Ljava/net/Socket;Ljava/lang/String;IZ)Ljava/net/Socket;",
-            {VmValue::Ref(plain_socket),
-             VmValue::Ref(f.vm.NewStringUtf8("example.invalid")),
-             VmValue::Int(443), VmValue::Int(1)});
-        REQUIRE(offline_tls.exception.IsValid());
-        CHECK(f.linker.Class(offline_tls.exception_class).descriptor ==
-              "Ljava/net/SocketException;");
+        result = f.Static(
+            "Ljavax/net/ssl/HttpsURLConnection;",
+            "getDefaultSSLSocketFactory",
+            "()Ljavax/net/ssl/SSLSocketFactory;");
+        REQUIRE(result.exception.IsValid());
+        CHECK(f.linker.Class(result.exception_class).descriptor ==
+              "Ljava/lang/UnsatisfiedLinkError;");
 
         result = f.Static("Ljavax/net/ssl/SSLContext;", "getInstance",
                           "(Ljava/lang/String;)Ljavax/net/ssl/SSLContext;",
@@ -1775,7 +1760,103 @@ TEST_CASE("DVM-149 Apache HTTP BootDex supports the Restlet startup object path"
              VmValue::Ref(VmObjectRef{})});
         REQUIRE(ssl_init.exception.IsValid());
         CHECK(f.linker.Class(ssl_init.exception_class).descriptor ==
-              "Ljava/lang/UnsupportedOperationException;");
+              "Ljava/lang/UnsatisfiedLinkError;");
+    }
+}
+
+TEST_CASE("TLS-01 TrustManagerFactory and AndroidCAStore use the injected pack") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch,
+                               InterpreterBackend::threaded}) {
+        CAPTURE(backend == InterpreterBackend::threaded ? "threaded" : "switch");
+        Dvm87Vm f(backend);
+        auto algorithm = f.Static(
+            "Ljavax/net/ssl/TrustManagerFactory;", "getDefaultAlgorithm",
+            "()Ljava/lang/String;");
+        f.RequireOk(algorithm);
+        CHECK(f.vm.StringUtf8(algorithm.value.ref) == "PKIX");
+        auto factory = f.Static(
+            "Ljavax/net/ssl/TrustManagerFactory;", "getInstance",
+            "(Ljava/lang/String;)Ljavax/net/ssl/TrustManagerFactory;",
+            {VmValue::Ref(f.vm.NewStringUtf8("PKIX"))});
+        f.RequireOk(factory);
+        auto alias = f.Static(
+            "Ljavax/net/ssl/TrustManagerFactory;", "getInstance",
+            "(Ljava/lang/String;)Ljavax/net/ssl/TrustManagerFactory;",
+            {VmValue::Ref(f.vm.NewStringUtf8("X509"))});
+        f.RequireOk(alias);
+        auto params = f.Virtual(
+            factory.value.ref, "init",
+            "(Ljavax/net/ssl/ManagerFactoryParameters;)V",
+            {VmValue::Ref(VmObjectRef{})});
+        REQUIRE(params.exception.IsValid());
+        CHECK(f.linker.Class(params.exception_class).descriptor ==
+              "Ljava/security/InvalidAlgorithmParameterException;");
+
+        auto store = f.Static(
+            "Ljava/security/KeyStore;", "getInstance",
+            "(Ljava/lang/String;)Ljava/security/KeyStore;",
+            {VmValue::Ref(f.vm.NewStringUtf8("AndroidCAStore"))});
+        f.RequireOk(store);
+        auto write = f.Virtual(
+            store.value.ref, "setCertificateEntry",
+            "(Ljava/lang/String;Ljava/security/cert/Certificate;)V",
+            {VmValue::Ref(f.vm.NewStringUtf8("user:test")),
+             VmValue::Ref(VmObjectRef{})});
+        REQUIRE(write.exception.IsValid());
+        CHECK(f.linker.Class(write.exception_class).descriptor ==
+              "Ljava/security/KeyStoreException;");
+        auto remove = f.Virtual(store.value.ref, "deleteEntry",
+                                "(Ljava/lang/String;)V",
+                                {VmValue::Ref(f.vm.NewStringUtf8("system:x"))});
+        REQUIRE(remove.exception.IsValid());
+        CHECK(f.linker.Class(remove.exception_class).descriptor ==
+              "Ljava/security/KeyStoreException;");
+
+        auto empty = f.Static(
+            "Ljava/security/KeyStore;", "getInstance",
+            "(Ljava/lang/String;)Ljava/security/KeyStore;",
+            {VmValue::Ref(f.vm.NewStringUtf8("BKS"))});
+        f.RequireOk(empty);
+        f.RequireOk(f.Virtual(empty.value.ref, "load",
+                              "(Ljava/io/InputStream;[C)V",
+                              {VmValue::Ref(VmObjectRef{}),
+                               VmValue::Ref(VmObjectRef{})}));
+        auto empty_factory = f.Static(
+            "Ljavax/net/ssl/TrustManagerFactory;", "getInstance",
+            "(Ljava/lang/String;)Ljavax/net/ssl/TrustManagerFactory;",
+            {VmValue::Ref(f.vm.NewStringUtf8("PKIX"))});
+        f.RequireOk(empty_factory);
+        f.RequireOk(f.Virtual(empty_factory.value.ref, "init",
+                              "(Ljava/security/KeyStore;)V",
+                              {VmValue::Ref(empty.value.ref)}));
+        auto empty_managers = f.Virtual(
+            empty_factory.value.ref, "getTrustManagers",
+            "()[Ljavax/net/ssl/TrustManager;");
+        f.RequireOk(empty_managers);
+        auto empty_issuers = f.Virtual(
+            f.model.GetObjectElement(empty_managers.value.ref, 0),
+            "getAcceptedIssuers", "()[Ljava/security/cert/X509Certificate;");
+        f.RequireOk(empty_issuers);
+        CHECK(f.model.ArrayLength(empty_issuers.value.ref) == 0);
+
+        auto unknown = f.Static(
+            "Ljavax/net/ssl/TrustManagerFactory;", "getInstance",
+            "(Ljava/lang/String;Ljava/lang/String;)Ljavax/net/ssl/TrustManagerFactory;",
+            {VmValue::Ref(f.vm.NewStringUtf8("PKIX")),
+             VmValue::Ref(f.vm.NewStringUtf8("NoSuchProvider"))});
+        REQUIRE(unknown.exception.IsValid());
+        CHECK(f.linker.Class(unknown.exception_class).descriptor ==
+              "Ljava/security/NoSuchProviderException;");
+        auto engine = f.Static(
+            "Ljavax/net/ssl/SSLContext;", "getInstance",
+            "(Ljava/lang/String;)Ljavax/net/ssl/SSLContext;",
+            {VmValue::Ref(f.vm.NewStringUtf8("TLS"))});
+        f.RequireOk(engine);
+        auto ssl_engine = f.Virtual(engine.value.ref, "createSSLEngine",
+                                    "()Ljavax/net/ssl/SSLEngine;");
+        REQUIRE(ssl_engine.exception.IsValid());
+        CHECK(f.linker.Class(ssl_engine.exception_class).descriptor ==
+              "Ljava/lang/IllegalStateException;");
     }
 }
 

@@ -924,6 +924,23 @@ Interpreter::Interpreter(DexClassLinker& linker, JavaObjectModel& model,
                              "BKS private-key resource metadata");
         TrackGuestNativeResourceField(*field, *cleanup);
     }
+    const auto track_tls_field = [&](const char* owner, const char* field_name,
+                                     const char* cleanup_name) {
+        const auto type = linker.FindClass(owner);
+        const auto native = linker.FindClass("Lorg/ogplay/security/NativeTls;");
+        if (!type || !native) return;
+        linker.EnsureClassLinked(*type);
+        linker.EnsureClassLinked(*native);
+        const auto field = linker.FindFieldRecursive(*type, field_name, "J");
+        const auto cleanup = linker.FindDirectMethod(*native, cleanup_name, "(J)V");
+        if (!field || !cleanup)
+            throw DexVmError(DexVmErrorReason::unresolved_reference,
+                             std::string{"TLS resource metadata: "} + owner);
+        TrackGuestNativeResourceField(*field, *cleanup);
+    };
+    track_tls_field("Lorg/ogplay/security/OgPlaySslSocket;", "ssl", "freeSsl");
+    track_tls_field("Lorg/ogplay/security/OgPlaySslContextSpi;", "nativeContext",
+                    "freeContext");
     const auto string_class = linker.FindClass("Ljava/lang/String;");
     const auto class_class = linker.FindClass("Ljava/lang/Class;");
     if (string_class.has_value() && class_class.has_value()) {

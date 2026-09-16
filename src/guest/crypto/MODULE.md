@@ -50,6 +50,8 @@ Provider、SPI、条目、BKS codec 与 PKCS#12 KDF；Provider 以 `OGPlayKeySto
 标准 BKS v2 写出和 v0/v1/v2 读取。BC 仅为隔离 oracle，生产 DEX 拒绝其类型引用。
 标准/历史 3DES PBE 调用 guest libcrypto；RSA/EC PKCS#8 使用独立 EVP_PKEY token registry，
 引用、GC、显式释放与 teardown 一致。生产 C++ 不保存条目或 KeyStore 影子状态。
-读取时仅非空 store 密码验证 MAC；null/空密码遵循 API 19 跳过 MAC，但格式、长度、截断和
-资源上限仍严格检查。写入在缓冲增长时执行包含 header/end/MAC 的 16 MiB 总上限；byte[]
-重载按原版写 TYPE_SECRET，不把调用方字节解释为 sealed-key PBE。
+DVM-173 在同一 `libogplay_jni.so` 增加 `trust_jni.c` 与 `tls_jni.c`：路径验证走
+`X509_verify_cert`，客户端 TLS 使用内存 BIO 与逻辑 SSL_CTX/SSL token；JNI_OnLoad 调用
+`ogplay_tls_on_load` 初始化 libssl。不扩展原版 NativeCrypto ABI，不把宿主 FD 传入 guest SSL。
+DT_NEEDED 增加 `libssl.so`。SSLEngine、server TLS 与公开互联网 CA 包不在本模块范围。客户端 TLS 握手当前在
+首次 `SSL_do_handshake` 返回 `SSL_ERROR_SYSCALL`，不能宣称 complete。

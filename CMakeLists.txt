@@ -829,6 +829,7 @@ if(OGPLAY_BUILD_TESTS)
         tests/runtime/android_link_preflight_tests.cpp
         tests/runtime/native_activity_runner_tests.cpp
         tests/runtime/native_library_loader_tests.cpp
+        tests/runtime/tls_trust_tests.cpp
         tests/runtime/preferences_xml_tests.cpp
         tests/runtime/ui_tree_tests.cpp
         tests/runtime/ui_renderer_tests.cpp
@@ -891,7 +892,7 @@ if(OGPLAY_BUILD_TESTS)
         tests/dexvm/unsafe_tests.cpp
         tests/dexvm/bootdex_library_tests.cpp
         tests/dexvm/observable_tests.cpp
-        tests/dexvm/dvm88_tests.cpp
+        tests/dexvm/network_sqlite_tests.cpp
         tests/dexvm/session_exit_tests.cpp
         tests/dexvm/intrinsics_p1_tests.cpp
         tests/dexvm/thread_intrinsic_tests.cpp

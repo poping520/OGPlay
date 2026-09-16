@@ -1966,7 +1966,7 @@ TEST_CASE("DVM-126 String.format delegates Locale formatting to API19 Formatter"
         std::vector<runtime::BionicModuleSource> libraries;
         for (const auto name : {
                  "libc.so", "libm.so", "libdl.so", "libstdc++.so", "libz.so",
-                 "libcrypto.so", "libgabi++.so", "libicui18n.so", "libicuuc.so",
+                 "libcrypto.so", "libssl.so", "libgabi++.so", "libicui18n.so", "libicuuc.so",
                  "libstlport.so", "libogplay_jni.so"}) {
             std::ifstream stream(std::string(OGPLAY_SOURCE_DIR) +
                                      "/data/android/19/lib/" + name,
@@ -2141,7 +2141,7 @@ TEST_CASE("DVM-105/169/175-180 crypto and BKS use BootDex and real guest libcryp
         std::vector<std::vector<std::byte>> contents;
         std::vector<runtime::BionicModuleSource> libraries;
         for (const auto name : {"libc.so", "libm.so", "libdl.so", "libstdc++.so", "libz.so",
-                                "libcrypto.so", "libgabi++.so", "libicui18n.so", "libicuuc.so",
+                                "libcrypto.so", "libssl.so", "libgabi++.so", "libicui18n.so", "libicuuc.so",
                                 "libstlport.so", "libogplay_jni.so"}) {
             std::ifstream stream(std::string(OGPLAY_SOURCE_DIR) + "/data/android/19/lib/" + name,
                                  std::ios::binary);
@@ -3241,7 +3241,7 @@ TEST_CASE("DVM-171 failed unified crypto JNI initialization aborts process creat
     std::vector<std::vector<std::byte>> contents;
     std::vector<runtime::BionicModuleSource> libraries;
     for (const auto name : {"libc.so", "libm.so", "libdl.so", "libstdc++.so", "libz.so",
-                            "libcrypto.so", "libgabi++.so", "libicui18n.so", "libicuuc.so",
+                            "libcrypto.so", "libssl.so", "libgabi++.so", "libicui18n.so", "libicuuc.so",
                             "libstlport.so"}) {
         std::ifstream stream(std::string(OGPLAY_SOURCE_DIR) + "/data/android/19/lib/" + name,
                              std::ios::binary);
@@ -3294,7 +3294,7 @@ TEST_CASE("DVM-106 Certificate parses DER PEM and verifies RSA EC through guest 
         std::vector<std::vector<std::byte>> contents;
         std::vector<runtime::BionicModuleSource> libraries;
         for (const auto name : {"libc.so", "libm.so", "libdl.so", "libstdc++.so", "libz.so",
-                                "libcrypto.so", "libgabi++.so", "libicui18n.so", "libicuuc.so",
+                                "libcrypto.so", "libssl.so", "libgabi++.so", "libicui18n.so", "libicuuc.so",
                                 "libstlport.so", "libogplay_jni.so"}) {
             std::ifstream stream(std::string(OGPLAY_SOURCE_DIR) + "/data/android/19/lib/" + name,
                                  std::ios::binary);
@@ -3699,7 +3699,7 @@ TEST_CASE("DVM-108/109 UUID MessageDigest and serialization use BootDex with rea
         std::vector<std::vector<std::byte>> contents;
         std::vector<runtime::BionicModuleSource> libraries;
         for (const auto name : {"libc.so", "libm.so", "libdl.so", "libstdc++.so", "libz.so",
-                                "libcrypto.so", "libgabi++.so", "libicui18n.so", "libicuuc.so",
+                                "libcrypto.so", "libssl.so", "libgabi++.so", "libicui18n.so", "libicuuc.so",
                                 "libstlport.so", "libogplay_jni.so"}) {
             std::ifstream stream(std::string(OGPLAY_SOURCE_DIR) + "/data/android/19/lib/" + name,
                                  std::ios::binary);

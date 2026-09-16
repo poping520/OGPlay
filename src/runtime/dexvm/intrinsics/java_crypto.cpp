@@ -7,6 +7,7 @@ namespace {
 using namespace detail;
 constexpr auto kNative = "Lcom/android/org/conscrypt/NativeCrypto;";
 constexpr auto kVerificationNative = "Lorg/ogplay/security/NativeVerification;";
+constexpr auto kKeyStoreNative = "Lorg/ogplay/security/NativeKeyStoreCrypto;";
 constexpr auto kProvider = "Lcom/android/org/conscrypt/OpenSSLProvider;";
 
 struct SignatureAlgorithm {
@@ -55,6 +56,8 @@ IntrinsicClassDecl SecurityConfiguration() {
         Put(vm, props, "security.provider.1", "com.android.org.conscrypt.OpenSSLProvider");
         Put(vm, props, "security.provider.2",
             "org.apache.harmony.security.provider.cert.DRLCertFactory");
+        Put(vm, props, "security.provider.3", "org.ogplay.security.OgPlayKeyStoreProvider");
+        Put(vm, props, "keystore.type", "BKS");
         const auto door = Construct(vm, "Ljava/security/Security$SecurityDoor;");
         vm.SetIntrinsicStaticRef("Lorg/apache/harmony/security/fortress/Engine;", "door",
                                  "Lorg/apache/harmony/security/fortress/SecurityAccess;", door);
@@ -330,6 +333,15 @@ IntrinsicClassDecl NativeVerificationBoundary() {
     b.GuestNativeStatic("verify", "([B[B[BLjava/lang/String;)Z");
     return std::move(b).Build();
 }
+IntrinsicClassDecl NativeKeyStoreBoundary() {
+    auto b = IntrinsicClassBuilder::Class(kKeyStoreNative);
+    b.GuestNativeStatic("desEdeCbc", "(Z[B[B[B)[B");
+    b.GuestNativeStatic("decodePrivateKey", "([B)J");
+    b.GuestNativeStatic("encodePrivateKey", "(J)[B");
+    b.GuestNativeStatic("privateKeyType", "(J)I");
+    b.GuestNativeStatic("freePrivateKey", "(J)V");
+    return std::move(b).Build();
+}
 IntrinsicClassDecl NativeCryptoGuestAdmission() {
     auto b = IntrinsicClassBuilder::Class(kNative);
     b.AdmitBootNativeMethods();
@@ -415,6 +427,7 @@ void AppendJavaCrypto(std::vector<IntrinsicClassDecl>& catalog,
     catalog.push_back(AesKeyGenerator());
     catalog.push_back(NativeCryptoGuestAdmission());
     catalog.push_back(NativeVerificationBoundary());
+    catalog.push_back(NativeKeyStoreBoundary());
     catalog.push_back(CipherContext());
     for (const auto& entry : kSignatures) catalog.push_back(VerificationSpi(entry.algorithm));
 }

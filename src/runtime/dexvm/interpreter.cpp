@@ -912,6 +912,18 @@ Interpreter::Interpreter(DexClassLinker& linker, JavaObjectModel& model,
     track_native_field("Lcom/android/org/conscrypt/OpenSSLDigestContext;", "context",
                        "EVP_MD_CTX_destroy");
     track_native_field("Lcom/android/org/conscrypt/OpenSSLKey;", "ctx", "EVP_PKEY_free");
+    if (const auto type = linker.FindClass("Lorg/ogplay/security/BksPrivateKey;");
+        type.has_value()) {
+        const auto native = linker.FindClass("Lorg/ogplay/security/NativeKeyStoreCrypto;");
+        linker.EnsureClassLinked(*type);
+        linker.EnsureClassLinked(*native);
+        const auto field = linker.FindFieldRecursive(*type, "token", "J");
+        const auto cleanup = linker.FindDirectMethod(*native, "freePrivateKey", "(J)V");
+        if (!field || !cleanup)
+            throw DexVmError(DexVmErrorReason::unresolved_reference,
+                             "BKS private-key resource metadata");
+        TrackGuestNativeResourceField(*field, *cleanup);
+    }
     const auto string_class = linker.FindClass("Ljava/lang/String;");
     const auto class_class = linker.FindClass("Ljava/lang/Class;");
     if (string_class.has_value() && class_class.has_value()) {

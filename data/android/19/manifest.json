@@ -41,7 +41,7 @@
     "path": "framework/bootdex.jar",
     "generator": "tools/bootdex/build_bootdex.py",
     "recipe": "tools/bootdex/api19.json",
-    "recipe_sha256": "f14070351634611b9ae83d30f0f43c4c35b00c4876f6d334de3471bd2aedbc07",
+    "recipe_sha256": "a35b79ac14825bad382f6bc8e71ac19a1cf331ae463a4b3a97c1e2f4b7d2b932",
     "sources": [
       {
         "source_project": "platform/libcore",
@@ -67,14 +67,22 @@
         "source_project": "platform/frameworks/base",
         "source_jar": "framework2.jar",
         "source_jar_sha256": "5866d4e62e5fe44ffaf6ff441b6c361baeb1f8b91e30bb555481ef13ef837973"
+      },
+      {
+        "source_project": "OGPlay",
+        "source_root": "src/guest/crypto/java",
+        "source_sha256": "61f4b8dc6cb1bf87a2c41876bf96de00f33b4ea85a8fdbeb24bbabd00557b663",
+        "javac": "17.0.2",
+        "android_jar_sha256": "4032a201eeb1d0430c7d9f1075151dd280427de5ca9e36f734f464ab605cb690",
+        "d8_sha256": "d9e6acde0cb6f2453d6835b52c31d2066054394fb79e91115dd4978bde6afd16"
       }
     ],
-    "size": 2265852,
-    "sha256": "75b505c3cfda291b91284c7d87eed04f7533d54f78146952e0813e5b10d78680",
+    "size": 2293040,
+    "sha256": "936b5900605fb0bb9a8ffc35cff4f95e700a18a226f8a1edc90e5a730b0749d5",
     "dex_entry": "classes.dex",
-    "dex_size": 2262284,
-    "dex_sha256": "6c100c7edc8d07982267ea4a1224d53c79bff68e6215ebf7902944c8354d8606",
-    "class_count": 1542,
+    "dex_size": 2289472,
+    "dex_sha256": "78d9b7ebf717a80012d87493c6f55189e55a655df292395bae1d1680a57224d0",
+    "class_count": 1572,
     "selection_policy": "load-all",
     "notice": "notices/bootdex.jar.txt",
     "notice_sha256": "c5bf8c6efc379e6d5401a40fbf7810aedf9ee81dfa9f2deaa174faa97ded310a"
@@ -197,8 +205,8 @@
     {
       "path": "lib/libogplay_jni.so",
       "source_project": "ogplay",
-      "size": 67756,
-      "sha256": "b916cfe21443c9c203c681adf4930675bedb78ef9dc3d7e125202a7ed0561348",
+      "size": 73312,
+      "sha256": "448c536622ac46e6d3538f0437ce475205a516324fca2731af0f38c264b65bda",
       "soname": "libogplay_jni.so",
       "needed": [
         "libcrypto.so",
@@ -208,14 +216,14 @@
       ],
       "build": {
         "generator": "tools/bootdex/build_bootdex.py",
-        "generator_sha256": "294df83fa5db9bad7aa7139901207f569361906f316c1cced53dc55798b3abc4",
+        "generator_sha256": "6c5f2cb9ddd490dd898728b7a08abcd6c11aefaf50e4233efab5b9afa1358dd4",
         "ndk_revision": "25.2.9519653",
         "target": "armv7a-linux-androideabi19",
         "language": "C11",
         "sources": [
           {
             "path": "src/guest/crypto/crypto_jni.c",
-            "sha256": "8f65e618aa677d0d1174e0c0381fb80e04c1ee84dc82d0e54cd2e1a5d70af359"
+            "sha256": "15eba395603b5cd7b8ca2fe690949c69b4dda6df139fe832c40713ed310784ca"
           },
           {
             "path": "src/guest/icu/icu_jni.c",

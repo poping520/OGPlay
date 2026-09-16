@@ -128,6 +128,10 @@
   完整 ThreadGroup/反射长尾、RSA Cipher/GCM/其他 transformation、签名生成、PKIX/系统 CA/
   撤销/TLS、HMAC/SHA3/独立 SHA224 摘要。AES AlgorithmParameters provider 未注册，原版
   engineGetParameters 可返回 null；公钥仅编码 fallback，不宣称数学参数/KeyFactory 能力。
+- KeyStore/KeyStoreSpi 及公开嵌套类已进入 BootDex；自有 `OGPlayKeyStore` 已注册 BKS 并设为
+  默认类型，BKS v0/v1/v2、标准/历史 key PBE、AES RAW、RSA/EC PKCS#8 与 API19 双向互操作
+  已受检。CallbackHandler 实际取密码、同 store 双线程、磁盘跨 session 重载及应用沙盒隔离
+  已受检；complete 仅指 DVM-172 约定的软件 KeyStore/BKS 与算法集合。
 
 ## 验证入口
 

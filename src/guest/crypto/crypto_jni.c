@@ -377,6 +377,7 @@ static void release_crypto_locks(void);
 static void release_digests(void);
 static void release_hmacs(void);
 static void release_mac_keys(void);
+static void release_private_keys(void);
 __attribute__((destructor)) static void release_contexts(void) {
     while (contexts) {
         Context *p = contexts;
@@ -387,6 +388,7 @@ __attribute__((destructor)) static void release_contexts(void) {
     release_digests();
     release_hmacs();
     release_mac_keys();
+    release_private_keys();
     release_crypto_locks();
     ogplay_icu_release();
 }
@@ -395,10 +397,18 @@ __attribute__((destructor)) static void release_contexts(void) {
  * OpenSSL owns key decoding and the actual signature algorithm. */
 typedef struct env_md_ctx_st EVP_MD_CTX;
 typedef struct evp_pkey_st EVP_PKEY;
+typedef struct pkcs8_priv_key_info_st PKCS8_PRIV_KEY_INFO;
 typedef struct env_md_st EVP_MD;
 extern EVP_PKEY *d2i_PUBKEY(EVP_PKEY **, const unsigned char **, long);
 extern void EVP_PKEY_free(EVP_PKEY *);
 extern int EVP_PKEY_base_id(const EVP_PKEY *);
+extern PKCS8_PRIV_KEY_INFO *d2i_PKCS8_PRIV_KEY_INFO(
+    PKCS8_PRIV_KEY_INFO **, const unsigned char **, long);
+extern int i2d_PKCS8_PRIV_KEY_INFO(const PKCS8_PRIV_KEY_INFO *, unsigned char **);
+extern void PKCS8_PRIV_KEY_INFO_free(PKCS8_PRIV_KEY_INFO *);
+extern EVP_PKEY *EVP_PKCS82PKEY(PKCS8_PRIV_KEY_INFO *);
+extern PKCS8_PRIV_KEY_INFO *EVP_PKEY2PKCS8(EVP_PKEY *);
+extern const EVP_CIPHER *EVP_des_ede3_cbc(void);
 extern int EVP_add_digest(const EVP_MD *);
 extern const EVP_MD *EVP_sha1(void);
 extern const EVP_MD *EVP_sha224(void);
@@ -545,6 +555,190 @@ done:
     ERR_clear_error();
     return valid;
 }
+
+typedef struct PrivateKeyToken {
+    struct PrivateKeyToken *next;
+    int mutex, references, removed;
+    jlong token;
+    EVP_PKEY *key;
+} PrivateKeyToken;
+static PrivateKeyToken *private_keys;
+static PrivateKeyToken *private_key(JNIEnv *env, jlong token) {
+    pthread_mutex_lock(&registry_mutex);
+    PrivateKeyToken *p = private_keys;
+    while (p && p->token != token) p = p->next;
+    if (p) ++p->references;
+    pthread_mutex_unlock(&registry_mutex);
+    if (!p) fail(env, "java/lang/IllegalStateException", "invalid private key token");
+    else pthread_mutex_lock(&p->mutex);
+    return p;
+}
+static void release_private_key(PrivateKeyToken **address) {
+    PrivateKeyToken *p = *address;
+    if (!p) return;
+    pthread_mutex_unlock(&p->mutex);
+    pthread_mutex_lock(&registry_mutex);
+    int destroy = --p->references == 0 && p->removed;
+    pthread_mutex_unlock(&registry_mutex);
+    if (destroy) { EVP_PKEY_free(p->key); free(p); }
+}
+static jlong publish_private_key(JNIEnv *env, EVP_PKEY *key) {
+    PrivateKeyToken *p = malloc(sizeof(PrivateKeyToken));
+    if (!p) {
+        EVP_PKEY_free(key);
+        fail(env, "java/lang/OutOfMemoryError", "private key token");
+        return 0;
+    }
+    p->mutex = p->references = p->removed = 0;
+    p->key = key;
+    pthread_mutex_lock(&registry_mutex);
+    if (next_token == 0x7fffffffffffffffLL) {
+        pthread_mutex_unlock(&registry_mutex);
+        EVP_PKEY_free(key); free(p);
+        fail(env, "java/lang/OutOfMemoryError", "native token space exhausted");
+        return 0;
+    }
+    p->token = next_token++;
+    p->next = private_keys;
+    private_keys = p;
+    pthread_mutex_unlock(&registry_mutex);
+    return p->token;
+}
+static jobject new_bytes(JNIEnv *env, int count) {
+    return JNI(176, jobject(*)(JNIEnv *, int))(env, count);
+}
+jobject Java_org_ogplay_security_NativeKeyStoreCrypto_desEdeCbc(
+        JNIEnv *env, jobject cls, unsigned char encrypt, jobject key,
+        jobject iv, jobject input) {
+    (void)cls;
+    if (length(env, key) != 24 || length(env, iv) != 8) {
+        fail(env, "java/security/InvalidKeyException", "3DES requires 24-byte key and 8-byte IV");
+        return 0;
+    }
+    int input_size = length(env, input);
+    if (input_size < 0 || input_size > 1048576) {
+        if (input_size > 1048576) fail(env, "java/lang/IllegalArgumentException", "3DES input exceeds 1 MiB");
+        return 0;
+    }
+    unsigned char key_bytes[24], iv_bytes[8];
+    unsigned char *source = malloc((size_t)input_size + 1);
+    unsigned char *output = malloc((size_t)input_size + 9);
+    EVP_CIPHER_CTX *ctx = EVP_CIPHER_CTX_new();
+    if (!source || !output || !ctx) {
+        fail(env, "java/lang/OutOfMemoryError", "3DES buffer");
+        goto failed;
+    }
+    read_bytes(env, key, 0, 24, key_bytes);
+    read_bytes(env, iv, 0, 8, iv_bytes);
+    if (input_size) read_bytes(env, input, 0, input_size, source);
+    int first = 0, last = 0;
+    ERR_clear_error();
+    if (!EVP_CipherInit_ex(ctx, EVP_des_ede3_cbc(), 0, key_bytes, iv_bytes, encrypt != 0) ||
+        !EVP_CipherUpdate(ctx, output, &first, source, input_size) ||
+        !EVP_CipherFinal_ex(ctx, output + first, &last)) {
+        fail(env, encrypt ? "java/security/ProviderException" : "javax/crypto/BadPaddingException",
+             encrypt ? "3DES encryption failed" : "incorrect key password");
+        goto failed;
+    }
+    jobject result = new_bytes(env, first + last);
+    if (result) write_bytes(env, result, 0, first + last, output);
+    if (ctx) EVP_CIPHER_CTX_free(ctx);
+    if (source) { volatile unsigned char *p = source; for (int i = 0; i < input_size; ++i) p[i] = 0; }
+    if (output) { volatile unsigned char *p = output; for (int i = 0; i < input_size + 8; ++i) p[i] = 0; }
+    {
+        volatile unsigned char *wipe = key_bytes;
+        for (int i = 0; i < 24; ++i) wipe[i] = 0;
+        wipe = iv_bytes;
+        for (int i = 0; i < 8; ++i) wipe[i] = 0;
+    }
+    free(source); free(output);
+    return result;
+failed:
+    if (ctx) EVP_CIPHER_CTX_free(ctx);
+    {
+        volatile unsigned char *wipe = key_bytes;
+        for (int i = 0; i < 24; ++i) wipe[i] = 0;
+        wipe = iv_bytes;
+        for (int i = 0; i < 8; ++i) wipe[i] = 0;
+    }
+    if (source) { volatile unsigned char *p = source; for (int i = 0; i < input_size; ++i) p[i] = 0; }
+    if (output) { volatile unsigned char *p = output; for (int i = 0; i < input_size + 8; ++i) p[i] = 0; }
+    free(source); free(output);
+    return 0;
+}
+jlong Java_org_ogplay_security_NativeKeyStoreCrypto_decodePrivateKey(
+        JNIEnv *env, jobject cls, jobject encoded_key) {
+    (void)cls;
+    int count = 0;
+    unsigned char *bytes = encoded(env, encoded_key, &count, "java/security/InvalidKeyException");
+    if (!bytes) return 0;
+    const unsigned char *cursor = bytes;
+    PKCS8_PRIV_KEY_INFO *info = d2i_PKCS8_PRIV_KEY_INFO(0, &cursor, count);
+    EVP_PKEY *key = info && cursor == bytes + count ? EVP_PKCS82PKEY(info) : 0;
+    if (info) PKCS8_PRIV_KEY_INFO_free(info);
+    free(bytes);
+    if (!key || (EVP_PKEY_base_id(key) != 6 && EVP_PKEY_base_id(key) != 408)) {
+        if (key) EVP_PKEY_free(key);
+        fail(env, "java/security/InvalidKeyException", "invalid RSA/EC PKCS#8 private key");
+        return 0;
+    }
+    return publish_private_key(env, key);
+}
+jobject Java_org_ogplay_security_NativeKeyStoreCrypto_encodePrivateKey(
+        JNIEnv *env, jobject cls, jlong token) {
+    (void)cls;
+    PrivateKeyToken *p __attribute__((cleanup(release_private_key))) = private_key(env, token);
+    if (!p) return 0;
+    PKCS8_PRIV_KEY_INFO *info = EVP_PKEY2PKCS8(p->key);
+    int count = info ? i2d_PKCS8_PRIV_KEY_INFO(info, 0) : -1;
+    unsigned char *bytes = count > 0 ? malloc((size_t)count) : 0;
+    unsigned char *cursor = bytes;
+    int written = bytes ? i2d_PKCS8_PRIV_KEY_INFO(info, &cursor) : -1;
+    if (info) PKCS8_PRIV_KEY_INFO_free(info);
+    if (written != count) {
+        free(bytes);
+        fail(env, "java/security/ProviderException", "private key encoding failed");
+        return 0;
+    }
+    jobject result = new_bytes(env, count);
+    if (result) write_bytes(env, result, 0, count, bytes);
+    if (bytes) { volatile unsigned char *wipe = bytes; for (int i = 0; i < count; ++i) wipe[i] = 0; }
+    free(bytes);
+    return result;
+}
+int Java_org_ogplay_security_NativeKeyStoreCrypto_privateKeyType(
+        JNIEnv *env, jobject cls, jlong token) {
+    (void)cls;
+    PrivateKeyToken *p __attribute__((cleanup(release_private_key))) = private_key(env, token);
+    return p ? EVP_PKEY_base_id(p->key) : 0;
+}
+void Java_org_ogplay_security_NativeKeyStoreCrypto_freePrivateKey(
+        JNIEnv *env, jobject cls, jlong token) {
+    (void)cls;
+    pthread_mutex_lock(&registry_mutex);
+    PrivateKeyToken **cursor = &private_keys;
+    while (*cursor && (*cursor)->token != token) cursor = &(*cursor)->next;
+    if (!*cursor) {
+        pthread_mutex_unlock(&registry_mutex);
+        fail(env, "java/lang/IllegalStateException", "invalid private key token");
+        return;
+    }
+    PrivateKeyToken *p = *cursor;
+    *cursor = p->next;
+    p->removed = 1;
+    int destroy = p->references == 0;
+    pthread_mutex_unlock(&registry_mutex);
+    if (destroy) { EVP_PKEY_free(p->key); free(p); }
+}
+static void release_private_keys(void) {
+    while (private_keys) {
+        PrivateKeyToken *p = private_keys;
+        private_keys = p->next;
+        EVP_PKEY_free(p->key);
+        free(p);
+    }
+}
+
 static void release_crypto_locks(void) {
     CRYPTO_set_locking_callback(0);
     CRYPTO_set_id_callback(0);

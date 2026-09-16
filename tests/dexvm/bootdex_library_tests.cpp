@@ -1610,7 +1610,7 @@ TEST_CASE("DVM-103 all BootDex classes link and collection methods have no intri
         for (const auto method : f.linker.Class(type).own_direct_methods)
             CHECK(f.linker.Method(method).kind != MethodKind::intrinsic);
     }
-    CHECK(count == 1542);
+    CHECK(count == 1572);
 }
 
 TEST_CASE("DVM-149 Apache HTTP BootDex supports the Restlet startup object path") {
@@ -1986,6 +1986,57 @@ TEST_CASE("DVM-104 formatters events tokenizer and key parameters use guest stat
             else f.Construct(key,owner,"([B)V",{VmValue::Ref(keybytes)});
             const auto copied=f.Virtual(key,std::string_view(owner).find("IvParameter")!=std::string_view::npos?"getIV":"getEncoded","()[B");f.RequireOk(copied);CHECK(copied.value.ref!=keybytes);CHECK(f.model.ReadByteRegion(copied.value.ref,0,3)==f.model.ReadByteRegion(keybytes,0,3));
         }
+    }
+}
+
+TEST_CASE("DVM-173/174 KeyStore Java closure keeps state in the guest object graph") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch,
+                               InterpreterBackend::threaded}) {
+        Dvm87Vm f(backend);
+        const auto default_type = f.Static(
+            "Ljava/security/KeyStore;", "getDefaultType", "()Ljava/lang/String;");
+        f.RequireOk(default_type);
+        CHECK(f.vm.StringUtf8(default_type.value.ref) == "BKS");
+        const auto public_store = f.Static(
+            "Ljava/security/KeyStore;", "getInstance",
+            "(Ljava/lang/String;)Ljava/security/KeyStore;",
+            {VmValue::Ref(f.vm.NewStringUtf8("BKS"))});
+        f.RequireOk(public_store);
+        const auto provider = f.Virtual(
+            public_store.value.ref, "getProvider", "()Ljava/security/Provider;");
+        f.RequireOk(provider);
+        const auto provider_name = f.Virtual(
+            provider.value.ref, "getName", "()Ljava/lang/String;");
+        f.RequireOk(provider_name);
+        CHECK(f.vm.StringUtf8(provider_name.value.ref) == "OGPlayKeyStore");
+        f.RequireOk(f.Virtual(
+            public_store.value.ref, "load", "(Ljava/io/InputStream;[C)V",
+            {VmValue::Ref(VmObjectRef{}), VmValue::Ref(VmObjectRef{})}));
+        const auto store = f.vm.NewIntrinsicInstance(
+            "Lorg/ogplay/security/BksKeyStoreSpi;");
+        f.Construct(store, "Lorg/ogplay/security/BksKeyStoreSpi;", "()V");
+        f.RequireOk(f.Virtual(
+            store, "engineLoad", "(Ljava/io/InputStream;[C)V",
+            {VmValue::Ref(VmObjectRef{}), VmValue::Ref(VmObjectRef{})}));
+        auto size = f.Virtual(store, "engineSize", "()I");
+        f.RequireOk(size);
+        CHECK(size.value.AsInt() == 0);
+
+        const auto empty = f.model.NewPrimitiveArray(
+            f.linker.ResolveDescriptor("[B"), JniPrimitiveKind::byte, 0);
+        const auto input = f.vm.NewIntrinsicInstance("Ljava/io/ByteArrayInputStream;");
+        f.Construct(input, "Ljava/io/ByteArrayInputStream;", "([B)V",
+                    {VmValue::Ref(empty)});
+        const auto failed_load = f.Virtual(
+            store, "engineLoad", "(Ljava/io/InputStream;[C)V",
+            {VmValue::Ref(input), VmValue::Ref(VmObjectRef{})});
+        REQUIRE(failed_load.exception.IsValid());
+        CHECK(f.linker.Class(failed_load.exception_class).descriptor ==
+              "Ljava/io/IOException;");
+        size = f.Virtual(store, "engineSize", "()I");
+        f.RequireOk(size);
+        CHECK(size.value.AsInt() == 0);
+
     }
 }
 

@@ -4,13 +4,17 @@
 
 ## 最近进展
 
+- KeyStore [DVM-172](../tasks/dexvm/DVM-172.md) 约定范围内验收完成：API19 原版公开 API 与
+  自有 Java Provider/SPI/BKS codec 进入 1572 类 BootDex；标准及历史 3DES PBE、AES RAW、
+  RSA/EC PKCS#8、native token 生命周期、v0/v1/v2、资源上限与失败清理完成。Android 4.4.4
+  mixed store 双向互操作通过，正式发布独立 `OGPlayKeyStore`，默认类型为 BKS；CallbackHandler、
+  同 store 双线程、磁盘跨 session 重载及应用沙盒同路径读写隔离通过，KS-01..09 闭合。
 - [DVM-171](../tasks/dexvm/DVM-171.md)：固定 API 19 原版 `NativeCrypto` 及精确依赖进入
   BootDex，删除 C++ 手工类壳；原版 217 个 native 中 26 个沿用既有后端、1 个为初始化适配、
   190 个明确失败。资源登记归 VM，私有验签移出原版 ABI；初始化失败传播和 payload 来源
   固定均已受检。BootDex 现为 1542 类。
-- [KeyStore 通用能力规划](../design/dexvm/13-keystore.md)已落地：原版 JCA、自有 BKS
-  Provider、既有 guest crypto，覆盖真实密钥保护、文件互操作及持久化；ADR-0064 确认方向。
-  当前仅规划，KS-01..09 尚未实施；KeyStore、BKS 与 TLS/PKIX 的运行时能力状态未变。
+- [KeyStore 通用能力规划](../design/dexvm/13-keystore.md)按 ADR-0064 实施，约定范围已验收；TLS/PKIX、系统 CA、
+  AndroidKeyStore、DSA 与签名生成仍明确不在本次范围。
 - Angry Birds 无 Profile 兼容链已依次越过 `dl_unwind_find_exidx`、location 薄层、
   `Context.getFileStreamPath`、旧 Dalvik JNI Object-call/void、AudioTrack notification getter、
   Flurry boot-age、Settings moved-key 和 Context calling/self 权限检查。
@@ -63,11 +67,15 @@
 
 ## 验证快照
 
-- Windows Release 仅构建受影响目标；BootDex 当前为 1542 类。
+- Windows Release 仅构建受影响目标；BootDex 当前为 1572 类，DEX
+  `78d9b7ebf717a80012d87493c6f55189e55a655df292395bae1d1680a57224d0`。
 - JNI 定向回归 54 cases / 1608 assertions；DVM-166/167 双解释器分别通过 58/44 assertions；
   DVM-168 EGL10/EGL14 定向回归 6 cases / 314 assertions；Angry Birds 已进入 renderer 的
   `onSurfaceChanged`；DVM-169 双解释器加密回归 1 case / 1646 assertions；DVM-170 双解释器
   1 case / 16 assertions；真实 APK 已推进至 `java.security.KeyStore` 缺口。
+- DVM-172 最终定向回归：KeyStore API、BKS/crypto/native、BootDex 全链接、证书及
+  DVM-108/109 共 5 cases / 15722 assertions 通过；包含回调、共享 store 双线程、磁盘重载
+  和沙盒隔离。intrinsic layout、BootDex builder self-test、payload current 共 3/3 通过。
 - 既有 BootDex 全链接测试：8602 assertions；能力清单解析通过。
 - 图形 catalog/定向回归通过不代表 CTS/Khronos 或全部厂商扩展认证。
 - `data/android/19/framework/` 为本地生成产物，不纳入版本控制。

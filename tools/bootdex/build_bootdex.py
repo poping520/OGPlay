@@ -31,6 +31,26 @@ MANIFEST = ROOT / "data/android/19/manifest.json"
 NOTICE = ROOT / "data/android/19/notices/bootdex.jar.txt"
 AUDIT_REPORT = ROOT / ".local/dvm102-date-family-audit.json"
 NATIVE_CRYPTO_AUDIT_REPORT = ROOT / ".local/nativecrypto-api19-audit.json"
+JAVA_SOURCE_ROOT = ROOT / "src/guest/crypto/java"
+JAVA_SOURCE_NAMES = (
+    "org/ogplay/security/BksKeyStoreSpi.java",
+    "org/ogplay/security/BksLimits.java",
+    "org/ogplay/security/BksPrivateKey.java",
+    "org/ogplay/security/NativeKeyStoreCrypto.java",
+    "org/ogplay/security/OgPlayKeyStoreProvider.java",
+    "org/ogplay/security/Pkcs12Kdf.java",
+)
+JAVAC = Path(os.environ.get(
+    "OGPLAY_JAVAC", r"D:\01_software\jdk-17.0.2\bin\javac.exe"))
+JAVA = JAVAC.with_name("java.exe" if os.name == "nt" else "java")
+ANDROID_JAR = Path(os.environ.get(
+    "OGPLAY_ANDROID_19_JAR",
+    r"D:\01_software\android-sdk\platforms\android-19\android.jar"))
+D8_JAR = Path(os.environ.get(
+    "OGPLAY_D8_JAR",
+    r"D:\01_software\android-sdk\build-tools\29.0.2\lib\d8.jar"))
+ANDROID_JAR_SHA256 = "4032a201eeb1d0430c7d9f1075151dd280427de5ca9e36f734f464ab605cb690"
+D8_JAR_SHA256 = "d9e6acde0cb6f2453d6835b52c31d2066054394fb79e91115dd4978bde6afd16"
 CATEGORIES = ("boot_dex", "existing_vm_intrinsic", "native_boundary", "deferred")
 NATIVE_DISPOSITIONS = ("required_backend", "explicit_failure")
 NATIVE_CRYPTO_OWNER = "Lcom/android/org/conscrypt/NativeCrypto;"
@@ -171,7 +191,58 @@ def run(command: list[str]) -> None:
         raise BuildError(result.stdout)
 
 
-def assemble(recipe: dict[str, tuple[str, ...]], work: Path) -> bytes:
+def compile_guest_java(work: Path) -> tuple[Path, tuple[str, ...]]:
+    sources = tuple(JAVA_SOURCE_ROOT / name for name in JAVA_SOURCE_NAMES)
+    observed = tuple(
+        path.relative_to(JAVA_SOURCE_ROOT).as_posix()
+        for path in sorted(JAVA_SOURCE_ROOT.rglob("*.java")))
+    if observed != JAVA_SOURCE_NAMES:
+        raise BuildError("KeyStore Java source list changed")
+    if not all(path.is_file() for path in sources) or not JAVAC.is_file() or \
+            not JAVA.is_file() or not ANDROID_JAR.is_file() or not D8_JAR.is_file():
+        raise BuildError("KeyStore Java toolchain or sources are missing")
+    if file_sha256(ANDROID_JAR) != ANDROID_JAR_SHA256:
+        raise BuildError("unexpected API 19 android.jar")
+    if file_sha256(D8_JAR) != D8_JAR_SHA256:
+        raise BuildError("unexpected Android build-tools 29.0.2 d8.jar")
+    version = subprocess.run(
+        [str(JAVAC), "-version"], stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+        text=True, encoding="utf-8", check=False).stdout.strip()
+    if version != "javac 17.0.2":
+        raise BuildError(f"unexpected javac: {version}")
+    classes = work / "guest-java-classes"
+    classes.mkdir()
+    run([
+        str(JAVAC), "-J-Duser.language=en", "-encoding", "UTF-8", "-source", "7", "-target", "7",
+        "-Xlint:-options", "-g:none", "-bootclasspath", str(ANDROID_JAR),
+        "-d", str(classes), *(str(source) for source in sources),
+    ])
+    class_files = tuple(sorted(classes.rglob("*.class")))
+    if not class_files:
+        raise BuildError("KeyStore Java compilation produced no classes")
+    dex_dir = work / "guest-java-dex"
+    dex_dir.mkdir()
+    run([
+        str(JAVA), "-cp", str(D8_JAR), "com.android.tools.r8.D8",
+        "--min-api", "19", "--output", str(dex_dir),
+        *(str(path) for path in class_files),
+    ])
+    dex_path = dex_dir / "classes.dex"
+    dex = dex_path.read_bytes()
+    descriptors = class_names(dex)
+    if any(item.startswith("Lcom/android/org/bouncycastle/") for item in
+           dex_survey_lib.parse_dex(dex).type_descriptors):
+        raise BuildError("guest Java production code references BouncyCastle")
+    destination = work / "guest-java-smali"
+    run([
+        "java", "-jar", str(SMALI / "baksmali.jar"), "disassemble",
+        "--api", "19", "--jobs", "1", "--output", str(destination), str(dex_path),
+    ])
+    return destination, descriptors
+
+
+def assemble(recipe: dict[str, tuple[str, ...]], work: Path,
+             include_guest_java: bool = True) -> bytes:
     smali_roots = []
     for source, classes in recipe.items():
         destination = work / (source + "-smali")
@@ -183,6 +254,13 @@ def assemble(recipe: dict[str, tuple[str, ...]], work: Path) -> bytes:
                 "--classes", ",".join(classes[offset:offset + 100]),
                 "--output", str(destination), str(source_path(source)),
             ])
+        smali_roots.append(str(destination))
+    if include_guest_java:
+        destination, custom_classes = compile_guest_java(work)
+        selected = {item for values in recipe.values() for item in values}
+        duplicate = selected.intersection(custom_classes)
+        if duplicate:
+            raise BuildError(f"duplicate guest Java class: {sorted(duplicate)[0]}")
         smali_roots.append(str(destination))
     output = work / "classes.dex"
     run([
@@ -196,6 +274,24 @@ def class_names(dex: bytes) -> tuple[str, ...]:
     parsed = dex_survey_lib.parse_dex(dex)
     return tuple(sorted(parsed.type_name(item.type_index)
                         for item in parsed.classes))
+
+
+def expected_class_names(
+        recipe: dict[str, tuple[str, ...]],
+        custom_classes: tuple[str, ...]) -> tuple[str, ...]:
+    selected = tuple(item for values in recipe.values() for item in values)
+    if len(custom_classes) != len(set(custom_classes)):
+        raise BuildError("guest Java compilation contains duplicate classes")
+    duplicate = set(selected).intersection(custom_classes)
+    if duplicate:
+        raise BuildError(f"duplicate guest Java class: {sorted(duplicate)[0]}")
+    return tuple(sorted(selected + custom_classes))
+
+
+def compile_expected_class_names(
+        recipe: dict[str, tuple[str, ...]], work: Path) -> tuple[str, ...]:
+    _, custom_classes = compile_guest_java(work)
+    return expected_class_names(recipe, custom_classes)
 
 
 def audit_native_crypto(dex_bytes: bytes) -> dict:
@@ -275,7 +371,8 @@ def build() -> tuple[bytes, bytes, dict[str, tuple[str, ...]]]:
         dex = assemble(recipe, Path(first))
         if dex != assemble(recipe, Path(second)):
             raise BuildError("two BootDex assemblies differ")
-    selected = tuple(sorted(item for values in recipe.values() for item in values))
+    with tempfile.TemporaryDirectory(prefix="ogplay-bootdex-java-audit-") as work:
+        selected = compile_expected_class_names(recipe, Path(work))
     if class_names(dex) != selected:
         raise BuildError("generated classes differ from recipe")
     resources = resource_payload(resource_recipe)
@@ -296,7 +393,17 @@ def boot_metadata(jar: bytes, dex: bytes,
                 "source_jar_sha256": file_sha256(source_path(source)),
             }
             for source in recipe
-        ],
+        ] + [{
+            "source_project": "OGPlay",
+            "source_root": "src/guest/crypto/java",
+            "source_sha256": sha256(b"".join(
+                path.relative_to(ROOT).as_posix().encode("utf-8") + b"\0" +
+                path.read_bytes() for path in
+                (JAVA_SOURCE_ROOT / name for name in JAVA_SOURCE_NAMES))),
+            "javac": "17.0.2",
+            "android_jar_sha256": ANDROID_JAR_SHA256,
+            "d8_sha256": D8_JAR_SHA256,
+        }],
         "size": len(jar),
         "sha256": sha256(jar),
         "dex_entry": "classes.dex",
@@ -411,7 +518,7 @@ def selected_dex(source: str, classes: tuple[str, ...]) -> bytes:
     recipe = {source: classes}
     verify_inputs(recipe)
     with tempfile.TemporaryDirectory(prefix="ogplay-date-family-audit-") as work:
-        return assemble(recipe, Path(work))
+        return assemble(recipe, Path(work), include_guest_java=False)
 
 
 def classified_records(policy: dict, dex: dex_survey_lib.DexFile) -> dict:
@@ -568,6 +675,19 @@ def self_test() -> int:
     sample = b"dex\n035\0sample"
     if make_jar(sample) != make_jar(sample):
         raise BuildError("JAR output is not deterministic")
+    recipe_classes = {"source.jar": ("Ltest/Original;",)}
+    expected = expected_class_names(recipe_classes, ("Ltest/Custom;",))
+    if expected != ("Ltest/Custom;", "Ltest/Original;") or \
+            expected_class_names(recipe_classes, ()) == expected or \
+            expected_class_names(recipe_classes,
+                                 ("Ltest/Custom;", "Ltest/Extra;")) == expected:
+        raise BuildError("final BootDex class selection does not include exact custom classes")
+    try:
+        expected_class_names(recipe_classes, ("Ltest/Original;",))
+    except BuildError:
+        pass
+    else:
+        raise BuildError("custom/original duplicate class was accepted")
     with tempfile.TemporaryDirectory(prefix="ogplay-bootdex-tool-") as work:
         source = Path(work) / "source.jar"
         destination = Path(work) / "downloaded.jar"

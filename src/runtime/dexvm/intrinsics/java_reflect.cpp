@@ -327,6 +327,35 @@ IntrinsicClassDecl Declare_java_lang_Class(
                 outcome.exception_message, outcome.exception};
             return VmValue::Ref(stream);
         });
+    builder.VirtualMethod("getPackage", "()Ljava/lang/Package;",
+        [](IntrinsicContext& context) {
+            const auto descriptor =
+                context.vm.Linker().Class(Represented(context)).descriptor;
+            if (!descriptor.starts_with('L')) return VmValue::Ref(VmObjectRef{});
+            const auto binary = ClassNameCodec::ClassGetName(descriptor);
+            const auto dot = binary.rfind('.');
+            if (dot == std::string::npos) return VmValue::Ref(VmObjectRef{});
+            const auto type = context.vm.Linker().ResolveDescriptor("Ljava/lang/Package;");
+            const auto package = context.vm.Model().NewInstance(
+                type, context.vm.Linker().Class(type).instance_slots);
+            const auto name = context.vm.NewStringUtf8(binary.substr(0, dot));
+            const auto roots = context.vm.ProtectReferences(std::array{package, name});
+            const auto constructor = context.vm.Linker().FindDirectMethod(
+                type, "<init>",
+                "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;"
+                "Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/net/URL;)V");
+            if (!constructor) throw DexVmError(
+                DexVmErrorReason::unresolved_reference, "Package constructor");
+            const auto null = VmValue::Ref(VmObjectRef{});
+            const auto outcome = context.vm.Call(
+                *constructor,
+                std::array{VmValue::Ref(package), VmValue::Ref(name), null, null,
+                           null, null, null, null, null});
+            if (outcome.exception.IsValid()) throw VmJavaThrow{
+                context.vm.Linker().Class(outcome.exception_class).descriptor,
+                outcome.exception_message, outcome.exception};
+            return VmValue::Ref(package);
+        });
     builder.VirtualMethod("desiredAssertionStatus", "()Z",
         [](IntrinsicContext&) {
             // OGPlay does not expose Dalvik assertion-control arguments;

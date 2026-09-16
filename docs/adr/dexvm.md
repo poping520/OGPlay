@@ -969,3 +969,20 @@ BC 仅可作为隔离测试 oracle/参考，不进入生产依赖。
 PKCS12/JKS 等格式后续各自实现，不能替换默认类型以规避 BKS。
 KeyStore 不承担 PKIX、系统 CA 或 TLS；网络链另行验收，保持默认网络策略和明确失败。
 上线 TLS 的后端版本与维护策略需要独立设计，不自动继承旧版离线 crypto 的选择。
+
+<a id="adr-0065"></a>
+## ADR-0065 · NativeCrypto 类身份归固定 BootDex，native 按类显式准入
+
+- 状态：Accepted
+- 日期：2026-09-16
+- 关联：[DVM-171](../tasks/dexvm/DVM-171.md)
+- Supersedes：DVM-169 的手工 `NativeCrypto` 类壳；延续 ADR-0035、0036、0039、0049。
+
+固定 API 19 `conscrypt.jar` 的 `NativeCrypto` 是类、字段、普通方法、常量表和 native descriptor
+的唯一事实源。VM 只为该类显式准入其原版 native 声明到 guest JNI，不在 intrinsic catalog
+重复列举方法；未导出的入口仍由统一缺口账本明确失败。
+
+原版加载名 `javacrypto` 在 API 19 系统库边界解析到唯一 `libogplay_jni.so`。原版 Java
+`<clinit>` 不替换；受限 native `clinit` 复用 `JNI_OnLoad` 已完成的线程回调和当前算法注册，
+不引入 libjavacrypto/libssl 或据 TLS 名称表发布 TLS。字段型 native token 的资源规则在 VM
+统一装配，OGPlay 私有验签放在独立私有类，不污染原版 ABI。

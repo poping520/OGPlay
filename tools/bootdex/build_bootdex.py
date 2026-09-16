@@ -30,8 +30,28 @@ OUTPUT = ROOT / "data/android/19/framework/bootdex.jar"
 MANIFEST = ROOT / "data/android/19/manifest.json"
 NOTICE = ROOT / "data/android/19/notices/bootdex.jar.txt"
 AUDIT_REPORT = ROOT / ".local/dvm102-date-family-audit.json"
+NATIVE_CRYPTO_AUDIT_REPORT = ROOT / ".local/nativecrypto-api19-audit.json"
 CATEGORIES = ("boot_dex", "existing_vm_intrinsic", "native_boundary", "deferred")
 NATIVE_DISPOSITIONS = ("required_backend", "explicit_failure")
+NATIVE_CRYPTO_OWNER = "Lcom/android/org/conscrypt/NativeCrypto;"
+NATIVE_CRYPTO_ADAPTED = {f"{NATIVE_CRYPTO_OWNER}->clinit()V"}
+NATIVE_CRYPTO_BACKENDS = {
+    f"{NATIVE_CRYPTO_OWNER}->{member}" for member in (
+        "EVP_get_cipherbyname(Ljava/lang/String;)J",
+        "EVP_CIPHER_CTX_new()J", "EVP_CIPHER_CTX_cleanup(J)V",
+        "EVP_CIPHER_CTX_block_size(J)I", "get_EVP_CIPHER_CTX_buf_len(J)I",
+        "EVP_CIPHER_CTX_set_padding(JZ)V", "EVP_CIPHER_CTX_set_key_length(JI)V",
+        "EVP_CIPHER_iv_length(J)I", "EVP_CipherInit_ex(JJ[B[BZ)V",
+        "EVP_CipherUpdate(J[BI[BII)I", "EVP_CipherFinal_ex(J[BI)I",
+        "EVP_get_digestbyname(Ljava/lang/String;)J", "EVP_MD_size(J)I",
+        "EVP_DigestInit(J)J", "EVP_DigestUpdate(J[BII)V",
+        "EVP_DigestFinal(J[BI)I", "EVP_MD_CTX_copy(J)J",
+        "EVP_MD_CTX_create()J", "EVP_MD_CTX_init(J)V",
+        "EVP_MD_CTX_destroy(J)V", "EVP_PKEY_new_mac_key(I[B)J",
+        "EVP_PKEY_free(J)V", "EVP_DigestSignInit(JJJ)V",
+        "EVP_DigestSignFinal(J)[B", "RAND_seed([B)V", "RAND_bytes([B)V",
+    )
+}
 
 
 def source_path(source: str) -> Path:
@@ -176,6 +196,41 @@ def class_names(dex: bytes) -> tuple[str, ...]:
     parsed = dex_survey_lib.parse_dex(dex)
     return tuple(sorted(parsed.type_name(item.type_index)
                         for item in parsed.classes))
+
+
+def audit_native_crypto(dex_bytes: bytes) -> dict:
+    dex = dex_survey_lib.parse_dex(dex_bytes)
+    observed = set()
+    for parsed_class in dex.classes:
+        if dex.type_name(parsed_class.type_index) != NATIVE_CRYPTO_OWNER:
+            continue
+        for method in parsed_class.direct_methods + parsed_class.virtual_methods:
+            if method.access_flags & dex_survey_lib.ACC_NATIVE:
+                owner, name, descriptor = dex.method_signature(method.method_index)
+                observed.add(f"{owner}->{name}{descriptor}")
+    required = NATIVE_CRYPTO_BACKENDS | NATIVE_CRYPTO_ADAPTED
+    missing = sorted(required.difference(observed))
+    if missing:
+        raise BuildError(f"NativeCrypto backend signature drift: missing={missing}")
+    records = {
+        "source": "conscrypt.jar",
+        "owner": NATIVE_CRYPTO_OWNER,
+        "native_methods": {
+            "existing_backend": sorted(NATIVE_CRYPTO_BACKENDS),
+            "ogplay_initialization_adapter": sorted(NATIVE_CRYPTO_ADAPTED),
+            "explicit_failure": sorted(observed.difference(required)),
+        },
+        "counts": {
+            "total": len(observed),
+            "existing_backend": len(NATIVE_CRYPTO_BACKENDS),
+            "ogplay_initialization_adapter": len(NATIVE_CRYPTO_ADAPTED),
+            "explicit_failure": len(observed.difference(required)),
+        },
+    }
+    NATIVE_CRYPTO_AUDIT_REPORT.parent.mkdir(parents=True, exist_ok=True)
+    NATIVE_CRYPTO_AUDIT_REPORT.write_text(
+        json.dumps(records, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    return records
 
 
 def make_jar(dex: bytes, resources: dict[str, bytes] | None = None) -> bytes:
@@ -666,6 +721,7 @@ def main() -> int:
         if arguments.mode == "build-guest-jni":
             return build_guest_jni()
         jar, dex, recipe = build()
+        native_crypto = audit_native_crypto(dex)
         manifest = manifest_bytes(boot_metadata(jar, dex, recipe))
         if arguments.mode == "build":
             OUTPUT.parent.mkdir(parents=True, exist_ok=True)
@@ -676,6 +732,8 @@ def main() -> int:
             raise BuildError("BootDex payload is stale; run build")
         print(f"BootDex {arguments.mode}: {len(class_names(dex))} classes, "
               f"DEX {sha256(dex)}, JAR {sha256(jar)}")
+        print(f"NativeCrypto audit: {native_crypto['counts']}; "
+              f"report={NATIVE_CRYPTO_AUDIT_REPORT}")
         return 0
     except (BuildError, OSError, json.JSONDecodeError,
             dex_survey_lib.DexFormatError) as error:

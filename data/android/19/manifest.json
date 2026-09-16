@@ -41,7 +41,7 @@
     "path": "framework/bootdex.jar",
     "generator": "tools/bootdex/build_bootdex.py",
     "recipe": "tools/bootdex/api19.json",
-    "recipe_sha256": "737a54619393d12178267af6c1c90b837fc3fe4578106bdfa6e6c5a4790bd114",
+    "recipe_sha256": "f14070351634611b9ae83d30f0f43c4c35b00c4876f6d334de3471bd2aedbc07",
     "sources": [
       {
         "source_project": "platform/libcore",
@@ -69,12 +69,12 @@
         "source_jar_sha256": "5866d4e62e5fe44ffaf6ff441b6c361baeb1f8b91e30bb555481ef13ef837973"
       }
     ],
-    "size": 2244484,
-    "sha256": "b94ab55316251a9c32b1475464c04cb13f386a06f2666cfe2c73d1e2fed6b750",
+    "size": 2265852,
+    "sha256": "75b505c3cfda291b91284c7d87eed04f7533d54f78146952e0813e5b10d78680",
     "dex_entry": "classes.dex",
-    "dex_size": 2240916,
-    "dex_sha256": "46f4aab9b38d1979598392784fb2d16beb11a329ceb079209c8ea79a78231123",
-    "class_count": 1539,
+    "dex_size": 2262284,
+    "dex_sha256": "6c100c7edc8d07982267ea4a1224d53c79bff68e6215ebf7902944c8354d8606",
+    "class_count": 1542,
     "selection_policy": "load-all",
     "notice": "notices/bootdex.jar.txt",
     "notice_sha256": "c5bf8c6efc379e6d5401a40fbf7810aedf9ee81dfa9f2deaa174faa97ded310a"
@@ -197,8 +197,8 @@
     {
       "path": "lib/libogplay_jni.so",
       "source_project": "ogplay",
-      "size": 67364,
-      "sha256": "990c978efbbe4ebf47360f00dec0fa0fd3ed47d8e80c90523801880bdee5649e",
+      "size": 67756,
+      "sha256": "b916cfe21443c9c203c681adf4930675bedb78ef9dc3d7e125202a7ed0561348",
       "soname": "libogplay_jni.so",
       "needed": [
         "libcrypto.so",
@@ -208,14 +208,14 @@
       ],
       "build": {
         "generator": "tools/bootdex/build_bootdex.py",
-        "generator_sha256": "610128cfee0574d9e2f7745fe6087fee2124428ffcc23862745b5f534ec84b9e",
+        "generator_sha256": "294df83fa5db9bad7aa7139901207f569361906f316c1cced53dc55798b3abc4",
         "ndk_revision": "25.2.9519653",
         "target": "armv7a-linux-androideabi19",
         "language": "C11",
         "sources": [
           {
             "path": "src/guest/crypto/crypto_jni.c",
-            "sha256": "5455204831882cb78e32c83049969bc9779adf20dceb35cae32939faee639fe4"
+            "sha256": "8f65e618aa677d0d1174e0c0381fb80e04c1ee84dc82d0e54cd2e1a5d70af359"
           },
           {
             "path": "src/guest/icu/icu_jni.c",

@@ -637,6 +637,11 @@ namespace ogplay::runtime::dexvm {
         return *this;
     }
 
+    IntrinsicClassBuilder& IntrinsicClassBuilder::AdmitBootNativeMethods() {
+        declaration_.admit_boot_native_methods = true;
+        return *this;
+    }
+
     IntrinsicClassBuilder& IntrinsicClassBuilder::VirtualMethod(
         std::string name, std::string descriptor, IntrinsicHandler handler,
         const std::uint32_t access_flags) {

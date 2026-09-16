@@ -15,6 +15,7 @@ extern void ogplay_icu_release(void);
 extern int pthread_mutex_lock(int *);
 extern int pthread_mutex_unlock(int *);
 static int registry_mutex;
+static int crypto_initialized;
 
 extern int strcmp(const char *, const char *);
 extern EVP_CIPHER_CTX *EVP_CIPHER_CTX_new(void);
@@ -436,7 +437,14 @@ int JNI_OnLoad(JavaVM *vm, void *reserved) {
         !EVP_add_digest(EVP_sha256()) || !EVP_add_digest(EVP_sha384()) ||
         !EVP_add_digest(EVP_sha512()))
         return -1;
+    crypto_initialized = 1;
     return 0x00010006;
+}
+void N(clinit)(JNIEnv *env, jobject cls) {
+    (void)cls;
+    if (!crypto_initialized)
+        fail(env, "java/security/ProviderException",
+             "OGPlay crypto JNI initialization is incomplete");
 }
 static unsigned char *encoded(JNIEnv *env, jobject array, int *count, const char *exception) {
     *count = length(env, array);
@@ -458,8 +466,9 @@ extern int EVP_DigestUpdate(EVP_MD_CTX *, const void *, size_t);
 extern int EVP_VerifyFinal(EVP_MD_CTX *, const unsigned char *, unsigned int, EVP_PKEY *);
 extern EVP_MD_CTX *EVP_MD_CTX_create(void);
 extern void EVP_MD_CTX_destroy(EVP_MD_CTX *);
-unsigned char N(verify_1signature)(JNIEnv *env, jobject cls, jobject spki, jobject message,
-                                   jobject signature, jobject algorithm) {
+unsigned char Java_org_ogplay_security_NativeVerification_verify(
+        JNIEnv *env, jobject cls, jobject spki, jobject message,
+        jobject signature, jobject algorithm) {
     (void)cls;
     if (!algorithm) {
         fail(env, "java/lang/NullPointerException", "algorithm == null");

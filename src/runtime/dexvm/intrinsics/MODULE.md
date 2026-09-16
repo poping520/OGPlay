@@ -117,11 +117,14 @@
   及 CTR/NoPadding、128/192/256 KeyGenerator 已登记；Cipher 普通方法无 overlay。
   OGPlayOS 用 HAL CSPRNG 且拒绝 setSeed；SHA1PRNG 首次由同一 CSPRNG 播种，后续执行
   guest RAND_seed/RAND_bytes，调用方 seed 仅追加熵。IvParameterSpec 可用。
+- API 19 原版 `NativeCrypto` 是 BootDex 唯一定义；catalog 仅按类准入其原版 native 到
+  guest JNI，不重列成员。原版 `javacrypto` 加载名映射统一 JNI，字段 token 资源由 VM 装配；
+  OGPlay 私有证书验签使用独立 `NativeVerification`，不扩展原版 ABI。
 - Certificate/ASN.1/X.509/PKCS7/CertPath、UUID、MessageDigest 普通协议归 BootDex。
   证书 verify 不允许 overlay；SHA1/224/256/384/512 × RSA PKCS#1 v1.5/ECDSA 的 10 个
   验签 SPI 用普通字段保存公钥/最多 1 MiB 消息，真实解码后调用 guest ARM EVP，验后清空。
   摘要仅 MD5/SHA1/SHA256/SHA384/SHA512；NativeBN 只保留 17 个值原语和 per-VM token。
-- 未登记能力明确失败：完整大数/double formatter、具名时区历史、privileged executor、
+- 未登记能力明确失败：NativeCrypto 的 ENGINE/RSA/EC/X509/TLS 长尾、完整大数/double formatter、具名时区历史、privileged executor、
   完整 ThreadGroup/反射长尾、RSA Cipher/GCM/其他 transformation、签名生成、PKIX/系统 CA/
   撤销/TLS、HMAC/SHA3/独立 SHA224 摘要。AES AlgorithmParameters provider 未注册，原版
   engineGetParameters 可返回 null；公钥仅编码 fallback，不宣称数学参数/KeyFactory 能力。

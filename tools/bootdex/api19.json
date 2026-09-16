@@ -144,6 +144,7 @@
       "Ljava/lang/NullPointerException;",
       "Ljava/lang/NumberFormatException;",
       "Ljava/lang/OutOfMemoryError;",
+      "Ljava/lang/Package;",
       "Ljava/lang/RealToString$1;",
       "Ljava/lang/RealToString;",
       "Ljava/lang/ReflectiveOperationException;",
@@ -1042,6 +1043,8 @@
       "Lorg/xml/sax/ErrorHandler;"
     ],
     "conscrypt.jar": [
+      "Lcom/android/org/conscrypt/NativeCrypto$SSLHandshakeCallbacks;",
+      "Lcom/android/org/conscrypt/NativeCrypto;",
       "Lcom/android/org/conscrypt/OpenSSLCipher$1;",
       "Lcom/android/org/conscrypt/OpenSSLCipher$AES$CBC$NoPadding;",
       "Lcom/android/org/conscrypt/OpenSSLCipher$AES$CBC$PKCS5Padding;",

@@ -715,6 +715,35 @@ TEST_CASE("DVM-102 SimpleDateFormat uses the API 19 BootDex hierarchy") {
     CHECK(fixture.linker.Method(*constructor).kind == MethodKind::interpreted);
 }
 
+TEST_CASE("DVM NativeCrypto identity and members come from API 19 BootDex") {
+    Dvm87Vm fixture;
+    const auto type = fixture.linker.ResolveDescriptor(
+        "Lcom/android/org/conscrypt/NativeCrypto;");
+    const auto& linked = fixture.linker.Class(type);
+    CHECK(linked.own_direct_methods.size() == 232U);
+    CHECK(linked.own_virtual_methods.size() == 0U);
+    CHECK(linked.own_static_fields.size() == 41U);
+    CHECK(linked.own_instance_fields.empty());
+
+    const auto clinit = fixture.linker.FindDirectMethod(type, "<clinit>", "()V");
+    REQUIRE(clinit.has_value());
+    CHECK(fixture.linker.Method(*clinit).kind == MethodKind::interpreted);
+    CHECK(fixture.linker.Method(*clinit).code.has_value());
+    CHECK_FALSE(static_cast<bool>(fixture.linker.Method(*clinit).implementation));
+
+    const auto digest_final = fixture.linker.FindDirectMethod(
+        type, "EVP_DigestFinal", "(J[BI)I");
+    REQUIRE(digest_final.has_value());
+    CHECK(fixture.linker.Method(*digest_final).kind == MethodKind::native);
+    CHECK_FALSE(static_cast<bool>(fixture.linker.Method(*digest_final).implementation));
+    CHECK(fixture.linker.FindDirectMethod(
+              type, "verify_signature", "([B[B[BLjava/lang/String;)Z") == std::nullopt);
+
+    const auto callbacks = fixture.linker.ResolveDescriptor(
+        "Lcom/android/org/conscrypt/NativeCrypto$SSLHandshakeCallbacks;");
+    CHECK(fixture.linker.Class(callbacks).is_interface);
+}
+
 TEST_CASE("DVM-102 SimpleDateFormat initializes the API 19 object graph" *
           doctest::skip(true)) {
   for (const auto backend : {InterpreterBackend::switch_dispatch,
@@ -1581,7 +1610,7 @@ TEST_CASE("DVM-103 all BootDex classes link and collection methods have no intri
         for (const auto method : f.linker.Class(type).own_direct_methods)
             CHECK(f.linker.Method(method).kind != MethodKind::intrinsic);
     }
-    CHECK(count == 1539);
+    CHECK(count == 1542);
 }
 
 TEST_CASE("DVM-149 Apache HTTP BootDex supports the Restlet startup object path") {

@@ -2452,6 +2452,19 @@ TEST_CASE("DVM-105/169 AES and HmacSHA1 use BootDex and real guest libcrypto") {
         CHECK(read(invoke(alias, "doFinal", "([B)[B", {VmValue::Ref(bytes(""))}).ref).size() == 16);
         // Tokens stay private to guest libcrypto and stale/foreign tokens fail explicitly.
         const auto native = *linker.FindClass("Lcom/android/org/conscrypt/NativeCrypto;");
+        const auto initialized_once = vm.EnsureClassInitialized(native);
+        REQUIRE_MESSAGE(!initialized_once.exception.IsValid(),
+                        initialized_once.exception_message);
+        const auto initialized_twice = vm.EnsureClassInitialized(native);
+        REQUIRE_MESSAGE(!initialized_twice.exception.IsValid(),
+                        initialized_twice.exception_message);
+        const auto supported_protocols = direct(
+            "Lcom/android/org/conscrypt/NativeCrypto;", "getSupportedProtocols",
+            "()[Ljava/lang/String;", {}).ref;
+        CHECK(vm.Model().ArrayLength(supported_protocols) == 4);
+        const auto unsupported_engine = *linker.FindDirectMethod(
+            native, "ENGINE_load_dynamic", "()V");
+        CHECK_THROWS_AS(static_cast<void>(vm.Call(unsupported_engine, {})), VmJavaThrow);
         const auto allocate = *linker.FindDirectMethod(native, "EVP_CIPHER_CTX_new", "()J");
         const auto cleanup = *linker.FindDirectMethod(native, "EVP_CIPHER_CTX_cleanup", "(J)V");
         const auto size = *linker.FindDirectMethod(native, "EVP_CIPHER_CTX_block_size", "(J)I");

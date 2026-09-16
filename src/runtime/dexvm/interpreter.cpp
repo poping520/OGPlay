@@ -892,6 +892,26 @@ Interpreter::Interpreter(DexClassLinker& linker, JavaObjectModel& model,
         if (address.has_value() && close.has_value())
             TrackGuestNativeResourceField(*address, *close);
     }
+    const auto track_native_field = [&](const char* owner, const char* field_name,
+                                        const char* cleanup_name) {
+        const auto type = linker.FindClass(owner);
+        const auto native = linker.FindClass("Lcom/android/org/conscrypt/NativeCrypto;");
+        if (!type || !native) return;
+        linker.EnsureClassLinked(*type);
+        linker.EnsureClassLinked(*native);
+        const auto field = linker.FindFieldRecursive(*type, field_name, "J");
+        const auto cleanup = linker.FindDirectMethod(*native, cleanup_name, "(J)V");
+        if (!field || !cleanup)
+            throw DexVmError(DexVmErrorReason::unresolved_reference,
+                             std::string{"crypto resource metadata: "} + owner +
+                                 (!field ? " field" : " cleanup"));
+        TrackGuestNativeResourceField(*field, *cleanup);
+    };
+    track_native_field("Lcom/android/org/conscrypt/OpenSSLMessageDigestJDK;", "ctx",
+                       "EVP_MD_CTX_destroy");
+    track_native_field("Lcom/android/org/conscrypt/OpenSSLDigestContext;", "context",
+                       "EVP_MD_CTX_destroy");
+    track_native_field("Lcom/android/org/conscrypt/OpenSSLKey;", "ctx", "EVP_PKEY_free");
     const auto string_class = linker.FindClass("Ljava/lang/String;");
     const auto class_class = linker.FindClass("Ljava/lang/Class;");
     if (string_class.has_value() && class_class.has_value()) {

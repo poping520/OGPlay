@@ -1680,6 +1680,21 @@ status = "complete"
 test = "tests/runtime/native_library_loader_tests.cpp; tools/bootdex/build_bootdex.py check"
 note = "DVM-169 将 API19 原版 Mac/MacSpi 与 OpenSSLMac HmacSHA1 精确闭包纳入 BootDex；DVM-171 进一步以固定 conscrypt.jar 的原版 NativeCrypto 作为唯一类定义，26 个已有 native 后端继续经统一 guest ARM libcrypto，受限 clinit 复用 JNI_OnLoad 初始化，190 个其余 native 明确失败。逻辑 token 复用统一 GC/teardown，私有证书验签已移出原版 ABI。双解释器 RFC 向量通过；BKS/KeyStore、BouncyCastle、其他 Mac 与 TLS 未纳入。"
 
+[dexvm.keystore_api]
+status = "complete"
+test = "tests/dexvm/bootdex_library_tests.cpp: DVM-172; tests/runtime/native_library_loader_tests.cpp: DVM-172; tools/bootdex/build_bootdex.py build/check"
+note = "DVM-172：固定自有 Java 工具链并把 API19 原版 KeyStore/KeyStoreSpi 公开闭包与自有 Provider/SPI 编入 1572 类 BootDex；builder 与 payload validator 共用最终精确类集合。条目、Entry/ProtectionParameter/Builder 状态在 guest 对象图，OGPlayKeyStore 注册 KeyStore.BKS，keystore.type=BKS。公开 getEntry、Builder、API19 默认 CallbackHandler 实际取密码和两个 guest 线程共享 store 增删查已受检；complete 限于 DVM-172 约定范围，不承诺复合调用原子性。不包含 AndroidKeyStore、PKIX、系统 CA 或 TLS。"
+
+[dexvm.bks_store]
+status = "complete"
+test = "tests/runtime/native_library_loader_tests.cpp: DVM-172; tests/fixtures/keystore; tools/bootdex/build_bootdex.py check"
+note = "DVM-172：Java PKCS#12 SHA-1 KDF、HMAC-SHA1、BKS v2 写出及 v0/v1/v2 读取完成；null/空密码按 API19 跳过 store MAC 但仍严格解析，非空密码执行认证。写读共用 16 MiB 上限并在缓冲增长时拒绝超限；1 MiB blob、4096 entries、64 chain、1,000,000 iterations 上限。API19 v0/v2、AOSP v1、Unicode、mixed-key 及双向真机语义通过；guest VFS 写入磁盘沙盒，销毁首个进程后由新 VFS/VM 重载并恢复 AES/RSA/EC；不同应用沙盒同路径不可读取原库，独立写入不影响原库。complete 限于上述格式与算法边界。"
+
+[dexvm.bks_key_protection]
+status = "complete"
+test = "tests/runtime/native_library_loader_tests.cpp: DVM-172; tests/fixtures/keystore/old-pbe-bc146.bks.b64; tests/fixtures/keystore/broken-pbe-bc146.bks.b64"
+note = "DVM-172：标准 SHA/3-key TripleDES 写出/恢复及 Broken faulty-parity、Old PKCS12 mixer 历史回退调用 guest libcrypto；支持 AES RAW secret 与 RSA/EC PKCS#8 private key、证书链和两种 setKeyEntry 重载。私钥 EVP token 有独立类型、引用、GC/teardown 释放。DSA、X.509 public-key entry 和其他算法明确失败；不代表签名生成或 TLS client auth。"
+
 [dexvm.object_stream_bootdex]
 status = "complete"
 test = "tests/dexvm/reflection_tests.cpp; tests/dexvm/file_vfs_tests.cpp; tests/dexvm/bootdex_library_tests.cpp; tests/dexvm/android_value_tests.cpp; tests/dexvm/gc_tests.cpp; tests/runtime/native_library_loader_tests.cpp; tools.bootdex_builder_self_test; tools.android_payload_current"

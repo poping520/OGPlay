@@ -38,3 +38,12 @@ DVM-171 使用固定 JAR 的原版 `NativeCrypto` 类和全部 native descriptor
 26 个已实现后端及受限 `clinit`。`clinit` 验证 `JNI_OnLoad` 已完成线程回调和摘要注册，
 不初始化或发布 TLS。OGPlay 私有证书验签导出归 `NativeVerification.verify`；digest/HMAC/
 OpenSSLKey 的字段 token 清理由 VM 统一登记，registry、锁、GC/teardown 语义不变。
+
+DVM-172 的 `java/` 目录以固定 API 19 类路径编译进入 BootDex，拥有自有 KeyStore
+Provider、SPI、条目、BKS codec 与 PKCS#12 KDF；Provider 以 `OGPlayKeyStore` 独立身份发布
+标准 BKS v2 写出和 v0/v1/v2 读取。BC 仅为隔离 oracle，生产 DEX 拒绝其类型引用。
+标准/历史 3DES PBE 调用 guest libcrypto；RSA/EC PKCS#8 使用独立 EVP_PKEY token registry，
+引用、GC、显式释放与 teardown 一致。生产 C++ 不保存条目或 KeyStore 影子状态。
+读取时仅非空 store 密码验证 MAC；null/空密码遵循 API 19 跳过 MAC，但格式、长度、截断和
+资源上限仍严格检查。写入在缓冲增长时执行包含 header/end/MAC 的 16 MiB 总上限；byte[]
+重载按原版写 TYPE_SECRET，不把调用方字节解释为 sealed-key PBE。

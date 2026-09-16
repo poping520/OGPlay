@@ -9,6 +9,7 @@ import json
 import re
 import struct
 import sys
+import tempfile
 import xml.etree.ElementTree as ET
 import zipfile
 from pathlib import Path
@@ -256,7 +257,13 @@ def validate(root: Path) -> None:
     except dex_survey_lib.DexFormatError as error:
         raise PayloadError(f"boot_dex DEX structure is invalid: {error}") \
             from error
-    selected = tuple(sorted(item for values in recipe.values() for item in values))
+    try:
+        with tempfile.TemporaryDirectory(
+                prefix="ogplay-payload-bootdex-java-") as work:
+            selected = bootdex.compile_expected_class_names(recipe, Path(work))
+    except (bootdex.BuildError, OSError) as error:
+        raise PayloadError(
+            f"BootDex custom Java class selection is invalid: {error}") from error
     if classes != selected:
         raise PayloadError("boot_dex exact class selection does not match")
 

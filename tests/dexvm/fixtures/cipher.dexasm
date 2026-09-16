@@ -360,3 +360,102 @@
     const/4 v0, 0
     return v0
 .end method
+
+.class public Lfixture/FailingOutputStream;
+.super Ljava/io/OutputStream;
+.field private remaining:I
+.method public constructor <init>(I)V
+.registers 2
+    invoke-direct {v0}, Ljava/io/OutputStream;-><init>()V
+    iput v1, v0, Lfixture/FailingOutputStream;->remaining:I
+    return-void
+.end method
+.method public write(I)V
+.registers 4
+    iget v0, v2, Lfixture/FailingOutputStream;->remaining:I
+    if-lez v0, :fail
+    add-int/lit8 v0, v0, -1
+    iput v0, v2, Lfixture/FailingOutputStream;->remaining:I
+    return-void
+:fail
+    new-instance v0, Ljava/io/IOException;
+    const-string v1, "injected output failure"
+    invoke-direct {v0, v1}, Ljava/io/IOException;-><init>(Ljava/lang/String;)V
+    throw v0
+.end method
+.class public Lfixture/KeyPasswordHandler;
+.super Ljava/lang/Object;
+.implements Ljavax/security/auth/callback/CallbackHandler;
+.method public constructor <init>()V
+.registers 1
+    invoke-direct {v0}, Ljava/lang/Object;-><init>()V
+    return-void
+.end method
+.method public handle([Ljavax/security/auth/callback/Callback;)V
+.registers 5
+    const/4 v0, 0
+    aget-object v1, v4, v0
+    check-cast v1, Ljavax/security/auth/callback/PasswordCallback;
+    const-string v2, "keypass"
+    invoke-virtual {v2}, Ljava/lang/String;->toCharArray()[C
+    move-result-object v2
+    invoke-virtual {v1, v2}, Ljavax/security/auth/callback/PasswordCallback;->setPassword([C)V
+    return-void
+.end method
+
+.class public Lfixture/KeyStoreWorker;
+.super Ljava/lang/Thread;
+.field private store:Ljava/security/KeyStore;
+.field private alias:Ljava/lang/String;
+.field public completed:I
+.method public constructor <init>(Ljava/security/KeyStore;Ljava/lang/String;)V
+.registers 3
+    invoke-direct {v0}, Ljava/lang/Thread;-><init>()V
+    iput-object v1, v0, Lfixture/KeyStoreWorker;->store:Ljava/security/KeyStore;
+    iput-object v2, v0, Lfixture/KeyStoreWorker;->alias:Ljava/lang/String;
+    return-void
+.end method
+.method public run()V
+.registers 8
+    iget-object v0, v7, Lfixture/KeyStoreWorker;->store:Ljava/security/KeyStore;
+    iget-object v1, v7, Lfixture/KeyStoreWorker;->alias:Ljava/lang/String;
+    const/4 v2, 3
+    new-array v2, v2, [B
+    const/4 v3, 0
+    const/4 v4, 0
+:loop
+    invoke-virtual {v0, v1, v2, v3}, Ljava/security/KeyStore;->setKeyEntry(Ljava/lang/String;[B[Ljava/security/cert/Certificate;)V
+    invoke-virtual {v0, v1}, Ljava/security/KeyStore;->isKeyEntry(Ljava/lang/String;)Z
+    move-result v5
+    if-eqz v5, :done
+    invoke-virtual {v0, v1}, Ljava/security/KeyStore;->deleteEntry(Ljava/lang/String;)V
+    invoke-virtual {v0, v1}, Ljava/security/KeyStore;->containsAlias(Ljava/lang/String;)Z
+    move-result v5
+    if-nez v5, :done
+    add-int/lit8 v4, v4, 1
+    const/16 v6, 20
+    if-lt v4, v6, :loop
+:done
+    iput v4, v7, Lfixture/KeyStoreWorker;->completed:I
+    return-void
+.end method
+
+.class public Lfixture/KeyStoreWorkers;
+.super Ljava/lang/Object;
+.method public static exercise(Ljava/security/KeyStore;)I
+.registers 5
+    new-instance v0, Lfixture/KeyStoreWorker;
+    const-string v2, "worker-a"
+    invoke-direct {v0, v4, v2}, Lfixture/KeyStoreWorker;-><init>(Ljava/security/KeyStore;Ljava/lang/String;)V
+    new-instance v1, Lfixture/KeyStoreWorker;
+    const-string v2, "worker-b"
+    invoke-direct {v1, v4, v2}, Lfixture/KeyStoreWorker;-><init>(Ljava/security/KeyStore;Ljava/lang/String;)V
+    invoke-virtual {v0}, Ljava/lang/Thread;->start()V
+    invoke-virtual {v1}, Ljava/lang/Thread;->start()V
+    invoke-virtual {v0}, Ljava/lang/Thread;->join()V
+    invoke-virtual {v1}, Ljava/lang/Thread;->join()V
+    iget v2, v0, Lfixture/KeyStoreWorker;->completed:I
+    iget v3, v1, Lfixture/KeyStoreWorker;->completed:I
+    add-int/2addr v2, v3
+    return v2
+.end method

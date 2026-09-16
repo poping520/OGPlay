@@ -1,4 +1,6 @@
 #include <set>
+#include <chrono>
+#include "ogplay/runtime/vfs/sandbox_store.h"
 #include "../dexvm/boot_dex.h"
 #include <algorithm>
 #include <array>
@@ -2119,12 +2121,21 @@ TEST_CASE("DVM-126 String.format delegates Locale formatting to API19 Formatter"
     }
 }
 
-TEST_CASE("DVM-105/169 AES and HmacSHA1 use BootDex and real guest libcrypto") {
+TEST_CASE("DVM-105/169/175-180 crypto and BKS use BootDex and real guest libcrypto") {
     using namespace ogplay;
     using namespace runtime::dexvm;
     for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
         CAPTURE(backend == InterpreterBackend::threaded ? "threaded" : "switch");
+        const auto sandbox_root = std::filesystem::temp_directory_path() /
+            ("ogplay-keystore-" + std::to_string(
+                std::chrono::steady_clock::now().time_since_epoch().count()));
+        struct Cleanup { std::filesystem::path path;
+            ~Cleanup() { std::error_code ec; std::filesystem::remove_all(path, ec); }
+        } sandbox_cleanup{sandbox_root};
+        auto sandbox = runtime::SandboxStore::Open(sandbox_root, "fixture");
+        const std::array<std::string, 1> sandbox_roots{"/data/data/fixture"};
         runtime::VirtualFileSystem filesystem;
+        filesystem.AttachSandbox(*sandbox, sandbox_roots);
         core::CapabilityLedger ledger;
         core::Logger logger;
         std::vector<std::vector<std::byte>> contents;
@@ -2164,6 +2175,7 @@ TEST_CASE("DVM-105/169 AES and HmacSHA1 use BootDex and real guest libcrypto") {
         request.filesystem = &filesystem;
         request.ledger = &ledger;
         request.logger = &logger;
+        {
         auto app = session::AndroidAppProcess::Create(std::move(request));
         auto& vm = app->DexVm().Vm();
         auto& linker = vm.Linker();
@@ -2187,6 +2199,14 @@ TEST_CASE("DVM-105/169 AES and HmacSHA1 use BootDex and real guest libcrypto") {
             REQUIRE_MESSAGE(!result.exception.IsValid(), result.exception_message);
             return result.value;
         };
+        const auto invoke_result = [&](VmObjectRef obj, const char* name, const char* desc,
+                                       std::vector<VmValue> args) {
+            auto type = vm.Model().ObjectClass(obj);
+            auto slot = linker.FindVtableIndex(type, name, desc);
+            REQUIRE_MESSAGE(slot.has_value(), name);
+            args.insert(args.begin(), VmValue::Ref(obj));
+            return vm.Call(linker.Class(type).vtable[*slot], args);
+        };
         const auto bytes = [&](const char* hex) {
             std::vector<std::byte> data;
             for (std::size_t i = 0; hex[i]; i += 2)
@@ -2198,6 +2218,455 @@ TEST_CASE("DVM-105/169 AES and HmacSHA1 use BootDex and real guest libcrypto") {
             vm.Model().WriteByteRegion(array, 0, data);
             return array;
         };
+        const auto chars = [&](std::string_view text) {
+            auto array = vm.Model().NewPrimitiveArray(
+                linker.ResolveDescriptor("[C"), runtime::JniPrimitiveKind::character,
+                static_cast<runtime::JniSize>(text.size()));
+            for (std::size_t index = 0; index < text.size(); ++index)
+                vm.Model().SetPrimitiveElement(
+                    array, static_cast<runtime::JniSize>(index),
+                    static_cast<std::uint16_t>(text[index]));
+            return array;
+        };
+        const auto kdf_password = vm.Model().NewPrimitiveArray(
+            linker.ResolveDescriptor("[C"), runtime::JniPrimitiveKind::character, 8);
+        constexpr std::string_view password_text = "password";
+        for (std::size_t index = 0; index < password_text.size(); ++index) {
+            vm.Model().SetPrimitiveElement(
+                kdf_password, static_cast<runtime::JniSize>(index),
+                static_cast<std::uint16_t>(password_text[index]));
+        }
+        const auto derived = direct(
+            "Lorg/ogplay/security/Pkcs12Kdf;", "derive", "([C[BIII)[B",
+            {VmValue::Ref(kdf_password),
+             VmValue::Ref(bytes("0102030405060708")), VmValue::Int(2048),
+             VmValue::Int(3), VmValue::Int(20)}).ref;
+        CHECK(vm.Model().ReadByteRegion(derived, 0, 20) ==
+              vm.Model().ReadByteRegion(
+                  bytes("e41bf25c2ea77685923a7b4bb231021e7e045ee4"), 0, 20));
+        const auto oracle_path = std::filesystem::path(OGPLAY_SOURCE_DIR) /
+            "tests/fixtures/keystore/mixed-api19.bks.b64";
+        REQUIRE(std::filesystem::is_regular_file(oracle_path));
+        std::ifstream oracle_stream(oracle_path);
+        const std::string oracle_base64{
+            std::istreambuf_iterator<char>(oracle_stream), {}};
+        const auto decoded_oracle = ogplay::core::DecodeBase64(oracle_base64);
+        REQUIRE(decoded_oracle.has_value());
+        const auto& oracle_bytes = *decoded_oracle;
+        const auto oracle_array = vm.Model().NewPrimitiveArray(
+            linker.ResolveDescriptor("[B"), runtime::JniPrimitiveKind::byte,
+            static_cast<runtime::JniSize>(oracle_bytes.size()));
+        vm.Model().WriteByteRegion(oracle_array, 0, oracle_bytes);
+        const auto public_input = vm.NewIntrinsicInstance("Ljava/io/ByteArrayInputStream;");
+        direct("Ljava/io/ByteArrayInputStream;", "<init>", "([B)V",
+               {VmValue::Ref(public_input), VmValue::Ref(oracle_array)});
+        const auto public_store = direct(
+            "Ljava/security/KeyStore;", "getInstance",
+            "(Ljava/lang/String;)Ljava/security/KeyStore;",
+            {VmValue::Ref(vm.NewStringUtf8("BKS"))}).ref;
+        const auto public_password = chars("storepass");
+        const auto public_key_password = chars("keypass");
+        const auto public_roots = vm.ProtectReferences(
+            std::array{public_input, public_store, public_password, public_key_password});
+        invoke(public_store, "load", "(Ljava/io/InputStream;[C)V",
+               {VmValue::Ref(public_input), VmValue::Ref(public_password)});
+        CHECK(invoke(public_store, "size", "()I", {}).AsInt() == 4);
+        CHECK(invoke(public_store, "isKeyEntry", "(Ljava/lang/String;)Z",
+                     {VmValue::Ref(vm.NewStringUtf8("secret"))}).AsInt() != 0);
+        const auto password_protection = vm.NewIntrinsicInstance(
+            "Ljava/security/KeyStore$PasswordProtection;");
+        direct("Ljava/security/KeyStore$PasswordProtection;", "<init>", "([C)V",
+               {VmValue::Ref(password_protection), VmValue::Ref(public_key_password)});
+        const auto public_entry = invoke(
+            public_store, "getEntry",
+            "(Ljava/lang/String;Ljava/security/KeyStore$ProtectionParameter;)Ljava/security/KeyStore$Entry;",
+            {VmValue::Ref(vm.NewStringUtf8("secret")),
+             VmValue::Ref(password_protection)}).ref;
+        CHECK(linker.Class(vm.Model().ObjectClass(public_entry)).descriptor ==
+              "Ljava/security/KeyStore$SecretKeyEntry;");
+        const auto builder = direct(
+            "Ljava/security/KeyStore$Builder;", "newInstance",
+            "(Ljava/security/KeyStore;Ljava/security/KeyStore$ProtectionParameter;)Ljava/security/KeyStore$Builder;",
+            {VmValue::Ref(public_store), VmValue::Ref(password_protection)}).ref;
+        const auto builder_roots = vm.ProtectReferences(
+            std::array{password_protection, public_entry, builder});
+        CHECK(invoke(builder, "getKeyStore", "()Ljava/security/KeyStore;", {}).ref ==
+              public_store);
+        CHECK(invoke(builder, "getProtectionParameter",
+                     "(Ljava/lang/String;)Ljava/security/KeyStore$ProtectionParameter;",
+                     {VmValue::Ref(vm.NewStringUtf8("secret"))}).ref ==
+              password_protection);
+        // API 19 KeyStoreSpi resolves the configured default CallbackHandler.
+        direct("Ljava/security/Security;", "setProperty",
+               "(Ljava/lang/String;Ljava/lang/String;)V",
+               {VmValue::Ref(vm.NewStringUtf8("auth.login.defaultCallbackHandler")),
+                VmValue::Ref(vm.NewStringUtf8("fixture.KeyPasswordHandler"))});
+        const auto handler = vm.NewIntrinsicInstance("Lfixture/KeyPasswordHandler;");
+        direct("Lfixture/KeyPasswordHandler;", "<init>", "()V", {VmValue::Ref(handler)});
+        const auto protection = vm.NewIntrinsicInstance(
+            "Ljava/security/KeyStore$CallbackHandlerProtection;");
+        const auto callback_roots = vm.ProtectReferences(std::array{handler, protection});
+        direct("Ljava/security/KeyStore$CallbackHandlerProtection;", "<init>",
+               "(Ljavax/security/auth/callback/CallbackHandler;)V",
+               {VmValue::Ref(protection), VmValue::Ref(handler)});
+        const auto callback_entry = invoke(public_store, "getEntry",
+            "(Ljava/lang/String;Ljava/security/KeyStore$ProtectionParameter;)Ljava/security/KeyStore$Entry;",
+            {VmValue::Ref(vm.NewStringUtf8("secret")), VmValue::Ref(protection)}).ref;
+        const auto callback_entry_roots = vm.ProtectReferences(std::array{callback_entry});
+        const auto callback_key = invoke(callback_entry, "getSecretKey", "()Ljavax/crypto/SecretKey;", {}).ref;
+        CHECK(vm.Model().ReadByteRegion(invoke(callback_key, "getEncoded", "()[B", {}).ref, 0, 16) ==
+              vm.Model().ReadByteRegion(bytes("000102030405060708090a0b0c0d0e0f"), 0, 16));
+        CHECK(direct("Lfixture/KeyStoreWorkers;", "exercise", "(Ljava/security/KeyStore;)I",
+                     {VmValue::Ref(public_store)}).AsInt() == 40);
+        CHECK(invoke(public_store, "size", "()I", {}).AsInt() == 4);
+        const auto session_output = vm.NewIntrinsicInstance("Ljava/io/FileOutputStream;");
+        direct("Ljava/io/FileOutputStream;", "<init>", "(Ljava/lang/String;)V",
+               {VmValue::Ref(session_output),
+                VmValue::Ref(vm.NewStringUtf8("/data/data/fixture/keystore-session.bks"))});
+        const auto session_output_roots = vm.ProtectReferences(std::array{session_output});
+        invoke(public_store, "store", "(Ljava/io/OutputStream;[C)V",
+               {VmValue::Ref(session_output), VmValue::Ref(public_password)});
+        invoke(session_output, "close", "()V", {});
+        const auto oracle_input = vm.NewIntrinsicInstance("Ljava/io/ByteArrayInputStream;");
+        direct("Ljava/io/ByteArrayInputStream;", "<init>", "([B)V",
+               {VmValue::Ref(oracle_input), VmValue::Ref(oracle_array)});
+        const auto store = vm.NewIntrinsicInstance("Lorg/ogplay/security/BksKeyStoreSpi;");
+        direct("Lorg/ogplay/security/BksKeyStoreSpi;", "<init>", "()V",
+               {VmValue::Ref(store)});
+        const auto store_password = chars("storepass");
+        const auto key_password = chars("keypass");
+        const auto store_roots = vm.ProtectReferences(
+            std::array{oracle_array, oracle_input, store, store_password, key_password});
+        invoke(store, "engineLoad", "(Ljava/io/InputStream;[C)V",
+               {VmValue::Ref(oracle_input), VmValue::Ref(store_password)});
+        CHECK(invoke(store, "engineSize", "()I", {}).AsInt() == 4);
+        const auto rejected_load = [&](std::vector<std::byte> candidate,
+                                       VmObjectRef password) {
+            const auto encoded = vm.Model().NewPrimitiveArray(
+                linker.ResolveDescriptor("[B"), runtime::JniPrimitiveKind::byte,
+                static_cast<runtime::JniSize>(candidate.size()));
+            vm.Model().WriteByteRegion(encoded, 0, candidate);
+            const auto input = vm.NewIntrinsicInstance("Ljava/io/ByteArrayInputStream;");
+            direct("Ljava/io/ByteArrayInputStream;", "<init>", "([B)V",
+                   {VmValue::Ref(input), VmValue::Ref(encoded)});
+            const auto target = vm.NewIntrinsicInstance(
+                "Lorg/ogplay/security/BksKeyStoreSpi;");
+            direct("Lorg/ogplay/security/BksKeyStoreSpi;", "<init>", "()V",
+                   {VmValue::Ref(target)});
+            const auto roots = vm.ProtectReferences(std::array{encoded, input, target});
+            const auto result = invoke_result(
+                target, "engineLoad", "(Ljava/io/InputStream;[C)V",
+                {VmValue::Ref(input), VmValue::Ref(password)});
+            CHECK(result.exception.IsValid());
+            CHECK(invoke(target, "engineSize", "()I", {}).AsInt() == 0);
+        };
+        rejected_load(oracle_bytes, chars("wrong"));
+        auto tampered = oracle_bytes;
+        tampered[tampered.size() / 2] ^= std::byte{1};
+        rejected_load(std::move(tampered), store_password);
+        auto truncated = oracle_bytes;
+        truncated.resize(truncated.size() - 7);
+        rejected_load(std::move(truncated), store_password);
+        for (const auto no_password : {VmObjectRef{}, chars("")}) {
+            const auto encoded = vm.Model().NewPrimitiveArray(
+                linker.ResolveDescriptor("[B"), runtime::JniPrimitiveKind::byte,
+                static_cast<runtime::JniSize>(oracle_bytes.size()));
+            vm.Model().WriteByteRegion(encoded, 0, oracle_bytes);
+            const auto input = vm.NewIntrinsicInstance("Ljava/io/ByteArrayInputStream;");
+            direct("Ljava/io/ByteArrayInputStream;", "<init>", "([B)V",
+                   {VmValue::Ref(input), VmValue::Ref(encoded)});
+            const auto unauthenticated = vm.NewIntrinsicInstance(
+                "Lorg/ogplay/security/BksKeyStoreSpi;");
+            direct("Lorg/ogplay/security/BksKeyStoreSpi;", "<init>", "()V",
+                   {VmValue::Ref(unauthenticated)});
+            const auto roots = vm.ProtectReferences(
+                std::array{encoded, input, unauthenticated, no_password});
+            invoke(unauthenticated, "engineLoad", "(Ljava/io/InputStream;[C)V",
+                   {VmValue::Ref(input), VmValue::Ref(no_password)});
+            CHECK(invoke(unauthenticated, "engineSize", "()I", {}).AsInt() == 4);
+            const auto protected_key = invoke_result(
+                unauthenticated, "engineGetKey",
+                "(Ljava/lang/String;[C)Ljava/security/Key;",
+                {VmValue::Ref(vm.NewStringUtf8("secret")), VmValue::Ref(chars("wrong"))});
+            CHECK(protected_key.exception.IsValid());
+
+            auto mac_tampered = oracle_bytes;
+            mac_tampered.back() ^= std::byte{1};
+            const auto tampered_array = vm.Model().NewPrimitiveArray(
+                linker.ResolveDescriptor("[B"), runtime::JniPrimitiveKind::byte,
+                static_cast<runtime::JniSize>(mac_tampered.size()));
+            vm.Model().WriteByteRegion(tampered_array, 0, mac_tampered);
+            const auto tampered_input = vm.NewIntrinsicInstance("Ljava/io/ByteArrayInputStream;");
+            direct("Ljava/io/ByteArrayInputStream;", "<init>", "([B)V",
+                   {VmValue::Ref(tampered_input), VmValue::Ref(tampered_array)});
+            const auto tampered_store = vm.NewIntrinsicInstance(
+                "Lorg/ogplay/security/BksKeyStoreSpi;");
+            direct("Lorg/ogplay/security/BksKeyStoreSpi;", "<init>", "()V",
+                   {VmValue::Ref(tampered_store)});
+            const auto tampered_roots = vm.ProtectReferences(
+                std::array{tampered_array, tampered_input, tampered_store});
+            invoke(tampered_store, "engineLoad", "(Ljava/io/InputStream;[C)V",
+                   {VmValue::Ref(tampered_input), VmValue::Ref(no_password)});
+            CHECK(invoke(tampered_store, "engineSize", "()I", {}).AsInt() == 4);
+        }
+        const auto wrong_key = invoke_result(
+            store, "engineGetKey", "(Ljava/lang/String;[C)Ljava/security/Key;",
+            {VmValue::Ref(vm.NewStringUtf8("secret")), VmValue::Ref(chars("wrong"))});
+        CHECK(wrong_key.exception.IsValid());
+        const auto legacy_path = std::filesystem::path(OGPLAY_SOURCE_DIR) /
+            ".local/aosp/libcore/luni/src/test/resources/org/apache/harmony/luni/tests/key_store.bks";
+        std::ifstream legacy_stream(legacy_path, std::ios::binary);
+        REQUIRE(legacy_stream.good());
+        const std::vector<char> legacy_chars{
+            std::istreambuf_iterator<char>(legacy_stream), {}};
+        std::vector<std::byte> legacy_bytes(legacy_chars.size());
+        std::transform(legacy_chars.begin(), legacy_chars.end(), legacy_bytes.begin(),
+                       [](char value) { return static_cast<std::byte>(value); });
+        const auto legacy_array = vm.Model().NewPrimitiveArray(
+            linker.ResolveDescriptor("[B"), runtime::JniPrimitiveKind::byte,
+            static_cast<runtime::JniSize>(legacy_bytes.size()));
+        vm.Model().WriteByteRegion(legacy_array, 0, legacy_bytes);
+        const auto legacy_input = vm.NewIntrinsicInstance("Ljava/io/ByteArrayInputStream;");
+        direct("Ljava/io/ByteArrayInputStream;", "<init>", "([B)V",
+               {VmValue::Ref(legacy_input), VmValue::Ref(legacy_array)});
+        const auto legacy_store = vm.NewIntrinsicInstance(
+            "Lorg/ogplay/security/BksKeyStoreSpi;");
+        direct("Lorg/ogplay/security/BksKeyStoreSpi;", "<init>", "()V",
+               {VmValue::Ref(legacy_store)});
+        const auto legacy_password = chars("password");
+        const auto legacy_roots = vm.ProtectReferences(
+            std::array{legacy_array, legacy_input, legacy_store, legacy_password});
+        invoke(legacy_store, "engineLoad", "(Ljava/io/InputStream;[C)V",
+               {VmValue::Ref(legacy_input), VmValue::Ref(legacy_password)});
+        CHECK(invoke(legacy_store, "engineSize", "()I", {}).AsInt() == 1);
+        const auto legacy_key = invoke(
+            legacy_store, "engineGetKey", "(Ljava/lang/String;[C)Ljava/security/Key;",
+            {VmValue::Ref(vm.NewStringUtf8("ssl_test_store")),
+             VmValue::Ref(legacy_password)}).ref;
+        CHECK(vm.StringUtf8(invoke(
+            legacy_key, "getAlgorithm", "()Ljava/lang/String;", {}).ref) == "RSA");
+        const auto v0_path = std::filesystem::path(OGPLAY_SOURCE_DIR) /
+            "tests/fixtures/keystore/v0-api19.bks.b64";
+        std::ifstream v0_stream(v0_path);
+        REQUIRE(v0_stream.good());
+        const std::string v0_base64{
+            std::istreambuf_iterator<char>(v0_stream), {}};
+        const auto decoded_v0 = ogplay::core::DecodeBase64(v0_base64);
+        REQUIRE(decoded_v0.has_value());
+        const auto v0_array = vm.Model().NewPrimitiveArray(
+            linker.ResolveDescriptor("[B"), runtime::JniPrimitiveKind::byte,
+            static_cast<runtime::JniSize>(decoded_v0->size()));
+        vm.Model().WriteByteRegion(v0_array, 0, *decoded_v0);
+        const auto v0_input = vm.NewIntrinsicInstance("Ljava/io/ByteArrayInputStream;");
+        direct("Ljava/io/ByteArrayInputStream;", "<init>", "([B)V",
+               {VmValue::Ref(v0_input), VmValue::Ref(v0_array)});
+        const auto v0_store = vm.NewIntrinsicInstance(
+            "Lorg/ogplay/security/BksKeyStoreSpi;");
+        direct("Lorg/ogplay/security/BksKeyStoreSpi;", "<init>", "()V",
+               {VmValue::Ref(v0_store)});
+        const auto v0_roots = vm.ProtectReferences(
+            std::array{v0_array, v0_input, v0_store});
+        invoke(v0_store, "engineLoad", "(Ljava/io/InputStream;[C)V",
+               {VmValue::Ref(v0_input), VmValue::Ref(legacy_password)});
+        CHECK(invoke(v0_store, "engineSize", "()I", {}).AsInt() == 1);
+        CHECK(invoke(v0_store, "engineContainsAlias", "(Ljava/lang/String;)Z",
+                     {VmValue::Ref(vm.NewStringUtf8("cert"))}).AsInt() != 0);
+        const auto unicode_path = std::filesystem::path(OGPLAY_SOURCE_DIR) /
+            "tests/fixtures/keystore/unicode-api19.bks.b64";
+        std::ifstream unicode_stream(unicode_path);
+        REQUIRE(unicode_stream.good());
+        const std::string unicode_base64{
+            std::istreambuf_iterator<char>(unicode_stream), {}};
+        const auto decoded_unicode = ogplay::core::DecodeBase64(unicode_base64);
+        REQUIRE(decoded_unicode.has_value());
+        const auto unicode_array = vm.Model().NewPrimitiveArray(
+            linker.ResolveDescriptor("[B"), runtime::JniPrimitiveKind::byte,
+            static_cast<runtime::JniSize>(decoded_unicode->size()));
+        vm.Model().WriteByteRegion(unicode_array, 0, *decoded_unicode);
+        const auto unicode_input = vm.NewIntrinsicInstance("Ljava/io/ByteArrayInputStream;");
+        direct("Ljava/io/ByteArrayInputStream;", "<init>", "([B)V",
+               {VmValue::Ref(unicode_input), VmValue::Ref(unicode_array)});
+        const auto unicode_store = vm.NewIntrinsicInstance(
+            "Lorg/ogplay/security/BksKeyStoreSpi;");
+        direct("Lorg/ogplay/security/BksKeyStoreSpi;", "<init>", "()V",
+               {VmValue::Ref(unicode_store)});
+        const auto unicode_password = vm.Model().NewPrimitiveArray(
+            linker.ResolveDescriptor("[C"), runtime::JniPrimitiveKind::character, 4);
+        for (std::size_t i = 0; i < 4; ++i)
+            vm.Model().SetPrimitiveElement(
+                unicode_password, static_cast<runtime::JniSize>(i),
+                std::array<std::uint16_t, 4>{0x5bc6, 0x7801, 0xd83d, 0xdd11}[i]);
+        const auto unicode_roots = vm.ProtectReferences(
+            std::array{unicode_array, unicode_input, unicode_store, unicode_password});
+        invoke(unicode_store, "engineLoad", "(Ljava/io/InputStream;[C)V",
+               {VmValue::Ref(unicode_input), VmValue::Ref(unicode_password)});
+        CHECK(invoke(unicode_store, "engineSize", "()I", {}).AsInt() == 1);
+        const auto opaque_store = vm.NewIntrinsicInstance(
+            "Lorg/ogplay/security/BksKeyStoreSpi;");
+        direct("Lorg/ogplay/security/BksKeyStoreSpi;", "<init>", "()V",
+               {VmValue::Ref(opaque_store)});
+        invoke(opaque_store, "engineLoad", "(Ljava/io/InputStream;[C)V",
+               {VmValue::Ref(VmObjectRef{}), VmValue::Ref(VmObjectRef{})});
+        const auto opaque_bytes = bytes("010203");
+        const auto opaque_roots = vm.ProtectReferences(
+            std::array{opaque_store, opaque_bytes});
+        invoke(opaque_store, "engineSetKeyEntry",
+               "(Ljava/lang/String;[B[Ljava/security/cert/Certificate;)V",
+               {VmValue::Ref(vm.NewStringUtf8("opaque")), VmValue::Ref(opaque_bytes),
+                VmValue::Ref(VmObjectRef{})});
+        CHECK(invoke(opaque_store, "engineIsKeyEntry", "(Ljava/lang/String;)Z",
+                     {VmValue::Ref(vm.NewStringUtf8("opaque"))}).AsInt() != 0);
+        const auto opaque_get = invoke_result(
+            opaque_store, "engineGetKey", "(Ljava/lang/String;[C)Ljava/security/Key;",
+            {VmValue::Ref(vm.NewStringUtf8("opaque")), VmValue::Ref(key_password)});
+        CHECK(opaque_get.exception.IsValid());
+        CHECK(linker.Class(opaque_get.exception_class).descriptor ==
+              "Ljava/lang/RuntimeException;");
+        const auto opaque_output = vm.NewIntrinsicInstance("Ljava/io/ByteArrayOutputStream;");
+        direct("Ljava/io/ByteArrayOutputStream;", "<init>", "()V",
+               {VmValue::Ref(opaque_output)});
+        invoke(opaque_store, "engineStore", "(Ljava/io/OutputStream;[C)V",
+               {VmValue::Ref(opaque_output), VmValue::Ref(store_password)});
+        const auto opaque_encoded = invoke(opaque_output, "toByteArray", "()[B", {}).ref;
+        CHECK(vm.Model().ReadByteRegion(opaque_encoded, 32, 1)[0] == std::byte{3});
+        const auto opaque_input = vm.NewIntrinsicInstance("Ljava/io/ByteArrayInputStream;");
+        direct("Ljava/io/ByteArrayInputStream;", "<init>", "([B)V",
+               {VmValue::Ref(opaque_input), VmValue::Ref(opaque_encoded)});
+        const auto opaque_reloaded = vm.NewIntrinsicInstance(
+            "Lorg/ogplay/security/BksKeyStoreSpi;");
+        direct("Lorg/ogplay/security/BksKeyStoreSpi;", "<init>", "()V",
+               {VmValue::Ref(opaque_reloaded)});
+        const auto opaque_reload_roots = vm.ProtectReferences(
+            std::array{opaque_output, opaque_encoded, opaque_input, opaque_reloaded});
+        invoke(opaque_reloaded, "engineLoad", "(Ljava/io/InputStream;[C)V",
+               {VmValue::Ref(opaque_input), VmValue::Ref(store_password)});
+        CHECK(invoke(opaque_reloaded, "engineIsKeyEntry", "(Ljava/lang/String;)Z",
+                     {VmValue::Ref(vm.NewStringUtf8("opaque"))}).AsInt() != 0);
+        const auto failing_output = vm.NewIntrinsicInstance(
+            "Lfixture/FailingOutputStream;");
+        direct("Lfixture/FailingOutputStream;", "<init>", "(I)V",
+               {VmValue::Ref(failing_output), VmValue::Int(8)});
+        const auto failing_roots = vm.ProtectReferences(std::array{failing_output});
+        const auto failed_write = invoke_result(
+            opaque_store, "engineStore", "(Ljava/io/OutputStream;[C)V",
+            {VmValue::Ref(failing_output), VmValue::Ref(store_password)});
+        CHECK(failed_write.exception.IsValid());
+        CHECK(linker.Class(failed_write.exception_class).descriptor ==
+              "Ljava/io/IOException;");
+        const auto oversized_store = vm.NewIntrinsicInstance(
+            "Lorg/ogplay/security/BksKeyStoreSpi;");
+        direct("Lorg/ogplay/security/BksKeyStoreSpi;", "<init>", "()V",
+               {VmValue::Ref(oversized_store)});
+        invoke(oversized_store, "engineLoad", "(Ljava/io/InputStream;[C)V",
+               {VmValue::Ref(VmObjectRef{}), VmValue::Ref(VmObjectRef{})});
+        const auto one_megabyte = vm.Model().NewPrimitiveArray(
+            linker.ResolveDescriptor("[B"), runtime::JniPrimitiveKind::byte,
+            1024 * 1024);
+        const auto oversized_roots = vm.ProtectReferences(
+            std::array{oversized_store, one_megabyte});
+        for (int index = 0; index < 17; ++index) {
+            invoke(oversized_store, "engineSetKeyEntry",
+                   "(Ljava/lang/String;[B[Ljava/security/cert/Certificate;)V",
+                   {VmValue::Ref(vm.NewStringUtf8("blob" + std::to_string(index))),
+                    VmValue::Ref(one_megabyte), VmValue::Ref(VmObjectRef{})});
+        }
+        const auto oversized_output = vm.NewIntrinsicInstance(
+            "Ljava/io/ByteArrayOutputStream;");
+        direct("Ljava/io/ByteArrayOutputStream;", "<init>", "()V",
+               {VmValue::Ref(oversized_output)});
+        const auto oversized_result = invoke_result(
+            oversized_store, "engineStore", "(Ljava/io/OutputStream;[C)V",
+            {VmValue::Ref(oversized_output), VmValue::Ref(store_password)});
+        CHECK(oversized_result.exception.IsValid());
+        CHECK(linker.Class(oversized_result.exception_class).descriptor ==
+              "Ljava/io/IOException;");
+        CHECK(vm.Model().ArrayLength(
+            invoke(oversized_output, "toByteArray", "()[B", {}).ref) == 0);
+        const auto load_fixture = [&](const char* relative_path, VmObjectRef password) {
+            std::ifstream stream(std::filesystem::path(OGPLAY_SOURCE_DIR) / relative_path);
+            REQUIRE(stream.good());
+            const std::string base64{std::istreambuf_iterator<char>(stream), {}};
+            const auto decoded = ogplay::core::DecodeBase64(base64);
+            REQUIRE(decoded.has_value());
+            const auto encoded = vm.Model().NewPrimitiveArray(
+                linker.ResolveDescriptor("[B"), runtime::JniPrimitiveKind::byte,
+                static_cast<runtime::JniSize>(decoded->size()));
+            vm.Model().WriteByteRegion(encoded, 0, *decoded);
+            const auto input = vm.NewIntrinsicInstance("Ljava/io/ByteArrayInputStream;");
+            direct("Ljava/io/ByteArrayInputStream;", "<init>", "([B)V",
+                   {VmValue::Ref(input), VmValue::Ref(encoded)});
+            const auto loaded = vm.NewIntrinsicInstance(
+                "Lorg/ogplay/security/BksKeyStoreSpi;");
+            direct("Lorg/ogplay/security/BksKeyStoreSpi;", "<init>", "()V",
+                   {VmValue::Ref(loaded)});
+            invoke(loaded, "engineLoad", "(Ljava/io/InputStream;[C)V",
+                   {VmValue::Ref(input), VmValue::Ref(password)});
+            return loaded;
+        };
+        for (const auto* historical : {
+                 "tests/fixtures/keystore/old-pbe-bc146.bks.b64",
+                 "tests/fixtures/keystore/broken-pbe-bc146.bks.b64"}) {
+            CAPTURE(historical);
+            const auto historical_store = load_fixture(historical, store_password);
+            const auto historical_roots = vm.ProtectReferences(std::array{historical_store});
+            const auto historical_key = invoke(
+                historical_store, "engineGetKey",
+                "(Ljava/lang/String;[C)Ljava/security/Key;",
+                {VmValue::Ref(vm.NewStringUtf8("secret")), VmValue::Ref(key_password)}).ref;
+            CHECK(vm.StringUtf8(invoke(
+                historical_key, "getAlgorithm", "()Ljava/lang/String;", {}).ref) == "AES");
+            CHECK(vm.Model().ArrayLength(invoke(
+                historical_key, "getEncoded", "()[B", {}).ref) == 16);
+        }
+        const auto rebuilt_store = vm.NewIntrinsicInstance(
+            "Lorg/ogplay/security/BksKeyStoreSpi;");
+        direct("Lorg/ogplay/security/BksKeyStoreSpi;", "<init>", "()V",
+               {VmValue::Ref(rebuilt_store)});
+        invoke(rebuilt_store, "engineLoad", "(Ljava/io/InputStream;[C)V",
+               {VmValue::Ref(VmObjectRef{}), VmValue::Ref(VmObjectRef{})});
+        const auto rebuilt_roots = vm.ProtectReferences(std::array{rebuilt_store});
+        for (const auto& expected_key : std::array{
+                 std::pair{"secret", "AES"}, std::pair{"rsa", "RSA"},
+                 std::pair{"ec", "EC"}}) {
+            const auto restored = invoke(
+                store, "engineGetKey", "(Ljava/lang/String;[C)Ljava/security/Key;",
+                {VmValue::Ref(vm.NewStringUtf8(expected_key.first)),
+                 VmValue::Ref(key_password)}).ref;
+            const auto restored_roots = vm.ProtectReferences(std::array{restored});
+            CHECK(vm.StringUtf8(invoke(restored, "getAlgorithm", "()Ljava/lang/String;", {}).ref) ==
+                  expected_key.second);
+            CHECK(invoke(restored, "getEncoded", "()[B", {}).ref.IsValid());
+            const auto chain = invoke(
+                store, "engineGetCertificateChain",
+                "(Ljava/lang/String;)[Ljava/security/cert/Certificate;",
+                {VmValue::Ref(vm.NewStringUtf8(expected_key.first))}).ref;
+            invoke(rebuilt_store, "engineSetKeyEntry",
+                   "(Ljava/lang/String;Ljava/security/Key;[C[Ljava/security/cert/Certificate;)V",
+                   {VmValue::Ref(vm.NewStringUtf8(expected_key.first)),
+                    VmValue::Ref(restored), VmValue::Ref(key_password), VmValue::Ref(chain)});
+        }
+        const auto trusted = invoke(
+            store, "engineGetCertificate",
+            "(Ljava/lang/String;)Ljava/security/cert/Certificate;",
+            {VmValue::Ref(vm.NewStringUtf8("cert"))}).ref;
+        invoke(rebuilt_store, "engineSetCertificateEntry",
+               "(Ljava/lang/String;Ljava/security/cert/Certificate;)V",
+               {VmValue::Ref(vm.NewStringUtf8("cert")), VmValue::Ref(trusted)});
+        const auto bks_output = vm.NewIntrinsicInstance("Ljava/io/ByteArrayOutputStream;");
+        direct("Ljava/io/ByteArrayOutputStream;", "<init>", "()V",
+               {VmValue::Ref(bks_output)});
+        const auto bks_output_roots = vm.ProtectReferences(std::array{bks_output});
+        invoke(rebuilt_store, "engineStore", "(Ljava/io/OutputStream;[C)V",
+               {VmValue::Ref(bks_output), VmValue::Ref(store_password)});
+        const auto ogplay_store = invoke(bks_output, "toByteArray", "()[B", {}).ref;
+        const auto encoded_store = vm.Model().ReadByteRegion(
+            ogplay_store, 0, vm.Model().ArrayLength(ogplay_store));
+        std::ofstream roundtrip(
+            std::filesystem::temp_directory_path() / "ogplay-keystore-api19-roundtrip.bks",
+            std::ios::binary);
+        roundtrip.write(reinterpret_cast<const char*>(encoded_store.data()),
+                        static_cast<std::streamsize>(encoded_store.size()));
+        REQUIRE(roundtrip.good());
         const auto secure_random = direct(
             "Ljava/security/SecureRandom;", "getInstance",
             "(Ljava/lang/String;)Ljava/security/SecureRandom;",
@@ -2231,6 +2700,7 @@ TEST_CASE("DVM-105/169 AES and HmacSHA1 use BootDex and real guest libcrypto") {
         const auto key_roots = vm.ProtectReferences(std::array{key, key_bytes});
         direct("Ljavax/crypto/spec/SecretKeySpec;", "<init>", "([BLjava/lang/String;)V",
                {VmValue::Ref(key), VmValue::Ref(key_bytes), VmValue::Ref(vm.NewStringUtf8("AES"))});
+        const auto resources_before_cipher = vm.GuestNativeResourceCount();
         const auto cipher = direct("Ljavax/crypto/Cipher;", "getInstance",
                                    "(Ljava/lang/String;)Ljavax/crypto/Cipher;",
                                    {VmValue::Ref(vm.NewStringUtf8("AES/ECB/NoPadding"))})
@@ -2243,7 +2713,7 @@ TEST_CASE("DVM-105/169 AES and HmacSHA1 use BootDex and real guest libcrypto") {
         const auto expected = bytes("69c4e0d86a7b0430d8cdb78070b4c55a");
         CHECK(vm.Model().ReadByteRegion(result, 0, 16) ==
               vm.Model().ReadByteRegion(expected, 0, 16));
-        CHECK(vm.GuestNativeResourceCount() == 1);
+        CHECK(vm.GuestNativeResourceCount() == resources_before_cipher + 1);
         invoke(cipher, "init", "(ILjava/security/Key;)V", {VmValue::Int(2), VmValue::Ref(key)});
         const auto plain = invoke(cipher, "doFinal", "([B)[B", {VmValue::Ref(expected)}).ref;
         CHECK(vm.Model().ReadByteRegion(plain, 0, 16) ==
@@ -2658,6 +3128,108 @@ TEST_CASE("DVM-105/169 AES and HmacSHA1 use BootDex and real guest libcrypto") {
               "com.android.org.conscrypt.OpenSSLMac$HmacSHA1");
         vm.ReleaseGuestNativeResources(true);
         CHECK(vm.GuestNativeResourceCount() == 0);
+        static_cast<void>(app->Stop());
+        }
+        filesystem.FlushAll();
+        auto reopened = runtime::SandboxStore::Open(sandbox_root, "fixture");
+        runtime::VirtualFileSystem reload_filesystem;
+        reload_filesystem.AttachSandbox(*reopened, sandbox_roots);
+        session::AndroidAppProcessRequest reload_request;
+        reload_request.manifest = AppManifest("fixture.MainActivity");
+        reload_request.system_libraries = libraries;
+        reload_request.dex_bytes = ReadDexFixture("cipher.dex");
+        reload_request.icu_data = ReadPayloadBytes("icu/icudt51l.dat");
+        reload_request.boot_dex_bytes = test::ReadBootDex();
+        reload_request.context = std::make_shared<runtime::DexVmAndroidContext>();
+        reload_request.context->apk_bytes = {
+            std::byte{0x50}, std::byte{0x4b}, std::byte{3}, std::byte{4}};
+        reload_request.dexvm.interpreter.backend = backend;
+        reload_request.surface_width = 64;
+        reload_request.surface_height = 36;
+        reload_request.maximum_ticks_per_call = UINT64_C(100000000);
+#if defined(_WIN32)
+        reload_request.backend = {gles::AngleRenderer::d3d11, gles::AngleDevice::hardware};
+#elif defined(__APPLE__)
+        reload_request.backend = {gles::AngleRenderer::metal, gles::AngleDevice::hardware};
+#else
+        reload_request.backend = {gles::AngleRenderer::vulkan, gles::AngleDevice::hardware};
+#endif
+        reload_request.filesystem = &reload_filesystem;
+        reload_request.ledger = &ledger;
+        reload_request.logger = &logger;
+        auto reloaded_app = session::AndroidAppProcess::Create(std::move(reload_request));
+        auto& reloaded_vm = reloaded_app->DexVm().Vm();
+        auto& reloaded_linker = reloaded_vm.Linker();
+        const auto reload_direct = [&](const char* owner, const char* name, const char* desc,
+                                       std::vector<VmValue> args) {
+            const auto type = reloaded_linker.FindClass(owner);
+            REQUIRE(type.has_value());
+            const auto method = reloaded_linker.FindDirectMethod(*type, name, desc);
+            REQUIRE(method.has_value());
+            const auto result = reloaded_vm.Call(*method, args);
+            REQUIRE_MESSAGE(!result.exception.IsValid(), result.exception_message);
+            return result.value;
+        };
+        const auto reload_invoke = [&](VmObjectRef object, const char* name, const char* desc,
+                                       std::vector<VmValue> args) {
+            const auto type = reloaded_vm.Model().ObjectClass(object);
+            const auto slot = reloaded_linker.FindVtableIndex(type, name, desc);
+            REQUIRE(slot.has_value());
+            args.insert(args.begin(), VmValue::Ref(object));
+            const auto result = reloaded_vm.Call(reloaded_linker.Class(type).vtable[*slot], args);
+            REQUIRE_MESSAGE(!result.exception.IsValid(), result.exception_message);
+            return result.value;
+        };
+        const auto session_input = reloaded_vm.NewIntrinsicInstance("Ljava/io/FileInputStream;");
+        reload_direct("Ljava/io/FileInputStream;", "<init>", "(Ljava/lang/String;)V",
+                      {VmValue::Ref(session_input),
+                       VmValue::Ref(reloaded_vm.NewStringUtf8("/data/data/fixture/keystore-session.bks"))});
+        const auto session_store = reload_direct(
+            "Ljava/security/KeyStore;", "getInstance",
+            "(Ljava/lang/String;)Ljava/security/KeyStore;",
+            {VmValue::Ref(reloaded_vm.NewStringUtf8("BKS"))}).ref;
+        const auto reload_password = reloaded_vm.Model().NewPrimitiveArray(
+            reloaded_linker.ResolveDescriptor("[C"), runtime::JniPrimitiveKind::character, 9);
+        constexpr std::string_view reload_password_text = "storepass";
+        for (std::size_t index = 0; index < reload_password_text.size(); ++index)
+            reloaded_vm.Model().SetPrimitiveElement(
+                reload_password, static_cast<runtime::JniSize>(index),
+                static_cast<std::uint16_t>(reload_password_text[index]));
+        const auto reload_roots = reloaded_vm.ProtectReferences(
+            std::array{session_input, session_store, reload_password});
+        reload_invoke(session_store, "load", "(Ljava/io/InputStream;[C)V",
+                      {VmValue::Ref(session_input), VmValue::Ref(reload_password)});
+        CHECK(reload_invoke(session_store, "size", "()I", {}).AsInt() == 4);
+        CHECK(reload_invoke(session_store, "containsAlias", "(Ljava/lang/String;)Z",
+                            {VmValue::Ref(reloaded_vm.NewStringUtf8("rsa"))}).AsInt() != 0);
+        reload_invoke(session_input, "close", "()V", {});
+        const auto restored_key_password = reloaded_vm.Model().NewPrimitiveArray(
+            reloaded_linker.ResolveDescriptor("[C"), runtime::JniPrimitiveKind::character, 7);
+        for (std::size_t i = 0; i < 7; ++i)
+            reloaded_vm.Model().SetPrimitiveElement(restored_key_password,
+                static_cast<runtime::JniSize>(i), static_cast<std::uint16_t>("keypass"[i]));
+        const auto restored_password_root = reloaded_vm.ProtectReferences(std::array{restored_key_password});
+        for (const auto* alias : {"secret", "rsa", "ec"}) {
+            const auto key = reload_invoke(session_store, "getKey",
+                "(Ljava/lang/String;[C)Ljava/security/Key;",
+                {VmValue::Ref(reloaded_vm.NewStringUtf8(alias)), VmValue::Ref(restored_key_password)}).ref;
+            const auto key_root = reloaded_vm.ProtectReferences(std::array{key});
+            CHECK(reload_invoke(key, "getEncoded", "()[B", {}).ref.IsValid());
+        }
+        auto other = runtime::SandboxStore::Open(sandbox_root, "fixture.other");
+        runtime::VirtualFileSystem isolated;
+        isolated.AttachSandbox(*other, sandbox_roots);
+        CHECK_THROWS_AS(static_cast<void>(isolated.Stat("/data/data/fixture/keystore-session.bks")), runtime::VfsError);
+        CHECK_THROWS_AS(static_cast<void>(isolated.Open("/data/data/fixture/keystore-session.bks", {.read = true})), runtime::VfsError);
+        const auto original_file = reopened->ReadFile("/data/data/fixture/keystore-session.bks");
+        const auto isolated_fd = isolated.Open("/data/data/fixture/keystore-session.bks",
+            {.write = true, .create = true});
+        const std::array<std::byte, 3> other_data{std::byte{1}, std::byte{2}, std::byte{3}};
+        CHECK(isolated.Write(isolated_fd, other_data) == other_data.size());
+        isolated.Close(isolated_fd);
+        CHECK(reopened->ReadFile("/data/data/fixture/keystore-session.bks") == original_file);
+        CHECK(other->ReadFile("/data/data/fixture/keystore-session.bks").size() == 3);
+        static_cast<void>(reloaded_app->Stop());
     }
 }
 
@@ -3075,8 +3647,9 @@ TEST_CASE("DVM-106 Certificate parses DER PEM and verifies RSA EC through guest 
                                     {VmValue::Ref(stream(malformed))});
             REQUIRE(result.exception.IsValid());
             CHECK(linker.Class(result.exception_class).descriptor ==
-                  "Ljava/security/cert/CertificateException;");
+                   "Ljava/security/cert/CertificateException;");
         }
+
     }
 }
 

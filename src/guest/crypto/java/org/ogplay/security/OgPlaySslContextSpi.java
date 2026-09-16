@@ -5,6 +5,7 @@ import java.security.KeyStore;
 import java.security.KeyStoreException;
 import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
+import javax.net.ssl.HttpsURLConnection;
 import javax.net.ssl.KeyManager;
 import javax.net.ssl.SSLContextSpi;
 import javax.net.ssl.SSLEngine;
@@ -40,18 +41,23 @@ public class OgPlaySslContextSpi extends SSLContextSpi {
         try {
             trustManager = selectTrustManager(tm);
             keyManager = selectKeyManager(km);
+            secureRandom = sr != null ? sr : new SecureRandom();
+            byte[] entropy = new byte[64];
+            secureRandom.nextBytes(entropy);
+            NativeTls.seed(entropy);
+            if (nativeContext != 0) {
+                NativeTls.freeContext(nativeContext);
+                nativeContext = 0;
+            }
+            nativeContext = NativeTls.createContext(defaultProtocols,
+                    NativeTls.defaultCipherSuites());
+            clientSessions = new OgPlaySslSessionContext();
+            socketFactory = new OgPlaySslSocketFactory(this);
+            HttpsURLConnection.setDefaultSSLSocketFactory(socketFactory);
+            initialized = true;
         } catch (Exception e) {
             throw new KeyManagementException(e);
         }
-        secureRandom = sr;
-        if (nativeContext != 0) {
-            NativeTls.freeContext(nativeContext);
-            nativeContext = 0;
-        }
-        nativeContext = NativeTls.createContext(defaultProtocols, NativeTls.defaultCipherSuites());
-        clientSessions = new OgPlaySslSessionContext();
-        socketFactory = new OgPlaySslSocketFactory(this);
-        initialized = true;
     }
 
     protected SSLSocketFactory engineGetSocketFactory() {
@@ -176,9 +182,13 @@ public class OgPlaySslContextSpi extends SSLContextSpi {
     }
 
     public static final class DefaultContext extends OgPlaySslContextSpi {
-        public DefaultContext() throws KeyManagementException {
+        public DefaultContext() {
             super(new String[] {"TLSv1.2", "TLSv1.1", "TLSv1"});
-            engineInit(null, null, null);
+            try {
+                engineInit(null, null, null);
+            } catch (Exception e) {
+                throw new java.security.ProviderException(e);
+            }
         }
     }
 }

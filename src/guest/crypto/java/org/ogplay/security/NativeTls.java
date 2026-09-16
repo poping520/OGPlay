@@ -1,10 +1,13 @@
 package org.ogplay.security;
 
+import java.io.ByteArrayInputStream;
+import java.io.InputStream;
+import java.io.OutputStream;
 import java.net.Socket;
+import java.net.SocketAddress;
 import java.security.cert.CertificateException;
 import java.security.cert.CertificateFactory;
 import java.security.cert.X509Certificate;
-import java.io.ByteArrayInputStream;
 import javax.net.ssl.X509TrustManager;
 
 /** Private guest libssl session tokens. Ciphertext stays in memory BIOs. */
@@ -22,6 +25,15 @@ final class NativeTls {
 
     /** Host overlay: enforce allow_tls/allowed_hosts without connecting this socket. */
     static void requireTls(String host) {}
+
+    /** Host overlay: connect over the unique raw NetworkRuntime channel. */
+    static void connectRaw(Socket socket, SocketAddress endpoint, int timeout) {}
+
+    static InputStream socketInput(Socket socket) { return null; }
+
+    static OutputStream socketOutput(Socket socket) { return null; }
+
+    static native void seed(byte[] entropy);
 
     static native long createContext(String[] protocols, String[] cipherSuites);
 

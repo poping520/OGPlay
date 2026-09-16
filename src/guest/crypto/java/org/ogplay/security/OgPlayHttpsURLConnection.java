@@ -14,6 +14,7 @@ import java.util.List;
 import java.util.Map;
 import javax.net.ssl.HostnameVerifier;
 import javax.net.ssl.HttpsURLConnection;
+import javax.net.ssl.SSLContext;
 import javax.net.ssl.SSLSocket;
 import javax.net.ssl.SSLSocketFactory;
 
@@ -39,6 +40,13 @@ public final class OgPlayHttpsURLConnection extends HttpsURLConnection {
             return;
         }
         SSLSocketFactory factory = getSSLSocketFactory();
+        try {
+            SSLContext context = SSLContext.getDefault();
+            if (context != null && context.getSocketFactory() != null) {
+                factory = context.getSocketFactory();
+            }
+        } catch (Exception ignored) {
+        }
         if (factory == null) {
             factory = getDefaultSSLSocketFactory();
         }
@@ -50,23 +58,35 @@ public final class OgPlayHttpsURLConnection extends HttpsURLConnection {
         if (port < 0) {
             port = url.getDefaultPort();
         }
-        Socket created = factory.createSocket();
+        Socket created;
+        try {
+            created = factory.createSocket();
+        } catch (IOException e) {
+            throw new IOException(factory.getClass().getName() + " createSocket: " + e.getMessage());
+        }
         if (!(created instanceof SSLSocket)) {
             created.close();
-            throw new IOException("SSLSocketFactory did not return an SSLSocket");
+            throw new IOException(factory.getClass().getName() + " did not return an SSLSocket");
         }
         socket = (SSLSocket) created;
-        int connectMs = getConnectTimeout();
-        if (connectMs > 0) {
-            socket.connect(new InetSocketAddress(host, port), connectMs);
-        } else {
-            socket.connect(new InetSocketAddress(host, port));
+        try {
+            if (!socket.isConnected()) {
+                int connectMs = getConnectTimeout();
+                if (connectMs > 0) {
+                    socket.connect(new InetSocketAddress(host, port), connectMs);
+                } else {
+                    socket.connect(new InetSocketAddress(host, port));
+                }
+            }
+            int readMs = getReadTimeout();
+            if (readMs > 0) {
+                socket.setSoTimeout(readMs);
+            }
+            socket.startHandshake();
+        } catch (IOException e) {
+            throw new IOException(factory.getClass().getName() + " tls connected="
+                    + socket.isConnected() + " " + e.getMessage());
         }
-        int readMs = getReadTimeout();
-        if (readMs > 0) {
-            socket.setSoTimeout(readMs);
-        }
-        socket.startHandshake();
         HostnameVerifier verifier = getHostnameVerifier();
         if (verifier != null && !verifier.verify(host, socket.getSession())) {
             socket.close();
@@ -212,12 +232,16 @@ public final class OgPlayHttpsURLConnection extends HttpsURLConnection {
             header.append("Content-Length: ").append(body.length).append("\r\n");
         }
         header.append("\r\n");
-        socketOut.write(header.toString().getBytes("ISO-8859-1"));
-        if (body.length > 0) {
-            socketOut.write(body);
+        try {
+            socketOut.write(header.toString().getBytes("ISO-8859-1"));
+            if (body.length > 0) {
+                socketOut.write(body);
+            }
+            socketOut.flush();
+            parseResponse();
+        } catch (IOException e) {
+            throw new IOException("https-write");
         }
-        socketOut.flush();
-        parseResponse();
         requestSent = true;
     }
 

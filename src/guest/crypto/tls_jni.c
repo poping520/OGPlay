@@ -73,6 +73,8 @@ extern SSL_CTX *SSL_get_SSL_CTX(const SSL *);
 extern void *X509_STORE_CTX_get_ex_data(X509_STORE_CTX *, int);
 extern void ERR_clear_error(void);
 extern unsigned long ERR_get_error(void);
+extern void RAND_seed(const void *, int);
+extern int RAND_status(void);
 extern EC_KEY *EC_KEY_new_by_curve_name(int);
 extern void EC_KEY_free(EC_KEY *);
 #define SSL_CTRL_OPTIONS 32
@@ -346,6 +348,24 @@ static int verify_peer(Session *s) {
     X509_free(leaf);
     return ok;
 }
+void Java_org_ogplay_security_NativeTls_seed(JNIEnv *env, jobject cls, jobject entropy) {
+    (void)cls;
+    int count = length(env, entropy);
+    if (count < 0) return;
+    if (count < 32) {
+        fail(env, "java/security/ProviderException", "TLS entropy is shorter than 32 bytes");
+        return;
+    }
+    unsigned char buffer[256];
+    int offset = 0;
+    while (offset < count) {
+        int chunk = count - offset;
+        if (chunk > (int)sizeof(buffer)) chunk = (int)sizeof(buffer);
+        read_bytes(env, entropy, offset, chunk, buffer);
+        RAND_seed(buffer, chunk);
+        offset += chunk;
+    }
+}
 int ogplay_tls_on_load(void) {
     if (SSL_library_init() != 1) return 0;
     SSL_load_error_strings();
@@ -403,6 +423,10 @@ jlong Java_org_ogplay_security_NativeTls_createContext(JNIEnv *env, jobject cls,
                                                        jobject ciphers) {
     (void)cls;
     ERR_clear_error();
+    if (RAND_status() != 1) {
+        fail(env, "javax/net/ssl/SSLException", "OpenSSL RNG is not seeded");
+        return 0;
+    }
     long options = disable_unused(0, protocols, env);
     if (options < 0) return 0;
     SSL_CTX *ssl = SSL_CTX_new(SSLv23_client_method());
@@ -653,6 +677,7 @@ int Java_org_ogplay_security_NativeTls_handshake(JNIEnv *env, jobject cls, jlong
     if (status == STATUS_FAILED && !pending(env)) {
         int ssl_err = SSL_get_error(s->ssl, result);
         unsigned long err = ERR_get_error();
+        int rand_ok = RAND_status();
         char message[96];
         int i = 0;
         const char *prefix = "TLS handshake failed ssl=";
@@ -671,7 +696,7 @@ int Java_org_ogplay_security_NativeTls_handshake(JNIEnv *env, jobject cls, jlong
             digits[n++] = (char)('0' + (v % 10));
             v /= 10;
         } while (v && n < 12);
-        while (n && i < 80) message[i++] = digits[--n];
+        while (n && i < 70) message[i++] = digits[--n];
         message[i++] = ' ';
         message[i++] = 'e';
         message[i++] = 'r';
@@ -684,7 +709,14 @@ int Java_org_ogplay_security_NativeTls_handshake(JNIEnv *env, jobject cls, jlong
             digits[n++] = (char)("0123456789abcdef"[ev & 15]);
             ev >>= 4;
         }
-        while (n && i < (int)sizeof(message) - 1) message[i++] = digits[--n];
+        while (n && i < (int)sizeof(message) - 10) message[i++] = digits[--n];
+        message[i++] = ' ';
+        message[i++] = 'r';
+        message[i++] = 'a';
+        message[i++] = 'n';
+        message[i++] = 'd';
+        message[i++] = '=';
+        message[i++] = (char)('0' + (rand_ok != 0));
         message[i] = 0;
         fail(env, "javax/net/ssl/SSLHandshakeException", message);
     }

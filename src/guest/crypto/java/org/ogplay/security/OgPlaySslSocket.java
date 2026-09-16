@@ -90,9 +90,13 @@ public final class OgPlaySslSocket extends SSLSocket {
         connect(new InetSocketAddress(address, port));
     }
 
+    public void connect(SocketAddress endpoint) throws IOException {
+        connect(endpoint, 0);
+    }
+
     public void connect(SocketAddress endpoint, int timeout) throws IOException {
         NativeTls.markTls(this);
-        super.connect(endpoint, timeout);
+        NativeTls.connectRaw(this, endpoint, timeout);
     }
 
     public void startHandshake() throws IOException {
@@ -338,8 +342,8 @@ public final class OgPlaySslSocket extends SSLSocket {
             if (!isConnected()) {
                 throw new SocketException("socket is not connected");
             }
-            rawIn = super.getInputStream();
-            rawOut = super.getOutputStream();
+            rawIn = NativeTls.socketInput(this);
+            rawOut = NativeTls.socketOutput(this);
         }
     }
 

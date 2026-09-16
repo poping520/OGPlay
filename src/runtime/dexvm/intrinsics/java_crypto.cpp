@@ -437,6 +437,67 @@ IntrinsicClassDecl NativeTlsBoundary() {
         }
         return VmValue::Void();
     });
+    b.StaticMethod("connectRaw",
+                   "(Ljava/net/Socket;Ljava/net/SocketAddress;I)V", [](IntrinsicContext& c) {
+        IntrinsicCall call(c);
+        const auto socket = call.NonNullRef(0, "socket");
+        const auto endpoint = call.NonNullRef(1, "endpoint");
+        const auto timeout = call.Int(2);
+        try {
+            if (timeout < 0)
+                throw VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "timeout < 0"};
+            auto& net = c.vm.Network();
+            try {
+                net.GetSocket(socket).tls = true;
+            } catch (const NetworkRuntimeError&) {
+                net.CreateSocket(socket, true);
+            }
+            if (timeout > 0) net.SetTimeout(socket, timeout);
+            const auto host = InvokeGuest(c.vm, endpoint, "getHostName",
+                                          "()Ljava/lang/String;").ref;
+            const auto port = InvokeGuest(c.vm, endpoint, "getPort", "()I").AsInt();
+            if (!host.IsValid())
+                throw VmJavaThrow{"Ljava/net/UnknownHostException;", "unresolved socket endpoint"};
+            const auto host_name = c.vm.StringUtf8(host);
+            if (host_name.empty())
+                throw VmJavaThrow{"Ljava/net/UnknownHostException;", "unresolved socket endpoint"};
+            if (port < 0 || port > 65535)
+                throw VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "port out of range"};
+            const auto addresses = net.Resolve(host_name);
+            const auto depth = c.vm.ExecutionLock().ReleaseForBlocking();
+            try {
+                net.Connect(socket, {host_name, addresses.front(),
+                                     static_cast<std::uint16_t>(port)});
+                c.vm.ExecutionLock().ReacquireAfterBlocking(depth);
+            } catch (...) {
+                c.vm.ExecutionLock().ReacquireAfterBlocking(depth);
+                throw;
+            }
+        } catch (const NetworkRuntimeError& error) {
+            throw VmJavaThrow{"Ljava/net/SocketException;", error.what()};
+        }
+        return VmValue::Void();
+    });
+    b.StaticMethod("socketInput", "(Ljava/net/Socket;)Ljava/io/InputStream;", [](IntrinsicContext& c) {
+        const auto socket = IntrinsicCall(c).NonNullRef(0, "socket");
+        const auto stream = c.vm.NewIntrinsicInstance("Ljava/net/SocketInputStream;");
+        try {
+            c.vm.Network().BindStream(stream, socket, false);
+        } catch (const NetworkRuntimeError& error) {
+            throw VmJavaThrow{"Ljava/net/SocketException;", error.what()};
+        }
+        return VmValue::Ref(stream);
+    });
+    b.StaticMethod("socketOutput", "(Ljava/net/Socket;)Ljava/io/OutputStream;", [](IntrinsicContext& c) {
+        const auto socket = IntrinsicCall(c).NonNullRef(0, "socket");
+        const auto stream = c.vm.NewIntrinsicInstance("Ljava/net/SocketOutputStream;");
+        try {
+            c.vm.Network().BindStream(stream, socket, true);
+        } catch (const NetworkRuntimeError& error) {
+            throw VmJavaThrow{"Ljava/net/SocketException;", error.what()};
+        }
+        return VmValue::Ref(stream);
+    });
     b.StaticMethod("requireTls", "(Ljava/lang/String;)V", [](IntrinsicContext& c) {
         const auto host = IntrinsicCall(c).NonNullRef(0, "host");
         try {
@@ -446,6 +507,7 @@ IntrinsicClassDecl NativeTlsBoundary() {
         }
         return VmValue::Void();
     });
+    b.GuestNativeStatic("seed", "([B)V");
     b.GuestNativeStatic("createContext", "([Ljava/lang/String;[Ljava/lang/String;)J");
     b.GuestNativeStatic("createSsl", "(JLjava/lang/String;)J");
     b.GuestNativeStatic("setClientKey", "(J[B[B)V");

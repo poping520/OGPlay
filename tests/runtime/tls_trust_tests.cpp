@@ -736,8 +736,14 @@ TEST_CASE("TLS-02 client handshake HTTPS layered autoClose") {
                                      "()Ljava/net/URLConnection;").ref;
         CHECK(app.Linker().Class(app.Vm().Model().ObjectClass(connection)).descriptor ==
               "Lorg/ogplay/security/OgPlayHttpsURLConnection;");
-        auto code = app.Invoke(connection, "getResponseCode", "()I");
-        CHECK(code.AsInt() == 200);
+        auto opened_connect = app.InvokeResult(connection, "connect", "()V");
+        REQUIRE_MESSAGE(!opened_connect.exception.IsValid(), opened_connect.exception_message);
+        auto body_result = app.InvokeResult(connection, "getInputStream",
+                                            "()Ljava/io/InputStream;");
+        REQUIRE_MESSAGE(!body_result.exception.IsValid(), body_result.exception_message);
+        auto code = app.InvokeResult(connection, "getResponseCode", "()I");
+        REQUIRE_MESSAGE(!code.exception.IsValid(), code.exception_message);
+        CHECK(code.value.AsInt() == 200);
         auto body = app.Invoke(connection, "getInputStream", "()Ljava/io/InputStream;").ref;
         auto bytes = app.Vm().NewIntrinsicInstance("Ljava/io/ByteArrayOutputStream;");
         app.Direct("Ljava/io/ByteArrayOutputStream;", "<init>", "()V", {VmValue::Ref(bytes)});

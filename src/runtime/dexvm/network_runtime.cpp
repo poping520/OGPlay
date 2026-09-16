@@ -53,6 +53,7 @@ void NetworkRuntime::CreateSocket(const VmObjectRef owner, const bool tls) {
 void NetworkRuntime::Connect(const VmObjectRef owner, Endpoint endpoint) {
     auto& socket = GetSocket(owner);
     if (socket.closed) throw NetworkRuntimeError("socket is closed");
+    if (socket.connected) return;
     RequireAllowed(endpoint.host, socket.tls, false);
     // tls is a policy bit only; the injected transport always carries raw bytes.
     socket.channel = transport_->Connect(endpoint.host, endpoint.port, false);

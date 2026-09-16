@@ -2661,6 +2661,56 @@ TEST_CASE("DVM-105/169 AES and HmacSHA1 use BootDex and real guest libcrypto") {
     }
 }
 
+TEST_CASE("DVM-171 failed unified crypto JNI initialization aborts process creation") {
+    using namespace ogplay;
+    runtime::VirtualFileSystem filesystem;
+    core::CapabilityLedger ledger;
+    core::Logger logger;
+    std::vector<std::vector<std::byte>> contents;
+    std::vector<runtime::BionicModuleSource> libraries;
+    for (const auto name : {"libc.so", "libm.so", "libdl.so", "libstdc++.so", "libz.so",
+                            "libcrypto.so", "libgabi++.so", "libicui18n.so", "libicuuc.so",
+                            "libstlport.so"}) {
+        std::ifstream stream(std::string(OGPLAY_SOURCE_DIR) + "/data/android/19/lib/" + name,
+                             std::ios::binary);
+        REQUIRE_MESSAGE(stream.good(), name);
+        std::vector<char> data{std::istreambuf_iterator<char>(stream), {}};
+        contents.emplace_back(data.size());
+        std::transform(data.begin(), data.end(), contents.back().begin(),
+                       [](char c) { return static_cast<std::byte>(c); });
+        libraries.push_back({name, contents.back()});
+    }
+    contents.push_back(AppElf(
+        {"libogplay_jni.so", "", 0x00090009U, false}));
+    libraries.push_back({"libogplay_jni.so", contents.back()});
+
+    auto context = std::make_shared<runtime::DexVmAndroidContext>();
+    context->apk_bytes = {std::byte{0x50}, std::byte{0x4b}, std::byte{3}, std::byte{4}};
+    session::AndroidAppProcessRequest request;
+    request.manifest = AppManifest("fixture.MainActivity");
+    request.system_libraries = libraries;
+    request.dex_bytes = ReadDexFixture("cipher.dex");
+    request.icu_data = ReadPayloadBytes("icu/icudt51l.dat");
+    request.boot_dex_bytes = test::ReadBootDex();
+    request.context = context;
+    request.surface_width = 64;
+    request.surface_height = 36;
+    request.maximum_ticks_per_call = UINT64_C(100000000);
+    request.filesystem = &filesystem;
+    request.ledger = &ledger;
+    request.logger = &logger;
+
+    try {
+        static_cast<void>(session::AndroidAppProcess::Create(std::move(request)));
+        FAIL("invalid unified JNI initialization unexpectedly succeeded");
+    } catch (const session::AndroidAppProcessError& error) {
+        CHECK(std::string(error.what()).find(
+                  "API 19 guest JNI initialization failed") != std::string::npos);
+        CHECK(std::string(error.what()).find(
+                  "unsupported JNI version") != std::string::npos);
+    }
+}
+
 TEST_CASE("DVM-106 Certificate parses DER PEM and verifies RSA EC through guest OpenSSL") {
     using namespace ogplay;
     using namespace runtime::dexvm;

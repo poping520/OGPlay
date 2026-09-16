@@ -6,7 +6,8 @@
 
 - [DVM-171](../tasks/dexvm/DVM-171.md)：固定 API 19 原版 `NativeCrypto` 及精确依赖进入
   BootDex，删除 C++ 手工类壳；原版 217 个 native 中 26 个沿用既有后端、1 个为初始化适配、
-  190 个明确失败。资源登记归 VM，私有验签移出原版 ABI。BootDex 现为 1542 类。
+  190 个明确失败。资源登记归 VM，私有验签移出原版 ABI；初始化失败传播和 payload 来源
+  固定均已受检。BootDex 现为 1542 类。
 - [KeyStore 通用能力规划](../design/dexvm/13-keystore.md)已落地：原版 JCA、自有 BKS
   Provider、既有 guest crypto，覆盖真实密钥保护、文件互操作及持久化；ADR-0064 确认方向。
   当前仅规划，KS-01..09 尚未实施；KeyStore、BKS 与 TLS/PKIX 的运行时能力状态未变。

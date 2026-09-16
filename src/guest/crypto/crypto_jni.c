@@ -11,6 +11,8 @@ extern void *malloc(size_t);
 extern void free(void *);
 extern int ogplay_icu_on_load(JNIEnv *env);
 extern void ogplay_icu_release(void);
+extern int ogplay_tls_on_load(void);
+extern void ogplay_tls_on_unload(void);
 /* bionic API 19 pthread_mutex_t is one 32-bit word; static initializer is 0. */
 extern int pthread_mutex_lock(int *);
 extern int pthread_mutex_unlock(int *);
@@ -390,6 +392,7 @@ __attribute__((destructor)) static void release_contexts(void) {
     release_mac_keys();
     release_private_keys();
     release_crypto_locks();
+    ogplay_tls_on_unload();
     ogplay_icu_release();
 }
 
@@ -435,7 +438,7 @@ int JNI_OnLoad(JavaVM *vm, void *reserved) {
     JNIEnv *env = 0;
     if (((int (*)(JavaVM *, void **, int))((*vm)[6]))(
             vm, (void **)&env, 0x00010006) != 0 ||
-        !env || !ogplay_icu_on_load(env))
+        !env || !ogplay_icu_on_load(env) || !ogplay_tls_on_load())
         return -1;
     crypto_lock_count = CRYPTO_num_locks();
     crypto_locks = malloc((size_t)crypto_lock_count * sizeof(int));

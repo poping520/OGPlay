@@ -1537,22 +1537,22 @@ note = "DVM-87 的 FutureTask、串行 executor 继续复用 VmThreadRuntime。D
 
 [dexvm.java_network]
 status = "complete"
-test = "tests/dexvm/dvm88_tests.cpp; tests/dexvm/bootdex_library_tests.cpp: DVM-103/DVM-149; Angry Birds no-Profile smoke"
-note = "ProxySelector 采用无进程代理 intrinsic，getDefault 返回 null。DVM-153 将 URI/UrlUtils、DVM-152 将 InetAddress 闭包迁入 BootDex。DVM-164 将 URLConnection/HttpURLConnection/HttpsURLConnection、NoPreloadHolder 与默认 hostname verifier Java 状态迁入 API19 BootDex，删除重复 Https C++ 类壳；仅 connect/disconnect/input 和 SSL factory/context 保留 NetworkRuntime 边界。NetworkPolicy 默认 disabled，离线 TLS 分层创建抛 SocketException，不启用网络或伪造握手/证书。真实 TLS transport、PKIX 与剩余 SSL provider 普通状态仍未实现。"
+test = "tests/dexvm/network_sqlite_tests.cpp; tests/dexvm/bootdex_library_tests.cpp: DVM-103/DVM-149; Angry Birds no-Profile smoke"
+note = "ProxySelector 采用无进程代理 intrinsic，getDefault 返回 null。DVM-153 将 URI/UrlUtils、DVM-152 将 InetAddress 闭包迁入 BootDex。DVM-164 将 URLConnection/HttpURLConnection/HttpsURLConnection、NoPreloadHolder 与默认 hostname verifier Java 状态迁入 API19 BootDex，删除重复 Https C++ 类壳；仅 connect/disconnect/input 和 SSL factory/context 保留 NetworkRuntime 边界。NetworkPolicy 默认 disabled。DVM-173 将 HTTPS 出口接到 OGPlayJSSE；客户端握手尚未闭合，不启用公网、不伪造握手/证书。"
 
 [dexvm.apache_http_bootdex]
 status = "partial"
 test = "tests/dexvm/bootdex_library_tests.cpp: DVM-149"
-note = "DVM-149 从固定 API19 ext.jar 选入 Terms/Restlet 有界闭包，并扩展为完整 org.apache.http.entity 包 12 类；Apache HTTP entity 全由 AOSP Java 字节码执行，Commons Logging 的反射实现类显式入集。DVM-164 加入 URLConnection/HTTP/HTTPS Java 状态后当前 BootDex 1531 类。BasicHttpParams、SchemeRegistry、ThreadSafeClientConnManager、DefaultHttpClient 与日志写出已有双后端覆盖。java.net 仍受 NetworkRuntime policy/transport 约束；TLS transport/PKIX 未启用，完整在线请求未验收。URLEncodedUtils 仍未纳入。"
+note = "DVM-149 从固定 API19 ext.jar 选入 Terms/Restlet 有界闭包，并扩展为完整 org.apache.http.entity 包 12 类；Apache HTTP entity 全由 AOSP Java 字节码执行，Commons Logging 的反射实现类显式入集。DVM-164 加入 URLConnection/HTTP/HTTPS Java 状态后当前 BootDex 1531 类。BasicHttpParams、SchemeRegistry、ThreadSafeClientConnManager、DefaultHttpClient 与日志写出已有双后端覆盖。java.net 仍受 NetworkRuntime policy/transport 约束；DVM-173 使 Apache HTTPS 与 OGPlayJSSE 共用 raw transport，但客户端握手未绿，完整在线请求未验收。URLEncodedUtils 仍未纳入。"
 
 [dexvm.sqlite_vfs]
 status = "complete"
-test = "tests/dexvm/dvm88_tests.cpp"
+test = "tests/dexvm/network_sqlite_tests.cpp"
 note = "DVM-88 发布 ContentValues、CursorImpl、SQLiteDatabase/SQLiteOpenHelper 的 create/drop/insert/update/delete/query bounded 数据面；确定性内部格式只经 guest VFS 持久化 schema version，SQLiteHelper 首次创建与升级虚派 guest callback，只有 Stat ENOENT 作为新库；完整 SQLite 文件格式、SQL parser、transaction/index/trigger/ContentProvider deferred"
 
 [dexvm.api19_capability_stack]
 status = "complete"
-test = "tests/dexvm/dvm88_tests.cpp; ctest --preset windows-msvc"
+test = "tests/dexvm/network_sqlite_tests.cpp; ctest --preset windows-msvc"
 note = "DVM-80..88 计划的 family ownership、Context、NIO/direct buffer、Java GLES bounded facade、AudioTrack、统一 Clock/scheduler、value services、Java P1、network policy 与 VFS database 均有机器测试；complete 仅指设计文档定义的 bounded 阶段闭包，不表示 Android framework 全量或 title 可玩/在线"
 
 [dexvm.gap_survey]
@@ -1653,7 +1653,7 @@ note = "API 19 Context.checkPermission(String,int,int) 在单 guest 进程内校
 [dexvm.certificate_x509]
 status = "complete"
 test = "tests/runtime/native_library_loader_tests.cpp; tests/dexvm/bootdex_library_tests.cpp; tests/runtime/jni_object_array_tests.cpp; tools.android_payload_current"
-note = "DVM-106/ADR-0036 完成 Certificate/X509Certificate/CertificateFactory 与 Harmony ASN.1/X.509/PKCS7 选入；解析、属性、verify、javax 旧 API 和路径编解码执行 BootDex。AndroidOpenSSL 的有界 SignatureSpi 仅保留普通 guest 公钥快照和消息流，经 ARM JNI/EVP 真实验证 RSA PKCS#1 v1.5/ECDSA 与 SHA1/224/256/384/512 的 10 个组合，单条消息最多 1 MiB。DER/PEM/证书集合、长序列号、有效期/扩展、编码公钥、PkiPath/PKCS7、证书链/错误公钥/篡改/未知算法/超限及 GC 后复用双后端受检，JNI 嵌套数组使用 VM 类型关系并拒绝非法写入。complete 不代表 PKIX 信任、CA/撤销/TLS、签名生成、PSS/DSA/EdDSA、RSA Cipher 或 RSA/EC KeyFactory/数学公钥接口；未跑真机/跨平台/游戏 gate。 2026-09-07 ROM libcrypto 已撤出 Git，后按用户再次授权恢复到本地临时使用，完整 payload 校验通过；仍须自行构建替换并更新来源/哈希后复验。"
+note = "DVM-106/ADR-0036 完成 Certificate/X509Certificate/CertificateFactory 与 Harmony ASN.1/X.509/PKCS7 选入；解析、属性、verify、javax 旧 API 和路径编解码执行 BootDex。AndroidOpenSSL 的有界 SignatureSpi 仅保留普通 guest 公钥快照和消息流，经 ARM JNI/EVP 真实验证 RSA PKCS#1 v1.5/ECDSA 与 SHA1/224/256/384/512 的 10 个组合，单条消息最多 1 MiB。DER/PEM/证书集合、长序列号、有效期/扩展、编码公钥、PkiPath/PKCS7、证书链/错误公钥/篡改/未知算法/超限及 GC 后复用双后端受检，JNI 嵌套数组使用 VM 类型关系并拒绝非法写入。complete 不代表通用 CertPathValidator.PKIX、公开互联网 CA、撤销或 TLS 握手；TrustManager 路径验证见 DVM-173。未跑真机/跨平台/游戏 gate。 2026-09-07 ROM libcrypto 已撤出 Git，后按用户再次授权恢复到本地临时使用，完整 payload 校验通过；仍须自行构建替换并更新来源/哈希后复验。"
 
 [dexvm.framework_value_bootdex]
 status = "complete"
@@ -1693,7 +1693,37 @@ note = "DVM-172：Java PKCS#12 SHA-1 KDF、HMAC-SHA1、BKS v2 写出及 v0/v1/v2
 [dexvm.bks_key_protection]
 status = "complete"
 test = "tests/runtime/native_library_loader_tests.cpp: DVM-172; tests/fixtures/keystore/old-pbe-bc146.bks.b64; tests/fixtures/keystore/broken-pbe-bc146.bks.b64"
-note = "DVM-172：标准 SHA/3-key TripleDES 写出/恢复及 Broken faulty-parity、Old PKCS12 mixer 历史回退调用 guest libcrypto；支持 AES RAW secret 与 RSA/EC PKCS#8 private key、证书链和两种 setKeyEntry 重载。私钥 EVP token 有独立类型、引用、GC/teardown 释放。DSA、X.509 public-key entry 和其他算法明确失败；不代表签名生成或 TLS client auth。"
+note = "DVM-172：标准 SHA/3-key TripleDES 写出/恢复及 Broken faulty-parity、Old PKCS12 mixer 历史回退调用 guest libcrypto；支持 AES RAW secret 与 RSA/EC PKCS#8 private key、证书链和两种 setKeyEntry 重载。私钥 EVP token 有独立类型、引用、GC/teardown 释放。DSA、X.509 public-key entry 和其他算法明确失败；TLS client auth 另见 DVM-173，当前握手未闭合。"
+
+[dexvm.trust_manager_factory]
+status = "complete"
+test = "tests/runtime/tls_trust_tests.cpp: TLS-01"
+note = "DVM-173 TLS-01：OGPlayJSSE 发布 PKIX 与 X509 别名 TrustManagerFactory；init(显式 BKS) 与 init(null) 默认 CA、getAcceptedIssuers 快照、空库不信任任意远端、AndroidCAStore 只读写失败均受检。complete 仅指 TrustManager 服务，不包含通用 CertPathValidator.PKIX 或公开互联网 CA。"
+
+[dexvm.x509_trust_validation]
+status = "complete"
+test = "tests/runtime/tls_trust_tests.cpp: TLS-01"
+note = "DVM-173：guest libcrypto X509_verify_cert 做真实路径验证；packed [B] JNI、固定校验时间 1704067200、正反矩阵（过期/未生效/非 CA/pathLen/EKU/NameConstraints/关键扩展/交叉签名/受信任叶/同主题不同 key/authType）双解释器通过。Harmony DER 在 encodedCopy 钉死独立副本。不联网 AIA/OCSP/CRL。"
+
+[dexvm.android_ca_store]
+status = "complete"
+test = "tests/runtime/tls_trust_tests.cpp: TLS-01"
+note = "DVM-173：只读 AndroidCAStore 从 /system/etc/security/cacerts.ogplay 加载版本化 OGPLAYCA 包；缺包/损坏时 TrustManagerFactory.init(null) 失败，不读宿主证书。写/删抛 UnsupportedOperationException。当前包是测试根，不是公开信任列表。"
+
+[dexvm.tls_client]
+status = "partial"
+test = "tests/runtime/tls_trust_tests.cpp: TLS-02"
+note = "DVM-173 TLS-02：OGPlayJSSE SSLContext/SSLSocket/session 与 guest libssl 内存 BIO、raw NetworkRuntime 已接线；默认网络关闭受检。loopback 握手首次 SSL_do_handshake 返回 SSL_ERROR_SYSCALL 且 ClientHello 未发出，不能标 complete。SSLEngine 与 server TLS 明确失败。"
+
+[dexvm.tls_client_auth]
+status = "partial"
+test = "tests/runtime/tls_trust_tests.cpp: TLS-02 mutual TLS"
+note = "DVM-173：BKS KeyManager 可安装 RSA 客户端证书；mTLS 定向用例因握手 SYSCALL 未绿。EC client auth 未跑通。"
+
+[dexvm.https_transport]
+status = "partial"
+test = "tests/runtime/tls_trust_tests.cpp: TLS-02"
+note = "DVM-173：HttpsURLConnection 与 Apache HTTPS 出口接到同一 OGPlayJSSE。默认离线 UnknownHostException 受检。loopback HTTPS 因握手未闭合未绿。公开互联网 HTTPS 被 TLS-03 的 CA/OpenSSL 1.0.1 维护条件阻塞，不能据本地接线发布。"
 
 [dexvm.object_stream_bootdex]
 status = "complete"

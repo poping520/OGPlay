@@ -343,6 +343,8 @@ def validate(root: Path) -> None:
             build = entry.get("build")
             expected_sources = [
                 "src/guest/crypto/crypto_jni.c",
+                "src/guest/crypto/trust_jni.c",
+                "src/guest/crypto/tls_jni.c",
                 "src/guest/icu/icu_jni.c",
                 "src/guest/icu/icu51_capi.h",
             ]
@@ -367,7 +369,7 @@ def validate(root: Path) -> None:
             inputs = build.get("inputs")
             expected_inputs = {
                 path: libraries[path]["sha256"]
-                for path in ("lib/libcrypto.so", "lib/libicuuc.so",
+                for path in ("lib/libssl.so", "lib/libcrypto.so", "lib/libicuuc.so",
                              "lib/libicui18n.so")
             }
             icu = _mapping(manifest.get("icu"), "icu")

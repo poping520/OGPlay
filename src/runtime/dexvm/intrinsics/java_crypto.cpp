@@ -8,6 +8,8 @@ using namespace detail;
 constexpr auto kNative = "Lcom/android/org/conscrypt/NativeCrypto;";
 constexpr auto kVerificationNative = "Lorg/ogplay/security/NativeVerification;";
 constexpr auto kKeyStoreNative = "Lorg/ogplay/security/NativeKeyStoreCrypto;";
+constexpr auto kTrustNative = "Lorg/ogplay/security/NativeTrust;";
+constexpr auto kTlsNative = "Lorg/ogplay/security/NativeTls;";
 constexpr auto kProvider = "Lcom/android/org/conscrypt/OpenSSLProvider;";
 
 struct SignatureAlgorithm {
@@ -57,7 +59,10 @@ IntrinsicClassDecl SecurityConfiguration() {
         Put(vm, props, "security.provider.2",
             "org.apache.harmony.security.provider.cert.DRLCertFactory");
         Put(vm, props, "security.provider.3", "org.ogplay.security.OgPlayKeyStoreProvider");
+        Put(vm, props, "security.provider.4", "org.ogplay.security.OgPlayJsseProvider");
         Put(vm, props, "keystore.type", "BKS");
+        Put(vm, props, "ssl.TrustManagerFactory.algorithm", "PKIX");
+        Put(vm, props, "ssl.KeyManagerFactory.algorithm", "PKIX");
         const auto door = Construct(vm, "Ljava/security/Security$SecurityDoor;");
         vm.SetIntrinsicStaticRef("Lorg/apache/harmony/security/fortress/Engine;", "door",
                                  "Lorg/apache/harmony/security/fortress/SecurityAccess;", door);
@@ -342,6 +347,123 @@ IntrinsicClassDecl NativeKeyStoreBoundary() {
     b.GuestNativeStatic("freePrivateKey", "(J)V");
     return std::move(b).Build();
 }
+[[nodiscard]] VmObjectRef InstanceRefField(Interpreter& vm, VmObjectRef object, const char* name,
+                                           const char* descriptor) {
+    if (!object.IsValid() || vm.Model().Kind(object) != VmObjectKind::vm_instance) {
+        return VmObjectRef{};
+    }
+    const auto field = vm.Linker().FindFieldRecursive(vm.Model().ObjectClass(object), name,
+                                                      descriptor);
+    if (!field) return VmObjectRef{};
+    const auto& linked = vm.Linker().Field(*field);
+    const auto slots = vm.Model().InstanceSlots(object);
+    if (!linked.is_ref || linked.slot >= slots.size()) return VmObjectRef{};
+    return VmObjectRef(slots[linked.slot].bits);
+}
+
+bool SetInstanceRefField(Interpreter& vm, VmObjectRef object, const char* name,
+                         const char* descriptor, VmObjectRef value) {
+    if (!object.IsValid() || vm.Model().Kind(object) != VmObjectKind::vm_instance) return false;
+    const auto field = vm.Linker().FindFieldRecursive(vm.Model().ObjectClass(object), name,
+                                                      descriptor);
+    if (!field) return false;
+    const auto& linked = vm.Linker().Field(*field);
+    auto slots = vm.Model().InstanceSlots(object);
+    if (!linked.is_ref || linked.slot >= slots.size()) return false;
+    slots[linked.slot] = {value.Value(), SlotTag::ref};
+    return true;
+}
+
+[[nodiscard]] VmObjectRef CopyByteArray(Interpreter& vm, VmObjectRef source) {
+    if (!source.IsValid()) return VmObjectRef{};
+    const auto length = vm.Model().ArrayLength(source);
+    auto copy = vm.Model().NewPrimitiveArray(vm.Linker().ResolveDescriptor("[B"),
+                                             JniPrimitiveKind::byte, length);
+    if (length > 0) {
+        vm.Model().WriteByteRegion(copy, 0, vm.Model().ReadByteRegion(source, 0, length));
+    }
+    return copy;
+}
+
+// Harmony X509CertImpl.getEncoded clones a cached DER. Nested invokevirtual of that
+// clone returns a different array than a top-level Call; copy the ASN.1 encoding
+// field through the object model instead.
+[[nodiscard]] VmObjectRef CopyHarmonyCertEncoding(Interpreter& vm, VmObjectRef cert) {
+    const auto pinned = vm.ProtectReferences(std::array{cert});
+    auto encoding = InstanceRefField(vm, cert, "encoding", "[B");
+    if (!encoding.IsValid()) {
+        const auto inner = InstanceRefField(vm, cert, "certificate",
+                                            "Lorg/apache/harmony/security/x509/Certificate;");
+        encoding = InstanceRefField(vm, inner, "encoding", "[B");
+        if (!encoding.IsValid() && inner.IsValid()) {
+            encoding = InvokeGuest(vm, inner, "getEncoded", "()[B").ref;
+        }
+    }
+    if (!encoding.IsValid()) {
+        throw VmJavaThrow{"Ljava/security/cert/CertificateException;",
+                          "certificate encoding is missing"};
+    }
+    const auto copy = CopyByteArray(vm, encoding);
+    const auto keep = vm.ProtectReferences(std::array{cert, encoding, copy});
+    if (!copy.IsValid()) {
+        throw VmJavaThrow{"Ljava/security/cert/CertificateException;",
+                          "certificate encoding is missing"};
+    }
+    // Harmony's ASN.1 decoder/cache may retain a shared input encoding.  Pin a
+    // certificate-owned snapshot on first boundary crossing so later decodes
+    // cannot change the DER observed by TrustManager.
+    static_cast<void>(SetInstanceRefField(vm, cert, "encoding", "[B", copy));
+    return copy;
+}
+
+IntrinsicClassDecl NativeTrustBoundary() {
+    auto b = IntrinsicClassBuilder::Class(kTrustNative);
+    b.GuestNativeStatic("subjectHashOld", "([B)I");
+    b.GuestNativeStatic("verifyPath", "([B[B[BLjava/lang/String;)Z");
+    b.StaticMethod("encodedCopy", "(Ljava/security/cert/X509Certificate;)[B", [](IntrinsicContext& c) {
+        return VmValue::Ref(
+            CopyHarmonyCertEncoding(c.vm, IntrinsicCall(c).NonNullRef(0, "certificate")));
+    });
+    return std::move(b).Build();
+}
+IntrinsicClassDecl NativeTlsBoundary() {
+    auto b = IntrinsicClassBuilder::Class(kTlsNative);
+    b.StaticMethod("markTls", "(Ljava/net/Socket;)V", [](IntrinsicContext& c) {
+        const auto socket = IntrinsicCall(c).NonNullRef(0, "socket");
+        try {
+            c.vm.Network().GetSocket(socket).tls = true;
+        } catch (const NetworkRuntimeError&) {
+            c.vm.Network().CreateSocket(socket, true);
+        }
+        return VmValue::Void();
+    });
+    b.StaticMethod("requireTls", "(Ljava/lang/String;)V", [](IntrinsicContext& c) {
+        const auto host = IntrinsicCall(c).NonNullRef(0, "host");
+        try {
+            c.vm.Network().RequireTls(c.vm.StringUtf8(host));
+        } catch (const NetworkRuntimeError& error) {
+            throw VmJavaThrow{"Ljava/net/SocketException;", error.what()};
+        }
+        return VmValue::Void();
+    });
+    b.GuestNativeStatic("createContext", "([Ljava/lang/String;[Ljava/lang/String;)J");
+    b.GuestNativeStatic("createSsl", "(JLjava/lang/String;)J");
+    b.GuestNativeStatic("setClientKey", "(J[B[B)V");
+    b.GuestNativeStatic("handshake", "(JLjava/lang/Object;Z)I");
+    b.GuestNativeStatic("peerCertificates", "(J)[B");
+    b.GuestNativeStatic("protocol", "(J)Ljava/lang/String;");
+    b.GuestNativeStatic("cipherSuite", "(J)Ljava/lang/String;");
+    b.GuestNativeStatic("read", "(J[BII)I");
+    b.GuestNativeStatic("write", "(J[BII)I");
+    b.GuestNativeStatic("pullWire", "(J)[B");
+    b.GuestNativeStatic("pushWire", "(J[BII)V");
+    b.GuestNativeStatic("shutdown", "(J)I");
+    b.GuestNativeStatic("freeSsl", "(J)V");
+    b.GuestNativeStatic("freeContext", "(J)V");
+    b.GuestNativeStatic("supportedCipherSuites", "()[Ljava/lang/String;");
+    b.GuestNativeStatic("defaultCipherSuites", "()[Ljava/lang/String;");
+    return std::move(b).Build();
+}
 IntrinsicClassDecl NativeCryptoGuestAdmission() {
     auto b = IntrinsicClassBuilder::Class(kNative);
     b.AdmitBootNativeMethods();
@@ -428,6 +550,8 @@ void AppendJavaCrypto(std::vector<IntrinsicClassDecl>& catalog,
     catalog.push_back(NativeCryptoGuestAdmission());
     catalog.push_back(NativeVerificationBoundary());
     catalog.push_back(NativeKeyStoreBoundary());
+    catalog.push_back(NativeTrustBoundary());
+    catalog.push_back(NativeTlsBoundary());
     catalog.push_back(CipherContext());
     for (const auto& entry : kSignatures) catalog.push_back(VerificationSpi(entry.algorithm));
 }

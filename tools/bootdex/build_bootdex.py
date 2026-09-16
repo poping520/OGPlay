@@ -33,12 +33,29 @@ AUDIT_REPORT = ROOT / ".local/dvm102-date-family-audit.json"
 NATIVE_CRYPTO_AUDIT_REPORT = ROOT / ".local/nativecrypto-api19-audit.json"
 JAVA_SOURCE_ROOT = ROOT / "src/guest/crypto/java"
 JAVA_SOURCE_NAMES = (
+    "org/ogplay/security/AndroidCaStoreSpi.java",
     "org/ogplay/security/BksKeyStoreSpi.java",
     "org/ogplay/security/BksLimits.java",
     "org/ogplay/security/BksPrivateKey.java",
+    "org/ogplay/security/CaBundle.java",
     "org/ogplay/security/NativeKeyStoreCrypto.java",
+    "org/ogplay/security/NativeTls.java",
+    "org/ogplay/security/NativeTrust.java",
+    "org/ogplay/security/OgPlayHttpsURLConnection.java",
+    "org/ogplay/security/OgPlayHttpURLConnection.java",
+    "org/ogplay/security/OgPlayJsseProvider.java",
+    "org/ogplay/security/OgPlayKeyManager.java",
+    "org/ogplay/security/OgPlayKeyManagerFactorySpi.java",
     "org/ogplay/security/OgPlayKeyStoreProvider.java",
+    "org/ogplay/security/OgPlaySslContextSpi.java",
+    "org/ogplay/security/OgPlaySslSession.java",
+    "org/ogplay/security/OgPlaySslSessionContext.java",
+    "org/ogplay/security/OgPlaySslSocket.java",
+    "org/ogplay/security/OgPlaySslSocketFactory.java",
     "org/ogplay/security/Pkcs12Kdf.java",
+    "org/ogplay/security/PkixTrustManagerFactorySpi.java",
+    "org/ogplay/security/TrustLimits.java",
+    "org/ogplay/security/X509TrustManagerImpl.java",
 )
 JAVAC = Path(os.environ.get(
     "OGPLAY_JAVAC", r"D:\01_software\jdk-17.0.2\bin\javac.exe"))
@@ -197,7 +214,7 @@ def compile_guest_java(work: Path) -> tuple[Path, tuple[str, ...]]:
         path.relative_to(JAVA_SOURCE_ROOT).as_posix()
         for path in sorted(JAVA_SOURCE_ROOT.rglob("*.java")))
     if observed != JAVA_SOURCE_NAMES:
-        raise BuildError("KeyStore Java source list changed")
+        raise BuildError("guest Java source list changed")
     if not all(path.is_file() for path in sources) or not JAVAC.is_file() or \
             not JAVA.is_file() or not ANDROID_JAR.is_file() or not D8_JAR.is_file():
         raise BuildError("KeyStore Java toolchain or sources are missing")
@@ -719,6 +736,7 @@ def self_test() -> int:
 
 
 CRYPTO_SHA256 = "7d38659dfd49d7a02d229a4712c5090fdfbdb3db9b6618b773bf86ace9703f2a"
+SSL_SHA256 = "8b1a7d20e405ff73edcaad592cf846f8e28b78bb446874208d65990b16d79734"
 ICUUC_SHA256 = "1e47c2d57db1573ac4f6c09a8b1b815ed89a72d0686c032d0916644a44e9acfd"
 ICUI18N_SHA256 = "08596ab1ed097f953cc681e4cc61e69c1cea5f639e9014f5789265923ccd5149"
 ICU_DATA_SHA256 = "8275408cb7161606c9a1b55edf12df538a7110ad53103a00f8ac7ba5b092a96f"
@@ -728,6 +746,7 @@ def build_guest_jni() -> int:
     """Build the unified API 19 ARM guest JNI library with NDK r25c."""
     inputs = {
         "lib/libcrypto.so": CRYPTO_SHA256,
+        "lib/libssl.so": SSL_SHA256,
         "lib/libicuuc.so": ICUUC_SHA256,
         "lib/libicui18n.so": ICUI18N_SHA256,
         "icu/icudt51l.dat": ICU_DATA_SHA256,
@@ -755,6 +774,8 @@ def build_guest_jni() -> int:
         if not tool.is_file():
             raise BuildError(f"NDK tool is missing: {tool}")
     sources = [ROOT / "src/guest/crypto/crypto_jni.c",
+               ROOT / "src/guest/crypto/trust_jni.c",
+               ROOT / "src/guest/crypto/tls_jni.c",
                ROOT / "src/guest/icu/icu_jni.c"]
     source_inputs = [*sources, ROOT / "src/guest/icu/icu51_capi.h"]
     for source in source_inputs:
@@ -772,6 +793,7 @@ def build_guest_jni() -> int:
         library = work / "libogplay_jni.so"
         run([str(linker), "-shared", "--hash-style=sysv", "-soname", library.name,
              "-z", "max-page-size=4096", "--no-undefined", *map(str, objects),
+             str(MANIFEST.parent / "lib/libssl.so"),
              str(MANIFEST.parent / "lib/libcrypto.so"),
              str(MANIFEST.parent / "lib/libicui18n.so"),
              str(MANIFEST.parent / "lib/libicuuc.so"),
@@ -783,7 +805,7 @@ def build_guest_jni() -> int:
         if any(value not in dynamic for value in required):
             raise BuildError("guest JNI ELF ABI or SONAME check failed")
         needed = re.findall(r"Shared library: \[([^]]+)\]", dynamic)
-        if needed != ["libcrypto.so", "libicui18n.so", "libicuuc.so", "libc.so"]:
+        if needed != ["libssl.so", "libcrypto.so", "libicui18n.so", "libicuuc.so", "libc.so"]:
             raise BuildError(f"unexpected guest JNI DT_NEEDED: {needed}")
         return library.read_bytes()
     with tempfile.TemporaryDirectory() as a, tempfile.TemporaryDirectory() as b:

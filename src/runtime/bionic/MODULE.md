@@ -39,7 +39,7 @@ integration。线程和 syscall 只通过上层装配接入。
 
 对应 `tests/runtime/bionic_*_tests.cpp`。
 
-DVM-122：API 19 guest 库包含 libcrypto、ICU/STLport 闭包和统一 libogplay_jni.so；API 22/23 保持五库。
+DVM-122：API 19 guest 库包含 libcrypto、libssl、ICU/STLport 闭包和统一 libogplay_jni.so；API 22/23 保持五库。
 统一桥作为普通 ARM ELF 执行，crypto 依赖复用 pinned libc，无宿主 EVP/AES
 替代。libcrypto 固定为 AOSP android-4.4.4_r2.0.1 的 platform/external/openssl 源码构建，
 ICU 桥只调用 ICU 51 C ABI，不跨越 NDK libc++/API 19 STLport C++ ABI；精确来源、SONAME、

@@ -69,7 +69,7 @@ public:
     std::uint32_t close_count{};
 };
 
-struct Dvm88Vm final {
+struct NetworkSqliteVm final {
     JniStringStore strings;
     JniPrimitiveArrayStore arrays;
     JavaObjectModel model{strings, arrays};
@@ -84,7 +84,7 @@ struct Dvm88Vm final {
     std::int32_t helper_old_version{};
     std::int32_t helper_new_version{};
 
-    explicit Dvm88Vm(
+    explicit NetworkSqliteVm(
         const InterpreterBackend backend = InterpreterBackend::switch_dispatch)
         : vm([this]() -> DexClassLinker& {
               context->package_name = "test.game";
@@ -92,7 +92,7 @@ struct Dvm88Vm final {
               linker.RegisterIntrinsics(CoreIntrinsicCatalog());
               linker.RegisterIntrinsics(AndroidIntrinsicCatalog(context));
               auto helper = IntrinsicClassBuilder::Class(
-                  "Ltest/Dvm88OpenHelper;",
+                  "Ltest/SqliteOpenHelperFixture;",
                   "Landroid/database/sqlite/SQLiteOpenHelper;");
               helper.OverrideMethod("onCreate",
                   "(Landroid/database/sqlite/SQLiteDatabase;)V",
@@ -183,7 +183,7 @@ struct Dvm88Vm final {
     }
 
     VmObjectRef NewHelper(const std::string_view name, const std::int32_t version) {
-        const auto helper = vm.NewIntrinsicInstance("Ltest/Dvm88OpenHelper;");
+        const auto helper = vm.NewIntrinsicInstance("Ltest/SqliteOpenHelperFixture;");
         const auto constructor = linker.FindDirectMethod(
             linker.ResolveDescriptor("Landroid/database/sqlite/SQLiteOpenHelper;"),
             "<init>",
@@ -222,7 +222,7 @@ TEST_CASE("DVM-88 network runtime is offline unless explicitly injected") {
           std::vector<std::byte>{std::byte{'p'}, std::byte{'o'},
                                  std::byte{'n'}, std::byte{'g'}});
     CHECK(transport.connected == "game.test:443");
-    CHECK(transport.used_tls);
+    CHECK_FALSE(transport.used_tls);
     runtime.CloseSocket(VmObjectRef(1));
     CHECK(transport.closed == 7);
 }
@@ -243,7 +243,7 @@ TEST_CASE("DVM-152 API 19 InetAddress owns address state and uses bounded DNS") 
     for (const auto backend : {InterpreterBackend::switch_dispatch,
                                InterpreterBackend::threaded}) {
         CAPTURE(backend == InterpreterBackend::threaded ? "threaded" : "switch");
-        Dvm88Vm fixture(backend);
+        NetworkSqliteVm fixture(backend);
 
         const auto ipv4 = fixture.Static(
             "Ljava/net/InetAddress;", "getByName",
@@ -291,7 +291,7 @@ TEST_CASE("DVM-153 API 19 URI parses creates normalizes and resolves in BootDex"
     for (const auto backend : {InterpreterBackend::switch_dispatch,
                                InterpreterBackend::threaded}) {
         CAPTURE(backend == InterpreterBackend::threaded ? "threaded" : "switch");
-        Dvm88Vm fixture(backend);
+        NetworkSqliteVm fixture(backend);
         const auto input = fixture.vm.NewStringUtf8(
             "http://chillingo-terms.chillingocloud.com/a/../getLatest?q=x%20y#f");
         const auto uri = fixture.Static(
@@ -331,7 +331,7 @@ TEST_CASE("ProxySelector reports no process-wide proxy service") {
     for (const auto backend : {InterpreterBackend::switch_dispatch,
                                InterpreterBackend::threaded}) {
         CAPTURE(backend == InterpreterBackend::threaded ? "threaded" : "switch");
-        Dvm88Vm fixture(backend);
+        NetworkSqliteVm fixture(backend);
         const auto selector = fixture.Static(
             "Ljava/net/ProxySelector;", "getDefault",
             "()Ljava/net/ProxySelector;");
@@ -344,7 +344,7 @@ TEST_CASE("DVM-88 URL form codecs match API 19 UTF-8 behavior") {
                                InterpreterBackend::threaded}) {
         CAPTURE(backend == InterpreterBackend::threaded ? "threaded" :
                                                          "switch");
-        Dvm88Vm fixture(backend);
+        NetworkSqliteVm fixture(backend);
         const auto utf8 = fixture.vm.NewStringUtf8("UTF-8");
         const std::u16string clear{u'a', u' ', u'b', u'+', u'c', u'/',
                                    0x00e9U, 0xd83dU, 0xde00U};
@@ -405,7 +405,7 @@ TEST_CASE("DVM-88 URL parsing is value-only and offline failure starts at I/O") 
         CAPTURE(backend == InterpreterBackend::threaded ? "threaded" :
                                                          "switch");
         FakeNetwork transport;
-        Dvm88Vm fixture(backend);
+        NetworkSqliteVm fixture(backend);
         const auto url = fixture.New(
             "Ljava/net/URL;", "(Ljava/lang/String;)V",
             {VmValue::Ref(fixture.vm.NewStringUtf8(
@@ -479,7 +479,7 @@ TEST_CASE("DVM-88 URL parsing is value-only and offline failure starts at I/O") 
 
 TEST_CASE("DVM-88 SocketFactory exposes policy-gated common creation") {
     FakeNetwork transport;
-    Dvm88Vm fixture;
+    NetworkSqliteVm fixture;
     fixture.vm.Network().Configure(
         {true, false, false, {"game.test"}}, &transport);
     const auto factory = fixture.Static(
@@ -496,7 +496,7 @@ TEST_CASE("DVM-88 SocketFactory exposes policy-gated common creation") {
 }
 
 TEST_CASE("DVM-88 ContentValues SQLite query persists through guest VFS") {
-    Dvm88Vm fixture;
+    NetworkSqliteVm fixture;
     const auto path = fixture.vm.NewStringUtf8(
         "/data/data/test.game/databases/save.db");
     auto database = fixture.Static(
@@ -568,7 +568,7 @@ TEST_CASE("DVM-88 ContentValues SQLite query persists through guest VFS") {
 }
 
 TEST_CASE("DVM-88 SQLiteOpenHelper dispatches create and upgrade by version") {
-    Dvm88Vm fixture;
+    NetworkSqliteVm fixture;
     const auto first = fixture.NewHelper("lifecycle.db", 1);
     const auto database = fixture.On(
         first, "getWritableDatabase",
@@ -588,7 +588,7 @@ TEST_CASE("DVM-88 SQLiteOpenHelper dispatches create and upgrade by version") {
 }
 
 TEST_CASE("DVM-88 database open reports non-missing VFS failures") {
-    Dvm88Vm fixture;
+    NetworkSqliteVm fixture;
     const auto outcome = fixture.StaticOutcome(
         "Landroid/database/sqlite/SQLiteDatabase;", "openOrCreateDatabase",
         "(Ljava/lang/String;Landroid/database/sqlite/SQLiteDatabase$CursorFactory;)Landroid/database/sqlite/SQLiteDatabase;",
@@ -600,7 +600,7 @@ TEST_CASE("DVM-88 database open reports non-missing VFS failures") {
 }
 
 TEST_CASE("DVM-88 stage catalog keeps NIO GLES AudioTrack and data paths linkable") {
-    Dvm88Vm fixture;
+    NetworkSqliteVm fixture;
     for (const auto descriptor : {
              "Ljava/nio/ByteBuffer;", "Landroid/opengl/GLES20;",
              "Landroid/media/AudioTrack;", "Ljava/net/Socket;",

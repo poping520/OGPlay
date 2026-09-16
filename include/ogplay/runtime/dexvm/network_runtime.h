@@ -55,6 +55,12 @@ public:
                       std::span<const std::byte> bytes) = 0;
     [[nodiscard]] virtual std::vector<std::byte>
     Receive(std::uint64_t channel, std::size_t maximum) = 0;
+    [[nodiscard]] virtual std::vector<std::byte>
+    Receive(std::uint64_t channel, std::size_t maximum,
+            std::int32_t timeout_ms) {
+        static_cast<void>(timeout_ms);
+        return Receive(channel, maximum);
+    }
     virtual void Close(std::uint64_t channel) noexcept = 0;
     virtual void SendDatagram(const NetworkDatagram& datagram) = 0;
     [[nodiscard]] virtual NetworkDatagram ReceiveDatagram(
@@ -79,6 +85,7 @@ public:
         bool tls{};
         bool connected{};
         bool closed{};
+        std::int32_t timeout_ms{};
     };
     struct DatagramPacket final {
         VmObjectRef array;
@@ -94,6 +101,8 @@ public:
 
     void CreateSocket(VmObjectRef owner, bool tls = false);
     void Connect(VmObjectRef owner, Endpoint endpoint);
+    void RequireTls(std::string_view host);
+    void SetTimeout(VmObjectRef owner, std::int32_t timeout_ms);
     [[nodiscard]] Socket& GetSocket(VmObjectRef owner);
     [[nodiscard]] const Socket& GetSocket(VmObjectRef owner) const;
     void BindStream(VmObjectRef stream, VmObjectRef socket, bool output);

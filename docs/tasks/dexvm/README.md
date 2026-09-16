@@ -4,7 +4,8 @@
 本专项把设计展开为可分片执行的 WU 批次；编号沿用子系统缩写 `DVM-N`，
 创建后不移动、不重编号，依赖用文件名声明。
 
-当前能力专项：[KeyStore 通用能力](../../design/dexvm/13-keystore.md)（ADR-0064，已完成）。
+当前能力专项：[信任验证与 TLS](../../design/dexvm/14-tls-trust.md)（ADR-0066，规划完成）。
+前置 [KeyStore 通用能力](../../design/dexvm/13-keystore.md)（ADR-0064，已完成）。
 KS-01..09 已合并由 DVM-172 统一交付，不以游戏单条调用为范围。
 
 ## 目标
@@ -42,6 +43,7 @@ Asphalt 5（pilot title）删除 profile 全部 `native_call` 与 `[[java.class]
 | [DVM-170](DVM-170.md) | Activity 主线程投递与 JNI 清理顺序 | 完成 |
 | [DVM-171](DVM-171.md) | 原版 NativeCrypto 迁入 BootDex | 完成 |
 | [DVM-172](DVM-172.md) | 通用 KeyStore/BKS（KS-01..09） | 完成 |
+| [DVM-173](DVM-173.md) | 证书信任与客户端 TLS（TLS-01..03） | 规划完成，未实施 |
 | [DVM-151](DVM-151.md) | 三个 builder 的 Java 行为与状态迁入 BootDex | 完成 |
 | [DVM-1](DVM-1.md) | AOSP Dalvik 本地参考资料说明 | 完成 |
 | [DVM-2](DVM-2.md) | dex_dependency_survey 题库静态测量工具 | 完成 |

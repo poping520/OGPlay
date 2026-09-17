@@ -98,6 +98,15 @@ namespace {
            kAccFinal | kAccAbstract;
 }
 
+[[nodiscard]] bool IsEnumClass(IntrinsicContext& context,
+                               const DexClassId represented) {
+    const auto& linked = context.vm.Linker().Class(represented);
+    const auto enum_class =
+        context.vm.Linker().ResolveDescriptor("Ljava/lang/Enum;");
+    return linked.super == enum_class &&
+           (ClassModifiers(context, represented) & kAccEnum) != 0U;
+}
+
 [[nodiscard]] std::string SimpleName(IntrinsicContext& context,
                                      const DexClassId represented) {
     if (const auto component = ComponentType(context, represented);
@@ -480,13 +489,21 @@ IntrinsicClassDecl Declare_java_lang_Class(
             context.vm.Linker().Class(Represented(context)).descriptor) ? 1 : 0);
     });
     builder.VirtualMethod("isEnum", "()Z", [](IntrinsicContext& context) {
-        const auto represented = Represented(context);
-        const auto& linked = context.vm.Linker().Class(represented);
-        const auto enum_class = context.vm.Linker().ResolveDescriptor(
-            "Ljava/lang/Enum;");
-        return VmValue::Int(linked.super == enum_class &&
-            (ClassModifiers(context, represented) & kAccEnum) != 0U ? 1 : 0);
+        return VmValue::Int(IsEnumClass(context, Represented(context)) ? 1 : 0);
     });
+    builder.VirtualMethod("getEnumConstants", "()[Ljava/lang/Object;",
+        [](IntrinsicContext& context) {
+            const auto represented = Represented(context);
+            if (!IsEnumClass(context, represented)) {
+                return VmValue::Ref(VmObjectRef{});
+            }
+            const auto shared = context.vm.SharedEnumConstants(represented);
+            const auto roots =
+                context.vm.ProtectReferences(std::array{shared});
+            const auto clone = context.vm.Model().CloneObject(shared);
+            static_cast<void>(roots);
+            return VmValue::Ref(clone);
+        });
     builder.VirtualMethod("isSynthetic", "()Z", [](IntrinsicContext& context) {
         return VmValue::Int(
             (ClassModifiers(context, Represented(context)) & kAccSynthetic) != 0U

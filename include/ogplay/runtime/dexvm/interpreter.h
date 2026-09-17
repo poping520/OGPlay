@@ -24,6 +24,7 @@ class NioRuntime;
 class NetworkRuntime;
 class ZipRuntime;
 class UnsafeRuntime;
+class AnnotationRuntime;
 
 // Interpreter kernel (02 §7..§9): tagged frames, table dispatch, three-way
 // invoke routing (interpreted / intrinsic / native bridge), real exception
@@ -352,6 +353,7 @@ public:
     [[nodiscard]] ClassLoaderFacade& ClassLoaders() noexcept;
     [[nodiscard]] ReflectionRuntime& Reflection() noexcept;
     [[nodiscard]] UnsafeRuntime& Unsafe() noexcept;
+    [[nodiscard]] AnnotationRuntime& Annotations() noexcept;
     [[nodiscard]] const InterpreterStats& Stats() const noexcept;
 
     // DVM-52 diagnostics. Filtering and descriptor formatting happen only

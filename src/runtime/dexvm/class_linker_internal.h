@@ -85,6 +85,7 @@ public:
     // report order is deterministic.
     bool gap_survey{};
     std::map<std::string, std::uint32_t> survey_hits;
+    std::uint32_t next_annotation_impl{};
 
     [[nodiscard]] DexUnit& UnitAt(const DexUnitId id) {
         if (!id.IsValid() || id.value > dex_units.size()) {

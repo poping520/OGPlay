@@ -401,3 +401,48 @@ TEST_CASE("DEX parser preserves runtime-visible field marker annotations") {
     CHECK(image.types[annotation.type_index].descriptor == "Lreflect/Marker;");
     CHECK_FALSE(annotation.has_elements);
 }
+
+TEST_CASE("DEX parser preserves class runtime annotations and defaults") {
+    const auto image =
+        ogplay::loader::ParseDex(ReadDexFixture("class_annotation.dex"));
+    const auto host = std::find_if(
+        image.classes.begin(), image.classes.end(), [&](const auto& item) {
+            return image.types[item.class_type_index].descriptor == "Lann/Host;";
+        });
+    REQUIRE(host != image.classes.end());
+    const auto index = static_cast<std::size_t>(host - image.classes.begin());
+    const auto& meta = image.class_annotation_metadata[index];
+    REQUIRE(meta.runtime_annotations.size() == 3U);
+    CHECK_FALSE(meta.annotation_default.has_value());
+
+    const auto named = std::find_if(
+        image.classes.begin(), image.classes.end(), [&](const auto& item) {
+            return image.types[item.class_type_index].descriptor ==
+                   "Lann/Named;";
+        });
+    REQUIRE(named != image.classes.end());
+    const auto named_index =
+        static_cast<std::size_t>(named - image.classes.begin());
+    REQUIRE(image.class_annotation_metadata[named_index]
+                .annotation_default.has_value());
+    const auto& defaults =
+        *image.class_annotation_metadata[named_index].annotation_default;
+    CHECK(image.types[defaults.type_index].descriptor == "Lann/Named;");
+    CHECK(defaults.elements.size() == 2U);
+}
+
+TEST_CASE("DEX class annotations reject invalid visibility") {
+    auto invalid = ReadDexFixture("class_annotation.dex");
+    const auto image = ogplay::loader::ParseDex(invalid);
+    const auto host = std::find_if(
+        image.classes.begin(), image.classes.end(), [&](const auto& item) {
+            return image.types[item.class_type_index].descriptor == "Lann/Host;";
+        });
+    REQUIRE(host != image.classes.end());
+    const auto annotation_set = Read32(invalid, host->annotations_offset);
+    REQUIRE(Read32(invalid, annotation_set) != 0U);
+    const auto annotation_item = Read32(invalid, annotation_set + 4U);
+    invalid[annotation_item] = 3U;
+    CHECK_THROWS_AS(static_cast<void>(ogplay::loader::ParseDex(invalid)),
+                    ogplay::loader::DexError);
+}

@@ -17,6 +17,7 @@
 #include "ogplay/runtime/dexvm/io_runtime.h"
 #include "ogplay/runtime/dexvm/nio_runtime.h"
 #include "ogplay/runtime/dexvm/unsafe_runtime.h"
+#include "ogplay/runtime/dexvm/annotation_runtime.h"
 #include "ogplay/runtime/dexvm/network_runtime.h"
 #include "ogplay/runtime/dexvm/zip_runtime.h"
 #include "ogplay/runtime/dexvm/reflection.h"
@@ -144,6 +145,7 @@ public:
         {"path.separator", ":"},
         {"user.dir", "/"},
     };
+    std::unique_ptr<AnnotationRuntime> annotations;
     std::vector<IntrinsicStateTableHooks> intrinsic_state_tables;
     core::Logger* logger{};
     Interpreter* owner{};

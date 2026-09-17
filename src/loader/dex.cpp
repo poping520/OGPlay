@@ -2,6 +2,7 @@
 
 #include "dex_uleb128.h"
 #include <algorithm>
+#include <bit>
 #include <iterator>
 #include <limits>
 #include <map>
@@ -627,29 +628,88 @@ void ReadMembersAndClasses(const Reader& reader, DexImage& image) {
     return value;
 }
 
-void SkipEncodedValue(const Reader& reader, std::size_t& offset,
-                      const std::uint32_t depth);
+constexpr std::uint32_t kMaxEncodedValueDepth = 16U;
+constexpr std::uint32_t kMaxAnnotationElements = 1024U;
+constexpr std::uint32_t kMaxEncodedArraySize = 65535U;
+constexpr std::uint32_t kMaxEncodedValueNodes = 65536U;
 
-void SkipEncodedAnnotation(const Reader& reader, std::size_t& offset,
-                           const std::uint32_t depth) {
-    if (depth > 16U) {
+void CountEncodedNode(std::uint32_t& nodes, const std::size_t offset) {
+    if (++nodes > kMaxEncodedValueNodes) {
         Fail(DexErrorReason::invalid_member, offset,
-             "DEX encoded annotation nesting is too deep");
-    }
-    static_cast<void>(reader.Uleb128(offset));
-    const auto count = reader.Uleb128(offset);
-    for (std::uint32_t index = 0; index < count; ++index) {
-        static_cast<void>(reader.Uleb128(offset));
-        SkipEncodedValue(reader, offset, depth + 1U);
+             "DEX encoded annotation value budget exceeded");
     }
 }
 
-void SkipEncodedValue(const Reader& reader, std::size_t& offset,
-                      const std::uint32_t depth) {
-    if (depth > 16U) {
+[[nodiscard]] std::int64_t SignExtendPayload(const std::uint64_t value,
+                                             const std::uint8_t argument) {
+    const auto width = static_cast<std::uint32_t>(argument + 1U) * 8U;
+    if (width >= 64U) {
+        return static_cast<std::int64_t>(value);
+    }
+    auto extended = value;
+    if ((extended & (1ULL << (width - 1U))) != 0U) {
+        extended |= ~((1ULL << width) - 1ULL);
+    }
+    return static_cast<std::int64_t>(extended);
+}
+
+DexAnnotationValue ReadEncodedValue(const Reader& reader, const DexImage& image,
+                                    std::size_t& offset, std::uint32_t depth,
+                                    std::uint32_t& nodes);
+
+[[nodiscard]] DexAnnotationValue ReadEncodedAnnotationBody(
+    const Reader& reader, const DexImage& image, std::size_t& offset,
+    const std::uint32_t depth, std::uint32_t& nodes) {
+    if (depth > kMaxEncodedValueDepth) {
+        Fail(DexErrorReason::invalid_member, offset,
+             "DEX encoded annotation nesting is too deep");
+    }
+    CountEncodedNode(nodes, offset);
+    DexAnnotationValue value;
+    value.kind = DexAnnotationValueKind::annotation;
+    const auto type_index = reader.Uleb128(offset);
+    if (type_index >= image.types.size()) {
+        Fail(DexErrorReason::invalid_index, offset,
+             "DEX annotation type index is invalid");
+    }
+    value.nested_type_index = type_index;
+    const auto count = reader.Uleb128(offset);
+    if (count > kMaxAnnotationElements) {
+        Fail(DexErrorReason::invalid_member, offset,
+             "DEX encoded annotation has too many elements");
+    }
+    std::vector<std::uint32_t> names;
+    names.reserve(count);
+    value.nested_elements.reserve(count);
+    for (std::uint32_t index = 0; index < count; ++index) {
+        const auto name_index = reader.Uleb128(offset);
+        if (name_index >= image.strings.size()) {
+            Fail(DexErrorReason::invalid_index, offset,
+                 "DEX annotation element name index is invalid");
+        }
+        if (std::find(names.begin(), names.end(), name_index) != names.end()) {
+            Fail(DexErrorReason::invalid_member, offset,
+                 "DEX annotation element name is duplicated");
+        }
+        names.push_back(name_index);
+        DexAnnotationElement element;
+        element.name_string_index = name_index;
+        element.value =
+            ReadEncodedValue(reader, image, offset, depth + 1U, nodes);
+        value.nested_elements.push_back(std::move(element));
+    }
+    return value;
+}
+
+DexAnnotationValue ReadEncodedValue(const Reader& reader, const DexImage& image,
+                                    std::size_t& offset,
+                                    const std::uint32_t depth,
+                                    std::uint32_t& nodes) {
+    if (depth > kMaxEncodedValueDepth) {
         Fail(DexErrorReason::invalid_member, offset,
              "DEX encoded value nesting is too deep");
     }
+    CountEncodedNode(nodes, offset);
     const auto header = reader.U8(offset++);
     const auto type = static_cast<std::uint8_t>(header & 0x1fU);
     const auto argument = static_cast<std::uint8_t>(header >> 5U);
@@ -680,13 +740,99 @@ void SkipEncodedValue(const Reader& reader, std::size_t& offset,
     default:
         break;
     }
+    DexAnnotationValue value;
     if (maximum_argument.has_value()) {
         if (argument > *maximum_argument) {
             Fail(DexErrorReason::invalid_member, offset - 1U,
                  "DEX encoded value has an invalid value_arg");
         }
-        static_cast<void>(ReadUnsignedPayload(reader, offset, argument));
-        return;
+        const auto raw = ReadUnsignedPayload(reader, offset, argument);
+        switch (type) {
+        case 0x00U:
+            value.kind = DexAnnotationValueKind::byte_value;
+            value.integral = SignExtendPayload(raw, argument);
+            break;
+        case 0x02U:
+            value.kind = DexAnnotationValueKind::short_value;
+            value.integral = SignExtendPayload(raw, argument);
+            break;
+        case 0x03U:
+            value.kind = DexAnnotationValueKind::char_value;
+            value.integral = static_cast<std::int64_t>(raw);
+            break;
+        case 0x04U:
+            value.kind = DexAnnotationValueKind::int_value;
+            value.integral = SignExtendPayload(raw, argument);
+            break;
+        case 0x06U:
+            value.kind = DexAnnotationValueKind::long_value;
+            value.integral = SignExtendPayload(raw, argument);
+            break;
+        case 0x10U: {
+            value.kind = DexAnnotationValueKind::float_value;
+            const auto bits = static_cast<std::uint32_t>(
+                raw << ((3U - argument) * 8U));
+            value.floating = std::bit_cast<float>(bits);
+            break;
+        }
+        case 0x11U: {
+            value.kind = DexAnnotationValueKind::double_value;
+            const auto bits = raw << ((7U - argument) * 8U);
+            value.floating = std::bit_cast<double>(bits);
+            break;
+        }
+        case 0x15U:
+            value.kind = DexAnnotationValueKind::method_type_index;
+            value.index = static_cast<std::uint32_t>(raw);
+            break;
+        case 0x16U:
+            value.kind = DexAnnotationValueKind::method_handle_index;
+            value.index = static_cast<std::uint32_t>(raw);
+            break;
+        case 0x17U:
+            value.kind = DexAnnotationValueKind::string_index;
+            value.index = static_cast<std::uint32_t>(raw);
+            if (value.index >= image.strings.size()) {
+                Fail(DexErrorReason::invalid_index, offset,
+                     "DEX encoded string index is invalid");
+            }
+            break;
+        case 0x18U:
+            value.kind = DexAnnotationValueKind::type_index;
+            value.index = static_cast<std::uint32_t>(raw);
+            if (value.index >= image.types.size()) {
+                Fail(DexErrorReason::invalid_index, offset,
+                     "DEX encoded type index is invalid");
+            }
+            break;
+        case 0x19U:
+            value.kind = DexAnnotationValueKind::field_index;
+            value.index = static_cast<std::uint32_t>(raw);
+            if (value.index >= image.fields.size()) {
+                Fail(DexErrorReason::invalid_index, offset,
+                     "DEX encoded field index is invalid");
+            }
+            break;
+        case 0x1aU:
+            value.kind = DexAnnotationValueKind::method_index;
+            value.index = static_cast<std::uint32_t>(raw);
+            if (value.index >= image.methods.size()) {
+                Fail(DexErrorReason::invalid_index, offset,
+                     "DEX encoded method index is invalid");
+            }
+            break;
+        case 0x1bU:
+            value.kind = DexAnnotationValueKind::enum_field_index;
+            value.index = static_cast<std::uint32_t>(raw);
+            if (value.index >= image.fields.size()) {
+                Fail(DexErrorReason::invalid_index, offset,
+                     "DEX encoded enum field index is invalid");
+            }
+            break;
+        default:
+            break;
+        }
+        return value;
     }
     if (type == 0x1cU) {
         if (argument != 0U) {
@@ -694,189 +840,191 @@ void SkipEncodedValue(const Reader& reader, std::size_t& offset,
                  "DEX encoded array has a value_arg");
         }
         const auto count = reader.Uleb128(offset);
-        for (std::uint32_t index = 0; index < count; ++index) {
-            SkipEncodedValue(reader, offset, depth + 1U);
+        if (count > kMaxEncodedArraySize) {
+            Fail(DexErrorReason::invalid_member, offset,
+                 "DEX encoded array is too large");
         }
-        return;
+        value.kind = DexAnnotationValueKind::array;
+        value.values.reserve(count);
+        for (std::uint32_t index = 0; index < count; ++index) {
+            value.values.push_back(
+                ReadEncodedValue(reader, image, offset, depth + 1U, nodes));
+        }
+        return value;
     }
     if (type == 0x1dU) {
         if (argument != 0U) {
             Fail(DexErrorReason::invalid_member, offset - 1U,
                  "DEX encoded annotation has a value_arg");
         }
-        SkipEncodedAnnotation(reader, offset, depth + 1U);
-        return;
+        return ReadEncodedAnnotationBody(reader, image, offset, depth + 1U,
+                                         nodes);
     }
     if (type == 0x1eU) {
         if (argument != 0U) {
             Fail(DexErrorReason::invalid_member, offset - 1U,
                  "DEX encoded null has a value_arg");
         }
-        return;
+        value.kind = DexAnnotationValueKind::null_reference;
+        return value;
     }
     if (type == 0x1fU) {
         if (argument > 1U) {
             Fail(DexErrorReason::invalid_member, offset - 1U,
                  "DEX encoded boolean has an invalid value_arg");
         }
-        return;
+        value.kind = DexAnnotationValueKind::boolean_value;
+        value.integral = argument;
+        return value;
     }
     Fail(DexErrorReason::invalid_member, offset - 1U,
          "DEX encoded annotation value type is invalid");
 }
 
-[[nodiscard]] std::uint32_t ReadEncodedIndex(
-    const Reader& reader, std::size_t& offset, const std::uint8_t expected,
-    const std::uint32_t limit, const char* label) {
-    const auto header = reader.U8(offset++);
-    const auto type = static_cast<std::uint8_t>(header & 0x1fU);
-    const auto argument = static_cast<std::uint8_t>(header >> 5U);
-    if (type != expected || argument > 3U) {
-        Fail(DexErrorReason::invalid_member, offset - 1U,
-             std::string("DEX system annotation ") + label +
-                 " value has the wrong type");
-    }
-    const auto value = static_cast<std::uint32_t>(
-        ReadUnsignedPayload(reader, offset, argument));
-    if (value >= limit) {
-        Fail(DexErrorReason::invalid_index, offset,
-             std::string("DEX system annotation ") + label +
-                 " index is invalid");
-    }
-    return value;
-}
-
-[[nodiscard]] std::int32_t ReadEncodedInt(const Reader& reader,
-                                          std::size_t& offset) {
-    const auto header = reader.U8(offset++);
-    const auto type = static_cast<std::uint8_t>(header & 0x1fU);
-    const auto argument = static_cast<std::uint8_t>(header >> 5U);
-    if (type != 0x04U || argument > 3U) {
-        Fail(DexErrorReason::invalid_member, offset - 1U,
-             "DEX system annotation accessFlags is not int");
-    }
-    auto value = ReadUnsignedPayload(reader, offset, argument);
-    const auto width = static_cast<std::uint32_t>(argument + 1U) * 8U;
-    if (width < 32U && (value & (1ULL << (width - 1U))) != 0U) {
-        value |= ~((1ULL << width) - 1ULL);
-    }
-    return static_cast<std::int32_t>(value);
-}
-
-[[nodiscard]] std::optional<std::string> ReadEncodedStringOrNull(
-    const Reader& reader, std::size_t& offset, const DexImage& image) {
-    const auto header = reader.U8(offset);
-    if ((header & 0x1fU) == 0x1eU) {
-        if (header != 0x1eU) {
-            Fail(DexErrorReason::invalid_member, offset,
-                 "DEX encoded null has a value_arg");
-        }
-        ++offset;
-        return std::nullopt;
-    }
-    const auto index = ReadEncodedIndex(
-        reader, offset, 0x17U,
-        static_cast<std::uint32_t>(image.strings.size()), "name");
-    const auto& value = image.strings[index].value;
-    return NarrowString(value);
-}
-
-[[nodiscard]] std::vector<std::uint32_t> ReadEncodedTypeArray(
-    const Reader& reader, std::size_t& offset, const DexImage& image) {
-    const auto header = reader.U8(offset++);
-    if (header != 0x1cU) {
-        Fail(DexErrorReason::invalid_member, offset - 1U,
-             "DEX system annotation value is not an array");
-    }
-    const auto count = reader.Uleb128(offset);
-    std::vector<std::uint32_t> result;
-    result.reserve(count);
-    for (std::uint32_t index = 0; index < count; ++index) {
-        result.push_back(ReadEncodedIndex(
-            reader, offset, 0x18U,
-            static_cast<std::uint32_t>(image.types.size()), "type"));
-    }
-    return result;
-}
-
-void ReadSystemAnnotationItem(
+[[nodiscard]] DexRuntimeAnnotation ReadAnnotationItem(
     const Reader& reader, const DexImage& image,
-    const std::uint32_t annotation_offset,
-    DexClassSystemMetadata* class_metadata,
-    DexMethodSystemMetadata* method_metadata) {
+    const std::uint32_t annotation_offset, std::uint32_t& nodes) {
     std::size_t offset = annotation_offset;
-    static_cast<void>(reader.U8(offset++));  // visibility
-    const auto annotation_type = reader.Uleb128(offset);
-    if (annotation_type >= image.types.size()) {
-        Fail(DexErrorReason::invalid_index, offset,
-             "DEX annotation type index is invalid");
+    const auto visibility = reader.U8(offset++);
+    if (visibility > 2U) {
+        Fail(DexErrorReason::invalid_member, annotation_offset,
+             "DEX annotation visibility is invalid");
     }
-    const auto descriptor = image.types[annotation_type].descriptor;
-    const auto element_count = reader.Uleb128(offset);
-    for (std::uint32_t index = 0; index < element_count; ++index) {
-        const auto name_index = reader.Uleb128(offset);
-        if (name_index >= image.strings.size()) {
-            Fail(DexErrorReason::invalid_index, offset,
-                 "DEX annotation element name index is invalid");
-        }
-        const auto& name_utf16 = image.strings[name_index].value;
-        const auto name = NarrowString(name_utf16);
-        if (class_metadata != nullptr &&
-            descriptor == "Ldalvik/annotation/InnerClass;") {
-            class_metadata->has_inner_class = true;
-            if (name == "name") {
-                class_metadata->inner_name =
-                    ReadEncodedStringOrNull(reader, offset, image);
-            } else if (name == "accessFlags") {
-                class_metadata->inner_access_flags =
-                    static_cast<std::uint32_t>(ReadEncodedInt(reader, offset));
-            } else {
-                SkipEncodedValue(reader, offset, 0U);
-            }
-        } else if (class_metadata != nullptr &&
-                   descriptor == "Ldalvik/annotation/EnclosingClass;" &&
-                   name == "value") {
-            class_metadata->enclosing_class_type_index = ReadEncodedIndex(
-                reader, offset, 0x18U,
-                static_cast<std::uint32_t>(image.types.size()),
-                "enclosing class");
-        } else if (class_metadata != nullptr &&
-                   descriptor == "Ldalvik/annotation/EnclosingMethod;" &&
-                   name == "value") {
-            class_metadata->enclosing_method_index = ReadEncodedIndex(
-                reader, offset, 0x1aU,
-                static_cast<std::uint32_t>(image.methods.size()),
-                "enclosing method");
-        } else if (class_metadata != nullptr &&
-                   descriptor == "Ldalvik/annotation/MemberClasses;" &&
-                   name == "value") {
-            class_metadata->member_class_type_indices =
-                ReadEncodedTypeArray(reader, offset, image);
-        } else if (method_metadata != nullptr &&
-                   descriptor == "Ldalvik/annotation/Throws;" &&
-                   name == "value") {
-            method_metadata->exception_type_indices =
-                ReadEncodedTypeArray(reader, offset, image);
-        } else {
-            SkipEncodedValue(reader, offset, 0U);
-        }
-    }
+    auto body = ReadEncodedAnnotationBody(reader, image, offset, 0U, nodes);
+    DexRuntimeAnnotation annotation;
+    annotation.visibility = static_cast<DexAnnotationVisibility>(visibility);
+    annotation.type_index = body.nested_type_index;
+    annotation.elements = std::move(body.nested_elements);
+    annotation.has_elements = !annotation.elements.empty();
+    return annotation;
 }
 
-template <typename Metadata>
-void ReadSystemAnnotationSet(const Reader& reader, const DexImage& image,
-                             const std::uint32_t set_offset,
-                             Metadata* metadata) {
-    if (set_offset == 0U) return;
+[[nodiscard]] std::vector<DexRuntimeAnnotation> ReadAnnotationSet(
+    const Reader& reader, const DexImage& image, const std::uint32_t set_offset,
+    std::uint32_t& nodes) {
+    std::vector<DexRuntimeAnnotation> annotations;
+    if (set_offset == 0U) return annotations;
     const auto count = reader.U32(set_offset);
+    annotations.reserve(count);
     for (std::uint32_t index = 0; index < count; ++index) {
         const auto item = reader.U32(
             static_cast<std::size_t>(set_offset) + 4U +
             static_cast<std::size_t>(index) * 4U);
-        if constexpr (std::is_same_v<Metadata, DexClassSystemMetadata>) {
-            ReadSystemAnnotationItem(reader, image, item, metadata, nullptr);
-        } else {
-            ReadSystemAnnotationItem(reader, image, item, nullptr, metadata);
+        annotations.push_back(ReadAnnotationItem(reader, image, item, nodes));
+    }
+    return annotations;
+}
+
+void ApplySystemClassAnnotation(const DexImage& image,
+                                const DexRuntimeAnnotation& annotation,
+                                DexClassSystemMetadata& metadata,
+                                std::optional<DexRuntimeAnnotation>& defaults,
+                                const std::uint32_t declaring_type_index) {
+    const auto descriptor = image.types[annotation.type_index].descriptor;
+    const auto element_name = [&](const DexAnnotationElement& element) {
+        return NarrowString(image.strings[element.name_string_index].value);
+    };
+    const auto fail_type = [](const char* label) {
+        Fail(DexErrorReason::invalid_member, 0,
+             std::string("DEX system annotation ") + label +
+                 " value has the wrong type");
+    };
+    if (descriptor == "Ldalvik/annotation/InnerClass;") {
+        metadata.has_inner_class = true;
+        for (const auto& element : annotation.elements) {
+            const auto name = element_name(element);
+            if (name == "name") {
+                if (element.value.kind == DexAnnotationValueKind::null_reference) {
+                    metadata.inner_name = std::nullopt;
+                } else if (element.value.kind ==
+                           DexAnnotationValueKind::string_index) {
+                    metadata.inner_name = NarrowString(
+                        image.strings[element.value.index].value);
+                } else {
+                    fail_type("name");
+                }
+            } else if (name == "accessFlags") {
+                if (element.value.kind != DexAnnotationValueKind::int_value) {
+                    Fail(DexErrorReason::invalid_member, 0,
+                         "DEX system annotation accessFlags is not int");
+                }
+                metadata.inner_access_flags =
+                    static_cast<std::uint32_t>(element.value.integral);
+            }
+        }
+    } else if (descriptor == "Ldalvik/annotation/EnclosingClass;") {
+        for (const auto& element : annotation.elements) {
+            if (element_name(element) != "value") continue;
+            if (element.value.kind != DexAnnotationValueKind::type_index) {
+                fail_type("enclosing class");
+            }
+            metadata.enclosing_class_type_index = element.value.index;
+        }
+    } else if (descriptor == "Ldalvik/annotation/EnclosingMethod;") {
+        for (const auto& element : annotation.elements) {
+            if (element_name(element) != "value") continue;
+            if (element.value.kind != DexAnnotationValueKind::method_index) {
+                fail_type("enclosing method");
+            }
+            metadata.enclosing_method_index = element.value.index;
+        }
+    } else if (descriptor == "Ldalvik/annotation/MemberClasses;") {
+        for (const auto& element : annotation.elements) {
+            if (element_name(element) != "value") continue;
+            if (element.value.kind != DexAnnotationValueKind::array) {
+                Fail(DexErrorReason::invalid_member, 0,
+                     "DEX system annotation value is not an array");
+            }
+            metadata.member_class_type_indices.clear();
+            for (const auto& item : element.value.values) {
+                if (item.kind != DexAnnotationValueKind::type_index) {
+                    fail_type("type");
+                }
+                metadata.member_class_type_indices.push_back(item.index);
+            }
+        }
+    } else if (descriptor == "Ldalvik/annotation/AnnotationDefault;") {
+        if (annotation.elements.size() != 1U ||
+            element_name(annotation.elements[0]) != "value" ||
+            annotation.elements[0].value.kind !=
+                DexAnnotationValueKind::annotation) {
+            Fail(DexErrorReason::invalid_member, 0,
+                 "DEX AnnotationDefault value is not an annotation");
+        }
+        const auto& nested = annotation.elements[0].value;
+        if (nested.nested_type_index != declaring_type_index) {
+            Fail(DexErrorReason::invalid_member, 0,
+                 "DEX AnnotationDefault type does not match the declaration");
+        }
+        DexRuntimeAnnotation stored;
+        stored.visibility = DexAnnotationVisibility::system;
+        stored.type_index = nested.nested_type_index;
+        stored.elements = nested.nested_elements;
+        stored.has_elements = !stored.elements.empty();
+        defaults = std::move(stored);
+    }
+}
+
+void ApplySystemMethodAnnotation(const DexImage& image,
+                                 const DexRuntimeAnnotation& annotation,
+                                 DexMethodSystemMetadata& metadata) {
+    if (image.types[annotation.type_index].descriptor !=
+        "Ldalvik/annotation/Throws;") {
+        return;
+    }
+    for (const auto& element : annotation.elements) {
+        if (NarrowString(image.strings[element.name_string_index].value) !=
+                "value" ||
+            element.value.kind != DexAnnotationValueKind::array) {
+            continue;
+        }
+        metadata.exception_type_indices.clear();
+        for (const auto& item : element.value.values) {
+            if (item.kind != DexAnnotationValueKind::type_index) {
+                Fail(DexErrorReason::invalid_member, 0,
+                     "DEX system annotation type value has the wrong type");
+            }
+            metadata.exception_type_indices.push_back(item.index);
         }
     }
 }
@@ -885,6 +1033,8 @@ void ReadSystemMetadata(const Reader& reader, DexImage& image) {
     image.class_system_metadata.resize(image.classes.size());
     image.method_system_metadata.resize(image.methods.size());
     image.field_runtime_metadata.resize(image.fields.size());
+    image.class_annotation_metadata.resize(image.classes.size());
+    std::uint32_t nodes{};
     for (std::size_t class_index = 0; class_index < image.classes.size();
          ++class_index) {
         const auto directory = image.classes[class_index].annotations_offset;
@@ -893,8 +1043,24 @@ void ReadSystemMetadata(const Reader& reader, DexImage& image) {
         const auto fields_size = reader.U32(directory + 4U);
         const auto methods_size = reader.U32(directory + 8U);
         const auto parameters_size = reader.U32(directory + 12U);
-        ReadSystemAnnotationSet(reader, image, class_set,
-                                &image.class_system_metadata[class_index]);
+        auto class_annotations =
+            ReadAnnotationSet(reader, image, class_set, nodes);
+        const auto declaring_type =
+            image.classes[class_index].class_type_index;
+        for (auto& annotation : class_annotations) {
+            if (annotation.visibility == DexAnnotationVisibility::system) {
+                ApplySystemClassAnnotation(
+                    image, annotation,
+                    image.class_system_metadata[class_index],
+                    image.class_annotation_metadata[class_index]
+                        .annotation_default,
+                    declaring_type);
+            } else if (annotation.visibility ==
+                       DexAnnotationVisibility::runtime) {
+                image.class_annotation_metadata[class_index]
+                    .runtime_annotations.push_back(std::move(annotation));
+            }
+        }
         const auto fields_at = static_cast<std::size_t>(directory) + 16U;
         for (std::uint32_t index = 0; index < fields_size; ++index) {
             const auto at = fields_at + static_cast<std::size_t>(index) * 8U;
@@ -904,31 +1070,11 @@ void ReadSystemMetadata(const Reader& reader, DexImage& image) {
                 Fail(DexErrorReason::invalid_index, at,
                      "DEX annotated field index is invalid");
             }
-            if (set_offset == 0U) continue;
-            const auto count = reader.U32(set_offset);
+            auto parsed = ReadAnnotationSet(reader, image, set_offset, nodes);
             auto& output = image.field_runtime_metadata[field_index].annotations;
-            for (std::uint32_t item_index = 0; item_index < count; ++item_index) {
-                const auto item = reader.U32(
-                    static_cast<std::size_t>(set_offset) + 4U +
-                    static_cast<std::size_t>(item_index) * 4U);
-                std::size_t item_at = item;
-                const auto visibility = reader.U8(item_at++);
-                const auto type_index = reader.Uleb128(item_at);
-                if (type_index >= image.types.size()) {
-                    Fail(DexErrorReason::invalid_index, item_at,
-                         "DEX annotation type index is invalid");
-                }
-                const auto element_count = reader.Uleb128(item_at);
-                for (std::uint32_t element = 0; element < element_count; ++element) {
-                    const auto name_index = reader.Uleb128(item_at);
-                    if (name_index >= image.strings.size()) {
-                        Fail(DexErrorReason::invalid_index, item_at,
-                             "DEX annotation element name index is invalid");
-                    }
-                    SkipEncodedValue(reader, item_at, 0U);
-                }
-                if (visibility == 1U) {
-                    output.push_back({type_index, element_count != 0U});
+            for (auto& annotation : parsed) {
+                if (annotation.visibility == DexAnnotationVisibility::runtime) {
+                    output.push_back(std::move(annotation));
                 }
             }
         }
@@ -942,14 +1088,38 @@ void ReadSystemMetadata(const Reader& reader, DexImage& image) {
                 Fail(DexErrorReason::invalid_index, at,
                      "DEX annotated method index is invalid");
             }
-            ReadSystemAnnotationSet(
-                reader, image, set_offset,
-                &image.method_system_metadata[method_index]);
+            auto parsed = ReadAnnotationSet(reader, image, set_offset, nodes);
+            for (const auto& annotation : parsed) {
+                if (annotation.visibility == DexAnnotationVisibility::system) {
+                    ApplySystemMethodAnnotation(
+                        image, annotation,
+                        image.method_system_metadata[method_index]);
+                }
+            }
         }
         const auto parameters_at = methods_at +
             static_cast<std::size_t>(methods_size) * 8U;
         reader.Require(parameters_at,
                        static_cast<std::size_t>(parameters_size) * 8U);
+        for (std::uint32_t index = 0; index < parameters_size; ++index) {
+            const auto at =
+                parameters_at + static_cast<std::size_t>(index) * 8U;
+            const auto method_index = reader.U32(at);
+            const auto list_offset = reader.U32(at + 4U);
+            if (method_index >= image.methods.size()) {
+                Fail(DexErrorReason::invalid_index, at,
+                     "DEX annotated parameter method index is invalid");
+            }
+            if (list_offset == 0U) continue;
+            const auto count = reader.U32(list_offset);
+            for (std::uint32_t parameter = 0; parameter < count; ++parameter) {
+                const auto set_offset = reader.U32(
+                    static_cast<std::size_t>(list_offset) + 4U +
+                    static_cast<std::size_t>(parameter) * 4U);
+                static_cast<void>(
+                    ReadAnnotationSet(reader, image, set_offset, nodes));
+            }
+        }
     }
 }
 

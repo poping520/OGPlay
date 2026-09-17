@@ -606,6 +606,21 @@ TEST_CASE("dexvm core intrinsic catalog is unique and structurally stable") {
         "()[Ljava/lang/annotation/Annotation;",
         "Ljava/lang/reflect/AnnotatedElement;.getDeclaredAnnotations"
         "()[Ljava/lang/annotation/Annotation;",
+        "Ljava/lang/reflect/Method;.isAnnotationPresent(Ljava/lang/Class;)Z",
+        "Ljava/lang/reflect/Method;.getAnnotation"
+        "(Ljava/lang/Class;)Ljava/lang/annotation/Annotation;",
+        "Ljava/lang/reflect/Method;.getAnnotations"
+        "()[Ljava/lang/annotation/Annotation;",
+        "Ljava/lang/reflect/Method;.getDeclaredAnnotations"
+        "()[Ljava/lang/annotation/Annotation;",
+        "Ljava/lang/reflect/Constructor;.isAnnotationPresent"
+        "(Ljava/lang/Class;)Z",
+        "Ljava/lang/reflect/Constructor;.getAnnotation"
+        "(Ljava/lang/Class;)Ljava/lang/annotation/Annotation;",
+        "Ljava/lang/reflect/Constructor;.getAnnotations"
+        "()[Ljava/lang/annotation/Annotation;",
+        "Ljava/lang/reflect/Constructor;.getDeclaredAnnotations"
+        "()[Ljava/lang/annotation/Annotation;",
         "Ljava/lang/reflect/GenericDeclaration;.getTypeParameters"
         "()[Ljava/lang/reflect/TypeVariable;",
         "Ljava/lang/reflect/Member;.getDeclaringClass()Ljava/lang/Class;",

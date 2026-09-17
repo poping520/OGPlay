@@ -819,14 +819,18 @@ TEST_CASE("Field runtime marker annotations dispatch on both backends") {
             field, "getAnnotation",
             "(Ljava/lang/Class;)Ljava/lang/annotation/Annotation;",
             {VmValue::Ref(marker_class)}));
-        CHECK(vm.model.ObjectClass(annotation) == marker);
+        CHECK(vm.linker.IsAssignable(marker, vm.model.ObjectClass(annotation)));
+        CHECK(Int(vm.Virtual(
+            marker_class, "isInstance", "(Ljava/lang/Object;)Z",
+            {VmValue::Ref(annotation)})) == 1);
 
         const auto annotations = Ref(vm.Virtual(
             field, "getDeclaredAnnotations",
             "()[Ljava/lang/annotation/Annotation;"));
         REQUIRE(vm.model.ArrayLength(annotations) == 1);
-        CHECK(vm.model.ObjectClass(
-                  vm.model.GetObjectElement(annotations, 0)) == marker);
+        CHECK(vm.linker.IsAssignable(
+            marker, vm.model.ObjectClass(
+                        vm.model.GetObjectElement(annotations, 0))));
 
         const auto absent = vm.Virtual(
             field, "getAnnotation",
@@ -1333,5 +1337,161 @@ TEST_CASE("DVM-109 reflective wide field initialization failure preserves Java e
         REQUIRE(field);
         CHECK(f.linker.Class(f.linker.Field(*field).owner).static_storage[f.linker.Field(*field).slot] ==
               error_result.exception.Value());
+    }
+}
+
+VmObjectRef ClassOf(ReflectionVm& vm, const std::string_view descriptor) {
+    return vm.model.ClassObject(vm.linker.ResolveDescriptor(descriptor));
+}
+
+VmObjectRef ClassAnnotation(ReflectionVm& vm, const std::string_view owner,
+                            const std::string_view type) {
+    return Ref(vm.Virtual(
+        ClassOf(vm, owner), "getAnnotation",
+        "(Ljava/lang/Class;)Ljava/lang/annotation/Annotation;",
+        {VmValue::Ref(ClassOf(vm, type))}));
+}
+
+TEST_CASE("Class runtime annotations query members defaults inherited and isolation") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch,
+                               InterpreterBackend::threaded}) {
+        ReflectionVm vm("class_annotation.dex", backend);
+        const auto host = ClassOf(vm, "Lann/Host;");
+        const auto marker = vm.linker.ResolveDescriptor("Lann/Marker;");
+
+        CHECK(Int(vm.Virtual(
+            host, "isAnnotationPresent", "(Ljava/lang/Class;)Z",
+            {VmValue::Ref(ClassOf(vm, "Lann/Marker;"))})) == 1);
+        ExpectException(
+            vm,
+            vm.Virtual(host, "getAnnotation",
+                       "(Ljava/lang/Class;)Ljava/lang/annotation/Annotation;",
+                       {VmValue::Ref(VmObjectRef{})}),
+            "Ljava/lang/NullPointerException;");
+
+        const auto marker_instance =
+            ClassAnnotation(vm, "Lann/Host;", "Lann/Marker;");
+        CHECK(vm.linker.IsAssignable(marker, vm.model.ObjectClass(marker_instance)));
+        CHECK(Int(vm.Virtual(ClassOf(vm, "Lann/Marker;"), "isInstance",
+                             "(Ljava/lang/Object;)Z",
+                             {VmValue::Ref(marker_instance)})) == 1);
+        CHECK(vm.model.ClassOfClassObject(Ref(vm.Virtual(
+            marker_instance, "annotationType", "()Ljava/lang/Class;"))) ==
+              marker);
+
+        const auto named_instance =
+            ClassAnnotation(vm, "Lann/Host;", "Lann/Named;");
+        CHECK(Int(vm.Virtual(named_instance, "number", "()I")) == 7);
+        CHECK(vm.interpreter.StringUtf8(Ref(vm.Virtual(
+            named_instance, "title", "()Ljava/lang/String;"))) == "hi");
+        const auto again = ClassAnnotation(vm, "Lann/Host;", "Lann/Named;");
+        CHECK(Int(vm.Virtual(named_instance, "equals", "(Ljava/lang/Object;)Z",
+                             {VmValue::Ref(again)})) == 1);
+        CHECK(Int(vm.Virtual(named_instance, "hashCode", "()I")) ==
+              Int(vm.Virtual(again, "hashCode", "()I")));
+
+        const auto declared = Ref(vm.Virtual(
+            host, "getDeclaredAnnotations",
+            "()[Ljava/lang/annotation/Annotation;"));
+        CHECK(vm.model.ArrayLength(declared) == 3);
+        const auto build = vm.Virtual(
+            host, "isAnnotationPresent", "(Ljava/lang/Class;)Z",
+            {VmValue::Ref(ClassOf(vm, "Lann/NotInherited;"))});
+        REQUIRE_FALSE(build.exception.IsValid());
+        CHECK(build.value.AsInt() == 0);
+
+        const auto rich = ClassAnnotation(vm, "Lann/Host;", "Lann/Rich;");
+        CHECK(vm.interpreter.StringUtf8(Ref(vm.Virtual(
+            Ref(vm.Virtual(rich, "kind", "()Ljava/lang/Class;")),
+            "getName", "()Ljava/lang/String;"))) == "java.lang.String");
+        CHECK(vm.interpreter.StringUtf8(Ref(vm.Virtual(
+            Ref(vm.Virtual(rich, "policy",
+                           "()Ljava/lang/annotation/RetentionPolicy;")),
+            "name", "()Ljava/lang/String;"))) == "RUNTIME");
+        const auto policies = Ref(vm.Virtual(
+            rich, "policies", "()[Ljava/lang/annotation/RetentionPolicy;"));
+        REQUIRE(vm.model.ArrayLength(policies) == 2);
+        const auto numbers = Ref(vm.Virtual(rich, "numbers", "()[I"));
+        const auto numbers_copy = Ref(vm.Virtual(rich, "numbers", "()[I"));
+        CHECK(numbers != numbers_copy);
+        vm.model.SetPrimitiveElement(numbers, 0, 99);
+        CHECK(vm.model.GetPrimitiveElement(numbers_copy, 0) == 1);
+        const auto nested = Ref(vm.Virtual(rich, "nested", "()Lann/Named;"));
+        CHECK(Int(vm.Virtual(nested, "number", "()I")) == 4);
+        CHECK(vm.interpreter.StringUtf8(Ref(vm.Virtual(
+            nested, "title", "()Ljava/lang/String;"))) == "nest");
+
+        const auto defaults =
+            ClassAnnotation(vm, "Lann/DefaultsHost;", "Lann/Named;");
+        CHECK(Int(vm.Virtual(defaults, "number", "()I")) == 3);
+        CHECK(vm.interpreter.StringUtf8(Ref(vm.Virtual(
+            defaults, "title", "()Ljava/lang/String;"))) == "def");
+        const auto default_method = MethodWrapper(vm, "Lann/Named;", "number");
+        const auto boxed = Ref(vm.Virtual(default_method, "getDefaultValue",
+                                          "()Ljava/lang/Object;"));
+        CHECK(vm.linker.Class(vm.model.ObjectClass(boxed)).descriptor ==
+              "Ljava/lang/Integer;");
+        CHECK(Int(vm.Virtual(boxed, "intValue", "()I")) == 3);
+
+        const auto child = ClassOf(vm, "Lann/Child;");
+        const auto inherited =
+            ClassAnnotation(vm, "Lann/Child;", "Lann/InheritedMark;");
+        CHECK(Int(vm.Virtual(inherited, "value", "()I")) == 11);
+        const auto not_inherited = vm.Virtual(
+            child, "getAnnotation",
+            "(Ljava/lang/Class;)Ljava/lang/annotation/Annotation;",
+            {VmValue::Ref(ClassOf(vm, "Lann/NotInherited;"))});
+        REQUIRE_FALSE(not_inherited.exception.IsValid());
+        CHECK_FALSE(not_inherited.value.ref.IsValid());
+        CHECK(vm.model.ArrayLength(Ref(vm.Virtual(
+            child, "getDeclaredAnnotations",
+            "()[Ljava/lang/annotation/Annotation;"))) == 0);
+        CHECK(vm.model.ArrayLength(Ref(vm.Virtual(
+            child, "getAnnotations",
+            "()[Ljava/lang/annotation/Annotation;"))) == 1);
+        CHECK(Int(vm.Virtual(
+            ClassAnnotation(vm, "Lann/ChildHide;", "Lann/InheritedMark;"),
+            "value", "()I")) == 22);
+        const auto from_interface = vm.Virtual(
+            ClassOf(vm, "Lann/Impl;"), "getAnnotation",
+            "(Ljava/lang/Class;)Ljava/lang/annotation/Annotation;",
+            {VmValue::Ref(ClassOf(vm, "Lann/Named;"))});
+        REQUIRE_FALSE(from_interface.exception.IsValid());
+        CHECK_FALSE(from_interface.value.ref.IsValid());
+
+        const auto incomplete = ClassAnnotation(vm, "Lann/IncompleteHost;",
+                                                "Lann/Required;");
+        ExpectException(vm, vm.Virtual(incomplete, "required", "()I"),
+                        "Ljava/lang/annotation/IncompleteAnnotationException;");
+        const auto mismatched = ClassAnnotation(vm, "Lann/MismatchHost;",
+                                                "Lann/Mismatch;");
+        ExpectException(vm, vm.Virtual(mismatched, "number", "()I"),
+                        "Ljava/lang/annotation/AnnotationTypeMismatchException;");
+        const auto missing_enum = ClassAnnotation(vm, "Lann/MissingEnumHost;",
+                                                  "Lann/MissingEnum;");
+        ExpectException(
+            vm,
+            vm.Virtual(missing_enum, "policy",
+                       "()Ljava/lang/annotation/RetentionPolicy;"),
+            "Ljava/lang/EnumConstantNotPresentException;");
+        const auto missing_type = ClassAnnotation(vm, "Lann/UnusedMissingHost;",
+                                                  "Lann/MissingType;");
+        ExpectException(vm, vm.Virtual(missing_type, "missing",
+                                       "()Ljava/lang/Class;"),
+                        "Ljava/lang/TypeNotPresentException;");
+
+        const auto method = MethodWrapper(vm, "Lann/Named;", "number");
+        ExpectException(
+            vm,
+            vm.Virtual(method, "getAnnotation",
+                       "(Ljava/lang/Class;)Ljava/lang/annotation/Annotation;",
+                       {VmValue::Ref(ClassOf(vm, "Lann/Marker;"))}),
+            "Ljava/lang/UnsatisfiedLinkError;");
+
+        const auto live = ClassAnnotation(vm, "Lann/Host;", "Lann/Named;");
+        const auto roots = vm.interpreter.ProtectReferences(std::array{live});
+        static_cast<void>(vm.interpreter.CollectGarbage("annotation-live"));
+        CHECK(Int(vm.Virtual(live, "number", "()I")) == 7);
+        static_cast<void>(roots);
     }
 }

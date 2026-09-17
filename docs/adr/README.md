@@ -14,14 +14,14 @@ Deprecated、Superseded；日期使用 `YYYY-MM-DD`。当前能力与实施进�
 | [图形、音频与视频](media.md) | 6 条决策 | [0003](media.md#adr-0003)、[0019](media.md#adr-0019)、[0021](media.md#adr-0021)、[0027](media.md#adr-0027)、[0061](media.md#adr-0061)、[0062](media.md#adr-0062) |
 | [会话、Profile 与持久沙盒](session.md) | 2 条决策 | [0020](session.md#adr-0020)、[0022](session.md#adr-0022) |
 | [可观测性、线程握手与退出](diagnostics.md) | 5 条决策 | [0006](diagnostics.md#adr-0006)、[0023](diagnostics.md#adr-0023)、[0024](diagnostics.md#adr-0024)、[0025](diagnostics.md#adr-0025)、[0026](diagnostics.md#adr-0026) |
-| [DexVM、BootDex 与 Java 平台边界](dexvm.md) | 37 条决策 | [0017](dexvm.md#adr-0017)、[0028](dexvm.md#adr-0028)、[0029](dexvm.md#adr-0029)、[0030](dexvm.md#adr-0030)、[0031](dexvm.md#adr-0031)、[0032](dexvm.md#adr-0032)、[0033](dexvm.md#adr-0033)、[0034](dexvm.md#adr-0034)、[0035](dexvm.md#adr-0035)、[0036](dexvm.md#adr-0036)、[0037](dexvm.md#adr-0037)、[0038](dexvm.md#adr-0038)、[0039](dexvm.md#adr-0039)、[0040](dexvm.md#adr-0040)、[0041](dexvm.md#adr-0041)、[0042](dexvm.md#adr-0042)、[0043](dexvm.md#adr-0043)、[0044](dexvm.md#adr-0044)、[0045](dexvm.md#adr-0045)、[0046](dexvm.md#adr-0046)、[0047](dexvm.md#adr-0047)、[0048](dexvm.md#adr-0048)、[0049](dexvm.md#adr-0049)、[0050](dexvm.md#adr-0050)、[0051](dexvm.md#adr-0051)、[0052](dexvm.md#adr-0052)、[0053](dexvm.md#adr-0053)、[0054](dexvm.md#adr-0054)、[0055](dexvm.md#adr-0055)、[0056](dexvm.md#adr-0056)、[0057](dexvm.md#adr-0057)、[0058](dexvm.md#adr-0058)、[0059](dexvm.md#adr-0059)、[0060](dexvm.md#adr-0060)、[0064](dexvm.md#adr-0064)、[0065](dexvm.md#adr-0065)、[0066](dexvm.md#adr-0066) |
+| [DexVM、BootDex 与 Java 平台边界](dexvm.md) | 38 条决策 | [0017](dexvm.md#adr-0017)、[0028](dexvm.md#adr-0028)、[0029](dexvm.md#adr-0029)、[0030](dexvm.md#adr-0030)、[0031](dexvm.md#adr-0031)、[0032](dexvm.md#adr-0032)、[0033](dexvm.md#adr-0033)、[0034](dexvm.md#adr-0034)、[0035](dexvm.md#adr-0035)、[0036](dexvm.md#adr-0036)、[0037](dexvm.md#adr-0037)、[0038](dexvm.md#adr-0038)、[0039](dexvm.md#adr-0039)、[0040](dexvm.md#adr-0040)、[0041](dexvm.md#adr-0041)、[0042](dexvm.md#adr-0042)、[0043](dexvm.md#adr-0043)、[0044](dexvm.md#adr-0044)、[0045](dexvm.md#adr-0045)、[0046](dexvm.md#adr-0046)、[0047](dexvm.md#adr-0047)、[0048](dexvm.md#adr-0048)、[0049](dexvm.md#adr-0049)、[0050](dexvm.md#adr-0050)、[0051](dexvm.md#adr-0051)、[0052](dexvm.md#adr-0052)、[0053](dexvm.md#adr-0053)、[0054](dexvm.md#adr-0054)、[0055](dexvm.md#adr-0055)、[0056](dexvm.md#adr-0056)、[0057](dexvm.md#adr-0057)、[0058](dexvm.md#adr-0058)、[0059](dexvm.md#adr-0059)、[0060](dexvm.md#adr-0060)、[0064](dexvm.md#adr-0064)、[0065](dexvm.md#adr-0065)、[0066](dexvm.md#adr-0066)、[0067](dexvm.md#adr-0067) |
 
 ## 维护方式
 
-最新补充：[ADR-0066 · TLS 保留 AOSP API，采用自有 Provider 与进程内底座](dexvm.md#adr-0066)。
+最新补充：[ADR-0067 · 受限注解运行时由 DEX 元数据与每 VM 实现类构成](dexvm.md#adr-0067)。
 
 - 查找历史编号使用上表，跨文档引用使用 `主题.md#adr-NNNN`；编号不随归并重排。
-- 新决策使用下一个全局编号（当前最大为 ADR-0066），在既有主题末尾追加；只有出现无法
+- 新决策使用下一个全局编号（当前最大为 ADR-0067），在既有主题末尾追加；只有出现无法
   归入现有主题的独立领域时才新增主题文件。每条记录前保留 `<a id="adr-NNNN"></a>`。
 - 条目标题使用二级标题，背景、决定、后果等使用三级标题；同步更新本索引和主题内目录。
 - 已有决策的实施补充保留原日期；有实质决策变化时追加新编号与精确替代关系，不能覆盖旧文。

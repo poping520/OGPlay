@@ -161,6 +161,41 @@ struct IntrinsicClassDecl final {
     HostStateDestructor host_state_destructor;
 };
 
+struct LinkedAnnotationValue final {
+    enum class Kind : std::uint8_t {
+        byte_value,
+        short_value,
+        char_value,
+        int_value,
+        long_value,
+        float_value,
+        double_value,
+        boolean_value,
+        string_value,
+        type_descriptor,
+        enum_constant,
+        array,
+        annotation,
+        null_reference,
+        unsupported,
+    };
+    Kind kind{Kind::null_reference};
+    std::int64_t integral{};
+    double floating{};
+    std::u16string text;
+    std::string descriptor;
+    std::string name;
+    std::vector<LinkedAnnotationValue> values;
+    std::string nested_type;
+    std::vector<std::pair<std::string, LinkedAnnotationValue>> nested_elements;
+};
+
+struct LinkedAnnotation final {
+    std::string type_descriptor;
+    DexUnitId dex_unit;
+    std::vector<std::pair<std::string, LinkedAnnotationValue>> elements;
+};
+
 struct LinkedField final {
     VmFieldId id;
     DexClassId owner;
@@ -171,11 +206,7 @@ struct LinkedField final {
     bool is_wide{};
     bool is_ref{};
     std::uint16_t slot{};
-    struct RuntimeAnnotation final {
-        std::string descriptor;
-        bool has_elements{};
-    };
-    std::vector<RuntimeAnnotation> runtime_annotations;
+    std::vector<LinkedAnnotation> runtime_annotations;
 };
 
 struct LinkedMethod final {
@@ -247,6 +278,11 @@ struct LinkedClass final {
     std::vector<std::uint16_t> static_ref_slots;
     std::optional<std::uint32_t> dex_class_def_index;
     std::optional<DexUnitId> dex_unit;
+    bool is_annotation_implementation{};
+    std::optional<DexClassId> annotation_interface;
+    std::vector<LinkedAnnotation> runtime_annotations;
+    std::vector<std::pair<std::string, LinkedAnnotationValue>>
+        annotation_defaults;
     IntrinsicHandler clinit_implementation;
     HostStateDestructor host_state_destructor;
     std::vector<IntrinsicFieldDecl> intrinsic_constants;
@@ -293,6 +329,13 @@ public:
     void EnsureClassLinked(DexClassId id);
     // Resolves (and synthesizes on first use) an array class.
     [[nodiscard]] DexClassId ResolveDescriptor(std::string_view descriptor);
+
+    // After Link(): synthesize a concrete class that implements an already
+    // loaded annotation interface. Storage is appended to the stable deque;
+    // existing class/method identities are not rewritten.
+    [[nodiscard]] DexClassId DefineRestrictedAnnotationClass(
+        DexClassId annotation_type,
+        std::span<const IntrinsicMethodDecl> methods);
 
     [[nodiscard]] const LinkedClass& Class(DexClassId id) const;
     [[nodiscard]] LinkedClass& MutableClass(DexClassId id);

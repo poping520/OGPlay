@@ -36,6 +36,102 @@ namespace {
     return result;
 }
 
+LinkedAnnotationValue ConvertAnnotationValue(
+    const loader::DexImage& image, const loader::DexAnnotationValue& source);
+
+LinkedAnnotationValue ConvertAnnotationValue(
+    const loader::DexImage& image, const loader::DexAnnotationValue& source) {
+    LinkedAnnotationValue value;
+    switch (source.kind) {
+    case loader::DexAnnotationValueKind::byte_value:
+        value.kind = LinkedAnnotationValue::Kind::byte_value;
+        value.integral = source.integral;
+        break;
+    case loader::DexAnnotationValueKind::short_value:
+        value.kind = LinkedAnnotationValue::Kind::short_value;
+        value.integral = source.integral;
+        break;
+    case loader::DexAnnotationValueKind::char_value:
+        value.kind = LinkedAnnotationValue::Kind::char_value;
+        value.integral = source.integral;
+        break;
+    case loader::DexAnnotationValueKind::int_value:
+        value.kind = LinkedAnnotationValue::Kind::int_value;
+        value.integral = source.integral;
+        break;
+    case loader::DexAnnotationValueKind::long_value:
+        value.kind = LinkedAnnotationValue::Kind::long_value;
+        value.integral = source.integral;
+        break;
+    case loader::DexAnnotationValueKind::float_value:
+        value.kind = LinkedAnnotationValue::Kind::float_value;
+        value.floating = source.floating;
+        break;
+    case loader::DexAnnotationValueKind::double_value:
+        value.kind = LinkedAnnotationValue::Kind::double_value;
+        value.floating = source.floating;
+        break;
+    case loader::DexAnnotationValueKind::boolean_value:
+        value.kind = LinkedAnnotationValue::Kind::boolean_value;
+        value.integral = source.integral;
+        break;
+    case loader::DexAnnotationValueKind::string_index:
+        value.kind = LinkedAnnotationValue::Kind::string_value;
+        value.text = image.strings[source.index].value;
+        break;
+    case loader::DexAnnotationValueKind::type_index:
+        value.kind = LinkedAnnotationValue::Kind::type_descriptor;
+        value.descriptor = image.types[source.index].descriptor;
+        break;
+    case loader::DexAnnotationValueKind::enum_field_index: {
+        const auto& field = image.fields[source.index];
+        value.kind = LinkedAnnotationValue::Kind::enum_constant;
+        value.descriptor = image.types[field.class_type_index].descriptor;
+        value.name = Ascii(image.strings[field.name_string_index]);
+        break;
+    }
+    case loader::DexAnnotationValueKind::array:
+        value.kind = LinkedAnnotationValue::Kind::array;
+        value.values.reserve(source.values.size());
+        for (const auto& item : source.values) {
+            value.values.push_back(ConvertAnnotationValue(image, item));
+        }
+        break;
+    case loader::DexAnnotationValueKind::annotation:
+        value.kind = LinkedAnnotationValue::Kind::annotation;
+        value.nested_type = image.types[source.nested_type_index].descriptor;
+        value.nested_elements.reserve(source.nested_elements.size());
+        for (const auto& element : source.nested_elements) {
+            value.nested_elements.emplace_back(
+                Ascii(image.strings[element.name_string_index]),
+                ConvertAnnotationValue(image, element.value));
+        }
+        break;
+    case loader::DexAnnotationValueKind::null_reference:
+        value.kind = LinkedAnnotationValue::Kind::null_reference;
+        break;
+    default:
+        value.kind = LinkedAnnotationValue::Kind::unsupported;
+        break;
+    }
+    return value;
+}
+
+[[nodiscard]] LinkedAnnotation ConvertAnnotation(
+    const loader::DexImage& image, const DexUnitId unit,
+    const loader::DexRuntimeAnnotation& source) {
+    LinkedAnnotation annotation;
+    annotation.type_descriptor = image.types[source.type_index].descriptor;
+    annotation.dex_unit = unit;
+    annotation.elements.reserve(source.elements.size());
+    for (const auto& element : source.elements) {
+        annotation.elements.emplace_back(
+            Ascii(image.strings[element.name_string_index]),
+            ConvertAnnotationValue(image, element.value));
+    }
+    return annotation;
+}
+
 [[nodiscard]] bool IsPlatformDescriptor(const std::string_view descriptor) {
     // 临时方案：OGPlay 尚未加载完整的 API 19 boot class path，而是以
     // intrinsic catalog 代替 bootstrap 类，因此目前只能按 descriptor 前缀近似判断
@@ -364,9 +460,8 @@ DexUnitId DexClassLinker::RegisterDexUnit(
                 if (encoded.field_index < image_ref.field_runtime_metadata.size()) {
                     for (const auto& annotation :
                          image_ref.field_runtime_metadata[encoded.field_index].annotations) {
-                        field.runtime_annotations.push_back({
-                            image_ref.types[annotation.type_index].descriptor,
-                            annotation.has_elements});
+                        field.runtime_annotations.push_back(
+                            ConvertAnnotation(image_ref, unit_id, annotation));
                     }
                 }
                 auto& own_fields = is_static ? stored.own_static_fields
@@ -508,6 +603,22 @@ DexUnitId DexClassLinker::RegisterDexUnit(
                         }
                     }
                 }
+            }
+        }
+        if (class_index < image_ref.class_annotation_metadata.size()) {
+            const auto& meta = image_ref.class_annotation_metadata[class_index];
+            stored.runtime_annotations.clear();
+            stored.runtime_annotations.reserve(meta.runtime_annotations.size());
+            for (const auto& annotation : meta.runtime_annotations) {
+                stored.runtime_annotations.push_back(
+                    ConvertAnnotation(image_ref, unit_id, annotation));
+            }
+            stored.annotation_defaults.clear();
+            if (meta.annotation_default.has_value()) {
+                stored.annotation_defaults =
+                    ConvertAnnotation(image_ref, unit_id,
+                                      *meta.annotation_default)
+                        .elements;
             }
         }
     }
@@ -902,6 +1013,58 @@ std::vector<VmMethodId> DexClassLinker::MethodsOf(
     result.insert(result.end(), linked.own_virtual_methods.begin(),
                   linked.own_virtual_methods.end());
     return result;
+}
+
+DexClassId DexClassLinker::DefineRestrictedAnnotationClass(
+    const DexClassId annotation_type,
+    const std::span<const IntrinsicMethodDecl> methods) {
+    if (!impl_->link_complete) {
+        Fail(DexVmErrorReason::internal_invariant,
+             "annotation implementation requires Link()");
+    }
+    EnsureClassLinked(annotation_type);
+    const auto& annotation = impl_->ClassAt(annotation_type);
+    if (!annotation.is_interface ||
+        (annotation.access_flags & kAccAnnotation) == 0U) {
+        Fail(DexVmErrorReason::invalid_hierarchy,
+             "restricted annotation class requires an annotation interface");
+    }
+    const auto loader = annotation.defining_loader;
+    LinkedClass linked;
+    linked.descriptor = "Ljava/lang/annotation/$Impl$" +
+                        std::to_string(++impl_->next_annotation_impl) + ";";
+    linked.super = FindClass("Ljava/lang/Object;");
+    linked.direct_interfaces = {annotation_type};
+    linked.defining_loader = loader;
+    linked.access_flags = kAccPublic | kAccFinal | kAccSynthetic;
+    linked.is_intrinsic = true;
+    linked.is_annotation_implementation = true;
+    linked.annotation_interface = annotation_type;
+    const auto id = impl_->AddClass(std::move(linked));
+    auto& stored = impl_->ClassAt(id);
+    for (const auto& declaration : methods) {
+        LinkedMethod method;
+        method.owner = id;
+        method.name = declaration.name;
+        method.descriptor = declaration.descriptor;
+        method.access_flags = declaration.access_flags;
+        method.kind = MethodKind::intrinsic;
+        method.is_static = declaration.is_static;
+        method.overridable = declaration.overridable;
+        method.must_override = declaration.must_override;
+        method.declared_invoke_kind = declaration.invoke_kind;
+        method.implementation = declaration.implementation;
+        const auto parts = SplitDescriptor(method.descriptor);
+        method.shape = ShapeOf(parts, method.is_static);
+        method.return_shorty = ShortyOf(parts.return_type);
+        method.ins_words = method.shape.incoming_words;
+        const auto method_id = impl_->AddMethod(std::move(method));
+        stored.own_virtual_methods.push_back(method_id);
+    }
+    std::set<std::uint32_t> visiting;
+    impl_->LinkClass(id, visiting);
+    MarkInitiatedBy(id, loader);
+    return id;
 }
 
 std::vector<DexClassId> DexClassLinker::AllClasses() const {

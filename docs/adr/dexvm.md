@@ -29,6 +29,7 @@
 - [ADR-0064 · 通用 KeyStore 使用自有 BKS Provider 与既有 guest crypto](#adr-0064)
 - [ADR-0065 · NativeCrypto 类身份归固定 BootDex，native 按类显式准入](#adr-0065)
 - [ADR-0066 · TLS 保留 AOSP API，采用自有 Provider 与进程内底座](#adr-0066)
+- [ADR-0067 · 受限注解运行时由 DEX 元数据与每 VM 实现类构成](#adr-0067)
 
 <a id="adr-0017"></a>
 
@@ -1020,3 +1021,40 @@ AndroidCAStore 采用可追溯版本化 CA 包和 API19 只读视图；AndroidKe
 减少 Android 系统依赖，但项目承担 Java SPI、BIO/线程生命周期、CA 更新和后端维护责任。
 先交付显式/默认信任，再交付本地 TLS/HTTPS，最后受控在线；完整 PKIX、AndroidKeyStore、
 SSLEngine 与 server TLS 独立记账。本记录不把任何未实现能力提升为 complete。
+
+
+<a id="adr-0067"></a>
+## ADR-0067 · 受限注解运行时由 DEX 元数据与每 VM 实现类构成
+
+- 状态：Accepted
+- 日期：2026-09-17
+- 关联：[DVM-181](../tasks/dexvm/DVM-181.md)、[DVM-145](../tasks/dexvm/DVM-145.md)
+- 延续 ADR-0017、0029；不开放 `Proxy.newProxyInstance`、动态定义或解释器按方法名截获。
+
+### 背景
+
+API 19 的 `Class.getAnnotation` 需要真实 runtime-visible 注解对象，成员调用必须能
+check-cast / instanceof / invoke-interface，并区分显式值与 `AnnotationDefault`。
+AOSP AnnotationFactory 依赖 Proxy 与 Method.getDefaultValue 闭包；既有 Field
+marker 把注解接口直接实例化，无法提供成员行为。初始 Link 之后仍允许数组与原语类
+合成，但不得破坏已发布 class/method 引用的稳定性。
+
+### 决定
+
+采用「DEX 不可变注解元数据 + 每 VM 受限注解实例 + 标准反射入口」。
+
+- loader 只保存事实：可见性、类型、按名称的成员和递归 encoded value。Boot 与 App
+  的索引不得交叉解释。
+- linker 在登记时把索引投影为所属 DexUnit 的描述符/名称。运行期唯一正式接入点是
+  `DexClassLinker::DefineRestrictedAnnotationClass`：仅从已加载的 annotation
+  interface 生成具体实现类，使用 `deque` 追加存储，并走既有 `LinkClass` 填充
+  vtable/iftable。不得改写已链接类的成员表。
+- 实现类方法在生成时绑定 intrinsic handler，成员调用走正常虚派/接口分派；实例状态
+  归 per-VM `AnnotationRuntime` 的具名 state table，参与 GC。不引入进程级 guest
+  引用缓存，也不把注解接口直接实例化。
+
+### 后果
+
+Class 与 Field 查询可共享物化后端；Method.getDefaultValue 复用同一默认值。
+Method/Constructor/参数注解、通用 Proxy 与完整反射仍明确未实现。生成类对
+`Class.forName` 可见，但不作为应用可定义类型或动态 classpath。

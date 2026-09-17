@@ -117,9 +117,11 @@ switch/threaded 解释、异常、线程/monitor、反射及 `java.*` core intri
 ## 文件分工与不变量
 
 - linker：`class_linker.cpp` 注册/布局/vtable，`class_linker_resolve.cpp` 解析/type relation，
-  `method_precheck.cpp` 预检，`fast_code.cpp` 构建缓存。
+  `method_precheck.cpp` 预检，`fast_code.cpp` 构建缓存。`DefineRestrictedAnnotationClass`
+  只在 `Link()` 之后按已加载 annotation interface 追加实现类。
 - interpreter：`interpreter.cpp` 主循环，`interp_threaded_*.inc` threaded，
   `interpreter_context.cpp` context/锁，`diagnostics.cpp` 诊断，`vm_threads.cpp` 线程。
+  `annotation_runtime.cpp` 物化受限注解实例与成员取值。
 - intrinsic：`intrinsics/catalog.cpp` 显式聚合固定 family TU；每类唯一 `Declare_*` 与实现同址。
   禁止静态自注册、misc 巨石、空 handler、平台事实反向依赖。
 - 依赖仅指向 core/loader/runtime-jni；平台 provider 经注入获得。guest 输入全部受检，未实现必须
@@ -130,8 +132,10 @@ switch/threaded 解释、异常、线程/monitor、反射及 `java.*` core intri
 
 ## 尚未实现与测试
 
-Field 支持 runtime-visible 零成员 marker annotation 的查询与数组物化；带成员 annotation 明确
-失败。未实现 generic reflection、完整 annotation proxy、动态 Proxy/defineClass/DexClassLoader、多 classpath
+Field 与 Class 共享运行时注解查询：runtime-visible 递归 encoded value、AnnotationDefault、
+`@Inherited` 超类继承与受限实现类成员分派。Method.getDefaultValue 读取声明默认值。
+Method/Constructor/参数注解查询仍明确未实现。未实现 generic reflection、完整 annotation
+proxy、动态 Proxy/defineClass/DexClassLoader、多 classpath
 反射字段、方法、构造器元数据按成员类别独立按需构建；字段查询不得解析无关方法签名。
 namespace、完整 Charset/PKIX/TLS/BigInt 及完整 Java/Android 平台。
 

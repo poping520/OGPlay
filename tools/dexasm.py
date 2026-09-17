@@ -272,13 +272,28 @@ class Method:
 
 
 @dataclass
+class EncodedAnnValue:
+    kind: str
+    payload: object
+    line: int = 0
+
+
+@dataclass
+class AnnotationDecl:
+    line: int
+    type_descriptor: str
+    visibility: int
+    elements: list[tuple[str, EncodedAnnValue]] = field(default_factory=list)
+
+
+@dataclass
 class FieldDecl:
     line: int
     name: str
     descriptor: str
     access_flags: int
     static_value: tuple[str, object] | None = None
-    runtime_annotations: list[str] = field(default_factory=list)
+    runtime_annotations: list[AnnotationDecl] = field(default_factory=list)
 
 
 @dataclass
@@ -296,6 +311,116 @@ class ClassDecl:
     enclosing_class: str | None = None
     enclosing_method: MethodRef | None = None
     member_classes: list[str] = field(default_factory=list)
+    runtime_annotations: list[AnnotationDecl] = field(default_factory=list)
+    annotation_default: AnnotationDecl | None = None
+
+
+def parse_encoded_ann_value(text: str, line: int, pos: int = 0) -> tuple[EncodedAnnValue, int]:
+    def skip() -> int:
+        nonlocal pos
+        while pos < len(text) and text[pos].isspace():
+            pos += 1
+        return pos
+
+    def take_until(separators: str) -> str:
+        nonlocal pos
+        start = pos
+        while pos < len(text) and text[pos] not in separators and not text[pos].isspace():
+            pos += 1
+        return text[start:pos]
+
+    skip()
+    if pos >= len(text):
+        raise DexAsmError(line, "missing annotation value")
+    if text.startswith("null", pos) and (pos + 4 == len(text) or not text[pos + 4].isalnum()):
+        return EncodedAnnValue("null", None, line), pos + 4
+    if text.startswith("true", pos) and (pos + 4 == len(text) or not text[pos + 4].isalnum()):
+        return EncodedAnnValue("boolean", True, line), pos + 4
+    if text.startswith("false", pos) and (pos + 5 == len(text) or not text[pos + 5].isalnum()):
+        return EncodedAnnValue("boolean", False, line), pos + 5
+    if text.startswith("string:", pos):
+        pos += 7
+        skip()
+        if pos >= len(text) or text[pos] != '"':
+            raise DexAsmError(line, "string annotation value needs quotes")
+        end = pos + 1
+        while end < len(text):
+            if text[end] == '"' and text[end - 1] != "\\":
+                break
+            end += 1
+        if end >= len(text) or text[end] != '"':
+            raise DexAsmError(line, "unterminated annotation string")
+        literal = text[pos:end + 1]
+        return EncodedAnnValue("string", parse_string_literal(literal, line), line), end + 1
+    if text.startswith("class:", pos):
+        pos += 6
+        descriptor = take_until("}{,")
+        if not is_type_descriptor(descriptor):
+            raise DexAsmError(line, f"malformed class annotation value {descriptor}")
+        return EncodedAnnValue("class", descriptor, line), pos
+    if text.startswith("enum:", pos):
+        pos += 5
+        owner = take_until(".")
+        if pos >= len(text) or text[pos] != ".":
+            raise DexAsmError(line, "enum annotation value needs a field name")
+        pos += 1
+        name = take_until(":")
+        if pos >= len(text) or text[pos] != ":":
+            raise DexAsmError(line, "enum annotation value needs a type")
+        pos += 1
+        enum_type = take_until("}{,")
+        if not is_type_descriptor(owner) or not is_type_descriptor(enum_type) or not name:
+            raise DexAsmError(line, "malformed enum annotation value")
+        return EncodedAnnValue("enum", (owner, name, enum_type), line), pos
+    if text.startswith("array:{", pos):
+        pos += 7
+        values: list[EncodedAnnValue] = []
+        while True:
+            skip()
+            if pos >= len(text):
+                raise DexAsmError(line, "unterminated annotation array")
+            if text[pos] == "}":
+                return EncodedAnnValue("array", values, line), pos + 1
+            item, pos = parse_encoded_ann_value(text, line, pos)
+            values.append(item)
+    if text.startswith("annotation:", pos):
+        pos += 11
+        descriptor = take_until("{")
+        skip()
+        if pos >= len(text) or text[pos] != "{":
+            raise DexAsmError(line, "nested annotation needs a body")
+        pos += 1
+        elements: list[tuple[str, EncodedAnnValue]] = []
+        while True:
+            skip()
+            if pos >= len(text):
+                raise DexAsmError(line, "unterminated nested annotation")
+            if text[pos] == "}":
+                return EncodedAnnValue(
+                    "annotation", (descriptor, elements), line), pos + 1
+            name_start = pos
+            while pos < len(text) and (text[pos].isalnum() or text[pos] in "_$"):
+                pos += 1
+            name = text[name_start:pos]
+            skip()
+            if not name or pos >= len(text) or text[pos] != "=":
+                raise DexAsmError(line, "nested annotation element needs name=")
+            pos += 1
+            item, pos = parse_encoded_ann_value(text, line, pos)
+            elements.append((name, item))
+    if len(text) > pos + 1 and text[pos + 1] == ":":
+        kind = text[pos]
+        pos += 2
+        number = take_until("}{,")
+        kinds = {"B": "byte", "S": "short", "C": "char", "I": "int",
+                 "J": "long", "F": "float", "D": "double"}
+        if kind not in kinds:
+            raise DexAsmError(line, f"unsupported annotation value kind {kind}")
+        if kind in "FD":
+            return EncodedAnnValue(kinds[kind], float(number), line), pos
+        return EncodedAnnValue(
+            kinds[kind], parse_int_literal(number, line), line), pos
+    raise DexAsmError(line, f"unsupported annotation value {text[pos:]}")
 
 
 class Parser:
@@ -307,6 +432,8 @@ class Parser:
     def parse(self, text: str) -> list[ClassDecl]:
         current_class: ClassDecl | None = None
         current_method: Method | None = None
+        current_annotation: AnnotationDecl | None = None
+        attach_annotation_to_field = False
         lines = text.splitlines()
         index = 0
         while index < len(lines):
@@ -331,6 +458,8 @@ class Parser:
                                       f"malformed class {descriptor}")
                 current_class = ClassDecl(line_number, descriptor, flags)
                 self.classes.append(current_class)
+                current_annotation = None
+                attach_annotation_to_field = False
             elif tokens[0] == ".super":
                 self._require_class(current_class, line_number)
                 current_class.superclass = tokens[1]
@@ -361,17 +490,63 @@ class Parser:
                 self._require_class(current_class, line_number)
                 current_class.fields.append(
                     self._parse_field(tokens, line_number))
-            elif tokens[0] == ".runtime-annotation":
+                current_annotation = None
+                attach_annotation_to_field = True
+            elif tokens[0] in (".runtime-annotation", ".build-annotation",
+                               ".system-annotation", ".annotation-default"):
                 self._require_class(current_class, line_number)
-                if len(tokens) != 2 or not current_class.fields:
+                visibility = {
+                    ".build-annotation": 0,
+                    ".runtime-annotation": 1,
+                    ".system-annotation": 2,
+                    ".annotation-default": 2,
+                }[tokens[0]]
+                if tokens[0] == ".annotation-default":
+                    if current_annotation is not None:
+                        raise DexAsmError(line_number,
+                                          "nested annotation default is invalid")
+                    current_annotation = AnnotationDecl(
+                        line_number, current_class.descriptor, visibility)
+                    current_class.annotation_default = current_annotation
+                    attach_annotation_to_field = False
+                else:
+                    if len(tokens) != 2 or not is_type_descriptor(tokens[1]):
+                        raise DexAsmError(line_number,
+                                          f"{tokens[0]} expects a type descriptor")
+                    current_annotation = AnnotationDecl(
+                        line_number, tokens[1], visibility)
+                    if attach_annotation_to_field and current_class.fields:
+                        current_class.fields[-1].runtime_annotations.append(
+                            current_annotation)
+                    else:
+                        current_class.runtime_annotations.append(
+                            current_annotation)
+                        attach_annotation_to_field = False
+            elif tokens[0] == ".element":
+                if current_annotation is None:
                     raise DexAsmError(line_number,
-                                      ".runtime-annotation expects a preceding field")
-                current_class.fields[-1].runtime_annotations.append(tokens[1])
+                                      ".element requires an open annotation")
+                if len(tokens) < 3:
+                    raise DexAsmError(line_number,
+                                      ".element expects a name and value")
+                value, consumed = parse_encoded_ann_value(
+                    " ".join(tokens[2:]), line_number)
+                trailing = " ".join(tokens[2:])[consumed:].strip()
+                if trailing:
+                    raise DexAsmError(line_number,
+                                      f"trailing annotation tokens {trailing}")
+                current_annotation.elements.append((tokens[1], value))
+            elif tokens[0] == ".end-annotation":
+                if current_annotation is None:
+                    raise DexAsmError(line_number, "unmatched .end-annotation")
+                current_annotation = None
             elif tokens[0] == ".method":
                 self._require_class(current_class, line_number)
                 current_method = self._parse_method_header(
                     tokens, line_number)
                 current_class.methods.append(current_method)
+                current_annotation = None
+                attach_annotation_to_field = False
             elif tokens[0] == ".registers":
                 self._require_method(current_method, line_number)
                 current_method.registers = parse_int_literal(
@@ -711,12 +886,16 @@ class Assembler:
                     self.pools.add_type(member)
                 annotation_names.add("value")
             self.pools.strings.update(annotation_names)
+            self._collect_annotations(declaration.runtime_annotations)
+            if declaration.annotation_default is not None:
+                self.pools.add_type("Ldalvik/annotation/AnnotationDefault;")
+                self.pools.strings.add("value")
+                self._collect_annotations([declaration.annotation_default])
             for field_decl in declaration.fields:
                 self.pools.add_field(FieldRef(
                     declaration.descriptor, field_decl.name,
                     field_decl.descriptor))
-                for annotation in field_decl.runtime_annotations:
-                    self.pools.add_type(annotation)
+                self._collect_annotations(field_decl.runtime_annotations)
                 if field_decl.static_value and \
                         field_decl.static_value[0] == "string":
                     self.pools.strings.add(field_decl.static_value[1])
@@ -743,6 +922,31 @@ class Assembler:
                     self.pools.strings.add("value")
                     for exception in method.throws_types:
                         self.pools.add_type(exception)
+
+    def _collect_annotations(self, annotations: list[AnnotationDecl]) -> None:
+        for annotation in annotations:
+            self.pools.add_type(annotation.type_descriptor)
+            for name, value in annotation.elements:
+                self.pools.strings.add(name)
+                self._collect_ann_value(value)
+
+    def _collect_ann_value(self, value: EncodedAnnValue) -> None:
+        if value.kind == "string":
+            self.pools.strings.add(value.payload)
+        elif value.kind == "class":
+            self.pools.add_type(value.payload)
+        elif value.kind == "enum":
+            owner, name, enum_type = value.payload
+            self.pools.add_field(FieldRef(owner, name, enum_type))
+        elif value.kind == "array":
+            for item in value.payload:
+                self._collect_ann_value(item)
+        elif value.kind == "annotation":
+            descriptor, elements = value.payload
+            self.pools.add_type(descriptor)
+            for name, item in elements:
+                self.pools.strings.add(name)
+                self._collect_ann_value(item)
 
     def _index_pools(self) -> None:
         self.string_list = sorted(self.pools.strings)
@@ -1101,7 +1305,45 @@ class Assembler:
         if kind == "string":
             payload = trimmed_unsigned(self.string_index[value], 4)
             return bytes([0x17 | ((len(payload) - 1) << 5)]) + payload
+        if kind == "class":
+            return self._encoded_index(0x18, self.type_index[value])
+        if kind == "enum":
+            owner, name, enum_type = value
+            return self._encoded_index(
+                0x1B, self.field_index[(owner, name, enum_type)])
+        if kind == "array":
+            out = bytearray([0x1C])
+            out += uleb128(len(value))
+            for item in value:
+                out += self._encode_ann_value(item)
+            return bytes(out)
+        if kind == "annotation":
+            descriptor, elements = value
+            return bytes([0x1D]) + self._encode_annotation_body(
+                descriptor, elements)
         raise DexAsmError(line, f"unsupported encoded value kind {kind}")
+
+    def _encode_ann_value(self, value: EncodedAnnValue) -> bytes:
+        return self._encode_encoded_value(value.kind, value.payload, value.line)
+
+    def _encode_annotation_body(
+            self, annotation_type: str,
+            elements: list[tuple[str, EncodedAnnValue]]) -> bytes:
+        encoded = [(name, self._encode_ann_value(item))
+                   for name, item in elements]
+        encoded.sort(key=lambda item: self.string_index[item[0]])
+        out = bytearray()
+        out += uleb128(self.type_index[annotation_type])
+        out += uleb128(len(encoded))
+        for name, payload in encoded:
+            out += uleb128(self.string_index[name])
+            out += payload
+        return bytes(out)
+
+    def _encode_annotation_elements(
+            self, annotation: AnnotationDecl) -> list[tuple[str, bytes]]:
+        return [(name, self._encode_ann_value(item))
+                for name, item in annotation.elements]
 
     @staticmethod
     def _encoded_index(value_type: int, index: int) -> bytes:
@@ -1304,6 +1546,22 @@ class Assembler:
                     annotation_type,
                     [("value", self._encoded_type_array(
                         declaration.member_classes))])))
+            for annotation in declaration.runtime_annotations:
+                items.append((annotation.type_descriptor, append_annotation(
+                    annotation.type_descriptor,
+                    self._encode_annotation_elements(annotation),
+                    annotation.visibility)))
+            if declaration.annotation_default is not None:
+                default = declaration.annotation_default
+                nested = self._encode_encoded_value(
+                    "annotation",
+                    (declaration.descriptor, default.elements),
+                    default.line)
+                items.append((
+                    "Ldalvik/annotation/AnnotationDefault;",
+                    append_annotation(
+                        "Ldalvik/annotation/AnnotationDefault;",
+                        [("value", nested)], 2)))
             if items:
                 class_annotation_items[declaration.descriptor] = items
             for field_decl in declaration.fields:
@@ -1311,7 +1569,10 @@ class Assembler:
                        field_decl.descriptor)
                 for annotation in field_decl.runtime_annotations:
                     field_annotation_items.setdefault(key, []).append(
-                        (annotation, append_annotation(annotation, [], 1)))
+                        (annotation.type_descriptor, append_annotation(
+                            annotation.type_descriptor,
+                            self._encode_annotation_elements(annotation),
+                            annotation.visibility)))
             for method in declaration.methods:
                 if not method.throws_types:
                     continue

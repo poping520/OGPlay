@@ -4,6 +4,10 @@
 
 ## 最近进展
 
+- [DVM-181](../tasks/dexvm/DVM-181.md)：Class 运行时注解查询与受限注解成员执行。DEX 递归
+  encoded value、AnnotationDefault、`@Inherited` 超类继承与每 VM 实现类走普通接口分派。
+  Field 改用同一后端；Method.getDefaultValue 读取声明默认值。不宣称完整 annotation
+  reflection、Proxy 或 Jackson。
 - [DVM-180](../tasks/dexvm/DVM-180.md)：`getPackageInfo` 支持 `GET_ACTIVITIES`，从当前
   APK Manifest 发布 Activity/activity-alias 元数据。未请求时 `activities` 保持 null。
   不宣称完整 PackageManager、组件启动或广告可用。
@@ -12,8 +16,8 @@
   LinearLayout 空 AttributeSet、ViewGroup clip 与 View clickable。
 - DVM-173 TLS-01/02 与 Session 边界已验收；TLS-03 未完成。KeyStore DVM-172 约定范围闭合。
 - Angry Birds 无 Profile 兼容链已越过 location、文件路径、旧 JNI、AudioTrack、Settings、
-  权限、GLSurfaceView、Mac、runOnUiThread、KeyStore、DVM-174..179 以及当前包
-  `GET_ACTIVITIES` 查询。
+  权限、GLSurfaceView、Mac、runOnUiThread、KeyStore、DVM-174..179、当前包
+  `GET_ACTIVITIES` 查询以及 Class 运行时注解查询。
 - [DVM-161](../tasks/dexvm/DVM-161.md) 至 [DVM-170](../tasks/dexvm/DVM-170.md) 对应首错已闭合。
 - BND-34..39 已闭合本轮 EGL/GLES 核心审计；不等同 CTS/Khronos 完整认证。
 
@@ -34,9 +38,12 @@
 
 - Windows Release 仅构建受影响目标；BootDex 1638 类，DEX
   `506da0c2323946e53852affe2bfb9b3b585ae3d1c2a20cb345093f6296fe97bd`。
-  DVM-180 双解释器与 Manifest exported 夹具通过；`architecture.dexvm_intrinsic_layout` 通过。
-- Angry Birds 无 Profile、关闭 survey：插屏路径已越过 `getPackageInfo` flags=4097。
-  下一独立首错为 `Class.getAnnotation`（Jackson `VisibilityChecker$Std.<clinit>`）。
+  DVM-181 双解释器 Class/Field 注解夹具、loader runtime/default 与 malformed
+  可见性测试通过；`architecture.dexvm_intrinsic_layout` 通过。
+- Angry Birds 无 Profile、关闭 survey：插屏路径越过 `Class.getAnnotation`，
+  Jackson `ObjectMapper`/`VisibilityChecker$Std` 初始化继续。下一独立首错为
+  `Class.getEnumConstants`（`MapperConfig$Impl.collectFeatureDefaults`，
+  `SerializationConfig$Feature`）。不宣称完整 Jackson 或游戏兼容。
 - guest JNI
   `e2d4b5de0f1c02b2d84c1e37d7d0561495b2ea1165648f2a01b5a80201a1a7f0`。
 - `data/android/19/framework/` 为本地生成产物，不纳入版本控制。

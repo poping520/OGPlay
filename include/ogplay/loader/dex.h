@@ -120,13 +120,64 @@ struct DexMethodSystemMetadata final {
     std::vector<std::uint32_t> exception_type_indices;
 };
 
+enum class DexAnnotationVisibility : std::uint8_t {
+    build = 0,
+    runtime = 1,
+    system = 2,
+};
+
+enum class DexAnnotationValueKind : std::uint8_t {
+    byte_value = 0x00,
+    short_value = 0x02,
+    char_value = 0x03,
+    int_value = 0x04,
+    long_value = 0x06,
+    float_value = 0x10,
+    double_value = 0x11,
+    method_type_index = 0x15,
+    method_handle_index = 0x16,
+    string_index = 0x17,
+    type_index = 0x18,
+    field_index = 0x19,
+    method_index = 0x1a,
+    enum_field_index = 0x1b,
+    array = 0x1c,
+    annotation = 0x1d,
+    null_reference = 0x1e,
+    boolean_value = 0x1f,
+};
+
+struct DexAnnotationElement;
+
+struct DexAnnotationValue final {
+    DexAnnotationValueKind kind{DexAnnotationValueKind::null_reference};
+    std::int64_t integral{};
+    double floating{};
+    std::uint32_t index{};
+    std::uint32_t nested_type_index{};
+    std::vector<DexAnnotationValue> values;
+    std::vector<DexAnnotationElement> nested_elements;
+};
+
+struct DexAnnotationElement final {
+    std::uint32_t name_string_index{};
+    DexAnnotationValue value;
+};
+
 struct DexRuntimeAnnotation final {
     std::uint32_t type_index{};
     bool has_elements{};
+    DexAnnotationVisibility visibility{DexAnnotationVisibility::runtime};
+    std::vector<DexAnnotationElement> elements;
 };
 
 struct DexFieldRuntimeMetadata final {
     std::vector<DexRuntimeAnnotation> annotations;
+};
+
+struct DexClassAnnotationMetadata final {
+    std::vector<DexRuntimeAnnotation> runtime_annotations;
+    std::optional<DexRuntimeAnnotation> annotation_default;
 };
 
 struct DexImage final {
@@ -142,6 +193,7 @@ struct DexImage final {
     std::vector<DexClassSystemMetadata> class_system_metadata;
     std::vector<DexMethodSystemMetadata> method_system_metadata;
     std::vector<DexFieldRuntimeMetadata> field_runtime_metadata;
+    std::vector<DexClassAnnotationMetadata> class_annotation_metadata;
 
     [[nodiscard]] std::optional<DexMapItem> FindMapItem(
         DexMapItemType type) const noexcept;

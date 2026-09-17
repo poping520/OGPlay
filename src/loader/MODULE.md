@@ -52,11 +52,11 @@
   永久限制在已选 process ABI。
 - `ParseDex(bytes)`：从不可信字节解析 DEX 035..040 header、固定 ID 表范围和有序
   `map_list`，并严格解码字符串、类型 descriptor、prototype type_list/shorty；交叉验证
-  field/method ID、class_def、接口列表及所有索引与 UTF-16 长度；DVM-69 额外只投影
-  InnerClass/EnclosingClass/EnclosingMethod/MemberClasses/Throws system annotations，
-  runtime-visible 字段 annotation 保留类型与是否含元素；其余 annotation 只受检跳过，
-  不生成通用语义对象；encoded value kind/value_arg 按 DEX
-  宽度与复合/null/boolean 规则 fail closed；不执行任何字节码。
+  field/method ID、class_def、接口列表及所有索引与 UTF-16 长度；DVM-69 投影
+  InnerClass/EnclosingClass/EnclosingMethod/MemberClasses/Throws system annotations；
+  DVM-181 另外保留 class/field runtime-visible 递归 encoded value 与
+  `AnnotationDefault`，method/parameter 注解仍只受检不发布查询面；encoded value
+  kind/value_arg 按 DEX 宽度与复合/null/boolean 规则 fail closed；不执行任何字节码。
 - `ReadDexClassData(bytes, image)`：解码 class_data 的 delta member 索引与 access flags，
   对 code_item 只提取寄存器、参数、try 数和指令 code-unit 数，不解释指令。
 - `AnalyzeDexL1(image, class_data, libraries, signatures)`：输出应用类/方法/native 数量、

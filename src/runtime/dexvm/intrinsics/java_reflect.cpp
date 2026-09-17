@@ -14,6 +14,7 @@
 
 #include "ogplay/runtime/dexvm/class_loader_facade.h"
 #include "ogplay/runtime/dexvm/class_name_codec.h"
+#include "ogplay/runtime/dexvm/annotation_runtime.h"
 #include "ogplay/runtime/dexvm/intrinsic_builder.h"
 #include "ogplay/runtime/dexvm/reflection.h"
 
@@ -671,6 +672,35 @@ IntrinsicClassDecl Declare_java_lang_Class(
     add_field_lookup("getDeclaredField", false);
     add_field_lookup("getField", true);
 
+    builder.VirtualMethod(
+        "isAnnotationPresent", "(Ljava/lang/Class;)Z",
+        [](IntrinsicContext& context) {
+            return VmValue::Int(
+                context.vm.Annotations().IsClassAnnotationPresent(
+                    Represented(context), context.arguments[0].ref)
+                    ? 1
+                    : 0);
+        });
+    builder.VirtualMethod(
+        "getAnnotation",
+        "(Ljava/lang/Class;)Ljava/lang/annotation/Annotation;",
+        [](IntrinsicContext& context) {
+            return VmValue::Ref(context.vm.Annotations().GetClassAnnotation(
+                Represented(context), context.arguments[0].ref, true));
+        });
+    builder.VirtualMethod(
+        "getAnnotations", "()[Ljava/lang/annotation/Annotation;",
+        [](IntrinsicContext& context) {
+            return VmValue::Ref(context.vm.Annotations().GetClassAnnotations(
+                Represented(context), true));
+        });
+    builder.VirtualMethod(
+        "getDeclaredAnnotations", "()[Ljava/lang/annotation/Annotation;",
+        [](IntrinsicContext& context) {
+            return VmValue::Ref(context.vm.Annotations().GetClassAnnotations(
+                Represented(context), false));
+        });
+
     return std::move(builder).Build();
 }
 
@@ -1134,6 +1164,15 @@ IntrinsicClassDecl Declare_java_lang_reflect_Constructor() {
             }
             return VmValue::Ref(context.vm.NewStringUtf8(text));
         });
+    builder.UnimplementedOverride(
+        "isAnnotationPresent", "(Ljava/lang/Class;)Z");
+    builder.UnimplementedOverride(
+        "getAnnotation",
+        "(Ljava/lang/Class;)Ljava/lang/annotation/Annotation;");
+    builder.UnimplementedOverride(
+        "getAnnotations", "()[Ljava/lang/annotation/Annotation;");
+    builder.UnimplementedOverride(
+        "getDeclaredAnnotations", "()[Ljava/lang/annotation/Annotation;");
     builder.VirtualMethod(
         "newInstance", "([Ljava/lang/Object;)Ljava/lang/Object;",
         [](IntrinsicContext& context) {
@@ -1199,69 +1238,34 @@ IntrinsicClassDecl Declare_java_lang_reflect_Field() {
             (context.vm.Reflection().FieldMetadata(context.receiver)
                  .access_flags & kAccSynthetic) != 0U ? 1 : 0);
     });
-    const auto find_annotation = [](IntrinsicContext& context)
-        -> const LinkedField::RuntimeAnnotation* {
-        const auto requested =
-            context.vm.Model().ClassOfClassObject(context.arguments[0].ref);
-        const auto& field = context.vm.Linker().Field(
-            context.vm.Reflection().FieldMetadata(context.receiver).field);
-        const auto& descriptor = context.vm.Linker().Class(requested).descriptor;
-        const auto found = std::find_if(
-            field.runtime_annotations.begin(), field.runtime_annotations.end(),
-            [&](const auto& item) { return item.descriptor == descriptor; });
-        return found == field.runtime_annotations.end() ? nullptr : &*found;
-    };
-    const auto materialize_annotation = [](IntrinsicContext& context,
-                                           const auto& annotation) {
-        if (annotation.has_elements) {
-            throw VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
-                              "annotation elements are not supported"};
-        }
-        const auto type = context.vm.Linker().ResolveDescriptor(
-            annotation.descriptor);
-        return context.vm.Model().NewInstance(
-            type, context.vm.Linker().Class(type).instance_slots);
-    };
     builder.OverrideMethod(
         "isAnnotationPresent", "(Ljava/lang/Class;)Z",
-        [find_annotation](IntrinsicContext& context) {
-            return VmValue::Int(find_annotation(context) != nullptr ? 1 : 0);
+        [](IntrinsicContext& context) {
+            return VmValue::Int(
+                context.vm.Annotations().IsFieldAnnotationPresent(
+                    context.vm.Reflection().FieldMetadata(context.receiver).field,
+                    context.arguments[0].ref)
+                    ? 1
+                    : 0);
         });
     builder.OverrideMethod(
-        "getAnnotation", "(Ljava/lang/Class;)Ljava/lang/annotation/Annotation;",
-        [find_annotation, materialize_annotation](IntrinsicContext& context) {
-            const auto* annotation = find_annotation(context);
-            return VmValue::Ref(annotation == nullptr
-                ? VmObjectRef{}
-                : materialize_annotation(context, *annotation));
+        "getAnnotation",
+        "(Ljava/lang/Class;)Ljava/lang/annotation/Annotation;",
+        [](IntrinsicContext& context) {
+            return VmValue::Ref(context.vm.Annotations().GetFieldAnnotation(
+                context.vm.Reflection().FieldMetadata(context.receiver).field,
+                context.arguments[0].ref));
         });
-    const auto get_annotations =
-        [materialize_annotation](IntrinsicContext& context) {
-            const auto& field = context.vm.Linker().Field(
-                context.vm.Reflection().FieldMetadata(context.receiver).field);
-            const auto annotation_class = context.vm.Linker().ResolveDescriptor(
-                "Ljava/lang/annotation/Annotation;");
-            const auto array_class = context.vm.Linker().ResolveDescriptor(
-                "[Ljava/lang/annotation/Annotation;");
-            const auto array = context.vm.Model().NewObjectArray(
-                array_class, annotation_class,
-                static_cast<JniSize>(field.runtime_annotations.size()));
-            for (JniSize index = 0;
-                 index < static_cast<JniSize>(field.runtime_annotations.size());
-                 ++index) {
-                context.vm.Model().SetObjectElement(
-                    array, index,
-                    materialize_annotation(context,
-                        field.runtime_annotations[static_cast<std::size_t>(index)]));
-            }
-            return VmValue::Ref(array);
-        };
+    const auto get_field_annotations = [](IntrinsicContext& context) {
+        return VmValue::Ref(context.vm.Annotations().GetFieldAnnotations(
+            context.vm.Reflection().FieldMetadata(context.receiver).field));
+    };
     builder.OverrideMethod("getAnnotations",
                            "()[Ljava/lang/annotation/Annotation;",
-                           get_annotations);
+                           get_field_annotations);
     builder.OverrideMethod("getDeclaredAnnotations",
                            "()[Ljava/lang/annotation/Annotation;",
-                           get_annotations);
+                           get_field_annotations);
     builder.OverrideMethod("equals", "(Ljava/lang/Object;)Z",
         [](IntrinsicContext& context) {
             return VmValue::Int(context.vm.Reflection().SemanticallyEqual(
@@ -1500,6 +1504,22 @@ IntrinsicClassDecl Declare_java_lang_reflect_Method() {
             }
             return VmValue::Ref(context.vm.NewStringUtf8(text));
     });
+    builder.UnimplementedOverride(
+        "isAnnotationPresent", "(Ljava/lang/Class;)Z");
+    builder.UnimplementedOverride(
+        "getAnnotation",
+        "(Ljava/lang/Class;)Ljava/lang/annotation/Annotation;");
+    builder.UnimplementedOverride(
+        "getAnnotations", "()[Ljava/lang/annotation/Annotation;");
+    builder.UnimplementedOverride(
+        "getDeclaredAnnotations", "()[Ljava/lang/annotation/Annotation;");
+    builder.VirtualMethod(
+        "getDefaultValue", "()Ljava/lang/Object;",
+        [](IntrinsicContext& context) {
+            return VmValue::Ref(context.vm.Annotations().GetDefaultValue(
+                context.vm.Reflection().MethodMetadata(context.receiver)
+                    .method));
+        });
     builder.VirtualMethod(
         "invoke", "(Ljava/lang/Object;[Ljava/lang/Object;)Ljava/lang/Object;",
         [](IntrinsicContext& context) {

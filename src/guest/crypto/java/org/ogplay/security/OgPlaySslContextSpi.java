@@ -5,7 +5,6 @@ import java.security.KeyStore;
 import java.security.KeyStoreException;
 import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
-import javax.net.ssl.HttpsURLConnection;
 import javax.net.ssl.KeyManager;
 import javax.net.ssl.SSLContextSpi;
 import javax.net.ssl.SSLEngine;
@@ -185,7 +184,6 @@ public class OgPlaySslContextSpi extends SSLContextSpi {
             super(new String[] {"TLSv1.2", "TLSv1.1", "TLSv1"});
             try {
                 engineInit(null, null, null);
-                HttpsURLConnection.setDefaultSSLSocketFactory(engineGetSocketFactory());
             } catch (Exception e) {
                 throw new java.security.ProviderException(e);
             }

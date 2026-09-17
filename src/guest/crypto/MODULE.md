@@ -57,4 +57,6 @@ DVM-173 在同一 `libogplay_jni.so` 增加 `trust_jni.c` 与 `tls_jni.c`：路�
 DT_NEEDED 含 `libssl.so` 并写入 manifest。SSLEngine、server TLS 与公开互联网 CA 包不在本模块范围。
 路径验证时间经 JNI 读取 `System.currentTimeMillis()` 再 `X509_STORE_CTX_set_time`，不写死墙钟。
 握手使用 `SSL_VERIFY_PEER`，在 `SSL_do_handshake` 内调用 Java TrustManager。
+客户端 session 经 `i2d_SSL_SESSION`/`SSL_set_session` 恢复；`SSL_session_reused` 在
+OpenSSL 1.0.1 中不是导出符号，恢复成功以未再次调用 TrustManager 判定。
 payload `libssl.so` 仍为 AOSP 4.4.4_r2.0.1 的 OpenSSL 1.0.1，不能据本地握手发布在线 HTTPS。

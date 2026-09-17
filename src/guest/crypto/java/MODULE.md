@@ -17,8 +17,11 @@ API19 只读；写/删/store 抛 UnsupportedOperationException。
 DVM-172 已完成 KeyStore/BKS 发布条件并注册默认 BKS。DVM-173 增加 OGPlayJSSE：PKIX
 TrustManagerFactory、真实 libcrypto 路径验证与只读 AndroidCAStore；客户端 SSLSocket/
 HTTPS 经 raw NetworkRuntime 完成 loopback TLS 1.2 握手与 GET。校验时间走统一 Clock；
-仅 Default SSLContext 设置全局 HTTPS 工厂；协议/SNI 作用于 native SSL；TrustManager 在
-握手内执行。请求头在 `connect()` 前快照，因为 `URLConnection.getRequestProperties()` 在
-已连接后抛 Already connected。
-不包含 AndroidKeyStore、通用 CertPathValidator.PKIX、SSLEngine、server TLS、
-`SSL_set_session` 恢复或公开互联网 CA。
+`SSLContext.init` 与 `DefaultContext` 都不覆盖调用方已设置的全局 HTTPS 工厂；协议/SNI
+作用于 native SSL；TrustManager 在握手内执行；session 以二进制 id 缓存并经
+`SSL_set_session` 恢复，超时在查询/枚举/恢复路径上检查。请求头在 `connect()` 前快照，
+因为 `URLConnection.getRequestProperties()` 在已连接后抛 Already connected。
+不包含 AndroidKeyStore、通用 CertPathValidator.PKIX、SSLEngine、server TLS 或公开互联网 CA。
+
+Session 超时按统一 Clock 与原创建时间计算；恢复复用原 Session 对象，查询不续期。
+缓存容量 0 表示无限，只有超过容量才淘汰；二进制 ID 使用不可变字节键。

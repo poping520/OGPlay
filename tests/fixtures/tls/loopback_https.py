@@ -48,6 +48,8 @@ def main() -> int:
     context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
     context.minimum_version = ssl.TLSVersion.TLSv1_2
     context.maximum_version = ssl.TLSVersion.TLSv1_2
+    if hasattr(ssl, "OP_NO_TICKET"):
+        context.options |= ssl.OP_NO_TICKET
     context.set_ciphers(
         "ECDHE-RSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-SHA256:AES128-SHA256:AES128-SHA")
     context.load_cert_chain(args.cert, args.key)

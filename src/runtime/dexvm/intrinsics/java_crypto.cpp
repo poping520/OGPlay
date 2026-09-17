@@ -517,6 +517,9 @@ IntrinsicClassDecl NativeTlsBoundary() {
     b.GuestNativeStatic("protocol", "(J)Ljava/lang/String;");
     b.GuestNativeStatic("cipherSuite", "(J)Ljava/lang/String;");
     b.GuestNativeStatic("sessionId", "(J)[B");
+    b.GuestNativeStatic("sessionState", "(J)[B");
+    b.GuestNativeStatic("setSession", "(J[B)Z");
+    b.GuestNativeStatic("sessionReused", "(J)Z");
     b.GuestNativeStatic("read", "(J[BII)I");
     b.GuestNativeStatic("write", "(J[BII)I");
     b.GuestNativeStatic("pullWire", "(J)[B");

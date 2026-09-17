@@ -731,3 +731,17 @@
     move-result-object v1
     return-object v1
 .end method
+
+.class public final enum LP1EmptyEnum;
+.super Ljava/lang/Enum;
+
+.method static constructor <clinit>()V
+.registers 0
+    return-void
+.end method
+
+.method public constructor <init>(Ljava/lang/String;I)V
+.registers 4
+    invoke-direct {v1, v2, v3}, Ljava/lang/Enum;-><init>(Ljava/lang/String;I)V
+    return-void
+.end method

@@ -1495,3 +1495,53 @@ TEST_CASE("Class runtime annotations query members defaults inherited and isolat
         static_cast<void>(roots);
     }
 }
+
+TEST_CASE("DVM-182 Class getEnumConstants clones shared enum identity") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch,
+                               InterpreterBackend::threaded}) {
+        ReflectionVm vm("p1.dex", backend);
+        const auto enum_class = vm.linker.ResolveDescriptor("LP1Enum;");
+        const auto class_object = vm.model.ClassObject(enum_class);
+        const auto first = Ref(vm.Virtual(
+            class_object, "getEnumConstants", "()[Ljava/lang/Object;"));
+        const auto second = Ref(vm.Virtual(
+            class_object, "getEnumConstants", "()[Ljava/lang/Object;"));
+        const auto shared = vm.interpreter.SharedEnumConstants(enum_class);
+        REQUIRE(first.IsValid());
+        REQUIRE(second.IsValid());
+        CHECK(vm.linker.Class(vm.model.ObjectClass(first)).descriptor ==
+              "[LP1Enum;");
+        CHECK(vm.linker.Class(vm.model.ObjectClass(second)).descriptor ==
+              "[LP1Enum;");
+        REQUIRE(vm.model.ArrayLength(first) == 2);
+        REQUIRE(vm.model.ArrayLength(second) == 2);
+        CHECK(first != second);
+        CHECK(first != shared);
+        const auto small = vm.model.GetObjectElement(shared, 0);
+        const auto large = vm.model.GetObjectElement(shared, 1);
+        CHECK(vm.model.GetObjectElement(first, 0) == small);
+        CHECK(vm.model.GetObjectElement(first, 1) == large);
+        CHECK(vm.interpreter.StringUtf8(Ref(vm.Virtual(
+            small, "name", "()Ljava/lang/String;"))) == "SMALL");
+        CHECK(vm.interpreter.StringUtf8(Ref(vm.Virtual(
+            large, "name", "()Ljava/lang/String;"))) == "LARGE");
+        vm.model.SetObjectElement(first, 0, VmObjectRef{});
+        CHECK(vm.model.GetObjectElement(second, 0) == small);
+        CHECK(vm.model.GetObjectElement(shared, 0) == small);
+
+        const auto empty = Ref(vm.Virtual(
+            ClassOf(vm, "LP1EmptyEnum;"), "getEnumConstants",
+            "()[Ljava/lang/Object;"));
+        REQUIRE(empty.IsValid());
+        CHECK(vm.model.ArrayLength(empty) == 0);
+        CHECK(vm.linker.Class(vm.model.ObjectClass(empty)).descriptor ==
+              "[LP1EmptyEnum;");
+
+        CHECK_FALSE(Ref(vm.Virtual(
+            ClassOf(vm, "Ljava/lang/String;"), "getEnumConstants",
+            "()[Ljava/lang/Object;")).IsValid());
+        CHECK_FALSE(Ref(vm.Virtual(
+            ClassOf(vm, "Ljava/lang/Object;"), "getEnumConstants",
+            "()[Ljava/lang/Object;")).IsValid());
+    }
+}

@@ -1342,8 +1342,8 @@ note = "DVM-64/Chapter 11 closure 交付不可变 ReflectionMetadata 与唯一 w
 
 [dexvm.class_reflection_core]
 status = "complete"
-test = "tests/dexvm/reflection_tests.cpp; tests/dexvm/android_value_tests.cpp: DVM-143"
-note = "DVM-65 闭合 API19 Class 的名称、loader、forName、层级、分类、assignability/cast 与成员查询。DVM-143 将 getMethod/getDeclaredMethod 改为名称+参数定向扫描，只有同名候选在命中后解析返回/异常类型；getMethods/getDeclaredMethods 仍完整枚举。双后端验证无关方法引用缺失类型不阻断查询。DVM-181 交付 Class 运行时注解查询与受限注解成员执行；generic、Method/Constructor 注解与通用 Proxy 仍非目标。"
+test = "tests/dexvm/reflection_tests.cpp; tests/dexvm/android_value_tests.cpp: DVM-143; tests/dexvm/reflection_tests.cpp: DVM-182"
+note = "DVM-65 闭合 API19 Class 的名称、loader、forName、层级、分类、assignability/cast 与成员查询。DVM-143 将 getMethod/getDeclaredMethod 改为名称+参数定向扫描，只有同名候选在命中后解析返回/异常类型；getMethods/getDeclaredMethods 仍完整枚举。双后端验证无关方法引用缺失类型不阻断查询。DVM-181 交付 Class 运行时注解查询与受限注解成员执行。DVM-182 按 API19 交付 getEnumConstants：非枚举返回 null，枚举返回 SharedEnumConstants 的浅克隆。generic、Method/Constructor 注解与通用 Proxy 仍非目标。"
 
 [dexvm.reflection_invoke]
 status = "complete"

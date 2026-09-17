@@ -119,6 +119,9 @@ handler id、单类 TU 或 misc 巨石。非 Android family 归 core，平台事
   clickable；程序化 `InvokeViewOnClick` 不检查该标志。基础 `onTouchEvent` 在 clickable
   时消费触摸且不伪造 onClick。OnTouchListener 与子类 `onTouchEvent` 不被 clickable=false
   禁用。不宣称长按、无障碍或完整手势系统。
+- `View.getContext()` 返回构造或 XML 膨胀时写入 `mContext` 的同一 guest Context。
+  不替换为全局 Activity/Application/null。不宣称完整 View 状态机或 LayoutInflater
+  工厂。
 - `LinearLayout(Context, AttributeSet)` 支持 `attrs == null` 的程序化构造：复用
   `ViewInitHandler`/`UiClassForObject` 建立唯一 LinearLayout UiNode 与默认水平排列。
   null Context 抛 NPE；非空 AttributeSet 记账并明确失败。不宣称完整 XML/主题构造。

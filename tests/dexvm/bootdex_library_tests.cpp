@@ -1533,6 +1533,88 @@ TEST_CASE("DVM-103 Externalizable invokes public constructor and callbacks with 
     }
 }
 
+TEST_CASE("DVM-183 SQL date value types use API 19 BootDex") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch,
+                               InterpreterBackend::threaded}) {
+        CAPTURE(backend == InterpreterBackend::threaded ? "threaded" : "switch");
+        Dvm87Vm fixture(backend);
+        const auto util_date =
+            fixture.linker.ResolveDescriptor("Ljava/util/Date;");
+        const auto sql_date =
+            fixture.linker.ResolveDescriptor("Ljava/sql/Date;");
+        const auto sql_time =
+            fixture.linker.ResolveDescriptor("Ljava/sql/Time;");
+        const auto sql_timestamp =
+            fixture.linker.ResolveDescriptor("Ljava/sql/Timestamp;");
+        for (const auto type : {sql_date, sql_time, sql_timestamp}) {
+            fixture.linker.EnsureClassLinked(type);
+            const auto& linked = fixture.linker.Class(type);
+            CHECK(linked.is_boot_dex);
+            CHECK_FALSE(linked.is_intrinsic);
+            CHECK(linked.super.has_value());
+            CHECK(*linked.super == util_date);
+            CHECK(fixture.linker.IsAssignable(util_date, type));
+            for (const auto method : linked.own_virtual_methods) {
+                CHECK(fixture.linker.Method(method).kind !=
+                      MethodKind::intrinsic);
+            }
+            for (const auto method : linked.own_direct_methods) {
+                CHECK(fixture.linker.Method(method).kind !=
+                      MethodKind::intrinsic);
+            }
+        }
+
+        const auto date = fixture.vm.NewIntrinsicInstance("Ljava/sql/Date;");
+        fixture.Construct(date, "Ljava/sql/Date;", "(J)V", {VmValue::Long(0)});
+        auto outcome = fixture.Virtual(date, "getTime", "()J");
+        fixture.RequireOk(outcome);
+        CHECK(outcome.value.AsLong() == 0);
+        outcome = fixture.Virtual(date, "toString", "()Ljava/lang/String;");
+        fixture.RequireOk(outcome);
+        CHECK(fixture.vm.StringUtf8(outcome.value.ref) == "1970-01-01");
+        outcome = fixture.Virtual(date, "getHours", "()I");
+        REQUIRE(outcome.exception.IsValid());
+        CHECK(fixture.linker.Class(outcome.exception_class).descriptor ==
+              "Ljava/lang/IllegalArgumentException;");
+
+        const auto kept = fixture.vm.NewIntrinsicInstance("Ljava/sql/Date;");
+        fixture.Construct(kept, "Ljava/sql/Date;", "(J)V",
+                          {VmValue::Long(12345)});
+        outcome = fixture.Virtual(kept, "getTime", "()J");
+        fixture.RequireOk(outcome);
+        CHECK(outcome.value.AsLong() == 12345);
+
+        const auto time = fixture.vm.NewIntrinsicInstance("Ljava/sql/Time;");
+        fixture.Construct(time, "Ljava/sql/Time;", "(J)V", {VmValue::Long(0)});
+        outcome = fixture.Virtual(time, "getTime", "()J");
+        fixture.RequireOk(outcome);
+        CHECK(outcome.value.AsLong() == 0);
+        outcome = fixture.Virtual(time, "toString", "()Ljava/lang/String;");
+        fixture.RequireOk(outcome);
+        CHECK(fixture.vm.StringUtf8(outcome.value.ref) == "00:00:00");
+
+        constexpr auto millis = 1'704'067'200'123LL;
+        const auto timestamp =
+            fixture.vm.NewIntrinsicInstance("Ljava/sql/Timestamp;");
+        fixture.Construct(timestamp, "Ljava/sql/Timestamp;", "(J)V",
+                          {VmValue::Long(millis)});
+        outcome = fixture.Virtual(timestamp, "getTime", "()J");
+        fixture.RequireOk(outcome);
+        CHECK(outcome.value.AsLong() == millis);
+        outcome = fixture.Virtual(timestamp, "getNanos", "()I");
+        fixture.RequireOk(outcome);
+        CHECK(outcome.value.AsInt() == 123000000);
+        fixture.RequireOk(fixture.Virtual(timestamp, "setNanos", "(I)V",
+                                          {VmValue::Int(7)}));
+        outcome = fixture.Virtual(timestamp, "getNanos", "()I");
+        fixture.RequireOk(outcome);
+        CHECK(outcome.value.AsInt() == 7);
+        outcome = fixture.Virtual(timestamp, "getTime", "()J");
+        fixture.RequireOk(outcome);
+        CHECK(outcome.value.AsLong() == 1'704'067'200'000LL);
+    }
+}
+
 TEST_CASE("DVM-103 all BootDex classes link and collection methods have no intrinsic overlay") {
     Dvm87Vm f;
     const auto all = f.linker.AllClasses();
@@ -1618,7 +1700,7 @@ TEST_CASE("DVM-103 all BootDex classes link and collection methods have no intri
         for (const auto method : f.linker.Class(type).own_direct_methods)
             CHECK(f.linker.Method(method).kind != MethodKind::intrinsic);
     }
-    CHECK(count == 1637);
+    CHECK(count == 1640);
 }
 
 TEST_CASE("DVM-149 Apache HTTP BootDex supports the Restlet startup object path") {

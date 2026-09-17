@@ -232,8 +232,8 @@ Decl Declare_android_app_Activity(const Context& context) {
                                               *error};
                     }
                 }
-                context->content_view =
-                    InflateUiLayoutResource(call.vm, *context, layout_id);
+                context->content_view = InflateUiLayoutResource(
+                    call.vm, *context, layout_id, call.receiver);
                 const auto node = FindViewUiNode(
                     *context, context->content_view.Value());
                 if (node.has_value()) {

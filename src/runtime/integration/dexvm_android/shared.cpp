@@ -700,6 +700,8 @@ dx::IntrinsicHandler ViewInitHandler(const Context& context) {
         const auto node = EnsureViewUiNode(
             *context, call.receiver, UiClassForObject(call.vm, call.receiver));
         InitializeDefaultViewBackground(call.vm, *context, call.receiver, node);
+        AssignViewContext(call.vm, *context, call.receiver,
+                          call.arguments[0].ref);
         return dx::VmValue::Void();
     });
 }

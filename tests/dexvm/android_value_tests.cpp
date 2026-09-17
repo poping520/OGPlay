@@ -4428,3 +4428,99 @@ TEST_CASE("DVM-151 builders retain constructor null array and bridge contracts")
         }
     }
 }
+
+TEST_CASE("DVM-184 View.getContext preserves constructor and inflation identity") {
+    constexpr auto kGetContext = "getContext";
+    constexpr auto kContextSig = "()Landroid/content/Context;";
+    constexpr auto kViewInit = "(Landroid/content/Context;)V";
+    constexpr auto kTwoArg =
+        "(Landroid/content/Context;Landroid/util/AttributeSet;)V";
+    constexpr auto kStyleInit =
+        "(Landroid/content/Context;Landroid/util/AttributeSet;I)V";
+    for (const auto backend :
+         {InterpreterBackend::switch_dispatch,
+          InterpreterBackend::threaded}) {
+        auto subclass = IntrinsicClassBuilder::Class(
+            "Ltest/BurstlyView;", "Landroid/widget/LinearLayout;");
+        subclass.Constructor(
+            kViewInit, [](IntrinsicContext& call) {
+                const auto type = call.vm.Linker().ResolveDescriptor(
+                    "Landroid/widget/LinearLayout;");
+                const auto constructor = call.vm.Linker().FindDirectMethod(
+                    type, "<init>", kViewInit);
+                const std::array arguments{
+                    VmValue::Ref(call.receiver), call.arguments[0]};
+                const auto outcome = call.vm.Call(*constructor, arguments);
+                if (outcome.exception.IsValid()) {
+                    throw VmJavaThrow{
+                        call.vm.Linker().Class(outcome.exception_class)
+                            .descriptor,
+                        outcome.exception_message, outcome.exception};
+                }
+                return VmValue::Void();
+            });
+        AndroidValueVm fixture(backend, {std::move(subclass).Build()});
+        const auto view_type =
+            fixture.linker.ResolveDescriptor("Landroid/view/View;");
+        const auto subclass_type =
+            fixture.linker.ResolveDescriptor("Ltest/BurstlyView;");
+        const auto view_slot = fixture.linker.FindVtableIndex(
+            view_type, kGetContext, kContextSig);
+        const auto subclass_slot = fixture.linker.FindVtableIndex(
+            subclass_type, kGetContext, kContextSig);
+        REQUIRE(view_slot.has_value());
+        REQUIRE(subclass_slot.has_value());
+        CHECK(*view_slot == *subclass_slot);
+        const auto& inherited = fixture.linker.Method(
+            fixture.linker.Class(subclass_type).vtable[*subclass_slot]);
+        CHECK(inherited.owner == view_type);
+        CHECK_FALSE(inherited.overridable);
+        CHECK((inherited.access_flags & kAccFinal) != 0);
+
+        bool found_context_field = false;
+        for (const auto field :
+             fixture.linker.Class(view_type).own_instance_fields) {
+            const auto& linked = fixture.linker.Field(field);
+            if (linked.name != "mContext") continue;
+            found_context_field = true;
+            CHECK(linked.descriptor == "Landroid/content/Context;");
+            CHECK((linked.access_flags & kAccProtected) != 0);
+        }
+        CHECK(found_context_field);
+
+        const auto activity = fixture.New("Landroid/app/Activity;");
+        const auto wrapper =
+            fixture.New("Landroid/view/ContextThemeWrapper;");
+        const auto other = fixture.New("Landroid/content/Context;");
+        REQUIRE(activity != wrapper);
+        REQUIRE(activity != other);
+
+        const auto view = fixture.New(
+            "Landroid/view/View;", kViewInit, {VmValue::Ref(activity)});
+        const auto layout = fixture.New(
+            "Landroid/widget/LinearLayout;", kTwoArg,
+            {VmValue::Ref(wrapper), VmValue::Ref(VmObjectRef{})});
+        const auto button = fixture.New(
+            "Landroid/widget/Button;", kStyleInit,
+            {VmValue::Ref(other), VmValue::Ref(VmObjectRef{}),
+             VmValue::Int(0)});
+        const auto burstly = fixture.New(
+            "Ltest/BurstlyView;", kViewInit, {VmValue::Ref(activity)});
+        CHECK(fixture.On(view, kGetContext, kContextSig).ref == activity);
+        CHECK(fixture.On(layout, kGetContext, kContextSig).ref == wrapper);
+        CHECK(fixture.On(button, kGetContext, kContextSig).ref == other);
+        CHECK(fixture.On(burstly, kGetContext, kContextSig).ref == activity);
+        CHECK(fixture.On(view, kGetContext, kContextSig).ref !=
+              fixture.On(layout, kGetContext, kContextSig).ref);
+
+        std::vector<ogplay::loader::BinaryXmlElement> elements(1);
+        elements[0].name = "LinearLayout";
+        const auto inflated = InflateUiElements(
+            fixture.vm, *fixture.context, elements, activity);
+        CHECK(fixture.On(inflated, kGetContext, kContextSig).ref == activity);
+
+        const auto roots = fixture.vm.ProtectReferences(std::array{burstly});
+        static_cast<void>(fixture.vm.CollectGarbage("dvm184-view-context"));
+        CHECK(fixture.On(burstly, kGetContext, kContextSig).ref == activity);
+    }
+}

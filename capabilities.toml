@@ -1315,6 +1315,11 @@ status = "complete"
 test = "tests/runtime/native_library_loader_tests.cpp: DVM-105; tests/dexvm/bootdex_library_tests.cpp: non-native shape/time-zone/static-field regressions; tools.bootdex_builder_self_test; tools.android_payload_current"
 note = "DVM-102/122 的日期与数字 Java 行为来自 pinned API 19 BootDex；25 个 required native 经统一 guest JNI 调用 ICU 51。LocaleData resource、货币 fallback、Long/Double parse、完整整数 FieldPosition/grouping 与 Unicode case mapping 已按 AOSP 对照受检。宿主不含 ICU runtime/data。具名时区/历史 DST、BigDecimal/BigInteger、double/digit-list formatter 和其余 ICU 查询仍明确失败。"
 
+[dexvm.sql_date_value_types]
+status = "complete"
+test = "tests/dexvm/bootdex_library_tests.cpp: DVM-183; tools.bootdex_builder_self_test; python tools/bootdex/build_bootdex.py check"
+note = "API19 SQL 日期值类型纳入 BootDex。DVM-183 从固定 API 19 core.jar 精确选入 java.sql.Date/Time/Timestamp。继承 java.util.Date，构造、日期归一化与 Timestamp 纳秒语义执行原版 Java。不引入 JDBC、Driver、Connection 或其余 java.sql 包。"
+
 [dexvm.guest_jni_api19]
 status = "complete"
 test = "tests/runtime/native_library_loader_tests.cpp: DVM-105/DVM-106/DVM-108; tests/runtime/bionic_profile_tests.cpp; python tools/validate_android_payload.py --root data/android/19; python tools/bootdex/build_bootdex.py build-guest-jni"
@@ -1499,6 +1504,11 @@ note = "DVM-178 在 ViewGroup 按 API 19 提供可覆盖 setClipChildren/setClip
 status = "complete"
 test = "tests/dexvm/android_value_tests.cpp: DVM-179; tests/dexvm/widget_click_tests.cpp: DVM-179 clickable gates touch clicks; tests/dexvm/widget_click_tests.cpp: visible button with a listener receives the click; architecture.dexvm_intrinsic_layout; Angry Birds no-Profile interstitial reached PackageManager.getPackageInfo flags 4097"
 note = "DVM-179 在 View 按 API 19 提供可覆盖 setClickable/isClickable，唯一写入 UiNode.clickable。setOnClickListener 虚派使 View 可点击（含 null）；触摸点击要求 clickable，程序化 InvokeViewOnClick 不检查；基础 onTouchEvent 在 clickable 时消费且不伪造 onClick。OnTouchListener 与子类 onTouchEvent 不被 clickable=false 禁用。不宣称长按或完整手势系统。"
+
+[dexvm.view_get_context]
+status = "complete"
+test = "tests/dexvm/android_value_tests.cpp: DVM-184; architecture.dexvm_intrinsic_layout; Angry Birds no-Profile interstitial reached WebView.destroy"
+note = "DVM-184 在 View facade 按 API 19 绑定 protected mContext，public final getContext() 返回构造或 XML 膨胀时的同一 guest Context。共享构造器、样式构造与 setContentView(int) 膨胀共用该字段；不新增宿主 Context 表。不宣称完整 View 状态机、LayoutInflater 工厂或广告展示。"
 
 [dexvm.package_info_activities]
 status = "complete"

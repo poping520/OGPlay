@@ -512,6 +512,7 @@ dx::IntrinsicHandler ViewDefaultStyleInitHandler(const Context& context) {
             const auto owner = call.arguments[0].ref;
             if (!owner.IsValid())
                 throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;", "View Context is null"};
+            AssignViewContext(call.vm, *context, call.receiver, owner);
             const auto attrs = call.arguments[1].ref;
             const auto def_style_attr = static_cast<std::uint32_t>(
                 call.arguments[2].AsInt());

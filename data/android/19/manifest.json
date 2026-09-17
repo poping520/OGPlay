@@ -71,17 +71,17 @@
       {
         "source_project": "OGPlay",
         "source_root": "src/guest/crypto/java",
-        "source_sha256": "9a27abd2e6453152e6f3eba759af6f8308c11ee485afbd2e523d9c7b3ecddc02",
+        "source_sha256": "ea8c86a9dcbe6d049b0a53f1482b1ba90bc79c2549dd49a6ceafbb4b0f98334a",
         "javac": "17.0.2",
         "android_jar_sha256": "4032a201eeb1d0430c7d9f1075151dd280427de5ca9e36f734f464ab605cb690",
         "d8_sha256": "d9e6acde0cb6f2453d6835b52c31d2066054394fb79e91115dd4978bde6afd16"
       }
     ],
-    "size": 2347972,
-    "sha256": "8d4954c83326406e2cf26fc4f9764a5bfaab53fccee5017b90311677c42aecbe",
+    "size": 2348148,
+    "sha256": "963bf85a9c89ef2ca69cbcfc1e4e762cf06e2e6482aab933c3feef511047058f",
     "dex_entry": "classes.dex",
-    "dex_size": 2344404,
-    "dex_sha256": "81faaf1bbc12378806ecbc2aa8d13a6ea88191673851166fc093a701a52f4b57",
+    "dex_size": 2344580,
+    "dex_sha256": "9e3c6627f72a96905a140d5214ca682c078e77cbccdc5f8bfdb89821ece6c42c",
     "class_count": 1636,
     "selection_policy": "load-all",
     "notice": "notices/bootdex.jar.txt",

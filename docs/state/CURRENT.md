@@ -4,12 +4,13 @@
 
 ## 最近进展
 
-- [DVM-173](../tasks/dexvm/DVM-173.md) TLS-01 信任服务已验收：OGPlayJSSE 发布 PKIX
-  TrustManagerFactory、guest libcrypto 路径验证、只读 AndroidCAStore 与测试 CA 包。
-  Harmony 证书 DER 在 `encodedCopy` 钉死独立副本，避免共享 decode buffer 把锚点换成其它证书。
-  TLS-02 的 SSLSocket/HTTPS/mTLS Java 与内存 BIO 已接线，默认网络仍关闭；loopback 握手在
-  guest `SSL_do_handshake` 首次返回 `SSL_ERROR_SYSCALL`，ClientHello 未发出，不能宣称客户端
-  TLS complete。TLS-03 公开 CA 与 OpenSSL 1.0.1 维护仍阻塞在线发布。BootDex 1635 类。
+- [DVM-173](../tasks/dexvm/DVM-173.md) TLS-01/02 已验收：OGPlayJSSE 发布 PKIX
+  TrustManagerFactory、guest libcrypto 路径验证、只读 AndroidCAStore 与测试 CA 包；
+  `engineInit` 经 `SecureRandom`/`NativeTls.seed` 播种 guest libssl，`SSLSocket` 走
+  `NativeTls.connectRaw` 原始通道，loopback TLS 1.2 握手、HTTPS GET `200 tls-ok`、
+  layered `autoClose=false` 与 RSA mTLS 双解释器通过。默认网络仍关闭。TLS-03 测试 CA
+  包不是公开信任列表，payload `libssl.so` 仍为已停止维护的 OpenSSL 1.0.1，不发布公开
+  互联网 HTTPS。BootDex 1636 类。
 
 - KeyStore [DVM-172](../tasks/dexvm/DVM-172.md) 约定范围内验收完成：API19 原版公开 API 与
   自有 Java Provider/SPI/BKS codec 进入 1572 类 BootDex；标准及历史 3DES PBE、AES RAW、
@@ -69,19 +70,18 @@
   Keyguard 当前发布无锁屏事实并预留宿主状态 provider；
   不运行 Binder system_server、Play 服务、跨包解析、支付或完整 Android 系统。
 - **网络**：Apache HTTP Java 类可链接不代表在线可用；socket 仍受 NetworkRuntime policy/
-  transport 控制。TrustManager/默认 CA 已真实验证；客户端 TLS 握手尚未闭合，默认网络关闭，
-  不发布公开互联网 HTTPS。`URLEncodedUtils` 尚未纳入。
+  transport 控制。TrustManager/默认 CA 已真实验证；loopback 客户端 TLS/HTTPS 已闭合，
+  默认网络关闭，不发布公开互联网 HTTPS。`URLEncodedUtils` 尚未纳入。
 - **图形/UI**：ANGLE GLES 与 SDL3 窗口输入已接通；完整 framework 排版、Dialog/Web 展示、
   传感器和系统 UI 不在当前范围。Java EGL config wrapper 保留真实 native handle，并可对宿主
   颜色格式超集投影 guest 显式请求位数。
 
 ## 验证快照
 
-- Windows Debug 仅构建受影响目标；BootDex 当前为 1635 类，DEX
-  `9074a459abb03156b9858a4fd5fff87b4d040927771e8bdd9442b7d7184f5a0b`。
-  DVM-173 TLS-01 定向 `TLS-01*` 双解释器通过；TLS-02 默认离线通过，loopback 握手仍为
-  `SSL_ERROR_SYSCALL`。guest JNI
-  `c7843db73bdc9780b85cf954d2c309b6347f399d6d3b0dacb44f46c41bda864a`。
+- Windows Debug 仅构建受影响目标；BootDex 当前为 1636 类，DEX
+  `9e3c6627f72a96905a140d5214ca682c078e77cbccdc5f8bfdb89821ece6c42c`。
+  DVM-173 定向 `TLS*` 5 cases / 1363 assertions 双解释器通过。guest JNI
+  `9b8fda764c526284189c86f778b6ade5bf4784d4fcda1bf81d329591127fc7d3`。
 - JNI 定向回归 54 cases / 1608 assertions；DVM-166/167 双解释器分别通过 58/44 assertions；
   DVM-168 EGL10/EGL14 定向回归 6 cases / 314 assertions；Angry Birds 已进入 renderer 的
   `onSurfaceChanged`；DVM-169 双解释器加密回归 1 case / 1646 assertions；DVM-170 双解释器

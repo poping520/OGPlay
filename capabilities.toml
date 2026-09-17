@@ -1693,7 +1693,7 @@ note = "DVM-172：Java PKCS#12 SHA-1 KDF、HMAC-SHA1、BKS v2 写出及 v0/v1/v2
 [dexvm.bks_key_protection]
 status = "complete"
 test = "tests/runtime/native_library_loader_tests.cpp: DVM-172; tests/fixtures/keystore/old-pbe-bc146.bks.b64; tests/fixtures/keystore/broken-pbe-bc146.bks.b64"
-note = "DVM-172：标准 SHA/3-key TripleDES 写出/恢复及 Broken faulty-parity、Old PKCS12 mixer 历史回退调用 guest libcrypto；支持 AES RAW secret 与 RSA/EC PKCS#8 private key、证书链和两种 setKeyEntry 重载。私钥 EVP token 有独立类型、引用、GC/teardown 释放。DSA、X.509 public-key entry 和其他算法明确失败；TLS client auth 另见 DVM-173，当前握手未闭合。"
+note = "DVM-172：标准 SHA/3-key TripleDES 写出/恢复及 Broken faulty-parity、Old PKCS12 mixer 历史回退调用 guest libcrypto；支持 AES RAW secret 与 RSA/EC PKCS#8 private key、证书链和两种 setKeyEntry 重载。私钥 EVP token 有独立类型、引用、GC/teardown 释放。DSA、X.509 public-key entry 和其他算法明确失败；TLS client auth 见 DVM-173 RSA mTLS。"
 
 [dexvm.trust_manager_factory]
 status = "complete"
@@ -1711,19 +1711,19 @@ test = "tests/runtime/tls_trust_tests.cpp: TLS-01"
 note = "DVM-173：只读 AndroidCAStore 从 /system/etc/security/cacerts.ogplay 加载版本化 OGPLAYCA 包；缺包/损坏时 TrustManagerFactory.init(null) 失败，不读宿主证书。写/删抛 UnsupportedOperationException。当前包是测试根，不是公开信任列表。"
 
 [dexvm.tls_client]
-status = "partial"
+status = "complete"
 test = "tests/runtime/tls_trust_tests.cpp: TLS-02"
-note = "DVM-173 TLS-02：OGPlayJSSE SSLContext/SSLSocket/session 与 guest libssl 内存 BIO、raw NetworkRuntime 已接线；默认网络关闭受检。loopback 握手首次 SSL_do_handshake 返回 SSL_ERROR_SYSCALL 且 ClientHello 未发出，不能标 complete。SSLEngine 与 server TLS 明确失败。"
+note = "DVM-173 TLS-02：OGPlayJSSE SSLContext/SSLSocket/session 经 guest libssl 内存 BIO 与 raw NetworkRuntime 完成 loopback TLS 1.2 握手；engineInit 播种 RAND，connectRaw 绕过 Harmony Socket.connect。默认网络关闭受检。complete 仅指客户端 socket TLS；SSLEngine 与 server TLS 明确失败。公开互联网 CA/在线 HTTPS 见 https_transport。"
 
 [dexvm.tls_client_auth]
-status = "partial"
+status = "complete"
 test = "tests/runtime/tls_trust_tests.cpp: TLS-02 mutual TLS"
-note = "DVM-173：BKS KeyManager 可安装 RSA 客户端证书；mTLS 定向用例因握手 SYSCALL 未绿。EC client auth 未跑通。"
+note = "DVM-173：BKS KeyManager 安装 RSA 客户端证书后 loopback mTLS 协商 TLSv1.2。complete 仅指该 RSA 路径；EC client auth 未纳入。"
 
 [dexvm.https_transport]
 status = "partial"
 test = "tests/runtime/tls_trust_tests.cpp: TLS-02"
-note = "DVM-173：HttpsURLConnection 与 Apache HTTPS 出口接到同一 OGPlayJSSE。默认离线 UnknownHostException 受检。loopback HTTPS 因握手未闭合未绿。公开互联网 HTTPS 被 TLS-03 的 CA/OpenSSL 1.0.1 维护条件阻塞，不能据本地接线发布。"
+note = "DVM-173：HttpsURLConnection 与 Apache HTTPS 出口接到同一 OGPlayJSSE。默认离线 UnknownHostException 受检；loopback HTTPS GET 200/tls-ok 与 layered autoClose=false 通过。公开互联网 HTTPS 被测试 CA 包与已停止维护的 OpenSSL 1.0.1（AOSP 4.4.4_r2.0.1）阻塞，不能据本地握手发布。"
 
 [dexvm.object_stream_bootdex]
 status = "complete"

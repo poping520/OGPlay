@@ -30,6 +30,7 @@ public final class OgPlayHttpsURLConnection extends HttpsURLConnection {
     private final ArrayList headerKeys = new ArrayList();
     private final ArrayList headerValues = new ArrayList();
     private boolean requestSent;
+    private Map requestHeaderSnapshot;
 
     public OgPlayHttpsURLConnection(URL url) {
         super(url);
@@ -39,6 +40,7 @@ public final class OgPlayHttpsURLConnection extends HttpsURLConnection {
         if (connected) {
             return;
         }
+        snapshotRequestHeaders();
         SSLSocketFactory factory = getSSLSocketFactory();
         try {
             SSLContext context = SSLContext.getDefault();
@@ -208,40 +210,41 @@ public final class OgPlayHttpsURLConnection extends HttpsURLConnection {
         if (requestSent) {
             return;
         }
-        connect();
         String path = url.getFile();
         if (path == null || path.length() == 0) {
             path = "/";
         }
         String method = getRequestMethod();
         byte[] body = requestBody == null ? new byte[0] : requestBody.toByteArray();
+        Map properties = snapshotRequestHeaders();
         StringBuffer header = new StringBuffer();
         header.append(method).append(' ').append(path).append(" HTTP/1.1\r\n");
         header.append("Host: ").append(url.getHost()).append("\r\n");
         header.append("Connection: close\r\n");
-        Map properties = getRequestProperties();
-        Object[] keys = properties.keySet().toArray();
-        for (int i = 0; i < keys.length; i++) {
-            String key = (String) keys[i];
-            List values = (List) properties.get(key);
-            for (int j = 0; j < values.size(); j++) {
-                header.append(key).append(": ").append(values.get(j)).append("\r\n");
+        if (properties != null) {
+            Object[] keys = properties.keySet().toArray();
+            for (int i = 0; i < keys.length; i++) {
+                String key = (String) keys[i];
+                List values = (List) properties.get(key);
+                if (values == null) {
+                    continue;
+                }
+                for (int j = 0; j < values.size(); j++) {
+                    header.append(key).append(": ").append(values.get(j)).append("\r\n");
+                }
             }
         }
         if (doOutput) {
             header.append("Content-Length: ").append(body.length).append("\r\n");
         }
         header.append("\r\n");
-        try {
-            socketOut.write(header.toString().getBytes("ISO-8859-1"));
-            if (body.length > 0) {
-                socketOut.write(body);
-            }
-            socketOut.flush();
-            parseResponse();
-        } catch (IOException e) {
-            throw new IOException("https-write");
+        connect();
+        socketOut.write(header.toString().getBytes("ISO-8859-1"));
+        if (body.length > 0) {
+            socketOut.write(body);
         }
+        socketOut.flush();
+        parseResponse();
         requestSent = true;
     }
 
@@ -289,5 +292,12 @@ public final class OgPlayHttpsURLConnection extends HttpsURLConnection {
             }
             line.append((char) b);
         }
+    }
+
+    private Map snapshotRequestHeaders() {
+        if (requestHeaderSnapshot == null) {
+            requestHeaderSnapshot = getRequestProperties();
+        }
+        return requestHeaderSnapshot;
     }
 }

@@ -15,6 +15,7 @@ BouncyCastle 运行时或 C++ 条目/会话影子状态。
 API19 只读；写/删/store 抛 UnsupportedOperationException。
 
 DVM-172 已完成 KeyStore/BKS 发布条件并注册默认 BKS。DVM-173 增加 OGPlayJSSE：PKIX
-TrustManagerFactory、真实 libcrypto 路径验证与只读 AndroidCAStore；SSLSocket/HTTPS
-Java 与内存 BIO 已接线，客户端握手尚未闭合。不包含 AndroidKeyStore、通用
-CertPathValidator.PKIX、SSLEngine、server TLS 或公开互联网 CA。
+TrustManagerFactory、真实 libcrypto 路径验证与只读 AndroidCAStore；客户端 SSLSocket/
+HTTPS 经 raw NetworkRuntime 完成 loopback TLS 1.2 握手与 GET。请求头在 `connect()` 前
+快照，因为 `URLConnection.getRequestProperties()` 在已连接后抛 Already connected。
+不包含 AndroidKeyStore、通用 CertPathValidator.PKIX、SSLEngine、server TLS 或公开互联网 CA。

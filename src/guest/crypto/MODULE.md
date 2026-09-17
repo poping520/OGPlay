@@ -52,6 +52,7 @@ Provider、SPI、条目、BKS codec 与 PKCS#12 KDF；Provider 以 `OGPlayKeySto
 引用、GC、显式释放与 teardown 一致。生产 C++ 不保存条目或 KeyStore 影子状态。
 DVM-173 在同一 `libogplay_jni.so` 增加 `trust_jni.c` 与 `tls_jni.c`：路径验证走
 `X509_verify_cert`，客户端 TLS 使用内存 BIO 与逻辑 SSL_CTX/SSL token；JNI_OnLoad 调用
-`ogplay_tls_on_load` 初始化 libssl。不扩展原版 NativeCrypto ABI，不把宿主 FD 传入 guest SSL。
-DT_NEEDED 增加 `libssl.so`。SSLEngine、server TLS 与公开互联网 CA 包不在本模块范围。客户端 TLS 握手当前在
-首次 `SSL_do_handshake` 返回 `SSL_ERROR_SYSCALL`，不能宣称 complete。
+`ogplay_tls_on_load` 初始化 libssl。`NativeTls.seed` 在 `SSL_CTX_new` 前执行 `RAND_seed`，
+未播种时 `createContext` 明确失败。不扩展原版 NativeCrypto ABI，不把宿主 FD 传入 guest SSL。
+DT_NEEDED 增加 `libssl.so`。SSLEngine、server TLS 与公开互联网 CA 包不在本模块范围。
+payload `libssl.so` 仍为 AOSP 4.4.4_r2.0.1 的 OpenSSL 1.0.1，不能据本地握手发布在线 HTTPS。

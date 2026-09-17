@@ -2,11 +2,23 @@
 
 // ---- migrated from support_ui_binding.cpp ----
 #include "ogplay/runtime/integration/dexvm_android.h"
+#include "ogplay/runtime/dexvm/intrinsic_builder.h"
 
 #include <stdexcept>
 #include <tuple>
 
 namespace ogplay::runtime {
+
+void AssignViewContext(dexvm::Interpreter& vm, DexVmAndroidContext& context,
+                       const dexvm::VmObjectRef view,
+                       const dexvm::VmObjectRef owner) {
+    if (!context.view_context_field.has_value() ||
+        !context.view_context_field->IsValid()) {
+        throw std::runtime_error("View mContext field is unbound");
+    }
+    dexvm::IntrinsicContext call{vm, view, {}};
+    dexvm::IntrinsicCall(call).SetRef(*context.view_context_field, view, owner);
+}
 
 void BindViewToUiNode(DexVmAndroidContext& context,
                       const dexvm::VmObjectRef view,
@@ -947,7 +959,8 @@ std::span<const UiWidgetDescriptor> UiWidgetRegistry() { return kWidgets; }
 
 dexvm::VmObjectRef InflateUiElements(
     dexvm::Interpreter& vm, DexVmAndroidContext& context,
-    const std::span<const loader::BinaryXmlElement> elements) {
+    const std::span<const loader::BinaryXmlElement> elements,
+    const dexvm::VmObjectRef inflater_context) {
     ResetViewUiState(context);
     try {
         auto expanded = ExpandUiIncludes(
@@ -998,6 +1011,7 @@ dexvm::VmObjectRef InflateUiElements(
             const auto view = vm.NewIntrinsicInstance(widget->dex_descriptor);
             const auto node = context.ui_tree.CreateNode(widget->kind);
             BindViewToUiNode(context, view, node);
+            AssignViewContext(vm, context, view, inflater_context);
             ApplyInflatedWidgetDefaults(context, *context.ui_tree.Get(node));
             InitializeDefaultViewBackground(vm, context, view, node);
             std::uint32_t drawable_id = element.src;
@@ -1085,7 +1099,8 @@ dexvm::VmObjectRef InflateUiElements(
 
 dexvm::VmObjectRef InflateUiLayoutResource(
     dexvm::Interpreter& vm, DexVmAndroidContext& context,
-    const std::uint32_t layout_id) {
+    const std::uint32_t layout_id,
+    const dexvm::VmObjectRef inflater_context) {
     try {
         const auto root = LoadLayout(context, layout_id);
         const auto expanded = ExpandUiIncludes(
@@ -1094,7 +1109,7 @@ dexvm::VmObjectRef InflateUiLayoutResource(
                 return LoadLayout(context, included_id);
             },
             layout_id);
-        return InflateUiElements(vm, context, expanded);
+        return InflateUiElements(vm, context, expanded, inflater_context);
     } catch (...) {
         ResetViewUiState(context);
         throw;

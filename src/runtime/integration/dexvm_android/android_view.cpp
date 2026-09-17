@@ -840,8 +840,15 @@ Decl Declare_android_view_View(const Context& context) {
         "mOgplaySystemUiVisibilityListener",
         "Landroid/view/View$OnSystemUiVisibilityChangeListener;",
         dx::kAccPrivate | dx::kAccSynthetic);
+    context->view_context_field = builder.BoundInstanceField(
+        "mContext", "Landroid/content/Context;", dx::kAccProtected);
     builder.Constructor("(Landroid/content/Context;)V",
                     ViewInitHandler(context));
+    builder.FinalMethod("getContext", "()Landroid/content/Context;",
+        [context](dx::IntrinsicContext& call) {
+            return dx::VmValue::Ref(dx::IntrinsicCall(call).GetRef(
+                *context->view_context_field));
+        });
     builder.VirtualMethod("onSizeChanged", "(IIII)V",
         [](dx::IntrinsicContext&) { return dx::VmValue::Void(); },
         dx::kAccProtected);

@@ -4,6 +4,9 @@
 
 ## 最近进展
 
+- DVM-184：View 保存构造/膨胀 Context，`getContext()` 返回同一 guest 引用。
+- DVM-183：从固定 API 19 `core.jar` 精确选入 `java.sql.Date`/`Time`/`Timestamp`
+  值类型。不引入 JDBC 或其余 `java.sql` 包。
 - [DVM-182](../tasks/dexvm/DVM-182.md)：`Class.getEnumConstants` 按 API 19 返回共享枚举
   常量数组的浅克隆。非枚举为 null；空枚举为非 null 空数组。复用 `isEnum` 与
   `SharedEnumConstants`。不宣称完整 Jackson 或游戏兼容。
@@ -16,7 +19,7 @@
 - DVM-173 TLS-01/02 已验收；TLS-03 未完成。KeyStore DVM-172 约定范围闭合。
 - Angry Birds 无 Profile 兼容链已越过 location、文件路径、旧 JNI、AudioTrack、Settings、
   权限、GLSurfaceView、Mac、runOnUiThread、KeyStore、DVM-174..179、`GET_ACTIVITIES`、
-  Class 注解查询与 `getEnumConstants`。
+  Class 注解查询、`getEnumConstants`、SQL 日期值类型与 `View.getContext()`。
 - [DVM-161](../tasks/dexvm/DVM-161.md) 至 [DVM-170](../tasks/dexvm/DVM-170.md) 对应首错已闭合。
 - BND-34..39 已闭合本轮 EGL/GLES 核心审计；不等同 CTS/Khronos 完整认证。
 
@@ -35,13 +38,13 @@
 
 ## 验证快照
 
-- Windows Release 仅构建受影响目标；BootDex 1638 类，DEX
-  `506da0c2323946e53852affe2bfb9b3b585ae3d1c2a20cb345093f6296fe97bd`。
-  DVM-182 双解释器 `getEnumConstants` 定向用例 1/82 通过；
+- Windows Release 仅构建受影响目标；BootDex 1641 类，DEX
+  `2758237a501a736e6c58cef79c413a4d36147301d657bf2279a0a333fc1a6747`。
+  DVM-184 双解释器 View.getContext 定向用例 1/110 通过；
   `architecture.dexvm_intrinsic_layout` 通过。
-- Angry Birds 无 Profile、关闭 survey：插屏路径越过 `Class.getEnumConstants`。
-  Jackson `ObjectMapper` 构造继续。下一独立首错为 `Ljava/sql/Date;`
-  （`StdDeserializer$SqlDateDeserializer.<init>`）。不宣称完整 Jackson 或游戏兼容。
+- Angry Birds 无 Profile、关闭 survey：插屏路径越过 `BurstlyView.getContext()`。
+  下一独立首错为 `WebView.destroy()`（`Burstly Utils.getUserAgentString`）。
+  不宣称完整广告 SDK、WebView 或游戏兼容。
 - guest JNI
   `e2d4b5de0f1c02b2d84c1e37d7d0561495b2ea1165648f2a01b5a80201a1a7f0`。
 - `data/android/19/framework/` 为本地生成产物，不纳入版本控制。

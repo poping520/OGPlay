@@ -23,6 +23,7 @@
 #include "ogplay/loader/arsc.h"
 #include "ogplay/loader/binary_xml.h"
 #include "ogplay/runtime/dexvm/interpreter.h"
+#include "ogplay/runtime/dexvm/intrinsic_builder.h"
 #include "ogplay/runtime/dexvm/network_runtime.h"
 #include "ogplay/runtime/dexvm/vm_threads.h"
 #include "ogplay/runtime/framework/preferences_xml.h"
@@ -621,6 +622,10 @@ struct DexVmAndroidContext final {
         std::vector<std::int16_t> pcm_carry;
     };
     std::unordered_map<std::uint64_t, VideoViewState> video_views;
+
+    // Bound View.mContext token. Guest object identity lives in the field slot
+    // and is traced by GC; this is not a host-side Context table.
+    std::optional<dexvm::IntrinsicFieldHandle> view_context_field;
 };
 
 void RegisterAndroidAudioTrackStateTable(
@@ -654,12 +659,16 @@ using UiLayoutLoader = std::function<std::vector<loader::BinaryXmlElement>(
     std::span<const loader::BinaryXmlElement> elements,
     const UiLayoutLoader& loader,
     std::optional<std::uint32_t> root_layout_id = std::nullopt);
+void AssignViewContext(dexvm::Interpreter& vm, DexVmAndroidContext& context,
+                       dexvm::VmObjectRef view, dexvm::VmObjectRef owner);
 [[nodiscard]] dexvm::VmObjectRef InflateUiElements(
     dexvm::Interpreter& vm, DexVmAndroidContext& context,
-    std::span<const loader::BinaryXmlElement> elements);
+    std::span<const loader::BinaryXmlElement> elements,
+    dexvm::VmObjectRef inflater_context = dexvm::VmObjectRef{});
 [[nodiscard]] dexvm::VmObjectRef InflateUiLayoutResource(
     dexvm::Interpreter& vm, DexVmAndroidContext& context,
-    std::uint32_t layout_id);
+    std::uint32_t layout_id,
+    dexvm::VmObjectRef inflater_context = dexvm::VmObjectRef{});
 [[nodiscard]] std::u16string ResolveUiString(
     const DexVmAndroidContext& context, std::uint32_t resource_id);
 [[nodiscard]] std::string ResolveResourceString(

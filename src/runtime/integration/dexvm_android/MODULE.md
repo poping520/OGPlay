@@ -45,7 +45,10 @@ handler id、单类 TU 或 misc 巨石。非 Android family 归 core，平台事
 - session 只创建顶层 Activity，因此 `Activity.isChild()` 返回 false；ActivityGroup/嵌入式
   child Activity 不在兼容边界。
 - PackageManager 只发布当前 APK：manifest/path/label/permission/feature 来自 sealed facts；未知包、
-  flags、跨包查询失败。DVM-142：PackageItemInfo/ApplicationInfo、Component/Activity/Service/
+  flags、跨包查询失败。`getPackageInfo` 支持 `GET_ACTIVITIES`/`GET_META_DATA`/`GET_PERMISSIONS`
+  组合：`activities` 仅在请求 `GET_ACTIVITIES` 时从当前 Manifest 的 activity/activity-alias
+  生成，保留声明顺序与 alias 身份，并按 API 19 默认跳过禁用组件；未请求时保持 null。
+  requestedPermissions 来自 Manifest 声明，不等于已授予权限。DVM-142：PackageItemInfo/ApplicationInfo、Component/Activity/Service/
   Provider/ResolveInfo、PathPermission/PatternMatcher/Printer 及内部类归 BootDex，删除前两者 intrinsic；
   integration 只写受检字段。Application `meta-data` 按 API 19 区分 `android:value` 与
   `android:resource`：前者解析 ARSC typed value 后写入对应 Bundle 类型，后者保留 resource id。

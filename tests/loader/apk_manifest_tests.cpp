@@ -245,6 +245,7 @@ struct ComponentFixture final {
     std::vector<std::vector<std::string>> filters;
     bool filter_has_data{};
     std::optional<std::uint32_t> theme;
+    std::optional<bool> exported;
 };
 
 std::vector<std::byte> StartupManifest(
@@ -255,7 +256,7 @@ std::vector<std::byte> StartupManifest(
     std::vector<std::string> strings{
         "manifest", "package", "versionCode", "application", "name",
         "enabled", "targetActivity", "activity", "activity-alias",
-        "intent-filter", "action", "category", "service", "data", "theme", "org.example.game",
+        "intent-filter", "action", "category", "service", "data", "theme", "exported", "org.example.game",
         "http://schemas.android.com/apk/res/android"};
     const auto add = [&](const std::string& value) {
         if (std::find(strings.begin(), strings.end(), value) == strings.end()) {
@@ -310,6 +311,11 @@ std::vector<std::byte> StartupManifest(
             attributes.push_back(
                 {index("targetActivity"), index(*component.target), 0x03,
                  index(*component.target), android_namespace});
+        }
+        if (component.exported.has_value()) {
+            attributes.push_back({index("exported"), 0xffffffffU, 0x12,
+                                  *component.exported ? 1U : 0U,
+                                  android_namespace});
         }
         Append(result, StartElement(index(component.tag), attributes));
         for (const auto& filter : component.filters) {
@@ -610,4 +616,40 @@ TEST_CASE("DVM-121 Manifest retains application and Activity themes with alias i
     REQUIRE(facts.activity_components.size() == 2);
     CHECK(facts.activity_components[0].theme == 0x7f030001U);
     CHECK_FALSE(facts.activity_components[1].theme.has_value());
+}
+
+TEST_CASE("DVM-180 Manifest resolves Activity exported from attribute or intent-filters") {
+    using namespace ogplay::loader;
+    ComponentFixture filtered;
+    filtered.name = ".Filtered";
+    filtered.filters = {{std::string(kMain), std::string(kLauncher)}};
+    ComponentFixture private_activity;
+    private_activity.name = ".Private";
+    ComponentFixture forced_private;
+    forced_private.name = ".ForcedPrivate";
+    forced_private.filters = {{std::string(kMain)}};
+    forced_private.exported = false;
+    ComponentFixture forced_public;
+    forced_public.name = ".ForcedPublic";
+    forced_public.exported = true;
+    ComponentFixture alias_target;
+    alias_target.name = ".Target";
+    ComponentFixture alias;
+    alias.tag = "activity-alias";
+    alias.name = ".Alias";
+    alias.target = ".Target";
+    alias.filters = {{std::string(kLauncher)}};
+    const auto facts = ParseAndroidBinaryManifest(StartupManifest(
+        std::nullopt,
+        {filtered, private_activity, forced_private, forced_public, alias_target,
+         alias}));
+    REQUIRE(facts.activity_components.size() == 6);
+    CHECK(facts.activity_components[0].exported == true);
+    CHECK(facts.activity_components[1].exported == false);
+    CHECK(facts.activity_components[2].exported == false);
+    CHECK(facts.activity_components[3].exported == true);
+    CHECK(facts.activity_components[4].exported == false);
+    CHECK(facts.activity_components[5].exported == true);
+    CHECK(AndroidManifestActivityExported(facts.activity_components[0]));
+    CHECK_FALSE(AndroidManifestActivityExported(facts.activity_components[1]));
 }

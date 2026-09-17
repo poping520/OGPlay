@@ -58,7 +58,14 @@ struct AndroidManifestActivityComponent final {
     bool enabled{true};
     std::vector<AndroidManifestIntentFilter> intent_filters;
     std::optional<std::uint32_t> theme;
+    // Absent means API 19 default: exported iff the component has intent-filters.
+    std::optional<bool> exported;
 };
+
+[[nodiscard]] inline bool AndroidManifestActivityExported(
+    const AndroidManifestActivityComponent& component) {
+    return component.exported.value_or(!component.intent_filters.empty());
+}
 
 struct AndroidManifestLauncherComponent final {
     std::string component_name;

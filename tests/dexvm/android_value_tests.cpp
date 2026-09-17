@@ -3258,6 +3258,216 @@ TEST_CASE("DVM-142 PackageManager reflection resolves the BootDex ResolveInfo fa
     }
 }
 
+TEST_CASE("DVM-180 getPackageInfo returns current-package Activity metadata") {
+    using ogplay::loader::AndroidManifestActivityComponent;
+    using ogplay::loader::AndroidManifestComponentKind;
+    constexpr auto kGetActivities = 0x00000001;
+    constexpr auto kGetMetaData = 0x00000080;
+    constexpr auto kGetPermissions = 0x00001000;
+    constexpr auto kGetPackageInfo =
+        "(Ljava/lang/String;I)Landroid/content/pm/PackageInfo;";
+    for (const auto backend : {InterpreterBackend::switch_dispatch,
+                               InterpreterBackend::threaded}) {
+        AndroidValueVm f(backend);
+        f.context->package_name = "org.example.game";
+        f.context->package_version_code = 7U;
+        f.context->package_version_name = "1.2.3";
+        f.context->requested_permissions = {"android.permission.INTERNET"};
+        f.context->granted_permissions.insert("android.permission.CAMERA");
+        f.context->activity_components = {
+            {AndroidManifestComponentKind::activity, ".Main", std::nullopt, true,
+             {{{"android.intent.action.MAIN"},
+               {"android.intent.category.LAUNCHER"},
+               false}},
+             std::nullopt, true},
+            {AndroidManifestComponentKind::activity, "org.example.game.Hidden",
+             std::nullopt, true, {}, std::nullopt, std::nullopt},
+            {AndroidManifestComponentKind::activity, ".Disabled", std::nullopt,
+             false, {{{"android.intent.action.VIEW"}, {}, false}}, std::nullopt,
+             false},
+            {AndroidManifestComponentKind::activity, ".ForcedPrivate", std::nullopt,
+             true, {{{"android.intent.action.SEND"}, {}, false}}, std::nullopt,
+             false},
+            {AndroidManifestComponentKind::activity_alias, ".Alias",
+             std::optional<std::string>{".Main"}, true,
+             {{{"android.intent.action.MAIN"},
+               {"android.intent.category.DEFAULT"},
+               false}},
+             std::nullopt, std::nullopt},
+        };
+
+        const auto manager = f.vm.NewIntrinsicInstance(
+            "Landroid/content/pm/PackageManager;");
+        const auto manager_root = f.vm.ProtectReferences(std::array{manager});
+        const auto package = f.vm.NewStringUtf8("org.example.game");
+        const auto pm_class =
+            f.linker.ResolveDescriptor("Landroid/content/pm/PackageManager;");
+        CHECK(f.linker.FindFieldRecursive(pm_class, "GET_ACTIVITIES", "I")
+                  .has_value());
+        const auto field = [&](const VmObjectRef object, const std::string& name,
+                               const std::string& descriptor) {
+            const auto found = f.linker.FindFieldRecursive(
+                f.model.ObjectClass(object), name, descriptor);
+            REQUIRE(found.has_value());
+            return f.model.InstanceSlots(object)[f.linker.Field(*found).slot];
+        };
+        const auto ref_field = [&](const VmObjectRef object,
+                                   const std::string& name,
+                                   const std::string& descriptor) {
+            const auto slot = field(object, name, descriptor);
+            if (slot.bits == 0U) return VmObjectRef{};
+            REQUIRE(slot.tag == SlotTag::ref);
+            return VmObjectRef{static_cast<std::uint32_t>(slot.bits)};
+        };
+        const auto bool_field = [&](const VmObjectRef object,
+                                    const std::string& name) {
+            const auto slot = field(object, name, "Z");
+            REQUIRE(slot.tag == SlotTag::cat1);
+            return slot.bits != 0U;
+        };
+        const auto query = [&](const std::int32_t flags) {
+            return f.On(manager, "getPackageInfo", kGetPackageInfo,
+                        {VmValue::Ref(package), VmValue::Int(flags)});
+        };
+        const auto activity_at = [&](const VmObjectRef array,
+                                     const JniSize index) {
+            REQUIRE(array.IsValid());
+            REQUIRE(f.model.ArrayLength(array) > index);
+            return f.model.GetObjectElement(array, index);
+        };
+        const auto name_of = [&](const VmObjectRef info) {
+            return f.vm.StringUtf8(
+                ref_field(info, "name", "Ljava/lang/String;"));
+        };
+
+        const auto none = query(0);
+        CHECK_FALSE(ref_field(none.ref, "activities",
+                              "[Landroid/content/pm/ActivityInfo;")
+                        .IsValid());
+        CHECK_FALSE(ref_field(none.ref, "requestedPermissions",
+                              "[Ljava/lang/String;")
+                        .IsValid());
+
+        const auto permissions_only = query(kGetPermissions);
+        CHECK_FALSE(ref_field(permissions_only.ref, "activities",
+                              "[Landroid/content/pm/ActivityInfo;")
+                        .IsValid());
+        const auto permissions = ref_field(permissions_only.ref,
+                                           "requestedPermissions",
+                                           "[Ljava/lang/String;");
+        REQUIRE(permissions.IsValid());
+        REQUIRE(f.model.ArrayLength(permissions) == 1);
+        CHECK(f.vm.StringUtf8(f.model.GetObjectElement(permissions, 0)) ==
+              "android.permission.INTERNET");
+
+        const auto activities_only = query(kGetActivities);
+        CHECK_FALSE(ref_field(activities_only.ref, "requestedPermissions",
+                              "[Ljava/lang/String;")
+                        .IsValid());
+        auto activities = ref_field(activities_only.ref, "activities",
+                                    "[Landroid/content/pm/ActivityInfo;");
+        REQUIRE(activities.IsValid());
+        REQUIRE(f.model.ArrayLength(activities) == 4);
+        const auto main = activity_at(activities, 0);
+        const auto hidden = activity_at(activities, 1);
+        const auto forced_private = activity_at(activities, 2);
+        const auto alias = activity_at(activities, 3);
+        CHECK(name_of(main) == "org.example.game.Main");
+        CHECK(name_of(hidden) == "org.example.game.Hidden");
+        CHECK(name_of(forced_private) == "org.example.game.ForcedPrivate");
+        CHECK(name_of(alias) == "org.example.game.Alias");
+        CHECK(f.vm.StringUtf8(ref_field(main, "packageName",
+                                        "Ljava/lang/String;")) ==
+              "org.example.game");
+        CHECK(bool_field(main, "enabled"));
+        CHECK(bool_field(main, "exported"));
+        CHECK_FALSE(bool_field(hidden, "exported"));
+        CHECK_FALSE(bool_field(forced_private, "exported"));
+        CHECK(bool_field(alias, "exported"));
+        CHECK_FALSE(ref_field(main, "targetActivity", "Ljava/lang/String;")
+                        .IsValid());
+        CHECK(f.vm.StringUtf8(ref_field(alias, "targetActivity",
+                                        "Ljava/lang/String;")) ==
+              "org.example.game.Main");
+        const auto application = ref_field(
+            alias, "applicationInfo", "Landroid/content/pm/ApplicationInfo;");
+        REQUIRE(application.IsValid());
+        CHECK(f.vm.StringUtf8(ref_field(application, "packageName",
+                                        "Ljava/lang/String;")) ==
+              "org.example.game");
+        CHECK(ref_field(activities_only.ref, "applicationInfo",
+                        "Landroid/content/pm/ApplicationInfo;") == application);
+
+        const auto combined = query(kGetActivities | kGetPermissions | kGetMetaData);
+        CHECK(f.model.ArrayLength(ref_field(
+                  combined.ref, "activities",
+                  "[Landroid/content/pm/ActivityInfo;")) == 4);
+        CHECK(f.model.ArrayLength(ref_field(
+                  combined.ref, "requestedPermissions",
+                  "[Ljava/lang/String;")) == 1);
+        CHECK(ref_field(ref_field(combined.ref, "applicationInfo",
+                                  "Landroid/content/pm/ApplicationInfo;"),
+                        "metaData", "Landroid/os/Bundle;")
+                  .IsValid());
+        CHECK_FALSE(ref_field(ref_field(activities_only.ref, "applicationInfo",
+                                        "Landroid/content/pm/ApplicationInfo;"),
+                              "metaData", "Landroid/os/Bundle;")
+                        .IsValid());
+
+        const auto flags_4097 = query(kGetActivities | kGetPermissions);
+        CHECK(f.model.ArrayLength(ref_field(
+                  flags_4097.ref, "activities",
+                  "[Landroid/content/pm/ActivityInfo;")) == 4);
+
+        const auto mutated_name = f.vm.NewStringUtf8("mutated.Name");
+        const auto name_slot = f.linker.FindFieldRecursive(
+            f.model.ObjectClass(main), "name", "Ljava/lang/String;");
+        REQUIRE(name_slot.has_value());
+        f.model.InstanceSlots(main)[f.linker.Field(*name_slot).slot] = {
+            mutated_name.Value(), SlotTag::ref};
+        f.model.SetObjectElement(activities, 0, VmObjectRef{});
+        const auto again = query(kGetActivities);
+        const auto fresh = ref_field(again.ref, "activities",
+                                     "[Landroid/content/pm/ActivityInfo;");
+        REQUIRE(f.model.ArrayLength(fresh) == 4);
+        CHECK(name_of(f.model.GetObjectElement(fresh, 0)) ==
+              "org.example.game.Main");
+        CHECK(f.model.GetObjectElement(fresh, 0).IsValid());
+
+        f.context->activity_components = {
+            {AndroidManifestComponentKind::activity, ".OnlyDisabled",
+             std::nullopt, false, {}, std::nullopt, std::nullopt},
+        };
+        const auto disabled_only = query(kGetActivities);
+        const auto disabled_array = ref_field(
+            disabled_only.ref, "activities",
+            "[Landroid/content/pm/ActivityInfo;");
+        REQUIRE(disabled_array.IsValid());
+        CHECK(f.model.ArrayLength(disabled_array) == 0);
+
+        f.context->activity_components.clear();
+        const auto empty = query(kGetActivities);
+        CHECK_FALSE(ref_field(empty.ref, "activities",
+                              "[Landroid/content/pm/ActivityInfo;")
+                        .IsValid());
+
+        const auto unknown = f.OnOutcome(
+            manager, "getPackageInfo", kGetPackageInfo,
+            {VmValue::Ref(f.vm.NewStringUtf8("org.example.missing")),
+             VmValue::Int(kGetActivities)});
+        REQUIRE(unknown.exception.IsValid());
+        CHECK(f.linker.Class(unknown.exception_class).descriptor ==
+              "Landroid/content/pm/PackageManager$NameNotFoundException;");
+        const auto unsupported = f.OnOutcome(
+            manager, "getPackageInfo", kGetPackageInfo,
+            {VmValue::Ref(package), VmValue::Int(0x00000002)});
+        REQUIRE(unsupported.exception.IsValid());
+        CHECK(f.linker.Class(unsupported.exception_class).descriptor ==
+              "Ljava/lang/UnsupportedOperationException;");
+        static_cast<void>(f.vm.CollectGarbage());
+    }
+}
+
 TEST_CASE("DVM-143 method lookup ignores unrelated unavailable signature types") {
     auto builder = IntrinsicClassBuilder::Class(
         "Ltest/SelectiveLookup;", "Ljava/lang/Object;");

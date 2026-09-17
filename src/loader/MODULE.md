@@ -16,7 +16,9 @@
   Application 类，以及按声明顺序保留 enabled、逐 intent-filter、alias target 的 Activity
   组件事实；`NormalizeAndroidManifestClassName` 对齐 API 19 `buildClassName`，
   `ResolveLauncherComponent` 确定性选择首个 enabled MAIN+LAUNCHER 组件并把 alias 映射到
-  已声明 target，no-launcher/非法 alias 以 typed error 失败。`application` icon 保留
+  已声明 target，no-launcher/非法 alias 以 typed error 失败。Activity/`activity-alias`
+  保留 `android:exported`：显式布尔写入事实，缺省时按 API 19 在有 intent-filter 时为
+  true。`application` icon 保留
   resource id，label 严格区分 resource id 与字面量；DVM-77 继续按声明序提取去重的
   `uses-permission` 与 application `meta-data`，metadata 只接受 API19 string、integer、
   boolean、value/resource reference；两种 reference 保留独立身份，由运行时仅解析

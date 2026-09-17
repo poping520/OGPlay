@@ -14,7 +14,6 @@ import java.util.List;
 import java.util.Map;
 import javax.net.ssl.HostnameVerifier;
 import javax.net.ssl.HttpsURLConnection;
-import javax.net.ssl.SSLContext;
 import javax.net.ssl.SSLSocket;
 import javax.net.ssl.SSLSocketFactory;
 
@@ -42,13 +41,6 @@ public final class OgPlayHttpsURLConnection extends HttpsURLConnection {
         }
         snapshotRequestHeaders();
         SSLSocketFactory factory = getSSLSocketFactory();
-        try {
-            SSLContext context = SSLContext.getDefault();
-            if (context != null && context.getSocketFactory() != null) {
-                factory = context.getSocketFactory();
-            }
-        } catch (Exception ignored) {
-        }
         if (factory == null) {
             factory = getDefaultSSLSocketFactory();
         }
@@ -62,7 +54,7 @@ public final class OgPlayHttpsURLConnection extends HttpsURLConnection {
         }
         Socket created;
         try {
-            created = factory.createSocket();
+            created = factory.createSocket(host, port);
         } catch (IOException e) {
             throw new IOException(factory.getClass().getName() + " createSocket: " + e.getMessage());
         }

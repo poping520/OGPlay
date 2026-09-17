@@ -510,11 +510,13 @@ IntrinsicClassDecl NativeTlsBoundary() {
     b.GuestNativeStatic("seed", "([B)V");
     b.GuestNativeStatic("createContext", "([Ljava/lang/String;[Ljava/lang/String;)J");
     b.GuestNativeStatic("createSsl", "(JLjava/lang/String;)J");
+    b.GuestNativeStatic("configure", "(J[Ljava/lang/String;[Ljava/lang/String;)V");
     b.GuestNativeStatic("setClientKey", "(J[B[B)V");
     b.GuestNativeStatic("handshake", "(JLjava/lang/Object;Z)I");
     b.GuestNativeStatic("peerCertificates", "(J)[B");
     b.GuestNativeStatic("protocol", "(J)Ljava/lang/String;");
     b.GuestNativeStatic("cipherSuite", "(J)Ljava/lang/String;");
+    b.GuestNativeStatic("sessionId", "(J)[B");
     b.GuestNativeStatic("read", "(J[BII)I");
     b.GuestNativeStatic("write", "(J[BII)I");
     b.GuestNativeStatic("pullWire", "(J)[B");

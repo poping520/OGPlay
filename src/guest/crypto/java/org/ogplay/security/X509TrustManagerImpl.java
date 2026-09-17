@@ -67,7 +67,7 @@ public final class X509TrustManagerImpl implements X509TrustManager {
             if (chain[i] == null) {
                 throw new CertificateException("certificate chain contains a null entry");
             }
-            chain[i].checkValidity(new Date(1704067200000L));
+            chain[i].checkValidity(new Date(System.currentTimeMillis()));
             rejectWeakSignature(chain[i]);
             bytes += copyEncoded(chain[i]).length;
             if (bytes > TrustLimits.MAX_CHAIN_BYTES) {

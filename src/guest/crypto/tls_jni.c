@@ -5,6 +5,7 @@ typedef void *jobject;
 typedef const void **JNIEnv;
 typedef struct ssl_st SSL;
 typedef struct ssl_ctx_st SSL_CTX;
+typedef struct ssl_session_st SSL_SESSION;
 typedef struct ssl_method_st SSL_METHOD;
 typedef struct ssl_cipher_st SSL_CIPHER;
 typedef struct bio_st BIO;
@@ -29,7 +30,6 @@ extern void SSL_CTX_free(SSL_CTX *);
 extern long SSL_CTX_ctrl(SSL_CTX *, int, long, void *);
 extern int SSL_CTX_set_cipher_list(SSL_CTX *, const char *);
 extern void SSL_CTX_set_verify(SSL_CTX *, int, int (*)(int, X509_STORE_CTX *));
-extern void SSL_CTX_set_cert_verify_callback(SSL_CTX *, int (*)(X509_STORE_CTX *, void *), void *);
 extern SSL *SSL_new(SSL_CTX *);
 extern void SSL_free(SSL *);
 extern void SSL_set_connect_state(SSL *);
@@ -58,6 +58,10 @@ extern BIO_METHOD *BIO_s_mem(void);
 extern int BIO_read(BIO *, void *, int);
 extern int BIO_write(BIO *, const void *, int);
 extern long BIO_ctrl(BIO *, int, long, void *);
+extern int SSL_set_cipher_list(SSL *, const char *);
+extern SSL_SESSION *SSL_get1_session(SSL *);
+extern void SSL_SESSION_free(SSL_SESSION *);
+extern const unsigned char *SSL_SESSION_get_id(const SSL_SESSION *, unsigned int *);
 extern BIO *SSL_get_wbio(const SSL *);
 extern BIO *SSL_get_rbio(const SSL *);
 extern X509 *d2i_X509(X509 **, const unsigned char **, long);
@@ -71,6 +75,10 @@ extern int sk_num(const _STACK *);
 extern void *sk_value(const _STACK *, int);
 extern SSL_CTX *SSL_get_SSL_CTX(const SSL *);
 extern void *X509_STORE_CTX_get_ex_data(X509_STORE_CTX *, int);
+extern X509 *X509_STORE_CTX_get_current_cert(X509_STORE_CTX *);
+extern int X509_STORE_CTX_get_error_depth(X509_STORE_CTX *);
+extern _STACK *X509_STORE_CTX_get_chain(X509_STORE_CTX *);
+extern int X509_cmp(X509 *, X509 *);
 extern void ERR_clear_error(void);
 extern unsigned long ERR_get_error(void);
 extern void RAND_seed(const void *, int);
@@ -78,6 +86,7 @@ extern int RAND_status(void);
 extern EC_KEY *EC_KEY_new_by_curve_name(int);
 extern void EC_KEY_free(EC_KEY *);
 #define SSL_CTRL_OPTIONS 32
+#define SSL_CTRL_CLEAR_OPTIONS 77
 #define SSL_CTRL_MODE 33
 #define SSL_CTRL_EXTRA_CHAIN_CERT 14
 #define SSL_CTRL_SET_TMP_ECDH 4
@@ -91,6 +100,7 @@ extern void EC_KEY_free(EC_KEY *);
 #define SSL_MODE_ENABLE_PARTIAL_WRITE 1L
 #define SSL_MODE_ACCEPT_MOVING_WRITE_BUFFER 2L
 #define SSL_VERIFY_NONE 0x00
+#define SSL_VERIFY_PEER 0x01
 #define NID_X9_62_PRIME256V1 415
 #define SSL_ERROR_WANT_READ 2
 #define SSL_ERROR_WANT_WRITE 3
@@ -292,7 +302,7 @@ static int invoke_verify(Session *s, X509 *leaf, _STACK *chain) {
     int extra = chain ? sk_num(chain) : 0;
     if (extra < 0) extra = 0;
     if (extra > MAX_CHAIN - 1) extra = MAX_CHAIN - 1;
-    int count = extra + 1;
+    int count = 1;
     int sizes[MAX_CHAIN];
     int total = 4;
     int i;
@@ -301,9 +311,14 @@ static int invoke_verify(Session *s, X509 *leaf, _STACK *chain) {
     total += 4 + sizes[0];
     for (i = 0; i < extra; ++i) {
         X509 *item = (X509 *)sk_value(chain, i);
-        sizes[i + 1] = item ? i2d_X509(item, 0) : 0;
+        if (!item || X509_cmp(item, leaf) == 0) {
+            sizes[i + 1] = 0;
+            continue;
+        }
+        sizes[i + 1] = i2d_X509(item, 0);
         if (sizes[i + 1] < 1) return 0;
         total += 4 + sizes[i + 1];
+        ++count;
     }
     unsigned char *blob = malloc((size_t)total);
     if (!blob) return 0;
@@ -317,6 +332,7 @@ static int invoke_verify(Session *s, X509 *leaf, _STACK *chain) {
         offset += sizes[0];
     }
     for (i = 0; i < extra; ++i) {
+        if (sizes[i + 1] < 1) continue;
         store_i32(blob + offset, sizes[i + 1]);
         offset += 4;
         unsigned char *p = blob + offset;
@@ -341,12 +357,53 @@ static int invoke_verify(Session *s, X509 *leaf, _STACK *chain) {
     s->verified = 1;
     return 1;
 }
-static int verify_peer(Session *s) {
-    X509 *leaf = SSL_get_peer_certificate(s->ssl);
+static int verify_cb(int preverify_ok, X509_STORE_CTX *ctx) {
+    (void)preverify_ok;
+    if (X509_STORE_CTX_get_error_depth(ctx) != 0) return 1;
+    SSL *ssl = (SSL *)X509_STORE_CTX_get_ex_data(ctx, SSL_get_ex_data_X509_STORE_CTX_idx());
+    if (!ssl) return 0;
+    Session *s = (Session *)SSL_get_ex_data(ssl, tls_ex_index);
+    if (!s) return 0;
+    X509 *leaf = X509_STORE_CTX_get_current_cert(ctx);
     if (!leaf) return 0;
-    int ok = invoke_verify(s, leaf, SSL_get_peer_cert_chain(s->ssl));
-    X509_free(leaf);
-    return ok;
+    return invoke_verify(s, leaf, X509_STORE_CTX_get_chain(ctx));
+}
+static int fill_cipher_list(JNIEnv *env, jobject ciphers, char *cipher_list, int capacity) {
+    int used = 0;
+    cipher_list[0] = 0;
+    if (!ciphers) {
+        int i = 0;
+        while (kDefaultCiphers[i] && i < capacity - 1) {
+            cipher_list[i] = kDefaultCiphers[i];
+            ++i;
+        }
+        cipher_list[i] = 0;
+        return 1;
+    }
+    int n = length(env, ciphers);
+    int i;
+    if (n < 0) return 0;
+    for (i = 0; i < n; ++i) {
+        jobject item = element(env, ciphers, i);
+        const char *name = utf8(env, item);
+        const char *ossl = openssl_cipher(name);
+        release_utf8(env, item, name);
+        if (!ossl) {
+            fail(env, "java/lang/IllegalArgumentException", "unsupported cipher suite");
+            return 0;
+        }
+        int len = 0;
+        while (ossl[len]) ++len;
+        if (used + len + 2 >= capacity) {
+            fail(env, "java/lang/IllegalArgumentException", "cipher list exceeds limit");
+            return 0;
+        }
+        if (used) cipher_list[used++] = ':';
+        memcpy(cipher_list + used, ossl, (size_t)len);
+        used += len;
+        cipher_list[used] = 0;
+    }
+    return 1;
 }
 void Java_org_ogplay_security_NativeTls_seed(JNIEnv *env, jobject cls, jobject entropy) {
     (void)cls;
@@ -446,44 +503,16 @@ jlong Java_org_ogplay_security_NativeTls_createContext(JNIEnv *env, jobject cls,
         return 0;
     }
     char cipher_list[1024];
-    int used = 0;
-    cipher_list[0] = 0;
-    if (ciphers) {
-        int n = length(env, ciphers);
-        int i;
-        if (n < 0) {
-            SSL_CTX_free(ssl);
-            return 0;
-        }
-        for (i = 0; i < n; ++i) {
-            jobject item = element(env, ciphers, i);
-            const char *name = utf8(env, item);
-            const char *ossl = openssl_cipher(name);
-            release_utf8(env, item, name);
-            if (!ossl) {
-                SSL_CTX_free(ssl);
-                fail(env, "java/lang/IllegalArgumentException", "unsupported cipher suite");
-                return 0;
-            }
-            int len = 0;
-            while (ossl[len]) ++len;
-            if (used + len + 2 >= (int)sizeof(cipher_list)) {
-                SSL_CTX_free(ssl);
-                fail(env, "java/lang/IllegalArgumentException", "cipher list exceeds limit");
-                return 0;
-            }
-            if (used) cipher_list[used++] = ':';
-            memcpy(cipher_list + used, ossl, (size_t)len);
-            used += len;
-            cipher_list[used] = 0;
-        }
+    if (!fill_cipher_list(env, ciphers, cipher_list, (int)sizeof(cipher_list))) {
+        SSL_CTX_free(ssl);
+        return 0;
     }
-    if (SSL_CTX_set_cipher_list(ssl, used ? cipher_list : kDefaultCiphers) != 1) {
+    if (SSL_CTX_set_cipher_list(ssl, cipher_list[0] ? cipher_list : kDefaultCiphers) != 1) {
         SSL_CTX_free(ssl);
         fail(env, "javax/net/ssl/SSLException", "cipher list is not supported");
         return 0;
     }
-    SSL_CTX_set_verify(ssl, SSL_VERIFY_NONE, 0);
+    SSL_CTX_set_verify(ssl, SSL_VERIFY_PEER, verify_cb);
     Ctx *p = malloc(sizeof(Ctx));
     if (!p) {
         SSL_CTX_free(ssl);
@@ -548,6 +577,42 @@ jlong Java_org_ogplay_security_NativeTls_createSsl(JNIEnv *env, jobject cls, jlo
     pthread_mutex_unlock(&registry_mutex);
     SSL_set_ex_data(ssl, tls_ex_index, p);
     return p->token;
+}
+void Java_org_ogplay_security_NativeTls_configure(JNIEnv *env, jobject cls, jlong token,
+                                                  jobject protocols, jobject ciphers) {
+    (void)cls;
+    SESSION;
+    if (!s) return;
+    long options = disable_unused(0, protocols, env);
+    if (options < 0) return;
+    SSL_ctrl(s->ssl, SSL_CTRL_CLEAR_OPTIONS,
+             SSL_OP_NO_TLSv1 | SSL_OP_NO_TLSv1_1 | SSL_OP_NO_TLSv1_2, 0);
+    SSL_ctrl(s->ssl, SSL_CTRL_OPTIONS, options, 0);
+    char cipher_list[1024];
+    if (!fill_cipher_list(env, ciphers, cipher_list, (int)sizeof(cipher_list))) return;
+    if (SSL_set_cipher_list(s->ssl, cipher_list[0] ? cipher_list : kDefaultCiphers) != 1)
+        fail(env, "javax/net/ssl/SSLException", "cipher list is not supported");
+}
+jobject Java_org_ogplay_security_NativeTls_sessionId(JNIEnv *env, jobject cls, jlong token) {
+    (void)cls;
+    SESSION;
+    if (!s) return 0;
+    SSL_SESSION *session = SSL_get1_session(s->ssl);
+    if (!session) {
+        fail(env, "javax/net/ssl/SSLException", "TLS session is missing");
+        return 0;
+    }
+    unsigned int id_len = 0;
+    const unsigned char *id = SSL_SESSION_get_id(session, &id_len);
+    jobject bytes = 0;
+    if (id && id_len > 0 && id_len <= 256) {
+        bytes = new_bytes(env, (int)id_len);
+        if (bytes) write_bytes(env, bytes, 0, (int)id_len, id);
+    } else {
+        bytes = new_bytes(env, 0);
+    }
+    SSL_SESSION_free(session);
+    return bytes;
 }
 void Java_org_ogplay_security_NativeTls_setClientKey(JNIEnv *env, jobject cls, jlong token,
                                                      jobject pkcs8, jobject chain) {
@@ -660,14 +725,6 @@ int Java_org_ogplay_security_NativeTls_handshake(JNIEnv *env, jobject cls, jlong
     ERR_clear_error();
     int result = SSL_do_handshake(s->ssl);
     int status = map_error(s->ssl, result);
-    if (status == STATUS_OK && !verify_peer(s)) {
-        s->env = 0;
-        s->trust_manager = 0;
-        if (!pending(env))
-            fail(env, "javax/net/ssl/SSLHandshakeException",
-                 "TrustManager rejected the peer certificate");
-        return STATUS_FAILED;
-    }
     s->env = 0;
     s->trust_manager = 0;
     if (status == STATUS_OK && !s->verified) {

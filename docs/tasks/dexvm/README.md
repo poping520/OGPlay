@@ -43,7 +43,7 @@ Asphalt 5（pilot title）删除 profile 全部 `native_call` 与 `[[java.class]
 | [DVM-170](DVM-170.md) | Activity 主线程投递与 JNI 清理顺序 | 完成 |
 | [DVM-171](DVM-171.md) | 原版 NativeCrypto 迁入 BootDex | 完成 |
 | [DVM-172](DVM-172.md) | 通用 KeyStore/BKS（KS-01..09） | 完成 |
-| [DVM-173](DVM-173.md) | 证书信任与客户端 TLS（TLS-01..03） | TLS-01/02 完成；TLS-03 在线发布阻塞 |
+| [DVM-173](DVM-173.md) | 证书信任与客户端 TLS（TLS-01..03） | TLS-01/02 完成；TLS-03 未完成 |
 | [DVM-151](DVM-151.md) | 三个 builder 的 Java 行为与状态迁入 BootDex | 完成 |
 | [DVM-1](DVM-1.md) | AOSP Dalvik 本地参考资料说明 | 完成 |
 | [DVM-2](DVM-2.md) | dex_dependency_survey 题库静态测量工具 | 完成 |

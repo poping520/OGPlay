@@ -1703,7 +1703,7 @@ note = "DVM-173 TLS-01：OGPlayJSSE 发布 PKIX 与 X509 别名 TrustManagerFact
 [dexvm.x509_trust_validation]
 status = "complete"
 test = "tests/runtime/tls_trust_tests.cpp: TLS-01"
-note = "DVM-173：guest libcrypto X509_verify_cert 做真实路径验证；packed [B] JNI、固定校验时间 1704067200、正反矩阵（过期/未生效/非 CA/pathLen/EKU/NameConstraints/关键扩展/交叉签名/受信任叶/同主题不同 key/authType）双解释器通过。Harmony DER 在 encodedCopy 钉死独立副本。不联网 AIA/OCSP/CRL。"
+note = "DVM-173：guest libcrypto X509_verify_cert 做真实路径验证；packed [B] JNI、校验时间取统一 Clock、正反矩阵（过期/未生效/非 CA/pathLen/EKU/NameConstraints/关键扩展/交叉签名/受信任叶/同主题不同 key/authType）双解释器通过。Harmony DER 在 encodedCopy 钉死独立副本。不联网 AIA/OCSP/CRL。"
 
 [dexvm.android_ca_store]
 status = "complete"
@@ -1713,17 +1713,17 @@ note = "DVM-173：只读 AndroidCAStore 从 /system/etc/security/cacerts.ogplay 
 [dexvm.tls_client]
 status = "complete"
 test = "tests/runtime/tls_trust_tests.cpp: TLS-02"
-note = "DVM-173 TLS-02：OGPlayJSSE SSLContext/SSLSocket/session 经 guest libssl 内存 BIO 与 raw NetworkRuntime 完成 loopback TLS 1.2 握手；engineInit 播种 RAND，connectRaw 绕过 Harmony Socket.connect。默认网络关闭受检。complete 仅指客户端 socket TLS；SSLEngine 与 server TLS 明确失败。公开互联网 CA/在线 HTTPS 见 https_transport。"
+note = "DVM-173 TLS-02：OGPlayJSSE SSLContext/SSLSocket/session 经 guest libssl 内存 BIO 与 raw NetworkRuntime 完成 loopback TLS 1.2 握手；engineInit 播种 RAND，connectRaw 绕过 Harmony Socket.connect；协议/SNI 作用于 native SSL，TrustManager 在 SSL_do_handshake 内执行。默认网络关闭受检。complete 仅指客户端 socket TLS；SSLEngine、server TLS 与 SSL_set_session 恢复明确未做。公开互联网 CA/在线 HTTPS 见 https_transport。"
 
 [dexvm.tls_client_auth]
 status = "complete"
 test = "tests/runtime/tls_trust_tests.cpp: TLS-02 mutual TLS"
-note = "DVM-173：BKS KeyManager 安装 RSA 客户端证书后 loopback mTLS 协商 TLSv1.2。complete 仅指该 RSA 路径；EC client auth 未纳入。"
+note = "DVM-173：BKS KeyManager 安装 RSA 或 EC 客户端证书后 loopback mTLS 协商 TLSv1.2，双解释器受检。complete 仅指该客户端证书路径；SSL_set_session 恢复未纳入。"
 
 [dexvm.https_transport]
 status = "partial"
 test = "tests/runtime/tls_trust_tests.cpp: TLS-02"
-note = "DVM-173：HttpsURLConnection 与 Apache HTTPS 出口接到同一 OGPlayJSSE。默认离线 UnknownHostException 受检；loopback HTTPS GET 200/tls-ok 与 layered autoClose=false 通过。公开互联网 HTTPS 被测试 CA 包与已停止维护的 OpenSSL 1.0.1（AOSP 4.4.4_r2.0.1）阻塞，不能据本地握手发布。"
+note = "DVM-173：HttpsURLConnection 与 Apache HTTPS 出口接到同一 OGPlayJSSE。默认离线 UnknownHostException 受检；loopback HTTPS GET 200/tls-ok 与 layered autoClose=false 通过。公开互联网 HTTPS 被测试 CA 包与已停止维护的 OpenSSL 1.0.1（AOSP 4.4.4_r2.0.1）阻塞，TLS-03 仍未完成，不能据本地握手发布。"
 
 [dexvm.object_stream_bootdex]
 status = "complete"

@@ -20,7 +20,7 @@ final class OgPlaySslSession implements SSLSession {
     private boolean valid = true;
 
     OgPlaySslSession(String protocol, String cipherSuite, String peerHost, int peerPort,
-                     Certificate[] peerCerts, OgPlaySslSessionContext context) {
+                     Certificate[] peerCerts, OgPlaySslSessionContext context, byte[] sessionId) {
         this.protocol = protocol;
         this.cipherSuite = cipherSuite;
         this.peerHost = peerHost;
@@ -28,10 +28,12 @@ final class OgPlaySslSession implements SSLSession {
         this.peerCerts = peerCerts == null ? new Certificate[0] : peerCerts;
         this.context = context;
         this.creationTime = System.currentTimeMillis();
-        this.id = new byte[] {
-            (byte) (creationTime >>> 24), (byte) (creationTime >>> 16),
-            (byte) (creationTime >>> 8), (byte) creationTime
-        };
+        if (sessionId == null || sessionId.length == 0) {
+            this.id = new byte[0];
+        } else {
+            this.id = new byte[sessionId.length];
+            System.arraycopy(sessionId, 0, this.id, 0, sessionId.length);
+        }
     }
 
     public byte[] getId() {

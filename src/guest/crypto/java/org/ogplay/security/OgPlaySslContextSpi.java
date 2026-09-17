@@ -53,7 +53,6 @@ public class OgPlaySslContextSpi extends SSLContextSpi {
                     NativeTls.defaultCipherSuites());
             clientSessions = new OgPlaySslSessionContext();
             socketFactory = new OgPlaySslSocketFactory(this);
-            HttpsURLConnection.setDefaultSSLSocketFactory(socketFactory);
             initialized = true;
         } catch (Exception e) {
             throw new KeyManagementException(e);
@@ -186,6 +185,7 @@ public class OgPlaySslContextSpi extends SSLContextSpi {
             super(new String[] {"TLSv1.2", "TLSv1.1", "TLSv1"});
             try {
                 engineInit(null, null, null);
+                HttpsURLConnection.setDefaultSSLSocketFactory(engineGetSocketFactory());
             } catch (Exception e) {
                 throw new java.security.ProviderException(e);
             }

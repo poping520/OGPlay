@@ -27,8 +27,11 @@ handler id、单类 TU 或 misc 巨石。非 Android family 归 core，平台事
 
 ## 平台边界
 
-`android.util.Log` 的 d/e/w Throwable 重载通过 guest `printStackTrace(PrintWriter)` 保留
-Java 异常文本，再进入统一结构化 logger；不吞异常、不写裸 stdout/stderr。
+`android.util.Log` 的 d/e/w Throwable 重载与 `getStackTraceString` 共用 guest
+`printStackTrace(PrintWriter)` 格式化：flush 后取字符串，虚调用与异常身份保留。
+`getStackTraceString` 按 API 19 对 `null` 以及 cause 链中的 `UnknownHostException`
+（含子类）返回空字符串；不按异常消息或域名判断，也不把所有异常压成空串。不宣称
+完整 Log 子系统。日志进入统一结构化 logger；不吞异常、不写裸 stdout/stderr。
 
 ### Context、Intent、PackageManager
 
@@ -107,6 +110,20 @@ Java 异常文本，再进入统一结构化 logger；不吞异常、不写裸 s
   统一 ARGB。
 - pointer 在 dirty 时先 layout，按 clipped reverse-Z/deepest-first 命中并虚派 listener/
   onTouchEvent；键盘将 SDL scancode 转 API 19 keyCode/Unicode/meta/repeat。
+- `View.setClickable`/`isClickable` 为可覆盖实例方法，读写 UiNode.clickable。
+  `setOnClickListener` 按 API 19 在登记前虚派 `isClickable`/`setClickable(true)`，`null`
+  同样使 View 可点击但解除监听器。`setClickable(false)` 不删除监听器。触摸点击要求
+  clickable；程序化 `InvokeViewOnClick` 不检查该标志。基础 `onTouchEvent` 在 clickable
+  时消费触摸且不伪造 onClick。OnTouchListener 与子类 `onTouchEvent` 不被 clickable=false
+  禁用。不宣称长按、无障碍或完整手势系统。
+- `LinearLayout(Context, AttributeSet)` 支持 `attrs == null` 的程序化构造：复用
+  `ViewInitHandler`/`UiClassForObject` 建立唯一 LinearLayout UiNode 与默认水平排列。
+  null Context 抛 NPE；非空 AttributeSet 记账并明确失败。不宣称完整 XML/主题构造。
+- ViewGroup 按 API 19 提供可覆盖的 `setClipChildren`/`setClipToPadding` 与
+  `getClipChildren`。状态只写入 UiNode（默认均为 true）；值变化只标 draw dirty，不改布局
+  尺寸。绘制链按父容器 `clipChildren` 裁子 View 边界、按容器 `clipToPadding` 裁子孙到
+  padding box；祖先裁剪、输出边界与控件自身必要裁剪保留。不扩大触摸命中区域，不宣称完整
+  ViewGroup 或动画裁剪。
 - ViewGroup 的 width/height `addView` 重载虚派容器默认 LayoutParams，写入 BootDex 字段后委托
   唯一 index+params attach 路径；RelativeLayout 生成自身参数类型，不在 UiTree 复制参数对象。
 - GLES/EGL 通过 session 的 managed 冷入口调用 Native EGL/GLES binding；不创建第二套状态。
@@ -171,7 +188,8 @@ extension string 与错误锁存以 native registry 为唯一事实。
 ## BootDex、文件与测试
 
 Bundle、Build、Uri、Configuration、OrientationEventListener、ResultReceiver、布局参数、framework/
-PM 值类等普通算法归 BootDex。catalog 只保留 native/平台事实边界，不重复发布 class 或普通方法；
+PM 值类等普通算法归 BootDex。`Animation$AnimationListener` 只提供类型兼容，不发布 Animation
+执行或 C++ 动画实现。catalog 只保留 native/平台事实边界，不重复发布 class 或普通方法；
 Java 工厂必须先初始化类再调用原版构造器。
 
 实现按 content/os/view/graphics/gl/media/database/device 等既有 family TU 分工；新增类进入既有

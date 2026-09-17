@@ -1470,6 +1470,36 @@ status = "complete"
 test = "tests/dexvm/android_value_tests.cpp: DVM-166; Angry Birds no-Profile reached RelativeLayout.addView(View,int,int)"
 note = "DVM-166 发布 API 19 非缓存 KeyguardManager facade，三项只读查询统一从进程级 AndroidKeyguardStateProvider 读取快照；当前未注入 provider 时明确表示无锁屏。后续宿主行为只能替换 provider，不引入 IWindowManager、Binder 或 system_server。"
 
+[dexvm.animation_listener_type]
+status = "complete"
+test = "tests/dexvm/android_value_tests.cpp: DVM-174; tools.bootdex_builder_self_test; python tools/bootdex/build_bootdex.py check; Angry Birds no-Profile reached BurstlyView setOnClickListener override"
+note = "DVM-174 从固定 API 19 framework.jar 精确选入原版 Animation$AnimationListener 嵌套接口，提供类型、访问标志与 onAnimationStart/End/Repeat 抽象签名，使应用实现类可链接、实例化并做接口分派。不包含 Animation 本体、TranslateAnimation、Interpolator、startAnimation 或完成回调；不宣称完整动画框架或游戏可玩。"
+
+[dexvm.view_click_listener_override]
+status = "complete"
+test = "tests/dexvm/android_value_tests.cpp: DVM-175; tests/dexvm/widget_click_tests.cpp: visible button with a listener receives the click; Angry Birds no-Profile reached Log.getStackTraceString"
+note = "DVM-175 按 API 19 将 View.setOnClickListener 改为可覆盖实例方法，子类可覆盖并 invoke-super 进入现有 node 级 listener 登记，null 解除登记。DVM-179 补齐登记时虚派 isClickable/setClickable(true) 的副作用。不迁移 View 到 BootDex，不宣称完整手势系统。"
+
+[dexvm.log_get_stack_trace_string]
+status = "complete"
+test = "tests/dexvm/android_value_tests.cpp: DVM-176; tests/dexvm/android_value_tests.cpp: Log debug throwable overload; Angry Birds no-Profile 600 frames without getStackTraceString fault"
+note = "DVM-176 按 API 19 补齐 Log.getStackTraceString(Throwable)：null 与 cause 链中的 UnknownHostException（含子类）返回空字符串，其余经 guest printStackTrace(PrintWriter)+flush。空串是 AOSP 语义，不按消息或域名判断。不宣称完整 Log 子系统或广告联网。"
+
+[dexvm.linear_layout_programmatic_attrs]
+status = "complete"
+test = "tests/dexvm/android_value_tests.cpp: DVM-177; tests/dexvm/widget_click_tests.cpp: guest View subclass resolves the platform kind by inheritance; Angry Birds no-Profile interstitial reached ViewGroup.setClipChildren"
+note = "DVM-177 为 LinearLayout 补齐 (Context, AttributeSet) 程序化构造：attrs==null 复用 ViewInitHandler/UiClassForObject 建立唯一 LinearLayout UiNode；null Context 抛 NPE；非空 AttributeSet 记账并明确失败。不宣称完整 XML/主题构造或广告展示。"
+
+[dexvm.view_group_clip_flags]
+status = "complete"
+test = "tests/runtime/ui_renderer_tests.cpp: ViewGroup clipChildren and clipToPadding change descendant pixels; tests/dexvm/android_value_tests.cpp: DVM-178; architecture.dexvm_intrinsic_layout; Angry Birds no-Profile interstitial reached View.setClickable"
+note = "DVM-178 在 ViewGroup 按 API 19 提供可覆盖 setClipChildren/setClipToPadding 与 getClipChildren。UiNode 保存两个默认 true 的独立开关；绘制链按父容器 clipChildren 裁子 View 边界、按容器 clipToPadding 裁子孙到 padding box。不扩大触摸命中，不宣称完整 ViewGroup 或动画裁剪。"
+
+[dexvm.view_clickable_state]
+status = "complete"
+test = "tests/dexvm/android_value_tests.cpp: DVM-179; tests/dexvm/widget_click_tests.cpp: DVM-179 clickable gates touch clicks; tests/dexvm/widget_click_tests.cpp: visible button with a listener receives the click; architecture.dexvm_intrinsic_layout; Angry Birds no-Profile interstitial reached PackageManager.getPackageInfo flags 4097"
+note = "DVM-179 在 View 按 API 19 提供可覆盖 setClickable/isClickable，唯一写入 UiNode.clickable。setOnClickListener 虚派使 View 可点击（含 null）；触摸点击要求 clickable，程序化 InvokeViewOnClick 不检查；基础 onTouchEvent 在 clickable 时消费且不伪造 onClick。OnTouchListener 与子类 onTouchEvent 不被 clickable=false 禁用。不宣称长按或完整手势系统。"
+
 [dexvm.context_file_stream_path]
 status = "complete"
 test = "tests/dexvm/file_vfs_tests.cpp: Context private file streams use the app files directory on both backends; Angry Birds reached JNI CallObjectMethodV return mismatch"
@@ -1638,7 +1668,7 @@ note = "DVM-147 补齐 API19 AndroidOpenSSL SHA1PRNG 与 AES KeyGenerator。SHA1
 [dexvm.android_log]
 status = "complete"
 test = "tests/dexvm/android_value_tests.cpp: Log debug throwable overload"
-note = "API19 Log.d(String,String,Throwable) 复用既有 d/e/w 结构化日志 handler，并由 guest Throwable.printStackTrace(PrintWriter) 生成异常文本；双解释器精确签名调用受检，pvz-amaz 8.1.0 实跑越过原解析故障。其余 Log API 长尾不因此宣称完整。"
+note = "API19 Log.d(String,String,Throwable) 复用既有 d/e/w 结构化日志 handler；异常文本与 getStackTraceString 共用 guest Throwable.printStackTrace(PrintWriter)+flush。双解释器精确签名调用受检，pvz-amaz 8.1.0 实跑越过原解析故障。其余 Log API 长尾不因此宣称完整。"
 
 [dexvm.activity_parent_identity]
 status = "complete"

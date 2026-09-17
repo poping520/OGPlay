@@ -153,11 +153,28 @@ using Glyph = std::array<std::uint8_t, 7>;
     return {left, top, left + width, top + height};
 }
 
+[[nodiscard]] Rect ContentBox(const UiNode& node) {
+    return {node.screen_frame.left + node.padding.left,
+            node.screen_frame.top + node.padding.top,
+            node.screen_frame.right - node.padding.right,
+            node.screen_frame.bottom - node.padding.bottom};
+}
+
+[[nodiscard]] bool HasPadding(const Insets& padding) {
+    return padding.left != 0 || padding.top != 0 || padding.right != 0 ||
+           padding.bottom != 0;
+}
+
 void AppendNode(const UiTree& tree, const UiNodeId id,
-                const UiBitmapCache& bitmaps, UiRenderList& out) {
+                const UiBitmapCache& bitmaps, UiRenderList& out,
+                const bool parent_clips_children) {
     const auto& node = *tree.Get(id);
     if (node.visibility != Visibility::Visible) return;
-    out.emplace_back(PushClip{node.screen_frame});
+    // Parent clipChildren clips this view to its bounds (AOSP View.draw).
+    const bool clip_to_bounds = parent_clips_children;
+    if (clip_to_bounds) {
+        out.emplace_back(PushClip{node.screen_frame});
+    }
     if (node.background_color.has_value()) {
         out.emplace_back(DrawSolidRect{node.screen_frame,
                                        *node.background_color,
@@ -263,8 +280,22 @@ void AppendNode(const UiTree& tree, const UiNodeId id,
                                       node.text_size_px, node.alpha, node.text_style});
         }
     }
-    for (const auto child : node.children) AppendNode(tree, child, bitmaps, out);
-    out.emplace_back(PopClip{});
+    // clipToPadding clips descendants to the padding box (AOSP dispatchDraw),
+    // not this node's background or onDraw content.
+    const bool clip_children_to_padding =
+        node.clip_to_padding && HasPadding(node.padding);
+    if (clip_children_to_padding) {
+        out.emplace_back(PushClip{ContentBox(node)});
+    }
+    for (const auto child : node.children) {
+        AppendNode(tree, child, bitmaps, out, node.clip_children);
+    }
+    if (clip_children_to_padding) {
+        out.emplace_back(PopClip{});
+    }
+    if (clip_to_bounds) {
+        out.emplace_back(PopClip{});
+    }
 }
 
 [[nodiscard]] std::uint8_t AlphaByte(const float alpha) {
@@ -407,7 +438,9 @@ std::u16string WrapFixedText(const std::u16string_view text,
 UiRenderList BuildUiRenderList(const UiTree& tree,
                                const UiBitmapCache& bitmaps) {
     UiRenderList commands;
-    AppendNode(tree, tree.Root(), bitmaps, commands);
+    // The window clips the content root to its bounds, matching default
+    // parent clipChildren=true.
+    AppendNode(tree, tree.Root(), bitmaps, commands, true);
     return commands;
 }
 

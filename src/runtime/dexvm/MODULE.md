@@ -110,6 +110,9 @@ switch/threaded 解释、异常、线程/monitor、反射及 `java.*` core intri
   显式列入配方，`org.apache.http.entity` 的 12 个类完整入集。HTTP socket 仍只经
   NetworkRuntime，Apache 客户端 TLS 走同一 OGPlayJSSE 与 raw transport；SSLEngine 与
   server TLS 仍明确失败，不因类可解析而宣称完整 Apache 或公开互联网 CA。
+- API 19 `Animation$AnimationListener` 作为独立嵌套接口进入 BootDex，只提供类型、访问标志
+  与三个抽象回调签名，供应用类链接和接口分派；不纳入 `Animation` 本体或动画执行。签名中的
+  `Animation` 仅作类型描述符，不因此承诺动画框架。
 
 ## 文件分工与不变量
 

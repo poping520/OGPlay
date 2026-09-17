@@ -85,9 +85,11 @@ Dex activity 每帧在 guest 回调前泵送主 Looper，到帧尾只通过
   video 不依赖 UI。EditText 键盘编辑和 ScrollView 手势都更新 UiTree 的唯一状态，绘制、
   裁剪与命中使用同一次布局产生的 frame。
 - touch DOWN 的 gesture ownership 与 click eligibility 独立：touch-only false 立即回退
-  Activity，touch-only true 保持 capture；带 click listener 时未消费的 UP-inside 才 onClick，
-  touch 消费则禁止 click。隐藏/删除/UP-outside 取消 click，hit-test 仍只读 UiTree frame。
-  无 listener target 时按 reverse-Z、deepest-first 遍历命中点下的 guest View override；
+  Activity，touch-only true 保持 capture；clickable 且带 click listener 时未消费的
+  UP-inside 才 onClick，touch 消费则禁止 click。`setClickable(false)` 阻止触摸点击但
+  保留监听器。隐藏/删除/UP-outside 取消 click，hit-test 仍只读 UiTree frame。
+  无 listener target 时按 reverse-Z、deepest-first 遍历命中点下的 guest View；基础
+  `View.onTouchEvent` 在 clickable 时消费 DOWN，未覆盖的非 clickable View 返回 false。
   只有消费 DOWN 的实际 receiver 才建立 MOVE/UP capture，未消费事件再回退
   `Activity.onTouchEvent`。receiver detach 或 Activity switch 清空 capture，禁止旧 View
   跨 generation 收事件。

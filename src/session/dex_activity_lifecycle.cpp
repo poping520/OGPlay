@@ -184,8 +184,7 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
             const auto method = linker.Class(receiver_class).vtable[*index];
             const auto& owner = linker.Class(linker.Method(method).owner);
             if (action == kMotionActionDown &&
-                (owner.descriptor == "Landroid/view/View;" ||
-                 owner.descriptor == "Landroid/app/Activity;")) {
+                owner.descriptor == "Landroid/app/Activity;") {
                 return {};
             }
             const auto event = runtime::MakeMotionEvent(vm, action, x, y, 0);

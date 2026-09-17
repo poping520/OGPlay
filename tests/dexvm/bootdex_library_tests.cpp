@@ -1618,7 +1618,7 @@ TEST_CASE("DVM-103 all BootDex classes link and collection methods have no intri
         for (const auto method : f.linker.Class(type).own_direct_methods)
             CHECK(f.linker.Method(method).kind != MethodKind::intrinsic);
     }
-    CHECK(count == 1636);
+    CHECK(count == 1637);
 }
 
 TEST_CASE("DVM-149 Apache HTTP BootDex supports the Restlet startup object path") {

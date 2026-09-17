@@ -1,7 +1,9 @@
 #include <doctest/doctest.h>
 
 #include <array>
+#include <memory>
 #include <stdexcept>
+#include <vector>
 
 #include "ogplay/runtime/ui/ui_renderer.h"
 
@@ -333,4 +335,153 @@ TEST_CASE("DVM-123 compound drawables measure all axes and empty text") {
         }
     }
     CHECK(count == 4);
+}
+
+namespace {
+
+[[nodiscard]] std::shared_ptr<const ui::UiBitmap> SolidBitmap(
+    const std::int32_t width, const std::int32_t height,
+    const std::uint8_t red, const std::uint8_t green,
+    const std::uint8_t blue) {
+    auto bitmap = std::make_shared<ui::UiBitmap>();
+    bitmap->width = width;
+    bitmap->height = height;
+    bitmap->rgba8.assign(static_cast<std::size_t>(width * height) * 4U, 0U);
+    for (std::size_t index = 0; index < bitmap->rgba8.size(); index += 4U) {
+        bitmap->rgba8[index] = red;
+        bitmap->rgba8[index + 1U] = green;
+        bitmap->rgba8[index + 2U] = blue;
+        bitmap->rgba8[index + 3U] = 255U;
+    }
+    return bitmap;
+}
+
+}  // namespace
+
+TEST_CASE("ViewGroup clipChildren and clipToPadding change descendant pixels") {
+    const std::vector<std::uint8_t> kRed{255, 0, 0, 255};
+    const std::vector<std::uint8_t> kClear{0, 0, 0, 0};
+    const ui::UiBitmapCache bitmaps{{9, SolidBitmap(6, 2, 255, 0, 0)}};
+    const auto make_padded_crop = [](const bool clip_children,
+                                     const bool clip_to_padding) {
+        ui::UiTree tree;
+        const auto container = tree.CreateNode(ui::UiClass::FrameLayout);
+        auto* group = tree.Get(container);
+        CHECK(group->clip_children);
+        CHECK(group->clip_to_padding);
+        group->layout.width = {ui::SizeMode::Fixed, 6};
+        group->layout.height = {ui::SizeMode::Fixed, 4};
+        group->padding = {1, 1, 1, 1};
+        group->clip_children = clip_children;
+        group->clip_to_padding = clip_to_padding;
+        const auto image = tree.CreateNode(ui::UiClass::ImageView);
+        tree.Get(image)->layout.width = {ui::SizeMode::Fixed, 2};
+        tree.Get(image)->layout.height = {ui::SizeMode::Fixed, 2};
+        tree.Get(image)->image_resource_id = 9;
+        tree.Get(image)->image_scale_type = ui::ImageScaleType::CenterCrop;
+        tree.Attach(tree.Root(), container);
+        tree.Attach(container, image);
+        ui::LayoutUiTree(tree, {6, 4});
+        CHECK(tree.Get(container)->measured == ui::Size{6, 4});
+        CHECK(tree.Get(image)->screen_frame == ui::Rect{1, 1, 3, 3});
+        return tree;
+    };
+
+    const auto clipped = ui::RasterizeUiOverlay(
+        ui::BuildUiRenderList(make_padded_crop(true, true), bitmaps), {6, 4});
+    CHECK(Pixel(clipped, 0, 1) == kClear);
+    CHECK(Pixel(clipped, 1, 1) == kRed);
+    CHECK(Pixel(clipped, 2, 1) == kRed);
+    CHECK(Pixel(clipped, 3, 1) == kClear);
+
+    const auto padding_only = ui::RasterizeUiOverlay(
+        ui::BuildUiRenderList(make_padded_crop(false, true), bitmaps), {6, 4});
+    CHECK(Pixel(padding_only, 0, 1) == kClear);
+    CHECK(Pixel(padding_only, 1, 1) == kRed);
+    CHECK(Pixel(padding_only, 3, 1) == kRed);
+    CHECK(Pixel(padding_only, 5, 1) == kClear);
+
+    const auto unclipped = ui::RasterizeUiOverlay(
+        ui::BuildUiRenderList(make_padded_crop(false, false), bitmaps), {6, 4});
+    CHECK(Pixel(unclipped, 0, 1) == kRed);
+    CHECK(Pixel(unclipped, 3, 1) == kRed);
+    CHECK(Pixel(unclipped, 5, 1) == kRed);
+
+    ui::UiTree nested;
+    const auto outer = nested.CreateNode(ui::UiClass::FrameLayout);
+    nested.Get(outer)->layout.width = {ui::SizeMode::Fixed, 6};
+    nested.Get(outer)->layout.height = {ui::SizeMode::Fixed, 4};
+    nested.Get(outer)->clip_children = true;
+    const auto inner = nested.CreateNode(ui::UiClass::FrameLayout);
+    nested.Get(inner)->layout.width = {ui::SizeMode::Fixed, 4};
+    nested.Get(inner)->layout.height = {ui::SizeMode::Fixed, 4};
+    nested.Get(inner)->layout.margin.left = 1;
+    nested.Get(inner)->clip_children = false;
+    nested.Get(inner)->clip_to_padding = false;
+    const auto nested_image = nested.CreateNode(ui::UiClass::ImageView);
+    nested.Get(nested_image)->layout.width = {ui::SizeMode::Fixed, 2};
+    nested.Get(nested_image)->layout.height = {ui::SizeMode::Fixed, 2};
+    nested.Get(nested_image)->image_resource_id = 9;
+    nested.Get(nested_image)->image_scale_type = ui::ImageScaleType::CenterCrop;
+    nested.Attach(nested.Root(), outer);
+    nested.Attach(outer, inner);
+    nested.Attach(inner, nested_image);
+    ui::LayoutUiTree(nested, {6, 4});
+    CHECK(nested.Get(inner)->screen_frame == ui::Rect{1, 0, 5, 4});
+    CHECK(nested.Get(nested_image)->screen_frame == ui::Rect{1, 0, 3, 2});
+    const auto nested_frame = ui::RasterizeUiOverlay(
+        ui::BuildUiRenderList(nested, bitmaps), {6, 4});
+    CHECK(Pixel(nested_frame, 0, 0) == kClear);
+    CHECK(Pixel(nested_frame, 1, 0) == kRed);
+    CHECK(Pixel(nested_frame, 3, 0) == kRed);
+
+    ui::UiTree isolated;
+    const auto row = isolated.CreateNode(ui::UiClass::LinearLayout);
+    isolated.Get(row)->layout.width = {ui::SizeMode::Fixed, 8};
+    isolated.Get(row)->layout.height = {ui::SizeMode::Fixed, 4};
+    isolated.Get(row)->orientation = ui::Orientation::Horizontal;
+    const auto open = isolated.CreateNode(ui::UiClass::FrameLayout);
+    isolated.Get(open)->layout.width = {ui::SizeMode::Fixed, 4};
+    isolated.Get(open)->layout.height = {ui::SizeMode::Fixed, 4};
+    isolated.Get(open)->clip_children = false;
+    isolated.Get(open)->clip_to_padding = false;
+    const auto closed = isolated.CreateNode(ui::UiClass::FrameLayout);
+    isolated.Get(closed)->layout.width = {ui::SizeMode::Fixed, 4};
+    isolated.Get(closed)->layout.height = {ui::SizeMode::Fixed, 4};
+    const auto left = isolated.CreateNode(ui::UiClass::ImageView);
+    isolated.Get(left)->layout.width = {ui::SizeMode::Fixed, 2};
+    isolated.Get(left)->layout.height = {ui::SizeMode::Fixed, 2};
+    isolated.Get(left)->image_resource_id = 9;
+    isolated.Get(left)->image_scale_type = ui::ImageScaleType::CenterCrop;
+    const auto right = isolated.CreateNode(ui::UiClass::ImageView);
+    isolated.Get(right)->layout.width = {ui::SizeMode::Fixed, 2};
+    isolated.Get(right)->layout.height = {ui::SizeMode::Fixed, 2};
+    isolated.Get(right)->image_resource_id = 9;
+    isolated.Get(right)->image_scale_type = ui::ImageScaleType::CenterCrop;
+    isolated.Attach(isolated.Root(), row);
+    isolated.Attach(row, open);
+    isolated.Attach(row, closed);
+    isolated.Attach(open, left);
+    isolated.Attach(closed, right);
+    ui::LayoutUiTree(isolated, {8, 4});
+    CHECK(isolated.Get(left)->screen_frame == ui::Rect{0, 0, 2, 2});
+    CHECK(isolated.Get(right)->screen_frame == ui::Rect{4, 0, 6, 2});
+    const auto isolated_frame = ui::RasterizeUiOverlay(
+        ui::BuildUiRenderList(isolated, bitmaps), {8, 4});
+    CHECK(Pixel(isolated_frame, 2, 0) == kRed);
+    CHECK(Pixel(isolated_frame, 6, 0) == kClear);
+
+    auto live = make_padded_crop(true, true);
+    ui::UiOverlayRenderer renderer;
+    CHECK(Pixel(renderer.Render(live, bitmaps, {6, 4}), 0, 1) == kClear);
+    CHECK(renderer.BuildCount() == 1);
+    const auto container = live.Get(live.Root())->children.front();
+    const auto measured = live.Get(container)->measured;
+    live.Get(container)->clip_children = false;
+    live.Get(container)->clip_to_padding = false;
+    live.MarkDrawDirty(container);
+    CHECK(live.Get(container)->measured == measured);
+    CHECK_FALSE(live.Get(container)->layout_dirty);
+    CHECK(Pixel(renderer.Render(live, bitmaps, {6, 4}), 0, 1) == kRed);
+    CHECK(renderer.BuildCount() == 2);
 }

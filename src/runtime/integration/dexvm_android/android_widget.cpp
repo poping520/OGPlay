@@ -196,6 +196,8 @@ namespace ogplay::runtime::android_intrinsics {
 Decl Declare_android_widget_LinearLayout(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/widget/LinearLayout;", "Landroid/view/ViewGroup;");
     builder.Constructor("(Landroid/content/Context;)V", ViewInitHandler(context));
+    builder.Constructor("(Landroid/content/Context;Landroid/util/AttributeSet;)V",
+                        ViewNullAttributeSetInitHandler(context));
     builder.FinalMethod("setOrientation", "(I)V",
         [context](dx::IntrinsicContext& call) {
             const auto value = call.arguments[0].AsInt();

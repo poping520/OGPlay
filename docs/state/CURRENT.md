@@ -4,6 +4,8 @@
 
 ## 最近进展
 
+- `SetIntrinsicStaticRef` 写静态引用前先 `EnsureClassLinked`，不跑 `<clinit>`。
+  冷路径 `Security.getProperty` 能给已注册但未链接的 BootDex `Engine.door` 赋值。
 - DVM-185：有限 `WebView.destroy()` 生命周期与按实例 Settings。
 - DVM-184：View 保存构造/膨胀 Context，`getContext()` 返回同一 guest 引用。
 - DVM-183：从固定 API 19 `core.jar` 精确选入 `java.sql.Date`/`Time`/`Timestamp`
@@ -42,11 +44,15 @@
 
 - Windows Release 仅构建受影响目标；BootDex 1641 类，DEX
   `2758237a501a736e6c58cef79c413a4d36147301d657bf2279a0a333fc1a6747`。
-  DVM-185 双解释器 WebView.destroy 定向用例 1/186 通过；
-  `architecture.dexvm_intrinsic_layout` 通过。
-- Angry Birds 无 Profile、关闭 survey：插屏路径越过 `WebView.destroy()`。
-  下一独立首错为 `SQLiteDatabase.rawQuery`（Burstly `Cookie init thread` /
-  `SQLiteCookieStorage`）。不宣称 User-Agent、浏览器内核或游戏兼容。
+  `SetIntrinsicStaticRef` 定向 4 用例 109 断言通过（冷 VM、JCA 先序、
+  后台 guest 线程、helper 校验）。
+- `angry-bird-v.1.0-android_port` 无 Profile、关闭 survey：Flurry
+  `Engine.door` 原错消失，启动越过 `onSurfaceCreated`/`onSurfaceChanged`。
+  随后 `Failed to open data/FONT_BASIC_N900.dat`，`nativeUpdate` 返回 false
+  于 1067 presented frames 退出。不宣称资源包或游戏兼容。
+- Angry Birds 2.3.0 无 Profile 插屏路径下一独立首错仍为
+  `SQLiteDatabase.rawQuery`（Burstly `Cookie init thread` /
+  `SQLiteCookieStorage`）。
 - guest JNI
   `e2d4b5de0f1c02b2d84c1e37d7d0561495b2ea1165648f2a01b5a80201a1a7f0`。
 - `data/android/19/framework/` 为本地生成产物，不纳入版本控制。

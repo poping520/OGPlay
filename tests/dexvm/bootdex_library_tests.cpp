@@ -2710,3 +2710,141 @@ TEST_CASE("DVM-151 StringBuffer monitor covers callbacks and releases on excepti
         CHECK(f.vm.StringUtf8(f.Virtual(*receiver, "toString", "()Ljava/lang/String;").value.ref) == "x");
     }
 }
+
+namespace {
+constexpr auto kEngine = "Lorg/apache/harmony/security/fortress/Engine;";
+constexpr auto kDoorType =
+    "Lorg/apache/harmony/security/fortress/SecurityAccess;";
+constexpr auto kSecurityDoor = "Ljava/security/Security$SecurityDoor;";
+
+VmObjectRef EngineDoor(Dvm87Vm& f) {
+    const auto engine = f.linker.FindClass(kEngine);
+    REQUIRE(engine.has_value());
+    const auto field = f.linker.FindFieldRecursive(*engine, "door", kDoorType);
+    REQUIRE(field.has_value());
+    return VmObjectRef(
+        f.linker.Class(*engine).static_storage[f.linker.Field(*field).slot]);
+}
+
+void ExpectDoor(Dvm87Vm& f) {
+    const auto door = EngineDoor(f);
+    REQUIRE(door.IsValid());
+    CHECK(f.linker.Class(f.model.ObjectClass(door)).descriptor == kSecurityDoor);
+}
+
+void CallGetProperty(Dvm87Vm& f) {
+    const auto key = f.vm.NewStringUtf8("ssl.SocketFactory.provider");
+    const auto roots = f.vm.ProtectReferences(std::array{key});
+    f.RequireOk(f.Static("Ljava/security/Security;", "getProperty",
+                         "(Ljava/lang/String;)Ljava/lang/String;",
+                         {VmValue::Ref(key)}));
+}
+
+bool EngineDoorDeclared(Dvm87Vm& f) {
+    const auto engine = f.linker.FindClass(kEngine);
+    REQUIRE(engine.has_value());
+    return f.linker.FindFieldRecursive(*engine, "door", kDoorType).has_value();
+}
+}  // namespace
+
+TEST_CASE("SetIntrinsicStaticRef links BootDex statics without running clinit") {
+    Dvm87Vm f;
+    CHECK_FALSE(EngineDoorDeclared(f));
+    const auto engine = f.linker.FindClass(kEngine);
+    f.linker.EnsureClassLinked(*engine);
+    CHECK(f.linker.Class(*engine).clinit_state == ClinitState::uninitialized);
+    const auto missing = std::string(kEngine) + ".missing " + kDoorType;
+    try {
+        f.vm.SetIntrinsicStaticRef(kEngine, "missing", kDoorType, VmObjectRef{});
+        FAIL("expected missing-field DexVmError");
+    } catch (const DexVmError& error) {
+        CHECK(error.Reason() == DexVmErrorReason::invalid_member);
+        CHECK(std::string(error.what()) ==
+              "intrinsic static field is not declared: " + missing);
+    }
+    const auto instance = std::string(kEngine) + ".serviceName Ljava/lang/String;";
+    try {
+        f.vm.SetIntrinsicStaticRef(kEngine, "serviceName", "Ljava/lang/String;",
+                                   VmObjectRef{});
+        FAIL("expected non-static DexVmError");
+    } catch (const DexVmError& error) {
+        CHECK(error.Reason() == DexVmErrorReason::invalid_member);
+        CHECK(std::string(error.what()) ==
+              "intrinsic static target is not static: " + instance);
+    }
+    CHECK(f.linker.Class(*engine).clinit_state == ClinitState::uninitialized);
+}
+
+TEST_CASE("Security.getProperty writes Engine.door on a cold VM") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch,
+                               InterpreterBackend::threaded}) {
+        CAPTURE(backend == InterpreterBackend::threaded ? "threaded" : "switch");
+        Dvm87Vm f(backend);
+        CHECK_FALSE(EngineDoorDeclared(f));
+        CallGetProperty(f);
+        ExpectDoor(f);
+        const auto door_id = EngineDoor(f).Value();
+        static_cast<void>(f.vm.CollectGarbage("security-engine-door"));
+        CHECK(EngineDoor(f).Value() == door_id);
+        ExpectDoor(f);
+    }
+}
+
+TEST_CASE("Security.getProperty still writes Engine.door after other JCA classes") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch,
+                               InterpreterBackend::threaded}) {
+        CAPTURE(backend == InterpreterBackend::threaded ? "threaded" : "switch");
+        Dvm87Vm f(backend);
+        for (const auto* type :
+             {"Ljavax/crypto/Cipher;", "Ljavax/crypto/Mac;"}) {
+            f.RequireOk(f.vm.EnsureClassInitialized(f.linker.ResolveDescriptor(type)));
+        }
+        CHECK(EngineDoorDeclared(f));
+        CHECK_FALSE(EngineDoor(f).IsValid());
+        CallGetProperty(f);
+        ExpectDoor(f);
+    }
+}
+
+TEST_CASE("guest worker first Security.getProperty writes Engine.door") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch,
+                               InterpreterBackend::threaded}) {
+        CAPTURE(backend == InterpreterBackend::threaded ? "threaded" : "switch");
+        auto worker = IntrinsicClassBuilder::Class("Ltest/SecurityDoorWorker;",
+                                                   "Ljava/lang/Thread;");
+        worker.OverrideMethod("run", "()V", [](IntrinsicContext& context) {
+            const auto type = context.vm.Linker().ResolveDescriptor(
+                "Ljava/security/Security;");
+            const auto method = context.vm.Linker().FindDirectMethod(
+                type, "getProperty", "(Ljava/lang/String;)Ljava/lang/String;");
+            if (!method.has_value()) {
+                throw DexVmError(DexVmErrorReason::unresolved_reference,
+                                 "Security.getProperty is missing");
+            }
+            const auto key =
+                context.vm.NewStringUtf8("ssl.SocketFactory.provider");
+            const auto roots = context.vm.ProtectReferences(std::array{key});
+            const auto outcome =
+                context.vm.Call(*method, std::array{VmValue::Ref(key)});
+            if (outcome.exception.IsValid()) {
+                throw VmJavaThrow{
+                    context.vm.Linker().Class(outcome.exception_class)
+                        .descriptor,
+                    outcome.exception_message, outcome.exception};
+            }
+            return VmValue::Void();
+        });
+        Dvm87Vm f(backend, "en", "eng", "USA", "GMT",
+                  {std::move(worker).Build()});
+        CHECK_FALSE(EngineDoorDeclared(f));
+        const auto thread = f.vm.NewIntrinsicInstance("Ltest/SecurityDoorWorker;");
+        const auto roots = f.vm.ProtectReferences(std::array{thread});
+        f.Construct(thread, "Ljava/lang/Thread;", "()V");
+        f.RequireOk(f.Virtual(thread, "start", "()V"));
+        f.RequireOk(f.Virtual(thread, "join", "()V"));
+        CHECK_FALSE(f.threads.TakeFailure().has_value());
+        ExpectDoor(f);
+        static_cast<void>(f.vm.CollectGarbage("security-engine-door-worker"));
+        ExpectDoor(f);
+    }
+}

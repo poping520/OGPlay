@@ -430,7 +430,8 @@ public:
 
     // Intrinsic instance side state.
 
-    // Writes a reference into an intrinsic static field (System.out etc.).
+    // Writes a reference into a static field slot. Links the owner on demand
+    // so BootDex classes can receive clinit-time stores; does not run <clinit>.
     void SetIntrinsicStaticRef(std::string_view class_descriptor,
                                std::string_view field_name,
                                std::string_view field_descriptor,

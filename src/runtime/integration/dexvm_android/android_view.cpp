@@ -894,7 +894,13 @@ Decl Declare_android_view_View(const Context& context) {
                 : 0);
         });
     builder.VirtualMethod("onTouchEvent", "(Landroid/view/MotionEvent;)Z",
-        [](dx::IntrinsicContext&) { return dx::VmValue::Int(0); });
+        [context](dx::IntrinsicContext& call) {
+            const auto node = EnsureViewUiNode(
+                *context, call.receiver,
+                UiClassForObject(call.vm, call.receiver));
+            return dx::VmValue::Int(
+                context->ui_tree.Get(node)->clickable ? 1 : 0);
+        });
     const auto unhandled_key = dx::IntrinsicHandler(
         [](dx::IntrinsicContext&) { return dx::VmValue::Int(0); });
     builder.VirtualMethod("onKeyDown", "(ILandroid/view/KeyEvent;)Z",
@@ -1105,6 +1111,21 @@ Decl Declare_android_view_View(const Context& context) {
                 node, call.arguments[0].AsInt() != 0);
             return dx::VmValue::Void();
         });
+    builder.VirtualMethod("isClickable", "()Z",
+        [context](dx::IntrinsicContext& call) {
+            const auto node = EnsureViewUiNode(
+                *context, call.receiver, ui::UiClass::View);
+            return dx::VmValue::Int(
+                context->ui_tree.Get(node)->clickable ? 1 : 0);
+        });
+    builder.VirtualMethod("setClickable", "(Z)V",
+        [context](dx::IntrinsicContext& call) {
+            const auto node = EnsureViewUiNode(
+                *context, call.receiver, ui::UiClass::View);
+            context->ui_tree.SetClickable(
+                node, call.arguments[0].AsInt() != 0);
+            return dx::VmValue::Void();
+        });
     builder.FinalMethod("setBackgroundColor", "(I)V",
         [context](dx::IntrinsicContext& call) {
             const auto node = ViewNode(call, context);
@@ -1189,10 +1210,16 @@ Decl Declare_android_view_View(const Context& context) {
                                         ? dx::VmObjectRef{}
                                         : found->second);
         });
-    builder.FinalMethod("setOnClickListener", "(Landroid/view/View$OnClickListener;)V",
+    builder.VirtualMethod("setOnClickListener", "(Landroid/view/View$OnClickListener;)V",
         [context](dx::IntrinsicContext& call) {
             const auto node = EnsureViewUiNode(
                 *context, call.receiver, ui::UiClass::View);
+            if (CallAndroidMethod(call.vm, call.receiver, "isClickable",
+                                  "()Z").AsInt() == 0) {
+                static_cast<void>(CallAndroidMethod(
+                    call.vm, call.receiver, "setClickable", "(Z)V",
+                    {dx::VmValue::Int(1)}));
+            }
             if (call.arguments[0].ref.IsValid()) {
                 context->ui_click_listeners[node] = call.arguments[0].ref;
             } else {
@@ -1380,6 +1407,29 @@ Decl Declare_android_view_ViewGroup(const Context& context) {
                 call.vm, "Landroid/view/ViewGroup$LayoutParams;", -2, -2));
         },
         dx::kAccProtected);
+    const auto set_clip_flag = [context](bool ui::UiNode::* field) {
+        return dx::IntrinsicHandler(
+            [context, field](dx::IntrinsicContext& call) {
+                const auto node = NodeFor(call, context, call.receiver);
+                const bool value = call.arguments[0].AsInt() != 0;
+                auto* state = context->ui_tree.Get(node);
+                if (state->*field != value) {
+                    state->*field = value;
+                    context->ui_tree.MarkDrawDirty(node);
+                }
+                return dx::VmValue::Void();
+            });
+    };
+    builder.VirtualMethod("setClipChildren", "(Z)V",
+                          set_clip_flag(&ui::UiNode::clip_children));
+    builder.VirtualMethod("setClipToPadding", "(Z)V",
+                          set_clip_flag(&ui::UiNode::clip_to_padding));
+    builder.VirtualMethod(
+        "getClipChildren", "()Z", [context](dx::IntrinsicContext& call) {
+            const auto node = NodeFor(call, context, call.receiver);
+            return dx::VmValue::Int(
+                context->ui_tree.Get(node)->clip_children ? 1 : 0);
+        });
     builder.FinalMethod("addView", "(Landroid/view/View;)V",
                     AddHandler(context, false, false));
     builder.FinalMethod("addView", "(Landroid/view/View;I)V",

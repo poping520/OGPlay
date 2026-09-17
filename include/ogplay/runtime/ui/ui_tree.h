@@ -176,6 +176,9 @@ struct UiNode final {
     bool numeric_input{};
     LayoutParams layout;
     Insets padding;
+    // ViewGroup clipChildren / clipToPadding. Defaults match API 19 (both true).
+    bool clip_children{true};
+    bool clip_to_padding{true};
     Size measured;
     Size intrinsic;
     Size minimum;

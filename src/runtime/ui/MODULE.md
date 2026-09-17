@@ -12,7 +12,8 @@ SDL、ANGLE 或视频解码。
   detach/destroy node，并以 android id 查找已接入 content root 的 node。
 - `UiNode`：唯一保存 parent/children、class、android id（NO_ID=-1）、visibility、
   enabled/clickable、orientation、gravity、image resource、layout params、padding、
-  measured/frame/screen frame、alpha 与 dirty state。
+  `clipChildren`/`clipToPadding`（默认 true）、measured/frame/screen frame、alpha 与
+  dirty state。
 - `SetVisibility`：VISIBLE/INVISIBLE 只标 draw dirty；任意 GONE 转换同时从 node 到 root
   标 layout/draw dirty。
 - dirty 消费严格分相：`LayoutUiTree` 只清 `layout_dirty`；`UiOverlayRenderer` 只在 overlay
@@ -36,7 +37,9 @@ SDL、ANGLE 或视频解码。
   映射为 UiTree 布局输入快照；UI 不保存 guest 引用或读取 Java 字段。
 - `BuildUiRenderList` / `RasterizeUiOverlay`：从 resolved tree 生成 solid/bitmap/clip 命令，
   以整数 source-over 输出透明 RGBA8；`UiOverlayRenderer` 仅在 generation、metrics 或
-  draw dirty 改变时重建。
+  draw dirty 改变时重建。窗口先裁剪 content root；父容器 `clipChildren`（默认 true）把子
+  View 裁到其 `screen_frame`；容器 `clipToPadding`（默认 true）再把子孙裁到 padding box。
+  两个开关互不替代，关闭某一容器不解除祖先或输出边界裁剪。clip 改变只标 draw dirty。
 - `TextView/Button`：UiNode 唯一保存 text、RGBA textColor、textSize、gravity 与行数边界；
   内置 5x7 ASCII 大小写字形同时提供确定性 measure/raster，两者共用按词换行结果；空文本
   控件仍保留一行字体高度。wrap_content 加入 padding，Button
@@ -52,11 +55,14 @@ SDL、ANGLE 或视频解码。
   只缩放中心区。Drawable 的 alpha/bounds 仍是逐实例状态。
 - `ImageView/ImageButton`：UiNode 保存 CENTER/CENTER_INSIDE/FIT_CENTER/FIT_XY/CENTER_CROP；
   render-list 在 node content box 内按 API19 对齐语义生成目标 rect，CPU raster 使用确定性
-  nearest-neighbor scale，CENTER_CROP 仍由 node clip 裁切。
+  nearest-neighbor scale。CENTER_CROP 的 dest 可超出 content box；默认父容器
+  `clipChildren` 把该子 View 裁回自身 bounds。关闭父容器 clip 后，溢出仍受祖先与输出
+  边界约束。触摸命中继续使用 `screen_frame`，不随绘制越界扩大。
 
 ## 不变量
 
-- hierarchy、android id、visibility、layout params 和 geometry 只有 UiTree 一份权威事实。
+- hierarchy、android id、visibility、layout params、geometry 与 clip 开关只有 UiTree
+  一份权威事实。
 - renderer 与 input 后续只能读取同一 `screen_frame`；不得各自推导 bounds。
 - `ClearLayoutDirty` 与 `ClearDrawDirty` 只能由各自阶段消费；禁止恢复同时清除两类状态的
   模糊入口。
@@ -75,7 +81,8 @@ LinearLayout 的 GONE/INVISIBLE、weight、padding/margin geometry。
 RelativeLayout tests 锁定 parent/sibling/center、反向 document order 与 missing/cycle failure。
 `tests/runtime/ui_renderer_tests.cpp` 锁定透明、bitmap、alpha overlap、Z-order、clip、
 visibility、layout 后 draw cache 刷新、固定字体 measure/text golden、Button content/background，以及五种
-ImageView scale destination 与 CENTER_CROP exact pixel golden。
+ImageView scale destination 与 CENTER_CROP exact pixel golden；另锁定 `clipChildren`/
+`clipToPadding` 对越界子 View、padding 与嵌套容器的像素差，以及动态切换后的 cache 重建。
 
 DVM-120：内置字体 BOLD 以行像素并集加粗、ITALIC 按行右移，四种样式共用测量与绘制
 的 advance/边界；半透明加粗像素只混合一次。text_style 随 UiNode dirty 一起失效。

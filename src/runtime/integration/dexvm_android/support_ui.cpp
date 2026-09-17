@@ -1163,10 +1163,11 @@ void EnsureLayout(DexVmAndroidContext& context) {
     }
     const auto click = context.ui_click_listeners.find(id);
     const auto touch = context.ui_touch_listeners.find(id);
-    return ((click != context.ui_click_listeners.end() &&
-             click->second.IsValid()) ||
-            (touch != context.ui_touch_listeners.end() &&
-             touch->second.IsValid()))
+    const bool has_click = click != context.ui_click_listeners.end() &&
+                           click->second.IsValid();
+    const bool has_touch = touch != context.ui_touch_listeners.end() &&
+                           touch->second.IsValid();
+    return (has_touch || (has_click && node->clickable))
                ? std::optional<ui::UiNodeId>{id}
                : std::nullopt;
 }
@@ -1277,7 +1278,12 @@ ViewGestureDispatchResult DispatchViewGestureEvent(
         return found != context.ui_click_listeners.end() &&
                found->second.IsValid();
     }();
-    if (action == kActionDown) click_eligible = has_live_click;
+    const auto is_clickable = [&]() {
+        if (!node.has_value()) return false;
+        const auto* state = context.ui_tree.Get(*node);
+        return state != nullptr && state->clickable;
+    }();
+    if (action == kActionDown) click_eligible = has_live_click && is_clickable;
     if (action == kActionCancel) {
         return {.handled = touch_consumed || click_eligible,
                 .keep_capture = false,
@@ -1286,7 +1292,7 @@ ViewGestureDispatchResult DispatchViewGestureEvent(
     }
     if (action == kActionUp) {
         if (!touch_consumed && click_eligible && has_live_click &&
-            ViewContainsPoint(context, handle, x, y)) {
+            is_clickable && ViewContainsPoint(context, handle, x, y)) {
             if (const auto error = InvokeViewOnClick(vm, context, handle);
                 error.has_value()) {
                 return {.error = error};

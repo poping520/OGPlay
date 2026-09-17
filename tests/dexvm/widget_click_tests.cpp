@@ -384,6 +384,74 @@ TEST_CASE("Button inherits View enabled state and disabled hit filtering") {
     CHECK(vm.Click(60.0F, 95.0F).has_value());
     CHECK(vm.CallStaticInt("getClicks") == 1);
 }
+
+TEST_CASE("DVM-179 clickable gates touch clicks and still consumes without a listener") {
+    ClickVm vm;
+    const auto listener = vm.NewListener();
+    vm.CallOn(vm.skip_button, "setOnClickListener",
+              "(Landroid/view/View$OnClickListener;)V",
+              {VmValue::Ref(listener)});
+    CHECK(vm.CallOn(vm.skip_button, "isClickable", "()Z").AsInt() == 1);
+    CHECK(vm.Click(60.0F, 95.0F).has_value());
+    CHECK(vm.CallStaticInt("getClicks") == 1);
+
+    vm.CallOn(vm.skip_button, "setClickable", "(Z)V", {VmValue::Int(0)});
+    CHECK(vm.CallOn(vm.skip_button, "isClickable", "()Z").AsInt() == 0);
+    const auto node = FindViewUiNode(*vm.context, vm.skip_button.Value());
+    REQUIRE(node.has_value());
+    REQUIRE(vm.context->ui_click_listeners.contains(*node));
+    CHECK_FALSE(vm.Click(60.0F, 95.0F).has_value());
+    CHECK(vm.CallStaticInt("getClicks") == 1);
+    CHECK_FALSE(InvokeViewOnClick(vm.interpreter, *vm.context,
+                                  vm.skip_button.Value())
+                    .has_value());
+    CHECK(vm.CallStaticInt("getClicks") == 2);
+
+    vm.CallOn(vm.skip_button, "setClickable", "(Z)V", {VmValue::Int(1)});
+    CHECK(vm.Click(60.0F, 95.0F).has_value());
+    CHECK(vm.CallStaticInt("getClicks") == 3);
+
+    vm.context->ui_touch_listeners[*node] = listener;
+    vm.CallOn(vm.skip_button, "setClickable", "(Z)V", {VmValue::Int(0)});
+    vm.SetTouchResult(true);
+    auto gesture = DispatchViewGestureEvent(
+        vm.interpreter, *vm.context, vm.skip_button.Value(), 0, 60.0F, 95.0F,
+        false, false);
+    CHECK(gesture.handled);
+    CHECK_FALSE(gesture.click_eligible);
+    gesture = DispatchViewGestureEvent(
+        vm.interpreter, *vm.context, vm.skip_button.Value(), 1, 60.0F, 95.0F,
+        gesture.click_eligible, gesture.touch_consumed);
+    CHECK(vm.CallStaticInt("getTouches") == 2);
+    CHECK(vm.CallStaticInt("getClicks") == 3);
+
+    const auto plain = vm.interpreter.NewIntrinsicInstance("Landroid/view/View;");
+    vm.CallDirect(plain, "Landroid/view/View;", "<init>",
+                  "(Landroid/content/Context;)V",
+                  {VmValue::Ref(vm.activity)});
+    vm.CallOn(vm.activity, "setContentView", "(Landroid/view/View;)V",
+              {VmValue::Ref(plain)});
+    vm.CallOn(plain, "setClickable", "(Z)V", {VmValue::Int(1)});
+    auto deep = ogplay::session::DispatchDeepTouchEvent(
+        vm.interpreter, *vm.context, 0, 50.0F, 50.0F, 0U);
+    CHECK_FALSE(deep.error.has_value());
+    CHECK(deep.handled);
+    CHECK(deep.captured_view == plain.Value());
+    CHECK(vm.CallStaticInt("getClicks") == 3);
+
+    vm.CallOn(plain, "setClickable", "(Z)V", {VmValue::Int(0)});
+    const auto custom = vm.NewTouchView();
+    vm.CallOn(custom, "setClickable", "(Z)V", {VmValue::Int(0)});
+    vm.CallOn(vm.activity, "setContentView", "(Landroid/view/View;)V",
+              {VmValue::Ref(custom)});
+    vm.ResetTouchView(true);
+    deep = ogplay::session::DispatchDeepTouchEvent(
+        vm.interpreter, *vm.context, 0, 12.0F, 34.0F, 0U);
+    CHECK(deep.handled);
+    CHECK(deep.captured_view == custom.Value());
+    CHECK(vm.TouchViewValue("getEvents") == 1);
+}
+
 TEST_CASE("UI hit test chooses the topmost resolved clickable node") {
     ClickVm vm;
     vm.CallOn(vm.skip_button, "setOnClickListener",
@@ -765,7 +833,10 @@ TEST_CASE("touch consumption and click eligibility stay independent") {
             FindViewUiNode(*vm.context, vm.skip_button.Value());
         REQUIRE(node.has_value());
         vm.context->ui_touch_listeners[*node] = listener;
-        if (test.click) vm.context->ui_click_listeners[*node] = listener;
+        if (test.click) {
+            vm.context->ui_click_listeners[*node] = listener;
+            vm.context->ui_tree.SetClickable(*node, true);
+        }
         vm.SetTouchResult(test.touch);
         auto result = DispatchViewGestureEvent(vm.interpreter, *vm.context,
             vm.skip_button.Value(), 0, 60.0F, 95.0F, false, false);
@@ -794,6 +865,7 @@ TEST_CASE("Scroll interception cancels a child click after touch slop") {
     REQUIRE(node.has_value());
     vm.context->ui_touch_listeners[*node] = listener;
     vm.context->ui_click_listeners[*node] = listener;
+    vm.context->ui_tree.SetClickable(*node, true);
     vm.SetTouchResult(false);
 
     auto result = DispatchViewGestureEvent(

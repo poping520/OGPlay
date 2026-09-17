@@ -1608,6 +1608,7 @@
       "Landroid/view/OrientationEventListener;",
       "Landroid/view/ViewGroup$LayoutParams;",
       "Landroid/view/ViewGroup$MarginLayoutParams;",
+      "Landroid/view/animation/Animation$AnimationListener;",
       "Landroid/widget/FrameLayout$LayoutParams;",
       "Landroid/widget/LinearLayout$LayoutParams;",
       "Landroid/widget/RelativeLayout$LayoutParams;"

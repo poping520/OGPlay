@@ -704,6 +704,24 @@ dx::IntrinsicHandler ViewInitHandler(const Context& context) {
     });
 }
 
+dx::IntrinsicHandler ViewNullAttributeSetInitHandler(const Context& context) {
+    return dx::IntrinsicHandler([context](dx::IntrinsicContext& call) {
+        if (!call.arguments[0].ref.IsValid()) {
+            throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;",
+                                  "View Context is null"};
+        }
+        if (call.arguments[1].ref.IsValid()) {
+            if (auto* ledger = call.vm.Ledger()) {
+                ledger->RecordUnimplemented("dexvm.view_xml_attributes", 0);
+            }
+            throw dx::VmJavaThrow{
+                "Ljava/lang/UnsupportedOperationException;",
+                "constructing a View from an AttributeSet is unsupported"};
+        }
+        return ViewInitHandler(context)(call);
+    });
+}
+
 dx::IntrinsicHandler ViewSetIdHandler(const Context& context) {
     return dx::IntrinsicHandler([context](dx::IntrinsicContext& call) {
         const auto node = EnsureViewUiNode(

@@ -7,6 +7,7 @@
 当前能力专项：[信任验证与 TLS](../../design/dexvm/14-tls-trust.md)（ADR-0066，规划完成）。
 前置 [KeyStore 通用能力](../../design/dexvm/13-keystore.md)（ADR-0064，已完成）。
 KS-01..09 已合并由 DVM-172 统一交付，不以游戏单条调用为范围。
+DVM-174..179 已合并由 DVM-174 统一归档，编号不重排。
 
 ## 目标
 
@@ -44,6 +45,12 @@ Asphalt 5（pilot title）删除 profile 全部 `native_call` 与 `[[java.class]
 | [DVM-171](DVM-171.md) | 原版 NativeCrypto 迁入 BootDex | 完成 |
 | [DVM-172](DVM-172.md) | 通用 KeyStore/BKS（KS-01..09） | 完成 |
 | [DVM-173](DVM-173.md) | 证书信任与客户端 TLS（TLS-01..03） | TLS-01/02 完成；TLS-03 未完成 |
+| [DVM-174](DVM-174.md) | Angry Birds 插屏路径（DVM-174..179） | 完成 |
+| [DVM-175](DVM-175.md) | 见 DVM-174 · setOnClickListener 可覆盖 | 完成 |
+| [DVM-176](DVM-176.md) | 见 DVM-174 · Log.getStackTraceString | 完成 |
+| [DVM-177](DVM-177.md) | 见 DVM-174 · LinearLayout 空 AttributeSet | 完成 |
+| [DVM-178](DVM-178.md) | 见 DVM-174 · ViewGroup clip 开关 | 完成 |
+| [DVM-179](DVM-179.md) | 见 DVM-174 · View clickable 闭环 | 完成 |
 | [DVM-151](DVM-151.md) | 三个 builder 的 Java 行为与状态迁入 BootDex | 完成 |
 | [DVM-1](DVM-1.md) | AOSP Dalvik 本地参考资料说明 | 完成 |
 | [DVM-2](DVM-2.md) | dex_dependency_survey 题库静态测量工具 | 完成 |

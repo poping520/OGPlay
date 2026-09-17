@@ -788,7 +788,9 @@ struct ViewGestureDispatchResult final {
 };
 // Dispatches one event to a captured View. Gesture ownership and click
 // eligibility are independent: a false touch-only DOWN falls through, while
-// a click listener may retain capture without consuming OnTouchListener.
+// a clickable view with a click listener may retain capture without consuming
+// OnTouchListener. Touch clicks require clickable; programmatic InvokeViewOnClick
+// does not.
 [[nodiscard]] ViewGestureDispatchResult DispatchViewGestureEvent(
     dexvm::Interpreter& vm, DexVmAndroidContext& context,
     std::uint64_t handle, std::int32_t action, float x, float y,

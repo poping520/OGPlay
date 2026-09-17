@@ -204,6 +204,10 @@ bool ApplyTextEdit(dx::Interpreter& vm, DexVmAndroidContext& context,
 [[nodiscard]] dx::IntrinsicHandler TelephonyEmptyStringHandler();
 [[nodiscard]] dx::IntrinsicHandler TelephonyFalseHandler();
 [[nodiscard]] dx::IntrinsicHandler ViewInitHandler(const Context& context);
+// Programmatic View(Context, AttributeSet) with attrs == null. Non-null
+// AttributeSet is an explicit XML/theme gap, not a silent default.
+[[nodiscard]] dx::IntrinsicHandler ViewNullAttributeSetInitHandler(
+    const Context& context);
 [[nodiscard]] dx::IntrinsicHandler ViewSetIdHandler(const Context& context);
 [[nodiscard]] dx::IntrinsicHandler WidgetNoopHandler();
 [[nodiscard]] dx::IntrinsicHandler WindowmanagerGetDefaultDisplayHandler(

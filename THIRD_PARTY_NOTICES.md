@@ -12,6 +12,7 @@
 | Boost.Pool | 1.90（`740c8076f9d02f0216e8f3dbb15d2fd80f67d7f4`） | https://github.com/boostorg/pool | Boost Software License 1.0 | 补充 Dynarmic 使用的 pool allocator 头文件 |
 | PowerVR Native SDK | `2b1bf2f14d3365d0bb801e2a6a131a319d3a2e48` | https://github.com/powervr-graphics/Native_SDK | MIT | 原样引入 `PVRTDecompress.cpp/.h` 实现 PVRTC1 软件解码 |
 | Dear ImGui | 1.92.9b（`f1cc2ae15e53a861a874c3034aae6798fde194ab`） | https://github.com/ocornut/imgui | MIT | SDL3 + GLES2 主面板界面 |
+| SQLite amalgamation | 3.53.4（`ed6f533374f8340dee587f714115e75d6d8d6aa6`） | https://github.com/poping520/sqlite-amalgamation | Public Domain | 官方 amalgamation 源码（尚未接入构建） |
 | AOSP Bionic ARM runtime | Android 4.4.4 r2.0.1（`081db840befec895fb86e709ae95832ade2d065c`） | https://android.googlesource.com/platform/bionic/+/android-4.4.4_r2.0.1 | 见随包逐库 NOTICE | API 19 guest libc/libm/libdl/libstdc++ |
 | AOSP zlib ARM runtime | Android 4.4.4 r2.0.1（`a5c7131da47c991585a6c6ac0c063b6d7d56e3fc`） | https://android.googlesource.com/platform/external/zlib/+/android-4.4.4_r2.0.1 | zlib | API 19 guest libz |
 

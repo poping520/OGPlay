@@ -1404,22 +1404,37 @@ void Interpreter::SetIntrinsicStaticRef(const std::string_view class_descriptor,
                                         const std::string_view field_name,
                                         const std::string_view field_descriptor,
                                         const VmObjectRef value) {
+    const auto member = std::string(class_descriptor) + "." +
+                        std::string(field_name) + " " +
+                        std::string(field_descriptor);
     const auto java_class = impl_->linker->FindClass(class_descriptor);
     if (!java_class.has_value()) {
         throw DexVmError(DexVmErrorReason::unknown_class,
-                         "intrinsic static owner is not registered: " +
-                             std::string(class_descriptor));
+                         "intrinsic static owner is not registered: " + member);
     }
+    impl_->linker->EnsureClassLinked(*java_class);
     const auto field_id = impl_->linker->FindFieldRecursive(
         *java_class, std::string(field_name), std::string(field_descriptor));
     if (!field_id.has_value()) {
         throw DexVmError(DexVmErrorReason::invalid_member,
-                         "intrinsic static field is not declared: " +
-                             std::string(field_name));
+                         "intrinsic static field is not declared: " + member);
     }
     const auto& field = impl_->linker->Field(*field_id);
-    impl_->linker->MutableClass(field.owner).static_storage[field.slot] =
-        value.Value();
+    if (!field.is_static) {
+        throw DexVmError(DexVmErrorReason::invalid_member,
+                         "intrinsic static target is not static: " + member);
+    }
+    if (!field.is_ref) {
+        throw DexVmError(DexVmErrorReason::invalid_member,
+                         "intrinsic static target is not a reference: " +
+                             member);
+    }
+    auto& owner = impl_->linker->MutableClass(field.owner);
+    if (field.slot + 1U > owner.static_storage.size()) {
+        throw DexVmError(DexVmErrorReason::internal_invariant,
+                         "intrinsic static slot is out of range: " + member);
+    }
+    owner.static_storage[field.slot] = value.Value();
 }
 
 void Interpreter::SetStaticFieldBits(const std::string_view class_descriptor,

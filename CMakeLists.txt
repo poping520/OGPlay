@@ -473,6 +473,7 @@ add_library(ogplay_runtime
     src/runtime/dexvm/zip_runtime.cpp
     src/runtime/dexvm/reflection.cpp
     src/runtime/dexvm/reflection_codec.cpp
+    src/runtime/dexvm/annotation_runtime.cpp
     src/runtime/dexvm/class_linker.cpp
     src/runtime/dexvm/class_linker_resolve.cpp
     src/runtime/dexvm/diagnostics.cpp

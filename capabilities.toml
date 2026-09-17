@@ -1343,7 +1343,7 @@ note = "DVM-64/Chapter 11 closure 交付不可变 ReflectionMetadata 与唯一 w
 [dexvm.class_reflection_core]
 status = "complete"
 test = "tests/dexvm/reflection_tests.cpp; tests/dexvm/android_value_tests.cpp: DVM-143"
-note = "DVM-65 闭合 API19 Class 的名称、loader、forName、层级、分类、assignability/cast 与成员查询。DVM-143 将 getMethod/getDeclaredMethod 改为名称+参数定向扫描，只有同名候选在命中后解析返回/异常类型；getMethods/getDeclaredMethods 仍完整枚举。双后端验证无关方法引用缺失类型不阻断查询；generic/annotation 仍非目标。"
+note = "DVM-65 闭合 API19 Class 的名称、loader、forName、层级、分类、assignability/cast 与成员查询。DVM-143 将 getMethod/getDeclaredMethod 改为名称+参数定向扫描，只有同名候选在命中后解析返回/异常类型；getMethods/getDeclaredMethods 仍完整枚举。双后端验证无关方法引用缺失类型不阻断查询。DVM-181 交付 Class 运行时注解查询与受限注解成员执行；generic、Method/Constructor 注解与通用 Proxy 仍非目标。"
 
 [dexvm.reflection_invoke]
 status = "complete"
@@ -1366,9 +1366,9 @@ test = "tests/dexvm/reflection_tests.cpp; tests/loader/dex_tests.cpp malformed e
 note = "DVM-69/Chapter 11 closure 受检解析 Dalvik InnerClass/EnclosingClass/EnclosingMethod/MemberClasses/Throws 为 host metadata；nested/enclosing/declared exceptions 不做 $ 猜测。encoded value kind/value_arg 按 DEX 精确 fail closed，reserved/超宽/array/annotation/null/boolean 非法形态有 malformed tests；不物化通用 annotation proxy"
 
 [dexvm.reflection_field_annotations]
-status = "partial"
-test = "tests/loader/dex_tests.cpp runtime-visible field marker annotation; tests/dexvm/reflection_tests.cpp Field runtime marker annotations dispatch on both backends"
-note = "字段 runtime-visible annotation 类型元数据贯通 loader/linker，Field.getAnnotation/isAnnotationPresent/getAnnotations/getDeclaredAnnotations 可物化零成员 marker annotation；API19 java.lang.annotation 十类进入 BootDex，DVM-147 再加入 KeyGenerator/KeyGeneratorSpi，当前共 1053 类。带成员 annotation 与完整 Annotation 契约仍明确不支持。"
+status = "complete"
+test = "tests/loader/dex_tests.cpp runtime-visible field marker annotation; tests/dexvm/reflection_tests.cpp Field runtime marker annotations dispatch on both backends; tests/dexvm/reflection_tests.cpp Class runtime annotations query members defaults inherited and isolation"
+note = "DVM-181 将 Class/Field 运行时注解查询接到同一 AnnotationRuntime：递归 encoded value、AnnotationDefault、@Inherited 超类继承、受限实现类成员分派与 API19 缺失/类型不匹配异常。Method.getDefaultValue 读取声明默认值。Method/Constructor/参数注解、通用 Proxy 与完整反射仍明确未实现。"
 
 [dexvm.reflection_metadata_laziness]
 status = "complete"

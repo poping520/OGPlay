@@ -1,0 +1,143 @@
+# Generic runtime annotation fixture for DVM-181. No game/vendor names.
+
+.class public abstract interface annotation Lann/Marker;
+.super Ljava/lang/Object;
+.implements Ljava/lang/annotation/Annotation;
+
+.class public abstract interface annotation Lann/Named;
+.super Ljava/lang/Object;
+.implements Ljava/lang/annotation/Annotation;
+.annotation-default
+.element number I:3
+.element title string:"def"
+.end-annotation
+.method public abstract number()I
+.end method
+.method public abstract title()Ljava/lang/String;
+.end method
+
+.class public abstract interface annotation Lann/Rich;
+.super Ljava/lang/Object;
+.implements Ljava/lang/annotation/Annotation;
+.method public abstract kind()Ljava/lang/Class;
+.end method
+.method public abstract policy()Ljava/lang/annotation/RetentionPolicy;
+.end method
+.method public abstract policies()[Ljava/lang/annotation/RetentionPolicy;
+.end method
+.method public abstract nested()Lann/Named;
+.end method
+.method public abstract numbers()[I
+.end method
+
+.class public abstract interface annotation Lann/InheritedMark;
+.super Ljava/lang/Object;
+.implements Ljava/lang/annotation/Annotation;
+.runtime-annotation Ljava/lang/annotation/Inherited;
+.method public abstract value()I
+.end method
+
+.class public abstract interface annotation Lann/NotInherited;
+.super Ljava/lang/Object;
+.implements Ljava/lang/annotation/Annotation;
+.method public abstract value()I
+.end method
+
+.class public abstract interface annotation Lann/Required;
+.super Ljava/lang/Object;
+.implements Ljava/lang/annotation/Annotation;
+.method public abstract required()I
+.end method
+
+.class public abstract interface annotation Lann/Mismatch;
+.super Ljava/lang/Object;
+.implements Ljava/lang/annotation/Annotation;
+.method public abstract number()I
+.end method
+
+.class public abstract interface annotation Lann/MissingType;
+.super Ljava/lang/Object;
+.implements Ljava/lang/annotation/Annotation;
+.method public abstract missing()Ljava/lang/Class;
+.end method
+
+.class public abstract interface annotation Lann/MissingEnum;
+.super Ljava/lang/Object;
+.implements Ljava/lang/annotation/Annotation;
+.method public abstract policy()Ljava/lang/annotation/RetentionPolicy;
+.end method
+
+.class public abstract interface Lann/Contract;
+.super Ljava/lang/Object;
+.runtime-annotation Lann/Named;
+.element number I:9
+.element title string:"iface"
+.end-annotation
+
+.class public Lann/Parent;
+.super Ljava/lang/Object;
+.runtime-annotation Lann/InheritedMark;
+.element value I:11
+.end-annotation
+.runtime-annotation Lann/NotInherited;
+.element value I:12
+.end-annotation
+
+.class public Lann/Child;
+.super Lann/Parent;
+
+.class public Lann/ChildHide;
+.super Lann/Parent;
+.runtime-annotation Lann/InheritedMark;
+.element value I:22
+.end-annotation
+
+.class public Lann/Impl;
+.super Ljava/lang/Object;
+.implements Lann/Contract;
+
+.class public Lann/Host;
+.super Ljava/lang/Object;
+.runtime-annotation Lann/Marker;
+.runtime-annotation Lann/Named;
+.element number I:7
+.element title string:"hi"
+.end-annotation
+.runtime-annotation Lann/Rich;
+.element kind class:Ljava/lang/String;
+.element policy enum:Ljava/lang/annotation/RetentionPolicy;.RUNTIME:Ljava/lang/annotation/RetentionPolicy;
+.element policies array:{enum:Ljava/lang/annotation/RetentionPolicy;.RUNTIME:Ljava/lang/annotation/RetentionPolicy; enum:Ljava/lang/annotation/RetentionPolicy;.CLASS:Ljava/lang/annotation/RetentionPolicy;}
+.element nested annotation:Lann/Named;{number=I:4 title=string:"nest"}
+.element numbers array:{I:1 I:2}
+.end-annotation
+.build-annotation Lann/NotInherited;
+.element value I:99
+.end-annotation
+.field public marked:I
+.runtime-annotation Lann/Marker;
+
+.class public Lann/DefaultsHost;
+.super Ljava/lang/Object;
+.runtime-annotation Lann/Named;
+
+.class public Lann/IncompleteHost;
+.super Ljava/lang/Object;
+.runtime-annotation Lann/Required;
+
+.class public Lann/MismatchHost;
+.super Ljava/lang/Object;
+.runtime-annotation Lann/Mismatch;
+.element number string:"nope"
+.end-annotation
+
+.class public Lann/UnusedMissingHost;
+.super Ljava/lang/Object;
+.runtime-annotation Lann/MissingType;
+.element missing class:Lann/DoesNotExist;
+.end-annotation
+
+.class public Lann/MissingEnumHost;
+.super Ljava/lang/Object;
+.runtime-annotation Lann/MissingEnum;
+.element policy enum:Ljava/lang/annotation/RetentionPolicy;.NOPE:Ljava/lang/annotation/RetentionPolicy;
+.end-annotation

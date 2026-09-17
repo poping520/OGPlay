@@ -951,6 +951,8 @@ Interpreter::Interpreter(DexClassLinker& linker, JavaObjectModel& model,
     impl_->reflection =
         std::make_unique<ReflectionRuntime>(*this, linker, model);
     impl_->unsafe = std::make_unique<UnsafeRuntime>(*this);
+    impl_->annotations = std::make_unique<AnnotationRuntime>(*this);
+    RegisterIntrinsicStateTable(impl_->annotations->Hooks());
 }
 
 BigIntRuntime& Interpreter::BigInts() { return impl_->big_ints; }
@@ -989,6 +991,10 @@ ClassLoaderFacade& Interpreter::ClassLoaders() noexcept {
 
 UnsafeRuntime& Interpreter::Unsafe() noexcept {
     return *impl_->unsafe;
+}
+
+AnnotationRuntime& Interpreter::Annotations() noexcept {
+    return *impl_->annotations;
 }
 
 ReflectionRuntime& Interpreter::Reflection() noexcept {

@@ -28,6 +28,7 @@ Asphalt 5（pilot title）删除 profile 全部 `native_call` 与 `[[java.class]
 
 | WU | 一句话目标 | 状态 |
 | --- | --- | --- |
+| [DVM-186](DVM-186.md) | BootDex SQLite、host 引擎与真实数据库 VFS | 已规划，未开始 |
 | [DVM-154](DVM-154.md) | 文件 IO 家族与 FileChannel 迁入 BootDex | 完成 |
 | [DVM-156](DVM-156.md) | 无位置源的 API 19 location 薄层 | 完成 |
 | [DVM-157](DVM-157.md) | Context.getFileStreamPath VFS 对齐 | 完成 |

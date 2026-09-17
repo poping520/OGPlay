@@ -1510,6 +1510,11 @@ status = "complete"
 test = "tests/dexvm/android_value_tests.cpp: DVM-184; architecture.dexvm_intrinsic_layout; Angry Birds no-Profile interstitial reached WebView.destroy"
 note = "DVM-184 在 View facade 按 API 19 绑定 protected mContext，public final getContext() 返回构造或 XML 膨胀时的同一 guest Context。共享构造器、样式构造与 setContentView(int) 膨胀共用该字段；不新增宿主 Context 表。不宣称完整 View 状态机、LayoutInflater 工厂或广告展示。"
 
+[dexvm.webview_destroy]
+status = "complete"
+test = "tests/dexvm/android_value_tests.cpp: DVM-185; tests/dexvm/widget_click_tests.cpp: unsupported dialog and WebView presentation fail explicitly; Angry Birds no-Profile interstitial reached SQLiteDatabase.rawQuery"
+note = "DVM-185 在 WebView facade 按 API 19 提供可覆盖 destroy()：保存构造线程 Looper，targetSdk≥18 跨线程抛 RuntimeException。每实例 WebSettings 身份稳定；销毁后不再重建 Web 专属状态。重复 destroy 幂等防御。loadUrl 仍明确失败。不引入浏览器内核，不宣称 User-Agent 或完整 WebView。"
+
 [dexvm.package_info_activities]
 status = "complete"
 test = "tests/dexvm/android_value_tests.cpp: DVM-180; tests/loader/apk_manifest_tests.cpp: DVM-180; architecture.dexvm_intrinsic_layout; Angry Birds no-Profile interstitial reached Class.getAnnotation"

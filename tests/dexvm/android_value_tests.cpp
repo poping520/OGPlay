@@ -2,12 +2,15 @@
 #include <doctest/doctest.h>
 
 #include <array>
+#include <atomic>
 #include <bit>
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <optional>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include "ogplay/core/capability_ledger.h"
@@ -4522,5 +4525,186 @@ TEST_CASE("DVM-184 View.getContext preserves constructor and inflation identity"
         const auto roots = fixture.vm.ProtectReferences(std::array{burstly});
         static_cast<void>(fixture.vm.CollectGarbage("dvm184-view-context"));
         CHECK(fixture.On(burstly, kGetContext, kContextSig).ref == activity);
+    }
+}
+
+TEST_CASE("DVM-185 WebView.destroy isolates settings and enforces thread rules") {
+    constexpr auto kDestroy = "destroy";
+    constexpr auto kVoid = "()V";
+    constexpr auto kViewInit = "(Landroid/content/Context;)V";
+    constexpr auto kGetSettings = "()Landroid/webkit/WebSettings;";
+    constexpr auto kLoadUrl = "(Ljava/lang/String;)V";
+    for (const auto backend :
+         {InterpreterBackend::switch_dispatch,
+          InterpreterBackend::threaded}) {
+        std::atomic<std::int32_t> worker_runs{};
+        std::string worker_exception;
+        VmObjectRef worker_view;
+        auto subclass = IntrinsicClassBuilder::Class(
+            "Ltest/OwnedWebView;", "Landroid/webkit/WebView;");
+        subclass.Constructor(
+            kViewInit, [](IntrinsicContext& call) {
+                const auto type = call.vm.Linker().ResolveDescriptor(
+                    "Landroid/webkit/WebView;");
+                const auto constructor = call.vm.Linker().FindDirectMethod(
+                    type, "<init>", kViewInit);
+                const std::array arguments{
+                    VmValue::Ref(call.receiver), call.arguments[0]};
+                const auto outcome = call.vm.Call(*constructor, arguments);
+                if (outcome.exception.IsValid()) {
+                    throw VmJavaThrow{
+                        call.vm.Linker().Class(outcome.exception_class)
+                            .descriptor,
+                        outcome.exception_message, outcome.exception};
+                }
+                return VmValue::Void();
+            });
+        auto destroyer = IntrinsicClassBuilder::Class(
+            "Ltest/DestroyWebView;", "Ljava/lang/Object;",
+            {"Ljava/lang/Runnable;"});
+        destroyer.Constructor("()V", [](IntrinsicContext&) {
+            return VmValue::Void();
+        });
+        destroyer.VirtualMethod(
+            "run", "()V",
+            [&worker_runs, &worker_exception, &worker_view](
+                IntrinsicContext& call) {
+                ++worker_runs;
+                const auto klass = call.vm.Model().ObjectClass(worker_view);
+                const auto index = call.vm.Linker().FindVtableIndex(
+                    klass, kDestroy, kVoid);
+                const std::array arguments{VmValue::Ref(worker_view)};
+                const auto outcome = call.vm.Call(
+                    call.vm.Linker().Class(klass).vtable[*index], arguments);
+                if (outcome.exception.IsValid()) {
+                    worker_exception =
+                        call.vm.Linker().Class(outcome.exception_class)
+                            .descriptor;
+                } else {
+                    worker_exception.clear();
+                }
+                return VmValue::Void();
+            });
+        AndroidValueVm fixture(
+            backend, {std::move(subclass).Build(), std::move(destroyer).Build()});
+        VmThreadRuntime threads(fixture.vm);
+        fixture.context->threads = &threads;
+        RegisterAndroidSchedulerStateTable(fixture.vm, fixture.context);
+
+        const auto web_type =
+            fixture.linker.ResolveDescriptor("Landroid/webkit/WebView;");
+        const auto subclass_type =
+            fixture.linker.ResolveDescriptor("Ltest/OwnedWebView;");
+        const auto web_slot =
+            fixture.linker.FindVtableIndex(web_type, kDestroy, kVoid);
+        const auto subclass_slot =
+            fixture.linker.FindVtableIndex(subclass_type, kDestroy, kVoid);
+        REQUIRE(web_slot.has_value());
+        REQUIRE(subclass_slot.has_value());
+        CHECK(*web_slot == *subclass_slot);
+        const auto& inherited = fixture.linker.Method(
+            fixture.linker.Class(subclass_type).vtable[*subclass_slot]);
+        CHECK(inherited.owner == web_type);
+        CHECK(inherited.overridable);
+        CHECK((inherited.access_flags & kAccFinal) == 0);
+
+        fixture.Static("Landroid/os/Looper;", "prepareMainLooper", "()V");
+        const auto owner = fixture.New("Landroid/content/Context;");
+        const auto first = fixture.New(
+            "Ltest/OwnedWebView;", kViewInit, {VmValue::Ref(owner)});
+        const auto second = fixture.New(
+            "Landroid/webkit/WebView;", kViewInit, {VmValue::Ref(owner)});
+        const auto first_settings =
+            fixture.On(first, "getSettings", kGetSettings).ref;
+        const auto first_again =
+            fixture.On(first, "getSettings", kGetSettings).ref;
+        const auto second_settings =
+            fixture.On(second, "getSettings", kGetSettings).ref;
+        CHECK(first_settings.IsValid());
+        CHECK(first_settings == first_again);
+        CHECK(second_settings.IsValid());
+        CHECK(first_settings != second_settings);
+
+        const auto url = fixture.vm.NewStringUtf8("https://example.invalid");
+        auto load = fixture.OnOutcome(first, "loadUrl", kLoadUrl,
+                                      {VmValue::Ref(url)});
+        REQUIRE(load.exception.IsValid());
+        CHECK(fixture.linker.Class(load.exception_class).descriptor ==
+              "Ljava/lang/UnsupportedOperationException;");
+
+        fixture.On(first, kDestroy, kVoid);
+        fixture.On(first, kDestroy, kVoid);
+        auto after = fixture.OnOutcome(first, "getSettings", kGetSettings);
+        REQUIRE(after.exception.IsValid());
+        CHECK(fixture.linker.Class(after.exception_class).descriptor ==
+              "Ljava/lang/IllegalStateException;");
+        load = fixture.OnOutcome(first, "loadUrl", kLoadUrl,
+                                 {VmValue::Ref(url)});
+        REQUIRE(load.exception.IsValid());
+        CHECK(fixture.linker.Class(load.exception_class).descriptor ==
+              "Ljava/lang/IllegalStateException;");
+        CHECK(fixture.On(second, "getSettings", kGetSettings).ref ==
+              second_settings);
+
+        const auto wait_for = [](const auto& predicate) {
+            for (int attempt = 0; attempt < 2000; ++attempt) {
+                if (predicate()) return true;
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            }
+            return false;
+        };
+        const auto post_destroy = [&](VmObjectRef view) {
+            worker_runs = 0;
+            worker_exception.clear();
+            worker_view = view;
+            const auto thread = fixture.New("Landroid/os/HandlerThread;");
+            const auto name = fixture.vm.NewStringUtf8("webview-worker");
+            const auto init = fixture.linker.FindDirectMethod(
+                fixture.linker.ResolveDescriptor(
+                    "Landroid/os/HandlerThread;"),
+                "<init>", "(Ljava/lang/String;)V");
+            REQUIRE(init.has_value());
+            const std::array init_args{
+                VmValue::Ref(thread), VmValue::Ref(name)};
+            auto outcome = fixture.vm.Call(*init, init_args);
+            REQUIRE_MESSAGE(!outcome.exception.IsValid(),
+                            outcome.exception_message);
+            fixture.On(thread, "start", "()V");
+            const auto looper =
+                fixture.On(thread, "getLooper", "()Landroid/os/Looper;").ref;
+            const auto handler = fixture.vm.NewIntrinsicInstance(
+                "Landroid/os/Handler;");
+            const auto handler_init = fixture.linker.FindDirectMethod(
+                fixture.linker.ResolveDescriptor("Landroid/os/Handler;"),
+                "<init>", "(Landroid/os/Looper;)V");
+            REQUIRE(handler_init.has_value());
+            const std::array handler_args{
+                VmValue::Ref(handler), VmValue::Ref(looper)};
+            outcome = fixture.vm.Call(*handler_init, handler_args);
+            REQUIRE_MESSAGE(!outcome.exception.IsValid(),
+                            outcome.exception_message);
+            const auto runnable = fixture.New("Ltest/DestroyWebView;");
+            fixture.On(handler, "post", "(Ljava/lang/Runnable;)Z",
+                       {VmValue::Ref(runnable)});
+            REQUIRE(wait_for([&] { return worker_runs.load() == 1; }));
+            fixture.On(thread, "quit", "()Z");
+            fixture.On(thread, "join", "()V");
+        };
+
+        fixture.context->target_sdk_version = 19;
+        post_destroy(second);
+        CHECK(worker_exception == "Ljava/lang/RuntimeException;");
+        CHECK(fixture.On(second, "getSettings", kGetSettings).ref ==
+              second_settings);
+
+        fixture.context->target_sdk_version = 13;
+        post_destroy(second);
+        CHECK(worker_exception.empty());
+        after = fixture.OnOutcome(second, "getSettings", kGetSettings);
+        REQUIRE(after.exception.IsValid());
+        CHECK(fixture.linker.Class(after.exception_class).descriptor ==
+              "Ljava/lang/IllegalStateException;");
+
+        ShutdownAndroidScheduler(*fixture.context);
     }
 }

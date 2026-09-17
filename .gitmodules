@@ -23,3 +23,6 @@
 [submodule "third_party/imgui"]
 	path = third_party/imgui
 	url = https://github.com/ocornut/imgui.git
+[submodule "third_party/sqlite-amalgamation"]
+	path = third_party/sqlite-amalgamation
+	url = https://github.com/poping520/sqlite-amalgamation.git

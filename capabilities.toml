@@ -1500,6 +1500,11 @@ status = "complete"
 test = "tests/dexvm/android_value_tests.cpp: DVM-179; tests/dexvm/widget_click_tests.cpp: DVM-179 clickable gates touch clicks; tests/dexvm/widget_click_tests.cpp: visible button with a listener receives the click; architecture.dexvm_intrinsic_layout; Angry Birds no-Profile interstitial reached PackageManager.getPackageInfo flags 4097"
 note = "DVM-179 在 View 按 API 19 提供可覆盖 setClickable/isClickable，唯一写入 UiNode.clickable。setOnClickListener 虚派使 View 可点击（含 null）；触摸点击要求 clickable，程序化 InvokeViewOnClick 不检查；基础 onTouchEvent 在 clickable 时消费且不伪造 onClick。OnTouchListener 与子类 onTouchEvent 不被 clickable=false 禁用。不宣称长按或完整手势系统。"
 
+[dexvm.package_info_activities]
+status = "complete"
+test = "tests/dexvm/android_value_tests.cpp: DVM-180; tests/loader/apk_manifest_tests.cpp: DVM-180; architecture.dexvm_intrinsic_layout; Angry Birds no-Profile interstitial reached Class.getAnnotation"
+note = "DVM-180 在 PackageManager.getPackageInfo 按 API 19 支持 GET_ACTIVITIES 与既有 GET_META_DATA/GET_PERMISSIONS 组合。当前包 activities 从 sealed Manifest 的 activity/activity-alias 生成，保留顺序与 alias 身份，默认过滤禁用组件；未请求时保持 null。exported 来自 Manifest 或 intent-filter 缺省。requestedPermissions 仍是声明列表，不等于已授予。不宣称完整 PackageManager、组件启动或广告可用。"
+
 [dexvm.context_file_stream_path]
 status = "complete"
 test = "tests/dexvm/file_vfs_tests.cpp: Context private file streams use the app files directory on both backends; Angry Birds reached JNI CallObjectMethodV return mismatch"

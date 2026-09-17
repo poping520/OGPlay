@@ -592,6 +592,11 @@ AndroidManifestFacts ParseAndroidBinaryManifest(const std::span<const std::byte>
                         FindAttribute(attributes, "enabled", kAndroidNamespace)) {
                     component.enabled = ReadBooleanAttribute(*enabled, name + " enabled");
                 }
+                if (const auto* exported =
+                        FindAttribute(attributes, "exported", kAndroidNamespace)) {
+                    component.exported =
+                        ReadBooleanAttribute(*exported, name + " exported");
+                }
                 if (component.kind == AndroidManifestComponentKind::activity) {
                     if (const auto* theme = FindAttribute(attributes, "theme", kAndroidNamespace))
                         component.theme = ReadReferenceAttribute(*theme, "activity theme");
@@ -737,6 +742,10 @@ AndroidManifestFacts ParseAndroidBinaryManifest(const std::span<const std::byte>
                 current_intent_filter.reset();
             } else if ((name == "activity" || name == "activity-alias") &&
                        elements.size() == 3 && current_component.has_value()) {
+                auto& component = facts.activity_components[*current_component];
+                if (!component.exported.has_value()) {
+                    component.exported = !component.intent_filters.empty();
+                }
                 current_component.reset();
             } else if (name == "service" && elements.size() == 3) {
                 current_service.reset();

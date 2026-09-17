@@ -51,6 +51,7 @@ Asphalt 5（pilot title）删除 profile 全部 `native_call` 与 `[[java.class]
 | [DVM-177](DVM-177.md) | 见 DVM-174 · LinearLayout 空 AttributeSet | 完成 |
 | [DVM-178](DVM-178.md) | 见 DVM-174 · ViewGroup clip 开关 | 完成 |
 | [DVM-179](DVM-179.md) | 见 DVM-174 · View clickable 闭环 | 完成 |
+| [DVM-180](DVM-180.md) | 当前包 GET_ACTIVITIES Activity 元数据 | 完成 |
 | [DVM-151](DVM-151.md) | 三个 builder 的 Java 行为与状态迁入 BootDex | 完成 |
 | [DVM-1](DVM-1.md) | AOSP Dalvik 本地参考资料说明 | 完成 |
 | [DVM-2](DVM-2.md) | dex_dependency_survey 题库静态测量工具 | 完成 |

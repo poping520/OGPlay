@@ -14,6 +14,7 @@
 #include <algorithm>
 #include <limits>
 #include <string_view>
+#include <vector>
 
 #include "ogplay/core/encoding.h"
 
@@ -2404,6 +2405,7 @@ namespace ogplay::runtime::android_intrinsics {
 
 namespace {
 
+constexpr std::int32_t kGetActivities = 0x00000001;
 constexpr std::int32_t kGetMetaData = 0x00000080;
 constexpr std::int32_t kGetPermissions = 0x00001000;
 constexpr std::int32_t kPermissionGranted = 0;
@@ -2429,6 +2431,13 @@ void SetInt(dx::IntrinsicContext& call, const dx::VmObjectRef object,
     const auto& field = Field(call, object, name, "I");
     call.vm.Model().InstanceSlots(object)[field.slot] = {
         static_cast<std::uint32_t>(value), dx::SlotTag::cat1};
+}
+
+void SetBoolean(dx::IntrinsicContext& call, const dx::VmObjectRef object,
+                const std::string_view name, const bool value) {
+    const auto& field = Field(call, object, name, "Z");
+    call.vm.Model().InstanceSlots(object)[field.slot] = {
+        value ? 1U : 0U, dx::SlotTag::cat1};
 }
 
 void SetRef(dx::IntrinsicContext& call, const dx::VmObjectRef object,
@@ -2485,6 +2494,71 @@ void RequireFlags(const std::int32_t flags, const std::int32_t supported,
     return array;
 }
 
+[[nodiscard]] std::string NormalizedComponentName(const std::string& package,
+                                                  const std::string& name) {
+    try {
+        return loader::NormalizeAndroidManifestClassName(package, name);
+    } catch (const loader::AndroidManifestStartupError& error) {
+        throw dx::DexVmError(dx::DexVmErrorReason::internal_invariant,
+                             error.what());
+    }
+}
+
+[[nodiscard]] dx::VmObjectRef MakeActivityInfo(
+    dx::IntrinsicContext& call, const Context& context,
+    const loader::AndroidManifestActivityComponent& component,
+    const dx::VmObjectRef application_info) {
+    const auto info =
+        call.vm.NewIntrinsicInstance("Landroid/content/pm/ActivityInfo;");
+    const auto roots =
+        call.vm.ProtectReferences(std::array{info, application_info});
+    const auto name =
+        NormalizedComponentName(context->package_name, component.name);
+    SetRef(call, info, "name", "Ljava/lang/String;", String(call, name));
+    SetRef(call, info, "packageName", "Ljava/lang/String;",
+           String(call, context->package_name));
+    SetRef(call, info, "applicationInfo",
+           "Landroid/content/pm/ApplicationInfo;", application_info);
+    SetBoolean(call, info, "enabled", component.enabled);
+    SetBoolean(call, info, "exported",
+               loader::AndroidManifestActivityExported(component));
+    if (component.kind == loader::AndroidManifestComponentKind::activity_alias &&
+        component.target_activity.has_value()) {
+        SetRef(call, info, "targetActivity", "Ljava/lang/String;",
+               String(call, NormalizedComponentName(
+                                context->package_name,
+                                *component.target_activity)));
+    }
+    return info;
+}
+
+[[nodiscard]] dx::VmObjectRef MakeActivityInfoArray(
+    dx::IntrinsicContext& call, const Context& context,
+    const dx::VmObjectRef application_info) {
+    std::vector<std::size_t> selected;
+    selected.reserve(context->activity_components.size());
+    for (std::size_t index = 0; index < context->activity_components.size();
+         ++index) {
+        if (context->activity_components[index].enabled) selected.push_back(index);
+    }
+    const auto array_class = call.vm.Linker().ResolveDescriptor(
+        "[Landroid/content/pm/ActivityInfo;");
+    const auto element_class = call.vm.Linker().ResolveDescriptor(
+        "Landroid/content/pm/ActivityInfo;");
+    const auto array = call.vm.Model().NewObjectArray(
+        array_class, element_class, static_cast<JniSize>(selected.size()));
+    const auto roots =
+        call.vm.ProtectReferences(std::array{array, application_info});
+    JniSize slot{};
+    for (const auto index : selected) {
+        call.vm.Model().SetObjectElement(
+            array, slot++,
+            MakeActivityInfo(call, context, context->activity_components[index],
+                             application_info));
+    }
+    return array;
+}
+
 [[nodiscard]] std::string ApplicationPackageName(
     dx::IntrinsicContext& call, const dx::VmObjectRef info) {
     const auto& field = Field(call, info, "packageName", "Ljava/lang/String;");
@@ -2505,7 +2579,8 @@ Decl Declare_android_content_pm_PackageInfo(const Context&) {
         .InstanceField("versionCode", "I")
         .InstanceField("versionName", "Ljava/lang/String;")
         .InstanceField("applicationInfo", "Landroid/content/pm/ApplicationInfo;")
-        .InstanceField("requestedPermissions", "[Ljava/lang/String;");
+        .InstanceField("requestedPermissions", "[Ljava/lang/String;")
+        .InstanceField("activities", "[Landroid/content/pm/ActivityInfo;");
     return std::move(builder).Build();
 }
 
@@ -2544,6 +2619,9 @@ Decl Declare_android_content_pm_PackageManager(const Context& context) {
             return dx::VmValue::Ref(dx::VmObjectRef{});
         });
     builder.ConstantInt(
+               "GET_ACTIVITIES", "I", kGetActivities,
+               dx::kAccPublic | dx::kAccStatic | dx::kAccFinal)
+        .ConstantInt(
                "GET_META_DATA", "I", kGetMetaData,
                dx::kAccPublic | dx::kAccStatic | dx::kAccFinal)
         .ConstantInt(
@@ -2581,23 +2659,33 @@ Decl Declare_android_content_pm_PackageManager(const Context& context) {
             const auto package = RequiredString(call, 0U, "packageName");
             const auto flags = call.arguments[1].AsInt();
             RequireCurrentPackage(context, package);
-            RequireFlags(flags, kGetMetaData | kGetPermissions,
+            RequireFlags(flags,
+                         kGetActivities | kGetMetaData | kGetPermissions,
                          "getPackageInfo");
             const auto info = call.vm.NewIntrinsicInstance(
                 "Landroid/content/pm/PackageInfo;");
+            const auto info_root = call.vm.ProtectReferences(std::array{info});
             SetRef(call, info, "packageName", "Ljava/lang/String;",
                    String(call, context->package_name));
             SetInt(call, info, "versionCode",
                    static_cast<std::int32_t>(context->package_version_code));
             SetRef(call, info, "versionName", "Ljava/lang/String;",
                    String(call, context->package_version_name));
+            const auto application = MakeApplicationInfo(
+                call, context, (flags & kGetMetaData) != 0);
+            const auto roots =
+                call.vm.ProtectReferences(std::array{info, application});
             SetRef(call, info, "applicationInfo",
-                   "Landroid/content/pm/ApplicationInfo;",
-                   MakeApplicationInfo(
-                       call, context, (flags & kGetMetaData) != 0));
+                   "Landroid/content/pm/ApplicationInfo;", application);
             if ((flags & kGetPermissions) != 0) {
                 SetRef(call, info, "requestedPermissions", "[Ljava/lang/String;",
                        MakeStringArray(call, context->requested_permissions));
+            }
+            if ((flags & kGetActivities) != 0 &&
+                !context->activity_components.empty()) {
+                SetRef(call, info, "activities",
+                       "[Landroid/content/pm/ActivityInfo;",
+                       MakeActivityInfoArray(call, context, application));
             }
             return dx::VmValue::Ref(info);
         });

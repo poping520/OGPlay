@@ -104,9 +104,9 @@ survey 模式下，未声明的平台类/方法会被合成为**中性桩**（0/
 ogplay run-apk … --exit-after-frames 600      # 不带 --survey-gaps
 ```
 
-只有这次运行的结果能作为进展结论。收尾：用 `windows-msvc`（或 `dev`）预设运行受影响
-能力的单点/定向测试，并更新 `MODULE.md` / `capabilities.toml` /
-`docs/state/CURRENT.md`；全量测试只在用户明确要求时运行。
+只有关闭 survey 的同路径复现才能证明越过原首错；600 帧未触发目标路径不能替代复现。
+收尾按根目录 `AGENTS.md` 的改动分级执行：复用直接相关验证，只有二进制受影响才构建。
+按事实变化更新对应文档，不默认修改 MODULE、能力账本及任务单。正式 title 验收另走 Scenario。
 
 ---
 
@@ -186,8 +186,8 @@ cd build/dev
    二进制 + Python 结构化比对，要么用正式诊断能力。
 3. **v1 冻结**：`[[java.class]]` 胶水目录不再增长（裁决 14）。不要为让新 title
    跑起来去补 v1 profile，直接走 dexvm 路线。
-4. **每批收尾**：同步 `MODULE.md`、推进 `capabilities.toml`（状态只前进）、滚动
-   更新 `docs/state/CURRENT.md`（≤6144 字节），提交前构建受影响目标并运行直接相关的
-   单点/定向测试；仅在用户明确要求时运行全量 `ctest`。
+4. **每批收尾**：按 `AGENTS.md` 选择最小验证和文档更新；CURRENT 仅记录当前进展与阻塞
+   （≤6144 字节），MODULE 仅在契约变化时修改。不要为每个缺类或缺方法新建工作单。
+   仅在用户明确要求时运行全量 `ctest`。
 
 其他跨 title 的易误判症状见 [TROUBLESHOOTING.md](TROUBLESHOOTING.md)。

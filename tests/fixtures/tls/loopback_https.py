@@ -51,6 +51,12 @@ def main() -> int:
     context.set_ciphers(
         "ECDHE-RSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-SHA256:AES128-SHA256:AES128-SHA")
     context.load_cert_chain(args.cert, args.key)
+    def require_sni(sock, server_name, ctx):
+        del sock, ctx
+        if not server_name:
+            return ssl.ALERT_DESCRIPTION_HANDSHAKE_FAILURE
+        return None
+    context.set_servername_callback(require_sni)
     if args.client_ca:
         context.verify_mode = ssl.CERT_REQUIRED
         context.load_verify_locations(args.client_ca)

@@ -39,6 +39,8 @@ final class NativeTls {
 
     static native long createSsl(long context, String hostname);
 
+    static native void configure(long ssl, String[] protocols, String[] cipherSuites);
+
     static native void setClientKey(long ssl, byte[] pkcs8, byte[] packedChain);
 
     static native int handshake(long ssl, Object trustManager, boolean clientAuth);
@@ -48,6 +50,8 @@ final class NativeTls {
     static native String protocol(long ssl);
 
     static native String cipherSuite(long ssl);
+
+    static native byte[] sessionId(long ssl);
 
     static native int read(long ssl, byte[] buffer, int offset, int length);
 

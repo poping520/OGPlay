@@ -64,6 +64,19 @@ static void fail(JNIEnv *env, const char *type, const char *message) {
     if (cls) JNI(14, int (*)(JNIEnv *, jobject, const char *))(env, cls, message);
 }
 static int pending(JNIEnv *env) { return JNI(228, unsigned char (*)(JNIEnv *))(env); }
+static long verification_time(JNIEnv *env) {
+    jobject sys = JNI(6, jobject(*)(JNIEnv *, const char *))(env, "java/lang/System");
+    jobject method = JNI(113, jobject(*)(JNIEnv *, jobject, const char *, const char *))(
+        env, sys, "currentTimeMillis", "()J");
+    if (!sys || !method) {
+        fail(env, "java/security/cert/CertificateException", "unified Clock is unavailable");
+        return 0;
+    }
+    jlong millis = JNI(132, jlong (*)(JNIEnv *, jobject, jobject))(env, sys, method);
+    if (pending(env)) return 0;
+    if (millis < 0) millis = 0;
+    return (long)(millis / 1000);
+}
 static int length(JNIEnv *env, jobject array) {
     if (!array) {
         fail(env, "java/lang/NullPointerException", "array == null");
@@ -292,7 +305,9 @@ unsigned char Java_org_ogplay_security_NativeTrust_verifyPath(
         goto done;
     }
     X509_STORE_CTX_trusted_stack(ctx, trusted);
-    X509_STORE_CTX_set_time(ctx, 0, 1704067200L);
+    long now = verification_time(env);
+    if (pending(env)) goto done;
+    X509_STORE_CTX_set_time(ctx, 0, now);
     X509_STORE_CTX_set_depth(ctx, MAX_DEPTH);
     if (X509_STORE_CTX_set_purpose(ctx, client_auth ? X509_PURPOSE_SSL_CLIENT
                                                     : X509_PURPOSE_SSL_SERVER) != 1) {

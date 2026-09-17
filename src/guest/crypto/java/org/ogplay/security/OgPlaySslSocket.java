@@ -33,8 +33,8 @@ public final class OgPlaySslSocket extends SSLSocket {
     private final OgPlaySslContextSpi context;
     private final Socket raw;
     private final boolean autoClose;
-    private final String peerHost;
-    private final int peerPort;
+    private String peerHost;
+    private int peerPort;
     private final boolean layered;
     private final ArrayList listeners = new ArrayList();
     private String[] enabledProtocols;
@@ -96,6 +96,14 @@ public final class OgPlaySslSocket extends SSLSocket {
 
     public void connect(SocketAddress endpoint, int timeout) throws IOException {
         NativeTls.markTls(this);
+        if (endpoint instanceof InetSocketAddress) {
+            InetSocketAddress inet = (InetSocketAddress) endpoint;
+            String host = inet.getHostName();
+            if (host != null && host.length() > 0) {
+                peerHost = host;
+            }
+            peerPort = inet.getPort();
+        }
         NativeTls.connectRaw(this, endpoint, timeout);
     }
 
@@ -118,8 +126,13 @@ public final class OgPlaySslSocket extends SSLSocket {
             if (savedTimeout <= 0) {
                 setSoTimeout(15000);
             }
+            if (!enableSessionCreation) {
+                setSoTimeout(savedTimeout);
+                throw new javax.net.ssl.SSLException("SSL session creation is disabled");
+            }
             if (ssl == 0) {
                 ssl = NativeTls.createSsl(context.nativeContextToken(), peerHost);
+                NativeTls.configure(ssl, enabledProtocols, enabledCiphers);
             }
             installClientKey();
             long deadline = System.currentTimeMillis() + TrustLimits.MAX_HANDSHAKE_MILLIS;
@@ -153,7 +166,8 @@ public final class OgPlaySslSocket extends SSLSocket {
             }
             Certificate[] peer = certificates(NativeTls.peerCertificates(ssl));
             session = new OgPlaySslSession(NativeTls.protocol(ssl), NativeTls.cipherSuite(ssl),
-                    peerHost, peerPort != 0 ? peerPort : getPort(), peer, context.sessions());
+                    peerHost, peerPort != 0 ? peerPort : getPort(), peer, context.sessions(),
+                    NativeTls.sessionId(ssl));
             context.sessions().put(session);
             synchronized (this) {
                 state = OPEN;
@@ -321,6 +335,8 @@ public final class OgPlaySslSocket extends SSLSocket {
         if (protocols != null) {
             setEnabledProtocols(protocols);
         }
+        // API 19 SSLParameters has no endpointIdentificationAlgorithm.
+        // HTTPS hostname checking stays on HostnameVerifier.
         if (parameters.getNeedClientAuth()) {
             setNeedClientAuth(true);
         } else if (parameters.getWantClientAuth()) {

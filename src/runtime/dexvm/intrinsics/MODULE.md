@@ -134,8 +134,9 @@
   默认类型，BKS v0/v1/v2、标准/历史 key PBE、AES RAW、RSA/EC PKCS#8 与 API19 双向互操作
   已受检。CallbackHandler 实际取密码、同 store 双线程、磁盘跨 session 重载及应用沙盒隔离
   已受检；complete 仅指 DVM-172 约定的软件 KeyStore/BKS 与算法集合。DVM-173 增加
-  OGPlayJSSE：PKIX TrustManagerFactory、真实路径验证与只读 AndroidCAStore；loopback
-  客户端 TLS/HTTPS 已闭合，公开互联网 CA 与 OpenSSL 1.0.1 维护仍阻塞在线发布。
+  OGPlayJSSE：PKIX TrustManagerFactory、真实路径验证与只读 AndroidCAStore；`SSLContext`
+  归 BootDex；loopback 客户端 TLS/HTTPS 已闭合，公开互联网 CA 与 OpenSSL 1.0.1 维护仍阻塞，
+  TLS-03 未完成。
 
 ## 验证入口
 

@@ -16,7 +16,24 @@ final class OgPlaySslSessionContext implements SSLSessionContext {
         if (sessionId == null) {
             return null;
         }
-        return (SSLSession) sessions.get(new String(sessionId));
+        String key = new String(sessionId);
+        SSLSession session = (SSLSession) sessions.get(key);
+        if (session == null) {
+            return null;
+        }
+        if (timeoutSeconds > 0) {
+            long age = System.currentTimeMillis() - session.getCreationTime();
+            if (age > timeoutSeconds * 1000L) {
+                session.invalidate();
+                sessions.remove(key);
+                return null;
+            }
+        }
+        if (!session.isValid()) {
+            sessions.remove(key);
+            return null;
+        }
+        return session;
     }
 
     public Enumeration getIds() {

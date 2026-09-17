@@ -175,6 +175,7 @@ def main() -> int:
     other_ca_key = rsa_key()
     server_key = rsa_key()
     client_key = rsa_key()
+    ec_client_key = ec_key()
     ec_server_key = ec_key()
     untrusted_key = rsa_key()
     expired_key = rsa_key()
@@ -208,6 +209,10 @@ def main() -> int:
     )
     client = leaf_cert(
         ca_key, ca, client_key, name("client.test"), 11,
+        server=False, client=True,
+    )
+    ec_client = leaf_cert(
+        ca_key, ca, ec_client_key, name("ec-client.test"), 28,
         server=False, client=True,
     )
     ec_server = leaf_cert(
@@ -298,6 +303,8 @@ def main() -> int:
         ),
         "client.pkcs8": pkcs8_der(client_key),
         "client.der": der_cert(client),
+        "ec-client.pkcs8": pkcs8_der(ec_client_key),
+        "ec-client.der": der_cert(ec_client),
         "ec-server.der": der_cert(ec_server),
         "untrusted.der": der_cert(untrusted),
         "expired.der": der_cert(expired),

@@ -684,6 +684,22 @@ TEST_CASE("TLS-01 path validation uses guest libcrypto") {
         REQUIRE(auth.exception.IsValid());
         CHECK(app.Linker().Class(auth.exception_class).descriptor ==
               "Ljava/security/cert/CertificateException;");
+        const auto previous = app.context->uptime_millis.load();
+        // AndroidAppProcess wall clock is 1_400_000_000_000 + uptime_millis.
+        // 714'380'800'000 yields 2037-01-01, after fixture notAfter 2036-12-31.
+        app.context->uptime_millis.store(714'380'800'000LL);
+        auto expired_chain = app.CertArray({"server.der"});
+        const auto expired_chain_roots =
+            app.Vm().ProtectReferences(std::array{expired_chain});
+        auto clocked = app.InvokeResult(
+            trusted, "checkServerTrusted",
+            "([Ljava/security/cert/X509Certificate;Ljava/lang/String;)V",
+            {VmValue::Ref(expired_chain),
+             VmValue::Ref(app.Vm().NewStringUtf8("RSA"))});
+        app.context->uptime_millis.store(previous);
+        REQUIRE(clocked.exception.IsValid());
+        CHECK(app.Linker().Class(clocked.exception_class).descriptor ==
+              "Ljava/security/cert/CertificateExpiredException;");
     }
 }
 
@@ -723,6 +739,11 @@ TEST_CASE("TLS-02 client handshake HTTPS layered autoClose") {
         CHECK(app.Vm().StringUtf8(app.Invoke(session, "getCipherSuite",
                                              "()Ljava/lang/String;").ref)
                   .find("TLS_") == 0);
+        auto session_id = app.Invoke(session, "getId", "()[B").ref;
+        CHECK(app.Vm().Model().ArrayLength(session_id) > 4);
+        CHECK(app.Vm().StringUtf8(app.Invoke(session, "getPeerHost",
+                                             "()Ljava/lang/String;").ref) ==
+              "tls.test");
         auto peers = app.Invoke(session, "getPeerCertificates",
                                 "()[Ljava/security/cert/Certificate;").ref;
         CHECK(app.Vm().Model().ArrayLength(peers) >= 1);
@@ -781,10 +802,104 @@ TEST_CASE("TLS-02 client handshake HTTPS layered autoClose") {
     }
 }
 
-TEST_CASE("TLS-02 mutual TLS installs a BKS client certificate") {
-    OracleServer server("server.crt", "server.key", "ca.crt");
+TEST_CASE("TLS-02 SSLContext init does not replace the HTTPS factory") {
+    TlsApp app;
+    auto defaults = app.Direct(
+        "Ljavax/net/ssl/SSLContext;", "getInstance",
+        "(Ljava/lang/String;)Ljavax/net/ssl/SSLContext;",
+        {VmValue::Ref(app.Vm().NewStringUtf8("Default"))}).ref;
+    auto original = app.Direct(
+        "Ljavax/net/ssl/HttpsURLConnection;", "getDefaultSSLSocketFactory",
+        "()Ljavax/net/ssl/SSLSocketFactory;").ref;
+    auto context = app.Direct(
+        "Ljavax/net/ssl/SSLContext;", "getInstance",
+        "(Ljava/lang/String;)Ljavax/net/ssl/SSLContext;",
+        {VmValue::Ref(app.Vm().NewStringUtf8("TLS"))}).ref;
+    app.Invoke(context, "init",
+               "([Ljavax/net/ssl/KeyManager;[Ljavax/net/ssl/TrustManager;"
+               "Ljava/security/SecureRandom;)V",
+               {VmValue::Ref(VmObjectRef{}), VmValue::Ref(VmObjectRef{}),
+                VmValue::Ref(VmObjectRef{})});
+    auto after = app.Direct(
+        "Ljavax/net/ssl/HttpsURLConnection;", "getDefaultSSLSocketFactory",
+        "()Ljavax/net/ssl/SSLSocketFactory;").ref;
+    CHECK(after.Value() == original.Value());
+    auto factory = app.Invoke(context, "getSocketFactory",
+                              "()Ljavax/net/ssl/SSLSocketFactory;").ref;
+    CHECK(factory.Value() != original.Value());
+    auto url = app.Vm().NewIntrinsicInstance("Ljava/net/URL;");
+    app.Direct("Ljava/net/URL;", "<init>", "(Ljava/lang/String;)V",
+               {VmValue::Ref(url),
+                VmValue::Ref(app.Vm().NewStringUtf8("https://tls.test/"))});
+    auto connection = app.InvokeResult(url, "openConnection",
+                                       "()Ljava/net/URLConnection;");
+    REQUIRE(connection.exception.IsValid());
+    CHECK(app.Linker().Class(connection.exception_class).descriptor ==
+          "Ljava/net/UnknownHostException;");
+    (void)defaults;
+}
+
+TEST_CASE("TLS-02 enabled protocols and SNI apply to the handshake") {
+    OracleServer server("server.crt", "server.key");
     LoopbackTransport transport(server.Port());
     TlsApp app(&transport);
+    auto context = app.Direct(
+        "Ljavax/net/ssl/SSLContext;", "getInstance",
+        "(Ljava/lang/String;)Ljavax/net/ssl/SSLContext;",
+        {VmValue::Ref(app.Vm().NewStringUtf8("TLS"))}).ref;
+    app.Invoke(context, "init",
+               "([Ljavax/net/ssl/KeyManager;[Ljavax/net/ssl/TrustManager;"
+               "Ljava/security/SecureRandom;)V",
+               {VmValue::Ref(VmObjectRef{}), VmValue::Ref(VmObjectRef{}),
+                VmValue::Ref(VmObjectRef{})});
+    auto factory = app.Invoke(context, "getSocketFactory",
+                              "()Ljavax/net/ssl/SSLSocketFactory;").ref;
+    auto tls1 = app.Invoke(factory, "createSocket", "()Ljava/net/Socket;").ref;
+    auto v1 = app.Vm().Model().NewObjectArray(
+        app.Linker().ResolveDescriptor("[Ljava/lang/String;"),
+        app.Linker().ResolveDescriptor("Ljava/lang/String;"), 1);
+    app.Vm().Model().SetObjectElement(v1, 0, app.Vm().NewStringUtf8("TLSv1"));
+    app.Invoke(tls1, "setEnabledProtocols", "([Ljava/lang/String;)V",
+               {VmValue::Ref(v1)});
+    auto endpoint = app.Vm().NewIntrinsicInstance("Ljava/net/InetSocketAddress;");
+    app.Direct("Ljava/net/InetSocketAddress;", "<init>", "(Ljava/lang/String;I)V",
+               {VmValue::Ref(endpoint), VmValue::Ref(app.Vm().NewStringUtf8("tls.test")),
+                VmValue::Int(server.Port())});
+    app.Invoke(tls1, "connect", "(Ljava/net/SocketAddress;)V", {VmValue::Ref(endpoint)});
+    auto denied = app.InvokeResult(tls1, "startHandshake", "()V");
+    REQUIRE(denied.exception.IsValid());
+    app.Invoke(tls1, "close", "()V");
+
+    auto created = app.Invoke(factory, "createSocket", "()Ljava/net/Socket;").ref;
+    auto created_endpoint = app.Vm().NewIntrinsicInstance("Ljava/net/InetSocketAddress;");
+    app.Direct("Ljava/net/InetSocketAddress;", "<init>", "(Ljava/lang/String;I)V",
+               {VmValue::Ref(created_endpoint),
+                VmValue::Ref(app.Vm().NewStringUtf8("tls.test")),
+                VmValue::Int(server.Port())});
+    app.Invoke(created, "connect", "(Ljava/net/SocketAddress;)V",
+               {VmValue::Ref(created_endpoint)});
+    auto handshake = app.InvokeResult(created, "startHandshake", "()V");
+    REQUIRE_MESSAGE(!handshake.exception.IsValid(), handshake.exception_message);
+    auto session = app.Invoke(created, "getSession", "()Ljavax/net/ssl/SSLSession;").ref;
+    CHECK(app.Vm().StringUtf8(app.Invoke(session, "getPeerHost",
+                                         "()Ljava/lang/String;").ref) == "tls.test");
+    CHECK(app.Vm().StringUtf8(app.Invoke(session, "getProtocol",
+                                         "()Ljava/lang/String;").ref) == "TLSv1.2");
+    app.Invoke(created, "setEnableSessionCreation", "(Z)V", {VmValue::Int(0)});
+    app.Invoke(created, "close", "()V");
+
+    auto disabled = app.Invoke(factory, "createSocket",
+                               "(Ljava/lang/String;I)Ljava/net/Socket;",
+                               {VmValue::Ref(app.Vm().NewStringUtf8("tls.test")),
+                                VmValue::Int(server.Port())}).ref;
+    app.Invoke(disabled, "setEnableSessionCreation", "(Z)V", {VmValue::Int(0)});
+    auto blocked = app.InvokeResult(disabled, "startHandshake", "()V");
+    REQUIRE(blocked.exception.IsValid());
+    app.Invoke(disabled, "close", "()V");
+}
+
+void HandshakeMutualTls(TlsApp& app, std::uint16_t port, const char* algorithm,
+                        const char* pkcs8, const char* der) {
     auto store = app.Direct("Ljava/security/KeyStore;", "getInstance",
                             "(Ljava/lang/String;)Ljava/security/KeyStore;",
                             {VmValue::Ref(app.Vm().NewStringUtf8("BKS"))}).ref;
@@ -793,12 +908,12 @@ TEST_CASE("TLS-02 mutual TLS installs a BKS client certificate") {
     auto key = app.Vm().NewIntrinsicInstance("Lorg/ogplay/security/BksPrivateKey;");
     app.Direct("Lorg/ogplay/security/BksPrivateKey;", "<init>",
                "(Ljava/lang/String;[B)V",
-               {VmValue::Ref(key), VmValue::Ref(app.Vm().NewStringUtf8("RSA")),
-                VmValue::Ref(app.Bytes(ReadTlsFixture("client.pkcs8")))});
+               {VmValue::Ref(key), VmValue::Ref(app.Vm().NewStringUtf8(algorithm)),
+                VmValue::Ref(app.Bytes(ReadTlsFixture(pkcs8)))});
     auto chain = app.Vm().Model().NewObjectArray(
         app.Linker().ResolveDescriptor("[Ljava/security/cert/Certificate;"),
         app.Linker().ResolveDescriptor("Ljava/security/cert/Certificate;"), 1);
-    app.Vm().Model().SetObjectElement(chain, 0, app.Certificate("client.der"));
+    app.Vm().Model().SetObjectElement(chain, 0, app.Certificate(der));
     auto password = app.Vm().Model().NewPrimitiveArray(
         app.Linker().ResolveDescriptor("[C"), JniPrimitiveKind::character, 0);
     app.Invoke(store, "setKeyEntry",
@@ -825,12 +940,24 @@ TEST_CASE("TLS-02 mutual TLS installs a BKS client certificate") {
     auto socket = app.Invoke(
         factory, "createSocket", "(Ljava/lang/String;I)Ljava/net/Socket;",
         {VmValue::Ref(app.Vm().NewStringUtf8("tls.test")),
-         VmValue::Int(server.Port())}).ref;
+         VmValue::Int(port)}).ref;
     auto protocol = app.Invoke(app.Invoke(socket, "getSession",
                                           "()Ljavax/net/ssl/SSLSession;").ref,
                                "getProtocol", "()Ljava/lang/String;");
     CHECK(app.Vm().StringUtf8(protocol.ref) == "TLSv1.2");
     app.Invoke(socket, "close", "()V");
+}
+
+TEST_CASE("TLS-02 mutual TLS installs a BKS client certificate") {
+    OracleServer server("server.crt", "server.key", "ca.crt");
+    LoopbackTransport transport(server.Port());
+    for (const auto backend : {InterpreterBackend::switch_dispatch,
+                               InterpreterBackend::threaded}) {
+        CAPTURE(backend == InterpreterBackend::threaded ? "threaded" : "switch");
+        TlsApp app(&transport, backend);
+        HandshakeMutualTls(app, server.Port(), "RSA", "client.pkcs8", "client.der");
+        HandshakeMutualTls(app, server.Port(), "EC", "ec-client.pkcs8", "ec-client.der");
+    }
 }
 
 TEST_CASE("TLS-02 network stays offline by default") {

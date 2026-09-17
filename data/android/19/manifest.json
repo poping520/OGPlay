@@ -71,17 +71,17 @@
       {
         "source_project": "OGPlay",
         "source_root": "src/guest/crypto/java",
-        "source_sha256": "ea8c86a9dcbe6d049b0a53f1482b1ba90bc79c2549dd49a6ceafbb4b0f98334a",
+        "source_sha256": "0c63123e5598e4fadae8f0ca9c6737ee7600ef25a05575adc4c9531dbe66200b",
         "javac": "17.0.2",
         "android_jar_sha256": "4032a201eeb1d0430c7d9f1075151dd280427de5ca9e36f734f464ab605cb690",
         "d8_sha256": "d9e6acde0cb6f2453d6835b52c31d2066054394fb79e91115dd4978bde6afd16"
       }
     ],
-    "size": 2348148,
-    "sha256": "963bf85a9c89ef2ca69cbcfc1e4e762cf06e2e6482aab933c3feef511047058f",
+    "size": 2348384,
+    "sha256": "db8398446410591f5345e0d07b7eee363a1c9f292523bff424bc8879781b2aa3",
     "dex_entry": "classes.dex",
-    "dex_size": 2344580,
-    "dex_sha256": "9e3c6627f72a96905a140d5214ca682c078e77cbccdc5f8bfdb89821ece6c42c",
+    "dex_size": 2344816,
+    "dex_sha256": "528a64870e0c39ca378bb30e9a7d61eeb056d4ca3c398a989233de540f1ff2a6",
     "class_count": 1636,
     "selection_policy": "load-all",
     "notice": "notices/bootdex.jar.txt",
@@ -220,10 +220,11 @@
     {
       "path": "lib/libogplay_jni.so",
       "source_project": "ogplay",
-      "size": 107712,
-      "sha256": "9b8fda764c526284189c86f778b6ade5bf4784d4fcda1bf81d329591127fc7d3",
+      "size": 111672,
+      "sha256": "bac86f19624245c7d80537f489a30e2af5a423031ead26843f3d48ebf07e7aae",
       "soname": "libogplay_jni.so",
       "needed": [
+        "libssl.so",
         "libcrypto.so",
         "libicui18n.so",
         "libicuuc.so",
@@ -231,7 +232,7 @@
       ],
       "build": {
         "generator": "tools/bootdex/build_bootdex.py",
-        "generator_sha256": "af3d6e772ec1d54af54d3e6363874140ce5ab82dabfea376f0cdb448a3d9fe99",
+        "generator_sha256": "1677cc04b23f92c308bd796689e7d29d3861ea165f86f56464390ddf817fb5cc",
         "ndk_revision": "25.2.9519653",
         "target": "armv7a-linux-androideabi19",
         "language": "C11",
@@ -242,11 +243,11 @@
           },
           {
             "path": "src/guest/crypto/trust_jni.c",
-            "sha256": "417cbf3d50d55c963fb8e34beaa5afb185998a685791aa0bd7e3c12f58fc7e53"
+            "sha256": "1c32337f66bee309aab6571e9dba7e9a335bb8748e00de5a40271b44be1fa8b6"
           },
           {
             "path": "src/guest/crypto/tls_jni.c",
-            "sha256": "81debb99a9aeec0875bff6683706d6a348ea3a0ccb454c15ee2208adc0c8add3"
+            "sha256": "f9436d9dab459c9198ebbfc37319f2c6f7c4fd3a4aa776cbdfe2a9efe7e738a3"
           },
           {
             "path": "src/guest/icu/icu_jni.c",

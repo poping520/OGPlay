@@ -107,7 +107,6 @@ set(required_core_descriptors
     "Llibcore/icu/ICU;"
     "Ljava/util/Locale;"
     "Ljava/util/Timer;"
-    "Ljavax/net/ssl/SSLContext;"
     "Ljavax/xml/parsers/SAXParser;"
     "Lorg/xml/sax/XMLReader;")
 file(READ "${core_dir}/java_net.cpp" java_net)
@@ -115,7 +114,18 @@ file(READ "${core_dir}/java_nio.cpp" java_nio)
 file(READ "${core_dir}/java_icu.cpp" java_icu)
 file(READ "${core_dir}/java_util.cpp" java_util)
 file(READ "${core_dir}/java_xml.cpp" java_xml)
+file(READ "${core_dir}/java_crypto.cpp" java_crypto)
 set(core_platform_text "${java_net}${java_nio}${java_icu}${java_util}${java_xml}")
+foreach(bootdex_ssl IN ITEMS
+        "Ljavax/net/ssl/SSLContext;"
+        "Ljavax/net/ssl/SSLSocket;"
+        "Ljavax/net/ssl/HttpsURLConnection;")
+    string(FIND "${java_crypto}" "${bootdex_ssl}" ssl_found)
+    if(NOT ssl_found EQUAL -1)
+        message(FATAL_ERROR
+            "BootDex-owned JSSE descriptor remains in core intrinsic: ${bootdex_ssl}")
+    endif()
+endforeach()
 foreach(descriptor IN LISTS required_core_descriptors)
     string(FIND "${core_platform_text}" "${descriptor}" found)
     if(found EQUAL -1)

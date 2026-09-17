@@ -784,7 +784,7 @@ def build_guest_jni() -> int:
     flags = ["-march=armv7-a", "-mfloat-abi=softfp", "-fPIC", "-fno-stack-protector",
              "-O2", "-std=c11", "-Wall", "-Wextra", "-Werror",
              "-I" + str(ROOT / "src/guest/icu")]
-    def compile_at(work: Path) -> bytes:
+    def compile_at(work: Path):
         objects = []
         for source in sources:
             obj = work / (source.stem + ".o")
@@ -807,10 +807,11 @@ def build_guest_jni() -> int:
         needed = re.findall(r"Shared library: \[([^]]+)\]", dynamic)
         if needed != ["libssl.so", "libcrypto.so", "libicui18n.so", "libicuuc.so", "libc.so"]:
             raise BuildError(f"unexpected guest JNI DT_NEEDED: {needed}")
-        return library.read_bytes()
+        return library.read_bytes(), needed
     with tempfile.TemporaryDirectory() as a, tempfile.TemporaryDirectory() as b:
-        library = compile_at(Path(a))
-        if library != compile_at(Path(b)):
+        library, needed = compile_at(Path(a))
+        second, second_needed = compile_at(Path(b))
+        if library != second or needed != second_needed:
             raise BuildError("two guest JNI builds differ")
     (MANIFEST.parent / "lib/libogplay_jni.so").write_bytes(library)
     document = json.loads(MANIFEST.read_text(encoding="utf-8"))
@@ -820,6 +821,7 @@ def build_guest_jni() -> int:
         raise BuildError("manifest is missing lib/libogplay_jni.so")
     adapter["size"] = len(library)
     adapter["sha256"] = sha256(library)
+    adapter["needed"] = needed
     adapter["build"] = {
         "generator": "tools/bootdex/build_bootdex.py",
         "generator_sha256": file_sha256(Path(__file__)),

@@ -827,6 +827,16 @@ TEST_CASE("TLS-02 SSLContext init does not replace the HTTPS factory") {
     auto factory = app.Invoke(context, "getSocketFactory",
                               "()Ljavax/net/ssl/SSLSocketFactory;").ref;
     CHECK(factory.Value() != original.Value());
+    app.Direct("Ljavax/net/ssl/HttpsURLConnection;", "setDefaultSSLSocketFactory",
+               "(Ljavax/net/ssl/SSLSocketFactory;)V", {VmValue::Ref(factory)});
+    auto created_default = app.Direct(
+        "Ljavax/net/ssl/SSLContext;", "getInstance",
+        "(Ljava/lang/String;)Ljavax/net/ssl/SSLContext;",
+        {VmValue::Ref(app.Vm().NewStringUtf8("Default"))}).ref;
+    auto after_default = app.Direct(
+        "Ljavax/net/ssl/HttpsURLConnection;", "getDefaultSSLSocketFactory",
+        "()Ljavax/net/ssl/SSLSocketFactory;").ref;
+    CHECK(after_default.Value() == factory.Value());
     auto url = app.Vm().NewIntrinsicInstance("Ljava/net/URL;");
     app.Direct("Ljava/net/URL;", "<init>", "(Ljava/lang/String;)V",
                {VmValue::Ref(url),
@@ -837,6 +847,7 @@ TEST_CASE("TLS-02 SSLContext init does not replace the HTTPS factory") {
     CHECK(app.Linker().Class(connection.exception_class).descriptor ==
           "Ljava/net/UnknownHostException;");
     (void)defaults;
+    (void)created_default;
 }
 
 TEST_CASE("TLS-02 enabled protocols and SNI apply to the handshake") {
@@ -885,17 +896,141 @@ TEST_CASE("TLS-02 enabled protocols and SNI apply to the handshake") {
                                          "()Ljava/lang/String;").ref) == "tls.test");
     CHECK(app.Vm().StringUtf8(app.Invoke(session, "getProtocol",
                                          "()Ljava/lang/String;").ref) == "TLSv1.2");
-    app.Invoke(created, "setEnableSessionCreation", "(Z)V", {VmValue::Int(0)});
     app.Invoke(created, "close", "()V");
+}
 
-    auto disabled = app.Invoke(factory, "createSocket",
-                               "(Ljava/lang/String;I)Ljava/net/Socket;",
-                               {VmValue::Ref(app.Vm().NewStringUtf8("tls.test")),
-                                VmValue::Int(server.Port())}).ref;
+TEST_CASE("TLS-02 session cache resumes and honors timeout") {
+    OracleServer server("server.crt", "server.key");
+    LoopbackTransport transport(server.Port());
+    TlsApp app(&transport);
+    auto context = app.Direct(
+        "Ljavax/net/ssl/SSLContext;", "getInstance",
+        "(Ljava/lang/String;)Ljavax/net/ssl/SSLContext;",
+        {VmValue::Ref(app.Vm().NewStringUtf8("TLS"))}).ref;
+    app.Invoke(context, "init",
+               "([Ljavax/net/ssl/KeyManager;[Ljavax/net/ssl/TrustManager;"
+               "Ljava/security/SecureRandom;)V",
+               {VmValue::Ref(VmObjectRef{}), VmValue::Ref(VmObjectRef{}),
+                VmValue::Ref(VmObjectRef{})});
+    auto factory = app.Invoke(context, "getSocketFactory",
+                              "()Ljavax/net/ssl/SSLSocketFactory;").ref;
+    auto first = app.Invoke(
+        factory, "createSocket", "(Ljava/lang/String;I)Ljava/net/Socket;",
+        {VmValue::Ref(app.Vm().NewStringUtf8("tls.test")),
+         VmValue::Int(server.Port())}).ref;
+    auto first_handshake = app.InvokeResult(first, "startHandshake", "()V");
+    REQUIRE_MESSAGE(!first_handshake.exception.IsValid(), first_handshake.exception_message);
+    auto first_session = app.Invoke(first, "getSession",
+                                    "()Ljavax/net/ssl/SSLSession;").ref;
+    auto first_id = app.Invoke(first_session, "getId", "()[B").ref;
+    REQUIRE(app.Vm().Model().ArrayLength(first_id) > 4);
+    auto session_context = app.Invoke(
+        context, "getClientSessionContext",
+        "()Ljavax/net/ssl/SSLSessionContext;").ref;
+    const auto session_roots = app.Vm().ProtectReferences(
+        std::array{context, factory, first, first_session, first_id, session_context});
+    auto cached = app.Invoke(session_context, "getSession",
+                             "([B)Ljavax/net/ssl/SSLSession;",
+                             {VmValue::Ref(first_id)}).ref;
+    REQUIRE(cached.IsValid());
+    auto cached_id = app.Invoke(cached, "getId", "()[B").ref;
+    CHECK(app.Vm().Model().ReadByteRegion(
+              first_id, 0, app.Vm().Model().ArrayLength(first_id)) ==
+          app.Vm().Model().ReadByteRegion(
+              cached_id, 0, app.Vm().Model().ArrayLength(cached_id)));
+    auto ids = app.Invoke(session_context, "getIds",
+                          "()Ljava/util/Enumeration;").ref;
+    CHECK(app.Invoke(ids, "hasMoreElements", "()Z").AsInt() == 1);
+    auto enumerated = app.Invoke(ids, "nextElement", "()Ljava/lang/Object;").ref;
+    CHECK(app.Vm().Model().ReadByteRegion(
+              first_id, 0, app.Vm().Model().ArrayLength(first_id)) ==
+          app.Vm().Model().ReadByteRegion(
+              enumerated, 0, app.Vm().Model().ArrayLength(enumerated)));
+    app.Invoke(first, "close", "()V");
+
+    const auto original_uptime = app.context->uptime_millis.load();
+    app.context->uptime_millis.store(original_uptime + 500);
+    app.Invoke(session_context, "setSessionCacheSize", "(I)V", {VmValue::Int(1)});
+    CHECK(app.Invoke(session_context, "getSession", "([B)Ljavax/net/ssl/SSLSession;",
+                     {VmValue::Ref(first_id)}).ref.IsValid());
+    app.Invoke(session_context, "setSessionCacheSize", "(I)V", {VmValue::Int(0)});
+    auto resumed = app.Invoke(
+        factory, "createSocket", "(Ljava/lang/String;I)Ljava/net/Socket;",
+        {VmValue::Ref(app.Vm().NewStringUtf8("tls.test")),
+         VmValue::Int(server.Port())}).ref;
+    app.Invoke(resumed, "setEnableSessionCreation", "(Z)V", {VmValue::Int(0)});
+    auto resume_handshake = app.InvokeResult(resumed, "startHandshake", "()V");
+    REQUIRE_MESSAGE(!resume_handshake.exception.IsValid(),
+                    resume_handshake.exception_message);
+    auto resumed_session = app.Invoke(resumed, "getSession",
+                                      "()Ljavax/net/ssl/SSLSession;").ref;
+    auto resumed_id = app.Invoke(resumed_session, "getId", "()[B").ref;
+    CHECK(resumed_session.Value() == first_session.Value());
+    CHECK(app.Invoke(session_context, "getSession", "([B)Ljavax/net/ssl/SSLSession;",
+                     {VmValue::Ref(first_id)}).ref.IsValid());
+    CHECK(app.Vm().Model().ReadByteRegion(
+              first_id, 0, app.Vm().Model().ArrayLength(first_id)) ==
+          app.Vm().Model().ReadByteRegion(
+              resumed_id, 0, app.Vm().Model().ArrayLength(resumed_id)));
+    app.Invoke(resumed, "close", "()V");
+
+    auto isolated = app.Direct(
+        "Ljavax/net/ssl/SSLContext;", "getInstance",
+        "(Ljava/lang/String;)Ljavax/net/ssl/SSLContext;",
+        {VmValue::Ref(app.Vm().NewStringUtf8("TLS"))}).ref;
+    app.Invoke(isolated, "init",
+               "([Ljavax/net/ssl/KeyManager;[Ljavax/net/ssl/TrustManager;"
+               "Ljava/security/SecureRandom;)V",
+               {VmValue::Ref(VmObjectRef{}), VmValue::Ref(VmObjectRef{}),
+                VmValue::Ref(VmObjectRef{})});
+    auto isolated_factory = app.Invoke(isolated, "getSocketFactory",
+                                       "()Ljavax/net/ssl/SSLSocketFactory;").ref;
+    auto disabled = app.Invoke(
+        isolated_factory, "createSocket", "(Ljava/lang/String;I)Ljava/net/Socket;",
+        {VmValue::Ref(app.Vm().NewStringUtf8("tls.test")),
+         VmValue::Int(server.Port())}).ref;
     app.Invoke(disabled, "setEnableSessionCreation", "(Z)V", {VmValue::Int(0)});
     auto blocked = app.InvokeResult(disabled, "startHandshake", "()V");
     REQUIRE(blocked.exception.IsValid());
     app.Invoke(disabled, "close", "()V");
+
+    app.Invoke(session_context, "setSessionTimeout", "(I)V", {VmValue::Int(1)});
+    const auto previous = app.context->uptime_millis.load();
+    app.context->uptime_millis.store(original_uptime + 900);
+    CHECK(app.Invoke(session_context, "getSession", "([B)Ljavax/net/ssl/SSLSession;",
+                     {VmValue::Ref(first_id)}).ref.IsValid());
+    app.context->uptime_millis.store(original_uptime + 1100);
+    auto expired = app.Invoke(session_context, "getSession",
+                              "([B)Ljavax/net/ssl/SSLSession;",
+                              {VmValue::Ref(first_id)}).ref;
+    CHECK_FALSE(expired.IsValid());
+    app.context->uptime_millis.store(previous);
+    app.Invoke(session_context, "setSessionTimeout", "(I)V", {VmValue::Int(0)});
+    for (int i = 0; i < 3; ++i) {
+        auto item = app.Vm().NewIntrinsicInstance("Lorg/ogplay/security/OgPlaySslSession;");
+        auto id = app.Bytes(std::vector<std::byte>{static_cast<std::byte>(i + 1)});
+        const auto roots = app.Vm().ProtectReferences(std::array{item, id});
+        app.Direct("Lorg/ogplay/security/OgPlaySslSession;", "<init>",
+            "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;I[Ljava/security/cert/Certificate;Lorg/ogplay/security/OgPlaySslSessionContext;[B[B)V",
+            {VmValue::Ref(item), VmValue::Ref(app.Vm().NewStringUtf8("TLSv1.2")),
+             VmValue::Ref(app.Vm().NewStringUtf8("fixture")),
+             VmValue::Ref(app.Vm().NewStringUtf8("cache.test")), VmValue::Int(i),
+             VmValue::Ref(VmObjectRef{}), VmValue::Ref(session_context),
+             VmValue::Ref(id), VmValue::Ref(VmObjectRef{})});
+        app.Invoke(session_context, "put", "(Lorg/ogplay/security/OgPlaySslSession;)V",
+                   {VmValue::Ref(item)});
+        CHECK(app.Invoke(session_context, "getSession", "([B)Ljavax/net/ssl/SSLSession;",
+                         {VmValue::Ref(id)}).ref.IsValid());
+    }
+    app.Invoke(session_context, "setSessionCacheSize", "(I)V", {VmValue::Int(2)});
+    auto remaining = app.Invoke(session_context, "getIds", "()Ljava/util/Enumeration;").ref;
+    int count = 0;
+    while (app.Invoke(remaining, "hasMoreElements", "()Z").AsInt()) {
+        app.Invoke(remaining, "nextElement", "()Ljava/lang/Object;");
+        ++count;
+        REQUIRE(count <= 3);
+    }
+    CHECK(count == 2);
 }
 
 void HandshakeMutualTls(TlsApp& app, std::uint16_t port, const char* algorithm,

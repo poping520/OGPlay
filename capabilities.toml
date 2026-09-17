@@ -1713,12 +1713,12 @@ note = "DVM-173：只读 AndroidCAStore 从 /system/etc/security/cacerts.ogplay 
 [dexvm.tls_client]
 status = "complete"
 test = "tests/runtime/tls_trust_tests.cpp: TLS-02"
-note = "DVM-173 TLS-02：OGPlayJSSE SSLContext/SSLSocket/session 经 guest libssl 内存 BIO 与 raw NetworkRuntime 完成 loopback TLS 1.2 握手；engineInit 播种 RAND，connectRaw 绕过 Harmony Socket.connect；协议/SNI 作用于 native SSL，TrustManager 在 SSL_do_handshake 内执行。默认网络关闭受检。complete 仅指客户端 socket TLS；SSLEngine、server TLS 与 SSL_set_session 恢复明确未做。公开互联网 CA/在线 HTTPS 见 https_transport。"
+note = "DVM-173 TLS-02：OGPlayJSSE SSLContext/SSLSocket/session 经 guest libssl 内存 BIO 与 raw NetworkRuntime 完成 loopback TLS 1.2 握手；engineInit 播种 RAND，connectRaw 绕过 Harmony Socket.connect；协议/SNI 作用于 native SSL，TrustManager 在 SSL_do_handshake 内执行；SSL_set_session 恢复、二进制 session id 与超时受检。DefaultContext 不覆盖已设置的 HTTPS 工厂。complete 仅指客户端 socket TLS；SSLEngine 与 server TLS 明确失败。公开互联网 CA/在线 HTTPS 见 https_transport。 Session 超时按原创建时间，恢复保留对象与寿命，查询不续期；容量 0 为无限、超限才淘汰，定向 2 cases / 214 assertions。"
 
 [dexvm.tls_client_auth]
 status = "complete"
 test = "tests/runtime/tls_trust_tests.cpp: TLS-02 mutual TLS"
-note = "DVM-173：BKS KeyManager 安装 RSA 或 EC 客户端证书后 loopback mTLS 协商 TLSv1.2，双解释器受检。complete 仅指该客户端证书路径；SSL_set_session 恢复未纳入。"
+note = "DVM-173：BKS KeyManager 安装 RSA 或 EC 客户端证书后 loopback mTLS 协商 TLSv1.2，双解释器受检。complete 仅指该客户端证书路径。"
 
 [dexvm.https_transport]
 status = "partial"

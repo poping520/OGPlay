@@ -126,13 +126,19 @@ public final class OgPlaySslSocket extends SSLSocket {
             if (savedTimeout <= 0) {
                 setSoTimeout(15000);
             }
-            if (!enableSessionCreation) {
-                setSoTimeout(savedTimeout);
-                throw new javax.net.ssl.SSLException("SSL session creation is disabled");
-            }
             if (ssl == 0) {
                 ssl = NativeTls.createSsl(context.nativeContextToken(), peerHost);
                 NativeTls.configure(ssl, enabledProtocols, enabledCiphers);
+            }
+            OgPlaySslSession cached = context.sessions().findResumable(
+                    peerHost, peerPort != 0 ? peerPort : getPort());
+            boolean offered = false;
+            if (cached != null) {
+                offered = NativeTls.setSession(ssl, cached.encodedState());
+            }
+            if (!enableSessionCreation && !offered) {
+                setSoTimeout(savedTimeout);
+                throw new javax.net.ssl.SSLException("SSL session creation is disabled");
             }
             installClientKey();
             long deadline = System.currentTimeMillis() + TrustLimits.MAX_HANDSHAKE_MILLIS;
@@ -145,6 +151,9 @@ public final class OgPlaySslSocket extends SSLSocket {
                 pumpWire();
                 if (status == NativeTls.OK) {
                     setSoTimeout(savedTimeout);
+                    if (!NativeTls.sessionReused(ssl) && !enableSessionCreation) {
+                        throw new javax.net.ssl.SSLException("SSL session creation is disabled");
+                    }
                     break;
                 }
                 if (status == NativeTls.WANT_WRITE) {
@@ -165,9 +174,14 @@ public final class OgPlaySslSocket extends SSLSocket {
                 throw new javax.net.ssl.SSLHandshakeException("TLS handshake failed");
             }
             Certificate[] peer = certificates(NativeTls.peerCertificates(ssl));
-            session = new OgPlaySslSession(NativeTls.protocol(ssl), NativeTls.cipherSuite(ssl),
-                    peerHost, peerPort != 0 ? peerPort : getPort(), peer, context.sessions(),
-                    NativeTls.sessionId(ssl));
+            if (cached != null && NativeTls.sessionReused(ssl)) {
+                session = cached;
+                session.touch();
+            } else {
+                session = new OgPlaySslSession(NativeTls.protocol(ssl), NativeTls.cipherSuite(ssl),
+                        peerHost, peerPort != 0 ? peerPort : getPort(), peer, context.sessions(),
+                        NativeTls.sessionId(ssl), NativeTls.sessionState(ssl));
+            }
             context.sessions().put(session);
             synchronized (this) {
                 state = OPEN;

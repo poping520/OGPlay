@@ -62,6 +62,9 @@ extern int SSL_set_cipher_list(SSL *, const char *);
 extern SSL_SESSION *SSL_get1_session(SSL *);
 extern void SSL_SESSION_free(SSL_SESSION *);
 extern const unsigned char *SSL_SESSION_get_id(const SSL_SESSION *, unsigned int *);
+extern int SSL_set_session(SSL *, SSL_SESSION *);
+extern int i2d_SSL_SESSION(SSL_SESSION *, unsigned char **);
+extern SSL_SESSION *d2i_SSL_SESSION(SSL_SESSION **, const unsigned char **, long);
 extern BIO *SSL_get_wbio(const SSL *);
 extern BIO *SSL_get_rbio(const SSL *);
 extern X509 *d2i_X509(X509 **, const unsigned char **, long);
@@ -91,6 +94,8 @@ extern void EC_KEY_free(EC_KEY *);
 #define SSL_CTRL_EXTRA_CHAIN_CERT 14
 #define SSL_CTRL_SET_TMP_ECDH 4
 #define SSL_CTRL_SET_TLSEXT_HOSTNAME 55
+#define SSL_CTRL_SET_SESS_CACHE_MODE 44
+#define SSL_SESS_CACHE_CLIENT 0x0001L
 #define SSL_OP_NO_SSLv2 0x01000000L
 #define SSL_OP_NO_SSLv3 0x02000000L
 #define SSL_OP_NO_TLSv1 0x04000000L
@@ -181,6 +186,8 @@ typedef struct Session {
     jobject trust_manager;
     unsigned char client_auth;
     int verified;
+    int resume_offered;
+    int reused;
 } Session;
 static Ctx *contexts;
 static Session *sessions;
@@ -513,6 +520,7 @@ jlong Java_org_ogplay_security_NativeTls_createContext(JNIEnv *env, jobject cls,
         return 0;
     }
     SSL_CTX_set_verify(ssl, SSL_VERIFY_PEER, verify_cb);
+    SSL_CTX_ctrl(ssl, SSL_CTRL_SET_SESS_CACHE_MODE, SSL_SESS_CACHE_CLIENT, 0);
     Ctx *p = malloc(sizeof(Ctx));
     if (!p) {
         SSL_CTX_free(ssl);
@@ -570,6 +578,8 @@ jlong Java_org_ogplay_security_NativeTls_createSsl(JNIEnv *env, jobject cls, jlo
     p->trust_manager = 0;
     p->client_auth = 0;
     p->verified = 0;
+    p->resume_offered = 0;
+    p->reused = 0;
     pthread_mutex_lock(&registry_mutex);
     p->token = next_token++;
     p->next = sessions;
@@ -613,6 +623,61 @@ jobject Java_org_ogplay_security_NativeTls_sessionId(JNIEnv *env, jobject cls, j
     }
     SSL_SESSION_free(session);
     return bytes;
+}
+jobject Java_org_ogplay_security_NativeTls_sessionState(JNIEnv *env, jobject cls, jlong token) {
+    (void)cls;
+    SESSION;
+    if (!s) return 0;
+    SSL_SESSION *session = SSL_get1_session(s->ssl);
+    if (!session) {
+        fail(env, "javax/net/ssl/SSLException", "TLS session is missing");
+        return 0;
+    }
+    int n = i2d_SSL_SESSION(session, 0);
+    jobject bytes = 0;
+    if (n > 0 && n <= MAX_DER) {
+        unsigned char *blob = malloc((size_t)n);
+        if (!blob) {
+            SSL_SESSION_free(session);
+            fail(env, "javax/net/ssl/SSLException", "out of memory");
+            return 0;
+        }
+        unsigned char *p = blob;
+        if (i2d_SSL_SESSION(session, &p) == n) {
+            bytes = new_bytes(env, n);
+            if (bytes) write_bytes(env, bytes, 0, n, blob);
+        }
+        free(blob);
+    }
+    SSL_SESSION_free(session);
+    if (!bytes) bytes = new_bytes(env, 0);
+    return bytes;
+}
+unsigned char Java_org_ogplay_security_NativeTls_setSession(JNIEnv *env, jobject cls, jlong token,
+                                                            jobject encoded) {
+    (void)cls;
+    SESSION;
+    if (!s) return 0;
+    int n = length(env, encoded);
+    if (n < 1 || n > MAX_DER) return 0;
+    unsigned char *bytes = malloc((size_t)n);
+    if (!bytes) return 0;
+    read_bytes(env, encoded, 0, n, bytes);
+    const unsigned char *p = bytes;
+    SSL_SESSION *session = d2i_SSL_SESSION(0, &p, n);
+    free(bytes);
+    if (!session) return 0;
+    int ok = SSL_set_session(s->ssl, session);
+    SSL_SESSION_free(session);
+    if (ok == 1) s->resume_offered = 1;
+    return ok == 1 ? 1 : 0;
+}
+unsigned char Java_org_ogplay_security_NativeTls_sessionReused(JNIEnv *env, jobject cls,
+                                                               jlong token) {
+    (void)cls;
+    SESSION;
+    if (!s) return 0;
+    return s->reused ? 1 : 0;
 }
 void Java_org_ogplay_security_NativeTls_setClientKey(JNIEnv *env, jobject cls, jlong token,
                                                      jobject pkcs8, jobject chain) {
@@ -728,8 +793,13 @@ int Java_org_ogplay_security_NativeTls_handshake(JNIEnv *env, jobject cls, jlong
     s->env = 0;
     s->trust_manager = 0;
     if (status == STATUS_OK && !s->verified) {
-        fail(env, "javax/net/ssl/SSLHandshakeException", "TrustManager was not invoked");
-        return STATUS_FAILED;
+        if (s->resume_offered) {
+            s->verified = 1;
+            s->reused = 1;
+        } else {
+            fail(env, "javax/net/ssl/SSLHandshakeException", "TrustManager was not invoked");
+            return STATUS_FAILED;
+        }
     }
     if (status == STATUS_FAILED && !pending(env)) {
         int ssl_err = SSL_get_error(s->ssl, result);

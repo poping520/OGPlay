@@ -53,6 +53,12 @@ final class NativeTls {
 
     static native byte[] sessionId(long ssl);
 
+    static native byte[] sessionState(long ssl);
+
+    static native boolean setSession(long ssl, byte[] encoded);
+
+    static native boolean sessionReused(long ssl);
+
     static native int read(long ssl, byte[] buffer, int offset, int length);
 
     static native int write(long ssl, byte[] buffer, int offset, int length);

@@ -16,11 +16,14 @@ final class OgPlaySslSession implements SSLSession {
     private final Certificate[] peerCerts;
     private final long creationTime;
     private final OgPlaySslSessionContext context;
+    private final byte[] nativeState;
     private byte[] id;
+    private long lastAccessedTime;
     private boolean valid = true;
 
     OgPlaySslSession(String protocol, String cipherSuite, String peerHost, int peerPort,
-                     Certificate[] peerCerts, OgPlaySslSessionContext context, byte[] sessionId) {
+                     Certificate[] peerCerts, OgPlaySslSessionContext context, byte[] sessionId,
+                     byte[] nativeState) {
         this.protocol = protocol;
         this.cipherSuite = cipherSuite;
         this.peerHost = peerHost;
@@ -28,11 +31,18 @@ final class OgPlaySslSession implements SSLSession {
         this.peerCerts = peerCerts == null ? new Certificate[0] : peerCerts;
         this.context = context;
         this.creationTime = System.currentTimeMillis();
+        this.lastAccessedTime = this.creationTime;
         if (sessionId == null || sessionId.length == 0) {
             this.id = new byte[0];
         } else {
             this.id = new byte[sessionId.length];
             System.arraycopy(sessionId, 0, this.id, 0, sessionId.length);
+        }
+        if (nativeState == null || nativeState.length == 0) {
+            this.nativeState = new byte[0];
+        } else {
+            this.nativeState = new byte[nativeState.length];
+            System.arraycopy(nativeState, 0, this.nativeState, 0, nativeState.length);
         }
     }
 
@@ -49,7 +59,7 @@ final class OgPlaySslSession implements SSLSession {
     }
 
     public long getLastAccessedTime() {
-        return creationTime;
+        return lastAccessedTime;
     }
 
     public void invalidate() {
@@ -57,7 +67,14 @@ final class OgPlaySslSession implements SSLSession {
     }
 
     public boolean isValid() {
-        return valid;
+        if (!valid) {
+            return false;
+        }
+        if (context != null && context.timedOut(this)) {
+            valid = false;
+            return false;
+        }
+        return true;
     }
 
     public void putValue(String name, Object value) {
@@ -133,5 +150,18 @@ final class OgPlaySslSession implements SSLSession {
 
     public int getApplicationBufferSize() {
         return TrustLimits.MAX_APP_BUFFER;
+    }
+
+    byte[] encodedState() {
+        if (nativeState.length == 0) {
+            return nativeState;
+        }
+        byte[] copy = new byte[nativeState.length];
+        System.arraycopy(nativeState, 0, copy, 0, nativeState.length);
+        return copy;
+    }
+
+    void touch() {
+        lastAccessedTime = System.currentTimeMillis();
     }
 }

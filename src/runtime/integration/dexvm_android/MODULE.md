@@ -162,7 +162,10 @@ extension string 与错误锁存以 native registry 为唯一事实。
 - `Activity.runOnUiThread` 仅在 root context 同步虚派 Runnable；guest worker 投递进程唯一主
   Looper。teardown 在 worker join 后、root JNI detach 前释放 guest native token。
 - AsyncTask worker 的 `DexVmError` 保留原始线程故障并终止该路径，不转换成 null 结果，
-  不继续调用 `onPostExecute`。Dialog/Web 内容尚未实现的 presentation 明确失败并记账。
+  不继续调用 `onPostExecute`。Dialog 展示与 `WebView.loadUrl` 仍明确失败并记账。
+  `WebView.destroy()` 为可覆盖实例方法：按构造线程 Looper 检查调用线程，targetSdk≥18
+  跨线程抛 RuntimeException；销毁释放该实例 WebSettings 并不再允许重建。重复 destroy
+  幂等防御，不宣称与 AOSP 完全等价，不引入浏览器内核或改写通用 View/GC。
 - ResultReceiver/IResultReceiver 普通协议来自 BootDex：有 Handler 排队、无 Handler 同步虚派，
   Parcel 往返保持本地 Binder 端点身份；不创建远程 Binder scheduler。
 - Thread/JNI native 入口复用 core runtime 与同一 catalog/context；不得恢复第二套线程或服务表。

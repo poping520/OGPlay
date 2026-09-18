@@ -11,11 +11,14 @@ SDL、ANGLE 或视频解码。
 - `UiTree`：每 generation 建立唯一 synthetic `ContentRoot`；创建、按稳定顺序 attach、
   detach/destroy node，并以 android id 查找已接入 content root 的 node。
 - `UiNode`：唯一保存 parent/children、class、android id（NO_ID=-1）、visibility、
-  enabled/clickable、orientation、gravity、image resource、layout params、padding、
+  enabled/clickable、focusable/touch-mode、scroll-container、滚动条开关、orientation、
+  gravity、image resource、layout params、padding、
   `clipChildren`/`clipToPadding`（默认 true）、measured/frame/screen frame、alpha 与
   dirty state。
 - `SetVisibility`：VISIBLE/INVISIBLE 只标 draw dirty；任意 GONE 转换同时从 node 到 root
   标 layout/draw dirty。
+- 焦点归 `UiTree` 单一 owner；请求需节点及祖先可见/启用并满足 focusable，转移、隐藏、
+  禁用、detach、destroy/reset 会清除旧 owner。`isFocused` 只认自身，`hasFocus` 包含子孙。
 - dirty 消费严格分相：`LayoutUiTree` 只清 `layout_dirty`；`UiOverlayRenderer` 只在 overlay
   成功重建后清 `draw_dirty`。layout traversal 不得吞掉尚未 rasterize 的 mutation。
 - `Reset`：推进 generation，销毁全部旧 node/id index 并创建新的 content root；旧

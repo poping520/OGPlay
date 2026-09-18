@@ -158,6 +158,11 @@ struct UiNode final {
     Visibility visibility{Visibility::Visible};
     bool enabled{true};
     bool clickable{};
+    bool focusable{};
+    bool focusable_in_touch_mode{};
+    bool scroll_container{};
+    bool horizontal_scroll_bar_enabled{true};
+    bool vertical_scroll_bar_enabled{true};
     Orientation orientation{Orientation::Horizontal};
     std::uint32_t gravity{};
     std::uint32_t image_resource_id{};
@@ -212,6 +217,11 @@ public:
     [[nodiscard]] UiNode* Get(UiNodeId id);
     [[nodiscard]] const UiNode* Get(UiNodeId id) const;
     [[nodiscard]] bool IsAttached(UiNodeId id) const;
+    [[nodiscard]] std::optional<UiNodeId> Focused() const { return focused_; }
+    [[nodiscard]] bool IsFocused(UiNodeId node) const;
+    [[nodiscard]] bool HasFocus(UiNodeId node) const;
+    [[nodiscard]] bool RequestFocus(UiNodeId node, bool touch_mode);
+    void ClearFocus(UiNodeId node);
     [[nodiscard]] std::optional<UiNodeId> FindByAndroidId(
         std::int32_t android_id) const;
 
@@ -237,6 +247,7 @@ private:
     std::uint32_t generation_{};
     std::uint32_t next_node_{};
     UiNodeId root_;
+    std::optional<UiNodeId> focused_;
     NodeMap nodes_;
     std::unordered_map<std::int32_t, std::vector<UiNodeId>> id_index_;
 };

@@ -48,6 +48,10 @@ struct AndroidGuestPlatformConfig final {
     std::string host_name{"generic"};
     std::string user_agent{"OGPlay"};
     std::string mac_address{"00:00:00:00:00:00"};
+    // Developer diagnostic switch. Production defaults to the bounded,
+    // offline WebView policy so unsupported web requests fail through the
+    // Android callback surface instead of terminating the guest.
+    bool strict_webview_errors{};
 };
 
 class AndroidGuestPlatformState final {

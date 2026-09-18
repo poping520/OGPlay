@@ -4593,6 +4593,185 @@ TEST_CASE("DVM-184 View.getContext preserves constructor and inflation identity"
     }
 }
 
+TEST_CASE("View scroll bar style is inherited and preserves unrelated flags") {
+    constexpr auto kSetStyle = "setScrollBarStyle";
+    constexpr auto kSetStyleSig = "(I)V";
+    constexpr auto kGetStyle = "getScrollBarStyle";
+    constexpr auto kGetStyleSig = "()I";
+    constexpr std::uint32_t kStyleMask = 0x03000000U;
+    for (const auto backend :
+         {InterpreterBackend::switch_dispatch,
+          InterpreterBackend::threaded}) {
+        AndroidValueVm fixture(backend);
+        const auto view_type =
+            fixture.linker.ResolveDescriptor("Landroid/view/View;");
+        const auto webview_type =
+            fixture.linker.ResolveDescriptor("Landroid/webkit/WebView;");
+        const auto setter = fixture.linker.FindVtableIndex(
+            webview_type, kSetStyle, kSetStyleSig);
+        const auto getter = fixture.linker.FindVtableIndex(
+            webview_type, kGetStyle, kGetStyleSig);
+        REQUIRE(setter.has_value());
+        REQUIRE(getter.has_value());
+        CHECK(fixture.linker.Method(
+                  fixture.linker.Class(webview_type).vtable[*setter]).owner ==
+              view_type);
+        CHECK(fixture.linker.Method(
+                  fixture.linker.Class(webview_type).vtable[*setter])
+                  .overridable);
+
+        const auto activity = fixture.New("Landroid/app/Activity;");
+        const auto first = fixture.New(
+            "Landroid/webkit/WebView;", "(Landroid/content/Context;)V",
+            {VmValue::Ref(activity)});
+        const auto second = fixture.New(
+            "Landroid/view/View;", "(Landroid/content/Context;)V",
+            {VmValue::Ref(activity)});
+        CHECK(fixture.On(first, kGetStyle, kGetStyleSig).AsInt() == 0);
+        CHECK(fixture.On(second, kGetStyle, kGetStyleSig).AsInt() == 0);
+
+        const auto flags_id = fixture.linker.FindFieldRecursive(
+            view_type, "mViewFlags", "I");
+        REQUIRE(flags_id.has_value());
+        auto& flags = fixture.model.InstanceSlots(first)
+                          [fixture.linker.Field(*flags_id).slot];
+        flags.bits = 0x40000040U;
+        flags.tag = SlotTag::cat1;
+        for (const auto style :
+             {0x00000000, 0x01000000, 0x02000000, 0x03000000}) {
+            fixture.On(first, kSetStyle, kSetStyleSig,
+                       {VmValue::Int(style)});
+            CHECK(fixture.On(first, kGetStyle, kGetStyleSig).AsInt() ==
+                  style);
+            CHECK((flags.bits & ~kStyleMask) == 0x40000040U);
+            CHECK(fixture.On(second, kGetStyle, kGetStyleSig).AsInt() == 0);
+        }
+        fixture.On(first, kSetStyle, kSetStyleSig,
+                   {VmValue::Int(0x7fffffff)});
+        CHECK(fixture.On(first, kGetStyle, kGetStyleSig).AsInt() ==
+              0x03000000);
+        CHECK((flags.bits & ~kStyleMask) == 0x40000040U);
+    }
+}
+
+TEST_CASE("View focus and WebView configuration keep real per-instance state") {
+    for (const auto backend :
+         {InterpreterBackend::switch_dispatch,
+          InterpreterBackend::threaded}) {
+        std::vector<std::int32_t> focus_events;
+        auto listener_class = IntrinsicClassBuilder::Class(
+            "Ltest/FocusListener;", "Ljava/lang/Object;",
+            {"Landroid/view/View$OnFocusChangeListener;"});
+        listener_class.Constructor("()V", [](IntrinsicContext&) {
+            return VmValue::Void();
+        });
+        listener_class.VirtualMethod(
+            "onFocusChange", "(Landroid/view/View;Z)V",
+            [&focus_events](IntrinsicContext& call) {
+                focus_events.push_back(call.arguments[1].AsInt());
+                return VmValue::Void();
+            });
+        AndroidValueVm fixture(
+            backend, {std::move(listener_class).Build()});
+        const auto activity = fixture.New("Landroid/app/Activity;");
+        const auto parent = fixture.New(
+            "Landroid/widget/FrameLayout;", "(Landroid/content/Context;)V",
+            {VmValue::Ref(activity)});
+        const auto first = fixture.New(
+            "Landroid/webkit/WebView;", "(Landroid/content/Context;)V",
+            {VmValue::Ref(activity)});
+        const auto second = fixture.New(
+            "Landroid/webkit/WebView;", "(Landroid/content/Context;)V",
+            {VmValue::Ref(activity)});
+        const auto listener = fixture.New("Ltest/FocusListener;");
+        fixture.On(first, "setOnFocusChangeListener",
+                   "(Landroid/view/View$OnFocusChangeListener;)V",
+                   {VmValue::Ref(listener)});
+        fixture.On(second, "setOnFocusChangeListener",
+                   "(Landroid/view/View$OnFocusChangeListener;)V",
+                   {VmValue::Ref(listener)});
+        fixture.On(parent, "addView", "(Landroid/view/View;)V",
+                   {VmValue::Ref(first)});
+        fixture.On(parent, "addView", "(Landroid/view/View;)V",
+                   {VmValue::Ref(second)});
+
+        fixture.On(first, "setVisibility", "(I)V", {VmValue::Int(8)});
+        CHECK(fixture.On(first, "requestFocus", "(I)Z",
+                         {VmValue::Int(130)}).AsInt() == 0);
+        CHECK(fixture.On(first, "hasFocus", "()Z").AsInt() == 0);
+        fixture.On(first, "setVisibility", "(I)V", {VmValue::Int(0)});
+        CHECK(fixture.On(first, "requestFocus", "(I)Z",
+                         {VmValue::Int(130)}).AsInt() == 1);
+        CHECK(fixture.On(first, "isFocused", "()Z").AsInt() == 1);
+        CHECK(fixture.On(parent, "hasFocus", "()Z").AsInt() == 1);
+        CHECK(fixture.On(second, "requestFocus", "()Z").AsInt() == 1);
+        CHECK(fixture.On(first, "isFocused", "()Z").AsInt() == 0);
+        CHECK(fixture.On(second, "isFocused", "()Z").AsInt() == 1);
+        fixture.On(second, "clearFocus", "()V");
+        CHECK(fixture.On(parent, "hasFocus", "()Z").AsInt() == 0);
+        CHECK(focus_events == std::vector<std::int32_t>{1, 0, 1, 0});
+        CHECK(fixture.On(second, "requestFocus", "()Z").AsInt() == 1);
+        fixture.On(parent, "removeView", "(Landroid/view/View;)V",
+                   {VmValue::Ref(second)});
+        CHECK(fixture.On(second, "isFocused", "()Z").AsInt() == 0);
+        CHECK(focus_events ==
+              std::vector<std::int32_t>{1, 0, 1, 0, 1, 0});
+
+        fixture.On(first, "setScrollContainer", "(Z)V", {VmValue::Int(1)});
+        fixture.On(first, "setHorizontalScrollBarEnabled", "(Z)V",
+                   {VmValue::Int(0)});
+        fixture.On(first, "setVerticalScrollBarEnabled", "(Z)V",
+                   {VmValue::Int(0)});
+        CHECK(fixture.On(first, "isScrollContainer", "()Z").AsInt() == 1);
+        CHECK(fixture.On(first, "isHorizontalScrollBarEnabled", "()Z").AsInt() == 0);
+        CHECK(fixture.On(first, "isVerticalScrollBarEnabled", "()Z").AsInt() == 0);
+        CHECK(fixture.On(second, "isHorizontalScrollBarEnabled", "()Z").AsInt() == 1);
+
+        const auto settings = fixture.On(
+            first, "getSettings", "()Landroid/webkit/WebSettings;").ref;
+        CHECK(fixture.On(settings, "getJavaScriptEnabled", "()Z").AsInt() == 0);
+        CHECK(fixture.On(settings, "supportZoom", "()Z").AsInt() == 1);
+        CHECK(fixture.On(settings, "getAllowFileAccess", "()Z").AsInt() == 1);
+        CHECK(fixture.On(settings, "getCacheMode", "()I").AsInt() == -1);
+        fixture.On(settings, "setJavaScriptEnabled", "(Z)V", {VmValue::Int(1)});
+        fixture.On(settings, "setSupportZoom", "(Z)V", {VmValue::Int(0)});
+        fixture.On(settings, "setAllowFileAccess", "(Z)V", {VmValue::Int(0)});
+        fixture.On(settings, "setCacheMode", "(I)V", {VmValue::Int(2)});
+        CHECK(fixture.On(settings, "getJavaScriptEnabled", "()Z").AsInt() == 1);
+        CHECK(fixture.On(settings, "supportZoom", "()Z").AsInt() == 0);
+        CHECK(fixture.On(settings, "getAllowFileAccess", "()Z").AsInt() == 0);
+        CHECK(fixture.On(settings, "getCacheMode", "()I").AsInt() == 2);
+        const auto high_name = fixture.vm.NewStringUtf8("HIGH");
+        const auto high = fixture.Static(
+            "Landroid/webkit/WebSettings$RenderPriority;", "valueOf",
+            "(Ljava/lang/String;)Landroid/webkit/WebSettings$RenderPriority;",
+            {VmValue::Ref(high_name)}).ref;
+        fixture.On(settings, "setRenderPriority",
+                   "(Landroid/webkit/WebSettings$RenderPriority;)V",
+                   {VmValue::Ref(high)});
+
+        const auto client = fixture.New("Landroid/webkit/WebViewClient;");
+        fixture.On(first, "setWebViewClient", "(Landroid/webkit/WebViewClient;)V",
+                   {VmValue::Ref(client)});
+        const auto js_object = fixture.New("Ljava/lang/Object;");
+        const auto js_name = fixture.vm.NewStringUtf8("bridge");
+        fixture.On(first, "addJavascriptInterface",
+                   "(Ljava/lang/Object;Ljava/lang/String;)V",
+                   {VmValue::Ref(js_object), VmValue::Ref(js_name)});
+        const auto roots = fixture.vm.ProtectReferences(std::array{first});
+        static_cast<void>(fixture.vm.CollectGarbage("webview-config-roots"));
+        CHECK(fixture.model.IsValidRef(client));
+        CHECK(fixture.model.IsValidRef(js_object));
+
+        CHECK(fixture.On(client, "shouldOverrideUrlLoading",
+                         "(Landroid/webkit/WebView;Ljava/lang/String;)Z",
+                         {VmValue::Ref(first), VmValue::Ref(js_name)}).AsInt() == 0);
+        fixture.On(client, "onPageFinished",
+                   "(Landroid/webkit/WebView;Ljava/lang/String;)V",
+                   {VmValue::Ref(first), VmValue::Ref(js_name)});
+    }
+}
+
 TEST_CASE("DVM-185 WebView.destroy isolates settings and enforces thread rules") {
     constexpr auto kDestroy = "destroy";
     constexpr auto kVoid = "()V";
@@ -4691,6 +4870,7 @@ TEST_CASE("DVM-185 WebView.destroy isolates settings and enforces thread rules")
         CHECK(first_settings != second_settings);
 
         const auto url = fixture.vm.NewStringUtf8("https://example.invalid");
+        fixture.context->strict_webview_errors = true;
         auto load = fixture.OnOutcome(first, "loadUrl", kLoadUrl,
                                       {VmValue::Ref(url)});
         REQUIRE(load.exception.IsValid());
@@ -4771,5 +4951,181 @@ TEST_CASE("DVM-185 WebView.destroy isolates settings and enforces thread rules")
               "Ljava/lang/IllegalStateException;");
 
         ShutdownAndroidScheduler(*fixture.context);
+    }
+}
+
+TEST_CASE("disabled WebView policy reports asynchronous failure and supports cancellation") {
+    for (const auto backend :
+         {InterpreterBackend::switch_dispatch,
+          InterpreterBackend::threaded}) {
+        std::int32_t error_count{};
+        std::int32_t last_error{};
+        std::string last_url;
+        auto client_class = IntrinsicClassBuilder::Class(
+            "Ltest/DisabledWebClient;", "Landroid/webkit/WebViewClient;");
+        client_class.Constructor("()V", [](IntrinsicContext&) {
+            return VmValue::Void();
+        });
+        client_class.OverrideMethod(
+            "onReceivedError",
+            "(Landroid/webkit/WebView;ILjava/lang/String;Ljava/lang/String;)V",
+            [&error_count, &last_error, &last_url](IntrinsicContext& call) {
+                ++error_count;
+                last_error = call.arguments[1].AsInt();
+                last_url = call.vm.StringUtf8(call.arguments[3].ref);
+                return VmValue::Void();
+            });
+        AndroidValueVm fixture(
+            backend, {std::move(client_class).Build()});
+        VmThreadRuntime threads(fixture.vm);
+        fixture.context->threads = &threads;
+        RegisterAndroidSchedulerStateTable(fixture.vm, fixture.context);
+        fixture.Static("Landroid/os/Looper;", "prepareMainLooper", "()V");
+        const auto activity = fixture.New("Landroid/app/Activity;");
+        const auto parent = fixture.New(
+            "Landroid/widget/FrameLayout;", "(Landroid/content/Context;)V",
+            {VmValue::Ref(activity)});
+        const auto view = fixture.New(
+            "Landroid/webkit/WebView;", "(Landroid/content/Context;)V",
+            {VmValue::Ref(activity)});
+        const auto client = fixture.New("Ltest/DisabledWebClient;");
+        fixture.On(view, "setWebViewClient",
+                   "(Landroid/webkit/WebViewClient;)V",
+                   {VmValue::Ref(client)});
+        fixture.On(parent, "addView", "(Landroid/view/View;)V",
+                   {VmValue::Ref(view)});
+        fixture.context->ui_tree.Attach(
+            fixture.context->ui_tree.Root(),
+            EnsureViewUiNode(*fixture.context, parent,
+                             ogplay::runtime::ui::UiClass::View));
+
+        const auto first = fixture.vm.NewStringUtf8(
+            "https://cloud.example/path/page?token=secret#fragment");
+        fixture.On(view, "loadUrl", "(Ljava/lang/String;)V",
+                   {VmValue::Ref(first)});
+        CHECK(error_count == 0);
+        CHECK_FALSE(PumpJavaThreads(fixture.vm, *fixture.context).has_value());
+        CHECK(error_count == 1);
+        CHECK(last_error == -10);
+        CHECK(last_url ==
+              "https://cloud.example/path/page?token=secret#fragment");
+
+        const auto base = fixture.vm.NewStringUtf8("https://data.example/base?x=1");
+        const auto html = fixture.vm.NewStringUtf8("<p>offline</p>");
+        fixture.On(
+            view, "loadDataWithBaseURL",
+            "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)V",
+            {VmValue::Ref(base), VmValue::Ref(html), VmValue::Ref(VmObjectRef{}),
+             VmValue::Ref(VmObjectRef{}), VmValue::Ref(VmObjectRef{})});
+        CHECK_FALSE(PumpJavaThreads(fixture.vm, *fixture.context).has_value());
+        CHECK(error_count == 2);
+        CHECK(last_error == -10);
+        CHECK(last_url == "https://data.example/base?x=1");
+
+        const auto second = fixture.vm.NewStringUtf8("https://example/stop");
+        fixture.On(view, "loadUrl", "(Ljava/lang/String;)V",
+                   {VmValue::Ref(second)});
+        fixture.On(view, "stopLoading", "()V");
+        CHECK_FALSE(PumpJavaThreads(fixture.vm, *fixture.context).has_value());
+        CHECK(error_count == 2);
+
+        const auto script = fixture.vm.NewStringUtf8("javascript:callback(1)");
+        fixture.On(view, "loadUrl", "(Ljava/lang/String;)V",
+                   {VmValue::Ref(script)});
+        CHECK_FALSE(PumpJavaThreads(fixture.vm, *fixture.context).has_value());
+        CHECK(error_count == 2);
+        CHECK(fixture.On(view, "canGoBack", "()Z").AsInt() == 0);
+        fixture.On(view, "goBack", "()V");
+
+        fixture.On(view, "loadUrl", "(Ljava/lang/String;)V",
+                   {VmValue::Ref(second)});
+        fixture.On(view, "destroy", "()V");
+        CHECK_FALSE(PumpJavaThreads(fixture.vm, *fixture.context).has_value());
+        CHECK(error_count == 2);
+
+        const auto records = fixture.logger.Snapshot(
+            ogplay::core::LogLevel::warn, "runtime.web.disabled");
+        REQUIRE(records.size() == 3);
+        CHECK(records[0].fields.size() == 4);
+        CHECK(std::get<std::string>(records[0].fields[1].value) ==
+              "https://cloud.example/path/page?token=secret#fragment");
+        CHECK(std::get<std::string>(records[0].fields[2].value) ==
+              "cloud.example");
+        CHECK(std::get<std::string>(records[0].fields[3].value) ==
+              "/path/page");
+        CHECK(std::get<std::string>(records[1].fields[0].value) ==
+              "load_data");
+        CHECK(std::get<std::string>(records[2].fields[0].value) ==
+              "javascript");
+
+        const auto strict_view = fixture.New(
+            "Landroid/webkit/WebView;", "(Landroid/content/Context;)V",
+            {VmValue::Ref(activity)});
+        fixture.context->strict_webview_errors = true;
+        const auto strict = fixture.OnOutcome(
+            strict_view, "loadUrl", "(Ljava/lang/String;)V",
+            {VmValue::Ref(second)});
+        REQUIRE(strict.exception.IsValid());
+        CHECK(fixture.linker.Class(strict.exception_class).descriptor ==
+              "Ljava/lang/UnsupportedOperationException;");
+        ShutdownAndroidScheduler(*fixture.context);
+    }
+}
+
+TEST_CASE("disabled web policy intercepts only external HTTP ACTION_VIEW") {
+    for (const auto backend :
+         {InterpreterBackend::switch_dispatch,
+          InterpreterBackend::threaded}) {
+        AndroidValueVm fixture(backend);
+        const auto context = fixture.New("Landroid/content/Context;");
+        const auto action = fixture.vm.NewStringUtf8(
+            "android.intent.action.VIEW");
+        const auto text = fixture.vm.NewStringUtf8(
+            "https://outside.example/open/item?auth=secret");
+        const auto uri = fixture.Static(
+            "Landroid/net/Uri;", "parse",
+            "(Ljava/lang/String;)Landroid/net/Uri;",
+            {VmValue::Ref(text)}).ref;
+        const auto intent = fixture.New(
+            "Landroid/content/Intent;",
+            "(Ljava/lang/String;Landroid/net/Uri;)V",
+            {VmValue::Ref(action), VmValue::Ref(uri)});
+        fixture.On(context, "startActivity",
+                   "(Landroid/content/Intent;)V",
+                   {VmValue::Ref(intent)});
+        CHECK_FALSE(fixture.context->activity_switch_pending);
+        CHECK(fixture.context->pending_activity_descriptor.empty());
+        const auto records = fixture.logger.Snapshot(
+            ogplay::core::LogLevel::warn, "runtime.web.disabled");
+        REQUIRE(records.size() == 1);
+        CHECK(std::get<std::string>(records[0].fields[0].value) ==
+              "external_browser");
+        CHECK(std::get<std::string>(records[0].fields[1].value) ==
+              "https://outside.example/open/item?auth=secret");
+        CHECK(std::get<std::string>(records[0].fields[2].value) ==
+              "outside.example");
+        CHECK(std::get<std::string>(records[0].fields[3].value) ==
+              "/open/item");
+
+        fixture.On(
+            intent, "setClassName",
+            "(Ljava/lang/String;Ljava/lang/String;)Landroid/content/Intent;",
+            {VmValue::Ref(fixture.vm.NewStringUtf8("external.browser")),
+             VmValue::Ref(fixture.vm.NewStringUtf8("BrowserActivity"))});
+        fixture.On(context, "startActivity",
+                   "(Landroid/content/Intent;)V",
+                   {VmValue::Ref(intent)});
+        CHECK_FALSE(fixture.context->activity_switch_pending);
+        CHECK(fixture.logger.Snapshot(
+                  ogplay::core::LogLevel::warn,
+                  "runtime.web.disabled").size() == 1);
+
+        fixture.context->strict_webview_errors = true;
+        const auto strict = fixture.OnOutcome(
+            context, "startActivity", "(Landroid/content/Intent;)V",
+            {VmValue::Ref(intent)});
+        REQUIRE(strict.exception.IsValid());
+        CHECK(fixture.linker.Class(strict.exception_class).descriptor ==
+              "Ljava/lang/UnsupportedOperationException;");
     }
 }

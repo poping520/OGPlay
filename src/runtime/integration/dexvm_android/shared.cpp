@@ -1373,6 +1373,49 @@ bool PostViewRunnable(dx::IntrinsicContext& call, const Context& context,
     return true;
 }
 
+DisabledWebTarget ParseDisabledWebTarget(const std::string_view url) {
+    DisabledWebTarget result;
+    result.url = std::string(url);
+    std::string lower(url);
+    std::ranges::transform(lower, lower.begin(), [](const unsigned char ch) {
+        return static_cast<char>(std::tolower(ch));
+    });
+    result.javascript = lower.starts_with("javascript:");
+    std::size_t authority = std::string_view::npos;
+    if (lower.starts_with("http://")) authority = 7U;
+    if (lower.starts_with("https://")) authority = 8U;
+    if (authority == std::string_view::npos) return result;
+    result.http_or_https = true;
+    const auto host_end = url.find_first_of("/?#", authority);
+    result.host = std::string(url.substr(
+        authority, host_end == std::string_view::npos
+                       ? url.size() - authority
+                       : host_end - authority));
+    if (host_end != std::string_view::npos && url[host_end] == '/') {
+        const auto path_end = url.find_first_of("?#", host_end);
+        result.path = std::string(url.substr(
+            host_end, path_end == std::string_view::npos
+                          ? url.size() - host_end
+                          : path_end - host_end));
+    }
+    if (result.path.empty()) result.path = "/";
+    return result;
+}
+
+void LogDisabledWeb(dx::Interpreter& vm, const std::string_view action,
+                    const DisabledWebTarget& target) {
+    auto* logger = vm.Log();
+    if (logger == nullptr) return;
+    std::vector<core::LogField> fields{{"action", std::string(action)}};
+    if (!target.url.empty()) fields.push_back({"url", target.url});
+    if (!target.host.empty()) fields.push_back({"host", target.host});
+    if (!target.path.empty()) fields.push_back({"path", target.path});
+    logger->Write(core::LogLevel::warn, "runtime.web.disabled",
+                  "web feature disabled by policy: " + std::string(action),
+                  {}, std::move(fields),
+                  {.mode = core::RateLimitMode::first_and_count});
+}
+
 void RemoveHandlerWork(const Context& context,
                        const dx::VmObjectRef handler,
                        const std::optional<std::int32_t> what,

@@ -91,6 +91,7 @@ struct DexVmAndroidContext final {
   std::uint32_t package_version_code{};
   std::string package_version_name;
   std::uint32_t target_sdk_version{};
+  bool strict_webview_errors{};
   std::uint32_t application_uid{10000U};
   std::string application_class_name;
   std::optional<loader::AndroidManifestLabel> application_label;

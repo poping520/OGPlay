@@ -223,8 +223,15 @@ Declare_android_view_WindowManagerImpl(const Context &context);
 Declare_android_view_inputmethod_InputMethodManager(const Context &context);
 [[nodiscard]] Decl
 Declare_android_webkit_WebChromeClient(const Context &context);
+[[nodiscard]] Decl
+Declare_android_webkit_WebChromeClient_CustomViewCallback(const Context &context);
+[[nodiscard]] Decl Declare_android_webkit_ConsoleMessage(const Context &context);
+[[nodiscard]] Decl Declare_android_webkit_HttpAuthHandler(const Context &context);
 [[nodiscard]] Decl Declare_android_webkit_WebSettings(const Context &context);
+[[nodiscard]] Decl Declare_android_webkit_WebSettings_RenderPriority(const Context &context);
 [[nodiscard]] Decl Declare_android_webkit_WebView(const Context &context);
+[[nodiscard]] Decl
+Declare_android_webkit_WebView_DisabledLoadCallback(const Context &context);
 [[nodiscard]] Decl Declare_android_webkit_WebViewClient(const Context &context);
 [[nodiscard]] Decl
 Declare_android_widget_AbsoluteLayout_LayoutParams(const Context &context);

@@ -166,6 +166,8 @@ DVM-112/128：AndroidAppProcess 把 sealed Manifest 的 application enabled、se
 及独立 `AndroidGuestPlatformConfig.android_id` 复制到同一 DexVmAndroidContext，并显式标记
 inventory 已就绪；独立 VM 未装配时保持
 未知，不能把缺少信息当作服务不存在。服务信息不参与 Activity 启动或产生绑定状态。
+同一平台配置的 `strict_webview_errors` 只控制 Web facade 的开发诊断策略；默认关闭，
+session 不据此创建浏览器、网络或 Activity 能力。
 
 DVM-121：从 sealed Manifest 发布 application theme 与逐 Activity theme；alias 继承
 目标 Activity，0 回退 application。integration 在 Activity.onCreate 前应用对应资源 id，

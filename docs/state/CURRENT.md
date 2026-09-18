@@ -67,6 +67,18 @@
   解密去尾零、重复初始化及短缓冲共 2622 断言通过；BootDex 1732 类 build/check 通过。
   Angry Birds 2.3.0 空沙盒运行 4000 presented frames，原 `encryptedDeviceId()` 二次调用 NPE
   未再出现，本轮未触发新的致命首错。
+- `View.setScrollBarStyle/getScrollBarStyle` 已按 API 19 保存逐实例样式掩码，`WebView`
+  继承解析、四种样式、默认值、实例隔离及其他 flags 保持在双解释器 124 断言中通过。
+  Angry Birds 2.3.0 空沙盒运行 5000 presented frames，原方法解析错误未再出现，本轮未触发
+  新的致命首错；滚动条绘制及 inset/padding 变化仍未实现。
+- [DVM-187](../tasks/dexvm/DVM-187.md)：View 焦点 owner、三个 requestFocus 重载、监听器、
+  scroll-container/双轴滚动条状态，以及当前 APK 使用的 WebSettings、RenderPriority、
+  client 默认回调与 GC 引用已完成定向验证。页面/JavaScript 执行仍明确失败；按用户安排
+  未复跑游戏，真实初始化链结果待用户测试。
+- [DVM-188](../tasks/dexvm/DVM-188.md)：默认禁用网页策略已完成。WebView 加载通过主 Looper
+  异步报告 `ERROR_UNSUPPORTED_SCHEME`，JS 只记录，stop/destroy 可取消；外部 HTTP/HTTPS
+  ACTION_VIEW 不启动浏览器。严格诊断模式保留原异常。Windows Release 与两个解释器后端
+  定向验证通过；按用户安排未复跑游戏。
 - guest JNI
   `e2d4b5de0f1c02b2d84c1e37d7d0561495b2ea1165648f2a01b5a80201a1a7f0`。
 - `data/android/19/framework/` 为本地生成产物，不纳入版本控制。

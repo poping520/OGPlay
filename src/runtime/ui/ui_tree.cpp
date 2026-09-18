@@ -83,6 +83,7 @@ void UiTree::Detach(const UiNodeId child) {
         throw std::runtime_error("UI tree hierarchy is inconsistent");
     }
     const bool was_attached = IsAttached(child);
+    if (focused_.has_value() && HasFocus(child)) focused_.reset();
     siblings.erase(found);
     child_node.parent.reset();
     if (was_attached) RebuildIndex();
@@ -114,6 +115,7 @@ void UiTree::Reset() {
     next_node_ = 0;
     nodes_.clear();
     id_index_.clear();
+    focused_.reset();
     root_ = CreateNode(UiClass::ContentRoot);
 }
 
@@ -151,6 +153,10 @@ void UiTree::SetVisibility(const UiNodeId node,
     const bool changes_layout = target.visibility == Visibility::Gone ||
                                 visibility == Visibility::Gone;
     target.visibility = visibility;
+    if (visibility != Visibility::Visible && focused_.has_value() &&
+        HasFocus(node)) {
+        focused_.reset();
+    }
     MarkAncestors(node, changes_layout, true);
 }
 
@@ -158,7 +164,43 @@ void UiTree::SetEnabled(const UiNodeId node, const bool enabled) {
     auto& target = Require(node);
     if (target.enabled == enabled) return;
     target.enabled = enabled;
+    if (!enabled && focused_.has_value() && HasFocus(node)) focused_.reset();
     MarkAncestors(node, false, true);
+}
+
+bool UiTree::IsFocused(const UiNodeId node) const {
+    static_cast<void>(Require(node));
+    return focused_ == node;
+}
+
+bool UiTree::HasFocus(const UiNodeId node) const {
+    static_cast<void>(Require(node));
+    for (auto cursor = focused_; cursor.has_value();
+         cursor = Require(*cursor).parent) {
+        if (*cursor == node) return true;
+    }
+    return false;
+}
+
+bool UiTree::RequestFocus(const UiNodeId node, const bool touch_mode) {
+    const auto& target = Require(node);
+    if (!target.focusable || (touch_mode && !target.focusable_in_touch_mode)) {
+        return false;
+    }
+    for (auto cursor = std::optional<UiNodeId>{node}; cursor.has_value();
+         cursor = Require(*cursor).parent) {
+        const auto& ancestor = Require(*cursor);
+        if (!ancestor.enabled || ancestor.visibility != Visibility::Visible) {
+            return false;
+        }
+    }
+    focused_ = node;
+    return true;
+}
+
+void UiTree::ClearFocus(const UiNodeId node) {
+    static_cast<void>(Require(node));
+    if (focused_ == node) focused_.reset();
 }
 
 void UiTree::SetClickable(const UiNodeId node, const bool clickable) {

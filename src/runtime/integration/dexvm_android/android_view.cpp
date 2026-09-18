@@ -813,6 +813,22 @@ std::uint32_t AndroidColorToRgba(const std::uint32_t argb) {
     return ((argb & 0x00ffffffU) << 8U) | (argb >> 24U);
 }
 
+void DispatchViewFocusChange(dx::Interpreter& vm, const dx::VmObjectRef view,
+                             const bool focused) {
+    if (!view.IsValid()) return;
+    const auto field = vm.Linker().FindFieldRecursive(
+        vm.Model().ObjectClass(view), "mOnFocusChangeListener",
+        "Landroid/view/View$OnFocusChangeListener;");
+    if (!field.has_value()) return;
+    const auto bits = vm.Model().InstanceSlots(view)[
+        vm.Linker().Field(*field).slot].bits;
+    const dx::VmObjectRef listener(bits);
+    if (!listener.IsValid()) return;
+    static_cast<void>(CallAndroidMethod(
+        vm, listener, "onFocusChange", "(Landroid/view/View;Z)V",
+        {dx::VmValue::Ref(view), dx::VmValue::Int(focused ? 1 : 0)}));
+}
+
 }  // namespace
 
 Decl Declare_android_view_View(const Context& context) {
@@ -836,6 +852,11 @@ Decl Declare_android_view_View(const Context& context) {
                      dx::kAccPublic);
     const auto system_ui_visibility = builder.BoundInstanceField(
         "mSystemUiVisibility", "I", dx::kAccNone);
+    const auto view_flags = builder.BoundInstanceField(
+        "mViewFlags", "I", dx::kAccNone);
+    const auto focus_listener = builder.BoundInstanceField(
+        "mOnFocusChangeListener", "Landroid/view/View$OnFocusChangeListener;",
+        dx::kAccPrivate);
     const auto system_ui_listener = builder.BoundInstanceField(
         "mOgplaySystemUiVisibilityListener",
         "Landroid/view/View$OnSystemUiVisibilityChangeListener;",
@@ -854,6 +875,23 @@ Decl Declare_android_view_View(const Context& context) {
         dx::kAccProtected);
     builder.VirtualMethod("onWindowFocusChanged", "(Z)V",
         [](dx::IntrinsicContext&) { return dx::VmValue::Void(); });
+    constexpr std::int32_t kScrollbarsStyleMask = 0x03000000;
+    builder.VirtualMethod("setScrollBarStyle", "(I)V",
+        [view_flags](dx::IntrinsicContext& call) {
+            dx::IntrinsicCall fields(call);
+            const auto flags = fields.GetInt(view_flags);
+            const auto style = call.arguments[0].AsInt();
+            fields.SetInt(view_flags,
+                          (flags & ~kScrollbarsStyleMask) |
+                              (style & kScrollbarsStyleMask));
+            return dx::VmValue::Void();
+        });
+    builder.VirtualMethod("getScrollBarStyle", "()I",
+        [view_flags](dx::IntrinsicContext& call) {
+            return dx::VmValue::Int(
+                dx::IntrinsicCall(call).GetInt(view_flags) &
+                kScrollbarsStyleMask);
+        });
     builder.VirtualMethod("hasWindowFocus", "()Z",
         [context](dx::IntrinsicContext& call) {
             if (!context->window_has_focus.load()) {
@@ -987,15 +1025,130 @@ Decl Declare_android_view_View(const Context& context) {
             }
             return outcome.value;
         });
-    const auto noop_flag = dx::IntrinsicHandler(
-        [](dx::IntrinsicContext&) { return dx::VmValue::Void(); });
-    builder.FinalMethod("setFocusable", "(Z)V", noop_flag);
-    builder.FinalMethod("setFocusableInTouchMode", "(Z)V", noop_flag);
-    builder.FinalMethod("requestFocus", "()Z",
-        [](dx::IntrinsicContext&) {
-            // The single fullscreen view always holds focus.
+    const auto dispatch_focus =
+        [focus_listener](dx::IntrinsicContext& call,
+                         const dx::VmObjectRef view, const bool focused) {
+            if (!view.IsValid()) return;
+            const auto listener =
+                dx::IntrinsicCall(call).GetRef(focus_listener, view);
+            if (!listener.IsValid()) return;
+            static_cast<void>(CallAndroidMethod(
+                call.vm, listener, "onFocusChange",
+                "(Landroid/view/View;Z)V",
+                {dx::VmValue::Ref(view), dx::VmValue::Int(focused ? 1 : 0)}));
+        };
+    builder.VirtualMethod("setOnFocusChangeListener",
+        "(Landroid/view/View$OnFocusChangeListener;)V",
+        [focus_listener](dx::IntrinsicContext& call) {
+            dx::IntrinsicCall(call).SetRef(focus_listener,
+                                           call.arguments[0].ref);
+            return dx::VmValue::Void();
+        });
+    builder.FinalMethod("getOnFocusChangeListener",
+        "()Landroid/view/View$OnFocusChangeListener;",
+        [focus_listener](dx::IntrinsicContext& call) {
+            return dx::VmValue::Ref(
+                dx::IntrinsicCall(call).GetRef(focus_listener));
+        });
+    builder.VirtualMethod("setFocusable", "(Z)V",
+        [context, dispatch_focus](dx::IntrinsicContext& call) {
+            const auto node = ViewNode(call, context);
+            auto* state = context->ui_tree.Get(node);
+            state->focusable = call.arguments[0].AsInt() != 0;
+            if (!state->focusable && context->ui_tree.IsFocused(node)) {
+                context->ui_tree.ClearFocus(node);
+                dispatch_focus(call, call.receiver, false);
+            }
+            return dx::VmValue::Void();
+        });
+    builder.FinalMethod("isFocusable", "()Z",
+        [context](dx::IntrinsicContext& call) {
+            return dx::VmValue::Int(
+                context->ui_tree.Get(ViewNode(call, context))->focusable ? 1 : 0);
+        });
+    builder.VirtualMethod("setFocusableInTouchMode", "(Z)V",
+        [context](dx::IntrinsicContext& call) {
+            auto* state = context->ui_tree.Get(ViewNode(call, context));
+            state->focusable_in_touch_mode = call.arguments[0].AsInt() != 0;
+            if (state->focusable_in_touch_mode) state->focusable = true;
+            return dx::VmValue::Void();
+        });
+    builder.FinalMethod("isFocusableInTouchMode", "()Z",
+        [context](dx::IntrinsicContext& call) {
+            return dx::VmValue::Int(context->ui_tree.Get(
+                ViewNode(call, context))->focusable_in_touch_mode ? 1 : 0);
+        });
+    const auto request_focus = dx::IntrinsicHandler(
+        [context, dispatch_focus](dx::IntrinsicContext& call) {
+            const auto node = ViewNode(call, context);
+            const auto previous = context->ui_tree.Focused();
+            if (!context->ui_tree.RequestFocus(node, false)) {
+                return dx::VmValue::Int(0);
+            }
+            if (previous.has_value() && *previous != node) {
+                dispatch_focus(call,
+                    ViewObjectForUiNode(*context, *previous), false);
+            }
+            if (previous != node) dispatch_focus(call, call.receiver, true);
             return dx::VmValue::Int(1);
         });
+    builder.VirtualMethod("requestFocus", "()Z", request_focus);
+    builder.VirtualMethod("requestFocus", "(I)Z", request_focus);
+    builder.VirtualMethod("requestFocus", "(ILandroid/graphics/Rect;)Z",
+                          request_focus);
+    builder.FinalMethod("isFocused", "()Z",
+        [context](dx::IntrinsicContext& call) {
+            return dx::VmValue::Int(
+                context->ui_tree.IsFocused(ViewNode(call, context)) ? 1 : 0);
+        });
+    builder.FinalMethod("hasFocus", "()Z",
+        [context](dx::IntrinsicContext& call) {
+            return dx::VmValue::Int(
+                context->ui_tree.HasFocus(ViewNode(call, context)) ? 1 : 0);
+        });
+    builder.VirtualMethod("clearFocus", "()V",
+        [context, dispatch_focus](dx::IntrinsicContext& call) {
+            const auto node = ViewNode(call, context);
+            if (context->ui_tree.IsFocused(node)) {
+                context->ui_tree.ClearFocus(node);
+                dispatch_focus(call, call.receiver, false);
+            }
+            return dx::VmValue::Void();
+        });
+    builder.VirtualMethod("setScrollContainer", "(Z)V",
+        [context](dx::IntrinsicContext& call) {
+            context->ui_tree.Get(ViewNode(call, context))->scroll_container =
+                call.arguments[0].AsInt() != 0;
+            return dx::VmValue::Void();
+        });
+    builder.FinalMethod("isScrollContainer", "()Z",
+        [context](dx::IntrinsicContext& call) {
+            return dx::VmValue::Int(context->ui_tree.Get(
+                ViewNode(call, context))->scroll_container ? 1 : 0);
+        });
+    const auto scroll_bar_enabled =
+        [context](const bool horizontal) {
+            return dx::IntrinsicHandler(
+                [context, horizontal](dx::IntrinsicContext& call) {
+                    auto* state = context->ui_tree.Get(ViewNode(call, context));
+                    auto& enabled = horizontal
+                        ? state->horizontal_scroll_bar_enabled
+                        : state->vertical_scroll_bar_enabled;
+                    if (!call.arguments.empty()) {
+                        enabled = call.arguments[0].AsInt() != 0;
+                        return dx::VmValue::Void();
+                    }
+                    return dx::VmValue::Int(enabled ? 1 : 0);
+                });
+        };
+    builder.VirtualMethod("setHorizontalScrollBarEnabled", "(Z)V",
+                          scroll_bar_enabled(true));
+    builder.FinalMethod("isHorizontalScrollBarEnabled", "()Z",
+                        scroll_bar_enabled(true));
+    builder.VirtualMethod("setVerticalScrollBarEnabled", "(Z)V",
+                          scroll_bar_enabled(false));
+    builder.FinalMethod("isVerticalScrollBarEnabled", "()Z",
+                        scroll_bar_enabled(false));
     const auto invalidate = dx::IntrinsicHandler(
         [context](dx::IntrinsicContext& call) {
             const auto node = EnsureViewUiNode(
@@ -1083,7 +1236,7 @@ Decl Declare_android_view_View(const Context& context) {
     builder.FinalMethod("getHeight", "()I", geometry([](const ui::UiNode& node) {
         return node.frame.bottom - node.frame.top;
     }));
-    builder.FinalMethod("setVisibility", "(I)V", [context](dx::IntrinsicContext& call) {
+    builder.FinalMethod("setVisibility", "(I)V", [context, dispatch_focus](dx::IntrinsicContext& call) {
         const auto value = call.arguments[0].AsInt();
         if (value != kVisible && value != kInvisible && value != kGone) {
             throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;",
@@ -1097,7 +1250,11 @@ Decl Declare_android_view_View(const Context& context) {
                                     : value == kInvisible
                                           ? ui::Visibility::Invisible
                                           : ui::Visibility::Gone;
+        const auto focused = context->ui_tree.Focused();
         context->ui_tree.SetVisibility(node, visibility);
+        if (focused.has_value() && !context->ui_tree.Focused().has_value()) {
+            dispatch_focus(call, ViewObjectForUiNode(*context, *focused), false);
+        }
         return dx::VmValue::Void();
     });
     builder.FinalMethod("getVisibility", "()I", [context](dx::IntrinsicContext& call) {
@@ -1111,11 +1268,17 @@ Decl Declare_android_view_View(const Context& context) {
                 context->ui_tree.Get(node)->enabled ? 1 : 0);
         });
     builder.VirtualMethod("setEnabled", "(Z)V",
-        [context](dx::IntrinsicContext& call) {
+        [context, dispatch_focus](dx::IntrinsicContext& call) {
             const auto node = EnsureViewUiNode(
                 *context, call.receiver, ui::UiClass::View);
+            const auto focused = context->ui_tree.Focused();
             context->ui_tree.SetEnabled(
                 node, call.arguments[0].AsInt() != 0);
+            if (focused.has_value() &&
+                !context->ui_tree.Focused().has_value()) {
+                dispatch_focus(call,
+                    ViewObjectForUiNode(*context, *focused), false);
+            }
             return dx::VmValue::Void();
         });
     builder.VirtualMethod("isClickable", "()Z",
@@ -1270,7 +1433,6 @@ Decl Declare_android_view_View(const Context& context) {
                 system_ui_listener, context.arguments[0].ref);
             return dx::VmValue::Void();
         });
-    builder.FinalMethod("clearFocus", "()V", WidgetNoopHandler());
     builder.FinalMethod("getWindowToken", "()Landroid/os/IBinder;",
         [](dx::IntrinsicContext&) {
             return dx::VmValue::Ref(dx::VmObjectRef{});
@@ -1458,12 +1620,18 @@ Decl Declare_android_view_ViewGroup(const Context& context) {
             const auto node = FindViewUiNode(*context, child.Value());
             if (parent.has_value() && node.has_value() &&
                 context->ui_tree.Get(*node)->parent == parent) {
+                const auto focused = context->ui_tree.Focused();
                 if (const auto error = DetachSurfaceViewSubtree(
                         call.vm, *context, *node);
                     error.has_value()) {
                     throw dx::VmJavaThrow{"Ljava/lang/RuntimeException;", *error};
                 }
                 context->ui_tree.Detach(*node);
+                if (focused.has_value() &&
+                    !context->ui_tree.Focused().has_value()) {
+                    DispatchViewFocusChange(
+                        call.vm, ViewObjectForUiNode(*context, *focused), false);
+                }
             }
             return dx::VmValue::Void();
         });
@@ -1483,12 +1651,18 @@ Decl Declare_android_view_ViewGroup(const Context& context) {
             for (std::int32_t offset = count; offset > 0; --offset) {
                 const auto child = children[static_cast<std::size_t>(
                     start + offset - 1)];
+                const auto focused = context->ui_tree.Focused();
                 if (const auto error = DetachSurfaceViewSubtree(
                         call.vm, *context, child);
                     error.has_value()) {
                     throw dx::VmJavaThrow{"Ljava/lang/RuntimeException;", *error};
                 }
                 context->ui_tree.Detach(child);
+                if (focused.has_value() &&
+                    !context->ui_tree.Focused().has_value()) {
+                    DispatchViewFocusChange(
+                        call.vm, ViewObjectForUiNode(*context, *focused), false);
+                }
             }
             return dx::VmValue::Void();
         });

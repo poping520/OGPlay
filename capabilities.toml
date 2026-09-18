@@ -1510,10 +1510,30 @@ status = "complete"
 test = "tests/dexvm/android_value_tests.cpp: DVM-184; architecture.dexvm_intrinsic_layout; Angry Birds no-Profile interstitial reached WebView.destroy"
 note = "DVM-184 在 View facade 按 API 19 绑定 protected mContext，public final getContext() 返回构造或 XML 膨胀时的同一 guest Context。共享构造器、样式构造与 setContentView(int) 膨胀共用该字段；不新增宿主 Context 表。不宣称完整 View 状态机、LayoutInflater 工厂或广告展示。"
 
+[dexvm.view_scrollbar_style]
+status = "complete"
+test = "tests/dexvm/android_value_tests.cpp: View scroll bar style is inherited and preserves unrelated flags; Angry Birds 2.3.0 no-Profile 5000-frame reached-fault"
+note = "View facade 按 API 19 提供可覆盖 setScrollBarStyle/getScrollBarStyle；逐实例 mViewFlags 仅按 0x03000000 掩码更新，默认 INSIDE_OVERLAY(0)，WebView 通过继承解析。未实现滚动条绘制、padding/inset 重算或不透明标志更新，不宣称完整滚动条显示能力。"
+
+[dexvm.view_focus_configuration]
+status = "complete"
+test = "tests/dexvm/android_value_tests.cpp: View focus and WebView configuration keep real per-instance state; tests/runtime/ui_tree_tests.cpp"
+note = "DVM-187：View 三个 requestFocus 重载、isFocused/hasFocus/clearFocus、focusable/touch-mode 与 OnFocusChangeListener 共用 UiTree 单一焦点 owner；不可见或禁用的自身/祖先拒绝请求，转移、隐藏、禁用与 detach 清理 owner。scroll-container 和双轴滚动条开关保存逐实例状态；未实现方向搜索、FOCUS_BLOCK_DESCENDANTS、滚动条绘制或 inset 布局。"
+
+[dexvm.webview_configuration_callbacks]
+status = "partial"
+test = "tests/dexvm/android_value_tests.cpp: View focus and WebView configuration keep real per-instance state; DVM-185 WebView.destroy isolates settings and enforces thread rules"
+note = "DVM-187/188：WebSettings 保存当前 APK 使用的配置及 RenderPriority；client/chrome client 与 JavaScript interface 由 guest 字段/HashMap 保活并在 destroy 清理。partial 表示没有浏览器后端；默认禁用网页策略让 loadUrl/loadDataWithBaseURL 在主 Looper 异步回调 ERROR_UNSUPPORTED_SCHEME，javascript: 只记录，stop/destroy 取消，历史为空。严格诊断配置恢复异常。"
+
+[dexvm.web_disabled_policy]
+status = "complete"
+test = "tests/dexvm/android_value_tests.cpp: disabled WebView policy reports asynchronous failure and supports cancellation; disabled web policy intercepts only external HTTP ACTION_VIEW"
+note = "DVM-188：默认不联网、不创建网页显示/输入层、不启动宿主浏览器。外部 HTTP/HTTPS ACTION_VIEW 记录后返回；包内显式 Activity 保持原路径。runtime.web.disabled 按 action 去重，记录完整 URL，并额外提供 host 与去 query/fragment 的 path。此 complete 仅表示禁用策略闭合，不表示 WebView 页面执行能力。"
+
 [dexvm.webview_destroy]
 status = "complete"
 test = "tests/dexvm/android_value_tests.cpp: DVM-185; tests/dexvm/widget_click_tests.cpp: unsupported dialog and WebView presentation fail explicitly; Angry Birds no-Profile interstitial reached SQLiteDatabase.rawQuery"
-note = "DVM-185 在 WebView facade 按 API 19 提供可覆盖 destroy()：保存构造线程 Looper，targetSdk≥18 跨线程抛 RuntimeException。每实例 WebSettings 身份稳定；销毁后不再重建 Web 专属状态。重复 destroy 幂等防御。loadUrl 仍明确失败。不引入浏览器内核，不宣称 User-Agent 或完整 WebView。"
+note = "DVM-185/188 在 WebView facade 按 API 19 提供可覆盖 destroy()：保存构造线程 Looper，targetSdk≥18 跨线程抛 RuntimeException。每实例 WebSettings 身份稳定；销毁取消禁用网页策略的待回调并清理 Web 状态。重复 destroy 幂等防御。不引入浏览器内核，不宣称 User-Agent 或完整 WebView。"
 
 [dexvm.package_info_activities]
 status = "complete"

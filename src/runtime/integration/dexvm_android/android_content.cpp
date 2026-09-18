@@ -1498,10 +1498,28 @@ Decl Declare_android_content_Context(const Context &context) {
               CallAndroidMethod(call.vm, component, "getPackageName",
                                 "()Ljava/lang/String;")
                   .ref;
-          if (call.vm.StringUtf8(package) != context->package_name)
+          if (call.vm.StringUtf8(package) != context->package_name) {
+            const auto action = CallAndroidMethod(
+                call.vm, intent, "getAction", "()Ljava/lang/String;").ref;
+            const auto data = CallAndroidMethod(
+                call.vm, intent, "getData", "()Landroid/net/Uri;").ref;
+            const auto external_roots =
+                call.vm.ProtectReferences(std::array{action, data});
+            if (action.IsValid() && data.IsValid() &&
+                call.vm.StringUtf8(action) == "android.intent.action.VIEW") {
+              const auto uri_text = call.vm.StringUtf8(
+                  CallAndroidMethod(call.vm, data, "toString",
+                                    "()Ljava/lang/String;").ref);
+              const auto target = ParseDisabledWebTarget(uri_text);
+              if (target.http_or_https && !context->strict_webview_errors) {
+                LogDisabledWeb(call.vm, "external_browser", target);
+                return dx::VmValue::Void();
+              }
+            }
             throw dx::VmJavaThrow{
                 "Ljava/lang/UnsupportedOperationException;",
                 "startActivity outside this package is not supported"};
+          }
           component_name = call.vm.StringUtf8(
               CallAndroidMethod(call.vm, component, "getClassName",
                                 "()Ljava/lang/String;")
@@ -1545,19 +1563,35 @@ Decl Declare_android_content_Context(const Context &context) {
             throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
                                   reason};
           };
-          if (!context->activity_inventory_known)
-            unsupported("activity inventory is unavailable");
           const auto data = CallAndroidMethod(call.vm, intent, "getData",
                                               "()Landroid/net/Uri;")
                                 .ref;
           const auto type = CallAndroidMethod(call.vm, intent, "getType",
                                               "()Ljava/lang/String;")
                                 .ref;
-          if (data.IsValid() || type.IsValid())
-            unsupported("data and MIME activity resolution is not supported");
           const auto action = CallAndroidMethod(call.vm, intent, "getAction",
                                                 "()Ljava/lang/String;")
                                   .ref;
+          const auto intent_roots =
+              call.vm.ProtectReferences(std::array{data, type, action});
+          if (action.IsValid() && data.IsValid() &&
+              call.vm.StringUtf8(action) == "android.intent.action.VIEW") {
+            const auto uri_text = call.vm.StringUtf8(
+                CallAndroidMethod(call.vm, data, "toString",
+                                  "()Ljava/lang/String;")
+                    .ref);
+            const auto target = ParseDisabledWebTarget(uri_text);
+            if (target.http_or_https) {
+              if (context->strict_webview_errors)
+                unsupported("external browser launch is disabled");
+              LogDisabledWeb(call.vm, "external_browser", target);
+              return dx::VmValue::Void();
+            }
+          }
+          if (!context->activity_inventory_known)
+            unsupported("activity inventory is unavailable");
+          if (data.IsValid() || type.IsValid())
+            unsupported("data and MIME activity resolution is not supported");
           if (!action.IsValid())
             throw dx::VmJavaThrow{
                 "Landroid/content/ActivityNotFoundException;",

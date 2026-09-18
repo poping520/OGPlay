@@ -123,6 +123,8 @@ public:
                 runtime::GuestProcessEnvironment::Api19(
                     context->external_storage_root));
         const auto android_id = request.platform.android_id;
+        const auto strict_webview_errors =
+            request.platform.strict_webview_errors;
         request.boundary_options.logger = request.logger;
         auto native_process = runtime::AndroidGuestProcess::Start(
             {request.api_level, system.inputs, request.backend,
@@ -160,6 +162,7 @@ public:
         context->package_version_code = manifest.version_code;
         context->package_version_name = manifest.version_name.value_or("");
         context->target_sdk_version = manifest.target_sdk.value_or(0U);
+        context->strict_webview_errors = strict_webview_errors;
         context->application_class_name = manifest.application_class;
         context->application_label = manifest.application_label;
         context->application_icon = manifest.application_icon.value_or(0U);

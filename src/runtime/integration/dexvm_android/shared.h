@@ -79,6 +79,18 @@ dx::VmObjectRef OpenStream(dx::IntrinsicContext& call, const Context& context,
                                     dx::VmObjectRef view,
                                     dx::VmObjectRef runnable,
                                     std::int64_t delay_millis);
+
+struct DisabledWebTarget final {
+    bool javascript{};
+    bool http_or_https{};
+    std::string url;
+    std::string host;
+    std::string path;
+};
+
+[[nodiscard]] DisabledWebTarget ParseDisabledWebTarget(std::string_view url);
+void LogDisabledWeb(dx::Interpreter& vm, std::string_view action,
+                    const DisabledWebTarget& target = {});
 void RemoveHandlerWork(const Context& context, dx::VmObjectRef handler,
                        std::optional<std::int32_t> what,
                        dx::VmObjectRef payload, bool runnable,

@@ -86,11 +86,13 @@ handler id、单类 TU 或 misc 巨石。非 Android family 归 core，平台事
 - Binder 线程策略按 execution context 保存，接口头保留 mask 与 API19 GATHER 位；仅记录，
   不运行 StrictMode 检测。StrictMode 只提供 Parcel 所需的无 violation 查询/清理窄边界，
   violation 编解码明确记账失败；Parcel 异常编码仍执行 BootDex。接口长度先受检再分配。
-- SQLite 使用固定 amalgamation 的真实引擎，主库/journal/临时文件只经 VFS；OGDB1/未知格式
-  拒绝且保留。API 19 原版 Java 数据库栈拥有事务、连接池和 Cursor 状态，integration 只实现
+- SQLite 使用固定 amalgamation 的真实引擎，主库/journal/临时文件只经 VFS；文件格式与损坏
+  由 SQLite 和 API 19 默认损坏处理器判定。API 19 原版 Java 数据库栈拥有事务、连接池和 Cursor 状态，integration 只实现
   固定 native ABI、逻辑 token、按错误码映射的 SQLite 异常族及受审配置。teardown 会取消并
   关闭全部 host 资源；CursorWindow 逐行填充有界窗口并遵循 requiredPos/countAllRows，
   SQLite 时间读取统一进程 Clock。
+- EventLog 四个写入重载保留 API 19 类型、截断与返回值语义并写结构化 guest 日志；读取接口
+  因无 Android 日志服务而明确失败。
 - SharedPreferences 按 context/package 持久化 app XML；editor 与 listener 遵循普通对象和具名
   state table 契约。
 

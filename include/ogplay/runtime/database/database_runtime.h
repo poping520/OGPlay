@@ -83,7 +83,6 @@ public:
 private:
   Connection(VirtualFileSystem &, std::string, IoFaultInjector,
              CurrentTimeMillis, RandomBytes, OpenOptions);
-  void Load();
   struct Impl;
   std::unique_ptr<Impl> impl_;
 };

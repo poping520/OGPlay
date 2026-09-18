@@ -1670,6 +1670,8 @@
       "Landroid/util/Base64DataException;",
       "Landroid/util/ContainerHelpers;",
       "Landroid/util/DisplayMetrics;",
+      "Landroid/util/EventLog$Event;",
+      "Landroid/util/EventLog;",
       "Landroid/util/LongSparseArray;",
       "Landroid/util/LruCache;",
       "Landroid/util/MapCollections$ArrayIterator;",

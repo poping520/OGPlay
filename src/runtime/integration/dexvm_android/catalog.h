@@ -22,13 +22,7 @@ Declare_android_content_BroadcastReceiver(const Context &context);
 [[nodiscard]] Decl
 Declare_android_content_ContentResolver(const Context &context);
 [[nodiscard]] Decl
-Declare_android_content_ContentValues(const Context &context);
-[[nodiscard]] Decl Declare_android_database_Cursor(const Context &context);
-[[nodiscard]] Decl Declare_android_database_CursorImpl(const Context &context);
-[[nodiscard]] Decl
 Declare_android_database_CursorWindow(const Context &context);
-[[nodiscard]] Decl
-Declare_android_database_sqlite_SQLiteClosable(const Context &context);
 [[nodiscard]] Decl
 Declare_android_database_sqlite_SQLiteConnection(const Context &context);
 [[nodiscard]] Decl
@@ -38,14 +32,6 @@ Declare_android_database_sqlite_SQLiteConnection_Operation(
 Declare_android_database_sqlite_SQLiteDebug(const Context &context);
 [[nodiscard]] Decl
 Declare_android_database_sqlite_SQLiteGlobal(const Context &context);
-[[nodiscard]] Decl
-Declare_android_database_sqlite_SQLiteDatabase(const Context &context);
-[[nodiscard]] Decl Declare_android_database_sqlite_SQLiteDatabase_CursorFactory(
-    const Context &context);
-[[nodiscard]] Decl
-Declare_android_database_sqlite_SQLiteOpenHelper(const Context &context);
-[[nodiscard]] Decl
-Declare_android_database_SQLiteException(const Context &context);
 [[nodiscard]] Decl Declare_android_content_Context(const Context &context);
 [[nodiscard]] Decl
 Declare_android_content_ContextWrapper(const Context &context);
@@ -197,6 +183,7 @@ Declare_android_telephony_TelephonyManager(const Context &context);
 [[nodiscard]] Decl Declare_android_text_TextWatcher(const Context &context);
 [[nodiscard]] Decl Declare_android_text_TextUtils(const Context &context);
 [[nodiscard]] Decl Declare_android_util_Log(const Context &context);
+[[nodiscard]] Decl Declare_android_util_EventLog(const Context &context);
 [[nodiscard]] Decl Declare_android_util_AttributeSet(const Context &context);
 [[nodiscard]] Decl Declare_android_util_Base64(const Context &context);
 [[nodiscard]] Decl Declare_android_util_DisplayMetrics(const Context &context);

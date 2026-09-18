@@ -5,7 +5,6 @@
 #include <algorithm>
 #include <array>
 #include <cctype>
-#include <cstring>
 #include <mutex>
 #include <shared_mutex>
 #include <stdexcept>
@@ -142,7 +141,6 @@ std::shared_ptr<Connection> Connection::Open(VirtualFileSystem &v,
       new Connection(v, std::move(p), std::move(injector),
                      std::move(current_time), std::move(random_bytes),
                      options));
-  c->Load();
   c->impl_->d = c->impl_->backend->Open();
   if (sqlite3_set_authorizer(c->impl_->d, authorize, nullptr) != SQLITE_OK)
     fail(c->impl_->d, "install authorizer");
@@ -155,36 +153,6 @@ Connection::~Connection() {
     Close();
   } catch (...) {
   }
-}
-void Connection::Load() {
-  if (impl_->p == ":memory:")
-    return;
-  VfsFileInfo info;
-  try {
-    info = impl_->v->Stat(impl_->p);
-  } catch (const VfsError &e) {
-    if (e.ErrorNumber() == 2)
-      return;
-    throw Error(e.ErrorNumber() == 13 ? SQLITE_READONLY : SQLITE_CANTOPEN,
-                e.what());
-  }
-  std::int32_t f{};
-  try {
-    f = impl_->v->Open(impl_->p, {.read = true});
-  } catch (const VfsError &e) {
-    throw Error(e.ErrorNumber() == 13 ? SQLITE_READONLY : SQLITE_CANTOPEN,
-                e.what());
-  }
-  std::array<std::byte, 16> header{};
-  auto n = impl_->v->Read(f, header);
-  impl_->v->Close(f);
-  if (info.size == 0)
-    return;
-  if (n >= 6 && !memcmp(header.data(), "OGDB1\n", 6))
-    throw Error(SQLITE_NOTADB,
-        "legacy OGDB1 database is not supported; file preserved");
-  if (n != 16 || memcmp(header.data(), "SQLite format 3\0", 16))
-    throw Error(SQLITE_NOTADB, "unknown database image; file preserved");
 }
 void Connection::Execute(std::string_view q, std::span<const Value> a) {
   auto use = impl_->Use();

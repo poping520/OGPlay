@@ -57,8 +57,11 @@
   独立 SQLite 双向互操作及 GC/关闭竞争。Angry Birds 2.3.0 原始类级路径的空库建表、
   过期行删除、有效行 rawQuery 均通过。SQLite 提交误将 LocaleData、日期 pattern 与货币入口
   替换为不完整宿主实现，现已全部恢复 guest ICU；真实 guest JNI 验证 Calendar 周规则及
-  SimpleDateFormat，完整进程越过 Jackson 初始化 NPE。下一独立首错为数据库损坏处理路径的
-  `android.util.EventLog.writeEvent`。DVM-186 完成。
+  SimpleDateFormat，完整进程越过 Jackson 初始化 NPE。SQLite 后续清理已删除旧格式解析、
+  影子状态和文件头预检；API 19 `EventLog` 四个写入重载及默认损坏处理链已闭合。
+  BootDex 1731 类 build/check 通过；空沙盒真实运行创建 16384 字节标准 SQLite `cookiedb`，
+  越过 Cookie 初始化与 EventLog 首错。下一独立首错为
+  `Utils.encryptedDeviceId` 对空设备标识调用 `String.length()`。DVM-186 完成。
 - guest JNI
   `e2d4b5de0f1c02b2d84c1e37d7d0561495b2ea1165648f2a01b5a80201a1a7f0`。
 - `data/android/19/framework/` 为本地生成产物，不纳入版本控制。

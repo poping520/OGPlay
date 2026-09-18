@@ -224,6 +224,7 @@ AndroidIntrinsicCatalog(const std::shared_ptr<DexVmAndroidContext> &context) {
       Declare_android_text_TextWatcher(context),
       Declare_android_text_TextUtils(context),
       Declare_android_util_Log(context),
+      Declare_android_util_EventLog(context),
       Declare_android_util_AttributeSet(context),
       Declare_android_util_Base64(context),
       Declare_android_util_DisplayMetrics(context),

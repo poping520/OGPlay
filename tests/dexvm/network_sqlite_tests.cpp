@@ -1,6 +1,7 @@
 #include "boot_dex.h"
 #include <doctest/doctest.h>
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <cstddef>
@@ -16,6 +17,7 @@
 #include <vector>
 
 #include "ogplay/core/capability_ledger.h"
+#include "ogplay/core/logger.h"
 #include "ogplay/loader/apk.h"
 #include "ogplay/runtime/database/database_runtime.h"
 #include "ogplay/runtime/dexvm/class_linker.h"
@@ -26,6 +28,7 @@
 #include "ogplay/runtime/dexvm/vm_monitors.h"
 #include "ogplay/runtime/dexvm/vm_threads.h"
 #include "ogplay/runtime/integration/dexvm_android.h"
+#include "ogplay/runtime/integration/dexvm_io_vfs.h"
 #include "ogplay/runtime/vfs/vfs.h"
 
 namespace {
@@ -102,7 +105,9 @@ struct NetworkSqliteVm final {
   JavaObjectModel model{strings, arrays};
   DexClassLinker linker;
   ogplay::core::CapabilityLedger ledger;
+  ogplay::core::Logger logger;
   VirtualFileSystem vfs;
+  DexVmIoVfsAdapter io_file_system{vfs};
   std::shared_ptr<DexVmAndroidContext> context{
       std::make_shared<DexVmAndroidContext>()};
   Interpreter vm;
@@ -180,6 +185,8 @@ struct NetworkSqliteVm final {
             model, nullptr, ledger, InterpreterConfig{.backend = backend}),
         threads(vm) {
     RegisterAndroidDatabaseStateTables(vm, context);
+    vm.IO().SetFileSystem(&io_file_system);
+    vm.SetLogger(&logger);
     vm.Monitors().SetTimeSource([] { return std::int64_t{1000}; });
     vfs.CreateDirectory("/data");
     vfs.CreateDirectory("/data/data");
@@ -416,34 +423,6 @@ TEST_CASE("DVM-186 SQLite preserves values indexes and trigger effects") {
         std::vector<std::byte>{std::byte{0}, std::byte{0xff}});
   CHECK(std::get<std::int64_t>(
             connection->Query("SELECT inserted FROM audit").rows[0][0]) == 7);
-}
-
-TEST_CASE("DVM-186 legacy and unknown database images are preserved") {
-  for (const auto &[name, image] :
-       std::array{std::pair{"legacy.db", std::string_view("OGDB1\n\x7f", 7)},
-                  std::pair{"unknown.db", std::string_view("notdb", 5)}}) {
-    const auto bytes = std::span(
-        reinterpret_cast<const std::byte *>(image.data()), image.size());
-    VirtualFileSystem vfs;
-    vfs.CreateDirectory("/data");
-    const auto path = "/data/" + std::string(name);
-    WriteVfsFile(vfs, path, bytes);
-    CHECK_THROWS(database::Connection::Open(vfs, path));
-    CHECK(ReadVfsFile(vfs, path) ==
-          std::vector<std::byte>(bytes.begin(), bytes.end()));
-  }
-}
-
-TEST_CASE("DVM-186 SQLite connection survives Android owner map insertion") {
-  VirtualFileSystem vfs;
-  vfs.CreateDirectory("/data");
-  DexVmAndroidContext context;
-  DexVmAndroidContext::DatabaseState state;
-  state.path = "/data/owned.db";
-  state.connection = database::Connection::Open(vfs, state.path);
-  state.version = state.connection->UserVersion();
-  context.databases.emplace(1U, std::move(state));
-  CHECK(context.databases.at(1U).connection->IsOpen());
 }
 
 TEST_CASE("DVM-186 SQLite VFS journal and writer locks are real") {
@@ -1438,9 +1417,6 @@ TEST_CASE("DVM-88 ContentValues SQLite query persists through guest VFS") {
                          header.size()) ==
         std::string_view("SQLite format 3\0", 16));
 
-  // Discard the in-memory owner maps so reopening must deserialize guest VFS.
-  fixture.context->databases.erase(database.Value());
-  fixture.context->database_by_path.erase(database_path);
   database = fixture
                  .Static("Landroid/database/sqlite/SQLiteDatabase;",
                          "openOrCreateDatabase",
@@ -1706,7 +1682,7 @@ TEST_CASE("DVM-88 SQLiteOpenHelper dispatches create and upgrade by version") {
   CHECK(user_version(upgraded) == 2);
 }
 
-TEST_CASE("DVM-88 database open reports non-missing VFS failures") {
+TEST_CASE("DVM-186 database open maps non-missing VFS failures") {
   NetworkSqliteVm fixture;
   const auto outcome = fixture.StaticOutcome(
       "Landroid/database/sqlite/SQLiteDatabase;", "openOrCreateDatabase",
@@ -1716,7 +1692,44 @@ TEST_CASE("DVM-88 database open reports non-missing VFS failures") {
        VmValue::Ref(VmObjectRef{})});
   CHECK(outcome.exception.IsValid());
   CHECK(fixture.linker.Class(outcome.exception_class).descriptor ==
-        "Landroid/database/SQLException;");
+        "Landroid/database/sqlite/SQLiteDiskIOException;");
+}
+
+TEST_CASE("DVM-186 corrupt database logs deletes and rebuilds") {
+  NetworkSqliteVm fixture;
+  constexpr std::string_view path =
+      "/data/data/test.game/databases/corrupt.db";
+  const std::array garbage{std::byte{'n'}, std::byte{'o'}, std::byte{'t'},
+                           std::byte{'-'}, std::byte{'s'}, std::byte{'q'},
+                           std::byte{'l'}, std::byte{'i'}, std::byte{'t'},
+                           std::byte{'e'}};
+  WriteVfsFile(fixture.vfs, path, garbage);
+  const auto path_string = fixture.vm.NewStringUtf8(path);
+  const auto first = fixture.StaticOutcome(
+      "Landroid/database/sqlite/SQLiteDatabase;", "openOrCreateDatabase",
+      "(Ljava/lang/String;Landroid/database/sqlite/"
+      "SQLiteDatabase$CursorFactory;)Landroid/database/sqlite/SQLiteDatabase;",
+      {VmValue::Ref(path_string), VmValue::Ref(VmObjectRef{})});
+  REQUIRE_FALSE(first.exception.IsValid());
+
+  const auto records = fixture.logger.Snapshot(
+      ogplay::core::LogLevel::info, "runtime.dexvm.guest");
+  const auto event = std::ranges::find_if(records, [](const auto &record) {
+    return record.message.starts_with(
+        "EventLog tag=75004 payload=string(");
+  });
+  REQUIRE(event != records.end());
+  CHECK(event->message.find("corrupt.db") != std::string::npos);
+
+  const auto database = first.value.ref;
+  fixture.On(database, "execSQL", "(Ljava/lang/String;)V",
+             {VmValue::Ref(fixture.vm.NewStringUtf8(
+                 "CREATE TABLE rebuilt(value INTEGER)"))});
+  fixture.On(database, "close", "()V");
+  const auto image = ReadVfsFile(fixture.vfs, path);
+  REQUIRE(image.size() >= 16);
+  CHECK(std::string_view(reinterpret_cast<const char *>(image.data()), 16) ==
+        std::string_view("SQLite format 3\0", 16));
 }
 
 TEST_CASE(

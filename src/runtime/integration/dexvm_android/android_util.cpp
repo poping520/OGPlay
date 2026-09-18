@@ -6,7 +6,9 @@
 #include <bit>
 #include <cstddef>
 #include <cstdint>
+#include <sstream>
 #include <string>
+#include <string_view>
 #include <vector>
 
 // ---- migrated from android_util_Log.cpp ----
@@ -130,6 +132,147 @@ Decl Declare_android_util_Log(const Context &context) {
                          return dx::VmValue::Ref(LogGetStackTraceString(
                              call.vm, call.arguments[0].ref));
                        });
+  return std::move(builder).Build();
+}
+
+namespace {
+
+constexpr std::size_t kEventPayloadMaximum = 4076 - sizeof(std::int32_t);
+
+[[nodiscard]] std::string EventText(const std::string_view value) {
+  std::string result;
+  result.reserve(value.size() + 2);
+  result.push_back('"');
+  for (const char c : value) {
+    switch (c) {
+    case '\\': result += "\\\\"; break;
+    case '"': result += "\\\""; break;
+    case '\n': result += "\\n"; break;
+    case '\r': result += "\\r"; break;
+    case '\t': result += "\\t"; break;
+    default: result.push_back(c); break;
+    }
+  }
+  result.push_back('"');
+  return result;
+}
+
+void LogEvent(dx::IntrinsicContext &call, const std::int32_t tag,
+              const std::string &payload) {
+  GuestLog(call, core::LogLevel::info,
+           "EventLog tag=" + std::to_string(tag) + " payload=" + payload);
+}
+
+[[nodiscard]] std::size_t EventStringSize(std::string_view value) {
+  constexpr std::size_t overhead = 2 + sizeof(std::int32_t);
+  const auto maximum = kEventPayloadMaximum - overhead;
+  return overhead + std::min(value.size(), maximum);
+}
+
+void TruncateEventString(std::string &value) {
+  constexpr std::size_t overhead = 2 + sizeof(std::int32_t);
+  value.resize(std::min(value.size(), kEventPayloadMaximum - overhead));
+}
+
+} // namespace
+
+Decl Declare_android_util_EventLog(const Context &context) {
+  static_cast<void>(context);
+  auto builder = dx::IntrinsicClassBuilder::Class("Landroid/util/EventLog;",
+                                                  "Ljava/lang/Object;");
+  builder.StaticMethod(
+      "writeEvent", "(II)I", [](dx::IntrinsicContext &call) {
+        const auto tag = call.arguments[0].AsInt();
+        const auto value = call.arguments[1].AsInt();
+        LogEvent(call, tag, "int(" + std::to_string(value) + ")");
+        return dx::VmValue::Int(1 + sizeof(std::int32_t));
+      });
+  builder.StaticMethod(
+      "writeEvent", "(IJ)I", [](dx::IntrinsicContext &call) {
+        const auto tag = call.arguments[0].AsInt();
+        const auto value = call.arguments[1].AsLong();
+        LogEvent(call, tag, "long(" + std::to_string(value) + ")");
+        return dx::VmValue::Int(1 + sizeof(std::int64_t));
+      });
+  builder.StaticMethod(
+      "writeEvent", "(ILjava/lang/String;)I", [](dx::IntrinsicContext &call) {
+        const auto tag = call.arguments[0].AsInt();
+        auto value = call.arguments[1].ref.IsValid()
+                         ? call.vm.StringUtf8(call.arguments[1].ref)
+                         : std::string("NULL");
+        TruncateEventString(value);
+        LogEvent(call, tag, "string(" + EventText(value) + ")");
+        return dx::VmValue::Int(
+            static_cast<std::int32_t>(EventStringSize(value)));
+      });
+  builder.StaticMethod(
+      "writeEvent", "(I[Ljava/lang/Object;)I",
+      [](dx::IntrinsicContext &call) -> dx::VmValue {
+        const auto tag = call.arguments[0].AsInt();
+        const auto array = call.arguments[1].ref;
+        if (!array.IsValid()) {
+          const std::string value = "NULL";
+          LogEvent(call, tag, "string(" + EventText(value) + ")");
+          return dx::VmValue::Int(
+              static_cast<std::int32_t>(EventStringSize(value)));
+        }
+
+        auto &model = call.vm.Model();
+        auto size = std::size_t{2};
+        std::ostringstream payload;
+        payload << "list[";
+        const auto count = std::min<std::size_t>(model.ArrayLength(array), 255);
+        std::size_t copied = 0;
+        for (; copied < count; ++copied) {
+          const auto item = model.GetObjectElement(
+              array, static_cast<JniSize>(copied));
+          std::string rendered;
+          std::size_t item_size{};
+          if (!item.IsValid()) {
+            rendered = "string(\"NULL\")";
+            item_size = 1 + sizeof(std::int32_t) + 4;
+          } else {
+            const auto descriptor =
+                call.vm.Linker().Class(model.ObjectClass(item)).descriptor;
+            if (descriptor == "Ljava/lang/String;") {
+              auto value = call.vm.StringUtf8(item);
+              const auto available = kEventPayloadMaximum - 1 - size;
+              if (available <= 1 + sizeof(std::int32_t)) break;
+              value.resize(std::min(value.size(),
+                                    available - 1 - sizeof(std::int32_t)));
+              rendered = "string(" + EventText(value) + ")";
+              item_size = 1 + sizeof(std::int32_t) + value.size();
+            } else if (descriptor == "Ljava/lang/Integer;") {
+              const auto value = CallAndroidMethod(call.vm, item, "intValue", "()I").AsInt();
+              rendered = "int(" + std::to_string(value) + ")";
+              item_size = 1 + sizeof(std::int32_t);
+            } else if (descriptor == "Ljava/lang/Long;") {
+              const auto value = CallAndroidMethod(call.vm, item, "longValue", "()J").AsLong();
+              rendered = "long(" + std::to_string(value) + ")";
+              item_size = 1 + sizeof(std::int64_t);
+            } else {
+              throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;",
+                                    "Invalid payload item type"};
+            }
+          }
+          if (size + item_size > kEventPayloadMaximum - 1) break;
+          if (copied != 0) payload << ", ";
+          payload << rendered;
+          size += item_size;
+        }
+        payload << ']';
+        LogEvent(call, tag, payload.str());
+        return dx::VmValue::Int(static_cast<std::int32_t>(size + 1));
+      });
+  builder.StaticMethod(
+      "readEvents", "([ILjava/util/Collection;)V",
+      [](dx::IntrinsicContext &call) -> dx::VmValue {
+        if (auto *ledger = call.vm.Ledger())
+          ledger->RecordUnimplemented("android.event_log.read", 0);
+        throw dx::VmJavaThrow{
+            "Ljava/lang/UnsupportedOperationException;",
+            "EventLog.readEvents requires the Android event log service"};
+      });
   return std::move(builder).Build();
 }
 

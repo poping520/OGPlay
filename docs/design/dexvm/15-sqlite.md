@@ -118,19 +118,15 @@ CursorWindow 的行容量、start position、NULL/type conversion 与 refill 语
   先落盘、主库同步、journal 删除及目录元数据屏障。缺失能力在 VFS 层补齐后再承诺
   对应耐久性，数据库模块不另建宿主存储。进程崩溃恢复与机器断电耐久性分别记录证据。
 
-## 6. OGDB1 与切换策略
+## 6. 真实 SQLite 与损坏处理
 
-打开现有文件前识别旧格式；OGDB1 不能交给默认 corruption handler 自动删除重建。
-保留原文件，抛明确的旧格式不支持错误并记账。真实 SQLite 文件走正常引擎检查；未知文件
-不能作为“文件不存在”处理。Android 原版损坏处理器的删除行为另列策略并验证。
+生产代码只保留真实 SQLite：旧 parser、旧格式 reader/writer、影子数据库状态表和文件头
+预检均已删除。不存在旧格式迁移、识别或执行失败后的回退路径。
 
-本期不承诺 OGDB1 自动无损迁移：旧文件没有完整类型/约束/schema，无法通用还原。
-后续迁移必须取得明确 schema，导出到新库并验证后切换；不得根据 Cookie 表名推断。
-开发复现用独立测试沙盒，用户已有数据不自动清空。
-
-开发中可在定向 fixture 装配新后端；生产 catalog 与 BootDex 在依赖闭合后一次切换。
-切换后删除旧 parser、OGDB1 writer、database/ContentValues/Cursor 影子侧表及对应 trace/sweep；
-不保留“SQLite 执行失败就尝试 OGDB1”的兜底。过渡期只保留旧格式识别和诊断。
+SQLite 引擎负责判断文件是否合法；`SQLITE_CORRUPT`/`SQLITE_NOTADB` 映射为
+`SQLiteDatabaseCorruptException`。API 19 原版 `SQLiteDatabase` 随后写 EventLog，调用默认
+损坏处理器经同一 VFS 删除主库及辅助文件，并在同一次 open 中重建。EventLog 读取依赖
+Android 日志服务，保持明确不支持。
 
 ## 7. 三阶段连续交付
 
@@ -142,14 +138,14 @@ DVM-186 是唯一任务单，原 8 个单元合并为下面 3 个阶段，现均
 | --- | --- | --- | --- |
 | SQL-01 真实数据库底座（完成） | 子模块 | 简短闭包/差异审计并确定 locale、配置与平台契约；静态引擎、资源令牌、VFS IO/锁、journal 和恢复 | 内存/文件库读写、空 BLOB、零字节初始库、打开标志、错误映射、令牌隔离、规范路径锁竞争、路径拒绝、short-read/ENOSPC、提交回滚与故障后重开通过 |
 | SQL-02 Java 全链路接入（完成） | 01 | BootDex 类闭包、native/overlay、CursorWindow、Helper、线程事务与生命周期；同步删除被接管的 intrinsic/影子状态并切换唯一后端 | build/check、类链接与 native 清单、异常子类、窗口类型/容量/requiredPos/countAllRows 流式 refill、建库升级/rawQuery、嵌套事务/取消/回调/GC/关闭竞争的双解释器定向验证通过 |
-| SQL-03 互操作与运行验收（完成） | 02 | 清理旧实现残留、验证 OGDB1 保护、独立 SQLite 互读、跨会话/崩溃恢复及真实 APK 复现；按事实更新文档 | 第 8 节矩阵全部闭合，记录原首错消失、下一独立首错和支持边界 |
+| SQL-03 互操作与运行验收（完成） | 02 | 清理旧实现残留、独立 SQLite 互读、跨会话/崩溃恢复、损坏库删除重建及真实 APK 复现；按事实更新文档 | 第 8 节矩阵全部闭合，记录原首错消失、下一独立首错和支持边界 |
 
 执行时复用同一构建目录与夹具，相关实现合并构建；每项验证证据只登记一次，代码变化或
 新疑点才重跑。验收矩阵作为检查表，不再拆成工作单。确有阻塞时记录精确缺口和续接点，
 恢复后接着执行，不重新审计已确认且未变化的内容。
 
 SQL-02 可先在隔离 fixture 使用候选 BootDex；依赖闭合后再切换生产 catalog，不能发布
-半套 Java/native 组合。事务恢复、并发和旧数据保护仍是必要验收，不以“已越过 rawQuery”替代。
+半套 Java/native 组合。事务恢复、并发和损坏处理仍是必要验收，不以“已越过 rawQuery”替代。
 
 ## 8. 最终验收矩阵
 
@@ -161,7 +157,7 @@ SQL-02 可先在隔离 fixture 使用候选 BootDex；依赖闭合后再切换�
 | 线程与生命周期 | 两个真实 guest 线程竞争/取消、重复释放、陈旧 token、会话隔离、teardown 无悬挂 |
 | 文件兼容 | 独立 SQLite 工具生成→OGPlay 读改→工具查询与 integrity_check；反向亦覆盖 |
 | 持久化恢复 | 独立 session 重开；journal 故障注入和进程崩溃检查，断电保证另列验证边界 |
-| 旧数据安全 | OGDB1 拒绝前后内容摘要一致，不能触发自动重建 |
+| 损坏处理 | 非 SQLite 文件由引擎报损坏；EventLog 记录后默认处理器删除并重建真实 SQLite 文件 |
 | 真实触发路径 | 关闭 survey；独立空库与含有效/过期记录的真实库分别运行，记录下一首错 |
 
 真实 APK 类级验收直接加载 Angry Birds 2.3.0 原始 `classes.dex` 并执行其
@@ -179,7 +175,7 @@ Jackson/日期格式化初始化。
 ## 9. 文档与完成判定
 
 ADR、CURRENT、capabilities 与受影响 MODULE 已按最终实现同步；DVM-88 保留为历史证据。
-SQL-01..03 与验收矩阵闭合后本期标记完成。WAL/跨进程/旧格式自动迁移仍独立未支持。
+SQL-01..03 与验收矩阵闭合后本期标记完成。WAL 与跨进程共享仍独立未支持。
 CURRENT 只记录真实运行变化。SQL 成功、Cookie 存储正确与游戏持续可玩分开报告。
 
 ## 参考

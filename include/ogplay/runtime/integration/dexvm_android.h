@@ -218,35 +218,8 @@ struct DexVmAndroidContext final {
   };
   std::unordered_map<std::uint32_t, PreferenceEditorState> preference_editors;
 
-  // DVM-88 bounded SQLite value store. The serialized database image is
-  // written through the process VFS; no host path or SQLite connection is
-  // exposed to platform handlers.
   using DatabaseValue = std::variant<std::monostate, std::int64_t, double,
-                                     std::string, std::vector<std::byte>>;
-  using DatabaseRow = std::unordered_map<std::string, DatabaseValue>;
-  struct DatabaseTable final {
-    std::vector<std::string> columns;
-    std::vector<DatabaseRow> rows;
-    std::int64_t next_row_id{1};
-  };
-  struct DatabaseState final {
-    std::string path;
-    bool open{true};
-    std::int32_t version{};
-    std::unordered_map<std::string, DatabaseTable> tables;
-    std::shared_ptr<database::Connection> connection;
-    std::vector<bool> transaction_success;
-  };
-  struct CursorState final {
-    std::vector<std::string> columns;
-    std::vector<DatabaseRow> rows;
-    std::int32_t position{-1};
-    bool closed{};
-  };
-  std::unordered_map<std::uint32_t, DatabaseRow> content_values;
-  std::unordered_map<std::uint32_t, DatabaseState> databases;
-  std::unordered_map<std::string, std::uint32_t> database_by_path;
-  std::unordered_map<std::uint32_t, CursorState> database_cursors;
+                                      std::string, std::vector<std::byte>>;
   struct CursorWindowState final {
     std::string name;
     std::size_t capacity{};

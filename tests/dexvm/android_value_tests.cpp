@@ -14,6 +14,7 @@
 #include <vector>
 
 #include "ogplay/core/capability_ledger.h"
+#include "ogplay/core/logger.h"
 #include "ogplay/runtime/dexvm/access_flags.h"
 #include "ogplay/runtime/dexvm/class_linker.h"
 #include "ogplay/runtime/dexvm/interpreter.h"
@@ -34,6 +35,7 @@ struct AndroidValueVm final {
     JavaObjectModel model{strings, arrays};
     DexClassLinker linker;
     ogplay::core::CapabilityLedger ledger;
+    ogplay::core::Logger logger;
     std::shared_ptr<DexVmAndroidContext> context{
         std::make_shared<DexVmAndroidContext>()};
     Interpreter vm;
@@ -52,6 +54,7 @@ struct AndroidValueVm final {
                   return linker;
               }(),
               model, nullptr, ledger, {.backend = backend, .force_all_bridge = force_all_bridge}) {
+        vm.SetLogger(&logger);
         RegisterAndroidValueStateTables(vm, context);
     }
 
@@ -1584,6 +1587,68 @@ TEST_CASE("Log debug throwable overload renders without changing control flow") 
                   "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/Throwable;)I",
                   {VmValue::Ref(tag), VmValue::Ref(text), VmValue::Ref(throwable)})
                   .AsInt() == 0);
+    }
+}
+
+TEST_CASE("EventLog write overloads preserve API 19 payload semantics") {
+    for (const auto backend :
+         {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        AndroidValueVm fixture(backend);
+        const auto text = fixture.vm.NewStringUtf8("cookie.db\ncorrupt");
+        const auto integer = fixture.New("Ljava/lang/Integer;", "(I)V",
+                                         {VmValue::Int(42)});
+        const auto wide = fixture.New("Ljava/lang/Long;", "(J)V",
+                                      {VmValue::Long(INT64_C(9000000000))});
+        const auto values = fixture.model.NewObjectArray(
+            fixture.linker.ResolveDescriptor("[Ljava/lang/Object;"),
+            fixture.linker.ResolveDescriptor("Ljava/lang/Object;"), 4);
+        fixture.model.SetObjectElement(values, 0, text);
+        fixture.model.SetObjectElement(values, 1, integer);
+        fixture.model.SetObjectElement(values, 2, wide);
+        fixture.model.SetObjectElement(values, 3, VmObjectRef{});
+        const auto roots = fixture.vm.ProtectReferences(
+            std::array{text, integer, wide, values});
+
+        CHECK(fixture.Static("Landroid/util/EventLog;", "writeEvent", "(II)I",
+                             {VmValue::Int(75004), VmValue::Int(7)}).AsInt() == 5);
+        CHECK(fixture.Static("Landroid/util/EventLog;", "writeEvent", "(IJ)I",
+                             {VmValue::Int(75004), VmValue::Long(8)}).AsInt() == 9);
+        CHECK(fixture.Static("Landroid/util/EventLog;", "writeEvent",
+                             "(ILjava/lang/String;)I",
+                             {VmValue::Int(75004), VmValue::Ref(text)}).AsInt() == 23);
+        CHECK(fixture.Static("Landroid/util/EventLog;", "writeEvent",
+                             "(I[Ljava/lang/Object;)I",
+                             {VmValue::Int(75004), VmValue::Ref(values)}).AsInt() == 48);
+
+        const auto records = fixture.logger.Snapshot(
+            ogplay::core::LogLevel::info, "runtime.dexvm.guest");
+        REQUIRE(records.size() == 4);
+        CHECK(records[0].message == "EventLog tag=75004 payload=int(7)");
+        CHECK(records[1].message == "EventLog tag=75004 payload=long(8)");
+        CHECK(records[2].message ==
+              "EventLog tag=75004 payload=string(\"cookie.db\\ncorrupt\")");
+        CHECK(records[3].message ==
+              "EventLog tag=75004 payload=list[string(\"cookie.db\\ncorrupt\"), int(42), long(9000000000), string(\"NULL\")]");
+
+        const auto bad = fixture.model.NewObjectArray(
+            fixture.linker.ResolveDescriptor("[Ljava/lang/Object;"),
+            fixture.linker.ResolveDescriptor("Ljava/lang/Object;"), 1);
+        fixture.model.SetObjectElement(bad, 0,
+                                       fixture.New("Ljava/lang/Object;"));
+        const auto outcome = fixture.StaticOutcome(
+            "Landroid/util/EventLog;", "writeEvent", "(I[Ljava/lang/Object;)I",
+            {VmValue::Int(1), VmValue::Ref(bad)});
+        REQUIRE(outcome.exception.IsValid());
+        CHECK(fixture.linker.Class(outcome.exception_class).descriptor ==
+              "Ljava/lang/IllegalArgumentException;");
+
+        const auto reads = fixture.StaticOutcome(
+            "Landroid/util/EventLog;", "readEvents",
+            "([ILjava/util/Collection;)V",
+            {VmValue::Ref(VmObjectRef{}), VmValue::Ref(VmObjectRef{})});
+        REQUIRE(reads.exception.IsValid());
+        CHECK(fixture.linker.Class(reads.exception_class).descriptor ==
+              "Ljava/lang/UnsupportedOperationException;");
     }
 }
 

@@ -10,6 +10,9 @@ BouncyCastle 运行时或 C++ 条目/会话影子状态。
 路径验证和 TLS 只能经既有 `libogplay_jni.so` 使用 guest libcrypto/libssl。解析先进入临时表，
 校验成功后整体发布。
 
+`AES/CBC/ZeroBytePadding` 由本目录的 CipherSpi 完成分段缓冲、零填充和解密去尾零，
+实际分组运算复用 API 19 Conscrypt 的 `AES/CBC/NoPadding`，仍进入 guest libcrypto。
+
 默认 CA 来自 owner 注入的版本化 `OGPLAYCA` 包，路径为 `/system/etc/security/cacerts.ogplay`；
 缺失或损坏时 TrustManagerFactory.init(null) 失败，不读取宿主证书库。AndroidCAStore 保持
 API19 只读；写/删/store 抛 UnsupportedOperationException。

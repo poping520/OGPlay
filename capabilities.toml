@@ -1678,7 +1678,7 @@ note = "DVM-104/106 为 X500 标签键与证书长序列号闭合 17 个 BigInt/
 [dexvm.cipher_aes]
 status = "complete"
 test = "tests/runtime/native_library_loader_tests.cpp; tests/dexvm/fixtures/cipher.dexasm; tests/dexvm/interpreter_tests.cpp; tests/runtime/jni_environment_tests.cpp; tools.android_payload_current"
-note = "DVM-105/ADR-0035 完成 AES 128/192/256：ECB/CBC 的 NoPadding/PKCS5Padding，CTR/NoPadding，裸 AES 默认 ECB/PKCS5Padding。Cipher/JCA/Conscrypt 普通 Java 逻辑由 BootDex 执行，11 个 native 经 guest ARM JNI 桥调用临时 API19 libcrypto；无宿主 AES 替代。双解释后端 NIST 向量、分段/原位/异常、IV reset、OS CSPRNG、两个真实 guest 线程、逻辑 token 与 GC/teardown 受检。JNI 原异常类型/消息及 Throwable cause 保持。complete 仅指该 AES 子集；自设随机 seed、AES AlgorithmParameters 编码、RSA Cipher/TLS、完整 JCA 与 wrap/unwrap 长尾未验收；手机断开，未跑本轮真机对照或游戏 gate。设备来源和构建器输出身份单独登记。 2026-09-07 ROM libcrypto 已撤出 Git，后按用户再次授权恢复到本地临时使用，完整 payload 校验通过；仍须自行构建替换并更新来源/哈希后复验。"
+note = "DVM-105/ADR-0035 完成 AES 128/192/256：ECB/CBC 的 NoPadding/PKCS5Padding、CBC/ZeroBytePadding，CTR/NoPadding，裸 AES 默认 ECB/PKCS5Padding。ZeroBytePadding 在 guest Java 层处理分段、零填充与去尾零并复用 CBC/NoPadding。Cipher/JCA/Conscrypt 普通 Java 逻辑由 BootDex 执行，11 个 native 经 guest ARM JNI 桥调用临时 API19 libcrypto；无宿主 AES 替代。双解释后端 NIST 向量、分段/原位/异常、IV reset、OS CSPRNG、两个真实 guest 线程、逻辑 token 与 GC/teardown 受检。JNI 原异常类型/消息及 Throwable cause 保持。complete 仅指该 AES 子集；自设随机 seed、AES AlgorithmParameters 编码、RSA Cipher/TLS、完整 JCA 与 wrap/unwrap 长尾未验收；手机断开，未跑本轮真机对照或游戏 gate。设备来源和构建器输出身份单独登记。 2026-09-07 ROM libcrypto 已撤出 Git，后按用户再次授权恢复到本地临时使用，完整 payload 校验通过；仍须自行构建替换并更新来源/哈希后复验。"
 
 [dexvm.jca_random_keygen]
 status = "complete"

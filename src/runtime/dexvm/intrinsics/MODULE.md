@@ -116,8 +116,9 @@
   只消费注入值且保持 clone/reset。ICU 数字/日期能力走固定 guest ICU，不恢复 java_text TU；
   formatter long 仅存 per-VM token，guest JNI 管 clone/close/错误，GC/teardown 回收。
   Pattern/Matcher 只承诺 String 与登记 regex 语义，groupCount 不要求已有匹配。
-- crypto family 只管 provider、熵、JNI 和资源 owner。AES ECB/CBC 的 NoPadding/PKCS5Padding
-  及 CTR/NoPadding、128/192/256 KeyGenerator 已登记；Cipher 普通方法无 overlay。
+- crypto family 只管 provider、熵、JNI 和资源 owner。AES ECB/CBC 的 NoPadding/PKCS5Padding、
+  CBC/ZeroBytePadding 及 CTR/NoPadding、128/192/256 KeyGenerator 已登记；ZeroBytePadding
+  由 guest Java 适配到 CBC/NoPadding，Cipher 普通方法无 overlay。
   OGPlayOS 用 HAL CSPRNG 且拒绝 setSeed；SHA1PRNG 首次由同一 CSPRNG 播种，后续执行
   guest RAND_seed/RAND_bytes，调用方 seed 仅追加熵。IvParameterSpec 可用。
 - API 19 原版 `NativeCrypto` 是 BootDex 唯一定义；catalog 仅按类准入其原版 native 到

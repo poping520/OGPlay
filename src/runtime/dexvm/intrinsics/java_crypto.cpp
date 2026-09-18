@@ -89,6 +89,8 @@ IntrinsicClassDecl CryptoProvider() {
                         padding);
             }
         }
+        Put(vm, c.receiver, "Cipher.AES/CBC/ZeroBytePadding",
+            "org.ogplay.security.AesCbcZeroBytePadding");
         Put(vm, c.receiver, "Cipher.AES", "org.ogplay.security.DefaultAes");
         Put(vm, c.receiver, "SecureRandom.OGPlayOS", "org.ogplay.security.OsRandom");
         Put(vm, c.receiver, "SecureRandom.SHA1PRNG",

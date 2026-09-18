@@ -1336,6 +1336,7 @@ DexVmGuestBridge::~DexVmGuestBridge() {
         ShutdownAndroidScheduler(*impl_->android_context);
     }
     if (impl_->threads) impl_->threads->Shutdown();
+    ReleaseAndroidDatabaseResources(impl_->android_context);
     if (impl_->vm) {
         try { impl_->vm->ReleaseGuestNativeResources(true); }
         catch (const dx::VmJavaThrow& error) {

@@ -100,6 +100,9 @@ public:
         std::string_view path) const;
     void SetWorkingDirectory(std::string_view path);
     [[nodiscard]] std::optional<std::string> WorkingDirectory() const;
+    // Returns the normalized node identity used internally by all VFS file
+    // operations, including path aliases.
+    [[nodiscard]] std::string CanonicalPath(std::string_view path) const;
     [[nodiscard]] VfsFileInfo Stat(std::string_view path) const;
     // Immediate children (sorted, deduplicated) of a directory path; empty
     // when nothing is below it. Directories exist both implicitly, through

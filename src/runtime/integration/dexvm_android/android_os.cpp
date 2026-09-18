@@ -794,6 +794,12 @@ Decl Declare_android_os_StrictMode(const Context&) {
         [](dx::IntrinsicContext&) { return dx::VmValue::Int(0); });
     builder.StaticMethod("clearGatheredViolations", "()V",
         [](dx::IntrinsicContext&) { return dx::VmValue::Void(); });
+    builder.StaticMethod("vmSqliteObjectLeaksEnabled", "()Z",
+        [](dx::IntrinsicContext&) { return dx::VmValue::Int(0); });
+    builder.StaticMethod("vmClosableObjectLeaksEnabled", "()Z",
+        [](dx::IntrinsicContext&) { return dx::VmValue::Int(0); });
+    builder.StaticMethod("vmRegistrationLeaksEnabled", "()Z",
+        [](dx::IntrinsicContext&) { return dx::VmValue::Int(0); });
     const auto unsupported = [](dx::IntrinsicContext& call) -> dx::VmValue {
         if (auto* ledger = call.vm.Ledger())
             ledger->RecordUnimplemented("dexvm.local_binder", 0);

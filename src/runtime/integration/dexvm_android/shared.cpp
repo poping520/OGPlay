@@ -1020,6 +1020,25 @@ namespace {
                     entry.method_name + " (pc " +
                     std::to_string(entry.pc) + ")";
     }
+    constexpr std::size_t kMaxCauseDepth = 16;
+    std::vector<std::uint32_t> visited{outcome.exception.Value()};
+    auto cause = vm.ThrowableCause(outcome.exception);
+    for (std::size_t depth = 0; cause.IsValid() && depth < kMaxCauseDepth;
+         ++depth) {
+        if (std::find(visited.begin(), visited.end(), cause.Value()) !=
+            visited.end()) {
+            rendered += "\nCaused by: [cycle]";
+            break;
+        }
+        visited.push_back(cause.Value());
+        rendered += "\nCaused by: " +
+                    vm.Linker().Class(vm.Model().ObjectClass(cause)).descriptor;
+        const auto message = vm.ThrowableMessage(cause);
+        if (message.IsValid()) rendered += ": " + vm.StringUtf8(message);
+        cause = vm.ThrowableCause(cause);
+    }
+    if (cause.IsValid() && visited.size() == kMaxCauseDepth + 1U)
+        rendered += "\nCaused by: [cause chain truncated]";
     return rendered;
 }
 

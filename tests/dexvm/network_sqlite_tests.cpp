@@ -418,33 +418,6 @@ TEST_CASE("DVM-186 SQLite preserves values indexes and trigger effects") {
             connection->Query("SELECT inserted FROM audit").rows[0][0]) == 7);
 }
 
-TEST_CASE("DVM-186 API19 currency facts support database caller date setup") {
-  for (const auto backend : {InterpreterBackend::switch_dispatch,
-                             InterpreterBackend::threaded}) {
-    NetworkSqliteVm fixture(backend);
-    const auto currency = fixture.Static(
-        "Llibcore/icu/ICU;", "getCurrencyCode",
-        "(Ljava/lang/String;)Ljava/lang/String;",
-        {VmValue::Ref(fixture.vm.NewStringUtf8("US"))});
-    CHECK(fixture.vm.StringUtf8(currency.ref) == "USD");
-    const auto symbol = fixture.Static(
-        "Llibcore/icu/ICU;", "getCurrencySymbol",
-        "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;",
-        {VmValue::Ref(fixture.vm.NewStringUtf8("en_US")),
-         VmValue::Ref(currency.ref)});
-    CHECK(fixture.vm.StringUtf8(symbol.ref) == "$");
-    CHECK(fixture
-              .Static("Llibcore/icu/ICU;", "getCurrencyFractionDigits",
-                      "(Ljava/lang/String;)I", {VmValue::Ref(currency.ref)})
-              .AsInt() == 2);
-    CHECK_FALSE(fixture
-                    .Static("Llibcore/icu/ICU;", "getCurrencyCode",
-                            "(Ljava/lang/String;)Ljava/lang/String;",
-                            {VmValue::Ref(fixture.vm.NewStringUtf8("ZZ"))})
-                    .ref.IsValid());
-  }
-}
-
 TEST_CASE("DVM-186 legacy and unknown database images are preserved") {
   for (const auto &[name, image] :
        std::array{std::pair{"legacy.db", std::string_view("OGDB1\n\x7f", 7)},
@@ -1648,12 +1621,7 @@ TEST_CASE("DVM-186 real APK cookie storage handles empty expired and valid datab
     const auto saved_count = fixture.On(saved, "size", "()I").AsInt();
     const auto valid_path = expiration.value_or(0) > 0;
     std::int32_t count{-1};
-    if (valid_path) {
-      CHECK_THROWS_WITH_AS(
-          fixture.OnOutcome(storage, "getValidCookies",
-                            "()Ljava/util/Collection;"),
-          doctest::Contains("NativeDecimalFormat;.open"), DexVmError);
-    } else {
+    if (!valid_path) {
       const auto outcome = fixture.OnOutcome(
           storage, "getValidCookies", "()Ljava/util/Collection;");
       REQUIRE_FALSE(outcome.exception.IsValid());

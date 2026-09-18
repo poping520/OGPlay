@@ -51,12 +51,14 @@
   随后 `Failed to open data/FONT_BASIC_N900.dat`，`nativeUpdate` 返回 false
   于 1067 presented frames 退出。不宣称资源包或游戏兼容。
 - DVM-186 已切换到 API 19 原版数据库 Java 栈和固定 SQLite/VFS 后端。BootDex 1729 类
-  build/check 与全类链接通过；DVM-186 27 用例/362 断言、SQLite 回归 12 用例/204 断言通过，
+  build/check 与全类链接通过；DVM-186 26 用例/336 断言、SQLite 回归 12 用例/204 断言通过，
   覆盖规范路径锁、journal、空 BLOB、零字节库、打开标志、异常子类、有界 CursorWindow、
   ENOSPC、提交中断恢复、双解释器/guest 线程 teardown，以及
   独立 SQLite 双向互操作及 GC/关闭竞争。Angry Birds 2.3.0 原始类级路径的空库建表、
-  过期行删除、有效行 rawQuery 均通过；完整进程也越过原 SQLite 首错，下一独立首错为
-  Jackson 日期格式化所需的 `NativeDecimalFormat.open`。DVM-186 完成。
+  过期行删除、有效行 rawQuery 均通过。SQLite 提交误将 LocaleData、日期 pattern 与货币入口
+  替换为不完整宿主实现，现已全部恢复 guest ICU；真实 guest JNI 验证 Calendar 周规则及
+  SimpleDateFormat，完整进程越过 Jackson 初始化 NPE。下一独立首错为数据库损坏处理路径的
+  `android.util.EventLog.writeEvent`。DVM-186 完成。
 - guest JNI
   `e2d4b5de0f1c02b2d84c1e37d7d0561495b2ea1165648f2a01b5a80201a1a7f0`。
 - `data/android/19/framework/` 为本地生成产物，不纳入版本控制。

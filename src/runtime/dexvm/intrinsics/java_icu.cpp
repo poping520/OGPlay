@@ -29,13 +29,30 @@ IntrinsicClassDecl IcuBoundary() {
   auto b = IntrinsicClassBuilder::Class("Llibcore/icu/ICU;");
   for (const auto &[name, descriptor, flags] : std::array{
            std::tuple{
+               "getBestDateTimePatternNative",
+               "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;",
+               kAccPrivate | kAccStatic | kAccNative},
+           std::tuple{"getCurrencyCode",
+                      "(Ljava/lang/String;)Ljava/lang/String;",
+                      kAccPublic | kAccStatic | kAccNative},
+           std::tuple{
                "getCurrencyDisplayName",
+               "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;",
+               kAccPublic | kAccStatic | kAccNative},
+           std::tuple{"getCurrencyFractionDigits", "(Ljava/lang/String;)I",
+                      kAccPublic | kAccStatic | kAccNative},
+           std::tuple{
+               "getCurrencySymbol",
                "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;",
                kAccPublic | kAccStatic | kAccNative},
            std::tuple{"getISOCountriesNative", "()[Ljava/lang/String;",
                       kAccPrivate | kAccStatic | kAccNative},
            std::tuple{"getISOLanguagesNative", "()[Ljava/lang/String;",
                       kAccPrivate | kAccStatic | kAccNative},
+           std::tuple{
+               "initLocaleDataNative",
+               "(Ljava/lang/String;Llibcore/icu/LocaleData;)Z",
+               kAccStatic | kAccNative},
            std::tuple{
                "toLowerCase",
                "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;",
@@ -45,139 +62,6 @@ IntrinsicClassDecl IcuBoundary() {
                "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;",
                kAccPublic | kAccStatic | kAccNative}})
     b.GuestNativeStatic(name, descriptor, flags);
-  b.StaticMethod(
-      "getCurrencyCode", "(Ljava/lang/String;)Ljava/lang/String;",
-      [](IntrinsicContext &c) {
-        const auto country = c.vm.StringUtf8(c.arguments[0].ref);
-        const auto code = country == "US"   ? "USD"
-                          : country == "CN" ? "CNY"
-                          : country == "GB" ? "GBP"
-                          : country == "JP" ? "JPY"
-                          : country == "CA" ? "CAD"
-                          : country == "AU" ? "AUD"
-                                            : nullptr;
-        return VmValue::Ref(code ? c.vm.NewStringUtf8(code) : VmObjectRef{});
-      },
-      kAccPublic | kAccStatic | kAccNative);
-  b.StaticMethod(
-      "getCurrencySymbol",
-      "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;",
-      [](IntrinsicContext &c) {
-        const auto locale = c.vm.StringUtf8(c.arguments[0].ref);
-        const auto currency = c.vm.StringUtf8(c.arguments[1].ref);
-        const auto symbol =
-            currency == "USD" && locale == "en_US" ? "$"
-            : currency == "CNY" && locale == "zh_CN" ? "¥"
-            : currency == "GBP"                       ? "£"
-            : currency == "JPY"                       ? "¥"
-                                                      : currency.c_str();
-        return VmValue::Ref(c.vm.NewStringUtf8(symbol));
-      },
-      kAccPublic | kAccStatic | kAccNative);
-  b.StaticMethod(
-      "getCurrencyFractionDigits", "(Ljava/lang/String;)I",
-      [](IntrinsicContext &c) {
-        const auto currency = c.vm.StringUtf8(c.arguments[0].ref);
-        return VmValue::Int(currency == "JPY" ? 0 : currency == "XXX" ? -1 : 2);
-      },
-      kAccPublic | kAccStatic | kAccNative);
-  b.StaticMethod(
-      "getBestDateTimePatternNative",
-      "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;",
-      [](IntrinsicContext &c) {
-        const auto skeleton = c.vm.StringUtf8(c.arguments[0].ref);
-        return VmValue::Ref(
-            c.vm.NewStringUtf8(skeleton == "Hm" ? "HH:mm" : "h:mm a"));
-      },
-      kAccPrivate | kAccStatic | kAccNative);
-  b.StaticMethod(
-      "initLocaleDataNative", "(Ljava/lang/String;Llibcore/icu/LocaleData;)Z",
-      [](IntrinsicContext &c) {
-        const auto locale = c.vm.StringUtf8(c.arguments[0].ref);
-        if (!(locale.empty() || locale == "en" || locale == "en_US" ||
-              locale == "zh" || locale == "zh_CN"))
-          return VmValue::Int(0);
-        const auto object = c.arguments[1].ref;
-        const auto set_ref = [&](const char *name, const char *descriptor,
-                                 VmObjectRef value) {
-          const auto field = c.vm.Linker().FindFieldRecursive(
-              c.vm.Model().ObjectClass(object), name, descriptor);
-          if (!field)
-            return;
-          const auto &linked = c.vm.Linker().Field(*field);
-          c.vm.Model().InstanceSlots(object)[linked.slot] = {value.Value(),
-                                                             SlotTag::ref};
-        };
-        const auto set_string = [&](const char *name, const char *value) {
-          set_ref(name, "Ljava/lang/String;", c.vm.NewStringUtf8(value));
-        };
-        const auto set_strings = [&](const char *name,
-                                     std::vector<std::u16string> values) {
-          set_ref(name, "[Ljava/lang/String;", StringArray(c.vm, values));
-        };
-        const auto set_char = [&](const char *name, char16_t value) {
-          const auto field = c.vm.Linker().FindFieldRecursive(
-              c.vm.Model().ObjectClass(object), name, "C");
-          if (!field)
-            return;
-          const auto &linked = c.vm.Linker().Field(*field);
-          c.vm.Model().InstanceSlots(object)[linked.slot] = {
-              static_cast<std::uint64_t>(value), SlotTag::cat1};
-        };
-        set_strings("amPm", {u"AM", u"PM"});
-        set_strings("eras", {u"BC", u"AD"});
-        const std::vector<std::u16string> months{
-            u"January",  u"February", u"March",  u"April",     u"May",
-            u"June",     u"July",     u"August", u"September", u"October",
-            u"November", u"December", u""};
-        const std::vector<std::u16string> short_months{
-            u"Jan", u"Feb", u"Mar", u"Apr", u"May", u"Jun", u"Jul",
-            u"Aug", u"Sep", u"Oct", u"Nov", u"Dec", u""};
-        const std::vector<std::u16string> weekdays{
-            u"",          u"Sunday",   u"Monday", u"Tuesday",
-            u"Wednesday", u"Thursday", u"Friday", u"Saturday"};
-        const std::vector<std::u16string> short_weekdays{
-            u"", u"Sun", u"Mon", u"Tue", u"Wed", u"Thu", u"Fri", u"Sat"};
-        for (const auto *name : {"longMonthNames", "longStandAloneMonthNames"})
-          set_strings(name, months);
-        for (const auto *name : {"shortMonthNames", "shortStandAloneMonthNames",
-                                 "tinyMonthNames", "tinyStandAloneMonthNames"})
-          set_strings(name, short_months);
-        for (const auto *name :
-             {"longWeekdayNames", "longStandAloneWeekdayNames"})
-          set_strings(name, weekdays);
-        for (const auto *name :
-             {"shortWeekdayNames", "shortStandAloneWeekdayNames",
-              "tinyWeekdayNames", "tinyStandAloneWeekdayNames"})
-          set_strings(name, short_weekdays);
-        for (const auto &[name, value] :
-             std::array{std::pair{"fullTimeFormat", "h:mm:ss a zzzz"},
-                        std::pair{"longTimeFormat", "h:mm:ss a z"},
-                        std::pair{"mediumTimeFormat", "h:mm:ss a"},
-                        std::pair{"shortTimeFormat", "h:mm a"},
-                        std::pair{"fullDateFormat", "EEEE, MMMM d, y"},
-                        std::pair{"longDateFormat", "MMMM d, y"},
-                        std::pair{"mediumDateFormat", "MMM d, y"},
-                        std::pair{"shortDateFormat", "M/d/yy"},
-                        std::pair{"numberPattern", "#,##0.###"},
-                        std::pair{"currencyPattern", "¤#,##0.00"},
-                        std::pair{"percentPattern", "#,##0%"},
-                        std::pair{"exponentSeparator", "E"},
-                        std::pair{"infinity", "∞"}, std::pair{"NaN", "NaN"},
-                        std::pair{"currencySymbol", "$"},
-                        std::pair{"internationalCurrencySymbol", "USD"}})
-          set_string(name, value);
-        set_char("zeroDigit", u'0');
-        set_char("decimalSeparator", u'.');
-        set_char("groupingSeparator", u',');
-        set_char("patternSeparator", u';');
-        set_char("percent", u'%');
-        set_char("perMill", u'‰');
-        set_char("monetarySeparator", u'.');
-        set_char("minusSign", u'-');
-        return VmValue::Int(1);
-      },
-      kAccStatic | kAccNative);
   constexpr std::pair<const char *, const char *> failures[]{
       {"addLikelySubtags", "(Ljava/lang/String;)Ljava/lang/String;"},
       {"getAvailableBreakIteratorLocalesNative", "()[Ljava/lang/String;"},

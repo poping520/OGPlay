@@ -51,6 +51,22 @@ std::vector<IntrinsicClassDecl> TestCatalog(
         });
     result.push_back(std::move(runnable).Build());
 
+    auto failing_runnable = IntrinsicClassBuilder::Class(
+        "Ltest/FailingRunnable;", "Ljava/lang/Object;",
+        {"Ljava/lang/Runnable;"});
+    failing_runnable.VirtualMethod(
+        "run", "()V", [](IntrinsicContext& call) -> VmValue {
+            const auto cause = call.vm.MakeThrowable(
+                "Ljava/lang/IllegalStateException;", "native formatter failed");
+            const auto roots = call.vm.ProtectReferences(std::array{cause});
+            const auto wrapper = call.vm.MakeThrowable(
+                "Ljava/lang/ExceptionInInitializerError;", "");
+            call.vm.InitThrowableCause(wrapper, cause);
+            throw VmJavaThrow{"Ljava/lang/ExceptionInInitializerError;", "",
+                              wrapper};
+        });
+    result.push_back(std::move(failing_runnable).Build());
+
     auto timer = IntrinsicClassBuilder::Class(
         "Ltest/RecordingTimerTask;", "Ljava/util/TimerTask;");
     timer.OverrideMethod("run", "()V", [timer_calls](IntrinsicContext&) {
@@ -476,6 +492,26 @@ TEST_CASE("DVM-85 Timer and CountDownTimer share the Android clock") {
     CHECK(fixture.timer_calls.load() == 1);
     CHECK(fixture.ticks == std::vector<std::int64_t>{30, 20, 10});
     CHECK(fixture.finishes.load() == 1);
+}
+
+TEST_CASE("scheduled callback diagnostics include the throwable cause chain") {
+    SchedulerVm fixture;
+    const auto handler = fixture.New("Landroid/os/Handler;");
+    fixture.ConstructAs(handler, "Landroid/os/Handler;", "()V");
+    const auto runnable = fixture.New("Ltest/FailingRunnable;");
+    SchedulerVm::RequireOk(fixture.Virtual(
+        handler, "post", "(Ljava/lang/Runnable;)Z",
+        {VmValue::Ref(runnable)}));
+
+    const auto failure = PumpJavaThreads(fixture.vm, *fixture.context);
+    REQUIRE(failure.has_value());
+    CHECK(failure->find(
+              "scheduled callback raised: "
+              "Ljava/lang/ExceptionInInitializerError;") !=
+          std::string::npos);
+    CHECK(failure->find(
+              "Caused by: Ljava/lang/IllegalStateException;: "
+              "native formatter failed") != std::string::npos);
 }
 
 TEST_CASE("DVM-85 HandlerThread owns a real child Looper") {

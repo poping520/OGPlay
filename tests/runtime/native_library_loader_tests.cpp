@@ -2988,6 +2988,16 @@ TEST_CASE("DVM-105/169/175-180 crypto and BKS use BootDex and real guest libcryp
             "Llibcore/icu/ICU;", "getCurrencySymbol",
             "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;",
             {VmValue::Ref(locale), VmValue::Ref(usd)}).ref).empty());
+        const auto calendar = direct(
+            "Ljava/util/Calendar;", "getInstance", "()Ljava/util/Calendar;",
+            {}).ref;
+        const auto calendar_roots = vm.ProtectReferences(std::array{calendar});
+        REQUIRE(calendar.IsValid());
+        CHECK(linker.Class(vm.Model().ObjectClass(calendar)).descriptor ==
+              "Ljava/util/GregorianCalendar;");
+        CHECK(invoke(calendar, "getFirstDayOfWeek", "()I", {}).AsInt() == 1);
+        CHECK(invoke(calendar, "getMinimalDaysInFirstWeek", "()I", {})
+                  .AsInt() == 1);
         const auto unknown_currency = vm.NewStringUtf8("ZZZ");
         const auto unknown_roots = vm.ProtectReferences(std::array{unknown_currency});
         CHECK_FALSE(direct(

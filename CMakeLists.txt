@@ -396,7 +396,17 @@ set(OGPLAY_BOOST_URL_CODEC_SOURCES
     third_party/ext-boost/libs/url/src/pct_string_view.cpp
 )
 
+add_library(ogplay_sqlite STATIC third_party/sqlite-amalgamation/sqlite3.c)
+target_include_directories(ogplay_sqlite PUBLIC
+    "${CMAKE_CURRENT_SOURCE_DIR}/third_party/sqlite-amalgamation")
+target_compile_definitions(ogplay_sqlite PRIVATE
+    SQLITE_THREADSAFE=1 SQLITE_OMIT_LOAD_EXTENSION=1
+    SQLITE_DEFAULT_MEMSTATUS=0)
+set_target_properties(ogplay_sqlite PROPERTIES C_EXTENSIONS ON)
+
 add_library(ogplay_runtime
+    src/runtime/database/database_runtime.cpp
+    src/runtime/database/sqlite_vfs.cpp
     src/runtime/debug/stall_diagnostics.cpp
     src/runtime/ui/ui_layout.cpp
     src/runtime/ui/ui_renderer.cpp
@@ -526,7 +536,7 @@ target_link_libraries(ogplay_runtime PUBLIC
     OGPlay::Audio OGPlay::Core OGPlay::Cpu OGPlay::Hal OGPlay::Loader OGPlay::Memory
     OGPlay::Video
 )
-target_link_libraries(ogplay_runtime PRIVATE OGPlay::Gles)
+target_link_libraries(ogplay_runtime PRIVATE OGPlay::Gles ogplay_sqlite)
 target_include_directories(ogplay_runtime PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
     $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>

@@ -349,6 +349,12 @@ std::optional<std::string> VirtualFileSystem::Impl::WorkingDirectory() const {
         return working_directory_;
     }
 
+std::string VirtualFileSystem::Impl::CanonicalPath(
+        const std::string_view path) const {
+        std::scoped_lock lock(mutex_);
+        return ResolvePath(path, working_directory_, aliases_);
+    }
+
 std::int32_t VirtualFileSystem::Impl::Open(const std::string_view path,
                                     const VfsOpenOptions options) {
         if (!options.read && !options.write) {
@@ -615,6 +621,9 @@ void VirtualFileSystem::SetWorkingDirectory(const std::string_view path) {
 }
 std::optional<std::string> VirtualFileSystem::WorkingDirectory() const {
     return impl_->WorkingDirectory();
+}
+std::string VirtualFileSystem::CanonicalPath(const std::string_view path) const {
+    return impl_->CanonicalPath(path);
 }
 VfsFileInfo VirtualFileSystem::Stat(const std::string_view path) const {
     return impl_->Stat(path);

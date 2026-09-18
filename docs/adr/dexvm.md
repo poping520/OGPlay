@@ -1063,18 +1063,18 @@ Method/Constructor/参数注解、通用 Proxy 与完整反射仍明确未实现
 <a id="adr-0068"></a>
 ## ADR-0068 · SQLite Java 栈归 BootDex，host 引擎只经唯一 VFS
 
-- 状态：Proposed
-- 日期：2026-09-17
+- 状态：Accepted
+- 日期：2026-09-18
 - 关联：[DVM-186](../tasks/dexvm/DVM-186.md)、[开发规划](../design/dexvm/15-sqlite.md)
-- 本提案尚不改变已生效 MODULE；实施时按 SQL-01 审计结果接受并同步契约。
+- DVM-186 已按本决定实现并同步数据库与 Android integration 契约。
 
 ### 背景
 
 DVM-88 的 OGDB1 只实现有限表/行存储，缺真实 SQL、完整 schema/约束和事务。
 继续扩写 C++ facade 会重复承担 Android Java 生命周期与数据库算法维护。
-固定 SQLite amalgamation 已入库，但尚未接入构建或运行时。
+固定 SQLite amalgamation 已接入构建与运行时。
 
-### 拟采用方案
+### 决定
 
 原版 API 19 SQLiteDatabase/OpenHelper、会话/连接池、语句和 Cursor Java 栈进入 BootDex；
 native 边界连接 host 原版 SQLite，所有文件只经 OGPlay VFS/SandboxStore。
@@ -1087,7 +1087,7 @@ host 只保管真实 connection/statement/window 资源；32 位 Java native 字
 
 ### 替代范围与后果
 
-若转 Accepted，仅替代 DVM-88 / API 19 能力栈及 integration MODULE 中数据库使用
+本决定替代 DVM-88 / API 19 能力栈及 integration MODULE 中数据库使用
 自定义格式、宿主侧普通 Java 状态和“不调用 host SQLite”的策略；唯一 VFS、应用隔离、
 明确失败及其余能力边界继续有效。项目承担 VFS 锁/同步、Android native 适配、
 collation 依赖和版本维护；不承担重写 SQL 引擎或实现完整 Android 数据库系统的义务。

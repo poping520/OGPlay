@@ -1597,8 +1597,8 @@ note = "DVM-149 从固定 API19 ext.jar 选入 Terms/Restlet 有界闭包，并�
 
 [dexvm.sqlite_vfs]
 status = "complete"
-test = "tests/dexvm/network_sqlite_tests.cpp"
-note = "DVM-88 发布 ContentValues、CursorImpl、SQLiteDatabase/SQLiteOpenHelper 的 create/drop/insert/update/delete/query bounded 数据面；确定性内部格式只经 guest VFS 持久化 schema version，SQLiteHelper 首次创建与升级虚派 guest callback，只有 Stat ENOENT 作为新库；完整 SQLite 文件格式、SQL parser、transaction/index/trigger/ContentProvider deferred"
+test = "tests/dexvm/network_sqlite_tests.cpp: DVM-88/DVM-186"
+note = "DVM-186 固定 SQLite amalgamation 通过 OGPlay VFS 直接读写主库、rollback journal 与临时文件；规范路径 alias 共享锁与 journal 身份。原版 API19 数据库栈、错误码异常子类、打开标志、流式 CursorWindow、SQL/约束/空 BLOB/int64、零字节初始库、事务、statement token、双解释器、真实 guest 线程取消/teardown、GC/关闭竞争、ENOSPC、提交同步点 hot-journal 恢复、Android SDK sqlite3 双向互操作及真实 APK 空库/有效/过期记录矩阵受检。OGDB1/未知格式拒绝并保留。complete 限于已定义的进程内 rollback-journal 范围；WAL、跨进程共享及完整 ICU collation 不支持。"
 
 [dexvm.api19_capability_stack]
 status = "complete"

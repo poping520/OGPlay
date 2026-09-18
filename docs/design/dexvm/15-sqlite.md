@@ -1,7 +1,7 @@
 # API 19 SQLite 与真实数据库开发规划
 
-日期：2026-09-17。状态：规划完成，运行时尚未接入真实 SQLite。
-任务：[DVM-186](../../tasks/dexvm/DVM-186.md)。提案：[ADR-0068](../../adr/dexvm.md#adr-0068)。
+日期：2026-09-18。状态：完成；SQL-01..03 与最终验收矩阵已闭合。
+任务：[DVM-186](../../tasks/dexvm/DVM-186.md)。决定：[ADR-0068](../../adr/dexvm.md#adr-0068)。
 
 ## 1. 目标与当前事实
 
@@ -14,10 +14,10 @@
 - 已核对 Git blob 的 `sqlite3.c` SHA3-256 与上游发布值一致；其余三份源码与子模块
   README 的摘要一致。Windows 工作区为 CRLF，来源校验应读取 Git blob，不能直接
   将工作区摘要差异判为源码改动。发布证据以子模块 README/上游记录为准。
-- 子模块没有 CMakeLists；尚未被 OGPlay 构建链接。新增依赖不等于数据库能力完成。
-- `android_content.cpp` 仍以 OGDB1 保存表、行和版本；缺 rawQuery、事务与 Cursor.isClosed。
-  建表未保留类型/主键约束，持久化未独立保存完整 schema，不能读取真实 SQLite 文件。
-- `dexvm.sqlite_vfs` 的 complete 仅指 DVM-88 的有界旧实现，不能作为本规划验收结果。
+- 子模块由 OGPlay CMake 静态构建；数据库、rollback journal 与临时文件通过 OGPlay VFS。
+- production catalog 已切换到 API 19 原版数据库 Java 栈；host 仅保留 SQLiteConnection、
+  CursorWindow、SQLiteGlobal/Debug 等固定 native ABI 和受审平台 overlay。
+- `dexvm.sqlite_vfs` 已由 DVM-186 的真实 SQLite/VFS 范围取代 DVM-88 有界旧实现。
 
 当前症状来自 Cookie 初始化线程；源码还触达参数查询、Cursor 关闭、64 位过期时间、
 增删改和事务。此样本只确定需求，不得成为 SQL 字符串、表名或包名分支。
@@ -96,6 +96,8 @@ CursorWindow 的行容量、start position、NULL/type conversion 与 refill 语
   OS_OTHER 对应初始化与 VFS 注册要完整；目标选项显式固定，不套用第三方推荐选项包。
 - 每次 open 显式选 OGPlay VFS；URI、ATTACH、VACUUM INTO、临时文件等也不能选择宿主
   VFS 或逃逸沙盒。首期 ATTACH 明确拒绝；其他写文件入口按范围验证或明确拒绝。
+- 当前 authorizer 明确拒绝 ATTACH/DETACH 与 WAL 切换；`:memory:` 由 SQLite 内存 pager
+  承载且不创建 VFS 文件。生产 xRandomness 使用 HAL OS CSPRNG 注入。
 - 新引擎与 API 19 不完全等价。审计双引号兼容、LIKE/排序、PRAGMA、外键默认值及浮点
   文本转换；3.53.4 的 FP_DIGITS=15 可作为旧精度候选，不等于复刻全部旧舍入行为。
   版本查询返回真实版本。AOSP/device 语义对照与独立 SQLite 文件互操作分别验收。
@@ -132,15 +134,15 @@ CursorWindow 的行容量、start position、NULL/type conversion 与 refill 语
 
 ## 7. 三阶段连续交付
 
-DVM-186 是唯一任务单，原 8 个单元合并为下面 3 个阶段，均未开始。阶段用于记录进度，
+DVM-186 是唯一任务单，原 8 个单元合并为下面 3 个阶段，现均已完成。阶段用于记录进度，
 不是审批或会话停止点；收到实施指令后默认按顺序连续推进至最终验收，不逐阶段等待确认。
 依赖审计随实现完成，不单独交付调查报告；不按类、方法或测试组另建工作单。
 
 | 阶段 | 依赖 | 实现范围 | 阶段出口 |
 | --- | --- | --- | --- |
-| SQL-01 真实数据库底座 | 子模块 | 简短闭包/差异审计并确定 locale、配置与平台契约；静态引擎、资源令牌、VFS IO/锁、journal 和恢复 | 内存/文件库读写、绑定与错误映射、令牌隔离、锁竞争、路径拒绝、short-read/ENOSPC、提交回滚与故障后重开通过 |
-| SQL-02 Java 全链路接入 | 01 | BootDex 类闭包、native/overlay、CursorWindow、Helper、线程事务与生命周期；同步删除被接管的 intrinsic/影子状态并切换唯一后端 | build/check、类链接与 native 清单、窗口类型/容量/refill、建库升级/rawQuery、嵌套事务/取消/回调/GC/关闭竞争的双解释器定向验证通过 |
-| SQL-03 互操作与运行验收 | 02 | 清理旧实现残留、验证 OGDB1 保护、独立 SQLite 互读、跨会话/崩溃恢复及真实 APK 复现；按事实更新文档 | 第 8 节矩阵全部闭合，记录原首错消失、下一独立首错和支持边界 |
+| SQL-01 真实数据库底座（完成） | 子模块 | 简短闭包/差异审计并确定 locale、配置与平台契约；静态引擎、资源令牌、VFS IO/锁、journal 和恢复 | 内存/文件库读写、空 BLOB、零字节初始库、打开标志、错误映射、令牌隔离、规范路径锁竞争、路径拒绝、short-read/ENOSPC、提交回滚与故障后重开通过 |
+| SQL-02 Java 全链路接入（完成） | 01 | BootDex 类闭包、native/overlay、CursorWindow、Helper、线程事务与生命周期；同步删除被接管的 intrinsic/影子状态并切换唯一后端 | build/check、类链接与 native 清单、异常子类、窗口类型/容量/requiredPos/countAllRows 流式 refill、建库升级/rawQuery、嵌套事务/取消/回调/GC/关闭竞争的双解释器定向验证通过 |
+| SQL-03 互操作与运行验收（完成） | 02 | 清理旧实现残留、验证 OGDB1 保护、独立 SQLite 互读、跨会话/崩溃恢复及真实 APK 复现；按事实更新文档 | 第 8 节矩阵全部闭合，记录原首错消失、下一独立首错和支持边界 |
 
 执行时复用同一构建目录与夹具，相关实现合并构建；每项验证证据只登记一次，代码变化或
 新疑点才重跑。验收矩阵作为检查表，不再拆成工作单。确有阻塞时记录精确缺口和续接点，
@@ -162,6 +164,13 @@ SQL-02 可先在隔离 fixture 使用候选 BootDex；依赖闭合后再切换�
 | 旧数据安全 | OGDB1 拒绝前后内容摘要一致，不能触发自动重建 |
 | 真实触发路径 | 关闭 survey；独立空库与含有效/过期记录的真实库分别运行，记录下一首错 |
 
+真实 APK 类级验收直接加载 Angry Birds 2.3.0 原始 `classes.dex` 并执行其
+`SQLiteCookieStorage`/`CookiePersistanceManager`：空库完成建表，过期记录经事务删除，
+有效记录由原始 `rawQuery` 读回。有效记录随后在 JSON 反序列化前触发独立的
+`NativeDecimalFormat.open` 缺口；该故障发生在 SQLite 查询和对象装载之后，不属于本专项。
+完整进程关闭 survey 的运行也已越过原 `SQLiteDatabase.rawQuery` 首错，下一首错同属
+Jackson/日期格式化初始化。
+
 复用 `tests/dexvm/network_sqlite_tests.cpp` 及 BootDex/GC/线程夹具；新增 runtime/VFS
 测试仅覆盖新风险。只构建受影响目标，Windows 使用 windows-msvc，不运行无关全量测试。
 真实 APK 首错复现按 [排查手册](../../playbook/TROUBLESHOOTING.md)与
@@ -169,12 +178,8 @@ SQL-02 可先在隔离 fixture 使用候选 BootDex；依赖闭合后再切换�
 
 ## 9. 文档与完成判定
 
-本轮只新增规划/任务/ADR 提案及索引，不改变 CURRENT、capabilities 或已生效 MODULE。
-进入实现时按 SQL-01 的实际决定将 ADR 转 Accepted，并同步受影响模块契约；已有
-“不调用 host SQLite”条款须明确替换，不允许代码先违背契约。
-
-新范围开始实施时更新现有 dexvm.sqlite_vfs 的范围/状态，保留 DVM-88 历史证据；仅在
-SQL-01..03 与验收矩阵全部闭合后声明本期完成。WAL/跨进程/旧格式自动迁移仍独立未支持。
+ADR、CURRENT、capabilities 与受影响 MODULE 已按最终实现同步；DVM-88 保留为历史证据。
+SQL-01..03 与验收矩阵闭合后本期标记完成。WAL/跨进程/旧格式自动迁移仍独立未支持。
 CURRENT 只记录真实运行变化。SQL 成功、Cookie 存储正确与游戏持续可玩分开报告。
 
 ## 参考

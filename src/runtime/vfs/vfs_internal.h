@@ -90,6 +90,7 @@ public:
         std::string_view path) const;
     void SetWorkingDirectory(std::string_view path);
     [[nodiscard]] std::optional<std::string> WorkingDirectory() const;
+    [[nodiscard]] std::string CanonicalPath(std::string_view path) const;
     [[nodiscard]] std::int32_t Open(std::string_view path,
                                     VfsOpenOptions options);
     [[nodiscard]] std::int32_t OpenDirectory(std::string_view path);

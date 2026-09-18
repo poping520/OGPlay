@@ -2874,6 +2874,56 @@ TEST_CASE("DVM-105/169/175-180 crypto and BKS use BootDex and real guest libcryp
                 CHECK(read(second_iv) != std::vector<std::byte>(16));
             }
         }
+        {
+            const auto zero_key = make_key("2b7e151628aed2a6abf7158809cf4f3c");
+            const auto zero_iv = make_iv("000102030405060708090a0b0c0d0e0f");
+            const auto zero = make_cipher("AES/CBC/ZeroBytePadding");
+            const auto roots =
+                vm.ProtectReferences(std::array{zero_key, zero_iv, zero});
+            const auto initialize = [&](const int operation) {
+                invoke(zero, "init",
+                       "(ILjava/security/Key;Ljava/security/spec/AlgorithmParameterSpec;)V",
+                       {VmValue::Int(operation), VmValue::Ref(zero_key),
+                        VmValue::Ref(zero_iv)});
+            };
+            const auto input = bytes("42757273746c7920646576696365");
+            const auto zero_expected = bytes("3d90d0108a2b72a3f9b7bf26866ed764");
+            const auto input_roots = vm.ProtectReferences(std::array{input, zero_expected});
+            initialize(1);
+            CHECK(invoke(zero, "getOutputSize", "(I)I", {VmValue::Int(14)}).AsInt() == 16);
+            CHECK(read(invoke(zero, "doFinal", "([B)[B", {VmValue::Ref(input)}).ref) ==
+                  read(zero_expected));
+
+            initialize(1);
+            CHECK(read(invoke(zero, "update", "([BII)[B",
+                              {VmValue::Ref(input), VmValue::Int(0), VmValue::Int(5)})
+                           .ref)
+                      .empty());
+            CHECK(invoke(zero, "getOutputSize", "(I)I", {VmValue::Int(9)}).AsInt() == 16);
+            CHECK(read(invoke(zero, "doFinal", "([BII)[B",
+                              {VmValue::Ref(input), VmValue::Int(5), VmValue::Int(9)})
+                           .ref) == read(zero_expected));
+
+            initialize(2);
+            CHECK(read(invoke(zero, "doFinal", "([B)[B", {VmValue::Ref(zero_expected)}).ref) ==
+                  read(input));
+            initialize(1);
+            CHECK(read(invoke(zero, "doFinal", "()[B", {}).ref).empty());
+            initialize(2);
+            CHECK(read(invoke(zero, "doFinal", "()[B", {}).ref).empty());
+            initialize(1);
+            CHECK(read(invoke(zero, "doFinal", "([B)[B",
+                              {VmValue::Ref(bytes("6bc1bee22e409f96e93d7e117393172a"))})
+                           .ref) ==
+                  read(bytes("7649abac8119b246cee98e9b12e9197d")));
+            initialize(1);
+            expect_exception(
+                raw_invoke(zero, "doFinal", "([BII[BI)I",
+                           {VmValue::Ref(input), VmValue::Int(0), VmValue::Int(14),
+                            VmValue::Ref(bytes("000000000000000000000000000000")),
+                            VmValue::Int(0)}),
+                "Ljavax/crypto/ShortBufferException;");
+        }
         const auto bad_key = make_key("000102030405060708090a0b0c0d0e");
         expect_exception(raw_invoke(cipher, "init", "(ILjava/security/Key;)V",
                                     {VmValue::Int(1), VmValue::Ref(bad_key)}),

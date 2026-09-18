@@ -62,6 +62,11 @@
   BootDex 1731 类 build/check 通过；空沙盒真实运行创建 16384 字节标准 SQLite `cookiedb`，
   越过 Cookie 初始化与 EventLog 首错。下一独立首错为
   `Utils.encryptedDeviceId` 对空设备标识调用 `String.length()`。DVM-186 完成。
+- `AES/CBC/ZeroBytePadding` 已由 guest Java CipherSpi 接入现有 Conscrypt
+  `AES/CBC/NoPadding`/guest OpenSSL 后端。独立向量、分段/一次性、空输入、整块输入、
+  解密去尾零、重复初始化及短缓冲共 2622 断言通过；BootDex 1732 类 build/check 通过。
+  Angry Birds 2.3.0 空沙盒运行 4000 presented frames，原 `encryptedDeviceId()` 二次调用 NPE
+  未再出现，本轮未触发新的致命首错。
 - guest JNI
   `e2d4b5de0f1c02b2d84c1e37d7d0561495b2ea1165648f2a01b5a80201a1a7f0`。
 - `data/android/19/framework/` 为本地生成产物，不纳入版本控制。

@@ -33,6 +33,7 @@ AUDIT_REPORT = ROOT / ".local/dvm102-date-family-audit.json"
 NATIVE_CRYPTO_AUDIT_REPORT = ROOT / ".local/nativecrypto-api19-audit.json"
 JAVA_SOURCE_ROOT = ROOT / "src/guest/crypto/java"
 JAVA_SOURCE_NAMES = (
+    "org/ogplay/security/AesCbcZeroBytePadding.java",
     "org/ogplay/security/AndroidCaStoreSpi.java",
     "org/ogplay/security/BksKeyStoreSpi.java",
     "org/ogplay/security/BksLimits.java",

@@ -32,7 +32,7 @@ NOTICE = ROOT / "data/android/19/notices/bootdex.jar.txt"
 AUDIT_REPORT = ROOT / ".local/dvm102-date-family-audit.json"
 NATIVE_CRYPTO_AUDIT_REPORT = ROOT / ".local/nativecrypto-api19-audit.json"
 JAVA_SOURCE_ROOT = ROOT / "src/guest/crypto/java"
-JAVA_SOURCE_NAMES = (
+JAVA_SOURCE_NAMES = tuple(sorted((
     "org/ogplay/security/AesCbcZeroBytePadding.java",
     "org/ogplay/security/AndroidCaStoreSpi.java",
     "org/ogplay/security/BksKeyStoreSpi.java",
@@ -42,8 +42,8 @@ JAVA_SOURCE_NAMES = (
     "org/ogplay/security/NativeKeyStoreCrypto.java",
     "org/ogplay/security/NativeTls.java",
     "org/ogplay/security/NativeTrust.java",
-    "org/ogplay/security/OgPlayHttpsURLConnection.java",
     "org/ogplay/security/OgPlayHttpURLConnection.java",
+    "org/ogplay/security/OgPlayHttpsURLConnection.java",
     "org/ogplay/security/OgPlayJsseProvider.java",
     "org/ogplay/security/OgPlayKeyManager.java",
     "org/ogplay/security/OgPlayKeyManagerFactorySpi.java",
@@ -57,18 +57,79 @@ JAVA_SOURCE_NAMES = (
     "org/ogplay/security/PkixTrustManagerFactorySpi.java",
     "org/ogplay/security/TrustLimits.java",
     "org/ogplay/security/X509TrustManagerImpl.java",
-)
-JAVAC = Path(os.environ.get(
-    "OGPLAY_JAVAC", r"D:\01_software\jdk-17.0.2\bin\javac.exe"))
-JAVA = JAVAC.with_name("java.exe" if os.name == "nt" else "java")
-ANDROID_JAR = Path(os.environ.get(
-    "OGPLAY_ANDROID_19_JAR",
-    r"D:\01_software\android-sdk\platforms\android-19\android.jar"))
-D8_JAR = Path(os.environ.get(
-    "OGPLAY_D8_JAR",
-    r"D:\01_software\android-sdk\build-tools\29.0.2\lib\d8.jar"))
+)))
+WINDOWS_JAVAC = Path(r"D:\01_software\jdk-17.0.2\bin\javac.exe")
+WINDOWS_ANDROID_JAR = Path(
+    r"D:\01_software\android-sdk\platforms\android-19\android.jar")
+WINDOWS_D8_JAR = Path(
+    r"D:\01_software\android-sdk\build-tools\29.0.2\lib\d8.jar")
+LOCAL_ANDROID_JAR = ROOT / ".local/toolchain/android-19/android.jar"
+LOCAL_D8_JAR = ROOT / ".local/toolchain/build-tools-29.0.2/d8.jar"
 ANDROID_JAR_SHA256 = "4032a201eeb1d0430c7d9f1075151dd280427de5ca9e36f734f464ab605cb690"
 D8_JAR_SHA256 = "d9e6acde0cb6f2453d6835b52c31d2066054394fb79e91115dd4978bde6afd16"
+
+
+def _first_file(*candidates: Path) -> Path:
+    for path in candidates:
+        if path.is_file():
+            return path
+    return candidates[-1]
+
+
+def _macos_javacs() -> tuple[Path, ...]:
+    found: list[Path] = []
+    home = os.environ.get("JAVA_HOME")
+    if home:
+        found.append(Path(home) / "bin" / "javac")
+    java_home = Path("/usr/libexec/java_home")
+    if java_home.is_file():
+        result = subprocess.run(
+            [str(java_home), "-v", "17"],
+            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+            text=True, encoding="utf-8", check=False)
+        if result.returncode == 0 and result.stdout.strip():
+            found.append(Path(result.stdout.strip()) / "bin" / "javac")
+    found.extend((
+        Path("/Library/Java/JavaVirtualMachines/openjdk-17.jdk/Contents/Home/bin/javac"),
+        Path("/opt/homebrew/opt/openjdk@17/bin/javac"),
+    ))
+    which = shutil.which("javac")
+    if which:
+        found.append(Path(which))
+    return tuple(found)
+
+
+def resolve_javac() -> Path:
+    env = os.environ.get("OGPLAY_JAVAC")
+    if env:
+        return Path(env)
+    if os.name == "nt":
+        return WINDOWS_JAVAC
+    return _first_file(*_macos_javacs(), WINDOWS_JAVAC)
+
+
+def resolve_java(javac: Path) -> Path:
+    return javac.with_name("java.exe" if os.name == "nt" else "java")
+
+
+def resolve_android_jar() -> Path:
+    env = os.environ.get("OGPLAY_ANDROID_19_JAR")
+    if env:
+        return Path(env)
+    return _first_file(LOCAL_ANDROID_JAR, WINDOWS_ANDROID_JAR)
+
+
+def resolve_d8_jar() -> Path:
+    env = os.environ.get("OGPLAY_D8_JAR")
+    if env:
+        return Path(env)
+    return _first_file(LOCAL_D8_JAR, WINDOWS_D8_JAR)
+
+
+JAVAC = resolve_javac()
+JAVA = resolve_java(JAVAC)
+ANDROID_JAR = resolve_android_jar()
+D8_JAR = resolve_d8_jar()
 CATEGORIES = ("boot_dex", "existing_vm_intrinsic", "native_boundary", "deferred")
 NATIVE_DISPOSITIONS = ("required_backend", "explicit_failure")
 NATIVE_CRYPTO_OWNER = "Lcom/android/org/conscrypt/NativeCrypto;"
@@ -209,6 +270,17 @@ def run(command: list[str]) -> None:
         raise BuildError(result.stdout)
 
 
+def javac_release() -> str:
+    result = subprocess.run(
+        [str(JAVAC), "-version"], stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+        text=True, encoding="utf-8", check=False)
+    version = result.stdout.strip()
+    prefix = "javac "
+    if result.returncode or not version.startswith(prefix):
+        raise BuildError(f"unexpected javac: {version}")
+    return version[len(prefix):]
+
+
 def compile_guest_java(work: Path) -> tuple[Path, tuple[str, ...]]:
     sources = tuple(JAVA_SOURCE_ROOT / name for name in JAVA_SOURCE_NAMES)
     observed = tuple(
@@ -223,10 +295,8 @@ def compile_guest_java(work: Path) -> tuple[Path, tuple[str, ...]]:
         raise BuildError("unexpected API 19 android.jar")
     if file_sha256(D8_JAR) != D8_JAR_SHA256:
         raise BuildError("unexpected Android build-tools 29.0.2 d8.jar")
-    version = subprocess.run(
-        [str(JAVAC), "-version"], stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-        text=True, encoding="utf-8", check=False).stdout.strip()
-    if version != "javac 17.0.2":
+    version = "javac " + javac_release()
+    if not version.startswith("javac 17."):
         raise BuildError(f"unexpected javac: {version}")
     classes = work / "guest-java-classes"
     classes.mkdir()
@@ -253,7 +323,7 @@ def compile_guest_java(work: Path) -> tuple[Path, tuple[str, ...]]:
         raise BuildError("guest Java production code references BouncyCastle")
     destination = work / "guest-java-smali"
     run([
-        "java", "-jar", str(SMALI / "baksmali.jar"), "disassemble",
+        str(JAVA), "-jar", str(SMALI / "baksmali.jar"), "disassemble",
         "--api", "19", "--jobs", "1", "--output", str(destination), str(dex_path),
     ])
     return destination, descriptors
@@ -267,7 +337,7 @@ def assemble(recipe: dict[str, tuple[str, ...]], work: Path,
         # Keep each command below the Windows command-line length limit.
         for offset in range(0, len(classes), 100):
             run([
-                "java", "-jar", str(SMALI / "baksmali.jar"), "disassemble",
+                str(JAVA), "-jar", str(SMALI / "baksmali.jar"), "disassemble",
                 "--api", "19", "--jobs", "1",
                 "--classes", ",".join(classes[offset:offset + 100]),
                 "--output", str(destination), str(source_path(source)),
@@ -282,7 +352,7 @@ def assemble(recipe: dict[str, tuple[str, ...]], work: Path,
         smali_roots.append(str(destination))
     output = work / "classes.dex"
     run([
-        "java", "-jar", str(SMALI / "smali.jar"), "assemble",
+        str(JAVA), "-jar", str(SMALI / "smali.jar"), "assemble",
         "--api", "19", "--jobs", "1", "--output", str(output), *smali_roots,
     ])
     return output.read_bytes()
@@ -418,7 +488,7 @@ def boot_metadata(jar: bytes, dex: bytes,
                 path.relative_to(ROOT).as_posix().encode("utf-8") + b"\0" +
                 path.read_bytes() for path in
                 (JAVA_SOURCE_ROOT / name for name in JAVA_SOURCE_NAMES))),
-            "javac": "17.0.2",
+            "javac": javac_release(),
             "android_jar_sha256": ANDROID_JAR_SHA256,
             "d8_sha256": D8_JAR_SHA256,
         }],

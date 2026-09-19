@@ -8,6 +8,7 @@
 - [ADR-0021 · VideoView 真实播放与 FFmpeg 运行时加载](#adr-0021)
 - [ADR-0027 · AudioTrack stream 按构造缓冲字节回压](#adr-0027)
 - [ADR-0061 · EGL 对象 registry 与每 Context 图形状态](#adr-0061)
+- [ADR-0069 · 音频 Java 协议、宿主执行与会话输出边界](#adr-0069)
 
 <a id="adr-0003"></a>
 
@@ -264,3 +265,40 @@ EGL_KHR_fence_sync，但有 EGL_KHR_reusable_sync；前者不能因入口存在�
 接口目录完整与定向回归通过均不是 Android CTS/Khronos conformance 认证。完整性账本保留
 整体 partial 状态；本任务只记录逐项实现和机器可验证的行为，未提供的 Android SO 包也不能
 声称完成了 ELF dynsym/ABI 全量比对。
+
+<a id="adr-0069"></a>
+
+## ADR-0069 · 音频 Java 协议、宿主执行与会话输出边界
+
+- 状态：Proposed（开发规划，未实施）
+- 日期：2026-09-19
+- 关联：[音频审计与规划](../design/dexvm/16-audio.md)、[DVM-189](../tasks/dexvm/DVM-189.md)
+- Supersedes：实施后替代 ADR-0027 将所有 release/销毁中断统一返回
+  ERROR_INVALID_OPERATION 的条款：分段 write 已接收部分数据时保留实际长度；
+  未接收数据时按 API19 精确返回。保留构造字节预算、释放 VM 锁及 teardown 唤醒原则。
+
+### 背景
+
+现有宿主 PCM 与 SDL3 方向可复用，但 Java 音频入口含参数误读、状态副本及空操作；
+编码音乐复用 SoundPool big-bank，实例和资源寿命混淆；CLI 拥有资源读取、视频音轨组合
+和按图形帧补音频。重采样、回调退役、设备队列与 guest Clock 也需统一审查。
+
+### 决定
+
+1. AudioTrack、SoundPool 及必要值类采用固定 API19 BootDex，MediaPlayer 在真实 native
+   播放器和依赖闭包闭合后迁入。普通字段/校验/Handler 归 Java；native 资源状态归宿主。
+   AudioManager 保留有界会话 facade。准入类不代表支持其全部能力。
+2. 音频模块提供共享 PCM/解码/混音能力，runtime 提供资源 lease、guest token 和事件边界；
+   session 统一所有音源、输出策略和生命周期；frontend 仅创建/注入设备与启动会话。
+3. 短音效缓存与音乐流式 source 分开，共享不可变数据但不共享播放器身份；统一宽精度
+   累加后最终限幅。OpenSL 保留 A32 公共 ABI 和专用 guest 回调线程。
+4. 实时消费不依赖图形帧；确定性模式由统一 Clock 决定帧数、写离线 sink，不由 SDL 水位
+   推进 guest。事件按 owner generation 退役；设备线程不直接执行 guest 或读取 Java 侧表。
+5. 保持唯一 VFS/Clock、SDL3 和受控线程模型，不引入 Android 音频服务、录音、DRM 或
+   厂商 HAL。未支持的 native 行为按 API19 错误协议明确失败，不允许空成功。
+
+### 后果
+
+实施按 DVM-189 的有依赖批次进行；先建立独立消费再迁移可能阻塞的原版 Java 回调。
+Java 迁移、native 状态修复、调度改变分别验收；实际契约改变时更新相应 MODULE 和能力入口。
+Proposed 不代表已替代现行实现，也不表示性能、听感、CTS 或游戏兼容已经验收。

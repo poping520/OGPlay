@@ -428,6 +428,15 @@ public:
         const std::uint32_t output_rate) {
         return open_sles_module_.MixAdditiveStereoPcm16(output, output_rate);
     }
+    std::vector<audio::OpenSlesConsumedBuffer> MixOpenSlesIntoAccumulator(
+        const std::span<std::int64_t> accumulator,
+        const std::uint32_t output_rate) {
+        return open_sles_module_.MixIntoAccumulator(accumulator, output_rate);
+    }
+    bool OpenSlesCallbackCurrent(const std::uint32_t object_key,
+                                 const std::uint32_t generation) const {
+        return open_sles_module_.CallbackCurrent(object_key, generation);
+    }
     audio::OpenSlesPcmMixer& PcmPlayback() noexcept { return open_sles_mixer_; }
     [[nodiscard]] const BionicHleSymbolProvider& Symbols() const noexcept {
         return provider_;
@@ -1058,6 +1067,15 @@ std::vector<audio::OpenSlesConsumedBuffer>
 AndroidBoundaryHle::MixOpenSlesPcm16(
     const std::span<std::int16_t> output, const std::uint32_t output_rate) {
     return impl_->MixOpenSlesPcm16(output, output_rate);
+}
+std::vector<audio::OpenSlesConsumedBuffer>
+AndroidBoundaryHle::MixOpenSlesIntoAccumulator(
+    const std::span<std::int64_t> accumulator, const std::uint32_t output_rate) {
+    return impl_->MixOpenSlesIntoAccumulator(accumulator, output_rate);
+}
+bool AndroidBoundaryHle::OpenSlesCallbackCurrent(
+    const std::uint32_t object_key, const std::uint32_t generation) const {
+    return impl_->OpenSlesCallbackCurrent(object_key, generation);
 }
 
 audio::OpenSlesPcmMixer& AndroidBoundaryHle::PcmPlayback() noexcept {

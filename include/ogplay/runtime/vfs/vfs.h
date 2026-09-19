@@ -51,6 +51,7 @@ struct VfsFileInfo final {
     bool writable{};
     VfsSource source{VfsSource::runtime};
     bool is_directory{};
+    std::uint64_t generation{};
 };
 
 struct VfsDirectoryEntry final {

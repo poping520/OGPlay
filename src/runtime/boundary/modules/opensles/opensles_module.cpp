@@ -6,6 +6,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <initializer_list>
+#include <deque>
 #include <map>
 #include <mutex>
 #include <optional>
@@ -16,6 +17,7 @@
 #include <utility>
 #include <vector>
 
+#include "ogplay/audio/pcm_mix.h"
 #include "ogplay/memory/address_space.h"
 #include "runtime/boundary/core/a32_call_frame.h"
 #include "runtime/boundary/core/boundary_binding.h"
@@ -47,6 +49,7 @@ constexpr std::uint32_t kDataFormatPcm = 2U;
 constexpr std::uint32_t kByteOrderLittleEndian = 2U;
 constexpr std::size_t kObjectStride = 0x40U;
 constexpr std::size_t kMaximumObjects = 4096U;
+constexpr std::uint32_t kSupportedPlayMask = 0x7U;
 
 enum class ObjectKind : std::uint8_t { engine, output_mix, audio_player };
 
@@ -83,9 +86,10 @@ public:
             {kOpenSlesObjectArenaBegin, kOpenSlesObjectArenaBytes},
             memory::PageProtection::read | memory::PageProtection::write);
     }
-    std::vector<audio::OpenSlesConsumedBuffer> Mix(
-        const std::span<std::int16_t> output, const std::uint32_t output_rate) {
-        auto consumed = mixer_.MixAdditiveStereoPcm16(output, output_rate);
+    std::vector<audio::OpenSlesConsumedBuffer> MixInto(
+        const std::span<std::int64_t> accumulator,
+        const std::uint32_t output_rate) {
+        auto consumed = mixer_.MixIntoAccumulator(accumulator, output_rate);
         std::vector<OpenSlesGuestCallback> pending;
         {
             std::scoped_lock lock(mutex_);
@@ -99,7 +103,7 @@ public:
                 if (object.queue_callback != 0U) {
                     for (std::size_t index = 0; index < consumed_count; ++index) {
                         pending.push_back(MakeCallback(
-                            object.queue_callback,
+                            object, object.queue_callback,
                             {object.base.Add(8U).Value(), object.queue_context}));
                     }
                 }
@@ -123,8 +127,25 @@ public:
                 object.last_position = position;
             }
         }
+        if (pending.size() > kMaximumOpenSlesPendingCallbacks) {
+            pending.resize(kMaximumOpenSlesPendingCallbacks);
+        }
         for (const auto& callback : pending) callbacks_.Enqueue(callback);
         return consumed;
+    }
+    std::vector<audio::OpenSlesConsumedBuffer> Mix(
+        const std::span<std::int16_t> output, const std::uint32_t output_rate) {
+        std::vector<std::int64_t> accumulator(output.size());
+        audio::CopyPcm16IntoAccumulator(output, accumulator);
+        auto consumed = MixInto(accumulator, output_rate);
+        audio::SaturateStereoPcm16(accumulator, output);
+        return consumed;
+    }
+    [[nodiscard]] bool CallbackCurrent(const std::uint32_t object_key,
+                                       const std::uint32_t generation) const {
+        std::scoped_lock lock(mutex_);
+        const auto found = objects_.find(ObjectKey(object_key));
+        return found != objects_.end() && found->second.generation == generation;
     }
 
     std::uint32_t CreateEngine(const A32CallFrame& call) {
@@ -174,7 +195,7 @@ public:
             object.state = kObjectRealized;
             if (call.Argument(1) != 0U && object.object_callback != 0U) {
                 callback = MakeCallback(
-                    object.object_callback,
+                    object, object.object_callback,
                     {object.base.Value(), object.object_context, 2U, kSuccess,
                      kObjectRealized, 0U});
             }
@@ -225,16 +246,32 @@ public:
     }
     std::uint32_t ObjectDestroy(const A32CallFrame& call) {
         std::scoped_lock lock(mutex_);
-        const auto found = objects_.find(ObjectKey(call.Argument(0)));
-        if (found == objects_.end()) {
+        const auto key = ObjectKey(call.Argument(0));
+        if (!objects_.contains(key)) {
             throw std::runtime_error("stale OpenSL object handle");
         }
-        if (found->second.player.has_value()) {
-            mixer_.DestroyPlayer(*found->second.player);
+        std::vector<std::uint32_t> doomed;
+        const auto walk = [&](auto&& self, const std::uint32_t node) -> void {
+            for (const auto& [child_key, child] : objects_) {
+                if (child.parent == node) self(self, child_key);
+            }
+            doomed.push_back(node);
+        };
+        walk(walk, key);
+        for (const auto child_key : doomed) {
+            const auto child = objects_.find(child_key);
+            if (child == objects_.end()) continue;
+            if (child->second.player.has_value()) {
+                mixer_.DestroyPlayer(*child->second.player);
+            }
+            ++child->second.generation;
+            std::array<std::byte, kObjectStride> zero{};
+            calls_.address_space.Write(child->second.base, zero, call.ThreadId());
+            const auto offset =
+                child->second.base.Value() - kOpenSlesObjectArenaBegin.Value();
+            free_offsets_.push_back(offset);
+            objects_.erase(child);
         }
-        std::array<std::byte, kObjectStride> zero{};
-        calls_.address_space.Write(found->second.base, zero, call.ThreadId());
-        objects_.erase(found);
         return kSuccess;
     }
     std::uint32_t ObjectSetPriority(const A32CallFrame& call) {
@@ -276,6 +313,7 @@ public:
         const auto& engine = RequireKind(call.Argument(0), ObjectKind::engine);
         if (engine.state != kObjectRealized) return kPreconditionsViolated;
         auto& mix = Allocate(ObjectKind::output_mix, *interfaces, call.ThreadId());
+        mix.parent = engine.base.Value();
         Write32(call.Argument(1), mix.base.Value(), call.ThreadId());
         return kSuccess;
     }
@@ -306,11 +344,19 @@ public:
         const auto bits = Read32(source_format + 12U, call.ThreadId());
         const auto container = Read32(source_format + 16U, call.ThreadId());
         const auto endian = Read32(source_format + 24U, call.ThreadId());
+        const auto channel_mask = Read32(source_format + 20U, call.ThreadId());
         if ((channels != 1U && channels != 2U) ||
             (bits != 8U && bits != 16U) || container != bits ||
             milli_hz == 0U || milli_hz % 1000U != 0U ||
             (bits == 16U && endian != kByteOrderLittleEndian)) {
             return kContentUnsupported;
+        }
+        if (channel_mask != 0U) {
+            const auto expected = channels == 1U ? 0x4U : 0x3U;
+            const auto mono_left = channels == 1U && channel_mask == 0x1U;
+            if (channel_mask != expected && !mono_left) {
+                return kContentUnsupported;
+            }
         }
         if (Read32(sink_locator, call.ThreadId()) != kLocatorOutputMix) {
             return kContentUnsupported;
@@ -341,6 +387,7 @@ public:
             player.player = player_id;
             player.sample_rate = format.sample_rate;
             player.queue_capacity = capacity;
+            player.parent = mix.base.Value();
             Write32(call.Argument(1), player.base.Value(), call.ThreadId());
         } catch (...) {
             mixer_.DestroyPlayer(player_id);
@@ -453,6 +500,7 @@ public:
     std::uint32_t PlayRegisterCallback(const A32CallFrame& call) {
         std::scoped_lock lock(mutex_);
         auto& object = RequirePlayer(call.Argument(0));
+        ++object.generation;
         object.play_callback = call.Argument(1);
         object.play_context = call.Argument(2);
         return kSuccess;
@@ -461,7 +509,8 @@ public:
         constexpr std::uint32_t kKnownMask = 0x1fU;
         if ((call.Argument(1) & ~kKnownMask) != 0U) return kParameterInvalid;
         std::scoped_lock lock(mutex_);
-        RequirePlayer(call.Argument(0)).play_mask = call.Argument(1);
+        RequirePlayer(call.Argument(0)).play_mask =
+            call.Argument(1) & kSupportedPlayMask;
         return kSuccess;
     }
     std::uint32_t PlayGetMask(const A32CallFrame& call) {
@@ -502,6 +551,9 @@ public:
         if (call.Argument(1) == 0U || call.Argument(2) == 0U) {
             return kParameterInvalid;
         }
+        if (call.Argument(2) > audio::OpenSlesPcmMixer::kMaximumBufferBytes) {
+            return kMemoryFailure;
+        }
         std::scoped_lock lock(mutex_);
         auto& object = RequirePlayer(call.Argument(0));
         if (object.state != kObjectRealized) return kPreconditionsViolated;
@@ -523,6 +575,7 @@ public:
     std::uint32_t BufferQueueClear(const A32CallFrame& call) {
         std::scoped_lock lock(mutex_);
         auto& object = RequirePlayer(call.Argument(0));
+        ++object.generation;
         mixer_.Clear(*object.player);
         return kSuccess;
     }
@@ -538,6 +591,7 @@ public:
     std::uint32_t BufferQueueRegisterCallback(const A32CallFrame& call) {
         std::scoped_lock lock(mutex_);
         auto& object = RequirePlayer(call.Argument(0));
+        ++object.generation;
         object.queue_callback = call.Argument(1);
         object.queue_context = call.Argument(2);
         return kSuccess;
@@ -641,16 +695,26 @@ private:
         bool stereo_enabled{};
         bool marker_fired{};
         std::uint32_t last_position{};
+        std::uint32_t generation{1U};
+        std::uint32_t parent{};
     };
 
     Object& Allocate(const ObjectKind kind, std::set<std::string> interfaces,
                      const std::uint64_t thread_id) {
-        if (objects_.size() >= kMaximumObjects ||
-            next_offset_ > kOpenSlesObjectArenaBytes - kObjectStride) {
+        if (objects_.size() >= kMaximumObjects) {
             throw std::length_error("OpenSL object arena exhausted");
         }
-        const auto base = kOpenSlesObjectArenaBegin.Add(next_offset_);
-        next_offset_ += kObjectStride;
+        std::size_t offset = next_offset_;
+        if (!free_offsets_.empty()) {
+            offset = free_offsets_.front();
+            free_offsets_.pop_front();
+        } else {
+            if (next_offset_ > kOpenSlesObjectArenaBytes - kObjectStride) {
+                throw std::length_error("OpenSL object arena exhausted");
+            }
+            next_offset_ += kObjectStride;
+        }
+        const auto base = kOpenSlesObjectArenaBegin.Add(offset);
         interfaces.insert("SL_IID_OBJECT");
         if (kind == ObjectKind::engine) interfaces.insert("SL_IID_ENGINE");
         if (kind == ObjectKind::output_mix) interfaces.insert("SL_IID_OUTPUTMIX");
@@ -797,12 +861,14 @@ private:
     }
 
     static OpenSlesGuestCallback MakeCallback(
-        const std::uint32_t function,
+        const Object& object, const std::uint32_t function,
         const std::initializer_list<std::uint32_t> arguments) {
         OpenSlesGuestCallback callback;
         callback.function = function;
         callback.argument_count = static_cast<std::uint8_t>(arguments.size());
         std::copy(arguments.begin(), arguments.end(), callback.arguments.begin());
+        callback.object_key = object.base.Value();
+        callback.generation = object.generation;
         return callback;
     }
     static void AddPlayCallback(std::vector<OpenSlesGuestCallback>& pending,
@@ -810,7 +876,7 @@ private:
                                 const std::uint32_t event) {
         if (object.play_callback == 0U) return;
         pending.push_back(MakeCallback(
-            object.play_callback,
+            object, object.play_callback,
             {object.base.Add(4U).Value(), object.play_context, event}));
     }
     template <typename Read>
@@ -824,8 +890,9 @@ private:
     BoundaryCallServices& calls_;
     audio::OpenSlesPcmMixer& mixer_;
     OpenSlesCallbackSink callbacks_;
-    std::mutex mutex_;
+    mutable std::mutex mutex_;
     std::map<std::uint32_t, Object> objects_;
+    std::deque<std::size_t> free_offsets_;
     std::size_t next_offset_{};
 };
 
@@ -840,6 +907,14 @@ std::vector<audio::OpenSlesConsumedBuffer>
 OpenSlesModule::MixAdditiveStereoPcm16(
     const std::span<std::int16_t> output, const std::uint32_t output_rate) {
     return impl_->Mix(output, output_rate);
+}
+std::vector<audio::OpenSlesConsumedBuffer> OpenSlesModule::MixIntoAccumulator(
+    const std::span<std::int64_t> accumulator, const std::uint32_t output_rate) {
+    return impl_->MixInto(accumulator, output_rate);
+}
+bool OpenSlesModule::CallbackCurrent(const std::uint32_t object_key,
+                                     const std::uint32_t generation) const {
+    return impl_->CallbackCurrent(object_key, generation);
 }
 
 #define OGPLAY_DEFINE_OPENSLES(name, id, count, kind, method)                  \

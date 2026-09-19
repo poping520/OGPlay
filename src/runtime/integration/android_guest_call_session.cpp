@@ -19,6 +19,7 @@
 #include <vector>
 
 #include "ogplay/audio/java_sound_pool.h"
+#include "ogplay/audio/pcm_mix.h"
 #include "ogplay/cpu/dynarmic.h"
 #include "ogplay/hal/clock.h"
 #include "ogplay/runtime/bionic/bionic_profile.h"
@@ -1322,6 +1323,7 @@ public:
         {
             const std::scoped_lock lock(open_sles_callback_mutex_);
             if (open_sles_callback_stopping_ || open_sles_callback_failure_) return;
+            if (open_sles_callbacks_.size() >= 256U) return;
             open_sles_callbacks_.push_back(callback);
         }
         open_sles_callback_ready_.notify_one();
@@ -1355,6 +1357,11 @@ public:
                         if (open_sles_callback_stopping_) return;
                         callback = open_sles_callbacks_.front();
                         open_sles_callbacks_.pop_front();
+                    }
+                    if (callback.generation != 0U &&
+                        !boundary_.OpenSlesCallbackCurrent(
+                            callback.object_key, callback.generation)) {
+                        continue;
                     }
                     try {
                         A32GuestCallFrame frame;
@@ -1621,6 +1628,11 @@ public:
         return sound_pool_mixer_; }
     audio::OpenSlesPcmMixer& PcmPlayback() noexcept {
         return boundary_.PcmPlayback(); }
+    void SetAuxiliaryAudioMix(
+        std::function<void(std::span<std::int64_t>, std::uint32_t)> mix) {
+        std::scoped_lock lock(auxiliary_audio_mutex_);
+        auxiliary_audio_mix_ = std::move(mix);
+    }
     VirtualFileSystem* Filesystem() noexcept { return filesystem_; }
     std::vector<GuestProcessEnvironmentEntry> ProcessEnvironmentEntries()
         const {
@@ -1745,10 +1757,18 @@ public:
     std::size_t RenderStereoAudio(const std::span<std::int16_t> output,
                                   const std::uint32_t sample_rate) {
         RethrowOpenSlesCallbackFailure();
-        const auto frames =
-            sound_pool_mixer_.RenderStereoPcm16(output, sample_rate);
-        static_cast<void>(boundary_.MixOpenSlesPcm16(output, sample_rate));
-        return frames;
+        std::vector<std::int64_t> accumulator(output.size());
+        sound_pool_mixer_.MixIntoAccumulator(accumulator, sample_rate);
+        static_cast<void>(
+            boundary_.MixOpenSlesIntoAccumulator(accumulator, sample_rate));
+        std::function<void(std::span<std::int64_t>, std::uint32_t)> extra;
+        {
+            std::scoped_lock lock(auxiliary_audio_mutex_);
+            extra = auxiliary_audio_mix_;
+        }
+        if (extra) extra(accumulator, sample_rate);
+        audio::SaturateStereoPcm16(accumulator, output);
+        return output.size() / 2U;
     }
     std::size_t InterruptBlockingWaits() {
         return futex_table_.InterruptAll() +
@@ -1986,6 +2006,9 @@ private:
     JniGuestObjectRegistry objects_;
     audio::JavaSoundPoolState sound_pool_;
     audio::JavaSoundPoolMixer sound_pool_mixer_;
+    std::mutex auxiliary_audio_mutex_;
+    std::function<void(std::span<std::int64_t>, std::uint32_t)>
+        auxiliary_audio_mix_;
     FrameworkScreenPolicyState screen_policy_;
     AndroidGuestProcessState process_state_;
     AndroidGuestPlatformState platform_state_;
@@ -2171,6 +2194,10 @@ audio::JavaSoundPoolMixer& AndroidGuestProcess::SoundPoolMixer() noexcept {
 audio::OpenSlesPcmMixer& AndroidGuestProcess::PcmPlayback() noexcept {
     return impl_->PcmPlayback();
 }
+void AndroidGuestProcess::SetAuxiliaryAudioMix(
+    std::function<void(std::span<std::int64_t>, std::uint32_t)> mix) {
+    impl_->SetAuxiliaryAudioMix(std::move(mix));
+}
 VirtualFileSystem* AndroidGuestProcess::Filesystem() noexcept {
     return impl_->Filesystem();
 }
@@ -2352,6 +2379,10 @@ dexvm::NioRuntime& AndroidGuestCallSession::NIO() noexcept { return process_->NI
 audio::JavaSoundPoolState& AndroidGuestCallSession::SoundPoolState() noexcept { return process_->SoundPoolState(); }
 audio::JavaSoundPoolMixer& AndroidGuestCallSession::SoundPoolMixer() noexcept { return process_->SoundPoolMixer(); }
 audio::OpenSlesPcmMixer& AndroidGuestCallSession::PcmPlayback() noexcept { return process_->PcmPlayback(); }
+void AndroidGuestCallSession::SetAuxiliaryAudioMix(
+    std::function<void(std::span<std::int64_t>, std::uint32_t)> mix) {
+    process_->SetAuxiliaryAudioMix(std::move(mix));
+}
 VirtualFileSystem* AndroidGuestCallSession::Filesystem() noexcept { return process_->Filesystem(); }
 AndroidGuestProcess& AndroidGuestCallSession::Process() noexcept { return *process_; }
 std::optional<memory::GuestAddress> AndroidGuestCallSession::FindNativeExport(std::string_view class_name, std::string_view method_name, std::string_view descriptor) const { return process_->FindNativeExport(class_name, method_name, descriptor); }

@@ -174,6 +174,7 @@ TEST_CASE("videoview plays through the fake backend and completes once") {
 
     vm.CallOn(view, "start", "()V");
     CHECK(vm.CallOn(view, "getCurrentPosition", "()I").AsInt() == 0);
+    const auto origin = vm.context->uptime_millis.load();
 
     std::vector<std::vector<std::uint8_t>> frames;
     CHECK(vm.Pump(&frames) == 1U);  // frame 0 is due at position 0
@@ -181,18 +182,18 @@ TEST_CASE("videoview plays through the fake backend and completes once") {
     CHECK(frames[0].size() == 64U * 32U * 4U);
     CHECK(vm.Completions() == 0);
 
-    vm.context->uptime_millis = 500;
+    vm.context->uptime_millis = origin + 500;
     CHECK(vm.CallOn(view, "getCurrentPosition", "()I").AsInt() == 500);
     CHECK(vm.Pump() == 1U);  // newest due frame (index 5) exactly once
     CHECK(vm.Pump() == 0U);  // same position -> no new frame
 
-    vm.context->uptime_millis = 1000;
+    vm.context->uptime_millis = origin + 1000;
     static_cast<void>(vm.Pump());
     CHECK(vm.Completions() == 1);
     CHECK(vm.CallOn(view, "getCurrentPosition", "()I").AsInt() == 1000);
 
     // Past the end nothing replays and completion stays single-shot.
-    vm.context->uptime_millis = 1200;
+    vm.context->uptime_millis = origin + 1200;
     CHECK(vm.Pump() == 0U);
     CHECK(vm.Completions() == 1);
 
@@ -226,17 +227,19 @@ TEST_CASE("videoview pause freezes and seekTo moves the position") {
     vm.CallOn(view, "setVideoPath", "(Ljava/lang/String;)V",
               {VmValue::Ref(vm.interpreter.NewStringUtf8(kGuestVideoPath))});
     vm.CallOn(view, "start", "()V");
-    vm.context->uptime_millis = 300;
+    const auto origin = vm.context->uptime_millis.load();
+    vm.context->uptime_millis = origin + 300;
     vm.CallOn(view, "pause", "()V");
     CHECK(vm.CallOn(view, "getCurrentPosition", "()I").AsInt() == 300);
-    vm.context->uptime_millis = 600;
+    vm.context->uptime_millis = origin + 600;
     CHECK(vm.CallOn(view, "getCurrentPosition", "()I").AsInt() == 300);
 
     // Resume-from-checkpoint path (MyVideoView-style seekTo + start).
     vm.CallOn(view, "seekTo", "(I)V", {VmValue::Int(100)});
     CHECK(vm.CallOn(view, "getCurrentPosition", "()I").AsInt() == 100);
     vm.CallOn(view, "start", "()V");
-    vm.context->uptime_millis = 700;
+    const auto resume = vm.context->uptime_millis.load();
+    vm.context->uptime_millis = resume + 100;
     CHECK(vm.CallOn(view, "getCurrentPosition", "()I").AsInt() == 200);
 
     // Out-of-range seeks clamp instead of failing.
@@ -480,6 +483,21 @@ TEST_CASE("video audio resampling stays continuous across pump batches") {
     CHECK(second == std::vector<std::int16_t>{2, 2, 2, 2, 3, 3});
 }
 
+TEST_CASE("video audio downsampling skips unread source frames across 1-frame pumps") {
+    VideoVm vm(FakeAudioFactory(192000U, 1U));
+    const auto view = vm.NewVideoView();
+    vm.CallOn(view, "setVideoPath", "(Ljava/lang/String;)V",
+              {VmValue::Ref(vm.interpreter.NewStringUtf8(kGuestVideoPath))});
+    vm.CallOn(view, "start", "()V");
+
+    std::vector<std::int16_t> first(2U, 0);
+    std::vector<std::int16_t> second(2U, 0);
+    CHECK(MixVideoPcmIntoStereo(*vm.context, first, 48000U) == 1U);
+    CHECK(MixVideoPcmIntoStereo(*vm.context, second, 48000U) == 1U);
+    CHECK(first == std::vector<std::int16_t>{0, 0});
+    CHECK(second == std::vector<std::int16_t>{4, 4});
+}
+
 TEST_CASE("paused, stopped and audioless videos contribute silence") {
     VideoVm vm(FakeAudioFactory(8000U, 1U));
     const auto view = vm.NewVideoView();
@@ -495,7 +513,6 @@ TEST_CASE("paused, stopped and audioless videos contribute silence") {
     CHECK(MixVideoPcmIntoStereo(*vm.context, buffer, 16000U) == 0U);
     CHECK(buffer == std::vector<std::int16_t>(8U, 0));
 
-    // A playing stream without an audio track also stays silent.
     VideoVm silent(FakeFactory());
     const auto silent_view = silent.NewVideoView();
     silent.CallOn(silent_view, "setVideoPath", "(Ljava/lang/String;)V",
@@ -503,6 +520,34 @@ TEST_CASE("paused, stopped and audioless videos contribute silence") {
                       silent.interpreter.NewStringUtf8(kGuestVideoPath))});
     silent.CallOn(silent_view, "start", "()V");
     CHECK(MixVideoPcmIntoStereo(*silent.context, buffer, 16000U) == 0U);
+}
+
+TEST_CASE("two playing VideoViews mix into one stereo buffer") {
+    VideoVm vm(FakeAudioFactory(8000U, 1U));
+    const auto first = vm.NewVideoView();
+    const auto second = vm.NewVideoView();
+    vm.CallOn(first, "setVideoPath", "(Ljava/lang/String;)V",
+              {VmValue::Ref(vm.interpreter.NewStringUtf8(kGuestVideoPath))});
+    vm.CallOn(second, "setVideoPath", "(Ljava/lang/String;)V",
+              {VmValue::Ref(vm.interpreter.NewStringUtf8(kGuestVideoPath))});
+    vm.CallOn(first, "start", "()V");
+    vm.CallOn(second, "start", "()V");
+    std::vector<std::int16_t> buffer(4U, 0);
+    CHECK(MixVideoPcmIntoStereo(*vm.context, buffer, 8000U) == 2U);
+}
+
+TEST_CASE("videoview seekTo resets the PCM cursor") {
+    VideoVm vm(FakeAudioFactory(8000U, 1U));
+    const auto view = vm.NewVideoView();
+    vm.CallOn(view, "setVideoPath", "(Ljava/lang/String;)V",
+              {VmValue::Ref(vm.interpreter.NewStringUtf8(kGuestVideoPath))});
+    vm.CallOn(view, "start", "()V");
+    std::vector<std::int16_t> first(2U, 0);
+    CHECK(MixVideoPcmIntoStereo(*vm.context, first, 8000U) == 1U);
+    vm.CallOn(view, "seekTo", "(I)V", {VmValue::Int(0)});
+    std::vector<std::int16_t> again(2U, 0);
+    CHECK(MixVideoPcmIntoStereo(*vm.context, again, 8000U) == 1U);
+    CHECK(again == first);
 }
 
 TEST_CASE("videoview missing file completion is deferred to the video pump") {

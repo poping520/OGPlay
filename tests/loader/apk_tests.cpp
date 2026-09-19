@@ -7,6 +7,7 @@
 #include <string_view>
 #include <vector>
 
+#include "ogplay/audio/encoded_audio.h"
 #include "ogplay/loader/apk.h"
 
 namespace {
@@ -105,6 +106,21 @@ TEST_CASE("APK parser reads an exact stored native library") {
     CHECK_THROWS_WITH(static_cast<void>(
                           ogplay::loader::ReadStoredApkEntry(bytes, archive, "missing.so")),
                       "APK entry was not found");
+}
+
+TEST_CASE("APK stored entry window reads a slice without copying the payload") {
+    std::vector<std::byte> payload(256U * 1024U, std::byte{0xab});
+    payload[100] = std::byte{0x11};
+    payload[101] = std::byte{0x22};
+    const auto bytes = MakeZip("assets/large.bin", payload);
+    const auto archive = ogplay::loader::ParseApkArchive(bytes);
+    const auto data_offset = ogplay::loader::StoredApkEntryDataOffset(
+        bytes, archive, "assets/large.bin");
+    const auto window = ogplay::audio::SliceSourceWindow(
+        bytes, data_offset + 100U, 2U);
+    CHECK(window == std::vector<std::byte>({std::byte{0x11}, std::byte{0x22}}));
+    CHECK(window.size() < payload.size());
+    CHECK(archive.entries.front().uncompressed_size == payload.size());
 }
 
 TEST_CASE("APK stored entry rejects corruption and compression") {

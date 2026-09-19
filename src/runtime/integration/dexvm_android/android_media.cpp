@@ -101,25 +101,34 @@ struct Format final {
     if (state == nullptr || context->pcm_playback == nullptr) {
         return kErrorInvalidOperation;
     }
-    if (bytes.empty() || bytes.size() %
-            static_cast<std::size_t>(state->channel_count *
-                                     state->bytes_per_sample) != 0U ||
-        bytes.size() > static_cast<std::size_t>(state->buffer_size)) {
+    const auto frame_bytes = static_cast<std::size_t>(
+        state->channel_count * state->bytes_per_sample);
+    if (bytes.size() % frame_bytes != 0U) {
         return kErrorBadValue;
     }
+    if (bytes.empty()) return 0;
     const auto player = state->player;
     const auto mode = state->mode;
     const auto buffer_size = static_cast<std::size_t>(state->buffer_size);
     if (mode == kModeStatic) {
-        context->pcm_playback->Clear(player);
-        if (!context->pcm_playback->Enqueue(player, bytes)) return 0;
-    } else {
+        const auto take = std::min(bytes.size(), buffer_size);
+        if (take % frame_bytes != 0U) return kErrorBadValue;
+        if (!context->pcm_playback->Enqueue(player, bytes.first(take))) {
+            return 0;
+        }
+        if (state->state == kStateNoStaticData) state->state = kStateInitialized;
+        return static_cast<std::int32_t>(take);
+    }
+    std::size_t written{};
+    auto remaining = bytes;
+    while (!remaining.empty()) {
+        const auto chunk = std::min(remaining.size(), buffer_size);
         auto& execution_lock = call.vm.ExecutionLock();
         const auto depth = execution_lock.ReleaseForBlocking();
         audio::OpenSlesEnqueueResult enqueue{};
         try {
             enqueue = context->pcm_playback->EnqueueBlocking(
-                player, bytes, buffer_size);
+                player, remaining.first(chunk), buffer_size);
         } catch (...) {
             execution_lock.ReacquireAfterBlocking(depth);
             throw;
@@ -128,11 +137,13 @@ struct Format final {
         state = Find(context, call.receiver);
         if (enqueue != audio::OpenSlesEnqueueResult::enqueued ||
             state == nullptr || state->player != player) {
+            if (written > 0U) return static_cast<std::int32_t>(written);
             return kErrorInvalidOperation;
         }
+        written += chunk;
+        remaining = remaining.subspan(chunk);
     }
-    if (state->state == kStateNoStaticData) state->state = kStateInitialized;
-    return static_cast<std::int32_t>(bytes.size());
+    return static_cast<std::int32_t>(written);
 }
 
 }  // namespace
@@ -213,6 +224,10 @@ Decl Declare_android_media_AudioTrack(const Context& context) {
              static_cast<std::uint8_t>(format->channels),
              static_cast<std::uint8_t>(format->bytes_per_sample * 8)},
             mode == kModeStatic ? 1U : 255U);
+        context->pcm_playback->SetPlayerKind(
+            player, mode == kModeStatic
+                        ? audio::OpenSlesPlayerKind::audio_track_static
+                        : audio::OpenSlesPlayerKind::audio_track_stream);
         context->audio_tracks[call.receiver.Value()] = {
             player, sample_rate, format->channels, format->bytes_per_sample,
             buffer_size, mode,
@@ -261,8 +276,10 @@ Decl Declare_android_media_AudioTrack(const Context& context) {
     });
     builder.FinalMethod("flush", "()V", [context](dx::IntrinsicContext& call) {
         auto& state = Require(context, call);
-        if (state.mode == kModeStream) {
-            context->pcm_playback->Clear(state.player);
+        if (state.mode == kModeStream &&
+            context->pcm_playback->PlayState(state.player) !=
+                audio::OpenSlesPlayState::playing) {
+            context->pcm_playback->ClearQueueKeepHead(state.player);
             state.last_notified_head =
                 context->pcm_playback->PositionFrames(state.player);
         }
@@ -537,6 +554,9 @@ Decl Declare_android_media_MediaPlayer(const Context& context) {
                           ? audio::EncodedAudioSource::Kind::apk_entry
                           : audio::EncodedAudioSource::Kind::vfs_path;
         source.name = descriptor->source;
+        if (source.name.empty() && descriptor->file != nullptr) {
+            source.name = descriptor->file->path;
+        }
         if (descriptor->kind == dx::IoRuntime::DescriptorKind::apk_entry &&
             offset != 0) {
             if (static_cast<std::uint64_t>(offset) <
@@ -551,15 +571,14 @@ Decl Declare_android_media_MediaPlayer(const Context& context) {
             source.offset = static_cast<std::uint64_t>(offset);
         }
         source.length = static_cast<std::uint64_t>(length);
-        static_cast<void>(context);
+        static_cast<void>(CaptureEncodedAudioWindow(*context, source));
         return source;
     };
     builder.FinalMethod("setDataSource", "(Ljava/io/FileDescriptor;)V",
         [context, descriptor_source](dx::IntrinsicContext& call) {
             auto source = descriptor_source(
-                call, call.arguments[0].ref, 0,
-                std::numeric_limits<std::int64_t>::max());
-            source.length = UINT64_MAX;
+                call, call.arguments[0].ref, 0, 0);
+            source.length = std::numeric_limits<std::uint64_t>::max();
             context->media_resources[call.receiver.Value()] =
                 std::move(source);
             context->media_playing[call.receiver.Value()] = false;
@@ -655,6 +674,9 @@ Decl Declare_android_media_MediaPlayer(const Context& context) {
                 context->encoded_audio_playback->Stop(
                     audio::JavaSoundPoolKind::big, *resource, 0);
                 context->encoded_audio_playback->Unload(*resource);
+                if (resource->lease != 0U) {
+                    context->encoded_audio_leases.erase(resource->lease);
+                }
             }
             context->media_resources.erase(call.receiver.Value());
             context->media_playing.erase(call.receiver.Value());
@@ -1055,6 +1077,8 @@ Decl Declare_android_widget_VideoView(const Context& context) {
 #include <algorithm>
 #include <stdexcept>
 
+#include "ogplay/audio/pcm_mix.h"
+
 #include "ogplay/video/rgba_canvas.h"
 
 #include "shared.h"
@@ -1063,35 +1087,29 @@ namespace ogplay::runtime {
 
 namespace {
 
-void SaturatingAdd(std::int16_t& destination, const std::int16_t value) {
-    const auto sum = static_cast<std::int32_t>(destination) + value;
-    destination = static_cast<std::int16_t>(
-        std::clamp<std::int32_t>(sum, INT16_MIN, INT16_MAX));
-}
-
-// Mixes one view's audio into the stereo buffer. Nearest-neighbour
+// Mixes one view's audio into the stereo accumulator. Nearest-neighbour
 // resampling with an integer phase accumulator: every output frame maps to
 // the current source frame; the phase advances by the source rate and
 // consumes source frames whenever it crosses the output rate, so batches of
-// any size stay drift-free.
+// any size stay drift-free. Fetch includes skipped source frames so
+// downsampling does not restart at the next unread sample of this chunk.
 bool MixOneVideoView(DexVmAndroidContext::VideoViewState& state,
-                     const std::span<std::int16_t> output,
+                     const std::span<std::int64_t> accumulator,
                      const std::uint32_t output_rate) {
     const auto& metadata = state.player->Metadata();
     if (!metadata.HasAudio()) return false;
     const auto channels =
         static_cast<std::size_t>(metadata.audio_channels);
     const auto source_rate = metadata.audio_sample_rate;
-    const auto output_frames = output.size() / 2U;
+    const auto output_frames = accumulator.size() / 2U;
 
-    // Source frames touched by this batch (index of the last used frame,
-    // relative to the carry-inclusive stream position).
-    const auto last_used = static_cast<std::size_t>(
+    const auto consumed_index = static_cast<std::size_t>(
         (state.pcm_phase +
-         static_cast<std::uint64_t>(output_frames - 1U) * source_rate) /
+         static_cast<std::uint64_t>(output_frames) * source_rate) /
         output_rate);
     const bool has_carry = !state.pcm_carry.empty();
-    const auto fetch_frames = last_used + 1U - (has_carry ? 1U : 0U);
+    const auto fetch_frames =
+        consumed_index + 1U - (has_carry ? 1U : 0U);
     std::vector<std::int16_t> source((has_carry ? 1U : 0U) * channels);
     if (has_carry) {
         std::copy(state.pcm_carry.begin(), state.pcm_carry.end(),
@@ -1109,12 +1127,12 @@ bool MixOneVideoView(DexVmAndroidContext::VideoViewState& state,
     auto phase = state.pcm_phase;
     std::size_t index = 0;
     for (std::size_t frame = 0; frame < output_frames; ++frame) {
-        if (index >= available) break;  // end of audio: silence remains
+        if (index >= available) break;
         const auto* samples = source.data() + index * channels;
         const auto left = samples[0];
         const auto right = channels >= 2U ? samples[1] : samples[0];
-        SaturatingAdd(output[frame * 2U], left);
-        SaturatingAdd(output[frame * 2U + 1U], right);
+        accumulator[frame * 2U] += left;
+        accumulator[frame * 2U + 1U] += right;
         phase += source_rate;
         while (phase >= output_rate) {
             phase -= output_rate;
@@ -1122,8 +1140,6 @@ bool MixOneVideoView(DexVmAndroidContext::VideoViewState& state,
         }
     }
     state.pcm_phase = phase;
-    // The frame the next batch starts on is still buffered locally; carry
-    // it so the player cursor never rewinds.
     if (index < available) {
         state.pcm_carry.assign(source.begin() + static_cast<std::ptrdiff_t>(
                                                     index * channels),
@@ -1144,9 +1160,9 @@ bool AnyVideoPlaying(const DexVmAndroidContext& context) {
     return false;
 }
 
-std::size_t MixVideoPcmIntoStereo(
+std::size_t MixVideoPcmIntoAccumulator(
     DexVmAndroidContext& context,
-    const std::span<std::int16_t> interleaved_stereo,
+    const std::span<std::int64_t> interleaved_stereo,
     const std::uint32_t output_rate) {
     if (output_rate == 0U || interleaved_stereo.empty() ||
         interleaved_stereo.size() % 2U != 0U) {
@@ -1161,6 +1177,18 @@ std::size_t MixVideoPcmIntoStereo(
             ++contributed;
         }
     }
+    return contributed;
+}
+
+std::size_t MixVideoPcmIntoStereo(
+    DexVmAndroidContext& context,
+    const std::span<std::int16_t> interleaved_stereo,
+    const std::uint32_t output_rate) {
+    std::vector<std::int64_t> accumulator(interleaved_stereo.size());
+    audio::CopyPcm16IntoAccumulator(interleaved_stereo, accumulator);
+    const auto contributed =
+        MixVideoPcmIntoAccumulator(context, accumulator, output_rate);
+    audio::SaturateStereoPcm16(accumulator, interleaved_stereo);
     return contributed;
 }
 

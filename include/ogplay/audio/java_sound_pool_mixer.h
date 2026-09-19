@@ -23,6 +23,8 @@ struct EncodedAudioSource final {
     std::string name;
     std::uint64_t offset{};
     std::uint64_t length{};
+    std::uint64_t revision{};
+    std::uint64_t lease{};
 
     EncodedAudioSource() = default;
     EncodedAudioSource(std::int32_t value) : resource(value) {}
@@ -79,6 +81,8 @@ public:
     void ResumeAll(JavaSoundPoolKind kind);
     void StopAllSounds();
     void Destroy();
+    void MixIntoAccumulator(std::span<std::int64_t> accumulator,
+                            std::uint32_t output_rate);
     [[nodiscard]] std::size_t RenderStereoPcm16(
         std::span<std::int16_t> output, std::uint32_t output_rate);
     [[nodiscard]] std::optional<std::string> LoadFailure(
@@ -108,7 +112,6 @@ private:
     std::map<EncodedAudioSource, Pcm16Audio> resources_;
     std::map<EncodedAudioSource, std::string> failures_;
     std::vector<Voice> voices_;
-    std::vector<std::int64_t> mix_scratch_;
 };
 
 }  // namespace ogplay::audio

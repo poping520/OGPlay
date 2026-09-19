@@ -446,6 +446,8 @@ struct DexVmAndroidContext final {
   std::unordered_map<std::uint32_t, audio::EncodedAudioSource> media_resources;
   std::unordered_map<std::uint32_t, bool> media_playing;
   std::unordered_map<std::uint32_t, bool> media_looping;
+  std::uint64_t next_encoded_audio_lease{1U};
+  std::unordered_map<std::uint64_t, std::vector<std::byte>> encoded_audio_leases;
 
   enum class ScheduledWorkKind : std::uint8_t {
     handler_message,
@@ -727,9 +729,22 @@ PumpAndroidAudioTracks(dexvm::Interpreter &vm, DexVmAndroidContext &context);
 // layouts take the first two. Returns the number of views that contributed.
 // Paused, stopped and completed views contribute silence.
 [[nodiscard]] std::size_t
+MixVideoPcmIntoAccumulator(DexVmAndroidContext &context,
+                           std::span<std::int64_t> interleaved_stereo,
+                           std::uint32_t output_rate);
+[[nodiscard]] std::size_t
 MixVideoPcmIntoStereo(DexVmAndroidContext &context,
                       std::span<std::int16_t> interleaved_stereo,
                       std::uint32_t output_rate);
+
+// Reads a bounded encoded-audio window from resid, APK stored/deflate, VFS, or
+// a captured FD lease. UINT64_MAX/0 length means the remainder of the source.
+[[nodiscard]] std::vector<std::byte>
+LoadEncodedAudioWindow(DexVmAndroidContext &context,
+                       const audio::EncodedAudioSource &source);
+[[nodiscard]] std::uint64_t
+CaptureEncodedAudioWindow(DexVmAndroidContext &context,
+                          audio::EncodedAudioSource &source);
 
 // Widget click dispatch uses the UiTree's resolved geometry and refreshes a
 // dirty traversal before hit-test. The full gesture contract lands in LUI-9.

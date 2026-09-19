@@ -136,6 +136,9 @@ add_library(ogplay_audio
     src/audio/mp3.cpp
     src/audio/open_sles_pcm_mixer.cpp
     src/audio/ogg_vorbis.cpp
+    src/audio/pcm_mix.cpp
+    src/audio/wav.cpp
+    src/audio/encoded_audio.cpp
     third_party/stb/stb_vorbis.c
 )
 add_library(OGPlay::Audio ALIAS ogplay_audio)
@@ -564,6 +567,7 @@ ogplay_set_project_warnings(ogplay_runtime)
 add_library(ogplay_session
     src/session/android_input_mapping.cpp
     src/session/android_app_process.cpp
+    src/session/audio_output_pump.cpp
     src/session/dex_activity_lifecycle.cpp
     src/session/ui_compositor.cpp
     src/session/lifecycle.cpp
@@ -870,8 +874,11 @@ if(OGPLAY_BUILD_TESTS)
         tests/gles/pvrtc_tests.cpp
         tests/audio/ogg_vorbis_tests.cpp
         tests/audio/mp3_tests.cpp
+        tests/audio/wav_tests.cpp
+        tests/audio/encoded_audio_tests.cpp
         tests/audio/java_sound_pool_mixer_tests.cpp
         tests/audio/open_sles_pcm_mixer_tests.cpp
+        tests/session/audio_output_pump_tests.cpp
         tests/video/video_player_tests.cpp
         tests/video/ffmpeg_video_player_tests.cpp
         tests/session/quirk_registry_tests.cpp

@@ -56,6 +56,7 @@ struct File final {
     // Bytes already counted by SandboxStore::UsedBytes. Dirty quota checks
     // replace this amount with the node's current in-memory size.
     std::uint64_t persisted_size{};
+    std::uint64_t generation{1U};
 };
 
 // A descriptor opened on a directory: the children are snapshotted so

@@ -12,6 +12,12 @@ namespace ogplay::audio {
 
 enum class OpenSlesPlayState : std::uint8_t { stopped, paused, playing };
 
+enum class OpenSlesPlayerKind : std::uint8_t {
+    buffer_queue,
+    audio_track_stream,
+    audio_track_static,
+};
+
 struct OpenSlesPcmFormat final {
     std::uint32_t sample_rate{};
     std::uint8_t channels{};
@@ -37,11 +43,17 @@ enum class OpenSlesEnqueueResult : std::uint8_t {
 class OpenSlesPcmMixer final {
 public:
     using PlayerId = std::uint64_t;
+    static constexpr std::size_t kMaximumBufferBytes = 16U * 1024U * 1024U;
 
     [[nodiscard]] PlayerId CreatePlayer(OpenSlesPcmFormat format,
                                         std::uint8_t queue_capacity);
     void DestroyPlayer(PlayerId player) noexcept;
     [[nodiscard]] bool HasPlayer(PlayerId player) const;
+    void SetPlayerKind(PlayerId player, OpenSlesPlayerKind kind);
+    [[nodiscard]] OpenSlesPlayerKind PlayerKind(PlayerId player) const;
+    void SetPlaybackRate(PlayerId player, float rate);
+    void SetLoop(PlayerId player, std::uint32_t start_frame,
+                 std::uint32_t end_frame, std::int32_t loop_count);
     [[nodiscard]] bool Enqueue(PlayerId player, std::span<const std::byte> pcm);
     // AudioTrack MODE_STREAM writes block against its Android buffer-size
     // byte budget. The item capacity remains only a bounded memory guard.
@@ -53,6 +65,7 @@ public:
     // Process teardown is sticky: wake current writers and reject later ones.
     [[nodiscard]] std::size_t InterruptBlockingWaits() noexcept;
     void Clear(PlayerId player);
+    void ClearQueueKeepHead(PlayerId player);
     [[nodiscard]] OpenSlesQueueState QueueState(PlayerId player) const;
     void SetPlayState(PlayerId player, OpenSlesPlayState state);
     [[nodiscard]] OpenSlesPlayState PlayState(PlayerId player) const;
@@ -63,6 +76,8 @@ public:
     void SetMute(PlayerId player, bool mute);
     void SetStereoPosition(PlayerId player, std::int16_t permille);
 
+    [[nodiscard]] std::vector<OpenSlesConsumedBuffer> MixIntoAccumulator(
+        std::span<std::int64_t> accumulator, std::uint32_t output_rate);
     [[nodiscard]] std::vector<OpenSlesConsumedBuffer> MixAdditiveStereoPcm16(
         std::span<std::int16_t> output, std::uint32_t output_rate);
 
@@ -73,17 +88,26 @@ private:
     };
     struct Player final {
         OpenSlesPcmFormat format;
+        OpenSlesPlayerKind kind{OpenSlesPlayerKind::buffer_queue};
         std::uint8_t capacity{};
         OpenSlesPlayState state{OpenSlesPlayState::stopped};
         std::int16_t millibel{};
         std::int16_t stereo_position{};
         float left_volume{1.0F};
         float right_volume{1.0F};
+        float playback_rate{1.0F};
         bool mute{};
         std::uint32_t play_index{};
         std::uint64_t next_sequence{1U};
         double frame_position{};
         double played_source_frames{};
+        std::int16_t carry_left{};
+        std::int16_t carry_right{};
+        bool has_carry{};
+        std::uint32_t loop_start{};
+        std::uint32_t loop_end{};
+        std::int32_t loop_count{};
+        std::int32_t loops_remaining{};
         std::vector<Buffer> queue;
     };
 
@@ -95,12 +119,18 @@ private:
     [[nodiscard]] Player& Require(PlayerId player);
     [[nodiscard]] const Player& Require(PlayerId player) const;
     [[nodiscard]] static std::size_t QueuedBytes(const Player& player);
+    void ReplaceStatic(Player& player, std::span<const std::byte> pcm);
+    [[nodiscard]] bool MixPlayerFrame(Player& player, PlayerId id,
+                                      std::size_t out_frame,
+                                      double left_gain, double right_gain,
+                                      std::span<std::int64_t> accumulator,
+                                      std::vector<OpenSlesConsumedBuffer>& consumed,
+                                      double step);
 
     mutable std::mutex mutex_;
     std::condition_variable queue_changed_;
     std::map<PlayerId, Player> players_;
     PlayerId next_player_{1U};
-    std::vector<std::int64_t> scratch_;
     std::size_t blocking_writers_{};
     bool interrupted_{};
 };

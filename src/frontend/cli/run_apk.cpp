@@ -1,5 +1,6 @@
 #include "run_apk.h"
 #include "run_apk_vfs.h"
+#include <algorithm>
 #include <array>
 #include <charconv>
 #include <chrono>
@@ -47,6 +48,7 @@
 #include "ogplay/session/quirk_registry.h"
 #include "ogplay/session/title_profile.h"
 #include "ogplay/session/android_app_process.h"
+#include "ogplay/session/audio_output_pump.h"
 #include "ogplay/session/android_input_mapping.h"
 
 namespace ogplay::frontend {
@@ -172,31 +174,6 @@ gles::AngleBackend NativeBackend() {
     return profile.quirks.has_value() &&
            std::ranges::find(profile.quirks->enabled, id) !=
                profile.quirks->enabled.end();
-}
-
-void PumpAudio(runtime::AndroidGuestProcess& guest,
-               hal::AudioOutput& output,
-               std::vector<std::int16_t>& samples,
-               runtime::DexVmAndroidContext* dex_context) {
-    constexpr std::uint64_t kTargetQueuedFrames = 4096U;
-    constexpr std::size_t kMaximumChunksPerPump = 4U;
-    for (std::size_t chunk = 0;
-         chunk < kMaximumChunksPerPump &&
-         output.QueuedFrames() < kTargetQueuedFrames;
-         ++chunk) {
-        auto frames = guest.RenderStereoAudio(
-            samples, kDesktopAudioOutputSpec.sample_rate);
-        if (dex_context != nullptr && !dex_context->video_views.empty()) {
-            // The mixer zero-fills the whole buffer, so decoded VideoView
-            // audio mixes over the full chunk even when no sound is queued.
-            frames = samples.size() / kDesktopAudioOutputSpec.channels;
-            static_cast<void>(runtime::MixVideoPcmIntoStereo(
-                *dex_context, samples, kDesktopAudioOutputSpec.sample_rate));
-        }
-        const auto sample_count = frames * kDesktopAudioOutputSpec.channels;
-        output.Submit(std::as_bytes(
-            std::span{samples}.first(sample_count)));
-    }
 }
 
 std::string Utf16ToUtf8(const std::span<const runtime::JniChar> text) {
@@ -541,58 +518,9 @@ int RunApkCommand(const int argc, const char* const argv[],
                 }
             }
         }
-        auto sound_loader =
-            audio::JavaSoundPoolMixer::EncodedResourceLoader(
-                [dex_context](const audio::EncodedAudioSource& source)
-                    -> std::vector<std::byte> {
-                    std::vector<std::byte> bytes;
-                    if (source.kind ==
-                        audio::EncodedAudioSource::Kind::resource) {
-                        const auto* entry = dex_context->arsc.FindById(
-                            static_cast<std::uint32_t>(source.resource));
-                        if (entry == nullptr ||
-                            !entry->string_value.has_value()) return {};
-                        bytes = loader::ReadApkEntry(
-                            dex_context->apk_bytes, dex_context->archive,
-                            *entry->string_value);
-                    } else if (source.kind ==
-                               audio::EncodedAudioSource::Kind::apk_entry) {
-                        bytes = loader::ReadApkEntry(
-                            dex_context->apk_bytes, dex_context->archive,
-                            source.name);
-                    } else {
-                        if (dex_context->vfs == nullptr) return {};
-                        runtime::DexVmIoVfsAdapter adapter(
-                            *dex_context->vfs);
-                        const auto file = adapter.ReadFile(source.name);
-                        if (!file.has_value()) return {};
-                        bytes = *file;
-                    }
-                    if (source.kind ==
-                        audio::EncodedAudioSource::Kind::resource) {
-                        return bytes;
-                    }
-                    if (source.offset > bytes.size()) return {};
-                    const auto available = bytes.size() -
-                        static_cast<std::size_t>(source.offset);
-                    const auto length = source.length == UINT64_MAX
-                        ? available
-                        : source.length > available
-                            ? std::size_t{}
-                            : static_cast<std::size_t>(source.length);
-                    if (length == 0U && source.length != 0U) return {};
-                    const auto begin = bytes.begin() +
-                        static_cast<std::ptrdiff_t>(source.offset);
-                    return {begin, begin + static_cast<std::ptrdiff_t>(length)};
-                });
         std::unique_ptr<hal::AudioOutput> audio_output;
-        std::vector<std::int16_t> audio_samples(
-            1024U * kDesktopAudioOutputSpec.channels);
-        if (sound_loader) {
-            audio_output =
-                hal::CreateSdlAudioOutput(kDesktopAudioOutputSpec);
-            audio_output->Start();
-        }
+        audio_output = hal::CreateSdlAudioOutput(kDesktopAudioOutputSpec);
+        audio_output->Start();
         std::uint64_t active_frame{};
         // Real-time pacing while a VideoView plays: the dex lifecycle
         // advances its deterministic uptime by 16 ms per frame, so during
@@ -720,7 +648,6 @@ int RunApkCommand(const int argc, const char* const argv[],
         app_request.boundary_options = {
             .allow_gles1_material_single_face = ProfileEnablesQuirk(
                 profile, "gles1_material_front_face")};
-        app_request.sound_resource_loader = std::move(sound_loader);
         app_request.guest_call_slice_observer = guest_slice_observer;
         app_request.platform = {
             .installation_id = "ogplay-" + manifest.package,
@@ -797,6 +724,17 @@ int RunApkCommand(const int argc, const char* const argv[],
                      "starting Profile lifecycle", {}, {},
                      kUnrestrictedLog);
         static_cast<void>(driver.start());
+        std::unique_ptr<session::AudioOutputPump> audio_pump;
+        if (audio_output) {
+            audio_pump = std::make_unique<session::AudioOutputPump>(
+                [guest](const std::span<std::int16_t> output,
+                        const std::uint32_t rate) {
+                    return guest->RenderStereoAudio(output, rate);
+                },
+                audio_output.get(), kDesktopAudioOutputSpec.sample_rate,
+                kDesktopAudioOutputSpec.channels);
+            audio_pump->StartRealtime();
+        }
         agent::McpLifecycleState mcp_lifecycle{
             agent::McpLifecycleState::running};
         std::optional<std::string> guest_fault;
@@ -857,10 +795,12 @@ int RunApkCommand(const int argc, const char* const argv[],
                             permitted_steps += command->frames;
                         } else if (!failure && command->type == Command::Type::suspend) {
                             static_cast<void>(driver.suspend());
+                            if (audio_pump) audio_pump->SetSuspended(true);
                             mcp_lifecycle = agent::McpLifecycleState::suspended;
                             publish_session();
                         } else if (!failure && command->type == Command::Type::resume) {
                             static_cast<void>(driver.resume());
+                            if (audio_pump) audio_pump->SetSuspended(false);
                             mcp_lifecycle = agent::McpLifecycleState::running;
                             publish_session();
                         }
@@ -893,10 +833,6 @@ int RunApkCommand(const int argc, const char* const argv[],
                     std::this_thread::sleep_until(video_pace_deadline);
                 } else {
                     video_pace_deadline = {};
-                }
-                if (audio_output) {
-                    PumpAudio(*guest, *audio_output, audio_samples,
-                              dex_context.get());
                 }
                 if (auto frame = guest->TakeLatestFrame(); frame.has_value()) {
                     *frame = dex_lifecycle->ComposePresentedFrame(
@@ -931,6 +867,7 @@ int RunApkCommand(const int argc, const char* const argv[],
             }
         }
         ReleaseCapturedFrame(mcp_frames.get(), *guest);
+        if (audio_pump) audio_pump->Stop();
         logger.Write(core::LogLevel::info, "frontend.run_apk",
                      "stopping Profile lifecycle",
                      {.frame = driver.state().frame}, {}, kUnrestrictedLog);

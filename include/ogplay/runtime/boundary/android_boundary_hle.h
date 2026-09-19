@@ -123,6 +123,11 @@ public:
     [[nodiscard]] std::vector<audio::OpenSlesConsumedBuffer>
     MixOpenSlesPcm16(std::span<std::int16_t> output,
                      std::uint32_t output_rate);
+    [[nodiscard]] std::vector<audio::OpenSlesConsumedBuffer>
+    MixOpenSlesIntoAccumulator(std::span<std::int64_t> accumulator,
+                               std::uint32_t output_rate);
+    [[nodiscard]] bool OpenSlesCallbackCurrent(std::uint32_t object_key,
+                                               std::uint32_t generation) const;
     [[nodiscard]] audio::OpenSlesPcmMixer& PcmPlayback() noexcept;
     [[nodiscard]] core::GpuStats Stats() const override;
     [[nodiscard]] std::vector<core::GpuRenderTarget> RenderTargets() const override;

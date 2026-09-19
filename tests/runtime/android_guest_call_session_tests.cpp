@@ -7,6 +7,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iterator>
+#include <span>
 #include <string_view>
 #include <thread>
 #include <vector>
@@ -372,6 +373,12 @@ TEST_CASE("Android guest process starts and stops without an application ELF") {
     CHECK(std::ranges::all_of(silent, [](const auto sample) {
         return sample == 0;
     }));
+    process->SetAuxiliaryAudioMix(
+        [](const std::span<std::int64_t> accumulator, const std::uint32_t) {
+            if (!accumulator.empty()) accumulator[0] = 1234;
+        });
+    CHECK(process->RenderStereoAudio(silent, 48000U) == 8U);
+    CHECK(silent[0] == 1234);
 
     process->Stop();
     CHECK_FALSE(process->Running());

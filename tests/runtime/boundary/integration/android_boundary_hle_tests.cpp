@@ -1659,6 +1659,354 @@ TEST_CASE("OpenSL ES guest vtables create and play a PCM buffer queue") {
     }
 }
 
+TEST_CASE("OpenSL ES rejects oversized enqueue before copying guest memory") {
+    BoundaryFixture fixture;
+    const auto call = [&](const std::uint32_t address,
+                          const std::initializer_list<std::uint32_t> arguments) {
+        const std::vector words(arguments);
+        return BoundaryCallAddress(fixture, address, words);
+    };
+    const auto iid = [](const std::string_view name) {
+        const auto found = std::find_if(
+            ogplay::runtime::OpenSlesIids().begin(),
+            ogplay::runtime::OpenSlesIids().end(),
+            [&](const auto& candidate) { return candidate.name == name; });
+        REQUIRE(found != ogplay::runtime::OpenSlesIids().end());
+        return found->value_address.Value();
+    };
+    const auto create = fixture.boundary.Symbols().Lookup(
+        "libOpenSLES.so", "slCreateEngine");
+    REQUIRE(create.has_value());
+    CHECK(call(create->Value(), {fixture.output.Value(), 0U, 0U, 0U, 0U, 0U}) ==
+          0U);
+    const auto engine_object = fixture.bus.Read32(fixture.output, 1U);
+    const auto object_vtable = fixture.bus.Read32(
+        ogplay::memory::GuestAddress{engine_object}, 1U);
+    CHECK(call(fixture.bus.Read32(ogplay::memory::GuestAddress{object_vtable},
+                                  1U),
+               {engine_object, 0U}) == 0U);
+    CHECK(call(fixture.bus.Read32(
+                   ogplay::memory::GuestAddress{object_vtable + 12U}, 1U),
+               {engine_object, iid("SL_IID_ENGINE"),
+                fixture.output.Add(4U).Value()}) == 0U);
+    const auto engine = fixture.bus.Read32(fixture.output.Add(4U), 1U);
+    const auto engine_vtable = fixture.bus.Read32(
+        ogplay::memory::GuestAddress{engine}, 1U);
+    CHECK(call(fixture.bus.Read32(
+                   ogplay::memory::GuestAddress{engine_vtable + 7U * 4U}, 1U),
+               {engine, fixture.output.Add(8U).Value(), 0U, 0U, 0U}) == 0U);
+    const auto mix_object = fixture.bus.Read32(fixture.output.Add(8U), 1U);
+    const auto mix_object_vtable = fixture.bus.Read32(
+        ogplay::memory::GuestAddress{mix_object}, 1U);
+    CHECK(call(fixture.bus.Read32(
+                   ogplay::memory::GuestAddress{mix_object_vtable}, 1U),
+               {mix_object, 0U}) == 0U);
+    const auto source = fixture.output.Add(0x100U);
+    const auto source_locator = fixture.output.Add(0x120U);
+    const auto source_format = fixture.output.Add(0x140U);
+    const auto sink = fixture.output.Add(0x180U);
+    const auto sink_locator = fixture.output.Add(0x1a0U);
+    fixture.bus.Write32(source, source_locator.Value(), 1U);
+    fixture.bus.Write32(source.Add(4U), source_format.Value(), 1U);
+    fixture.bus.Write32(source_locator, 0x800007bdU, 1U);
+    fixture.bus.Write32(source_locator.Add(4U), 1U, 1U);
+    fixture.bus.Write32(source_format, 2U, 1U);
+    fixture.bus.Write32(source_format.Add(4U), 1U, 1U);
+    fixture.bus.Write32(source_format.Add(8U), 48000000U, 1U);
+    fixture.bus.Write32(source_format.Add(12U), 16U, 1U);
+    fixture.bus.Write32(source_format.Add(16U), 16U, 1U);
+    fixture.bus.Write32(source_format.Add(20U), 4U, 1U);
+    fixture.bus.Write32(source_format.Add(24U), 2U, 1U);
+    fixture.bus.Write32(sink, sink_locator.Value(), 1U);
+    fixture.bus.Write32(sink.Add(4U), 0U, 1U);
+    fixture.bus.Write32(sink_locator, 4U, 1U);
+    fixture.bus.Write32(sink_locator.Add(4U), mix_object, 1U);
+    const auto interface_ids = fixture.output.Add(0x1c0U);
+    const auto interface_required = fixture.output.Add(0x1d0U);
+    fixture.bus.Write32(interface_ids,
+                        iid("SL_IID_ANDROIDSIMPLEBUFFERQUEUE"), 1U);
+    fixture.bus.Write32(interface_required, 1U, 1U);
+    CHECK(call(fixture.bus.Read32(
+                   ogplay::memory::GuestAddress{engine_vtable + 2U * 4U}, 1U),
+               {engine, fixture.output.Add(12U).Value(), source.Value(),
+                sink.Value(), 1U, interface_ids.Value(),
+                interface_required.Value()}) == 0U);
+    const auto player_object = fixture.bus.Read32(fixture.output.Add(12U), 1U);
+    const auto player_object_vtable = fixture.bus.Read32(
+        ogplay::memory::GuestAddress{player_object}, 1U);
+    CHECK(call(fixture.bus.Read32(
+                   ogplay::memory::GuestAddress{player_object_vtable}, 1U),
+               {player_object, 0U}) == 0U);
+    CHECK(call(fixture.bus.Read32(
+                   ogplay::memory::GuestAddress{player_object_vtable + 12U},
+                   1U),
+               {player_object, iid("SL_IID_ANDROIDSIMPLEBUFFERQUEUE"),
+                fixture.output.Add(20U).Value()}) == 0U);
+    const auto queue = fixture.bus.Read32(fixture.output.Add(20U), 1U);
+    const auto queue_vtable =
+        fixture.bus.Read32(ogplay::memory::GuestAddress{queue}, 1U);
+    const auto enqueue = fixture.bus.Read32(
+        ogplay::memory::GuestAddress{queue_vtable}, 1U);
+    CHECK(call(enqueue,
+               {queue, fixture.output.Add(0x200U).Value(),
+                ogplay::audio::OpenSlesPcmMixer::kMaximumBufferBytes + 1U}) ==
+          3U);
+}
+
+TEST_CASE("OpenSL ES caps pending callbacks in one mix") {
+    std::vector<ogplay::runtime::OpenSlesGuestCallback> callbacks;
+    BoundaryFixture fixture(1U, &callbacks);
+    const auto call = [&](const std::uint32_t address,
+                          const std::initializer_list<std::uint32_t> arguments) {
+        const std::vector words(arguments);
+        return BoundaryCallAddress(fixture, address, words);
+    };
+    const auto iid = [](const std::string_view name) {
+        const auto found = std::find_if(
+            ogplay::runtime::OpenSlesIids().begin(),
+            ogplay::runtime::OpenSlesIids().end(),
+            [&](const auto& candidate) { return candidate.name == name; });
+        REQUIRE(found != ogplay::runtime::OpenSlesIids().end());
+        return found->value_address.Value();
+    };
+    const auto create = fixture.boundary.Symbols().Lookup(
+        "libOpenSLES.so", "slCreateEngine");
+    REQUIRE(create.has_value());
+    CHECK(call(create->Value(), {fixture.output.Value(), 0U, 0U, 0U, 0U, 0U}) ==
+          0U);
+    const auto engine_object = fixture.bus.Read32(fixture.output, 1U);
+    const auto object_vtable = fixture.bus.Read32(
+        ogplay::memory::GuestAddress{engine_object}, 1U);
+    CHECK(call(fixture.bus.Read32(ogplay::memory::GuestAddress{object_vtable},
+                                  1U),
+               {engine_object, 0U}) == 0U);
+    CHECK(call(fixture.bus.Read32(
+                   ogplay::memory::GuestAddress{object_vtable + 12U}, 1U),
+               {engine_object, iid("SL_IID_ENGINE"),
+                fixture.output.Add(4U).Value()}) == 0U);
+    const auto engine = fixture.bus.Read32(fixture.output.Add(4U), 1U);
+    const auto engine_vtable = fixture.bus.Read32(
+        ogplay::memory::GuestAddress{engine}, 1U);
+    CHECK(call(fixture.bus.Read32(
+                   ogplay::memory::GuestAddress{engine_vtable + 7U * 4U}, 1U),
+               {engine, fixture.output.Add(8U).Value(), 0U, 0U, 0U}) == 0U);
+    const auto mix_object = fixture.bus.Read32(fixture.output.Add(8U), 1U);
+    const auto mix_object_vtable = fixture.bus.Read32(
+        ogplay::memory::GuestAddress{mix_object}, 1U);
+    CHECK(call(fixture.bus.Read32(
+                   ogplay::memory::GuestAddress{mix_object_vtable}, 1U),
+               {mix_object, 0U}) == 0U);
+    const auto source = fixture.output.Add(0x100U);
+    const auto source_locator = fixture.output.Add(0x120U);
+    const auto source_format = fixture.output.Add(0x140U);
+    const auto sink = fixture.output.Add(0x180U);
+    const auto sink_locator = fixture.output.Add(0x1a0U);
+    fixture.bus.Write32(source, source_locator.Value(), 1U);
+    fixture.bus.Write32(source.Add(4U), source_format.Value(), 1U);
+    fixture.bus.Write32(source_locator, 0x800007bdU, 1U);
+    fixture.bus.Write32(source_locator.Add(4U), 255U, 1U);
+    fixture.bus.Write32(source_format, 2U, 1U);
+    fixture.bus.Write32(source_format.Add(4U), 1U, 1U);
+    fixture.bus.Write32(source_format.Add(8U), 48000000U, 1U);
+    fixture.bus.Write32(source_format.Add(12U), 16U, 1U);
+    fixture.bus.Write32(source_format.Add(16U), 16U, 1U);
+    fixture.bus.Write32(source_format.Add(20U), 4U, 1U);
+    fixture.bus.Write32(source_format.Add(24U), 2U, 1U);
+    fixture.bus.Write32(sink, sink_locator.Value(), 1U);
+    fixture.bus.Write32(sink.Add(4U), 0U, 1U);
+    fixture.bus.Write32(sink_locator, 4U, 1U);
+    fixture.bus.Write32(sink_locator.Add(4U), mix_object, 1U);
+    const auto interface_ids = fixture.output.Add(0x1c0U);
+    const auto interface_required = fixture.output.Add(0x1d0U);
+    fixture.bus.Write32(interface_ids,
+                        iid("SL_IID_ANDROIDSIMPLEBUFFERQUEUE"), 1U);
+    fixture.bus.Write32(interface_required, 1U, 1U);
+    CHECK(call(fixture.bus.Read32(
+                   ogplay::memory::GuestAddress{engine_vtable + 2U * 4U}, 1U),
+               {engine, fixture.output.Add(12U).Value(), source.Value(),
+                sink.Value(), 1U, interface_ids.Value(),
+                interface_required.Value()}) == 0U);
+    const auto player_object = fixture.bus.Read32(fixture.output.Add(12U), 1U);
+    const auto player_object_vtable = fixture.bus.Read32(
+        ogplay::memory::GuestAddress{player_object}, 1U);
+    CHECK(call(fixture.bus.Read32(
+                   ogplay::memory::GuestAddress{player_object_vtable}, 1U),
+               {player_object, 0U}) == 0U);
+    CHECK(call(fixture.bus.Read32(
+                   ogplay::memory::GuestAddress{player_object_vtable + 12U},
+                   1U),
+               {player_object, iid("SL_IID_ANDROIDSIMPLEBUFFERQUEUE"),
+                fixture.output.Add(20U).Value()}) == 0U);
+    const auto queue = fixture.bus.Read32(fixture.output.Add(20U), 1U);
+    const auto queue_vtable =
+        fixture.bus.Read32(ogplay::memory::GuestAddress{queue}, 1U);
+    CHECK(call(fixture.bus.Read32(
+                   ogplay::memory::GuestAddress{queue_vtable + 3U * 4U}, 1U),
+               {queue, 0x60000003U, 0U}) == 0U);
+    CHECK(call(fixture.bus.Read32(
+                   ogplay::memory::GuestAddress{player_object_vtable + 12U},
+                   1U),
+               {player_object, iid("SL_IID_PLAY"),
+                fixture.output.Add(24U).Value()}) == 0U);
+    const auto play = fixture.bus.Read32(fixture.output.Add(24U), 1U);
+    const auto play_vtable =
+        fixture.bus.Read32(ogplay::memory::GuestAddress{play}, 1U);
+    CHECK(call(fixture.bus.Read32(
+                   ogplay::memory::GuestAddress{play_vtable + 4U * 4U}, 1U),
+               {play, 0x60000005U, 0U}) == 0U);
+    CHECK(call(fixture.bus.Read32(
+                   ogplay::memory::GuestAddress{play_vtable + 5U * 4U}, 1U),
+               {play, 7U}) == 0U);
+    const auto pcm = fixture.output.Add(0x200U);
+    const std::array pcm_bytes{std::byte{0xe8}, std::byte{0x03}};
+    fixture.memory.Write(pcm, pcm_bytes, 1U);
+    const auto enqueue = fixture.bus.Read32(
+        ogplay::memory::GuestAddress{queue_vtable}, 1U);
+    for (std::uint32_t index = 0; index < 255U; ++index) {
+        CHECK(call(enqueue, {queue, pcm.Value(), 2U}) == 0U);
+    }
+    CHECK(call(fixture.bus.Read32(ogplay::memory::GuestAddress{play_vtable},
+                                  1U),
+               {play, 3U}) == 0U);
+    std::vector<std::int16_t> mixed(512U);
+    static_cast<void>(fixture.boundary.MixOpenSlesPcm16(mixed, 48000U));
+    CHECK(callbacks.size() ==
+          ogplay::runtime::kMaximumOpenSlesPendingCallbacks);
+}
+
+TEST_CASE("OpenSL ES recycles destroyed object slots and drops stale callbacks") {
+    std::vector<ogplay::runtime::OpenSlesGuestCallback> callbacks;
+    BoundaryFixture fixture(1U, &callbacks);
+    const auto call = [&](const std::uint32_t address,
+                          const std::initializer_list<std::uint32_t> arguments) {
+        const std::vector words(arguments);
+        return BoundaryCallAddress(fixture, address, words);
+    };
+    const auto iid = [](const std::string_view name) {
+        const auto found = std::find_if(
+            ogplay::runtime::OpenSlesIids().begin(),
+            ogplay::runtime::OpenSlesIids().end(),
+            [&](const auto& candidate) { return candidate.name == name; });
+        REQUIRE(found != ogplay::runtime::OpenSlesIids().end());
+        return found->value_address.Value();
+    };
+    const auto create = fixture.boundary.Symbols().Lookup(
+        "libOpenSLES.so", "slCreateEngine");
+    REQUIRE(create.has_value());
+    CHECK(call(create->Value(), {fixture.output.Value(), 0U, 0U, 0U, 0U, 0U}) ==
+          0U);
+    const auto first_engine = fixture.bus.Read32(fixture.output, 1U);
+    const auto object_vtable = fixture.bus.Read32(
+        ogplay::memory::GuestAddress{first_engine}, 1U);
+    const auto destroy = fixture.bus.Read32(
+        ogplay::memory::GuestAddress{object_vtable + 6U * 4U}, 1U);
+    CHECK(call(destroy, {first_engine}) == 0U);
+    CHECK(call(create->Value(),
+               {fixture.output.Add(4U).Value(), 0U, 0U, 0U, 0U, 0U}) == 0U);
+    const auto reused_engine = fixture.bus.Read32(fixture.output.Add(4U), 1U);
+    CHECK(reused_engine == first_engine);
+
+    CHECK(call(fixture.bus.Read32(ogplay::memory::GuestAddress{object_vtable},
+                                  1U),
+               {reused_engine, 0U}) == 0U);
+    CHECK(call(fixture.bus.Read32(
+                   ogplay::memory::GuestAddress{object_vtable + 12U}, 1U),
+               {reused_engine, iid("SL_IID_ENGINE"),
+                fixture.output.Add(8U).Value()}) == 0U);
+    const auto engine = fixture.bus.Read32(fixture.output.Add(8U), 1U);
+    const auto engine_vtable = fixture.bus.Read32(
+        ogplay::memory::GuestAddress{engine}, 1U);
+    CHECK(call(fixture.bus.Read32(
+                   ogplay::memory::GuestAddress{engine_vtable + 7U * 4U}, 1U),
+               {engine, fixture.output.Add(12U).Value(), 0U, 0U, 0U}) == 0U);
+    const auto mix_object = fixture.bus.Read32(fixture.output.Add(12U), 1U);
+    const auto mix_object_vtable = fixture.bus.Read32(
+        ogplay::memory::GuestAddress{mix_object}, 1U);
+    CHECK(call(fixture.bus.Read32(
+                   ogplay::memory::GuestAddress{mix_object_vtable}, 1U),
+               {mix_object, 0U}) == 0U);
+    const auto source = fixture.output.Add(0x100U);
+    const auto source_locator = fixture.output.Add(0x120U);
+    const auto source_format = fixture.output.Add(0x140U);
+    const auto sink = fixture.output.Add(0x180U);
+    const auto sink_locator = fixture.output.Add(0x1a0U);
+    fixture.bus.Write32(source, source_locator.Value(), 1U);
+    fixture.bus.Write32(source.Add(4U), source_format.Value(), 1U);
+    fixture.bus.Write32(source_locator, 0x800007bdU, 1U);
+    fixture.bus.Write32(source_locator.Add(4U), 1U, 1U);
+    fixture.bus.Write32(source_format, 2U, 1U);
+    fixture.bus.Write32(source_format.Add(4U), 1U, 1U);
+    fixture.bus.Write32(source_format.Add(8U), 48000000U, 1U);
+    fixture.bus.Write32(source_format.Add(12U), 16U, 1U);
+    fixture.bus.Write32(source_format.Add(16U), 16U, 1U);
+    fixture.bus.Write32(source_format.Add(20U), 4U, 1U);
+    fixture.bus.Write32(source_format.Add(24U), 2U, 1U);
+    fixture.bus.Write32(sink, sink_locator.Value(), 1U);
+    fixture.bus.Write32(sink.Add(4U), 0U, 1U);
+    fixture.bus.Write32(sink_locator, 4U, 1U);
+    fixture.bus.Write32(sink_locator.Add(4U), mix_object, 1U);
+    const auto interface_ids = fixture.output.Add(0x1c0U);
+    const auto interface_required = fixture.output.Add(0x1d0U);
+    fixture.bus.Write32(interface_ids,
+                        iid("SL_IID_ANDROIDSIMPLEBUFFERQUEUE"), 1U);
+    fixture.bus.Write32(interface_required, 1U, 1U);
+    CHECK(call(fixture.bus.Read32(
+                   ogplay::memory::GuestAddress{engine_vtable + 2U * 4U}, 1U),
+               {engine, fixture.output.Add(16U).Value(), source.Value(),
+                sink.Value(), 1U, interface_ids.Value(),
+                interface_required.Value()}) == 0U);
+    const auto player_object = fixture.bus.Read32(fixture.output.Add(16U), 1U);
+    const auto player_object_vtable = fixture.bus.Read32(
+        ogplay::memory::GuestAddress{player_object}, 1U);
+    CHECK(call(fixture.bus.Read32(
+                   ogplay::memory::GuestAddress{player_object_vtable}, 1U),
+               {player_object, 0U}) == 0U);
+    CHECK(call(fixture.bus.Read32(
+                   ogplay::memory::GuestAddress{player_object_vtable + 12U},
+                   1U),
+               {player_object, iid("SL_IID_ANDROIDSIMPLEBUFFERQUEUE"),
+                fixture.output.Add(20U).Value()}) == 0U);
+    const auto queue = fixture.bus.Read32(fixture.output.Add(20U), 1U);
+    const auto queue_vtable =
+        fixture.bus.Read32(ogplay::memory::GuestAddress{queue}, 1U);
+    CHECK(call(fixture.bus.Read32(
+                   ogplay::memory::GuestAddress{queue_vtable + 3U * 4U}, 1U),
+               {queue, 0x60000003U, 0x5678U}) == 0U);
+    const auto pcm = fixture.output.Add(0x200U);
+    const std::array pcm_bytes{
+        std::byte{0xe8}, std::byte{0x03}, std::byte{0xd0}, std::byte{0x07}};
+    fixture.memory.Write(pcm, pcm_bytes, 1U);
+    CHECK(call(fixture.bus.Read32(ogplay::memory::GuestAddress{queue_vtable},
+                                  1U),
+               {queue, pcm.Value(),
+                static_cast<std::uint32_t>(pcm_bytes.size())}) == 0U);
+    CHECK(call(fixture.bus.Read32(
+                   ogplay::memory::GuestAddress{player_object_vtable + 12U},
+                   1U),
+               {player_object, iid("SL_IID_PLAY"),
+                fixture.output.Add(24U).Value()}) == 0U);
+    const auto play = fixture.bus.Read32(fixture.output.Add(24U), 1U);
+    const auto play_vtable =
+        fixture.bus.Read32(ogplay::memory::GuestAddress{play}, 1U);
+    CHECK(call(fixture.bus.Read32(ogplay::memory::GuestAddress{play_vtable},
+                                  1U),
+               {play, 3U}) == 0U);
+    std::array<std::int16_t, 4> mixed{};
+    CHECK(fixture.boundary.MixOpenSlesPcm16(mixed, 48000U).size() == 1U);
+    REQUIRE(callbacks.size() == 1U);
+    const auto generation = callbacks[0].generation;
+    CHECK(fixture.boundary.OpenSlesCallbackCurrent(callbacks[0].object_key,
+                                                   generation));
+    CHECK(call(fixture.bus.Read32(
+                   ogplay::memory::GuestAddress{queue_vtable + 4U}, 1U),
+               {queue}) == 0U);
+    CHECK_FALSE(fixture.boundary.OpenSlesCallbackCurrent(
+        callbacks[0].object_key, generation));
+    CHECK(call(destroy, {reused_engine}) == 0U);
+    CHECK_THROWS_AS(static_cast<void>(call(destroy, {player_object})),
+                    std::runtime_error);
+}
+
 TEST_CASE("A32 call frame bulk decodes register and stack arguments") {
     ogplay::memory::AddressSpace memory;
     const ogplay::memory::GuestAddress stack{0x6e200000U};

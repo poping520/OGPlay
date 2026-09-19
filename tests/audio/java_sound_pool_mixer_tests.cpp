@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <cstdint>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
@@ -72,6 +73,31 @@ TEST_CASE("SoundPool mixer keeps unavailable resources explicit") {
     CHECK(mixer.ActiveVoiceCount() == 0U);
 }
 
+TEST_CASE("SoundPool mixer decodes WAV windows") {
+    std::vector<std::byte> wav{
+        std::byte{'R'}, std::byte{'I'}, std::byte{'F'}, std::byte{'F'},
+        std::byte{36}, std::byte{0}, std::byte{0}, std::byte{0},
+        std::byte{'W'}, std::byte{'A'}, std::byte{'V'}, std::byte{'E'},
+        std::byte{'f'}, std::byte{'m'}, std::byte{'t'}, std::byte{' '},
+        std::byte{16}, std::byte{0}, std::byte{0}, std::byte{0},
+        std::byte{1}, std::byte{0}, std::byte{1}, std::byte{0},
+        std::byte{0x40}, std::byte{0x1f}, std::byte{0}, std::byte{0},
+        std::byte{0x80}, std::byte{0x3e}, std::byte{0}, std::byte{0},
+        std::byte{2}, std::byte{0}, std::byte{16}, std::byte{0},
+        std::byte{'d'}, std::byte{'a'}, std::byte{'t'}, std::byte{'a'},
+        std::byte{2}, std::byte{0}, std::byte{0}, std::byte{0},
+        std::byte{0xe8}, std::byte{0x03}};
+    ogplay::audio::JavaSoundPoolMixer mixer{
+        [&wav](const ogplay::audio::EncodedAudioSource&) { return wav; }};
+    REQUIRE(mixer.Load(3));
+    REQUIRE(mixer.Play(ogplay::audio::JavaSoundPoolKind::pool, 3, 1, 1.0F));
+    std::vector<std::int16_t> output(16U);
+    CHECK(mixer.RenderStereoPcm16(output, 8000U) == 8U);
+    CHECK(std::ranges::any_of(output, [](const auto sample) {
+        return sample != 0;
+    }));
+}
+
 TEST_CASE("SoundPool mixer serializes guest controls with host rendering") {
     const auto sound = ReadSound();
     ogplay::audio::JavaSoundPoolMixer mixer{
@@ -93,4 +119,23 @@ TEST_CASE("SoundPool mixer serializes guest controls with host rendering") {
     }
     renderer.join();
     CHECK(mixer.LoadedResourceCount() == 1U);
+}
+
+TEST_CASE("SoundPool mixer treats path revision as a distinct cache key") {
+    const auto sound = ReadSound();
+    std::uint32_t loads{};
+    ogplay::audio::JavaSoundPoolMixer mixer{
+        [&](const ogplay::audio::EncodedAudioSource&) {
+            ++loads;
+            return sound;
+        }};
+    ogplay::audio::EncodedAudioSource path;
+    path.kind = ogplay::audio::EncodedAudioSource::Kind::vfs_path;
+    path.name = "/sdcard/music.ogg";
+    path.revision = 1U;
+    REQUIRE(mixer.Load(path));
+    path.revision = 2U;
+    REQUIRE(mixer.Load(path));
+    CHECK(loads == 2U);
+    CHECK(mixer.LoadedResourceCount() == 2U);
 }

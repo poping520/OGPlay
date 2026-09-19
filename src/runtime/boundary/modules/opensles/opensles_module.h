@@ -25,8 +25,12 @@ public:
 
     [[nodiscard]] BoundaryCallServices& CallServices() noexcept;
     void MapGuestObjectArena();
+    [[nodiscard]] std::vector<audio::OpenSlesConsumedBuffer> MixIntoAccumulator(
+        std::span<std::int64_t> accumulator, std::uint32_t output_rate);
     [[nodiscard]] std::vector<audio::OpenSlesConsumedBuffer> MixAdditiveStereoPcm16(
         std::span<std::int16_t> output, std::uint32_t output_rate);
+    [[nodiscard]] bool CallbackCurrent(std::uint32_t object_key,
+                                       std::uint32_t generation) const;
 
 #define OGPLAY_DECLARE_OPENSLES(name, id, count, kind, method) \
     std::uint32_t method(const A32CallFrame& call);

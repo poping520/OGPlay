@@ -109,6 +109,10 @@ Dex activity 每帧在 guest 回调前泵送主 Looper，到帧尾只通过
 - `ProfileAssetBundle`：拥有已导入 VFS/audio 字节并拒绝非规范路径、大小写歧义、重复项
   和空资产。
 - `Session::OpenEmpty/Close/State/Step/UntilFrame/Pause/Resume`：确定性会话原语。
+- `AudioOutputPump`：会话拥有的音频消费；实时 worker 按设备队列补 PCM，离线路径按
+  统一 Clock 差值换算帧数并保留不足一帧的余数。frontend 只注入 HAL 输出。设备
+  Submit/水位查询失败时置位 `DeviceFailed` 并停止继续提交，不让 worker 因异常退出。
+  未注入 `sound_resource_loader` 时默认走 `LoadEncodedAudioWindow`。
 
 ## 不变量
 

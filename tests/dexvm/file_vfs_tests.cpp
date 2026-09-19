@@ -13,6 +13,8 @@
 #include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <iterator>
+#include <limits>
 #include <memory>
 #include <span>
 #include <string>
@@ -1980,6 +1982,48 @@ TEST_CASE("MediaPlayer decodes the selected second Ogg descriptor range") {
     CHECK(full_source.offset == 0U);
     CHECK(full_source.length == UINT64_MAX);
     vm.CallOn(player, "prepare", "()V");
+}
+
+TEST_CASE("MediaPlayer FD lease survives close and path replacement") {
+    FileVm vm;
+    vm.vfs.CreateDirectory("/sdcard");
+    const auto fixture_path = std::filesystem::path{OGPLAY_SOURCE_DIR} /
+                              "tests/fixtures/audio/short-vorbis.ogg";
+    std::ifstream fixture(fixture_path, std::ios::binary);
+    REQUIRE(fixture.good());
+    const std::vector<char> chars{std::istreambuf_iterator<char>(fixture), {}};
+    std::vector<std::byte> ogg(chars.size());
+    for (std::size_t index = 0; index < chars.size(); ++index) {
+        ogg[index] = static_cast<std::byte>(chars[index]);
+    }
+    vm.vfs.PutFile("/sdcard/lease.ogg", ogg, true);
+    ogplay::audio::JavaSoundPoolMixer mixer{
+        [context = vm.context](const ogplay::audio::EncodedAudioSource& source) {
+            return ogplay::runtime::LoadEncodedAudioWindow(*context, source);
+        }};
+    vm.context->encoded_audio_playback = &mixer;
+    const auto stream = vm.interpreter.NewIntrinsicInstance(
+        "Ljava/io/FileInputStream;");
+    vm.CallOn(stream, "<init>", "(Ljava/lang/String;)V",
+              {VmValue::Ref(vm.interpreter.NewStringUtf8("/sdcard/lease.ogg"))});
+    const auto fd = vm.CallOn(stream, "getFD",
+                              "()Ljava/io/FileDescriptor;").ref;
+    const auto player = vm.interpreter.NewIntrinsicInstance(
+        "Landroid/media/MediaPlayer;");
+    vm.CallOn(player, "setDataSource", "(Ljava/io/FileDescriptor;)V",
+              {VmValue::Ref(fd)});
+    REQUIRE(vm.context->encoded_audio_leases.size() == 1U);
+    vm.CallOn(stream, "close", "()V");
+    vm.vfs.RemoveFile("/sdcard/lease.ogg");
+    std::vector<std::byte> other(ogg.size(), std::byte{0});
+    vm.vfs.PutFile("/sdcard/lease.ogg", other, true);
+    vm.CallOn(player, "prepare", "()V");
+    vm.CallOn(player, "start", "()V");
+    std::vector<std::int16_t> pcm(512U * 2U);
+    CHECK(mixer.RenderStereoPcm16(pcm, 48000U) == 512U);
+    CHECK(std::ranges::any_of(pcm, [](const std::int16_t sample) {
+        return sample != 0;
+    }));
 }
 
 TEST_CASE("AssetManager list returns sorted unique direct children") {

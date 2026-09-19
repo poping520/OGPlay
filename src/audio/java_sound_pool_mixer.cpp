@@ -6,7 +6,8 @@
 #include <stdexcept>
 #include <utility>
 
-#include "ogplay/audio/mp3.h"
+#include "ogplay/audio/encoded_audio.h"
+#include "ogplay/audio/pcm_mix.h"
 
 namespace ogplay::audio {
 
@@ -22,25 +23,39 @@ bool JavaSoundPoolMixer::Load(const std::int32_t resource) {
 }
 
 bool JavaSoundPoolMixer::Load(const EncodedAudioSource& source) {
-    std::scoped_lock lock(mutex_);
-    if (!loader_ ||
+    if (!Enabled() ||
         (source.kind == EncodedAudioSource::Kind::resource &&
-         source.resource < 0)) return false;
-    if (resources_.contains(source)) return true;
+         source.resource < 0)) {
+        return false;
+    }
+    {
+        std::scoped_lock lock(mutex_);
+        if (resources_.contains(source)) return true;
+    }
+    std::vector<std::byte> encoded;
     try {
-        const auto encoded = loader_(source);
-        if (encoded.empty()) {
+        encoded = loader_(source);
+        if (encoded.empty() || encoded.size() > kMaximumEncodedAudioBytes) {
+            std::scoped_lock lock(mutex_);
             failures_[source] = "encoded audio source is unavailable";
             return false;
         }
-        const bool is_ogg = encoded.size() >= 4U &&
-            encoded[0] == std::byte{'O'} && encoded[1] == std::byte{'g'} &&
-            encoded[2] == std::byte{'g'} && encoded[3] == std::byte{'S'};
-        auto decoded = is_ogg ? DecodeOggVorbis(encoded) : DecodeMp3(encoded);
+        auto decoded = DecodeEncodedAudio(encoded);
+        std::scoped_lock lock(mutex_);
+        if (resources_.contains(source)) return true;
+        std::size_t cached = decoded.interleaved_samples.size() * sizeof(std::int16_t);
+        for (const auto& [_, pcm] : resources_) {
+            cached += pcm.interleaved_samples.size() * sizeof(std::int16_t);
+        }
+        if (cached > kMaximumDecodedPcmBytes) {
+            failures_[source] = "decoded audio cache exceeds the process budget";
+            return false;
+        }
         resources_.emplace(source, std::move(decoded));
         failures_.erase(source);
         return true;
     } catch (const std::exception& error) {
+        std::scoped_lock lock(mutex_);
         failures_[source] = error.what();
         return false;
     }
@@ -234,16 +249,14 @@ void JavaSoundPoolMixer::Destroy() {
     failures_.clear();
 }
 
-std::size_t JavaSoundPoolMixer::RenderStereoPcm16(
-    const std::span<std::int16_t> output, const std::uint32_t output_rate) {
-    if (output_rate == 0U || output.size() % 2U != 0U) {
+void JavaSoundPoolMixer::MixIntoAccumulator(
+    const std::span<std::int64_t> accumulator, const std::uint32_t output_rate) {
+    if (output_rate == 0U || accumulator.size() % 2U != 0U) {
         throw std::invalid_argument(
             "SoundPool output must be stereo PCM with a positive rate");
     }
     std::scoped_lock lock(mutex_);
-    std::ranges::fill(output, std::int16_t{});
-    const auto output_frames = output.size() / 2U;
-    mix_scratch_.assign(output.size(), 0);
+    const auto output_frames = accumulator.size() / 2U;
     for (auto voice = voices_.begin(); voice != voices_.end();) {
         const auto sound = resources_.find(voice->source);
         if (sound == resources_.end()) {
@@ -281,7 +294,7 @@ std::size_t JavaSoundPoolMixer::RenderStereoPcm16(
                 const auto sample = static_cast<double>(a) +
                     (static_cast<double>(b) - static_cast<double>(a)) *
                         fraction;
-                mix_scratch_[rendered * 2U + channel] +=
+                accumulator[rendered * 2U + channel] +=
                     static_cast<std::int64_t>(sample * voice->volume);
             }
             voice->position += step;
@@ -294,13 +307,14 @@ std::size_t JavaSoundPoolMixer::RenderStereoPcm16(
             ++voice;
         }
     }
-    for (std::size_t index = 0; index < output.size(); ++index) {
-        output[index] = static_cast<std::int16_t>(std::clamp(
-            mix_scratch_[index],
-            static_cast<std::int64_t>(std::numeric_limits<std::int16_t>::min()),
-            static_cast<std::int64_t>(std::numeric_limits<std::int16_t>::max())));
-    }
-    return output_frames;
+}
+
+std::size_t JavaSoundPoolMixer::RenderStereoPcm16(
+    const std::span<std::int16_t> output, const std::uint32_t output_rate) {
+    std::vector<std::int64_t> accumulator(output.size());
+    MixIntoAccumulator(accumulator, output_rate);
+    SaturateStereoPcm16(accumulator, output);
+    return output.size() / 2U;
 }
 
 std::optional<std::string> JavaSoundPoolMixer::LoadFailure(

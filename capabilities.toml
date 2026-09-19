@@ -247,7 +247,7 @@ note = "DVM-91 固定 CC0 minimp3 ea99364f，将最大 64 MiB MP3 内存输入�
 
 [audio.sound_pool_mixer]
 status = "complete"
-test = "tests/audio/java_sound_pool_mixer_tests.cpp; tests/runtime/android_guest_call_session_tests.cpp"
+test = "tests/audio/java_sound_pool_mixer_tests.cpp; tests/runtime/android_guest_call_session_tests.cpp; tests/audio/encoded_audio_tests.cpp; tests/audio/wav_tests.cpp"
 note = "M5 WU-0295 用注入 loader 在真实解码成功后提交 loaded，SoundPool voice 控制同步驱动线程安全 stereo PCM16 mixer；DVM-91 将 key 从 resid 泛化为 resid/APK entry/VFS path + 纯字节区间并增加 MP3，原 resid 行为保留；线性重采样、64-bit 累加、饱和与完成清理均有机器测试"
 
 [session.profile_plan]
@@ -807,8 +807,8 @@ note = "APS-6 在 launcher Activity 前完成 default/custom Application 的 res
 
 [session.android_app_process]
 status = "complete"
-test = "tests/runtime/native_library_loader_tests.cpp"
-note = "APS-7 以显式 DexVmReady/ApplicationStarted/ActivityResumed/Stopped 状态拥有 package、ABI、rootless process、NativeLibraryLoader、DexVM、Application 与 Activity lifecycle；Manifest launcher 默认、entry override 可选，纯 Java无 ABI可启动，Activity clinit/onCreate 才动态追加 ELF，Stop 先停 Java threads 再 finalization"
+test = "tests/runtime/native_library_loader_tests.cpp; tests/session/audio_output_pump_tests.cpp"
+note = "APS-7 以显式 DexVmReady/ApplicationStarted/ActivityResumed/Stopped 状态拥有 package、ABI、rootless process、NativeLibraryLoader、DexVM、Application 与 Activity lifecycle；Manifest launcher 默认、entry override 可选，纯 Java无 ABI可启动，Activity clinit/onCreate 才动态追加 ELF，Stop 先停 Java threads 再 finalization。DVM-189 AUD-01 由 process 默认注入 LoadEncodedAudioWindow，并由 AudioOutputPump 拥有实时/离线消费。"
 
 [profiles.apk_launch_preflight]
 status = "complete"
@@ -1557,7 +1557,7 @@ note = "DVM-133 按 API 19 闭合 ContentResolver 五参 query 的无 provider �
 
 [dexvm.media_data_sources]
 status = "complete"
-test = "tests/dexvm/file_vfs_tests.cpp; tests/audio/mp3_tests.cpp; tests/audio/java_sound_pool_mixer_tests.cpp"
+test = "tests/dexvm/file_vfs_tests.cpp; tests/audio/mp3_tests.cpp; tests/audio/java_sound_pool_mixer_tests.cpp; tests/audio/encoded_audio_tests.cpp"
 note = "DVM-91 以逻辑 source identity + byte range 闭合 FileDescriptor/PFD/AFD/FileInputStream.getFD/AssetManager.openFd/MediaPlayer 两个 FD overload；APK payload 绝对 offset 在消费边界规范化，VFS/APK/resid 共用唯一 mixer，stored/deflated、缺失、关闭与越界均明确裁决；不提供 native fd 数值互操作、pipe/socketpair、网络 Uri 或宿主 ffmpeg"
 
 [dexvm.surface_view_lifecycle]

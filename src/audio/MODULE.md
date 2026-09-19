@@ -18,16 +18,18 @@
 - `DecodeMp3`：用固定 CC0 minimp3 从有界内存输入逐帧解码，允许 ID3/非帧前缀，只接受
   全流稳定的 mono/stereo PCM16；vendor commit、hash 与 fixture 来源见
   `third_party/minimp3/README.md`。
-- `EncodedAudioSource`：统一 resid、APK entry、VFS path 与纯字节区间；来源读取仍由上层
-  注入，audio 模块不解析 APK/VFS。
+- `EncodedAudioSource`：统一 resid、APK entry、VFS path 与纯字节区间；`revision` 区分同路径
+  替换，`lease` 标识已捕获的 FD 窗口。来源读取仍由上层注入，audio 模块不解析 APK/VFS。
 - `JavaSoundPoolMixer`：用注入的编码资源 loader 按 source 去重解码，以
   kind + source + instance 管理 voice，并输出确定性 stereo PCM16；loader 不存在时
   保持显式 disabled，缺失/损坏资源保留可查询失败原因。
 - `OpenSlesPcmMixer`：为 Virtual `libOpenSLES.so` 保存线程安全 PCM player/queue，支持
-  mono/stereo、unsigned PCM8/signed little-endian PCM16、线性重采样、millibel volume、
-  mute、pan、独立左右声道 gain、frame playback head 与多 player 64-bit 饱和加性混音；
-  DVM-84 使 OpenSL ES、DEXVM AudioTrack 和旧 Java/JNI AudioTrack 共享该唯一 backend。
-  完整消费只返回事件，mixer 不直接调用 guest callback 或 HAL。
+  mono/stereo、unsigned PCM8/signed little-endian PCM16、跨 buffer 线性重采样、
+  millibel volume、mute、pan、独立左右声道 gain、无符号 32 位回绕的 playback head，
+  以及多 player 64-bit 累加后一次饱和。AudioTrack STREAM/STATIC 与 OpenSL buffer
+  queue 使用不同 stop/clear 语义；STATIC 数据不被播放消费。
+- `DecodeWav`：解码有界 RIFF/WAVE PCM8/16 mono/stereo，拒绝压缩 WAVE。
+- `DecodeEncodedAudio`：按魔数分派 OGG/WAV/MP3。
 - M3/M6 定义对象表、PCM 队列、回调与媒体状态机。
 
 ## 不变量
@@ -35,8 +37,8 @@
 - guest buffer 所有权和回调线程明确。
 - 音频时钟接入统一 Clock；对象状态可快照。
 - 编码资源的来源与路径解析发生在上层；播放器只接收一次调用期间有效的只读字节视图。
-- Ogg/MP3 输入最大 64 MiB、解码 PCM 最大 128 MiB，只接受 1/2 声道和正采样率；空、损坏、
-  超限或不支持流必须在发布 PCM 前明确失败。
+- Ogg/MP3/WAV 输入最大 64 MiB、解码 PCM 最大 128 MiB，只接受 1/2 声道和正采样率；空、损坏、
+  超限或不支持流必须在发布 PCM 前明确失败。WAV 容器不得当作裸 PCM。
 - SoundPool resource 只有在上游完成真实加载后才能 `MarkLoaded`；未接入加载、解码和
   输出前，load/play 只能留下可查询 pending request，查询必须返回目录事实，不得发布
   loaded/playing 成功；play 只有在 loaded 后才能以 resource + instance 创建 voice。
@@ -50,11 +52,13 @@
 - SoundPool 状态必须可由不同 guest JNI 线程安全访问；destroy 同时清空所有 voice，
   与 loaded resource；initialize 不得恢复已销毁的状态。stop 只影响 voice，不得隐式卸载。
 - mixer 控制和 render 共用内部锁；mono 复制到双声道，mono/stereo 通过有界线性重采样
-  消费 position，多个 voice 以 64-bit scratch 累加并饱和为 PCM16，完成 voice 自动清理。
+  消费 position，跨 buffer 保留分数相位；多个 voice 以 64-bit accumulator 累加，
+  仅在最终设备格式上饱和。
 - OpenSL mute 只把当前 player 的输出 gain 置零，不暂停 source position、queue 消费或
   consumed-buffer callback；pause/stopped 才停止 mixer 时间推进。
 - AudioTrack stereo gain 与 OpenSL millibel/mute/pan 在同一 player 上相乘；播放头按已消费
-  source frame 计数，stop 复位，pause 仅冻结。
+  source frame 计数并无符号 32 位回绕。STREAM stop 复位 head 但保留队列；STATIC stop
+  回到缓冲起点且保留样本；pause 仅冻结。flush 仅在非 playing 时丢弃 STREAM 队列且不改 head。
 - AudioTrack MODE_STREAM 使用 mixer 的可中断 blocking enqueue：未消费字节（首 buffer 已播放
   frame 除外）与本次 write 之和不得超过构造 buffer budget；播放、clear、destroy 唤醒
   writer，process teardown 粘性中断。position callback 若同步回填 PCM，同一次 lifecycle pump

@@ -496,10 +496,12 @@ TEST_CASE("AudioTrack notification baseline handles pause flush and release") {
     CHECK_FALSE(PumpAndroidAudioTracks(fixture.vm, *fixture.context).has_value());
     REQUIRE(fixture.recorder.periodic.size() == 3U);
 
+    static_cast<void>(fixture.CallOn(track, "pause", "()V"));
     static_cast<void>(fixture.CallOn(track, "flush", "()V"));
-    CHECK(fixture.CallOn(track, "getPlaybackHeadPosition", "()I").AsInt() == 0);
+    CHECK(fixture.CallOn(track, "getPlaybackHeadPosition", "()I").AsInt() == 2);
     CHECK_FALSE(PumpAndroidAudioTracks(fixture.vm, *fixture.context).has_value());
     CHECK(fixture.recorder.periodic.size() == 3U);
+    static_cast<void>(fixture.CallOn(track, "play", "()V"));
     CHECK(fixture.CallOn(
               track, "write", "([BII)I",
               {VmValue::Ref(pcm), VmValue::Int(0),

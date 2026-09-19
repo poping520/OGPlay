@@ -1,6 +1,7 @@
 #include "ogplay/session/android_app_process.h"
 
 #include <algorithm>
+#include <span>
 #include <unordered_map>
 #include <utility>
 
@@ -126,6 +127,14 @@ public:
         const auto strict_webview_errors =
             request.platform.strict_webview_errors;
         request.boundary_options.logger = request.logger;
+        if (!request.sound_resource_loader && request.context != nullptr) {
+            const auto android_context = request.context;
+            request.sound_resource_loader =
+                [android_context](const audio::EncodedAudioSource& source) {
+                    return runtime::LoadEncodedAudioWindow(*android_context,
+                                                           source);
+                };
+        }
         auto native_process = runtime::AndroidGuestProcess::Start(
             {request.api_level, system.inputs, request.backend,
              request.surface_width, request.surface_height,
@@ -150,6 +159,13 @@ public:
         context->session = session.get();
         context->pcm_playback = &session->PcmPlayback();
         context->encoded_audio_playback = &session->SoundPoolMixer();
+        const auto android_context = context;
+        session->SetAuxiliaryAudioMix(
+            [android_context](const std::span<std::int64_t> accumulator,
+                              const std::uint32_t rate) {
+                static_cast<void>(runtime::MixVideoPcmIntoAccumulator(
+                    *android_context, accumulator, rate));
+            });
         context->native_libraries = native_libraries.get();
         context->package_name = manifest.package;
         context->secure_settings.insert_or_assign("android_id", android_id);

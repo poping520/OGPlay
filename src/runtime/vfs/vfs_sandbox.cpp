@@ -21,7 +21,7 @@ VfsFileInfo VirtualFileSystem::Impl::Stat(const std::string_view path) const {
     const auto found = files_.find(normalized);
     if (found != files_.end()) {
         return {found->second->size, found->second->writable,
-                found->second->source, false};
+                found->second->source, false, found->second->generation};
     }
     if (IsDirectoryLocked(normalized)) {
         return DirectoryInfoLocked(normalized);
@@ -224,7 +224,8 @@ VfsFileInfo VirtualFileSystem::Impl::DescriptorInfo(
     }
     const auto& open = found->second;
     if (open.directory) return open.directory->info;
-    return {open.file->size, open.file->writable, open.file->source, false};
+    return {open.file->size, open.file->writable, open.file->source, false,
+            open.file->generation};
 }
 
 void VirtualFileSystem::Impl::CreateDirectory(const std::string_view path) {

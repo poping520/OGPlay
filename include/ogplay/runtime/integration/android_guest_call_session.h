@@ -260,6 +260,8 @@ public:
     [[nodiscard]] audio::JavaSoundPoolState& SoundPoolState() noexcept;
     [[nodiscard]] audio::JavaSoundPoolMixer& SoundPoolMixer() noexcept;
     [[nodiscard]] audio::OpenSlesPcmMixer& PcmPlayback() noexcept;
+    void SetAuxiliaryAudioMix(
+        std::function<void(std::span<std::int64_t>, std::uint32_t)> mix);
     [[nodiscard]] VirtualFileSystem* Filesystem() noexcept;
     [[nodiscard]] std::optional<std::string> ProcessEnvironmentValue(
         std::string_view name) const;
@@ -369,6 +371,8 @@ public:
     [[nodiscard]] audio::JavaSoundPoolState& SoundPoolState() noexcept;
     [[nodiscard]] audio::JavaSoundPoolMixer& SoundPoolMixer() noexcept;
     [[nodiscard]] audio::OpenSlesPcmMixer& PcmPlayback() noexcept;
+    void SetAuxiliaryAudioMix(
+        std::function<void(std::span<std::int64_t>, std::uint32_t)> mix);
     [[nodiscard]] VirtualFileSystem* Filesystem() noexcept;
     [[nodiscard]] AndroidGuestProcess& Process() noexcept;
     // Resolves a Java_ native export (short then long JNI name) across the

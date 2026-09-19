@@ -190,7 +190,9 @@ extension string 与错误锁存以 native registry 为唯一事实。
 ### 媒体、网络、设备、JNI
 
 - MediaPlayer/VideoView 只消费受检资源、路径或逻辑 FD 区间并交给唯一 decoder/mixer；不创建
-  host fd/第二播放器。回调只来自真实生命周期/播放进度。
+  host fd 或第二播放器。`LoadEncodedAudioWindow` 读取 resid/APK/VFS 窗口或已捕获 lease；
+  `setDataSource(FileDescriptor)` 在关闭原 FD 后仍保留窗口。同路径 VFS 替换不得命中旧缓存。
+  回调只来自真实生命周期/播放进度。
 - AudioTrack rate 来自 mixer；stream/static、marker/period、listener、pause/flush/release 使用
   唯一状态；notification marker/period getter 返回同一 setter 状态，默认 0，释放或未初始化
   时抛 IllegalStateException。回压等待完整释放 VM 锁，恢复后复验 owner；host 音频线程不得进入 VM。

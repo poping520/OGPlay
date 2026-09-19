@@ -478,6 +478,7 @@ std::size_t VirtualFileSystem::Impl::Write(
         std::copy(source.begin(), source.end(),
                   open.file->contents.begin() +
                       static_cast<Difference>(open.offset));
+        ++open.file->generation;
         open.offset = end;
         SetNodeSizeDirtyLocked(
             *open.file, open.file->contents.size(),

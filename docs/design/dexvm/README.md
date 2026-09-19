@@ -49,6 +49,7 @@ API 19 目标同代）为本地参考基线——目录类数据机器比对、�
 | [13 · KeyStore 通用能力开发规划](13-keystore.md) | 原版 JCA、自有 BKS Provider、真实密钥与持久化、互操作验收和 TLS 边界；DVM-172 约定范围已完成 |
 | [14 · 信任验证与 TLS](14-tls-trust.md) | AOSP API、自有 Provider、默认 CA、BIO/网络边界与分阶段验收；规划完成 |
 | [15 · SQLite 与真实数据库](15-sqlite.md) | BootDex Java 栈、host amalgamation、唯一 VFS、旧格式边界及 SQL-01..03 连续交付；待实施 |
+| [16 · 音频审计与开发规划](16-audio.md) | 应用音频语义、BootDex 选择、OpenSL/混音/时钟/退出、CLI 职责收敛与逐批验收；规划完成，未实施 |
 
 ## 启动条件与当前状态
 

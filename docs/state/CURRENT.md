@@ -6,8 +6,10 @@
 
 - [DVM-189](../tasks/dexvm/DVM-189.md) 末轮五项修复已完成定向验证：worker 故障统一唤醒
   writer、有界可取消准备任务、显式 MediaPlayer transport 阶段、按 stream 输出增益、
-  OGG/MP3/WAV 增量音乐解码。MP3 后退 seek 仍为线性重解码；raw-resource 完整链、
-  手动步进阻塞 write 闭环及游戏复现/听测仍待验收，AUD-03 不关闭。
+  OGG/MP3/WAV 增量音乐解码；AudioTrack 同步回填不再丢弃其余已跨越 periodic 通知。
+  MP3 后退 seek 仍为线性重解码；raw-resource 完整链、
+  手动步进阻塞 write 闭环及完整游戏音频验收仍待。Windows Release 下 Angry Birds 2.3.0
+  首界面背景音乐已由用户确认正常；AUD-03 不关闭。
 
 - `SetIntrinsicStaticRef` 写静态引用前先 `EnsureClassLinked`，不跑 `<clinit>`。
   冷路径 `Security.getProperty` 能给已注册但未链接的 BootDex `Engine.door` 赋值。

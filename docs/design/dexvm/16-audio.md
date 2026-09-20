@@ -299,7 +299,7 @@ catalog 只 overlay AudioTrack / SoundPoolImpl / MediaPlayer native 与 AudioMan
 | A04–A06 | 修复 | 每实例 `EncodedMusicMixer`；prepare/seek/duration/volume/loop/reset；两实例互不停止。BootDex MediaPlayer 与 file_vfs FD 用例 |
 | A07 | 修复 | AudioManager get/set volume/mute、`isMusicActive` 读 encoded_music/SoundPool/PCM playing。`AudioManager volume mute and isMusicActive follow session playback` |
 | A08–A17, A22–A24, A27 | 修复 | AUD-01 底座；本轮未回退 |
-| A18 | 修复 | `postEventFromNative` + Handler；periodic 在每条消息后 `PumpJavaThreads`，回填 write 可合并过期 period。`AudioTrack refill coalesces overdue periodic callbacks` |
+| A18 | 修复 | `postEventFromNative` + Handler；periodic 在每条消息后 `PumpJavaThreads`，回填 write 本轮暂停补发但保留其余已跨越 period，由后续安全点继续投递。`AudioTrack refill defers without dropping overdue periodic callbacks` |
 | A19 | 部分 | 音乐分块解码、实例/输入总量限制与取消任务已补；短音效仍全量缓存，整体资源链交叉验收未关闭 |
 | A20 | 修复 | AUD-01 WAV 分派保留 |
 | A21 | 实现已补 | OGG/MP3/WAV bitstream 分块消费、独立 duration/seek；MP3 后退 seek 精确线性重解码。固定 PCM 块不随歌曲时长增长，尚无游戏听测 |

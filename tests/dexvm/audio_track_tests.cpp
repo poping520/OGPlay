@@ -618,7 +618,7 @@ TEST_CASE("AudioTrack listener can refill stream during periodic callback") {
     CHECK(fixture.mixer.QueueState(player).count == 1U);
 }
 
-TEST_CASE("AudioTrack refill coalesces overdue periodic callbacks") {
+TEST_CASE("AudioTrack refill defers without dropping overdue periodic callbacks") {
     AudioTrackVm fixture;
     constexpr std::int32_t buffer_size = 800;
     const auto track = fixture.NewTrack(4000, 4, 2, buffer_size, 1);
@@ -627,14 +627,16 @@ TEST_CASE("AudioTrack refill coalesces overdue periodic callbacks") {
         std::vector<std::byte>(buffer_size, std::byte{}));
     fixture.recorder.write_on_periodic = true;
     fixture.recorder.write_array = pcm;
-    fixture.recorder.write_count = buffer_size;
+    constexpr std::int32_t period_frames = 100;
+    constexpr std::int32_t bytes_per_frame = 2;
+    fixture.recorder.write_count = period_frames * bytes_per_frame;
     static_cast<void>(fixture.CallOn(
         track, "setPlaybackPositionUpdateListener",
         "(Landroid/media/AudioTrack$OnPlaybackPositionUpdateListener;)V",
         {VmValue::Ref(listener)}));
     CHECK(fixture.CallOn(
               track, "setPositionNotificationPeriod", "(I)I",
-              {VmValue::Int(100)}).AsInt() == 0);
+              {VmValue::Int(period_frames)}).AsInt() == 0);
     CHECK(fixture.CallOn(
               track, "write", "([BII)I",
               {VmValue::Ref(pcm), VmValue::Int(0),
@@ -642,10 +644,18 @@ TEST_CASE("AudioTrack refill coalesces overdue periodic callbacks") {
     static_cast<void>(fixture.CallOn(track, "play", "()V"));
 
     fixture.MixFrames(400U);
-    CHECK_FALSE(PumpAndroidAudioTracks(fixture.vm, *fixture.context).has_value());
-    CHECK(fixture.recorder.periodic.size() == 1U);
-    CHECK(fixture.recorder.write_result == buffer_size);
     const auto player = fixture.context->audio_tracks.at(track.Value()).player;
+    for (std::size_t delivered = 1U; delivered <= 4U; ++delivered) {
+        CHECK_FALSE(
+            PumpAndroidAudioTracks(fixture.vm, *fixture.context).has_value());
+        CHECK(fixture.recorder.periodic.size() == delivered);
+        CHECK(fixture.recorder.write_result ==
+              period_frames * bytes_per_frame);
+        CHECK(fixture.context->audio_tracks.at(track.Value()).last_notified_head ==
+              delivered * static_cast<std::size_t>(period_frames));
+    }
+    CHECK_FALSE(PumpAndroidAudioTracks(fixture.vm, *fixture.context).has_value());
+    CHECK(fixture.recorder.periodic.size() == 4U);
     CHECK(fixture.mixer.QueuedBytes(player) ==
           static_cast<std::size_t>(buffer_size));
     CHECK(fixture.mixer.BlockingWriterCount() == 0U);

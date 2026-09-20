@@ -102,6 +102,7 @@ TEST_CASE("session audio pump records device failure without terminating") {
     FakeAudioOutput output(true);
     output.Start();
     std::atomic mixes{0U};
+    std::atomic interrupted{false};
     ogplay::session::AudioOutputPump pump(
         [&](const std::span<std::int16_t> buffer, const std::uint32_t) {
             mixes.fetch_add(1U, std::memory_order_relaxed);
@@ -109,7 +110,8 @@ TEST_CASE("session audio pump records device failure without terminating") {
             buffer[1] = 1;
             return 1U;
         },
-        &output, 48000U, 2U);
+        &output, 48000U, 2U,
+        [&] { interrupted.store(true, std::memory_order_relaxed); });
     pump.StartRealtime();
     const auto deadline =
         std::chrono::steady_clock::now() + std::chrono::seconds(2);
@@ -118,6 +120,9 @@ TEST_CASE("session audio pump records device failure without terminating") {
         std::this_thread::sleep_for(std::chrono::milliseconds(2));
     }
     CHECK(pump.DeviceFailed());
+    CHECK(interrupted.load(std::memory_order_relaxed));
+    CHECK_THROWS_WITH_AS(pump.RethrowWorkerFailure(), "audio device failed",
+                         std::runtime_error);
     pump.Stop();
 }
 

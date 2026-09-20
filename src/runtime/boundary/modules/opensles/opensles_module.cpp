@@ -264,7 +264,7 @@ public:
             if (child->second.player.has_value()) {
                 mixer_.DestroyPlayer(*child->second.player);
             }
-            ++child->second.generation;
+            AdvanceGeneration(child->second);
             std::array<std::byte, kObjectStride> zero{};
             calls_.address_space.Write(child->second.base, zero, call.ThreadId());
             const auto offset =
@@ -500,7 +500,7 @@ public:
     std::uint32_t PlayRegisterCallback(const A32CallFrame& call) {
         std::scoped_lock lock(mutex_);
         auto& object = RequirePlayer(call.Argument(0));
-        ++object.generation;
+        AdvanceGeneration(object);
         object.play_callback = call.Argument(1);
         object.play_context = call.Argument(2);
         return kSuccess;
@@ -575,7 +575,7 @@ public:
     std::uint32_t BufferQueueClear(const A32CallFrame& call) {
         std::scoped_lock lock(mutex_);
         auto& object = RequirePlayer(call.Argument(0));
-        ++object.generation;
+        AdvanceGeneration(object);
         mixer_.Clear(*object.player);
         return kSuccess;
     }
@@ -591,7 +591,7 @@ public:
     std::uint32_t BufferQueueRegisterCallback(const A32CallFrame& call) {
         std::scoped_lock lock(mutex_);
         auto& object = RequirePlayer(call.Argument(0));
-        ++object.generation;
+        AdvanceGeneration(object);
         object.queue_callback = call.Argument(1);
         object.queue_context = call.Argument(2);
         return kSuccess;
@@ -699,6 +699,13 @@ private:
         std::uint32_t parent{};
     };
 
+    void AdvanceGeneration(Object& object) {
+        if (next_generation_ == std::numeric_limits<std::uint32_t>::max()) {
+            throw std::length_error("OpenSL object generation exhausted");
+        }
+        object.generation = ++next_generation_;
+    }
+
     Object& Allocate(const ObjectKind kind, std::set<std::string> interfaces,
                      const std::uint64_t thread_id) {
         if (objects_.size() >= kMaximumObjects) {
@@ -720,11 +727,7 @@ private:
         if (kind == ObjectKind::output_mix) interfaces.insert("SL_IID_OUTPUTMIX");
         if (kind == ObjectKind::audio_player) interfaces.insert("SL_IID_PLAY");
         Object object;
-        if (next_generation_ == std::numeric_limits<std::uint32_t>::max()) {
-            throw std::length_error("OpenSL object generation exhausted");
-        }
-        ++next_generation_;
-        object.generation = next_generation_;
+        AdvanceGeneration(object);
         object.kind = kind;
         object.base = base;
         object.state = kObjectUnrealized;

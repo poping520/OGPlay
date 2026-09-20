@@ -15,8 +15,10 @@ constexpr std::size_t kChunkFrames = 1024U;
 
 AudioOutputPump::AudioOutputPump(Mix mix, hal::AudioOutput* output,
                                  const std::uint32_t sample_rate,
-                                 const std::uint8_t channels)
+                                 const std::uint8_t channels,
+                                 FailureInterrupt failure_interrupt)
     : mix_(std::move(mix)),
+      failure_interrupt_(std::move(failure_interrupt)),
       output_(output),
       sample_rate_(sample_rate),
       channels_(channels),
@@ -101,6 +103,9 @@ void AudioOutputPump::PumpRealtimeOnce() {
             if (output_->QueuedFrames() >= kTargetQueuedFrames) break;
         } catch (...) {
             device_failed_.store(true, std::memory_order_relaxed);
+            std::scoped_lock lock(failure_mutex_);
+            worker_failure_ = std::current_exception();
+            if (failure_interrupt_) failure_interrupt_();
             return;
         }
         std::size_t frames{};
@@ -114,6 +119,9 @@ void AudioOutputPump::PumpRealtimeOnce() {
             output_->Submit(std::as_bytes(std::span{chunk_}.first(samples)));
         } catch (...) {
             device_failed_.store(true, std::memory_order_relaxed);
+            std::scoped_lock lock(failure_mutex_);
+            worker_failure_ = std::current_exception();
+            if (failure_interrupt_) failure_interrupt_();
             return;
         }
     }

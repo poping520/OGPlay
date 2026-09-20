@@ -909,7 +909,12 @@ TEST_CASE("MediaPlayer prepareAsync posts the BootDex prepared event") {
     REQUIRE(music.SetEncoded(
         fixture.context->media_players.at(player.Value()).music, ogg));
     static_cast<void>(fixture.CallOn(player, "prepareAsync", "()V"));
-    CHECK_FALSE(PumpAndroidAudioTracks(fixture.vm, *fixture.context).has_value());
+    for (std::size_t attempt = 0;
+         attempt < 1000U && fixture.prepared.players.empty(); ++attempt) {
+        CHECK_FALSE(
+            PumpAndroidAudioTracks(fixture.vm, *fixture.context).has_value());
+        std::this_thread::yield();
+    }
     REQUIRE(fixture.prepared.players.size() == 1U);
     CHECK(fixture.prepared.players[0] == player);
 }

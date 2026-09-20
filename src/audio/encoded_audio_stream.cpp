@@ -44,18 +44,18 @@ public:
             while (offset < data.size()) {
                 if (stop.stop_requested()) throw std::runtime_error("music prepare cancelled");
                 mp3dec_frame_info_t info{};
-                const auto count = mp3dec_decode_frame(&scan,
+                const auto decoded_frames = mp3dec_decode_frame(&scan,
                     reinterpret_cast<const std::uint8_t*>(data.data() + offset),
                     static_cast<int>(data.size() - offset), nullptr, &info);
                 if (info.frame_bytes <= 0) break;
                 offset += static_cast<std::size_t>(info.frame_bytes);
-                if (count == 0) continue;
+                if (decoded_frames == 0) continue;
                 if ((info.channels != 1 && info.channels != 2) || info.hz <= 0 ||
                     (rate && (rate != static_cast<std::uint32_t>(info.hz) || channels != info.channels)))
                     throw std::invalid_argument("MP3 changes PCM format");
                 rate = static_cast<std::uint32_t>(info.hz);
                 channels = static_cast<std::uint8_t>(info.channels);
-                frames += static_cast<std::size_t>(count);
+                frames += static_cast<std::size_t>(decoded_frames);
             }
             mp3dec_init(&mp3);
         }

@@ -176,9 +176,9 @@ struct AudioTrackVm final {
         const auto prepare = linker.FindDirectMethod(
             looper, "prepareMainLooper", "()V");
         REQUIRE(prepare.has_value());
-        const auto prepared = vm.Call(*prepare, {});
-        REQUIRE_MESSAGE(!prepared.exception.IsValid(),
-                        prepared.exception_message);
+        const auto prepare_result = vm.Call(*prepare, {});
+        REQUIRE_MESSAGE(!prepare_result.exception.IsValid(),
+                        prepare_result.exception_message);
     }
 
     ~AudioTrackVm() {

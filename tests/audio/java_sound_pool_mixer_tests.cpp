@@ -190,7 +190,7 @@ TEST_CASE("SoundPool auto pause is pool-local and preserves manual pause") {
     mixer.AutoPausePool(first);
     mixer.AutoResumePool(first);
     std::vector<std::int16_t> pcm(32U * 2U);
-    mixer.RenderStereoPcm16(pcm, 48000U);
+    static_cast<void>(mixer.RenderStereoPcm16(pcm, 48000U));
     CHECK(mixer.ActiveVoiceCount() == 3U);
     mixer.StopStream(stream_a);
     mixer.StopStream(stream_b);

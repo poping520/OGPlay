@@ -196,3 +196,29 @@ TEST_CASE("SoundPool auto pause is pool-local and preserves manual pause") {
     mixer.StopStream(stream_b);
     mixer.StopStream(stream_c);
 }
+
+TEST_CASE("SoundPool stream gains affect only the selected pool audio stream") {
+    const auto encoded = ReadSound();
+    ogplay::audio::JavaSoundPoolMixer mixer([&](const auto&) { return encoded; });
+    const auto a = mixer.CreatePool(1, 3), b = mixer.CreatePool(1, 4);
+    const auto source = ogplay::audio::EncodedAudioSource::Resource(1);
+    const auto sa = mixer.LoadSample(a, source), sb = mixer.LoadSample(b, source);
+    REQUIRE(mixer.PlaySample(a, sa, 1, 0, 1, -1, 1) != 0);
+    REQUIRE(mixer.PlaySample(b, sb, 0, 1, 1, -1, 1) != 0);
+    mixer.SetStreamGain(4, 0);
+    std::vector<std::int64_t> pcm(2048);
+    mixer.MixIntoAccumulator(pcm, 48000);
+    bool left{};
+    for (std::size_t i = 0; i < pcm.size(); i += 2) {
+        left |= pcm[i] != 0; REQUIRE(pcm[i+1] == 0);
+    }
+    CHECK(left);
+    mixer.SetStreamGain(4, 1); mixer.SetStreamGain(3, 0);
+    std::fill(pcm.begin(), pcm.end(), 0);
+    mixer.MixIntoAccumulator(pcm, 48000);
+    bool right{};
+    for (std::size_t i = 0; i < pcm.size(); i += 2) {
+        REQUIRE(pcm[i] == 0); right |= pcm[i+1] != 0;
+    }
+    CHECK(right);
+}

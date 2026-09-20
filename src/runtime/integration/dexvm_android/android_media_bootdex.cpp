@@ -216,12 +216,13 @@ Decl Declare_android_media_AudioTrack(const Context& context) {
         "native_setup", "(Ljava/lang/Object;IIIIII[I)I",
         [context](dx::IntrinsicContext& call) {
             const auto sample_rate = call.arguments[2].AsInt();
+            const auto audio_stream = call.arguments[1].AsInt();
             const auto channels = ChannelCount(call.arguments[3].AsInt());
             const auto encoding = call.arguments[4].AsInt();
             const auto buffer_size = call.arguments[5].AsInt();
             const auto mode = call.arguments[6].AsInt();
             const auto bytes = BytesPerSample(encoding);
-            if (context->pcm_playback == nullptr || channels < 1 ||
+            if (context->pcm_playback == nullptr || audio_stream < 0 || audio_stream >= 10 || channels < 1 ||
                 channels > 2 || bytes == 0 || sample_rate < 4000 ||
                 sample_rate > 48000 || buffer_size <= 0 ||
                 buffer_size % (channels * bytes) != 0 ||
@@ -243,6 +244,7 @@ Decl Declare_android_media_AudioTrack(const Context& context) {
                 player, mode == kModeStatic
                             ? audio::OpenSlesPlayerKind::audio_track_static
                             : audio::OpenSlesPlayerKind::audio_track_stream);
+            context->pcm_playback->SetAudioStream(player, audio_stream);
             context->audio_tracks[call.receiver.Value()] = {
                 player,
                 sample_rate,
@@ -550,7 +552,7 @@ Decl Declare_android_media_SoundPoolImpl(const Context& context) {
                 return dx::VmValue::Int(kError);
             }
             const auto pool = context->encoded_audio_playback->CreatePool(
-                call.arguments[1].AsInt());
+                call.arguments[1].AsInt(), call.arguments[2].AsInt());
             DexVmAndroidContext::SoundPoolState state;
             state.pool = pool;
             state.jni_weak = call.arguments[0].ref;
@@ -751,6 +753,7 @@ Decl Declare_android_media_SoundPoolImpl(const Context& context) {
 }
 
 Decl Declare_android_media_MediaPlayer(const Context& context) {
+    using Phase = DexVmAndroidContext::MediaPlayerState::Phase;
     auto builder = dx::IntrinsicClassBuilder::Class(
         "Landroid/media/MediaPlayer;", "Ljava/lang/Object;");
     builder.StaticMethod(
@@ -765,7 +768,11 @@ Decl Declare_android_media_MediaPlayer(const Context& context) {
                                       "encoded music mixer is unavailable"};
             }
             DexVmAndroidContext::MediaPlayerState state;
-            state.music = context->encoded_music->Create();
+            try {
+                state.music = context->encoded_music->Create();
+            } catch (const std::length_error& error) {
+                throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", error.what()};
+            }
             state.jni_weak = call.arguments[0].ref;
             context->media_players[call.receiver.Value()] = std::move(state);
             SetNativeContext(call, static_cast<std::int32_t>(
@@ -795,7 +802,7 @@ Decl Declare_android_media_MediaPlayer(const Context& context) {
     const auto set_fd_source =
         [context](dx::IntrinsicContext& call) {
             auto& state = RequireMedia(context, call);
-            if (state.source_set || state.prepared) {
+            if (state.phase != Phase::idle) {
                 throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;",
                                       "MediaPlayer data source is already set"};
             }
@@ -805,12 +812,13 @@ Decl Declare_android_media_MediaPlayer(const Context& context) {
             auto bytes = LoadEncodedAudioWindow(*context, source);
             if (!context->encoded_music->SetEncoded(state.music,
                                                     std::move(bytes))) {
+                if (source.lease) context->encoded_audio_leases.erase(source.lease);
                 throw dx::VmJavaThrow{
                     "Ljava/io/IOException;",
                     "MediaPlayer source is empty or too large"};
             }
             state.source = std::move(source);
-            state.source_set = true;
+            state.phase = Phase::initialized;
             return dx::VmValue::Void();
         };
     builder.DirectMethod(
@@ -823,7 +831,7 @@ Decl Declare_android_media_MediaPlayer(const Context& context) {
         "(Ljava/lang/String;[Ljava/lang/String;[Ljava/lang/String;)V",
         [context](dx::IntrinsicContext& call) {
             auto& state = RequireMedia(context, call);
-            if (state.source_set || state.prepared) {
+            if (state.phase != Phase::idle) {
                 throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;",
                                       "MediaPlayer data source is already set"};
             }
@@ -843,11 +851,12 @@ Decl Declare_android_media_MediaPlayer(const Context& context) {
             auto bytes = LoadEncodedAudioWindow(*context, source);
             if (!context->encoded_music->SetEncoded(state.music,
                                                     std::move(bytes))) {
+                if (source.lease) context->encoded_audio_leases.erase(source.lease);
                 throw dx::VmJavaThrow{"Ljava/io/IOException;",
                                       "MediaPlayer path could not be read"};
             }
             state.source = std::move(source);
-            state.source_set = true;
+            state.phase = Phase::initialized;
             return dx::VmValue::Void();
         },
         kPrivNat);
@@ -855,18 +864,19 @@ Decl Declare_android_media_MediaPlayer(const Context& context) {
         "prepare", "()V",
         [context](dx::IntrinsicContext& call) {
             auto& state = RequireMedia(context, call);
-            if (!state.source_set && context->encoded_music->HasEncoded(state.music)) {
-                state.source_set = true;
+            if (state.phase == Phase::idle && context->encoded_music->HasEncoded(state.music)) {
+                state.phase = Phase::initialized;
             }
-            if (!state.source_set || state.prepared) {
+            if (state.phase != Phase::initialized && state.phase != Phase::stopped) {
                 throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;",
                                       "MediaPlayer prepare in invalid state"};
             }
             if (!context->encoded_music->Prepare(state.music)) {
+                state.phase = Phase::error;
                 throw dx::VmJavaThrow{"Ljava/io/IOException;",
                                       "MediaPlayer prepare failed"};
             }
-            state.prepared = true;
+            state.phase = Phase::prepared;
             return dx::VmValue::Void();
         },
         kPubNat);
@@ -874,11 +884,10 @@ Decl Declare_android_media_MediaPlayer(const Context& context) {
         "prepareAsync", "()V",
         [context](dx::IntrinsicContext& call) {
             auto& state = RequireMedia(context, call);
-            if (!state.source_set && context->encoded_music->HasEncoded(state.music)) {
-                state.source_set = true;
+            if (state.phase == Phase::idle && context->encoded_music->HasEncoded(state.music)) {
+                state.phase = Phase::initialized;
             }
-            if (!state.source_set || state.prepared ||
-                state.prepare_async_pending) {
+            if (state.phase != Phase::initialized && state.phase != Phase::stopped) {
                 throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;",
                                       "MediaPlayer prepareAsync in invalid state"};
             }
@@ -887,7 +896,7 @@ Decl Declare_android_media_MediaPlayer(const Context& context) {
                 throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;",
                                       "MediaPlayer prepareAsync could not start"};
             }
-            state.prepare_async_pending = true;
+            state.phase = Phase::preparing;
             return dx::VmValue::Void();
         },
         kPubNat);
@@ -895,11 +904,15 @@ Decl Declare_android_media_MediaPlayer(const Context& context) {
         "_start", "()V",
         [context](dx::IntrinsicContext& call) {
             auto& state = RequireMedia(context, call);
-            if (!state.prepared) {
-                throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;",
-                                      "MediaPlayer start before prepare"};
+            if (state.phase != Phase::prepared && state.phase != Phase::started &&
+                state.phase != Phase::paused && state.phase != Phase::completed) {
+                state.phase = Phase::error;
+                state.error_event_pending = true;
+                context->encoded_music->Pause(state.music);
+                return dx::VmValue::Void();
             }
             context->encoded_music->Start(state.music);
+            state.phase = Phase::started;
             return dx::VmValue::Void();
         },
         kPrivNat);
@@ -907,11 +920,15 @@ Decl Declare_android_media_MediaPlayer(const Context& context) {
         "_pause", "()V",
         [context](dx::IntrinsicContext& call) {
             auto& state = RequireMedia(context, call);
-            if (!state.prepared) {
-                throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;",
-                                      "MediaPlayer pause before prepare"};
+            if (state.phase != Phase::started && state.phase != Phase::paused &&
+                state.phase != Phase::completed) {
+                state.phase = Phase::error;
+                state.error_event_pending = true;
+                context->encoded_music->Pause(state.music);
+                return dx::VmValue::Void();
             }
             context->encoded_music->Pause(state.music);
+            state.phase = Phase::paused;
             return dx::VmValue::Void();
         },
         kPrivNat);
@@ -919,12 +936,16 @@ Decl Declare_android_media_MediaPlayer(const Context& context) {
         "_stop", "()V",
         [context](dx::IntrinsicContext& call) {
             auto& state = RequireMedia(context, call);
-            if (!state.prepared) {
-                throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;",
-                                      "MediaPlayer stop before prepare"};
+            if (state.phase != Phase::prepared && state.phase != Phase::started &&
+                state.phase != Phase::paused && state.phase != Phase::completed &&
+                state.phase != Phase::stopped) {
+                state.phase = Phase::error;
+                state.error_event_pending = true;
+                context->encoded_music->Pause(state.music);
+                return dx::VmValue::Void();
             }
             context->encoded_music->Stop(state.music);
-            state.prepared = false;
+            state.phase = Phase::stopped;
             return dx::VmValue::Void();
         },
         kPrivNat);
@@ -960,10 +981,9 @@ Decl Declare_android_media_MediaPlayer(const Context& context) {
             }
             found->second.source = {};
             found->second.prepared_event_pending = false;
-            found->second.prepare_async_pending = false;
             found->second.seek_event_pending = false;
-            found->second.source_set = false;
-            found->second.prepared = false;
+            found->second.error_event_pending = false;
+            found->second.phase = Phase::idle;
             return dx::VmValue::Void();
         },
         kPrivNat);
@@ -971,9 +991,12 @@ Decl Declare_android_media_MediaPlayer(const Context& context) {
         "seekTo", "(I)V",
         [context](dx::IntrinsicContext& call) {
             auto& state = RequireMedia(context, call);
-            if (!state.prepared) {
-                throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;",
-                                      "MediaPlayer seek before prepare"};
+            if (state.phase != Phase::prepared && state.phase != Phase::started &&
+                state.phase != Phase::paused && state.phase != Phase::completed) {
+                state.phase = Phase::error;
+                state.error_event_pending = true;
+                context->encoded_music->Pause(state.music);
+                return dx::VmValue::Void();
             }
             context->encoded_music->SeekMs(state.music,
                                            call.arguments[0].AsInt());
@@ -1053,7 +1076,17 @@ Decl Declare_android_media_MediaPlayer(const Context& context) {
         [](dx::IntrinsicContext&) { return dx::VmValue::Void(); }, kPubNat);
     builder.VirtualMethod(
         "setAudioStreamType", "(I)V",
-        [](dx::IntrinsicContext&) { return dx::VmValue::Void(); }, kPubNat);
+        [context](dx::IntrinsicContext& call) {
+            auto& state = RequireMedia(context, call);
+            const auto stream = call.arguments[0].AsInt();
+            if (stream < 0 || stream >= 10)
+                throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "invalid audio stream"};
+            if (state.phase != Phase::idle && state.phase != Phase::initialized &&
+                state.phase != Phase::stopped)
+                throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "stream type after prepare"};
+            context->encoded_music->SetAudioStream(state.music, stream);
+            return dx::VmValue::Void();
+        }, kPubNat);
     builder.VirtualMethod(
         "attachAuxEffect", "(I)V",
         [](dx::IntrinsicContext& call) {

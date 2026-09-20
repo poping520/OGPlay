@@ -253,7 +253,7 @@ note = "DVM-189：独立 SoundPool 池、AOSP play(IFFIIF) loop/priority/rate/ma
 [audio.encoded_music_playback]
 status = "partial"
 test = "tests/audio/encoded_music_tests.cpp; tests/dexvm/audio_track_tests.cpp; tests/dexvm/file_vfs_tests.cpp"
-note = "DVM-189 已有每实例 prepare/start/pause/stop/seek/loop/volume、完成后重播和进程 PCM 总预算；解码移出 mixer 总锁。仍为有界全量解码，增量 bitstream 解码及真实游戏听测未完成。"
+note = "DVM-189 音乐 OGG/MP3/WAV 增量 bitstream 解码、独立 seek/loop/volume、有限实例/输入预算和可取消准备任务；显式 MediaPlayer transport 阶段和按 stream 输出增益。MP3 后退 seek 线性重解码；仍未做真实游戏听测，不宣称完整 MediaPlayer/CTS。"
 
 [session.profile_plan]
 status = "complete"

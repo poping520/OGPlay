@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "ogplay/audio/wav.h"
+#include "ogplay/audio/encoded_audio_stream.h"
 
 namespace {
 
@@ -66,4 +67,14 @@ TEST_CASE("WAVE decoder rejects compressed or truncated files") {
     encoded[20] = std::byte{3};
     CHECK_THROWS_AS(static_cast<void>(ogplay::audio::DecodeWav(encoded)),
                     ogplay::audio::WavDecodeError);
+}
+
+TEST_CASE("incremental WAVE keeps bounded PCM and supports exact random access") {
+    const auto bytes = std::make_shared<const std::vector<std::byte>>(
+        MakePcm16Wav({1000, -1000, 2000, -2000}, 8000U, 2U));
+    ogplay::audio::EncodedAudioStream stream(bytes);
+    CHECK(stream.Frames() == 2);
+    CHECK(stream.Sample(1) == std::array<std::int16_t, 2>{2000, -2000});
+    CHECK(stream.Sample(0) == std::array<std::int16_t, 2>{1000, -1000});
+    CHECK(stream.BufferedPcmBytes() <= 16384);
 }

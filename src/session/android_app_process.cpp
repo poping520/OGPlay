@@ -160,12 +160,18 @@ public:
         context->pcm_playback = &session->PcmPlayback();
         context->encoded_audio_playback = &session->SoundPoolMixer();
         context->encoded_music = &session->EncodedMusic();
+        {
+            std::scoped_lock lock(context->audio_policy_mutex);
+            for (std::int32_t stream = 0; stream < 10; ++stream)
+                runtime::ApplyAudioStreamPolicy(*context, stream);
+        }
         const auto android_context = context;
         session->SetAuxiliaryAudioMix(
             [android_context](const std::span<std::int64_t> accumulator,
                               const std::uint32_t rate) {
+                std::vector<std::int64_t> video(accumulator.size());
                 static_cast<void>(runtime::MixVideoPcmIntoAccumulator(
-                    *android_context, accumulator, rate));
+                    *android_context, video, rate));
                 std::scoped_lock lock(android_context->audio_policy_mutex);
                 constexpr std::size_t kMusicStream = 3U;
                 const auto gain = android_context->stream_mute[kMusicStream]
@@ -173,8 +179,8 @@ public:
                                       : static_cast<double>(
                                             android_context->stream_volume[kMusicStream]) /
                                             15.0;
-                for (auto& sample : accumulator) {
-                    sample = static_cast<std::int64_t>(sample * gain);
+                for (std::size_t i = 0; i < accumulator.size(); ++i) {
+                    accumulator[i] += static_cast<std::int64_t>(video[i] * gain);
                 }
             });
         context->native_libraries = native_libraries.get();

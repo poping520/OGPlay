@@ -9,6 +9,7 @@
 - [ADR-0027 · AudioTrack stream 按构造缓冲字节回压](#adr-0027)
 - [ADR-0061 · EGL 对象 registry 与每 Context 图形状态](#adr-0061)
 - [ADR-0069 · 音频 Java 协议、宿主执行与会话输出边界](#adr-0069)
+- [ADR-0070 · 有界音乐增量解码与音源分流增益](#adr-0070)
 
 <a id="adr-0003"></a>
 
@@ -302,3 +303,35 @@ EGL_KHR_fence_sync，但有 EGL_KHR_reusable_sync；前者不能因入口存在�
 实施按 DVM-189 的有依赖批次进行；先建立独立消费再迁移可能阻塞的原版 Java 回调。
 Java 迁移、native 状态修复、调度改变分别验收；实际契约改变时更新相应 MODULE 和能力入口。
 Proposed 不代表已替代现行实现，也不表示性能、听感、CTS 或游戏兼容已经验收。
+
+<a id="adr-0070"></a>
+
+## ADR-0070 · 有界音乐增量解码与音源分流增益
+
+- 状态：Accepted
+- 日期：2026-09-20
+- 关联：[DVM-189](../tasks/dexvm/DVM-189.md)
+- Supersedes：ADR-0069 第 3 条音乐流式 source 的实施选择；不宣称该提案其余条款全部验收。
+
+### 决定
+
+复用固定 stb_vorbis/minimp3 和 PCM WAV parser，不增加第三方依赖。编码音乐保留有界
+不可变输入窗口，每播放器独立 bitstream 游标与固定 PCM 块；不将完整解码 PCM 用作音乐
+播放底座。OGG 使用 seek/read，MP3 先扫描帧头获取时长，播放时逐帧解码，WAV 直接按帧读。
+MP3 后退 seek 重新解码并丢弃前序输出，保证与线性解码一致，暂不增加不精确的近似 seek。
+
+音乐实例和输入总量在准入时限额，Vorbis 使用固定 codec arena。异步准备任务归实例所有，
+最多一个任务；reset/release/重设源取消并 join，不使用 detached 线程。同步 prepare 也复用
+此路径，任务仅生成 decoder，不访问 VM、mixer 总锁或 guest 回调。事件只在生命周期线程发布。
+
+AudioTrack/MediaPlayer 按播放器保存 stream，SoundPool 按池保存 stream；AudioManager
+将音量/静音下推 native mixer，与实例音量相乘。VideoView/OpenSL 默认 MUSIC，不把 MUSIC
+音量乘到最终总输出。设备或 mixer/callback 致命异常统一先中断 producer，再交还主循环。
+
+### 后果与边界
+
+短音效仍可全量缓存；音乐 PCM 占用不随歌曲时长增长，但编码窗口仍在内存，不支持无限输入
+或网络流。MP3 远距离 seek 为线性工作量，未声称实时延迟或无欠载；未做游戏听测。
+MediaPlayer 阶段与本地资源状态归 native，BootDex 保留 Java wrapper/Handler 协议。
+门禁覆盖跨块/随机 seek PCM 对照、超过旧 PCM 上限的音乐、任务取消/预算、分流静音和
+错误唤醒；不把定向测试当作 title gate 或 CTS。

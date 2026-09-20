@@ -115,10 +115,13 @@ TEST_CASE("session audio pump records device failure without terminating") {
     pump.StartRealtime();
     const auto deadline =
         std::chrono::steady_clock::now() + std::chrono::seconds(2);
-    while (!pump.DeviceFailed() &&
-           std::chrono::steady_clock::now() < deadline) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(2));
+    bool reported{};
+    while (!reported && std::chrono::steady_clock::now() < deadline) {
+        try { pump.RethrowWorkerFailure(); }
+        catch (const std::runtime_error&) { reported = true; }
+        std::this_thread::yield();
     }
+    CHECK(reported);
     CHECK(pump.DeviceFailed());
     CHECK(interrupted.load(std::memory_order_relaxed));
     CHECK_THROWS_WITH_AS(pump.RethrowWorkerFailure(), "audio device failed",
@@ -129,11 +132,13 @@ TEST_CASE("session audio pump records device failure without terminating") {
 TEST_CASE("session audio pump preserves mixer failures") {
     FakeAudioOutput output;
     output.Start();
+    std::atomic interrupted{false};
     ogplay::session::AudioOutputPump pump(
         [](const std::span<std::int16_t>, const std::uint32_t) -> std::size_t {
             throw std::runtime_error("mixer callback failed");
         },
-        &output, 48000U, 2U);
+        &output, 48000U, 2U,
+        [&] { interrupted.store(true); });
     pump.StartRealtime();
     bool observed{};
     const auto deadline =
@@ -148,6 +153,7 @@ TEST_CASE("session audio pump preserves mixer failures") {
         std::this_thread::yield();
     }
     CHECK(observed);
+    CHECK(interrupted.load());
     CHECK_FALSE(pump.DeviceFailed());
     pump.Stop();
 }

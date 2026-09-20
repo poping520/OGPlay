@@ -194,6 +194,10 @@ extension string 与错误锁存以 native registry 为唯一事实。
   `JavaSoundPoolMixer` 池隔离。`LoadEncodedAudioWindow` 读取 resid/APK/VFS 窗口或已捕获 lease；
   `setDataSource(FileDescriptor)` 在关闭原 FD 后仍保留窗口。同路径 VFS 替换不得命中旧缓存。
   原版事件经 `postEventFromNative` 和 Handler/Looper；`mNativeContext` 为非零 32 位 token。
+  MediaPlayer 使用显式 Idle/Initialized/Preparing/Prepared/Started/Paused/Stopped/
+  PlaybackCompleted/Error 阶段；停止幂等，停止后须重新准备；非法 transport 调用停止
+  该音源并投递 error，非法 prepare 抛 ISE。回调后不继续使用可能被 release 的表项。
+  AudioManager volume/mute 下推各 native mixer 的对应 stream，视频单独归 MUSIC。
   网络 URI、subtitle、DRM、effects 明确失败。
 - Resources `openRawResourceFd` 只为 APK 中 stored 的文件型资源建立逻辑 AFD 区间；压缩、
   缺失或非文件资源抛 `Resources.NotFoundException`，供原版 SoundPool/MediaPlayer create 链使用。

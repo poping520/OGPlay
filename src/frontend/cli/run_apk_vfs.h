@@ -25,8 +25,8 @@ struct SandboxOptions final {
     std::optional<std::filesystem::path> directory;
     // Automation and debugging: run with no persistence at all.
     bool ephemeral{};
-    // Required for persistent runs; it is selected by the library, never
-    // re-derived from package at launch.
+    // Advanced override selected by the library. Direct APK launches resolve
+    // a unique existing instance or allocate the package-named first instance.
     std::optional<std::string> installation_id;
 };
 

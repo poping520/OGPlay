@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <array>
+#include <charconv>
 #include <list>
 #include <map>
 #include <mutex>
@@ -89,6 +90,48 @@ private:
     std::array<std::byte, 8> entropy{};
     hal::FillSecureRandom(entropy);
     return entropy;
+}
+
+[[nodiscard]] bool IsInstallationIdForPackage(
+    const std::string_view installation_id, const std::string_view package) {
+    if (installation_id == package) return true;
+    if (!installation_id.starts_with(package) ||
+        installation_id.size() <= package.size() + 1U ||
+        installation_id[package.size()] != '-') {
+        return false;
+    }
+    const auto suffix = installation_id.substr(package.size() + 1U);
+    if (suffix.front() == '0') return false;
+    std::uint32_t number{};
+    const auto parsed = std::from_chars(
+        suffix.data(), suffix.data() + suffix.size(), number);
+    return parsed.ec == std::errc{} &&
+           parsed.ptr == suffix.data() + suffix.size() && number >= 2U;
+}
+
+[[nodiscard]] std::string ResolveInstallationId(
+    const std::filesystem::path& root, const std::string_view package) {
+    std::vector<std::string> matches;
+    std::error_code error;
+    for (std::filesystem::directory_iterator iterator(root, error), end;
+         !error && iterator != end; iterator.increment(error)) {
+        if (!iterator->is_directory(error)) continue;
+        const auto name = iterator->path().filename().string();
+        if (IsInstallationIdForPackage(name, package)) {
+            matches.push_back(name);
+        }
+    }
+    if (error) {
+        throw std::runtime_error(
+            "cannot inspect save sandbox installation ids at " +
+            root.string());
+    }
+    if (matches.empty()) return std::string(package);
+    if (matches.size() == 1U) return matches.front();
+    std::sort(matches.begin(), matches.end());
+    throw std::runtime_error(
+        "multiple save sandbox installations exist for package " +
+        std::string(package) + "; pass --installation-id <id>");
 }
 
 [[nodiscard]] const session::ProfileMount* ExternalMount(
@@ -277,10 +320,6 @@ SandboxSession OpenSandbox(const SandboxOptions& options,
         session.installation_id = "ephemeral-" + session.android_id;
         return session;
     }
-    if (!options.installation_id.has_value() || options.installation_id->empty()) {
-        throw std::runtime_error(
-            "persistent sandbox requires an explicit installation id");
-    }
     if (options.directory.has_value()) {
         session.root = *options.directory;
     } else {
@@ -292,8 +331,20 @@ SandboxSession OpenSandbox(const SandboxOptions& options,
         }
         session.root = *resolved;
     }
+    std::error_code root_error;
+    std::filesystem::create_directories(session.root, root_error);
+    if (root_error) {
+        throw std::runtime_error(
+            "cannot create the save sandbox root at " + session.root.string());
+    }
     try {
-        session.installation_id = *options.installation_id;
+        if (options.installation_id.has_value() &&
+            options.installation_id->empty()) {
+            throw std::runtime_error("--installation-id requires a non-empty id");
+        }
+        session.installation_id = options.installation_id.has_value()
+                                      ? *options.installation_id
+                                      : ResolveInstallationId(session.root, package);
         session.store = runtime::SandboxStore::Open(
             session.root, session.installation_id, package);
         session.android_id = session.store->AndroidId().value_or("");

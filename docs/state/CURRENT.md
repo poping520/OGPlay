@@ -9,6 +9,9 @@
   和 schema 3 四根沙盒均已接入生产入口。VFS、沙盒、syscall/Java 文件、SQLite、归档、
   音频与 Fake VideoView 回归通过；本机缺 FFmpeg 7 DLL，custom AVIO 真实解码用例按契约
   跳过并保留为环境验收缺口，不影响来源接口和无宿主路径链的完成判断。
+  裸 `run-apk` 已补齐实例解析：零实例分配 package 首实例、唯一实例复用，多实例明确要求
+  `--installation-id`，不再把内部安装 id 转嫁给普通 CLI 用户。同期修复 custom AVIO 扩充
+  后 FFmpeg 符号表长度多一项导致 macOS `dlsym(nullptr)` 崩溃；真实 APK 已进入 guest 生命周期。
 
 - [DVM-189](../tasks/dexvm/DVM-189.md) 末轮五项修复已完成定向验证：worker 故障统一唤醒
   writer、有界可取消准备任务、显式 MediaPlayer transport 阶段、按 stream 输出增益、

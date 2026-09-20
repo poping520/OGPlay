@@ -62,8 +62,9 @@ mkdir/unlink/rmdir/rename 立即落元数据。unlink/覆盖后的存活句柄�
 
 安装层从 library 与 sandbox 目录并集按 package 精确匹配，使用最小空缺编号：首份裸名，
 后续 `-2`、`-3`。并发导入先原子创建对应 sandbox 目录占位，再发布同名 library 目录；
-冲突后重扫，失败只清理本次新建内容。GUI 启动、CLI `--installation-id`、SandboxStore 与 guest platform facts 传递同一 id；
-版本字段不参与身份判定。
+冲突后重扫，失败只清理本次新建内容。GUI 启动传递选中 id；裸 CLI 在零/一个实例时分配或
+复用，多实例要求 `--installation-id` 消歧。SandboxStore 与 guest platform facts 始终传递
+同一 id；版本字段不参与身份判定。
 
 ## 不变量
 

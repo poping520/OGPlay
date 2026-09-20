@@ -91,7 +91,7 @@ template <typename Fn>
         const char* name;
         void** slot;
     };
-    const std::array<Symbol, 39> symbols = {{
+    const Symbol symbols[] = {
         {avutil, "avutil_version",
          reinterpret_cast<void**>(&api.avutil_version)},
         {avcodec, "avcodec_version",
@@ -158,8 +158,9 @@ template <typename Fn>
          reinterpret_cast<void**>(&api.sws_freeContext)},
         {swresample, "swr_alloc", reinterpret_cast<void**>(&api.swr_alloc)},
         {swresample, "swr_init", reinterpret_cast<void**>(&api.swr_init)},
-        {swresample, "swr_convert", reinterpret_cast<void**>(&api.swr_convert)},
-    }};
+        {swresample, "swr_convert",
+         reinterpret_cast<void**>(&api.swr_convert)},
+    };
     for (const auto& symbol : symbols) {
         *symbol.slot = ResolveSymbol(symbol.handle, symbol.name);
         if (*symbol.slot == nullptr) {

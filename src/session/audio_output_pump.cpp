@@ -31,6 +31,10 @@ AudioOutputPump::~AudioOutputPump() { Stop(); }
 void AudioOutputPump::StartRealtime() {
     Stop();
     device_failed_.store(false, std::memory_order_relaxed);
+    {
+        std::scoped_lock lock(failure_mutex_);
+        worker_failure_ = {};
+    }
     worker_ = std::jthread([this](const std::stop_token stop) {
         while (!stop.stop_requested()) {
             try {
@@ -41,12 +45,11 @@ void AudioOutputPump::StartRealtime() {
                     continue;
                 }
                 PumpRealtimeOnce();
-                if (output_ != nullptr &&
-                    output_->QueuedFrames() >= kTargetQueuedFrames) {
-                    std::this_thread::sleep_for(std::chrono::milliseconds(2));
-                }
+                std::this_thread::sleep_for(std::chrono::milliseconds(2));
             } catch (...) {
-                device_failed_.store(true, std::memory_order_relaxed);
+                std::scoped_lock lock(failure_mutex_);
+                worker_failure_ = std::current_exception();
+                return;
             }
         }
     });
@@ -63,6 +66,15 @@ void AudioOutputPump::SetSuspended(const bool suspended) noexcept {
 
 bool AudioOutputPump::DeviceFailed() const noexcept {
     return device_failed_.load(std::memory_order_relaxed);
+}
+
+void AudioOutputPump::RethrowWorkerFailure() {
+    std::exception_ptr failure;
+    {
+        std::scoped_lock lock(failure_mutex_);
+        failure = worker_failure_;
+    }
+    if (failure) std::rethrow_exception(failure);
 }
 
 std::size_t AudioOutputPump::MixOffline(const std::span<std::int16_t> output) {
@@ -84,9 +96,13 @@ void AudioOutputPump::PumpRealtimeOnce() {
     if (output_ == nullptr || device_failed_.load(std::memory_order_relaxed)) {
         return;
     }
-    for (std::size_t chunk = 0;
-         chunk < 4U && output_->QueuedFrames() < kTargetQueuedFrames;
-         ++chunk) {
+    for (std::size_t chunk = 0; chunk < 4U; ++chunk) {
+        try {
+            if (output_->QueuedFrames() >= kTargetQueuedFrames) break;
+        } catch (...) {
+            device_failed_.store(true, std::memory_order_relaxed);
+            return;
+        }
         std::size_t frames{};
         {
             std::scoped_lock lock(mutex_);
@@ -94,7 +110,12 @@ void AudioOutputPump::PumpRealtimeOnce() {
         }
         if (frames == 0U) break;
         const auto samples = frames * channels_;
-        output_->Submit(std::as_bytes(std::span{chunk_}.first(samples)));
+        try {
+            output_->Submit(std::as_bytes(std::span{chunk_}.first(samples)));
+        } catch (...) {
+            device_failed_.store(true, std::memory_order_relaxed);
+            return;
+        }
     }
 }
 

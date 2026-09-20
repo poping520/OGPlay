@@ -27,6 +27,7 @@ public:
     void SetLooping(std::uint32_t player, bool looping);
     void SetVolume(std::uint32_t player, float left, float right);
     [[nodiscard]] bool IsPlaying(std::uint32_t player) const;
+    [[nodiscard]] bool HasEncoded(std::uint32_t player) const;
     [[nodiscard]] bool AnyPlaying() const;
     [[nodiscard]] bool IsLooping(std::uint32_t player) const;
     [[nodiscard]] bool Completed(std::uint32_t player);
@@ -50,6 +51,7 @@ private:
         bool playing{};
         bool prepared{};
         bool completed{};
+        std::uint64_t generation{};
     };
 
     mutable std::mutex mutex_;

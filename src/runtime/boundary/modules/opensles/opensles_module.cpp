@@ -695,7 +695,7 @@ private:
         bool stereo_enabled{};
         bool marker_fired{};
         std::uint32_t last_position{};
-        std::uint32_t generation{1U};
+        std::uint32_t generation{};
         std::uint32_t parent{};
     };
 
@@ -720,6 +720,11 @@ private:
         if (kind == ObjectKind::output_mix) interfaces.insert("SL_IID_OUTPUTMIX");
         if (kind == ObjectKind::audio_player) interfaces.insert("SL_IID_PLAY");
         Object object;
+        if (next_generation_ == std::numeric_limits<std::uint32_t>::max()) {
+            throw std::length_error("OpenSL object generation exhausted");
+        }
+        ++next_generation_;
+        object.generation = next_generation_;
         object.kind = kind;
         object.base = base;
         object.state = kObjectUnrealized;
@@ -894,6 +899,7 @@ private:
     std::map<std::uint32_t, Object> objects_;
     std::deque<std::size_t> free_offsets_;
     std::size_t next_offset_{};
+    std::uint32_t next_generation_{};
 };
 
 OpenSlesModule::OpenSlesModule(BoundaryCallServices& calls,

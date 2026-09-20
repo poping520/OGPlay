@@ -514,6 +514,11 @@ struct OrchestratedApp final {
 
 }  // namespace
 
+TEST_CASE("Android app process installs the default encoded audio loader") {
+    OrchestratedApp fixture{"fixture.MainActivity", true, false};
+    CHECK(fixture.app->NativeProcess().SoundPoolMixer().Enabled());
+}
+
 TEST_CASE("native library loader appends dependency constructors and one explicit JNI_OnLoad") {
     using namespace ogplay;
     FixtureProcess fixture;

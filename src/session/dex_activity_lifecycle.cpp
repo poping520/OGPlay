@@ -732,7 +732,7 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
                 }
             } else if (!bindings_.context->renderer.IsValid() &&
                        bindings_.context->active_surface_holders.empty() &&
-                       bindings_.context->video_views.empty() &&
+                       runtime::AnyVideoPlaying(*bindings_.context) == false &&
                        bindings_.context->holder_canvases.empty() &&
                        bindings_.context->content_view.IsValid() &&
                        bindings_.context->session != nullptr &&
@@ -811,9 +811,12 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
     }
 
     void DexActivityLifecycle::PumpVideo() {
-        if (bindings_.context->video_views.empty() &&
-            bindings_.context->pending_video_completion.empty()) {
-            return;
+        {
+            std::scoped_lock lock(bindings_.context->video_views_mutex);
+            if (bindings_.context->video_views.empty() &&
+                bindings_.context->pending_video_completion.empty()) {
+                return;
+            }
         }
         const auto error = runtime::PumpVideoViews(
             bindings_.bridge->Vm(), *bindings_.context,
@@ -1103,6 +1106,10 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
 
     LifecycleFrameState DexActivityLifecycle::State() const {
         return {state_, frame_, clock_.Ticks()};
+    }
+
+    std::uint64_t DexActivityLifecycle::TicksPerSecond() const noexcept {
+        return clock_.TicksPerSecond();
     }
 
     void DexActivityLifecycle::MarkFailed() noexcept {

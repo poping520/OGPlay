@@ -108,6 +108,7 @@ private:
         std::uint32_t loop_end{};
         std::int32_t loop_count{};
         std::int32_t loops_remaining{};
+        std::uint64_t stop_generation{};
         std::vector<Buffer> queue;
     };
 

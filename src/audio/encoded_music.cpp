@@ -33,7 +33,11 @@ void EncodedMusicMixer::Destroy(const std::uint32_t player) {
 void EncodedMusicMixer::Reset(const std::uint32_t player) {
     std::scoped_lock lock(mutex_);
     const auto found = players_.find(player);
-    if (found != players_.end()) found->second = {};
+    if (found != players_.end()) {
+        const auto generation = found->second.generation + 1U;
+        found->second = {};
+        found->second.generation = generation;
+    }
 }
 
 bool EncodedMusicMixer::SetEncoded(const std::uint32_t player,
@@ -44,17 +48,37 @@ bool EncodedMusicMixer::SetEncoded(const std::uint32_t player,
         encoded.size() > kMaximumEncodedAudioBytes) {
         return false;
     }
+    const auto generation = found->second.generation + 1U;
     found->second = {};
+    found->second.generation = generation;
     found->second.encoded = std::move(encoded);
     return true;
 }
 
 bool EncodedMusicMixer::Prepare(const std::uint32_t player) {
-    std::scoped_lock lock(mutex_);
-    const auto found = players_.find(player);
-    if (found == players_.end() || found->second.encoded.empty()) return false;
+    std::vector<std::byte> encoded;
+    std::uint64_t generation{};
+    {
+        std::scoped_lock lock(mutex_);
+        const auto found = players_.find(player);
+        if (found == players_.end() || found->second.encoded.empty()) return false;
+        encoded = found->second.encoded;
+        generation = found->second.generation;
+    }
     try {
-        auto pcm = DecodeEncodedAudio(found->second.encoded);
+        auto pcm = DecodeEncodedAudio(encoded);
+        std::scoped_lock lock(mutex_);
+        const auto found = players_.find(player);
+        if (found == players_.end() || found->second.generation != generation) {
+            return false;
+        }
+        std::size_t total = pcm.interleaved_samples.size() * sizeof(std::int16_t);
+        for (const auto& [id, other] : players_) {
+            if (id != player && other.pcm.has_value()) {
+                total += other.pcm->interleaved_samples.size() * sizeof(std::int16_t);
+            }
+        }
+        if (total > kMaximumDecodedPcmBytes) return false;
         found->second.sample_rate = pcm.sample_rate;
         found->second.channels = pcm.channels;
         found->second.total_frames = pcm.Frames();
@@ -72,6 +96,10 @@ void EncodedMusicMixer::Start(const std::uint32_t player) {
     std::scoped_lock lock(mutex_);
     const auto found = players_.find(player);
     if (found == players_.end() || !found->second.prepared) return;
+    if (found->second.completed ||
+        found->second.position >= static_cast<double>(found->second.total_frames)) {
+        found->second.position = 0.0;
+    }
     found->second.playing = true;
     found->second.completed = false;
 }
@@ -129,6 +157,12 @@ bool EncodedMusicMixer::IsPlaying(const std::uint32_t player) const {
     std::scoped_lock lock(mutex_);
     const auto found = players_.find(player);
     return found != players_.end() && found->second.playing;
+}
+
+bool EncodedMusicMixer::HasEncoded(const std::uint32_t player) const {
+    std::scoped_lock lock(mutex_);
+    const auto found = players_.find(player);
+    return found != players_.end() && !found->second.encoded.empty();
 }
 
 bool EncodedMusicMixer::AnyPlaying() const {

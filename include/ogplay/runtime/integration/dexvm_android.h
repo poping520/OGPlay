@@ -75,6 +75,7 @@ struct DexVmAndroidContext final {
   // Process-owned encoded-audio mixer used by SoundPool and MediaPlayer.
   audio::JavaSoundPoolMixer *encoded_audio_playback{};
   audio::EncodedMusicMixer *encoded_music{};
+  mutable std::mutex audio_policy_mutex;
   std::array<std::int32_t, 10> stream_volume{7, 7, 7, 15, 7, 7, 7, 7, 7, 7};
   std::array<bool, 10> stream_mute{};
   // Process-wide APK native loader used by java.lang.System.load*.
@@ -460,6 +461,10 @@ struct DexVmAndroidContext final {
     audio::EncodedAudioSource source;
     dexvm::VmObjectRef jni_weak;
     bool prepared_event_pending{};
+    bool prepare_async_pending{};
+    bool seek_event_pending{};
+    bool source_set{};
+    bool prepared{};
   };
   std::unordered_map<std::uint32_t, MediaPlayerState> media_players;
   std::uint64_t next_encoded_audio_lease{1U};
@@ -612,6 +617,7 @@ struct DexVmAndroidContext final {
   // frontend; when it is missing or open fails, setVideoPath records the
   // gap and start() schedules the deferred-completion fallback.
   video::VideoPlayerFactory video_player_factory;
+  mutable std::recursive_mutex video_views_mutex;
   struct VideoViewState final {
     std::unique_ptr<video::VideoPlayer> player;
     std::string guest_path;

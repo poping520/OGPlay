@@ -195,6 +195,8 @@ extension string 与错误锁存以 native registry 为唯一事实。
   `setDataSource(FileDescriptor)` 在关闭原 FD 后仍保留窗口。同路径 VFS 替换不得命中旧缓存。
   原版事件经 `postEventFromNative` 和 Handler/Looper；`mNativeContext` 为非零 32 位 token。
   网络 URI、subtitle、DRM、effects 明确失败。
+- Resources `openRawResourceFd` 只为 APK 中 stored 的文件型资源建立逻辑 AFD 区间；压缩、
+  缺失或非文件资源抛 `Resources.NotFoundException`，供原版 SoundPool/MediaPlayer create 链使用。
 - AudioTrack 普通协议在 BootDex；integration 只 overlay native。rate 来自 mixer；
   stream/static、marker/period、listener、pause/flush/release 使用唯一状态；notification
   marker/period getter 返回同一 setter 状态，默认 0，释放或未初始化按 AOSP 返回 0。

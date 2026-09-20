@@ -127,8 +127,8 @@ public:
         const auto strict_webview_errors =
             request.platform.strict_webview_errors;
         request.boundary_options.logger = request.logger;
-        if (!request.sound_resource_loader && request.context != nullptr) {
-            const auto android_context = request.context;
+        if (!request.sound_resource_loader && context != nullptr) {
+            const auto android_context = context;
             request.sound_resource_loader =
                 [android_context](const audio::EncodedAudioSource& source) {
                     return runtime::LoadEncodedAudioWindow(*android_context,
@@ -166,6 +166,16 @@ public:
                               const std::uint32_t rate) {
                 static_cast<void>(runtime::MixVideoPcmIntoAccumulator(
                     *android_context, accumulator, rate));
+                std::scoped_lock lock(android_context->audio_policy_mutex);
+                constexpr std::size_t kMusicStream = 3U;
+                const auto gain = android_context->stream_mute[kMusicStream]
+                                      ? 0.0
+                                      : static_cast<double>(
+                                            android_context->stream_volume[kMusicStream]) /
+                                            15.0;
+                for (auto& sample : accumulator) {
+                    sample = static_cast<std::int64_t>(sample * gain);
+                }
             });
         context->native_libraries = native_libraries.get();
         context->package_name = manifest.package;

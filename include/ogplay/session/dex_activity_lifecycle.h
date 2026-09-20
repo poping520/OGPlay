@@ -98,6 +98,7 @@ public:
     void QueueInput(const runtime::AndroidBoundaryInput& input);
     [[nodiscard]] LifecycleFrameState Stop();
     [[nodiscard]] LifecycleFrameState State() const;
+    [[nodiscard]] std::uint64_t TicksPerSecond() const noexcept;
 
 private:
     void CallActivity(const std::string& name, const std::string& descriptor,

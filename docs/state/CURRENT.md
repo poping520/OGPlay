@@ -4,10 +4,10 @@
 
 ## 最近进展
 
-- [DVM-189](../tasks/dexvm/DVM-189.md) AUD-01/02/03 完成：共享音频底座、BootDex
-  AudioTrack/SoundPool/MediaPlayer native、会话 AudioManager、编码音乐实例 mixer。
-  Debug 定向 audio/media 测试通过。未做游戏复现或听测。不宣称 A01–A27 听测闭合或
-  title 兼容。
+- [DVM-189](../tasks/dexvm/DVM-189.md) 验收修复中，AUD-03 未关闭。首轮共享音频底座与
+  BootDex media native 已落地，但验收发现默认装配、并发、阻塞唤醒、音量、资源链、
+  播放协议、回收、确定性步进和故障传播问题；增量音乐解码仍缺失。未做游戏复现或听测，
+  不宣称 A01–A27 或 title 兼容闭合。
 
 - `SetIntrinsicStaticRef` 写静态引用前先 `EnsureClassLinked`，不跑 `<clinit>`。
   冷路径 `Security.getProperty` 能给已注册但未链接的 BootDex `Engine.door` 赋值。

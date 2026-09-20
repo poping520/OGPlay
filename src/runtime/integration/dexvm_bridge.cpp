@@ -267,6 +267,13 @@ void RegisterAndroidOwnerAttachedStateTable(
             const auto pool = context->sound_pools.find(key);
             if (pool != context->sound_pools.end()) {
                 if (context->encoded_audio_playback != nullptr) {
+                    for (const auto& source :
+                         context->encoded_audio_playback->PoolSources(
+                             pool->second.pool)) {
+                        if (source.lease != 0U) {
+                            context->encoded_audio_leases.erase(source.lease);
+                        }
+                    }
                     context->encoded_audio_playback->DestroyPool(
                         pool->second.pool);
                 }
@@ -288,7 +295,10 @@ void RegisterAndroidOwnerAttachedStateTable(
             context->video_completion.erase(key);
             context->pending_video_completion.erase(key);
             context->video_errors.erase(key);
-            context->video_views.erase(key);
+            {
+                std::scoped_lock video_lock(context->video_views_mutex);
+                context->video_views.erase(key);
+            }
         },
         {}});
 }

@@ -152,9 +152,12 @@ OpenSlesEnqueueResult OpenSlesPcmMixer::EnqueueBlocking(
         ReplaceStatic(found->second, pcm);
         return OpenSlesEnqueueResult::enqueued;
     }
-    const auto ready = [this, player, size = pcm.size(), byte_budget] {
+    const auto stop_generation = found->second.stop_generation;
+    const auto ready = [this, player, size = pcm.size(), byte_budget,
+                        stop_generation] {
         const auto current = players_.find(player);
         return interrupted_ || current == players_.end() ||
+               current->second.stop_generation != stop_generation ||
                (current->second.queue.size() < current->second.capacity &&
                 QueuedBytes(current->second) <= byte_budget - size);
     };
@@ -167,6 +170,9 @@ OpenSlesEnqueueResult OpenSlesPcmMixer::EnqueueBlocking(
     found = players_.find(player);
     if (found == players_.end()) {
         return OpenSlesEnqueueResult::player_destroyed;
+    }
+    if (found->second.stop_generation != stop_generation) {
+        return OpenSlesEnqueueResult::interrupted;
     }
     found->second.queue.push_back(
         Buffer{found->second.next_sequence++, {pcm.begin(), pcm.end()}});
@@ -246,17 +252,22 @@ OpenSlesQueueState OpenSlesPcmMixer::QueueState(const PlayerId player) const {
 
 void OpenSlesPcmMixer::SetPlayState(const PlayerId player,
                                     const OpenSlesPlayState state) {
-    std::scoped_lock lock(mutex_);
-    auto& target = Require(player);
-    target.state = state;
-    if (state != OpenSlesPlayState::stopped) return;
-    target.played_source_frames = 0.0;
-    if (target.kind == OpenSlesPlayerKind::audio_track_stream) {
-        return;
+    {
+        std::scoped_lock lock(mutex_);
+        auto& target = Require(player);
+        target.state = state;
+        if (state != OpenSlesPlayState::stopped) return;
+        ++target.stop_generation;
+        target.played_source_frames = 0.0;
+        if (target.kind == OpenSlesPlayerKind::audio_track_stream) {
+            queue_changed_.notify_all();
+            return;
+        }
+        target.frame_position = 0.0;
+        target.has_carry = false;
+        target.loops_remaining = target.loop_count;
     }
-    target.frame_position = 0.0;
-    target.has_carry = false;
-    target.loops_remaining = target.loop_count;
+    queue_changed_.notify_all();
 }
 
 OpenSlesPlayState OpenSlesPcmMixer::PlayState(const PlayerId player) const {

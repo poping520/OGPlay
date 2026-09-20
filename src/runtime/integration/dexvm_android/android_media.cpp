@@ -44,6 +44,7 @@ Decl Declare_android_media_AudioManager(const Context& context) {
         [context](dx::IntrinsicContext& call) {
             const auto stream = call.arguments[0].AsInt();
             if (stream < 0 || stream >= 10) return dx::VmValue::Int(0);
+            std::scoped_lock lock(context->audio_policy_mutex);
             if (context->stream_mute[static_cast<std::size_t>(stream)]) {
                 return dx::VmValue::Int(0);
             }
@@ -54,6 +55,7 @@ Decl Declare_android_media_AudioManager(const Context& context) {
         [context](dx::IntrinsicContext& call) {
             const auto stream = call.arguments[0].AsInt();
             if (stream < 0 || stream >= 10) return dx::VmValue::Void();
+            std::scoped_lock lock(context->audio_policy_mutex);
             context->stream_volume[static_cast<std::size_t>(stream)] =
                 std::clamp(call.arguments[1].AsInt(), 0, 15);
             return dx::VmValue::Void();
@@ -62,6 +64,7 @@ Decl Declare_android_media_AudioManager(const Context& context) {
         [context](dx::IntrinsicContext& call) {
             const auto stream = call.arguments[0].AsInt();
             if (stream < 0 || stream >= 10) return dx::VmValue::Void();
+            std::scoped_lock lock(context->audio_policy_mutex);
             context->stream_mute[static_cast<std::size_t>(stream)] =
                 call.arguments[1].AsInt() != 0;
             return dx::VmValue::Void();
@@ -119,6 +122,13 @@ void RegisterAndroidAudioTrackStateTable(
             const auto pool = context->sound_pools.find(object.Value());
             if (pool != context->sound_pools.end()) {
                 if (context->encoded_audio_playback != nullptr) {
+                    for (const auto& source :
+                         context->encoded_audio_playback->PoolSources(
+                             pool->second.pool)) {
+                        if (source.lease != 0U) {
+                            context->encoded_audio_leases.erase(source.lease);
+                        }
+                    }
                     context->encoded_audio_playback->DestroyPool(
                         pool->second.pool);
                 }
@@ -149,6 +159,7 @@ Decl Declare_android_widget_VideoView(const Context& context) {
     builder.Constructor("(Landroid/content/Context;)V", ViewInitHandler(context));
     builder.FinalMethod("setVideoPath", "(Ljava/lang/String;)V",
         [context](dx::IntrinsicContext& call) {
+            std::scoped_lock video_lock(context->video_views_mutex);
             const auto handle = call.receiver.Value();
             context->video_views.erase(handle);
             context->pending_video_completion.erase(handle);
@@ -207,6 +218,7 @@ Decl Declare_android_widget_VideoView(const Context& context) {
         });
     builder.FinalMethod("start", "()V",
         [context](dx::IntrinsicContext& call) {
+            std::scoped_lock video_lock(context->video_views_mutex);
             const auto handle = call.receiver.Value();
             auto* state = VideoStateOf(context, handle);
             if (state == nullptr || state->player == nullptr) {
@@ -233,6 +245,7 @@ Decl Declare_android_widget_VideoView(const Context& context) {
         });
     builder.FinalMethod("pause", "()V",
         [context](dx::IntrinsicContext& call) {
+            std::scoped_lock video_lock(context->video_views_mutex);
             auto* state = VideoStateOf(context, call.receiver.Value());
             if (state != nullptr && state->playing) {
                 state->base_position_ms =
@@ -243,6 +256,7 @@ Decl Declare_android_widget_VideoView(const Context& context) {
         });
     builder.FinalMethod("seekTo", "(I)V",
         [context](dx::IntrinsicContext& call) {
+            std::scoped_lock video_lock(context->video_views_mutex);
             auto* state = VideoStateOf(context, call.receiver.Value());
             if (state == nullptr || state->player == nullptr) {
                 return dx::VmValue::Void();
@@ -261,12 +275,14 @@ Decl Declare_android_widget_VideoView(const Context& context) {
         });
     builder.FinalMethod("stopPlayback", "()V",
         [context](dx::IntrinsicContext& call) {
+            std::scoped_lock video_lock(context->video_views_mutex);
             context->video_views.erase(call.receiver.Value());
             context->pending_video_completion.erase(call.receiver.Value());
             return dx::VmValue::Void();
         });
     builder.FinalMethod("getDuration", "()I",
         [context](dx::IntrinsicContext& call) {
+            std::scoped_lock video_lock(context->video_views_mutex);
             const auto* state =
                 VideoStateOf(context, call.receiver.Value());
             return dx::VmValue::Int(state == nullptr
@@ -276,6 +292,7 @@ Decl Declare_android_widget_VideoView(const Context& context) {
         });
     builder.FinalMethod("getCurrentPosition", "()I",
         [context](dx::IntrinsicContext& call) {
+            std::scoped_lock video_lock(context->video_views_mutex);
             const auto* state = VideoStateOf(context, call.receiver.Value());
             if (state == nullptr) return dx::VmValue::Int(0);
             return dx::VmValue::Int(static_cast<std::int32_t>(
@@ -283,6 +300,7 @@ Decl Declare_android_widget_VideoView(const Context& context) {
         });
     builder.FinalMethod("canSeekForward", "()Z",
         [context](dx::IntrinsicContext& call) {
+            std::scoped_lock video_lock(context->video_views_mutex);
             // AOSP reports the prepared stream capability. Every host
             // VideoPlayer implements bounded SeekTo, while an unopened or
             // released view has not reached the prepared state.
@@ -292,18 +310,21 @@ Decl Declare_android_widget_VideoView(const Context& context) {
         });
     builder.FinalMethod("canSeekBackward", "()Z",
         [context](dx::IntrinsicContext& call) {
+            std::scoped_lock video_lock(context->video_views_mutex);
             const auto* state = VideoStateOf(context, call.receiver.Value());
             return dx::VmValue::Int(
                 state != nullptr && state->player != nullptr ? 1 : 0);
         });
     builder.FinalMethod("canPause", "()Z",
         [context](dx::IntrinsicContext& call) {
+            std::scoped_lock video_lock(context->video_views_mutex);
             const auto* state = VideoStateOf(context, call.receiver.Value());
             return dx::VmValue::Int(
                 state != nullptr && state->player != nullptr ? 1 : 0);
         });
     builder.FinalMethod("setOnCompletionListener", "(Landroid/media/MediaPlayer$OnCompletionListener;)V",
         [context](dx::IntrinsicContext& call) {
+            std::scoped_lock video_lock(context->video_views_mutex);
             context->video_completion[call.receiver.Value()] =
                 call.arguments[0].ref;
             return dx::VmValue::Void();
@@ -311,6 +332,7 @@ Decl Declare_android_widget_VideoView(const Context& context) {
     builder.FinalMethod("setOnErrorListener",
         "(Landroid/media/MediaPlayer$OnErrorListener;)V",
         [context](dx::IntrinsicContext& call) {
+            std::scoped_lock video_lock(context->video_views_mutex);
             const auto listener = call.arguments[0].ref;
             if (listener.IsValid()) {
                 context->video_errors[call.receiver.Value()] = listener;
@@ -412,6 +434,7 @@ bool MixOneVideoView(DexVmAndroidContext::VideoViewState& state,
 }  // namespace
 
 bool AnyVideoPlaying(const DexVmAndroidContext& context) {
+    std::scoped_lock lock(context.video_views_mutex);
     for (const auto& [handle, state] : context.video_views) {
         if (state.player != nullptr && state.playing) return true;
     }
@@ -428,6 +451,7 @@ std::size_t MixVideoPcmIntoAccumulator(
             "video PCM mix needs a non-empty stereo buffer and a positive "
             "rate");
     }
+    std::scoped_lock lock(context.video_views_mutex);
     std::size_t contributed = 0;
     for (auto& [handle, state] : context.video_views) {
         if (state.player == nullptr || !state.playing) continue;
@@ -562,6 +586,21 @@ std::optional<std::string> PumpAndroidAudioTracks(
     for (const auto handle : media_handles) {
         const auto found = context.media_players.find(handle);
         if (found == context.media_players.end()) continue;
+        if (found->second.prepare_async_pending) {
+            found->second.prepare_async_pending = false;
+            found->second.prepared =
+                context.encoded_music != nullptr &&
+                context.encoded_music->Prepare(found->second.music);
+            if (!found->second.prepared) {
+                if (const auto error = post("Landroid/media/MediaPlayer;",
+                                            found->second.jni_weak, 100, 1, -1);
+                    error.has_value()) {
+                    return error;
+                }
+                continue;
+            }
+            found->second.prepared_event_pending = true;
+        }
         if (found->second.prepared_event_pending) {
             found->second.prepared_event_pending = false;
             if (const auto error = post("Landroid/media/MediaPlayer;",
@@ -574,6 +613,14 @@ std::optional<std::string> PumpAndroidAudioTracks(
             context.encoded_music->Completed(found->second.music)) {
             if (const auto error = post("Landroid/media/MediaPlayer;",
                                         found->second.jni_weak, 2);
+                error.has_value()) {
+                return error;
+            }
+        }
+        if (found->second.seek_event_pending) {
+            found->second.seek_event_pending = false;
+            if (const auto error = post("Landroid/media/MediaPlayer;",
+                                        found->second.jni_weak, 4);
                 error.has_value()) {
                 return error;
             }
@@ -606,6 +653,7 @@ std::optional<std::string> PumpAndroidAudioTracks(
 std::optional<std::string> PumpVideoViews(
     dexvm::Interpreter& vm, DexVmAndroidContext& context,
     const std::function<void(std::vector<std::uint8_t> rgba8)>& publish) {
+    std::scoped_lock video_lock(context.video_views_mutex);
     // Missing/unopenable streams complete asynchronously just like a real
     // MediaPlayer event. Clear the snapshot before invoking guest callbacks:
     // a callback may stop or restart the same view.

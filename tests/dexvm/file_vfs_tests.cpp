@@ -1799,6 +1799,38 @@ TEST_CASE("Resources getXml exposes compiled APK XML as pull events") {
           "Landroid/content/res/Resources$NotFoundException;");
 }
 
+TEST_CASE("Resources openRawResourceFd exposes a stored raw APK window") {
+    FileVm vm;
+    constexpr std::uint32_t kResourceId = 0x7f040001U;
+    const std::vector<std::byte> payload{
+        std::byte{'O'}, std::byte{'g'}, std::byte{'g'}, std::byte{'S'}};
+    vm.context->apk_bytes = MakeStoredZip("res/raw/click.ogg", payload);
+    vm.context->archive =
+        ogplay::loader::ParseApkArchive(vm.context->apk_bytes);
+    vm.context->arsc.entries.push_back({
+        .resource_id = kResourceId,
+        .type_name = "raw",
+        .entry_name = "click",
+        .string_value = "res/raw/click.ogg",
+        .value_type = 3,
+    });
+    const auto resources = vm.interpreter.NewIntrinsicInstance(
+        "Landroid/content/res/Resources;");
+    const auto afd = vm.CallOn(
+        resources, "openRawResourceFd",
+        "(I)Landroid/content/res/AssetFileDescriptor;",
+        {VmValue::Int(static_cast<std::int32_t>(kResourceId))}).ref;
+    REQUIRE(afd.IsValid());
+    CHECK(vm.CallOn(afd, "getLength", "()J").AsLong() ==
+          static_cast<std::int64_t>(payload.size()));
+    const auto fd = vm.CallOn(afd, "getFileDescriptor",
+                              "()Ljava/io/FileDescriptor;").ref;
+    const auto* state = vm.interpreter.IO().FindDescriptor(fd);
+    REQUIRE(state != nullptr);
+    CHECK(state->kind == IoRuntime::DescriptorKind::apk_entry);
+    CHECK(state->source == "res/raw/click.ogg");
+}
+
 TEST_CASE("AssetManager openFd rejects a compressed APK entry") {
     FileVm vm;
     const std::string name = "assets/compressed.bin";

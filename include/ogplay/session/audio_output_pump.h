@@ -4,6 +4,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <functional>
+#include <exception>
 #include <mutex>
 #include <span>
 #include <thread>
@@ -28,6 +29,7 @@ public:
     void Stop() noexcept;
     void SetSuspended(bool suspended) noexcept;
     [[nodiscard]] bool DeviceFailed() const noexcept;
+    void RethrowWorkerFailure();
     [[nodiscard]] std::size_t MixOffline(std::span<std::int16_t> output);
     [[nodiscard]] std::uint64_t FramesForTicks(std::uint64_t tick_delta,
                                                std::uint64_t ticks_per_second);
@@ -41,6 +43,8 @@ private:
     std::uint8_t channels_{};
     std::vector<std::int16_t> chunk_;
     std::mutex mutex_;
+    std::mutex failure_mutex_;
+    std::exception_ptr worker_failure_;
     std::jthread worker_;
     std::atomic<bool> suspended_{};
     std::atomic<bool> device_failed_{};

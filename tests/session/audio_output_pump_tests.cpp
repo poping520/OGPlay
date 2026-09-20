@@ -121,6 +121,32 @@ TEST_CASE("session audio pump records device failure without terminating") {
     pump.Stop();
 }
 
+TEST_CASE("session audio pump preserves mixer failures") {
+    FakeAudioOutput output;
+    output.Start();
+    ogplay::session::AudioOutputPump pump(
+        [](const std::span<std::int16_t>, const std::uint32_t) -> std::size_t {
+            throw std::runtime_error("mixer callback failed");
+        },
+        &output, 48000U, 2U);
+    pump.StartRealtime();
+    bool observed{};
+    const auto deadline =
+        std::chrono::steady_clock::now() + std::chrono::seconds(2);
+    while (!observed && std::chrono::steady_clock::now() < deadline) {
+        try {
+            pump.RethrowWorkerFailure();
+        } catch (const std::runtime_error& error) {
+            CHECK(std::string_view(error.what()) == "mixer callback failed");
+            observed = true;
+        }
+        std::this_thread::yield();
+    }
+    CHECK(observed);
+    CHECK_FALSE(pump.DeviceFailed());
+    pump.Stop();
+}
+
 TEST_CASE("session audio pump suspends realtime submit") {
     FakeAudioOutput output;
     output.Start();

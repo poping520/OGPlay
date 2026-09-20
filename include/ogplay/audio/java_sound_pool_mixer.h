@@ -1,4 +1,5 @@
 #pragma once
+#include <array>
 
 #include <compare>
 #include <cstddef>
@@ -42,7 +43,8 @@ public:
 
     explicit JavaSoundPoolMixer(EncodedResourceLoader loader = {});
     [[nodiscard]] bool Enabled() const noexcept;
-    [[nodiscard]] std::uint32_t CreatePool(std::int32_t max_streams);
+    [[nodiscard]] std::uint32_t CreatePool(std::int32_t max_streams, std::int32_t stream = 3);
+    void SetStreamGain(std::int32_t stream, float gain);
     void DestroyPool(std::uint32_t pool);
     [[nodiscard]] bool Load(std::int32_t resource);
     [[nodiscard]] bool Load(const EncodedAudioSource& source);
@@ -138,6 +140,7 @@ private:
         std::int32_t max_streams{1};
         std::int32_t next_sound{1};
         std::map<std::int32_t, EncodedAudioSource> samples;
+        std::int32_t audio_stream{3};
     };
     [[nodiscard]] std::vector<Voice>::iterator FindVoice(
         JavaSoundPoolKind kind, const EncodedAudioSource& source,
@@ -150,6 +153,7 @@ private:
     std::map<EncodedAudioSource, std::string> failures_;
     std::map<std::uint32_t, Pool> pools_;
     std::vector<Voice> voices_;
+    std::array<float, 10> stream_gains_{1,1,1,1,1,1,1,1,1,1};
     std::uint32_t next_pool_{1};
     std::int32_t next_stream_{1};
     std::uint64_t next_age_{1};

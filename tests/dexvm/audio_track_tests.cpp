@@ -200,13 +200,13 @@ struct AudioTrackVm final {
                          const std::int32_t channels,
                          const std::int32_t encoding,
                          const std::int32_t buffer_size,
-                         const std::int32_t mode) {
+                         const std::int32_t mode, const std::int32_t stream = 3) {
         const auto klass = linker.ResolveDescriptor("Landroid/media/AudioTrack;");
         const auto instance = vm.NewIntrinsicInstance("Landroid/media/AudioTrack;");
         const auto ctor = linker.FindDirectMethod(klass, "<init>", "(IIIIII)V");
         REQUIRE(ctor.has_value());
         const std::vector arguments{
-            VmValue::Ref(instance), VmValue::Int(3), VmValue::Int(sample_rate),
+            VmValue::Ref(instance), VmValue::Int(stream), VmValue::Int(sample_rate),
             VmValue::Int(channels), VmValue::Int(encoding),
             VmValue::Int(buffer_size), VmValue::Int(mode)};
         const auto outcome = vm.Call(*ctor, arguments);
@@ -909,12 +909,90 @@ TEST_CASE("MediaPlayer prepareAsync posts the BootDex prepared event") {
     REQUIRE(music.SetEncoded(
         fixture.context->media_players.at(player.Value()).music, ogg));
     static_cast<void>(fixture.CallOn(player, "prepareAsync", "()V"));
-    for (std::size_t attempt = 0;
-         attempt < 1000U && fixture.prepared.players.empty(); ++attempt) {
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+    while (fixture.prepared.players.empty() && std::chrono::steady_clock::now() < deadline) {
         CHECK_FALSE(
             PumpAndroidAudioTracks(fixture.vm, *fixture.context).has_value());
         std::this_thread::yield();
     }
     REQUIRE(fixture.prepared.players.size() == 1U);
     CHECK(fixture.prepared.players[0] == player);
+}
+
+TEST_CASE("MediaPlayer transport uses explicit stopped preparing and error phases") {
+    using Phase = DexVmAndroidContext::MediaPlayerState::Phase;
+    const auto path = std::filesystem::path{OGPLAY_SOURCE_DIR} / "tests/fixtures/audio/short-vorbis.ogg";
+    std::ifstream input(path, std::ios::binary);
+    const std::vector<char> raw{std::istreambuf_iterator<char>(input), {}};
+    std::vector<std::byte> encoded;
+    for (auto c : raw) encoded.push_back(static_cast<std::byte>(c));
+    AudioTrackVm fixture;
+    ogplay::audio::EncodedMusicMixer music;
+    fixture.context->encoded_music = &music;
+    const auto player = fixture.vm.NewIntrinsicInstance("Landroid/media/MediaPlayer;");
+    fixture.CallDirect(player, "<init>", "()V");
+    auto& state = fixture.context->media_players.at(player.Value());
+    REQUIRE(music.SetEncoded(state.music, encoded));
+    fixture.CallOn(player, "prepare", "()V");
+    fixture.CallOn(player, "start", "()V");
+    fixture.CallOn(player, "pause", "()V");
+    fixture.CallOn(player, "pause", "()V");
+    CHECK(state.phase == Phase::paused);
+    fixture.CallOn(player, "stop", "()V");
+    fixture.CallOn(player, "stop", "()V");
+    CHECK(state.phase == Phase::stopped);
+    fixture.CallOn(player, "prepare", "()V");
+    fixture.CallOn(player, "start", "()V");
+    CHECK(music.IsPlaying(state.music));
+    fixture.CallOn(player, "stop", "()V");
+    fixture.CallOn(player, "start", "()V");
+    CHECK(state.phase == Phase::error);
+    CHECK(state.error_event_pending);
+    CHECK_FALSE(music.IsPlaying(state.music));
+    fixture.CallOn(player, "reset", "()V");
+    CHECK(state.phase == Phase::idle);
+    CHECK_FALSE(state.error_event_pending);
+    REQUIRE(music.SetEncoded(state.music, encoded));
+    fixture.CallOn(player, "prepareAsync", "()V");
+    CHECK(state.phase == Phase::preparing);
+    CHECK(fixture.CallOnOutcome(player, "prepare", "()V").exception.IsValid());
+    CHECK(fixture.CallOnOutcome(player, "prepareAsync", "()V").exception.IsValid());
+    fixture.CallOn(player, "reset", "()V");
+    CHECK_FALSE(PumpAndroidAudioTracks(fixture.vm, *fixture.context).has_value());
+    CHECK(state.phase == Phase::idle);
+    CHECK(music.CachedDecodedBytes() == 0);
+    REQUIRE(music.SetEncoded(state.music, encoded));
+    fixture.CallOn(player, "prepare", "()V");
+    fixture.CallOn(player, "pause", "()V");
+    CHECK(state.phase == Phase::error); // pause is not legal in Prepared.
+    fixture.CallOn(player, "release", "()V");
+    CHECK(fixture.context->media_players.empty());
+}
+
+TEST_CASE("AudioManager applies stream volume to AudioTrack PCM without cross muting") {
+    AudioTrackVm fixture;
+    const auto a = fixture.NewTrack(8000, 4, 2, 16, 0, 3);
+    const auto b = fixture.NewTrack(8000, 4, 2, 16, 0, 4);
+    const auto pa = fixture.context->audio_tracks.at(a.Value()).player;
+    const auto pb = fixture.context->audio_tracks.at(b.Value()).player;
+    const std::array<std::byte, 8> a_pcm{std::byte{0xe8},std::byte{3},std::byte{0xe8},std::byte{3},
+                                      std::byte{0xe8},std::byte{3},std::byte{0xe8},std::byte{3}};
+    const std::array<std::byte, 8> b_pcm{std::byte{0xd0},std::byte{7},std::byte{0xd0},std::byte{7},
+                                      std::byte{0xd0},std::byte{7},std::byte{0xd0},std::byte{7}};
+    REQUIRE(fixture.mixer.Enqueue(pa, a_pcm)); REQUIRE(fixture.mixer.Enqueue(pb, b_pcm));
+    fixture.mixer.SetPlayState(pa, ogplay::audio::OpenSlesPlayState::playing);
+    fixture.mixer.SetPlayState(pb, ogplay::audio::OpenSlesPlayState::playing);
+    const auto manager = fixture.vm.NewIntrinsicInstance("Landroid/media/AudioManager;");
+    fixture.CallOn(manager, "setStreamVolume", "(III)V", {VmValue::Int(3),VmValue::Int(15),VmValue::Int(0)});
+    fixture.CallOn(manager, "setStreamMute", "(IZ)V", {VmValue::Int(4),VmValue::Int(1)});
+    std::array<std::int64_t, 2> pcm{};
+    static_cast<void>(fixture.mixer.MixIntoAccumulator(pcm, 8000));
+    CHECK(pcm[0] == 1000); CHECK(pcm[1] == 1000);
+    CHECK(fixture.mixer.PositionFrames(pb) == 1);
+    fixture.CallOn(manager, "setStreamMute", "(IZ)V", {VmValue::Int(4),VmValue::Int(0)});
+    fixture.CallOn(manager, "setStreamVolume", "(III)V", {VmValue::Int(4),VmValue::Int(15),VmValue::Int(0)});
+    fixture.CallOn(manager, "setStreamMute", "(IZ)V", {VmValue::Int(3),VmValue::Int(1)});
+    pcm.fill(0);
+    static_cast<void>(fixture.mixer.MixIntoAccumulator(pcm, 8000));
+    CHECK(pcm[0] == 2000); CHECK(pcm[1] == 2000);
 }

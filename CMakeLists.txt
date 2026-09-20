@@ -140,6 +140,7 @@ add_library(ogplay_audio
     src/audio/wav.cpp
     src/audio/encoded_audio.cpp
     src/audio/encoded_music.cpp
+    src/audio/encoded_audio_stream.cpp
     third_party/stb/stb_vorbis.c
 )
 add_library(OGPlay::Audio ALIAS ogplay_audio)

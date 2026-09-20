@@ -202,7 +202,7 @@ ADR/范围；不得通过空 overlay 宣称迁移完成，也不得把该批从�
 | WU | 前置 | 一次交付范围 | 关闭条件 |
 | --- | --- | --- | --- |
 | AUD-01 | 无 | 共享音频底座与会话输出：来源/预算、PCM 写入和 STATIC、重采样/混音、OpenSL 生命周期、实时/离线消费、VideoView 音轨及 CLI 下沉 | 完成（任务单 AUD-01 证据） |
-| AUD-02 | AUD-01 | 应用音频语义与 BootDex：SoundPool/MediaPlayer 隔离及真实状态、编码音乐实例、AudioManager、三类播放器原版 Java/native 和回调 | 部分完成；增量音乐解码仍缺失 |
+| AUD-02 | AUD-01 | 应用音频语义与 BootDex：SoundPool/MediaPlayer 隔离及真实状态、编码音乐实例、AudioManager、三类播放器原版 Java/native 和回调 | 实现已补增量解码，交叉验收未闭合 |
 | AUD-03 | AUD-02 | 集中交叉验收、过渡代码清理、诊断与真实运行证据、必要文档收尾 | 进行中；未做游戏 reached-fault 或听测 |
 
 执行顺序固定为 **AUD-01 → AUD-02 → AUD-03**。实现单元内按下述依赖连续推进，不为内部
@@ -285,8 +285,9 @@ token 强类型化。静音不得使播放位置与完成事件停止。性能�
 
 本节是首轮实现记录，不再作为 AUD-03 已关闭的依据。后续验收发现默认 loader、VideoView
 并发、阻塞 write、会话音量、资源 FD、播放器协议、缓存/lease、手动步进、OpenSL 代际及
-worker 故障传播问题；相关修复与回归正在补齐。增量 bitstream 解码尚未实现，不能以有界
-全量解码替代原规划验收。
+worker 故障传播问题。末轮五项修复已补音乐 bitstream 分块解码、有界可取消准备任务、显式
+transport 阶段、按 stream 混音及统一错误唤醒；真实运行与交叉验收仍未闭合，见
+[DVM-189 末轮记录](../../tasks/dexvm/DVM-189.md#末轮五项修复2026-09-20)。
 
 catalog 只 overlay AudioTrack / SoundPoolImpl / MediaPlayer native 与 AudioManager 会话
 事实；普通协议留在 BootDex。已删除 `media_resources` / `media_playing` / `sound_streams`
@@ -299,9 +300,9 @@ catalog 只 overlay AudioTrack / SoundPoolImpl / MediaPlayer native 与 AudioMan
 | A07 | 修复 | AudioManager get/set volume/mute、`isMusicActive` 读 encoded_music/SoundPool/PCM playing。`AudioManager volume mute and isMusicActive follow session playback` |
 | A08–A17, A22–A24, A27 | 修复 | AUD-01 底座；本轮未回退 |
 | A18 | 修复 | `postEventFromNative` + Handler；periodic 在每条消息后 `PumpJavaThreads`，回填 write 可合并过期 period。`AudioTrack refill coalesces overdue periodic callbacks` |
-| A19 | 部分 | 读窗口在 mixer 外；解码仍全量，128 MiB PCM 上限。增量解码未做 |
+| A19 | 部分 | 音乐分块解码、实例/输入总量限制与取消任务已补；短音效仍全量缓存，整体资源链交叉验收未关闭 |
 | A20 | 修复 | AUD-01 WAV 分派保留 |
-| A21 | 裁决 | 有界全量解码 + 已解码 PCM 上 seek/duration；不是 bitstream 增量解码。超限 `SetEncoded` 失败 |
+| A21 | 实现已补 | OGG/MP3/WAV bitstream 分块消费、独立 duration/seek；MP3 后退 seek 精确线性重解码。固定 PCM 块不随歌曲时长增长，尚无游戏听测 |
 | A25 | 复用 AUD-01 | mixer 锁外解码；实时回调仍不得做大分配（既有约束） |
 | A26 | 修复 | BootDex 常量/重载；STREAM_MUSIC 限制不再伪装 Java 参数非法。AudioTrack getter 按 AOSP 在释放后返回 0，不抛 ISE |
 | A16 | 复用 AUD-01 | OpenSL 回调/销毁协议未在本轮重开 |

@@ -111,10 +111,12 @@ Dex activity 每帧在 guest 回调前泵送主 Looper，到帧尾只通过
 - `Session::OpenEmpty/Close/State/Step/UntilFrame/Pause/Resume`：确定性会话原语。
 - `AudioOutputPump`：会话拥有的音频消费；实时 worker 按设备队列补 PCM，离线路径按
   统一 Clock 差值换算帧数并保留不足一帧的余数。frontend 只注入 HAL 输出。设备
-  Submit/水位查询失败时置位 `DeviceFailed` 并停止继续提交，不让 worker 因异常退出。
+  Submit/水位查询失败时置位 `DeviceFailed` 并停止继续提交。设备、mixer 和 callback
+  异常统一先调用显式 FailureInterrupt 唤醒 producer，再保存原异常并交还主循环。
   未注入 `sound_resource_loader` 时默认走 `LoadEncodedAudioWindow`。
   MCP 手动步进不启动实时 worker，只按 lifecycle Clock tick 差推进离线混音；mixer/callback
-  异常保留原异常并交还主循环，设备提交失败单独记录。
+  异常保留原异常并交还主循环，设备提交失败单独记录。进程按 stream 初始化 native gain，
+  VideoView 的 MUSIC gain 只作用于视频音轨，不二次缩放其他混音结果。
 
 ## 不变量
 

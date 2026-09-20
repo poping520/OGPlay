@@ -18,10 +18,11 @@ bool JavaSoundPoolMixer::Enabled() const noexcept {
     return static_cast<bool>(loader_);
 }
 
-std::uint32_t JavaSoundPoolMixer::CreatePool(const std::int32_t max_streams) {
+std::uint32_t JavaSoundPoolMixer::CreatePool(const std::int32_t max_streams, const std::int32_t stream) {
+    if (stream < 0 || stream >= 10) throw std::invalid_argument("invalid audio stream");
     std::scoped_lock lock(mutex_);
     const auto id = next_pool_++;
-    pools_[id] = Pool{std::max(max_streams, 1), 1, {}};
+    pools_[id] = Pool{std::max(max_streams, 1), 1, {}, stream};
     return id;
 }
 
@@ -549,7 +550,9 @@ void JavaSoundPoolMixer::MixIntoAccumulator(
                         fraction;
                 accumulator[rendered * 2U + channel] +=
                     static_cast<std::int64_t>(
-                        sample * (channel == 0U ? voice->left : voice->right));
+                        sample * (channel == 0U ? voice->left : voice->right) *
+                        stream_gains_[static_cast<std::size_t>(
+                            voice->pool == 0 ? 3 : pools_.at(voice->pool).audio_stream)]);
             }
             voice->position += step;
             ++rendered;
@@ -594,4 +597,10 @@ std::size_t JavaSoundPoolMixer::ActiveVoiceCount() const {
     return voices_.size();
 }
 
+void JavaSoundPoolMixer::SetStreamGain(std::int32_t stream, float gain) {
+    if (stream < 0 || stream >= 10 || !std::isfinite(gain) || gain < 0 || gain > 1)
+        throw std::invalid_argument("invalid stream gain");
+    std::scoped_lock lock(mutex_);
+    stream_gains_[static_cast<std::size_t>(stream)] = gain;
+}
 }  // namespace ogplay::audio

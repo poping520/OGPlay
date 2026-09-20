@@ -47,7 +47,7 @@ bool LooksLikeWav(const std::span<const std::byte> encoded) noexcept {
            TagEquals(encoded, 8U, "WAVE");
 }
 
-Pcm16Audio DecodeWav(const std::span<const std::byte> encoded) {
+WavPcmView ParseWav(const std::span<const std::byte> encoded) {
     if (!LooksLikeWav(encoded) || encoded.size() > kMaximumEncodedBytes) {
         throw WavDecodeError("WAVE input is not a bounded RIFF/WAVE file");
     }
@@ -93,9 +93,19 @@ Pcm16Audio DecodeWav(const std::span<const std::byte> encoded) {
         throw WavDecodeError("WAVE data is not frame aligned");
     }
     const auto frames = pcm.size() / bytes_per_frame;
-    if (frames == 0U ||
-        frames > kMaximumDecodedBytes / sizeof(std::int16_t) / channels) {
+    if (frames == 0U) {
         throw WavDecodeError("WAVE PCM is empty or exceeds the decode limit");
+    }
+    return {sample_rate, static_cast<std::uint8_t>(channels),
+            static_cast<std::uint8_t>(bits), pcm};
+}
+
+Pcm16Audio DecodeWav(const std::span<const std::byte> encoded) {
+    const auto view = ParseWav(encoded);
+    const auto [sample_rate, channels, bits, pcm] = view;
+    const auto frames = pcm.size() / (channels * (bits / 8U));
+    if (frames > kMaximumDecodedBytes / sizeof(std::int16_t) / channels) {
+        throw WavDecodeError("WAVE PCM exceeds the decode limit");
     }
     Pcm16Audio result{sample_rate, static_cast<std::uint8_t>(channels), {}};
     result.interleaved_samples.resize(frames * channels);

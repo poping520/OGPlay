@@ -457,14 +457,15 @@ struct DexVmAndroidContext final {
   std::unordered_map<std::uint32_t, dexvm::VmObjectRef> holder_canvases;
 
   struct MediaPlayerState final {
+    enum class Phase { idle, initialized, preparing, prepared, started,
+                       paused, stopped, completed, error };
+    Phase phase{Phase::idle};
     std::uint32_t music{};
     audio::EncodedAudioSource source;
     dexvm::VmObjectRef jni_weak;
     bool prepared_event_pending{};
-    bool prepare_async_pending{};
     bool seek_event_pending{};
-    bool source_set{};
-    bool prepared{};
+    bool error_event_pending{};
   };
   std::unordered_map<std::uint32_t, MediaPlayerState> media_players;
   std::uint64_t next_encoded_audio_lease{1U};
@@ -737,6 +738,9 @@ void PaceEglSwap(DexVmAndroidContext &context,
 // never run on the host audio thread.
 [[nodiscard]] std::optional<std::string>
 PumpAndroidAudioTracks(dexvm::Interpreter &vm, DexVmAndroidContext &context);
+// Caller holds audio_policy_mutex; update native stream gains without touching
+// Java state from the output worker.
+void ApplyAudioStreamPolicy(DexVmAndroidContext &context, std::int32_t stream);
 
 // True while at least one VideoView is actively playing decoded video. The
 // frontend uses this to pace the free-running frame loop to real time so

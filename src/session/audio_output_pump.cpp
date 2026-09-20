@@ -49,8 +49,16 @@ void AudioOutputPump::StartRealtime() {
                 PumpRealtimeOnce();
                 std::this_thread::sleep_for(std::chrono::milliseconds(2));
             } catch (...) {
+                const auto failure = std::current_exception();
+                // Never leave a producer waiting after the only consumer exits.
+                // Interrupt before publishing so observers see the complete failure.
+                try {
+                    if (failure_interrupt_) failure_interrupt_();
+                } catch (...) {
+                    // Preserve the original mixer/device failure.
+                }
                 std::scoped_lock lock(failure_mutex_);
-                worker_failure_ = std::current_exception();
+                worker_failure_ = failure;
                 return;
             }
         }
@@ -103,10 +111,7 @@ void AudioOutputPump::PumpRealtimeOnce() {
             if (output_->QueuedFrames() >= kTargetQueuedFrames) break;
         } catch (...) {
             device_failed_.store(true, std::memory_order_relaxed);
-            std::scoped_lock lock(failure_mutex_);
-            worker_failure_ = std::current_exception();
-            if (failure_interrupt_) failure_interrupt_();
-            return;
+            throw;
         }
         std::size_t frames{};
         {
@@ -119,10 +124,7 @@ void AudioOutputPump::PumpRealtimeOnce() {
             output_->Submit(std::as_bytes(std::span{chunk_}.first(samples)));
         } catch (...) {
             device_failed_.store(true, std::memory_order_relaxed);
-            std::scoped_lock lock(failure_mutex_);
-            worker_failure_ = std::current_exception();
-            if (failure_interrupt_) failure_interrupt_();
-            return;
+            throw;
         }
     }
 }

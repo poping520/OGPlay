@@ -58,6 +58,7 @@ Decl Declare_android_media_AudioManager(const Context& context) {
             std::scoped_lock lock(context->audio_policy_mutex);
             context->stream_volume[static_cast<std::size_t>(stream)] =
                 std::clamp(call.arguments[1].AsInt(), 0, 15);
+            ApplyAudioStreamPolicy(*context, stream);
             return dx::VmValue::Void();
         });
     builder.FinalMethod("setStreamMute", "(IZ)V",
@@ -67,6 +68,7 @@ Decl Declare_android_media_AudioManager(const Context& context) {
             std::scoped_lock lock(context->audio_policy_mutex);
             context->stream_mute[static_cast<std::size_t>(stream)] =
                 call.arguments[1].AsInt() != 0;
+            ApplyAudioStreamPolicy(*context, stream);
             return dx::VmValue::Void();
         });
     return std::move(builder).Build();
@@ -76,6 +78,14 @@ Decl Declare_android_media_AudioManager(const Context& context) {
 
 
 namespace ogplay::runtime {
+void ApplyAudioStreamPolicy(DexVmAndroidContext& context, std::int32_t stream) {
+    const auto index = static_cast<std::size_t>(stream);
+    const auto gain = context.stream_mute.at(index) ? 0.0F :
+        static_cast<float>(context.stream_volume.at(index)) / 15.0F;
+    if (context.pcm_playback) context.pcm_playback->SetStreamGain(stream, gain);
+    if (context.encoded_audio_playback) context.encoded_audio_playback->SetStreamGain(stream, gain);
+    if (context.encoded_music) context.encoded_music->SetStreamGain(stream, gain);
+}
 void RegisterAndroidAudioTrackStateTable(
     dexvm::Interpreter& vm,
     const std::shared_ptr<DexVmAndroidContext>& context) {
@@ -584,9 +594,21 @@ std::optional<std::string> PumpAndroidAudioTracks(
         media_handles.push_back(handle);
     }
     for (const auto handle : media_handles) {
+        using Phase = DexVmAndroidContext::MediaPlayerState::Phase;
         const auto found = context.media_players.find(handle);
         if (found == context.media_players.end()) continue;
-        if (found->second.prepare_async_pending) {
+        if (context.encoded_music && context.encoded_music->TakeDecodeFailure(found->second.music)) {
+            found->second.phase = Phase::error;
+            found->second.error_event_pending = true;
+        }
+        if (found->second.error_event_pending) {
+            found->second.error_event_pending = false;
+            if (const auto error = post("Landroid/media/MediaPlayer;",
+                                        found->second.jni_weak, 100, 1, -38);
+                error.has_value()) return error;
+            continue;
+        }
+        if (found->second.phase == Phase::preparing) {
             const auto status = context.encoded_music == nullptr
                                     ? audio::EncodedMusicMixer::PrepareStatus::failed
                                     : context.encoded_music->PollPrepare(
@@ -594,10 +616,9 @@ std::optional<std::string> PumpAndroidAudioTracks(
             if (status == audio::EncodedMusicMixer::PrepareStatus::pending) {
                 continue;
             }
-            found->second.prepare_async_pending = false;
-            found->second.prepared =
-                status == audio::EncodedMusicMixer::PrepareStatus::ready;
-            if (!found->second.prepared) {
+            found->second.phase = status == audio::EncodedMusicMixer::PrepareStatus::ready
+                                      ? Phase::prepared : Phase::error;
+            if (found->second.phase == Phase::error) {
                 if (const auto error = post("Landroid/media/MediaPlayer;",
                                             found->second.jni_weak, 100, 1, -1);
                     error.has_value()) {
@@ -614,14 +635,18 @@ std::optional<std::string> PumpAndroidAudioTracks(
                 error.has_value()) {
                 return error;
             }
+            // Listener may release/reset the player and invalidate this entry.
+            continue;
         }
         if (context.encoded_music != nullptr &&
             context.encoded_music->Completed(found->second.music)) {
+            found->second.phase = Phase::completed;
             if (const auto error = post("Landroid/media/MediaPlayer;",
                                         found->second.jni_weak, 2);
                 error.has_value()) {
                 return error;
             }
+            continue;
         }
         if (found->second.seek_event_pending) {
             found->second.seek_event_pending = false;

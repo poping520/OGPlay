@@ -20,9 +20,13 @@
   `third_party/minimp3/README.md`。
 - `EncodedAudioSource`：统一 resid、APK entry、VFS path 与纯字节区间；`revision` 区分同路径
   替换，`lease` 标识已捕获的 FD 窗口。来源读取仍由上层注入，audio 模块不解析 APK/VFS。
-- `EncodedMusicMixer`：每实例编码音乐解码与独立 seek/duration/loop/volume；PCM 预算
-  128 MiB 为所有实例共享的进程总预算，超限拒绝；解码在 mixer 锁外完成并以实例代际
-  复验后发布。不是 bitstream 增量解码器。
+- `EncodedMusicMixer` / `EncodedAudioStream`：音乐按 OGG/MP3/WAV bitstream 分块读取，
+  不缓存整首 PCM；SoundPool 仍用短音效全量缓存。音乐最多 16 实例，所持编码窗口总量
+  128 MiB、单窗口 64 MiB；每 decoder PCM 块 16 KiB，Vorbis codec arena 上限 2 MiB。
+  元数据准备在实例拥有的 jthread 中进行；每实例最多一个任务，不 detach，reset/release/
+  重设源先取消并 join；提交验证任务身份。MP3 准备只扫描帧头，后退 seek 重置解码器并
+  从头丢弃至目标帧，保持精确 PCM；不承诺常数时间 seek 或无欠载的实时性能。
+  后续块解码失败停止对应音乐，通过 runtime 投递 MediaPlayer error，不停止其他音源。
 - `JavaSoundPoolMixer`：用注入的编码资源 loader 按 source 去重解码；独立 PoolId 隔离
   sample/voice，`PlaySample` 使用 AOSP left/right/priority/loop/rate，maxStreams 按
   priority 然后最旧抢占；loader 不存在时保持显式 disabled，缺失/损坏资源保留可查询失败原因。
@@ -61,6 +65,8 @@
   仅在最终设备格式上饱和。
 - OpenSL mute 只把当前 player 的输出 gain 置零，不暂停 source position、queue 消费或
   consumed-buffer callback；pause/stopped 才停止 mixer 时间推进。
+- AudioTrack/MediaPlayer 保存 stream type，SoundPool 按池保存；stream gain 与实例 gain
+  相乘，静音仍消费 PCM。默认 OpenSL/legacy 音源归 STREAM_MUSIC；不映射系统设备路由。
 - AudioTrack stereo gain 与 OpenSL millibel/mute/pan 在同一 player 上相乘；播放头按已消费
   source frame 计数并无符号 32 位回绕。STREAM stop 复位 head 但保留队列；STATIC stop
   回到缓冲起点且保留样本；pause 仅冻结。flush 仅在非 playing 时丢弃 STREAM 队列且不改 head。

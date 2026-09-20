@@ -20,6 +20,7 @@ namespace {
 
 std::uint32_t EncodedMusicMixer::Create() {
     std::scoped_lock lock(mutex_);
+    if (players_.size() >= kMaximumPlayers) throw std::length_error("music player limit reached");
     const auto id = next_++;
     players_[id] = {};
     return id;
@@ -27,6 +28,9 @@ std::uint32_t EncodedMusicMixer::Create() {
 
 void EncodedMusicMixer::Destroy(const std::uint32_t player) {
     std::scoped_lock lock(mutex_);
+    const auto found = players_.find(player);
+    if (found != players_.end() && found->second.prepare_task)
+        found->second.prepare_task->Cancel();
     players_.erase(player);
 }
 
@@ -34,8 +38,11 @@ void EncodedMusicMixer::Reset(const std::uint32_t player) {
     std::scoped_lock lock(mutex_);
     const auto found = players_.find(player);
     if (found != players_.end()) {
+        if (found->second.prepare_task) found->second.prepare_task->Cancel();
         const auto generation = found->second.generation + 1U;
+        const auto stream = found->second.audio_stream;
         found->second = {};
+        found->second.audio_stream = stream;
         found->second.generation = generation;
     }
 }
@@ -48,111 +55,102 @@ bool EncodedMusicMixer::SetEncoded(const std::uint32_t player,
         encoded.size() > kMaximumEncodedAudioBytes) {
         return false;
     }
+    std::size_t total = encoded.size();
+    for (const auto& [id, other] : players_) {
+        if (id != player && other.encoded) total += other.encoded->size();
+    }
+    if (total > kMaximumMusicBytes) return false;
+    if (found->second.prepare_task) found->second.prepare_task->Cancel();
     const auto generation = found->second.generation + 1U;
+    const auto stream = found->second.audio_stream;
     found->second = {};
+    found->second.audio_stream = stream;
     found->second.generation = generation;
-    found->second.encoded = std::move(encoded);
+    found->second.encoded = std::make_shared<const std::vector<std::byte>>(std::move(encoded));
     return true;
 }
 
 bool EncodedMusicMixer::Prepare(const std::uint32_t player) {
-    std::vector<std::byte> encoded;
-    std::uint64_t generation{};
-    {
-        std::scoped_lock lock(mutex_);
-        const auto found = players_.find(player);
-        if (found == players_.end() || found->second.encoded.empty()) return false;
-        encoded = found->second.encoded;
-        generation = found->second.generation;
-    }
-    try {
-        auto pcm = DecodeEncodedAudio(encoded);
-        return CommitPrepared(player, generation, std::move(pcm));
-    } catch (const std::exception&) {
-        return false;
-    }
-}
-
-bool EncodedMusicMixer::CommitPrepared(const std::uint32_t player,
-                                       const std::uint64_t generation,
-                                       Pcm16Audio pcm) {
-        std::scoped_lock lock(mutex_);
-        const auto found = players_.find(player);
-        if (found == players_.end() || found->second.generation != generation) {
-            return false;
-        }
-        std::size_t total = pcm.interleaved_samples.size() * sizeof(std::int16_t);
-        for (const auto& [id, other] : players_) {
-            if (id != player && other.pcm.has_value()) {
-                total += other.pcm->interleaved_samples.size() * sizeof(std::int16_t);
-            }
-        }
-        if (total > kMaximumDecodedPcmBytes) return false;
-        found->second.sample_rate = pcm.sample_rate;
-        found->second.channels = pcm.channels;
-        found->second.total_frames = pcm.Frames();
-        found->second.pcm = std::move(pcm);
-        found->second.prepared = found->second.total_frames > 0U;
-        found->second.position = 0.0;
-        found->second.completed = false;
-        return found->second.prepared;
-}
-
-bool EncodedMusicMixer::BeginPrepare(const std::uint32_t player) {
-    std::vector<std::byte> encoded;
+    if (!BeginPrepare(player)) return false;
     std::shared_ptr<PrepareTask> task;
     {
         std::scoped_lock lock(mutex_);
         const auto found = players_.find(player);
-        if (found == players_.end() || found->second.encoded.empty() ||
-            found->second.prepare_task) return false;
-        encoded = found->second.encoded;
-        task = std::make_shared<PrepareTask>();
-        found->second.prepare_task = task;
+        if (found == players_.end()) return false;
+        task = found->second.prepare_task;
     }
-    std::thread([task, encoded = std::move(encoded)]() mutable {
-        try {
-            auto pcm = DecodeEncodedAudio(encoded);
-            std::scoped_lock lock(task->mutex);
-            task->pcm = std::move(pcm);
-            task->done = true;
-        } catch (const std::exception&) {
-            std::scoped_lock lock(task->mutex);
-            task->done = true;
+    if (!task) return false;
+    {
+        std::unique_lock lock(task->mutex);
+        task->ready.wait(lock, [&] { return task->done; });
+    }
+    // Poll only this task. Reset/source replacement must not publish another one.
+    std::scoped_lock lock(mutex_);
+    const auto found = players_.find(player);
+    if (found == players_.end() || found->second.prepare_task != task) return false;
+    auto& state = found->second;
+    state.decoder = std::move(task->stream);
+    state.prepare_task.reset();
+    if (!state.decoder) return false;
+    state.sample_rate = state.decoder->Rate();
+    state.channels = state.decoder->Channels();
+    state.total_frames = state.decoder->Frames();
+    state.prepared = true;
+    state.position = 0;
+    state.completed = false;
+    return true;
+}
+
+bool EncodedMusicMixer::BeginPrepare(const std::uint32_t player) {
+    std::scoped_lock lock(mutex_);
+    const auto found = players_.find(player);
+    if (found == players_.end() || !found->second.encoded ||
+        found->second.prepare_task) return false;
+    found->second.decoder.reset();
+    found->second.prepared = false;
+    found->second.playing = false;
+    found->second.decode_failed = false;
+    auto task = std::make_shared<PrepareTask>();
+    const auto encoded = found->second.encoded;
+    // Raw task pointer is safe: the owner joins before destroying any task data.
+    // No detached threads and no callback into the mixer from the worker.
+    task->worker = std::jthread([work = task.get(), encoded](std::stop_token stop) {
+        std::unique_ptr<EncodedAudioStream> stream;
+        try { stream = std::make_unique<EncodedAudioStream>(encoded, stop); }
+        catch (const std::exception&) {}
+        {
+            std::scoped_lock lock(work->mutex);
+            work->stream = std::move(stream);
+            work->done = true;
         }
-    }).detach();
+        work->ready.notify_all();
+    });
+    found->second.prepare_task = std::move(task);
     return true;
 }
 
 EncodedMusicMixer::PrepareStatus EncodedMusicMixer::PollPrepare(
     const std::uint32_t player) {
-    std::shared_ptr<PrepareTask> task;
-    std::uint64_t generation{};
+    std::scoped_lock lock(mutex_);
+    const auto found = players_.find(player);
+    if (found == players_.end() || !found->second.prepare_task)
+        return PrepareStatus::failed;
+    auto& state = found->second;
+    auto task = state.prepare_task;
     {
-        std::scoped_lock lock(mutex_);
-        const auto found = players_.find(player);
-        if (found == players_.end() || !found->second.prepare_task) {
-            return PrepareStatus::failed;
-        }
-        task = found->second.prepare_task;
-        generation = found->second.generation;
-    }
-    std::optional<Pcm16Audio> pcm;
-    {
-        std::scoped_lock lock(task->mutex);
+        std::scoped_lock task_lock(task->mutex);
         if (!task->done) return PrepareStatus::pending;
-        pcm = std::move(task->pcm);
+        state.decoder = std::move(task->stream);
     }
-    {
-        std::scoped_lock lock(mutex_);
-        const auto found = players_.find(player);
-        if (found != players_.end() && found->second.prepare_task == task) {
-            found->second.prepare_task.reset();
-        }
-    }
-    return pcm && CommitPrepared(player, generation, std::move(*pcm))
-               ? PrepareStatus::ready
-               : PrepareStatus::failed;
+    state.prepare_task.reset();
+    if (!state.decoder) return PrepareStatus::failed;
+    state.sample_rate = state.decoder->Rate();
+    state.channels = state.decoder->Channels();
+    state.total_frames = state.decoder->Frames();
+    state.prepared = true;
+    state.position = 0;
+    state.completed = false;
+    return PrepareStatus::ready;
 }
 
 void EncodedMusicMixer::Start(const std::uint32_t player) {
@@ -216,6 +214,18 @@ void EncodedMusicMixer::SetVolume(const std::uint32_t player, const float left,
     found->second.right = right;
 }
 
+void EncodedMusicMixer::SetAudioStream(std::uint32_t player, std::int32_t stream) {
+    if (stream < 0 || stream >= 10) throw std::invalid_argument("invalid audio stream");
+    std::scoped_lock lock(mutex_);
+    players_.at(player).audio_stream = stream;
+}
+void EncodedMusicMixer::SetStreamGain(std::int32_t stream, float gain) {
+    if (stream < 0 || stream >= 10 || !std::isfinite(gain) || gain < 0 || gain > 1)
+        throw std::invalid_argument("invalid stream gain");
+    std::scoped_lock lock(mutex_);
+    stream_gains_[static_cast<std::size_t>(stream)] = gain;
+}
+
 bool EncodedMusicMixer::IsPlaying(const std::uint32_t player) const {
     std::scoped_lock lock(mutex_);
     const auto found = players_.find(player);
@@ -225,7 +235,7 @@ bool EncodedMusicMixer::IsPlaying(const std::uint32_t player) const {
 bool EncodedMusicMixer::HasEncoded(const std::uint32_t player) const {
     std::scoped_lock lock(mutex_);
     const auto found = players_.find(player);
-    return found != players_.end() && !found->second.encoded.empty();
+    return found != players_.end() && found->second.encoded != nullptr;
 }
 
 bool EncodedMusicMixer::AnyPlaying() const {
@@ -250,6 +260,14 @@ bool EncodedMusicMixer::Completed(const std::uint32_t player) {
     return true;
 }
 
+bool EncodedMusicMixer::TakeDecodeFailure(std::uint32_t player) {
+    std::scoped_lock lock(mutex_);
+    const auto found = players_.find(player);
+    if (found == players_.end() || !found->second.decode_failed) return false;
+    found->second.decode_failed = false;
+    return true;
+}
+
 std::int32_t EncodedMusicMixer::DurationMs(const std::uint32_t player) const {
     std::scoped_lock lock(mutex_);
     const auto found = players_.find(player);
@@ -269,9 +287,12 @@ std::size_t EncodedMusicMixer::CachedDecodedBytes() const {
     std::scoped_lock lock(mutex_);
     std::size_t bytes{};
     for (const auto& [_, player] : players_) {
-        bytes += player.encoded.size();
-        if (player.pcm.has_value()) {
-            bytes += player.pcm->interleaved_samples.size() * sizeof(std::int16_t);
+        if (player.encoded) bytes += player.encoded->size();
+        if (player.decoder) bytes += player.decoder->BufferedPcmBytes();
+        if (player.prepare_task) {
+            std::scoped_lock task_lock(player.prepare_task->mutex);
+            if (player.prepare_task->stream)
+                bytes += player.prepare_task->stream->BufferedPcmBytes();
         }
     }
     return bytes;
@@ -286,9 +307,8 @@ void EncodedMusicMixer::MixIntoAccumulator(
     std::scoped_lock lock(mutex_);
     const auto output_frames = accumulator.size() / 2U;
     for (auto& [_, player] : players_) {
-        if (!player.playing || !player.pcm.has_value()) continue;
-        const auto& pcm = *player.pcm;
-        const auto source_frames = pcm.Frames();
+        if (!player.playing || !player.decoder) continue;
+        const auto source_frames = player.decoder->Frames();
         if (source_frames == 0U || player.sample_rate == 0U) continue;
         const auto step = static_cast<double>(player.sample_rate) /
                           static_cast<double>(output_rate);
@@ -304,11 +324,17 @@ void EncodedMusicMixer::MixIntoAccumulator(
                 }
             }
             const auto first = static_cast<std::size_t>(player.position);
-            const auto source_l = pcm.interleaved_samples[first * pcm.channels];
-            const auto source_r =
-                pcm.channels == 1U
-                    ? source_l
-                    : pcm.interleaved_samples[first * pcm.channels + 1U];
+            std::array<std::int16_t, 2> samples;
+            try {
+                samples = player.decoder->Sample(first);
+            } catch (const std::exception&) {
+                player.playing = false;
+                player.decode_failed = true;
+                break;
+            }
+            const auto gain = stream_gains_[static_cast<std::size_t>(player.audio_stream)];
+            const auto source_l = samples[0] * gain;
+            const auto source_r = samples[1] * gain;
             accumulator[rendered * 2U] +=
                 static_cast<std::int64_t>(source_l * player.left);
             accumulator[rendered * 2U + 1U] +=

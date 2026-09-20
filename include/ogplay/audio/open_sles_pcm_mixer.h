@@ -1,6 +1,7 @@
 #pragma once
 
 #include <condition_variable>
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <map>
@@ -73,6 +74,8 @@ public:
     [[nodiscard]] std::uint32_t PositionFrames(PlayerId player) const;
     void SetVolume(PlayerId player, std::int16_t millibel);
     void SetStereoVolume(PlayerId player, float left, float right);
+    void SetAudioStream(PlayerId player, std::int32_t stream);
+    void SetStreamGain(std::int32_t stream, float gain);
     void SetMute(PlayerId player, bool mute);
     void SetStereoPosition(PlayerId player, std::int16_t permille);
 
@@ -97,6 +100,7 @@ private:
         float right_volume{1.0F};
         float playback_rate{1.0F};
         bool mute{};
+        std::int32_t audio_stream{3};
         std::uint32_t play_index{};
         std::uint64_t next_sequence{1U};
         double frame_position{};
@@ -131,6 +135,7 @@ private:
     mutable std::mutex mutex_;
     std::condition_variable queue_changed_;
     std::map<PlayerId, Player> players_;
+    std::array<float, 10> stream_gains_{1,1,1,1,1,1,1,1,1,1};
     PlayerId next_player_{1U};
     std::size_t blocking_writers_{};
     bool interrupted_{};

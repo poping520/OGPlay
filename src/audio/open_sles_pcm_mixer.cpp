@@ -444,7 +444,8 @@ std::vector<OpenSlesConsumedBuffer> OpenSlesPcmMixer::MixIntoAccumulator(
         const auto step = static_cast<double>(player.format.sample_rate) /
                           static_cast<double>(output_rate) *
                           static_cast<double>(player.playback_rate);
-        const auto gain = player.mute ? 0.0 : MillibelGain(player.millibel);
+        const auto gain = player.mute ? 0.0 : MillibelGain(player.millibel) *
+            stream_gains_[static_cast<std::size_t>(player.audio_stream)];
         const auto pan = static_cast<double>(player.stereo_position) / 1000.0;
         const auto left_gain = gain * player.left_volume *
                                (pan > 0.0 ? 1.0 - pan : 1.0);
@@ -489,4 +490,15 @@ OpenSlesPcmMixer::MixAdditiveStereoPcm16(
     return consumed;
 }
 
+void OpenSlesPcmMixer::SetAudioStream(PlayerId player, std::int32_t stream) {
+    if (stream < 0 || stream >= 10) throw std::invalid_argument("invalid audio stream");
+    std::scoped_lock lock(mutex_);
+    Require(player).audio_stream = stream;
+}
+void OpenSlesPcmMixer::SetStreamGain(std::int32_t stream, float gain) {
+    if (stream < 0 || stream >= 10 || !std::isfinite(gain) || gain < 0 || gain > 1)
+        throw std::invalid_argument("invalid stream gain");
+    std::scoped_lock lock(mutex_);
+    stream_gains_[static_cast<std::size_t>(stream)] = gain;
+}
 }  // namespace ogplay::audio

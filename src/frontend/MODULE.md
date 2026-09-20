@@ -20,10 +20,11 @@
 - `--mcp`/`--mcp-port` 提供本机服务；`--mcp-manual-step` 等待 step/suspend/resume/
   shutdown。`--diag*` 与 `ogplay diag snapshot` 提供不依赖 SDL 主循环的停滞取证。
 
-`run-apk` 默认按 package 使用持久沙盒（ADR-0020）；`--sandbox-dir` 与
-`--ephemeral-sandbox` 互斥。打开失败必须终止，不降级为内存模式。持久/临时沙盒分别保存/
-重建 CSPRNG `ANDROID_ID`，且不读取宿主设备身份。pause 与 clean stop 均通过同一 VFS
-`FlushAll` 落盘。
+`run-apk` 默认使用持久沙盒（ADR-0020）；裸 APK 启动在没有实例时分配 package 首实例，
+唯一已有实例自动复用，多实例则要求 `--installation-id` 消歧。GUI 始终传递库中选定的实例。
+`--sandbox-dir` 与 `--ephemeral-sandbox` 互斥。打开失败必须终止，不降级为内存模式。持久/
+临时沙盒分别保存/重建 CSPRNG `ANDROID_ID`，且不读取宿主设备身份。pause 与 clean stop 均
+通过同一 VFS `FlushAll` 落盘。
 
 ## 不变量
 

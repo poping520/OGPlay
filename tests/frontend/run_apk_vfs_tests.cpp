@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
@@ -16,6 +17,22 @@
 #include "../../src/frontend/cli/run_apk_vfs.h"
 
 namespace {
+
+class TemporaryDirectory final {
+public:
+    TemporaryDirectory() {
+        static std::atomic_uint64_t next{};
+        path = std::filesystem::temp_directory_path() /
+               ("ogplay-run-apk-vfs-" +
+                std::to_string(next.fetch_add(1U, std::memory_order_relaxed)));
+        std::filesystem::remove_all(path);
+    }
+    ~TemporaryDirectory() {
+        std::error_code error;
+        std::filesystem::remove_all(path, error);
+    }
+    std::filesystem::path path;
+};
 
 void Append16(std::vector<std::byte>& out, const std::uint16_t value) {
     out.push_back(static_cast<std::byte>(value));
@@ -163,6 +180,51 @@ ogplay::session::TitleProfile ArchiveProfile(
 }
 
 }  // namespace
+
+TEST_CASE("direct run-apk allocates and reuses an unambiguous installation") {
+    TemporaryDirectory tree;
+    const auto root = tree.path / "sandbox";
+    {
+        auto sandbox = ogplay::frontend::OpenSandbox(
+            {.directory = root}, "org.example.game", 1U);
+        CHECK(sandbox.installation_id == "org.example.game");
+        CHECK(std::filesystem::is_directory(root / "org.example.game"));
+    }
+    {
+        auto sandbox = ogplay::frontend::OpenSandbox(
+            {.directory = root}, "org.example.game", 2U);
+        CHECK(sandbox.installation_id == "org.example.game");
+    }
+}
+
+TEST_CASE("direct run-apk reuses a unique suffixed installation") {
+    TemporaryDirectory tree;
+    const auto root = tree.path / "sandbox";
+    std::filesystem::create_directories(root);
+    auto created = ogplay::runtime::SandboxStore::Create(
+        root, "org.example.game-2", "org.example.game");
+    created.reset();
+    auto sandbox = ogplay::frontend::OpenSandbox(
+        {.directory = root}, "org.example.game", 1U);
+    CHECK(sandbox.installation_id == "org.example.game-2");
+}
+
+TEST_CASE("direct run-apk requires disambiguation for multiple installations") {
+    TemporaryDirectory tree;
+    const auto root = tree.path / "sandbox";
+    std::filesystem::create_directories(root);
+    auto first = ogplay::runtime::SandboxStore::Create(
+        root, "org.example.game", "org.example.game");
+    auto second = ogplay::runtime::SandboxStore::Create(
+        root, "org.example.game-2", "org.example.game");
+    first.reset();
+    second.reset();
+    CHECK_THROWS_WITH(
+        static_cast<void>(ogplay::frontend::OpenSandbox(
+            {.directory = root}, "org.example.game", 1U)),
+        "multiple save sandbox installations exist for package "
+        "org.example.game; pass --installation-id <id>");
+}
 
 TEST_CASE("run-apk archive mounts enforce compressed block cache budget") {
     const auto bytes = FixedZip();

@@ -190,12 +190,17 @@ extension string 与错误锁存以 native registry 为唯一事实。
 ### 媒体、网络、设备、JNI
 
 - MediaPlayer/VideoView 只消费受检资源、路径或逻辑 FD 区间并交给唯一 decoder/mixer；不创建
-  host fd 或第二播放器。`LoadEncodedAudioWindow` 读取 resid/APK/VFS 窗口或已捕获 lease；
+  host fd 或第二播放器。音频 MediaPlayer 使用 `EncodedMusicMixer` 每实例状态；SoundPool 使用
+  `JavaSoundPoolMixer` 池隔离。`LoadEncodedAudioWindow` 读取 resid/APK/VFS 窗口或已捕获 lease；
   `setDataSource(FileDescriptor)` 在关闭原 FD 后仍保留窗口。同路径 VFS 替换不得命中旧缓存。
-  回调只来自真实生命周期/播放进度。
-- AudioTrack rate 来自 mixer；stream/static、marker/period、listener、pause/flush/release 使用
-  唯一状态；notification marker/period getter 返回同一 setter 状态，默认 0，释放或未初始化
-  时抛 IllegalStateException。回压等待完整释放 VM 锁，恢复后复验 owner；host 音频线程不得进入 VM。
+  原版事件经 `postEventFromNative` 和 Handler/Looper；`mNativeContext` 为非零 32 位 token。
+  网络 URI、subtitle、DRM、effects 明确失败。
+- AudioTrack 普通协议在 BootDex；integration 只 overlay native。rate 来自 mixer；
+  stream/static、marker/period、listener、pause/flush/release 使用唯一状态；notification
+  marker/period getter 返回同一 setter 状态，默认 0，释放或未初始化按 AOSP 返回 0。
+  回压等待完整释放 VM 锁，恢复后复验 owner；host 音频线程不得进入 VM。
+  `loadLibrary("soundpool"|"media_jni")` 视为平台库身份成功，不加载 ELF；其他库名仍走
+  process loader 或明确 ULE。
 - 网络只用 core 注入 policy/transport，默认离线；Connectivity/Wifi 仅发布已配置事实，不读取
   host 网络、DNS、代理或证书。无传感器/电话来源时返回 API 允许的缺席结果，不伪造硬件。
 - location 仅发布 API 19 listener/值类型形状与稳定 manager facade；无 provider、无历史位置，

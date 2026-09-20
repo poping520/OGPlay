@@ -12,11 +12,14 @@
 #include <string>
 #include <vector>
 
+#include "ogplay/audio/encoded_music.h"
 #include "ogplay/core/capability_ledger.h"
 #include "ogplay/core/logger.h"
 #include "ogplay/runtime/dexvm/class_linker.h"
 #include "ogplay/runtime/dexvm/interpreter.h"
 #include "ogplay/runtime/dexvm/object_model.h"
+#include "ogplay/runtime/dexvm/vm_monitors.h"
+#include "ogplay/runtime/dexvm/vm_threads.h"
 #include "ogplay/runtime/integration/dexvm_android.h"
 #include "ogplay/runtime/vfs/vfs.h"
 #include "ogplay/video/fake_video_player.h"
@@ -86,6 +89,7 @@ struct VideoVm final {
                   return linker;
               }(),
               model, nullptr, ledger, {}) {
+        interpreter.Monitors().SetTimeSource([] { return std::int64_t{1}; });
         context->surface_width = 64U;
         context->surface_height = 32U;
         context->vfs = &vfs;
@@ -313,10 +317,28 @@ TEST_CASE("videoview error listener registration can be replaced and cleared") {
 
 TEST_CASE("MediaPlayer accepts error and prepared listeners and resets") {
     VideoVm vm(FakeFactory());
+    ogplay::audio::EncodedMusicMixer music;
+    vm.context->encoded_music = &music;
+    VmThreadRuntime threads(vm.interpreter);
+    vm.context->threads = &threads;
+    RegisterAndroidSchedulerStateTable(vm.interpreter, vm.context);
+    const auto looper =
+        vm.linker.ResolveDescriptor("Landroid/os/Looper;");
+    const auto prepare = vm.linker.FindDirectMethod(
+        looper, "prepareMainLooper", "()V");
+    REQUIRE(prepare.has_value());
+    const auto prepared = vm.interpreter.Call(*prepare, {});
+    REQUIRE_MESSAGE(!prepared.exception.IsValid(), prepared.exception_message);
     const auto player =
         vm.interpreter.NewIntrinsicInstance("Landroid/media/MediaPlayer;");
-    // Resolution itself is the contract: pvz's audioPlay registers an error
-    // listener before any playback, and AOSP accepts null to clear.
+    const auto klass =
+        vm.linker.ResolveDescriptor("Landroid/media/MediaPlayer;");
+    const auto ctor = vm.linker.FindDirectMethod(klass, "<init>", "()V");
+    REQUIRE(ctor.has_value());
+    const auto constructed = vm.interpreter.Call(
+        *ctor, std::vector<VmValue>{VmValue::Ref(player)});
+    REQUIRE_MESSAGE(!constructed.exception.IsValid(),
+                    constructed.exception_message);
     vm.CallOn(player, "setOnErrorListener",
               "(Landroid/media/MediaPlayer$OnErrorListener;)V",
               {VmValue::Ref(VmObjectRef{})});
@@ -325,6 +347,8 @@ TEST_CASE("MediaPlayer accepts error and prepared listeners and resets") {
               {VmValue::Ref(VmObjectRef{})});
     vm.CallOn(player, "reset", "()V");
     CHECK(vm.CallOn(player, "isPlaying", "()Z").AsInt() == 0);
+    ShutdownAndroidScheduler(*vm.context);
+    threads.Shutdown();
 }
 
 TEST_CASE("WifiInfo without a connection does not invent a MAC address") {

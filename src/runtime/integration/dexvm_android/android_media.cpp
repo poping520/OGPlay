@@ -4,6 +4,7 @@
 #include <cmath>
 #include <limits>
 
+#include "ogplay/audio/encoded_music.h"
 #include "ogplay/audio/open_sles_pcm_mixer.h"
 #include "ogplay/runtime/dexvm/io_runtime.h"
 
@@ -13,426 +14,63 @@
 namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_media_AudioManager(const Context& context) {
-    static_cast<void>(context);
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/media/AudioManager;", "Ljava/lang/Object;");
     builder.FinalMethod("getRingerMode", "()I", [](dx::IntrinsicContext&) {
-        return dx::VmValue::Int(2);  // RINGER_MODE_NORMAL
+        return dx::VmValue::Int(2);
     });
-    builder.FinalMethod("isMusicActive", "()Z", [](dx::IntrinsicContext&) {
-        // OGPlay owns the session mixer and has no external media session.
-        return dx::VmValue::Int(0);
-    });
-    const auto max_volume = dx::IntrinsicHandler(
-        [](dx::IntrinsicContext&) { return dx::VmValue::Int(15); });
-    const auto set_volume = dx::IntrinsicHandler(
-        [](dx::IntrinsicContext&) { return dx::VmValue::Void(); });
-    builder.FinalMethod("getStreamMaxVolume", "(I)I", max_volume);
-    builder.FinalMethod("setStreamVolume", "(III)V", set_volume);
-    builder.FinalMethod("getStreamVolume", "(I)I", max_volume);
-    builder.FinalMethod("setStreamMute", "(IZ)V", set_volume);
-    return std::move(builder).Build();
-}
-
-}  // namespace ogplay::runtime::android_intrinsics
-
-// ---- DVM-84: API 19 AudioFormat / AudioTrack on the shared PCM backend ----
-
-namespace ogplay::runtime::android_intrinsics::dvm84_android_media_AudioTrack {
-namespace {
-
-constexpr std::int32_t kStateUninitialized = 0;
-constexpr std::int32_t kStateInitialized = 1;
-constexpr std::int32_t kStateNoStaticData = 2;
-constexpr std::int32_t kModeStatic = 0;
-constexpr std::int32_t kModeStream = 1;
-constexpr std::int32_t kErrorBadValue = -2;
-constexpr std::int32_t kErrorInvalidOperation = -3;
-
-struct Format final {
-    std::int32_t channels{};
-    std::int32_t bytes_per_sample{};
-};
-
-[[nodiscard]] std::optional<Format> DecodeFormat(
-    const std::int32_t channel_config, const std::int32_t encoding) {
-    const auto channels =
-        channel_config == 1 || channel_config == 2 || channel_config == 4
-            ? 1
-            : (channel_config == 3 || channel_config == 12 ? 2 : 0);
-    const auto bytes = encoding == 1 || encoding == 2
-                           ? 2
-                           : (encoding == 3 ? 1 : 0);
-    if (channels == 0 || bytes == 0) return std::nullopt;
-    return Format{channels, bytes};
-}
-
-[[nodiscard]] std::int32_t MinimumBuffer(const std::int32_t sample_rate,
-                                         const std::int32_t channel_config,
-                                         const std::int32_t encoding) {
-    const auto format = DecodeFormat(channel_config, encoding);
-    if (!format.has_value() || sample_rate < 4000 || sample_rate > 48000) {
-        return kErrorBadValue;
-    }
-    return (sample_rate / 10) * format->channels * format->bytes_per_sample;
-}
-
-[[nodiscard]] DexVmAndroidContext::AudioTrackState* Find(
-    const Context& context, const dx::VmObjectRef receiver) {
-    const auto found = context->audio_tracks.find(receiver.Value());
-    return found == context->audio_tracks.end() ? nullptr : &found->second;
-}
-
-[[nodiscard]] DexVmAndroidContext::AudioTrackState& Require(
-    const Context& context, dx::IntrinsicContext& call) {
-    auto* state = Find(context, call.receiver);
-    if (state == nullptr || state->state == kStateUninitialized ||
-        context->pcm_playback == nullptr ||
-        !context->pcm_playback->HasPlayer(state->player)) {
-        throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;",
-                              "AudioTrack is not initialized"};
-    }
-    return *state;
-}
-
-[[nodiscard]] std::int32_t WriteBytes(
-    const Context& context, dx::IntrinsicContext& call,
-    const std::span<const std::byte> bytes) {
-    auto* state = Find(context, call.receiver);
-    if (state == nullptr || context->pcm_playback == nullptr) {
-        return kErrorInvalidOperation;
-    }
-    const auto frame_bytes = static_cast<std::size_t>(
-        state->channel_count * state->bytes_per_sample);
-    if (bytes.size() % frame_bytes != 0U) {
-        return kErrorBadValue;
-    }
-    if (bytes.empty()) return 0;
-    const auto player = state->player;
-    const auto mode = state->mode;
-    const auto buffer_size = static_cast<std::size_t>(state->buffer_size);
-    if (mode == kModeStatic) {
-        const auto take = std::min(bytes.size(), buffer_size);
-        if (take % frame_bytes != 0U) return kErrorBadValue;
-        if (!context->pcm_playback->Enqueue(player, bytes.first(take))) {
-            return 0;
-        }
-        if (state->state == kStateNoStaticData) state->state = kStateInitialized;
-        return static_cast<std::int32_t>(take);
-    }
-    std::size_t written{};
-    auto remaining = bytes;
-    while (!remaining.empty()) {
-        const auto chunk = std::min(remaining.size(), buffer_size);
-        auto& execution_lock = call.vm.ExecutionLock();
-        const auto depth = execution_lock.ReleaseForBlocking();
-        audio::OpenSlesEnqueueResult enqueue{};
-        try {
-            enqueue = context->pcm_playback->EnqueueBlocking(
-                player, remaining.first(chunk), buffer_size);
-        } catch (...) {
-            execution_lock.ReacquireAfterBlocking(depth);
-            throw;
-        }
-        execution_lock.ReacquireAfterBlocking(depth);
-        state = Find(context, call.receiver);
-        if (enqueue != audio::OpenSlesEnqueueResult::enqueued ||
-            state == nullptr || state->player != player) {
-            if (written > 0U) return static_cast<std::int32_t>(written);
-            return kErrorInvalidOperation;
-        }
-        written += chunk;
-        remaining = remaining.subspan(chunk);
-    }
-    return static_cast<std::int32_t>(written);
-}
-
-}  // namespace
-
-Decl Declare_android_media_AudioFormat(const Context& context) {
-    static_cast<void>(context);
-    auto builder = dx::IntrinsicClassBuilder::Class(
-        "Landroid/media/AudioFormat;", "Ljava/lang/Object;");
-    builder.ConstantInt("ENCODING_DEFAULT", "I", 1)
-        .ConstantInt("ENCODING_PCM_16BIT", "I", 2)
-        .ConstantInt("ENCODING_PCM_8BIT", "I", 3)
-        .ConstantInt("CHANNEL_CONFIGURATION_DEFAULT", "I", 1)
-        .ConstantInt("CHANNEL_CONFIGURATION_MONO", "I", 2)
-        .ConstantInt("CHANNEL_CONFIGURATION_STEREO", "I", 3)
-        .ConstantInt("CHANNEL_OUT_MONO", "I", 4)
-        .ConstantInt("CHANNEL_OUT_STEREO", "I", 12);
-    return std::move(builder).Build();
-}
-
-Decl Declare_android_media_AudioTrack(const Context& context) {
-    auto builder = dx::IntrinsicClassBuilder::Class(
-        "Landroid/media/AudioTrack;", "Ljava/lang/Object;");
-    builder.ConstantInt("MODE_STATIC", "I", kModeStatic)
-        .ConstantInt("MODE_STREAM", "I", kModeStream)
-        .ConstantInt("STATE_UNINITIALIZED", "I", kStateUninitialized)
-        .ConstantInt("STATE_INITIALIZED", "I", kStateInitialized)
-        .ConstantInt("STATE_NO_STATIC_DATA", "I", kStateNoStaticData)
-        .ConstantInt("PLAYSTATE_STOPPED", "I", 1)
-        .ConstantInt("PLAYSTATE_PAUSED", "I", 2)
-        .ConstantInt("PLAYSTATE_PLAYING", "I", 3)
-        .ConstantInt("SUCCESS", "I", 0)
-        .ConstantInt("ERROR", "I", -1)
-        .ConstantInt("ERROR_BAD_VALUE", "I", kErrorBadValue)
-        .ConstantInt("ERROR_INVALID_OPERATION", "I", kErrorInvalidOperation);
-    builder.StaticMethod("getMinVolume", "()F",
-        [](dx::IntrinsicContext&) { return dx::VmValue::Float(0.0F); });
-    builder.StaticMethod("getMaxVolume", "()F",
-        [](dx::IntrinsicContext&) { return dx::VmValue::Float(1.0F); });
-    builder.StaticMethod("getMinBufferSize", "(III)I",
-        [](dx::IntrinsicContext& call) {
-            return dx::VmValue::Int(MinimumBuffer(
-                call.arguments[0].AsInt(), call.arguments[1].AsInt(),
-                call.arguments[2].AsInt()));
-        });
-    builder.StaticMethod("getNativeOutputSampleRate", "(I)I",
+    builder.FinalMethod("isMusicActive", "()Z",
         [context](dx::IntrinsicContext&) {
-            // API 19 reports the same native mixer rate for every legacy
-            // stream type; the session supplies that backend fact once.
-            return dx::VmValue::Int(static_cast<std::int32_t>(
-                context->native_output_sample_rate));
-        });
-    builder.Constructor("(IIIIII)V", [context](dx::IntrinsicContext& call) {
-        const auto sample_rate = call.arguments[1].AsInt();
-        const auto format = DecodeFormat(call.arguments[2].AsInt(),
-                                         call.arguments[3].AsInt());
-        const auto buffer_size = call.arguments[4].AsInt();
-        const auto mode = call.arguments[5].AsInt();
-        const auto frame_size = format.has_value()
-                                    ? format->channels * format->bytes_per_sample
-                                    : 0;
-        if (call.arguments[0].AsInt() != 3 || !format.has_value() ||
-            sample_rate < 4000 || sample_rate > 48000 || buffer_size <= 0 ||
-            frame_size == 0 || buffer_size % frame_size != 0 ||
-            (mode != kModeStatic && mode != kModeStream) ||
-            context->pcm_playback == nullptr ||
-            (mode == kModeStream && buffer_size < MinimumBuffer(
-                 sample_rate, call.arguments[2].AsInt(),
-                 call.arguments[3].AsInt()))) {
-            throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;",
-                                  "unsupported AudioTrack configuration"};
-        }
-        if (context->audio_tracks.contains(call.receiver.Value())) {
-            throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;",
-                                  "AudioTrack is already initialized"};
-        }
-        const auto player = context->pcm_playback->CreatePlayer(
-            {static_cast<std::uint32_t>(sample_rate),
-             static_cast<std::uint8_t>(format->channels),
-             static_cast<std::uint8_t>(format->bytes_per_sample * 8)},
-            mode == kModeStatic ? 1U : 255U);
-        context->pcm_playback->SetPlayerKind(
-            player, mode == kModeStatic
-                        ? audio::OpenSlesPlayerKind::audio_track_static
-                        : audio::OpenSlesPlayerKind::audio_track_stream);
-        context->audio_tracks[call.receiver.Value()] = {
-            player, sample_rate, format->channels, format->bytes_per_sample,
-            buffer_size, mode,
-            mode == kModeStatic ? kStateNoStaticData : kStateInitialized,
-            0, 0, false, 0U, dx::VmObjectRef{0}};
-        return dx::VmValue::Void();
-    });
-    builder.FinalMethod("getState", "()I", [context](dx::IntrinsicContext& call) {
-        const auto* state = Find(context, call.receiver);
-        return dx::VmValue::Int(state == nullptr ? kStateUninitialized
-                                                 : state->state);
-    });
-    builder.FinalMethod("getPlayState", "()I", [context](dx::IntrinsicContext& call) {
-        const auto* state = Find(context, call.receiver);
-        if (state == nullptr || context->pcm_playback == nullptr) {
-            return dx::VmValue::Int(1);
-        }
-        const auto play = context->pcm_playback->PlayState(state->player);
-        return dx::VmValue::Int(play == audio::OpenSlesPlayState::playing
-                                    ? 3
-                                    : (play == audio::OpenSlesPlayState::paused ? 2 : 1));
-    });
-    builder.FinalMethod("play", "()V", [context](dx::IntrinsicContext& call) {
-        auto& state = Require(context, call);
-        if (state.state != kStateInitialized) {
-            throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;",
-                                  "static AudioTrack has no data"};
-        }
-        context->pcm_playback->SetPlayState(
-            state.player, audio::OpenSlesPlayState::playing);
-        return dx::VmValue::Void();
-    });
-    builder.FinalMethod("pause", "()V", [context](dx::IntrinsicContext& call) {
-        auto& state = Require(context, call);
-        context->pcm_playback->SetPlayState(
-            state.player, audio::OpenSlesPlayState::paused);
-        return dx::VmValue::Void();
-    });
-    builder.FinalMethod("stop", "()V", [context](dx::IntrinsicContext& call) {
-        auto& state = Require(context, call);
-        context->pcm_playback->SetPlayState(
-            state.player, audio::OpenSlesPlayState::stopped);
-        state.last_notified_head =
-            context->pcm_playback->PositionFrames(state.player);
-        return dx::VmValue::Void();
-    });
-    builder.FinalMethod("flush", "()V", [context](dx::IntrinsicContext& call) {
-        auto& state = Require(context, call);
-        if (state.mode == kModeStream &&
-            context->pcm_playback->PlayState(state.player) !=
-                audio::OpenSlesPlayState::playing) {
-            context->pcm_playback->ClearQueueKeepHead(state.player);
-            state.last_notified_head =
-                context->pcm_playback->PositionFrames(state.player);
-        }
-        return dx::VmValue::Void();
-    });
-    builder.FinalMethod("release", "()V", [context](dx::IntrinsicContext& call) {
-        const auto found = context->audio_tracks.find(call.receiver.Value());
-        if (found != context->audio_tracks.end()) {
+            if (context->encoded_music != nullptr &&
+                context->encoded_music->AnyPlaying()) {
+                return dx::VmValue::Int(1);
+            }
+            if (context->encoded_audio_playback != nullptr &&
+                context->encoded_audio_playback->ActiveVoiceCount() > 0U) {
+                return dx::VmValue::Int(1);
+            }
             if (context->pcm_playback != nullptr) {
-                context->pcm_playback->DestroyPlayer(found->second.player);
+                for (const auto& [_, track] : context->audio_tracks) {
+                    if (context->pcm_playback->PlayState(track.player) ==
+                        audio::OpenSlesPlayState::playing) {
+                        return dx::VmValue::Int(1);
+                    }
+                }
             }
-            context->audio_tracks.erase(found);
-        }
-        return dx::VmValue::Void();
-    });
-    builder.FinalMethod("write", "([BII)I", [context](dx::IntrinsicContext& call) {
-        const auto array = call.arguments[0].ref;
-        const auto offset = call.arguments[1].AsInt();
-        const auto count = call.arguments[2].AsInt();
-        if (!array.IsValid() || offset < 0 || count < 0 ||
-            static_cast<std::int64_t>(offset) + count >
-                call.vm.Model().ArrayLength(array) ||
-            call.vm.Model().PrimitiveArrayKind(array) != JniPrimitiveKind::byte) {
-            return dx::VmValue::Int(kErrorBadValue);
-        }
-        return dx::VmValue::Int(WriteBytes(
-            context, call, call.vm.Model().ReadByteRegion(array, offset, count)));
-    });
-    builder.FinalMethod("write", "([SII)I", [context](dx::IntrinsicContext& call) {
-        auto* state = Find(context, call.receiver);
-        const auto array = call.arguments[0].ref;
-        const auto offset = call.arguments[1].AsInt();
-        const auto count = call.arguments[2].AsInt();
-        if (state == nullptr || state->bytes_per_sample != 2 || !array.IsValid() ||
-            offset < 0 || count < 0 ||
-            static_cast<std::int64_t>(offset) + count >
-                call.vm.Model().ArrayLength(array) ||
-            call.vm.Model().PrimitiveArrayKind(array) !=
-                JniPrimitiveKind::short_integer) {
-            return dx::VmValue::Int(state == nullptr ? kErrorInvalidOperation
-                                                      : kErrorBadValue);
-        }
-        std::vector<std::byte> bytes(static_cast<std::size_t>(count) * 2U);
-        for (std::int32_t index = 0; index < count; ++index) {
-            const auto value = static_cast<std::uint16_t>(
-                call.vm.Model().GetPrimitiveElement(array, offset + index));
-            bytes[static_cast<std::size_t>(index) * 2U] =
-                static_cast<std::byte>(value & 0xffU);
-            bytes[static_cast<std::size_t>(index) * 2U + 1U] =
-                static_cast<std::byte>(value >> 8U);
-        }
-        const auto written = WriteBytes(context, call, bytes);
-        return dx::VmValue::Int(written < 0 ? written : written / 2);
-    });
-    builder.FinalMethod("setStereoVolume", "(FF)I", [context](dx::IntrinsicContext& call) {
-        auto* state = Find(context, call.receiver);
-        if (state == nullptr || context->pcm_playback == nullptr) {
-            return dx::VmValue::Int(kErrorInvalidOperation);
-        }
-        const auto left = std::clamp(call.arguments[0].AsFloat(), 0.0F, 1.0F);
-        const auto right = std::clamp(call.arguments[1].AsFloat(), 0.0F, 1.0F);
-        context->pcm_playback->SetStereoVolume(state->player, left, right);
-        return dx::VmValue::Int(0);
-    });
-    builder.FinalMethod("setVolume", "(F)I", [context](dx::IntrinsicContext& call) {
-        auto* state = Find(context, call.receiver);
-        if (state == nullptr || context->pcm_playback == nullptr) {
-            return dx::VmValue::Int(kErrorInvalidOperation);
-        }
-        const auto volume = std::clamp(call.arguments[0].AsFloat(), 0.0F, 1.0F);
-        context->pcm_playback->SetStereoVolume(state->player, volume, volume);
-        return dx::VmValue::Int(0);
-    });
-    builder.FinalMethod("setPositionNotificationPeriod", "(I)I",
-        [context](dx::IntrinsicContext& call) {
-            auto* state = Find(context, call.receiver);
-            const auto period = call.arguments[0].AsInt();
-            if (state == nullptr) return dx::VmValue::Int(kErrorInvalidOperation);
-            if (period < 0) return dx::VmValue::Int(kErrorBadValue);
-            state->notification_period = period;
-            state->last_notified_head =
-                context->pcm_playback->PositionFrames(state->player);
             return dx::VmValue::Int(0);
         });
-    builder.FinalMethod("getPositionNotificationPeriod", "()I",
+    builder.FinalMethod("getStreamMaxVolume", "(I)I",
+        [](dx::IntrinsicContext&) { return dx::VmValue::Int(15); });
+    builder.FinalMethod("getStreamVolume", "(I)I",
         [context](dx::IntrinsicContext& call) {
+            const auto stream = call.arguments[0].AsInt();
+            if (stream < 0 || stream >= 10) return dx::VmValue::Int(0);
+            if (context->stream_mute[static_cast<std::size_t>(stream)]) {
+                return dx::VmValue::Int(0);
+            }
             return dx::VmValue::Int(
-                Require(context, call).notification_period);
+                context->stream_volume[static_cast<std::size_t>(stream)]);
         });
-    builder.FinalMethod("setNotificationMarkerPosition", "(I)I",
+    builder.FinalMethod("setStreamVolume", "(III)V",
         [context](dx::IntrinsicContext& call) {
-            auto* state = Find(context, call.receiver);
-            const auto marker = call.arguments[0].AsInt();
-            if (state == nullptr) {
-                return dx::VmValue::Int(kErrorInvalidOperation);
-            }
-            if (marker < 0) return dx::VmValue::Int(kErrorBadValue);
-            state->marker_position = marker;
-            state->marker_fired = false;
-            return dx::VmValue::Int(0);
-        });
-    builder.FinalMethod("getNotificationMarkerPosition", "()I",
-        [context](dx::IntrinsicContext& call) {
-            return dx::VmValue::Int(Require(context, call).marker_position);
-        });
-    builder.FinalMethod(
-        "setPlaybackPositionUpdateListener",
-        "(Landroid/media/AudioTrack$OnPlaybackPositionUpdateListener;)V",
-        [context](dx::IntrinsicContext& call) {
-            auto* state = Find(context, call.receiver);
-            if (state == nullptr) {
-                throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;",
-                                      "AudioTrack is not initialized"};
-            }
-            state->position_listener = call.arguments[0].ref;
-            state->last_notified_head =
-                context->pcm_playback->PositionFrames(state->player);
+            const auto stream = call.arguments[0].AsInt();
+            if (stream < 0 || stream >= 10) return dx::VmValue::Void();
+            context->stream_volume[static_cast<std::size_t>(stream)] =
+                std::clamp(call.arguments[1].AsInt(), 0, 15);
             return dx::VmValue::Void();
         });
-    builder.FinalMethod("getPlaybackHeadPosition", "()I",
+    builder.FinalMethod("setStreamMute", "(IZ)V",
         [context](dx::IntrinsicContext& call) {
-            auto* state = Find(context, call.receiver);
-            return dx::VmValue::Int(
-                state == nullptr || context->pcm_playback == nullptr
-                    ? 0
-                    : static_cast<std::int32_t>(
-                          context->pcm_playback->PositionFrames(state->player)));
+            const auto stream = call.arguments[0].AsInt();
+            if (stream < 0 || stream >= 10) return dx::VmValue::Void();
+            context->stream_mute[static_cast<std::size_t>(stream)] =
+                call.arguments[1].AsInt() != 0;
+            return dx::VmValue::Void();
         });
     return std::move(builder).Build();
 }
 
-}  // namespace ogplay::runtime::android_intrinsics::dvm84_android_media_AudioTrack
-
-namespace ogplay::runtime::android_intrinsics {
-Decl Declare_android_media_AudioFormat(const Context& context) {
-    return dvm84_android_media_AudioTrack::Declare_android_media_AudioFormat(context);
-}
-Decl Declare_android_media_AudioTrack(const Context& context) {
-    return dvm84_android_media_AudioTrack::Declare_android_media_AudioTrack(context);
-}
-Decl Declare_android_media_AudioTrack_OnPlaybackPositionUpdateListener(
-    const Context&) {
-    auto builder = dx::IntrinsicClassBuilder::Interface(
-        "Landroid/media/AudioTrack$OnPlaybackPositionUpdateListener;");
-    builder.UnimplementedVirtual(
-        "onMarkerReached", "(Landroid/media/AudioTrack;)V",
-        dx::kAccPublic | dx::kAccAbstract);
-    builder.UnimplementedVirtual(
-        "onPeriodicNotification", "(Landroid/media/AudioTrack;)V",
-        dx::kAccPublic | dx::kAccAbstract);
-    return std::move(builder).Build();
-}
 }  // namespace ogplay::runtime::android_intrinsics
+
 
 namespace ogplay::runtime {
 void RegisterAndroidAudioTrackStateTable(
@@ -445,432 +83,52 @@ void RegisterAndroidAudioTrackStateTable(
                   const dexvm::VmRootVisitor& visit) {
             if (const auto found = context->audio_tracks.find(owner.Value());
                 found != context->audio_tracks.end() &&
-                found->second.position_listener.IsValid()) {
-                visit(found->second.position_listener);
+                found->second.jni_weak.IsValid()) {
+                visit(found->second.jni_weak);
+            }
+            if (const auto found = context->media_players.find(owner.Value());
+                found != context->media_players.end() &&
+                found->second.jni_weak.IsValid()) {
+                visit(found->second.jni_weak);
+            }
+            if (const auto found = context->sound_pools.find(owner.Value());
+                found != context->sound_pools.end() &&
+                found->second.jni_weak.IsValid()) {
+                visit(found->second.jni_weak);
             }
         },
         [context](const dexvm::VmObjectRef object) {
             const auto found = context->audio_tracks.find(object.Value());
-            if (found == context->audio_tracks.end()) return;
-            if (context->pcm_playback != nullptr) {
-                context->pcm_playback->DestroyPlayer(found->second.player);
+            if (found != context->audio_tracks.end()) {
+                if (context->pcm_playback != nullptr) {
+                    context->pcm_playback->DestroyPlayer(found->second.player);
+                }
+                context->audio_tracks.erase(found);
             }
-            context->audio_tracks.erase(found);
+            const auto media = context->media_players.find(object.Value());
+            if (media != context->media_players.end()) {
+                if (context->encoded_music != nullptr) {
+                    context->encoded_music->Destroy(media->second.music);
+                }
+                if (media->second.source.lease != 0U) {
+                    context->encoded_audio_leases.erase(
+                        media->second.source.lease);
+                }
+                context->media_players.erase(media);
+            }
+            const auto pool = context->sound_pools.find(object.Value());
+            if (pool != context->sound_pools.end()) {
+                if (context->encoded_audio_playback != nullptr) {
+                    context->encoded_audio_playback->DestroyPool(
+                        pool->second.pool);
+                }
+                context->sound_pools.erase(pool);
+            }
         },
         {}});
 }
 }  // namespace ogplay::runtime
 
-
-// ---- migrated from android_media_MediaPlayer_OnCompletionListener.cpp ----
-#include "catalog.h"
-
-namespace ogplay::runtime::android_intrinsics {
-
-Decl Declare_android_media_MediaPlayer_OnCompletionListener(const Context& context) {
-    static_cast<void>(context);
-    auto builder = dx::IntrinsicClassBuilder::Interface("Landroid/media/MediaPlayer$OnCompletionListener;");
-    return std::move(builder).Build();
-}
-
-}  // namespace ogplay::runtime::android_intrinsics
-
-
-// ---- migrated from android_media_MediaPlayer_OnErrorListener.cpp ----
-#include "catalog.h"
-
-namespace ogplay::runtime::android_intrinsics {
-
-Decl Declare_android_media_MediaPlayer_OnErrorListener(const Context& context) {
-    static_cast<void>(context);
-    auto builder = dx::IntrinsicClassBuilder::Interface("Landroid/media/MediaPlayer$OnErrorListener;");
-    return std::move(builder).Build();
-}
-
-}  // namespace ogplay::runtime::android_intrinsics
-
-
-// ---- migrated from android_media_MediaPlayer_OnPreparedListener.cpp ----
-#include "catalog.h"
-
-namespace ogplay::runtime::android_intrinsics {
-
-Decl Declare_android_media_MediaPlayer_OnPreparedListener(const Context& context) {
-    static_cast<void>(context);
-    auto builder = dx::IntrinsicClassBuilder::Interface("Landroid/media/MediaPlayer$OnPreparedListener;");
-    return std::move(builder).Build();
-}
-
-}  // namespace ogplay::runtime::android_intrinsics
-
-
-// ---- migrated from android_media_MediaPlayer.cpp ----
-// MediaPlayer handlers bound to the session's offline mixer ("big" bank,
-// resid-keyed). Playback state is real; path-backed sources and listener
-// callbacks stay recorded gaps.
-
-#include "ogplay/audio/java_sound_pool_mixer.h"
-#include "ogplay/runtime/integration/android_guest_call_session.h"
-
-#include "catalog.h"
-
-namespace ogplay::runtime::android_intrinsics {
-
-Decl Declare_android_media_MediaPlayer(const Context& context) {
-    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/media/MediaPlayer;", "Ljava/lang/Object;");
-    builder.Constructor("()V", [](dx::IntrinsicContext&) {
-        return dx::VmValue::Void();
-    });
-    builder.FinalMethod("setDataSource", "(Ljava/lang/String;)V",
-        [context](dx::IntrinsicContext& call) {
-            // Path-backed playback is not wired to the mixer yet: record the
-            // gap loudly; start() on this instance will have no audio.
-            GuestLog(call, core::LogLevel::warn,
-                     "MediaPlayer.setDataSource is not wired to the mixer: " +
-                         call.vm.StringUtf8(call.arguments[0].ref));
-            return dx::VmValue::Void();
-        });
-    const auto descriptor_source =
-        [context](dx::IntrinsicContext& call, const dx::VmObjectRef fd,
-                  const std::int64_t offset,
-                  const std::int64_t length) -> audio::EncodedAudioSource {
-        if (!fd.IsValid()) {
-            throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;",
-                                  "fd must not be null"};
-        }
-        if (offset < 0 || length < 0) {
-            throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;",
-                                  "offset and length must be non-negative"};
-        }
-        dx::IoRuntime::DescriptorState* descriptor{};
-        try {
-            descriptor = &call.vm.IO().Descriptor(fd);
-        } catch (const dx::IoRuntimeError& error) {
-            throw dx::VmJavaThrow{"Ljava/io/IOException;", error.what()};
-        }
-        audio::EncodedAudioSource source;
-        source.kind = descriptor->kind ==
-                              dx::IoRuntime::DescriptorKind::apk_entry
-                          ? audio::EncodedAudioSource::Kind::apk_entry
-                          : audio::EncodedAudioSource::Kind::vfs_path;
-        source.name = descriptor->source;
-        if (source.name.empty() && descriptor->file != nullptr) {
-            source.name = descriptor->file->path;
-        }
-        if (descriptor->kind == dx::IoRuntime::DescriptorKind::apk_entry &&
-            offset != 0) {
-            if (static_cast<std::uint64_t>(offset) <
-                descriptor->base_offset) {
-                throw dx::VmJavaThrow{
-                    "Ljava/lang/IllegalArgumentException;",
-                    "APK descriptor offset precedes the asset payload"};
-            }
-            source.offset = static_cast<std::uint64_t>(offset) -
-                            descriptor->base_offset;
-        } else {
-            source.offset = static_cast<std::uint64_t>(offset);
-        }
-        source.length = static_cast<std::uint64_t>(length);
-        static_cast<void>(CaptureEncodedAudioWindow(*context, source));
-        return source;
-    };
-    builder.FinalMethod("setDataSource", "(Ljava/io/FileDescriptor;)V",
-        [context, descriptor_source](dx::IntrinsicContext& call) {
-            auto source = descriptor_source(
-                call, call.arguments[0].ref, 0, 0);
-            source.length = std::numeric_limits<std::uint64_t>::max();
-            context->media_resources[call.receiver.Value()] =
-                std::move(source);
-            context->media_playing[call.receiver.Value()] = false;
-            return dx::VmValue::Void();
-        });
-    builder.FinalMethod("setDataSource", "(Ljava/io/FileDescriptor;JJ)V",
-        [context, descriptor_source](dx::IntrinsicContext& call) {
-            context->media_resources[call.receiver.Value()] =
-                descriptor_source(call, call.arguments[0].ref,
-                                  call.arguments[1].AsLong(),
-                                  call.arguments[2].AsLong());
-            context->media_playing[call.receiver.Value()] = false;
-            return dx::VmValue::Void();
-        });
-    builder.FinalMethod("isLooping", "()Z",
-        [context](dx::IntrinsicContext& call) {
-            const auto found =
-                context->media_looping.find(call.receiver.Value());
-            return dx::VmValue::Int(
-                found != context->media_looping.end() && found->second ? 1
-                                                                       : 0);
-        });
-    builder.StaticMethod("create",
-        "(Landroid/content/Context;I)Landroid/media/MediaPlayer;",
-        [context](dx::IntrinsicContext& call) {
-            const auto resource = call.arguments[1].AsInt();
-            const auto instance = call.vm.NewIntrinsicInstance(
-                "Landroid/media/MediaPlayer;");
-            if (context->encoded_audio_playback == nullptr ||
-                !context->encoded_audio_playback->Load(resource)) {
-                GuestLog(call, core::LogLevel::warn,
-                         "MediaPlayer.create failed for resource " +
-                             std::to_string(resource));
-                return dx::VmValue::Ref(dx::VmObjectRef{});
-            }
-            context->media_resources[instance.Value()] = resource;
-            context->media_playing[instance.Value()] = false;
-            return dx::VmValue::Ref(instance);
-        });
-    const auto media_resource = [context](dx::IntrinsicContext& call)
-        -> std::optional<audio::EncodedAudioSource> {
-        const auto found =
-            context->media_resources.find(call.receiver.Value());
-        if (found == context->media_resources.end()) return std::nullopt;
-        return found->second;
-    };
-    builder.FinalMethod("isPlaying", "()Z",
-        [context](dx::IntrinsicContext& call) {
-            const auto found =
-                context->media_playing.find(call.receiver.Value());
-            return dx::VmValue::Int(
-                found != context->media_playing.end() && found->second ? 1
-                                                                       : 0);
-        });
-    builder.FinalMethod("start", "()V",
-        [context, media_resource](dx::IntrinsicContext& call) {
-            const auto resource = media_resource(call);
-            if (resource.has_value()) {
-                const auto looping = context->media_looping.contains(
-                    call.receiver.Value()) &&
-                    context->media_looping.at(call.receiver.Value());
-                static_cast<void>(context->encoded_audio_playback->Play(
-                    audio::JavaSoundPoolKind::big, *resource, 0, 1.0F,
-                    looping));
-                context->media_playing[call.receiver.Value()] = true;
-            }
-            return dx::VmValue::Void();
-        });
-    builder.FinalMethod("pause", "()V",
-        [context, media_resource](dx::IntrinsicContext& call) {
-            const auto resource = media_resource(call);
-            if (resource.has_value()) {
-                context->encoded_audio_playback->Pause(
-                    audio::JavaSoundPoolKind::big, *resource, 0);
-                context->media_playing[call.receiver.Value()] = false;
-            }
-            return dx::VmValue::Void();
-        });
-    builder.FinalMethod("stop", "()V",
-        [context, media_resource](dx::IntrinsicContext& call) {
-            const auto resource = media_resource(call);
-            if (resource.has_value()) {
-                context->encoded_audio_playback->Stop(
-                    audio::JavaSoundPoolKind::big, *resource, 0);
-                context->media_playing[call.receiver.Value()] = false;
-            }
-            return dx::VmValue::Void();
-        });
-    builder.FinalMethod("release", "()V",
-        [context, media_resource](dx::IntrinsicContext& call) {
-            const auto resource = media_resource(call);
-            if (resource.has_value()) {
-                context->encoded_audio_playback->Stop(
-                    audio::JavaSoundPoolKind::big, *resource, 0);
-                context->encoded_audio_playback->Unload(*resource);
-                if (resource->lease != 0U) {
-                    context->encoded_audio_leases.erase(resource->lease);
-                }
-            }
-            context->media_resources.erase(call.receiver.Value());
-            context->media_playing.erase(call.receiver.Value());
-            return dx::VmValue::Void();
-        });
-    builder.FinalMethod("prepare", "()V",
-        [context, media_resource](dx::IntrinsicContext& call) {
-            const auto source = media_resource(call);
-            if (!source.has_value()) {
-                throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;",
-                                      "MediaPlayer has no data source"};
-            }
-            if (context->encoded_audio_playback == nullptr ||
-                !context->encoded_audio_playback->Load(*source)) {
-                const auto reason = context->encoded_audio_playback == nullptr
-                    ? std::optional<std::string>{}
-                    : context->encoded_audio_playback->LoadFailure(*source);
-                throw dx::VmJavaThrow{
-                    "Ljava/io/IOException;",
-                    reason.value_or("encoded audio backend is unavailable")};
-            }
-            return dx::VmValue::Void();
-        });
-    builder.FinalMethod("seekTo", "(I)V", [](dx::IntrinsicContext&) {
-        return dx::VmValue::Void();
-    });
-    builder.FinalMethod("setLooping", "(Z)V",
-        [context](dx::IntrinsicContext& call) {
-            context->media_looping[call.receiver.Value()] =
-                call.arguments[0].AsInt() != 0;
-            return dx::VmValue::Void();
-        });
-    builder.FinalMethod("setVolume", "(FF)V",
-        [context, media_resource](dx::IntrinsicContext& call) {
-            const auto resource = media_resource(call);
-            if (resource.has_value()) {
-                context->encoded_audio_playback->SetVolume(
-                    audio::JavaSoundPoolKind::big, *resource, 0,
-                    call.arguments[0].AsFloat());
-            }
-            return dx::VmValue::Void();
-        });
-    builder.FinalMethod("setOnCompletionListener",
-        "(Landroid/media/MediaPlayer$OnCompletionListener;)V",
-        [](dx::IntrinsicContext&) {
-            // Completion callbacks require the media clock; recorded gap.
-            return dx::VmValue::Void();
-        });
-    builder.FinalMethod("setOnErrorListener",
-        "(Landroid/media/MediaPlayer$OnErrorListener;)V",
-        [](dx::IntrinsicContext&) {
-            // The offline mixer has no failure surface to report; the
-            // listener is accepted like the completion listener and the
-            // callback stays a recorded gap.
-            return dx::VmValue::Void();
-        });
-    builder.FinalMethod("setOnPreparedListener",
-        "(Landroid/media/MediaPlayer$OnPreparedListener;)V",
-        [](dx::IntrinsicContext&) {
-            // Sources prepare synchronously in this backend; the callback
-            // stays a recorded gap.
-            return dx::VmValue::Void();
-        });
-    builder.FinalMethod("reset", "()V",
-        [context, media_resource](dx::IntrinsicContext& call) {
-            // AOSP reset() returns the player to idle; the resid binding
-            // from create() outlives it so a later start() can replay.
-            const auto resource = media_resource(call);
-            if (resource.has_value()) {
-                context->encoded_audio_playback->Stop(
-                    audio::JavaSoundPoolKind::big, *resource, 0);
-                context->media_playing[call.receiver.Value()] = false;
-            }
-            return dx::VmValue::Void();
-        });
-    return std::move(builder).Build();
-}
-
-}  // namespace ogplay::runtime::android_intrinsics
-
-
-// ---- migrated from android_media_SoundPool.cpp ----
-// SoundPool handlers bound to the session's offline mixer (resid is the
-// key). Playback state is real; unimplemented callbacks stay recorded gaps.
-
-#include "ogplay/audio/java_sound_pool_mixer.h"
-#include "ogplay/runtime/integration/android_guest_call_session.h"
-
-#include "catalog.h"
-
-namespace ogplay::runtime::android_intrinsics {
-
-Decl Declare_android_media_SoundPool(const Context& context) {
-    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/media/SoundPool;", "Ljava/lang/Object;");
-    builder.Constructor("(III)V", [](dx::IntrinsicContext&) {
-        return dx::VmValue::Void();
-    });
-    builder.FinalMethod("load", "(Landroid/content/Context;II)I",
-        [context](dx::IntrinsicContext& call) {
-            const auto resource = call.arguments[1].AsInt();
-            auto& mixer = context->session->SoundPoolMixer();
-            if (!mixer.Load(resource)) {
-                GuestLog(call, core::LogLevel::warn,
-                         "SoundPool.load failed for resource " +
-                             std::to_string(resource));
-                return dx::VmValue::Int(0);
-            }
-            return dx::VmValue::Int(resource);  // sound id == resource id
-        });
-    builder.FinalMethod("play", "(IFFIIF)I",
-        [context](dx::IntrinsicContext& call) {
-            const auto sound = call.arguments[0].AsInt();
-            const auto volume = call.arguments[1].AsFloat();
-            const auto loop = call.arguments[3].AsInt();
-            auto& mixer = context->session->SoundPoolMixer();
-            const auto stream = context->next_sound_stream++;
-            if (!mixer.Play(audio::JavaSoundPoolKind::pool, sound, stream,
-                            volume, loop != 0)) {
-                return dx::VmValue::Int(0);
-            }
-            context->sound_streams[stream] = sound;
-            return dx::VmValue::Int(stream);
-        });
-    const auto stream_call =
-        [context](dx::IntrinsicContext& call,
-                  const std::function<void(audio::JavaSoundPoolMixer&,
-                                           std::int32_t, std::int32_t)>&
-                      action) {
-            const auto stream = call.arguments[0].AsInt();
-            const auto found = context->sound_streams.find(stream);
-            if (found != context->sound_streams.end()) {
-                action(context->session->SoundPoolMixer(), found->second,
-                       stream);
-            }
-            return dx::VmValue::Void();
-        };
-    builder.FinalMethod("pause", "(I)V",
-        [stream_call](dx::IntrinsicContext& call) {
-            return stream_call(call, [](auto& mixer, const auto resource,
-                                        const auto stream) {
-                mixer.Pause(audio::JavaSoundPoolKind::pool, resource, stream);
-            });
-        });
-    builder.FinalMethod("resume", "(I)V",
-        [stream_call](dx::IntrinsicContext& call) {
-            return stream_call(call, [](auto& mixer, const auto resource,
-                                        const auto stream) {
-                mixer.Resume(audio::JavaSoundPoolKind::pool, resource, stream);
-            });
-        });
-    builder.FinalMethod("stop", "(I)V",
-        [stream_call](dx::IntrinsicContext& call) {
-            return stream_call(call, [](auto& mixer, const auto resource,
-                                        const auto stream) {
-                mixer.Stop(audio::JavaSoundPoolKind::pool, resource, stream);
-            });
-        });
-    builder.FinalMethod("unload", "(I)Z",
-        [context](dx::IntrinsicContext& call) {
-            context->session->SoundPoolMixer().Unload(
-                call.arguments[0].AsInt());
-            return dx::VmValue::Int(1);
-        });
-    builder.FinalMethod("release", "()V",
-        [context](dx::IntrinsicContext&) {
-            context->session->SoundPoolMixer().StopAllSounds();
-            return dx::VmValue::Void();
-        });
-    builder.FinalMethod("setVolume", "(IFF)V",
-        [context](dx::IntrinsicContext& call) {
-            const auto stream = call.arguments[0].AsInt();
-            const auto found = context->sound_streams.find(stream);
-            if (found != context->sound_streams.end()) {
-                context->session->SoundPoolMixer().SetVolume(
-                    audio::JavaSoundPoolKind::pool, found->second, stream,
-                    call.arguments[1].AsFloat());
-            }
-            return dx::VmValue::Void();
-        });
-    builder.FinalMethod("setRate", "(IF)V",
-        [context](dx::IntrinsicContext& call) {
-            const auto stream = call.arguments[0].AsInt();
-            const auto found = context->sound_streams.find(stream);
-            if (found != context->sound_streams.end()) {
-                context->session->SoundPoolMixer().SetPitch(
-                    audio::JavaSoundPoolKind::pool, found->second, stream,
-                    call.arguments[1].AsFloat());
-            }
-            return dx::VmValue::Void();
-        });
-    return std::move(builder).Build();
-}
-
-}  // namespace ogplay::runtime::android_intrinsics
 
 
 // ---- migrated from android_widget_VideoView.cpp ----
@@ -1194,110 +452,155 @@ std::size_t MixVideoPcmIntoStereo(
 
 std::optional<std::string> PumpAndroidAudioTracks(
     dexvm::Interpreter& vm, DexVmAndroidContext& context) {
-    if (context.pcm_playback == nullptr) return std::nullopt;
+    const auto post = [&](const char* descriptor, const dexvm::VmObjectRef weak,
+                          const std::int32_t what, const std::int32_t arg1 = 0,
+                          const std::int32_t arg2 = 0)
+        -> std::optional<std::string> {
+        if (!weak.IsValid()) return std::nullopt;
+        const auto klass = vm.Linker().ResolveDescriptor(descriptor);
+        const auto method = vm.Linker().FindDirectMethod(
+            klass, "postEventFromNative",
+            "(Ljava/lang/Object;IIILjava/lang/Object;)V");
+        if (!method.has_value()) {
+            return std::string(descriptor) + " postEventFromNative is missing";
+        }
+        const auto outcome = vm.Call(
+            *method,
+            std::vector<dexvm::VmValue>{
+                dexvm::VmValue::Ref(weak), dexvm::VmValue::Int(what),
+                dexvm::VmValue::Int(arg1), dexvm::VmValue::Int(arg2),
+                dexvm::VmValue::Ref(dexvm::VmObjectRef{})});
+        if (outcome.exception.IsValid()) {
+            return "postEventFromNative raised: " + outcome.exception_message;
+        }
+        return std::nullopt;
+    };
 
-    // Snapshot owners before callbacks: listener code may write, release, or
-    // otherwise mutate the same state table.
     std::vector<std::uint32_t> handles;
     handles.reserve(context.audio_tracks.size());
     for (const auto& [handle, _] : context.audio_tracks) {
         handles.push_back(handle);
     }
-
-    const auto invoke = [&](const dexvm::VmObjectRef listener,
-                            const std::uint32_t track,
-                            const std::string_view method)
-        -> std::optional<std::string> {
-        auto& linker = vm.Linker();
-        const auto listener_class = vm.Model().ObjectClass(listener);
-        const std::string method_name{method};
-        const auto index = linker.FindVtableIndex(
-            listener_class, method_name, "(Landroid/media/AudioTrack;)V");
-        if (!index.has_value()) {
-            return "AudioTrack position listener has no " +
-                   std::string(method) + " method";
-        }
-        const auto outcome = vm.Call(
-            linker.Class(listener_class).vtable[*index],
-            std::vector<dexvm::VmValue>{
-                dexvm::VmValue::Ref(listener),
-                dexvm::VmValue::Ref(dexvm::VmObjectRef{track})});
-        if (outcome.exception.IsValid()) {
-            return std::string(method) + " raised: " +
-                   outcome.exception_message;
-        }
-        return std::nullopt;
-    };
-
-    for (const auto handle : handles) {
-        auto found = context.audio_tracks.find(handle);
-        if (found == context.audio_tracks.end() ||
-            !context.pcm_playback->HasPlayer(found->second.player)) {
-            continue;
-        }
-        auto& state = found->second;
-        const auto head =
-            context.pcm_playback->PositionFrames(state.player);
-        if (head < state.last_notified_head) {
-            state.last_notified_head = head;
-            continue;
-        }
-        if (context.pcm_playback->PlayState(state.player) !=
-                audio::OpenSlesPlayState::playing ||
-            !state.position_listener.IsValid()) {
-            state.last_notified_head = head;
-            continue;
-        }
-
-        const auto listener = state.position_listener;
-        const auto player = state.player;
-        const auto period = state.notification_period;
-        const auto prior_head = state.last_notified_head;
-        const bool marker_due = state.marker_position > 0 &&
-            !state.marker_fired &&
-            prior_head < static_cast<std::uint32_t>(state.marker_position) &&
-            head >= static_cast<std::uint32_t>(state.marker_position);
-        const auto periodic_count = period > 0
-            ? head / static_cast<std::uint32_t>(period) -
-                  prior_head / static_cast<std::uint32_t>(period)
-            : 0U;
-        state.last_notified_head = head;
-        if (marker_due) state.marker_fired = true;
-
-        if (marker_due) {
-            const auto error = invoke(listener, handle, "onMarkerReached");
-            if (error.has_value()) return error;
-        }
-        for (std::uint32_t index = 0; index < periodic_count; ++index) {
-            found = context.audio_tracks.find(handle);
+    if (context.pcm_playback != nullptr) {
+        for (const auto handle : handles) {
+            auto found = context.audio_tracks.find(handle);
             if (found == context.audio_tracks.end() ||
-                found->second.position_listener != listener ||
-                found->second.notification_period != period ||
-                found->second.last_notified_head != head) {
-                break;
+                !context.pcm_playback->HasPlayer(found->second.player)) {
+                continue;
             }
-            const auto queued_before =
-                context.pcm_playback->QueuedBytes(found->second.player);
-            const auto error =
-                invoke(listener, handle, "onPeriodicNotification");
-            if (error.has_value()) return error;
-            found = context.audio_tracks.find(handle);
-            if (found == context.audio_tracks.end() ||
-                found->second.player != player) {
-                break;
+            auto& state = found->second;
+            const auto head =
+                context.pcm_playback->PositionFrames(state.player);
+            if (head < state.last_notified_head) {
+                state.last_notified_head = head;
+                continue;
             }
-            // Position callbacks run synchronously on the lifecycle thread,
-            // which is also the only frontend consumer of this mixer.  If a
-            // callback refills the stream, replaying more overdue callbacks
-            // in the same pump can fill the byte budget and block forever:
-            // the consumer cannot run until this pump returns.
-            if (context.pcm_playback->QueuedBytes(found->second.player) >
-                queued_before) {
-                break;
+            if (context.pcm_playback->PlayState(state.player) !=
+                audio::OpenSlesPlayState::playing) {
+                state.last_notified_head = head;
+                continue;
+            }
+            const auto player = state.player;
+            const auto period = state.notification_period;
+            const auto prior_head = state.last_notified_head;
+            const auto weak = state.jni_weak;
+            const bool marker_due = state.marker_position > 0 &&
+                !state.marker_fired &&
+                prior_head < static_cast<std::uint32_t>(state.marker_position) &&
+                head >= static_cast<std::uint32_t>(state.marker_position);
+            const auto periodic_count = period > 0
+                ? head / static_cast<std::uint32_t>(period) -
+                      prior_head / static_cast<std::uint32_t>(period)
+                : 0U;
+            state.last_notified_head = head;
+            if (marker_due) state.marker_fired = true;
+            if (marker_due) {
+                if (const auto error =
+                        post("Landroid/media/AudioTrack;", weak, 3);
+                    error.has_value()) {
+                    return error;
+                }
+            }
+            for (std::uint32_t index = 0; index < periodic_count; ++index) {
+                found = context.audio_tracks.find(handle);
+                if (found == context.audio_tracks.end() ||
+                    found->second.notification_period != period ||
+                    found->second.last_notified_head != head) {
+                    break;
+                }
+                const auto queued_before =
+                    context.pcm_playback->QueuedBytes(found->second.player);
+                if (const auto error =
+                        post("Landroid/media/AudioTrack;", weak, 4);
+                    error.has_value()) {
+                    return error;
+                }
+                // Deliver the Handler message before posting another overdue
+                // period so a refill write can coalesce the rest.
+                if (const auto error = PumpJavaThreads(vm, context);
+                    error.has_value()) {
+                    return error;
+                }
+                found = context.audio_tracks.find(handle);
+                if (found == context.audio_tracks.end() ||
+                    found->second.player != player) {
+                    break;
+                }
+                if (context.pcm_playback->QueuedBytes(found->second.player) >
+                    queued_before) {
+                    break;
+                }
             }
         }
     }
-    return std::nullopt;
+
+    std::vector<std::uint32_t> media_handles;
+    media_handles.reserve(context.media_players.size());
+    for (const auto& [handle, _] : context.media_players) {
+        media_handles.push_back(handle);
+    }
+    for (const auto handle : media_handles) {
+        const auto found = context.media_players.find(handle);
+        if (found == context.media_players.end()) continue;
+        if (found->second.prepared_event_pending) {
+            found->second.prepared_event_pending = false;
+            if (const auto error = post("Landroid/media/MediaPlayer;",
+                                        found->second.jni_weak, 1);
+                error.has_value()) {
+                return error;
+            }
+        }
+        if (context.encoded_music != nullptr &&
+            context.encoded_music->Completed(found->second.music)) {
+            if (const auto error = post("Landroid/media/MediaPlayer;",
+                                        found->second.jni_weak, 2);
+                error.has_value()) {
+                return error;
+            }
+        }
+    }
+
+    std::vector<std::uint32_t> pool_handles;
+    pool_handles.reserve(context.sound_pools.size());
+    for (const auto& [handle, _] : context.sound_pools) {
+        pool_handles.push_back(handle);
+    }
+    for (const auto handle : pool_handles) {
+        const auto found = context.sound_pools.find(handle);
+        if (found == context.sound_pools.end()) continue;
+        auto pending = std::move(found->second.pending_loads);
+        found->second.pending_loads.clear();
+        const auto weak = found->second.jni_weak;
+        for (const auto& load : pending) {
+            if (const auto error =
+                    post("Landroid/media/SoundPool$SoundPoolImpl;", weak, 1,
+                         load.sound, load.status);
+                error.has_value()) {
+                return error;
+            }
+        }
+    }
+    return PumpJavaThreads(vm, context);
 }
 
 std::optional<std::string> PumpVideoViews(

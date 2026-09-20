@@ -253,9 +253,25 @@ void RegisterAndroidOwnerAttachedStateTable(
             context->bitmaps.erase(key);
             context->canvases.erase(key);
             context->holder_canvases.erase(key);
-            context->media_resources.erase(key);
-            context->media_playing.erase(key);
-            context->media_looping.erase(key);
+            const auto media = context->media_players.find(key);
+            if (media != context->media_players.end()) {
+                if (context->encoded_music != nullptr) {
+                    context->encoded_music->Destroy(media->second.music);
+                }
+                if (media->second.source.lease != 0U) {
+                    context->encoded_audio_leases.erase(
+                        media->second.source.lease);
+                }
+                context->media_players.erase(media);
+            }
+            const auto pool = context->sound_pools.find(key);
+            if (pool != context->sound_pools.end()) {
+                if (context->encoded_audio_playback != nullptr) {
+                    context->encoded_audio_playback->DestroyPool(
+                        pool->second.pool);
+                }
+                context->sound_pools.erase(pool);
+            }
             context->ui_view_layout_params.erase(key);
             context->ui_image_scale_types.erase(key);
             context->text_watchers.erase(key);

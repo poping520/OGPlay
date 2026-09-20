@@ -159,6 +159,7 @@ public:
         context->session = session.get();
         context->pcm_playback = &session->PcmPlayback();
         context->encoded_audio_playback = &session->SoundPoolMixer();
+        context->encoded_music = &session->EncodedMusic();
         const auto android_context = context;
         session->SetAuxiliaryAudioMix(
             [android_context](const std::span<std::int64_t> accumulator,

@@ -247,8 +247,8 @@ note = "DVM-91 固定 CC0 minimp3 ea99364f，将最大 64 MiB MP3 内存输入�
 
 [audio.sound_pool_mixer]
 status = "complete"
-test = "tests/audio/java_sound_pool_mixer_tests.cpp; tests/runtime/android_guest_call_session_tests.cpp; tests/audio/encoded_audio_tests.cpp; tests/audio/wav_tests.cpp"
-note = "M5 WU-0295 用注入 loader 在真实解码成功后提交 loaded，SoundPool voice 控制同步驱动线程安全 stereo PCM16 mixer；DVM-91 将 key 从 resid 泛化为 resid/APK entry/VFS path + 纯字节区间并增加 MP3，原 resid 行为保留；线性重采样、64-bit 累加、饱和与完成清理均有机器测试"
+test = "tests/audio/java_sound_pool_mixer_tests.cpp; tests/runtime/android_guest_call_session_tests.cpp; tests/audio/encoded_audio_tests.cpp; tests/audio/wav_tests.cpp; tests/dexvm/audio_track_tests.cpp"
+note = "DVM-189：独立 SoundPool 池、AOSP play(IFFIIF) loop/priority/rate/maxStreams 抢占、OnLoadComplete Handler。历史 mixer 解码与 source 窗口保留。不宣称完整 Android SoundPool 或游戏听测。"
 
 [session.profile_plan]
 status = "complete"
@@ -1557,8 +1557,8 @@ note = "DVM-133 按 API 19 闭合 ContentResolver 五参 query 的无 provider �
 
 [dexvm.media_data_sources]
 status = "complete"
-test = "tests/dexvm/file_vfs_tests.cpp; tests/audio/mp3_tests.cpp; tests/audio/java_sound_pool_mixer_tests.cpp; tests/audio/encoded_audio_tests.cpp"
-note = "DVM-91 以逻辑 source identity + byte range 闭合 FileDescriptor/PFD/AFD/FileInputStream.getFD/AssetManager.openFd/MediaPlayer 两个 FD overload；APK payload 绝对 offset 在消费边界规范化，VFS/APK/resid 共用唯一 mixer，stored/deflated、缺失、关闭与越界均明确裁决；不提供 native fd 数值互操作、pipe/socketpair、网络 Uri 或宿主 ffmpeg"
+test = "tests/dexvm/file_vfs_tests.cpp; tests/audio/mp3_tests.cpp; tests/audio/java_sound_pool_mixer_tests.cpp; tests/audio/encoded_audio_tests.cpp; tests/audio/encoded_music_tests.cpp"
+note = "DVM-91 窗口/FD/AFD 与 DVM-189 EncodedMusicMixer 每实例 MediaPlayer；AOSP setDataSource(fd) 长度哨兵 0x7ffffffffffffff 视为余量。不提供 native fd 互操作、网络 Uri 或增量 bitstream 解码。"
 
 [dexvm.surface_view_lifecycle]
 status = "partial"
@@ -1577,8 +1577,8 @@ note = "DVM-83 发布 API19 Java GLES surface；BND-35/BND-38 为 GLES30 indexed
 
 [dexvm.audio_track]
 status = "complete"
-test = "tests/dexvm/audio_track_tests.cpp; tests/runtime/android_guest_java_media_tests.cpp; tests/audio/open_sles_pcm_mixer_tests.cpp"
-note = "DVM-84 发布 API 19 AudioFormat 常用 PCM 常量与 AudioTrack ctor/min-buffer/state/play/pause/stop/flush/release、byte/short write、volume 和真实 frame playback head；DVM-89 按该 head 在 lifecycle 帧泵投递 marker/periodic notification，支持跨多期补发、重入 write 与异常上浮，native output sample rate 由会话按后端 mixer 配置注入；DVM-159 补齐 notification marker/period 对称 getter，读取唯一 setter 状态且未初始化/释放后抛 IllegalStateException；DVM-93/ADR-0027 统一 DexVM/legacy STREAM 的构造 buffer 字节回压，DexVM park 释放执行锁并由播放/release/teardown 唤醒，A6 用户实听通过；PCM8/16 mono/stereo STREAM/STATIC 与 OpenSL ES、legacy Java/JNI 共用唯一 mixer"
+test = "tests/dexvm/audio_track_tests.cpp; tests/runtime/native_library_loader_tests.cpp; tests/audio/open_sles_pcm_mixer_tests.cpp; tests/audio/encoded_music_tests.cpp"
+note = "DVM-189 AUD-02：BootDex AudioTrack native overlay、Handler 位置通知、释放后 getter 返回 0。DVM-84/89/159/93 底座保留；PCM8/16 STREAM/STATIC 与 OpenSL、JNI 共用唯一 mixer。不宣称 CTS 或 title 兼容。"
 
 [dexvm.android_scheduler]
 status = "complete"

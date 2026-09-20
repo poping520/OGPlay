@@ -14,6 +14,7 @@
 #include <string_view>
 #include <vector>
 
+#include "ogplay/audio/encoded_music.h"
 #include "ogplay/audio/java_sound_pool_mixer.h"
 #include "ogplay/loader/module_loader.h"
 #include "ogplay/runtime/execution/guest_thread_runner.h"
@@ -259,6 +260,7 @@ public:
     [[nodiscard]] dexvm::NioRuntime& NIO() noexcept;
     [[nodiscard]] audio::JavaSoundPoolState& SoundPoolState() noexcept;
     [[nodiscard]] audio::JavaSoundPoolMixer& SoundPoolMixer() noexcept;
+    [[nodiscard]] audio::EncodedMusicMixer& EncodedMusic() noexcept;
     [[nodiscard]] audio::OpenSlesPcmMixer& PcmPlayback() noexcept;
     void SetAuxiliaryAudioMix(
         std::function<void(std::span<std::int64_t>, std::uint32_t)> mix);
@@ -370,6 +372,7 @@ public:
     [[nodiscard]] dexvm::NioRuntime& NIO() noexcept;
     [[nodiscard]] audio::JavaSoundPoolState& SoundPoolState() noexcept;
     [[nodiscard]] audio::JavaSoundPoolMixer& SoundPoolMixer() noexcept;
+    [[nodiscard]] audio::EncodedMusicMixer& EncodedMusic() noexcept;
     [[nodiscard]] audio::OpenSlesPcmMixer& PcmPlayback() noexcept;
     void SetAuxiliaryAudioMix(
         std::function<void(std::span<std::int64_t>, std::uint32_t)> mix);

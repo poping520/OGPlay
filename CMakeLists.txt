@@ -139,6 +139,7 @@ add_library(ogplay_audio
     src/audio/pcm_mix.cpp
     src/audio/wav.cpp
     src/audio/encoded_audio.cpp
+    src/audio/encoded_music.cpp
     third_party/stb/stb_vorbis.c
 )
 add_library(OGPlay::Audio ALIAS ogplay_audio)
@@ -876,6 +877,7 @@ if(OGPLAY_BUILD_TESTS)
         tests/audio/mp3_tests.cpp
         tests/audio/wav_tests.cpp
         tests/audio/encoded_audio_tests.cpp
+        tests/audio/encoded_music_tests.cpp
         tests/audio/java_sound_pool_mixer_tests.cpp
         tests/audio/open_sles_pcm_mixer_tests.cpp
         tests/session/audio_output_pump_tests.cpp

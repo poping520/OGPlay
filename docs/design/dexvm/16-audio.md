@@ -272,6 +272,10 @@ mixed/submitted/presented 估计、设备错误与取消状态；走结构化日
 token 强类型化。静音不得使播放位置与完成事件停止。性能评价区分解码、混音、队列和设备，
 不把约 85 ms 的当前水位当实测延迟或最终目标。
 
+AudioTrack 已提供每轨快照，覆盖累计写入/消费、当前队列、欠载次数/输出帧，以及 periodic
+callback 生成/投递/延期数；`buffer/8` 回填与 1024 帧设备块有超过 30 秒的逻辑时钟回归。
+设备 submitted/presented 估计和其他 source 类型仍按各自快照边界维护，不由该快照伪造。
+
 只构建受影响目标；Windows 使用 windows-msvc。Java/native 行为变更覆盖 switch/threaded
 和直接相关 guest JNI/OpenSL；不运行全量 CTest。修运行首错同路径复现一次并记录下一首错；
 实际无可用设备/制品时明确缺口，不以离线测试冒充听测或 title 可玩。

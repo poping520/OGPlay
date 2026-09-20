@@ -201,6 +201,18 @@ std::size_t OpenSlesPcmMixer::QueuedBytes(const PlayerId player) const {
     return QueuedBytes(Require(player));
 }
 
+OpenSlesPlayerSnapshot OpenSlesPcmMixer::Snapshot(
+    const PlayerId player) const {
+    std::scoped_lock lock(mutex_);
+    const auto& target = Require(player);
+    return {
+        QueuedBytes(target),
+        static_cast<std::uint64_t>(target.played_source_frames),
+        target.underrun_output_frames,
+        target.underrun_count,
+    };
+}
+
 std::size_t OpenSlesPcmMixer::BlockingWriterCount() const noexcept {
     std::scoped_lock lock(mutex_);
     return blocking_writers_;
@@ -228,6 +240,7 @@ void OpenSlesPcmMixer::Clear(const PlayerId player) {
         target.played_source_frames = 0.0;
         target.play_index = 0U;
         target.has_carry = false;
+        target.underrun_active = false;
     }
     queue_changed_.notify_all();
 }
@@ -240,6 +253,7 @@ void OpenSlesPcmMixer::ClearQueueKeepHead(const PlayerId player) {
         target.queue.clear();
         target.frame_position = 0.0;
         target.has_carry = false;
+        target.underrun_active = false;
     }
     queue_changed_.notify_all();
 }
@@ -256,6 +270,9 @@ void OpenSlesPcmMixer::SetPlayState(const PlayerId player,
         std::scoped_lock lock(mutex_);
         auto& target = Require(player);
         target.state = state;
+        if (state != OpenSlesPlayState::playing) {
+            target.underrun_active = false;
+        }
         if (state != OpenSlesPlayState::stopped) return;
         ++target.stop_generation;
         target.played_source_frames = 0.0;
@@ -451,12 +468,22 @@ std::vector<OpenSlesConsumedBuffer> OpenSlesPcmMixer::MixIntoAccumulator(
                                (pan > 0.0 ? 1.0 - pan : 1.0);
         const auto right_gain = gain * player.right_volume *
                                 (pan < 0.0 ? 1.0 + pan : 1.0);
-        for (std::size_t out_frame = 0; out_frame < output_frames; ++out_frame) {
-            if (!MixPlayerFrame(player, id, out_frame, left_gain, right_gain,
+        std::size_t mixed_frames{};
+        for (; mixed_frames < output_frames; ++mixed_frames) {
+            if (!MixPlayerFrame(player, id, mixed_frames, left_gain, right_gain,
                                 accumulator, consumed, step)) {
                 break;
             }
+            player.underrun_active = false;
             queue_progressed = true;
+        }
+        if (player.kind == OpenSlesPlayerKind::audio_track_stream &&
+            mixed_frames < output_frames) {
+            player.underrun_output_frames += output_frames - mixed_frames;
+            if (!player.underrun_active) {
+                ++player.underrun_count;
+                player.underrun_active = true;
+            }
         }
         while (!player.queue.empty() &&
                player.kind != OpenSlesPlayerKind::audio_track_static) {

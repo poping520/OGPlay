@@ -83,6 +83,7 @@ constexpr auto kPrivNat = dx::kAccPrivate | dx::kAccNative;
         if (!context->pcm_playback->Enqueue(player, bytes.first(take))) {
             return 0;
         }
+        state->written_frames += take / frame_bytes;
         if (state->state == kStateNoStaticData) {
             state->state = kStateInitialized;
         }
@@ -110,6 +111,7 @@ constexpr auto kPrivNat = dx::kAccPrivate | dx::kAccNative;
             return kErrorInvalidOperation;
         }
         written += chunk;
+        state->written_frames += chunk / frame_bytes;
         remaining = remaining.subspan(chunk);
     }
     return static_cast<std::int32_t>(written);
@@ -257,6 +259,11 @@ Decl Declare_android_media_AudioTrack(const Context& context) {
                 0,
                 false,
                 0U,
+                0U,
+                0U,
+                0U,
+                0U,
+                0U,
                 call.arguments[0].ref};
             const auto session = call.arguments[7].ref;
             if (session.IsValid() &&
@@ -289,6 +296,10 @@ Decl Declare_android_media_AudioTrack(const Context& context) {
             if (state != nullptr && context->pcm_playback != nullptr) {
                 context->pcm_playback->SetPlayState(
                     state->player, audio::OpenSlesPlayState::paused);
+                state->RetirePendingPeriodicCallbacks();
+                state->last_notified_head =
+                    context->pcm_playback->PositionFrames(state->player);
+                state->last_observed_head = state->last_notified_head;
             }
             return dx::VmValue::Void();
         },
@@ -300,8 +311,10 @@ Decl Declare_android_media_AudioTrack(const Context& context) {
             if (state != nullptr && context->pcm_playback != nullptr) {
                 context->pcm_playback->SetPlayState(
                     state->player, audio::OpenSlesPlayState::stopped);
+                state->RetirePendingPeriodicCallbacks();
                 state->last_notified_head =
                     context->pcm_playback->PositionFrames(state->player);
+                state->last_observed_head = state->last_notified_head;
             }
             return dx::VmValue::Void();
         },
@@ -315,8 +328,10 @@ Decl Declare_android_media_AudioTrack(const Context& context) {
                 context->pcm_playback->PlayState(state->player) !=
                     audio::OpenSlesPlayState::playing) {
                 context->pcm_playback->ClearQueueKeepHead(state->player);
+                state->RetirePendingPeriodicCallbacks();
                 state->last_notified_head =
                     context->pcm_playback->PositionFrames(state->player);
+                state->last_observed_head = state->last_notified_head;
             }
             return dx::VmValue::Void();
         },
@@ -430,9 +445,11 @@ Decl Declare_android_media_AudioTrack(const Context& context) {
             if (state == nullptr) return dx::VmValue::Int(kErrorInvalidOperation);
             if (period < 0) return dx::VmValue::Int(kErrorBadValue);
             state->notification_period = period;
+            state->RetirePendingPeriodicCallbacks();
             if (context->pcm_playback != nullptr) {
                 state->last_notified_head =
                     context->pcm_playback->PositionFrames(state->player);
+                state->last_observed_head = state->last_notified_head;
             }
             return dx::VmValue::Int(kSuccess);
         },

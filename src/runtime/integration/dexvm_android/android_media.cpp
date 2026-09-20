@@ -525,18 +525,24 @@ std::optional<std::string> PumpAndroidAudioTracks(
             auto& state = found->second;
             const auto head =
                 context.pcm_playback->PositionFrames(state.player);
-            if (head < state.last_notified_head) {
+            if (head < state.last_notified_head ||
+                head < state.last_observed_head) {
+                state.RetirePendingPeriodicCallbacks();
                 state.last_notified_head = head;
+                state.last_observed_head = head;
                 continue;
             }
             if (context.pcm_playback->PlayState(state.player) !=
                 audio::OpenSlesPlayState::playing) {
+                state.RetirePendingPeriodicCallbacks();
                 state.last_notified_head = head;
+                state.last_observed_head = head;
                 continue;
             }
             const auto player = state.player;
             const auto period = state.notification_period;
             const auto prior_head = state.last_notified_head;
+            const auto prior_observed_head = state.last_observed_head;
             const auto weak = state.jni_weak;
             const bool marker_due = state.marker_position > 0 &&
                 !state.marker_fired &&
@@ -546,7 +552,14 @@ std::optional<std::string> PumpAndroidAudioTracks(
                 ? head / static_cast<std::uint32_t>(period) -
                       prior_head / static_cast<std::uint32_t>(period)
                 : 0U;
-            if (period <= 0) state.last_notified_head = head;
+            if (period > 0) {
+                state.periodic_callbacks_generated +=
+                    head / static_cast<std::uint32_t>(period) -
+                    prior_observed_head / static_cast<std::uint32_t>(period);
+            } else {
+                state.last_notified_head = head;
+            }
+            state.last_observed_head = head;
             if (marker_due) state.marker_fired = true;
             if (marker_due) {
                 if (const auto error =
@@ -577,8 +590,10 @@ std::optional<std::string> PumpAndroidAudioTracks(
                 if (const auto error =
                         post("Landroid/media/AudioTrack;", weak, 4);
                     error.has_value()) {
+                    found->second.last_notified_head = expected_previous_head;
                     return error;
                 }
+                ++found->second.periodic_callbacks_delivered;
                 // Deliver the Handler message before posting another overdue
                 // period so a refill write can coalesce the rest.
                 if (const auto error = PumpJavaThreads(vm, context);
@@ -748,6 +763,32 @@ std::optional<std::string> PumpVideoViews(
         }
     }
     return std::nullopt;
+}
+
+std::vector<AndroidAudioTrackDiagnosticSnapshot>
+SnapshotAndroidAudioTracks(const DexVmAndroidContext& context) {
+    std::vector<AndroidAudioTrackDiagnosticSnapshot> snapshots;
+    if (context.pcm_playback == nullptr) return snapshots;
+    snapshots.reserve(context.audio_tracks.size());
+    for (const auto& [receiver, state] : context.audio_tracks) {
+        if (!context.pcm_playback->HasPlayer(state.player)) continue;
+        const auto player = context.pcm_playback->Snapshot(state.player);
+        snapshots.push_back({
+            receiver,
+            state.player,
+            state.written_frames,
+            player.queued_bytes,
+            player.consumed_source_frames,
+            player.underrun_output_frames,
+            player.underrun_count,
+            state.periodic_callbacks_generated,
+            state.periodic_callbacks_delivered,
+            state.PendingPeriodicCallbacks(),
+        });
+    }
+    std::ranges::sort(snapshots, {},
+                      &AndroidAudioTrackDiagnosticSnapshot::receiver);
+    return snapshots;
 }
 
 }  // namespace ogplay::runtime

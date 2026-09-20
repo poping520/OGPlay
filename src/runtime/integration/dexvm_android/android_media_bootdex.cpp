@@ -115,7 +115,7 @@ constexpr auto kPrivNat = dx::kAccPrivate | dx::kAccNative;
     return static_cast<std::int32_t>(written);
 }
 
-void Unsupported(dx::IntrinsicContext& call, const char* name) {
+[[noreturn]] void Unsupported(dx::IntrinsicContext& call, const char* name) {
     if (auto* ledger = call.vm.Ledger()) {
         ledger->RecordUnimplemented(std::string("dexvm.media.") + name, 0);
     }
@@ -1089,23 +1089,20 @@ Decl Declare_android_media_MediaPlayer(const Context& context) {
         }, kPubNat);
     builder.VirtualMethod(
         "attachAuxEffect", "(I)V",
-        [](dx::IntrinsicContext& call) {
+        [](dx::IntrinsicContext& call) -> dx::VmValue {
             Unsupported(call, "MediaPlayer.attachAuxEffect");
-            return dx::VmValue::Void();
         },
         kPubNat);
     builder.VirtualMethod(
         "setAuxEffectSendLevel", "(F)V",
-        [](dx::IntrinsicContext& call) {
+        [](dx::IntrinsicContext& call) -> dx::VmValue {
             Unsupported(call, "MediaPlayer.setAuxEffectSendLevel");
-            return dx::VmValue::Void();
         },
         kPubNat);
     builder.VirtualMethod(
         "setNextMediaPlayer", "(Landroid/media/MediaPlayer;)V",
-        [](dx::IntrinsicContext& call) {
+        [](dx::IntrinsicContext& call) -> dx::VmValue {
             Unsupported(call, "MediaPlayer.setNextMediaPlayer");
-            return dx::VmValue::Void();
         },
         kPubNat);
     builder.DirectMethod(
@@ -1119,37 +1116,32 @@ Decl Declare_android_media_MediaPlayer(const Context& context) {
         [](dx::IntrinsicContext&) { return dx::VmValue::Int(0); }, kPrivNat);
     builder.DirectMethod(
         "native_getMetadata", "(ZZLandroid/os/Parcel;)Z",
-        [](dx::IntrinsicContext& call) {
+        [](dx::IntrinsicContext& call) -> dx::VmValue {
             Unsupported(call, "MediaPlayer.native_getMetadata");
-            return dx::VmValue::Int(0);
         },
         kPrivNatFin);
     builder.DirectMethod(
         "native_invoke", "(Landroid/os/Parcel;Landroid/os/Parcel;)I",
-        [](dx::IntrinsicContext& call) {
+        [](dx::IntrinsicContext& call) -> dx::VmValue {
             Unsupported(call, "MediaPlayer.native_invoke");
-            return dx::VmValue::Int(kError);
         },
         kPrivNatFin);
     builder.StaticMethod(
         "native_pullBatteryData", "(Landroid/os/Parcel;)I",
-        [](dx::IntrinsicContext& call) {
+        [](dx::IntrinsicContext& call) -> dx::VmValue {
             Unsupported(call, "MediaPlayer.native_pullBatteryData");
-            return dx::VmValue::Int(kError);
         },
         dx::kAccPublic | dx::kAccStatic | dx::kAccNative);
     builder.DirectMethod(
         "native_setMetadataFilter", "(Landroid/os/Parcel;)I",
-        [](dx::IntrinsicContext& call) {
+        [](dx::IntrinsicContext& call) -> dx::VmValue {
             Unsupported(call, "MediaPlayer.native_setMetadataFilter");
-            return dx::VmValue::Int(kError);
         },
         kPrivNatFin);
     builder.DirectMethod(
         "native_setRetransmitEndpoint", "(Ljava/lang/String;I)I",
-        [](dx::IntrinsicContext& call) {
+        [](dx::IntrinsicContext& call) -> dx::VmValue {
             Unsupported(call, "MediaPlayer.native_setRetransmitEndpoint");
-            return dx::VmValue::Int(kError);
         },
         kPrivNatFin);
     builder.DirectMethod(

@@ -117,7 +117,7 @@ TEST_CASE("encoded music async owners cancel reset release and bound instances")
         REQUIRE(mixer.BeginPrepare(player));
         CHECK_FALSE(mixer.BeginPrepare(player));
     }
-    CHECK_THROWS_AS(mixer.Create(), std::length_error);
+    CHECK_THROWS_AS(static_cast<void>(mixer.Create()), std::length_error);
     CHECK(mixer.CachedDecodedBytes() <= players.size() * (encoded.size() + 16384U));
     for (auto player : players) {
         mixer.Reset(player);

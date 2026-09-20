@@ -283,11 +283,18 @@ def javac_release() -> str:
 
 def compile_guest_java(work: Path) -> tuple[Path, tuple[str, ...]]:
     sources = tuple(JAVA_SOURCE_ROOT / name for name in JAVA_SOURCE_NAMES)
-    observed = tuple(
+    observed = tuple(sorted(
         path.relative_to(JAVA_SOURCE_ROOT).as_posix()
-        for path in sorted(JAVA_SOURCE_ROOT.rglob("*.java")))
+        for path in JAVA_SOURCE_ROOT.rglob("*.java")))
     if observed != JAVA_SOURCE_NAMES:
-        raise BuildError("guest Java source list changed")
+        added = sorted(set(observed) - set(JAVA_SOURCE_NAMES))
+        missing = sorted(set(JAVA_SOURCE_NAMES) - set(observed))
+        details = []
+        if added:
+            details.append("added: " + ", ".join(added))
+        if missing:
+            details.append("missing: " + ", ".join(missing))
+        raise BuildError("guest Java source list changed (" + "; ".join(details) + ")")
     if not all(path.is_file() for path in sources) or not JAVAC.is_file() or \
             not JAVA.is_file() or not ANDROID_JAR.is_file() or not D8_JAR.is_file():
         raise BuildError("KeyStore Java toolchain or sources are missing")

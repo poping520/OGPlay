@@ -373,13 +373,6 @@ private:
         try {
             if (result->error != nullptr) std::rethrow_exception(result->error);
             auto analysis = std::move(*result->analysis);
-            for (const auto& entry : store_.LoadEntries()) {
-                if (entry.key == analysis.manifest.package) {
-                    throw GuiModelError(
-                        GuiModelErrorCode::duplicate_package,
-                        "该 package 已在游戏库中；请先删除既有条目", entry.directory);
-                }
-            }
             for (const auto fallback : analysis.visual_fallbacks) {
                 logger_.Write(core::LogLevel::warn, "frontend.gui.import.visual",
                               "APK visual fallback used", {},

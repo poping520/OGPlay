@@ -191,23 +191,26 @@ std::int32_t VirtualFileSystem::Impl::OpenDirectory(
         throw VfsError(kEnoent, "VFS directory not found");
     }
     const auto descriptor = AllocateDescriptor();
-    OpenFile open;
-    open.readable = true;
-    open.directory = std::make_shared<OpenDirectoryState>();
-    open.directory->entries = std::move(entries);
-    open.directory->info = DirectoryInfoLocked(normalized);
-    descriptors_.emplace(descriptor, std::move(open));
+    auto directory = std::make_shared<OpenDirectoryState>();
+    directory->entries = std::move(entries);
+    directory->info = DirectoryInfoLocked(normalized);
+    descriptors_.emplace(descriptor, std::make_shared<OpenFile>(
+        nullptr, 0, true, false, std::move(directory)));
     return descriptor;
 }
 
 std::vector<VfsDirectoryEntry> VirtualFileSystem::Impl::ReadDirectory(
     const std::int32_t descriptor, const std::size_t maximum) {
-    std::scoped_lock lock(mutex_);
-    auto& open = FindDescriptor(descriptor);
-    if (!open.directory) {
+    std::shared_ptr<OpenFile> open;
+    {
+        std::scoped_lock lock(mutex_);
+        open = FindDescriptor(descriptor);
+    }
+    std::scoped_lock operation(open->mutex);
+    if (!open->directory) {
         throw VfsError(kEnotdir, "VFS descriptor is not a directory");
     }
-    auto& state = *open.directory;
+    auto& state = *open->directory;
     std::vector<VfsDirectoryEntry> page;
     while (state.cursor < state.entries.size() && page.size() < maximum) {
         page.push_back(state.entries[state.cursor++]);
@@ -223,9 +226,9 @@ VfsFileInfo VirtualFileSystem::Impl::DescriptorInfo(
         throw VfsError(kEbadf, "VFS descriptor is not open");
     }
     const auto& open = found->second;
-    if (open.directory) return open.directory->info;
-    return {open.file->size, open.file->writable, open.file->source, false,
-            open.file->generation};
+    if (open->directory) return open->directory->info;
+    return {open->file->size, open->file->writable, open->file->source, false,
+            open->file->generation};
 }
 
 void VirtualFileSystem::Impl::CreateDirectory(const std::string_view path) {
@@ -301,10 +304,10 @@ void VirtualFileSystem::Impl::RemoveDirectory(const std::string_view path) {
 
 void VirtualFileSystem::Impl::Rename(const std::string_view from,
                                      const std::string_view to) {
-    std::scoped_lock lock(mutex_);
+    std::unique_lock lock(mutex_);
     const auto source = ResolvePath(from, working_directory_, aliases_);
     const auto target = ResolvePath(to, working_directory_, aliases_);
-    const auto found = files_.find(source);
+    auto found = files_.find(source);
     if (found == files_.end() || tombstones_.contains(source)) {
         if (source == target && IsDirectoryLocked(source)) return;
         if (IsDirectoryLocked(source)) {
@@ -332,6 +335,26 @@ void VirtualFileSystem::Impl::Rename(const std::string_view from,
         throw VfsError(kEacces, "VFS path is outside the writable namespace");
     }
     auto file = found->second;
+    const bool needs_materialization =
+        sandbox_ != nullptr && file->dirty && !file->overlay_path.empty();
+    lock.unlock();
+    std::scoped_lock file_lock(*file->mutex);
+    if (needs_materialization) Materialize(*file);
+    lock.lock();
+    found = files_.find(source);
+    if (found == files_.end() || found->second != file ||
+        tombstones_.contains(source)) {
+        throw VfsError(kEnoent, "VFS rename source changed concurrently");
+    }
+    if (IsDirectoryLocked(target)) {
+        throw VfsError(kEisdir, "VFS rename target is a directory");
+    }
+    if (!IsDirectoryLocked(target_parent)) {
+        throw VfsError(kEnoent, "VFS rename target parent does not exist");
+    }
+    if (sandbox_ != nullptr && !IsWritableNamespaceLocked(target)) {
+        throw VfsError(kEacces, "VFS path is outside the writable namespace");
+    }
     files_.erase(found);
     if (const auto replaced = files_.find(target);
         replaced != files_.end() && replaced->second != file) {
@@ -353,12 +376,16 @@ void VirtualFileSystem::Impl::Rename(const std::string_view from,
 
 void VirtualFileSystem::Impl::Truncate(const std::int32_t descriptor,
                                        const std::uint64_t size) {
-    std::scoped_lock lock(mutex_);
-    auto& open = FindDescriptor(descriptor);
-    if (open.directory) {
+    std::shared_ptr<OpenFile> open;
+    {
+        std::scoped_lock lock(mutex_);
+        open = FindDescriptor(descriptor);
+    }
+    std::scoped_lock operation(open->mutex);
+    if (open->directory) {
         throw VfsError(kEisdir, "VFS descriptor is a directory");
     }
-    if (!open.writable) {
+    if (!open->writable) {
         throw VfsError(kEbadf, "VFS descriptor is not writable");
     }
     if (size > std::numeric_limits<std::size_t>::max()) {
@@ -366,26 +393,44 @@ void VirtualFileSystem::Impl::Truncate(const std::int32_t descriptor,
     }
     // Growing has to see the backing bytes first, or the tail would be
     // zeroes over content that was never read.
-    Materialize(*open.file);
-    RequireSandboxQuotaLocked(*open.file, size);
-    open.file->contents.resize(static_cast<std::size_t>(size));
-    SetNodeSizeDirtyLocked(
-        *open.file, size,
-        open.file->dirty || !open.file->overlay_path.empty());
+    auto file = open->file;
+    std::scoped_lock file_lock(*file->mutex);
+    Materialize(*file);
+    std::scoped_lock lock(mutex_);
+    RequireSandboxQuotaLocked(*file, size);
+    file->contents.resize(static_cast<std::size_t>(size));
+    ++file->generation;
+    SetNodeSizeDirtyLocked(*file, size,
+                           file->dirty || !file->overlay_path.empty());
 }
 
 void VirtualFileSystem::Impl::Flush(const std::int32_t descriptor) {
+    std::shared_ptr<OpenFile> open;
+    {
+        std::scoped_lock lock(mutex_);
+        open = FindDescriptor(descriptor);
+    }
+    std::scoped_lock operation(open->mutex);
+    if (open->directory) return;
+    std::scoped_lock file_lock(*open->file->mutex);
     std::scoped_lock lock(mutex_);
-    auto& open = FindDescriptor(descriptor);
-    if (open.directory) return;
-    FlushFileLocked(*open.file);
+    FlushFileLocked(*open->file);
 }
 
 void VirtualFileSystem::Impl::FlushAll() {
-    std::scoped_lock lock(mutex_);
-    if (sandbox_ == nullptr) return;
-    for (auto& [path, file] : files_) {
-        static_cast<void>(path);
+    std::vector<std::shared_ptr<File>> files;
+    {
+        std::scoped_lock lock(mutex_);
+        if (sandbox_ == nullptr) return;
+        files.reserve(files_.size());
+        for (const auto& [path, file] : files_) {
+            static_cast<void>(path);
+            files.push_back(file);
+        }
+    }
+    for (const auto& file : files) {
+        std::scoped_lock file_lock(*file->mutex);
+        std::scoped_lock lock(mutex_);
         FlushFileLocked(*file);
     }
 }
@@ -393,6 +438,45 @@ void VirtualFileSystem::Impl::FlushAll() {
 bool VirtualFileSystem::Impl::SandboxAttached() const {
     std::scoped_lock lock(mutex_);
     return sandbox_ != nullptr;
+}
+
+VfsIoStatistics VirtualFileSystem::Impl::IoStatistics() const {
+    VfsIoStatistics result{
+        .backing_read_bytes = backing_read_bytes_.load(std::memory_order_relaxed),
+        .full_materialized_bytes =
+            full_materialized_bytes_.load(std::memory_order_relaxed),
+    };
+    std::scoped_lock lock(resource_budget_->mutex);
+    result.resource_memory_bytes = resource_budget_->used;
+    result.resource_memory_high_water = resource_budget_->high_water;
+    result.lease_snapshot_bytes = resource_budget_->snapshot_used;
+    result.lease_snapshot_high_water = resource_budget_->snapshot_high_water;
+    return result;
+}
+
+std::shared_ptr<const VfsResourceReservation>
+VirtualFileSystem::Impl::ReserveResourceMemory(const std::uint64_t bytes,
+                                               const bool snapshot) {
+    auto budget = resource_budget_;
+    {
+        std::scoped_lock lock(budget->mutex);
+        if (bytes > budget->limit - budget->used) {
+            throw VfsError(kEnospc, "VFS resource memory budget exhausted");
+        }
+        budget->used += bytes;
+        budget->high_water = std::max(budget->high_water, budget->used);
+        if (snapshot) {
+            budget->snapshot_used += bytes;
+            budget->snapshot_high_water =
+                std::max(budget->snapshot_high_water, budget->snapshot_used);
+        }
+    }
+    return std::shared_ptr<const VfsResourceReservation>(
+        new VfsResourceReservation([budget, bytes, snapshot] {
+            std::scoped_lock lock(budget->mutex);
+            budget->used -= bytes;
+            if (snapshot) budget->snapshot_used -= bytes;
+        }));
 }
 
 void VirtualFileSystem::Impl::AttachSandbox(
@@ -427,6 +511,7 @@ void VirtualFileSystem::Impl::AttachSandbox(
         item.is_tombstone = entry.is_tombstone;
         if (!entry.is_directory && !entry.is_tombstone) {
             auto file = std::make_shared<File>();
+            file->node_id = next_node_id_++;
             file->size = entry.size;
             file->writable = true;
             file->source = VfsSource::sandbox;

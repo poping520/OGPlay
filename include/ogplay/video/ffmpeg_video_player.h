@@ -21,5 +21,8 @@ namespace ogplay::video {
     const std::filesystem::path& host_path);
 
 [[nodiscard]] VideoPlayerFactory MakeFfmpegVideoPlayerFactory();
+[[nodiscard]] std::unique_ptr<VideoPlayer> OpenFfmpegVideo(
+    std::shared_ptr<const VideoDataSource> source);
+[[nodiscard]] VideoSourcePlayerFactory MakeFfmpegVideoSourcePlayerFactory();
 
 }  // namespace ogplay::video

@@ -1,11 +1,14 @@
 #include <doctest/doctest.h>
 
 #include <atomic>
+#include <array>
 #include <chrono>
 #include <cstddef>
 #include <filesystem>
+#include <exception>
 #include <fstream>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include "ogplay/frontend/gui_model.h"
@@ -157,23 +160,88 @@ TEST_CASE("library preserves Android version code zero") {
     CHECK(entries[0].metadata->version_code == 0);
 }
 
-TEST_CASE("library rejects duplicate package without replacing original") {
+TEST_CASE("library assigns a distinct installation id to duplicate packages") {
+    TemporaryDirectory tree;
+    const auto first = tree.path / "first.apk";
+    const auto second = tree.path / "second.apk";
+    const auto third = tree.path / "third.apk";
+    Write(first, "first");
+    Write(second, "second");
+    Write(third, "third");
+    ogplay::frontend::LibraryStore store(tree.path / "root");
+    store.Import({.source_apk = first, .metadata = Metadata()});
+
+    store.Import({.source_apk = second, .metadata = Metadata()});
+    auto missing_version = Metadata();
+    missing_version.version_code = 0;
+    missing_version.version_name.clear();
+    store.Import({.source_apk = third, .metadata = missing_version});
+    CHECK(std::filesystem::file_size(
+              store.EntriesRoot() / "org.example.game" / "game.apk") == 5);
+    CHECK(std::filesystem::file_size(
+              store.EntriesRoot() / "org.example.game-2" / "game.apk") == 6);
+    CHECK(std::filesystem::file_size(
+              store.EntriesRoot() / "org.example.game-3" / "game.apk") == 5);
+}
+
+TEST_CASE("concurrent library imports rescan after installation id collision") {
     TemporaryDirectory tree;
     const auto first = tree.path / "first.apk";
     const auto second = tree.path / "second.apk";
     Write(first, "first");
     Write(second, "second");
     ogplay::frontend::LibraryStore store(tree.path / "root");
-    store.Import({.source_apk = first, .metadata = Metadata()});
-
-    try {
-        store.Import({.source_apk = second, .metadata = Metadata()});
-        FAIL("duplicate package should fail");
-    } catch (const ogplay::frontend::GuiModelError& error) {
-        CHECK(error.Code() == ogplay::frontend::GuiModelErrorCode::duplicate_package);
+    std::array<std::exception_ptr, 2> errors{};
+    std::thread left([&] {
+        try {
+            store.Import({.source_apk = first, .metadata = Metadata()});
+        } catch (...) {
+            errors[0] = std::current_exception();
+        }
+    });
+    std::thread right([&] {
+        try {
+            store.Import({.source_apk = second, .metadata = Metadata()});
+        } catch (...) {
+            errors[1] = std::current_exception();
+        }
+    });
+    left.join();
+    right.join();
+    CHECK_FALSE(errors[0]);
+    CHECK_FALSE(errors[1]);
+    CHECK(std::filesystem::is_directory(
+        store.EntriesRoot() / "org.example.game"));
+    CHECK(std::filesystem::is_directory(
+        store.EntriesRoot() / "org.example.game-2"));
+    for (const auto id : {"org.example.game", "org.example.game-2"}) {
+        const auto sandbox = tree.path / "root" / "sandbox" / id;
+        CHECK(std::filesystem::is_regular_file(sandbox / "meta.toml"));
+        CHECK(std::filesystem::is_directory(sandbox / "internal"));
+        CHECK(std::filesystem::is_directory(sandbox / "external"));
+        CHECK(std::filesystem::is_directory(sandbox / "obb"));
+        CHECK(std::filesystem::is_directory(sandbox / "sdcard"));
     }
-    CHECK(std::filesystem::file_size(
-              store.EntriesRoot() / "org.example.game" / "game.apk") == 5);
+}
+
+TEST_CASE("library installation ids use the union of library and sandbox holes") {
+    TemporaryDirectory tree;
+    ogplay::frontend::LibraryStore store(tree.path / "root");
+    std::filesystem::create_directories(
+        store.EntriesRoot() / "org.example.game");
+    std::filesystem::create_directories(
+        tree.path / "root" / "sandbox" / "org.example.game-3");
+    std::filesystem::create_directories(
+        store.EntriesRoot() / "org.example.game.similar");
+    CHECK(store.NextInstallationId("org.example.game") ==
+          "org.example.game-2");
+    std::filesystem::create_directories(
+        tree.path / "root" / "sandbox" / "org.example.game-2");
+    CHECK(store.NextInstallationId("org.example.game") ==
+          "org.example.game-4");
+    std::filesystem::remove_all(store.EntriesRoot() / "org.example.game");
+    CHECK(store.NextInstallationId("org.example.game") ==
+          "org.example.game");
 }
 
 TEST_CASE("library exposes corrupt entries instead of silently skipping them") {
@@ -208,8 +276,8 @@ TEST_CASE("library removal never touches external data or persistent sandbox") {
     ogplay::frontend::LibraryStore store(tree.path / "root");
     store.Import({.source_apk = source, .metadata = Metadata(external)});
 
-    store.Remove("org.example.game");
-    CHECK_FALSE(std::filesystem::exists(store.EntriesRoot() / "org.example.game"));
+    store.Remove("org.example.game-2");
+    CHECK_FALSE(std::filesystem::exists(store.EntriesRoot() / "org.example.game-2"));
     CHECK(std::filesystem::is_regular_file(external / "data.bin"));
     CHECK(std::filesystem::is_regular_file(sandbox / "save.bin"));
     CHECK_THROWS_AS(store.Remove("../sandbox"), ogplay::frontend::GuiModelError);

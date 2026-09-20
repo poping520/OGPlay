@@ -46,7 +46,7 @@
 - 日志保留 backend 来源、Profile、bootstrap、生命周期和原始 JNI/CPU 故障上下文。CLI 顶层
   每个失败只输出一个缩进的 `error [ogplay]` 块；运行循环仍发布 MCP `guest_fault`、清理并
   传播，不重复打印。
-- GUI 子进程关闭 stdin、继承 stdout、stderr 覆盖写入 `last-run.log`；同 package 单实例，
+- GUI 子进程关闭 stdin、继承 stdout、stderr 覆盖写入 `last-run.log`；同 installation id 单实例，
   GUI 退出不杀游戏。存档固定在库根 `sandbox/`；删除条目不删除 external 或存档。macOS CLI
   名为 `ogplay-cli`。所有用户可见失败同时写结构化日志并给出下一步。
 

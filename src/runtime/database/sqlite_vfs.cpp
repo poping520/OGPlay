@@ -84,14 +84,16 @@ int Close(sqlite3_file *b) {
 }
 int Read(sqlite3_file *b, void *out, int amount, sqlite3_int64 offset) {
   auto *f = reinterpret_cast<File *>(b);
+  if (offset < 0)
+    return SQLITE_IOERR;
   try {
-    static_cast<void>(
-        f->context->vfs->Seek(f->descriptor, offset, VfsSeekWhence::begin));
     auto bytes =
         std::span(static_cast<std::byte *>(out), static_cast<size_t>(amount));
     size_t done{};
     while (done < bytes.size()) {
-      auto n = f->context->vfs->Read(f->descriptor, bytes.subspan(done));
+      auto n = f->context->vfs->ReadAt(
+          f->descriptor, static_cast<std::uint64_t>(offset) + done,
+          bytes.subspan(done));
       if (!n)
         break;
       done += n;
@@ -107,17 +109,19 @@ int Read(sqlite3_file *b, void *out, int amount, sqlite3_int64 offset) {
 }
 int Write(sqlite3_file *b, const void *in, int amount, sqlite3_int64 offset) {
   auto *f = reinterpret_cast<File *>(b);
+  if (offset < 0)
+    return SQLITE_IOERR;
   if (const auto injected = Inject(*f->context, IoOperation::write, f->path);
       injected != SQLITE_OK)
     return injected;
   try {
-    static_cast<void>(
-        f->context->vfs->Seek(f->descriptor, offset, VfsSeekWhence::begin));
     auto bytes = std::span(static_cast<const std::byte *>(in),
                            static_cast<size_t>(amount));
     size_t done{};
     while (done < bytes.size()) {
-      auto n = f->context->vfs->Write(f->descriptor, bytes.subspan(done));
+      auto n = f->context->vfs->WriteAt(
+          f->descriptor, static_cast<std::uint64_t>(offset) + done,
+          bytes.subspan(done));
       if (!n)
         return SQLITE_FULL;
       done += n;

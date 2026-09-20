@@ -48,7 +48,7 @@ roadmap [06 §3.1](../../roadmap/06-user-experience.md) 已确定 GUI 形态与
 | 游戏内设置（超采样、分辨率等）的 GUI 暴露 | 基础版一律用 `run-apk` 默认值；每游戏设置属 M7 |
 | 多语言 UI、主题、自动更新 | 打磨项，不阻塞基本可用 |
 | GUI 拥有任何内核行为 | 架构红线（`src/frontend/MODULE.md` 禁止项）；GUI 只编排公共内核 API 与子进程 |
-| 库内多版本共存（同 package 不同 versionCode） | 键为 package name（与 ADR-0020 沙盒一致）；再导入同 package 明确失败，提示先删除 |
+| 按版本自动合并/替换安装 | 不按 versionCode/versionName 推断；同 package 再导入按 ADR-0071 分配新 installation id |
 | 从库外路径直接"免导入"启动 | 该场景 CLI 已覆盖；主面板只服务库内条目，避免两套状态 |
 
 ## 4. 规模量级

@@ -4,6 +4,7 @@
 #include <array>
 #include <bit>
 #include <cstdint>
+#include <optional>
 #include <span>
 #include <stdexcept>
 
@@ -17,7 +18,9 @@ namespace ogplay::runtime::syscall_detail {
 // completed bytes if a subsequent transfer fails.
 inline std::int32_t TransferFile(VirtualFileSystem& vfs,
                                  memory::AddressSpace& memory,
-                                 const A32SyscallFrame& frame, bool write) {
+                                 const A32SyscallFrame& frame, bool write,
+                                 const std::optional<std::uint64_t> offset =
+                                     std::nullopt) {
     const auto count = std::min(frame.arguments[2], UINT32_C(0x7ffff000));
     std::array<std::byte, 64U * 1024U> scratch;
     std::uint32_t completed{};
@@ -33,9 +36,13 @@ inline std::int32_t TransferFile(VirtualFileSystem& vfs,
             std::size_t actual{};
             if (write) {
                 memory.Read(address, bytes, frame.thread_id);
-                actual = vfs.Write(fd, bytes);
+                actual = offset.has_value()
+                             ? vfs.WriteAt(fd, *offset + completed, bytes)
+                             : vfs.Write(fd, bytes);
             } else {
-                actual = vfs.Read(fd, bytes);
+                actual = offset.has_value()
+                             ? vfs.ReadAt(fd, *offset + completed, bytes)
+                             : vfs.Read(fd, bytes);
                 memory.Write(address, bytes.first(actual), frame.thread_id);
             }
             completed += static_cast<std::uint32_t>(actual);

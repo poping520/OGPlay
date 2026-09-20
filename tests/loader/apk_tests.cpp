@@ -1,5 +1,8 @@
 #include <doctest/doctest.h>
 
+#include <stop_token>
+
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <initializer_list>
@@ -121,6 +124,14 @@ TEST_CASE("APK stored entry window reads a slice without copying the payload") {
     CHECK(window == std::vector<std::byte>({std::byte{0x11}, std::byte{0x22}}));
     CHECK(window.size() < payload.size());
     CHECK(archive.entries.front().uncompressed_size == payload.size());
+    std::array<std::byte, 2> ranged{};
+    ogplay::loader::ApkEntryRangeStatistics statistics;
+    CHECK(ogplay::loader::ReadApkEntryRange(
+              bytes, archive, "assets/large.bin", 100U, ranged, {},
+              &statistics) == 2U);
+    CHECK(ranged == std::array{std::byte{0x11}, std::byte{0x22}});
+    CHECK(statistics.validation_scan_bytes == payload.size());
+    CHECK(statistics.copied_bytes == ranged.size());
 }
 
 TEST_CASE("APK stored entry rejects corruption and compression") {
@@ -160,6 +171,27 @@ TEST_CASE("APK reader inflates fixed and dynamic Deflate entries") {
     const auto fixed = MakeZip("classes.dex", fixed_payload, 8, fixed_encoded);
     const auto fixed_archive = ogplay::loader::ParseApkArchive(fixed);
     CHECK(ogplay::loader::ReadApkEntry(fixed, fixed_archive, "classes.dex") == fixed_payload);
+    std::array<std::byte, 8> fixed_window{};
+    ogplay::loader::ApkEntryRangeStatistics fixed_statistics;
+    CHECK(ogplay::loader::ReadApkEntryRange(
+              fixed, fixed_archive, "classes.dex", 6U, fixed_window, {},
+              &fixed_statistics) ==
+          fixed_window.size());
+    CHECK(std::equal(fixed_window.begin(), fixed_window.end(),
+                     fixed_payload.begin() + 6));
+    CHECK(fixed_statistics.validation_scan_bytes == fixed_payload.size());
+    CHECK(fixed_statistics.copied_bytes == fixed_window.size());
+    std::stop_source cancelled;
+    cancelled.request_stop();
+    CHECK_THROWS_WITH(static_cast<void>(ogplay::loader::ReadApkEntryRange(
+                          fixed, fixed_archive, "classes.dex", 0U,
+                          fixed_window, cancelled.get_token())),
+                      "APK entry read cancelled");
+    CHECK(ogplay::loader::ReadApkEntryRange(
+              fixed, fixed_archive, "classes.dex", 6U, fixed_window) ==
+          fixed_window.size());
+    CHECK(std::equal(fixed_window.begin(), fixed_window.end(),
+                     fixed_payload.begin() + 6));
 
     std::vector<std::byte> dynamic_payload(4000, std::byte{'A'});
     for (std::size_t repeat = 0; repeat < 1000; ++repeat) {

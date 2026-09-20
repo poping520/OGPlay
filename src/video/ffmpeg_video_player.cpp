@@ -26,6 +26,8 @@ constexpr std::size_t kMaxBufferedPcmSamples = 8U * 1024U * 1024U;
 class FfmpegVideoPlayer final : public VideoPlayer {
 public:
     FfmpegVideoPlayer(const Api* api, const std::filesystem::path& host_path);
+    FfmpegVideoPlayer(const Api* api,
+                      std::shared_ptr<const VideoDataSource> source);
     ~FfmpegVideoPlayer() override;
 
     [[nodiscard]] const VideoMetadata& Metadata() const noexcept override {
@@ -39,6 +41,9 @@ public:
 
 private:
     void OpenStreams(const std::filesystem::path& host_path);
+    void OpenStreams();
+    static int ReadSource(void* opaque, std::uint8_t* destination, int size);
+    static std::int64_t SeekSource(void* opaque, std::int64_t offset, int whence);
     void* OpenCodec(const ffabi::CodecParameters* params, const void* decoder);
     void ConfigureResampler(const ffabi::CodecParameters* params);
     [[nodiscard]] std::int64_t FramePtsMs(const ffabi::Frame* frame,
@@ -62,6 +67,10 @@ private:
     const Api* api_;
     VideoMetadata metadata_{};
     ffabi::FormatContext* format_ = nullptr;
+    std::shared_ptr<const VideoDataSource> source_;
+    void* avio_ = nullptr;
+    std::uint8_t* avio_buffer_ = nullptr;
+    std::uint64_t source_offset_{};
     int video_stream_ = -1;
     int audio_stream_ = -1;
     ffabi::Rational video_time_base_{0, 1};
@@ -99,6 +108,18 @@ FfmpegVideoPlayer::FfmpegVideoPlayer(const Api* api,
     }
 }
 
+FfmpegVideoPlayer::FfmpegVideoPlayer(
+    const Api* api, std::shared_ptr<const VideoDataSource> source)
+    : api_(api), source_(std::move(source)) {
+    if (!source_) throw VideoPlayerError("video data source is null");
+    try {
+        OpenStreams();
+    } catch (...) {
+        ClearDecodeState();
+        throw;
+    }
+}
+
 FfmpegVideoPlayer::~FfmpegVideoPlayer() { ClearDecodeState(); }
 
 void FfmpegVideoPlayer::ClearDecodeState() {
@@ -116,6 +137,8 @@ void FfmpegVideoPlayer::ClearDecodeState() {
     if (video_codec_ != nullptr) api_->avcodec_free_context(&video_codec_);
     if (audio_codec_ != nullptr) api_->avcodec_free_context(&audio_codec_);
     if (format_ != nullptr) api_->avformat_close_input(&format_);
+    if (avio_ != nullptr) api_->avio_context_free(&avio_);
+    avio_buffer_ = nullptr;
 }
 
 void FfmpegVideoPlayer::ReleaseFrame(ffabi::Frame*& frame) {
@@ -232,6 +255,101 @@ void FfmpegVideoPlayer::OpenStreams(const std::filesystem::path& host_path) {
     if (packet_ == nullptr) {
         throw VideoPlayerError("ffmpeg packet allocation failed");
     }
+}
+
+int FfmpegVideoPlayer::ReadSource(void* opaque, std::uint8_t* destination,
+                                  const int size) {
+    auto& self = *static_cast<FfmpegVideoPlayer*>(opaque);
+    if (size <= 0) return 0;
+    try {
+        auto bytes = std::span(reinterpret_cast<std::byte*>(destination),
+                               static_cast<std::size_t>(size));
+        const auto count = self.source_->ReadAt(self.source_offset_, bytes);
+        self.source_offset_ += count;
+        return count == 0 ? ffabi::kErrorEof : static_cast<int>(count);
+    } catch (...) {
+        return -EIO;
+    }
+}
+
+std::int64_t FfmpegVideoPlayer::SeekSource(void* opaque,
+                                           const std::int64_t offset,
+                                           const int whence) {
+    auto& self = *static_cast<FfmpegVideoPlayer*>(opaque);
+    constexpr int kAvSeekSize = 0x10000;
+    constexpr int kAvSeekForce = 0x20000;
+    if ((whence & kAvSeekSize) != 0)
+        return static_cast<std::int64_t>(self.source_->Size());
+    const int origin = whence & ~kAvSeekForce;
+    std::int64_t base{};
+    if (origin == SEEK_CUR) base = static_cast<std::int64_t>(self.source_offset_);
+    else if (origin == SEEK_END) base = static_cast<std::int64_t>(self.source_->Size());
+    else if (origin != SEEK_SET) return -EINVAL;
+    if ((offset < 0 && -offset > base) ||
+        (offset > 0 && static_cast<std::uint64_t>(offset) >
+                           self.source_->Size() - static_cast<std::uint64_t>(base)))
+        return -EINVAL;
+    const auto result = base + offset;
+    self.source_offset_ = static_cast<std::uint64_t>(result);
+    return result;
+}
+
+void FfmpegVideoPlayer::OpenStreams() {
+    constexpr int kBufferSize = 32 * 1024;
+    avio_buffer_ = static_cast<std::uint8_t*>(api_->av_malloc(kBufferSize));
+    if (avio_buffer_ == nullptr) throw VideoPlayerError("ffmpeg IO buffer allocation failed");
+    avio_ = api_->avio_alloc_context(avio_buffer_, kBufferSize, 0, this,
+                                     &ReadSource, nullptr, &SeekSource);
+    if (avio_ == nullptr) {
+        api_->av_free(avio_buffer_);
+        avio_buffer_ = nullptr;
+        throw VideoPlayerError("ffmpeg custom IO allocation failed");
+    }
+    format_ = api_->avformat_alloc_context();
+    if (format_ == nullptr) throw VideoPlayerError("ffmpeg format allocation failed");
+    format_->pb = avio_;
+    if (api_->avformat_open_input(&format_, nullptr, nullptr, nullptr) < 0)
+        throw VideoPlayerError("ffmpeg cannot open custom input");
+    if (api_->avformat_find_stream_info(format_, nullptr) < 0)
+        throw VideoPlayerError("ffmpeg cannot read stream info");
+
+    const void* video_decoder = nullptr;
+    video_stream_ = api_->av_find_best_stream(format_, ffabi::kMediaTypeVideo,
+                                              -1, -1, &video_decoder, 0);
+    if (video_stream_ < 0 || video_decoder == nullptr)
+        throw VideoPlayerError("ffmpeg found no decodable video stream");
+    const ffabi::Stream* video = format_->streams[video_stream_];
+    video_time_base_ = video->time_base;
+    metadata_.width = static_cast<std::uint32_t>(std::max(video->codecpar->width, 0));
+    metadata_.height = static_cast<std::uint32_t>(std::max(video->codecpar->height, 0));
+    metadata_.duration_ms = video->duration != ffabi::kNoPtsValue && video->duration > 0
+        ? RescaleToMs(video->duration, video_time_base_)
+        : (format_->duration > 0 ? format_->duration * 1000 / ffabi::kAvTimeBase : 0);
+    const auto framerate = video->codecpar->framerate;
+    if (framerate.num > 0 && framerate.den > 0)
+        frame_duration_estimate_ms_ = std::max<std::int64_t>(
+            1000LL * framerate.den / framerate.num, 1);
+    const void* audio_decoder = nullptr;
+    audio_stream_ = api_->av_find_best_stream(format_, ffabi::kMediaTypeAudio,
+                                              -1, -1, &audio_decoder, 0);
+    if (audio_stream_ >= 0 && audio_decoder != nullptr) {
+        const auto* audio = format_->streams[audio_stream_];
+        audio_time_base_ = audio->time_base;
+        const int channels = audio->codecpar->ch_layout.nb_channels;
+        if (channels > 0 && audio->codecpar->sample_rate > 0) {
+            metadata_.audio_channels = static_cast<std::uint8_t>(std::min(channels, 2));
+            metadata_.audio_sample_rate = audio->codecpar->sample_rate;
+        } else audio_stream_ = -1;
+    } else audio_stream_ = -1;
+    ValidateVideoMetadata(metadata_);
+    video_codec_ = OpenCodec(video->codecpar, video_decoder);
+    if (audio_stream_ >= 0) {
+        const auto* audio = format_->streams[audio_stream_];
+        audio_codec_ = OpenCodec(audio->codecpar, audio_decoder);
+        ConfigureResampler(audio->codecpar);
+    }
+    packet_ = api_->av_packet_alloc();
+    if (packet_ == nullptr) throw VideoPlayerError("ffmpeg packet allocation failed");
 }
 
 std::int64_t FfmpegVideoPlayer::FramePtsMs(const ffabi::Frame* frame,
@@ -533,6 +651,20 @@ std::unique_ptr<VideoPlayer> OpenFfmpegVideo(
 VideoPlayerFactory MakeFfmpegVideoPlayerFactory() {
     return [](const std::filesystem::path& host_path) {
         return OpenFfmpegVideo(host_path);
+    };
+}
+
+std::unique_ptr<VideoPlayer> OpenFfmpegVideo(
+    std::shared_ptr<const VideoDataSource> source) {
+    std::string reason;
+    const Api* api = ffabi::LoadFfmpegApi(&reason);
+    if (api == nullptr) throw VideoPlayerError("ffmpeg unavailable: " + reason);
+    return std::make_unique<FfmpegVideoPlayer>(api, std::move(source));
+}
+
+VideoSourcePlayerFactory MakeFfmpegVideoSourcePlayerFactory() {
+    return [](std::shared_ptr<const VideoDataSource> source) {
+        return OpenFfmpegVideo(std::move(source));
     };
 }
 

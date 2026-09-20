@@ -67,7 +67,7 @@ TEST_CASE("GUI LaunchPlan emits only the documented run-apk arguments") {
     const auto plan = ogplay::frontend::BuildLaunchPlan(
         cli, temporary.path, Entry(entry_dir, external),
         {.profiles_dir = profiles});
-    REQUIRE(plan.argv.size() == 9);
+    REQUIRE(plan.argv.size() == 11);
     CHECK(plan.argv[1] == "run-apk");
     CHECK(plan.argv[3] == "--profiles-dir");
     CHECK(plan.argv[5] == "--external-dir");
@@ -75,6 +75,8 @@ TEST_CASE("GUI LaunchPlan emits only the documented run-apk arguments") {
     CHECK(plan.argv[8] ==
           ogplay::frontend::LauncherSandboxRoot(temporary.path)
               .generic_string());
+    CHECK(plan.argv[9] == "--installation-id");
+    CHECK(plan.argv[10] == "org.example.game");
     CHECK(plan.package == "org.example.game");
     CHECK(plan.log_path == std::filesystem::absolute(entry_dir / "last-run.log"));
 }

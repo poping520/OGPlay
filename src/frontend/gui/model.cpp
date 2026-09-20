@@ -2,16 +2,20 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <charconv>
 #include <cctype>
 #include <fstream>
 #include <iterator>
 #include <limits>
 #include <map>
+#include <set>
 #include <system_error>
 #include <utility>
 
 #include "ogplay/core/text.h"
+#include "ogplay/runtime/vfs/sandbox_store.h"
+#include "ogplay/runtime/vfs/vfs.h"
 
 namespace ogplay::frontend {
 namespace {
@@ -403,6 +407,47 @@ const std::filesystem::path& LibraryStore::Root() const noexcept { return root_;
 
 std::filesystem::path LibraryStore::EntriesRoot() const { return root_ / "library"; }
 
+std::string LibraryStore::NextInstallationId(
+    const std::string_view package) const {
+    if (!core::IsValidPackageName(package) || package.find('-') != std::string_view::npos) {
+        throw GuiModelError(GuiModelErrorCode::invalid_argument,
+                            "package cannot be used as an installation id");
+    }
+    std::set<std::uint32_t> occupied;
+    const auto collect = [&](const std::filesystem::path& parent) {
+        std::error_code error;
+        if (!std::filesystem::exists(parent, error)) return;
+        for (std::filesystem::directory_iterator it(parent, error), end;
+             !error && it != end; it.increment(error)) {
+            if (!it->is_directory(error)) continue;
+            const auto name = PathUtf8(it->path().filename());
+            if (name == package) {
+                occupied.insert(1U);
+                continue;
+            }
+            if (!name.starts_with(package) || name.size() <= package.size() + 1U ||
+                name[package.size()] != '-') continue;
+            std::uint32_t number{};
+            const auto suffix = std::string_view(name).substr(package.size() + 1U);
+            const auto parsed = std::from_chars(suffix.data(), suffix.data() + suffix.size(), number);
+            if (parsed.ec == std::errc{} && parsed.ptr == suffix.data() + suffix.size() &&
+                number >= 2U && suffix.front() != '0') {
+                occupied.insert(number);
+            }
+        }
+        if (error) {
+            throw GuiModelError(GuiModelErrorCode::io_error,
+                                "cannot inspect installation ids", parent);
+        }
+    };
+    collect(EntriesRoot());
+    collect(root_ / "sandbox");
+    std::uint32_t number = 1U;
+    while (occupied.contains(number)) ++number;
+    return number == 1U ? std::string(package)
+                        : std::string(package) + "-" + std::to_string(number);
+}
+
 std::vector<LibraryEntry> LibraryStore::LoadEntries() const {
     std::vector<LibraryEntry> entries;
     std::error_code error;
@@ -444,9 +489,9 @@ std::vector<LibraryEntry> LibraryStore::LoadEntries() const {
         LibraryEntry entry{.key = key, .directory = iterator->path()};
         try {
             auto metadata = DecodeMetadata(ReadText(iterator->path() / "meta.toml"));
-            if (metadata.package != key) {
-                throw std::runtime_error("metadata package does not match its directory");
-            }
+            const auto expected_prefix = metadata.package + "-";
+            if (key != metadata.package && !key.starts_with(expected_prefix))
+                throw std::runtime_error("metadata package does not match installation id");
             if (!std::filesystem::is_regular_file(iterator->path() / "game.apk")) {
                 throw std::runtime_error("library APK copy is missing");
             }
@@ -483,19 +528,28 @@ void LibraryStore::Import(const LibraryImport& request) {
         throw GuiModelError(GuiModelErrorCode::io_error,
                             "cannot create game library", EntriesRoot());
     }
-    const auto target = EntriesRoot() / request.metadata.package;
-    if (std::filesystem::exists(target, error) || error) {
+    std::filesystem::create_directories(root_ / "sandbox", error);
+    if (error) {
+        throw GuiModelError(GuiModelErrorCode::io_error,
+                            "cannot create sandbox root", root_ / "sandbox");
+    }
+    static std::atomic_uint64_t next_import_token{};
+    std::filesystem::path temporary;
+    for (;;) {
+        const auto token = next_import_token.fetch_add(1U, std::memory_order_relaxed);
+        temporary = EntriesRoot() /
+                    ("." + request.metadata.package + "." + std::to_string(token) +
+                     ".importing");
+        error.clear();
+        if (std::filesystem::create_directory(temporary, error)) break;
         if (error) {
             throw GuiModelError(GuiModelErrorCode::io_error,
-                                "cannot inspect library package", target);
+                                "cannot reserve import temporary directory", temporary);
         }
-        throw GuiModelError(GuiModelErrorCode::duplicate_package,
-                            "this package is already in the game library", target);
     }
-    const auto temporary = EntriesRoot() / ("." + request.metadata.package + ".importing");
+    std::filesystem::path target;
+    std::filesystem::path reserved_sandbox;
     try {
-        if (std::filesystem::exists(temporary)) RemoveTree(temporary);
-        std::filesystem::create_directory(temporary);
         std::filesystem::copy_file(request.source_apk, temporary / "game.apk",
                                    std::filesystem::copy_options::none);
         WriteText(temporary / "meta.toml", EncodeMetadata(request.metadata));
@@ -506,13 +560,45 @@ void LibraryStore::Import(const LibraryImport& request) {
                        static_cast<std::streamsize>(request.icon_png.size()));
             if (!icon) throw std::runtime_error("cannot write icon cache");
         }
-        std::filesystem::rename(temporary, target);
+        for (;;) {
+            const auto installation_id = NextInstallationId(request.metadata.package);
+            target = EntriesRoot() / installation_id;
+            try {
+                auto reservation = runtime::SandboxStore::Create(
+                    root_ / "sandbox", installation_id, request.metadata.package);
+                reserved_sandbox = reservation->Directory();
+            } catch (const runtime::VfsError& reservation_error) {
+                if (reservation_error.ErrorNumber() == 17) continue;
+                throw;
+            }
+            error.clear();
+            std::filesystem::rename(temporary, target, error);
+            if (!error) break;
+            std::error_code exists_error;
+            const bool collision = std::filesystem::exists(target, exists_error);
+            if (exists_error || !collision) {
+                throw std::filesystem::filesystem_error(
+                    "rename", temporary, target,
+                    exists_error ? exists_error : error);
+            }
+            std::filesystem::remove_all(reserved_sandbox, exists_error);
+            if (exists_error) {
+                throw std::filesystem::filesystem_error(
+                    "remove sandbox reservation", reserved_sandbox,
+                    exists_error);
+            }
+            reserved_sandbox.clear();
+        }
     } catch (const GuiModelError&) {
         if (std::filesystem::exists(temporary)) RemoveTree(temporary);
         throw;
     } catch (const std::exception& exception) {
         std::error_code cleanup_error;
         static_cast<void>(std::filesystem::remove_all(temporary, cleanup_error));
+        if (!reserved_sandbox.empty()) {
+            static_cast<void>(std::filesystem::remove_all(
+                reserved_sandbox, cleanup_error));
+        }
         throw GuiModelError(GuiModelErrorCode::io_error,
                             std::string("cannot import game: ") + exception.what(), target);
     }

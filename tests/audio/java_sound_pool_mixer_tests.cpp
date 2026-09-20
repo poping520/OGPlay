@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "ogplay/audio/java_sound_pool_mixer.h"
+#include "ogplay/runtime/vfs/vfs.h"
 
 namespace {
 
@@ -28,6 +29,21 @@ namespace {
 }
 
 }  // namespace
+
+TEST_CASE("SoundPool encoded window retains the shared VFS reservation") {
+    ogplay::runtime::VirtualFileSystem vfs(
+        {.resource_memory_budget_bytes = 4U});
+    ogplay::audio::JavaSoundPoolMixer mixer{
+        [&vfs](const ogplay::audio::EncodedAudioSource&) {
+            auto reservation = vfs.ReserveResourceMemory(4U);
+            return ogplay::audio::JavaSoundPoolMixer::EncodedResource{
+                std::vector<std::byte>(4U), std::move(reservation)};
+        }};
+    CHECK_FALSE(mixer.Load(1));
+    const auto statistics = vfs.IoStatistics();
+    CHECK(statistics.resource_memory_high_water == 4U);
+    CHECK(statistics.resource_memory_bytes == 0U);
+}
 
 TEST_CASE("SoundPool mixer loads decodes controls and renders a real voice") {
     const auto sound = ReadSound();

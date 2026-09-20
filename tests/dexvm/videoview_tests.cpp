@@ -6,6 +6,8 @@
 
 #include <doctest/doctest.h>
 
+#include <algorithm>
+#include <array>
 #include <filesystem>
 #include <fstream>
 #include <memory>
@@ -42,6 +44,22 @@ constexpr const char* kGuestVideoPath = "/sdcard/short-mp4v-aac.mp4";
 
 [[nodiscard]] ogplay::video::VideoPlayerFactory FakeFactory() {
     return [](const std::filesystem::path&) {
+        ogplay::video::VideoMetadata metadata;
+        metadata.width = 8U;
+        metadata.height = 4U;
+        metadata.duration_ms = 1000;
+        return std::unique_ptr<ogplay::video::VideoPlayer>(
+            std::make_unique<ogplay::video::FakeVideoPlayer>(metadata, 10U));
+    };
+}
+
+[[nodiscard]] ogplay::video::VideoSourcePlayerFactory FakeSourceFactory(
+    bool& opened, std::size_t& bytes_read) {
+    return [&opened, &bytes_read](
+               std::shared_ptr<const ogplay::video::VideoDataSource> source) {
+        opened = true;
+        std::array<std::byte, 4> header{};
+        bytes_read += source->ReadAt(0, header);
         ogplay::video::VideoMetadata metadata;
         metadata.width = 8U;
         metadata.height = 4U;
@@ -93,7 +111,13 @@ struct VideoVm final {
         context->surface_width = 64U;
         context->surface_height = 32U;
         context->vfs = &vfs;
-        context->video_player_factory = std::move(factory);
+        if (factory) {
+            context->video_source_player_factory =
+                [factory = std::move(factory)](
+                    std::shared_ptr<const ogplay::video::VideoDataSource>) {
+                    return factory({});
+                };
+        }
         interpreter.SetLogger(&logger);
         vfs.MountHostDirectory(
             "/sdcard",
@@ -260,6 +284,54 @@ TEST_CASE("videoview stopPlayback releases the player") {
     vm.CallOn(view, "stopPlayback", "()V");
     CHECK(vm.CallOn(view, "getDuration", "()I").AsInt() == 0);
     CHECK(vm.context->video_views.empty());
+}
+
+TEST_CASE("videoview production source factory consumes a VFS lease") {
+    VideoVm vm(ogplay::video::VideoPlayerFactory{});
+    bool opened{};
+    std::size_t bytes_read{};
+    vm.context->video_source_player_factory =
+        FakeSourceFactory(opened, bytes_read);
+    const auto view = vm.NewVideoView();
+    vm.CallOn(view, "setVideoPath", "(Ljava/lang/String;)V",
+              {VmValue::Ref(vm.interpreter.NewStringUtf8(kGuestVideoPath))});
+    CHECK(opened);
+    CHECK(bytes_read == 4U);
+    CHECK(vm.CallOn(view, "getDuration", "()I").AsInt() == 1000);
+}
+
+TEST_CASE("videoview source factory consumes an APK-backed VFS lease") {
+    VideoVm vm(ogplay::video::VideoPlayerFactory{});
+    const std::array payload{
+        std::byte{'v'}, std::byte{'i'}, std::byte{'d'}, std::byte{'0'}};
+    unsigned full_reads{};
+    const std::vector<ogplay::runtime::VfsLazyMountEntry> entries{{
+        "movie.bin", payload.size(),
+        [&] {
+            ++full_reads;
+            return std::vector<std::byte>(payload.begin(), payload.end());
+        },
+        [&](const std::uint64_t offset,
+            const std::span<std::byte> destination) {
+            std::copy_n(payload.begin() +
+                            static_cast<std::ptrdiff_t>(offset),
+                        destination.size(), destination.begin());
+            return destination.size();
+        },
+    }};
+    vm.vfs.MountLazyReadOnly(ogplay::runtime::VfsSource::apk, "/apk", entries);
+    bool opened{};
+    std::size_t bytes_read{};
+    vm.context->video_source_player_factory =
+        FakeSourceFactory(opened, bytes_read);
+    const auto view = vm.NewVideoView();
+    vm.CallOn(view, "setVideoPath", "(Ljava/lang/String;)V",
+              {VmValue::Ref(vm.interpreter.NewStringUtf8(
+                  "/apk/movie.bin"))});
+    CHECK(opened);
+    CHECK(bytes_read == payload.size());
+    CHECK(full_reads == 0U);
+    CHECK(vm.vfs.IoStatistics().full_materialized_bytes == 0U);
 }
 
 TEST_CASE("videoview media controls follow prepared player state") {

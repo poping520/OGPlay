@@ -253,26 +253,13 @@ void BindAndroidFileMetadataSyscalls(A32SyscallDispatcher& dispatcher,
     dispatcher.Implement(118, flush);  // fsync
     dispatcher.Implement(148, flush);  // fdatasync
 
-    // Preserve the descriptor position for both successful and failed IO.
+    // True positioned IO is atomic with respect to the descriptor cursor.
     const auto positional = [&vfs, &address_space](const A32SyscallFrame& frame, bool write) {
-        const auto descriptor = std::bit_cast<std::int32_t>(frame.arguments[0]);
         const auto offset = static_cast<std::uint64_t>(frame.arguments[4]) |
                             (static_cast<std::uint64_t>(frame.arguments[5]) << 32U);
         if (offset > static_cast<std::uint64_t>(INT64_MAX)) return -kEinval;
-        const auto saved = vfs.Seek(descriptor, 0, VfsSeekWhence::current);
-        static_cast<void>(vfs.Seek(descriptor, static_cast<std::int64_t>(offset),
-                                   VfsSeekWhence::begin));
-        std::int32_t result{};
-        try {
-            result = syscall_detail::TransferFile(vfs, address_space, frame, write);
-        } catch (...) {
-            static_cast<void>(vfs.Seek(descriptor, static_cast<std::int64_t>(saved),
-                                       VfsSeekWhence::begin));
-            throw;
-        }
-        static_cast<void>(vfs.Seek(descriptor, static_cast<std::int64_t>(saved),
-                                   VfsSeekWhence::begin));
-        return result;
+        return syscall_detail::TransferFile(vfs, address_space, frame, write,
+                                            offset);
     };
     dispatcher.Implement(180, guarded([positional](const A32SyscallFrame& frame) {
         return positional(frame, false);

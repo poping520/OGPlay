@@ -91,7 +91,7 @@ template <typename Fn>
         const char* name;
         void** slot;
     };
-    const std::array<Symbol, 33> symbols = {{
+    const std::array<Symbol, 39> symbols = {{
         {avutil, "avutil_version",
          reinterpret_cast<void**>(&api.avutil_version)},
         {avcodec, "avcodec_version",
@@ -112,6 +112,10 @@ template <typename Fn>
          reinterpret_cast<void**>(&api.av_opt_set_int)},
         {avutil, "av_get_sample_fmt_name",
          reinterpret_cast<void**>(&api.av_get_sample_fmt_name)},
+        {avutil, "av_malloc", reinterpret_cast<void**>(&api.av_malloc)},
+        {avutil, "av_free", reinterpret_cast<void**>(&api.av_free)},
+        {avformat, "avformat_alloc_context",
+         reinterpret_cast<void**>(&api.avformat_alloc_context)},
         {avformat, "avformat_open_input",
          reinterpret_cast<void**>(&api.avformat_open_input)},
         {avformat, "avformat_close_input",
@@ -124,6 +128,10 @@ template <typename Fn>
          reinterpret_cast<void**>(&api.av_read_frame)},
         {avformat, "av_seek_frame",
          reinterpret_cast<void**>(&api.av_seek_frame)},
+        {avformat, "avio_alloc_context",
+         reinterpret_cast<void**>(&api.avio_alloc_context)},
+        {avformat, "avio_context_free",
+         reinterpret_cast<void**>(&api.avio_context_free)},
         {avcodec, "av_packet_alloc",
          reinterpret_cast<void**>(&api.av_packet_alloc)},
         {avcodec, "av_packet_free",

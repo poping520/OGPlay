@@ -181,7 +181,11 @@ struct ClickVm final {
         context->surface_width = 100U;
         context->surface_height = 100U;
         context->vfs = &vfs;
-        context->video_player_factory = FakeFactory();
+        context->video_source_player_factory =
+            [factory = FakeFactory()](
+                std::shared_ptr<const ogplay::video::VideoDataSource>) {
+                return factory({});
+            };
         interpreter.SetLogger(&logger);
         RegisterAndroidOwnerAttachedStateTable(interpreter, context);
         interpreter.SetGcIntegration({

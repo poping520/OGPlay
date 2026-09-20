@@ -521,8 +521,12 @@ def _launch(plan: ScenarioPlan, fixtures: dict[str, Path], ogplay: Path,
         raise RunnerError("runner supports at most one external fixture")
     if external:
         command.extend(["--external-dir", str(external[0])])
-    if any(item["kind"] == "obb" and item["id"] in fixtures for item in plan.fixtures):
-        raise RunnerError("OBB fixture launch is not implemented")
+    obb = [fixtures[item["id"]] for item in plan.fixtures
+           if item["kind"] == "obb" and item["id"] in fixtures]
+    if len(obb) > 1:
+        raise RunnerError("runner supports at most one OBB fixture")
+    if obb:
+        command.extend(["--obb", str(obb[0])])
     stdout_path = evidence_dir / "stdout.log"
     stderr_path = evidence_dir / "stderr.log"
     stdout_file = stdout_path.open("wb")

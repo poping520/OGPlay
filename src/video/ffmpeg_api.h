@@ -8,6 +8,7 @@
 // version, so a layout mismatch cannot occur silently.
 
 #include <cerrno>
+#include <cstddef>
 #include <cstdint>
 #include <limits>
 #include <string>
@@ -159,7 +160,10 @@ struct Api final {
     int (*av_opt_set)(void*, const char*, const char*, int);
     int (*av_opt_set_int)(void*, const char*, std::int64_t, int);
     const char* (*av_get_sample_fmt_name)(int);
+    void* (*av_malloc)(std::size_t);
+    void (*av_free)(void*);
 
+    FormatContext* (*avformat_alloc_context)();
     int (*avformat_open_input)(FormatContext**, const char*, void*, void*);
     void (*avformat_close_input)(FormatContext**);
     int (*avformat_find_stream_info)(FormatContext*, void*);
@@ -167,6 +171,11 @@ struct Api final {
                                int);
     int (*av_read_frame)(FormatContext*, Packet*);
     int (*av_seek_frame)(FormatContext*, int, std::int64_t, int);
+    void* (*avio_alloc_context)(std::uint8_t*, int, int, void*,
+                                int (*)(void*, std::uint8_t*, int),
+                                int (*)(void*, const std::uint8_t*, int),
+                                std::int64_t (*)(void*, std::int64_t, int));
+    void (*avio_context_free)(void**);
 
     Packet* (*av_packet_alloc)();
     void (*av_packet_free)(Packet**);

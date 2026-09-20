@@ -25,6 +25,9 @@ public:
     void Reset(std::uint32_t player);
     [[nodiscard]] bool SetEncoded(std::uint32_t player,
                                   std::vector<std::byte> encoded);
+    [[nodiscard]] bool SetSource(
+        std::uint32_t player,
+        std::shared_ptr<const EncodedAudioDataSource> source);
     [[nodiscard]] bool Prepare(std::uint32_t player);
     [[nodiscard]] bool BeginPrepare(std::uint32_t player);
     [[nodiscard]] PrepareStatus PollPrepare(std::uint32_t player);
@@ -64,7 +67,7 @@ private:
     };
 
     struct Player final {
-        EncodedAudioStream::Bytes encoded;
+        std::shared_ptr<const EncodedAudioDataSource> source;
         std::unique_ptr<EncodedAudioStream> decoder;
         std::uint32_t sample_rate{};
         std::uint8_t channels{1};

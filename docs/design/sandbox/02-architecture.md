@@ -1,5 +1,9 @@
 # 02 · 核心架构
 
+> 历史设计说明：其中 package 键、`fs/` 布局及 schema 迁移条款已被
+> [ADR-0071](../../adr/session.md#adr-0071) 与
+> [VFS 专项](../vfs/README.md)取代；当前契约以 `src/runtime/vfs/MODULE.md` 为准。
+
 ## 1. guest 命名空间分层
 
 guest 看到的单一路径树由两类层组成，解析优先级自上而下：

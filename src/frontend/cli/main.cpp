@@ -40,14 +40,14 @@ int Usage() {
                   "       ogplay gui [--library-root <dir>] [--smoke-frames <count>]\n"
                   "       ogplay diag snapshot --pid <pid> [--diag-dir <dir>]\n"
                   "       ogplay run-apk <apk> [--profiles-dir <dir>] "
-                  "[--external-dir <host-dir>] "
+                  "[--external-dir <host-dir>] [--obb <archive>] "
                   "[--preflight] [--supersample <1..4>] "
                   "[--exit-after-frames <count>] [--mcp | --mcp-port <1..65535>] "
                   "[--mcp-manual-step] "
                   "[--diag] [--diag-dir <dir>] "
                   "[--diag-on-teardown-timeout <seconds>] "
                   "[--dexvm-interpreter <switch|threaded>] "
-                  "[--sandbox-dir <host-dir> | --ephemeral-sandbox]\n");
+                  "[--sandbox-dir <host-dir> --installation-id <id> | --ephemeral-sandbox]\n");
     return 2;
 }
 

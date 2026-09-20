@@ -14,6 +14,31 @@
 
 namespace {
 
+class CountingSource final : public ogplay::audio::EncodedAudioDataSource {
+public:
+    explicit CountingSource(std::vector<std::byte> bytes)
+        : bytes_(std::move(bytes)) {}
+    [[nodiscard]] std::uint64_t Size() const noexcept override {
+        return bytes_.size();
+    }
+    [[nodiscard]] std::size_t ReadAt(
+        const std::uint64_t offset, const std::span<std::byte> destination,
+        const std::stop_token stop) const override {
+        if (stop.stop_requested() || offset >= bytes_.size()) return 0;
+        maximum_request = std::max(maximum_request, destination.size());
+        total_read += destination.size();
+        const auto count = std::min<std::size_t>(
+            destination.size(), bytes_.size() - static_cast<std::size_t>(offset));
+        std::copy_n(bytes_.begin() + static_cast<std::ptrdiff_t>(offset), count,
+                    destination.begin());
+        return count;
+    }
+    mutable std::size_t maximum_request{};
+    mutable std::size_t total_read{};
+private:
+    std::vector<std::byte> bytes_;
+};
+
 [[nodiscard]] std::vector<std::byte> ReadSound(const char* name = "short-vorbis.ogg") {
     const auto path = std::filesystem::path{OGPLAY_SOURCE_DIR} /
                       "tests/fixtures/audio" / name;
@@ -102,6 +127,26 @@ TEST_CASE("incremental music agrees with full decoding across blocks and seeks")
         std::stop_source cancelled;
         cancelled.request_stop();
         CHECK_THROWS(EncodedAudioStream(bytes, cancelled.get_token()));
+    }
+}
+
+TEST_CASE("music data source is consumed in bounded blocks without ReadAll") {
+    using namespace ogplay::audio;
+    for (const auto* name : {"short-vorbis.ogg", "short-mp3.mp3"}) {
+        auto repeated = ReadSound(name);
+        const auto part = repeated;
+        while (repeated.size() < 256U * 1024U) {
+            repeated.insert(repeated.end(), part.begin(), part.end());
+        }
+        auto source = std::make_shared<CountingSource>(std::move(repeated));
+        std::stop_source cancelled;
+        cancelled.request_stop();
+        CHECK_THROWS(EncodedAudioStream(source, cancelled.get_token()));
+        EncodedAudioStream stream(source);
+        CHECK(stream.Frames() > 0U);
+        CHECK(source->maximum_request <= 64U * 1024U);
+        CHECK(source->maximum_request < source->Size());
+        CHECK_NOTHROW(static_cast<void>(stream.Sample(stream.Frames() - 1U)));
     }
 }
 

@@ -1,5 +1,9 @@
 # 02 · 核心架构
 
+> 安装身份补充：本文早期的 package 唯一键/拒绝同包重复导入条款已被
+> [ADR-0071](../../adr/session.md#adr-0071) 取代。当前按安装 id 允许同包多实例，
+> GUI 启动通过 `--installation-id` 原样传递选中目录名。
+
 ## 1. 进程模型：主面板与游戏分进程
 
 **决定**：点击启动 = 主面板 spawn 一个运行 `run-apk` 的子进程（复用自身
@@ -80,7 +84,7 @@ Windows `%APPDATA%/OGPlay`、Linux `$XDG_DATA_HOME/OGPlay`，回退
 
 ```toml
 schema = 1
-package = "com.example.game"          # 目录名与此字段必须一致，不一致即条目损坏
+package = "com.example.game"          # 真实 guest 包名；目录名是受检 installation id
 display_name = "…"                    # 提取链结果；不可解析时等于 package
 version_code = 42
 version_name = "1.2.3"
@@ -91,8 +95,8 @@ external_dir = "/abs/path"            # 可选：用户指认的数据包目录�
 
 关键决定：
 
-1. **键为 package name**，与 ADR-0020 沙盒键一致；同 package 再导入明确
-   失败并提示先删除（非目标：多版本共存）。
+1. **键为 installation id**：首份目录名为 package，后续为 `-2`、`-3`；从 library 与
+   sandbox 占用并集取最小空缺。同 package 可多实例，版本字段不参与身份判定。
 2. **APK 复制入库**：APK 体积小（老游戏普遍 <50 MB），复制换得自包含的
    删除语义与"源文件被移动后游戏仍可玩"。
 3. **数据包原地引用不复制**：对齐 roadmap 06 §1.2"不复制大文件"。

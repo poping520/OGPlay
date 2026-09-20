@@ -13,6 +13,21 @@
 
 namespace ogplay::runtime::android_intrinsics {
 
+namespace {
+class VfsVideoSource final : public video::VideoDataSource {
+public:
+    explicit VfsVideoSource(std::shared_ptr<const VfsReadLease> lease)
+        : lease_(std::move(lease)) {}
+    std::uint64_t Size() const noexcept override { return lease_->Size(); }
+    std::size_t ReadAt(const std::uint64_t offset,
+                       const std::span<std::byte> destination) const override {
+        return lease_->ReadAt(offset, destination);
+    }
+private:
+    std::shared_ptr<const VfsReadLease> lease_;
+};
+}  // namespace
+
 Decl Declare_android_media_AudioManager(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/media/AudioManager;", "Ljava/lang/Object;");
     builder.FinalMethod("getRingerMode", "()I", [](dx::IntrinsicContext&) {
@@ -179,7 +194,7 @@ Decl Declare_android_widget_VideoView(const Context& context) {
                                       "setVideoPath path is null"};
             }
             const auto guest_path = call.vm.StringUtf8(path_ref);
-            if (!context->video_player_factory) {
+            if (!context->video_source_player_factory) {
                 GuestLog(call, core::LogLevel::warn,
                          "VideoView.setVideoPath: no video decoder is "
                          "available; playback of " + guest_path +
@@ -193,29 +208,29 @@ Decl Declare_android_widget_VideoView(const Context& context) {
                          "complete immediately (recorded gap)");
                 return dx::VmValue::Void();
             }
-            std::optional<std::filesystem::path> host_path;
             try {
-                host_path = context->vfs->HostPathFor(guest_path);
+                DexVmAndroidContext::VideoViewState state;
+                const auto descriptor = context->vfs->Open(
+                    guest_path, {.read = true});
+                try {
+                    auto lease = context->vfs->CaptureReadLease(descriptor, 0);
+                    context->vfs->Close(descriptor);
+                    state.player = context->video_source_player_factory(
+                        std::make_shared<VfsVideoSource>(std::move(lease)));
+                } catch (...) {
+                    try { context->vfs->Close(descriptor); } catch (...) {}
+                    throw;
+                }
+                state.guest_path = guest_path;
+                state.duration_ms = state.player->Metadata().duration_ms;
+                context->video_views[handle] = std::move(state);
             } catch (const VfsError& error) {
                 GuestLog(call, core::LogLevel::warn,
                          "VideoView.setVideoPath: " + guest_path +
                              " is not resolvable: " + error.what());
                 return dx::VmValue::Void();
             }
-            if (!host_path.has_value()) {
-                GuestLog(call, core::LogLevel::warn,
-                         "VideoView.setVideoPath: " + guest_path +
-                             " is not a host-backed file; playback will "
-                             "complete immediately (recorded gap)");
-                return dx::VmValue::Void();
-            }
-            try {
-                DexVmAndroidContext::VideoViewState state;
-                state.player = context->video_player_factory(*host_path);
-                state.guest_path = guest_path;
-                state.duration_ms = state.player->Metadata().duration_ms;
-                context->video_views[handle] = std::move(state);
-            } catch (const video::VideoPlayerError& error) {
+            catch (const video::VideoPlayerError& error) {
                 GuestLog(call, core::LogLevel::warn,
                          "VideoView.setVideoPath: cannot open " + guest_path +
                              ": " + error.what() +

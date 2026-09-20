@@ -150,7 +150,7 @@ TEST_CASE("Profile lifecycle flush adapter persists every dirty VFS node") {
     std::filesystem::create_directories(root, error);
     REQUIRE_FALSE(error);
 
-    auto store = ogplay::runtime::SandboxStore::Open(root, "com.example.game");
+    auto store = ogplay::runtime::SandboxStore::Open(root, "com.example.game", "com.example.game");
     ogplay::runtime::VirtualFileSystem vfs;
     const std::vector<std::string> roots{"/sdcard"};
     vfs.AttachSandbox(*store, roots);

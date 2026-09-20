@@ -6,10 +6,12 @@
 #include <cstdint>
 #include <functional>
 #include <map>
+#include <memory>
 #include <mutex>
 #include <optional>
 #include <span>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "ogplay/audio/java_sound_pool.h"
@@ -38,7 +40,19 @@ struct EncodedAudioSource final {
 
 class JavaSoundPoolMixer final {
 public:
-    using EncodedResourceLoader = std::function<std::vector<std::byte>(
+    struct EncodedResource final {
+        std::vector<std::byte> bytes;
+        std::shared_ptr<const void> lifetime;
+
+        EncodedResource() = default;
+        EncodedResource(std::vector<std::byte> value)
+            : bytes(std::move(value)) {}
+        EncodedResource(std::vector<std::byte> value,
+                        std::shared_ptr<const void> owner)
+            : bytes(std::move(value)), lifetime(std::move(owner)) {}
+    };
+
+    using EncodedResourceLoader = std::function<EncodedResource(
         const EncodedAudioSource& source)>;
 
     explicit JavaSoundPoolMixer(EncodedResourceLoader loader = {});

@@ -35,13 +35,19 @@ struct SandboxEntry final {
 
 class SandboxStore final {
 public:
-    // Opens (creating if needed) <root>/<package>/ and loads the overlay
+    // Opens (creating if needed) <root>/<installation_id>/ and loads the overlay.
     // index. Leftover crash temporaries are removed; the count is reported
     // through TemporaryFilesRemoved so the caller can log it.
     [[nodiscard]] static std::unique_ptr<SandboxStore> Open(
-        const std::filesystem::path& root, std::string_view package,
+        const std::filesystem::path& root, std::string_view installation_id,
+        std::string_view package,
         SandboxConfig config = {});
-
+    // Atomically reserves a previously unused installation id. Existing
+    // directories fail with EEXIST instead of being opened.
+    [[nodiscard]] static std::unique_ptr<SandboxStore> Create(
+        const std::filesystem::path& root, std::string_view installation_id,
+        std::string_view package,
+        SandboxConfig config = {});
     ~SandboxStore();
     SandboxStore(const SandboxStore&) = delete;
     SandboxStore& operator=(const SandboxStore&) = delete;
@@ -67,6 +73,7 @@ public:
     [[nodiscard]] std::uint64_t FileCount() const;
     [[nodiscard]] std::uint64_t QuotaBytes() const;
     [[nodiscard]] const std::string& Package() const;
+    [[nodiscard]] const std::string& InstallationId() const;
     [[nodiscard]] const std::filesystem::path& Directory() const;
     [[nodiscard]] std::uint64_t TemporaryFilesRemoved() const;
     // Diagnostic fact recorded in meta.toml; never used to pick behaviour.
@@ -85,6 +92,9 @@ public:
     [[nodiscard]] static std::string UnescapeSegment(std::string_view segment);
 
 private:
+    [[nodiscard]] static std::unique_ptr<SandboxStore> OpenInternal(
+        const std::filesystem::path& root, std::string_view installation_id,
+        std::string_view package, SandboxConfig config, bool require_new);
     class Impl;
     explicit SandboxStore(std::unique_ptr<Impl> impl) noexcept;
     std::unique_ptr<Impl> impl_;

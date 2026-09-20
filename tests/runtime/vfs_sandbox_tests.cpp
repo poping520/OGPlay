@@ -97,7 +97,7 @@ void WriteThrough(VirtualFileSystem& vfs, const std::string_view path,
 TEST_CASE("VFS sandbox keeps guest writes across two sessions") {
     const TemporaryRoot root("crosssession");
     {
-        auto store = SandboxStore::Open(root.path, kPackage);
+        auto store = SandboxStore::Open(root.path, kPackage, kPackage);
         VirtualFileSystem vfs;
         vfs.AttachSandbox(*store, kWritableRoots);
         CHECK(vfs.SandboxAttached());
@@ -110,7 +110,7 @@ TEST_CASE("VFS sandbox keeps guest writes across two sessions") {
     }
 
     // Session two: a fresh store and a fresh VFS over the same directory.
-    auto store = SandboxStore::Open(root.path, kPackage);
+    auto store = SandboxStore::Open(root.path, kPackage, kPackage);
     VirtualFileSystem vfs;
     vfs.AttachSandbox(*store, kWritableRoots);
     CHECK(ReadAll(vfs, "/sdcard/game/saves/slot0.sav") == "progress-42");
@@ -133,7 +133,7 @@ TEST_CASE("VFS sandbox overlays and tombstones a read-only base layer") {
         {"deleted.dat", {base.begin(), base.end()}}};
 
     {
-        auto store = SandboxStore::Open(root.path, kPackage);
+        auto store = SandboxStore::Open(root.path, kPackage, kPackage);
         VirtualFileSystem vfs;
         vfs.Mount(VfsSource::external, "/sdcard/data", entries);
         vfs.AttachSandbox(*store, kWritableRoots);
@@ -148,7 +148,7 @@ TEST_CASE("VFS sandbox overlays and tombstones a read-only base layer") {
         vfs.FlushAll();
     }
 
-    auto store = SandboxStore::Open(root.path, kPackage);
+    auto store = SandboxStore::Open(root.path, kPackage, kPackage);
     VirtualFileSystem vfs;
     // The base layer is mounted again exactly as before: it was never
     // written to.
@@ -172,14 +172,14 @@ TEST_CASE("VFS sandbox deletion never resurrects a previously shadowed base file
     const std::vector<VfsMountEntry> entries{{"save.dat", base}};
 
     {
-        auto store = SandboxStore::Open(root.path, kPackage);
+        auto store = SandboxStore::Open(root.path, kPackage, kPackage);
         VirtualFileSystem vfs;
         vfs.Mount(VfsSource::external, "/sdcard/data", entries);
         vfs.AttachSandbox(*store, kWritableRoots);
         WriteThrough(vfs, "/sdcard/data/save.dat", "new-save");
     }
     {
-        auto store = SandboxStore::Open(root.path, kPackage);
+        auto store = SandboxStore::Open(root.path, kPackage, kPackage);
         VirtualFileSystem vfs;
         vfs.Mount(VfsSource::external, "/sdcard/data", entries);
         vfs.AttachSandbox(*store, kWritableRoots);
@@ -187,7 +187,7 @@ TEST_CASE("VFS sandbox deletion never resurrects a previously shadowed base file
         vfs.RemoveFile("/sdcard/data/save.dat");
     }
 
-    auto store = SandboxStore::Open(root.path, kPackage);
+    auto store = SandboxStore::Open(root.path, kPackage, kPackage);
     VirtualFileSystem vfs;
     vfs.Mount(VfsSource::external, "/sdcard/data", entries);
     vfs.AttachSandbox(*store, kWritableRoots);
@@ -203,7 +203,7 @@ TEST_CASE("VFS sandbox recreate clears a tombstone before close and persists rea
     const std::vector<VfsMountEntry> entries{{"save.dat", base}};
 
     {
-        auto store = SandboxStore::Open(root.path, kPackage);
+        auto store = SandboxStore::Open(root.path, kPackage, kPackage);
         VirtualFileSystem vfs;
         vfs.Mount(VfsSource::external, "/sdcard/data", entries);
         vfs.AttachSandbox(*store, kWritableRoots);
@@ -224,7 +224,7 @@ TEST_CASE("VFS sandbox recreate clears a tombstone before close and persists rea
         vfs.Close(recreated);
     }
 
-    auto store = SandboxStore::Open(root.path, kPackage);
+    auto store = SandboxStore::Open(root.path, kPackage, kPackage);
     VirtualFileSystem vfs;
     vfs.Mount(VfsSource::external, "/sdcard/data", entries);
     vfs.AttachSandbox(*store, kWritableRoots);
@@ -234,7 +234,7 @@ TEST_CASE("VFS sandbox recreate clears a tombstone before close and persists rea
 
 TEST_CASE("VFS sandbox refuses writes outside the writable namespace") {
     const TemporaryRoot root("namespace");
-    auto store = SandboxStore::Open(root.path, kPackage);
+    auto store = SandboxStore::Open(root.path, kPackage, kPackage);
     VirtualFileSystem vfs;
     const std::array base{std::byte{'x'}};
     const std::vector<VfsMountEntry> entries{
@@ -256,7 +256,7 @@ TEST_CASE("VFS sandbox refuses writes outside the writable namespace") {
 
 TEST_CASE("VFS sandbox flushes at close and fsync but not before") {
     const TemporaryRoot root("flushpoints");
-    auto store = SandboxStore::Open(root.path, kPackage);
+    auto store = SandboxStore::Open(root.path, kPackage, kPackage);
     VirtualFileSystem vfs;
     vfs.AttachSandbox(*store, kWritableRoots);
 
@@ -285,7 +285,7 @@ TEST_CASE("VFS sandbox quota includes dirty bytes before close") {
     const TemporaryRoot root("dirty-quota");
     SandboxConfig config;
     config.byte_quota = 5;
-    auto store = SandboxStore::Open(root.path, kPackage, config);
+    auto store = SandboxStore::Open(root.path, kPackage, kPackage, config);
     VirtualFileSystem vfs;
     vfs.AttachSandbox(*store, kWritableRoots);
 
@@ -307,7 +307,7 @@ TEST_CASE("VFS sandbox does not rewrite a clean write-opened base file") {
     const TemporaryRoot root("clean-open");
     const auto base = Bytes("base");
     const std::vector<VfsMountEntry> entries{{"save.dat", base}};
-    auto store = SandboxStore::Open(root.path, kPackage);
+    auto store = SandboxStore::Open(root.path, kPackage, kPackage);
     VirtualFileSystem vfs;
     vfs.Mount(VfsSource::external, "/sdcard", entries);
     vfs.AttachSandbox(*store, kWritableRoots);
@@ -322,7 +322,7 @@ TEST_CASE("VFS sandbox does not rewrite a clean write-opened base file") {
 TEST_CASE("VFS sandbox persists rename and rmdir metadata immediately") {
     const TemporaryRoot root("metadata");
     {
-        auto store = SandboxStore::Open(root.path, kPackage);
+        auto store = SandboxStore::Open(root.path, kPackage, kPackage);
         VirtualFileSystem vfs;
         vfs.AttachSandbox(*store, kWritableRoots);
         vfs.CreateDirectory("/sdcard/tmpdir");
@@ -330,7 +330,7 @@ TEST_CASE("VFS sandbox persists rename and rmdir metadata immediately") {
         vfs.Rename("/sdcard/old.sav", "/sdcard/new.sav");
         vfs.RemoveDirectory("/sdcard/tmpdir");
     }
-    auto store = SandboxStore::Open(root.path, kPackage);
+    auto store = SandboxStore::Open(root.path, kPackage, kPackage);
     VirtualFileSystem vfs;
     vfs.AttachSandbox(*store, kWritableRoots);
     CHECK(ReadAll(vfs, "/sdcard/new.sav") == "body");
@@ -340,7 +340,7 @@ TEST_CASE("VFS sandbox persists rename and rmdir metadata immediately") {
 
 TEST_CASE("VFS rename over an open target orphans the replaced node") {
     const TemporaryRoot root("rename-orphan");
-    auto store = SandboxStore::Open(root.path, kPackage);
+    auto store = SandboxStore::Open(root.path, kPackage, kPackage);
     VirtualFileSystem vfs;
     vfs.AttachSandbox(*store, kWritableRoots);
 
@@ -373,8 +373,8 @@ TEST_CASE("VFS without a sandbox keeps its in-memory behaviour") {
 
 TEST_CASE("VFS refuses a second sandbox attachment") {
     const TemporaryRoot root("double");
-    auto first = SandboxStore::Open(root.path, kPackage);
-    auto second = SandboxStore::Open(root.path, "com.example.other");
+    auto first = SandboxStore::Open(root.path, kPackage, kPackage);
+    auto second = SandboxStore::Open(root.path, "com.example.other", "com.example.other");
     VirtualFileSystem vfs;
     vfs.AttachSandbox(*first, kWritableRoots);
     CHECK(ErrnoOf([&] { vfs.AttachSandbox(*second, kWritableRoots); }) == 17);

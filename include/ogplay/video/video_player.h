@@ -38,6 +38,14 @@ public:
     using std::runtime_error::runtime_error;
 };
 
+class VideoDataSource {
+public:
+    virtual ~VideoDataSource() = default;
+    [[nodiscard]] virtual std::uint64_t Size() const noexcept = 0;
+    [[nodiscard]] virtual std::size_t ReadAt(
+        std::uint64_t offset, std::span<std::byte> destination) const = 0;
+};
+
 // Throws VideoPlayerError when the metadata violates module bounds.
 void ValidateVideoMetadata(const VideoMetadata& metadata);
 
@@ -74,5 +82,7 @@ public:
 // Opens host_path or throws VideoPlayerError with a diagnosable reason.
 using VideoPlayerFactory = std::function<std::unique_ptr<VideoPlayer>(
     const std::filesystem::path& host_path)>;
+using VideoSourcePlayerFactory = std::function<std::unique_ptr<VideoPlayer>(
+    std::shared_ptr<const VideoDataSource> source)>;
 
 }  // namespace ogplay::video

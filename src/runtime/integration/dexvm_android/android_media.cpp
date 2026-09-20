@@ -546,7 +546,7 @@ std::optional<std::string> PumpAndroidAudioTracks(
                 ? head / static_cast<std::uint32_t>(period) -
                       prior_head / static_cast<std::uint32_t>(period)
                 : 0U;
-            state.last_notified_head = head;
+            if (period <= 0) state.last_notified_head = head;
             if (marker_due) state.marker_fired = true;
             if (marker_due) {
                 if (const auto error =
@@ -556,12 +556,22 @@ std::optional<std::string> PumpAndroidAudioTracks(
                 }
             }
             for (std::uint32_t index = 0; index < periodic_count; ++index) {
+                const auto delivered_head = static_cast<std::uint32_t>(
+                    (prior_head / static_cast<std::uint32_t>(period) +
+                     index + 1U) * static_cast<std::uint32_t>(period));
+                const auto expected_previous_head = index == 0U
+                    ? prior_head
+                    : delivered_head - static_cast<std::uint32_t>(period);
                 found = context.audio_tracks.find(handle);
                 if (found == context.audio_tracks.end() ||
                     found->second.notification_period != period ||
-                    found->second.last_notified_head != head) {
+                    found->second.last_notified_head != expected_previous_head) {
                     break;
                 }
+                // Advance only the threshold represented by this event. If a
+                // synchronous refill stops this pass, later lifecycle safe
+                // points must still observe every remaining crossed period.
+                found->second.last_notified_head = delivered_head;
                 const auto queued_before =
                     context.pcm_playback->QueuedBytes(found->second.player);
                 if (const auto error =
@@ -577,7 +587,9 @@ std::optional<std::string> PumpAndroidAudioTracks(
                 }
                 found = context.audio_tracks.find(handle);
                 if (found == context.audio_tracks.end() ||
-                    found->second.player != player) {
+                    found->second.player != player ||
+                    found->second.notification_period != period ||
+                    found->second.last_notified_head != delivered_head) {
                     break;
                 }
                 if (context.pcm_playback->QueuedBytes(found->second.player) >

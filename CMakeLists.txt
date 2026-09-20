@@ -853,6 +853,8 @@ if(OGPLAY_BUILD_TESTS)
         tests/runtime/sandbox_store_tests.cpp
         tests/runtime/vfs_sandbox_tests.cpp
         tests/runtime/vfs_tests.cpp
+        tests/frontend/run_apk_vfs_tests.cpp
+        src/frontend/cli/run_apk_vfs.cpp
         tests/loader/apk_tests.cpp
         tests/loader/apk_manifest_tests.cpp
         tests/loader/binary_xml_tests.cpp

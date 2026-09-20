@@ -119,15 +119,16 @@ bool JavaSoundPoolMixer::Load(const EncodedAudioSource& source) {
         std::scoped_lock lock(mutex_);
         if (resources_.contains(source)) return true;
     }
-    std::vector<std::byte> encoded;
+    EncodedResource encoded;
     try {
         encoded = loader_(source);
-        if (encoded.empty() || encoded.size() > kMaximumEncodedAudioBytes) {
+        if (encoded.bytes.empty() ||
+            encoded.bytes.size() > kMaximumEncodedAudioBytes) {
             std::scoped_lock lock(mutex_);
             failures_[source] = "encoded audio source is unavailable";
             return false;
         }
-        auto decoded = DecodeEncodedAudio(encoded);
+        auto decoded = DecodeEncodedAudio(encoded.bytes);
         std::scoped_lock lock(mutex_);
         if (resources_.contains(source)) return true;
         std::size_t cached = decoded.interleaved_samples.size() * sizeof(std::int16_t);

@@ -191,7 +191,9 @@ extension string 与错误锁存以 native registry 为唯一事实。
 
 - MediaPlayer/VideoView 只消费受检资源、路径或逻辑 FD 区间并交给唯一 decoder/mixer；不创建
   host fd 或第二播放器。音频 MediaPlayer 使用 `EncodedMusicMixer` 每实例状态；SoundPool 使用
-  `JavaSoundPoolMixer` 池隔离。`LoadEncodedAudioWindow` 读取 resid/APK/VFS 窗口或已捕获 lease；
+  `JavaSoundPoolMixer` 池隔离。音乐经 `LoadEncodedAudioSource` 增量读取 resid/APK/VFS
+  窗口或已捕获 lease；仅 SoundPool 短音效使用 `LoadEncodedAudioWindow` 全量读取。
+  VideoView 原子捕获 VFS lease 并交给 source factory，不查询宿主路径；
   `setDataSource(FileDescriptor)` 在关闭原 FD 后仍保留窗口。同路径 VFS 替换不得命中旧缓存。
   原版事件经 `postEventFromNative` 和 Handler/Looper；`mNativeContext` 为非零 32 位 token。
   MediaPlayer 使用显式 Idle/Initialized/Preparing/Prepared/Started/Paused/Stopped/

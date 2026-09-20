@@ -4,6 +4,12 @@
 
 ## 最近进展
 
+- [VFS 专项](../design/vfs/README.md) VFS-01/02/03 已实现并完成定向交叉验收：节点/backing/
+  打开状态与定位 IO、统一资源预算、APK/OBB range backing、音乐/视频 lease、安装实例 id
+  和 schema 3 四根沙盒均已接入生产入口。VFS、沙盒、syscall/Java 文件、SQLite、归档、
+  音频与 Fake VideoView 回归通过；本机缺 FFmpeg 7 DLL，custom AVIO 真实解码用例按契约
+  跳过并保留为环境验收缺口，不影响来源接口和无宿主路径链的完成判断。
+
 - [DVM-189](../tasks/dexvm/DVM-189.md) 末轮五项修复已完成定向验证：worker 故障统一唤醒
   writer、有界可取消准备任务、显式 MediaPlayer transport 阶段、按 stream 输出增益、
   OGG/MP3/WAV 增量音乐解码；AudioTrack 同步回填不再丢弃其余已跨越 periodic 通知。

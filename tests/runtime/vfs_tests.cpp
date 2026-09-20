@@ -1,16 +1,33 @@
 #include <doctest/doctest.h>
 
+#include <algorithm>
 #include <array>
+#include <atomic>
 #include <chrono>
 #include <cstddef>
 #include <filesystem>
 #include <fstream>
 #include <functional>
+#include <future>
+#include <mutex>
+#include <condition_variable>
 #include <string>
 #include <string_view>
+#include <thread>
 #include <vector>
 
 #include "ogplay/runtime/vfs/vfs.h"
+
+namespace {
+
+std::vector<std::byte> ReadLease(
+    const std::shared_ptr<const ogplay::runtime::VfsReadLease>& lease) {
+    std::vector<std::byte> bytes(static_cast<std::size_t>(lease->Size()));
+    REQUIRE(lease->ReadAt(0, bytes) == bytes.size());
+    return bytes;
+}
+
+}  // namespace
 
 TEST_CASE("VFS indexes Android paths case insensitively and isolates offsets") {
     ogplay::runtime::VirtualFileSystem vfs;
@@ -219,6 +236,293 @@ TEST_CASE("VFS lazy mount retries explicit backing failures") {
     vfs.Close(descriptor);
 }
 
+TEST_CASE("VFS positioned IO preserves descriptor offsets and bounds reads") {
+    ogplay::runtime::VirtualFileSystem vfs;
+    std::size_t bytes_read{};
+    std::size_t full_loads{};
+    const std::array data{std::byte{1}, std::byte{2}, std::byte{3},
+                          std::byte{4}, std::byte{5}};
+    const std::vector<ogplay::runtime::VfsLazyMountEntry> entries{{
+        "large.bin", data.size(),
+        [&] {
+            ++full_loads;
+            return std::vector<std::byte>(data.begin(), data.end());
+        },
+        [&](const std::uint64_t offset, std::span<std::byte> destination) {
+            const auto count = std::min<std::size_t>(
+                destination.size(), data.size() - static_cast<std::size_t>(offset));
+            std::copy_n(data.begin() + static_cast<std::ptrdiff_t>(offset), count,
+                        destination.begin());
+            bytes_read += count;
+            return count;
+        },
+    }};
+    vfs.MountLazyReadOnly(ogplay::runtime::VfsSource::apk, "/apk", entries);
+    const auto descriptor = vfs.Open("/apk/large.bin", {.read = true});
+    std::array<std::byte, 2> positioned{};
+    CHECK(vfs.ReadAt(descriptor, 2, positioned) == 2);
+    CHECK(positioned == std::array{std::byte{3}, std::byte{4}});
+    std::array<std::byte, 2> sequential{};
+    CHECK(vfs.Read(descriptor, sequential) == 2);
+    CHECK(sequential == std::array{std::byte{1}, std::byte{2}});
+    CHECK(full_loads == 0);
+    CHECK(bytes_read == 4);
+    vfs.Close(descriptor);
+
+    const auto writable = vfs.Open(
+        "/data/data/example/file", {.read = true, .write = true, .create = true});
+    CHECK(vfs.Write(writable, data) == data.size());
+    CHECK(vfs.Seek(writable, 1, ogplay::runtime::VfsSeekWhence::begin) == 1);
+    const std::array replacement{std::byte{9}};
+    CHECK(vfs.WriteAt(writable, 3, replacement) == 1);
+    CHECK(vfs.Seek(writable, 0, ogplay::runtime::VfsSeekWhence::current) == 1);
+    std::array<std::byte, 5> updated{};
+    CHECK(vfs.ReadAt(writable, 0, updated) == updated.size());
+    CHECK(updated[3] == std::byte{9});
+    vfs.Close(writable);
+}
+
+TEST_CASE("VFS blocked backing read does not hold the global index lock") {
+    ogplay::runtime::VirtualFileSystem vfs;
+    std::mutex barrier_mutex;
+    std::condition_variable barrier;
+    bool entered{};
+    bool release{};
+    const std::vector<ogplay::runtime::VfsLazyMountEntry> entries{{
+        "blocked.bin", 1,
+        [] { return std::vector<std::byte>{std::byte{1}}; },
+        [&](std::uint64_t, std::span<std::byte> destination) {
+            std::unique_lock lock(barrier_mutex);
+            entered = true;
+            barrier.notify_all();
+            barrier.wait(lock, [&] { return release; });
+            destination[0] = std::byte{1};
+            return std::size_t{1};
+        },
+    }};
+    vfs.MountLazyReadOnly(ogplay::runtime::VfsSource::apk, "/apk", entries);
+    const auto descriptor = vfs.Open("/apk/blocked.bin", {.read = true});
+    auto blocked = std::async(std::launch::async, [&] {
+        std::array<std::byte, 1> byte{};
+        return vfs.Read(descriptor, byte);
+    });
+    {
+        std::unique_lock lock(barrier_mutex);
+        REQUIRE(barrier.wait_for(lock, std::chrono::seconds(2),
+                                 [&] { return entered; }));
+    }
+    auto independent = std::async(std::launch::async, [&] {
+        CHECK(vfs.Stat("/apk/blocked.bin").size == 1);
+        const auto other = vfs.Open("/apk/blocked.bin", {.read = true});
+        vfs.Close(other);
+    });
+    CHECK(independent.wait_for(std::chrono::seconds(2)) ==
+          std::future_status::ready);
+    {
+        std::scoped_lock lock(barrier_mutex);
+        release = true;
+    }
+    barrier.notify_all();
+    CHECK(blocked.get() == 1);
+    independent.get();
+    vfs.Close(descriptor);
+}
+
+TEST_CASE("VFS close detaches a blocked open state before descriptor reuse") {
+    ogplay::runtime::VirtualFileSystem vfs;
+    std::mutex barrier_mutex;
+    std::condition_variable barrier;
+    bool entered{};
+    bool release{};
+    const std::vector<ogplay::runtime::VfsLazyMountEntry> entries{{
+        "old.bin", 1,
+        [] { return std::vector<std::byte>{std::byte{1}}; },
+        [&](std::uint64_t, std::span<std::byte> destination) {
+            std::unique_lock lock(barrier_mutex);
+            entered = true;
+            barrier.notify_all();
+            barrier.wait(lock, [&] { return release; });
+            destination[0] = std::byte{1};
+            return std::size_t{1};
+        },
+    }};
+    vfs.MountLazyReadOnly(ogplay::runtime::VfsSource::apk, "/apk", entries);
+    const auto old_descriptor = vfs.Open("/apk/old.bin", {.read = true});
+    std::array<std::byte, 1> old_byte{};
+    auto reading = std::async(std::launch::async, [&] {
+        return vfs.Read(old_descriptor, old_byte);
+    });
+    {
+        std::unique_lock lock(barrier_mutex);
+        REQUIRE(barrier.wait_for(lock, std::chrono::seconds(2),
+                                 [&] { return entered; }));
+    }
+    std::promise<void> close_started;
+    auto close_started_future = close_started.get_future();
+    auto closing = std::async(std::launch::async, [&] {
+        close_started.set_value();
+        vfs.Close(old_descriptor);
+    });
+    close_started_future.wait();
+
+    std::int32_t reused{-1};
+    const auto deadline = std::chrono::steady_clock::now() +
+                          std::chrono::seconds(2);
+    do {
+        const auto candidate = vfs.Open("/apk/old.bin", {.read = true});
+        if (candidate == old_descriptor) {
+            reused = candidate;
+            break;
+        }
+        vfs.Close(candidate);
+        std::this_thread::yield();
+    } while (std::chrono::steady_clock::now() < deadline);
+    REQUIRE(reused == old_descriptor);
+    CHECK(closing.wait_for(std::chrono::seconds(0)) ==
+          std::future_status::timeout);
+
+    {
+        std::scoped_lock lock(barrier_mutex);
+        release = true;
+    }
+    barrier.notify_all();
+    CHECK(reading.get() == 1U);
+    closing.get();
+    CHECK(old_byte[0] == std::byte{1});
+    std::array<std::byte, 1> new_byte{};
+    CHECK(vfs.Read(reused, new_byte) == 1U);
+    CHECK(new_byte[0] == std::byte{1});
+    vfs.Close(reused);
+}
+
+TEST_CASE("VFS serializes same descriptor seek and keeps failed read offset") {
+    ogplay::runtime::VirtualFileSystem vfs;
+    std::mutex barrier_mutex;
+    std::condition_variable barrier;
+    bool entered{};
+    bool release{};
+    bool fail_first{true};
+    const std::array data{std::byte{1}, std::byte{2}, std::byte{3}};
+    const std::vector<ogplay::runtime::VfsLazyMountEntry> entries{{
+        "file.bin", data.size(),
+        [&] { return std::vector<std::byte>(data.begin(), data.end()); },
+        [&](const std::uint64_t offset, const std::span<std::byte> destination) {
+            if (fail_first) {
+                fail_first = false;
+                throw std::runtime_error("injected read failure");
+            }
+            {
+                std::unique_lock lock(barrier_mutex);
+                entered = true;
+                barrier.notify_all();
+                barrier.wait(lock, [&] { return release; });
+            }
+            std::copy_n(data.begin() + static_cast<std::ptrdiff_t>(offset),
+                        destination.size(), destination.begin());
+            return destination.size();
+        },
+    }};
+    vfs.MountLazyReadOnly(ogplay::runtime::VfsSource::apk, "/apk", entries);
+    const auto descriptor = vfs.Open("/apk/file.bin", {.read = true});
+    std::array<std::byte, 1> byte{};
+    CHECK_THROWS(static_cast<void>(vfs.Read(descriptor, byte)));
+    auto reading = std::async(std::launch::async, [&] {
+        return vfs.Read(descriptor, byte);
+    });
+    {
+        std::unique_lock lock(barrier_mutex);
+        REQUIRE(barrier.wait_for(lock, std::chrono::seconds(2),
+                                 [&] { return entered; }));
+    }
+    std::promise<void> seek_started;
+    auto seek_started_future = seek_started.get_future();
+    auto seeking = std::async(std::launch::async, [&] {
+        seek_started.set_value();
+        return vfs.Seek(descriptor, 0,
+                        ogplay::runtime::VfsSeekWhence::current);
+    });
+    seek_started_future.wait();
+    CHECK(seeking.wait_for(std::chrono::seconds(0)) ==
+          std::future_status::timeout);
+    {
+        std::scoped_lock lock(barrier_mutex);
+        release = true;
+    }
+    barrier.notify_all();
+    CHECK(reading.get() == 1U);
+    CHECK(byte[0] == std::byte{1});
+    CHECK(seeking.get() == 1U);
+    vfs.Close(descriptor);
+}
+
+TEST_CASE("VFS leases retain source identity across close unlink and replacement") {
+    ogplay::runtime::VirtualFileSystem vfs;
+    const std::array original{std::byte{'a'}, std::byte{'b'}, std::byte{'c'}};
+    vfs.PutFile("/data/file", original, true);
+    const auto descriptor = vfs.Open("/data/file", {.read = true, .write = true});
+    const auto lease = vfs.CaptureReadLease(descriptor, 1, 2);
+    vfs.Close(descriptor);
+    vfs.RemoveFile("/data/file");
+    const auto replacement = vfs.Open(
+        "/data/file", {.read = true, .write = true, .create = true});
+    const std::array newer{std::byte{'x'}, std::byte{'y'}, std::byte{'z'}};
+    CHECK(vfs.Write(replacement, newer) == newer.size());
+    vfs.Close(replacement);
+    CHECK(ReadLease(lease) ==
+          std::vector<std::byte>{std::byte{'b'}, std::byte{'c'}});
+
+    vfs.PutFile("/data/rename-source", newer, true);
+    vfs.PutFile("/data/rename-target", original, true);
+    const auto target = vfs.Open(
+        "/data/rename-target", {.read = true, .write = true});
+    const auto replaced_lease = vfs.CaptureReadLease(target, 0);
+    vfs.Rename("/data/rename-source", "/data/rename-target");
+    vfs.Close(target);
+    CHECK(ReadLease(replaced_lease) ==
+          std::vector<std::byte>(original.begin(), original.end()));
+}
+
+TEST_CASE("VFS writable lease snapshots are immutable") {
+    ogplay::runtime::VirtualFileSystem vfs;
+    const std::array original{std::byte{1}, std::byte{2}};
+    vfs.PutFile("/data/snapshot", original, true);
+    const auto descriptor = vfs.Open(
+        "/data/snapshot", {.read = true, .write = true});
+    const auto lease = vfs.CaptureReadLease(descriptor, 0);
+    CHECK_THROWS_WITH(
+        static_cast<void>(vfs.CaptureReadLease(descriptor, 3, 0)),
+        "VFS lease offset is past EOF");
+    CHECK_THROWS_WITH(
+        static_cast<void>(vfs.CaptureReadLease(descriptor, 1, 2)),
+        "VFS lease exceeds EOF");
+    std::array<std::byte, 1> end{};
+    CHECK(lease->ReadAt(lease->Size(), end) == 0U);
+    CHECK(lease->ReadAt(0, {}) == 0U);
+    const std::array changed{std::byte{9}, std::byte{9}};
+    CHECK(vfs.WriteAt(descriptor, 0, changed) == changed.size());
+    CHECK(ReadLease(lease) ==
+          std::vector<std::byte>{std::byte{1}, std::byte{2}});
+    vfs.Close(descriptor);
+}
+
+TEST_CASE("VFS writable lease budget is aggregate and released on destruction") {
+    ogplay::runtime::VirtualFileSystem vfs({.resource_memory_budget_bytes = 3U});
+    const std::array original{std::byte{1}, std::byte{2}, std::byte{3}};
+    vfs.PutFile("/data/budget", original, true);
+    const auto descriptor = vfs.Open(
+        "/data/budget", {.read = true, .write = true});
+    auto first = vfs.CaptureReadLease(descriptor, 0, 2);
+    CHECK(vfs.IoStatistics().lease_snapshot_bytes == 2U);
+    CHECK_THROWS_WITH(static_cast<void>(vfs.CaptureReadLease(descriptor, 1, 2)),
+                      "VFS resource memory budget exhausted");
+    first.reset();
+    CHECK(vfs.IoStatistics().lease_snapshot_bytes == 0U);
+    const auto second = vfs.CaptureReadLease(descriptor, 0, 3);
+    CHECK(second->Size() == 3U);
+    CHECK(vfs.IoStatistics().lease_snapshot_high_water == 3U);
+    vfs.Close(descriptor);
+}
+
 TEST_CASE("VFS host directory mount lazily reads and preserves external writes") {
     const auto unique = std::to_string(
         std::chrono::steady_clock::now().time_since_epoch().count());
@@ -256,31 +560,165 @@ TEST_CASE("VFS host directory mount lazily reads and preserves external writes")
     std::filesystem::remove_all(root);
 }
 
-TEST_CASE("VFS answers the backing host path only for host-mounted files") {
+TEST_CASE("VFS large host file small reads stay positioned and unmaterialized") {
     const auto unique = std::to_string(
         std::chrono::steady_clock::now().time_since_epoch().count());
     const auto root = std::filesystem::temp_directory_path() /
-                      ("ogplay-vfs-hostpath-" + unique);
-    const auto nested = root / "Data";
-    std::filesystem::create_directories(nested);
-    const auto backing = nested / "Movie.mp4";
+                      ("ogplay-vfs-large-" + unique);
+    std::filesystem::create_directories(root);
+    const auto backing = root / "large.bin";
+    constexpr std::size_t size = 8U * 1024U * 1024U;
     {
         std::ofstream output(backing, std::ios::binary);
-        output.write("abc", 3);
+        std::array<char, 4096> block{};
+        for (std::size_t offset = 0; offset < size; offset += block.size()) {
+            block.fill(static_cast<char>((offset / block.size()) & 0x7fU));
+            output.write(block.data(), static_cast<std::streamsize>(block.size()));
+        }
     }
+    {
+        ogplay::runtime::VirtualFileSystem vfs;
+        vfs.MountHostDirectory("/host", root);
+        const auto descriptor = vfs.Open("/host/large.bin", {.read = true});
+        std::array<std::byte, 4> bytes{};
+        CHECK(vfs.ReadAt(descriptor, 0, bytes) == bytes.size());
+        CHECK(vfs.ReadAt(descriptor, size / 2U, bytes) == bytes.size());
+        CHECK(vfs.ReadAt(descriptor, size - bytes.size(), bytes) == bytes.size());
+        CHECK(vfs.ReadAt(descriptor, size, bytes) == 0U);
+        CHECK(vfs.ReadAt(descriptor, 0, {}) == 0U);
+        const auto stats = vfs.IoStatistics();
+        CHECK(stats.backing_read_bytes == 12U);
+        CHECK(stats.full_materialized_bytes == 0U);
+        vfs.Close(descriptor);
+    }
+    std::error_code error;
+    std::filesystem::remove_all(root, error);
+    CHECK_FALSE(error);
+}
 
+TEST_CASE("VFS large virtual source reads only requested windows") {
+    constexpr std::uint64_t size = 64ULL * 1024ULL * 1024ULL;
+    std::uint64_t source_bytes{};
+    unsigned read_all_calls{};
+    const std::vector<ogplay::runtime::VfsLazyMountEntry> entries{{
+        "large.bin", size,
+        [&] {
+            ++read_all_calls;
+            return std::vector<std::byte>(static_cast<std::size_t>(size));
+        },
+        [&](const std::uint64_t offset,
+            const std::span<std::byte> destination) {
+            source_bytes += destination.size();
+            std::fill(destination.begin(), destination.end(),
+                      static_cast<std::byte>(offset & 0xffU));
+            return destination.size();
+        },
+    }};
     ogplay::runtime::VirtualFileSystem vfs;
-    vfs.MountHostDirectory("/sdcard/game", root);
-    const std::array memory{std::byte{'m'}};
-    vfs.PutFile("/data/local/file.bin", memory, false);
+    vfs.MountLazyReadOnly(ogplay::runtime::VfsSource::apk, "/apk", entries);
+    const auto descriptor = vfs.Open("/apk/large.bin", {.read = true});
+    std::array<std::byte, 3> bytes{};
+    CHECK(vfs.ReadAt(descriptor, 0, bytes) == bytes.size());
+    CHECK(vfs.ReadAt(descriptor, size / 2U, bytes) == bytes.size());
+    CHECK(vfs.ReadAt(descriptor, size - bytes.size(), bytes) == bytes.size());
+    CHECK(vfs.ReadAt(descriptor, size, bytes) == 0U);
+    CHECK(vfs.ReadAt(descriptor, 0, {}) == 0U);
+    CHECK(source_bytes == 9U);
+    CHECK(read_all_calls == 0U);
+    const auto statistics = vfs.IoStatistics();
+    CHECK(statistics.backing_read_bytes == 9U);
+    CHECK(statistics.full_materialized_bytes == 0U);
+    CHECK(statistics.resource_memory_high_water == 0U);
+    vfs.Close(descriptor);
+}
 
-    const auto host = vfs.HostPathFor("/SDCARD/Game/data/movie.mp4");
-    REQUIRE(host.has_value());
-    CHECK(*host == backing);
-    CHECK_FALSE(vfs.HostPathFor("/data/local/file.bin").has_value());
-    CHECK_FALSE(vfs.HostPathFor("/sdcard/game/data/absent.mp4").has_value());
+TEST_CASE("VFS lease forwards cancellation into a backing read") {
+    std::promise<void> entered;
+    std::atomic_int error_number{};
+    const std::vector<ogplay::runtime::VfsLazyMountEntry> entries{{
+        "slow.bin", 1U,
+        [] { return std::vector<std::byte>(1U); },
+        [&](const std::uint64_t, const std::span<std::byte>,
+            const std::stop_token stop) {
+            entered.set_value();
+            while (!stop.stop_requested()) std::this_thread::yield();
+            return std::size_t{};
+        },
+    }};
+    ogplay::runtime::VirtualFileSystem vfs;
+    vfs.MountLazyReadOnly(ogplay::runtime::VfsSource::apk, "/apk", entries);
+    const auto descriptor = vfs.Open("/apk/slow.bin", {.read = true});
+    const auto lease = vfs.CaptureReadLease(descriptor, 0);
+    std::stop_source cancellation;
+    std::thread reader([&] {
+        std::array<std::byte, 1> output{};
+        try {
+            static_cast<void>(lease->ReadAt(0, output,
+                                            cancellation.get_token()));
+        } catch (const ogplay::runtime::VfsError& error) {
+            error_number.store(error.ErrorNumber());
+        }
+    });
+    entered.get_future().wait();
+    cancellation.request_stop();
+    reader.join();
+    CHECK(error_number.load() == 125);
+    vfs.Close(descriptor);
+}
 
-    std::filesystem::remove_all(root);
+TEST_CASE("VFS writable host materialization reserves memory before loading") {
+    const auto unique = std::to_string(
+        std::chrono::steady_clock::now().time_since_epoch().count());
+    const auto root = std::filesystem::temp_directory_path() /
+                      ("ogplay-vfs-materialize-budget-" + unique);
+    std::filesystem::create_directories(root);
+    {
+        std::ofstream output(root / "save.bin", std::ios::binary);
+        output.write("save", 4);
+    }
+    {
+        ogplay::runtime::VirtualFileSystem vfs(
+            {.resource_memory_budget_bytes = 3U});
+        vfs.MountHostDirectory("/sdcard", root);
+        const auto descriptor = vfs.Open(
+            "/sdcard/save.bin", {.read = true, .write = true});
+        const std::array replacement{std::byte{'x'}};
+        CHECK_THROWS_WITH(
+            static_cast<void>(vfs.WriteAt(descriptor, 0, replacement)),
+            "VFS resource memory budget exhausted");
+        CHECK(vfs.IoStatistics().resource_memory_bytes == 0U);
+        vfs.Close(descriptor);
+    }
+    std::error_code error;
+    std::filesystem::remove_all(root, error);
+    CHECK_FALSE(error);
+}
+
+TEST_CASE("VFS writable materialization reserves later growth") {
+    const auto unique = std::to_string(
+        std::chrono::steady_clock::now().time_since_epoch().count());
+    const auto root = std::filesystem::temp_directory_path() /
+                      ("ogplay-vfs-growth-budget-" + unique);
+    std::filesystem::create_directories(root);
+    { std::ofstream(root / "save.bin", std::ios::binary) << "save"; }
+    ogplay::runtime::VirtualFileSystem vfs(
+        {.resource_memory_budget_bytes = 5U});
+    vfs.MountHostDirectory("/sdcard", root);
+    const auto descriptor = vfs.Open(
+        "/sdcard/save.bin", {.read = true, .write = true});
+    const std::array replacement{std::byte{'x'}};
+    CHECK(vfs.WriteAt(descriptor, 0, replacement) == 1U);
+    vfs.Truncate(descriptor, 1U);
+    CHECK(vfs.WriteAt(descriptor, 3U, replacement) == 1U);
+    const std::array growth{std::byte{'a'}, std::byte{'b'}};
+    CHECK_THROWS_WITH(static_cast<void>(vfs.WriteAt(descriptor, 4, growth)),
+                      "VFS resource memory budget exhausted");
+    CHECK(vfs.Stat("/sdcard/save.bin").size == 4U);
+    CHECK(vfs.IoStatistics().resource_memory_bytes == 4U);
+    vfs.Close(descriptor);
+    std::error_code error;
+    std::filesystem::remove_all(root, error);
+    CHECK_FALSE(error);
 }
 
 TEST_CASE("VFS host directory mount rejects unsafe and ambiguous trees transactionally") {
@@ -337,6 +775,17 @@ TEST_CASE("VFS pipe connects isolated read and write descriptors") {
     CHECK_THROWS_AS(static_cast<void>(
                         vfs.Write(pipe.read_descriptor, message)),
                     ogplay::runtime::VfsError);
+    CHECK_THROWS_WITH(
+        static_cast<void>(vfs.ReadAt(pipe.read_descriptor, 0, received)),
+        "VFS pipe does not support positioned IO");
+    CHECK_THROWS_WITH(
+        static_cast<void>(vfs.WriteAt(pipe.write_descriptor, 0, message)),
+        "VFS pipe does not support positioned IO");
+    CHECK_THROWS_WITH(
+        static_cast<void>(vfs.Seek(
+            pipe.read_descriptor, 0,
+            ogplay::runtime::VfsSeekWhence::begin)),
+        "VFS pipe is not seekable");
     vfs.Close(pipe.read_descriptor);
     vfs.Close(pipe.write_descriptor);
 }
@@ -473,6 +922,47 @@ TEST_CASE("VFS truncate shrinks and grows through the descriptor") {
     const auto reader = vfs.Open("/sdcard/save.dat", {.read = true});
     CHECK(ErrnoOf([&] { vfs.Truncate(reader, 0); }) == 9);  // EBADF
     vfs.Close(reader);
+}
+
+TEST_CASE("VFS concurrent read and truncate are ordered by node identity") {
+    VirtualFileSystem vfs;
+    const std::vector<std::byte> contents(256U * 1024U, std::byte{7});
+    vfs.PutFile("/sdcard/ordered.dat", contents, true);
+    const auto reader = vfs.Open("/sdcard/ordered.dat", {.read = true});
+    const auto writer = vfs.Open("/sdcard/ordered.dat", {.write = true});
+    std::mutex start_mutex;
+    std::condition_variable start_barrier;
+    unsigned ready{};
+    bool start{};
+    auto arrive = [&] {
+        std::unique_lock lock(start_mutex);
+        ++ready;
+        start_barrier.notify_all();
+        start_barrier.wait(lock, [&] { return start; });
+    };
+    std::vector<std::byte> output(contents.size());
+    auto reading = std::async(std::launch::async, [&] {
+        arrive();
+        return vfs.Read(reader, output);
+    });
+    auto truncating = std::async(std::launch::async, [&] {
+        arrive();
+        vfs.Truncate(writer, 0);
+    });
+    {
+        std::unique_lock lock(start_mutex);
+        REQUIRE(start_barrier.wait_for(lock, std::chrono::seconds(2),
+                                       [&] { return ready == 2U; }));
+        start = true;
+    }
+    start_barrier.notify_all();
+    const auto count = reading.get();
+    truncating.get();
+    CHECK((count == 0U || count == contents.size()));
+    if (count == contents.size()) CHECK(output == contents);
+    CHECK(vfs.Stat("/sdcard/ordered.dat").size == 0U);
+    vfs.Close(reader);
+    vfs.Close(writer);
 }
 
 TEST_CASE("VFS flush validates its descriptor without a sandbox attached") {

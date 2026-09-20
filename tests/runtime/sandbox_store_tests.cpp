@@ -72,7 +72,7 @@ constexpr const char* kPackage = "com.example.game";
 TEST_CASE("sandbox store round-trips its layout across two openings") {
     const TemporaryRoot root("roundtrip");
     {
-        auto store = SandboxStore::Open(root.path, kPackage);
+        auto store = SandboxStore::Open(root.path, kPackage, kPackage);
         store->WriteFileAtomic("/data/data/com.example.game/files/save0.dat",
                                Bytes("progress"));
         store->CreateDirectory("/sdcard/game/empty");
@@ -80,12 +80,11 @@ TEST_CASE("sandbox store round-trips its layout across two openings") {
         CHECK(store->UsedBytes() == 8);
     }
 
-    // fs/ mirrors guest paths 1:1 so a user can find a save by hand.
+    // Internal data omits both the legacy fs/ mirror and repeated package.
     CHECK(std::filesystem::exists(
-        root.path / kPackage / "fs" / "data" / "data" / "com.example.game" /
-        "files" / "save0.dat"));
+        root.path / kPackage / "internal" / "files" / "save0.dat"));
 
-    auto reopened = SandboxStore::Open(root.path, kPackage);
+    auto reopened = SandboxStore::Open(root.path, kPackage, kPackage);
     const auto entries = reopened->Entries();
     const auto* save = Find(entries, "/data/data/com.example.game/files/save0.dat");
     REQUIRE(save != nullptr);
@@ -110,26 +109,26 @@ TEST_CASE("sandbox store round-trips its layout across two openings") {
 
 TEST_CASE("sandbox store replaces files atomically and clears crash residue") {
     const TemporaryRoot root("atomic");
-    const auto target = root.path / kPackage / "fs" / "sdcard" / "save.dat";
+    const auto target = root.path / kPackage / "sdcard" / "save.dat";
     {
-        auto store = SandboxStore::Open(root.path, kPackage);
+        auto store = SandboxStore::Open(root.path, kPackage, kPackage);
         store->WriteFileAtomic("/sdcard/save.dat", Bytes("first"));
         store->WriteFileAtomic("/sdcard/save.dat", Bytes("second-longer"));
         CHECK(Text(store->ReadFile("/sdcard/save.dat")) == "second-longer");
         CHECK(store->UsedBytes() == 13);
         // No temporary survives a completed write.
         CHECK_FALSE(std::filesystem::exists(
-            root.path / kPackage / "fs" / "sdcard" /
+            root.path / kPackage / "sdcard" /
             "save.dat.__ogplay_tmp__"));
     }
     // Simulate a crash mid-write: the temporary is residue, the committed
     // file is intact.
     {
-        std::ofstream residue(root.path / kPackage / "fs" / "sdcard" /
+        std::ofstream residue(root.path / kPackage / "sdcard" /
                               "save.dat.__ogplay_tmp__");
         residue << "half";
     }
-    auto reopened = SandboxStore::Open(root.path, kPackage);
+    auto reopened = SandboxStore::Open(root.path, kPackage, kPackage);
     CHECK(reopened->TemporaryFilesRemoved() == 1);
     CHECK(Text(reopened->ReadFile("/sdcard/save.dat")) == "second-longer");
     CHECK(std::filesystem::exists(target));
@@ -162,10 +161,10 @@ TEST_CASE("sandbox store escapes host-hostile names without losing bytes") {
 TEST_CASE("sandbox store persists escaped names across openings") {
     const TemporaryRoot root("escape");
     {
-        auto store = SandboxStore::Open(root.path, kPackage);
+        auto store = SandboxStore::Open(root.path, kPackage, kPackage);
         store->WriteFileAtomic("/sdcard/weird/a:b?c*/con", Bytes("x"));
     }
-    auto reopened = SandboxStore::Open(root.path, kPackage);
+    auto reopened = SandboxStore::Open(root.path, kPackage, kPackage);
     const auto entries = reopened->Entries();
     REQUIRE(Find(entries, "/sdcard/weird/a:b?c*/con") != nullptr);
     CHECK(Text(reopened->ReadFile("/sdcard/weird/a:b?c*/con")) == "x");
@@ -173,7 +172,7 @@ TEST_CASE("sandbox store persists escaped names across openings") {
 
 TEST_CASE("sandbox store refuses to escape its own root") {
     const TemporaryRoot root("traversal");
-    auto store = SandboxStore::Open(root.path, kPackage);
+    auto store = SandboxStore::Open(root.path, kPackage, kPackage);
     CHECK_THROWS_AS(store->WriteFileAtomic("/sdcard/../../escape", Bytes("x")),
                     VfsError);
     CHECK_THROWS_AS(store->WriteFileAtomic("relative/path", Bytes("x")),
@@ -192,7 +191,7 @@ TEST_CASE("sandbox store enforces byte and file quotas with -ENOSPC") {
     SandboxConfig config;
     config.byte_quota = 16;
     config.maximum_files = 3;
-    auto store = SandboxStore::Open(root.path, kPackage, config);
+    auto store = SandboxStore::Open(root.path, kPackage, kPackage, config);
 
     store->WriteFileAtomic("/sdcard/a", Bytes("0123456789"));
     // Rewriting the same path only counts its new size, not both.
@@ -220,7 +219,7 @@ TEST_CASE("sandbox tombstones do not consume the active file quota") {
     const TemporaryRoot root("tombstone-quota");
     SandboxConfig config;
     config.maximum_files = 1;
-    auto store = SandboxStore::Open(root.path, kPackage, config);
+    auto store = SandboxStore::Open(root.path, kPackage, kPackage, config);
     store->WriteFileAtomic("/sdcard/only", Bytes("x"));
 
     // Deleting a base-layer path must remain possible even while the
@@ -234,7 +233,7 @@ TEST_CASE("sandbox tombstones do not consume the active file quota") {
 
 TEST_CASE("sandbox store tombstones shadow and then release a path") {
     const TemporaryRoot root("tombstone");
-    auto store = SandboxStore::Open(root.path, kPackage);
+    auto store = SandboxStore::Open(root.path, kPackage, kPackage);
     store->WriteFileAtomic("/sdcard/save.dat", Bytes("body"));
     CHECK(store->UsedBytes() == 4);
 
@@ -255,13 +254,13 @@ TEST_CASE("sandbox store tombstones shadow and then release a path") {
     REQUIRE(revived != nullptr);
     CHECK_FALSE(revived->is_tombstone);
     CHECK_FALSE(std::filesystem::exists(
-        root.path / kPackage / "fs" / "sdcard" /
+        root.path / kPackage / "sdcard" /
         "save.dat.__ogplay_tombstone__"));
 }
 
 TEST_CASE("sandbox store removes only empty directories") {
     const TemporaryRoot root("remove");
-    auto store = SandboxStore::Open(root.path, kPackage);
+    auto store = SandboxStore::Open(root.path, kPackage, kPackage);
     store->CreateDirectory("/sdcard/dir");
     store->WriteFileAtomic("/sdcard/dir/file", Bytes("x"));
     try {
@@ -278,21 +277,21 @@ TEST_CASE("sandbox store removes only empty directories") {
 
 TEST_CASE("sandbox store rejects a meta.toml it did not write") {
     const TemporaryRoot root("meta");
-    { const auto store = SandboxStore::Open(root.path, kPackage); }
+    { const auto store = SandboxStore::Open(root.path, kPackage, kPackage); }
     const auto meta = root.path / kPackage / "meta.toml";
 
     {
         std::ofstream output(meta, std::ios::trunc);
         output << "schema = 99\npackage = \"" << kPackage << "\"\n";
     }
-    CHECK_THROWS_AS(static_cast<void>(SandboxStore::Open(root.path, kPackage)),
+    CHECK_THROWS_AS(static_cast<void>(SandboxStore::Open(root.path, kPackage, kPackage)),
                     VfsError);
 
     {
         std::ofstream output(meta, std::ios::trunc);
         output << "schema = 1\npackage = \"other.package\"\n";
     }
-    CHECK_THROWS_AS(static_cast<void>(SandboxStore::Open(root.path, kPackage)),
+    CHECK_THROWS_AS(static_cast<void>(SandboxStore::Open(root.path, kPackage, kPackage)),
                     VfsError);
 
     {
@@ -300,14 +299,14 @@ TEST_CASE("sandbox store rejects a meta.toml it did not write") {
         output << "schema = 1\npackage = \"" << kPackage
                << "\"\nfuture_key = 1\n";
     }
-    CHECK_THROWS_AS(static_cast<void>(SandboxStore::Open(root.path, kPackage)),
+    CHECK_THROWS_AS(static_cast<void>(SandboxStore::Open(root.path, kPackage, kPackage)),
                     VfsError);
 
     {
         std::ofstream output(meta, std::ios::trunc);
         output << "schema = not-a-number\npackage = \"" << kPackage << "\"\n";
     }
-    CHECK_THROWS_AS(static_cast<void>(SandboxStore::Open(root.path, kPackage)),
+    CHECK_THROWS_AS(static_cast<void>(SandboxStore::Open(root.path, kPackage, kPackage)),
                     VfsError);
 
     {
@@ -315,14 +314,14 @@ TEST_CASE("sandbox store rejects a meta.toml it did not write") {
         output << "schema = 2\npackage = \"" << kPackage
                << "\"\nversion_code = 0\nandroid_id = \"ABC\"\n";
     }
-    CHECK_THROWS_AS(static_cast<void>(SandboxStore::Open(root.path, kPackage)),
+    CHECK_THROWS_AS(static_cast<void>(SandboxStore::Open(root.path, kPackage, kPackage)),
                     VfsError);
 }
 
 TEST_CASE("sandbox store rejects ASCII case-folding conflicts on attach") {
     const TemporaryRoot root("case-conflict");
-    { const auto store = SandboxStore::Open(root.path, kPackage); }
-    const auto directory = root.path / kPackage / "fs" / "sdcard";
+    { const auto store = SandboxStore::Open(root.path, kPackage, kPackage); }
+    const auto directory = root.path / kPackage / "sdcard";
     std::error_code error;
     std::filesystem::create_directories(directory, error);
     REQUIRE_FALSE(error);
@@ -331,24 +330,133 @@ TEST_CASE("sandbox store rejects ASCII case-folding conflicts on attach") {
     { std::ofstream(directory / "%53ave.dat") << "upper"; }
     { std::ofstream(directory / "save.dat") << "lower"; }
 
-    CHECK_THROWS_AS(static_cast<void>(SandboxStore::Open(root.path, kPackage)),
+    CHECK_THROWS_AS(static_cast<void>(SandboxStore::Open(root.path, kPackage, kPackage)),
                     VfsError);
 }
 
 TEST_CASE("sandbox store records the version code as a diagnostic fact") {
     const TemporaryRoot root("version");
     {
-        auto store = SandboxStore::Open(root.path, kPackage);
+        auto store = SandboxStore::Open(root.path, kPackage, kPackage);
         store->RecordVersionCode(132);
     }
-    // Reopening accepts the recorded value: saves are shared across
-    // versions, exactly like the platform keys them by package.
-    auto reopened = SandboxStore::Open(root.path, kPackage);
+    // Reopening the same installation accepts a changed diagnostic version;
+    // the selected installation id, not the version, owns the saves.
+    auto reopened = SandboxStore::Open(root.path, kPackage, kPackage);
     reopened->RecordVersionCode(133);
     CHECK(reopened->Package() == kPackage);
 }
 
-TEST_CASE("sandbox store migrates and preserves one API 19 ANDROID_ID") {
+TEST_CASE("sandbox store maps four semantic roots without leaking host names") {
+    const TemporaryRoot root("semantic-roots");
+    auto store = SandboxStore::Open(root.path, kPackage, kPackage);
+    store->WriteFileAtomic(
+        "/data/data/com.example.game/files/internal.dat", Bytes("i"));
+    store->WriteFileAtomic(
+        "/sdcard/android/data/com.example.game/files/external.dat", Bytes("e"));
+    store->WriteFileAtomic(
+        "/sdcard/android/obb/com.example.game/main.obb", Bytes("o"));
+    store->WriteFileAtomic("/sdcard/shared.dat", Bytes("s"));
+    store->WriteFileAtomic(
+        "/sdcard/android/data/other.pkg/fallback.dat", Bytes("f"));
+
+    CHECK(std::filesystem::exists(root.path / kPackage / "internal" / "files" /
+                                  "internal.dat"));
+    CHECK(std::filesystem::exists(root.path / kPackage / "external" / "files" /
+                                  "external.dat"));
+    CHECK(std::filesystem::exists(root.path / kPackage / "obb" / "main.obb"));
+    CHECK(std::filesystem::exists(root.path / kPackage / "sdcard" / "shared.dat"));
+    CHECK(std::filesystem::exists(
+        root.path / kPackage / "sdcard" / "android" / "data" / "other.pkg" /
+        "fallback.dat"));
+    CHECK_FALSE(std::filesystem::exists(root.path / kPackage / "fs"));
+
+    auto reopened = SandboxStore::Open(root.path, kPackage, kPackage);
+    const auto entries = reopened->Entries();
+    CHECK(Find(entries, "/data/data/com.example.game/files/internal.dat") != nullptr);
+    CHECK(Find(entries, "/sdcard/android/data/com.example.game/files/external.dat") != nullptr);
+    CHECK(Find(entries, "/sdcard/android/obb/com.example.game/main.obb") != nullptr);
+    CHECK(Find(entries, "/sdcard/shared.dat") != nullptr);
+    CHECK(Find(entries, "/sdcard/android/data/other.pkg/fallback.dat") != nullptr);
+    CHECK(reopened->InstallationId() == kPackage);
+}
+
+TEST_CASE("same-package installation instances isolate saves and ANDROID_ID") {
+    const TemporaryRoot root("instance-isolation");
+    constexpr std::array<std::byte, 8> first_id{
+        std::byte{1}, std::byte{2}, std::byte{3}, std::byte{4},
+        std::byte{5}, std::byte{6}, std::byte{7}, std::byte{8}};
+    constexpr std::array<std::byte, 8> second_id{
+        std::byte{8}, std::byte{7}, std::byte{6}, std::byte{5},
+        std::byte{4}, std::byte{3}, std::byte{2}, std::byte{1}};
+    {
+        auto first = SandboxStore::Open(root.path, kPackage, kPackage);
+        auto second = SandboxStore::Open(
+            root.path, "com.example.game-2", kPackage);
+        first->WriteFileAtomic(
+            "/data/data/com.example.game/files/save.dat", Bytes("one"));
+        second->WriteFileAtomic(
+            "/data/data/com.example.game/files/save.dat", Bytes("two"));
+        CHECK(first->EnsureAndroidId(first_id) != second->EnsureAndroidId(second_id));
+    }
+    auto first = SandboxStore::Open(root.path, kPackage, kPackage);
+    auto second = SandboxStore::Open(
+        root.path, "com.example.game-2", kPackage);
+    CHECK(first->ReadFile("/data/data/com.example.game/files/save.dat") ==
+          Bytes("one"));
+    CHECK(second->ReadFile("/data/data/com.example.game/files/save.dat") ==
+          Bytes("two"));
+    CHECK(first->AndroidId() != second->AndroidId());
+}
+
+TEST_CASE("sandbox store rejects legacy mixed and mismatched instance layouts") {
+    const TemporaryRoot old("legacy-layout");
+    std::filesystem::create_directories(old.path / kPackage / "fs");
+    { std::ofstream(old.path / kPackage / "meta.toml")
+          << "schema = 2\npackage = \"" << kPackage << "\"\n"
+             "version_code = 1\nandroid_id = \"0123456789abcdef\"\n"; }
+    CHECK_THROWS_AS(static_cast<void>(
+                        SandboxStore::Open(old.path, kPackage, kPackage)),
+                    VfsError);
+    CHECK(std::filesystem::is_directory(old.path / kPackage / "fs"));
+
+    const TemporaryRoot unknown("missing-meta-layout");
+    const auto survivor = unknown.path / kPackage / "internal" / "save.dat";
+    std::filesystem::create_directories(survivor.parent_path());
+    { std::ofstream(survivor) << "keep"; }
+    CHECK_THROWS_AS(static_cast<void>(
+                        SandboxStore::Open(unknown.path, kPackage, kPackage)),
+                    VfsError);
+    CHECK(std::filesystem::is_regular_file(survivor));
+
+    const TemporaryRoot mixed("mixed-layout");
+    { auto created = SandboxStore::Open(mixed.path, kPackage, kPackage); }
+    std::filesystem::create_directory(mixed.path / kPackage / "fs");
+    CHECK_THROWS_AS(static_cast<void>(
+                        SandboxStore::Open(mixed.path, kPackage, kPackage)),
+                    VfsError);
+    CHECK_THROWS_AS(static_cast<void>(
+                        SandboxStore::Open(mixed.path, "com.example.game-2",
+                                           "other.package")),
+                    VfsError);
+}
+
+TEST_CASE("sandbox store rejects duplicate reverse mappings across semantic roots") {
+    const TemporaryRoot root("duplicate-semantic-root");
+    { auto created = SandboxStore::Open(root.path, kPackage, kPackage); }
+    const auto instance = root.path / kPackage;
+    std::filesystem::create_directories(instance / "external" / "files");
+    std::filesystem::create_directories(
+        instance / "sdcard" / "android" / "data" / kPackage / "files");
+    { std::ofstream(instance / "external" / "files" / "save.dat") << "one"; }
+    { std::ofstream(instance / "sdcard" / "android" / "data" / kPackage /
+                    "files" / "SAVE.DAT") << "two"; }
+    CHECK_THROWS_AS(static_cast<void>(
+                        SandboxStore::Open(root.path, kPackage, kPackage)),
+                    VfsError);
+}
+
+TEST_CASE("sandbox store creates and preserves one API 19 ANDROID_ID") {
     const TemporaryRoot root("android-id");
     constexpr std::array<std::byte, 8> first{
         std::byte{0x01}, std::byte{0x23}, std::byte{0x45}, std::byte{0x67},
@@ -358,21 +466,21 @@ TEST_CASE("sandbox store migrates and preserves one API 19 ANDROID_ID") {
         std::byte{0xbb}, std::byte{0xaa}, std::byte{0x99}, std::byte{0x88}};
 
     {
-        auto store = SandboxStore::Open(root.path, kPackage);
+        auto store = SandboxStore::Open(root.path, kPackage, kPackage);
         CHECK(store->EnsureAndroidId(first) == "0123456789abcdef");
         CHECK(store->EnsureAndroidId(ignored) == "0123456789abcdef");
     }
-    auto reopened = SandboxStore::Open(root.path, kPackage);
+    auto reopened = SandboxStore::Open(root.path, kPackage, kPackage);
     CHECK(reopened->EnsureAndroidId(ignored) == "0123456789abcdef");
 
     std::ifstream input(root.path / kPackage / "meta.toml");
     const std::string meta{std::istreambuf_iterator<char>(input),
                            std::istreambuf_iterator<char>()};
-    CHECK(meta.find("schema = 2") != std::string::npos);
+    CHECK(meta.find("schema = 3") != std::string::npos);
     CHECK(meta.find("android_id = \"0123456789abcdef\"") !=
           std::string::npos);
     const TemporaryRoot invalid_root("android-id-invalid");
-    auto invalid = SandboxStore::Open(invalid_root.path, kPackage);
+    auto invalid = SandboxStore::Open(invalid_root.path, kPackage, kPackage);
     CHECK_THROWS_AS(
         static_cast<void>(
             invalid->EnsureAndroidId(std::span{first}.first(7))),
@@ -381,15 +489,15 @@ TEST_CASE("sandbox store migrates and preserves one API 19 ANDROID_ID") {
 
 TEST_CASE("sandbox store rejects an unusable package key") {
     const TemporaryRoot root("package");
-    CHECK_THROWS_AS(static_cast<void>(SandboxStore::Open(root.path, "")),
+    CHECK_THROWS_AS(static_cast<void>(SandboxStore::Open(root.path, "", "")),
                     VfsError);
     CHECK_THROWS_AS(
-        static_cast<void>(SandboxStore::Open(root.path, "../escape")),
+        static_cast<void>(SandboxStore::Open(root.path, "../escape", "../escape")),
         VfsError);
     CHECK_THROWS_AS(
-        static_cast<void>(SandboxStore::Open(root.path, "with/slash")),
+        static_cast<void>(SandboxStore::Open(root.path, "with/slash", "with/slash")),
         VfsError);
     CHECK_THROWS_AS(
-        static_cast<void>(SandboxStore::Open(root.path, ".leading")),
+        static_cast<void>(SandboxStore::Open(root.path, ".leading", ".leading")),
         VfsError);
 }

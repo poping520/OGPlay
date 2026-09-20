@@ -1,7 +1,13 @@
 #include <doctest/doctest.h>
 
+#include <algorithm>
+#include <cstddef>
 #include <cstdint>
 #include <filesystem>
+#include <fstream>
+#include <iterator>
+#include <memory>
+#include <span>
 #include <vector>
 
 #include "ogplay/video/ffmpeg_video_player.h"
@@ -13,6 +19,32 @@ namespace {
     return std::filesystem::path{OGPLAY_SOURCE_DIR} /
            "tests/fixtures/video/short-mp4v-aac.mp4";
 }
+
+class FixtureSource final : public ogplay::video::VideoDataSource {
+public:
+    FixtureSource() {
+        std::ifstream input(FixturePath(), std::ios::binary);
+        const std::vector<char> raw{std::istreambuf_iterator<char>{input}, {}};
+        bytes_.reserve(raw.size());
+        for (const auto value : raw)
+            bytes_.push_back(static_cast<std::byte>(static_cast<unsigned char>(value)));
+    }
+    [[nodiscard]] std::uint64_t Size() const noexcept override { return bytes_.size(); }
+    [[nodiscard]] std::size_t ReadAt(
+        const std::uint64_t offset,
+        const std::span<std::byte> destination) const override {
+        if (offset >= bytes_.size()) return 0U;
+        const auto count = std::min<std::size_t>(
+            destination.size(), bytes_.size() - static_cast<std::size_t>(offset));
+        maximum_request = std::max(maximum_request, destination.size());
+        std::copy_n(bytes_.begin() + static_cast<std::ptrdiff_t>(offset), count,
+                    destination.begin());
+        return count;
+    }
+    mutable std::size_t maximum_request{};
+private:
+    std::vector<std::byte> bytes_;
+};
 
 }  // namespace
 
@@ -85,6 +117,17 @@ TEST_CASE("ffmpeg backend seek rewinds frame delivery" *
     CHECK(rewound->position_ms == 0);
 
     CHECK_THROWS_AS(player->SeekTo(999999), ogplay::video::VideoPlayerError);
+}
+
+TEST_CASE("ffmpeg custom IO decodes and seeks without a host path" *
+          doctest::skip(!ogplay::video::FfmpegAvailable())) {
+    auto source = std::make_shared<FixtureSource>();
+    auto player = ogplay::video::OpenFfmpegVideo(source);
+    CHECK(player->Metadata().width == 64U);
+    REQUIRE(player->TakeFrame(500).has_value());
+    player->SeekTo(0);
+    REQUIRE(player->TakeFrame(0).has_value());
+    CHECK(source->maximum_request <= 32U * 1024U);
 }
 
 TEST_CASE("ffmpeg backend rejects missing and non-video files" *

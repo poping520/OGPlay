@@ -5,6 +5,9 @@
 
 项目定名 **OGPlay**（`OG` + `Play`，玩那些老game），命名约定见 [08](08-naming.md)。
 
+专项记录：[VFS 资源读取与寿命收敛](../design/vfs/README.md)（三个连续工作单元已完成，
+FFmpeg 环境验收缺口见专项表）。
+
 ---
 
 ## 阅读顺序

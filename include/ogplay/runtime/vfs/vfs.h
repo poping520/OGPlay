@@ -7,18 +7,31 @@
 #include <functional>
 #include <filesystem>
 #include <map>
+#include <limits>
 #include <memory>
 #include <mutex>
 #include <optional>
 #include <span>
+#include <stop_token>
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <type_traits>
+#include <utility>
 #include <vector>
 
 namespace ogplay::runtime {
 
 class SandboxStore;
+
+class VfsReadLease {
+public:
+    virtual ~VfsReadLease() = default;
+    [[nodiscard]] virtual std::uint64_t Size() const noexcept = 0;
+    [[nodiscard]] virtual std::size_t ReadAt(
+        std::uint64_t offset, std::span<std::byte> destination,
+        std::stop_token stop = {}) const = 0;
+};
 
 struct VfsOpenOptions final {
     bool read{};
@@ -37,11 +50,49 @@ struct VfsMountEntry final {
 };
 
 using VfsReadOnlyLoader = std::function<std::vector<std::byte>()>;
+class VfsReadAtLoader final {
+public:
+    VfsReadAtLoader() = default;
+
+    template <class Loader>
+    VfsReadAtLoader(Loader loader) {
+        if constexpr (std::is_invocable_r_v<std::size_t, Loader&,
+                          std::uint64_t, std::span<std::byte>, std::stop_token>) {
+            loader_ = std::move(loader);
+        } else {
+            static_assert(std::is_invocable_r_v<std::size_t, Loader&,
+                              std::uint64_t, std::span<std::byte>>);
+            loader_ = [loader = std::move(loader)](
+                          const std::uint64_t offset,
+                          const std::span<std::byte> destination,
+                          const std::stop_token stop) mutable {
+                if (stop.stop_requested()) return std::size_t{};
+                return loader(offset, destination);
+            };
+        }
+    }
+
+    [[nodiscard]] explicit operator bool() const noexcept {
+        return static_cast<bool>(loader_);
+    }
+    [[nodiscard]] std::size_t operator()(
+        const std::uint64_t offset, const std::span<std::byte> destination,
+        const std::stop_token stop = {}) const {
+        return loader_(offset, destination, stop);
+    }
+
+private:
+    std::function<std::size_t(std::uint64_t, std::span<std::byte>,
+                              std::stop_token)> loader_;
+};
 
 struct VfsLazyMountEntry final {
     std::string path;
     std::uint64_t size{};
     VfsReadOnlyLoader read_all;
+    // Optional bounded reader. When present, ordinary reads do not invoke
+    // read_all or allocate the complete file.
+    VfsReadAtLoader read_at;
 };
 
 enum class VfsSeekWhence : std::uint8_t { begin, current, end };
@@ -66,6 +117,33 @@ struct VfsPipeDescriptors final {
     std::int32_t write_descriptor{};
 };
 
+struct VfsIoStatistics final {
+    std::uint64_t backing_read_bytes{};
+    std::uint64_t full_materialized_bytes{};
+    std::uint64_t resource_memory_bytes{};
+    std::uint64_t resource_memory_high_water{};
+    std::uint64_t lease_snapshot_bytes{};
+    std::uint64_t lease_snapshot_high_water{};
+};
+
+struct VfsConfig final {
+    // One aggregate budget for every retained resource buffer, including
+    // writable lease snapshots and decompressed archive cache blocks.
+    std::uint64_t resource_memory_budget_bytes{128ULL * 1024ULL * 1024ULL};
+};
+
+class VfsResourceReservation final {
+public:
+    ~VfsResourceReservation();
+    VfsResourceReservation(const VfsResourceReservation&) = delete;
+    VfsResourceReservation& operator=(const VfsResourceReservation&) = delete;
+
+private:
+    friend class VirtualFileSystem;
+    explicit VfsResourceReservation(std::function<void()> release);
+    std::function<void()> release_;
+};
+
 class VfsError final : public std::runtime_error {
 public:
     VfsError(std::int32_t error_number, std::string message);
@@ -79,7 +157,7 @@ private:
 
 class VirtualFileSystem final {
 public:
-    VirtualFileSystem();
+    explicit VirtualFileSystem(VfsConfig config = {});
     ~VirtualFileSystem();
     VirtualFileSystem(const VirtualFileSystem&) = delete;
     VirtualFileSystem& operator=(const VirtualFileSystem&) = delete;
@@ -95,10 +173,6 @@ public:
     // Canonicalizes a path prefix onto an already mounted namespace. Both
     // spellings then address the same nodes and overlay.
     void AddPathAlias(std::string_view alias, std::string_view target);
-    // Backing host file for a guest path inside a host-directory mount;
-    // nullopt for memory-, APK- or OBB-backed entries.
-    [[nodiscard]] std::optional<std::filesystem::path> HostPathFor(
-        std::string_view path) const;
     void SetWorkingDirectory(std::string_view path);
     [[nodiscard]] std::optional<std::string> WorkingDirectory() const;
     // Returns the normalized node identity used internally by all VFS file
@@ -129,8 +203,17 @@ public:
     [[nodiscard]] VfsPipeDescriptors CreatePipe();
     [[nodiscard]] std::size_t Read(std::int32_t descriptor,
                                    std::span<std::byte> destination);
+    [[nodiscard]] std::size_t ReadAt(std::int32_t descriptor,
+                                     std::uint64_t offset,
+                                     std::span<std::byte> destination);
     [[nodiscard]] std::size_t Write(std::int32_t descriptor,
                                     std::span<const std::byte> source);
+    [[nodiscard]] std::size_t WriteAt(std::int32_t descriptor,
+                                      std::uint64_t offset,
+                                      std::span<const std::byte> source);
+    [[nodiscard]] std::shared_ptr<const VfsReadLease> CaptureReadLease(
+        std::int32_t descriptor, std::uint64_t offset,
+        std::uint64_t length = std::numeric_limits<std::uint64_t>::max());
     [[nodiscard]] std::uint64_t Seek(std::int32_t descriptor,
                                      std::int64_t offset,
                                      VfsSeekWhence whence);
@@ -140,6 +223,12 @@ public:
     void AttachSandbox(SandboxStore& store,
                        std::span<const std::string> writable_roots);
     [[nodiscard]] bool SandboxAttached() const;
+    [[nodiscard]] VfsIoStatistics IoStatistics() const;
+    // Reserves from the same aggregate memory budget used by writable lease
+    // snapshots. Callers must reserve before allocating and retain the token
+    // for as long as the allocation is reachable.
+    [[nodiscard]] std::shared_ptr<const VfsResourceReservation>
+    ReserveResourceMemory(std::uint64_t bytes);
 
     void Truncate(std::int32_t descriptor, std::uint64_t size);
     // fsync/fdatasync join here; without an attached sandbox both only

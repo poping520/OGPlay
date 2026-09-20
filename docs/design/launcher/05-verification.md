@@ -8,7 +8,7 @@
 
 | 层 | 覆盖 | 载体 |
 | --- | --- | --- |
-| 模型层单元/契约 | LibraryStore 导入/删除/损坏条目 fail closed、meta round-trip、同 package 拒绝、原子写入（临时目录 rename）、LaunchPlan argv 逐字段、GuiConfig 读写 | CTest，合成 APK fixture（沿用 `tests/loader/apk_tests.cpp` 的构造式 ZIP 手法），临时目录做库根 |
+| 模型层单元/契约 | LibraryStore 导入/删除/损坏条目 fail closed、meta round-trip、同 package 多实例最小空缺、并发占位与原子写入、LaunchPlan installation id argv、GuiConfig 读写 | CTest，合成 APK fixture（沿用 `tests/loader/apk_tests.cpp` 的构造式 ZIP 手法），临时目录做库根 |
 | loader 增量 | manifest application icon/label 三态（缺失/resid/字面量）、损坏失败 | CTest，扩展既有 manifest 测试 fixture |
 | 提取链集成 | icon resid→arsc→PNG→缓存全链 + 每级回退占位 | CTest，合成含 arsc/PNG 的 APK fixture |
 | 有界冒烟 | `ogplay gui --library-root <tmp> --smoke-frames 3` 退出码 0：真实 SDL 窗口 + ANGLE context + ImGui 渲染 + 空库视图 | CTest 集成命令，复用现有 CI 已具备的 ANGLE 窗口能力 |

@@ -38,7 +38,8 @@ python tools/run_scenario.py \
 
 - `--fixture` 按 logical id 逐个映射宿主路径，可重复；场景里所有 `required`
   fixture 都必须映射，恰好一个 `apk`，最多一个 `external`（映射为
-  `--external-dir`）。`obb` 启动尚未实现，映射它会明确失败。
+  `--external-dir`）和一个 `obb`（映射为 `--obb`）。OBB 仍须由命中的 Profile
+  声明对应 mount；否则 run-apk 明确失败。
 - `--evidence-dir` 必须是新目录；`--fresh` 才允许覆盖已有目录。
 - 音频默认走 `SDL_AUDIODRIVER=dummy`，除非环境里已设定。
 - 退出码：`0` 通过，`1` 场景失败，`2` 参数/校验/环境无效。三种情况 stdout 都

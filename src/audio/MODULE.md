@@ -20,6 +20,8 @@
   `third_party/minimp3/README.md`。
 - `EncodedAudioSource`：统一 resid、APK entry、VFS path 与纯字节区间；`revision` 区分同路径
   替换，`lease` 标识已捕获的 FD 窗口。来源读取仍由上层注入，audio 模块不解析 APK/VFS。
+- `EncodedAudioDataSource`：窄拥有型接口只发布 `Size` 与带 `stop_token` 的 `ReadAt`；
+  decoder 按块消费，来源寿命覆盖 prepare/playback，取消只终止当前任务。
 - `EncodedMusicMixer` / `EncodedAudioStream`：音乐按 OGG/MP3/WAV bitstream 分块读取，
   不缓存整首 PCM；SoundPool 仍用短音效全量缓存。音乐最多 16 实例，所持编码窗口总量
   128 MiB、单窗口 64 MiB；每 decoder PCM 块 16 KiB，Vorbis codec arena 上限 2 MiB。
@@ -47,7 +49,10 @@
 - 音频时钟接入统一 Clock；对象状态可快照。
 - AudioTrack 诊断快照按 player 报告累计写入/消费帧、当前队列字节、欠载次数与欠载输出帧，
   并同时报告 periodic callback 的生成、投递和延期数量；统计不得改变混音或回调时序。
-- 编码资源的来源与路径解析发生在上层；播放器只接收一次调用期间有效的只读字节视图。
+- 编码资源的来源与路径解析发生在上层；音乐播放器只接收拥有型
+  `EncodedAudioDataSource`，不得在接入后再复制完整编码源。OGG/MP3 输入请求块不超过
+  64 KiB，Vorbis header arena 不超过 2 MiB；WAV 用定位读取。短 SoundPool 音效才允许
+  上层显式、有总量上限的 ReadAll。
 - Ogg/MP3/WAV 输入最大 64 MiB、解码 PCM 最大 128 MiB，只接受 1/2 声道和正采样率；空、损坏、
   超限或不支持流必须在发布 PCM 前明确失败。WAV 容器不得当作裸 PCM。
 - SoundPool resource 只有在上游完成真实加载后才能 `MarkLoaded`；未接入加载、解码和

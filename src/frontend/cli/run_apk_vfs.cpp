@@ -3,7 +3,11 @@
 
 #include "run_apk_vfs.h"
 
+#include <algorithm>
 #include <array>
+#include <list>
+#include <map>
+#include <mutex>
 #include <stdexcept>
 #include <string_view>
 #include <vector>
@@ -18,6 +22,68 @@ namespace {
 
 constexpr core::RateLimitPolicy kUnrestrictedLog{
     .mode = core::RateLimitMode::none};
+constexpr std::size_t kArchiveBlockBytes = 64U * 1024U;
+
+class ArchiveBlockCache final {
+public:
+    explicit ArchiveBlockCache(runtime::VirtualFileSystem& filesystem)
+        : filesystem_(filesystem) {}
+
+    struct Block final {
+        std::vector<std::byte> bytes;
+        std::shared_ptr<const runtime::VfsResourceReservation> reservation;
+    };
+
+    [[nodiscard]] std::shared_ptr<const Block> Get(
+        const std::string& name, const std::uint64_t block,
+        const std::size_t size,
+        const std::function<void(std::span<std::byte>)>& load) {
+        const Key key{name, block};
+        std::shared_ptr<const runtime::VfsResourceReservation> reservation;
+        {
+            std::scoped_lock lock(mutex_);
+            const auto found = entries_.find(key);
+            if (found != entries_.end()) {
+                lru_.splice(lru_.begin(), lru_, found->second.lru);
+                return found->second.block;
+            }
+            for (;;) {
+                try {
+                    reservation = filesystem_.ReserveResourceMemory(size);
+                    break;
+                } catch (const runtime::VfsError& error) {
+                    if (error.ErrorNumber() != 28 || lru_.empty()) throw;
+                    const auto victim = std::prev(lru_.end());
+                    entries_.erase(*victim);
+                    lru_.erase(victim);
+                }
+            }
+        }
+        auto loaded = std::make_shared<Block>();
+        loaded->reservation = std::move(reservation);
+        loaded->bytes.resize(size);
+        load(loaded->bytes);
+        std::scoped_lock lock(mutex_);
+        if (const auto found = entries_.find(key); found != entries_.end()) {
+            lru_.splice(lru_.begin(), lru_, found->second.lru);
+            return found->second.block;
+        }
+        lru_.push_front(key);
+        entries_.emplace(key, Entry{loaded, lru_.begin()});
+        return loaded;
+    }
+
+private:
+    using Key = std::pair<std::string, std::uint64_t>;
+    struct Entry final {
+        std::shared_ptr<const Block> block;
+        std::list<Key>::iterator lru;
+    };
+    runtime::VirtualFileSystem& filesystem_;
+    std::mutex mutex_;
+    std::list<Key> lru_;
+    std::map<Key, Entry> entries_;
+};
 
 [[nodiscard]] std::array<std::byte, 8> AndroidIdEntropy() {
     std::array<std::byte, 8> entropy{};
@@ -93,6 +159,114 @@ void MountExternalDirectory(
     }
 }
 
+static void MountArchive(const session::TitleProfile& profile,
+                  const session::ProfileSource profile_source,
+                  const runtime::VfsSource vfs_source,
+                  std::shared_ptr<const std::vector<std::byte>> apk_bytes,
+                  const loader::ApkArchive& archive,
+                  runtime::VirtualFileSystem& filesystem) {
+    if (!profile.data.has_value()) return;
+    const auto cache = std::make_shared<ArchiveBlockCache>(filesystem);
+    const auto archive_owner = std::make_shared<const loader::ApkArchive>(archive);
+    for (const auto& mount : profile.data->mounts) {
+        if (mount.source != profile_source) continue;
+        std::vector<runtime::VfsLazyMountEntry> entries;
+        entries.reserve(archive.entries.size());
+        for (const auto& entry : archive.entries) {
+            struct StoredState final {
+                std::mutex mutex;
+                bool verified{};
+                std::uint64_t data_offset{};
+            };
+            const auto name = entry.name;
+            const auto state = std::make_shared<StoredState>();
+            entries.push_back({
+                name, entry.uncompressed_size,
+                [apk_bytes, archive_owner, name] {
+                    return loader::ReadApkEntry(*apk_bytes, *archive_owner, name);
+                },
+                [apk_bytes, archive_owner, name, entry, state, cache](
+                    const std::uint64_t offset,
+                    const std::span<std::byte> destination,
+                    const std::stop_token stop) {
+                    if (stop.stop_requested()) return std::size_t{};
+                    if (entry.compression_method != 0U) {
+                        if (offset >= entry.uncompressed_size || destination.empty())
+                            return std::size_t{};
+                        const auto total = static_cast<std::size_t>(
+                            std::min<std::uint64_t>(destination.size(),
+                                entry.uncompressed_size - offset));
+                        std::size_t copied{};
+                        while (copied < total) {
+                            if (stop.stop_requested()) return copied;
+                            const auto absolute = offset + copied;
+                            const auto block = absolute / kArchiveBlockBytes;
+                            const auto within = static_cast<std::size_t>(
+                                absolute % kArchiveBlockBytes);
+                            const auto block_offset = block * kArchiveBlockBytes;
+                            const auto block_size = static_cast<std::size_t>(
+                                std::min<std::uint64_t>(kArchiveBlockBytes,
+                                    entry.uncompressed_size - block_offset));
+                            const auto bytes = cache->Get(
+                                name, block, block_size,
+                                [&](const std::span<std::byte> output) {
+                                    const auto got = loader::ReadApkEntryRange(
+                                        *apk_bytes, *archive_owner, name,
+                                        block_offset, output, stop);
+                                    if (got != output.size())
+                                        throw std::runtime_error("APK block read was short");
+                                });
+                            const auto count = std::min(total - copied,
+                                                       block_size - within);
+                            std::copy_n(bytes->bytes.begin() +
+                                            static_cast<std::ptrdiff_t>(within),
+                                        count, destination.begin() +
+                                            static_cast<std::ptrdiff_t>(copied));
+                            copied += count;
+                        }
+                        return copied;
+                    }
+                    std::scoped_lock lock(state->mutex);
+                    if (!state->verified) {
+                        const auto count = loader::ReadApkEntryRange(
+                            *apk_bytes, *archive_owner, name, offset, destination,
+                            stop);
+                        state->data_offset = loader::StoredApkEntryDataOffset(
+                            *apk_bytes, *archive_owner, name);
+                        state->verified = true;
+                        return count;
+                    }
+                    const auto available = entry.uncompressed_size - offset;
+                    const auto count = static_cast<std::size_t>(
+                        std::min<std::uint64_t>(destination.size(), available));
+                    const auto begin = state->data_offset + offset;
+                    std::copy_n(apk_bytes->begin() +
+                                    static_cast<std::ptrdiff_t>(begin),
+                                count, destination.begin());
+                    return count;
+                },
+            });
+        }
+        filesystem.MountLazyReadOnly(vfs_source, mount.guest, entries);
+    }
+}
+
+void MountApkArchive(const session::TitleProfile& profile,
+                     std::shared_ptr<const std::vector<std::byte>> apk_bytes,
+                     const loader::ApkArchive& archive,
+                     runtime::VirtualFileSystem& filesystem) {
+    MountArchive(profile, session::ProfileSource::apk, runtime::VfsSource::apk,
+                 std::move(apk_bytes), archive, filesystem);
+}
+
+void MountObbArchive(const session::TitleProfile& profile,
+                     std::shared_ptr<const std::vector<std::byte>> obb_bytes,
+                     const loader::ApkArchive& archive,
+                     runtime::VirtualFileSystem& filesystem) {
+    MountArchive(profile, session::ProfileSource::obb, runtime::VfsSource::obb,
+                 std::move(obb_bytes), archive, filesystem);
+}
+
 SandboxSession OpenSandbox(const SandboxOptions& options,
                            const std::string& package,
                            const std::uint32_t version_code) {
@@ -100,7 +274,12 @@ SandboxSession OpenSandbox(const SandboxOptions& options,
     if (options.ephemeral) {
         session.android_id = core::EncodeHex(
             AndroidIdEntropy(), core::HexCase::lower);
+        session.installation_id = "ephemeral-" + session.android_id;
         return session;
+    }
+    if (!options.installation_id.has_value() || options.installation_id->empty()) {
+        throw std::runtime_error(
+            "persistent sandbox requires an explicit installation id");
     }
     if (options.directory.has_value()) {
         session.root = *options.directory;
@@ -114,7 +293,9 @@ SandboxSession OpenSandbox(const SandboxOptions& options,
         session.root = *resolved;
     }
     try {
-        session.store = runtime::SandboxStore::Open(session.root, package);
+        session.installation_id = *options.installation_id;
+        session.store = runtime::SandboxStore::Open(
+            session.root, session.installation_id, package);
         session.android_id = session.store->AndroidId().value_or("");
         if (session.android_id.empty()) {
             session.android_id =

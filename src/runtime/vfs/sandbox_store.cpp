@@ -55,9 +55,7 @@ template <typename Integer>
     return value;
 }
 constexpr std::string_view kMetaName = "meta.toml";
-constexpr std::string_view kOverlayName = "fs";
-constexpr int kLegacyMetaSchema = 1;
-constexpr int kIdentityMetaSchema = 2;
+constexpr int kCurrentMetaSchema = 3;
 // Host limits vary; this keeps the escaped form comfortably inside the
 // shortest of them instead of discovering it at write time.
 constexpr std::size_t kMaximumSegmentLength = 200;
@@ -198,6 +196,7 @@ class SandboxStore::Impl final {
 public:
     std::filesystem::path directory;
     std::filesystem::path overlay;
+    std::string installation_id;
     std::string package;
     SandboxConfig config;
     std::uint64_t used_bytes{};
@@ -210,8 +209,28 @@ public:
     [[nodiscard]] std::filesystem::path HostPathFor(
         const std::string_view guest_path, const bool tombstone) const {
         const auto segments = SplitGuestPath(guest_path);
-        auto host = overlay;
-        for (std::size_t index = 0; index < segments.size(); ++index) {
+        std::filesystem::path host;
+        std::size_t begin{};
+        const auto matches = [&](const std::initializer_list<std::string_view> prefix) {
+            if (segments.size() < prefix.size()) return false;
+            return std::equal(prefix.begin(), prefix.end(), segments.begin());
+        };
+        if (matches({"data", "data", package})) {
+            host = directory / "internal";
+            begin = 3;
+        } else if (matches({"sdcard", "android", "data", package})) {
+            host = directory / "external";
+            begin = 4;
+        } else if (matches({"sdcard", "android", "obb", package})) {
+            host = directory / "obb";
+            begin = 4;
+        } else if (!segments.empty() && segments.front() == "sdcard") {
+            host = directory / "sdcard";
+            begin = 1;
+        } else {
+            throw VfsError(kEinval, "sandbox path is outside its semantic roots");
+        }
+        for (std::size_t index = begin; index < segments.size(); ++index) {
             auto name = SandboxStore::EscapeSegment(segments[index]);
             if (tombstone && index + 1 == segments.size()) {
                 name.append(kTombstoneSuffix);
@@ -252,19 +271,15 @@ public:
         }
     }
 
-    void Load() {
+    void LoadRoot(const std::string_view root_name,
+                  const std::string_view guest_prefix,
+                  std::map<std::string, std::string, std::less<>>& folded_paths) {
+        overlay = directory / root_name;
         std::error_code error;
-        std::filesystem::create_directories(overlay, error);
-        if (error) {
-            throw VfsError(kEio,
-                           "cannot create the sandbox directory for " +
-                               package);
-        }
         std::filesystem::recursive_directory_iterator iterator(overlay, error);
         const std::filesystem::recursive_directory_iterator end;
         if (error) throw VfsError(kEio, "cannot enumerate the sandbox");
         std::vector<std::filesystem::path> temporaries;
-        std::map<std::string, std::string, std::less<>> folded_paths;
         while (iterator != end) {
             const auto host = iterator->path();
             const auto status = iterator->symlink_status(error);
@@ -299,7 +314,9 @@ public:
             for (auto& segment : segments) {
                 segment = SandboxStore::UnescapeSegment(segment);
             }
-            const auto guest_path = JoinGuestPath(segments);
+            auto guest_path = std::string(guest_prefix);
+            const auto relative_guest = JoinGuestPath(segments);
+            guest_path.append(relative_guest);
             const auto folded = FoldGuestPath(guest_path);
             if (const auto conflict = folded_paths.find(folded);
                 conflict != folded_paths.end() &&
@@ -344,13 +361,19 @@ public:
         }
     }
 
+    void Load() {
+        std::map<std::string, std::string, std::less<>> folded_paths;
+        LoadRoot("internal", "/data/data/" + package, folded_paths);
+        LoadRoot("external", "/sdcard/android/data/" + package, folded_paths);
+        LoadRoot("obb", "/sdcard/android/obb/" + package, folded_paths);
+        LoadRoot("sdcard", "/sdcard", folded_paths);
+    }
+
     void LoadMeta() {
         const auto path = directory / kMetaName;
         std::error_code error;
-        if (!std::filesystem::exists(path, error)) {
-            WriteMeta();
-            return;
-        }
+        if (!std::filesystem::exists(path, error))
+            throw VfsError(kEinval, "existing sandbox has no meta.toml");
         std::ifstream input(path);
         if (!input) throw VfsError(kEio, "cannot read the sandbox meta.toml");
         std::string line;
@@ -396,7 +419,7 @@ public:
                                "sandbox meta.toml has an unknown key: " + key);
             }
         }
-        if (schema != kLegacyMetaSchema && schema != kIdentityMetaSchema) {
+        if (schema != kCurrentMetaSchema) {
             throw VfsError(kEinval,
                            "sandbox meta.toml schema is not supported; back "
                            "up and clear " + directory.string());
@@ -406,11 +429,7 @@ public:
                            "sandbox meta.toml belongs to " + stored_package +
                                ", not " + package);
         }
-        if (schema == kLegacyMetaSchema && !android_id.empty()) {
-            throw VfsError(kEinval,
-                           "sandbox schema 1 must not contain android_id");
-        }
-        if (schema == kIdentityMetaSchema && !IsAndroidId(android_id)) {
+        if (!android_id.empty() && !IsAndroidId(android_id)) {
             throw VfsError(kEinval,
                            "sandbox meta.toml has a malformed android_id");
         }
@@ -418,8 +437,7 @@ public:
 
     void WriteMeta() const {
         std::string text = "schema = ";
-        text.append(std::to_string(android_id.empty() ? kLegacyMetaSchema
-                                                       : kIdentityMetaSchema));
+        text.append(std::to_string(kCurrentMetaSchema));
         text.append("\npackage = \"");
         text.append(package);
         text.append("\"\nversion_code = ");
@@ -458,8 +476,23 @@ SandboxStore::SandboxStore(std::unique_ptr<Impl> impl) noexcept
 SandboxStore::~SandboxStore() = default;
 
 std::unique_ptr<SandboxStore> SandboxStore::Open(
-    const std::filesystem::path& root, const std::string_view package,
+    const std::filesystem::path& root, const std::string_view installation_id,
+    const std::string_view package,
     const SandboxConfig config) {
+    return OpenInternal(root, installation_id, package, config, false);
+}
+
+std::unique_ptr<SandboxStore> SandboxStore::Create(
+    const std::filesystem::path& root, const std::string_view installation_id,
+    const std::string_view package,
+    const SandboxConfig config) {
+    return OpenInternal(root, installation_id, package, config, true);
+}
+
+std::unique_ptr<SandboxStore> SandboxStore::OpenInternal(
+    const std::filesystem::path& root, const std::string_view installation_id,
+    const std::string_view package, const SandboxConfig config,
+    const bool require_new) {
     if (package.empty()) {
         throw VfsError(kEinval, "sandbox package name is empty");
     }
@@ -477,16 +510,72 @@ std::unique_ptr<SandboxStore> SandboxStore::Open(
     if (package.front() == '.' || package.ends_with('.')) {
         throw VfsError(kEinval, "sandbox package name is malformed");
     }
+    const auto valid_id = installation_id == package ||
+        (installation_id.starts_with(package) &&
+         installation_id.size() > package.size() + 1U &&
+         installation_id[package.size()] == '-' &&
+         installation_id[package.size() + 1U] >= '2' &&
+         installation_id[package.size() + 1U] <= '9' &&
+         std::ranges::all_of(installation_id.substr(package.size() + 1U),
+                             [](const char value) {
+                                 return value >= '0' && value <= '9';
+                             }));
+    if (!valid_id) {
+        throw VfsError(kEinval, "sandbox installation id does not match package");
+    }
     if (config.byte_quota == 0 || config.maximum_files == 0) {
         throw VfsError(kEinval, "sandbox quota must be positive");
     }
     auto impl = std::make_unique<Impl>();
-    impl->directory = root / std::string(package);
-    impl->overlay = impl->directory / std::string(kOverlayName);
+    impl->directory = root / std::string(installation_id);
+    impl->installation_id = std::string(installation_id);
     impl->package = std::string(package);
     impl->config = config;
+    std::error_code error;
+    const auto existed = std::filesystem::exists(impl->directory, error);
+    if (error) throw VfsError(kEio, "cannot inspect sandbox directory");
+    if (existed && require_new) {
+        throw VfsError(kEexist, "sandbox installation id already exists");
+    }
+    bool created{};
+    if (!existed) {
+        created = std::filesystem::create_directory(impl->directory, error);
+        if (error) throw VfsError(kEio, "cannot create sandbox directory");
+        if (!created && require_new) {
+            throw VfsError(kEexist, "sandbox installation id already exists");
+        }
+    }
+    if (created) {
+        try {
+            for (const auto root_name : {"internal", "external", "obb", "sdcard"}) {
+                std::filesystem::create_directory(impl->directory / root_name, error);
+                if (error) throw VfsError(kEio, "cannot create sandbox semantic root");
+            }
+            impl->WriteMeta();
+        } catch (...) {
+            std::error_code cleanup_error;
+            std::filesystem::remove_all(impl->directory, cleanup_error);
+            throw;
+        }
+    } else {
+        impl->LoadMeta();
+        static constexpr std::array<std::string_view, 5> kAllowed{
+            "meta.toml", "internal", "external", "obb", "sdcard"};
+        for (std::filesystem::directory_iterator it(impl->directory, error), end;
+             !error && it != end; it.increment(error)) {
+            const auto name = it->path().filename().string();
+            if (std::find(kAllowed.begin(), kAllowed.end(), name) == kAllowed.end()) {
+                throw VfsError(kEinval, "sandbox contains an unknown or legacy root: " + name);
+            }
+        }
+        if (error) throw VfsError(kEio, "cannot validate sandbox roots");
+        for (const auto root_name : {"internal", "external", "obb", "sdcard"}) {
+            if (!std::filesystem::is_directory(impl->directory / root_name, error) || error) {
+                throw VfsError(kEinval, "sandbox semantic root is missing");
+            }
+        }
+    }
     impl->Load();
-    impl->LoadMeta();
     return std::unique_ptr<SandboxStore>(new SandboxStore(std::move(impl)));
 }
 
@@ -685,6 +774,9 @@ std::uint64_t SandboxStore::QuotaBytes() const {
     return impl_->config.byte_quota;
 }
 const std::string& SandboxStore::Package() const { return impl_->package; }
+const std::string& SandboxStore::InstallationId() const {
+    return impl_->installation_id;
+}
 const std::filesystem::path& SandboxStore::Directory() const {
     return impl_->directory;
 }

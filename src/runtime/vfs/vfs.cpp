@@ -19,36 +19,100 @@
 
 namespace ogplay::runtime {
 
+class HostFileReader final {
+public:
+    explicit HostFileReader(const std::filesystem::path& path)
+        : input_(path, std::ios::binary) {
+        if (!input_) {
+            throw std::runtime_error("cannot open host backing file: " +
+                                     path.string());
+        }
+    }
 
-std::vector<std::byte> ReadHostFile(
-    const std::filesystem::path& path) {
-    std::ifstream input(path, std::ios::binary | std::ios::ate);
-    if (!input) {
-        throw std::runtime_error("cannot open host backing file: " +
-                                 path.string());
+    std::size_t ReadAt(const std::uint64_t offset,
+                       const std::span<std::byte> destination) {
+        std::unique_lock lock(mutex_);
+        input_.clear();
+        input_.seekg(static_cast<std::streamoff>(offset));
+        if (!input_) throw std::runtime_error("cannot seek host backing file");
+        input_.read(reinterpret_cast<char*>(destination.data()),
+                    static_cast<std::streamsize>(destination.size()));
+        const auto count = static_cast<std::size_t>(input_.gcount());
+        if (count != destination.size() && !input_.eof()) {
+            throw std::runtime_error("cannot read host backing file");
+        }
+        return count;
     }
-    const auto end = input.tellg();
-    if (end < 0) {
-        throw std::runtime_error("cannot size host backing file: " +
-                                 path.string());
+
+private:
+    std::mutex mutex_;
+    std::ifstream input_;
+};
+
+class BackingLease final : public VfsReadLease {
+public:
+    BackingLease(std::shared_ptr<File> file, const std::uint64_t begin,
+                 const std::uint64_t length)
+        : file_(std::move(file)), begin_(begin), length_(length) {}
+    std::uint64_t Size() const noexcept override { return length_; }
+    std::size_t ReadAt(const std::uint64_t offset,
+                       const std::span<std::byte> destination,
+                       const std::stop_token stop = {}) const override {
+        if (stop.stop_requested()) throw VfsError(kEcanceled, "VFS read cancelled");
+        if (offset >= length_) return 0;
+        const auto count = static_cast<std::size_t>(std::min<std::uint64_t>(
+            destination.size(), length_ - offset));
+        std::scoped_lock lock(*file_->mutex);
+        auto output = destination.first(count);
+        if (file_->read_at) {
+            const auto got = file_->read_at(begin_ + offset, output, stop);
+            if (stop.stop_requested()) {
+                throw VfsError(kEcanceled, "VFS read cancelled");
+            }
+            if (got != count) throw VfsError(kEio, "VFS lease backing was truncated");
+            return got;
+        }
+        if (file_->read_all) {
+            auto contents = file_->read_all();
+            if (contents.size() != file_->size)
+                throw VfsError(kEio, "VFS lease backing size mismatch");
+            file_->contents = std::move(contents);
+            file_->read_all = {};
+            file_->read_at = {};
+        }
+        using Difference = std::vector<std::byte>::difference_type;
+        std::copy_n(file_->contents.begin() +
+                        static_cast<Difference>(begin_ + offset),
+                    count, output.begin());
+        return count;
     }
-    const auto size = static_cast<std::uint64_t>(end);
-    if (size > std::numeric_limits<std::size_t>::max()) {
-        throw std::runtime_error("host backing file is too large: " +
-                                 path.string());
+private:
+    std::shared_ptr<File> file_;
+    std::uint64_t begin_{};
+    std::uint64_t length_{};
+};
+
+class SnapshotLease final : public VfsReadLease {
+public:
+    SnapshotLease(std::vector<std::byte> bytes,
+                  std::shared_ptr<const VfsResourceReservation> reservation)
+        : bytes_(std::move(bytes)), reservation_(std::move(reservation)) {}
+    std::uint64_t Size() const noexcept override { return bytes_.size(); }
+    std::size_t ReadAt(const std::uint64_t offset,
+                       const std::span<std::byte> destination,
+                       const std::stop_token stop = {}) const override {
+        if (stop.stop_requested()) throw VfsError(kEcanceled, "VFS read cancelled");
+        if (offset >= bytes_.size()) return 0;
+        const auto count = std::min<std::size_t>(
+            destination.size(), bytes_.size() - static_cast<std::size_t>(offset));
+        std::copy_n(bytes_.begin() + static_cast<std::ptrdiff_t>(offset), count,
+                    destination.begin());
+        return count;
     }
-    std::vector<std::byte> result(static_cast<std::size_t>(size));
-    input.seekg(0);
-    if (!result.empty()) {
-        input.read(reinterpret_cast<char*>(result.data()),
-                   static_cast<std::streamsize>(result.size()));
-    }
-    if (!input) {
-        throw std::runtime_error("host backing file was truncated: " +
-                                 path.string());
-    }
-    return result;
-}
+private:
+    std::vector<std::byte> bytes_;
+    std::shared_ptr<const VfsResourceReservation> reservation_;
+};
 
 [[nodiscard]] char FoldAscii(const char value) {
     if (value >= 'A' && value <= 'Z') {
@@ -134,11 +198,12 @@ void VirtualFileSystem::Impl::PutFile(const std::string_view path,
         if (files_.contains(normalized)) {
             throw VfsError(kEexist, "VFS path already exists");
         }
-        files_.emplace(normalized,
-                       std::make_shared<File>(
+        auto file = std::make_shared<File>(
                            File{std::vector(contents.begin(), contents.end()),
-                                contents.size(), {}, writable,
-                                VfsSource::runtime, false, {}}));
+                                contents.size(), {}, {}, writable,
+                                VfsSource::runtime, false, {}});
+        file->node_id = next_node_id_++;
+        files_.emplace(normalized, std::move(file));
     }
 
 void VirtualFileSystem::Impl::Mount(const VfsSource source, const std::string_view root,
@@ -174,7 +239,7 @@ void VirtualFileSystem::Impl::Mount(const VfsSource source, const std::string_vi
             pending.emplace_back(
                 normalized,
                 std::make_shared<File>(File{
-                    entry.contents, entry.contents.size(), {},
+                    entry.contents, entry.contents.size(), {}, {},
                     source == VfsSource::external, source, false, {}}));
         }
         std::scoped_lock lock(mutex_);
@@ -185,6 +250,7 @@ void VirtualFileSystem::Impl::Mount(const VfsSource source, const std::string_vi
             }
         }
         for (auto& [path, file] : pending) {
+            file->node_id = next_node_id_++;
             files_.emplace(std::move(path), std::move(file));
         }
     }
@@ -228,7 +294,7 @@ void VirtualFileSystem::Impl::MountLazy(
             pending.emplace_back(
                 normalized,
                 std::make_shared<File>(File{
-                    {}, entry.size, entry.read_all, writable, source,
+                    {}, entry.size, entry.read_all, entry.read_at, writable, source,
                     false, {}}));
         }
         std::scoped_lock lock(mutex_);
@@ -239,13 +305,13 @@ void VirtualFileSystem::Impl::MountLazy(
             }
         }
         for (auto& [path, file] : pending) {
+            file->node_id = next_node_id_++;
             files_.emplace(std::move(path), std::move(file));
         }
     }
 
 void VirtualFileSystem::Impl::MountHostDirectory(const std::string_view root,
                             const std::filesystem::path& directory) {
-        std::vector<std::pair<std::string, std::filesystem::path>> host_paths;
         std::error_code error;
         const auto root_status = std::filesystem::symlink_status(directory, error);
         if (error || !std::filesystem::is_directory(root_status) ||
@@ -283,14 +349,27 @@ void VirtualFileSystem::Impl::MountHostDirectory(const std::string_view root,
                     throw VfsError(kEacces,
                                    "external VFS backing entry escaped its root");
                 }
+                const auto reader = std::make_shared<HostFileReader>(path);
                 entries.push_back({
                     relative.generic_string(), size,
-                    [path] { return ReadHostFile(path); },
+                    [reader, size] {
+                        if (size > std::numeric_limits<std::size_t>::max()) {
+                            throw std::runtime_error(
+                                "host backing file is too large to materialize");
+                        }
+                        std::vector<std::byte> result(
+                            static_cast<std::size_t>(size));
+                        if (reader->ReadAt(0, result) != result.size()) {
+                            throw std::runtime_error(
+                                "host backing file was truncated");
+                        }
+                        return result;
+                    },
+                    [reader](const std::uint64_t offset,
+                             const std::span<std::byte> destination) {
+                        return reader->ReadAt(offset, destination);
+                    },
                 });
-                auto combined = std::string(root);
-                combined.push_back('/');
-                combined.append(relative.generic_string());
-                host_paths.emplace_back(NormalizePath(combined), path);
             } else if (!std::filesystem::is_directory(status)) {
                 throw VfsError(kEinval,
                                "external VFS backing contains a special file");
@@ -306,20 +385,6 @@ void VirtualFileSystem::Impl::MountHostDirectory(const std::string_view root,
                            "external VFS backing directory has no files");
         }
         MountLazy(VfsSource::external, root, entries, true);
-        std::scoped_lock lock(mutex_);
-        for (auto& [guest_path, host_path] : host_paths) {
-            host_backed_.insert_or_assign(std::move(guest_path),
-                                          std::move(host_path));
-        }
-    }
-
-std::optional<std::filesystem::path> VirtualFileSystem::Impl::HostPathFor(
-        const std::string_view path) const {
-        std::scoped_lock lock(mutex_);
-        const auto normalized = ResolvePath(path, working_directory_, aliases_);
-        const auto found = host_backed_.find(normalized);
-        if (found == host_backed_.end()) return std::nullopt;
-        return found->second;
     }
 
 void VirtualFileSystem::Impl::SetWorkingDirectory(const std::string_view path) {
@@ -367,7 +432,7 @@ std::int32_t VirtualFileSystem::Impl::Open(const std::string_view path,
             }
             return OpenDirectory(path);
         }
-        std::scoped_lock lock(mutex_);
+        std::unique_lock lock(mutex_);
         const auto normalized = ResolvePath(path, working_directory_, aliases_);
         auto found = files_.find(normalized);
         if (found == files_.end()) {
@@ -383,8 +448,9 @@ std::int32_t VirtualFileSystem::Impl::Open(const std::string_view path,
             found = files_.emplace(
                 normalized,
                     std::make_shared<File>(
-                    File{{}, 0, {}, true, VfsSource::runtime,
+                    File{{}, 0, {}, {}, true, VfsSource::runtime,
                           false, {}})).first;
+            found->second->node_id = next_node_id_++;
             // Creation makes the path visible immediately. The host-side
             // tombstone is cleared at the next flush, but it must stop
             // shadowing the new in-memory node in this session now.
@@ -404,99 +470,273 @@ std::int32_t VirtualFileSystem::Impl::Open(const std::string_view path,
             }
             MarkOverlayLocked(normalized, *found->second);
         }
+        auto selected_file = found->second;
         if (options.truncate) {
             if (!options.write) {
                 throw VfsError(kEinval, "VFS truncate requires write access");
             }
-            found->second->contents.clear();
-            found->second->read_all = {};
-            SetNodeSizeDirtyLocked(
-                *found->second, 0,
-                found->second->dirty ||
-                    !found->second->overlay_path.empty());
+            auto file = selected_file;
+            lock.unlock();
+            std::scoped_lock file_lock(*file->mutex);
+            file->contents.clear();
+            file->read_all = {};
+            file->read_at = {};
+            lock.lock();
+            ++file->generation;
+            SetNodeSizeDirtyLocked(*file, 0,
+                                   file->dirty || !file->overlay_path.empty());
         }
         const auto descriptor = AllocateDescriptor();
-        descriptors_.emplace(
-            descriptor,
-            OpenFile{found->second, 0, options.read, options.write, {}});
+        descriptors_.emplace(descriptor, std::make_shared<OpenFile>(
+            std::move(selected_file), 0, options.read, options.write, nullptr));
         return descriptor;
     }
 
 VfsPipeDescriptors VirtualFileSystem::Impl::CreatePipe() {
         std::scoped_lock lock(mutex_);
         auto pipe = std::make_shared<File>(
-            File{{}, 0, {}, true, VfsSource::runtime, false, {}});
+            File{{}, 0, {}, {}, true, VfsSource::runtime, false, {}});
+        pipe->node_id = next_node_id_++;
         const auto read_descriptor = AllocateDescriptor();
-        descriptors_.emplace(
-            read_descriptor, OpenFile{pipe, 0, true, false, {}});
+        descriptors_.emplace(read_descriptor, std::make_shared<OpenFile>(
+            pipe, 0, true, false, nullptr, true));
         const auto write_descriptor = AllocateDescriptor();
-        descriptors_.emplace(
-            write_descriptor, OpenFile{std::move(pipe), 0, false, true, {}});
+        descriptors_.emplace(write_descriptor, std::make_shared<OpenFile>(
+            std::move(pipe), 0, false, true, nullptr, true));
         return {read_descriptor, write_descriptor};
     }
 
 std::size_t VirtualFileSystem::Impl::Read(const std::int32_t descriptor,
                                    const std::span<std::byte> destination) {
-        std::scoped_lock lock(mutex_);
-        auto& open = FindDescriptor(descriptor);
-        if (open.directory) throw VfsError(kEisdir, "VFS descriptor is a directory");
-        if (!open.readable) throw VfsError(kEbadf, "VFS descriptor is not readable");
-        Materialize(*open.file);
-        const auto available = open.offset >= open.file->size
-                                   ? 0
-                                   : open.file->size - open.offset;
-        const auto count = std::min<std::uint64_t>(destination.size(), available);
-        if (count != 0) {
-            using Difference =
-                std::vector<std::byte>::difference_type;
-            std::copy_n(open.file->contents.begin() +
-                            static_cast<Difference>(open.offset),
-                        count, destination.begin());
+        std::shared_ptr<OpenFile> open;
+        {
+            std::scoped_lock lock(mutex_);
+            open = FindDescriptor(descriptor);
         }
-        open.offset += count;
+        std::scoped_lock operation(open->mutex);
+        if (open->directory) throw VfsError(kEisdir, "VFS descriptor is a directory");
+        if (!open->readable) throw VfsError(kEbadf, "VFS descriptor is not readable");
+        auto file = open->file;
+        std::scoped_lock file_lock(*file->mutex);
+        const auto available = open->offset >= file->size ? 0 : file->size - open->offset;
+        const auto count = static_cast<std::size_t>(
+            std::min<std::uint64_t>(destination.size(), available));
+        if (count != 0) {
+            auto bounded = destination.first(count);
+            if (file->read_at) {
+                try {
+                    const auto got = file->read_at(open->offset, bounded);
+                    backing_read_bytes_.fetch_add(got, std::memory_order_relaxed);
+                    if (got != count) throw VfsError(kEio, "VFS backing was truncated");
+                } catch (const VfsError&) {
+                    throw;
+                } catch (const std::exception& error) {
+                    throw VfsError(kEio, std::string("VFS backing read failed: ") +
+                                             error.what());
+                }
+            } else {
+                Materialize(*file);
+                using Difference = std::vector<std::byte>::difference_type;
+                std::copy_n(file->contents.begin() +
+                                static_cast<Difference>(open->offset),
+                            count, destination.begin());
+            }
+        }
+        open->offset += count;
+        return count;
+    }
+
+std::size_t VirtualFileSystem::Impl::ReadAt(
+        const std::int32_t descriptor, const std::uint64_t offset,
+        const std::span<std::byte> destination) {
+        std::shared_ptr<OpenFile> open;
+        {
+            std::scoped_lock lock(mutex_);
+            open = FindDescriptor(descriptor);
+        }
+        std::scoped_lock operation(open->mutex);
+        if (open->directory) throw VfsError(kEisdir, "VFS descriptor is a directory");
+        if (open->pipe) throw VfsError(kEspipe, "VFS pipe does not support positioned IO");
+        if (!open->readable) throw VfsError(kEbadf, "VFS descriptor is not readable");
+        auto file = open->file;
+        std::scoped_lock file_lock(*file->mutex);
+        const auto available = offset >= file->size ? 0 : file->size - offset;
+        const auto count = static_cast<std::size_t>(
+            std::min<std::uint64_t>(destination.size(), available));
+        if (count == 0) return 0;
+        auto bounded = destination.first(count);
+        if (file->read_at) {
+            try {
+                const auto got = file->read_at(offset, bounded);
+                backing_read_bytes_.fetch_add(got, std::memory_order_relaxed);
+                if (got != count) {
+                    throw VfsError(kEio, "VFS backing was truncated");
+                }
+                return got;
+            } catch (const VfsError&) {
+                throw;
+            } catch (const std::exception& error) {
+                throw VfsError(kEio, std::string("VFS backing read failed: ") +
+                                         error.what());
+            }
+        }
+        Materialize(*file);
+        using Difference = std::vector<std::byte>::difference_type;
+        std::copy_n(file->contents.begin() + static_cast<Difference>(offset),
+                    count, destination.begin());
         return count;
     }
 
 std::size_t VirtualFileSystem::Impl::Write(
         const std::int32_t descriptor,
         const std::span<const std::byte> source) {
-        std::scoped_lock lock(mutex_);
-        auto& open = FindDescriptor(descriptor);
-        if (open.directory) throw VfsError(kEisdir, "VFS descriptor is a directory");
-        if (!open.writable) throw VfsError(kEbadf, "VFS descriptor is not writable");
-        Materialize(*open.file);
-        const auto end = open.offset + source.size();
+        std::shared_ptr<OpenFile> open;
+        {
+            std::scoped_lock lock(mutex_);
+            open = FindDescriptor(descriptor);
+        }
+        std::scoped_lock operation(open->mutex);
+        if (open->directory) throw VfsError(kEisdir, "VFS descriptor is a directory");
+        if (!open->writable) throw VfsError(kEbadf, "VFS descriptor is not writable");
+        auto file = open->file;
+        std::scoped_lock file_lock(*file->mutex);
+        Materialize(*file);
+        const auto end = open->offset + source.size();
         if (end > std::numeric_limits<std::size_t>::max()) {
             throw VfsError(kEfbig, "VFS file size is not representable");
         }
-        RequireSandboxQuotaLocked(
-            *open.file, std::max<std::uint64_t>(open.file->size, end));
-        if (end > open.file->contents.size()) {
-            open.file->contents.resize(static_cast<std::size_t>(end));
+        {
+            std::scoped_lock lock(mutex_);
+            RequireSandboxQuotaLocked(*file,
+                                      std::max<std::uint64_t>(file->size, end));
+            std::shared_ptr<const VfsResourceReservation> growth;
+            if (!file->materialized_reservations.empty() &&
+                end > file->materialized_reserved_bytes) {
+                growth = ReserveResourceMemory(
+                    end - file->materialized_reserved_bytes, false);
+            }
+            if (growth) {
+                file->materialized_reservations.push_back(std::move(growth));
+                file->materialized_reserved_bytes = end;
+            }
+            if (end > file->contents.size()) {
+                file->contents.resize(static_cast<std::size_t>(end));
+            }
+            using Difference = std::vector<std::byte>::difference_type;
+            std::copy(source.begin(), source.end(),
+                      file->contents.begin() +
+                          static_cast<Difference>(open->offset));
+            ++file->generation;
+            open->offset = end;
+            SetNodeSizeDirtyLocked(*file, file->contents.size(),
+                                   file->dirty || !file->overlay_path.empty());
         }
-        using Difference = std::vector<std::byte>::difference_type;
-        std::copy(source.begin(), source.end(),
-                  open.file->contents.begin() +
-                      static_cast<Difference>(open.offset));
-        ++open.file->generation;
-        open.offset = end;
-        SetNodeSizeDirtyLocked(
-            *open.file, open.file->contents.size(),
-            open.file->dirty || !open.file->overlay_path.empty());
         return source.size();
     }
+
+std::size_t VirtualFileSystem::Impl::WriteAt(
+        const std::int32_t descriptor, const std::uint64_t offset,
+        const std::span<const std::byte> source) {
+        std::shared_ptr<OpenFile> open;
+        {
+            std::scoped_lock lock(mutex_);
+            open = FindDescriptor(descriptor);
+        }
+        std::scoped_lock operation(open->mutex);
+        if (open->directory) throw VfsError(kEisdir, "VFS descriptor is a directory");
+        if (open->pipe) throw VfsError(kEspipe, "VFS pipe does not support positioned IO");
+        if (!open->writable) throw VfsError(kEbadf, "VFS descriptor is not writable");
+        auto file = open->file;
+        std::scoped_lock file_lock(*file->mutex);
+        Materialize(*file);
+        if (source.size() > std::numeric_limits<std::uint64_t>::max() - offset) {
+            throw VfsError(kEfbig, "VFS positioned write overflows");
+        }
+        const auto end = offset + source.size();
+        if (end > std::numeric_limits<std::size_t>::max()) {
+            throw VfsError(kEfbig, "VFS file size is not representable");
+        }
+        {
+            std::scoped_lock lock(mutex_);
+            RequireSandboxQuotaLocked(*file,
+                                      std::max<std::uint64_t>(file->size, end));
+            std::shared_ptr<const VfsResourceReservation> growth;
+            if (!file->materialized_reservations.empty() &&
+                end > file->materialized_reserved_bytes) {
+                growth = ReserveResourceMemory(
+                    end - file->materialized_reserved_bytes, false);
+            }
+            if (growth) {
+                file->materialized_reservations.push_back(std::move(growth));
+                file->materialized_reserved_bytes = end;
+            }
+            if (end > file->contents.size()) {
+                file->contents.resize(static_cast<std::size_t>(end));
+            }
+            using Difference = std::vector<std::byte>::difference_type;
+            std::copy(source.begin(), source.end(),
+                      file->contents.begin() + static_cast<Difference>(offset));
+            ++file->generation;
+            SetNodeSizeDirtyLocked(*file, file->contents.size(),
+                                   file->dirty || !file->overlay_path.empty());
+        }
+        return source.size();
+    }
+
+std::shared_ptr<const VfsReadLease> VirtualFileSystem::Impl::CaptureReadLease(
+        const std::int32_t descriptor, const std::uint64_t offset,
+        const std::uint64_t requested_length) {
+    std::shared_ptr<OpenFile> open;
+    {
+        std::scoped_lock lock(mutex_);
+        open = FindDescriptor(descriptor);
+    }
+    std::scoped_lock operation(open->mutex);
+    if (open->directory) throw VfsError(kEisdir, "cannot lease a directory");
+    if (open->pipe) throw VfsError(kEspipe, "cannot lease a VFS pipe");
+    if (!open->readable) throw VfsError(kEbadf, "VFS descriptor is not readable");
+    auto file = open->file;
+    std::scoped_lock file_lock(*file->mutex);
+    if (offset > file->size) throw VfsError(kEinval, "VFS lease offset is past EOF");
+    const auto available = file->size - offset;
+    const auto length = requested_length == std::numeric_limits<std::uint64_t>::max()
+                            ? available
+                            : requested_length;
+    if (length > available) throw VfsError(kEinval, "VFS lease exceeds EOF");
+    if (!file->writable) {
+        // A read_at backing is a stable owned source and can be shared. A
+        // legacy read_all-only backing has no positioned lifetime contract,
+        // so freeze it once at capture and account the materialization.
+        if (!file->read_at && file->read_all) Materialize(*file);
+        return std::make_shared<BackingLease>(file, offset, length);
+    }
+    if (length > std::numeric_limits<std::size_t>::max())
+        throw VfsError(kEfbig, "VFS writable lease is too large");
+    auto reservation = ReserveResourceMemory(length, true);
+    Materialize(*file);
+    std::vector<std::byte> snapshot(static_cast<std::size_t>(length));
+    using Difference = std::vector<std::byte>::difference_type;
+    std::copy_n(file->contents.begin() + static_cast<Difference>(offset),
+                snapshot.size(), snapshot.begin());
+    return std::make_shared<SnapshotLease>(std::move(snapshot),
+                                           std::move(reservation));
+}
 
 std::uint64_t VirtualFileSystem::Impl::Seek(const std::int32_t descriptor,
                                      const std::int64_t offset,
                                      const VfsSeekWhence whence) {
-        std::scoped_lock lock(mutex_);
-        auto& open = FindDescriptor(descriptor);
-        if (open.directory) {
+        std::shared_ptr<OpenFile> open;
+        {
+            std::scoped_lock lock(mutex_);
+            open = FindDescriptor(descriptor);
+        }
+        std::scoped_lock operation(open->mutex);
+        if (open->directory) {
             std::uint64_t base{};
             if (whence == VfsSeekWhence::current) {
-                base = open.directory->cursor;
+                base = open->directory->cursor;
             } else if (whence == VfsSeekWhence::end) {
-                base = open.directory->entries.size();
+                base = open->directory->entries.size();
             }
             std::uint64_t result{};
             if (offset < 0) {
@@ -508,16 +748,20 @@ std::uint64_t VirtualFileSystem::Impl::Seek(const std::int32_t descriptor,
                 result = base - magnitude;
             } else {
                 result = base + static_cast<std::uint64_t>(offset);
-                if (result > open.directory->entries.size()) {
+                if (result > open->directory->entries.size()) {
                     throw VfsError(kEinval, "VFS directory seek is past end");
                 }
             }
-            open.directory->cursor = static_cast<std::size_t>(result);
+            open->directory->cursor = static_cast<std::size_t>(result);
             return result;
         }
+        if (open->pipe) throw VfsError(kEspipe, "VFS pipe is not seekable");
         std::uint64_t base{};
-        if (whence == VfsSeekWhence::current) base = open.offset;
-        if (whence == VfsSeekWhence::end) base = open.file->size;
+        if (whence == VfsSeekWhence::current) base = open->offset;
+        if (whence == VfsSeekWhence::end) {
+            std::scoped_lock file_lock(*open->file->mutex);
+            base = open->file->size;
+        }
         std::uint64_t result{};
         if (offset < 0) {
             const auto magnitude = static_cast<std::uint64_t>(-(offset + 1)) + 1U;
@@ -530,23 +774,38 @@ std::uint64_t VirtualFileSystem::Impl::Seek(const std::int32_t descriptor,
             }
             result = base + positive;
         }
-        open.offset = result;
+        open->offset = result;
         return result;
     }
 
 void VirtualFileSystem::Impl::Close(const std::int32_t descriptor) {
-        std::scoped_lock lock(mutex_);
-        const auto found = descriptors_.find(descriptor);
-        if (found == descriptors_.end()) {
-            throw VfsError(kEbadf, "VFS descriptor is not open");
+        std::shared_ptr<OpenFile> open;
+        {
+            std::scoped_lock lock(mutex_);
+            const auto found = descriptors_.find(descriptor);
+            if (found == descriptors_.end()) {
+                throw VfsError(kEbadf, "VFS descriptor is not open");
+            }
+            open = found->second;
+            descriptors_.erase(found);
         }
-        // close(2) is a flush point (03 §2); a clean node costs nothing.
-        if (found->second.file) FlushFileLocked(*found->second.file);
-        descriptors_.erase(found);
+        std::scoped_lock operation(open->mutex);
+        if (!open->file) return;
+        {
+            std::scoped_lock lock(mutex_);
+            if (!open->writable && !open->file->dirty) return;
+        }
+        std::scoped_lock file_lock(*open->file->mutex);
+        std::scoped_lock lock(mutex_);
+        FlushFileLocked(*open->file);
     }
 
 void VirtualFileSystem::Impl::Materialize(File& file) {
         if (!file.read_all) return;
+        std::shared_ptr<const VfsResourceReservation> reservation;
+        if (file.writable) {
+            reservation = ReserveResourceMemory(file.size, false);
+        }
         std::vector<std::byte> contents;
         try {
             contents = file.read_all();
@@ -561,7 +820,14 @@ void VirtualFileSystem::Impl::Materialize(File& file) {
                            "VFS backing size differs from mounted metadata");
         }
         file.contents = std::move(contents);
+        if (reservation) {
+            file.materialized_reservations.push_back(std::move(reservation));
+            file.materialized_reserved_bytes = file.contents.size();
+        }
+        full_materialized_bytes_.fetch_add(file.contents.size(),
+                                           std::memory_order_relaxed);
         file.read_all = {};
+        file.read_at = {};
     }
 
 std::int32_t VirtualFileSystem::Impl::AllocateDescriptor() const {
@@ -573,7 +839,8 @@ std::int32_t VirtualFileSystem::Impl::AllocateDescriptor() const {
         throw VfsError(kEbadf, "VFS descriptor table is full");
     }
 
-OpenFile& VirtualFileSystem::Impl::FindDescriptor(const std::int32_t descriptor) {
+std::shared_ptr<OpenFile> VirtualFileSystem::Impl::FindDescriptor(
+        const std::int32_t descriptor) const {
         const auto found = descriptors_.find(descriptor);
         if (found == descriptors_.end()) {
             throw VfsError(kEbadf, "VFS descriptor is not open");
@@ -582,8 +849,17 @@ OpenFile& VirtualFileSystem::Impl::FindDescriptor(const std::int32_t descriptor)
     }
 
 
-VirtualFileSystem::VirtualFileSystem() : impl_(std::make_unique<Impl>()) {}
+VirtualFileSystem::VirtualFileSystem(const VfsConfig config)
+    : impl_(std::make_unique<Impl>(config)) {}
 VirtualFileSystem::~VirtualFileSystem() = default;
+
+VfsResourceReservation::VfsResourceReservation(
+    std::function<void()> release)
+    : release_(std::move(release)) {}
+
+VfsResourceReservation::~VfsResourceReservation() {
+    if (release_) release_();
+}
 
 void VirtualFileSystem::PutFile(const std::string_view path,
                                 const std::span<const std::byte> contents,
@@ -609,13 +885,14 @@ void VirtualFileSystem::MountHostDirectory(
     impl_->MountHostDirectory(root, directory);
 }
 
+std::shared_ptr<const VfsResourceReservation>
+VirtualFileSystem::ReserveResourceMemory(const std::uint64_t bytes) {
+    return impl_->ReserveResourceMemory(bytes, false);
+}
+
 void VirtualFileSystem::AddPathAlias(
     const std::string_view alias, const std::string_view target) {
     impl_->AddPathAlias(alias, target);
-}
-std::optional<std::filesystem::path> VirtualFileSystem::HostPathFor(
-    const std::string_view path) const {
-    return impl_->HostPathFor(path);
 }
 void VirtualFileSystem::SetWorkingDirectory(const std::string_view path) {
     impl_->SetWorkingDirectory(path);
@@ -668,10 +945,29 @@ std::size_t VirtualFileSystem::Read(const std::int32_t descriptor,
                                     const std::span<std::byte> destination) {
     return impl_->Read(descriptor, destination);
 }
+std::size_t VirtualFileSystem::ReadAt(
+    const std::int32_t descriptor, const std::uint64_t offset,
+    const std::span<std::byte> destination) {
+    return impl_->ReadAt(descriptor, offset, destination);
+}
 std::size_t VirtualFileSystem::Write(
     const std::int32_t descriptor,
     const std::span<const std::byte> source) {
     return impl_->Write(descriptor, source);
+}
+std::size_t VirtualFileSystem::WriteAt(
+    const std::int32_t descriptor, const std::uint64_t offset,
+    const std::span<const std::byte> source) {
+    return impl_->WriteAt(descriptor, offset, source);
+}
+std::shared_ptr<const VfsReadLease> VirtualFileSystem::CaptureReadLease(
+    const std::int32_t descriptor, const std::uint64_t offset,
+    const std::uint64_t length) {
+    return impl_->CaptureReadLease(descriptor, offset, length);
+}
+
+VfsIoStatistics VirtualFileSystem::IoStatistics() const {
+    return impl_->IoStatistics();
 }
 std::uint64_t VirtualFileSystem::Seek(const std::int32_t descriptor,
                                       const std::int64_t offset,

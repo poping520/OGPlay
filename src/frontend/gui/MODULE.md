@@ -12,7 +12,7 @@
 - `RunGuiStandalone`：双击 `ogplay-gui` 的零参数产品入口；失败通过图形消息框呈现。
 - `HostBundledDataPaths`：解析随可执行文件交付的默认 Profile/quirk payload；源码树仅作
   开发回退。
-- `LibraryStore`：枚举、原子导入和删除 `<root>/library/<package>/` 条目；损坏条目
+- `LibraryStore`：枚举、原子导入和删除 `<root>/library/<installation-id>/` 条目；损坏条目
   仍以带错误原因的记录返回；枚举前清理崩溃遗留的 `.importing` 目录。
 - `LoadGuiConfig` / `SaveGuiConfig`：严格 schema 1 TOML 配置读写；`.bak` 提供跨 rename
   崩溃恢复，旧配置在新配置发布前始终可恢复。
@@ -35,12 +35,12 @@
   模型/session 层；控制器析构不等待分析完成。
 - `LauncherSandboxRoot` / `BuildLaunchPlan`：从库根、严格库条目与 `GuiConfig` 生成
   唯一 `run-apk` argv，并在 spawn 前验证全部宿主输入。
-- `GuiProcessManager`：以 SDL3 启动/非阻塞回收游戏子进程，维护同 package 单实例和
+- `GuiProcessManager`：以 SDL3 启动/非阻塞回收游戏子进程，维护同 installation id 单实例和
   `last-run.log`；GUI 退出只解除跟踪，不终止游戏。
 - `ValidateGuiConfigDirectories` / `GuiSettingsUi`：保存前严格验证已配置目录；设置页只
   编辑可选 Profile 目录，库根只读，Profile 留空使用内置默认。
 - `GuiManagementUi`：呈现删除边界并调用 `LibraryStore::Remove`；运行中条目拒绝删除，
-  external 数据和 `<library-root>/sandbox/<package>` 存档始终保留。
+  external 数据和 `<library-root>/sandbox/<installation-id>` 存档始终保留。
 
 ## 不变量
 
@@ -67,7 +67,7 @@
 - Profile catalog 不可用时所有非损坏磁贴必须显示显式不可用状态，不得把空的
   required-external 集合解释为 ready。
 - 未匹配 Profile 或跳过 required external 仍允许入库并显示对应角标；APK/manifest
-  损坏、重复 package 和所选 external 目录不存在必须阻止发布并给出下一步。
+  损坏、installation id 占位冲突未能重试和所选 external 目录不存在必须阻止发布并给出下一步。
 - 库枚举必须删除所有 `.importing` 崩溃残留；配置替换必须保留可恢复旧版本，启动发现
   仅有 `.bak` 时自动恢复。关闭 GUI 不得 join 正在进行的只读 APK 分析。
 - 子进程 CLI 只能从 GUI 可执行文件同目录解析，不查询 PATH；macOS bundle 内使用
@@ -83,7 +83,7 @@
   禁止留下后台分析或阻塞后续点击的悬挂选择器。
 - 每个 ImGui 按钮必须经 `GuiButton` 提交；同一帧同一有效作用域的按钮 ID 必须唯一，
   同名按钮使用 `##` 隐藏后缀或 `PushID` 区分，重复即让真实 GUI 冒烟明确失败。
-- 删除只移除 `library/<package>`；不得触碰库外 external 或同库根的持久存档。设置保存
+- 删除只移除 `library/<installation-id>`；不得触碰库外 external 或同库根的持久存档。设置保存
   后必须重载 Profile catalog，不能继续使用旧目录事实。
 - 默认 Profile 与 quirk 注册表必须来自同一完整 bundled data payload；用户覆盖 Profile
   目录时仍使用 bundled quirk 注册表，发行运行不得依赖编译机源码路径。

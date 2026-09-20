@@ -7,12 +7,23 @@
 
 namespace ogplay::audio {
 
+class EncodedAudioDataSource {
+public:
+    virtual ~EncodedAudioDataSource() = default;
+    [[nodiscard]] virtual std::uint64_t Size() const noexcept = 0;
+    [[nodiscard]] virtual std::size_t ReadAt(
+        std::uint64_t offset, std::span<std::byte> destination,
+        std::stop_token stop = {}) const = 0;
+};
+
 // Owns the immutable encoded window, never a complete decoded song. A decoder
 // is confined to its player's lock; independent players have independent cursors.
 class EncodedAudioStream final {
 public:
     using Bytes = std::shared_ptr<const std::vector<std::byte>>;
     explicit EncodedAudioStream(Bytes bytes, std::stop_token stop = {});
+    explicit EncodedAudioStream(std::shared_ptr<const EncodedAudioDataSource> source,
+                                std::stop_token stop = {});
     ~EncodedAudioStream();
     EncodedAudioStream(const EncodedAudioStream&) = delete;
     EncodedAudioStream& operator=(const EncodedAudioStream&) = delete;

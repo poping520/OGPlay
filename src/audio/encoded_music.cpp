@@ -10,6 +10,25 @@
 namespace ogplay::audio {
 namespace {
 
+class MemoryEncodedSource final : public EncodedAudioDataSource {
+public:
+    explicit MemoryEncodedSource(std::vector<std::byte> bytes)
+        : bytes_(std::make_shared<const std::vector<std::byte>>(std::move(bytes))) {}
+    [[nodiscard]] std::uint64_t Size() const noexcept override { return bytes_->size(); }
+    [[nodiscard]] std::size_t ReadAt(
+        const std::uint64_t offset, const std::span<std::byte> destination,
+        const std::stop_token stop) const override {
+        if (stop.stop_requested() || offset >= bytes_->size()) return 0;
+        const auto count = std::min<std::size_t>(
+            destination.size(), bytes_->size() - static_cast<std::size_t>(offset));
+        std::copy_n(bytes_->begin() + static_cast<std::ptrdiff_t>(offset), count,
+                    destination.begin());
+        return count;
+    }
+private:
+    std::shared_ptr<const std::vector<std::byte>> bytes_;
+};
+
 [[nodiscard]] std::int32_t FramesToMs(const std::size_t frames,
                                       const std::uint32_t rate) {
     if (rate == 0U) return 0;
@@ -49,15 +68,23 @@ void EncodedMusicMixer::Reset(const std::uint32_t player) {
 
 bool EncodedMusicMixer::SetEncoded(const std::uint32_t player,
                                    std::vector<std::byte> encoded) {
+    if (encoded.empty() || encoded.size() > kMaximumEncodedAudioBytes) return false;
+    return SetSource(player,
+                     std::make_shared<MemoryEncodedSource>(std::move(encoded)));
+}
+
+bool EncodedMusicMixer::SetSource(
+    const std::uint32_t player,
+    std::shared_ptr<const EncodedAudioDataSource> source) {
     std::scoped_lock lock(mutex_);
     const auto found = players_.find(player);
-    if (found == players_.end() || encoded.empty() ||
-        encoded.size() > kMaximumEncodedAudioBytes) {
+    if (found == players_.end() || !source || source->Size() == 0 ||
+        source->Size() > kMaximumEncodedAudioBytes) {
         return false;
     }
-    std::size_t total = encoded.size();
+    std::uint64_t total = source->Size();
     for (const auto& [id, other] : players_) {
-        if (id != player && other.encoded) total += other.encoded->size();
+        if (id != player && other.source) total += other.source->Size();
     }
     if (total > kMaximumMusicBytes) return false;
     if (found->second.prepare_task) found->second.prepare_task->Cancel();
@@ -66,7 +93,7 @@ bool EncodedMusicMixer::SetEncoded(const std::uint32_t player,
     found->second = {};
     found->second.audio_stream = stream;
     found->second.generation = generation;
-    found->second.encoded = std::make_shared<const std::vector<std::byte>>(std::move(encoded));
+    found->second.source = std::move(source);
     return true;
 }
 
@@ -104,19 +131,19 @@ bool EncodedMusicMixer::Prepare(const std::uint32_t player) {
 bool EncodedMusicMixer::BeginPrepare(const std::uint32_t player) {
     std::scoped_lock lock(mutex_);
     const auto found = players_.find(player);
-    if (found == players_.end() || !found->second.encoded ||
+    if (found == players_.end() || !found->second.source ||
         found->second.prepare_task) return false;
     found->second.decoder.reset();
     found->second.prepared = false;
     found->second.playing = false;
     found->second.decode_failed = false;
     auto task = std::make_shared<PrepareTask>();
-    const auto encoded = found->second.encoded;
+    const auto source = found->second.source;
     // Raw task pointer is safe: the owner joins before destroying any task data.
     // No detached threads and no callback into the mixer from the worker.
-    task->worker = std::jthread([work = task.get(), encoded](std::stop_token stop) {
+    task->worker = std::jthread([work = task.get(), source](std::stop_token stop) {
         std::unique_ptr<EncodedAudioStream> stream;
-        try { stream = std::make_unique<EncodedAudioStream>(encoded, stop); }
+        try { stream = std::make_unique<EncodedAudioStream>(source, stop); }
         catch (const std::exception&) {}
         {
             std::scoped_lock lock(work->mutex);
@@ -235,7 +262,7 @@ bool EncodedMusicMixer::IsPlaying(const std::uint32_t player) const {
 bool EncodedMusicMixer::HasEncoded(const std::uint32_t player) const {
     std::scoped_lock lock(mutex_);
     const auto found = players_.find(player);
-    return found != players_.end() && found->second.encoded != nullptr;
+    return found != players_.end() && found->second.source != nullptr;
 }
 
 bool EncodedMusicMixer::AnyPlaying() const {
@@ -287,7 +314,7 @@ std::size_t EncodedMusicMixer::CachedDecodedBytes() const {
     std::scoped_lock lock(mutex_);
     std::size_t bytes{};
     for (const auto& [_, player] : players_) {
-        if (player.encoded) bytes += player.encoded->size();
+        if (player.source) bytes += static_cast<std::size_t>(player.source->Size());
         if (player.decoder) bytes += player.decoder->BufferedPcmBytes();
         if (player.prepare_task) {
             std::scoped_lock task_lock(player.prepare_task->mutex);

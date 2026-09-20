@@ -35,6 +35,7 @@
 namespace ogplay::audio {
 class OpenSlesPcmMixer;
 class EncodedMusicMixer;
+class EncodedAudioDataSource;
 }
 
 namespace ogplay::runtime {
@@ -486,7 +487,9 @@ struct DexVmAndroidContext final {
   };
   std::unordered_map<std::uint32_t, MediaPlayerState> media_players;
   std::uint64_t next_encoded_audio_lease{1U};
-  std::unordered_map<std::uint64_t, std::vector<std::byte>> encoded_audio_leases;
+  std::unordered_map<std::uint64_t,
+                     std::shared_ptr<const audio::EncodedAudioDataSource>>
+      encoded_audio_leases;
 
   enum class ScheduledWorkKind : std::uint8_t {
     handler_message,
@@ -634,7 +637,7 @@ struct DexVmAndroidContext final {
   // Real VideoView playback (ADR-0021). The factory is injected by the
   // frontend; when it is missing or open fails, setVideoPath records the
   // gap and start() schedules the deferred-completion fallback.
-  video::VideoPlayerFactory video_player_factory;
+  video::VideoSourcePlayerFactory video_source_player_factory;
   mutable std::recursive_mutex video_views_mutex;
   struct VideoViewState final {
     std::unique_ptr<video::VideoPlayer> player;
@@ -798,8 +801,11 @@ MixVideoPcmIntoStereo(DexVmAndroidContext &context,
 
 // Reads a bounded encoded-audio window from resid, APK stored/deflate, VFS, or
 // a captured FD lease. UINT64_MAX/0 length means the remainder of the source.
-[[nodiscard]] std::vector<std::byte>
+[[nodiscard]] audio::JavaSoundPoolMixer::EncodedResource
 LoadEncodedAudioWindow(DexVmAndroidContext &context,
+                       const audio::EncodedAudioSource &source);
+[[nodiscard]] std::shared_ptr<const audio::EncodedAudioDataSource>
+LoadEncodedAudioSource(DexVmAndroidContext &context,
                        const audio::EncodedAudioSource &source);
 [[nodiscard]] std::uint64_t
 CaptureEncodedAudioWindow(DexVmAndroidContext &context,

@@ -826,9 +826,9 @@ Decl Declare_android_media_MediaPlayer(const Context& context) {
             auto source = DescriptorSource(context, call, call.arguments[0].ref,
                                            call.arguments[1].AsLong(),
                                            call.arguments[2].AsLong());
-            auto bytes = LoadEncodedAudioWindow(*context, source);
-            if (!context->encoded_music->SetEncoded(state.music,
-                                                    std::move(bytes))) {
+            auto data = LoadEncodedAudioSource(*context, source);
+            if (!context->encoded_music->SetSource(state.music,
+                                                   std::move(data))) {
                 if (source.lease) context->encoded_audio_leases.erase(source.lease);
                 throw dx::VmJavaThrow{
                     "Ljava/io/IOException;",
@@ -865,9 +865,9 @@ Decl Declare_android_media_MediaPlayer(const Context& context) {
             source.name = path;
             source.length = std::numeric_limits<std::uint64_t>::max();
             static_cast<void>(CaptureEncodedAudioWindow(*context, source));
-            auto bytes = LoadEncodedAudioWindow(*context, source);
-            if (!context->encoded_music->SetEncoded(state.music,
-                                                    std::move(bytes))) {
+            auto data = LoadEncodedAudioSource(*context, source);
+            if (!context->encoded_music->SetSource(state.music,
+                                                   std::move(data))) {
                 if (source.lease) context->encoded_audio_leases.erase(source.lease);
                 throw dx::VmJavaThrow{"Ljava/io/IOException;",
                                       "MediaPlayer path could not be read"};

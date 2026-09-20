@@ -216,6 +216,7 @@ int RunApkCommand(const int argc, const char* const argv[],
     }
     const std::filesystem::path apk_path{argv[2]};
     std::optional<std::filesystem::path> external_directory;
+    std::optional<std::filesystem::path> obb_path;
     const auto bundled_data = HostBundledDataPaths();
     auto profiles_directory = bundled_data.profiles_directory;
     std::optional<std::uint64_t> exit_after_frames;
@@ -235,6 +236,7 @@ int RunApkCommand(const int argc, const char* const argv[],
     // Saves persist by default (ADR-0020); automation opts out so golden
     // frames stay reproducible.
     std::optional<std::filesystem::path> sandbox_directory;
+    std::optional<std::string> installation_id;
     bool ephemeral_sandbox{};
     for (int index = 3; index < argc; ++index) {
         const std::string_view option{argv[index]};
@@ -249,6 +251,14 @@ int RunApkCommand(const int argc, const char* const argv[],
             if (external_directory->empty()) {
                 throw std::invalid_argument(
                     "--external-dir requires a non-empty host directory");
+            }
+        } else if (option == "--obb" && index + 1 < argc) {
+            if (obb_path.has_value()) {
+                throw std::invalid_argument("run-apk accepts --obb only once");
+            }
+            obb_path = std::filesystem::path{argv[++index]};
+            if (obb_path->empty()) {
+                throw std::invalid_argument("--obb requires a non-empty archive path");
             }
         } else if (option == "--exit-after-frames" && index + 1 < argc) {
             exit_after_frames = ParsePositive(argv[++index], option);
@@ -315,6 +325,8 @@ int RunApkCommand(const int argc, const char* const argv[],
             sandbox_directory = std::filesystem::path{value};
         } else if (option == "--ephemeral-sandbox") {
             ephemeral_sandbox = true;
+        } else if (option == "--installation-id" && index + 1 < argc) {
+            installation_id = argv[++index];
         } else if (option == "--preflight") {
             preflight = true;
         } else if (option == "--survey-gaps" && index + 1 < argc) {
@@ -351,14 +363,15 @@ int RunApkCommand(const int argc, const char* const argv[],
     }
     if (default_mcp) mcp_port = kDefaultMcpPort;
 
-    const auto apk_bytes = ReadBytes(apk_path);
-    const auto archive = loader::ParseApkArchive(apk_bytes);
+    const auto apk_bytes = std::make_shared<const std::vector<std::byte>>(
+        ReadBytes(apk_path));
+    const auto archive = loader::ParseApkArchive(*apk_bytes);
     const auto quirks =
         session::QuirkRegistry::LoadPackaged(bundled_data.quirk_registry);
     const auto profiles = session::TitleProfileCatalog::LoadDirectory(
         profiles_directory, quirks);
-    const auto manifest = loader::ReadAndroidManifest(apk_bytes, archive);
-    const auto libraries = loader::ReadApkArmNativeLibraries(apk_bytes, archive);
+    const auto manifest = loader::ReadAndroidManifest(*apk_bytes, archive);
+    const auto libraries = loader::ReadApkArmNativeLibraries(*apk_bytes, archive);
     const loader::ApkNativeLibraryInventory native_inventory{libraries};
     const auto compatibility =
         session::SelectApkCompatibilityProfile(manifest, libraries, profiles);
@@ -371,12 +384,39 @@ int RunApkCommand(const int argc, const char* const argv[],
     const auto& profile = selected_profile != nullptr
                               ? *selected_profile
                               : generic_profile;
+    bool has_obb_mount{};
+    bool requires_obb{};
+    if (profile.data.has_value()) {
+        for (const auto& mount : profile.data->mounts) {
+            if (mount.source != session::ProfileSource::obb) continue;
+            has_obb_mount = true;
+            requires_obb |= mount.required;
+        }
+    }
+    if (obb_path.has_value() && !has_obb_mount) {
+        throw std::runtime_error(
+            "--obb was supplied but Profile declares no OBB mount");
+    }
+    if (!obb_path.has_value() && requires_obb) {
+        throw std::runtime_error("Profile requires --obb for its OBB mount");
+    }
+    std::shared_ptr<const std::vector<std::byte>> obb_bytes;
+    std::optional<loader::ApkArchive> obb_archive;
+    if (obb_path.has_value()) {
+        obb_bytes = std::make_shared<const std::vector<std::byte>>(
+            ReadBytes(*obb_path));
+        obb_archive = loader::ParseApkArchive(*obb_bytes);
+    }
     // Declared before the filesystem so the overlay outlives every node
     // that flushes into it.
     const auto sandbox =
-        OpenSandbox({sandbox_directory, ephemeral_sandbox}, manifest.package,
+        OpenSandbox({sandbox_directory, ephemeral_sandbox, installation_id}, manifest.package,
                     manifest.version_code);
     runtime::VirtualFileSystem filesystem;
+    MountApkArchive(profile, apk_bytes, archive, filesystem);
+    if (obb_bytes) {
+        MountObbArchive(profile, obb_bytes, *obb_archive, filesystem);
+    }
     MountExternalDirectory(profile, external_directory, filesystem);
     AttachSandbox(sandbox, profile, filesystem, logger);
     filesystem.SetWorkingDirectory(
@@ -481,10 +521,10 @@ int RunApkCommand(const int argc, const char* const argv[],
             dex_context = std::make_shared<runtime::DexVmAndroidContext>();
             dex_context->native_output_sample_rate =
                 kDesktopAudioOutputSpec.sample_rate;
-            dex_context->apk_bytes = apk_bytes;
+            dex_context->apk_bytes = *apk_bytes;
             dex_context->archive = archive;
             const auto arsc_bytes =
-                loader::ReadApkEntry(apk_bytes, archive, "resources.arsc");
+                loader::ReadApkEntry(*apk_bytes, archive, "resources.arsc");
             dex_context->arsc = loader::ParseArsc(std::span(
                 reinterpret_cast<const std::uint8_t*>(arsc_bytes.data()),
                 arsc_bytes.size()));
@@ -500,8 +540,8 @@ int RunApkCommand(const int argc, const char* const argv[],
             // loadable; otherwise setVideoPath records the gap and start()
             // keeps the immediate-completion fallback (ADR-0021).
             if (video::FfmpegAvailable()) {
-                dex_context->video_player_factory =
-                    video::MakeFfmpegVideoPlayerFactory();
+                dex_context->video_source_player_factory =
+                    video::MakeFfmpegVideoSourcePlayerFactory();
             } else {
                 logger.Write(
                     core::LogLevel::warn, "frontend.run_apk",
@@ -565,7 +605,7 @@ int RunApkCommand(const int argc, const char* const argv[],
         LifecycleDriver driver;
         core::CapabilityLedger dexvm_ledger;
         const auto dex_entry =
-            loader::ReadApkEntry(apk_bytes, archive, "classes.dex");
+            loader::ReadApkEntry(*apk_bytes, archive, "classes.dex");
         std::vector<std::uint8_t> dex_bytes(dex_entry.size());
         std::memcpy(dex_bytes.data(), dex_entry.data(), dex_entry.size());
         auto boot_archive_bytes = ReadBytes(
@@ -650,7 +690,7 @@ int RunApkCommand(const int argc, const char* const argv[],
                 profile, "gles1_material_front_face")};
         app_request.guest_call_slice_observer = guest_slice_observer;
         app_request.platform = {
-            .installation_id = "ogplay-" + manifest.package,
+            .installation_id = sandbox.installation_id,
             .android_id = sandbox.android_id,
             .version_name = manifest.version_name.value_or("unknown")};
         app_request.dexvm = bridge_config;

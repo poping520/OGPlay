@@ -79,6 +79,8 @@ LaunchPlan BuildLaunchPlan(const std::filesystem::path& cli_executable,
     }
     plan.argv.push_back("--sandbox-dir");
     plan.argv.push_back(PathUtf8(LauncherSandboxRoot(library_root)));
+    plan.argv.push_back("--installation-id");
+    plan.argv.push_back(entry.key);
     plan.log_path = std::filesystem::absolute(entry.directory / "last-run.log")
                         .lexically_normal();
     return plan;

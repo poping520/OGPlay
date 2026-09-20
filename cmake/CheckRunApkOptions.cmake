@@ -59,6 +59,11 @@ expect_failure(external_once "run-apk accepts --external-dir only once"
     ${_base} --external-dir first --external-dir second)
 expect_failure(external_valid "cannot open"
     ${_base} --external-dir host-data)
+expect_failure(obb_missing "unknown or incomplete run-apk option: --obb"
+    ${_base} --obb)
+expect_failure(obb_once "run-apk accepts --obb only once"
+    ${_base} --obb first.obb --obb second.obb)
+expect_failure(obb_valid "cannot open" ${_base} --obb data.obb)
 expect_failure(mcp_zero "--mcp-port requires an integer in 1..65535"
     ${_base} --mcp-port 0)
 expect_failure(mcp_too_large "--mcp-port requires an integer in 1..65535"

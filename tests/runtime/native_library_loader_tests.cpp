@@ -2137,7 +2137,7 @@ TEST_CASE("DVM-105/169/175-180 crypto and BKS use BootDex and real guest libcryp
         struct Cleanup { std::filesystem::path path;
             ~Cleanup() { std::error_code ec; std::filesystem::remove_all(path, ec); }
         } sandbox_cleanup{sandbox_root};
-        auto sandbox = runtime::SandboxStore::Open(sandbox_root, "fixture");
+        auto sandbox = runtime::SandboxStore::Open(sandbox_root, "fixture", "fixture");
         const std::array<std::string, 1> sandbox_roots{"/data/data/fixture"};
         runtime::VirtualFileSystem filesystem;
         filesystem.AttachSandbox(*sandbox, sandbox_roots);
@@ -3196,7 +3196,7 @@ TEST_CASE("DVM-105/169/175-180 crypto and BKS use BootDex and real guest libcryp
         static_cast<void>(app->Stop());
         }
         filesystem.FlushAll();
-        auto reopened = runtime::SandboxStore::Open(sandbox_root, "fixture");
+        auto reopened = runtime::SandboxStore::Open(sandbox_root, "fixture", "fixture");
         runtime::VirtualFileSystem reload_filesystem;
         reload_filesystem.AttachSandbox(*reopened, sandbox_roots);
         session::AndroidAppProcessRequest reload_request;
@@ -3281,7 +3281,7 @@ TEST_CASE("DVM-105/169/175-180 crypto and BKS use BootDex and real guest libcryp
             const auto key_root = reloaded_vm.ProtectReferences(std::array{key});
             CHECK(reload_invoke(key, "getEncoded", "()[B", {}).ref.IsValid());
         }
-        auto other = runtime::SandboxStore::Open(sandbox_root, "fixture.other");
+        auto other = runtime::SandboxStore::Open(sandbox_root, "fixture.other", "fixture.other");
         runtime::VirtualFileSystem isolated;
         isolated.AttachSandbox(*other, sandbox_roots);
         CHECK_THROWS_AS(static_cast<void>(isolated.Stat("/data/data/fixture/keystore-session.bks")), runtime::VfsError);

@@ -24,7 +24,7 @@ void ValidateVolume(const float volume) {
     }
 }
 
-[[nodiscard]] std::vector<std::byte> LoadSoundResource(
+[[nodiscard]] audio::JavaSoundPoolMixer::EncodedResource LoadSoundResource(
     const audio::JavaSoundPoolMixer::EncodedResourceLoader& loader,
     const JniInvocation& invocation) {
     const auto resource = std::get<JniInt>(invocation.arguments.front());
@@ -33,8 +33,8 @@ void ValidateVolume(const float volume) {
             "Android guest numbered sound resource loader is unavailable");
     }
     auto contents = loader(resource);
-    if (contents.empty() ||
-        contents.size() >
+    if (contents.bytes.empty() ||
+        contents.bytes.size() >
             static_cast<std::size_t>(std::numeric_limits<JniSize>::max())) {
         throw AndroidGuestCallSessionError(
             "Android guest numbered sound resource is missing or oversized");
@@ -178,13 +178,13 @@ void BindAndroidGuestJavaMediaHandlers(
         [&environment, &arrays, resource_loader](
             const JniInvocation& invocation) {
             const auto contents = LoadSoundResource(resource_loader, invocation);
-            return PublishBytes(environment, arrays, invocation, contents);
+            return PublishBytes(environment, arrays, invocation, contents.bytes);
         });
     invocations.RegisterHandler(
         "resource.sound_length",
         [resource_loader](const JniInvocation& invocation) {
             return JniValue{static_cast<JniInt>(
-                LoadSoundResource(resource_loader, invocation).size())};
+                LoadSoundResource(resource_loader, invocation).bytes.size())};
         });
     invocations.RegisterHandler(
         "audio.java_noop",

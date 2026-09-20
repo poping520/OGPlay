@@ -77,6 +77,22 @@ std::uint32_t Crc32(const std::span<const std::byte> bytes) noexcept {
     return ~crc;
 }
 
+std::uint32_t Crc32(const std::span<const std::byte> bytes,
+                    const std::stop_token stop) {
+    std::uint32_t crc = 0xffffffffU;
+    for (std::size_t index = 0; index < bytes.size(); ++index) {
+        if ((index & 0xffffU) == 0U && stop.stop_requested()) {
+            throw std::runtime_error("APK entry read cancelled");
+        }
+        crc ^= std::to_integer<std::uint8_t>(bytes[index]);
+        for (unsigned bit = 0; bit < 8; ++bit) {
+            const auto mask = 0U - (crc & 1U);
+            crc = (crc >> 1U) ^ (0xedb88320U & mask);
+        }
+    }
+    return ~crc;
+}
+
 class DeflateBitReader final {
   public:
     explicit DeflateBitReader(const std::span<const std::byte> bytes) : bytes_(bytes) {}
@@ -225,9 +241,57 @@ std::pair<DeflateHuffman, DeflateHuffman> DynamicDeflateTables(DeflateBitReader&
             DeflateHuffman{{lengths.data() + literal_count, distance_count}}};
 }
 
+class DeflateOutput final {
+  public:
+    DeflateOutput(const std::size_t expected_size, const std::size_t window_offset,
+                  const std::span<std::byte> window, const std::stop_token stop)
+        : expected_size_(expected_size), window_offset_(window_offset), window_(window),
+          stop_(stop) {}
+
+    void Emit(const std::byte value) {
+        if ((offset_ & 0xffffU) == 0U && stop_.stop_requested())
+            throw std::runtime_error("APK entry read cancelled");
+        if (offset_ == expected_size_) {
+            throw std::runtime_error("APK deflate output exceeds declared size");
+        }
+        history_[offset_ % history_.size()] = value;
+        if (offset_ >= window_offset_ && offset_ - window_offset_ < window_.size()) {
+            window_[offset_ - window_offset_] = value;
+        }
+        crc_ ^= std::to_integer<std::uint8_t>(value);
+        for (unsigned bit = 0; bit < 8; ++bit) {
+            const auto mask = 0U - (crc_ & 1U);
+            crc_ = (crc_ >> 1U) ^ (0xedb88320U & mask);
+        }
+        ++offset_;
+    }
+
+    void Copy(const std::size_t distance, const std::size_t length) {
+        if (distance == 0 || distance > std::min(offset_, history_.size()) ||
+            length > expected_size_ - offset_) {
+            throw std::runtime_error("APK deflate back-reference is out of range");
+        }
+        for (std::size_t copied = 0; copied < length; ++copied) {
+            Emit(history_[(offset_ - distance) % history_.size()]);
+        }
+    }
+
+    [[nodiscard]] std::size_t Size() const noexcept { return offset_; }
+    [[nodiscard]] std::uint32_t Crc32() const noexcept { return ~crc_; }
+
+  private:
+    static constexpr std::size_t kHistorySize = 32U * 1024U;
+    std::array<std::byte, kHistorySize> history_{};
+    std::size_t expected_size_{};
+    std::size_t window_offset_{};
+    std::span<std::byte> window_;
+    std::size_t offset_{};
+    std::uint32_t crc_{0xffffffffU};
+    std::stop_token stop_;
+};
+
 void InflateCompressedBlock(DeflateBitReader& input, const DeflateHuffman& literals,
-                            const DeflateHuffman& distances,
-                            const std::span<std::byte> output, std::size_t& output_offset) {
+                            const DeflateHuffman& distances, DeflateOutput& output) {
     constexpr std::array<std::uint16_t, 29> length_base{
         3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 15, 17, 19, 23, 27,
         31, 35, 43, 51, 59, 67, 83, 99, 115, 131, 163, 195, 227, 258};
@@ -245,10 +309,7 @@ void InflateCompressedBlock(DeflateBitReader& input, const DeflateHuffman& liter
     for (;;) {
         const auto symbol = literals.Decode(input);
         if (symbol < 256) {
-            if (output_offset == output.size()) {
-                throw std::runtime_error("APK deflate output exceeds declared size");
-            }
-            output[output_offset++] = static_cast<std::byte>(symbol);
+            output.Emit(static_cast<std::byte>(symbol));
             continue;
         }
         if (symbol == 256) return;
@@ -262,20 +323,16 @@ void InflateCompressedBlock(DeflateBitReader& input, const DeflateHuffman& liter
         }
         const auto distance = static_cast<std::size_t>(distance_base[distance_symbol]) +
                               input.Read(distance_extra[distance_symbol]);
-        if (distance > output_offset || length > output.size() - output_offset) {
-            throw std::runtime_error("APK deflate back-reference is out of range");
-        }
-        for (std::size_t copied = 0; copied < length; ++copied) {
-            output[output_offset] = output[output_offset - distance];
-            ++output_offset;
-        }
+        output.Copy(distance, length);
     }
 }
 
-std::vector<std::byte> InflateDeflate(const std::span<const std::byte> compressed,
-                                     const std::size_t expected_size) {
-    std::vector<std::byte> output(expected_size);
-    std::size_t output_offset{};
+std::uint32_t InflateDeflateWindow(const std::span<const std::byte> compressed,
+                                  const std::size_t expected_size,
+                                  const std::size_t window_offset,
+                                  const std::span<std::byte> window,
+                                  const std::stop_token stop = {}) {
+    DeflateOutput output{expected_size, window_offset, window, stop};
     DeflateBitReader input{compressed};
     bool final{};
     while (!final) {
@@ -285,29 +342,35 @@ std::vector<std::byte> InflateDeflate(const std::span<const std::byte> compresse
             input.AlignToByte();
             const auto length = input.Read(8) | (input.Read(8) << 8U);
             const auto inverse = input.Read(8) | (input.Read(8) << 8U);
-            if ((length ^ 0xffffU) != inverse ||
-                length > output.size() - output_offset) {
+            if ((length ^ 0xffffU) != inverse || length > expected_size - output.Size()) {
                 throw std::runtime_error("APK deflate stored block is invalid");
             }
             for (std::uint32_t index = 0; index < length; ++index) {
-                output[output_offset++] = static_cast<std::byte>(input.Read(8));
+                output.Emit(static_cast<std::byte>(input.Read(8)));
             }
         } else if (type == 1) {
             auto [literals, distances] = FixedDeflateTables();
-            InflateCompressedBlock(input, literals, distances, output, output_offset);
+            InflateCompressedBlock(input, literals, distances, output);
         } else if (type == 2) {
             auto [literals, distances] = DynamicDeflateTables(input);
-            InflateCompressedBlock(input, literals, distances, output, output_offset);
+            InflateCompressedBlock(input, literals, distances, output);
         } else {
             throw std::runtime_error("APK deflate block type is reserved");
         }
     }
-    if (output_offset != output.size()) {
+    if (output.Size() != expected_size) {
         throw std::runtime_error("APK deflate output size disagrees with entry metadata");
     }
     if (input.ConsumedBytes() != compressed.size()) {
         throw std::runtime_error("APK deflate stream has trailing data");
     }
+    return output.Crc32();
+}
+
+std::vector<std::byte> InflateDeflate(const std::span<const std::byte> compressed,
+                                     const std::size_t expected_size) {
+    std::vector<std::byte> output(expected_size);
+    static_cast<void>(InflateDeflateWindow(compressed, expected_size, 0, output));
     return output;
 }
 
@@ -483,6 +546,49 @@ std::vector<std::byte> ReadApkEntry(const std::span<const std::byte> bytes,
         throw std::runtime_error("APK deflated entry CRC32 mismatch");
     }
     return result;
+}
+
+std::size_t ReadApkEntryRange(
+    const std::span<const std::byte> bytes, const ApkArchive& archive,
+    const std::string_view name, const std::uint64_t offset,
+    const std::span<std::byte> destination, const std::stop_token stop,
+    ApkEntryRangeStatistics* const statistics) {
+    const auto found = std::find_if(
+        archive.entries.begin(), archive.entries.end(),
+        [name](const ApkEntry& entry) { return entry.name == name; });
+    if (found == archive.entries.end()) throw std::runtime_error("APK entry was not found");
+    if (offset >= found->uncompressed_size || destination.empty()) return 0;
+    const auto count = static_cast<std::size_t>(std::min<std::uint64_t>(
+        destination.size(), found->uncompressed_size - offset));
+    if (found->compression_method == kStoredMethod) {
+        if (found->compressed_size != found->uncompressed_size)
+            throw std::runtime_error("APK stored entry sizes disagree");
+        const auto data = ReadCompressedEntryData(bytes, *found, "APK stored entry data");
+        if (Crc32(data, stop) != found->crc32)
+            throw std::runtime_error("APK stored entry CRC32 mismatch");
+        std::copy_n(data.begin() + static_cast<std::ptrdiff_t>(offset), count,
+                    destination.begin());
+        if (statistics != nullptr) {
+            statistics->validation_scan_bytes += data.size();
+            statistics->copied_bytes += count;
+        }
+        return count;
+    }
+    if (found->compression_method != kDeflateMethod) {
+        throw std::runtime_error("APK entry uses an unsupported compression method");
+    }
+    const auto data = ReadCompressedEntryData(bytes, *found, "APK deflated entry data");
+    const auto crc = InflateDeflateWindow(data, found->uncompressed_size,
+                                          static_cast<std::size_t>(offset),
+                                          destination.first(count), stop);
+    if (crc != found->crc32) {
+        throw std::runtime_error("APK deflated entry CRC32 mismatch");
+    }
+    if (statistics != nullptr) {
+        statistics->validation_scan_bytes += found->uncompressed_size;
+        statistics->copied_bytes += count;
+    }
+    return count;
 }
 
 }  // namespace ogplay::loader

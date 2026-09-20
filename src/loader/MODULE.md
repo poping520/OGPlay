@@ -11,6 +11,9 @@
   调用方显式保证未压缩的窄接口；使用 bit 3 的 ZIP32 data descriptor 同样与 central
   metadata 精确交叉验证。`StoredApkEntryDataOffset` 复用同一 local/central 校验，仅为
   AFD 发布 stored payload 在 APK 中的物理偏移，不放宽压缩或 CRC 读取契约。
+- `ReadApkEntryRange`：对 stored/Deflate 做 local/central、尺寸、尾部及 CRC 完整扫描，
+  仅复制请求窗口；Deflate 只保留 32 KiB history，不分配完整解压结果。按 64 KiB 输出块
+  检查取消；`ApkEntryRangeStatistics` 分开累计完整校验扫描量和实际交付量。
 - `ParseAndroidBinaryManifest` / `ReadAndroidManifest`：受检解析 binary XML chunk、UTF-8/
   UTF-16 string pool、元素与 typed attribute，产出 package/version/SDK、默认或自定义
   Application 类，以及按声明顺序保留 enabled、逐 intent-filter、alias target 的 Activity

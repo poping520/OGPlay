@@ -1058,7 +1058,7 @@ TEST_CASE("DexVM IO adapter preserves VFS errno on descriptor failures") {
     expect_errno(2, [&] { adapter.Rename("/data/missing", "/data/new"); });
 
     const TemporaryRoot root("adapter-errno");
-    auto store = SandboxStore::Open(root.path, kPackage);
+    auto store = SandboxStore::Open(root.path, kPackage, kPackage);
     vfs.AttachSandbox(*store, std::array<std::string, 1>{"/data"});
     expect_errno(13, [&] { adapter.MakeDirectory("/system/blocked"); });
 }
@@ -2672,7 +2672,7 @@ TEST_CASE("ZipInputStream reads guest source bytes and dispatches entry operatio
 TEST_CASE("Java file writes survive into the next session") {
     const TemporaryRoot root("crosssession");
     {
-        auto store = SandboxStore::Open(root.path, kPackage);
+        auto store = SandboxStore::Open(root.path, kPackage, kPackage);
         FileVm vm(store.get());
         const auto directory = vm.NewFile("/sdcard/game/saves");
         CHECK(vm.BoolOn(directory, "mkdirs"));
@@ -2680,7 +2680,7 @@ TEST_CASE("Java file writes survive into the next session") {
         vm.vfs.FlushAll();  // clean shutdown
     }
 
-    auto store = SandboxStore::Open(root.path, kPackage);
+    auto store = SandboxStore::Open(root.path, kPackage, kPackage);
     FileVm vm(store.get());
     const auto file = vm.NewFile("/sdcard/game/saves/slot0.sav");
     CHECK(vm.BoolOn(file, "exists"));
@@ -2737,7 +2737,7 @@ TEST_CASE("PreferenceManager default preferences persist across sessions") {
         return outcome.value.ref;
     };
     {
-        auto store = SandboxStore::Open(root.path, kPackage);
+        auto store = SandboxStore::Open(root.path, kPackage, kPackage);
         FileVm vm(store.get());
         const auto prefs = open_default(vm);
         const auto editor = vm.CallOn(prefs, "edit",
@@ -2759,7 +2759,7 @@ TEST_CASE("PreferenceManager default preferences persist across sessions") {
               std::string::npos);
     }
     {
-        auto store = SandboxStore::Open(root.path, kPackage);
+        auto store = SandboxStore::Open(root.path, kPackage, kPackage);
         FileVm vm(store.get());
         const auto prefs = open_default(vm);
         CHECK(vm.CallOn(prefs, "getInt", "(Ljava/lang/String;I)I",
@@ -2773,7 +2773,7 @@ TEST_CASE("PreferenceManager default preferences persist across sessions") {
 
 TEST_CASE("SharedPreferences failed load is retried without publishing an empty store") {
     const TemporaryRoot root("retry-prefs");
-    auto store = SandboxStore::Open(root.path, kPackage);
+    auto store = SandboxStore::Open(root.path, kPackage, kPackage);
     FileVm vm(store.get());
     const auto base = vm.interpreter.NewIntrinsicInstance("Landroid/content/Context;");
     const auto type = vm.model.ObjectClass(base);
@@ -2803,7 +2803,7 @@ TEST_CASE("SharedPreferences failed load is retried without publishing an empty 
 TEST_CASE("SharedPreferences persist as platform XML across sessions") {
     const TemporaryRoot root("prefs");
     {
-        auto store = SandboxStore::Open(root.path, kPackage);
+        auto store = SandboxStore::Open(root.path, kPackage, kPackage);
         FileVm vm(store.get());
         PrefsDriver driver{vm};
         const auto prefs = driver.Open("settings");
@@ -2830,7 +2830,7 @@ TEST_CASE("SharedPreferences persist as platform XML across sessions") {
         vm.vfs.FlushAll();
     }
 
-    auto store = SandboxStore::Open(root.path, kPackage);
+    auto store = SandboxStore::Open(root.path, kPackage, kPackage);
     FileVm vm(store.get());
     PrefsDriver driver{vm};
     const auto prefs = driver.Open("settings");

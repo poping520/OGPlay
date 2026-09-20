@@ -35,6 +35,13 @@ struct OpenSlesConsumedBuffer final {
     std::uint64_t sequence{};
 };
 
+struct OpenSlesPlayerSnapshot final {
+    std::size_t queued_bytes{};
+    std::uint64_t consumed_source_frames{};
+    std::uint64_t underrun_output_frames{};
+    std::uint64_t underrun_count{};
+};
+
 enum class OpenSlesEnqueueResult : std::uint8_t {
     enqueued,
     interrupted,
@@ -62,6 +69,7 @@ public:
         PlayerId player, std::span<const std::byte> pcm,
         std::size_t maximum_queued_bytes);
     [[nodiscard]] std::size_t QueuedBytes(PlayerId player) const;
+    [[nodiscard]] OpenSlesPlayerSnapshot Snapshot(PlayerId player) const;
     [[nodiscard]] std::size_t BlockingWriterCount() const noexcept;
     // Process teardown is sticky: wake current writers and reject later ones.
     [[nodiscard]] std::size_t InterruptBlockingWaits() noexcept;
@@ -105,6 +113,9 @@ private:
         std::uint64_t next_sequence{1U};
         double frame_position{};
         double played_source_frames{};
+        std::uint64_t underrun_output_frames{};
+        std::uint64_t underrun_count{};
+        bool underrun_active{};
         std::int16_t carry_left{};
         std::int16_t carry_right{};
         bool has_carry{};

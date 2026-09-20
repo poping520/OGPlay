@@ -7,6 +7,8 @@
 - [DVM-189](../tasks/dexvm/DVM-189.md) 末轮五项修复已完成定向验证：worker 故障统一唤醒
   writer、有界可取消准备任务、显式 MediaPlayer transport 阶段、按 stream 输出增益、
   OGG/MP3/WAV 增量音乐解码；AudioTrack 同步回填不再丢弃其余已跨越 periodic 通知。
+  每轨写入/消费/队列/欠载/periodic 事件诊断快照及 `buffer/8`、1024 帧设备块的 30 秒
+  逻辑回归已补，回归中无欠载且事件生成/投递对齐；本轮未重跑游戏。
   MP3 后退 seek 仍为线性重解码；raw-resource 完整链、
   手动步进阻塞 write 闭环及完整游戏音频验收仍待。Windows Release 下 Angry Birds 2.3.0
   首界面背景音乐已由用户确认正常；AUD-03 不关闭。

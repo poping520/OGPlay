@@ -653,12 +653,77 @@ TEST_CASE("AudioTrack refill defers without dropping overdue periodic callbacks"
               period_frames * bytes_per_frame);
         CHECK(fixture.context->audio_tracks.at(track.Value()).last_notified_head ==
               delivered * static_cast<std::size_t>(period_frames));
+        const auto progress = SnapshotAndroidAudioTracks(*fixture.context);
+        REQUIRE(progress.size() == 1U);
+        CHECK(progress[0].periodic_callbacks_generated == 4U);
+        CHECK(progress[0].periodic_callbacks_delivered == delivered);
+        CHECK(progress[0].periodic_callbacks_deferred == 4U - delivered);
     }
     CHECK_FALSE(PumpAndroidAudioTracks(fixture.vm, *fixture.context).has_value());
     CHECK(fixture.recorder.periodic.size() == 4U);
     CHECK(fixture.mixer.QueuedBytes(player) ==
           static_cast<std::size_t>(buffer_size));
     CHECK(fixture.mixer.BlockingWriterCount() == 0U);
+    const auto snapshots = SnapshotAndroidAudioTracks(*fixture.context);
+    REQUIRE(snapshots.size() == 1U);
+    CHECK(snapshots[0].periodic_callbacks_generated == 4U);
+    CHECK(snapshots[0].periodic_callbacks_delivered == 4U);
+    CHECK(snapshots[0].periodic_callbacks_deferred == 0U);
+}
+
+TEST_CASE("AudioTrack buffer eighth refill remains stable for logical 30 seconds") {
+    AudioTrackVm fixture;
+    constexpr std::int32_t sample_rate = 48000;
+    constexpr std::int32_t bytes_per_frame = 4;
+    constexpr std::int32_t buffer_size = 32768;
+    constexpr std::int32_t buffer_frames = buffer_size / bytes_per_frame;
+    constexpr std::int32_t period_frames = buffer_frames / 8;
+    constexpr std::size_t output_chunk_frames = 1024U;
+    constexpr std::size_t output_chunks =
+        (static_cast<std::size_t>(sample_rate) * 30U +
+         output_chunk_frames - 1U) /
+        output_chunk_frames;
+    const auto track =
+        fixture.NewTrack(sample_rate, 12, 2, buffer_size, 1);
+    const auto listener = fixture.NewListener();
+    const auto pcm = fixture.ByteArray(
+        std::vector<std::byte>(buffer_size, std::byte{}));
+    fixture.recorder.write_on_periodic = true;
+    fixture.recorder.write_array = pcm;
+    fixture.recorder.write_count = period_frames * bytes_per_frame;
+    static_cast<void>(fixture.CallOn(
+        track, "setPlaybackPositionUpdateListener",
+        "(Landroid/media/AudioTrack$OnPlaybackPositionUpdateListener;)V",
+        {VmValue::Ref(listener)}));
+    CHECK(fixture.CallOn(
+              track, "setPositionNotificationPeriod", "(I)I",
+              {VmValue::Int(period_frames)}).AsInt() == 0);
+    CHECK(fixture.CallOn(
+              track, "write", "([BII)I",
+              {VmValue::Ref(pcm), VmValue::Int(0),
+               VmValue::Int(buffer_size)}).AsInt() == buffer_size);
+    static_cast<void>(fixture.CallOn(track, "play", "()V"));
+
+    for (std::size_t chunk = 0; chunk < output_chunks; ++chunk) {
+        fixture.MixFrames(output_chunk_frames, sample_rate);
+        REQUIRE_FALSE(
+            PumpAndroidAudioTracks(fixture.vm, *fixture.context).has_value());
+    }
+
+    const auto snapshots = SnapshotAndroidAudioTracks(*fixture.context);
+    REQUIRE(snapshots.size() == 1U);
+    const auto& snapshot = snapshots[0];
+    CHECK(snapshot.periodic_callbacks_generated == output_chunks);
+    CHECK(snapshot.periodic_callbacks_delivered == output_chunks);
+    CHECK(snapshot.periodic_callbacks_deferred == 0U);
+    CHECK(snapshot.underrun_count == 0U);
+    CHECK(snapshot.underrun_output_frames == 0U);
+    CHECK(snapshot.consumed_frames == output_chunks * output_chunk_frames);
+    CHECK(snapshot.written_frames ==
+          static_cast<std::uint64_t>(buffer_frames) +
+              output_chunks * static_cast<std::uint64_t>(period_frames));
+    CHECK(snapshot.queued_bytes == static_cast<std::size_t>(buffer_size));
+    CHECK(fixture.recorder.periodic.size() == output_chunks);
 }
 
 TEST_CASE("AudioTrack notification setters report errors and callback faults") {

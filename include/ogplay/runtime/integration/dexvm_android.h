@@ -427,7 +427,24 @@ struct DexVmAndroidContext final {
     std::int32_t marker_position{};
     bool marker_fired{};
     std::uint32_t last_notified_head{};
+    std::uint32_t last_observed_head{};
+    std::uint64_t written_frames{};
+    std::uint64_t periodic_callbacks_generated{};
+    std::uint64_t periodic_callbacks_delivered{};
+    std::uint64_t periodic_callbacks_retired{};
     dexvm::VmObjectRef jni_weak;
+
+    [[nodiscard]] std::uint64_t PendingPeriodicCallbacks() const noexcept {
+      const auto accounted =
+          periodic_callbacks_delivered + periodic_callbacks_retired;
+      return periodic_callbacks_generated > accounted
+                 ? periodic_callbacks_generated - accounted
+                 : 0U;
+    }
+
+    void RetirePendingPeriodicCallbacks() noexcept {
+      periodic_callbacks_retired += PendingPeriodicCallbacks();
+    }
   };
   std::unordered_map<std::uint32_t, AudioTrackState> audio_tracks;
 
@@ -738,6 +755,22 @@ void PaceEglSwap(DexVmAndroidContext &context,
 // never run on the host audio thread.
 [[nodiscard]] std::optional<std::string>
 PumpAndroidAudioTracks(dexvm::Interpreter &vm, DexVmAndroidContext &context);
+
+struct AndroidAudioTrackDiagnosticSnapshot final {
+  std::uint32_t receiver{};
+  std::uint64_t player{};
+  std::uint64_t written_frames{};
+  std::size_t queued_bytes{};
+  std::uint64_t consumed_frames{};
+  std::uint64_t underrun_output_frames{};
+  std::uint64_t underrun_count{};
+  std::uint64_t periodic_callbacks_generated{};
+  std::uint64_t periodic_callbacks_delivered{};
+  std::uint64_t periodic_callbacks_deferred{};
+};
+
+[[nodiscard]] std::vector<AndroidAudioTrackDiagnosticSnapshot>
+SnapshotAndroidAudioTracks(const DexVmAndroidContext &context);
 // Caller holds audio_policy_mutex; update native stream gains without touching
 // Java state from the output worker.
 void ApplyAudioStreamPolicy(DexVmAndroidContext &context, std::int32_t stream);

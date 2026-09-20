@@ -401,3 +401,31 @@ TEST_CASE("AudioTrack blocking enqueue wakes a second writer") {
     CHECK(second.load() ==
           static_cast<int>(ogplay::audio::OpenSlesEnqueueResult::enqueued));
 }
+
+TEST_CASE("AudioTrack stream snapshot counts underrun episodes and frames") {
+    ogplay::audio::OpenSlesPcmMixer mixer;
+    const auto player = mixer.CreatePlayer({48000U, 1U, 16U}, 4U);
+    mixer.SetPlayerKind(
+        player, ogplay::audio::OpenSlesPlayerKind::audio_track_stream);
+    mixer.SetPlayState(player, ogplay::audio::OpenSlesPlayState::playing);
+
+    std::array<std::int16_t, 20> first_gap{};
+    static_cast<void>(mixer.MixAdditiveStereoPcm16(first_gap, 48000U));
+    std::array<std::int16_t, 10> same_gap{};
+    static_cast<void>(mixer.MixAdditiveStereoPcm16(same_gap, 48000U));
+    auto snapshot = mixer.Snapshot(player);
+    CHECK(snapshot.consumed_source_frames == 0U);
+    CHECK(snapshot.underrun_output_frames == 15U);
+    CHECK(snapshot.underrun_count == 1U);
+
+    REQUIRE(mixer.Enqueue(player, Pcm16({1000, 2000})));
+    std::array<std::int16_t, 4> recovered{};
+    static_cast<void>(mixer.MixAdditiveStereoPcm16(recovered, 48000U));
+    std::array<std::int16_t, 6> second_gap{};
+    static_cast<void>(mixer.MixAdditiveStereoPcm16(second_gap, 48000U));
+    snapshot = mixer.Snapshot(player);
+    CHECK(snapshot.queued_bytes == 0U);
+    CHECK(snapshot.consumed_source_frames == 2U);
+    CHECK(snapshot.underrun_output_frames == 18U);
+    CHECK(snapshot.underrun_count == 2U);
+}

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <atomic>
 #include <condition_variable>
 #include <cstdint>
@@ -33,6 +34,7 @@
 
 namespace ogplay::audio {
 class OpenSlesPcmMixer;
+class EncodedMusicMixer;
 }
 
 namespace ogplay::runtime {
@@ -72,6 +74,9 @@ struct DexVmAndroidContext final {
   std::uint32_t native_output_sample_rate{48000U};
   // Process-owned encoded-audio mixer used by SoundPool and MediaPlayer.
   audio::JavaSoundPoolMixer *encoded_audio_playback{};
+  audio::EncodedMusicMixer *encoded_music{};
+  std::array<std::int32_t, 10> stream_volume{7, 7, 7, 15, 7, 7, 7, 7, 7, 7};
+  std::array<bool, 10> stream_mute{};
   // Process-wide APK native loader used by java.lang.System.load*.
   // The application ClassLoader has one stable non-zero identity for the
   // lifetime of this context; APS-5 intentionally does not invent a second
@@ -397,9 +402,17 @@ struct DexVmAndroidContext final {
   // until the bounded XML callback pipeline is implemented.
   std::unordered_map<std::uint32_t, dexvm::VmObjectRef> sax_content_handlers;
 
-  // SoundPool stream id -> (resource id) mapping for voice controls.
-  std::unordered_map<std::int32_t, std::int32_t> sound_streams;
-  std::int32_t next_sound_stream{1};
+  // SoundPoolImpl native tokens map the Java instance to a mixer pool.
+  struct SoundPoolState final {
+    std::uint32_t pool{};
+    dexvm::VmObjectRef jni_weak;
+    struct PendingLoad final {
+      std::int32_t sound{};
+      std::int32_t status{};
+    };
+    std::vector<PendingLoad> pending_loads;
+  };
+  std::unordered_map<std::uint32_t, SoundPoolState> sound_pools;
 
   struct AudioTrackState final {
     std::uint64_t player{};
@@ -413,7 +426,7 @@ struct DexVmAndroidContext final {
     std::int32_t marker_position{};
     bool marker_fired{};
     std::uint32_t last_notified_head{};
-    dexvm::VmObjectRef position_listener;
+    dexvm::VmObjectRef jni_weak;
   };
   std::unordered_map<std::uint32_t, AudioTrackState> audio_tracks;
 
@@ -442,10 +455,13 @@ struct DexVmAndroidContext final {
   std::unordered_map<std::uint32_t, CanvasState> canvases;
   std::unordered_map<std::uint32_t, dexvm::VmObjectRef> holder_canvases;
 
-  // MediaPlayer playing flags by instance handle.
-  std::unordered_map<std::uint32_t, audio::EncodedAudioSource> media_resources;
-  std::unordered_map<std::uint32_t, bool> media_playing;
-  std::unordered_map<std::uint32_t, bool> media_looping;
+  struct MediaPlayerState final {
+    std::uint32_t music{};
+    audio::EncodedAudioSource source;
+    dexvm::VmObjectRef jni_weak;
+    bool prepared_event_pending{};
+  };
+  std::unordered_map<std::uint32_t, MediaPlayerState> media_players;
   std::uint64_t next_encoded_audio_lease{1U};
   std::unordered_map<std::uint64_t, std::vector<std::byte>> encoded_audio_leases;
 

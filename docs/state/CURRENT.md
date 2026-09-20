@@ -1,12 +1,13 @@
 # 当前状态
 
-更新：2026-09-19。
+更新：2026-09-20。
 
 ## 最近进展
 
-- [DVM-189](../tasks/dexvm/DVM-189.md) AUD-01 完成：编码窗口/FD lease、PCM STREAM/STATIC、
-  跨块重采样、OpenSL 预检/对象/事件上限、会话输出泵与 VideoView 音轨、CLI 编排下沉。
-  AUD-02/03 未开始。不宣称 A01–A27 闭合或游戏兼容。
+- [DVM-189](../tasks/dexvm/DVM-189.md) AUD-01/02/03 完成：共享音频底座、BootDex
+  AudioTrack/SoundPool/MediaPlayer native、会话 AudioManager、编码音乐实例 mixer。
+  Debug 定向 audio/media 测试通过。未做游戏复现或听测。不宣称 A01–A27 听测闭合或
+  title 兼容。
 
 - `SetIntrinsicStaticRef` 写静态引用前先 `EnsureClassLinked`，不跑 `<clinit>`。
   冷路径 `Security.getProperty` 能给已注册但未链接的 BootDex `Engine.door` 赋值。

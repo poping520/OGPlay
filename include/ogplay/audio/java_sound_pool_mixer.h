@@ -42,10 +42,15 @@ public:
 
     explicit JavaSoundPoolMixer(EncodedResourceLoader loader = {});
     [[nodiscard]] bool Enabled() const noexcept;
+    [[nodiscard]] std::uint32_t CreatePool(std::int32_t max_streams);
+    void DestroyPool(std::uint32_t pool);
     [[nodiscard]] bool Load(std::int32_t resource);
     [[nodiscard]] bool Load(const EncodedAudioSource& source);
+    [[nodiscard]] std::int32_t LoadSample(std::uint32_t pool,
+                                          const EncodedAudioSource& source);
     void Unload(std::int32_t resource);
     void Unload(const EncodedAudioSource& source);
+    [[nodiscard]] bool UnloadSample(std::uint32_t pool, std::int32_t sound);
     [[nodiscard]] bool Play(JavaSoundPoolKind kind, std::int32_t resource,
                             std::int32_t instance, float volume,
                             bool looping = false);
@@ -53,6 +58,10 @@ public:
                             const EncodedAudioSource& source,
                             std::int32_t instance, float volume,
                             bool looping = false);
+    [[nodiscard]] std::int32_t PlaySample(std::uint32_t pool, std::int32_t sound,
+                                          float left, float right,
+                                          std::int32_t priority,
+                                          std::int32_t loop, float rate);
     void Pause(JavaSoundPoolKind kind, std::int32_t resource,
                std::int32_t instance);
     void Pause(JavaSoundPoolKind kind, const EncodedAudioSource& source,
@@ -69,8 +78,15 @@ public:
                    std::int32_t instance, float volume);
     void SetVolume(JavaSoundPoolKind kind, const EncodedAudioSource& source,
                    std::int32_t instance, float volume);
+    void SetStreamVolume(std::int32_t stream, float left, float right);
+    void SetStreamLoop(std::int32_t stream, std::int32_t loop);
+    void SetStreamPriority(std::int32_t stream, std::int32_t priority);
+    void PauseStream(std::int32_t stream);
+    void ResumeStream(std::int32_t stream);
+    void StopStream(std::int32_t stream);
     void SetPitch(JavaSoundPoolKind kind, std::int32_t resource,
                   std::int32_t instance, float pitch);
+    void SetStreamRate(std::int32_t stream, float rate);
     void Reset(JavaSoundPoolKind kind, std::int32_t resource,
                std::int32_t instance);
     void Reset(JavaSoundPoolKind kind, const EncodedAudioSource& source,
@@ -96,12 +112,25 @@ private:
     struct Voice final {
         JavaSoundPoolKind kind{JavaSoundPoolKind::pool};
         EncodedAudioSource source;
+        std::uint32_t pool{};
         std::int32_t instance{};
+        std::int32_t stream{};
+        std::int32_t sound{};
+        std::int32_t priority{};
+        std::int32_t loops_remaining{};
+        std::uint64_t age{};
         double position{};
+        float left{1.0F};
+        float right{1.0F};
         float volume{1.0F};
         float pitch{1.0F};
         bool paused{};
         bool looping{};
+    };
+    struct Pool final {
+        std::int32_t max_streams{1};
+        std::int32_t next_sound{1};
+        std::map<std::int32_t, EncodedAudioSource> samples;
     };
     [[nodiscard]] std::vector<Voice>::iterator FindVoice(
         JavaSoundPoolKind kind, const EncodedAudioSource& source,
@@ -111,7 +140,11 @@ private:
     mutable std::mutex mutex_;
     std::map<EncodedAudioSource, Pcm16Audio> resources_;
     std::map<EncodedAudioSource, std::string> failures_;
+    std::map<std::uint32_t, Pool> pools_;
     std::vector<Voice> voices_;
+    std::uint32_t next_pool_{1};
+    std::int32_t next_stream_{1};
+    std::uint64_t next_age_{1};
 };
 
 }  // namespace ogplay::audio

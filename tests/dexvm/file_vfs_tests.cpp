@@ -25,10 +25,13 @@
 #include "ogplay/core/capability_ledger.h"
 #include "ogplay/core/logger.h"
 #include "ogplay/loader/apk.h"
+#include "ogplay/audio/encoded_music.h"
 #include "ogplay/audio/java_sound_pool_mixer.h"
+#include "ogplay/audio/pcm_mix.h"
 #include "ogplay/runtime/dexvm/class_linker.h"
 #include "ogplay/runtime/dexvm/intrinsic_builder.h"
 #include "ogplay/runtime/dexvm/interpreter.h"
+#include "ogplay/runtime/dexvm/vm_monitors.h"
 #include "ogplay/runtime/dexvm/io_runtime.h"
 #include "ogplay/runtime/dexvm/object_model.h"
 #include "ogplay/runtime/dexvm/vm_threads.h"
@@ -410,6 +413,7 @@ struct FileVm final {
                   return linker;
               }(),
               model, nullptr, ledger, config) {
+        interpreter.Monitors().SetTimeSource([] { return std::int64_t{1}; });
         context->vfs = &vfs;
         interpreter.IO().SetFileSystem(&io_file_system);
         context->package_name = kPackage;
@@ -1922,25 +1926,11 @@ TEST_CASE("MediaPlayer decodes the selected second Ogg descriptor range") {
         REQUIRE(output.good());
     }
 
-    std::optional<ogplay::audio::EncodedAudioSource> requested;
-    ogplay::audio::JavaSoundPoolMixer mixer{
-        [&joined, &requested](
-            const ogplay::audio::EncodedAudioSource& source) {
-            requested = source;
-            if (source.offset > joined.size()) return std::vector<std::byte>{};
-            const auto available = joined.size() -
-                static_cast<std::size_t>(source.offset);
-            const auto length = source.length == UINT64_MAX
-                ? available
-                : static_cast<std::size_t>(source.length);
-            if (length > available) return std::vector<std::byte>{};
-            const auto begin = joined.begin() +
-                static_cast<std::ptrdiff_t>(source.offset);
-            return std::vector<std::byte>(
-                begin, begin + static_cast<std::ptrdiff_t>(length));
-        }};
+    ogplay::audio::EncodedMusicMixer music;
     FileVm vm;
-    vm.context->encoded_audio_playback = &mixer;
+    VmThreadRuntime threads(vm.interpreter);
+    vm.context->threads = &threads;
+    vm.context->encoded_music = &music;
     vm.vfs.MountHostDirectory("/sdcard", root.path);
     const auto file = vm.NewFile("/sdcard/joined.ogg");
     const auto pfd_class =
@@ -1957,20 +1947,22 @@ TEST_CASE("MediaPlayer decodes the selected second Ogg descriptor range") {
                               "()Ljava/io/FileDescriptor;").ref;
     const auto player = vm.interpreter.NewIntrinsicInstance(
         "Landroid/media/MediaPlayer;");
+    vm.CallOn(player, "<init>", "()V");
     vm.CallOn(player, "setDataSource", "(Ljava/io/FileDescriptor;JJ)V",
               {VmValue::Ref(fd), VmValue::Long(
                    static_cast<std::int64_t>(ogg.size())),
                VmValue::Long(static_cast<std::int64_t>(ogg.size()))});
     vm.CallOn(player, "prepare", "()V");
     vm.CallOn(player, "start", "()V");
-    REQUIRE(requested.has_value());
-    CHECK(requested->kind ==
-          ogplay::audio::EncodedAudioSource::Kind::vfs_path);
-    CHECK(requested->name == "/sdcard/joined.ogg");
-    CHECK(requested->offset == ogg.size());
-    CHECK(requested->length == ogg.size());
+    const auto& source = vm.context->media_players.at(player.Value()).source;
+    CHECK(source.kind == ogplay::audio::EncodedAudioSource::Kind::vfs_path);
+    CHECK(source.name == "/sdcard/joined.ogg");
+    CHECK(source.offset == ogg.size());
+    CHECK(source.length == ogg.size());
     std::vector<std::int16_t> pcm(2048U * 2U);
-    CHECK(mixer.RenderStereoPcm16(pcm, 48000U) == 2048U);
+    std::vector<std::int64_t> accumulator(pcm.size());
+    music.MixIntoAccumulator(accumulator, 48000U);
+    ogplay::audio::SaturateStereoPcm16(accumulator, pcm);
     CHECK(std::ranges::any_of(pcm,
         [](const std::int16_t sample) { return sample != 0; }));
 
@@ -1978,9 +1970,10 @@ TEST_CASE("MediaPlayer decodes the selected second Ogg descriptor range") {
     vm.CallOn(player, "reset", "()V");
     vm.CallOn(player, "setDataSource", "(Ljava/io/FileDescriptor;)V",
               {VmValue::Ref(fd)});
-    const auto& full_source = vm.context->media_resources.at(player.Value());
+    const auto& full_source = vm.context->media_players.at(player.Value()).source;
     CHECK(full_source.offset == 0U);
-    CHECK(full_source.length == UINT64_MAX);
+    CHECK((full_source.length == UINT64_MAX ||
+           full_source.length == 0x7ffffffffffffffULL));
     vm.CallOn(player, "prepare", "()V");
 }
 
@@ -1997,11 +1990,10 @@ TEST_CASE("MediaPlayer FD lease survives close and path replacement") {
         ogg[index] = static_cast<std::byte>(chars[index]);
     }
     vm.vfs.PutFile("/sdcard/lease.ogg", ogg, true);
-    ogplay::audio::JavaSoundPoolMixer mixer{
-        [context = vm.context](const ogplay::audio::EncodedAudioSource& source) {
-            return ogplay::runtime::LoadEncodedAudioWindow(*context, source);
-        }};
-    vm.context->encoded_audio_playback = &mixer;
+    ogplay::audio::EncodedMusicMixer music;
+    vm.context->encoded_music = &music;
+    VmThreadRuntime threads(vm.interpreter);
+    vm.context->threads = &threads;
     const auto stream = vm.interpreter.NewIntrinsicInstance(
         "Ljava/io/FileInputStream;");
     vm.CallOn(stream, "<init>", "(Ljava/lang/String;)V",
@@ -2010,6 +2002,7 @@ TEST_CASE("MediaPlayer FD lease survives close and path replacement") {
                               "()Ljava/io/FileDescriptor;").ref;
     const auto player = vm.interpreter.NewIntrinsicInstance(
         "Landroid/media/MediaPlayer;");
+    vm.CallOn(player, "<init>", "()V");
     vm.CallOn(player, "setDataSource", "(Ljava/io/FileDescriptor;)V",
               {VmValue::Ref(fd)});
     REQUIRE(vm.context->encoded_audio_leases.size() == 1U);
@@ -2020,7 +2013,9 @@ TEST_CASE("MediaPlayer FD lease survives close and path replacement") {
     vm.CallOn(player, "prepare", "()V");
     vm.CallOn(player, "start", "()V");
     std::vector<std::int16_t> pcm(512U * 2U);
-    CHECK(mixer.RenderStereoPcm16(pcm, 48000U) == 512U);
+    std::vector<std::int64_t> accumulator(pcm.size());
+    music.MixIntoAccumulator(accumulator, 48000U);
+    ogplay::audio::SaturateStereoPcm16(accumulator, pcm);
     CHECK(std::ranges::any_of(pcm, [](const std::int16_t sample) {
         return sample != 0;
     }));

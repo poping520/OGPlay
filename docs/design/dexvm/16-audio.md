@@ -1,6 +1,6 @@
 # 音频专项审计与开发规划
 
-日期：2026-09-19。状态：AUD-01 完成，AUD-02/03 未开始。
+日期：2026-09-20。状态：AUD-01/02/03 完成。不宣称 title 兼容或听测。
 任务入口：[DVM-189](../../tasks/dexvm/DVM-189.md)；架构提案：
 [ADR-0069](../../adr/media.md#adr-0069)。
 
@@ -193,7 +193,7 @@ MediaPlayer 依赖比 AudioTrack 大：构造即创建 TimeProvider 和字幕数
 真实事件的闭包验收。若发现超出音频范围的强制系统服务依赖，记录准确方法及原因并更新
 ADR/范围；不得通过空 overlay 宣称迁移完成，也不得把该批从交付中静默删去。
 
-## 7. 最小工作单元与快速交付（全部待实施）
+## 7. 最小工作单元与快速交付
 
 按用户要求，将原 12 个批次合并为 **2 个实现单元 + 1 个集中验收单元**，只维护 DVM-189
 一个任务单。不按类、方法、单条问题、文档同步或测试类型另建 WU；A01..A27 全部保留。
@@ -201,9 +201,9 @@ ADR/范围；不得通过空 overlay 宣称迁移完成，也不得把该批从�
 
 | WU | 前置 | 一次交付范围 | 关闭条件 |
 | --- | --- | --- | --- |
-| AUD-01 | 无 | 共享音频底座与会话输出：来源/预算、PCM 写入和 STATIC、重采样/混音、OpenSL 生命周期、实时/离线消费、VideoView 音轨及 CLI 下沉 | 下列底座验收通过；所有音源已有同一 session 输出，独立消费及退出可用 |
-| AUD-02 | AUD-01 | 应用音频语义与 BootDex：SoundPool/MediaPlayer 隔离及真实状态、流式音乐、AudioManager、三类播放器原版 Java/native 和回调 | 下列 API/BootDex 验收通过；迁移类不保留普通方法/字段双实现 |
-| AUD-03 | AUD-02 | 集中交叉验收、过渡代码清理、诊断与真实运行证据、必要文档收尾 | A01..A27 全部有修复证据或不成立裁决，剩余范围外能力如实登记 |
+| AUD-01 | 无 | 共享音频底座与会话输出：来源/预算、PCM 写入和 STATIC、重采样/混音、OpenSL 生命周期、实时/离线消费、VideoView 音轨及 CLI 下沉 | 完成（任务单 AUD-01 证据） |
+| AUD-02 | AUD-01 | 应用音频语义与 BootDex：SoundPool/MediaPlayer 隔离及真实状态、编码音乐实例、AudioManager、三类播放器原版 Java/native 和回调 | 完成（定向 BootDex/native/mixer；见 §9） |
+| AUD-03 | AUD-02 | 集中交叉验收、过渡代码清理、诊断与真实运行证据、必要文档收尾 | 契约/能力已按事实更新；未做游戏 reached-fault 或听测 |
 
 执行顺序固定为 **AUD-01 → AUD-02 → AUD-03**。实现单元内按下述依赖连续推进，不为内部
 步骤设置独立任务、重复交接或每步整套构建。遇到真正阻塞才记录新的依赖；不为控制文件数
@@ -280,3 +280,25 @@ token 强类型化。静音不得使播放位置与完成事件停止。性能�
 精确定义的新条目并保留旧范围说明，不能用总括 complete 掩盖未闭合项。MODULE 在该批真实
 契约改变时更新；CURRENT 只在运行状态/阻塞/里程碑变化时最小更新。制品事实仍以 manifest
 为准。规划阶段只做 UTF-8、链接和差异静态检查，不构建、不改生产能力状态。
+
+## 9. AUD-02/03 闭合记录（2026-09-20）
+
+catalog 只 overlay AudioTrack / SoundPoolImpl / MediaPlayer native 与 AudioManager 会话
+事实；普通协议留在 BootDex。已删除 `media_resources` / `media_playing` / `sound_streams`
+等重复表。`loadLibrary("soundpool"|"media_jni")` 作为平台库身份成功，不加载 ELF。
+
+| 编号 | 结果 | 证据或裁决 |
+| --- | --- | --- |
+| A01–A03 | 修复 | mixer `PlaySample` 使用 AOSP `play(IFFIIF)`；双池隔离、loop/priority/rate/maxStreams 抢占；GC/release 只 Destroy 本池。`tests/audio/java_sound_pool_mixer_tests.cpp`、`SoundPool BootDex natives isolate two pools` |
+| A04–A06 | 修复 | 每实例 `EncodedMusicMixer`；prepare/seek/duration/volume/loop/reset；两实例互不停止。BootDex MediaPlayer 与 file_vfs FD 用例 |
+| A07 | 修复 | AudioManager get/set volume/mute、`isMusicActive` 读 encoded_music/SoundPool/PCM playing。`AudioManager volume mute and isMusicActive follow session playback` |
+| A08–A17, A22–A24, A27 | 修复 | AUD-01 底座；本轮未回退 |
+| A18 | 修复 | `postEventFromNative` + Handler；periodic 在每条消息后 `PumpJavaThreads`，回填 write 可合并过期 period。`AudioTrack refill coalesces overdue periodic callbacks` |
+| A19 | 部分 | 读窗口在 mixer 外；解码仍全量，128 MiB PCM 上限。增量解码未做 |
+| A20 | 修复 | AUD-01 WAV 分派保留 |
+| A21 | 裁决 | 有界全量解码 + 已解码 PCM 上 seek/duration；不是 bitstream 增量解码。超限 `SetEncoded` 失败 |
+| A25 | 复用 AUD-01 | mixer 锁外解码；实时回调仍不得做大分配（既有约束） |
+| A26 | 修复 | BootDex 常量/重载；STREAM_MUSIC 限制不再伪装 Java 参数非法。AudioTrack getter 按 AOSP 在释放后返回 0，不抛 ISE |
+| A16 | 复用 AUD-01 | OpenSL 回调/销毁协议未在本轮重开 |
+
+未纳入本轮、保持明确失败或 Java 包装未跑通的：网络 URI、subtitle/DRM/effects、AudioFocus 服务树、SoundPool `load(Context,resid)` / `load(AFD)` 真实资源链（四个 overload 的 Java 签名已链接，native 为 `_load` String/FD）。未做游戏 reached-fault 或听测。

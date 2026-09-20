@@ -2970,7 +2970,21 @@ IntrinsicClassDecl Declare_java_lang_System(const CoreIntrinsicServices& service
             static_cast<std::uint64_t>(now()) * 1000000ULL));
     });
     builder.UnimplementedStatic("load", "(Ljava/lang/String;)V");
-    builder.UnimplementedStatic("loadLibrary", "(Ljava/lang/String;)V");
+    builder.StaticMethod(
+        "loadLibrary", "(Ljava/lang/String;)V", [](IntrinsicContext& call) {
+            const auto reference = call.arguments[0].ref;
+            if (!reference.IsValid()) {
+                throw VmJavaThrow{"Ljava/lang/NullPointerException;",
+                                  "libraryName == null"};
+            }
+            const auto name = call.vm.StringUtf8(reference);
+            if (name == "soundpool" || name == "media_jni") {
+                return VmValue::Void();
+            }
+            throw VmJavaThrow{
+                "Ljava/lang/UnsatisfiedLinkError;",
+                "APK native library loader is unavailable"};
+        });
     builder.StaticMethod("exit", "(I)V", [](IntrinsicContext& context) {
         const auto runtime = InvokeGuestDirect(context.vm, "Ljava/lang/Runtime;", "getRuntime",
                                     "()Ljava/lang/Runtime;", {}).ref;

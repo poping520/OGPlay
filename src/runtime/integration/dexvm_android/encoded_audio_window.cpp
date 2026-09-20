@@ -25,7 +25,9 @@ namespace {
     return length == 0U ||
            length == std::numeric_limits<std::uint64_t>::max() ||
            length == static_cast<std::uint64_t>(
-               std::numeric_limits<std::int64_t>::max());
+               std::numeric_limits<std::int64_t>::max()) ||
+           // MediaPlayer.setDataSource(FileDescriptor) uses this AOSP sentinel.
+           length == 0x7ffffffffffffffULL;
 }
 
 [[nodiscard]] std::uint64_t WindowLength(const std::uint64_t available,

@@ -139,3 +139,35 @@ TEST_CASE("SoundPool mixer treats path revision as a distinct cache key") {
     CHECK(loads == 2U);
     CHECK(mixer.LoadedResourceCount() == 2U);
 }
+
+TEST_CASE("SoundPool mixer isolates pools and honors loop priority and rate") {
+    const auto sound = ReadSound();
+    ogplay::audio::JavaSoundPoolMixer mixer{
+        [&sound](const ogplay::audio::EncodedAudioSource&) { return sound; }};
+    const auto first = mixer.CreatePool(1);
+    const auto second = mixer.CreatePool(1);
+    const auto a = mixer.LoadSample(first, 1);
+    const auto b = mixer.LoadSample(second, 1);
+    REQUIRE(a != 0);
+    REQUIRE(b != 0);
+    const auto stream_a =
+        mixer.PlaySample(first, a, 1.0F, 0.0F, 1, 0, 1.0F);
+    const auto stream_b =
+        mixer.PlaySample(second, b, 0.0F, 1.0F, 1, 0, 1.0F);
+    REQUIRE(stream_a != 0);
+    REQUIRE(stream_b != 0);
+    CHECK(stream_a != stream_b);
+    const auto preempted =
+        mixer.PlaySample(first, a, 1.0F, 1.0F, 2, 0, 1.0F);
+    REQUIRE(preempted != 0);
+    mixer.SetStreamLoop(stream_b, -1);
+    mixer.SetStreamRate(stream_b, 0.5F);
+    std::vector<std::int16_t> pcm(256U * 2U);
+    CHECK(mixer.RenderStereoPcm16(pcm, 48000U) == 256U);
+    CHECK(std::ranges::any_of(pcm, [](const std::int16_t sample) {
+        return sample != 0;
+    }));
+    CHECK(mixer.UnloadSample(first, a));
+    mixer.DestroyPool(first);
+    mixer.DestroyPool(second);
+}

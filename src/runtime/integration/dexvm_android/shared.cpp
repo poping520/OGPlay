@@ -782,6 +782,9 @@ dx::IntrinsicHandler PlatformSystemLoadHandlerImpl(
         [context, argument_name, load = std::move(load)](
             dx::IntrinsicContext& call) {
             const auto argument = SystemLoadArgument(call, argument_name);
+            if (argument == "soundpool" || argument == "media_jni") {
+                return dx::VmValue::Void();
+            }
             if (context->native_libraries == nullptr ||
                 context->application_class_loader_token == 0U) {
                 throw dx::VmJavaThrow{
@@ -816,9 +819,6 @@ dx::IntrinsicHandler PlatformSystemLoadLibraryHandler(
         context, "libraryName",
         [](NativeLibraryLoader& libraries, const std::string_view name,
            const JavaClassLoaderToken class_loader) {
-            // API 19 Conscrypt names its platform JNI library "javacrypto".
-            // OGPlay intentionally ships the audited crypto/ICU JNI subset in
-            // the single process-owned libogplay_jni.so instead.
             const auto resolved = name == "javacrypto" ? std::string_view{"ogplay_jni"} : name;
             static_cast<void>(libraries.LoadLibrary(resolved, class_loader));
         });

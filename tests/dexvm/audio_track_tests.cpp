@@ -6,6 +6,9 @@
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
+#include <filesystem>
+#include <fstream>
+#include <iterator>
 #include <memory>
 #include <optional>
 #include <stdexcept>
@@ -13,10 +16,14 @@
 #include <thread>
 #include <vector>
 
+#include "ogplay/audio/encoded_music.h"
+#include "ogplay/audio/java_sound_pool_mixer.h"
 #include "ogplay/audio/open_sles_pcm_mixer.h"
+#include "ogplay/audio/pcm_mix.h"
 #include "ogplay/core/capability_ledger.h"
 #include "ogplay/runtime/dexvm/class_linker.h"
-#include "ogplay/runtime/dexvm/interpreter.h"
+#include "ogplay/runtime/dexvm/vm_monitors.h"
+#include "ogplay/runtime/dexvm/vm_threads.h"
 #include "ogplay/runtime/dexvm/intrinsic_builder.h"
 #include "ogplay/runtime/dexvm/object_model.h"
 #include "ogplay/runtime/integration/dexvm_android.h"
@@ -35,8 +42,19 @@ struct PositionListenerRecorder final {
     std::int32_t write_result{-999};
 };
 
+struct LoadCompleteRecorder final {
+    std::vector<std::int32_t> sounds;
+    std::vector<std::int32_t> statuses;
+};
+
+struct PreparedRecorder final {
+    std::vector<VmObjectRef> players;
+};
+
 std::vector<IntrinsicClassDecl> AudioTrackTestCatalog(
-    PositionListenerRecorder* recorder) {
+    PositionListenerRecorder* recorder,
+    LoadCompleteRecorder* loads = nullptr,
+    PreparedRecorder* prepared = nullptr) {
     std::vector<IntrinsicClassDecl> result;
     auto listener = IntrinsicClassBuilder::Class(
         "Ltest/AudioPositionListener;", "Ljava/lang/Object;",
@@ -85,6 +103,33 @@ std::vector<IntrinsicClassDecl> AudioTrackTestCatalog(
     throwing.VirtualMethod(
         "onMarkerReached", "(Landroid/media/AudioTrack;)V", fail);
     result.push_back(std::move(throwing).Build());
+
+    auto load_listener = IntrinsicClassBuilder::Class(
+        "Ltest/SoundLoadListener;", "Ljava/lang/Object;",
+        {"Landroid/media/SoundPool$OnLoadCompleteListener;"});
+    load_listener.VirtualMethod(
+        "onLoadComplete", "(Landroid/media/SoundPool;II)V",
+        [loads](IntrinsicContext& call) {
+            if (loads != nullptr) {
+                loads->sounds.push_back(call.arguments[1].AsInt());
+                loads->statuses.push_back(call.arguments[2].AsInt());
+            }
+            return VmValue::Void();
+        });
+    result.push_back(std::move(load_listener).Build());
+
+    auto prepared_listener = IntrinsicClassBuilder::Class(
+        "Ltest/MediaPreparedListener;", "Ljava/lang/Object;",
+        {"Landroid/media/MediaPlayer$OnPreparedListener;"});
+    prepared_listener.VirtualMethod(
+        "onPrepared", "(Landroid/media/MediaPlayer;)V",
+        [prepared](IntrinsicContext& call) {
+            if (prepared != nullptr) {
+                prepared->players.push_back(call.arguments[0].ref);
+            }
+            return VmValue::Void();
+        });
+    result.push_back(std::move(prepared_listener).Build());
     return result;
 }
 
@@ -98,7 +143,10 @@ struct AudioTrackVm final {
     std::shared_ptr<DexVmAndroidContext> context{
         std::make_shared<DexVmAndroidContext>()};
     PositionListenerRecorder recorder;
+    LoadCompleteRecorder loads;
+    PreparedRecorder prepared;
     Interpreter vm;
+    VmThreadRuntime threads;
 
     explicit AudioTrackVm(
         const std::optional<std::uint32_t> native_output_sample_rate =
@@ -111,13 +159,31 @@ struct AudioTrackVm final {
                  context->pcm_playback = &mixer;
                  linker.RegisterIntrinsics(CoreIntrinsicCatalog());
                  linker.RegisterIntrinsics(AndroidIntrinsicCatalog(context));
-                 linker.RegisterIntrinsics(AudioTrackTestCatalog(&recorder));
+                 linker.RegisterIntrinsics(AudioTrackTestCatalog(
+                     &recorder, &loads, &prepared));
                  ogplay::test::RegisterBootDex(linker);
                  linker.Link();
                  return linker;
              }(),
-             model, nullptr, ledger, {}) {
+             model, nullptr, ledger, {}),
+          threads(vm) {
+        vm.Monitors().SetTimeSource([] { return std::int64_t{1}; });
+        context->threads = &threads;
+        RegisterAndroidSchedulerStateTable(vm, context);
         RegisterAndroidAudioTrackStateTable(vm, context);
+        const auto looper =
+            linker.ResolveDescriptor("Landroid/os/Looper;");
+        const auto prepare = linker.FindDirectMethod(
+            looper, "prepareMainLooper", "()V");
+        REQUIRE(prepare.has_value());
+        const auto prepared = vm.Call(*prepare, {});
+        REQUIRE_MESSAGE(!prepared.exception.IsValid(),
+                        prepared.exception_message);
+    }
+
+    ~AudioTrackVm() {
+        ShutdownAndroidScheduler(*context);
+        threads.Shutdown();
     }
 
     VmValue CallStatic(const char* name, const char* descriptor,
@@ -156,6 +222,18 @@ struct AudioTrackVm final {
         REQUIRE(index.has_value());
         arguments.insert(arguments.begin(), VmValue::Ref(receiver));
         const auto outcome = vm.Call(linker.Class(klass).vtable[*index], arguments);
+        REQUIRE_MESSAGE(!outcome.exception.IsValid(), outcome.exception_message);
+        return outcome.value;
+    }
+
+    VmValue CallDirect(const VmObjectRef receiver, const char* name,
+                       const char* descriptor,
+                       std::vector<VmValue> arguments = {}) {
+        const auto klass = model.ObjectClass(receiver);
+        const auto method = linker.FindDirectMethod(klass, name, descriptor);
+        REQUIRE(method.has_value());
+        arguments.insert(arguments.begin(), VmValue::Ref(receiver));
+        const auto outcome = vm.Call(*method, arguments);
         REQUIRE_MESSAGE(!outcome.exception.IsValid(), outcome.exception_message);
         return outcome.value;
     }
@@ -399,21 +477,16 @@ TEST_CASE("AudioTrack notification getters expose persistent configured state") 
               track, "getNotificationMarkerPosition", "()I").AsInt() == 23);
 
     static_cast<void>(fixture.CallOn(track, "release", "()V"));
-    const auto released_period = fixture.CallOnOutcome(
-        track, "getPositionNotificationPeriod", "()I");
-    REQUIRE(released_period.exception.IsValid());
-    CHECK(fixture.linker.Class(fixture.model.ObjectClass(
-              released_period.exception)).descriptor ==
-          "Ljava/lang/IllegalStateException;");
+    CHECK(fixture.CallOn(
+              track, "getPositionNotificationPeriod", "()I").AsInt() == 0);
+    CHECK(fixture.CallOn(
+              track, "getNotificationMarkerPosition", "()I").AsInt() == 0);
 
     const auto uninitialized =
         fixture.vm.NewIntrinsicInstance("Landroid/media/AudioTrack;");
-    const auto uninitialized_marker = fixture.CallOnOutcome(
-        uninitialized, "getNotificationMarkerPosition", "()I");
-    REQUIRE(uninitialized_marker.exception.IsValid());
-    CHECK(fixture.linker.Class(fixture.model.ObjectClass(
-              uninitialized_marker.exception)).descriptor ==
-          "Ljava/lang/IllegalStateException;");
+    CHECK(fixture.CallOn(
+              uninitialized, "getNotificationMarkerPosition", "()I").AsInt() ==
+          0);
 }
 
 TEST_CASE("AudioTrack marker notification fires once and rearms on set") {
@@ -598,16 +671,10 @@ TEST_CASE("AudioTrack notification setters report errors and callback faults") {
               uninitialized, "setNotificationMarkerPosition", "(I)I",
               {VmValue::Int(1)}).AsInt() == -3);
     const auto listener = fixture.NewListener();
-    const auto listener_outcome = fixture.CallOnOutcome(
+    static_cast<void>(fixture.CallOn(
         uninitialized, "setPlaybackPositionUpdateListener",
         "(Landroid/media/AudioTrack$OnPlaybackPositionUpdateListener;)V",
-        {VmValue::Ref(listener)});
-    CHECK(listener_outcome.exception.IsValid());
-    CHECK(fixture.linker.Class(fixture.model.ObjectClass(
-              listener_outcome.exception)).descriptor ==
-          "Ljava/lang/IllegalStateException;");
-    CHECK(listener_outcome.exception_message ==
-          "AudioTrack is not initialized");
+        {VmValue::Ref(listener)}));
 
     const auto throwing = fixture.NewListener(
         "Ltest/ThrowingAudioPositionListener;");
@@ -628,6 +695,221 @@ TEST_CASE("AudioTrack notification setters report errors and callback faults") {
     fixture.MixFrames(1U);
     const auto error = PumpAndroidAudioTracks(fixture.vm, *fixture.context);
     REQUIRE(error.has_value());
-    CHECK(error->find("onPeriodicNotification raised") != std::string::npos);
+    CHECK(error->find("handleMessage raised") != std::string::npos);
     CHECK(error->find("position listener failure") != std::string::npos);
+}
+
+TEST_CASE("AudioManager volume mute and isMusicActive follow session playback") {
+    AudioTrackVm fixture;
+    const auto manager =
+        fixture.vm.NewIntrinsicInstance("Landroid/media/AudioManager;");
+    CHECK(fixture.CallOn(manager, "getStreamMaxVolume", "(I)I",
+                         {VmValue::Int(3)}).AsInt() == 15);
+    static_cast<void>(fixture.CallOn(
+        manager, "setStreamVolume", "(III)V",
+        {VmValue::Int(3), VmValue::Int(4), VmValue::Int(0)}));
+    CHECK(fixture.CallOn(manager, "getStreamVolume", "(I)I",
+                         {VmValue::Int(3)}).AsInt() == 4);
+    static_cast<void>(fixture.CallOn(
+        manager, "setStreamMute", "(IZ)V",
+        {VmValue::Int(3), VmValue::Int(1)}));
+    CHECK(fixture.CallOn(manager, "getStreamVolume", "(I)I",
+                         {VmValue::Int(3)}).AsInt() == 0);
+    CHECK(fixture.CallOn(manager, "isMusicActive", "()Z").AsInt() == 0);
+    const auto track = fixture.NewTrack(4000, 4, 2, 800, 1);
+    const auto pcm = fixture.ByteArray(std::vector<std::byte>(800, std::byte{}));
+    CHECK(fixture.CallOn(track, "write", "([BII)I",
+                         {VmValue::Ref(pcm), VmValue::Int(0),
+                          VmValue::Int(800)}).AsInt() == 800);
+    static_cast<void>(fixture.CallOn(track, "play", "()V"));
+    CHECK(fixture.CallOn(manager, "isMusicActive", "()Z").AsInt() == 1);
+}
+
+TEST_CASE("SoundPool BootDex natives isolate two pools") {
+    const auto path = std::filesystem::path{OGPLAY_SOURCE_DIR} /
+                      "tests/fixtures/audio/short-vorbis.ogg";
+    std::ifstream input(path, std::ios::binary);
+    REQUIRE(input.good());
+    const std::vector<char> chars{std::istreambuf_iterator<char>(input), {}};
+    std::vector<std::byte> ogg(chars.size());
+    for (std::size_t index = 0; index < chars.size(); ++index) {
+        ogg[index] = static_cast<std::byte>(chars[index]);
+    }
+    AudioTrackVm fixture;
+    ogplay::audio::JavaSoundPoolMixer mixer{
+        [&ogg](const ogplay::audio::EncodedAudioSource&) { return ogg; }};
+    fixture.context->encoded_audio_playback = &mixer;
+    const auto make_pool = [&] {
+        const auto pool =
+            fixture.vm.NewIntrinsicInstance("Landroid/media/SoundPool;");
+        const auto klass =
+            fixture.linker.ResolveDescriptor("Landroid/media/SoundPool;");
+        const auto ctor =
+            fixture.linker.FindDirectMethod(klass, "<init>", "(III)V");
+        REQUIRE(ctor.has_value());
+        const std::vector arguments{
+            VmValue::Ref(pool), VmValue::Int(2), VmValue::Int(3),
+            VmValue::Int(0)};
+        const auto outcome = fixture.vm.Call(*ctor, arguments);
+        REQUIRE_MESSAGE(!outcome.exception.IsValid(), outcome.exception_message);
+        return pool;
+    };
+    const auto first = make_pool();
+    const auto second = make_pool();
+    const auto load = [&](const VmObjectRef pool) {
+        return fixture.CallOn(
+            pool, "load", "(Ljava/lang/String;I)I",
+            {VmValue::Ref(fixture.vm.NewStringUtf8("http://sdcard/a.ogg")),
+             VmValue::Int(1)}).AsInt();
+    };
+    const auto sound_a = load(first);
+    const auto sound_b = load(second);
+    REQUIRE(sound_a != 0);
+    REQUIRE(sound_b != 0);
+    const auto stream_a = fixture.CallOn(
+        first, "play", "(IFFIIF)I",
+        {VmValue::Int(sound_a), VmValue::Float(1.0F), VmValue::Float(0.0F),
+         VmValue::Int(1), VmValue::Int(0), VmValue::Float(1.0F)}).AsInt();
+    const auto stream_b = fixture.CallOn(
+        second, "play", "(IFFIIF)I",
+        {VmValue::Int(sound_b), VmValue::Float(0.0F), VmValue::Float(1.0F),
+         VmValue::Int(1), VmValue::Int(-1), VmValue::Float(1.0F)}).AsInt();
+    REQUIRE(stream_a != 0);
+    REQUIRE(stream_b != 0);
+    CHECK(stream_a != stream_b);
+    CHECK(fixture.CallOn(first, "unload", "(I)Z", {VmValue::Int(sound_a)})
+              .AsInt() == 1);
+    static_cast<void>(fixture.CallOn(first, "release", "()V"));
+    CHECK(mixer.ActiveVoiceCount() >= 1U);
+}
+
+TEST_CASE("MediaPlayer BootDex instances prepare seek and mix independently") {
+    const auto path = std::filesystem::path{OGPLAY_SOURCE_DIR} /
+                      "tests/fixtures/audio/short-vorbis.ogg";
+    std::ifstream input(path, std::ios::binary);
+    REQUIRE(input.good());
+    const std::vector<char> chars{std::istreambuf_iterator<char>(input), {}};
+    std::vector<std::byte> ogg(chars.size());
+    for (std::size_t index = 0; index < chars.size(); ++index) {
+        ogg[index] = static_cast<std::byte>(chars[index]);
+    }
+    AudioTrackVm fixture;
+    ogplay::audio::EncodedMusicMixer music;
+    fixture.context->encoded_music = &music;
+    const auto make_player = [&] {
+        const auto player =
+            fixture.vm.NewIntrinsicInstance("Landroid/media/MediaPlayer;");
+        fixture.CallDirect(player, "<init>", "()V");
+        return player;
+    };
+    const auto first = make_player();
+    const auto second = make_player();
+    REQUIRE(music.SetEncoded(
+        fixture.context->media_players.at(first.Value()).music, ogg));
+    REQUIRE(music.SetEncoded(
+        fixture.context->media_players.at(second.Value()).music, ogg));
+    static_cast<void>(fixture.CallOn(first, "prepare", "()V"));
+    static_cast<void>(fixture.CallOn(second, "prepare", "()V"));
+    static_cast<void>(fixture.CallOn(first, "setVolume", "(FF)V",
+                                     {VmValue::Float(1.0F), VmValue::Float(0.0F)}));
+    static_cast<void>(fixture.CallOn(second, "setLooping", "(Z)V",
+                                     {VmValue::Int(1)}));
+    static_cast<void>(fixture.CallOn(first, "start", "()V"));
+    static_cast<void>(fixture.CallOn(second, "start", "()V"));
+    CHECK(fixture.CallOn(first, "isPlaying", "()Z").AsInt() == 1);
+    CHECK(fixture.CallOn(second, "getDuration", "()I").AsInt() > 0);
+    static_cast<void>(fixture.CallOn(
+        first, "seekTo", "(I)V",
+        {VmValue::Int(fixture.CallOn(first, "getDuration", "()I").AsInt())}));
+    std::vector<std::int16_t> pcm(64U * 2U);
+    std::vector<std::int64_t> accumulator(pcm.size());
+    music.MixIntoAccumulator(accumulator, 48000U);
+    ogplay::audio::SaturateStereoPcm16(accumulator, pcm);
+    CHECK(std::ranges::any_of(
+        pcm, [](const std::int16_t sample) { return sample != 0; }));
+    static_cast<void>(fixture.CallOn(first, "reset", "()V"));
+    CHECK(fixture.CallOn(first, "isPlaying", "()Z").AsInt() == 0);
+    CHECK(fixture.CallOn(second, "isPlaying", "()Z").AsInt() == 1);
+}
+
+TEST_CASE("SoundPool BootDex load overloads complete through Handler") {
+    const auto path = std::filesystem::path{OGPLAY_SOURCE_DIR} /
+                      "tests/fixtures/audio/short-vorbis.ogg";
+    std::ifstream input(path, std::ios::binary);
+    REQUIRE(input.good());
+    const std::vector<char> chars{std::istreambuf_iterator<char>(input), {}};
+    std::vector<std::byte> ogg(chars.size());
+    for (std::size_t index = 0; index < chars.size(); ++index) {
+        ogg[index] = static_cast<std::byte>(chars[index]);
+    }
+    AudioTrackVm fixture;
+    ogplay::audio::JavaSoundPoolMixer mixer{
+        [&ogg](const ogplay::audio::EncodedAudioSource&) { return ogg; }};
+    fixture.context->encoded_audio_playback = &mixer;
+    const auto klass =
+        fixture.linker.ResolveDescriptor("Landroid/media/SoundPool;");
+    CHECK(fixture.linker.FindVtableIndex(
+              klass, "load", "(Ljava/lang/String;I)I").has_value());
+    CHECK(fixture.linker.FindVtableIndex(
+              klass, "load", "(Landroid/content/Context;II)I").has_value());
+    CHECK(fixture.linker.FindVtableIndex(
+              klass, "load",
+              "(Landroid/content/res/AssetFileDescriptor;I)I").has_value());
+    CHECK(fixture.linker.FindVtableIndex(
+              klass, "load", "(Ljava/io/FileDescriptor;JJI)I").has_value());
+    const auto pool =
+        fixture.vm.NewIntrinsicInstance("Landroid/media/SoundPool;");
+    const auto ctor =
+        fixture.linker.FindDirectMethod(klass, "<init>", "(III)V");
+    REQUIRE(ctor.has_value());
+    const auto constructed = fixture.vm.Call(
+        *ctor, std::vector<VmValue>{VmValue::Ref(pool), VmValue::Int(2),
+                                    VmValue::Int(3), VmValue::Int(0)});
+    REQUIRE_MESSAGE(!constructed.exception.IsValid(),
+                    constructed.exception_message);
+    const auto listener =
+        fixture.vm.NewIntrinsicInstance("Ltest/SoundLoadListener;");
+    static_cast<void>(fixture.CallOn(
+        pool, "setOnLoadCompleteListener",
+        "(Landroid/media/SoundPool$OnLoadCompleteListener;)V",
+        {VmValue::Ref(listener)}));
+    const auto sound = fixture.CallOn(
+        pool, "load", "(Ljava/lang/String;I)I",
+        {VmValue::Ref(fixture.vm.NewStringUtf8("http://sdcard/a.ogg")),
+         VmValue::Int(1)}).AsInt();
+    REQUIRE(sound != 0);
+    CHECK_FALSE(PumpAndroidAudioTracks(fixture.vm, *fixture.context).has_value());
+    REQUIRE(fixture.loads.sounds.size() == 1U);
+    CHECK(fixture.loads.sounds[0] == sound);
+    CHECK(fixture.loads.statuses[0] == 0);
+}
+
+TEST_CASE("MediaPlayer prepareAsync posts the BootDex prepared event") {
+    const auto path = std::filesystem::path{OGPLAY_SOURCE_DIR} /
+                      "tests/fixtures/audio/short-vorbis.ogg";
+    std::ifstream input(path, std::ios::binary);
+    REQUIRE(input.good());
+    const std::vector<char> chars{std::istreambuf_iterator<char>(input), {}};
+    std::vector<std::byte> ogg(chars.size());
+    for (std::size_t index = 0; index < chars.size(); ++index) {
+        ogg[index] = static_cast<std::byte>(chars[index]);
+    }
+    AudioTrackVm fixture;
+    ogplay::audio::EncodedMusicMixer music;
+    fixture.context->encoded_music = &music;
+    const auto player =
+        fixture.vm.NewIntrinsicInstance("Landroid/media/MediaPlayer;");
+    fixture.CallDirect(player, "<init>", "()V");
+    const auto listener =
+        fixture.vm.NewIntrinsicInstance("Ltest/MediaPreparedListener;");
+    static_cast<void>(fixture.CallOn(
+        player, "setOnPreparedListener",
+        "(Landroid/media/MediaPlayer$OnPreparedListener;)V",
+        {VmValue::Ref(listener)}));
+    REQUIRE(music.SetEncoded(
+        fixture.context->media_players.at(player.Value()).music, ogg));
+    static_cast<void>(fixture.CallOn(player, "prepareAsync", "()V"));
+    CHECK_FALSE(PumpAndroidAudioTracks(fixture.vm, *fixture.context).has_value());
+    REQUIRE(fixture.prepared.players.size() == 1U);
+    CHECK(fixture.prepared.players[0] == player);
 }

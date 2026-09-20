@@ -20,9 +20,11 @@
   `third_party/minimp3/README.md`。
 - `EncodedAudioSource`：统一 resid、APK entry、VFS path 与纯字节区间；`revision` 区分同路径
   替换，`lease` 标识已捕获的 FD 窗口。来源读取仍由上层注入，audio 模块不解析 APK/VFS。
-- `JavaSoundPoolMixer`：用注入的编码资源 loader 按 source 去重解码，以
-  kind + source + instance 管理 voice，并输出确定性 stereo PCM16；loader 不存在时
-  保持显式 disabled，缺失/损坏资源保留可查询失败原因。
+- `EncodedMusicMixer`：每实例编码音乐解码与独立 seek/duration/loop/volume；PCM 预算
+  128 MiB，超限拒绝。不是 bitstream 增量解码器。
+- `JavaSoundPoolMixer`：用注入的编码资源 loader 按 source 去重解码；独立 PoolId 隔离
+  sample/voice，`PlaySample` 使用 AOSP left/right/priority/loop/rate，maxStreams 按
+  priority 然后最旧抢占；loader 不存在时保持显式 disabled，缺失/损坏资源保留可查询失败原因。
 - `OpenSlesPcmMixer`：为 Virtual `libOpenSLES.so` 保存线程安全 PCM player/queue，支持
   mono/stereo、unsigned PCM8/signed little-endian PCM16、跨 buffer 线性重采样、
   millibel volume、mute、pan、独立左右声道 gain、无符号 32 位回绕的 playback head，

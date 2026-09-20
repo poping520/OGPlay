@@ -18,6 +18,7 @@
 #include <unordered_map>
 #include <vector>
 
+#include "ogplay/audio/encoded_music.h"
 #include "ogplay/audio/java_sound_pool.h"
 #include "ogplay/audio/pcm_mix.h"
 #include "ogplay/cpu/dynarmic.h"
@@ -1626,6 +1627,8 @@ public:
         return sound_pool_; }
     audio::JavaSoundPoolMixer& SoundPoolMixer() noexcept {
         return sound_pool_mixer_; }
+    audio::EncodedMusicMixer& EncodedMusic() noexcept {
+        return encoded_music_; }
     audio::OpenSlesPcmMixer& PcmPlayback() noexcept {
         return boundary_.PcmPlayback(); }
     void SetAuxiliaryAudioMix(
@@ -1759,6 +1762,7 @@ public:
         RethrowOpenSlesCallbackFailure();
         std::vector<std::int64_t> accumulator(output.size());
         sound_pool_mixer_.MixIntoAccumulator(accumulator, sample_rate);
+        encoded_music_.MixIntoAccumulator(accumulator, sample_rate);
         static_cast<void>(
             boundary_.MixOpenSlesIntoAccumulator(accumulator, sample_rate));
         std::function<void(std::span<std::int64_t>, std::uint32_t)> extra;
@@ -2006,6 +2010,7 @@ private:
     JniGuestObjectRegistry objects_;
     audio::JavaSoundPoolState sound_pool_;
     audio::JavaSoundPoolMixer sound_pool_mixer_;
+    audio::EncodedMusicMixer encoded_music_;
     std::mutex auxiliary_audio_mutex_;
     std::function<void(std::span<std::int64_t>, std::uint32_t)>
         auxiliary_audio_mix_;
@@ -2190,6 +2195,9 @@ audio::JavaSoundPoolState& AndroidGuestProcess::SoundPoolState() noexcept {
 }
 audio::JavaSoundPoolMixer& AndroidGuestProcess::SoundPoolMixer() noexcept {
     return impl_->SoundPoolMixer();
+}
+audio::EncodedMusicMixer& AndroidGuestProcess::EncodedMusic() noexcept {
+    return impl_->EncodedMusic();
 }
 audio::OpenSlesPcmMixer& AndroidGuestProcess::PcmPlayback() noexcept {
     return impl_->PcmPlayback();
@@ -2378,6 +2386,7 @@ JniPrimitiveArrayStore& AndroidGuestCallSession::Arrays() noexcept { return proc
 dexvm::NioRuntime& AndroidGuestCallSession::NIO() noexcept { return process_->NIO(); }
 audio::JavaSoundPoolState& AndroidGuestCallSession::SoundPoolState() noexcept { return process_->SoundPoolState(); }
 audio::JavaSoundPoolMixer& AndroidGuestCallSession::SoundPoolMixer() noexcept { return process_->SoundPoolMixer(); }
+audio::EncodedMusicMixer& AndroidGuestCallSession::EncodedMusic() noexcept { return process_->EncodedMusic(); }
 audio::OpenSlesPcmMixer& AndroidGuestCallSession::PcmPlayback() noexcept { return process_->PcmPlayback(); }
 void AndroidGuestCallSession::SetAuxiliaryAudioMix(
     std::function<void(std::span<std::int64_t>, std::uint32_t)> mix) {

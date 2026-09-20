@@ -18,8 +18,48 @@ bool JavaSoundPoolMixer::Enabled() const noexcept {
     return static_cast<bool>(loader_);
 }
 
+std::uint32_t JavaSoundPoolMixer::CreatePool(const std::int32_t max_streams) {
+    std::scoped_lock lock(mutex_);
+    const auto id = next_pool_++;
+    pools_[id] = Pool{std::max(max_streams, 1), 1, {}};
+    return id;
+}
+
+void JavaSoundPoolMixer::DestroyPool(const std::uint32_t pool) {
+    std::scoped_lock lock(mutex_);
+    pools_.erase(pool);
+    std::erase_if(voices_, [pool](const Voice& voice) {
+        return voice.pool == pool;
+    });
+}
+
 bool JavaSoundPoolMixer::Load(const std::int32_t resource) {
     return Load(EncodedAudioSource::Resource(resource));
+}
+
+std::int32_t JavaSoundPoolMixer::LoadSample(
+    const std::uint32_t pool, const EncodedAudioSource& source) {
+    if (!Load(source)) return 0;
+    std::scoped_lock lock(mutex_);
+    const auto found = pools_.find(pool);
+    if (found == pools_.end()) return 0;
+    const auto sound = found->second.next_sound++;
+    found->second.samples[sound] = source;
+    return sound;
+}
+
+bool JavaSoundPoolMixer::UnloadSample(const std::uint32_t pool,
+                                      const std::int32_t sound) {
+    std::scoped_lock lock(mutex_);
+    const auto found = pools_.find(pool);
+    if (found == pools_.end()) return false;
+    const auto sample = found->second.samples.find(sound);
+    if (sample == found->second.samples.end()) return false;
+    found->second.samples.erase(sample);
+    std::erase_if(voices_, [pool, sound](const Voice& voice) {
+        return voice.pool == pool && voice.sound == sound;
+    });
+    return true;
 }
 
 bool JavaSoundPoolMixer::Load(const EncodedAudioSource& source) {
@@ -103,16 +143,86 @@ bool JavaSoundPoolMixer::Play(const JavaSoundPoolKind kind,
     }
     const auto found = FindVoice(kind, source, instance);
     if (found == voices_.end()) {
-        voices_.push_back({kind, source, instance, 0.0, volume, 1.0F,
-                           false, looping});
+        voices_.push_back({kind,
+                           source,
+                           0U,
+                           instance,
+                           instance,
+                           0,
+                           0,
+                           looping ? -1 : 0,
+                           next_age_++,
+                           0.0,
+                           volume,
+                           volume,
+                           volume,
+                           1.0F,
+                           false,
+                           looping});
     } else {
         found->position = 0.0;
         found->volume = volume;
+        found->left = volume;
+        found->right = volume;
         found->pitch = 1.0F;
         found->paused = false;
         found->looping = looping;
+        found->loops_remaining = looping ? -1 : 0;
     }
     return true;
+}
+
+std::int32_t JavaSoundPoolMixer::PlaySample(
+    const std::uint32_t pool, const std::int32_t sound, const float left,
+    const float right, const std::int32_t priority, const std::int32_t loop,
+    const float rate) {
+    std::scoped_lock lock(mutex_);
+    const auto found = pools_.find(pool);
+    if (found == pools_.end()) return 0;
+    const auto sample = found->second.samples.find(sound);
+    if (sample == found->second.samples.end() ||
+        !resources_.contains(sample->second) || !std::isfinite(left) ||
+        !std::isfinite(right) || !std::isfinite(rate) || left < 0.0F ||
+        left > 1.0F || right < 0.0F || right > 1.0F || rate < 0.5F ||
+        rate > 2.0F) {
+        return 0;
+    }
+    std::size_t active{};
+    std::size_t victim = voices_.size();
+    for (std::size_t index = 0; index < voices_.size(); ++index) {
+        if (voices_[index].pool != pool || voices_[index].paused) continue;
+        ++active;
+        if (victim == voices_.size() ||
+            voices_[index].priority < voices_[victim].priority ||
+            (voices_[index].priority == voices_[victim].priority &&
+             voices_[index].age < voices_[victim].age)) {
+            victim = index;
+        }
+    }
+    if (active >= static_cast<std::size_t>(found->second.max_streams)) {
+        if (victim == voices_.size() || voices_[victim].priority > priority) {
+            return 0;
+        }
+        voices_.erase(voices_.begin() + static_cast<std::ptrdiff_t>(victim));
+    }
+    const auto stream = next_stream_++;
+    voices_.push_back({JavaSoundPoolKind::pool,
+                       sample->second,
+                       pool,
+                       stream,
+                       stream,
+                       sound,
+                       priority,
+                       loop,
+                       next_age_++,
+                       0.0,
+                       left,
+                       right,
+                       std::max(left, right),
+                       rate,
+                       false,
+                       loop != 0});
+    return stream;
 }
 
 void JavaSoundPoolMixer::Pause(const JavaSoundPoolKind kind,
@@ -179,6 +289,73 @@ void JavaSoundPoolMixer::SetVolume(const JavaSoundPoolKind kind,
     if (const auto found = FindVoice(kind, source, instance);
         found != voices_.end()) {
         found->volume = volume;
+        found->left = volume;
+        found->right = volume;
+    }
+}
+
+void JavaSoundPoolMixer::SetStreamVolume(const std::int32_t stream,
+                                         const float left, const float right) {
+    std::scoped_lock lock(mutex_);
+    if (!std::isfinite(left) || !std::isfinite(right) || left < 0.0F ||
+        left > 1.0F || right < 0.0F || right > 1.0F) {
+        return;
+    }
+    for (auto& voice : voices_) {
+        if (voice.stream == stream) {
+            voice.left = left;
+            voice.right = right;
+            voice.volume = std::max(left, right);
+        }
+    }
+}
+
+void JavaSoundPoolMixer::SetStreamLoop(const std::int32_t stream,
+                                       const std::int32_t loop) {
+    std::scoped_lock lock(mutex_);
+    for (auto& voice : voices_) {
+        if (voice.stream == stream) {
+            voice.loops_remaining = loop;
+            voice.looping = loop != 0;
+        }
+    }
+}
+
+void JavaSoundPoolMixer::SetStreamPriority(const std::int32_t stream,
+                                           const std::int32_t priority) {
+    std::scoped_lock lock(mutex_);
+    for (auto& voice : voices_) {
+        if (voice.stream == stream) voice.priority = priority;
+    }
+}
+
+void JavaSoundPoolMixer::PauseStream(const std::int32_t stream) {
+    std::scoped_lock lock(mutex_);
+    for (auto& voice : voices_) {
+        if (voice.stream == stream) voice.paused = true;
+    }
+}
+
+void JavaSoundPoolMixer::ResumeStream(const std::int32_t stream) {
+    std::scoped_lock lock(mutex_);
+    for (auto& voice : voices_) {
+        if (voice.stream == stream) voice.paused = false;
+    }
+}
+
+void JavaSoundPoolMixer::StopStream(const std::int32_t stream) {
+    std::scoped_lock lock(mutex_);
+    std::erase_if(voices_, [stream](const Voice& voice) {
+        return voice.stream == stream;
+    });
+}
+
+void JavaSoundPoolMixer::SetStreamRate(const std::int32_t stream,
+                                       const float rate) {
+    std::scoped_lock lock(mutex_);
+    if (!std::isfinite(rate) || rate < 0.5F || rate > 2.0F) return;
+    for (auto& voice : voices_) {
+        if (voice.stream == stream) voice.pitch = rate;
     }
 }
 
@@ -247,6 +424,7 @@ void JavaSoundPoolMixer::Destroy() {
     voices_.clear();
     resources_.clear();
     failures_.clear();
+    pools_.clear();
 }
 
 void JavaSoundPoolMixer::MixIntoAccumulator(
@@ -278,9 +456,16 @@ void JavaSoundPoolMixer::MixIntoAccumulator(
         std::size_t rendered{};
         while (rendered < output_frames) {
             if (voice->position >= static_cast<double>(source_frames)) {
-                if (!voice->looping) break;
-                voice->position = std::fmod(
-                    voice->position, static_cast<double>(source_frames));
+                if (voice->loops_remaining < 0) {
+                    voice->position = std::fmod(
+                        voice->position, static_cast<double>(source_frames));
+                } else if (voice->loops_remaining > 0) {
+                    --voice->loops_remaining;
+                    voice->position = std::fmod(
+                        voice->position, static_cast<double>(source_frames));
+                } else {
+                    break;
+                }
             }
             const auto first = static_cast<std::size_t>(voice->position);
             const auto second = std::min(first + 1U, source_frames - 1U);
@@ -295,13 +480,14 @@ void JavaSoundPoolMixer::MixIntoAccumulator(
                     (static_cast<double>(b) - static_cast<double>(a)) *
                         fraction;
                 accumulator[rendered * 2U + channel] +=
-                    static_cast<std::int64_t>(sample * voice->volume);
+                    static_cast<std::int64_t>(
+                        sample * (channel == 0U ? voice->left : voice->right));
             }
             voice->position += step;
             ++rendered;
         }
-        if (!voice->looping &&
-            voice->position >= static_cast<double>(source_frames)) {
+        if (voice->position >= static_cast<double>(source_frames) &&
+            voice->loops_remaining == 0) {
             voice = voices_.erase(voice);
         } else {
             ++voice;

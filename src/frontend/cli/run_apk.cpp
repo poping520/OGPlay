@@ -733,13 +733,14 @@ int RunApkCommand(const int argc, const char* const argv[],
                 },
                 audio_output.get(), kDesktopAudioOutputSpec.sample_rate,
                 kDesktopAudioOutputSpec.channels);
-            audio_pump->StartRealtime();
+            if (!mcp_manual_step) audio_pump->StartRealtime();
         }
         agent::McpLifecycleState mcp_lifecycle{
             agent::McpLifecycleState::running};
         std::optional<std::string> guest_fault;
         std::exception_ptr failure;
         std::uint64_t permitted_steps{};
+        std::uint64_t last_audio_ticks = driver.state().clock_ticks;
         const auto publish_session = [&] {
             if (!mcp_session) return;
             const auto state = driver.state();
@@ -786,6 +787,7 @@ int RunApkCommand(const int argc, const char* const argv[],
             }
             bool frame_presented = false;
             try {
+                if (audio_pump) audio_pump->RethrowWorkerFailure();
                 if (mcp_session) {
                     if (const auto command = mcp_session->TakeNextCommand(); command) {
                         using Command = agent::McpSessionCommand;
@@ -820,6 +822,20 @@ int RunApkCommand(const int argc, const char* const argv[],
                 active_frame = driver.state().frame + 1U;
                 static_cast<void>(driver.step());
                 const auto stepped = driver.state();
+                if (mcp_manual_step && audio_pump) {
+                    const auto tick_delta = stepped.clock_ticks - last_audio_ticks;
+                    auto frames = audio_pump->FramesForTicks(
+                        tick_delta, dex_lifecycle->TicksPerSecond());
+                    std::vector<std::int16_t> offline_audio;
+                    while (frames != 0U) {
+                        const auto chunk = std::min<std::uint64_t>(frames, 1024U);
+                        offline_audio.assign(static_cast<std::size_t>(chunk) * 2U,
+                                             0);
+                        static_cast<void>(audio_pump->MixOffline(offline_audio));
+                        frames -= chunk;
+                    }
+                    last_audio_ticks = stepped.clock_ticks;
+                }
                 if (mcp_manual_step) --permitted_steps;
                 if (!mcp_manual_step && dex_context &&
                     runtime::AnyVideoPlaying(*dex_context)) {

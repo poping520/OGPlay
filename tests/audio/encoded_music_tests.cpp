@@ -57,3 +57,20 @@ TEST_CASE("encoded music players keep independent seek duration and mix") {
     mixer.Destroy(first);
     mixer.Destroy(second);
 }
+
+TEST_CASE("encoded music restarts from zero after natural completion") {
+    ogplay::audio::EncodedMusicMixer mixer;
+    const auto player = mixer.Create();
+    REQUIRE(mixer.SetEncoded(player, ReadSound()));
+    REQUIRE(mixer.Prepare(player));
+    mixer.Start(player);
+    std::vector<std::int64_t> drain(48000U * 2U);
+    mixer.MixIntoAccumulator(drain, 48000U);
+    REQUIRE(mixer.Completed(player));
+    mixer.Start(player);
+    std::vector<std::int64_t> replay(64U * 2U);
+    mixer.MixIntoAccumulator(replay, 48000U);
+    CHECK(std::ranges::any_of(replay, [](const auto sample) {
+        return sample != 0;
+    }));
+}

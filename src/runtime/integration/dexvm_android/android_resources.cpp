@@ -45,6 +45,43 @@ void Initialize(dx::IntrinsicContext &call, const dx::VmObjectRef descriptor,
   SetWide(call, descriptor, 3, length);
 }
 
+dx::VmObjectRef MakeStoredApkAssetFileDescriptor(
+    dx::IntrinsicContext &call, const Context &context,
+    const std::string &path) {
+  const loader::ApkEntry *entry = nullptr;
+  for (const auto &candidate : context->archive.entries) {
+    if (candidate.name == path) {
+      entry = &candidate;
+      break;
+    }
+  }
+  if (entry == nullptr || entry->compression_method != 0 ||
+      entry->compressed_size != entry->uncompressed_size) {
+    throw dx::VmJavaThrow{"Ljava/io/FileNotFoundException;",
+                          "APK resource cannot provide a descriptor: " + path};
+  }
+  std::uint64_t data_offset{};
+  try {
+    data_offset = loader::StoredApkEntryDataOffset(
+        context->apk_bytes, context->archive, path);
+  } catch (const std::exception &error) {
+    throw dx::VmJavaThrow{"Ljava/io/FileNotFoundException;",
+                          "APK resource cannot provide a descriptor: " + path +
+                              " (" + error.what() + ")"};
+  }
+  const auto fd = call.vm.NewIntrinsicInstance("Ljava/io/FileDescriptor;");
+  call.vm.IO().SetDescriptor(fd, {dx::IoRuntime::DescriptorKind::apk_entry,
+                                  path, data_offset, false, {}, {}, {}});
+  const auto pfd =
+      call.vm.NewIntrinsicInstance("Landroid/os/ParcelFileDescriptor;");
+  call.vm.Model().InstanceSlots(pfd)[0] = {fd.Value(), dx::SlotTag::ref};
+  const auto descriptor = call.vm.NewIntrinsicInstance(
+      "Landroid/content/res/AssetFileDescriptor;");
+  Initialize(call, descriptor, pfd, static_cast<std::int64_t>(data_offset),
+             static_cast<std::int64_t>(entry->uncompressed_size));
+  return descriptor;
+}
+
 } // namespace
 
 Decl Declare_android_content_res_AssetFileDescriptor(const Context &) {
@@ -650,6 +687,26 @@ Decl Declare_android_content_res_Resources(const Context &context) {
         }
         return dx::VmValue::Ref(OpenStream(
             call, context, ReadApkFile(context, *entry->string_value)));
+      });
+  builder.FinalMethod(
+      "openRawResourceFd", "(I)Landroid/content/res/AssetFileDescriptor;",
+      [context](dx::IntrinsicContext &call) {
+        const auto resource_id =
+            static_cast<std::uint32_t>(call.arguments[0].AsInt());
+        const auto *entry = context->arsc.FindById(resource_id);
+        if (entry == nullptr || !entry->string_value.has_value()) {
+          throw dx::VmJavaThrow{
+              "Landroid/content/res/Resources$NotFoundException;",
+              "resource id has no file entry: " + std::to_string(resource_id)};
+        }
+        try {
+          return dx::VmValue::Ref(MakeStoredApkAssetFileDescriptor(
+              call, context, *entry->string_value));
+        } catch (const dx::VmJavaThrow &error) {
+          throw dx::VmJavaThrow{
+              "Landroid/content/res/Resources$NotFoundException;",
+              error.message};
+        }
       });
   // 按资源 ID 打开编译后的 XML pull parser。
   builder.VirtualMethod(

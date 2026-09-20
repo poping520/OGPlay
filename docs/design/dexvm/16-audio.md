@@ -1,6 +1,6 @@
 # 音频专项审计与开发规划
 
-日期：2026-09-20。状态：AUD-01/02/03 完成。不宣称 title 兼容或听测。
+日期：2026-09-20。状态：验收修复中；AUD-03 未关闭。不宣称 title 兼容或听测。
 任务入口：[DVM-189](../../tasks/dexvm/DVM-189.md)；架构提案：
 [ADR-0069](../../adr/media.md#adr-0069)。
 
@@ -202,8 +202,8 @@ ADR/范围；不得通过空 overlay 宣称迁移完成，也不得把该批从�
 | WU | 前置 | 一次交付范围 | 关闭条件 |
 | --- | --- | --- | --- |
 | AUD-01 | 无 | 共享音频底座与会话输出：来源/预算、PCM 写入和 STATIC、重采样/混音、OpenSL 生命周期、实时/离线消费、VideoView 音轨及 CLI 下沉 | 完成（任务单 AUD-01 证据） |
-| AUD-02 | AUD-01 | 应用音频语义与 BootDex：SoundPool/MediaPlayer 隔离及真实状态、编码音乐实例、AudioManager、三类播放器原版 Java/native 和回调 | 完成（定向 BootDex/native/mixer；见 §9） |
-| AUD-03 | AUD-02 | 集中交叉验收、过渡代码清理、诊断与真实运行证据、必要文档收尾 | 契约/能力已按事实更新；未做游戏 reached-fault 或听测 |
+| AUD-02 | AUD-01 | 应用音频语义与 BootDex：SoundPool/MediaPlayer 隔离及真实状态、编码音乐实例、AudioManager、三类播放器原版 Java/native 和回调 | 部分完成；增量音乐解码仍缺失 |
+| AUD-03 | AUD-02 | 集中交叉验收、过渡代码清理、诊断与真实运行证据、必要文档收尾 | 进行中；未做游戏 reached-fault 或听测 |
 
 执行顺序固定为 **AUD-01 → AUD-02 → AUD-03**。实现单元内按下述依赖连续推进，不为内部
 步骤设置独立任务、重复交接或每步整套构建。遇到真正阻塞才记录新的依赖；不为控制文件数
@@ -282,6 +282,11 @@ token 强类型化。静音不得使播放位置与完成事件停止。性能�
 为准。规划阶段只做 UTF-8、链接和差异静态检查，不构建、不改生产能力状态。
 
 ## 9. AUD-02/03 闭合记录（2026-09-20）
+
+本节是首轮实现记录，不再作为 AUD-03 已关闭的依据。后续验收发现默认 loader、VideoView
+并发、阻塞 write、会话音量、资源 FD、播放器协议、缓存/lease、手动步进、OpenSL 代际及
+worker 故障传播问题；相关修复与回归正在补齐。增量 bitstream 解码尚未实现，不能以有界
+全量解码替代原规划验收。
 
 catalog 只 overlay AudioTrack / SoundPoolImpl / MediaPlayer native 与 AudioManager 会话
 事实；普通协议留在 BootDex。已删除 `media_resources` / `media_playing` / `sound_streams`

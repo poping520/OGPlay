@@ -250,6 +250,11 @@ status = "complete"
 test = "tests/audio/java_sound_pool_mixer_tests.cpp; tests/runtime/android_guest_call_session_tests.cpp; tests/audio/encoded_audio_tests.cpp; tests/audio/wav_tests.cpp; tests/dexvm/audio_track_tests.cpp"
 note = "DVM-189：独立 SoundPool 池、AOSP play(IFFIIF) loop/priority/rate/maxStreams 抢占、OnLoadComplete Handler。历史 mixer 解码与 source 窗口保留。不宣称完整 Android SoundPool 或游戏听测。"
 
+[audio.encoded_music_playback]
+status = "partial"
+test = "tests/audio/encoded_music_tests.cpp; tests/dexvm/audio_track_tests.cpp; tests/dexvm/file_vfs_tests.cpp"
+note = "DVM-189 已有每实例 prepare/start/pause/stop/seek/loop/volume、完成后重播和进程 PCM 总预算；解码移出 mixer 总锁。仍为有界全量解码，增量 bitstream 解码及真实游戏听测未完成。"
+
 [session.profile_plan]
 status = "complete"
 test = "tests/session/profile_session_plan_tests.cpp"

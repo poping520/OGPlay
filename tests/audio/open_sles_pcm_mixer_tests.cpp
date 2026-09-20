@@ -130,6 +130,24 @@ TEST_CASE("AudioTrack blocking enqueue wakes when its player is destroyed") {
           ogplay::audio::OpenSlesEnqueueResult::player_destroyed);
 }
 
+TEST_CASE("AudioTrack stop interrupts a blocked enqueue") {
+    ogplay::audio::OpenSlesPcmMixer mixer;
+    const auto player = mixer.CreatePlayer({48000U, 1U, 16U}, 255U);
+    mixer.SetPlayerKind(
+        player, ogplay::audio::OpenSlesPlayerKind::audio_track_stream);
+    const auto pcm = Pcm16({1000, 2000, 3000, 4000});
+    REQUIRE(mixer.EnqueueBlocking(player, pcm, pcm.size()) ==
+            ogplay::audio::OpenSlesEnqueueResult::enqueued);
+    std::atomic result{ogplay::audio::OpenSlesEnqueueResult::enqueued};
+    std::jthread writer([&] {
+        result = mixer.EnqueueBlocking(player, pcm, pcm.size());
+    });
+    while (mixer.BlockingWriterCount() == 0U) std::this_thread::yield();
+    mixer.SetPlayState(player, ogplay::audio::OpenSlesPlayState::stopped);
+    writer.join();
+    CHECK(result.load() == ogplay::audio::OpenSlesEnqueueResult::interrupted);
+}
+
 TEST_CASE("OpenSL mixer decodes PCM8 resamples and applies volume mute pan") {
     ogplay::audio::OpenSlesPcmMixer mixer;
     const auto player = mixer.CreatePlayer({24000U, 1U, 8U}, 2U);

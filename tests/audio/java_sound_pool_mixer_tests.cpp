@@ -168,6 +168,31 @@ TEST_CASE("SoundPool mixer isolates pools and honors loop priority and rate") {
         return sample != 0;
     }));
     CHECK(mixer.UnloadSample(first, a));
+    CHECK(mixer.LoadedResourceCount() == 1U);
     mixer.DestroyPool(first);
     mixer.DestroyPool(second);
+    CHECK(mixer.LoadedResourceCount() == 0U);
+}
+
+TEST_CASE("SoundPool auto pause is pool-local and preserves manual pause") {
+    const auto sound = ReadSound();
+    ogplay::audio::JavaSoundPoolMixer mixer{
+        [&sound](const ogplay::audio::EncodedAudioSource&) { return sound; }};
+    const auto first = mixer.CreatePool(2);
+    const auto second = mixer.CreatePool(1);
+    const auto a = mixer.LoadSample(first, 1);
+    const auto b = mixer.LoadSample(first, 2);
+    const auto c = mixer.LoadSample(second, 3);
+    const auto stream_a = mixer.PlaySample(first, a, 1, 1, 1, -1, 1);
+    const auto stream_b = mixer.PlaySample(first, b, 1, 1, 1, -1, 1);
+    const auto stream_c = mixer.PlaySample(second, c, 1, 1, 1, -1, 1);
+    mixer.PauseStream(stream_b);
+    mixer.AutoPausePool(first);
+    mixer.AutoResumePool(first);
+    std::vector<std::int16_t> pcm(32U * 2U);
+    mixer.RenderStereoPcm16(pcm, 48000U);
+    CHECK(mixer.ActiveVoiceCount() == 3U);
+    mixer.StopStream(stream_a);
+    mixer.StopStream(stream_b);
+    mixer.StopStream(stream_c);
 }

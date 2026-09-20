@@ -113,6 +113,8 @@ Dex activity 每帧在 guest 回调前泵送主 Looper，到帧尾只通过
   统一 Clock 差值换算帧数并保留不足一帧的余数。frontend 只注入 HAL 输出。设备
   Submit/水位查询失败时置位 `DeviceFailed` 并停止继续提交，不让 worker 因异常退出。
   未注入 `sound_resource_loader` 时默认走 `LoadEncodedAudioWindow`。
+  MCP 手动步进不启动实时 worker，只按 lifecycle Clock tick 差推进离线混音；mixer/callback
+  异常保留原异常并交还主循环，设备提交失败单独记录。
 
 ## 不变量
 

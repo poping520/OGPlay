@@ -51,6 +51,10 @@ public:
     void Unload(std::int32_t resource);
     void Unload(const EncodedAudioSource& source);
     [[nodiscard]] bool UnloadSample(std::uint32_t pool, std::int32_t sound);
+    [[nodiscard]] std::optional<EncodedAudioSource> SampleSource(
+        std::uint32_t pool, std::int32_t sound) const;
+    [[nodiscard]] std::vector<EncodedAudioSource> PoolSources(
+        std::uint32_t pool) const;
     [[nodiscard]] bool Play(JavaSoundPoolKind kind, std::int32_t resource,
                             std::int32_t instance, float volume,
                             bool looping = false);
@@ -95,6 +99,8 @@ public:
                  std::optional<std::int32_t> except_resource = std::nullopt);
     void PauseAll(JavaSoundPoolKind kind);
     void ResumeAll(JavaSoundPoolKind kind);
+    void AutoPausePool(std::uint32_t pool);
+    void AutoResumePool(std::uint32_t pool);
     void StopAllSounds();
     void Destroy();
     void MixIntoAccumulator(std::span<std::int64_t> accumulator,
@@ -125,6 +131,7 @@ private:
         float volume{1.0F};
         float pitch{1.0F};
         bool paused{};
+        bool auto_paused{};
         bool looping{};
     };
     struct Pool final {
@@ -135,6 +142,7 @@ private:
     [[nodiscard]] std::vector<Voice>::iterator FindVoice(
         JavaSoundPoolKind kind, const EncodedAudioSource& source,
         std::int32_t instance);
+    void CollectUnusedResourcesLocked();
 
     EncodedResourceLoader loader_;
     mutable std::mutex mutex_;

@@ -587,10 +587,16 @@ std::optional<std::string> PumpAndroidAudioTracks(
         const auto found = context.media_players.find(handle);
         if (found == context.media_players.end()) continue;
         if (found->second.prepare_async_pending) {
+            const auto status = context.encoded_music == nullptr
+                                    ? audio::EncodedMusicMixer::PrepareStatus::failed
+                                    : context.encoded_music->PollPrepare(
+                                          found->second.music);
+            if (status == audio::EncodedMusicMixer::PrepareStatus::pending) {
+                continue;
+            }
             found->second.prepare_async_pending = false;
             found->second.prepared =
-                context.encoded_music != nullptr &&
-                context.encoded_music->Prepare(found->second.music);
+                status == audio::EncodedMusicMixer::PrepareStatus::ready;
             if (!found->second.prepared) {
                 if (const auto error = post("Landroid/media/MediaPlayer;",
                                             found->second.jni_weak, 100, 1, -1);

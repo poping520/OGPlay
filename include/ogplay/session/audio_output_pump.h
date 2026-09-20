@@ -18,9 +18,10 @@ class AudioOutputPump final {
 public:
     using Mix = std::function<std::size_t(std::span<std::int16_t>,
                                           std::uint32_t)>;
+    using FailureInterrupt = std::function<void()>;
 
     AudioOutputPump(Mix mix, hal::AudioOutput* output, std::uint32_t sample_rate,
-                    std::uint8_t channels);
+                    std::uint8_t channels, FailureInterrupt failure_interrupt = {});
     ~AudioOutputPump();
     AudioOutputPump(const AudioOutputPump&) = delete;
     AudioOutputPump& operator=(const AudioOutputPump&) = delete;
@@ -38,6 +39,7 @@ private:
     void PumpRealtimeOnce();
 
     Mix mix_;
+    FailureInterrupt failure_interrupt_;
     hal::AudioOutput* output_{};
     std::uint32_t sample_rate_{};
     std::uint8_t channels_{};

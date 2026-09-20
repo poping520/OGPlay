@@ -67,6 +67,15 @@ bool EncodedMusicMixer::Prepare(const std::uint32_t player) {
     }
     try {
         auto pcm = DecodeEncodedAudio(encoded);
+        return CommitPrepared(player, generation, std::move(pcm));
+    } catch (const std::exception&) {
+        return false;
+    }
+}
+
+bool EncodedMusicMixer::CommitPrepared(const std::uint32_t player,
+                                       const std::uint64_t generation,
+                                       Pcm16Audio pcm) {
         std::scoped_lock lock(mutex_);
         const auto found = players_.find(player);
         if (found == players_.end() || found->second.generation != generation) {
@@ -87,9 +96,63 @@ bool EncodedMusicMixer::Prepare(const std::uint32_t player) {
         found->second.position = 0.0;
         found->second.completed = false;
         return found->second.prepared;
-    } catch (const std::exception&) {
-        return false;
+}
+
+bool EncodedMusicMixer::BeginPrepare(const std::uint32_t player) {
+    std::vector<std::byte> encoded;
+    std::shared_ptr<PrepareTask> task;
+    {
+        std::scoped_lock lock(mutex_);
+        const auto found = players_.find(player);
+        if (found == players_.end() || found->second.encoded.empty() ||
+            found->second.prepare_task) return false;
+        encoded = found->second.encoded;
+        task = std::make_shared<PrepareTask>();
+        found->second.prepare_task = task;
     }
+    std::thread([task, encoded = std::move(encoded)]() mutable {
+        try {
+            auto pcm = DecodeEncodedAudio(encoded);
+            std::scoped_lock lock(task->mutex);
+            task->pcm = std::move(pcm);
+            task->done = true;
+        } catch (const std::exception&) {
+            std::scoped_lock lock(task->mutex);
+            task->done = true;
+        }
+    }).detach();
+    return true;
+}
+
+EncodedMusicMixer::PrepareStatus EncodedMusicMixer::PollPrepare(
+    const std::uint32_t player) {
+    std::shared_ptr<PrepareTask> task;
+    std::uint64_t generation{};
+    {
+        std::scoped_lock lock(mutex_);
+        const auto found = players_.find(player);
+        if (found == players_.end() || !found->second.prepare_task) {
+            return PrepareStatus::failed;
+        }
+        task = found->second.prepare_task;
+        generation = found->second.generation;
+    }
+    std::optional<Pcm16Audio> pcm;
+    {
+        std::scoped_lock lock(task->mutex);
+        if (!task->done) return PrepareStatus::pending;
+        pcm = std::move(task->pcm);
+    }
+    {
+        std::scoped_lock lock(mutex_);
+        const auto found = players_.find(player);
+        if (found != players_.end() && found->second.prepare_task == task) {
+            found->second.prepare_task.reset();
+        }
+    }
+    return pcm && CommitPrepared(player, generation, std::move(*pcm))
+               ? PrepareStatus::ready
+               : PrepareStatus::failed;
 }
 
 void EncodedMusicMixer::Start(const std::uint32_t player) {

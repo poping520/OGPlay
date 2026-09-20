@@ -581,6 +581,9 @@ Decl Declare_android_media_SoundPoolImpl(const Context& context) {
                                            call.arguments[2].AsLong());
             const auto sound =
                 context->encoded_audio_playback->LoadSample(pool, source);
+            if (sound == 0 && source.lease != 0U) {
+                context->encoded_audio_leases.erase(source.lease);
+            }
             enqueue_load(call, sound);
             return dx::VmValue::Int(sound);
         },
@@ -600,6 +603,9 @@ Decl Declare_android_media_SoundPoolImpl(const Context& context) {
             static_cast<void>(CaptureEncodedAudioWindow(*context, source));
             const auto sound =
                 context->encoded_audio_playback->LoadSample(pool, source);
+            if (sound == 0 && source.lease != 0U) {
+                context->encoded_audio_leases.erase(source.lease);
+            }
             enqueue_load(call, sound);
             return dx::VmValue::Int(sound);
         },
@@ -876,6 +882,11 @@ Decl Declare_android_media_MediaPlayer(const Context& context) {
                 throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;",
                                       "MediaPlayer prepareAsync in invalid state"};
             }
+            if (context->encoded_music == nullptr ||
+                !context->encoded_music->BeginPrepare(state.music)) {
+                throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;",
+                                      "MediaPlayer prepareAsync could not start"};
+            }
             state.prepare_async_pending = true;
             return dx::VmValue::Void();
         },
@@ -913,6 +924,7 @@ Decl Declare_android_media_MediaPlayer(const Context& context) {
                                       "MediaPlayer stop before prepare"};
             }
             context->encoded_music->Stop(state.music);
+            state.prepared = false;
             return dx::VmValue::Void();
         },
         kPrivNat);

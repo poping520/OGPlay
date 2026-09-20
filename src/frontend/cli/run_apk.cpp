@@ -732,7 +732,11 @@ int RunApkCommand(const int argc, const char* const argv[],
                     return guest->RenderStereoAudio(output, rate);
                 },
                 audio_output.get(), kDesktopAudioOutputSpec.sample_rate,
-                kDesktopAudioOutputSpec.channels);
+                kDesktopAudioOutputSpec.channels,
+                [guest] {
+                    static_cast<void>(
+                        guest->PcmPlayback().InterruptBlockingWaits());
+                });
             if (!mcp_manual_step) audio_pump->StartRealtime();
         }
         agent::McpLifecycleState mcp_lifecycle{

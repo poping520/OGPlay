@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>OGPlay Runtime Dashboard — 效果图</title>
+<style>
+:root{
+  --bg:#0e1116;--panel:#161b22;--panel2:#1c2330;--line:#2a3342;--fg:#d5dbe5;--dim:#7f8a9b;
+  --ok:#3fb950;--warn:#d29922;--err:#f85149;--info:#58a6ff;--acc:#bc8cff;--sel:#1f3a5f;
+  --mono:"JetBrains Mono","Cascadia Code",Consolas,monospace;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:12px/1.45 "Segoe UI","Microsoft YaHei",system-ui,sans-serif;width:1720px;height:1080px;overflow:hidden}
+.top{height:44px;display:flex;align-items:center;gap:14px;padding:0 14px;background:#0b0e13;border-bottom:1px solid var(--line)}
+.top .logo{font-weight:700;letter-spacing:.5px;color:#fff;white-space:nowrap}
+.top{gap:10px;font-size:11.5px}
+.top .logo span{color:var(--acc)}
+.kv{display:flex;gap:6px;align-items:center;color:var(--dim);white-space:nowrap}
+.top .btn,.top .pill{white-space:nowrap}
+.kv b{color:var(--fg);font-weight:500;font-family:var(--mono)}
+.pill{padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600}
+.pill.ok{background:#12301a;color:var(--ok)}.pill.warn{background:#3a2a08;color:var(--warn)}.pill.err{background:#3d1416;color:var(--err)}.pill.info{background:#0f2540;color:var(--info)}
+.btn{padding:3px 10px;border:1px solid var(--line);border-radius:4px;background:var(--panel2);color:var(--fg);font-size:11px}
+.btn.primary{border-color:var(--info);color:var(--info)}
+.spacer{flex:1}
+.grid{display:grid;grid-template-columns:250px 1fr 400px;grid-template-rows:180px 1fr 230px;gap:8px;padding:8px;height:1036px}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:6px;display:flex;flex-direction:column;min-height:0;overflow:hidden}
+.panel h3{margin:0;padding:6px 10px;font-size:12px;font-weight:600;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:8px;color:#e6edf3}
+.panel h3 .st{font-size:10px;color:var(--dim);font-weight:400;margin-left:auto;font-family:var(--mono)}
+.panel .body{padding:8px 10px;overflow:hidden;flex:1;min-height:0}
+.dot{width:8px;height:8px;border-radius:50%;display:inline-block}
+.dot.ok{background:var(--ok)}.dot.warn{background:var(--warn)}.dot.err{background:var(--err)}.dot.dim{background:#3b4656}
+/* topology */
+.topo{grid-row:1/4}
+.layer{border:1px solid var(--line);border-radius:5px;margin:0 0 6px;background:var(--panel2);padding:6px 8px;position:relative}
+.layer.sel{border-color:var(--info);box-shadow:0 0 0 1px var(--info) inset}
+.layer .name{display:flex;align-items:center;gap:6px;font-weight:600}
+.layer .name small{color:var(--dim);font-weight:400;margin-left:auto;font-family:var(--mono)}
+.layer .m{color:var(--dim);font-family:var(--mono);font-size:10.5px;margin-top:2px}
+.layer .m b{color:var(--fg);font-weight:500}
+.arrow{text-align:center;color:#3b4656;font-size:10px;line-height:8px;margin:-4px 0 2px}
+.legend{color:var(--dim);font-size:10.5px;border-top:1px solid var(--line);padding-top:6px;margin-top:4px}
+/* timeline */
+.timeline{grid-column:2/4}
+.lanes{display:grid;grid-template-columns:90px 1fr;row-gap:3px;font-family:var(--mono);font-size:10.5px}
+.lanes .lab{color:var(--dim);text-align:right;padding-right:8px}
+.lane{height:16px;background:#0b0e13;border-radius:2px;position:relative;overflow:hidden}
+.bar{position:absolute;bottom:0;background:var(--info);width:2px}
+.ev{position:absolute;top:3px;width:6px;height:10px;border-radius:2px}
+.cursor{position:absolute;top:0;bottom:0;width:1px;background:var(--acc);left:71%}
+.cursor::after{content:"frame 4213";position:absolute;top:-1px;left:4px;color:var(--acc);font-size:9.5px}
+.axis{grid-column:2;color:var(--dim);display:flex;justify-content:space-between;padding-top:2px}
+/* center */
+.center{display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr;gap:8px;min-height:0}
+table{width:100%;border-collapse:collapse;font-family:var(--mono);font-size:10.5px}
+th{color:var(--dim);text-align:left;font-weight:500;padding:2px 4px;border-bottom:1px solid var(--line)}
+td{padding:2px 4px;border-bottom:1px solid #1e2632;white-space:nowrap}
+tr.sel td{background:var(--sel)}
+.meter{height:10px;background:#0b0e13;border-radius:3px;overflow:hidden;position:relative;margin:3px 0 6px}
+.meter i{position:absolute;left:0;top:0;bottom:0;background:var(--info)}
+.meter i.warn{background:var(--warn)}
+.meter .mark{position:absolute;top:-2px;bottom:-2px;width:1px;background:var(--dim)}
+.row{display:flex;gap:10px}
+.row>div{flex:1;min-width:0}
+.stat{font-family:var(--mono);font-size:10.5px;color:var(--dim)}
+.stat b{color:var(--fg);font-weight:500}
+.mini{display:flex;gap:2px;align-items:flex-end;height:36px;margin:4px 0}
+.mini i{flex:1;background:#2c5c8a;display:block}
+.mini i.g{background:var(--ok)}.mini i.w{background:var(--warn)}
+.stack{font-family:var(--mono);font-size:10.5px;color:var(--fg)}
+.stack div{padding:1px 0;border-left:2px solid var(--line);padding-left:6px}
+.stack div.hi{border-left-color:var(--acc)}
+.stack .pc{color:var(--dim)}
+code{font-family:var(--mono);color:#c9d1d9;font-size:10.5px}
+.link{color:var(--info);text-decoration:underline dotted}
+.chip{display:inline-block;padding:0 6px;border-radius:3px;background:#0f2540;color:var(--info);font-family:var(--mono);font-size:10px;margin-right:4px}
+.chip.err{background:#3d1416;color:var(--err)}.chip.warn{background:#3a2a08;color:var(--warn)}.chip.ok{background:#12301a;color:var(--ok)}
+/* right */
+.right{display:grid;grid-template-rows:1fr 1fr;gap:8px;min-height:0}
+.focus h3{background:#152238}
+.sec{margin-bottom:8px}
+.sec .t{color:var(--dim);font-size:10.5px;text-transform:uppercase;letter-spacing:.4px;margin-bottom:2px;display:flex;gap:6px;align-items:center}
+.sec .t .mod{color:var(--acc);font-family:var(--mono);text-transform:none;letter-spacing:0}
+/* bottom */
+.bottom{grid-column:2/4;display:grid;grid-template-columns:1.1fr 1.1fr 1fr 1.2fr;gap:8px;min-height:0}
+.log{font-family:var(--mono);font-size:10.5px}
+.log div{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding:1px 0}
+.log .lv{display:inline-block;width:38px;color:var(--dim)}
+.log .lv.w{color:var(--warn)}.log .lv.e{color:var(--err)}
+.log .k{color:var(--dim)}
+.log .hl{background:#2a2410}
+</style>
+</head>
+<body>
+<div class="top">
+  <div class="logo">OG<span>Play</span> Runtime Dashboard</div>
+  <div class="kv">package <b>com.example.title</b></div>
+  <div class="kv">instance <b>0001</b></div>
+  <div class="kv">profile <b>generic</b></div>
+  <div class="kv">API <b>19</b></div>
+  <span class="pill ok">lifecycle: ActivityResumed</span>
+  <div class="kv">frame <b>4213</b></div>
+  <div class="kv">presented <b>4208</b></div>
+  <div class="kv">ticks <b>9.81e9</b></div>
+  <div class="kv">clock <b>FixedStep 60Hz ×1</b></div>
+  <div class="kv">window FPS <b>59.7</b></div>
+  <div class="spacer"></div>
+  <div class="kv">control-plane <b>127.0.0.1:7788</b> <span class="dot ok"></span> 8 Hz</div>
+  <button class="btn">Suspend</button><button class="btn">Step ×1</button><button class="btn primary">Diag Snapshot</button>
+</div>
+
+<div class="grid">
+  <!-- 左：模块拓扑 -->
+  <div class="panel topo">
+    <h3>模块拓扑 <span class="st">依赖方向 ↓</span></h3>
+    <div class="body" style="padding:8px">
+      <div class="layer"><div class="name"><span class="dot ok"></span>frontend · session<small>run-apk</small></div>
+        <div class="m">Activity <b>Resumed</b> · MCP queue <b>0/64</b> · pump <b>rt</b></div></div>
+      <div class="arrow">▼</div>
+      <div class="layer sel"><div class="name"><span class="dot warn"></span>runtime/dexvm<small>switch</small></div>
+        <div class="m">heap <b>38.2</b>/48 MiB · GC <b>112</b> · threads <b>9</b></div>
+        <div class="m">unimpl hits <b style="color:var(--warn)">3</b> · monitors <b>2</b></div></div>
+      <div class="arrow">▼</div>
+      <div class="layer"><div class="name"><span class="dot ok"></span>runtime/jni · jni_guest<small>217/233</small></div>
+        <div class="m">local <b>41</b> global <b>1 208</b> weak <b>6</b> · in-flight <b>1</b></div></div>
+      <div class="arrow">▼</div>
+      <div class="layer"><div class="name"><span class="dot ok"></span>runtime/boundary<small>5 VSO</small></div>
+        <div class="m">libEGL libGLESv2 libOpenSLES liblog libandroid</div>
+        <div class="m">unbound thunk hits <b>0</b> · dlopen <b>3</b></div></div>
+      <div class="arrow">▼</div>
+      <div class="row" style="gap:6px">
+        <div class="layer" style="flex:1"><div class="name"><span class="dot ok"></span>gles</div><div class="m">D3D11 · draws <b>612</b></div></div>
+        <div class="layer" style="flex:1"><div class="name"><span class="dot warn"></span>audio</div><div class="m">underrun <b style="color:var(--warn)">2</b></div></div>
+      </div>
+      <div class="row" style="gap:6px">
+        <div class="layer" style="flex:1"><div class="name"><span class="dot ok"></span>runtime/vfs</div><div class="m">fd <b>14</b> · 96/128 MiB</div></div>
+        <div class="layer" style="flex:1"><div class="name"><span class="dot dim"></span>video</div><div class="m">FFmpeg <b>n/a</b></div></div>
+      </div>
+      <div class="arrow">▼</div>
+      <div class="layer"><div class="name"><span class="dot ok"></span>bionic · syscall · execution<small>API 19</small></div>
+        <div class="m">guest threads <b>11</b> · ENOSYS <b>0</b> · futex wait <b>4</b></div></div>
+      <div class="arrow">▼</div>
+      <div class="layer"><div class="name"><span class="dot ok"></span>cpu · memory<small>Dynarmic</small></div>
+        <div class="m">code cache <b>21</b>/64 MiB · mapped <b>212</b> MiB · faults <b>0</b></div></div>
+      <div class="arrow">▼</div>
+      <div class="layer"><div class="name"><span class="dot ok"></span>hal<small>win32</small></div>
+        <div class="m">SDL3 window · ANGLE D3D11 · audio dev <b>48k/2ch</b></div></div>
+      <div class="legend">● ok ● 有告警 ● 未实现命中 ● 未装配<br>点击层级筛选右侧/底部面板；选中线程在所有面板高亮。</div>
+    </div>
+  </div>
+
+  <!-- 顶部：帧时间轴 -->
+  <div class="panel timeline">
+    <h3>帧时间轴（主时间轴 · 最近 600 帧） <span class="chip">按帧对齐所有事件</span><span class="st">seq 88 213 · steady 612.4 s</span></h3>
+    <div class="body">
+      <div class="lanes">
+        <div class="lab">frame ms</div><div class="lane" id="l1"></div>
+        <div class="lab">GC</div><div class="lane" id="l2"></div>
+        <div class="lab">GLES error</div><div class="lane" id="l3"></div>
+        <div class="lab">syscall/帧</div><div class="lane" id="l4"></div>
+        <div class="lab">audio underrun</div><div class="lane" id="l5"></div>
+        <div class="lab">capability miss</div><div class="lane" id="l6"></div>
+        <div class="lab">lifecycle</div><div class="lane" id="l7"></div>
+        <div></div><div class="axis"><span>3613</span><span>3763</span><span>3913</span><span>4063</span><span>4213</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 中部 -->
+  <div class="center">
+    <div class="panel">
+      <h3><span class="dot warn"></span>DexVM · 堆 / GC / 类链接 <span class="st">provider: try-snapshot · complete</span></h3>
+      <div class="body">
+        <div class="stat">heap <b>38.2 MiB</b> / target <b>44 MiB</b> / growth limit <b>48 MiB</b> / max <b>64 MiB</b></div>
+        <div class="meter"><i style="width:60%"></i><span class="mark" style="left:69%"></span><span class="mark" style="left:75%"></span></div>
+        <div class="row">
+          <div><div class="stat">GC 次数 <b>112</b> · 上次 STW <b>3.8 ms</b> · live <b>31.1 MiB</b></div>
+            <div class="mini"><i style="height:30%"></i><i style="height:35%"></i><i style="height:28%"></i><i style="height:60%" class="w"></i><i style="height:32%"></i><i style="height:38%"></i><i style="height:31%"></i><i style="height:45%"></i><i style="height:29%"></i><i style="height:33%"></i><i style="height:36%"></i><i style="height:95%" class="w"></i><i style="height:30%"></i><i style="height:34%"></i></div></div>
+          <div><div class="stat">类：boot <b>1732</b> 注册 / <b>611</b> 已链接 · app <b>418</b> / <b>402</b></div>
+            <div class="stat">intrinsic 命中 <b>2.1M</b> · interpreted <b>48.6M</b> · native bridge <b>184k</b></div>
+            <div class="stat">execution lock 持有 <b>ctx#7</b> · 等待 <b>2</b> · STW 请求 <b>0</b></div></div>
+        </div>
+        <div class="stat" style="margin-top:4px">最近 DexVM 事件</div>
+        <table>
+          <tr><th>tick</th><th>ctx</th><th>kind</th><th>method</th><th>pc</th></tr>
+          <tr class="sel"><td>9.81e9</td><td>#7</td><td>invoke-native</td><td>GLSurfaceView$GLThread.guardedRun → egl swap</td><td>0x2a</td></tr>
+          <tr><td>9.80e9</td><td>#3</td><td>gc</td><td>alloc-driven mark-sweep</td><td>—</td></tr>
+          <tr><td>9.80e9</td><td>#3</td><td>unimplemented</td><td style="color:var(--warn)">android.media.AudioTrack.getTimestamp</td><td>0x08</td></tr>
+          <tr><td>9.79e9</td><td>#5</td><td>monitor-wait</td><td>java.lang.Object.wait</td><td>0x00</td></tr>
+        </table>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h3><span class="dot ok"></span>线程 · monitor · futex <span class="st">1 guest thread = 1 host thread</span></h3>
+      <div class="body">
+        <table>
+          <tr><th>gtid</th><th>ctx</th><th>name</th><th>Java status</th><th>wait</th><th>A32 PC</th><th>ticks</th><th>host</th></tr>
+          <tr><td>1</td><td>#1</td><td>main</td><td>RUNNABLE</td><td>Looper.loop</td><td>0x7f0a1c24</td><td>3.1e9</td><td>18804</td></tr>
+          <tr class="sel"><td>7</td><td>#7</td><td>GLThread 121</td><td>RUNNABLE</td><td>native</td><td>0x6c2210f8</td><td>5.9e9</td><td>19112</td></tr>
+          <tr><td>5</td><td>#5</td><td>AudioTrack</td><td>WAITING</td><td>monitor 0x1c3f</td><td>0x7f0b3300</td><td>0.4e9</td><td>19008</td></tr>
+          <tr><td>3</td><td>#3</td><td>Thread-3</td><td>BLOCKED</td><td>entry 0x1c3f ← #5</td><td>0x7f0b34a0</td><td>0.2e9</td><td>19010</td></tr>
+          <tr><td>9</td><td>—</td><td>pthread(clone)</td><td>—</td><td>futex 0x7e10</td><td>0x6c33a04c</td><td>0.1e9</td><td>19220</td></tr>
+        </table>
+        <div class="row" style="margin-top:6px">
+          <div><div class="stat">monitors <b>2</b> · confirmed cycle <b style="color:var(--ok)">none</b></div>
+            <div class="stat">0x1c3f owner <b>#5</b> rec 1 · entry waiters [#3] · notify set []</div></div>
+          <div><div class="stat">futex waiters <b>4</b> · wake tokens <b>1 902</b></div>
+            <div class="stat">lifecycle: running <b>10</b> exit-req <b>0</b> exited <b>1</b> reap <b>0</b></div></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h3><span class="dot ok"></span>GLES / EGL · GPU <span class="st">ANGLE D3D11 · ES2 · supersample ×2</span></h3>
+      <div class="body">
+        <div class="row">
+          <div><div class="stat">draws/帧 <b>612</b> · tris <b>84k</b> · state changes <b>1 340</b></div>
+            <div class="mini"><i style="height:60%"></i><i style="height:62%"></i><i style="height:61%"></i><i style="height:64%"></i><i style="height:59%"></i><i style="height:63%"></i><i style="height:60%"></i><i style="height:62%"></i><i style="height:88%"></i><i style="height:61%"></i><i style="height:60%"></i><i style="height:63%"></i></div></div>
+          <div><div class="stat">textures <b>212</b> (96 MiB) · buffers <b>48</b> · programs <b>19</b> · FBO <b>3</b></div>
+            <div class="stat">pacer: attached <b>yes</b> · driver blocked <b>no</b> · gen <b>41</b></div>
+            <div class="stat">GL errors (600 帧) <b style="color:var(--warn)">1</b> · unbound GLES thunk <b>0</b></div></div>
+        </div>
+        <div class="stat" style="margin-top:4px">GLES trace（尾部）</div>
+        <table>
+          <tr><th>call</th><th>r0</th><th>r1</th><th>r2</th><th>err</th></tr>
+          <tr><td>glDrawElements</td><td>0x0004</td><td>1 536</td><td>0x1403</td><td>—</td></tr>
+          <tr><td>glBindTexture</td><td>0x0de1</td><td>117</td><td>—</td><td>—</td></tr>
+          <tr><td>glTexImage2D</td><td>0x0de1</td><td>0</td><td>0x8d64</td><td style="color:var(--warn)">0x0501 INVALID_VALUE @ frame 4198</td></tr>
+          <tr><td>eglSwapBuffers</td><td>dpy#1</td><td>surf#1</td><td>—</td><td>—</td></tr>
+        </table>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h3><span class="dot ok"></span>CPU · memory · syscall <span class="st">Dynarmic A32 · 4 KiB pages</span></h3>
+      <div class="body">
+        <div class="row">
+          <div><div class="stat">code cache <b>21.4</b> / 64 MiB · flush <b>0</b> · 重编译/帧 <b>12</b></div>
+            <div class="meter"><i style="width:33%"></i></div>
+            <div class="stat">mapped <b>212 MiB</b>：RW 168 · RX 31 · R 12 · NONE 1 · faults <b>0</b></div></div>
+          <div><div class="stat">syscall/帧 <b>146</b> · ENOSYS <b>0</b> · EINTR <b>3</b></div>
+            <div class="stat">top: futex 61% · clock_gettime 22% · write 6% · ioctl 4%</div>
+            <div class="stat">watchdog: advanced <b>1.2k</b> idle <b>44</b> · 最近 slice <b>2.0e7</b> tick</div></div>
+        </div>
+        <div class="stat" style="margin-top:4px">syscall ring（选中线程 #7 过滤）</div>
+        <table>
+          <tr><th>seq</th><th>nr</th><th>name</th><th>result</th><th>progress</th></tr>
+          <tr><td>88210</td><td>240</td><td>futex WAKE</td><td>1</td><td>handled_advanced</td></tr>
+          <tr><td>88208</td><td>263</td><td>clock_gettime</td><td>0</td><td>handled_idle</td></tr>
+          <tr><td>88201</td><td>240</td><td>futex WAIT</td><td>-EINTR</td><td>handled_idle</td></tr>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- 右：联动焦点 + 能力账本 -->
+  <div class="right">
+    <div class="panel focus">
+      <h3>联动焦点：guest thread <code>#7 GLThread 121</code> <span class="st">跨模块同一 gtid/ctx</span></h3>
+      <div class="body">
+        <div class="sec"><div class="t"><span class="mod">cpu</span> A32 状态</div>
+          <div class="stack"><div>PC <code>0x6c2210f8</code> LR <code>0x6c221a3d</code> SP <code>0x7e1ff3c8</code> · stop: <code>host_call</code> · TPIDRURO <code>0x7e2f0000</code></div></div></div>
+        <div class="sec"><div class="t"><span class="mod">jni_guest</span> 在途 native 调用</div>
+          <div class="stack"><div class="hi">→ <code>Java_…_GLRenderer_nativeRender</code> enter +1.8 ms · slot <code>CallVoidMethodV</code> 重入 ×1</div></div></div>
+        <div class="sec"><div class="t"><span class="mod">dexvm</span> Java 栈</div>
+          <div class="stack">
+            <div class="hi">GLRenderer.onDrawFrame(GL10) <span class="pc">pc 0x2a native</span></div>
+            <div>GLSurfaceView$GLThread.guardedRun() <span class="pc">pc 0x3f2</span></div>
+            <div>GLSurfaceView$GLThread.run() <span class="pc">pc 0x04</span></div>
+          </div></div>
+        <div class="sec"><div class="t"><span class="mod">boundary · gles</span> 本帧边界调用</div>
+          <div class="stack"><div>libGLESv2 <b>598</b> · libEGL <b>2</b> · liblog <b>0</b> · 最近: <code>glDrawElements</code> ok</div></div></div>
+        <div class="sec"><div class="t"><span class="mod">syscall · futex</span></div>
+          <div class="stack"><div>last <code>futex WAKE 0x7e10 → 1</code> · 无等待 · 不在任何 monitor 边上</div></div></div>
+        <div class="sec"><div class="t"><span class="mod">session</span> pacer / 生命周期</div>
+          <div class="stack"><div>render driver <b>registered</b> · 1 frame = 1 swap · surface gen <b>41</b> · 焦点 <b>true</b></div></div></div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h3><span class="dot warn"></span>能力账本 · 未实现命中 <span class="st">capabilities.toml · 不清零</span></h3>
+      <div class="body">
+        <table>
+          <tr><th>capability</th><th>状态</th><th>hits</th><th>最近来源</th></tr>
+          <tr><td>audio.audiotrack.timestamp</td><td><span class="chip warn">partial</span></td><td>3</td><td><span class="link">ctx#3 AudioTrack.getTimestamp</span></td></tr>
+          <tr><td>jni.env.reflection_slots</td><td><span class="chip">expected-unbound</span></td><td>0</td><td>—</td></tr>
+          <tr><td>net.tls.client_public_ca</td><td><span class="chip err">missing</span></td><td>1</td><td><span class="link">ctx#1 HttpsURLConnection.connect</span></td></tr>
+          <tr><td>syscall.mmap.file_backed</td><td><span class="chip err">missing</span></td><td>0</td><td>—</td></tr>
+          <tr><td>vfs.file_lock</td><td><span class="chip err">missing</span></td><td>0</td><td>—</td></tr>
+        </table>
+        <div class="stat" style="margin-top:6px">null-call 观测（quirk）<b>0</b> · 本次运行新增未实现 <b style="color:var(--warn)">2</b> · 点击行跳转日志与触发方法</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 底部 -->
+  <div class="bottom">
+    <div class="panel">
+      <h3><span class="dot ok"></span>VFS · 沙盒 <span class="st">schema 3 · instance 0001</span></h3>
+      <div class="body">
+        <div class="stat">资源预算 <b>96</b> / 128 MiB（高水位 <b>103</b>）</div>
+        <div class="meter"><i style="width:75%"></i><span class="mark" style="left:80%"></span></div>
+        <table>
+          <tr><th>mount</th><th>源</th><th>rw</th><th>fd</th></tr>
+          <tr><td>/apk</td><td>APK range</td><td>—</td><td>6</td></tr>
+          <tr><td>/data/data/&lt;pkg&gt;</td><td>internal/</td><td>rw</td><td>5</td></tr>
+          <tr><td>/storage/emulated/0</td><td>external/</td><td>rw</td><td>2</td></tr>
+          <tr><td>/mnt/obb</td><td>obb/ range</td><td>—</td><td>1</td></tr>
+        </table>
+        <div class="stat">backing reads <b>18.4k</b> · 全量物化 <b>3</b> · lease <b>2</b> · 上次 FlushAll <b>pause@3960</b></div>
+      </div>
+    </div>
+    <div class="panel">
+      <h3><span class="dot warn"></span>Audio · Video <span class="st">HAL 48 kHz / 2 ch · 1024 帧块</span></h3>
+      <div class="body">
+        <table>
+          <tr><th>player</th><th>stream</th><th>written</th><th>consumed</th><th>queue</th><th>underrun</th></tr>
+          <tr><td>AudioTrack#1</td><td>MUSIC</td><td>29.4M</td><td>29.39M</td><td>8 192 B</td><td style="color:var(--warn)">2</td></tr>
+          <tr><td>OpenSL#1</td><td>PCM16</td><td>1.2M</td><td>1.2M</td><td>4 096 B</td><td>0</td></tr>
+          <tr><td>SoundPool</td><td>voices 3/8</td><td>—</td><td>—</td><td>cache 2.1 MiB</td><td>—</td></tr>
+        </table>
+        <div class="stat">music 实例 <b>1</b>/16 · 编码窗口 <b>4.2</b>/128 MiB · MediaPlayer <b>Started</b> · gain MUSIC 0.8</div>
+        <div class="stat">video: FFmpeg <b style="color:var(--dim)">unavailable</b>（缺 avutil-59）· VideoView <b>none</b></div>
+      </div>
+    </div>
+    <div class="panel">
+      <h3><span class="dot ok"></span>Input · UI tree <span class="st">MouseTouchMapper</span></h3>
+      <div class="body">
+        <div class="stat">HAL 事件/帧 <b>2</b> · 触摸 capture <b>none</b> · MCP gesture 队列 <b>0</b>/64</div>
+        <div class="stat">最近: <code>ACTION_UP (412,688) → Activity.onTouchEvent</code></div>
+        <div class="stat" style="margin-top:6px">UiTree gen <b>3</b> · nodes <b>7</b> · layout dirty <b>0</b> · draw dirty <b>0</b></div>
+        <div class="stack" style="margin-top:2px">
+          <div>ContentRoot 1280×720</div>
+          <div style="margin-left:10px">FrameLayout</div>
+          <div style="margin-left:20px">GLSurfaceView <span class="pc">(guest renderer)</span></div>
+          <div style="margin-left:20px">LinearLayout <span class="pc">GONE</span></div>
+        </div>
+        <div class="stat">focus owner <b>GLSurfaceView</b> · overlay 合成 <b>skipped（无 dirty）</b></div>
+      </div>
+    </div>
+    <div class="panel">
+      <h3>结构化日志尾部 <span class="chip">filter: gtid=7 | capability</span><span class="st">Logger ring · JSONL 同源</span></h3>
+      <div class="body log">
+        <div><span class="lv">INFO</span>egl.swap <span class="k">frame=</span>4213 <span class="k">gtid=</span>7 <span class="k">gen=</span>41</div>
+        <div><span class="lv w">WARN</span>gles.error <span class="k">call=</span>glTexImage2D <span class="k">err=</span>0x0501 <span class="k">frame=</span>4198 <span class="k">gtid=</span>7</div>
+        <div class="hl"><span class="lv w">WARN</span>capability.unimplemented <span class="k">id=</span>audio.audiotrack.timestamp <span class="k">ctx=</span>3 <span class="k">hits=</span>3</div>
+        <div><span class="lv">INFO</span>dexvm.gc <span class="k">live=</span>31.1MiB <span class="k">stw_ms=</span>3.8 <span class="k">target=</span>44MiB</div>
+        <div><span class="lv w">WARN</span>audio.underrun <span class="k">player=</span>1 <span class="k">frames=</span>1024 <span class="k">frame=</span>4190</div>
+        <div><span class="lv">INFO</span>vfs.flush_all <span class="k">reason=</span>pause <span class="k">frame=</span>3960 <span class="k">files=</span>4</div>
+        <div><span class="lv">DEBUG</span>syscall <span class="k">nr=</span>240 <span class="k">name=</span>futex <span class="k">result=</span>1 <span class="k">×</span>1 902</div>
+        <div><span class="lv">INFO</span>session.lifecycle <span class="k">phase=</span>ActivityResumed <span class="k">frame=</span>3961</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// 生成时间轴伪数据（仅效果图）
+function bars(id, fn){const el=document.getElementById(id);const n=150;for(let i=0;i<n;i++){const v=fn(i);if(v==null)continue;const b=document.createElement('i');b.className='bar';b.style.left=(i/n*100)+'%';b.style.height=v+'%';b.style.width='0.6%';el.appendChild(b);}}
+function evs(id, idx, cls){const el=document.getElementById(id);idx.forEach(i=>{const e=document.createElement('i');e.className='ev';e.style.left=(i/150*100)+'%';e.style.background=cls;el.appendChild(e);});}
+bars('l1',i=>35+Math.abs(Math.sin(i*0.7))*25+(i%37==0?40:0));
+evs('l2',[4,18,31,44,57,70,84,97,110,123,137,146],'#58a6ff');
+evs('l3',[146],'#d29922');
+bars('l4',i=>30+Math.abs(Math.cos(i*0.4))*30);
+evs('l5',[131,133],'#d29922');
+evs('l6',[62,131],'#f85149');
+evs('l7',[0,86,87],'#3fb950');
+['l1','l2','l3','l4','l5','l6','l7'].forEach(id=>{const c=document.createElement('span');c.className='cursor';if(id!=='l1')c.classList.add('nolab');document.getElementById(id).appendChild(c);});
+document.querySelectorAll('.nolab').forEach(c=>c.style.setProperty('--x','1'));
+const st=document.createElement('style');st.textContent='.cursor.nolab::after{content:none}';document.head.appendChild(st);
+</script>
+</body>
+</html>

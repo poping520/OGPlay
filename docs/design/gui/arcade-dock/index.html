@@ -1,0 +1,534 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>OGPlay · Desktop Arcade Dock</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root {
+    --font: Roboto, "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", "PingFang SC", "Noto Sans CJK SC", sans-serif;
+    --ease: cubic-bezier(.22, .9, .3, 1.02);
+    --dur: .58s;
+  }
+  html, body { margin: 0; height: 100%; background: #dfe4de; overflow: hidden; font-family: var(--font); }
+  #viewport { position: fixed; inset: 0; display: grid; place-items: center; }
+  #stage {
+    position: relative; width: 1672px; height: 941px; flex: none;
+    background: radial-gradient(ellipse at 45% 0%, #fff 0%, #f4f6f0 55%, #e7eee7 100%); border-radius: 28px; box-shadow: inset 0 0 0 2px #fff;
+    transform-origin: 0 0; user-select: none; -webkit-user-select: none;
+  }
+  #stage * { box-sizing: border-box; }
+
+  /* ---------------------------------------------------------------- rack */
+  #rack { position: absolute; left: 203px; top: 128px; width: 1004px; height: 590px; overflow: hidden; }
+  .cart {
+    position: absolute; opacity: 1; cursor: pointer;
+    transition: left var(--dur) var(--ease), top var(--dur) var(--ease),
+                width var(--dur) var(--ease), height var(--dur) var(--ease),
+                opacity .4s ease, transform .32s cubic-bezier(.2,.8,.3,1.2);
+    will-change: left, top, width, height, transform;
+  }
+  .cart.hidden { opacity: 0; pointer-events: none; }
+  .cart.ghost  { opacity: 0; pointer-events: none; }
+  .cart:hover { transform: translateY(-14px); }
+  .cart.selected:hover { transform: translateY(-6px); }
+  .cart.bounce { animation: bounce .5s cubic-bezier(.2,.8,.3,1.2); }
+  @keyframes bounce { 30% { transform: translateY(-18px) scale(1.012); } 100% { transform: none; } }
+
+  .cart .body {
+    position: absolute; inset: 0; width: 100%; height: 100%; display: block;
+    transition: opacity .45s ease; pointer-events: none;
+    filter: drop-shadow(2px 3px 2px rgba(15, 23, 12, .4)) drop-shadow(5px 9px 6px rgba(20, 30, 25, .28));
+  }
+  .cart:hover .body { filter: drop-shadow(2px 4px 2px rgba(15, 23, 12, .28)) drop-shadow(5px 19px 11px rgba(20, 30, 25, .36)); }
+
+  .cart .floor {
+    position: absolute; left: 7%; right: 7%; bottom: -7px; height: 16px; pointer-events: none;
+    background: radial-gradient(ellipse at 50% 48%, rgba(15,22,12,.7), rgba(15,22,12,.24) 35%, transparent 72%);
+    transition: opacity .32s ease, transform .32s ease;
+  }
+  .cart:hover .floor { opacity: .55; transform: scaleX(1.06) translateY(4px); }
+
+  .cart .cover {
+    position: absolute; overflow: hidden; background: #edf1ec; pointer-events: none;
+    transition: left var(--dur) var(--ease), top var(--dur) var(--ease),
+                width var(--dur) var(--ease), height var(--dur) var(--ease);
+  }
+
+  .cart .lbl {
+    position: absolute; pointer-events: none; transition: opacity .3s ease, left var(--dur) var(--ease), top var(--dur) var(--ease), width var(--dur) var(--ease), height var(--dur) var(--ease);
+  }
+  .cart .small-title {
+    display: flex; align-items: center; justify-content: center; white-space: nowrap;
+    color: #0b0b12; font-weight: 700; font-size: 26px; letter-spacing: .01em;
+  }
+  .cart .big-label { color: #fff; text-align: center; }
+  .cart .big-label .t { position: absolute; left: 0; right: 0; top: 11px; font-size: 35px; font-weight: 700; line-height: 44px; letter-spacing: -.005em; white-space: nowrap; }
+  .cart .big-label .p { position: absolute; left: 0; right: 0; top: 62px; font-size: 22px; font-weight: 400; line-height: 26px; color: rgba(255,255,255,.92); white-space: nowrap; }
+  .cart .big-label .v {
+    position: absolute; left: 50%; top: 96px; transform: translateX(-50%); height: 40px; padding: 0 22px;
+    border-radius: 16px; background: #0d51d3; color: #fff; font-size: 22px; line-height: 40px; white-space: nowrap;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.12);
+  }
+  .cart .badge {
+    display: flex; align-items: center; justify-content: center;
+    color: #0a46d8; font-weight: 900; font-size: 48px; letter-spacing: -.01em; line-height: 1;
+    font-family: "Arial Rounded MT Bold", "Nunito", var(--font);
+  }
+  .cart .shine {
+    position: absolute; inset: 0; pointer-events: none; opacity: 0;
+    background: linear-gradient(108deg, rgba(255,255,255,0) 38%, rgba(255,255,255,.2) 50%, rgba(255,255,255,0) 62%);
+    border-radius: 24px; background-size: 250% 100%; background-position: 100% 0;
+  }
+  .cart:hover .shine { animation: sweep .9s ease-out forwards; }
+  @keyframes sweep { 0% { opacity: 0; background-position: 100% 0; } 35% { opacity: .65; } 100% { opacity: 0; background-position: 0% 0; } }
+
+  /* ---------------------------------------------------------------- pager */
+  .pill {
+    position: absolute; width: 62px; height: 66px; top: 826px; cursor: pointer;
+    transition: left .45s var(--ease), top .45s var(--ease), width .45s var(--ease), height .45s var(--ease), transform .25s ease;
+  }
+  .pill .bg { position: absolute; inset: 0; border-radius: 18px; border: 1px solid #dbe1d7; background: linear-gradient(145deg, #fff, #eef0e9); box-shadow: inset 0 2px 1px white, 0 3px 2px #b9c3b54d; transition: opacity .3s ease; }
+  .pill .bg.act { background: linear-gradient(135deg, #fff476, #ffd819 45%, #ffbc00); border-color: #efb90e; opacity: 0; }
+  .pill .n {
+    position: absolute; left: 0; right: 0; top: 0; height: 60px; display: grid; place-items: center;
+    font-weight: 800; font-size: 27px; color: #0a0d24; letter-spacing: -.01em; transition: color .3s ease, font-size .3s ease;
+  }
+  .pill:hover { transform: translateY(-3px); }
+  .pill.active { width: 79px; height: 68px; top: 824px; cursor: default; }
+  .pill.active:hover { transform: none; }
+  .pill.active .bg.act { opacity: 1; }
+  .pill.active .bg.idle { opacity: 0; }
+  .pill.active .n { color: #0a46d8; height: 62px; font-size: 32px; }
+  #underline {
+    position: absolute; top: 895px; width: 72px; height: 9px; border-radius: 5px; background: #0643f4;
+    transition: left .45s var(--ease);
+  }
+
+  /* ---------------------------------------------------------------- panel */
+  .abs { position: absolute; white-space: nowrap; }
+  #panel-dyn { transition: opacity .18s ease, transform .18s ease; }
+  #panel-dyn.out { opacity: 0; transform: translateY(6px); }
+  #thumb { left: 1256px; top: 146px; width: 111px; height: 115px; border-radius: 22px; overflow: hidden; background: linear-gradient(145deg,#fcfdf9,#e4eae2); border: 2px solid #d3dccf; box-shadow: inset 0 2px 5px #b4c0ac55; }
+
+  #p-title { left: 1390px; top: 144px; font-size: 34px; font-weight: 700; color: #05091f; line-height: 44px; letter-spacing: -.01em; }
+  #p-pkg   { left: 1392px; top: 187px; font-size: 19px; color: #6e8094; line-height: 26px; }
+  #p-ver   { left: 1516px; top: 225px; font-size: 17px; color: #0c3f92; line-height: 26px; }
+  #p-serial { left: 1370px; top: 524px; font-size: 18px; font-weight: 500; color: #092990; line-height: 24px; }
+  #p-sandbox { left: 1403px; top: 601px; font-size: 18px; font-weight: 500; color: #091e70; line-height: 24px; }
+  .run { font-size: 18px; font-weight: 500; line-height: 24px; }
+  .run .d { position: absolute; left: 1306px; color: #092990; }
+  .run .m { position: absolute; left: 1467px; color: #091e70; }
+
+  .hit { position: absolute; border-radius: 14px; cursor: pointer; transition: background .18s ease, transform .18s ease; }
+  .hit:hover { background: rgba(255,255,255,.14); }
+  .hit:active { transform: scale(.985); }
+  #hit-launch { left: 1254px; top: 268px; width: 397px; height: 84px; border-radius: 22px; }
+  #hit-launch:hover { background: rgba(255,255,255,.10); }
+  .navhit:hover { background: rgba(0,0,0,.035); }
+
+  button, input { font: inherit; }
+  button { cursor: pointer; border: 1px solid #dce2d6; color: #11192a; background: linear-gradient(145deg,#fff,#f1f3ec); box-shadow: inset 0 2px 1px #fff, 0 3px 3px #b8c2b53b; }
+  button:active { transform: translateY(2px); }
+  :focus-visible { outline: 3px solid #1460f7; outline-offset: 4px; }
+  header { position:absolute; inset:22px 47px auto; height:74px; display:flex; align-items:center; gap:28px; }
+  .logo { color:#0727f4; font-size:76px; font-weight:950; letter-spacing:-5px; line-height:1; }
+  .brand { border-left:1px solid #cfd5cb; padding-left:28px; margin-left:5px; font-size:20px; font-weight:750; color:#a1a8a2; }
+  .stripes { display:flex; gap:10px; margin-top:7px; }.stripes i { width:21px; height:7px; border-radius:5px; background:#0065ff; }.stripes i:nth-child(2) { background:#ff3431; }.stripes i:nth-child(3) { background:#ffb900; }.stripes i:nth-child(4) { background:#19a245; }.stripes i:nth-child(5) { background:#713de5; }
+  .ready { margin-left:auto; color:#079d39; font-size:27px; font-weight:700; }
+  .primary { background:linear-gradient(155deg,#1590ff,#0064ff 55%,#0346e2); color:white; border:1px solid #0570ff; box-shadow:inset 0 2px 1px #ffffffa6,0 3px 5px #005aff33; font-weight:700; }
+  .import { width:212px; height:74px; border-radius:23px; font-size:28px; margin-left:8px; }
+  .navigation { position:absolute; left:10px; top:116px; width:185px; height:805px; padding:29px 12px; border:2px solid #dbe2d7; border-radius:32px; background:#f9fbf650; box-shadow:inset 0 2px 3px white,0 3px 4px #a6b49e44; }
+  .nav { width:160px; height:126px; border-radius:25px; margin-bottom:18px; display:flex; align-items:center; justify-content:center; gap:15px; font-size:24px; font-weight:700; }.nav.active { background:linear-gradient(140deg,#147dff,#0047ed); color:white; border-color:#0080ff; }.nav small { display:block; font-size:16px; font-weight:400; margin-top:5px; }.icon-blank { width:31px; height:31px; border-radius:8px; background:currentColor; opacity:.12; }
+  .cabinet { position:absolute; left:206px; top:126px; width:1000px; height:682px; border:2px solid #bccbb4; border-radius:32px; background:radial-gradient(ellipse at 50% 76%,#edf2e8a0,transparent 67%),linear-gradient(180deg,#8c9d86,#a7b6a4 19%,#c7d3c2 67%,#edf3eb); box-shadow:inset 0 13px 17px #53654b66,inset 16px 0 18px #6c805a55,inset -10px 0 13px #87977666,0 0 0 11px #ecf1e8,0 0 0 13px #dce3d7; }
+  .cabinet-depth { position:absolute; left:0; top:0; width:100%; height:235px; pointer-events:none; border-radius:30px 30px 0 0; overflow:hidden; }
+  .light { position:absolute; left:60px; right:58px; top:29px; height:13px; background:linear-gradient(#fff,#fcfff5 65%,#e8f0dc); border-radius:30px; box-shadow:0 -2px 5px #40503766,0 0 5px #fffff6,0 3px 15px #f7ffeaa6,0 7px 7px #34412d50; }
+  .light::before { content:""; position:absolute; inset:-3px -7px; border-radius:20px; border:1px solid #5e6d5155; box-shadow:inset 0 1px 2px #45533a66; z-index:-1; }
+  .light::after { content:""; position:absolute; left:-14px; right:-14px; top:8px; height:95px; background:radial-gradient(ellipse at 50% 0%,#f8ffe97a,transparent 73%); pointer-events:none; }
+  .shelf { position:absolute; left:3px; right:3px; top:557px; height:44px; border-radius:13px 13px 22px 22px; background:linear-gradient(#fffef3,#e6e4d4 55%,#c7c9b7); box-shadow:0 7px 8px #54694b44,inset 0 2px white; }
+  .pedestal { position:absolute; left:290px; top:536px; width:366px; height:36px; border-radius:50% 50% 20px 20px / 10px 10px 12px 12px; background:linear-gradient(#fffef7,#e2dfce); box-shadow:0 3px 3px #75826766; }
+  .pager-tray { position:absolute; left:208px; top:815px; width:996px; height:99px; border-radius:28px; border:2px solid #dfe6d9; background:#f7f9f3aa; box-shadow:inset 0 2px 1px white,0 4px 5px #a7b5a344; }
+  .side-panel { position:absolute; left:1220px; top:115px; width:442px; height:801px; border:13px solid #ffffffa8; border-radius:34px; background:#fafbf7; box-shadow:inset 0 2px 4px #b0baa4,0 3px 5px #9ca99355; }
+  .panel-ready { left:1392px; top:225px; color:#0b9d3e; font-size:19px; font-weight:700; }
+  #hit-launch { width:382px; font-size:33px; }
+  #hit-launch:hover { background:linear-gradient(155deg,#2b9eff,#0059f2); }
+  .actions { position:absolute; left:1248px; top:364px; display:grid; grid-template-columns:190px 190px; gap:14px 12px; }.actions button { height:46px; border-radius:15px; font-size:19px; font-weight:650; }
+  .info,.recent { position:absolute; left:1246px; width:397px; border:1px solid #e8ece3; border-radius:20px; padding:10px 13px; background:linear-gradient(130deg,#fff9,#f5f7f155); }
+  .info { top:483px; height:233px; }.recent { top:728px; height:161px; }
+  h2 { margin:0; height:30px; font-size:21px; color:#151c19; border-bottom:1px solid #e9ece5; }.recent small { float:right; color:#84927e; font-size:15px; font-weight:400; margin-top:5px; }
+  dl { margin:7px 0 0; display:grid; grid-template-columns:110px 1fr; grid-auto-rows:27px; font-size:18px; color:#123983; }dt { font-weight:550; }dd { margin:0; }.green { color:#0a9936; }.green span { color:#123983; }.run-rule { height:35px; border-bottom:1px solid #e9ece5; }.run-rule:last-child { border:0; }
+  .color-control { position:absolute; left:247px; top:754px; display:flex; gap:15px; align-items:center; height:35px; color:#52664a; font-size:17px; }.color-control input { width:48px; height:31px; border:1px solid #bfccb6; border-radius:8px; padding:2px; background:#fff8; cursor:pointer; }.color-control output { width:86px; font-family:monospace; }.color-control span { color:#84937d; font-size:14px; }
+  .cart .cover { border-radius:17px; background:linear-gradient(155deg,#f5f6f1 0%,#eef0e9 62%,#e8ece3 100%); box-shadow:inset 0 1px 0 #ffffffa6,0 0 0 .7px #20301930,0 1px 1px #20301920; }.cart.selected .cover { border-radius:28px; }
+  .cart .big-label { border-radius:24px; background:linear-gradient(115deg,#ffffff12,transparent 35%),linear-gradient(175deg,#075bdf,#0644b8 60%,#073997); box-shadow:inset 0 1px 1px #ffffff80,inset 1px 0 1px #ffffff30,inset 0 -1px 1px #001b6026,0 1px 1px #0003; }.cart .small-title { color:#101711; text-shadow:0 1px 0 #ffffff20; }
+  .cart .shine { inset:4px 15px 36px 8px; }.cart.selected .shine { inset:4px 15px 5px 8px; border-radius:45px; }
+  #toast { position:absolute; bottom:33px; left:50%; transform:translateX(-50%) translateY(12px); padding:14px 24px; border-radius:15px; color:#fff; background:#172c20ed; font-size:18px; opacity:0; transition:opacity .2s,transform .2s; pointer-events:none; z-index:100; }#toast.show { opacity:1; transform:translateX(-50%); }
+  @media (prefers-reduced-motion:reduce) { #stage * { transition:none!important; animation:none!important; } }
+  /* Comparison mode locks one CSS pixel to one reference pixel. */
+  html.comparison, body.comparison { width:1672px; height:941px; overflow:auto; }
+  .comparison #viewport { position:absolute; width:1672px; height:941px; display:block; }
+  .comparison #stage * { animation:none!important; transition:none!important; }
+  .comparison .cart:hover { transform:none; }
+  .comparison .color-control { visibility:hidden; }
+</style>
+</head>
+<body>
+<div id="viewport">
+  <div id="stage">
+    <header><strong class="logo">OGPlay</strong><div class="brand">DESKTOP ARCADE DOCK<div class="stripes"><i></i><i></i><i></i><i></i><i></i></div></div><span class="ready">● 可启动</span><button class="primary import" data-demo="导入游戏">导入游戏</button></header>
+    <nav class="navigation"><button class="nav active" data-demo="游戏库"><span class="icon-blank"></span>游戏库</button><button class="nav" data-demo="运行时"><span class="icon-blank"></span><span>运行时<small>Dashboard</small></span></button><button class="nav" data-demo="设置"><span class="icon-blank"></span>设置</button></nav>
+    <div class="cabinet">
+      <!-- Recessed ceiling and corner returns share the same rear seam. -->
+      <svg class="cabinet-depth" viewBox="0 0 996 235" preserveAspectRatio="none" aria-hidden="true">
+        <defs>
+          <linearGradient id="dock-ceiling" x2="0" y2="1"><stop stop-color="#778567"/><stop offset=".23" stop-color="#a4af8e"/><stop offset=".62" stop-color="#a0ac8c"/><stop offset="1" stop-color="#65765d"/></linearGradient>
+          <linearGradient id="dock-left"><stop stop-color="#5b7050" stop-opacity=".65"/><stop offset=".55" stop-color="#748668" stop-opacity=".32"/><stop offset="1" stop-color="#a6b79b" stop-opacity="0"/></linearGradient>
+          <linearGradient id="dock-right"><stop stop-color="#a6b79b" stop-opacity="0"/><stop offset=".5" stop-color="#748668" stop-opacity=".3"/><stop offset="1" stop-color="#4c6044" stop-opacity=".6"/></linearGradient>
+          <linearGradient id="dock-seam" x2="0" y2="1"><stop stop-color="#34472e" stop-opacity=".35"/><stop offset=".3" stop-color="#6c8060" stop-opacity=".14"/><stop offset="1" stop-color="#6c8060" stop-opacity="0"/></linearGradient>
+          <linearGradient id="dock-fade" x2="0" y2="1"><stop offset=".42" stop-color="white"/><stop offset="1" stop-color="black"/></linearGradient>
+          <radialGradient id="dock-wash" cx=".5" cy="0" r=".65"><stop stop-color="#f4ffe4" stop-opacity=".5"/><stop offset=".55" stop-color="#edf9df" stop-opacity=".16"/><stop offset="1" stop-color="#edf9df" stop-opacity="0"/></radialGradient>
+          <mask id="dock-return-mask"><rect width="996" height="235" fill="url(#dock-fade)"/></mask>
+        </defs>
+        <path d="M0 0H996V20Q985 30 968 48H28Q12 30 0 20Z" fill="url(#dock-ceiling)"/>
+        <g mask="url(#dock-return-mask)">
+          <path d="M0 18Q12 28 28 48V235H0Z" fill="url(#dock-left)"/>
+          <path d="M996 18Q984 28 968 48V235H996Z" fill="url(#dock-right)"/>
+          <path d="M28 48H968V90H28Z" fill="url(#dock-seam)"/>
+          <path d="M12 27Q27 35 28 58V155M984 27Q969 35 968 58V155" fill="none" stroke="#4b6042" stroke-opacity=".2" stroke-width="1.2"/>
+        </g>
+        <ellipse cx="498" cy="61" rx="455" ry="107" fill="url(#dock-wash)"/>
+      </svg>
+      <div class="light"></div><div class="shelf"></div><div class="pedestal"></div></div>
+    <div class="pager-tray"></div>
+    <div class="side-panel"></div>
+    <span class="abs panel-ready">● 可启动</span>
+    <section class="info"><h2>游戏信息</h2><dl><dt>安装序号</dt><dd></dd><dt>Profile</dt><dd class="green">● 已匹配 <span>(Default)</span></dd><dt>数据包</dt><dd class="green">● 已安装</dd><dt>沙盒目录</dt><dd></dd><dt>运行解释器</dt><dd>Android 12 (自带)</dd><dt>帧率限制</dt><dd>60 FPS</dd><dt>虚拟设备</dt><dd>Pixel 5 (1080 × 2340)</dd></dl></section>
+    <section class="recent"><h2>最近运行 <small>演示记录</small></h2><div class="run-rule"></div><div class="run-rule"></div><div class="run-rule"></div></section>
+    <div class="color-control"><label for="cart-color">卡带颜色</label><input type="color" id="cart-color" value="#fed111"><output id="color-value" for="cart-color">#FFD21C</output><span>即时预览</span></div>
+
+    <div id="rack"></div>
+
+    <div id="pager"></div>
+    <div id="underline"></div>
+
+    <div id="panel-dyn">
+      <div id="thumb" class="abs"></div>
+      <div id="p-title" class="abs"></div>
+      <div id="p-pkg" class="abs"></div>
+      <div id="p-ver" class="abs"></div>
+      <div id="p-serial" class="abs"></div>
+      <div id="p-sandbox" class="abs"></div>
+      <div id="p-runs"></div>
+    </div>
+
+    <button class="hit primary" id="hit-launch" data-demo="启动游戏">启动游戏</button>
+    <div class="actions">
+      <button data-demo="游戏设置">游戏设置</button><button data-demo="Dashboard">Dashboard</button>
+      <button data-demo="打开沙盒目录">打开沙盒目录</button><button data-demo="打开日志目录">打开日志目录</button>
+    </div>
+    <div id="toast" role="status"></div>
+  </div>
+</div>
+
+<script src="assets/layout.js"></script>
+<script>
+(() => {
+  const L = window.DOCK_LAYOUT;
+  const COLORS = { yellow: "#fed111", blue: "#2c84fd", red: "#f85448", green: "#6cb555", purple: "#a251ea", gray: "#9b928f", orange: "#ff9438", teal: "#21b7a7", pink: "#ec72b8", indigo: "#6771d7", lime: "#b7d74a", brown: "#ad8259" };
+  const SLOT_ORDER = ["s0", "s1", "big", "s3", "s4", "s5"];
+
+  // Demo metadata; artwork is intentionally blank.
+  const GAMES = [
+    { title: "Sample Racer", pkg: "com.example.racer",  ver: "1.2.3 (45)", color: "yellow" },
+    { title: "奇幻冒险",     pkg: "com.example.fantasy", ver: "2.0.1 (12)", color: "blue",   cover: "s0" },
+    { title: "极速飞车",     pkg: "com.example.speed",   ver: "1.4.0 (33)", color: "red",    cover: "s1" },
+    { title: "水果忍者",     pkg: "com.example.fruit",   ver: "1.8.5 (58)", color: "green",  cover: "s3" },
+    { title: "机器人乐园",   pkg: "com.example.robot",   ver: "3.2.0 (71)", color: "purple" },
+    { title: "导入的游戏",   pkg: "com.imported.game",   ver: "1.0.0 (1)",  color: "gray",   cover: "s5" },
+    { title: "像素跳跃",     pkg: "com.example.pixel",   ver: "0.9.7 (9)",  color: "orange" },
+    { title: "星际防线",     pkg: "com.example.stellar", ver: "2.3.0 (40)", color: "teal",   ph: ["#2bd4c0", "#1476b8", "星"] },
+    { title: "方块消除",     pkg: "com.example.blocks",  ver: "4.1.2 (88)", color: "pink",   ph: ["#ff8ad0", "#c23ea8", "块"] },
+    { title: "塔防战纪",     pkg: "com.example.tower",   ver: "1.1.0 (17)", color: "indigo" },
+    { title: "节奏大师",     pkg: "com.example.rhythm",  ver: "5.0.3 (120)", color: "lime",  ph: ["#d9ff5a", "#5cae1c", "♪"] },
+    { title: "弹珠传说",     pkg: "com.example.marble",  ver: "1.0.4 (6)",  color: "brown",  ph: ["#c99a6a", "#6d4326", "珠"] },
+  ];
+  // ring order in the rack. Default selection (game 1) follows the reference ordering:
+  // slot0=奇幻冒险 slot1=极速飞车 big=Sample Racer slot3=水果忍者 slot4=机器人乐园 slot5=导入的游戏
+  const RING = [1, 2, 0, 3, 4, 5, 6, 7, 8, 9, 10, 11];
+
+  // Glossy molded plastic: a flat colored face with light confined to rounded edges.
+  // Every layer inherits --cart-color; no baked color variants or bitmap textures.
+  function shell(shape, id) {
+    const s = L.slots[shape], w = s.rect[2], h = s.rect[3];
+    const big = shape === "big", foot = big ? 0 : 32, front = h - foot - 5;
+    const radius = big ? 44 : 22, vx = big ? 144 : 46, vw = big ? 143 : w - 67;
+    const c = s.cover, fw = w - 16, fh = front - 5;
+    const stops = entries => entries.map(([offset, color, opacity]) => `<stop offset="${offset}" stop-color="${color}" stop-opacity="${opacity}"/>`).join('');
+    const linear = (name, entries, vertical = false) => `<linearGradient id="${name}-${id}" x1="0" y1="0" x2="${vertical?0:1}" y2="${vertical?1:0}">${stops(entries)}</linearGradient>`;
+    // The reference has broad upper shoulders and much tighter lower corners.
+    const outline = (x,y,width,height,top,bottom) => `M${x+top} ${y} H${x+width-top} Q${x+width} ${y} ${x+width} ${y+top} V${y+height-bottom} Q${x+width} ${y+height} ${x+width-bottom} ${y+height} H${x+bottom} Q${x} ${y+height} ${x} ${y+height-bottom} V${y+top} Q${x} ${y} ${x+top} ${y}Z`;
+    const outer = outline(3,3,w-6,front,big?55:24,big?12:15);
+    const face = outline(7,4,fw,fh,big?51:22,big?10:13);
+    return `<svg class="body" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" aria-hidden="true" style="color:var(--cart-color)">
+      <defs>
+        ${linear('face', [[0,'#fff',.27],[.015,'#fff',.11],[.06,'#fff',.02],[.2,'#fff',0],[.88,'#000',0],[.98,'#000',.025],[1,'#000',.1]], true)}
+        ${linear('bevel', [[0,'#fff',.12],[1.5/fw,'#fff',.07],[5/fw,'#fff',.015],[12/fw,'#fff',0],[1-8/fw,'#000',0],[1-3/fw,'#000',.06],[1,'#000',.17]])}
+        ${linear('side', [[0,'#000',.1],[.04,'#fff',.18],[.12,'#fff',0],[.8,'#000',.04],[.95,'#000',.22],[1,'#000',.32]])}
+        ${linear('foot', [[0,'#000',.22],[.07,'#fff',.1],[.17,'#fff',.025],[.78,'#000',.08],[.96,'#000',.22],[1,'#000',.32]])}
+        ${linear('footshade', [[0,'#000',.38],[.2,'#000',.14],[.64,'#000',.1],[.94,'#000',.15],[1,'#000',.3]],true)}
+        ${linear('groove', [[0,'#000',.3],[.22,'#000',.21],[.6,'#000',.075],[.85,'#000',.025],[1,'#fff',.2]],true)}
+        ${linear('rim', [[0,'#000',.16],[.35,'#000',.06],[.8,'#fff',.06],[1,'#fff',.24]],true)}
+        ${linear('topline', [[0,'#fff',0],[.16,'#fff',.65],[.4,'#fff',.9],[.8,'#fff',.3],[1,'#fff',0]])}
+        <radialGradient id="reflection-${id}" cx=".18" cy="0" r=".85" gradientTransform="translate(0 .015) scale(1 .24)">
+          ${stops([[0,'#fff',.26],[.2,'#fff',.13],[.48,'#fff',.025],[1,'#fff',0]])}
+        </radialGradient>
+        ${linear('ventlight', [[0,'#fff',0],[.12,'#fff',.2],[.4,'#fff',.6],[.85,'#fff',.3],[1,'#fff',0]])}
+        <radialGradient id="button-${id}" cx=".28" cy=".2" r=".78">${stops([[0,'#fff',.9],[.16,'#fff',.3],[.42,'#fff',0],[.77,'#000',.14],[1,'#000',.5]])}</radialGradient>
+        <!-- Alpha-derived bevel normals: a narrow dielectric specular lobe.
+             Neutral light overlays the colored body, so arbitrary shell colors remain supported. -->
+        <filter id="plastic-light-${id}" filterUnits="userSpaceOnUse" x="0" y="0" width="${w}" height="${h}" color-interpolation-filters="sRGB">
+          <feGaussianBlur in="SourceAlpha" stdDeviation="${big?3.2:2.1}" result="height"/>
+          <feSpecularLighting in="height" surfaceScale="${big?7:4.8}" specularConstant=".85" specularExponent="48" lighting-color="#fffef4" result="specular">
+            <feDistantLight azimuth="235" elevation="42"/>
+          </feSpecularLighting>
+          <feComposite in="specular" in2="SourceAlpha" operator="in"/>
+        </filter>
+        <clipPath id="faceclip-${id}"><path d="${face}"/></clipPath>
+      </defs>
+      <rect x="14" y="${h-55}" width="${w-28}" height="53" rx="10" fill="currentColor"/>
+      <rect x="14" y="${h-55}" width="${w-28}" height="53" rx="10" fill="url(#foot-${id})"/>
+      <rect x="14" y="${h-55}" width="${w-28}" height="53" rx="10" fill="url(#footshade-${id})"/>
+      <path d="M22 ${h-5} H${w-24}" stroke="#000" stroke-opacity=".22" stroke-width="1"/>
+      <path d="${outer}" fill="currentColor"/>
+      <path d="${outer}" fill="url(#side-${id})"/>
+      <path d="${face}" fill="currentColor"/>
+      <g clip-path="url(#faceclip-${id})">
+        <rect x="7" y="4" width="${fw}" height="${fh}" fill="url(#face-${id})"/>
+        <rect x="7" y="4" width="${fw}" height="${fh}" fill="url(#bevel-${id})"/>
+        <rect x="7" y="4" width="${fw}" height="${fh}" fill="url(#reflection-${id})"/>
+        <path d="${face}" fill="#fff" filter="url(#plastic-light-${id})" opacity=".72"/>
+      </g>
+      <path d="M15 ${radius-10} Q19 7 ${radius+8} 7 H${w-radius-13}" fill="none" stroke="url(#topline-${id})" stroke-width="1.1" stroke-opacity=".45" stroke-linecap="round"/>
+      <path d="M${w-7} ${radius+8} V${front-18}" stroke="#000" stroke-opacity=".19" stroke-width=".7"/>
+      <path d="M${radius} ${front-3} H${w-radius-9}" stroke="#000" stroke-opacity=".08" stroke-width="1"/>
+      ${[0,1,2].map(n=>{const y = big?35+n*13:24+n*12; return `<rect x="${vx}" y="${y}" width="${vw}" height="8" rx="4" fill="url(#groove-${id})"/><path d="M${vx+4} ${y+1} H${vx+vw-4}" stroke="#000" stroke-opacity=".07"/><rect x="${vx+2}" y="${y+7.6}" width="${vw-4}" height="1.2" rx=".6" fill="url(#ventlight-${id})"/>`;}).join('')}
+      ${big ? `<rect x="48" y="28" width="74" height="53" rx="10" fill="url(#rim-${id})"/><rect x="50" y="30" width="70" height="49" rx="8" fill="currentColor"/><rect x="50" y="30" width="70" height="49" rx="8" fill="url(#face-${id})"/><path d="M305 37l19 18-19 18z" fill="url(#groove-${id})"/><path d="M306 72l18-17" stroke="#fff" stroke-opacity=".6"/>` : `<ellipse cx="26" cy="37" rx="8.8" ry="11" fill="#000" fill-opacity=".4"/><ellipse cx="26" cy="36" rx="7.4" ry="9.5" fill="currentColor"/><ellipse cx="26" cy="36" rx="7.4" ry="9.5" fill="url(#button-${id})"/><ellipse cx="24" cy="31.5" rx="2.2" ry="2.5" fill="#fff" fill-opacity=".6"/>`}
+      <rect x="${c[0]}" y="${c[1]}" width="${c[2]}" height="${c[3]}" rx="${big?29:17}" fill="url(#rim-${id})"/>
+      ${big ? [0,1].map(side=>Array.from({length:10},(_,n)=>`<rect x="${side?w-10:3}" y="${146+n*18}" width="8" height="12" rx="2" fill="currentColor"/><rect x="${side?w-10:3}" y="${146+n*18}" width="8" height="12" rx="2" fill="url(#groove-${id})"/>`).join('')).join('') : ''}
+    </svg>`;
+  }
+
+  const stage = document.getElementById("stage");
+  const rack = document.getElementById("rack");
+  const RX = 203, RY = 128;                       // rack origin on the stage
+
+  const slotRect = (k) => { const r = L.slots[k].rect; return { x: r[0] - RX, y: r[1] - RY, w: r[2], h: r[3] }; };
+  const geom = {};
+  for (const k of SLOT_ORDER) geom[k] = slotRect(k);
+  // virtual slots beyond both ends of the rack
+  const gL = geom.s0, gR = geom.s5;
+  geom.vL1 = { ...gL, x: gL.x - 158 };
+  geom.vL2 = { ...gL, x: gL.x - 316 };
+  geom.vR1 = { ...gR, x: gR.x + 124 };
+  geom.vR2 = { ...gR, x: gR.x + 248 };
+  const SHAPE_OF = { vL1: "s0", vL2: "s0", vR1: "s5", vR2: "s5" };
+
+  // ------------------------------------------------------------ cart elements
+  const carts = GAMES.map((g, i) => {
+    const el = document.createElement("div");
+    el.className = "cart";
+    el.dataset.game = i;
+    el.style.setProperty("--cart-color", COLORS[g.color]);
+    el.tabIndex = 0;
+    el.setAttribute("role", "button");
+    el.setAttribute("aria-label", `选择 ${g.title}`);
+    el.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); select(i); } });
+    el.innerHTML = `
+      <div class="floor"></div>
+      <div class="shell"></div>
+      <div class="cover" aria-label="封面占位"></div>
+      <div class="lbl small-title">${g.title}</div>
+      <div class="lbl big-label"><div class="t">${g.title}</div><div class="p">${g.pkg}</div><div class="v">版本 ${g.ver}</div></div>
+      <div class="lbl badge">${String(i + 1).padStart(2, "0")}</div>
+      <div class="shine"></div>`;
+    rack.appendChild(el);
+    el.addEventListener("click", () => {
+      if (i === selected) { el.classList.remove("bounce"); void el.offsetWidth; el.classList.add("bounce"); }
+      else select(i);
+    });
+    return { el, game: g, shape: null, slot: null };
+  });
+
+  function px(el, r) { el.style.left = r[0] + "px"; el.style.top = r[1] + "px"; el.style.width = r[2] + "px"; el.style.height = r[3] + "px"; }
+
+  function place(cart, slotKey, z) {
+    const g = geom[slotKey];
+    const shape = SHAPE_OF[slotKey] || slotKey;
+    const s = L.slots[shape];
+    const { el } = cart;
+    el.style.left = g.x + "px"; el.style.top = g.y + "px"; el.style.width = g.w + "px"; el.style.height = g.h + "px";
+    el.style.zIndex = z;
+    el.classList.toggle("selected", shape === "big");
+    el.classList.toggle("ghost", slotKey === "vL1" || slotKey === "vR1");
+    el.classList.toggle("hidden", slotKey === "vL2" || slotKey === "vR2");
+
+    el.tabIndex = (el.classList.contains("hidden") || el.classList.contains("ghost")) ? -1 : 0;
+    el.setAttribute("aria-pressed", String(shape === "big"));
+    if (cart.shape !== shape) {
+      el.querySelector(".shell").innerHTML = shell(shape, el.dataset.game);
+      cart.shape = shape;
+    }
+    const c = s.cover;
+    px(el.querySelector(".cover"), [c[0]+1, c[1]+1, c[2]-2, c[3]-2]);
+    // labels
+    const small = el.querySelector(".small-title"), big = el.querySelector(".big-label"), badge = el.querySelector(".badge");
+    if (shape === "big") {
+      px(big, s.label); px(badge, s.badge);
+      px(small, [s.label[0], s.label[1], s.label[2], 40]);
+      big.style.opacity = 1; badge.style.opacity = 1; small.style.opacity = 0;
+    } else {
+      const t = s.text;
+      px(small, [8, t[1] - 10, g.w - 16, t[3] + 20]);
+      const units = [...cart.game.title].reduce((n, ch) => n + (/[\u2e80-\u9fff\uf900-\ufaff\uff00-\uffef]/.test(ch) ? 1 : 0.58), 0);
+      small.style.fontSize = Math.min(23, Math.floor((t[2] + 10) / units)) + "px";
+      px(big, [8, t[1] - 40, g.w - 16, 152]); px(badge, [g.w / 2 - 37, 20, 74, 53]);
+      big.style.opacity = 0; badge.style.opacity = 0; small.style.opacity = 1;
+    }
+    cart.slot = slotKey;
+  }
+
+  // ------------------------------------------------------------ pager
+  const pager = document.getElementById("pager");
+  const underline = document.getElementById("underline");
+  const P = L.pills;
+  const pills = GAMES.map((g, i) => {
+    const el = document.createElement("div");
+    el.className = "pill";
+    el.tabIndex = 0; el.setAttribute("role", "button"); el.setAttribute("aria-label", `选择 ${g.title}`);
+    el.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); select(i); } });
+    el.innerHTML = `<div class="bg idle"></div><div class="bg act"></div><div class="n">${String(i + 1).padStart(2, "0")}</div>`;
+    el.addEventListener("click", () => select(i));
+    pager.appendChild(el);
+    return el;
+  });
+  const pillCenter = (i) => P.first_center + 5.5 + P.pitch * i;   // original reference grid centre
+  function layoutPills() {
+    pills.forEach((el, i) => {
+      const active = i === selected, cx = pillCenter(i) - (active ? 5.5 : 0);
+      const w = active ? P.active_size[0] : P.size[0];
+      el.classList.toggle("active", active);
+      el.setAttribute("aria-pressed", String(active));
+      el.style.left = (cx - w / 2) + "px";
+      if (active) underline.style.left = (cx - P.underline[2] / 2) + "px";
+    });
+  }
+
+  // ------------------------------------------------------------ panel
+  const $ = (id) => document.getElementById(id);
+  const pad = (n) => String(n).padStart(2, "0");
+  function runsFor(i) {
+    if (i === 0) return [["2024-08-24 14:32", 12], ["2024-08-20 20:18", 36], ["2024-08-18 19:03", 8]].map(([d, m]) => ({ d, m: `运行 ${m} 分钟` }));
+    const base = new Date(2024, 7, 24 - i * 3, 14, 32);
+    return [0, 1, 2].map(k => {
+      const d = new Date(base.getTime() - k * (3.5 + i * .7) * 86400000 - k * 5.6e6);
+      const mins = [12, 36, 8, 21, 47, 15, 29, 5, 63, 18, 33, 9][(i * 3 + k) % 12];
+      return { d: `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`, m: `运行 ${mins} 分钟` };
+    });
+  }
+  function fillPanel(i) {
+    const g = GAMES[i];
+    $("cart-color").value = carts[i].el.style.getPropertyValue("--cart-color");
+    $("color-value").textContent = $("cart-color").value.toUpperCase();
+    $("p-title").textContent = g.title;
+    $("p-pkg").textContent = g.pkg;
+    $("p-ver").textContent = `版本 ${g.ver}`;
+    $("p-serial").textContent = pad(i + 1).padStart(4, "0");
+    $("p-sandbox").textContent = `/data/ogplay/sandbox/${pad(i + 1).padStart(4, "0")}`;
+    $("p-runs").innerHTML = runsFor(i).map((r, k) =>
+      `<div class="run"><span class="abs d" style="top:${779 + k * 35}px">${r.d}</span><span class="abs m" style="top:${779 + k * 35}px">${r.m}</span></div>`).join("");
+  }
+  let panelTimer = 0;
+  function updatePanel(i, animate) {
+    const dyn = $("panel-dyn");
+    if (!animate) { fillPanel(i); return; }
+    dyn.classList.add("out");
+    clearTimeout(panelTimer);
+    panelTimer = setTimeout(() => { fillPanel(i); dyn.classList.remove("out"); }, 180);
+  }
+
+  // ------------------------------------------------------------ selection
+  let selected = -1;
+  function select(i, animate = true) {
+    if (i === selected) return;
+    selected = i;
+    const sel = RING.indexOf(i);
+    RING.forEach((gameIdx, ri) => {
+      let rel = ((ri - sel) % 12 + 12 + 6) % 12 - 6;     // -6 .. 5
+      let key, z;
+      if (rel >= -2 && rel <= 3) { key = SLOT_ORDER[rel + 2]; z = 10 - Math.abs(rel) * 2 + (rel === 0 ? 4 : 0); }
+      else if (rel === -3) { key = "vL1"; z = 1; }
+      else if (rel === 4)  { key = "vR1"; z = 1; }
+      else if (rel < -3)   { key = "vL2"; z = 0; }
+      else                 { key = "vR2"; z = 0; }
+      place(carts[gameIdx], key, z);
+    });
+    layoutPills();
+    updatePanel(i, animate);
+  }
+
+  // keyboard / wheel navigation
+  const step = (d) => select((selected + d + 12) % 12);
+  window.addEventListener("keydown", (e) => {
+    if (e.target.matches?.("input, button")) return;
+    if (e.key.startsWith("Arrow") || e.key === "Home") e.preventDefault();
+    if (e.key === "ArrowRight" || e.key === "ArrowDown") step(1);
+    else if (e.key === "ArrowLeft" || e.key === "ArrowUp") step(-1);
+    else if (e.key === "Home") select(0);
+  });
+  let wheelLock = 0;
+  rack.addEventListener("wheel", (e) => {
+    e.preventDefault();
+    const now = performance.now();
+    if (now - wheelLock < 260) return;
+    wheelLock = now;
+    step((e.deltaY || e.deltaX) > 0 ? 1 : -1);
+  }, { passive: false });
+
+  $("cart-color").addEventListener("input", e => {
+    carts[selected].el.style.setProperty("--cart-color", e.target.value);
+    $("color-value").textContent = e.target.value.toUpperCase();
+  });
+  let toastTimer;
+  document.querySelectorAll("[data-demo]").forEach(el => el.addEventListener("click", () => {
+    $("toast").textContent = `${el.dataset.demo} · 仅界面演示，尚未接入运行时`;
+    $("toast").classList.add("show"); clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => $("toast").classList.remove("show"), 2400);
+  }));
+
+  // ------------------------------------------------------------ fit to window
+  const fixedSize = new URLSearchParams(location.search).get("compare") === "1";
+  if (fixedSize) {
+    document.documentElement.classList.add("comparison");
+    document.body.classList.add("comparison");
+  }
+  function fit() {
+    if (fixedSize) {
+      Object.assign(stage.style, {transform:"none", position:"absolute", left:"0", top:"0", marginLeft:"0", marginTop:"0"});
+      return;
+    }
+    const s = Math.min(innerWidth / L.stage[0], innerHeight / L.stage[1]);
+    stage.style.transform = `scale(${s})`;
+    stage.style.marginLeft = ((innerWidth - L.stage[0] * s) / 2) + "px";
+    stage.style.marginTop = ((innerHeight - L.stage[1] * s) / 2) + "px";
+    stage.style.position = "absolute"; stage.style.left = "0"; stage.style.top = "0";
+  }
+  addEventListener("resize", fit);
+  fit();
+
+  // initial state without transitions
+  stage.style.setProperty("--dur", "0s");
+  select(0, false);
+  requestAnimationFrame(() => requestAnimationFrame(() => stage.style.removeProperty("--dur")));
+})();
+</script>
+</body>
+</html>

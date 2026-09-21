@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>OGPlay — 主界面 / 设置 原型</title>
+<style>
+:root{
+  --bg:#0f1115;--bg2:#151920;--panel:#1a1f28;--panel2:#20262f;--line:#2b323d;--line2:#343c48;
+  --fg:#e6e9ef;--fg2:#aeb6c2;--dim:#7a8494;--acc:#7c9cff;--acc2:#5b7cf0;--ok:#3fb950;--warn:#d29922;--err:#f0625d;
+  --r:10px;--mono:"JetBrains Mono","Cascadia Code",Consolas,monospace;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%}
+body{background:var(--bg);color:var(--fg);font:13px/1.5 "Segoe UI","Microsoft YaHei",system-ui,sans-serif;width:100vw;height:100vh;min-width:1280px;overflow:hidden;display:flex}
+button{font:inherit;cursor:pointer}
+.nav{width:212px;background:var(--bg2);border-right:1px solid var(--line);display:flex;flex-direction:column;padding:14px 10px}
+.brand{display:flex;align-items:center;gap:10px;padding:6px 8px 16px}
+.brand .mark{width:30px;height:30px;border-radius:8px;background:linear-gradient(135deg,#7c9cff,#b58cff);display:grid;place-items:center;font-weight:800;color:#0f1115}
+.brand b{font-size:15px;letter-spacing:.3px}
+.brand small{display:block;color:var(--dim);font-size:11px;font-weight:400}
+.nav a{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:8px;color:var(--fg2);text-decoration:none;margin-bottom:2px}
+.nav a.on{background:var(--panel2);color:#fff}
+.nav a .ic{width:18px;text-align:center;color:var(--dim)}
+.nav a.on .ic{color:var(--acc)}
+.nav .badge{margin-left:auto;background:#12301a;color:var(--ok);font-size:11px;padding:0 6px;border-radius:8px}
+.nav .sep{height:1px;background:var(--line);margin:10px 4px}
+.nav .foot{margin-top:auto;color:var(--dim);font-size:11px;padding:8px 10px}
+.nav .foot b{color:var(--fg2);font-weight:500}
+.primary{background:var(--acc2);color:#fff;border:0;border-radius:8px;padding:9px 12px;font-weight:600;width:100%}
+.main{flex:1;display:flex;flex-direction:column;min-width:0}
+.view{display:none;flex:1;min-height:0;flex-direction:column}
+.view.on{display:flex}
+.topbar{height:56px;display:flex;align-items:center;gap:12px;padding:0 20px;border-bottom:1px solid var(--line)}
+.topbar h1{font-size:16px;margin:0;font-weight:600}
+.topbar .sub{color:var(--dim)}
+.search{margin-left:auto;display:flex;align-items:center;gap:8px;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:6px 10px;width:260px;color:var(--dim)}
+.seg{display:flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.seg button{background:transparent;border:0;color:var(--fg2);padding:6px 10px}
+.seg button.on{background:var(--panel2);color:#fff}
+.ghost{background:var(--panel);border:1px solid var(--line);color:var(--fg);border-radius:8px;padding:6px 12px}
+.ghost.danger{color:var(--err);border-color:#4a2325}
+.content{flex:1;display:flex;min-height:0}
+.grid{flex:1;padding:18px 20px;overflow:hidden;display:grid;grid-template-columns:repeat(auto-fill,164px);gap:16px;align-content:start}
+.filters{display:flex;gap:8px;padding:12px 20px 0;color:var(--dim);font-size:12px;align-items:center}
+.chip{border:1px solid var(--line);border-radius:14px;padding:2px 10px;color:var(--fg2)}
+.chip.on{background:#1b2a4a;border-color:#2f4a80;color:#c9d6ff}
+.card{width:164px;border-radius:12px;background:var(--panel);border:1px solid var(--line);overflow:hidden;position:relative;cursor:pointer}
+.card.sel{outline:2px solid var(--acc);outline-offset:-1px}
+.cover{height:164px;display:grid;place-items:center;position:relative}
+.cover .icon{width:84px;height:84px;border-radius:20px;display:grid;place-items:center;font-size:36px;box-shadow:0 8px 24px rgba(0,0,0,.45)}
+.cover .glow{position:absolute;inset:0;filter:blur(26px);opacity:.75}
+.card .meta{padding:9px 10px 10px}
+.card .t{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.card .s{color:var(--dim);font-size:11px;font-family:var(--mono)}
+.tag{position:absolute;top:8px;left:8px;font-size:10.5px;padding:1px 7px;border-radius:6px;font-weight:600;backdrop-filter:blur(4px)}
+.tag.ok{background:rgba(63,185,80,.18);color:#6fe38a}.tag.warn{background:rgba(210,153,34,.2);color:#f0c36a}.tag.err{background:rgba(240,98,93,.2);color:#ff8d89}.tag.run{background:rgba(124,156,255,.22);color:#b9caff}
+.tag.right{left:auto;right:8px}
+.card .play{position:absolute;right:10px;top:132px;width:34px;height:34px;border-radius:50%;background:var(--acc2);color:#fff;border:0;display:none;place-items:center;font-size:14px}
+.card:hover .play{display:grid}
+.addcard{border-style:dashed;display:grid;place-items:center;color:var(--dim);text-align:center;font-size:12px;background:transparent}
+.addcard b{display:block;font-size:26px;color:var(--fg2);font-weight:300}
+/* drawer */
+.drawer{width:380px;border-left:1px solid var(--line);background:var(--bg2);display:flex;flex-direction:column;min-height:0}
+.hero{padding:20px 20px 14px;display:flex;gap:14px;align-items:center;border-bottom:1px solid var(--line)}
+.hero .icon{width:64px;height:64px;border-radius:16px;display:grid;place-items:center;font-size:28px;flex:none}
+.hero h2{margin:0;font-size:16px}
+.hero .pkg{color:var(--dim);font-family:var(--mono);font-size:11px}
+.hero .tags{margin-top:4px;display:flex;gap:6px}
+.hero .tags span{font-size:10.5px;padding:1px 7px;border-radius:6px;background:var(--panel2);color:var(--fg2)}
+.hero .tags span.ok{color:var(--ok)}.hero .tags span.warn{color:var(--warn)}
+.actions{padding:14px 20px;display:grid;grid-template-columns:1fr 1fr;gap:8px;border-bottom:1px solid var(--line)}
+.actions .primary{grid-column:1/3;padding:11px}
+.actions .ghost{text-align:left;display:flex;gap:8px;align-items:center}
+.kvs{padding:14px 20px;display:grid;grid-template-columns:110px 1fr;row-gap:6px;font-size:12px;border-bottom:1px solid var(--line)}
+.kvs .k{color:var(--dim)}
+.kvs .v{font-family:var(--mono);font-size:11.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.kvs .v.ok{color:var(--ok)}.kvs .v.warn{color:var(--warn)}
+.drawer h4{margin:0;padding:12px 20px 0;font-size:12px;color:var(--dim);font-weight:500;text-transform:uppercase;letter-spacing:.4px}
+.runs{padding:8px 20px 14px;font-size:12px}
+.runs div{display:flex;gap:10px;padding:5px 0;border-bottom:1px solid var(--line)}
+.runs .d{color:var(--dim);font-family:var(--mono);font-size:11px;width:110px}
+.runs .st{margin-left:auto;font-family:var(--mono);font-size:11px}
+.runs .st.ok{color:var(--ok)}.runs .st.err{color:var(--err)}
+.drawer .foot{margin-top:auto;padding:12px 20px;display:flex;gap:8px;border-top:1px solid var(--line)}
+/* settings */
+.settings{flex:1;display:flex;min-height:0}
+.sidenav{width:220px;border-right:1px solid var(--line);padding:14px 10px;overflow:hidden}
+.sidenav a{display:block;padding:7px 12px;border-radius:8px;color:var(--fg2);text-decoration:none;font-size:13px}
+.sidenav a.on{background:var(--panel2);color:#fff}
+.sidenav .grp{color:var(--dim);font-size:11px;padding:10px 12px 4px;text-transform:uppercase;letter-spacing:.4px}
+.form{flex:1;overflow:hidden;padding:20px 28px}
+.form h2{font-size:15px;margin:0 0 4px}
+.form .desc{color:var(--dim);margin-bottom:16px}
+.sec{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);margin-bottom:14px}
+.sec h3{margin:0;padding:11px 16px;font-size:13px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:8px}
+.sec h3 .rs{margin-left:auto;font-size:11px;color:var(--dim);font-weight:400}
+.rowi{display:flex;align-items:center;gap:14px;padding:10px 16px;border-bottom:1px solid var(--line)}
+.rowi:last-child{border-bottom:0}
+.rowi .l{flex:1}
+.rowi .l b{font-weight:500;display:block}
+.rowi .l small{color:var(--dim)}
+.ctl{display:flex;align-items:center;gap:8px}
+.inp{background:var(--bg);border:1px solid var(--line2);border-radius:7px;padding:6px 10px;color:var(--fg);min-width:120px;font-family:var(--mono);font-size:12px}
+.inp.w{min-width:300px}
+.sel{background:var(--bg);border:1px solid var(--line2);border-radius:7px;padding:6px 28px 6px 10px;color:var(--fg);position:relative;min-width:140px}
+.sel::after{content:"⌄";position:absolute;right:10px;top:3px;color:var(--dim)}
+.tog{width:36px;height:20px;border-radius:10px;background:var(--line2);position:relative}
+.tog.on{background:var(--acc2)}
+.tog::after{content:"";position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:#fff}
+.tog.on::after{left:18px}
+.pill{font-size:10.5px;padding:1px 7px;border-radius:6px;background:var(--panel2);color:var(--dim)}
+.pill.res{background:#2a2410;color:var(--warn)}
+.pill.ok{background:#12301a;color:var(--ok)}
+.presets{display:flex;gap:8px;flex-wrap:wrap;padding:10px 16px;border-bottom:1px solid var(--line)}
+.preset{border:1px solid var(--line2);border-radius:8px;padding:6px 10px;background:var(--bg);font-size:12px;cursor:pointer}
+.preset.on{border-color:var(--acc);color:#c9d6ff;background:#1b2a4a}
+.preset small{display:block;color:var(--dim);font-size:10.5px;font-family:var(--mono)}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:0 24px}
+.two .rowi{padding-left:16px}
+.stick{display:flex;gap:8px;justify-content:flex-end;align-items:center;padding:12px 28px;border-top:1px solid var(--line);color:var(--dim);font-size:12px}
+.stick .primary{width:auto;padding:8px 16px}
+.argv{font-family:var(--mono);font-size:11px;color:var(--fg2);background:var(--bg);border-radius:7px;padding:8px 10px;margin:10px 16px;white-space:pre-wrap;word-break:break-all}
+.tabs{display:flex;gap:2px;padding:0 28px;border-bottom:1px solid var(--line)}
+.tabs a{padding:10px 12px;color:var(--fg2);text-decoration:none;border-bottom:2px solid transparent;font-size:13px}
+.tabs a.on{color:#fff;border-bottom-color:var(--acc)}
+.hint{color:var(--dim);font-size:11.5px;padding:0 16px 10px}
+</style>
+</head>
+<body>
+<nav class="nav">
+  <div class="brand"><div class="mark">OG</div><div><b>OGPlay</b><small>Android 老游戏兼容层</small></div></div>
+  <a href="#library" data-v="library" class="on"><span class="ic">▦</span>游戏库<span class="badge">1 运行中</span></a>
+  <a href="#dash" data-v="library"><span class="ic">◔</span>运行时 Dashboard</a>
+  <a href="#settings" data-v="settings"><span class="ic">⚙</span>设置</a>
+  <div class="sep"></div>
+  <button class="primary">＋ 导入 APK / XAPK</button>
+  <div class="foot">v0.9.0 · API 19 BootDex<br>库根 <b>D:\OGPlay\library</b></div>
+</nav>
+
+<div class="main">
+<!-- ============ 游戏库 ============ -->
+<section class="view on" id="v-library">
+  <div class="topbar">
+    <h1>游戏库</h1><span class="sub">6 个条目 · 2 个缺数据包</span>
+    <div class="search">⌕ 搜索名称 / 包名</div>
+    <div class="seg"><button class="on">▦</button><button>☰</button></div>
+    <div class="sel" style="min-width:120px">按名称</div>
+  </div>
+  <div class="filters">筛选 <span class="chip on">全部</span><span class="chip">可启动</span><span class="chip">缺数据包</span><span class="chip">无 Profile</span><span class="chip">运行中</span><span class="chip">损坏</span></div>
+  <div class="content">
+    <div class="grid" id="grid"></div>
+    <aside class="drawer">
+      <div class="hero"><div class="icon" style="background:linear-gradient(135deg,#ff9a3c,#ff4f6d)">🏎</div>
+        <div><h2>Sample Racer</h2><div class="pkg">com.example.racer · 1.2.3 (45)</div>
+        <div class="tags"><span class="ok">Profile 匹配</span><span>API 19</span><span>armeabi</span></div></div></div>
+      <div class="actions">
+        <button class="primary">▶ 启动</button>
+        <button class="ghost">⚙ 游戏设置</button><button class="ghost">📊 Dashboard</button>
+        <button class="ghost">📁 打开沙盒目录</button><button class="ghost">📄 打开日志目录</button>
+      </div>
+      <div class="kvs">
+        <span class="k">安装实例</span><span class="v">0001</span>
+        <span class="k">Profile</span><span class="v ok">racer-v2 · 1 quirk</span>
+        <span class="k">数据包</span><span class="v ok">external/ 已就绪 (412 MiB)</span>
+        <span class="k">沙盒</span><span class="v">library\sandbox\0001 · 38 MiB</span>
+        <span class="k">解释器</span><span class="v">switch（全局默认）</span>
+        <span class="k">帧率上限</span><span class="v">60 fps</span>
+        <span class="k">虚拟设备</span><span class="v warn">默认 · 预留</span>
+        <span class="k">导入时间</span><span class="v">2026-09-12 21:04</span>
+      </div>
+      <h4>最近运行</h4>
+      <div class="runs">
+        <div><span class="d">09-21 14:02</span>12 min · 43 210 帧<span class="st ok">exit 0</span></div>
+        <div><span class="d">09-20 22:31</span>3 min · guest fault<span class="st err">exit 3 · 查看日志</span></div>
+        <div><span class="d">09-20 22:10</span>41 min<span class="st ok">exit 0</span></div>
+      </div>
+      <div class="foot"><button class="ghost">预检 (--preflight)</button><button class="ghost">带诊断启动</button><button class="ghost danger" style="margin-left:auto">删除…</button></div>
+    </aside>
+  </div>
+</section>
+
+<!-- ============ 游戏设置 ============ -->
+<section class="view" id="v-game">
+  <div class="topbar"><a href="#library" style="color:var(--dim);text-decoration:none">‹ 游戏库</a><h1>Sample Racer · 游戏设置</h1><span class="sub">实例 0001 · 覆盖全局默认</span>
+    <div style="margin-left:auto;display:flex;gap:8px"><button class="ghost">📁 沙盒目录</button><button class="ghost">📄 日志目录</button><button class="ghost">恢复默认</button></div></div>
+  <div class="tabs"><a class="on" href="#game">性能</a><a href="#game">虚拟设备</a><a href="#game">显示</a><a href="#game">音频</a><a href="#game">输入</a><a href="#game">数据与沙盒</a><a href="#game">网络</a><a href="#game">兼容性</a><a href="#game">高级</a></div>
+  <div class="form" style="display:grid;grid-template-columns:1fr 1fr;gap:0 18px;align-content:start">
+    <div>
+      <div class="sec"><h3>性能</h3>
+        <div class="rowi"><div class="l"><b>最大帧率</b><small>guest 统一 Clock 步进；不改变游戏逻辑速度</small></div><div class="ctl"><div class="seg"><button>30</button><button class="on">60</button><button>120</button><button>不限</button></div></div></div>
+        <div class="rowi"><div class="l"><b>时钟模式</b><small>Realtime 跟随宿主；FixedStep 确定性回放</small></div><div class="sel">Realtime</div></div>
+        <div class="rowi"><div class="l"><b>时钟倍率</b><small>1/2× ~ 4×，快进慢放</small></div><div class="ctl"><span class="inp" style="min-width:80px">1.0×</span></div></div>
+        <div class="rowi"><div class="l"><b>DexVM 解释器</b><small>--dexvm-interpreter</small></div><div class="sel">继承全局 (switch)</div></div>
+        <div class="rowi"><div class="l"><b>JIT 代码缓存</b><small>Dynarmic，默认 64 MiB</small></div><div class="sel">64 MiB</div></div>
+      </div>
+      <div class="sec"><h3>显示</h3>
+        <div class="rowi"><div class="l"><b>渲染分辩率</b><small>Profile surface 800×480，可超采样</small></div><div class="ctl"><div class="seg"><button>1×</button><button class="on">2×</button><button>3×</button><button>4×</button></div></div></div>
+        <div class="rowi"><div class="l"><b>窗口模式</b></div><div class="sel">窗口 · 等比居中</div></div>
+        <div class="rowi"><div class="l"><b>屏幕方向</b><small>由 Manifest 决定，可强制</small></div><div class="sel">自动 (横屏)</div></div>
+        <div class="rowi"><div class="l"><b>FPS 叠层</b></div><div class="tog"></div></div>
+      </div>
+    </div>
+    <div>
+      <div class="sec"><h3>虚拟设备 <span class="pill res">预留 · 运行时未实现</span><span class="rs">一键带入机型</span></h3>
+        <div class="presets">
+          <div class="preset on">默认虚拟设备<small>ogplay generic · 4.4.4</small></div>
+          <div class="preset">Nexus 4<small>LGE mako · 768×1280</small></div>
+          <div class="preset">Nexus 5<small>LGE hammerhead · 1080×1920</small></div>
+          <div class="preset">Nexus 7 (2013)<small>asus flo · 1200×1920</small></div>
+          <div class="preset">Galaxy S4<small>samsung jflte · 1080×1920</small></div>
+          <div class="preset">自定义…</div>
+        </div>
+        <div class="two">
+          <div class="rowi"><div class="l"><b>品牌 / 厂商</b></div><span class="inp">google / LGE</span></div>
+          <div class="rowi"><div class="l"><b>型号</b></div><span class="inp">Nexus 5</span></div>
+          <div class="rowi"><div class="l"><b>设备 / 产品</b></div><span class="inp">hammerhead</span></div>
+          <div class="rowi"><div class="l"><b>Android 版本</b><small>固定 API 19</small></div><span class="inp" style="color:var(--dim)">4.4.4 (19)</span></div>
+          <div class="rowi"><div class="l"><b>CPU</b><small>/proc/cpuinfo · 核心数</small></div><span class="inp">Krait 400 · 4 核</span></div>
+          <div class="rowi"><div class="l"><b>GPU</b><small>GL_VENDOR / GL_RENDERER 上报</small></div><span class="inp">Qualcomm · Adreno 330</span></div>
+          <div class="rowi"><div class="l"><b>屏幕 / 密度</b></div><span class="inp">1080×1920 · 480 dpi</span></div>
+          <div class="rowi"><div class="l"><b>内存</b><small>/proc/meminfo</small></div><span class="inp">2048 MiB</span></div>
+          <div class="rowi"><div class="l"><b>语言 / 地区</b></div><span class="inp">zh / CN</span></div>
+          <div class="rowi"><div class="l"><b>时区</b></div><span class="inp">Asia/Shanghai</span></div>
+        </div>
+        <div class="rowi"><div class="l"><b>ANDROID_ID</b><small>每实例 CSPRNG 生成，不读取宿主</small></div><div class="ctl"><span class="inp">9f3c…a71e</span><button class="ghost">重新生成</button></div></div>
+        <div class="hint">机型预设来自 <code>data/devices/*.toml</code>，字段与 API 19 <code>Build</code>/<code>ro.*</code> 对齐；灰色项为只读。</div>
+      </div>
+    </div>
+  </div>
+  <div class="stick">未保存的更改会在下次启动生效 <button class="ghost">取消</button><button class="primary">保存</button></div>
+</section>
+
+<!-- ============ 全局设置 ============ -->
+<section class="view" id="v-settings">
+  <div class="topbar"><h1>设置</h1><span class="sub">全局默认；每个游戏可单独覆盖</span></div>
+  <div class="settings">
+    <div class="sidenav">
+      <div class="grp">应用</div>
+      <a class="on" href="#settings">常规</a><a href="#settings">目录与存储</a>
+      <div class="grp">运行时默认</div>
+      <a href="#settings">图形</a><a href="#settings">音频</a><a href="#settings">输入</a><a href="#settings">虚拟机</a><a href="#settings">网络</a>
+      <div class="grp">开发者</div>
+      <a href="#settings">诊断与日志</a><a href="#settings">控制面 (MCP)</a>
+      <div class="grp"></div>
+      <a href="#settings">关于</a>
+    </div>
+    <div class="form">
+      <h2>常规</h2><div class="desc">界面与启动行为。</div>
+      <div class="sec"><h3>界面</h3>
+        <div class="rowi"><div class="l"><b>语言</b></div><div class="sel">简体中文</div></div>
+        <div class="rowi"><div class="l"><b>主题</b></div><div class="seg"><button class="on">深色</button><button>浅色</button><button>跟随系统</button></div></div>
+        <div class="rowi"><div class="l"><b>库视图密度</b></div><div class="seg"><button>紧凑</button><button class="on">标准</button><button>宽松</button></div></div>
+      </div>
+      <div class="sec"><h3>启动与关闭</h3>
+        <div class="rowi"><div class="l"><b>启动游戏后最小化启动器</b></div><div class="tog"></div></div>
+        <div class="rowi"><div class="l"><b>关闭启动器时保持游戏运行</b><small>始终为是：GUI 退出不终止游戏（契约）</small></div><div class="tog on" style="opacity:.5"></div></div>
+        <div class="rowi"><div class="l"><b>游戏异常退出时弹出日志末尾</b></div><div class="tog on"></div></div>
+        <div class="rowi"><div class="l"><b>删除条目前二次确认</b><small>删除只移除库条目，存档与数据包保留</small></div><div class="tog on"></div></div>
+      </div>
+      <div class="sec"><h3>目录与存储 <span class="rs">见「目录与存储」页</span></h3>
+        <div class="rowi"><div class="l"><b>库根目录</b><small>只读；包含 library/、sandbox/、gui.log</small></div><div class="ctl"><span class="inp w">D:\OGPlay\library</span><button class="ghost">打开</button></div></div>
+        <div class="rowi"><div class="l"><b>Profile 目录覆盖</b><small>留空使用内置 bundled Profile；quirk 注册表始终内置</small></div><div class="ctl"><span class="inp w" style="color:var(--dim)">（内置默认）</span><button class="ghost">选择…</button></div></div>
+        <div class="rowi"><div class="l"><b>FFmpeg 目录</b><small>视频解码；缺失时 VideoView 按契约不可用</small></div><div class="ctl"><span class="inp w">D:\tools\ffmpeg-7\bin</span><span class="pill ok">已检测 7.1</span></div></div>
+        <div class="rowi"><div class="l"><b>每条目保留日志数</b></div><div class="sel">最近 5 次</div></div>
+      </div>
+    </div>
+  </div>
+  <div class="stick"><button class="ghost">恢复默认</button><button class="primary">保存</button></div>
+</section>
+</div>
+
+<script>
+const games=[
+ {t:"Sample Racer",p:"com.example.racer",v:"1.2.3 (45)",ic:"🏎",g:"linear-gradient(135deg,#ff9a3c,#ff4f6d)",tag:["ok","Profile"],run:true,sel:true},
+ {t:"Dungeon Sample",p:"com.example.dungeon",v:"2.0.1 (61)",ic:"🗡",g:"linear-gradient(135deg,#5b7cf0,#9b5bf0)",tag:["ok","Profile"]},
+ {t:"Sky Sample HD",p:"com.example.sky",v:"1.0.0 (3)",ic:"✈",g:"linear-gradient(135deg,#2ec4b6,#3a86ff)",tag:["warn","缺数据包"]},
+ {t:"Puzzle Sample",p:"com.example.puzzle",v:"3.4 (120)",ic:"🧩",g:"linear-gradient(135deg,#ffd166,#ef476f)",tag:["","无 Profile"]},
+ {t:"Sample Birds",p:"com.example.birds",v:"2.3.0 (2300)",ic:"🐦",g:"linear-gradient(135deg,#e63946,#f77f00)",tag:["ok","Profile"]},
+ {t:"Broken Import",p:"com.example.broken",v:"—",ic:"⚠",g:"linear-gradient(135deg,#444,#222)",tag:["err","损坏"]},
+];
+const grid=document.getElementById('grid');
+games.forEach(g=>{
+ const c=document.createElement('div');c.className='card'+(g.sel?' sel':'');
+ c.innerHTML=`<div class="cover" style="background:#0b0d12"><div class="glow" style="background:${g.g}"></div><div class="icon" style="background:${g.g}">${g.ic}</div>
+ ${g.tag[1]?`<span class="tag ${g.tag[0]}">${g.tag[1]}</span>`:''}${g.run?'<span class="tag run right">运行中</span>':''}
+ <button class="play">▶</button></div><div class="meta"><div class="t">${g.t}</div><div class="s">${g.v}</div></div>`;
+ grid.appendChild(c);
+});
+const add=document.createElement('div');add.className='card addcard';add.innerHTML='<div><b>＋</b>拖入 APK / XAPK / APKM<br>或点击导入</div>';grid.appendChild(add);
+function show(v){document.querySelectorAll('.view').forEach(e=>e.classList.toggle('on',e.id==='v-'+v));document.querySelectorAll('.nav a').forEach(a=>a.classList.toggle('on',a.dataset.v===v&&a.getAttribute('href')!=='#dash'));}
+function route(){const h=location.hash.replace('#','')||'library';show(h==='game'?'game':h==='settings'?'settings':'library');}
+addEventListener('hashchange',route);route();
+document.querySelectorAll('.actions .ghost')[0].onclick=()=>location.hash='game';
+</script>
+</body>
+</html>

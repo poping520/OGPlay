@@ -9,6 +9,7 @@
 - [ADR-0012：有界 CURRENT 与里程碑任务归档](#adr-0012)
 - [ADR-0014 · ANGLE 预编译 SDK 交付](#adr-0014)
 - [ADR-0015 · ANGLE 维护者工作区归属](#adr-0015)
+- [ADR-0072 · Web UI 使用固定 Node 构建链，产物按生成制品交付](#adr-0072)
 
 <a id="adr-0005"></a>
 
@@ -184,3 +185,45 @@ checkout、CI 和依赖边界仍然暴露一个无需构建的源码依赖。完
 
 普通 OGPlay clone 不再获取任何 ANGLE 源码；维护者仍可复用既有 15.5 GB 增量工作区生成
 三平台 SDK。源码工作区的备份与清理由二进制仓库维护流程负责，不属于 OGPlay 消费流程。
+
+<a id="adr-0072"></a>
+
+## ADR-0072 · Web UI 使用固定 Node 构建链，产物按生成制品交付
+
+- 状态：Accepted
+- 日期：2026-09-21
+- 关联：[GUI v2 设计](../design/gui/README.md)、[运行时 Dashboard 设计](../design/dashboard/README.md)、
+  [ADR-0007](#adr-0007)、[ADR-0026](diagnostics.md#adr-0026)
+
+### 背景
+
+启动器主界面与运行时 Dashboard 都决定采用 Web 前端：前者由 C++ 宿主经系统 WebView
+（WebView2 / WKWebView / WebKitGTK）加载，后者由 `run-apk` 既有 loopback 服务以静态路由交付。
+两者需要 TypeScript 编译与打包，这引入项目此前没有的 Node 工具链；ADR-0007 只约束参与
+C++ 构建的源码依赖，未覆盖 npm 注册表依赖与前端产物的归属。
+
+### 决定
+
+1. **范围**：Node 只用于构建 `tools/webui/` 下的前端工作区（`packages/ui-kit`、`apps/gui`、
+   `apps/dashboard`），产物为纯静态文件。运行时不依赖 Node，不引入 Electron 或任何打包浏览器；
+   GUI 宿主不启动本地 HTTP 服务，Dashboard 复用 ADR-0026 已有的 loopback 传输。
+2. **固定版本**：Node 使用当前 LTS 主版本并在 `tools/webui/.nvmrc` 与 `package.json`
+   `engines` 中固定；依赖以 lockfile（含 integrity 哈希）提交，安装只允许 `npm ci`，禁止
+   `npm install` 漂移。直接依赖限定为 vite、typescript、preact、uplot、vitest 及其类型包；
+   新增依赖须在 Work Unit 中说明并更新 `third_party/LICENSES` 记录。
+3. **与 C++ 构建的关系**：CMake 配置期不调用 npm，默认不访问网络（与 ADR-0007 一致）。
+   可选目标 `webui`（`OGPLAY_BUILD_WEBUI=ON`）显式调用 `npm ci && npm run build`；未开启时
+   构建与测试消费已存在的产物，缺失时相关 GUI/Dashboard 目标明确失败，不静默降级。
+4. **产物归属**：构建输出写入 `data/webui/gui/` 与 `data/webui/dashboard/`，附带 `manifest.json`
+   （源码 commit、Node/npm 版本、文件 SHA-256）。与 `data/android/19/framework/` 同类，
+   属本地生成制品，不纳入版本控制；发行包与 CI 由 `webui` 目标生成并按 manifest 校验。
+5. **验证**：前端以 `npm run check`（`tsc --noEmit` + `vitest`）作为机器可判定门禁；
+   宿主侧由 CTest 校验 manifest 存在、哈希匹配与 RPC schema 闭合。前端不承担任何
+   兼容性判断逻辑，只渲染 C++ 侧结构化事实。
+
+### 后果
+
+- 开发者首次构建 GUI/Dashboard 需要安装固定版本 Node；纯运行时开发不受影响。
+- 一份 lockfile 决定同一提交的前端依赖集合，可离线复现（`npm ci --offline` 配合缓存）。
+- 前端与 C++ 的边界固定为 JSON-RPC 结构化消息；未来替换 WebView 宿主或传输不影响前端产物。
+- ImGui 视图层与 `ogplay_imgui` 目标在 GUI v2 落地时删除；`third_party/imgui` submodule 随之移除。

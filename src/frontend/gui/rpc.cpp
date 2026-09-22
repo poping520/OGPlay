@@ -110,6 +110,17 @@ agent::ControlResponse GuiRpcService::Request(std::string_view method, core::Jso
                 writer.AddString(item, "display_name", tile.display_name);
                 writer.AddString(item, "package", detail.package);
                 writer.AddString(item, "version", detail.version);
+                if (entry->metadata) {
+                    writer.AddString(item, "version_name", entry->metadata->version_name);
+                    writer.AddUnsignedInteger(item, "version_code", entry->metadata->version_code);
+                    writer.AddString(item, "imported_at", entry->metadata->imported_at);
+                } else {
+                    writer.AddNull(item, "version_name");
+                    writer.AddNull(item, "version_code");
+                    writer.AddNull(item, "imported_at");
+                }
+                writer.AddString(item, "sandbox_path", PathUtf8(LauncherSandboxRoot(store_.Root()) / entry->key));
+                writer.AddString(item, "log_directory", PathUtf8(entry->directory));
                 writer.AddString(item, "status", Status(tile.status));
                 writer.AddString(item, "detail", tile.detail);
                 writer.AddBool(item, "running", tile.running);

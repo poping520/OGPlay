@@ -71,6 +71,11 @@ TEST_CASE("GUI RPC serializes model facts and enforces launch eligibility") {
     CHECK(items->Element(0)->Member("status")->String() == "missing_profile");
     CHECK(items->Element(0)->Member("display_name")->String() == "游戏 <script>");
     CHECK(items->Element(0)->Member("can_launch")->Bool() == true);
+    CHECK(items->Element(0)->Member("version_name")->String() == "1.0");
+    CHECK(items->Element(0)->Member("version_code")->UnsignedInteger() == 1);
+    CHECK(items->Element(0)->Member("imported_at")->String() == "now");
+    CHECK(items->Element(0)->Member("sandbox_path")->String()->ends_with("/sandbox/org.example.game"));
+    CHECK(items->Element(0)->Member("log_directory")->String()->ends_with("/library/org.example.game"));
     const auto* launch = R"({"jsonrpc":"2.0","id":2,"method":"library.launch","params":{"installation_id":"org.example.game"}})";
     auto started = Decode(fixture.rpc.Handle(launch));
     CHECK(started.Root().Member("result").has_value());
@@ -96,4 +101,16 @@ TEST_CASE("GUI RPC opens only an existing instance directory") {
     const auto traversal = Decode(fixture.rpc.Handle(R"({"jsonrpc":"2.0","id":1,"method":"library.open_dir","params":{"installation_id":"../../","kind":"log"}})"));
     CHECK(traversal.Root().Member("error")->Member("code")->Integer() == -32004);
     CHECK(fixture.opens == 1);
+}
+
+TEST_CASE("GUI RPC exposes missing metadata as null facts") {
+    Fixture fixture;
+    std::ofstream(fixture.root / "library/org.example.game/meta.toml") << "broken";
+    const auto response = Decode(fixture.rpc.Handle(R"({"jsonrpc":"2.0","id":1,"method":"library.list"})"));
+    const auto item = response.Root().Member("result")->Member("items")->Element(0);
+    CHECK(item->Member("status")->String() == "damaged");
+    CHECK(item->Member("version_name")->IsNull());
+    CHECK(item->Member("version_code")->IsNull());
+    CHECK(item->Member("imported_at")->IsNull());
+    CHECK(item->Member("can_launch")->Bool() == false);
 }

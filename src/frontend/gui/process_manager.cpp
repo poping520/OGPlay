@@ -5,6 +5,8 @@
 #include <SDL3/SDL_properties.h>
 
 #include <stdexcept>
+#include <algorithm>
+#include "ogplay/hal/clock.h"
 #include <string>
 #include <utility>
 
@@ -58,6 +60,9 @@ GuiProcessManager::~GuiProcessManager() {
 }
 
 void GuiProcessManager::Launch(const LaunchPlan& plan) {
+    if (plan.mcp_port && std::any_of(active_.begin(), active_.end(), [&](const auto& active) {
+        return active.dashboard.port == plan.mcp_port;
+    })) throw std::runtime_error("MCP 端口已被其他运行实例使用，请在游戏设置中选择其他端口。");
     tracker_.Begin(plan.package, plan.log_path);
     SDL_IOStream* error_stream{};
     try {
@@ -83,7 +88,13 @@ void GuiProcessManager::Launch(const LaunchPlan& plan) {
         static_cast<void>(SDL_CloseIO(error_stream));
         error_stream = nullptr;
         if (process == nullptr) ThrowSdl("SDL_CreateProcessWithProperties");
-        active_.push_back({plan.package, process});
+        Active active;
+        active.package = plan.package; active.process = process;
+        active.dashboard.installation_id = plan.package; active.dashboard.port = plan.mcp_port;
+        active.dashboard.process_id = static_cast<std::uint64_t>(SDL_GetNumberProperty(SDL_GetProcessProperties(process), SDL_PROP_PROCESS_PID_NUMBER, 0));
+        active.auto_open = plan.dashboard_auto_open;
+        if (plan.mcp_port) { active.dashboard.status = "starting"; active.dashboard.detail = "等待 Dashboard 服务启动。"; }
+        active_.push_back(std::move(active));
         logger_.Write(core::LogLevel::info, "frontend.gui.launch",
                       "game process started", {},
                       {{"package", plan.package},
@@ -96,10 +107,23 @@ void GuiProcessManager::Launch(const LaunchPlan& plan) {
 }
 
 std::vector<GameExit> GuiProcessManager::Poll() {
+    std::erase_if(retired_probes_, [](auto& probe) { return probe.wait_for(std::chrono::seconds(0)) == std::future_status::ready; });
     std::vector<GameExit> exits;
     for (auto iterator = active_.begin(); iterator != active_.end();) {
         int exit_code{};
         if (!SDL_WaitProcess(iterator->process, false, &exit_code)) {
+            auto& active = *iterator;
+            const auto now = hal::Clock::SteadyTimestampNs();
+            if (active.probe.valid() && active.probe.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
+                const auto result = active.probe.get();
+                active.dashboard.status = result.ready ? "ready" : "unavailable";
+                active.dashboard.detail = result.detail;
+                active.next_probe = now + 1000000000ULL;
+            }
+            if (active.dashboard.port && !active.probe.valid() && now >= active.next_probe) {
+                const auto port = *active.dashboard.port; const auto pid = active.dashboard.process_id;
+                active.probe = std::async(std::launch::async, [port, pid] { return ProbeDashboard(port, pid); });
+            }
             ++iterator;
             continue;
         }
@@ -111,6 +135,7 @@ std::vector<GameExit> GuiProcessManager::Poll() {
                        {"exit_code", static_cast<std::int64_t>(exit_code)},
                        {"log_path", PathUtf8(result.log_path)}});
         exits.push_back(std::move(result));
+        if (iterator->probe.valid()) retired_probes_.push_back(std::move(iterator->probe));
         iterator = active_.erase(iterator);
     }
     return exits;
@@ -122,6 +147,25 @@ std::vector<std::string> GuiProcessManager::RunningPackages() const {
 
 bool GuiProcessManager::IsRunning(const std::string_view package) const noexcept {
     return tracker_.IsRunning(package);
+}
+
+std::vector<GuiDashboard> GuiProcessManager::Dashboards() const {
+    std::vector<GuiDashboard> result;
+    for (const auto& active : active_) result.push_back(active.dashboard);
+    return result;
+}
+std::uint16_t GuiProcessManager::DashboardPort(std::string_view instance) const {
+    const auto found = std::find_if(active_.begin(), active_.end(), [&](const auto& active) { return active.package == instance; });
+    if (found == active_.end()) throw std::runtime_error("实例已退出，请重新启动。");
+    if (found->dashboard.status != "ready" || !found->dashboard.port) throw std::runtime_error(found->dashboard.detail);
+    return *found->dashboard.port;
+}
+std::vector<std::string> GuiProcessManager::TakeAutoOpen() {
+    std::vector<std::string> result;
+    for (auto& active : active_) if (active.auto_open && active.dashboard.status == "ready") {
+        active.auto_open = false; result.push_back(active.package);
+    }
+    return result;
 }
 
 std::filesystem::path FindSiblingCliExecutable() {

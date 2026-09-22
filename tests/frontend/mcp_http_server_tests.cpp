@@ -4,6 +4,8 @@
 #include "ogplay/agent/mcp_session_control.h"
 #include "ogplay/agent/dashboard.h"
 #include "ogplay/frontend/mcp_http_server.h"
+#include "ogplay/frontend/gui_dashboard.h"
+#include "ogplay/hal/diagnostic_trigger.h"
 
 #include <boost/asio.hpp>
 
@@ -184,6 +186,8 @@ TEST_CASE("Dashboard HTTP serves bounded assets and enforces origin host and pat
         std::filesystem::path(OGPLAY_SOURCE_DIR) / "data/webui/dashboard"};
     auto server = frontend::McpHttpServer::Start(0, frames, inputs, config);
     const auto port = server->Port();
+    CHECK(frontend::ProbeDashboard(port, hal::HostProcessId()).ready);
+    CHECK_FALSE(frontend::ProbeDashboard(port, hal::HostProcessId() + 1).ready);
     for (const auto target : {"/dash", "/dash/", "/dash/index.html", "/dash/dashboard.js", "/dash/dashboard.css", "/dash/manifest.json", "/dash/THIRD-PARTY-LICENSES.txt"}) {
         CAPTURE(target);
         const auto response = Request(port, "GET", target, {}, "Origin: http://127.0.0.1\r\n");

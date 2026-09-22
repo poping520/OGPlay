@@ -61,6 +61,7 @@
 - MCP 图像最大 64 MiB RGBA8，尺寸、字节数、JPEG/PNG/Base64 输出必须在发布前完整受检；
   两种编码均使用仓库固定 commit 的官方 `stb_image_write`，禁止退回 stored-block PNG。
 - 调试接口与 CI 断言读取同一份状态。
+- Dashboard 响应附带真实宿主 `process_id`，供启动器核对所跟踪进程，避免端口冲突误连。
 - Dashboard schema 1 的 section 为 session/diagnostics/gpu/vfs/audio/capabilities/log，携带
   status/captured_at_steady_ns/generation；未连接、忙碌、异常为 unavailable + null，部分来源
   与截断为 partial。无来源 generation 沿用诊断约定 0，不冒充 frame。overview 保留 session

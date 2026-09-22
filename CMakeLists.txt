@@ -623,6 +623,7 @@ add_library(ogplay_frontend
     src/frontend/run_apk_progress.cpp
     src/frontend/gui/import.cpp
     src/frontend/gui/launch.cpp
+    src/frontend/gui/dashboard.cpp
     src/frontend/gui/settings.cpp
     src/frontend/gui/game_settings.cpp
     src/frontend/gui/rpc_settings.cpp
@@ -771,6 +772,7 @@ if(OGPLAY_BUILD_TESTS)
         tests/frontend/run_apk_progress_tests.cpp
         tests/frontend/data_directory_tests.cpp
         tests/frontend/gui_import_tests.cpp
+        tests/frontend/gui_dashboard_window_tests.cpp
         tests/frontend/gui_launch_tests.cpp
         tests/frontend/gui_rpc_tests.cpp
         tests/frontend/gui_model_tests.cpp
@@ -1031,6 +1033,9 @@ if(OGPLAY_BUILD_TESTS)
     set_tests_properties(frontend.run_apk_options PROPERTIES LABELS "unit;frontend")
 
     if(OGPLAY_ENABLE_SDL3 AND WIN32)
+        add_test(NAME frontend.gui_dashboard_window
+            COMMAND ogplay_tests "--test-case=GUI Dashboard windows*" --no-skip=true)
+        set_tests_properties(frontend.gui_dashboard_window PROPERTIES LABELS "integration;frontend" TIMEOUT 30)
         add_test(NAME frontend.dashboard_http
             COMMAND ogplay_tests "--test-case=Dashboard HTTP*,MCP HTTP*")
         add_test(NAME frontend.dashboard_manifest

@@ -84,6 +84,31 @@ std::string GuiRpcService::Handle(std::string_view request) {
 
 agent::ControlResponse GuiRpcService::Request(std::string_view method, core::JsonValue params) {
     try {
+        if (method == "dashboard.list" || method == "dashboard.open") {
+            if (method == "dashboard.list") CheckFields(params, {});
+            else CheckFields(params, {"installation_id"});
+            const auto id = method == "dashboard.open" ? RequiredString(params, "installation_id") : std::string{};
+            if (!host_.dashboards) throw std::runtime_error("宿主未接入运行实例查询。");
+            const auto dashboards = host_.dashboards();
+            core::JsonWriter writer; const auto root = writer.Object(), result = writer.Object();
+            if (method == "dashboard.open") {
+                const auto found = std::find_if(dashboards.begin(), dashboards.end(), [&](const auto& value) { return value.installation_id == id; });
+                if (found == dashboards.end()) return Error(-32004, "实例未运行", "启动游戏后重试。");
+                if (found->status != "ready" || !found->port) return Error(-32002, found->detail, "检查 MCP 设置或等待服务启动。");
+                if (!host_.open_dashboard) throw std::runtime_error("宿主不支持 Dashboard 窗口。");
+                host_.open_dashboard(id); writer.AddBool(result, "opened", true);
+            } else {
+                const auto items = writer.Array();
+                for (const auto& value : dashboards) {
+                    const auto item = writer.Object(); writer.AddString(item, "installation_id", value.installation_id);
+                    writer.AddUnsignedInteger(item, "process_id", value.process_id);
+                    if (value.port) writer.AddUnsignedInteger(item, "port", *value.port); else writer.AddNull(item, "port");
+                    writer.AddString(item, "status", value.status); writer.AddString(item, "detail", value.detail); writer.Append(items, item);
+                }
+                writer.Add(result, "items", items);
+            }
+            writer.Add(root, "result", result); return {true, writer.Serialize(root)};
+        }
         if (method == "game_settings.get" || method == "game_settings.set")
             return GameSettingsRequest(method, params);
         if (method == "settings.get" || method == "settings.set" || method == "settings.open_dir")

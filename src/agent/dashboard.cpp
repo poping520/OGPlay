@@ -1,6 +1,7 @@
 #include "ogplay/agent/dashboard.h"
 #include "ogplay/core/text.h"
 #include "ogplay/hal/clock.h"
+#include "ogplay/hal/diagnostic_trigger.h"
 #include <algorithm>
 #include <array>
 #include <set>
@@ -146,6 +147,7 @@ ControlResponse DashboardService::Request(std::string_view method, core::JsonVal
         Writer writer; const auto root = writer.Object(), result = writer.Object();
         writer.AddUnsignedInteger(result, "schema_version", 1);
         writer.AddUnsignedInteger(result, "stream_id", stream_id_);
+        writer.AddUnsignedInteger(result, "process_id", hal::HostProcessId());
         writer.AddUnsignedInteger(result, "captured_at_steady_ns", now);
         const auto section = [&](std::string_view name, std::string_view status, std::uint64_t generation, std::string_view reason, Value data) {
             const auto value = writer.Object(); writer.AddString(value, "status", status);

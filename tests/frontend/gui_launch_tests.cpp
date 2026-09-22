@@ -1,4 +1,5 @@
 #include <doctest/doctest.h>
+#include "ogplay/frontend/gui_dashboard.h"
 
 #include <atomic>
 #include <algorithm>
@@ -95,11 +96,17 @@ TEST_CASE("GUI instance launch overrides inherit and emit valid CLI mode combina
     GuiConfig global;
     SetGuiSetting(global, "supersample", std::uint32_t{4});
     SetGuiSetting(global, "mcp_enabled", true);
+    SetGuiSetting(global, "dashboard_auto_open", true);
     GameSettings settings{{{"supersample", std::uint32_t{2}}, {"mcp_manual_step", true},
         {"ephemeral_sandbox", true}, {"external_dir", external.generic_string()}, {"model", std::string("reserved")}}};
     SaveGameSettings(directory, settings);
     const auto has = [](const auto& args, const auto& value) { return std::find(args.begin(), args.end(), value) != args.end(); };
-    const auto normal = BuildLaunchPlan(cli, tree.path, entry, global).argv;
+    const auto normal_plan = BuildLaunchPlan(cli, tree.path, entry, global);
+    CHECK(normal_plan.mcp_port == 15971);
+    CHECK(normal_plan.dashboard_auto_open);
+    CHECK_FALSE(BuildLaunchPlan(cli, tree.path, entry, global, GuiLaunchMode::preflight).mcp_port);
+    CHECK_FALSE(BuildLaunchPlan(cli, tree.path, entry, global, GuiLaunchMode::preflight).dashboard_auto_open);
+    const auto normal = normal_plan.argv;
     CHECK(has(normal, "2")); CHECK_FALSE(has(normal, "4")); CHECK_FALSE(has(normal, "reserved"));
     CHECK(has(normal, "--external-dir")); CHECK(has(normal, external.generic_string()));
     CHECK(has(normal, "--mcp-port")); CHECK(has(normal, "--mcp-manual-step"));
@@ -206,4 +213,19 @@ TEST_CASE("GUI launch log tail is bounded by lines and bytes") {
     Write(log, "prefix\n中文\n");
     CHECK(ogplay::frontend::ReadLogTail(log, 20, 5) == "文\n");
     CHECK(ogplay::frontend::ReadLogTail(temporary.path / "missing") == "");
+}
+
+TEST_CASE("GUI Dashboard probe rejects foreign process and malformed protocol") {
+    using ogplay::frontend::DecodeDashboardProbe;
+    const std::string good = "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\r\n";
+    const std::string body = R"({"jsonrpc":"2.0","id":1,"result":{"schema_version":1,"process_id":123}})";
+    CHECK(DecodeDashboardProbe(good + body, 123).ready);
+    CHECK_FALSE(DecodeDashboardProbe(good + body, 124).ready);
+    CHECK_FALSE(DecodeDashboardProbe(good + body, 0).ready);
+    CHECK_FALSE(DecodeDashboardProbe("HTTP/1.1 404 Not Found\r\n\r\n" + body, 123).ready);
+    CHECK_FALSE(DecodeDashboardProbe(good + "{}", 123).ready);
+    CHECK_FALSE(DecodeDashboardProbe(good + "{", 123).ready);
+    CHECK_FALSE(DecodeDashboardProbe(good + body + std::string(8192, ' '), 123).ready);
+    CHECK_FALSE(DecodeDashboardProbe(good + R"({"id":1,"result":{"schema_version":1,"process_id":123}})", 123).ready);
+    CHECK_FALSE(DecodeDashboardProbe(good + R"({"jsonrpc":"2.0","id":1,"result":{"schema_version":2,"process_id":123}})", 123).ready);
 }

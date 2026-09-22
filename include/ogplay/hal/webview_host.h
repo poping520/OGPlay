@@ -29,6 +29,9 @@ public:
     virtual void Evaluate(std::string_view script) = 0;
     virtual void RecordSmokeResponse() = 0;
     virtual void Minimize() = 0;
+    // Independent loopback window; never binds the launcher's rpc bridge.
+    virtual void OpenDashboard(std::string_view instance, std::uint16_t port) = 0;
+    virtual void CloseDashboard(std::string_view instance) = 0;
     virtual std::future<std::optional<std::filesystem::path>> PickPath(bool directory) = 0;
 };
 [[nodiscard]] std::unique_ptr<WebViewHost> CreateWebViewHost(

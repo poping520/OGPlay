@@ -1271,6 +1271,20 @@ if(OGPLAY_BUILD_TESTS)
         PROPERTIES LABELS "tools;automation;scenarios")
 
     add_test(
+        NAME tools.device_presets_current
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/validate_devices.py
+            --devices ${CMAKE_CURRENT_SOURCE_DIR}/data/devices
+    )
+    add_test(
+        NAME tools.device_presets_validator
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tests/tools/test_validate_devices.py
+    )
+    set_tests_properties(tools.device_presets_current tools.device_presets_validator
+        PROPERTIES LABELS "tools;devices")
+
+    add_test(
         NAME tools.quirk_registry_validator_self_test
         COMMAND ${Python3_EXECUTABLE}
             ${CMAKE_CURRENT_SOURCE_DIR}/tools/validate_quirks.py

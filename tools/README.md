@@ -113,3 +113,10 @@ CMake 会按宿主选择平台/CPU，并逐文件验证清单。普通 Debug 构
 libcrypto、ICU 两库和 icudt51l.dat 输入哈希，执行两次独立构建，并检查 ELF32 ARM/DYN、
 SONAME 与精确 DT_NEEDED；两个 C 源和 ICU C ABI 头的哈希写入 manifest。工具链或输入不匹配
 即失败。宿主构建不下载、编译或链接 ICU。
+
+## 机型预设数据校验
+
+`python tools/validate_devices.py --devices data/devices` 校验 GUI-7 schema 1（Python 3.11+ 标准库）。
+未知/缺失字段、类型、范围、身份和资源预算错误均失败；不读取或修改宿主/guest 配置。
+格式与支持边界见 [data/devices/README.md](../data/devices/README.md)。
+定向测试：`python tests/tools/test_validate_devices.py`；CTest：`tools.device_presets_current` / `tools.device_presets_validator`。

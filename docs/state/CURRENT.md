@@ -4,6 +4,9 @@
 
 ## 最近进展
 
+- [GUI-7](../tasks/gui/GUI-7.md)：机型预设 schema 1、三份通用虚拟数据与严格校验完成；
+  7 项 Python 回归、2 项设备预设 CTest 通过。预设仍为纯数据，GUI 选择和运行时消费未接入。
+
 - [DASH-02](../tasks/gui/DASH-02.md) / [DASH-04](../tasks/gui/DASH-04.md)：Windows 接通运行时有界快照、
   诊断面板、共享键联动和九类事件泳道；计数观测明确区别实际发生帧/时刻。
   Dashboard 23 项、模块 45 项、loader/lifecycle 8 项定向回归及前端 30 项、CTest 2 项通过；

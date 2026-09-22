@@ -66,7 +66,7 @@ std::vector<LibraryTile> BuildLibraryTiles(
         if (entry.Damaged() || !entry.metadata.has_value()) {
             tile.status = LibraryTileStatus::damaged;
             tile.detail = "库条目损坏：" + entry.damage_reason.value_or(
-                "元数据不可用") + "。可右键删除后重新导入。";
+                "元数据不可用") + "。可在详情中移除后重新导入。";
         } else if (profile_error.has_value()) {
             tile.status = LibraryTileStatus::profile_catalog_unavailable;
             tile.detail = "Profile 目录不可用：" +

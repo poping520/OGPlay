@@ -116,10 +116,11 @@ agent::ControlResponse GuiRpcService::Request(std::string_view method, core::Jso
         if (method == "dialog.pick" || method == "dialog.poll" || method == "library.analyze" ||
             method == "library.import" || method.starts_with("library.job.") || method.starts_with("library.upload."))
             return ImportRequest(method, params);
-        if (method != "library.list" && method != "library.launch" && method != "library.open_dir")
+        if (method != "library.list" && method != "library.launch" && method != "library.open_dir" && method != "library.remove")
             return Error(-32601, "unknown method", "使用当前版本支持的 GUI 方法。");
         if (method == "library.list") CheckFields(params, {});
         else if (method == "library.launch") CheckFields(params, {"installation_id", "mode"});
+        else if (method == "library.remove") CheckFields(params, {"installation_id", "confirmed"});
         else CheckFields(params, {"installation_id", "kind"});
 
         // Validate request shape before any library IO or host callback.
@@ -133,6 +134,11 @@ agent::ControlResponse GuiRpcService::Request(std::string_view method, core::Jso
             if (value == "preflight") mode = GuiLaunchMode::preflight;
             else if (value == "diagnostic") mode = GuiLaunchMode::diagnostic;
             else if (value != "normal") throw std::invalid_argument("unknown launch mode");
+        }
+        if (method == "library.remove") {
+            const auto confirmed = params.Member("confirmed");
+            if (!confirmed || confirmed->Bool() != std::optional<bool>{true})
+                throw std::invalid_argument("removal requires confirmed=true");
         }
         if (ImportBusy()) return Error(-32002, "正在入库", "入库完成后重试。");
         auto entries = store_.LoadEntries();
@@ -181,7 +187,13 @@ agent::ControlResponse GuiRpcService::Request(std::string_view method, core::Jso
         } else {
             const auto entry = std::find_if(entries.begin(), entries.end(), [&](const auto& item) { return item.key == key; });
             if (entry == entries.end()) return Error(-32004, "installation not found", "刷新游戏库后重试。");
-            if (method == "library.launch") {
+            if (method == "library.remove") {
+                const auto tile = std::find_if(tiles.begin(), tiles.end(), [&](const auto& item) { return item.key == key; });
+                if (tile->running) return Error(-32002, "实例正在运行", "退出游戏后再移除。");
+                store_.Remove(key);
+                writer.AddString(result, "installation_id", key);
+                writer.AddBool(result, "removed", true);
+            } else if (method == "library.launch") {
                 const auto tile = std::find_if(tiles.begin(), tiles.end(), [&](const auto& item) { return item.key == key; });
                 if (!tile->can_launch) return Error(-32001, tile->detail, "检查运行状态、Profile 和数据包目录。");
                 const auto config = LoadGuiConfig(store_.Root());

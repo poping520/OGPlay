@@ -1,6 +1,6 @@
 # OGPlay Web UI
 
-GUI-1..5：Windows WebView2 游戏库、APK 导入、全局及每实例设置。
+GUI：Windows WebView2 游戏库、APK 导入、全局/实例设置、移除与独立 Dashboard 窗口。
 DASH-03：浏览器 Dashboard 顶栏、拓扑、帧采样、线程/事件与联动焦点，复用 run-apk 服务。
 支持原生文件/数据包目录选择及 APK 拖放，后台分析、确认新实例、原子入库；分包格式明确拒绝。
 Linux 暂缓；macOS WebView 宿主尚未接入，本阶段仅构建 Windows GUI。
@@ -18,6 +18,25 @@ Windows 首次在仓库根运行 `./webui/prepare-sdk.ps1`，显式下载并校�
 
 `cmake --build --preset windows-msvc --config Release --target ogplay-gui ogplay_tests`
 之后运行 `ctest --test-dir build/windows-msvc -C Release -R "^frontend.gui_" --output-on-failure`。
+
+## 当前怎么用
+
+已构建后，双击 `build/windows-msvc/Release/ogplay-gui.exe` 打开启动器。
+也可以在仓库根指定独立游戏库：
+
+```powershell
+./build/windows-msvc/Release/ogplay.exe gui --library-root .local/gui-library
+```
+
+1. 点击“导入 APK”选择单体 APK，查看分析结果并确认入库；需要外部数据包时选择对应目录。
+2. 选中条目，在“游戏设置”修改并保存；标为预留的项目仅保存，不改变游戏运行。
+3. 需要 Dashboard 时，先在全局设置或该实例的高级设置启用 MCP，设置空闲端口；再启动游戏。
+   可在全局 MCP 设置开启 Dashboard 自动打开，也可待服务就绪后从详情/运行实例手动打开。
+4. 游戏退出后可“移除库中实例”；库内 APK、设置与日志会删除，沙盒存档和外部数据保留。
+   重新导入是新实例，不自动恢复旧实例存档。
+
+GUI 页面依赖原生宿主 RPC，不能直接双击 `index.html` 作为完整启动器使用；无需 `npm run dev`。
+关闭启动器不终止已运行的游戏。当前机型预设只有数据/校验，尚无列表选择或运行时应用。
 
 ## Dashboard
 

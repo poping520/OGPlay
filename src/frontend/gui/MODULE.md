@@ -10,7 +10,7 @@ Windows 系统 WebView2 启动器与独立游戏库模型。GUI 只管理宿主�
 - `RunGuiCommand` / `RunGuiStandalone`：CLI 与双击入口；失败记录日志，独立入口显示消息框。
   原生窗口、导航限制和目录打开经 `hal::WebViewHost`，不直接包含 Windows/WebView2 API。
 - `GuiRpcService::Handle`：复用 `agent::JsonRpcAdapter` 注入模式；同步分派
-  `library.list`、`library.launch`、`library.open_dir`，以及导入任务与对话框 RPC。
+  `library.list`、`library.launch`、`library.open_dir`、`library.remove`，以及导入任务与对话框 RPC。
   宿主上下文、进程、目录打开、分析、选择器与 UTC 时间通过显式回调注入。
 - `library.analyze {path}` / `library.upload.begin/chunk/finish`：原生路径或拖放字节进入独立快照，
   单体 APK 上限 1 GiB；分块 base64 最大 256 KiB，严格顺序/总长度检查。
@@ -42,7 +42,7 @@ Windows 系统 WebView2 启动器与独立游戏库模型。GUI 只管理宿主�
   只有 ready 能打开。固定端口冲突在 spawn 前失败；未启用 MCP 或预检没有 Dashboard。
   dashboard_auto_open 只在首次就绪执行一次；子进程退出后移除入口并关闭对应窗口。
   同实例复用窗口，关闭后可重开；启动器退出关闭监控窗口，保留游戏进程。
-- `ValidateGuiConfigDirectories`：配置目录验证；全局设置保存前执行，删除 UI 待后续接回。
+- `ValidateGuiConfigDirectories`：配置目录验证；全局设置保存前执行。
 - 原 CJK 字体选择、事件等待与消息队列模型保留用于既有调用/测试，不再驱动 WebView 渲染。
 
 ## 不变量
@@ -99,3 +99,7 @@ Windows 系统 WebView2 启动器与独立游戏库模型。GUI 只管理宿主�
 `gui_rpc_tests.cpp` 覆盖协议闭合、事实序列化、启动约束和目录映射。
 `npm run check` 验证前端类型、协议、库筛选和分块上传边界；`frontend.gui_webui_manifest` 校验制品哈希；
 `frontend.gui_smoke` / `frontend.gui_library_smoke` 验证真实 WebView 加载与空库/CJK 非空库 RPC。
+
+- `library.remove {installation_id, confirmed:true}` 只作用于当前枚举的安装实例；请求字段严格校验，
+  入库忙碌或实例运行中（包括损坏条目）拒绝移除。复用 LibraryStore::Remove，删除库内 APK、
+  设置与日志，保留 sandbox/external 和原始 APK。重新导入分配新实例，不自动挂接旧存档。

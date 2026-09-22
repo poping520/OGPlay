@@ -8,7 +8,7 @@ MCP 工具一样直接驱动真实游戏：读画面、注入触摸、步进帧�
 
 ## 前提：会话必须先起来
 
-MCP 服务只在 `run-apk` 会话存活期间存在，**它不能启动或终止游戏**。所以顺序是
+MCP 服务只在 `run-apk` 会话存活期间存在，**它不能启动游戏**（已装配会话控制时可用 `shutdown` 请求正常退出）。所以顺序是
 先起会话，Agent 再调工具：
 
 ```powershell
@@ -28,11 +28,11 @@ Agent 里看不到这些工具，通常是会话没起来、已经退出，或�
 | 模式 | 启动参数 | 行为 | 可用工具 |
 | --- | --- | --- | --- |
 | 自由运行 | `--mcp` | 游戏按实时节奏跑，窗口可见 | `frame_capture`、`click`、`swipe` |
-| 手动步进 | `--mcp` + `--mcp-manual-step` | 窗口隐藏，guest 只在收到 `step` 时前进 | 全部 7 个 |
+| 手动步进 | `--mcp` + `--mcp-manual-step` | 窗口隐藏，guest 只在收到 `step` 时前进 | 会话控制工具；`diag.snapshot` 另需 `--diag` |
 
 `--mcp-manual-step` 必须配合 `--mcp`/`--mcp-port`，且 profile 必须是
-`gl_surface_view` 或 `dex_activity`。两种模式下 Agent 都会看到 7 个工具，但自由
-运行时调用会话类工具只会返回错误——要可复现的节奏就用手动步进。
+`gl_surface_view` 或 `dex_activity`。两种模式公布同一工具目录；未装配会话控制时调用会话类工具会明确失败。
+`--diag` 也会装配会话控制以支持诊断取证，但可复现步进仍应显式使用 `--mcp-manual-step`。
 
 ## 工具
 
@@ -45,6 +45,7 @@ Agent 里看不到这些工具，通常是会话没起来、已经退出，或�
 | `step` | `frames` 1..1000000 | `requestSequence`、`startingFrame`、`targetFrame`、`frames` |
 | `lifecycle` | `action` `suspend`\|`resume` | `requestSequence`、`startingFrame`、`action` |
 | `shutdown` | 无 | 同上，`action` 为 `shutdown` |
+| `diag.snapshot` | 无；启动需 `--diag` | 诊断 JSON 的 `path`；未启用或超时明确失败 |
 
 `frame_capture` 不推进执行也不消费输入。`suspend` 期间窗口事件与步进都停住，
 `resume` 后继续。
@@ -83,7 +84,13 @@ guest 抛异常后会话不会退出：`lifecycle` 变 `failed`、`guestFault` �
 ## 会明确失败的情形
 
 无首帧就截图或点击、坐标越界、`swipe` 端点相同或 `steps` 越界、输入/命令队列满、
-多传参数、自由运行模式下调用会话类工具——全部返回 tool error，不会静默吞掉。
+多传参数、未装配会话控制时调用会话类工具——全部返回 tool error，不会静默吞掉。
+
+## Dashboard 与独立取证
+
+同一端口的 `/dash/` 页面与 `/dash/rpc` 只读接口不推进帧，不代替 MCP 控制。
+页面定位、原始证据保存及 `diag.snapshot`/OS 入口衔接见 [DASHBOARD.md](DASHBOARD.md)。
+仅启用 MCP 不会打开诊断写盘；需要取证应在启动时加 `--diag`。
 
 ## 自建客户端
 
@@ -91,5 +98,6 @@ guest 抛异常后会话不会退出：`lifecycle` 变 `failed`、`guestFault` �
 JSON-RPC 2.0，`Content-Type: application/json`，`Accept` 若带则须含
 `application/json` 或 `*/*`；`initialize`（需 `protocolVersion` + `capabilities` +
 `clientInfo`）→ `notifications/initialized` → `tools/call`。协议版本
-`2025-11-25`，也接受 `2025-06-18` / `2025-03-26`。服务只绑定回环：其他路径 404、
-非 POST 405、非回环 `Origin` 403。
+`2025-11-25`，也接受 `2025-06-18` / `2025-03-26`。服务只绑定回环：未知路径 404、
+`/mcp` 非 POST 405、非回环 `Origin` 403；`GET /dash/` 与 `POST /dash/rpc`
+是另行提供的 Dashboard 路由，不属于 MCP 方法。

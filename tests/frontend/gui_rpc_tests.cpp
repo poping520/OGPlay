@@ -356,3 +356,43 @@ TEST_CASE("GUI Dashboard RPC only opens tracked ready instances") {
     CHECK(open().Root().Member("error").has_value());
     CHECK(fixture.reads == 0);
 }
+
+TEST_CASE("GUI RPC removes only the confirmed stopped installation") {
+    Fixture fixture;
+    const auto entry = fixture.store.EntriesRoot() / "org.example.game";
+    const auto sibling = fixture.store.EntriesRoot() / "org.example.game-2";
+    const auto sandbox = frontend::LauncherSandboxRoot(fixture.root) / "org.example.game";
+    const auto external = fixture.root / "external";
+    std::filesystem::create_directories(sibling);
+    std::filesystem::create_directories(sandbox);
+    std::filesystem::create_directories(external);
+    std::ofstream(sandbox / "save.dat") << "save";
+    std::ofstream(external / "data.obb") << "data";
+    std::ofstream(fixture.root / "original.apk") << "source";
+    for (const auto* params : {
+        R"({"installation_id":"org.example.game"})",
+        R"({"installation_id":"org.example.game","confirmed":false})",
+        R"({"installation_id":"org.example.game","confirmed":1})",
+        R"({"installation_id":"org.example.game","confirmed":true,"path":"../sandbox"})",
+        R"({"installation_id":"../sandbox","confirmed":true})",
+        R"({"installation_id":"absent","confirmed":true})"}) {
+        const auto response = Decode(fixture.rpc.Handle(std::string(R"({"jsonrpc":"2.0","id":1,"method":"library.remove","params":)") + params + "}"));
+        CHECK(response.Root().Member("error").has_value());
+        CHECK(std::filesystem::exists(entry / "game.apk"));
+    }
+    const auto request = R"({"jsonrpc":"2.0","id":1,"method":"library.remove","params":{"installation_id":"org.example.game","confirmed":true}})";
+    fixture.context.running_packages = {"org.example.game"};
+    std::ofstream(entry / "settings.toml") << "invalid TOML [";
+    CHECK(Decode(fixture.rpc.Handle(request)).Root().Member("error").has_value());
+    CHECK(std::filesystem::exists(entry / "game.apk"));
+    fixture.context.running_packages.clear();
+    const auto removed = Decode(fixture.rpc.Handle(request));
+    REQUIRE(removed.Root().Member("result").has_value());
+    CHECK(removed.Root().Member("result")->Member("removed")->Bool() == true);
+    CHECK_FALSE(std::filesystem::exists(entry));
+    CHECK(std::filesystem::is_directory(sibling));
+    CHECK(std::filesystem::exists(sandbox / "save.dat"));
+    CHECK(std::filesystem::exists(external / "data.obb"));
+    CHECK(std::filesystem::exists(fixture.root / "original.apk"));
+    CHECK(Decode(fixture.rpc.Handle(request)).Root().Member("error").has_value());
+}

@@ -12,7 +12,7 @@ const std::vector<GuiSettingDefinition>& GuiSettings() {
         {"density", "general", "游戏库密度", std::string("comfortable"), {"comfortable", "compact"}},
         {"minimize_on_launch", "general", "启动游戏后最小化", false},
         {"show_exit_log", "general", "异常退出时显示日志末尾", true},
-        {"confirm_delete", "general", "删除前二次确认", true, {}, 0, 0, "预留 · 删除界面尚未接入"},
+        {"confirm_delete", "general", "移除库中实例前二次确认", true},
         {"profiles_dir", "storage", "Profile 目录覆盖", std::string(), {}, 0, 0, "", true},
         {"default_external_dir", "storage", "默认数据包目录（导入时预填）", std::string(), {}, 0, 0, "", true},
         {"ffmpeg_dir", "storage", "FFmpeg 目录", std::string(), {}, 0, 0, "预留 · 运行时目录配置尚未接入", true},

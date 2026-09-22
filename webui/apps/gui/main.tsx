@@ -47,6 +47,7 @@ function Modal({ title, onDismiss, children }: { title: string; onDismiss: () =>
 function App() {
   const [library, setLibrary] = useState<Library>({ items: [], library_root: '' });
   const [dashboards, setDashboards] = useState<DashboardInfo[]>([]);
+  const [removing, setRemoving] = useState<LibraryItem | null>(null);
   const [dashboardListOpen, setDashboardListOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settings, setSettings] = useState<Settings | null>(null);
@@ -90,11 +91,11 @@ function App() {
   useEffect(() => { if (selected && !item) setSelected(''); }, [selected, item]);
   useEffect(() => {
     const escape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && selected && !errors.length && !importing && !settingsOpen && !gameSettingsId) closeDrawer();
+      if (event.key === 'Escape' && selected && !errors.length && !importing && !settingsOpen && !gameSettingsId && !removing) closeDrawer();
     };
     window.addEventListener('keydown', escape);
     return () => window.removeEventListener('keydown', escape);
-  }, [selected, errors.length, importing, settingsOpen, gameSettingsId]);
+  }, [selected, errors.length, importing, settingsOpen, gameSettingsId, removing]);
   async function refresh() {
     const request = ++generation.current;
     try {
@@ -137,11 +138,22 @@ function App() {
     if (inFlight.current) return;
     inFlight.current = true; setBusy(true);
     try {
-      await rpc(method, { installation_id: game.installation_id, ...(kind ? { kind } : {}) });
+      await rpc(method, { installation_id: game.installation_id, ...(kind ? { kind } : {}), ...(method === "library.remove" ? { confirmed: true } : {}) });
       await refresh();
-    } catch (reason) { report(reason); }
+      return true;
+    } catch (reason) { report(reason); return false; }
     finally { inFlight.current = false; setBusy(false); }
   }
+  const remove = async (game: LibraryItem) => {
+    if (await act('library.remove', game)) {
+      setRemoving(null); lastSelected.current = ''; setSelected('');
+    }
+  };
+  const requestRemoval = (game: LibraryItem) => {
+    if (game.running || busy || importing) return;
+    if (settingsRef.current?.values.confirm_delete === false) void remove(game);
+    else setRemoving(game);
+  };
   const select = (game: LibraryItem) => { lastSelected.current = game.installation_id; setSelected(game.installation_id); };
   const intake = (files: File[]) => {
     const error = validatePackageSelection(files);
@@ -200,6 +212,8 @@ function App() {
           <button class="primary launch-button" disabled={busy || !item.can_launch} onClick={() => void act('library.launch', item)}>{item.running ? '游戏运行中' : '▶ 启动游戏'}</button><p class="condition-detail">{item.detail}</p>
           <div class="detail-actions"><button disabled={busy || importing} onClick={() => setGameSettingsId(item.installation_id)}>游戏设置</button><button disabled={busy || !dashboards.some(instance => instance.installation_id === item.installation_id && instance.status === 'ready')} title={dashboards.find(instance => instance.installation_id === item.installation_id)?.detail ?? '游戏尚未运行'} onClick={() => void act('dashboard.open', item)}>打开 Dashboard</button><button disabled={busy} onClick={() => void act('library.open_dir', item, 'sandbox')}>打开沙盒目录</button><button disabled={busy} onClick={() => void act('library.open_dir', item, 'log')}>打开日志目录</button></div>
           <p class="condition-detail">Dashboard：{dashboards.find(instance => instance.installation_id === item.installation_id)?.detail ?? '游戏尚未运行'}</p>
+          <button disabled={busy || importing || item.running} onClick={() => requestRemoval(item)}>移除库中实例</button>
+          <p class="condition-detail">删除该实例的库内 APK、设置和日志；保留沙盒存档、外部数据包及原始 APK。</p>
           <h3>安装信息</h3><dl><dt>安装实例</dt><dd class="mono">{item.installation_id}</dd><dt>Profile</dt><dd>{item.profile.value}<small>{item.profile.detail}</small></dd><dt>数据包</dt><dd>{item.external.value}<small>{item.external.detail}</small></dd><dt>沙盒路径</dt><dd class="mono">{item.sandbox_path}</dd><dt>日志目录</dt><dd class="mono">{item.log_directory}</dd><dt>导入时间</dt><dd>{item.imported_at || '未记录'}</dd></dl>
         </div></aside>}
       </div><footer class="statusbar"><span title={library.library_root}>{library.library_root}</span><span>{library.items.filter(game => game.running).length} 个运行中</span></footer>
@@ -208,6 +222,11 @@ function App() {
     {importing && <ImportWizard defaultExternal={String(settings?.values.default_external_dir ?? '')} file={pendingFile} onClose={() => { setImporting(false); setPendingFile(null); }} onImported={async id => {
       setQuery(''); setFilter('all'); await refresh(); lastSelected.current = id; setSelected(id); setImporting(false); setPendingFile(null);
     }} />}
+    {removing && <Modal title="移除库中实例" onDismiss={() => { if (!busy) setRemoving(null); }}>
+      <p>确认移除「{removing.display_name}」？</p><p class="mono">{removing.installation_id}</p>
+      <p>删除该实例的库内 APK、设置和日志。沙盒存档、外部数据包及原始 APK 均保留；重新导入会创建新实例，不会自动恢复旧存档。</p>
+      <button disabled={busy} onClick={() => void remove(removing)}>确认移除</button>
+    </Modal>}
     {dashboardListOpen && <Modal title="运行实例" onDismiss={() => setDashboardListOpen(false)}>
       {dashboards.length === 0 ? <p>当前启动器没有运行中的游戏。</p> : dashboards.map(instance => <section key={instance.installation_id}>
         <h3>{library.items.find(game => game.installation_id === instance.installation_id)?.display_name ?? instance.installation_id}</h3>

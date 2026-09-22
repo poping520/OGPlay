@@ -11,6 +11,7 @@
 | [GUI-5](GUI-5.md) | 每实例继承/覆盖、启动模式与参数预览 | Windows 主流程完成；运行时/沙盒管理预留 |
 | [GUI-6](GUI-6.md) | 运行实例、Dashboard 独立窗口与自动打开 | Windows 主流程完成 |
 | [GUI-7](GUI-7.md) | 机型预设 schema、通用数据与校验 | 数据阶段完成；运行时接入另立任务 |
+| [GUI-8](GUI-8.md) | 游戏库移除、确认与运行中保护 | 自动验证完成；真实全链路下次验收 |
 | [DASH-01](DASH-01.md) | Dashboard agent 只读聚合、事件游标与线程关联 | agent 层完成 |
 | [DASH-02](DASH-02.md) | 堆/GC、JNI、CPU 缓存、权限、VFS/动态库快照 | Windows 完成；扩展 BootDex 回归有阻塞 |
 | [DASH-03](DASH-03.md) | Dashboard HTTP、顶栏/拓扑/时间轴/线程表 | Windows 完成；新增来源/面板见 DASH-02/04 |

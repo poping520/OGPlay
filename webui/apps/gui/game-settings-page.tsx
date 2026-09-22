@@ -51,7 +51,7 @@ export function GameSettingsPage({ id, onBack }: { id: string; onBack: () => voi
       {error && <pre class="settings-error" role="alert">{error}</pre>}{notice && <p class="settings-notice" role="status">{notice}</p>}
       {!saved && <p>{busy ? '正在读取…' : '设置不可用；不会覆盖损坏的配置。'}</p>}
       {saved && <>
-        {group === 'device' && <div class="settings-fact"><p>Android 4.4.4 / API 19（固定）</p><p>机型预设列表在 GUI-7 接入。下列数值为保存的配置意向，不代表运行时硬件。</p><button disabled>ANDROID_ID 查看/重新生成 · 管理接口待接入</button></div>}
+        {group === 'device' && <div class="settings-fact"><p>Android 4.4.4 / API 19（固定）</p><p>机型预设数据已提供，列表选择与运行时应用尚未接入。下列数值为保存的配置意向，不代表运行时硬件。</p><button disabled>ANDROID_ID 查看/重新生成 · 管理接口待接入</button></div>}
         {group === 'data' && <div class="settings-fact"><p>{saved.config_path}</p><div class="game-actions"><button disabled={busy} onClick={() => open('sandbox')}>打开沙盒目录</button><button disabled={busy} onClick={() => open('log')}>打开日志目录</button><button disabled={busy} onClick={() => open('external')}>打开数据包目录</button></div><p>存档管理接口尚未接入。</p><div class="game-actions"><button disabled>导出/导入存档 · 预留</button><button disabled>重置沙盒 · 暂未开放</button></div></div>}
         {group === 'network' && <p class="settings-fact">仅保存意向，不改变运行时网络策略；“allow”表示允许网络的预留配置。</p>}
         {group === 'compatibility' && <div class="settings-fact"><p>导入时记录的 Profile：{saved.profile_id}</p>{Object.entries(saved.facts).map(([key, value]) => <p key={key}>{key}：{value}</p>)}</div>}

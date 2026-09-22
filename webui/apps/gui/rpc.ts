@@ -3,6 +3,8 @@ export interface LibraryItem {
   installation_id: string; display_name: string; package: string; version: string;
   status: string; detail: string; running: boolean; can_launch: boolean; icon: string;
   profile: Condition; external: Condition;
+  version_name: string | null; version_code: number | null; imported_at: string | null;
+  sandbox_path: string; log_directory: string;
 }
 export interface Library { items: LibraryItem[]; library_root: string }
 declare global {

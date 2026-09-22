@@ -1,0 +1,35 @@
+schema = 1
+id = "generic-tablet"
+label = "通用平板"
+description = "OGPlay 虚拟配置示例，不对应真实手机；运行时尚未接入。"
+
+[build]
+brand = "OGPlay"
+manufacturer = "OGPlay"
+model = "通用平板"
+device = "generic-tablet"
+product = "generic-tablet"
+android_release = "4.4.4"
+api_level = 19
+abi = "armeabi-v7a"
+
+[cpu]
+name = "Virtual ARMv7"
+cores = 4
+
+[gpu]
+vendor = "OGPlay"
+renderer = "Virtual GLES device"
+
+[display]
+width = 800
+height = 1280
+density_dpi = 213
+
+[memory]
+ram_mb = 2048
+
+[locale]
+language = "en"
+region = "US"
+timezone = "UTC"

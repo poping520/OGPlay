@@ -151,7 +151,8 @@ C++ 模型层，前端只渲染事实；错误返回结构化 `{code, message, n
 4. **GUI-4 全局设置**：`GuiConfig` schema 升级（新增键，保留 `.bak` 恢复）。
 5. **GUI-5 游戏设置**：`settings.toml` 读写 + `BuildLaunchPlan` 消费可实现项；预留项只落盘。
 6. **GUI-6 Dashboard 联动**：运行实例表 → 第二窗口打开 `/dash/`。
-7. **GUI-7 机型预设数据**：`data/devices/*.toml` schema 与校验脚本；运行时能力另立任务。
+7. **[GUI-7 机型预设数据](../../tasks/gui/GUI-7.md)**：`data/devices/*.toml` schema 与校验脚本已落地，
+   见 [数据格式](../../../data/devices/README.md)；运行时能力另立任务。
 
 ## 6. 需要的决策 / ADR
 

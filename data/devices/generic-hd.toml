@@ -1,0 +1,35 @@
+schema = 1
+id = "generic-hd"
+label = "通用 HD"
+description = "OGPlay 虚拟配置示例，不对应真实手机；运行时尚未接入。"
+
+[build]
+brand = "OGPlay"
+manufacturer = "OGPlay"
+model = "通用 HD"
+device = "generic-hd"
+product = "generic-hd"
+android_release = "4.4.4"
+api_level = 19
+abi = "armeabi-v7a"
+
+[cpu]
+name = "Virtual ARMv7"
+cores = 2
+
+[gpu]
+vendor = "OGPlay"
+renderer = "Virtual GLES device"
+
+[display]
+width = 720
+height = 1280
+density_dpi = 320
+
+[memory]
+ram_mb = 1024
+
+[locale]
+language = "en"
+region = "US"
+timezone = "UTC"

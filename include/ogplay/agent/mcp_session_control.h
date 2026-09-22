@@ -53,6 +53,7 @@ public:
 
     void Publish(McpSessionSnapshot snapshot);
     [[nodiscard]] McpSessionSnapshot Snapshot() const;
+    [[nodiscard]] std::optional<McpSessionSnapshot> TrySnapshot() const;
     [[nodiscard]] std::optional<McpSessionCommand> TryEnqueue(
         McpSessionCommand::Type type, std::uint32_t frames = 0U);
     [[nodiscard]] std::optional<McpSessionCommand> TakeNextCommand();

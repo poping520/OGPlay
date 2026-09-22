@@ -7,6 +7,10 @@
 #include <utility>
 
 namespace ogplay::hal {
+std::uint64_t Clock::SteadyTimestampNs() {
+    return static_cast<std::uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(
+        std::chrono::steady_clock::now().time_since_epoch()).count());
+}
 std::string Clock::UtcTimestamp() {
     return std::format("{:%FT%TZ}", std::chrono::floor<std::chrono::seconds>(std::chrono::system_clock::now()));
 }

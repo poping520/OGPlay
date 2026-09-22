@@ -23,6 +23,9 @@
 - 输出同时受单文件、总目录字节和快照数量约束；Windows 文件和命名 event 使用仅当前
   用户的保护 DACL，POSIX 文件替换为 owner read/write。
 
+- `AppendGuestStallSnapshotJson` 将既有快照加入调用方 JsonWriter，与独立 JSON 渲染共用
+  同一 schema；不重新采集、不触发 coordinator 写盘。
+
 ## 非目标
 
 - 不实现任意线程 `SuspendThread`/DbgHelp 或 POSIX `backtrace()` 展开。

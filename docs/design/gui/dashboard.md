@@ -130,7 +130,7 @@ dash.thread    {guest_tid}         -> 联动焦点：A32 状态、Java 栈、在
 
 ## 7. 实施切分（每个 Work Unit 单次会话可完成）
 
-1. **DASH-01 快照层**：`agent` 增加 `dash.overview/snapshot/events/thread`，先只聚合已有
+1. **[DASH-01 快照层](../../tasks/gui/DASH-01.md)**：`agent` 增加 `dash.overview/snapshot/events/thread`，先只聚合已有
    来源（`DiagnosticState`、`McpSessionControl`、`GpuStateProvider`、`CapabilityLedger`、
    `Logger`、`IoStatistics`、AudioTrack 诊断、`FutexTable::TrySnapshot`）。
    验证：`tests/agent/` 方法分派/schema 闭合/`unavailable` 传播用例。

@@ -205,6 +205,11 @@ void McpSessionControl::Publish(McpSessionSnapshot snapshot) {
     snapshot_ = std::move(snapshot);
 }
 
+std::optional<McpSessionSnapshot> McpSessionControl::TrySnapshot() const {
+    std::unique_lock lock(mutex_, std::try_to_lock);
+    if (!lock.owns_lock()) return std::nullopt;
+    return snapshot_;
+}
 McpSessionSnapshot McpSessionControl::Snapshot() const {
     std::scoped_lock lock(mutex_);
     return snapshot_;

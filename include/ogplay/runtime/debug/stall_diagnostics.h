@@ -12,6 +12,7 @@
 #include <vector>
 
 #include "ogplay/cpu/futex.h"
+#include "ogplay/core/json.h"
 #include "ogplay/runtime/common/supervisor_call_progress.h"
 
 namespace ogplay::core { class Logger; }
@@ -225,6 +226,8 @@ private:
     const GuestStallSnapshot& snapshot);
 [[nodiscard]] std::string RenderGuestStallSnapshotJson(
     const GuestStallSnapshot& snapshot);
+[[nodiscard]] core::JsonWriter::Value AppendGuestStallSnapshotJson(
+    core::JsonWriter& writer, const GuestStallSnapshot& snapshot);
 
 // Reads diag-control-<pid>.json from directory and activates the process-local
 // OS trigger. Returns the event/signal description used for the request.

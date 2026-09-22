@@ -9,6 +9,7 @@
 
 #include "ogplay/core/capability_ledger.h"
 #include "ogplay/core/json.h"
+#include "ogplay/core/text.h"
 
 namespace ogplay::core {
 namespace {
@@ -253,6 +254,36 @@ std::vector<LogRecord> Logger::Snapshot(const std::optional<LogLevel> minimum,
     return result;
 }
 
+std::optional<std::vector<LogRecord>> Logger::TrySnapshot(std::size_t limit) const {
+    std::unique_lock lock(mutex_, std::try_to_lock);
+    if (!lock.owns_lock()) return std::nullopt;
+    limit = std::min({limit, records_.size(), std::size_t{128}});
+    const auto text = [](std::string_view value) {
+        value = value.substr(0, 512);
+        // Only inspect/copy a bounded prefix; do not scan arbitrarily large messages.
+        for (unsigned removed = 0; removed < 4; ++removed) {
+            if (IsValidUtf8(value)) return std::string(value);
+            if (value.empty()) break;
+            value.remove_suffix(1);
+        }
+        return std::string("<invalid_utf8>");
+    };
+    std::vector<LogRecord> result; result.reserve(limit);
+    for (auto it = records_.end() - static_cast<std::ptrdiff_t>(limit); it != records_.end(); ++it) {
+        LogRecord record;
+        record.wall = it->wall; record.frame = it->frame; record.guest_ticks = it->guest_ticks;
+        record.host_thread = it->host_thread; record.guest_thread = it->guest_thread; record.level = it->level;
+        record.category = text(it->category); record.message = text(it->message);
+        for (std::size_t i = 0; i < std::min<std::size_t>(it->fields.size(), 32); ++i) {
+            LogField field; field.key = text(it->fields[i].key);
+            if (const auto* value = std::get_if<std::string>(&it->fields[i].value)) field.value = text(*value);
+            else field.value = it->fields[i].value;
+            record.fields.push_back(std::move(field));
+        }
+        result.push_back(std::move(record));
+    }
+    return result;
+}
 std::string Logger::RenderText(const LogRecord& record) const {
     std::shared_ptr<const GuestSymbolProvider> symbols;
     {

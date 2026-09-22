@@ -10,6 +10,7 @@
 - `WebViewHost`：仅宿主启动器使用的静态页面窗口、RPC 字符串回调、事件轮询与脚本投递；
   不暴露 native handle，不创建 guest。当前仅 Windows 实现；冒烟可记录响应并保存 PNG。
 - `WebViewHost::PickPath`：返回文件/目录选择 future，取消返回空；原生句柄不跨接口。
+- `Clock::SteadyTimestampNs`：宿主诊断采集时刻，steady epoch 纳秒，与 guest ticks 分开。
 - `Clock::UtcTimestamp`：仅宿主元数据使用的 UTC 时间，guest 时间仍为 Clock ticks。
 - `OpenHostDirectory`：打开已由上层验证的宿主目录，失败明确传播。
 - `hal::Clock`：所有 guest 时间源使用的抽象。

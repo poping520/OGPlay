@@ -1,6 +1,7 @@
 #include "ogplay/agent/control_service.h"
 
 #include "ogplay/agent/json_rpc.h"
+#include "ogplay/agent/dashboard.h"
 #include "ogplay/core/json.h"
 
 #include <optional>
@@ -168,12 +169,22 @@ std::string RpcError(const std::optional<core::JsonValue> id, const int code,
 
 ControlService::ControlService(core::CapabilityLedger& ledger, core::Logger& logger,
                                session::Session& session,
-                               const core::GpuStateProvider* const gpu)
-    : ledger_(ledger), logger_(logger), session_(session), gpu_(gpu) {}
+                               const core::GpuStateProvider* const gpu, std::shared_ptr<DashboardService> dashboard)
+    : ledger_(ledger), logger_(logger), session_(session), gpu_(gpu), dashboard_(std::move(dashboard)) {
+    if (!dashboard_) dashboard_ = std::make_shared<DashboardService>(DashboardSources{.logger = &logger, .ledger = &ledger});
+}
+ControlResponse ControlService::RequestDashboard(std::string_view method, core::JsonValue params) {
+    return dashboard_->Request(method, params);
+}
 
 ControlResponse ControlService::Request(const std::string_view method,
                                         const ControlParams& params) {
     try {
+        if (method.starts_with("dash.")) {
+            if (params.frames != 1 || params.target_frame || params.max_frames || params.address || params.filter || params.limit != 100)
+                return Error(-32602, "invalid_params", "Dashboard parameters require RequestDashboard");
+            return dashboard_->Request(method);
+        }
         if (method == "system.ping") {
             return Success([](core::JsonWriter& writer) {
                 const auto result = writer.Object();
@@ -379,7 +390,7 @@ std::string JsonRpcAdapter::Handle(const std::string_view request) {
         return RpcError(id, -32602, "params must be an object");
     }
     const core::JsonValue params = params_value.value_or(core::JsonValue{});
-    if (handler_ && root.Size() != 2U + (id.has_value() ? 1U : 0U) +
+    if ((handler_ || method->starts_with("dash.")) && root.Size() != 2U + (id.has_value() ? 1U : 0U) +
                                       (params_value.has_value() ? 1U : 0U)) {
         return RpcError(id, -32600, "unknown JSON-RPC request field");
     }
@@ -403,6 +414,7 @@ std::string JsonRpcAdapter::Handle(const std::string_view request) {
         }
 
         const auto response = handler_ ? handler_(*method, params)
+                                       : method->starts_with("dash.") ? service_->RequestDashboard(*method, params)
                                        : service_->Request(*method, control);
         core::JsonParseError response_error;
         auto response_document = core::JsonDocument::ParseStrict(response.json, response_error);

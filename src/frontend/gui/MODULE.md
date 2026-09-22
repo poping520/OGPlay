@@ -2,112 +2,61 @@
 
 ## 职责
 
-提供独立的 SDL3 + ANGLE/GLES2 + Dear ImGui 主面板 shell，以及不依赖 ImGui 的游戏库
-模型。GUI 只维护宿主游戏库并装配既有 CLI 子进程，不拥有 guest/runtime 行为。
+Windows 系统 WebView2 启动器与独立游戏库模型。GUI 只管理宿主游戏库、装配同目录 CLI
+子进程，不拥有 guest/runtime。GUI v2 第一阶段已替换 ImGui；Linux 暂缓，macOS 宿主待接入。
 
 ## 公共 API
 
-- `RunGuiCommand`：`ogplay gui` 的开发/CI 入口，只接受 `--library-root` 与
-  `--smoke-frames`。
-- `RunGuiStandalone`：双击 `ogplay-gui` 的零参数产品入口；失败通过图形消息框呈现。
-- `HostBundledDataPaths`：解析随可执行文件交付的默认 Profile/quirk payload；源码树仅作
-  开发回退。
-- `LibraryStore`：枚举、原子导入和删除 `<root>/library/<installation-id>/` 条目；损坏条目
-  仍以带错误原因的记录返回；枚举前清理崩溃遗留的 `.importing` 目录。
-- `LoadGuiConfig` / `SaveGuiConfig`：严格 schema 1 TOML 配置读写；`.bak` 提供跨 rename
-  崩溃恢复，旧配置在新配置发布前始终可恢复。
-- `ExtractApkApplicationVisuals`：从 APK 严格读取 manifest 身份，复用 loader 的
-  resources.arsc 与统一条目读取；名称回退 package，图标归一化为 128×128 PNG，
-  非致命失败以 `ApplicationVisualFallback` 枚举返回。
-- `ResizeArgbBilinear`：以像素中心双线性插值归一化图标 ARGB，拒绝尺寸/像素数不一致。
-- `BuildLibraryTiles`：将库条目与运行/required-external 事实合成为名称排序的条目，
-  状态优先级固定为损坏、Profile catalog 不可用、缺 Profile、缺数据包、运行中、ready。
-- `LibrarySelection` / `BuildLibraryDetail`：维护不落盘的稳定选择，并把条目、Profile 和
-  external 事实组合为双栏详情；详情不推断 API、ABI 或兼容性等级。
-- `GuiMessageQueue`：按 FIFO 保存运行/启动诊断，仅在没有其他 popup 时激活下一条。
-- `SelectCjkFont`：按注入候选顺序选择宿主字体，全部缺失时返回空路径供 ASCII 回退。
-- `GuiEventWaitMilliseconds`：普通运行最多等待 100ms 事件，smoke 为 0ms。
-- `AnalyzeApkImport` / `BuildLibraryImport`：组合 GUI-3 visuals 与 session 精确 Profile
-  匹配，生成可确认的导入摘要和 GUI-2 原子入库请求；时间戳由调用方注入。
-- `CanDismissImportModal`：宿主选择器未决时禁止导入模态先行关闭。
-- `GuiImportUi`：SDL 异步文件/目录对话框、后台只读分析和 ImGui 三态摘要控制器；
-  回调和 detached 分析结果只经共享 mailbox 投递事件，文件 IO 与 Profile 判断留在
-  模型/session 层；控制器析构不等待分析完成。
-- `LauncherSandboxRoot` / `BuildLaunchPlan`：从库根、严格库条目与 `GuiConfig` 生成
-  唯一 `run-apk` argv，并在 spawn 前验证全部宿主输入。
-- `GuiProcessManager`：以 SDL3 启动/非阻塞回收游戏子进程，维护同 installation id 单实例和
-  `last-run.log`；GUI 退出只解除跟踪，不终止游戏。
-- `ValidateGuiConfigDirectories` / `GuiSettingsUi`：保存前严格验证已配置目录；设置页只
-  编辑可选 Profile 目录，库根只读，Profile 留空使用内置默认。
-- `GuiManagementUi`：呈现删除边界并调用 `LibraryStore::Remove`；运行中条目拒绝删除，
-  external 数据和 `<library-root>/sandbox/<installation-id>` 存档始终保留。
+- `RunGuiCommand` / `RunGuiStandalone`：CLI 与双击入口；失败记录日志，独立入口显示消息框。
+  原生窗口、导航限制和目录打开经 `hal::WebViewHost`，不直接包含 Windows/WebView2 API。
+- `GuiRpcService::Handle`：复用 `agent::JsonRpcAdapter` 注入模式；同步分派
+  `library.list`、`library.launch`、`library.open_dir`。宿主上下文、进程和打开目录通过显式回调注入。
+- `LibraryStore`：枚举、原子导入、按 installation id 删除；损坏条目携带原因，清理 `.importing` 残留。
+- `LoadGuiConfig` / `SaveGuiConfig`：严格 schema 1 TOML；配置发布保留 `.bak` 崩溃恢复。
+- `ExtractApkApplicationVisuals` / `ResizeArgbBilinear`：APK 名称、128×128 PNG 与明确资源回退原因。
+- `BuildLibraryTiles` / `BuildLibraryDetail` / `LibrarySelection`：统一状态、详情和稳定选择模型。
+- `AnalyzeApkImport` / `BuildLibraryImport`：只读 APK 分析、Profile 匹配和原子入库请求。
+- `LauncherSandboxRoot` / `BuildLaunchPlan`：唯一 run-apk argv 与 spawn 前宿主输入验证。
+- `GuiProcessManager`：SDL3 子进程启动、单实例约束、非阻塞回收；析构只解除跟踪，不杀游戏。
+- `ValidateGuiConfigDirectories`：配置目录验证；设置、导入和删除 UI 在后续 GUI v2 阶段接回。
+- 原 CJK 字体选择、事件等待与消息队列模型保留用于既有调用/测试，不再驱动 WebView 渲染。
 
 ## 不变量
 
-- shell 使用 SDL3 的 OpenGL ES profile，强制 EGL/OpenGL ES driver，使 ImGui GLES2
-  backend 运行在随程序交付的 ANGLE 上；不得回退出第二套桌面 GL renderer。
-- GUI 进程日志覆盖写入 `<library-root>/gui.log`；CLI 入口同时保留同源 stderr sink。
-- `--smoke-frames` 必须为正整数，完成指定成功 present 数后正常退出。
-- 普通主循环必须用 SDL 事件等待降低空闲渲染频率，最长 100ms 后唤醒轮询子进程与导入；
-  smoke 不得等待。CJK 宿主字体作为 18px scalable 主字体，不得拉伸像素 fallback。
-- 模型层不得 include ImGui/SDL，不触碰窗口或进程 API。
-- APK/archive/manifest 损坏必须失败；图标/名称资源失败不得阻止导入，也不得静默，
-  调用方必须记录返回的 fallback 枚举，空 `icon_png` 明确表示使用内置占位磁贴。
-- Android `versionCode` 接受完整 uint32 范围（含 0）；application label 含 C0/DEL 控制
-  字符时必须记账并回退 package name，不得把不可显示文本送入持久 TOML。
-- 视图每帧只消费 `LibraryTile` / `LibraryDetail` 事实，不读取 meta/Profile 或管理进程；
-  长名称单行省略，悬停显示全文，状态角标互斥。
-- 主界面固定为左侧条目列表和右侧选中详情；单击只选中，ready 条目双击或详情启动按钮
-  进入同一 LaunchPlan。搜索、筛选、替换导入和常驻日志入口在模型存在前不得显示。
-- optional Profile 和 required external 事实必须来自
-  `SelectApkCompatibilityProfile` 与 `SummarizeCompatibilityProfile`，不得在 GUI
-  重复解析 applicability 或遍历 Profile mounts；no match 是 generic APK，不是错误。
-- 缺 Profile 是可启动的提示状态，不是硬阻断；条目未运行时，GUI 必须允许同一
-  `run-apk` 通用路径启动。缺 Profile 时 external 只能显示无法判断，不伪造就绪。
-- Profile catalog 不可用时所有非损坏磁贴必须显示显式不可用状态，不得把空的
-  required-external 集合解释为 ready。
-- 未匹配 Profile 或跳过 required external 仍允许入库并显示对应角标；APK/manifest
-  损坏、installation id 占位冲突未能重试和所选 external 目录不存在必须阻止发布并给出下一步。
-- 库枚举必须删除所有 `.importing` 崩溃残留；配置替换必须保留可恢复旧版本，启动发现
-  仅有 `.bak` 时自动恢复。关闭 GUI 不得 join 正在进行的只读 APK 分析。
-- 子进程 CLI 只能从 GUI 可执行文件同目录解析，不查询 PATH；macOS bundle 内使用
-  `ogplay-cli` 文件名以避免与 `OGPlay` GUI 可执行名冲突，其他平台使用 `ogplay`
-  （Windows 为 `ogplay.exe`）；stdin 关闭、stdout
-  继承、stderr 覆盖重定向到条目日志，并显式传 `--sandbox-dir <library-root>/sandbox`。
-  退出 0 静默，非零结果呈现退出码与有界日志末尾。
-- 日志尾部按字节截断时必须前移到下一个完整 UTF-8 codepoint，不得把 continuation byte
-  作为弹窗首字节。
-- SDL 对话框返回的路径必须按 UTF-8 解码；每个用户可见失败同时记录结构化原因，模型
-  错误还必须记录错误码与路径，弹窗必须给出可执行下一步。
-- SDL 宿主文件/目录选择器未决时不得关闭其所属导入模态；必须等待回调完成选择或取消，
-  禁止留下后台分析或阻塞后续点击的悬挂选择器。
-- 每个 ImGui 按钮必须经 `GuiButton` 提交；同一帧同一有效作用域的按钮 ID 必须唯一，
-  同名按钮使用 `##` 隐藏后缀或 `PushID` 区分，重复即让真实 GUI 冒烟明确失败。
-- 删除只移除 `library/<installation-id>`；不得触碰库外 external 或同库根的持久存档。设置保存
-  后必须重载 Profile catalog，不能继续使用旧目录事实。
-- 默认 Profile 与 quirk 注册表必须来自同一完整 bundled data payload；用户覆盖 Profile
-  目录时仍使用 bundled quirk 注册表，发行运行不得依赖编译机源码路径。
-- 游戏运行结果和启动诊断必须排队，且只在导入、设置、删除、上下文菜单和退出确认均
-  未打开时呈现；不得用根级 `OpenPopup` 顶掉正在进行的工作流。
+- 请求 envelope 和方法参数采用 closed schema；未知字段、方法、类型与重复 JSON 键明确失败。
+  前端不传自由 argv、任意目录打开路径或游戏兼容结论；错误返回 code/message/next_step。
+- Web UI 只渲染模型事实。状态优先级：损坏 > Profile catalog 不可用 > 缺 Profile >
+  缺数据包 > 运行中 > ready。缺 Profile 为可启动通用 APK 提示，不是兼容性等级。
+- Profile/required-external 事实来自 session 摘要；catalog 失效必须显示 unavailable。
+  不得把空 required-external 集合当成 ready；默认 Profile 与 quirk 来自同一 bundled payload。
+- GUI 只加载 bundled `webui/gui/index.html`；WebView2 仅允许该入口导航，禁止新窗口。
+  静态 CSP 禁止网络、框架、对象、表单和 base 重定向；只绑定 `rpc(string)`，不启用 HTTP 服务。
+- Node 仅用于构建；默认 CMake 不联网，SDK 需显式准备。GUI 构建校验 manifest 文件 SHA-256，
+  缺失/不匹配明确失败；运行时找不到 Web UI 明确失败，不退回旧界面。
+- 模型/RPC 层不 include SDL/WebView，不直接调用窗口或进程 API。
+- `library.open_dir` 只由已枚举 installation id 映射 sandbox/log/external；目录不存在明确失败，
+  不创建沙盒。log 为保存 last-run.log 的条目目录。
+- GUI 日志覆盖写入 `<library-root>/gui.log`，CLI 同时保留 stderr sink。
+- 兼容 `--smoke-frames N` 正整数参数：现表示 WebView 加载后 N 次成功 `library.list`，
+  不再声称 ANGLE present 次数；未完成前关闭窗口视为失败。
+- 100ms 宿主事件计时器回收进程，不忙轮询。退出 0 静默，非零结构化退出码及有界 UTF-8
+  日志尾部经前端队列呈现；不据此推断兼容性。
+- 子进程只解析同目录 CLI，stdin 关闭、stdout 继承、stderr 覆盖 last-run.log；显式传递
+  `--sandbox-dir <library-root>/sandbox` 与 `--installation-id`，同实例不重复启动。
+- APK/manifest 损坏失败；资源图标/名称失败记录 fallback，空 PNG 为明确占位；versionCode
+  接受完整 uint32。禁止把含控制字符的 label 直接持久化。
+- 导入未知 Profile 或跳过 required external 可以入库；无效目录、损坏 APK 和未解决的实例
+  占位冲突必须阻止发布。重复 package 允许多个安装实例，不覆盖旧条目。
+- 删除只移除 `library/<installation-id>`；external 与持久存档不删除，运行中不删除。
 
 ## 禁止
 
-- 不实现 syscall/JNI/GLES/game-specific compatibility。
-- 不在 GUI 进程内启动 guest session。
-- 不解析自由文本日志来判断兼容性状态。
+不实现 guest/session、syscall/JNI/GLES 或游戏专用兼容；不解析自由文本日志判断兼容性；
+不使用前端猜测替代宿主状态。
 
-## 测试
+## 验证
 
-`tests/frontend/gui_model_tests.cpp` 锁定配置、导入、损坏、重复与删除边界；
-`tests/frontend/gui_visuals_tests.cpp` 以合成 APK 锁定 resid→arsc→PNG→128×128
-缓存全链和逐级回退；
-`tests/frontend/gui_view_model_tests.cpp` 锁定排序、角标优先级与字体候选；
-`tests/frontend/gui_import_tests.cpp` 锁定无 Profile 分析、metadata 装配、可选 external
-与明确失败；
-`tests/frontend/gui_launch_tests.cpp` 锁定 argv、spawn 前校验、单实例状态、退出码与
-有界日志末尾；
-`tests/frontend/gui_model_tests.cpp` 同时锁定设置目录校验和删除保留 external/存档；
-`frontend.gui_smoke`/`frontend.gui_library_smoke` 在有界三帧内验证真实
-SDL3/ANGLE/ImGui 空库与 CJK 非空库窗口，并由 `GuiButton` 审计可见按钮 ID 唯一性。
-macOS 的 `frontend.gui_bundle_layout` 额外验证 `OGPlay.app` 的 GUI/CLI 文件名和
-Info.plist 入口不会在大小写不敏感文件系统上冲突。
+保留 `tests/frontend/gui_{model,visuals,view_model,import,launch}_tests.cpp`；
+`gui_rpc_tests.cpp` 覆盖协议闭合、事实序列化、启动约束和目录映射。
+`npm run check` 验证前端类型与协议边界；`frontend.gui_webui_manifest` 校验制品哈希；
+`frontend.gui_smoke` / `frontend.gui_library_smoke` 验证真实 WebView 加载与空库/CJK 非空库 RPC。

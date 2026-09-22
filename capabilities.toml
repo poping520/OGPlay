@@ -287,8 +287,8 @@ note = "M5 WU-0302 让 run-apk 将一个显式宿主数据目录精确挂到匹�
 
 [frontend.gui_shell]
 status = "complete"
-test = "frontend.gui_options; frontend.gui_smoke; frontend.gui_library_smoke; frontend.gui_bundle_layout; tests/frontend/data_directory_tests.cpp; tests/frontend/gui_view_model_tests.cpp; tests/frontend/gui_model_tests.cpp"
-note = "Launcher GUI-1/4/7/8/11/12/13/14/17/18 提供双入口与随程序交付 ANGLE 上的 ImGui GLES2 窗口；默认 Profile/quirk payload 随可执行文件交付且不依赖源码树，catalog 或 system 目录失效时 fail closed；1280x720 双栏主视图使用 scalable 18px CJK 字体，左侧列表选择、右侧详情启动/删除只接已有工作流，空闲事件等待 100ms；运行诊断仅在其他 popup 关闭后按 FIFO 呈现；可见按钮 ID 逐帧审计，重复会让真实 GUI 冒烟明确失败"
+test = "frontend.gui_options; frontend.gui_smoke; frontend.gui_library_smoke; frontend.gui_webui_manifest; tests/frontend/gui_rpc_tests.cpp; webui/apps/gui/rpc.test.ts"
+note = "GUI-V2-01 将 Windows ImGui 替换为系统 WebView2 + Preact：library.list/launch/open_dir 复用模型与 JsonRpcAdapter，closed schema、导航限制、CSP、结构化错误与 100ms 进程回收；静态 Web UI manifest 经哈希校验。当前为宿主骨架，完整游戏库/导入/设置/Dashboard 界面待后续阶段；Linux 暂缓，macOS WebView 宿主未接入"
 
 [frontend.gui_library]
 status = "complete"
@@ -298,7 +298,7 @@ note = "Launcher GUI-2/5/7/10/12/15/16/17 交付严格 LibraryStore/GuiConfig、
 [frontend.gui_launch_spawn]
 status = "complete"
 test = "tests/frontend/gui_launch_tests.cpp; frontend.gui_smoke; frontend.gui_library_smoke"
-note = "Launcher GUI-6/9/14 严格装配同目录 ogplay run-apk 参数并在 spawn 前验证输入；显式传递当前库根 sandbox 与选中目录的 --installation-id，SandboxStore 和 guest platform facts 沿用同一 id；SDL 子进程关闭 stdin、继承 stdout、重定向 stderr，逐帧回收状态/退出码并以完整 UTF-8 边界呈现日志尾部，同 package 多实例互不合并"
+note = "Launcher GUI-6/9/14 严格装配同目录 ogplay run-apk 参数并在 spawn 前验证输入；显式传递当前库根 sandbox 与选中目录的 --installation-id，SandboxStore 和 guest platform facts 沿用同一 id；SDL 子进程关闭 stdin、继承 stdout、重定向 stderr，以 100ms 宿主计时器回收状态/退出码并以完整 UTF-8 边界呈现日志尾部，同 package 多实例互不合并"
 
 [loader.apk_application_visuals]
 status = "complete"

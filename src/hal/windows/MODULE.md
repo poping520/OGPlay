@@ -9,6 +9,9 @@
 - 可依赖公开 HAL 接口、SDL3 及 Windows SDK。
 - 不得被除 HAL 装配点之外的上层模块直接包含。
 - 回调上层必须经过显式 HAL 接口，不包含 guest、游戏或 Android 语义。
+- `WebViewHost` 封装固定 webview/WebView2、同一本地页面导航限制、禁止新窗口、100ms 宿主
+  事件计时器与 PNG 冒烟截图。绑定只转交字符串请求，方法语义由上层提供；不启动 HTTP 服务。
+  上游实现单独编译，WebView2 SDK 通过显式准备脚本提供，不在配置阶段下载。
 - `HostExecutableDirectory` 与宿主环境覆盖使用 Win32 模块路径及进程环境 API，
   不把 Windows SDK 类型泄漏到公共 HAL。
 - 共享库加载使用 `LoadLibraryW`/`GetProcAddress`，命名规则为 `<name>-<major>.dll`。

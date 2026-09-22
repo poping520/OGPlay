@@ -1,8 +1,12 @@
 # 当前状态
 
-更新：2026-09-20。
+更新：2026-09-22。
 
 ## 最近进展
+
+- [GUI-V2-01](../tasks/launcher/GUI-V2-01.md)：Windows WebView2 宿主与 RPC 骨架完成，
+  替换 ImGui 并保留游戏库模型；48 用例/343 断言、前端检查及真实 WebView 空库/CJK
+  非空库冒烟通过。导入/设置/Dashboard UI 待后续阶段；Linux 暂缓，macOS 宿主待接入。
 
 - [VFS 专项](../design/vfs/README.md) VFS-01/02/03 已实现并完成定向交叉验收：节点/backing/
   打开状态与定位 IO、统一资源预算、APK/OBB range backing、音乐/视频 lease、安装实例 id

@@ -343,7 +343,11 @@ ControlResponse ControlService::Request(const std::string_view method,
     }
 }
 
-JsonRpcAdapter::JsonRpcAdapter(ControlService& service) : service_(service) {}
+JsonRpcAdapter::JsonRpcAdapter(ControlService& service) : service_(&service) {}
+
+JsonRpcAdapter::JsonRpcAdapter(RequestHandler handler) : handler_(std::move(handler)) {
+    if (!handler_) throw std::invalid_argument("JSON-RPC handler is required");
+}
 
 std::string JsonRpcAdapter::Handle(const std::string_view request) {
     core::JsonParseError parse_error;
@@ -375,10 +379,14 @@ std::string JsonRpcAdapter::Handle(const std::string_view request) {
         return RpcError(id, -32602, "params must be an object");
     }
     const core::JsonValue params = params_value.value_or(core::JsonValue{});
+    if (handler_ && root.Size() != 2U + (id.has_value() ? 1U : 0U) +
+                                      (params_value.has_value() ? 1U : 0U)) {
+        return RpcError(id, -32600, "unknown JSON-RPC request field");
+    }
 
     try {
         ControlParams control;
-        if (params.IsValid()) {
+        if (service_ && params.IsValid()) {
             if (const auto frames = UnsignedParam(params, "frames")) control.frames = *frames;
             if (const auto target = UnsignedParam(params, "target_frame")) {
                 control.target_frame = *target;
@@ -390,11 +398,12 @@ std::string JsonRpcAdapter::Handle(const std::string_view request) {
             control.filter = StringParam(params, "filter");
             if (const auto limit = UnsignedParam(params, "limit")) control.limit = *limit;
         }
-        if (*method == "run.until" && control.max_frames == 0) {
+        if (service_ && *method == "run.until" && control.max_frames == 0) {
             return RpcError(id, -32602, "run.until requires positive max_frames");
         }
 
-        const auto response = service_.Request(*method, control);
+        const auto response = handler_ ? handler_(*method, params)
+                                       : service_->Request(*method, control);
         core::JsonParseError response_error;
         auto response_document = core::JsonDocument::ParseStrict(response.json, response_error);
         if (!response_document.has_value() || !response_document->Root().IsObject()) {

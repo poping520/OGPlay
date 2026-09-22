@@ -25,3 +25,5 @@ crash-*/
 /user-data/
 
 bootdex.jar
+/data/webui/
+/webui/node_modules/

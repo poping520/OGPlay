@@ -10,6 +10,7 @@
 - [ADR-0014 · ANGLE 预编译 SDK 交付](#adr-0014)
 - [ADR-0015 · ANGLE 维护者工作区归属](#adr-0015)
 - [ADR-0072 · Web UI 使用固定 Node 构建链，产物按生成制品交付](#adr-0072)
+- [ADR-0073 · Windows 启动器 WebView 宿主边界](#adr-0073)
 
 <a id="adr-0005"></a>
 
@@ -204,13 +205,16 @@ C++ 构建的源码依赖，未覆盖 npm 注册表依赖与前端产物的归�
 
 ### 决定
 
-1. **范围**：Node 只用于构建 `tools/webui/` 下的前端工作区（`packages/ui-kit`、`apps/gui`、
+2026-09-22 目录调整：按用户决定，产品前端源码统一放在仓库根 `webui/`；生成产物仍为
+`data/webui/`，不入库。此调整只修正工作区位置，构建与依赖约束不变。
+
+1. **范围**：Node 只用于构建 `webui/` 下的前端工作区（`packages/ui-kit`、`apps/gui`、
    `apps/dashboard`），产物为纯静态文件。运行时不依赖 Node，不引入 Electron 或任何打包浏览器；
    GUI 宿主不启动本地 HTTP 服务，Dashboard 复用 ADR-0026 已有的 loopback 传输。
-2. **固定版本**：Node 使用当前 LTS 主版本并在 `tools/webui/.nvmrc` 与 `package.json`
+2. **固定版本**：Node 使用当前 LTS 主版本并在 `webui/.nvmrc` 与 `package.json`
    `engines` 中固定；依赖以 lockfile（含 integrity 哈希）提交，安装只允许 `npm ci`，禁止
    `npm install` 漂移。直接依赖限定为 vite、typescript、preact、uplot、vitest 及其类型包；
-   新增依赖须在 Work Unit 中说明并更新 `third_party/LICENSES` 记录。
+   新增依赖须在 Work Unit 中说明并更新 [Web UI 依赖许可](../../webui/README.md#依赖许可)记录。
 3. **与 C++ 构建的关系**：CMake 配置期不调用 npm，默认不访问网络（与 ADR-0007 一致）。
    可选目标 `webui`（`OGPLAY_BUILD_WEBUI=ON`）显式调用 `npm ci && npm run build`；未开启时
    构建与测试消费已存在的产物，缺失时相关 GUI/Dashboard 目标明确失败，不静默降级。
@@ -227,3 +231,27 @@ C++ 构建的源码依赖，未覆盖 npm 注册表依赖与前端产物的归�
 - 一份 lockfile 决定同一提交的前端依赖集合，可离线复现（`npm ci --offline` 配合缓存）。
 - 前端与 C++ 的边界固定为 JSON-RPC 结构化消息；未来替换 WebView 宿主或传输不影响前端产物。
 - ImGui 视图层与 `ogplay_imgui` 目标在 GUI v2 落地时删除；`third_party/imgui` submodule 随之移除。
+
+<a id="adr-0073"></a>
+
+## ADR-0073 · Windows 启动器 WebView 宿主边界
+
+- 状态：Accepted
+- 日期：2026-09-22
+- 关联：[GUI-V2-01](../tasks/launcher/GUI-V2-01.md)、[GUI v2](../design/gui/README.md)
+
+### 决定
+
+用户授权按 GUI v2 推进并暂缓 Linux。第一工作单交付 Windows；macOS WebView 宿主后续接入。
+webview 0.12.0 以 Git submodule 固定源码；WebView2 1.0.1150.38 为预编译 SDK/header 包，
+由显式脚本下载并校验固定 SHA-256，CMake 不使用 FetchContent 或自动下载。
+系统提供 WebView2 Runtime，不打包浏览器。前端 Node 构建沿用 ADR-0072。
+
+Windows/WebView2 API 只在 `hal/windows`，上层经 `WebViewHost` 的显式字符串请求、轮询、
+脚本投递接口编排，不泄漏 native handle。GUI 只加载本地静态页面，限制导航与新窗口，
+不启动 HTTP 服务。模型层继续维护身份、状态、配置与 LaunchPlan。
+
+### 后果
+
+ImGui 视图与依赖移除，原模型回归保留；导入/设置/删除 UI 按后续阶段恢复，第一工作单不
+宣称整个 GUI v2 完成。原 `--smoke-frames` 兼容为成功 RPC 响应数，另保存真实 WebView PNG。

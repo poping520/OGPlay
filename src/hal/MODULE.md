@@ -7,6 +7,9 @@
 
 ## 公共 API
 
+- `WebViewHost`：仅宿主启动器使用的静态页面窗口、RPC 字符串回调、事件轮询与脚本投递；
+  不暴露 native handle，不创建 guest。当前仅 Windows 实现；冒烟可记录响应并保存 PNG。
+- `OpenHostDirectory`：打开已由上层验证的宿主目录，失败明确传播。
 - `hal::Clock`：所有 guest 时间源使用的抽象。
 - `hal::ClockRate`：正整数分子/分母表示的精确倍率。
 - `hal::FixedStepClock`：无 sleep、按帧推进且保留倍率余数的确定性后端。

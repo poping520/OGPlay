@@ -30,12 +30,27 @@ jobs:
           git submodule update --init --depth 1 --
           third_party/angle-prebuilt
 
+      - name: Prepare GUI WebView dependencies (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          git submodule update --init -- third_party/webview
+          ./webui/prepare-sdk.ps1
+
+      - uses: actions/setup-node@v4
+        if: runner.os == 'Windows'
+        with:
+          node-version-file: webui/.nvmrc
+          cache: npm
+          cache-dependency-path: webui/package-lock.json
+
       - name: Configure (Windows)
         if: runner.os == 'Windows'
         run: >-
           cmake -S . -B build/ci -G "Visual Studio 17 2022" -A x64
           -DOGPLAY_BUILD_TESTS=ON -DOGPLAY_WARNINGS_AS_ERRORS=ON
           -DOGPLAY_ENABLE_ANGLE=ON
+          -DOGPLAY_BUILD_WEBUI=ON
 
       - name: Configure (Linux/macOS)
         if: runner.os != 'Windows'

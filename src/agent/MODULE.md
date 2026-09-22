@@ -9,6 +9,8 @@
 
 - `ControlService::Request`：session/run/sym/hle/log/gpu 的传输无关分派。
 - `JsonRpcAdapter::Handle`：逐行 JSON-RPC 2.0 编解码，可由 stdio/TCP/UDS 共用。
+  支持同步 `RequestHandler` 注入供独立 GUI 复用协议封装；JSON view 只在调用期间有效，
+  注入模式拒绝额外 envelope 字段，不依赖前端或创建运行时 session。
 - `FrameSnapshotStore`：以移动所有权保留最近一次已呈现 RGBA8 guest frame；发布新帧时
   返回旧缓冲供前端回收，读取时只按请求复制，不在每帧编码或复制截图。
 - `McpProtocolAdapter::Handle`：实现 MCP initialize/ping/tools/list/tools/call 最小协议面；

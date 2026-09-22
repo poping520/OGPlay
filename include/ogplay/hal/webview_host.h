@@ -28,6 +28,7 @@ public:
     virtual int Run() = 0;
     virtual void Evaluate(std::string_view script) = 0;
     virtual void RecordSmokeResponse() = 0;
+    virtual void Minimize() = 0;
     virtual std::future<std::optional<std::filesystem::path>> PickPath(bool directory) = 0;
 };
 [[nodiscard]] std::unique_ptr<WebViewHost> CreateWebViewHost(

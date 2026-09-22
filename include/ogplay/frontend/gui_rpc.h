@@ -18,6 +18,8 @@ struct GuiRpcHost final {
     std::function<ApkImportAnalysis(const std::filesystem::path&)> analyze;
     std::function<std::future<std::optional<std::filesystem::path>>(bool)> pick;
     std::function<std::string()> timestamp;
+    std::function<void()> minimize;
+    std::function<std::map<std::string, std::string>()> settings_facts;
 };
 
 class GuiRpcService final {
@@ -32,6 +34,8 @@ private:
     [[nodiscard]] agent::ControlResponse Request(std::string_view method, core::JsonValue params);
     struct ImportState;
     bool ImportBusy() const;
+    bool SettingsBusy() const;
+    [[nodiscard]] agent::ControlResponse SettingsRequest(std::string_view method, core::JsonValue params);
     [[nodiscard]] agent::ControlResponse ImportRequest(std::string_view method, core::JsonValue params);
     std::shared_ptr<ImportState> import_;
     LibraryStore& store_;

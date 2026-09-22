@@ -13,6 +13,7 @@
   事件计时器与 PNG 冒烟截图。绑定只转交字符串请求，方法语义由上层提供；不启动 HTTP 服务。
   文件/目录选择使用独立 STA 线程的 IFileOpenDialog，父窗口关联当前宿主；取消返回空，
   HRESULT 失败传播，避免在 WebView 消息回调中运行模态消息循环。
+  `Minimize` 只最小化当前宿主窗口，不改变子进程生命周期。
   上游实现单独编译，WebView2 SDK 通过显式准备脚本提供，不在配置阶段下载。
 - `HostExecutableDirectory` 与宿主环境覆盖使用 Win32 模块路径及进程环境 API，
   不把 Windows SDK 类型泄漏到公共 HAL。

@@ -2,8 +2,8 @@ import { useEffect, useRef, useState } from 'preact/hooks';
 import { rpc } from './rpc';
 import { pause, pickPath, upload, type ImportJob } from './import';
 
-export function ImportWizard({ file, onClose, onImported }: {
-  file: File | null; onClose: () => void; onImported: (id: string) => Promise<void>;
+export function ImportWizard({ file, defaultExternal = '', onClose, onImported }: {
+  file: File | null; defaultExternal?: string; onClose: () => void; onImported: (id: string) => Promise<void>;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const activeJob = useRef('');
@@ -37,7 +37,7 @@ export function ImportWizard({ file, onClose, onImported }: {
   async function analyze(dropped: File | null) {
     await run(async () => {
       if (activeJob.current) await rpc('library.job.cancel', { job: activeJob.current });
-      activeJob.current = ''; setJob(null); setConfirmed(false); setExternal(''); setSkip(false);
+      activeJob.current = ''; setJob(null); setConfirmed(false); setExternal(defaultExternal); setSkip(false);
       let initial: ImportJob;
       if (dropped) {
         setStage('正在读取拖入的 APK…');

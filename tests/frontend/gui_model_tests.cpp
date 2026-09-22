@@ -12,6 +12,7 @@
 #include <vector>
 
 #include "ogplay/frontend/gui_model.h"
+#include "ogplay/frontend/gui_settings.h"
 
 namespace {
 
@@ -118,7 +119,33 @@ TEST_CASE("GUI config discards the legacy external system directory") {
     ogplay::frontend::SaveGuiConfig(tree.path,
                                     ogplay::frontend::GuiConfig{});
     CHECK(std::filesystem::file_size(tree.path / "config.toml") ==
-          std::string_view("schema = 1\n").size());
+          std::string_view("schema = 2\n").size());
+}
+
+TEST_CASE("GUI schema two validates typed settings without replacing good config") {
+    using namespace ogplay::frontend;
+    TemporaryDirectory tree;
+    GuiConfig config;
+    SetGuiSetting(config, "theme", std::string("light"));
+    SetGuiSetting(config, "supersample", std::uint32_t{3});
+    SetGuiSetting(config, "mute", true);
+    SaveGuiConfig(tree.path, config);
+    CHECK(LoadGuiConfig(tree.path) == config);
+    CHECK(std::get<bool>(GuiSetting(config, "show_exit_log")));
+    CHECK_THROWS(SetGuiSetting(config, "theme", std::string("unknown")));
+    CHECK_THROWS(SetGuiSetting(config, "supersample", std::uint32_t{5}));
+    CHECK_THROWS(SetGuiSetting(config, "mute", std::string("true")));
+    CHECK_THROWS(SetGuiSetting(config, "unknown", true));
+    CHECK(LoadGuiConfig(tree.path) == config);
+    auto invalid = config;
+    invalid.values["mcp_port"] = std::uint32_t{0};
+    CHECK_THROWS(SaveGuiConfig(tree.path, invalid));
+    CHECK(LoadGuiConfig(tree.path) == config);
+    for (const auto text : {"schema = 2\ntheme = true\n", "schema = 2\nsupersample = 0\n",
+                            "schema = 2\nunknown = true\n", "schema = 3\n"}) {
+        Write(tree.path / "config.toml", text);
+        CHECK_THROWS(static_cast<void>(LoadGuiConfig(tree.path)));
+    }
 }
 
 TEST_CASE("library import atomically copies APK metadata and optional icon") {

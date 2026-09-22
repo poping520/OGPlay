@@ -128,7 +128,7 @@ library.import   {job, external_dir?}
 library.remove   {installation_id}
 library.launch   {installation_id, overrides?}   → pid / 单实例冲突错误
 library.open_dir {installation_id, kind: sandbox|log|external}
-settings.get / settings.set            （全局，schema 1）
+settings.get / settings.set            （全局，schema 2；set 要求读取版本 revision）
 game_settings.get / game_settings.set  {installation_id}
 devices.presets                        → data/devices/*.toml
 runtime.instances                      → 运行中子进程、MCP 端口、退出码回收

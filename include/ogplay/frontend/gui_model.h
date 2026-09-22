@@ -4,6 +4,8 @@
 #include <cstdint>
 #include <filesystem>
 #include <optional>
+#include <map>
+#include <variant>
 #include <span>
 #include <stdexcept>
 #include <string>
@@ -33,8 +35,11 @@ private:
     std::filesystem::path path_;
 };
 
+using GuiSettingValue = std::variant<bool, std::uint32_t, std::string>;
+
 struct GuiConfig final {
     std::optional<std::filesystem::path> profiles_dir;
+    std::map<std::string, GuiSettingValue, std::less<>> values;
 
     bool operator==(const GuiConfig&) const = default;
 };

@@ -1,4 +1,5 @@
 #include "ogplay/frontend/gui_model.h"
+#include "ogplay/frontend/gui_settings.h"
 
 #include <algorithm>
 #include <array>
@@ -251,38 +252,34 @@ void ValidateMetadata(const LibraryMetadata& metadata) {
 }
 
 [[nodiscard]] std::string EncodeConfig(const GuiConfig& config) {
-    std::string text = "schema = 1\n";
-    if (config.profiles_dir.has_value()) {
-        if (!config.profiles_dir->is_absolute()) {
-            throw GuiModelError(GuiModelErrorCode::invalid_argument,
-                                "GUI profiles directory must be absolute");
-        }
-        text.append("profiles_dir = ")
-            .append(EscapeToml(PathUtf8(*config.profiles_dir)))
-            .push_back('\n');
+    ValidateGuiConfigValues(config);
+    std::string text = "schema = 2\n";
+    if (config.profiles_dir) text += "profiles_dir = " + EscapeToml(PathUtf8(*config.profiles_dir)) + "\n";
+    for (const auto& [key, value] : config.values) {
+        text += key + " = ";
+        if (const auto flag = std::get_if<bool>(&value)) text += *flag ? "true" : "false";
+        else if (const auto number = std::get_if<std::uint32_t>(&value)) text += std::to_string(*number);
+        else text += EscapeToml(std::get<std::string>(value));
+        text += "\n";
     }
     return text;
 }
 
 [[nodiscard]] GuiConfig DecodeConfig(const std::string_view text) {
     const auto values = ParseFlatToml(text);
-    ExactKeys(values, {"schema", "system_dir", "profiles_dir"});
-    if (ParseUint32(Require(values, "schema"), "schema") != kSchema) {
-        throw std::runtime_error("GUI config schema is not supported");
-    }
+    const auto schema = ParseUint32(Require(values, "schema"), "schema");
+    if (schema != 1 && schema != 2) throw std::runtime_error("GUI config schema is not supported");
+    if (schema == 1) ExactKeys(values, {"schema", "system_dir", "profiles_dir"});
     GuiConfig config;
-    // schema 1 previously persisted an externally selected Bionic directory.
-    // Parse the value so damaged legacy files still fail closed, then discard
-    // it because system libraries are now part of the bundled runtime data.
-    if (const auto item = values.find("system_dir"); item != values.end()) {
-        static_cast<void>(ParseTomlString(item->second));
-    }
-    if (const auto item = values.find("profiles_dir"); item != values.end()) {
-        config.profiles_dir = Utf8Path(ParseTomlString(item->second));
-    }
-    if (config.profiles_dir.has_value() &&
-        !config.profiles_dir->is_absolute()) {
-        throw std::runtime_error("GUI config paths must be absolute");
+    for (const auto& [key, value] : values) {
+        if (key == "schema") continue;
+        if (schema == 1 && key == "system_dir") { static_cast<void>(ParseTomlString(value)); continue; }
+        const auto& field = FindGuiSetting(key);
+        if (std::holds_alternative<bool>(field.initial)) {
+            if (value != "true" && value != "false") throw std::runtime_error(key + " requires a boolean");
+            SetGuiSetting(config, key, value == "true");
+        } else if (std::holds_alternative<std::uint32_t>(field.initial)) SetGuiSetting(config, key, ParseUint32(value, key));
+        else SetGuiSetting(config, key, ParseTomlString(value));
     }
     return config;
 }
@@ -344,8 +341,11 @@ void ValidateGuiConfigDirectories(const GuiConfig& config) {
                                 std::string(name) + " is unavailable", path);
         }
     };
-    if (config.profiles_dir.has_value()) {
-        require_directory(*config.profiles_dir, "Profile directory");
+    ValidateGuiConfigValues(config);
+    for (const auto& field : GuiSettings()) {
+        if (!field.directory) continue;
+        const auto text = std::get<std::string>(GuiSetting(config, field.key));
+        if (!text.empty()) require_directory(Utf8Path(text), field.label);
     }
 }
 

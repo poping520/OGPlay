@@ -19,13 +19,17 @@ Windows 系统 WebView2 启动器与独立游戏库模型。GUI 只管理宿主�
   重复提交拒绝，结果返回真实 installation id。取消不发布；提交期间不能取消。
 - `dialog.pick {kind:file|directory}` / `dialog.poll {dialog}`：异步原生选择器，取消返回 null。
 - `LibraryStore`：枚举、原子导入并返回实际 installation id、按 id 删除；损坏条目携带原因，清理 `.importing` 残留。
-- `LoadGuiConfig` / `SaveGuiConfig`：严格 schema 1 TOML；配置发布保留 `.bak` 崩溃恢复。
+- `LoadGuiConfig` / `SaveGuiConfig`：严格 schema 2 TOML，兼容读取 schema 1；配置发布保留 `.bak` 崩溃恢复。
+- `GuiSettings`：全局字段的默认值、类型、范围、枚举与预留标记唯一来源。
+  `settings.get/set` 返回完整有效值；保存校验读取版本、目录和字段，未知键或损坏配置拒绝覆盖。
+  `settings.open_dir` 只接受 library 枚举，不接受任意路径。制品信息缺失不影响配置保存。
+  后台 APK 分析或入库尚未回收时禁止保存，避免配置发布与后台读取并发。
 - `ExtractApkApplicationVisuals` / `ResizeArgbBilinear`：APK 名称、128×128 PNG 与明确资源回退原因。
 - `BuildLibraryTiles` / `BuildLibraryDetail` / `LibrarySelection`：统一状态、详情和稳定选择模型。
 - `AnalyzeApkImport` / `BuildLibraryImport`：只读 APK 分析、Profile 匹配和原子入库请求。
 - `LauncherSandboxRoot` / `BuildLaunchPlan`：唯一 run-apk argv 与 spawn 前宿主输入验证。
 - `GuiProcessManager`：SDL3 子进程启动、单实例约束、非阻塞回收；析构只解除跟踪，不杀游戏。
-- `ValidateGuiConfigDirectories`：配置目录验证；设置和删除 UI 在后续 GUI v2 阶段接回。
+- `ValidateGuiConfigDirectories`：配置目录验证；全局设置保存前执行，删除 UI 待后续接回。
 - 原 CJK 字体选择、事件等待与消息队列模型保留用于既有调用/测试，不再驱动 WebView 渲染。
 
 ## 不变量
@@ -50,6 +54,8 @@ Windows 系统 WebView2 启动器与独立游戏库模型。GUI 只管理宿主�
   日志尾部经前端队列呈现；不据此推断兼容性。
 - 子进程只解析同目录 CLI，stdin 关闭、stdout 继承、stderr 覆盖 last-run.log；显式传递
   `--sandbox-dir <library-root>/sandbox` 与 `--installation-id`，同实例不重复启动。
+- 全局设置仅将超采样、解释器和 MCP 端口转为已支持的 CLI 参数；预留选项只保存，
+  不改变运行时行为。启动成功后通过宿主回调最小化；GUI 配置不覆盖正在运行的进程。
 - APK/manifest 损坏失败；资源图标/名称失败记录 fallback，空 PNG 为明确占位；versionCode
   接受完整 uint32。禁止把含控制字符的 label 直接持久化。
 - 导入未知 Profile 或跳过 required external 可以入库；无效目录、损坏 APK 和未解决的实例

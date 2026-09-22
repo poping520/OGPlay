@@ -1,4 +1,5 @@
 #include "ogplay/frontend/gui_rpc.h"
+#include "ogplay/frontend/gui_settings.h"
 
 #include <algorithm>
 #include <array>
@@ -83,6 +84,8 @@ std::string GuiRpcService::Handle(std::string_view request) {
 
 agent::ControlResponse GuiRpcService::Request(std::string_view method, core::JsonValue params) {
     try {
+        if (method == "settings.get" || method == "settings.set" || method == "settings.open_dir")
+            return SettingsRequest(method, params);
         if (method == "dialog.pick" || method == "dialog.poll" || method == "library.analyze" ||
             method == "library.import" || method.starts_with("library.job.") || method.starts_with("library.upload."))
             return ImportRequest(method, params);
@@ -143,7 +146,11 @@ agent::ControlResponse GuiRpcService::Request(std::string_view method, core::Jso
             if (method == "library.launch") {
                 const auto tile = std::find_if(tiles.begin(), tiles.end(), [&](const auto& item) { return item.key == key; });
                 if (!tile->can_launch) return Error(-32001, tile->detail, "检查运行状态、Profile 和数据包目录。");
-                host_.launch(BuildLaunchPlan(cli_, store_.Root(), *entry, LoadGuiConfig(store_.Root())));
+                const auto config = LoadGuiConfig(store_.Root());
+                const auto minimize = std::get<bool>(GuiSetting(config, "minimize_on_launch"));
+                if (minimize && !host_.minimize) throw std::runtime_error("宿主不支持最小化窗口。");
+                host_.launch(BuildLaunchPlan(cli_, store_.Root(), *entry, config));
+                if (minimize) host_.minimize();
                 writer.AddString(result, "installation_id", key);
                 writer.AddBool(result, "started", true);
             } else {

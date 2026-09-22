@@ -130,7 +130,26 @@ int RunGuiCommand(int argc, const char* const argv[], core::Logger& logger) {
             return AnalyzeApkImportFile(path, profiles);
         },
         [&](bool directory) { return view->PickPath(directory); },
-        [] { return hal::Clock::UtcTimestamp(); }});
+        [] { return hal::Clock::UtcTimestamp(); },
+        [&] { view->Minimize(); },
+        [] {
+            std::map<std::string, std::string> facts;
+            facts["OGPlay 版本"] = OGPLAY_VERSION;
+            const auto root = HostBundledDataPaths().root;
+            for (const auto& [key, path] : std::array<std::pair<const char*, const char*>, 3>{{
+                {"Web UI 构建清单", "webui/gui/manifest.json"},
+                {"Android / BootDex / guest JNI 制品清单", "android/19/manifest.json"},
+                {"Web UI 第三方许可", "webui/gui/THIRD-PARTY-LICENSES.txt"}}}) {
+                std::error_code error;
+                const auto size = std::filesystem::file_size(root / path, error);
+                if (error || size > 65536) { facts[key] = "文件不可用或超过读取上限"; continue; }
+                std::ifstream file(root / path, std::ios::binary);
+                std::string text(static_cast<std::size_t>(size), '\0');
+                file.read(text.data(), static_cast<std::streamsize>(size));
+                facts[key] = file ? text : "读取失败";
+            }
+            return facts;
+        }});
     view = hal::CreateWebViewHost({
         HostBundledDataPaths().root / "webui/gui/index.html", options.smoke_frames,
         options.library_root / "gui-smoke.png"}, {

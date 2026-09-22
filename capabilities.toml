@@ -287,8 +287,8 @@ note = "M5 WU-0302 让 run-apk 将一个显式宿主数据目录精确挂到匹�
 
 [frontend.gui_shell]
 status = "complete"
-test = "frontend.gui_options; frontend.gui_smoke; frontend.gui_library_smoke; frontend.gui_webui_manifest; tests/frontend/gui_rpc_tests.cpp; webui/apps/gui/rpc.test.ts; webui/apps/gui/library.test.ts; webui/apps/gui/import.test.ts"
-note = "GUI-1 将 Windows ImGui 替换为系统 WebView2 + Preact：library.list/launch/open_dir 复用模型与 JsonRpcAdapter，closed schema、导航限制、CSP、结构化错误与 100ms 进程回收；静态 Web UI manifest 经哈希校验。GUI-2/3 接入库视图与单体 APK 异步导入向导、原生文件/目录选择及有界拖放上传；分包格式明确拒绝，设置/Dashboard 待后续阶段；Linux 暂缓，macOS WebView 宿主未接入"
+test = "frontend.gui_options; frontend.gui_smoke; frontend.gui_library_smoke; frontend.gui_webui_manifest; tests/frontend/gui_rpc_tests.cpp; webui/apps/gui/rpc.test.ts; webui/apps/gui/library.test.ts; webui/apps/gui/import.test.ts; webui/apps/gui/settings.test.ts"
+note = "GUI-1 将 Windows ImGui 替换为系统 WebView2 + Preact：library.list/launch/open_dir 复用模型与 JsonRpcAdapter，closed schema、导航限制、CSP、结构化错误与 100ms 进程回收；静态 Web UI manifest 经哈希校验。GUI-2/3 接入库视图与单体 APK 异步导入向导、原生文件/目录选择及有界拖放上传；分包格式明确拒绝。GUI-4 接入十组全局设置、schema 2 升级、保存冲突/目录校验与主题/密度；仅超采样、解释器和 MCP 端口转发已有 CLI，预留项只保存。Dashboard 待后续阶段；Linux 暂缓，macOS WebView 宿主未接入"
 
 [frontend.gui_library]
 status = "complete"

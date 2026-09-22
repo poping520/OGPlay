@@ -90,6 +90,8 @@ LaunchPlan BuildLaunchPlan(const std::filesystem::path& cli_executable,
     const auto manual = std::get<bool>(EffectiveGameSetting(settings, global, entry, "mcp_manual_step"));
     if (manual && !mcp && mode != GuiLaunchMode::preflight) throw std::invalid_argument("MCP 手动步进需要启用 MCP。");
     if (mcp && mode != GuiLaunchMode::preflight) {
+        plan.mcp_port = static_cast<std::uint16_t>(std::get<std::uint32_t>(GuiSetting(config, "mcp_port")));
+        plan.dashboard_auto_open = std::get<bool>(GuiSetting(config, "dashboard_auto_open"));
         plan.argv.push_back("--mcp-port");
         plan.argv.push_back(std::to_string(std::get<std::uint32_t>(GuiSetting(config, "mcp_port"))));
     }

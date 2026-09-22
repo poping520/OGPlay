@@ -8,6 +8,7 @@
 #include <wrl.h>
 #include <WebView2.h>
 #include <iterator>
+#include <map>
 #include <stdexcept>
 #include <utility>
 #include "ogplay/core/json.h"
@@ -35,6 +36,7 @@ public:
     ~NativeWebView() {
         if (active_ == this) active_ = nullptr;
         if (timer_) KillTimer(nullptr, timer_);
+        dashboards_.clear();
         if (view_) webview_destroy(view_);
     }
 
@@ -93,6 +95,45 @@ public:
         const auto window = static_cast<HWND>(webview_get_native_handle(view_, WEBVIEW_NATIVE_HANDLE_KIND_UI_WINDOW));
         ShowWindow(window, SW_MINIMIZE);
     }
+    void OpenDashboard(std::string_view instance, std::uint16_t port) override {
+        if (!port || instance.empty()) throw std::invalid_argument("Dashboard instance and port are required");
+        if (window_operation_) throw std::runtime_error("Dashboard window operation is already in progress");
+        const auto previous = window_operation_; window_operation_ = true;
+        struct Reset { bool& flag; bool previous; ~Reset() { flag = previous; } } reset{window_operation_, previous};
+        auto found = dashboards_.find(std::string(instance));
+        if (found != dashboards_.end()) {
+            const auto window = static_cast<HWND>(webview_get_native_handle(found->second.get(), WEBVIEW_NATIVE_HANDLE_KIND_UI_WINDOW));
+            if (window && IsWindow(window)) { ShowWindow(window, SW_RESTORE); SetForegroundWindow(window); return; }
+            dashboards_.erase(found);
+        }
+        const auto url = "http://127.0.0.1:" + std::to_string(port) + "/dash/";
+        DashboardWindow child(webview_create(0, nullptr));
+        if (!child) throw std::runtime_error("Cannot create Dashboard WebView2 window");
+        CheckWeb(webview_set_title(child.get(), ("OGPlay Dashboard · " + std::string(instance)).c_str()));
+        CheckWeb(webview_set_size(child.get(), 960, 640, WEBVIEW_HINT_MIN));
+        CheckWeb(webview_set_size(child.get(), 1280, 800, WEBVIEW_HINT_NONE));
+        auto* controller = static_cast<ICoreWebView2Controller*>(webview_get_native_handle(child.get(), WEBVIEW_NATIVE_HANDLE_KIND_BROWSER_CONTROLLER));
+        if (!controller) throw std::runtime_error("Dashboard WebView2 controller unavailable");
+        Microsoft::WRL::ComPtr<ICoreWebView2> browser; Check(controller->get_CoreWebView2(&browser));
+        const std::wstring allowed(url.begin(), url.end());
+        EventRegistrationToken token{};
+        Check(browser->add_NavigationStarting(Microsoft::WRL::Callback<ICoreWebView2NavigationStartingEventHandler>(
+            [allowed](ICoreWebView2*, ICoreWebView2NavigationStartingEventArgs* args) -> HRESULT {
+                LPWSTR target{}; const auto result = args->get_Uri(&target);
+                const bool permitted = SUCCEEDED(result) && target && allowed == target;
+                CoTaskMemFree(target); return args->put_Cancel(permitted ? FALSE : TRUE);
+            }).Get(), &token));
+        Check(browser->add_NewWindowRequested(Microsoft::WRL::Callback<ICoreWebView2NewWindowRequestedEventHandler>(
+            [](ICoreWebView2*, ICoreWebView2NewWindowRequestedEventArgs* args) -> HRESULT { return args->put_Handled(TRUE); }).Get(), &token));
+        // No webview_bind: runtime content cannot invoke launcher operations.
+        CheckWeb(webview_navigate(child.get(), url.c_str()));
+        dashboards_.emplace(instance, std::move(child));
+    }
+    void CloseDashboard(std::string_view instance) override {
+        const auto previous = window_operation_; window_operation_ = true;
+        struct Reset { bool& flag; bool previous; ~Reset() { flag = previous; } } reset{window_operation_, previous};
+        dashboards_.erase(std::string(instance));
+    }
     std::future<std::optional<std::filesystem::path>> PickPath(bool directory) override {
         const auto owner = static_cast<HWND>(webview_get_native_handle(view_, WEBVIEW_NATIVE_HANDLE_KIND_UI_WINDOW));
         // A separate STA keeps modal Shell UI out of the WebView message callback.
@@ -145,7 +186,14 @@ private:
     static void CALLBACK Tick(HWND, UINT, UINT_PTR, DWORD) noexcept {
         if (!active_) return;
         auto& self = *active_;
+        if (self.polling_ || self.window_operation_) return;
+        self.polling_ = true;
+        struct Reset { bool& flag; ~Reset() { flag = false; } } reset{self.polling_};
         try {
+            const auto main_window = static_cast<HWND>(webview_get_native_handle(self.view_, WEBVIEW_NATIVE_HANDLE_KIND_UI_WINDOW));
+            if (!main_window || !IsWindow(main_window)) {
+                self.dashboards_.clear(); static_cast<void>(webview_terminate(self.view_)); return;
+            }
             self.callbacks_.poll();
             if (self.options_.smoke_responses && self.lists_ >= *self.options_.smoke_responses && !self.smoke_capture_requested_)
                 self.CaptureSmoke();
@@ -171,6 +219,9 @@ private:
                     return S_OK;
                 }).Get()));
     }
+    struct DashboardDeleter { void operator()(void* window) const { if (window) webview_destroy(window); } };
+    using DashboardWindow = std::unique_ptr<void, DashboardDeleter>;
+    std::map<std::string, DashboardWindow> dashboards_;
     inline static NativeWebView* active_{};
     WebViewHostOptions options_;
     WebViewHostCallbacks callbacks_;
@@ -178,6 +229,8 @@ private:
     webview_t view_{};
     UINT_PTR timer_{};
     std::uint64_t lists_{};
+    bool window_operation_{};
+    bool polling_{};
     bool smoke_capture_requested_{};
     bool smoke_capture_complete_{};
 };

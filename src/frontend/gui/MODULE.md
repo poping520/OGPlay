@@ -35,7 +35,13 @@ Windows 系统 WebView2 启动器与独立游戏库模型。GUI 只管理宿主�
 - `BuildLibraryTiles` / `BuildLibraryDetail` / `LibrarySelection`：统一状态、详情和稳定选择模型。
 - `AnalyzeApkImport` / `BuildLibraryImport`：只读 APK 分析、Profile 匹配和原子入库请求。
 - `LauncherSandboxRoot` / `BuildLaunchPlan`：唯一 run-apk argv 与 spawn 前宿主输入验证。
-- `GuiProcessManager`：SDL3 子进程启动、单实例约束、非阻塞回收；析构只解除跟踪，不杀游戏。
+- `GuiProcessManager`：SDL3 子进程启动、单实例/端口约束、非阻塞回收；析构只解除跟踪，不杀游戏。
+- `dashboard.list {}` / `dashboard.open {installation_id}`：仅查询/打开当前启动器跟踪的子进程，
+  不接受前端 URL/端口。每实例记录 PID、MCP 端口和 disabled/starting/ready/unavailable。
+  后台探测只读空 section 快照（750ms/8KiB 上限，完成后间隔 1s），核对 schema 与宿主 PID；
+  只有 ready 能打开。固定端口冲突在 spawn 前失败；未启用 MCP 或预检没有 Dashboard。
+  dashboard_auto_open 只在首次就绪执行一次；子进程退出后移除入口并关闭对应窗口。
+  同实例复用窗口，关闭后可重开；启动器退出关闭监控窗口，保留游戏进程。
 - `ValidateGuiConfigDirectories`：配置目录验证；全局设置保存前执行，删除 UI 待后续接回。
 - 原 CJK 字体选择、事件等待与消息队列模型保留用于既有调用/测试，不再驱动 WebView 渲染。
 
@@ -47,8 +53,9 @@ Windows 系统 WebView2 启动器与独立游戏库模型。GUI 只管理宿主�
   缺数据包 > 运行中 > ready。缺 Profile 为可启动通用 APK 提示，不是兼容性等级。
 - Profile/required-external 事实来自 session 摘要；catalog 失效必须显示 unavailable。
   不得把空 required-external 集合当成 ready；默认 Profile 与 quirk 来自同一 bundled payload。
-- GUI 只加载 bundled `webui/gui/index.html`；WebView2 仅允许该入口导航，禁止新窗口。
+- 启动器主窗口只加载 bundled `webui/gui/index.html`；WebView2 仅允许该入口导航，禁止新窗口。
   静态 CSP 禁止网络、框架、对象、表单和 base 重定向；只绑定 `rpc(string)`，不启用 HTTP 服务。
+  Dashboard 独立窗口只允许宿主选择的 loopback `/dash/`，无启动器 RPC，禁止弹窗。
 - Node 仅用于构建；默认 CMake 不联网，SDK 需显式准备。GUI 构建校验 manifest 文件 SHA-256，
   缺失/不匹配明确失败；运行时找不到 Web UI 明确失败，不退回旧界面。
 - 模型/RPC 层不 include SDL/WebView，不直接调用窗口或进程 API。

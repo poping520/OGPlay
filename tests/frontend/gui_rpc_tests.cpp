@@ -17,6 +17,8 @@ struct Fixture {
     frontend::LibraryStore store{root};
     frontend::LibraryViewContext context;
     unsigned launches{}, opens{}, reads{}, minimized{};
+    std::vector<frontend::GuiDashboard> dashboards;
+    std::string opened_dashboard;
     bool fail_launch{};
     std::optional<frontend::LaunchPlan> plan;
     std::filesystem::path opened;
@@ -34,7 +36,9 @@ struct Fixture {
         },
         [](bool) { return std::async(std::launch::deferred, []() -> std::optional<std::filesystem::path> { return std::nullopt; }); },
         [] { return std::string("2026-09-22T00:00:00Z"); },
-        [this] { ++minimized; }}};
+        [this] { ++minimized; }, {}, {},
+        [this] { return dashboards; },
+        [this](std::string_view id) { opened_dashboard = id; }}};
     Fixture() {
         std::filesystem::create_directories(root);
         std::ofstream(root / "ogplay.exe") << "fixture";
@@ -334,4 +338,21 @@ TEST_CASE("GUI import invalid external directory preserves ready analysis for re
     CHECK(Decode(ImportCall(fixture, "library.import", R"({"job":"1","new_instance":true,"external_dir":"missing-directory-fixture"})")).Root().Member("error"));
     CHECK(Decode(PollImport(fixture)).Root().Member("result")->Member("state")->String() == "ready");
     REQUIRE(Decode(ImportCall(fixture, "library.job.cancel", R"({"job":"1"})")).Root().Member("result"));
+}
+
+TEST_CASE("GUI Dashboard RPC only opens tracked ready instances") {
+    Fixture fixture;
+    const auto open = [&] { return Decode(fixture.rpc.Handle(R"({"jsonrpc":"2.0","id":1,"method":"dashboard.open","params":{"installation_id":"game"}})")); };
+    CHECK(open().Root().Member("error").has_value());
+    fixture.dashboards.push_back({"game", 123, 15971, "starting", "waiting"});
+    CHECK(open().Root().Member("error").has_value());
+    fixture.dashboards[0].status = "ready";
+    CHECK(open().Root().Member("result").has_value());
+    CHECK(fixture.opened_dashboard == "game");
+    auto list = Decode(fixture.rpc.Handle(R"({"jsonrpc":"2.0","id":1,"method":"dashboard.list"})"));
+    CHECK(list.Root().Member("result")->Member("items")->Size() == 1);
+    CHECK(Decode(fixture.rpc.Handle(R"({"jsonrpc":"2.0","id":1,"method":"dashboard.open","params":{"installation_id":"game","url":"http://example.org"}})")).Root().Member("error").has_value());
+    fixture.dashboards.clear();
+    CHECK(open().Root().Member("error").has_value());
+    CHECK(fixture.reads == 0);
 }

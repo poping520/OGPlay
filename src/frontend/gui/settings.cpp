@@ -38,7 +38,7 @@ const std::vector<GuiSettingDefinition>& GuiSettings() {
         {"crash_dump_dir", "diagnostics", "崩溃转储目录", std::string(), {}, 0, 0, "预留 · 运行时未实现", true},
         {"mcp_enabled", "control", "启动时启用 MCP", false},
         {"mcp_port", "control", "MCP 端口", std::uint32_t(15971), {}, 1, 65535},
-        {"dashboard_auto_open", "control", "自动打开 Dashboard", false, {}, 0, 0, "预留 · Dashboard 联动尚未接入"},
+        {"dashboard_auto_open", "control", "自动打开 Dashboard（需启用 MCP）", false},
     };
     return fields;
 }

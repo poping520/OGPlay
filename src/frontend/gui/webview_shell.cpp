@@ -181,7 +181,9 @@ int RunGuiCommand(int argc, const char* const argv[], core::Logger& logger) {
                 }
             }
             return facts;
-        }});
+        },
+        [&] { return processes.Dashboards(); },
+        [&](std::string_view instance) { view->OpenDashboard(instance, processes.DashboardPort(instance)); }});
     view = hal::CreateWebViewHost({
         HostBundledDataPaths().root / "webui/gui/index.html", options.smoke_frames,
         options.library_root / "gui-smoke.png"}, {
@@ -200,12 +202,21 @@ int RunGuiCommand(int argc, const char* const argv[], core::Logger& logger) {
         },
         [&] {
             for (const auto& result : processes.Poll()) {
+                view->CloseDashboard(result.package);
                 core::JsonWriter writer;
                 const auto event = writer.Object();
                 writer.AddString(event, "installation_id", result.package);
                 writer.AddInteger(event, "exit_code", result.exit_code);
                 writer.AddString(event, "log_tail", result.exit_code == 0 ? "" : ReadLogTail(result.log_path));
                 view->Evaluate("window.dispatchEvent(new CustomEvent('ogplay-exit',{detail:" + writer.Serialize(event) + "}));");
+            }
+            for (const auto& instance : processes.TakeAutoOpen()) {
+                try { view->OpenDashboard(instance, processes.DashboardPort(instance)); }
+                catch (const std::exception& error) {
+                    logger.Write(core::LogLevel::error, "frontend.gui.dashboard", "automatic Dashboard open failed", {}, {{"reason", std::string(error.what())}});
+                    core::JsonWriter writer; const auto text = writer.String(error.what());
+                    view->Evaluate("window.dispatchEvent(new CustomEvent('ogplay-dashboard-error',{detail:" + writer.Serialize(text) + "}));");
+                }
             }
         }}, logger);
     return view->Run();

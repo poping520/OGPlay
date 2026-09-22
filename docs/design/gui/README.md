@@ -46,7 +46,7 @@ ImGui 是即时模式调试 UI：无原生文本渲染栅格/字距、无 CSS �
   `webui/` 下的 `packages/ui-kit`；不引入大型组件库（构建链约束见
   [ADR-0072](../../adr/development.md#adr-0072)）。产物打进 `data/webui/gui/`，
   由宿主以 `ogplay://` 自定义 scheme 或 `file://` 加载；**不启动本地 HTTP 服务**。
-- **Dashboard 入口**：游戏运行时 `run-apk` 带 `--mcp --mcp-port N`，宿主打开第二个 webview
+- **Dashboard 入口**：游戏运行时 `run-apk` 带 `--mcp-port N`（启用 MCP 时；与 `--mcp` 互斥），宿主打开第二个 webview
   窗口加载 `http://127.0.0.1:N/dash/`；两者共享主题与 ui-kit 但进程/来源隔离。
 
 ## 3. 信息架构

@@ -4,6 +4,7 @@
 #include <future>
 #include <memory>
 #include "ogplay/frontend/gui_import.h"
+#include "ogplay/frontend/gui_dashboard.h"
 #include "ogplay/agent/json_rpc.h"
 #include "ogplay/frontend/gui_launch.h"
 #include "ogplay/frontend/gui_view_model.h"
@@ -21,6 +22,8 @@ struct GuiRpcHost final {
     std::function<void()> minimize;
     std::function<std::map<std::string, std::string>()> settings_facts;
     std::function<std::map<std::string, std::string>(const LibraryEntry&, const GuiConfig&)> game_facts;
+    std::function<std::vector<GuiDashboard>()> dashboards;
+    std::function<void(std::string_view)> open_dashboard;
 };
 
 class GuiRpcService final {

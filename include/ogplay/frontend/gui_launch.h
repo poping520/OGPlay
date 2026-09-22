@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
 #include <filesystem>
 #include <optional>
 #include <string>
@@ -15,6 +16,8 @@ struct LaunchPlan final {
     std::string package;
     std::vector<std::string> argv;
     std::filesystem::path log_path;
+    std::optional<std::uint16_t> mcp_port;
+    bool dashboard_auto_open{};
 };
 enum class GuiLaunchMode { normal, preflight, diagnostic };
 

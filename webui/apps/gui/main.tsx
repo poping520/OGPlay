@@ -7,6 +7,7 @@ import { GameSettingsPage } from './game-settings-page';
 import { resolvedTheme, type Settings } from './settings';
 import { ImportWizard } from './import-wizard';
 import '../../packages/ui-kit/theme.css';
+interface DashboardInfo { installation_id: string; process_id: number; port: number | null; status: string; detail: string }
 
 function GameIcon({ item, glow = false }: { item: LibraryItem; glow?: boolean }) {
   const canvas = useRef<HTMLCanvasElement>(null);
@@ -45,6 +46,8 @@ function Modal({ title, onDismiss, children }: { title: string; onDismiss: () =>
 }
 function App() {
   const [library, setLibrary] = useState<Library>({ items: [], library_root: '' });
+  const [dashboards, setDashboards] = useState<DashboardInfo[]>([]);
+  const [dashboardListOpen, setDashboardListOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settings, setSettings] = useState<Settings | null>(null);
   const settingsRef = useRef<Settings | null>(null);
@@ -111,11 +114,24 @@ function App() {
     void rpc<Settings>('settings.get').then(value => { if (!disposed) applySettings(value); }).catch(report);
     const exited = (event: Event) => {
       const detail = (event as CustomEvent<{ installation_id: string; exit_code: number; log_tail: string }>).detail;
+      setDashboards(current => current.filter(instance => instance.installation_id !== detail.installation_id));
       if (detail.exit_code !== 0 && settingsRef.current?.values.show_exit_log !== false) report(`${detail.installation_id} 退出码 ${detail.exit_code}\n${detail.log_tail}`);
       void refresh().catch(report);
     };
+    let polling = false;
+    const poll = async () => {
+      if (polling || disposed) return;
+      polling = true;
+      try { const result = await rpc<{ items: DashboardInfo[] }>('dashboard.list'); if (!disposed) setDashboards(result.items); }
+      catch { /* Host errors are reported by explicit actions; retry on the next poll. */ }
+      finally { polling = false; }
+    };
+    void poll();
+    const timer = window.setInterval(() => void poll(), 1000);
+    const dashboardError = (event: Event) => report((event as CustomEvent<string>).detail);
+    window.addEventListener('ogplay-dashboard-error', dashboardError);
     window.addEventListener('ogplay-exit', exited);
-    return () => { disposed = true; ++generation.current; window.removeEventListener('ogplay-exit', exited); };
+    return () => { disposed = true; window.clearInterval(timer); window.removeEventListener('ogplay-dashboard-error', dashboardError); ++generation.current; window.removeEventListener('ogplay-exit', exited); };
   }, []);
   async function act(method: string, game: LibraryItem, kind?: string) {
     if (inFlight.current) return;
@@ -145,6 +161,7 @@ function App() {
     <nav class="navigation" aria-label="主导航">
       <div class="brand"><span>O</span><div><b>OGPlay</b><small>安卓经典游戏</small></div></div>
       <div class="nav-selected" aria-current="page"><span>▦</span> 游戏库 <span class="nav-count">{library.items.length}</span></div>
+      <button onClick={() => setDashboardListOpen(true)}>运行实例 · {dashboards.length}</button>
       <button class="settings-entry" disabled={busy || importing} onClick={() => setSettingsOpen(true)}>⚙ 设置</button>
       <div class="nav-bottom"><b>你的游戏，你的存档</b><small>关闭启动器后，游戏继续运行</small></div>
     </nav>
@@ -181,7 +198,8 @@ function App() {
         <div class="drawer-scroll"><div class="hero"><GameIcon item={item} /><div><h2>{item.display_name}</h2><p class="mono">{item.package || '包名不可用'}</p><small>{versionLabel(item)}</small></div></div>
           <div class="detail-status"><Status item={item} />{item.running && item.status !== 'running' && <span class="badge running">运行中</span>}</div>
           <button class="primary launch-button" disabled={busy || !item.can_launch} onClick={() => void act('library.launch', item)}>{item.running ? '游戏运行中' : '▶ 启动游戏'}</button><p class="condition-detail">{item.detail}</p>
-          <div class="detail-actions"><button disabled={busy || importing} onClick={() => setGameSettingsId(item.installation_id)}>游戏设置</button><button disabled title="运行监控暂未开放">Dashboard · 暂未开放</button><button disabled={busy} onClick={() => void act('library.open_dir', item, 'sandbox')}>打开沙盒目录</button><button disabled={busy} onClick={() => void act('library.open_dir', item, 'log')}>打开日志目录</button></div>
+          <div class="detail-actions"><button disabled={busy || importing} onClick={() => setGameSettingsId(item.installation_id)}>游戏设置</button><button disabled={busy || !dashboards.some(instance => instance.installation_id === item.installation_id && instance.status === 'ready')} title={dashboards.find(instance => instance.installation_id === item.installation_id)?.detail ?? '游戏尚未运行'} onClick={() => void act('dashboard.open', item)}>打开 Dashboard</button><button disabled={busy} onClick={() => void act('library.open_dir', item, 'sandbox')}>打开沙盒目录</button><button disabled={busy} onClick={() => void act('library.open_dir', item, 'log')}>打开日志目录</button></div>
+          <p class="condition-detail">Dashboard：{dashboards.find(instance => instance.installation_id === item.installation_id)?.detail ?? '游戏尚未运行'}</p>
           <h3>安装信息</h3><dl><dt>安装实例</dt><dd class="mono">{item.installation_id}</dd><dt>Profile</dt><dd>{item.profile.value}<small>{item.profile.detail}</small></dd><dt>数据包</dt><dd>{item.external.value}<small>{item.external.detail}</small></dd><dt>沙盒路径</dt><dd class="mono">{item.sandbox_path}</dd><dt>日志目录</dt><dd class="mono">{item.log_directory}</dd><dt>导入时间</dt><dd>{item.imported_at || '未记录'}</dd></dl>
         </div></aside>}
       </div><footer class="statusbar"><span title={library.library_root}>{library.library_root}</span><span>{library.items.filter(game => game.running).length} 个运行中</span></footer>
@@ -190,6 +208,14 @@ function App() {
     {importing && <ImportWizard defaultExternal={String(settings?.values.default_external_dir ?? '')} file={pendingFile} onClose={() => { setImporting(false); setPendingFile(null); }} onImported={async id => {
       setQuery(''); setFilter('all'); await refresh(); lastSelected.current = id; setSelected(id); setImporting(false); setPendingFile(null);
     }} />}
+    {dashboardListOpen && <Modal title="运行实例" onDismiss={() => setDashboardListOpen(false)}>
+      {dashboards.length === 0 ? <p>当前启动器没有运行中的游戏。</p> : dashboards.map(instance => <section key={instance.installation_id}>
+        <h3>{library.items.find(game => game.installation_id === instance.installation_id)?.display_name ?? instance.installation_id}</h3>
+        <p class="mono">PID {instance.process_id} · {instance.port ? `端口 ${instance.port}` : 'MCP 未启用'}</p>
+        <p>{instance.detail}</p>
+        <button disabled={instance.status !== 'ready'} onClick={() => void rpc('dashboard.open', { installation_id: instance.installation_id }).catch(report)}>打开 Dashboard</button>
+      </section>)}
+    </Modal>}
     {!importing && errors.length > 0 && <Modal title="操作提示" onDismiss={() => setErrors(queue => queue.slice(1))}><pre>{errors[0]}</pre></Modal>}
   </div>;
 }

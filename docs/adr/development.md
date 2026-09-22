@@ -192,7 +192,7 @@ checkout、CI 和依赖边界仍然暴露一个无需构建的源码依赖。完
 
 - 状态：Accepted
 - 日期：2026-09-21
-- 关联：[GUI v2 设计](../design/gui/README.md)、[运行时 Dashboard 设计](../design/dashboard/README.md)、
+- 关联：[GUI v2 设计](../design/gui/README.md)、[运行时 Dashboard 设计](../design/gui/dashboard.md)、
   [ADR-0007](#adr-0007)、[ADR-0026](diagnostics.md#adr-0026)
 
 ### 背景

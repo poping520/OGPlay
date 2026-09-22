@@ -1,7 +1,7 @@
 # OGPlay 运行时 Dashboard 设计
 
-状态：Proposal（未实施）。效果图见 [`mockup.png`](mockup.png)，静态原型见
-[`mockup.html`](mockup.html)（纯 HTML/CSS，浏览器直接打开）。
+状态：Proposal（未实施）。效果图见 [`dashboard.png`](dashboard.png)，静态原型见
+[`dashboard.html`](dashboard.html)（纯 HTML/CSS，浏览器直接打开）。
 
 ## 1. 目标与非目标
 

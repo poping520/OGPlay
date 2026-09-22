@@ -2,8 +2,8 @@
 
 状态：Proposal（未实施）。本设计**推翻**现有 ImGui 视图层，但复用 `frontend/gui` 中已与 ImGui/SDL
 解耦的模型层。效果图：[`library.png`](library.png)、[`game-settings.png`](game-settings.png)、
-[`settings.png`](settings.png)；可交互原型：[`prototype.html`](prototype.html)（浏览器直接打开，
-左侧导航 / 「游戏设置」按钮可切换视图）。姊妹设计：[运行时 Dashboard](../dashboard/README.md)。
+[`settings.png`](settings.png)；可交互原型：[`library.html`](library.html)（浏览器直接打开，
+左侧导航 / 「游戏设置」按钮可切换视图）。姊妹设计：[运行时 Dashboard](dashboard.md)。
 
 ## 1. 目标与边界
 

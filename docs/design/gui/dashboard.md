@@ -89,7 +89,7 @@ underrun、堆越过 target）/ 未实现命中 / 未装配（如 FFmpeg 不可�
   不改造 transport 为 SSE/WebSocket；停滞时轮询照常，section 显示 `unavailable`。
 
 Node 工具链已由 [ADR-0072](../../adr/development.md#adr-0072) 接受：前端源码位于
-`tools/webui/apps/dashboard`，产物 `data/webui/dashboard/` 为不入库的生成制品，由 `run-apk`
+`webui/apps/dashboard`，产物 `data/webui/dashboard/` 为不入库的生成制品，由 `run-apk`
 的 `/dash/*` 静态路由交付。候选 C 不再作为回退方案。
 
 ## 5. 接口草案（`agent` 侧）

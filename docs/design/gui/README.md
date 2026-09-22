@@ -1,6 +1,6 @@
 # OGPlay 主界面 + 设置页 设计（GUI v2）
 
-状态：Proposal（未实施）。本设计**推翻**现有 ImGui 视图层，但复用 `frontend/gui` 中已与 ImGui/SDL
+状态：实施中，首阶段见 [GUI-V2-01](../../tasks/launcher/GUI-V2-01.md)。Windows 优先，Linux 暂缓。本设计**推翻**现有 ImGui 视图层，但复用 `frontend/gui` 中已与 ImGui/SDL
 解耦的模型层。效果图：[`library.png`](library.png)、[`game-settings.png`](game-settings.png)、
 [`settings.png`](settings.png)；可交互原型：[`library.html`](library.html)（浏览器直接打开，
 左侧导航 / 「游戏设置」按钮可切换视图）。姊妹设计：[运行时 Dashboard](dashboard.md)。
@@ -43,7 +43,7 @@ ImGui 是即时模式调试 UI：无原生文本渲染栅格/字距、无 CSS �
 - **文件对话框**：Windows `IFileDialog`、macOS `NSOpenPanel`、Linux `xdg-desktop-portal`
   （或保留 SDL3 `SDL_ShowOpenFileDialog` 无窗口模式，避免新依赖——实施时二选一）。
 - **前端**：Vite + TypeScript + Preact + 自有 CSS 变量主题（原型即此风格），与 Dashboard 共享
-  `tools/webui/` 下的 `packages/ui-kit`；不引入大型组件库（构建链约束见
+  `webui/` 下的 `packages/ui-kit`；不引入大型组件库（构建链约束见
   [ADR-0072](../../adr/development.md#adr-0072)）。产物打进 `data/webui/gui/`，
   由宿主以 `ogplay://` 自定义 scheme 或 `file://` 加载；**不启动本地 HTTP 服务**。
 - **Dashboard 入口**：游戏运行时 `run-apk` 带 `--mcp --mcp-port N`，宿主打开第二个 webview
@@ -155,7 +155,7 @@ C++ 模型层，前端只渲染事实；错误返回结构化 `{code, message, n
 ## 6. 需要的决策 / ADR
 
 - ~~Node 前端构建链~~ → 已接受，见 [ADR-0072](../../adr/development.md#adr-0072)：
-  工作区 `tools/webui/`，产物 `data/webui/` 为不入库的生成制品，由 `webui` 目标与 CI 构建。
+  工作区 `webui/`，产物 `data/webui/` 为不入库的生成制品，由 `webui` 目标与 CI 构建。
 - Linux 的 WebKitGTK 运行时依赖是否可接受；否则 Linux 先只发 CLI。
 - 文件对话框：保留 SDL3 无窗口对话框 vs 平台原生 API。
 - 虚拟设备字段进入运行时的路径（Profile 同构 TOML vs 独立 `--device` 参数），属运行时能力范围，

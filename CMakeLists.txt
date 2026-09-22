@@ -622,39 +622,20 @@ add_library(ogplay_frontend
     src/frontend/run_apk_progress.cpp
     src/frontend/gui/import.cpp
     src/frontend/gui/launch.cpp
+    src/frontend/gui/rpc.cpp
     src/frontend/gui/model.cpp
     src/frontend/gui/view_model.cpp
     src/frontend/gui/visuals.cpp
     src/frontend/user_data_dir.cpp
 )
-if(OGPLAY_ENABLE_SDL3 AND OGPLAY_ENABLE_ANGLE)
-    add_library(ogplay_imgui STATIC
-        third_party/imgui/imgui.cpp
-        third_party/imgui/imgui_draw.cpp
-        third_party/imgui/imgui_tables.cpp
-        third_party/imgui/imgui_widgets.cpp
-        third_party/imgui/backends/imgui_impl_sdl3.cpp
-        third_party/imgui/backends/imgui_impl_opengl3.cpp
-    )
-    target_include_directories(ogplay_imgui SYSTEM PUBLIC
-        ${CMAKE_CURRENT_SOURCE_DIR}/third_party/imgui)
-    target_compile_definitions(ogplay_imgui PRIVATE IMGUI_IMPL_OPENGL_ES2)
-    target_link_libraries(ogplay_imgui PUBLIC SDL3::SDL3 ANGLE::GLESv2)
-    if(MSVC)
-        target_compile_options(ogplay_imgui PRIVATE /w)
-    else()
-        target_compile_options(ogplay_imgui PRIVATE -w)
-    endif()
-
+include(cmake/WebUi.cmake)
+if(OGPLAY_ENABLE_SDL3 AND WIN32)
     target_sources(ogplay_frontend PRIVATE
-        src/frontend/gui/import_ui.cpp
-        src/frontend/gui/management_ui.cpp
         src/frontend/gui/process_manager.cpp
-        src/frontend/gui/settings_ui.cpp
-        src/frontend/gui/shell.cpp
-        src/frontend/gui/ui_button.cpp)
-    target_link_libraries(ogplay_frontend PRIVATE ogplay_imgui ANGLE::EGL ANGLE::GLESv2)
+        src/frontend/gui/webview_shell.cpp)
+    target_link_libraries(ogplay_frontend PRIVATE SDL3::SDL3)
     target_compile_definitions(ogplay_frontend PUBLIC OGPLAY_HAS_GUI=1)
+    add_dependencies(ogplay_frontend ogplay_check_webui)
 else()
     target_compile_definitions(ogplay_frontend PUBLIC OGPLAY_HAS_GUI=0)
 endif()
@@ -714,10 +695,19 @@ add_custom_target(ogplay_stage_data ALL
     COMMENT "Staging OGPlay runtime data"
     VERBATIM)
 
-if(OGPLAY_ENABLE_SDL3 AND OGPLAY_ENABLE_ANGLE)
+if(OGPLAY_ENABLE_SDL3 AND WIN32)
     add_executable(ogplay-gui WIN32 MACOSX_BUNDLE src/frontend/gui/main.cpp)
     target_link_libraries(ogplay-gui PRIVATE OGPlay::Frontend SDL3::SDL3)
     add_dependencies(ogplay-gui ogplay_stage_data)
+    add_custom_target(ogplay_stage_webui
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+            "${CMAKE_CURRENT_SOURCE_DIR}/data/webui/gui"
+            "$<TARGET_FILE_DIR:ogplay>/data/webui/gui")
+    add_dependencies(ogplay_stage_webui ogplay_check_webui)
+    add_dependencies(ogplay ogplay_stage_webui)
+    install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/data/webui/gui" DESTINATION data/webui)
+    install(FILES "${OGPLAY_WEBVIEW2_SDK}/LICENSE.txt"
+        DESTINATION data/webui/gui RENAME WEBVIEW2-SDK-LICENSE.txt)
     set_target_properties(ogplay-gui PROPERTIES
         MACOSX_BUNDLE_BUNDLE_NAME "OGPlay"
         MACOSX_BUNDLE_GUI_IDENTIFIER "org.ogplay.launcher")
@@ -772,6 +762,7 @@ if(OGPLAY_BUILD_TESTS)
         tests/frontend/data_directory_tests.cpp
         tests/frontend/gui_import_tests.cpp
         tests/frontend/gui_launch_tests.cpp
+        tests/frontend/gui_rpc_tests.cpp
         tests/frontend/gui_model_tests.cpp
         tests/frontend/gui_view_model_tests.cpp
         tests/frontend/gui_visuals_tests.cpp
@@ -1029,7 +1020,11 @@ if(OGPLAY_BUILD_TESTS)
     )
     set_tests_properties(frontend.run_apk_options PROPERTIES LABELS "unit;frontend")
 
-    if(OGPLAY_ENABLE_SDL3 AND OGPLAY_ENABLE_ANGLE)
+    if(OGPLAY_ENABLE_SDL3 AND WIN32)
+        add_test(
+            NAME frontend.gui_webui_manifest
+            COMMAND ${CMAKE_COMMAND} -DWEBUI_ROOT=${CMAKE_CURRENT_SOURCE_DIR}/data/webui/gui
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/CheckWebUi.cmake)
         add_test(
             NAME frontend.gui_options
             COMMAND ${CMAKE_COMMAND}

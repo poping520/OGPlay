@@ -36,6 +36,7 @@ public:
                        const std::array<std::uint32_t, 4>& arguments,
                        bool gpu);
 
+    [[nodiscard]] std::optional<core::GpuStats> TryStats() const;
     [[nodiscard]] core::GpuStats Stats() const;
     [[nodiscard]] std::vector<core::GpuRenderTarget> RenderTargets() const;
     [[nodiscard]] std::vector<core::GpuTraceEntry> Trace(

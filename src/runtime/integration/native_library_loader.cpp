@@ -273,6 +273,25 @@ public:
             class_loader);
     }
 
+    std::optional<NativeLibrarySnapshot> TrySnapshot() const {
+        std::unique_lock lock(mutex_, std::try_to_lock);
+        if (!lock.owns_lock()) return std::nullopt;
+        NativeLibrarySnapshot result; result.total = records_.size();
+        for (const auto& [path, entry] : records_) {
+            static_cast<void>(path);
+            if (result.records.size() == 128) break;
+            const auto bounded = [](const std::string& text) {
+                auto length = std::min<std::size_t>(text.size(), 512);
+                while (length < text.size() && length && (static_cast<unsigned char>(text[length]) & 0xc0) == 0x80) --length;
+                return text.substr(0, length);
+            };
+            const auto& record = entry.record;
+            result.records.push_back({record.handle, bounded(record.canonical_path), bounded(record.soname),
+                record.class_loader, record.state, record.module_index, record.jni_version,
+                record.jni_on_load_calls, bounded(record.failure)});
+        }
+        return result;
+    }
     std::vector<NativeLibraryRecord> Records() const {
         std::scoped_lock lock(mutex_);
         std::vector<NativeLibraryRecord> result;
@@ -614,3 +633,7 @@ std::string NativeLibraryLoader::SyntheticGuestPath(
 }
 
 }  // namespace ogplay::runtime
+
+namespace ogplay::runtime {
+std::optional<NativeLibrarySnapshot> NativeLibraryLoader::TrySnapshot() const { return impl_->TrySnapshot(); }
+}

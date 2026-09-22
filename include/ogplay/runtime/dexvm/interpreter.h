@@ -235,10 +235,16 @@ struct InterpreterStats final {
     std::uint64_t native_calls{};
     std::uint64_t classes_initialized{};
     std::uint64_t gc_collections{};
+    std::uint64_t gc_pause_ns{};
     std::uint64_t gc_freed_bytes{};
     std::uint64_t gc_peak_allocated_bytes{};
     std::uint64_t gc_pause_ticks{};
     std::uint64_t gc_host_destructors_run{};
+};
+
+struct InterpreterSnapshot final {
+    InterpreterStats stats;
+    std::uint64_t heap_used{}, heap_target{}, heap_growth_limit{}, heap_maximum{}, objects{}, classes{}, linked_classes{};
 };
 
 using VmRootVisitor = std::function<void(VmObjectRef)>;
@@ -355,6 +361,7 @@ public:
     [[nodiscard]] UnsafeRuntime& Unsafe() noexcept;
     [[nodiscard]] AnnotationRuntime& Annotations() noexcept;
     [[nodiscard]] const InterpreterStats& Stats() const noexcept;
+    [[nodiscard]] std::optional<InterpreterSnapshot> TrySnapshot() const;
 
     // DVM-52 diagnostics. Filtering and descriptor formatting happen only
     // at query time; StackSnapshot uses the execution lock as a safe point.

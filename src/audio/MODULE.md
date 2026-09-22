@@ -91,3 +91,5 @@
 ## 测试
 
 `tests/audio/` 的 ABI、状态机和无设备离线混音测试。
+
+`OpenSlesPcmMixer::TrySnapshot(player)` 使用 try-lock，仅复制已有 player 标量统计；竞争或 player 不存在返回 nullopt，不触发混音、消费或回调。

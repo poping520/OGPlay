@@ -173,3 +173,11 @@ std::optional<std::vector<core::GpuTraceEntry>> FrameService::TryTrace(
 }
 
 }  // namespace ogplay::runtime
+
+namespace ogplay::runtime {
+std::optional<core::GpuStats> FrameService::TryStats() const {
+    std::unique_lock lock(mutex_, std::try_to_lock);
+    if (!lock.owns_lock()) return std::nullopt;
+    return core::GpuStats{gpu_stats_.draws, gpu_stats_.clears, gpu_stats_.shader_compiles, gpu_stats_.program_links, gpu_stats_.gl_errors, {}};
+}
+}

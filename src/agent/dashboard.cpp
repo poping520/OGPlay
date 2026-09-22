@@ -15,7 +15,7 @@ using Writer = core::JsonWriter;
 using Value = Writer::Value;
 using Snapshot = runtime::debug::GuestStallSnapshot;
 using Status = runtime::debug::DiagnosticSectionStatus;
-constexpr std::array<std::string_view, 7> sections{"session", "diagnostics", "gpu", "vfs", "audio", "capabilities", "log"};
+constexpr std::array<std::string_view, 14> sections{"session", "diagnostics", "gpu", "vfs", "audio", "capabilities", "log", "dexvm", "jni", "memory", "cpu", "libraries", "ui", "video"};
 constexpr std::array<std::string_view, 9> kinds{"gc", "gles_error", "syscall", "native", "dexvm", "capability_miss", "audio_underrun", "lifecycle", "vfs_flush"};
 std::string Text(std::string_view text) {
     if (!core::IsValidUtf8(text)) return "<invalid_utf8>";
@@ -97,6 +97,7 @@ void DashboardService::CollectEvents(const Snapshot& snapshot) {
     const auto syscall_cursor = syscall_cursor_, native_cursor = native_cursor_, dexvm_cursor = dexvm_cursor_;
     for (const auto& event : snapshot.syscalls) if (event.sequence > syscall_cursor) {
         fresh.push_back({0, event.sequence, "syscall", event.steady_ns, event.guest_tid, {}, {}, event.syscall_nr, event.result, {}});
+        fresh.back().fd = event.fd; fresh.back().node_id = event.node_id;
         syscall_cursor_ = std::max(syscall_cursor_, event.sequence);
     }
     for (const auto& event : snapshot.native_calls) if (event.sequence > native_cursor) {
@@ -119,6 +120,37 @@ void DashboardService::CollectEvents(const Snapshot& snapshot) {
         if (events_.size() == capacity_) { events_.pop_front(); ++dropped_; }
         events_.push_back(std::move(event));
     }
+}
+void DashboardService::Observe(std::string_view kind, std::string key, std::uint64_t total, std::string capability, std::optional<std::uint64_t> player) {
+    key = std::string(kind) + ":" + key;
+    const auto found = counters_.find(key);
+    const auto previous = found == counters_.end() ? 0 : found->second;
+    if (found == counters_.end() && counters_.size() == 4096) counters_.erase(counters_.begin());
+    counters_[key] = total;
+    if (total == previous || total == 0) return;
+    Event event; event.sequence = ++sequence_; event.source_sequence = total; event.kind = kind;
+    event.capability = Text(capability); event.player = player; event.observed_at = hal::Clock::SteadyTimestampNs();
+    event.delta = total >= previous ? total - previous : total;
+    if (events_.size() == capacity_) { events_.pop_front(); ++dropped_; }
+    events_.push_back(std::move(event));
+}
+void DashboardService::CollectCounters() {
+    const auto collect = [&](const char* name, auto provider, auto consume) {
+        if (!provider) { counter_status_[name] = "not_connected"; return; }
+        try { if (auto value = provider()) { consume(*value); counter_status_[name] = "complete"; }
+              else counter_status_[name] = "busy"; }
+        catch (const std::exception&) { counter_status_[name] = "provider_error"; }
+    };
+    collect("gc", sources_.dexvm, [&](const auto& s) { Observe("gc", "", s.stats.gc_collections); });
+    collect("gles_error", sources_.gpu_errors_available ? sources_.gpu : decltype(sources_.gpu){}, [&](const auto& s) { Observe("gles_error", "", s.gl_errors); });
+    collect("audio_underrun", sources_.audio, [&](const auto& rows) {
+        std::size_t count{}; for (const auto& row : rows) { if (count++ == 128) break;
+            Observe("audio_underrun", std::to_string(row.player), row.underrun_count, {}, row.player); }
+    });
+    collect("vfs_flush", sources_.filesystem, [&](const auto& s) { Observe("vfs_flush", "", s.flushes); });
+    std::function<std::optional<std::vector<core::UnimplementedHit>>()> hits;
+    if (sources_.ledger) hits = [&] { return sources_.ledger->TryUnimplemented(128); };
+    collect("capability_miss", hits, [&](const auto& rows) { for (const auto& row : rows) Observe("capability_miss", Text(row.id), row.count, row.id); });
 }
 ControlResponse DashboardService::Request(std::string_view method, core::JsonValue params) {
     try {
@@ -144,11 +176,15 @@ ControlResponse DashboardService::Request(std::string_view method, core::JsonVal
             CollectEvents(*diagnostic);
             if (!thread) Bound(*diagnostic);
         }
+        if (events) CollectCounters();
         Writer writer; const auto root = writer.Object(), result = writer.Object();
         writer.AddUnsignedInteger(result, "schema_version", 1);
         writer.AddUnsignedInteger(result, "stream_id", stream_id_);
         writer.AddUnsignedInteger(result, "process_id", hal::HostProcessId());
         writer.AddUnsignedInteger(result, "captured_at_steady_ns", now);
+        const auto metadata = writer.Object(); std::size_t metadata_count{};
+        for (const auto& [key, value] : sources_.metadata) { if (metadata_count++ == 16) break; writer.AddString(metadata, Text(key), Text(value)); }
+        writer.Add(result, "metadata", metadata);
         const auto section = [&](std::string_view name, std::string_view status, std::uint64_t generation, std::string_view reason, Value data) {
             const auto value = writer.Object(); writer.AddString(value, "status", status);
             writer.AddUnsignedInteger(value, "captured_at_steady_ns", now); writer.AddUnsignedInteger(value, "generation", generation);
@@ -165,8 +201,15 @@ ControlResponse DashboardService::Request(std::string_view method, core::JsonVal
                 writer.AddUnsignedInteger(value, "sequence", event.sequence); writer.AddUnsignedInteger(value, "source_sequence", event.source_sequence);
                 writer.AddString(value, "kind", event.kind); Optional(writer, value, "steady_ns", event.steady_ns);
                 Optional(writer, value, "frame", event.frame); Optional(writer, value, "guest_tid", event.guest_tid); Optional(writer, value, "context_token", event.context_token);
-                if (event.kind == "syscall") {
+                if (event.observed_at) {
+                    writer.AddUnsignedInteger(value, "observed_at_steady_ns", *event.observed_at);
+                    writer.AddUnsignedInteger(value, "delta", event.delta); writer.AddBool(value, "observed_only", true);
+                    if (!event.capability.empty()) writer.AddString(value, "capability", event.capability);
+                    Optional(writer, value, "player", event.player);
+                } else if (event.kind == "syscall") {
                     writer.AddUnsignedInteger(value, "syscall_nr", event.code); writer.AddInteger(value, "result", event.result);
+                    if (event.fd) writer.AddInteger(value, "fd", *event.fd); else writer.AddNull(value, "fd");
+                    Optional(writer, value, "node_id", event.node_id);
                 } else if (event.kind == "native") {
                     writer.AddUnsignedInteger(value, "call_id", event.code); writer.AddUnsignedInteger(value, "method_id", event.source_detail);
                     writer.AddString(value, "phase", event.result == 0 ? "enter" : event.result == 1 ? "returned" : "threw");
@@ -174,15 +217,15 @@ ControlResponse DashboardService::Request(std::string_view method, core::JsonVal
                 } else if (event.kind == "dexvm") {
                     writer.AddUnsignedInteger(value, "dex_pc", event.code); writer.AddUnsignedInteger(value, "tick", event.source_detail);
                     writer.AddString(value, "detail", event.detail);
-                } else writer.AddString(value, "lifecycle_phase", event.detail);
+                } else { writer.AddString(value, "lifecycle_phase", event.detail); writer.AddUnsignedInteger(value, "generation", event.source_sequence); }
                 writer.Append(values, value); if (++count == limit) break;
             }
             writer.Add(result, "events", values); writer.AddUnsignedInteger(result, "next_sequence", next);
             writer.AddUnsignedInteger(result, "latest_sequence", sequence_); writer.AddUnsignedInteger(result, "dropped", dropped_);
             writer.AddUnsignedInteger(result, "oldest_sequence", events_.empty() ? sequence_ + 1 : events_.front().sequence);
             writer.AddBool(result, "gap", !events_.empty() && since < events_.front().sequence - 1);
-            writer.AddString(result, "status", diagnostic ? "partial" : "unavailable");
-            const auto supported = writer.Array(); for (const auto name : {"syscall", "native", "dexvm", "lifecycle"}) writer.Append(supported, writer.String(name));
+            writer.AddString(result, "status", diagnostic || std::any_of(counter_status_.begin(), counter_status_.end(), [](const auto& item) { return item.second == "complete"; }) ? "partial" : "unavailable");
+            const auto supported = writer.Array(); for (const auto name : kinds) writer.Append(supported, writer.String(name));
             writer.Add(result, "supported_kinds", supported);
             writer.AddUnsignedInteger(result, "generation", sequence_);
             const auto source_sections = writer.Object();
@@ -199,6 +242,11 @@ ControlResponse DashboardService::Request(std::string_view method, core::JsonVal
                     else writer.AddUnsignedInteger(result, key, source.name == "syscalls" ? diagnostic->syscalls_dropped : diagnostic->native_calls_dropped);
                 }
             }
+            for (const auto& [name, status] : counter_status_) {
+                const auto info = writer.Object(); writer.AddString(info, "status", status == "complete" ? "partial" : "unavailable");
+                writer.AddString(info, "reason", status == "complete" ? "bounded counter observations; not exact occurrence times" : status);
+                writer.Add(source_sections, name, info);
+            }
             writer.Add(result, "sources", source_sections);
         } else {
             if (thread) {
@@ -208,7 +256,103 @@ ControlResponse DashboardService::Request(std::string_view method, core::JsonVal
             for (const auto& name : selected) {
                 bool connected = false;
                 try {
-                    if (name == "diagnostics") {
+                    if (name == "ui") {
+                        connected = static_cast<bool>(sources_.ui);
+                        if (connected) if (const auto s = sources_.ui()) {
+                            const auto value = writer.Object(); writer.AddUnsignedInteger(value, "nodes", s->nodes);
+                            writer.AddUnsignedInteger(value, "layout_dirty", s->layout_dirty); writer.AddUnsignedInteger(value, "draw_dirty", s->draw_dirty);
+                            Optional(writer, value, "focus", s->focus); section(name, "partial", s->generation, "UiTree only", value); continue;
+                        }
+                    } else if (name == "video") {
+                        connected = static_cast<bool>(sources_.video);
+                        if (connected) if (const auto s = sources_.video()) {
+                            const auto value = writer.Array();
+                            std::size_t count{}; for (const auto& state : *s) { if (count++ == 128) break; const auto row = writer.Object(); writer.AddUnsignedInteger(row, "receiver", state.receiver);
+                                writer.AddInteger(row, "duration_ms", state.duration_ms); writer.AddInteger(row, "base_position_ms", state.base_position_ms);
+                                writer.AddBool(row, "playing", state.playing); writer.AddBool(row, "completed", state.completed);
+                                writer.AddBool(row, "decoder_attached", state.decoder_attached); writer.Append(value, row); }
+                            section(name, "partial", 0, "VideoView state; base position, maximum 128", value); continue;
+                        }
+                    } else if (name == "dexvm") {
+                        connected = static_cast<bool>(sources_.dexvm);
+                        if (connected) if (const auto s = sources_.dexvm()) {
+                            const auto value = writer.Object();
+                            writer.AddUnsignedInteger(value, "heap_used", s->heap_used); writer.AddUnsignedInteger(value, "heap_target", s->heap_target);
+                            writer.AddUnsignedInteger(value, "heap_growth_limit", s->heap_growth_limit); writer.AddUnsignedInteger(value, "heap_maximum", s->heap_maximum);
+                            writer.AddUnsignedInteger(value, "objects", s->objects); writer.AddUnsignedInteger(value, "classes", s->classes);
+                            writer.AddUnsignedInteger(value, "linked_classes", s->linked_classes); writer.AddUnsignedInteger(value, "classes_initialized", s->stats.classes_initialized);
+                            writer.AddUnsignedInteger(value, "method_calls", s->stats.method_calls); writer.AddUnsignedInteger(value, "intrinsic_calls", s->stats.intrinsic_calls);
+                            writer.AddUnsignedInteger(value, "native_calls", s->stats.native_calls); writer.AddUnsignedInteger(value, "gc_collections", s->stats.gc_collections);
+                            writer.AddUnsignedInteger(value, "gc_pause_ns", s->stats.gc_pause_ns); writer.AddUnsignedInteger(value, "gc_freed_bytes", s->stats.gc_freed_bytes);
+                            section(name, "complete", 0, "", value); continue;
+                        }
+                    } else if (name == "jni") {
+                        connected = static_cast<bool>(sources_.jni);
+                        if (connected) if (const auto s = sources_.jni()) {
+                            const auto value = writer.Object(); writer.AddUnsignedInteger(value, "local", s->local);
+                            writer.AddUnsignedInteger(value, "global", s->global); writer.AddUnsignedInteger(value, "weak_global", s->weak_global);
+                            writer.AddUnsignedInteger(value, "attached_threads", s->attached_threads); section(name, "complete", 0, "", value); continue;
+                        }
+                    } else if (name == "memory") {
+                        connected = static_cast<bool>(sources_.memory);
+                        if (connected) if (const auto s = sources_.memory()) {
+                            const auto value = writer.Object(), pages = writer.Array();
+                            for (auto count : s->pages_by_protection) writer.Append(pages, writer.UnsignedInteger(count));
+                            writer.Add(value, "pages_by_protection", pages); writer.AddUnsignedInteger(value, "page_size", 4096);
+                            section(name, "complete", s->generation, "", value); continue;
+                        }
+                    } else if (name == "cpu") {
+                        connected = static_cast<bool>(sources_.cpu);
+                        if (connected) if (const auto s = sources_.cpu()) {
+                            const auto value = writer.Array();
+                            std::size_t count{}; for (const auto& cache : *s) { if (count++ == 128) break; const auto row = writer.Object();
+                                writer.AddUnsignedInteger(row, "processor_id", cache.processor_id);
+                                writer.AddString(row, "status", cache.captured_at_steady_ns ? "complete" : "unavailable");
+                                if (cache.captured_at_steady_ns) {
+                                    writer.AddUnsignedInteger(row, "capacity_bytes", cache.capacity_bytes);
+                                    writer.AddUnsignedInteger(row, "used_bytes", cache.used_bytes); writer.AddUnsignedInteger(row, "flushes", cache.flushes);
+                                    writer.AddUnsignedInteger(row, "captured_at_steady_ns", cache.captured_at_steady_ns);
+                                } else {
+                                    for (const auto field : {"capacity_bytes", "used_bytes", "flushes", "captured_at_steady_ns"}) writer.Add(row, field, writer.Null());
+                                }
+                                writer.Append(value, row); }
+                            section(name, "partial", 0, "last completed run; maximum 128 processors", value); continue;
+                        }
+                    } else if (name == "libraries") {
+                        connected = static_cast<bool>(sources_.libraries);
+                        if (connected) if (const auto s = sources_.libraries()) {
+                            const auto value = writer.Object(), rows = writer.Array();
+                            writer.AddUnsignedInteger(value, "total", s->total);
+                            for (const auto& record : s->records) { const auto row = writer.Object();
+                                writer.AddString(row, "soname", Text(record.soname)); writer.AddString(row, "path", Text(record.canonical_path));
+                                writer.AddUnsignedInteger(row, "handle", record.handle); writer.AddUnsignedInteger(row, "class_loader", record.class_loader);
+                                writer.AddString(row, "state", record.state == runtime::NativeLibraryLoadState::loaded ? "Loaded" : record.state == runtime::NativeLibraryLoadState::loading ? "Loading" : "Failed");
+                                writer.AddString(row, "failure", Text(record.failure)); writer.Append(rows, row); }
+                            writer.Add(value, "records", rows); section(name, s->total > s->records.size() ? "partial" : "complete", 0, "", value); continue;
+                        }
+                    } else if (name == "vfs" && sources_.filesystem) {
+                        connected = true;
+                        if (const auto s = sources_.filesystem()) {
+                            const auto value = writer.Object(), mounts = writer.Array(), fds = writer.Array();
+                            writer.AddUnsignedInteger(value, "backing_read_bytes", s->io.backing_read_bytes);
+                            writer.AddUnsignedInteger(value, "full_materialized_bytes", s->io.full_materialized_bytes);
+                            writer.AddUnsignedInteger(value, "resource_memory_bytes", s->io.resource_memory_bytes);
+                            writer.AddUnsignedInteger(value, "resource_memory_high_water", s->io.resource_memory_high_water);
+                            writer.AddUnsignedInteger(value, "lease_snapshot_bytes", s->io.lease_snapshot_bytes);
+                            writer.AddUnsignedInteger(value, "lease_snapshot_high_water", s->io.lease_snapshot_high_water);
+                            writer.AddUnsignedInteger(value, "total_descriptors", s->total_descriptors); writer.AddUnsignedInteger(value, "total_mounts", s->total_mounts);
+                            writer.AddBool(value, "sandbox_attached", s->sandbox_attached); writer.AddUnsignedInteger(value, "flushes", s->flushes);
+                            for (const auto& mount : s->mounts) { const auto row = writer.Object(); writer.AddString(row, "root", Text(mount.root));
+                                writer.AddUnsignedInteger(row, "source", static_cast<unsigned>(mount.source)); writer.Append(mounts, row); }
+                            for (const auto& fd : s->descriptors) { const auto row = writer.Object(); writer.AddInteger(row, "fd", fd.fd);
+                                Optional(writer, row, "node_id", fd.node_id); Optional(writer, row, "offset", fd.offset);
+                                if (fd.busy) { writer.AddNull(row, "readable"); writer.AddNull(row, "writable"); }
+                                else { writer.AddBool(row, "readable", fd.readable); writer.AddBool(row, "writable", fd.writable); }
+                                writer.AddBool(row, "busy", fd.busy); writer.Append(fds, row); }
+                            writer.Add(value, "mounts", mounts); writer.Add(value, "descriptors", fds);
+                            section(name, s->partial ? "partial" : "complete", 0, s->partial ? "busy rows or limit" : "", value); continue;
+                        }
+                    } else if (name == "diagnostics") {
                         connected = sources_.diagnostics != nullptr;
                         if (diagnostic) {
                             const auto complete = std::all_of(diagnostic->sections.begin(), diagnostic->sections.end(), [](const auto& s) { return s.status == Status::complete; });
@@ -232,7 +376,8 @@ ControlResponse DashboardService::Request(std::string_view method, core::JsonVal
                         if (connected) if (const auto s = sources_.gpu()) {
                             const auto value = writer.Object(); writer.AddUnsignedInteger(value, "draws", s->draws); writer.AddUnsignedInteger(value, "clears", s->clears);
                             writer.AddUnsignedInteger(value, "shader_compiles", s->shader_compiles); writer.AddUnsignedInteger(value, "program_links", s->program_links);
-                            writer.AddUnsignedInteger(value, "gl_errors", s->gl_errors); section(name, "partial", 0, "stats only", value); continue;
+                            if (sources_.gpu_errors_available) writer.AddUnsignedInteger(value, "gl_errors", s->gl_errors); else writer.AddNull(value, "gl_errors");
+                            section(name, "partial", 0, sources_.gpu_errors_available ? "stats only" : "tracked GLES counters only; GL error accounting unavailable", value); continue;
                         }
                     } else if (name == "vfs") {
                         connected = static_cast<bool>(sources_.vfs);

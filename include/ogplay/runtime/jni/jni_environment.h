@@ -118,6 +118,7 @@ public:
                                     JniReference right) const;
     [[nodiscard]] std::optional<JniObjectIdentity> ResolveObjectForHle(
         std::uint64_t thread_id, JniReference reference) const;
+    [[nodiscard]] std::optional<JniReferenceSnapshot> TrySnapshot() const { return references_.TrySnapshot(); }
     [[nodiscard]] std::size_t GlobalReferenceCount() const;
     void VisitReferenceRoots(const JniReferenceTable::RootVisitor& visitor) const;
     void ClearWeakReferencesTo(JniObjectIdentity object);

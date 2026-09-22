@@ -175,6 +175,7 @@ public:
                        std::span<const std::string> writable_roots);
     [[nodiscard]] bool SandboxAttached() const;
     [[nodiscard]] VfsIoStatistics IoStatistics() const;
+    [[nodiscard]] std::optional<VfsSnapshot> TrySnapshot() const;
     [[nodiscard]] std::shared_ptr<const VfsResourceReservation>
     ReserveResourceMemory(std::uint64_t bytes, bool snapshot);
 
@@ -207,6 +208,7 @@ public:
     std::map<std::string, std::shared_ptr<File>, std::less<>> files_;
     // Directories created explicitly; implicit ones come from files_.
     std::set<std::string, std::less<>> directories_;
+    std::vector<VfsMountSnapshot> mounts_;
     std::map<std::int32_t, std::shared_ptr<OpenFile>> descriptors_;
     // Sandbox overlay (ADR-0020). Absent until AttachSandbox.
     SandboxStore* sandbox_{};
@@ -220,6 +222,7 @@ public:
     std::shared_ptr<ResourceBudget> resource_budget_{
         std::make_shared<ResourceBudget>()};
     std::uint64_t next_node_id_{1U};
+    std::atomic_uint64_t flushes_{};
     std::atomic_uint64_t backing_read_bytes_{};
     std::atomic_uint64_t full_materialized_bytes_{};
 };

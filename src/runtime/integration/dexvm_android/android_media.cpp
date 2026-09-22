@@ -807,3 +807,49 @@ SnapshotAndroidAudioTracks(const DexVmAndroidContext& context) {
 }
 
 }  // namespace ogplay::runtime
+
+namespace ogplay::runtime {
+std::optional<std::vector<AndroidAudioTrackDiagnosticSnapshot>> TrySnapshotAndroidAudioTracks(dexvm::Interpreter& vm, const DexVmAndroidContext& context) {
+    auto& lock = vm.ExecutionLock();
+    if (!lock.TryAcquire()) return std::nullopt;
+    struct Release { dexvm::VmExecutionLock& lock; ~Release() { lock.Release(); } } release{lock};
+    if (!context.pcm_playback) return std::nullopt;
+    std::vector<AndroidAudioTrackDiagnosticSnapshot> result;
+    for (const auto& [receiver, state] : context.audio_tracks) {
+        if (result.size() == 129) break;
+        const auto player = context.pcm_playback->TrySnapshot(state.player);
+        if (!player) return std::nullopt;
+        result.push_back({receiver, state.player, state.written_frames, player->queued_bytes, player->consumed_source_frames,
+            player->underrun_output_frames, player->underrun_count, state.periodic_callbacks_generated,
+            state.periodic_callbacks_delivered, state.PendingPeriodicCallbacks()});
+    }
+    return result;
+}
+std::optional<AndroidUiSnapshot> TrySnapshotAndroidUi(dexvm::Interpreter& vm, const DexVmAndroidContext& context) {
+    auto& lock = vm.ExecutionLock();
+    if (!lock.TryAcquire()) return std::nullopt;
+    struct Release { dexvm::VmExecutionLock& lock; ~Release() { lock.Release(); } } release{lock};
+    AndroidUiSnapshot result; result.generation = context.ui_tree.Generation(); result.nodes = context.ui_tree.Size();
+    if (const auto focus = context.ui_tree.Focused()) result.focus = focus->Value();
+    for (const auto& [id, object] : context.ui_node_to_object) {
+        static_cast<void>(object);
+        if (const auto node = context.ui_tree.Get(id)) { result.layout_dirty += node->layout_dirty; result.draw_dirty += node->draw_dirty; }
+    }
+    if (!context.ui_node_to_object.contains(context.ui_tree.Root())) {
+        if (const auto* root = context.ui_tree.Get(context.ui_tree.Root())) {
+            result.layout_dirty += root->layout_dirty; result.draw_dirty += root->draw_dirty;
+        }
+    }
+    return result;
+}
+std::optional<std::vector<AndroidVideoSnapshot>> TrySnapshotAndroidVideo(const DexVmAndroidContext& context) {
+    std::unique_lock lock(context.video_views_mutex, std::try_to_lock);
+    if (!lock.owns_lock()) return std::nullopt;
+    std::vector<AndroidVideoSnapshot> result;
+    for (const auto& [receiver, state] : context.video_views) {
+        if (result.size() == 128) break;
+        result.push_back({receiver, state.duration_ms, state.base_position_ms, state.playing, state.completed, state.player != nullptr});
+    }
+    return result;
+}
+}

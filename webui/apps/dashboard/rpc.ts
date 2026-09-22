@@ -46,7 +46,7 @@ export class Poller {
       if (this.stopped) return;
       this.store.publish(snapshot, page);
       const tid = this.store.selection.guestTid;
-      if (tid) {
+      if (tid && !this.store.selection.frame) {
         const focused = await this.call<Snapshot>('dash.thread', {guest_tid: wireInteger(tid)}, controller.signal);
         if (!this.stopped && this.store.selection.guestTid === tid) { this.store.selectedThread = focused; this.store.changed(); }
       }

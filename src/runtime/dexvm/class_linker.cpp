@@ -810,6 +810,7 @@ DexClassId DexClassLinker::ResolveDescriptor(
             impl_->ExtrasAt(id).virtual_lookup =
                 impl_->ExtrasAt(object_class.id).virtual_lookup;
             impl_->ExtrasAt(id).linked = true;
+            ++impl_->linked_class_count;
         }
         MarkInitiatedBy(id, impl_->ClassAt(id).defining_loader);
         return id;
@@ -833,6 +834,7 @@ DexClassId DexClassLinker::ResolveDescriptor(
             impl_->ExtrasAt(id).virtual_lookup =
                 impl_->ExtrasAt(object_class.id).virtual_lookup;
             impl_->ExtrasAt(id).linked = true;
+            ++impl_->linked_class_count;
         }
         MarkInitiatedBy(id, kBootstrapLoader);
         return id;
@@ -853,6 +855,7 @@ DexClassId DexClassLinker::ResolveDescriptor(
             impl_->ExtrasAt(id).virtual_lookup =
                 impl_->ExtrasAt(object_id).virtual_lookup;
             impl_->ExtrasAt(id).linked = true;
+            ++impl_->linked_class_count;
         }
         RecordGapSurveyHit(std::string(descriptor), {});
         return id;
@@ -1135,3 +1138,7 @@ std::vector<DexClassId> DexClassLinker::ReflectionExceptionTypes(
     return result;
 }
 }  // namespace ogplay::runtime::dexvm
+
+namespace ogplay::runtime::dexvm {
+std::size_t DexClassLinker::LinkedClassCount() const noexcept { return impl_->linked_class_count; }
+}

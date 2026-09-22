@@ -76,6 +76,9 @@ if(OGPLAY_ENABLE_DYNARMIC)
     set(DYNARMIC_WARNINGS_AS_ERRORS OFF CACHE BOOL "" FORCE)
     add_subdirectory("${PROJECT_SOURCE_DIR}/third_party/dynarmic"
         "${CMAKE_BINARY_DIR}/_deps/dynarmic-build" EXCLUDE_FROM_ALL)
+    if(WIN32 AND CMAKE_SYSTEM_PROCESSOR MATCHES "^(AMD64|amd64|x86_64)$")
+        include("${CMAKE_CURRENT_LIST_DIR}/DynarmicDiagnostics.cmake")
+    endif()
     target_include_directories(dynarmic SYSTEM PRIVATE
         "${PROJECT_SOURCE_DIR}/third_party/boost-pool/include")
 endif()

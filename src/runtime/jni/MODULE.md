@@ -51,3 +51,5 @@ DVM-106/111：ObjectArrayStore 的类型兼容性通过显式 SetAssignability �
 true/false 是最终结果，nullopt 或未安装时，host 类使用 registry 父类链、synthetic 类
 保持严格身份比较。只在 guest 启动前安装，停止线程后撤销，不允许与数组读写并发修改回调。
 initial/set 共用校验，不兼容写入保留原元素并携带源/目标类身份明确失败。
+
+`JniReferenceTable::TrySnapshot` 只 try-lock 复制 local/global/weak_global 与 attached thread 数；不创建引用、不遍历 guest 对象，忙时返回 nullopt。

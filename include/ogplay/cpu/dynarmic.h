@@ -4,16 +4,23 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <optional>
+#include <vector>
 
 #include "ogplay/cpu/cpu.h"
 #include "ogplay/memory/bus.h"
 
 namespace ogplay::cpu {
 
+struct DynarmicCacheSnapshot final {
+    std::uint64_t processor_id{}, capacity_bytes{}, used_bytes{}, flushes{}, captured_at_steady_ns{};
+};
+
 class DynarmicExecutionContext final {
 public:
     explicit DynarmicExecutionContext(std::size_t maximum_processors);
     ~DynarmicExecutionContext();
+    [[nodiscard]] std::optional<std::vector<DynarmicCacheSnapshot>> TrySnapshot() const;
 
     DynarmicExecutionContext(const DynarmicExecutionContext&) = delete;
     DynarmicExecutionContext& operator=(const DynarmicExecutionContext&) = delete;

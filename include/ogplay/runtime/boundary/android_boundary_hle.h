@@ -129,6 +129,7 @@ public:
     [[nodiscard]] bool OpenSlesCallbackCurrent(std::uint32_t object_key,
                                                std::uint32_t generation) const;
     [[nodiscard]] audio::OpenSlesPcmMixer& PcmPlayback() noexcept;
+    [[nodiscard]] std::optional<core::GpuStats> TryStats() const;
     [[nodiscard]] core::GpuStats Stats() const override;
     [[nodiscard]] std::vector<core::GpuRenderTarget> RenderTargets() const override;
     [[nodiscard]] core::GpuCapabilities Capabilities() const override;

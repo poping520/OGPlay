@@ -1,4 +1,5 @@
 #include <bit>
+#include "ogplay/hal/clock.h"
 #include <map>
 #include <set>
 #include "ogplay/runtime/dexvm/interpreter.h"
@@ -686,6 +687,7 @@ void Interpreter::ReleaseGuestNativeResources(const bool all) {
 GcSweepResult Interpreter::CollectGarbage(const std::string_view trigger, const bool clear_soft_references) {
     VmExecutionLockScope lock_scope(impl_->execution_lock);
     auto& execution = impl_->Execution();
+    const auto gc_started = hal::Clock::SteadyTimestampNs();
     impl_->RecordTrace(DexVmTraceKind::gc_begin, execution);
     const auto mark = MarkReachable(clear_soft_references);
     const auto swept = SweepGarbage(mark);
@@ -693,6 +695,7 @@ GcSweepResult Interpreter::CollectGarbage(const std::string_view trigger, const 
     ReleaseGuestNativeResources();
     impl_->RecordTrace(DexVmTraceKind::gc_end, execution, nullptr, 0, 0,
                        swept.freed_bytes);
+    impl_->stats.gc_pause_ns += hal::Clock::SteadyTimestampNs() - gc_started;
     ++impl_->stats.gc_collections;
     impl_->stats.gc_freed_bytes += swept.freed_bytes;
     impl_->stats.gc_host_destructors_run += swept.host_destructors_run;

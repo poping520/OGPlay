@@ -72,6 +72,11 @@ struct NativeLibraryRecord final {
     std::string failure;
 };
 
+struct NativeLibrarySnapshot final {
+    std::vector<NativeLibraryRecord> records;
+    std::size_t total{};
+};
+
 class NativeLibraryLoader final {
 public:
     NativeLibraryLoader(
@@ -91,6 +96,7 @@ public:
         std::string_view logical_name, JavaClassLoaderToken class_loader);
     [[nodiscard]] NativeLibraryLoadResult LoadPath(
         std::string_view guest_path, JavaClassLoaderToken class_loader);
+    [[nodiscard]] std::optional<NativeLibrarySnapshot> TrySnapshot() const;
     [[nodiscard]] std::vector<NativeLibraryRecord> Records() const;
 
     [[nodiscard]] static std::string SyntheticGuestPath(

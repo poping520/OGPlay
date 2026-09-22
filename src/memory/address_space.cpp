@@ -67,6 +67,15 @@ public:
     [[nodiscard]] std::uint64_t ReservedSize() const noexcept { return reservation_->Size(); }
     [[nodiscard]] std::uint64_t PageSize() const noexcept { return page_size_; }
 
+    std::optional<MemoryStatistics> TrySnapshot() const {
+        std::unique_lock lock(mutex_, std::try_to_lock);
+        if (!lock.owns_lock()) return std::nullopt;
+        MemoryStatistics result; result.generation = mapping_generation_;
+        for (std::size_t i = 0; i < pages_.size(); ++i)
+            if (mapped_[i]) ++result.pages_by_protection[static_cast<std::size_t>(pages_[i])];
+        return result;
+    }
+
     void Map(const GuestRange& range, const PageProtection protection) {
         ValidateProtection(protection);
         ValidatePageRange(range);
@@ -620,6 +629,8 @@ void AddressSpace::Write64(const GuestAddress address, const std::uint64_t value
 DirectMemoryPageTable* AddressSpace::DirectPageTable() noexcept {
     return impl_->DirectPageTable();
 }
+std::optional<MemoryStatistics> AddressSpace::TrySnapshot() const { return impl_->TrySnapshot(); }
+
 MemorySnapshot AddressSpace::CaptureSnapshot() const { return impl_->CaptureSnapshot(); }
 void AddressSpace::RestoreSnapshot(const MemorySnapshot& snapshot) {
     impl_->RestoreSnapshot(snapshot);

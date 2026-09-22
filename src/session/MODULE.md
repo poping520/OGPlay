@@ -187,3 +187,5 @@ DVM-150：显式 guest Runtime/System.exit 先完成 BootDex hook 协议，halt 
 launcher；已退出 VM 的 Stop 不再调用 Java 生命周期回调。宿主 Stop 仍是已有取消/回收路径，
 不隐式运行 hook；没有最后 non-daemon 线程结束自动退出或 hook 超时成功语义。挂起的原版
 hook 可阻塞正常 exit，强制取消不能宣称正常 hook 完成。详见 ADR-0056。
+
+DexActivityLifecycle 成功启动与恢复后向已连接 DiagnosticState 发布 running 阶段；无需启动写盘 coordinator，阶段 generation 仍由 DiagnosticState 维护。

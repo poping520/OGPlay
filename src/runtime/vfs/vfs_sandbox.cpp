@@ -433,6 +433,7 @@ void VirtualFileSystem::Impl::FlushAll() {
         std::scoped_lock lock(mutex_);
         FlushFileLocked(*file);
     }
+    flushes_.fetch_add(1, std::memory_order_relaxed);
 }
 
 bool VirtualFileSystem::Impl::SandboxAttached() const {

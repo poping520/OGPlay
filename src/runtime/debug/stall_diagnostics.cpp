@@ -285,11 +285,12 @@ void DiagnosticState::SetGlesProvider(
 
 void DiagnosticState::RecordSyscall(
     const std::uint64_t guest_tid, const std::uint32_t syscall_nr,
-    const std::int32_t result, const SupervisorCallProgress progress) {
+    const std::int32_t result, const SupervisorCallProgress progress,
+    const std::optional<std::int32_t> fd, const std::optional<std::uint64_t> node_id) {
     const auto now = SteadyNowNs();
     impl_->syscall_ring.Push(
         {impl_->next_event_sequence.fetch_add(1U), now, guest_tid,
-         syscall_nr, result, progress});
+         syscall_nr, result, progress, fd, node_id});
     std::unique_lock lock(impl_->executions_mutex, std::try_to_lock);
     if (!lock.owns_lock()) return;
     for (auto& [id, execution] : impl_->executions) {
@@ -825,6 +826,8 @@ core::JsonWriter::Value AppendGuestStallSnapshotJson(
         writer.AddUnsignedInteger(value, "steady_ns", event.steady_ns);
         writer.AddUnsignedInteger(value, "guest_tid", event.guest_tid);
         writer.AddUnsignedInteger(value, "syscall_nr", event.syscall_nr);
+        if (event.fd) writer.AddInteger(value, "fd", *event.fd); else writer.AddNull(value, "fd");
+        if (event.node_id) writer.AddUnsignedInteger(value, "node_id", *event.node_id); else writer.AddNull(value, "node_id");
         writer.AddInteger(value, "result", event.result);
         writer.AddString(value, "progress", ProgressName(event.progress));
         writer.Append(syscalls, value);

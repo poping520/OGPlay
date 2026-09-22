@@ -435,6 +435,7 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
             EnsureRendererCallbacks();
 
             state_ = LifecycleRunState::running;
+            if (bindings_.diagnostics) bindings_.diagnostics->SetLifecyclePhase("running", false);
         } catch (...) {
             if (bindings_.bridge->Vm().ExitCode().has_value()) return Stop();
             MarkFailed();
@@ -479,6 +480,7 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
             CallActivity("onResume", "()V", {});
             SetWindowFocus(true);
             suspended_ = false;
+            if (bindings_.diagnostics) bindings_.diagnostics->SetLifecyclePhase("running", false);
         } catch (...) {
             if (bindings_.bridge->Vm().ExitCode().has_value()) return Stop();
             MarkFailed();

@@ -138,3 +138,5 @@ family Declare_* 同址绑定，shared 只放跨 family helper，support 承担�
 定向测试位于 [tests/runtime](../../../tests/runtime/) 的 native loader、guest call、JNI、preflight、
 headless/NativeActivity，以及 [tests/dexvm](../../../tests/dexvm/) 的 Android/线程/布局/scheduler。
 只构建受影响目标；文档修改只做 UTF-8/链接/diff 检查，人工探索不能代替 Scenario gate。
+
+只读诊断通过 AndroidGuestProcess 转发 memory/CPU/GPU try-snapshot；NativeLibraryLoader registry 使用 try-lock，最多 128 项、每段文本最多 512 UTF-8 bytes，保留 Loading/Loaded/Failed 事实。Syscall FD/node_id 来自已知 ARM 文件 syscall 参数/返回值与 VFS 元数据；无法解析的节点保持未知。

@@ -1599,9 +1599,16 @@ public:
             dispatcher_.SetDiagnosticObserver(
                 [this](const A32SyscallFrame& frame,
                        const A32SyscallOutcome& outcome) {
+                    std::optional<std::int32_t> fd;
+                    switch (frame.number) {
+                    case 3: case 4: case 6: case 19: case 140: case 180: case 181:
+                        fd = static_cast<std::int32_t>(frame.arguments[0]); break;
+                    case 5: case 322: if (outcome.return_value >= 0) fd = outcome.return_value; break;
+                    default: break;
+                    }
                     diagnostics_->RecordSyscall(
                         frame.thread_id, frame.number, outcome.return_value,
-                        outcome.progress);
+                        outcome.progress, fd, fd ? filesystem_->TryDescriptorNode(*fd) : std::nullopt);
                 });
         }
     }
@@ -1902,6 +1909,9 @@ public:
     std::shared_ptr<debug::DiagnosticState> Diagnostics() const {
         return diagnostics_;
     }
+    std::optional<core::GpuStats> TryStats() const { return boundary_.TryStats(); }
+    std::optional<memory::MemoryStatistics> TryMemorySnapshot() const { return address_space_.TrySnapshot(); }
+    std::optional<std::vector<cpu::DynarmicCacheSnapshot>> TryCpuSnapshot() const { return execution_context_->TrySnapshot(); }
     core::GpuStats Stats() const { return boundary_.Stats(); }
     std::vector<core::GpuRenderTarget> RenderTargets() const {
         return boundary_.RenderTargets(); }
@@ -2459,3 +2469,9 @@ core::GpuCapabilities AndroidGuestCallSession::Capabilities() const { return pro
 std::vector<core::GpuTraceEntry> AndroidGuestCallSession::Trace(std::string_view filter, std::size_t limit) const { return process_->Trace(filter, limit); }
 
 }  // namespace ogplay::runtime
+
+namespace ogplay::runtime {
+std::optional<core::GpuStats> AndroidGuestProcess::TryStats() const { return impl_->TryStats(); }
+std::optional<memory::MemoryStatistics> AndroidGuestProcess::TryMemorySnapshot() const { return impl_->TryMemorySnapshot(); }
+std::optional<std::vector<cpu::DynarmicCacheSnapshot>> AndroidGuestProcess::TryCpuSnapshot() const { return impl_->TryCpuSnapshot(); }
+}

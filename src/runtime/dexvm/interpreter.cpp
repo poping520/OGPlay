@@ -1513,3 +1513,13 @@ bool Interpreter::JavaEquals(const VmObjectRef left,
 }
 
 }  // namespace ogplay::runtime::dexvm
+
+namespace ogplay::runtime::dexvm {
+std::optional<InterpreterSnapshot> Interpreter::TrySnapshot() const {
+    if (!impl_->execution_lock.TryAcquire()) return std::nullopt;
+    struct Release { VmExecutionLock& lock; ~Release() { lock.Release(); } } release{impl_->execution_lock};
+    return InterpreterSnapshot{impl_->stats, impl_->model->AllocatedBytes(), impl_->model->HeapTargetBytes(),
+        impl_->model->HeapGrowthLimitBytes(), impl_->model->MaximumHeapBytes(), impl_->model->ObjectCount(),
+        impl_->linker->ClassCount(), impl_->linker->LinkedClassCount()};
+}
+}

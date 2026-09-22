@@ -1096,3 +1096,7 @@ std::uint64_t JavaObjectModel::EstimateObjectArrayBytes(const JniSize length) {
 }
 
 }  // namespace ogplay::runtime::dexvm
+
+namespace ogplay::runtime::dexvm {
+std::uint64_t JavaObjectModel::MaximumHeapBytes() const noexcept { return impl_->config.maximum_heap_bytes; }
+}

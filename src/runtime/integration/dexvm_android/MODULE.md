@@ -243,3 +243,5 @@ frontend lifecycle。行为变更覆盖 switch/threaded 及架构门禁；title 
 
 DVM-150：shared 的 PlatformRuntimeNativeExitHandler 仅绑定 Runtime.nativeExit，发布会话
 退出标记并调用 VM 的不可返回 Exit；不能再把 System.exit 实现为设置标记后返回。
+
+Dashboard 的 AudioTrack/UiTree provider 只 TryAcquire VM 锁；PCM player 另用 mixer try-lock，任一来源忙即 nullopt。UI 计数包含根节点；不在查询中执行 layout/draw。VideoView 仅 try-lock 复制最多 128 个播放状态，不调用 decoder，base_position_ms 不冒充实时位置。

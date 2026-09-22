@@ -741,8 +741,25 @@ int RunApkCommand(const int argc, const char* const argv[],
         std::unique_ptr<McpHttpServer> mcp_server;
         if (mcp_port) {
             agent::DashboardSources sources;
+            sources.metadata = {{"package", manifest.package}, {"installation_id", sandbox.installation_id},
+                {"profile", selected_profile ? profile.identity.package : "generic"},
+                {"api_level", std::to_string(profile.runtime.api_level)}, {"supersample", std::to_string(supersample_factor)},
+                {"mode", mcp_manual_step ? "manual-step" : "free-running"},
+                {"ffmpeg_available", video::FfmpegAvailable() ? "true" : "false"},
+                {"ffmpeg_reason", video::FfmpegUnavailableReason()}};
             sources.diagnostics = diagnostic_state.get(); sources.session = mcp_session.get();
             sources.logger = &logger; sources.ledger = &dexvm_ledger;
+            sources.dexvm = [&] { return app_process->DexVm().Vm().TrySnapshot(); };
+            sources.jni = [&] { return app_process->NativeProcess().Environment().TrySnapshot(); };
+            sources.memory = [&] { return app_process->NativeProcess().TryMemorySnapshot(); };
+            sources.cpu = [&] { return app_process->NativeProcess().TryCpuSnapshot(); };
+            sources.gpu_errors_available = false; // FrameService does not account GL errors.
+            sources.gpu = [&] { return app_process->NativeProcess().TryStats(); };
+            sources.filesystem = [&] { return filesystem.TrySnapshot(); };
+            sources.audio = [&] { return runtime::TrySnapshotAndroidAudioTracks(app_process->DexVm().Vm(), *app_process->Context()); };
+            sources.ui = [&] { return runtime::TrySnapshotAndroidUi(app_process->DexVm().Vm(), *app_process->Context()); };
+            sources.video = [&] { return runtime::TrySnapshotAndroidVideo(*app_process->Context()); };
+            if (app_process->NativeLibraries()) sources.libraries = [&] { return app_process->NativeLibraries()->TrySnapshot(); };
             DashboardHttpConfig dashboard{
                 std::make_shared<agent::DashboardService>(std::move(sources)),
                 bundled_data.root / "webui" / "dashboard"};

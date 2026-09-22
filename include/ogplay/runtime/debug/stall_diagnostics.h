@@ -40,6 +40,8 @@ struct DiagnosticSyscallEvent final {
     std::uint32_t syscall_nr{};
     std::int32_t result{};
     SupervisorCallProgress progress{SupervisorCallProgress::handled_idle};
+    std::optional<std::int32_t> fd;
+    std::optional<std::uint64_t> node_id;
 };
 
 enum class DiagnosticNativePhase : std::uint8_t { enter, returned, threw };
@@ -167,7 +169,8 @@ public:
     void SetGlesProvider(
         std::function<std::optional<std::vector<DiagnosticGlesEvent>>()> provider);
     void RecordSyscall(std::uint64_t guest_tid, std::uint32_t syscall_nr,
-                       std::int32_t result, SupervisorCallProgress progress);
+                       std::int32_t result, SupervisorCallProgress progress,
+                       std::optional<std::int32_t> fd = {}, std::optional<std::uint64_t> node_id = {});
     [[nodiscard]] std::uint64_t BeginNativeCall(
         std::uint64_t context_token, std::uint64_t guest_tid,
         std::uint64_t method_id);

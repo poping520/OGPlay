@@ -380,6 +380,7 @@ public:
     [[nodiscard]] std::vector<loader::DexEncodedValue> StaticValues(
         const LinkedClass& linked) const;
     [[nodiscard]] std::size_t ClassCount() const noexcept;
+    [[nodiscard]] std::size_t LinkedClassCount() const noexcept;
     // Own methods declared by the class (not inherited).
     [[nodiscard]] std::vector<VmMethodId> MethodsOf(DexClassId owner) const;
     [[nodiscard]] std::vector<DexClassId> AllClasses() const;

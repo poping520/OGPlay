@@ -1,4 +1,5 @@
 #include "ogplay/cpu/dynarmic.h"
+#include "ogplay/hal/clock.h"
 
 #include <algorithm>
 #include <cstddef>
@@ -83,7 +84,7 @@ private:
 class DynarmicExecutionContext::Impl final {
 public:
     explicit Impl(const std::size_t maximum_processors)
-        : monitor(maximum_processors), processors(maximum_processors) {
+        : monitor(maximum_processors), processors(maximum_processors), snapshots(maximum_processors) {
         if (maximum_processors == 0) {
             throw std::invalid_argument(
                 "Dynarmic execution context requires a processor");
@@ -94,6 +95,7 @@ public:
     std::mutex mutex;
     std::mutex memory_mutex;
     std::vector<bool> processors;
+    std::vector<DynarmicCacheSnapshot> snapshots;
 };
 
 DynarmicExecutionContext::DynarmicExecutionContext(
@@ -107,6 +109,7 @@ std::size_t DynarmicExecutionContext::AcquireProcessor() {
     for (std::size_t index = 0; index < impl_->processors.size(); ++index) {
         if (!impl_->processors[index]) {
             impl_->processors[index] = true;
+            impl_->snapshots[index] = {index, 0, 0, 0, 0};
             return index;
         }
     }
@@ -426,6 +429,11 @@ RunResult DynarmicCpu::Run(const std::uint64_t tick_budget) {
     const auto halt_reason = impl_->jit.Run();
     const auto ticks = impl_->callbacks.TicksConsumed();
     impl_->jit.ClearHalt(halt_reason);
+#ifdef OGPLAY_DYNARMIC_CACHE_STATS
+    const auto cache = impl_->jit.CacheStatistics();
+    { std::unique_lock lock(impl_->context->impl_->mutex, std::try_to_lock);
+      if (lock.owns_lock()) impl_->context->impl_->snapshots[impl_->processor_id] = {impl_->processor_id, cache[0], cache[1], cache[2], hal::Clock::SteadyTimestampNs()}; }
+#endif
 
     if (impl_->callbacks.Pending().has_value()) {
         const auto& pending = *impl_->callbacks.Pending();
@@ -475,3 +483,18 @@ void DynarmicCpu::SetHostCallHook(const HostCallHook hook) noexcept {
 }
 
 }  // namespace ogplay::cpu
+
+namespace ogplay::cpu {
+std::optional<std::vector<DynarmicCacheSnapshot>> DynarmicExecutionContext::TrySnapshot() const {
+#ifndef OGPLAY_DYNARMIC_CACHE_STATS
+    return std::nullopt;
+#else
+    std::unique_lock lock(impl_->mutex, std::try_to_lock);
+    if (!lock.owns_lock()) return std::nullopt;
+    std::vector<DynarmicCacheSnapshot> result;
+    for (std::size_t i = 0; i < impl_->processors.size() && result.size() < 128; ++i)
+        if (impl_->processors[i]) result.push_back(impl_->snapshots[i]);
+    return result;
+#endif
+}
+}

@@ -2,6 +2,7 @@
 
 #include "ogplay/agent/mcp_protocol.h"
 #include "ogplay/agent/mcp_session_control.h"
+#include "ogplay/agent/dashboard.h"
 #include "ogplay/frontend/mcp_http_server.h"
 
 #include <boost/asio.hpp>
@@ -18,7 +19,7 @@ using boost::asio::ip::tcp;
 
 std::string Request(const std::uint16_t port, const std::string_view method,
                     const std::string_view target, const std::string_view body,
-                    const std::string_view extra_headers = {}) {
+                    const std::string_view extra_headers = {}, const std::string_view host = "127.0.0.1") {
     boost::asio::io_context io;
     tcp::socket socket(io);
     boost::system::error_code error;
@@ -28,7 +29,7 @@ std::string Request(const std::uint16_t port, const std::string_view method,
     }
 
     std::string request = std::string(method) + " " + std::string(target) +
-                          " HTTP/1.1\r\nHost: 127.0.0.1\r\n"
+                          " HTTP/1.1\r\nHost: " + std::string(host) + "\r\n"
                           "Accept: application/json, text/event-stream\r\n"
                           "Content-Type: application/json\r\nContent-Length: " +
                           std::to_string(body.size()) + "\r\n";
@@ -174,4 +175,56 @@ TEST_CASE("MCP HTTP bridges session commands without entering guest code") {
     REQUIRE(command.has_value());
     CHECK(command->type == ogplay::agent::McpSessionCommand::Type::step);
     CHECK(command->frames == 2U);
+}
+
+TEST_CASE("Dashboard HTTP serves bounded assets and enforces origin host and path boundaries") {
+    using namespace ogplay;
+    agent::FrameSnapshotStore frames; agent::McpInputQueue inputs;
+    frontend::DashboardHttpConfig config{std::make_shared<agent::DashboardService>(),
+        std::filesystem::path(OGPLAY_SOURCE_DIR) / "data/webui/dashboard"};
+    auto server = frontend::McpHttpServer::Start(0, frames, inputs, config);
+    const auto port = server->Port();
+    for (const auto target : {"/dash", "/dash/", "/dash/index.html", "/dash/dashboard.js", "/dash/dashboard.css", "/dash/manifest.json", "/dash/THIRD-PARTY-LICENSES.txt"}) {
+        CAPTURE(target);
+        const auto response = Request(port, "GET", target, {}, "Origin: http://127.0.0.1\r\n");
+        CHECK(response.starts_with("HTTP/1.1 200 OK"));
+        CHECK(response.find("X-Content-Type-Options: nosniff") != std::string::npos);
+        CHECK(response.find("frame-ancestors 'none'") != std::string::npos);
+        CHECK(response.find("Access-Control-Allow-Origin") == std::string::npos);
+    }
+    for (const auto path : {"/dash/../package.json", "/dash/%2e%2e/package.json", "/dash/..%5cpackage.json", "/dash/C:/secret", "/dash/dashboard.js:secret", "/dash//index.html", "/dash/index.html?x=1", "/dash/private.json"})
+        CHECK(Request(port, "GET", path, {}).starts_with("HTTP/1.1 404"));
+    for (const auto origin : {"https://example.com", "null", "http://127.0.0.1.evil", "http://localhost@evil", "http://localhost:123/"}) {
+        for (const auto path : {"/dash/", "/dash/dashboard.js", "/dash/rpc"})
+            CHECK(Request(port, "GET", path, {}, std::string("Origin: ") + origin + "\r\n").starts_with("HTTP/1.1 403"));
+    }
+    CHECK(Request(port, "GET", "/dash/", {}, "Origin: http://localhost\r\nOrigin: http://127.0.0.1\r\n").starts_with("HTTP/1.1 400"));
+    CHECK(Request(port, "GET", "/dash/", {}, "Host: evil.example\r\n").starts_with("HTTP/1.1 400"));
+    CHECK(Request(port, "GET", "/dash/", {}, {}, "evil.example").starts_with("HTTP/1.1 403"));
+    CHECK(Request(port, "POST", "/dash/", "{}").starts_with("HTTP/1.1 405"));
+    CHECK(Request(port, "GET", "/dash/rpc", {}).starts_with("HTTP/1.1 405"));
+    config.assets /= "missing";
+    CHECK_THROWS(frontend::McpHttpServer::Start(0, frames, inputs, config));
+}
+
+TEST_CASE("Dashboard HTTP exposes actual agent snapshots without advancing session or accepting controls") {
+    using namespace ogplay;
+    agent::FrameSnapshotStore frames; agent::McpInputQueue inputs; agent::McpSessionControl session;
+    session.Publish({.frame = 17, .guest_ticks = 17000});
+    runtime::debug::DiagnosticState diagnostics;
+    diagnostics.RecordSyscall(7, 240, -4, runtime::SupervisorCallProgress::handled_idle);
+    agent::DashboardSources sources; sources.session = &session; sources.diagnostics = &diagnostics;
+    auto dashboard = std::make_shared<agent::DashboardService>(sources);
+    auto server = frontend::McpHttpServer::Start(0, frames, inputs, session,
+        {dashboard, std::filesystem::path(OGPLAY_SOURCE_DIR) / "data/webui/dashboard"});
+    const auto response = Request(server->Port(), "POST", "/dash/rpc",
+        R"({"jsonrpc":"2.0","id":1,"method":"dash.snapshot"})");
+    CHECK(response.starts_with("HTTP/1.1 200"));
+    CHECK(response.find("\"frame\":17") != std::string::npos);
+    CHECK(response.find("\"syscall_nr\":240") != std::string::npos);
+    CHECK(response.find("\"status\":\"unavailable\"") != std::string::npos);
+    CHECK(Request(server->Port(), "POST", "/dash/rpc", R"({"jsonrpc":"2.0","id":2,"method":"dash.events","params":{"since_sequence":0}})").find("\"kind\":\"syscall\"") != std::string::npos);
+    CHECK(Request(server->Port(), "POST", "/dash/rpc", R"({"jsonrpc":"2.0","id":3,"method":"run.step"})").find("-32601") != std::string::npos);
+    CHECK(Request(server->Port(), "POST", "/dash/rpc", R"({"jsonrpc":"2.0","id":4,"method":"dash.snapshot","params":{"unknown":true}})").find("-32602") != std::string::npos);
+    CHECK(session.Snapshot().frame == 17); CHECK(session.PendingCommands() == 0); CHECK(inputs.PendingGestures() == 0);
 }

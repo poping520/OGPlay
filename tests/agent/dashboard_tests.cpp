@@ -101,6 +101,8 @@ TEST_CASE("Dashboard unavailable partial and structured sources preserve read-on
     CHECK(At(*At(*logs.Element(0), "fields").Element(0), "value").String() == "test.missing");
     CHECK(At(*At(At(result, "capabilities"), "data").Element(0), "id").String() == "test.missing");
     const auto overview = Call(service, "dash.overview");
+    CHECK(Uint(Result(overview), "stream_id") == Uint(result, "stream_id"));
+    CHECK(Uint(result, "stream_id") > 0);
     CHECK(At(Result(overview), "session").Member("data"));
     CHECK_FALSE(At(Result(overview), "log").Member("data"));
     CHECK(At(Result(overview), "session").Member("captured_at_steady_ns"));

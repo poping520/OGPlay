@@ -17,6 +17,13 @@
 - `--external-dir` 按 Profile 唯一 external 根 lazy mount；`/storage/emulated/0` 与
   `/sdcard` 共用节点。`--supersample` 选择 1..4×；`--dexvm-interpreter` 覆盖 Profile，
   默认 `switch`。
+- `--mcp`/`--mcp-port` 同时提供 `/dash/` 页面与 `/dash/rpc` 只读 Dashboard，复用端口。
+  静态产物来自 bundled `data/webui/dashboard`；启动前只加载固定文件白名单，每文件最多
+  2 MiB，worker 不解析宿主路径。缺失制品明确失败，路径变体、非 loopback Host/Origin
+  与重复 Host/Origin 拒绝，不提供 CORS 授权。JSON-RPC 只分派 `dash.*`，控制仍走 `/mcp`。
+- `run-apk` 在有 MCP 时连接会话、DiagnosticState、日志与账本；不开启诊断写盘协调器，
+  除非显式 `--diag*`。GPU/VFS/AudioTrack 未有非阻塞接线时保持 unavailable。
+  HTTP server 作用域比 app_process 短，析构 stop/join 后才允许销毁诊断来源。
 - `--mcp`/`--mcp-port` 提供本机服务；`--mcp-manual-step` 等待 step/suspend/resume/
   shutdown。`--diag*` 与 `ogplay diag snapshot` 提供不依赖 SDL 主循环的停滞取证。
 
@@ -34,7 +41,7 @@
   验证；`--external-dir` 最多一个。quirk 必须在 `data/quirks.toml` 注册并有测试引用。
 - `--preflight` 只验证身份、ELF 闭包、API、surface 与 boundary 映射，不执行 guest。
 - MCP 仅绑定 `127.0.0.1`，拒绝非 loopback Origin、错误路径/方法、chunked 或超限 body；
-  worker 只排队。manual-step 必须启用 transport，且不能与 preflight 共用；无许可不得推进
+  控制请求在 worker 只排队。manual-step 必须启用 transport，且不能与 preflight 共用；无许可不得推进
   Clock、输入、frame 或 present。
 - MCP 发布唯一 lifecycle/frame/ticks/presented-frame/movie/exit/fault 快照；fault 不冒充
   stop/success，截图只读已 present 的 RGBA8。`McpPointerDispatcher` 在 guest 主线程映射输入，

@@ -4,9 +4,14 @@
 
 ## 最近进展
 
+- [DASH-03](../tasks/gui/DASH-03.md)：Windows run-apk `/dash/` 与只读 RPC、来源生命周期、
+  顶栏/拓扑/uPlot 帧采样/线程焦点完成。32 项 C++ 定向回归、26 项前端测试和 2 项 CTest
+  通过；真实 APK 验证只读、MCP 步进后帧同步、Java 栈联动及断线显示。DASH-02 新来源与
+  DASH-04 完整面板仍待推进，GPU/VFS/音频当前保持 unavailable。
+
 - [DASH-01](../tasks/gui/DASH-01.md)：agent 四个只读 Dashboard 方法、快照状态传播、
   限量事件游标与线程关联完成；Windows Release 构建及 56 项定向用例/1039 断言通过。
-  运行进程来源装配、HTTP/页面由 DASH-03 接入，尚未做真实游戏 Dashboard 端到端验收。
+  运行进程来源装配、HTTP/页面与真实会话链路验证见 DASH-03。
 
 - [GUI-5](../tasks/gui/GUI-5.md)：九组每实例设置、严格 schema 1 覆盖与继承、冲突检测及
   参数预览接通；正常/预检/诊断复用启动生成，实例错误隔离。61 项定向回归、17 项前端

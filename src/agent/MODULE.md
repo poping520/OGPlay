@@ -13,7 +13,7 @@
   `dash.thread {guest_tid}`；JSON-RPC 支持同名分派，envelope/params 闭合校验。
   `DashboardSources` 注入结构化来源，必须比服务存活更久；回调必须 atomic/有界 try-lock，
   不允许执行 guest、写盘或调用会等待锁的普通 GPU/AudioTrack 快照。
-  默认 ControlService 只连接 logger/ledger；运行进程装配与 HTTP 路由由 DASH-03 接入。
+  默认 ControlService 只连接 logger/ledger；frontend 负责运行进程装配与 HTTP 路由。
 - `JsonRpcAdapter::Handle`：逐行 JSON-RPC 2.0 编解码，可由 stdio/TCP/UDS 共用。
   支持同步 `RequestHandler` 注入供独立 GUI 复用协议封装；JSON view 只在调用期间有效，
   注入模式拒绝额外 envelope 字段，不依赖前端或创建运行时 session。
@@ -68,7 +68,8 @@
 - Dashboard 事件环默认 4096（上限 4096），每次最多 1000；sequence 是服务观察顺序，
   source_sequence 保留来源序号。支持 syscall/native/dexvm/lifecycle；缺 frame/steady_ns
   返回 null，其余事件类别不伪造。next_sequence 用于独立客户端续读；未来游标拒绝，覆盖
-  返回 gap/dropped，来源环丢失另计并保留 source section 状态。服务重建须从游标 0 开始。
+  返回 gap/dropped，来源环丢失另计并保留 source section 状态。stream_id 为服务创建的
+  steady 时间戳；服务重建或 stream_id 改变时客户端清除旧历史并从游标 0 开始。
 - Dashboard 响应最大 1 MiB；常规集合最多 128、事件最多 256、Java 栈最多 32 层；
   日志尾部最多 128 条/每条 32 fields/文本 512 bytes。超预算显式 -32003，竞争请求立即
   -32002，禁止等待 VM 执行锁；不承诺跨 section 原子快照。

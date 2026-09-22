@@ -38,6 +38,7 @@ private:
     void CollectEvents(const runtime::debug::GuestStallSnapshot& snapshot);
     DashboardSources sources_;
     const std::size_t capacity_;
+    const std::uint64_t stream_id_;
     std::mutex mutex_;
     std::deque<Event> events_;
     std::uint64_t sequence_{}, dropped_{}, syscall_cursor_{}, native_cursor_{}, dexvm_cursor_{}, lifecycle_cursor_{};

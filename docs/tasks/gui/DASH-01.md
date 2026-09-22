@@ -28,7 +28,7 @@
 ## 后续边界
 
 - 本阶段是传输无关 agent 接口；默认 ControlService 只装配 logger/ledger。
-  运行进程来源生命周期装配、HTTP RPC/静态路由及 Web 页面归 DASH-03，尚未做真实游戏端到端验收。
+  运行进程来源生命周期装配、HTTP RPC/静态路由、Web 页面与真实会话验证见 [DASH-03](DASH-03.md)。
 - GPU/VFS/AudioTrack 回调只能用 atomic/有界 try-lock，不能直接接可能等待的普通快照方法。
   GPU 目前为统计、VFS 为 IO 计数、Audio 为 AudioTrack，均标 partial；新计数/快照归 DASH-02。
 - GC/GLES error/capability miss/audio underrun/VFS flush 的统一事件发布尚未接入；

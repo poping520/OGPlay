@@ -3,6 +3,8 @@
 #include <chrono>
 #include <filesystem>
 #include <fstream>
+#include <thread>
+#include "ogplay/core/encoding.h"
 #include "ogplay/frontend/gui_rpc.h"
 
 namespace {
@@ -19,7 +21,17 @@ struct Fixture {
     frontend::GuiRpcService rpc{store, root / "ogplay.exe", {
         [this](const auto&) { ++reads; return context; },
         [this](const auto& value) { ++launches; plan = value; },
-        [this](const auto& path) { ++opens; opened = path; }}};
+        [this](const auto& path) { ++opens; opened = path; },
+        [](const auto& path) {
+            frontend::ApkImportAnalysis result;
+            result.source_apk = path;
+            result.display_name = "导入游戏";
+            result.manifest.package = "org.example.game";
+            result.manifest.version_code = 0;
+            return result;
+        },
+        [](bool) { return std::async(std::launch::deferred, []() -> std::optional<std::filesystem::path> { return std::nullopt; }); },
+        [] { return std::string("2026-09-22T00:00:00Z"); }}};
     Fixture() {
         std::filesystem::create_directories(root);
         std::ofstream(root / "ogplay.exe") << "fixture";
@@ -113,4 +125,68 @@ TEST_CASE("GUI RPC exposes missing metadata as null facts") {
     CHECK(item->Member("version_code")->IsNull());
     CHECK(item->Member("imported_at")->IsNull());
     CHECK(item->Member("can_launch")->Bool() == false);
+}
+
+namespace {
+std::string ImportCall(Fixture& fixture, std::string_view method, std::string_view params) {
+    return fixture.rpc.Handle("{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"" + std::string(method) + "\",\"params\":" + std::string(params) + "}");
+}
+std::string PollImport(Fixture& fixture) {
+    for (unsigned attempt = 0; attempt < 100000; ++attempt) {
+        auto response = ImportCall(fixture, "library.job.poll", R"({"job":"1"})");
+        const auto document = Decode(response);
+        REQUIRE_FALSE(document.Root().Member("error"));
+        const auto state = document.Root().Member("result")->Member("state")->String();
+        if (state != "analyzing" && state != "importing") return response;
+        std::this_thread::yield();
+    }
+    FAIL("import job did not settle");
+    return {};
+}
+void UploadFixture(Fixture& fixture) {
+    auto started = Decode(ImportCall(fixture, "library.upload.begin", R"({"name":"游戏.APK","size":7})"));
+    REQUIRE(started.Root().Member("result"));
+    REQUIRE(Decode(ImportCall(fixture, "library.upload.chunk", R"({"job":"1","offset":0,"data":"Zml4dHVyZQ=="})")).Root().Member("result"));
+    REQUIRE(Decode(ImportCall(fixture, "library.upload.finish", R"({"job":"1"})")).Root().Member("result"));
+}
+}
+TEST_CASE("GUI import snapshot creates a distinct instance and rejects repeated commit") {
+    Fixture fixture;
+    UploadFixture(fixture);
+    const auto ready = Decode(PollImport(fixture));
+    const auto summary = ready.Root().Member("result")->Member("summary");
+    REQUIRE(summary);
+    CHECK(summary->Member("existing_instances")->UnsignedInteger() == 1);
+    CHECK(summary->Member("version_code")->UnsignedInteger() == 0);
+    CHECK(summary->Member("requires_external")->IsNull());
+    CHECK_FALSE(Decode(ImportCall(fixture, "library.import", R"({"job":"1","new_instance":false})")).Root().Member("result"));
+    REQUIRE(Decode(ImportCall(fixture, "library.import", R"({"job":"1","new_instance":true})")).Root().Member("result"));
+    const auto completed = Decode(PollImport(fixture));
+    CHECK(completed.Root().Member("result")->Member("installation_id")->String() == "org.example.game-2");
+    CHECK_FALSE(Decode(ImportCall(fixture, "library.import", R"({"job":"1","new_instance":true})")).Root().Member("result"));
+    CHECK(fixture.store.LoadEntries().size() == 2);
+    CHECK_FALSE(std::filesystem::exists(fixture.root / ".gui-import-1"));
+    CHECK(std::filesystem::file_size(fixture.root / "library/org.example.game-2/game.apk") == 7);
+}
+TEST_CASE("GUI import rejects malformed upload and cancelled jobs without publishing") {
+    Fixture fixture;
+    for (const auto params : {R"({"name":"x.xapk","size":1})", R"({"name":"x.apk","size":0})", R"({"name":"x.apk","size":1073741825})", R"({"name":"x.apk","size":7,"extra":true})"})
+        CHECK(Decode(ImportCall(fixture, "library.upload.begin", params)).Root().Member("error"));
+    REQUIRE(Decode(ImportCall(fixture, "library.upload.begin", R"({"name":"x.apk","size":7})")).Root().Member("result"));
+    CHECK(Decode(ImportCall(fixture, "library.upload.chunk", R"({"job":"1","offset":1,"data":"YQ=="})")).Root().Member("error"));
+    CHECK(Decode(ImportCall(fixture, "library.upload.chunk", R"({"job":"1","offset":0,"data":"?"})")).Root().Member("error"));
+    CHECK(Decode(ImportCall(fixture, "library.upload.finish", R"({"job":"1"})")).Root().Member("error"));
+    CHECK(Decode(ImportCall(fixture, "library.job.poll", R"({"job":"unknown"})")).Root().Member("error"));
+    REQUIRE(Decode(ImportCall(fixture, "library.job.cancel", R"({"job":"1"})")).Root().Member("result"));
+    CHECK_FALSE(std::filesystem::exists(fixture.root / ".gui-import-1"));
+    CHECK(Decode(ImportCall(fixture, "library.import", R"({"job":"1","new_instance":true})")).Root().Member("error"));
+    CHECK(fixture.store.LoadEntries().size() == 1);
+}
+TEST_CASE("GUI import invalid external directory preserves ready analysis for retry") {
+    Fixture fixture;
+    UploadFixture(fixture);
+    PollImport(fixture);
+    CHECK(Decode(ImportCall(fixture, "library.import", R"({"job":"1","new_instance":true,"external_dir":"missing-directory-fixture"})")).Root().Member("error"));
+    CHECK(Decode(PollImport(fixture)).Root().Member("result")->Member("state")->String() == "ready");
+    REQUIRE(Decode(ImportCall(fixture, "library.job.cancel", R"({"job":"1"})")).Root().Member("result"));
 }

@@ -1,6 +1,6 @@
 # OGPlay 主界面 + 设置页 设计（GUI v2）
 
-状态：实施中，首阶段见 [GUI-V2-01](../../tasks/launcher/GUI-V2-01.md)。Windows 优先，Linux 暂缓。本设计**推翻**现有 ImGui 视图层，但复用 `frontend/gui` 中已与 ImGui/SDL
+状态：实施中，首阶段见 [GUI-1](../../tasks/gui/GUI-1.md)。Windows 优先，Linux 暂缓。本设计**推翻**现有 ImGui 视图层，但复用 `frontend/gui` 中已与 ImGui/SDL
 解耦的模型层。效果图：[`library.png`](library.png)、[`game-settings.png`](game-settings.png)、
 [`settings.png`](settings.png)；可交互原型：[`library.html`](library.html)（浏览器直接打开，
 左侧导航 / 「游戏设置」按钮可切换视图）。姊妹设计：[运行时 Dashboard](dashboard.md)。
@@ -142,21 +142,21 @@ C++ 模型层，前端只渲染事实；错误返回结构化 `{code, message, n
 
 ## 5. 实施切分
 
-1. **GUI-V2-01 宿主骨架**：webview 窗口 + RPC 桥 + `library.list/launch/open_dir`；删除 ImGui
+1. **GUI-1 宿主骨架**：webview 窗口 + RPC 桥 + `library.list/launch/open_dir`；删除 ImGui
    视图与 `ogplay_imgui` 目标；保留并复用全部模型测试。验证：`tests/frontend/` 模型测试不变；
    新增 RPC 分派/schema 用例；`frontend.gui_smoke` 改为 webview 加载完成 + 一次 `library.list`。
-2. **GUI-V2-02 前端游戏库**：网格/列表/抽屉/空态/拖放；图标光晕；状态角标。
-3. **GUI-V2-03 导入向导 + 对话框**。
-4. **GUI-V2-04 全局设置**：`GuiConfig` schema 升级（新增键，保留 `.bak` 恢复）。
-5. **GUI-V2-05 游戏设置**：`settings.toml` 读写 + `BuildLaunchPlan` 消费可实现项；预留项只落盘。
-6. **GUI-V2-06 Dashboard 联动**：运行实例表 → 第二窗口打开 `/dash/`。
-7. **GUI-V2-07 机型预设数据**：`data/devices/*.toml` schema 与校验脚本；运行时能力另立任务。
+2. **GUI-2 前端游戏库**：网格/列表/抽屉/空态/拖放；图标光晕；状态角标。
+3. **GUI-3 导入向导 + 对话框**。
+4. **GUI-4 全局设置**：`GuiConfig` schema 升级（新增键，保留 `.bak` 恢复）。
+5. **GUI-5 游戏设置**：`settings.toml` 读写 + `BuildLaunchPlan` 消费可实现项；预留项只落盘。
+6. **GUI-6 Dashboard 联动**：运行实例表 → 第二窗口打开 `/dash/`。
+7. **GUI-7 机型预设数据**：`data/devices/*.toml` schema 与校验脚本；运行时能力另立任务。
 
 ## 6. 需要的决策 / ADR
 
 - ~~Node 前端构建链~~ → 已接受，见 [ADR-0072](../../adr/development.md#adr-0072)：
   工作区 `webui/`，产物 `data/webui/` 为不入库的生成制品，由 `webui` 目标与 CI 构建。
 - Linux 的 WebKitGTK 运行时依赖是否可接受；否则 Linux 先只发 CLI。
-- 文件对话框：保留 SDL3 无窗口对话框 vs 平台原生 API。
+- Windows 文件对话框已选择 HAL IFileOpenDialog（ADR-0073）；其他平台暂缓。
 - 虚拟设备字段进入运行时的路径（Profile 同构 TOML vs 独立 `--device` 参数），属运行时能力范围，
   本设计只预留 UI 与数据格式。

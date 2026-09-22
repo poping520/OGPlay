@@ -1,6 +1,9 @@
 #pragma once
 
 #include <functional>
+#include <future>
+#include <memory>
+#include "ogplay/frontend/gui_import.h"
 #include "ogplay/agent/json_rpc.h"
 #include "ogplay/frontend/gui_launch.h"
 #include "ogplay/frontend/gui_view_model.h"
@@ -12,6 +15,9 @@ struct GuiRpcHost final {
     std::function<LibraryViewContext(const std::vector<LibraryEntry>&)> context;
     std::function<void(const LaunchPlan&)> launch;
     std::function<void(const std::filesystem::path&)> open_directory;
+    std::function<ApkImportAnalysis(const std::filesystem::path&)> analyze;
+    std::function<std::future<std::optional<std::filesystem::path>>(bool)> pick;
+    std::function<std::string()> timestamp;
 };
 
 class GuiRpcService final {
@@ -24,6 +30,10 @@ public:
     [[nodiscard]] std::string Handle(std::string_view request);
 private:
     [[nodiscard]] agent::ControlResponse Request(std::string_view method, core::JsonValue params);
+    struct ImportState;
+    bool ImportBusy() const;
+    [[nodiscard]] agent::ControlResponse ImportRequest(std::string_view method, core::JsonValue params);
+    std::shared_ptr<ImportState> import_;
     LibraryStore& store_;
     std::filesystem::path cli_;
     GuiRpcHost host_;

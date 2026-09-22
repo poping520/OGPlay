@@ -83,7 +83,7 @@ public:
     [[nodiscard]] std::string NextInstallationId(
         std::string_view package) const;
     [[nodiscard]] std::vector<LibraryEntry> LoadEntries() const;
-    void Import(const LibraryImport& request);
+    std::string Import(const LibraryImport& request);
     void Remove(std::string_view key);
 
 private:

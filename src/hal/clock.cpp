@@ -1,11 +1,16 @@
 #include "ogplay/hal/clock.h"
 
 #include <cmath>
+#include <format>
 #include <limits>
 #include <stdexcept>
 #include <utility>
 
 namespace ogplay::hal {
+std::string Clock::UtcTimestamp() {
+    return std::format("{:%FT%TZ}", std::chrono::floor<std::chrono::seconds>(std::chrono::system_clock::now()));
+}
+
 namespace {
 
 void ValidateRate(const ClockRate rate) {

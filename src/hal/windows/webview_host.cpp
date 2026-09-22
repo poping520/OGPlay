@@ -3,6 +3,7 @@
 #include <webview/webview.h>
 #include <windows.h>
 #include <shellapi.h>
+#include <shobjidl.h>
 #include <shlwapi.h>
 #include <wrl.h>
 #include <WebView2.h>
@@ -88,6 +89,35 @@ public:
         CheckWeb(webview_eval(view_, std::string(script).c_str()));
     }
     void RecordSmokeResponse() override { ++lists_; }
+    std::future<std::optional<std::filesystem::path>> PickPath(bool directory) override {
+        const auto owner = static_cast<HWND>(webview_get_native_handle(view_, WEBVIEW_NATIVE_HANDLE_KIND_UI_WINDOW));
+        // A separate STA keeps modal Shell UI out of the WebView message callback.
+        return std::async(std::launch::async, [owner, directory]() -> std::optional<std::filesystem::path> {
+            Check(CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE));
+            struct Apartment { ~Apartment() { CoUninitialize(); } } apartment;
+            Microsoft::WRL::ComPtr<IFileOpenDialog> dialog;
+            Check(CoCreateInstance(CLSID_FileOpenDialog, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&dialog)));
+            FILEOPENDIALOGOPTIONS flags{};
+            Check(dialog->GetOptions(&flags));
+            Check(dialog->SetOptions(flags | FOS_FORCEFILESYSTEM | FOS_PATHMUSTEXIST |
+                (directory ? FOS_PICKFOLDERS : FOS_FILEMUSTEXIST)));
+            if (!directory) {
+                const COMDLG_FILTERSPEC filters[]{{L"Android APK", L"*.apk"}};
+                Check(dialog->SetFileTypes(1, filters));
+            }
+            Check(dialog->SetTitle(directory ? L"选择游戏数据包目录" : L"选择 APK"));
+            const auto result = dialog->Show(owner);
+            if (result == HRESULT_FROM_WIN32(ERROR_CANCELLED)) return std::nullopt;
+            Check(result);
+            Microsoft::WRL::ComPtr<IShellItem> item;
+            Check(dialog->GetResult(&item));
+            PWSTR path{};
+            Check(item->GetDisplayName(SIGDN_FILESYSPATH, &path));
+            const std::filesystem::path selected(path);
+            CoTaskMemFree(path);
+            return selected;
+        });
+    }
 private:
     static void Rpc(const char* id, const char* args, void* user) noexcept {
         auto& self = *static_cast<NativeWebView*>(user);

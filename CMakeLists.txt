@@ -623,6 +623,7 @@ add_library(ogplay_frontend
     src/frontend/gui/import.cpp
     src/frontend/gui/launch.cpp
     src/frontend/gui/rpc.cpp
+    src/frontend/gui/rpc_import.cpp
     src/frontend/gui/model.cpp
     src/frontend/gui/view_model.cpp
     src/frontend/gui/visuals.cpp

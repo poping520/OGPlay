@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <functional>
 #include <mutex>
+#include <string>
 
 namespace ogplay::hal {
 
@@ -17,6 +18,8 @@ struct ClockRate {
 class Clock {
 public:
     virtual ~Clock() = default;
+    // Host metadata only; guest time remains instance ticks.
+    [[nodiscard]] static std::string UtcTimestamp();
     [[nodiscard]] virtual std::uint64_t Ticks() const = 0;
     [[nodiscard]] virtual std::uint64_t TicksPerSecond() const = 0;
     [[nodiscard]] virtual bool IsPaused() const = 0;

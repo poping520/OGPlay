@@ -1,6 +1,6 @@
 # OGPlay Web UI
 
-GUI-1..3：Windows WebView2 游戏库与单体 APK 导入向导；设置和 Dashboard 后续接入。
+GUI-1..4：Windows WebView2 游戏库、单体 APK 导入向导与全局设置；Dashboard 后续接入。
 支持原生文件/数据包目录选择及 APK 拖放，后台分析、确认新实例、原子入库；分包格式明确拒绝。
 Linux 暂缓；macOS WebView 宿主尚未接入，本阶段仅构建 Windows GUI。
 

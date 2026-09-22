@@ -1,6 +1,7 @@
 #include <doctest/doctest.h>
 
 #include <atomic>
+#include <algorithm>
 #include <chrono>
 #include <filesystem>
 #include <fstream>
@@ -9,6 +10,7 @@
 #include <vector>
 
 #include "ogplay/frontend/gui_launch.h"
+#include "ogplay/frontend/gui_settings.h"
 
 namespace {
 
@@ -54,6 +56,34 @@ ogplay::frontend::LibraryEntry Entry(const std::filesystem::path& directory,
 }
 
 }  // namespace
+
+TEST_CASE("GUI global launch settings forward only supported CLI controls") {
+    using namespace ogplay::frontend;
+    TemporaryDirectory tree;
+    const auto cli = tree.path / "ogplay";
+    const auto directory = tree.path / "entry";
+    Write(cli, "exe"); Write(directory / "game.apk", "apk");
+    auto entry = Entry(directory, {});
+    entry.metadata->external_dir.reset();
+    GuiConfig config;
+    const auto baseline = BuildLaunchPlan(cli, tree.path, entry, config).argv;
+    SetGuiSetting(config, "network_policy", std::string("allow"));
+    SetGuiSetting(config, "volume", std::uint32_t{25});
+    CHECK(BuildLaunchPlan(cli, tree.path, entry, config).argv == baseline);
+    SetGuiSetting(config, "supersample", std::uint32_t{2});
+    SetGuiSetting(config, "interpreter", std::string("threaded"));
+    SetGuiSetting(config, "mcp_enabled", true);
+    SetGuiSetting(config, "mcp_port", std::uint32_t{12345});
+    const auto argv = BuildLaunchPlan(cli, tree.path, entry, config).argv;
+    CHECK(argv.size() == baseline.size() + 6);
+    for (const auto& [flag, value] : std::vector<std::pair<std::string, std::string>>{
+        {"--supersample", "2"}, {"--dexvm-interpreter", "threaded"}, {"--mcp-port", "12345"}}) {
+        const auto it = std::find(argv.begin(), argv.end(), flag);
+        REQUIRE(it != argv.end());
+        REQUIRE(std::next(it) != argv.end());
+        CHECK(*std::next(it) == value);
+    }
+}
 
 TEST_CASE("GUI LaunchPlan emits only the documented run-apk arguments") {
     TemporaryDirectory temporary;

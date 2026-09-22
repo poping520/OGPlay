@@ -89,6 +89,10 @@ public:
         CheckWeb(webview_eval(view_, std::string(script).c_str()));
     }
     void RecordSmokeResponse() override { ++lists_; }
+    void Minimize() override {
+        const auto window = static_cast<HWND>(webview_get_native_handle(view_, WEBVIEW_NATIVE_HANDLE_KIND_UI_WINDOW));
+        ShowWindow(window, SW_MINIMIZE);
+    }
     std::future<std::optional<std::filesystem::path>> PickPath(bool directory) override {
         const auto owner = static_cast<HWND>(webview_get_native_handle(view_, WEBVIEW_NATIVE_HANDLE_KIND_UI_WINDOW));
         // A separate STA keeps modal Shell UI out of the WebView message callback.

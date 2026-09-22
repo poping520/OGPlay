@@ -622,6 +622,8 @@ add_library(ogplay_frontend
     src/frontend/run_apk_progress.cpp
     src/frontend/gui/import.cpp
     src/frontend/gui/launch.cpp
+    src/frontend/gui/settings.cpp
+    src/frontend/gui/rpc_settings.cpp
     src/frontend/gui/rpc.cpp
     src/frontend/gui/rpc_import.cpp
     src/frontend/gui/model.cpp
@@ -647,6 +649,7 @@ target_include_directories(ogplay_frontend SYSTEM PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party/ext-boost
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party/stb)
 target_compile_definitions(ogplay_frontend PRIVATE
+    OGPLAY_VERSION="${PROJECT_VERSION}"
     OGPLAY_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
 if(WIN32)
     target_link_libraries(ogplay_frontend PRIVATE ws2_32)

@@ -89,6 +89,9 @@ struct GuiRpcService::ImportState {
 bool GuiRpcService::ImportBusy() const {
     return import_ && import_->committing.valid();
 }
+bool GuiRpcService::SettingsBusy() const {
+    return import_ && (import_->analyzing.valid() || import_->committing.valid());
+}
 agent::ControlResponse GuiRpcService::ImportRequest(std::string_view method, core::JsonValue params) {
     if (!import_) import_ = std::make_shared<ImportState>();
     auto& job = *import_;

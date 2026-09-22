@@ -2,6 +2,8 @@ import { render, type ComponentChildren } from 'preact';
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { rpc, type Library, type LibraryItem } from './rpc';
 import { averageIconColor, statuses, validatePackageSelection, versionLabel, visibleItems, type Filter, type Sort } from './library';
+import { SettingsPage } from './settings-page';
+import { resolvedTheme, type Settings } from './settings';
 import { ImportWizard } from './import-wizard';
 import '../../packages/ui-kit/theme.css';
 
@@ -42,6 +44,9 @@ function Modal({ title, onDismiss, children }: { title: string; onDismiss: () =>
 }
 function App() {
   const [library, setLibrary] = useState<Library>({ items: [], library_root: '' });
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settings, setSettings] = useState<Settings | null>(null);
+  const settingsRef = useRef<Settings | null>(null);
   const [selected, setSelected] = useState('');
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<Filter>('all');
@@ -61,6 +66,16 @@ function App() {
   const items = useMemo(() => visibleItems(library.items, query, filter, sort), [library.items, query, filter, sort]);
   const item = items.find(game => game.installation_id === selected);
   const report = (reason: unknown) => setErrors(queue => [...queue, reason instanceof Error ? reason.message : String(reason)]);
+  const applySettings = (value: Settings) => { settingsRef.current = value; setSettings(value); };
+  useEffect(() => {
+    const media = window.matchMedia('(prefers-color-scheme: light)');
+    const apply = () => {
+      document.documentElement.dataset.theme = resolvedTheme(settings?.values.theme, media.matches);
+      document.documentElement.dataset.density = String(settings?.values.density ?? 'comfortable');
+    };
+    apply(); media.addEventListener('change', apply);
+    return () => media.removeEventListener('change', apply);
+  }, [settings]);
   const closeDrawer = () => {
     setSelected('');
     const button = Array.from(document.querySelectorAll<HTMLButtonElement>('.select-game'))
@@ -91,9 +106,10 @@ function App() {
       }
     };
     void initial().catch(report);
+    void rpc<Settings>('settings.get').then(value => { if (!disposed) applySettings(value); }).catch(report);
     const exited = (event: Event) => {
       const detail = (event as CustomEvent<{ installation_id: string; exit_code: number; log_tail: string }>).detail;
-      if (detail.exit_code !== 0) report(`${detail.installation_id} 退出码 ${detail.exit_code}\n${detail.log_tail}`);
+      if (detail.exit_code !== 0 && settingsRef.current?.values.show_exit_log !== false) report(`${detail.installation_id} 退出码 ${detail.exit_code}\n${detail.log_tail}`);
       void refresh().catch(report);
     };
     window.addEventListener('ogplay-exit', exited);
@@ -117,6 +133,7 @@ function App() {
   const isFileDrag = (event: DragEvent) => Array.from(event.dataTransfer?.types ?? []).includes('Files');
   const resetFilters = () => { setQuery(''); setFilter('all'); search.current?.focus(); };
   const importButton = <button class="primary" disabled={importing} onClick={() => { setPendingFile(null); setImporting(true); }}>＋ 选择安装包</button>;
+  if (settingsOpen) return <SettingsPage onBack={() => { setSettingsOpen(false); void refresh().catch(report); }} onSaved={applySettings} />;
   return <div class={`shell ${dragging ? 'dragging' : ''}`}
     onDragEnter={event => { if (isFileDrag(event)) { event.preventDefault(); ++dragDepth.current; setDragging(true); } }}
     onDragOver={event => { if (isFileDrag(event)) { event.preventDefault(); if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy'; } }}
@@ -125,6 +142,7 @@ function App() {
     <nav class="navigation" aria-label="主导航">
       <div class="brand"><span>O</span><div><b>OGPlay</b><small>安卓经典游戏</small></div></div>
       <div class="nav-selected" aria-current="page"><span>▦</span> 游戏库 <span class="nav-count">{library.items.length}</span></div>
+      <button class="settings-entry" disabled={busy || importing} onClick={() => setSettingsOpen(true)}>⚙ 设置</button>
       <div class="nav-bottom"><b>你的游戏，你的存档</b><small>关闭启动器后，游戏继续运行</small></div>
     </nav>
     <main>
@@ -166,7 +184,7 @@ function App() {
       </div><footer class="statusbar"><span title={library.library_root}>{library.library_root}</span><span>{library.items.filter(game => game.running).length} 个运行中</span></footer>
     </main>
     {dragging && <div class="drop-overlay" aria-live="polite"><div><span>↓</span><h2>松开以选择安装包</h2><p>单体 APK · 一次一个文件</p></div></div>}
-    {importing && <ImportWizard file={pendingFile} onClose={() => { setImporting(false); setPendingFile(null); }} onImported={async id => {
+    {importing && <ImportWizard defaultExternal={String(settings?.values.default_external_dir ?? '')} file={pendingFile} onClose={() => { setImporting(false); setPendingFile(null); }} onImported={async id => {
       setQuery(''); setFilter('all'); await refresh(); lastSelected.current = id; setSelected(id); setImporting(false); setPendingFile(null);
     }} />}
     {!importing && errors.length > 0 && <Modal title="操作提示" onDismiss={() => setErrors(queue => queue.slice(1))}><pre>{errors[0]}</pre></Modal>}

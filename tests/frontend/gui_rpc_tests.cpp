@@ -6,6 +6,7 @@
 #include <thread>
 #include "ogplay/core/encoding.h"
 #include "ogplay/frontend/gui_rpc.h"
+#include "ogplay/frontend/gui_settings.h"
 
 namespace {
 using namespace ogplay;
@@ -15,12 +16,13 @@ struct Fixture {
         ("ogplay-gui-rpc-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()) + "-" + std::to_string(sequence++));
     frontend::LibraryStore store{root};
     frontend::LibraryViewContext context;
-    unsigned launches{}, opens{}, reads{};
+    unsigned launches{}, opens{}, reads{}, minimized{};
+    bool fail_launch{};
     std::optional<frontend::LaunchPlan> plan;
     std::filesystem::path opened;
     frontend::GuiRpcService rpc{store, root / "ogplay.exe", {
         [this](const auto&) { ++reads; return context; },
-        [this](const auto& value) { ++launches; plan = value; },
+        [this](const auto& value) { if (fail_launch) throw std::runtime_error("spawn failed"); ++launches; plan = value; },
         [this](const auto& path) { ++opens; opened = path; },
         [](const auto& path) {
             frontend::ApkImportAnalysis result;
@@ -31,7 +33,8 @@ struct Fixture {
             return result;
         },
         [](bool) { return std::async(std::launch::deferred, []() -> std::optional<std::filesystem::path> { return std::nullopt; }); },
-        [] { return std::string("2026-09-22T00:00:00Z"); }}};
+        [] { return std::string("2026-09-22T00:00:00Z"); },
+        [this] { ++minimized; }}};
     Fixture() {
         std::filesystem::create_directories(root);
         std::ofstream(root / "ogplay.exe") << "fixture";
@@ -72,6 +75,73 @@ TEST_CASE("GUI RPC rejects unknown schema before host operations") {
     CHECK(fixture.reads == 0);
     CHECK(fixture.launches == 0);
     CHECK(fixture.opens == 0);
+}
+
+TEST_CASE("GUI settings RPC applies validated patches and rejects stale writes") {
+    Fixture fixture;
+    const auto get = [&] { return Decode(fixture.rpc.Handle(R"({"jsonrpc":"2.0","id":1,"method":"settings.get"})")); };
+    auto initial = get();
+    const auto result = initial.Root().Member("result");
+    REQUIRE(result.has_value());
+    CHECK(result->Member("schema")->UnsignedInteger() == 2);
+    CHECK(result->Member("fields")->Size() == frontend::GuiSettings().size());
+    const auto revision = std::string(*result->Member("revision")->String());
+    const auto update = [&](std::string_view token, std::string_view key, auto value) {
+        core::JsonWriter writer;
+        const auto request = writer.Object(), params = writer.Object(), values = writer.Object();
+        writer.AddString(request, "jsonrpc", "2.0"); writer.AddUnsignedInteger(request, "id", 2);
+        writer.AddString(request, "method", "settings.set");
+        writer.AddString(params, "revision", token);
+        if constexpr (std::is_same_v<decltype(value), unsigned>) writer.AddUnsignedInteger(values, key, value);
+        else writer.AddString(values, key, value);
+        writer.Add(params, "values", values); writer.Add(request, "params", params);
+        return Decode(fixture.rpc.Handle(writer.Serialize(request)));
+    };
+    CHECK(update(revision, "theme", "light").Root().Member("result").has_value());
+    auto saved = frontend::LoadGuiConfig(fixture.root);
+    CHECK(saved.profiles_dir == fixture.root / "profiles");
+    CHECK(std::get<std::string>(frontend::GuiSetting(saved, "theme")) == "light");
+    CHECK(update(revision, "theme", "dark").Root().Member("error").has_value());
+    auto current = get();
+    const auto token = std::string(*current.Root().Member("result")->Member("revision")->String());
+    CHECK(update(token, "supersample", 5u).Root().Member("error").has_value());
+    CHECK(update(token, "supersample", "2").Root().Member("error").has_value());
+    CHECK(update(token, "unknown", "value").Root().Member("error").has_value());
+    CHECK(update(token, "profiles_dir", (fixture.root / "missing").generic_string()).Root().Member("error").has_value());
+    CHECK(frontend::LoadGuiConfig(fixture.root) == saved);
+    CHECK(Decode(fixture.rpc.Handle(R"({"jsonrpc":"2.0","id":3,"method":"settings.open_dir","params":{"kind":"library"}})")).Root().Member("result").has_value());
+    CHECK(fixture.opened == fixture.root);
+    CHECK(Decode(fixture.rpc.Handle(R"({"jsonrpc":"2.0","id":3,"method":"settings.open_dir","params":{"kind":"library","path":"C:/"}})")).Root().Member("error").has_value());
+    CHECK(fixture.opens == 1);
+    core::JsonWriter writer;
+    const auto analyze = writer.Object(), params = writer.Object();
+    writer.AddString(analyze, "jsonrpc", "2.0"); writer.AddUnsignedInteger(analyze, "id", 4);
+    writer.AddString(analyze, "method", "library.analyze");
+    writer.AddString(params, "path", (fixture.root / "library/org.example.game/game.apk").generic_string());
+    writer.Add(analyze, "params", params);
+    REQUIRE(Decode(fixture.rpc.Handle(writer.Serialize(analyze))).Root().Member("result"));
+    CHECK(update(token, "theme", "dark").Root().Member("error").has_value());
+    CHECK(frontend::LoadGuiConfig(fixture.root) == saved);
+    std::ofstream(fixture.root / "config.toml", std::ios::binary) << "schema = 99\n";
+    CHECK(get().Root().Member("error").has_value());
+    CHECK(update(token, "theme", "dark").Root().Member("error").has_value());
+    CHECK(std::filesystem::file_size(fixture.root / "config.toml") == 12);
+}
+
+TEST_CASE("GUI minimizes only after a successful launch when requested") {
+    Fixture fixture;
+    const auto* launch = R"({"jsonrpc":"2.0","id":1,"method":"library.launch","params":{"installation_id":"org.example.game"}})";
+    REQUIRE(Decode(fixture.rpc.Handle(launch)).Root().Member("result"));
+    CHECK(fixture.minimized == 0);
+    auto config = frontend::LoadGuiConfig(fixture.root);
+    frontend::SetGuiSetting(config, "minimize_on_launch", true);
+    frontend::SaveGuiConfig(fixture.root, config);
+    fixture.fail_launch = true;
+    CHECK(Decode(fixture.rpc.Handle(launch)).Root().Member("error").has_value());
+    CHECK(fixture.minimized == 0);
+    fixture.fail_launch = false;
+    CHECK(Decode(fixture.rpc.Handle(launch)).Root().Member("result").has_value());
+    CHECK(fixture.minimized == 1);
 }
 
 TEST_CASE("GUI RPC serializes model facts and enforces launch eligibility") {

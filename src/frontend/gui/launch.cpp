@@ -1,4 +1,5 @@
 #include "ogplay/frontend/gui_launch.h"
+#include "ogplay/frontend/gui_settings.h"
 
 #include <algorithm>
 #include <fstream>
@@ -40,6 +41,7 @@ LaunchPlan BuildLaunchPlan(const std::filesystem::path& cli_executable,
                            const std::filesystem::path& library_root,
                            const LibraryEntry& entry,
                            const GuiConfig& config) {
+    ValidateGuiConfigValues(config);
     if (entry.Damaged() || !entry.metadata.has_value()) {
         throw GuiModelError(GuiModelErrorCode::corrupt_config,
                             "damaged library entry cannot be launched",
@@ -76,6 +78,14 @@ LaunchPlan BuildLaunchPlan(const std::filesystem::path& cli_executable,
     if (entry.metadata->external_dir.has_value()) {
         plan.argv.push_back("--external-dir");
         plan.argv.push_back(PathUtf8(*entry.metadata->external_dir));
+    }
+    const auto supersample = std::get<std::uint32_t>(GuiSetting(config, "supersample"));
+    if (supersample != 1) { plan.argv.push_back("--supersample"); plan.argv.push_back(std::to_string(supersample)); }
+    const auto interpreter = std::get<std::string>(GuiSetting(config, "interpreter"));
+    if (interpreter != "profile") { plan.argv.push_back("--dexvm-interpreter"); plan.argv.push_back(interpreter); }
+    if (std::get<bool>(GuiSetting(config, "mcp_enabled"))) {
+        plan.argv.push_back("--mcp-port");
+        plan.argv.push_back(std::to_string(std::get<std::uint32_t>(GuiSetting(config, "mcp_port"))));
     }
     plan.argv.push_back("--sandbox-dir");
     plan.argv.push_back(PathUtf8(LauncherSandboxRoot(library_root)));

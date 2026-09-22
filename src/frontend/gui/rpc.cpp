@@ -84,6 +84,8 @@ std::string GuiRpcService::Handle(std::string_view request) {
 
 agent::ControlResponse GuiRpcService::Request(std::string_view method, core::JsonValue params) {
     try {
+        if (method == "game_settings.get" || method == "game_settings.set")
+            return GameSettingsRequest(method, params);
         if (method == "settings.get" || method == "settings.set" || method == "settings.open_dir")
             return SettingsRequest(method, params);
         if (method == "dialog.pick" || method == "dialog.poll" || method == "library.analyze" ||
@@ -92,7 +94,7 @@ agent::ControlResponse GuiRpcService::Request(std::string_view method, core::Jso
         if (method != "library.list" && method != "library.launch" && method != "library.open_dir")
             return Error(-32601, "unknown method", "使用当前版本支持的 GUI 方法。");
         if (method == "library.list") CheckFields(params, {});
-        else if (method == "library.launch") CheckFields(params, {"installation_id"});
+        else if (method == "library.launch") CheckFields(params, {"installation_id", "mode"});
         else CheckFields(params, {"installation_id", "kind"});
 
         // Validate request shape before any library IO or host callback.
@@ -100,8 +102,19 @@ agent::ControlResponse GuiRpcService::Request(std::string_view method, core::Jso
         const auto kind = method == "library.open_dir" ? RequiredString(params, "kind") : std::string{};
         if (!kind.empty() && kind != "sandbox" && kind != "log" && kind != "external")
             throw std::invalid_argument("kind must be sandbox, log or external");
+        GuiLaunchMode mode = GuiLaunchMode::normal;
+        if (method == "library.launch" && params.Member("mode")) {
+            const auto value = RequiredString(params, "mode");
+            if (value == "preflight") mode = GuiLaunchMode::preflight;
+            else if (value == "diagnostic") mode = GuiLaunchMode::diagnostic;
+            else if (value != "normal") throw std::invalid_argument("unknown launch mode");
+        }
         if (ImportBusy()) return Error(-32002, "正在入库", "入库完成后重试。");
-        const auto entries = store_.LoadEntries();
+        auto entries = store_.LoadEntries();
+        for (auto& entry : entries) {
+            try { entry = EffectiveGameEntry(entry, LoadGameSettings(entry.directory)); }
+            catch (const std::exception& error) { entry.damage_reason = error.what(); }
+        }
         const auto context = host_.context(entries);
         const auto tiles = BuildLibraryTiles(entries, context);
         core::JsonWriter writer;
@@ -149,7 +162,7 @@ agent::ControlResponse GuiRpcService::Request(std::string_view method, core::Jso
                 const auto config = LoadGuiConfig(store_.Root());
                 const auto minimize = std::get<bool>(GuiSetting(config, "minimize_on_launch"));
                 if (minimize && !host_.minimize) throw std::runtime_error("宿主不支持最小化窗口。");
-                host_.launch(BuildLaunchPlan(cli_, store_.Root(), *entry, config));
+                host_.launch(BuildLaunchPlan(cli_, store_.Root(), *entry, config, mode));
                 if (minimize) host_.minimize();
                 writer.AddString(result, "installation_id", key);
                 writer.AddBool(result, "started", true);

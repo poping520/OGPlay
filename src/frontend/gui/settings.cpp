@@ -58,8 +58,7 @@ GuiSettingValue GuiSetting(const GuiConfig& config, std::string_view key) {
     const auto found = config.values.find(key);
     return found == config.values.end() ? field.initial : found->second;
 }
-void SetGuiSetting(GuiConfig& config, std::string_view key, GuiSettingValue value) {
-    const auto& field = FindGuiSetting(key);
+void ValidateSettingValue(const GuiSettingDefinition& field, const GuiSettingValue& value) {
     if (field.initial.index() != value.index()) throw std::invalid_argument(field.key + ": invalid type");
     if (const auto number = std::get_if<std::uint32_t>(&value)) {
         if (*number < field.minimum || *number > field.maximum) throw std::invalid_argument(field.key + ": outside allowed range");
@@ -72,6 +71,9 @@ void SetGuiSetting(GuiConfig& config, std::string_view key, GuiSettingValue valu
         if (field.directory && !text->empty() && !std::filesystem::path(std::u8string_view(reinterpret_cast<const char8_t*>(text->data()), text->size())).is_absolute())
             throw std::invalid_argument(field.key + ": directory must be absolute");
     }
+}
+void SetGuiSetting(GuiConfig& config, std::string_view key, GuiSettingValue value) {
+    ValidateSettingValue(FindGuiSetting(key), value);
     if (key == "profiles_dir") {
         const auto& text = std::get<std::string>(value);
         config.profiles_dir = text.empty() ? std::nullopt : std::optional(std::filesystem::path(std::u8string_view(reinterpret_cast<const char8_t*>(text.data()), text.size())));

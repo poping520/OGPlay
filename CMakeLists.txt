@@ -708,10 +708,13 @@ if(OGPLAY_ENABLE_SDL3 AND WIN32)
     add_custom_target(ogplay_stage_webui
         COMMAND ${CMAKE_COMMAND} -E copy_directory
             "${CMAKE_CURRENT_SOURCE_DIR}/data/webui/gui"
-            "$<TARGET_FILE_DIR:ogplay>/data/webui/gui")
+            "$<TARGET_FILE_DIR:ogplay>/data/webui/gui"
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+            "${CMAKE_CURRENT_SOURCE_DIR}/data/webui/dashboard"
+            "$<TARGET_FILE_DIR:ogplay>/data/webui/dashboard")
     add_dependencies(ogplay_stage_webui ogplay_check_webui)
     add_dependencies(ogplay ogplay_stage_webui)
-    install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/data/webui/gui" DESTINATION data/webui)
+    install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/data/webui/gui" "${CMAKE_CURRENT_SOURCE_DIR}/data/webui/dashboard" DESTINATION data/webui)
     install(FILES "${OGPLAY_WEBVIEW2_SDK}/LICENSE.txt"
         DESTINATION data/webui/gui RENAME WEBVIEW2-SDK-LICENSE.txt)
     set_target_properties(ogplay-gui PROPERTIES
@@ -1028,6 +1031,12 @@ if(OGPLAY_BUILD_TESTS)
     set_tests_properties(frontend.run_apk_options PROPERTIES LABELS "unit;frontend")
 
     if(OGPLAY_ENABLE_SDL3 AND WIN32)
+        add_test(NAME frontend.dashboard_http
+            COMMAND ogplay_tests "--test-case=Dashboard HTTP*,MCP HTTP*")
+        add_test(NAME frontend.dashboard_manifest
+            COMMAND ${CMAKE_COMMAND} -DWEBUI_ROOT=${CMAKE_CURRENT_SOURCE_DIR}/data/webui/dashboard
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/CheckWebUi.cmake)
+        set_tests_properties(frontend.dashboard_http frontend.dashboard_manifest PROPERTIES LABELS "unit;frontend" TIMEOUT 30)
         add_test(
             NAME frontend.gui_webui_manifest
             COMMAND ${CMAKE_COMMAND} -DWEBUI_ROOT=${CMAKE_CURRENT_SOURCE_DIR}/data/webui/gui

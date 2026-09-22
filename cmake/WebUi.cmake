@@ -33,6 +33,8 @@ if(OGPLAY_ENABLE_SDL3 AND WIN32)
     add_custom_target(ogplay_check_webui
         COMMAND "${CMAKE_COMMAND}" -DWEBUI_ROOT=${PROJECT_SOURCE_DIR}/data/webui/gui
             -P "${PROJECT_SOURCE_DIR}/cmake/CheckWebUi.cmake"
+        COMMAND "${CMAKE_COMMAND}" -DWEBUI_ROOT=${PROJECT_SOURCE_DIR}/data/webui/dashboard
+            -P "${PROJECT_SOURCE_DIR}/cmake/CheckWebUi.cmake"
         VERBATIM)
     if(TARGET webui)
         add_dependencies(ogplay_check_webui webui)

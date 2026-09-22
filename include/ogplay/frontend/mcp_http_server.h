@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <filesystem>
 #include <memory>
 #include <string>
 
@@ -8,21 +9,27 @@ namespace ogplay::agent {
 class FrameSnapshotStore;
 class McpInputQueue;
 class McpSessionControl;
+class DashboardService;
 }
 
 namespace ogplay::frontend {
+
+struct DashboardHttpConfig final {
+    std::shared_ptr<agent::DashboardService> service;
+    std::filesystem::path assets;
+};
 
 class McpHttpServer final {
 public:
     static std::unique_ptr<McpHttpServer> Start(
         std::uint16_t port,
         agent::FrameSnapshotStore& frames,
-        agent::McpInputQueue& inputs);
+        agent::McpInputQueue& inputs, DashboardHttpConfig dashboard = {});
     static std::unique_ptr<McpHttpServer> Start(
         std::uint16_t port,
         agent::FrameSnapshotStore& frames,
         agent::McpInputQueue& inputs,
-        agent::McpSessionControl& session_control);
+        agent::McpSessionControl& session_control, DashboardHttpConfig dashboard = {});
 
     ~McpHttpServer();
 

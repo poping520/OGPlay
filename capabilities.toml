@@ -168,7 +168,7 @@ note = "M0 完成传输无关分派、JSON-RPC 参数与标准错误模型；M6 
 [agent.dashboard]
 status = "partial"
 test = "tests/agent/dashboard_tests.cpp"
-note = "DASH-01 完成传输无关 dash.overview/snapshot/events/thread、只读 try-lock 聚合、限量事件环与线程关联；缺失来源明确 unavailable；运行进程装配、HTTP 与页面待 DASH-03，新增计数和剩余事件来源未接入"
+note = "DASH-01 完成传输无关 dash.overview/snapshot/events/thread、只读 try-lock 聚合、限量事件环与线程关联；缺失来源明确 unavailable；DASH-03 接通运行进程已有来源、HTTP 与页面骨架，新增计数和剩余事件来源未接入"
 
 [agent.session]
 status = "complete"
@@ -354,6 +354,11 @@ note = "M6 WU-0341 发布 click schema、最近 guest 帧整数坐标校验和 6
 status = "complete"
 test = "tests/agent/mcp_protocol_tests.cpp"
 note = "M6 WU-0350..0351 发布 swipe(startX,startY,endX,endY,steps)；严格验证最近帧端点与 1..120 motion 步数，逐 take 输出 down/线性 move/up 并返回稳定元数据"
+
+[frontend.dashboard]
+status = "partial"
+test = "tests/frontend/mcp_http_server_tests.cpp; webui/apps/dashboard/store.test.ts; frontend.dashboard_http; frontend.dashboard_manifest"
+note = "DASH-03 Windows 完成 loopback 静态白名单/只读 RPC、运行进程来源生命周期、8 Hz 目标轮询与限量 history/selection、uPlot 实际 frame 采样及线程焦点；DASH-02 新来源、DASH-04 完整联动面板及跨平台验证未完成"
 
 [frontend.mcp_http_transport]
 status = "complete"

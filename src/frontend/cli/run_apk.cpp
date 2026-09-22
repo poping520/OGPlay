@@ -21,6 +21,7 @@
 
 #include "ogplay/agent/mcp_protocol.h"
 #include "ogplay/agent/mcp_session_control.h"
+#include "ogplay/agent/dashboard.h"
 #include "ogplay/core/logger.h"
 #include "ogplay/core/text.h"
 #include "ogplay/frontend/mcp_http_server.h"
@@ -469,22 +470,13 @@ int RunApkCommand(const int argc, const char* const argv[],
     std::unique_ptr<agent::FrameSnapshotStore> mcp_frames;
     std::unique_ptr<agent::McpInputQueue> mcp_inputs;
     std::unique_ptr<agent::McpSessionControl> mcp_session;
-    std::unique_ptr<McpHttpServer> mcp_server;
-    auto diagnostic_state = diagnostics_enabled
+    auto diagnostic_state = (diagnostics_enabled || mcp_port.has_value())
         ? std::make_shared<runtime::debug::DiagnosticState>()
         : std::shared_ptr<runtime::debug::DiagnosticState>{};
     if (mcp_port.has_value()) {
         mcp_frames = std::make_unique<agent::FrameSnapshotStore>();
         mcp_inputs = std::make_unique<agent::McpInputQueue>();
-        if (mcp_manual_step || diagnostics_enabled) {
-            mcp_session = std::make_unique<agent::McpSessionControl>();
-            mcp_server = McpHttpServer::Start(
-                *mcp_port, *mcp_frames, *mcp_inputs, *mcp_session);
-        } else {
-            mcp_server = McpHttpServer::Start(
-                *mcp_port, *mcp_frames, *mcp_inputs);
-        }
-        Write("OGPlay: MCP ready at " + mcp_server->Endpoint() + "\n");
+        mcp_session = std::make_unique<agent::McpSessionControl>();
     }
 
     auto window = hal::CreateSdlWindowInput();
@@ -643,7 +635,7 @@ int RunApkCommand(const int argc, const char* const argv[],
         if (dexvm_interpreter.has_value()) {
             bridge_config.interpreter.backend = *dexvm_interpreter;
         }
-        if (diagnostics_enabled &&
+        if (diagnostic_state &&
             bridge_config.interpreter.diagnostics.trace_capacity == 0U) {
             bridge_config.interpreter.diagnostics.trace_capacity = 256U;
         }
@@ -722,7 +714,7 @@ int RunApkCommand(const int argc, const char* const argv[],
         auto app_process = session::AndroidAppProcess::Create(
             std::move(app_request));
         std::shared_ptr<runtime::debug::DiagCoordinator> diagnostic_coordinator;
-        if (diagnostic_state) {
+        if (diagnostics_enabled && diagnostic_state) {
             diagnostic_coordinator = runtime::debug::DiagCoordinator::Start(
                 diagnostic_state,
                 {.output_directory = diagnostic_directory,
@@ -743,6 +735,22 @@ int RunApkCommand(const int argc, const char* const argv[],
                         : std::optional<std::string>{};
                 });
             }
+        }
+        // Stop/join the HTTP worker before app_process unbinds diagnostic providers.
+        // All Dashboard sources below outlive this scope-owned transport.
+        std::unique_ptr<McpHttpServer> mcp_server;
+        if (mcp_port) {
+            agent::DashboardSources sources;
+            sources.diagnostics = diagnostic_state.get(); sources.session = mcp_session.get();
+            sources.logger = &logger; sources.ledger = &dexvm_ledger;
+            DashboardHttpConfig dashboard{
+                std::make_shared<agent::DashboardService>(std::move(sources)),
+                bundled_data.root / "webui" / "dashboard"};
+            if (mcp_manual_step || diagnostics_enabled)
+                mcp_server = McpHttpServer::Start(*mcp_port, *mcp_frames, *mcp_inputs, *mcp_session, std::move(dashboard));
+            else mcp_server = McpHttpServer::Start(*mcp_port, *mcp_frames, *mcp_inputs, std::move(dashboard));
+            Write("OGPlay: MCP ready at " + mcp_server->Endpoint() + "\n");
+            Write("OGPlay: Dashboard ready at http://127.0.0.1:" + std::to_string(mcp_server->Port()) + "/dash/\n");
         }
         auto* guest = &app_process->NativeProcess();
         auto* dex_lifecycle = &app_process->ActivityLifecycle();

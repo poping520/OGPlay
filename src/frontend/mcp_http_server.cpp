@@ -2,6 +2,10 @@
 
 #include "ogplay/agent/mcp_protocol.h"
 #include "ogplay/agent/mcp_session_control.h"
+#include "ogplay/agent/dashboard.h"
+#include "ogplay/agent/json_rpc.h"
+#include <fstream>
+#include <map>
 
 #include <boost/asio.hpp>
 
@@ -34,6 +38,7 @@ struct HttpRequest {
     std::string content_type;
     std::string accept;
     std::string origin;
+    std::string host;
     std::size_t content_length = 0;
     std::string body;
 };
@@ -80,6 +85,7 @@ std::optional<HttpRequest> ParseHeaders(const std::string_view bytes, std::strin
     request.target = std::string(request_line.substr(first_space + 1,
                                                      second_space - first_space - 1));
     std::optional<std::size_t> content_length;
+    bool seen_origin = false, seen_host = false;
     std::size_t cursor = first_line_end == std::string_view::npos
                              ? headers.size()
                              : first_line_end + 2;
@@ -109,7 +115,11 @@ std::optional<HttpRequest> ParseHeaders(const std::string_view bytes, std::strin
         } else if (name == "accept") {
             request.accept = LowerAscii(value);
         } else if (name == "origin") {
-            request.origin = LowerAscii(value);
+            if (seen_origin || value.empty()) { error = "invalid Origin"; return std::nullopt; }
+            seen_origin = true; request.origin = LowerAscii(value);
+        } else if (name == "host") {
+            if (seen_host || value.empty()) { error = "invalid Host"; return std::nullopt; }
+            seen_host = true; request.host = LowerAscii(value);
         } else if (name == "transfer-encoding") {
             error = "Transfer-Encoding is unsupported";
             return std::nullopt;
@@ -159,10 +169,43 @@ std::string MakeResponse(const int status, const std::string_view reason,
     return response;
 }
 
+// Preload a fixed allowlist before the worker starts: requests never resolve disk paths.
+struct DashboardHttp final {
+    std::shared_ptr<agent::DashboardService> service;
+    agent::JsonRpcAdapter rpc;
+    struct Asset { std::string type, bytes; };
+    std::map<std::string, Asset, std::less<>> assets;
+    explicit DashboardHttp(DashboardHttpConfig config)
+        : service(std::move(config.service)), rpc([this](std::string_view method, core::JsonValue params) {
+            return service->Request(method, params);
+        }) {
+        const auto root = std::filesystem::canonical(config.assets);
+        for (const auto& [name, type] : std::array<std::pair<std::string_view, std::string_view>, 5>{{
+            {"index.html", "text/html; charset=utf-8"}, {"dashboard.js", "text/javascript; charset=utf-8"},
+            {"dashboard.css", "text/css; charset=utf-8"}, {"manifest.json", "application/json"},
+            {"THIRD-PARTY-LICENSES.txt", "text/plain; charset=utf-8"}}}) {
+            const auto path = std::filesystem::canonical(root / name);
+            if (path.parent_path() != root || !std::filesystem::is_regular_file(path))
+                throw std::runtime_error("Invalid Dashboard asset path");
+            const auto size = std::filesystem::file_size(path);
+            if (size > 2U * 1024U * 1024U) throw std::runtime_error("Dashboard asset exceeds 2 MiB");
+            std::ifstream input(path, std::ios::binary);
+            std::string bytes(static_cast<std::size_t>(size), '\0');
+            if (!input.read(bytes.data(), static_cast<std::streamsize>(size)))
+                throw std::runtime_error("Cannot read Dashboard assets; build webui");
+            assets.emplace("/dash/" + std::string(name), Asset{std::string(type), std::move(bytes)});
+        }
+    }
+};
+std::shared_ptr<DashboardHttp> CreateDashboard(DashboardHttpConfig config) {
+    if (!config.service) return {};
+    return std::make_shared<DashboardHttp>(std::move(config));
+}
+
 class HttpSession final : public std::enable_shared_from_this<HttpSession> {
 public:
-    HttpSession(tcp::socket socket, agent::McpProtocolAdapter& protocol)
-        : socket_(std::move(socket)), protocol_(protocol) {}
+    HttpSession(tcp::socket socket, agent::McpProtocolAdapter& protocol, std::shared_ptr<DashboardHttp> dashboard)
+        : socket_(std::move(socket)), protocol_(protocol), dashboard_(std::move(dashboard)) {}
 
     void Start() {
         auto self = shared_from_this();
@@ -211,14 +254,31 @@ private:
 
     void FinishRequest(const std::size_t body_offset) {
         request_->body.assign(request_bytes_.data() + body_offset, request_->content_length);
-        if (request_->target != "/mcp") {
-            Reply(MakeResponse(404, "Not Found", "text/plain; charset=utf-8",
-                               "MCP endpoint is /mcp"));
+        if (!IsLoopbackOrigin(request_->origin)) {
+            Reply(MakeResponse(403, "Forbidden", "text/plain; charset=utf-8", "Origin is not loopback"));
             return;
         }
-        if (!IsLoopbackOrigin(request_->origin)) {
-            Reply(MakeResponse(403, "Forbidden", "text/plain; charset=utf-8",
-                               "Origin is not loopback"));
+        const bool dash = request_->target == "/dash" || request_->target.starts_with("/dash/");
+        if (dash && dashboard_) {
+            if (request_->host.empty() || !IsLoopbackOrigin("http://" + request_->host)) {
+                Reply(MakeResponse(403, "Forbidden", "text/plain; charset=utf-8", "Host is not loopback")); return;
+            }
+            if (request_->target != "/dash/rpc") {
+                if (request_->method != "GET") {
+                    Reply(MakeResponse(405, "Method Not Allowed", "text/plain", "Only GET is supported", "Allow: GET\r\n")); return;
+                }
+                const auto target = request_->target == "/dash" || request_->target == "/dash/" ? "/dash/index.html" : request_->target;
+                const auto asset = dashboard_->assets.find(target);
+                if (asset == dashboard_->assets.end()) {
+                    Reply(MakeResponse(404, "Not Found", "text/plain", "Unknown Dashboard asset")); return;
+                }
+                Reply(MakeResponse(200, "OK", asset->second.type, asset->second.bytes,
+                    "X-Content-Type-Options: nosniff\r\nContent-Security-Policy: default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; frame-ancestors 'none'; base-uri 'none'; form-action 'none'\r\n"));
+                return;
+            }
+        } else if (request_->target != "/mcp") {
+            Reply(MakeResponse(404, "Not Found", "text/plain; charset=utf-8",
+                               "MCP endpoint is /mcp"));
             return;
         }
         if (request_->method != "POST") {
@@ -239,6 +299,9 @@ private:
             return;
         }
 
+        if (dash) {
+            Reply(MakeResponse(200, "OK", "application/json", dashboard_->rpc.Handle(request_->body))); return;
+        }
         const auto response = protocol_.Handle(request_->body);
         if (!response.has_value()) {
             Reply(MakeResponse(202, "Accepted", "application/json", {}));
@@ -262,6 +325,7 @@ private:
 
     tcp::socket socket_;
     agent::McpProtocolAdapter& protocol_;
+    std::shared_ptr<DashboardHttp> dashboard_;
     std::string request_bytes_;
     std::optional<HttpRequest> request_;
     std::string response_;
@@ -272,16 +336,16 @@ private:
 struct McpHttpServer::Impl final {
     explicit Impl(const std::uint16_t requested_port,
                   agent::FrameSnapshotStore& frames,
-                  agent::McpInputQueue& inputs)
-        : acceptor(io), protocol(frames, inputs) {
+                  agent::McpInputQueue& inputs, DashboardHttpConfig config)
+        : acceptor(io), protocol(frames, inputs), dashboard(CreateDashboard(std::move(config))) {
         Open(requested_port);
     }
 
     Impl(const std::uint16_t requested_port,
          agent::FrameSnapshotStore& frames,
          agent::McpInputQueue& inputs,
-         agent::McpSessionControl& session_control)
-        : acceptor(io), protocol(frames, inputs, session_control) {
+         agent::McpSessionControl& session_control, DashboardHttpConfig config)
+        : acceptor(io), protocol(frames, inputs, session_control), dashboard(CreateDashboard(std::move(config))) {
         Open(requested_port);
     }
 
@@ -317,7 +381,7 @@ struct McpHttpServer::Impl final {
     void AcceptNext() {
         acceptor.async_accept([this](const boost::system::error_code& error, tcp::socket socket) {
             if (!error) {
-                std::make_shared<HttpSession>(std::move(socket), protocol)->Start();
+                std::make_shared<HttpSession>(std::move(socket), protocol, dashboard)->Start();
             }
             if (acceptor.is_open()) {
                 AcceptNext();
@@ -328,22 +392,23 @@ struct McpHttpServer::Impl final {
     boost::asio::io_context io{1};
     tcp::acceptor acceptor;
     agent::McpProtocolAdapter protocol;
+    std::shared_ptr<DashboardHttp> dashboard;
     std::uint16_t port = 0;
     std::thread worker;
 };
 
 std::unique_ptr<McpHttpServer> McpHttpServer::Start(
     const std::uint16_t port, agent::FrameSnapshotStore& frames,
-    agent::McpInputQueue& inputs) {
+    agent::McpInputQueue& inputs, DashboardHttpConfig dashboard) {
     return std::unique_ptr<McpHttpServer>(
-        new McpHttpServer(std::make_unique<Impl>(port, frames, inputs)));
+        new McpHttpServer(std::make_unique<Impl>(port, frames, inputs, std::move(dashboard))));
 }
 
 std::unique_ptr<McpHttpServer> McpHttpServer::Start(
     const std::uint16_t port, agent::FrameSnapshotStore& frames,
-    agent::McpInputQueue& inputs, agent::McpSessionControl& session_control) {
+    agent::McpInputQueue& inputs, agent::McpSessionControl& session_control, DashboardHttpConfig dashboard) {
     return std::unique_ptr<McpHttpServer>(new McpHttpServer(
-        std::make_unique<Impl>(port, frames, inputs, session_control)));
+        std::make_unique<Impl>(port, frames, inputs, session_control, std::move(dashboard))));
 }
 
 McpHttpServer::McpHttpServer(std::unique_ptr<Impl> impl) : impl_(std::move(impl)) {}

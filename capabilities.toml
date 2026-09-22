@@ -165,6 +165,11 @@ status = "complete"
 test = "tests/agent/control_service_tests.cpp"
 note = "M0 完成传输无关分派、JSON-RPC 参数与标准错误模型；M6 WU-0335 统一以 core yyjson 严格解析和构造所有响应"
 
+[agent.dashboard]
+status = "partial"
+test = "tests/agent/dashboard_tests.cpp"
+note = "DASH-01 完成传输无关 dash.overview/snapshot/events/thread、只读 try-lock 聚合、限量事件环与线程关联；缺失来源明确 unavailable；运行进程装配、HTTP 与页面待 DASH-03，新增计数和剩余事件来源未接入"
+
 [agent.session]
 status = "complete"
 test = "tests/agent/control_service_tests.cpp"

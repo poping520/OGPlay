@@ -50,6 +50,7 @@ public:
 
     void RecordUnimplemented(std::string_view id, std::uint64_t link_register);
     [[nodiscard]] std::vector<UnimplementedHit> Unimplemented() const;
+    [[nodiscard]] std::optional<std::vector<UnimplementedHit>> TryUnimplemented(std::size_t limit = 128) const;
     void RecordNullCall(std::uint64_t link_register, std::string_view symbol);
     [[nodiscard]] std::vector<NullCallHit> NullCalls() const;
 

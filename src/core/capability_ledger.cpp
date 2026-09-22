@@ -140,6 +140,17 @@ std::vector<UnimplementedHit> CapabilityLedger::Unimplemented() const {
     return result;
 }
 
+std::optional<std::vector<UnimplementedHit>> CapabilityLedger::TryUnimplemented(std::size_t limit) const {
+    std::unique_lock lock(mutex_, std::try_to_lock);
+    if (!lock.owns_lock()) return std::nullopt;
+    std::vector<UnimplementedHit> result;
+    for (const auto& [id, hit] : hits_) {
+        static_cast<void>(id);
+        if (result.size() == limit) break;
+        result.push_back(hit);
+    }
+    return result;
+}
 void CapabilityLedger::RecordNullCall(const std::uint64_t link_register,
                                       const std::string_view symbol) {
     std::scoped_lock lock(mutex_);

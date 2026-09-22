@@ -134,6 +134,10 @@ public:
         std::string_view category_prefix = {},
         std::size_t limit = 0) const;
     [[nodiscard]] std::string RenderText(const LogRecord& record) const;
+    // Bounded, nonblocking ring copy; never renders or calls sinks/symbol providers.
+    // Nonblocking tail: at most 128 records, 32 fields/record and 512-byte UTF-8 text.
+    // Nullopt means busy; rendering/symbol providers are never called.
+    [[nodiscard]] std::optional<std::vector<LogRecord>> TrySnapshot(std::size_t limit = 128) const;
     [[nodiscard]] std::string RenderJson(const LogRecord& record) const;
     [[nodiscard]] std::optional<SymbolizedAddress> ResolveGuestAddress(
         std::uint64_t address) const;

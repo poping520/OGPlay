@@ -768,9 +768,8 @@ std::string RenderGuestStallSnapshotText(
     return out.str();
 }
 
-std::string RenderGuestStallSnapshotJson(
-    const GuestStallSnapshot& snapshot) {
-    core::JsonWriter writer;
+core::JsonWriter::Value AppendGuestStallSnapshotJson(
+    core::JsonWriter& writer, const GuestStallSnapshot& snapshot) {
     const auto root = writer.Object();
     writer.AddUnsignedInteger(root, "schema_version",
                               GuestStallSnapshot::kSchemaVersion);
@@ -967,7 +966,12 @@ std::string RenderGuestStallSnapshotJson(
         writer.Append(futexes, value);
     }
     writer.Add(root, "futexes", futexes);
-    return writer.Serialize(root);
+    return root;
+}
+
+std::string RenderGuestStallSnapshotJson(const GuestStallSnapshot& snapshot) {
+    core::JsonWriter writer;
+    return writer.Serialize(AppendGuestStallSnapshotJson(writer, snapshot));
 }
 
 class DiagCoordinator::Impl final {

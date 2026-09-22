@@ -8,6 +8,12 @@
 ## 公共 API
 
 - `ControlService::Request`：session/run/sym/hle/log/gpu 的传输无关分派。
+- `DashboardService::Request` / `ControlService::RequestDashboard`：只读 `dash.overview`、
+  `dash.snapshot {sections?}`、`dash.events {since_sequence, limit?, kinds?}`、
+  `dash.thread {guest_tid}`；JSON-RPC 支持同名分派，envelope/params 闭合校验。
+  `DashboardSources` 注入结构化来源，必须比服务存活更久；回调必须 atomic/有界 try-lock，
+  不允许执行 guest、写盘或调用会等待锁的普通 GPU/AudioTrack 快照。
+  默认 ControlService 只连接 logger/ledger；运行进程装配与 HTTP 路由由 DASH-03 接入。
 - `JsonRpcAdapter::Handle`：逐行 JSON-RPC 2.0 编解码，可由 stdio/TCP/UDS 共用。
   支持同步 `RequestHandler` 注入供独立 GUI 复用协议封装；JSON view 只在调用期间有效，
   注入模式拒绝额外 envelope 字段，不依赖前端或创建运行时 session。
@@ -55,6 +61,17 @@
 - MCP 图像最大 64 MiB RGBA8，尺寸、字节数、JPEG/PNG/Base64 输出必须在发布前完整受检；
   两种编码均使用仓库固定 commit 的官方 `stb_image_write`，禁止退回 stored-block PNG。
 - 调试接口与 CI 断言读取同一份状态。
+- Dashboard schema 1 的 section 为 session/diagnostics/gpu/vfs/audio/capabilities/log，携带
+  status/captured_at_steady_ns/generation；未连接、忙碌、异常为 unavailable + null，部分来源
+  与截断为 partial。无来源 generation 沿用诊断约定 0，不冒充 frame。overview 保留 session
+  顶栏数据，其余只给状态；thread 用 guest_tid/context_token 关联，pacer/lifecycle 为共享状态。
+- Dashboard 事件环默认 4096（上限 4096），每次最多 1000；sequence 是服务观察顺序，
+  source_sequence 保留来源序号。支持 syscall/native/dexvm/lifecycle；缺 frame/steady_ns
+  返回 null，其余事件类别不伪造。next_sequence 用于独立客户端续读；未来游标拒绝，覆盖
+  返回 gap/dropped，来源环丢失另计并保留 source section 状态。服务重建须从游标 0 开始。
+- Dashboard 响应最大 1 MiB；常规集合最多 128、事件最多 256、Java 栈最多 32 层；
+  日志尾部最多 128 条/每条 32 fields/文本 512 bytes。超预算显式 -32003，竞争请求立即
+  -32002，禁止等待 VM 执行锁；不承诺跨 section 原子快照。
 - `sym.resolve` 使用 core 的 provider；`hle.unimplemented/null_calls` 直接读取运行时账本。
 - `gpu.*` 不接受 provider 生成的 JSON；过滤与限额经结构化参数传入同一快照接口。
 - 协议错误使用 JSON-RPC 标准错误码；内核状态错误放在 server error 范围。

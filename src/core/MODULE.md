@@ -12,6 +12,9 @@
 - `GpuStateProvider`：图形实现注入统计、渲染目标、能力与有界 trace 的强类型只读快照；
   core 不依赖 GLES 或 Agent。
 - `ogplay::core::CapabilityLedger`：加载账本并记录运行时命中。
+- `Logger::TrySnapshot` / `CapabilityLedger::TryUnimplemented`：try-lock 读取同源记录，busy
+  返回 nullopt，成功空集合仍有值；不调用 sink/符号化。日志限 128 条、32 fields/条、
+  512-byte UTF-8 文本，账本按 id 顺序复制调用方指定上限，不改变原始记录。
 - `JsonDocument` / `JsonWriter`：基于 yyjson 的唯一 JSON 解析、只读访问、树复制与构造
   边界；调用方不接触第三方类型。
 - `CapabilityLedger::RecordNullCall/NullCalls`：所有吞错 quirk 共用的空调用观测表。

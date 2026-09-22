@@ -595,6 +595,7 @@ target_include_directories(ogplay_session PUBLIC
 ogplay_set_project_warnings(ogplay_session)
 
 add_library(ogplay_agent
+    src/agent/dashboard.cpp
     src/agent/control_service.cpp
     src/agent/coordinate_overlay.cpp
     src/agent/mcp_input.cpp
@@ -760,6 +761,7 @@ if(OGPLAY_BUILD_TESTS)
         tests/core/json_tests.cpp
         tests/core/logger_tests.cpp
         tests/agent/control_service_tests.cpp
+        tests/agent/dashboard_tests.cpp
         tests/agent/mcp_protocol_tests.cpp
         tests/frontend/mcp_http_server_tests.cpp
         tests/frontend/mcp_input_dispatch_tests.cpp

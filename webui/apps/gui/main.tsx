@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { rpc, type Library, type LibraryItem } from './rpc';
 import { averageIconColor, statuses, validatePackageSelection, versionLabel, visibleItems, type Filter, type Sort } from './library';
 import { SettingsPage } from './settings-page';
+import { GameSettingsPage } from './game-settings-page';
 import { resolvedTheme, type Settings } from './settings';
 import { ImportWizard } from './import-wizard';
 import '../../packages/ui-kit/theme.css';
@@ -52,6 +53,7 @@ function App() {
   const [filter, setFilter] = useState<Filter>('all');
   const [sort, setSort] = useState<Sort>('name');
   const [mode, setMode] = useState<'grid' | 'list'>('grid');
+  const [gameSettingsId, setGameSettingsId] = useState('');
   const [errors, setErrors] = useState<string[]>([]);
   const [pendingFile, setPendingFile] = useState<File | null>(null);
   const [importing, setImporting] = useState(false);
@@ -85,11 +87,11 @@ function App() {
   useEffect(() => { if (selected && !item) setSelected(''); }, [selected, item]);
   useEffect(() => {
     const escape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && selected && !errors.length && !importing) closeDrawer();
+      if (event.key === 'Escape' && selected && !errors.length && !importing && !settingsOpen && !gameSettingsId) closeDrawer();
     };
     window.addEventListener('keydown', escape);
     return () => window.removeEventListener('keydown', escape);
-  }, [selected, errors.length, importing]);
+  }, [selected, errors.length, importing, settingsOpen, gameSettingsId]);
   async function refresh() {
     const request = ++generation.current;
     try {
@@ -134,6 +136,7 @@ function App() {
   const resetFilters = () => { setQuery(''); setFilter('all'); search.current?.focus(); };
   const importButton = <button class="primary" disabled={importing} onClick={() => { setPendingFile(null); setImporting(true); }}>＋ 选择安装包</button>;
   if (settingsOpen) return <SettingsPage onBack={() => { setSettingsOpen(false); void refresh().catch(report); }} onSaved={applySettings} />;
+  if (gameSettingsId) return <GameSettingsPage id={gameSettingsId} onBack={() => { setGameSettingsId(''); void refresh().catch(report); }} />;
   return <div class={`shell ${dragging ? 'dragging' : ''}`}
     onDragEnter={event => { if (isFileDrag(event)) { event.preventDefault(); ++dragDepth.current; setDragging(true); } }}
     onDragOver={event => { if (isFileDrag(event)) { event.preventDefault(); if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy'; } }}
@@ -178,7 +181,7 @@ function App() {
         <div class="drawer-scroll"><div class="hero"><GameIcon item={item} /><div><h2>{item.display_name}</h2><p class="mono">{item.package || '包名不可用'}</p><small>{versionLabel(item)}</small></div></div>
           <div class="detail-status"><Status item={item} />{item.running && item.status !== 'running' && <span class="badge running">运行中</span>}</div>
           <button class="primary launch-button" disabled={busy || !item.can_launch} onClick={() => void act('library.launch', item)}>{item.running ? '游戏运行中' : '▶ 启动游戏'}</button><p class="condition-detail">{item.detail}</p>
-          <div class="detail-actions"><button disabled title="游戏设置暂未开放">游戏设置 · 暂未开放</button><button disabled title="运行监控暂未开放">Dashboard · 暂未开放</button><button disabled={busy} onClick={() => void act('library.open_dir', item, 'sandbox')}>打开沙盒目录</button><button disabled={busy} onClick={() => void act('library.open_dir', item, 'log')}>打开日志目录</button></div>
+          <div class="detail-actions"><button disabled={busy || importing} onClick={() => setGameSettingsId(item.installation_id)}>游戏设置</button><button disabled title="运行监控暂未开放">Dashboard · 暂未开放</button><button disabled={busy} onClick={() => void act('library.open_dir', item, 'sandbox')}>打开沙盒目录</button><button disabled={busy} onClick={() => void act('library.open_dir', item, 'log')}>打开日志目录</button></div>
           <h3>安装信息</h3><dl><dt>安装实例</dt><dd class="mono">{item.installation_id}</dd><dt>Profile</dt><dd>{item.profile.value}<small>{item.profile.detail}</small></dd><dt>数据包</dt><dd>{item.external.value}<small>{item.external.detail}</small></dd><dt>沙盒路径</dt><dd class="mono">{item.sandbox_path}</dd><dt>日志目录</dt><dd class="mono">{item.log_directory}</dd><dt>导入时间</dt><dd>{item.imported_at || '未记录'}</dd></dl>
         </div></aside>}
       </div><footer class="statusbar"><span title={library.library_root}>{library.library_root}</span><span>{library.items.filter(game => game.running).length} 个运行中</span></footer>

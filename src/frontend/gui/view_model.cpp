@@ -56,6 +56,8 @@ std::vector<LibraryTile> BuildLibraryTiles(
     std::vector<LibraryTile> tiles;
     tiles.reserve(entries.size());
     for (const auto& entry : entries) {
+        const auto profile_error = context.profile_errors.contains(entry.key) ?
+            std::optional<std::string>(context.profile_errors.at(entry.key)) : context.profile_catalog_error;
         LibraryTile tile;
         tile.key = entry.key;
         tile.display_name = entry.metadata ? entry.metadata->display_name : entry.key;
@@ -65,10 +67,10 @@ std::vector<LibraryTile> BuildLibraryTiles(
             tile.status = LibraryTileStatus::damaged;
             tile.detail = "库条目损坏：" + entry.damage_reason.value_or(
                 "元数据不可用") + "。可右键删除后重新导入。";
-        } else if (context.profile_catalog_error.has_value()) {
+        } else if (profile_error.has_value()) {
             tile.status = LibraryTileStatus::profile_catalog_unavailable;
             tile.detail = "Profile 目录不可用：" +
-                          *context.profile_catalog_error +
+                          *profile_error +
                           "。请在设置中选择有效目录或恢复内置数据。";
         } else if (!entry.metadata->profile_id.has_value()) {
             tile.status = LibraryTileStatus::missing_profile;
@@ -126,6 +128,8 @@ LibraryDetail BuildLibraryDetail(const LibraryEntry& entry,
         .can_delete = !tile.running,
     };
 
+    const auto profile_error = context.profile_errors.contains(entry.key) ?
+        std::optional<std::string>(context.profile_errors.at(entry.key)) : context.profile_catalog_error;
     if (!entry.metadata.has_value() || entry.Damaged()) {
         result.profile = {LibraryConditionStatus::unavailable, "无法判断",
                           "库条目元数据不可用。"};
@@ -138,10 +142,10 @@ LibraryDetail BuildLibraryDetail(const LibraryEntry& entry,
                              ? "versionCode " +
                                    std::to_string(metadata.version_code)
                              : metadata.version_name;
-        if (context.profile_catalog_error.has_value()) {
+        if (profile_error.has_value()) {
             result.profile = {
                 LibraryConditionStatus::unavailable, "无法判断",
-                "Profile 目录不可用：" + *context.profile_catalog_error};
+                "Profile 目录不可用：" + *profile_error};
             result.external = {
                 LibraryConditionStatus::unavailable, "无法判断",
                 "Profile 不可用，无法判断是否需要外部数据。"};

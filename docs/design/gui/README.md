@@ -126,10 +126,11 @@ library.list                → tiles + detail facts（复用 BuildLibraryTiles/
 library.analyze  {path}     → 导入摘要（异步，返回 job id；library.job.poll 取结果）
 library.import   {job, external_dir?}
 library.remove   {installation_id}
-library.launch   {installation_id, overrides?}   → pid / 单实例冲突错误
+library.launch   {installation_id, mode?: normal|preflight|diagnostic} → started / 单实例冲突错误
 library.open_dir {installation_id, kind: sandbox|log|external}
 settings.get / settings.set            （全局，schema 2；set 要求读取版本 revision）
-game_settings.get / game_settings.set  {installation_id}
+game_settings.get {installation_id}    → 覆盖值、继承值、字段与已保存配置的 argv 预览
+game_settings.set {installation_id, values, revision} → 完整替换覆盖集合，缺省键恢复继承
 devices.presets                        → data/devices/*.toml
 runtime.instances                      → 运行中子进程、MCP 端口、退出码回收
 dialog.pick {kind: file|directory, filters}

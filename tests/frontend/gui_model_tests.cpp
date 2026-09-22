@@ -148,6 +148,32 @@ TEST_CASE("GUI schema two validates typed settings without replacing good config
     }
 }
 
+TEST_CASE("GUI instance settings persist only overrides with strict schema and backup recovery") {
+    using namespace ogplay::frontend;
+    TemporaryDirectory tree;
+    const auto first = tree.path / "first", second = tree.path / "second";
+    std::filesystem::create_directories(first); std::filesystem::create_directories(second);
+    CHECK(LoadGameSettings(first).values.empty());
+    GameSettings settings{{{"supersample", std::uint32_t{3}}, {"mute", false}, {"model", std::string("测试机型")}}};
+    SaveGameSettings(first, settings);
+    CHECK(LoadGameSettings(first) == settings);
+    CHECK(LoadGameSettings(second).values.empty());
+    auto bad = settings; bad.values["supersample"] = std::uint32_t{5};
+    CHECK_THROWS(SaveGameSettings(first, bad));
+    CHECK(LoadGameSettings(first) == settings);
+    std::filesystem::rename(first / "settings.toml", first / "settings.toml.bak");
+    CHECK(LoadGameSettings(first) == settings);
+    CHECK_FALSE(std::filesystem::exists(first / "settings.toml.bak"));
+    SaveGameSettings(first, {});
+    CHECK(std::filesystem::file_size(first / "settings.toml") == std::string_view("schema = 1\n").size());
+    for (const auto text : {"schema = 2\n", "schema = 1\nunknown = true\n", "schema = 1\nmute = 1\n",
+                            "schema = 1\nsupersample = 0\n", "schema = 1\nexternal_dir = \"relative\"\n",
+                            "schema = 1\nmute = true\nmute = false\n"}) {
+        Write(first / "settings.toml", text);
+        CHECK_THROWS(static_cast<void>(LoadGameSettings(first)));
+    }
+}
+
 TEST_CASE("library import atomically copies APK metadata and optional icon") {
     TemporaryDirectory tree;
     const auto source = tree.path / "source.apk";

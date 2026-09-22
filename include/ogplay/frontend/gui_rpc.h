@@ -20,6 +20,7 @@ struct GuiRpcHost final {
     std::function<std::string()> timestamp;
     std::function<void()> minimize;
     std::function<std::map<std::string, std::string>()> settings_facts;
+    std::function<std::map<std::string, std::string>(const LibraryEntry&, const GuiConfig&)> game_facts;
 };
 
 class GuiRpcService final {
@@ -36,6 +37,7 @@ private:
     bool ImportBusy() const;
     bool SettingsBusy() const;
     [[nodiscard]] agent::ControlResponse SettingsRequest(std::string_view method, core::JsonValue params);
+    [[nodiscard]] agent::ControlResponse GameSettingsRequest(std::string_view method, core::JsonValue params);
     [[nodiscard]] agent::ControlResponse ImportRequest(std::string_view method, core::JsonValue params);
     std::shared_ptr<ImportState> import_;
     LibraryStore& store_;

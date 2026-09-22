@@ -300,8 +300,9 @@ GuiModelErrorCode GuiModelError::Code() const noexcept { return code_; }
 
 const std::filesystem::path& GuiModelError::Path() const noexcept { return path_; }
 
-GuiConfig LoadGuiConfig(const std::filesystem::path& library_root) {
-    const auto path = library_root / "config.toml";
+namespace {
+template<class Config, class Decode>
+Config LoadConfigFile(const std::filesystem::path& path, Decode decode) {
     auto backup = path;
     backup += ".bak";
     std::error_code error;
@@ -325,11 +326,36 @@ GuiConfig LoadGuiConfig(const std::filesystem::path& library_root) {
         }
     }
     try {
-        return DecodeConfig(ReadText(path));
+        return decode(ReadText(path));
     } catch (const std::exception& exception) {
         throw GuiModelError(GuiModelErrorCode::corrupt_config,
                             std::string("GUI config is damaged: ") + exception.what(), path);
     }
+}
+
+} // namespace
+GuiConfig LoadGuiConfig(const std::filesystem::path& root) {
+    return LoadConfigFile<GuiConfig>(root / "config.toml", DecodeConfig);
+}
+GameSettings LoadGameSettings(const std::filesystem::path& directory) {
+    return LoadConfigFile<GameSettings>(directory / "settings.toml", [](std::string_view text) {
+        const auto values = ParseFlatToml(text);
+        if (ParseUint32(Require(values, "schema"), "schema") != 1) throw std::invalid_argument("unsupported instance settings schema");
+        GameSettings settings;
+        for (const auto& [key, value] : values) {
+            if (key == "schema") continue;
+            const auto& field = FindGameSetting(key);
+            GuiSettingValue parsed;
+            if (std::holds_alternative<bool>(field.initial)) {
+                if (value != "true" && value != "false") throw std::invalid_argument("invalid boolean: " + key);
+                parsed = value == "true";
+            } else if (std::holds_alternative<std::uint32_t>(field.initial)) parsed = ParseUint32(value, key);
+            else parsed = ParseTomlString(value);
+            ValidateSettingValue(field, parsed);
+            settings.values[key] = std::move(parsed);
+        }
+        return settings;
+    });
 }
 
 void ValidateGuiConfigDirectories(const GuiConfig& config) {
@@ -349,16 +375,15 @@ void ValidateGuiConfigDirectories(const GuiConfig& config) {
     }
 }
 
-void SaveGuiConfig(const std::filesystem::path& library_root,
-                   const GuiConfig& config) {
+namespace {
+void SaveConfigFile(const std::filesystem::path& target, const std::string& text) {
     try {
-        std::filesystem::create_directories(library_root);
-        const auto target = library_root / "config.toml";
+        std::filesystem::create_directories(target.parent_path());
         auto temporary = target;
         temporary += ".tmp";
         auto backup = target;
         backup += ".bak";
-        WriteText(temporary, EncodeConfig(config));
+        WriteText(temporary, text);
         std::error_code error;
         static_cast<void>(std::filesystem::remove(backup, error));
         if (error) {
@@ -390,8 +415,25 @@ void SaveGuiConfig(const std::filesystem::path& library_root,
     } catch (const std::exception& exception) {
         throw GuiModelError(GuiModelErrorCode::io_error,
                             std::string("cannot save GUI config: ") + exception.what(),
-                            library_root / "config.toml");
+                            target);
     }
+}
+} // namespace
+void SaveGuiConfig(const std::filesystem::path& root, const GuiConfig& config) {
+    SaveConfigFile(root / "config.toml", EncodeConfig(config));
+}
+void SaveGameSettings(const std::filesystem::path& directory, const GameSettings& settings) {
+    ValidateGameSettings(settings);
+    if (!std::filesystem::is_directory(directory)) throw std::invalid_argument("instance directory unavailable");
+    std::string text = "schema = 1\n";
+    for (const auto& [key, value] : settings.values) {
+        text += key + " = ";
+        if (const auto flag = std::get_if<bool>(&value)) text += *flag ? "true" : "false";
+        else if (const auto number = std::get_if<std::uint32_t>(&value)) text += std::to_string(*number);
+        else text += EscapeToml(std::get<std::string>(value));
+        text += "\n";
+    }
+    SaveConfigFile(directory / "settings.toml", text);
 }
 
 LibraryStore::LibraryStore(std::filesystem::path library_root)

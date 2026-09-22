@@ -85,6 +85,39 @@ TEST_CASE("GUI global launch settings forward only supported CLI controls") {
     }
 }
 
+TEST_CASE("GUI instance launch overrides inherit and emit valid CLI mode combinations") {
+    using namespace ogplay::frontend;
+    TemporaryDirectory tree;
+    const auto cli = tree.path / "ogplay", directory = tree.path / "entry", external = tree.path / "external";
+    Write(cli, "exe"); Write(directory / "game.apk", "apk");
+    std::filesystem::create_directories(external);
+    auto entry = Entry(directory, {}); entry.metadata->external_dir.reset();
+    GuiConfig global;
+    SetGuiSetting(global, "supersample", std::uint32_t{4});
+    SetGuiSetting(global, "mcp_enabled", true);
+    GameSettings settings{{{"supersample", std::uint32_t{2}}, {"mcp_manual_step", true},
+        {"ephemeral_sandbox", true}, {"external_dir", external.generic_string()}, {"model", std::string("reserved")}}};
+    SaveGameSettings(directory, settings);
+    const auto has = [](const auto& args, const auto& value) { return std::find(args.begin(), args.end(), value) != args.end(); };
+    const auto normal = BuildLaunchPlan(cli, tree.path, entry, global).argv;
+    CHECK(has(normal, "2")); CHECK_FALSE(has(normal, "4")); CHECK_FALSE(has(normal, "reserved"));
+    CHECK(has(normal, "--external-dir")); CHECK(has(normal, external.generic_string()));
+    CHECK(has(normal, "--mcp-port")); CHECK(has(normal, "--mcp-manual-step"));
+    CHECK(has(normal, "--ephemeral-sandbox")); CHECK_FALSE(has(normal, "--sandbox-dir"));
+    const auto preflight = BuildLaunchPlan(cli, tree.path, entry, global, GuiLaunchMode::preflight).argv;
+    CHECK(has(preflight, "--preflight")); CHECK_FALSE(has(preflight, "--mcp-port")); CHECK_FALSE(has(preflight, "--mcp-manual-step"));
+    CHECK(has(BuildLaunchPlan(cli, tree.path, entry, global, GuiLaunchMode::diagnostic).argv, "--diag"));
+    SetGuiSetting(global, "mcp_enabled", false);
+    CHECK_THROWS(static_cast<void>(BuildLaunchPlan(cli, tree.path, entry, global)));
+    CHECK_NOTHROW(static_cast<void>(BuildLaunchPlan(cli, tree.path, entry, global, GuiLaunchMode::preflight)));
+    SaveGameSettings(directory, {});
+    const auto inherited = BuildLaunchPlan(cli, tree.path, entry, global).argv;
+    CHECK(has(inherited, "4")); CHECK(has(inherited, "--sandbox-dir")); CHECK_FALSE(has(inherited, "--external-dir"));
+    entry.metadata->external_dir = external;
+    SaveGameSettings(directory, {{{"external_dir", std::string()}}});
+    CHECK_FALSE(has(BuildLaunchPlan(cli, tree.path, entry, global).argv, "--external-dir"));
+}
+
 TEST_CASE("GUI LaunchPlan emits only the documented run-apk arguments") {
     TemporaryDirectory temporary;
     const auto cli = temporary.path / "bin" / "ogplay";

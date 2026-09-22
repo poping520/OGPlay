@@ -144,6 +144,81 @@ TEST_CASE("GUI minimizes only after a successful launch when requested") {
     CHECK(fixture.minimized == 1);
 }
 
+TEST_CASE("GUI instance settings RPC isolates instances and uses the same preview and launch plan") {
+    Fixture fixture;
+    const auto first = fixture.root / "library/org.example.game", second = fixture.root / "library/org.example.game-2";
+    std::filesystem::copy(first, second, std::filesystem::copy_options::recursive);
+    const auto get = [&](std::string_view id) {
+        core::JsonWriter writer; const auto request = writer.Object(), params = writer.Object();
+        writer.AddString(request, "jsonrpc", "2.0"); writer.AddUnsignedInteger(request, "id", 1);
+        writer.AddString(request, "method", "game_settings.get"); writer.AddString(params, "installation_id", id);
+        writer.Add(request, "params", params); return Decode(fixture.rpc.Handle(writer.Serialize(request)));
+    };
+    const auto set = [&](std::string_view revision, std::string_view values) {
+        auto parsed = Decode(std::string(values)); core::JsonWriter writer;
+        const auto request = writer.Object(), params = writer.Object();
+        writer.AddString(request, "jsonrpc", "2.0"); writer.AddUnsignedInteger(request, "id", 2);
+        writer.AddString(request, "method", "game_settings.set"); writer.AddString(params, "installation_id", "org.example.game");
+        writer.AddString(params, "revision", revision); writer.Add(params, "values", writer.Copy(parsed.Root()));
+        writer.Add(request, "params", params); return Decode(fixture.rpc.Handle(writer.Serialize(request)));
+    };
+    auto initial = get("org.example.game");
+    REQUIRE(initial.Root().Member("result"));
+    const auto revision = std::string(*initial.Root().Member("result")->Member("revision")->String());
+    for (const auto values : {R"({"supersample":5})", R"({"unknown":true})", R"({"supersample":"2"})",
+                              R"({"mcp_manual_step":true})", R"({"mute":null})", R"({"external_dir":"relative"})"})
+        CHECK(set(revision, values).Root().Member("error").has_value());
+    CHECK_FALSE(std::filesystem::exists(first / "settings.toml"));
+    auto changed = set(revision, R"({"supersample":3,"mcp_enabled":true,"mcp_manual_step":true,"ephemeral_sandbox":true})");
+    REQUIRE(changed.Root().Member("result"));
+    CHECK(frontend::LoadGameSettings(second).values.empty());
+    CHECK(set(revision, "{}").Root().Member("error").has_value());
+    const auto preview = changed.Root().Member("result")->Member("previews")->Member("normal")->Member("argv");
+    REQUIRE(Decode(fixture.rpc.Handle(R"({"jsonrpc":"2.0","id":3,"method":"library.launch","params":{"installation_id":"org.example.game"}})")).Root().Member("result"));
+    REQUIRE(fixture.plan); REQUIRE(preview->Size() == fixture.plan->argv.size());
+    for (std::size_t i = 0; i < preview->Size(); ++i) CHECK(preview->Element(i)->String() == fixture.plan->argv[i]);
+    const auto current = std::string(*changed.Root().Member("result")->Member("revision")->String());
+    auto global = frontend::LoadGuiConfig(fixture.root);
+    frontend::SetGuiSetting(global, "supersample", std::uint32_t{4}); frontend::SaveGuiConfig(fixture.root, global);
+    CHECK(set(current, "{}").Root().Member("error").has_value());
+    auto reload = get("org.example.game");
+    const auto fresh = std::string(*reload.Root().Member("result")->Member("revision")->String());
+    REQUIRE(set(fresh, "{}").Root().Member("result"));
+    CHECK(frontend::LoadGameSettings(first).values.empty());
+    CHECK(get("../org.example.game").Root().Member("error").has_value());
+    std::ofstream(first / "settings.toml") << "schema = 99\n";
+    CHECK(get("org.example.game").Root().Member("error").has_value());
+    REQUIRE(get("org.example.game-2").Root().Member("result"));
+    CHECK(set(fresh, "{}").Root().Member("error").has_value());
+}
+
+TEST_CASE("GUI library facts use instance external directory and isolate broken settings") {
+    Fixture fixture;
+    const auto directory = fixture.root / "library/org.example.game";
+    std::ofstream(directory / "meta.toml", std::ios::app) << "profile_id = \"org.example.game\"\n";
+    fixture.context.external_required_packages = {"org.example.game"};
+    const auto list = [&] { return Decode(fixture.rpc.Handle(R"({"jsonrpc":"2.0","id":1,"method":"library.list"})")); };
+    auto before = list();
+    CHECK(before.Root().Member("result")->Member("items")->Element(0)->Member("status")->String() == "missing_external");
+    const auto external = fixture.root / "external"; std::filesystem::create_directories(external);
+    frontend::SaveGameSettings(directory, {{{"external_dir", external.generic_string()}}});
+    auto after = list();
+    CHECK(after.Root().Member("result")->Member("items")->Element(0)->Member("status")->String() == "ready");
+    REQUIRE(Decode(fixture.rpc.Handle(R"({"jsonrpc":"2.0","id":2,"method":"library.open_dir","params":{"installation_id":"org.example.game","kind":"external"}})")).Root().Member("result"));
+    CHECK(fixture.opened == external);
+    std::filesystem::copy(directory, fixture.root / "library/org.example.game-2", std::filesystem::copy_options::recursive);
+    fixture.context.profile_errors["org.example.game"] = "bad override";
+    auto unavailable = list();
+    const auto items = unavailable.Root().Member("result")->Member("items");
+    REQUIRE(items->Size() == 2);
+    CHECK(items->Element(0)->Member("status")->String() == "profile_catalog_unavailable");
+    CHECK(items->Element(1)->Member("can_launch")->Bool() == true);
+    std::ofstream(directory / "settings.toml") << "schema = 99\n";
+    auto damaged = list();
+    CHECK(damaged.Root().Member("result")->Member("items")->Element(0)->Member("status")->String() == "damaged");
+    CHECK(damaged.Root().Member("result")->Member("items")->Element(1)->Member("can_launch")->Bool() == true);
+}
+
 TEST_CASE("GUI RPC serializes model facts and enforces launch eligibility") {
     Fixture fixture;
     auto list = Decode(fixture.rpc.Handle(R"({"jsonrpc":"2.0","id":"list","method":"library.list"})"));

@@ -10,6 +10,7 @@
 #include <string>
 #include "ogplay/core/logger.h"
 #include "ogplay/frontend/gui_rpc.h"
+#include "ogplay/frontend/gui_settings.h"
 #include "ogplay/frontend/data_directory.h"
 #include "ogplay/frontend/user_data_dir.h"
 #include "ogplay/hal/webview_host.h"
@@ -100,12 +101,20 @@ LibraryViewContext BuildContext(const LibraryStore& store_, const GuiProcessMana
             const auto bundled = HostBundledDataPaths();
             const auto config = LoadGuiConfig(store_.Root());
             const auto quirks = session::QuirkRegistry::LoadPackaged(bundled.quirk_registry);
-            const auto profiles = session::TitleProfileCatalog::LoadDirectory(
-                config.profiles_dir.value_or(bundled.profiles_directory), quirks);
+            std::map<std::filesystem::path, session::TitleProfileCatalog> catalogs;
             for (const auto& entry : entries) {
-                if (!entry.metadata || !entry.metadata->profile_id) continue;
-                const auto summary = session::FindApkProfileSummary(profiles, *entry.metadata->profile_id);
-                if (summary && summary->requires_external_data) context.external_required_packages.push_back(entry.key);
+                if (!entry.metadata || entry.Damaged()) continue;
+                try {
+                    const auto effective = EffectiveGameConfig(LoadGameSettings(entry.directory), config);
+                    const auto directory = effective.profiles_dir.value_or(bundled.profiles_directory);
+                    if (!catalogs.contains(directory)) catalogs.emplace(directory,
+                        session::TitleProfileCatalog::LoadDirectory(directory, quirks));
+                    const auto& profiles = catalogs.at(directory);
+                    if (!entry.metadata->profile_id) continue;
+                    const auto summary = session::FindApkProfileSummary(profiles, *entry.metadata->profile_id);
+                    if (!summary) throw std::runtime_error("记录的 Profile 在所选目录中不存在。");
+                    if (summary->requires_external_data) context.external_required_packages.push_back(entry.key);
+                } catch (const std::exception& error) { context.profile_errors[entry.key] = error.what(); }
             }
         } catch (const std::exception& error) { context.profile_catalog_error = error.what(); }
         return context;
@@ -147,6 +156,29 @@ int RunGuiCommand(int argc, const char* const argv[], core::Logger& logger) {
                 std::string text(static_cast<std::size_t>(size), '\0');
                 file.read(text.data(), static_cast<std::streamsize>(size));
                 facts[key] = file ? text : "读取失败";
+            }
+            return facts;
+        },
+        [](const LibraryEntry& entry, const GuiConfig& config) {
+            std::map<std::string, std::string> facts;
+            const auto bundled = HostBundledDataPaths();
+            const auto directory = config.profiles_dir.value_or(bundled.profiles_directory);
+            facts["有效 Profile 目录"] = PathUtf8(directory);
+            const auto quirks = session::QuirkRegistry::LoadPackaged(bundled.quirk_registry);
+            const auto profiles = session::TitleProfileCatalog::LoadDirectory(directory, quirks);
+            facts["Profile 状态"] = "无导入匹配记录；启动时由 CLI 重新匹配";
+            if (entry.metadata && entry.metadata->profile_id) {
+                const auto summary = session::FindApkProfileSummary(profiles, *entry.metadata->profile_id);
+                if (!summary) throw std::runtime_error("记录的 Profile 在所选目录中不存在。");
+                facts["Profile 状态"] = "目录中存在导入记录；适用性由 CLI 启动时校验";
+                for (const auto& profile : profiles.Profiles()) if (profile.identity.package == *entry.metadata->profile_id) {
+                    std::string names;
+                    if (profile.quirks) for (const auto& name : profile.quirks->enabled) {
+                        if (!names.empty()) names += ", "; names += name;
+                    }
+                    facts["Profile quirk 列表"] = names.empty() ? "无" : names;
+                    facts["Profile 输入模板"] = profile.input ? profile.input->profile : "未指定";
+                }
             }
             return facts;
         }});

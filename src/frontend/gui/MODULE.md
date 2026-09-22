@@ -24,6 +24,13 @@ Windows 系统 WebView2 启动器与独立游戏库模型。GUI 只管理宿主�
   `settings.get/set` 返回完整有效值；保存校验读取版本、目录和字段，未知键或损坏配置拒绝覆盖。
   `settings.open_dir` 只接受 library 枚举，不接受任意路径。制品信息缺失不影响配置保存。
   后台 APK 分析或入库尚未回收时禁止保存，避免配置发布与后台读取并发。
+- `GameSettingDefinitions` / `LoadGameSettings` / `SaveGameSettings`：每实例 `settings.toml`
+  严格 schema 1，与全局配置共用私有 TOML 解析与 `.bak` 发布/恢复。只写显式覆盖键；
+  缺省继承全局或字段默认值，`external_dir` 缺省继承导入记录，空字符串明确取消数据包目录。
+- `game_settings.get/set {installation_id, values?, revision?}`：只查找已枚举实例，set 的 values
+  是完整覆盖集合，删除键恢复继承；读取版本绑定实例、覆盖集合及继承值。未知键、无效目录、
+  损坏配置及过期版本明确失败。运行中可保存下次启动设置，不修改运行中的进程。
+  get 返回保存值、继承值、字段定义和三种启动模式的 argv/错误，预览不启动子进程。
 - `ExtractApkApplicationVisuals` / `ResizeArgbBilinear`：APK 名称、128×128 PNG 与明确资源回退原因。
 - `BuildLibraryTiles` / `BuildLibraryDetail` / `LibrarySelection`：统一状态、详情和稳定选择模型。
 - `AnalyzeApkImport` / `BuildLibraryImport`：只读 APK 分析、Profile 匹配和原子入库请求。
@@ -56,6 +63,11 @@ Windows 系统 WebView2 启动器与独立游戏库模型。GUI 只管理宿主�
   `--sandbox-dir <library-root>/sandbox` 与 `--installation-id`，同实例不重复启动。
 - 全局设置仅将超采样、解释器和 MCP 端口转为已支持的 CLI 参数；预留选项只保存，
   不改变运行时行为。启动成功后通过宿主回调最小化；GUI 配置不覆盖正在运行的进程。
+- BuildLaunchPlan 从实例配置合并全局值，支持 Profile/数据目录、超采样、解释器、MCP
+  开关/端口/手动步进、临时沙盒。预检移除全部 MCP 参数；临时沙盒不传 `--sandbox-dir`。
+  `library.launch` 的 mode 仅允许 normal/preflight/diagnostic，预览和启动使用同一路径。
+  库视图和目录打开消费实例数据目录，Profile 覆盖目录的错误按实例隔离。
+  本阶段不直接修改沙盒 meta、身份或存档；身份再生成/重置/导入导出入口禁用。
 - APK/manifest 损坏失败；资源图标/名称失败记录 fallback，空 PNG 为明确占位；versionCode
   接受完整 uint32。禁止把含控制字符的 label 直接持久化。
 - 导入未知 Profile 或跳过 required external 可以入库；无效目录、损坏 APK 和未解决的实例

@@ -39,8 +39,11 @@ std::filesystem::path LauncherSandboxRoot(
 
 LaunchPlan BuildLaunchPlan(const std::filesystem::path& cli_executable,
                            const std::filesystem::path& library_root,
-                           const LibraryEntry& entry,
-                           const GuiConfig& config) {
+                           const LibraryEntry& source_entry,
+                           const GuiConfig& global, GuiLaunchMode mode) {
+    const auto settings = LoadGameSettings(source_entry.directory);
+    const auto config = EffectiveGameConfig(settings, global);
+    const auto entry = EffectiveGameEntry(source_entry, settings);
     ValidateGuiConfigValues(config);
     if (entry.Damaged() || !entry.metadata.has_value()) {
         throw GuiModelError(GuiModelErrorCode::corrupt_config,
@@ -83,12 +86,22 @@ LaunchPlan BuildLaunchPlan(const std::filesystem::path& cli_executable,
     if (supersample != 1) { plan.argv.push_back("--supersample"); plan.argv.push_back(std::to_string(supersample)); }
     const auto interpreter = std::get<std::string>(GuiSetting(config, "interpreter"));
     if (interpreter != "profile") { plan.argv.push_back("--dexvm-interpreter"); plan.argv.push_back(interpreter); }
-    if (std::get<bool>(GuiSetting(config, "mcp_enabled"))) {
+    const auto mcp = std::get<bool>(GuiSetting(config, "mcp_enabled"));
+    const auto manual = std::get<bool>(EffectiveGameSetting(settings, global, entry, "mcp_manual_step"));
+    if (manual && !mcp && mode != GuiLaunchMode::preflight) throw std::invalid_argument("MCP 手动步进需要启用 MCP。");
+    if (mcp && mode != GuiLaunchMode::preflight) {
         plan.argv.push_back("--mcp-port");
         plan.argv.push_back(std::to_string(std::get<std::uint32_t>(GuiSetting(config, "mcp_port"))));
     }
-    plan.argv.push_back("--sandbox-dir");
-    plan.argv.push_back(PathUtf8(LauncherSandboxRoot(library_root)));
+    if (manual && mode != GuiLaunchMode::preflight) plan.argv.push_back("--mcp-manual-step");
+    if (mode == GuiLaunchMode::preflight) plan.argv.push_back("--preflight");
+    if (mode == GuiLaunchMode::diagnostic) plan.argv.push_back("--diag");
+    if (std::get<bool>(EffectiveGameSetting(settings, global, entry, "ephemeral_sandbox")))
+        plan.argv.push_back("--ephemeral-sandbox");
+    else {
+        plan.argv.push_back("--sandbox-dir");
+        plan.argv.push_back(PathUtf8(LauncherSandboxRoot(library_root)));
+    }
     plan.argv.push_back("--installation-id");
     plan.argv.push_back(entry.key);
     plan.log_path = std::filesystem::absolute(entry.directory / "last-run.log")

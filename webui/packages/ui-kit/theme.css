@@ -136,6 +136,10 @@ pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 50vh; overflow
 .settings-nav button { text-align: left; background: transparent; border-color: transparent; }
 .settings-nav button[aria-current=page] { background: var(--panel); border-color: var(--accent); }
 .settings-toolbar { margin-left: auto; display: flex; gap: 8px; }
+.instance-identity { overflow-wrap: anywhere; margin-bottom: 16px; }
+.inherit-control { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 11px; margin-top: 6px; }
+.game-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 12px 0; }
+.game-actions select { background: var(--panel); padding: 6px; border: 1px solid var(--line); border-radius: 6px; }
 .settings-content { overflow: auto; padding: 24px; max-width: 1050px; width: 100%; }
 .settings-content h2 { margin-bottom: 20px; }
 .setting-row { display: grid; grid-template-columns: minmax(180px, 1fr) minmax(200px, 1fr); gap: 24px; align-items: center; padding: 18px 0; border-bottom: 1px solid var(--line); }

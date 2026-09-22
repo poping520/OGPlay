@@ -249,6 +249,7 @@ void VirtualFileSystem::Impl::Mount(const VfsSource source, const std::string_vi
                 throw VfsError(kEexist, "VFS mount path already exists");
             }
         }
+        mounts_.push_back({NormalizePath(root), source});
         for (auto& [path, file] : pending) {
             file->node_id = next_node_id_++;
             files_.emplace(std::move(path), std::move(file));
@@ -304,6 +305,7 @@ void VirtualFileSystem::Impl::MountLazy(
                 throw VfsError(kEexist, "VFS mount path already exists");
             }
         }
+        mounts_.push_back({NormalizePath(root), source});
         for (auto& [path, file] : pending) {
             file->node_id = next_node_id_++;
             files_.emplace(std::move(path), std::move(file));
@@ -994,3 +996,43 @@ void VirtualFileSystem::Close(const std::int32_t descriptor) {
 }
 
 }  // namespace ogplay::runtime
+
+namespace ogplay::runtime {
+std::optional<VfsSnapshot> VirtualFileSystem::TrySnapshot() const { return impl_->TrySnapshot(); }
+std::optional<VfsSnapshot> VirtualFileSystem::Impl::TrySnapshot() const {
+    VfsSnapshot result; result.flushes = flushes_.load(std::memory_order_relaxed);
+    std::vector<std::pair<std::int32_t, std::shared_ptr<OpenFile>>> opens;
+    {
+        std::unique_lock lock(mutex_, std::try_to_lock);
+        if (!lock.owns_lock()) return std::nullopt;
+        result.sandbox_attached = sandbox_ != nullptr;
+        result.total_mounts = mounts_.size(); result.total_descriptors = descriptors_.size();
+        for (const auto& mount : mounts_) { if (result.mounts.size() == 128) break; result.mounts.push_back(mount); }
+        for (const auto& entry : descriptors_) { if (opens.size() == 128) break; opens.push_back(entry); }
+    }
+    result.partial = result.total_mounts > 128 || result.total_descriptors > 128;
+    for (const auto& [fd, open] : opens) {
+        VfsDescriptorSnapshot row; row.fd = fd;
+        std::unique_lock lock(open->mutex, std::try_to_lock);
+        if (!lock.owns_lock()) { row.busy = true; result.partial = true; }
+        else { row.offset = open->offset; row.readable = open->readable; row.writable = open->writable;
+            if (open->file) row.node_id = open->file->node_id; }
+        result.descriptors.push_back(row);
+    }
+    std::unique_lock budget_lock(resource_budget_->mutex, std::try_to_lock);
+    if (!budget_lock.owns_lock()) return std::nullopt;
+    result.io = {backing_read_bytes_.load(std::memory_order_relaxed), full_materialized_bytes_.load(std::memory_order_relaxed),
+        resource_budget_->used, resource_budget_->high_water, resource_budget_->snapshot_used, resource_budget_->snapshot_high_water};
+    return result;
+}
+}
+
+namespace ogplay::runtime {
+std::optional<std::uint64_t> VirtualFileSystem::TryDescriptorNode(std::int32_t fd) const {
+    std::unique_lock lock(impl_->mutex_, std::try_to_lock);
+    if (!lock.owns_lock()) return std::nullopt;
+    const auto found = impl_->descriptors_.find(fd);
+    if (found == impl_->descriptors_.end() || !found->second->file) return std::nullopt;
+    return found->second->file->node_id;
+}
+}

@@ -1,5 +1,6 @@
+import { identitySelection } from './store';
 import {afterEach, describe, expect, it, vi} from 'vitest';
-import {DashboardStore, matches, threads, type Snapshot, type Event, type EventPage} from './store';
+import {DashboardStore, matches, matchesFact, selectedSnapshot, health, threads, type Snapshot, type Event, type EventPage} from './store';
 import {parseExact, Poller, RpcError, type Rpc} from './rpc';
 const snapshot: Snapshot = {schema_version: 1, captured_at_steady_ns: 100,
   session: {status: 'complete', reason: '', generation: 0, captured_at_steady_ns: 100, data: {frame: 5, guest_ticks: 5000, lifecycle: 'running', presented_frame: null, guest_fault: null}},
@@ -74,4 +75,37 @@ describe('Dashboard stores and polling', () => {
     expect(store.connection).toBe('disconnected'); expect(call).toHaveBeenCalledTimes(1);
     await vi.advanceTimersByTimeAsync(1000); expect(call).toHaveBeenCalledTimes(2); poller.stop();
   });
+});
+
+it('filters only exact structured shared keys and keeps large identities distinct', () => {
+  const fact = {guest_tid:'9007199254740993',host_tid:9,fd:3,node_id:21,player:5,lifecycle_phase:'resumed',generation:7,fields:[{key:'capability',value:'jni.missing'}]};
+  expect(matchesFact(fact,{guestTid:'9007199254740993',hostTid:'9',fd:'3',nodeId:'21',player:'5',lifecycle:'resumed',generation:'7',capability:'jni.missing'})).toBe(true);
+  expect(matchesFact(fact,{guestTid:'9007199254740992'})).toBe(false);
+  expect(matchesFact({message:'jni.missing'}, {capability:'jni.missing'})).toBe(false);
+  expect(matchesFact({steady_ns:99},{frame:'5',steadyStart:'90',steadyEnd:'100'})).toBe(true);
+  expect(matchesFact({steady_ns:101},{frame:'5',steadyStart:'90',steadyEnd:'100'})).toBe(false);
+  expect(matchesFact({},{fd:'3'})).toBe(false);
+});
+it('frame selection uses historical facts and never substitutes the live snapshot', () => {
+  const store=new DashboardStore(); store.history=[snapshot]; store.latest={...snapshot,session:{...snapshot.session!,data:{...snapshot.session!.data!,frame:6}}};
+  store.select({frame:'5'}); expect(selectedSnapshot(store)).toBe(snapshot);
+  store.select({frame:'3'}); expect(selectedSnapshot(store)).toBeNull();
+  store.select({}); expect(selectedSnapshot(store)).toBe(store.latest);
+});
+
+it('module warning lights follow their own facts and unavailable never looks healthy', () => {
+  expect(health()).toBe('unavailable');
+  const section={status:'complete' as const,reason:'',generation:0,captured_at_steady_ns:0,data:{gl_errors:2}};
+  expect(health(section)).toBe('warning'); expect(health({...section,status:'unavailable'})).toBe('unavailable');
+  expect(health({...section,data:{gl_errors:0}})).toBe('available');
+});
+
+it('maps host and monitor owner identities through actual execution contexts', () => {
+  const diagnostic = {java_threads:[{guest_tid:2,context_token:12}],executions:[{guest_tid:16384,context_token:12,host_tid:77}]};
+  expect(identitySelection('host_tid',77,diagnostic)).toEqual({guestTid:'2',contextToken:'12',hostTid:'77'});
+  expect(identitySelection('owner_context',12,diagnostic)).toEqual({guestTid:'2',contextToken:'12'});
+  expect(identitySelection('guest_tid',0,diagnostic)).toEqual({});
+  expect(identitySelection('fd',0,diagnostic)).toEqual({fd:'0'});
+  expect(matchesFact({futex_address:42},{futex:'42'})).toBe(true);
+  expect(matchesFact({},{monitor:'42'})).toBe(false);
 });

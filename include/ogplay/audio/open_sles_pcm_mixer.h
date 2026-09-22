@@ -5,6 +5,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <map>
+#include <optional>
 #include <mutex>
 #include <span>
 #include <vector>
@@ -70,6 +71,7 @@ public:
         std::size_t maximum_queued_bytes);
     [[nodiscard]] std::size_t QueuedBytes(PlayerId player) const;
     [[nodiscard]] OpenSlesPlayerSnapshot Snapshot(PlayerId player) const;
+    [[nodiscard]] std::optional<OpenSlesPlayerSnapshot> TrySnapshot(PlayerId player) const;
     [[nodiscard]] std::size_t BlockingWriterCount() const noexcept;
     // Process teardown is sticky: wake current writers and reject later ones.
     [[nodiscard]] std::size_t InterruptBlockingWaits() noexcept;

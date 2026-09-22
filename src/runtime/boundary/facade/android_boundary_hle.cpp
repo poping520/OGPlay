@@ -441,6 +441,7 @@ public:
     [[nodiscard]] const BionicHleSymbolProvider& Symbols() const noexcept {
         return provider_;
     }
+    std::optional<core::GpuStats> TryStats() const { return frame_service_.TryStats(); }
     [[nodiscard]] core::GpuStats Stats() const {
         return frame_service_.Stats();
     }
@@ -1098,3 +1099,7 @@ std::optional<std::vector<core::GpuTraceEntry>> AndroidBoundaryHle::TryTrace(
 }
 
 }  // namespace ogplay::runtime
+
+namespace ogplay::runtime {
+std::optional<core::GpuStats> AndroidBoundaryHle::TryStats() const { return impl_->TryStats(); }
+}

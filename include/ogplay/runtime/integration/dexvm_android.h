@@ -772,6 +772,20 @@ struct AndroidAudioTrackDiagnosticSnapshot final {
   std::uint64_t periodic_callbacks_deferred{};
 };
 
+struct AndroidUiSnapshot final {
+  std::uint64_t generation{}, nodes{}, layout_dirty{}, draw_dirty{};
+  std::optional<std::uint64_t> focus;
+};
+struct AndroidVideoSnapshot final {
+  std::uint64_t receiver{};
+  std::int64_t duration_ms{}, base_position_ms{};
+  bool playing{}, completed{}, decoder_attached{};
+};
+[[nodiscard]] std::optional<AndroidUiSnapshot> TrySnapshotAndroidUi(dexvm::Interpreter& vm, const DexVmAndroidContext& context);
+[[nodiscard]] std::optional<std::vector<AndroidVideoSnapshot>> TrySnapshotAndroidVideo(const DexVmAndroidContext& context);
+[[nodiscard]] std::optional<std::vector<AndroidAudioTrackDiagnosticSnapshot>>
+TrySnapshotAndroidAudioTracks(dexvm::Interpreter& vm, const DexVmAndroidContext& context);
+
 [[nodiscard]] std::vector<AndroidAudioTrackDiagnosticSnapshot>
 SnapshotAndroidAudioTracks(const DexVmAndroidContext &context);
 // Caller holds audio_policy_mutex; update native stream gains without touching

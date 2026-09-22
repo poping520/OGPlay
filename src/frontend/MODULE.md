@@ -22,7 +22,8 @@
   2 MiB，worker 不解析宿主路径。缺失制品明确失败，路径变体、非 loopback Host/Origin
   与重复 Host/Origin 拒绝，不提供 CORS 授权。JSON-RPC 只分派 `dash.*`，控制仍走 `/mcp`。
 - `run-apk` 在有 MCP 时连接会话、DiagnosticState、日志与账本；不开启诊断写盘协调器，
-  除非显式 `--diag*`。GPU/VFS/AudioTrack 未有非阻塞接线时保持 unavailable。
+  除非显式 `--diag*`。连接 DexVM/JNI/CPU/memory/loader/VFS/GPU/AudioTrack/UiTree/VideoView 的 try-snapshot；
+  FFmpeg 装配事实在启动时封存进 metadata，不在 HTTP 查询中初始化 decoder。
   HTTP server 作用域比 app_process 短，析构 stop/join 后才允许销毁诊断来源。
 - `--mcp`/`--mcp-port` 提供本机服务；`--mcp-manual-step` 等待 step/suspend/resume/
   shutdown。`--diag*` 与 `ogplay diag snapshot` 提供不依赖 SDL 主循环的停滞取证。

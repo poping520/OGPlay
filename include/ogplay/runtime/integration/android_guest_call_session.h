@@ -1,6 +1,7 @@
 #pragma once
 
 #include <atomic>
+#include "ogplay/cpu/dynarmic.h"
 #include <cstdint>
 #include <cstddef>
 #include <functional>
@@ -314,6 +315,9 @@ public:
     LatestMovieRequest() const;
     [[nodiscard]] std::shared_ptr<debug::DiagnosticState> Diagnostics() const;
 
+    [[nodiscard]] std::optional<core::GpuStats> TryStats() const;
+    [[nodiscard]] std::optional<memory::MemoryStatistics> TryMemorySnapshot() const;
+    [[nodiscard]] std::optional<std::vector<cpu::DynarmicCacheSnapshot>> TryCpuSnapshot() const;
     [[nodiscard]] core::GpuStats Stats() const override;
     [[nodiscard]] std::vector<core::GpuRenderTarget> RenderTargets() const override;
     [[nodiscard]] core::GpuCapabilities Capabilities() const override;

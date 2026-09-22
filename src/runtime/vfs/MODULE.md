@@ -82,3 +82,5 @@ mkdir/unlink/rmdir/rename 立即落元数据。unlink/覆盖后的存活句柄�
   双实例隔离、旧布局拒绝、ANDROID_ID、配额、tombstone、存活句柄和跨会话落盘。
 - syscall/Java 文件与 SQLite 定向回归验证定位 IO、alias 锁身份、空库/空 BLOB、journal
   恢复和 ENOSPC。
+
+`TrySnapshot` 分别 try-lock 全局元数据、打开状态与资源预算；挂载/FD 各最多 128 项。打开状态忙时该 FD 标 busy，offset/node_id 未知，不等待 backing IO；总数和 partial 显式返回。`TryDescriptorNode` 仅尝试读取稳定节点身份。flushes 只累计挂载沙盒成功完成的 FlushAll，不把未挂载算成功落盘。

@@ -126,6 +126,21 @@ struct VfsIoStatistics final {
     std::uint64_t lease_snapshot_high_water{};
 };
 
+struct VfsDescriptorSnapshot final {
+    std::int32_t fd{};
+    std::optional<std::uint64_t> node_id, offset;
+    bool readable{}, writable{}, busy{};
+};
+struct VfsMountSnapshot final { std::string root; VfsSource source{}; };
+struct VfsSnapshot final {
+    VfsIoStatistics io;
+    std::vector<VfsMountSnapshot> mounts;
+    std::vector<VfsDescriptorSnapshot> descriptors;
+    std::size_t total_mounts{}, total_descriptors{};
+    bool partial{}, sandbox_attached{};
+    std::uint64_t flushes{};
+};
+
 struct VfsConfig final {
     // One aggregate budget for every retained resource buffer, including
     // writable lease snapshots and decompressed archive cache blocks.
@@ -224,6 +239,8 @@ public:
                        std::span<const std::string> writable_roots);
     [[nodiscard]] bool SandboxAttached() const;
     [[nodiscard]] VfsIoStatistics IoStatistics() const;
+    [[nodiscard]] std::optional<VfsSnapshot> TrySnapshot() const;
+    [[nodiscard]] std::optional<std::uint64_t> TryDescriptorNode(std::int32_t descriptor) const;
     // Reserves from the same aggregate memory budget used by writable lease
     // snapshots. Callers must reserve before allocating and retain the token
     // for as long as the allocation is reachable.

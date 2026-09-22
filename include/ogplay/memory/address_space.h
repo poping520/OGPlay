@@ -4,6 +4,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <span>
 #include <stdexcept>
 #include <string_view>
@@ -109,6 +110,11 @@ private:
     friend class AddressSpace;
 };
 
+struct MemoryStatistics final {
+    std::array<std::uint64_t, 8> pages_by_protection{};
+    std::uint64_t generation{};
+};
+
 class AddressSpace final {
 public:
     AddressSpace();
@@ -162,6 +168,7 @@ public:
     void Write64(GuestAddress address, std::uint64_t value,
                  std::uint64_t thread_id = 0);
     [[nodiscard]] DirectMemoryPageTable* DirectPageTable() noexcept;
+    [[nodiscard]] std::optional<MemoryStatistics> TrySnapshot() const;
     [[nodiscard]] MemorySnapshot CaptureSnapshot() const;
     void RestoreSnapshot(const MemorySnapshot& snapshot);
 

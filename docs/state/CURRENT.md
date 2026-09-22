@@ -4,6 +4,12 @@
 
 ## 最近进展
 
+- [DASH-02](../tasks/gui/DASH-02.md) / [DASH-04](../tasks/gui/DASH-04.md)：Windows 接通运行时有界快照、
+  诊断面板、共享键联动和九类事件泳道；计数观测明确区别实际发生帧/时刻。
+  Dashboard 23 项、模块 45 项、loader/lifecycle 8 项定向回归及前端 30 项、CTest 2 项通过；
+  真实 APK 验证只读不推进帧、MCP step 同步、线程/能力/player 联动。
+  扩展 BootDex/File VFS 检查存在失败，详见任务单；FFmpeg 解码与 Linux 未验收。
+
 - [GUI-6](../tasks/gui/GUI-6.md)：运行实例/详情 Dashboard 入口、PID 核对、独立无 RPC 窗口、
   就绪后自动打开及退出回收完成。C++ 定向回归、26 项前端测试及 7 项 CTest 通过；
   真实 WebView 验证窗口隔离/重开/主窗口关闭，受控子进程验证启动器解除跟踪后继续执行。
@@ -11,8 +17,7 @@
 
 - [DASH-03](../tasks/gui/DASH-03.md)：Windows run-apk `/dash/` 与只读 RPC、来源生命周期、
   顶栏/拓扑/uPlot 帧采样/线程焦点完成。32 项 C++ 定向回归、26 项前端测试和 2 项 CTest
-  通过；真实 APK 验证只读、MCP 步进后帧同步、Java 栈联动及断线显示。DASH-02 新来源与
-  DASH-04 完整面板仍待推进，GPU/VFS/音频当前保持 unavailable。
+  通过；真实 APK 验证只读、MCP 步进后帧同步、Java 栈联动及断线显示。新增来源与面板已由 DASH-02/04 接通，支持边界见对应任务。
 
 - [DASH-01](../tasks/gui/DASH-01.md)：agent 四个只读 Dashboard 方法、快照状态传播、
   限量事件游标与线程关联完成；Windows Release 构建及 56 项定向用例/1039 断言通过。

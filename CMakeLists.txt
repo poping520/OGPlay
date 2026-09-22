@@ -765,6 +765,7 @@ if(OGPLAY_BUILD_TESTS)
         tests/core/json_tests.cpp
         tests/core/logger_tests.cpp
         tests/agent/control_service_tests.cpp
+        tests/agent/dashboard_sources_tests.cpp
         tests/agent/dashboard_tests.cpp
         tests/agent/mcp_protocol_tests.cpp
         tests/frontend/mcp_http_server_tests.cpp

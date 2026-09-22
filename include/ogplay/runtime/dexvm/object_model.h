@@ -201,6 +201,7 @@ public:
     [[nodiscard]] std::uint64_t ObjectCount() const noexcept;
     [[nodiscard]] std::uint64_t HeapTargetBytes() const noexcept;
     [[nodiscard]] std::uint64_t HeapGrowthLimitBytes() const noexcept;
+    [[nodiscard]] std::uint64_t MaximumHeapBytes() const noexcept;
     [[nodiscard]] bool ShouldCollectFor(std::uint64_t request_bytes) const noexcept;
     void AdjustTargetAfterGc() noexcept;
     [[nodiscard]] bool GrowFor(std::uint64_t request_bytes) noexcept;

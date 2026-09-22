@@ -62,13 +62,14 @@
   两种编码均使用仓库固定 commit 的官方 `stb_image_write`，禁止退回 stored-block PNG。
 - 调试接口与 CI 断言读取同一份状态。
 - Dashboard 响应附带真实宿主 `process_id`，供启动器核对所跟踪进程，避免端口冲突误连。
-- Dashboard schema 1 的 section 为 session/diagnostics/gpu/vfs/audio/capabilities/log，携带
+- Dashboard schema 1 的 section 为 session/diagnostics/gpu/vfs/audio/capabilities/log/dexvm/jni/memory/cpu/libraries/ui/video，携带
   status/captured_at_steady_ns/generation；未连接、忙碌、异常为 unavailable + null，部分来源
   与截断为 partial。无来源 generation 沿用诊断约定 0，不冒充 frame。overview 保留 session
   顶栏数据，其余只给状态；thread 用 guest_tid/context_token 关联，pacer/lifecycle 为共享状态。
 - Dashboard 事件环默认 4096（上限 4096），每次最多 1000；sequence 是服务观察顺序，
-  source_sequence 保留来源序号。支持 syscall/native/dexvm/lifecycle；缺 frame/steady_ns
-  返回 null，其余事件类别不伪造。next_sequence 用于独立客户端续读；未来游标拒绝，覆盖
+  source_sequence 保留来源序号。支持 syscall/native/dexvm/lifecycle；gc/gles_error/audio_underrun/capability_miss/vfs_flush
+  来自累计计数观测差值，显式 observed_only/observed_at_steady_ns/delta，首次从零基线观测。
+  缺 frame/steady_ns 返回 null，不把观测时间当作事件发生时间；计数身份缓存最多 4096 项。next_sequence 用于独立客户端续读；未来游标拒绝，覆盖
   返回 gap/dropped，来源环丢失另计并保留 source section 状态。stream_id 为服务创建的
   steady 时间戳；服务重建或 stream_id 改变时客户端清除旧历史并从游标 0 开始。
 - Dashboard 响应最大 1 MiB；常规集合最多 128、事件最多 256、Java 栈最多 32 层；
@@ -87,3 +88,5 @@
 ## 测试
 
 `tests/agent/` 的方法分派和错误契约测试。
+
+- GPU provider 明确声明 GL error 是否已记账；未记账时字段为 null、计数事件 unavailable，不把默认值当成已验证的零。

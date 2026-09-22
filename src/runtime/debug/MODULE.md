@@ -30,3 +30,5 @@
 
 - 不实现任意线程 `SuspendThread`/DbgHelp 或 POSIX `backtrace()` 展开。
 - 不替代 procdump、WinDbg、lldb，也不改变 teardown cancellation 语义。
+
+Syscall 环可携带上层注入的 fd/node_id 整数身份；缺失字段输出 null，不从日志或数字相似性推断关联。

@@ -490,6 +490,11 @@ public:
         return count;
     }
 
+    std::optional<JniReferenceSnapshot> TrySnapshot() const {
+        std::unique_lock lock(mutex_, std::try_to_lock);
+        if (!lock.owns_lock()) return std::nullopt;
+        return JniReferenceSnapshot{entries_.size() - global_count_ - weak_count_, global_count_, weak_count_, threads_.size()};
+    }
     [[nodiscard]] std::size_t GlobalCount() const {
         std::scoped_lock lock(mutex_);
         return global_count_;
@@ -786,3 +791,7 @@ std::size_t JniReferenceTable::WeakGlobalCount() const {
 }
 
 }  // namespace ogplay::runtime
+
+namespace ogplay::runtime {
+std::optional<JniReferenceSnapshot> JniReferenceTable::TrySnapshot() const { return impl_->TrySnapshot(); }
+}

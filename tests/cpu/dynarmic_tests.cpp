@@ -313,3 +313,19 @@ TEST_CASE("Dynarmic direct memory falls back for cross-page permission checks") 
     CHECK(result.fault->thread_id == 305);
     CHECK(bus.Read16(crossing) == 0);
 }
+
+TEST_CASE("Dashboard source Dynarmic publishes owner thread cache usage") {
+#if defined(_WIN32) && defined(_M_X64)
+    using namespace ogplay;
+    memory::AddressSpace memory; memory::CheckedMemoryBus bus(memory);
+    const memory::GuestAddress address{0x10000};
+    memory.Map({address,4096},memory::PageProtection::read | memory::PageProtection::write);
+    memory.Write32(address,0xeafffffeU);
+    memory.Protect({address,4096},memory::PageProtection::read | memory::PageProtection::execute);
+    auto context=std::make_shared<cpu::DynarmicExecutionContext>(2);
+    cpu::DynarmicCpu jit(bus,context); cpu::A32State state; state.SetRegister(cpu::CoreRegister::pc,address.Value()); jit.SetState(state);
+    static_cast<void>(jit.Run(10)); const auto snapshot=context->TrySnapshot(); REQUIRE(snapshot); REQUIRE(snapshot->size()==1);
+    CHECK((*snapshot)[0].capacity_bytes==64U*1024U*1024U); CHECK((*snapshot)[0].used_bytes>0);
+    CHECK((*snapshot)[0].used_bytes<(*snapshot)[0].capacity_bytes); CHECK((*snapshot)[0].captured_at_steady_ns>0);
+#endif
+}

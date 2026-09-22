@@ -158,6 +158,10 @@ struct JniReferenceLimits final {
     return target_sdk_version > 0U && target_sdk_version <= 13U;
 }
 
+struct JniReferenceSnapshot final {
+    std::uint64_t local{}, global{}, weak_global{}, attached_threads{};
+};
+
 class JniReferenceTable final {
 public:
     using RootVisitor = std::function<void(JniObjectIdentity)>;
@@ -202,6 +206,7 @@ public:
     void VisitRoots(const RootVisitor& visitor) const;
 
     [[nodiscard]] std::size_t LocalCount(std::uint64_t thread_id) const;
+    [[nodiscard]] std::optional<JniReferenceSnapshot> TrySnapshot() const;
     [[nodiscard]] std::size_t GlobalCount() const;
     [[nodiscard]] std::size_t WeakGlobalCount() const;
 

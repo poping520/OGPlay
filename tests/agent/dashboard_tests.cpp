@@ -248,3 +248,56 @@ TEST_CASE("Dashboard bounds diagnostic stacks and propagates busy and error sect
     CHECK(At(At(source, "monitors"), "reason").String() == "busy");
     CHECK(At(At(source, "gles"), "reason").String() == "provider_error");
 }
+
+TEST_CASE("Dashboard counter events retain deltas and never invent frame or occurrence time") {
+    agent::DashboardSources sources; std::uint64_t collections=3;
+    sources.dexvm = [&]() -> std::optional<runtime::dexvm::InterpreterSnapshot> { runtime::dexvm::InterpreterSnapshot s; s.stats.gc_collections=collections; s.heap_used=123; return s; };
+    sources.audio = []() -> std::optional<std::vector<AndroidAudioTrackDiagnosticSnapshot>> { return std::vector<AndroidAudioTrackDiagnosticSnapshot>{{.player=9,.underrun_count=2}}; };
+    core::CapabilityLedger ledger; ledger.RecordUnimplemented("test.missing",123); sources.ledger=&ledger;
+    agent::DashboardService service(sources);
+    auto first=Call(service,"dash.events",R"({"since_sequence":0})"); const auto values=At(Result(first),"events"); REQUIRE(values.Size()==3);
+    const auto gc=*values.Element(0); CHECK(At(gc,"kind").String()=="gc"); CHECK(Uint(gc,"delta")==3);
+    CHECK(At(gc,"frame").IsNull()); CHECK(At(gc,"steady_ns").IsNull()); CHECK(Uint(gc,"observed_at_steady_ns")>0);
+    const auto cursor=Uint(Result(first),"next_sequence"); collections=5;
+    auto next=Call(service,"dash.events","{\"since_sequence\":"+std::to_string(cursor)+"}");
+    REQUIRE(At(Result(next),"events").Size()==1); CHECK(Uint(*At(Result(next),"events").Element(0),"delta")==2);
+    auto snap=Call(service,"dash.snapshot",R"({"sections":["dexvm","jni","memory","cpu","libraries","ui","video"]})");
+    CHECK(Uint(At(At(Result(snap),"dexvm"),"data"),"heap_used")==123);
+    for (const auto name : {"jni","memory","cpu","libraries","ui","video"}) CHECK(At(At(Result(snap),name),"data").IsNull());
+}
+
+TEST_CASE("Dashboard unpublished CPU samples are unavailable rather than zero") {
+    agent::DashboardSources sources;
+    sources.cpu = []() -> std::optional<std::vector<cpu::DynarmicCacheSnapshot>> {
+        return std::vector<cpu::DynarmicCacheSnapshot>{{0,0,0,0,0},{1,64,12,2,99}};
+    };
+    agent::DashboardService service(sources);
+    const auto snapshot = Call(service, "dash.snapshot", R"({"sections":["cpu"]})");
+    const auto rows = At(At(Result(snapshot), "cpu"), "data");
+    CHECK(At(*rows.Element(0), "capacity_bytes").IsNull());
+    CHECK(At(*rows.Element(0), "status").String() == "unavailable");
+    CHECK(Uint(*rows.Element(1), "used_bytes") == 12);
+}
+
+TEST_CASE("Dashboard does not report zero for uninstrumented GL errors") {
+    agent::DashboardSources sources; sources.gpu_errors_available = false;
+    sources.gpu = []() -> std::optional<core::GpuStats> { core::GpuStats stats; stats.gl_errors = 9; return stats; };
+    agent::DashboardService service(sources);
+    const auto snapshot = Call(service, "dash.snapshot", R"({"sections":["gpu"]})");
+    CHECK(At(At(At(Result(snapshot), "gpu"), "data"), "gl_errors").IsNull());
+    const auto events = Call(service, "dash.events", R"({"since_sequence":0,"kinds":["gles_error"]})");
+    CHECK(At(Result(events), "events").Size() == 0);
+}
+
+TEST_CASE("Dashboard busy FD access flags remain unknown") {
+    agent::DashboardSources sources;
+    sources.filesystem = []() -> std::optional<runtime::VfsSnapshot> {
+        runtime::VfsSnapshot snapshot; runtime::VfsDescriptorSnapshot row; row.fd = 3; row.busy = true;
+        snapshot.descriptors.push_back(row); snapshot.partial = true; return snapshot;
+    };
+    agent::DashboardService service(sources);
+    const auto snapshot = Call(service, "dash.snapshot", R"({"sections":["vfs"]})");
+    const auto rows = At(At(At(Result(snapshot), "vfs"), "data"), "descriptors");
+    CHECK(At(*rows.Element(0), "readable").IsNull());
+    CHECK(At(*rows.Element(0), "writable").IsNull());
+}

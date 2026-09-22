@@ -167,8 +167,8 @@ note = "M0 完成传输无关分派、JSON-RPC 参数与标准错误模型；M6 
 
 [agent.dashboard]
 status = "partial"
-test = "tests/agent/dashboard_tests.cpp"
-note = "DASH-01 完成传输无关 dash.overview/snapshot/events/thread、只读 try-lock 聚合、限量事件环与线程关联；缺失来源明确 unavailable；DASH-03 接通运行进程已有来源、HTTP 与页面骨架，新增计数和剩余事件来源未接入"
+test = "tests/agent/dashboard_tests.cpp; tests/agent/dashboard_sources_tests.cpp; tests/cpu/dynarmic_tests.cpp"
+note = "DASH-01/02/04 Windows 接通 14 个只读来源区、运行时 try-snapshot、缓存/堆/引用/权限/FD/动态库事实与九类事件；计数增量标注观测时间，未知帧不伪造；音视频/UI/GPU 仍按明确支持边界标 partial"
 
 [agent.session]
 status = "complete"
@@ -358,7 +358,7 @@ note = "M6 WU-0350..0351 发布 swipe(startX,startY,endX,endY,steps)；严格验
 [frontend.dashboard]
 status = "partial"
 test = "tests/frontend/mcp_http_server_tests.cpp; webui/apps/dashboard/store.test.ts; frontend.dashboard_http; frontend.dashboard_manifest"
-note = "DASH-03 Windows 完成 loopback 静态白名单/只读 RPC、运行进程来源生命周期、8 Hz 目标轮询与限量 history/selection、uPlot 实际 frame 采样及线程焦点；DASH-02 新来源、DASH-04 完整联动面板及跨平台验证未完成"
+note = "DASH-03/04 Windows 完成 loopback 只读页面、8 Hz 目标轮询、有界历史、九类泳道与运行时面板；真实线程/context/host、帧时间窗、能力、阶段/代际、monitor/futex、FD/node/player 联动；历史不混入实时事实，未采集指标明确 partial，Linux 暂缓"
 
 [frontend.mcp_http_transport]
 status = "complete"

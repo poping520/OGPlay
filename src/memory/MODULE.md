@@ -51,3 +51,5 @@
 ## 测试
 
 `tests/memory/` 的边界、权限、并发与快照测试。
+
+`AddressSpace::TrySnapshot` 只 try-lock 扫描固定 4 GiB 页表，按 8 种权限统计已映射页（包括 PROT_NONE），并返回 mapping generation；不访问 guest 内容，锁忙返回 nullopt。

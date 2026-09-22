@@ -67,6 +67,7 @@ public:
     // Lazy arrays, primitive classes and survey members may be appended while
     // frames are active.  deque keeps all previously published references
     // stable across those additions.
+    std::size_t linked_class_count{};
     std::deque<LinkedClass> classes;
     std::deque<ClassExtras> extras;
     std::deque<LinkedMethod> methods;
@@ -320,6 +321,7 @@ public:
             }
         }
         extra.linked = true;
+        ++linked_class_count;
         visiting.erase(id.Value());
     }
 

@@ -545,6 +545,8 @@ TEST_CASE("native library loader appends dependency constructors and one explici
     CHECK(repeated.already_loaded);
     CHECK_FALSE(repeated.recursive);
     CHECK(repeated.initialized_modules.empty());
+    const auto registry_snapshot = libraries.TrySnapshot();
+    REQUIRE(registry_snapshot); CHECK(registry_snapshot->total == libraries.Records().size());
     auto records = libraries.Records();
     REQUIRE(records.size() == 1U);
     CHECK(records[0].jni_on_load_calls == 1U);

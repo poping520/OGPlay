@@ -57,3 +57,5 @@
 ## 测试
 
 `tests/cpu/` 的解释器/JIT 指令级对拍。
+
+`DynarmicExecutionContext::TrySnapshot` 只 try-lock 复制最多 128 个活跃 processor 的最近完成 Run 缓存发布值；带发布 Clock 时间戳，未发布不等于零。Windows x64 通过构建目录的受检 Dynarmic 扩展读取 code capacity/used/full flush，不修改固定 submodule；其他后端返回 unavailable。

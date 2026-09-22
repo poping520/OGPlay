@@ -529,3 +529,14 @@ void OpenSlesPcmMixer::SetStreamGain(std::int32_t stream, float gain) {
     stream_gains_[static_cast<std::size_t>(stream)] = gain;
 }
 }  // namespace ogplay::audio
+
+namespace ogplay::audio {
+std::optional<OpenSlesPlayerSnapshot> OpenSlesPcmMixer::TrySnapshot(PlayerId player) const {
+    std::unique_lock lock(mutex_, std::try_to_lock);
+    if (!lock.owns_lock()) return std::nullopt;
+    const auto found = players_.find(player);
+    if (found == players_.end()) return std::nullopt;
+    const auto& target = found->second;
+    return OpenSlesPlayerSnapshot{QueuedBytes(target), static_cast<std::uint64_t>(target.played_source_frames), target.underrun_output_frames, target.underrun_count};
+}
+}

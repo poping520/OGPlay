@@ -2,6 +2,7 @@ import { render, type ComponentChildren } from 'preact';
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { rpc, type Library, type LibraryItem } from './rpc';
 import { averageIconColor, statuses, validatePackageSelection, versionLabel, visibleItems, type Filter, type Sort } from './library';
+import { ImportWizard } from './import-wizard';
 import '../../packages/ui-kit/theme.css';
 
 function GameIcon({ item, glow = false }: { item: LibraryItem; glow?: boolean }) {
@@ -48,12 +49,12 @@ function App() {
   const [mode, setMode] = useState<'grid' | 'list'>('grid');
   const [errors, setErrors] = useState<string[]>([]);
   const [pendingFile, setPendingFile] = useState<File | null>(null);
+  const [importing, setImporting] = useState(false);
   const [dragging, setDragging] = useState(false);
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(true);
   const inFlight = useRef(false);
   const generation = useRef(0);
-  const picker = useRef<HTMLInputElement>(null);
   const search = useRef<HTMLInputElement>(null);
   const lastSelected = useRef('');
   const dragDepth = useRef(0);
@@ -69,11 +70,11 @@ function App() {
   useEffect(() => { if (selected && !item) setSelected(''); }, [selected, item]);
   useEffect(() => {
     const escape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && selected && !errors.length && !pendingFile) closeDrawer();
+      if (event.key === 'Escape' && selected && !errors.length && !importing) closeDrawer();
     };
     window.addEventListener('keydown', escape);
     return () => window.removeEventListener('keydown', escape);
-  }, [selected, errors.length, pendingFile]);
+  }, [selected, errors.length, importing]);
   async function refresh() {
     const request = ++generation.current;
     try {
@@ -110,18 +111,17 @@ function App() {
   const select = (game: LibraryItem) => { lastSelected.current = game.installation_id; setSelected(game.installation_id); };
   const intake = (files: File[]) => {
     const error = validatePackageSelection(files);
-    if (error) report(error); else setPendingFile(files[0]);
+    if (importing) return;
+    if (error) report(error); else { setPendingFile(files[0]); setImporting(true); }
   };
   const isFileDrag = (event: DragEvent) => Array.from(event.dataTransfer?.types ?? []).includes('Files');
   const resetFilters = () => { setQuery(''); setFilter('all'); search.current?.focus(); };
-  const importButton = <button class="primary" onClick={() => picker.current?.click()}>＋ 选择安装包</button>;
+  const importButton = <button class="primary" disabled={importing} onClick={() => { setPendingFile(null); setImporting(true); }}>＋ 选择安装包</button>;
   return <div class={`shell ${dragging ? 'dragging' : ''}`}
     onDragEnter={event => { if (isFileDrag(event)) { event.preventDefault(); ++dragDepth.current; setDragging(true); } }}
     onDragOver={event => { if (isFileDrag(event)) { event.preventDefault(); if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy'; } }}
     onDragLeave={event => { event.preventDefault(); if (--dragDepth.current <= 0) { dragDepth.current = 0; setDragging(false); } }}
     onDrop={event => { event.preventDefault(); dragDepth.current = 0; setDragging(false); if (isFileDrag(event)) intake(Array.from(event.dataTransfer?.files ?? [])); }}>
-    <input ref={picker} class="visually-hidden" type="file" tabIndex={-1} accept=".apk,.xapk,.apkm,.apks" aria-label="选择安装包"
-      onChange={event => { const files = Array.from(event.currentTarget.files ?? []); event.currentTarget.value = ''; if (files.length) intake(files); }} />
     <nav class="navigation" aria-label="主导航">
       <div class="brand"><span>O</span><div><b>OGPlay</b><small>安卓经典游戏</small></div></div>
       <div class="nav-selected" aria-current="page"><span>▦</span> 游戏库 <span class="nav-count">{library.items.length}</span></div>
@@ -141,7 +141,7 @@ function App() {
       </div>
       <div class="workspace"><section class="library-content" aria-label="游戏条目" aria-busy={loading}>
         {loading ? <div class="empty-state"><h2>正在读取游戏库…</h2></div> : library.items.length === 0 ?
-          <div class="empty-state drop-target"><span class="empty-symbol" aria-hidden="true">＋</span><h2>把经典游戏带回来</h2><p>拖入 APK / XAPK / APKM / APKS，或选择安装包</p>{importButton}<small>当前可选择文件，导入功能暂未开放</small></div> : items.length === 0 ?
+          <div class="empty-state drop-target"><span class="empty-symbol" aria-hidden="true">＋</span><h2>把经典游戏带回来</h2><p>拖入 APK，或选择安装包</p>{importButton}<small>支持单体 APK；分包格式暂不支持</small></div> : items.length === 0 ?
           <div class="empty-state"><h2>没有符合条件的游戏</h2><p>试试其他关键词，或清除当前筛选。</p><button onClick={resetFilters}>清除筛选</button></div> : mode === 'grid' ?
           <div class="game-grid">{items.map(game => <article key={game.installation_id} class={`game-card ${selected === game.installation_id ? 'selected' : ''}`}>
             <button class="select-game card-select" data-instance={game.installation_id} aria-label={`查看 ${game.display_name}`} aria-pressed={selected === game.installation_id} onClick={() => select(game)}>
@@ -165,9 +165,11 @@ function App() {
         </div></aside>}
       </div><footer class="statusbar"><span title={library.library_root}>{library.library_root}</span><span>{library.items.filter(game => game.running).length} 个运行中</span></footer>
     </main>
-    {dragging && <div class="drop-overlay" aria-live="polite"><div><span>↓</span><h2>松开以选择安装包</h2><p>APK / XAPK / APKM / APKS · 一次一个文件</p></div></div>}
-    {pendingFile && <Modal title="已选择安装包" onDismiss={() => setPendingFile(null)}><p class="selected-file">{pendingFile.name}</p><p>{(pendingFile.size / 1024 / 1024).toFixed(2)} MB</p><p>导入功能暂未开放，此文件尚未加入游戏库。</p></Modal>}
-    {!pendingFile && errors.length > 0 && <Modal title="操作提示" onDismiss={() => setErrors(queue => queue.slice(1))}><pre>{errors[0]}</pre></Modal>}
+    {dragging && <div class="drop-overlay" aria-live="polite"><div><span>↓</span><h2>松开以选择安装包</h2><p>单体 APK · 一次一个文件</p></div></div>}
+    {importing && <ImportWizard file={pendingFile} onClose={() => { setImporting(false); setPendingFile(null); }} onImported={async id => {
+      setQuery(''); setFilter('all'); await refresh(); lastSelected.current = id; setSelected(id); setImporting(false); setPendingFile(null);
+    }} />}
+    {!importing && errors.length > 0 && <Modal title="操作提示" onDismiss={() => setErrors(queue => queue.slice(1))}><pre>{errors[0]}</pre></Modal>}
   </div>;
 }
 render(<App />, document.getElementById('app')!);

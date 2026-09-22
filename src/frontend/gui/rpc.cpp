@@ -83,6 +83,9 @@ std::string GuiRpcService::Handle(std::string_view request) {
 
 agent::ControlResponse GuiRpcService::Request(std::string_view method, core::JsonValue params) {
     try {
+        if (method == "dialog.pick" || method == "dialog.poll" || method == "library.analyze" ||
+            method == "library.import" || method.starts_with("library.job.") || method.starts_with("library.upload."))
+            return ImportRequest(method, params);
         if (method != "library.list" && method != "library.launch" && method != "library.open_dir")
             return Error(-32601, "unknown method", "使用当前版本支持的 GUI 方法。");
         if (method == "library.list") CheckFields(params, {});
@@ -94,6 +97,7 @@ agent::ControlResponse GuiRpcService::Request(std::string_view method, core::Jso
         const auto kind = method == "library.open_dir" ? RequiredString(params, "kind") : std::string{};
         if (!kind.empty() && kind != "sandbox" && kind != "log" && kind != "external")
             throw std::invalid_argument("kind must be sandbox, log or external");
+        if (ImportBusy()) return Error(-32002, "正在入库", "入库完成后重试。");
         const auto entries = store_.LoadEntries();
         const auto context = host_.context(entries);
         const auto tiles = BuildLibraryTiles(entries, context);

@@ -29,10 +29,4 @@ GUI-1..18 已完成，主面板基础版闭环并完成双栏主视图重构；W
 
 ## GUI v2
 
-按 [GUI v2 规划](../../design/gui/README.md) 顺序推进。
-
-| WU | 目标 | 状态 |
-| --- | --- | --- |
-| [GUI-V2-01](GUI-V2-01.md) | Windows WebView 宿主、RPC 与静态构建骨架 | Windows 完成 |
-
-GUI-V2-02..07 按设计依次接入；Linux 暂缓。
+任务单已移至 [gui/](../gui/README.md)，按 `GUI-x.md` 编号。

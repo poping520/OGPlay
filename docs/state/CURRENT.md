@@ -4,7 +4,11 @@
 
 ## 最近进展
 
-- [GUI-V2-01](../tasks/launcher/GUI-V2-01.md)：Windows WebView2 宿主与 RPC 骨架完成，
+- [GUI-3](../tasks/gui/GUI-3.md)：Windows APK 导入向导、原生文件/目录选择、
+  后台分析与原子入库接通；支持同包新实例及自动选中。53 项定向回归、11 项前端测试、
+  4 项 GUI CTest 和原生导入交互通过；跨窗口拖放手势未实测，分包格式明确拒绝。
+
+- [GUI-1](../tasks/gui/GUI-1.md)：Windows WebView2 宿主与 RPC 骨架完成，
   替换 ImGui 并保留游戏库模型；48 用例/343 断言、前端检查及真实 WebView 空库/CJK
   非空库冒烟通过。导入/设置/Dashboard UI 待后续阶段；Linux 暂缓，macOS 宿主待接入。
 

@@ -238,7 +238,7 @@ C++ 构建的源码依赖，未覆盖 npm 注册表依赖与前端产物的归�
 
 - 状态：Accepted
 - 日期：2026-09-22
-- 关联：[GUI-V2-01](../tasks/launcher/GUI-V2-01.md)、[GUI v2](../design/gui/README.md)
+- 关联：[GUI-1](../tasks/gui/GUI-1.md)、[GUI v2](../design/gui/README.md)
 
 ### 决定
 
@@ -255,3 +255,10 @@ Windows/WebView2 API 只在 `hal/windows`，上层经 `WebViewHost` 的显式字
 
 ImGui 视图与依赖移除，原模型回归保留；导入/设置/删除 UI 按后续阶段恢复，第一工作单不
 宣称整个 GUI v2 完成。原 `--smoke-frames` 兼容为成功 RPC 响应数，另保存真实 WebView PNG。
+
+### GUI-3 文件选择补充（2026-09-22）
+
+Windows 采用 IFileOpenDialog，由 HAL 的独立 STA 线程托管，通过 future 返回路径或取消。
+不在 WebView RPC 回调中运行原生模态循环；模型不接触 Windows 类型。拖放通过有界分块
+传入本地快照，复用相同后台分析与入库任务；没有新增依赖。现有模型只支持单体 APK，
+XAPK/APKM/APKS 拆包与目录自动识别不在本工作单实现，入口明确报不支持。

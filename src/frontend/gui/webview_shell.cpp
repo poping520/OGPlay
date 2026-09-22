@@ -13,6 +13,7 @@
 #include "ogplay/frontend/data_directory.h"
 #include "ogplay/frontend/user_data_dir.h"
 #include "ogplay/hal/webview_host.h"
+#include "ogplay/hal/clock.h"
 #include "ogplay/session/profile_apk.h"
 #include "ogplay/session/quirk_registry.h"
 #include "process_manager.h"
@@ -119,7 +120,17 @@ int RunGuiCommand(int argc, const char* const argv[], core::Logger& logger) {
     GuiRpcService rpc(store, FindSiblingCliExecutable(), {
         [&](const auto& entries) { return BuildContext(store, processes, entries); },
         [&](const auto& plan) { processes.Launch(plan); },
-        [](const auto& path) { hal::OpenHostDirectory(path); }});
+        [](const auto& path) { hal::OpenHostDirectory(path); },
+        [&](const auto& path) {
+            const auto bundled = HostBundledDataPaths();
+            const auto config = LoadGuiConfig(store.Root());
+            const auto quirks = session::QuirkRegistry::LoadPackaged(bundled.quirk_registry);
+            const auto profiles = session::TitleProfileCatalog::LoadDirectory(
+                config.profiles_dir.value_or(bundled.profiles_directory), quirks);
+            return AnalyzeApkImportFile(path, profiles);
+        },
+        [&](bool directory) { return view->PickPath(directory); },
+        [] { return hal::Clock::UtcTimestamp(); }});
     view = hal::CreateWebViewHost({
         HostBundledDataPaths().root / "webui/gui/index.html", options.smoke_frames,
         options.library_root / "gui-smoke.png"}, {

@@ -1,6 +1,7 @@
 # OGPlay Web UI
 
-GUI-V2-01：Windows WebView2 宿主的最小游戏库。完整游戏库交互、导入和设置在后续工作单接入。
+GUI-1..3：Windows WebView2 游戏库与单体 APK 导入向导；设置和 Dashboard 后续接入。
+支持原生文件/数据包目录选择及 APK 拖放，后台分析、确认新实例、原子入库；分包格式明确拒绝。
 Linux 暂缓；macOS WebView 宿主尚未接入，本阶段仅构建 Windows GUI。
 
 ## 构建
@@ -10,7 +11,7 @@ Windows 首次在仓库根运行 `./webui/prepare-sdk.ps1`，显式下载并校�
 安装后的 WebView2 Runtime 由系统提供，不打包浏览器。CMake 配置期不访问网络。
 
 在本目录运行 `npm ci`、`npm run build`；生成 `data/webui/gui/`，不入库。
-`npm run check` 执行 TypeScript 和协议边界测试。
+`npm run check` 执行 TypeScript、协议、库交互及分块上传测试。
 也可配置 `-DOGPLAY_BUILD_WEBUI=ON` 后构建 `webui`，GUI 目标会先构建并校验制品。
 默认关闭该选项时，GUI 构建消费已有制品，缺失或哈希不符明确失败。
 

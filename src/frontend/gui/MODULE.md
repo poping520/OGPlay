@@ -10,15 +10,22 @@ Windows 系统 WebView2 启动器与独立游戏库模型。GUI 只管理宿主�
 - `RunGuiCommand` / `RunGuiStandalone`：CLI 与双击入口；失败记录日志，独立入口显示消息框。
   原生窗口、导航限制和目录打开经 `hal::WebViewHost`，不直接包含 Windows/WebView2 API。
 - `GuiRpcService::Handle`：复用 `agent::JsonRpcAdapter` 注入模式；同步分派
-  `library.list`、`library.launch`、`library.open_dir`。宿主上下文、进程和打开目录通过显式回调注入。
-- `LibraryStore`：枚举、原子导入、按 installation id 删除；损坏条目携带原因，清理 `.importing` 残留。
+  `library.list`、`library.launch`、`library.open_dir`，以及导入任务与对话框 RPC。
+  宿主上下文、进程、目录打开、分析、选择器与 UTC 时间通过显式回调注入。
+- `library.analyze {path}` / `library.upload.begin/chunk/finish`：原生路径或拖放字节进入独立快照，
+  单体 APK 上限 1 GiB；分块 base64 最大 256 KiB，严格顺序/总长度检查。
+- `library.job.poll/cancel {job}`：每服务仅一个活动导入任务；后台只读分析，失败可查询。
+  `library.import {job, new_instance:true, external_dir?}` 只消费 ready 快照，异步原子发布；
+  重复提交拒绝，结果返回真实 installation id。取消不发布；提交期间不能取消。
+- `dialog.pick {kind:file|directory}` / `dialog.poll {dialog}`：异步原生选择器，取消返回 null。
+- `LibraryStore`：枚举、原子导入并返回实际 installation id、按 id 删除；损坏条目携带原因，清理 `.importing` 残留。
 - `LoadGuiConfig` / `SaveGuiConfig`：严格 schema 1 TOML；配置发布保留 `.bak` 崩溃恢复。
 - `ExtractApkApplicationVisuals` / `ResizeArgbBilinear`：APK 名称、128×128 PNG 与明确资源回退原因。
 - `BuildLibraryTiles` / `BuildLibraryDetail` / `LibrarySelection`：统一状态、详情和稳定选择模型。
 - `AnalyzeApkImport` / `BuildLibraryImport`：只读 APK 分析、Profile 匹配和原子入库请求。
 - `LauncherSandboxRoot` / `BuildLaunchPlan`：唯一 run-apk argv 与 spawn 前宿主输入验证。
 - `GuiProcessManager`：SDL3 子进程启动、单实例约束、非阻塞回收；析构只解除跟踪，不杀游戏。
-- `ValidateGuiConfigDirectories`：配置目录验证；设置、导入和删除 UI 在后续 GUI v2 阶段接回。
+- `ValidateGuiConfigDirectories`：配置目录验证；设置和删除 UI 在后续 GUI v2 阶段接回。
 - 原 CJK 字体选择、事件等待与消息队列模型保留用于既有调用/测试，不再驱动 WebView 渲染。
 
 ## 不变量
@@ -49,6 +56,13 @@ Windows 系统 WebView2 启动器与独立游戏库模型。GUI 只管理宿主�
   占位冲突必须阻止发布。重复 package 允许多个安装实例，不覆盖旧条目。
 - 删除只移除 `library/<installation-id>`；external 与持久存档不删除，运行中不删除。
 
+- 入库期间库枚举/启动/目录 RPC 返回忙，避免枚举清理仍在写入的 `.importing`；
+  作业轮询始终可用。分析与入库线程在服务销毁时 join，再移除本服务持有的快照。
+- 导入摘要的版本/API/ABI/Profile 来自解析；无 Profile 时 required external 为未知。
+  前端同包重复导入须确认新实例，需要数据时允许明确跳过；从不覆盖已有游戏。
+- 原生选择器与后台操作期间向导保留并禁用重复操作；选择器取消不丢弃当前摘要。
+  当前仅支持单体 APK，不实现 XAPK/APKM/APKS 拆包，也不从目录猜选 APK。
+
 ## 禁止
 
 不实现 guest/session、syscall/JNI/GLES 或游戏专用兼容；不解析自由文本日志判断兼容性；
@@ -58,5 +72,5 @@ Windows 系统 WebView2 启动器与独立游戏库模型。GUI 只管理宿主�
 
 保留 `tests/frontend/gui_{model,visuals,view_model,import,launch}_tests.cpp`；
 `gui_rpc_tests.cpp` 覆盖协议闭合、事实序列化、启动约束和目录映射。
-`npm run check` 验证前端类型与协议边界；`frontend.gui_webui_manifest` 校验制品哈希；
+`npm run check` 验证前端类型、协议、库筛选和分块上传边界；`frontend.gui_webui_manifest` 校验制品哈希；
 `frontend.gui_smoke` / `frontend.gui_library_smoke` 验证真实 WebView 加载与空库/CJK 非空库 RPC。

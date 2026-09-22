@@ -24,6 +24,7 @@ Work Unit 按所属里程碑或语义化专项存放，创建后不因完成状�
 | --- | --- | --- | --- | --- |
 | 每游戏持久沙盒 | SBX-1..12 | 完成（用户级存档演示待 title 深入） | [`sandbox/`](sandbox/) | [ADR-0020](../adr/session.md#adr-0020) |
 | 主面板启动器 | GUI-1..7 | GUI-1..5 完成 | [`launcher/`](launcher/) | [设计](../design/launcher/README.md) |
+| GUI v2（WebView） | GUI-1..7 | Windows 按阶段推进 | [`gui/`](gui/README.md) | [设计](../design/gui/README.md) |
 | Layout UI | LUI-1..16 | 完成 | [`layoutui/`](layoutui/) | [设计](../design/layout-ui/README.md) |
 | 基础工具维护 | UTIL-1.. | 进行中 | [`maintenance/`](maintenance/README.md) | 跨模块纯基础设施收敛 |
 

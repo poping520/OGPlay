@@ -1,6 +1,7 @@
 #include "ogplay/frontend/gui_import.h"
 
 #include <fstream>
+#include <set>
 #include <iterator>
 #include <stdexcept>
 #include <system_error>
@@ -62,6 +63,13 @@ ApkImportAnalysis AnalyzeApkImport(
         .icon_png = std::move(visuals.icon_png),
         .visual_fallbacks = std::move(visuals.fallbacks),
     };
+    std::set<std::string> abis;
+    for (const auto& entry : archive.entries) {
+        if (!entry.name.starts_with("lib/") || !entry.name.ends_with(".so")) continue;
+        const auto end = entry.name.find('/', 4);
+        if (end != std::string::npos) abis.insert(entry.name.substr(4, end - 4));
+    }
+    result.abis.assign(abis.begin(), abis.end());
     if (selection.profile != nullptr) {
         result.profile =
             session::SummarizeCompatibilityProfile(*selection.profile);

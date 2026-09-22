@@ -122,3 +122,12 @@ dialog p, dialog pre { margin-top: 14px; }
 pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 50vh; overflow: auto; font: 12px/1.7 Consolas, 'Microsoft YaHei', monospace; }
 @media (max-width: 1120px) { .navigation { width: 164px; } .topbar > .subtle { display: none; } .search-box { width: 210px; } .drawer { width: 300px; } }
 @media (prefers-reduced-motion: reduce) { button { transition: none; } }
+
+.import-wizard { width: min(600px, calc(100vw - 48px)); max-height: calc(100vh - 64px); overflow-y: auto; }
+.import-hero { display: flex; gap: 18px; align-items: center; }
+.import-hero img { width: 72px; height: 72px; border-radius: 16px; }
+.import-wizard dl { display: grid; grid-template-columns: 90px 1fr; gap: 12px; }
+.import-wizard dd { margin: 0; overflow-wrap: anywhere; }
+.external-selection { margin: 20px 0; }
+.external-selection label, .import-confirm { display: block; margin: 14px 0; line-height: 1.7; }
+.import-wizard input[type=checkbox] { width: auto; margin-right: 8px; }

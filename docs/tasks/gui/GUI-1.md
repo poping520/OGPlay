@@ -1,4 +1,4 @@
-# GUI-V2-01 · Windows WebView 宿主与 RPC 骨架
+# GUI-1 · Windows WebView 宿主与 RPC 骨架
 
 状态：Windows 首阶段完成。
 
@@ -18,5 +18,5 @@
 参数校验、空库与 CJK 非空库真实 WebView 加载/RPC/PNG 截图。截图已检查。
 
 命令与构建前提见 [Web UI 说明](../../../webui/README.md)。
-未执行全量测试、真实 APK 兼容验收或远端 CI。下一阶段 GUI-V2-02；导入、设置和 Dashboard
+未执行全量测试、真实 APK 兼容验收或远端 CI。下一阶段 GUI-2；导入、设置和 Dashboard
 尚未接入，不能将本阶段视为完整启动器体验验收。

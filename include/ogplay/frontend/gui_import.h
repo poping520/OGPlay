@@ -24,6 +24,7 @@ struct ApkImportAnalysis final {
     std::vector<std::byte> icon_png;
     std::vector<ApplicationVisualFallback> visual_fallbacks;
     std::optional<session::ApkProfileSummary> profile;
+    std::vector<std::string> abis;
 };
 
 [[nodiscard]] ApkImportAnalysis AnalyzeApkImport(

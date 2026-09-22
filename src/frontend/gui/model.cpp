@@ -516,7 +516,7 @@ std::vector<LibraryEntry> LibraryStore::LoadEntries() const {
     return entries;
 }
 
-void LibraryStore::Import(const LibraryImport& request) {
+std::string LibraryStore::Import(const LibraryImport& request) {
     ValidateMetadata(request.metadata);
     std::error_code error;
     if (!std::filesystem::is_regular_file(request.source_apk, error) || error) {
@@ -602,6 +602,7 @@ void LibraryStore::Import(const LibraryImport& request) {
         throw GuiModelError(GuiModelErrorCode::io_error,
                             std::string("cannot import game: ") + exception.what(), target);
     }
+    return PathUtf8(target.filename());
 }
 
 void LibraryStore::Remove(const std::string_view key) {

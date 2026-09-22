@@ -1,6 +1,6 @@
 # OGPlay 运行时 Dashboard 设计
 
-状态：DASH-01/02/03/04 Windows 实现已落地；支持边界与验收见任务单，DASH-05 待推进。效果图见 [`dashboard.png`](dashboard.png)，静态原型见
+状态：DASH-01/02/03/04 Windows 实现已落地；支持边界与验收见任务单，DASH-05 操作手册已完成。效果图见 [`dashboard.png`](dashboard.png)，静态原型见
 [`dashboard.html`](dashboard.html)（纯 HTML/CSS，浏览器直接打开）。
 
 ## 1. 目标与非目标
@@ -140,8 +140,8 @@ dash.thread    {guest_tid}         -> 联动焦点：A32 状态、Java 栈、在
 3. **[DASH-03 静态路由 + 前端骨架](../../tasks/gui/DASH-03.md)**：`/dash/` 路由、Vite 工程、顶栏/拓扑/时间轴/线程表。
    验证：CTest 覆盖路由 Origin 校验；前端 `vitest` 覆盖 selection→筛选逻辑。
 4. **[DASH-04 联动与其余面板](../../tasks/gui/DASH-04.md)**：§3 全部共享键联动、能力账本跳转、日志过滤同步。
-5. **DASH-05 playbook**：`docs/playbook/` 增加“用 Dashboard 定位首错/停滞”流程，与
-   `diag snapshot` 流程衔接。
+5. **[DASH-05 playbook](../../tasks/gui/DASH-05.md)**：`docs/playbook/` 增加“用 Dashboard 定位首错/停滞”流程，与
+   `diag snapshot` 流程衔接，见 [操作手册](../../playbook/DASHBOARD.md)。
 
 ## 8. 风险与开放问题
 

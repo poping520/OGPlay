@@ -8,6 +8,9 @@
 dexvm 适配过程中的失败信息判读表见 [NEW-TITLE.md](NEW-TITLE.md) §3；本篇只收跨
 title 的通用症状。手册总览见 [README.md](README.md)。
 
+页面仍可读时，先按 [Dashboard 排查流程](DASHBOARD.md) 用共享键缩小范围；
+主循环或 HTTP 无响应时，直接使用下面的独立取证入口。
+
 ## 停滞与退出卡住
 
 启动时显式打开诊断；超时值只触发取证，不会强杀 guest：

@@ -26,7 +26,8 @@ Windows 首次在仓库根运行 `./webui/prepare-sdk.ps1`，显式下载并校�
 页面只读；控制继续使用既有 MCP。无需启动 Node 服务或额外进程。
 
 `ctest --test-dir build/windows-msvc -C Release -R "^frontend.dashboard_" --output-on-failure`
-验证静态制品和 HTTP 路由。GPU/VFS/音频、完整模块面板及帧事件关联仍按后续任务推进。
+验证静态制品和 HTTP 路由。运行时来源和共享键面板已接通，支持范围与
+首错/停滞取证流程见 [Dashboard 操作手册](../docs/playbook/DASHBOARD.md)。
 
 ## 结构
 

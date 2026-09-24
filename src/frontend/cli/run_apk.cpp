@@ -217,6 +217,7 @@ int RunApkCommand(const int argc, const char* const argv[],
     }
     const std::filesystem::path apk_path{argv[2]};
     std::optional<std::filesystem::path> external_directory;
+    std::optional<std::string> external_guest_directory;
     std::optional<std::filesystem::path> obb_path;
     const auto bundled_data = HostBundledDataPaths();
     auto profiles_directory = bundled_data.profiles_directory;
@@ -252,6 +253,16 @@ int RunApkCommand(const int argc, const char* const argv[],
             if (external_directory->empty()) {
                 throw std::invalid_argument(
                     "--external-dir requires a non-empty host directory");
+            }
+        } else if (option == "--external-guest-dir" && index + 1 < argc) {
+            if (external_guest_directory.has_value()) {
+                throw std::invalid_argument(
+                    "run-apk accepts --external-guest-dir only once");
+            }
+            external_guest_directory = argv[++index];
+            if (external_guest_directory->empty()) {
+                throw std::invalid_argument(
+                    "--external-guest-dir requires a non-empty guest path");
             }
         } else if (option == "--obb" && index + 1 < argc) {
             if (obb_path.has_value()) {
@@ -345,6 +356,10 @@ int RunApkCommand(const int argc, const char* const argv[],
         throw std::invalid_argument(
             "--ephemeral-sandbox and --sandbox-dir cannot be combined");
     }
+    if (external_guest_directory.has_value() && !external_directory.has_value()) {
+        throw std::invalid_argument(
+            "--external-guest-dir requires --external-dir");
+    }
     if (default_mcp && mcp_port.has_value()) {
         throw std::invalid_argument("--mcp and --mcp-port cannot be combined");
     }
@@ -394,16 +409,31 @@ int RunApkCommand(const int argc, const char* const argv[],
             requires_obb |= mount.required;
         }
     }
-    if (obb_path.has_value() && !has_obb_mount) {
-        throw std::runtime_error(
-            "--obb was supplied but Profile declares no OBB mount");
-    }
     if (!obb_path.has_value() && requires_obb) {
         throw std::runtime_error("Profile requires --obb for its OBB mount");
     }
+    if (obb_path.has_value()) {
+        const auto filename = obb_path->filename().string();
+        const auto suffix = "." + manifest.package + ".obb";
+        const auto prefix_length = filename.starts_with("main.") ? 5U :
+                                   filename.starts_with("patch.") ? 6U : 0U;
+        if (prefix_length == 0U || !filename.ends_with(suffix) ||
+            filename.size() <= prefix_length + suffix.size()) {
+            throw std::invalid_argument(
+                "--obb filename must be main.<version>.<package>.obb or "
+                "patch.<version>.<package>.obb for the APK package");
+        }
+        const auto version = std::string_view(filename).substr(
+            prefix_length, filename.size() - prefix_length - suffix.size());
+        if (version.empty() || !std::ranges::all_of(version, [](const char ch) {
+                return ch >= '0' && ch <= '9';
+            })) {
+            throw std::invalid_argument("--obb filename has an invalid version");
+        }
+    }
     std::shared_ptr<const std::vector<std::byte>> obb_bytes;
     std::optional<loader::ApkArchive> obb_archive;
-    if (obb_path.has_value()) {
+    if (obb_path.has_value() && has_obb_mount) {
         obb_bytes = std::make_shared<const std::vector<std::byte>>(
             ReadBytes(*obb_path));
         obb_archive = loader::ParseApkArchive(*obb_bytes);
@@ -415,10 +445,16 @@ int RunApkCommand(const int argc, const char* const argv[],
                     manifest.version_code);
     runtime::VirtualFileSystem filesystem;
     MountApkArchive(profile, apk_bytes, archive, filesystem);
+    if (obb_path.has_value()) {
+        filesystem.MountHostFile(
+            runtime::VfsSource::obb,
+            "/sdcard/Android/obb/" + manifest.package, *obb_path);
+    }
     if (obb_bytes) {
         MountObbArchive(profile, obb_bytes, *obb_archive, filesystem);
     }
-    MountExternalDirectory(profile, external_directory, filesystem);
+    MountExternalDirectory(profile, external_directory, filesystem,
+                           external_guest_directory);
     AttachSandbox(sandbox, profile, filesystem, logger);
     filesystem.SetWorkingDirectory(
         session::ResolveProfileWorkingDirectory(profile));

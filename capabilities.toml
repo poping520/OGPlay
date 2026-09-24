@@ -1870,6 +1870,11 @@ status = "partial"
 test = "tests/loader/apk_manifest_tests.cpp; tests/dexvm/android_value_tests.cpp; tests/runtime/native_library_loader_tests.cpp; DVM-112"
 note = "DVM-112/ADR-0042：ServiceConnection 原版双回调接口选入 BootDex；Manifest 保存 application enabled、service 名称/enabled/过滤器 action/category/data 存在标记，AndroidAppProcess 装配唯一 context。resolveService 仅接受非空 action、无 component/data/type/categories、flags=0 的查询，基于当前 APK 信息排除 disabled 与 action 不匹配项，无候选返回 null；没有外部安装包/平台服务目录。未装配信息、潜在匹配、data 条件或其他查询形态记账并抛 UnsupportedOperationException；null Intent 抛 NPE。DVM-142 补齐 ResolveInfo/ServiceInfo 返回类型及相关值类，使 PackageManager 公共方法反射可解析；仍不物化正匹配结果。bindService 复用缺席判定并在返回 false 前登记连接，unbindService 清理登记且重复解绑明确失败；本地 Service 生命周期与支付未实现，能力保持 partial。"
 
+[dexvm.receiver_info]
+status = "partial"
+test = "tests/loader/apk_manifest_tests.cpp; tests/dexvm/android_value_tests.cpp; Dead Trigger reached getServiceInfo"
+note = "DVM-190：Manifest receiver 经 session 注入，只按当前包完整 ComponentName 回答 getReceiverInfo；支持 0、GET_META_DATA、GET_DISABLED_COMPONENTS 与 application/component 禁用过滤，返回 BootDex ActivityInfo 并分离 receiver/application 元数据。未知 flags 与缺少 inventory 记账失败；不含外部包、广播投递或系统包服务。"
+
 [dexvm.typeface]
 status = "partial"
 test = "tests/dexvm/android_value_tests.cpp"

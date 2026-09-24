@@ -197,6 +197,7 @@ public:
         context->target_sdk_version = manifest.target_sdk.value_or(0U);
         context->strict_webview_errors = strict_webview_errors;
         context->application_class_name = manifest.application_class;
+        context->application_process_name = manifest.application_process_name;
         context->application_label = manifest.application_label;
         context->application_icon = manifest.application_icon.value_or(0U);
         context->application_theme = manifest.application_theme.value_or(0U);
@@ -218,9 +219,11 @@ public:
         context->requested_permissions = manifest.requested_permissions;
         context->activity_components = manifest.activity_components;
         context->service_components = manifest.service_components;
+        context->receiver_components = manifest.receiver_components;
         context->application_enabled = manifest.application_enabled;
         context->activity_inventory_known = true;
         context->service_inventory_known = true;
+        context->receiver_inventory_known = true;
         context->granted_permissions.insert(manifest.requested_permissions.begin(),
                                             manifest.requested_permissions.end());
         context->system_features.insert("android.hardware.touchscreen");

@@ -17,7 +17,8 @@ Dex activity 每帧在 guest 回调前泵送主 Looper，到帧尾只通过
   label/icon/meta-data/requested permissions 注入 DexVM Android context；requested permissions
   是 bounded compatibility process 的显式 granted set，不宣称模拟 protection level。
   同一 sealed Manifest 的 activity/activity-alias 也注入 context，供 `getPackageInfo`
-  在 `GET_ACTIVITIES` 下发布当前包 Activity 元数据。`AndroidAppProcessRequest` 同时把显式 `GuestProcFacts` 原样传给 native process；session
+  在 `GET_ACTIVITIES` 下发布当前包 Activity 元数据；receiver 声明独立注入，供当前包
+  `getReceiverInfo` 使用。`AndroidAppProcessRequest` 同时把显式 `GuestProcFacts` 原样传给 native process；session
   还接收前端已解包的 curated API 19 Boot DEX，并与应用 DEX 一起交给 bridge；session
   不选择 Boot 类、不读取宿主内存，也不从 Profile 隐式覆盖虚拟设备 `/proc` 事实。
 - `LoadTitleProfileText` / `LoadTitleProfile`：严格读取 legacy v1/v2 与 optional v3

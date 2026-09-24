@@ -166,7 +166,8 @@ std::vector<std::byte> Manifest(const bool utf8 = false,
     return result;
 }
 
-std::vector<std::byte> PackageFactsManifest(const bool invalid_metadata = false) {
+std::vector<std::byte> PackageFactsManifest(const bool invalid_metadata = false,
+                                             const bool include_receivers = false) {
     const std::vector<std::string> strings{
         "manifest", "package", "versionCode", "application",
         "uses-permission", "name", "meta-data", "value", "resource",
@@ -174,7 +175,11 @@ std::vector<std::byte> PackageFactsManifest(const bool invalid_metadata = false)
         "com.example.configuration", "live", "com.example.number",
         "com.example.resource", "com.example.enabled",
         "com.example.value-reference",
-        "http://schemas.android.com/apk/res/android"};
+        "http://schemas.android.com/apk/res/android", "receiver", "process",
+        "permission", "enabled", "exported", "intent-filter", ".Receiver",
+        ".Disabled", ":app", ":remote", "org.example.APP",
+        "org.example.RECEIVER", "receiver.string", "receiver.bool",
+        "receiver.int", "receiver.value-ref", "receiver.resource", "ready"};
     const auto index = [&](const std::string_view value) {
         const auto found = std::find(strings.begin(), strings.end(), value);
         REQUIRE(found != strings.end());
@@ -194,7 +199,14 @@ std::vector<std::byte> PackageFactsManifest(const bool invalid_metadata = false)
         {{index("name"), index("android.permission.INTERNET"), 0x03,
           index("android.permission.INTERNET"), android_namespace}}));
     Append(result, EndElement(index("uses-permission")));
-    Append(result, StartElement(index("application"), {}));
+    std::vector<Attribute> application_attributes;
+    if (include_receivers) {
+        application_attributes = {
+            {index("process"), index(":app"), 0x03, index(":app"), android_namespace},
+            {index("permission"), index("org.example.APP"), 0x03,
+             index("org.example.APP"), android_namespace}};
+    }
+    Append(result, StartElement(index("application"), application_attributes));
     std::vector<Attribute> string_metadata{
         {index("name"), index("com.example.configuration"), 0x03,
          index("com.example.configuration"), android_namespace}};
@@ -202,6 +214,37 @@ std::vector<std::byte> PackageFactsManifest(const bool invalid_metadata = false)
         string_metadata.push_back(
             {index("value"), index("live"), 0x03, index("live"),
              android_namespace});
+    }
+    if (include_receivers) {
+        Append(result, StartElement(index("receiver"),
+            {{index("name"), index(".Receiver"), 0x03, index(".Receiver"), android_namespace},
+             {index("process"), index(":remote"), 0x03, index(":remote"), android_namespace},
+             {index("permission"), index("org.example.RECEIVER"), 0x03,
+              index("org.example.RECEIVER"), android_namespace}}));
+        Append(result, StartElement(index("intent-filter"), {}));
+        Append(result, EndElement(index("intent-filter")));
+        const auto metadata = [&](const char* name, const Attribute value) {
+            Append(result, StartElement(index("meta-data"),
+                {{index("name"), index(name), 0x03, index(name), android_namespace},
+                 value}));
+            Append(result, EndElement(index("meta-data")));
+        };
+        metadata("receiver.string",
+                 {index("value"), index("ready"), 0x03, index("ready"), android_namespace});
+        metadata("receiver.bool",
+                 {index("value"), 0xffffffffU, 0x12, 1, android_namespace});
+        metadata("receiver.int",
+                 {index("value"), 0xffffffffU, 0x10, 42, android_namespace});
+        metadata("receiver.value-ref",
+                 {index("value"), 0xffffffffU, 0x01, 0x7f05004fU, android_namespace});
+        metadata("receiver.resource",
+                 {index("resource"), 0xffffffffU, 0x01, 0x7f030001U, android_namespace});
+        Append(result, EndElement(index("receiver")));
+        Append(result, StartElement(index("receiver"),
+            {{index("name"), index(".Disabled"), 0x03, index(".Disabled"), android_namespace},
+             {index("enabled"), 0xffffffffU, 0x12, 0, android_namespace},
+             {index("exported"), 0xffffffffU, 0x12, 0, android_namespace}}));
+        Append(result, EndElement(index("receiver")));
     }
     Append(result, StartElement(index("meta-data"), string_metadata));
     Append(result, EndElement(index("meta-data")));
@@ -515,6 +558,34 @@ TEST_CASE("binary AndroidManifest exposes package permission and application met
         static_cast<void>(ogplay::loader::ParseAndroidBinaryManifest(
             PackageFactsManifest(true))),
         "binary AndroidManifest application meta-data requires name and exactly one value or resource");
+}
+
+TEST_CASE("binary AndroidManifest preserves receiver facts and own meta-data") {
+    const auto facts = ogplay::loader::ParseAndroidBinaryManifest(
+        PackageFactsManifest(false, true));
+    CHECK(facts.application_process_name == "org.example.game:app");
+    REQUIRE(facts.receiver_components.size() == 2);
+    const auto& receiver = facts.receiver_components[0];
+    CHECK(receiver.name == "org.example.game.Receiver");
+    CHECK(receiver.enabled);
+    CHECK(ogplay::loader::AndroidManifestReceiverExported(receiver));
+    CHECK(receiver.process_name == "org.example.game:remote");
+    CHECK(receiver.permission == "org.example.RECEIVER");
+    REQUIRE(receiver.meta_data.size() == 5);
+    CHECK(std::get<std::string>(receiver.meta_data[0].value) == "ready");
+    CHECK(std::get<bool>(receiver.meta_data[1].value));
+    CHECK(std::get<std::int32_t>(receiver.meta_data[2].value) == 42);
+    CHECK(std::get<ogplay::loader::AndroidManifestMetaDataValueReference>(
+              receiver.meta_data[3].value).resource_id == 0x7f05004fU);
+    CHECK(std::get<ogplay::loader::AndroidManifestMetaDataResourceReference>(
+              receiver.meta_data[4].value).resource_id == 0x7f030001U);
+    CHECK(facts.application_meta_data.size() == 5);
+    const auto& disabled = facts.receiver_components[1];
+    CHECK_FALSE(disabled.enabled);
+    CHECK_FALSE(ogplay::loader::AndroidManifestReceiverExported(disabled));
+    CHECK(disabled.process_name == "org.example.game:app");
+    CHECK(disabled.permission == "org.example.APP");
+    CHECK(disabled.meta_data.empty());
 }
 
 TEST_CASE("binary AndroidManifest rejects invalid application visual types") {

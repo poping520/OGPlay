@@ -28,6 +28,7 @@ Asphalt 5（pilot title）删除 profile 全部 `native_call` 与 `[[java.class]
 
 | WU | 一句话目标 | 状态 |
 | --- | --- | --- |
+| [DVM-190](DVM-190.md) | 当前包 receiver 元数据查询 | 完成 |
 | [DVM-189](DVM-189.md) | 音频协议、BootDex 与会话输出收敛（AUD-01..03，两个实现单元加集中验收） | AUD-01 完成，AUD-02/03 未开始 |
 | [DVM-186](DVM-186.md) | BootDex SQLite、host 引擎与真实数据库 VFS | 已规划，未开始 |
 | [DVM-154](DVM-154.md) | 文件 IO 家族与 FileChannel 迁入 BootDex | 完成 |

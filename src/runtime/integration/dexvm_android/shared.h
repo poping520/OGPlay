@@ -58,6 +58,9 @@ void RefreshAndroidLayoutParams(dx::Interpreter& vm, const Context& context);
 [[nodiscard]] dx::VmObjectRef MakeApplicationInfo(
     dx::IntrinsicContext& call, const Context& context,
     bool include_meta_data);
+void PutAndroidMetaData(dx::IntrinsicContext& call, const Context& context,
+                        dx::VmObjectRef bundle, const std::string& name,
+                        const loader::AndroidManifestMetaDataValue& value);
 [[nodiscard]] dx::IntrinsicHandler NeutralHandler(char shorty);
 [[nodiscard]] dx::IntrinsicHandler PlaceholderString(std::string value = {});
 void GuestLog(dx::IntrinsicContext& call, core::LogLevel level,

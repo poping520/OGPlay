@@ -1,6 +1,7 @@
 #include "boot_dex.h"
 #include <doctest/doctest.h>
 
+#include <algorithm>
 #include <array>
 #include <atomic>
 #include <bit>
@@ -3533,6 +3534,145 @@ TEST_CASE("DVM-180 getPackageInfo returns current-package Activity metadata") {
         CHECK(f.linker.Class(unsupported.exception_class).descriptor ==
               "Ljava/lang/UnsupportedOperationException;");
         static_cast<void>(f.vm.CollectGarbage());
+    }
+}
+
+TEST_CASE("PackageManager getReceiverInfo uses current Manifest receiver facts") {
+    constexpr auto kQuery =
+        "(Landroid/content/ComponentName;I)Landroid/content/pm/ActivityInfo;";
+    for (const auto backend : {InterpreterBackend::switch_dispatch,
+                               InterpreterBackend::threaded}) {
+        AndroidValueVm f(backend);
+        f.context->package_name = "org.example.game";
+        f.context->application_process_name = "org.example.game:app";
+        f.context->receiver_inventory_known = true;
+        f.context->application_meta_data.emplace("application.key", std::string("app"));
+        f.context->arsc.entries.push_back(
+            {.resource_id = 0x7f050001U, .type_name = "string",
+             .entry_name = "receiver_value", .string_value = "resolved",
+             .value_type = 0x03U});
+        f.context->receiver_components = {
+            {.name = "org.example.game.CoreReceiver", .enabled = true,
+             .has_intent_filter = true, .process_name = "org.example.game:push",
+             .permission = "org.example.RECEIVE",
+             .meta_data = {{"receiver.string", std::string("ready")},
+                           {"receiver.bool", true}, {"receiver.int", std::int32_t{42}},
+                           {"receiver.value", ogplay::loader::AndroidManifestMetaDataValueReference{0x7f050001U}},
+                           {"receiver.resource", ogplay::loader::AndroidManifestMetaDataResourceReference{0x7f030001U}}}},
+            {.name = "org.example.game.DisabledReceiver", .enabled = false,
+             .process_name = "org.example.game:app"},
+        };
+        const auto manager = f.vm.NewIntrinsicInstance(
+            "Landroid/content/pm/PackageManager;");
+        const auto component = [&](const char* package, const char* name) {
+            return f.New("Landroid/content/ComponentName;",
+                         "(Ljava/lang/String;Ljava/lang/String;)V",
+                         {VmValue::Ref(f.vm.NewStringUtf8(package)),
+                          VmValue::Ref(f.vm.NewStringUtf8(name))});
+        };
+        const auto present = component("org.example.game", "org.example.game.CoreReceiver");
+        const auto disabled = component("org.example.game", "org.example.game.DisabledReceiver");
+        const auto absent = component("org.example.game", "org.example.game.Absent");
+        const auto foreign = component("other.package", "org.example.game.CoreReceiver");
+        const auto roots = f.vm.ProtectReferences(
+            std::array{manager, present, disabled, absent, foreign});
+        const auto query = [&](const VmObjectRef name, const int flags) {
+            return f.OnOutcome(manager, "getReceiverInfo", kQuery,
+                               {VmValue::Ref(name), VmValue::Int(flags)});
+        };
+        const auto ref_field = [&](const VmObjectRef object, const char* name,
+                                   const char* descriptor) {
+            const auto found = f.linker.FindFieldRecursive(
+                f.model.ObjectClass(object), name, descriptor);
+            REQUIRE(found.has_value());
+            const auto slot = f.model.InstanceSlots(object)[f.linker.Field(*found).slot];
+            return VmObjectRef{static_cast<std::uint32_t>(slot.bits)};
+        };
+        const auto bool_field = [&](const VmObjectRef object, const char* name) {
+            const auto found = f.linker.FindFieldRecursive(
+                f.model.ObjectClass(object), name, "Z");
+            REQUIRE(found.has_value());
+            return f.model.InstanceSlots(object)[f.linker.Field(*found).slot].bits != 0;
+        };
+        const auto string_field = [&](const VmObjectRef object, const char* name) {
+            const auto value = ref_field(object, name, "Ljava/lang/String;");
+            REQUIRE(value.IsValid());
+            return f.vm.StringUtf8(value);
+        };
+        const auto bundle_string = [&](const VmObjectRef bundle, const char* key) {
+            return f.On(bundle, "getString", "(Ljava/lang/String;)Ljava/lang/String;",
+                        {VmValue::Ref(f.vm.NewStringUtf8(key))}).ref;
+        };
+        const auto no_meta = query(present, 0);
+        REQUIRE_FALSE(no_meta.exception.IsValid());
+        REQUIRE(no_meta.value.ref.IsValid());
+        CHECK(string_field(no_meta.value.ref, "name") == "org.example.game.CoreReceiver");
+        CHECK(string_field(no_meta.value.ref, "processName") == "org.example.game:push");
+        CHECK(string_field(no_meta.value.ref, "permission") == "org.example.RECEIVE");
+        CHECK(bool_field(no_meta.value.ref, "enabled"));
+        CHECK(bool_field(no_meta.value.ref, "exported"));
+        CHECK_FALSE(ref_field(no_meta.value.ref, "metaData", "Landroid/os/Bundle;").IsValid());
+
+        const auto with_meta = query(present, 0x80);
+        REQUIRE_FALSE(with_meta.exception.IsValid());
+        const auto info = with_meta.value.ref;
+        const auto info_root = f.vm.ProtectReferences(std::array{info});
+        const auto metadata = ref_field(info, "metaData", "Landroid/os/Bundle;");
+        REQUIRE(metadata.IsValid());
+        CHECK(f.vm.StringUtf8(bundle_string(metadata, "receiver.string")) == "ready");
+        CHECK(f.vm.StringUtf8(bundle_string(metadata, "receiver.value")) == "resolved");
+        CHECK_FALSE(bundle_string(metadata, "application.key").IsValid());
+        CHECK(f.On(metadata, "getBoolean", "(Ljava/lang/String;)Z",
+                   {VmValue::Ref(f.vm.NewStringUtf8("receiver.bool"))}).AsInt() == 1);
+        CHECK(f.On(metadata, "getInt", "(Ljava/lang/String;)I",
+                   {VmValue::Ref(f.vm.NewStringUtf8("receiver.int"))}).AsInt() == 42);
+        CHECK(f.On(metadata, "getInt", "(Ljava/lang/String;)I",
+                   {VmValue::Ref(f.vm.NewStringUtf8("receiver.resource"))}).AsInt() ==
+              static_cast<std::int32_t>(0x7f030001U));
+        const auto app = ref_field(info, "applicationInfo",
+                                   "Landroid/content/pm/ApplicationInfo;");
+        const auto app_meta = ref_field(app, "metaData", "Landroid/os/Bundle;");
+        REQUIRE(app_meta.IsValid());
+        CHECK(f.vm.StringUtf8(bundle_string(app_meta, "application.key")) == "app");
+        CHECK_FALSE(bundle_string(app_meta, "receiver.string").IsValid());
+
+        const auto again = query(present, 0x80);
+        REQUIRE_FALSE(again.exception.IsValid());
+        CHECK(again.value.ref != info);
+        CHECK(ref_field(again.value.ref, "metaData", "Landroid/os/Bundle;") != metadata);
+        CHECK(query(absent, 0).exception_class ==
+              f.linker.ResolveDescriptor("Landroid/content/pm/PackageManager$NameNotFoundException;"));
+        CHECK(query(foreign, 0).exception_class ==
+              f.linker.ResolveDescriptor("Landroid/content/pm/PackageManager$NameNotFoundException;"));
+        CHECK(query(disabled, 0).exception_class ==
+              f.linker.ResolveDescriptor("Landroid/content/pm/PackageManager$NameNotFoundException;"));
+        const auto include_disabled = query(disabled, 0x200);
+        REQUIRE_FALSE(include_disabled.exception.IsValid());
+        CHECK_FALSE(bool_field(include_disabled.value.ref, "enabled"));
+        f.context->application_enabled = false;
+        CHECK(query(present, 0).exception_class ==
+              f.linker.ResolveDescriptor("Landroid/content/pm/PackageManager$NameNotFoundException;"));
+        const auto disabled_app = query(present, 0x200);
+        REQUIRE_FALSE(disabled_app.exception.IsValid());
+        CHECK_FALSE(bool_field(ref_field(disabled_app.value.ref, "applicationInfo",
+                                         "Landroid/content/pm/ApplicationInfo;"), "enabled"));
+        const auto unsupported = query(present, 0x400);
+        REQUIRE(unsupported.exception.IsValid());
+        CHECK(f.linker.Class(unsupported.exception_class).descriptor ==
+              "Ljava/lang/UnsupportedOperationException;");
+        f.context->receiver_inventory_known = false;
+        const auto unavailable = query(present, 0);
+        REQUIRE(unavailable.exception.IsValid());
+        CHECK(f.linker.Class(unavailable.exception_class).descriptor ==
+              "Ljava/lang/UnsupportedOperationException;");
+        const auto hits = f.ledger.Unimplemented();
+        CHECK(std::any_of(hits.begin(), hits.end(), [](const auto &hit) {
+            return hit.id == "dexvm.receiver_info" && hit.count == 2;
+        }));
+        static_cast<void>(f.vm.CollectGarbage("receiver-info"));
+        CHECK(f.vm.StringUtf8(bundle_string(ref_field(info, "metaData",
+                                                      "Landroid/os/Bundle;"),
+                                                "receiver.string")) == "ready");
     }
 }
 

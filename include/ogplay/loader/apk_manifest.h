@@ -51,6 +51,21 @@ struct AndroidManifestServiceComponent final {
     std::vector<AndroidManifestIntentFilter> intent_filters;
 };
 
+struct AndroidManifestReceiverComponent final {
+    std::string name;
+    bool enabled{true};
+    std::optional<bool> exported;
+    bool has_intent_filter{};
+    std::string process_name;
+    std::optional<std::string> permission;
+    std::vector<AndroidManifestMetaData> meta_data;
+};
+
+[[nodiscard]] inline bool AndroidManifestReceiverExported(
+    const AndroidManifestReceiverComponent& component) {
+    return component.exported.value_or(component.has_intent_filter);
+}
+
 struct AndroidManifestActivityComponent final {
     AndroidManifestComponentKind kind{AndroidManifestComponentKind::activity};
     std::string name;
@@ -108,12 +123,15 @@ struct AndroidManifestFacts final {
     // Normalized process Application class. The framework default is published
     // explicitly so startup callers do not need to reconstruct Manifest rules.
     std::string application_class{"android.app.Application"};
+    std::string application_process_name;
+    std::optional<std::string> application_permission;
     // Activity and activity-alias declarations in Manifest document order.
     std::vector<AndroidManifestActivityComponent> activity_components;
     std::vector<AndroidManifestMetaData> application_meta_data;
     std::vector<std::string> requested_permissions;
     bool application_enabled{true};
     std::vector<AndroidManifestServiceComponent> service_components;
+    std::vector<AndroidManifestReceiverComponent> receiver_components;
 };
 
 [[nodiscard]] std::string NormalizeAndroidManifestClassName(

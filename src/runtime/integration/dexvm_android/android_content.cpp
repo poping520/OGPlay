@@ -2466,6 +2466,7 @@ namespace {
 
 constexpr std::int32_t kGetActivities = 0x00000001;
 constexpr std::int32_t kGetMetaData = 0x00000080;
+constexpr std::int32_t kGetDisabledComponents = 0x00000200;
 constexpr std::int32_t kGetPermissions = 0x00001000;
 constexpr std::int32_t kPermissionGranted = 0;
 constexpr std::int32_t kPermissionDenied = -1;
@@ -2564,29 +2565,64 @@ MakeStringArray(dx::IntrinsicContext &call,
   }
 }
 
-[[nodiscard]] dx::VmObjectRef
-MakeActivityInfo(dx::IntrinsicContext &call, const Context &context,
-                 const loader::AndroidManifestActivityComponent &component,
-                 const dx::VmObjectRef application_info) {
+[[nodiscard]] dx::VmObjectRef MakeComponentActivityInfo(
+    dx::IntrinsicContext &call, const Context &context,
+    const std::string &name, const bool enabled, const bool exported,
+    const std::string &process_name, const std::optional<std::string> &permission,
+    const dx::VmObjectRef application_info) {
   const auto info =
       call.vm.NewIntrinsicInstance("Landroid/content/pm/ActivityInfo;");
   const auto roots =
       call.vm.ProtectReferences(std::array{info, application_info});
-  const auto name =
-      NormalizedComponentName(context->package_name, component.name);
   SetRef(call, info, "name", "Ljava/lang/String;", String(call, name));
   SetRef(call, info, "packageName", "Ljava/lang/String;",
          String(call, context->package_name));
   SetRef(call, info, "applicationInfo", "Landroid/content/pm/ApplicationInfo;",
          application_info);
-  SetBoolean(call, info, "enabled", component.enabled);
-  SetBoolean(call, info, "exported",
-             loader::AndroidManifestActivityExported(component));
+  SetBoolean(call, info, "enabled", enabled);
+  SetBoolean(call, info, "exported", exported);
+  SetRef(call, info, "processName", "Ljava/lang/String;",
+         String(call, process_name.empty() ? context->package_name : process_name));
+  if (permission) {
+    SetRef(call, info, "permission", "Ljava/lang/String;",
+           String(call, *permission));
+  }
+  return info;
+}
+
+[[nodiscard]] dx::VmObjectRef
+MakeActivityInfo(dx::IntrinsicContext &call, const Context &context,
+                 const loader::AndroidManifestActivityComponent &component,
+                 const dx::VmObjectRef application_info) {
+  const auto info = MakeComponentActivityInfo(
+      call, context, NormalizedComponentName(context->package_name, component.name),
+      component.enabled, loader::AndroidManifestActivityExported(component),
+      context->application_process_name, std::nullopt, application_info);
+  const auto roots = call.vm.ProtectReferences(std::array{info});
   if (component.kind == loader::AndroidManifestComponentKind::activity_alias &&
       component.target_activity.has_value()) {
     SetRef(call, info, "targetActivity", "Ljava/lang/String;",
            String(call, NormalizedComponentName(context->package_name,
                                                 *component.target_activity)));
+  }
+  return info;
+}
+
+[[nodiscard]] dx::VmObjectRef MakeReceiverInfo(
+    dx::IntrinsicContext &call, const Context &context,
+    const loader::AndroidManifestReceiverComponent &receiver,
+    const bool include_meta_data, const dx::VmObjectRef application_info) {
+  const auto info = MakeComponentActivityInfo(
+      call, context, receiver.name, receiver.enabled,
+      loader::AndroidManifestReceiverExported(receiver), receiver.process_name,
+      receiver.permission, application_info);
+  if (include_meta_data && !receiver.meta_data.empty()) {
+    const auto roots = call.vm.ProtectReferences(std::array{info, application_info});
+    const auto bundle = NewAndroidBundle(call.vm);
+    const auto bundle_root = call.vm.ProtectReferences(std::array{bundle});
+    for (const auto &item : receiver.meta_data)
+      PutAndroidMetaData(call, context, bundle, item.name, item.value);
+    SetRef(call, info, "metaData", "Landroid/os/Bundle;", bundle);
   }
   return info;
 }
@@ -2686,6 +2722,8 @@ Decl Declare_android_content_pm_PackageManager(const Context &context) {
                    dx::kAccPublic | dx::kAccStatic | dx::kAccFinal)
       .ConstantInt("GET_META_DATA", "I", kGetMetaData,
                    dx::kAccPublic | dx::kAccStatic | dx::kAccFinal)
+      .ConstantInt("GET_DISABLED_COMPONENTS", "I", kGetDisabledComponents,
+                   dx::kAccPublic | dx::kAccStatic | dx::kAccFinal)
       .ConstantInt("GET_PERMISSIONS", "I", kGetPermissions,
                    dx::kAccPublic | dx::kAccStatic | dx::kAccFinal)
       .ConstantInt("PERMISSION_GRANTED", "I", kPermissionGranted,
@@ -2710,6 +2748,48 @@ Decl Declare_android_content_pm_PackageManager(const Context &context) {
         RequireFlags(flags, kGetMetaData, "getApplicationInfo");
         return dx::VmValue::Ref(
             MakeApplicationInfo(call, context, (flags & kGetMetaData) != 0));
+      });
+  builder.VirtualMethod(
+      "getReceiverInfo",
+      "(Landroid/content/ComponentName;I)Landroid/content/pm/ActivityInfo;",
+      [context](dx::IntrinsicContext &call) {
+        const auto component = dx::IntrinsicCall(call).NonNullRef(0, "component");
+        const auto flags = call.arguments[1].AsInt();
+        if ((flags & ~(kGetMetaData | kGetDisabledComponents)) != 0 ||
+            !context->receiver_inventory_known) {
+          if (auto *ledger = call.vm.Ledger())
+            ledger->RecordUnimplemented("dexvm.receiver_info", 0);
+          throw dx::VmJavaThrow{
+              "Ljava/lang/UnsupportedOperationException;",
+              "getReceiverInfo requires current-package receiver facts and "
+              "flags 0, GET_META_DATA or GET_DISABLED_COMPONENTS"};
+        }
+        const auto package = CallAndroidMethod(
+            call.vm, component, "getPackageName", "()Ljava/lang/String;").ref;
+        const auto name = CallAndroidMethod(
+            call.vm, component, "getClassName", "()Ljava/lang/String;").ref;
+        if (!package.IsValid() || !name.IsValid()) {
+          throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;",
+                                "ComponentName has no package or class"};
+        }
+        const auto package_name = call.vm.StringUtf8(package);
+        const auto class_name = call.vm.StringUtf8(name);
+        RequireCurrentPackage(context, package_name);
+        const auto found = std::find_if(
+            context->receiver_components.begin(), context->receiver_components.end(),
+            [&](const auto &receiver) { return receiver.name == class_name; });
+        if (found == context->receiver_components.end() ||
+            (!(flags & kGetDisabledComponents) &&
+             (!context->application_enabled || !found->enabled))) {
+          throw dx::VmJavaThrow{
+              "Landroid/content/pm/PackageManager$NameNotFoundException;",
+              package_name + "/" + class_name};
+        }
+        const auto application =
+            MakeApplicationInfo(call, context, (flags & kGetMetaData) != 0);
+        const auto root = call.vm.ProtectReferences(std::array{application});
+        return dx::VmValue::Ref(MakeReceiverInfo(
+            call, context, *found, (flags & kGetMetaData) != 0, application));
       });
   builder.VirtualMethod(
       "getPackageInfo", "(Ljava/lang/String;I)Landroid/content/pm/PackageInfo;",

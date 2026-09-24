@@ -30,6 +30,8 @@
   保存 action/category 与 data 条件存在标记，不能将未解析的 data 条件当作没有条件。
   service 名称沿用 API19 buildClassName，缺名/空名/非法名/重复声明明确失败；
   服务不参与 Launcher 选择，本层不执行服务解析、实例化或生命周期。
+  receiver 独立保存规范类名、enabled/exported、继承或覆盖的 process/permission 与自身
+  `meta-data`；exported 缺省取决于 intent-filter 是否存在。receiver 不混入 Activity 列表。
 - `ParseBinaryXmlElements`：受检遍历通用 Android binary XML，按文档序返回标签、父索引
   与 generic typed attributes；每个 attribute 保留 namespace/name、value type/data 与
   raw/typed string。旧布局字段暂作单向兼容 adapter，新 widget 语义不得进入 loader。

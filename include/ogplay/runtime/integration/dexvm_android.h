@@ -101,6 +101,7 @@ struct DexVmAndroidContext final {
   bool strict_webview_errors{};
   std::uint32_t application_uid{10000U};
   std::string application_class_name;
+  std::string application_process_name;
   std::optional<loader::AndroidManifestLabel> application_label;
   std::uint32_t application_icon{};
   std::uint32_t application_theme{};
@@ -113,9 +114,11 @@ struct DexVmAndroidContext final {
   // absence.
   bool service_inventory_known{};
   bool activity_inventory_known{};
+  bool receiver_inventory_known{};
   bool application_enabled{true};
   std::vector<loader::AndroidManifestActivityComponent> activity_components;
   std::vector<loader::AndroidManifestServiceComponent> service_components;
+  std::vector<loader::AndroidManifestReceiverComponent> receiver_components;
   // API19 registers a dispatcher before an absent bind returns false.
   // Connections are strong edges of the Context, removed on unbind/sweep.
   std::unordered_map<std::uint32_t, std::vector<dexvm::VmObjectRef>>

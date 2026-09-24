@@ -486,6 +486,7 @@ AndroidManifestFacts ParseAndroidBinaryManifest(const std::span<const std::byte>
     std::optional<std::size_t> current_component;
     std::optional<std::size_t> current_service;
     std::optional<std::size_t> current_receiver;
+    std::optional<std::size_t> current_permission;
     std::optional<AndroidManifestIntentFilter> current_intent_filter;
     while (cursor < bytes.size()) {
         const auto chunk = ReadChunk(bytes, cursor, "binary XML node");
@@ -575,14 +576,19 @@ AndroidManifestFacts ParseAndroidBinaryManifest(const std::span<const std::byte>
                         (elements.size() == 3 && elements[2] == "receiver" &&
                          current_receiver.has_value()) ||
                         (elements.size() == 3 && elements[2] == "service" &&
-                         current_service.has_value()))) {
+                         current_service.has_value()) ||
+                        (elements.size() == 2 && elements[1] == "permission" &&
+                         current_permission.has_value()))) {
                 auto& meta_data = current_receiver
                     ? facts.receiver_components[*current_receiver].meta_data
                     : current_service
                         ? facts.service_components[*current_service].meta_data
-                        : facts.application_meta_data;
+                        : current_permission
+                            ? facts.defined_permissions[*current_permission].meta_data
+                            : facts.application_meta_data;
                 const auto owner = current_receiver ? "receiver"
-                    : current_service ? "service" : "application";
+                    : current_service ? "service"
+                    : current_permission ? "permission" : "application";
                 const auto* metadata_name =
                     FindAttribute(attributes, "name", kAndroidNamespace);
                 const auto* metadata_value =
@@ -820,6 +826,53 @@ AndroidManifestFacts ParseAndroidBinaryManifest(const std::span<const std::byte>
                             ReadIntegerAttribute(*target_sdk, "targetSdkVersion"),
                             "targetSdkVersion");
                 }
+            } else if (elements.size() == 1 && name == "permission") {
+                const auto* permission_name =
+                    FindAttribute(attributes, "name", kAndroidNamespace);
+                if (permission_name == nullptr) {
+                    throw std::runtime_error("binary AndroidManifest permission has no name");
+                }
+                AndroidManifestPermissionDefinition definition;
+                definition.name = NormalizeAndroidManifestClassName(
+                    facts.package,
+                    ReadStringAttribute(*permission_name, strings, "permission name"));
+                definition.package_name = facts.package;
+                if (std::any_of(facts.defined_permissions.begin(),
+                                facts.defined_permissions.end(),
+                                [&](const auto& item) { return item.name == definition.name; })) {
+                    throw std::runtime_error("binary AndroidManifest duplicate permission " +
+                                             definition.name);
+                }
+                if (const auto* level = FindAttribute(attributes, "protectionLevel", kAndroidNamespace)) {
+                    definition.protection_level =
+                        ReadIntegerAttribute(*level, "permission protectionLevel");
+                }
+                if (definition.protection_level == 3U) definition.protection_level = 0x12U;
+                if ((definition.protection_level & ~0x33U) != 0U ||
+                    (definition.protection_level & 0x3U) > 2U ||
+                    ((definition.protection_level & 0x30U) != 0U &&
+                     (definition.protection_level & 0x3U) != 2U)) {
+                    throw std::runtime_error("binary AndroidManifest permission protectionLevel is invalid");
+                }
+                if (const auto* group = FindAttribute(attributes, "permissionGroup", kAndroidNamespace)) {
+                    definition.group = ReadStringAttribute(*group, strings, "permission group");
+                }
+                if (const auto* flags = FindAttribute(attributes, "permissionFlags", kAndroidNamespace)) {
+                    definition.flags = ReadIntegerAttribute(*flags, "permission flags");
+                    if ((definition.flags & ~1U) != 0U)
+                        throw std::runtime_error("binary AndroidManifest permission flags are unsupported");
+                }
+                if (const auto* description = FindAttribute(attributes, "description", kAndroidNamespace)) {
+                    if (description->data_type == kReferenceType)
+                        definition.description_res = ReadReferenceAttribute(*description, "permission description");
+                    else if (description->data_type == kStringType)
+                        definition.nonlocalized_description =
+                            ReadStringAttribute(*description, strings, "permission description");
+                    else
+                        throw std::runtime_error("binary AndroidManifest permission description is invalid");
+                }
+                facts.defined_permissions.push_back(std::move(definition));
+                current_permission = facts.defined_permissions.size() - 1U;
             } else if (elements.size() == 1 && name == "uses-permission") {
                 const auto* permission_name =
                     FindAttribute(attributes, "name", kAndroidNamespace);
@@ -873,6 +926,8 @@ AndroidManifestFacts ParseAndroidBinaryManifest(const std::span<const std::byte>
                 current_service.reset();
             } else if (name == "receiver" && elements.size() == 3) {
                 current_receiver.reset();
+            } else if (name == "permission" && elements.size() == 2) {
+                current_permission.reset();
             }
             elements.pop_back();
         } else if (chunk.type == kResourceMapType) {

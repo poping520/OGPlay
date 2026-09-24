@@ -1880,6 +1880,11 @@ status = "partial"
 test = "tests/loader/apk_manifest_tests.cpp; tests/dexvm/android_value_tests.cpp; Dead Trigger reached getPermissionInfo"
 note = "DVM-191：Manifest service 保存名称、启用、exported、process、permission、自身元数据和 API19 ServiceInfo.flags，经 session 注入。getServiceInfo 仅按当前包完整 ComponentName 查询，支持 0、GET_META_DATA、GET_DISABLED_COMPONENTS 及应用/组件禁用过滤，返回 BootDex ServiceInfo；service/application 元数据分离。未知 flags 或缺少 inventory 记账失败；不启动独立进程，不含 Binder 或系统包服务。"
 
+[dexvm.permission_info]
+status = "partial"
+test = "tools/bootdex/build_bootdex.py check; tests/loader/apk_manifest_tests.cpp; tests/dexvm/android_value_tests.cpp; Dead Trigger reached queryBroadcastReceivers"
+note = "DVM-192：API19 PermissionInfo 与 CREATOR 归 BootDex；Manifest 顶层 permission 定义独立于 uses-permission 请求和现有 granted 集合。getPermissionInfo 仅查询当前 APK 定义，支持 0、GET_META_DATA，返回原版 PermissionInfo；未定义抛 NameNotFoundException，未知 flags/未装配 inventory 记账失败。不提供外部包或平台权限目录。"
+
 [dexvm.typeface]
 status = "partial"
 test = "tests/dexvm/android_value_tests.cpp"

@@ -109,6 +109,8 @@ struct DexVmAndroidContext final {
   std::unordered_map<std::string, loader::AndroidManifestMetaDataValue>
       application_meta_data;
   std::vector<std::string> requested_permissions;
+  bool permission_inventory_known{};
+  std::vector<loader::AndroidManifestPermissionDefinition> defined_permissions;
   // Installed service discovery is limited to the sealed current-APK facts.
   // An unconfigured standalone VM must not confuse missing metadata with
   // absence.

@@ -169,7 +169,8 @@ std::vector<std::byte> Manifest(const bool utf8 = false,
 
 std::vector<std::byte> PackageFactsManifest(const bool invalid_metadata = false,
                                              const bool include_receivers = false,
-                                             const std::uint32_t boolean_data = 1U) {
+                                             const std::uint32_t boolean_data = 1U,
+                                             const bool include_permission = false) {
     const std::vector<std::string> strings{
         "manifest", "package", "versionCode", "application",
         "uses-permission", "name", "meta-data", "value", "resource",
@@ -181,7 +182,10 @@ std::vector<std::byte> PackageFactsManifest(const bool invalid_metadata = false,
         "permission", "enabled", "exported", "intent-filter", ".Receiver",
         ".Disabled", ":app", ":remote", "org.example.APP",
         "org.example.RECEIVER", "receiver.string", "receiver.bool",
-        "receiver.int", "receiver.value-ref", "receiver.resource", "ready"};
+        "receiver.int", "receiver.value-ref", "receiver.resource", "ready",
+        ".C2D_MESSAGE", "protectionLevel", "permissionGroup", "permissionFlags",
+        "description", "org.example.GROUP", "permission.string", "permission.bool",
+        "permission.int", "permission.value-ref", "permission.resource"};
     const auto index = [&](const std::string_view value) {
         const auto found = std::find(strings.begin(), strings.end(), value);
         REQUIRE(found != strings.end());
@@ -201,6 +205,34 @@ std::vector<std::byte> PackageFactsManifest(const bool invalid_metadata = false,
         {{index("name"), index("android.permission.INTERNET"), 0x03,
           index("android.permission.INTERNET"), android_namespace}}));
     Append(result, EndElement(index("uses-permission")));
+    if (include_permission) {
+        Append(result, StartElement(index("permission"),
+            {{index("name"), index(".C2D_MESSAGE"), 0x03,
+              index(".C2D_MESSAGE"), android_namespace},
+             {index("protectionLevel"), 0xffffffffU, 0x10, 2, android_namespace},
+             {index("permissionGroup"), index("org.example.GROUP"), 0x03,
+              index("org.example.GROUP"), android_namespace},
+             {index("permissionFlags"), 0xffffffffU, 0x10, 1, android_namespace},
+             {index("description"), 0xffffffffU, 0x01, 0x7f030002U,
+              android_namespace}}));
+        const auto metadata = [&](const char* name, const Attribute value) {
+            Append(result, StartElement(index("meta-data"),
+                {{index("name"), index(name), 0x03, index(name), android_namespace},
+                 value}));
+            Append(result, EndElement(index("meta-data")));
+        };
+        metadata("permission.string",
+                 {index("value"), index("ready"), 0x03, index("ready"), android_namespace});
+        metadata("permission.bool",
+                 {index("value"), 0xffffffffU, 0x12, 1, android_namespace});
+        metadata("permission.int",
+                 {index("value"), 0xffffffffU, 0x10, 42, android_namespace});
+        metadata("permission.value-ref",
+                 {index("value"), 0xffffffffU, 0x01, 0x7f05004fU, android_namespace});
+        metadata("permission.resource",
+                 {index("resource"), 0xffffffffU, 0x01, 0x7f030001U, android_namespace});
+        Append(result, EndElement(index("permission")));
+    }
     std::vector<Attribute> application_attributes;
     if (include_receivers) {
         application_attributes = {
@@ -621,6 +653,30 @@ TEST_CASE("binary AndroidManifest exposes package permission and application met
         static_cast<void>(ogplay::loader::ParseAndroidBinaryManifest(
             PackageFactsManifest(true))),
         "binary AndroidManifest application meta-data requires name and exactly one value or resource");
+}
+
+TEST_CASE("Manifest permission definitions are separate from requests") {
+    using namespace ogplay::loader;
+    const auto facts = ParseAndroidBinaryManifest(
+        PackageFactsManifest(false, false, 1U, true));
+    REQUIRE(facts.requested_permissions.size() == 1);
+    CHECK(facts.requested_permissions[0] == "android.permission.INTERNET");
+    REQUIRE(facts.defined_permissions.size() == 1);
+    const auto& definition = facts.defined_permissions[0];
+    CHECK(definition.name == "org.example.game.C2D_MESSAGE");
+    CHECK(definition.package_name == "org.example.game");
+    CHECK(definition.protection_level == 2U);
+    CHECK(definition.group == "org.example.GROUP");
+    CHECK(definition.flags == 1U);
+    CHECK(definition.description_res == 0x7f030002U);
+    REQUIRE(definition.meta_data.size() == 5);
+    CHECK(std::get<std::string>(definition.meta_data[0].value) == "ready");
+    CHECK(std::get<bool>(definition.meta_data[1].value));
+    CHECK(std::get<std::int32_t>(definition.meta_data[2].value) == 42);
+    CHECK(std::get<AndroidManifestMetaDataValueReference>(
+              definition.meta_data[3].value).resource_id == 0x7f05004fU);
+    CHECK(std::get<AndroidManifestMetaDataResourceReference>(
+              definition.meta_data[4].value).resource_id == 0x7f030001U);
 }
 
 TEST_CASE("binary AndroidManifest preserves receiver facts and own meta-data") {

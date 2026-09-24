@@ -26,6 +26,8 @@
   `uses-permission` 与 application `meta-data`，metadata 只接受 API19 string、integer、
   boolean、value/resource reference；两种 reference 保留独立身份，由运行时仅解析
   `android:value`，`android:resource` 继续发布 resource id。
+  顶层 `<permission>` 另存名称、所属包、protectionLevel、group、flags、description 与
+  自身 `meta-data`；权限定义不从 `uses-permission` 推导。
   DVM-112 保留 application enabled、独立的 service 名称/enabled/过滤器事实；过滤器
   保存 action/category 与 data 条件存在标记，不能将未解析的 data 条件当作没有条件。
   service 名称沿用 API19 buildClassName，缺名/空名/非法名/重复声明明确失败；

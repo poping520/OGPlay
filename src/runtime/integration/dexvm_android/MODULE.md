@@ -61,6 +61,9 @@ handler id、单类 TU 或 misc 巨石。非 Android family 归 core，平台事
   返回原版 BootDex ServiceInfo。service 与 application 的 metaData 分别物化；缺失抛
   NameNotFoundException，未知 flags/缺少 inventory 记账失败。仅读取独立进程声明，
   不创建 service 进程。
+  `getPermissionInfo(String,int)` 只查当前 APK 的 `<permission>` 定义，支持 0 和
+  `GET_META_DATA`，返回原版 BootDex PermissionInfo；仅请求或已授权而未定义的名称抛
+  NameNotFoundException，未知 flags/未装配事实记账失败。定义、请求和现有简化授权集合分离。
 - `Context.checkPermission(String,int,int)` 只回答 guest self PID/UID，并与 PackageManager
   共用 Manifest granted-permission 集合；外部身份和未授予权限返回 denied，null permission
   抛 IllegalArgumentException。无跨进程 Binder 时 `checkCallingPermission` 按 API 19 防泄漏

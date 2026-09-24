@@ -6,8 +6,9 @@
 
 - **Dead Trigger 1.1.0**：无 Profile 的 APK/OBB 启动已越过 [VFS-04](../tasks/vfs/VFS-04.md)
   挂载、`Resources.getAssets()`、[DVM-190](../tasks/dexvm/DVM-190.md)
-  `getReceiverInfo` 与 [DVM-191](../tasks/dexvm/DVM-191.md) `getServiceInfo`。
-  关闭 survey 的当前首错为 `PackageManager.getPermissionInfo(String,int)`；
+  `getReceiverInfo`、[DVM-191](../tasks/dexvm/DVM-191.md) `getServiceInfo` 与
+  [DVM-192](../tasks/dexvm/DVM-192.md) `getPermissionInfo`。关闭 survey 的当前首错为
+  `PackageManager.queryBroadcastReceivers(Intent,int)`；
   这只是 reached-fault，未通过游戏验收。
 - **Angry Birds 2.3.0**：无 Profile、空沙盒运行 5000 presented frames，
   `View.setScrollBarStyle/getScrollBarStyle` 原方法解析错未再出现，未触发新的致命首错。
@@ -23,6 +24,7 @@
   service 同样传递查询字段与自身元数据。`getReceiverInfo/getServiceInfo` 支持
   0、GET_META_DATA、GET_DISABLED_COMPONENTS。VM 状态由字段/数组
   与统一对象模型持有，文件 IO 经 Libcore Posix 进入 VFS。
+  `getPermissionInfo` 只查当前 APK 的权限定义，定义与请求/授权集合分离。
 - **VFS**：[VFS-01..04](../design/vfs/README.md) 的资源 backing、定位 IO、预算、
   APK/OBB range、媒体 lease、安装实例沙盒和无 Profile external/OBB 挂载已接入。
   受影响目标及定向回归通过；多实例选择要求显式 `--installation-id`。
@@ -36,7 +38,7 @@
 
 ## 未闭合边界
 
-- Dead Trigger 下一独立缺口是 `PackageManager.getPermissionInfo`；不运行 Binder、
+- Dead Trigger 下一独立缺口是 `PackageManager.queryBroadcastReceivers`；不运行 Binder、
   system_server、外部包数据库、广播投递或 Play 服务。
 - GUI 的真实 APK 导入→设置→启动→Dashboard→退出→移除全链路验收按用户安排延后；
   GUI 的 Linux/macOS 宿主未完成。WebView 页面/JavaScript 执行仍不支持。

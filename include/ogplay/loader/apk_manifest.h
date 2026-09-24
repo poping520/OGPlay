@@ -33,6 +33,17 @@ struct AndroidManifestMetaData final {
     AndroidManifestMetaDataValue value;
 };
 
+struct AndroidManifestPermissionDefinition final {
+    std::string name;
+    std::string package_name;
+    std::uint32_t protection_level{};
+    std::optional<std::string> group;
+    std::uint32_t flags{};
+    std::uint32_t description_res{};
+    std::optional<std::string> nonlocalized_description;
+    std::vector<AndroidManifestMetaData> meta_data;
+};
+
 enum class AndroidManifestComponentKind : std::uint8_t {
     activity,
     activity_alias,
@@ -139,6 +150,7 @@ struct AndroidManifestFacts final {
     std::vector<AndroidManifestActivityComponent> activity_components;
     std::vector<AndroidManifestMetaData> application_meta_data;
     std::vector<std::string> requested_permissions;
+    std::vector<AndroidManifestPermissionDefinition> defined_permissions;
     bool application_enabled{true};
     std::vector<AndroidManifestServiceComponent> service_components;
     std::vector<AndroidManifestReceiverComponent> receiver_components;

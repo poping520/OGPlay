@@ -2690,6 +2690,31 @@ MakeActivityInfo(dx::IntrinsicContext &call, const Context &context,
   return info;
 }
 
+[[nodiscard]] dx::VmObjectRef MakePermissionInfo(
+    dx::IntrinsicContext &call, const Context &context,
+    const loader::AndroidManifestPermissionDefinition &definition,
+    const bool include_meta_data) {
+  const auto info = call.vm.NewIntrinsicInstance("Landroid/content/pm/PermissionInfo;");
+  const auto root = call.vm.ProtectReferences(std::array{info});
+  SetRef(call, info, "name", "Ljava/lang/String;", String(call, definition.name));
+  SetRef(call, info, "packageName", "Ljava/lang/String;",
+         String(call, definition.package_name));
+  SetInt(call, info, "protectionLevel",
+         static_cast<std::int32_t>(definition.protection_level));
+  SetInt(call, info, "flags", static_cast<std::int32_t>(definition.flags));
+  SetInt(call, info, "descriptionRes",
+         static_cast<std::int32_t>(definition.description_res));
+  if (definition.group)
+    SetRef(call, info, "group", "Ljava/lang/String;",
+           String(call, *definition.group));
+  if (definition.nonlocalized_description)
+    SetRef(call, info, "nonLocalizedDescription", "Ljava/lang/CharSequence;",
+           String(call, *definition.nonlocalized_description));
+  SetComponentMetaData(call, context, info, definition.meta_data,
+                       include_meta_data);
+  return info;
+}
+
 [[nodiscard]] dx::VmObjectRef
 MakeActivityInfoArray(dx::IntrinsicContext &call, const Context &context,
                       const dx::VmObjectRef application_info) {
@@ -2863,6 +2888,28 @@ Decl Declare_android_content_pm_PackageManager(const Context &context) {
         const auto root = call.vm.ProtectReferences(std::array{application});
         return dx::VmValue::Ref(MakeServiceInfo(
             call, context, *found, (flags & kGetMetaData) != 0, application));
+      });
+  builder.VirtualMethod(
+      "getPermissionInfo",
+      "(Ljava/lang/String;I)Landroid/content/pm/PermissionInfo;",
+      [context](dx::IntrinsicContext &call) {
+        const auto name = RequiredString(call, 0U, "permissionName");
+        const auto flags = call.arguments[1].AsInt();
+        if (!context->permission_inventory_known || (flags & ~kGetMetaData) != 0) {
+          if (auto *ledger = call.vm.Ledger())
+            ledger->RecordUnimplemented("dexvm.permission_info", 0);
+          throw dx::VmJavaThrow{
+              "Ljava/lang/UnsupportedOperationException;",
+              "getPermissionInfo requires current-package definitions and flags 0 or GET_META_DATA"};
+        }
+        const auto found = std::find_if(
+            context->defined_permissions.begin(), context->defined_permissions.end(),
+            [&](const auto &definition) { return definition.name == name; });
+        if (found == context->defined_permissions.end())
+          throw dx::VmJavaThrow{
+              "Landroid/content/pm/PackageManager$NameNotFoundException;", name};
+        return dx::VmValue::Ref(MakePermissionInfo(
+            call, context, *found, (flags & kGetMetaData) != 0));
       });
   builder.VirtualMethod(
       "getPackageInfo", "(Ljava/lang/String;I)Landroid/content/pm/PackageInfo;",

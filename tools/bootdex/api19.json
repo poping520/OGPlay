@@ -1510,6 +1510,8 @@
       "Landroid/content/pm/PackageItemInfo;",
       "Landroid/content/pm/PathPermission$1;",
       "Landroid/content/pm/PathPermission;",
+      "Landroid/content/pm/PermissionInfo$1;",
+      "Landroid/content/pm/PermissionInfo;",
       "Landroid/content/pm/ProviderInfo$1;",
       "Landroid/content/pm/ProviderInfo;",
       "Landroid/content/pm/ResolveInfo$1;",

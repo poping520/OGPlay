@@ -217,6 +217,8 @@ public:
             context->application_meta_data.emplace(item.name, item.value);
         }
         context->requested_permissions = manifest.requested_permissions;
+        context->defined_permissions = manifest.defined_permissions;
+        context->permission_inventory_known = true;
         context->activity_components = manifest.activity_components;
         context->service_components = manifest.service_components;
         context->receiver_components = manifest.receiver_components;

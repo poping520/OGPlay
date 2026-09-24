@@ -3537,6 +3537,111 @@ TEST_CASE("DVM-180 getPackageInfo returns current-package Activity metadata") {
     }
 }
 
+TEST_CASE("PackageManager getPermissionInfo queries definitions, not requests") {
+    constexpr auto kQuery =
+        "(Ljava/lang/String;I)Landroid/content/pm/PermissionInfo;";
+    for (const auto backend : {InterpreterBackend::switch_dispatch,
+                               InterpreterBackend::threaded}) {
+        AndroidValueVm f(backend);
+        f.context->package_name = "org.example.game";
+        f.context->permission_inventory_known = true;
+        f.context->requested_permissions = {"external.REQUESTED"};
+        f.context->granted_permissions.insert("external.REQUESTED");
+        f.context->arsc.entries.push_back(
+            {.resource_id = 0x7f050001U, .type_name = "string",
+             .entry_name = "permission_value", .string_value = "resolved",
+             .value_type = 0x03U});
+        ogplay::loader::AndroidManifestPermissionDefinition definition;
+        definition.name = "org.example.game.C2D_MESSAGE";
+        definition.package_name = "org.example.game";
+        definition.protection_level = 2;
+        definition.group = "org.example.GROUP";
+        definition.flags = 1;
+        definition.description_res = 0x7f030002U;
+        definition.meta_data = {
+            {"permission.string", std::string("ready")},
+            {"permission.bool", true}, {"permission.int", std::int32_t{42}},
+            {"permission.value", ogplay::loader::AndroidManifestMetaDataValueReference{0x7f050001U}},
+            {"permission.resource", ogplay::loader::AndroidManifestMetaDataResourceReference{0x7f030001U}}};
+        f.context->defined_permissions = {definition};
+        const auto manager = f.vm.NewIntrinsicInstance(
+            "Landroid/content/pm/PackageManager;");
+        const auto roots = f.vm.ProtectReferences(std::array{manager});
+        const auto query = [&](const char* name, const int flags) {
+            return f.OnOutcome(manager, "getPermissionInfo", kQuery,
+                               {VmValue::Ref(f.vm.NewStringUtf8(name)),
+                                VmValue::Int(flags)});
+        };
+        const auto field = [&](const VmObjectRef object, const char* name,
+                               const char* descriptor) {
+            const auto found = f.linker.FindFieldRecursive(
+                f.model.ObjectClass(object), name, descriptor);
+            REQUIRE(found.has_value());
+            return f.model.InstanceSlots(object)[f.linker.Field(*found).slot].bits;
+        };
+        const auto ref_field = [&](const VmObjectRef object, const char* name,
+                                   const char* descriptor) {
+            return VmObjectRef{static_cast<std::uint32_t>(field(object, name, descriptor))};
+        };
+        const auto string_field = [&](const VmObjectRef object, const char* name) {
+            return f.vm.StringUtf8(ref_field(object, name, "Ljava/lang/String;"));
+        };
+        const auto get_string = [&](const VmObjectRef bundle, const char* key) {
+            return f.On(bundle, "getString", "(Ljava/lang/String;)Ljava/lang/String;",
+                        {VmValue::Ref(f.vm.NewStringUtf8(key))}).ref;
+        };
+        const auto plain = query("org.example.game.C2D_MESSAGE", 0);
+        REQUIRE_FALSE(plain.exception.IsValid());
+        CHECK(string_field(plain.value.ref, "name") == "org.example.game.C2D_MESSAGE");
+        CHECK(string_field(plain.value.ref, "packageName") == "org.example.game");
+        CHECK(string_field(plain.value.ref, "group") == "org.example.GROUP");
+        CHECK(field(plain.value.ref, "protectionLevel", "I") == 2);
+        CHECK(field(plain.value.ref, "flags", "I") == 1);
+        CHECK(field(plain.value.ref, "descriptionRes", "I") == 0x7f030002U);
+        CHECK_FALSE(ref_field(plain.value.ref, "metaData", "Landroid/os/Bundle;").IsValid());
+        const auto with_meta = query("org.example.game.C2D_MESSAGE", 0x80);
+        REQUIRE_FALSE(with_meta.exception.IsValid());
+        const auto info = with_meta.value.ref;
+        const auto info_root = f.vm.ProtectReferences(std::array{info});
+        const auto metadata = ref_field(info, "metaData", "Landroid/os/Bundle;");
+        REQUIRE(metadata.IsValid());
+        CHECK(f.vm.StringUtf8(get_string(metadata, "permission.string")) == "ready");
+        CHECK(f.vm.StringUtf8(get_string(metadata, "permission.value")) == "resolved");
+        CHECK(f.On(metadata, "getBoolean", "(Ljava/lang/String;)Z",
+                   {VmValue::Ref(f.vm.NewStringUtf8("permission.bool"))}).AsInt() == 1);
+        CHECK(f.On(metadata, "getInt", "(Ljava/lang/String;)I",
+                   {VmValue::Ref(f.vm.NewStringUtf8("permission.int"))}).AsInt() == 42);
+        CHECK(f.On(metadata, "getInt", "(Ljava/lang/String;)I",
+                   {VmValue::Ref(f.vm.NewStringUtf8("permission.resource"))}).AsInt() ==
+              static_cast<std::int32_t>(0x7f030001U));
+        const auto again = query("org.example.game.C2D_MESSAGE", 0x80);
+        REQUIRE_FALSE(again.exception.IsValid());
+        CHECK(again.value.ref != info);
+        CHECK(ref_field(again.value.ref, "metaData", "Landroid/os/Bundle;") != metadata);
+        const auto missing = f.linker.ResolveDescriptor(
+            "Landroid/content/pm/PackageManager$NameNotFoundException;");
+        CHECK(query("external.REQUESTED", 0).exception_class == missing);
+        CHECK(query("other.package.Permission", 0).exception_class == missing);
+        const auto unsupported = query("org.example.game.C2D_MESSAGE", 0x200);
+        REQUIRE(unsupported.exception.IsValid());
+        CHECK(f.linker.Class(unsupported.exception_class).descriptor ==
+              "Ljava/lang/UnsupportedOperationException;");
+        f.context->permission_inventory_known = false;
+        const auto unavailable = query("org.example.game.C2D_MESSAGE", 0);
+        REQUIRE(unavailable.exception.IsValid());
+        CHECK(f.linker.Class(unavailable.exception_class).descriptor ==
+              "Ljava/lang/UnsupportedOperationException;");
+        const auto hits = f.ledger.Unimplemented();
+        CHECK(std::any_of(hits.begin(), hits.end(), [](const auto& hit) {
+            return hit.id == "dexvm.permission_info" && hit.count == 2;
+        }));
+        static_cast<void>(f.vm.CollectGarbage("permission-info"));
+        CHECK(f.vm.StringUtf8(get_string(ref_field(info, "metaData",
+                                                    "Landroid/os/Bundle;"),
+                                         "permission.string")) == "ready");
+    }
+}
+
 TEST_CASE("PackageManager getServiceInfo uses current Manifest service facts") {
     constexpr auto kQuery =
         "(Landroid/content/ComponentName;I)Landroid/content/pm/ServiceInfo;";

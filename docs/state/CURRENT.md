@@ -1,8 +1,14 @@
 # 当前状态
 
-更新：2026-09-22。
+更新：2026-09-24。
 
 ## 最近进展
+
+- [VFS-04](../tasks/vfs/VFS-04.md)：`run-apk` 显式 external 在无 Profile 时默认挂到
+  `/sdcard`，可指定其下 guest 根；OBB 原文件按标准路径只读定位挂载，Profile 特殊
+  挂载仍有效。Windows Release 定向 4 项/29 断言通过；Dead Trigger APK/OBB
+  `--preflight` 在 `profile=none` 下通过，实际启动越过挂载并进入 guest
+  `Application.onCreate`，下一首错为 `Resources.getAssets()` 未解析。游戏兼容未验收。
 
 - [GUI-8](../tasks/gui/GUI-8.md)：详情移除入口、默认二次确认、运行中保护与沙盒/外部数据保留接通。
   定向自动检查通过，Release 静态制品已同步；按用户要求，真实 APK 全链路和原生交互验收下次进行。

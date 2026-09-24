@@ -226,6 +226,74 @@ TEST_CASE("direct run-apk requires disambiguation for multiple installations") {
         "org.example.game; pass --installation-id <id>");
 }
 
+TEST_CASE("run-apk mounts an external directory without a Profile") {
+    TemporaryDirectory tree;
+    std::filesystem::create_directories(tree.path);
+    {
+        std::ofstream file(tree.path / "data.bin", std::ios::binary);
+        file << "external-data";
+    }
+    ogplay::session::TitleProfile generic;
+    generic.identity.package = "org.example.game";
+    ogplay::runtime::VirtualFileSystem vfs;
+    ogplay::frontend::MountExternalDirectory(generic, tree.path, vfs);
+    const auto descriptor = vfs.Open("/storage/emulated/0/data.bin", {.read = true});
+    std::array<std::byte, 8> output{};
+    CHECK(vfs.Read(descriptor, output) == output.size());
+    CHECK(std::string(reinterpret_cast<const char*>(output.data()), output.size()) ==
+          "external");
+    CHECK(vfs.DescriptorInfo(descriptor).source ==
+          ogplay::runtime::VfsSource::external);
+    vfs.Close(descriptor);
+
+    ogplay::runtime::VirtualFileSystem explicit_vfs;
+    ogplay::frontend::MountExternalDirectory(
+        generic, tree.path, explicit_vfs,
+        std::string{"/sdcard/Android/data/org.example.game/files"});
+    CHECK_NOTHROW(static_cast<void>(explicit_vfs.Stat(
+        "/sdcard/Android/data/org.example.game/files/data.bin")));
+    CHECK_THROWS(static_cast<void>(explicit_vfs.Stat("/sdcard/data.bin")));
+    ogplay::runtime::VirtualFileSystem invalid_vfs;
+    CHECK_THROWS(ogplay::frontend::MountExternalDirectory(
+        generic, tree.path, invalid_vfs, std::string{"/data/data/org.example.game"}));
+
+    generic.data = ogplay::session::ProfileData{
+        .mounts = {{"/sdcard/game", ogplay::session::ProfileSource::external, true}}};
+    ogplay::runtime::VirtualFileSystem profiled_vfs;
+    ogplay::frontend::MountExternalDirectory(generic, tree.path, profiled_vfs);
+    CHECK_NOTHROW(static_cast<void>(profiled_vfs.Stat("/sdcard/game/data.bin")));
+    CHECK_THROWS(static_cast<void>(profiled_vfs.Stat("/sdcard/data.bin")));
+    CHECK_THROWS(ogplay::frontend::MountExternalDirectory(
+        generic, tree.path, profiled_vfs, std::string{"/sdcard/elsewhere"}));
+}
+
+TEST_CASE("run-apk mounts the original OBB file with bounded reads") {
+    TemporaryDirectory tree;
+    std::filesystem::create_directories(tree.path);
+    const auto file = tree.path / "main.1.org.example.game.obb";
+    {
+        std::ofstream output(file, std::ios::binary);
+        output << "original-obb-bytes";
+    }
+    ogplay::runtime::VirtualFileSystem vfs;
+    vfs.MountHostFile(ogplay::runtime::VfsSource::obb,
+                      "/sdcard/Android/obb/org.example.game", file);
+    vfs.AddPathAlias("/storage/emulated/0", "/sdcard");
+    const auto descriptor = vfs.Open(
+        "/storage/emulated/0/Android/obb/org.example.game/main.1.org.example.game.obb",
+        {.read = true});
+    CHECK(vfs.DescriptorInfo(descriptor).source == ogplay::runtime::VfsSource::obb);
+    CHECK(vfs.Seek(descriptor, 9, ogplay::runtime::VfsSeekWhence::begin) == 9U);
+    std::array<std::byte, 3> output{};
+    CHECK(vfs.Read(descriptor, output) == output.size());
+    CHECK(std::string(reinterpret_cast<const char*>(output.data()), output.size()) ==
+          "obb");
+    CHECK(vfs.IoStatistics().full_materialized_bytes == 0U);
+    vfs.Close(descriptor);
+    CHECK_THROWS(vfs.MountHostFile(ogplay::runtime::VfsSource::obb,
+                                  "/sdcard/Android/obb/org.example.game", file));
+}
+
 TEST_CASE("run-apk archive mounts enforce compressed block cache budget") {
     const auto bytes = FixedZip();
     const auto archive = ogplay::loader::ParseApkArchive(bytes);

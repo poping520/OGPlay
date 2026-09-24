@@ -185,6 +185,8 @@ public:
                            std::span<const VfsLazyMountEntry> entries);
     void MountHostDirectory(std::string_view root,
                             const std::filesystem::path& directory);
+    void MountHostFile(VfsSource source, std::string_view root,
+                       const std::filesystem::path& file);
     // Canonicalizes a path prefix onto an already mounted namespace. Both
     // spellings then address the same nodes and overlay.
     void AddPathAlias(std::string_view alias, std::string_view target);

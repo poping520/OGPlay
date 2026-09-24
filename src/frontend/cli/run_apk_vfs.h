@@ -43,12 +43,13 @@ struct SandboxSession final {
     [[nodiscard]] std::string Describe() const;
 };
 
-// Mounts the Profile's declared external host directory, if any, and checks
-// its required manifest entries.
+// Mounts external data at the Profile root or a generic /sdcard root, and
+// checks required Profile manifest entries.
 void MountExternalDirectory(
     const session::TitleProfile& profile,
     const std::optional<std::filesystem::path>& directory,
-    runtime::VirtualFileSystem& filesystem);
+    runtime::VirtualFileSystem& filesystem,
+    const std::optional<std::string>& guest_directory = std::nullopt);
 void MountApkArchive(const session::TitleProfile& profile,
                      std::shared_ptr<const std::vector<std::byte>> apk_bytes,
                      const loader::ApkArchive& archive,

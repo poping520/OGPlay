@@ -131,6 +131,8 @@ public:
                    std::span<const VfsLazyMountEntry> entries, bool writable);
     void MountHostDirectory(std::string_view root,
                             const std::filesystem::path& directory);
+    void MountHostFile(VfsSource source, std::string_view root,
+                       const std::filesystem::path& file);
     void AddPathAlias(std::string_view alias, std::string_view target);
     void SetWorkingDirectory(std::string_view path);
     [[nodiscard]] std::optional<std::string> WorkingDirectory() const;

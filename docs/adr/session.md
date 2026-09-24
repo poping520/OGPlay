@@ -6,6 +6,7 @@
 - [ADR-0020 · 每游戏持久沙盒（可写命名空间跨会话持久化）](#adr-0020)
 - [ADR-0022 · Profile 启动作用域与 v2-only 迁移](#adr-0022)
 - [ADR-0071 · VFS backing、资源 lease 与安装实例沙盒](#adr-0071)
+- [ADR-0074 · CLI 数据输入独立于 Profile 挂载声明](#adr-0074)
 
 <a id="adr-0020"></a>
 
@@ -144,3 +145,32 @@ Asphalt 6 的 manifest launcher 会转入首启下载、DRM、推送和分析外
 - 小窗口读取、慢来源隔离、关闭后的 lease 寿命和多安装数据隔离成为可测试契约。
 - 可写源捕获需要受总预算约束的快照；压缩后退仍允许线性重启，本轮不承诺 mmap、WAL、
   跨进程锁或所有同步宿主 IO 可立即取消。
+
+<a id="adr-0074"></a>
+
+## ADR-0074 · CLI 数据输入独立于 Profile 挂载声明
+
+- 状态：Accepted
+- 日期：2026-09-24
+- 关联：[VFS-04](../tasks/vfs/VFS-04.md)
+- Supersedes：WU-0302 中“无 Profile external 声明时拒绝 `--external-dir`”的条款。
+
+### 背景
+
+`run-apk` 把宿主数据输入和游戏特殊 guest 路径合为 Profile mount。无匹配 Profile 时，
+显式 `--external-dir` 和 `--obb` 因缺少声明被拒绝；OBB 还只以 ZIP 条目形式挂载，
+guest 看不到标准路径下的原 `.obb` 文件。
+
+### 决定
+
+- `--external-dir` 无 Profile external 声明时挂到 `/sdcard`；有声明时沿用唯一声明路径，
+  无声明时可用 `--external-guest-dir` 指定 `/sdcard` 内的 guest 根；required mount 与
+  manifest 校验仍生效。
+- `--obb` 始终按原文件名只读挂到 `/sdcard/Android/obb/<package>/`，通过宿主文件
+  backing 定位读取。Profile OBB 声明额外挂载归档条目，required 规则不变。
+- 原始输入挂载在沙盒 overlay 前完成；路径冲突和非法输入明确失败，不静默覆盖底层。
+
+### 后果
+
+无 Profile 的 APK 可使用显式外部目录和标准 OBB 路径。Profile 保留特殊数据布局职责；
+本决定不为任意外部目录猜测游戏专属路径，也不扩大到多个 OBB 的 CLI 输入。

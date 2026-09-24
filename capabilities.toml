@@ -287,8 +287,8 @@ note = "M5 WU-0215 以不可变所有权 bundle 汇总已导入 VFS/audio 字节
 
 [frontend.run_apk_external]
 status = "complete"
-test = "frontend.run_apk_options; bounded exact-APK run-apk smoke"
-note = "M5 WU-0302 让 run-apk 将一个显式宿主数据目录精确挂到匹配 Profile 声明的唯一 external guest 根，并在窗口创建前校验 required 输入与 manifest；DVM-39 将 Android 4.4 /storage/emulated/0 规范到同一 /sdcard VFS 节点，避免 external 与保存 overlay 分裂"
+test = "frontend.run_apk_options; tests/frontend/run_apk_vfs_tests.cpp; bounded exact-APK run-apk smoke"
+note = "ADR-0074/VFS-04：显式 external 目录有 Profile 声明时沿用其唯一 guest 根，无声明时默认挂到 /sdcard，可用 --external-guest-dir 指定 /sdcard 内路径；required 输入与 manifest 仍在窗口创建前校验。Android 4.4 /storage/emulated/0 与 /sdcard 共用 VFS 节点和保存 overlay"
 
 [frontend.gui_shell]
 status = "complete"
@@ -578,7 +578,7 @@ note = "ADR-0071/VFS-01 将沙盒身份改为安装层显式 installation id，s
 [runtime.vfs]
 status = "complete"
 test = "tests/runtime/vfs_tests.cpp; tests/frontend/run_apk_vfs_tests.cpp; tests/loader/apk_tests.cpp; tests/dexvm/network_sqlite_tests.cpp"
-note = "ADR-0071/VFS-01..03 在既有事务挂载、alias 和目录语义上分离稳定节点、打开状态与 backing；新增 ReadAt/WriteAt、持有打开身份的宿主定位读、FD close/reuse 安全、节点级读写/截断排序及 VfsReadLease。统一 128 MiB 可注入资源预算覆盖可写快照、writable lazy 物化和 Deflate 块缓存；慢 backing/CRC/解压不持全局索引锁。APK/OBB stored/Deflate 通过严格 range reader 挂载，生产媒体不再依赖宿主路径"
+note = "ADR-0071/VFS-01..03 在既有事务挂载、alias 和目录语义上分离稳定节点、打开状态与 backing；新增 ReadAt/WriteAt、持有打开身份的宿主定位读、FD close/reuse 安全、节点级读写/截断排序及 VfsReadLease。统一 128 MiB 可注入资源预算覆盖可写快照、writable lazy 物化和 Deflate 块缓存；慢 backing/CRC/解压不持全局索引锁。APK/OBB stored/Deflate 通过严格 range reader 挂载；ADR-0074/VFS-04 增加标准路径下 OBB 原文件的宿主定位读，生产媒体不再依赖宿主路径"
 
 [runtime.jni]
 status = "complete"

@@ -168,17 +168,26 @@ std::string SandboxSession::Describe() const {
 void MountExternalDirectory(
     const session::TitleProfile& profile,
     const std::optional<std::filesystem::path>& directory,
-    runtime::VirtualFileSystem& filesystem) {
+    runtime::VirtualFileSystem& filesystem,
+    const std::optional<std::string>& guest_directory) {
     // Android 4.4 exposes the emulated primary volume through both names.
     // Canonicalizing the storage path preserves shared file and save state.
     filesystem.AddPathAlias("/storage/emulated/0", "/sdcard");
     const auto* mount = ExternalMount(profile);
     if (mount == nullptr) {
         if (directory.has_value()) {
-            throw std::runtime_error(
-                "--external-dir was supplied but Profile declares no external mount");
+            const auto& guest = guest_directory.value_or("/sdcard");
+            if (guest != "/sdcard" && !guest.starts_with("/sdcard/")) {
+                throw std::invalid_argument(
+                    "--external-guest-dir must be within /sdcard");
+            }
+            filesystem.MountHostDirectory(guest, *directory);
         }
         return;
+    }
+    if (guest_directory.has_value()) {
+        throw std::invalid_argument(
+            "--external-guest-dir cannot override a Profile external mount");
     }
     if (!directory.has_value()) {
         if (mount->required) {

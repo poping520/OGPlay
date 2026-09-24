@@ -14,8 +14,11 @@
   与退出码。
 - `HostBundledDataPaths`：优先读取可执行文件同目录（macOS bundle Resources）的
   `profiles/`、`quirks.toml` 与 `framework/bootdex.jar`，源码树仅作开发回退。
-- `--external-dir` 按 Profile 唯一 external 根 lazy mount；`/storage/emulated/0` 与
-  `/sdcard` 共用节点。`--supersample` 选择 1..4×；`--dexvm-interpreter` 覆盖 Profile，
+- `--external-dir` 有 Profile external 声明时挂到其唯一 guest 根，否则挂到 `/sdcard`；
+  无声明时可用 `--external-guest-dir` 指定 `/sdcard` 内的 guest 根。
+  `/storage/emulated/0` 与 `/sdcard` 共用节点。`--obb` 将原文件只读挂到
+  `/sdcard/Android/obb/<package>/<filename>`；Profile OBB 声明可额外挂载归档条目。
+  `--supersample` 选择 1..4×；`--dexvm-interpreter` 覆盖 Profile，
   默认 `switch`。
 - `--mcp`/`--mcp-port` 同时提供 `/dash/` 页面与 `/dash/rpc` 只读 Dashboard，复用端口。
   静态产物来自 bundled `data/webui/dashboard`；启动前只加载固定文件白名单，每文件最多

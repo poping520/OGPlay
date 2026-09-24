@@ -1,6 +1,7 @@
 #include "vfs_internal.h"
 
 #include <algorithm>
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
@@ -313,7 +314,7 @@ void VirtualFileSystem::Impl::MountLazy(
     }
 
 void VirtualFileSystem::Impl::MountHostDirectory(const std::string_view root,
-                            const std::filesystem::path& directory) {
+                             const std::filesystem::path& directory) {
         std::error_code error;
         const auto root_status = std::filesystem::symlink_status(directory, error);
         if (error || !std::filesystem::is_directory(root_status) ||
@@ -388,6 +389,40 @@ void VirtualFileSystem::Impl::MountHostDirectory(const std::string_view root,
         }
         MountLazy(VfsSource::external, root, entries, true);
     }
+
+void VirtualFileSystem::Impl::MountHostFile(
+    const VfsSource source, const std::string_view root,
+    const std::filesystem::path& path) {
+    if (source != VfsSource::obb) {
+        throw VfsError(kEinval, "host file mount requires OBB source");
+    }
+    std::error_code error;
+    const auto status = std::filesystem::symlink_status(path, error);
+    if (error || !std::filesystem::is_regular_file(status) ||
+        std::filesystem::is_symlink(status)) {
+        throw VfsError(kEinval, "OBB backing must be a regular file");
+    }
+    const auto size = std::filesystem::file_size(path, error);
+    if (error) throw VfsError(kEio, "cannot size OBB backing file");
+    const auto reader = std::make_shared<HostFileReader>(path);
+    const std::array entries{VfsLazyMountEntry{
+        path.filename().string(), size,
+        [reader, size] {
+            if (size > std::numeric_limits<std::size_t>::max()) {
+                throw std::runtime_error("OBB backing is too large to materialize");
+            }
+            std::vector<std::byte> bytes(static_cast<std::size_t>(size));
+            if (reader->ReadAt(0, bytes) != bytes.size()) {
+                throw std::runtime_error("OBB backing file was truncated");
+            }
+            return bytes;
+        },
+        [reader](const std::uint64_t offset,
+                 const std::span<std::byte> destination) {
+            return reader->ReadAt(offset, destination);
+        }}};
+    MountLazy(source, root, entries, false);
+}
 
 void VirtualFileSystem::Impl::SetWorkingDirectory(const std::string_view path) {
         std::scoped_lock lock(mutex_);
@@ -885,6 +920,12 @@ void VirtualFileSystem::MountLazyReadOnly(
 void VirtualFileSystem::MountHostDirectory(
     const std::string_view root, const std::filesystem::path& directory) {
     impl_->MountHostDirectory(root, directory);
+}
+
+void VirtualFileSystem::MountHostFile(
+    const VfsSource source, const std::string_view root,
+    const std::filesystem::path& file) {
+    impl_->MountHostFile(source, root, file);
 }
 
 std::shared_ptr<const VfsResourceReservation>

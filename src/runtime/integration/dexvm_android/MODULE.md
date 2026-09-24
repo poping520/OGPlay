@@ -77,6 +77,8 @@ handler id、单类 TU 或 misc 巨石。非 Android family 归 core，平台事
 
 - AssetManager/Resources 只读 APK/ARSC/AXML；open 返回 core ByteArrayInputStream，openFd 仅接受
   STORED entry 并发布逻辑 FD+区间。缺失映射为 Java IOException/NotFoundException，不泄漏路径。
+  应用 Context 的 Resources/AssetManager 是同一对象对，`Resources.mAssets` 为 GC 强边；
+  `getSystem()` 返回独立稳定对象对，系统 asset 不读取应用 APK，未覆盖的系统资源明确失败。
 - `Resources.getConfiguration()`的稳定对象以同一 VM `Locale.getDefault()`补齐 locale，并调用
   BootDex `Configuration.setLayoutDirection`。当前 TextUtils 只确认 ROOT/en/zh 为 LTR；其他
   locale 在 ICU likely-subtags 边界补齐前记账失败，不伪造方向。

@@ -1105,11 +1105,10 @@ Decl Declare_android_content_Context(const Context &context) {
   builder.Constructor(
       "()V", [](dx::IntrinsicContext &) { return dx::VmValue::Void(); });
   builder.VirtualMethod("getAssets", "()Landroid/content/res/AssetManager;",
-                        [context](dx::IntrinsicContext &call) {
-                          return dx::VmValue::Ref(
-                              Singleton(call, context, "assets",
-                                        "Landroid/content/res/AssetManager;"));
-                        });
+                         [context](dx::IntrinsicContext &call) {
+                           return dx::VmValue::Ref(
+                               ResourceAssets(call, context, false));
+                         });
   builder.VirtualMethod("getPackageName", "()Ljava/lang/String;",
                         [context](dx::IntrinsicContext &call) {
                           return MakeString(call, context->package_name);
@@ -1309,11 +1308,10 @@ Decl Declare_android_content_Context(const Context &context) {
             ContextDirectory(call, context, path, "context_cache_directory"));
       });
   builder.VirtualMethod("getResources", "()Landroid/content/res/Resources;",
-                        [context](dx::IntrinsicContext &call) {
-                          return dx::VmValue::Ref(
-                              Singleton(call, context, "resources",
-                                        "Landroid/content/res/Resources;"));
-                        });
+                         [context](dx::IntrinsicContext &call) {
+                           return dx::VmValue::Ref(
+                               ResourceObject(call, context, false));
+                         });
   // API 19 Context owns this final convenience method. It deliberately
   // dispatches getResources() on the runtime receiver so wrappers keep the
   // framework inheritance relationship without copying resource state.

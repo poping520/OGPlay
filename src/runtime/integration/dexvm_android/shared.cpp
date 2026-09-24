@@ -867,6 +867,52 @@ namespace android_intrinsics {
     return instance;
 }
 
+[[nodiscard]] bool IsSystemResources(const Context& context,
+                                     const dx::VmObjectRef object) {
+    const auto found = context->singletons.find("system_resources");
+    return found != context->singletons.end() && found->second == object;
+}
+
+[[nodiscard]] bool IsSystemAssets(const Context& context,
+                                  const dx::VmObjectRef object) {
+    const auto found = context->singletons.find("system_assets");
+    return found != context->singletons.end() && found->second == object;
+}
+
+[[nodiscard]] dx::VmObjectRef ResourceObject(dx::IntrinsicContext& call,
+                                             const Context& context,
+                                             const bool system) {
+    const char* resource_key = system ? "system_resources" : "resources";
+    const char* asset_key = system ? "system_assets" : "assets";
+    if (const auto found = context->singletons.find(resource_key);
+        found != context->singletons.end()) return found->second;
+    const auto resources = call.vm.NewIntrinsicInstance(
+        "Landroid/content/res/Resources;");
+    const auto resource_root = call.vm.ProtectReferences(std::array{resources});
+    const auto assets = call.vm.NewIntrinsicInstance(
+        "Landroid/content/res/AssetManager;");
+    const auto asset_root = call.vm.ProtectReferences(std::array{assets});
+    const auto field = call.vm.Linker().FindFieldRecursive(
+        call.vm.Model().ObjectClass(resources), "mAssets",
+        "Landroid/content/res/AssetManager;");
+    if (!field.has_value()) {
+        throw dx::DexVmError(dx::DexVmErrorReason::internal_invariant,
+                             "Resources.mAssets is not linked");
+    }
+    call.vm.Model().InstanceSlots(resources)[call.vm.Linker().Field(*field).slot] =
+        {assets.Value(), dx::SlotTag::ref};
+    context->singletons.emplace(asset_key, assets);
+    context->singletons.emplace(resource_key, resources);
+    return resources;
+}
+
+[[nodiscard]] dx::VmObjectRef ResourceAssets(dx::IntrinsicContext& call,
+                                             const Context& context,
+                                             const bool system) {
+    static_cast<void>(ResourceObject(call, context, system));
+    return context->singletons.at(system ? "system_assets" : "assets");
+}
+
 [[nodiscard]] dx::VmValue MakeString(dx::IntrinsicContext& call,
                                      const std::string& value) {
     return dx::VmValue::Ref(call.vm.NewStringUtf8(value));

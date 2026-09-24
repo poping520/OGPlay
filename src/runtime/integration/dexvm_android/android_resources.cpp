@@ -143,6 +143,9 @@ Decl Declare_android_content_res_AssetManager(const Context &context) {
   builder.FinalMethod(
       "openFd", "(Ljava/lang/String;)Landroid/content/res/AssetFileDescriptor;",
       [context](dx::IntrinsicContext &call) {
+        if (IsSystemAssets(context, call.receiver))
+          throw dx::VmJavaThrow{"Ljava/io/FileNotFoundException;",
+                                "system asset is unavailable"};
         const auto path = "assets/" + call.vm.StringUtf8(call.arguments[0].ref);
         const loader::ApkEntry *entry = nullptr;
         for (const auto &candidate : context->archive.entries) {
@@ -197,6 +200,9 @@ Decl Declare_android_content_res_AssetManager(const Context &context) {
         const auto requested = call.vm.StringUtf8(call.arguments[0].ref);
         const auto prefix = requested.empty() ? std::string{"assets/"}
                                               : "assets/" + requested + "/";
+        if (IsSystemAssets(context, call.receiver))
+          throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
+                                "system asset listing is unavailable"};
         std::set<std::string> children;
         for (const auto &entry : context->archive.entries) {
           if (!entry.name.starts_with(prefix))
@@ -224,6 +230,9 @@ Decl Declare_android_content_res_AssetManager(const Context &context) {
   builder.FinalMethod(
       "open", "(Ljava/lang/String;)Ljava/io/InputStream;",
       [context](dx::IntrinsicContext &call) {
+        if (IsSystemAssets(context, call.receiver))
+          throw dx::VmJavaThrow{"Ljava/io/FileNotFoundException;",
+                                "system asset is unavailable"};
         const auto name = call.vm.StringUtf8(call.arguments[0].ref);
         return dx::VmValue::Ref(
             OpenStream(call, context, ReadApkFile(context, "assets/" + name)));
@@ -231,6 +240,9 @@ Decl Declare_android_content_res_AssetManager(const Context &context) {
   builder.FinalMethod(
       "open", "(Ljava/lang/String;I)Ljava/io/InputStream;",
       [context](dx::IntrinsicContext &call) {
+        if (IsSystemAssets(context, call.receiver))
+          throw dx::VmJavaThrow{"Ljava/io/FileNotFoundException;",
+                                "system asset is unavailable"};
         const auto name = call.vm.StringUtf8(call.arguments[0].ref);
         return dx::VmValue::Ref(
             OpenStream(call, context, ReadApkFile(context, "assets/" + name)));
@@ -551,11 +563,22 @@ namespace ogplay::runtime::android_intrinsics {
 Decl Declare_android_content_res_Resources(const Context &context) {
   auto builder = dx::IntrinsicClassBuilder::Class(
       "Landroid/content/res/Resources;", "Ljava/lang/Object;");
+  const auto assets = builder.BoundInstanceField(
+      "mAssets", "Landroid/content/res/AssetManager;",
+      dx::kAccPrivate | dx::kAccFinal);
   builder.StaticMethod("getSystem", "()Landroid/content/res/Resources;",
-                       [](dx::IntrinsicContext &call) {
-                         return dx::VmValue::Ref(call.vm.NewIntrinsicInstance(
-                             "Landroid/content/res/Resources;"));
+                       [context](dx::IntrinsicContext &call) {
+                         return dx::VmValue::Ref(ResourceObject(call, context, true));
                        });
+  builder.FinalMethod("getAssets", "()Landroid/content/res/AssetManager;",
+                      [assets](dx::IntrinsicContext &call) {
+                        const dx::IntrinsicCall fields(call);
+                        const auto value = fields.GetRef(assets);
+                        if (!value.IsValid())
+                          throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;",
+                                                "Resources has no AssetManager"};
+                        return dx::VmValue::Ref(value);
+                      });
   builder.VirtualMethod("getInteger", "(I)I", [](dx::IntrinsicContext &call) {
     const auto id = static_cast<std::uint32_t>(call.arguments[0].AsInt());
     if (id == 0x10e0035U)
@@ -667,6 +690,9 @@ Decl Declare_android_content_res_Resources(const Context &context) {
       "getIdentifier",
       "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)I",
       [context](dx::IntrinsicContext &call) {
+        if (IsSystemResources(context, call.receiver))
+          throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
+                                "system resource names are unavailable"};
         const auto entry_name = call.vm.StringUtf8(call.arguments[0].ref);
         const auto type_name = call.vm.StringUtf8(call.arguments[1].ref);
         const auto *entry = context->arsc.FindByName(type_name, entry_name);
@@ -677,6 +703,9 @@ Decl Declare_android_content_res_Resources(const Context &context) {
   builder.FinalMethod(
       "openRawResource", "(I)Ljava/io/InputStream;",
       [context](dx::IntrinsicContext &call) {
+        if (IsSystemResources(context, call.receiver))
+          throw dx::VmJavaThrow{"Landroid/content/res/Resources$NotFoundException;",
+                                "system raw resource is unavailable"};
         const auto resource_id =
             static_cast<std::uint32_t>(call.arguments[0].AsInt());
         const auto *entry = context->arsc.FindById(resource_id);
@@ -691,6 +720,9 @@ Decl Declare_android_content_res_Resources(const Context &context) {
   builder.FinalMethod(
       "openRawResourceFd", "(I)Landroid/content/res/AssetFileDescriptor;",
       [context](dx::IntrinsicContext &call) {
+        if (IsSystemResources(context, call.receiver))
+          throw dx::VmJavaThrow{"Landroid/content/res/Resources$NotFoundException;",
+                                "system raw resource is unavailable"};
         const auto resource_id =
             static_cast<std::uint32_t>(call.arguments[0].AsInt());
         const auto *entry = context->arsc.FindById(resource_id);
@@ -712,6 +744,9 @@ Decl Declare_android_content_res_Resources(const Context &context) {
   builder.VirtualMethod(
       "getXml", "(I)Landroid/content/res/XmlResourceParser;",
       [context](dx::IntrinsicContext &call) {
+        if (IsSystemResources(context, call.receiver))
+          throw dx::VmJavaThrow{"Landroid/content/res/Resources$NotFoundException;",
+                                "system XML resource is unavailable"};
         const auto resource_id =
             static_cast<std::uint32_t>(call.arguments[0].AsInt());
         const auto *entry = context->arsc.FindById(resource_id);
@@ -749,6 +784,9 @@ Decl Declare_android_content_res_Resources(const Context &context) {
           return dx::VmValue::Ref(call.vm.NewStringUtf8(
               resource_id == 0x1040029U ? "DELETE" : "FULL"));
         }
+        if (IsSystemResources(context, call.receiver))
+          throw dx::VmJavaThrow{"Landroid/content/res/Resources$NotFoundException;",
+                                "system string resource is unavailable"};
         try {
           return dx::VmValue::Ref(call.vm.NewStringUtf8(
               ResolveResourceString(*context, resource_id)));

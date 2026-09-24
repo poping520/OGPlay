@@ -37,9 +37,19 @@ void RefreshAndroidLayoutParams(dx::Interpreter& vm, const Context& context);
 // Per-context instance cache: platform singletons (window, locale, service
 // managers) must answer the same object every call.
 [[nodiscard]] dx::VmObjectRef Singleton(dx::IntrinsicContext& call,
-                                        const Context& context,
-                                        const std::string& key,
-                                        const char* descriptor);
+                                         const Context& context,
+                                         const std::string& key,
+                                         const char* descriptor);
+[[nodiscard]] dx::VmObjectRef ResourceObject(dx::IntrinsicContext& call,
+                                             const Context& context,
+                                             bool system);
+[[nodiscard]] dx::VmObjectRef ResourceAssets(dx::IntrinsicContext& call,
+                                             const Context& context,
+                                             bool system);
+[[nodiscard]] bool IsSystemResources(const Context& context,
+                                     dx::VmObjectRef object);
+[[nodiscard]] bool IsSystemAssets(const Context& context,
+                                  dx::VmObjectRef object);
 [[nodiscard]] dx::VmValue MakeString(dx::IntrinsicContext& call,
                                      const std::string& value);
 // Materialize the current package's ApplicationInfo from sealed process

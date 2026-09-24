@@ -4,6 +4,11 @@
 
 ## 最近进展
 
+- `Resources.getAssets()` 按 API 19 的 `mAssets` 关系接入 intrinsic：应用 Context 共享
+  同一资源对象对，系统资源对象独立且不读取应用 APK。双解释器对象身份、GC 与读取定向
+  回归通过；Dead Trigger 实际启动越过原首错，下一首错为
+  `PackageManager.getReceiverInfo(ComponentName,int)` 未解析。仍属 reached-fault，非游戏验收。
+
 - [VFS-04](../tasks/vfs/VFS-04.md)：`run-apk` 显式 external 在无 Profile 时默认挂到
   `/sdcard`，可指定其下 guest 根；OBB 原文件按标准路径只读定位挂载，Profile 特殊
   挂载仍有效。Windows Release 定向 4 项/29 断言通过；Dead Trigger APK/OBB

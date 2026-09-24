@@ -1724,6 +1724,75 @@ TEST_CASE("AssetManager open returns a readable concrete byte stream") {
     CHECK(vm.CallOn(stream, "read", "()I").AsInt() == -1);
 }
 
+TEST_CASE("Resources and Context share application assets and isolate system assets") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch,
+                               InterpreterBackend::threaded}) {
+        FileVm vm(nullptr, true, {.backend = backend});
+        RegisterAndroidValueStateTables(vm.interpreter, vm.context);
+        const std::vector<std::byte> payload{std::byte{0x41}};
+        vm.context->apk_bytes = MakeStoredZip("assets/gamecfg.bar", payload);
+        vm.context->archive = ogplay::loader::ParseApkArchive(
+            vm.context->apk_bytes);
+        const auto context = vm.interpreter.NewIntrinsicInstance(
+            "Landroid/content/Context;");
+        const auto context_root = vm.interpreter.ProtectReferences(std::array{context});
+        const auto resources = vm.CallOn(
+            context, "getResources", "()Landroid/content/res/Resources;").ref;
+        const auto resources_root = vm.interpreter.ProtectReferences(
+            std::array{resources});
+        const auto direct_assets = vm.CallOn(
+            context, "getAssets", "()Landroid/content/res/AssetManager;").ref;
+        const auto resource_assets = vm.CallOn(
+            resources, "getAssets", "()Landroid/content/res/AssetManager;").ref;
+        REQUIRE(direct_assets.IsValid());
+        CHECK(direct_assets == resource_assets);
+        CHECK(vm.CallOn(context, "getResources",
+                        "()Landroid/content/res/Resources;").ref == resources);
+        CHECK(vm.CallOn(resources, "getAssets",
+                        "()Landroid/content/res/AssetManager;").ref == direct_assets);
+        const auto wrapper = vm.interpreter.NewIntrinsicInstance(
+            "Landroid/content/ContextWrapper;");
+        static_cast<void>(vm.CallOn(
+            wrapper, "<init>", "(Landroid/content/Context;)V",
+            {VmValue::Ref(context)}));
+        CHECK(vm.CallOn(wrapper, "getResources",
+                        "()Landroid/content/res/Resources;").ref == resources);
+        CHECK(vm.CallOn(wrapper, "getAssets",
+                        "()Landroid/content/res/AssetManager;").ref == direct_assets);
+        static_cast<void>(vm.interpreter.CollectGarbage("resources-assets-identity"));
+        CHECK(vm.CallOn(resources, "getAssets",
+                        "()Landroid/content/res/AssetManager;").ref == direct_assets);
+        const auto name = vm.interpreter.NewStringUtf8("gamecfg.bar");
+        const auto name_root = vm.interpreter.ProtectReferences(std::array{name});
+        CHECK(vm.CallOn(direct_assets, "open",
+                        "(Ljava/lang/String;)Ljava/io/InputStream;",
+                        {VmValue::Ref(name)}).ref.IsValid());
+
+        const auto system = vm.CallStatic(
+            "Landroid/content/res/Resources;", "getSystem",
+            "()Landroid/content/res/Resources;").ref;
+        REQUIRE(system.IsValid());
+        const auto system_root = vm.interpreter.ProtectReferences(
+            std::array{system});
+        CHECK(system != resources);
+        CHECK(vm.CallStatic("Landroid/content/res/Resources;", "getSystem",
+                            "()Landroid/content/res/Resources;").ref == system);
+        const auto system_assets = vm.CallOn(
+            system, "getAssets", "()Landroid/content/res/AssetManager;").ref;
+        REQUIRE(system_assets.IsValid());
+        CHECK(system_assets != direct_assets);
+        static_cast<void>(vm.interpreter.CollectGarbage("system-resources-assets"));
+        CHECK(vm.CallOn(system, "getAssets",
+                        "()Landroid/content/res/AssetManager;").ref == system_assets);
+        const auto missing = vm.CallOnOutcome(
+            system_assets, "open", "(Ljava/lang/String;)Ljava/io/InputStream;",
+            {VmValue::Ref(name)});
+        REQUIRE(missing.exception.IsValid());
+        CHECK(vm.linker.Class(missing.exception_class).descriptor ==
+              "Ljava/io/FileNotFoundException;");
+    }
+}
+
 TEST_CASE("Resources getXml exposes compiled APK XML as pull events") {
     FileVm vm;
     constexpr std::uint32_t kResourceId = 0x7f010000U;

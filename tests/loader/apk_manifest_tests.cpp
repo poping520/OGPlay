@@ -6,6 +6,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include "ogplay/loader/apk_manifest.h"
@@ -167,7 +168,8 @@ std::vector<std::byte> Manifest(const bool utf8 = false,
 }
 
 std::vector<std::byte> PackageFactsManifest(const bool invalid_metadata = false,
-                                             const bool include_receivers = false) {
+                                             const bool include_receivers = false,
+                                             const std::uint32_t boolean_data = 1U) {
     const std::vector<std::string> strings{
         "manifest", "package", "versionCode", "application",
         "uses-permission", "name", "meta-data", "value", "resource",
@@ -202,6 +204,7 @@ std::vector<std::byte> PackageFactsManifest(const bool invalid_metadata = false,
     std::vector<Attribute> application_attributes;
     if (include_receivers) {
         application_attributes = {
+            {index("enabled"), 0xffffffffU, 0x12, boolean_data, android_namespace},
             {index("process"), index(":app"), 0x03, index(":app"), android_namespace},
             {index("permission"), index("org.example.APP"), 0x03,
              index("org.example.APP"), android_namespace}};
@@ -218,6 +221,8 @@ std::vector<std::byte> PackageFactsManifest(const bool invalid_metadata = false,
     if (include_receivers) {
         Append(result, StartElement(index("receiver"),
             {{index("name"), index(".Receiver"), 0x03, index(".Receiver"), android_namespace},
+             {index("enabled"), 0xffffffffU, 0x12, boolean_data, android_namespace},
+             {index("exported"), 0xffffffffU, 0x12, boolean_data, android_namespace},
              {index("process"), index(":remote"), 0x03, index(":remote"), android_namespace},
              {index("permission"), index("org.example.RECEIVER"), 0x03,
               index("org.example.RECEIVER"), android_namespace}}));
@@ -232,7 +237,7 @@ std::vector<std::byte> PackageFactsManifest(const bool invalid_metadata = false,
         metadata("receiver.string",
                  {index("value"), index("ready"), 0x03, index("ready"), android_namespace});
         metadata("receiver.bool",
-                 {index("value"), 0xffffffffU, 0x12, 1, android_namespace});
+                 {index("value"), 0xffffffffU, 0x12, boolean_data, android_namespace});
         metadata("receiver.int",
                  {index("value"), 0xffffffffU, 0x10, 42, android_namespace});
         metadata("receiver.value-ref",
@@ -270,7 +275,7 @@ std::vector<std::byte> PackageFactsManifest(const bool invalid_metadata = false,
         Append(result, StartElement(index("meta-data"),
             {{index("name"), index("com.example.enabled"), 0x03,
               index("com.example.enabled"), android_namespace},
-             {index("value"), 0xffffffffU, 0x12, 1,
+             {index("value"), 0xffffffffU, 0x12, boolean_data,
               android_namespace}}));
         Append(result, EndElement(index("meta-data")));
     }
@@ -289,27 +294,42 @@ struct ComponentFixture final {
     bool filter_has_data{};
     std::optional<std::uint32_t> theme;
     std::optional<bool> exported;
+    std::optional<std::string> process;
+    std::optional<std::string> permission;
+    bool stop_with_task{};
+    bool isolated_process{};
+    bool single_user{};
+    bool service_meta_data{};
 };
 
 std::vector<std::byte> StartupManifest(
     const std::optional<std::string>& application_name,
     const std::vector<ComponentFixture>& components,
     const bool application_enabled = true,
-    std::optional<std::uint32_t> theme = std::nullopt) {
+    std::optional<std::uint32_t> theme = std::nullopt,
+    const std::optional<std::string> application_process = std::nullopt,
+    const std::optional<std::string> application_permission = std::nullopt) {
     std::vector<std::string> strings{
         "manifest", "package", "versionCode", "application", "name",
         "enabled", "targetActivity", "activity", "activity-alias",
         "intent-filter", "action", "category", "service", "data", "theme", "exported", "org.example.game",
-        "http://schemas.android.com/apk/res/android"};
+        "http://schemas.android.com/apk/res/android", "process", "permission",
+        "stopWithTask", "isolatedProcess", "singleUser", "meta-data",
+        "value", "resource", "service.string", "service.bool", "service.int",
+        "service.value-ref", "service.resource", "ready"};
     const auto add = [&](const std::string& value) {
         if (std::find(strings.begin(), strings.end(), value) == strings.end()) {
             strings.push_back(value);
         }
     };
     if (application_name.has_value()) add(*application_name);
+    if (application_process) add(*application_process);
+    if (application_permission) add(*application_permission);
     for (const auto& component : components) {
         add(component.name);
         if (component.target.has_value()) add(*component.target);
+        if (component.process) add(*component.process);
+        if (component.permission) add(*component.permission);
         for (const auto& filter : component.filters) {
             for (const auto& value : filter) add(value);
         }
@@ -340,6 +360,16 @@ std::vector<std::byte> StartupManifest(
             {index("name"), index(*application_name), 0x03,
              index(*application_name), android_namespace});
     }
+    if (application_process) {
+        application_attributes.push_back(
+            {index("process"), index(*application_process), 0x03,
+             index(*application_process), android_namespace});
+    }
+    if (application_permission) {
+        application_attributes.push_back(
+            {index("permission"), index(*application_permission), 0x03,
+             index(*application_permission), android_namespace});
+    }
     Append(result, StartElement(index("application"), application_attributes));
     for (const auto& component : components) {
         std::vector<Attribute> attributes{
@@ -360,6 +390,21 @@ std::vector<std::byte> StartupManifest(
                                   *component.exported ? 1U : 0U,
                                   android_namespace});
         }
+        if (component.process) {
+            attributes.push_back({index("process"), index(*component.process), 0x03,
+                                  index(*component.process), android_namespace});
+        }
+        if (component.permission) {
+            attributes.push_back({index("permission"), index(*component.permission), 0x03,
+                                  index(*component.permission), android_namespace});
+        }
+        for (const auto& [enabled, name] :
+             {std::pair{component.stop_with_task, "stopWithTask"},
+              std::pair{component.isolated_process, "isolatedProcess"},
+              std::pair{component.single_user, "singleUser"}}) {
+            if (enabled) attributes.push_back(
+                {index(name), 0xffffffffU, 0x12, 1, android_namespace});
+        }
         Append(result, StartElement(index(component.tag), attributes));
         for (const auto& filter : component.filters) {
             Append(result, StartElement(index("intent-filter"), {}));
@@ -377,6 +422,24 @@ std::vector<std::byte> StartupManifest(
                 Append(result, EndElement(index(tag)));
             }
             Append(result, EndElement(index("intent-filter")));
+        }
+        if (component.service_meta_data) {
+            const auto metadata = [&](const char* name, const Attribute value) {
+                Append(result, StartElement(index("meta-data"),
+                    {{index("name"), index(name), 0x03, index(name), android_namespace},
+                     value}));
+                Append(result, EndElement(index("meta-data")));
+            };
+            metadata("service.string",
+                     {index("value"), index("ready"), 0x03, index("ready"), android_namespace});
+            metadata("service.bool",
+                     {index("value"), 0xffffffffU, 0x12, 1, android_namespace});
+            metadata("service.int",
+                     {index("value"), 0xffffffffU, 0x10, 42, android_namespace});
+            metadata("service.value-ref",
+                     {index("value"), 0xffffffffU, 0x01, 0x7f05004fU, android_namespace});
+            metadata("service.resource",
+                     {index("resource"), 0xffffffffU, 0x01, 0x7f030001U, android_namespace});
         }
         Append(result, EndElement(index(component.tag)));
     }
@@ -588,6 +651,25 @@ TEST_CASE("binary AndroidManifest preserves receiver facts and own meta-data") {
     CHECK(disabled.meta_data.empty());
 }
 
+TEST_CASE("binary AndroidManifest boolean values use nonzero truth semantics") {
+    for (const auto data : {0U, 1U, 2U, 0xffffffffU}) {
+        CAPTURE(data);
+        const auto facts = ogplay::loader::ParseAndroidBinaryManifest(
+            PackageFactsManifest(false, true, data));
+        const bool expected = data != 0U;
+        CHECK(facts.application_enabled == expected);
+        REQUIRE(facts.receiver_components.size() == 2U);
+        const auto& receiver = facts.receiver_components.front();
+        CHECK(receiver.enabled == expected);
+        REQUIRE(receiver.exported.has_value());
+        CHECK(*receiver.exported == expected);
+        REQUIRE(receiver.meta_data.size() == 5U);
+        CHECK(std::get<bool>(receiver.meta_data[1].value) == expected);
+        REQUIRE(facts.application_meta_data.size() == 5U);
+        CHECK(std::get<bool>(facts.application_meta_data[4].value) == expected);
+    }
+}
+
 TEST_CASE("binary AndroidManifest rejects invalid application visual types") {
     CHECK_THROWS_WITH(
         static_cast<void>(ogplay::loader::ParseAndroidBinaryManifest(Manifest(
@@ -661,6 +743,49 @@ TEST_CASE("DVM-112 Manifest preserves service facts independently of activities"
         {"service", ".Local", {}, true, {{"android.intent.action.LOCAL"}}}}, false));
     CHECK_FALSE(disabled.application_enabled);
     CHECK(disabled.service_components[0].enabled);
+}
+
+TEST_CASE("Manifest preserves service query fields and owned metadata") {
+    using namespace ogplay::loader;
+    ComponentFixture explicit_service;
+    explicit_service.tag = "service";
+    explicit_service.name = ".Push";
+    explicit_service.exported = true;
+    explicit_service.process = ":push";
+    explicit_service.permission = "org.example.PUSH";
+    explicit_service.stop_with_task = true;
+    explicit_service.isolated_process = true;
+    explicit_service.service_meta_data = true;
+    ComponentFixture inherited_service;
+    inherited_service.tag = "service";
+    inherited_service.name = ".Inherited";
+    inherited_service.exported = true;
+    inherited_service.single_user = true;
+    const auto facts = ParseAndroidBinaryManifest(StartupManifest(
+        std::nullopt, {explicit_service, inherited_service}, true, std::nullopt,
+        ":app", "org.example.APP"));
+    REQUIRE(facts.service_components.size() == 2);
+    const auto& push = facts.service_components[0];
+    CHECK(push.name == "org.example.game.Push");
+    CHECK(push.process_name == "org.example.game:push");
+    CHECK(push.permission == "org.example.PUSH");
+    CHECK(AndroidManifestServiceExported(push));
+    CHECK(push.flags == 3U);
+    REQUIRE(push.meta_data.size() == 5);
+    CHECK(push.meta_data[0].name == "service.string");
+    CHECK(std::get<std::string>(push.meta_data[0].value) == "ready");
+    CHECK(std::get<bool>(push.meta_data[1].value));
+    CHECK(std::get<std::int32_t>(push.meta_data[2].value) == 42);
+    CHECK(std::get<AndroidManifestMetaDataValueReference>(
+              push.meta_data[3].value).resource_id == 0x7f05004fU);
+    CHECK(std::get<AndroidManifestMetaDataResourceReference>(
+              push.meta_data[4].value).resource_id == 0x7f030001U);
+    const auto& inherited = facts.service_components[1];
+    CHECK(inherited.process_name == "org.example.game:app");
+    CHECK(inherited.permission == "org.example.APP");
+    CHECK_FALSE(AndroidManifestServiceExported(inherited));
+    CHECK(inherited.flags == 0x40000000U);
+    CHECK(inherited.meta_data.empty());
 }
 
 TEST_CASE("DVM-112 Manifest rejects duplicate or invalid service names") {

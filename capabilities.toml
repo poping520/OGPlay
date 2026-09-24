@@ -1875,6 +1875,11 @@ status = "partial"
 test = "tests/loader/apk_manifest_tests.cpp; tests/dexvm/android_value_tests.cpp; Dead Trigger reached getServiceInfo"
 note = "DVM-190：Manifest receiver 经 session 注入，只按当前包完整 ComponentName 回答 getReceiverInfo；支持 0、GET_META_DATA、GET_DISABLED_COMPONENTS 与 application/component 禁用过滤，返回 BootDex ActivityInfo 并分离 receiver/application 元数据。未知 flags 与缺少 inventory 记账失败；不含外部包、广播投递或系统包服务。"
 
+[dexvm.service_info]
+status = "partial"
+test = "tests/loader/apk_manifest_tests.cpp; tests/dexvm/android_value_tests.cpp; Dead Trigger reached getPermissionInfo"
+note = "DVM-191：Manifest service 保存名称、启用、exported、process、permission、自身元数据和 API19 ServiceInfo.flags，经 session 注入。getServiceInfo 仅按当前包完整 ComponentName 查询，支持 0、GET_META_DATA、GET_DISABLED_COMPONENTS 及应用/组件禁用过滤，返回 BootDex ServiceInfo；service/application 元数据分离。未知 flags 或缺少 inventory 记账失败；不启动独立进程，不含 Binder 或系统包服务。"
+
 [dexvm.typeface]
 status = "partial"
 test = "tests/dexvm/android_value_tests.cpp"

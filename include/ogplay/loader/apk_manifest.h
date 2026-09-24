@@ -49,7 +49,17 @@ struct AndroidManifestServiceComponent final {
     std::string name;
     bool enabled{true};
     std::vector<AndroidManifestIntentFilter> intent_filters;
+    std::optional<bool> exported;
+    std::string process_name;
+    std::optional<std::string> permission;
+    std::vector<AndroidManifestMetaData> meta_data;
+    std::uint32_t flags{};
 };
+
+[[nodiscard]] inline bool AndroidManifestServiceExported(
+    const AndroidManifestServiceComponent& component) {
+    return component.exported.value_or(!component.intent_filters.empty());
+}
 
 struct AndroidManifestReceiverComponent final {
     std::string name;

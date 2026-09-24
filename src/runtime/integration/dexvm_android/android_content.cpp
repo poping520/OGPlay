@@ -11,6 +11,7 @@
 #include <cstdint>
 #include <limits>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include "ogplay/hal/host_environment.h"
@@ -2539,6 +2540,35 @@ void RequireFlags(const std::int32_t flags, const std::int32_t supported,
   }
 }
 
+void RequireComponentInfoQuery(dx::IntrinsicContext &call, const bool known,
+                               const std::int32_t flags,
+                               const std::string_view capability,
+                               const std::string_view method) {
+  if (known && (flags & ~(kGetMetaData | kGetDisabledComponents)) == 0)
+    return;
+  if (auto *ledger = call.vm.Ledger())
+    ledger->RecordUnimplemented(capability, 0);
+  throw dx::VmJavaThrow{
+      "Ljava/lang/UnsupportedOperationException;",
+      std::string(method) + " requires current-package component facts and "
+                            "flags 0, GET_META_DATA or GET_DISABLED_COMPONENTS"};
+}
+
+[[nodiscard]] std::pair<std::string, std::string> ReadComponentIdentity(
+    dx::IntrinsicContext &call, const Context &context,
+    const dx::VmObjectRef component) {
+  const auto package = CallAndroidMethod(
+      call.vm, component, "getPackageName", "()Ljava/lang/String;").ref;
+  const auto name = CallAndroidMethod(
+      call.vm, component, "getClassName", "()Ljava/lang/String;").ref;
+  if (!package.IsValid() || !name.IsValid())
+    throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;",
+                          "ComponentName has no package or class"};
+  const auto package_name = call.vm.StringUtf8(package);
+  RequireCurrentPackage(context, package_name);
+  return {package_name, call.vm.StringUtf8(name)};
+}
+
 [[nodiscard]] dx::VmObjectRef
 MakeStringArray(dx::IntrinsicContext &call,
                 const std::vector<std::string> &values) {
@@ -2565,13 +2595,11 @@ MakeStringArray(dx::IntrinsicContext &call,
   }
 }
 
-[[nodiscard]] dx::VmObjectRef MakeComponentActivityInfo(
-    dx::IntrinsicContext &call, const Context &context,
+void PopulateComponentInfo(dx::IntrinsicContext &call, const Context &context,
+    const dx::VmObjectRef info,
     const std::string &name, const bool enabled, const bool exported,
-    const std::string &process_name, const std::optional<std::string> &permission,
+    const std::string &process_name,
     const dx::VmObjectRef application_info) {
-  const auto info =
-      call.vm.NewIntrinsicInstance("Landroid/content/pm/ActivityInfo;");
   const auto roots =
       call.vm.ProtectReferences(std::array{info, application_info});
   SetRef(call, info, "name", "Ljava/lang/String;", String(call, name));
@@ -2583,6 +2611,31 @@ MakeStringArray(dx::IntrinsicContext &call,
   SetBoolean(call, info, "exported", exported);
   SetRef(call, info, "processName", "Ljava/lang/String;",
          String(call, process_name.empty() ? context->package_name : process_name));
+}
+
+void SetComponentMetaData(dx::IntrinsicContext &call, const Context &context,
+                          const dx::VmObjectRef info,
+                          const std::vector<loader::AndroidManifestMetaData> &meta_data,
+                          const bool include_meta_data) {
+  if (!include_meta_data || meta_data.empty()) return;
+  const auto root = call.vm.ProtectReferences(std::array{info});
+  const auto bundle = NewAndroidBundle(call.vm);
+  const auto bundle_root = call.vm.ProtectReferences(std::array{bundle});
+  for (const auto &item : meta_data)
+    PutAndroidMetaData(call, context, bundle, item.name, item.value);
+  SetRef(call, info, "metaData", "Landroid/os/Bundle;", bundle);
+}
+
+[[nodiscard]] dx::VmObjectRef MakeComponentActivityInfo(
+    dx::IntrinsicContext &call, const Context &context,
+    const std::string &name, const bool enabled, const bool exported,
+    const std::string &process_name, const std::optional<std::string> &permission,
+    const dx::VmObjectRef application_info) {
+  const auto info =
+      call.vm.NewIntrinsicInstance("Landroid/content/pm/ActivityInfo;");
+  const auto roots = call.vm.ProtectReferences(std::array{info, application_info});
+  PopulateComponentInfo(call, context, info, name, enabled, exported,
+                        process_name, application_info);
   if (permission) {
     SetRef(call, info, "permission", "Ljava/lang/String;",
            String(call, *permission));
@@ -2616,14 +2669,24 @@ MakeActivityInfo(dx::IntrinsicContext &call, const Context &context,
       call, context, receiver.name, receiver.enabled,
       loader::AndroidManifestReceiverExported(receiver), receiver.process_name,
       receiver.permission, application_info);
-  if (include_meta_data && !receiver.meta_data.empty()) {
-    const auto roots = call.vm.ProtectReferences(std::array{info, application_info});
-    const auto bundle = NewAndroidBundle(call.vm);
-    const auto bundle_root = call.vm.ProtectReferences(std::array{bundle});
-    for (const auto &item : receiver.meta_data)
-      PutAndroidMetaData(call, context, bundle, item.name, item.value);
-    SetRef(call, info, "metaData", "Landroid/os/Bundle;", bundle);
-  }
+  SetComponentMetaData(call, context, info, receiver.meta_data, include_meta_data);
+  return info;
+}
+
+[[nodiscard]] dx::VmObjectRef MakeServiceInfo(
+    dx::IntrinsicContext &call, const Context &context,
+    const loader::AndroidManifestServiceComponent &service,
+    const bool include_meta_data, const dx::VmObjectRef application_info) {
+  const auto info = call.vm.NewIntrinsicInstance("Landroid/content/pm/ServiceInfo;");
+  const auto roots = call.vm.ProtectReferences(std::array{info, application_info});
+  PopulateComponentInfo(call, context, info, service.name, service.enabled,
+                        loader::AndroidManifestServiceExported(service),
+                        service.process_name, application_info);
+  if (service.permission)
+    SetRef(call, info, "permission", "Ljava/lang/String;",
+           String(call, *service.permission));
+  SetInt(call, info, "flags", static_cast<std::int32_t>(service.flags));
+  SetComponentMetaData(call, context, info, service.meta_data, include_meta_data);
   return info;
 }
 
@@ -2755,26 +2818,10 @@ Decl Declare_android_content_pm_PackageManager(const Context &context) {
       [context](dx::IntrinsicContext &call) {
         const auto component = dx::IntrinsicCall(call).NonNullRef(0, "component");
         const auto flags = call.arguments[1].AsInt();
-        if ((flags & ~(kGetMetaData | kGetDisabledComponents)) != 0 ||
-            !context->receiver_inventory_known) {
-          if (auto *ledger = call.vm.Ledger())
-            ledger->RecordUnimplemented("dexvm.receiver_info", 0);
-          throw dx::VmJavaThrow{
-              "Ljava/lang/UnsupportedOperationException;",
-              "getReceiverInfo requires current-package receiver facts and "
-              "flags 0, GET_META_DATA or GET_DISABLED_COMPONENTS"};
-        }
-        const auto package = CallAndroidMethod(
-            call.vm, component, "getPackageName", "()Ljava/lang/String;").ref;
-        const auto name = CallAndroidMethod(
-            call.vm, component, "getClassName", "()Ljava/lang/String;").ref;
-        if (!package.IsValid() || !name.IsValid()) {
-          throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;",
-                                "ComponentName has no package or class"};
-        }
-        const auto package_name = call.vm.StringUtf8(package);
-        const auto class_name = call.vm.StringUtf8(name);
-        RequireCurrentPackage(context, package_name);
+        RequireComponentInfoQuery(call, context->receiver_inventory_known, flags,
+                                  "dexvm.receiver_info", "getReceiverInfo");
+        const auto [package_name, class_name] =
+            ReadComponentIdentity(call, context, component);
         const auto found = std::find_if(
             context->receiver_components.begin(), context->receiver_components.end(),
             [&](const auto &receiver) { return receiver.name == class_name; });
@@ -2789,6 +2836,32 @@ Decl Declare_android_content_pm_PackageManager(const Context &context) {
             MakeApplicationInfo(call, context, (flags & kGetMetaData) != 0);
         const auto root = call.vm.ProtectReferences(std::array{application});
         return dx::VmValue::Ref(MakeReceiverInfo(
+            call, context, *found, (flags & kGetMetaData) != 0, application));
+      });
+  builder.VirtualMethod(
+      "getServiceInfo",
+      "(Landroid/content/ComponentName;I)Landroid/content/pm/ServiceInfo;",
+      [context](dx::IntrinsicContext &call) {
+        const auto component = dx::IntrinsicCall(call).NonNullRef(0, "component");
+        const auto flags = call.arguments[1].AsInt();
+        RequireComponentInfoQuery(call, context->service_inventory_known, flags,
+                                  "dexvm.service_info", "getServiceInfo");
+        const auto [package_name, class_name] =
+            ReadComponentIdentity(call, context, component);
+        const auto found = std::find_if(
+            context->service_components.begin(), context->service_components.end(),
+            [&](const auto &service) { return service.name == class_name; });
+        if (found == context->service_components.end() ||
+            (!(flags & kGetDisabledComponents) &&
+             (!context->application_enabled || !found->enabled))) {
+          throw dx::VmJavaThrow{
+              "Landroid/content/pm/PackageManager$NameNotFoundException;",
+              package_name + "/" + class_name};
+        }
+        const auto application =
+            MakeApplicationInfo(call, context, (flags & kGetMetaData) != 0);
+        const auto root = call.vm.ProtectReferences(std::array{application});
+        return dx::VmValue::Ref(MakeServiceInfo(
             call, context, *found, (flags & kGetMetaData) != 0, application));
       });
   builder.VirtualMethod(

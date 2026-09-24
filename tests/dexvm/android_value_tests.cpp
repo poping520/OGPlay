@@ -3537,6 +3537,147 @@ TEST_CASE("DVM-180 getPackageInfo returns current-package Activity metadata") {
     }
 }
 
+TEST_CASE("PackageManager getServiceInfo uses current Manifest service facts") {
+    constexpr auto kQuery =
+        "(Landroid/content/ComponentName;I)Landroid/content/pm/ServiceInfo;";
+    for (const auto backend : {InterpreterBackend::switch_dispatch,
+                               InterpreterBackend::threaded}) {
+        AndroidValueVm f(backend);
+        f.context->package_name = "org.example.game";
+        f.context->application_process_name = "org.example.game:app";
+        f.context->service_inventory_known = true;
+        f.context->application_meta_data.emplace("application.key", std::string("app"));
+        f.context->arsc.entries.push_back(
+            {.resource_id = 0x7f050001U, .type_name = "string",
+             .entry_name = "service_value", .string_value = "resolved",
+             .value_type = 0x03U});
+        ogplay::loader::AndroidManifestServiceComponent push;
+        push.name = "org.example.game.PushService";
+        push.exported = true;
+        push.process_name = "org.example.game:push";
+        push.permission = "org.example.SERVICE";
+        push.flags = 3;
+        push.meta_data = {{"service.string", std::string("ready")},
+                          {"service.bool", true}, {"service.int", std::int32_t{42}},
+                          {"service.value", ogplay::loader::AndroidManifestMetaDataValueReference{0x7f050001U}},
+                          {"service.resource", ogplay::loader::AndroidManifestMetaDataResourceReference{0x7f030001U}}};
+        ogplay::loader::AndroidManifestServiceComponent disabled;
+        disabled.name = "org.example.game.DisabledService";
+        disabled.enabled = false;
+        ogplay::loader::AndroidManifestServiceComponent no_meta;
+        no_meta.name = "org.example.game.NoMetaService";
+        f.context->service_components = {push, disabled, no_meta};
+        const auto manager = f.vm.NewIntrinsicInstance(
+            "Landroid/content/pm/PackageManager;");
+        const auto component = [&](const char* package, const char* name) {
+            return f.New("Landroid/content/ComponentName;",
+                         "(Ljava/lang/String;Ljava/lang/String;)V",
+                         {VmValue::Ref(f.vm.NewStringUtf8(package)),
+                          VmValue::Ref(f.vm.NewStringUtf8(name))});
+        };
+        const auto present = component("org.example.game", "org.example.game.PushService");
+        const auto empty = component("org.example.game", "org.example.game.NoMetaService");
+        const auto hidden = component("org.example.game", "org.example.game.DisabledService");
+        const auto absent = component("org.example.game", "org.example.game.Absent");
+        const auto foreign = component("other.package", "org.example.game.PushService");
+        const auto roots = f.vm.ProtectReferences(
+            std::array{manager, present, empty, hidden, absent, foreign});
+        const auto query = [&](const VmObjectRef name, const int flags) {
+            return f.OnOutcome(manager, "getServiceInfo", kQuery,
+                               {VmValue::Ref(name), VmValue::Int(flags)});
+        };
+        const auto field = [&](const VmObjectRef object, const char* name,
+                               const char* descriptor) {
+            const auto found = f.linker.FindFieldRecursive(
+                f.model.ObjectClass(object), name, descriptor);
+            REQUIRE(found.has_value());
+            return f.model.InstanceSlots(object)[f.linker.Field(*found).slot].bits;
+        };
+        const auto ref_field = [&](const VmObjectRef object, const char* name,
+                                   const char* descriptor) {
+            return VmObjectRef{static_cast<std::uint32_t>(field(object, name, descriptor))};
+        };
+        const auto string_field = [&](const VmObjectRef object, const char* name) {
+            return f.vm.StringUtf8(ref_field(object, name, "Ljava/lang/String;"));
+        };
+        const auto bundle_string = [&](const VmObjectRef bundle, const char* key) {
+            return f.On(bundle, "getString", "(Ljava/lang/String;)Ljava/lang/String;",
+                        {VmValue::Ref(f.vm.NewStringUtf8(key))}).ref;
+        };
+        const auto plain = query(present, 0);
+        REQUIRE_FALSE(plain.exception.IsValid());
+        CHECK(string_field(plain.value.ref, "name") == "org.example.game.PushService");
+        CHECK(string_field(plain.value.ref, "packageName") == "org.example.game");
+        CHECK(string_field(plain.value.ref, "processName") == "org.example.game:push");
+        CHECK(string_field(plain.value.ref, "permission") == "org.example.SERVICE");
+        CHECK(field(plain.value.ref, "enabled", "Z") == 1);
+        CHECK(field(plain.value.ref, "exported", "Z") == 1);
+        CHECK(field(plain.value.ref, "flags", "I") == 3);
+        CHECK_FALSE(ref_field(plain.value.ref, "metaData", "Landroid/os/Bundle;").IsValid());
+        const auto with_meta = query(present, 0x80);
+        REQUIRE_FALSE(with_meta.exception.IsValid());
+        const auto info = with_meta.value.ref;
+        const auto info_root = f.vm.ProtectReferences(std::array{info});
+        const auto metadata = ref_field(info, "metaData", "Landroid/os/Bundle;");
+        REQUIRE(metadata.IsValid());
+        CHECK(f.vm.StringUtf8(bundle_string(metadata, "service.string")) == "ready");
+        CHECK(f.vm.StringUtf8(bundle_string(metadata, "service.value")) == "resolved");
+        CHECK_FALSE(bundle_string(metadata, "application.key").IsValid());
+        CHECK(f.On(metadata, "getBoolean", "(Ljava/lang/String;)Z",
+                   {VmValue::Ref(f.vm.NewStringUtf8("service.bool"))}).AsInt() == 1);
+        CHECK(f.On(metadata, "getInt", "(Ljava/lang/String;)I",
+                   {VmValue::Ref(f.vm.NewStringUtf8("service.int"))}).AsInt() == 42);
+        CHECK(f.On(metadata, "getInt", "(Ljava/lang/String;)I",
+                   {VmValue::Ref(f.vm.NewStringUtf8("service.resource"))}).AsInt() ==
+              static_cast<std::int32_t>(0x7f030001U));
+        const auto app = ref_field(info, "applicationInfo",
+                                   "Landroid/content/pm/ApplicationInfo;");
+        const auto app_meta = ref_field(app, "metaData", "Landroid/os/Bundle;");
+        REQUIRE(app_meta.IsValid());
+        CHECK(f.vm.StringUtf8(bundle_string(app_meta, "application.key")) == "app");
+        CHECK_FALSE(bundle_string(app_meta, "service.string").IsValid());
+        const auto again = query(present, 0x80);
+        REQUIRE_FALSE(again.exception.IsValid());
+        CHECK(again.value.ref != info);
+        CHECK(ref_field(again.value.ref, "metaData", "Landroid/os/Bundle;") != metadata);
+        CHECK_FALSE(ref_field(query(empty, 0x80).value.ref, "metaData", "Landroid/os/Bundle;").IsValid());
+        const auto missing = f.linker.ResolveDescriptor(
+            "Landroid/content/pm/PackageManager$NameNotFoundException;");
+        CHECK(query(absent, 0).exception_class == missing);
+        CHECK(query(foreign, 0).exception_class == missing);
+        CHECK(query(hidden, 0).exception_class == missing);
+        const auto include_disabled = query(hidden, 0x200);
+        REQUIRE_FALSE(include_disabled.exception.IsValid());
+        CHECK(field(include_disabled.value.ref, "enabled", "Z") == 0);
+        const auto combined = query(present, 0x280);
+        REQUIRE_FALSE(combined.exception.IsValid());
+        CHECK(ref_field(combined.value.ref, "metaData", "Landroid/os/Bundle;").IsValid());
+        f.context->application_enabled = false;
+        CHECK(query(present, 0).exception_class == missing);
+        const auto disabled_app = query(present, 0x200);
+        REQUIRE_FALSE(disabled_app.exception.IsValid());
+        CHECK(field(ref_field(disabled_app.value.ref, "applicationInfo",
+                              "Landroid/content/pm/ApplicationInfo;"), "enabled", "Z") == 0);
+        const auto unsupported = query(present, 0x400);
+        REQUIRE(unsupported.exception.IsValid());
+        CHECK(f.linker.Class(unsupported.exception_class).descriptor ==
+              "Ljava/lang/UnsupportedOperationException;");
+        f.context->service_inventory_known = false;
+        const auto unavailable = query(present, 0);
+        REQUIRE(unavailable.exception.IsValid());
+        CHECK(f.linker.Class(unavailable.exception_class).descriptor ==
+              "Ljava/lang/UnsupportedOperationException;");
+        const auto hits = f.ledger.Unimplemented();
+        CHECK(std::any_of(hits.begin(), hits.end(), [](const auto &hit) {
+            return hit.id == "dexvm.service_info" && hit.count == 2;
+        }));
+        static_cast<void>(f.vm.CollectGarbage("service-info"));
+        CHECK(f.vm.StringUtf8(bundle_string(ref_field(info, "metaData",
+                                                      "Landroid/os/Bundle;"),
+                                                "service.string")) == "ready");
+    }
+}
+
 TEST_CASE("PackageManager getReceiverInfo uses current Manifest receiver facts") {
     constexpr auto kQuery =
         "(Landroid/content/ComponentName;I)Landroid/content/pm/ActivityInfo;";

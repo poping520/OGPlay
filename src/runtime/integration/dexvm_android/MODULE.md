@@ -56,6 +56,11 @@ handler id、单类 TU 或 misc 巨石。非 Android family 归 core，平台事
   0、`GET_META_DATA`、`GET_DISABLED_COMPONENTS`，按 application/component 启用状态过滤。
   缺失抛 NameNotFoundException，未知 flags/缺少 inventory 记账失败；返回原版 BootDex
   ActivityInfo，receiver 与 application 的 metaData 各归其对象。
+  `getServiceInfo(ComponentName,int)` 使用同一查询边界与字段构造：仅查当前包 Manifest
+  service，支持 0、`GET_META_DATA`、`GET_DISABLED_COMPONENTS`，按启用状态过滤，
+  返回原版 BootDex ServiceInfo。service 与 application 的 metaData 分别物化；缺失抛
+  NameNotFoundException，未知 flags/缺少 inventory 记账失败。仅读取独立进程声明，
+  不创建 service 进程。
 - `Context.checkPermission(String,int,int)` 只回答 guest self PID/UID，并与 PackageManager
   共用 Manifest granted-permission 集合；外部身份和未授予权限返回 denied，null permission
   抛 IllegalArgumentException。无跨进程 Binder 时 `checkCallingPermission` 按 API 19 防泄漏

@@ -8,6 +8,7 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include "ogplay/core/byte_order.h"
@@ -333,7 +334,7 @@ std::uint32_t ReadReferenceAttribute(const Attribute& attribute,
 }
 
 bool ReadBooleanAttribute(const Attribute& attribute, const std::string_view name) {
-    if (attribute.data_type != kIntegerBooleanType || attribute.data > 1U) {
+    if (attribute.data_type != kIntegerBooleanType) {
         throw AndroidManifestStartupError(
             AndroidManifestStartupErrorReason::invalid_enabled,
             "binary AndroidManifest attribute " + std::string(name) +
@@ -355,7 +356,7 @@ AndroidManifestMetaDataValue ReadMetaDataValue(
         attribute.data_type == kIntegerHexType) {
         return static_cast<std::int32_t>(attribute.data);
     }
-    if (attribute.data_type == kIntegerBooleanType && attribute.data <= 1U) {
+    if (attribute.data_type == kIntegerBooleanType) {
         return attribute.data != 0U;
     }
     throw std::runtime_error("binary AndroidManifest meta-data " +
@@ -572,11 +573,16 @@ AndroidManifestFacts ParseAndroidBinaryManifest(const std::span<const std::byte>
             } else if (name == "meta-data" &&
                        ((elements.size() == 2 && elements[1] == "application") ||
                         (elements.size() == 3 && elements[2] == "receiver" &&
-                         current_receiver.has_value()))) {
+                         current_receiver.has_value()) ||
+                        (elements.size() == 3 && elements[2] == "service" &&
+                         current_service.has_value()))) {
                 auto& meta_data = current_receiver
                     ? facts.receiver_components[*current_receiver].meta_data
-                    : facts.application_meta_data;
-                const auto owner = current_receiver ? "receiver" : "application";
+                    : current_service
+                        ? facts.service_components[*current_service].meta_data
+                        : facts.application_meta_data;
+                const auto owner = current_receiver ? "receiver"
+                    : current_service ? "service" : "application";
                 const auto* metadata_name =
                     FindAttribute(attributes, "name", kAndroidNamespace);
                 const auto* metadata_value =
@@ -702,6 +708,31 @@ AndroidManifestFacts ParseAndroidBinaryManifest(const std::span<const std::byte>
                 if (const auto* enabled = FindAttribute(attributes, "enabled", kAndroidNamespace)) {
                     service.enabled = ReadBooleanAttribute(*enabled, "service enabled");
                 }
+                if (const auto* exported = FindAttribute(attributes, "exported", kAndroidNamespace)) {
+                    service.exported = ReadBooleanAttribute(*exported, "service exported");
+                }
+                service.process_name = facts.application_process_name;
+                if (const auto* process = FindAttribute(attributes, "process", kAndroidNamespace)) {
+                    service.process_name = ManifestProcessName(
+                        facts.package, ReadStringAttribute(*process, strings, "service process"),
+                        facts.application_process_name);
+                }
+                service.permission = facts.application_permission;
+                if (const auto* permission = FindAttribute(attributes, "permission", kAndroidNamespace)) {
+                    const auto value = ReadStringAttribute(*permission, strings, "service permission");
+                    service.permission = value.empty() ? std::nullopt
+                                                       : std::optional<std::string>{value};
+                }
+                for (const auto& [attribute, bit] :
+                     {std::pair{"stopWithTask", 0x00000001U},
+                      std::pair{"isolatedProcess", 0x00000002U},
+                      std::pair{"singleUser", 0x40000000U}}) {
+                    if (const auto* value = FindAttribute(attributes, attribute, kAndroidNamespace);
+                        value != nullptr && ReadBooleanAttribute(*value, attribute)) {
+                        service.flags |= bit;
+                    }
+                }
+                if ((service.flags & 0x40000000U) != 0U) service.exported = false;
                 facts.service_components.push_back(std::move(service));
                 current_service = facts.service_components.size() - 1U;
                 current_intent_filter.reset();

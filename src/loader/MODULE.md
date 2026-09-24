@@ -29,6 +29,8 @@
   DVM-112 保留 application enabled、独立的 service 名称/enabled/过滤器事实；过滤器
   保存 action/category 与 data 条件存在标记，不能将未解析的 data 条件当作没有条件。
   service 名称沿用 API19 buildClassName，缺名/空名/非法名/重复声明明确失败；
+  service 还保存 exported、继承或覆盖的 process/permission、自身 `meta-data` 和
+  stopWithTask/isolatedProcess/singleUser flags；singleUser 强制 exported=false。
   服务不参与 Launcher 选择，本层不执行服务解析、实例化或生命周期。
   receiver 独立保存规范类名、enabled/exported、继承或覆盖的 process/permission 与自身
   `meta-data`；exported 缺省取决于 intent-filter 是否存在。receiver 不混入 Activity 列表。

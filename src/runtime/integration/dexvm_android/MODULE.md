@@ -56,6 +56,12 @@ handler id、单类 TU 或 misc 巨石。非 Android family 归 core，平台事
   0、`GET_META_DATA`、`GET_DISABLED_COMPONENTS`，按 application/component 启用状态过滤。
   缺失抛 NameNotFoundException，未知 flags/缺少 inventory 记账失败；返回原版 BootDex
   ActivityInfo，receiver 与 application 的 metaData 各归其对象。
+  `queryBroadcastReceivers(Intent,int)` 支持当前 APK、flags=0、非空 action 与同一 filter
+  内的 category 子集匹配，不要求 DEFAULT；排除禁用应用/组件。返回真实 BootDex
+  ArrayList/ResolveInfo/ActivityInfo，同组件取首个命中过滤器，按 API 19 稳定排序，
+  发布 priority/match/isDefault、filter label/icon。permission/exported 不限制声明查询。
+  无 inventory、未知 flags、外部包、component/selector/data/type 或潜在匹配的未解析
+  data 条件均记账并抛 UnsupportedOperationException，不把未知当作零匹配。
   `getServiceInfo(ComponentName,int)` 使用同一查询边界与字段构造：仅查当前包 Manifest
   service，支持 0、`GET_META_DATA`、`GET_DISABLED_COMPONENTS`，按启用状态过滤，
   返回原版 BootDex ServiceInfo。service 与 application 的 metaData 分别物化；缺失抛

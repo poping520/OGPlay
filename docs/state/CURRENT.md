@@ -1,14 +1,15 @@
 # 当前状态
 
-更新：2026-09-24。
+更新：2026-09-27。
 
 ## 运行状态
 
 - **Dead Trigger 1.1.0**：无 Profile 的 APK/OBB 启动已越过 [VFS-04](../tasks/vfs/VFS-04.md)
   挂载、`Resources.getAssets()`、[DVM-190](../tasks/dexvm/DVM-190.md)
-  `getReceiverInfo`、[DVM-191](../tasks/dexvm/DVM-191.md) `getServiceInfo` 与
-  [DVM-192](../tasks/dexvm/DVM-192.md) `getPermissionInfo`。关闭 survey 的当前首错为
-  `PackageManager.queryBroadcastReceivers(Intent,int)`；
+  `getReceiverInfo`、[DVM-191](../tasks/dexvm/DVM-191.md) `getServiceInfo`、
+  [DVM-192](../tasks/dexvm/DVM-192.md) `getPermissionInfo` 与
+  [DVM-193](../tasks/dexvm/DVM-193.md) `queryBroadcastReceivers`。关闭 survey 的当前首错为
+  `SQLiteGlobal.getDefaultJournalMode` 读取系统字符串时抛 `Resources.NotFoundException`；
   这只是 reached-fault，未通过游戏验收。
 - **Angry Birds 2.3.0**：无 Profile、空沙盒运行 5000 presented frames，
   `View.setScrollBarStyle/getScrollBarStyle` 原方法解析错未再出现，未触发新的致命首错。
@@ -20,7 +21,9 @@
 
 - **Android/DexVM**：受审 API 19 BootDex 与 intrinsic 提供游戏直接调用的能力；
   PackageManager 查询仅覆盖当前 APK。
-  receiver 声明、启用状态和独立元数据经 Manifest→session→DexVM 传递；
+  receiver 声明、启用状态、独立元数据与逐过滤器事实经 Manifest→session→DexVM 传递；
+  `queryBroadcastReceivers` 支持 flags=0、无 data/type 的有界 action/category 查询，
+  返回真实 BootDex 列表并按 API 19 去重/排序；
   service 同样传递查询字段与自身元数据。`getReceiverInfo/getServiceInfo` 支持
   0、GET_META_DATA、GET_DISABLED_COMPONENTS。VM 状态由字段/数组
   与统一对象模型持有，文件 IO 经 Libcore Posix 进入 VFS。
@@ -38,7 +41,7 @@
 
 ## 未闭合边界
 
-- Dead Trigger 下一独立缺口是 `PackageManager.queryBroadcastReceivers`；不运行 Binder、
+- Dead Trigger 下一独立缺口是 SQLite 默认 journal mode 所需系统字符串资源；不运行 Binder、
   system_server、外部包数据库、广播投递或 Play 服务。
 - GUI 的真实 APK 导入→设置→启动→Dashboard→退出→移除全链路验收按用户安排延后；
   GUI 的 Linux/macOS 宿主未完成。WebView 页面/JavaScript 执行仍不支持。

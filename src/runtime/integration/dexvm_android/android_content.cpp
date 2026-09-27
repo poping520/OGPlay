@@ -1896,6 +1896,11 @@ constexpr std::int32_t kNoMatchData = -2;
 constexpr std::int32_t kNoMatchAction = -3;
 constexpr std::int32_t kNoMatchCategory = -4;
 
+[[nodiscard]] bool FilterContains(const std::vector<std::string> &values,
+                                  const std::string_view value) {
+  return std::find(values.begin(), values.end(), value) != values.end();
+}
+
 void AddUnique(std::vector<std::string> &values, std::string value) {
   if (std::find(values.begin(), values.end(), value) == values.end()) {
     values.push_back(std::move(value));
@@ -2166,8 +2171,7 @@ Decl Declare_android_content_IntentFilter(const Context &context) {
     for (const auto category : *snapshot) {
       const auto name = call.vm.StringUtf8(category);
       if (found == context->intent_filter_categories.end() ||
-          std::find(found->second.begin(), found->second.end(), name) ==
-              found->second.end()) {
+          !FilterContains(found->second, name)) {
         return std::optional<dx::VmObjectRef>{category};
       }
     }
@@ -2432,8 +2436,7 @@ Decl Declare_android_content_IntentFilter(const Context &context) {
         if (action.has_value()) {
           const auto &actions =
               filter_values(context->intent_filter_actions, call.receiver);
-          if (std::find(actions.begin(), actions.end(), *action) ==
-              actions.end()) {
+          if (!FilterContains(actions, *action)) {
             return dx::VmValue::Int(kNoMatchAction);
           }
         }
@@ -2673,6 +2676,134 @@ MakeActivityInfo(dx::IntrinsicContext &call, const Context &context,
   return info;
 }
 
+// These are ordinary BootDex objects: constructors establish Java defaults
+// (notably ArrayList storage and ResolveInfo.specificIndex/targetUserId).
+[[nodiscard]] dx::VmObjectRef NewQueryObject(dx::IntrinsicContext &call,
+                                             const char *descriptor) {
+  const auto klass = call.vm.Linker().ResolveDescriptor(descriptor);
+  const auto propagate = [&](const dx::VmCallOutcome &outcome) {
+    if (outcome.exception.IsValid())
+      throw dx::VmJavaThrow{
+          call.vm.Linker().Class(outcome.exception_class).descriptor,
+          outcome.exception_message, outcome.exception};
+  };
+  propagate(call.vm.EnsureClassInitialized(klass));
+  const auto object = call.vm.NewIntrinsicInstance(descriptor);
+  const auto root = call.vm.ProtectReferences(std::array{object});
+  const auto constructor = call.vm.Linker().FindDirectMethod(klass, "<init>", "()V");
+  if (!constructor)
+    throw dx::DexVmError(dx::DexVmErrorReason::internal_invariant,
+                         "package query BootDex constructor is unavailable");
+  propagate(call.vm.Call(*constructor, std::array{dx::VmValue::Ref(object)}));
+  return object;
+}
+
+[[nodiscard]] dx::VmObjectRef QueryBroadcastReceivers(
+    dx::IntrinsicContext &call, const Context &context) {
+  const auto intent = dx::IntrinsicCall(call).NonNullRef(0, "intent");
+  const auto unsupported = [&call](const std::string &reason) -> void {
+    if (auto *ledger = call.vm.Ledger())
+      ledger->RecordUnimplemented("dexvm.receiver_query", 0);
+    throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
+                          "queryBroadcastReceivers: " + reason};
+  };
+  if (!context->receiver_inventory_known)
+    unsupported("receiver inventory is unavailable");
+  if (call.arguments[1].AsInt() != 0)
+    unsupported("only flags=0 is supported");
+  for (const auto &[name, signature] :
+       {std::pair{"getComponent", "()Landroid/content/ComponentName;"},
+        std::pair{"getSelector", "()Landroid/content/Intent;"},
+        std::pair{"getData", "()Landroid/net/Uri;"},
+        std::pair{"getType", "()Ljava/lang/String;"}}) {
+    if (CallAndroidMethod(call.vm, intent, name, signature).ref.IsValid())
+      unsupported("only implicit Intents without selector/data/type are supported");
+  }
+  const auto package = CallAndroidMethod(call.vm, intent, "getPackage",
+                                         "()Ljava/lang/String;").ref;
+  if (package.IsValid() && call.vm.StringUtf8(package) != context->package_name)
+    unsupported("external package inventory is unavailable");
+  const auto action = CallAndroidMethod(call.vm, intent, "getAction",
+                                        "()Ljava/lang/String;").ref;
+  if (!action.IsValid() || call.vm.StringUtf8(action).empty())
+    unsupported("a nonempty action is required");
+  const auto action_name = call.vm.StringUtf8(action);
+  std::vector<std::string> categories;
+  const auto category_set = CallAndroidMethod(call.vm, intent, "getCategories",
+                                               "()Ljava/util/Set;").ref;
+  if (category_set.IsValid()) {
+    const auto category_root = call.vm.ProtectReferences(std::array{category_set});
+    const auto iterator = CallAndroidMethod(call.vm, category_set, "iterator",
+                                             "()Ljava/util/Iterator;").ref;
+    const auto iterator_root = call.vm.ProtectReferences(std::array{iterator});
+    while (CallAndroidMethod(call.vm, iterator, "hasNext", "()Z").AsInt()) {
+      categories.push_back(call.vm.StringUtf8(
+          CallAndroidMethod(call.vm, iterator, "next", "()Ljava/lang/Object;").ref));
+    }
+  }
+  struct Match {
+    const loader::AndroidManifestReceiverComponent *receiver;
+    const loader::AndroidManifestIntentFilter *filter;
+    bool is_default;
+  };
+  std::vector<Match> matches;
+  if (context->application_enabled) {
+    for (const auto &receiver : context->receiver_components) {
+      if (!receiver.enabled)
+        continue;
+      for (const auto &filter : receiver.intent_filters) {
+        if (!FilterContains(filter.actions, action_name) ||
+            !std::ranges::all_of(categories, [&](const auto &category) {
+              return FilterContains(filter.categories, category);
+            }))
+          continue;
+        if (filter.has_data)
+          unsupported("candidate requires data-filter resolution");
+        matches.push_back({&receiver, &filter,
+            FilterContains(filter.categories, "android.intent.category.DEFAULT")});
+        // API 19 IntentResolver accepts the first matching filter for a
+        // component, then sorts results; it does not pick its highest priority.
+        break;
+      }
+    }
+  }
+  std::stable_sort(matches.begin(), matches.end(), [](const auto &a, const auto &b) {
+    if (a.filter->priority != b.filter->priority)
+      return a.filter->priority > b.filter->priority;
+    // preferredOrder=0, match=EMPTY+NORMAL and system=false are equal for
+    // this installed APK and the supported data-free query shape.
+    return a.is_default && !b.is_default;
+  });
+  const auto list = NewQueryObject(call, "Ljava/util/ArrayList;");
+  const auto list_root = call.vm.ProtectReferences(std::array{list});
+  if (matches.empty())
+    return list;
+  const auto application = MakeApplicationInfo(call, context, false);
+  const auto application_root = call.vm.ProtectReferences(std::array{application});
+  for (const auto &match : matches) {
+    const auto result = NewQueryObject(call, "Landroid/content/pm/ResolveInfo;");
+    const auto result_root = call.vm.ProtectReferences(std::array{result});
+    SetRef(call, result, "activityInfo", "Landroid/content/pm/ActivityInfo;",
+           MakeReceiverInfo(call, context, *match.receiver, false, application));
+    SetInt(call, result, "priority", match.filter->priority);
+    SetInt(call, result, "preferredOrder", 0);
+    SetInt(call, result, "match", kMatchCategoryEmpty + kMatchAdjustmentNormal);
+    SetBoolean(call, result, "isDefault", match.is_default);
+    SetBoolean(call, result, "system", false);
+    SetInt(call, result, "icon", static_cast<std::int32_t>(match.filter->icon));
+    if (match.filter->label) {
+      if (const auto *resource = std::get_if<std::uint32_t>(&*match.filter->label))
+        SetInt(call, result, "labelRes", static_cast<std::int32_t>(*resource));
+      else
+        SetRef(call, result, "nonLocalizedLabel", "Ljava/lang/CharSequence;",
+               String(call, std::get<std::string>(*match.filter->label)));
+    }
+    static_cast<void>(CallAndroidMethod(call.vm, list, "add", "(Ljava/lang/Object;)Z",
+                                        {dx::VmValue::Ref(result)}));
+  }
+  return list;
+}
+
 [[nodiscard]] dx::VmObjectRef MakeServiceInfo(
     dx::IntrinsicContext &call, const Context &context,
     const loader::AndroidManifestServiceComponent &service,
@@ -2836,6 +2967,11 @@ Decl Declare_android_content_pm_PackageManager(const Context &context) {
         RequireFlags(flags, kGetMetaData, "getApplicationInfo");
         return dx::VmValue::Ref(
             MakeApplicationInfo(call, context, (flags & kGetMetaData) != 0));
+      });
+  builder.VirtualMethod(
+      "queryBroadcastReceivers", "(Landroid/content/Intent;I)Ljava/util/List;",
+      [context](dx::IntrinsicContext &call) {
+        return dx::VmValue::Ref(QueryBroadcastReceivers(call, context));
       });
   builder.VirtualMethod(
       "getReceiverInfo",

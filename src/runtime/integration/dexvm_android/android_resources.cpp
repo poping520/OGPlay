@@ -5,6 +5,7 @@
 #include <utility>
 
 #include "catalog.h"
+#include "system_resources.generated.h"
 #include "ogplay/runtime/dexvm/io_runtime.h"
 
 namespace ogplay::runtime::android_intrinsics {
@@ -581,14 +582,9 @@ Decl Declare_android_content_res_Resources(const Context &context) {
                       });
   builder.VirtualMethod("getInteger", "(I)I", [](dx::IntrinsicContext &call) {
     const auto id = static_cast<std::uint32_t>(call.arguments[0].AsInt());
-    if (id == 0x10e0035U)
-      return dx::VmValue::Int(4);
-    if (id == 0x10e0036U)
-      return dx::VmValue::Int(524288);
-    if (id == 0x10e0037U)
-      return dx::VmValue::Int(100);
-    if (id == 0x10e003bU)
-      return dx::VmValue::Int(2048);
+    if (const auto *resource = FindSystemResource(id);
+        resource != nullptr && resource->string_value == nullptr)
+      return dx::VmValue::Int(resource->integer_value);
     throw dx::VmJavaThrow{"Landroid/content/res/Resources$NotFoundException;",
                           "unknown system integer resource " +
                               std::to_string(id)};
@@ -779,10 +775,9 @@ Decl Declare_android_content_res_Resources(const Context &context) {
       [context](dx::IntrinsicContext &call) -> dx::VmValue {
         const auto resource_id =
             static_cast<std::uint32_t>(call.arguments[0].AsInt());
-        if (resource_id == 0x1040029U || resource_id == 0x104002aU ||
-            resource_id == 0x104002bU) {
-          return dx::VmValue::Ref(call.vm.NewStringUtf8(
-              resource_id == 0x1040029U ? "DELETE" : "FULL"));
+        if (const auto *resource = FindSystemResource(resource_id);
+            resource != nullptr && resource->string_value != nullptr) {
+          return dx::VmValue::Ref(call.vm.NewStringUtf8(resource->string_value));
         }
         if (IsSystemResources(context, call.receiver))
           throw dx::VmJavaThrow{"Landroid/content/res/Resources$NotFoundException;",

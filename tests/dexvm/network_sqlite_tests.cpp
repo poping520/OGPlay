@@ -934,11 +934,47 @@ TEST_CASE("DVM-186 close cancels active work and teardown is idempotent") {
   CHECK_NOTHROW(connection->Close());
 }
 
+TEST_CASE("DVM-194 SQLiteGlobal reads reviewed system resources through BootDex") {
+  for (const auto backend : {InterpreterBackend::switch_dispatch,
+                             InterpreterBackend::threaded}) {
+    NetworkSqliteVm fixture(backend);
+    const auto owner = fixture.linker.ResolveDescriptor("Landroid/database/sqlite/SQLiteGlobal;");
+    const auto config = [&](const char *method, const char *signature) {
+      const auto id = fixture.linker.FindDirectMethod(owner, method, signature);
+      REQUIRE(id.has_value());
+      CHECK(fixture.linker.Method(*id).kind == MethodKind::interpreted);
+      REQUIRE(fixture.linker.Method(*id).code.has_value());
+      return fixture.Static("Landroid/database/sqlite/SQLiteGlobal;", method, signature);
+    };
+    CHECK(fixture.vm.StringUtf8(config("getDefaultJournalMode", "()Ljava/lang/String;").ref) == "DELETE");
+    CHECK(fixture.vm.StringUtf8(config("getDefaultSyncMode", "()Ljava/lang/String;").ref) == "FULL");
+    CHECK(fixture.vm.StringUtf8(config("getWALSyncMode", "()Ljava/lang/String;").ref) == "FULL");
+    CHECK(config("getWALConnectionPoolSize", "()I").AsInt() == 4);
+    CHECK(config("getJournalSizeLimit", "()I").AsInt() == 524288);
+    CHECK(config("getWALAutoCheckpoint", "()I").AsInt() == 100);
+    const auto resources = fixture.Static("Landroid/content/res/Resources;", "getSystem",
+                                           "()Landroid/content/res/Resources;").ref;
+    const auto resource_root = fixture.vm.ProtectReferences(std::array{resources});
+    CHECK(fixture.On(resources, "getInteger", "(I)I", {VmValue::Int(0x010e003e)}).AsInt() == 2048);
+    // The original CursorWindow clinit must consume the reviewed size too.
+    const auto window = fixture.New("Landroid/database/CursorWindow;", "(Ljava/lang/String;)V",
+                                    {VmValue::Ref(fixture.vm.NewStringUtf8("reviewed-size"))});
+    fixture.On(window, "close", "()V");
+    const auto missing = fixture.linker.ResolveDescriptor("Landroid/content/res/Resources$NotFoundException;");
+    for (const auto id : {0x01040029, 0x0104002a, 0x0104002b, 0x010e003e, 0x0104ffff})
+      CHECK(fixture.OnOutcome(resources, "getString", "(I)Ljava/lang/String;",
+                               {VmValue::Int(id)}).exception_class == missing);
+    for (const auto id : {0x010e0035, 0x010e0036, 0x010e0037, 0x010e003b, 0x0104011c, 0x010effff})
+      CHECK(fixture.OnOutcome(resources, "getInteger", "(I)I",
+                               {VmValue::Int(id)}).exception_class == missing);
+  }
+}
+
 TEST_CASE("DVM-186 original database path runs on both interpreters") {
   for (const auto backend : {InterpreterBackend::switch_dispatch,
                              InterpreterBackend::threaded}) {
     NetworkSqliteVm fixture(backend);
-    const auto database =
+    auto database =
         fixture
             .Static("Landroid/database/sqlite/SQLiteDatabase;",
                     "openOrCreateDatabase",
@@ -955,6 +991,21 @@ TEST_CASE("DVM-186 original database path runs on both interpreters") {
     fixture.On(database, "execSQL", "(Ljava/lang/String;)V",
                {VmValue::Ref(fixture.vm.NewStringUtf8(
                    "INSERT INTO backend_value VALUES(19)"))});
+    fixture.On(database, "close", "()V");
+    database = fixture.Static("Landroid/database/sqlite/SQLiteDatabase;",
+        "openOrCreateDatabase",
+        "(Ljava/lang/String;Landroid/database/sqlite/SQLiteDatabase$CursorFactory;)"
+        "Landroid/database/sqlite/SQLiteDatabase;",
+        {VmValue::Ref(fixture.vm.NewStringUtf8("/data/data/test.game/databases/backends.db")),
+         VmValue::Ref(VmObjectRef{})}).ref;
+    const auto journal = fixture.On(database, "rawQuery",
+        "(Ljava/lang/String;[Ljava/lang/String;)Landroid/database/Cursor;",
+        {VmValue::Ref(fixture.vm.NewStringUtf8("PRAGMA journal_mode")),
+         VmValue::Ref(VmObjectRef{})}).ref;
+    REQUIRE(fixture.On(journal, "moveToFirst", "()Z").AsInt() == 1);
+    CHECK(fixture.vm.StringUtf8(fixture.On(journal, "getString", "(I)Ljava/lang/String;",
+                                          {VmValue::Int(0)}).ref) == "delete");
+    fixture.On(journal, "close", "()V");
     const auto cursor =
         fixture
             .On(database, "rawQuery",

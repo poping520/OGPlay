@@ -10,6 +10,12 @@ python3 tools/bootdex/build_bootdex.py build
 python3 tools/bootdex/build_bootdex.py check
 ```
 
+`api19-system-resources.json` 保存受审系统资源名/类型/ID、AOSP 默认值和显式配置覆盖。
+build/check 校验 framework.jar、config.xml 的来源哈希、默认值及原版 Java 查询的实际
+ID/类型与覆盖完整性；build 同时生成宿主 `system_resources.generated.h`，check 拒绝过期
+头文件/manifest。更换 framework 来源必须先审阅并更新该表，不能自动沿用旧 ID。
+SQLite journal mode 保留 DELETE 覆盖；读取 WAL 配置不代表支持 WAL。
+
 输入默认位于 `.local/aosp` 和 `.local/tools`；缺少 smali/baksmali 时生成器会下载固定的
 3.0.10 release，所有输入均校验固定 SHA-256。新增类时只修改 recipe 对应源 jar 的有序
 列表，运行时仍全量加载生成物中的 class_def。

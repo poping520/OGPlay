@@ -1,6 +1,7 @@
 #include "ogplay/loader/apk_manifest.h"
 
 #include <algorithm>
+#include <bit>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
@@ -780,15 +781,26 @@ AndroidManifestFacts ParseAndroidBinaryManifest(const std::span<const std::byte>
                 }
                 facts.receiver_components.push_back(std::move(receiver));
                 current_receiver = facts.receiver_components.size() - 1U;
-            } else if (name == "intent-filter" && current_receiver &&
-                       elements.size() == 3 && elements.back() == "receiver") {
-                facts.receiver_components[*current_receiver].has_intent_filter = true;
-            } else if (name == "intent-filter" && (current_component || current_service) &&
+                current_intent_filter.reset();
+            } else if (name == "intent-filter" && (current_component || current_service || current_receiver) &&
                        elements.size() == 3 &&
                        (elements.back() == "activity" ||
-                        elements.back() == "activity-alias" || elements.back() == "service")) {
+                        elements.back() == "activity-alias" || elements.back() == "service" ||
+                        elements.back() == "receiver")) {
                 current_intent_filter.emplace();
-            } else if (name == "action" && (current_component || current_service) &&
+                if (const auto* priority = FindAttribute(attributes, "priority", kAndroidNamespace)) {
+                    current_intent_filter->priority = std::bit_cast<std::int32_t>(
+                        ReadIntegerAttribute(*priority, "intent-filter priority"));
+                }
+                if (const auto* label = FindAttribute(attributes, "label", kAndroidNamespace)) {
+                    current_intent_filter->label = label->data_type == kReferenceType
+                        ? AndroidManifestLabel{ReadReferenceAttribute(*label, "intent-filter label")}
+                        : AndroidManifestLabel{ReadStringAttribute(*label, strings, "intent-filter label")};
+                }
+                if (const auto* icon = FindAttribute(attributes, "icon", kAndroidNamespace)) {
+                    current_intent_filter->icon = ReadReferenceAttribute(*icon, "intent-filter icon");
+                }
+            } else if (name == "action" && (current_component || current_service || current_receiver) &&
                        current_intent_filter.has_value() &&
                        elements.size() == 4 &&
                        elements.back() == "intent-filter") {
@@ -797,7 +809,7 @@ AndroidManifestFacts ParseAndroidBinaryManifest(const std::span<const std::byte>
                     current_intent_filter->actions.push_back(ReadStringAttribute(
                         *action_name, strings, "action name"));
                 }
-            } else if (name == "category" && (current_component || current_service) &&
+            } else if (name == "category" && (current_component || current_service || current_receiver) &&
                        current_intent_filter.has_value() &&
                        elements.size() == 4 &&
                        elements.back() == "intent-filter") {
@@ -908,11 +920,13 @@ AndroidManifestFacts ParseAndroidBinaryManifest(const std::span<const std::byte>
                 throw std::runtime_error("binary XML element nesting is invalid");
             }
             if (name == "intent-filter" && elements.size() == 4 &&
-                (current_component || current_service) &&
+                (current_component || current_service || current_receiver) &&
                 current_intent_filter.has_value()) {
-                auto& filters = current_service
-                    ? facts.service_components[*current_service].intent_filters
-                    : facts.activity_components[*current_component].intent_filters;
+                auto& filters = current_receiver
+                    ? facts.receiver_components[*current_receiver].intent_filters
+                    : current_service
+                        ? facts.service_components[*current_service].intent_filters
+                        : facts.activity_components[*current_component].intent_filters;
                 filters.push_back(std::move(*current_intent_filter));
                 current_intent_filter.reset();
             } else if ((name == "activity" || name == "activity-alias") &&

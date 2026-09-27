@@ -185,7 +185,8 @@ std::vector<std::byte> PackageFactsManifest(const bool invalid_metadata = false,
         "receiver.int", "receiver.value-ref", "receiver.resource", "ready",
         ".C2D_MESSAGE", "protectionLevel", "permissionGroup", "permissionFlags",
         "description", "org.example.GROUP", "permission.string", "permission.bool",
-        "permission.int", "permission.value-ref", "permission.resource"};
+        "permission.int", "permission.value-ref", "permission.resource",
+        "action", "category", "data", "priority", "label", "icon", "OTHER"};
     const auto index = [&](const std::string_view value) {
         const auto found = std::find(strings.begin(), strings.end(), value);
         REQUIRE(found != strings.end());
@@ -258,7 +259,26 @@ std::vector<std::byte> PackageFactsManifest(const bool invalid_metadata = false,
              {index("process"), index(":remote"), 0x03, index(":remote"), android_namespace},
              {index("permission"), index("org.example.RECEIVER"), 0x03,
               index("org.example.RECEIVER"), android_namespace}}));
-        Append(result, StartElement(index("intent-filter"), {}));
+        Append(result, StartElement(index("intent-filter"), {
+            {index("priority"), 0xffffffffU, 0x10, 0xfffffff9U, android_namespace},
+            {index("label"), index("ready"), 0x03, index("ready"), android_namespace},
+            {index("icon"), 0xffffffffU, 0x01, 0x7f030001U, android_namespace}}));
+        Append(result, StartElement(index("action"), {
+            {index("name"), index("org.example.RECEIVER"), 0x03,
+             index("org.example.RECEIVER"), android_namespace}}));
+        Append(result, EndElement(index("action")));
+        Append(result, StartElement(index("category"), {
+            {index("name"), index("org.example.game"), 0x03,
+             index("org.example.game"), android_namespace}}));
+        Append(result, EndElement(index("category")));
+        Append(result, EndElement(index("intent-filter")));
+        Append(result, StartElement(index("intent-filter"), {
+            {index("label"), 0xffffffffU, 0x01, 0x7f050001U, android_namespace}}));
+        Append(result, StartElement(index("action"), {
+            {index("name"), index("OTHER"), 0x03, index("OTHER"), android_namespace}}));
+        Append(result, EndElement(index("action")));
+        Append(result, StartElement(index("data"), {}));
+        Append(result, EndElement(index("data")));
         Append(result, EndElement(index("intent-filter")));
         const auto metadata = [&](const char* name, const Attribute value) {
             Append(result, StartElement(index("meta-data"),
@@ -690,6 +710,22 @@ TEST_CASE("binary AndroidManifest preserves receiver facts and own meta-data") {
     CHECK(ogplay::loader::AndroidManifestReceiverExported(receiver));
     CHECK(receiver.process_name == "org.example.game:remote");
     CHECK(receiver.permission == "org.example.RECEIVER");
+    REQUIRE(receiver.intent_filters.size() == 2);
+    const auto& first = receiver.intent_filters[0];
+    CHECK(first.actions == std::vector<std::string>{"org.example.RECEIVER"});
+    CHECK(first.categories == std::vector<std::string>{"org.example.game"});
+    CHECK_FALSE(first.has_data);
+    CHECK(first.priority == -7);
+    REQUIRE(first.label.has_value());
+    CHECK(std::get<std::string>(*first.label) == "ready");
+    CHECK(first.icon == 0x7f030001U);
+    const auto& second = receiver.intent_filters[1];
+    CHECK(second.actions == std::vector<std::string>{"OTHER"});
+    CHECK(second.categories.empty());
+    CHECK(second.has_data);
+    CHECK(second.priority == 0);
+    REQUIRE(second.label.has_value());
+    CHECK(std::get<std::uint32_t>(*second.label) == 0x7f050001U);
     REQUIRE(receiver.meta_data.size() == 5);
     CHECK(std::get<std::string>(receiver.meta_data[0].value) == "ready");
     CHECK(std::get<bool>(receiver.meta_data[1].value));

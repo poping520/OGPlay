@@ -12,6 +12,7 @@
 #include <optional>
 #include <string>
 #include <thread>
+#include <tuple>
 #include <vector>
 
 #include "ogplay/core/capability_ledger.h"
@@ -3799,7 +3800,7 @@ TEST_CASE("PackageManager getReceiverInfo uses current Manifest receiver facts")
              .value_type = 0x03U});
         f.context->receiver_components = {
             {.name = "org.example.game.CoreReceiver", .enabled = true,
-             .has_intent_filter = true, .process_name = "org.example.game:push",
+             .intent_filters = {{}}, .process_name = "org.example.game:push",
              .permission = "org.example.RECEIVE",
              .meta_data = {{"receiver.string", std::string("ready")},
                            {"receiver.bool", true}, {"receiver.int", std::int32_t{42}},
@@ -5513,5 +5514,170 @@ TEST_CASE("disabled web policy intercepts only external HTTP ACTION_VIEW") {
         REQUIRE(strict.exception.IsValid());
         CHECK(fixture.linker.Class(strict.exception_class).descriptor ==
               "Ljava/lang/UnsupportedOperationException;");
+    }
+}
+
+TEST_CASE("DVM-193 receiver queries match independent filters and return BootDex results") {
+    using ogplay::loader::AndroidManifestIntentFilter;
+    using ogplay::loader::AndroidManifestReceiverComponent;
+    for (const auto backend : {InterpreterBackend::switch_dispatch,
+                               InterpreterBackend::threaded}) {
+        AndroidValueVm f(backend);
+        f.context->package_name = "org.example.game";
+        f.context->receiver_inventory_known = true;
+        const AndroidManifestIntentFilter plain{
+            .actions = {"RECEIVE"}, .categories = {"org.example.game", "EXTRA"},
+            .priority = 5, .label = std::string("Receiver label"), .icon = 0x7f030001U};
+        auto default_filter = plain;
+        default_filter.categories.push_back("android.intent.category.DEFAULT");
+        default_filter.label = std::uint32_t{0x7f050001U};
+        auto high = plain;
+        high.priority = 10;
+        auto negative = plain;
+        negative.priority = -7;
+        auto disabled = AndroidManifestReceiverComponent{
+            .name = "org.example.game.Disabled", .enabled = false,
+            .intent_filters = {high}};
+        f.context->receiver_components = {
+            {.name = "org.example.game.First", .intent_filters = {plain, high},
+             .process_name = "org.example.game:receiver", .permission = "org.example.PROTECTED"},
+            {.name = "org.example.game.Tie", .intent_filters = {plain}},
+            {.name = "org.example.game.Default", .exported = false,
+             .intent_filters = {default_filter}},
+            {.name = "org.example.game.High", .intent_filters = {high}},
+            {.name = "org.example.game.Negative", .intent_filters = {negative}},
+            {.name = "org.example.game.Split", .intent_filters = {
+                {.actions = {"RECEIVE"}, .categories = {"org.example.game"}},
+                {.actions = {"RECEIVE"}, .categories = {"EXTRA"}},
+                {.actions = {"OTHER"}, .categories = {"org.example.game", "EXTRA"}}}},
+            disabled};
+        f.context->receiver_components.back().intent_filters.front().has_data = true;
+        const auto manager = f.vm.NewIntrinsicInstance("Landroid/content/pm/PackageManager;");
+        const auto intent = f.New("Landroid/content/Intent;", "(Ljava/lang/String;)V",
+                                 {VmValue::Ref(f.vm.NewStringUtf8("RECEIVE"))});
+        const auto roots = f.vm.ProtectReferences(std::array{manager, intent});
+        const auto add_category = [&](const char* category) {
+            f.On(intent, "addCategory", "(Ljava/lang/String;)Landroid/content/Intent;",
+                 {VmValue::Ref(f.vm.NewStringUtf8(category))});
+        };
+        add_category("org.example.game");
+        add_category("EXTRA");
+        const auto query = [&](VmObjectRef value, int flags = 0) {
+            return f.OnOutcome(manager, "queryBroadcastReceivers",
+                               "(Landroid/content/Intent;I)Ljava/util/List;",
+                               {VmValue::Ref(value), VmValue::Int(flags)});
+        };
+        const auto size = [&](VmObjectRef list) { return f.On(list, "size", "()I").AsInt(); };
+        const auto field = [&](VmObjectRef object, const char* name, const char* type) {
+            const auto found = f.linker.FindFieldRecursive(f.model.ObjectClass(object), name, type);
+            REQUIRE(found.has_value());
+            return f.model.InstanceSlots(object)[f.linker.Field(*found).slot].bits;
+        };
+        const auto ref_field = [&](VmObjectRef object, const char* name, const char* type) {
+            return VmObjectRef{static_cast<std::uint32_t>(field(object, name, type))};
+        };
+        const auto result = query(intent);
+        REQUIRE_MESSAGE(!result.exception.IsValid(), result.exception_message);
+        const auto list = result.value.ref;
+        const auto list_root = f.vm.ProtectReferences(std::array{list});
+        CHECK(f.linker.Class(f.model.ObjectClass(list)).descriptor == "Ljava/util/ArrayList;");
+        REQUIRE(size(list) == 5);
+        const auto item = [&](int index) {
+            return f.On(list, "get", "(I)Ljava/lang/Object;", {VmValue::Int(index)}).ref;
+        };
+        const std::array names{"High", "Default", "First", "Tie", "Negative"};
+        for (int i = 0; i < 5; ++i) {
+            const auto resolve = item(i);
+            CHECK(f.linker.Class(f.model.ObjectClass(resolve)).descriptor == "Landroid/content/pm/ResolveInfo;");
+            const auto info = ref_field(resolve, "activityInfo", "Landroid/content/pm/ActivityInfo;");
+            CHECK(f.linker.Class(f.model.ObjectClass(info)).descriptor == "Landroid/content/pm/ActivityInfo;");
+            CHECK(f.vm.StringUtf8(ref_field(info, "name", "Ljava/lang/String;")) ==
+                  std::string("org.example.game.") + names[static_cast<std::size_t>(i)]);
+            CHECK(field(resolve, "match", "I") == 0x108000U);
+            CHECK(field(resolve, "preferredOrder", "I") == 0U);
+            CHECK(field(resolve, "system", "Z") == 0U);
+            CHECK(static_cast<std::int32_t>(field(resolve, "specificIndex", "I")) == -1);
+            CHECK_FALSE(ref_field(resolve, "filter", "Landroid/content/IntentFilter;").IsValid());
+            CHECK_FALSE(ref_field(info, "metaData", "Landroid/os/Bundle;").IsValid());
+            CHECK(ref_field(info, "applicationInfo", "Landroid/content/pm/ApplicationInfo;").IsValid());
+        }
+        CHECK(field(item(2), "priority", "I") == 5U); // first matching filter, not max priority
+        CHECK(field(item(1), "isDefault", "Z") == 1U);
+        CHECK(field(item(2), "isDefault", "Z") == 0U); // broadcasts need no DEFAULT
+        CHECK(field(item(1), "labelRes", "I") == 0x7f050001U);
+        CHECK(field(item(2), "icon", "I") == 0x7f030001U);
+        CHECK(f.vm.StringUtf8(ref_field(item(2), "nonLocalizedLabel", "Ljava/lang/CharSequence;")) == "Receiver label");
+        const auto first_info = ref_field(item(2), "activityInfo", "Landroid/content/pm/ActivityInfo;");
+        CHECK(f.vm.StringUtf8(ref_field(first_info, "permission", "Ljava/lang/String;")) == "org.example.PROTECTED");
+        CHECK(f.vm.StringUtf8(ref_field(first_info, "processName", "Ljava/lang/String;")) == "org.example.game:receiver");
+        CHECK(field(first_info, "exported", "Z") == 1U);
+        CHECK(field(ref_field(item(1), "activityInfo", "Landroid/content/pm/ActivityInfo;"), "exported", "Z") == 0U);
+        static_cast<void>(f.vm.CollectGarbage("receiver-query-results"));
+        CHECK(size(list) == 5);
+        CHECK(field(item(2), "priority", "I") == 5U);
+        f.context->application_enabled = false;
+        CHECK(size(query(intent).value.ref) == 0);
+        f.context->application_enabled = true;
+        add_category("MISSING");
+        CHECK(size(query(intent).value.ref) == 0);
+        f.On(intent, "removeCategory", "(Ljava/lang/String;)V",
+             {VmValue::Ref(f.vm.NewStringUtf8("MISSING"))});
+        f.On(intent, "setAction", "(Ljava/lang/String;)Landroid/content/Intent;",
+             {VmValue::Ref(f.vm.NewStringUtf8("ABSENT"))});
+        CHECK(size(query(intent).value.ref) == 0);
+        f.On(intent, "setAction", "(Ljava/lang/String;)Landroid/content/Intent;",
+             {VmValue::Ref(f.vm.NewStringUtf8("RECEIVE"))});
+        f.On(intent, "removeCategory", "(Ljava/lang/String;)V",
+             {VmValue::Ref(f.vm.NewStringUtf8("EXTRA"))});
+        CHECK(size(query(intent).value.ref) == 6); // Split now matches its first filter
+
+        int unsupported_count = 0;
+        const auto unsupported = [&](const VmCallOutcome& outcome) {
+            CHECK(outcome.exception_class == f.linker.ResolveDescriptor("Ljava/lang/UnsupportedOperationException;"));
+            ++unsupported_count;
+        };
+        for (const int flags : {0x80, 0x200, 0x10000, -1}) unsupported(query(intent, flags));
+        f.context->receiver_inventory_known = false;
+        unsupported(query(intent));
+        f.context->receiver_inventory_known = true;
+        const auto empty_intent = f.New("Landroid/content/Intent;");
+        const auto empty_root = f.vm.ProtectReferences(std::array{empty_intent});
+        unsupported(query(empty_intent));
+        f.On(empty_intent, "setAction", "(Ljava/lang/String;)Landroid/content/Intent;",
+             {VmValue::Ref(f.vm.NewStringUtf8(""))});
+        unsupported(query(empty_intent));
+        CHECK(query(VmObjectRef{}).exception_class == f.linker.ResolveDescriptor("Ljava/lang/NullPointerException;"));
+        for (const auto& [setter, signature, value] :
+             {std::tuple{"setPackage", "(Ljava/lang/String;)Landroid/content/Intent;", f.vm.NewStringUtf8("other.package")},
+              std::tuple{"setType", "(Ljava/lang/String;)Landroid/content/Intent;", f.vm.NewStringUtf8("text/plain")},
+              std::tuple{"setData", "(Landroid/net/Uri;)Landroid/content/Intent;",
+                         f.Static("Landroid/net/Uri;", "parse", "(Ljava/lang/String;)Landroid/net/Uri;",
+                                  {VmValue::Ref(f.vm.NewStringUtf8("content://example/item"))}).ref},
+              std::tuple{"setComponent", "(Landroid/content/ComponentName;)Landroid/content/Intent;",
+                         f.New("Landroid/content/ComponentName;", "(Ljava/lang/String;Ljava/lang/String;)V",
+                               {VmValue::Ref(f.vm.NewStringUtf8("org.example.game")),
+                                VmValue::Ref(f.vm.NewStringUtf8("org.example.game.First"))})}}) {
+            f.On(intent, setter, signature, {VmValue::Ref(value)});
+            unsupported(query(intent));
+            f.On(intent, setter, signature, {VmValue::Ref(VmObjectRef{})});
+        }
+        f.On(intent, "setSelector", "(Landroid/content/Intent;)V", {VmValue::Ref(empty_intent)});
+        unsupported(query(intent));
+        f.On(intent, "setSelector", "(Landroid/content/Intent;)V", {VmValue::Ref(VmObjectRef{})});
+        f.On(intent, "setPackage", "(Ljava/lang/String;)Landroid/content/Intent;",
+             {VmValue::Ref(f.vm.NewStringUtf8("org.example.game"))});
+        CHECK(size(query(intent).value.ref) == 6);
+        // An unresolved candidate must not be reported as an empty/partial list.
+        f.context->receiver_components.back().enabled = true;
+        f.context->receiver_components.back().intent_filters.front().has_data = true;
+        unsupported(query(intent));
+        f.context->receiver_components.back().intent_filters.front().actions = {"UNRELATED"};
+        CHECK(size(query(intent).value.ref) == 6);
+        f.context->receiver_components.clear();
+        CHECK(size(query(intent).value.ref) == 0);
+        const auto hits = f.ledger.Unimplemented();
+        CHECK(std::any_of(hits.begin(), hits.end(), [&](const auto& hit) {
+            return hit.id == "dexvm.receiver_query" && hit.count == static_cast<std::uint64_t>(unsupported_count);
+        }));
     }
 }

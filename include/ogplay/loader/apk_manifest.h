@@ -54,6 +54,9 @@ struct AndroidManifestIntentFilter final {
     std::vector<std::string> categories;
     // Preserve the presence of constraints not parsed by the bounded resolver.
     bool has_data{};
+    std::int32_t priority{};
+    std::optional<AndroidManifestLabel> label{};
+    std::uint32_t icon{};
 };
 
 struct AndroidManifestServiceComponent final {
@@ -76,7 +79,7 @@ struct AndroidManifestReceiverComponent final {
     std::string name;
     bool enabled{true};
     std::optional<bool> exported;
-    bool has_intent_filter{};
+    std::vector<AndroidManifestIntentFilter> intent_filters;
     std::string process_name;
     std::optional<std::string> permission;
     std::vector<AndroidManifestMetaData> meta_data;
@@ -84,7 +87,7 @@ struct AndroidManifestReceiverComponent final {
 
 [[nodiscard]] inline bool AndroidManifestReceiverExported(
     const AndroidManifestReceiverComponent& component) {
-    return component.exported.value_or(component.has_intent_filter);
+    return component.exported.value_or(!component.intent_filters.empty());
 }
 
 struct AndroidManifestActivityComponent final {

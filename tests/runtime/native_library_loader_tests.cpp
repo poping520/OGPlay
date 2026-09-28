@@ -4489,6 +4489,53 @@ TEST_CASE("DVM-195 original NativeActivity runs in the existing Java native proc
     }
 }
 
+TEST_CASE("NativeActivity failed lifecycle releases backing before JNI detach") {
+    using namespace ogplay;
+    namespace dx = runtime::dexvm;
+    for (const auto backend : {dx::InterpreterBackend::switch_dispatch,
+                               dx::InterpreterBackend::threaded}) {
+        OrchestratedApp fixture("android.app.NativeActivity", true, true, {}, {}, true, backend);
+        fixture.app->StartApplication();
+        auto& linker = fixture.app->DexVm().Linker();
+        const auto type = linker.ResolveDescriptor("Landroid/app/NativeActivity;");
+        const auto slot = linker.FindVtableIndex(type, "onStart", "()V");
+        REQUIRE(slot.has_value());
+        auto& on_start = linker.MutableMethod(linker.Class(type).vtable[*slot]);
+        on_start.kind = dx::MethodKind::intrinsic;
+        on_start.implementation = [](dx::IntrinsicContext&) -> dx::VmValue {
+            throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "original startup failure"};
+        };
+        try {
+            static_cast<void>(fixture.app->StartLauncherActivity());
+            FAIL("injected startup failure did not propagate");
+        } catch (const session::DexActivityLifecycleError& error) {
+            CHECK(std::string(error.what()).find("original startup failure") != std::string::npos);
+        }
+        const auto activity = fixture.context->activity;
+        auto* native_runtime = fixture.context->native_activity.get();
+        const auto pointer = native_runtime->InputQueuePointer(activity);
+        REQUIRE_FALSE(pointer.IsNull());
+        const auto memory = fixture.app->NativeProcess().GuestMemoryAccess();
+        const auto native = memory::GuestAddress{pointer.Value() - 148U};
+        REQUIRE(memory.validate(native, 4));
+        // Failed startup skips Java onDestroy with a live native handle.
+        CHECK_NOTHROW(static_cast<void>(fixture.app->Stop()));
+        CHECK(native_runtime->InputQueuePointer(activity).IsNull());
+        CHECK_FALSE(memory.validate(native, 4));
+        CHECK(fixture.app->NativeProcess().AttachedJniThreadCount() == 0U);
+        CHECK_NOTHROW(native_runtime->Release());
+        CHECK_NOTHROW(static_cast<void>(fixture.app->Stop()));
+        // Unwinding must preserve the startup error instead of terminating.
+        try {
+            auto app = std::move(fixture.app);
+            throw session::DexActivityLifecycleError("original startup failure");
+        } catch (const session::DexActivityLifecycleError& error) {
+            CHECK(std::string(error.what()) == "original startup failure");
+            CHECK_FALSE(fixture.context->native_activity);
+        }
+    }
+}
+
 TEST_CASE("DVM-195 NativeActivity library load defers JNI OnLoad until Java requests it") {
     using namespace ogplay;
     FixtureProcess fixture;

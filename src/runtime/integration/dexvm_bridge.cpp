@@ -1353,7 +1353,7 @@ DexVmGuestBridge::DexVmGuestBridge(
             session, android_context,
             [bridge_state](dx::VmObjectRef ref, std::uint64_t thread) { return bridge_state->PublishLocal(ref, thread); },
             [bridge_state](JniReference ref, std::uint64_t thread) { return bridge_state->FromReference(ref, thread); },
-            [bridge_state](std::uint64_t token) { return bridge_state->ProcessThreadForToken(token); });
+            [bridge_state](std::uint64_t token) { return bridge_state->ProcessThreadForToken(token); }, logger);
         session.Invocations().RegisterHandler(
             "activity.current",
             [bridge_state, weak_context = std::weak_ptr<DexVmAndroidContext>(android_context)](

@@ -193,6 +193,9 @@ GLES30 的 indexed string、sync long、mapped direct Buffer 与 transform-feedb
 GLSurfaceView 保存逐 View 的 Context version/config 请求；`queueEvent` 保活 Runnable 并由
 lifecycle 在 current GL 渲染线程、renderer callback 前按 FIFO 执行，禁止同步伪装或空返回。
 `requestRender` 与 WHEN_DIRTY 使用逐 View 单次消费请求，事件执行不依赖绘帧。
+`set/getPreserveEGLContextOnPause` 按 API19 读写每个 View 的普通 boolean 字段，默认 false，
+允许在 renderer 建立前配置，方法可覆盖。不宣称 EGL 暂停/恢复策略闭环：当前 onPause/onResume
+仍由宿主 lifecycle 控制停帧，按该字段拆分 Surface/Context 销毁、重建及 context-loss 回调待实现。
 GLU 的 error string、look-at、ortho、perspective、project/unproject 采用 API19 专用数学与
 GL10 虚调用适配，不进入 native GLES symbol 目录；数组 offset 与失败不回写均显式受检。
 Java GLES 的 String 返回、active query、uniform block/transform-feedback 名称及 String[]

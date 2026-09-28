@@ -53,6 +53,20 @@ Decl Declare_android_opengl_GLSurfaceView(const Context& context) {
         .ConstantInt("RENDERMODE_CONTINUOUSLY", "I", 1);
     builder.Constructor("(Landroid/content/Context;)V",
         ViewInitHandler(context));
+    // API19 stores this preference on the View, independently of renderer
+    // creation. It is a request, not evidence that an EGL context survived.
+    const auto preserve_context = builder.BoundInstanceField(
+        "mPreserveEGLContextOnPause", "Z", dx::kAccPrivate);
+    builder.VirtualMethod("setPreserveEGLContextOnPause", "(Z)V",
+        [preserve_context](dx::IntrinsicContext& call) {
+            dx::IntrinsicCall(call).SetInt(
+                preserve_context, call.arguments[0].AsInt() != 0 ? 1 : 0);
+            return dx::VmValue::Void();
+        });
+    builder.VirtualMethod("getPreserveEGLContextOnPause", "()Z",
+        [preserve_context](dx::IntrinsicContext& call) {
+            return dx::VmValue::Int(dx::IntrinsicCall(call).GetInt(preserve_context));
+        });
     builder.FinalMethod("setRenderer",
         "(Landroid/opengl/GLSurfaceView$Renderer;)V",
         [context](dx::IntrinsicContext& call) {

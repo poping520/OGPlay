@@ -240,6 +240,41 @@ TEST_CASE("GLSurfaceView retains linked EGL policy identities") {
     CHECK(vm.context->egl_config_chooser == policy);
 }
 
+TEST_CASE("GLSurfaceView preserves the EGL pause preference per instance before renderer setup") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch,
+                               InterpreterBackend::threaded}) {
+        EglVm vm(backend);
+        const auto first = vm.interpreter.NewIntrinsicInstance("Lfixture/GlView;");
+        const auto second = vm.interpreter.NewIntrinsicInstance("Lfixture/GlView;");
+        const auto preference = [&](VmObjectRef view) {
+            return vm.CallOn(view, "getPreserveEGLContextOnPause", "()Z").AsInt();
+        };
+        const auto set = [&](VmObjectRef view, int value) {
+            vm.CallOn(view, "setPreserveEGLContextOnPause", "(Z)V", {VmValue::Int(value)});
+        };
+        CHECK(preference(first) == 0);
+        CHECK(preference(second) == 0);
+        set(first, 1);
+        CHECK(preference(first) == 1);
+        CHECK(preference(second) == 0);
+        set(second, 1);
+        set(first, 0);
+        CHECK(preference(first) == 0);
+        CHECK(preference(second) == 1);
+        set(second, 1);
+        CHECK(preference(second) == 1);
+        CHECK_FALSE(vm.context->renderer.IsValid());
+        for (const auto& [name, signature] : {
+                 std::pair{"setPreserveEGLContextOnPause", "(Z)V"},
+                 std::pair{"getPreserveEGLContextOnPause", "()Z"}}) {
+            const auto type = vm.model.ObjectClass(first);
+            const auto slot = vm.linker.FindVtableIndex(type, name, signature);
+            REQUIRE(slot.has_value());
+            CHECK(vm.linker.Method(vm.linker.Class(type).vtable[*slot]).overridable);
+        }
+    }
+}
+
 TEST_CASE("DVM-134 GLSurfaceView stores validated render mode per view") {
     for (const auto backend : {InterpreterBackend::switch_dispatch,
                                InterpreterBackend::threaded}) {

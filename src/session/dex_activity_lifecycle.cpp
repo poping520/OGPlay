@@ -494,6 +494,10 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
         const runtime::AndroidBoundaryInput& input) {
         if (state_ != LifecycleRunState::running || suspended_) return;
         pending_input_.push_back(input);
+        // Both Java dispatch and the native input queue expose the same
+        // logical devices. Host SDL ids belong to a different namespace.
+        pending_input_.back().device_id = input.type == runtime::AndroidBoundaryInputType::key
+            ? runtime::kAndroidKeyboardDeviceId : runtime::kAndroidTouchDeviceId;
     }
 
     void DexActivityLifecycle::DispatchInput() {

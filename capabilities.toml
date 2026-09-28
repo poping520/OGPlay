@@ -1585,6 +1585,12 @@ status = "partial"
 test = "tests/session/profile_entry_scope_tests.cpp"
 note = "DVM-90 对照 AOSP 4.4.4 ViewGroup conditional attach/detach 与 SurfaceView.mSurfaceCreated：初始 lifecycle 只激活 live UiTree holder，动态子树 add/remove 形成独立 created/changed/destroyed generation，callback 使用稳定快照且 removeCallback 幂等。OGPlay 仍只拥有一个 managed host surface；visibility、format/size 重建、独立合成层和 SurfaceFlinger 不在有界能力内。"
 
+[dexvm.input_device_services]
+status = "partial"
+test = "tests/dexvm/android_value_tests.cpp: InputDevice queries; tests/runtime/native_library_loader_tests.cpp: InputDevice production directory"
+note = "DVM-196：InputDevice/MotionRange 数据类来自 API19 BootDex，查询 overlay 投影进程逻辑键盘与映射触摸；未知设备/轴为 null，无设备时返回真实空快照。Java/NativeActivity 事件在 session 统一设备 id；触摸坐标范围来自逻辑窗口，不宣称宿主触摸板或摇杆。键盘映射、hasKeys、震动与 Parcel 写入明确记账失败；Parcel 读入、完整反射、热插拔及 NDK 新查询符号未验收。不运行 InputManager/Binder。"
+
+
 [dexvm.system_ui_visibility]
 status = "partial"
 test = "tests/dexvm/widget_click_tests.cpp; tests/session/profile_entry_scope_tests.cpp"

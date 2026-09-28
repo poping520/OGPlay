@@ -345,6 +345,9 @@ Decl Declare_android_view_KeyEvent(const Context& context) {
             return dx::VmValue::Int(
                 dx::IntrinsicCall(call).GetInt(device_id));
         });
+    builder.FinalMethod("getSource", "()I", [](dx::IntrinsicContext&) {
+        return dx::VmValue::Int(kAndroidKeyboardSource);
+    });
     builder.FinalMethod("getUnicodeChar", "()I",
         [unicode_char](dx::IntrinsicContext& call) {
             dx::IntrinsicCall fields(call);
@@ -389,6 +392,68 @@ void SetAndroidKeyEventUnicode(dexvm::Interpreter& vm,
 
 namespace ogplay::runtime::android_intrinsics {
 
+// InputDevice value semantics stay in BootDex. Only process service queries
+// cross this boundary; no InputManager/Binder singleton is initialized.
+Decl Declare_android_view_InputDevice(const Context& context) {
+    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/view/InputDevice;", "Ljava/lang/Object;");
+    builder.StaticMethod("getDeviceIds", "()[I", [context](dx::IntrinsicContext& call) {
+        const auto ids = call.vm.Model().NewPrimitiveArray(
+            call.vm.Linker().ResolveDescriptor("[I"), JniPrimitiveKind::integer,
+            static_cast<JniSize>(context->input_devices.size()));
+        for (std::size_t i = 0; i < context->input_devices.size(); ++i)
+            call.vm.Model().SetPrimitiveElement(ids, static_cast<JniSize>(i),
+                static_cast<std::uint32_t>(context->input_devices[i].id));
+        return dx::VmValue::Ref(ids);
+    });
+    builder.StaticMethod("getDevice", "(I)Landroid/view/InputDevice;", [context](dx::IntrinsicContext& call) {
+        const auto id = call.arguments[0].AsInt();
+        const auto found = std::find_if(context->input_devices.begin(), context->input_devices.end(),
+            [id](const auto& device) { return device.id == id; });
+        if (found == context->input_devices.end()) return dx::VmValue::Ref(dx::VmObjectRef{});
+        const auto type = call.vm.Linker().ResolveDescriptor("Landroid/view/InputDevice;");
+        const auto check = [&](const dx::VmCallOutcome& outcome) {
+            if (outcome.exception.IsValid()) throw dx::VmJavaThrow{
+                call.vm.Linker().Class(outcome.exception_class).descriptor,
+                outcome.exception_message, outcome.exception};
+        };
+        check(call.vm.EnsureClassInitialized(type));
+        const auto object = call.vm.NewIntrinsicInstance("Landroid/view/InputDevice;");
+        const auto root = call.vm.ProtectReferences(std::array{object});
+        const auto name = call.vm.NewStringUtf8(found->name);
+        const auto name_root = call.vm.ProtectReferences(std::array{name});
+        const auto descriptor = call.vm.NewStringUtf8(found->descriptor);
+        const auto descriptor_root = call.vm.ProtectReferences(std::array{descriptor});
+        const auto constructor = call.vm.Linker().FindDirectMethod(type, "<init>",
+            "(IIILjava/lang/String;IILjava/lang/String;ZIILandroid/view/KeyCharacterMap;ZZ)V");
+        const auto add_range = call.vm.Linker().FindDirectMethod(type, "addMotionRange", "(IIFFFFF)V");
+        if (!constructor || !add_range) throw dx::VmJavaThrow{
+            "Ljava/lang/IllegalStateException;", "API19 InputDevice constructors are unavailable"};
+        check(call.vm.Call(*constructor, std::vector<dx::VmValue>{
+            dx::VmValue::Ref(object), dx::VmValue::Int(id), dx::VmValue::Int(0), dx::VmValue::Int(0),
+            dx::VmValue::Ref(name), dx::VmValue::Int(0), dx::VmValue::Int(0),
+            dx::VmValue::Ref(descriptor), dx::VmValue::Int(0), dx::VmValue::Int(found->sources),
+            dx::VmValue::Int(found->keyboard_type), dx::VmValue::Ref(dx::VmObjectRef{}),
+            dx::VmValue::Int(0), dx::VmValue::Int(0)}));
+        for (const auto& range : found->ranges)
+            check(call.vm.Call(*add_range, std::vector<dx::VmValue>{
+                dx::VmValue::Ref(object), dx::VmValue::Int(range.axis), dx::VmValue::Int(range.source),
+                dx::VmValue::Float(range.minimum), dx::VmValue::Float(range.maximum),
+                dx::VmValue::Float(range.flat), dx::VmValue::Float(range.fuzz), dx::VmValue::Float(range.resolution)}));
+        return dx::VmValue::Ref(object);
+    });
+    // These service contracts are not implied by device enumeration.
+    const auto unsupported = [](dx::IntrinsicContext& call) -> dx::VmValue {
+        if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.input_device_services", 0);
+        throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
+            "InputDevice key map, key capability, vibrator and parcel services are unsupported"};
+    };
+    builder.VirtualMethod("getKeyCharacterMap", "()Landroid/view/KeyCharacterMap;", unsupported);
+    builder.VirtualMethod("hasKeys", "([I)[Z", unsupported);
+    builder.VirtualMethod("getVibrator", "()Landroid/os/Vibrator;", unsupported);
+    builder.VirtualMethod("writeToParcel", "(Landroid/os/Parcel;I)V", unsupported);
+    return std::move(builder).Build();
+}
+
 Decl Declare_android_view_MotionEvent(const Context& context) {
     static_cast<void>(context);
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/view/MotionEvent;", "Ljava/lang/Object;");
@@ -396,6 +461,12 @@ Decl Declare_android_view_MotionEvent(const Context& context) {
     builder.InstanceField("x", "F");
     builder.InstanceField("y", "F");
     builder.InstanceField("pointer", "I");
+    builder.FinalMethod("getDeviceId", "()I", [](dx::IntrinsicContext&) {
+        return dx::VmValue::Int(kAndroidTouchDeviceId);
+    });
+    builder.FinalMethod("getSource", "()I", [](dx::IntrinsicContext&) {
+        return dx::VmValue::Int(kAndroidTouchSource);
+    });
     const auto slot_float = [](dx::IntrinsicContext& call,
                                const std::size_t slot) {
         dx::VmValue value;

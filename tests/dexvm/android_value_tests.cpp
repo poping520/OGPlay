@@ -5724,3 +5724,51 @@ TEST_CASE("DVM-195 getActivityInfo returns only the requested activity metadata"
         CHECK(query(0).exception.IsValid());
     }
 }
+
+TEST_CASE("InputDevice queries use BootDex values and the process input directory") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        AndroidValueVm fixture(backend);
+        constexpr auto device_class = "Landroid/view/InputDevice;";
+        const auto ids = [&] { return fixture.Static(device_class, "getDeviceIds", "()[I").ref; };
+        const auto device = [&](int id) {
+            return fixture.Static(device_class, "getDevice", "(I)Landroid/view/InputDevice;", {VmValue::Int(id)}).ref;
+        };
+        CHECK(fixture.model.ArrayLength(ids()) == 0);
+        CHECK_FALSE(device(404).IsValid());
+        fixture.context->input_devices = {
+            {-1, "keyboard", "fixture:keyboard", kAndroidKeyboardSource, 2, {}},
+            {0, "touch", "fixture:touch", kAndroidTouchSource, 0,
+             {{0, kAndroidTouchSource, 0, 799}, {1, kAndroidTouchSource, 0, 479}}}};
+        const auto list = ids();
+        REQUIRE(fixture.model.ArrayLength(list) == 2);
+        CHECK(static_cast<std::int32_t>(fixture.model.GetPrimitiveElement(list, 0)) == -1);
+        CHECK(fixture.model.GetPrimitiveElement(list, 1) == 0);
+        fixture.model.SetPrimitiveElement(list, 1, 999);
+        CHECK(fixture.model.GetPrimitiveElement(ids(), 1) == 0);
+        const auto touch = device(0);
+        REQUIRE(touch.IsValid());
+        const auto roots = fixture.vm.ProtectReferences(std::array{touch});
+        CHECK_FALSE(fixture.linker.Class(fixture.model.ObjectClass(touch)).is_intrinsic);
+        CHECK(fixture.On(touch, "getId", "()I").AsInt() == 0);
+        CHECK(fixture.vm.StringUtf8(fixture.On(touch, "getDescriptor", "()Ljava/lang/String;").ref) == "fixture:touch");
+        const auto sources = fixture.On(touch, "getSources", "()I").AsInt();
+        CHECK(sources == kAndroidTouchSource);
+        CHECK((sources & 0x100008) != 0x100008); // no touchpad advertised
+        const auto range = fixture.On(touch, "getMotionRange", "(I)Landroid/view/InputDevice$MotionRange;", {VmValue::Int(0)}).ref;
+        REQUIRE(range.IsValid());
+        CHECK(fixture.On(range, "getRange", "()F").AsFloat() == 799.0f);
+        CHECK_FALSE(fixture.On(touch, "getMotionRange", "(II)Landroid/view/InputDevice$MotionRange;",
+            {VmValue::Int(0), VmValue::Int(0x100008)}).ref.IsValid());
+        CHECK_FALSE(fixture.On(touch, "getMotionRange", "(I)Landroid/view/InputDevice$MotionRange;", {VmValue::Int(9)}).ref.IsValid());
+        const auto ranges = fixture.On(touch, "getMotionRanges", "()Ljava/util/List;").ref;
+        CHECK(fixture.On(ranges, "size", "()I").AsInt() == 2);
+        const auto keyboard = device(-1);
+        CHECK(fixture.On(keyboard, "getKeyboardType", "()I").AsInt() == 2);
+        const auto unsupported = fixture.OnOutcome(keyboard, "hasKeys", "([I)[Z", {VmValue::Ref(VmObjectRef{})});
+        REQUIRE(unsupported.exception.IsValid());
+        CHECK(fixture.linker.Class(unsupported.exception_class).descriptor == "Ljava/lang/UnsupportedOperationException;");
+        const auto event = MakeMotionEvent(fixture.vm, 0, 10, 20, 0);
+        CHECK(fixture.On(event, "getDeviceId", "()I").AsInt() == fixture.On(touch, "getId", "()I").AsInt());
+        CHECK(fixture.On(event, "getSource", "()I").AsInt() == sources);
+    }
+}

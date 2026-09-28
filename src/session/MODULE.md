@@ -141,6 +141,8 @@ Dex activity 每帧在 guest 回调前泵送主 Looper，到帧尾只通过
 - enabled quirk 必须有注册定义和可定位测试；源码/CI 在打包前验证测试文件与用例存在，
   packaged runtime 至少严格保留其引用形状；未注入注册表时不得进入匹配目录。
 - 生命周期清理顺序固定，状态推进由固定帧步进驱动，不依赖 sleep。
+- app process 发布逻辑键盘（id=-1）与鼠标映射触摸（id=0）；触摸轴范围采用逻辑窗口坐标。
+  QueueInput 将宿主设备编号归一到这两个 id，Java 与 NativeActivity 输入队列共用该映射。
 - app process 状态只允许 DexVmReady→ApplicationStarted→ActivityResumed→Stopped；
   frontend 不得跳过 Application 或直接选择/初始化 APK ELF root。
 - Application 初始化失败必须先清除临时 root，且不得打开 surface、初始化或构造 Activity。

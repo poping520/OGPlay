@@ -1,4 +1,4 @@
-// DVM-80: reserved API-family translation unit; no declarations yet.
+// SAX construction and explicit unsupported parsing boundary. XML Pull is BootDex.
 #include "catalog.h"
 
 #include "ogplay/runtime/dexvm/intrinsic_builder.h"
@@ -109,20 +109,6 @@ IntrinsicClassDecl DeclareDefaultHandler() {
     return std::move(builder).Build();
 }
 
-IntrinsicClassDecl DeclareXmlPullParser() {
-    auto builder = IntrinsicClassBuilder::Interface(
-        "Lorg/xmlpull/v1/XmlPullParser;");
-    builder.UnimplementedVirtual("getEventType", "()I",
-                                 kAccPublic | kAccAbstract);
-    builder.UnimplementedVirtual("next", "()I",
-                                 kAccPublic | kAccAbstract);
-    builder.UnimplementedVirtual("getName", "()Ljava/lang/String;",
-                                 kAccPublic | kAccAbstract);
-    builder.UnimplementedVirtual("getText", "()Ljava/lang/String;",
-                                 kAccPublic | kAccAbstract);
-    return std::move(builder).Build();
-}
-
 }  // namespace
 
 void AppendJavaXml(std::vector<IntrinsicClassDecl>& catalog,
@@ -134,7 +120,6 @@ void AppendJavaXml(std::vector<IntrinsicClassDecl>& catalog,
     catalog.push_back(DeclareXmlReaderImpl(services));
     catalog.push_back(DeclareXmlReader(services));
     catalog.push_back(DeclareDefaultHandler());
-    catalog.push_back(DeclareXmlPullParser());
 }
 
 }  // namespace ogplay::runtime::dexvm::intrinsics

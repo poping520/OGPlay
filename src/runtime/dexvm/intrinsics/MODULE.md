@@ -12,7 +12,8 @@
 - 禁止迁移转发层、misc/common/all TU、字符串 handler id、静态自注册和 android.* 行为。
   flags 只用 access_flags.h 的 kAcc*；反射 modifier mask 使用对应命名常量。
 - java.*、javax.net/xml 与 org.xml.sax 归 core；平台事实只经 CoreIntrinsicServices 注入，
-  不读取 DexVmAndroidContext 或宿主 locale、环境、网络。XmlPullParser 仅声明接口。
+  不读取 DexVmAndroidContext 或宿主 locale、环境、网络。XML Pull 的完整接口、工厂与 KXml
+  文本解析/序列化实现归固定 API 19 BootDex，不注册 XML Pull class intrinsic。
 - 普通 Java 状态只在 guest 字段/数组；资源交给 per-VM runtime，不重建算法或影子侧表。
   跨 nested guest call 的新引用必须用 RootScope；宿主 VmObjectRef 容器不是 GC 根。
   未支持的方法记账并明确失败，不能用默认值伪造能力。

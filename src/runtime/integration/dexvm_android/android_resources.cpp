@@ -544,6 +544,45 @@ Decl Declare_android_content_res_XmlResourceParser_Impl(
   // 返回当前文本事件的内容。
   builder.FinalMethod("getText", "()Ljava/lang/String;",
                       current_string("mTexts"));
+  // The complete BootDex interface does not expand the bounded AXML reader.
+  // Publish unsupported entries so calls use the normal ledger/failure path.
+  constexpr std::pair<const char *, const char *> unsupported[] = {
+      {"defineEntityReplacementText", "(Ljava/lang/String;Ljava/lang/String;)V"},
+      {"getAttributeCount", "()I"},
+      {"getAttributeName", "(I)Ljava/lang/String;"},
+      {"getAttributeNamespace", "(I)Ljava/lang/String;"},
+      {"getAttributePrefix", "(I)Ljava/lang/String;"},
+      {"getAttributeType", "(I)Ljava/lang/String;"},
+      {"getAttributeValue", "(I)Ljava/lang/String;"},
+      {"getAttributeValue", "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;"},
+      {"getColumnNumber", "()I"},
+      {"getDepth", "()I"},
+      {"getFeature", "(Ljava/lang/String;)Z"},
+      {"getInputEncoding", "()Ljava/lang/String;"},
+      {"getLineNumber", "()I"},
+      {"getNamespace", "()Ljava/lang/String;"},
+      {"getNamespace", "(Ljava/lang/String;)Ljava/lang/String;"},
+      {"getNamespaceCount", "(I)I"},
+      {"getNamespacePrefix", "(I)Ljava/lang/String;"},
+      {"getNamespaceUri", "(I)Ljava/lang/String;"},
+      {"getPositionDescription", "()Ljava/lang/String;"},
+      {"getPrefix", "()Ljava/lang/String;"},
+      {"getProperty", "(Ljava/lang/String;)Ljava/lang/Object;"},
+      {"getTextCharacters", "([I)[C"},
+      {"isAttributeDefault", "(I)Z"},
+      {"isEmptyElementTag", "()Z"},
+      {"isWhitespace", "()Z"},
+      {"nextTag", "()I"},
+      {"nextText", "()Ljava/lang/String;"},
+      {"nextToken", "()I"},
+      {"require", "(ILjava/lang/String;Ljava/lang/String;)V"},
+      {"setFeature", "(Ljava/lang/String;Z)V"},
+      {"setInput", "(Ljava/io/InputStream;Ljava/lang/String;)V"},
+      {"setInput", "(Ljava/io/Reader;)V"},
+      {"setProperty", "(Ljava/lang/String;Ljava/lang/Object;)V"},
+  };
+  for (const auto &[name, signature] : unsupported)
+    builder.UnimplementedVirtual(name, signature, dx::kAccPublic | dx::kAccFinal);
   // 关闭解析器并释放其事件数组，重复关闭保持幂等。
   builder.FinalMethod("close", "()V", [](dx::IntrinsicContext &call) {
     SetRefField(call, call.receiver, "mEventTypes", "[I", dx::VmObjectRef{});

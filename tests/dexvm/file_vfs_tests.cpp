@@ -10,11 +10,13 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
 #include <limits>
+#include <map>
 #include <memory>
 #include <span>
 #include <string>
@@ -1794,78 +1796,98 @@ TEST_CASE("Resources and Context share application assets and isolate system ass
 }
 
 TEST_CASE("Resources getXml exposes compiled APK XML as pull events") {
-    FileVm vm;
-    constexpr std::uint32_t kResourceId = 0x7f010000U;
-    const auto xml = MakeBinaryXmlTextResource();
-    vm.context->apk_bytes = MakeStoredZip("res/xml/settings.xml", xml);
-    vm.context->archive =
-        ogplay::loader::ParseApkArchive(vm.context->apk_bytes);
-    vm.context->arsc.entries.push_back({
-        .resource_id = kResourceId,
-        .type_name = "xml",
-        .entry_name = "settings",
-        .string_value = "res/xml/settings.xml",
-        .value_type = 3,
-    });
+    for (const auto backend : {InterpreterBackend::switch_dispatch,
+                               InterpreterBackend::threaded}) {
+        FileVm vm(nullptr, true, {.backend = backend});
+        constexpr std::uint32_t kResourceId = 0x7f010000U;
+        const auto xml = MakeBinaryXmlTextResource();
+        vm.context->apk_bytes = MakeStoredZip("res/xml/settings.xml", xml);
+        vm.context->archive =
+            ogplay::loader::ParseApkArchive(vm.context->apk_bytes);
+        vm.context->arsc.entries.push_back({
+            .resource_id = kResourceId,
+            .type_name = "xml",
+            .entry_name = "settings",
+            .string_value = "res/xml/settings.xml",
+            .value_type = 3,
+        });
 
-    const auto resources = vm.interpreter.NewIntrinsicInstance(
-        "Landroid/content/res/Resources;");
-    const auto parser = vm.CallOn(
-        resources, "getXml", "(I)Landroid/content/res/XmlResourceParser;",
-        {VmValue::Int(static_cast<std::int32_t>(kResourceId))}).ref;
-    const auto event_type = [&] {
-        return vm.CallOn(parser, "getEventType", "()I").AsInt();
-    };
-    const auto next = [&] {
-        return vm.CallOn(parser, "next", "()I").AsInt();
-    };
-    const auto string_value = [&](const char* name) {
-        const auto value =
-            vm.CallOn(parser, name, "()Ljava/lang/String;").ref;
-        return value.IsValid() ? vm.interpreter.StringUtf8(value) : std::string{};
-    };
+        const auto resources = vm.interpreter.NewIntrinsicInstance(
+            "Landroid/content/res/Resources;");
+        const auto parser = vm.CallOn(
+            resources, "getXml", "(I)Landroid/content/res/XmlResourceParser;",
+            {VmValue::Int(static_cast<std::int32_t>(kResourceId))}).ref;
+        const auto event_type = [&] {
+            return vm.CallOn(parser, "getEventType", "()I").AsInt();
+        };
+        const auto next = [&] {
+            return vm.CallOn(parser, "next", "()I").AsInt();
+        };
+        const auto string_value = [&](const char* name) {
+            const auto value =
+                vm.CallOn(parser, name, "()Ljava/lang/String;").ref;
+            return value.IsValid() ? vm.interpreter.StringUtf8(value) : std::string{};
+        };
 
-    CHECK(event_type() == 0);
-    CHECK(next() == 2);
-    CHECK(string_value("getName") == "settings");
-    CHECK(next() == 2);
-    CHECK(string_value("getName") == "Level");
-    CHECK(next() == 4);
-    CHECK(string_value("getText") == "error");
-    CHECK(next() == 3);
-    CHECK(string_value("getName") == "Level");
-    CHECK(next() == 3);
-    CHECK(string_value("getName") == "settings");
-    CHECK(next() == 1);
-    CHECK(next() == 1);
-    static_cast<void>(vm.CallOn(parser, "close", "()V"));
-    static_cast<void>(vm.CallOn(parser, "close", "()V"));
-    const auto after_close =
-        vm.CallOnOutcome(parser, "getEventType", "()I");
-    REQUIRE(after_close.exception.IsValid());
-    CHECK(vm.linker.Class(after_close.exception_class).descriptor ==
-          "Ljava/lang/IllegalStateException;");
+        const auto pull = vm.linker.ResolveDescriptor("Lorg/xmlpull/v1/XmlPullParser;");
+        CHECK(vm.linker.Class(pull).is_boot_dex);
+        CHECK(vm.linker.IsAssignable(pull, vm.model.ObjectClass(parser)));
+        for (const auto method : vm.linker.Class(pull).own_virtual_methods) {
+            const auto &declared = vm.linker.Method(method);
+            const auto slot = vm.linker.FindVtableIndex(vm.model.ObjectClass(parser),
+                                                       declared.name, declared.descriptor);
+            REQUIRE_MESSAGE(slot.has_value(), declared.name);
+            CHECK(vm.linker.Method(vm.linker.Class(vm.model.ObjectClass(parser)).vtable[*slot]).kind == MethodKind::intrinsic);
+        }
+        const auto unsupported = vm.CallOnOutcome(parser, "getAttributeCount", "()I");
+        REQUIRE(unsupported.exception.IsValid());
+        CHECK(vm.linker.Class(unsupported.exception_class).descriptor == "Ljava/lang/UnsatisfiedLinkError;");
+        const auto hits = vm.ledger.Unimplemented();
+        REQUIRE(hits.size() == 1);
+        CHECK(hits.front().id == "dexvm.intrinsic.Landroid/content/res/XmlResourceParser$Impl;.getAttributeCount()I");
 
-    const auto missing = vm.CallOnOutcome(
-        resources, "getXml", "(I)Landroid/content/res/XmlResourceParser;",
-        {VmValue::Int(0x7f010001)});
-    REQUIRE(missing.exception.IsValid());
-    CHECK(vm.linker.Class(missing.exception_class).descriptor ==
-          "Landroid/content/res/Resources$NotFoundException;");
+        CHECK(event_type() == 0);
+        CHECK(next() == 2);
+        CHECK(string_value("getName") == "settings");
+        CHECK(next() == 2);
+        CHECK(string_value("getName") == "Level");
+        CHECK(next() == 4);
+        CHECK(string_value("getText") == "error");
+        CHECK(next() == 3);
+        CHECK(string_value("getName") == "Level");
+        CHECK(next() == 3);
+        CHECK(string_value("getName") == "settings");
+        CHECK(next() == 1);
+        CHECK(next() == 1);
+        static_cast<void>(vm.CallOn(parser, "close", "()V"));
+        static_cast<void>(vm.CallOn(parser, "close", "()V"));
+        const auto after_close =
+            vm.CallOnOutcome(parser, "getEventType", "()I");
+        REQUIRE(after_close.exception.IsValid());
+        CHECK(vm.linker.Class(after_close.exception_class).descriptor ==
+              "Ljava/lang/IllegalStateException;");
 
-    vm.context->arsc.entries.push_back({
-        .resource_id = 0x7f010002U,
-        .type_name = "xml",
-        .entry_name = "missing",
-        .string_value = "res/xml/missing.xml",
-        .value_type = 3,
-    });
-    const auto absent_entry = vm.CallOnOutcome(
-        resources, "getXml", "(I)Landroid/content/res/XmlResourceParser;",
-        {VmValue::Int(0x7f010002)});
-    REQUIRE(absent_entry.exception.IsValid());
-    CHECK(vm.linker.Class(absent_entry.exception_class).descriptor ==
-          "Landroid/content/res/Resources$NotFoundException;");
+        const auto missing = vm.CallOnOutcome(
+            resources, "getXml", "(I)Landroid/content/res/XmlResourceParser;",
+            {VmValue::Int(0x7f010001)});
+        REQUIRE(missing.exception.IsValid());
+        CHECK(vm.linker.Class(missing.exception_class).descriptor ==
+              "Landroid/content/res/Resources$NotFoundException;");
+
+        vm.context->arsc.entries.push_back({
+            .resource_id = 0x7f010002U,
+            .type_name = "xml",
+            .entry_name = "missing",
+            .string_value = "res/xml/missing.xml",
+            .value_type = 3,
+        });
+        const auto absent_entry = vm.CallOnOutcome(
+            resources, "getXml", "(I)Landroid/content/res/XmlResourceParser;",
+            {VmValue::Int(0x7f010002)});
+        REQUIRE(absent_entry.exception.IsValid());
+        CHECK(vm.linker.Class(absent_entry.exception_class).descriptor ==
+              "Landroid/content/res/Resources$NotFoundException;");
+    }
 }
 
 TEST_CASE("Resources openRawResourceFd exposes a stored raw APK window") {
@@ -2938,5 +2960,103 @@ TEST_CASE("DVM-104 FileReader inherits guest Reader behavior over VFS UTF8") {
         static_cast<void>(vm.CallOn(reader,"close","()V"));
         static_cast<void>(vm.CallOn(reader,"close","()V"));
         CHECK(vm.CallOnOutcome(reader,"read","()I").exception.IsValid());
+    }
+}
+
+TEST_CASE("XML Pull original factory parses BOM APK assets through KXml on both backends") {
+    // A caller may supply an exact local text fixture without putting APK data
+    // in the repository. The same AssetManager/Java parser path is always used.
+    std::string document = "\xEF\xBB\xBF<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+        "<settings><integer name=\"gles_mode\">2</integer>"
+        "<bool name=\"useObb\">True</bool></settings>";
+    if (const auto path = std::getenv("OGPLAY_XML_PULL_INPUT")) {
+        std::ifstream stream(path, std::ios::binary);
+        REQUIRE_MESSAGE(stream.good(), path);
+        document.assign(std::istreambuf_iterator<char>(stream), std::istreambuf_iterator<char>());
+    }
+    REQUIRE(document.starts_with("\xEF\xBB\xBF"));
+    for (const auto backend : {InterpreterBackend::switch_dispatch,
+                               InterpreterBackend::threaded}) {
+        FileVm vm(nullptr, true, {.backend = backend});
+        for (const auto descriptor : {
+                "Lorg/xmlpull/v1/XmlPullParserFactory;", "Lorg/xmlpull/v1/XmlPullParser;",
+                "Lorg/xmlpull/v1/XmlPullParserException;", "Lorg/xmlpull/v1/XmlSerializer;",
+                "Lorg/kxml2/io/KXmlParser;", "Lorg/kxml2/io/KXmlParser$ContentSource;",
+                "Lorg/kxml2/io/KXmlParser$ValueContext;",
+                "Lorg/kxml2/io/KXmlSerializer;", "Llibcore/internal/StringPool;"}) {
+            const auto type = vm.linker.ResolveDescriptor(descriptor);
+            vm.linker.EnsureClassLinked(type);
+            CHECK(vm.linker.Class(type).is_boot_dex);
+            for (const auto method : vm.linker.Class(type).own_virtual_methods)
+                CHECK(vm.linker.Method(method).kind != MethodKind::intrinsic);
+            for (const auto method : vm.linker.Class(type).own_direct_methods)
+                CHECK(vm.linker.Method(method).kind != MethodKind::intrinsic);
+        }
+        const auto factory = vm.CallStatic("Lorg/xmlpull/v1/XmlPullParserFactory;", "newInstance",
+            "()Lorg/xmlpull/v1/XmlPullParserFactory;").ref;
+        const auto factory_root = vm.interpreter.ProtectReferences(std::array{factory});
+        static_cast<void>(vm.CallOn(factory, "setNamespaceAware", "(Z)V", {VmValue::Int(1)}));
+        CHECK(vm.CallOn(factory, "isNamespaceAware", "()Z").AsInt() == 1);
+        const auto parser = vm.CallOn(factory, "newPullParser", "()Lorg/xmlpull/v1/XmlPullParser;").ref;
+        const auto parser_root = vm.interpreter.ProtectReferences(std::array{parser});
+        CHECK(vm.linker.Class(vm.model.ObjectClass(parser)).descriptor == "Lorg/kxml2/io/KXmlParser;");
+        const auto serializer = vm.CallOn(factory, "newSerializer", "()Lorg/xmlpull/v1/XmlSerializer;").ref;
+        CHECK(vm.linker.Class(vm.model.ObjectClass(serializer)).descriptor == "Lorg/kxml2/io/KXmlSerializer;");
+        const auto open = [&](std::string_view text) {
+            std::vector<std::byte> bytes(text.size());
+            std::memcpy(bytes.data(), text.data(), text.size());
+            vm.context->apk_bytes = MakeStoredZip("assets/settings.xml", bytes);
+            vm.context->archive = ogplay::loader::ParseApkArchive(vm.context->apk_bytes);
+            const auto manager = vm.interpreter.NewIntrinsicInstance("Landroid/content/res/AssetManager;");
+            const auto manager_root = vm.interpreter.ProtectReferences(std::array{manager});
+            return vm.CallOn(manager, "open", "(Ljava/lang/String;)Ljava/io/InputStream;",
+                {VmValue::Ref(vm.interpreter.NewStringUtf8("settings.xml"))}).ref;
+        };
+        const auto input = open(document);
+        const auto input_root = vm.interpreter.ProtectReferences(std::array{input});
+        static_cast<void>(vm.CallOn(parser, "setInput", "(Ljava/io/InputStream;Ljava/lang/String;)V",
+            {VmValue::Ref(input), VmValue::Ref(VmObjectRef{})}));
+        const auto string_value = [&](std::string_view method) {
+            const auto ref = vm.CallOn(parser, std::string(method), "()Ljava/lang/String;").ref;
+            return ref.IsValid() ? vm.interpreter.StringUtf8(ref) : std::string{};
+        };
+        std::map<std::string, std::string> settings;
+        std::string key;
+        auto event = vm.CallOn(parser, "getEventType", "()I").AsInt();
+        for (unsigned step = 0; event != 1 && step < 128; ++step) {
+            if (event == 2 && vm.CallOn(parser, "getAttributeCount", "()I").AsInt() != 0) {
+                const auto attribute = vm.CallOn(parser, "getAttributeName", "(I)Ljava/lang/String;", {VmValue::Int(0)}).ref;
+                CHECK(vm.interpreter.StringUtf8(attribute) == "name");
+                const auto value = vm.CallOn(parser, "getAttributeValue", "(I)Ljava/lang/String;", {VmValue::Int(0)}).ref;
+                key = vm.interpreter.StringUtf8(value);
+                const auto by_name = vm.CallOn(parser, "getAttributeValue", "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;",
+                    {VmValue::Ref(VmObjectRef{}), VmValue::Ref(vm.interpreter.NewStringUtf8("name"))}).ref;
+                CHECK(vm.interpreter.StringUtf8(by_name) == key);
+            } else if (event == 4 && !key.empty()) {
+                settings[key] = string_value("getText");
+            } else if (event == 3) key.clear();
+            event = vm.CallOn(parser, "next", "()I").AsInt();
+        }
+        CHECK(event == 1);
+        CHECK(settings["gles_mode"] == "2");
+        CHECK(settings["useObb"] == "True");
+        CHECK(string_value("getInputEncoding") == "UTF-8");
+        static_cast<void>(vm.CallOn(input, "close", "()V"));
+        const auto bad_input = open("<settings><value></settings>");
+        const auto bad_root = vm.interpreter.ProtectReferences(std::array{bad_input});
+        static_cast<void>(vm.CallOn(parser, "setInput", "(Ljava/io/InputStream;Ljava/lang/String;)V",
+            {VmValue::Ref(bad_input), VmValue::Ref(VmObjectRef{})}));
+        bool rejected = false;
+        for (unsigned step = 0; step < 16; ++step) {
+            const auto outcome = vm.CallOnOutcome(parser, "next", "()I");
+            if (outcome.exception.IsValid()) {
+                CHECK(vm.linker.Class(outcome.exception_class).descriptor == "Lorg/xmlpull/v1/XmlPullParserException;");
+                rejected = true;
+                break;
+            }
+            if (outcome.value.AsInt() == 1) break;
+        }
+        CHECK(rejected);
+        static_cast<void>(vm.CallOn(bad_input, "close", "()V"));
     }
 }

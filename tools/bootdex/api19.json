@@ -895,6 +895,7 @@
       "Llibcore/icu/TimeZoneNames$1;",
       "Llibcore/icu/TimeZoneNames$ZoneStringsCache;",
       "Llibcore/icu/TimeZoneNames;",
+      "Llibcore/internal/StringPool;",
       "Llibcore/io/Base64;",
       "Llibcore/io/BlockGuardOs;",
       "Llibcore/io/ErrnoException;",
@@ -1105,8 +1106,16 @@
       "Lorg/apache/harmony/security/x509/tsp/TimeStampReq;",
       "Lorg/apache/harmony/security/x509/tsp/TimeStampResp$1;",
       "Lorg/apache/harmony/security/x509/tsp/TimeStampResp;",
+      "Lorg/kxml2/io/KXmlParser$ContentSource;",
+      "Lorg/kxml2/io/KXmlParser$ValueContext;",
+      "Lorg/kxml2/io/KXmlParser;",
+      "Lorg/kxml2/io/KXmlSerializer;",
       "Lorg/xml/sax/EntityResolver;",
-      "Lorg/xml/sax/ErrorHandler;"
+      "Lorg/xml/sax/ErrorHandler;",
+      "Lorg/xmlpull/v1/XmlPullParser;",
+      "Lorg/xmlpull/v1/XmlPullParserException;",
+      "Lorg/xmlpull/v1/XmlPullParserFactory;",
+      "Lorg/xmlpull/v1/XmlSerializer;"
     ],
     "conscrypt.jar": [
       "Lcom/android/org/conscrypt/NativeCrypto$SSLHandshakeCallbacks;",
@@ -1610,6 +1619,7 @@
       "Landroid/graphics/Rect$1;",
       "Landroid/graphics/Rect;",
       "Landroid/graphics/Typeface;",
+      "Landroid/hardware/Camera$PreviewCallback;",
       "Landroid/media/AudioFormat;",
       "Landroid/media/AudioTimestamp;",
       "Landroid/media/AudioTrack$NativeEventHandlerDelegate$1;",

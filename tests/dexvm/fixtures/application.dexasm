@@ -904,3 +904,48 @@
     invoke-virtual {v2, v0}, Landroid/app/Activity;->setContentView(Landroid/view/View;)V
     return-void
 .end method
+
+# EGL renderer lifecycle policy fixture; tests inject observable callbacks.
+.class public Lfixture/RendererPolicy;
+.super Ljava/lang/Object;
+.implements Landroid/opengl/GLSurfaceView$Renderer;
+.implements Landroid/opengl/GLSurfaceView$EGLContextFactory;
+.implements Landroid/opengl/GLSurfaceView$EGLConfigChooser;
+.implements Ljava/lang/Runnable;
+
+.method public run()V
+.registers 1
+    return-void
+.end method
+
+.method public onSurfaceCreated(Ljavax/microedition/khronos/opengles/GL10;Ljavax/microedition/khronos/egl/EGLConfig;)V
+.registers 3
+    return-void
+.end method
+
+.method public onSurfaceChanged(Ljavax/microedition/khronos/opengles/GL10;II)V
+.registers 4
+    return-void
+.end method
+
+.method public onDrawFrame(Ljavax/microedition/khronos/opengles/GL10;)V
+.registers 2
+    return-void
+.end method
+
+.method public chooseConfig(Ljavax/microedition/khronos/egl/EGL10;Ljavax/microedition/khronos/egl/EGLDisplay;)Ljavax/microedition/khronos/egl/EGLConfig;
+.registers 3
+    const/4 v0, 0
+    return-object v0
+.end method
+
+.method public createContext(Ljavax/microedition/khronos/egl/EGL10;Ljavax/microedition/khronos/egl/EGLDisplay;Ljavax/microedition/khronos/egl/EGLConfig;)Ljavax/microedition/khronos/egl/EGLContext;
+.registers 4
+    const/4 v0, 0
+    return-object v0
+.end method
+
+.method public destroyContext(Ljavax/microedition/khronos/egl/EGL10;Ljavax/microedition/khronos/egl/EGLDisplay;Ljavax/microedition/khronos/egl/EGLContext;)V
+.registers 4
+    return-void
+.end method

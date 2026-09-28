@@ -850,7 +850,11 @@ dx::IntrinsicHandler EglDestroySurfaceHandler(const Context& context) {
             }
             const auto result = NativeEgl(call, context, "eglDestroySurface",
                 std::array{context->egl.native_display, found->second});
-            if (result != 0U) context->egl.surfaces.erase(found);
+            if (result != 0U) {
+                context->egl.surfaces.erase(found);
+                if (context->egl.window_surface == call.arguments[1].ref)
+                    context->egl.window_surface = dx::VmObjectRef{};
+            }
             return Bool(result != 0U);
         }
         if (call.arguments[1].ref != context->egl.window_surface) { LatchEglError(call, context, kBadSurface); return Bool(false); }

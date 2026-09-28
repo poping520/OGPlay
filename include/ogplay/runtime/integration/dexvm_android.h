@@ -211,6 +211,9 @@ struct DexVmAndroidContext final {
   dexvm::VmObjectRef renderer;
   dexvm::VmObjectRef egl_context_factory;
   dexvm::VmObjectRef egl_config_chooser;
+  // Owned by the intrinsic renderer, backed by the normal EGL registry.
+  dexvm::VmObjectRef renderer_egl, renderer_display, renderer_config;
+  dexvm::VmObjectRef renderer_context, renderer_surface, renderer_gl;
   // GLSurfaceView render mode is guest-visible per view. Frame production
   // remains owned by the lifecycle/managed-surface boundary.
   std::unordered_map<std::uint32_t, std::int32_t> gl_surface_render_modes;

@@ -69,7 +69,12 @@ Dex activity 每帧在 guest 回调前泵送主 Looper，到帧尾只通过
   guest 阻塞原语时由执行锁 observer 放行 GLThread。停止在 shutdown/join guest Java
   线程前唤醒 pacer。surface callback 前按通用 render-driver 事实分流：intrinsic
   renderer 保留打开线程 GL currency；guest-owned GLSurfaceView 显式释放后交给其
-  GLThread。GLSurfaceView queueEvent 在 renderer callback 前由同一 current GL 线程排空；
+  GLThread。intrinsic renderer 消费已登记 EGL chooser/factory 或默认 config/client version，
+  经 Java EGL10 facade 创建并绑定 registry Context/Surface；回调传真实 GL/config wrapper，
+  绘制后由该 surface swap 发布。其 EGL wrapper 持有 GC roots，Activity 切换/退出时解除
+  current 并销毁所拥有的 surface/context（自定义 factory 收到 destroyContext）；进程退出时
+  此释放在图形入口永久退役前完成。创建失败明确失败，暂停保留和 context-loss 恢复未闭合。
+  GLSurfaceView queueEvent 在 renderer callback 前由同一 current GL 线程排空；
   continuous 每帧绘制，WHEN_DIRTY 仅在初始帧或 requestRender 后消费一次绘制请求，事件
   即使不触发绘制也会执行。
   未捕获 Java 异常文本按失败阶段、exception、message、stack trace 分行输出；原始类描述符、

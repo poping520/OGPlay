@@ -103,7 +103,7 @@ public:
 private:
     void CallActivity(const std::string& name, const std::string& descriptor,
                       std::vector<runtime::dexvm::VmValue> arguments);
-    void CallOnView(runtime::dexvm::VmObjectRef receiver,
+    runtime::dexvm::VmValue CallOnView(runtime::dexvm::VmObjectRef receiver,
                     const std::string& name, const std::string& descriptor,
                     std::vector<runtime::dexvm::VmValue> arguments);
     void DispatchInput();
@@ -128,6 +128,9 @@ private:
     void AwaitInitialThreadQuiescence();
     void ServiceActivitySwitch();
     void EnsureRendererCallbacks();
+    void InitializeRendererEgl();
+    void ReleaseRendererEgl();
+    void RunRendererEvents();
     // Publishes the sole window-focus fact before virtually notifying the
     // Activity and every currently attached View. Repeated values are silent.
     void SetWindowFocus(bool has_focus);

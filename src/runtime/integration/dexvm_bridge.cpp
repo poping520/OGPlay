@@ -1,3 +1,4 @@
+#include "ogplay/runtime/integration/native_activity_runtime.h"
 #include "ogplay/runtime/integration/dexvm_bridge.h"
 #include "ogplay/runtime/debug/stall_diagnostics.h"
 
@@ -134,6 +135,13 @@ void VisitAndroidSessionRoots(const DexVmAndroidContext& context,
     root(context.egl_context_factory);
     root(context.egl_config_chooser);
     root(context.content_view);
+    root(context.window_surface_callback);
+    root(context.window_surface_holder);
+    root(context.window_input_callback);
+    root(context.window_input_queue);
+    for (const auto& [holder, surface] : context.holder_surfaces) {
+        root(dx::VmObjectRef(holder)); root(surface);
+    }
     root(context.current_intent);
     for (const auto& [_, value] : context.singletons) root(value);
     root(context.egl.display);
@@ -1341,6 +1349,11 @@ DexVmGuestBridge::DexVmGuestBridge(
 
     impl_->RegisterDexClasses();
     if (android_context != nullptr) {
+        android_context->native_activity = std::make_shared<NativeActivityRuntime>(
+            session, android_context,
+            [bridge_state](dx::VmObjectRef ref, std::uint64_t thread) { return bridge_state->PublishLocal(ref, thread); },
+            [bridge_state](JniReference ref, std::uint64_t thread) { return bridge_state->FromReference(ref, thread); },
+            [bridge_state](std::uint64_t token) { return bridge_state->ProcessThreadForToken(token); });
         session.Invocations().RegisterHandler(
             "activity.current",
             [bridge_state, weak_context = std::weak_ptr<DexVmAndroidContext>(android_context)](
@@ -1374,7 +1387,10 @@ DexVmGuestBridge::~DexVmGuestBridge() {
                 "runtime.dexvm.native_cleanup", error.what());
         }
     }
-    if (impl_->android_context) impl_->android_context->threads = nullptr;
+    if (impl_->android_context) {
+        impl_->android_context->native_activity.reset();
+        impl_->android_context->threads = nullptr;
+    }
     if (impl_->session) {
         impl_->session->Environment().SetMonitorHooks({});
         impl_->session->Objects().ObjectArrays().SetAssignability({});

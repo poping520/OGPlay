@@ -232,7 +232,7 @@ public:
 
     NativeLibraryLoadResult LoadPath(
         const std::string_view guest_path,
-        const JavaClassLoaderToken class_loader) {
+        const JavaClassLoaderToken class_loader, const NativeLibraryEntry mode) {
         if (guest_path.starts_with(kSyntheticLibraryRoot)) {
             const auto soname = guest_path.substr(kSyntheticLibraryRoot.size());
             const auto* library =
@@ -247,7 +247,7 @@ public:
             return LoadResolved(
                 {SyntheticGuestPath(library->soname), library->soname,
                  library->image, library->entry_name, false},
-                class_loader);
+                class_loader, mode);
         }
 
         if (const auto* library = libraries_->FindEntryName(guest_path);
@@ -255,7 +255,7 @@ public:
             return LoadResolved(
                 {SyntheticGuestPath(library->soname), library->soname,
                  library->image, library->entry_name, false},
-                class_loader);
+                class_loader, mode);
         }
 
         const auto canonical_path = CanonicalGuestLibraryPath(guest_path);
@@ -270,7 +270,7 @@ public:
         const auto module_name = canonical_path.substr(separator + 1U);
         return LoadResolved(
             {canonical_path, module_name, image, canonical_path, false},
-            class_loader);
+            class_loader, mode);
     }
 
     std::optional<NativeLibrarySnapshot> TrySnapshot() const {
@@ -306,6 +306,7 @@ public:
 private:
     struct RegistryEntry final {
         NativeLibraryRecord record;
+        bool jni_initialized{};
         std::thread::id loading_thread;
         NativeLibraryLoadErrorReason failure_reason{
             NativeLibraryLoadErrorReason::prior_failure};
@@ -450,7 +451,8 @@ private:
 
     [[nodiscard]] NativeLibraryLoadResult LoadResolved(
         const ExplicitLibrary& library,
-        const JavaClassLoaderToken class_loader) {
+        const JavaClassLoaderToken class_loader,
+        const NativeLibraryEntry mode = NativeLibraryEntry::java) {
         const auto canonical_path = library.canonical_path;
         NativeLibraryHandle handle{};
         {
@@ -472,25 +474,32 @@ private:
                     condition_.wait(lock);
                 }
                 if (entry.record.state == NativeLibraryLoadState::loaded) {
-                    return ExistingResult(entry.record, false);
+                    if (mode == NativeLibraryEntry::native_activity || entry.jni_initialized)
+                        return ExistingResult(entry.record, false);
+                    // dlopen-style NativeActivity load may later become an explicit
+                    // Java load. Reuse the mapping; run JNI_OnLoad exactly once then.
+                    handle = entry.record.handle;
+                    entry.record.state = NativeLibraryLoadState::loading;
+                    entry.loading_thread = std::this_thread::get_id();
+                } else {
+                    throw NativeLibraryLoadError(entry.failure_reason, entry.record.failure);
                 }
-                throw NativeLibraryLoadError(
-                    entry.failure_reason,
-                    entry.record.failure);
             }
-            if (next_handle_ == 0) {
-                throw NativeLibraryLoadError(
-                    NativeLibraryLoadErrorReason::invalid_request,
-                    "native library handle space is exhausted");
+            if (handle == 0) {
+                if (next_handle_ == 0) {
+                    throw NativeLibraryLoadError(
+                        NativeLibraryLoadErrorReason::invalid_request,
+                        "native library handle space is exhausted");
+                }
+                handle = next_handle_++;
+                RegistryEntry entry;
+                entry.record.handle = handle;
+                entry.record.canonical_path = canonical_path;
+                entry.record.soname = library.module_name;
+                entry.record.class_loader = class_loader;
+                entry.loading_thread = std::this_thread::get_id();
+                records_.emplace(canonical_path, std::move(entry));
             }
-            handle = next_handle_++;
-            RegistryEntry entry;
-            entry.record.handle = handle;
-            entry.record.canonical_path = canonical_path;
-            entry.record.soname = library.module_name;
-            entry.record.class_loader = class_loader;
-            entry.loading_thread = std::this_thread::get_id();
-            records_.emplace(canonical_path, std::move(entry));
         }
 
         try {
@@ -505,8 +514,8 @@ private:
                 library.module_name, sources);
             std::optional<std::uint32_t> jni_version;
             try {
-                jni_version = process_->InitializeExplicitJniLibrary(
-                    library.module_name);
+                if (mode == NativeLibraryEntry::java)
+                    jni_version = process_->InitializeExplicitJniLibrary(library.module_name);
             } catch (const std::exception& error) {
                 const auto message = std::string_view(error.what());
                 const auto reason =
@@ -522,6 +531,7 @@ private:
             auto& entry = records_.at(canonical_path);
             entry.record.state = NativeLibraryLoadState::loaded;
             entry.record.module_index = application.root_module_index;
+            entry.jni_initialized = mode == NativeLibraryEntry::java;
             entry.record.jni_version = jni_version;
             entry.record.jni_on_load_calls = jni_version.has_value() ? 1U : 0U;
             entry.loading_thread = {};
@@ -614,8 +624,8 @@ NativeLibraryLoadResult NativeLibraryLoader::LoadLibrary(
 
 NativeLibraryLoadResult NativeLibraryLoader::LoadPath(
     const std::string_view guest_path,
-    const JavaClassLoaderToken class_loader) {
-    return impl_->LoadPath(guest_path, class_loader);
+    const JavaClassLoaderToken class_loader, const NativeLibraryEntry entry) {
+    return impl_->LoadPath(guest_path, class_loader, entry);
 }
 
 std::vector<NativeLibraryRecord> NativeLibraryLoader::Records() const {

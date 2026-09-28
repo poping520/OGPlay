@@ -481,7 +481,10 @@ std::uint32_t EglModule::ExecuteExport(const A32CallFrame& call) {
     if constexpr (FunctionId == 4U) {
         if (args[0] != kFakeDisplay) { SetError(tid, kEglBadDisplay); return 0U; }
         if (args[1] != kFakeConfig) { SetError(tid, kEglBadConfig); return 0U; }
-        if (args[2] == 0U) { SetError(tid, kEglBadNativeWindow); return 0U; }
+        if (args[2] == 0U || (context_.native_window_is_current &&
+            !context_.native_window_is_current(context_.native_window_owner, memory::GuestAddress{args[2]}))) {
+            SetError(tid, kEglBadNativeWindow); return 0U;
+        }
         if (args[3] != 0U && calls_.address_space.Read32(memory::GuestAddress{args[3]}, tid) != kEglNone) {
             SetError(tid, kEglBadAttribute); return 0U;
         }
@@ -490,6 +493,7 @@ std::uint32_t EglModule::ExecuteExport(const A32CallFrame& call) {
         const auto handle = next_surface_++;
         surfaces_.emplace(handle, SurfaceState{kFakeDisplay, kFakeConfig, SurfaceKind::window,
             graphics.layout.logical_width, graphics.layout.logical_height});
+        surfaces_.at(handle).native_window = memory::GuestAddress{args[2]};
         return handle;
     }
     if constexpr (FunctionId == 5U) {
@@ -559,6 +563,11 @@ std::uint32_t EglModule::ExecuteExport(const A32CallFrame& call) {
                 const auto draw = surfaces_.find(args[1]); const auto read = surfaces_.find(args[2]);
                 if (draw == surfaces_.end() || read == surfaces_.end() || draw->second.destroy_pending || read->second.destroy_pending) {
                     threads_[tid].error = kEglBadSurface; return 0U;
+                }
+                if (context_.native_window_is_current &&
+                    ((draw->second.kind == SurfaceKind::window && !context_.native_window_is_current(context_.native_window_owner, draw->second.native_window)) ||
+                     (read->second.kind == SurfaceKind::window && !context_.native_window_is_current(context_.native_window_owner, read->second.native_window)))) {
+                    threads_[tid].error = kEglBadNativeWindow; return 0U;
                 }
                 if (context->second.current_thread.has_value() &&
                     *context->second.current_thread != tid) {
@@ -678,6 +687,10 @@ std::uint32_t EglModule::ExecuteExport(const A32CallFrame& call) {
         { std::scoped_lock lock(mutex_); const auto found = surfaces_.find(args[1]);
           if (!initialized_) { threads_[tid].error = kEglNotInitialized; return 0U; }
           if (found == surfaces_.end()) { threads_[tid].error = kEglBadSurface; return 0U; }
+          if (found->second.kind == SurfaceKind::window && context_.native_window_is_current &&
+              !context_.native_window_is_current(context_.native_window_owner, found->second.native_window)) {
+              threads_[tid].error = kEglBadNativeWindow; return 0U;
+          }
           if (threads_[tid].draw_surface != args[1]) { threads_[tid].error = kEglBadSurface; return 0U; } }
         auto* frame = graphics.CurrentFrame();
         if (frame == nullptr) { SetError(tid, kEglBadSurface); return 0U; }

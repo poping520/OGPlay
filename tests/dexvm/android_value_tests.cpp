@@ -5681,3 +5681,46 @@ TEST_CASE("DVM-193 receiver queries match independent filters and return BootDex
         }));
     }
 }
+
+TEST_CASE("DVM-195 getActivityInfo returns only the requested activity metadata") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        AndroidValueVm f(backend);
+        f.context->package_name = "fixture";
+        f.context->activity_inventory_known = true;
+        f.context->application_meta_data.emplace("android.app.lib_name", std::string("application"));
+        ogplay::loader::AndroidManifestActivityComponent component;
+        component.name = "fixture.Native";
+        component.meta_data.push_back({"android.app.lib_name", std::string("activity")});
+        f.context->activity_components.push_back(component);
+        const auto manager = f.vm.NewIntrinsicInstance("Landroid/content/pm/PackageManager;");
+        const auto name = f.New("Landroid/content/ComponentName;", "(Ljava/lang/String;Ljava/lang/String;)V",
+            {VmValue::Ref(f.vm.NewStringUtf8("fixture")), VmValue::Ref(f.vm.NewStringUtf8("fixture.Native"))});
+        const auto root = f.vm.ProtectReferences(std::array{manager, name});
+        const auto query = [&](int flags) {
+            return f.OnOutcome(manager, "getActivityInfo", "(Landroid/content/ComponentName;I)Landroid/content/pm/ActivityInfo;",
+                {VmValue::Ref(name), VmValue::Int(flags)});
+        };
+        const auto field = [&](VmObjectRef object, const char* name, const char* type) {
+            const auto id = f.linker.FindFieldRecursive(f.model.ObjectClass(object), name, type);
+            REQUIRE(id.has_value());
+            return VmObjectRef(static_cast<std::uint32_t>(f.model.InstanceSlots(object)[f.linker.Field(*id).slot].bits));
+        };
+        const auto plain = query(0);
+        REQUIRE_FALSE(plain.exception.IsValid());
+        CHECK_FALSE(field(plain.value.ref, "metaData", "Landroid/os/Bundle;").IsValid());
+        const auto full = query(0x80);
+        REQUIRE_FALSE(full.exception.IsValid());
+        const auto metadata = field(full.value.ref, "metaData", "Landroid/os/Bundle;");
+        const auto library = f.On(metadata, "getString", "(Ljava/lang/String;)Ljava/lang/String;",
+            {VmValue::Ref(f.vm.NewStringUtf8("android.app.lib_name"))}).ref;
+        CHECK(f.vm.StringUtf8(library) == "activity");
+        const auto app = field(full.value.ref, "applicationInfo", "Landroid/content/pm/ApplicationInfo;");
+        CHECK(f.vm.StringUtf8(field(app, "nativeLibraryDir", "Ljava/lang/String;")) == "/data/app-lib");
+        CHECK(query(1).exception.IsValid());
+        f.context->activity_components.front().enabled = false;
+        CHECK(query(0).exception.IsValid());
+        CHECK_FALSE(query(0x200).exception.IsValid());
+        f.context->activity_inventory_known = false;
+        CHECK(query(0).exception.IsValid());
+    }
+}

@@ -21,4 +21,15 @@
     X("AMotionEvent_getAction", 16, 1, MotionEventGetAction)                   \
     X("AMotionEvent_getX", 17, 2, MotionEventGetX)                             \
     X("AMotionEvent_getY", 18, 2, MotionEventGetY)                             \
-    X("ANativeWindow_setBuffersGeometry", 19, 4, NativeWindowSetGeometry)
+    X("ANativeWindow_setBuffersGeometry", 19, 4, NativeWindowSetGeometry) \
+    X("AAssetManager_open", 20, 3, AAssetManager_open) \
+    X("AAsset_read", 21, 3, AAsset_read) \
+    X("AAsset_close", 22, 1, AAsset_close) \
+    X("AAsset_getLength", 23, 1, AAsset_getLength) \
+    X("AAsset_getRemainingLength", 24, 1, AAsset_getRemainingLength) \
+    X("AAsset_seek", 25, 3, AAsset_seek) \
+    X("ANativeWindow_getWidth", 26, 1, ANativeWindow_getWidth) \
+    X("ANativeWindow_getHeight", 27, 1, ANativeWindow_getHeight) \
+    X("ANativeWindow_getFormat", 28, 1, ANativeWindow_getFormat) \
+    X("ANativeWindow_acquire", 29, 1, ANativeWindow_acquire) \
+    X("ANativeWindow_release", 30, 1, ANativeWindow_release)

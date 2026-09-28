@@ -508,6 +508,14 @@ dx::IntrinsicHandler UnlockCanvasAndPostHandler(const Context& context) {
     };
 }
 
+dx::IntrinsicHandler HolderGetSurface(const Context& context) {
+    return [context](dx::IntrinsicContext& call) {
+        auto& surface = context->holder_surfaces[call.receiver.Value()];
+        if (!surface.IsValid()) surface = call.vm.NewIntrinsicInstance("Landroid/view/Surface;");
+        return dx::VmValue::Ref(surface);
+    };
+}
+
 void AddCanvasMethods(dx::IntrinsicClassBuilder& builder,
                       const Context& context) {
     builder.FinalMethod("lockCanvas", "()Landroid/graphics/Canvas;",
@@ -528,6 +536,7 @@ Decl Declare_android_view_SurfaceHolder_Impl(const Context& context) {
     builder.FinalMethod("removeCallback", "(Landroid/view/SurfaceHolder$Callback;)V", SurfaceHolderRemoveCallbackHandler(context));
     builder.FinalMethod("setType", "(I)V", SurfaceHolderSetTypeHandler());
     builder.FinalMethod("setFormat", "(I)V", SurfaceHolderSetFormatHandler());
+    builder.FinalMethod("getSurface", "()Landroid/view/Surface;", HolderGetSurface(context));
     AddCanvasMethods(builder, context);
     return std::move(builder).Build();
 }
@@ -542,6 +551,7 @@ namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_view_SurfaceHolder(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Interface("Landroid/view/SurfaceHolder;");
+    builder.FinalMethod("getSurface", "()Landroid/view/Surface;", HolderGetSurface(context));
     builder.FinalMethod("addCallback", "(Landroid/view/SurfaceHolder$Callback;)V", SurfaceHolderAddCallbackHandler(context));
     builder.FinalMethod("removeCallback", "(Landroid/view/SurfaceHolder$Callback;)V", SurfaceHolderRemoveCallbackHandler(context));
     builder.FinalMethod("setType", "(I)V", SurfaceHolderSetTypeHandler());
@@ -1230,6 +1240,16 @@ Decl Declare_android_view_View(const Context& context) {
     builder.FinalMethod("getBottom", "()I", geometry([](const ui::UiNode& node) {
         return node.frame.bottom;
     }));
+    builder.FinalMethod("getLocationInWindow", "([I)V", [context](dx::IntrinsicContext& call) {
+        const auto output = dx::IntrinsicCall(call).NonNullRef(0, "location");
+        if (call.vm.Model().ArrayLength(output) < 2)
+            throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "location requires two entries"};
+        const auto node = EnsureViewUiNode(*context, call.receiver, ui::UiClass::View);
+        const auto& frame = context->ui_tree.Get(node)->screen_frame;
+        call.vm.Model().SetPrimitiveElement(output, 0, static_cast<std::uint32_t>(frame.left));
+        call.vm.Model().SetPrimitiveElement(output, 1, static_cast<std::uint32_t>(frame.top));
+        return dx::VmValue::Void();
+    });
     builder.FinalMethod("getWidth", "()I", geometry([](const ui::UiNode& node) {
         return node.frame.right - node.frame.left;
     }));
@@ -1783,6 +1803,20 @@ void WriteIntField(dx::IntrinsicContext& call, const dx::VmObjectRef object,
 
 Decl Declare_android_view_Window(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/view/Window;", "Ljava/lang/Object;");
+    builder.VirtualMethod("takeSurface", "(Landroid/view/SurfaceHolder$Callback2;)V",
+        [context](dx::IntrinsicContext& call) {
+            SetWindowSurfaceCallback(call.vm, *context, call.arguments[0].ref);
+            return dx::VmValue::Void();
+        });
+    builder.VirtualMethod("takeInputQueue", "(Landroid/view/InputQueue$Callback;)V",
+        [context](dx::IntrinsicContext& call) {
+            SetWindowInputCallback(call.vm, *context, call.arguments[0].ref);
+            return dx::VmValue::Void();
+        });
+    builder.FinalMethod("setFormat", "(I)V", [context](dx::IntrinsicContext& call) {
+        context->window_format = call.arguments[0].AsInt();
+        return dx::VmValue::Void();
+    });
     builder.FinalMethod("setFlags", "(II)V",
         [context](dx::IntrinsicContext& call) {
             const auto attributes = Attributes(call, context);
@@ -1884,3 +1918,41 @@ Decl Declare_android_view_WindowManagerImpl(const Context& context) {
 }
 
 }  // namespace ogplay::runtime::android_intrinsics
+
+namespace ogplay::runtime::android_intrinsics {
+Decl Declare_android_view_InputQueue(const Context&) {
+    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/view/InputQueue;", "Ljava/lang/Object;");
+    const auto pointer = builder.BoundInstanceField("mPtr", "I", dx::kAccPrivate);
+    builder.FinalMethod("getNativePtr", "()I", [pointer](dx::IntrinsicContext& call) {
+        const auto value = dx::IntrinsicCall(call).GetInt(pointer);
+        if (value == 0) throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "InputQueue is disposed"};
+        return dx::VmValue::Int(value);
+    });
+    return std::move(builder).Build();
+}
+Decl Declare_android_view_Surface(const Context& context) {
+    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/view/Surface;", "Ljava/lang/Object;");
+    builder.FinalMethod("isValid", "()Z", [context](dx::IntrinsicContext& call) {
+        for (const auto& [holder, surface] : context->holder_surfaces)
+            if (surface == call.receiver)
+                return dx::VmValue::Int(context->active_surface_holders.contains(holder));
+        return dx::VmValue::Int(0);
+    });
+    return std::move(builder).Build();
+}
+} // namespace ogplay::runtime::android_intrinsics
+
+namespace ogplay::runtime {
+void DispatchAndroidGlobalLayout(dexvm::Interpreter& vm, DexVmAndroidContext& context) {
+    std::vector<dexvm::VmObjectRef> callbacks;
+    for (const auto& [view, observer] : context.view_tree_observers) {
+        const auto node = FindViewUiNode(context, view);
+        if (!node || !context.ui_tree.IsAttached(*node)) continue;
+        const auto listener = context.global_layout_listeners.find(observer.Value());
+        if (listener != context.global_layout_listeners.end()) callbacks.push_back(listener->second);
+    }
+    const auto roots = vm.ProtectReferences(callbacks);
+    for (const auto callback : callbacks)
+        static_cast<void>(android_intrinsics::CallAndroidMethod(vm, callback, "onGlobalLayout", "()V"));
+}
+}

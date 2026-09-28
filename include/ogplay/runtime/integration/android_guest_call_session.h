@@ -30,7 +30,7 @@ namespace ogplay::runtime {
 
 namespace debug { class DiagnosticState; }
 
-namespace dexvm { class NioRuntime; }
+namespace dexvm { class NioRuntime; struct NioDirectMemoryAccess; }
 
 class JniInvocationEngine;
 class JniNativeRegistry;
@@ -248,6 +248,9 @@ public:
     void PrepareDexVmThread(std::uint64_t thread_id,
                             std::uint32_t allocation_slot);
     void ReleaseDexVmThread(std::uint64_t thread_id) noexcept;
+    [[nodiscard]] dexvm::NioDirectMemoryAccess GuestMemoryAccess() const;
+    [[nodiscard]] memory::GuestAddress FindModuleExport(std::size_t module_index,
+                                                       std::string_view name) const;
     [[nodiscard]] memory::GuestAddress GuestEnvironment() const noexcept;
     [[nodiscard]] memory::GuestAddress GuestJavaVm() const noexcept;
     [[nodiscard]] JniEnvironment& Environment() noexcept;
@@ -290,6 +293,11 @@ public:
     void PresentManagedSurface();
     void CloseManagedSurface();
     void PushInput(const AndroidBoundaryInput& input);
+    void RegisterNativeActivity(NativeActivityBoundaryResources resources);
+    void UnregisterNativeActivity(memory::GuestAddress activity);
+    memory::GuestAddress SetNativeActivityWindow(memory::GuestAddress activity, bool active);
+    void SetNativeActivityInput(memory::GuestAddress activity, bool active);
+
     [[nodiscard]] std::optional<AndroidBoundaryFrame> TakeLatestFrame();
     void PublishSoftwareFrame(std::vector<std::uint8_t> rgba8);
     void RecycleFrame(AndroidBoundaryFrame&& frame);

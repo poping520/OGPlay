@@ -34,6 +34,11 @@ Android API 的详细行为以 [dexvm_android](dexvm_android/MODULE.md)为准；
   registry：同 loader 幂等、同线程递归返回现有 handle、跨 loader 拒绝、Failed 重试稳定失败。
   app resolver 只用 selected-ABI inventory，basename 为身份，DT_SONAME 为受检别名；
   DT_NEEDED 可用二者，别名歧义、ET_DYN、依赖/重定位、constructor/JNI version 均受检。
+- NativeActivityRuntime 借用当前 process 的 guest 分配、模块导出查询、JNI/JavaVM 与执行器，
+  只拥有 ARMv7 ANativeActivity/callbacks、路径/state backing 和真实 Activity/AssetManager global
+  refs；回调要求创建线程，native 执行释放 VM 锁，销毁退役注册并解除引用。
+  NativeActivity 的 LoadPath entry mode 不执行 JNI_OnLoad；随后 Java load 复用同一 registry
+  和映射，并执行一次 OnLoad。不得启动 standalone NativeActivitySession 代替这个桥。
 - APK 未命中时仅查注入 bundled 系统库；未映射 Bionic source 持有副本，按 DT_NEEDED
   可达性加入同一 namespace。map 事务完成后执行 constructor；registry mutex 不跨 guest
   call。只有显式 root 执行 JNI_OnLoad，不把 dependency 算作 Java load；module 持有至 Stop，

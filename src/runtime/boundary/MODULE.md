@@ -326,6 +326,18 @@ Android/EGL/GLES2 sealed export 的 `if constexpr` 分派在 MSVC 下只对模�
 实例化范围关闭 C4702；全局 `/W4 /WX` 保持启用，fallback 仍必须明确抛错。
 
 
+## NativeActivity 注册边界
+
+Android module 经 façade 接收当前进程的强类型 Activity/AssetManager/queue identity，
+不反向依赖 integration。APK asset reader 显式注入；open/read/seek/length/remaining/close
+使用 module-owned opaque token，单 asset 上限 64 MiB，退役时释放全部 backing。
+每次窗口创建分配独立 opaque identity，并持有 acquire/release 引用计数；解除所有权后
+引用可保留尺寸查询，旧 identity 不得重新激活。EGL 经 façade 注入的只读接口检查窗口，
+退役窗口的 create/bind/swap 返回 BAD_NATIVE_WINDOW。会话尺寸与 RGBA8 可查询，
+其他 geometry 返回 EINVAL。
+InputQueue 只接收当前所有者的 SDL 输入，支持 ident polling、get/finish event、detach；
+callback looper 明确失败。接入过 managed Activity 后，失效句柄不得回退到 standalone runner。
+
 ## BND-34 当前契约
 
 EGL Context、Surface、Display 按 [ADR-0063](../../../docs/adr/media.md#adr-0063) 分离所有权。

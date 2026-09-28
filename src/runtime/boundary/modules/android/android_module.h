@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <deque>
 #include <mutex>
+#include <map>
 #include <optional>
 
 #include "ogplay/runtime/boundary/android_boundary_hle.h"
@@ -21,7 +22,13 @@ public:
                   AndroidBoundaryServices& services) noexcept;
     [[nodiscard]] BoundaryCallServices& CallServices() noexcept;
     void NotifyFileWrite();
+    bool NativeWindowIsCurrent(memory::GuestAddress window);
     void PushInput(const AndroidBoundaryInput& input);
+    void RegisterNativeActivity(NativeActivityBoundaryResources resources);
+    void UnregisterNativeActivity(memory::GuestAddress activity);
+    memory::GuestAddress SetNativeActivityWindow(memory::GuestAddress activity, bool active);
+    void SetNativeActivityInput(memory::GuestAddress activity, bool active);
+
 
 #define OGPLAY_DECLARE_ANDROID(name, id, count, method) \
     std::uint32_t method(const A32CallFrame& call);
@@ -36,6 +43,31 @@ private:
 
     BoundaryCallServices& calls_;
     AndroidBoundaryServices& services_;
+    struct Resource {
+        NativeActivityBoundaryResources resources;
+        memory::GuestAddress window{};
+        bool input_active{}, input_attached{};
+
+    };
+    struct WindowResource {
+        std::uint32_t width{}, height{}, references{1};
+        bool active{}, owned{true};
+    };
+    std::map<std::uint32_t, WindowResource> windows_;
+    memory::GuestAddress next_window_{kNativeActivityWindowHandleBegin};
+    void RetireWindow(Resource& resource);
+    struct Asset {
+        memory::GuestAddress manager;
+        std::vector<std::byte> bytes;
+        std::size_t offset{};
+    };
+    bool managed_activity_seen_{};
+    std::map<std::uint32_t, Resource> resources_;
+    std::map<std::uint32_t, Asset> assets_;
+    // Asset handles are opaque tokens, never dereferenced as guest structures.
+    std::uint32_t next_asset_{0x6e100000U};
+    Resource& Queue(std::uint32_t handle);
+    WindowResource& Window(std::uint32_t handle);
     std::mutex mutex_;
     std::condition_variable ready_;
     std::uint64_t pending_command_writes_{};

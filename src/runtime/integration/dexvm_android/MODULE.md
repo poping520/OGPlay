@@ -33,6 +33,15 @@ handler id、单类 TU 或 misc 巨石。非 Android family 归 core，平台事
 （含子类）返回空字符串；不按异常消息或域名判断，也不把所有异常压成空串。不宣称
 完整 Log 子系统。日志进入统一结构化 logger；不吞异常、不写裸 stdout/stderr。
 
+### NativeActivity 与窗口接管
+
+原版 NativeActivity/NativeContentView 执行 Java；只 overlay 私有 native 入口，并通过显式
+NativeActivityRuntime 接入当前进程。Window.takeSurface/takeInputQueue 支持 null 解除和切换，
+旧 holder/queue 先销毁再发布新 owner；首次遍历前解除不会收到旧 Surface 事件。
+Callback2 在 changed 后收到 redraw；主线程的首次/dirty 遍历分发已附着 observer 的 global
+layout，View.getLocationInWindow 使用唯一 UiTree 的 screen frame。
+Looper.myQueue 发布现有 scheduler 的稳定队列身份，不创建另一调度器；范围外队列操作仍失败。
+
 ### Context、Intent、PackageManager
 
 - Context→ContextWrapper→Application/Service/ContextThemeWrapper→Activity 类型链固定。process
@@ -52,6 +61,9 @@ handler id、单类 TU 或 misc 巨石。非 Android family 归 core，平台事
   Provider/ResolveInfo、PathPermission/PatternMatcher/Printer 及内部类归 BootDex，删除前两者 intrinsic；
   integration 只写受检字段。Application `meta-data` 按 API 19 区分 `android:value` 与
   `android:resource`：前者解析 ARSC typed value 后写入对应 Bundle 类型，后者保留 resource id。
+  `getActivityInfo(ComponentName,int)` 使用当前包 Activity/alias 事实，支持 0、GET_META_DATA、
+  GET_DISABLED_COMPONENTS；返回 BootDex ActivityInfo，自身 metaData 与 application 分离。
+  nativeLibraryDir 为 guest `/data/app-lib`，selected-ABI 库由 session 只读发布到同一 VFS。
   `getReceiverInfo(ComponentName,int)` 仅按完整组件名查询当前包 Manifest receiver；支持
   0、`GET_META_DATA`、`GET_DISABLED_COMPONENTS`，按 application/component 启用状态过滤。
   缺失抛 NameNotFoundException，未知 flags/缺少 inventory 记账失败；返回原版 BootDex

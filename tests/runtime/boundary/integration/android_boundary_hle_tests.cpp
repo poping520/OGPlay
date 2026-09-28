@@ -6087,3 +6087,115 @@ TEST_CASE("BND34 EGL fences images and texture pbuffers use real ANGLE objects")
     CHECK(egl("eglSwapInterval", {1, 99}) == 1U);
     CHECK(egl("eglSwapInterval", {1, 0xFFFFFFFFU}) == 1U);
 }
+
+TEST_CASE("DVM-195 registered NativeActivity assets window and input are bounded and retired") {
+    using namespace ogplay;
+    BoundaryFixture f;
+    const auto activity = f.output.Add(256), assets = activity.Add(128), queue = activity.Add(148);
+    f.boundary.RegisterNativeActivity({activity, assets, queue, 4, 3,
+        [](std::string_view name) -> std::optional<std::vector<std::byte>> {
+            if (name != "hello") return std::nullopt;
+            return std::vector{std::byte{'a'}, std::byte{'b'}, std::byte{'c'}};
+        }});
+    WriteGuestString(f, f.output, "hello");
+    const auto asset = f.Call("libandroid.so", "AAssetManager_open", {assets.Value(), f.output.Value(), 2});
+    REQUIRE(asset != 0);
+    CHECK(f.Call("libandroid.so", "AAsset_getLength", {asset}) == 3);
+    CHECK(f.Call("libandroid.so", "AAsset_read", {asset, f.output.Add(32).Value(), 2}) == 2);
+    CHECK(f.Call("libandroid.so", "AAsset_getRemainingLength", {asset}) == 1);
+    CHECK(f.Call("libandroid.so", "AAsset_seek", {asset, 0, 0}) == 0);
+    CHECK(f.Call("libandroid.so", "AAsset_read", {asset, f.output.Add(32).Value(), 8}) == 3);
+    std::array<std::byte, 3> actual{}; f.memory.Read(f.output.Add(32), actual);
+    CHECK(actual == std::array{std::byte{'a'}, std::byte{'b'}, std::byte{'c'}});
+    CHECK(f.Call("libandroid.so", "AAsset_read", {asset, f.output.Add(32).Value(), 8}) == 0);
+    f.Call("libandroid.so", "AAsset_close", {asset});
+    CHECK_THROWS(f.Call("libandroid.so", "AAsset_getLength", {asset}));
+    const auto window = f.boundary.SetNativeActivityWindow(activity, true);
+    CHECK(f.Call("libandroid.so", "ANativeWindow_getWidth", {window.Value()}) == 4);
+    CHECK(f.Call("libandroid.so", "ANativeWindow_getHeight", {window.Value()}) == 3);
+    CHECK(f.Call("libandroid.so", "ANativeWindow_setBuffersGeometry", {window.Value(), 0, 0, 1}) == 0);
+    CHECK(static_cast<std::int32_t>(f.Call("libandroid.so", "ANativeWindow_setBuffersGeometry", {window.Value(), 8, 3, 1})) == -22);
+    f.boundary.SetNativeActivityInput(activity, true);
+    f.bus.Write32(f.stack, 0x1234);
+    CHECK_THROWS(f.Call("libandroid.so", "AInputQueue_attachLooper", {queue.Value(), 1, 2, 1}));
+    f.Call("libandroid.so", "AInputQueue_attachLooper", {queue.Value(), 1, 2, 0});
+    f.boundary.PushInput({runtime::AndroidBoundaryInputType::key, 29, 0, 0, true});
+    CHECK(f.Call("libandroid.so", "ALooper_pollAll", {0, 0, 0, f.output.Value()}) == 2);
+    CHECK(f.bus.Read32(f.output) == 0x1234);
+    CHECK(f.Call("libandroid.so", "AInputQueue_getEvent", {queue.Value(), f.output.Value()}) == 0);
+    const auto event = f.bus.Read32(f.output);
+    CHECK(f.Call("libandroid.so", "AKeyEvent_getKeyCode", {event}) == 29);
+    f.Call("libandroid.so", "AInputQueue_finishEvent", {queue.Value(), event, 1});
+    CHECK_THROWS(f.Call("libandroid.so", "AKeyEvent_getKeyCode", {event}));
+    f.Call("libandroid.so", "AInputQueue_detachLooper", {queue.Value()});
+    f.boundary.PushInput({runtime::AndroidBoundaryInputType::key, 30, 0, 0, true});
+    CHECK(static_cast<std::int32_t>(f.Call("libandroid.so", "ALooper_pollAll")) == -1);
+    f.Call("libandroid.so", "ANativeWindow_acquire", {window.Value()});
+    f.boundary.UnregisterNativeActivity(activity);
+    CHECK(f.Call("libandroid.so", "ANativeWindow_getWidth", {window.Value()}) == 4);
+    f.Call("libandroid.so", "ANativeWindow_release", {window.Value()});
+    CHECK_THROWS(f.Call("libandroid.so", "ANativeWindow_getWidth", {window.Value()}));
+    CHECK_THROWS(f.Call("libandroid.so", "AInputQueue_getEvent", {queue.Value(), f.output.Value()}));
+    CHECK_THROWS(f.Call("libandroid.so", "ANativeWindow_setBuffersGeometry", {window.Value(), 0, 0, 0}));
+    CHECK_THROWS(f.Call("libandroid.so", "AAssetManager_open", {assets.Value(), f.output.Value(), 2}));
+}
+
+TEST_CASE("DVM-195 NativeActivity window takeover retires old EGL surfaces") {
+    using namespace ogplay;
+    BoundaryFixture f;
+    const auto activity = f.output.Add(256);
+    f.boundary.RegisterNativeActivity({activity, activity.Add(128), activity.Add(148), 4, 3,
+        [](std::string_view) -> std::optional<std::vector<std::byte>> { return std::nullopt; }});
+    REQUIRE(f.Call("libEGL.so", "eglInitialize", {1, 0, 0}) == 1U);
+    const auto create = [&](memory::GuestAddress window) {
+        return f.Call("libEGL.so", "eglCreateWindowSurface", {1, 2, window.Value(), 0});
+    };
+    CHECK(create(runtime::kNativeActivityWindowHandleBegin) == 0U);
+    CHECK(f.Call("libEGL.so", "eglGetError") == 0x300BU);
+    const auto first_window = f.boundary.SetNativeActivityWindow(activity, true);
+    const auto first_surface = create(first_window);
+    REQUIRE(first_surface != 0U);
+    f.Call("libandroid.so", "ANativeWindow_acquire", {first_window.Value()});
+    std::uint32_t context{};
+    if (gles::IsNativeAngleEglAvailable()) {
+        context = AuditContext(f);
+        AuditBind(f, context, first_surface);
+        REQUIRE(f.Call("libEGL.so", "eglSwapBuffers", {1, first_surface}) == 1U);
+    }
+    f.boundary.SetNativeActivityWindow(activity, false);
+    CHECK(create(first_window) == 0U);
+    CHECK(f.Call("libEGL.so", "eglGetError") == 0x300BU);
+    if (context != 0U) {
+        CHECK(f.Call("libEGL.so", "eglSwapBuffers", {1, first_surface}) == 0U);
+        CHECK(f.Call("libEGL.so", "eglGetError") == 0x300BU);
+    }
+    // A retained ANativeWindow stays readable, but a new Surface owns a new
+    // identity. Reacquiring ownership must not reactivate the old EGL surface.
+    CHECK(f.Call("libandroid.so", "ANativeWindow_getWidth", {first_window.Value()}) == 4U);
+    const auto second_window = f.boundary.SetNativeActivityWindow(activity, true);
+    CHECK(second_window != first_window);
+    const auto second_surface = create(second_window);
+    REQUIRE(second_surface != 0U);
+    CHECK(create(first_window) == 0U);
+    CHECK(f.Call("libEGL.so", "eglGetError") == 0x300BU);
+    if (context != 0U) {
+        CHECK(f.Call("libEGL.so", "eglMakeCurrent", {1, first_surface, first_surface, context}) == 0U);
+        CHECK(f.Call("libEGL.so", "eglGetError") == 0x300BU);
+        AuditBind(f, context, second_surface);
+        REQUIRE(f.Call("libEGL.so", "eglSwapBuffers", {1, second_surface}) == 1U);
+    }
+    f.Call("libandroid.so", "ANativeWindow_release", {first_window.Value()});
+    CHECK_THROWS(f.Call("libandroid.so", "ANativeWindow_getWidth", {first_window.Value()}));
+    f.boundary.UnregisterNativeActivity(activity);
+    CHECK(create(second_window) == 0U);
+    CHECK(f.Call("libEGL.so", "eglGetError") == 0x300BU);
+    if (context != 0U) {
+        CHECK(f.Call("libEGL.so", "eglSwapBuffers", {1, second_surface}) == 0U);
+        CHECK(f.Call("libEGL.so", "eglGetError") == 0x300BU);
+        REQUIRE(f.Call("libEGL.so", "eglMakeCurrent", {1, 0, 0, 0}) == 1U);
+        CHECK(f.Call("libEGL.so", "eglDestroyContext", {1, context}) == 1U);
+    }
+    CHECK(f.Call("libEGL.so", "eglDestroySurface", {1, first_surface}) == 1U);
+    CHECK(f.Call("libEGL.so", "eglDestroySurface", {1, second_surface}) == 1U);
+    CHECK(f.Call("libEGL.so", "eglTerminate", {1}) == 1U);
+}

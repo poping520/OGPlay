@@ -101,6 +101,9 @@ std::vector<dexvm::IntrinsicClassDecl>
 AndroidIntrinsicCatalog(const std::shared_ptr<DexVmAndroidContext> &context) {
   using namespace android_intrinsics;
   return {
+      Declare_android_app_NativeActivity(context),
+      Declare_android_view_InputQueue(context),
+        Declare_android_view_Surface(context),
       Declare_android_app_Activity(context),
       Declare_android_app_KeyguardManager(context),
       Declare_android_app_backup_BackupManager(context),
@@ -198,6 +201,7 @@ AndroidIntrinsicCatalog(const std::shared_ptr<DexVmAndroidContext> &context) {
       Declare_android_os_Handler_Callback(context),
       Declare_android_os_HandlerThread(context),
       Declare_android_os_Looper(context),
+        Declare_android_os_MessageQueue(context),
       Declare_android_os_Message(context),
       Declare_android_os_SystemClock(context),
       Declare_android_os_StatFs(context),

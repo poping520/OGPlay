@@ -1,6 +1,6 @@
 # 当前状态
 
-更新：2026-09-27。
+更新：2026-09-28。
 
 ## 运行状态
 
@@ -9,10 +9,11 @@
   `getReceiverInfo`、[DVM-191](../tasks/dexvm/DVM-191.md) `getServiceInfo`、
   [DVM-192](../tasks/dexvm/DVM-192.md) `getPermissionInfo` 与
   [DVM-193](../tasks/dexvm/DVM-193.md) `queryBroadcastReceivers` 及
-  [DVM-194](../tasks/dexvm/DVM-194.md) SQLite 系统配置资源读取。关闭 survey 的下一阻塞为
-  `android.app.NativeActivity` 层级缺失，Unity Activity 加载失败后报
-  `onCreate did not install a content view`；
-  这只是 reached-fault，未通过游戏验收。
+  [DVM-194](../tasks/dexvm/DVM-194.md) SQLite 系统配置资源读取，以及
+  [DVM-195](../tasks/dexvm/DVM-195.md) NativeActivity 类链接与 Activity 切换。
+  关闭 survey 的下一首错为 `android.hardware.Camera$PreviewCallback` 层级缺失，
+  发生在新 Activity 的 onCreate、super.onCreate/native 加载之前。
+  通用 NativeActivity 进程内桥与窗口接管回归通过；游戏仍只是 reached-fault，未通过验收。
 - **Angry Birds 2.3.0**：无 Profile、空沙盒运行 5000 presented frames，
   `View.setScrollBarStyle/getScrollBarStyle` 原方法解析错未再出现，未触发新的致命首错。
   滚动条绘制和完整游戏兼容仍未验收。此前 SQLite/guest ICU、EventLog、
@@ -43,7 +44,7 @@
 
 ## 未闭合边界
 
-- Dead Trigger 下一独立缺口是 `android.app.NativeActivity` 层级；不运行 Binder、
+- Dead Trigger 下一独立缺口是 `android.hardware.Camera$PreviewCallback` 层级；不运行 Binder、
   system_server、外部包数据库、广播投递或 Play 服务。
 - GUI 的真实 APK 导入→设置→启动→Dashboard→退出→移除全链路验收按用户安排延后；
   GUI 的 Linux/macOS 宿主未完成。WebView 页面/JavaScript 执行仍不支持。

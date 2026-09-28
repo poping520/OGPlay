@@ -421,6 +421,7 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
             // before it will touch EGL; the intrinsic one ignores them.
             DispatchSurfaceHolder(runtime::SurfaceHolderPhase::created);
             DispatchSurfaceHolder(runtime::SurfaceHolderPhase::changed);
+            runtime::DispatchAndroidGlobalLayout(vm, context);
 
             // ViewRootImpl establishes and sizes the Surface during its first
             // traversal; window focus arrives later through a separate
@@ -499,6 +500,10 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
         auto& vm = bindings_.bridge->Vm();
         auto& context = *bindings_.context;
         for (const auto& input: pending_input_) {
+            if (context.window_input_queue.IsValid()) {
+                bindings_.bridge->Session().PushInput(input);
+                continue;
+            }
             using Type = runtime::AndroidBoundaryInputType;
             if (input.type == Type::key) {
                 if (input.pressed && context.focused_edit_text.IsValid()) {
@@ -706,6 +711,13 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
         }
         if (suspended_) return State();
         try {
+            auto& context = *bindings_.context;
+            if (context.ui_tree.Get(context.ui_tree.Root())->layout_dirty) {
+                runtime::ui::LayoutUiTree(context.ui_tree, {
+                    static_cast<std::int32_t>(context.surface_width),
+                    static_cast<std::int32_t>(context.surface_height)});
+                runtime::DispatchAndroidGlobalLayout(bindings_.bridge->Vm(), context);
+            }
             DispatchInput();
             PumpJavaThreads();
             if (initial_focus_pending_) {
@@ -985,6 +997,7 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
             // managed host surface before its GL thread can render.
             DispatchSurfaceHolder(runtime::SurfaceHolderPhase::created);
             DispatchSurfaceHolder(runtime::SurfaceHolderPhase::changed);
+            runtime::DispatchAndroidGlobalLayout(vm, context);
         }
     }
 
@@ -1056,6 +1069,8 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
                                 }),
                         "surfaceDestroyed");
                 }
+            }
+            if (was_running) {
                 CallActivity("onStop", "()V", {});
                 CallActivity("onDestroy", "()V", {});
             }

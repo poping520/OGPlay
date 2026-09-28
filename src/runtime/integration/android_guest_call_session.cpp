@@ -718,7 +718,7 @@ public:
             address_space_, memory_bus_, loaded_.link_namespace,
             {kRootThreadId, "ogplay-profile", initial_environment_.get()});
         lifecycle_.Register(kRootThreadId, process_memory_.thread_pointer);
-        nio_.SetDirectMemoryAccess({
+        direct_memory_access_ = {
             [this](const std::uint32_t size) {
                 if (size == 0U) return memory::GuestAddress{};
                 const auto page = address_space_.PageSize();
@@ -786,7 +786,8 @@ public:
             },
             [this](const memory::GuestAddress address, const std::span<const std::byte> in) {
                 address_space_.Write(address, in);
-            }});
+            }};
+        nio_.SetDirectMemoryAccess(direct_memory_access_);
         BindSyscalls();
         if (diagnostics_) {
             diagnostics_->SetFutexProvider([this] {
@@ -1617,6 +1618,16 @@ public:
         if (progress_) progress_(stage);
     }
 
+    dexvm::NioDirectMemoryAccess GuestMemoryAccess() const { return direct_memory_access_; }
+    memory::GuestAddress FindModuleExport(const std::size_t index, const std::string_view name) const {
+        std::scoped_lock lock(dynamic_link_mutex_);
+        if (index >= loaded_.link_namespace.modules.size())
+            throw AndroidGuestProcessError("invalid native module index");
+        const auto scope = loader::ExtendElf32LinkNamespace(
+            loaded_.link_namespace, loaded_.link_namespace.modules[index].name, {}).scope;
+        return loader::LookupElf32Symbol(loaded_.link_namespace, scope, name).address;
+    }
+
     memory::GuestAddress GuestEnvironment() const noexcept {
         return guest_jni_.Environment(); }
     memory::GuestAddress GuestJavaVm() const noexcept {
@@ -1749,6 +1760,10 @@ public:
     }
     void PresentManagedSurface() { boundary_.PresentManagedSurface(); }
     void CloseManagedSurface() { boundary_.CloseManagedSurface(); }
+    void RegisterNativeActivity(NativeActivityBoundaryResources resources) { boundary_.RegisterNativeActivity(std::move(resources)); }
+    void UnregisterNativeActivity(memory::GuestAddress activity) { boundary_.UnregisterNativeActivity(activity); }
+    memory::GuestAddress SetNativeActivityWindow(memory::GuestAddress activity, bool active) { return boundary_.SetNativeActivityWindow(activity, active); }
+    void SetNativeActivityInput(memory::GuestAddress activity, bool active) { boundary_.SetNativeActivityInput(activity, active); }
     void PushInput(const AndroidBoundaryInput& input) {
         if (!running_) {
             throw AndroidGuestProcessError(
@@ -2032,6 +2047,7 @@ private:
     AndroidGuestLegacyMediaState media_state_;
     JniPrimitiveArrayStore arrays_;
     JniNativeRegistry natives_;
+    dexvm::NioDirectMemoryAccess direct_memory_access_;
     std::mutex nio_direct_mutex_;
     std::vector<memory::GuestRange> nio_direct_free_;
     std::uint32_t nio_direct_cursor_{kNioDirectArenaBegin};
@@ -2179,6 +2195,8 @@ void AndroidGuestProcess::ReleaseDexVmThread(
     const std::uint64_t thread_id) noexcept {
     impl_->ReleaseDexVmThread(thread_id);
 }
+dexvm::NioDirectMemoryAccess AndroidGuestProcess::GuestMemoryAccess() const { return impl_->GuestMemoryAccess(); }
+memory::GuestAddress AndroidGuestProcess::FindModuleExport(const std::size_t index, const std::string_view name) const { return impl_->FindModuleExport(index, name); }
 memory::GuestAddress AndroidGuestProcess::GuestEnvironment() const noexcept { return impl_->GuestEnvironment(); }
 memory::GuestAddress AndroidGuestProcess::GuestJavaVm() const noexcept { return impl_->GuestJavaVm(); }
 JniEnvironment& AndroidGuestProcess::Environment() noexcept { return impl_->Environment(); }
@@ -2474,4 +2492,11 @@ namespace ogplay::runtime {
 std::optional<core::GpuStats> AndroidGuestProcess::TryStats() const { return impl_->TryStats(); }
 std::optional<memory::MemoryStatistics> AndroidGuestProcess::TryMemorySnapshot() const { return impl_->TryMemorySnapshot(); }
 std::optional<std::vector<cpu::DynarmicCacheSnapshot>> AndroidGuestProcess::TryCpuSnapshot() const { return impl_->TryCpuSnapshot(); }
+}
+
+namespace ogplay::runtime {
+void AndroidGuestProcess::RegisterNativeActivity(NativeActivityBoundaryResources resources) { impl_->RegisterNativeActivity(std::move(resources)); }
+void AndroidGuestProcess::UnregisterNativeActivity(memory::GuestAddress activity) { impl_->UnregisterNativeActivity(activity); }
+memory::GuestAddress AndroidGuestProcess::SetNativeActivityWindow(memory::GuestAddress activity, bool active) { return impl_->SetNativeActivityWindow(activity, active); }
+void AndroidGuestProcess::SetNativeActivityInput(memory::GuestAddress activity, bool active) { impl_->SetNativeActivityInput(activity, active); }
 }

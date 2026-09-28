@@ -1,6 +1,6 @@
 # 当前状态
 
-更新：2026-09-28。
+更新：2026-09-29。
 
 ## 运行状态
 
@@ -27,6 +27,11 @@
   BootDex build/check、定向 11 用例/445 断言通过。原路径完成启动并进入首次 nativeRender，
   退出 1，下一首错为 `GLES1 draw requires GL_VERTEX_ARRAY`。
   证据为 `.local/input-device-{boot-build,boot-check,build,tests,startup}.log`。
+  [DVM-197](../tasks/dexvm/DVM-197.md) 已补 intrinsic renderer EGL policy 消费、真实 current/swap，
+  并将首次 queueEvent 提前至 Surface 回调前。定向 6 用例/414 断言通过。
+  原路径加 3 帧退出上限复跑，当前首错为 unityAndroidInit 主动 exit_group(1)，
+  前置日志 `Mono requires /proc to be mounted`；尚未重达原 nativeRender，原绘制故障的
+  端到端复验受此阻塞。证据 `.local/renderer-{build,test-build,tests,startup}.log`。
   EGL 暂停/恢复策略尚未接入该配置；前置 NDK 符号缺失仍待闭合。
   本轮证据为 `.local/gl-preserve-{build,tests,startup}.log`。
   本次证据为 `.local/dt-lifecycle-{build,tests,startup}.log`。此前证据为 `.local/bnd40-build.log`、

@@ -1598,7 +1598,7 @@ note = "DVM-71 扩展发布 API19 View.OnSystemUiVisibilityChangeListener 精确
 [dexvm.java_gles]
 status = "complete"
 test = "tests/dexvm/egl_facade_tests.cpp; tests/dexvm/nio_runtime_tests.cpp; tests/runtime/boundary/integration/android_boundary_hle_tests.cpp; tools/generate_java_gles_surface.py --check"
-note = "DVM-83 发布 API19 Java GLES surface；BND-35/BND-38 为 GLES30 indexed String、mapped direct Buffer、sync long、String[]、info log/source、active/uniform-block/transform-feedback 查询增加专用桥接；BND-37/BND-38 补齐 GLSurfaceView Context/config、current GL 线程 queueEvent 与 requestRender/WHEN_DIRTY；BND-38 专用实现 GLU 六类方法，并让 GLUtils 按 API19 四种 Bitmap.Config 转换。GLSurfaceView 的 set/getPreserveEGLContextOnPause 已提供默认 false 的逐实例字段与可覆盖方法；仅配置读写受检，按该设置销毁/保留 EGLContext、Surface 重建及 context-loss 恢复未闭合。complete 限于已发布 API19 Java GLES/GLU/GLUtils 与 managed surface 边界，不包含完整 GLSurfaceView 暂停/恢复，不代表 CTS/Khronos 认证。"
+note = "DVM-83 发布 API19 Java GLES surface；BND-35/BND-38 为 GLES30 indexed String、mapped direct Buffer、sync long、String[]、info log/source、active/uniform-block/transform-feedback 查询增加专用桥接；BND-37/BND-38 补齐 GLSurfaceView Context/config、current GL 线程 queueEvent 与 requestRender/WHEN_DIRTY；BND-38 专用实现 GLU 六类方法，并让 GLUtils 按 API19 四种 Bitmap.Config 转换。DVM-197 让 intrinsic renderer 消费 EGL chooser/factory、建立真实 current 并在 Surface 回调前执行事件，使用真实 surface swap；GC roots、失败路径与释放受检（tests/runtime/native_library_loader_tests.cpp）。GLSurfaceView 的 set/getPreserveEGLContextOnPause 已提供默认 false 的逐实例字段与可覆盖方法；仅配置读写受检，按该设置销毁/保留 EGLContext、Surface 重建及 context-loss 恢复未闭合。complete 限于已发布 API19 Java GLES/GLU/GLUtils 与 managed surface 边界，不包含完整 GLSurfaceView 暂停/恢复，不代表 CTS/Khronos 认证。"
 
 [dexvm.audio_track]
 status = "complete"

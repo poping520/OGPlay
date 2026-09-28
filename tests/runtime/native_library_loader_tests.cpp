@@ -4613,3 +4613,130 @@ TEST_CASE("InputDevice production directory agrees with dispatched keyboard iden
     CHECK(fixture.context->input_devices.size() == 2);
     static_cast<void>(fixture.app->Stop());
 }
+
+
+TEST_CASE("DVM-197 renderer EGL policies establish current context before events and callbacks") {
+    using namespace ogplay;
+    namespace dx = runtime::dexvm;
+    using runtime::android_intrinsics::CallAndroidMethod;
+    for (const auto backend : {dx::InterpreterBackend::switch_dispatch, dx::InterpreterBackend::threaded}) {
+      for (const int mode : {0, 1, 2}) {
+        const bool custom = mode != 0;
+        const bool reject_context = mode == 2;
+        OrchestratedApp fixture("fixture.LauncherActivity", true, false, {}, {}, true, backend);
+        fixture.app->StartApplication();
+        REQUIRE(fixture.app->StartLauncherActivity().state == session::LifecycleRunState::running);
+        auto& vm = fixture.app->DexVm().Vm();
+        auto& linker = vm.Linker();
+        auto& c = *fixture.context;
+        const auto ref = dx::VmValue::Ref;
+        const auto integer = dx::VmValue::Int;
+        const auto call = [&](dx::VmObjectRef object, const char* name, const char* sig,
+                              std::vector<dx::VmValue> args = {}) {
+            return CallAndroidMethod(vm, object, name, sig, std::move(args));
+        };
+        const auto ints = [&](std::vector<std::int32_t> values) {
+            const auto a = vm.Model().NewPrimitiveArray(linker.ResolveDescriptor("[I"), runtime::JniPrimitiveKind::integer,
+                static_cast<runtime::JniSize>(values.size()));
+            for (std::size_t i=0; i<values.size(); ++i) vm.Model().SetPrimitiveElement(a, static_cast<runtime::JniSize>(i), static_cast<std::uint32_t>(values[i]));
+            return a;
+        };
+        const auto policy_type = linker.ResolveDescriptor("Lfixture/RendererPolicy;");
+        const auto policy = vm.Model().NewInstance(policy_type, linker.Class(policy_type).instance_slots);
+        const auto view = vm.NewIntrinsicInstance("Landroid/opengl/GLSurfaceView;");
+        const auto roots = vm.ProtectReferences(std::array{policy, view});
+        const auto ctor = linker.FindDirectMethod(vm.Model().ObjectClass(view), "<init>", "(Landroid/content/Context;)V");
+        REQUIRE(ctor.has_value());
+        REQUIRE_FALSE(vm.Call(*ctor, std::array{ref(view), ref(c.activity)}).exception.IsValid());
+        const auto hook = [&](const char* name, const char* sig, dx::IntrinsicHandler handler) {
+            const auto slot = linker.FindVtableIndex(policy_type, name, sig);
+            REQUIRE(slot.has_value());
+            auto& method = linker.MutableMethod(linker.Class(policy_type).vtable[*slot]);
+            method.kind = dx::MethodKind::intrinsic;
+            method.implementation = std::move(handler);
+        };
+        std::vector<std::string> order;
+        const auto current = [&] {
+            REQUIRE(c.renderer_context.IsValid());
+            CHECK(call(c.renderer_egl, "eglGetCurrentContext", "()Ljavax/microedition/khronos/egl/EGLContext;").ref == c.renderer_context);
+            const auto query = ints({0});
+            const auto root = vm.ProtectReferences(std::array{query});
+            CHECK(call(c.renderer_egl, "eglQueryContext", "(Ljavax/microedition/khronos/egl/EGLDisplay;Ljavax/microedition/khronos/egl/EGLContext;I[I)Z",
+                       {ref(c.renderer_display),ref(c.renderer_context),integer(0x3098),ref(query)}).AsInt() == 1);
+            CHECK(vm.Model().GetPrimitiveElement(query,0) == 2);
+        };
+        hook("run", "()V", [&](dx::IntrinsicContext&) { current(); order.push_back("event"); return dx::VmValue::Void(); });
+        hook("onSurfaceCreated", "(Ljavax/microedition/khronos/opengles/GL10;Ljavax/microedition/khronos/egl/EGLConfig;)V",
+             [&](dx::IntrinsicContext& args) { current(); CHECK(args.arguments[0].ref == c.renderer_gl); CHECK(args.arguments[1].ref == c.renderer_config); order.push_back("created"); return dx::VmValue::Void(); });
+        hook("onSurfaceChanged", "(Ljavax/microedition/khronos/opengles/GL10;II)V",
+             [&](dx::IntrinsicContext& args) { current(); CHECK(args.arguments[1].AsInt() == 64); CHECK(args.arguments[2].AsInt() == 36); order.push_back("changed"); return dx::VmValue::Void(); });
+        hook("onDrawFrame", "(Ljavax/microedition/khronos/opengles/GL10;)V",
+             [&](dx::IntrinsicContext& args) { current(); CHECK(args.arguments[0].ref == c.renderer_gl); order.push_back("draw");
+                 static_cast<void>(c.session->InvokeManagedGles(gles::GlesApi::gles2, "glClearColor", std::array{0x3f800000U,0U,0U,0x3f800000U}, 1));
+                 static_cast<void>(c.session->InvokeManagedGles(gles::GlesApi::gles2, "glClear", std::array{0x4000U}, 1));
+                 return dx::VmValue::Void(); });
+        if (custom) {
+            hook("chooseConfig", "(Ljavax/microedition/khronos/egl/EGL10;Ljavax/microedition/khronos/egl/EGLDisplay;)Ljavax/microedition/khronos/egl/EGLConfig;",
+                 [&](dx::IntrinsicContext& args) {
+                    order.push_back("choose");
+                    const auto attrs=ints({0x3040,4,0x3038}), count=ints({0});
+                    const auto configs=vm.Model().NewObjectArray(linker.ResolveDescriptor("[Ljavax/microedition/khronos/egl/EGLConfig;"),linker.ResolveDescriptor("Ljavax/microedition/khronos/egl/EGLConfig;"),1);
+                    const auto roots=vm.ProtectReferences(std::array{attrs,count,configs});
+                    REQUIRE(call(args.arguments[0].ref,"eglChooseConfig","(Ljavax/microedition/khronos/egl/EGLDisplay;[I[Ljavax/microedition/khronos/egl/EGLConfig;I[I)Z",
+                        {args.arguments[1],ref(attrs),ref(configs),integer(1),ref(count)}).AsInt()==1);
+                    return ref(vm.Model().GetObjectElement(configs,0));
+                 });
+            hook("createContext", "(Ljavax/microedition/khronos/egl/EGL10;Ljavax/microedition/khronos/egl/EGLDisplay;Ljavax/microedition/khronos/egl/EGLConfig;)Ljavax/microedition/khronos/egl/EGLContext;",
+                 [&](dx::IntrinsicContext& args) {
+                    order.push_back("create");
+                    if (reject_context) return ref(c.egl.no_context);
+                    const auto attrs=ints({0x3098,2,0x3038}); const auto root=vm.ProtectReferences(std::array{attrs});
+                    return call(args.arguments[0].ref,"eglCreateContext","(Ljavax/microedition/khronos/egl/EGLDisplay;Ljavax/microedition/khronos/egl/EGLConfig;Ljavax/microedition/khronos/egl/EGLContext;[I)Ljavax/microedition/khronos/egl/EGLContext;",
+                        {args.arguments[1],args.arguments[2],ref(c.egl.no_context),ref(attrs)});
+                 });
+            hook("destroyContext", "(Ljavax/microedition/khronos/egl/EGL10;Ljavax/microedition/khronos/egl/EGLDisplay;Ljavax/microedition/khronos/egl/EGLContext;)V",
+                 [&](dx::IntrinsicContext& args) {
+                    order.push_back("destroy");
+                    CHECK(call(args.arguments[0].ref,"eglDestroyContext","(Ljavax/microedition/khronos/egl/EGLDisplay;Ljavax/microedition/khronos/egl/EGLContext;)Z",{args.arguments[1],args.arguments[2]}).AsInt()==1);
+                    return dx::VmValue::Void();
+                 });
+            call(view,"setEGLConfigChooser","(Landroid/opengl/GLSurfaceView$EGLConfigChooser;)V",{ref(policy)});
+            call(view,"setEGLContextFactory","(Landroid/opengl/GLSurfaceView$EGLContextFactory;)V",{ref(policy)});
+        } else {
+            call(view,"setEGLContextClientVersion","(I)V",{integer(2)});
+        }
+        call(view,"setRenderer","(Landroid/opengl/GLSurfaceView$Renderer;)V",{ref(policy)});
+        call(view,"queueEvent","(Ljava/lang/Runnable;)V",{ref(policy)});
+        if (reject_context) {
+            CHECK_THROWS_WITH_AS(fixture.app->ActivityLifecycle().StepFrame(), "renderer EGL context creation failed", session::DexActivityLifecycleError);
+            CHECK(order == std::vector<std::string>{"choose", "create"});
+            static_cast<void>(fixture.app->Stop());
+            CHECK_FALSE(c.renderer_context.IsValid());
+            CHECK_FALSE(c.renderer_surface.IsValid());
+            continue;
+        }
+        static_cast<void>(fixture.app->ActivityLifecycle().StepFrame());
+        auto frame = c.session->TakeLatestFrame();
+        REQUIRE(frame.has_value());
+        CHECK(frame->width == 64);
+        CHECK(frame->height == 36);
+        REQUIRE(frame->rgba8.size() == 64 * 36 * 4);
+        CHECK(frame->rgba8[0] == 255);
+        CHECK(frame->rgba8[1] == 0);
+        CHECK(frame->rgba8[2] == 0);
+        CHECK(frame->rgba8[3] == 255);
+        static_cast<void>(vm.CollectGarbage("renderer-egl-roots"));
+        std::vector<std::string> expected = custom ? std::vector<std::string>{"choose","create","event","created","changed","draw"} : std::vector<std::string>{"event","created","changed","draw"};
+        CHECK(order == expected);
+        static_cast<void>(fixture.app->ActivityLifecycle().StepFrame());
+        expected.push_back("draw");
+        CHECK(order == expected);
+        static_cast<void>(fixture.app->Stop());
+        if(custom) expected.push_back("destroy");
+        CHECK(order == expected);
+        CHECK_FALSE(c.renderer_context.IsValid());
+        CHECK_FALSE(c.renderer_surface.IsValid());
+        CHECK_FALSE(c.egl.window_surface.IsValid());
+      }
+    }
+}

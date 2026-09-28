@@ -1,5 +1,7 @@
 #include <doctest/doctest.h>
 
+#include <algorithm>
+#include <bit>
 #include <cstdint>
 #include <array>
 #include <cstddef>
@@ -291,6 +293,87 @@ TEST_CASE("Android mmap avoids occupied regions and reuses released space") {
     CHECK(dispatcher.Dispatch(frame) == -12);
     frame.arguments[1] = 4096;
     CHECK(dispatcher.Dispatch(frame) == 0x60004000);
+}
+
+TEST_CASE("SBX-15 mmap fixed anonymously replaces reserved BSS pages") {
+    using namespace ogplay::memory;
+    ogplay::core::CapabilityLedger ledger;
+    auto dispatcher = ogplay::runtime::CreateAndroidArmSyscallDispatcher(ledger);
+    AddressSpace memory;
+    ogplay::runtime::BindAndroidMemorySyscalls(dispatcher, memory);
+    const GuestAddress base{0x61000000};
+    const auto target = base.Add(3 * 4096);
+    constexpr std::uint32_t rounded = 0x1f000;
+    memory.Map({base, 40 * 4096}, PageProtection::read | PageProtection::write | PageProtection::execute);
+    std::vector<std::byte> marker(rounded, std::byte{0x5a});
+    memory.Write(target, marker);
+    memory.Write32(target.Subtract(4096), 0x12345678);
+    memory.Write32(target.Add(rounded), 0x87654321);
+    // A hole inside the reserved segment must also become a fresh mapping.
+    memory.Unmap({target.Add(4 * 4096), 4096});
+    const auto generation = memory.TrySnapshot()->generation;
+    ogplay::runtime::A32SyscallFrame frame{};
+    frame.number = 192;
+    frame.arguments = {target.Value(), 0x1ef54, 3, 0x32, UINT32_MAX, 0};
+    CHECK(dispatcher.Dispatch(frame) == static_cast<std::int32_t>(target.Value()));
+    memory.Read(target, marker);
+    CHECK(std::all_of(marker.begin(), marker.end(), [](const auto byte) { return byte == std::byte{}; }));
+    CHECK(memory.Read32(target.Subtract(4096)) == 0x12345678);
+    CHECK(memory.Read32(target.Add(rounded)) == 0x87654321);
+    CHECK(memory.TrySnapshot()->generation == generation + 1);
+    CHECK_THROWS_AS(memory.Fetch(target, std::span{marker}.first(1)), MemoryFault);
+    CHECK((*memory.DirectPageTable())[target.Value() >> kGuestPageBits] != nullptr);
+    memory.Write32(target, 123);
+    frame.arguments[2] = 1;
+    CHECK(dispatcher.Dispatch(frame) == static_cast<std::int32_t>(target.Value()));
+    CHECK(memory.Read32(target) == 0);
+    CHECK_THROWS_AS(memory.Write32(target, 123), MemoryFault);
+}
+
+TEST_CASE("SBX-15 mmap fixed errors preserve mappings and the last page is valid") {
+    using namespace ogplay::memory;
+    ogplay::core::CapabilityLedger ledger;
+    auto dispatcher = ogplay::runtime::CreateAndroidArmSyscallDispatcher(ledger);
+    AddressSpace memory;
+    ogplay::runtime::BindAndroidMemorySyscalls(dispatcher, memory);
+    memory.Map({GuestAddress{0x61000000}, 8192}, PageProtection::read | PageProtection::write);
+    memory.Write32(GuestAddress{0x61000000}, 0x12345678);
+    const auto before = memory.TrySnapshot();
+    ogplay::runtime::A32SyscallFrame frame{};
+    frame.number = 192;
+    const decltype(frame.arguments) valid{0x61000000, 4096, 3, 0x32, UINT32_MAX, 0};
+    frame.arguments = valid;
+    frame.arguments[0] += 1;
+    CHECK(dispatcher.Dispatch(frame) == -22);
+    frame.arguments = valid;
+    frame.arguments[1] = 0;
+    CHECK(dispatcher.Dispatch(frame) == -22);
+    frame.arguments = valid;
+    frame.arguments[2] = 8;
+    CHECK(dispatcher.Dispatch(frame) == -22);
+    frame.arguments = valid;
+    frame.arguments[3] = 0x12;
+    CHECK(dispatcher.Dispatch(frame) == -22);
+    frame.arguments = valid;
+    frame.arguments[5] = 1;
+    CHECK(dispatcher.Dispatch(frame) == -22);
+    frame.arguments = valid;
+    frame.arguments[0] = 0xf000;
+    CHECK(dispatcher.Dispatch(frame) == -1);
+    frame.arguments = valid;
+    frame.arguments[0] = 0xfffff000;
+    frame.arguments[1] = 8192;
+    CHECK(dispatcher.Dispatch(frame) == -12);
+    frame.arguments = valid;
+    frame.arguments[1] = UINT32_MAX;
+    CHECK(dispatcher.Dispatch(frame) == -12);
+    CHECK(memory.Read32(GuestAddress{0x61000000}) == 0x12345678);
+    CHECK(memory.TrySnapshot()->generation == before->generation);
+    CHECK(memory.TrySnapshot()->pages_by_protection == before->pages_by_protection);
+    frame.arguments = valid;
+    frame.arguments[0] = 0xfffff000;
+    CHECK(dispatcher.Dispatch(frame) == std::bit_cast<std::int32_t>(0xfffff000U));
+    CHECK(memory.Read8(GuestAddress{0xffffffff}) == 0);
 }
 
 TEST_CASE("Android madvise validates hints and discards writable pages") {

@@ -15,8 +15,11 @@
   XML DEX 闭包核对、build/check、双解释器定向 2 用例/882 断言通过；实际 APK 的
   settings.xml 经 AssetManager/InputStream 正确解析 BOM、gles_mode=2、useObb=True，
   畸形 XML 抛原版异常，原有 AXML 调用及未支持方法记账失败受检。
-  无 Profile、关闭 survey 的同路径启动已进入 native 加载；下一致命首错为
-  JNI_OnLoad 返回不支持的版本 0，前置日志报告 libmono.so 段扩展失败。
+  [SBX-15](../tasks/sandbox/SBX-15.md) 已支持匿名 MAP_FIXED 原子替换；22 用例/165 断言通过。
+  无 Profile、关闭 survey 的同路径启动实测 `0x6112c000/0x1ef54/flags=0x32` 返回原地址，
+  libmono.so 段扩展错误消失；下一致命首错为 JNI_OnLoad 内 guest memory fault：
+  `pc=0x304a42ec` 读取未映射地址 `0xb5`，代理初始化尚未完成。证据为
+  `.local/sbx15-build.log`、`.local/sbx15-tests.log` 与 `.local/sbx15-dt-startup.log`。
   全 BootDex 类链接遍历完成，但仍因既有 MediaPlayer overlay 检查与过期类数断言（1729）
   整体失败。证据为 `.local/xmlpull-*.log` 与 `.local/xmlpull-dependencies.json`；
   游戏仍只是 reached-fault，未通过验收。
@@ -50,7 +53,7 @@
 
 ## 未闭合边界
 
-- Dead Trigger 下一独立缺口是 native 库加载（JNI_OnLoad 返回 0/libmono.so 段扩展失败）；
+- Dead Trigger 下一独立缺口是 JNI_OnLoad 内 guest memory fault（`pc=0x304a42ec/address=0xb5`）；
   不运行 Binder、
   system_server、外部包数据库、广播投递或 Play 服务。
 - GUI 的真实 APK 导入→设置→启动→Dashboard→退出→移除全链路验收按用户安排延后；

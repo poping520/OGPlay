@@ -127,6 +127,9 @@ public:
     [[nodiscard]] std::uint64_t ReservedSize() const noexcept;
     [[nodiscard]] std::uint64_t PageSize() const noexcept;
     void Map(const GuestRange& range, PageProtection protection);
+    // Atomically replace guest pages (including holes) with zeroed anonymous
+    // memory. Outside pages and ordinary Map overlap checks are preserved.
+    void ReplaceAnonymous(const GuestRange& range, PageProtection protection);
     // Atomically first-fit and map inside bounds; PROT_NONE is occupied.
     // Throws bad_alloc when no contiguous free range exists.
     [[nodiscard]] GuestAddress MapAnywhere(const GuestRange& bounds,

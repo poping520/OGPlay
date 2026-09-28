@@ -22,8 +22,9 @@ exit/exit_group/clear-child-tid 所需的 guest 线程生命周期状态。
 - 非固定匿名私有 `mmap2` 在 `[0x60000000,4 GiB)` 调用 memory 的原子 first-fit
   映射，依据真实账本避开已占区（包括 TLS/栈/PROT_NONE）；无单调游标或独立空闲表，
   munmap 后空洞自动可复用，失败不消耗地址。brk 状态用独立锁串行化。
-  非固定 hint 仍为可忽略建议；MAP_FIXED 沿用禁止覆盖已有映射的受限契约，
-  文件映射仍未支持；本次不扩展这两项能力。
+  非固定 hint 仍为可忽略建议；匿名私有 MAP_FIXED 调用 `ReplaceAnonymous` 原子替换，
+  长度向上对齐到 4 KiB，成功返回请求地址；未对齐/非法参数返回 EINVAL，低地址 guard
+  返回 EPERM，范围溢出或 backing 失败返回 ENOMEM。文件 mmap 与非零页偏移仍未支持。
 - `read/write/pread64/pwrite64` 共用 `file_transfer.h`，以 64 KiB 临时缓冲分块，
   不再因请求超过 16 MiB 返回 `-EINVAL`；单次请求截到 `0x7ffff000`。
   短传输即停止，后续块的内存/VFS 错误返回已完成字节，首块错误返回 errno。

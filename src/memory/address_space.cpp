@@ -22,6 +22,9 @@ inline constexpr std::uint64_t kGuestPageSize = std::uint64_t{1}
 }
 
 void ValidateProtection(const PageProtection protection) {
+    if ((static_cast<std::uint8_t>(protection) & ~7U) != 0) {
+        throw std::invalid_argument("invalid guest page protection");
+    }
     if (HasProtection(protection, PageProtection::write) &&
         !HasProtection(protection, PageProtection::read)) {
         throw std::invalid_argument("writable guest pages must also be readable");
@@ -86,6 +89,16 @@ public:
         MapLocked(range, protection);
     }
 
+    void ReplaceAnonymous(const GuestRange& range, const PageProtection protection) {
+        ValidateProtection(protection);
+        ValidatePageRange(range);
+        if (range.Overlaps(LowAddressGuard())) {
+            throw std::invalid_argument("low guest address guard cannot be mapped");
+        }
+        std::scoped_lock lock(mutex_);
+        ReplaceAnonymousLocked(range, protection);
+    }
+
     GuestAddress MapAnywhere(const GuestRange& bounds, const std::uint64_t size,
                              const PageProtection protection) {
         ValidateProtection(protection);
@@ -117,6 +130,13 @@ public:
                         [](const bool mapped) { return mapped; })) {
             throw std::logic_error("guest memory range overlaps an existing mapping");
         }
+        ReplaceAnonymousLocked(range, protection);
+    }
+
+    void ReplaceAnonymousLocked(const GuestRange& range, const PageProtection protection) {
+        const auto [first, last] = PageIndexes(range);
+        // Prepare every missing host page before touching existing guest bytes
+        // or metadata. Zero only the exact guest range, even on 16 KiB hosts.
         EnsureHostBacking(range);
         std::memset(reservation_->Base() + range.Start().Value(), 0,
                     static_cast<std::size_t>(range.Size()));
@@ -429,6 +449,9 @@ private:
     void EnsureHostBacking(const GuestRange& range) {
         const auto [first, last] = HostPageIndexes(range);
         std::vector<std::size_t> added;
+        // Recording a successful commit must not allocate and throw before the
+        // page enters the rollback list.
+        added.reserve(last - first);
         try {
             for (auto host = first; host < last; ++host) {
                 if (host_committed_[host]) continue;
@@ -540,6 +563,9 @@ std::uint64_t AddressSpace::ReservedSize() const noexcept { return impl_->Reserv
 std::uint64_t AddressSpace::PageSize() const noexcept { return impl_->PageSize(); }
 void AddressSpace::Map(const GuestRange& range, const PageProtection protection) {
     impl_->Map(range, protection);
+}
+void AddressSpace::ReplaceAnonymous(const GuestRange& range, const PageProtection protection) {
+    impl_->ReplaceAnonymous(range, protection);
 }
 
 GuestAddress AddressSpace::MapAnywhere(const GuestRange& bounds, const std::uint64_t size,

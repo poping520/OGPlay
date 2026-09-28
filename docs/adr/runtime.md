@@ -12,6 +12,7 @@
 - [ADR-0013 · Runtime 子模块边界](#adr-0013)
 - [ADR-0016 · 受保护的 Dynarmic 数据页表](#adr-0016)
 - [ADR-0018 · Runtime 拆出 jni_guest 与 boundary 子模块](#adr-0018)
+- [ADR-0076 · API 19 ARM32 linker 元数据视图](#adr-0076)
 
 <a id="adr-0001"></a>
 
@@ -299,3 +300,40 @@ Java handler 绑定、link preflight、headless/NativeActivity runner 与累计 
 `integration` 从 32 个实现文件收敛到约 11 个,三份契约分别可通读;后续可用独立
 CMake target 强制 `boundary` 不依赖 JNI、`jni_guest` 不依赖 GLES。include 路径一次性
 变化,由同一 WU 内的构建与全量测试兜底。
+
+<a id="adr-0076"></a>
+
+## ADR-0076 · API 19 ARM32 linker 元数据视图
+
+- 状态：Accepted
+- 日期：2026-09-28
+
+### 背景
+
+旧 native 加载器会把 dlopen 结果当作 Bionic 私有 `soinfo*`，直接读取 ELF 符号与 SysV hash。
+整数句柄不满足这个 ABI。依据固定 [android-4.4.4_r2 linker.h](https://raw.githubusercontent.com/aosp-mirror/platform_bionic/android-4.4.4_r2/linker/linker.h)
+与 [dlfcn.cpp](https://raw.githubusercontent.com/aosp-mirror/platform_bionic/android-4.4.4_r2/linker/dlfcn.cpp)，
+仅提供当前进程的有界元数据视图。
+
+### 决定
+
+- API19 ARM32 普通句柄改为 guest 中 `soinfo` 记录地址；process-owned registry 继续拥有
+  身份、引用与关闭状态。重复打开同一活跃库返回同一地址，引用归零退役 backing，地址不复用。
+  RTLD_DEFAULT 独立处理；RTLD_NEXT 与其他 ABI 布局不在本次支持范围。
+- 只支持受审字段读取：name、base/size、flags、strtab/symtab、nbucket/nchain/bucket/chain、
+  ref_count、link_map 的地址/名称及 load_bias。其余结构槽为保留区，不提供 phdr、dynamic、
+  链表遍历、重定位表、init/fini、linker 写入或 debugger 协议。
+- 从唯一 ELF namespace 的未版本化导出与 sealed boundary provider 生成 ELF32 symbol/string
+  与 SysV hash 表；真实 ELF 优先于该库的部分 boundary 截获目录。st_value 按已解析地址与
+  load_bias 投影，包括 SHN_ABS/host intercept；不重新装载或另建符号地址来源。
+  Virtual SO 无 ELF image，base/size/load_bias 为 0，符号值为实际 guest thunk/data 地址。
+- 视图只暴露所属库导出；dlsym 保留原有 dependency scope 与 sealed fallback 契约。
+  普通表只读，宿主在 registry 锁内更新引用时临时切换记录页权限。每个进程使用
+  `[0x79000000,0x7a000000)` 有界 arena，单个视图最多 65536 导出、4 MiB 数据。
+- 模块、构造器、析构与 JNI 初始化仍归当前 process/native loader；本能力只投影查询事实。
+  不引入 Android linker 进程、宿主动态库、低地址映射、游戏或库名特判。
+
+### 后果
+
+需要通用 guest 载荷验证 ELF/Virtual SO 直接查询与 dlsym 地址及调用一致、引用/退役和失败路径。
+私有 ABI 兼容只承诺上述读取范围；新的写入、字段或布局依赖必须单独评审。

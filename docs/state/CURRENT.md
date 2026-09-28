@@ -17,9 +17,20 @@
   畸形 XML 抛原版异常，原有 AXML 调用及未支持方法记账失败受检。
   [SBX-15](../tasks/sandbox/SBX-15.md) 已支持匿名 MAP_FIXED 原子替换；22 用例/165 断言通过。
   无 Profile、关闭 survey 的同路径启动实测 `0x6112c000/0x1ef54/flags=0x32` 返回原地址，
-  libmono.so 段扩展错误消失；下一致命首错为 JNI_OnLoad 内 guest memory fault：
-  `pc=0x304a42ec` 读取未映射地址 `0xb5`，代理初始化尚未完成。证据为
-  `.local/sbx15-build.log`、`.local/sbx15-tests.log` 与 `.local/sbx15-dt-startup.log`。
+  libmono.so 段扩展错误消失。[BND-40](../tasks/boundary/BND-40.md) 已将 dlopen 普通句柄
+  改为 API19 ARM32 soinfo 视图；5 用例/148 断言通过。实跑首个依赖 liblog.so 返回
+  `0x79000000`，原 `0xb5` 故障消失，Mono 与 Unity 的 JNI 加载完成。已修复 GLSurfaceView
+  父类及 View 初始化，并将残留 NativeActivity 资源释放提前至 JNI 解绑前；此前退出 134
+  是清理异常掩盖 getHolder 解析首错。定向 11 用例/381 断言通过。现已补齐 GLSurfaceView
+  set/getPreserveEGLContextOnPause 的逐实例配置（默认 false、方法可覆盖），5 用例/182 断言通过；
+  [DVM-196](../tasks/dexvm/DVM-196.md) 已发布 BootDex InputDevice/MotionRange 与进程输入目录查询；
+  BootDex build/check、定向 11 用例/445 断言通过。原路径完成启动并进入首次 nativeRender，
+  退出 1，下一首错为 `GLES1 draw requires GL_VERTEX_ARRAY`。
+  证据为 `.local/input-device-{boot-build,boot-check,build,tests,startup}.log`。
+  EGL 暂停/恢复策略尚未接入该配置；前置 NDK 符号缺失仍待闭合。
+  本轮证据为 `.local/gl-preserve-{build,tests,startup}.log`。
+  本次证据为 `.local/dt-lifecycle-{build,tests,startup}.log`。此前证据为 `.local/bnd40-build.log`、
+  `.local/bnd40-tests.log`、`.local/bnd40-dt-startup.log` 与 `.local/bnd40-startup-check.log`。
   全 BootDex 类链接遍历完成，但仍因既有 MediaPlayer overlay 检查与过期类数断言（1729）
   整体失败。证据为 `.local/xmlpull-*.log` 与 `.local/xmlpull-dependencies.json`；
   游戏仍只是 reached-fault，未通过验收。
@@ -53,7 +64,7 @@
 
 ## 未闭合边界
 
-- Dead Trigger 下一独立缺口是 JNI_OnLoad 内 guest memory fault（`pc=0x304a42ec/address=0xb5`）；
+- Dead Trigger 下一独立缺口是首次 nativeRender 的 `GLES1 draw requires GL_VERTEX_ARRAY`；
   不运行 Binder、
   system_server、外部包数据库、广播投递或 Play 服务。
 - GUI 的真实 APK 导入→设置→启动→Dashboard→退出→移除全链路验收按用户安排延后；

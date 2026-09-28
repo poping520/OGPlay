@@ -15,6 +15,8 @@
 #include <doctest/doctest.h>
 
 #include "ogplay/audio/java_sound_pool.h"
+#include "ogplay/core/byte_order.h"
+#include "ogplay/runtime/dexvm/nio_runtime.h"
 #include "ogplay/runtime/integration/android_guest_call_session.h"
 #include "ogplay/runtime/framework/framework_lifecycle.h"
 #include "ogplay/runtime/framework/framework_locale.h"
@@ -26,6 +28,7 @@
 #include "runtime/boundary/core/boundary_symbols.h"
 #include "runtime/boundary/modules/module_catalog.h"
 #include "runtime/integration/nested_guest_cpu_pool.h"
+#include "runtime/integration/api19_linker_view.h"
 
 namespace {
 
@@ -675,6 +678,169 @@ TEST_CASE("libdl boundary handle lookups fall back to the sealed surface") {
                           0U}) == 0U);
     CHECK(invoke("dlclose", {gles1, 0U, 0U, 0U}) == 0U);
     process->Stop();
+}
+
+TEST_CASE("BND-40 guest soinfo lookup calls ELF and boundary exports and retires handles") {
+    auto libc = LibdlDefaultLibcElf();
+    // Add a real dependency and an intercepted ELF strlen export to the root.
+    Put32(libc, 100U, 64U);
+    Put32(libc, 104U, 64U);
+    Put32(libc, 0x130, 1U);  // DT_NEEDED
+    Put32(libc, 0x134, 34U);
+    const char extra_strings[] = "libt.so\0strlen";
+    for (std::size_t i = 0; i < sizeof(extra_strings); ++i) libc[0x182 + i] = static_cast<std::byte>(extra_strings[i]);
+    Put32(libc, 0x10c, 49U);
+    Put32(libc, 0x11c, 0x10240U);
+    Put32(libc, 0x240, 1U);
+    Put32(libc, 0x244, 3U);
+    Put32(libc, 0x248, 1U);
+    Put32(libc, 0x24c, 0U);
+    Put32(libc, 0x250, 2U);
+    Put32(libc, 0x254, 0U);
+    Put32(libc, 0x1d0, 42U);
+    Put32(libc, 0x1d4, 0x11020U);
+    libc[0x1dc] = std::byte{0x12};
+    Put16(libc, 0x1de, 1U);
+    const auto put_string = [&](const std::uint32_t offset, const std::string_view name) {
+        for (std::size_t i = 0; i < name.size(); ++i) libc[0x1000U + offset + i] = static_cast<std::byte>(name[i]);
+    };
+    constexpr std::uint32_t kRealName = 0x900, kFunctionName = 0x910, kLogName = 0x930;
+    constexpr std::uint32_t kLogWrite = 0x940, kLibcName = 0x980, kStrlenName = 0x990, kNoLibrary = 0x9a0;
+    put_string(kRealName, "libt.so");
+    put_string(kFunctionName, "fixture_add");
+    put_string(kLogName, "liblog.so");
+    put_string(kLogWrite, "__android_log_write");
+    put_string(kLibcName, "libc.so");
+    put_string(kStrlenName, "strlen");
+    put_string(kNoLibrary, "libmissing.so");
+    const std::uint32_t lookup_words[]{
+#include "../fixtures/api19_soinfo_lookup.inc"
+    };
+    for (std::size_t i = 0; i < std::size(lookup_words); ++i) Put32(libc, 0x1100U + 4U * i, lookup_words[i]);
+    auto real = LibdlDefaultLibcElf();
+    const char real_strings[] = "\0libt.so\0fixture_add\0";
+    std::fill(real.begin() + 0x160, real.begin() + 0x182, std::byte{});
+    for (std::size_t i = 0; i < sizeof(real_strings); ++i) real[0x160 + i] = static_cast<std::byte>(real_strings[i]);
+    Put32(real, 0x1c4, 0x11010U);
+    real[0x1cc] = std::byte{0x12};
+    Put32(real, 0x1010, 0xe0800001U);  // add r0, r0, r1
+    Put32(real, 0x1014, 0xe12fff1eU);  // bx lr
+    const std::array modules{
+        ogplay::loader::Elf32ModuleInput{"libc.so", libc, ogplay::memory::GuestAddress{0x10000000}},
+        ogplay::loader::Elf32ModuleInput{"libt.so", real, ogplay::memory::GuestAddress{0x20000000}}};
+    ogplay::runtime::VirtualFileSystem filesystem;
+    auto process = ogplay::runtime::AndroidGuestProcess::Start(
+        {19, modules, {}, 64, 36, 100000, 1, &filesystem, {}});
+    const auto symbols = ogplay::runtime::detail::BuildAndroidBoundarySymbols(ogplay::runtime::AndroidApi::api19);
+    const auto hle = [&](const std::string_view library, const std::string_view name) {
+        const auto found = std::ranges::find_if(symbols, [&](const auto& symbol) {
+            return symbol.library == library && symbol.symbol == name;
+        });
+        REQUIRE(found != symbols.end());
+        return found->address;
+    };
+    const auto invoke = [&](const ogplay::memory::GuestAddress target, const std::array<std::uint32_t, 4> args) {
+        return process->Invoke({target, args, {}}).return_value;
+    };
+    const auto libdl = [&](const std::string_view name, const std::array<std::uint32_t, 4> args) {
+        return invoke(hle("libdl.so", name), args);
+    };
+    const auto lookup = [&](const std::uint32_t handle, const std::uint32_t name) {
+        return invoke(ogplay::memory::GuestAddress{LibdlFixtureAddress(0x100)}, {handle, name, 0, 0});
+    };
+    const auto access = process->GuestMemoryAccess();
+    const auto read32 = [&](const std::uint32_t address) {
+        std::array<std::byte, 4> bytes{};
+        access.read(ogplay::memory::GuestAddress{address}, bytes);
+        return ogplay::core::ReadLittleEndian<std::uint32_t>(std::span{bytes}, 0);
+    };
+    const auto file = libdl("dlopen", {LibdlFixtureAddress(kRealName), 2, 0, 0});
+    std::string open_error;
+    if (file == 0) {
+        const auto error = libdl("dlerror", {0, 0, 0, 0});
+        for (std::uint32_t i = 0; error != 0 && i < 512; ++i) {
+            std::array<std::byte, 1> byte{};
+            access.read(ogplay::memory::GuestAddress{error}.Add(i), byte);
+            if (byte[0] == std::byte{}) break;
+            open_error += static_cast<char>(byte[0]);
+        }
+    }
+    INFO(open_error);
+    REQUIRE(file >= 0x79000000U);
+    CHECK(read32(file + 0x8c) == 0x20010000U);
+    CHECK(read32(file + 0x11c) == 0x20000000U);
+    CHECK(read32(file + 0x100) == 1U);
+    CHECK(libdl("dlopen", {LibdlFixtureAddress(kRealName), 2, 0, 0}) == file);
+    CHECK(read32(file + 0x100) == 2U);
+    const auto function = lookup(file, LibdlFixtureAddress(kFunctionName));
+    CHECK(function == 0x20011010U);
+    CHECK(function == libdl("dlsym", {file, LibdlFixtureAddress(kFunctionName), 0, 0}));
+    CHECK(invoke(ogplay::memory::GuestAddress{function}, {20, 22, 0, 0}) == 42U);
+    CHECK(lookup(file, LibdlFixtureAddress(kLibdlMissingOffset)) == 0U);
+    CHECK(libdl("dlsym", {file, LibdlFixtureAddress(kLibdlMissingOffset), 0, 0}) == 0U);
+    CHECK(libdl("dlclose", {file, 0, 0, 0}) == 0U);
+    CHECK(read32(file + 0x100) == 1U);
+    CHECK(lookup(file, LibdlFixtureAddress(kFunctionName)) == function);
+    CHECK(libdl("dlclose", {file, 0, 0, 0}) == 0U);
+    CHECK_THROWS_AS(static_cast<void>(read32(file)), ogplay::memory::MemoryFault);
+    CHECK(libdl("dlsym", {file, LibdlFixtureAddress(kFunctionName), 0, 0}) == 0U);
+    CHECK(libdl("dlclose", {file, 0, 0, 0}) == UINT32_MAX);
+    const auto reopened = libdl("dlopen", {LibdlFixtureAddress(kRealName), 2, 0, 0});
+    CHECK(reopened != file);
+    CHECK(libdl("dlsym", {file, LibdlFixtureAddress(kFunctionName), 0, 0}) == 0U);
+    CHECK(libdl("dlclose", {reopened, 0, 0, 0}) == 0U);
+    CHECK(libdl("dlopen", {LibdlFixtureAddress(kNoLibrary), 2, 0, 0}) == 0U);
+
+    const auto log = libdl("dlopen", {LibdlFixtureAddress(kLogName), 2, 0, 0});
+    REQUIRE(log != 0U);
+    CHECK(read32(log + 0x8c) == 0U);
+    const auto log_write = lookup(log, LibdlFixtureAddress(kLogWrite));
+    CHECK(log_write == hle("liblog.so", "__android_log_write").Value());
+    CHECK(log_write == libdl("dlsym", {log, LibdlFixtureAddress(kLogWrite), 0, 0}));
+    CHECK_NOTHROW(static_cast<void>(invoke(ogplay::memory::GuestAddress{log_write},
+        {4, LibdlFixtureAddress(kFunctionName), LibdlFixtureAddress(kFunctionName), 0})));
+    // Visit every liblog export, exercising non-empty hash collision chains.
+    const auto scratch = access.allocate(256);
+    for (const auto& symbol : symbols) {
+        if (symbol.library != "liblog.so") continue;
+        std::vector<std::byte> name;
+        for (const char character : symbol.symbol) name.push_back(static_cast<std::byte>(character));
+        name.push_back(std::byte{});
+        access.write(scratch, name);
+        CHECK(lookup(log, scratch.Value()) == symbol.address.Value());
+    }
+    CHECK(libdl("dlclose", {log, 0, 0, 0}) == 0U);
+    CHECK_THROWS_AS(static_cast<void>(read32(log)), ogplay::memory::MemoryFault);
+
+    const auto libc_handle = libdl("dlopen", {LibdlFixtureAddress(kLibcName), 2, 0, 0});
+    const auto intercepted = lookup(libc_handle, LibdlFixtureAddress(kStrlenName));
+    CHECK(intercepted == hle("libc.so", "strlen").Value());
+    CHECK(intercepted == libdl("dlsym", {libc_handle, LibdlFixtureAddress(kStrlenName), 0, 0}));
+    CHECK(invoke(ogplay::memory::GuestAddress{intercepted}, {LibdlFixtureAddress(kFunctionName), 0, 0, 0}) == 11U);
+    CHECK(lookup(libc_handle, LibdlFixtureAddress(kLibdlPropertyAreaOffset)) == 0x10010200U);
+    CHECK(libdl("dlclose", {libc_handle, 0, 0, 0}) == 0U);
+    access.release(scratch, 256);
+    process->Stop();
+}
+
+TEST_CASE("BND-40 linker metadata rejects invalid projections before mapping") {
+    using namespace ogplay::runtime::detail;
+    using namespace ogplay::memory;
+    AddressSpace memory;
+    const GuestRange arena{GuestAddress{0x78000000}, 4096};
+    const std::array symbols{Api19LinkerSymbol{"fixture", GuestAddress{0x1234}, 4, 1, 2}};
+    const auto before = memory.TrySnapshot()->generation;
+    CHECK_THROWS_AS(static_cast<void>(CreateApi19LinkerView(memory, arena, std::string(128, 'a'), GuestAddress{}, GuestAddress{}, 0, symbols)), ogplay::loader::LinkError);
+    auto invalid = symbols;
+    invalid[0].name.clear();
+    CHECK_THROWS_AS(static_cast<void>(CreateApi19LinkerView(memory, arena, "libt.so", GuestAddress{}, GuestAddress{}, 0, invalid)), ogplay::loader::LinkError);
+    CHECK(memory.TrySnapshot()->generation == before);
+    const auto view = CreateApi19LinkerView(memory, arena, "libt.so", GuestAddress{}, GuestAddress{}, 0, symbols);
+    CHECK(memory.Read32(view.Handle().Add(0xb4)) == 2U);
+    CHECK(memory.Read32(view.Handle().Add(0xb8)) == 2U);
+    CHECK_THROWS_AS(memory.Write32(view.Handle(), 0), MemoryFault);
+    CHECK_THROWS_AS(static_cast<void>(CreateApi19LinkerView(memory, arena, "libt.so", GuestAddress{}, GuestAddress{}, 0, symbols)), std::bad_alloc);
+    CHECK(memory.Read32(view.Handle().Add(0x100)) == 1U);
 }
 
 TEST_CASE("Android guest process owns reusable DexVM native thread contexts") {

@@ -45,6 +45,7 @@
 #include "ogplay/runtime/jni/jni_object.h"
 #include "ogplay/runtime/syscall/arm_kernel_helpers.h"
 #include "runtime/integration/nested_guest_cpu_pool.h"
+#include "runtime/integration/api19_linker_view.h"
 
 namespace ogplay::runtime {
 namespace {
@@ -1183,7 +1184,6 @@ public:
     std::uint32_t DynamicOpen(const std::string_view path,
                               const std::uint32_t flags,
                               const std::uint64_t thread_id) {
-        static_cast<void>(thread_id);
         constexpr std::uint32_t kSupportedFlags = 0x3U;
         if ((flags & ~kSupportedFlags) != 0U) {
             throw loader::LinkError("dlopen flags are not supported");
@@ -1191,9 +1191,15 @@ public:
         // dlopen(nullptr) is the process-wide handle in bionic, not an open
         // of the root module.
         if (path.empty()) return kRtldDefault;
-        const auto library =
+        auto library =
             CanonicalDynamicLibrary(DynamicLibraryName(path));
         std::scoped_lock lock(dynamic_link_mutex_);
+        const auto module = std::ranges::find_if(loaded_.link_namespace.modules,
+            [&](const loader::Elf32LinkModule& item) {
+                return item.name == library || item.dynamic.soname == library;
+            });
+        const bool real_elf = module != loaded_.link_namespace.modules.end() && !module->load_ranges.empty();
+        if (real_elf) library = module->dynamic.soname.value_or(module->name);
         const auto open = std::ranges::find_if(
             dynamic_link_handles_, [&](const DynamicLinkHandle& state) {
                 return state.open && state.library == library;
@@ -1203,27 +1209,71 @@ public:
                 (std::numeric_limits<std::uint32_t>::max)()) {
                 throw loader::LinkError("dlopen reference count overflow");
             }
+            detail::SetApi19LinkerReferences(address_space_, *open->view, open->references + 1U);
             ++open->references;
-            return open->handle;
+            return open->handle.Value();
         }
 
         DynamicLinkHandle state;
-        state.handle = next_dynamic_link_handle_++;
-        if (state.handle == 0U || state.handle == kRtldDefault ||
-            next_dynamic_link_handle_ == 0U) {
-            throw loader::LinkError("dlopen handle space is exhausted");
-        }
         state.library = library;
         state.references = 1U;
         state.open = true;
-        state.boundary = !boundary_.Symbols().Exports(library).empty();
+        const auto exports = boundary_.Symbols().Exports(library);
+        state.boundary = !real_elf && !exports.empty();
+        std::vector<detail::Api19LinkerSymbol> symbols;
+        memory::GuestAddress base, bias;
+        std::uint32_t image_size{};
         if (!state.boundary) {
             state.scope = loader::ExtendElf32LinkNamespace(
                               loaded_.link_namespace, library, {})
                               .scope;
+            const auto& root = loaded_.link_namespace.modules[state.scope->root_module];
+            if (root.load_ranges.empty()) throw loader::LinkError("dlopen ELF is not mapped: " + library);
+            bias = root.load_bias;
+            base = std::ranges::min(root.load_ranges, {}, [](const auto& range) {
+                return range.Start();
+            }).Start();
+            std::uint64_t end{};
+            for (const auto& range : root.load_ranges) end = std::max(end, range.EndExclusive());
+            image_size = static_cast<std::uint32_t>(end - base.Value());
+            const loader::Elf32LinkScope own{state.scope->root_module, {}, {state.scope->root_module}};
+            std::set<std::string> names;
+            for (std::size_t index = 1; index < root.symbols.symbols.size(); ++index) {
+                const auto& symbol = root.symbols.symbols[index];
+                if (root.versions) {
+                    const auto& version = root.versions->symbols[index];
+                    if (version.kind != loader::Elf32SymbolVersionKind::global &&
+                        (version.kind != loader::Elf32SymbolVersionKind::definition || version.hidden)) continue;
+                }
+                if (!symbol.IsExported() || !names.insert(symbol.name).second) continue;
+                // Project the same unversioned address as the authoritative
+                // namespace, including Bionic host-intercept replacements.
+                const auto target = loader::LookupElf32Symbol(loaded_.link_namespace, own, symbol.name);
+                const auto& selected = root.symbols.symbols[target.symbol_index];
+                symbols.push_back({symbol.name, target.address, selected.size, selected.binding, selected.type});
+            }
+        } else {
+            for (const auto& symbol : exports) {
+                symbols.push_back({symbol.symbol, symbol.address, symbol.size, 1,
+                    static_cast<std::uint8_t>(symbol.kind == BoundarySymbolKind::function ? 2U : 1U)});
+            }
         }
+        dynamic_link_handles_.reserve(dynamic_link_handles_.size() + 1U);
+        constexpr std::uint64_t kViewArenaEnd = 0x7a000000U;
+        if (next_dynamic_link_view_.Value() >= kViewArenaEnd) throw loader::LinkError("API19 linker view arena exhausted");
+        state.view = detail::CreateApi19LinkerView(address_space_,
+            {next_dynamic_link_view_, kViewArenaEnd - next_dynamic_link_view_.Value()},
+            library, base, bias, image_size, symbols);
+        state.handle = state.view->Handle();
+        next_dynamic_link_view_ = memory::GuestAddress{static_cast<std::uint32_t>(state.view->backing.EndExclusive())};
         dynamic_link_handles_.push_back(std::move(state));
-        return dynamic_link_handles_.back().handle;
+        const auto handle = dynamic_link_handles_.back().handle;
+        if (logger_ && diagnostics_) {
+            logger_->Write(core::LogLevel::info, "guest.dlopen", "linker metadata view opened",
+                {.guest_thread = thread_id}, {{"library", library}, {"handle", core::GuestAddress{handle.Value()}}},
+                {.mode = core::RateLimitMode::none});
+        }
+        return handle.Value();
     }
 
     std::uint32_t DynamicSymbol(const std::uint32_t handle,
@@ -1243,7 +1293,7 @@ public:
         }
         const auto state = std::ranges::find_if(
             dynamic_link_handles_, [handle](const DynamicLinkHandle& item) {
-                return item.open && item.handle == handle;
+                return item.open && item.handle.Value() == handle;
             });
         if (state == dynamic_link_handles_.end()) {
             throw loader::LinkError("dlsym handle is invalid or closed");
@@ -1275,12 +1325,21 @@ public:
         std::scoped_lock lock(dynamic_link_mutex_);
         const auto state = std::ranges::find_if(
             dynamic_link_handles_, [handle](const DynamicLinkHandle& item) {
-                return item.open && item.handle == handle;
+                return item.open && item.handle.Value() == handle;
             });
         if (state == dynamic_link_handles_.end()) {
             throw loader::LinkError("dlclose handle is invalid or closed");
         }
-        if (--state->references == 0U) state->open = false;
+        if (state->references == 1U) {
+            // Retire the backing and never reuse its address for a later open.
+            // Loaded ELF/thunks and lifecycle ownership remain process-wide.
+            address_space_.Unmap(state->view->backing);
+            state->references = 0;
+            state->open = false;
+        } else {
+            detail::SetApi19LinkerReferences(address_space_, *state->view, state->references - 1U);
+            --state->references;
+        }
         return 0;
     }
 
@@ -2099,16 +2158,17 @@ private:
         dexvm_threads_;
     loader::Elf32LoadedNamespace loaded_;
     struct DynamicLinkHandle final {
-        std::uint32_t handle{};
+        memory::GuestAddress handle;
         std::string library;
         std::optional<loader::Elf32LinkScope> scope;
+        std::optional<detail::Api19LinkerView> view;
         std::uint32_t references{};
         bool boundary{};
         bool open{};
     };
     static constexpr std::uint32_t kRtldDefault = 0xffffffffU;
     std::vector<DynamicLinkHandle> dynamic_link_handles_;
-    std::uint32_t next_dynamic_link_handle_{1U};
+    memory::GuestAddress next_dynamic_link_view_{0x79000000U};
     std::vector<loader::Elf32LoadedModule> dynamic_modules_;
     std::string root_module_;
     Api19GuestProcessMemory process_memory_;

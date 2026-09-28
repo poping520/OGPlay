@@ -2954,6 +2954,11 @@ IntrinsicClassDecl Declare_java_lang_System(const CoreIntrinsicServices& service
                            ? VmValue::Ref(context.vm.NewStringUtf8(*previous))
                            : VmValue::Ref(VmObjectRef{});
                 });
+    builder.StaticMethod("mapLibraryName", "(Ljava/lang/String;)Ljava/lang/String;",
+        [](IntrinsicContext& call) {
+            const auto name = IntrinsicCall(call).NonNullRef(0, "libName");
+            return VmValue::Ref(call.vm.NewStringUtf8("lib" + call.vm.StringUtf8(name) + ".so"));
+        });
     builder.StaticMethod("currentTimeMillis", "()J",
         [now = services.current_time_millis](IntrinsicContext&) {
             if (!now) {

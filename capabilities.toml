@@ -1557,8 +1557,8 @@ note = "DVM-185/188 在 WebView facade 按 API 19 提供可覆盖 destroy()：�
 
 [dexvm.package_info_activities]
 status = "complete"
-test = "tests/dexvm/android_value_tests.cpp: DVM-180; tests/loader/apk_manifest_tests.cpp: DVM-180; architecture.dexvm_intrinsic_layout; Angry Birds no-Profile interstitial reached Class.getAnnotation"
-note = "DVM-180 在 PackageManager.getPackageInfo 按 API 19 支持 GET_ACTIVITIES 与既有 GET_META_DATA/GET_PERMISSIONS 组合。当前包 activities 从 sealed Manifest 的 activity/activity-alias 生成，保留顺序与 alias 身份，默认过滤禁用组件；未请求时保持 null。exported 来自 Manifest 或 intent-filter 缺省。requestedPermissions 仍是声明列表，不等于已授予。不宣称完整 PackageManager、组件启动或广告可用。"
+test = "tests/dexvm/android_value_tests.cpp: DVM-180, DVM-195; tests/loader/apk_manifest_tests.cpp: DVM-180, DVM-195; architecture.dexvm_intrinsic_layout; Angry Birds no-Profile interstitial reached Class.getAnnotation"
+note = "DVM-195 增加当前包 getActivityInfo，支持 0/GET_META_DATA/GET_DISABLED_COMPONENTS，Activity 自身 metadata 与 application 分离，未知 flags/无 inventory 明确失败。DVM-180 在 PackageManager.getPackageInfo 按 API 19 支持 GET_ACTIVITIES 与既有 GET_META_DATA/GET_PERMISSIONS 组合。当前包 activities 从 sealed Manifest 的 activity/activity-alias 生成，保留顺序与 alias 身份，默认过滤禁用组件；未请求时保持 null。exported 来自 Manifest 或 intent-filter 缺省。requestedPermissions 仍是声明列表，不等于已授予。不宣称完整 PackageManager、组件启动或广告可用。"
 
 [dexvm.context_file_stream_path]
 status = "complete"
@@ -1910,3 +1910,8 @@ note = "API19 Runtime add/removeShutdownHook/exit/halt 执行 BootDex 原版 Jav
 status = "partial"
 test = "tests/runtime/boundary/integration/android_boundary_hle_tests.cpp: BND34 EGL fences images and texture pbuffers use real ANGLE objects"
 note = "BND-34 发布 8 个 KHR sync/image handler 及两个 OES image target thunk，使用 guest identity 与真实 ANGLE 对象。Windows D3D11 实测 reusable sync、GL texture image、texture pbuffer；fence/wait 等只按后端实际支持宣告；Android native-buffer/native-fence FD/presentation-time 未发布。"
+
+[dexvm.native_activity]
+status = "partial"
+test = "tests/runtime/native_library_loader_tests.cpp: DVM-195; tests/runtime/boundary/integration/android_boundary_hle_tests.cpp: DVM-195; tests/dexvm/android_value_tests.cpp: DVM-195; tests/loader/apk_manifest_tests.cpp: DVM-195"
+note = "DVM-195/ADR-0075：原版 API19 NativeActivity Java 接入当前 ARMv7 process，真实 JNI Activity/AssetManager global refs、ANativeActivity ABI、已登记生命周期/窗口/输入回调与销毁；Surface 所有权支持解除/重接管及首次遍历前切换，每次创建独立窗口身份，旧 EGL surface 明确失效。selected-ABI 库在 nativeLibraryDir VFS 可见，dlopen-style load 与 Java JNI_OnLoad 分离。窗口固定会话尺寸/RGBA8，输入仅 ident polling，APK asset 支持有界 open/read/seek/length/close；非空保存状态上限1MiB，复制后调用 guest free。通用双解释器回归及原路径 reached-fault，不宣称完整 NDK或游戏验收。"

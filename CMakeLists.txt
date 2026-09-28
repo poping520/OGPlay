@@ -435,6 +435,7 @@ add_library(ogplay_runtime
     src/runtime/integration/nested_guest_cpu_pool.cpp
     src/runtime/integration/android_guest_java_movie.cpp
     src/runtime/integration/android_guest_java_platform.cpp
+    src/runtime/integration/native_activity_runtime.cpp
     src/runtime/integration/native_library_loader.cpp
     src/runtime/integration/headless_bionic_runner.cpp
     src/runtime/boundary/core/a32_call_frame.cpp

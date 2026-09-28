@@ -28,6 +28,8 @@ struct EglBoundaryContext final {
     detail::AndroidBoundaryGles1State& gles1_state;
     detail::AndroidBoundaryGles1DrawState& gles1_draw;
     detail::AndroidBoundaryGles1LegacyState& gles1_legacy;
+    void* native_window_owner{};
+    bool (*native_window_is_current)(void*, memory::GuestAddress){};
 };
 
 class EglModule final {
@@ -92,6 +94,7 @@ private:
         std::uint32_t texture_format{0x305CU};
         bool mipmap{};
         std::uint32_t mipmap_level{};
+        memory::GuestAddress native_window{};
     };
 
     template <std::uint16_t FunctionId>

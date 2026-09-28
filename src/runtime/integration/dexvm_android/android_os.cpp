@@ -821,6 +821,7 @@ namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_os_Looper(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/os/Looper;", "Ljava/lang/Object;");
+    const auto queue = builder.BoundInstanceField("mQueue", "Landroid/os/MessageQueue;", dx::kAccPrivate);
     builder.StaticMethod("prepare", "()V", [context](dx::IntrinsicContext& call) {
         static_cast<void>(PrepareLooper(call, context, false));
         return dx::VmValue::Void();
@@ -844,9 +845,18 @@ Decl Declare_android_os_Looper(const Context& context) {
                 context, call.vm.CurrentContextToken()));
         });
     builder.StaticMethod("myQueue", "()Landroid/os/MessageQueue;",
-        [](dx::IntrinsicContext&) -> dx::VmValue {
-            throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
-                                  "MessageQueue is internal to DexVM"};
+        [context, queue](dx::IntrinsicContext& call) {
+            const auto looper = call.vm.CurrentContextToken() == 1U
+                ? EnsureMainLooper(call, context)
+                : CurrentLooper(context, call.vm.CurrentContextToken());
+            if (!looper.IsValid()) throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;", "no Looper on this thread"};
+            dx::IntrinsicCall typed(call);
+            auto value = typed.GetRef(queue, looper);
+            if (!value.IsValid()) {
+                value = call.vm.NewIntrinsicInstance("Landroid/os/MessageQueue;");
+                typed.SetRef(queue, looper, value);
+            }
+            return dx::VmValue::Ref(value);
         });
     builder.FinalMethod("getThread", "()Ljava/lang/Thread;",
         [context](dx::IntrinsicContext& call) {
@@ -1498,3 +1508,10 @@ void RegisterAndroidValueStateTables(
 }
 
 }  // namespace ogplay::runtime
+
+namespace ogplay::runtime::android_intrinsics {
+Decl Declare_android_os_MessageQueue(const Context&) {
+    // Identity of the existing Looper scheduler; callers cannot create another queue.
+    return dx::IntrinsicClassBuilder::Class("Landroid/os/MessageQueue;", "Ljava/lang/Object;").Build();
+}
+}

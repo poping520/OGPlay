@@ -46,6 +46,7 @@ class Connection;
 
 class AndroidGuestCallSession;
 class NativeLibraryLoader;
+class NativeActivityRuntime;
 class VirtualFileSystem;
 
 // The Android device exists before an APK process starts. Keep a deterministic
@@ -84,6 +85,7 @@ struct DexVmAndroidContext final {
   // lifetime of this context; APS-5 intentionally does not invent a second
   // loader namespace.
   NativeLibraryLoader *native_libraries{};
+  std::shared_ptr<NativeActivityRuntime> native_activity;
   std::uint64_t application_class_loader_token{1U};
   loader::ArscTable arsc;
   std::vector<std::byte> apk_bytes;
@@ -354,6 +356,12 @@ struct DexVmAndroidContext final {
   // attach/detach must never mutate it. Each holder independently enters or
   // leaves active_surface_holders, mirroring SurfaceView.mSurfaceCreated.
   bool managed_host_surface_open{};
+  dexvm::VmObjectRef window_surface_callback;
+  dexvm::VmObjectRef window_surface_holder;
+  dexvm::VmObjectRef window_input_callback;
+  dexvm::VmObjectRef window_input_queue;
+  std::unordered_map<std::uint32_t, dexvm::VmObjectRef> holder_surfaces;
+  std::int32_t window_format{1};
   std::unordered_set<std::uint32_t> active_surface_holders;
 
   struct EglFacadeState final {
@@ -400,8 +408,8 @@ struct DexVmAndroidContext final {
   EglFacadeState egl;
 
   // Each View exposes one stable observer. Listener identity is retained
-  // for a future managed layout pass; registration itself does not invent
-  // an event.
+  // until a managed main-thread traversal. Detached observers do not receive
+  // global layout events; registration itself does not invent an event.
   std::unordered_map<std::uint32_t, dexvm::VmObjectRef> view_tree_observers;
   std::unordered_map<std::uint32_t, dexvm::VmObjectRef> global_layout_listeners;
 
@@ -909,6 +917,11 @@ InvokeViewOnClick(dexvm::Interpreter &vm, DexVmAndroidContext &context,
 // EGL, so the managed surface lifecycle has to deliver them. There is one
 // managed surface, so every registered holder callback gets the same event.
 // Returns a rendered message when a guest callback raised.
+void DispatchAndroidGlobalLayout(dexvm::Interpreter&, DexVmAndroidContext&);
+void SetWindowSurfaceCallback(dexvm::Interpreter&, DexVmAndroidContext&, dexvm::VmObjectRef);
+void SetWindowInputCallback(dexvm::Interpreter&, DexVmAndroidContext&, dexvm::VmObjectRef);
+void DispatchWindowInputQueue(dexvm::Interpreter&, DexVmAndroidContext&, bool created);
+
 enum class SurfaceHolderPhase : std::uint8_t { created, changed, destroyed };
 
 [[nodiscard]] std::optional<std::string>

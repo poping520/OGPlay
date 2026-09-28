@@ -1,4 +1,7 @@
 #include <set>
+#include "ogplay/runtime/integration/native_activity_runtime.h"
+#include "ogplay/runtime/dexvm/nio_runtime.h"
+#include "runtime/integration/dexvm_android/shared.h"
 #include <chrono>
 #include "ogplay/runtime/vfs/sandbox_store.h"
 #include "../dexvm/boot_dex.h"
@@ -275,6 +278,41 @@ void WriteAps5OnLoad(std::vector<std::byte>& bytes,
     return bytes;
 }
 
+// ARM fixture: stores a real JNI IsSameObject(env, clazz, clazz) result,
+// registers 15 distinct callback stubs, and records their count/id/argument
+// through ANativeActivity.instance. See native_activity_fixture.S.
+[[nodiscard]] std::vector<std::byte> NativeActivityElf() {
+    auto bytes = AppElf({"liba.so", "libc.so", 0U, false});
+    constexpr char strings[] = "\0liba.so\0libc.so\0ANativeActivity_onCreate\0free\0";
+    for (std::size_t i=0; i<sizeof(strings); ++i) bytes[0x160+i] = static_cast<std::byte>(strings[i]);
+    Put32(bytes, 0x10c, sizeof(strings));
+    Put32(bytes, 0x194, 3); // two chained exports
+    Put32(bytes, 0x1a0, 2);
+    Put32(bytes, 0x1d0, 42); Put32(bytes, 0x1d4, 0x20114); Put32(bytes, 0x1d8, 12);
+    bytes[0x1dc] = std::byte{0x12}; Put16(bytes, 0x1de, 1);
+    Put32(bytes, 0x1c0, 17);
+    constexpr std::array code{
+        0xe92d4010U, 0xe1a04000U, 0xe28410c0U, 0xe584101cU, 0xe5943000U, 0xe28f203cU,
+        0xe3a01000U, 0xe7832101U, 0xe2822008U, 0xe2811001U, 0xe3510010U, 0x1afffffaU,
+        0xe3a01000U, 0xe5831008U, 0xe5940008U, 0xe594100cU, 0xe1a02001U, 0xe5903000U,
+        0xe5933060U, 0xe12fff33U, 0xe584006cU, 0xe8bd8010U, 0xe3a02000U, 0xea00001dU,
+        0xe3a02001U, 0xea00001bU, 0xe3a02002U, 0xea000019U, 0xe3a02003U, 0xea000017U,
+        0xe3a02004U, 0xea000015U, 0xe3a02005U, 0xea000013U, 0xe3a02006U, 0xea000011U,
+        0xe3a02007U, 0xea00000fU, 0xe3a02008U, 0xea00000dU, 0xe3a02009U, 0xea00000bU,
+        0xe3a0200aU, 0xea000009U, 0xe3a0200bU, 0xea000007U, 0xe3a0200cU, 0xea000005U,
+        0xe3a0200dU, 0xea000003U, 0xe3a0200eU, 0xea000001U, 0xe3a0200fU, 0xeaffffffU,
+        0xe590301cU, 0xe593c000U, 0xe28cc001U, 0xe583c000U, 0xe5832004U, 0xe5831008U,
+        0xe12fff1eU,
+    };
+    for (std::size_t i=0; i<code.size(); ++i) Put32(bytes, 0x1000+i*4, code[i]);
+    bytes.resize(0x1120);
+    Put32(bytes, 100, 0x120); Put32(bytes, 104, 0x120);
+    constexpr std::array state_code{0xe590301cU, 0xe593000cU, 0xe5933010U, 0xe5813000U, 0xe12fff1eU,
+                                     0xe3a01000U, 0xe5801000U, 0xe12fff1eU};
+    for (std::size_t i=0; i<state_code.size(); ++i) Put32(bytes, 0x1100+i*4, state_code[i]);
+    return bytes;
+}
+
 [[nodiscard]] ogplay::loader::ApkNativeLibrary Library(
     std::string soname, std::vector<std::byte> image) {
     const auto logical = soname.substr(3U, soname.size() - 6U);
@@ -447,6 +485,7 @@ struct OrchestratedApp final {
                                  interpreter_backend =
                                      ogplay::runtime::dexvm::InterpreterBackend::switch_dispatch,
                              const std::string& application_class = "android.app.Application") {
+        if (activity == "android.app.NativeActivity" || activity == "fixture.NativeTakeoverActivity") native_a = NativeActivityElf();
         context->apk_bytes = {
             std::byte{0x50}, std::byte{0x4b}, std::byte{0x03}, std::byte{0x04}};
         const ogplay::runtime::BionicModuleSource system{
@@ -455,6 +494,10 @@ struct OrchestratedApp final {
         if (with_native) libraries.push_back(Library("liba.so", native_a));
         ogplay::session::AndroidAppProcessRequest request;
         request.manifest = AppManifest(activity, has_launcher);
+        if (activity == "android.app.NativeActivity" || activity == "fixture.NativeTakeoverActivity") {
+            request.manifest.activity_components.front().meta_data.push_back({"android.app.lib_name", std::string("a")});
+            request.manifest.application_meta_data.push_back({"android.app.lib_name", std::string("wrong_application_library")});
+        }
         request.manifest.application_class = application_class;
         request.manifest.service_components = services;
         request.manifest.application_enabled = application_enabled;
@@ -4340,4 +4383,150 @@ TEST_CASE("DVM-150 Runtime exit propagates through guest JNI OnLoad reentry") {
     bridge.reset();
     session->Stop();
     CHECK_FALSE(session->Running());
+}
+
+TEST_CASE("DVM-195 original NativeActivity runs in the existing Java native process") {
+    using namespace ogplay;
+    namespace dx = runtime::dexvm;
+    for (const auto backend : {dx::InterpreterBackend::switch_dispatch,
+                               dx::InterpreterBackend::threaded}) {
+        OrchestratedApp fixture("android.app.NativeActivity", true, true, {}, {}, true, backend);
+        fixture.app->StartApplication();
+        const auto started = fixture.app->StartLauncherActivity();
+        REQUIRE(started.state == session::LifecycleRunState::running);
+        auto& bridge = fixture.app->DexVm();
+        auto& vm = bridge.Vm();
+        auto& process = bridge.Session().Process();
+        const auto memory = process.GuestMemoryAccess();
+        const auto activity = fixture.context->activity;
+        const auto pointer = fixture.context->native_activity->InputQueuePointer(activity);
+        REQUIRE_FALSE(pointer.IsNull());
+        const auto native = memory::GuestAddress{pointer.Value() - 148U};
+        const auto read = [&](memory::GuestAddress address) {
+            std::array<std::byte, 4> bytes{}; memory.read(address, bytes);
+            std::uint32_t value{};
+            for (std::size_t i=0; i<4; ++i) value |= std::to_integer<std::uint32_t>(bytes[i]) << (8*i);
+            return value;
+        };
+        const auto write = [&](memory::GuestAddress address, std::uint32_t value) {
+            std::array<std::byte, 4> bytes{};
+            for (std::size_t i=0; i<4; ++i) bytes[i] = static_cast<std::byte>(value >> (8*i));
+            memory.write(address, bytes);
+        };
+        CHECK(read(native.Add(4)) == bridge.Session().GuestJavaVm().Value());
+        CHECK(read(native.Add(8)) == bridge.Session().GuestEnvironment().Value());
+        CHECK(read(native.Add(24)) == 19);
+        const runtime::JniReference actual_activity(read(native.Add(12)));
+        CHECK(bridge.FromReference(actual_activity) == activity);
+        const auto asset_manager = runtime::android_intrinsics::CallAndroidMethod(vm, activity, "getAssets", "()Landroid/content/res/AssetManager;").ref;
+        CHECK(bridge.FromReference(runtime::JniReference(read(native.Add(128)))) == asset_manager);
+        CHECK(read(native.Add(160+8)) == 64); CHECK(read(native.Add(160+12)) == 36);
+        CHECK(read(native.Add(108)) == 1); // actual guest JNI invocation
+        CHECK(fixture.context->window_input_queue.IsValid());
+        CHECK(fixture.context->active_surface_holders.contains(fixture.context->window_surface_holder.Value()));
+        const auto trace = memory.allocate(20);
+        write(trace, 0); write(trace.Add(4), 0); write(trace.Add(8), 0);
+        write(native.Add(28), trace.Value());
+        const auto call = [&](const char* name, const char* signature, std::vector<dx::VmValue> args = {}) {
+            return runtime::android_intrinsics::CallAndroidMethod(vm, activity, name, signature, std::move(args));
+        };
+        const auto bundle = runtime::android_intrinsics::NewAndroidBundle(vm);
+        static_cast<void>(call("onSaveInstanceState", "(Landroid/os/Bundle;)V", {dx::VmValue::Ref(bundle)}));
+        CHECK(read(trace) == 0); // unregistered save callback
+        const auto state = memory.allocate(4);
+        constexpr std::array state_bytes{std::byte{'a'}, std::byte{'b'}, std::byte{'c'}, std::byte{0}};
+        memory.write(state, state_bytes);
+        write(trace.Add(12), state.Value()); write(trace.Add(16), 3);
+        const auto entry = process.FindModuleExport(fixture.app->NativeLibraries()->Records().front().module_index, "ANativeActivity_onCreate");
+        write(memory::GuestAddress{read(native)}.Add(8), entry.Add(256).Value());
+        static_cast<void>(call("onSaveInstanceState", "(Landroid/os/Bundle;)V", {dx::VmValue::Ref(bundle)}));
+        const auto saved = runtime::android_intrinsics::CallAndroidMethod(vm, bundle, "getByteArray", "(Ljava/lang/String;)[B",
+            {dx::VmValue::Ref(vm.NewStringUtf8("android:native_state"))}).ref;
+        CHECK(vm.Model().ReadByteRegion(saved, 0, 3) == std::vector<std::byte>(state_bytes.begin(), state_bytes.begin()+3));
+        CHECK(read(state) == 0); // fixture guest free ran after the copy
+        write(trace.Add(16), 1024U*1024U+1U);
+        try {
+            static_cast<void>(call("onSaveInstanceState", "(Landroid/os/Bundle;)V", {dx::VmValue::Ref(bundle)}));
+            FAIL("oversized NativeActivity state unexpectedly succeeded");
+        } catch (const dx::VmJavaThrow& error) {
+            CHECK(error.descriptor == "Ljava/lang/IllegalStateException;");
+            CHECK(error.message == "NativeActivity saved state exceeds budget");
+        }
+        write(memory::GuestAddress{read(native)}.Add(8), 0);
+        memory.release(state, 4);
+        static_cast<void>(fixture.app->ActivityLifecycle().Suspend());
+        CHECK(read(trace.Add(4)) == 3);
+        static_cast<void>(fixture.app->ActivityLifecycle().Resume());
+        CHECK(read(trace.Add(4)) == 6); // resume then focus
+        static_cast<void>(call("onLowMemory", "()V"));
+        CHECK(read(trace.Add(4)) == 15);
+        const auto configuration = vm.NewIntrinsicInstance("Landroid/content/res/Configuration;");
+        static_cast<void>(call("onConfigurationChanged", "(Landroid/content/res/Configuration;)V", {dx::VmValue::Ref(configuration)}));
+        CHECK(read(trace.Add(4)) == 14);
+        static_cast<void>(call("onWindowFocusChanged", "(Z)V", {dx::VmValue::Int(1)}));
+        CHECK(read(trace.Add(4)) == 6); CHECK(read(trace.Add(8)) == 1);
+        // Releasing and reacquiring the Surface destroys the old ownership once.
+        runtime::SetWindowSurfaceCallback(vm, *fixture.context, dx::VmObjectRef{});
+        CHECK(read(trace.Add(4)) == 10);
+        const auto old_window = read(trace.Add(8));
+        const auto count = read(trace);
+        runtime::SetWindowSurfaceCallback(vm, *fixture.context, dx::VmObjectRef{});
+        CHECK(read(trace) == count);
+        runtime::SetWindowSurfaceCallback(vm, *fixture.context, activity);
+        CHECK(read(trace) == count + 3); CHECK(read(trace.Add(4)) == 9);
+        CHECK(read(trace.Add(8)) != old_window);
+        runtime::SetWindowInputCallback(vm, *fixture.context, dx::VmObjectRef{});
+        CHECK(read(trace.Add(4)) == 12);
+        CHECK_FALSE(fixture.context->window_input_queue.IsValid());
+        runtime::SetWindowInputCallback(vm, *fixture.context, activity);
+        CHECK(read(trace.Add(4)) == 11);
+        static_cast<void>(fixture.app->Stop());
+        CHECK(read(trace.Add(4)) == 5); // onDestroy, even without GLSurfaceView renderer
+        CHECK(fixture.context->native_activity->InputQueuePointer(activity).IsNull());
+        CHECK_FALSE(memory.validate(native, 4));
+        CHECK_THROWS(bridge.FromReference(actual_activity));
+        memory.release(trace, 20);
+    }
+}
+
+TEST_CASE("DVM-195 NativeActivity library load defers JNI OnLoad until Java requests it") {
+    using namespace ogplay;
+    FixtureProcess fixture;
+    loader::ApkNativeLibraryInventory inventory(std::vector{Library("liba.so",
+        AppElf({"liba.so", "libc.so", runtime::kJniVersion1_6}))});
+    const auto selected = loader::SelectApkNativeLibraries(inventory, loader::AndroidArmAbi::armeabi_v7a);
+    runtime::NativeLibraryLoader libraries(*fixture.process, selected);
+    const auto native = libraries.LoadPath("/data/app-lib/liba.so", 1, runtime::NativeLibraryEntry::native_activity);
+    CHECK_FALSE(native.jni_version.has_value());
+    CHECK(libraries.Records().front().jni_on_load_calls == 0);
+    const auto java = libraries.LoadLibrary("a", 1);
+    CHECK(java.handle == native.handle);
+    CHECK(java.module_index == native.module_index);
+    CHECK(java.jni_version == runtime::kJniVersion1_6);
+    CHECK(libraries.Records().front().jni_on_load_calls == 1);
+    CHECK(libraries.LoadLibrary("a", 1).already_loaded);
+}
+
+TEST_CASE("DVM-195 NativeActivity missing libraries and entry points fail without native handles") {
+    for (const bool missing_library : {false, true}) {
+        OrchestratedApp fixture("android.app.NativeActivity");
+        auto& metadata = fixture.context->activity_components.front().meta_data;
+        metadata.push_back({missing_library ? "android.app.lib_name" : "android.app.func_name", std::string("missing")});
+        fixture.app->StartApplication();
+        CHECK_THROWS_WITH_AS(fixture.app->StartLauncherActivity(),
+            doctest::Contains(missing_library ? "Unable to find native library: missing" : "missing"), std::exception);
+        CHECK(fixture.context->native_activity->InputQueuePointer(fixture.context->activity).IsNull());
+    }
+}
+
+TEST_CASE("DVM-195 takeSurface null before traversal suppresses native surface callbacks") {
+    using namespace ogplay;
+    OrchestratedApp fixture("fixture.NativeTakeoverActivity");
+    fixture.app->StartApplication();
+    REQUIRE(fixture.app->StartLauncherActivity().state == session::LifecycleRunState::running);
+    CHECK_FALSE(fixture.context->window_surface_callback.IsValid());
+    CHECK(fixture.context->active_surface_holders.empty());
+    CHECK(fixture.context->content_view.IsValid());
+    CHECK(fixture.context->window_input_queue.IsValid());
+    CHECK(fixture.app->Stop().state == session::LifecycleRunState::stopped);
 }

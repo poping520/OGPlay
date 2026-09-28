@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <span>
@@ -64,6 +65,20 @@ struct BionicDynamicLinkHooks final {
     ArmExidx (*find_exidx)(void*, std::uint32_t, std::uint64_t){};
 };
 
+inline constexpr memory::GuestAddress kNativeActivityWindowHandleBegin{0x6e400000U};
+inline constexpr memory::GuestAddress kNativeActivityWindowHandleEnd{0x6e800000U};
+
+// Opaque NDK identities backed by the current process. The owner retains these
+// allocations until UnregisterNativeActivity. Window generations are allocated
+// separately by the boundary; no host pointer crosses this API.
+struct NativeActivityBoundaryResources final {
+    memory::GuestAddress activity;
+    memory::GuestAddress assets;
+    memory::GuestAddress queue;
+    std::uint32_t width{}, height{};
+    std::function<std::optional<std::vector<std::byte>>(std::string_view)> read_asset;
+};
+
 struct AndroidBoundaryOptions final {
     bool allow_gles1_material_single_face{};
     bool allow_gles1_single_stage_texcoord_fallback{true};
@@ -115,6 +130,10 @@ public:
     [[nodiscard]] bool Handle(cpu::Cpu& cpu, const cpu::RunResult& stopped);
     void NotifyFileWrite();
     void PushInput(const AndroidBoundaryInput& input);
+    void RegisterNativeActivity(NativeActivityBoundaryResources resources);
+    void UnregisterNativeActivity(memory::GuestAddress activity);
+    memory::GuestAddress SetNativeActivityWindow(memory::GuestAddress activity, bool active);
+    void SetNativeActivityInput(memory::GuestAddress activity, bool active);
     [[nodiscard]] std::optional<AndroidBoundaryFrame> TakeLatestFrame();
     // Publishes a host-composed RGBA frame (logical surface size) into the
     // same frame store and sequence as GL presents.

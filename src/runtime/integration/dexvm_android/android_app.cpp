@@ -6,6 +6,7 @@
 // presentation-only calls stay no-ops.
 
 #include "ogplay/loader/binary_xml.h"
+#include "ogplay/runtime/integration/native_activity_runtime.h"
 
 #include "catalog.h"
 
@@ -127,6 +128,8 @@ Decl Declare_android_app_Activity(const Context& context) {
         dx::kAccPublic | dx::kAccFinal);
     const auto lifecycle_noop = dx::IntrinsicHandler(
         [](dx::IntrinsicContext&) { return dx::VmValue::Void(); });
+    builder.VirtualMethod("onLowMemory", "()V", lifecycle_noop);
+    builder.VirtualMethod("onSaveInstanceState", "(Landroid/os/Bundle;)V", lifecycle_noop, dx::kAccProtected);
     builder.VirtualMethod("onCreate", "(Landroid/os/Bundle;)V", lifecycle_noop,
                           dx::kAccProtected);
     builder.VirtualMethod("onStart", "()V", lifecycle_noop,
@@ -640,7 +643,19 @@ std::optional<std::string> DispatchHolderCallbacks(
             const auto outcome = vm.Call(
                 linker.Class(callback_class).vtable[*index], arguments);
             ++delivered;
-            if (!outcome.exception.IsValid()) continue;
+            if (!outcome.exception.IsValid()) {
+                if (phase == SurfaceHolderPhase::changed) {
+                    const auto redraw = linker.FindVtableIndex(callback_class,
+                        "surfaceRedrawNeeded", "(Landroid/view/SurfaceHolder;)V");
+                    if (redraw) {
+                        const auto result = vm.Call(linker.Class(callback_class).vtable[*redraw],
+                            std::array{dx::VmValue::Ref(callback), dx::VmValue::Ref(dx::VmObjectRef(holder_handle))});
+                        if (result.exception.IsValid())
+                            return "surfaceRedrawNeeded raised " + result.exception_message;
+                    }
+                }
+                continue;
+            }
             std::string rendered = std::string(name) + " raised " +
                                    linker.Class(outcome.exception_class)
                                        .descriptor +
@@ -665,6 +680,63 @@ std::optional<std::string> DispatchHolderCallbacks(
 
 }  // namespace
 
+void DispatchWindowInputQueue(dexvm::Interpreter& vm, DexVmAndroidContext& context, bool created) {
+    using namespace android_intrinsics;
+    if (!context.window_input_callback.IsValid()) return;
+    if (created) {
+        if (context.window_input_queue.IsValid()) return;
+        if (!context.native_activity)
+            throw dexvm::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "window input requires NativeActivity runtime"};
+        const auto pointer = context.native_activity->InputQueuePointer(context.activity);
+        if (pointer.IsNull()) return; // takeInputQueue during onCreate, before loadNativeCode
+        const auto queue = vm.NewIntrinsicInstance("Landroid/view/InputQueue;");
+        context.window_input_queue = queue;
+        const auto field = vm.Linker().FindFieldRecursive(vm.Model().ObjectClass(queue), "mPtr", "I");
+        if (!field) throw std::logic_error("InputQueue.mPtr is missing");
+        vm.Model().InstanceSlots(queue)[vm.Linker().Field(*field).slot] = {pointer.Value(), dexvm::SlotTag::cat1};
+        static_cast<void>(CallAndroidMethod(vm, context.window_input_callback, "onInputQueueCreated",
+            "(Landroid/view/InputQueue;)V", std::vector{dexvm::VmValue::Ref(queue)}));
+    } else if (context.window_input_queue.IsValid()) {
+        const auto queue = context.window_input_queue;
+        context.window_input_queue = dexvm::VmObjectRef{};
+        const auto root = vm.ProtectReferences(std::array{queue});
+        static_cast<void>(CallAndroidMethod(vm, context.window_input_callback, "onInputQueueDestroyed",
+            "(Landroid/view/InputQueue;)V", std::vector{dexvm::VmValue::Ref(queue)}));
+        const auto field = vm.Linker().FindFieldRecursive(vm.Model().ObjectClass(queue), "mPtr", "I");
+        vm.Model().InstanceSlots(queue)[vm.Linker().Field(*field).slot] = {0, dexvm::SlotTag::cat1};
+    }
+}
+
+void SetWindowInputCallback(dexvm::Interpreter& vm, DexVmAndroidContext& context, dexvm::VmObjectRef callback) {
+    if (context.window_input_callback == callback) return;
+    const auto root = vm.ProtectReferences(std::array{callback});
+    DispatchWindowInputQueue(vm, context, false);
+    context.window_input_callback = callback;
+    if (context.managed_host_surface_open) DispatchWindowInputQueue(vm, context, true);
+}
+
+void SetWindowSurfaceCallback(dexvm::Interpreter& vm, DexVmAndroidContext& context, dexvm::VmObjectRef callback) {
+    if (context.window_surface_callback == callback) return;
+    const auto root = vm.ProtectReferences(std::array{callback});
+    if (context.window_surface_holder.IsValid()) {
+        if (const auto error = DispatchHolderCallbacks(vm, context,
+                std::array{context.window_surface_holder.Value()}, SurfaceHolderPhase::destroyed); error)
+            throw dexvm::VmJavaThrow{"Ljava/lang/IllegalStateException;", *error};
+        context.surface_callbacks.erase(context.window_surface_holder.Value());
+    }
+    context.window_surface_callback = callback;
+    if (!callback.IsValid()) return;
+    if (!context.window_surface_holder.IsValid())
+        context.window_surface_holder = vm.NewIntrinsicInstance("Landroid/view/SurfaceHolder$Impl;");
+    context.surface_callbacks[context.window_surface_holder.Value()] = {callback};
+    if (context.managed_host_surface_open) {
+        for (const auto phase : {SurfaceHolderPhase::created, SurfaceHolderPhase::changed})
+            if (const auto error = DispatchHolderCallbacks(vm, context,
+                    std::array{context.window_surface_holder.Value()}, phase); error)
+                throw dexvm::VmJavaThrow{"Ljava/lang/IllegalStateException;", *error};
+    }
+}
+
 std::optional<std::string> DispatchSurfaceHolderCallbacks(
     dexvm::Interpreter& vm, DexVmAndroidContext& context,
     const SurfaceHolderPhase phase) {
@@ -672,8 +744,12 @@ std::optional<std::string> DispatchSurfaceHolderCallbacks(
     if (phase == SurfaceHolderPhase::created) {
         context.managed_host_surface_open = true;
         holders = AttachedHolderHandles(context);
+        if (context.window_surface_callback.IsValid())
+            holders.push_back(context.window_surface_holder.Value());
+        DispatchWindowInputQueue(vm, context, true);
     } else if (phase == SurfaceHolderPhase::destroyed) {
         context.managed_host_surface_open = false;
+        DispatchWindowInputQueue(vm, context, false);
         holders.assign(context.active_surface_holders.begin(),
                        context.active_surface_holders.end());
         std::ranges::sort(holders);
@@ -716,6 +792,11 @@ std::optional<std::string> RetireSurfaceHolderGeneration(
     const auto error = DispatchSurfaceHolderCallbacks(
         vm, context, SurfaceHolderPhase::destroyed);
     if (error.has_value()) return error;
+    context.window_surface_callback = dexvm::VmObjectRef{};
+    context.window_surface_holder = dexvm::VmObjectRef{};
+    context.window_input_callback = dexvm::VmObjectRef{};
+    context.window_input_queue = dexvm::VmObjectRef{};
+    context.holder_surfaces.clear();
     context.surface_callbacks.clear();
     context.surface_holders.clear();
     context.active_surface_holders.clear();
@@ -780,3 +861,30 @@ void AttachAndroidActivityIdentity(dexvm::Interpreter& vm,
             {dx::VmValue::Int(static_cast<std::int32_t>(resource))}));
 }
 } // namespace ogplay::runtime
+
+namespace ogplay::runtime::android_intrinsics {
+Decl Declare_android_app_NativeActivity(const Context& context) {
+    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/app/NativeActivity;", "Landroid/app/Activity;");
+    const auto bind = [&](const char* name, const char* signature) {
+        builder.DirectMethod(name, signature, [context, name](dx::IntrinsicContext& call) {
+            if (!context->native_activity) {
+                if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.native_activity", 0);
+                throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "NativeActivity requires the current guest process"};
+            }
+            return context->native_activity->Call(call, name);
+        }, dx::kAccPrivate | dx::kAccNative);
+    };
+    bind("loadNativeCode", "(Ljava/lang/String;Ljava/lang/String;Landroid/os/MessageQueue;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;ILandroid/content/res/AssetManager;[B)I");
+    for (const auto* name : {"unloadNativeCode", "onStartNative", "onResumeNative", "onPauseNative", "onStopNative", "onConfigurationChangedNative", "onLowMemoryNative", "onSurfaceDestroyedNative"}) bind(name, "(I)V");
+    bind("onSaveInstanceStateNative", "(I)[B");
+    bind("onWindowFocusChangedNative", "(IZ)V");
+    bind("onSurfaceCreatedNative", "(ILandroid/view/Surface;)V");
+    bind("onSurfaceChangedNative", "(ILandroid/view/Surface;III)V");
+    bind("onSurfaceRedrawNeededNative", "(ILandroid/view/Surface;)V");
+    bind("onInputQueueCreatedNative", "(II)V");
+    bind("onInputQueueDestroyedNative", "(II)V");
+    bind("onContentRectChangedNative", "(IIIII)V");
+    return std::move(builder).Build();
+}
+
+}

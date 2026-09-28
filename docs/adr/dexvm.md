@@ -31,6 +31,7 @@
 - [ADR-0066 · TLS 保留 AOSP API，采用自有 Provider 与进程内底座](#adr-0066)
 - [ADR-0067 · 受限注解运行时由 DEX 元数据与每 VM 实现类构成](#adr-0067)
 - [ADR-0068 · SQLite Java 栈归 BootDex，host 引擎只经唯一 VFS](#adr-0068)
+- [ADR-0075 · 原版 NativeActivity Java 与当前进程 NDK 桥](#adr-0075)
 
 <a id="adr-0017"></a>
 
@@ -1092,3 +1093,43 @@ SQLite 引擎判断，损坏库交给 API 19 默认处理器记录、删除并�
 自定义格式、宿主侧普通 Java 状态和“不调用 host SQLite”的策略；唯一 VFS、应用隔离、
 明确失败及其余能力边界继续有效。项目承担 VFS 锁/同步、Android native 适配、
 collation 依赖和版本维护；不承担重写 SQL 引擎或实现完整 Android 数据库系统的义务。
+
+<a id="adr-0075"></a>
+
+## ADR-0075 · 原版 NativeActivity Java 与当前进程 NDK 桥
+
+- 状态：Accepted
+- 日期：2026-09-28
+- 关联：[DVM-195](../tasks/dexvm/DVM-195.md)
+- Supersedes：无；延续 ADR-0030、0038 的 Java/native 所有权。
+
+### 背景
+
+NativeActivity 不只是 Activity 类型名：原版 Java 根据组件 meta-data 选择库与入口，
+持有 native handle，并转发生命周期及窗口/输入回调。独立 NativeActivity runner 自建
+进程，不能共享现有 Java Activity 的对象、JNI、地址空间和库加载身份。
+
+### 决定
+
+NativeActivity 的生命周期、字段及 NativeContentView 归固定 API 19 BootDex；私有 native
+方法通过 intrinsic 进入当前 AndroidGuestProcess。Manifest 保存每个 Activity 自己的
+meta-data，getActivityInfo 仅读取当前 APK，nativeLibraryDir 对应 selected-ABI 库的 guest VFS。
+
+NativeActivityRuntime 只拥有 guest ABI 分配和 JNI global refs，借用现有 loader、内存、
+JNI/JavaVM 与执行器；不拥有第二个进程。NativeActivity 加载使用 dlopen 语义，仅执行
+constructor；之后显式 Java 加载仍能在同一映射上执行一次 JNI_OnLoad。回调按创建线程
+进入 guest，只调用当时登记的槽，销毁解除资源与引用。
+
+Window.takeSurface/takeInputQueue 保存真实所有权；解除时先结束旧代际，首次遍历前解除
+不产生旧 Surface 回调。SurfaceHolder 和 InputQueue 的 Java 身份进入同一对象模型，
+NDK 窗口/队列/AssetManager 使用受检进程内注册。每次窗口创建分配独立身份，显式 acquire
+引用可延续至 release；解除所有权后旧窗口不得重新激活。EGL 通过 façade 注入的只读接口
+检查身份，拒绝旧窗口的 create/bind/swap，不建立 EGL 到 Android module 的直接依赖。
+
+### 后果与边界
+
+当前只覆盖单宿主窗口的 API 19 ARMv7 路径，复用 SDL3/ANGLE。窗口维持会话尺寸与 RGBA8；
+其他 buffers geometry 返回 EINVAL。InputQueue 支持 ident polling，callback looper 明确失败；
+AssetManager 支持 APK asset 的 open/read/seek/length/close，单文件上限 64 MiB。
+保存状态复制预算 1 MiB，复制后调用 guest free。不引入 Binder、系统 Looper 服务、
+完整 NDK、相机或输入法系统；缺失入口不伪装为成功。通用 fixture 验证不等于游戏兼容验收。

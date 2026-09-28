@@ -20,6 +20,8 @@ namespace ogplay::runtime {
 using JavaClassLoaderToken = std::uint64_t;
 using NativeLibraryHandle = std::uint64_t;
 
+enum class NativeLibraryEntry : std::uint8_t { java, native_activity };
+
 enum class NativeLibraryLoadState : std::uint8_t {
     loading,
     loaded,
@@ -95,7 +97,8 @@ public:
     [[nodiscard]] NativeLibraryLoadResult LoadLibrary(
         std::string_view logical_name, JavaClassLoaderToken class_loader);
     [[nodiscard]] NativeLibraryLoadResult LoadPath(
-        std::string_view guest_path, JavaClassLoaderToken class_loader);
+        std::string_view guest_path, JavaClassLoaderToken class_loader,
+        NativeLibraryEntry entry = NativeLibraryEntry::java);
     [[nodiscard]] std::optional<NativeLibrarySnapshot> TrySnapshot() const;
     [[nodiscard]] std::vector<NativeLibraryRecord> Records() const;
 

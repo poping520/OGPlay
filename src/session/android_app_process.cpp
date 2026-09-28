@@ -152,6 +152,14 @@ public:
         if (!inventory.Empty()) selected_abi = loader::ResolveApkProcessAbi(inventory);
         selected = std::make_unique<loader::ApkSelectedNativeLibraries>(
             inventory, selected_abi.value_or(loader::AndroidArmAbi::armeabi_v7a));
+        if (request.filesystem) {
+            for (const auto& library : selected->Libraries()) {
+                if (library.abi != selected->Abi()) continue;
+                request.filesystem->PutFile(
+                    runtime::NativeLibraryLoader::SyntheticGuestPath(library.soname),
+                    library.image, false);
+            }
+        }
         native_libraries = std::make_unique<runtime::NativeLibraryLoader>(
             session->Process(), *selected,
             runtime::SelectBionicProfile(request.api_level),

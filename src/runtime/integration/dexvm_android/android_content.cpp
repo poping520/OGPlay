@@ -2974,6 +2974,27 @@ Decl Declare_android_content_pm_PackageManager(const Context &context) {
         return dx::VmValue::Ref(QueryBroadcastReceivers(call, context));
       });
   builder.VirtualMethod(
+      "getActivityInfo", "(Landroid/content/ComponentName;I)Landroid/content/pm/ActivityInfo;",
+      [context](dx::IntrinsicContext &call) {
+        const auto component = dx::IntrinsicCall(call).NonNullRef(0, "component");
+        const auto flags = call.arguments[1].AsInt();
+        RequireComponentInfoQuery(call, context->activity_inventory_known, flags,
+                                  "dexvm.activity_info", "getActivityInfo");
+        const auto [package, name] = ReadComponentIdentity(call, context, component);
+        const auto found = std::ranges::find_if(context->activity_components,
+            [&](const auto &item) { return item.name == name; });
+        if (found == context->activity_components.end() ||
+            (!(flags & kGetDisabledComponents) &&
+             (!context->application_enabled || !found->enabled)))
+          throw dx::VmJavaThrow{"Landroid/content/pm/PackageManager$NameNotFoundException;",
+                                package + "/" + name};
+        const auto application = MakeApplicationInfo(call, context, (flags & kGetMetaData) != 0);
+        const auto root = call.vm.ProtectReferences(std::array{application});
+        const auto info = MakeActivityInfo(call, context, *found, application);
+        SetComponentMetaData(call, context, info, found->meta_data, (flags & kGetMetaData) != 0);
+        return dx::VmValue::Ref(info);
+      });
+  builder.VirtualMethod(
       "getReceiverInfo",
       "(Landroid/content/ComponentName;I)Landroid/content/pm/ActivityInfo;",
       [context](dx::IntrinsicContext &call) {

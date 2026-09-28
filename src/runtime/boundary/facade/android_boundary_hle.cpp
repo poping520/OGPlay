@@ -99,7 +99,10 @@ public:
               &ServiceReadCString, &ServiceReadShaderSources,
               &ServiceCurrentFrame, &ServiceActivateContext},
           egl_context_{graphics_context_, api_routing_, symbols_, descriptors_,
-                       gles1_state_, gles1_draw_state_, gles1_legacy_state_},
+                       gles1_state_, gles1_draw_state_, gles1_legacy_state_, this,
+                       +[](void* owner, memory::GuestAddress window) {
+                           return static_cast<Impl*>(owner)->android_module_.NativeWindowIsCurrent(window);
+                       }},
           android_module_(call_services_, android_services_),
           egl_module_(call_services_, egl_context_),
           gles1_module_(call_services_, graphics_context_, gles1_state_,
@@ -409,6 +412,10 @@ public:
     void NotifyFileWrite() {
         android_module_.NotifyFileWrite();
     }
+    void RegisterNativeActivity(NativeActivityBoundaryResources resources) { android_module_.RegisterNativeActivity(std::move(resources)); }
+    void UnregisterNativeActivity(memory::GuestAddress activity) { android_module_.UnregisterNativeActivity(activity); }
+    memory::GuestAddress SetNativeActivityWindow(memory::GuestAddress activity, bool active) { return android_module_.SetNativeActivityWindow(activity, active); }
+    void SetNativeActivityInput(memory::GuestAddress activity, bool active) { android_module_.SetNativeActivityInput(activity, active); }
     void PushInput(const AndroidBoundaryInput& input) {
         android_module_.PushInput(input);
     }
@@ -1102,4 +1109,11 @@ std::optional<std::vector<core::GpuTraceEntry>> AndroidBoundaryHle::TryTrace(
 
 namespace ogplay::runtime {
 std::optional<core::GpuStats> AndroidBoundaryHle::TryStats() const { return impl_->TryStats(); }
+}
+
+namespace ogplay::runtime {
+void AndroidBoundaryHle::RegisterNativeActivity(NativeActivityBoundaryResources resources) { impl_->RegisterNativeActivity(std::move(resources)); }
+void AndroidBoundaryHle::UnregisterNativeActivity(memory::GuestAddress activity) { impl_->UnregisterNativeActivity(activity); }
+memory::GuestAddress AndroidBoundaryHle::SetNativeActivityWindow(memory::GuestAddress activity, bool active) { return impl_->SetNativeActivityWindow(activity, active); }
+void AndroidBoundaryHle::SetNativeActivityInput(memory::GuestAddress activity, bool active) { impl_->SetNativeActivityInput(activity, active); }
 }

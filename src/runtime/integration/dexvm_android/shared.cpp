@@ -325,6 +325,8 @@ dx::VmObjectRef MakeApplicationInfo(dx::IntrinsicContext& call,
                           package_path);
     SetApplicationInfoRef(call, info, "dataDir", "Ljava/lang/String;",
                           data_dir);
+    SetApplicationInfoRef(call, info, "nativeLibraryDir", "Ljava/lang/String;",
+                          string("/data/app-lib"));
     if (context->application_label.has_value()) {
         if (const auto* resource = std::get_if<std::uint32_t>(
                 &*context->application_label)) {

@@ -4,6 +4,9 @@
 
 namespace ogplay::runtime::android_intrinsics {
 
+[[nodiscard]] Decl Declare_android_app_NativeActivity(const Context &context);
+[[nodiscard]] Decl Declare_android_view_Surface(const Context& context);
+Decl Declare_android_view_InputQueue(const Context &context);
 [[nodiscard]] Decl Declare_android_app_Activity(const Context &context);
 [[nodiscard]] Decl Declare_android_app_KeyguardManager(const Context &context);
 [[nodiscard]] Decl
@@ -148,6 +151,7 @@ Declare_android_opengl_GLSurfaceView_Renderer(const Context &context);
 [[nodiscard]] Decl Declare_android_os_Handler_Callback(const Context &context);
 [[nodiscard]] Decl Declare_android_os_HandlerThread(const Context &context);
 [[nodiscard]] Decl Declare_android_os_Looper(const Context &context);
+[[nodiscard]] Decl Declare_android_os_MessageQueue(const Context &context);
 [[nodiscard]] Decl Declare_android_os_Message(const Context &context);
 [[nodiscard]] Decl Declare_android_os_SystemClock(const Context &context);
 [[nodiscard]] Decl Declare_android_os_StatFs(const Context &context);

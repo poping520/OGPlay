@@ -574,20 +574,24 @@ AndroidManifestFacts ParseAndroidBinaryManifest(const std::span<const std::byte>
                 }
             } else if (name == "meta-data" &&
                        ((elements.size() == 2 && elements[1] == "application") ||
+                        (elements.size() == 3 && current_component &&
+                         (elements[2] == "activity" || elements[2] == "activity-alias")) ||
                         (elements.size() == 3 && elements[2] == "receiver" &&
                          current_receiver.has_value()) ||
                         (elements.size() == 3 && elements[2] == "service" &&
                          current_service.has_value()) ||
                         (elements.size() == 2 && elements[1] == "permission" &&
                          current_permission.has_value()))) {
-                auto& meta_data = current_receiver
+                auto& meta_data = current_component
+                    ? facts.activity_components[*current_component].meta_data
+                    : current_receiver
                     ? facts.receiver_components[*current_receiver].meta_data
                     : current_service
                         ? facts.service_components[*current_service].meta_data
                         : current_permission
                             ? facts.defined_permissions[*current_permission].meta_data
                             : facts.application_meta_data;
-                const auto owner = current_receiver ? "receiver"
+                const auto owner = current_component ? "activity" : current_receiver ? "receiver"
                     : current_service ? "service"
                     : current_permission ? "permission" : "application";
                 const auto* metadata_name =

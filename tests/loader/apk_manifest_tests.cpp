@@ -941,3 +941,15 @@ TEST_CASE("DVM-180 Manifest resolves Activity exported from attribute or intent-
     CHECK(AndroidManifestActivityExported(facts.activity_components[0]));
     CHECK_FALSE(AndroidManifestActivityExported(facts.activity_components[1]));
 }
+
+TEST_CASE("DVM-195 Manifest keeps activity metadata separate from application and siblings") {
+    ComponentFixture first; first.name = ".First"; first.service_meta_data = true;
+    ComponentFixture second; second.name = ".Second";
+    const auto facts = ogplay::loader::ParseAndroidBinaryManifest(
+        StartupManifest(std::nullopt, {first, second}));
+    REQUIRE(facts.activity_components.size() == 2);
+    REQUIRE(facts.activity_components[0].meta_data.size() == 5);
+    CHECK(std::get<std::string>(facts.activity_components[0].meta_data[0].value) == "ready");
+    CHECK(facts.activity_components[1].meta_data.empty());
+    CHECK(facts.application_meta_data.empty());
+}

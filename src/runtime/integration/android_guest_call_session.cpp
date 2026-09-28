@@ -1610,6 +1610,21 @@ public:
                     diagnostics_->RecordSyscall(
                         frame.thread_id, frame.number, outcome.return_value,
                         outcome.progress, fd, fd ? filesystem_->TryDescriptorNode(*fd) : std::nullopt);
+                    if (logger_ && frame.number == 192 && frame.arguments[3] == 0x32) {
+                        const auto pending = environment_.IsThreadAttached(frame.thread_id)
+                            ? core::FieldValue{environment_.ExceptionCheck(frame.thread_id)}
+                            : core::FieldValue{std::string{"unattached"}};
+                        logger_->Write(core::LogLevel::info, "guest.mmap_fixed",
+                            "anonymous fixed mapping result",
+                            {.guest_thread = frame.thread_id},
+                            {{"address", core::GuestAddress{frame.arguments[0]}},
+                             {"length", static_cast<std::uint64_t>(frame.arguments[1])},
+                             {"protection", static_cast<std::uint64_t>(frame.arguments[2])},
+                             {"flags", static_cast<std::uint64_t>(frame.arguments[3])},
+                             {"result", static_cast<std::int64_t>(outcome.return_value)},
+                             {"pending_exception", pending}},
+                            {.mode = core::RateLimitMode::none});
+                    }
                 });
         }
     }

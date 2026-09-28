@@ -1,6 +1,8 @@
 #include <doctest/doctest.h>
 
 #include <array>
+#include <algorithm>
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <stdexcept>
@@ -8,6 +10,117 @@
 #include <set>
 
 #include "ogplay/memory/address_space.h"
+
+TEST_CASE("SBX-15 anonymous fixed replacement preserves neighbors across mappings and holes") {
+    using namespace ogplay::memory;
+    AddressSpace memory;
+    constexpr std::uint64_t page = 4096;
+    const GuestAddress base{0x10000};
+    const auto rw = PageProtection::read | PageProtection::write;
+    memory.Map({base, 2 * page}, rw);
+    memory.Map({base.Add(3 * page), 3 * page}, rw);
+    std::array<std::byte, page> marker;
+    marker.fill(std::byte{0x5a});
+    for (const auto i : {0U, 1U, 3U, 4U, 5U}) memory.Write(base.Add(i * page), marker);
+    memory.Protect({base.Add(3 * page), page}, PageProtection::read | PageProtection::execute);
+    memory.Protect({base.Add(4 * page), page}, PageProtection::none);
+    const auto ticket = memory.PreflightWrite({base.Add(page), 1});
+    auto* table = memory.DirectPageTable();
+    const auto first_index = base.Value() >> kGuestPageBits;
+    auto* neighbor = (*table)[first_index];
+    const auto generation = memory.TrySnapshot()->generation;
+    CHECK_THROWS_AS(memory.Map({base.Add(page), page}, rw), std::logic_error);
+
+    memory.ReplaceAnonymous({base.Add(page), page}, PageProtection::read);
+    std::array<std::byte, page> output;
+    memory.Read(base.Add(page), output);
+    CHECK(output == std::array<std::byte, page>{});
+    memory.Read(base, output);
+    CHECK(output == marker);
+    memory.Read(base.Add(3 * page), output);
+    CHECK(output == marker);
+    CHECK((*table)[first_index] == neighbor);
+    CHECK((*table)[first_index + 1] == nullptr);
+    CHECK(memory.TrySnapshot()->generation == generation + 1);
+    CHECK_THROWS_AS(memory.WritePrevalidated(ticket, std::span{marker}.first(1)), MemoryFault);
+    CHECK_THROWS_AS(memory.Fetch(base.Add(page), output), MemoryFault);
+
+    memory.ReplaceAnonymous({base.Add(page), 4 * page}, rw);
+    for (std::uint64_t i = 1; i <= 4; ++i) {
+        memory.Read(base.Add(i * page), output);
+        CHECK(output == std::array<std::byte, page>{});
+        CHECK((*table)[first_index + i] != nullptr);
+    }
+    for (const auto i : {0U, 5U}) {
+        memory.Read(base.Add(i * page), output);
+        CHECK(output == marker);
+    }
+    CHECK(memory.TrySnapshot()->generation == generation + 2);
+    CHECK(memory.TrySnapshot()->pages_by_protection[3] == 6);
+    CHECK_THROWS_AS(memory.Fetch(base.Add(3 * page), output), MemoryFault);
+    CHECK_NOTHROW(memory.Write(base.Add(4 * page), marker));
+}
+
+TEST_CASE("SBX-15 anonymous fixed replacement validates before mutation") {
+    using namespace ogplay::memory;
+    AddressSpace memory;
+    const GuestAddress base{0x10000};
+    const auto rw = PageProtection::read | PageProtection::write;
+    memory.Map({base, 8192}, rw);
+    memory.Write32(base, 0x12345678);
+    const auto before = memory.TrySnapshot();
+    CHECK_THROWS_AS(memory.ReplaceAnonymous({base.Add(1), 4096}, rw), std::invalid_argument);
+    CHECK_THROWS_AS(memory.ReplaceAnonymous({base, 4095}, rw), std::invalid_argument);
+    CHECK_THROWS_AS(memory.ReplaceAnonymous({base, 0}, rw), std::invalid_argument);
+    CHECK_THROWS_AS(memory.ReplaceAnonymous(LowAddressGuard(), rw), std::invalid_argument);
+    CHECK_THROWS_AS(memory.ReplaceAnonymous({base, 4096}, PageProtection::write), std::invalid_argument);
+    CHECK_THROWS_AS(memory.ReplaceAnonymous({base, 4096}, static_cast<PageProtection>(0x80)), std::invalid_argument);
+    CHECK_THROWS_AS(memory.ReplaceAnonymous({GuestAddress{0xfffff000}, 8192}, rw), std::overflow_error);
+    CHECK(memory.Read32(base) == 0x12345678);
+    CHECK(memory.TrySnapshot()->generation == before->generation);
+    CHECK(memory.TrySnapshot()->pages_by_protection == before->pages_by_protection);
+
+    const GuestAddress last{0xfffff000};
+    memory.ReplaceAnonymous({last, 4096}, rw);
+    memory.Write8(GuestAddress{0xffffffff}, 0x7f);
+    memory.ReplaceAnonymous({last, 4096}, PageProtection::read);
+    CHECK(memory.Read8(GuestAddress{0xffffffff}) == 0);
+}
+
+TEST_CASE("SBX-15 anonymous fixed replacement is atomic to checked readers") {
+    using namespace ogplay::memory;
+    AddressSpace memory;
+    const GuestAddress base{0x10000};
+    const auto rw = PageProtection::read | PageProtection::write;
+    memory.Map({base, 8192}, rw);
+    std::array<std::byte, 8192> marker;
+    marker.fill(std::byte{0x5a});
+    std::atomic<bool> started{false}, done{false}, intact{true};
+    std::thread reader([&] {
+        std::array<std::byte, 8192> output;
+        started = true;
+        do {
+            try {
+                memory.Read(base, output);
+                if (!std::all_of(output.begin(), output.end(), [&](const auto byte) {
+                        return byte == output.front();
+                    }) || (output.front() != std::byte{} && output.front() != marker.front())) {
+                    intact = false;
+                }
+            } catch (...) {
+                intact = false;
+            }
+        } while (!done);
+    });
+    while (!started) std::this_thread::yield();
+    for (int i = 0; i < 500; ++i) {
+        memory.Write(base, marker);
+        memory.ReplaceAnonymous({base, marker.size()}, rw);
+    }
+    done = true;
+    reader.join();
+    CHECK(intact);
+}
 
 TEST_CASE("guest atomic first fit skips guards reuses holes and preserves failure state") {
     using namespace ogplay::memory;

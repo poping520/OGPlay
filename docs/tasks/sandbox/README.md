@@ -22,6 +22,7 @@
 | [SBX-10](SBX-10.md) | pause/shutdown 落盘与 prefs 错误语义 | SBX-3、6、7 | 完成 |
 | [SBX-11](SBX-11.md) | Java File/包装输出流与 float prefs 完整性 | SBX-5、6 | 完成 |
 | [SBX-12](SBX-12.md) | store 装载冲突、meta 与合并配额硬化 | SBX-1、3、8 | 完成 |
+| [SBX-15](SBX-15.md) | 匿名 MAP_FIXED 原子替换与跨宿主页边界保留 | SBX-14 | 完成 |
 
 SBX-7 提前到 SBX-4..6 之前执行：它只依赖 SBX-3，先做完 CLI 接线就能端到端
 验证覆盖层，后面三个通道收敛各自落地即刻生效。

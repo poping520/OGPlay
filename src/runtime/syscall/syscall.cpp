@@ -412,6 +412,7 @@ void BindAndroidTimeSyscalls(A32SyscallDispatcher& dispatcher,
 
 void BindAndroidMemorySyscalls(A32SyscallDispatcher& dispatcher,
                                memory::AddressSpace& address_space) {
+    constexpr std::int32_t kEperm = 1;
     constexpr std::int32_t kEnomem = 12;
     constexpr std::int32_t kEinval = 22;
     constexpr std::uint32_t kMapPrivate = 0x02;
@@ -464,8 +465,9 @@ void BindAndroidMemorySyscalls(A32SyscallDispatcher& dispatcher,
                 if ((flags & kMapFixed) != 0) {
                     address = frame.arguments[0];
                     if (address % page_size != 0) return -kEinval;
-                    address_space.Map({memory::GuestAddress{address}, size},
-                                      protection(frame.arguments[2]));
+                    if (address < memory::kGuestLowGuardSize) return -kEperm;
+                    address_space.ReplaceAnonymous({memory::GuestAddress{address}, size},
+                                                   protection(frame.arguments[2]));
                 } else {
                     address = address_space.MapAnywhere(
                         {memory::GuestAddress{0x60000000U}, UINT64_C(0xa0000000)},
@@ -475,7 +477,7 @@ void BindAndroidMemorySyscalls(A32SyscallDispatcher& dispatcher,
             } catch (const std::invalid_argument&) {
                 return -kEinval;
             } catch (const std::overflow_error&) {
-                return -kEinval;
+                return -kEnomem;
             } catch (const std::exception&) {
                 return -kEnomem;
             }

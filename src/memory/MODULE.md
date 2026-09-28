@@ -10,6 +10,9 @@
 - `GuestRange`：64 位长度的半开区间，可表达完整 4 GiB 地址空间。
 - `LowAddressGuard()`：`0x00000000–0x0000ffff` 默认保留区间。
 - `AddressSpace`：4 GiB reservation 上的 Map/Unmap/Protect/Read/Write/Validate；
+  普通 `Map` 拒绝重叠；`ReplaceAnonymous(range,protection)` 在同一锁内替换目标页及空洞，
+  先准备宿主 backing，再仅清零目标 guest 范围，并发布权限、映射账本、直接页表与世代。
+  参数或 backing 准备失败不改变已有 guest 映射；范围外页保持数据和权限。
   `MapAnywhere(bounds,size,protection)` 在同一账本锁内 first-fit 选址并 Map，
   跳过低地址 guard 和全部已映射页（包括 PROT_NONE），无连续空间抛 bad_alloc。
   复用 Map 的清零、宿主 backing、direct-page-table 与映射世代发布；失败不占 guest 页。
@@ -38,7 +41,7 @@
 - guest 映射与权限按 4 KiB 独立记账；共享同一宿主页的相邻 guest 页不得互相影响。
 - 宿主后备页保持可读写且不可执行；guest execute、observer、非 RW 权限和跨页访问必须
   经过 `CheckedMemoryBus`。直接数据页表只能发布账本确认的 RW 非执行页，并随映射、保护、
-  卸载和快照恢复同步更新。
+  匿名替换、卸载和快照恢复同步更新。
 - 不完整或不兼容的快照不得改变当前地址空间。
 - 页索引和小端编解码必须在 32/64 位宿主及 GCC/Clang/MSVC 严格告警下保持类型安全；
   8/16 位值也必须先在足够宽的类型中移位和合并。

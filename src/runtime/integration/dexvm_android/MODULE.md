@@ -33,6 +33,14 @@ handler id、单类 TU 或 misc 巨石。非 Android family 归 core，平台事
 （含子类）返回空字符串；不按异常消息或域名判断，也不把所有异常压成空串。不宣称
 完整 Log 子系统。日志进入统一结构化 logger；不吞异常、不写裸 stdout/stderr。
 
+### 输入设备查询
+
+InputDevice 查询读取启动前注入的进程逻辑设备目录。API19 InputDevice/MotionRange/CREATOR
+来自 BootDex，静态 getDeviceIds/getDevice 由 overlay 投影目录，普通字段与轴范围算法仍执行
+原版 Java；未知 id/轴返回 null，空目录返回新的空数组。目录不探测宿主硬件、不初始化
+InputManager/Binder；键盘映射、hasKeys、震动和 Parcel 写入明确记账失败，Parcel 读入和
+完整反射依赖不在已验证范围。目录不宣称触摸板、摇杆或热插拔。
+
 ### NativeActivity 与窗口接管
 
 原版 NativeActivity/NativeContentView 执行 Java；只 overlay 私有 native 入口，并通过显式

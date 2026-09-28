@@ -62,12 +62,30 @@ struct AndroidKeyguardState final {
 
 using AndroidKeyguardStateProvider = std::function<AndroidKeyguardState()>;
 
+// Process-visible logical devices, independent of SDL's host device ids.
+inline constexpr std::int32_t kAndroidKeyboardDeviceId = -1;
+inline constexpr std::int32_t kAndroidTouchDeviceId = 0;
+inline constexpr std::int32_t kAndroidKeyboardSource = 0x101;
+inline constexpr std::int32_t kAndroidTouchSource = 0x1002;
+struct AndroidInputMotionRange final {
+  std::int32_t axis{}, source{};
+  float minimum{}, maximum{}, flat{}, fuzz{}, resolution{};
+};
+struct AndroidInputDevice final {
+  std::int32_t id{};
+  std::string name, descriptor;
+  std::int32_t sources{}, keyboard_type{};
+  std::vector<AndroidInputMotionRange> ranges;
+};
+
 // android.* intrinsic surface for the dex_activity lifecycle
 // (docs/design/dexvm/03-platform-intrinsics.md §4). The catalog is a
 // code-defined immutable list; handlers bind to the running guest session
 // (sound mixer, VFS, platform identity) through this shared context.
 
 struct DexVmAndroidContext final {
+  // Installed before Application startup; no host device or Binder discovery.
+  std::vector<AndroidInputDevice> input_devices;
   AndroidGuestCallSession *session{};
   // One process-owned PCM backend shared by OpenSL ES and AudioTrack.
   audio::OpenSlesPcmMixer *pcm_playback{};

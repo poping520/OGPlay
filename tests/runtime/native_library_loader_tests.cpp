@@ -4577,3 +4577,39 @@ TEST_CASE("DVM-195 takeSurface null before traversal suppresses native surface c
     CHECK(fixture.context->window_input_queue.IsValid());
     CHECK(fixture.app->Stop().state == session::LifecycleRunState::stopped);
 }
+
+TEST_CASE("InputDevice production directory agrees with dispatched keyboard identity") {
+    using namespace ogplay;
+    namespace dx = runtime::dexvm;
+    OrchestratedApp fixture("fixture.LauncherActivity", true, false);
+    fixture.app->StartApplication();
+    REQUIRE(fixture.app->StartLauncherActivity().state == session::LifecycleRunState::running);
+    auto& vm = fixture.app->DexVm().Vm();
+    auto& linker = vm.Linker();
+    const auto type = linker.ResolveDescriptor("Landroid/view/InputDevice;");
+    const auto get_device = linker.FindDirectMethod(type, "getDevice", "(I)Landroid/view/InputDevice;");
+    REQUIRE(get_device.has_value());
+    const auto outcome = vm.Call(*get_device, std::array{dx::VmValue::Int(runtime::kAndroidKeyboardDeviceId)});
+    REQUIRE_FALSE(outcome.exception.IsValid());
+    REQUIRE(outcome.value.ref.IsValid());
+    const auto root = vm.ProtectReferences(std::array{outcome.value.ref});
+    const auto query_id = runtime::android_intrinsics::CallAndroidMethod(vm, outcome.value.ref, "getId", "()I").AsInt();
+    std::int32_t event_id = 1234;
+    const auto activity_type = vm.Model().ObjectClass(fixture.context->activity);
+    const auto slot = linker.FindVtableIndex(activity_type, "onKeyDown", "(ILandroid/view/KeyEvent;)Z");
+    REQUIRE(slot.has_value());
+    auto& handler = linker.MutableMethod(linker.Class(activity_type).vtable[*slot]);
+    handler.kind = dx::MethodKind::intrinsic;
+    handler.implementation = [&](dx::IntrinsicContext& call) {
+        event_id = runtime::android_intrinsics::CallAndroidMethod(call.vm, call.arguments[1].ref,
+            "getDeviceId", "()I").AsInt();
+        return dx::VmValue::Int(1);
+    };
+    fixture.app->ActivityLifecycle().QueueInput({.type = runtime::AndroidBoundaryInputType::key,
+        .code = 29, .pressed = true, .device_id = 1234});
+    static_cast<void>(fixture.app->ActivityLifecycle().StepFrame());
+    CHECK(event_id == query_id);
+    CHECK(event_id == runtime::kAndroidKeyboardDeviceId);
+    CHECK(fixture.context->input_devices.size() == 2);
+    static_cast<void>(fixture.app->Stop());
+}

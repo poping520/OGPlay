@@ -230,6 +230,7 @@ AndroidIntrinsicCatalog(const std::shared_ptr<DexVmAndroidContext> &context) {
       Declare_android_view_ContextThemeWrapper(context),
       Declare_android_view_KeyEvent(context),
       Declare_android_view_MotionEvent(context),
+      Declare_android_view_InputDevice(context),
       Declare_android_view_SurfaceHolder_Callback(context),
       Declare_android_view_SurfaceHolder_Impl(context),
       Declare_android_view_SurfaceHolder(context),

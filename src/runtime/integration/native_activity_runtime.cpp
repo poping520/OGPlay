@@ -6,6 +6,8 @@
 #include <bit>
 #include <map>
 #include <utility>
+#include <exception>
+#include "ogplay/core/logger.h"
 #include "ogplay/runtime/dexvm/interpreter.h"
 #include "ogplay/runtime/dexvm/nio_runtime.h"
 #include "ogplay/runtime/integration/android_guest_call_session.h"
@@ -34,14 +36,15 @@ public:
     Publish publish;
     Resolve resolve;
     Thread thread;
+    core::Logger* logger;
     dx::NioDirectMemoryAccess memory;
     std::map<std::uint32_t, Instance> instances;
     std::uint32_t next_handle{1};
 
     Impl(AndroidGuestCallSession& s, std::weak_ptr<DexVmAndroidContext> c,
-         Publish p, Resolve r, Thread t)
+         Publish p, Resolve r, Thread t, core::Logger* l)
         : session(s), context(std::move(c)), publish(std::move(p)), resolve(std::move(r)),
-          thread(std::move(t)), memory(s.Process().GuestMemoryAccess()) {}
+          thread(std::move(t)), logger(l), memory(s.Process().GuestMemoryAccess()) {}
 
     void Write(memory::GuestAddress address, std::uint32_t value) {
         std::array<std::byte, 4> bytes{};
@@ -103,10 +106,19 @@ public:
         return Invoke(call, item, target, args);
     }
     void Free(Instance& item) {
-        if (item.registered) session.Process().UnregisterNativeActivity(item.address);
+        if (item.registered) {
+            session.Process().UnregisterNativeActivity(item.address);
+            item.registered = false;
+        }
         auto& env = session.Environment();
-        if (!item.activity.IsNull()) env.DeleteGlobalRef(item.thread, item.activity);
-        if (!item.assets.IsNull()) env.DeleteGlobalRef(item.thread, item.assets);
+        if (!item.activity.IsNull()) {
+            env.DeleteGlobalRef(item.thread, item.activity);
+            item.activity = JniReference{};
+        }
+        if (!item.assets.IsNull()) {
+            env.DeleteGlobalRef(item.thread, item.assets);
+            item.assets = JniReference{};
+        }
         if (!item.address.IsNull()) memory.release(item.address, item.bytes);
         item = Instance();
     }
@@ -282,9 +294,19 @@ public:
 };
 
 NativeActivityRuntime::NativeActivityRuntime(AndroidGuestCallSession& s,
-        std::weak_ptr<DexVmAndroidContext> c, Publish p, Resolve r, Thread t)
-    : impl_(std::make_unique<Impl>(s, std::move(c), std::move(p), std::move(r), std::move(t))) {}
-NativeActivityRuntime::~NativeActivityRuntime() { Release(); }
+        std::weak_ptr<DexVmAndroidContext> c, Publish p, Resolve r, Thread t, core::Logger* logger)
+    : impl_(std::make_unique<Impl>(s, std::move(c), std::move(p), std::move(r), std::move(t), logger)) {}
+NativeActivityRuntime::~NativeActivityRuntime() {
+    try { Release(); }
+    catch (const std::exception& error) {
+        if (impl_->logger) impl_->logger->Write(core::LogLevel::error,
+            "runtime.native_activity.cleanup", error.what());
+    }
+    catch (...) {
+        if (impl_->logger) impl_->logger->Write(core::LogLevel::error,
+            "runtime.native_activity.cleanup", "unknown cleanup failure");
+    }
+}
 dexvm::VmValue NativeActivityRuntime::Call(dexvm::IntrinsicContext& call, std::string_view method) { return impl_->Call(call, method); }
 memory::GuestAddress NativeActivityRuntime::InputQueuePointer(dexvm::VmObjectRef owner) const {
     for (const auto& [_, item] : impl_->instances)
@@ -292,7 +314,16 @@ memory::GuestAddress NativeActivityRuntime::InputQueuePointer(dexvm::VmObjectRef
     return memory::GuestAddress{};
 }
 void NativeActivityRuntime::Release() {
-    for (auto& [_, item] : impl_->instances) impl_->Free(item);
-    impl_->instances.clear();
+    std::exception_ptr failure;
+    for (auto it = impl_->instances.begin(); it != impl_->instances.end();) {
+        try {
+            impl_->Free(it->second);
+            it = impl_->instances.erase(it);
+        } catch (...) {
+            if (!failure) failure = std::current_exception();
+            ++it;
+        }
+    }
+    if (failure) std::rethrow_exception(failure);
 }
 } // namespace ogplay::runtime

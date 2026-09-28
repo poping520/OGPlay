@@ -42,6 +42,10 @@ struct EglVm final {
               auto android = AndroidIntrinsicCatalog(context);
               android.push_back(std::move(
                   IntrinsicClassBuilder::Class(
+                      "Lfixture/GlView;", "Landroid/opengl/GLSurfaceView;"))
+                                    .Build());
+              android.push_back(std::move(
+                  IntrinsicClassBuilder::Class(
                       "Lfixture/EglPolicies;", "Ljava/lang/Object;",
                       {"Landroid/opengl/GLSurfaceView$EGLContextFactory;",
                        "Landroid/opengl/GLSurfaceView$EGLConfigChooser;"}))
@@ -178,6 +182,28 @@ std::vector<std::byte> MinimalLibcElf() {
 }
 
 }  // namespace
+
+TEST_CASE("GLSurfaceView subclasses inherit a stable holder and initialized View context") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch,
+                               InterpreterBackend::threaded}) {
+        EglVm vm(backend);
+        const auto view = vm.interpreter.NewIntrinsicInstance("Lfixture/GlView;");
+        const auto context = vm.interpreter.NewIntrinsicInstance("Landroid/content/Context;");
+        CHECK(vm.linker.IsAssignable(
+            vm.linker.ResolveDescriptor("Landroid/view/SurfaceView;"),
+            vm.model.ObjectClass(view)));
+        vm.CallStatic("Landroid/opengl/GLSurfaceView;", "<init>",
+                      "(Landroid/content/Context;)V",
+                      {VmValue::Ref(view), VmValue::Ref(context)});
+        CHECK(vm.CallOn(view, "getContext", "()Landroid/content/Context;").ref == context);
+        CHECK(FindViewUiNode(*vm.context, view.Value()).has_value());
+        const auto holder = vm.CallOn(view, "getHolder", "()Landroid/view/SurfaceHolder;").ref;
+        REQUIRE(holder.IsValid());
+        CHECK(vm.CallOn(view, "getHolder", "()Landroid/view/SurfaceHolder;").ref == holder);
+        vm.CallOn(holder, "setFormat", "(I)V", {VmValue::Int(-3)});
+        CHECK(vm.CallOn(holder, "getSurface", "()Landroid/view/Surface;").ref.IsValid());
+    }
+}
 
 TEST_CASE("GLSurfaceView retains linked EGL policy identities") {
     EglVm vm;

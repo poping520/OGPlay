@@ -48,11 +48,11 @@ Decl Declare_android_opengl_GLSurfaceView_Renderer(const Context& context) {
 namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_opengl_GLSurfaceView(const Context& context) {
-    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/opengl/GLSurfaceView;", "Landroid/view/View;");
+    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/opengl/GLSurfaceView;", "Landroid/view/SurfaceView;");
     builder.ConstantInt("RENDERMODE_WHEN_DIRTY", "I", 0)
         .ConstantInt("RENDERMODE_CONTINUOUSLY", "I", 1);
     builder.Constructor("(Landroid/content/Context;)V",
-        [](dx::IntrinsicContext&) { return dx::VmValue::Void(); });
+        ViewInitHandler(context));
     builder.FinalMethod("setRenderer",
         "(Landroid/opengl/GLSurfaceView$Renderer;)V",
         [context](dx::IntrinsicContext& call) {

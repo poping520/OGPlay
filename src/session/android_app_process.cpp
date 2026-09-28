@@ -8,6 +8,7 @@
 #include "ogplay/runtime/bionic/bionic_profile.h"
 #include "ogplay/runtime/debug/stall_diagnostics.h"
 #include "ogplay/runtime/dexvm/vm_monitors.h"
+#include "ogplay/runtime/integration/native_activity_runtime.h"
 
 namespace ogplay::session {
 namespace {
@@ -287,6 +288,9 @@ public:
             // cleanup through JNI. The lifecycle has already joined worker
             // threads here, while the root JNI thread is still attached.
             bridge->Vm().ReleaseGuestNativeResources(true);
+            // Failed startup skips Java onDestroy, so retire any remaining
+            // native activity backing while JNI references are still usable.
+            if (context->native_activity) context->native_activity->Release();
             session->Stop();
         };
         bindings.close_surface = [this] { session->CloseManagedSurface(); };

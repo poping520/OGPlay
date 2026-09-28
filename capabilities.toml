@@ -33,7 +33,7 @@ note = "BND-3 将真实 guest libc 的 memcpy/memmove/memset/memcmp/strlen host 
 [runtime.libdl_process_service]
 status = "complete"
 test = "tests/runtime/bionic_profile_tests.cpp; tests/runtime/android_guest_call_session_tests.cpp; tests/runtime/boundary/integration/android_boundary_hle_tests.cpp; cmake/CheckBoundaryHotPath.cmake"
-note = "BND-25 将 Android libdl 的 dlopen/dlsym/dlclose/dlerror linker-service stub 接到 process-owned ELF namespace 与 sealed boundary symbols，支持路径 basename、handle/refcount、RTLD_DEFAULT 及逐 guest thread 消费式错误；不访问宿主动态库，不引入 title 分支。后续修复对齐 KitKat 全进程语义：dlopen(nullptr) 返回 RTLD_DEFAULT 伪句柄，dlsym(RTLD_DEFAULT) 先搜任意 sealed HLE 模块再回退 ELF namespace，dlclose 对伪句柄 no-op，主机 GL 包装名 libhgl.so 归一化为 libGLESv2.so 边界 handle；boundary 句柄 dlsym 未命中时回退跨 sealed 模块解析（引擎经 GLES1/主机 GL 句柄查询 GLES2 入口，有意宽于 KitKat 单库语义）。BND-39 覆盖 dl_unwind_find_exidx linker stub，按 PC 返回初始或动态 ELF 的重定位 PT_ARM_EXIDX 地址与表项数，使 guest ARM C++ 异常可进入原有 catch。"
+note = "BND-25 将 Android libdl 的 dlopen/dlsym/dlclose/dlerror linker-service stub 接到 process-owned ELF namespace 与 sealed boundary symbols，支持路径 basename、handle/refcount、RTLD_DEFAULT 及逐 guest thread 消费式错误；不访问宿主动态库，不引入 title 分支。后续修复对齐 KitKat 全进程语义：dlopen(nullptr) 返回 RTLD_DEFAULT 伪句柄，dlsym(RTLD_DEFAULT) 先搜任意 sealed HLE 模块再回退 ELF namespace，dlclose 对伪句柄 no-op，主机 GL 包装名 libhgl.so 归一化为 libGLESv2.so 边界 handle；boundary 句柄 dlsym 未命中时回退跨 sealed 模块解析（引擎经 GLES1/主机 GL 句柄查询 GLES2 入口，有意宽于 KitKat 单库语义）。BND-39 覆盖 dl_unwind_find_exidx linker stub，按 PC 返回初始或动态 ELF 的重定位 PT_ARM_EXIDX 地址与表项数，使 guest ARM C++ 异常可进入原有 catch。BND-40/ADR-0076 普通句柄改为有界 API19 ARM32 soinfo guest 视图，由真实 ELF namespace 与 sealed exports 生成符号/字符串/SysV hash，保留截获后的地址；支持直接读取查询与 dlsym/调用一致，引用归零退役且地址不复用。未实现完整私有 linker 或其他布局，模块与 JNI 归属不变。"
 
 [loader.binary_xml_typed_attributes]
 status = "complete"
@@ -1589,7 +1589,6 @@ note = "DVM-90 对照 AOSP 4.4.4 ViewGroup conditional attach/detach 与 Surface
 status = "partial"
 test = "tests/dexvm/android_value_tests.cpp: InputDevice queries; tests/runtime/native_library_loader_tests.cpp: InputDevice production directory"
 note = "DVM-196：InputDevice/MotionRange 数据类来自 API19 BootDex，查询 overlay 投影进程逻辑键盘与映射触摸；未知设备/轴为 null，无设备时返回真实空快照。Java/NativeActivity 事件在 session 统一设备 id；触摸坐标范围来自逻辑窗口，不宣称宿主触摸板或摇杆。键盘映射、hasKeys、震动与 Parcel 写入明确记账失败；Parcel 读入、完整反射、热插拔及 NDK 新查询符号未验收。不运行 InputManager/Binder。"
-
 
 [dexvm.system_ui_visibility]
 status = "partial"

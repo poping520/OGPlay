@@ -30,6 +30,14 @@ Android API 的详细行为以 [dexvm_android](dexvm_android/MODULE.md)为准；
   libhgl.so 映射 sealed libGLESv2.so；dlsym 先查 handle scope，boundary 可回退 LookupAny，
   DEFAULT 先 sealed catalog 再 global namespace。dlclose 只减引用，不卸载；未知库/符号/
   handle/flags 进入逐线程 dlerror，不返回假地址或访问宿主文件。
+- 普通 libdl handle 为 API19 ARM32 `soinfo` guest 视图地址，支持范围见
+  [ADR-0076](../../../docs/adr/runtime.md#adr-0076)。表从现有 namespace 的未版本化导出和
+  sealed provider 投影；真实 ELF 优先于部分截获目录，st_value/load_bias 合成同一已解析地址。
+  视图只暴露所属库导出，dlsym 的 dependency/sealed fallback 保持原契约。
+  重复打开共享活跃记录及引用，引用归零解除 backing；退役地址不复用，失效 handle 明确失败。
+  只读记录/符号/字符串/SysV hash 位于 `[0x79000000,0x7a000000)` 有界 arena，宿主更新引用
+  时临时切换记录页权限；Virtual SO 的 base/size/load_bias 为 0，符号指向真实 thunk/data。
+  不提供完整私有 linker 状态或其他 API/ABI 布局，不接管模块、构造器或 JNI 初始化。
 - NativeLibraryLoader 以 canonical path + ClassLoader token 维护唯一 Loading/Loaded/Failed
   registry：同 loader 幂等、同线程递归返回现有 handle、跨 loader 拒绝、Failed 重试稳定失败。
   app resolver 只用 selected-ABI inventory，basename 为身份，DT_SONAME 为受检别名；

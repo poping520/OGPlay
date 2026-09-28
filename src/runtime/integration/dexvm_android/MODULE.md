@@ -109,6 +109,9 @@ Looper.myQueue 发布现有 scheduler 的稳定队列身份，不创建另一调
   STORED entry 并发布逻辑 FD+区间。缺失映射为 Java IOException/NotFoundException，不泄漏路径。
   应用 Context 的 Resources/AssetManager 是同一对象对，`Resources.mAssets` 为 GC 强边；
   `getSystem()` 返回独立稳定对象对，系统 asset 不读取应用 APK，未覆盖的系统资源明确失败。
+  `Resources.getXml` 保持 AXML 的 getEventType/next/getName/getText/close 有界能力；继承
+  BootDex 完整 XmlPullParser 接口，其余方法经统一未实现路径记账并抛 UnsatisfiedLinkError。
+  普通文本 XML 使用 BootDex KXml，不能传入二进制 AXML reader。
   getString/getInteger 的受审系统配置共用 BootDex 同源生成表；名称/类型/ID、AOSP 默认值与
   来源身份由 `tools/bootdex/api19-system-resources.json` 持有，build/check 校验实际 Java
   消费者并绑定生成物。旧 ID 不作别名；SQLite journal mode 显式覆盖为 DELETE，

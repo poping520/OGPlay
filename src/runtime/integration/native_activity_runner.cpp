@@ -75,7 +75,12 @@ class NativeActivitySession::Impl final {
 public:
     explicit Impl(const NativeActivityRunRequest& request)
         : boundary_(address_space_, request.backend, request.width, request.height,
-                    request.supersample_factor),
+                    request.supersample_factor, {.loopers = {
+                        [this](std::int32_t fd) { return vfs_.PipePollEvents(fd); },
+                        [this](std::uint64_t tid) {
+                            try { return lifecycle_.State(tid).status == GuestThreadStatus::running; }
+                            catch (const GuestThreadLifecycleError&) { return false; }
+                        }}}),
           dispatcher_(CreateAndroidArmSyscallDispatcher(ledger_)),
           threads_([this] {
               auto result = std::make_unique<cpu::DynarmicCpu>(

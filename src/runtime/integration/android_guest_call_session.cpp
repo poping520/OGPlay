@@ -1111,7 +1111,9 @@ public:
         }
     }
 
+    memory::GuestAddress PrepareThreadLooper(std::uint64_t tid) { return boundary_.PrepareThreadLooper(tid); }
     void ReleaseDexVmThread(const std::uint64_t thread_id) noexcept {
+        boundary_.RetireThreadLooper(thread_id);
         std::shared_ptr<DexVmThreadContext> context;
         {
             const std::scoped_lock lock(dexvm_threads_mutex_);
@@ -1199,6 +1201,13 @@ public:
                 return static_cast<Impl*>(userdata)->DynamicFindExidx(
                     pc, thread_id);
             }};
+        options.loopers.poll_events = [owner](std::int32_t fd) {
+            return owner->filesystem_->PipePollEvents(fd);
+        };
+        options.loopers.thread_running = [owner](std::uint64_t tid) {
+            try { return owner->lifecycle_.State(tid).status == GuestThreadStatus::running; }
+            catch (const GuestThreadLifecycleError&) { return false; }
+        };
         options.open_sles_callbacks = {
             owner, +[](void* userdata, const OpenSlesGuestCallback& callback) {
                 static_cast<Impl*>(userdata)->EnqueueOpenSlesCallback(callback);
@@ -1561,6 +1570,7 @@ public:
 
     void Stop() {
         if (!running_) return;
+        boundary_.ShutdownLoopers();
         if (execution_budget_) execution_budget_->BeginDrain();
         static_cast<void>(
             boundary_.PcmPlayback().InterruptBlockingWaits());
@@ -1699,7 +1709,7 @@ public:
         dispatcher_.SetObserver(
             [this](const A32SyscallFrame& frame,
                    const std::int32_t result) {
-                if (frame.number == 4 && result > 0) {
+                if ((frame.number == 3 || frame.number == 4 || frame.number == 6 || frame.number == 146) && result >= 0) {
                     boundary_.NotifyFileWrite();
                 }
             });
@@ -1926,6 +1936,7 @@ public:
     void BeginTeardown() noexcept {
         if (teardown_requested_.exchange(true, std::memory_order_acq_rel)) return;
         if (execution_budget_) execution_budget_->BeginDrain();
+        boundary_.ShutdownLoopers();
         boundary_.RetireGuestGraphics();
         static_cast<void>(
             boundary_.PcmPlayback().InterruptBlockingWaits());
@@ -2321,6 +2332,7 @@ void AndroidGuestProcess::PrepareDexVmThread(
     const std::uint64_t thread_id, const std::uint32_t allocation_slot) {
     impl_->PrepareDexVmThread(thread_id, allocation_slot);
 }
+memory::GuestAddress AndroidGuestProcess::PrepareThreadLooper(std::uint64_t tid) { return impl_->PrepareThreadLooper(tid); }
 void AndroidGuestProcess::ReleaseDexVmThread(
     const std::uint64_t thread_id) noexcept {
     impl_->ReleaseDexVmThread(thread_id);
@@ -2529,6 +2541,7 @@ void AndroidGuestCallSession::PrepareDexVmThread(
     const std::uint64_t thread_id, const std::uint32_t allocation_slot) {
     process_->PrepareDexVmThread(thread_id, allocation_slot);
 }
+memory::GuestAddress AndroidGuestCallSession::PrepareThreadLooper(std::uint64_t tid) { return process_->PrepareThreadLooper(tid); }
 void AndroidGuestCallSession::ReleaseDexVmThread(
     const std::uint64_t thread_id) noexcept {
     process_->ReleaseDexVmThread(thread_id);

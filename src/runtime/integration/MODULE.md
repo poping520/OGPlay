@@ -171,3 +171,9 @@ headless/NativeActivity，以及 [tests/dexvm](../../../tests/dexvm/) 的 Androi
 只构建受影响目标；文档修改只做 UTF-8/链接/diff 检查，人工探索不能代替 Scenario gate。
 
 只读诊断通过 AndroidGuestProcess 转发 memory/CPU/GPU try-snapshot；NativeLibraryLoader registry 使用 try-lock，最多 128 项、每段文本最多 512 UTF-8 bytes，保留 Loading/Loaded/Failed 事实。Syscall FD/node_id 来自已知 ARM 文件 syscall 参数/返回值与 VFS 元数据；无法解析的节点保持未知。
+
+## Java/NDK Looper 关联
+
+DexVM bridge 通过 token→guest TID 显式准备 NDK Looper，Java 主线程在 Activity/JNI 启动前
+已关联，HandlerThread.prepare 复用该 registry。线程退出释放内部引用，进程 teardown
+先 shutdown Looper 以唤醒阻塞轮询。native clone 的存活来自 lifecycle hook，不继承父 Looper。

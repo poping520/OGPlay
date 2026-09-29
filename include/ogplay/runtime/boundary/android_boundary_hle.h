@@ -79,6 +79,12 @@ struct NativeActivityBoundaryResources final {
     std::function<std::optional<std::vector<std::byte>>(std::string_view)> read_asset;
 };
 
+struct AndroidLooperHooks final {
+    // nullopt: descriptor type is unsupported; bits use ALOOPER_EVENT_*.
+    std::function<std::optional<std::uint32_t>(std::int32_t)> poll_events;
+    std::function<bool(std::uint64_t)> thread_running;
+};
+
 struct AndroidBoundaryOptions final {
     bool allow_gles1_material_single_face{};
     bool allow_gles1_single_stage_texcoord_fallback{true};
@@ -88,6 +94,7 @@ struct AndroidBoundaryOptions final {
                             std::vector<std::byte>&){};
     BionicDynamicLinkHooks dynamic_link{};
     OpenSlesCallbackSink open_sles_callbacks{};
+    AndroidLooperHooks loopers{};
 };
 
 class AndroidBoundaryHle final : public core::GpuStateProvider {
@@ -129,6 +136,9 @@ public:
     // Compatibility wrapper for boundary-only consumers.
     [[nodiscard]] bool Handle(cpu::Cpu& cpu, const cpu::RunResult& stopped);
     void NotifyFileWrite();
+    memory::GuestAddress PrepareThreadLooper(std::uint64_t thread_id);
+    void RetireThreadLooper(std::uint64_t thread_id);
+    void ShutdownLoopers();
     void PushInput(const AndroidBoundaryInput& input);
     void RegisterNativeActivity(NativeActivityBoundaryResources resources);
     void UnregisterNativeActivity(memory::GuestAddress activity);

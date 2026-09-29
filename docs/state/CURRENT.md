@@ -52,6 +52,11 @@
   原 APK/OBB 复跑中 `pthread_kill failed` 及随后 SIGABRT 消失；下一首错为 guest
   PC=0 执行未映射内存（LR=0x614220cc）。同时修正低 PC 诊断下溢，避免掩盖原故障。
   证据 `.local/tkill-fix-{build,tests,startup,startup-check}.log`；实际 GC 全周期尚未验收。
+  [BND-45](../tasks/boundary/BND-45.md) 已接通线程 Looper 与 Java/native 关联、VFS pipe
+  就绪轮询及生命周期；Windows 构建与定向 14 用例/391 断言通过。原命令复跑 `ALooper_forThread` 缺失和 PC=0 崩溃消失，进入
+  `UnityPlayer.onDrawFrame`，下一首错为 `javax.crypto.SecretKeyFactory` 类缺失
+  （请求 `PBEWITHSHAAND256BITAES-CBC-BC`）。证据 `.local/looper-fix-startup.log`。
+  NDK callback/非 pipe fd 仍不支持，不代表游戏完整验收。
   尚未重达 nativeRender，原绘制故障未复验。证据 `.local/proc-maps-*.log`。
   此前 renderer 证据 `.local/renderer-{build,test-build,tests,startup}.log`。
   EGL 暂停/恢复策略尚未接入该配置；前置 NDK 符号缺失仍待闭合。
@@ -96,8 +101,8 @@
 
 ## 未闭合边界
 
-- Dead Trigger 当前首错是 guest PC=0 执行未映射内存（LR=0x614220cc）；Mono 信号注册、
-  tkill 缺失导致的 SIGABRT 和 Dynarmic coprocessor 断言已越过。首次 nativeRender 的
+- Dead Trigger 当前首错是 `UnityPlayer.onDrawFrame` 中 `javax.crypto.SecretKeyFactory`
+  类缺失；Looper 缺导出导致的 PC=0、Mono 信号注册、tkill SIGABRT 和 coprocessor 断言已越过。首次 nativeRender 的
   `GLES1 draw requires GL_VERTEX_ARRAY` 尚未重达复验；
   不运行 Binder、
   system_server、外部包数据库、广播投递或 Play 服务。

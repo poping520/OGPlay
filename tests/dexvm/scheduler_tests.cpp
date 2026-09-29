@@ -231,11 +231,14 @@ bool WaitFor(Predicate predicate) {
 
 TEST_CASE("Context exposes the stable scheduler main Looper through wrappers") {
     SchedulerVm fixture;
+    std::uint64_t native_token{};
+    fixture.context->prepare_native_looper = [&](std::uint64_t token) { native_token = token; };
     const auto static_main = fixture.Direct(
         "Landroid/os/Looper;", "getMainLooper",
         "()Landroid/os/Looper;");
     SchedulerVm::RequireOk(static_main);
     REQUIRE(static_main.value.ref.IsValid());
+    CHECK(native_token == 1);
 
     const auto base = fixture.New("Landroid/content/Context;");
     fixture.ConstructAs(base, "Landroid/content/Context;", "()V");
@@ -516,6 +519,8 @@ TEST_CASE("scheduled callback diagnostics include the throwable cause chain") {
 
 TEST_CASE("DVM-85 HandlerThread owns a real child Looper") {
     SchedulerVm fixture;
+    std::atomic_uint64_t prepared_token{};
+    fixture.context->prepare_native_looper = [&](std::uint64_t token) { prepared_token = token; };
     const auto thread = fixture.New("Landroid/os/HandlerThread;");
     fixture.ConstructAs(thread, "Landroid/os/HandlerThread;",
                         "(Ljava/lang/String;)V",
@@ -538,6 +543,7 @@ TEST_CASE("DVM-85 HandlerThread owns a real child Looper") {
     SchedulerVm::RequireOk(fixture.Virtual(thread, "quit", "()Z"));
     SchedulerVm::RequireOk(fixture.Virtual(thread, "join", "()V"));
     CHECK_FALSE(fixture.threads.IsAlive(thread));
+    CHECK(prepared_token.load() > 1);
 }
 
 TEST_CASE("DVM-85 AsyncTask runs background work then posts to main") {

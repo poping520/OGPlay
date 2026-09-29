@@ -1290,6 +1290,7 @@ dx::VmObjectRef EnsureMainLooper(dx::Interpreter& vm,
             found->second.thread = thread;
         }
     }
+    if (context->prepare_native_looper) context->prepare_native_looper(1U);
     return main;
 }
 
@@ -1321,6 +1322,7 @@ dx::VmObjectRef PrepareLooper(dx::IntrinsicContext& call,
         }
     }
     if (main) return EnsureMainLooper(call, context);
+    if (context->prepare_native_looper) context->prepare_native_looper(token);
     const auto looper = call.vm.NewIntrinsicInstance("Landroid/os/Looper;");
     const auto thread = CurrentJavaThread(call.vm);
     std::scoped_lock lock(context->scheduler_mutex);

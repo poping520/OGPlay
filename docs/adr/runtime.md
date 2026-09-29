@@ -487,3 +487,21 @@ TPIDRURO 仍只读。普通 VFP/NEON 保留原解码路径，不把所有协处�
 
 覆盖 A32/T32、新旧屏障、条件跳过、IT 状态、TLS、协处理器操作族和精确失败副作用。
 实际游戏仅以原故障消失及下一首错作为 reached-fault 证据，不据此宣布游戏兼容。
+
+
+## ADR-0083：线程 Looper 身份与有界事件轮询
+
+状态：接受（2026-09-29）。任务：[BND-45](../tasks/boundary/BND-45.md)。
+
+`libandroid.so` 导出存在必须对应真实状态语义。ALooper 不再用全局固定句柄；Android module
+按 guest TID 持有唯一关联，句柄单调分配并区分线程内部引用和外部 acquire 引用。
+integration 将 Java execution token 映射到 native TID；主 Looper 在 Java 启动前准备，
+HandlerThread prepare 接入同一 registry，退出退役。Java quit 不等同于线程退出，
+原有 Java scheduler 继续拥有消息队列，不隐式复制为另一套 native 消息队列。
+
+VFS 拥有 pipe 数据和端点存活，发布只读 readiness；boundary 通过窄 hook 查询，不依赖
+VFS 实现。syscall 写入只通知重新检查。NDK poll 按所属线程读取已登记事件、wake、timeout，
+shutdown 与线程退出均可中断等待。callback 与非 pipe fd 暂明确拒绝；后续扩展必须通过
+显式所属线程 guest executor，不能由唤醒方执行 guest callback。Clock 是唯一时间源。
+
+选择有界进程能力，避免引入 Binder/system_server 或复制 Android epoll/MessageQueue。

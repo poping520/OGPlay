@@ -43,7 +43,7 @@ JNI、framework 或 integration。
 - A32 非正常停止由统一 formatter 报告：execution state 与 stop/fault 枚举同时保留名字和
   数值，指令字/地址/核心寄存器使用固定宽度十六进制；stop、fault、thread、registers 与 code
   使用对齐的独立行，r0-r3 与 r12/SP/LR 分组。报告尽力读取 PC-8 起的有界指令窗口，读取
-  失败不得遮蔽原始 stop。上层可以添加调用边界，但不得重新拼装一份信息更少的 CPU
+  失败不得遮蔽原始 stop；PC 低于 8 时保留原错，尽力附加 LR 前指令字节，不推测栈帧。上层可以添加调用边界，但不得重新拼装一份信息更少的 CPU
   fault 文本。
 
 ## 测试

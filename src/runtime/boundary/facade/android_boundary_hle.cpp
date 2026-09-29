@@ -103,7 +103,7 @@ public:
                        +[](void* owner, memory::GuestAddress window) {
                            return static_cast<Impl*>(owner)->android_module_.NativeWindowIsCurrent(window);
                        }},
-          android_module_(call_services_, android_services_),
+          android_module_(call_services_, android_services_, options.loopers),
           egl_module_(call_services_, egl_context_),
           gles1_module_(call_services_, graphics_context_, gles1_state_,
                         gles1_legacy_state_, gles1_draw_state_,
@@ -409,6 +409,9 @@ public:
         return detail::ClassifyAndroidBoundaryProgress(
             descriptor->library, descriptor->name, result);
     }
+    memory::GuestAddress PrepareThreadLooper(std::uint64_t tid) { return android_module_.PrepareThreadLooper(tid); }
+    void RetireThreadLooper(std::uint64_t tid) { android_module_.RetireThreadLooper(tid); }
+    void ShutdownLoopers() { android_module_.ShutdownLoopers(); }
     void NotifyFileWrite() {
         android_module_.NotifyFileWrite();
     }
@@ -1060,6 +1063,9 @@ bool AndroidBoundaryHle::Handle(cpu::Cpu& cpu, const cpu::RunResult& stopped) {
     return HandleWithProgress(cpu, stopped) !=
            SupervisorCallProgress::not_handled;
 }
+memory::GuestAddress AndroidBoundaryHle::PrepareThreadLooper(std::uint64_t tid) { return impl_->PrepareThreadLooper(tid); }
+void AndroidBoundaryHle::RetireThreadLooper(std::uint64_t tid) { impl_->RetireThreadLooper(tid); }
+void AndroidBoundaryHle::ShutdownLoopers() { impl_->ShutdownLoopers(); }
 void AndroidBoundaryHle::NotifyFileWrite() { impl_->NotifyFileWrite(); }
 void AndroidBoundaryHle::PushInput(const AndroidBoundaryInput& input) { impl_->PushInput(input); }
 std::optional<AndroidBoundaryFrame> AndroidBoundaryHle::TakeLatestFrame() {

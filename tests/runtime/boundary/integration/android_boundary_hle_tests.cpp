@@ -14,6 +14,8 @@
 #include <string>
 #include <string_view>
 #include <thread>
+#include <future>
+#include "ogplay/runtime/vfs/vfs.h"
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -53,7 +55,8 @@ public:
         const std::uint32_t supersample_factor = 1,
         std::vector<ogplay::runtime::OpenSlesGuestCallback>* callbacks = nullptr,
         const ogplay::runtime::BionicDynamicLinkHooks dynamic_link = {},
-        const bool allow_single_stage_texcoord_fallback = true)
+        const bool allow_single_stage_texcoord_fallback = true,
+        ogplay::runtime::AndroidLooperHooks loopers = {})
         : bus(memory), cpu(bus), boundary(memory,
               {kNativeRenderer,
                ogplay::gles::AngleDevice::hardware}, 4, 3,
@@ -81,7 +84,7 @@ public:
                                ogplay::runtime::OpenSlesGuestCallback>*>(owner)
                                ->push_back(callback);
                        }
-                   }}}) {
+                   }}, .loopers = std::move(loopers)}) {
         memory.Map({stack, memory.PageSize()},
                    ogplay::memory::PageProtection::read |
                        ogplay::memory::PageProtection::write);
@@ -148,7 +151,7 @@ void WriteGuestString(BoundaryFixture& fixture,
 std::uint32_t FastBoundaryCall(
     BoundaryFixture& fixture, const std::string_view library,
     const std::string_view symbol,
-    const std::array<std::uint32_t, 4>& arguments,
+    const std::array<std::uint32_t, 4>& arguments = {},
     const std::uint64_t thread_id = 1U) {
     const auto address = fixture.boundary.Symbols().Lookup(library, symbol);
     REQUIRE(address.has_value());
@@ -1345,9 +1348,10 @@ TEST_CASE("Virtual SO end-to-end host call benchmark records ABI shapes") {
     const auto four_us = run_fast(
         "libandroid.so", "ANativeWindow_setBuffersGeometry",
         {1U, 2U, 3U, 4U}, {}, host_iterations);
+    const auto benchmark_looper = fixture.Call("libandroid.so", "ALooper_prepare", {1});
     const std::array stack_words{5U, 6U};
     const auto stack_us = run_fast(
-        "libandroid.so", "ALooper_addFd", {1U, 2U, 3U, 4U},
+        "libandroid.so", "ALooper_addFd", {benchmark_looper, 2U, 3U, 4U},
         stack_words, host_iterations);
 
     fixture.boundary.OpenManagedSurface();
@@ -4510,28 +4514,138 @@ TEST_CASE("GLES1 OES mapbuffer uses a guest arena and never leaks host pointers"
     fixture.boundary.CloseManagedSurface();
 }
 
-TEST_CASE("Android looper publishes command and input poll sources") {
-    BoundaryFixture fixture;
+TEST_CASE("BND45 Android looper polls real pipe readiness and attached input") {
+    ogplay::runtime::VirtualFileSystem fs;
+    BoundaryFixture fixture(1, nullptr, {}, true, {[&](std::int32_t fd) { return fs.PipePollEvents(fd); }, {}});
+    const auto pipe = fs.CreatePipe();
+    const auto looper = fixture.Call("libandroid.so", "ALooper_prepare", {1});
+    fixture.bus.Write32(fixture.stack, 0);
     fixture.bus.Write32(fixture.stack.Add(4), 0x12345678U);
-    CHECK(fixture.Call("libandroid.so", "ALooper_addFd", {1, 7, 1, 1}) == 1);
+    CHECK(fixture.Call("libandroid.so", "ALooper_addFd", {looper, static_cast<std::uint32_t>(pipe.read_descriptor), 1, 1}) == 1);
     fixture.boundary.NotifyFileWrite();
-    CHECK(fixture.Call("libandroid.so", "ALooper_pollAll",
+    CHECK(static_cast<std::int32_t>(fixture.Call("libandroid.so", "ALooper_pollAll")) == -3);
+    const std::array payload{std::byte{42}};
+    CHECK(fs.Write(pipe.write_descriptor, payload) == 1);
+    CHECK(fixture.Call("libandroid.so", "ALooper_pollOnce",
                        {0, fixture.output.Value(), fixture.output.Add(4).Value(),
                         fixture.output.Add(8).Value()}) == 1);
+    CHECK(fixture.bus.Read32(fixture.output) == static_cast<std::uint32_t>(pipe.read_descriptor));
     CHECK(fixture.bus.Read32(fixture.output.Add(8)) == 0x12345678U);
-
+    std::array<std::byte, 1> read{};
+    CHECK(fs.Read(pipe.read_descriptor, read) == 1);
+    CHECK(static_cast<std::int32_t>(fixture.Call("libandroid.so", "ALooper_pollAll")) == -3);
+    CHECK(fixture.Call("libandroid.so", "ALooper_removeFd", {looper, static_cast<std::uint32_t>(pipe.read_descriptor)}) == 1);
+    CHECK(fixture.Call("libandroid.so", "ALooper_removeFd", {looper, static_cast<std::uint32_t>(pipe.read_descriptor)}) == 0);
     fixture.bus.Write32(fixture.stack, 0x87654321U);
-    static_cast<void>(fixture.Call("libandroid.so", "AInputQueue_attachLooper",
-                                   {2, 1, 2, 0}));
-    fixture.boundary.PushInput({ogplay::runtime::AndroidBoundaryInputType::key,
-                                29, 0, 0, true});
-    CHECK(fixture.Call("libandroid.so", "ALooper_pollAll",
-                       {0, 0, 0, fixture.output.Add(8).Value()}) == 2);
+    fixture.Call("libandroid.so", "AInputQueue_attachLooper", {2, looper, 2, 0});
+    fixture.boundary.PushInput({ogplay::runtime::AndroidBoundaryInputType::key, 29, 0, 0, true});
+    CHECK(fixture.Call("libandroid.so", "ALooper_pollAll", {0, 0, 0, fixture.output.Add(8).Value()}) == 2);
     CHECK(fixture.bus.Read32(fixture.output.Add(8)) == 0x87654321U);
-    CHECK(fixture.Call("libandroid.so", "AInputQueue_getEvent",
-                       {2, fixture.output.Value(), 0, 0}) == 0);
-    CHECK(fixture.Call("libandroid.so", "AInputEvent_getType", {0x6e003200U}) == 1);
-    CHECK(fixture.Call("libandroid.so", "AKeyEvent_getKeyCode", {0x6e003200U}) == 29);
+    CHECK(fixture.Call("libandroid.so", "AInputQueue_getEvent", {2, fixture.output.Value()}) == 0);
+    fixture.Call("libandroid.so", "AInputQueue_finishEvent", {2, 0x6e003200U, 1});
+    fixture.Call("libandroid.so", "AInputQueue_detachLooper", {2});
+    fixture.boundary.PushInput({ogplay::runtime::AndroidBoundaryInputType::key, 30, 0, 0, true});
+    CHECK(static_cast<std::int32_t>(fixture.Call("libandroid.so", "ALooper_pollOnce")) == -3);
+}
+
+TEST_CASE("BND45 Android looper validates registrations replaces data and isolates ready sources") {
+    using namespace ogplay;
+    runtime::VirtualFileSystem fs;
+    BoundaryFixture f(1, nullptr, {}, true, {[&](std::int32_t fd) { return fs.PipePollEvents(fd); }, {}});
+    const auto pipe = fs.CreatePipe();
+    const auto fd = static_cast<std::uint32_t>(pipe.read_descriptor);
+    const auto looper = f.Call("libandroid.so", "ALooper_prepare", {1});
+    f.bus.Write32(f.stack, 0);
+    f.bus.Write32(f.stack.Add(4), 11);
+    CHECK(static_cast<std::int32_t>(f.Call("libandroid.so", "ALooper_addFd", {looper, 9999, 1, 1})) == -1);
+    fs.PutFile("/plain", {}, true);
+    const auto plain = fs.Open("/plain", {.read = true});
+    CHECK_FALSE(fs.PipePollEvents(plain).has_value());
+    CHECK(static_cast<std::int32_t>(f.Call("libandroid.so", "ALooper_addFd", {looper, static_cast<std::uint32_t>(plain), 1, 1})) == -1);
+    f.bus.Write32(f.stack, 0x10000);
+    CHECK(static_cast<std::int32_t>(f.Call("libandroid.so", "ALooper_addFd", {looper, fd, 1, 1})) == -1);
+    f.bus.Write32(f.stack, 0);
+    CHECK(f.Call("libandroid.so", "ALooper_addFd", {looper, fd, 1, 1}) == 1);
+    f.bus.Write32(f.stack.Add(4), 22);
+    CHECK(f.Call("libandroid.so", "ALooper_addFd", {looper, fd, 7, 1}) == 1);
+    const std::array bytes{std::byte{1}};
+    CHECK(fs.Write(pipe.write_descriptor, bytes) == 1);
+    FastBoundaryCall(f, "libandroid.so", "ALooper_prepare", {1}, 20);
+    CHECK(static_cast<std::int32_t>(FastBoundaryCall(f, "libandroid.so", "ALooper_pollOnce", {}, 20)) == -3);
+    f.bus.Write32(f.output, 0x1234);
+    CHECK_THROWS(f.Call("libandroid.so", "ALooper_pollOnce", {0, f.output.Value(), 0x10, 0}));
+    CHECK(f.bus.Read32(f.output) == 0x1234);
+    CHECK(f.Call("libandroid.so", "ALooper_pollOnce", {0, 0, 0, f.output.Value()}) == 7);
+    CHECK(f.bus.Read32(f.output) == 22);
+    std::array<std::byte, 1> buffer{};
+    CHECK(fs.Read(pipe.read_descriptor, buffer) == 1);
+    CHECK(static_cast<std::int32_t>(f.Call("libandroid.so", "ALooper_pollOnce", {0, 0, 0, f.output.Value()})) == -3);
+    CHECK(f.bus.Read32(f.output) == 0);
+}
+
+TEST_CASE("BND45 Android looper identity references and thread isolation") {
+    BoundaryFixture f;
+    const auto call = [&](std::uint64_t tid, std::string_view name, std::array<std::uint32_t, 4> args = {}) {
+        return FastBoundaryCall(f, "libandroid.so", name, args, tid);
+    };
+    CHECK(call(10, "ALooper_forThread") == 0);
+    CHECK(static_cast<std::int32_t>(call(10, "ALooper_pollOnce")) == -4);
+    const auto first = call(10, "ALooper_prepare", {1});
+    REQUIRE(first != 0);
+    CHECK(call(10, "ALooper_prepare") == first);
+    CHECK(call(10, "ALooper_forThread") == first);
+    CHECK(call(11, "ALooper_forThread") == 0);
+    const auto second = call(11, "ALooper_prepare");
+    CHECK(second != first);
+    CHECK(call(11, "ALooper_acquire", {first}) == 0);
+    f.boundary.RetireThreadLooper(10);
+    CHECK(call(10, "ALooper_forThread") == 0);
+    CHECK(call(11, "ALooper_wake", {first}) == 0);
+    CHECK(call(11, "ALooper_release", {first}) == 0);
+    const auto third = call(10, "ALooper_prepare");
+    CHECK(third != first);
+    CHECK(call(11, "ALooper_forThread") == second);
+    // Slow route exposes structured errors from an invalid/stale identity.
+    CHECK_THROWS(f.Call("libandroid.so", "ALooper_wake", {first}));
+    CHECK_THROWS(f.Call("libandroid.so", "ALooper_release", {third}));
+}
+
+TEST_CASE("BND45 Android looper wake timeout shutdown and owner exit unblock waits") {
+    std::atomic_bool running{true};
+    BoundaryFixture f(1, nullptr, {}, true, {{}, [&](std::uint64_t) { return running.load(); }});
+    const auto looper = FastBoundaryCall(f, "libandroid.so", "ALooper_prepare", {}, 10);
+    CHECK(static_cast<std::int32_t>(FastBoundaryCall(f, "libandroid.so", "ALooper_pollOnce", {1}, 10)) == -3);
+    auto waiting = std::async(std::launch::async, [&] {
+        return static_cast<std::int32_t>(FastBoundaryCall(f, "libandroid.so", "ALooper_pollOnce", {0xffffffffU}, 10));
+    });
+    CHECK(FastBoundaryCall(f, "libandroid.so", "ALooper_wake", {looper}, 11) == 0);
+    CHECK(waiting.get() == -1);
+    auto cancelled = std::async(std::launch::async, [&] {
+        return static_cast<std::int32_t>(FastBoundaryCall(f, "libandroid.so", "ALooper_pollAll", {0xffffffffU}, 10));
+    });
+    SUBCASE("owner exits") { running = false; }
+    SUBCASE("process shuts down") { f.boundary.ShutdownLoopers(); }
+    CHECK(cancelled.get() == -4);
+}
+
+TEST_CASE("BND45 pipe readiness reflects data EOF peers and unsupported descriptors") {
+    ogplay::runtime::VirtualFileSystem fs;
+    const auto pipe = fs.CreatePipe();
+    REQUIRE(fs.PipePollEvents(pipe.read_descriptor).has_value());
+    CHECK(*fs.PipePollEvents(pipe.read_descriptor) == 0);
+    CHECK(*fs.PipePollEvents(pipe.write_descriptor) == 2);
+    const std::array data{std::byte{7}};
+    CHECK(fs.Write(pipe.write_descriptor, data) == 1);
+    CHECK(*fs.PipePollEvents(pipe.read_descriptor) == 1);
+    SUBCASE("writer closes") {
+        fs.Close(pipe.write_descriptor);
+        CHECK(*fs.PipePollEvents(pipe.read_descriptor) == 9);
+        CHECK(*fs.PipePollEvents(pipe.write_descriptor) == 16);
+    }
+    SUBCASE("reader closes") {
+        fs.Close(pipe.read_descriptor);
+        CHECK(*fs.PipePollEvents(pipe.write_descriptor) == 4);
+    }
 }
 
 TEST_CASE("Android EGL and GLES boundary produces a guest frame") {
@@ -6118,7 +6232,8 @@ TEST_CASE("DVM-195 registered NativeActivity assets window and input are bounded
     f.boundary.SetNativeActivityInput(activity, true);
     f.bus.Write32(f.stack, 0x1234);
     CHECK_THROWS(f.Call("libandroid.so", "AInputQueue_attachLooper", {queue.Value(), 1, 2, 1}));
-    f.Call("libandroid.so", "AInputQueue_attachLooper", {queue.Value(), 1, 2, 0});
+    const auto looper = f.Call("libandroid.so", "ALooper_prepare", {1});
+    f.Call("libandroid.so", "AInputQueue_attachLooper", {queue.Value(), looper, 2, 0});
     f.boundary.PushInput({runtime::AndroidBoundaryInputType::key, 29, 0, 0, true});
     CHECK(f.Call("libandroid.so", "ALooper_pollAll", {0, 0, 0, f.output.Value()}) == 2);
     CHECK(f.bus.Read32(f.output) == 0x1234);
@@ -6129,7 +6244,7 @@ TEST_CASE("DVM-195 registered NativeActivity assets window and input are bounded
     CHECK_THROWS(f.Call("libandroid.so", "AKeyEvent_getKeyCode", {event}));
     f.Call("libandroid.so", "AInputQueue_detachLooper", {queue.Value()});
     f.boundary.PushInput({runtime::AndroidBoundaryInputType::key, 30, 0, 0, true});
-    CHECK(static_cast<std::int32_t>(f.Call("libandroid.so", "ALooper_pollAll")) == -1);
+    CHECK(static_cast<std::int32_t>(f.Call("libandroid.so", "ALooper_pollAll")) == -3);
     f.Call("libandroid.so", "ANativeWindow_acquire", {window.Value()});
     f.boundary.UnregisterNativeActivity(activity);
     CHECK(f.Call("libandroid.so", "ANativeWindow_getWidth", {window.Value()}) == 4);

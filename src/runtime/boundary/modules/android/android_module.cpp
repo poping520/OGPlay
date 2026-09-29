@@ -3,14 +3,12 @@
 #include <bit>
 #include <algorithm>
 #include <limits>
-#include <chrono>
 #include <cstddef>
 #include <stdexcept>
 
 namespace ogplay::runtime {
 namespace {
 constexpr std::uint32_t kFakeConfiguration = 0x6e003000U;
-constexpr std::uint32_t kFakeLooper = 0x6e003100U;
 constexpr std::uint32_t kFakeInputEvent = 0x6e003200U;
 
 std::uint32_t SignedResult(const std::int32_t value) noexcept {
@@ -19,8 +17,8 @@ std::uint32_t SignedResult(const std::int32_t value) noexcept {
 }  // namespace
 
 AndroidModule::AndroidModule(BoundaryCallServices& calls,
-                             AndroidBoundaryServices& services) noexcept
-    : calls_(calls), services_(services) {}
+                             AndroidBoundaryServices& services, AndroidLooperHooks hooks)
+    : looper_hooks_(std::move(hooks)), calls_(calls), services_(services) {}
 
 BoundaryCallServices& AndroidModule::CallServices() noexcept { return calls_; }
 
@@ -34,13 +32,7 @@ bool AndroidModule::NativeWindowIsCurrent(memory::GuestAddress window) {
            window.Value() >= kNativeActivityWindowHandleEnd.Value();
 }
 
-void AndroidModule::NotifyFileWrite() {
-    {
-        std::scoped_lock lock(mutex_);
-        ++pending_command_writes_;
-    }
-    ready_.notify_all();
-}
+void AndroidModule::NotifyFileWrite() { ready_.notify_all(); }
 
 void AndroidModule::RegisterNativeActivity(NativeActivityBoundaryResources resources) {
     std::scoped_lock lock(mutex_);
@@ -117,43 +109,6 @@ void AndroidModule::PushInput(const AndroidBoundaryInput& input) {
     ready_.notify_all();
 }
 
-std::uint32_t AndroidModule::PollAll(
-    const std::array<std::uint32_t, 4>& args,
-    const std::uint64_t thread_id) {
-    const auto timeout = std::bit_cast<std::int32_t>(args[0]);
-    std::unique_lock lock(mutex_);
-    const auto has_source = [this] {
-        return pending_command_writes_ != 0 || (!inputs_.empty() &&
-            (!managed_activity_seen_ || std::ranges::any_of(resources_, [](const auto& pair) {
-                return pair.second.input_active && pair.second.input_attached;
-            })));
-    };
-    if (!has_source()) {
-        if (timeout < 0) {
-            ready_.wait(lock, has_source);
-        } else if (timeout > 0) {
-            ready_.wait_for(lock, std::chrono::milliseconds(timeout), has_source);
-        }
-    }
-    std::uint32_t ident{};
-    std::uint32_t data{};
-    if (pending_command_writes_ != 0) {
-        --pending_command_writes_;
-        ident = command_ident_;
-        data = command_data_;
-    } else if (has_source() && !inputs_.empty()) {
-        ident = input_ident_;
-        data = input_data_;
-    } else {
-        return SignedResult(-1);
-    }
-    lock.unlock();
-    services_.Write32(args[1], 0, thread_id);
-    services_.Write32(args[2], 1, thread_id);
-    services_.Write32(args[3], data, thread_id);
-    return ident;
-}
-
 #if defined(_MSC_VER)
 #pragma warning(push)
 // VS 18.8 reports the discarded fallback of exhaustive if-constexpr
@@ -191,6 +146,7 @@ std::uint32_t AndroidModule::ExecuteExport(const A32CallFrame& call) {
                 if (!active_input_ || args[1] != kFakeInputEvent)
                     throw std::invalid_argument("invalid input event pre-dispatch");
         }
+        if constexpr (FunctionId == 9U) input_looper_ = memory::GuestAddress{};
         return 0;
     }
     if constexpr (FunctionId == 19U || (FunctionId >= 26U && FunctionId <= 30U)) {
@@ -277,21 +233,57 @@ std::uint32_t AndroidModule::ExecuteExport(const A32CallFrame& call) {
         }
         return 0;
     }
-    if constexpr (FunctionId == 5U) return kFakeLooper;
+    if constexpr (FunctionId == 5U) return PrepareThreadLooper(tid, args[0]).Value();
+    if constexpr (FunctionId == 31U) {
+        std::scoped_lock lock(mutex_);
+        SweepLoopers();
+        const auto found = thread_loopers_.find(tid);
+        return found == thread_loopers_.end() ? 0 : found->second.Value();
+    }
+    if constexpr (FunctionId == 32U || FunctionId == 33U || FunctionId == 35U || FunctionId == 36U) {
+        std::scoped_lock lock(mutex_);
+        SweepLoopers();
+        auto& looper = RequireLooper(call.Pointer<void>(0).Address());
+        if constexpr (FunctionId == 32U) {
+            if (looper.references == UINT32_MAX) throw std::overflow_error("ALooper reference overflow");
+            ++looper.references;
+        }
+        if constexpr (FunctionId == 33U) {
+            const auto owner_reference = looper.retired ? 0U : 1U;
+            if (looper.references <= owner_reference) throw std::invalid_argument("unbalanced ALooper_release");
+            if (--looper.references == 0) loopers_.erase(args[0]);
+        }
+        if constexpr (FunctionId == 35U) { looper.wake = true; ready_.notify_all(); }
+        if constexpr (FunctionId == 36U) return static_cast<std::uint32_t>(looper.requests.erase(static_cast<std::int32_t>(args[1])));
+        return 0;
+    }
     if constexpr (FunctionId == 6U) {
         std::scoped_lock lock(mutex_);
-        command_ident_ = args[2];
-        command_data_ = call.Argument(5);
+        SweepLoopers();
+        auto& looper = RequireLooper(call.Pointer<void>(0).Address());
+        const auto fd = static_cast<std::int32_t>(args[1]);
+        const auto ident = static_cast<std::int32_t>(args[2]);
+        // Callback execution is outside this bounded ident-polling contract.
+        if (looper.retired || fd < 0 || ident < 0 || !looper.allow_non_callbacks ||
+            call.Argument(4) != 0 || !looper_hooks_.poll_events ||
+            (args[3] & ~31U) != 0) return SignedResult(-1);
+        const auto events = looper_hooks_.poll_events(fd);
+        if (!events || (*events & 16U) != 0) return SignedResult(-1);
+        looper.requests[fd] = {ident, args[3], call.Pointer<void>(5).Address()};
+        ready_.notify_all();
         return 1;
     }
-    if constexpr (FunctionId == 7U) return PollAll(args, tid);
+    if constexpr (FunctionId == 7U || FunctionId == 34U) return PollAll(args, tid);
     if constexpr (FunctionId == 8U) {
         std::scoped_lock lock(mutex_);
+        auto& looper = RequireLooper(call.Pointer<void>(1).Address());
+        if (looper.retired || args[3] != 0 || static_cast<std::int32_t>(args[2]) < 0)
+            throw std::invalid_argument("AInputQueue requires a live ident-polling looper");
         if (managed_activity_seen_) {
             auto& item = Queue(args[0]);
-            if (args[3] != 0) throw std::invalid_argument("AInputQueue callback looper is unsupported; use ident polling");
             item.input_attached = true;
         }
+        input_looper_ = call.Pointer<void>(1).Address();
         input_ident_ = args[2];
         input_data_ = call.Argument(4);
         return 0;

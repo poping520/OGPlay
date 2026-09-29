@@ -9,6 +9,7 @@
 #include <optional>
 
 #include "ogplay/runtime/boundary/android_boundary_hle.h"
+#include "ogplay/hal/clock.h"
 #include "runtime/boundary/core/a32_call_frame.h"
 #include "runtime/boundary/core/boundary_binding.h"
 #include "runtime/boundary/modules/android/android_exports.h"
@@ -19,9 +20,12 @@ namespace ogplay::runtime {
 class AndroidModule final {
 public:
     AndroidModule(BoundaryCallServices& calls,
-                  AndroidBoundaryServices& services) noexcept;
+                  AndroidBoundaryServices& services, AndroidLooperHooks hooks = {});
     [[nodiscard]] BoundaryCallServices& CallServices() noexcept;
     void NotifyFileWrite();
+    memory::GuestAddress PrepareThreadLooper(std::uint64_t thread_id, std::uint32_t opts = 0);
+    void RetireThreadLooper(std::uint64_t thread_id);
+    void ShutdownLoopers();
     bool NativeWindowIsCurrent(memory::GuestAddress window);
     void PushInput(const AndroidBoundaryInput& input);
     void RegisterNativeActivity(NativeActivityBoundaryResources resources);
@@ -38,6 +42,24 @@ public:
 private:
     std::uint32_t PollAll(const std::array<std::uint32_t, 4>& args,
                           std::uint64_t thread_id);
+    struct Looper {
+        std::uint64_t owner{};
+        std::uint32_t references{1};
+        bool allow_non_callbacks{}, wake{}, retired{};
+        struct Request { std::int32_t ident{}; std::uint32_t events{}; memory::GuestAddress data{}; };
+        std::map<std::int32_t, Request> requests;
+        std::int32_t last_fd{-1};
+    };
+    Looper& RequireLooper(memory::GuestAddress handle);
+    void RetireThreadLooperLocked(std::uint64_t thread_id);
+    void SweepLoopers();
+    std::map<std::uint32_t, Looper> loopers_;
+    std::map<std::uint64_t, memory::GuestAddress> thread_loopers_;
+    memory::GuestAddress next_looper_{0x6e010000U};
+    AndroidLooperHooks looper_hooks_;
+    hal::RealtimeClock looper_clock_;
+    bool loopers_shutdown_{};
+    memory::GuestAddress input_looper_{};
     template <std::uint16_t FunctionId>
     std::uint32_t ExecuteExport(const A32CallFrame& call);
 
@@ -70,9 +92,6 @@ private:
     WindowResource& Window(std::uint32_t handle);
     std::mutex mutex_;
     std::condition_variable ready_;
-    std::uint64_t pending_command_writes_{};
-    std::uint32_t command_ident_{};
-    std::uint32_t command_data_{};
     std::uint32_t input_ident_{};
     std::uint32_t input_data_{};
     std::deque<AndroidBoundaryInput> inputs_;

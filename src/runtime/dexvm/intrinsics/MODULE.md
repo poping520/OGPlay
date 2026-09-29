@@ -120,6 +120,8 @@
 - crypto family 只管 provider、熵、JNI 和资源 owner。AES ECB/CBC 的 NoPadding/PKCS5Padding、
   CBC/ZeroBytePadding 及 CTR/NoPadding、128/192/256 KeyGenerator 已登记；ZeroBytePadding
   由 guest Java 适配到 CBC/NoPadding，Cipher 普通方法无 overlay。
+  OGPlayCrypto 的 SecretKeyFactory 通过标准 Provider 配置进入 JCA；公开 API、PBE 规格及
+  PKCS12 SHA-1/AES-256 SPI 都执行 guest Java，不新增 SecretKeyFactory 方法 overlay。
   OGPlayOS 用 HAL CSPRNG 且拒绝 setSeed；SHA1PRNG 首次由同一 CSPRNG 播种，后续执行
   guest RAND_seed/RAND_bytes，调用方 seed 仅追加熵。IvParameterSpec 可用。
 - API 19 原版 `NativeCrypto` 是 BootDex 唯一定义；catalog 仅按类准入其原版 native 到

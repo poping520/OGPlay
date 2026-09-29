@@ -5,6 +5,8 @@ import java.security.NoSuchAlgorithmException;
 
 /** PKCS#12 v1.0 Appendix B derivation (not PBKDF2). */
 final class Pkcs12Kdf {
+    static final int MAX_INPUT_LENGTH = 65536;
+    static final int MAX_ITERATIONS = 1000000;
     static final int PURPOSE_MAC = 3;
     static final int PURPOSE_KEY = 1;
     static final int PURPOSE_IV = 2;
@@ -35,7 +37,7 @@ final class Pkcs12Kdf {
 
     private static byte[] derive(char[] password, byte[] salt, int iterations,
             int purpose, int length, boolean oldBrokenMixer) throws NoSuchAlgorithmException {
-        if (salt == null || iterations < 1 || iterations > BksLimits.MAX_ITERATIONS ||
+        if (salt == null || iterations < 1 || iterations > MAX_ITERATIONS ||
                 purpose < 1 || purpose > 3 || length < 0 || length > 1024) {
             throw new IllegalArgumentException("invalid PKCS12 KDF parameters");
         }

@@ -57,7 +57,10 @@
   `UnityPlayer.onDrawFrame`，下一首错为 `javax.crypto.SecretKeyFactory` 类缺失
   （请求 `PBEWITHSHAAND256BITAES-CBC-BC`）。证据 `.local/looper-fix-startup.log`。
   NDK callback/非 pipe fd 仍不支持，不代表游戏完整验收。
-  尚未重达 nativeRender，原绘制故障未复验。证据 `.local/proc-maps-*.log`。
+  [DVM-199](../tasks/dexvm/DVM-199.md) 已补 SecretKey 公开类型与 PKCS12 SHA-1/AES-256
+  SecretKeyFactory；BootDex build/check、r25c JNI/Windows 构建和双解释器密码/BKS
+  回归 3312 断言通过。原命令越过类缺失并重达 `nativeRender`，下一首错为
+  `unbound JNI guest slot: FromReflectedField`。证据 `.local/skf-startup.log`；不代表游戏兼容验收。
   此前 renderer 证据 `.local/renderer-{build,test-build,tests,startup}.log`。
   EGL 暂停/恢复策略尚未接入该配置；前置 NDK 符号缺失仍待闭合。
   本轮证据为 `.local/gl-preserve-{build,tests,startup}.log`。

@@ -60,6 +60,7 @@ IntrinsicClassDecl SecurityConfiguration() {
             "org.apache.harmony.security.provider.cert.DRLCertFactory");
         Put(vm, props, "security.provider.3", "org.ogplay.security.OgPlayKeyStoreProvider");
         Put(vm, props, "security.provider.4", "org.ogplay.security.OgPlayJsseProvider");
+        Put(vm, props, "security.provider.5", "org.ogplay.security.OgPlayCryptoProvider");
         Put(vm, props, "keystore.type", "BKS");
         Put(vm, props, "ssl.TrustManagerFactory.algorithm", "PKIX");
         Put(vm, props, "ssl.KeyManagerFactory.algorithm", "PKIX");

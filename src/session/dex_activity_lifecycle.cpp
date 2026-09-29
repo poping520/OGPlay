@@ -1217,6 +1217,15 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
         if (egl_pacer_attached_) {
             runtime::ShutdownEglSwapPacer(*bindings_.context);
         }
+        try { runtime::ShutdownLocalServices(bindings_.bridge->Vm(), *bindings_.context); }
+        catch (const dx::VmJavaThrow& error) {
+            state_ = LifecycleRunState::failed;
+            if (!persistence_failure) persistence_failure = std::make_exception_ptr(
+                std::runtime_error("service cleanup failed: " + error.descriptor + ": " + error.message));
+        } catch (...) {
+            state_ = LifecycleRunState::failed;
+            if (!persistence_failure) persistence_failure = std::current_exception();
+        }
         phase("teardown.scheduler_shutdown");
         runtime::ShutdownAndroidScheduler(*bindings_.context);
         // A callback may have entered a new futex after BeginTeardown's first
@@ -1236,8 +1245,12 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
         }
         phase("teardown.guest_finalize");
         if (!guest_finalized_ && bindings_.finalize_guest) {
-            bindings_.finalize_guest();
             guest_finalized_ = true;
+            try { bindings_.finalize_guest(); }
+            catch (...) {
+                state_ = LifecycleRunState::failed;
+                if (!persistence_failure) persistence_failure = std::current_exception();
+            }
         }
         phase("teardown.surface_close");
         if (surface_open_ && bindings_.close_surface) {

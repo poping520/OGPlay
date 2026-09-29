@@ -58,18 +58,19 @@ struct ThreadedVm final {
     Interpreter interpreter;
     VmThreadRuntime threads;
 
-    explicit ThreadedVm(NativeMethodBridge* bridge = nullptr)
+    explicit ThreadedVm(NativeMethodBridge* bridge = nullptr, InterpreterBackend backend = InterpreterBackend::switch_dispatch, bool platform = false)
         : model(strings, arrays, {}),
           linker(),
           interpreter(
-              [this]() -> DexClassLinker& {
+              [this, platform]() -> DexClassLinker& {
                   linker.RegisterIntrinsics(CoreIntrinsicCatalog());
+                  if (platform) linker.RegisterIntrinsics(AndroidIntrinsicCatalog(std::make_shared<DexVmAndroidContext>()));
                   linker.RegisterDex(ReadFixture("interp.dex"));
                   ogplay::test::RegisterBootDex(linker);
                   linker.Link();
                   return linker;
               }(),
-              model, bridge, ledger, {}),
+              model, bridge, ledger, {.backend = backend}),
           threads(interpreter) {}
 
     [[nodiscard]] VmMethodId Static(const std::string& class_descriptor,
@@ -335,7 +336,7 @@ TEST_CASE("dexvm may park while a guest native frame is live") {
 
 TEST_CASE("dexvm synchronized native methods use class and receiver monitors") {
     StubNativeBridge bridge;
-    ThreadedVm vm(&bridge);
+    ThreadedVm vm(&bridge, InterpreterBackend::switch_dispatch, true);
     const auto java_class = vm.linker.FindClass("LSyncNative;");
     REQUIRE(java_class.has_value());
     VmObjectRef expected(0);
@@ -369,10 +370,32 @@ TEST_CASE("dexvm synchronized native methods use class and receiver monitors") {
     bridge.action = [] {
         throw VmJavaThrow{"Ljava/lang/RuntimeException;", "native failure"};
     };
-    CHECK_THROWS_AS(
-        static_cast<void>(vm.interpreter.Call(
-            vm.linker.Class(*java_class).vtable[*index],
-            std::vector<VmValue>{VmValue::Ref(expected)})),
-        VmJavaThrow);
+    const auto failure = vm.interpreter.Call(
+        vm.linker.Class(*java_class).vtable[*index],
+        std::vector<VmValue>{VmValue::Ref(expected)});
+    REQUIRE(failure.exception.IsValid());
+    CHECK(failure.exception_message == "native failure");
     CHECK(vm.interpreter.Monitors().HeldCount(1) == 0U);
+}
+
+TEST_CASE("DVM-202 direct native Java exceptions preserve identity and permit subsequent calls") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        StubNativeBridge bridge;
+        ThreadedVm vm(&bridge, backend, true);
+        const auto original = vm.interpreter.MakeThrowable("Ljava/lang/IllegalStateException;", "native failure");
+        const auto roots = vm.interpreter.ProtectReferences(std::array{original});
+        bridge.action = [&] { throw VmJavaThrow{"Ljava/lang/IllegalStateException;", {}, original}; };
+        for (const auto* method : {"trigger", "call"}) {
+            const auto result = vm.CallStatic("LThreadNative;", method, "()V");
+            REQUIRE(result.exception == original);
+            CHECK(result.exception_message == "native failure");
+            CHECK(vm.interpreter.CurrentNativeDepth() == 0);
+        }
+        bridge.action = [] { throw VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "new native failure"}; };
+        const auto fresh = vm.CallStatic("LThreadNative;", "trigger", "()V");
+        REQUIRE(fresh.exception.IsValid());
+        CHECK(fresh.exception_message == "new native failure");
+        bridge.action = {};
+        CHECK_FALSE(vm.CallStatic("LThreadNative;", "trigger", "()V").exception.IsValid());
+    }
 }

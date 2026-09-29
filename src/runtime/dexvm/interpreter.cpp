@@ -1120,6 +1120,15 @@ VmCallOutcome Interpreter::Call(const VmMethodId method_id,
                                    &impl_->linker->Method(method_id));
                 impl_->RecordTrace(DexVmTraceKind::method_exit, execution,
                                    &impl_->linker->Method(method_id));
+            } catch (const VmJavaThrow& thrown) {
+                const auto throwable = thrown.existing.IsValid()
+                    ? thrown.existing : MakeThrowable(thrown.descriptor, thrown.message);
+                outcome.exception = throwable;
+                outcome.exception_class = impl_->model->ObjectClass(throwable);
+                const auto message = ThrowableMessage(throwable);
+                if (message.IsValid()) outcome.exception_message = StringUtf8(message);
+                impl_->RecordTrace(DexVmTraceKind::native_exit, execution, nullptr, 0, 0, 1);
+                impl_->RecordTrace(DexVmTraceKind::method_exit, execution, nullptr, 0, 0, 1);
             } catch (...) {
                 impl_->RecordTrace(DexVmTraceKind::native_exit, execution,
                                    nullptr, 0, 0, 1);

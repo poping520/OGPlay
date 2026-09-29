@@ -2365,14 +2365,9 @@ TEST_CASE("DVM-201 CRC32 uses BootDex state and real guest zlib on both backends
         }
         // Also exercise the native guard independently of the Java parameter checks.
         const auto native_failure = [&](VmObjectRef array, int offset, int count, const char* expected) {
-            try {
-                // Direct native calls have no interpreted frame to convert VmJavaThrow.
-                const auto result = direct(owner, "updateImpl", "([BIIJ)J",
-                    {VmValue::Ref(crc), VmValue::Ref(array), VmValue::Int(offset), VmValue::Int(count), VmValue::Long(0)});
-                expect_exception(result, expected);
-            } catch (const VmJavaThrow& error) {
-                CHECK(error.descriptor == expected);
-            }
+            const auto result = direct(owner, "updateImpl", "([BIIJ)J",
+                {VmValue::Ref(crc), VmValue::Ref(array), VmValue::Int(offset), VmValue::Int(count), VmValue::Long(0)});
+            expect_exception(result, expected);
         };
         native_failure(input, 8, 2, "Ljava/lang/ArrayIndexOutOfBoundsException;");
         native_failure(VmObjectRef{}, 0, 0, "Ljava/lang/NullPointerException;");
@@ -3559,23 +3554,20 @@ TEST_CASE("DVM-105/169/175-180 crypto and BKS use BootDex and real guest libcryp
         CHECK(vm.Model().ArrayLength(supported_protocols) == 4);
         const auto unsupported_engine = *linker.FindDirectMethod(
             native, "ENGINE_load_dynamic", "()V");
-        CHECK_THROWS_AS(static_cast<void>(vm.Call(unsupported_engine, {})), VmJavaThrow);
+        CHECK(vm.Call(unsupported_engine, {}).exception.IsValid());
         const auto allocate = *linker.FindDirectMethod(native, "EVP_CIPHER_CTX_new", "()J");
         const auto cleanup = *linker.FindDirectMethod(native, "EVP_CIPHER_CTX_cleanup", "(J)V");
         const auto size = *linker.FindDirectMethod(native, "EVP_CIPHER_CTX_block_size", "(J)I");
         CHECK(linker.Method(allocate).kind == MethodKind::native);
         CHECK_FALSE(static_cast<bool>(linker.Method(allocate).implementation));
         const auto token = vm.Call(allocate, {}).value.AsLong();
-        CHECK_THROWS_AS(static_cast<void>(vm.Call(
-                            size, std::array{VmValue::Long(token)})),
-                        VmJavaThrow);
+        CHECK(vm.Call(
+                            size, std::array{VmValue::Long(token)}).exception.IsValid());
         static_cast<void>(vm.Call(cleanup, std::array{VmValue::Long(token)}));
-        CHECK_THROWS_AS(static_cast<void>(vm.Call(
-                            cleanup, std::array{VmValue::Long(token)})),
-                        VmJavaThrow);
-        CHECK_THROWS_AS(static_cast<void>(vm.Call(
-                            size, std::array{VmValue::Long(0x123456789LL)})),
-                        VmJavaThrow);
+        CHECK(vm.Call(
+                            cleanup, std::array{VmValue::Long(token)}).exception.IsValid());
+        CHECK(vm.Call(
+                            size, std::array{VmValue::Long(0x123456789LL)}).exception.IsValid());
         CHECK(direct("Lfixture/CipherThreads;", "exercise", "()I", {}).AsInt() == 32);
         const auto before_gc = vm.GuestNativeResourceCount();
         CHECK(before_gc > 3);
@@ -4690,14 +4682,14 @@ TEST_CASE("DVM-108/109 UUID MessageDigest and serialization use BootDex with rea
         const auto cleanup = *linker.FindDirectMethod(native, "EVP_MD_CTX_destroy", "(J)V");
         const auto copy_context = *linker.FindDirectMethod(native, "EVP_MD_CTX_copy", "(J)J");
         CHECK(vm.Call(lookup, std::array{VmValue::Ref(vm.NewStringUtf8("unknown"))}).value.AsLong() == 0);
-        CHECK_THROWS_AS(static_cast<void>(vm.Call(size, std::array{VmValue::Long(0)})), VmJavaThrow);
-        CHECK_THROWS_AS(static_cast<void>(vm.Call(init, std::array{VmValue::Long(99)})), VmJavaThrow);
+        CHECK(vm.Call(size, std::array{VmValue::Long(0)}).exception.IsValid());
+        CHECK(vm.Call(init, std::array{VmValue::Long(99)}).exception.IsValid());
         const auto algorithm = vm.Call(lookup, std::array{VmValue::Ref(vm.NewStringUtf8("sha512"))}).value.AsLong();
         const auto token = vm.Call(init, std::array{VmValue::Long(algorithm)}).value.AsLong();
         REQUIRE(token > 0);
         static_cast<void>(vm.Call(cleanup, std::array{VmValue::Long(token)}));
-        CHECK_THROWS_AS(static_cast<void>(vm.Call(cleanup, std::array{VmValue::Long(token)})), VmJavaThrow);
-        CHECK_THROWS_AS(static_cast<void>(vm.Call(copy_context, std::array{VmValue::Long(token)})), VmJavaThrow);
+        CHECK(vm.Call(cleanup, std::array{VmValue::Long(token)}).exception.IsValid());
+        CHECK(vm.Call(copy_context, std::array{VmValue::Long(token)}).exception.IsValid());
         const auto name_uuid = direct("Ljava/util/UUID;", "nameUUIDFromBytes", "([B)Ljava/util/UUID;", {VmValue::Ref(bytes("616263"))}).ref;
         CHECK(vm.StringUtf8(invoke(name_uuid, "toString", "()Ljava/lang/String;", {}).ref) == "90015098-3cd2-3fb0-9696-3f7d28e17f72");
         CHECK(invoke(name_uuid, "version", "()I", {}).AsInt() == 3);
@@ -5264,5 +5256,29 @@ TEST_CASE("DVM-197 renderer EGL policies establish current context before events
         CHECK_FALSE(c.renderer_surface.IsValid());
         CHECK_FALSE(c.egl.window_surface.IsValid());
       }
+    }
+}
+
+TEST_CASE("DVM-202 teardown isolates pending JNI errors and still stops after cleanup failure") {
+    using namespace ogplay;
+    using namespace runtime::dexvm;
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        OrchestratedApp f("fixture.LauncherActivity", true, false, {}, {}, true, backend);
+        f.app->StartApplication();
+        static_cast<void>(f.app->StartLauncherActivity());
+        auto& bridge = f.app->DexVm();
+        auto& vm = bridge.Vm();
+        auto& env = bridge.Session().Environment();
+        const auto original = vm.MakeThrowable("Ljava/lang/UnsupportedOperationException;", "original failure");
+        env.Throw(1, bridge.PublishLocal(original));
+        const auto type = vm.Linker().ResolveDescriptor("Lfixture/FailingNativeCleanup;");
+        const auto cleanup = vm.Linker().FindDirectMethod(type, "release", "(J)V");
+        REQUIRE(cleanup.has_value());
+        vm.TrackGuestNativeResource(original, *cleanup, 1);
+        CHECK_THROWS_WITH_AS(static_cast<void>(f.app->Stop()),
+            doctest::Contains("native cleanup failed: Ljava/lang/UnsatisfiedLinkError;"), runtime::AndroidGuestProcessError);
+        CHECK(f.app->NativeProcess().AttachedJniThreadCount() == 0);
+        CHECK_FALSE(env.ExceptionDiagnostics().empty());
+        CHECK_NOTHROW(static_cast<void>(f.app->Stop()));
     }
 }

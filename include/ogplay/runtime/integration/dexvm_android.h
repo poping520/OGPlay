@@ -145,6 +145,19 @@ struct DexVmAndroidContext final {
   // Connections are strong edges of the Context, removed on unbind/sweep.
   std::unordered_map<std::uint32_t, std::vector<dexvm::VmObjectRef>>
       service_connections;
+  struct LocalServiceBinding final {
+    std::uint64_t generation{};
+    dexvm::VmObjectRef owner{}, connection{}, intent{}, component{};
+    std::string name;
+    bool delivered{};
+  };
+  struct LocalService final {
+    dexvm::VmObjectRef instance{}, binder{}, intent{};
+  };
+  std::vector<LocalServiceBinding> local_service_bindings;
+  std::unordered_map<std::string, LocalService> local_services;
+  std::uint64_t next_service_generation{1};
+  bool local_services_stopping{};
   std::unordered_set<std::string> granted_permissions;
   std::unordered_set<std::string> system_features;
   std::uint32_t surface_width{};
@@ -526,6 +539,7 @@ struct DexVmAndroidContext final {
       encoded_audio_leases;
 
   enum class ScheduledWorkKind : std::uint8_t {
+    local_service_bind,
     handler_message,
     handler_runnable,
     timer_task,
@@ -975,6 +989,7 @@ void AdvanceAndroidClock(DexVmAndroidContext &context,
 
 // Stops all loopers and wakes HandlerThread teardown. Idempotent.
 void ShutdownAndroidScheduler(DexVmAndroidContext &context);
+void ShutdownLocalServices(dexvm::Interpreter&, DexVmAndroidContext&);
 
 // Frame-boundary service for the main Looper and Java threads. Runs all due
 // main work in (deadline, sequence) order and drains uncaught thread failure.

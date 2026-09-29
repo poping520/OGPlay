@@ -132,6 +132,12 @@ void VisitAndroidSessionRoots(const DexVmAndroidContext& context,
     root(context.activity);
     root(context.application);
     root(context.application_base_context);
+    for (const auto& binding : context.local_service_bindings) {
+        root(binding.owner); root(binding.connection); root(binding.intent); root(binding.component);
+    }
+    for (const auto& [_, service] : context.local_services) {
+        root(service.instance); root(service.binder); root(service.intent);
+    }
     root(context.renderer);
     root(context.egl_context_factory);
     root(context.egl_config_chooser);

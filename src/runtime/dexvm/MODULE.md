@@ -166,3 +166,5 @@ store 契约复制快照；GC 追踪 builder.value，Java 自行维护 shared/CO
 RealToString 只保留 bigIntDigitGenerator native，字段经绑定 handle，临时数值不跨调用保存。
 
 `Interpreter::TrySnapshot` 只尝试 VM 执行锁，复制堆边界、对象/登记类/已链接类与已有调用计数；忙时立即返回 nullopt。method_calls 是解释调用，不是三路总数；GC 暂停使用统一 Clock 累计实际 mark/sweep/资源回收区间，不含等待执行锁的时间。
+
+直接 native 调用将 VmJavaThrow 转为 VmCallOutcome，保留原异常身份和消息。

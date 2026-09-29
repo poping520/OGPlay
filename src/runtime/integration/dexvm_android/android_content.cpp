@@ -21,6 +21,93 @@
 namespace ogplay::runtime::android_intrinsics {
 
 namespace {
+[[noreturn]] void UnsupportedLocalService(dx::Interpreter& vm, const char* reason) {
+  if (auto* ledger = vm.Ledger()) ledger->RecordUnimplemented("dexvm.service_resolution", 0);
+  throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", reason};
+}
+
+void UnbindLocalService(dx::Interpreter& vm, DexVmAndroidContext& context,
+                        dx::VmObjectRef owner, dx::VmObjectRef connection) {
+  const auto binding = std::find_if(context.local_service_bindings.begin(),
+      context.local_service_bindings.end(), [&](const auto& b) {
+        return b.owner == owner && b.connection == connection;
+      });
+  if (binding == context.local_service_bindings.end()) return;
+  const auto name = binding->name;
+  context.local_service_bindings.erase(binding);
+  if (std::any_of(context.local_service_bindings.begin(), context.local_service_bindings.end(),
+                  [&](const auto& b) { return b.name == name; })) return;
+  const auto found = context.local_services.find(name);
+  if (found == context.local_services.end()) return;
+  const auto service = found->second;
+  const auto roots = vm.ProtectReferences(std::array{service.instance, service.binder, service.intent});
+  context.local_services.erase(found);
+  std::exception_ptr failure;
+  try { CallAndroidMethod(vm, service.instance, "onUnbind", "(Landroid/content/Intent;)Z",
+                          {dx::VmValue::Ref(service.intent)}); }
+  catch (...) { failure = std::current_exception(); }
+  try { CallAndroidMethod(vm, service.instance, "onDestroy", "()V"); }
+  catch (...) { if (!failure) failure = std::current_exception(); }
+  if (failure) std::rethrow_exception(failure);
+}
+
+std::optional<bool> BindLocalService(dx::IntrinsicContext& call, const Context& context,
+                                    dx::VmObjectRef intent, dx::VmObjectRef connection) {
+  auto& vm = call.vm;
+  const auto component = CallAndroidMethod(vm, intent, "getComponent", "()Landroid/content/ComponentName;").ref;
+  if (!component.IsValid()) return std::nullopt;
+  if (context->local_services_stopping) UnsupportedLocalService(vm, "service bind during teardown");
+  if (!context->service_inventory_known || vm.CurrentContextToken() != 1 ||
+      call.arguments[2].AsInt() != 1)
+    UnsupportedLocalService(vm, "local bind requires inventory, main thread and BIND_AUTO_CREATE");
+  for (const auto& [name, signature] : {
+      std::pair{"getAction", "()Ljava/lang/String;"},
+      std::pair{"getData", "()Landroid/net/Uri;"},
+      std::pair{"getType", "()Ljava/lang/String;"},
+      std::pair{"getCategories", "()Ljava/util/Set;"},
+      std::pair{"getSelector", "()Landroid/content/Intent;"}})
+    if (CallAndroidMethod(vm, intent, name, signature).ref.IsValid())
+      UnsupportedLocalService(vm, "local bind requires a component-only Intent");
+  const auto package = vm.StringUtf8(CallAndroidMethod(vm, component, "getPackageName", "()Ljava/lang/String;").ref);
+  const auto name = vm.StringUtf8(CallAndroidMethod(vm, component, "getClassName", "()Ljava/lang/String;").ref);
+  if (package != context->package_name) UnsupportedLocalService(vm, "external explicit service binding is unsupported");
+  const auto found = std::find_if(context->service_components.begin(), context->service_components.end(),
+                                [&](const auto& s) { return s.name == name; });
+  if (!context->application_enabled || found == context->service_components.end() || !found->enabled) return false;
+  const auto process = context->application_process_name.empty() ? context->package_name : context->application_process_name;
+  // API19 ServiceInfo.FLAG_ISOLATED_PROCESS creates a separate UID/process.
+  if ((found->flags & 0x0002U) != 0 ||
+      (!found->process_name.empty() && found->process_name != process))
+    UnsupportedLocalService(vm, "remote service process is unsupported");
+  for (const auto& b : context->local_service_bindings) {
+    if (b.owner == call.receiver && b.connection == connection) {
+      if (b.name != name) UnsupportedLocalService(vm, "one connection cannot bind multiple components");
+      return true;
+    }
+  }
+  auto descriptor = name;
+  std::replace(descriptor.begin(), descriptor.end(), '.', '/');
+  const auto type = vm.Linker().ResolveDescriptor("L" + descriptor + ";");
+  if (!vm.Linker().IsAssignable(vm.Linker().ResolveDescriptor("Landroid/app/Service;"), type))
+    throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "component is not a Service"};
+  const auto looper = EnsureMainLooper(call, context);
+  const auto copy = vm.NewIntrinsicInstance("Landroid/content/Intent;");
+  const auto roots = vm.ProtectReferences(std::array{copy, component});
+  const auto ctor = vm.Linker().FindDirectMethod(vm.Model().ObjectClass(copy), "<init>", "(Landroid/content/Intent;)V");
+  if (!ctor) UnsupportedLocalService(vm, "Intent copy constructor unavailable");
+  const auto copied = vm.Call(*ctor, std::array{dx::VmValue::Ref(copy), dx::VmValue::Ref(intent)});
+  if (copied.exception.IsValid()) throw dx::VmJavaThrow{vm.Linker().Class(copied.exception_class).descriptor, copied.exception_message, copied.exception};
+  const auto generation = context->next_service_generation++;
+  std::scoped_lock lock(context->scheduler_mutex);
+  if (context->scheduler_shutdown) UnsupportedLocalService(vm, "service bind during shutdown");
+  context->local_service_bindings.push_back({generation, call.receiver, connection, copy, component, name});
+  context->scheduled_work.push_back({context->uptime_millis.load(), context->next_scheduler_sequence++,
+      DexVmAndroidContext::ScheduledWorkKind::local_service_bind, looper, call.receiver,
+      connection, copy, component, 0, generation});
+  context->scheduler_changed.notify_all();
+  return true;
+}
+
 void RequireAbsentService(dx::IntrinsicContext &call, const Context &context,
                           dx::VmObjectRef intent) {
   const auto unsupported = [&call](const std::string &reason) -> void {
@@ -1441,6 +1528,8 @@ Decl Declare_android_content_Context(const Context &context) {
         if (std::find(connections.begin(), connections.end(), connection) ==
             connections.end())
           connections.push_back(connection);
+        if (const auto bound = BindLocalService(call, context, intent, connection))
+          return dx::VmValue::Int(*bound ? 1 : 0);
         RequireAbsentService(call, context, intent);
         return dx::VmValue::Int(0);
       });
@@ -1451,6 +1540,10 @@ Decl Declare_android_content_Context(const Context &context) {
         if (!connection.IsValid())
           throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;",
                                 "connection is null"};
+        if (call.vm.CurrentContextToken() != 1 &&
+            std::any_of(context->local_service_bindings.begin(), context->local_service_bindings.end(),
+              [&](const auto& b) { return b.owner == call.receiver && b.connection == connection; }))
+          UnsupportedLocalService(call.vm, "local unbind requires the main thread");
         const auto found =
             context->service_connections.find(call.receiver.Value());
         if (found == context->service_connections.end() ||
@@ -1459,6 +1552,7 @@ Decl Declare_android_content_Context(const Context &context) {
                                 "ServiceConnection was not registered"};
         if (found->second.empty())
           context->service_connections.erase(found);
+        UnbindLocalService(call.vm, *context, call.receiver, connection);
         return dx::VmValue::Void();
       });
   builder.VirtualMethod(
@@ -3141,3 +3235,69 @@ Decl Declare_android_content_pm_PackageManager(const Context &context) {
 }
 
 } // namespace ogplay::runtime::android_intrinsics
+
+namespace ogplay::runtime::android_intrinsics {
+dx::VmCallOutcome DispatchLocalServiceBinding(dx::Interpreter& vm, DexVmAndroidContext& context,
+                                              const std::uint64_t generation) {
+  dx::VmCallOutcome outcome;
+  const auto found = std::find_if(context.local_service_bindings.begin(), context.local_service_bindings.end(),
+                                 [&](const auto& b) { return b.generation == generation; });
+  if (found == context.local_service_bindings.end() || found->delivered) return outcome;
+  const auto binding = *found;
+  try {
+    if (!context.local_services.contains(binding.name)) {
+      auto descriptor = binding.name;
+      std::replace(descriptor.begin(), descriptor.end(), '.', '/');
+      descriptor = "L" + descriptor + ";";
+      const auto type = vm.Linker().ResolveDescriptor(descriptor);
+      const auto initialized = vm.EnsureClassInitialized(type);
+      if (initialized.exception.IsValid()) return initialized;
+      const auto instance = vm.NewIntrinsicInstance(descriptor);
+      const auto roots = vm.ProtectReferences(std::array{instance, binding.intent, binding.component, binding.connection});
+      context.local_services.emplace(binding.name, DexVmAndroidContext::LocalService{instance, dx::VmObjectRef{}, binding.intent});
+      const auto ctor = vm.Linker().FindDirectMethod(type, "<init>", "()V");
+      if (!ctor) UnsupportedLocalService(vm, "Service requires a no-argument constructor");
+      const auto constructed = vm.Call(*ctor, std::array{dx::VmValue::Ref(instance)});
+      if (constructed.exception.IsValid()) return constructed;
+      CallAndroidMethod(vm, instance, "attachBaseContext", "(Landroid/content/Context;)V",
+                        {dx::VmValue::Ref(context.application_base_context.IsValid()
+                            ? context.application_base_context : binding.owner)});
+      CallAndroidMethod(vm, instance, "onCreate", "()V");
+      if (!context.local_services.contains(binding.name)) return outcome;
+      const auto binder = CallAndroidMethod(vm, instance, "onBind", "(Landroid/content/Intent;)Landroid/os/IBinder;",
+                                           {dx::VmValue::Ref(binding.intent)}).ref;
+      if (!context.local_services.contains(binding.name)) return outcome;
+      context.local_services.at(binding.name).binder = binder;
+    }
+    const auto service = context.local_services.at(binding.name);
+    // Guest lifecycle callbacks may unbind this connection reentrantly.
+    const auto current = std::find_if(context.local_service_bindings.begin(), context.local_service_bindings.end(),
+                                      [&](const auto& b) { return b.generation == generation; });
+    if (current == context.local_service_bindings.end()) return outcome;
+    current->delivered = true;
+    if (service.binder.IsValid())
+      CallAndroidMethod(vm, binding.connection, "onServiceConnected",
+          "(Landroid/content/ComponentName;Landroid/os/IBinder;)V",
+          {dx::VmValue::Ref(binding.component), dx::VmValue::Ref(service.binder)});
+  } catch (const dx::VmJavaThrow& error) {
+    outcome.exception = error.existing.IsValid() ? error.existing : vm.MakeThrowable(error.descriptor, error.message);
+    outcome.exception_class = vm.Model().ObjectClass(outcome.exception);
+    const auto message = vm.ThrowableMessage(outcome.exception);
+    if (message.IsValid()) outcome.exception_message = vm.StringUtf8(message);
+  }
+  return outcome;
+}
+} // namespace ogplay::runtime::android_intrinsics
+
+namespace ogplay::runtime {
+void ShutdownLocalServices(dexvm::Interpreter& vm, DexVmAndroidContext& context) {
+  context.local_services_stopping = true;
+  std::exception_ptr failure;
+  while (!context.local_service_bindings.empty()) {
+    const auto binding = context.local_service_bindings.back();
+    try { android_intrinsics::UnbindLocalService(vm, context, binding.owner, binding.connection); }
+    catch (...) { if (!failure) failure = std::current_exception(); }
+  }
+  if (failure) std::rethrow_exception(failure);
+}
+} // namespace ogplay::runtime

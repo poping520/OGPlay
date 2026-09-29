@@ -28,6 +28,8 @@
 - `CheckedMemoryBus`：完整权限验证和观察器钩子的 soft-MMU 调试后端。
 - `DirectMemoryPageTable`：按 4 KiB guest 页索引的稳定数据页表；只有无 observer 的 RW
   非执行页可交给 JIT，其他页和跨页访问继续回退受检 bus。
+- `DescribeMappings(maximum_ranges)`：同一锁内按地址合并连续同权限已映射页，仅返回
+  range/protection；包含 PROT_NONE，超限明确失败，不复制 guest 内容。
 - `MemorySnapshot`：带版本、4 KiB guest 页尺寸、映射权限与内容的最小内存快照。
 - `CaptureSnapshot/RestoreSnapshot`：合并连续映射并以事务式替换恢复内存状态。
 

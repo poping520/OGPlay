@@ -31,6 +31,15 @@
 - `ListDirectory` 合并显式/隐式目录并返回排序去重快照；`OpenDirectory` 的 cursor 在打开
   时冻结。目录树 rename、mmap、跨进程锁、WAL 与通用 POSIX 扩展不在本模块范围。
 
+## 生成的只读文件
+
+`RegisterGeneratedReadOnly` 注册有界 provider，stat 大小为 0；每次 open 先预留最大输出
+预算，再在 VFS 锁外生成独立不可变快照。read/readAt/seek/fstat/lease 共用既有 FD 语义；
+fstat 报当前快照大小。write/create/truncate/unlink/rename 拒绝，回调不得递归打开自身。
+注册句柄销毁同步等待正在生成的调用并撤销 provider；新 stat/open 返回 ENOENT，
+已有快照继续可读，close/lease 释放回收预算。退役路径可重新注册，不允许覆盖活跃节点。
+VFS 不依赖 provider 所属上层模块，也不调用宿主 procfs。
+
 ## 安装实例沙盒
 
 `SandboxStore::Open(root, installation_id, package)` 只接收安装层已选定的实例 id，不分配

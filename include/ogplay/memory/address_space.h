@@ -63,6 +63,11 @@ inline constexpr std::size_t kGuestPageCount =
 using DirectMemoryPageTable =
     std::array<std::uint8_t*, kGuestPageCount>;
 
+struct MemoryMappingInfo final {
+    GuestRange range;
+    PageProtection protection;
+};
+
 struct MemorySnapshotMapping final {
     GuestRange range;
     PageProtection protection;
@@ -172,6 +177,9 @@ public:
                  std::uint64_t thread_id = 0);
     [[nodiscard]] DirectMemoryPageTable* DirectPageTable() noexcept;
     [[nodiscard]] std::optional<MemoryStatistics> TrySnapshot() const;
+    // Metadata only, bounded by maximum_ranges; never copies guest contents.
+    [[nodiscard]] std::vector<MemoryMappingInfo> DescribeMappings(
+        std::size_t maximum_ranges = 65536) const;
     [[nodiscard]] MemorySnapshot CaptureSnapshot() const;
     void RestoreSnapshot(const MemorySnapshot& snapshot);
 

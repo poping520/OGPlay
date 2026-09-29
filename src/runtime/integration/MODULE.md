@@ -22,6 +22,11 @@ Android API 的详细行为以 [dexvm_android](dexvm_android/MODULE.md)为准；
   用 libc 建立 namespace、process memory、syscall/clone、boundary、JNI/JavaVM/root attach；
   不接受 app ELF，返回时 ApplicationModuleCount 为 0，此后只随成功动态加载增加。
   AndroidGuestCallSession.Start 是 legacy adapter；AdoptProcess 仅包装既有 owner。
+- `/proc/self/maps` 为当前 guest 地址空间的按打开快照，最多 8192 个合并区间/1 MiB；
+  包含 PROT_NONE，输出真实 guest 读写执行权限。现有 backing 为私有匿名页（包括复制的
+  ELF 段），offset/device/inode 为 0、pathname 为空；不推测原 ROM 文件身份。
+  provider 只捕获 address space，由注册句柄在地址空间析构前同步撤销，构造失败同样回收。
+  不读取宿主 maps，不实现完整 procfs 或 `/proc/self/stat`。
 - /proc/meminfo 是启动时写入 VFS 的只读 GuestProcFacts 快照：受检 total/free，Buffers/
   Swap 为 0，Cached 为 total/4；不读取宿主内存或动态刷新。
 - `dl_unwind_find_exidx` 按 PC 查询 process-owned namespace 的实际 load range，返回所属模块

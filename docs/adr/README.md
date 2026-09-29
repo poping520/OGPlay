@@ -9,7 +9,7 @@ Deprecated、Superseded；日期使用 `YYYY-MM-DD`。当前能力与实施进�
 
 | 主题 | 内容 | ADR 编号（精确定位） |
 | --- | --- | --- |
-| [运行时基础与模块边界](runtime.md) | 10 条决策 | [0001](runtime.md#adr-0001)、[0002](runtime.md#adr-0002)、[0004](runtime.md#adr-0004)、[0009](runtime.md#adr-0009)、[0010](runtime.md#adr-0010)、[0011](runtime.md#adr-0011)、[0013](runtime.md#adr-0013)、[0016](runtime.md#adr-0016)、[0018](runtime.md#adr-0018)、[0076](runtime.md#adr-0076) |
+| [运行时基础与模块边界](runtime.md) | 11 条决策 | [0001](runtime.md#adr-0001)、[0002](runtime.md#adr-0002)、[0004](runtime.md#adr-0004)、[0009](runtime.md#adr-0009)、[0010](runtime.md#adr-0010)、[0011](runtime.md#adr-0011)、[0013](runtime.md#adr-0013)、[0016](runtime.md#adr-0016)、[0018](runtime.md#adr-0018)、[0076](runtime.md#adr-0076)、[0078](runtime.md#adr-0078) |
 | [构建、依赖与开发流程](development.md) | 8 条决策 | [0005](development.md#adr-0005)、[0007](development.md#adr-0007)、[0008](development.md#adr-0008)、[0012](development.md#adr-0012)、[0014](development.md#adr-0014)、[0015](development.md#adr-0015)、[0072](development.md#adr-0072)、[0073](development.md#adr-0073) |
 | [图形、音频与视频](media.md) | 9 条决策 | [0003](media.md#adr-0003)、[0019](media.md#adr-0019)、[0021](media.md#adr-0021)、[0027](media.md#adr-0027)、[0061](media.md#adr-0061)、[0062](media.md#adr-0062)、[0063](media.md#adr-0063)、[0069](media.md#adr-0069)、[0070](media.md#adr-0070) |
 | [会话、Profile 与持久沙盒](session.md) | 4 条决策 | [0020](session.md#adr-0020)、[0022](session.md#adr-0022)、[0071](session.md#adr-0071)、[0074](session.md#adr-0074) |
@@ -18,10 +18,10 @@ Deprecated、Superseded；日期使用 `YYYY-MM-DD`。当前能力与实施进�
 
 ## 维护方式
 
-最新补充：[ADR-0077 · BootDex 自带系统资源 ID 映射](dexvm.md#adr-0077)（Accepted）。
+最新补充：[ADR-0078 · Guest proc 文件的按打开映射快照](runtime.md#adr-0078)（Accepted）。
 
 - 查找历史编号使用上表，跨文档引用使用 `主题.md#adr-NNNN`；编号不随归并重排。
-- 新决策使用下一个全局编号（当前最大为 ADR-0077），在既有主题末尾追加；只有出现无法
+- 新决策使用下一个全局编号（当前最大为 ADR-0078），在既有主题末尾追加；只有出现无法
   归入现有主题的独立领域时才新增主题文件。每条记录前保留 `<a id="adr-NNNN"></a>`。
 - 条目标题使用二级标题，背景、决定、后果等使用三级标题；同步更新本索引和主题内目录。
 - 已有决策的实施补充保留原日期；有实质决策变化时追加新编号与精确替代关系，不能覆盖旧文。

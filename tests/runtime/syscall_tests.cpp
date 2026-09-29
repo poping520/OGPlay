@@ -1245,3 +1245,23 @@ TEST_CASE("Android *at syscalls refuse relative paths instead of guessing") {
     CHECK(fixture.Call(328, {0xffffff9c, 0x20000, 0, 0, 0, 0}) == -95);
     CHECK(fixture.Call(327, {0xffffff9c, 0x20000, 0x20200, 0, 0, 0}) == -95);
 }
+
+TEST_CASE("VFS-05 generated proc files share ARM access open and read semantics") {
+    MetadataSyscallFixture fixture;
+    auto registration = fixture.vfs.RegisterGeneratedReadOnly("/proc/self/maps", 64, [] {
+        const std::string text = "00010000-00011000 rw-p 00000000 00:00 0\n";
+        const auto bytes = std::as_bytes(std::span{text.data(), text.size()});
+        return std::vector<std::byte>(bytes.begin(), bytes.end());
+    });
+    fixture.WriteString(0x20000, "/proc/self/maps");
+    CHECK(fixture.Call(33, {0x20000, 0, 0, 0, 0, 0}) == 0);
+    CHECK(fixture.Call(33, {0x20000, 2, 0, 0, 0, 0}) == -13);
+    const auto fd = fixture.Call(5, {0x20000, 0, 0, 0, 0, 0});
+    REQUIRE(fd >= 3);
+    CHECK(fixture.Call(3, {static_cast<std::uint32_t>(fd), 0x20300, 8, 0, 0, 0}) == 8);
+    CHECK(fixture.memory.Read8(GuestAddress{0x20300}) == '0');
+    registration.reset();
+    CHECK(fixture.Call(33, {0x20000, 0, 0, 0, 0, 0}) == -2);
+    CHECK(fixture.Call(5, {0x20000, 0, 0, 0, 0, 0}) == -2);
+    CHECK(fixture.Call(6, {static_cast<std::uint32_t>(fd), 0, 0, 0, 0, 0}) == 0);
+}

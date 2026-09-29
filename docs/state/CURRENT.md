@@ -29,9 +29,12 @@
   证据为 `.local/input-device-{boot-build,boot-check,build,tests,startup}.log`。
   [DVM-197](../tasks/dexvm/DVM-197.md) 已补 intrinsic renderer EGL policy 消费、真实 current/swap，
   并将首次 queueEvent 提前至 Surface 回调前。定向 6 用例/414 断言通过。
-  原路径加 3 帧退出上限复跑，当前首错为 unityAndroidInit 主动 exit_group(1)，
-  前置日志 `Mono requires /proc to be mounted`；尚未重达原 nativeRender，原绘制故障的
-  端到端复验受此阻塞。证据 `.local/renderer-{build,test-build,tests,startup}.log`。
+  [VFS-05](../tasks/vfs/VFS-05.md) 已按 guest 页账本提供 `/proc/self/maps` 的只读打开快照；
+  Windows 构建、定向 56 用例/351 断言通过。原 APK/OBB 无 Profile/无 survey、临时沙盒加
+  3 帧上限复跑，`Mono requires /proc to be mounted` 消失；当前首错为
+  `Cannot set SIG_SUSPEND handler`，随后 SIGABRT（134），CLI 返回 1。
+  尚未重达 nativeRender，原绘制故障未复验。证据 `.local/proc-maps-*.log`。
+  此前 renderer 证据 `.local/renderer-{build,test-build,tests,startup}.log`。
   EGL 暂停/恢复策略尚未接入该配置；前置 NDK 符号缺失仍待闭合。
   本轮证据为 `.local/gl-preserve-{build,tests,startup}.log`。
   本次证据为 `.local/dt-lifecycle-{build,tests,startup}.log`。此前证据为 `.local/bnd40-build.log`、
@@ -74,7 +77,8 @@
 
 ## 未闭合边界
 
-- Dead Trigger 下一独立缺口是首次 nativeRender 的 `GLES1 draw requires GL_VERTEX_ARRAY`；
+- Dead Trigger 当前首错是 Mono 注册 `SIG_SUSPEND` handler 失败；首次 nativeRender 的
+  `GLES1 draw requires GL_VERTEX_ARRAY` 尚未重达复验；
   不运行 Binder、
   system_server、外部包数据库、广播投递或 Play 服务。
 - GUI 的真实 APK 导入→设置→启动→Dashboard→退出→移除全链路验收按用户安排延后；

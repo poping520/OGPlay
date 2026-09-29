@@ -311,6 +311,22 @@ public:
         return direct_page_table_.get();
     }
 
+    [[nodiscard]] std::vector<MemoryMappingInfo> DescribeMappings(const std::size_t maximum_ranges) const {
+        std::scoped_lock lock(mutex_);
+        std::vector<MemoryMappingInfo> result;
+        std::size_t first = 0;
+        while (first < pages_.size()) {
+            if (!mapped_[first]) { ++first; continue; }
+            auto last = first + 1;
+            while (last < pages_.size() && mapped_[last] && pages_[last] == pages_[first]) ++last;
+            if (result.size() >= maximum_ranges) throw std::length_error("guest mapping metadata limit exceeded");
+            result.push_back({GuestRange(GuestAddress(static_cast<std::uint32_t>(first * page_size_)),
+                                        (last - first) * page_size_), pages_[first]});
+            first = last;
+        }
+        return result;
+    }
+
     [[nodiscard]] MemorySnapshot CaptureSnapshot() const {
         std::scoped_lock lock(mutex_);
         MemorySnapshot snapshot;
@@ -656,6 +672,10 @@ DirectMemoryPageTable* AddressSpace::DirectPageTable() noexcept {
     return impl_->DirectPageTable();
 }
 std::optional<MemoryStatistics> AddressSpace::TrySnapshot() const { return impl_->TrySnapshot(); }
+
+std::vector<MemoryMappingInfo> AddressSpace::DescribeMappings(const std::size_t maximum_ranges) const {
+    return impl_->DescribeMappings(maximum_ranges);
+}
 
 MemorySnapshot AddressSpace::CaptureSnapshot() const { return impl_->CaptureSnapshot(); }
 void AddressSpace::RestoreSnapshot(const MemorySnapshot& snapshot) {

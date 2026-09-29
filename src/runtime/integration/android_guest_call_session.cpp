@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <array>
 #include <condition_variable>
+#include <charconv>
 #include <cstddef>
 #include <deque>
 #include <exception>
@@ -82,6 +83,40 @@ void AppendProcMemoryLine(std::string& output, const std::string_view name,
     output.append(kUnitColumn - name.size() - value.size(), ' ');
     output += value;
     output += " kB\n";
+}
+
+std::vector<std::byte> BuildGuestProcMaps(const memory::AddressSpace& space) {
+    std::vector<memory::MemoryMappingInfo> mappings;
+    try {
+        mappings = space.DescribeMappings(8192);
+    } catch (const std::length_error&) {
+        throw VfsError(27, "guest proc maps range limit exceeded");
+    }
+    std::string text;
+    text.reserve(mappings.size() * 64);
+    const auto append_hex = [&](const std::uint64_t value) {
+        std::array<char, 16> buffer{};
+        const auto end = std::to_chars(buffer.data(), buffer.data() + buffer.size(), value, 16).ptr;
+        const auto size = static_cast<std::size_t>(end - buffer.data());
+        if (size < 8) text.append(8 - size, '0');
+        text.append(buffer.data(), size);
+    };
+    for (const auto& mapping : mappings) {
+        const auto start = mapping.range.Start().Value();
+        append_hex(start);
+        text += '-';
+        append_hex(static_cast<std::uint64_t>(start) + mapping.range.Size());
+        const auto permissions = static_cast<std::uint8_t>(mapping.protection);
+        text += ' ';
+        text += (permissions & 1U) ? 'r' : '-';
+        text += (permissions & 2U) ? 'w' : '-';
+        text += (permissions & 4U) ? 'x' : '-';
+        // Guest pages are currently private anonymous allocations, including
+        // ELF segments copied into those pages. No invented file identity.
+        text += "p 00000000 00:00 0\n";
+    }
+    const auto bytes = std::as_bytes(std::span{text.data(), text.size()});
+    return {bytes.begin(), bytes.end()};
 }
 
 void InstallApi19ProcFiles(VirtualFileSystem& filesystem,
@@ -683,6 +718,9 @@ public:
                 "Android guest proc facts are invalid");
         }
         InstallApi19ProcFiles(*filesystem_, request.proc_facts);
+        proc_maps_ = filesystem_->RegisterGeneratedReadOnly(
+            "/proc/self/maps", 1024U * 1024U,
+            [space = &address_space_] { return BuildGuestProcMaps(*space); });
         BindAndroidGuestJavaAudioHandlers(
             invocations_, sound_pool_,
             sound_pool_mixer_.Enabled() ? &sound_pool_mixer_ : nullptr);
@@ -843,6 +881,7 @@ public:
     }
 
     ~Impl() {
+        proc_maps_.reset();
         if (diagnostics_) diagnostics_->SetFutexProvider({});
         if (!running_) return;
         try {
@@ -2096,6 +2135,9 @@ private:
     }
 
     memory::AddressSpace address_space_;
+    // Declared after address_space_: provider revocation precedes memory teardown,
+    // including constructor failure. Callback captures only the address space.
+    std::unique_ptr<VfsGeneratedFileRegistration> proc_maps_;
     memory::CheckedMemoryBus memory_bus_{address_space_};
     AndroidBoundaryHle boundary_;
     GuestJniAbi guest_jni_;

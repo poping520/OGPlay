@@ -14,6 +14,8 @@
 - [ADR-0018 · Runtime 拆出 jni_guest 与 boundary 子模块](#adr-0018)
 - [ADR-0076 · API 19 ARM32 linker 元数据视图](#adr-0076)
 
+- [ADR-0078 · Guest proc 文件的按打开映射快照](#adr-0078)
+
 <a id="adr-0001"></a>
 
 ## ADR-0001 · 采用进程级 HLE 兼容层
@@ -337,3 +339,25 @@ CMake target 强制 `boundary` 不依赖 JNI、`jni_guest` 不依赖 GLES。incl
 
 需要通用 guest 载荷验证 ELF/Virtual SO 直接查询与 dlsym 地址及调用一致、引用/退役和失败路径。
 私有 ABI 兼容只承诺上述读取范围；新的写入、字段或布局依赖必须单独评审。
+
+<a id="adr-0078"></a>
+
+## ADR-0078 · Guest proc 文件的按打开映射快照
+
+- 状态：Accepted
+- 日期：2026-09-29
+- 实施：[VFS-05](../tasks/vfs/VFS-05.md)
+
+### 决定
+
+进程直接读取的 proc 事实通过 integration 注入唯一 VFS；VFS 提供通用按打开生成的
+只读文件，memory 只提供有界映射元数据。回调在 VFS 锁外执行，注册句柄撤销时等待
+在途调用；打开快照独立拥有数据和预算，避免多次短读跨越映射世代。
+首期仅发布 `/proc/self/maps`，覆盖真实匿名 guest 页和权限，不以空文件或虚假 access
+成功跳过运行库检查。现有 ELF 是复制进匿名页，暂不伪造文件路径/偏移/inode。
+
+### 后果
+
+原版 Java/native IO 共用路径、权限、读与 seek。新增 proc 节点按实际消费者扩展，
+不引入系统服务或宿主 `/proc`；文件映射来源身份需在未来引入真实 file-backed mmap
+时由唯一映射账本持有，不能从库名推测。

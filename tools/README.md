@@ -115,9 +115,9 @@ CMake 会按宿主选择平台/CPU，并逐文件验证清单。普通 Debug 构
 ### API 19 guest JNI
 
 `python tools/bootdex/build_bootdex.py build-guest-jni` 使用 NDK r25c ARMv7 API 19 clang
-把 `src/guest/crypto` 与 `src/guest/icu` 编译为唯一 `libogplay_jni.so`。构建器校验
-libcrypto、ICU 两库和 icudt51l.dat 输入哈希，执行两次独立构建，并检查 ELF32 ARM/DYN、
-SONAME 与精确 DT_NEEDED；两个 C 源和 ICU C ABI 头的哈希写入 manifest。工具链或输入不匹配
+把 `src/guest/crypto`、`src/guest/icu` 与 `src/guest/zip` 编译为唯一 `libogplay_jni.so`。
+构建器校验 libcrypto、libssl、ICU 两库、libz 和 icudt51l.dat 输入哈希，执行两次独立构建，
+并检查 ELF32 ARM/DYN、SONAME 与精确 DT_NEEDED；源码和 ICU C ABI 头的哈希写入 manifest。工具链或输入不匹配
 即失败。宿主构建不下载、编译或链接 ICU。
 
 ## 机型预设数据校验

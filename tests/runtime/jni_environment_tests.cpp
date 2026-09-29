@@ -40,6 +40,15 @@ TEST_CASE("JNI environment exposes pending exceptions and enforces the gate") {
     CHECK(occurred != throwable);
     CHECK_THROWS_AS(static_cast<void>(environment.GetVersion(7)),
                     ogplay::runtime::JniExceptionError);
+    const auto pending = environment.PendingExceptionMetadata(7)->throwable;
+    environment.PushLocalFrame(7, 1);
+    const auto nested = environment.ExceptionOccurred(7);
+    CHECK_FALSE(nested.IsNull());
+    CHECK(environment.PopLocalFrame(7).IsNull());
+    CHECK(environment.PendingExceptionMetadata(7)->throwable == pending);
+    CHECK_THROWS_AS(static_cast<void>(environment.NewGlobalRef(7, throwable)),
+                    ogplay::runtime::JniExceptionError);
+    CHECK(environment.PendingExceptionMetadata(7)->throwable == pending);
     environment.ExceptionClear(7);
     CHECK(environment.IsSameObject(7, throwable, occurred));
     environment.DeleteLocalRef(7, occurred);

@@ -132,7 +132,8 @@ switch/threaded 解释、异常、线程/monitor、反射及 `java.*` core intri
 - 依赖仅指向 core/loader/runtime-jni；平台 provider 经注入获得。guest 输入全部受检，未实现必须
   记账并失败。缓存不得跨可能扩容操作保存 class/member 引用或 host pointer。
 - 固定 BootDex 类可按类显式准入其原版 native 声明到 guest JNI；准入不定义类或复制成员，
-  未导出的符号仍明确失败。该机制当前用于 API 19 `NativeCrypto`，并由制品审计校验签名集合。
+  未导出的符号仍明确失败。该机制用于 API 19 `NativeCrypto` 与 `CRC32`，
+  并由制品审计校验签名集合。
 - Gap survey 默认关闭，只对真实触达的平台缺口生成 0/null/void 并记账；结果不是兼容性结论。
 
 ## 尚未实现与测试

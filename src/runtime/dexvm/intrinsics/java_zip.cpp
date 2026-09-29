@@ -18,6 +18,12 @@
 namespace ogplay::runtime::dexvm::intrinsics {
 namespace {
 
+IntrinsicClassDecl DeclareCRC32() {
+  auto builder = IntrinsicClassBuilder::Class("Ljava/util/zip/CRC32;");
+  builder.AdmitBootNativeMethods();
+  return std::move(builder).Build();
+}
+
 [[noreturn]] void ZipFailure(const ZipRuntimeError &error) {
   throw VmJavaThrow{"Ljava/io/IOException;", error.what()};
 }
@@ -169,6 +175,7 @@ DeclareZipInputStream(const IntrinsicFieldHandle entry_name) {
 } // namespace
 
 void AppendJavaUtilZip(std::vector<IntrinsicClassDecl> &catalog) {
+  catalog.push_back(DeclareCRC32());
   auto entry = DeclareZipEntry();
   catalog.push_back(std::move(entry.declaration));
   catalog.push_back(DeclareZipInputStream(entry.name));

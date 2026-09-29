@@ -70,6 +70,26 @@
   第 6 帧后报告 `java/util/zip/CRC32` 缺失并以 1 退出，未再永久等待。
   证据 `.local/stall-fix-{build,tests,monitor-tests,startup}.log`；不代表游戏可玩验收，
   运行中主动关闭及完整 native-attached Java 执行上下文支持仍未验收。
+  [DVM-201](../tasks/dexvm/DVM-201.md) 已以原版 BootDex CRC32 + guest JNI/libz 补齐校验能力；
+  BootDex build/check、载荷校验、NDK r25c 重复构建及 macOS 双解释器 292 断言通过。
+  原 APK/OBB 无 Profile/无 survey、临时沙盒复跑越过 CRC32 缺失，第 6 帧退出 1；
+  下一阻塞是 `Class.forName(com.prime31.EtceteraPlugin)` 抛异常后 nativeRender 在 pending
+  exception 下调用 `NewGlobalRef`，清理期 `PushLocalFrame` 次生错误仍在。
+  证据 `.local/crc32-{tests,startup}.log`，不代表游戏可玩验收。
+  已补入原版 TextToSpeech 两个回调接口，并按 API19 放行 pending 下 PushLocalFrame；
+  JNI 诊断增加有界 cause 链。BootDex build/check、载荷校验、macOS Release 构建及定向
+  3 用例/68 断言通过，覆盖双解释器接口分派、缺失依赖 cause、循环原因与异常身份保留。
+  原 APK/OBB 无 Profile/无 survey、临时沙盒复跑已越过上述 ClassNotFoundException/NewGlobalRef；
+  下一首错为 ReflectionHelper.getMethodID 调用 getDeclaredMethods，解析插件 access$4
+  返回类型时缺少 `android.speech.tts.TextToSpeech`。本轮只提供回调接口，未实现语音服务。
+  证据 `.local/tts-{boot-build,boot-check,payload,build,tests,startup}.log`；仍为 reached-fault。
+  随后纳入原版 TextToSpeech 类，补充 synthetic 方法返回类型的完整枚举回归；未实现语音服务。
+  BootDex build/check、载荷校验、Release 测试目标构建及双解释器 1 用例/62 断言通过。
+  相同 APK/OBB、无 Profile/无 survey、临时沙盒复跑已越过上述返回类型缺失，推进到 f=9；
+  后续出现 IABPlugin.init 的 `only an action-only Intent is supported`，停止生命周期时
+  因未捕获 VmJavaThrow 退出（134），两者因果尚未定位。
+  证据 `.local/tts-type-{boot-build,boot-check,payload,build,tests,startup}.log`
+  与 `.local/tts-type-startup-check.json`；未完成 120 帧或游戏兼容验收。
   此前 renderer 证据 `.local/renderer-{build,test-build,tests,startup}.log`。
   EGL 暂停/恢复策略尚未接入该配置；前置 NDK 符号缺失仍待闭合。
   本轮证据为 `.local/gl-preserve-{build,tests,startup}.log`。
@@ -113,8 +133,11 @@
 
 ## 未闭合边界
 
-- Dead Trigger 当前首错是 `UnityPlayer.onDrawFrame` 中 `javax.crypto.SecretKeyFactory`
-  类缺失；Looper 缺导出导致的 PC=0、Mono 信号注册、tkill SIGABRT 和 coprocessor 断言已越过。首次 nativeRender 的
+- Dead Trigger 最新复跑在 f=9 停止生命周期时因未捕获 `VmJavaThrow` 退出；此前出现
+  IABPlugin.init 的 action-only Intent 支持限制，具体退出原因待定位。
+  `getDeclaredMethods` 解析 TextToSpeech 返回类型缺失已越过；此前插件回调接口缺失
+  导致的 ClassNotFoundException/NewGlobalRef、SecretKeyFactory、CRC32 缺失，
+  Looper 缺导出导致的 PC=0、Mono 信号注册、tkill SIGABRT 和 coprocessor 断言已越过。首次 nativeRender 的
   `GLES1 draw requires GL_VERTEX_ARRAY` 尚未重达复验；
   不运行 Binder、
   system_server、外部包数据库、广播投递或 Play 服务。

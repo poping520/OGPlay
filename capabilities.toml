@@ -917,8 +917,8 @@ note = "M8 WU-M8-005 绑定 10 种返回类型的 CallNonvirtual*Method/V/A 共 
 
 [runtime.jni_guest_exceptions]
 status = "complete"
-test = "tests/runtime/jni_guest_instance_calls_tests.cpp; tests/runtime/jni_guest_bindings_tests.cpp"
-note = "M8 WU-M8-005 让 ThrowNew 完整读取校验 Modified UTF-8 message 并在 runtime/jni 保存 throwable identity、exception class 与 message；ExceptionDescribe 写结构化 runtime.jni.exception diagnostic 且不清除或替换 pending throwable，与 M3 的 Throw/ExceptionOccurred/ExceptionCheck/ExceptionClear 共用同一状态。FatalError 明确排除，保持 unbound"
+test = "tests/runtime/jni_guest_instance_calls_tests.cpp; tests/runtime/jni_guest_bindings_tests.cpp; tests/runtime/jni_environment_tests.cpp; tests/runtime/native_library_loader_tests.cpp: BootDex speech callbacks link and JNI diagnostics retain nested causes"
+note = "M8 WU-M8-005 让 ThrowNew 完整读取校验 Modified UTF-8 message 并在 runtime/jni 保存 throwable identity、exception class 与 message；ExceptionDescribe 写结构化 runtime.jni.exception diagnostic 且不清除或替换 pending throwable，与 M3 的 Throw/ExceptionOccurred/ExceptionCheck/ExceptionClear 共用同一状态。API19 pending 下 Push/PopLocalFrame 保留原异常，NewGlobalRef 仍严格拒绝；DexVM JNI 日志与 native 故障有界输出原字段 cause 链（含 ClassNotFoundException.ex），不执行 guest 方法。FatalError 明确排除，保持 unbound"
 
 [runtime.jni_guest_monitors]
 status = "complete"
@@ -1354,6 +1354,11 @@ note = "API19 SQL 日期值类型纳入 BootDex。DVM-183 从固定 API 19 core.
 status = "complete"
 test = "tests/runtime/native_library_loader_tests.cpp: DVM-105/DVM-106/DVM-108; tests/runtime/bionic_profile_tests.cpp; python tools/validate_android_payload.py --root data/android/19; python tools/bootdex/build_bootdex.py build-guest-jni"
 note = "DVM-122 将 crypto/ICU 统一为 libogplay_jni.so 和单一 JNI_OnLoad。NDK r25c ARMv7 API19 重复构建一致；ELF ABI、SONAME、DT_NEEDED、输入/输出哈希受构建器和 validator 约束。ICU data 禁止文件回退并立即初始化，teardown 先 cleanup 再释放；未审计 native 明确失败，不引入 libjavacore。"
+
+[dexvm.crc32]
+status = "complete"
+test = "tests/runtime/native_library_loader_tests.cpp: DVM-201; tools/bootdex/build_bootdex.py build/check/build-guest-jni; tools.android_payload_current"
+note = "DVM-201：Checksum/CRC32 公开方法、参数检查与 crc/tbytes 状态执行原版 API19 BootDex；两个私有实例 native 经统一 guest JNI 调用既有 libz，数组有界分块读取，空区间保持累积值，32 位结果无符号扩展。双解释器覆盖标准/大数组向量、增量/单字节、范围异常、reset/GC/实例隔离与 DigestOutputStream；不含 Adler32、Inflater/Deflater 或完整 ZIP 流。"
 
 [dexvm.unsafe]
 status = "complete"

@@ -90,6 +90,8 @@
   VMStack 除 getClasses 外的四个 native 明确失败。宿主资源不因迁入对象流自动可序列化。
 - ZIP 的 archive/entry/cursor/close 只用 ZipRuntime，ZIP32/inflate/CRC 复用严格 loader；
   FilterInputStream 持源强引用，close 幂等关闭源，mark/reset 明确不支持。
+  独立 Checksum/CRC32 公开行为与状态归原版 BootDex；CRC32 两个私有实例 native
+  按原声明准入统一 guest JNI，计算使用 guest libz，不新增宿主校验算法或状态。
 - Buffer/Charset 的 handler 只做类型/异常边界；cursor/backing/view/字节序交 NioRuntime。
   typed view 共享 backing 并隐藏不匹配 array，保持 concrete class；direct buffer 只用强类型
   guest-memory 接口，不退化为 heap 或保存宿主指针。Memory 仅提供受检 byte[] 整数 codec。

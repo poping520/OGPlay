@@ -1,0 +1,48 @@
+# CRC-backed MessageDigest exercises ordinary DigestOutputStream virtual dispatch.
+.class public Lfixture/CrcDigest;
+.super Ljava/security/MessageDigest;
+.field private checksum:Ljava/util/zip/CRC32;
+.method public constructor <init>()V
+.registers 3
+    const-string v0, "CRC"
+    invoke-direct {v2, v0}, Ljava/security/MessageDigest;-><init>(Ljava/lang/String;)V
+    new-instance v0, Ljava/util/zip/CRC32;
+    invoke-direct {v0}, Ljava/util/zip/CRC32;-><init>()V
+    iput-object v0, v2, Lfixture/CrcDigest;->checksum:Ljava/util/zip/CRC32;
+    return-void
+.end method
+.method protected engineReset()V
+.registers 2
+    iget-object v0, v1, Lfixture/CrcDigest;->checksum:Ljava/util/zip/CRC32;
+    invoke-virtual {v0}, Ljava/util/zip/CRC32;->reset()V
+    return-void
+.end method
+.method protected engineUpdate(B)V
+.registers 3
+    iget-object v0, v1, Lfixture/CrcDigest;->checksum:Ljava/util/zip/CRC32;
+    invoke-virtual {v0, v2}, Ljava/util/zip/CRC32;->update(I)V
+    return-void
+.end method
+.method protected engineUpdate([BII)V
+.registers 5
+    iget-object v0, v1, Lfixture/CrcDigest;->checksum:Ljava/util/zip/CRC32;
+    invoke-virtual {v0, v2, v3, v4}, Ljava/util/zip/CRC32;->update([BII)V
+    return-void
+.end method
+.method protected engineDigest()[B
+.registers 7
+    iget-object v0, v6, Lfixture/CrcDigest;->checksum:Ljava/util/zip/CRC32;
+    invoke-virtual {v0}, Ljava/util/zip/CRC32;->getValue()J
+    move-result-wide v0
+    long-to-int v0, v0
+    const/4 v1, 4
+    new-array v2, v1, [B
+    const/4 v3, 3
+:bytes
+    int-to-byte v4, v0
+    aput-byte v4, v2, v3
+    ushr-int/lit8 v0, v0, 8
+    add-int/lit8 v3, v3, -1
+    if-gez v3, :bytes
+    return-object v2
+.end method

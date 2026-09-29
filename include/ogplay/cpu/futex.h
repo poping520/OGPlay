@@ -3,6 +3,7 @@
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <vector>
@@ -51,10 +52,12 @@ public:
                                        std::uint32_t expected,
                                        std::uint64_t thread_id,
                                        std::optional<std::chrono::nanoseconds>
-                                           timeout = std::nullopt);
+                                           timeout = std::nullopt,
+                                       std::function<bool()> interrupted = {});
     [[nodiscard]] std::size_t Wake(memory::GuestAddress address,
                                    std::size_t maximum_count);
     [[nodiscard]] std::size_t WakeAll();
+    void NotifyWaiters();
     [[nodiscard]] std::size_t InterruptAll();
     [[nodiscard]] std::size_t WaiterCount(memory::GuestAddress address) const;
     // Never waits for a lock held by a stalled guest. Busy queues are omitted

@@ -27,8 +27,12 @@ std::optional<A32SyscallDispatchResult> DispatchAndroidArmSupervisorCall(
     frame.thread_id = state.ThreadId();
     frame.cpu_state = state;
     const auto outcome = dispatcher.DispatchOutcome(frame);
-    state.SetRegister(cpu::CoreRegister::r0,
-                      std::bit_cast<std::uint32_t>(outcome.return_value));
+    if (outcome.restored_state) {
+        state = *outcome.restored_state;
+    } else {
+        state.SetRegister(cpu::CoreRegister::r0,
+                          std::bit_cast<std::uint32_t>(outcome.return_value));
+    }
     cpu.SetState(state);
     return A32SyscallDispatchResult{
         frame.number, outcome.return_value, outcome.progress, std::move(state)};

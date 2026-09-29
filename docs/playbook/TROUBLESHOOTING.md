@@ -71,5 +71,6 @@ guest SO。`exit_group` 会标记全部 live 线程，`affected_guest` 不一定
 `origin=signal_termination` 时先读其前面的 `guest.stderr` / `guest.kernel_log`：C++ terminate、
 stack protector 和 libc fatal 往往先写原始原因，再通过 `tgkill(SIGABRT)` 终止。回溯每帧的
 `pc` 已清除 Thumb bit，`lr` 保留原值；`stop=end_of_frame_chain/unreadable_frame_record/
-non_monotonic` 是证据边界，不应继续按栈内相似地址猜帧。当前只实现 SIGABRT 默认 fatal
-action，不代表完整 POSIX signal handler 语义。
+non_monotonic` 是证据边界，不应继续按栈内相似地址猜帧。当前进程内 handler 投递范围见
+[ADR-0079](../adr/runtime.md#adr-0079) 与 [BND-41](../tasks/boundary/BND-41.md)，
+不代表完整 POSIX 信号或 CPU fault 自动转信号。

@@ -15,6 +15,7 @@
 - [ADR-0076 · API 19 ARM32 linker 元数据视图](#adr-0076)
 
 - [ADR-0078 · Guest proc 文件的按打开映射快照](#adr-0078)
+- [ADR-0079 · 进程内 ARM guest 信号投递](#adr-0079)
 
 <a id="adr-0001"></a>
 
@@ -361,3 +362,36 @@ CMake target 强制 `boundary` 不依赖 JNI、`jni_guest` 不依赖 GLES。incl
 原版 Java/native IO 共用路径、权限、读与 seek。新增 proc 节点按实际消费者扩展，
 不引入系统服务或宿主 `/proc`；文件映射来源身份需在未来引入真实 file-backed mmap
 时由唯一映射账本持有，不能从库名推测。
+
+<a id="adr-0079"></a>
+
+## ADR-0079 · 进程内 ARM guest 信号投递
+
+- 状态：Accepted
+- 日期：2026-09-29
+- 实施：[BND-41](../tasks/boundary/BND-41.md)
+
+### 决定
+
+信号状态由进程 syscall dispatcher 唯一拥有：handler 进程共享，mask/pending/备用栈/活动帧
+按 guest thread 隔离。clone 在启动 child 前继承 mask；不复制 pending 或备用栈。
+保持 guest 与 host 线程 1:1，只由目标线程在 CPU 安全边界建立 guest 栈帧并执行 handler；
+发送方不访问目标 CPU。主调用、clone 和 headless 共用状态及最多 50000 tick 的检查间隔。
+不安装宿主 OS 信号、不引入 Android 系统进程或特定引擎分支。
+
+按 API19 ARM EABI 分别编组旧 sigaction/sigsuspend/sigreturn 与 RT 入口，信号帧使用
+ucontext/siginfo/VFP 布局，恢复 guest 可编辑的上下文和 mask。返回桥为惰性分配的 RX guest
+页，不要求栈可执行。futex 通过显式中断谓词及通知连接信号状态，通知不产生 WAKE token；
+无超时 futex WAIT 在 SA_RESTART 下重执行原 syscall，否则 EINTR。
+
+### 边界与后果
+
+首期支持 tgkill 投递标准信号及注册 handler、默认忽略/终止、屏蔽与合并、嵌套、备用栈、
+SA_SIGINFO/SA_RESTORER/SA_RESTART/SA_NODEFER/SA_RESETHAND。进程内 tgkill 验证 PID/TID；
+无 handler 的 SIGABRT 保留原有 fatal 诊断。实时队列、作业控制、外部进程/定时器信号、
+同步 CPU fault 转信号尚未实现；其他宿主阻塞 IO 不承诺及时投递，有超时 futex 中断返回
+EINTR。坏帧/栈溢出明确失败，不吞掉信号或绕过 handler。
+
+ABI 依据本地 AOSP 4.4.4 bionic 的 arch-arm syscall 与 asm/{signal,ucontext,sigcontext}.h，
+并核对 [Linux v3.4 ARM signal.c](https://github.com/torvalds/linux/blob/v3.4/arch/arm/kernel/signal.c)
+及 user_vfp 布局。定向双后端测试和 APK 首错推进分别记证据，后者不等于完整 GC/游戏验收。

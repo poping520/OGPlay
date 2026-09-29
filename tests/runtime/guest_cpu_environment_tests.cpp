@@ -8,6 +8,7 @@
 
 #include "ogplay/cpu/dynarmic.h"
 #include "ogplay/memory/bus.h"
+#include "ogplay/runtime/dexvm/nio_runtime.h"
 #include "runtime/integration/guest_cpu_environment.h"
 #include "ogplay/runtime/integration/android_guest_call_session.h"
 
@@ -172,4 +173,34 @@ TEST_CASE("BND-42 sysconf shim returns topology and tailcalls ARM or Thumb libc"
             CHECK(after.Register(cpu::CoreRegister::sp) == 0x12340000);
         }
     }
+}
+
+TEST_CASE("ARM tkill real API19 libc wrapper preserves syscall errno") {
+    std::vector<std::vector<std::byte>> images;
+    std::vector<loader::Elf32ModuleInput> modules;
+    for (const auto* name : {"libc.so", "libdl.so"}) {
+        std::ifstream input(std::string(OGPLAY_SOURCE_DIR) + "/data/android/19/lib/" + name, std::ios::binary);
+        REQUIRE(input.good());
+        const std::vector<char> bytes{std::istreambuf_iterator<char>(input), {}};
+        auto& image = images.emplace_back(bytes.size());
+        std::transform(bytes.begin(), bytes.end(), image.begin(), [](char value) { return static_cast<std::byte>(value); });
+        modules.push_back({name, image, memory::GuestAddress{0x10000000U + static_cast<std::uint32_t>(modules.size()) * 0x10000000U}});
+    }
+    runtime::VirtualFileSystem fs;
+    auto process = runtime::AndroidGuestProcess::Start({19, modules, {}, 64, 36, 1000000, 1, &fs, {}});
+    const auto tkill = process->FindModuleExport(0, "tkill");
+    const auto error_pointer = process->FindModuleExport(0, "__errno");
+    CHECK(process->Invoke({tkill, {1, 0}}).return_value == 0);
+    for (const auto& sample : {std::array<std::uint32_t, 3>{999, 0, 3},
+                               std::array<std::uint32_t, 3>{1, 65, 22}}) {
+        CHECK(process->Invoke({tkill, {sample[0], sample[1]}}).return_value == 0xffffffffU);
+        const memory::GuestAddress address{process->Invoke({error_pointer, {}}).return_value};
+        std::array<std::byte, 4> bytes{};
+        process->GuestMemoryAccess().read(address, bytes);
+        CHECK(std::to_integer<std::uint32_t>(bytes[0]) == sample[2]);
+        CHECK(bytes[1] == std::byte{});
+        CHECK(bytes[2] == std::byte{});
+        CHECK(bytes[3] == std::byte{});
+    }
+    process->Stop();
 }

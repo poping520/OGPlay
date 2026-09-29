@@ -1939,7 +1939,7 @@ note = "VFS-05/ADR-0078：定向 56 用例/351 断言通过，同路径 APK 越�
 [runtime.guest_signals]
 status = "partial"
 test = "tests/runtime/syscall_signal_tests.cpp; tests/runtime/guest_thread_runner_tests.cpp; tests/runtime/guest_clone_thread_runtime_tests.cpp; tests/cpu/futex_tests.cpp"
-note = "BND-41/ADR-0079：进程内 ARM legacy/RT action、mask、pending、suspend、return，tgkill 标准信号 handler 投递与默认忽略/终止；目标线程安全点执行，支持 ARM/Thumb/VFP、备用栈、嵌套、guest ucontext 修改与 clone mask 继承。无超时 futex 支持 SA_RESTART，超时等待中断为 EINTR；实时队列、作业控制、同步 CPU fault 转信号、任意宿主 IO 中断未实现。实际 APK 已越过信号注册，下一首错为 CPU coprocessor 断言，未完成真实 GC 全周期或游戏验收。"
+note = "BND-41/ADR-0079：进程内 ARM legacy/RT action、mask、pending、suspend、return，tkill/tgkill 标准信号 handler 投递与默认忽略/终止；目标线程安全点执行，支持 ARM/Thumb/VFP、备用栈、嵌套、guest ucontext 修改与 clone mask 继承。无超时 futex 支持 SA_RESTART，超时等待中断为 EINTR；实时队列、作业控制、同步 CPU fault 转信号、任意宿主 IO 中断未实现。tkill 与 tgkill 共用投递并保留原调用归因；真实 API19 libc errno、双后端暂停恢复受检。实际 APK 已越过信号注册及 tkill 缺失导致的 SIGABRT，下一首错为 guest PC=0 执行未映射内存，未完成真实 GC 全周期或游戏验收。"
 
 [runtime.guest_cpu_facts]
 status = "partial"

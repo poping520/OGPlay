@@ -697,4 +697,11 @@ TEST_CASE("A32 guest stop BND-44 reports unsupported instruction without masking
     CHECK(text.find("instruction=0xee000f10") != std::string::npos);
     CHECK(text.find("operation=MCR p=15 opc1=0 crn=0 crm=0 opc2=0") != std::string::npos);
     CHECK(text.find("guest=444") != std::string::npos);
+    for (const auto pc : {0U, 4U, 7U}) {
+        auto low_pc = stopped;
+        low_pc.pc = ogplay::memory::GuestAddress{pc};
+        const auto report = ogplay::runtime::DescribeA32GuestStop(low_pc, state, memory);
+        CHECK(report.find("reason=unsupported_instruction") != std::string::npos);
+        CHECK(report.find("unavailable (PC is below 8)") != std::string::npos);
+    }
 }

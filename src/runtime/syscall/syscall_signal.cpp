@@ -308,14 +308,16 @@ void GuestSignalRuntime::Bind(A32SyscallDispatcher& dispatcher) {
             } catch (const memory::MemoryFault&) { return -kEfault; }
         });
     }
-    dispatcher.Implement(268, [state, binding = dispatcher.signal_binding](const A32SyscallFrame& frame) {
-        auto result = state->Send(frame);
-        // Notify after releasing signal state; futex predicates take its lock.
-        if (result.return_value == 0 && binding->waiters) {
-            binding->waiters->NotifyWaiters();
-        }
-        return result;
-    });
+    for (const auto number : {238U, 268U}) {
+        dispatcher.Implement(number, [state, binding = dispatcher.signal_binding](const A32SyscallFrame& frame) {
+            auto result = state->Send(frame);
+            // Notify after releasing signal state; futex predicates take its lock.
+            if (result.return_value == 0 && binding->waiters) {
+                binding->waiters->NotifyWaiters();
+            }
+            return result;
+        });
+    }
 }
 
 A32SyscallOutcome GuestSignalRuntime::Impl::Action(const A32SyscallFrame& frame) {
@@ -357,10 +359,14 @@ A32SyscallOutcome GuestSignalRuntime::Impl::Action(const A32SyscallFrame& frame)
 }
 
 A32SyscallOutcome GuestSignalRuntime::Impl::Send(const A32SyscallFrame& frame) {
-    const auto target = static_cast<std::uint64_t>(frame.arguments[1]);
-    const auto signal = frame.arguments[2];
+    // Decode each ABI without rewriting the original frame used by diagnostics,
+    // pending sender information and process termination attribution.
+    const bool grouped = frame.number == 268;
+    const auto target = static_cast<std::uint64_t>(frame.arguments[grouped ? 1 : 0]);
+    const auto signal = frame.arguments[grouped ? 2 : 1];
     if (signal > 64) return -kEinval;
-    if (!lifecycle || !frame.thread_id || !target || frame.arguments[0] != process_id) return -kEsrch;
+    if (!lifecycle || !frame.thread_id || !target ||
+        (grouped && frame.arguments[0] != process_id)) return -kEsrch;
     try {
         if (lifecycle->State(target).status != GuestThreadStatus::running) return -kEsrch;
         if (signal == 0) return 0;

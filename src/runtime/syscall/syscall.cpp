@@ -124,6 +124,7 @@ constexpr std::array kAndroidArmBaseline{
     Declaration{220, "madvise", SyscallGroup::memory},
     Declaration{221, "fcntl64", SyscallGroup::file},
     Declaration{224, "gettid", SyscallGroup::thread},
+    Declaration{238, "tkill", SyscallGroup::signal},
     Declaration{239, "sendfile64", SyscallGroup::file},
     Declaration{240, "futex", SyscallGroup::thread},
     Declaration{241, "sched_setaffinity", SyscallGroup::thread},

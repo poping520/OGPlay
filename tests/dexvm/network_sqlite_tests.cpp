@@ -18,6 +18,7 @@
 
 #include "ogplay/core/capability_ledger.h"
 #include "ogplay/core/logger.h"
+#include "ogplay/core/json.h"
 #include "ogplay/loader/apk.h"
 #include "ogplay/runtime/database/database_runtime.h"
 #include "ogplay/runtime/dexvm/class_linker.h"
@@ -99,6 +100,50 @@ public:
   std::uint32_t close_count{};
 };
 
+std::vector<std::byte> MakeStoredZip(const std::string_view name,
+                                     const std::span<const std::byte> payload) {
+    const auto append16 = [](std::vector<std::byte>& bytes, std::uint16_t value) {
+        for (unsigned shift = 0; shift < 16; shift += 8) bytes.push_back(static_cast<std::byte>(value >> shift));
+    };
+    const auto append32 = [](std::vector<std::byte>& bytes, std::uint32_t value) {
+        for (unsigned shift = 0; shift < 32; shift += 8) bytes.push_back(static_cast<std::byte>(value >> shift));
+    };
+    std::uint32_t crc = 0xffffffffU;
+    for (const auto byte : payload) {
+        crc ^= std::to_integer<std::uint8_t>(byte);
+        for (unsigned bit = 0; bit < 8; ++bit) {
+            const auto mask = 0U - (crc & 1U);
+            crc = (crc >> 1U) ^ (0xedb88320U & mask);
+        }
+    }
+    crc = ~crc;
+    const auto append_name = [&](std::vector<std::byte>& bytes) {
+        for (const auto value : name) {
+            bytes.push_back(static_cast<std::byte>(value));
+        }
+    };
+    std::vector<std::byte> bytes;
+    append32(bytes, 0x04034b50U); append16(bytes, 20); append16(bytes, 0);
+    append16(bytes, 0); append16(bytes, 0); append16(bytes, 0);
+    append32(bytes, crc); append32(bytes, static_cast<std::uint32_t>(payload.size()));
+    append32(bytes, static_cast<std::uint32_t>(payload.size()));
+    append16(bytes, static_cast<std::uint16_t>(name.size())); append16(bytes, 0);
+    append_name(bytes); bytes.insert(bytes.end(), payload.begin(), payload.end());
+    const auto central_offset = static_cast<std::uint32_t>(bytes.size());
+    append32(bytes, 0x02014b50U); append16(bytes, 20); append16(bytes, 20);
+    append16(bytes, 0); append16(bytes, 0); append16(bytes, 0); append16(bytes, 0);
+    append32(bytes, crc); append32(bytes, static_cast<std::uint32_t>(payload.size()));
+    append32(bytes, static_cast<std::uint32_t>(payload.size()));
+    append16(bytes, static_cast<std::uint16_t>(name.size()));
+    append16(bytes, 0); append16(bytes, 0); append16(bytes, 0); append16(bytes, 0);
+    append32(bytes, 0); append32(bytes, 0); append_name(bytes);
+    const auto central_size = static_cast<std::uint32_t>(bytes.size()) - central_offset;
+    append32(bytes, 0x06054b50U); append16(bytes, 0); append16(bytes, 0);
+    append16(bytes, 1); append16(bytes, 1); append32(bytes, central_size);
+    append32(bytes, central_offset); append16(bytes, 0);
+    return bytes;
+}
+
 struct NetworkSqliteVm final {
   JniStringStore strings;
   JniPrimitiveArrayStore arrays;
@@ -127,6 +172,7 @@ struct NetworkSqliteVm final {
       std::string package_name = "test.game")
       : vm(
             [this, &app_dex, &package_name]() -> DexClassLinker & {
+              ogplay::test::BindBootDexArchive(*context);
               context->package_name = package_name;
               context->vfs = &vfs;
               linker.RegisterIntrinsics(CoreIntrinsicCatalog(
@@ -934,6 +980,50 @@ TEST_CASE("DVM-186 close cancels active work and teardown is idempotent") {
   CHECK_NOTHROW(connection->Close());
 }
 
+TEST_CASE("DVM-198 system resource mapping follows each BootDex archive") {
+  for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto id : {0x0104011c, 0x01040029}) {
+      NetworkSqliteVm fixture(backend);
+      const std::string document = R"({"schema_version":1,"api_level":19,"resources":[{"id":)" +
+          std::to_string(id) + R"(,"name":"journal","type":"string","value":"DELETE"}]})";
+      fixture.context->boot_classpath_bytes = MakeStoredZip("META-INF/ogplay/system-resources.json",
+          std::as_bytes(std::span(document.data(), document.size())));
+      fixture.context->boot_classpath_archive = ogplay::loader::ParseApkArchive(fixture.context->boot_classpath_bytes);
+      const auto resources = fixture.Static("Landroid/content/res/Resources;", "getSystem",
+                                            "()Landroid/content/res/Resources;").ref;
+      CHECK(fixture.vm.StringUtf8(fixture.On(resources, "getString", "(I)Ljava/lang/String;",
+          {VmValue::Int(id)}).ref) == "DELETE");
+      const auto missing = fixture.linker.ResolveDescriptor("Landroid/content/res/Resources$NotFoundException;");
+      CHECK(fixture.OnOutcome(resources, "getInteger", "(I)I", {VmValue::Int(id)}).exception_class == missing);
+      const auto other = id == 0x0104011c ? 0x01040029 : 0x0104011c;
+      CHECK(fixture.OnOutcome(resources, "getString", "(I)Ljava/lang/String;",
+          {VmValue::Int(other)}).exception_class == missing);
+    }
+  }
+}
+
+TEST_CASE("DVM-198 missing or malformed BootDex resource maps fail without APK fallback") {
+  for (const std::string document : {
+      "", "{", R"({"schema_version":2,"api_level":19,"resources":[]})",
+      R"({"schema_version":1,"api_level":19,"resources":[{"id":17039657,"name":"a","type":"integer","value":2147483648}]})",
+      R"({"schema_version":1,"api_level":19,"resources":[{"id":17039657,"name":"a","type":"string","value":"x"},{"id":17039657,"name":"b","type":"integer","value":1}]})"}) {
+    NetworkSqliteVm fixture;
+    fixture.context->apk_bytes = fixture.context->boot_classpath_bytes;
+    fixture.context->archive = fixture.context->boot_classpath_archive;
+    fixture.context->boot_classpath_bytes = MakeStoredZip(
+        document.empty() ? "other.json" : "META-INF/ogplay/system-resources.json",
+        std::as_bytes(std::span(document.data(), document.size())));
+    fixture.context->boot_classpath_archive = ogplay::loader::ParseApkArchive(fixture.context->boot_classpath_bytes);
+    const auto resources = fixture.Static("Landroid/content/res/Resources;", "getSystem",
+                                          "()Landroid/content/res/Resources;").ref;
+    const auto invalid = fixture.linker.ResolveDescriptor("Ljava/lang/IllegalStateException;");
+    CHECK(fixture.OnOutcome(resources, "getString", "(I)Ljava/lang/String;",
+        {VmValue::Int(0x01040029)}).exception_class == invalid);
+    CHECK(fixture.OnOutcome(resources, "getInteger", "(I)I",
+        {VmValue::Int(0x010e003b)}).exception_class == invalid);
+  }
+}
+
 TEST_CASE("DVM-194 SQLiteGlobal reads reviewed system resources through BootDex") {
   for (const auto backend : {InterpreterBackend::switch_dispatch,
                              InterpreterBackend::threaded}) {
@@ -955,16 +1045,34 @@ TEST_CASE("DVM-194 SQLiteGlobal reads reviewed system resources through BootDex"
     const auto resources = fixture.Static("Landroid/content/res/Resources;", "getSystem",
                                            "()Landroid/content/res/Resources;").ref;
     const auto resource_root = fixture.vm.ProtectReferences(std::array{resources});
-    CHECK(fixture.On(resources, "getInteger", "(I)I", {VmValue::Int(0x010e003e)}).AsInt() == 2048);
+
+    const auto bytes = ogplay::loader::ReadStoredApkEntry(fixture.context->boot_classpath_bytes,
+        fixture.context->boot_classpath_archive, "META-INF/ogplay/system-resources.json");
+    ogplay::core::JsonParseError parse_error;
+    const auto document = ogplay::core::JsonDocument::ParseStrict(
+        std::string_view(reinterpret_cast<const char*>(bytes.data()), bytes.size()), parse_error);
+    REQUIRE(document.has_value());
+    const auto entries = *document->Root().Member("resources");
+    const auto not_found = fixture.linker.ResolveDescriptor("Landroid/content/res/Resources$NotFoundException;");
+    for (std::size_t i = 0; i < entries.Size(); ++i) {
+      const auto entry = *entries.Element(i);
+      const auto id = static_cast<std::int32_t>(*entry.Member("id")->Integer());
+      if (entry.Member("type")->String() == "integer") {
+        CHECK(fixture.On(resources, "getInteger", "(I)I", {VmValue::Int(id)}).AsInt() == *entry.Member("value")->Integer());
+        CHECK(fixture.OnOutcome(resources, "getString", "(I)Ljava/lang/String;", {VmValue::Int(id)}).exception_class == not_found);
+      } else {
+        CHECK(fixture.OnOutcome(resources, "getInteger", "(I)I", {VmValue::Int(id)}).exception_class == not_found);
+      }
+    }
     // The original CursorWindow clinit must consume the reviewed size too.
     const auto window = fixture.New("Landroid/database/CursorWindow;", "(Ljava/lang/String;)V",
                                     {VmValue::Ref(fixture.vm.NewStringUtf8("reviewed-size"))});
     fixture.On(window, "close", "()V");
     const auto missing = fixture.linker.ResolveDescriptor("Landroid/content/res/Resources$NotFoundException;");
-    for (const auto id : {0x01040029, 0x0104002a, 0x0104002b, 0x010e003e, 0x0104ffff})
+    for (const auto id : {0x0104ffff})
       CHECK(fixture.OnOutcome(resources, "getString", "(I)Ljava/lang/String;",
                                {VmValue::Int(id)}).exception_class == missing);
-    for (const auto id : {0x010e0035, 0x010e0036, 0x010e0037, 0x010e003b, 0x0104011c, 0x010effff})
+    for (const auto id : {0x010effff})
       CHECK(fixture.OnOutcome(resources, "getInteger", "(I)I",
                                {VmValue::Int(id)}).exception_class == missing);
   }

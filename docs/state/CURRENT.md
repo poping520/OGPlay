@@ -47,6 +47,11 @@
 
 ## 已交付范围
 
+- **BootDex 构建**：[DVM-198](../tasks/dexvm/DVM-198.md) 从最终 DEX 自动提取 SQLite/窗口
+  资源 ID，映射随 JAR 发布并按 context 加载；换 ROM 不再手改 ID 或重编译宿主。
+  当前 ROM build/check、载荷校验及定向 5 用例/319 断言通过；Windows 构建临时屏蔽既有
+  C4996/C4834 警告。两组 ID 的合成验证不等于多 ROM 完整兼容或游戏验收。
+
 - **Android/DexVM**：受审 API 19 BootDex 与 intrinsic 提供游戏直接调用的能力；
   PackageManager 查询仅覆盖当前 APK。
   receiver 声明、启用状态、独立元数据与逐过滤器事实经 Manifest→session→DexVM 传递；

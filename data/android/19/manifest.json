@@ -44,49 +44,50 @@
     "recipe_sha256": "73c609208938c65cba1e4e232be668ab2e5feddaa4ca405158a447d8dc0efd9f",
     "system_resources": {
       "table": "tools/bootdex/api19-system-resources.json",
-      "table_sha256": "66141bfeb1e3f35d140c5fb005e0f59a7d2f5ae8b4a9fc3893c1fbe9e28fa1a1",
-      "header_sha256": "8c7a01f7c55eb758ae5d744e350936e5a3da1a3dd18931fa93f14950885e8286"
+      "table_sha256": "65768857b28b9ba572bd84eb89a33e223188bf0731ffb6fe80d4e701558b9ab3",
+      "entry": "META-INF/ogplay/system-resources.json",
+      "payload_sha256": "e920b02a5b6e776e7e69c43e300f72a4e8c5b802d7f021c93ebe9876344ba081"
     },
     "sources": [
       {
         "source_project": "platform/libcore",
         "source_jar": "core.jar",
-        "source_jar_sha256": "996557954e45f7192b187b2394259bc8aca6e3946652e03b99d837432f83d1ef"
+        "source_jar_sha256": "60b6cdf3eded2fdf157c6166402477e4f72ade215b334817439960522c0e64ee"
       },
       {
         "source_project": "platform/libcore",
         "source_jar": "conscrypt.jar",
-        "source_jar_sha256": "43ab6b953bd5a9e25f0f0d4411a5aa3f0660d16954a0a84e95ad834558b21a1e"
+        "source_jar_sha256": "c7d0849cde38cd0d0dc99d89ee61bd33a65618567fc18171d6605dc6b8e15004"
       },
       {
         "source_project": "platform/external/apache-http",
         "source_jar": "ext.jar",
-        "source_jar_sha256": "618663a2f417f7eb4ae903d25809ffdd90fe5b5236184c530228dd66bfcdb65c"
+        "source_jar_sha256": "e95d35989f0e1b438b3b6fea2777a798a0398f457a32875cdadfe3e2573a4ca2"
       },
       {
         "source_project": "platform/frameworks/base",
         "source_jar": "framework.jar",
-        "source_jar_sha256": "90fc9fd36b45db1810ecf51e40119222da081b552f9a64a6d0c09cac09f98a48"
+        "source_jar_sha256": "422e232e121425268f04044f5349072ce42d7b4403267d21569e8ce70d07bc4b"
       },
       {
         "source_project": "platform/frameworks/base",
         "source_jar": "framework2.jar",
-        "source_jar_sha256": "b6aba8bec45e2a2faa7a4e1e8ae3d8e450259f7e28c8dae6ca2c31dc34e06bea"
+        "source_jar_sha256": "5866d4e62e5fe44ffaf6ff441b6c361baeb1f8b91e30bb555481ef13ef837973"
       },
       {
         "source_project": "OGPlay",
         "source_root": "src/guest/crypto/java",
         "source_sha256": "adc7e3b9b206d7bfc235f7bba454097949181af4042c22cb840418331a158c0a",
-        "javac": "17.0.18",
+        "javac": "17.0.2",
         "android_jar_sha256": "4032a201eeb1d0430c7d9f1075151dd280427de5ca9e36f734f464ab605cb690",
         "d8_sha256": "d9e6acde0cb6f2453d6835b52c31d2066054394fb79e91115dd4978bde6afd16"
       }
     ],
-    "size": 2694996,
-    "sha256": "a3d99e4ad372c648cfa7728be5e40a17c872eb1114eca63918f342b43b5b894f",
+    "size": 2660024,
+    "sha256": "3b3074169d4148c304ea1b019d9646813541910714a9b1e0b7cc8ad6853863e3",
     "dex_entry": "classes.dex",
-    "dex_size": 2691428,
-    "dex_sha256": "c56d183ffe9f3114eeb10e25ca488a5d3f9c97d6754b649d5fe9594865a667d5",
+    "dex_size": 2655404,
+    "dex_sha256": "cec910e0c30dd7fc64d70a5f8d8aeb7cbd77a49e784eac86a9ea54efc24665ef",
     "class_count": 1807,
     "selection_policy": "load-all",
     "notice": "notices/bootdex.jar.txt",
@@ -237,7 +238,7 @@
       ],
       "build": {
         "generator": "tools/bootdex/build_bootdex.py",
-        "generator_sha256": "1677cc04b23f92c308bd796689e7d29d3861ea165f86f56464390ddf817fb5cc",
+        "generator_sha256": "6c7c9a9cd2fb5246e678a1976cad802d49bc85be78ba50f28eaff73d7b8ac2b5",
         "ndk_revision": "25.2.9519653",
         "target": "armv7a-linux-androideabi19",
         "language": "C11",

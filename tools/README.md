@@ -2,7 +2,7 @@
 
 ## API 19 BootDex
 
-`bootdex/build_bootdex.py` 根据 [`bootdex/api19.json`](bootdex/api19.json) 从 pinned AOSP jar
+`bootdex/build_bootdex.py` 根据 [`bootdex/api19.json`](bootdex/api19.json) 从 API 19 ROM/AOSP jar
 精确选取 class_def，以 smali/baksmali 3.0.10 重组 DEX，并生成固定格式的 JAR。
 
 ```text
@@ -10,19 +10,19 @@ python3 tools/bootdex/build_bootdex.py build
 python3 tools/bootdex/build_bootdex.py check
 ```
 
-`api19-system-resources.json` 保存受审系统资源名/类型/ID、AOSP 默认值和显式配置覆盖。
-build/check 校验 framework.jar、config.xml 的来源哈希、默认值及原版 Java 查询的实际
-ID/类型与覆盖完整性；build 同时生成宿主 `system_resources.generated.h`，check 拒绝过期
-头文件/manifest。更换 framework 来源必须先审阅并更新该表，不能自动沿用旧 ID。
-SQLite journal mode 保留 DELETE 覆盖；读取 WAL 配置不代表支持 WAL。
+`api19-system-resources.json` 保存受审资源名、类型、消费者及 OGPlay 配置值，不固定 ROM
+资源 ID，也不依赖本地 AOSP config.xml。build/check 从最终 DEX 中的实际 Resources 调用
+提取 ID，生成 `META-INF/ogplay/system-resources.json` 并与 classes.dex 同包发布。
+运行时从当前 BootDex 归档读取映射；更换输入后重新 build/check，无需因 ID 变化重编译宿主。
+SQLite journal mode 保留 DELETE；读取 WAL 配置不代表支持 WAL。
 
-输入默认位于 `.local/aosp` 和 `.local/tools`；缺少 smali/baksmali 时生成器会下载固定的
-3.0.10 release，所有输入均校验固定 SHA-256。新增类时只修改 recipe 对应源 jar 的有序
-列表，运行时仍全量加载生成物中的 class_def。
+提取器支持常量、普通 move 和 invoke/range；分支/标签清除常量事实，无法证明的 ID、
+类型变化、重复 ID、遗漏/新增查询明确失败并指出消费者。它不自动适配厂商新增类或 native。
 
-DVM-107 另选入 framework 的 Pair、SparseArray 家族、ComponentName 与 Parcelable 接口。
-其 ArrayUtils 从 `.local/aosp/framework2.jar` 精确选入；该 JAR 与其他 BootDex 输入一样固定
-SHA-256。`build`/`check` 均执行两次独立重组并核对 DEX 一致；无需 SDK 或额外 recipe。
+输入默认位于 `.local/aosp` 和 `.local/tools`；换 ROM 时应使用同一来源配套的输入 JAR。
+JAR 哈希记录于 manifest 供追溯，不作为固定来源准入条件；工具下载仍校验固定 SHA-256。
+新增类时修改 recipe 对应源 jar 的有序列表，运行时仍全量加载生成物中的 class_def。
+`build`/`check` 均执行两次独立重组并核对 DEX 一致；check 校验 JAR、内嵌映射和 manifest。
 
 `api19.json` 的 `date_family_audit` 保存 DVM-102 日期闭包的依赖分类、native 边界与
 ICU 来源；`roots` 冻结原 42 类审计样本，不随依赖迁移扩大；其中 `boot_dex` 是主类清单的受检子集，外部依赖分类不得与主清单冲突。

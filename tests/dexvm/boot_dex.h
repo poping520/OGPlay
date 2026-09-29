@@ -27,6 +27,16 @@ inline std::vector<std::uint8_t> ReadBootDex() {
     std::memcpy(bytes.data(), dex.data(), dex.size());
     return bytes;
 }
+inline void BindBootDexArchive(runtime::DexVmAndroidContext& context) {
+    const auto path = std::filesystem::path(OGPLAY_SOURCE_DIR) /
+        "data/android/19/framework/bootdex.jar";
+    std::ifstream stream(path, std::ios::binary);
+    if (!stream) throw std::runtime_error("missing test BootDex: " + path.string());
+    const std::vector<char> raw{std::istreambuf_iterator<char>(stream), {}};
+    context.boot_classpath_bytes.resize(raw.size());
+    std::memcpy(context.boot_classpath_bytes.data(), raw.data(), raw.size());
+    context.boot_classpath_archive = loader::ParseApkArchive(context.boot_classpath_bytes);
+}
 inline void BindBootDexPlatformNatives(runtime::dexvm::DexClassLinker& linker) {
     // Core-only fixtures still load the full curated artifact. Its Typeface
     // native boundary needs the real built-in backend, even when not exercised.

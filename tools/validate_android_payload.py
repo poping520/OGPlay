@@ -227,6 +227,8 @@ def validate(root: Path) -> None:
     try:
         jar_bytes = (root / BOOT_DEX).read_bytes()
         with zipfile.ZipFile(root / BOOT_DEX) as archive:
+            dex = archive.read("classes.dex")
+            resources[bootdex.SYSTEM_RESOURCES_ENTRY] = bootdex.system_resources_payload(dex)
             expected_entries = ["META-INF/MANIFEST.MF", "classes.dex"] + \
                 sorted(resources)
             if archive.namelist() != expected_entries:
@@ -236,7 +238,7 @@ def validate(root: Path) -> None:
                     bootdex.JAR_MANIFEST:
                 raise PayloadError("boot_dex JAR manifest is not canonical")
             dex = archive.read("classes.dex")
-    except (OSError, zipfile.BadZipFile, KeyError) as error:
+    except (OSError, zipfile.BadZipFile, KeyError, bootdex.BuildError) as error:
         raise PayloadError(f"boot_dex archive is invalid: {error}") from error
     try:
         expected_metadata = bootdex.boot_metadata(jar_bytes, dex, recipe)

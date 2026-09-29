@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build, check and audit curated API 19 BootDex from pinned AOSP inputs."""
+"""Build, check and audit curated API 19 BootDex from API 19 ROM/AOSP inputs."""
 
 from __future__ import annotations
 
@@ -15,7 +15,6 @@ import sys
 import tempfile
 import urllib.request
 import zipfile
-import xml.etree.ElementTree as ET
 from pathlib import Path
 from unittest.mock import patch
 
@@ -26,7 +25,7 @@ import dex_survey_lib
 
 RECIPE = ROOT / "tools/bootdex/api19.json"
 SYSTEM_RESOURCES = ROOT / "tools/bootdex/api19-system-resources.json"
-SYSTEM_RESOURCES_HEADER = ROOT / "src/runtime/integration/dexvm_android/system_resources.generated.h"
+SYSTEM_RESOURCES_ENTRY = "META-INF/ogplay/system-resources.json"
 SYSTEM_RESOURCE_CONSUMERS = (
     "Landroid/database/CursorWindow;", "Landroid/database/sqlite/SQLiteGlobal;",
 )
@@ -467,27 +466,19 @@ def load_system_resources(document: dict | None = None) -> dict:
     if document is None:
         document = json.loads(SYSTEM_RESOURCES.read_text(encoding="utf-8"))
     if document.get("api_level") != 19 or \
-            document.get("framework", {}).get("jar") != "framework.jar" or \
-            document.get("defaults_source", {}).get("path") != \
-            "framework/base/core/res/res/values/config.xml":
+            document.get("framework", {}).get("jar") != "framework.jar":
         raise BuildError("invalid system resource source identity")
-    for source in (document["framework"], document["defaults_source"]):
-        if not re.fullmatch(r"[0-9a-f]{64}", source.get("sha256", "")):
-            raise BuildError("system resource source requires SHA-256")
     entries = document.get("resources", [])
     if not entries:
         raise BuildError("system resource table is empty")
-    names, ids = set(), set()
+    names, consumers = set(), set()
     for entry in entries:
         name, kind = entry.get("name", ""), entry.get("type")
-        resource_id = entry.get("id", "")
         if not re.fullmatch(r"[A-Za-z_][A-Za-z_0-9]*", name) or \
                 kind not in ("string", "integer") or \
-                not re.fullmatch(r"0x01[0-9a-f]{6}", resource_id) or \
-                name in names or resource_id in ids:
+                name in names:
             raise BuildError("invalid or duplicate system resource")
         names.add(name)
-        ids.add(resource_id)
         values = [entry.get("aosp_default")]
         if "override" in entry:
             if not entry["override"].get("reason", "").strip():
@@ -503,96 +494,110 @@ def load_system_resources(document: dict | None = None) -> dict:
                 not re.fullmatch(r"(?:[A-Za-z]+|<clinit>)\(\)(?:I|V|Ljava/lang/String;)",
                                  consumer.get("method", "")):
             raise BuildError("invalid system resource consumer")
+        identity = (consumer["class"], consumer["method"])
+        if identity in consumers:
+            raise BuildError("duplicate system resource consumer")
+        consumers.add(identity)
     return document
 
 
-def verify_system_resource_contents(document: dict, framework_sha: str,
-                                    config: bytes, consumers: dict[str, str]) -> None:
-    if document["framework"]["sha256"] != framework_sha:
-        raise BuildError("system resource framework SHA-256 changed; review resource mappings")
-    if document["defaults_source"]["sha256"] != sha256(config):
-        raise BuildError("system resource defaults source SHA-256 changed")
-    declared = {(entry["consumer"]["class"], entry["consumer"]["method"])
-                for entry in document["resources"]}
+def resource_call_ids(body: str) -> list[tuple[int, str]]:
+    # Conservative straight-line propagation. Branches and labels discard facts;
+    # an ID crossing a control-flow join must be re-established or is rejected.
+    registers: dict[str, int] = {}
+    calls = []
+    for raw in body.splitlines():
+        line = raw.split("#", 1)[0].strip()
+        if not line or line.startswith("."):
+            continue
+        if line.startswith(":") or re.match(r"(?:if-|goto|packed-switch|sparse-switch)", line):
+            registers.clear()
+            continue
+        lookup = re.search(r"Landroid/content/res/Resources;->(getString|getInteger)\(I\)", line)
+        if lookup:
+            args = re.search(r"\{([^}]+)\}", line)
+            if not args:
+                raise BuildError("system resource call has no arguments")
+            argument_text = args[1].strip()
+            if ".." in argument_text:
+                span = re.fullmatch(r"([vp])(\d+) \.\. ([vp])(\d+)", argument_text)
+                if not span or span[1] != span[3] or int(span[4]) != int(span[2]) + 1:
+                    raise BuildError("unsupported system resource invoke range")
+                arguments = [span[1] + span[2], span[3] + span[4]]
+            else:
+                arguments = [value.strip() for value in argument_text.split(",")]
+            if len(arguments) != 2 or arguments[1] not in registers:
+                raise BuildError("system resource ID is not a proven constant")
+            calls.append((registers[arguments[1]], "string" if lookup[1] == "getString" else "integer"))
+        constant = re.fullmatch(r"const(?:/4|/16|/high16)? ([vp]\d+), (-?0x[0-9a-f]+|-?\d+)", line)
+        move = re.fullmatch(r"move(?:/from16|/16)? ([vp]\d+), ([vp]\d+)", line)
+        if constant:
+            # baksmali writes the expanded value for const/high16.
+            registers[constant[1]] = int(constant[2], 0) & 0xffffffff
+        elif move:
+            value = registers.get(move[2])
+            registers.pop(move[1], None)
+            if value is not None:
+                registers[move[1]] = value
+        elif not line.startswith(("invoke-", "return", "throw", "iput", "sput", "aput", "monitor-")):
+            destination = re.match(r"\S+ ([vp]\d+)", line)
+            if destination:
+                registers.pop(destination[1], None)
+                # Wide writes also invalidate the adjacent register.
+                if "wide" in line.split()[0]:
+                    registers.pop(destination[1][0] + str(int(destination[1][1:]) + 1), None)
+    return calls
+
+
+def resolve_system_resource_contents(document: dict, consumers: dict[str, str]) -> dict:
+    declared = {(e["consumer"]["class"], e["consumer"]["method"]) for e in document["resources"]}
+    methods = {}
     observed = set()
     for owner, text in consumers.items():
-        for signature, body in re.findall(r"^\.method [^\n]* ([^ \n]+)\n(.*?)^\.end method",
-                                          text, re.M | re.S):
+        for signature, body in re.findall(r"^\.method [^\n]* ([^ \n]+)\n(.*?)^\.end method", text, re.M | re.S):
+            methods[(owner, signature)] = body
             if re.search(r"Landroid/content/res/Resources;->get(?:String|Integer)\(I\)", body):
                 observed.add((owner, signature))
     if observed != declared:
-        raise BuildError("system resource consumer coverage differs from reviewed table")
-    root = ET.fromstring(config)
+        raise BuildError("system resource consumer coverage differs from reviewed table: "
+                         f"missing={sorted(declared - observed)}, extra={sorted(observed - declared)}")
+    resources, ids = [], set()
     for entry in document["resources"]:
-        nodes = root.findall(f"{entry['type']}[@name='{entry['name']}']")
-        if len(nodes) != 1 or (nodes[0].text or "").strip() != str(entry["aosp_default"]):
-            raise BuildError(f"system resource default mismatch: {entry['name']}")
         consumer = entry["consumer"]
-        text = consumers.get(consumer["class"], "")
-        method = re.search(r"^\.method [^\n]* " + re.escape(consumer["method"]) +
-                           r"\n(.*?)^\.end method", text, re.M | re.S)
-        if not method:
-            raise BuildError(f"system resource consumer missing: {consumer}")
-        # These API 19 methods inline R constants. Bind the constant register
-        # directly to the Resources call, not to an unrelated literal in the class.
-        instructions = "\n".join(line.strip() for line in method[1].splitlines()
-                                 if line.strip() and not line.strip().startswith((".", "#")))
-        getter = "getString(I)Ljava/lang/String;" if entry["type"] == "string" else "getInteger(I)I"
-        lookups = re.findall(
-            r"const (v\d+), (0x[0-9a-f]+)\ninvoke-virtual \{v\d+, \1\}, "
-            r"Landroid/content/res/Resources;->" + re.escape(getter), instructions)
-        if len(lookups) != 1 or int(lookups[0][1], 16) != int(entry["id"], 16):
-            raise BuildError(f"system resource ID/type mismatch: {entry['name']}")
+        try:
+            calls = resource_call_ids(methods[(consumer["class"], consumer["method"])])
+        except BuildError as error:
+            raise BuildError(f"{consumer['class']}->{consumer['method']}: {error}") from error
+        if len(calls) != 1 or calls[0][1] != entry["type"]:
+            raise BuildError(f"system resource call/type mismatch: {entry['name']}")
+        resource_id = calls[0][0]
+        if resource_id >> 24 != 1 or resource_id in ids:
+            raise BuildError(f"invalid or conflicting system resource ID: {entry['name']}")
+        ids.add(resource_id)
+        resources.append({"id": resource_id, "name": entry["name"], "type": entry["type"],
+                          "value": entry.get("override", {}).get("value", entry["aosp_default"])})
+    return {"schema_version": 1, "api_level": 19, "resources": resources}
 
 
-def verify_system_resources(recipe: dict[str, tuple[str, ...]]) -> dict:
+def system_resources_payload(dex: bytes) -> bytes:
     document = load_system_resources()
-    source = document["framework"]["jar"]
-    classes = SYSTEM_RESOURCE_CONSUMERS
-    if not set(classes).issubset(recipe.get(source, ())):
-        raise BuildError("system resource consumers must remain in BootDex")
-    framework_sha = file_sha256(source_path(source))
-    if framework_sha != document["framework"]["sha256"]:
-        raise BuildError("system resource framework SHA-256 changed; review resource mappings")
     with tempfile.TemporaryDirectory(prefix="ogplay-system-resources-") as work:
+        source = Path(work) / "classes.dex"
+        source.write_bytes(dex)
+        output = Path(work) / "smali"
         run([str(JAVA), "-jar", str(SMALI / "baksmali.jar"), "disassemble",
-             "--api", "19", "--jobs", "1", "--classes", ",".join(classes),
-             "--output", work, str(source_path(source))])
-        consumers = {owner: (Path(work) / (owner[1:-1] + ".smali")).read_text(encoding="utf-8")
-                     for owner in classes}
-    verify_system_resource_contents(document, framework_sha,
-        (AOSP / document["defaults_source"]["path"]).read_bytes(), consumers)
-    return document
-
-
-def system_resources_header(document: dict) -> bytes:
-    lines = ["// Generated by tools/bootdex/build_bootdex.py; do not edit.",
-             "// Reviewed source: tools/bootdex/api19-system-resources.json",
-             "// Table SHA-256: " + file_sha256(SYSTEM_RESOURCES),
-             "#pragma once", "", "#include <cstdint>", "#include <string_view>", "",
-             "namespace ogplay::runtime::android_intrinsics {", "",
-             "struct ReviewedSystemResource {", "  std::uint32_t id;",
-             "  std::string_view name;", "  const char *string_value;",
-             "  std::int32_t integer_value;", "};", "",
-             "inline constexpr ReviewedSystemResource kSystemResources[] = {"]
-    for entry in document["resources"]:
-        value = entry.get("override", {}).get("value", entry["aosp_default"])
-        string_value = json.dumps(value, ensure_ascii=True) if entry["type"] == "string" else "nullptr"
-        integer_value = value if entry["type"] == "integer" else 0
-        lines.append(f'    {{{entry["id"]}U, "{entry["name"]}", {string_value}, {integer_value}}},')
-    lines += ["};", "", "[[nodiscard]] inline const ReviewedSystemResource *",
-              "FindSystemResource(const std::uint32_t id) {",
-              "  for (const auto &resource : kSystemResources)",
-              "    if (resource.id == id) return &resource;", "  return nullptr;", "}", "",
-              "} // namespace ogplay::runtime::android_intrinsics", ""]
-    return "\n".join(lines).encode("utf-8")
+             "--api", "19", "--jobs", "1", "--classes", ",".join(SYSTEM_RESOURCE_CONSUMERS),
+             "--output", str(output), str(source)])
+        consumers = {owner: (output / (owner[1:-1] + ".smali")).read_text(encoding="utf-8")
+                     for owner in SYSTEM_RESOURCE_CONSUMERS}
+    resolved = resolve_system_resource_contents(document, consumers)
+    return (json.dumps(resolved, sort_keys=True, indent=2) + "\n").encode("utf-8")
 
 
 def build() -> tuple[bytes, bytes, dict[str, tuple[str, ...]]]:
     recipe = load_recipe()
     resource_recipe = load_resources()
     verify_inputs(recipe)
-    verify_system_resources(recipe)
     with tempfile.TemporaryDirectory(prefix="ogplay-bootdex-a-") as first, \
             tempfile.TemporaryDirectory(prefix="ogplay-bootdex-b-") as second:
         dex = assemble(recipe, Path(first))
@@ -603,6 +608,9 @@ def build() -> tuple[bytes, bytes, dict[str, tuple[str, ...]]]:
     if class_names(dex) != selected:
         raise BuildError("generated classes differ from recipe")
     resources = resource_payload(resource_recipe)
+    if SYSTEM_RESOURCES_ENTRY in resources:
+        raise BuildError("reserved system resource entry in input")
+    resources[SYSTEM_RESOURCES_ENTRY] = system_resources_payload(dex)
     return make_jar(dex, resources), dex, recipe
 
 
@@ -616,7 +624,8 @@ def boot_metadata(jar: bytes, dex: bytes,
         "system_resources": {
             "table": SYSTEM_RESOURCES.relative_to(ROOT).as_posix(),
             "table_sha256": file_sha256(SYSTEM_RESOURCES),
-            "header_sha256": sha256(system_resources_header(load_system_resources())),
+            "entry": SYSTEM_RESOURCES_ENTRY,
+            "payload_sha256": sha256(zipfile.ZipFile(io.BytesIO(jar)).read(SYSTEM_RESOURCES_ENTRY)),
         },
         "sources": [
             {
@@ -908,8 +917,6 @@ def self_test() -> int:
     # Mutation checks need neither local framework inputs nor Java tooling.
     sample_resource = json.loads(json.dumps(resources))
     sample_resource["resources"] = [sample_resource["resources"][0]]
-    config = b'<resources><string name="db_default_journal_mode">PERSIST</string></resources>'
-    sample_resource["defaults_source"]["sha256"] = sha256(config)
     owner = sample_resource["resources"][0]["consumer"]["class"]
     consumer = """.method public static getDefaultJournalMode()Ljava/lang/String;
     .registers 3
@@ -918,21 +925,26 @@ def self_test() -> int:
     invoke-virtual {v1, v2}, Landroid/content/res/Resources;->getString(I)Ljava/lang/String;
 .end method
 """
-    framework_sha = sample_resource["framework"]["sha256"]
-    verify_system_resource_contents(sample_resource, framework_sha, config, {owner: consumer})
-    for case in ("framework hash", "defaults hash", "ID", "default", "type",
+    for resource_id in (0x0104011c, 0x01040029):
+        text = consumer.replace("0x104011c", hex(resource_id))
+        resolved = resolve_system_resource_contents(sample_resource, {owner: text})
+        assert resolved["resources"][0]["id"] == resource_id
+        assert resolved["resources"][0]["value"] == "DELETE"
+    moved = consumer.replace("const v2, 0x104011c", "const v0, 0x1040029\n    move/from16 v2, v0")
+    assert resolve_system_resource_contents(sample_resource, {owner: moved})["resources"][0]["id"] == 0x01040029
+    ranged = consumer.replace("invoke-virtual {v1, v2}", "invoke-virtual/range {v1 .. v2}")
+    assert resolve_system_resource_contents(sample_resource, {owner: ranged})["resources"][0]["id"] == 0x0104011c
+    for case in ("ID", "unknown ID", "branch", "type",
                  "method", "register", "duplicate", "override reason", "unreviewed query"):
         changed = json.loads(json.dumps(sample_resource))
         entry = changed["resources"][0]
         text = consumer
-        if case == "framework hash":
-            changed["framework"]["sha256"] = "0" * 64
-        elif case == "defaults hash":
-            changed["defaults_source"]["sha256"] = "0" * 64
-        elif case == "ID":
-            entry["id"] = "0x01040029"
-        elif case == "default":
-            entry["aosp_default"] = "DELETE"
+        if case == "ID":
+            text = text.replace("0x104011c", "0x7f040029")
+        elif case == "unknown ID":
+            text = text.replace("const v2, 0x104011c", "move-result v2")
+        elif case == "branch":
+            text = text.replace(".line 77", ":join")
         elif case == "type":
             entry["type"] = "integer"
         elif case == "method":
@@ -947,10 +959,28 @@ def self_test() -> int:
             entry["override"]["reason"] = ""
         try:
             load_system_resources(changed)
-            verify_system_resource_contents(changed, framework_sha, config, {owner: text})
+            resolve_system_resource_contents(changed, {owner: text})
         except BuildError:
             continue
         raise BuildError(f"invalid system resource mapping accepted: {case}")
+    collision = json.loads(json.dumps(sample_resource))
+    extra = json.loads(json.dumps(collision["resources"][0]))
+    extra["name"] = "second_resource"
+    extra["consumer"]["method"] = "getOtherMode()Ljava/lang/String;"
+    collision["resources"].append(extra)
+    try:
+        resolve_system_resource_contents(collision, {owner: consumer + consumer.replace("getDefaultJournalMode", "getOtherMode")})
+    except BuildError:
+        pass
+    else:
+        raise BuildError("conflicting resource IDs accepted")
+    wrong_type = consumer.replace("getString(I)Ljava/lang/String;", "getInteger(I)I")
+    try:
+        resolve_system_resource_contents(sample_resource, {owner: wrong_type})
+    except BuildError:
+        pass
+    else:
+        raise BuildError("consumer type mismatch accepted")
     sample = b"dex\n035\0sample"
     if make_jar(sample) != make_jar(sample):
         raise BuildError("JAR output is not deterministic")
@@ -1127,25 +1157,21 @@ def main() -> int:
         if arguments.mode == "build-guest-jni":
             return build_guest_jni()
         jar, dex, recipe = build()
-        resource_header = system_resources_header(load_system_resources())
         native_crypto = audit_native_crypto(dex)
         manifest = manifest_bytes(boot_metadata(jar, dex, recipe))
         if arguments.mode == "build":
             OUTPUT.parent.mkdir(parents=True, exist_ok=True)
-            SYSTEM_RESOURCES_HEADER.write_bytes(resource_header)
             OUTPUT.write_bytes(jar)
             MANIFEST.write_bytes(manifest)
         elif not OUTPUT.is_file() or OUTPUT.read_bytes() != jar or \
-                MANIFEST.read_bytes() != manifest or \
-                not SYSTEM_RESOURCES_HEADER.is_file() or \
-                SYSTEM_RESOURCES_HEADER.read_bytes() != resource_header:
+                MANIFEST.read_bytes() != manifest:
             raise BuildError("BootDex payload is stale; run build")
         print(f"BootDex {arguments.mode}: {len(class_names(dex))} classes, "
               f"DEX {sha256(dex)}, JAR {sha256(jar)}")
         print(f"NativeCrypto audit: {native_crypto['counts']}; "
               f"report={NATIVE_CRYPTO_AUDIT_REPORT}")
         return 0
-    except (BuildError, OSError, json.JSONDecodeError, ET.ParseError,
+    except (BuildError, OSError, json.JSONDecodeError,
             dex_survey_lib.DexFormatError) as error:
         parser.error(str(error))
 

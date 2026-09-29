@@ -5,12 +5,89 @@
 #include <utility>
 
 #include "catalog.h"
-#include "system_resources.generated.h"
+#include "ogplay/core/json.h"
+#include <limits>
+#include <mutex>
+#include <set>
+#include <variant>
 #include "ogplay/runtime/dexvm/io_runtime.h"
 
 namespace ogplay::runtime::android_intrinsics {
 
 namespace {
+
+// The sealed BootDex archive owns both Java code and its resource-ID mapping.
+// One cache per catalog/context; no APK lookup or host filesystem fallback.
+struct SystemResourceCache {
+  std::once_flag loaded;
+  std::unordered_map<std::uint32_t, std::variant<std::string, std::int32_t>> values;
+  std::string error;
+};
+
+const std::variant<std::string, std::int32_t> *FindSystemResource(
+    const Context &context, SystemResourceCache &cache, const std::uint32_t id) {
+  if ((id >> 24U) != 1U) return nullptr;
+  std::call_once(cache.loaded, [&] {
+    try {
+      constexpr std::string_view name = "META-INF/ogplay/system-resources.json";
+      std::size_t matches = 0;
+      for (const auto &entry : context->boot_classpath_archive.entries) {
+        if (entry.name != name) continue;
+        ++matches;
+        if (entry.compression_method != 0 || entry.uncompressed_size > 65536U)
+          throw std::runtime_error("invalid BootDex system resource entry size/encoding");
+      }
+      if (matches != 1)
+        throw std::runtime_error("BootDex system resource entry missing or duplicated");
+      const auto bytes = loader::ReadStoredApkEntry(context->boot_classpath_bytes,
+                                                   context->boot_classpath_archive, name);
+      const std::string_view text(reinterpret_cast<const char *>(bytes.data()), bytes.size());
+      core::JsonParseError error;
+      const auto document = core::JsonDocument::ParseStrict(text, error, 65536U, 8U);
+      if (!document) throw std::runtime_error("invalid BootDex system resource JSON: " + error.message);
+      const auto member = [](const core::JsonValue object, const std::string_view key) {
+        return object.Member(key).value_or(core::JsonValue{});
+      };
+      const auto root = document->Root();
+      const auto entries = member(root, "resources");
+      if (!root.IsObject() || root.Size() != 3 ||
+          member(root, "schema_version").Integer() != 1 ||
+          member(root, "api_level").Integer() != 19 ||
+          !entries.IsArray() || entries.Size() == 0 || entries.Size() > 256)
+        throw std::runtime_error("invalid BootDex system resource schema");
+      decltype(cache.values) values;
+      std::set<std::string> names;
+      for (std::size_t index = 0; index < entries.Size(); ++index) {
+        const auto entry = *entries.Element(index);
+        const auto resource_id = member(entry, "id").UnsignedInteger();
+        const auto resource_name = member(entry, "name").String();
+        const auto type = member(entry, "type").String();
+        const auto value = member(entry, "value");
+        if (!entry.IsObject() || entry.Size() != 4 || !resource_id ||
+            (*resource_id >> 24U) != 1U || !resource_name || resource_name->empty() ||
+            !names.emplace(*resource_name).second || values.contains(static_cast<std::uint32_t>(*resource_id)))
+          throw std::runtime_error("invalid or duplicate BootDex system resource identity");
+        const auto key = static_cast<std::uint32_t>(*resource_id);
+        if (type == "string" && value.IsString() && value.String()->find('\0') == std::string_view::npos) {
+          values.emplace(key, std::string(*value.String()));
+        } else if (type == "integer" && value.IsInteger() && value.Integer() &&
+                   *value.Integer() >= std::numeric_limits<std::int32_t>::min() &&
+                   *value.Integer() <= std::numeric_limits<std::int32_t>::max()) {
+          values.emplace(key, static_cast<std::int32_t>(*value.Integer()));
+        } else {
+          throw std::runtime_error("invalid BootDex system resource type/value");
+        }
+      }
+      cache.values = std::move(values);
+    } catch (const std::exception &error) {
+      cache.error = error.what();
+    }
+  });
+  if (!cache.error.empty())
+    throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", cache.error};
+  const auto found = cache.values.find(id);
+  return found == cache.values.end() ? nullptr : &found->second;
+}
 
 void SetWide(dx::IntrinsicContext &call, const dx::VmObjectRef object,
              const std::size_t slot, const std::int64_t value) {
@@ -601,6 +678,7 @@ Decl Declare_android_content_res_XmlResourceParser_Impl(
 namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_content_res_Resources(const Context &context) {
+  const auto system_resources = std::make_shared<SystemResourceCache>();
   auto builder = dx::IntrinsicClassBuilder::Class(
       "Landroid/content/res/Resources;", "Ljava/lang/Object;");
   const auto assets = builder.BoundInstanceField(
@@ -619,11 +697,11 @@ Decl Declare_android_content_res_Resources(const Context &context) {
                                                 "Resources has no AssetManager"};
                         return dx::VmValue::Ref(value);
                       });
-  builder.VirtualMethod("getInteger", "(I)I", [](dx::IntrinsicContext &call) {
+  builder.VirtualMethod("getInteger", "(I)I", [context, system_resources](dx::IntrinsicContext &call) {
     const auto id = static_cast<std::uint32_t>(call.arguments[0].AsInt());
-    if (const auto *resource = FindSystemResource(id);
-        resource != nullptr && resource->string_value == nullptr)
-      return dx::VmValue::Int(resource->integer_value);
+    if (const auto *resource = FindSystemResource(context, *system_resources, id);
+        resource != nullptr && std::holds_alternative<std::int32_t>(*resource))
+      return dx::VmValue::Int(std::get<std::int32_t>(*resource));
     throw dx::VmJavaThrow{"Landroid/content/res/Resources$NotFoundException;",
                           "unknown system integer resource " +
                               std::to_string(id)};
@@ -811,12 +889,12 @@ Decl Declare_android_content_res_Resources(const Context &context) {
       });
   builder.FinalMethod(
       "getString", "(I)Ljava/lang/String;",
-      [context](dx::IntrinsicContext &call) -> dx::VmValue {
+      [context, system_resources](dx::IntrinsicContext &call) -> dx::VmValue {
         const auto resource_id =
             static_cast<std::uint32_t>(call.arguments[0].AsInt());
-        if (const auto *resource = FindSystemResource(resource_id);
-            resource != nullptr && resource->string_value != nullptr) {
-          return dx::VmValue::Ref(call.vm.NewStringUtf8(resource->string_value));
+        if (const auto *resource = FindSystemResource(context, *system_resources, resource_id);
+            resource != nullptr && std::holds_alternative<std::string>(*resource)) {
+          return dx::VmValue::Ref(call.vm.NewStringUtf8(std::get<std::string>(*resource)));
         }
         if (IsSystemResources(context, call.receiver))
           throw dx::VmJavaThrow{"Landroid/content/res/Resources$NotFoundException;",

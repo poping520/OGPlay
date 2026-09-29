@@ -32,6 +32,7 @@
 - [ADR-0067 · 受限注解运行时由 DEX 元数据与每 VM 实现类构成](#adr-0067)
 - [ADR-0068 · SQLite Java 栈归 BootDex，host 引擎只经唯一 VFS](#adr-0068)
 - [ADR-0075 · 原版 NativeActivity Java 与当前进程 NDK 桥](#adr-0075)
+- [ADR-0077 · BootDex 自带系统资源 ID 映射](#adr-0077)
 
 <a id="adr-0017"></a>
 
@@ -1133,3 +1134,31 @@ NDK 窗口/队列/AssetManager 使用受检进程内注册。每次窗口创建�
 AssetManager 支持 APK asset 的 open/read/seek/length/close，单文件上限 64 MiB。
 保存状态复制预算 1 MiB，复制后调用 guest free。不引入 Binder、系统 Looper 服务、
 完整 NDK、相机或输入法系统；缺失入口不伪装为成功。通用 fixture 验证不等于游戏兼容验收。
+
+<a id="adr-0077"></a>
+
+## ADR-0077 · BootDex 自带系统资源 ID 映射
+
+- 状态：Accepted
+- 日期：2026-09-29
+- 实施：[DVM-198](../tasks/dexvm/DVM-198.md)
+
+### 背景
+
+API19 ROM 的内部资源 ID 不同。DVM-194 将受审 ID 编译进宿主，导致换 ROM 后构建失败，
+即使更新映射也需要重编译 C++。配置值属于 OGPlay 平台策略，ID 属于当前 Java 制品。
+
+### 决定
+
+配方只维护资源语义/类型/消费者与平台配置值。构建从最终 DEX 的资源查询参数提取 ID，
+以 schema 1 JSON 内嵌同一 BootDex JAR，manifest 记录映射/输入哈希。输入哈希用于追溯，
+不与某一 ROM 固定值比较。保留资源类型、覆盖、冲突和制品一致性验证；不能证明 ID 时失败。
+
+运行时复用封存的 boot_classpath 归档，每 context 延迟加载一次并缓存成功或失败结果。
+只有 package 0x01 的资源查询使用该映射；不读取 APK 同名条目、不访问宿主文件、不提供旧 ID
+别名。原版 SQLiteGlobal/CursorWindow 保持 Java，平台值保留 DELETE 等已验证配置。
+
+### 后果
+
+宿主完成一次升级后，ROM 资源 ID 变化只需重建 BootDex；不需要设备在线或完整 framework-res。
+旧 BootDex 缺少映射时显式失败，需要重新生成。任意厂商类/native 改动仍须单独适配。

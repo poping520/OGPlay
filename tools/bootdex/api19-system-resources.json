@@ -1,18 +1,12 @@
 {
   "api_level": 19,
   "framework": {
-    "jar": "framework.jar",
-    "sha256": "90fc9fd36b45db1810ecf51e40119222da081b552f9a64a6d0c09cac09f98a48"
-  },
-  "defaults_source": {
-    "path": "framework/base/core/res/res/values/config.xml",
-    "sha256": "5d014c61baa316270df15a6e1a36a5bb0543a2eb4da54f5182d33d7159153776"
+    "jar": "framework.jar"
   },
   "resources": [
     {
       "name": "db_default_journal_mode",
       "type": "string",
-      "id": "0x0104011c",
       "aosp_default": "PERSIST",
       "consumer": {
         "class": "Landroid/database/sqlite/SQLiteGlobal;",
@@ -26,7 +20,6 @@
     {
       "name": "db_default_sync_mode",
       "type": "string",
-      "id": "0x0104011d",
       "aosp_default": "FULL",
       "consumer": {
         "class": "Landroid/database/sqlite/SQLiteGlobal;",
@@ -36,7 +29,6 @@
     {
       "name": "db_wal_sync_mode",
       "type": "string",
-      "id": "0x0104011e",
       "aosp_default": "FULL",
       "consumer": {
         "class": "Landroid/database/sqlite/SQLiteGlobal;",
@@ -46,7 +38,6 @@
     {
       "name": "db_connection_pool_size",
       "type": "integer",
-      "id": "0x010e0038",
       "aosp_default": 4,
       "consumer": {
         "class": "Landroid/database/sqlite/SQLiteGlobal;",
@@ -56,7 +47,6 @@
     {
       "name": "db_journal_size_limit",
       "type": "integer",
-      "id": "0x010e0039",
       "aosp_default": 524288,
       "consumer": {
         "class": "Landroid/database/sqlite/SQLiteGlobal;",
@@ -66,7 +56,6 @@
     {
       "name": "db_wal_autocheckpoint",
       "type": "integer",
-      "id": "0x010e003a",
       "aosp_default": 100,
       "consumer": {
         "class": "Landroid/database/sqlite/SQLiteGlobal;",
@@ -76,7 +65,6 @@
     {
       "name": "config_cursorWindowSize",
       "type": "integer",
-      "id": "0x010e003e",
       "aosp_default": 2048,
       "consumer": {
         "class": "Landroid/database/CursorWindow;",

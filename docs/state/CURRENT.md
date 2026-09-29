@@ -64,7 +64,12 @@
   [DVM-200](../tasks/dexvm/DVM-200.md) 已补四个 JNI 反射转换槽；Windows 构建和定向
   5 用例/342 断言通过。原命令越过该首错，进入 `Loader.SetState DataAvailable` 后仍停留
   在加载阶段；关闭请求未结束进程，有限观察后停止测试。证据 `.local/jni-reflect-startup.log`，
-  加载停滞与退出响应未验收。
+  已修复加载停滞：native-only JNI detach 不再要求不存在的 VM monitor token；clone 宿主
+  异常立即保存首错、退出线程组并中断等待，native 调用优先传播原异常。
+  Windows Release 构建及定向 14 用例/350 断言通过；原 APK/OBB 命令越过卡点，推进至
+  第 6 帧后报告 `java/util/zip/CRC32` 缺失并以 1 退出，未再永久等待。
+  证据 `.local/stall-fix-{build,tests,monitor-tests,startup}.log`；不代表游戏可玩验收，
+  运行中主动关闭及完整 native-attached Java 执行上下文支持仍未验收。
   此前 renderer 证据 `.local/renderer-{build,test-build,tests,startup}.log`。
   EGL 暂停/恢复策略尚未接入该配置；前置 NDK 符号缺失仍待闭合。
   本轮证据为 `.local/gl-preserve-{build,tests,startup}.log`。

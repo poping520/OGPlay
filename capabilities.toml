@@ -492,8 +492,8 @@ note = "BND-44/ADR-0082：A32/T32 旧式 CP15 DMB/DSB/ISB 复用原生屏障 IR�
 
 [cpu.thread_model]
 status = "complete"
-test = "tests/cpu/thread_group_tests.cpp"
-note = "M1 一个 guest 线程对应一个真实宿主线程和独立 CPU，上下文与 TLS 生命周期明确"
+test = "tests/cpu/thread_group_tests.cpp; tests/runtime/guest_clone_thread_runtime_tests.cpp"
+note = "M1 一个 guest 线程对应一个真实宿主线程和独立 CPU，上下文与 TLS 生命周期明确；clone 执行宿主异常保存首错并退出线程组、中断等待，通过显式上层通知取消其他阻塞，调用路径及 join 保留原异常"
 
 [cpu.futex]
 status = "complete"

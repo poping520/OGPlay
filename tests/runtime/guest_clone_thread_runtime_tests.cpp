@@ -5,6 +5,8 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <chrono>
+#include <thread>
 
 #include "ogplay/cpu/interpreter.h"
 #include "ogplay/runtime/execution/guest_clone_thread_runtime.h"
@@ -142,4 +144,47 @@ TEST_CASE("guest clone observes an external exit request between slices") {
     CHECK(joined.run.exit->state.status ==
           ogplay::runtime::GuestThreadStatus::exited);
     CHECK(threads.ActiveCount() == 0U);
+}
+
+TEST_CASE("guest clone failure interrupts parent wait and preserves original exception") {
+    using namespace ogplay;
+    using namespace runtime;
+    memory::AddressSpace memory;
+    memory::CheckedMemoryBus bus(memory);
+    const memory::GuestAddress code{0x10000U}, word{0x11000U};
+    memory.Map({code, memory.PageSize()}, memory::PageProtection::read | memory::PageProtection::write);
+    memory.Map({word, memory.PageSize()}, memory::PageProtection::read | memory::PageProtection::write);
+    bus.Write32(code, 0xef000002U);
+    memory.Protect({code, memory.PageSize()}, memory::PageProtection::read | memory::PageProtection::execute);
+    core::CapabilityLedger ledger;
+    auto dispatcher = CreateAndroidArmSyscallDispatcher(ledger);
+    GuestThreadLifecycle lifecycle;
+    lifecycle.Register(1);
+    cpu::FutexTable futex;
+    cpu::GuestThreadGroup threads{[&bus] { return std::make_unique<cpu::InterpreterCpu>(bus); }};
+    std::atomic_bool notified{};
+    GuestCloneThreadRuntime runtime{threads, dispatcher, lifecycle, memory, bus, futex, 2, 64,
+        [&](cpu::Cpu&, const cpu::RunResult&) -> SupervisorCallProgress {
+            const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+            while (futex.WaiterCount(word) == 0 && std::chrono::steady_clock::now() < deadline)
+                std::this_thread::yield();
+            throw std::runtime_error("fixture native child failure");
+        }, {}, [&] { notified = true; }};
+    A32SyscallFrame clone;
+    clone.number = 120;
+    clone.thread_id = 1;
+    clone.arguments[0] = kLinuxCloneVm | kLinuxCloneFs | kLinuxCloneFiles | kLinuxCloneSighand |
+                         kLinuxCloneThread | kLinuxCloneSysvsem;
+    clone.arguments[1] = 0x12000;
+    clone.cpu_state.emplace();
+    clone.cpu_state->SetThreadId(1);
+    clone.cpu_state->SetRegister(cpu::CoreRegister::pc, code.Value());
+    REQUIRE(dispatcher.Dispatch(clone) == 2);
+    CHECK(futex.Wait(bus, word, 0, 1, std::chrono::seconds(3)) == cpu::FutexWaitResult::interrupted_after_wait);
+    CHECK_THROWS_WITH(runtime.RethrowFailure(), "fixture native child failure");
+    CHECK_THROWS_WITH(static_cast<void>(runtime.Join(2)), "fixture native child failure");
+    CHECK(notified.load());
+    CHECK(lifecycle.State(2).status == GuestThreadStatus::exited);
+    CHECK(lifecycle.State(1).status == GuestThreadStatus::exit_requested);
+    CHECK(threads.ActiveCount() == 0);
 }

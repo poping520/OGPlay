@@ -1165,6 +1165,27 @@ TEST_CASE("DexVM bridge canonicalizes JNI jclass as the real Class object") {
           *represented);
 }
 
+TEST_CASE("JNI native-only attachments detach without a DexVM monitor context") {
+    using namespace ogplay::runtime;
+    using namespace ogplay::runtime::dexvm;
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        ApplicationProcess f(backend);
+        auto& env = f.session->Environment();
+        JniJavaVm java_vm(env);
+        for (const bool daemon : {false, true}) {
+            const auto attached = daemon ? java_vm.AttachCurrentThreadAsDaemon(5, kJniVersion1_6)
+                                         : java_vm.AttachCurrentThread(5, kJniVersion1_6);
+            REQUIRE(attached.status == JniStatus::ok);
+            CHECK(java_vm.AttachCurrentThread(5, kJniVersion1_6).environment == attached.environment);
+            CHECK(env.IsThreadAttached(5));
+            CHECK(java_vm.DetachCurrentThread(5) == JniStatus::ok);
+            CHECK_FALSE(env.IsThreadAttached(5));
+            CHECK(java_vm.GetEnv(5, kJniVersion1_6).status == JniStatus::detached);
+            CHECK(java_vm.DetachCurrentThread(5) == JniStatus::detached);
+        }
+    }
+}
+
 TEST_CASE("DVM-200 JNI reflection conversions share VM members and survive GC") {
     using namespace ogplay;
     using namespace runtime;

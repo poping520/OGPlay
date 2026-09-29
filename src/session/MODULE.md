@@ -197,3 +197,6 @@ launcher；已退出 VM 的 Stop 不再调用 Java 生命周期回调。宿主 S
 hook 可阻塞正常 exit，强制取消不能宣称正常 hook 完成。详见 ADR-0056。
 
 DexActivityLifecycle 成功启动与恢复后向已连接 DiagnosticState 发布 running 阶段；无需启动写盘 coordinator，阶段 generation 仍由 DiagnosticState 维护。
+
+退出前记录并退役已失败调用的 root JNI 异常；本地服务在 scheduler 关闭前解绑。
+native 清理失败仍继续关闭进程和 surface；前端保留运行首错，独立报告清理错误。

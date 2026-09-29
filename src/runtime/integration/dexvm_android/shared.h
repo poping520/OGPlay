@@ -31,6 +31,9 @@ void PopulateAndroidDisplayMetrics(dx::IntrinsicContext& call, const Context& co
     dx::Interpreter& vm, dx::VmObjectRef params);
 void RefreshAndroidLayoutParams(dx::Interpreter& vm, const Context& context);
 
+[[nodiscard]] dx::VmCallOutcome DispatchLocalServiceBinding(
+    dx::Interpreter&, DexVmAndroidContext&, std::uint64_t generation);
+
 // Helpers shared across handler batches; batch-local helpers stay private to
 // their translation unit.
 [[nodiscard]] dx::VmValue Self(dx::IntrinsicContext& call);

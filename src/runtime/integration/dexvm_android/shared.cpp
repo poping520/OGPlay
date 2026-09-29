@@ -1130,6 +1130,8 @@ void EnqueueLocked(DexVmAndroidContext& context,
     dx::Interpreter& vm, DexVmAndroidContext& context,
     const DexVmAndroidContext::ScheduledWork& work) {
     using Kind = DexVmAndroidContext::ScheduledWorkKind;
+    if (work.kind == Kind::local_service_bind)
+        return DispatchLocalServiceBinding(vm, context, work.generation);
     if (work.kind == Kind::handler_message) {
         return CallVirtual(vm, work.target, "dispatchMessage",
                            "(Landroid/os/Message;)V",

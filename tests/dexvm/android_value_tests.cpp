@@ -5778,3 +5778,101 @@ TEST_CASE("InputDevice queries use BootDex values and the process input director
         CHECK(fixture.On(event, "getSource", "()I").AsInt() == sources);
     }
 }
+
+TEST_CASE("DVM-202 explicit local service bindings share instances and cancel queued delivery") {
+  for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    int created=0, bound=0, connected=0, destroyed=0, unbound=0;
+    VmObjectRef delivered;
+    bool null_binder = false, fail_bind = false;
+    auto service = IntrinsicClassBuilder::Class("Lexample/Local;", "Landroid/app/Service;");
+    service.Constructor("()V", [](IntrinsicContext&) { return VmValue::Void(); });
+    service.OverrideMethod("onCreate", "()V", [&](IntrinsicContext&) { ++created; return VmValue::Void(); });
+    service.OverrideMethod("onBind", "(Landroid/content/Intent;)Landroid/os/IBinder;", [&](IntrinsicContext& c) {
+      ++bound;
+      if (fail_bind) throw VmJavaThrow{"Ljava/lang/IllegalStateException;", "bind failure"};
+      if (null_binder) return VmValue::Ref(VmObjectRef{});
+      const auto binder = c.vm.NewIntrinsicInstance("Landroid/os/Binder;");
+      const auto ctor = c.vm.Linker().FindDirectMethod(c.vm.Model().ObjectClass(binder), "<init>", "()V");
+      REQUIRE(ctor.has_value());
+      REQUIRE_FALSE(c.vm.Call(*ctor, std::array{VmValue::Ref(binder)}).exception.IsValid());
+      return VmValue::Ref(binder);
+    });
+    service.OverrideMethod("onUnbind", "(Landroid/content/Intent;)Z", [&](IntrinsicContext&) { ++unbound; return VmValue::Int(1); });
+    service.OverrideMethod("onDestroy", "()V", [&](IntrinsicContext&) { ++destroyed; return VmValue::Void(); });
+    auto connection_type = IntrinsicClassBuilder::Class("Lexample/Connection;", "Ljava/lang/Object;", {"Landroid/content/ServiceConnection;"});
+    connection_type.Constructor("()V", [](IntrinsicContext&) { return VmValue::Void(); });
+    connection_type.VirtualMethod("onServiceConnected", "(Landroid/content/ComponentName;Landroid/os/IBinder;)V", [&](IntrinsicContext& c) {
+      ++connected;
+      if (delivered.IsValid()) CHECK(delivered == c.arguments[1].ref);
+      delivered = c.arguments[1].ref;
+      return VmValue::Void();
+    });
+    connection_type.VirtualMethod("onServiceDisconnected", "(Landroid/content/ComponentName;)V", [](IntrinsicContext&) { FAIL("normal unbind is not disconnection"); return VmValue::Void(); });
+    AndroidValueVm f(backend, {std::move(service).Build(), std::move(connection_type).Build()});
+    VmThreadRuntime threads(f.vm);
+    f.context->threads = &threads;
+    f.vm.SetGcIntegration({{}, {}, [&f](const VmRootVisitor& visit) { VisitAndroidSessionRoots(*f.context, visit); }});
+    f.context->package_name = "example";
+    f.context->service_inventory_known = true;
+    f.context->service_components = {{"example.Local", true}};
+    const auto base = f.New("Landroid/content/Context;");
+    f.context->application_base_context = base;
+    const auto component = f.New("Landroid/content/ComponentName;", "(Ljava/lang/String;Ljava/lang/String;)V",
+        {VmValue::Ref(f.vm.NewStringUtf8("example")), VmValue::Ref(f.vm.NewStringUtf8("example.Local"))});
+    const auto intent = f.New("Landroid/content/Intent;");
+    f.On(intent, "setComponent", "(Landroid/content/ComponentName;)Landroid/content/Intent;", {VmValue::Ref(component)});
+    const auto first = f.New("Lexample/Connection;");
+    const auto second = f.New("Lexample/Connection;");
+    const auto roots = f.vm.ProtectReferences(std::array{base, intent, first, second});
+    const auto bind = [&](VmObjectRef c, int flags=1) { return f.OnOutcome(base, "bindService", "(Landroid/content/Intent;Landroid/content/ServiceConnection;I)Z", {VmValue::Ref(intent), VmValue::Ref(c), VmValue::Int(flags)}); };
+    const auto unbind = [&](VmObjectRef c) { f.On(base, "unbindService", "(Landroid/content/ServiceConnection;)V", {VmValue::Ref(c)}); };
+    REQUIRE(bind(first).value.AsInt() == 1);
+    REQUIRE(bind(first).value.AsInt() == 1);
+    CHECK(created == 0);
+    unbind(first);
+    REQUIRE_FALSE(PumpJavaThreads(f.vm, *f.context).has_value());
+    CHECK(created == 0);
+    REQUIRE(bind(first).value.AsInt() == 1);
+    REQUIRE(bind(second).value.AsInt() == 1);
+    static_cast<void>(f.vm.CollectGarbage("queued-service"));
+    REQUIRE_FALSE(PumpJavaThreads(f.vm, *f.context).has_value());
+    CHECK(created == 1); CHECK(bound == 1); CHECK(connected == 2);
+    static_cast<void>(f.vm.CollectGarbage("bound-service"));
+    CHECK(f.vm.MarkReachable().IsMarked(delivered));
+    unbind(first); CHECK(destroyed == 0);
+    unbind(second); CHECK(destroyed == 1); CHECK(unbound == 1);
+    CHECK(f.context->local_services.empty());
+    CHECK(f.context->local_service_bindings.empty());
+    REQUIRE(bind(first, 0).exception.IsValid());
+    f.context->service_components[0].process_name = "example:remote";
+    REQUIRE(bind(first).exception.IsValid());
+    f.context->service_components[0].process_name.clear();
+    f.context->service_components[0].flags = 0x0002U;
+    REQUIRE(bind(first).exception.IsValid());
+    f.context->service_components[0].flags = 0;
+    f.context->service_components[0].enabled = false;
+    const auto disabled = bind(first);
+    REQUIRE_FALSE(disabled.exception.IsValid()); CHECK(disabled.value.AsInt() == 0);
+    f.context->service_components[0].enabled = true;
+    null_binder = true;
+    REQUIRE(bind(first).value.AsInt() == 1);
+    REQUIRE_FALSE(PumpJavaThreads(f.vm, *f.context).has_value());
+    CHECK(connected == 2);
+    unbind(first);
+    CHECK(destroyed == 2);
+    null_binder = false;
+    fail_bind = true;
+    REQUIRE(bind(first).value.AsInt() == 1);
+    const auto bind_error = PumpJavaThreads(f.vm, *f.context);
+    REQUIRE(bind_error.has_value());
+    CHECK(bind_error->find("bind failure") != std::string::npos);
+    unbind(first);
+    CHECK(destroyed == 3);
+    fail_bind = false;
+    delivered = VmObjectRef{};
+    REQUIRE(bind(first).value.AsInt() == 1);
+    REQUIRE_FALSE(PumpJavaThreads(f.vm, *f.context).has_value());
+    ShutdownLocalServices(f.vm, *f.context);
+    CHECK(destroyed == 4); CHECK(unbound == 4);
+  }
+}

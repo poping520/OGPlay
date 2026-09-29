@@ -1015,6 +1015,8 @@ int RunApkCommand(const int argc, const char* const argv[],
             static_cast<void>(driver.stop());
             if (!failure) mcp_lifecycle = agent::McpLifecycleState::stopped;
         } catch (const std::exception& error) {
+            logger.Write(core::LogLevel::error, "frontend.run_apk.teardown",
+                         error.what(), {}, {}, kUnrestrictedLog);
             if (!failure) failure = std::current_exception();
             if (!guest_fault) guest_fault = error.what();
             mcp_lifecycle = agent::McpLifecycleState::failed;

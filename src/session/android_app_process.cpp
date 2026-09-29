@@ -294,11 +294,25 @@ public:
             // Native-backed Java objects (Mac, streams, etc.) run their guest
             // cleanup through JNI. The lifecycle has already joined worker
             // threads here, while the root JNI thread is still attached.
-            bridge->Vm().ReleaseGuestNativeResources(true);
-            // Failed startup skips Java onDestroy, so retire any remaining
-            // native activity backing while JNI references are still usable.
-            if (context->native_activity) context->native_activity->Release();
-            session->Stop();
+            // Retire the already-reported root JNI exception before cleanup.
+            // It must not masquerade as a failure of an unrelated native free.
+            auto& env = session->Environment();
+            if (env.ExceptionCheck(1)) {
+                env.ExceptionDescribe(1);
+                env.ExceptionClear(1);
+            }
+            std::exception_ptr failure;
+            try { bridge->Vm().ReleaseGuestNativeResources(true); }
+            catch (const runtime::dexvm::VmJavaThrow& error) {
+                failure = std::make_exception_ptr(runtime::AndroidGuestProcessError(
+                    "native cleanup failed: " + error.descriptor + ": " + error.message));
+            } catch (...) { failure = std::current_exception(); }
+            try {
+                if (context->native_activity) context->native_activity->Release();
+            } catch (...) { if (!failure) failure = std::current_exception(); }
+            try { session->Stop(); }
+            catch (...) { if (!failure) failure = std::current_exception(); }
+            if (failure) std::rethrow_exception(failure);
         };
         bindings.close_surface = [this] { session->CloseManagedSurface(); };
         bindings.flush_persistent_state =
@@ -495,9 +509,20 @@ LifecycleFrameState AndroidAppProcess::Stop() {
     if (impl_->state == AndroidAppProcessState::stopped) {
         return impl_->lifecycle->State();
     }
-    const auto result = impl_->lifecycle->Stop();
-    impl_->state = AndroidAppProcessState::stopped;
-    return result;
+    auto& env = impl_->session->Environment();
+    if (env.ExceptionCheck(1)) {
+        env.ExceptionDescribe(1);
+        env.ExceptionClear(1);
+    }
+    try {
+        const auto result = impl_->lifecycle->Stop();
+        impl_->state = AndroidAppProcessState::stopped;
+        return result;
+    } catch (...) {
+        if (!env.IsThreadAttached(1))
+            impl_->state = AndroidAppProcessState::stopped;
+        throw;
+    }
 }
 
 AndroidAppProcessState AndroidAppProcess::State() const noexcept {

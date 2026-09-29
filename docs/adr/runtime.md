@@ -505,3 +505,17 @@ shutdown 与线程退出均可中断等待。callback 与非 pipe fd 暂明确�
 显式所属线程 guest executor，不能由唤醒方执行 guest callback。Clock 是唯一时间源。
 
 选择有界进程能力，避免引入 Binder/system_server 或复制 Android epoll/MessageQueue。
+
+## ADR-0084：当前 APK 内的显式绑定服务
+
+状态：接受（2026-09-29）。任务：[DVM-202](../tasks/dexvm/DVM-202.md)。
+
+支持主 Java 线程以 BIND_AUTO_CREATE 绑定当前 APK 中启用的同进程 Service。
+实例由进程注册表拥有，构造、attachBaseContext、onCreate、onBind 和连接回调在现有
+主 Looper 排队执行；同一组件共享实例与本地 IBinder 对象，最后解绑调用 onUnbind/onDestroy。
+连接、Intent、实例及 Binder 均参与 GC 根追踪，排队后解绑取消投递，退出释放剩余实例。
+仅接受 component-only 显式 Intent；不同筛选条件、其他 flags、跨线程/跨进程与隐式正匹配
+仍明确记账失败。外部服务缺席查询保持既有语义。
+
+这是游戏进程直接调用的对象生命周期，不引入 Binder IPC、system_server、外部安装包
+或支付实现。已有本地 Binder Java 对象仅作为 onBind 的原样返回值，禁止伪造连接成功。

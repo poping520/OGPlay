@@ -43,12 +43,16 @@ content/os/view/graphics/gl/media/database/device 等 family TU 同址。shared.
 | getActivityInfo/getReceiverInfo/getServiceInfo | 当前包完整组件名；0、GET_META_DATA、GET_DISABLED_COMPONENTS，按应用/组件启用状态过滤；缺失 NameNotFoundException |
 | getPermissionInfo | 仅 Manifest `<permission>` 定义；0/GET_META_DATA；仅请求或已授权未定义仍 NameNotFoundException |
 | queryBroadcastReceivers | flags=0、非空 action、同一 filter category 子集，不要求 DEFAULT；排除禁用项，同组件取首个匹配，API19 稳定排序 |
-| resolveService/bindService | 非空 action、无 component/data/type/categories、flags=0；仅能确定无候选，返回 null/false；潜在匹配或未知条件失败 |
+| resolveService | 非空 action、无 component/data/type/categories、flags=0；仅能确定无候选，返回 null；潜在匹配或未知条件失败 |
+| bindService/unbindService | 缺席查询沿用原规则；另支持主线程 BIND_AUTO_CREATE、component-only、当前 APK 启用的同进程服务，见 ADR-0084 |
 
 广播查询返回真实 ArrayList/ResolveInfo/ActivityInfo，保留 priority/match/isDefault/filter label/icon；
 permission/exported 不限制声明查询。外部包、selector/component/data/type、未解析潜在 data、
 未知 flags/缺少 inventory 不能伪装零匹配，须记账抛 UnsupportedOperationException。服务声明
-查询不启动进程；正匹配 resolver 和服务生命周期未实现。连接早于 bind 结果登记，失败仍可
+查询不启动进程；正匹配 resolver、started service 与跨进程服务未实现。显式绑定复用主 Looper，
+异步构造/attach/onCreate/onBind 后交付原本地 Binder；同组件共享实例，最后解绑执行
+onUnbind/onDestroy，排队后解绑取消回调。连接、Intent 与服务对象由 session GC roots 保活；
+null onBind 不产生连接回调，退出拒绝新绑定并释放残留服务。连接早于 bind 结果登记，失败仍可
 解绑一次，并作为 Context GC 强边。定向反射不解析无关签名。
 
 权限定义、requestedPermissions 和 granted 集合独立。checkPermission 仅查询 self PID/UID，

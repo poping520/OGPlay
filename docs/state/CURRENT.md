@@ -90,6 +90,18 @@
   因未捕获 VmJavaThrow 退出（134），两者因果尚未定位。
   证据 `.local/tts-type-{boot-build,boot-check,payload,build,tests,startup}.log`
   与 `.local/tts-type-startup-check.json`；未完成 120 帧或游戏兼容验收。
+  LLDB 后续确认因果：IABPlugin 显式绑定 APK 内 BillingService 被 action-only 限制拒绝；
+  原 UnsupportedOperationException 留在 JNI pending，nativeRender 的 GetObjectClass 被门禁拒绝。
+  停止时 ReleaseGuestNativeResources 又将同一 throwable 抛成 VmJavaThrow；直接 native
+  Interpreter::Call 未转换它，Stop/CLI 仅捕获 std::exception，最终 terminate，掩盖运行首错。
+  证据 `.local/tts-crash-{lldb,throw,exceptions}.log`；本轮只定位，尚未修改上述路径。
+  [DVM-202](../tasks/dexvm/DVM-202.md) 已修复直接 native Java 异常转换及清理失败出口，
+  补齐同包同进程显式 Service 绑定。macOS Release 构建、8 用例/7106 断言通过；
+  原 APK/OBB 无 Profile/无 survey、临时沙盒完成 120 presented frames，退出码 0。
+  本地 onBind/onServiceConnected/onDestroy 均实际执行，外部商店缺席返回支付不可用；
+  原 Intent 限制、pending GetObjectClass 和退出 134 均消失，本轮无新致命首错。
+  证据 `.local/service-fix-{tests,startup}.log` 与 `.local/service-fix-startup-check.json`。
+  仅为启动冒烟，不代表游戏操作、完整画面/音频或 title gate 验收。
   此前 renderer 证据 `.local/renderer-{build,test-build,tests,startup}.log`。
   EGL 暂停/恢复策略尚未接入该配置；前置 NDK 符号缺失仍待闭合。
   本轮证据为 `.local/gl-preserve-{build,tests,startup}.log`。
@@ -133,8 +145,8 @@
 
 ## 未闭合边界
 
-- Dead Trigger 最新复跑在 f=9 停止生命周期时因未捕获 `VmJavaThrow` 退出；此前出现
-  IABPlugin.init 的 action-only Intent 支持限制，具体退出原因待定位。
+- Dead Trigger 已完成无 Profile 的 120 呈现帧启动冒烟并正常退出；本次无新致命首错，
+  完整画面、交互及游戏兼容验收仍未完成。同进程 Service 绑定与失败清理链已修复。
   `getDeclaredMethods` 解析 TextToSpeech 返回类型缺失已越过；此前插件回调接口缺失
   导致的 ClassNotFoundException/NewGlobalRef、SecretKeyFactory、CRC32 缺失，
   Looper 缺导出导致的 PC=0、Mono 信号注册、tkill SIGABRT 和 coprocessor 断言已越过。首次 nativeRender 的

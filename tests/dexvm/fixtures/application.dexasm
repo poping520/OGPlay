@@ -1004,3 +1004,8 @@
 .registers 1
     throw v0
 .end method
+
+.class public Lfixture/FailingNativeCleanup;
+.super Ljava/lang/Object;
+.method public static native release(J)V
+.end method

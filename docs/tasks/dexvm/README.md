@@ -28,6 +28,7 @@ Asphalt 5（pilot title）删除 profile 全部 `native_call` 与 `[[java.class]
 
 | WU | 一句话目标 | 状态 |
 | --- | --- | --- |
+| [DVM-198](DVM-198.md) | BootDex 系统资源随 ROM 自动绑定 | 有界实现完成 |
 | [DVM-196](DVM-196.md) | 进程逻辑输入设备查询 | 有界实现完成 |
 | [DVM-194](DVM-194.md) | BootDex 同源系统资源映射 | 完成 |
 | [DVM-193](DVM-193.md) | 当前 APK 接收器声明查询 | 完成 |

@@ -120,10 +120,12 @@ Looper.myQueue 发布现有 scheduler 的稳定队列身份，不创建另一调
   `Resources.getXml` 保持 AXML 的 getEventType/next/getName/getText/close 有界能力；继承
   BootDex 完整 XmlPullParser 接口，其余方法经统一未实现路径记账并抛 UnsatisfiedLinkError。
   普通文本 XML 使用 BootDex KXml，不能传入二进制 AXML reader。
-  getString/getInteger 的受审系统配置共用 BootDex 同源生成表；名称/类型/ID、AOSP 默认值与
-  来源身份由 `tools/bootdex/api19-system-resources.json` 持有，build/check 校验实际 Java
-  消费者并绑定生成物。旧 ID 不作别名；SQLite journal mode 显式覆盖为 DELETE，
-  恢复 AOSP PERSIST 需独立验证，WAL 仍不支持。
+  getString/getInteger 从当前 context 封存的 BootDex 归档读取
+  `META-INF/ogplay/system-resources.json`（schema 1/API19，stored，至多 64 KiB/256 条），
+  每 context 一次解析并发布不可变映射；禁止 APK/宿主文件回退或全局跨 VM 缓存。
+  名称、类型、消费者和 OGPlay 配置值由配方持有，ID 从最终 DEX 查询点提取并随包发布；
+  build/check 验证覆盖和映射。缺失、重复或畸形映射抛 IllegalStateException；未知 ID/错类型
+  抛 NotFoundException。旧 ID 不作别名；journal mode 为 DELETE，WAL 仍不支持。
 - `Resources.getConfiguration()`的稳定对象以同一 VM `Locale.getDefault()`补齐 locale，并调用
   BootDex `Configuration.setLayoutDirection`。当前 TextUtils 只确认 ROOT/en/zh 为 LTR；其他
   locale 在 ICU likely-subtags 边界补齐前记账失败，不伪造方向。

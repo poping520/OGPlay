@@ -858,7 +858,7 @@ public:
             futex_table_, 2, 100000,
             [this](cpu::Cpu& cpu, const cpu::RunResult& stopped) {
                 return HandleBoundary(cpu, stopped);
-            }, diagnostics_);
+            }, diagnostics_, [this] { BeginTeardown(); });
         root_cpu_ = std::make_unique<cpu::DynarmicCpu>(
             memory_bus_, execution_context_);
         ConfigureFastHostCalls(*root_cpu_);
@@ -897,6 +897,7 @@ public:
     }
 
     A32GuestCallResult Invoke(const A32GuestCallFrame& frame) {
+        if (clone_runtime_) clone_runtime_->RethrowFailure();
         if (std::this_thread::get_id() != open_sles_callback_thread_.get_id()) {
             RethrowOpenSlesCallbackFailure();
         }
@@ -974,6 +975,7 @@ public:
                             execution, target->GetState().Register(
                                 cpu::CoreRegister::pc));
                     }
+                    if (clone_runtime_) clone_runtime_->RethrowFailure();
                     if (slice_observer_) slice_observer_(consumed);
                 };
             if (frame.renewable_native_frame) {
@@ -988,6 +990,7 @@ public:
                         throw A32GuestCallError(
                             "A32 renewable native frame cancelled for teardown");
                     }
+                    if (clone_runtime_) clone_runtime_->RethrowFailure();
                     if (slice_observer_) slice_observer_(consumed);
                 };
             }
@@ -1005,6 +1008,7 @@ public:
             if (frame.renewable_native_frame) ConfigureFastHostCalls(*target);
             if (previous.cpu != nullptr) active_guest_calls[this] = previous;
             else active_guest_calls.erase(this);
+            if (clone_runtime_) clone_runtime_->RethrowFailure();
             throw;
         }
     }

@@ -1405,7 +1405,16 @@ DexVmGuestBridge::DexVmGuestBridge(
         [bridge_state](const std::uint64_t thread) {
             const dx::VmExecutionLockScope guard(
                 bridge_state->vm->ExecutionLock());
-            const auto token = bridge_state->TokenForProcessThread(thread);
+            // Native-only JNI attachments have no VM execution context and
+            // cannot own a VM monitor (MonitorEnter requires that context).
+            // Detaching them must still release their JNI references/exceptions.
+            std::uint64_t token{};
+            {
+                const std::scoped_lock lock(bridge_state->thread_contexts_mutex);
+                const auto found = bridge_state->process_thread_to_token.find(thread);
+                if (found == bridge_state->process_thread_to_token.end()) return std::size_t{};
+                token = found->second;
+            }
             const auto held = bridge_state->vm->Monitors().HeldCount(token);
             bridge_state->vm->Monitors().ReleaseAll(token);
             return held;

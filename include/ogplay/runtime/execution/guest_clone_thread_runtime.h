@@ -2,6 +2,8 @@
 
 #include <atomic>
 #include <cstdint>
+#include <exception>
+#include <functional>
 #include <map>
 #include <memory>
 #include <mutex>
@@ -29,13 +31,17 @@ public:
                             std::uint64_t first_child_thread_id = 2,
                             std::uint64_t tick_slice = 100000,
                             GuestSupervisorCallHandler hle_handler = {},
-                            std::shared_ptr<debug::DiagnosticState> diagnostics = {});
+                            std::shared_ptr<debug::DiagnosticState> diagnostics = {},
+                            std::function<void()> failure_notifier = {});
+
+    void RethrowFailure() const;
 
     [[nodiscard]] GuestCloneThreadJoin Join(std::uint64_t thread_id);
 
 private:
     [[nodiscard]] std::int32_t Spawn(const GuestThreadCloneRequest& request);
     void RunChild(std::uint64_t thread_id, cpu::Cpu& cpu);
+    void RunChildBody(std::uint64_t thread_id, cpu::Cpu& cpu);
 
     cpu::GuestThreadGroup& threads_;
     A32SyscallDispatcher& dispatcher_;
@@ -47,6 +53,9 @@ private:
     std::uint64_t tick_slice_{};
     GuestSupervisorCallHandler hle_handler_;
     std::shared_ptr<debug::DiagnosticState> diagnostics_;
+    std::function<void()> failure_notifier_;
+    mutable std::mutex failure_mutex_;
+    std::exception_ptr failure_;
     std::mutex outcomes_mutex_;
     std::map<std::uint64_t, GuestThreadRunOutcome> outcomes_;
 };

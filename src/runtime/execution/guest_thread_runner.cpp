@@ -399,6 +399,9 @@ std::string DescribeA32GuestStop(const cpu::RunResult& stopped,
             break;
         }
     }
+    if (stopped.pc.Value() < 8U) {
+        return result + "\n  code:      unavailable (PC is below 8)";
+    }
     try {
         const auto code_start = stopped.pc.Subtract(8U);
         std::array<std::byte, 24> code{};

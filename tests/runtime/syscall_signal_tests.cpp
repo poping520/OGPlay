@@ -139,6 +139,11 @@ TEST_CASE("ARM tgkill SIGABRT records signal termination and exits process") {
     frame.number = 268U;
     frame.thread_id = 71U;
     frame.arguments = {1000U, 71U, 6U};
+    SUBCASE("tkill preserves original syscall attribution") {
+        frame.number = 238;
+        frame.arguments = {71, 6, 999}; // Third argument is irrelevant to tkill.
+    }
+    SUBCASE("tgkill") {}
     frame.program_counter = 0x12345678U;
     frame.link_register = 0x87654321U;
     CHECK(dispatcher.Dispatch(frame) == 0);
@@ -151,6 +156,8 @@ TEST_CASE("ARM tgkill SIGABRT records signal termination and exits process") {
         CHECK(state.exit_request.signal_number == 6U);
         CHECK(state.exit_request.target_thread_id == 71U);
         CHECK(state.exit_request.program_counter == 0x12345678U);
+        CHECK(state.exit_request.syscall_number == frame.number);
+        CHECK(state.exit_request.link_register == 0x87654321U);
     }
 }
 
@@ -191,7 +198,11 @@ template <typename Cpu> struct SignalFixture {
         memory.Write32(GuestAddress{0x2000c}, 0);
         REQUIRE(Call(67, {signal, 0x20000}) == 0);
     }
-    std::int32_t Send(std::uint32_t signal) { return Call(268, {1000, 2, signal}, 1); }
+    std::uint32_t send_number{268};
+    std::int32_t Send(std::uint32_t signal) {
+        return send_number == 238 ? Call(238, {2, signal}, 1)
+                                  : Call(268, {1000, 2, signal}, 1);
+    }
     void Code(std::uint32_t at, std::initializer_list<std::uint32_t> words) {
         for (const auto word : words) { memory.Write32(GuestAddress{at}, word); at += 4; }
     }
@@ -228,8 +239,12 @@ TEST_CASE("ARM signal action ABI validates inputs and preserves old disposition"
 
 TEST_CASE_TEMPLATE("ARM signal handlers restore core Thumb VFP and mask state", Cpu,
                    cpu::InterpreterCpu, cpu::DynarmicCpu) {
+    std::uint32_t send_number = 268;
+    SUBCASE("tkill") { send_number = 238; }
+    SUBCASE("tgkill") {}
     for (const auto flags : {0U, 4U}) {
         SignalFixture<Cpu> f;
+        f.send_number = send_number;
         f.Code(0x10100, {0xe3a00063, 0xe12fff1e}); // mov r0,#99; bx lr
         f.Action(30, 0x10100, flags);
         auto initial = f.cpu.GetState();
@@ -262,6 +277,8 @@ TEST_CASE_TEMPLATE("ARM signal handlers restore core Thumb VFP and mask state", 
 
 TEST_CASE("ARM signal pending coalesces inherits mask and retires thread state") {
     SignalFixture<cpu::InterpreterCpu> f;
+    SUBCASE("tkill") { f.send_number = 238; }
+    SUBCASE("tgkill") {}
     f.Action(30, 0x10100);
     f.memory.Write32(GuestAddress{0x20080}, 1U << 29);
     REQUIRE(f.Call(126, {2, 0x20080}) == 0);
@@ -284,6 +301,8 @@ TEST_CASE("ARM signal pending coalesces inherits mask and retires thread state")
 TEST_CASE_TEMPLATE("ARM signals suspend and resume a real blocked guest thread", Cpu,
                    cpu::InterpreterCpu, cpu::DynarmicCpu) {
     SignalFixture<Cpu> f;
+    SUBCASE("tkill") { f.send_number = 238; }
+    SUBCASE("tgkill") {}
     f.Code(0x10000, {0xef000000, 0xef000001}); // futex wait, call return
     f.Code(0x10100, {
         0xe59f301c, // ldr r3,[pc,#28] -> marker
@@ -408,4 +427,23 @@ TEST_CASE("ARM signal rt suspend restores old mask and cancels on shutdown") {
     f.lifecycle.RequestExit(2, 0);
     REQUIRE(waiting.wait_for(std::chrono::seconds(5)) == std::future_status::ready);
     CHECK(waiting.get() == -4);
+}
+
+TEST_CASE("ARM tkill validates target and signal without treating arguments as tgkill") {
+    SignalFixture<cpu::DynarmicCpu> f;
+    CHECK(f.Call(238, {2, 0, 999}, 1) == 0);
+    CHECK_FALSE(f.dispatcher.signal_binding->runtime->Pending(2));
+    CHECK(f.Call(238, {0, 0}, 1) == -3);
+    CHECK(f.Call(238, {999, 0}, 1) == -3);
+    CHECK(f.Call(238, {0xffffffffU, 0}, 1) == -3);
+    CHECK(f.Call(238, {2, 65}, 1) == -22);
+    CHECK(f.Call(238, {2, 0xffffffffU}, 1) == -22);
+    CHECK(f.Call(238, {2, 32}, 1) == -38);
+    CHECK(f.Call(268, {999, 2, 0}, 1) == -3);
+    f.Action(30, 1); // Explicit SIG_IGN, no pending handler.
+    CHECK(f.Call(238, {2, 30}, 1) == 0);
+    CHECK_FALSE(f.dispatcher.signal_binding->runtime->Pending(2));
+    f.lifecycle.RequestExit(2, 0);
+    CHECK(f.Call(238, {2, 0}, 1) == -3);
+    CHECK(f.Call(238, {2, 30}, 1) == -3);
 }

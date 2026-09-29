@@ -4,7 +4,7 @@
 
 ## 范围
 
-- syscall 拥有唯一进程 signal runtime；旧/RT ABI 分开，tgkill 检查进程及活跃线程。
+- syscall 拥有唯一进程 signal runtime；旧/RT ABI 分开，tkill 检查进程内活跃线程，tgkill 额外检查进程 ID。
 - 目标线程执行真实 guest handler，保存/恢复 ARM、Thumb、VFP、mask 和备用栈；支持嵌套。
 - clone 继承 mask；退役清理状态；主 native 调用、clone、headless 在安全边界投递。
 - futex 等待可被目标线程信号中断，SA_RESTART 恢复无超时等待；sigsuspend 原子换 mask，
@@ -25,3 +25,13 @@
   断言。GC 还提示 /proc/stat 缺失，但不是本次退出的直接报告。
 - 新 CPU 首错不在本工作单修复；尚未触达游戏渲染，也未完成实际 GC 全周期或游戏验收。
 - 证据：`.local/signal-{build-verified,tests,startup}.log`。
+
+## tkill 入口补齐（2026-09-29）
+
+- Mono 暂停线程实际调用 tkill(238)，此前未绑定返回 ENOSYS，随后报告
+  `pthread_kill failed` 并 abort。现与 tgkill 共用校验、投递和唤醒，保留原调用归因。
+- Windows Release 构建及定向 17 用例/300 断言通过；覆盖真实 API19 libc errno、
+  无效/退出线程、信号 0、忽略/屏蔽与双后端暂停恢复，以及低 PC 故障诊断。
+- 原 APK/OBB 复跑已越过该错误及其 SIGABRT；下一首错为 PC=0 执行未映射内存，
+  LR=0x614220cc。修正诊断读取 PC-8 的下溢，保留原始故障。未完成 GC 全周期或游戏验收。
+- 证据：`.local/tkill-fix-{build,tests,startup,startup-check}.log`。

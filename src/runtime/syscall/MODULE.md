@@ -42,7 +42,8 @@ exit/exit_group/clear-child-tid 所需的 guest 线程生命周期状态。
   来源（host/exit/exit_group）、requester、退出码和 syscall PC/LR；进程组退出的每个受影响
   线程共享同一请求事实，供即时错误与后续诊断读取。
 - 进程 signal runtime 共享 dispositions，按线程保存 mask/pending/备用栈/活动帧；旧与 RT
-  action/suspend/return ABI 独立编组，tgkill 只接受当前 PID 与活跃 TID。标准信号合并，
+  action/suspend/return ABI 独立编组；tkill 只接受当前进程活跃 TID，tgkill 额外校验当前 PID。
+  两者共用投递及等待唤醒，保留原 syscall/PC/LR 归因。标准信号合并，
   由目标线程安全边界投递，禁止发送方改写目标 CPU。细节与未支持边界见
   [ADR-0079](../../../docs/adr/runtime.md#adr-0079)。SIGABRT 默认终止继续保留退出来源。
 - signal return 通过 syscall outcome 显式恢复整个 CPU 状态，bridge 不再覆盖其 r0。

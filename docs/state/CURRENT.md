@@ -47,6 +47,11 @@
   保留故障 PC/Thumb IT；Windows 构建及定向 31 用例/476 断言通过。用户原 APK/OBB 命令
   复跑已越过 coprocessor 断言，下一首错 `pthread_kill failed` 后 guest SIGABRT/code=134，
   CLI 以 1 退出；证据 `.local/coprocessor-fix-{build,tests,startup,startup-check}.log`。
+  [BND-41](../tasks/boundary/BND-41.md) 已补 ARM tkill(238)，共用现有信号投递；
+  Windows 构建与定向 17 用例/300 断言通过，含真实 API19 libc errno 与双后端暂停/恢复。
+  原 APK/OBB 复跑中 `pthread_kill failed` 及随后 SIGABRT 消失；下一首错为 guest
+  PC=0 执行未映射内存（LR=0x614220cc）。同时修正低 PC 诊断下溢，避免掩盖原故障。
+  证据 `.local/tkill-fix-{build,tests,startup,startup-check}.log`；实际 GC 全周期尚未验收。
   尚未重达 nativeRender，原绘制故障未复验。证据 `.local/proc-maps-*.log`。
   此前 renderer 证据 `.local/renderer-{build,test-build,tests,startup}.log`。
   EGL 暂停/恢复策略尚未接入该配置；前置 NDK 符号缺失仍待闭合。
@@ -91,8 +96,8 @@
 
 ## 未闭合边界
 
-- Dead Trigger 当前首错是 `pthread_kill failed` 后 guest SIGABRT；Mono 信号注册和 Dynarmic
-  coprocessor 断言已越过。首次 nativeRender 的
+- Dead Trigger 当前首错是 guest PC=0 执行未映射内存（LR=0x614220cc）；Mono 信号注册、
+  tkill 缺失导致的 SIGABRT 和 Dynarmic coprocessor 断言已越过。首次 nativeRender 的
   `GLES1 draw requires GL_VERTEX_ARRAY` 尚未重达复验；
   不运行 Binder、
   system_server、外部包数据库、广播投递或 Play 服务。

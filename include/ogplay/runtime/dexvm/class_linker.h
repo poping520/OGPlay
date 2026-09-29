@@ -29,6 +29,7 @@ using HostStateDestructor = std::function<void(std::uint64_t)>;
 // Narrow host facts needed by Java/JRE intrinsic families that used to live
 // in dexvm_android. Callbacks keep core independent from DexVmAndroidContext.
 struct CoreIntrinsicServices final {
+    std::uint32_t cpu_cores{1};
     enum class ClasspathLoader : std::uint8_t { bootstrap, application };
     std::function<std::optional<std::vector<std::byte>>(
         ClasspathLoader, std::string_view)>

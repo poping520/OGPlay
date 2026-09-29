@@ -228,6 +228,7 @@ int RunApkCommand(const int argc, const char* const argv[],
     std::optional<std::chrono::milliseconds> diagnostic_teardown_timeout;
     bool diagnostics_enabled{};
     std::uint32_t supersample_factor{1};
+    runtime::GuestCpuConfig cpu_config;
     bool default_mcp{};
     bool mcp_manual_step{};
     bool preflight{};
@@ -274,6 +275,19 @@ int RunApkCommand(const int argc, const char* const argv[],
             }
         } else if (option == "--exit-after-frames" && index + 1 < argc) {
             exit_after_frames = ParsePositive(argv[++index], option);
+        } else if (option == "--cpu-limit-parallelism") {
+            cpu_config.execution.limit_parallelism = true;
+        } else if (option == "--cpu-max-mticks-per-second" && index + 1 < argc) {
+            const auto value = ParsePositive(argv[++index], option);
+            if (value > 10000U) throw std::invalid_argument("--cpu-max-mticks-per-second requires 1..10000");
+            cpu_config.execution.max_mticks_per_second = static_cast<std::uint32_t>(value);
+        } else if ((option == "--cpu-cores" || option == "--cpu-frequency-mhz") && index + 1 < argc) {
+            const auto value = ParsePositive(argv[++index], option);
+            const auto maximum = option == "--cpu-cores" ? 32U : 10000U;
+            if (value > maximum)
+                throw std::invalid_argument(std::string(option) + " exceeds " + std::to_string(maximum));
+            if (option == "--cpu-cores") cpu_config.cores = static_cast<std::uint32_t>(value);
+            else cpu_config.frequency_mhz = static_cast<std::uint32_t>(value);
         } else if (option == "--supersample" && index + 1 < argc) {
             supersample_factor = ParseSupersampleFactor(argv[++index]);
         } else if (option == "--mcp-port" && index + 1 < argc) {
@@ -524,7 +538,11 @@ int RunApkCommand(const int argc, const char* const argv[],
     logger.Write(
         core::LogLevel::info, "frontend.run_apk", "SDL window opened", {},
         {{"hidden", mcp_manual_step},
-         {"supersample", static_cast<std::uint64_t>(supersample_factor)}},
+         {"supersample", static_cast<std::uint64_t>(supersample_factor)},
+         {"cpu_cores", static_cast<std::uint64_t>(cpu_config.cores)},
+         {"cpu_frequency_mhz", static_cast<std::uint64_t>(cpu_config.frequency_mhz)},
+         {"cpu_limit_parallelism", cpu_config.execution.limit_parallelism},
+         {"cpu_max_mticks_per_second", static_cast<std::uint64_t>(cpu_config.execution.max_mticks_per_second)}},
         kUnrestrictedLog);
     bool quit{};
     std::uint64_t presented{};
@@ -691,6 +709,7 @@ int RunApkCommand(const int argc, const char* const argv[],
              {"source", backend_source}},
             kUnrestrictedLog);
         session::AndroidAppProcessRequest app_request;
+        app_request.proc_facts.cpu = cpu_config;
         app_request.manifest = manifest;
         app_request.native_libraries = libraries;
         app_request.system_libraries = system_sources;

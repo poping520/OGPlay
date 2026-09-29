@@ -64,6 +64,10 @@ switch/threaded 解释、异常、线程/monitor、反射及 `java.*` core intri
 
 ### Core intrinsic 与专用 runtime
 
+- `Runtime.availableProcessors` 与 `Posix.sysconf` 的 API19 核数 selector 96/97 消费同一
+  `CoreIntrinsicServices.cpu_cores`（由 bridge 注入进程配置）；不从 VM 锁或宿主硬件推导。
+  其他 Java sysconf selector 仍记账并明确失败；不宣称完整 Posix sysconf 支持。
+
 - `CoreIntrinsicCatalog(services)` 按 family TU 聚合拥有型 handler；非 Android 类只能在 core，
   平台事实只经 `CoreIntrinsicServices` 注入。Builder 只声明 own members，override 必须显式，字段
   经 bound token 访问；flags 统一来自 `access_flags.h`。

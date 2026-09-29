@@ -395,3 +395,66 @@ EINTR。坏帧/栈溢出明确失败，不吞掉信号或绕过 handler。
 ABI 依据本地 AOSP 4.4.4 bionic 的 arch-arm syscall 与 asm/{signal,ucontext,sigcontext}.h，
 并核对 [Linux v3.4 ARM signal.c](https://github.com/torvalds/linux/blob/v3.4/arch/arm/kernel/signal.c)
 及 user_vfp 布局。定向双后端测试和 APK 首错推进分别记证据，后者不等于完整 GC/游戏验收。
+
+<a id="adr-0080"></a>
+## ADR-0080：进程统一拥有虚拟 CPU 查询事实
+
+日期：2026-09-29。状态：接受。任务：[BND-42](../tasks/boundary/BND-42.md)。
+
+### 决策
+
+核数和标称主频在启动时冻结为 `GuestCpuConfig`，默认 1 核/1000 MHz。允许范围分别为
+1..32 和 1..10000；所有核心固定在线且同频。该参数表达 guest 的虚拟硬件配置，不映射
+宿主亲和性、线程配额、Clock 或执行速度。CPU 名称/指令标志不开放任意覆盖；Features
+只发布现有 Dynarmic ARMv7 的受支持子集，不复制真机 VFPv4 或厂商身份。
+
+integration 发布只读 `/proc/cpuinfo`、CPU sysfs 的 possible/present/online/offline、
+每核 online 与 cpufreq 的 min/max/current 标称 kHz。发布冲突明确失败，进程销毁撤销，
+旧 FD 保留原快照。已存在的 meminfo 不阻止 CPU 节点发布。
+
+API19 原版 Bionic 的在线核数查询依赖 `/proc/stat`。本阶段没有真实 CPU 时间统计，
+因此不生成虚假的零利用率文件。仅替换 libc 导出的 sysconf 符号位置，使用进程私有 RX
+A32 桥处理 `_SC_NPROCESSORS_CONF=96` 和 `_SC_NPROCESSORS_ONLN=97`；其他 selector
+保留参数、LR 和栈，BX 尾调用原版 ARM/Thumb sysconf，保留其返回值及 errno。
+桥进入同一 linker namespace，重定位/dlsym/soinfo 共用，不修改 ROM ELF 指令或固定偏移。
+libc 内部不经导出符号的私有调用不属于该覆写契约。
+
+DexVM bridge 从该进程注入 CoreIntrinsicServices，Runtime.availableProcessors 与
+Java Posix 的这两个 sysconf selector 共享核数；其他 Java selector 继续记账失败。
+CLI 与单游戏设置接入同一启动配置；全局设备预设仍保持数据层边界。
+
+### 验收边界
+
+覆盖配置范围、VFS 快照/隔离/只读/撤销、ARM 与 Thumb fallback、Java 与 GUI 传递，
+再复现同一 APK 首错。后续真实并行度、负载统计与速度控制需要独立设计及验证；
+CPU coprocessor 首错也不并入本工作单。
+<a id="adr-0081"></a>
+## ADR-0081：独立于硬件查询的原生 CPU 执行预算
+
+日期：2026-09-29。状态：接受。任务：[BND-43](../tasks/boundary/BND-43.md)。
+
+### 决策
+
+第一阶段的核数和 MHz 是查询事实；第二阶段增加默认关闭的执行策略：可按虚拟核数限制
+同时执行的 A32/T32 CPU，并独立限制每个进程的总 backend tick/秒。guest 与 host 线程
+继续 1:1，Java 字节码仍使用现有 VM 单写锁；HLE、Java 解释器与宿主 CPU 占用不计入该配额。
+不对标称 MHz 作周期精确映射，不改变 guest Clock、指令语义、watchdog 或宿主亲和性。
+
+CPU 下层拥有 ExecutionBudget，integration 将唯一预算注入进程 Dynarmic context，供
+root、clone、DexVM native、音频 callback 和嵌套 JNI CPU 共用。并发名额由 FIFO 队列分配；
+速率采用 aggregate token bucket，最多积累 max(rate/20, 1) tick（50 ms），每片最多
+消费半桶且不超过 50000 tick，使宿主粗粒度等待仍有补充额度的余量。
+运行前预留，运行后按 RunResult.ticks_consumed 结算并退还余量；计量沿用后端既有 block
+预算语义，不声称等于物理周期或逐条退休指令数。单片上限 50000，不改变总调用预算。
+
+限额模式下关闭 fast SVC 内联分派，SVC 先退出 Run 并释放名额，再由既有 runner 进入
+JNI/HLE/syscall；阻塞调用和重入不能占住上一层执行名额。不引入跨层反向依赖。
+统一 Clock 提供单调时间；等待最多每 2 ms 重检，通知可提前唤醒。取消移除排队项，RAII
+处理所有异常出口。BeginTeardown/Stop 切入不可逆 drain，唤醒并解除配额，允许现有退出
+检查和 guest finalizer 完成；drain 期间不再承诺执行限额，生命周期依旧负责终止线程。
+
+### 边界
+
+速率是上限且允许有限突发，不保证宿主能达到请求速度；默认模式保留原 fast SVC 路径。
+CLI/GUI 参数及启动日志区分查询核数、标称 MHz、并发限制和百万 tick 速率；不把该控制
+扩展为完整 Android 调度器、CPU 热插拔、负载统计或 `/proc/stat`。首错复现仍与兼容验收分开。

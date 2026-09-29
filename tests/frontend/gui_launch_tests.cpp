@@ -137,16 +137,20 @@ TEST_CASE("GUI LaunchPlan emits only the documented run-apk arguments") {
     const auto plan = ogplay::frontend::BuildLaunchPlan(
         cli, temporary.path, Entry(entry_dir, external),
         {.profiles_dir = profiles});
-    REQUIRE(plan.argv.size() == 11);
+    REQUIRE(plan.argv.size() == 15);
     CHECK(plan.argv[1] == "run-apk");
     CHECK(plan.argv[3] == "--profiles-dir");
     CHECK(plan.argv[5] == "--external-dir");
-    CHECK(plan.argv[7] == "--sandbox-dir");
-    CHECK(plan.argv[8] ==
+    CHECK(plan.argv[7] == "--cpu-cores");
+    CHECK(plan.argv[8] == "1");
+    CHECK(plan.argv[9] == "--cpu-frequency-mhz");
+    CHECK(plan.argv[10] == "1000");
+    CHECK(plan.argv[11] == "--sandbox-dir");
+    CHECK(plan.argv[12] ==
           ogplay::frontend::LauncherSandboxRoot(temporary.path)
               .generic_string());
-    CHECK(plan.argv[9] == "--installation-id");
-    CHECK(plan.argv[10] == "org.example.game");
+    CHECK(plan.argv[13] == "--installation-id");
+    CHECK(plan.argv[14] == "org.example.game");
     CHECK(plan.package == "org.example.game");
     CHECK(plan.log_path == std::filesystem::absolute(entry_dir / "last-run.log"));
 }
@@ -186,6 +190,49 @@ TEST_CASE("GUI LaunchPlan fails before spawn for every missing required input") 
     CHECK_THROWS_AS(static_cast<void>(ogplay::frontend::BuildLaunchPlan(
                         cli, {}, valid, {})),
                     ogplay::frontend::GuiModelError);
+}
+
+TEST_CASE("BND-42 GUI persists and forwards bounded CPU configuration") {
+    using namespace ogplay::frontend;
+    TemporaryDirectory tree;
+    const auto cli = tree.path / "ogplay", directory = tree.path / "entry";
+    Write(cli, "exe"); Write(directory / "game.apk", "apk");
+    auto entry = Entry(directory, {}); entry.metadata->external_dir.reset();
+    GameSettings settings{{{"cpu_cores", std::uint32_t{4}}, {"cpu_frequency_mhz", std::uint32_t{1500}}}};
+    SaveGameSettings(directory, settings);
+    const auto plan = BuildLaunchPlan(cli, tree.path, entry, {});
+    for (const auto& [flag, value] : {std::pair{"--cpu-cores", "4"}, std::pair{"--cpu-frequency-mhz", "1500"}}) {
+        const auto found = std::find(plan.argv.begin(), plan.argv.end(), flag);
+        REQUIRE(found != plan.argv.end());
+        REQUIRE(std::next(found) != plan.argv.end());
+        CHECK(*std::next(found) == value);
+    }
+    settings.values["cpu_cores"] = std::uint32_t{33};
+    CHECK_THROWS(ValidateGameSettings(settings));
+    settings.values["cpu_cores"] = std::uint32_t{1};
+    settings.values["cpu_frequency_mhz"] = std::uint32_t{0};
+    CHECK_THROWS(ValidateGameSettings(settings));
+}
+
+TEST_CASE("BND-43 GUI persists optional execution limits independently of nominal frequency") {
+    using namespace ogplay::frontend;
+    TemporaryDirectory tree;
+    const auto cli = tree.path / "ogplay", directory = tree.path / "entry";
+    Write(cli, "exe"); Write(directory / "game.apk", "apk");
+    auto entry = Entry(directory, {}); entry.metadata->external_dir.reset();
+    GameSettings settings{{{"cpu_limit_parallelism", true}, {"cpu_max_mticks_per_second", std::uint32_t{20}}}};
+    SaveGameSettings(directory, settings);
+    const auto plan = BuildLaunchPlan(cli, tree.path, entry, {});
+    CHECK(std::find(plan.argv.begin(), plan.argv.end(), "--cpu-limit-parallelism") != plan.argv.end());
+    const auto rate = std::find(plan.argv.begin(), plan.argv.end(), "--cpu-max-mticks-per-second");
+    REQUIRE(rate != plan.argv.end()); REQUIRE(std::next(rate) != plan.argv.end());
+    CHECK(*std::next(rate) == "20");
+    settings.values["cpu_max_mticks_per_second"] = std::uint32_t{10001};
+    CHECK_THROWS(ValidateGameSettings(settings));
+    SaveGameSettings(directory, {});
+    const auto defaults = BuildLaunchPlan(cli, tree.path, entry, {}).argv;
+    CHECK(std::find(defaults.begin(), defaults.end(), "--cpu-limit-parallelism") == defaults.end());
+    CHECK(std::find(defaults.begin(), defaults.end(), "--cpu-max-mticks-per-second") == defaults.end());
 }
 
 TEST_CASE("GUI launch tracker rejects duplicates and returns exact exits") {

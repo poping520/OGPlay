@@ -1,10 +1,13 @@
 #include "catalog.h"
+#include <stdexcept>
 
 namespace ogplay::runtime::dexvm {
 
 std::vector<IntrinsicClassDecl> CoreIntrinsicCatalog(
     CoreIntrinsicServices services) {
     using namespace intrinsics;
+    if (services.cpu_cores < 1 || services.cpu_cores > 32)
+        throw std::invalid_argument("guest CPU requires 1..32 cores");
     std::vector<IntrinsicClassDecl> catalog{
         Declare_java_lang_Object(),
         Declare_java_lang_ClassLoader(services),
@@ -22,7 +25,7 @@ std::vector<IntrinsicClassDecl> CoreIntrinsicCatalog(
         Declare_java_lang_System(services),
         Declare_java_io_PrintStream(),
         Declare_java_lang_Math(),
-        Declare_java_lang_Runtime(),
+        Declare_java_lang_Runtime(services),
         Declare_libcore_io_IoUtils(),
         Declare_java_lang_Class(services),
         Declare_java_lang_reflect_AnnotatedElement(),

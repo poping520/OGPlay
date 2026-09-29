@@ -83,6 +83,19 @@ LaunchPlan BuildLaunchPlan(const std::filesystem::path& cli_executable,
         plan.argv.push_back(PathUtf8(*entry.metadata->external_dir));
     }
     const auto supersample = std::get<std::uint32_t>(GuiSetting(config, "supersample"));
+    if (std::get<bool>(EffectiveGameSetting(settings, global, entry, "cpu_limit_parallelism")))
+        plan.argv.push_back("--cpu-limit-parallelism");
+    const auto max_mticks = std::get<std::uint32_t>(EffectiveGameSetting(settings, global, entry, "cpu_max_mticks_per_second"));
+    if (max_mticks != 0) {
+        plan.argv.push_back("--cpu-max-mticks-per-second");
+        plan.argv.push_back(std::to_string(max_mticks));
+    }
+    for (const auto& [key, option] : {std::pair{"cpu_cores", "--cpu-cores"},
+                                    std::pair{"cpu_frequency_mhz", "--cpu-frequency-mhz"}}) {
+        plan.argv.push_back(option);
+        plan.argv.push_back(std::to_string(std::get<std::uint32_t>(
+            EffectiveGameSetting(settings, global, entry, key))));
+    }
     if (supersample != 1) { plan.argv.push_back("--supersample"); plan.argv.push_back(std::to_string(supersample)); }
     const auto interpreter = std::get<std::string>(GuiSetting(config, "interpreter"));
     if (interpreter != "profile") { plan.argv.push_back("--dexvm-interpreter"); plan.argv.push_back(interpreter); }

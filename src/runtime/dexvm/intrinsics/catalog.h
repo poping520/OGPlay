@@ -54,7 +54,7 @@ Declare_java_lang_Thread_UncaughtExceptionHandler();
     const CoreIntrinsicServices& services);
 [[nodiscard]] IntrinsicClassDecl Declare_java_io_PrintStream();
 [[nodiscard]] IntrinsicClassDecl Declare_java_lang_Math();
-[[nodiscard]] IntrinsicClassDecl Declare_java_lang_Runtime();
+[[nodiscard]] IntrinsicClassDecl Declare_java_lang_Runtime(const CoreIntrinsicServices& services);
 [[nodiscard]] IntrinsicClassDecl Declare_libcore_io_IoUtils();
 [[nodiscard]] IntrinsicClassDecl Declare_java_lang_Class(
     const CoreIntrinsicServices& services);

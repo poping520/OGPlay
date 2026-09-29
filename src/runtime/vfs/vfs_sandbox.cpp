@@ -72,8 +72,10 @@ bool VirtualFileSystem::Impl::IsDirectoryLocked(const std::string& path) const {
     if (directories_.contains(path)) return true;
     auto prefix = path;
     prefix.push_back('/');
-    const auto file = files_.lower_bound(prefix);
-    if (file != files_.end() && file->first.starts_with(prefix)) return true;
+    for (auto file = files_.lower_bound(prefix);
+         file != files_.end() && file->first.starts_with(prefix); ++file) {
+        if (!file->second->generated || file->second->generated->active) return true;
+    }
     const auto directory = directories_.lower_bound(prefix);
     return directory != directories_.end() && directory->starts_with(prefix);
 }

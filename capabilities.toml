@@ -893,7 +893,12 @@ note = "M8 WU-M8-002 将 ARM32 RegisterNatives/UnregisterNatives 以整批预检
 [runtime.jni_guest_instance_fields]
 status = "complete"
 test = "tests/runtime/jni_guest_instance_calls_tests.cpp; tests/runtime/jni_guest_bindings_tests.cpp"
-note = "M8 WU-M8-003 绑定 GetFieldID 与 Object/Boolean/Byte/Char/Short/Int/Long/Float/Double 的 9 对 instance getter/setter 共 19 槽；receiver 先经当前 JNIEnv resolve 再由 JniGuestObjectRegistry 取 class，field ID/descriptor/kind 与 static 严格分离，long/double 遵循 A32 soft-float word-pair 与对齐栈 ABI。DVM-89 将 DEX 自有字段发布到同一 registry，并让 JNI instance/static 访问与解释器共享对象槽/linker static storage；引用值保持 VmObjectRef 身份并按调用线程发布 local reference。不含 reflection field 与 ID 缓存失效语义"
+note = "M8 WU-M8-003 绑定 GetFieldID 与 Object/Boolean/Byte/Char/Short/Int/Long/Float/Double 的 9 对 instance getter/setter 共 19 槽；receiver 先经当前 JNIEnv resolve 再由 JniGuestObjectRegistry 取 class，field ID/descriptor/kind 与 static 严格分离，long/double 遵循 A32 soft-float word-pair 与对齐栈 ABI。DVM-89 将 DEX 自有字段发布到同一 registry，并让 JNI instance/static 访问与解释器共享对象槽/linker static storage；引用值保持 VmObjectRef 身份并按调用线程发布 local reference。反射转换见 jni_guest_reflection；不含跨 VM 的 ID 缓存失效语义"
+
+[runtime.jni_guest_reflection]
+status = "complete"
+test = "tests/runtime/native_library_loader_tests.cpp: DVM-200; tests/runtime/jni_guest_bindings_tests.cpp; tests/dexvm/android_value_tests.cpp: DVM-143"
+note = "DVM-200：From/ToReflectedMethod/Field 四槽复用 JniEnvironment 显式 hooks、ReflectionRuntime 和现有 registry 成员 ID，支持 Method/Constructor、实例/静态及继承成员。Method 按完整 descriptor 定向查找，不解析无关方法的缺失类型；不另建成员状态或暴露宿主指针。返回对象属于调用线程 local frame，ID 不拥有 wrapper；非法引用/类型/ID/static 标志及无后端明确失败，teardown 清除 hooks。双解释器真实 guest ABI、字段访问/方法调用、GC/local-global 引用和生命周期已受检。"
 
 [runtime.jni_guest_utf16_strings]
 status = "complete"

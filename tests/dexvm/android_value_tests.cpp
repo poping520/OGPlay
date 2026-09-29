@@ -3951,6 +3951,12 @@ TEST_CASE("DVM-143 method lookup ignores unrelated unavailable signature types")
                  VmValue::Ref(VmObjectRef{})});
         };
 
+        const auto exact = f.vm.Reflection().FindDeclaredMethodByDescriptor(
+            f.linker.ResolveDescriptor("Ltest/SelectiveLookup;"), "wanted", "()I");
+        REQUIRE(exact.has_value());
+        CHECK(f.linker.Method(exact->method).descriptor == "()I");
+        CHECK_FALSE(f.vm.Reflection().FindDeclaredMethodByDescriptor(
+            exact->declaring_class, "wanted", "()J").has_value());
         const auto public_method = lookup("getMethod");
         REQUIRE_MESSAGE(!public_method.exception.IsValid(),
                         public_method.exception_message);

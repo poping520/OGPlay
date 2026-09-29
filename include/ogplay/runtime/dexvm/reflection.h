@@ -67,6 +67,9 @@ public:
     [[nodiscard]] std::optional<ReflectMethodMeta> FindDeclaredMethod(
         DexClassId declaring_class, std::string_view name,
         std::span<const DexClassId> parameter_types);
+    // JNI IDs select the exact descriptor, including the return type.
+    [[nodiscard]] std::optional<ReflectMethodMeta> FindDeclaredMethodByDescriptor(
+        DexClassId declaring_class, std::string_view name, std::string_view descriptor);
     [[nodiscard]] std::optional<ReflectMethodMeta> FindPublicMethod(
         DexClassId java_class, std::string_view name,
         std::span<const DexClassId> parameter_types);

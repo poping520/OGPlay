@@ -1,5 +1,9 @@
 # 子模块：runtime/jni
 
+JNI 反射转换由 JniEnvironment 的显式 hooks 接入 VM owner。四个 From/ToReflected
+入口复用引用表及 pending exception 约束；无后端明确失败。回调在锁外调用，owner
+必须在停止所有调用后清除 hooks；返回对象由 owner 发布为当前线程 local reference。
+
 ## 职责
 
 实现完整 JNI/JavaVM ABI 目录及 M3 常用行为，包括类型、引用、异常、签名、Modified UTF-8、

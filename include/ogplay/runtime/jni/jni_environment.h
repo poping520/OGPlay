@@ -81,6 +81,14 @@ struct JniThrowableMetadata final {
     bool operator==(const JniThrowableMetadata&) const = default;
 };
 
+// Installed by the VM owner; callbacks publish reflected results as local refs.
+struct JniReflectionHooks final {
+    std::function<JniMethodId(std::uint64_t, JniReference)> from_method;
+    std::function<JniFieldId(std::uint64_t, JniReference)> from_field;
+    std::function<JniReference(std::uint64_t, JniReference, JniMethodId, bool)> to_method;
+    std::function<JniReference(std::uint64_t, JniReference, JniFieldId, bool)> to_field;
+};
+
 class JniEnvironment final {
 public:
     explicit JniEnvironment(JniReferenceLimits limits = {});
@@ -140,10 +148,19 @@ public:
     [[nodiscard]] JniMonitorSnapshot MonitorSnapshot(
         JniObjectIdentity object) const;
     void SetMonitorHooks(JniMonitorHooks hooks);
+    void SetReflectionHooks(JniReflectionHooks hooks);
+    [[nodiscard]] JniMethodId FromReflectedMethod(std::uint64_t thread, JniReference object);
+    [[nodiscard]] JniFieldId FromReflectedField(std::uint64_t thread, JniReference object);
+    [[nodiscard]] JniReference ToReflectedMethod(std::uint64_t thread, JniReference owner,
+                                                JniMethodId id, bool is_static);
+    [[nodiscard]] JniReference ToReflectedField(std::uint64_t thread, JniReference owner,
+                                               JniFieldId id, bool is_static);
 
 private:
     void RequireAllowed(std::uint64_t thread_id, const char* slot_name) const;
 
+    mutable std::mutex reflection_hooks_mutex_;
+    JniReflectionHooks reflection_hooks_;
     JniReferenceTable references_;
     JniExceptionState exceptions_;
     JniMonitorTable monitors_;

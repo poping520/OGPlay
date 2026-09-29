@@ -18,6 +18,8 @@ Bionic、syscall、execution 或 integration。
 
 - 233 个 JNIEnv 槽与 8 个 JavaVM 槽的索引稳定。
 - 未绑定槽记账并 trap；引用类别、线程作用域和 pending exception gate 必须严格检查。
+- 按 API19 CheckJNI，pending exception 下允许 Push/PopLocalFrame，原异常身份不变；
+  NewGlobalRef 仍受严格门禁，不以清除异常绕过检查。
 - 已解析方法缺少 implementation handler 时，错误必须携带规范 implementation ID，禁止
   丢失定位所需的注册表身份。
 - guest handle 保持固定宽度，不暴露宿主指针。

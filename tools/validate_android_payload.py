@@ -348,6 +348,7 @@ def validate(root: Path) -> None:
                 "src/guest/crypto/trust_jni.c",
                 "src/guest/crypto/tls_jni.c",
                 "src/guest/icu/icu_jni.c",
+                "src/guest/zip/crc32_jni.c",
                 "src/guest/icu/icu51_capi.h",
             ]
             if not isinstance(build, dict) or build.get("ndk_revision") != "25.2.9519653" or \
@@ -372,7 +373,7 @@ def validate(root: Path) -> None:
             expected_inputs = {
                 path: libraries[path]["sha256"]
                 for path in ("lib/libssl.so", "lib/libcrypto.so", "lib/libicuuc.so",
-                             "lib/libicui18n.so")
+                             "lib/libicui18n.so", "lib/libz.so")
             }
             icu = _mapping(manifest.get("icu"), "icu")
             expected_inputs[icu["path"]] = icu["sha256"]

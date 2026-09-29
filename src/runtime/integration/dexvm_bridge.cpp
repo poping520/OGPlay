@@ -828,6 +828,42 @@ public:
     }
   }
 
+  // Read stored exception facts only: diagnostics must not execute guest getCause/toString.
+  [[nodiscard]] std::string ExceptionChain(dx::VmObjectRef throwable) {
+    std::string rendered;
+    std::unordered_set<std::uint32_t> seen;
+    try {
+      for (unsigned depth = 0; throwable.IsValid() && depth < 8; ++depth) {
+        if (!seen.insert(throwable.Value()).second) {
+          rendered += " | cause cycle";
+          return rendered;
+        }
+        if (depth != 0) rendered += " | caused by ";
+        const auto type = model->ObjectClass(throwable);
+        rendered += linker.Class(type).descriptor;
+        const auto message = vm->ThrowableMessage(throwable);
+        if (message.IsValid()) rendered += ": " + vm->StringUtf8(message).substr(0, 512);
+        if (rendered.size() > 4096) {
+          rendered.resize(4096);
+          return rendered + " [truncated]";
+        }
+        // API19 ClassNotFoundException overrides getCause using its own 'ex' field.
+        const auto cnfe = linker.FindClass("Ljava/lang/ClassNotFoundException;");
+        if (cnfe && linker.IsAssignable(*cnfe, type)) {
+          const auto field = linker.FindFieldRecursive(*cnfe, "ex", "Ljava/lang/Throwable;");
+          if (!field) return rendered + " [cause unavailable]";
+          throwable = dx::VmObjectRef(model->InstanceSlots(throwable)[linker.Field(*field).slot].bits);
+        } else {
+          throwable = vm->ThrowableCause(throwable);
+        }
+      }
+      if (throwable.IsValid()) rendered += " | cause depth limit";
+    } catch (...) {
+      rendered += " [exception details unavailable]";
+    }
+    return rendered;
+  }
+
   [[nodiscard]] JniValue InvokeInterpreted(const dx::VmMethodId method_id,
                                            const JniInvocation &invocation) {
         const auto& method = linker.Method(method_id);
@@ -850,8 +886,7 @@ public:
             if (logger != nullptr) {
                 std::string rendered =
             linker.Class(method.owner).descriptor + "." + method.name +
-            " threw " + linker.Class(outcome.exception_class).descriptor +
-            ": " + outcome.exception_message;
+            " threw " + ExceptionChain(outcome.exception);
                 for (const auto& entry : outcome.exception_stack) {
                     rendered += " | at " + entry.class_descriptor + "." +
                       entry.method_name + " pc " + std::to_string(entry.pc);
@@ -1110,13 +1145,20 @@ public:
             }
         } catch (const AndroidGuestCallSessionError& error) {
             execution_lock.ReacquireAfterBlocking(execution_depth);
+            std::string pending_details;
+            if (const auto pending = environment.PendingExceptionMetadata(process_thread)) {
+                if (pending->throwable.domain == JniObjectDomain::dex_vm) {
+                    pending_details = "\n  pending_exception=" +
+                        ExceptionChain(model->FindIdentity(pending->throwable));
+                }
+            }
             throw AndroidGuestProcessError(
                 "DexVM native invocation failed:\n"
                 "  class=" + class_name + "\n  method=" + method.name +
                 "\n  descriptor=" + method.descriptor +
                 "\n  guest_thread=" + std::to_string(process_thread) +
                 "\n  context_token=" +
-                std::to_string(frame.context_token) +
+                std::to_string(frame.context_token) + pending_details +
                 "\n  cause:\n" + IndentDiagnostic(error.what(), "    "));
         } catch (...) {
             execution_lock.ReacquireAfterBlocking(execution_depth);

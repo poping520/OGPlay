@@ -29,6 +29,7 @@ Asphalt 5（pilot title）删除 profile 全部 `native_call` 与 `[[java.class]
 | WU | 一句话目标 | 状态 |
 | --- | --- | --- |
 | [DVM-200](DVM-200.md) | JNI 反射成员双向转换 | 有界实现完成 |
+| [DVM-201](DVM-201.md) | CRC32 BootDex 与 guest zlib | 有界实现完成 |
 | [DVM-199](DVM-199.md) | SecretKey 公开类型与 PKCS12 SecretKeyFactory | 有界实现完成 |
 | [DVM-198](DVM-198.md) | BootDex 系统资源随 ROM 自动绑定 | 有界实现完成 |
 | [DVM-196](DVM-196.md) | 进程逻辑输入设备查询 | 有界实现完成 |

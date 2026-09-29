@@ -11,7 +11,7 @@
 namespace ogplay::runtime {
 namespace {
 
-constexpr std::array<std::string_view, 24> kPendingExceptionAllowedCalls{
+constexpr std::array<std::string_view, 25> kPendingExceptionAllowedCalls{
     "ExceptionOccurred",
     "ExceptionDescribe",
     "ExceptionClear",
@@ -36,6 +36,7 @@ constexpr std::array<std::string_view, 24> kPendingExceptionAllowedCalls{
     "GetObjectRefType",
     "GetJavaVM",
     "PopLocalFrame",
+    "PushLocalFrame",
 };
 
 [[nodiscard]] bool AllowedWithPendingException(const JniSlot slot) {

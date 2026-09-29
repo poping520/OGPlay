@@ -949,3 +949,58 @@
 .registers 4
     return-void
 .end method
+
+# Platform callback interfaces must link without constructing the enclosing service.
+.class public Lfixture/SpeechCallbacks;
+.super Ljava/lang/Object;
+.implements Landroid/speech/tts/TextToSpeech$OnInitListener;
+.implements Landroid/speech/tts/TextToSpeech$OnUtteranceCompletedListener;
+.field public status:I
+.field public utterance:Ljava/lang/String;
+.method static synthetic accessService(Lfixture/SpeechCallbacks;)Landroid/speech/tts/TextToSpeech;
+.registers 1
+    const/4 v0, 0
+    return-object v0
+.end method
+.method public constructor <init>()V
+.registers 1
+    invoke-direct {v0}, Ljava/lang/Object;-><init>()V
+    return-void
+.end method
+.method public onInit(I)V
+.registers 2
+    iput v1, v0, Lfixture/SpeechCallbacks;->status:I
+    return-void
+.end method
+.method public onUtteranceCompleted(Ljava/lang/String;)V
+.registers 2
+    iput-object v1, v0, Lfixture/SpeechCallbacks;->utterance:Ljava/lang/String;
+    return-void
+.end method
+.method public static exercise()I
+.registers 3
+    new-instance v0, Lfixture/SpeechCallbacks;
+    invoke-direct {v0}, Lfixture/SpeechCallbacks;-><init>()V
+    const/16 v1, 42
+    invoke-interface {v0, v1}, Landroid/speech/tts/TextToSpeech$OnInitListener;->onInit(I)V
+    const-string v1, "utterance"
+    invoke-interface {v0, v1}, Landroid/speech/tts/TextToSpeech$OnUtteranceCompletedListener;->onUtteranceCompleted(Ljava/lang/String;)V
+    iget-object v2, v0, Lfixture/SpeechCallbacks;->utterance:Ljava/lang/String;
+    if-ne v1, v2, :failed
+    iget v1, v0, Lfixture/SpeechCallbacks;->status:I
+    return v1
+:failed
+    const/4 v1, -1
+    return v1
+.end method
+
+.class public Lfixture/MissingCallbackImplementation;
+.super Ljava/lang/Object;
+.implements Lfixture/AbsentCallback;
+
+.class public Lfixture/ExceptionProbe;
+.super Ljava/lang/Object;
+.method public static raise(Ljava/lang/Throwable;)V
+.registers 1
+    throw v0
+.end method

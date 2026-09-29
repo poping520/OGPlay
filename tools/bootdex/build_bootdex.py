@@ -396,6 +396,23 @@ def compile_expected_class_names(
     return expected_class_names(recipe, custom_classes)
 
 
+def audit_crc32(dex_bytes: bytes) -> None:
+    """Class-wide guest admission must not silently acquire new native methods."""
+    dex = dex_survey_lib.parse_dex(dex_bytes)
+    observed = {}
+    for parsed_class in dex.classes:
+        if dex.type_name(parsed_class.type_index) != "Ljava/util/zip/CRC32;":
+            continue
+        for method in parsed_class.direct_methods + parsed_class.virtual_methods:
+            if method.access_flags & dex_survey_lib.ACC_NATIVE:
+                _, name, descriptor = dex.method_signature(method.method_index)
+                observed[name + descriptor] = method.access_flags
+    # ACC_PRIVATE | ACC_NATIVE; neither method is static.
+    expected = {"updateImpl([BIIJ)J": 0x102, "updateByteImpl(BJ)J": 0x102}
+    if observed != expected:
+        raise BuildError(f"CRC32 private instance native signature drift: {observed}")
+
+
 def audit_native_crypto(dex_bytes: bytes) -> dict:
     dex = dex_survey_lib.parse_dex(dex_bytes)
     observed = set()
@@ -1034,6 +1051,7 @@ SSL_SHA256 = "8b1a7d20e405ff73edcaad592cf846f8e28b78bb446874208d65990b16d79734"
 ICUUC_SHA256 = "1e47c2d57db1573ac4f6c09a8b1b815ed89a72d0686c032d0916644a44e9acfd"
 ICUI18N_SHA256 = "08596ab1ed097f953cc681e4cc61e69c1cea5f639e9014f5789265923ccd5149"
 ICU_DATA_SHA256 = "8275408cb7161606c9a1b55edf12df538a7110ad53103a00f8ac7ba5b092a96f"
+ZLIB_SHA256 = "c2f0143900e491639a0ceac70d1d24a008ab719ec8283465acb4449f2a83c48e"
 NDK_REVISION = "25.2.9519653"
 
 def build_guest_jni() -> int:
@@ -1043,6 +1061,7 @@ def build_guest_jni() -> int:
         "lib/libssl.so": SSL_SHA256,
         "lib/libicuuc.so": ICUUC_SHA256,
         "lib/libicui18n.so": ICUI18N_SHA256,
+        "lib/libz.so": ZLIB_SHA256,
         "icu/icudt51l.dat": ICU_DATA_SHA256,
     }
     for relative, expected in inputs.items():
@@ -1070,7 +1089,8 @@ def build_guest_jni() -> int:
     sources = [ROOT / "src/guest/crypto/crypto_jni.c",
                ROOT / "src/guest/crypto/trust_jni.c",
                ROOT / "src/guest/crypto/tls_jni.c",
-               ROOT / "src/guest/icu/icu_jni.c"]
+               ROOT / "src/guest/icu/icu_jni.c",
+               ROOT / "src/guest/zip/crc32_jni.c"]
     source_inputs = [*sources, ROOT / "src/guest/icu/icu51_capi.h"]
     for source in source_inputs:
         if not source.is_file():
@@ -1091,6 +1111,7 @@ def build_guest_jni() -> int:
              str(MANIFEST.parent / "lib/libcrypto.so"),
              str(MANIFEST.parent / "lib/libicui18n.so"),
              str(MANIFEST.parent / "lib/libicuuc.so"),
+             str(MANIFEST.parent / "lib/libz.so"),
              str(MANIFEST.parent / "lib/libc.so"), "-o", str(library)])
         dynamic = subprocess.run([str(readelf), "-h", "-d", str(library)], check=True,
                                  text=True, stdout=subprocess.PIPE).stdout
@@ -1099,7 +1120,7 @@ def build_guest_jni() -> int:
         if any(value not in dynamic for value in required):
             raise BuildError("guest JNI ELF ABI or SONAME check failed")
         needed = re.findall(r"Shared library: \[([^]]+)\]", dynamic)
-        if needed != ["libssl.so", "libcrypto.so", "libicui18n.so", "libicuuc.so", "libc.so"]:
+        if needed != ["libssl.so", "libcrypto.so", "libicui18n.so", "libicuuc.so", "libz.so", "libc.so"]:
             raise BuildError(f"unexpected guest JNI DT_NEEDED: {needed}")
         return library.read_bytes(), needed
     with tempfile.TemporaryDirectory() as a, tempfile.TemporaryDirectory() as b:
@@ -1159,6 +1180,7 @@ def main() -> int:
         if arguments.mode == "build-guest-jni":
             return build_guest_jni()
         jar, dex, recipe = build()
+        audit_crc32(dex)
         native_crypto = audit_native_crypto(dex)
         manifest = manifest_bytes(boot_metadata(jar, dex, recipe))
         if arguments.mode == "build":

@@ -349,6 +349,7 @@ struct ApplicationProcess final {
     ogplay::core::CapabilityLedger ledger;
     std::unique_ptr<ogplay::runtime::DexVmGuestBridge> bridge;
     std::size_t globals_before_bridge{};
+    ogplay::core::Logger logger;
 
     explicit ApplicationProcess(
         ogplay::runtime::dexvm::InterpreterBackend backend =
@@ -388,7 +389,7 @@ struct ApplicationProcess final {
         globals_before_bridge = session->Environment().GlobalReferenceCount();
         bridge = std::make_unique<ogplay::runtime::DexVmGuestBridge>(
             *session, ReadDexFixture("application.dex"), catalog, context,
-            ledger, nullptr, ogplay::runtime::DexVmBridgeConfig{
+            ledger, &logger, ogplay::runtime::DexVmBridgeConfig{
                 .interpreter = {.backend = backend}}, ogplay::test::ReadBootDex());
         context->threads = &bridge->Threads();
     }
@@ -1183,6 +1184,98 @@ TEST_CASE("JNI native-only attachments detach without a DexVM monitor context") 
             CHECK(java_vm.GetEnv(5, kJniVersion1_6).status == JniStatus::detached);
             CHECK(java_vm.DetachCurrentThread(5) == JniStatus::detached);
         }
+    }
+}
+
+TEST_CASE("BootDex speech callbacks link and JNI diagnostics retain nested causes") {
+    using namespace ogplay;
+    using namespace runtime;
+    using namespace runtime::dexvm;
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        ApplicationProcess f(backend);
+        auto& vm = f.bridge->Vm();
+        auto& linker = vm.Linker();
+        auto& env = f.session->Environment();
+        auto& classes = f.session->Classes();
+        const auto cls = *classes.FindClass("java/lang/Class");
+        const auto for_name = *classes.GetMethodId(cls, "forName", "(Ljava/lang/String;)Ljava/lang/Class;", true);
+        const auto lookup = [&](const char* name) {
+            const std::array<JniValue, 1> args{f.bridge->PublishLocal(vm.NewStringUtf8(name))};
+            return std::get<JniReference>(f.session->Invocations().InvokeStatic(
+                1, cls, for_name, args, JniArgumentSource::value_array));
+        };
+        CHECK_FALSE(lookup("fixture.SpeechCallbacks").IsNull());
+        CHECK_FALSE(env.ExceptionCheck(1));
+        const auto callback = linker.ResolveDescriptor("Lfixture/SpeechCallbacks;");
+        for (const auto descriptor : {"Landroid/speech/tts/TextToSpeech$OnInitListener;",
+                                      "Landroid/speech/tts/TextToSpeech$OnUtteranceCompletedListener;"}) {
+            const auto type = linker.ResolveDescriptor(descriptor);
+            CHECK(linker.Class(type).is_boot_dex);
+            CHECK(linker.IsAssignable(type, callback));
+        }
+        const auto speech = linker.ResolveDescriptor("Landroid/speech/tts/TextToSpeech;");
+        CHECK(linker.Class(speech).is_boot_dex);
+        CHECK_FALSE(linker.Class(speech).is_intrinsic);
+        const auto class_object = vm.Model().ClassObject(callback);
+        const auto methods_slot = linker.FindVtableIndex(
+            vm.Model().ObjectClass(class_object), "getDeclaredMethods", "()[Ljava/lang/reflect/Method;");
+        REQUIRE(methods_slot.has_value());
+        const auto methods_result = vm.Call(
+            linker.Class(vm.Model().ObjectClass(class_object)).vtable[*methods_slot],
+            std::array{VmValue::Ref(class_object)});
+        REQUIRE_FALSE(methods_result.exception.IsValid());
+        const auto methods_root = vm.ProtectReferences(std::array{methods_result.value.ref});
+        CHECK(vm.Model().ArrayLength(methods_result.value.ref) == 4);
+        bool found_service = false;
+        for (runtime::JniSize i = 0; i < vm.Model().ArrayLength(methods_result.value.ref); ++i) {
+            const auto method_object = vm.Model().GetObjectElement(methods_result.value.ref, i);
+            const auto& metadata = vm.Reflection().MethodMetadata(method_object);
+            if (linker.Method(metadata.method).name != "accessService") continue;
+            found_service = true;
+            CHECK(metadata.return_type == speech);
+            CHECK(metadata.parameter_types == std::vector<DexClassId>{callback});
+            CHECK((metadata.access_flags & kAccSynthetic) != 0);
+        }
+        CHECK(found_service);
+        const auto exercise = *linker.FindDirectMethod(callback, "exercise", "()I");
+        const auto result = vm.Call(exercise, {});
+        REQUIRE_FALSE(result.exception.IsValid());
+        CHECK(result.value.AsInt() == 42);
+
+        CHECK(lookup("fixture.MissingCallbackImplementation").IsNull());
+        const auto pending = env.PendingExceptionMetadata(1);
+        REQUIRE(pending.has_value());
+        auto records = f.logger.Snapshot(core::LogLevel::warn, "runtime.dexvm");
+        REQUIRE_FALSE(records.empty());
+        CHECK(records.back().message.find("ClassNotFoundException") != std::string::npos);
+        CHECK(records.back().message.find("caused by Ljava/lang/LinkageError;") != std::string::npos);
+        CHECK(records.back().message.find("Lfixture/AbsentCallback;") != std::string::npos);
+        env.PushLocalFrame(1, 2);
+        const auto occurred = env.ExceptionOccurred(1);
+        CHECK_FALSE(occurred.IsNull());
+        CHECK(env.PendingExceptionMetadata(1)->throwable == pending->throwable);
+        CHECK_THROWS_AS(static_cast<void>(env.NewGlobalRef(1, occurred)), JniExceptionError);
+        CHECK(env.PopLocalFrame(1).IsNull());
+        CHECK(env.PendingExceptionMetadata(1)->throwable == pending->throwable);
+        env.ExceptionClear(1);
+
+        // Diagnostic traversal is bounded even for legal multi-object cause cycles.
+        const auto first = vm.MakeThrowable("Ljava/lang/IllegalStateException;", "first");
+        const auto first_root = vm.ProtectReferences(std::array{first});
+        const auto second = vm.MakeThrowable("Ljava/lang/IllegalArgumentException;", "second");
+        const auto second_root = vm.ProtectReferences(std::array{second});
+        vm.InitThrowableCause(first, second);
+        vm.InitThrowableCause(second, first);
+        const auto probe = *classes.FindClass("fixture/ExceptionProbe");
+        const auto raise = *classes.GetMethodId(probe, "raise", "(Ljava/lang/Throwable;)V", true);
+        const std::array<JniValue, 1> args{f.bridge->PublishLocal(first)};
+        static_cast<void>(f.session->Invocations().InvokeStatic(
+            1, probe, raise, args, JniArgumentSource::value_array));
+        records = f.logger.Snapshot(core::LogLevel::warn, "runtime.dexvm");
+        CHECK(records.back().message.find("cause cycle") != std::string::npos);
+        CHECK(records.back().message.size() < 4096);
+        CHECK(env.PendingExceptionMetadata(1)->throwable == vm.Model().ToIdentity(first));
+        env.ExceptionClear(1);
     }
 }
 
@@ -2139,6 +2232,184 @@ TEST_CASE("run-apk delegates application startup and never selects an ELF root")
     const auto gui = read_source("/src/frontend/gui/import.cpp");
     CHECK(gui.find("SelectApkCompatibilityProfile") != std::string::npos);
     CHECK(gui.find("MatchApkTitleProfile") == std::string::npos);
+}
+
+TEST_CASE("DVM-201 CRC32 uses BootDex state and real guest zlib on both backends") {
+    using namespace ogplay;
+    using namespace runtime::dexvm;
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        CAPTURE(backend == InterpreterBackend::threaded ? "threaded" : "switch");
+        runtime::VirtualFileSystem filesystem;
+        core::CapabilityLedger ledger;
+        core::Logger logger;
+        std::vector<std::vector<std::byte>> contents;
+        std::vector<runtime::BionicModuleSource> libraries;
+        for (const auto name : {"libc.so", "libm.so", "libdl.so", "libstdc++.so", "libz.so",
+                               "libcrypto.so", "libssl.so", "libgabi++.so", "libicui18n.so",
+                               "libicuuc.so", "libstlport.so", "libogplay_jni.so"}) {
+            contents.push_back(ReadPayloadBytes(std::string("lib/") + name));
+            libraries.push_back({name, contents.back()});
+        }
+        auto context = std::make_shared<runtime::DexVmAndroidContext>();
+        context->apk_bytes = {std::byte{0x50}, std::byte{0x4b}, std::byte{3}, std::byte{4}};
+        session::AndroidAppProcessRequest request;
+        request.manifest = AppManifest("android.app.Activity");
+        request.system_libraries = libraries;
+        request.dex_bytes = ReadDexFixture("crc32.dex");
+        request.icu_data = ReadPayloadBytes("icu/icudt51l.dat");
+        request.boot_dex_bytes = test::ReadBootDex();
+        request.context = context;
+        request.dexvm.interpreter.backend = backend;
+        request.surface_width = 64;
+        request.surface_height = 36;
+        request.maximum_ticks_per_call = UINT64_C(100000000);
+#if defined(_WIN32)
+        request.backend = {gles::AngleRenderer::d3d11, gles::AngleDevice::hardware};
+#elif defined(__APPLE__)
+        request.backend = {gles::AngleRenderer::metal, gles::AngleDevice::hardware};
+#else
+        request.backend = {gles::AngleRenderer::vulkan, gles::AngleDevice::hardware};
+#endif
+        request.filesystem = &filesystem;
+        request.ledger = &ledger;
+        request.logger = &logger;
+        auto app = session::AndroidAppProcess::Create(std::move(request));
+        auto& vm = app->DexVm().Vm();
+        auto& linker = vm.Linker();
+        const auto direct = [&](const char* owner, const char* name, const char* descriptor,
+                                std::vector<VmValue> arguments) {
+            const auto method = linker.FindDirectMethod(linker.ResolveDescriptor(owner), name, descriptor);
+            REQUIRE(method.has_value());
+            return vm.Call(*method, arguments);
+        };
+        const auto invoke_result = [&](VmObjectRef object, const char* name, const char* descriptor,
+                                       std::vector<VmValue> arguments) {
+            const auto type = vm.Model().ObjectClass(object);
+            const auto slot = linker.FindVtableIndex(type, name, descriptor);
+            REQUIRE(slot.has_value());
+            arguments.insert(arguments.begin(), VmValue::Ref(object));
+            return vm.Call(linker.Class(type).vtable[*slot], arguments);
+        };
+        const auto invoke = [&](VmObjectRef object, const char* name, const char* descriptor,
+                                std::vector<VmValue> arguments = {}) {
+            const auto outcome = invoke_result(object, name, descriptor, std::move(arguments));
+            REQUIRE_MESSAGE(!outcome.exception.IsValid(), outcome.exception_message);
+            return outcome.value;
+        };
+        const auto construct = [&](const char* owner, const char* descriptor = "()V",
+                                   std::vector<VmValue> arguments = {}) {
+            const auto object = vm.NewIntrinsicInstance(owner);
+            const auto root = vm.ProtectReferences(std::array{object});
+            arguments.insert(arguments.begin(), VmValue::Ref(object));
+            const auto outcome = direct(owner, "<init>", descriptor, std::move(arguments));
+            REQUIRE_MESSAGE(!outcome.exception.IsValid(), outcome.exception_message);
+            return object;
+        };
+        const auto byte_array = [&](const std::vector<std::byte>& data) {
+            const auto array = vm.Model().NewPrimitiveArray(linker.ResolveDescriptor("[B"),
+                runtime::JniPrimitiveKind::byte, static_cast<runtime::JniSize>(data.size()));
+            vm.Model().WriteByteRegion(array, 0, data);
+            return array;
+        };
+        const auto expect_exception = [&](const VmCallOutcome& result, const char* type) {
+            REQUIRE(result.exception.IsValid());
+            CHECK(linker.Class(result.exception_class).descriptor == type);
+        };
+        constexpr auto owner = "Ljava/util/zip/CRC32;";
+        const auto type = linker.ResolveDescriptor(owner);
+        linker.EnsureClassLinked(type);
+        CHECK(linker.Class(type).is_boot_dex);
+        CHECK_FALSE(linker.Class(type).is_intrinsic);
+        CHECK(linker.IsAssignable(linker.ResolveDescriptor("Ljava/util/zip/Checksum;"), type));
+        for (const auto method : linker.Class(type).own_virtual_methods)
+            CHECK(linker.Method(method).kind == MethodKind::interpreted);
+        for (const auto method : linker.Class(type).own_direct_methods)
+            CHECK(linker.Method(method).kind != MethodKind::intrinsic);
+
+        const auto crc = construct(owner);
+        const auto crc_root = vm.ProtectReferences(std::array{crc});
+        const auto other = construct(owner);
+        const auto other_root = vm.ProtectReferences(std::array{other});
+        const std::vector<std::byte> digits{std::byte{'1'}, std::byte{'2'}, std::byte{'3'},
+            std::byte{'4'}, std::byte{'5'}, std::byte{'6'}, std::byte{'7'}, std::byte{'8'}, std::byte{'9'}};
+        const auto input = byte_array(digits);
+        const auto input_root = vm.ProtectReferences(std::array{input});
+        CHECK(invoke(crc, "getValue", "()J").AsLong() == 0);
+        invoke(crc, "update", "([B)V", {VmValue::Ref(input)});
+        CHECK(invoke(crc, "getValue", "()J").AsLong() == INT64_C(0xcbf43926));
+        const auto empty = byte_array({});
+        const auto empty_root = vm.ProtectReferences(std::array{empty});
+        invoke(crc, "update", "([B)V", {VmValue::Ref(empty)});
+        invoke(crc, "update", "([BII)V", {VmValue::Ref(input), VmValue::Int(9), VmValue::Int(0)});
+        CHECK(invoke(crc, "getValue", "()J").AsLong() == INT64_C(0xcbf43926));
+        CHECK(invoke(other, "getValue", "()J").AsLong() == 0);
+        for (const auto byte : digits)
+            invoke(other, "update", "(I)V", {VmValue::Int(std::to_integer<int>(byte))});
+        CHECK(invoke(other, "getValue", "()J").AsLong() == INT64_C(0xcbf43926));
+        invoke(crc, "reset", "()V");
+        CHECK(invoke(crc, "getValue", "()J").AsLong() == 0);
+        invoke(crc, "update", "([BII)V", {VmValue::Ref(input), VmValue::Int(0), VmValue::Int(4)});
+        static_cast<void>(vm.CollectGarbage("crc32-incremental-state"));
+        invoke(crc, "update", "([BII)V", {VmValue::Ref(input), VmValue::Int(4), VmValue::Int(5)});
+        CHECK(invoke(crc, "getValue", "()J").AsLong() == INT64_C(0xcbf43926));
+
+        expect_exception(invoke_result(crc, "update", "([B)V", {VmValue::Ref(VmObjectRef{})}),
+                         "Ljava/lang/NullPointerException;");
+        expect_exception(invoke_result(crc, "update", "([BII)V",
+            {VmValue::Ref(VmObjectRef{}), VmValue::Int(0), VmValue::Int(0)}), "Ljava/lang/NullPointerException;");
+        for (const auto& [offset, count] : std::array<std::pair<int, int>, 5>{
+                 {{-1, 1}, {0, -1}, {8, 2}, {10, 0}, {1, INT32_MAX}}}) {
+            expect_exception(invoke_result(crc, "update", "([BII)V",
+                {VmValue::Ref(input), VmValue::Int(offset), VmValue::Int(count)}),
+                "Ljava/lang/ArrayIndexOutOfBoundsException;");
+        }
+        // Also exercise the native guard independently of the Java parameter checks.
+        const auto native_failure = [&](VmObjectRef array, int offset, int count, const char* expected) {
+            try {
+                // Direct native calls have no interpreted frame to convert VmJavaThrow.
+                const auto result = direct(owner, "updateImpl", "([BIIJ)J",
+                    {VmValue::Ref(crc), VmValue::Ref(array), VmValue::Int(offset), VmValue::Int(count), VmValue::Long(0)});
+                expect_exception(result, expected);
+            } catch (const VmJavaThrow& error) {
+                CHECK(error.descriptor == expected);
+            }
+        };
+        native_failure(input, 8, 2, "Ljava/lang/ArrayIndexOutOfBoundsException;");
+        native_failure(VmObjectRef{}, 0, 0, "Ljava/lang/NullPointerException;");
+        CHECK(invoke(crc, "getValue", "()J").AsLong() == INT64_C(0xcbf43926));
+        for (const auto value : {-1, 255, 511}) {
+            invoke(crc, "reset", "()V");
+            invoke(crc, "update", "(I)V", {VmValue::Int(value)});
+            CHECK(invoke(crc, "getValue", "()J").AsLong() == INT64_C(0xff000000));
+        }
+        // Independent host-zlib vector crosses three 4096-byte JNI chunks plus a tail.
+        std::vector<std::byte> large(12289);
+        for (std::size_t i = 0; i < large.size(); ++i) large[i] = static_cast<std::byte>(i & 255U);
+        const auto large_input = byte_array(large);
+        const auto large_root = vm.ProtectReferences(std::array{large_input});
+        invoke(crc, "reset", "()V");
+        invoke(crc, "update", "([B)V", {VmValue::Ref(large_input)});
+        CHECK(invoke(crc, "getValue", "()J").AsLong() == INT64_C(0x8ce380a7));
+        CHECK(invoke(other, "getValue", "()J").AsLong() == INT64_C(0xcbf43926));
+
+        const auto digest = construct("Lfixture/CrcDigest;");
+        const auto digest_root = vm.ProtectReferences(std::array{digest});
+        const auto output = construct("Ljava/io/ByteArrayOutputStream;");
+        const auto output_root = vm.ProtectReferences(std::array{output});
+        const auto stream = construct("Ljava/security/DigestOutputStream;",
+            "(Ljava/io/OutputStream;Ljava/security/MessageDigest;)V", {VmValue::Ref(output), VmValue::Ref(digest)});
+        const auto stream_root = vm.ProtectReferences(std::array{stream});
+        invoke(stream, "write", "(I)V", {VmValue::Int('1')});
+        invoke(stream, "write", "([BII)V", {VmValue::Ref(input), VmValue::Int(1), VmValue::Int(8)});
+        const auto sum = invoke(digest, "digest", "()[B").ref;
+        CHECK(vm.Model().ReadByteRegion(sum, 0, 4) ==
+            std::vector<std::byte>{std::byte{0xcb}, std::byte{0xf4}, std::byte{0x39}, std::byte{0x26}});
+        const auto written = invoke(output, "toByteArray", "()[B").ref;
+        CHECK(vm.Model().ReadByteRegion(written, 0, 9) == digits);
+        invoke(digest, "reset", "()V");
+        const auto reset = invoke(digest, "digest", "()[B").ref;
+        CHECK(vm.Model().ReadByteRegion(reset, 0, 4) == std::vector<std::byte>(4));
+    }
 }
 
 TEST_CASE("DVM-126 String.format delegates Locale formatting to API19 Formatter") {

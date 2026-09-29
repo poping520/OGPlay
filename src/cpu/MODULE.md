@@ -53,10 +53,15 @@
   访问不得进入直接快路，寄存器状态不得包含宿主指针。
 - `Run` 的 tick 预算和消费量必须确定且可测试。
 - 所有停止结果必须显式初始化指令、立即数和 fault 字段，跨编译器不得依赖聚合尾字段补零。
-- 未识别指令停在原 PC 并返回 `undefined_instruction`，禁止当作 NOP。
+- Dynarmic 指令能力缺口返回 `unsupported_instruction`，不是 guest 非法指令；其 fallback
+  保留原 PC，协处理器缺口保留当前 IT 及已执行效果，禁止当作 NOP。非法/不可预测编码
+  返回 `undefined_instruction`，内部 DecodeError 返回 `backend_error`；不自动投递 SIGILL。
 - SVC/BKPT 返回陷阱 PC，同时 CPU 状态 PC 指向下一条指令。
 - A32/Thumb-2 `MRC p15,0,*,c13,c0,3` 只读取当前线程 TPIDRURO；其他 CP15 访问
-  仍明确触发未定义指令。
+  返回明确能力缺口。旧式非 MCR2 CP15 `c7,c10,5/4` 和 `c7,c5,4` 复用 DMB/DSB/ISB
+  语义，ARM 条件与 Thumb IT 保持原路径。通用协处理器翻译采用受检构建扩展，只放行上述
+  屏障及 TPIDRURO；其余在实际执行处停下，不进入后端 coprocessor assert，不产生访存或
+  基址回写。VFP/NEON 仍由上游独立解码；不是任意 JIT 内部断言的恢复机制。
 
 ## 禁止
 

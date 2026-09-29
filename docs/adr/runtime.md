@@ -458,3 +458,32 @@ JNI/HLE/syscall；阻塞调用和重入不能占住上一层执行名额。不�
 速率是上限且允许有限突发，不保证宿主能达到请求速度；默认模式保留原 fast SVC 路径。
 CLI/GUI 参数及启动日志区分查询核数、标称 MHz、并发限制和百万 tick 速率；不把该控制
 扩展为完整 Android 调度器、CPU 热插拔、负载统计或 `/proc/stat`。首错复现仍与兼容验收分开。
+
+<a id="adr-0082"></a>
+## ADR-0082：有界协处理器支持与指令能力缺口隔离
+
+日期：2026-09-29。状态：接受。任务：[BND-44](../tasks/boundary/BND-44.md)。
+
+### 决策
+
+ARM 用户态旧式 CP15 屏障复用 Dynarmic 已有 DMB/DSB/ISB 翻译，包括 ISB 的返回分派，
+不跳过指令、不修改原 SO。支持 `MCR p15,0,Rt,c7,c10,5/4` 与 `c7,c5,4`（非 MCR2），
+TPIDRURO 仍只读。普通 VFP/NEON 保留原解码路径，不把所有协处理器编码一律拒绝。
+
+在上游通用协处理器 visitor 中保留非法编码检查和 ARM/Thumb 条件处理，未支持操作在
+任何操作数副作用之前生成受控 ExceptionRaised 回调，使用私有标签携带故障前 IT 状态。
+标签协议集中在 CPU 内部头文件，运行时回调明确返回 unsupported_instruction，恢复原 PC/IT
+并保留已执行效果，不继续执行、不投递 SIGILL；不依赖只在 x64 实现的 Interpret terminal。
+原有 InterpreterFallback 也返回能力缺口，而不伪装成非法指令。
+解码内部错误单列 backend_error；真正的 undefined/unpredictable 保持原分类。这不是对
+任意 JIT assert 的恢复承诺，同步 CPU fault 到 guest signal 另行建立契约。
+
+通过 CMake 生成替换翻译单元，固定 submodule 保持干净；对规范化换行后的上游源做 SHA256
+匹配检查，第三方升级必须重新审查。校验针对所修改的编译器源码，不绑定游戏或 ROM 内容。
+屏障和异常属于 cpu；execution 的既有统一 stop 报告保留指令字、状态、线程和寄存器，
+上层继续保留 JNI cause。当前不增加完整 MMU、CP15 特权寄存器或完整 Android 系统。
+
+### 验证边界
+
+覆盖 A32/T32、新旧屏障、条件跳过、IT 状态、TLS、协处理器操作族和精确失败副作用。
+实际游戏仅以原故障消失及下一首错作为 reached-fault 证据，不据此宣布游戏兼容。

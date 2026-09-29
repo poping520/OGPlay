@@ -485,6 +485,11 @@ status = "complete"
 test = "tests/cpu/dynarmic_tests.cpp"
 note = "M1 Dynarmic A32/T32 后端遵守 MemoryBus、状态、tick、停止和 fault 契约；M2 与解释器一致支持 TPIDRURO；M5 WU-0290 接入受保护数据页表并保留跨页及 callback fault"
 
+[cpu.arm_user_coprocessor]
+status = "partial"
+test = "tests/cpu/dynarmic_tests.cpp: BND-44; tests/runtime/guest_thread_runner_tests.cpp: BND-44"
+note = "BND-44/ADR-0082：A32/T32 旧式 CP15 DMB/DSB/ISB 复用原生屏障 IR，TPIDRURO 仍只读；通用七类协处理器操作（含 2 形式）其余明确返回 unsupported_instruction，保留条件、故障 PC/IT 和已执行效果，不进入后端 coprocessor assert。未知能力与非法指令、内部 DecodeError 分离；诊断包含指令字和单寄存器传输参数。Windows 定向 31 用例/476 断言通过；原 APK 已越过断言，下一首错 pthread_kill failed 后 guest SIGABRT。完整 CP15、同步 fault-to-signal、ARM64 宿主验收及任意 JIT 内部断言隔离未完成。"
+
 [cpu.thread_model]
 status = "complete"
 test = "tests/cpu/thread_group_tests.cpp"

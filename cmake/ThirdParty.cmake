@@ -76,6 +76,7 @@ if(OGPLAY_ENABLE_DYNARMIC)
     set(DYNARMIC_WARNINGS_AS_ERRORS OFF CACHE BOOL "" FORCE)
     add_subdirectory("${PROJECT_SOURCE_DIR}/third_party/dynarmic"
         "${CMAKE_BINARY_DIR}/_deps/dynarmic-build" EXCLUDE_FROM_ALL)
+    include("${CMAKE_CURRENT_LIST_DIR}/DynarmicCoprocessor.cmake")
     if(WIN32 AND CMAKE_SYSTEM_PROCESSOR MATCHES "^(AMD64|amd64|x86_64)$")
         include("${CMAKE_CURRENT_LIST_DIR}/DynarmicDiagnostics.cmake")
     endif()

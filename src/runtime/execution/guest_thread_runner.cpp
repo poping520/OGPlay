@@ -320,7 +320,19 @@ std::string DescribeA32GuestStop(const cpu::RunResult& stopped,
                   std::string{cpu::ToString(state.State())} + " reason=" +
                   numeric(cpu::ToString(stopped.reason),
                           static_cast<std::uint8_t>(stopped.reason)) +
-                  " immediate=" + std::to_string(stopped.immediate);
+                  " immediate=" + std::to_string(stopped.immediate) +
+                  " instruction=" + hex32(stopped.instruction);
+    if (stopped.reason == cpu::RunStopReason::unsupported_instruction) {
+        const auto word = stopped.instruction;
+        if ((word & 0x0f000010U) == 0x0e000010U) {
+            result += "\n  coproc:    operation=" + std::string{(word & (1U << 20U)) ? "MRC" : "MCR"} +
+                      " p=" + std::to_string((word >> 8U) & 15U) +
+                      " opc1=" + std::to_string((word >> 21U) & 7U) +
+                      " crn=" + std::to_string((word >> 16U) & 15U) +
+                      " crm=" + std::to_string(word & 15U) +
+                      " opc2=" + std::to_string((word >> 5U) & 7U);
+        }
+    }
     if (stopped.fault.has_value()) {
         result += "\n  fault:     address=" +
                   hex32(stopped.fault->address.Value()) +

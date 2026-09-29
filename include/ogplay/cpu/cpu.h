@@ -113,6 +113,8 @@ enum class RunStopReason : std::uint8_t {
     memory_fault,
     halt_requested,
     host_call_fault,
+    unsupported_instruction,
+    backend_error,
 };
 
 [[nodiscard]] constexpr std::string_view ToString(
@@ -132,6 +134,10 @@ enum class RunStopReason : std::uint8_t {
             return "halt_requested";
         case RunStopReason::host_call_fault:
             return "host_call_fault";
+        case RunStopReason::unsupported_instruction:
+            return "unsupported_instruction";
+        case RunStopReason::backend_error:
+            return "backend_error";
     }
     return "unknown";
 }

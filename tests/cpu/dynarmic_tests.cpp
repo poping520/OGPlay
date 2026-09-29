@@ -329,3 +329,150 @@ TEST_CASE("Dashboard source Dynarmic publishes owner thread cache usage") {
     CHECK((*snapshot)[0].used_bytes<(*snapshot)[0].capacity_bytes); CHECK((*snapshot)[0].captured_at_steady_ns>0);
 #endif
 }
+
+namespace {
+struct CoprocessorGuest final {
+    ogplay::memory::AddressSpace memory;
+    ogplay::memory::CheckedMemoryBus bus{memory};
+    ogplay::cpu::DynarmicCpu cpu{bus};
+    ogplay::cpu::A32State state;
+    const ogplay::memory::GuestAddress code{sample::kCodeAddress};
+    const ogplay::memory::GuestAddress data{sample::kMailboxAddress};
+
+    CoprocessorGuest(const std::vector<std::uint32_t>& instructions, bool thumb,
+                     std::uint32_t flags = 0) {
+        using ogplay::memory::PageProtection;
+        memory.Map({code, memory.PageSize()}, PageProtection::read | PageProtection::write);
+        memory.Map({data, memory.PageSize()}, PageProtection::read | PageProtection::write);
+        auto pc = code;
+        for (auto instruction : instructions) {
+            if (thumb) {
+                if (instruction > 0xffff) {
+                    bus.Write16(pc, static_cast<std::uint16_t>(instruction >> 16));
+                    pc = pc.Add(2);
+                }
+                bus.Write16(pc, static_cast<std::uint16_t>(instruction));
+                pc = pc.Add(2);
+            } else {
+                bus.Write32(pc, instruction);
+                pc = pc.Add(4);
+            }
+        }
+        memory.Protect({code, memory.PageSize()}, PageProtection::read | PageProtection::execute);
+        state.SetCpsr(flags);
+        state.SetState(thumb ? ogplay::cpu::ExecutionState::thumb : ogplay::cpu::ExecutionState::a32);
+        state.SetRegister(ogplay::cpu::CoreRegister::pc, code.Value());
+        state.SetRegister(ogplay::cpu::CoreRegister::r4, data.Value());
+        state.SetThreadPointer(ogplay::memory::GuestAddress{0x56789000});
+        state.SetThreadId(444);
+        cpu.SetState(state);
+    }
+};
+} // namespace
+
+TEST_CASE("Dynarmic BND-44 legacy and modern barriers preserve ARM and Thumb execution") {
+    using namespace ogplay::cpu;
+    for (bool thumb : {false, true}) {
+        for (auto opcode : {0xee073fbaU, 0xee073f9aU, 0xee073f95U}) {
+            CAPTURE(thumb);
+            CAPTURE(opcode);
+            CoprocessorGuest guest({opcode, thumb ? 0x2007U : 0xe3a00007U,
+                                   thumb ? 0xdf01U : 0xef000001U}, thumb);
+            const auto stop = guest.cpu.Run(32);
+            CHECK(stop.reason == RunStopReason::supervisor_call);
+            CHECK(guest.cpu.GetState().Register(CoreRegister::r0) == 7);
+            CHECK(guest.cpu.GetState().State() == guest.state.State());
+        }
+        for (auto opcode : {thumb ? 0xf3bf8f5fU : 0xf57ff05fU,
+                            thumb ? 0xf3bf8f4fU : 0xf57ff04fU,
+                            thumb ? 0xf3bf8f6fU : 0xf57ff06fU}) {
+            CoprocessorGuest guest({opcode, thumb ? 0xdf01U : 0xef000001U}, thumb);
+            CHECK(guest.cpu.Run(32).reason == RunStopReason::supervisor_call);
+        }
+    }
+}
+
+TEST_CASE("Dynarmic BND-44 unsupported coprocessor families stop without host abort") {
+    using namespace ogplay::cpu;
+    // MCR/MRC/CDP/MCRR/MRRC/LDC/STC, including absent CP14 and CP15.
+    // Loads/stores request writeback: neither memory access nor writeback is allowed.
+    for (bool thumb : {false, true}) {
+        for (auto opcode : {0xee000f10U, 0xee100f10U, 0xee000e00U,
+                            0xec410f00U, 0xec510f00U, 0xedb00f01U, 0xeda00f01U,
+                            0xfe000f10U, 0xfe100f10U, 0xfe000e00U,
+                            0xfc410f00U, 0xfc510f00U, 0xfdb00f01U, 0xfda00f01U}) {
+            CAPTURE(thumb);
+            CAPTURE(opcode);
+            CoprocessorGuest guest({opcode, thumb ? 0x2009U : 0xe3a00009U,
+                                   thumb ? 0xdf01U : 0xef000001U}, thumb);
+            const auto stop = guest.cpu.Run(32);
+            REQUIRE(stop.reason == RunStopReason::unsupported_instruction);
+            CHECK(stop.pc == guest.code);
+            CHECK(stop.instruction == opcode);
+            CHECK(guest.cpu.GetState().Register(CoreRegister::pc) == guest.code.Value());
+            CHECK(guest.cpu.GetState().Register(CoreRegister::r0) == 0);
+            CHECK(guest.cpu.GetState().ThreadId() == 444);
+            CHECK_FALSE(stop.fault.has_value());
+            CHECK(guest.cpu.Run(32).reason == RunStopReason::unsupported_instruction);
+        }
+    }
+}
+
+TEST_CASE("Dynarmic BND-44 ARM conditions and precise unsupported side effects") {
+    using namespace ogplay::cpu;
+    // A preceding store must commit; the subsequent store must not execute.
+    CoprocessorGuest guest({0xe3a00007U, 0xe5840000U, 0xee000f10U,
+                           0xe3a00009U, 0xe5840000U, 0xef000001U}, false);
+    const auto stop = guest.cpu.Run(32);
+    REQUIRE(stop.reason == RunStopReason::unsupported_instruction);
+    CHECK(stop.pc == guest.code.Add(8));
+    CHECK(stop.instruction == 0xee000f10U);
+    CHECK(guest.bus.Read32(guest.data) == 7);
+    CHECK(guest.cpu.GetState().Register(CoreRegister::r0) == 7);
+
+    for (auto opcode : {0x0e000f10U, 0x0e073f95U}) { // EQ unsupported / ISB
+        CoprocessorGuest skipped({0xe3a00007U, opcode, 0xe2800001U, 0xef000001U}, false);
+        CHECK(skipped.cpu.Run(32).reason == RunStopReason::supervisor_call);
+        CHECK(skipped.cpu.GetState().Register(CoreRegister::r0) == 8);
+    }
+    CoprocessorGuest taken({0x0e000f10U, 0xef000001U}, false, 1U << 30);
+    CHECK(taken.cpu.Run(32).reason == RunStopReason::unsupported_instruction);
+}
+
+TEST_CASE("Dynarmic BND-44 Thumb IT state survives barriers and unsupported stops") {
+    using namespace ogplay::cpu;
+    for (auto opcode : {0xee000f10U, 0xee073fbaU, 0xee073f9aU, 0xee073f95U}) {
+        CAPTURE(opcode);
+        CoprocessorGuest skipped({0x2000U, 0x2801U, 0xbf08U, opcode, 0x2109U, 0xdf01U}, true);
+        CHECK(skipped.cpu.Run(32).reason == RunStopReason::supervisor_call);
+        CHECK(skipped.cpu.GetState().Register(CoreRegister::r1) == 9);
+    }
+    // ITE EQ: execute the barrier and skip the NE MOV, including after ISB dispatch.
+    for (auto opcode : {0xee073fbaU, 0xee073f9aU, 0xee073f95U}) {
+        CoprocessorGuest taken({0x2000U, 0x2800U, 0xbf0cU, opcode, 0x2109U, 0xdf01U}, true);
+        CHECK(taken.cpu.Run(32).reason == RunStopReason::supervisor_call);
+        CHECK(taken.cpu.GetState().Register(CoreRegister::r1) == 0);
+    }
+    CoprocessorGuest fault({0x2000U, 0x2800U, 0xbf08U, 0xee000f10U, 0xdf01U}, true);
+    const auto stop = fault.cpu.Run(32);
+    REQUIRE(stop.reason == RunStopReason::unsupported_instruction);
+    CHECK(stop.pc == fault.code.Add(6)); // Unaligned Thumb-2, crosses a word boundary.
+    CHECK(stop.instruction == 0xee000f10U);
+    CHECK((fault.cpu.GetState().Cpsr() & 0x0600fc00U) == 0x800U);
+    CHECK(fault.cpu.Run(32).reason == RunStopReason::unsupported_instruction);
+}
+
+TEST_CASE("Dynarmic BND-44 TLS remains supported and UDF remains distinct") {
+    using namespace ogplay::cpu;
+    CoprocessorGuest tls({0xee1d2f70U, 0xdf01U}, true);
+    CHECK(tls.cpu.Run(32).reason == RunStopReason::supervisor_call);
+    CHECK(tls.cpu.GetState().Register(CoreRegister::r2) == 0x56789000U);
+    for (bool thumb : {false, true}) {
+        const auto opcode = thumb ? 0xde00U : 0xe7f000f0U;
+        CoprocessorGuest udf({opcode}, thumb);
+        const auto stop = udf.cpu.Run(32);
+        CHECK(stop.reason == RunStopReason::undefined_instruction);
+        CHECK(stop.pc == udf.code);
+        CHECK(stop.instruction == opcode);
+    }
+}

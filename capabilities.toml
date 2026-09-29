@@ -1780,6 +1780,11 @@ status = "complete"
 test = "tests/runtime/native_library_loader_tests.cpp; tools/bootdex/build_bootdex.py check"
 note = "DVM-169 将 API19 原版 Mac/MacSpi 与 OpenSSLMac HmacSHA1 精确闭包纳入 BootDex；DVM-171 进一步以固定 conscrypt.jar 的原版 NativeCrypto 作为唯一类定义，26 个已有 native 后端继续经统一 guest ARM libcrypto，受限 clinit 复用 JNI_OnLoad 初始化，190 个其余 native 明确失败。逻辑 token 复用统一 GC/teardown，私有证书验签已移出原版 ABI。双解释器 RFC 向量通过；BKS/KeyStore、BouncyCastle、其他 Mac 与 TLS 未纳入。"
 
+[dexvm.secret_key_factory]
+status = "complete"
+test = "tests/runtime/native_library_loader_tests.cpp: DVM-105/169/175-180 (DVM-199 section); tools/bootdex/build_bootdex.py build/check"
+note = "DVM-199：API19 原版 SecretKeyFactory/SPI、PBEKey/PBEKeySpec、DES/DESedeKeySpec 与对称参数规格进入 BootDex。OGPlayCrypto 仅注册 PBEWITHSHAAND256BITAES-CBC-BC 及 SHA1/SHA-1 名称别名，使用自有 Java SPI/PBEKey 与既有 PKCS12 SHA-1 KDF/guest libcrypto；固定派生 256 位，支持无盐密码编码、RAW 规格转换及 translateKey。密码最多 65536 UTF-16 单元、盐最多 65536 bytes、迭代最多 1000000，超限明确失败。双解释器独立 BC 向量、公开 API/失败行为及 BKS 回归通过；不含 BC Provider、PBE Cipher、PBKDF2 或新增 DES/RC/GCM 算法。"
+
 [dexvm.keystore_api]
 status = "complete"
 test = "tests/dexvm/bootdex_library_tests.cpp: DVM-172; tests/runtime/native_library_loader_tests.cpp: DVM-172; tools/bootdex/build_bootdex.py build/check"

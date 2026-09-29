@@ -2182,6 +2182,7 @@ TEST_CASE("DVM-105/169/175-180 crypto and BKS use BootDex and real guest libcryp
         struct Cleanup { std::filesystem::path path;
             ~Cleanup() { std::error_code ec; std::filesystem::remove_all(path, ec); }
         } sandbox_cleanup{sandbox_root};
+        std::filesystem::create_directories(sandbox_root);
         auto sandbox = runtime::SandboxStore::Open(sandbox_root, "fixture", "fixture");
         const std::array<std::string, 1> sandbox_roots{"/data/data/fixture"};
         runtime::VirtualFileSystem filesystem;
@@ -2278,6 +2279,121 @@ TEST_CASE("DVM-105/169/175-180 crypto and BKS use BootDex and real guest libcryp
                     static_cast<std::uint16_t>(text[index]));
             return array;
         };
+        // DVM-199: public JCA dispatch and PKCS12/SHA1 vectors from isolated BC 1.50.
+        {
+            constexpr const char* factory_type = "Ljavax/crypto/SecretKeyFactory;";
+            constexpr const char* spec_type = "Ljavax/crypto/spec/PBEKeySpec;";
+            const auto factory = direct(factory_type, "getInstance",
+                "(Ljava/lang/String;)Ljavax/crypto/SecretKeyFactory;",
+                {VmValue::Ref(vm.NewStringUtf8("PBEWITHSHAAND256BITAES-CBC-BC"))}).ref;
+            const auto factory_root = vm.ProtectReferences(std::array{factory});
+            const auto provider = invoke(factory, "getProvider", "()Ljava/security/Provider;", {}).ref;
+            CHECK(vm.StringUtf8(invoke(provider, "getName", "()Ljava/lang/String;", {}).ref) == "OGPlayCrypto");
+            const std::array<std::u16string, 3> passwords{
+                u"password", u"", std::u16string{u'\u5bc6', u'\u7801', u'\0', 0xd83d, 0xde00}};
+            const std::array<const char*, 6> vectors{
+                "be7f5f21b43a293a45aa36715521dcc91d0554d5b1b1a5d6fdf5b9d110b276eb",
+                "00191210ddc2ed6768d2095bc40c2fad2305b914cd7c06ddba975183a3ca71f6",
+                "39d3776b5e1e17a1db1cb6db5ebea05d6ea2fc0edf0c48cfac68d756dea8c4e4",
+                "71fc9f3c005dcb294b766c8461072b96b56a357fa30cf074e3c78a4c7d8f13c3",
+                "43b902d0b714c6757aaa58e5fc616eb597aae2e1201f6162b0530e767c03b520",
+                "6180ffff036ea371846dc7fa7890fb35134b0b7d9caea7b882017f97e18cce66"};
+            std::size_t vector_index = 0;
+            for (const auto& password : passwords) {
+                for (const int iterations : {1, 1024}) {
+                    const auto pass = vm.Model().NewPrimitiveArray(linker.ResolveDescriptor("[C"),
+                        runtime::JniPrimitiveKind::character, static_cast<runtime::JniSize>(password.size()));
+                    for (std::size_t i = 0; i < password.size(); ++i)
+                        vm.Model().SetPrimitiveElement(pass, static_cast<runtime::JniSize>(i), password[i]);
+                    const auto spec = vm.NewIntrinsicInstance(spec_type);
+                    const auto spec_roots = vm.ProtectReferences(std::array{pass, spec});
+                    direct(spec_type, "<init>", "([C[BII)V", {VmValue::Ref(spec), VmValue::Ref(pass),
+                        VmValue::Ref(bytes("0102030405060708")), VmValue::Int(iterations), VmValue::Int(128)});
+                    const auto secret = invoke(factory, "generateSecret",
+                        "(Ljava/security/spec/KeySpec;)Ljavax/crypto/SecretKey;", {VmValue::Ref(spec)}).ref;
+                    const auto secret_root = vm.ProtectReferences(std::array{secret});
+                    const auto encoded = invoke(secret, "getEncoded", "()[B", {}).ref;
+                    const auto encoded_root = vm.ProtectReferences(std::array{encoded});
+                    CHECK(vm.Model().ArrayLength(encoded) == 32); // named algorithm ignores requested 128 bits
+                    CHECK(vm.Model().ReadByteRegion(encoded, 0, 32) ==
+                        vm.Model().ReadByteRegion(bytes(vectors[vector_index++]), 0, 32));
+                    CHECK(vm.StringUtf8(invoke(secret, "getAlgorithm", "()Ljava/lang/String;", {}).ref) ==
+                        "PBEWithSHA1And256BitAES-CBC-BC");
+                    CHECK(vm.StringUtf8(invoke(secret, "getFormat", "()Ljava/lang/String;", {}).ref) == "RAW");
+                    CHECK(invoke(secret, "getIterationCount", "()I", {}).AsInt() == iterations);
+                    const auto translated = invoke(factory, "translateKey",
+                        "(Ljavax/crypto/SecretKey;)Ljavax/crypto/SecretKey;", {VmValue::Ref(secret)}).ref;
+                    CHECK(vm.Model().ReadByteRegion(invoke(translated, "getEncoded", "()[B", {}).ref, 0, 32) ==
+                        vm.Model().ReadByteRegion(encoded, 0, 32));
+                    for (const auto* target : {"Ljavax/crypto/spec/SecretKeySpec;",
+                            "Ljavax/crypto/spec/DESKeySpec;", "Ljavax/crypto/spec/DESedeKeySpec;"}) {
+                        const auto converted = invoke(factory, "getKeySpec",
+                            "(Ljavax/crypto/SecretKey;Ljava/lang/Class;)Ljava/security/spec/KeySpec;",
+                            {VmValue::Ref(secret), VmValue::Ref(vm.Model().ClassObject(linker.ResolveDescriptor(target)))}).ref;
+                        const bool raw = std::string_view(target).find("SecretKeySpec") != std::string_view::npos;
+                        const auto converted_bytes = invoke(converted, raw ? "getEncoded" : "getKey", "()[B", {}).ref;
+                        const auto length = vm.Model().ArrayLength(converted_bytes);
+                        CHECK(vm.Model().ReadByteRegion(converted_bytes, 0, length) == vm.Model().ReadByteRegion(encoded, 0, length));
+                    }
+                    const auto invalid_spec = invoke_result(factory, "getKeySpec",
+                        "(Ljavax/crypto/SecretKey;Ljava/lang/Class;)Ljava/security/spec/KeySpec;",
+                        {VmValue::Ref(secret), VmValue::Ref(vm.Model().ClassObject(linker.ResolveDescriptor(spec_type)))});
+                    REQUIRE(invalid_spec.exception.IsValid());
+                    CHECK(linker.Class(invalid_spec.exception_class).descriptor == "Ljava/security/spec/InvalidKeySpecException;");
+                    invoke(spec, "clearPassword", "()V", {});
+                    CHECK(invoke_result(secret, "getPassword", "()[C", {}).exception.IsValid());
+                    CHECK(vm.Model().ArrayLength(invoke(secret, "getEncoded", "()[B", {}).ref) == 32);
+                }
+            }
+            const auto unsalted = vm.NewIntrinsicInstance(spec_type);
+            const auto unsalted_root = vm.ProtectReferences(std::array{unsalted});
+            direct(spec_type, "<init>", "([C)V", {VmValue::Ref(unsalted), VmValue::Ref(chars("ab"))});
+            const auto deferred = invoke(factory, "generateSecret",
+                "(Ljava/security/spec/KeySpec;)Ljavax/crypto/SecretKey;", {VmValue::Ref(unsalted)}).ref;
+            const auto deferred_root = vm.ProtectReferences(std::array{deferred});
+            CHECK(vm.Model().ReadByteRegion(invoke(deferred, "getEncoded", "()[B", {}).ref, 0, 6) ==
+                vm.Model().ReadByteRegion(bytes("006100620000"), 0, 6));
+            const auto invalid = invoke_result(factory, "generateSecret",
+                "(Ljava/security/spec/KeySpec;)Ljavax/crypto/SecretKey;", {VmValue::Ref(VmObjectRef{})});
+            REQUIRE(invalid.exception.IsValid());
+            CHECK(linker.Class(invalid.exception_class).descriptor == "Ljava/security/spec/InvalidKeySpecException;");
+            direct(spec_type, "<init>", "([C[BII)V", {VmValue::Ref(unsalted), VmValue::Ref(chars("p")),
+                VmValue::Ref(bytes("01")), VmValue::Int(1000001), VmValue::Int(256)});
+            const auto over_limit = invoke_result(factory, "generateSecret",
+                "(Ljava/security/spec/KeySpec;)Ljavax/crypto/SecretKey;", {VmValue::Ref(unsalted)});
+            REQUIRE(over_limit.exception.IsValid());
+            CHECK(linker.Class(over_limit.exception_class).descriptor == "Ljava/security/spec/InvalidKeySpecException;");
+            for (const auto* alias : {"PBEWITHSHA1AND256BITAES-CBC-BC", "pbewithsha-1and256bitaes-cbc-bc"}) {
+                const auto other = direct(factory_type, "getInstance",
+                    "(Ljava/lang/String;Ljava/security/Provider;)Ljavax/crypto/SecretKeyFactory;",
+                    {VmValue::Ref(vm.NewStringUtf8(alias)), VmValue::Ref(provider)}).ref;
+                CHECK(other.IsValid());
+                CHECK(direct(factory_type, "getInstance",
+                    "(Ljava/lang/String;Ljava/lang/String;)Ljavax/crypto/SecretKeyFactory;",
+                    {VmValue::Ref(vm.NewStringUtf8(alias)), VmValue::Ref(vm.NewStringUtf8("OGPlayCrypto"))}).ref.IsValid());
+            }
+            const auto wrong_key = vm.NewIntrinsicInstance("Ljavax/crypto/spec/SecretKeySpec;");
+            const auto wrong_key_root = vm.ProtectReferences(std::array{wrong_key});
+            direct("Ljavax/crypto/spec/SecretKeySpec;", "<init>", "([BLjava/lang/String;)V",
+                {VmValue::Ref(wrong_key), VmValue::Ref(bytes("0102030405060708")), VmValue::Ref(vm.NewStringUtf8("AES"))});
+            for (const auto bad_key : {VmObjectRef{}, wrong_key}) {
+                const auto rejected = invoke_result(factory, "translateKey",
+                    "(Ljavax/crypto/SecretKey;)Ljavax/crypto/SecretKey;", {VmValue::Ref(bad_key)});
+                REQUIRE(rejected.exception.IsValid());
+                CHECK(linker.Class(rejected.exception_class).descriptor == "Ljava/security/InvalidKeyException;");
+            }
+            const auto huge_password = vm.Model().NewPrimitiveArray(linker.ResolveDescriptor("[C"),
+                runtime::JniPrimitiveKind::character, 65537);
+            direct(spec_type, "<init>", "([C)V", {VmValue::Ref(unsalted), VmValue::Ref(huge_password)});
+            CHECK(invoke_result(factory, "generateSecret", "(Ljava/security/spec/KeySpec;)Ljavax/crypto/SecretKey;",
+                {VmValue::Ref(unsalted)}).exception.IsValid());
+            const auto factory_class = linker.FindClass(factory_type);
+            const auto get_instance = linker.FindDirectMethod(*factory_class, "getInstance",
+                "(Ljava/lang/String;)Ljavax/crypto/SecretKeyFactory;");
+            const auto unsupported = vm.Call(*get_instance, std::array{VmValue::Ref(vm.NewStringUtf8("PBKDF2WithHmacSHA1"))});
+            REQUIRE(unsupported.exception.IsValid());
+            CHECK(linker.Class(unsupported.exception_class).descriptor == "Ljava/security/NoSuchAlgorithmException;");
+        }
         const auto kdf_password = vm.Model().NewPrimitiveArray(
             linker.ResolveDescriptor("[C"), runtime::JniPrimitiveKind::character, 8);
         constexpr std::string_view password_text = "password";
@@ -3328,17 +3444,18 @@ TEST_CASE("DVM-105/169/175-180 crypto and BKS use BootDex and real guest libcryp
         }
         auto other = runtime::SandboxStore::Open(sandbox_root, "fixture.other", "fixture.other");
         runtime::VirtualFileSystem isolated;
-        isolated.AttachSandbox(*other, sandbox_roots);
+        const std::array<std::string, 1> other_roots{"/data/data/fixture.other"};
+        isolated.AttachSandbox(*other, other_roots);
         CHECK_THROWS_AS(static_cast<void>(isolated.Stat("/data/data/fixture/keystore-session.bks")), runtime::VfsError);
         CHECK_THROWS_AS(static_cast<void>(isolated.Open("/data/data/fixture/keystore-session.bks", {.read = true})), runtime::VfsError);
         const auto original_file = reopened->ReadFile("/data/data/fixture/keystore-session.bks");
-        const auto isolated_fd = isolated.Open("/data/data/fixture/keystore-session.bks",
+        const auto isolated_fd = isolated.Open("/data/data/fixture.other/keystore-session.bks",
             {.write = true, .create = true});
         const std::array<std::byte, 3> other_data{std::byte{1}, std::byte{2}, std::byte{3}};
         CHECK(isolated.Write(isolated_fd, other_data) == other_data.size());
         isolated.Close(isolated_fd);
         CHECK(reopened->ReadFile("/data/data/fixture/keystore-session.bks") == original_file);
-        CHECK(other->ReadFile("/data/data/fixture/keystore-session.bks").size() == 3);
+        CHECK(other->ReadFile("/data/data/fixture.other/keystore-session.bks").size() == 3);
         static_cast<void>(reloaded_app->Stop());
     }
 }
@@ -4484,7 +4601,7 @@ TEST_CASE("DVM-195 original NativeActivity runs in the existing Java native proc
         CHECK(read(trace.Add(4)) == 5); // onDestroy, even without GLSurfaceView renderer
         CHECK(fixture.context->native_activity->InputQueuePointer(activity).IsNull());
         CHECK_FALSE(memory.validate(native, 4));
-        CHECK_THROWS(bridge.FromReference(actual_activity));
+        CHECK_THROWS(static_cast<void>(bridge.FromReference(actual_activity)));
         memory.release(trace, 20);
     }
 }
@@ -4560,7 +4677,7 @@ TEST_CASE("DVM-195 NativeActivity missing libraries and entry points fail withou
         auto& metadata = fixture.context->activity_components.front().meta_data;
         metadata.push_back({missing_library ? "android.app.lib_name" : "android.app.func_name", std::string("missing")});
         fixture.app->StartApplication();
-        CHECK_THROWS_WITH_AS(fixture.app->StartLauncherActivity(),
+        CHECK_THROWS_WITH_AS(static_cast<void>(fixture.app->StartLauncherActivity()),
             doctest::Contains(missing_library ? "Unable to find native library: missing" : "missing"), std::exception);
         CHECK(fixture.context->native_activity->InputQueuePointer(fixture.context->activity).IsNull());
     }
@@ -4708,7 +4825,7 @@ TEST_CASE("DVM-197 renderer EGL policies establish current context before events
         call(view,"setRenderer","(Landroid/opengl/GLSurfaceView$Renderer;)V",{ref(policy)});
         call(view,"queueEvent","(Ljava/lang/Runnable;)V",{ref(policy)});
         if (reject_context) {
-            CHECK_THROWS_WITH_AS(fixture.app->ActivityLifecycle().StepFrame(), "renderer EGL context creation failed", session::DexActivityLifecycleError);
+            CHECK_THROWS_WITH_AS(static_cast<void>(fixture.app->ActivityLifecycle().StepFrame()), "renderer EGL context creation failed", session::DexActivityLifecycleError);
             CHECK(order == std::vector<std::string>{"choose", "create"});
             static_cast<void>(fixture.app->Stop());
             CHECK_FALSE(c.renderer_context.IsValid());

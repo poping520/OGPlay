@@ -41,7 +41,7 @@
     "path": "framework/bootdex.jar",
     "generator": "tools/bootdex/build_bootdex.py",
     "recipe": "tools/bootdex/api19.json",
-    "recipe_sha256": "73c609208938c65cba1e4e232be668ab2e5feddaa4ca405158a447d8dc0efd9f",
+    "recipe_sha256": "1099d331a7c48a0f8da620a366b93b799af84e5ff1abede39febcb15be4a0d9f",
     "system_resources": {
       "table": "tools/bootdex/api19-system-resources.json",
       "table_sha256": "65768857b28b9ba572bd84eb89a33e223188bf0731ffb6fe80d4e701558b9ab3",
@@ -77,18 +77,18 @@
       {
         "source_project": "OGPlay",
         "source_root": "src/guest/crypto/java",
-        "source_sha256": "adc7e3b9b206d7bfc235f7bba454097949181af4042c22cb840418331a158c0a",
+        "source_sha256": "5b550dca2a5a65bed8ce3afff1bf97e20c601cbc5d44b6d408b9787dd519d121",
         "javac": "17.0.2",
         "android_jar_sha256": "4032a201eeb1d0430c7d9f1075151dd280427de5ca9e36f734f464ab605cb690",
         "d8_sha256": "d9e6acde0cb6f2453d6835b52c31d2066054394fb79e91115dd4978bde6afd16"
       }
     ],
-    "size": 2660024,
-    "sha256": "3b3074169d4148c304ea1b019d9646813541910714a9b1e0b7cc8ad6853863e3",
+    "size": 2670416,
+    "sha256": "10cf46f7d1e9f76031fe3f5a344271c5f62833033b1506f729e625a2346862c9",
     "dex_entry": "classes.dex",
-    "dex_size": 2655404,
-    "dex_sha256": "cec910e0c30dd7fc64d70a5f8d8aeb7cbd77a49e784eac86a9ea54efc24665ef",
-    "class_count": 1807,
+    "dex_size": 2665796,
+    "dex_sha256": "335932733253397598219217efeca63ec12bd373cc060686bda40af5eb4ad1c0",
+    "class_count": 1820,
     "selection_policy": "load-all",
     "notice": "notices/bootdex.jar.txt",
     "notice_sha256": "c5bf8c6efc379e6d5401a40fbf7810aedf9ee81dfa9f2deaa174faa97ded310a"
@@ -238,7 +238,7 @@
       ],
       "build": {
         "generator": "tools/bootdex/build_bootdex.py",
-        "generator_sha256": "6c7c9a9cd2fb5246e678a1976cad802d49bc85be78ba50f28eaff73d7b8ac2b5",
+        "generator_sha256": "ca5d4709b6cbd22078f35b7ca1dfbe3580cffc9578cdf3af177a3a0ec3ebecfd",
         "ndk_revision": "25.2.9519653",
         "target": "armv7a-linux-androideabi19",
         "language": "C11",

@@ -13,6 +13,13 @@ BouncyCastle 运行时或 C++ 条目/会话影子状态。
 `AES/CBC/ZeroBytePadding` 由本目录的 CipherSpi 完成分段缓冲、零填充和解密去尾零，
 实际分组运算复用 API 19 Conscrypt 的 `AES/CBC/NoPadding`，仍进入 guest libcrypto。
 
+`OGPlayCrypto` 独立发布 `PBEWITHSHAAND256BITAES-CBC-BC` SecretKeyFactory 及 SHA1/SHA-1
+名称别名。公开 API/规格来自原版 BootDex，SPI 与 PBEKey 状态归 guest Java；复用 PKCS12
+SHA-1 KDF，固定派生 32-byte key，不使用 PBKDF2。无盐规格返回延迟密码编码；有盐密钥
+保留 PBE 元数据，getKeySpec/translateKey 对齐 API19 的原始字节转换。密码最多 65536
+UTF-16 单元、盐最多 65536 bytes、迭代 1..1000000，超限明确失败。此服务不提供 PBE Cipher，
+不冒充 BC Provider；DES/RC/GCM 等公开规格可用不代表对应算法已注册。
+
 默认 CA 来自 owner 注入的版本化 `OGPLAYCA` 包，路径为 `/system/etc/security/cacerts.ogplay`；
 缺失或损坏时 TrustManagerFactory.init(null) 失败，不读取宿主证书库。AndroidCAStore 保持
 API19 只读；写/删/store 抛 UnsupportedOperationException。

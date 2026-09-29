@@ -684,3 +684,17 @@ TEST_CASE("A32 guest stop diagnostic names and hex-encodes a memory fault") {
     CHECK(rendered.find("  code:      pc_minus_8=0368013303607047") !=
           std::string::npos);
 }
+
+TEST_CASE("A32 guest stop BND-44 reports unsupported instruction without masking unreadable code") {
+    ogplay::memory::AddressSpace memory;
+    ogplay::cpu::A32State state;
+    state.SetThreadId(444);
+    const ogplay::cpu::RunResult stopped{
+        1, ogplay::cpu::RunStopReason::unsupported_instruction,
+        ogplay::memory::GuestAddress{0x10000}, 0xee000f10U, 0, std::nullopt};
+    const auto text = ogplay::runtime::DescribeA32GuestStop(stopped, state, memory);
+    CHECK(text.find("reason=unsupported_instruction") != std::string::npos);
+    CHECK(text.find("instruction=0xee000f10") != std::string::npos);
+    CHECK(text.find("operation=MCR p=15 opc1=0 crn=0 crm=0 opc2=0") != std::string::npos);
+    CHECK(text.find("guest=444") != std::string::npos);
+}

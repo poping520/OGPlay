@@ -43,6 +43,10 @@
   [BND-43](../tasks/boundary/BND-43.md) 第二阶段已接入默认关闭的原生 CPU 并发与总速率
   上限，CLI/单游戏设置可用；Windows 构建及定向 47 用例/683 断言通过。开启 2 核并发和
   20 百万 tick/秒复跑仍到达同一 coprocessor 断言；证据 `.local/cpu-execution-startup-verified.log`。
+  [BND-44](../tasks/boundary/BND-44.md) 已补旧式 CP15 屏障及通用协处理器受控能力缺口出口，
+  保留故障 PC/Thumb IT；Windows 构建及定向 31 用例/476 断言通过。用户原 APK/OBB 命令
+  复跑已越过 coprocessor 断言，下一首错 `pthread_kill failed` 后 guest SIGABRT/code=134，
+  CLI 以 1 退出；证据 `.local/coprocessor-fix-{build,tests,startup,startup-check}.log`。
   尚未重达 nativeRender，原绘制故障未复验。证据 `.local/proc-maps-*.log`。
   此前 renderer 证据 `.local/renderer-{build,test-build,tests,startup}.log`。
   EGL 暂停/恢复策略尚未接入该配置；前置 NDK 符号缺失仍待闭合。
@@ -87,7 +91,8 @@
 
 ## 未闭合边界
 
-- Dead Trigger 当前首错是 Dynarmic coprocessor 断言；Mono 信号注册失败已越过。首次 nativeRender 的
+- Dead Trigger 当前首错是 `pthread_kill failed` 后 guest SIGABRT；Mono 信号注册和 Dynarmic
+  coprocessor 断言已越过。首次 nativeRender 的
   `GLES1 draw requires GL_VERTEX_ARRAY` 尚未重达复验；
   不运行 Binder、
   system_server、外部包数据库、广播投递或 Play 服务。

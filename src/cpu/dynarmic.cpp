@@ -1,6 +1,7 @@
 #include "ogplay/cpu/dynarmic.h"
 #include "ogplay/cpu/execution_budget.h"
 #include "ogplay/hal/clock.h"
+#include "dynarmic_guest_fault.h"
 
 #include <algorithm>
 #include <cstddef>
@@ -233,8 +234,8 @@ public:
 
         void InterpreterFallback(const Dynarmic::A32::VAddr pc,
                                  std::size_t) override {
-            RecordStop({RunStopReason::undefined_instruction,
-                        memory::GuestAddress{pc}, 0, 0, std::nullopt});
+            RecordStop({RunStopReason::unsupported_instruction,
+                        memory::GuestAddress{pc}, InstructionAt(pc), 0, std::nullopt});
         }
 
         void CallSVC(const std::uint32_t immediate) override {
@@ -262,11 +263,26 @@ public:
 
         void ExceptionRaised(const Dynarmic::A32::VAddr pc,
                              const Dynarmic::A32::Exception exception) override {
-            const auto reason = exception == Dynarmic::A32::Exception::Breakpoint
+            const auto code = static_cast<std::uint32_t>(exception);
+            if (detail::IsUnsupportedInstruction(code)) {
+                jit_->SetCpsr(detail::RestoreItState(jit_->Cpsr(), code));
+                jit_->Regs()[15] = pc;
+                RecordStop({RunStopReason::unsupported_instruction,
+                            memory::GuestAddress{pc}, InstructionAt(pc), 0, std::nullopt});
+                return;
+            }
+            using Exception = Dynarmic::A32::Exception;
+            const auto reason = exception == Exception::Breakpoint
                                     ? RunStopReason::breakpoint
-                                    : RunStopReason::undefined_instruction;
+                                : exception == Exception::DecodeError
+                                    ? RunStopReason::backend_error
+                                : exception == Exception::UndefinedInstruction ||
+                                  exception == Exception::UnpredictableInstruction
+                                    ? RunStopReason::undefined_instruction
+                                    : RunStopReason::unsupported_instruction;
             RecordStop(
-                {reason, memory::GuestAddress{pc}, 0, 0, std::nullopt});
+                {reason, memory::GuestAddress{pc}, InstructionAt(pc),
+                 static_cast<std::uint32_t>(exception), std::nullopt});
         }
 
         void AddTicks(const std::uint64_t ticks) override {
@@ -278,6 +294,22 @@ public:
         std::uint64_t GetTicksRemaining() override { return ticks_remaining_; }
 
     private:
+        // Diagnostic reads must not replace the original stop with a new fault.
+        [[nodiscard]] std::uint32_t InstructionAt(const std::uint32_t pc) noexcept {
+            try {
+                const memory::GuestAddress address{pc};
+                if ((jit_->Cpsr() & kThumbBit) == 0) {
+                    return memory_bus_.Fetch32(address, thread_id_);
+                }
+                const auto first = memory_bus_.Fetch16(address, thread_id_);
+                if ((first & 0xf800U) < 0xe800U) return first;
+                return (static_cast<std::uint32_t>(first) << 16U) |
+                       memory_bus_.Fetch16(address.Add(2), thread_id_);
+            } catch (...) {
+                return 0;
+            }
+        }
+
         template <typename UInt>
         using ReadFunction = UInt (memory::MemoryBus::*)(memory::GuestAddress,
                                                          std::uint64_t);

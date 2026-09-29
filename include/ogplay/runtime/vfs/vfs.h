@@ -23,6 +23,19 @@
 namespace ogplay::runtime {
 
 class SandboxStore;
+struct VfsGeneratedFileState;
+// Revokes the provider synchronously on destruction. Open snapshots remain valid.
+class VfsGeneratedFileRegistration final {
+public:
+    ~VfsGeneratedFileRegistration();
+    VfsGeneratedFileRegistration(const VfsGeneratedFileRegistration&) = delete;
+    VfsGeneratedFileRegistration& operator=(const VfsGeneratedFileRegistration&) = delete;
+private:
+    friend class VirtualFileSystem;
+    explicit VfsGeneratedFileRegistration(std::shared_ptr<VfsGeneratedFileState> state)
+        : state_(std::move(state)) {}
+    std::shared_ptr<VfsGeneratedFileState> state_;
+};
 
 class VfsReadLease {
 public:
@@ -177,6 +190,10 @@ public:
     VirtualFileSystem(const VirtualFileSystem&) = delete;
     VirtualFileSystem& operator=(const VirtualFileSystem&) = delete;
 
+    // Provider runs outside VFS locks, once per open; stat size is zero.
+    // Caller bounds allocation to maximum_bytes; the VFS reserves that budget first.
+    [[nodiscard]] std::unique_ptr<VfsGeneratedFileRegistration> RegisterGeneratedReadOnly(
+        std::string_view path, std::uint64_t maximum_bytes, VfsReadOnlyLoader provider);
     void PutFile(std::string_view path, std::span<const std::byte> contents,
                  bool writable);
     void Mount(VfsSource source, std::string_view root,

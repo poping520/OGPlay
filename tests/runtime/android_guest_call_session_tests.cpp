@@ -390,6 +390,34 @@ TEST_CASE("Android guest process starts and stops without an application ELF") {
     process->Stop();
 }
 
+TEST_CASE("VFS-05 guest proc maps exposes actual address space and retires with process") {
+    auto libc = MinimalLibcElf();
+    const ogplay::loader::Elf32ModuleInput module{
+        "libc.so", libc, ogplay::memory::GuestAddress{0x10000000U}};
+    ogplay::runtime::VirtualFileSystem filesystem;
+    auto process = ogplay::runtime::AndroidGuestProcess::Start(
+        {19, std::span{&module, 1}, {}, 64, 36, 1000, 1, &filesystem, {}});
+    CHECK(filesystem.Stat("/proc/self/maps").size == 0);
+    const auto fd = filesystem.Open("/proc/self/maps", {.read = true});
+    std::string maps;
+    std::array<std::byte, 17> chunk{};
+    for (;;) {
+        const auto count = filesystem.Read(fd, chunk);
+        if (count == 0) break;
+        maps.append(reinterpret_cast<const char*>(chunk.data()), count);
+    }
+    CHECK(maps.find("10010000-10011000 rw-p") != std::string::npos);
+    CHECK(maps.find("6b000000-6b400000 rw-p") != std::string::npos);
+    CHECK(maps.find("00:00 0\n") != std::string::npos);
+    CHECK_THROWS_AS(filesystem.Open("/proc/self/maps", {.write = true}), ogplay::runtime::VfsError);
+    process->Stop();
+    process.reset();
+    CHECK_THROWS_AS(filesystem.Stat("/proc/self/maps"), ogplay::runtime::VfsError);
+    CHECK(filesystem.Seek(fd, 0, ogplay::runtime::VfsSeekWhence::begin) == 0);
+    CHECK(filesystem.Read(fd, chunk) > 0);
+    filesystem.Close(fd);
+}
+
 TEST_CASE("Android guest proc memory values come from injected facts") {
     auto libc = MinimalLibcElf();
     const ogplay::loader::Elf32ModuleInput module{

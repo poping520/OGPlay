@@ -191,6 +191,26 @@ std::string ResolvePath(
 VfsError::VfsError(const std::int32_t error_number, std::string message)
     : std::runtime_error(std::move(message)), error_number_(error_number) {}
 
+VfsGeneratedFileRegistration::~VfsGeneratedFileRegistration() {
+    std::scoped_lock lock(state_->mutex);
+    state_->active = false;
+    state_->provider = {};
+}
+
+void VirtualFileSystem::Impl::RegisterGeneratedReadOnly(
+    const std::string_view path, std::shared_ptr<VfsGeneratedFileState> state) {
+    const auto normalized = NormalizePath(path);
+    std::scoped_lock lock(mutex_);
+    const auto found = files_.find(normalized);
+    if (found != files_.end() && (!found->second->generated || found->second->generated->active))
+        throw VfsError(kEexist, "VFS generated file path already exists");
+    if (IsDirectoryLocked(normalized)) throw VfsError(kEisdir, "VFS generated file is a directory");
+    auto file = std::make_shared<File>();
+    file->node_id = next_node_id_++;
+    file->generated = std::move(state);
+    files_[normalized] = std::move(file);
+}
+
 void VirtualFileSystem::Impl::PutFile(const std::string_view path,
                  const std::span<const std::byte> contents,
                  const bool writable) {
@@ -508,6 +528,26 @@ std::int32_t VirtualFileSystem::Impl::Open(const std::string_view path,
             MarkOverlayLocked(normalized, *found->second);
         }
         auto selected_file = found->second;
+        if (selected_file->generated) {
+            if (options.create || options.truncate || options.write)
+                throw VfsError(kEacces, "VFS generated file is read-only");
+            const auto state = selected_file->generated;
+            lock.unlock();
+            std::scoped_lock provider_lock(state->mutex);
+            if (!state->active) throw VfsError(kEnoent, "VFS generated file provider retired");
+            const auto reservation = ReserveResourceMemory(state->maximum_bytes, false);
+            auto contents = state->provider();
+            if (contents.size() > state->maximum_bytes)
+                throw VfsError(kEfbig, "VFS generated file exceeded its bound");
+            auto snapshot = std::make_shared<File>();
+            snapshot->contents = std::move(contents);
+            snapshot->size = snapshot->contents.size();
+            snapshot->materialized_reservations.push_back(reservation);
+            snapshot->materialized_reserved_bytes = state->maximum_bytes;
+            lock.lock();
+            snapshot->node_id = next_node_id_++;
+            selected_file = std::move(snapshot);
+        }
         if (options.truncate) {
             if (!options.write) {
                 throw VfsError(kEinval, "VFS truncate requires write access");
@@ -896,6 +936,17 @@ VfsResourceReservation::VfsResourceReservation(
 
 VfsResourceReservation::~VfsResourceReservation() {
     if (release_) release_();
+}
+
+std::unique_ptr<VfsGeneratedFileRegistration> VirtualFileSystem::RegisterGeneratedReadOnly(
+    const std::string_view path, const std::uint64_t maximum_bytes, VfsReadOnlyLoader provider) {
+    if (!provider || maximum_bytes == 0) throw VfsError(kEinval, "invalid generated file provider");
+    auto state = std::make_shared<VfsGeneratedFileState>();
+    state->maximum_bytes = maximum_bytes;
+    state->provider = std::move(provider);
+    auto registration = std::unique_ptr<VfsGeneratedFileRegistration>(new VfsGeneratedFileRegistration(state));
+    impl_->RegisterGeneratedReadOnly(path, std::move(state));
+    return registration;
 }
 
 void VirtualFileSystem::PutFile(const std::string_view path,

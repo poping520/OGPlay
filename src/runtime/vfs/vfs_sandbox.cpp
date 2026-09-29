@@ -20,6 +20,8 @@ VfsFileInfo VirtualFileSystem::Impl::Stat(const std::string_view path) const {
     }
     const auto found = files_.find(normalized);
     if (found != files_.end()) {
+        if (found->second->generated && !found->second->generated->active)
+            throw VfsError(kEnoent, "VFS generated file provider retired");
         return {found->second->size, found->second->writable,
                 found->second->source, false, found->second->generation};
     }
@@ -51,7 +53,7 @@ std::vector<VfsDirectoryEntry> VirtualFileSystem::Impl::ListDirectory(
     };
     for (auto it = files_.lower_bound(prefix);
          it != files_.end() && it->first.starts_with(prefix); ++it) {
-        collect(it->first, false);
+        if (!it->second->generated || it->second->generated->active) collect(it->first, false);
     }
     for (auto it = directories_.lower_bound(prefix);
          it != directories_.end() && it->starts_with(prefix); ++it) {
@@ -308,6 +310,10 @@ void VirtualFileSystem::Impl::Rename(const std::string_view from,
     const auto source = ResolvePath(from, working_directory_, aliases_);
     const auto target = ResolvePath(to, working_directory_, aliases_);
     auto found = files_.find(source);
+    const auto target_file = files_.find(target);
+    if ((found != files_.end() && found->second->generated) ||
+        (target_file != files_.end() && target_file->second->generated))
+        throw VfsError(kEacces, "VFS generated file cannot be renamed or replaced");
     if (found == files_.end() || tombstones_.contains(source)) {
         if (source == target && IsDirectoryLocked(source)) return;
         if (IsDirectoryLocked(source)) {
@@ -355,6 +361,9 @@ void VirtualFileSystem::Impl::Rename(const std::string_view from,
     if (sandbox_ != nullptr && !IsWritableNamespaceLocked(target)) {
         throw VfsError(kEacces, "VFS path is outside the writable namespace");
     }
+    if (const auto current_target = files_.find(target);
+        current_target != files_.end() && current_target->second->generated)
+        throw VfsError(kEacces, "VFS generated file cannot be replaced");
     files_.erase(found);
     if (const auto replaced = files_.find(target);
         replaced != files_.end() && replaced->second != file) {

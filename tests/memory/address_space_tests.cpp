@@ -320,3 +320,26 @@ TEST_CASE("guest C string scan is page aware bounded and fault precise") {
     CHECK_THROWS_AS(static_cast<void>(memory.CStringLength(first, 0U, 94)),
                     std::length_error);
 }
+
+TEST_CASE("VFS-05 mapping metadata tracks permissions replacement and holes") {
+    using namespace ogplay::memory;
+    AddressSpace space;
+    space.Map({GuestAddress{0x10000}, 0x3000}, PageProtection::read | PageProtection::write);
+    space.Protect({GuestAddress{0x11000}, 0x1000}, PageProtection::none);
+    auto maps = space.DescribeMappings();
+    REQUIRE(maps.size() == 3);
+    CHECK(maps[1].range.Start().Value() == 0x11000);
+    CHECK(maps[1].protection == PageProtection::none);
+    CHECK_THROWS_AS(space.DescribeMappings(2), std::length_error);
+    space.Unmap({GuestAddress{0x11000}, 0x1000});
+    CHECK(space.DescribeMappings().size() == 2);
+    space.ReplaceAnonymous({GuestAddress{0x11000}, 0x1000}, PageProtection::read | PageProtection::write);
+    maps = space.DescribeMappings();
+    REQUIRE(maps.size() == 1);
+    CHECK(maps[0].range.Size() == 0x3000);
+    space.Map({GuestAddress{0xfffff000}, 0x1000}, PageProtection::execute);
+    maps = space.DescribeMappings();
+    CHECK(static_cast<std::uint64_t>(maps.back().range.Start().Value()) + maps.back().range.Size() == (UINT64_C(1) << 32U));
+    AddressSpace other;
+    CHECK(other.DescribeMappings().empty());
+}

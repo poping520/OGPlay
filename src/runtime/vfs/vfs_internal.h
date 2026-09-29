@@ -43,6 +43,13 @@ inline constexpr std::int32_t kEcanceled = 125;
     std::string_view path,
     const std::optional<std::string>& working_directory,
     const std::map<std::string, std::string, std::less<>>& aliases);
+struct VfsGeneratedFileState final {
+    std::mutex mutex;
+    std::atomic_bool active{true};
+    VfsReadOnlyLoader provider;
+    std::uint64_t maximum_bytes{};
+};
+
 struct File final {
     File() = default;
     File(std::vector<std::byte> initial_contents, std::uint64_t initial_size,
@@ -59,6 +66,7 @@ struct File final {
     // Stable for the node lifetime. Paths may be removed or rebound; caches
     // and leases must never use a pathname as content identity.
     std::uint64_t node_id{};
+    std::shared_ptr<VfsGeneratedFileState> generated;
     std::vector<std::byte> contents;
     std::uint64_t size{};
     VfsReadOnlyLoader read_all;
@@ -123,6 +131,7 @@ public:
         resource_budget_->limit = config.resource_memory_budget_bytes;
     }
     // ---- mounts and files (vfs.cpp) -------------------------------------
+    void RegisterGeneratedReadOnly(std::string_view path, std::shared_ptr<VfsGeneratedFileState> state);
     void PutFile(std::string_view path, std::span<const std::byte> contents,
                  bool writable);
     void Mount(VfsSource source, std::string_view root,

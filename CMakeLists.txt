@@ -451,6 +451,7 @@ add_library(ogplay_runtime
     src/runtime/boundary/services/graphics_dispatch.cpp
     src/runtime/boundary/services/guest_gl_context.cpp
     src/runtime/boundary/modules/android/android_module.cpp
+    src/runtime/boundary/modules/android/android_looper.cpp
     src/runtime/boundary/modules/egl/egl_module.cpp
     src/runtime/boundary/modules/gles1/gles1_bounds.cpp
     src/runtime/boundary/modules/gles1/gles1_completion.cpp
@@ -848,6 +849,7 @@ if(OGPLAY_BUILD_TESTS)
         tests/runtime/api19_guest_process_tests.cpp
         tests/runtime/android_guest_call_session_tests.cpp
         tests/runtime/guest_cpu_environment_tests.cpp
+        tests/runtime/guest_looper_tests.cpp
         tests/runtime/android_guest_framework_platform_tests.cpp
         tests/runtime/android_guest_java_media_tests.cpp
         tests/runtime/boundary/integration/android_boundary_hle_tests.cpp

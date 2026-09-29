@@ -705,3 +705,17 @@ TEST_CASE("A32 guest stop BND-44 reports unsupported instruction without masking
         CHECK(report.find("unavailable (PC is below 8)") != std::string::npos);
     }
 }
+
+TEST_CASE("BND45 null PC report retains readable caller code without guessing a frame") {
+    using namespace ogplay;
+    memory::AddressSpace memory;
+    memory.Map({memory::GuestAddress{0x10000}, 4096}, memory::PageProtection::read | memory::PageProtection::write);
+    memory.Write32(memory::GuestAddress{0x1000c}, 0xe12fff33U);
+    cpu::A32State state;
+    state.SetThreadId(1);
+    state.SetRegister(cpu::CoreRegister::lr, 0x10010);
+    const cpu::RunResult stopped{1, cpu::RunStopReason::memory_fault, memory::GuestAddress{0}, 0, 0, std::nullopt};
+    const auto report = runtime::DescribeA32GuestStop(stopped, state, memory);
+    CHECK(report.find("pc=0x00000000") != std::string::npos);
+    CHECK(report.find("caller_code: address=0x00010008 bytes=0000000033ff2fe1") != std::string::npos);
+}

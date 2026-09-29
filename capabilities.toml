@@ -752,8 +752,8 @@ note = "M4 提供受检 1..4x 布局和确定性 RGBA8 box resolve，覆盖溢�
 
 [runtime.android_boundary_hle]
 status = "partial"
-test = "tests/runtime/boundary/integration/android_boundary_hle_tests.cpp"
-note = "M4 最小 NativeActivity 所需 Android/Looper/input/EGL/GLES 导入已绑定到显式 Thumb trap；M5 WU-0292 增加严格布局帧归还与 1x RGBA8 高水位复用；BND-1..4 改为完整 Virtual SO catalog、multi-page arena、CPU fast host call 与 concrete module-local binding，删除旧 route/function-id 热路径；完整 NDK 与 GLES2 槽仍不在本能力范围"
+test = "tests/runtime/guest_looper_tests.cpp; tests/runtime/boundary/integration/android_boundary_hle_tests.cpp"
+note = "M4 最小 NativeActivity 所需 Android/Looper/input/EGL/GLES 导入已绑定到显式 Thumb trap；M5 WU-0292 增加严格布局帧归还与 1x RGBA8 高水位复用；BND-1..4 改为完整 Virtual SO catalog、multi-page arena、CPU fast host call 与 concrete module-local binding，删除旧 route/function-id 热路径；BND-45/ADR-0083 新增线程 Looper 身份、prepare/forThread、引用、wake/removeFd/pollOnce 与既有 ident polling；Java 主线程及 HandlerThread 关联，VFS pipe readiness、退出/shutdown、空输出指针与真实 ARM libdl 调用受检。callback、非 pipe fd 与 Java 消息在 native poll 中派发未支持，完整 NDK 不在本能力范围"
 
 [runtime.native_activity_session]
 status = "partial"

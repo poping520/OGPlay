@@ -153,6 +153,7 @@ public:
         std::int32_t descriptor, std::size_t maximum);
     [[nodiscard]] VfsFileInfo DescriptorInfo(std::int32_t descriptor) const;
     [[nodiscard]] VfsPipeDescriptors CreatePipe();
+    [[nodiscard]] std::optional<std::uint32_t> PipePollEvents(std::int32_t descriptor) const;
     [[nodiscard]] std::size_t Read(std::int32_t descriptor,
                                    std::span<std::byte> destination);
     [[nodiscard]] std::size_t ReadAt(std::int32_t descriptor,

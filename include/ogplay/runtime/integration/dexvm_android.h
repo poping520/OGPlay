@@ -553,6 +553,8 @@ struct DexVmAndroidContext final {
     std::int64_t delay_millis{};
   };
 
+  std::function<void(std::uint64_t)> prepare_native_looper;
+
   struct LooperState final {
     std::uint64_t context_token{};
     dexvm::VmObjectRef thread{};

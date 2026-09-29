@@ -1181,6 +1181,13 @@ DexVmGuestBridge::DexVmGuestBridge(
                                        android_context->network_transport);
     }
     RegisterAndroidAudioTrackStateTable(*impl_->vm, android_context);
+    if (android_context) {
+        android_context->prepare_native_looper = [bridge_state](std::uint64_t token) {
+            static_cast<void>(bridge_state->session->PrepareThreadLooper(bridge_state->ProcessThreadForToken(token)));
+        };
+        // The Android main thread has a native Looper before Activity/JNI startup.
+        static_cast<void>(session.PrepareThreadLooper(kRootThreadId));
+    }
     RegisterAndroidSchedulerStateTable(*impl_->vm, android_context);
     RegisterAndroidValueStateTables(*impl_->vm, android_context);
     RegisterAndroidDatabaseStateTables(*impl_->vm, android_context);
@@ -1393,6 +1400,7 @@ DexVmGuestBridge::~DexVmGuestBridge() {
     if (impl_->android_context) {
         impl_->android_context->native_activity.reset();
         impl_->android_context->threads = nullptr;
+        impl_->android_context->prepare_native_looper = {};
     }
     if (impl_->session) {
         impl_->session->Environment().SetMonitorHooks({});

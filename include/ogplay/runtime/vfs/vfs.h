@@ -235,6 +235,9 @@ public:
         std::int32_t descriptor, std::size_t maximum);
     [[nodiscard]] VfsFileInfo DescriptorInfo(std::int32_t descriptor) const;
     [[nodiscard]] VfsPipeDescriptors CreatePipe();
+    // ALOOPER-style bits: read=1, write=2, error=4, hangup=8, invalid=16.
+    // nullopt means the descriptor type is outside the pipe polling contract.
+    [[nodiscard]] std::optional<std::uint32_t> PipePollEvents(std::int32_t descriptor) const;
     [[nodiscard]] std::size_t Read(std::int32_t descriptor,
                                    std::span<std::byte> destination);
     [[nodiscard]] std::size_t ReadAt(std::int32_t descriptor,

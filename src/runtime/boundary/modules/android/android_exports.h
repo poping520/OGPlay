@@ -32,4 +32,10 @@
     X("ANativeWindow_getHeight", 27, 1, ANativeWindow_getHeight) \
     X("ANativeWindow_getFormat", 28, 1, ANativeWindow_getFormat) \
     X("ANativeWindow_acquire", 29, 1, ANativeWindow_acquire) \
-    X("ANativeWindow_release", 30, 1, ANativeWindow_release)
+    X("ANativeWindow_release", 30, 1, ANativeWindow_release) \
+    X("ALooper_forThread", 31, 0, LooperForThread) \
+    X("ALooper_acquire", 32, 1, LooperAcquire) \
+    X("ALooper_release", 33, 1, LooperRelease) \
+    X("ALooper_pollOnce", 34, 4, LooperPollOnce) \
+    X("ALooper_wake", 35, 1, LooperWake) \
+    X("ALooper_removeFd", 36, 2, LooperRemoveFd)

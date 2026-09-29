@@ -399,11 +399,14 @@ std::string DescribeA32GuestStop(const cpu::RunResult& stopped,
             break;
         }
     }
-    if (stopped.pc.Value() < 8U) {
-        return result + "\n  code:      unavailable (PC is below 8)";
+    const bool low_pc = stopped.pc.Value() < 8U;
+    const auto caller = state.Register(cpu::CoreRegister::lr) & ~UINT32_C(1);
+    if (low_pc) {
+        result += "\n  code:      unavailable (PC is below 8)";
+        if (caller < 8U) return result;
     }
     try {
-        const auto code_start = stopped.pc.Subtract(8U);
+        const auto code_start = low_pc ? memory::GuestAddress{caller - 8U} : stopped.pc.Subtract(8U);
         std::array<std::byte, 24> code{};
         address_space.Read(code_start, code, state.ThreadId());
         std::ostringstream encoded;
@@ -412,7 +415,9 @@ std::string DescribeA32GuestStop(const cpu::RunResult& stopped,
             encoded << std::setw(2)
                     << std::to_integer<std::uint32_t>(byte);
         }
-        result += "\n  code:      pc_minus_8=" + encoded.str();
+        result += low_pc
+            ? "\n  caller_code: address=" + hex32(code_start.Value()) + " bytes=" + encoded.str()
+            : "\n  code:      pc_minus_8=" + encoded.str();
     } catch (const memory::MemoryFault&) {
     }
     return result;

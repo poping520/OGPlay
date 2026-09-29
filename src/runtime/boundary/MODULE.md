@@ -1,355 +1,136 @@
 # 子模块：runtime/boundary
 
-## 目录与 ownership
+## 职责与依赖
 
-- `core/`：Virtual SO 通用 catalog、dense symbol/thunk metadata、A32 call frame、direct
-  binding、thunk arena、fast router 与 pending fault；依赖方向只允许指向
-  cpu/memory/loader 等底层。
-- `services/`：跨 module 共享状态；`GuestGlContext` 只在这里拥有一份，由
-  `GraphicsBoundaryContext` 显式聚合 ANGLE frame/context 和 graphics shadow；
-  `gles_transfer_io.h` 是 GLES1/GLES2 module 与 graphics dispatch 共用的 guest
-  小端 32 位传输原语唯一实现，尺寸校验、错误文案与 `Commit()` 时机等 handler
-  语义差异保留在各调用侧；
-  `FrameService` 统一拥有 frame recycling、GPU stats 与 trace，Android guest memory
-  写入由窄化的 `AndroidBoundaryServices` 提供；停滞诊断只通过 `TryTrace` 短锁复制最近
-  有界 raw 记录，busy 时不得等待 graphics 线程。
-- `modules/<so>/`：各 Virtual SO 的 export metadata、handler 与私有 state。Android、EGL、
-  GLES1、GLES2、log 已有独立目录；built-in registration 位于
-  `modules/module_catalog.*`，generic core catalog 不包含业务 export 表。
-- `facade/`：`AndroidBoundaryHle` session composition/lifecycle 实现；public ABI header
-  仍为 `include/ogplay/runtime/boundary/android_boundary_hle.h`。
-- 测试按 `tests/runtime/boundary/{core,modules,integration}` 归属；跨 module/transport 行为
-  放 integration，module 私有 state 放 modules。
+将 guest EGL/GLES、NDK Looper/input、log、OpenSL ES 与 libc/libdl 边界绑定到明确的
+handler，负责 ABI 搬运和边界状态，不拥有会话生命周期。依赖 gles、loader、memory、cpu、
+core 及显式注入的服务；不得依赖 JNI、jni_guest、framework、integration 或整个 session Impl。
 
-## 职责
+| 目录 | 唯一职责 |
+| --- | --- |
+| `core/` | catalog、A32 call frame、dense thunk、direct binding、fast router、pending fault |
+| `services/` | 共享 GuestGlContext/GraphicsBoundaryContext、搬运原语、FrameService 与窄内存接口 |
+| `modules/<so>/` | concrete final module 的导出、handler 和私有状态；注册归 module_catalog |
+| `facade/` | AndroidBoundaryHle 装配与冷入口；公共 ABI 为 include 下同名头文件 |
 
-- `BoundaryCatalog` 是 Virtual SO SONAME、active export、module-local id 与 dense thunk
-  slot 的唯一冷路径事实来源；API seal 后只读。Bionic namespace 只从该目录识别明确
-  注册的 Virtual SO。export-less module 可作为显式 loader scaffold 存在，但不得分配
-  thunk 或伪造函数；其他未实现 SONAME 不得因历史 Profile 声明而伪装可用。
-- module/export 的 `AndroidApiRange` 在 seal 时执行过滤；不适用项不进入 active catalog，
-  不使整个 catalog 失败。local id 是 module metadata，可以非连续且不得依赖数组序号。
-- synthetic Virtual SO 首次建立时发布该 module 的完整 active export 集，后续动态装载
-  不得补写或扩展既有 dynsym。
-- `libOpenSLES.so` 按 Android 4.4.4 AOSP Wilhelm 发布 3 个 `STT_FUNC`、全部 51 个
-  `SL_IID_*` `STT_OBJECT` pointer global/UUID record，以及只进入 dense hot table 的 Object、
-  Engine、OutputMix、Play、BufferQueue/AndroidSimpleBufferQueue、Volume private callable。
-  immutable vtable 直接保存各 method thunk；RW object handle 是 generation-safe host table 的
-  guest identity。concrete `OpenSlesModule final` 实现 Engine→OutputMix→PCM AudioPlayer 链，
-  范围外 constructor 明确返回 `FEATURE_UNSUPPORTED`。PCM DSP 由注入的唯一
-  `OpenSlesPcmMixer` service 拥有；DVM-84 通过 façade 的窄接口发布该 service 给上层
-  AudioTrack adapter，module 仍不依赖 integration、facade 或 HAL。
-- thunk arena 按实际 slot 数向上取整到多页并在写入后封为 RX；fast router 只做
-  `PC → dense slot → {fn,self}`，live r0-r15 直接借用自 CPU hook，5 个以上参数只进行
-  一次 guest stack bulk read。启用 guest-call slice observer 时上层不得安装 fast hook。
-- fast handler 的 C++ 异常按 thread/PC 保存为 pending structured fault，退出 JIT 后由
-  slow consumer 重抛原 exception identity；不得只留下 generic `host_call_fault`。
-- 真实 guest libc override 与 Virtual SO 共用 dense hot transport，但每个 symbol 在 seal
-  后拥有独立 `{export-specific fn, concrete module*}`；fast/slow 不得使用共享 mutable PC
-  或统一参数个数推导当前 symbol。
-- 真实 guest libdl 的 `dlopen/dlsym/dlclose/dlerror/dl_unwind_find_exidx` 同样复用 dense transport，但 module
-  只拥有 guest 参数搬运、错误状态与 `0x71d00000` 有界只读返回区；ELF namespace、handle
-  和 sealed Virtual SO/exidx 查询由 integration 通过 `BionicDynamicLinkHooks` 注入。失败返回
-  null/-1 并由同一 guest thread 的下一次 `dlerror()` 消费，禁止把 lookup 失败变成 trap。
-- Android/EGL/GLES1/GLES2/GLES3/log 以普通 `final` module type 实例化并在 seal 时一次 type
-  erase；descriptor 只保留 module-local id 与签名冷数据。每个 active export 在 seal 时
-  直接生成 `{export-specific fn, concrete module*}`，fast/slow transport 共用该 handler；
-  调用期不再读取 SONAME/local id，不经过 module-level route、`HleRoute` 或全局 id。
-  export 实现体必须位于 concrete module，禁止转发到 `AndroidBoundaryHle::Impl::Invoke*`；
-  Android looper/input 状态由 Android module 自有。module 不持有整个 session `Impl`，
-  而是分别构造注入 bounded call transport、Android memory service 与 graphics context；
-  EGL/GLES1/GLES2/GLES3 由同一个 `GraphicsBoundaryContext` 引用唯一 `GuestGlContext`、ANGLE
-  frame/context 和 graphics state，不复制状态。GLES1 私有 fixed/draw state 直接注入
-  `Gles1Module`，shared service 不反向依赖 concrete module。
-  DVM-83 增加的 managed GLES 冷入口按 API/name/参数数校验 sealed catalog，并直接调用
-  同一 `{slow,self}` binding；它只服务 Java 参数适配，不定义或转发任何 native export
-  实现，也不创建另一份 graphics state。WU-3 的 managed EGL 冷入口遵循相同约束，Java
-  EGL10/EGL14 与 native import 共用 `EglModule` registry、thread current 与 sticky error。
-  managed window surface 存在时，pbuffer 仍按 registry 对象持有独立 ANGLE backing；切换
-  回 managed window 才重新绑定 lifecycle frame。
-- `liblog.so` 的 export surface 固定为 Android 4.4.4 target `system/core/liblog`
-  (`logd_write.c + logprint.c + event_tag_map.c`) 的 23 个 global API。`LogModule final`
-  只依赖显式 `LogBoundaryContext`：guest address 始终由 `AddressSpace` 搬运，event tag map
-  只经注入的 guest-file reader 访问 VFS，tag 字符串进入 module-owned 只读 guest pages。
-  KitKat `/dev/log/*` 写端在 OGPlay 中由 structured logger 取代，category 为
-  `guest.liblog` 且 message 必有 `[guest]` 前缀；不得直接访问 host filesystem、伪造
-  kernel logger device 或让 C++ exception 跨越 fast callback。message 与 structured
-  `guest_log_tag` 必须从同一份未移动 tag 值构造，不得依赖 C++ 参数求值顺序。
-- `libEGL.so` 发布完整 34 个 EGL 1.4 core 函数；在原有 surface/context/present 入口外，
-  API19 游戏所需的 13 个基础
-  query/thread/proc-address/pbuffer API。`EglModule final` 自有 per-guest-thread sticky error、
-  current/bound API 与稳定 query-string pages；只读 `EglBoundaryContext` 可在
-  `eglGetProcAddress` 冷路径解析 sealed public callable，未知扩展返回 null，绝不修改 hot table
-  或宣告未实现 extension。native EGL display/config 仍是进程稳定事实，但 context/surface
-  使用单调句柄对象表；对象记录 client version/share root、类型/尺寸、current owner、交换间隔
-  与 pending-destroy。每个 Context/Surface 组合拥有真实 ANGLE backing，同一 Context 的
-  draw/read surface 可分别绑定；共享 Context 将 native share identity 传入 ANGLE。所有对象
-  入口校验 initialize/display/config/type，current 对象销毁延迟到解绑；独立 `GlApiRouting`
-  按 guest thread 保存 current Context 的 client version，
-  `eglGetProcAddress` 为已支持 GLES 名称解析独立稳定 thunk，查询无需 current Context；调用
-  thunk 时读取 guest thread 的 current client version 并转发到对应 sealed GLES family。
-  无 current 时调用返回零。直接 ELF import 仍由 SONAME 确定 API family，
-  GLES1/GLES2 的 guest 状态随 current Context 保存和恢复。pbuffer 的真实 ANGLE attachment
-  与查询尺寸一致。宿主允许不同 host thread 分别持有不同 current Context；
-  lane，跨 host thread 抢占返回 `EGL_BAD_ACCESS`，不模拟并行 GPU context 调度。
-  `eglWaitGL`/`eglWaitClient` 同步当前 ANGLE context；pixmap、OpenVG client buffer 与
-  texture-capable pbuffer 尚无底层能力，对应 core 入口完整校验后明确返回 EGL error，
-  不创建伪对象或静默成功。
+共享服务不反向依赖 concrete module。GLES1 fixed/draw 状态显式注入；EGL/GLES 共用唯一
+GuestGlContext、ANGLE backing 与 shared shadow。FrameService 拥有帧回收、指标和 trace；
+TryTrace 只短锁复制有界记录，busy 不等待 graphics 线程。跨线程 input/readback 必须受锁保护。
 
-Android native 边界:`android_boundary_hle` session facade、GLES2/GLES1 边界组件、
-boundary symbol 目录、跨 API 共享的 `GuestGlContext` 与 `A32CallFrame`。本模块把 guest
-的 EGL/GLES/Looper/input 导入映射为显式 handler 并搬运 guest 数据,不拥有会话生命周期。
+## 导出与调用契约
 
-## 依赖
+- BoundaryCatalog 是 SONAME、active export、module-local id、dense slot 的唯一事实源。
+  AndroidApiRange 在 seal 时过滤，seal 后只读；local id 可不连续且不得充当数组序号。
+  synthetic SO 首次发布完整 active dynsym，动态装载不得补写。无导出模块只可作为显式
+  loader scaffold，不能分配伪 thunk；历史 Profile 不构成能力声明。
+- thunk 从 kBionicHleThunkBegin 起按 4 字节 dense slot 排列；arena 按页分配并封为 RX。
+  seal 一次生成 `{export-specific fn, concrete module*}`；fast/slow 共用 handler，热路径
+  仅 `PC → slot → binding`，不再按 SONAME/local id/HleRoute 分发或使用共享 mutable PC。
+  导出实现在 concrete module，不转发到 façade 的 Invoke*；libc override 同样遵守此约束。
+- A32CallFrame 按精确参数数借用 r0-r3，剩余参数一次 bulk read；不得在 handler 逐字读栈。
+  GuestPtr/GuestCString 保留 guest identity，禁止转 host 指针；复杂 callback/variadic ABI
+  可显式编组。启用 guest-call slice observer 时不得安装 fast hook。
+- fast callback 不向 JIT 抛 C++ 异常：按 thread/PC 保存 pending fault，slow consumer 重抛
+  原异常。搬运失败保留类别并附 module!symbol、r0-r3、SP、LR、thread；attribute staging
+  还报告 descriptor、definition/enable LR。未知地址/SVC 或未绑定函数必须明确失败。
+- managed GLES/EGL 是按 API/name/参数数校验 catalog 的冷适配，直接使用同一 binding、
+  registry、thread current 和 error；不重复定义 native export 或创建第二份图形状态。
+- watchdog 仅将成功 eglSwapBuffers、OpenSL BufferQueue.Enqueue 归 advanced，其余保守
+  为 idle；新进展类别必须进集中清单并受测，不能把任意 handled 调用当作续期。
+- MSVC C4702 仅在 sealed if-constexpr 模板定义/实例化处局部关闭；全局 /W4 /WX 与明确失败保留。
 
-可依赖 gles 模块、loader、memory、cpu、core。不得依赖 `runtime/jni`、
-`runtime/jni_guest`、`runtime/framework` 与 `runtime/integration`;上层通过显式接口
-(`AngleFrame`、observer、options)注入运行期状态。
+## 图形共用不变量
 
-## 总则(适用于全部 GLES handler)
+- guest 输入在 ANGLE 调用或状态变化前完整预检、搬运；输出先整体预检，成功后一次提交。
+  shadow 仅在 native mutation 成功后窄范围更新，不复制整个动态状态容器；reset 恢复规范默认。
+- GL 参数错误携精确 GLenum 写入 per-context 首错锁存；glGetError 先取锁存再查 ANGLE。
+  负 count/first/stride/imageSize 等为 INVALID_VALUE，不误归 INVALID_ENUM；内存、生命周期、
+  内部逻辑错误继续硬失败，不能全局吞 invalid_argument。无当前 AngleFrame 明确失败。
+- 同一 Context 的 GLES1/2 共用 buffer/texture、pack/unpack、active unit、framebuffer/
+  renderbuffer、viewport/scissor、clear 与共有 capability；library origin 只决定 API 语义。
+  texture 按 object/target 保存 base format、generate-mipmap，cube face 归一为 cube target；
+  删除清除所有 unit/target 引用。对象名由 ANGLE 唯一生成/删除。
+- query 返回真实 ANGLE 或对应逻辑 shadow，shape 明确受检；不得泄漏超采样坐标或猜未知 pname。
+  GLES1 version 表示 ES-CM 1.1，GLES1/2 扩展串只发布完整可执行能力，不透传后端扩展全集。
+  字符串位于分槽只读 guest 区，不因其他 pname 查询覆盖；GLES1 扩展串保留尾随分隔符。
+- client array 保存定义时 buffer binding，在 draw 按 first/count 或实际最大索引预检并上传；
+  staging 仅复用容量，每次重读，内部 VBO/EBO 上传后恢复 guest binding。opaque EBO 与
+  guest client array 无法确定范围时失败。draw 由 current program/fixed/array 状态决定。
+- fixed draw 在成功和异常路径均恢复 programmable program/buffer/VAO/attribute 常量；
+  内部对象不写 shared shadow。2D/cube sampler 按实际 stage 生成，禁用 stage 不与其他类型冲突。
+- 超采样只换算默认 framebuffer viewport/scissor，用户 FBO 保持 guest 尺寸；倍率创建前校验，
+  查询/指标保持逻辑尺寸。readback 按 pack alignment 提交像素行，保留 padding。
 
-- 无当前 `AngleFrame`、guest 搬运或宿主契约错误必须明确失败；ANGLE 原生 GLES API error
-  必须携带精确 GLenum 锁存到当前 guest context，由 `glGetError` 首错优先、读取清除，禁止
-  静默 no-op、部分回写或伪造结果。
-- process teardown 可通过显式 `RetireGuestGraphics` 永久封闭边界：后续 native/managed
-  GLES 调用中性返回 0 且归类 idle，不进入 ANGLE；`eglSwapBuffers` 返回 false 并由同一
-  guest thread 的 `eglGetError` 消费 `EGL_BAD_NATIVE_WINDOW`。该门只在 teardown 置位，
-  不改变运行期错误或进展分类。
-- guest 输入(名称数组、像素、矩阵、字符串、二级指针)在任何 ANGLE 调用或状态变化前
-  按强类型 guest 地址完整预检并搬运;guest 输出先整体预检,仅在 ANGLE 成功后一次提交。
-- 宿主 shadow 状态仅在对应 ANGLE mutation 成功后提交;context reset/终止时恢复各自的
-  GLES 规范默认值。
+## EGL 与 Surface
 
-## 不变量
+对象细节见 [EGL](modules/egl/MODULE.md) 与 [ADR-0063](../../../docs/adr/media.md#adr-0063)。
+Display/config 是进程事实，Context/Surface 使用单调句柄，保存版本、share、owner、交换间隔和
+延迟销毁状态；Context 拥有 native Context，Surface 独立拥有存储，draw/read 可分别绑定。
 
-- 同一 guest EGL current context 下,GLES1 与 GLES2 入口共享同一个 `GuestGlContext`;
-  buffer binding、pack/unpack alignment 与 active texture 由 `SharedGlState` 唯一拥有,
-  GLES1 texture matrix 也直接以该 active texture 选择 unit,library origin 只决定 API 语义。
-- texture binding、delete semantics、level-zero base format 与 generate-mipmap metadata
-  同样由 `SharedGlState` 唯一拥有;binding 以 `(texture unit,target)` 区分 2D/cube-map,
-  metadata 显式携带 object/target 且键入前归一(cube face → cube map),删除 object 清除
-  所有 unit/target 引用。shared state 表达 GLES1/GLES2 能力并集,GLES1 支持绑定
-  `GL_TEXTURE_CUBE_MAP_OES` 并对上传 face target 归一,其余非法 target 记入
-  per-context guest 错误锁存(`glGetError` 先排空锁存再查后端,首错保留);object
-  name 只由同一个 ANGLE context 生成和删除。GLES1 的
-  `glGetString(GL_VERSION/GL_EXTENSIONS)` 合成固定管线路径语义(版本
-  `OpenGL ES-CM 1.1`,扩展恰为已实现能力),不透传 ES3 后端字符串。
-- GLES2 `glGetString(GL_EXTENSIONS)` 同样只发布 guest 边界可执行的 ETC1/PVRTC
-  压缩格式与已验证 RGBA8 能力，不透传没有 guest thunk/编组契约的 ANGLE 扩展；
-  vendor/renderer/version/shading-language 仍来自当前 ANGLE Context。
-- GLES1/GLES2 调用 ANGLE 后的原生 GL error 共用上述 guest 锁存；module 捕获携带精确
-  GLenum 的 `GlesApiError`，内存、生命周期和内部逻辑异常继续向上失败。GLES2
-  `glGetError` 与 GLES1 一样先排空锁存再查询 ANGLE，不把非法 GLES1-only 枚举伪装成
-  GLES2 能力。负 count/first/stride/imageSize 等已校验数值参数必须类型化为
-  `GL_INVALID_VALUE`，不得落入 GLES1 的兼容性 `invalid_argument`→`GL_INVALID_ENUM` 兜底。
-- framebuffer/renderbuffer binding、viewport/scissor、clear state 与共有 capability 也只有
-  一份 shared shadow;viewport/scissor 的 guest query 返回该 logical shadow,不泄露超采样
-  后的 native 坐标。高频 setter 先验证、执行 ANGLE、再原位窄范围提交,禁止为事务语义
-  复制含动态容器的整个 `SharedGlState` 或 texture-environment/draw state 容器。
-- GLES1 fixed draw 通过显式 native transaction 临时使用内部 program/buffer/attribute;
-  成功和异常返回前均恢复 guest programmable state,internal object 不写入 shared state。
-  fixed program 按 stage 采样目标(2D/cube)选择 `sampler2D`/`samplerCube` 变体惰性编译,
-  未启用 stage 的 sampler 挂到无绑定 unit,禁止同 unit 混用采样器类型。
-- `AndroidBoundaryGles` 独占 buffer/texture/vertex/uniform/query/state/draw/readback 的
-  调用准备与 transfer state;主 HLE 只传入当前 `AngleFrame`,组件不得拥有 EGL 生命周期、
-  GPU 指标或窗口状态。
-- `AndroidBoundaryHle` 从生成目录暴露完整 142 项 GLES2 Thumb trap 命名空间,并从隔离目录
-  发布完整 145 项 `libGLESv1_CM.so` core Thumb trap 及固定 header 受检的 6 项
-  matrix-palette/mapbuffer extension trap;core/extension 独立记账,只有显式 handler 可以执行,
-  未实现或未绑定调用必须携带函数名失败,不得误用同名 GLES2 handler。Looper/input 数据与
-  ANGLE readback 跨线程传递必须受锁保护,未知地址或 SVC 不得吞掉。
-- HLE 分发除 handled 事实外发布 watchdog 进展类别；成功 `eglSwapBuffers` 与 OpenSL ES
-  BufferQueue Enqueue 为 advanced，其余 HLE 保守为 idle。新增 externally observable family
-  必须进入 façade 集中清单并由测试锁定，禁止任意 handled HLE 自动续期。
-- guest transfer 失败必须保留原异常类别,并附带 `module!symbol`、r0-r3、SP、LR 与
-  thread;client attribute staging 还须报告完整 descriptor 和 definition/enable LR。
-- GLES1 `glViewport`/`glScissor` 直接转发当前 `AngleFrame`,与 GLES2 共用受检超采样坐标
-  换算;`glClearColor`/`glClearDepthf`/`glClear` 逐位解码 guest 参数并转发真实 ANGLE
-  clear state,不得仅宿主缓存或静默过滤未知 bit;`glShadeModel` 只接受
-  `GL_FLAT`/`GL_SMOOTH`,写入独立 fixed-pipeline context state；flat triangle/strip/fan 在
-  顶点准备阶段展开为独立三角形，并以每个 primitive 的最后顶点提供 provoking color/normal；
-  client/VBO array 与 `DrawArrays`/`DrawElements` 必须保持同一规则。
-- GLES1 scalar state 批次把 17 个无指针标量入口直接交给当前 `AngleFrame`;GLboolean、
-  GLint、GLfloat 分别按非零、位模式有符号值和浮点位型解码。buffer/pixel-store 同时事务
-  更新独立 GLES1 transfer state;GLES1-only hint 与 capability 进入受检可重置
-  fixed-pipeline state,mipmap hint 与 ANGLE 共有 capability 才转发原生 context,
-  `GL_TEXTURE_2D` 按 active texture unit 隔离。
-- GLES1 raster/depth/stencil 批次直接转发 clear-stencil、depth-range、line-width、
-  polygon-offset 与三项 stencil state;point size/min/max/fade-threshold 保存为受检
-  fixed state,size/min/max 由顶点 shader 的 `gl_PointSize` 消费。
-- GLES1/GLES2 texture/buffer name 生命周期复用 ANGLE name;`GLsizei` 必须非负,删除当前
-  绑定对象后同步 array/element binding 与搬运状态。`glReadPixels` 按当前 pack alignment
-  解析精确输出范围。
-- GLES1 `GL_GENERATE_MIPMAP` 按 texture object 保存,不得作为 texture parameter 转发;
-  active unit/binding/delete/reset 必须同步,值只接受 `GL_FALSE`/`GL_TRUE`。四个 texture
-  image/copy 入口在 level 0 成功后消费 true 状态并经 ANGLE 实际生成 mipmap;像素大小
-  服从独立 unpack alignment,nullable 规则、负 image size 与传输上限受检,ETC1 在 ANGLE
-  未发布原生或 lossy decode 扩展时通过 gles 模块的规范解码器上传 RGBA8,guest texture
-  base format 仍保持 RGB 事实。
-- GLES1 `glGetString` 接受 vendor/renderer/version/extensions;混合链接 guest 经共享符号
-  查询 shading-language 时也转发真实 ANGLE context。五类结果写入 GLES1 专属、分槽且只读
-  的 guest region,任何稳定指针不得因另一 pname 查询被覆盖。固定扩展串发布共享 context
-  已由真实 ANGLE 路径验证的 `GL_OES_rgb8_rgba8`,并保留尾随 token 分隔符以兼容只在空格处
-  提交最后一项的旧解析器；测试必须同时建立 RGBA8 renderbuffer 和完整 FBO，禁止只宣告名称。
-- GLES1 `glGetIntegerv`/`glGetBooleanv`/`glGetFloatv` 对矩阵栈、shade model、
-  active/client texture、binding、client-array descriptor、alignment 与固定管线上限返回
-  转换器拥有的 context 状态;位数、legacy blend alias、设备尺寸与最大 anisotropy 等兼容
-  查询转发真实 ANGLE;查询形状显式受检,未知 pname 不得伪造。同时链接 GLES1/GLES2 的
-  guest 可经共享 `glGetIntegerv` 查询 GLES2 上限与 current program、framebuffer、
-  renderbuffer binding,值仍来自真实 ANGLE。
-- GLES1 fixed/legacy query 直接读取同一 matrix、light/material/fog、clip-plane 与 texture
-  environment state；buffer/texture predicate 和 parameter query 转发真实 ANGLE。所有 guest
-  输出按实际 shape 完整写入，fixed 输出按 16.16 转换而 enum identity 保持整数值。
-- GLES1 legacy fixed-state 批次显式绑定 alpha function、client active texture、current
-  color、current normal、六个 eye-space clip plane 与 texture environment,状态按
-  context/texture unit 隔离、clamp 并随 reset 恢复;`glMultMatrixf` 右乘当前 matrix,
-  `glClipPlanef` 提交时按 modelview 逆转置方程并拒绝奇异 matrix;fixed shader 必须消费
-  current normal 并以六项 capability 控制真实 fragment clipping,不得只保存方程或伪造
-  `GL_MAX_CLIP_PLANES`。
-- GLES1 client-array/draw 批次延迟保存 4 类 client pointer;`glGetPointerv`/`glIsEnabled`
-  返回已保存 descriptor 与 server/client enable,context reset 恢复规范 array 默认值。
-  draw 才按实际 first/count 或 guest index 最大值完整预检 client 内存并上传内部
-  VBO/EBO,guest buffer binding 在内部上传后恢复;暂存只复用宿主高水位容量,每次 draw
-  仍重新预检读取,pointer 更新以已验证候选在 current frame 成功后提交。固定管线通过
-  内部 GLES2 shader 消费 modelview/projection/texture matrix、current/array color、
-  light0、texture、fog 与 alpha-test 状态。`glDrawArrays` 直接以无索引路径执行；flat
-  triangle 展开后也以连续顶点绘制，不引入 `GLushort` 或 65535 上限。当前 renderer 支持最多两个实际启用 `GL_TEXTURE_2D`
-  的单元,按单元编号以各自 coordinate array、sampler、texture matrix、base format 和
-  environment 逐级应用 MODULATE/REPLACE/ADD/BLEND/DECAL/COMBINE,`GL_PREVIOUS` 读取上一 stage
-  输出;active/client active texture 只决定后续状态写入位置。BND-27 将坐标来源与采样
-  stage 分开解析：优先 stage 自有 array；单 stage 且全局仅有一个有效 array 时允许通用
-  回退，多 stage 缺失自有 array 则明确失败，禁止跨 stage 共享。超过两个单元、
-  其他 environment 或 opaque EBO 配合 guest client array 必须明确失败。lighting 消费
-  LIGHT0..7 的 ambient/diffuse/specular、position、spot 与衰减，以及前后材质、emission、
-  shininess、two-side 和 color-material；输出 alpha 取 diffuse material alpha。法线使用
-  modelview 上三阶逆转置；`GL_NORMALIZE` 控制单位化，`GL_RESCALE_NORMAL` 按 modelview
-  比例补偿，两者关闭时保留变换后长度。level-0 base format 按 texture object 保存并随
-  delete/reset 清理,未知格式不得猜测组合语义。
-- `glPointSizePointerOES` 保存调用时 array-buffer binding；启用 point-size array 后内部
-  vertex shader 从该 attribute 选择每顶点 point size，再应用 distance attenuation/min/max。
-- 三个 `GL_OES_matrix_palette` 入口绑定在独立 extension dispatch:current palette index
-  限定 0..31,matrix-index/weight pointer 延迟保存调用时 array-buffer binding,类型、
-  size 与 stride 受检且随 context reset;完整 skinning shader 尚未实现时 draw 必须明确
-  失败,禁止忽略权重或伪装成功。
-- `GL_OES_mapbuffer` 三个入口绑定同一 extension dispatch：只接受规范的 buffer target、
-  `GL_WRITE_ONLY_OES` 与当前未映射对象；ANGLE host map 内容复制到 `0x72000000` 起的
-  32 MiB 受检 guest arena，unmap 前反向复制，pointer query 仅返回对应 guest identity。
-  arena 分配耗尽、guest 搬运失败或 native GL error 必须明确失败，reset 清除全部映射事实。
-- KitKat `libGLESv1_CM.so` 额外发布 7 个 Android Bounds wrapper；它们拥有独立 public
-  metadata 与 direct `Gles1Module` binding，不占用或重排 145 core/6 extension ID。client
-  pointer 在 VBO 模式保存 offset，在 guest-memory 模式按 `count/size/type/stride` 预检完整范围
-  后提交到同一 draw state。
-- GLES1 matrix state 批次保存 modelview/projection 与按 active texture unit 隔离的
-  texture 列主序矩阵栈,`load/multiply/push/pop/rotate/translate/scale/frustum/ortho`
-  按 OpenGL 后乘语义更新;fixed API 以有符号 16.16 转换且向量先完整读取;栈
-  上溢/下溢、非法旋转轴不部分提交,状态留给 fixed-pipeline draw 转换消费,不得将仅
-  缓存矩阵解释为已完成渲染。
-- GLES1 current texture coordinate 按显式 texture unit 隔离，在对应 coordinate array
-  关闭时写入内部 shader attribute；point distance attenuation 与 min/max 一并由 fixed
-  vertex shader 消费。相关 fixed/scalar alias 必须直接绑定，不得回退为 unimplemented。
-- GLES1 lighting/material/fog 批次绑定 7 个目标导入入口,按 pname、元素数与参数范围
-  校验后事务提交;`glMaterial*` 默认严格要求 `GL_FRONT_AND_BACK`。
-  `AndroidBoundaryOptions::allow_gles1_material_single_face` 默认关闭,仅已验证 Profile
-  quirk 可经 guest-session request 启用;启用时可独立保存 `GL_FRONT` 与 `GL_BACK`,
-  标准 face 仍事务更新两面,reset 恢复两面默认值但不得丢失配置策略。
-- GLES2 shader/program handler 把 guest 二级源码数组、可选长度、查询输出和符号名完整
-  预检后调用 ANGLE;active attribute/uniform 与 info-log 多输出按 `bufSize` 截断提交,
-  编译/链接失败通过真实查询值表达。
-- GLES2 completion handler 在成功 link 后从 ANGLE active-uniform metadata 为每个 location
-  登记输出 shape，包括 API19 `GL_SAMPLER_3D_OES` 的单值 shape；relink/delete 清理旧
-  shape；uniform/vertex query 在 native 调用前完整
-  preflight。vertex array descriptor 与 pointer/offset identity 读取 programmable service 的
-  guest logical state，constant value 在 fixed draw transaction 后恢复；shader binary unsupported
-  通过真实 `glGetError` 表达，不转成伪成功能力声明。
-- GLES2 framebuffer/renderbuffer 批次真实转发生命周期、绑定、storage、两类 attachment、
-  status 与 mipmap;第五个 `glFramebufferTexture2D` 参数必须从 A32 guest 栈读取。
-- GLES2 blend/raster 批次真实转发 blend color/equation、sample coverage 与 flush；混合
-  链接 guest 的 core `glSampleCoverage` 与 `glFlush` 也必须在 GLES1 dispatch 转入相同
-  ANGLE context，flush 不得触发 managed/guest surface present。
-- GLES2 low-transfer state 批次直接绑定 separate blend、depth/raster、普通与 front/back
-  stencil 入口；clear depth/stencil 只在真实 ANGLE 成功后提交 shared shadow。buffer、texture、
-  shader、program、framebuffer 与 renderbuffer predicate 查询真实 context object namespace，
-  创建、绑定和删除后的 identity 必须一致；back-stencil query shape 固定为规范单值。
-- GLES2 transfer/query 批次的 15 个 export 由 `Gles2Module` 命名 handler 直接承载；IDL 与
-  shared transfer state 在 ANGLE 前解析完整 guest range，output 先 preflight 后一次提交。
-  compressed/copy texture、buffer subrange 以及 object/texture/boolean/float query 均进入同一
-  ANGLE context，非法 guest pointer 不得留下 native 或 shared-state mutation。
-- vertex attribute 延迟保存调用时 array-buffer binding;client array 在 draw 时按
-  first/count 或 guest 索引最大值完整预检并上传内部 VBO/EBO,随后恢复 guest buffer
-  binding。uniform 标量保持位模式,矩阵/vector 批量入口复用 IDL 计数,constant
-  attribute 的第五个 float 从 A32 guest 栈读取;已绑定 element buffer 时不得为启用的
-  client attribute 猜测索引范围。draw renderer 由统一 Context 的 current program、fixed
-  client-array 与 programmable attribute 事实共同决定,symbol 所属 library 不拥有
-  renderer 或 context state。
-- boundary thunk catalog 必须保持从 `kBionicHleThunkBegin` 开始的 dense 4-byte slot；seal
-  后正常执行链只以 slot 读取 `{fn,self}` 并调用 export-specific handler。local id、library
-  与 name 只服务冷路径 metadata、ELF 查询、诊断与 trace，禁止重新参与 handler 选择。
-- `A32CallFrame` 按 descriptor 的精确 parameter count 固定存储 r0-r3,并以一次 guest
-  bulk read 解码剩余栈参数;handler 不得自行逐字读取 guest 栈。普通指针/string 参数用
-  `GuestPtr<T>`/`GuestCString` 保持 guest address identity，禁止转换为 host pointer；
-  variadic/callback 等复杂 ABI 可保留显式 custom wrapper。
-- `glGetString` 只为样例使用的真实 ANGLE core 字符串建立有界只读 guest 槽;integer
-  query、draw indices 与 readback 输出复用 transfer state,draw 成功后由主 HLE 更新指标。
-- 超采样倍率必须在创建任何 ANGLE 资源前完整验证;只有默认 framebuffer 的 viewport/scissor
-  按倍率缩放，用户 FBO 保持 guest 像素尺寸；缩放溢出明确失败,guest
-  `eglQuerySurface` 不得泄漏内部渲染尺寸,GPU 查询不得把逻辑尺寸伪装成真实 target。
-- host-managed surface 明确表示 GLSurfaceView 等 Java lifecycle 拥有的 ANGLE pbuffer;
-  open/present/close 必须严格配对,guest EGL 不得替换或终止该 surface,帧仍走统一
-  resolve。宿主成功 present 后可归还布局完全匹配的拥有型帧;1x surface 复用其 RGBA8
-  高水位存储,被新帧覆盖但未消费的同布局存储也可回收,帧内容和序号本身不得缓存或
-  复用。超采样帧仍通过 resolve 独立产生逻辑尺寸输出。
-- host-managed surface 创建并初始化默认状态后保持打开线程 GL currency；session 可在
-  guest-owned render driver 启动前由该线程显式释放，随后首个 GL/present 调用绑定到
-  新调用线程。同线程可再次显式释放后接力，跨线程抢夺必须明确失败。
-- `PublishSoftwareFrame` 允许上层(如视频解码泵)注入一整帧逻辑尺寸 RGBA8 软件帧,
-  复用统一帧存储与递增 sequence;尺寸与逻辑 surface 布局不符必须明确失败,不得部分
-  发布。
+- per-thread 保存 current、bound API、sticky error；所有入口验证 display/config/type/初始化。
+  current 对象到解绑后才销毁；不同 host thread 可拥有不同 Context，跨线程抢占报 BAD_ACCESS。
+  GLES fixed/client/VAO 状态按 Context 保存，纹理/VBO 内容按 share group 共享；最后 share
+  退役经显式回调清理 map/sync，eglReleaseThread 不清除其他 Context 的记录。
+- eglGetProcAddress 冷查 sealed callable，未知扩展返回 null，不改 hot table。查询无需 current；
+  返回的稳定 GLES thunk 按调用线程 current client version 路由，无 current 返回零。
+  直接 ELF import 仍由 SONAME 决定 API family。eglWaitGL/WaitClient 同步真实 ANGLE。
+- KHR sync/image 与 OES image target 使用 guest identity；只发布后端支持的扩展。texture
+  pbuffer 使用真实 native binding；swap 保存/恢复 read framebuffer，只发布 draw surface。
+  pixmap、OpenVG、native-buffer/native-fence FD、presentation-time 与任意厂商扩展不在范围。
+- managed surface 的 open/present/close 严格配对，guest EGL 不得替换/终止；pbuffer 仍有独立
+  backing。创建线程保持 GL currency，显式释放后才可由新渲染线程接管，不允许跨线程抢夺。
+- 帧经统一 resolve/sequence 发布；仅回收布局匹配的容量，不复用内容/序号。PublishSoftwareFrame
+  只接受完整逻辑尺寸 RGBA8。RetireGuestGraphics 永久关闭 guest 图形：后续调用 idle/零返回，
+  swap 返回 false 并锁存 BAD_NATIVE_WINDOW；此规则仅用于 teardown。
 
-## 测试
+## GLES 支持边界
 
-BND-29：GLES2 enable/disable/isEnabled 只将 capability 前置枚举校验失败转为
-GlesApiError(GL_INVALID_ENUM)，复用共用错误锁存，错误调用不改变状态。
-无当前 ANGLE frame 仍先明确失败，禁止全局吞掉 std::invalid_argument。
+完整导出以生成 catalog 为准，core/extension 独立记账；不得误用同名其他 API handler。
+细节见 [GLES1](modules/gles1/MODULE.md)、[GLES2](modules/gles2/MODULE.md)、
+[GLES3](modules/gles3/MODULE.md)。
 
-对应 `tests/runtime/boundary/integration/android_boundary_hle_tests.cpp`（同时覆盖独立 GLES
-分派组件）与 `tests/runtime/boundary/modules/gles1_fixed_tests.cpp`。architecture gate 递归
-扫描 `src/runtime/boundary/{core,services,modules,facade}` 下全部 implementation，并对
-`TryFastCall()` 另做严格 hot-router 检查。
+- GLES1 matrix 栈按 Context/unit 隔离，列主序后乘，fixed 用有符号 16.16；溢出、奇异矩阵和
+  非法参数不得部分提交。current color/normal/texcoord、clip plane、lighting/material/fog、
+  alpha-test 与 texture environment 必须被 shader 消费，不能只缓存状态。
+- fixed renderer 支持最多两个启用纹理 stage，独立 coordinate/sampler/matrix/base format，
+  支持 MODULATE/REPLACE/ADD/BLEND/DECAL/COMBINE，PREVIOUS 为上一 stage 输出。
+  优先 stage 自有 array；仅单 stage 且全局唯一有效 array 可通用回退，多 stage 不借用坐标。
+  超范围明确失败。light0..7、双面材质、spot/衰减、normalize/rescale-normal 保留实际语义。
+- flat 展开以 primitive 最后顶点提供 provoking 属性；DrawArrays/展开不引入 16 位索引上限。
+  point-size array 与 distance attenuation/min/max 由 shader 消费。matrix palette 支持受检
+  RAM/VBO 加权变换，Context 隔离；范围以 GLES1 子契约为准。
+- material 默认只接受 FRONT_AND_BACK；allow_gles1_material_single_face 默认关闭，仅已验证
+  Profile quirk 可启用单面状态，reset 不丢策略。clip plane 提交用 modelview 逆转置并拒绝奇异矩阵。
+- texture level 0 成功后按对象 GENERATE_MIPMAP 状态真正生成 mipmap；nullable/image-size/
+  unpack alignment 受检，ETC1 无原生能力时规范解码为 RGBA8，guest base format 仍为 RGB。
+  OES mapbuffer 仅 WRITE_ONLY、有效未映射对象；内容经 0x72000000 起的 32 MiB guest arena
+  双向复制，耗尽/搬运/native 错误明确失败，reset 清理。
+  Bounds wrapper 独立绑定，client-memory 按 count/size/type/stride 预检，VBO 保存 offset。
+- GLES2/3 shader/program 源码、二级指针、名字与多输出先整体校验；编译/链接结果来自 ANGLE。
+  active query/info-log 按 bufSize 截断；link 后按 active-uniform metadata 保存 location shape，
+  relink/delete 清理。pointer query 返回 guest logical identity；不猜未绑定属性的索引范围。
+  compressed/copy/subrange、object query、framebuffer、blend/depth/stencil 均复用同一 ANGLE
+  与搬运服务；flush 不触发 present，shader binary 不支持以真实 GL error 表达。
 
-BND-24 以 API19 exact APK 的 `eglGetProcAddress + 142/142 GLES2 core` 导入面复验
-catalog provider 和 concrete handler，关闭 survey 的 bounded run 已越过 native load、
-JNI_OnLoad 与 OpenGL 边界。ADR-0062 已将 API19 GLES3 纳入目标：`libGLESv2.so` 发布
-104 项 delta，104 项均已进入真实 ANGLE handler；厂商 extension
-全集仍不发布。
+## Android、动态链接、日志与音频
 
-Android/EGL/GLES2 sealed export 的 `if constexpr` 分派在 MSVC 下只对模板定义与显式
-实例化范围关闭 C4702；全局 `/W4 /WX` 保持启用，fallback 仍必须明确抛错。
+- [Android module](modules/android/MODULE.md) 自有 Looper/input；Activity/assets/queue 强类型
+  identity 与 APK reader 显式注入。asset opaque token 随 owner 退役，单 asset 上限 64 MiB。
+  window 每次创建新身份，acquire/release 可保留退役后的尺寸查询但不能重新激活；EGL
+  create/bind/swap 拒绝失效窗口。只接受会话尺寸/RGBA8 geometry，其余 EINVAL。
+  InputQueue 只接收当前 owner 的 SDL 输入，支持所属 Looper ident poll/get/finish/detach；
+  callback 明确失败，managed Activity 失效句柄不得回退 standalone 行为。
+- libdl 只处理 ABI、逐线程消费式 dlerror 和有界只读返回区；ELF namespace、handle、sealed
+  symbol/exidx 由 BionicDynamicLinkHooks 注入。查找失败按 null/-1 表达，不转为 trap。
+- liblog 使用固定 API19 surface 和 LogBoundaryContext；内存经 AddressSpace，event tag map
+  经注入 VFS reader，tag 存只读页。输出结构化 guest.liblog/[guest]，不访问 host filesystem、
+  伪造 logger device 或裸输出；message/guest_log_tag 从同一未移动值构造。
+- [OpenSL ES](modules/opensles/MODULE.md) 以 immutable vtable thunk 与防陈旧句柄表实现
+  Engine→OutputMix→PCM AudioPlayer；范围外 constructor 返回 FEATURE_UNSUPPORTED。
+  唯一 OpenSlesPcmMixer 经 façade 提供 AudioTrack 适配，module 不依赖 integration/façade/HAL。
 
+## 验证入口
 
-## NativeActivity 注册边界
-
-Android module 经 façade 接收当前进程的强类型 Activity/AssetManager/queue identity，
-不反向依赖 integration。APK asset reader 显式注入；open/read/seek/length/remaining/close
-使用 module-owned opaque token，单 asset 上限 64 MiB，退役时释放全部 backing。
-每次窗口创建分配独立 opaque identity，并持有 acquire/release 引用计数；解除所有权后
-引用可保留尺寸查询，旧 identity 不得重新激活。EGL 经 façade 注入的只读接口检查窗口，
-退役窗口的 create/bind/swap 返回 BAD_NATIVE_WINDOW。会话尺寸与 RGBA8 可查询，
-其他 geometry 返回 EINVAL。
-InputQueue 只接收当前所有者的 SDL 输入，支持 ident polling、get/finish event、detach；
-callback looper 明确失败。接入过 managed Activity 后，失效句柄不得回退到 standalone runner。
-
-## BND-34 当前契约
-
-EGL Context、Surface、Display 按 [ADR-0063](../../../docs/adr/media.md#adr-0063) 分离所有权。
-Context 创建时建立 native share；所有 GLES1 fixed/legacy/client-array 和可编程 VAO shadow
-按 Context 保存。texture 元数据与 GLES1 VBO 内容共享持有；map/sync identity 以 share group
-隔离，最后成员销毁通过显式回调退役，eglReleaseThread 不清空其他 Context 的映射。
-
-EGL core 名称保持 34 项；增加 8 个 KHR sync/image 入口，以及两种 OES image target 的
-受检 guest thunk。驱动不支持的扩展不发布。texture pbuffer 使用真实 native 绑定，swap
-保存/恢复 guest read framebuffer 和 read surface，仅发布 draw surface 默认颜色缓冲。
-GLES1 matrix palette 四入口执行有界加权变换，保留固定管线 ANGLE shader 和 Context 隔离。
-
-回归见 integration `BND34*`。Pixmap/OpenVG、Android native-buffer/native-fence FD、
-presentation-time 与任意厂商扩展仍不是本模块已发布能力；整体 Android GLES 完整性不能
-由 core 函数个数或本次回归替代。
+`tests/runtime/boundary/{core,modules,integration}` 分别验证 transport、私有状态与跨模块行为；
+Looper 另见 `tests/runtime/guest_looper_tests.cpp`。architecture.boundary_hot_path 递归检查
+boundary 实现和 TryFastCall；运行证据、未闭合验收以 CURRENT、任务单及 capabilities 为准。

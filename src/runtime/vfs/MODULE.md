@@ -94,3 +94,9 @@ mkdir/unlink/rmdir/rename 立即落元数据。unlink/覆盖后的存活句柄�
   恢复和 ENOSPC。
 
 `TrySnapshot` 分别 try-lock 全局元数据、打开状态与资源预算；挂载/FD 各最多 128 项。打开状态忙时该 FD 标 busy，offset/node_id 未知，不等待 backing IO；总数和 partial 显式返回。`TryDescriptorNode` 仅尝试读取稳定节点身份。flushes 只累计挂载沙盒成功完成的 FlushAll，不把未挂载算成功落盘。
+
+## Pipe readiness
+
+PipePollEvents 是不消费数据的快照查询：返回读/写/错误/挂断/无效位，普通文件或目录返回
+不支持。可读性来自当前 offset 与 backing size，另一端关闭从真实 descriptor 表推导；
+不以任意文件写入作为 pipe 事件。调用侧负责等待和重新查询，VFS 不依赖 Looper。

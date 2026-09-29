@@ -569,6 +569,33 @@ std::int32_t VirtualFileSystem::Impl::Open(const std::string_view path,
         return descriptor;
     }
 
+std::optional<std::uint32_t> VirtualFileSystem::Impl::PipePollEvents(std::int32_t descriptor) const {
+    std::shared_ptr<OpenFile> open;
+    bool reader{}, writer{};
+    {
+        std::scoped_lock lock(mutex_);
+        const auto found = descriptors_.find(descriptor);
+        if (found == descriptors_.end()) return 16U;
+        open = found->second;
+        if (!open->pipe) return std::nullopt;
+        for (const auto& [fd, peer] : descriptors_) {
+            static_cast<void>(fd);
+            if (peer->file != open->file) continue;
+            reader = reader || peer->readable;
+            writer = writer || peer->writable;
+        }
+    }
+    std::scoped_lock operation(open->mutex);
+    std::scoped_lock contents(*open->file->mutex);
+    std::uint32_t events{};
+    if (open->readable) {
+        if (open->offset < open->file->size || !writer) events |= 1U;
+        if (!writer) events |= 8U;
+    }
+    if (open->writable) events |= reader ? 2U : 4U;
+    return events;
+}
+
 VfsPipeDescriptors VirtualFileSystem::Impl::CreatePipe() {
         std::scoped_lock lock(mutex_);
         auto pipe = std::make_shared<File>(
@@ -1032,6 +1059,10 @@ VfsFileInfo VirtualFileSystem::DescriptorInfo(
     const std::int32_t descriptor) const {
     return impl_->DescriptorInfo(descriptor);
 }
+std::optional<std::uint32_t> VirtualFileSystem::PipePollEvents(std::int32_t descriptor) const {
+    return impl_->PipePollEvents(descriptor);
+}
+
 VfsPipeDescriptors VirtualFileSystem::CreatePipe() {
     return impl_->CreatePipe();
 }

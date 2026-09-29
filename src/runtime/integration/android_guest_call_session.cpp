@@ -1094,6 +1094,7 @@ public:
                 lifecycle_.RequestExit(thread_id, 0);
                 static_cast<void>(lifecycle_.CompleteExit(thread_id));
                 static_cast<void>(lifecycle_.Reap(thread_id));
+                if (dispatcher_.signal_binding->runtime) dispatcher_.signal_binding->runtime->Retire(thread_id);
             }
             if (stack_mapped) address_space_.Unmap(context->stack);
             if (context->tls.has_value()) {
@@ -1122,6 +1123,7 @@ public:
             lifecycle_.RequestExit(thread_id, 0);
             static_cast<void>(lifecycle_.CompleteExit(thread_id));
             static_cast<void>(lifecycle_.Reap(thread_id));
+            if (dispatcher_.signal_binding->runtime) dispatcher_.signal_binding->runtime->Retire(thread_id);
             address_space_.Unmap(context->stack);
             DestroyBionicTlsBlock(address_space_, *context->tls);
             address_space_.Unmap(context->thread_info);

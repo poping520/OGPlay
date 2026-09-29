@@ -31,8 +31,11 @@
   并将首次 queueEvent 提前至 Surface 回调前。定向 6 用例/414 断言通过。
   [VFS-05](../tasks/vfs/VFS-05.md) 已按 guest 页账本提供 `/proc/self/maps` 的只读打开快照；
   Windows 构建、定向 56 用例/351 断言通过。原 APK/OBB 无 Profile/无 survey、临时沙盒加
-  3 帧上限复跑，`Mono requires /proc to be mounted` 消失；当前首错为
+  3 帧上限复跑，`Mono requires /proc to be mounted` 消失；当时首错为
   `Cannot set SIG_SUSPEND handler`，随后 SIGABRT（134），CLI 返回 1。
+  [BND-41](../tasks/boundary/BND-41.md) 已补 ARM 进程内信号注册、投递及暂停/恢复链路；
+  Windows 构建与定向 68 用例/573 断言通过。同一路径已越过该注册错误，当前停止在 Dynarmic `Should raise coproc exception here`
+  断言。证据 `.local/signal-startup.log`；实际 GC 全周期尚未验收。
   尚未重达 nativeRender，原绘制故障未复验。证据 `.local/proc-maps-*.log`。
   此前 renderer 证据 `.local/renderer-{build,test-build,tests,startup}.log`。
   EGL 暂停/恢复策略尚未接入该配置；前置 NDK 符号缺失仍待闭合。
@@ -77,7 +80,7 @@
 
 ## 未闭合边界
 
-- Dead Trigger 当前首错是 Mono 注册 `SIG_SUSPEND` handler 失败；首次 nativeRender 的
+- Dead Trigger 当前首错是 Dynarmic coprocessor 断言；Mono 信号注册失败已越过。首次 nativeRender 的
   `GLES1 draw requires GL_VERTEX_ARRAY` 尚未重达复验；
   不运行 Binder、
   system_server、外部包数据库、广播投递或 Play 服务。

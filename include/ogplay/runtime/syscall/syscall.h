@@ -18,6 +18,7 @@
 #include "ogplay/hal/clock.h"
 #include "ogplay/memory/address_space.h"
 #include "ogplay/runtime/syscall/guest_thread_lifecycle.h"
+#include "ogplay/runtime/syscall/guest_signal_runtime.h"
 #include "ogplay/runtime/common/supervisor_call_progress.h"
 #include "ogplay/runtime/vfs/vfs.h"
 
@@ -123,6 +124,7 @@ public:
 };
 
 struct A32SyscallOutcome final {
+    std::optional<cpu::A32State> restored_state;
     std::int32_t return_value{};
     SupervisorCallProgress progress{SupervisorCallProgress::handled_idle};
 
@@ -130,6 +132,11 @@ struct A32SyscallOutcome final {
     A32SyscallOutcome(std::int32_t value) : return_value(value) {}
     A32SyscallOutcome(std::int32_t value, SupervisorCallProgress made_progress)
         : return_value(value), progress(made_progress) {}
+};
+
+struct GuestSignalBinding final {
+    std::shared_ptr<GuestSignalRuntime> runtime;
+    cpu::FutexTable* waiters{};
 };
 
 class A32SyscallDispatcher final {
@@ -152,6 +159,9 @@ public:
     // Compatibility query for callers which only consume the Linux result.
     [[nodiscard]] std::int32_t Dispatch(const A32SyscallFrame& frame);
     [[nodiscard]] SyscallCoverage Coverage() const;
+    // Shared indirection keeps bound handlers valid if the dispatcher is moved.
+    std::shared_ptr<GuestSignalBinding> signal_binding{std::make_shared<GuestSignalBinding>()};
+    AndroidProcessIdentity identity;
 
 private:
     struct Entry final {

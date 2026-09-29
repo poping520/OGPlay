@@ -50,6 +50,7 @@ std::int32_t GuestCloneThreadRuntime::Spawn(
         const auto committed = committer_.Commit(request, child_thread_id);
         if (committed == -kEagain) continue;
         if (committed < 0) return committed;
+        if (dispatcher_.signal_binding->runtime) dispatcher_.signal_binding->runtime->Inherit(request.parent_thread_id, child_thread_id);
 
         auto child_state = request.parent_cpu_state;
         child_state.SetThreadId(child_thread_id);
@@ -66,6 +67,7 @@ std::int32_t GuestCloneThreadRuntime::Spawn(
                     RunChild(child_thread_id, cpu);
                 });
         } catch (const std::exception&) {
+            if (dispatcher_.signal_binding->runtime) dispatcher_.signal_binding->runtime->Retire(child_thread_id);
             lifecycle_.RequestExit(child_thread_id, -1);
             static_cast<void>(lifecycle_.CompleteExit(
                 child_thread_id, memory_bus_, futex_table_));
@@ -132,6 +134,7 @@ GuestCloneThreadJoin GuestCloneThreadRuntime::Join(
         throw std::logic_error("guest clone thread has no run outcome");
     }
     auto outcome = std::move(found->second);
+    if (dispatcher_.signal_binding->runtime) dispatcher_.signal_binding->runtime->Retire(thread_id);
     outcomes_.erase(found);
     return {std::move(thread), std::move(outcome)};
 }

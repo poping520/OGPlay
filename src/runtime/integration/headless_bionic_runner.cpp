@@ -158,9 +158,17 @@ void InitializeEmptyPropertyArea(
     std::uint64_t consumed{};
     std::string syscall_trace;
     while (consumed < remaining_ticks) {
-        const auto stopped = cpu.Run(remaining_ticks - consumed);
+        if (dispatcher.signal_binding->runtime) dispatcher.signal_binding->runtime->Deliver(cpu);
+        if (lifecycle.State(cpu.GetState().ThreadId()).status != GuestThreadStatus::running) {
+            throw HeadlessBionicRunError("headless guest signal or exit request terminated the call");
+        }
+        const auto stopped = cpu.Run(dispatcher.signal_binding->runtime ? std::min(remaining_ticks - consumed,
+            GuestSignalRuntime::kPollTicks) : remaining_ticks - consumed);
         consumed += stopped.ticks_consumed;
-        if (stopped.reason == cpu::RunStopReason::budget_exhausted) break;
+        if (stopped.reason == cpu::RunStopReason::budget_exhausted) {
+            if (stopped.ticks_consumed == 0) break;
+            continue;
+        }
         if (stopped.reason == cpu::RunStopReason::supervisor_call &&
             stopped.immediate == 1 && stopped.pc == kReturnAddress) {
             return consumed;

@@ -43,6 +43,11 @@ constexpr std::array kAndroidArmBaseline{
     Declaration{45, "brk", SyscallGroup::memory},
     Declaration{54, "ioctl", SyscallGroup::file},
     Declaration{55, "fcntl", SyscallGroup::file},
+    Declaration{67, "sigaction", SyscallGroup::signal},
+    Declaration{72, "sigsuspend", SyscallGroup::signal},
+    Declaration{73, "sigpending", SyscallGroup::signal},
+    Declaration{119, "sigreturn", SyscallGroup::signal},
+    Declaration{173, "rt_sigreturn", SyscallGroup::signal},
     Declaration{78, "gettimeofday", SyscallGroup::time},
     Declaration{77, "getrusage", SyscallGroup::process},
     Declaration{82, "select", SyscallGroup::poll},
@@ -230,6 +235,9 @@ A32SyscallOutcome A32SyscallDispatcher::DispatchOutcome(
         outcome.return_value = -kLinuxEnosys;
     } else {
         outcome = found->second.handler(frame);
+        if (outcome.return_value == -kLinuxEnosys) {
+            ledger_.RecordUnimplemented("syscall." + found->second.name, frame.link_register);
+        }
     }
     if (outcome.progress != SupervisorCallProgress::handled_advanced) {
         outcome.progress = classify(frame.number, outcome.return_value);
@@ -263,6 +271,7 @@ SyscallCoverage A32SyscallDispatcher::Coverage() const {
 A32SyscallDispatcher CreateAndroidArmSyscallDispatcher(
     core::CapabilityLedger& ledger, const AndroidProcessIdentity identity) {
     A32SyscallDispatcher result{ledger};
+    result.identity = identity;
     for (const auto& declaration : kAndroidArmBaseline) {
         const auto constant = [value = identity.process_id](const A32SyscallFrame&) {
             return static_cast<std::int32_t>(value);
@@ -584,6 +593,7 @@ void BindAndroidMemorySyscalls(A32SyscallDispatcher& dispatcher,
 void BindAndroidThreadSyscalls(A32SyscallDispatcher& dispatcher,
                                cpu::FutexTable& futex_table,
                                memory::MemoryBus& memory_bus) {
+    dispatcher.signal_binding->waiters = &futex_table;
     constexpr std::int32_t kEagain = 11;
     constexpr std::int32_t kEintr = 4;
     constexpr std::int32_t kEfault = 14;
@@ -595,7 +605,7 @@ void BindAndroidThreadSyscalls(A32SyscallDispatcher& dispatcher,
     constexpr std::uint32_t kFutexPrivateFlag = 128;
     constexpr std::uint32_t kFutexClockRealtime = 256;
     dispatcher.Implement(
-        240, [&futex_table, &memory_bus](const A32SyscallFrame& frame)
+        240, [binding = dispatcher.signal_binding, &futex_table, &memory_bus](const A32SyscallFrame& frame)
                  -> A32SyscallOutcome {
             const memory::GuestAddress address{frame.arguments[0]};
             if (!address.IsAligned(4)) return -kEinval;
@@ -622,7 +632,9 @@ void BindAndroidThreadSyscalls(A32SyscallDispatcher& dispatcher,
                     }
                     const auto result = futex_table.Wait(
                         memory_bus, address, frame.arguments[2], frame.thread_id,
-                        timeout);
+                        timeout, [binding, &frame] {
+                            return binding->runtime && binding->runtime->Pending(frame.thread_id);
+                        });
                     const auto parked =
                         result == cpu::FutexWaitResult::awoken ||
                         result == cpu::FutexWaitResult::interrupted_after_wait ||
@@ -638,6 +650,7 @@ void BindAndroidThreadSyscalls(A32SyscallDispatcher& dispatcher,
                         result ==
                             cpu::FutexWaitResult::interrupted_after_wait) {
                         value = -kEintr;
+                        if (binding->runtime) binding->runtime->InterruptedWait(frame);
                     }
                     return {value, parked
                                        ? SupervisorCallProgress::handled_advanced

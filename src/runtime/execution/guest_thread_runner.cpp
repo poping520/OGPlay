@@ -177,8 +177,17 @@ A32GuestCallResult InvokeA32GuestCall(
     std::uint64_t consumed{};
     std::uint64_t watchdog_consumed{};
     while (watchdog_consumed < tick_budget) {
+        if (dispatcher.signal_binding->runtime) dispatcher.signal_binding->runtime->Deliver(cpu);
+        const auto current_before_run = lifecycle.State(state.ThreadId());
+        if (current_before_run.status != GuestThreadStatus::running) {
+            const cpu::RunResult interrupted{0, cpu::RunStopReason::halt_requested,
+                memory::GuestAddress{cpu.GetState().Register(cpu::CoreRegister::pc)}, 0, 0, std::nullopt};
+            throw A32GuestCallError(DescribeGuestCallExit(frame, consumed, interrupted,
+                cpu.GetState(), current_before_run, address_space));
+        }
         const auto remaining = tick_budget - watchdog_consumed;
-        const auto slice_ticks = std::min(remaining, kA32GuestCallSliceTicks);
+        const auto slice_ticks = std::min(remaining, dispatcher.signal_binding->runtime
+            ? GuestSignalRuntime::kPollTicks : kA32GuestCallSliceTicks);
         const auto stopped = cpu.Run(slice_ticks);
         if (stopped.ticks_consumed > slice_ticks) {
             throw A32GuestCallError(
@@ -255,9 +264,16 @@ GuestThreadRunOutcome RunAndroidArmGuestThread(
                         0, 0, std::nullopt};
     std::uint64_t consumed{};
     while (consumed < tick_budget) {
-        last = cpu.Run(tick_budget - consumed);
+        if (dispatcher.signal_binding->runtime) dispatcher.signal_binding->runtime->Deliver(cpu);
+        if (lifecycle.State(initial.ThreadId()).status == GuestThreadStatus::exit_requested) {
+            auto exit = lifecycle.CompleteExit(initial.ThreadId(), memory_bus, futex_table);
+            return {consumed, GuestThreadRunStop::guest_exit, last, std::move(exit)};
+        }
+        last = cpu.Run(dispatcher.signal_binding->runtime ? std::min(tick_budget - consumed,
+            GuestSignalRuntime::kPollTicks) : tick_budget - consumed);
         consumed += last.ticks_consumed;
         if (last.reason == cpu::RunStopReason::budget_exhausted) {
+            if (last.ticks_consumed != 0 && consumed < tick_budget) continue;
             return {consumed, GuestThreadRunStop::budget_exhausted, last,
                     std::nullopt};
         }

@@ -42,14 +42,16 @@ public:
                          const memory::GuestAddress address,
                          const std::uint32_t expected,
                          const std::uint64_t thread_id,
-                         const std::optional<std::chrono::nanoseconds> timeout) {
+                         const std::optional<std::chrono::nanoseconds> timeout,
+                         const std::function<bool()>& interrupted) {
         ValidateAddress(address);
         const auto queue = GetOrCreate(address);
         std::unique_lock lock(queue->mutex);
         if (memory_bus.Read32(address, thread_id) != expected) {
             return FutexWaitResult::value_mismatch;
         }
-        if (interrupted_.load()) return FutexWaitResult::interrupted;
+        const auto is_interrupted = [&] { return interrupted_.load() || (interrupted && interrupted()); };
+        if (is_interrupted()) return FutexWaitResult::interrupted;
         ++queue->waiters;
         queue->waiter_details.push_back(
             {thread_id, expected, timeout.has_value(), SteadyNowNs()});
@@ -62,8 +64,8 @@ public:
             }
             --queue->waiters;
         };
-        const auto ready = [this, &queue] {
-            return interrupted_.load() || queue->wake_tokens != 0;
+        const auto ready = [&] {
+            return is_interrupted() || queue->wake_tokens != 0;
         };
         if (timeout.has_value() &&
             !queue->wake.wait_for(lock, *timeout, ready)) {
@@ -71,7 +73,7 @@ public:
             return FutexWaitResult::timed_out;
         }
         if (!timeout.has_value()) queue->wake.wait(lock, ready);
-        if (interrupted_.load()) {
+        if (interrupted_.load() || (is_interrupted() && queue->wake_tokens == 0)) {
             remove_waiter();
             return FutexWaitResult::interrupted_after_wait;
         }
@@ -116,6 +118,18 @@ public:
             queue->wake.notify_all();
         }
         return total;
+    }
+
+    void NotifyWaiters() {
+        std::vector<std::shared_ptr<WaitQueue>> queues;
+        {
+            std::scoped_lock lock(queues_mutex_);
+            for (const auto& entry : queues_) queues.push_back(entry.second);
+        }
+        for (const auto& queue : queues) {
+            std::scoped_lock lock(queue->mutex);
+            queue->wake.notify_all();
+        }
     }
 
     std::size_t InterruptAll() {
@@ -200,14 +214,16 @@ FutexWaitResult FutexTable::Wait(memory::MemoryBus& memory_bus,
                                  const std::uint32_t expected,
                                  const std::uint64_t thread_id,
                                  const std::optional<std::chrono::nanoseconds>
-                                     timeout) {
-    return impl_->Wait(memory_bus, address, expected, thread_id, timeout);
+                                     timeout, std::function<bool()> interrupted) {
+    return impl_->Wait(memory_bus, address, expected, thread_id, timeout, interrupted);
 }
 
 std::size_t FutexTable::Wake(const memory::GuestAddress address,
                              const std::size_t maximum_count) {
     return impl_->Wake(address, maximum_count);
 }
+
+void FutexTable::NotifyWaiters() { impl_->NotifyWaiters(); }
 
 std::size_t FutexTable::WakeAll() { return impl_->WakeAll(); }
 

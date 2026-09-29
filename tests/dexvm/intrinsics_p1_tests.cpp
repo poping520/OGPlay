@@ -73,11 +73,14 @@ struct Vm final {
 
     explicit Vm(const InterpreterConfig config = {},
                 const bool load_boot_dex = true,
-                const CoreIntrinsicServices& services = {})
+                const CoreIntrinsicServices& services = {},
+                const bool full_platform = false)
       : model(strings, arrays), linker(),
           interpreter(
-              [this, load_boot_dex, &services]() -> DexClassLinker& {
+              [this, load_boot_dex, &services, full_platform]() -> DexClassLinker& {
                   linker.RegisterIntrinsics(CoreIntrinsicCatalog(services));
+                  if (full_platform) linker.RegisterIntrinsics(AndroidIntrinsicCatalog(
+                      std::make_shared<DexVmAndroidContext>()));
                   if (load_boot_dex) {
                       ogplay::test::BindBootDexPlatformNatives(linker);
                       linker.RegisterBootDex(ReadBootDex());
@@ -129,6 +132,36 @@ TEST_CASE("dexvm P1 StringBuilder chain renders like the class library") {
     Vm vm;
   CHECK(vm.AsString(vm.CallStatic("buildString", "(I)Ljava/lang/String;",
                                     {VmValue::Int(42)})) == "value:42true");
+}
+
+TEST_CASE("BND-42 Java Runtime and Posix share the configured CPU count") {
+    for (const auto cores : {1U, 4U}) {
+        CoreIntrinsicServices services;
+        services.cpu_cores = cores;
+        Vm vm({}, true, services, true);
+        const auto invoke = [&](const VmObjectRef receiver, const std::string& name,
+                                const std::string& descriptor, std::vector<VmValue> args = {}) {
+            const auto type = vm.model.ObjectClass(receiver);
+            const auto slot = vm.linker.FindVtableIndex(type, name, descriptor);
+            REQUIRE(slot.has_value());
+            args.insert(args.begin(), VmValue::Ref(receiver));
+            return vm.interpreter.Call(vm.linker.Class(type).vtable[*slot], args);
+        };
+        const auto runtime = vm.CallStatic("getRuntime", "()Ljava/lang/Runtime;", {}, "Ljava/lang/Runtime;");
+        REQUIRE_FALSE(runtime.exception.IsValid());
+        ExpectInt(invoke(runtime.value.ref, "availableProcessors", "()I"), static_cast<std::int32_t>(cores));
+        const auto posix = vm.interpreter.NewIntrinsicInstance("Llibcore/io/Posix;");
+        for (const auto selector : {96, 97}) {
+            const auto result = invoke(posix, "sysconf", "(I)J", {VmValue::Int(selector)});
+            REQUIRE_FALSE(result.exception.IsValid());
+            CHECK(result.value.AsLong() == cores);
+        }
+        const auto unsupported = invoke(posix, "sysconf", "(I)J", {VmValue::Int(39)});
+        REQUIRE(unsupported.exception.IsValid());
+        CHECK(vm.linker.Class(unsupported.exception_class).descriptor == "Ljava/lang/UnsupportedOperationException;");
+        const auto hits = vm.ledger.Unimplemented();
+        CHECK(std::ranges::any_of(hits, [](const auto& hit) { return hit.id == "dexvm.posix.sysconf.39"; }));
+    }
 }
 
 TEST_CASE("dexvm P1 String surface: trim/lower/startsWith/indexOf") {

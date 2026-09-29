@@ -9,6 +9,9 @@
 - 只依赖标准库和更低层公共类型；不得包含 session、integration、JNI、syscall 或 boundary
   实现。
 - `SupervisorCallProgress` 只表达可观测进展分类，不决定 watchdog 预算或 teardown 策略。
+- `GuestCpuConfig` 保存 guest 可见核数与标称 MHz，以及独立、默认关闭的
+  `GuestCpuExecutionConfig` 策略；只有 integration 装配时才转换为下层执行预算。
+  标称 MHz 不转换为 tick 或物理周期。
 
 ## 禁止
 

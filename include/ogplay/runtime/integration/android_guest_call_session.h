@@ -1,5 +1,7 @@
 #pragma once
 
+#include "ogplay/runtime/common/guest_cpu_config.h"
+
 #include <atomic>
 #include "ogplay/cpu/dynarmic.h"
 #include <cstdint>
@@ -171,6 +173,7 @@ void InstallAndroidGuestFrameworkPlatform(JniClassRegistry& classes);
 struct GuestProcFacts final {
     std::uint32_t memory_total_kb{524288};
     std::uint32_t memory_free_kb{262144};
+    GuestCpuConfig cpu;
 };
 
 struct AndroidGuestCallSessionRequest final {
@@ -269,6 +272,7 @@ public:
     void SetAuxiliaryAudioMix(
         std::function<void(std::span<std::int64_t>, std::uint32_t)> mix);
     [[nodiscard]] VirtualFileSystem* Filesystem() noexcept;
+    [[nodiscard]] const GuestCpuConfig& CpuConfig() const noexcept;
     [[nodiscard]] std::optional<std::string> ProcessEnvironmentValue(
         std::string_view name) const;
     [[nodiscard]] std::vector<GuestProcessEnvironmentEntry>
@@ -389,6 +393,7 @@ public:
     void SetAuxiliaryAudioMix(
         std::function<void(std::span<std::int64_t>, std::uint32_t)> mix);
     [[nodiscard]] VirtualFileSystem* Filesystem() noexcept;
+    [[nodiscard]] const GuestCpuConfig& CpuConfig() const noexcept;
     [[nodiscard]] AndroidGuestProcess& Process() noexcept;
     // Resolves a Java_ native export (short then long JNI name) across the
     // loaded guest namespace; empty when the method is not exported.

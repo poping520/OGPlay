@@ -43,6 +43,8 @@ int Usage() {
                   "[--external-dir <host-dir> [--external-guest-dir </sdcard/...>]] "
                   "[--obb <archive>] "
                   "[--preflight] [--supersample <1..4>] "
+                  "[--cpu-cores <1..32>] [--cpu-frequency-mhz <1..10000>] "
+                  "[--cpu-limit-parallelism] [--cpu-max-mticks-per-second <1..10000>] "
                   "[--exit-after-frames <count>] [--mcp | --mcp-port <1..65535>] "
                   "[--mcp-manual-step] "
                   "[--diag] [--diag-dir <dir>] "

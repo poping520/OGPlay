@@ -353,12 +353,11 @@ namespace ogplay::runtime::dexvm::intrinsics {
 namespace ogplay::runtime::dexvm::intrinsics {
 using namespace detail;
 
-IntrinsicClassDecl Declare_java_lang_Runtime() {
+IntrinsicClassDecl Declare_java_lang_Runtime(const CoreIntrinsicServices& services) {
     auto builder = IntrinsicClassBuilder::Class("Ljava/lang/Runtime;", "Ljava/lang/Object;");
     // Runtime state and shutdown-hook protocol belong to pinned API 19 DEX.
-    builder.VirtualMethod("availableProcessors", "()I", [](IntrinsicContext&) {
-        // The interpreter exposes one execution lane under VmExecutionLock.
-        return VmValue::Int(1);
+    builder.VirtualMethod("availableProcessors", "()I", [cores = services.cpu_cores](IntrinsicContext&) {
+        return VmValue::Int(static_cast<std::int32_t>(cores));
     });
     builder.StaticMethod("nativeExit", "(I)V", [](IntrinsicContext& context) -> VmValue {
         context.vm.Exit(context.arguments[0].AsInt());

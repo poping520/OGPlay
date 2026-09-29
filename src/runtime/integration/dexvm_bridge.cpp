@@ -1132,8 +1132,9 @@ DexVmGuestBridge::DexVmGuestBridge(
                 {.mode = core::RateLimitMode::none});
         });
 
-    auto core_catalog = dx::CoreIntrinsicCatalog(
-        AndroidCoreIntrinsicServices(android_context));
+    auto core_services = AndroidCoreIntrinsicServices(android_context);
+    core_services.cpu_cores = session.CpuConfig().cores;
+    auto core_catalog = dx::CoreIntrinsicCatalog(std::move(core_services));
     BindPlatformCoreHandlers(core_catalog, android_context);
     impl_->linker.RegisterIntrinsics(core_catalog);
     if (!platform_catalog.empty()) {

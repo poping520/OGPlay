@@ -24,6 +24,13 @@
 - `DynarmicExecutionContext`：为同一 guest 进程的 JIT CPU 分配唯一 processor ID 并共享
   exclusive monitor；普通写与 exclusive compare/write 也共享提交锁，使 LDREX/STREX
   在真实宿主线程间保持原子语义。
+- `ExecutionBudget`：可选的进程共享并发名额和 token bucket，使用 Clock 单调纳秒计时。
+  FIFO 入场、取消通知、RAII 释放与未消费 tick 退款；单片不超过 50000 tick，速率突发量
+  为 `max(rate/20, 1)`（50 ms），限速时每片最多使用半桶额度，以容忍宿主计时粒度。
+  统计提供 active/peak/waiting/consumed/draining 快照。
+  Dynarmic context 在创建时固定预算；启用时 Run 可提前以 budget_exhausted 结束，累计
+  watchdog 预算不变，所有 SVC 先返回 runner 释放名额再分派。此模式不启用 fast host hook。
+  BeginDrain 解除限额并唤醒等待者，供上层生命周期清理；不修改线程身份或宿主亲和性。
 - `GuestThreadGroup`：每个 guest thread ID 启动一个宿主线程和独立 CPU 实例，将
   TLS 基址装入 CPU thread pointer，保存退出状态并提供真实 join 生命周期。
 - `FutexTable`：以 32 位对齐 guest 地址为键，提供比较等待、精确 WAKE N、普通全局唤醒和

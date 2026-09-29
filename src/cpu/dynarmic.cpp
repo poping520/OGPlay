@@ -1,4 +1,5 @@
 #include "ogplay/cpu/dynarmic.h"
+#include "ogplay/cpu/execution_budget.h"
 #include "ogplay/hal/clock.h"
 
 #include <algorithm>
@@ -83,8 +84,9 @@ private:
 
 class DynarmicExecutionContext::Impl final {
 public:
-    explicit Impl(const std::size_t maximum_processors)
-        : monitor(maximum_processors), processors(maximum_processors), snapshots(maximum_processors) {
+    explicit Impl(const std::size_t maximum_processors, std::shared_ptr<ExecutionBudget> execution_budget)
+        : monitor(maximum_processors), processors(maximum_processors), snapshots(maximum_processors),
+          budget(std::move(execution_budget)) {
         if (maximum_processors == 0) {
             throw std::invalid_argument(
                 "Dynarmic execution context requires a processor");
@@ -96,11 +98,12 @@ public:
     std::mutex memory_mutex;
     std::vector<bool> processors;
     std::vector<DynarmicCacheSnapshot> snapshots;
+    const std::shared_ptr<ExecutionBudget> budget;
 };
 
 DynarmicExecutionContext::DynarmicExecutionContext(
-    const std::size_t maximum_processors)
-    : impl_(std::make_unique<Impl>(maximum_processors)) {}
+    const std::size_t maximum_processors, std::shared_ptr<ExecutionBudget> budget)
+    : impl_(std::make_unique<Impl>(maximum_processors, std::move(budget))) {}
 
 DynarmicExecutionContext::~DynarmicExecutionContext() = default;
 
@@ -424,10 +427,18 @@ RunResult DynarmicCpu::Run(const std::uint64_t tick_budget) {
         return {0, RunStopReason::budget_exhausted, pc, 0, 0, std::nullopt};
     }
 
-    impl_->callbacks.Begin(tick_budget, impl_->thread_id);
+    const auto& budget = impl_->context->impl_->budget;
+    auto lease = budget ? budget->Acquire(tick_budget, halt_requested_) : ExecutionBudget::Lease{};
+    if (budget && !lease) {
+        halt_requested_.store(false);
+        impl_->jit.ClearHalt(kExternalHalt);
+        return {0, RunStopReason::halt_requested, pc, 0, 0, std::nullopt};
+    }
+    impl_->callbacks.Begin(budget ? lease.Ticks() : tick_budget, impl_->thread_id);
     impl_->jit.ClearHalt(kCallbackHalt | kExternalHalt);
     const auto halt_reason = impl_->jit.Run();
     const auto ticks = impl_->callbacks.TicksConsumed();
+    if (budget) lease.Complete(ticks);
     impl_->jit.ClearHalt(halt_reason);
 #ifdef OGPLAY_DYNARMIC_CACHE_STATS
     const auto cache = impl_->jit.CacheStatistics();
@@ -475,11 +486,14 @@ void DynarmicCpu::SetState(const A32State& state) {
 
 void DynarmicCpu::RequestHalt() noexcept {
     halt_requested_.store(true);
+    if (const auto& budget = impl_->context->impl_->budget) budget->Notify();
     impl_->jit.HaltExecution(kExternalHalt);
 }
 
 void DynarmicCpu::SetHostCallHook(const HostCallHook hook) noexcept {
-    impl_->callbacks.SetHostCallHook(hook);
+    // HLE/JNI may block or reenter guest code. Under admission control every
+    // SVC returns to the runner first, releasing the lease before dispatch.
+    impl_->callbacks.SetHostCallHook(impl_->context->impl_->budget ? HostCallHook{} : hook);
 }
 
 }  // namespace ogplay::cpu

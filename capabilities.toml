@@ -1935,3 +1935,13 @@ note = "VFS-05/ADR-0078：定向 56 用例/351 断言通过，同路径 APK 越�
 status = "partial"
 test = "tests/runtime/syscall_signal_tests.cpp; tests/runtime/guest_thread_runner_tests.cpp; tests/runtime/guest_clone_thread_runtime_tests.cpp; tests/cpu/futex_tests.cpp"
 note = "BND-41/ADR-0079：进程内 ARM legacy/RT action、mask、pending、suspend、return，tgkill 标准信号 handler 投递与默认忽略/终止；目标线程安全点执行，支持 ARM/Thumb/VFP、备用栈、嵌套、guest ucontext 修改与 clone mask 继承。无超时 futex 支持 SA_RESTART，超时等待中断为 EINTR；实时队列、作业控制、同步 CPU fault 转信号、任意宿主 IO 中断未实现。实际 APK 已越过信号注册，下一首错为 CPU coprocessor 断言，未完成真实 GC 全周期或游戏验收。"
+
+[runtime.guest_cpu_facts]
+status = "partial"
+test = "tests/runtime/guest_cpu_environment_tests.cpp; tests/runtime/android_guest_call_session_tests.cpp; tests/dexvm/intrinsics_p1_tests.cpp: BND-42; tests/frontend/gui_launch_tests.cpp: BND-42"
+note = "BND-42/ADR-0080 第一阶段：进程统一冻结 1..32 核与 1..10000 MHz，默认 1 核/1000 MHz；只读 cpuinfo/CPU sysfs、Bionic 导出 sysconf 96/97、Java Runtime/Posix 核数查询一致。其他 native sysconf 尾调用原 libc，其他 Java selector 记账失败。CLI/单游戏设置已接入；Features 固定受支持 ARMv7 子集，不伪造真机身份。26 用例/514 断言通过，APK cpuinfo ENOENT 消失；直接 /proc/stat 查询、负载统计、全局设备预设应用未实现；原生执行配额见 cpu.execution_budget，coprocessor 首错独立保留。"
+
+[cpu.execution_budget]
+status = "complete"
+test = "tests/cpu/execution_budget_tests.cpp; tests/cpu/dynarmic_tests.cpp; tests/runtime/guest_cpu_environment_tests.cpp; tests/frontend/gui_launch_tests.cpp: BND-43"
+note = "BND-43/ADR-0081：complete 仅指默认关闭的 A32/T32 并发名额和进程总 backend tick 速率上限。共享 Dynarmic context 覆盖主/clone/Java native/重入 CPU，FIFO、Clock 计量、50ms 有限突发、未用额度退款、取消和 teardown drain 有机器回归；限额模式在 SVC 返回后释放名额，再经原有 runner 调用 HLE/JNI，默认模式保留 fast hook。CLI/单游戏设置接入，Windows 构建与定向 47 用例/683 断言通过；开启限额 APK 仍到达已有 coprocessor 断言。Java 字节码限速、宿主 CPU 占用/亲和性、物理周期模拟和完整游戏兼容不在该 complete 范围。"

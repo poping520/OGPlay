@@ -23,6 +23,7 @@
 #include "ogplay/audio/java_sound_pool.h"
 #include "ogplay/audio/pcm_mix.h"
 #include "ogplay/cpu/dynarmic.h"
+#include "ogplay/cpu/execution_budget.h"
 #include "ogplay/hal/clock.h"
 #include "ogplay/runtime/bionic/bionic_profile.h"
 #include "ogplay/runtime/bionic/bionic_tls.h"
@@ -47,6 +48,7 @@
 #include "ogplay/runtime/syscall/arm_kernel_helpers.h"
 #include "runtime/integration/nested_guest_cpu_pool.h"
 #include "runtime/integration/api19_linker_view.h"
+#include "runtime/integration/guest_cpu_environment.h"
 
 namespace ogplay::runtime {
 namespace {
@@ -667,7 +669,8 @@ public:
     };
 
     explicit Impl(const AndroidGuestProcessStartup& request)
-        : boundary_(address_space_, request.backend, request.width,
+        : cpu_environment_(request.proc_facts.cpu),
+          boundary_(address_space_, request.backend, request.width,
                     request.height, request.supersample_factor,
                     BindProcessCallbacks(request.boundary_options, this)),
           guest_jni_(address_space_),
@@ -718,6 +721,7 @@ public:
                 "Android guest proc facts are invalid");
         }
         InstallApi19ProcFiles(*filesystem_, request.proc_facts);
+        cpu_environment_.Publish(*filesystem_);
         proc_maps_ = filesystem_->RegisterGeneratedReadOnly(
             "/proc/self/maps", 1024U * 1024U,
             [space = &address_space_] { return BuildGuestProcMaps(*space); });
@@ -748,8 +752,10 @@ public:
             [&profile, this](
                 const std::string_view root,
                 const std::span<const loader::Elf32LinkModule> guest) {
-                return BuildBionicLinkNamespace(
+                auto symbols = BuildBionicLinkNamespace(
                     profile, root, guest, boundary_.Symbols());
+                cpu_environment_.BindSysconf(symbols, address_space_);
+                return symbols;
             });
         Progress("modules-loaded");
 
@@ -1555,6 +1561,7 @@ public:
 
     void Stop() {
         if (!running_) return;
+        if (execution_budget_) execution_budget_->BeginDrain();
         static_cast<void>(
             boundary_.PcmPlayback().InterruptBlockingWaits());
         StopOpenSlesCallbackThread();
@@ -1770,6 +1777,7 @@ public:
         auxiliary_audio_mix_ = std::move(mix);
     }
     VirtualFileSystem* Filesystem() noexcept { return filesystem_; }
+    const GuestCpuConfig& CpuConfig() const noexcept { return cpu_environment_.Config(); }
     std::vector<GuestProcessEnvironmentEntry> ProcessEnvironmentEntries()
         const {
         constexpr std::size_t kMaximumEntryBytes = 4096U;
@@ -1917,6 +1925,7 @@ public:
     }
     void BeginTeardown() noexcept {
         if (teardown_requested_.exchange(true, std::memory_order_acq_rel)) return;
+        if (execution_budget_) execution_budget_->BeginDrain();
         boundary_.RetireGuestGraphics();
         static_cast<void>(
             boundary_.PcmPlayback().InterruptBlockingWaits());
@@ -2140,6 +2149,7 @@ private:
     // Declared after address_space_: provider revocation precedes memory teardown,
     // including constructor failure. Callback captures only the address space.
     std::unique_ptr<VfsGeneratedFileRegistration> proc_maps_;
+    GuestCpuEnvironment cpu_environment_;
     memory::CheckedMemoryBus memory_bus_{address_space_};
     AndroidBoundaryHle boundary_;
     GuestJniAbi guest_jni_;
@@ -2176,8 +2186,9 @@ private:
     GuestThreadLifecycle lifecycle_;
     std::vector<GuestVmaAnnotation> vma_annotations_;
     std::mutex vma_mutex_;
+    std::shared_ptr<cpu::ExecutionBudget> execution_budget_ = cpu_environment_.MakeExecutionBudget();
     std::shared_ptr<cpu::DynarmicExecutionContext> execution_context_ =
-        std::make_shared<cpu::DynarmicExecutionContext>(64);
+        std::make_shared<cpu::DynarmicExecutionContext>(64, execution_budget_);
     cpu::GuestThreadGroup threads_;
     detail::NestedGuestCpuPool nested_guest_cpus_;
     VirtualFileSystem* filesystem_{};
@@ -2356,6 +2367,8 @@ void AndroidGuestProcess::SetAuxiliaryAudioMix(
 VirtualFileSystem* AndroidGuestProcess::Filesystem() noexcept {
     return impl_->Filesystem();
 }
+
+const GuestCpuConfig& AndroidGuestProcess::CpuConfig() const noexcept { return impl_->CpuConfig(); }
 std::optional<std::string> AndroidGuestProcess::ProcessEnvironmentValue(
     const std::string_view name) const {
     return impl_->ProcessEnvironmentValue(name);
@@ -2540,6 +2553,7 @@ void AndroidGuestCallSession::SetAuxiliaryAudioMix(
     process_->SetAuxiliaryAudioMix(std::move(mix));
 }
 VirtualFileSystem* AndroidGuestCallSession::Filesystem() noexcept { return process_->Filesystem(); }
+const GuestCpuConfig& AndroidGuestCallSession::CpuConfig() const noexcept { return process_->CpuConfig(); }
 AndroidGuestProcess& AndroidGuestCallSession::Process() noexcept { return *process_; }
 std::optional<memory::GuestAddress> AndroidGuestCallSession::FindNativeExport(std::string_view class_name, std::string_view method_name, std::string_view descriptor) const { return process_->FindNativeExport(class_name, method_name, descriptor); }
 void AndroidGuestCallSession::InitializeJniLibrary() {

@@ -2,6 +2,17 @@
 
 ## 职责与依赖
 
+`GuestCpuEnvironment` 由进程拥有并冻结 CPU 配置；在 VFS 发布可撤销只读 CPU 信息与
+sysfs 拓扑/标称频率。API19 `sysconf` 导出通过进程私有 RX guest 桥处理核数 selector
+96/97，其余参数保持原 ABI 尾调用原 libc。重定位、dlsym 与 linker 视图使用同一导出；
+不修改原 ELF 指令。DexVM bridge 从该进程取得核数，禁止另用宿主硬件事实。
+不支持统计负载、热插拔、调频控制或周期精确模拟，见 ADR-0080。
+
+第二阶段（ADR-0081）可按配置建立一个进程共享 ExecutionBudget，所有主/clone/Java
+native/音频回调及重入 CPU 使用同一 Dynarmic context。并发上限可独立启用为配置核数，
+总速率以百万 backend tick/秒指定；默认不设预算。BeginTeardown/Stop 先解除预算等待，
+再执行原有线程退出和 finalizer，不在关闭过程中重新阻塞。Java 字节码继续遵循原 VM 锁。
+
 组合 Bionic、guest JNI ABI、Android boundary、DexVM/框架 HLE，拥有进程会话、动态加载、
 headless/NativeActivity runner 与出口报告。可依赖 jni_guest/boundary/framework/jni/bionic/
 syscall/execution/vfs 及下层；下层不得反向依赖 integration。不直接持有窗口、消费输入或

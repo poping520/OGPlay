@@ -810,7 +810,8 @@ namespace ogplay::runtime::dexvm::intrinsics {
             throw VmJavaThrow{"Llibcore/io/GaiException;", std::string(message), exception};
         }
 
-        void AppendAddressNatives(std::vector<IntrinsicClassDecl>& catalog) {
+        void AppendAddressNatives(std::vector<IntrinsicClassDecl>& catalog,
+                                  const CoreIntrinsicServices& services) {
             auto constants = IntrinsicClassBuilder::Class(
                 "Llibcore/io/OsConstants;", "Ljava/lang/Object;", {}, kAccPublic | kAccFinal);
             std::vector<std::pair<IntrinsicFieldHandle, std::int32_t>> fields;
@@ -830,6 +831,14 @@ namespace ogplay::runtime::dexvm::intrinsics {
                 "Llibcore/io/Posix;", "Ljava/lang/Object;", {"Llibcore/io/Os;"},
                 kAccPublic | kAccFinal);
             #include "api19_posix_natives.inc"
+            posix.VirtualMethod("sysconf", "(I)J", [cores = services.cpu_cores](IntrinsicContext& call) {
+                const auto selector = call.arguments[0].AsInt();
+                if (selector == 96 || selector == 97) return VmValue::Long(cores);
+                if (auto* ledger = call.vm.Ledger())
+                    ledger->RecordUnimplemented("dexvm.posix.sysconf." + std::to_string(selector), 0);
+                throw VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
+                                  "Posix.sysconf selector is not implemented: " + std::to_string(selector)};
+            });
             posix.VirtualMethod("open", "(Ljava/lang/String;II)Ljava/io/FileDescriptor;",
                 [](IntrinsicContext& call) {
                     const auto path = call.vm.StringUtf8(call.arguments[0].ref);
@@ -1474,7 +1483,7 @@ namespace ogplay::runtime::dexvm::intrinsics {
         catalog.push_back(DeclarePlatformUrlConnection());
         catalog.push_back(DeclarePlatformUrlEncoder());
         catalog.push_back(DeclarePlatformUrlDecoder());
-        AppendAddressNatives(catalog);
+        AppendAddressNatives(catalog, services);
         catalog.push_back(DeclareSocketInputStream());
         catalog.push_back(DeclareSocketOutputStream());
         catalog.push_back(DeclareSocket());

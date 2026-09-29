@@ -198,13 +198,14 @@ target_include_directories(ogplay_memory PUBLIC
 ogplay_set_project_warnings(ogplay_memory)
 
 add_library(ogplay_cpu
+    src/cpu/execution_budget.cpp
     src/cpu/futex.cpp
     src/cpu/interpreter.cpp
     src/cpu/state.cpp
     src/cpu/thread_group.cpp
 )
 add_library(OGPlay::Cpu ALIAS ogplay_cpu)
-target_link_libraries(ogplay_cpu PUBLIC OGPlay::Memory)
+target_link_libraries(ogplay_cpu PUBLIC OGPlay::Memory PRIVATE OGPlay::Hal)
 target_include_directories(ogplay_cpu PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
     $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
@@ -433,6 +434,7 @@ add_library(ogplay_runtime
     src/runtime/integration/api19_guest_process.cpp
     src/runtime/integration/api19_linker_view.cpp
     src/runtime/integration/android_guest_call_session.cpp
+    src/runtime/integration/guest_cpu_environment.cpp
     src/runtime/integration/nested_guest_cpu_pool.cpp
     src/runtime/integration/android_guest_java_movie.cpp
     src/runtime/integration/android_guest_java_platform.cpp
@@ -845,6 +847,7 @@ if(OGPLAY_BUILD_TESTS)
         tests/runtime/guest_thread_runner_tests.cpp
         tests/runtime/api19_guest_process_tests.cpp
         tests/runtime/android_guest_call_session_tests.cpp
+        tests/runtime/guest_cpu_environment_tests.cpp
         tests/runtime/android_guest_framework_platform_tests.cpp
         tests/runtime/android_guest_java_media_tests.cpp
         tests/runtime/boundary/integration/android_boundary_hle_tests.cpp
@@ -877,6 +880,7 @@ if(OGPLAY_BUILD_TESTS)
         tests/loader/symbol_version_tests.cpp
         tests/loader/tls_tests.cpp
         tests/cpu/state_tests.cpp
+        tests/cpu/execution_budget_tests.cpp
         tests/cpu/futex_tests.cpp
         tests/cpu/interpreter_tests.cpp
         tests/cpu/m1_guest_sample_tests.cpp

@@ -36,6 +36,13 @@
   [BND-41](../tasks/boundary/BND-41.md) 已补 ARM 进程内信号注册、投递及暂停/恢复链路；
   Windows 构建与定向 68 用例/573 断言通过。同一路径已越过该注册错误，当前停止在 Dynarmic `Should raise coproc exception here`
   断言。证据 `.local/signal-startup.log`；实际 GC 全周期尚未验收。
+  [BND-42](../tasks/boundary/BND-42.md) 第一阶段已统一可配置 CPU 核数与标称频率查询，
+  CLI/单游戏设置接入；Windows 构建及定向 26 用例/514 断言通过。4 核/1500 MHz 原路径
+  复跑后 `/proc/cpuinfo` 的 ENOENT 消失，仍停在上述 coprocessor 断言；GC 直接读取
+  `/proc/stat` 的警告保留。证据 `.local/cpu-facts-startup.log`，不代表游戏兼容验收。
+  [BND-43](../tasks/boundary/BND-43.md) 第二阶段已接入默认关闭的原生 CPU 并发与总速率
+  上限，CLI/单游戏设置可用；Windows 构建及定向 47 用例/683 断言通过。开启 2 核并发和
+  20 百万 tick/秒复跑仍到达同一 coprocessor 断言；证据 `.local/cpu-execution-startup-verified.log`。
   尚未重达 nativeRender，原绘制故障未复验。证据 `.local/proc-maps-*.log`。
   此前 renderer 证据 `.local/renderer-{build,test-build,tests,startup}.log`。
   EGL 暂停/恢复策略尚未接入该配置；前置 NDK 符号缺失仍待闭合。

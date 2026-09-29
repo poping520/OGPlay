@@ -285,9 +285,9 @@ constexpr std::uint32_t kLibdlGlVertexPointerOffset = 0x810U;
 [[nodiscard]] std::string ReadVfsText(
     ogplay::runtime::VirtualFileSystem& filesystem,
     const std::string_view path) {
-    const auto size = filesystem.Stat(path).size;
-    std::vector<std::byte> bytes(static_cast<std::size_t>(size));
     const auto descriptor = filesystem.Open(path, {.read = true});
+    const auto size = filesystem.DescriptorInfo(descriptor).size;
+    std::vector<std::byte> bytes(static_cast<std::size_t>(size));
     const auto read = filesystem.Read(descriptor, bytes);
     filesystem.Close(descriptor);
     return {reinterpret_cast<const char*>(bytes.data()), read};
@@ -456,6 +456,7 @@ TEST_CASE("Android guest proc installation preserves an existing snapshot") {
         {19, std::span{&module, 1}, {}, 64, 36,
          1000, 1, &filesystem, {}});
     CHECK(ReadVfsText(filesystem, "/proc/meminfo") == existing);
+    CHECK(ReadVfsText(filesystem, "/proc/cpuinfo").find("processor\t: 0") != std::string::npos);
     process->Stop();
 }
 
@@ -905,12 +906,15 @@ TEST_CASE("legacy Android guest call session delegates process ownership") {
         19, "libc.so", std::span{&module, 1}, {}, 64, 36,
         1000, 1, &filesystem, {}};
     request.proc_facts = {8192U, 4096U};
+    request.proc_facts.cpu = {4, 1500};
     auto session = ogplay::runtime::AndroidGuestCallSession::Start(request);
     CHECK(session->Running());
     CHECK(session->GuestJavaVm().Value() != 0);
     const auto meminfo = ReadVfsText(filesystem, "/proc/meminfo");
     CHECK(ProcMemoryValue(meminfo, "MemTotal:") == 8192U);
     CHECK(ProcMemoryValue(meminfo, "MemFree:") == 4096U);
+    CHECK(session->CpuConfig().cores == 4U);
+    CHECK(ReadVfsText(filesystem, "/sys/devices/system/cpu/online") == "0-3\n");
     session->Stop();
     CHECK_FALSE(session->Running());
 }

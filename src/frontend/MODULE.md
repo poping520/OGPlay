@@ -39,6 +39,14 @@
 
 ## 不变量
 
+- `run-apk --cpu-cores`（1..32）与 `--cpu-frequency-mhz`（1..10000）在进程创建前固定
+  guest CPU 查询参数；默认 1 核/1000 MHz。GUI 单游戏配置通过相同 CLI 参数接入，主频
+  仅为标称值，不改变 Clock/执行速度。全局设备预设和 CPU 名称仍未接入。
+- `--cpu-limit-parallelism` 按虚拟核数限制同时执行的原生 guest CPU；
+  `--cpu-max-mticks-per-second` 接受 1..10000，限制进程总 backend tick 速率。
+  两项独立、默认关闭；GUI 对应速率值 0 表示省略限速参数。启动日志记录查询和执行配置。
+  不限制 Java 解释/HLE、宿主 CPU 占用或物理频率，也不改变游戏 Clock。
+
 - CLI/GUI 共用 session、Profile、quirk 与 bundled payload。Profile 决定 API 和入口；系统
   库依赖闭包不得由 CLI 手写。API 19 缺 `bootdex.jar` 与缺 ELF 同样在装配前失败。
 - 仅接受规范化的 `dex_activity` Profile。entry/presets 在生命周期前应用，required 数据先

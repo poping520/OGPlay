@@ -12,13 +12,16 @@
 
 namespace ogplay::cpu {
 
+class ExecutionBudget;
+
 struct DynarmicCacheSnapshot final {
     std::uint64_t processor_id{}, capacity_bytes{}, used_bytes{}, flushes{}, captured_at_steady_ns{};
 };
 
 class DynarmicExecutionContext final {
 public:
-    explicit DynarmicExecutionContext(std::size_t maximum_processors);
+    explicit DynarmicExecutionContext(std::size_t maximum_processors,
+                                     std::shared_ptr<ExecutionBudget> budget = {});
     ~DynarmicExecutionContext();
     [[nodiscard]] std::optional<std::vector<DynarmicCacheSnapshot>> TrySnapshot() const;
 

@@ -432,6 +432,63 @@ std::vector<core::LogRecord> JniEnvironment::ExceptionDiagnostics() const {
         std::nullopt, "runtime.jni.exception");
 }
 
+void JniEnvironment::SetReflectionHooks(JniReflectionHooks hooks) {
+    const std::scoped_lock lock(reflection_hooks_mutex_);
+    reflection_hooks_ = std::move(hooks);
+}
+
+JniMethodId JniEnvironment::FromReflectedMethod(std::uint64_t thread, JniReference object) {
+    RequireAllowed(thread, "FromReflectedMethod");
+    if (!references_.Resolve(thread, object).has_value())
+        throw std::invalid_argument("FromReflectedMethod: null reference");
+    std::function<JniMethodId(std::uint64_t, JniReference)> hook;
+    {
+        const std::scoped_lock lock(reflection_hooks_mutex_);
+        hook = reflection_hooks_.from_method;
+    }
+    if (!hook) throw std::runtime_error("JNI reflection backend is unavailable");
+    return hook(thread, object);
+}
+
+JniReference JniEnvironment::ToReflectedMethod(std::uint64_t thread, JniReference object, JniMethodId id, bool is_static) {
+    RequireAllowed(thread, "ToReflectedMethod");
+    if (!references_.Resolve(thread, object).has_value())
+        throw std::invalid_argument("ToReflectedMethod: null reference");
+    std::function<JniReference(std::uint64_t, JniReference, JniMethodId, bool)> hook;
+    {
+        const std::scoped_lock lock(reflection_hooks_mutex_);
+        hook = reflection_hooks_.to_method;
+    }
+    if (!hook) throw std::runtime_error("JNI reflection backend is unavailable");
+    return hook(thread, object, id, is_static);
+}
+
+JniFieldId JniEnvironment::FromReflectedField(std::uint64_t thread, JniReference object) {
+    RequireAllowed(thread, "FromReflectedField");
+    if (!references_.Resolve(thread, object).has_value())
+        throw std::invalid_argument("FromReflectedField: null reference");
+    std::function<JniFieldId(std::uint64_t, JniReference)> hook;
+    {
+        const std::scoped_lock lock(reflection_hooks_mutex_);
+        hook = reflection_hooks_.from_field;
+    }
+    if (!hook) throw std::runtime_error("JNI reflection backend is unavailable");
+    return hook(thread, object);
+}
+
+JniReference JniEnvironment::ToReflectedField(std::uint64_t thread, JniReference object, JniFieldId id, bool is_static) {
+    RequireAllowed(thread, "ToReflectedField");
+    if (!references_.Resolve(thread, object).has_value())
+        throw std::invalid_argument("ToReflectedField: null reference");
+    std::function<JniReference(std::uint64_t, JniReference, JniFieldId, bool)> hook;
+    {
+        const std::scoped_lock lock(reflection_hooks_mutex_);
+        hook = reflection_hooks_.to_field;
+    }
+    if (!hook) throw std::runtime_error("JNI reflection backend is unavailable");
+    return hook(thread, object, id, is_static);
+}
+
 void JniEnvironment::MonitorEnter(const std::uint64_t thread_id,
                                   const JniReference object) {
     RequireAllowed(thread_id, "MonitorEnter");

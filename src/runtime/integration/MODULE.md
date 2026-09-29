@@ -2,6 +2,11 @@
 
 ## 职责与依赖
 
+DexVM bridge 拥有 JNI 反射转换适配：FromReflected 使用 ReflectionRuntime 的成员元数据
+取得已有 registry ID；ToReflected 根据声明成员还原真实 Method/Constructor/Field wrapper。
+校验引用类型、声明类与 static 标志，在 VM 执行锁内发布调用线程 local reference；ID 不
+拥有 wrapper，不另建字段存储。销毁前先停止调用，再清除 JniEnvironment 的反射 hooks。
+
 `GuestCpuEnvironment` 由进程拥有并冻结 CPU 配置；在 VFS 发布可撤销只读 CPU 信息与
 sysfs 拓扑/标称频率。API19 `sysconf` 导出通过进程私有 RX guest 桥处理核数 selector
 96/97，其余参数保持原 ABI 尾调用原 libc。重定位、dlsym 与 linker 视图使用同一导出；

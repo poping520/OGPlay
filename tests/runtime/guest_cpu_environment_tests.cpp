@@ -52,17 +52,17 @@ TEST_CASE("BND-42 CPU facts publish isolated readonly topology and fixed frequen
             CHECK(std::count_if(entries.begin(), entries.end(), [](const auto& entry) {
                 return entry.is_directory && entry.name.starts_with("cpu");
             }) == cores);
-            CHECK_THROWS_AS(fs.Stat("/sys/devices/system/cpu/cpu" + std::to_string(cores)), runtime::VfsError);
-            CHECK_THROWS_AS(fs.Open("/proc/cpuinfo", {.write = true}), runtime::VfsError);
-            CHECK_THROWS_AS(fs.Open("/sys/devices/system/cpu/online", {.write = true}), runtime::VfsError);
+            CHECK_THROWS_AS(static_cast<void>(fs.Stat("/sys/devices/system/cpu/cpu" + std::to_string(cores))), runtime::VfsError);
+            CHECK_THROWS_AS(static_cast<void>(fs.Open("/proc/cpuinfo", {.write = true})), runtime::VfsError);
+            CHECK_THROWS_AS(static_cast<void>(fs.Open("/sys/devices/system/cpu/online", {.write = true})), runtime::VfsError);
             runtime::VirtualFileSystem other_fs;
             runtime::GuestCpuEnvironment other({2, 800});
             other.Publish(other_fs);
             CHECK(ReadCpuFile(other_fs, "/sys/devices/system/cpu/online") == "0-1\n");
             CHECK(ReadCpuFile(other_fs, "/sys/devices/system/cpu/cpu0/cpufreq/cpuinfo_max_freq") == "800000\n");
         }
-        CHECK_THROWS_AS(fs.Stat("/proc/cpuinfo"), runtime::VfsError);
-        CHECK_THROWS_AS(fs.Stat("/sys/devices/system/cpu/cpu0"), runtime::VfsError);
+        CHECK_THROWS_AS(static_cast<void>(fs.Stat("/proc/cpuinfo")), runtime::VfsError);
+        CHECK_THROWS_AS(static_cast<void>(fs.Stat("/sys/devices/system/cpu/cpu0")), runtime::VfsError);
     }
 }
 
@@ -74,7 +74,7 @@ TEST_CASE("BND-42 CPU configuration rejects invalid values and rolls back collis
     fs.PutFile("/sys/devices/system/cpu/online", contents, false);
     runtime::GuestCpuEnvironment environment({4, 1200});
     CHECK_THROWS_AS(environment.Publish(fs), runtime::VfsError);
-    CHECK_THROWS_AS(fs.Stat("/proc/cpuinfo"), runtime::VfsError);
+    CHECK_THROWS_AS(static_cast<void>(fs.Stat("/proc/cpuinfo")), runtime::VfsError);
     CHECK(ReadCpuFile(fs, "/sys/devices/system/cpu/online") == "x");
 }
 

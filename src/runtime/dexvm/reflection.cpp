@@ -287,7 +287,7 @@ public:
     [[nodiscard]] std::optional<ReflectMethodMeta> FindOwnMethod(
         const DexClassId declaring_class, const std::string_view name,
         const std::span<const DexClassId> parameter_types,
-        const bool public_only) {
+        const bool public_only, const std::string_view exact_descriptor = {}) {
         linker->EnsureClassLinked(declaring_class);
         const auto direct = linker->Class(declaring_class).own_direct_methods;
         const auto virtuals = linker->Class(declaring_class).own_virtual_methods;
@@ -302,7 +302,8 @@ public:
                 const auto method_slot = slot++;
                 if (method.name != name ||
                     (public_only && (method.access_flags & kAccPublic) == 0U) ||
-                    !MethodParametersMatch(method_id, parameter_types)) {
+                    (exact_descriptor.empty() ? !MethodParametersMatch(method_id, parameter_types)
+                                             : method.descriptor != exact_descriptor)) {
                     continue;
                 }
                 ClassReflectionMetadata selected;
@@ -581,6 +582,12 @@ std::optional<ReflectMethodMeta> ReflectionRuntime::FindDeclaredMethod(
     const DexClassId declaring_class, const std::string_view name,
     const std::span<const DexClassId> parameter_types) {
     return impl_->FindOwnMethod(declaring_class, name, parameter_types, false);
+}
+
+std::optional<ReflectMethodMeta> ReflectionRuntime::FindDeclaredMethodByDescriptor(
+    const DexClassId declaring_class, const std::string_view name,
+    const std::string_view descriptor) {
+    return impl_->FindOwnMethod(declaring_class, name, {}, false, descriptor);
 }
 
 std::optional<ReflectMethodMeta> ReflectionRuntime::FindPublicMethod(

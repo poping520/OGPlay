@@ -61,6 +61,10 @@
   SecretKeyFactory；BootDex build/check、r25c JNI/Windows 构建和双解释器密码/BKS
   回归 3312 断言通过。原命令越过类缺失并重达 `nativeRender`，下一首错为
   `unbound JNI guest slot: FromReflectedField`。证据 `.local/skf-startup.log`；不代表游戏兼容验收。
+  [DVM-200](../tasks/dexvm/DVM-200.md) 已补四个 JNI 反射转换槽；Windows 构建和定向
+  5 用例/342 断言通过。原命令越过该首错，进入 `Loader.SetState DataAvailable` 后仍停留
+  在加载阶段；关闭请求未结束进程，有限观察后停止测试。证据 `.local/jni-reflect-startup.log`，
+  加载停滞与退出响应未验收。
   此前 renderer 证据 `.local/renderer-{build,test-build,tests,startup}.log`。
   EGL 暂停/恢复策略尚未接入该配置；前置 NDK 符号缺失仍待闭合。
   本轮证据为 `.local/gl-preserve-{build,tests,startup}.log`。

@@ -180,6 +180,7 @@ constexpr std::string_view kArrayTypes[]{
 
 [[nodiscard]] std::set<std::string> ExpectedEnvironmentSlots() {
     std::set<std::string> names{
+        "FromReflectedMethod", "FromReflectedField", "ToReflectedMethod", "ToReflectedField",
         "GetVersion", "Throw", "ThrowNew", "ExceptionOccurred",
         "ExceptionDescribe", "ExceptionClear", "ExceptionCheck",
         "PushLocalFrame", "PopLocalFrame", "NewGlobalRef", "DeleteGlobalRef",
@@ -270,7 +271,7 @@ TEST_CASE("guest JNI aggregate binds the exact behavior-backed slot sets") {
     CHECK(Missing(expected_environment, bound_environment).empty());
     CHECK(Missing(bound_environment, expected_environment).empty());
     CHECK(bound_environment == expected_environment);
-    CHECK(bound_environment.size() == 214U);
+    CHECK(bound_environment.size() == 218U);
 
     const std::set<std::string> expected_java_vm{
         "AttachCurrentThread", "AttachCurrentThreadAsDaemon",
@@ -283,9 +284,7 @@ TEST_CASE("guest JNI aggregate binds the exact behavior-backed slot sets") {
 
     for (const auto name : {"GetStringCritical", "ReleaseStringCritical",
                             "NewDirectByteBuffer", "GetDirectBufferAddress",
-                            "GetDirectBufferCapacity", "FromReflectedMethod",
-                            "FromReflectedField", "ToReflectedMethod",
-                            "ToReflectedField", "FatalError"}) {
+                            "GetDirectBufferCapacity", "FatalError"}) {
         CAPTURE(name);
         CHECK_FALSE(expected_environment.contains(name));
         CHECK_FALSE(fixture.dispatcher.IsEnvironmentBound(

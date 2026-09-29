@@ -16,6 +16,7 @@
 #include <vector>
 
 #include <doctest/doctest.h>
+#include "ogplay/runtime/dexvm/reflection.h"
 
 #include "ogplay/core/capability_ledger.h"
 #include "ogplay/core/encoding.h"
@@ -1162,6 +1163,122 @@ TEST_CASE("DexVM bridge canonicalizes JNI jclass as the real Class object") {
     CHECK(round_trip == class_object);
     CHECK(fixture.bridge->Model().ClassOfClassObject(round_trip) ==
           *represented);
+}
+
+TEST_CASE("DVM-200 JNI reflection conversions share VM members and survive GC") {
+    using namespace ogplay;
+    using namespace runtime;
+    using namespace runtime::dexvm;
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        ApplicationProcess f(backend);
+        auto& vm = f.bridge->Vm();
+        auto& model = f.bridge->Model();
+        auto& linker = f.bridge->Linker();
+        auto& session = *f.session;
+        auto& env = session.Environment();
+        memory::AddressSpace memory;
+        memory::CheckedMemoryBus bus(memory);
+        cpu::InterpreterCpu cpu(bus);
+        GuestJniAbi abi(memory);
+        JniGuestCallDispatcher dispatcher(f.ledger);
+        JniJavaVm java_vm(env);
+        JniGuestBindingContext context{env, session.Classes(), session.Invocations(), session.Fields(),
+            session.Strings(), session.Arrays(), java_vm, session.Objects(), memory};
+        BindJniGuestSlots(dispatcher, context);
+        dispatcher.Seal();
+        const auto call = [&](const char* name, std::uint32_t r1, std::uint32_t r2 = 0, std::uint32_t r3 = 0) {
+            const auto slot = FindJniSlot(name);
+            REQUIRE(slot.has_value());
+            const auto target = bus.Read32(kJniGuestEnvironmentTable.Add(slot->Value() * 4U));
+            cpu::A32State state;
+            state.SetThreadId(1);
+            state.SetState(cpu::ExecutionState::thumb);
+            state.SetRegister(cpu::CoreRegister::pc, target & ~1U);
+            state.SetRegister(cpu::CoreRegister::r0, abi.Environment().Value());
+            state.SetRegister(cpu::CoreRegister::r1, r1);
+            state.SetRegister(cpu::CoreRegister::r2, r2);
+            state.SetRegister(cpu::CoreRegister::r3, r3);
+            cpu.SetState(state);
+            const auto handled = dispatcher.Handle(cpu, cpu.Run(1));
+            REQUIRE(handled);
+            return cpu.GetState().Register(cpu::CoreRegister::r0);
+        };
+        const auto owner = linker.ResolveDescriptor("Lfixture/LauncherActivity;");
+        const auto owner_ref = f.bridge->PublishLocal(model.ClassObject(owner));
+        const auto identity = *f.bridge->RegisteredClassIdentity(owner);
+        const auto object = vm.NewIntrinsicInstance("Lfixture/LauncherActivity;");
+        const auto object_ref = f.bridge->PublishLocal(object);
+        const auto instance_meta = vm.Reflection().FindDeclaredField(owner, "imported");
+        REQUIRE(instance_meta.has_value());
+        auto& classes = session.Classes();
+        for (const char* name : {"imported", "stage"}) {
+            const bool is_static = std::string_view(name) == "stage";
+            const auto meta = vm.Reflection().FindDeclaredField(owner, name);
+            REQUIRE(meta.has_value());
+            env.PushLocalFrame(1, 8);
+            const auto wrapper = f.bridge->PublishLocal(vm.Reflection().MaterializeField(*meta));
+            const auto id = call("FromReflectedField", wrapper.Value());
+            CHECK(id == classes.GetFieldId(identity, name, "I", is_static)->Value());
+            const auto round_trip = JniReference{call("ToReflectedField", owner_ref.Value(), id, is_static)};
+            CHECK(vm.Reflection().FieldMetadata(f.bridge->FromReference(round_trip)).field == meta->field);
+            CHECK(call("FromReflectedField", round_trip.Value()) == id);
+            if (is_static) {
+                static_cast<void>(call("SetStaticIntField", owner_ref.Value(), id, 42));
+                CHECK(call("GetStaticIntField", owner_ref.Value(), id) == 42);
+            } else {
+                static_cast<void>(call("SetIntField", object_ref.Value(), id, 37));
+                CHECK(call("GetIntField", object_ref.Value(), id) == 37);
+            }
+            const auto global = env.NewGlobalRef(1, wrapper);
+            static_cast<void>(env.PopLocalFrame(1));
+            CHECK_THROWS(static_cast<void>(call("FromReflectedField", wrapper.Value())));
+            static_cast<void>(vm.CollectGarbage("jni-reflection"));
+            CHECK(call("FromReflectedField", global.Value()) == id);
+            env.DeleteGlobalRef(1, global);
+            static_cast<void>(vm.CollectGarbage("jni-reflection-id"));
+            const auto renewed = call("ToReflectedField", owner_ref.Value(), id, is_static);
+            CHECK(call("FromReflectedField", renewed) == id);
+            CHECK_THROWS(static_cast<void>(call("ToReflectedField", owner_ref.Value(), id, !is_static)));
+        }
+        for (const char* name : {"getImported", "getInstances", "<init>"}) {
+            const bool constructor = std::string_view(name) == "<init>";
+            const bool is_static = std::string_view(name) == "getInstances";
+            const auto id = classes.GetMethodId(identity, name, constructor ? "()V" : "()I", is_static);
+            REQUIRE(id.has_value());
+            const auto ref = JniReference{call("ToReflectedMethod", owner_ref.Value(), id->Value(), is_static)};
+            CHECK(linker.Class(model.ObjectClass(f.bridge->FromReference(ref))).descriptor ==
+                (constructor ? "Ljava/lang/reflect/Constructor;" : "Ljava/lang/reflect/Method;"));
+            CHECK(call("FromReflectedMethod", ref.Value()) == id->Value());
+            CHECK_THROWS(static_cast<void>(call("FromReflectedField", ref.Value())));
+            if (!constructor && !is_static)
+                CHECK(call("CallIntMethod", object_ref.Value(), id->Value()) == 37);
+            if (constructor) {
+                const std::array<JniValue, 0> args{};
+                static_cast<void>(session.Invocations().InvokeNonvirtual(1, object_ref, identity, identity,
+                    *id, args, JniArgumentSource::value_array));
+                CHECK(call("GetIntField", object_ref.Value(),
+                    classes.GetFieldId(identity, "imported", "I", false)->Value()) == 7);
+            }
+        }
+        const auto child_ref = f.bridge->PublishLocal(model.ClassObject(
+            linker.ResolveDescriptor("Lfixture/LauncherChildActivity;")));
+        const auto inherited_id = classes.GetFieldId(identity, "imported", "I", false)->Value();
+        const auto inherited = JniReference{call("ToReflectedField", child_ref.Value(), inherited_id)};
+        CHECK(vm.Reflection().FieldMetadata(f.bridge->FromReference(inherited)).declaring_class == owner);
+        CHECK(call("FromReflectedField", inherited.Value()) == inherited_id);
+        const auto inherited_method = classes.GetMethodId(identity, "getImported", "()I", false)->Value();
+        CHECK(call("FromReflectedMethod", call("ToReflectedMethod", child_ref.Value(), inherited_method)) == inherited_method);
+        CHECK_THROWS(static_cast<void>(call("FromReflectedField", 0)));
+        CHECK_THROWS(static_cast<void>(call("FromReflectedMethod", object_ref.Value())));
+        CHECK_THROWS(static_cast<void>(call("ToReflectedField", owner_ref.Value(), 0xffffffffU)));
+        CHECK_THROWS(static_cast<void>(call("ToReflectedMethod", owner_ref.Value(), 0xffffffffU)));
+        const auto other = f.bridge->PublishLocal(model.ClassObject(linker.ResolveDescriptor("Ljava/lang/String;")));
+        CHECK_THROWS(static_cast<void>(call("ToReflectedField", other.Value(),
+            classes.GetFieldId(identity, "imported", "I", false)->Value())));
+        f.bridge.reset();
+        CHECK_THROWS_WITH(static_cast<void>(env.FromReflectedField(1, object_ref)),
+                          "JNI reflection backend is unavailable");
+    }
 }
 
 TEST_CASE("DVM-141 Java Map array elements become callable JNI receivers and GC roots") {

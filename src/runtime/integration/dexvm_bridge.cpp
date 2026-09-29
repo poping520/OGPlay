@@ -4,6 +4,7 @@
 
 #include "ogplay/core/text.h"
 #include "ogplay/runtime/jni/jni_utf.h"
+#include "ogplay/runtime/dexvm/reflection.h"
 
 #include <algorithm>
 #include <cstring>
@@ -576,6 +577,80 @@ public:
       storage[index] = slots[index].bits;
     }
     return true;
+  }
+
+  [[nodiscard]] JniFieldId FromReflectedField(std::uint64_t thread, JniReference reference) {
+    const auto object = FromReference(reference, thread);
+    if (linker.Class(model->ObjectClass(object)).descriptor != "Ljava/lang/reflect/Field;")
+      throw DexVmBridgeError("FromReflectedField requires java.lang.reflect.Field");
+    const auto field_id = vm->Reflection().FieldMetadata(object).field;
+    const auto field = linker.Field(field_id);
+    const auto declaring_identity = RegisterClassForNative(field.owner);
+    const auto id = session->Classes().GetFieldId(declaring_identity, field.name, field.descriptor, field.is_static);
+    if (!id) throw DexVmBridgeError("reflected field has no JNI ID");
+    return *id;
+  }
+
+  [[nodiscard]] JniMethodId FromReflectedMethod(std::uint64_t thread, JniReference reference) {
+    const auto object = FromReference(reference, thread);
+    const auto type = linker.Class(model->ObjectClass(object)).descriptor;
+    dx::VmMethodId method_id;
+    if (type == "Ljava/lang/reflect/Method;")
+      method_id = vm->Reflection().MethodMetadata(object).method;
+    else if (type == "Ljava/lang/reflect/Constructor;")
+      method_id = vm->Reflection().ConstructorMetadata(object).method;
+    else throw DexVmBridgeError("FromReflectedMethod requires Method or Constructor");
+    const auto method = linker.Method(method_id);
+    const auto declaring_identity = RegisterClassForNative(method.owner);
+    const auto id = session->Classes().GetMethodId(declaring_identity, method.name, method.descriptor, method.is_static);
+    if (!id) throw DexVmBridgeError("reflected method has no JNI ID");
+    return *id;
+  }
+
+  void CheckReflectedOwner(std::uint64_t thread, JniReference reference,
+                           dx::DexClassId declaring) {
+    const auto supplied = model->ClassOfClassObject(FromReference(reference, thread));
+    if (!linker.IsAssignable(declaring, supplied))
+      throw DexVmBridgeError("JNI reflected member does not belong to supplied class");
+  }
+
+  [[nodiscard]] JniReference ToReflectedField(std::uint64_t thread, JniReference declaring_identity,
+                                             JniFieldId id, bool is_static) {
+    const auto resolved = session->Classes().ResolveField(id);
+    const auto declaring = ClassForJniIdentity(resolved.declaring_class);
+    if (!declaring || resolved.declaration.is_static != is_static)
+      throw DexVmBridgeError("ToReflectedField class or static kind mismatch");
+    CheckReflectedOwner(thread, declaring_identity, *declaring);
+    static_cast<void>(RegisterClassForNative(*declaring));
+    const auto field = DexField(resolved);
+    if (!field) throw DexVmBridgeError("ToReflectedField has no VM field");
+    for (const auto& meta : vm->Reflection().DeclaredFields(*declaring)) {
+      if (meta.field == *field)
+        return PublishLocal(vm->Reflection().MaterializeField(meta), thread);
+    }
+    throw DexVmBridgeError("ToReflectedField metadata is missing");
+  }
+
+  [[nodiscard]] JniReference ToReflectedMethod(std::uint64_t thread, JniReference declaring_identity,
+                                               JniMethodId id, bool is_static) {
+    const auto resolved = session->Classes().ResolveMethod(id);
+    const auto declaring = ClassForJniIdentity(resolved.declaring_class);
+    if (!declaring || resolved.declaration.is_static != is_static)
+      throw DexVmBridgeError("ToReflectedMethod class or static kind mismatch");
+    CheckReflectedOwner(thread, declaring_identity, *declaring);
+    const auto matches = [&](dx::VmMethodId method_id) {
+      const auto& method = linker.Method(method_id);
+      return method.name == resolved.declaration.name && method.descriptor == resolved.declaration.descriptor;
+    };
+    if (resolved.declaration.name == "<init>") {
+      for (const auto& meta : vm->Reflection().DeclaredConstructors(*declaring))
+        if (matches(meta.method)) return PublishLocal(vm->Reflection().MaterializeConstructor(meta), thread);
+    } else {
+      const auto meta = vm->Reflection().FindDeclaredMethodByDescriptor(
+          *declaring, resolved.declaration.name, resolved.declaration.descriptor);
+      if (meta) return PublishLocal(vm->Reflection().MaterializeMethod(*meta), thread);
+    }
+    throw DexVmBridgeError("ToReflectedMethod metadata is missing");
   }
 
   void BindField(const JniObjectIdentity identity,
@@ -1216,6 +1291,23 @@ DexVmGuestBridge::DexVmGuestBridge(
             if (!target_class || !source_class) return std::nullopt;
             return bridge_state->linker.IsAssignable(*target_class, *source_class);
         });
+    session.Environment().SetReflectionHooks(JniReflectionHooks{
+        [bridge_state](std::uint64_t thread, JniReference object) {
+            const dx::VmExecutionLockScope guard(bridge_state->vm->ExecutionLock());
+            return bridge_state->FromReflectedMethod(thread, object);
+        },
+        [bridge_state](std::uint64_t thread, JniReference object) {
+            const dx::VmExecutionLockScope guard(bridge_state->vm->ExecutionLock());
+            return bridge_state->FromReflectedField(thread, object);
+        },
+        [bridge_state](std::uint64_t thread, JniReference owner, JniMethodId id, bool is_static) {
+            const dx::VmExecutionLockScope guard(bridge_state->vm->ExecutionLock());
+            return bridge_state->ToReflectedMethod(thread, owner, id, is_static);
+        },
+        [bridge_state](std::uint64_t thread, JniReference owner, JniFieldId id, bool is_static) {
+            const dx::VmExecutionLockScope guard(bridge_state->vm->ExecutionLock());
+            return bridge_state->ToReflectedField(thread, owner, id, is_static);
+        }});
     session.Fields().SetAccessHooks(JniFieldAccessHooks{
         [bridge_state](const JniObjectIdentity java_class,
                        const std::uint64_t thread) {
@@ -1404,6 +1496,7 @@ DexVmGuestBridge::~DexVmGuestBridge() {
     }
     if (impl_->session) {
         impl_->session->Environment().SetMonitorHooks({});
+        impl_->session->Environment().SetReflectionHooks({});
         impl_->session->Objects().ObjectArrays().SetAssignability({});
         impl_->session->Fields().SetAccessHooks({});
     }

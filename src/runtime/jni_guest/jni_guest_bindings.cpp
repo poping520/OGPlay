@@ -612,6 +612,24 @@ A32GuestCallFrame ResolveJniRegisteredNativeCall(
 
 void BindJniGuestSlots(JniGuestCallDispatcher& dispatcher,
                        JniGuestBindingContext& context) {
+    dispatcher.BindEnvironment(EnvironmentSlot("FromReflectedMethod"),
+        [&env = context.environment](const JniGuestCallFrame& frame) {
+            return Word(env.FromReflectedMethod(frame.thread_id, JniReference{frame.registers[1]}).Value());
+        });
+    dispatcher.BindEnvironment(EnvironmentSlot("ToReflectedMethod"),
+        [&env = context.environment](const JniGuestCallFrame& frame) {
+            return Reference(env.ToReflectedMethod(frame.thread_id, JniReference{frame.registers[1]},
+                JniMethodId{frame.registers[2]}, frame.registers[3] != 0U));
+        });
+    dispatcher.BindEnvironment(EnvironmentSlot("FromReflectedField"),
+        [&env = context.environment](const JniGuestCallFrame& frame) {
+            return Word(env.FromReflectedField(frame.thread_id, JniReference{frame.registers[1]}).Value());
+        });
+    dispatcher.BindEnvironment(EnvironmentSlot("ToReflectedField"),
+        [&env = context.environment](const JniGuestCallFrame& frame) {
+            return Reference(env.ToReflectedField(frame.thread_id, JniReference{frame.registers[1]},
+                JniFieldId{frame.registers[2]}, frame.registers[3] != 0U));
+        });
     BindJniGuestCoreSlots(dispatcher, context.environment, context.classes,
                           context.strings, context.arrays,
                           context.address_space);

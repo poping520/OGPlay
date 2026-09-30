@@ -549,3 +549,18 @@ O_NONBLOCK 不改变该策略，OS 失败返回 EIO；没有额外 readiness/pol
 只读权限、字符设备类型与 rdev 明确发布；seek/pread、lease、fsync 和修改设备的操作
 分别受 VFS 契约限制。注册撤销同步等待 reader，已有描述符保留身份但读取明确失败。
 dup 复用同一打开状态与操作锁，不复制随机内容。支付服务不在本能力范围。
+
+## ADR-0087：JNI 字符串正文预算与按需副本
+
+状态：接受（2026-09-30）。任务：[DVM-204](../tasks/dexvm/DVM-204.md)。
+
+将 `NewStringUTF` 正文与类名/成员名/签名的 1 KiB 扫描策略分开。正文默认预算为
+3 MiB Modified UTF-8 payload 和 1 Mi UTF-16 code units，扫描包含额外终止符字节；
+资源上限是宿主支持边界，不宣称为 JNI 规范限制。仍复用 AddressSpace 的逐页权限校验，
+明确区分预算耗尽、坏地址/权限、非法编码和分配失败，保留调用位置。
+
+`GetStringUTFChars/GetStringChars` 共用可注入的默认 16 MiB 页对齐临时副本预算，
+通过 AddressSpace 的 native mmap 范围按需取得未占用页；不新增宿主分配器或固定区域。
+副本发布绑定现有 semantic access token，release 解除映射并归还预算，失败完整回滚。
+析构只清理 guest 映射，不反向访问可能先销毁的 string store。成功观察接口仅供上层
+记录长度与调用帧，观察失败不得替换运行结果，不记录正文或修改游戏数据。

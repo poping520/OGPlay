@@ -209,7 +209,10 @@ void BindJniGuestCoreSlots(JniGuestCallDispatcher& dispatcher,
                            JniClassRegistry& classes,
                            JniStringStore& strings,
                            JniPrimitiveArrayStore&,
-                           memory::AddressSpace& address_space) {
+                           memory::AddressSpace& address_space,
+                           const JniGuestStringLimits limits,
+                           JniGuestStringObserver observer) {
+    ValidateJniGuestStringLimits(limits);
     dispatcher.BindEnvironment(
         EnvironmentSlot("GetVersion"),
         [&environment](const JniGuestCallFrame& frame) {
@@ -396,28 +399,45 @@ void BindJniGuestCoreSlots(JniGuestCallDispatcher& dispatcher,
         });
     dispatcher.BindEnvironment(
         EnvironmentSlot("NewStringUTF"),
-        [&environment, &strings,
-         &address_space](const JniGuestCallFrame& frame) {
+        [&environment, &strings, &address_space, limits,
+         observer = std::move(observer)](const JniGuestCallFrame& frame) {
             if (frame.registers[1] == 0U) {
                 return Reference(JniReference{});
             }
-            std::string text;
+            JniObjectIdentity identity{};
+            bool created{};
             try {
-                text = ReadGuestCString(
-                    address_space, memory::GuestAddress{frame.registers[1]},
-                    frame.thread_id, "modified UTF-8");
-            } catch (const JniGuestBindingError& error) {
+                const auto encoded = ReadGuestModifiedUtf8(address_space,
+                    memory::GuestAddress{frame.registers[1]}, frame.thread_id,
+                    limits.maximum_modified_utf8_bytes);
+                const auto chars = DecodeJniModifiedUtf8(encoded);
+                if (chars.size() > limits.maximum_utf16_code_units)
+                    throw JniGuestBindingError("JNI string UTF-16 resource budget exceeded: code_units=" +
+                        std::to_string(chars.size()) + " budget=" + std::to_string(limits.maximum_utf16_code_units));
+                identity = strings.Create(chars);
+                created = true;
+                const auto reference = environment.PublishLocalObject(frame.thread_id, identity);
+                if (observer) {
+                    try { observer(frame, encoded.size(), chars.size()); }
+                    catch (...) { /* diagnostics must not affect the result */ }
+                }
+                return Reference(reference);
+            } catch (const std::bad_alloc&) {
+                if (created) strings.Delete(identity);
+                throw JniGuestBindingError(JniCallFailure("NewStringUTF", frame, "JNI string allocation failed"));
+            } catch (const JniModifiedUtf8Error& error) {
+                throw JniGuestBindingError(JniCallFailure("NewStringUTF", frame,
+                    "invalid Modified UTF-8 at byte=" + std::to_string(error.Offset()) + ": " + error.what()));
+            } catch (const memory::MemoryFault& error) {
+                throw JniGuestBindingError(JniCallFailure("NewStringUTF", frame,
+                    "JNI string input memory fault: " + std::string(memory::ToString(error.Reason())) + ": " + error.what()));
+            } catch (const std::overflow_error& error) {
+                throw JniGuestBindingError(JniCallFailure("NewStringUTF", frame,
+                    "JNI string guest address overflow: " + std::string(error.what())));
+            } catch (const std::exception& error) {
+                if (created) strings.Delete(identity);
                 throw JniGuestBindingError(
                     JniCallFailure("NewStringUTF", frame, error.what()));
-            }
-            const std::vector<std::uint8_t> encoded(text.begin(), text.end());
-            const auto identity = strings.CreateModifiedUtf8(encoded);
-            try {
-                return Reference(environment.PublishLocalObject(
-                    frame.thread_id, identity));
-            } catch (...) {
-                strings.Delete(identity);
-                throw;
             }
         });
 }
@@ -612,6 +632,7 @@ A32GuestCallFrame ResolveJniRegisteredNativeCall(
 
 void BindJniGuestSlots(JniGuestCallDispatcher& dispatcher,
                        JniGuestBindingContext& context) {
+    ValidateJniGuestStringLimits(context.string_limits);
     dispatcher.BindEnvironment(EnvironmentSlot("FromReflectedMethod"),
         [&env = context.environment](const JniGuestCallFrame& frame) {
             return Word(env.FromReflectedMethod(frame.thread_id, JniReference{frame.registers[1]}).Value());
@@ -631,8 +652,8 @@ void BindJniGuestSlots(JniGuestCallDispatcher& dispatcher,
                 JniFieldId{frame.registers[2]}, frame.registers[3] != 0U));
         });
     BindJniGuestCoreSlots(dispatcher, context.environment, context.classes,
-                          context.strings, context.arrays,
-                          context.address_space);
+                         context.strings, context.arrays,
+                         context.address_space, context.string_limits, context.string_observer);
     BindJniGuestClassAndInstanceSlots(
         dispatcher, context.environment, context.classes,
         context.invocations, context.address_space, &context.objects);
@@ -648,12 +669,9 @@ void BindJniGuestSlots(JniGuestCallDispatcher& dispatcher,
     BindJniGuestArraySlots(
         dispatcher, context.environment, context.classes, context.strings,
         context.arrays, context.objects, context.address_space);
-    BindJniGuestModifiedUtf8Slots(
+    BindJniGuestStringSlots(
         dispatcher, context.environment, context.strings,
-        context.address_space);
-    BindJniGuestUtf16Slots(
-        dispatcher, context.environment, context.strings,
-        context.address_space);
+        context.address_space, context.string_limits);
     if (context.natives != nullptr) {
         BindJniGuestNativeRegistrationSlots(
             dispatcher, context.environment, context.classes,

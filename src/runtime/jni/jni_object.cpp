@@ -105,8 +105,6 @@ public:
             throw std::length_error("JNI string access token space exhausted");
         }
         const auto token = next_token_++;
-        accesses_.emplace(token, AccessEntry{string.value, kind});
-        ++found->second.active_accesses;
 
         JniStringAccess access{token, kind, {}, {}, true};
         if (kind == JniStringAccessKind::modified_utf8) {
@@ -114,6 +112,8 @@ public:
         } else {
             access.chars = found->second.utf16;
         }
+        accesses_.emplace(token, AccessEntry{string.value, kind});
+        ++found->second.active_accesses;
         return access;
     }
 

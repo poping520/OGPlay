@@ -903,7 +903,7 @@ note = "DVM-200：From/ToReflectedMethod/Field 四槽复用 JniEnvironment 显�
 [runtime.jni_guest_utf16_strings]
 status = "complete"
 test = "tests/runtime/jni_guest_instance_calls_tests.cpp; tests/runtime/jni_guest_bindings_tests.cpp"
-note = "M8 WU-M8-003 绑定 NewString/GetStringLength/GetStringChars/ReleaseStringChars/GetStringRegion 共 5 槽，长度与 region 以 UTF-16 code unit 计；M3 Modified UTF-8 五槽保持可用。GetStringChars 使用独立 64 KiB copy-based guest arena 并写 JNI_TRUE，lease 以 string identity + pointer + token 配对。GetStringCritical/ReleaseStringCritical 明确排除，保持 unbound"
+note = "M8 WU-M8-003 绑定 NewString/GetStringLength/GetStringChars/ReleaseStringChars/GetStringRegion 共 5 槽，长度与 region 以 UTF-16 code unit 计；M3 Modified UTF-8 五槽保持可用。DVM-204 两种 chars 按需映射 copy buffer，共享可注入的默认 16 MiB 页对齐预算；UTF-16 默认最多 1 Mi code units，Modified UTF-8 最多 3 MiB payload。isCopy 写 JNI_TRUE，release 回收映射/预算，失败回滚 access。GetStringCritical/ReleaseStringCritical 明确排除，保持 unbound"
 
 [runtime.jni_guest_arrays]
 status = "complete"
@@ -938,7 +938,7 @@ note = "M5 WU-0246 让 guest GetStaticMethodID 以真实 class reference 与受�
 [runtime.jni_guest_new_string_utf]
 status = "complete"
 test = "tests/runtime/jni_guest_bindings_tests.cpp; bounded exact-APK run-apk smoke"
-note = "M5 WU-0252 让 guest NewStringUTF 通过受检 guest C string、M3 Modified UTF-8 解码与统一 string store 发布 local reference；遵循 API19 Dalvik，null C 指针返回 null jstring，null jstring 的 UTF length/chars 返回 0/null 且 chars 不改写 isCopy；ReleaseStringUTFChars 忽略 jstr、按已发布 UTF pointer 释放，null pointer 无操作；非空坏输入仍明确失败"
+note = "M5 WU-0252 让 guest NewStringUTF 通过受检 guest C string、M3 Modified UTF-8 解码与统一 string store 发布 local reference；DVM-204 正文逐页扫描使用可注入的默认 3 MiB payload / 1 Mi UTF-16 code units 预算，名称/签名保持 1 KiB 扫描限制；区分预算、内存、编码和分配失败，保留调用位置，成功观察器只报告长度且不得影响结果。遵循 API19 Dalvik，null C 指针返回 null jstring，null jstring 的 UTF length/chars 返回 0/null 且 chars 不改写 isCopy；ReleaseStringUTFChars 忽略 jstr、按已发布 UTF pointer 释放，null pointer 无操作；非空坏输入仍明确失败"
 
 [runtime.jni_guest_static_object_invocation]
 status = "complete"

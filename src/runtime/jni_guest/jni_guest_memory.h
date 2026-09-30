@@ -6,12 +6,23 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <iomanip>
+#include <sstream>
+#include <vector>
 
 #include "ogplay/core/byte_order.h"
 #include "ogplay/memory/address_space.h"
 #include "ogplay/runtime/jni_guest/jni_guest_bindings.h"
 
 namespace ogplay::runtime {
+
+inline void ValidateJniGuestStringLimits(const JniGuestStringLimits limits) {
+    if (limits.maximum_modified_utf8_bytes == 0 || limits.maximum_modified_utf8_bytes > INT32_MAX ||
+        limits.maximum_utf16_code_units == 0 || limits.maximum_utf16_code_units > INT32_MAX ||
+        limits.maximum_copy_bytes == 0 || limits.maximum_copy_bytes > INT32_MAX) {
+        throw std::invalid_argument("JNI guest string resource limits are invalid");
+    }
+}
 
 [[nodiscard]] inline std::uint8_t ReadGuest8(
     memory::AddressSpace& address_space, const memory::GuestAddress address,
@@ -58,11 +69,31 @@ namespace ogplay::runtime {
         length = address_space.CStringLength(address, kMaximumBytes, thread_id);
     } catch (const std::length_error&) {
         throw JniGuestBindingError(
-            "JNI guest " + std::string(field) + " is not null-terminated");
+            "JNI guest " + std::string(field) + " scan limit reached: scanned_bytes=1024");
     }
     std::string result(length, '\0');
     address_space.Read(address, std::as_writable_bytes(std::span{result}), thread_id);
     return result;
+}
+
+// String bodies have a separate resource policy from class/member names.
+[[nodiscard]] inline std::vector<std::uint8_t> ReadGuestModifiedUtf8(
+    memory::AddressSpace& space, const memory::GuestAddress address,
+    const std::uint64_t thread_id, const std::size_t maximum_payload_bytes) {
+    const auto scan_bytes = maximum_payload_bytes + 1U; // include terminator
+    std::size_t length{};
+    try {
+        length = space.CStringLength(address, scan_bytes, thread_id);
+    } catch (const std::length_error&) {
+        std::ostringstream message;
+        message << "modified UTF-8 scan limit reached: pointer=0x" << std::hex
+                << std::setw(8) << std::setfill('0') << address.Value() << std::dec
+                << " scanned_bytes=" << scan_bytes << " payload_budget=" << maximum_payload_bytes;
+        throw JniGuestBindingError(message.str());
+    }
+    std::vector<std::uint8_t> encoded(length);
+    space.Read(address, std::as_writable_bytes(std::span{encoded}), thread_id);
+    return encoded;
 }
 
 }  // namespace ogplay::runtime

@@ -19,7 +19,9 @@ nonvirtual、monitor、JavaVM)与 root `JNI_OnLoad` 库生命周期。语义本�
   不修改已有类型。GetObjectArrayElement 发布引用前使用元素携带的 java_class 登记，
   不使用声明 component type 猜测；该表不是 GC root，VM sweep 仍负责 Forget。
 - guest-memory 标量和受限 C 字符串读取统一经过私有 `jni_guest_memory.h`；整数按 A32
-  little-endian 解码，C 字符串继续保持 1024 字节上限与原有 binding error。
+  little-endian 解码，名称/签名等元数据保持 1024 字节扫描上限。`NewStringUTF` 正文
+  使用独立、可注入资源预算，默认最多 3 MiB Modified UTF-8 payload（另读终止符）、
+  1 Mi UTF-16 code units；逐页扫描仍校验权限和地址溢出，超限不等于已证明未终止。
 - `GuestJniAbi` 把完整 233 槽 JNIEnv 与 8 槽 JavaVM 物化为 32 位 guest 函数表、对象和
   Thumb SVC trap;reserved 槽保持 null,其余槽均有可识别地址。表与对象只读、trap 页
   RX,映射冲突完整回滚,析构后不得残留 guest 映射。
@@ -48,7 +50,8 @@ nonvirtual、monitor、JavaVM)与 root `JNI_OnLoad` 库生命周期。语义本�
   string、M3 Modified UTF-8 解码与统一 string store 后发布 local reference；遵循 API 19
   Dalvik，null C 指针直接返回 null `jstring`。非空输入读取失败必须按层级排版保留 slot、
   guest thread、LR/SP、r0-r3 与原始 cause，使动态注册 native 的外层 Java/JNI 上下文仍能
-  定位到具体 guest 调用点。
+  定位到具体 guest 调用点；分别报告扫描预算、内存故障、编码错误及分配失败。
+  可注入成功读取观察器，仅发布调用帧与两种长度，诊断失败不得改变 JNI 结果。
 - 10 种 `CallStatic*Method` 返回类型的普通、`V`、`A` 共 30 个槽按 method descriptor
   分别解码 A32 variadic、对齐 `va_list` 与 8 字节步长 `jvalue[]`,再进入统一 invocation
   engine;小整数符号/零扩展、float/double/long 双字返回及 void 均遵循 A32 guest ABI,
@@ -80,16 +83,17 @@ nonvirtual、monitor、JavaVM)与 root `JNI_OnLoad` 库生命周期。语义本�
   DVM-158 按 API 19 非 CheckJNI Dalvik 通用兼容语义，允许 CallObjectMethod/ V / A
   调用 void 实例方法：方法照常执行、结果丢弃并返回 null；不依赖 Profile，其他返回族
   错配继续明确失败。
-- modified UTF-8 访问族与 UTF-16 string 5 槽都解析统一 `JniStringStore`,并各用独立
-  64 KiB copy-based guest arena;`isCopy` 明确写 true,lease 以 string identity +
-  pointer + token 配对并 first-fit 回收,arena owner 不得在析构时反向访问可能已销毁的
+- modified UTF-8 访问族与 UTF-16 string 5 槽都解析统一 `JniStringStore`，通过 AddressSpace
+  页账本按需映射 copy buffer，共享默认 16 MiB 页对齐总预算；release 解除映射并归还预算。
+  编码分别受正文预算约束，`isCopy` 明确写 true，lease 以 string identity +
+  pointer + token 配对，owner 不得在析构时反向访问可能已销毁的
   string store。API 19 Dalvik 的 null modified-UTF8 string 兼容语义保持一致：length 返回 0、
   chars 返回 null 且不改写 `isCopy`；`ReleaseStringUTFChars` 与 Dalvik 一样忽略 `jstr`，null
   指针无操作，非空指针只按已发布 lease 身份释放，未知或重复指针继续明确失败。
   UTF-16 长度与 region 以 code unit 计,NewString 完整预检 guest input 并
   在 reference 发布失败时删除 semantic object;坏引用/range/输出、wrong-string/double
-  release 与 arena exhaustion 明确失败,Critical 两槽继续 unbound。
-  两个 arena 共用 lease 分配、发布、配对与回收实现，编码/解码和 semantic store 操作不合并。
+  release 与资源预算耗尽明确失败，分配/复制/发布失败回滚映射、预算与 semantic access；
+  Critical 两槽继续 unbound。两个编码共用 lease 分配、发布、配对与回收实现。
 - primitive array 42 槽由统一 binder 批量接入 `JniPrimitiveArrayStore`;8 类 New/Region/
   Elements 都按 little-endian ARM32 ABI 搬运,第五个 region buffer 从 guest 栈读取并在
   semantic mutation 前完整预检。Elements 使用独立 4 MiB 有界 guest arena,严格实现

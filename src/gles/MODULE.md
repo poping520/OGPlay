@@ -112,6 +112,9 @@
   附着、完整性查询及 mipmap 生成必须转发当前 ANGLE context 并立即检查原生错误。
 - buffer subrange 的 guest offset/size 必须非负，输入 payload 先完整预检再调用 ANGLE；
   `AngleFrame::BufferSubData` 只接受拥有精确长度的受检 span，并立即检查原生错误。
+- `AngleFrame::ReadBufferRange` 从当前绑定的实际 Buffer 有界回读，不改变绑定；拒绝
+  越界、超搬运预算及已映射对象，返回前解除内部映射。ES2 要求宿主
+  `GL_EXT_map_buffer_range`，ES3 使用 core mapping；不向 guest 扩大扩展声明。
 - boolean/float、buffer、texture、framebuffer attachment 与 renderbuffer parameter query
   必须调用对应的真实 ANGLE API；输出 storage 在 native query 前完整预检，只在成功后提交。
   compressed/copy texture 继续复用统一 ETC1/PVRTC fallback，不能绕过当前 context。

@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <string>
+#include <array>
 
 #include "ogplay/gles/angle_frame.h"
 
@@ -20,6 +21,47 @@ constexpr ogplay::gles::AngleRenderer kNativeRenderer =
 #endif
 
 }  // namespace
+
+TEST_CASE("ANGLE bounded buffer read observes updates and preserves mappings and bindings") {
+    if (!ogplay::gles::IsNativeAngleEglAvailable()) return;
+    for (const int version : {2, 3}) {
+        CAPTURE(version);
+        auto frame = ogplay::gles::AngleFrame::CreatePbuffer(
+            {kNativeRenderer, ogplay::gles::AngleDevice::hardware}, 4, 4, version);
+        const auto buffers = frame.GenerateBuffers(2);
+        frame.BindBuffer(0x8892U, buffers[0]);
+        frame.BindBuffer(0x8893U, buffers[1]);
+        frame.BufferData(0x8893U, 16, std::nullopt, 0x88E4U);
+        std::array<std::byte, 4> bytes{std::byte{3}, std::byte{1}, std::byte{9}, std::byte{2}};
+        frame.BufferSubData(0x8893U, 5, bytes);
+        CHECK(frame.ReadBufferRange(0x8893U, 5, 4) == std::vector<std::byte>(bytes.begin(), bytes.end()));
+        bytes[2] = std::byte{7};
+        frame.BufferSubData(0x8893U, 5, bytes);
+        CHECK(frame.ReadBufferRange(0x8893U, 5, 4)[2] == std::byte{7});
+        CHECK(frame.GetIntegers(0x8894U, 1)[0] == static_cast<std::int32_t>(buffers[0]));
+        CHECK(frame.GetIntegers(0x8895U, 1)[0] == static_cast<std::int32_t>(buffers[1]));
+        CHECK(frame.GetBufferParameter(0x8893U, 0x88BCU) == 0);
+        CHECK_THROWS_AS(static_cast<void>(frame.ReadBufferRange(0x8893U, 15, 2)), ogplay::gles::GlesApiError);
+        CHECK_THROWS_AS(static_cast<void>(frame.ReadBufferRange(0x8893U, UINT32_MAX, 1)), ogplay::gles::GlesApiError);
+        auto* mapped = frame.MapBufferOes(0x8893U, 0x88B9U);
+        REQUIRE(mapped != nullptr);
+        mapped[7] = std::byte{8};
+        CHECK_THROWS_AS(static_cast<void>(frame.ReadBufferRange(0x8893U, 5, 4)), ogplay::gles::GlesApiError);
+        CHECK(frame.GetBufferParameter(0x8893U, 0x88BCU) != 0);
+        REQUIRE(frame.UnmapBufferOes(0x8893U));
+        CHECK(frame.ReadBufferRange(0x8893U, 5, 4)[2] == std::byte{8});
+        frame.ReleaseCurrent();
+        auto shared = ogplay::gles::AngleFrame::CreatePbuffer(
+            {kNativeRenderer, ogplay::gles::AngleDevice::hardware}, 4, 4, version, frame.NativeContext());
+        shared.BindBuffer(0x8893U, buffers[1]);
+        bytes[2] = std::byte{6};
+        shared.BufferSubData(0x8893U, 5, bytes);
+        shared.ReleaseCurrent();
+        frame.BindCurrentOnCallingThread();
+        CHECK(frame.ReadBufferRange(0x8893U, 5, 4)[2] == std::byte{6});
+        frame.DeleteBuffers(buffers);
+    }
+}
 
 TEST_CASE("ANGLE frame clears and reads back an exact GLES2 pbuffer") {
     if (!ogplay::gles::IsNativeAngleEglAvailable()) {

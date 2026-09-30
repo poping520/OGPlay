@@ -236,6 +236,10 @@ struct DexVmAndroidContext final {
   std::unordered_map<std::uint32_t, std::vector<std::int32_t>>
       gl_surface_config_specs;
   std::vector<dexvm::VmObjectRef> gl_surface_events;
+  // Session-owned intrinsic GLThread driver, reached through explicit hooks.
+  std::function<void()> run_gl_surface_thread;
+  std::function<void()> wake_gl_surface_thread;
+  bool gl_surface_thread_stopped{};
   dexvm::VmObjectRef content_view;
 
   // Shared guest filesystem: the single world view for Java File I/O and
@@ -568,6 +572,8 @@ struct DexVmAndroidContext final {
   };
 
   std::function<void(std::uint64_t)> prepare_native_looper;
+  // Resolve the VM execution token to the same process TID used by JNI.
+  std::function<std::uint64_t(std::uint64_t)> native_thread_for_context;
 
   struct LooperState final {
     std::uint64_t context_token{};

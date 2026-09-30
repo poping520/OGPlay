@@ -131,6 +131,7 @@ Declare_android_opengl_GLSurfaceView_EGLContextFactory(const Context &context);
 [[nodiscard]] Decl
 Declare_android_opengl_GLSurfaceView_Renderer(const Context &context);
 [[nodiscard]] Decl Declare_android_opengl_GLSurfaceView(const Context &context);
+[[nodiscard]] Decl Declare_android_opengl_GLSurfaceView_GLThread(const Context &context);
 [[nodiscard]] Decl Declare_android_opengl_GLES10(const Context &context);
 [[nodiscard]] Decl Declare_android_opengl_GLES10Ext(const Context &context);
 [[nodiscard]] Decl Declare_android_opengl_GLES11(const Context &context);

@@ -1,6 +1,6 @@
 # 当前状态
 
-更新：2026-09-29。
+更新：2026-09-30。
 
 ## 运行状态
 
@@ -102,6 +102,13 @@
   原 Intent 限制、pending GetObjectClass 和退出 134 均消失，本轮无新致命首错。
   证据 `.local/service-fix-{tests,startup}.log` 与 `.local/service-fix-startup-check.json`。
   仅为启动冒烟，不代表游戏操作、完整画面/音频或 title gate 验收。
+  [DVM-203](../tasks/dexvm/DVM-203.md) 已将 intrinsic GLSurfaceView renderer 迁至独立
+  Java/host GLThread，并统一 Java EGL/GLES 与 JNI 的 process TID；原点击被 NativeActivity
+  worker 丢弃的问题已越过。Windows 构建、定向 10 用例/1113 断言通过；原 APK/OBB
+  隔离存档复跑，第 88 帧注入点击，第 89 帧由 guest thread 16385 / context 3 的
+  nativeRender 调用缺失的 `AInputEvent_getSource`，退出 1。NDK 事件查询接口仍待补齐，
+  不代表按钮可用。证据 `.local/glthread-{build-final,tests-final,startup}.log`
+  与 `.local/glthread-startup-check.json`。
   此前 renderer 证据 `.local/renderer-{build,test-build,tests,startup}.log`。
   EGL 暂停/恢复策略尚未接入该配置；前置 NDK 符号缺失仍待闭合。
   本轮证据为 `.local/gl-preserve-{build,tests,startup}.log`。
@@ -146,7 +153,8 @@
 ## 未闭合边界
 
 - Dead Trigger 已完成无 Profile 的 120 呈现帧启动冒烟并正常退出；本次无新致命首错，
-  完整画面、交互及游戏兼容验收仍未完成。同进程 Service 绑定与失败清理链已修复。
+  完整画面、交互及游戏兼容验收仍未完成。独立 GLThread 与输入接管已修正；点击路径
+  当前首错为缺失的 `AInputEvent_getSource`。同进程 Service 绑定与失败清理链已修复。
   `getDeclaredMethods` 解析 TextToSpeech 返回类型缺失已越过；此前插件回调接口缺失
   导致的 ClassNotFoundException/NewGlobalRef、SecretKeyFactory、CRC32 缺失，
   Looper 缺导出导致的 PC=0、Mono 信号注册、tkill SIGABRT 和 coprocessor 断言已越过。首次 nativeRender 的

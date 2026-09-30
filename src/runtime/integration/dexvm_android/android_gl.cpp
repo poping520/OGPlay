@@ -71,6 +71,7 @@ Decl Declare_android_opengl_GLSurfaceView(const Context& context) {
         "(Landroid/opengl/GLSurfaceView$Renderer;)V",
         [context](dx::IntrinsicContext& call) {
             context->renderer = call.arguments[0].ref;
+            context->gl_surface_thread_stopped = false;
             context->gl_surface_renderer_view = call.receiver;
             context->gl_surface_render_requests[call.receiver.Value()] = true;
             return dx::VmValue::Void();
@@ -149,11 +150,12 @@ Decl Declare_android_opengl_GLSurfaceView(const Context& context) {
                                       "runnable must not be null"};
             }
             std::scoped_lock lock(context->scheduler_mutex);
-            if (context->scheduler_shutdown) {
+            if (context->scheduler_shutdown || context->gl_surface_thread_stopped) {
                 throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;",
                                       "GL thread is stopped"};
             }
             context->gl_surface_events.push_back(runnable);
+            if (context->wake_gl_surface_thread) context->wake_gl_surface_thread();
             return dx::VmValue::Void();
         });
     // Render pause/resume is owned by the lifecycle driver.
@@ -161,6 +163,18 @@ Decl Declare_android_opengl_GLSurfaceView(const Context& context) {
         [](dx::IntrinsicContext&) { return dx::VmValue::Void(); });
     builder.FinalMethod("onPause", "()V", lifecycle_noop);
     builder.FinalMethod("onResume", "()V", lifecycle_noop);
+    return std::move(builder).Build();
+}
+
+Decl Declare_android_opengl_GLSurfaceView_GLThread(const Context& context) {
+    auto builder = dx::IntrinsicClassBuilder::Class(
+        "Landroid/opengl/GLSurfaceView$GLThread;", "Ljava/lang/Thread;");
+    builder.OverrideMethod("run", "()V", [context](dx::IntrinsicContext&) {
+        if (!context->run_gl_surface_thread)
+            throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "GL thread has no driver"};
+        context->run_gl_surface_thread();
+        return dx::VmValue::Void();
+    });
     return std::move(builder).Build();
 }
 
@@ -245,6 +259,7 @@ void SetError(const Context& context, const std::int32_t error) {
     const auto found = configs.find(ref.Value());
     return found == configs.end() ? 0U : found->second;
 }
+
 
 void LatchEglError(dx::IntrinsicContext& call, const Context& context,
                    std::uint32_t error);
@@ -358,13 +373,22 @@ void RequireInitialized(dx::IntrinsicContext& call, const Context& context) {
     return wrapper;
 }
 
-[[nodiscard]] std::uint64_t EglThreadId(dx::IntrinsicContext& call) {
+[[nodiscard]] std::uint64_t EglThreadId(dx::IntrinsicContext& call, const Context& context) {
+    if (context->native_thread_for_context)
+        return context->native_thread_for_context(call.vm.CurrentContextToken());
     if (call.vm.AttachedThreadRuntime() != nullptr) {
         const auto current = call.vm.Threads().CurrentThreadObject();
         if (current.IsValid()) return call.vm.Threads().ThreadId(current);
     }
     return static_cast<std::uint64_t>(
         std::hash<std::thread::id>{}(std::this_thread::get_id()));
+}
+
+[[nodiscard]] std::uint32_t NativeGles(
+    dx::IntrinsicContext& call, const Context& context, const gles::GlesApi api,
+    const std::string_view name, const std::span<const std::uint32_t> arguments) {
+    return context->session->InvokeManagedGles(api, name, arguments,
+                                               EglThreadId(call, context));
 }
 
 [[nodiscard]] std::uint32_t NativeEgl(
@@ -375,13 +399,13 @@ void RequireInitialized(dx::IntrinsicContext& call, const Context& context) {
         ModelFailure(call, "Java EGL native registry is unavailable");
     }
     return context->session->InvokeManagedEgl(
-        name, arguments, EglThreadId(call));
+        name, arguments, EglThreadId(call, context));
 }
 
 void LatchEglError(dx::IntrinsicContext& call, const Context& context,
                    const std::uint32_t error) {
     if (context->session != nullptr) {
-        context->session->LatchManagedEglError(EglThreadId(call), error);
+        context->session->LatchManagedEglError(EglThreadId(call, context), error);
     } else {
         SetError(context, static_cast<std::int32_t>(error));
     }
@@ -1229,7 +1253,7 @@ dx::IntrinsicHandler GlGetStringHandler(const Context& context) {
     static_cast<void>(context->session->NIO().WithTemporaryGuestMemory(
         bytes, true, [&](const memory::GuestAddress address) {
             const std::array args{object, parameter, address.Value()};
-            return context->session->InvokeManagedGles(api, name, args);
+            return NativeGles(call, context, api, name, args);
         }, &output));
     std::uint32_t value{};
     for (std::size_t index = 0; index < 4U; ++index) {
@@ -1278,7 +1302,7 @@ void SetJavaIntOutput(dx::IntrinsicContext& call, const dx::VmObjectRef output,
         bytes, true, [&](const memory::GuestAddress address) {
             const std::array args{object, static_cast<std::uint32_t>(maximum),
                                   0U, address.Value()};
-            return context->session->InvokeManagedGles(api, get_name, args);
+            return NativeGles(call, context, api, get_name, args);
         }, &output));
     const auto terminator = std::ranges::find(output, std::byte{});
     return std::string(reinterpret_cast<const char*>(output.data()),
@@ -1295,7 +1319,7 @@ dx::IntrinsicHandler JavaGlesHandler(const Context& context,
         if (context->session == nullptr) ModelFailure(call, "guest session is absent");
         if (name == "glGetStringi" && descriptor == "(II)Ljava/lang/String;") {
             const std::array args{call.arguments[0].cat1, call.arguments[1].cat1};
-            if (context->session->InvokeManagedGles(api, name, args) == 0U)
+            if (NativeGles(call, context, api, name, args) == 0U)
                 return dx::VmValue::Ref(dx::VmObjectRef{});
             std::istringstream stream(context->session->ManagedGlString(0x1F03U));
             std::string extension;
@@ -1308,14 +1332,14 @@ dx::IntrinsicHandler JavaGlesHandler(const Context& context,
         }
         if (name == "glFenceSync" && descriptor == "(II)J") {
             const std::array args{call.arguments[0].cat1, call.arguments[1].cat1};
-            return dx::VmValue::Long(context->session->InvokeManagedGles(
+            return dx::VmValue::Long(NativeGles(call, context,
                 api, name, args));
         }
         if (name == "glMapBufferRange" && descriptor == "(IIII)Ljava/nio/Buffer;") {
             const auto length = call.arguments[2].AsInt();
             const std::array args{call.arguments[0].cat1, call.arguments[1].cat1,
                                   call.arguments[2].cat1, call.arguments[3].cat1};
-            const auto address = context->session->InvokeManagedGles(api, name, args);
+            const auto address = NativeGles(call, context, api, name, args);
             if (address == 0U) return dx::VmValue::Ref(dx::VmObjectRef{});
             const auto buffer = call.vm.NewIntrinsicInstance("Ljava/nio/DirectByteBuffer;");
             call.vm.NIO().WrapDirect(call.vm.Model().ToIdentity(buffer),
@@ -1360,7 +1384,7 @@ dx::IntrinsicHandler JavaGlesHandler(const Context& context,
                                         static_cast<std::uint32_t>(maximum), 0U,
                                         size_address.Value(), type_address.Value(),
                                         name_address.Value()};
-                                    return context->session->InvokeManagedGles(api, name, args);
+                                    return NativeGles(call, context, api, name, args);
                                 }, &name_bytes);
                         }, &type_bytes);
                 }, &size_bytes));
@@ -1386,7 +1410,7 @@ dx::IntrinsicHandler JavaGlesHandler(const Context& context,
                 length_input, true, [&](const memory::GuestAddress address) {
                     const std::array args{call.arguments[0].cat1,
                         call.arguments[1].cat1, 0x8A41U, address.Value()};
-                    return context->session->InvokeManagedGles(
+                    return NativeGles(call, context,
                         api, "glGetActiveUniformBlockiv", args);
                 }, &length_output));
             std::uint32_t maximum{};
@@ -1399,7 +1423,7 @@ dx::IntrinsicHandler JavaGlesHandler(const Context& context,
                 name_input, true, [&](const memory::GuestAddress address) {
                     const std::array args{call.arguments[0].cat1,
                         call.arguments[1].cat1, maximum, 0U, address.Value()};
-                    return context->session->InvokeManagedGles(api, name, args);
+                    return NativeGles(call, context, api, name, args);
                 }, &name_output));
             const auto end = std::ranges::find(name_output, std::byte{});
             return MakeString(call, std::string(
@@ -1446,7 +1470,7 @@ dx::IntrinsicHandler JavaGlesHandler(const Context& context,
                                 const std::array args{call.arguments[0].cat1,
                                     static_cast<std::uint32_t>(count), pointer_address.Value(),
                                     output_address.Value()};
-                                return context->session->InvokeManagedGles(api, name, args);
+                                return NativeGles(call, context, api, name, args);
                             }, &copied);
                     }));
                 for (std::int32_t i = 0; i < count; ++i) {
@@ -1481,7 +1505,7 @@ dx::IntrinsicHandler JavaGlesHandler(const Context& context,
                             const std::array args{
                                 call.arguments[0].cat1, static_cast<std::uint32_t>(count),
                                 address.Value(), call.arguments[2].cat1};
-                            return context->session->InvokeManagedGles(
+                            return NativeGles(call, context,
                                 api, name, args);
                         });
                 }
@@ -1517,7 +1541,7 @@ dx::IntrinsicHandler JavaGlesHandler(const Context& context,
                         pointer_bytes, false, [&](const memory::GuestAddress pointers) {
                             const std::array args{call.arguments[0].cat1, 1U,
                                                   pointers.Value(), 0U};
-                            return context->session->InvokeManagedGles(
+                            return NativeGles(call, context,
                                 api, name, args);
                         });
                 }));
@@ -1535,7 +1559,7 @@ dx::IntrinsicHandler JavaGlesHandler(const Context& context,
         std::function<std::uint32_t(std::size_t)> marshal;
         marshal = [&](const std::size_t index) -> std::uint32_t {
             if (index == types.size()) {
-                return context->session->InvokeManagedGles(api, name, arguments);
+                return NativeGles(call, context, api, name, arguments);
             }
             const auto& type = types[index];
             const auto& value = call.arguments[index];
@@ -1765,7 +1789,7 @@ dx::IntrinsicHandler GlUtilsTextureHandler(const Context& context,
                         static_cast<std::uint32_t>(bitmap.width),
                         static_cast<std::uint32_t>(bitmap.height), format, type,
                         address.Value()};
-                    return context->session->InvokeManagedGles(
+                    return NativeGles(call, context,
                         gles::GlesApi::gles2, "glTexSubImage2D", args);
                 }
                 const auto border = call.arguments.back().cat1;
@@ -1774,7 +1798,7 @@ dx::IntrinsicHandler GlUtilsTextureHandler(const Context& context,
                     static_cast<std::uint32_t>(bitmap.width),
                     static_cast<std::uint32_t>(bitmap.height), border, format,
                     type, address.Value()};
-                return context->session->InvokeManagedGles(
+                return NativeGles(call, context,
                     gles::GlesApi::gles2, "glTexImage2D", args);
             }));
         return dx::VmValue::Void();

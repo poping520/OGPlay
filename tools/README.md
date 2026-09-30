@@ -35,6 +35,10 @@ python3 tools/bootdex/build_bootdex.py audit
 python3 tools/bootdex/build_bootdex.py --self-test
 ```
 
+`generate_virtual_keymap.py` 从本地 API19 `Virtual.kcm` 与 `KeyEvent.java` 生成虚拟键盘
+native 查询表；`--check` 核对生成数据及来源哈希。只接受受审属性，未知行为明确失败。
+生成表随 C++ 发布，各宿主平台共用；修改映射后只重建受影响目标。
+
 ## DexVM API-19 intrinsic 骨架
 
 `dexvm_api19_surface.py` 从 pinned Android 4.4.4 Java 源码抽取 public/protected

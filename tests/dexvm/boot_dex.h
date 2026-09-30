@@ -38,15 +38,27 @@ inline void BindBootDexArchive(runtime::DexVmAndroidContext& context) {
     context.boot_classpath_archive = loader::ParseApkArchive(context.boot_classpath_bytes);
 }
 inline void BindBootDexPlatformNatives(runtime::dexvm::DexClassLinker& linker) {
-    // Core-only fixtures still load the full curated artifact. Its Typeface
-    // native boundary needs the real built-in backend, even when not exercised.
+    // Core-only fixtures load the full curated artifact. Bind its audited
+    // Android native owners to real handlers, even when not exercised.
     if (!linker.FindClass("Landroid/graphics/Typeface;")) {
         const auto context = std::make_shared<runtime::DexVmAndroidContext>();
         for (const auto& declaration : runtime::AndroidIntrinsicCatalog(context)) {
             if (declaration.descriptor == "Landroid/graphics/Typeface;" ||
+                declaration.descriptor == "Landroid/app/NativeActivity;" ||
+                declaration.descriptor == "Landroid/database/CursorWindow;" ||
+                declaration.descriptor == "Landroid/database/sqlite/SQLiteConnection;" ||
+                declaration.descriptor == "Landroid/database/sqlite/SQLiteDebug;" ||
+                declaration.descriptor == "Landroid/database/sqlite/SQLiteGlobal;" ||
+                declaration.descriptor == "Landroid/media/AudioTrack;" ||
+                declaration.descriptor == "Landroid/media/MediaPlayer;" ||
+                declaration.descriptor == "Landroid/media/SoundPool$SoundPoolImpl;" ||
+                declaration.descriptor == "Landroid/util/EventLog;" ||
                 declaration.descriptor == "Landroid/os/Binder;" ||
                 declaration.descriptor == "Landroid/os/Parcel;" ||
                 declaration.descriptor == "Landroid/os/SystemProperties;")
+                linker.RegisterIntrinsics(std::array{declaration});
+            if (declaration.descriptor == "Landroid/view/KeyEvent;" ||
+                declaration.descriptor == "Landroid/view/KeyCharacterMap;")
                 linker.RegisterIntrinsics(std::array{declaration});
         }
     }

@@ -180,6 +180,28 @@ struct DexClassAnnotationMetadata final {
     std::optional<DexRuntimeAnnotation> annotation_default;
 };
 
+// Parser resource policy, independent of guest heap and title profiles.
+// Effective totals also scale with the validated DEX size; these are hard caps.
+struct DexAnnotationLimits final {
+    std::uint64_t max_work_units = 16ULL * 1024ULL * 1024ULL;
+    std::uint64_t max_storage_bytes = 256ULL * 1024ULL * 1024ULL;
+    std::uint32_t max_item_nodes = 65536U;
+};
+
+struct DexAnnotationStatistics final {
+    std::uint64_t unique_items{};
+    std::uint64_t unique_sets{};
+    std::uint64_t decoded_nodes{};
+    std::uint64_t item_cache_hits{};
+    std::uint64_t set_cache_hits{};
+    std::uint64_t work_units{};
+    // Conservatively charged container storage, including temporary parsing
+    // buffers, caches and owned projections; excludes allocator bookkeeping.
+    std::uint64_t storage_bytes{};
+    std::uint64_t work_limit{};
+    std::uint64_t storage_limit{};
+};
+
 struct DexImage final {
     DexHeader header;
     std::vector<DexMapItem> map_items;
@@ -194,6 +216,7 @@ struct DexImage final {
     std::vector<DexMethodSystemMetadata> method_system_metadata;
     std::vector<DexFieldRuntimeMetadata> field_runtime_metadata;
     std::vector<DexClassAnnotationMetadata> class_annotation_metadata;
+    DexAnnotationStatistics annotation_statistics;
 
     [[nodiscard]] std::optional<DexMapItem> FindMapItem(
         DexMapItemType type) const noexcept;
@@ -214,6 +237,7 @@ enum class DexErrorReason : std::uint8_t {
     invalid_prototype,
     invalid_member,
     invalid_class_def,
+    resource_limit,
 };
 
 class DexError final : public std::runtime_error {
@@ -227,6 +251,8 @@ private:
     std::size_t offset_{};
 };
 
-[[nodiscard]] DexImage ParseDex(std::span<const std::uint8_t> bytes);
+[[nodiscard]] DexImage ParseDex(
+    std::span<const std::uint8_t> bytes,
+    const DexAnnotationLimits& annotation_limits = {});
 
 }  // namespace ogplay::loader

@@ -369,7 +369,16 @@ DexUnitId DexClassLinker::RegisterDexUnit(
     }
     const auto unit_id = DexUnitId{
         static_cast<std::uint32_t>(impl_->dex_units.size() + 1U)};
-    auto image = loader::ParseDex(dex_bytes);
+    auto image = [&] {
+        try {
+            return loader::ParseDex(dex_bytes);
+        } catch (const loader::DexError& error) {
+            throw loader::DexError(error.Reason(), error.Offset(),
+                std::string(boot ? "boot" : "application") +
+                    " DEX parse failed (bytes=" + std::to_string(dex_bytes.size()) +
+                    "): " + error.what());
+        }
+    }();
     auto class_data = loader::ReadDexClassData(dex_bytes, image);
     impl_->dex_units.push_back({unit_id,
                                 boot,

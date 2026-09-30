@@ -5953,3 +5953,78 @@ TEST_CASE("BND46 timed KeyEvent retains metadata in both interpreters") {
     CHECK(f.On(event, "getSource", "()I").AsInt() == 0x101);
   }
 }
+
+TEST_CASE("DVM-206 virtual key character maps use API19 data and process device fallback") {
+  for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    AndroidValueVm f(backend);
+    constexpr auto owner = "Landroid/view/KeyCharacterMap;";
+    const auto load = [&](int device) {
+        return f.Static(owner, "load", "(I)Landroid/view/KeyCharacterMap;", {VmValue::Int(device)}).ref;
+    };
+    const auto absent = f.StaticOutcome(owner, "load", "(I)Landroid/view/KeyCharacterMap;", {VmValue::Int(-1)});
+    REQUIRE(absent.exception.IsValid());
+    CHECK(f.linker.Class(absent.exception_class).descriptor == "Landroid/view/KeyCharacterMap$UnavailableException;");
+    f.context->input_devices = {
+        {-1, "keyboard", "fixture:keyboard", kAndroidKeyboardSource, 2, {}},
+        {0, "touch", "fixture:touch", kAndroidTouchSource, 0, {}}};
+    const auto map = load(-1), fallback = load(404), empty = load(0);
+    const auto roots = f.vm.ProtectReferences(std::array{map, fallback, empty});
+    CHECK_FALSE(f.linker.Class(f.model.ObjectClass(map)).is_intrinsic);
+    const auto get = [&](VmObjectRef object, int code, int meta) {
+        return f.On(object, "get", "(II)I", {VmValue::Int(code), VmValue::Int(meta)}).AsInt();
+    };
+    for (const auto& [code, meta, expected] : std::array<std::tuple<int, int, int>, 15>{{
+        {29, 0, 'a'}, {29, 0x40, 'A'}, {29, 0x80, 'A'},
+        {29, 0x100000, 'A'}, {29, 0x100001, 'A'}, {29, 0x2000, 0},
+        {31, 0x10, 0xe7}, {31, 0x11, 0xc7},
+        {8, 0, '1'}, {8, 1, '!'}, {66, 0, '\n'}, {61, 0, '\t'},
+        {144, 0, 0}, {144, 0x200000, '0'}, {999, 0, 0}}}) {
+        CHECK(get(map, code, meta) == expected);
+        CHECK(get(fallback, code, meta) == expected);
+        CHECK(get(empty, code, meta) == 0);
+    }
+    CHECK(get(map, 33, 2) == std::bit_cast<std::int32_t>(0x800000b4U)); // ALT+E dead acute
+    const auto normalization = f.StaticOutcome(owner, "getDeadChar", "(II)I", {VmValue::Int(0xb4), VmValue::Int('e')});
+    CHECK(f.linker.Class(normalization.exception_class).descriptor == "Ljava/lang/UnsupportedOperationException;");
+    CHECK(f.On(map, "getDisplayLabel", "(I)C", {VmValue::Int(29)}).AsInt() == 'A');
+    CHECK(f.On(map, "getNumber", "(I)C", {VmValue::Int(10)}).AsInt() == '3');
+    CHECK(f.On(map, "getKeyboardType", "()I").AsInt() == 4);
+    CHECK(f.On(empty, "getKeyboardType", "()I").AsInt() == 5);
+    CHECK(f.On(map, "getModifierBehavior", "()I").AsInt() == 0);
+    const auto category = f.OnOutcome(map, "isPrintingKey", "(I)Z", {VmValue::Int(29)});
+    CHECK(f.linker.Class(category.exception_class).descriptor == "Ljava/lang/UnsupportedOperationException;");
+    const auto chars = f.model.NewPrimitiveArray(f.linker.ResolveDescriptor("[C"), JniPrimitiveKind::character, 2);
+    const auto chars_root = f.vm.ProtectReferences(std::array{chars});
+    f.model.SetPrimitiveElement(chars, 0, 'a'); f.model.SetPrimitiveElement(chars, 1, 'A');
+    CHECK(f.On(map, "getMatch", "(I[CI)C", {VmValue::Int(29), VmValue::Ref(chars), VmValue::Int(0)}).AsInt() == 'a');
+    CHECK(f.On(map, "getMatch", "(I[CI)C", {VmValue::Int(29), VmValue::Ref(chars), VmValue::Int(1)}).AsInt() == 'A');
+    const auto action = f.On(map, "getFallbackAction", "(II)Landroid/view/KeyCharacterMap$FallbackAction;",
+        {VmValue::Int(111), VmValue::Int(0)}).ref;
+    REQUIRE(action.IsValid());
+    const auto action_root = f.vm.ProtectReferences(std::array{action});
+    const auto key_field = f.linker.FindFieldRecursive(f.model.ObjectClass(action), "keyCode", "I");
+    REQUIRE(key_field.has_value());
+    CHECK(f.model.InstanceSlots(action)[f.linker.Field(*key_field).slot].bits == 4);
+    f.On(action, "recycle", "()V");
+    const auto device = f.Static("Landroid/view/InputDevice;", "getDevice", "(I)Landroid/view/InputDevice;", {VmValue::Int(-1)}).ref;
+    const auto device_root = f.vm.ProtectReferences(std::array{device});
+    const auto device_map = f.On(device, "getKeyCharacterMap", "()Landroid/view/KeyCharacterMap;").ref;
+    CHECK(get(device_map, 29, 0) == 'a');
+    const auto event = f.New("Landroid/view/KeyEvent;", "(II)V", {VmValue::Int(0), VmValue::Int(33)});
+    const auto event_root = f.vm.ProtectReferences(std::array{event});
+    CHECK(f.On(event, "getUnicodeChar", "(I)I", {VmValue::Int(2)}).AsInt() == get(map, 33, 2));
+    CHECK(f.On(event, "getUnicodeChar", "()I").AsInt() == 'e');
+    SetAndroidKeyEventUnicode(f.vm, event, 0x03bb);
+    CHECK(f.On(event, "getUnicodeChar", "()I").AsInt() == 0x03bb);
+    const auto unsupported = f.OnOutcome(map, "getEvents", "([C)[Landroid/view/KeyEvent;", {VmValue::Ref(chars)});
+    CHECK(f.linker.Class(unsupported.exception_class).descriptor == "Ljava/lang/UnsupportedOperationException;");
+    const auto invalid = f.OnOutcome(map, "getMatch", "(I[CI)C", {VmValue::Int(29), VmValue::Ref(VmObjectRef{}), VmValue::Int(0)});
+    CHECK(f.linker.Class(invalid.exception_class).descriptor == "Ljava/lang/IllegalArgumentException;");
+    f.On(map, "finalize", "()V");
+    const auto disposed = f.OnOutcome(map, "get", "(II)I", {VmValue::Int(29), VmValue::Int(0)});
+    CHECK(f.linker.Class(disposed.exception_class).descriptor == "Ljava/lang/IllegalStateException;");
+    CHECK(get(fallback, 29, 0) == 'a');
+    static_cast<void>(f.vm.CollectGarbage("virtual-key-character-map"));
+    CHECK(get(fallback, 29, 0) == 'a');
+  }
+}

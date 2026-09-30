@@ -13,6 +13,7 @@ switch/threaded 解释、异常、线程/monitor、反射及 `java.*` core intri
 - 装配顺序固定为 `RegisterIntrinsics → RegisterBootDex → RegisterDex → Link`。Boot/App 分别
   保存 DEX unit 与常量池缓存；解析使用方法所属 unit。BootDex 提供 class/field/hierarchy，
   同签名 intrinsic 只 overlay 方法；未绑定 native 明确失败。
+  DEX 解析失败保留 loader 的 reason/offset，并标识 boot/application 来源及输入字节数。
 - APK class_def 全量登记，层级/布局/vtable/iftable 懒链接。未触达可选类不阻断启动；触达后
   缺失层级、循环继承、非法覆盖明确失败。应用自带 `android.support.*` 归 app loader，真正平台
   前缀类忽略。数组按需合成并支持引用协变及 Object/Cloneable/Serializable 关系。

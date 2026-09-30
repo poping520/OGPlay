@@ -120,8 +120,13 @@ SettingsProvider、跨用户/观察者/host 设置。SystemProperties 仅受审 
   首次遍历前解除不收旧事件。Callback2 changed 后 redraw；主线程首次/dirty 遍历向已附着
   observer 分发 global layout，getLocationInWindow 使用 UiTree screen frame。
 - InputDevice/MotionRange 普通算法归 BootDex；getDeviceIds/getDevice 投影启动前逻辑目录，
-  未知 id/轴为 null，空目录返回新数组。不探测 host/InputManager/Binder；键盘映射/hasKeys/
-  震动/Parcel 写入失败，Parcel 读入/完整反射未验证，不宣称摇杆、触摸板或热插拔。
+  未知 id/轴为 null，空目录返回新数组。不探测 host/InputManager/Binder；hasKeys/震动/
+  Parcel 失败，完整反射未验证，不宣称摇杆、触摸板或热插拔。
+- KeyCharacterMap 与 KeyEvent 修饰键算法归 API19 BootDex；load 按进程目录查询，未知 id
+  回退虚拟键盘，目录无键盘则明确失败。FULL 虚拟键盘采用受检 AOSP Virtual.kcm 数据，
+  非键盘为空 SPECIAL_FUNCTION 映射。native 字符/标签/数字/match/fallback 查询共用不可变
+  selector；KeyEvent Unicode 查询复用该映射，宿主显式 Unicode 保留。动态宿主布局、
+  Unicode 分类/重音合成、事件合成、物理键能力与 system-key policy 记账失败。
 - 输入派发从 AndroidBoundaryInput 快照物化 Java 事件。MotionEvent 的私有 primitive
   数组归 VM/GC 所有，保存触点身份、轴、offset、精度、纳秒时间与历史；getter 不读取
   实时宿主状态。Java 毫秒/纳秒接口按 API19 转换，索引越界抛 IllegalArgumentException；

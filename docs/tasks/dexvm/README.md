@@ -28,6 +28,8 @@ Asphalt 5（pilot title）删除 profile 全部 `native_call` 与 `[[java.class]
 
 | WU | 一句话目标 | 状态 |
 | --- | --- | --- |
+| [DVM-206](DVM-206.md) | 进程虚拟键盘字符映射与 JNI 查询 | 有界实现完成 |
+| [DVM-205](DVM-205.md) | DEX 注解缓存与分层资源预算 | 完成 |
 | [DVM-200](DVM-200.md) | JNI 反射成员双向转换 | 有界实现完成 |
 | [DVM-203](DVM-203.md) | intrinsic GLSurfaceView 渲染线程归属 | 有界完成 |
 | [DVM-202](DVM-202.md) | 同进程服务绑定与失败退出边界 | 有界完成 |

@@ -18,6 +18,8 @@ Deprecated、Superseded；日期使用 `YYYY-MM-DD`。当前能力与实施进�
 
 ## 维护方式
 
+本次补充：[ADR-0089 · DEX 注解按唯一数据解析并分层计量](dexvm.md#adr-0089)（Accepted）。
+
 最新补充：[ADR-0086 · 跨宿主输入与 Android guest 快照](session.md#adr-0086)（Accepted）。
 
 此前补充：[ADR-0079 · 进程内 ARM guest 信号投递](runtime.md#adr-0079)（Accepted）。

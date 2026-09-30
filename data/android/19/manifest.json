@@ -41,54 +41,54 @@
     "path": "framework/bootdex.jar",
     "generator": "tools/bootdex/build_bootdex.py",
     "recipe": "tools/bootdex/api19.json",
-    "recipe_sha256": "52d05ec9bd82ef403f8b0790a0acc9d575cfa9323badb1dd61b4830112f31984",
+    "recipe_sha256": "f11307936320eee45931c858c0b18b4ff9221d87d7926e23e6faba99a9e9884d",
     "system_resources": {
       "table": "tools/bootdex/api19-system-resources.json",
       "table_sha256": "65768857b28b9ba572bd84eb89a33e223188bf0731ffb6fe80d4e701558b9ab3",
       "entry": "META-INF/ogplay/system-resources.json",
-      "payload_sha256": "e920b02a5b6e776e7e69c43e300f72a4e8c5b802d7f021c93ebe9876344ba081"
+      "payload_sha256": "d818e8e8fabbc422c5794489a3850126ac96e435b057acda57000a9639678130"
     },
     "sources": [
       {
         "source_project": "platform/libcore",
         "source_jar": "core.jar",
-        "source_jar_sha256": "60b6cdf3eded2fdf157c6166402477e4f72ade215b334817439960522c0e64ee"
+        "source_jar_sha256": "996557954e45f7192b187b2394259bc8aca6e3946652e03b99d837432f83d1ef"
       },
       {
         "source_project": "platform/libcore",
         "source_jar": "conscrypt.jar",
-        "source_jar_sha256": "c7d0849cde38cd0d0dc99d89ee61bd33a65618567fc18171d6605dc6b8e15004"
+        "source_jar_sha256": "43ab6b953bd5a9e25f0f0d4411a5aa3f0660d16954a0a84e95ad834558b21a1e"
       },
       {
         "source_project": "platform/external/apache-http",
         "source_jar": "ext.jar",
-        "source_jar_sha256": "e95d35989f0e1b438b3b6fea2777a798a0398f457a32875cdadfe3e2573a4ca2"
+        "source_jar_sha256": "618663a2f417f7eb4ae903d25809ffdd90fe5b5236184c530228dd66bfcdb65c"
       },
       {
         "source_project": "platform/frameworks/base",
         "source_jar": "framework.jar",
-        "source_jar_sha256": "422e232e121425268f04044f5349072ce42d7b4403267d21569e8ce70d07bc4b"
+        "source_jar_sha256": "90fc9fd36b45db1810ecf51e40119222da081b552f9a64a6d0c09cac09f98a48"
       },
       {
         "source_project": "platform/frameworks/base",
         "source_jar": "framework2.jar",
-        "source_jar_sha256": "5866d4e62e5fe44ffaf6ff441b6c361baeb1f8b91e30bb555481ef13ef837973"
+        "source_jar_sha256": "b6aba8bec45e2a2faa7a4e1e8ae3d8e450259f7e28c8dae6ca2c31dc34e06bea"
       },
       {
         "source_project": "OGPlay",
         "source_root": "src/guest/crypto/java",
         "source_sha256": "5b550dca2a5a65bed8ce3afff1bf97e20c601cbc5d44b6d408b9787dd519d121",
-        "javac": "17.0.2",
+        "javac": "17.0.18",
         "android_jar_sha256": "4032a201eeb1d0430c7d9f1075151dd280427de5ca9e36f734f464ab605cb690",
         "d8_sha256": "d9e6acde0cb6f2453d6835b52c31d2066054394fb79e91115dd4978bde6afd16"
       }
     ],
-    "size": 2681308,
-    "sha256": "d5ca07072140603858b2311c8f5fe2417e79763af5d232babdc8012cacf20c22",
+    "size": 2753112,
+    "sha256": "83dc433c6de6764471209ae9d87a45fa70d40c1a3521aa32700bc257854b3d20",
     "dex_entry": "classes.dex",
-    "dex_size": 2676688,
-    "dex_sha256": "d7c5d87fe17c6853dacda84f46f9acf28f34edd549916a361302629b441557af",
-    "class_count": 1825,
+    "dex_size": 2748492,
+    "dex_sha256": "c6641c128ec2e227b34f16fdf7dd49caf24e55e4948ae82eca35ce57c43f8405",
+    "class_count": 1836,
     "selection_policy": "load-all",
     "notice": "notices/bootdex.jar.txt",
     "notice_sha256": "c5bf8c6efc379e6d5401a40fbf7810aedf9ee81dfa9f2deaa174faa97ded310a"

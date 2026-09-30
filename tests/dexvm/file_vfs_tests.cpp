@@ -18,6 +18,7 @@
 #include <limits>
 #include <map>
 #include <memory>
+#include <optional>
 #include <span>
 #include <string>
 #include <tuple>
@@ -2969,9 +2970,21 @@ TEST_CASE("XML Pull original factory parses BOM APK assets through KXml on both 
     std::string document = "\xEF\xBB\xBF<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
         "<settings><integer name=\"gles_mode\">2</integer>"
         "<bool name=\"useObb\">True</bool></settings>";
-    if (const auto path = std::getenv("OGPLAY_XML_PULL_INPUT")) {
-        std::ifstream stream(path, std::ios::binary);
-        REQUIRE_MESSAGE(stream.good(), path);
+    std::optional<std::string> input_path;
+#if defined(_WIN32)
+    char* input_env_value{};
+    std::size_t input_env_size{};
+    REQUIRE(_dupenv_s(&input_env_value, &input_env_size, "OGPLAY_XML_PULL_INPUT") == 0);
+    if (input_env_value != nullptr) {
+        input_path = input_env_value;
+        std::free(input_env_value);
+    }
+#else
+    if (const auto* value = std::getenv("OGPLAY_XML_PULL_INPUT")) input_path = value;
+#endif
+    if (input_path) {
+        std::ifstream stream(*input_path, std::ios::binary);
+        REQUIRE_MESSAGE(stream.good(), *input_path);
         document.assign(std::istreambuf_iterator<char>(stream), std::istreambuf_iterator<char>());
     }
     REQUIRE(document.starts_with("\xEF\xBB\xBF"));

@@ -625,7 +625,7 @@ int RunApkCommand(const int argc, const char* const argv[],
                 core::LogLevel::info, "runtime.guest_session", stage, {}, {},
                 kUnrestrictedLog);
         };
-        const auto guest_slice_observer = [&](const std::uint64_t consumed_ticks) {
+        const auto pump_host_events = [&] {
             // DexVM Java threads reuse the native guest-call observer. SDL
             // event pumping and the progress gate it mutates belong only to
             // the host thread that opened and drives the window.
@@ -633,6 +633,10 @@ int RunApkCommand(const int argc, const char* const argv[],
             if (pump_gate.ShouldPump(frame_rate_clock.Ticks())) {
                 window->PumpEvents();
             }
+        };
+        const auto guest_slice_observer = [&](const std::uint64_t consumed_ticks) {
+            if (!event_thread_gate.IsOwnerThread()) return;
+            pump_host_events();
             call_progress.Observe(consumed_ticks);
         };
         call_progress.Begin(0U, 0U);
@@ -764,6 +768,7 @@ int RunApkCommand(const int argc, const char* const argv[],
         app_request.host.flush_persistent_state = [&filesystem] {
             session::FlushProfileVfsAtLifecycleBoundary(filesystem);
         };
+        app_request.host.pump_host_events = pump_host_events;
         app_request.host.before_process_stop = [&] {
             call_progress.Begin(active_frame, 0U);
         };

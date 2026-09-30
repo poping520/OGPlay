@@ -27,6 +27,13 @@ std::optional<A32SyscallDispatchResult> DispatchAndroidArmSupervisorCall(
     frame.thread_id = state.ThreadId();
     frame.cpu_state = state;
     const auto outcome = dispatcher.DispatchOutcome(frame);
+    // ARM cacheflush validation belongs to the syscall binding; publication
+    // belongs to the process-wide CPU backend and must precede guest resume.
+    if (frame.number == 0x0f0002U && outcome.return_value == 0 &&
+        frame.arguments[1] > frame.arguments[0]) {
+        cpu.InvalidateCodeRange({memory::GuestAddress{frame.arguments[0]},
+            static_cast<std::uint64_t>(frame.arguments[1]) - frame.arguments[0]});
+    }
     if (outcome.restored_state) {
         state = *outcome.restored_state;
     } else {

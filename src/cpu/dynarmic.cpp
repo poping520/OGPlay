@@ -86,7 +86,7 @@ private:
 class DynarmicExecutionContext::Impl final {
 public:
     explicit Impl(const std::size_t maximum_processors, std::shared_ptr<ExecutionBudget> execution_budget)
-        : monitor(maximum_processors), processors(maximum_processors), snapshots(maximum_processors),
+        : monitor(maximum_processors), processors(maximum_processors), jits(maximum_processors), snapshots(maximum_processors),
           budget(std::move(execution_budget)) {
         if (maximum_processors == 0) {
             throw std::invalid_argument(
@@ -98,6 +98,8 @@ public:
     std::mutex mutex;
     std::mutex memory_mutex;
     std::vector<bool> processors;
+    // Protected by mutex, including registration and removal before destruction.
+    std::vector<Dynarmic::A32::Jit*> jits;
     std::vector<DynarmicCacheSnapshot> snapshots;
     const std::shared_ptr<ExecutionBudget> budget;
 };
@@ -125,6 +127,7 @@ void DynarmicExecutionContext::ReleaseProcessor(
     std::scoped_lock lock(impl_->mutex);
     if (processor_id < impl_->processors.size()) {
         impl_->processors[processor_id] = false;
+        impl_->jits[processor_id] = nullptr;
         impl_->monitor.ClearProcessor(processor_id);
     }
 }
@@ -394,6 +397,8 @@ public:
           callbacks(memory_bus, context->impl_->memory_mutex),
           jit(MakeConfig(callbacks, thread_pointer, *context, processor_id)) {
         callbacks.Attach(jit);
+        std::scoped_lock lock(context->impl_->mutex);
+        context->impl_->jits[processor_id] = &jit;
     }
 
     ~Impl() { context->ReleaseProcessor(processor_id); }
@@ -468,10 +473,19 @@ RunResult DynarmicCpu::Run(const std::uint64_t tick_budget) {
     }
     impl_->callbacks.Begin(budget ? lease.Ticks() : tick_budget, impl_->thread_id);
     impl_->jit.ClearHalt(kCallbackHalt | kExternalHalt);
-    const auto halt_reason = impl_->jit.Run();
+    auto halt_reason = impl_->jit.Run();
+    // A concurrent invalidation can interrupt before the first guest tick.
+    // It is internal maintenance, not the runner's "CPU made no progress".
+    while (halt_reason == Dynarmic::HaltReason::CacheInvalidation &&
+           impl_->callbacks.TicksConsumed() == 0 &&
+           !impl_->callbacks.Pending().has_value() && !halt_requested_.load()) {
+        halt_reason = impl_->jit.Run();
+    }
     const auto ticks = impl_->callbacks.TicksConsumed();
     if (budget) lease.Complete(ticks);
-    impl_->jit.ClearHalt(halt_reason);
+    // Dynarmic consumes CacheInvalidation under its own mutex. Clearing that
+    // bit here could lose a new request published after Run() returned.
+    impl_->jit.ClearHalt(halt_reason & ~Dynarmic::HaltReason::CacheInvalidation);
 #ifdef OGPLAY_DYNARMIC_CACHE_STATS
     const auto cache = impl_->jit.CacheStatistics();
     { std::unique_lock lock(impl_->context->impl_->mutex, std::try_to_lock);
@@ -526,6 +540,17 @@ void DynarmicCpu::SetHostCallHook(const HostCallHook hook) noexcept {
     // HLE/JNI may block or reenter guest code. Under admission control every
     // SVC returns to the runner first, releasing the lease before dispatch.
     impl_->callbacks.SetHostCallHook(impl_->context->impl_->budget ? HostCallHook{} : hook);
+}
+
+void DynarmicCpu::InvalidateCodeRange(const memory::GuestRange range) {
+    std::scoped_lock lock(impl_->context->impl_->mutex);
+    for (auto* jit : impl_->context->impl_->jits) {
+        if (!jit) continue;
+        // This API only queues ranges under Dynarmic's invalidation mutex and
+        // atomically halts active execution; the owner performs invalidation.
+        jit->InvalidateCacheRange(range.Start().Value(),
+                                  static_cast<std::size_t>(range.Size()));
+    }
 }
 
 }  // namespace ogplay::cpu

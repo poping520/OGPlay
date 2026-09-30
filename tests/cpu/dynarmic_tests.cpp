@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <array>
 #include <cstdint>
+#include <future>
+#include <thread>
 #include <vector>
 
 #include "ogplay/cpu/dynarmic.h"
@@ -96,6 +98,60 @@ void CheckEquivalent(const Outcome& reference, const Outcome& jit) {
 }
 
 }  // namespace
+
+TEST_CASE("Dynarmic invalidation interrupts an active peer and resumes patched code") {
+    using namespace ogplay;
+    memory::AddressSpace memory;
+    const memory::GuestAddress code{0x10000U};
+    memory.Map({code, memory.PageSize()}, memory::PageProtection::read |
+        memory::PageProtection::write | memory::PageProtection::execute);
+    memory::CheckedMemoryBus bus(memory);
+    bus.Write32(code, 0xe3a00001U); // mov r0, #1
+    bus.Write32(code.Add(4), 0xef000001U);
+    bus.Write32(code.Add(64), 0xef000002U); // blocking host hook
+    bus.Write32(code.Add(68), 0xeaffffedU); // b code
+    auto context = std::make_shared<cpu::DynarmicExecutionContext>(2);
+    cpu::DynarmicCpu publisher(bus, context), peer(bus, context);
+    cpu::A32State state;
+    state.SetRegister(cpu::CoreRegister::pc, code.Value());
+    peer.SetState(state);
+    REQUIRE(peer.Run(16).reason == cpu::RunStopReason::supervisor_call);
+    REQUIRE(peer.GetState().Register(cpu::CoreRegister::r0) == 1);
+    struct Hook final {
+        std::promise<void> entered;
+        std::promise<void> release;
+        std::future<void> released{release.get_future()};
+    } hook;
+    auto entered = hook.entered.get_future();
+    peer.SetHostCallHook({+[](void* userdata, std::uint32_t svc,
+                            cpu::A32HostCallContext&) noexcept {
+        if (svc != 2) return cpu::HostCallResult::unhandled;
+        auto& h = *static_cast<Hook*>(userdata);
+        h.entered.set_value();
+        h.released.wait();
+        return cpu::HostCallResult::handled;
+    }, &hook});
+    state.SetRegister(cpu::CoreRegister::pc, code.Add(64).Value());
+    peer.SetState(state);
+    auto result = std::async(std::launch::async, [&] { return peer.Run(64); });
+    const auto ready = entered.wait_for(std::chrono::seconds(2));
+    if (ready != std::future_status::ready) {
+        peer.RequestHalt();
+        hook.release.set_value();
+        static_cast<void>(result.get());
+        REQUIRE(ready == std::future_status::ready);
+        return;
+    }
+    // The peer is inside its JIT callback, but no memory fetch is in flight.
+    bus.Write32(code, 0xe3a00002U);
+    publisher.InvalidateCodeRange({code, 4});
+    hook.release.set_value();
+    auto stop = result.get();
+    if (stop.reason == cpu::RunStopReason::budget_exhausted) stop = peer.Run(64);
+    REQUIRE(stop.reason == cpu::RunStopReason::supervisor_call);
+    CHECK(stop.immediate == 1);
+    CHECK(peer.GetState().Register(cpu::CoreRegister::r0) == 2);
+}
 
 TEST_CASE("Dynarmic matches the interpreter on the M1 bare guest samples") {
     SUBCASE("A32") {

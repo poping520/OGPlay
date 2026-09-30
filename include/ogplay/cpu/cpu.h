@@ -165,6 +165,11 @@ public:
     [[nodiscard]] virtual A32State GetState() const = 0;
     virtual void SetState(const A32State& state) = 0;
     virtual void RequestHalt() noexcept = 0;
+    // Publish guest code changes to every CPU sharing this process. Cached
+    // backends must invalidate on their execution owner, including active CPUs.
+    virtual void InvalidateCodeRange(memory::GuestRange) {
+        throw std::logic_error("CPU code invalidation is not implemented");
+    }
     virtual void SetHostCallHook(HostCallHook hook) noexcept {
         static_cast<void>(hook);
     }

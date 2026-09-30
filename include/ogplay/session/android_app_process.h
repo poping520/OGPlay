@@ -35,6 +35,7 @@ enum class AndroidAppProcessState : std::uint8_t {
 struct AndroidAppProcessHost final {
     std::function<void()> flush_persistent_state;
     std::function<void()> before_process_stop;
+    std::function<void()> pump_host_events;
 };
 
 struct AndroidAppProcessRequest final {

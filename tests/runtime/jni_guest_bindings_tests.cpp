@@ -536,8 +536,8 @@ TEST_CASE("guest JNI long strings round trip beyond both former copy arenas") {
     CHECK(fixture.CallEnvironment("GetStringUTFLength", 402U, copied_reference) == size);
     static_cast<void>(fixture.CallEnvironment("ReleaseStringUTFChars", 402U, reference, utf8.Value()));
     static_cast<void>(fixture.CallEnvironment("ReleaseStringChars", 402U, reference, utf16.Value()));
-    CHECK_THROWS_AS(fixture.memory.Read8(utf8), ogplay::memory::MemoryFault);
-    CHECK_THROWS_AS(fixture.memory.Read8(utf16), ogplay::memory::MemoryFault);
+    CHECK_THROWS_AS(static_cast<void>(fixture.memory.Read8(utf8)), ogplay::memory::MemoryFault);
+    CHECK_THROWS_AS(static_cast<void>(fixture.memory.Read8(utf16)), ogplay::memory::MemoryFault);
 }
 
 TEST_CASE("guest JNI string copy budget is shared released and failed outputs do not leak") {

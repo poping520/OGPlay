@@ -322,6 +322,7 @@ public:
             session->ReleaseManagedSurfaceFromCallingThread();
         };
         bindings.diagnostics = request.diagnostics;
+        bindings.pump_host_events = std::move(host.pump_host_events);
         lifecycle =
             std::make_unique<DexActivityLifecycle>(std::move(bindings));
         BindDiagnostics();

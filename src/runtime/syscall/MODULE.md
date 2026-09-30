@@ -34,8 +34,9 @@ exit/exit_group/clear-child-tid 所需的 guest 线程生命周期状态。
 - API 19 futex wait 的 timeout 是 guest 32-bit 相对 timespec；超时返回 `-ETIMEDOUT`，
   非法 timespec 与坏指针分别明确返回 `-EINVAL`/`-EFAULT`。
 - guest `mmap/mprotect` 可表达解释执行所需的逻辑 RWX；AddressSpace 的宿主 backing 不授予
-  execute。`ARM_cacheflush(start,end,0)` 验证范围已映射；解释器无 host I-cache/JIT cache，
-  因此验证后完成即等价于同步。
+  execute。`ARM_cacheflush(start,end,0)` 验证范围已映射；SVC bridge 对成功的非空范围
+  调用 `Cpu::InvalidateCodeRange`，发布到同进程所有代码缓存后才恢复 guest。非法请求
+  和空范围不失效缓存；解释器直接取指。见 [ADR-0088](../../../docs/adr/runtime.md#adr-0088)。
 - `pipe` 必须先验证完整两元素输出数组，再原子创建 VFS descriptor pair；发布失败回收
   两端，不泄漏半完成状态。
 - 线程状态只能按 running → exit-requested → exited → reap 前进。exit-requested 必须持久保存

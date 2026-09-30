@@ -66,7 +66,9 @@ std::int32_t GuestCloneThreadRuntime::Spawn(
             threads_.Spawn(
                 {child_thread_id, child_state.ThreadPointer(), child_state},
                 [this, child_thread_id](cpu::Cpu& cpu) {
-                    RunChild(child_thread_id, cpu);
+                    RunChildBody(child_thread_id, cpu);
+                }, [this, child_thread_id](std::exception_ptr failure) {
+                    PublishFailure(child_thread_id, failure);
                 });
         } catch (const std::exception&) {
             if (dispatcher_.signal_binding->runtime) dispatcher_.signal_binding->runtime->Retire(child_thread_id);
@@ -85,23 +87,18 @@ void GuestCloneThreadRuntime::RethrowFailure() const {
     if (failure) std::rethrow_exception(failure);
 }
 
-void GuestCloneThreadRuntime::RunChild(const std::uint64_t thread_id, cpu::Cpu& cpu) {
+void GuestCloneThreadRuntime::PublishFailure(const std::uint64_t thread_id,
+                                           const std::exception_ptr failure) {
+    { const std::scoped_lock lock(failure_mutex_); if (!failure_) failure_ = failure; }
+    // Include CPU construction, initial SetState and final GetState failures.
+    try { lifecycle_.RequestExitGroup(thread_id, -1); } catch (...) {}
+    try { static_cast<void>(futex_table_.InterruptAll()); } catch (...) {}
+    try { static_cast<void>(lifecycle_.CompleteExit(thread_id, memory_bus_, futex_table_)); } catch (...) {}
     try {
-        RunChildBody(thread_id, cpu);
-    } catch (...) {
-        const auto failure = std::current_exception();
-        { const std::scoped_lock lock(failure_mutex_); if (!failure_) failure_ = failure; }
-        // Publish the original failure before waking any waiter. A stopped host
-        // worker must never remain a live guest signal target.
-        try {
-            lifecycle_.RequestExitGroup(thread_id, -1);
-            static_cast<void>(futex_table_.InterruptAll());
-            static_cast<void>(lifecycle_.CompleteExit(thread_id, memory_bus_, futex_table_));
-        } catch (...) { /* Preserve the first execution failure. */ }
-        if (failure_notifier_) {
-            try { failure_notifier_(); } catch (...) { /* Preserve first failure. */ }
-        }
-        std::rethrow_exception(failure);
+        if (dispatcher_.signal_binding->runtime) dispatcher_.signal_binding->runtime->Retire(thread_id);
+    } catch (...) {}
+    if (failure_notifier_) {
+        try { failure_notifier_(); } catch (...) { /* Preserve first failure. */ }
     }
 }
 

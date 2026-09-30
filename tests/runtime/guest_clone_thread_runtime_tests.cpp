@@ -188,3 +188,79 @@ TEST_CASE("guest clone failure interrupts parent wait and preserves original exc
     CHECK(lifecycle.State(1).status == GuestThreadStatus::exit_requested);
     CHECK(threads.ActiveCount() == 0);
 }
+
+namespace {
+class CloneStartupFailureCpu final : public ogplay::cpu::Cpu {
+public:
+    ogplay::cpu::RunResult Run(std::uint64_t) override { throw std::logic_error("unexpected Run"); }
+    ogplay::cpu::A32State GetState() const override { return {}; }
+    void SetState(const ogplay::cpu::A32State&) override { throw std::runtime_error("initial SetState failed"); }
+    void RequestHalt() noexcept override {}
+};
+class CloneFinalStateFailureCpu final : public ogplay::cpu::Cpu {
+public:
+    explicit CloneFinalStateFailureCpu(ogplay::runtime::GuestThreadLifecycle& life) : lifecycle(life) {}
+    ogplay::cpu::RunResult Run(std::uint64_t) override {
+        state.SetRegister(ogplay::cpu::CoreRegister::r7, 1); // exit(0)
+        return {1, ogplay::cpu::RunStopReason::supervisor_call,
+                ogplay::memory::GuestAddress{0x10000}, 0xef000000U, 0, std::nullopt};
+    }
+    ogplay::cpu::A32State GetState() const override {
+        if (lifecycle.State(state.ThreadId()).status == ogplay::runtime::GuestThreadStatus::exited)
+            throw std::runtime_error("final GetState failed");
+        return state;
+    }
+    void SetState(const ogplay::cpu::A32State& value) override { state = value; }
+    void RequestHalt() noexcept override {}
+private:
+    ogplay::runtime::GuestThreadLifecycle& lifecycle;
+    ogplay::cpu::A32State state;
+};
+}
+
+TEST_CASE("guest clone startup and final state failures reach the process failure notifier") {
+    using namespace ogplay;
+    using namespace runtime;
+    memory::AddressSpace memory;
+    memory::CheckedMemoryBus bus(memory);
+    core::CapabilityLedger ledger;
+    auto dispatcher = CreateAndroidArmSyscallDispatcher(ledger);
+    GuestThreadLifecycle lifecycle;
+    lifecycle.Register(1);
+    BindAndroidThreadLifecycleSyscalls(dispatcher, lifecycle);
+    cpu::FutexTable futex;
+    const memory::GuestAddress clear_tid{0x20000};
+    memory.Map({clear_tid, 4096}, memory::PageProtection::read | memory::PageProtection::write);
+    bus.Write32(clear_tid, 2);
+    unsigned failure_mode = 0;
+    const char* expected = "CPU creation failed";
+    SUBCASE("CPU creation throws") { failure_mode = 0; }
+    SUBCASE("CPU factory returns null") { failure_mode = 1; expected = "CPU factory returned null"; }
+    SUBCASE("initial SetState throws") { failure_mode = 2; expected = "initial SetState failed"; }
+    SUBCASE("final GetState throws after guest exit") { failure_mode = 3; expected = "final GetState failed"; }
+    cpu::GuestThreadGroup threads{[&]() -> std::unique_ptr<cpu::Cpu> {
+        if (failure_mode == 0) throw std::runtime_error("CPU creation failed");
+        if (failure_mode == 1) return {};
+        if (failure_mode == 2) return std::make_unique<CloneStartupFailureCpu>();
+        return std::make_unique<CloneFinalStateFailureCpu>(lifecycle);
+    }};
+    std::atomic_bool notified{};
+    GuestCloneThreadRuntime runtime{threads, dispatcher, lifecycle, memory, bus, futex,
+                                    2, 64, {}, {}, [&] { notified = true; throw std::runtime_error("secondary notifier failure"); }};
+    A32SyscallFrame clone;
+    clone.number = 120;
+    clone.thread_id = 1;
+    clone.arguments[0] = kLinuxCloneVm | kLinuxCloneFs | kLinuxCloneFiles |
+                         kLinuxCloneSighand | kLinuxCloneThread | kLinuxCloneSysvsem | kLinuxCloneChildCleartid;
+    clone.arguments[1] = 0x12000;
+    clone.arguments[4] = clear_tid.Value();
+    clone.cpu_state.emplace();
+    clone.cpu_state->SetThreadId(1);
+    REQUIRE(dispatcher.Dispatch(clone) == 2);
+    CHECK_THROWS_WITH(static_cast<void>(runtime.Join(2)), expected);
+    CHECK(notified.load());
+    CHECK(bus.Read32(clear_tid) == 0);
+    CHECK(lifecycle.State(2).status == GuestThreadStatus::exited);
+    CHECK(lifecycle.State(1).status == GuestThreadStatus::exit_requested);
+    CHECK_THROWS_WITH(runtime.RethrowFailure(), expected);
+}

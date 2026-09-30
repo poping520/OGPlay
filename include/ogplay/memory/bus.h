@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <utility>
 
 #include "ogplay/memory/address.h"
 #include "ogplay/memory/address_space.h"
@@ -62,6 +63,10 @@ public:
         std::uint64_t, std::uint64_t = 0) {
         throw std::logic_error("memory bus atomic compare/exchange is unavailable");
     }
+    // Fixed-mapping buses need no subscription. Mutable buses must forward it.
+    [[nodiscard]] virtual MappingChangeSubscription ObserveMappingChanges(MappingChangeHandler) {
+        return {};
+    }
     [[nodiscard]] virtual DirectMemoryPageTable* DirectPageTable() noexcept {
         return nullptr;
     }
@@ -100,6 +105,9 @@ public:
         std::uint32_t value, std::uint64_t thread_id = 0) override;
     [[nodiscard]] bool CompareExchange64(GuestAddress address, std::uint64_t expected,
         std::uint64_t value, std::uint64_t thread_id = 0) override;
+    [[nodiscard]] MappingChangeSubscription ObserveMappingChanges(MappingChangeHandler handler) override {
+        return address_space_.ObserveMappingChanges(std::move(handler));
+    }
     [[nodiscard]] DirectMemoryPageTable* DirectPageTable() noexcept override;
 
 private:

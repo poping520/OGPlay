@@ -135,7 +135,10 @@ void GuestThreadLifecycle::RequestExitGroup(
     const std::int32_t exit_code, GuestThreadExitRequest request) {
     std::scoped_lock lock(impl_->mutex);
     const auto& requester = impl_->Require(requesting_thread_id);
-    if (requester.status == GuestThreadStatus::exited) {
+    // Host failure publication can arrive after guest exit (e.g. final CPU
+    // state capture). Keep syscall-origin requests restricted to live callers.
+    if (requester.status == GuestThreadStatus::exited &&
+        request.origin != GuestThreadExitOrigin::host_request) {
         throw GuestThreadLifecycleError("requesting guest thread has exited");
     }
     for (auto& [thread_id, state] : impl_->states) {

@@ -140,6 +140,12 @@
   string instance`。证据 `.local/accept-stall/{cas-tests.log,cas-negative-test.log,
   fixed-after-accept.png,fixed-gameplay.jsonl}`；未宣称关卡完整验收，普通直接写入的 ABA
   历史跟踪及既有退出停滞仍未覆盖。
+  [BND-48](../tasks/boundary/BND-48.md) 已修复三类并发审计缺口：映射/权限/快照变更
+  发布 JIT 范围失效，clone CPU 创建至最终状态失败统一收敛，以及 kuser v5 屏障与
+  32/64 位比较交换 ABI。Windows Release 构建、定向 21 用例/324 断言通过。
+  原 APK/OBB 隔离沙盒回放点击 Accept 后进入第一关并持续出帧，f=4740 报告上述
+  独立字符串构造首错后退出；证据 `.local/concurrency-audit/replay.stderr.log` 与
+  `replay-gameplay.png`。完整关卡、直接访存卸载 quiescence 和退出顺序风险仍未验收。
 - **Angry Birds 2.3.0**：无 Profile、空沙盒运行 5000 presented frames，
   `View.setScrollBarStyle/getScrollBarStyle` 原方法解析错未再出现，未触发新的致命首错。
   滚动条绘制和完整游戏兼容仍未验收。此前 SQLite/guest ICU、EventLog、

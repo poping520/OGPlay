@@ -343,3 +343,40 @@ TEST_CASE("VFS-05 mapping metadata tracks permissions replacement and holes") {
     AddressSpace other;
     CHECK(other.DescribeMappings().empty());
 }
+
+TEST_CASE("mapping subscriptions publish committed ranges and retire safely") {
+    using namespace ogplay::memory;
+    AddressSpace space;
+    std::vector<GuestRange> changed;
+    auto subscription = space.ObserveMappingChanges([&](GuestRange range) {
+        static_cast<void>(space.DescribeMappings()); // No ledger lock held.
+        changed.push_back(range);
+    });
+    const GuestAddress page{0x10000};
+    const auto rw = PageProtection::read | PageProtection::write;
+    space.Map({page, 4096}, rw);
+    space.Write32(page, 1); // Ordinary writes still require guest cacheflush.
+    CHECK(changed.size() == 1);
+    CHECK_THROWS(space.Map({page, 4096}, rw));
+    CHECK_THROWS(space.Protect({page.Add(4096), 4096}, PageProtection::none));
+    CHECK(changed.size() == 1);
+    space.Protect({page, 4096}, PageProtection::none);
+    space.ReplaceAnonymous({page, 4096}, rw);
+    const auto allocated = space.MapAnywhere({page, 8192}, 4096, rw);
+    CHECK(allocated == page.Add(4096));
+    const auto snapshot = space.CaptureSnapshot();
+    space.Unmap({page, 4096});
+    space.RestoreSnapshot(snapshot);
+    REQUIRE(changed.size() == 6);
+    CHECK(changed[0].Start() == page);
+    CHECK(changed[3].Start() == allocated);
+    CHECK(changed[5].Start() == GuestAddress{0});
+    CHECK(changed[5].Size() == kGuestAddressSpaceSize);
+    subscription.reset();
+    space.Unmap({page, 8192});
+    CHECK(changed.size() == 6);
+    // Unsubscribing after the address space is gone is also safe.
+    MappingChangeSubscription expired;
+    { AddressSpace temporary; expired = temporary.ObserveMappingChanges([](GuestRange) {}); }
+    expired.reset();
+}

@@ -15,7 +15,7 @@ JNI、framework 或 integration。
 - `GuestCloneThreadRuntime` 可接收窄诊断状态，在 child 宿主线程执行 guest runner 的整个
   驻留期登记 host_tid/guest_tid/PC，每个 budget slice 更新 PC/last progress，并以 RAII
   保留退出 tombstone；关闭时不登记。
-- clone 执行抛出宿主异常时先保存首错，再请求进程线程组退出并中断 futex；完成故障线程
+- clone 从 CPU 创建、初始 SetState 到执行及最终 GetState 抛出宿主异常时先保存首错，再请求进程线程组退出并中断 futex；完成故障线程
   的退出清理，通过显式 notifier 取消上层其他等待。`RethrowFailure` 与 join 保留原异常，
   不允许已退出宿主线程仍保持 guest running、直到 join 才暴露失败。
 - 启用 signal runtime 时，主调用与 clone runner 每次 CPU 运行前投递信号，纯计算最多

@@ -12,6 +12,8 @@
 #include "ogplay/memory/address_space.h"
 #include "ogplay/memory/bus.h"
 #include "ogplay_m1_guest/sample.h"
+#include "ogplay/runtime/syscall/syscall.h"
+#include "ogplay/runtime/syscall/syscall_bridge.h"
 
 namespace {
 
@@ -144,7 +146,11 @@ TEST_CASE("Dynarmic invalidation interrupts an active peer and resumes patched c
     }
     // The peer is inside its JIT callback, but no memory fetch is in flight.
     bus.Write32(code, 0xe3a00002U);
-    publisher.InvalidateCodeRange({code, 4});
+    SUBCASE("explicit code cacheflush") { publisher.InvalidateCodeRange({code, 4}); }
+    SUBCASE("mapping permission publication") {
+        memory.Protect({code, memory.PageSize()}, memory::PageProtection::read |
+            memory::PageProtection::write | memory::PageProtection::execute);
+    }
     hook.release.set_value();
     auto stop = result.get();
     if (stop.reason == cpu::RunStopReason::budget_exhausted) stop = peer.Run(64);
@@ -711,4 +717,100 @@ TEST_CASE("Dynarmic BND-44 TLS remains supported and UDF remains distinct") {
         CHECK(stop.pc == udf.code);
         CHECK(stop.instruction == opcode);
     }
+}
+
+TEST_CASE("Dynarmic cached executable mapping follows successful memory syscalls") {
+    using namespace ogplay;
+    memory::AddressSpace space;
+    memory::CheckedMemoryBus bus(space);
+    const memory::GuestAddress code{0x10000}, trap{0x11000};
+    const auto rw = memory::PageProtection::read | memory::PageProtection::write;
+    const auto rx = memory::PageProtection::read | memory::PageProtection::execute;
+    space.Map({code, 4096}, rw);
+    space.Map({trap, 4096}, rw);
+    bus.Write32(code, 0xe3a00001U);
+    bus.Write32(code.Add(4), 0xef000001U);
+    bus.Write32(trap, 0xef000000U);
+    space.Protect({code, 4096}, rx);
+    space.Protect({trap, 4096}, rx);
+    cpu::DynarmicCpu executor(bus);
+    cpu::A32State initial;
+    initial.SetRegister(cpu::CoreRegister::pc, code.Value());
+    executor.SetState(initial);
+    REQUIRE(executor.Run(8).reason == cpu::RunStopReason::supervisor_call);
+    REQUIRE(executor.GetState().Register(cpu::CoreRegister::r0) == 1);
+    core::CapabilityLedger ledger;
+    auto dispatcher = runtime::CreateAndroidArmSyscallDispatcher(ledger);
+    runtime::BindAndroidMemorySyscalls(dispatcher, space);
+    auto syscall = [&](std::uint32_t number, std::array<std::uint32_t, 6> args) {
+        auto state = initial;
+        state.SetRegister(cpu::CoreRegister::pc, trap.Value());
+        state.SetRegister(cpu::CoreRegister::r7, number);
+        for (unsigned i = 0; i < args.size(); ++i)
+            state.SetRegister(static_cast<cpu::CoreRegister>(i), args[i]);
+        executor.SetState(state);
+        const auto stop = executor.Run(8);
+        REQUIRE(stop.reason == cpu::RunStopReason::supervisor_call);
+        auto outcome = runtime::DispatchAndroidArmSupervisorCall(executor, stop, dispatcher);
+        REQUIRE(outcome.has_value());
+        return outcome->return_value;
+    };
+    SUBCASE("mprotect removes execution permission from an already compiled block") {
+        REQUIRE(syscall(125, {code.Value(), 4096, 0, 0, 0, 0}) == 0);
+        executor.SetState(initial);
+        const auto stopped = executor.Run(8);
+        CHECK(stopped.reason == cpu::RunStopReason::memory_fault);
+        if (stopped.fault) CHECK(stopped.fault->access == memory::AccessType::execute);
+    }
+    SUBCASE("munmap mmap address reuse must execute the new mapping") {
+        REQUIRE(syscall(91, {code.Value(), 4096, 0, 0, 0, 0}) == 0);
+        REQUIRE(syscall(192, {code.Value(), 4096, 3, 0x32, 0xffffffffU, 0}) == code.Value());
+        bus.Write32(code, 0xe3a00002U);
+        bus.Write32(code.Add(4), 0xef000001U);
+        REQUIRE(syscall(125, {code.Value(), 4096, 5, 0, 0, 0}) == 0);
+        executor.SetState(initial);
+        REQUIRE(executor.Run(8).reason == cpu::RunStopReason::supervisor_call);
+        CHECK(executor.GetState().Register(cpu::CoreRegister::r0) == 2);
+        executor.InvalidateCodeRange({code, 4096});
+        executor.SetState(initial);
+        REQUIRE(executor.Run(8).reason == cpu::RunStopReason::supervisor_call);
+        CHECK(executor.GetState().Register(cpu::CoreRegister::r0) == 2);
+    }
+}
+
+TEST_CASE("Dynarmic mapping changes invalidate all subscribers including snapshot restore") {
+    using namespace ogplay;
+    memory::AddressSpace space;
+    memory::CheckedMemoryBus bus(space);
+    const memory::GuestAddress code{0x10000};
+    const auto rw = memory::PageProtection::read | memory::PageProtection::write;
+    const auto rx = memory::PageProtection::read | memory::PageProtection::execute;
+    space.Map({code, 4096}, rw);
+    bus.Write32(code, 0xe3a00001U); // mov r0,#1
+    bus.Write32(code.Add(4), 0xef000001U);
+    space.Protect({code, 4096}, rx);
+    const auto snapshot = space.CaptureSnapshot();
+    cpu::DynarmicCpu first(bus), peer(bus); // Even independent JIT contexts subscribe.
+    cpu::A32State initial;
+    initial.SetRegister(cpu::CoreRegister::pc, code.Value());
+    const auto execute = [&](cpu::DynarmicCpu& executor, std::uint32_t expected) {
+        executor.SetState(initial);
+        REQUIRE(executor.Run(8).reason == cpu::RunStopReason::supervisor_call);
+        CHECK(executor.GetState().Register(cpu::CoreRegister::r0) == expected);
+    };
+    execute(first, 1); execute(peer, 1);
+    space.ReplaceAnonymous({code, 4096}, rw);
+    bus.Write32(code, 0xe3a00002U);
+    bus.Write32(code.Add(4), 0xef000001U);
+    space.Protect({code, 4096}, rx);
+    execute(first, 2); execute(peer, 2);
+    space.RestoreSnapshot(snapshot);
+    execute(first, 1); execute(peer, 1);
+    { cpu::DynarmicCpu temporary(bus); execute(temporary, 1); }
+    space.Unmap({code, 4096}); // Retired CPU callback must not run.
+    peer.SetState(initial);
+    const auto stopped = peer.Run(8);
+    CHECK(stopped.reason == cpu::RunStopReason::memory_fault);
+    REQUIRE(stopped.fault.has_value());
+    CHECK(stopped.fault->reason == memory::FaultReason::unmapped);
 }

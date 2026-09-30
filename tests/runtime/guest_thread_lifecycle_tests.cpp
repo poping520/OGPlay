@@ -171,3 +171,19 @@ TEST_CASE("guest exit reports cleanup faults without reverting exit state") {
     CHECK(lifecycle.CompleteExit(62, bus, futex).cleanup ==
           ogplay::runtime::GuestThreadCleanupStatus::invalid_address);
 }
+
+TEST_CASE("host failure after child exit can still stop the live process group") {
+    using namespace ogplay::runtime;
+    GuestThreadLifecycle lifecycle;
+    lifecycle.Register(1); lifecycle.Register(2);
+    lifecycle.RequestExit(2, 0);
+    static_cast<void>(lifecycle.CompleteExit(2));
+    CHECK_THROWS_AS(lifecycle.RequestExitGroup(2, -1,
+        {.origin = GuestThreadExitOrigin::syscall_exit_group, .requesting_thread_id = 2}),
+        GuestThreadLifecycleError);
+    lifecycle.RequestExitGroup(2, -1);
+    CHECK(lifecycle.State(1).status == GuestThreadStatus::exit_requested);
+    CHECK(lifecycle.State(1).exit_request.requesting_thread_id == 2);
+    CHECK(lifecycle.State(2).status == GuestThreadStatus::exited);
+    CHECK(lifecycle.State(2).exit_code == 0);
+}

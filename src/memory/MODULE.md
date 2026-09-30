@@ -25,6 +25,10 @@
   重新验证。
 - `MemoryFault`：携带 guest 地址、访问类型、失败原因和 guest 线程 ID。
 - `MemoryBus`：CPU 只依赖的 8/16/32/64 位小端数据访存及 16/32 位取指接口。
+- `AddressSpace/MemoryBus::ObserveMappingChanges`：显式范围通知；Map、Protect、Unmap、
+  匿名替换、first-fit 映射成功后发布，快照恢复发布完整地址空间。失败校验和普通写入不发布。
+  回调在账本锁外、变更返回前执行；订阅退役与正在执行的回调串行化，回调不得重入映射变更或订阅管理。
+  mutable bus 必须转发，固定映射 bus 可不订阅；内存层不依赖 CPU 或 syscall。
 - `AddressSpace/MemoryBus::CompareExchange8/16/32/64`：自然对齐、小端的强原子比较交换；
   在账本锁内验证 read/write 权限、固定 backing，并使用宿主无锁原子指令与 JIT 直接写
   竞争，禁止拆成独立读取与写入。失配返回 false；权限、映射、对齐错误保留 guest fault。

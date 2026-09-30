@@ -3,7 +3,6 @@
 #include <optional>
 
 #include "ogplay/hal/window_input.h"
-#include "ogplay/input/mouse_touch_mapper.h"
 #include "ogplay/runtime/boundary/android_boundary_hle.h"
 
 namespace ogplay::agent {
@@ -19,7 +18,8 @@ public:
         hal::InputEventType type) const noexcept;
     [[nodiscard]] std::optional<runtime::AndroidBoundaryInput> TakeNext(
         agent::McpInputQueue* inputs,
-        const input::MouseTouchMapper& mouse_touch);
+        bool host_gesture_active);
+    void Cancel(agent::McpInputQueue* inputs);
 
 private:
     bool active_{};

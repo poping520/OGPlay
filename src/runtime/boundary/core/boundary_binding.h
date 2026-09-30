@@ -31,7 +31,20 @@ struct BoundaryCallServices final {
     }
 };
 
-using BoundarySlowInvokeFn = std::uint32_t (*)(void*, const A32CallFrame&);
+// AAPCS32 scalar results. Only wide results may overwrite r1.
+struct BoundaryResult final {
+    std::uint32_t low{}, high{};
+    bool wide{};
+    constexpr BoundaryResult(std::uint32_t value = 0) : low(value) {}
+    static constexpr BoundaryResult Wide(std::uint64_t value) {
+        BoundaryResult result{static_cast<std::uint32_t>(value)};
+        result.high = static_cast<std::uint32_t>(value >> 32U);
+        result.wide = true;
+        return result;
+    }
+};
+
+using BoundarySlowInvokeFn = BoundaryResult (*)(void*, const A32CallFrame&);
 
 struct BoundaryHotEntry final {
     cpu::HostCallResult (*invoke)(void*, cpu::A32HostCallContext&) noexcept{};
@@ -41,7 +54,7 @@ struct BoundaryHotEntry final {
 };
 
 template <typename Module, auto Method>
-std::uint32_t InvokeBoundarySlow(void* userdata, const A32CallFrame& call) {
+BoundaryResult InvokeBoundarySlow(void* userdata, const A32CallFrame& call) {
     return (static_cast<Module*>(userdata)->*Method)(call);
 }
 
@@ -54,14 +67,15 @@ cpu::HostCallResult InvokeBoundaryFast(
     try {
         const A32CallFrame call(services.address_space, context, ParameterCount);
         const auto arguments = call.RegisterArguments();
-        const auto result = (module.*Method)(call);
+        const BoundaryResult result = (module.*Method)(call);
         if constexpr (Gpu) {
             constexpr std::uint32_t kThunkStride = 4U;
             const auto slot = static_cast<std::size_t>(
                 (context.pc.Value() - kBionicHleThunkBegin) / kThunkStride);
             services.RecordGpuCall(slot, arguments, true);
         }
-        context.registers[0] = result;
+        context.registers[0] = result.low;
+        if (result.wide) context.registers[1] = result.high;
         return cpu::HostCallResult::handled;
     } catch (...) {
         services.RecordFastFault(context);

@@ -175,6 +175,7 @@ ogplay_set_project_warnings(ogplay_video)
 
 add_library(ogplay_input
     src/input/mouse_touch_mapper.cpp
+    src/input/touch_mapper.cpp
     src/input/template_catalog.cpp
 )
 add_library(OGPlay::Input ALIAS ogplay_input)
@@ -451,6 +452,7 @@ add_library(ogplay_runtime
     src/runtime/boundary/services/graphics_dispatch.cpp
     src/runtime/boundary/services/guest_gl_context.cpp
     src/runtime/boundary/modules/android/android_module.cpp
+    src/runtime/boundary/modules/android/android_input.cpp
     src/runtime/boundary/modules/android/android_looper.cpp
     src/runtime/boundary/modules/egl/egl_module.cpp
     src/runtime/boundary/modules/gles1/gles1_bounds.cpp
@@ -804,6 +806,7 @@ if(OGPLAY_BUILD_TESTS)
         tests/hal/virtual_memory_tests.cpp
         tests/input/template_catalog_tests.cpp
         tests/input/mouse_touch_mapper_tests.cpp
+        tests/input/touch_mapper_tests.cpp
         tests/memory/address_tests.cpp
         tests/memory/address_space_tests.cpp
         tests/memory/bus_tests.cpp

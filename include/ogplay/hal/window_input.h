@@ -21,6 +21,13 @@ enum class InputEventType : std::uint8_t {
     gamepad_button,
     gamepad_added,
     gamepad_removed,
+    touch_down,
+    touch_motion,
+    touch_up,
+    touch_cancel,
+    input_reset,
+    app_background,
+    app_foreground,
 };
 
 enum class PointerButton : std::int32_t {
@@ -116,6 +123,8 @@ struct InputEvent {
     bool repeat{};
     std::int32_t key_symbol{};
     std::uint32_t key_modifiers{};
+    std::uint64_t touch_device_id{}, contact_id{};
+    float pressure{};
 };
 
 class WindowInput {

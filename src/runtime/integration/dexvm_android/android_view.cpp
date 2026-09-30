@@ -287,11 +287,19 @@ Decl Declare_android_view_KeyEvent(const Context& context) {
         builder.BoundInstanceField("mDeviceId", "I", dx::kAccPrivate);
     const auto unicode_char =
         builder.BoundInstanceField("mOgplayUnicodeChar", "I", dx::kAccPrivate);
+    const auto down_time = builder.BoundInstanceField("mDownTime", "J", dx::kAccPrivate);
+    const auto event_time = builder.BoundInstanceField("mEventTime", "J", dx::kAccPrivate);
+    const auto flags = builder.BoundInstanceField("mFlags", "I", dx::kAccPrivate);
+    const auto source = builder.BoundInstanceField("mSource", "I", dx::kAccPrivate);
     builder.Constructor("(II)V",
         [action, key_code, repeat_count, meta_state, scan_code, device_id,
-         unicode_char](dx::IntrinsicContext& call) {
+         unicode_char, down_time, event_time, flags, source](dx::IntrinsicContext& call) {
             const auto value = call.arguments[0].AsInt();
             dx::IntrinsicCall fields(call);
+            fields.SetLong(down_time, 0);
+            fields.SetLong(event_time, 0);
+            fields.SetInt(flags, 0);
+            fields.SetInt(source, kAndroidKeyboardSource);
             fields.SetInt(action, value);
             fields.SetInt(key_code, call.arguments[1].AsInt());
             fields.SetInt(repeat_count, 0);
@@ -302,10 +310,14 @@ Decl Declare_android_view_KeyEvent(const Context& context) {
                 call.arguments[1].AsInt(), 0));
             return dx::VmValue::Void();
         });
-    builder.Constructor("(JJIIIIII)V",
+    const auto timed_constructor =
         [action, key_code, repeat_count, meta_state, scan_code, device_id,
-         unicode_char](dx::IntrinsicContext& call) {
+         unicode_char, down_time, event_time, flags, source](dx::IntrinsicContext& call) {
             dx::IntrinsicCall fields(call);
+            fields.SetLong(down_time, call.arguments[0].AsLong());
+            fields.SetLong(event_time, call.arguments[1].AsLong());
+            fields.SetInt(flags, call.arguments.size() > 8 ? call.arguments[8].AsInt() : 0);
+            fields.SetInt(source, call.arguments.size() > 9 ? call.arguments[9].AsInt() : kAndroidKeyboardSource);
             fields.SetInt(action, call.arguments[2].AsInt());
             fields.SetInt(key_code, call.arguments[3].AsInt());
             fields.SetInt(repeat_count, call.arguments[4].AsInt());
@@ -315,7 +327,18 @@ Decl Declare_android_view_KeyEvent(const Context& context) {
             fields.SetInt(unicode_char, UnicodeForKeyCode(
                 call.arguments[3].AsInt(), call.arguments[5].AsInt()));
             return dx::VmValue::Void();
-        });
+        };
+    builder.Constructor("(JJIIIIII)V", timed_constructor);
+    builder.Constructor("(JJIIIIIIII)V", timed_constructor);
+    builder.FinalMethod("getDownTime", "()J", [down_time](dx::IntrinsicContext& call) {
+        return dx::VmValue::Long(dx::IntrinsicCall(call).GetLong(down_time));
+    });
+    builder.FinalMethod("getEventTime", "()J", [event_time](dx::IntrinsicContext& call) {
+        return dx::VmValue::Long(dx::IntrinsicCall(call).GetLong(event_time));
+    });
+    builder.FinalMethod("getFlags", "()I", [flags](dx::IntrinsicContext& call) {
+        return dx::VmValue::Int(dx::IntrinsicCall(call).GetInt(flags));
+    });
     builder.FinalMethod("getAction", "()I",
         [action](dx::IntrinsicContext& call) {
             return dx::VmValue::Int(dx::IntrinsicCall(call).GetInt(action));
@@ -345,8 +368,8 @@ Decl Declare_android_view_KeyEvent(const Context& context) {
             return dx::VmValue::Int(
                 dx::IntrinsicCall(call).GetInt(device_id));
         });
-    builder.FinalMethod("getSource", "()I", [](dx::IntrinsicContext&) {
-        return dx::VmValue::Int(kAndroidKeyboardSource);
+    builder.FinalMethod("getSource", "()I", [source](dx::IntrinsicContext& call) {
+        return dx::VmValue::Int(dx::IntrinsicCall(call).GetInt(source));
     });
     builder.FinalMethod("getUnicodeChar", "()I",
         [unicode_char](dx::IntrinsicContext& call) {
@@ -454,54 +477,130 @@ Decl Declare_android_view_InputDevice(const Context& context) {
     return std::move(builder).Build();
 }
 
+namespace {
+class MotionSnapshotReader final {
+public:
+    using Layout = MotionSnapshotLayout;
+    MotionSnapshotReader(dx::IntrinsicContext& call, dx::IntrinsicFieldHandle field)
+        : call_(call), data_(dx::IntrinsicCall(call).GetRef(field)) {
+        if (!data_.IsValid()) throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "MotionEvent is recycled or uninitialized"};
+    }
+    std::uint64_t Word(std::size_t index) const {
+        return call_.vm.Model().GetPrimitiveElement(data_, static_cast<JniSize>(index));
+    }
+    std::int32_t Int(std::size_t index) const { return std::bit_cast<std::int32_t>(static_cast<std::uint32_t>(Word(index))); }
+    float Float(std::size_t index) const { return std::bit_cast<float>(static_cast<std::uint32_t>(Word(index))); }
+    std::size_t Pointer(std::int32_t index) const {
+        if (index < 0 || static_cast<std::uint64_t>(index) >= Word(Layout::pointer_count))
+            throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "MotionEvent pointer index out of range"};
+        return static_cast<std::size_t>(index);
+    }
+    std::size_t History(std::int32_t index) const {
+        if (index < 0 || static_cast<std::uint64_t>(index) >= Word(Layout::history_count))
+            throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "MotionEvent history index out of range"};
+        return static_cast<std::size_t>(index) + 1;
+    }
+    std::size_t Sample(std::size_t index) const {
+        return Layout::Sample(static_cast<std::size_t>(Word(Layout::pointer_count)), index);
+    }
+    float Axis(std::int32_t axis, std::int32_t pointer, std::size_t sample = 0, bool raw = false) const {
+        const auto index = Pointer(pointer);
+        if (axis < 0 || axis >= 64) return 0;
+        auto value = Float(Sample(sample) + 1 + index * 64 + static_cast<std::size_t>(axis));
+        if (!raw && axis == 0) value += Float(Layout::x_offset);
+        if (!raw && axis == 1) value += Float(Layout::y_offset);
+        return value;
+    }
+private:
+    dx::IntrinsicContext& call_;
+    dx::VmObjectRef data_;
+};
+} // namespace
+
 Decl Declare_android_view_MotionEvent(const Context& context) {
     static_cast<void>(context);
+    using Layout = MotionSnapshotLayout;
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/view/MotionEvent;", "Ljava/lang/Object;");
-    builder.InstanceField("action", "I");
-    builder.InstanceField("x", "F");
-    builder.InstanceField("y", "F");
-    builder.InstanceField("pointer", "I");
-    builder.FinalMethod("getDeviceId", "()I", [](dx::IntrinsicContext&) {
-        return dx::VmValue::Int(kAndroidTouchDeviceId);
+    const auto data = builder.BoundInstanceField("mOgplaySnapshot", "[J", dx::kAccPrivate);
+    const std::pair<const char*, std::size_t> integers[]{
+        {"getAction", Layout::action}, {"getDeviceId", Layout::device}, {"getSource", Layout::source},
+        {"getFlags", Layout::flags}, {"getMetaState", Layout::meta}, {"getButtonState", Layout::buttons},
+        {"getEdgeFlags", Layout::edges}, {"getPointerCount", Layout::pointer_count}, {"getHistorySize", Layout::history_count}};
+    for (const auto [name, slot] : integers)
+        builder.FinalMethod(name, "()I", [data, slot](dx::IntrinsicContext& call) {
+            return dx::VmValue::Int(MotionSnapshotReader(call, data).Int(slot));
+        });
+    builder.FinalMethod("getActionMasked", "()I", [data](dx::IntrinsicContext& call) {
+        return dx::VmValue::Int(MotionSnapshotReader(call, data).Int(Layout::action) & 0xff);
     });
-    builder.FinalMethod("getSource", "()I", [](dx::IntrinsicContext&) {
-        return dx::VmValue::Int(kAndroidTouchSource);
+    builder.FinalMethod("getActionIndex", "()I", [data](dx::IntrinsicContext& call) {
+        return dx::VmValue::Int((MotionSnapshotReader(call, data).Int(Layout::action) >> 8) & 0xff);
     });
-    const auto slot_float = [](dx::IntrinsicContext& call,
-                               const std::size_t slot) {
-        dx::VmValue value;
-        value.kind = dx::VmValue::Kind::cat1;
-        value.cat1 = call.vm.Model().InstanceSlots(call.receiver)[slot].bits;
-        return value;
-    };
-    builder.FinalMethod("getAction", "()I",
-        [](dx::IntrinsicContext& call) {
-            return dx::VmValue::Int(static_cast<std::int32_t>(
-                call.vm.Model().InstanceSlots(call.receiver)[0].bits));
+    for (bool tool : {false, true})
+        builder.FinalMethod(tool ? "getToolType" : "getPointerId", "(I)I", [data, tool](dx::IntrinsicContext& call) {
+            MotionSnapshotReader reader(call, data);
+            const auto index = reader.Pointer(call.arguments[0].AsInt());
+            return dx::VmValue::Int(reader.Int(Layout::header_size + 2 * index + (tool ? 1 : 0)));
         });
-    builder.FinalMethod("getX", "()F",
-        [slot_float](dx::IntrinsicContext& call) {
-            return slot_float(call, 1);
+    builder.FinalMethod("findPointerIndex", "(I)I", [data](dx::IntrinsicContext& call) {
+        MotionSnapshotReader reader(call, data);
+        for (std::int32_t i = 0; i < reader.Int(Layout::pointer_count); ++i)
+            if (reader.Int(Layout::header_size + 2 * static_cast<std::size_t>(i)) == call.arguments[0].AsInt())
+                return dx::VmValue::Int(i);
+        return dx::VmValue::Int(-1);
+    });
+    builder.FinalMethod("getDownTime", "()J", [data](dx::IntrinsicContext& call) {
+        return dx::VmValue::Long(static_cast<std::int64_t>(MotionSnapshotReader(call, data).Word(Layout::down_time)) / 1000000);
+    });
+    for (bool nano : {false, true}) {
+        builder.FinalMethod(nano ? "getEventTimeNano" : "getEventTime", "()J", [data, nano](dx::IntrinsicContext& call) {
+            MotionSnapshotReader reader(call, data);
+            return dx::VmValue::Long(static_cast<std::int64_t>(reader.Word(reader.Sample(0))) / (nano ? 1 : 1000000));
         });
-    builder.FinalMethod("getY", "()F",
-        [slot_float](dx::IntrinsicContext& call) {
-            return slot_float(call, 2);
+        builder.FinalMethod(nano ? "getHistoricalEventTimeNano" : "getHistoricalEventTime", "(I)J", [data, nano](dx::IntrinsicContext& call) {
+            MotionSnapshotReader reader(call, data);
+            const auto sample = reader.History(call.arguments[0].AsInt());
+            return dx::VmValue::Long(static_cast<std::int64_t>(reader.Word(reader.Sample(sample))) / (nano ? 1 : 1000000));
         });
-    builder.FinalMethod("getX", "(I)F",
-        [slot_float](dx::IntrinsicContext& call) {
-            return slot_float(call, 1);
+    }
+    const std::array names{"X", "Y", "Pressure", "Size", "TouchMajor", "TouchMinor", "ToolMajor", "ToolMinor", "Orientation"};
+    for (std::size_t axis = 0; axis < names.size(); ++axis) {
+        const auto name = std::string("get") + names[axis];
+        const auto history_name = std::string("getHistorical") + names[axis];
+        for (bool indexed : {false, true}) {
+            builder.FinalMethod(name, indexed ? "(I)F" : "()F", [data, axis, indexed](dx::IntrinsicContext& call) {
+                return dx::VmValue::Float(MotionSnapshotReader(call, data).Axis(static_cast<std::int32_t>(axis), indexed ? call.arguments[0].AsInt() : 0));
+            });
+            builder.FinalMethod(history_name, indexed ? "(II)F" : "(I)F", [data, axis, indexed](dx::IntrinsicContext& call) {
+                MotionSnapshotReader reader(call, data);
+                const auto sample = reader.History(call.arguments[indexed ? 1 : 0].AsInt());
+                return dx::VmValue::Float(reader.Axis(static_cast<std::int32_t>(axis), indexed ? call.arguments[0].AsInt() : 0, sample));
+            });
+        }
+    }
+    for (bool indexed : {false, true}) {
+        builder.FinalMethod("getAxisValue", indexed ? "(II)F" : "(I)F", [data, indexed](dx::IntrinsicContext& call) {
+            return dx::VmValue::Float(MotionSnapshotReader(call, data).Axis(call.arguments[0].AsInt(), indexed ? call.arguments[1].AsInt() : 0));
         });
-    builder.FinalMethod("getY", "(I)F",
-        [slot_float](dx::IntrinsicContext& call) {
-            return slot_float(call, 2);
+        builder.FinalMethod("getHistoricalAxisValue", indexed ? "(III)F" : "(II)F", [data, indexed](dx::IntrinsicContext& call) {
+            MotionSnapshotReader reader(call, data);
+            const auto sample = reader.History(call.arguments[indexed ? 2 : 1].AsInt());
+            return dx::VmValue::Float(reader.Axis(call.arguments[0].AsInt(), indexed ? call.arguments[1].AsInt() : 0, sample));
         });
-    builder.FinalMethod("getPointerCount", "()I",
-        [](dx::IntrinsicContext&) { return dx::VmValue::Int(1); });
-    builder.FinalMethod("getPointerId", "(I)I",
-        [](dx::IntrinsicContext& call) {
-            return dx::VmValue::Int(static_cast<std::int32_t>(
-                call.vm.Model().InstanceSlots(call.receiver)[3].bits));
+    }
+    for (std::int32_t axis = 0; axis < 2; ++axis) {
+        builder.FinalMethod(axis == 0 ? "getRawX" : "getRawY", "()F", [data, axis](dx::IntrinsicContext& call) {
+            return dx::VmValue::Float(MotionSnapshotReader(call, data).Axis(axis, 0, 0, true));
         });
+        builder.FinalMethod(axis == 0 ? "getXPrecision" : "getYPrecision", "()F", [data, axis](dx::IntrinsicContext& call) {
+            return dx::VmValue::Float(MotionSnapshotReader(call, data).Float(axis == 0 ? Layout::x_precision : Layout::y_precision));
+        });
+    }
+    builder.FinalMethod("recycle", "()V", [data](dx::IntrinsicContext& call) {
+        static_cast<void>(MotionSnapshotReader(call, data));
+        dx::IntrinsicCall(call).SetRef(data, dx::VmObjectRef{});
+        return dx::VmValue::Void();
+    });
     return std::move(builder).Build();
 }
 

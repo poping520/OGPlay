@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <array>
 #include <functional>
 #include <memory>
 #include <optional>
@@ -29,6 +30,19 @@ enum class AndroidBoundaryInputType : std::uint8_t {
     pointer_button,
 };
 
+// Android API19 axis values, in guest surface coordinates. Missing axes read
+// as zero, as in AOSP PointerCoords; device capabilities are reported separately.
+struct AndroidInputPointer final {
+    std::int32_t id{};
+    std::int32_t tool_type{1};
+    std::array<float, 64> axes{};
+};
+
+struct AndroidInputSample final {
+    std::int64_t event_time_ns{};
+    std::vector<AndroidInputPointer> pointers;
+};
+
 struct AndroidBoundaryInput final {
     AndroidBoundaryInputType type{};
     std::int32_t code{};
@@ -41,7 +55,18 @@ struct AndroidBoundaryInput final {
     std::int32_t meta_state{};
     std::int32_t repeat_count{};
     std::int64_t event_time_ms{};
+    // Legacy single-pointer producers are normalized at ingress. A non-negative
+    // action denotes a complete immutable snapshot shared by Java and NDK.
+    std::int32_t action{-1};
+    std::int32_t source{};
+    std::int32_t flags{}, button_state{}, edge_flags{};
+    std::int64_t event_time_ns{}, down_time_ns{};
+    float x_offset{}, y_offset{}, x_precision{1}, y_precision{1};
+    std::vector<AndroidInputPointer> pointers;
+    std::vector<AndroidInputSample> history;
 };
+
+[[nodiscard]] AndroidBoundaryInput NormalizeAndroidInput(AndroidBoundaryInput input);
 
 struct AndroidBoundaryFrame final {
     std::uint32_t width{};

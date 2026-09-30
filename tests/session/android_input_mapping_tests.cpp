@@ -71,3 +71,56 @@ TEST_CASE("pointer input retains normalized pointer semantics") {
     CHECK(mapped->y == doctest::Approx(20.5F));
     CHECK(mapped->pressed);
 }
+
+
+TEST_CASE("BND46 input timeline uses guest Clock and preserves gesture down time") {
+    using namespace ogplay;
+    session::AndroidInputTimeline timeline;
+    runtime::AndroidBoundaryInput touch{runtime::AndroidBoundaryInputType::pointer_button, 0, 10, 20, true};
+    touch.event_time_ms = 123456; // unrelated SDL uptime
+    const auto down = timeline.Stamp(touch, 1'000'000'000);
+    REQUIRE(down.has_value());
+    CHECK(down->event_time_ns == 1'000'000'000);
+    CHECK(down->down_time_ns == 1'000'000'000);
+    CHECK(down->source == 0x1002);
+    auto multi = *down;
+    multi.action = 5 | (1 << 8);
+    auto second = multi.pointers[0]; second.id = 3; second.axes[0] = 30;
+    multi.pointers.push_back(second);
+    const auto joined = timeline.Stamp(multi, 2'000'000'000);
+    REQUIRE(joined.has_value());
+    CHECK(joined->down_time_ns == down->down_time_ns);
+    multi = *joined; multi.action = 6; // primary pointer leaves
+    REQUIRE(timeline.Stamp(multi, 3'000'000'000).has_value());
+    const auto cancelled = timeline.Cancel(4'000'000'000);
+    REQUIRE(cancelled.size() == 1);
+    CHECK(cancelled[0].action == 3);
+    REQUIRE(cancelled[0].pointers.size() == 1);
+    CHECK(cancelled[0].pointers[0].id == 3);
+    CHECK(cancelled[0].x == 30);
+    CHECK(cancelled[0].down_time_ns == 1'000'000'000);
+    CHECK(cancelled[0].event_time_ns == 4'000'000'000);
+    CHECK(timeline.Cancel(5'000'000'000).empty());
+    CHECK_THROWS(static_cast<void>(timeline.Stamp(touch, 4'000'000'000)));
+    CHECK_THROWS(static_cast<void>(timeline.Cancel(4'000'000'000)));
+    touch.type = runtime::AndroidBoundaryInputType::pointer_motion;
+    CHECK_FALSE(timeline.Stamp(touch, 5'000'000'000).has_value());
+}
+
+TEST_CASE("BND46 repeated keys and cancellation retain original press time") {
+    using namespace ogplay;
+    session::AndroidInputTimeline timeline;
+    runtime::AndroidBoundaryInput key{runtime::AndroidBoundaryInputType::key, 29, 0, 0, true};
+    const auto down = timeline.Stamp(key, 1'000'000'000);
+    REQUIRE(down.has_value());
+    const auto repeat = timeline.Stamp(key, 2'000'000'000);
+    REQUIRE(repeat.has_value());
+    CHECK(repeat->repeat_count == 1);
+    CHECK(repeat->down_time_ns == down->down_time_ns);
+    const auto cancelled = timeline.Cancel(3'000'000'000);
+    REQUIRE(cancelled.size() == 1);
+    CHECK_FALSE(cancelled[0].pressed);
+    CHECK(cancelled[0].action == 1);
+    CHECK((cancelled[0].flags & 0x20) != 0);
+    CHECK(cancelled[0].down_time_ns == down->down_time_ns);
+}

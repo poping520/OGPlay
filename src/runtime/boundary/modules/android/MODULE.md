@@ -3,6 +3,17 @@
 拥有 libandroid.so 的导出、进程内 opaque 对象及输入状态。只依赖 boundary services、
 memory、core/hal；VFS 和线程存活事实通过 AndroidLooperHooks 注入，不反向依赖 integration。
 
+## 输入事件
+
+- API19 AInputEvent/AKeyEvent/AMotionEvent getter 读取不可变 AndroidBoundaryInput 快照。
+  指针属性与 64 轴坐标、offset、precision、纳秒时间及历史样本随事件保存；缺省轴按
+  AOSP PointerCoords 返回零，无历史时 size 为零，越界索引或错误事件类型明确失败。
+- 每个 InputQueue 独立持有 pending/inflight；getEvent 输出失败不消费，finishEvent
+  仅能完成该队列的事件。事件句柄单调分配、不复用，队列退役清除 pending/inflight。
+  单队列最多 4096 个待处理/在途事件；预算耗尽明确失败，不静默丢弃 release/cancel。
+- 输入时间用 ARM32 r0/r1 返回，float 保留 soft-float 位模式。legacy 单指生产者暂经
+  NormalizeAndroidInput 归一；多指/历史快照检查身份、索引、有限坐标及时间顺序。
+
 ## Looper
 
 - 每个 guest 线程至多关联一个 Looper；forThread 不创建，prepare 幂等且沿用首次 options。

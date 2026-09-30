@@ -154,7 +154,14 @@
 
 - Dead Trigger 已完成无 Profile 的 120 呈现帧启动冒烟并正常退出；本次无新致命首错，
   完整画面、交互及游戏兼容验收仍未完成。独立 GLThread 与输入接管已修正；点击路径
-  当前首错为缺失的 `AInputEvent_getSource`。同进程 Service 绑定与失败清理链已修复。
+  [BND-46](../tasks/boundary/BND-46.md) 已补 API19 输入 getter 与队列事件快照，
+  Windows 构建、定向 12 用例/463 断言通过。原路径 120 帧点击弹框后越过
+  `AInputEvent_getSource` 缺失，121 帧下一首错为 `GLES2 cannot stage client arrays from an opaque element buffer`；
+  弹框关闭仍未验收。Java/NDK 共用快照、输入时钟、SDL 多点输入及取消已接入，
+  联合定向 31 用例/1324 断言通过。event-watch 通知缓冲已接入并定向受检，
+  按用户澄清，本次仅预留移动接口，移动入口同步暂停握手与真机验收属于后续移植工作，
+  不作为当前输入任务的阻塞。
+  同进程 Service 绑定与失败清理链已修复。
   `getDeclaredMethods` 解析 TextToSpeech 返回类型缺失已越过；此前插件回调接口缺失
   导致的 ClassNotFoundException/NewGlobalRef、SecretKeyFactory、CRC32 缺失，
   Looper 缺导出导致的 PC=0、Mono 信号注册、tkill SIGABRT 和 coprocessor 断言已越过。首次 nativeRender 的

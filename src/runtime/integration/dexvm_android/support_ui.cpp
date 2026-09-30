@@ -1,3 +1,4 @@
+#include "ogplay/runtime/boundary/android_boundary_hle.h"
 // DVM-80: API-family translation unit. Physical consolidation only.
 
 // ---- migrated from support_ui_binding.cpp ----
@@ -1247,14 +1248,16 @@ ViewTouchResult InvokeViewOnTouch(dexvm::Interpreter& vm,
                                   DexVmAndroidContext& context,
                                   const std::uint64_t handle,
                                   const std::int32_t action, const float x,
-                                  const float y) {
+                                  const float y, const AndroidBoundaryInput* snapshot) {
     const auto node = FindViewUiNode(context, handle);
     if (!node.has_value() || context.ui_tree.Get(*node) == nullptr) return {};
     const auto found = context.ui_touch_listeners.find(*node);
     if (found == context.ui_touch_listeners.end() ||
         !found->second.IsValid()) return {};
     const auto view = ViewObjectForUiNode(context, *node);
-    const auto event = MakeMotionEvent(vm, action, x, y, 0);
+    auto adjusted = snapshot ? *snapshot : AndroidBoundaryInput{};
+    if (snapshot && action == 3) adjusted.action = 3;
+    const auto event = snapshot ? MakeMotionEvent(vm, adjusted) : MakeMotionEvent(vm, action, x, y, 0);
     auto& linker = vm.Linker();
     const auto listener_class = vm.Model().ObjectClass(found->second);
     const auto index = linker.FindVtableIndex(
@@ -1275,11 +1278,11 @@ ViewTouchResult InvokeViewOnTouch(dexvm::Interpreter& vm,
 ViewGestureDispatchResult DispatchViewGestureEvent(
     dexvm::Interpreter& vm, DexVmAndroidContext& context,
     const std::uint64_t handle, const std::int32_t action, const float x,
-    const float y, bool click_eligible, bool touch_consumed) {
+    const float y, bool click_eligible, bool touch_consumed, const AndroidBoundaryInput* snapshot) {
     constexpr std::int32_t kActionDown = 0;
     constexpr std::int32_t kActionUp = 1;
     constexpr std::int32_t kActionCancel = 3;
-    const auto touch = InvokeViewOnTouch(vm, context, handle, action, x, y);
+    const auto touch = InvokeViewOnTouch(vm, context, handle, action, x, y, snapshot);
     if (touch.error.has_value()) {
         return {.error = touch.error};
     }

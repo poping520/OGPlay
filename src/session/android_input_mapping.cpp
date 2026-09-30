@@ -1,3 +1,5 @@
+#include <stdexcept>
+#include <limits>
 #include "ogplay/session/android_input_mapping.h"
 
 #include <cstdint>
@@ -123,6 +125,97 @@ std::optional<runtime::AndroidBoundaryInput> MapAndroidInput(
         };
     }
     return std::nullopt;
+}
+
+runtime::AndroidBoundaryInput MapAndroidTouch(const input::TouchSnapshot& touch) {
+    if (touch.points.empty() || touch.points.size() > 16 ||
+        touch.changed_index >= touch.points.size()) {
+        throw std::invalid_argument("invalid touch snapshot pointer count or index");
+    }
+    runtime::AndroidBoundaryInput result;
+    result.type = runtime::AndroidBoundaryInputType::pointer_motion;
+    result.source = 0x1002;
+    result.meta_state = AndroidMetaState(touch.modifiers);
+    const auto index = static_cast<std::int32_t>(touch.changed_index);
+    switch (touch.phase) {
+    case input::TouchPhase::down: result.action = touch.points.size() == 1 ? 0 : 5 | (index << 8); break;
+    case input::TouchPhase::move: result.action = 2; break;
+    case input::TouchPhase::up: result.action = touch.points.size() == 1 ? 1 : 6 | (index << 8); break;
+    case input::TouchPhase::cancel: result.action = 3; break;
+    }
+    for (const auto& point : touch.points) {
+        runtime::AndroidInputPointer pointer;
+        pointer.id = point.id;
+        pointer.axes[0] = point.x; pointer.axes[1] = point.y; pointer.axes[2] = point.pressure;
+        result.pointers.push_back(pointer);
+    }
+    return runtime::NormalizeAndroidInput(std::move(result));
+}
+
+std::optional<runtime::AndroidBoundaryInput> AndroidInputTimeline::Stamp(
+    runtime::AndroidBoundaryInput input, std::int64_t now_ns) {
+    if (now_ns < last_time_ns_) throw std::invalid_argument("input Clock moved backwards");
+    input = runtime::NormalizeAndroidInput(std::move(input));
+    const auto old_time = input.event_time_ns;
+    for (auto& sample : input.history) {
+        const auto age = old_time - sample.event_time_ns;
+        if (age > now_ns) throw std::invalid_argument("input history predates guest Clock epoch");
+        sample.event_time_ns = now_ns - age;
+    }
+    input.event_time_ns = now_ns;
+    input.event_time_ms = now_ns / 1000000;
+    if (input.type == runtime::AndroidBoundaryInputType::key) {
+        const auto key = std::pair{input.device_id, input.code};
+        const auto found = keys_.find(key);
+        input.down_time_ns = found == keys_.end() ? now_ns : found->second.down_time_ns;
+        input.pressed = input.action == 0;
+        if (input.pressed) {
+            if (found != keys_.end()) {
+                if (found->second.repeat_count == std::numeric_limits<std::int32_t>::max())
+                    throw std::overflow_error("key repeat count overflow");
+                input.repeat_count = found->second.repeat_count + 1;
+            }
+            if (keys_.size() >= 256 && found == keys_.end())
+                throw std::runtime_error("pressed key budget exhausted");
+            keys_[key] = input;
+        } else keys_.erase(key);
+    } else {
+        const auto action = input.action & 0xff;
+        const auto found = motions_.find(input.device_id);
+        if (action != 0 && found == motions_.end()) return std::nullopt;
+        input.down_time_ns = action == 0 ? now_ns : found->second.down_time_ns;
+        if (action == 1 || action == 3) motions_.erase(input.device_id);
+        else {
+            if (motions_.size() >= 16 && found == motions_.end())
+                throw std::runtime_error("active touch device budget exhausted");
+            auto remaining = input;
+            if (action == 6) remaining.pointers.erase(remaining.pointers.begin() + (input.action >> 8));
+            motions_[input.device_id] = std::move(remaining);
+        }
+    }
+    last_time_ns_ = now_ns;
+    return input;
+}
+
+std::vector<runtime::AndroidBoundaryInput> AndroidInputTimeline::Cancel(std::int64_t now_ns) {
+    if (now_ns < last_time_ns_) throw std::invalid_argument("input Clock moved backwards");
+    std::vector<runtime::AndroidBoundaryInput> result;
+    for (const auto& [_, state] : motions_) {
+        auto input = state;
+        input.action = 3;
+        input.history.clear();
+        input.event_time_ns = now_ns; input.event_time_ms = now_ns / 1000000;
+        result.push_back(runtime::NormalizeAndroidInput(std::move(input)));
+    }
+    for (const auto& [_, state] : keys_) {
+        auto input = state;
+        input.action = 1; input.pressed = false; input.flags |= 0x20;
+        input.event_time_ns = now_ns; input.event_time_ms = now_ns / 1000000;
+        result.push_back(runtime::NormalizeAndroidInput(std::move(input)));
+    }
+    motions_.clear(); keys_.clear();
+    last_time_ns_ = now_ns;
+    return result;
 }
 
 }  // namespace ogplay::session

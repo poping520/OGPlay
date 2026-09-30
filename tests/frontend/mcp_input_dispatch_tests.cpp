@@ -1,3 +1,4 @@
+#include "ogplay/input/mouse_touch_mapper.h"
 #include "ogplay/frontend/mcp_input_dispatch.h"
 
 #include <doctest/doctest.h>
@@ -10,7 +11,7 @@ TEST_CASE("MCP pointer dispatcher emits one phase per guest loop step") {
     ogplay::frontend::McpPointerDispatcher dispatcher;
     REQUIRE(inputs.TryEnqueueClick(7U, 123U, 45U).has_value());
 
-    const auto down = dispatcher.TakeNext(&inputs, mouse);
+    const auto down = dispatcher.TakeNext(&inputs, mouse.Active());
     REQUIRE(down.has_value());
     CHECK(down->type ==
           ogplay::runtime::AndroidBoundaryInputType::pointer_button);
@@ -26,12 +27,12 @@ TEST_CASE("MCP pointer dispatcher emits one phase per guest loop step") {
     CHECK_FALSE(dispatcher.SuppressWindowEvent(
         ogplay::hal::InputEventType::key));
 
-    const auto up = dispatcher.TakeNext(&inputs, mouse);
+    const auto up = dispatcher.TakeNext(&inputs, mouse.Active());
     REQUIRE(up.has_value());
     CHECK_FALSE(up->pressed);
     CHECK_FALSE(dispatcher.Active());
-    CHECK_FALSE(dispatcher.TakeNext(&inputs, mouse).has_value());
-    CHECK_FALSE(dispatcher.TakeNext(nullptr, mouse).has_value());
+    CHECK_FALSE(dispatcher.TakeNext(&inputs, mouse.Active()).has_value());
+    CHECK_FALSE(dispatcher.TakeNext(nullptr, mouse.Active()).has_value());
 }
 
 TEST_CASE("MCP pointer dispatcher waits for an active desktop gesture") {
@@ -52,13 +53,13 @@ TEST_CASE("MCP pointer dispatcher waits for an active desktop gesture") {
         .y = 40.0F,
         .pressed = true};
     REQUIRE(mouse.Map(mouse_down, window, 100U, 100U).has_value());
-    CHECK_FALSE(dispatcher.TakeNext(&inputs, mouse).has_value());
+    CHECK_FALSE(dispatcher.TakeNext(&inputs, mouse.Active()).has_value());
     CHECK(inputs.PendingGestures() == 1U);
 
     auto mouse_up = mouse_down;
     mouse_up.pressed = false;
     REQUIRE(mouse.Map(mouse_up, window, 100U, 100U).has_value());
-    REQUIRE(dispatcher.TakeNext(&inputs, mouse).has_value());
+    REQUIRE(dispatcher.TakeNext(&inputs, mouse.Active()).has_value());
 }
 
 TEST_CASE("MCP pointer dispatcher preserves swipe down motion and up phases") {
@@ -67,14 +68,14 @@ TEST_CASE("MCP pointer dispatcher preserves swipe down motion and up phases") {
     ogplay::frontend::McpPointerDispatcher dispatcher;
     REQUIRE(inputs.TryEnqueueSwipe(3U, 10U, 20U, 30U, 40U, 2U).has_value());
 
-    const auto down = dispatcher.TakeNext(&inputs, mouse);
+    const auto down = dispatcher.TakeNext(&inputs, mouse.Active());
     REQUIRE(down.has_value());
     CHECK(down->type ==
           ogplay::runtime::AndroidBoundaryInputType::pointer_button);
     CHECK(down->pressed);
     CHECK(dispatcher.Active());
 
-    const auto first_motion = dispatcher.TakeNext(&inputs, mouse);
+    const auto first_motion = dispatcher.TakeNext(&inputs, mouse.Active());
     REQUIRE(first_motion.has_value());
     CHECK(first_motion->type ==
           ogplay::runtime::AndroidBoundaryInputType::pointer_motion);
@@ -83,17 +84,33 @@ TEST_CASE("MCP pointer dispatcher preserves swipe down motion and up phases") {
     CHECK(first_motion->pressed);
     CHECK(dispatcher.Active());
 
-    const auto second_motion = dispatcher.TakeNext(&inputs, mouse);
+    const auto second_motion = dispatcher.TakeNext(&inputs, mouse.Active());
     REQUIRE(second_motion.has_value());
     CHECK(second_motion->type ==
           ogplay::runtime::AndroidBoundaryInputType::pointer_motion);
     CHECK(second_motion->x == 30.0F);
     CHECK(second_motion->y == 40.0F);
 
-    const auto up = dispatcher.TakeNext(&inputs, mouse);
+    const auto up = dispatcher.TakeNext(&inputs, mouse.Active());
     REQUIRE(up.has_value());
     CHECK(up->type ==
           ogplay::runtime::AndroidBoundaryInputType::pointer_button);
     CHECK_FALSE(up->pressed);
     CHECK_FALSE(dispatcher.Active());
+}
+
+
+TEST_CASE("BND46 MCP lifecycle cancellation clears queued gestures and releases host touch") {
+    ogplay::agent::McpInputQueue queue;
+    ogplay::frontend::McpPointerDispatcher dispatcher;
+    REQUIRE(queue.TryEnqueueClick(1, 10, 20).has_value());
+    CHECK_FALSE(dispatcher.TakeNext(&queue, true).has_value());
+    REQUIRE(dispatcher.TakeNext(&queue, false).has_value());
+    CHECK(dispatcher.Active());
+    CHECK(dispatcher.SuppressWindowEvent(ogplay::hal::InputEventType::touch_down));
+    CHECK_FALSE(dispatcher.SuppressWindowEvent(ogplay::hal::InputEventType::input_reset));
+    dispatcher.Cancel(&queue);
+    CHECK_FALSE(dispatcher.Active());
+    CHECK(queue.PendingGestures() == 0);
+    CHECK_FALSE(dispatcher.TakeNext(&queue, false).has_value());
 }

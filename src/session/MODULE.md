@@ -86,6 +86,11 @@ Dex activity 每帧在 guest 回调前泵送主 Looper，到帧尾只通过
 - `MapAndroidInput`：在 HAL 与 Android guest 边界把通用 USB HID/SDL 物理 scancode
   转为 API 19 keyCode，把左右 modifier/caps/num 转为 metaState，并保留当前布局 Unicode、
   repeatCount、scanCode 与 eventTime；未知物理键明确成为 `KEYCODE_UNKNOWN`。
+  `AndroidInputTimeline` 在入队时以 session 发布的 guest Clock 重定时，保留手势/按键的
+  首次 downTime；Java 与 NDK 消费同一快照。失焦、暂停或 Activity 退役前闭合剩余
+  touch CANCEL 与 key UP，UI listener、深层 View 与 Activity 均接收完整触点快照。
+  `MapAndroidTouch` 将平台无关 TouchSnapshot 转为 API19 的 DOWN/POINTER_DOWN/
+  MOVE/POINTER_UP/UP/CANCEL 与 action index；坐标变换不在这里重复执行。
   Activity switch 在旧 `onDestroy` 后推进 UI content generation，清空旧 UiTree binding/
   listener，再构造新 Activity；旧 Activity UI 不得参与新一帧 draw/input。入口 Activity
   实例化时把自身句柄发布为 `task_root_activity`（进程唯一 task 的根，

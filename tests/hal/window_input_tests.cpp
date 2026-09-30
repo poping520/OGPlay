@@ -4,6 +4,7 @@
 #include <limits>
 #include <stdexcept>
 #include <vector>
+#include <thread>
 
 #if OGPLAY_TEST_HAS_SDL3
 #include <SDL3/SDL.h>
@@ -175,6 +176,8 @@ TEST_CASE("SDL events map to backend-independent keyboard and pointer events") {
 
     const auto events = host->PollEvents();
     REQUIRE(events.size() == 3);
+    CHECK(events[1].key_modifiers == events[0].key_modifiers);
+    CHECK(events[2].key_modifiers == events[0].key_modifiers);
     CHECK(events[0].type == ogplay::hal::InputEventType::key);
     CHECK(events[0].timestamp_ns == 101);
     CHECK(events[0].code == SDL_SCANCODE_A);
@@ -235,5 +238,101 @@ TEST_CASE("SDL-disabled builds fail the window factory explicitly") {
         static_cast<void>(
             ogplay::hal::CreateSdlWindowInput(ogplay::hal::VideoBackend::dummy)),
         "SDL3 support is disabled in this build", std::runtime_error);
+}
+#endif
+
+
+#if OGPLAY_TEST_HAS_SDL3
+TEST_CASE("BND46 SDL touch input preserves identities filters synthesis and publishes cancellation") {
+    using namespace ogplay::hal;
+    auto host = OpenDummyWindow();
+    SDL_Event event{};
+    event.tfinger.type = SDL_EVENT_FINGER_DOWN;
+    event.tfinger.windowID = host->State().id;
+    event.tfinger.touchID = 0x100000001ULL;
+    event.tfinger.fingerID = 0x200000001ULL;
+    event.tfinger.x = 0.5F; event.tfinger.y = 0.25F; event.tfinger.pressure = 0.75F;
+    REQUIRE(SDL_PushEvent(&event));
+    event.tfinger.touchID = SDL_MOUSE_TOUCHID;
+    REQUIRE(SDL_PushEvent(&event));
+    event = {};
+    event.button.type = SDL_EVENT_MOUSE_BUTTON_DOWN;
+    event.button.windowID = host->State().id;
+    event.button.which = SDL_TOUCH_MOUSEID;
+    event.button.button = SDL_BUTTON_LEFT; event.button.down = true;
+    REQUIRE(SDL_PushEvent(&event));
+    event = {};
+    event.window.type = SDL_EVENT_WINDOW_FOCUS_LOST;
+    event.window.windowID = host->State().id;
+    REQUIRE(SDL_PushEvent(&event));
+    const auto inputs = host->PollEvents();
+    REQUIRE(inputs.size() == 2);
+    CHECK(inputs[0].type == InputEventType::touch_down);
+    CHECK(inputs[0].touch_device_id == 0x100000001ULL);
+    CHECK(inputs[0].contact_id == 0x200000001ULL);
+    CHECK(inputs[0].x == 160); CHECK(inputs[0].y == 45);
+    CHECK(inputs[0].pressure == 0.75F);
+    CHECK(inputs[1].type == InputEventType::input_reset);
+    for (const auto type : {SDL_EVENT_MOUSE_REMOVED, SDL_EVENT_KEYBOARD_REMOVED,
+                            SDL_EVENT_WINDOW_RESIZED, SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED}) {
+        event = {};
+        event.type = type;
+        REQUIRE(SDL_PushEvent(&event));
+        const auto reset = host->PollEvents();
+        REQUIRE(reset.size() == 1);
+        CHECK(reset[0].type == InputEventType::input_reset);
+    }
+}
+
+TEST_CASE("BND46 SDL lifecycle watch survives queue flush and cancels stale input") {
+    using namespace ogplay::hal;
+    auto host = OpenDummyWindow();
+    bool pushed = true;
+    std::thread producer([&] {
+        SDL_Event event{};
+        for (const auto type : {SDL_EVENT_WILL_ENTER_BACKGROUND, SDL_EVENT_DID_ENTER_BACKGROUND,
+                                SDL_EVENT_DID_ENTER_FOREGROUND}) {
+            event.type = type;
+            pushed = SDL_PushEvent(&event) && pushed;
+        }
+    });
+    producer.join();
+    REQUIRE(pushed);
+    host->PumpEvents();
+    // Android termination may flush SDL's queue; lifecycle must not disappear.
+    SDL_FlushEvents(SDL_EVENT_FIRST, SDL_EVENT_LAST);
+    SDL_Event key{};
+    key.key.type = SDL_EVENT_KEY_DOWN;
+    key.key.windowID = host->State().id;
+    key.key.scancode = SDL_SCANCODE_A;
+    key.key.down = true;
+    REQUIRE(SDL_PushEvent(&key));
+    const auto events = host->PollEvents();
+    REQUIRE(events.size() == 2);
+    CHECK(events[0].type == InputEventType::app_background);
+    CHECK(events[1].type == InputEventType::app_foreground);
+    CHECK(host->PollEvents().empty());
+    REQUIRE(SDL_PushEvent(&key));
+    const auto fresh = host->PollEvents();
+    REQUIRE(fresh.size() == 1);
+    CHECK(fresh[0].type == InputEventType::key);
+
+    SDL_Event terminating{};
+    terminating.type = SDL_EVENT_TERMINATING;
+    REQUIRE(SDL_PushEvent(&terminating));
+    SDL_FlushEvents(SDL_EVENT_FIRST, SDL_EVENT_LAST);
+    const auto stopped = host->PollEvents();
+    REQUIRE(stopped.size() == 1);
+    CHECK(stopped[0].type == InputEventType::quit);
+}
+
+TEST_CASE("BND46 SDL lifecycle watch reports overflow instead of losing transitions") {
+    auto host = OpenDummyWindow();
+    SDL_Event event{};
+    for (int i = 0; i < 65; ++i) {
+        event.type = i % 2 == 0 ? SDL_EVENT_WILL_ENTER_BACKGROUND : SDL_EVENT_DID_ENTER_FOREGROUND;
+        REQUIRE(SDL_PushEvent(&event));
+    }
+    CHECK_THROWS_WITH(static_cast<void>(host->PollEvents()), "SDL lifecycle notification budget exhausted");
 }
 #endif

@@ -10,13 +10,22 @@ bool McpPointerDispatcher::SuppressWindowEvent(
     const hal::InputEventType type) const noexcept {
     return active_ &&
            (type == hal::InputEventType::pointer_motion ||
-            type == hal::InputEventType::pointer_button);
+            type == hal::InputEventType::pointer_button ||
+            type == hal::InputEventType::touch_down ||
+            type == hal::InputEventType::touch_motion ||
+            type == hal::InputEventType::touch_up ||
+            type == hal::InputEventType::touch_cancel);
+}
+
+void McpPointerDispatcher::Cancel(agent::McpInputQueue* inputs) {
+    if (inputs) inputs->CancelPending();
+    active_ = false;
 }
 
 std::optional<runtime::AndroidBoundaryInput> McpPointerDispatcher::TakeNext(
     agent::McpInputQueue* inputs,
-    const input::MouseTouchMapper& mouse_touch) {
-    if (inputs == nullptr || (!active_ && mouse_touch.Active())) {
+    const bool host_gesture_active) {
+    if (inputs == nullptr || (!active_ && host_gesture_active)) {
         return std::nullopt;
     }
     const auto event = inputs->TakeNextPointerEvent();

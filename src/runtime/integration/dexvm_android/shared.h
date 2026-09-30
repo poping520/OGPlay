@@ -13,6 +13,21 @@ namespace dx = dexvm;
 using Decl = dexvm::IntrinsicClassDecl;
 using Context = std::shared_ptr<DexVmAndroidContext>;
 
+// Private, GC-owned MotionEvent snapshot encoding. Header followed by (id, tool)
+// pairs and samples: timestamp + pointerCount * 64 axis bit patterns. Sample 0
+// is current; samples 1..N are historical in chronological order.
+struct MotionSnapshotLayout final {
+    enum : std::size_t {
+        action, device, source, flags, meta, buttons, edges, down_time,
+        x_offset, y_offset, x_precision, y_precision, pointer_count, history_count,
+        header_size
+    };
+    static constexpr std::size_t axis_count = 64;
+    static constexpr std::size_t Sample(std::size_t pointers, std::size_t sample) {
+        return header_size + 2 * pointers + sample * (1 + axis_count * pointers);
+    }
+};
+
 // Normal guest dispatch; preserve Java exception identity across the boundary.
 [[nodiscard]] dx::VmValue CallAndroidMethod(
     dx::Interpreter& vm, dx::VmObjectRef receiver, const char* name,

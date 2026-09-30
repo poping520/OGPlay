@@ -39,6 +39,7 @@ class EncodedAudioDataSource;
 }
 
 namespace ogplay::runtime {
+struct AndroidBoundaryInput;
 
 namespace database {
 class Connection;
@@ -929,7 +930,8 @@ struct ViewTouchResult final {
 };
 [[nodiscard]] ViewTouchResult
 InvokeViewOnTouch(dexvm::Interpreter &vm, DexVmAndroidContext &context,
-                  std::uint64_t handle, std::int32_t action, float x, float y);
+                  std::uint64_t handle, std::int32_t action, float x, float y,
+                  const AndroidBoundaryInput* snapshot = nullptr);
 
 struct ViewGestureDispatchResult final {
   bool handled{};
@@ -946,7 +948,8 @@ struct ViewGestureDispatchResult final {
 [[nodiscard]] ViewGestureDispatchResult
 DispatchViewGestureEvent(dexvm::Interpreter &vm, DexVmAndroidContext &context,
                          std::uint64_t handle, std::int32_t action, float x,
-                         float y, bool click_eligible, bool touch_consumed);
+                         float y, bool click_eligible, bool touch_consumed,
+                         const AndroidBoundaryInput* snapshot = nullptr);
 
 // Invokes the registered OnClickListener.onClick(view) on the guest thread.
 // Returns a rendered message when the guest callback raised.
@@ -1027,6 +1030,9 @@ void SetAndroidKeyEventUnicode(dexvm::Interpreter &vm, dexvm::VmObjectRef event,
                                std::int32_t unicode_char);
 
 // Builds a MotionEvent intrinsic instance for input dispatch.
+struct AndroidBoundaryInput;
+[[nodiscard]] dexvm::VmObjectRef MakeMotionEvent(dexvm::Interpreter &vm,
+                                                const AndroidBoundaryInput& input);
 [[nodiscard]] dexvm::VmObjectRef MakeMotionEvent(dexvm::Interpreter &vm,
                                                  std::int32_t action, float x,
                                                  float y, std::int32_t pointer);

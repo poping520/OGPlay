@@ -4,7 +4,7 @@
 
 为 dex_activity 提供有界 android/javax.microedition intrinsic，将 session 的 VFS、UI、ANGLE、
 媒体、线程和平台事实注入 DexVM。不运行完整 Android、Binder/system_server、外部包数据库、
-Play 服务或手机端能力；禁止 title/厂商分支。
+Play 服务或手机系统服务；移动宿主按 ADR-0086 通过 HAL 接入，禁止 title/厂商分支。
 
 catalog.cpp 是唯一注册点，每类一个 Declare_<类名>(context)，shape/handler 在所属
 content/os/view/graphics/gl/media/database/device 等 family TU 同址。shared.* 只放跨类 helper；
@@ -122,6 +122,10 @@ SettingsProvider、跨用户/观察者/host 设置。SystemProperties 仅受审 
 - InputDevice/MotionRange 普通算法归 BootDex；getDeviceIds/getDevice 投影启动前逻辑目录，
   未知 id/轴为 null，空目录返回新数组。不探测 host/InputManager/Binder；键盘映射/hasKeys/
   震动/Parcel 写入失败，Parcel 读入/完整反射未验证，不宣称摇杆、触摸板或热插拔。
+- 输入派发从 AndroidBoundaryInput 快照物化 Java 事件。MotionEvent 的私有 primitive
+  数组归 VM/GC 所有，保存触点身份、轴、offset、精度、纳秒时间与历史；getter 不读取
+  实时宿主状态。Java 毫秒/纳秒接口按 API19 转换，索引越界抛 IllegalArgumentException；
+  recycle 清除本对象的数组引用，后续读取明确失败。KeyEvent 保留 down/event time、flags/source。
 
 ## GLES/EGL 与渲染调度
 

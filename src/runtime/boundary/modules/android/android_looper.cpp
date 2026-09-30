@@ -24,7 +24,12 @@ void AndroidModule::RetireThreadLooperLocked(std::uint64_t tid) {
     looper.requests.clear();
     if (--looper.references == 0) loopers_.erase(handle.Value());
     thread_loopers_.erase(found);
-    if (input_looper_ == handle) input_looper_ = memory::GuestAddress{};
+    if (standalone_input_.looper == handle) standalone_input_.looper = memory::GuestAddress{};
+    for (auto& [_, resource] : resources_) {
+        if (resource.input.looper != handle) continue;
+        resource.input.looper = memory::GuestAddress{};
+        resource.input_attached = false;
+    }
     ready_.notify_all();
 }
 
@@ -99,14 +104,21 @@ std::uint32_t AndroidModule::PollAll(const std::array<std::uint32_t, 4>& args,
             looper.last_fd = fd;
             return static_cast<std::uint32_t>(item.ident);
         }
-        if (input_looper_ == found->second && !active_input_ && !inputs_.empty() &&
-            (!managed_activity_seen_ || std::ranges::any_of(resources_, [](const auto& entry) {
-                return entry.second.input_active && entry.second.input_attached;
-            }))) {
+        const InputQueueState* ready_input = nullptr;
+        if (!managed_activity_seen_ && standalone_input_.looper == found->second &&
+            !standalone_input_.pending.empty()) ready_input = &standalone_input_;
+        for (const auto& [_, resource] : resources_) {
+            if (resource.input_active && resource.input_attached &&
+                resource.input.looper == found->second && !resource.input.pending.empty()) {
+                ready_input = &resource.input;
+                break;
+            }
+        }
+        if (ready_input) {
             services_.Write32(args[1], 0, tid);
             services_.Write32(args[2], 1, tid);
-            services_.Write32(args[3], input_data_, tid);
-            return input_ident_;
+            services_.Write32(args[3], ready_input->data, tid);
+            return ready_input->ident;
         }
         if (looper.wake) {
             looper.wake = false;

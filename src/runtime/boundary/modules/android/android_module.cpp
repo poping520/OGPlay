@@ -9,7 +9,6 @@
 namespace ogplay::runtime {
 namespace {
 constexpr std::uint32_t kFakeConfiguration = 0x6e003000U;
-constexpr std::uint32_t kFakeInputEvent = 0x6e003200U;
 
 std::uint32_t SignedResult(const std::int32_t value) noexcept {
     return std::bit_cast<std::uint32_t>(value);
@@ -53,7 +52,6 @@ void AndroidModule::UnregisterNativeActivity(memory::GuestAddress activity) {
     std::erase_if(assets_, [manager](const auto& pair) { return pair.second.manager == manager; });
     RetireWindow(found->second);
     resources_.erase(found);
-    inputs_.clear(); active_input_.reset();
 }
 void AndroidModule::RetireWindow(Resource& resource) {
     if (resource.window.IsNull()) return;
@@ -84,7 +82,7 @@ void AndroidModule::SetNativeActivityInput(memory::GuestAddress activity, bool a
     item.input_active = active;
     if (!active) {
         item.input_attached = false;
-        inputs_.clear(); active_input_.reset();
+        item.input = {};
     }
 }
 AndroidModule::Resource& AndroidModule::Queue(std::uint32_t handle) {
@@ -98,13 +96,40 @@ AndroidModule::WindowResource& AndroidModule::Window(std::uint32_t handle) {
     throw std::invalid_argument("ANativeWindow is stale or unregistered");
 }
 
+AndroidModule::InputQueueState& AndroidModule::InputQueue(std::uint32_t handle) {
+    return managed_activity_seen_ ? Queue(handle).input : standalone_input_;
+}
+
+const AndroidBoundaryInput& AndroidModule::InputEvent(memory::GuestAddress handle) const {
+    if (!managed_activity_seen_) {
+        const auto found = standalone_input_.inflight.find(handle.Value());
+        if (found != standalone_input_.inflight.end()) return found->second;
+    }
+    for (const auto& [_, resource] : resources_) {
+        if (!resource.input_active) continue;
+        const auto found = resource.input.inflight.find(handle.Value());
+        if (found != resource.input.inflight.end()) return found->second;
+    }
+    throw std::invalid_argument("AInputEvent is stale or unregistered");
+}
+
 void AndroidModule::PushInput(const AndroidBoundaryInput& input) {
+    auto snapshot = NormalizeAndroidInput(input);
     {
         std::scoped_lock lock(mutex_);
-        if (managed_activity_seen_ && std::ranges::none_of(resources_, [](const auto& pair) {
-                return pair.second.input_active;
-            })) return;
-        inputs_.push_back(input);
+        InputQueueState* target = &standalone_input_;
+        if (managed_activity_seen_) {
+            target = nullptr;
+            for (auto& [_, resource] : resources_) {
+                if (!resource.input_active) continue;
+                if (target) throw std::logic_error("multiple active input queue owners");
+                target = &resource.input;
+            }
+            if (!target) return;
+        }
+        if (target->pending.size() + target->inflight.size() >= 4096)
+            throw std::runtime_error("input queue event budget exhausted");
+        target->pending.push_back(std::move(snapshot));
     }
     ready_.notify_all();
 }
@@ -116,37 +141,26 @@ void AndroidModule::PushInput(const AndroidBoundaryInput& input) {
 #pragma warning(disable : 4702)
 #endif
 template <std::uint16_t FunctionId>
-std::uint32_t AndroidModule::ExecuteExport(const A32CallFrame& call) {
+BoundaryResult AndroidModule::ExecuteExport(const A32CallFrame& call) {
     const auto args = call.RegisterArguments();
     const auto tid = call.ThreadId();
-    if constexpr (FunctionId >= 13U && FunctionId <= 18U) {
-        std::scoped_lock lock(mutex_);
-        if (managed_activity_seen_) {
-            if (!active_input_ || args[0] != kFakeInputEvent)
-                throw std::invalid_argument("AInputEvent is stale or unregistered");
-            if constexpr (FunctionId == 14U || FunctionId == 15U)
-                if (active_input_->type != AndroidBoundaryInputType::key)
-                    throw std::invalid_argument("AKeyEvent requires a key event");
-            if constexpr (FunctionId >= 16U) {
-                if (active_input_->type == AndroidBoundaryInputType::key)
-                    throw std::invalid_argument("AMotionEvent requires a pointer event");
-                if constexpr (FunctionId == 17U || FunctionId == 18U)
-                    if (args[1] != 0) throw std::invalid_argument("AMotionEvent has only one pointer");
-            }
-        }
+    if constexpr ((FunctionId >= 13U && FunctionId <= 18U) ||
+                  (FunctionId >= 37U && FunctionId <= 81U)) {
+        return ReadInput<FunctionId>(call);
     }
     if constexpr (FunctionId == 0U) return kFakeConfiguration;
     if constexpr (FunctionId == 1U || FunctionId == 2U) return 0;
-    if constexpr (FunctionId == 9U || FunctionId == 11U) {
+    if constexpr (FunctionId == 9U || FunctionId == 11U || FunctionId == 82U) {
         std::scoped_lock lock(mutex_);
-        if (managed_activity_seen_) {
-            auto& item = Queue(args[0]);
-            if constexpr (FunctionId == 9U) item.input_attached = false;
-            if constexpr (FunctionId == 11U)
-                if (!active_input_ || args[1] != kFakeInputEvent)
-                    throw std::invalid_argument("invalid input event pre-dispatch");
+        auto& queue = InputQueue(args[0]);
+        if constexpr (FunctionId == 9U) {
+            queue.looper = memory::GuestAddress{};
+            if (managed_activity_seen_) Queue(args[0]).input_attached = false;
         }
-        if constexpr (FunctionId == 9U) input_looper_ = memory::GuestAddress{};
+        if constexpr (FunctionId == 11U)
+            if (!queue.inflight.contains(args[1]))
+                throw std::invalid_argument("invalid input event pre-dispatch");
+        if constexpr (FunctionId == 82U) return queue.pending.empty() ? 0U : 1U;
         return 0;
     }
     if constexpr (FunctionId == 19U || (FunctionId >= 26U && FunctionId <= 30U)) {
@@ -195,7 +209,7 @@ std::uint32_t AndroidModule::ExecuteExport(const A32CallFrame& call) {
         std::scoped_lock lock(mutex_);
         if (std::ranges::none_of(resources_, [&](const auto& pair) { return pair.second.resources.assets.Value() == args[0]; }))
             throw std::invalid_argument("AAssetManager retired during open");
-        if (next_asset_ == 0x6f000000U) throw std::runtime_error("NDK asset handle budget exhausted");
+        if (next_asset_ == 0x6e200000U) throw std::runtime_error("NDK asset handle budget exhausted");
         const auto handle = next_asset_++;
         assets_.emplace(handle, Asset{memory::GuestAddress{args[0]}, std::move(*bytes), 0});
         return handle;
@@ -283,65 +297,42 @@ std::uint32_t AndroidModule::ExecuteExport(const A32CallFrame& call) {
             auto& item = Queue(args[0]);
             item.input_attached = true;
         }
-        input_looper_ = call.Pointer<void>(1).Address();
-        input_ident_ = args[2];
-        input_data_ = call.Argument(4);
+        auto& queue = InputQueue(args[0]);
+        queue.looper = call.Pointer<void>(1).Address();
+        queue.ident = args[2];
+        queue.data = call.Argument(4);
+        ready_.notify_all();
         return 0;
     }
     if constexpr (FunctionId == 10U) {
         std::scoped_lock lock(mutex_);
-        if (managed_activity_seen_) static_cast<void>(Queue(args[0]));
-        if (inputs_.empty() || active_input_.has_value()) return SignedResult(-1);
-        active_input_ = inputs_.front();
-        inputs_.pop_front();
-        services_.Write32(args[1], kFakeInputEvent, tid);
+        auto& queue = InputQueue(args[0]);
+        if (call.Pointer<void>(1).IsNull())
+            throw std::invalid_argument("AInputQueue_getEvent requires an output pointer");
+        if (queue.pending.empty()) return SignedResult(-11); // EAGAIN
+        if (next_input_.Value() >= 0x6e400000U)
+            throw std::runtime_error("input event identity budget exhausted");
+        const auto handle = next_input_;
+        // Publish only after the guest destination and host allocation succeed.
+        queue.inflight.emplace(handle.Value(), queue.pending.front());
+        try { services_.Write32(args[1], handle.Value(), tid); }
+        catch (...) { queue.inflight.erase(handle.Value()); throw; }
+        next_input_ = next_input_.Add(4);
+        queue.pending.pop_front();
         return 0;
     }
     if constexpr (FunctionId == 12U) {
         std::scoped_lock lock(mutex_);
-        if (managed_activity_seen_) {
-            static_cast<void>(Queue(args[0]));
-            if (args[1] != kFakeInputEvent || !active_input_) throw std::invalid_argument("invalid input event completion");
-        }
-        active_input_.reset();
+        auto& queue = InputQueue(args[0]);
+        if (queue.inflight.erase(args[1]) == 0)
+            throw std::invalid_argument("invalid input event completion");
         return 0;
-    }
-    if constexpr (FunctionId == 13U) {
-        std::scoped_lock lock(mutex_);
-        return active_input_.has_value() &&
-                       active_input_->type == AndroidBoundaryInputType::key
-                   ? 1U : 2U;
-    }
-    if constexpr (FunctionId == 14U) {
-        std::scoped_lock lock(mutex_);
-        return active_input_.has_value() && active_input_->pressed ? 0U : 1U;
-    }
-    if constexpr (FunctionId == 15U) {
-        std::scoped_lock lock(mutex_);
-        return active_input_.has_value()
-                   ? static_cast<std::uint32_t>(active_input_->code) : 0U;
-    }
-    if constexpr (FunctionId == 16U) {
-        std::scoped_lock lock(mutex_);
-        if (!active_input_.has_value() ||
-            active_input_->type == AndroidBoundaryInputType::pointer_motion) {
-            return 2U;
-        }
-        return active_input_->pressed ? 0U : 1U;
-    }
-    if constexpr (FunctionId == 17U || FunctionId == 18U) {
-        std::scoped_lock lock(mutex_);
-        const auto value = !active_input_.has_value()
-                               ? 0.0F
-                               : FunctionId == 17U ? active_input_->x
-                                                   : active_input_->y;
-        return std::bit_cast<std::uint32_t>(value);
     }
     throw std::logic_error("unbound concrete libandroid export");
 }
 
 #define OGPLAY_DEFINE_ANDROID(name, id, count, method) \
-    std::uint32_t AndroidModule::method(const A32CallFrame& call) { \
+    BoundaryResult AndroidModule::method(const A32CallFrame& call) { \
         return ExecuteExport<id>(call); \
     }
 OGPLAY_ANDROID_BOUNDARY_EXPORTS(OGPLAY_DEFINE_ANDROID)

@@ -5,6 +5,7 @@
 // (and the platform core bindings in dexvm_bridge.cpp).
 
 #include <algorithm>
+#include <bit>
 #include <chrono>
 #include <limits>
 #include <thread>
@@ -12,6 +13,7 @@
 #include <utility>
 
 #include "shared.h"
+#include "ogplay/runtime/boundary/android_boundary_hle.h"
 #include "ogplay/runtime/integration/native_library_loader.h"
 
 namespace ogplay::runtime::android_intrinsics {
@@ -844,11 +846,13 @@ dx::IntrinsicHandler PlatformSystemNanoTimeHandler(const Context& context) {
 // dexvm_android_*.cpp files, one per platform area.
 
 #include <algorithm>
+#include <bit>
 #include <cstring>
 
 #include "ogplay/runtime/vfs/vfs.h"
 
 #include "shared.h"
+#include "ogplay/runtime/boundary/android_boundary_hle.h"
 #include "ogplay/runtime/dexvm/io_runtime.h"
 
 namespace ogplay::runtime {
@@ -2030,21 +2034,69 @@ bool SessionExitRequested(const DexVmAndroidContext& context) {
     return !context.activity_switch_pending.load();
 }
 
-dx::VmObjectRef MakeMotionEvent(dx::Interpreter& vm,
-                                const std::int32_t action, const float x,
-                                const float y, const std::int32_t pointer) {
-    const auto instance =
-        vm.NewIntrinsicInstance("Landroid/view/MotionEvent;");
-    const auto slots = vm.Model().InstanceSlots(instance);
-    std::uint32_t x_bits{};
-    std::uint32_t y_bits{};
-    std::memcpy(&x_bits, &x, sizeof(x_bits));
-    std::memcpy(&y_bits, &y, sizeof(y_bits));
-    slots[0] = {static_cast<std::uint32_t>(action), dx::SlotTag::cat1};
-    slots[1] = {x_bits, dx::SlotTag::cat1};
-    slots[2] = {y_bits, dx::SlotTag::cat1};
-    slots[3] = {static_cast<std::uint32_t>(pointer), dx::SlotTag::cat1};
+dx::VmObjectRef MakeMotionEvent(dx::Interpreter& vm, const AndroidBoundaryInput& input) {
+    using Layout = android_intrinsics::MotionSnapshotLayout;
+    const auto snapshot = NormalizeAndroidInput(input);
+    if (snapshot.type == AndroidBoundaryInputType::key)
+        throw std::invalid_argument("MotionEvent requires a motion snapshot");
+    const auto instance = vm.NewIntrinsicInstance("Landroid/view/MotionEvent;");
+    const auto root = vm.ProtectReferences(std::array{instance});
+    const auto count = snapshot.pointers.size();
+    const auto length = Layout::Sample(count, snapshot.history.size() + 1);
+    const auto data = vm.Model().NewPrimitiveArray(vm.Linker().ResolveDescriptor("[J"),
+        JniPrimitiveKind::long_integer, static_cast<JniSize>(length));
+    const auto data_root = vm.ProtectReferences(std::array{data});
+    const auto put = [&](std::size_t index, std::uint64_t bits) {
+        vm.Model().SetPrimitiveElement(data, static_cast<JniSize>(index), bits);
+    };
+    put(Layout::action, static_cast<std::uint32_t>(snapshot.action));
+    put(Layout::device, static_cast<std::uint32_t>(snapshot.device_id));
+    put(Layout::source, static_cast<std::uint32_t>(snapshot.source));
+    put(Layout::flags, static_cast<std::uint32_t>(snapshot.flags));
+    put(Layout::meta, static_cast<std::uint32_t>(snapshot.meta_state));
+    put(Layout::buttons, static_cast<std::uint32_t>(snapshot.button_state));
+    put(Layout::edges, static_cast<std::uint32_t>(snapshot.edge_flags));
+    put(Layout::down_time, static_cast<std::uint64_t>(snapshot.down_time_ns));
+    put(Layout::x_offset, std::bit_cast<std::uint32_t>(snapshot.x_offset));
+    put(Layout::y_offset, std::bit_cast<std::uint32_t>(snapshot.y_offset));
+    put(Layout::x_precision, std::bit_cast<std::uint32_t>(snapshot.x_precision));
+    put(Layout::y_precision, std::bit_cast<std::uint32_t>(snapshot.y_precision));
+    put(Layout::pointer_count, count);
+    put(Layout::history_count, snapshot.history.size());
+    for (std::size_t i = 0; i < count; ++i) {
+        put(Layout::header_size + i * 2, static_cast<std::uint32_t>(snapshot.pointers[i].id));
+        put(Layout::header_size + i * 2 + 1, static_cast<std::uint32_t>(snapshot.pointers[i].tool_type));
+    }
+    const auto sample = [&](std::size_t index, std::int64_t time,
+                            const std::vector<AndroidInputPointer>& pointers) {
+        const auto base = Layout::Sample(count, index);
+        put(base, static_cast<std::uint64_t>(time));
+        for (std::size_t i = 0; i < count; ++i)
+            for (std::size_t axis = 0; axis < Layout::axis_count; ++axis)
+                put(base + 1 + i * Layout::axis_count + axis,
+                    std::bit_cast<std::uint32_t>(pointers[i].axes[axis]));
+    };
+    sample(0, snapshot.event_time_ns, snapshot.pointers);
+    for (std::size_t i = 0; i < snapshot.history.size(); ++i)
+        sample(i + 1, snapshot.history[i].event_time_ns, snapshot.history[i].pointers);
+    const auto field = vm.Linker().FindFieldRecursive(vm.Model().ObjectClass(instance),
+                                                     "mOgplaySnapshot", "[J");
+    if (!field) throw std::logic_error("MotionEvent snapshot field is missing");
+    vm.Model().InstanceSlots(instance)[vm.Linker().Field(*field).slot] = {data.Value(), dx::SlotTag::ref};
     return instance;
+}
+
+dx::VmObjectRef MakeMotionEvent(dx::Interpreter& vm, const std::int32_t action,
+                                const float x, const float y, const std::int32_t pointer) {
+    AndroidBoundaryInput input;
+    input.type = AndroidBoundaryInputType::pointer_motion;
+    input.action = action;
+    AndroidInputPointer point;
+    point.id = pointer;
+    point.axes[0] = x; point.axes[1] = y;
+    point.axes[2] = (action & 0xff) == 1 ? 0.0F : 1.0F;
+    input.pointers.push_back(point);
+    return MakeMotionEvent(vm, input);
 }
 
 }  // namespace ogplay::runtime

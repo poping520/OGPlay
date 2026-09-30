@@ -24,6 +24,7 @@
   未知按钮显式标记为 unknown，不向上层泄漏 SDL 数值。
 - `hal::InputEvent` 的键盘事实同时携带物理 scancode、当前键盘布局与 modifier 解析出的
   Unicode key symbol、左右 modifier/caps/num 状态及 repeat；这里不生成 Android keyCode。
+  SDL 指针事件使用队列中此前键盘事件的修饰键状态，失焦或生命周期切换时清除。
 - `hal::WindowInput::SetTitle`：只在窗口打开期间更新宿主标题，拒绝内嵌 NUL，SDL
   失败必须明确传播。
 - `hal::WindowInput::PumpEvents`：处理宿主窗口消息但不移除规范化输入事件，供长任务
@@ -64,6 +65,13 @@
 - 暂停期间 ticks 不增长；不支持的推进方式必须明确失败。
 - SDL video 生命周期由创建它的宿主主线程拥有；输入只保留规范化宿主事实，不翻译 guest
   语义；只泵消息不得消费或改写待轮询事件。
+- SDL finger 事件保留完整设备/触点身份与压力，归一化坐标转换到窗口逻辑像素后再交
+  input；过滤 SDL 的 touch-to-mouse 和 mouse-to-touch 合成副本。失焦、尺寸/安全区
+  变化发布 input_reset；后台/前台通知保持独立，不冒充普通触摸。
+- SDL event-watch 只向固定容量的线程安全缓冲区保存后台/前台/终止通知，不执行 guest、
+  SDL 调用或等待拥有线程完成任务。PollEvents 在拥有线程交付通知，合并重复后台阶段；
+  生命周期切换批次丢弃过期输入，禁止恢复后重放旧手势。通知溢出明确失败，SDL 清队列
+  不得丢失通知。这只保证通知采集；移动 OS 回调返回前的暂停/保存握手仍由移动入口负责。
 - 帧尺寸与字节数必须精确匹配；只有 renderer 上传、缩放与 present 全部成功才累计
   present。guest 帧经流式纹理上传后由 renderer 缩放合成，不再走 CPU surface blit。
 - RGBA8 guest framebuffer 作为不透明窗口内容复制，alpha 保留为像素事实但不得与预清理的

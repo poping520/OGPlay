@@ -131,3 +131,137 @@ TEST_CASE("instruction fetch uses execute permission independently from data rea
         CHECK(fault.ThreadId() == 91);
     }
 }
+
+TEST_CASE("checked memory atomic compare exchange preserves width and observer semantics") {
+    using namespace ogplay::memory;
+    AddressSpace space;
+    const GuestAddress start{0x10000};
+    space.Map({start, 4096}, PageProtection::read | PageProtection::write);
+    RecordingObserver observer;
+    CheckedMemoryBus bus(space, &observer);
+    SUBCASE("8 bit") {
+        const auto expected = static_cast<std::uint8_t>(0xfedcba9876543210ULL);
+        const auto desired = static_cast<std::uint8_t>(0x123456789abcdef0ULL);
+        bus.Write64(start, UINT64_C(0xeeeeeeeeeeeeeeee));
+        bus.Write8(start, expected);
+        observer.accesses.clear();
+        CHECK_FALSE(bus.CompareExchange8(start, 0, desired, 83));
+        REQUIRE(observer.accesses.size() == 1);
+        CHECK(observer.accesses[0].type == BusAccessType::read);
+        CHECK(bus.CompareExchange8(start, expected, desired, 83));
+        REQUIRE(observer.accesses.size() == 3);
+        CHECK(observer.accesses[2].type == BusAccessType::write);
+        CHECK(observer.accesses[2].thread_id == 83);
+        CHECK(observer.accesses[2].size == 1);
+        CHECK(bus.Read8(start) == desired);
+        for (std::uint64_t i = 0; i < 1; ++i) {
+            CHECK(bus.Read8(start.Add(i)) == ((desired >> (i * 8U)) & 0xffU));
+        }
+        for (std::uint64_t i = 1; i < 8; ++i) {
+            CHECK(bus.Read8(start.Add(i)) == 0xee);
+        }
+    }
+    SUBCASE("16 bit") {
+        const auto expected = static_cast<std::uint16_t>(0xfedcba9876543210ULL);
+        const auto desired = static_cast<std::uint16_t>(0x123456789abcdef0ULL);
+        bus.Write64(start, UINT64_C(0xeeeeeeeeeeeeeeee));
+        bus.Write16(start, expected);
+        observer.accesses.clear();
+        CHECK_FALSE(bus.CompareExchange16(start, 0, desired, 83));
+        REQUIRE(observer.accesses.size() == 1);
+        CHECK(observer.accesses[0].type == BusAccessType::read);
+        CHECK(bus.CompareExchange16(start, expected, desired, 83));
+        REQUIRE(observer.accesses.size() == 3);
+        CHECK(observer.accesses[2].type == BusAccessType::write);
+        CHECK(observer.accesses[2].thread_id == 83);
+        CHECK(observer.accesses[2].size == 2);
+        CHECK(bus.Read16(start) == desired);
+        for (std::uint64_t i = 0; i < 2; ++i) {
+            CHECK(bus.Read8(start.Add(i)) == ((desired >> (i * 8U)) & 0xffU));
+        }
+        for (std::uint64_t i = 2; i < 8; ++i) {
+            CHECK(bus.Read8(start.Add(i)) == 0xee);
+        }
+    }
+    SUBCASE("32 bit") {
+        const auto expected = static_cast<std::uint32_t>(0xfedcba9876543210ULL);
+        const auto desired = static_cast<std::uint32_t>(0x123456789abcdef0ULL);
+        bus.Write64(start, UINT64_C(0xeeeeeeeeeeeeeeee));
+        bus.Write32(start, expected);
+        observer.accesses.clear();
+        CHECK_FALSE(bus.CompareExchange32(start, 0, desired, 83));
+        REQUIRE(observer.accesses.size() == 1);
+        CHECK(observer.accesses[0].type == BusAccessType::read);
+        CHECK(bus.CompareExchange32(start, expected, desired, 83));
+        REQUIRE(observer.accesses.size() == 3);
+        CHECK(observer.accesses[2].type == BusAccessType::write);
+        CHECK(observer.accesses[2].thread_id == 83);
+        CHECK(observer.accesses[2].size == 4);
+        CHECK(bus.Read32(start) == desired);
+        for (std::uint64_t i = 0; i < 4; ++i) {
+            CHECK(bus.Read8(start.Add(i)) == ((desired >> (i * 8U)) & 0xffU));
+        }
+        for (std::uint64_t i = 4; i < 8; ++i) {
+            CHECK(bus.Read8(start.Add(i)) == 0xee);
+        }
+    }
+    SUBCASE("64 bit") {
+        const auto expected = static_cast<std::uint64_t>(0xfedcba9876543210ULL);
+        const auto desired = static_cast<std::uint64_t>(0x123456789abcdef0ULL);
+        bus.Write64(start, UINT64_C(0xeeeeeeeeeeeeeeee));
+        bus.Write64(start, expected);
+        observer.accesses.clear();
+        CHECK_FALSE(bus.CompareExchange64(start, 0, desired, 83));
+        REQUIRE(observer.accesses.size() == 1);
+        CHECK(observer.accesses[0].type == BusAccessType::read);
+        CHECK(bus.CompareExchange64(start, expected, desired, 83));
+        REQUIRE(observer.accesses.size() == 3);
+        CHECK(observer.accesses[2].type == BusAccessType::write);
+        CHECK(observer.accesses[2].thread_id == 83);
+        CHECK(observer.accesses[2].size == 8);
+        CHECK(bus.Read64(start) == desired);
+        for (std::uint64_t i = 0; i < 8; ++i) {
+            CHECK(bus.Read8(start.Add(i)) == ((desired >> (i * 8U)) & 0xffU));
+        }
+        for (std::uint64_t i = 8; i < 8; ++i) {
+            CHECK(bus.Read8(start.Add(i)) == 0xee);
+        }
+    }
+}
+
+TEST_CASE("checked memory atomic compare exchange validates permissions alignment and lifetime") {
+    using namespace ogplay::memory;
+    AddressSpace space;
+    const GuestAddress start{0x10000};
+    const auto rw = PageProtection::read | PageProtection::write;
+    space.Map({start, 8192}, rw);
+    RecordingObserver observer;
+    CheckedMemoryBus bus(space, &observer);
+    bus.Write64(start, 9);
+    observer.accesses.clear();
+    const auto check_fault = [&](GuestAddress address, FaultReason reason,
+                                 AccessType access) {
+        try {
+            static_cast<void>(bus.CompareExchange64(address, 9, 10, 91));
+            FAIL("atomic access unexpectedly completed");
+        } catch (const MemoryFault& fault) {
+            CHECK(fault.Address() == address);
+            CHECK(fault.Reason() == reason);
+            CHECK(fault.Access() == access);
+            CHECK(fault.ThreadId() == 91);
+        }
+        CHECK(observer.accesses.empty());
+    };
+    check_fault(start.Add(1), FaultReason::misaligned, AccessType::write);
+    check_fault(start.Add(4092), FaultReason::misaligned, AccessType::write);
+    space.Protect({start, 4096}, PageProtection::read);
+    check_fault(start, FaultReason::permission_denied, AccessType::write);
+    space.Protect({start, 4096}, PageProtection::none);
+    check_fault(start, FaultReason::permission_denied, AccessType::read);
+    space.Unmap({start, 4096});
+    check_fault(start, FaultReason::unmapped, AccessType::read);
+    space.Map({start, 4096}, rw);
+    CHECK_FALSE(bus.CompareExchange64(start, 9, 10, 91));
+    CHECK(bus.CompareExchange64(start, 0, 10, 91));
+    CHECK(bus.Read64(start) == 10);
+}

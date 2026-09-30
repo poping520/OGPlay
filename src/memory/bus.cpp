@@ -71,6 +71,24 @@ void WriteValue(AddressSpace& address_space, MemoryAccessObserver* observer,
     }
 }
 
+template <typename UInt, typename Function>
+[[nodiscard]] bool CompareExchangeValue(AddressSpace& space,
+    MemoryAccessObserver* observer, GuestAddress address, UInt expected,
+    UInt value, std::uint64_t thread_id, Function function) {
+    const bool exchanged = (space.*function)(address, expected, value, thread_id);
+    // Report after the operation and outside the ledger lock. Failure is a
+    // completed read, not a write; faults do not emit successful access events.
+    if (observer != nullptr) {
+        observer->OnMemoryAccess({address, static_cast<std::uint32_t>(sizeof(UInt)),
+                                  BusAccessType::read, thread_id});
+        if (exchanged) {
+            observer->OnMemoryAccess({address, static_cast<std::uint32_t>(sizeof(UInt)),
+                                      BusAccessType::write, thread_id});
+        }
+    }
+    return exchanged;
+}
+
 }  // namespace
 
 CheckedMemoryBus::CheckedMemoryBus(AddressSpace& address_space,
@@ -116,6 +134,34 @@ void CheckedMemoryBus::Write32(const GuestAddress address, const std::uint32_t v
 void CheckedMemoryBus::Write64(const GuestAddress address, const std::uint64_t value,
                                const std::uint64_t thread_id) {
     WriteValue(address_space_, observer_, address, value, thread_id);
+}
+
+bool CheckedMemoryBus::CompareExchange8(const GuestAddress address,
+    const std::uint8_t expected, const std::uint8_t value,
+    const std::uint64_t thread_id) {
+    return CompareExchangeValue(address_space_, observer_, address, expected,
+                                value, thread_id, &AddressSpace::CompareExchange8);
+}
+
+bool CheckedMemoryBus::CompareExchange16(const GuestAddress address,
+    const std::uint16_t expected, const std::uint16_t value,
+    const std::uint64_t thread_id) {
+    return CompareExchangeValue(address_space_, observer_, address, expected,
+                                value, thread_id, &AddressSpace::CompareExchange16);
+}
+
+bool CheckedMemoryBus::CompareExchange32(const GuestAddress address,
+    const std::uint32_t expected, const std::uint32_t value,
+    const std::uint64_t thread_id) {
+    return CompareExchangeValue(address_space_, observer_, address, expected,
+                                value, thread_id, &AddressSpace::CompareExchange32);
+}
+
+bool CheckedMemoryBus::CompareExchange64(const GuestAddress address,
+    const std::uint64_t expected, const std::uint64_t value,
+    const std::uint64_t thread_id) {
+    return CompareExchangeValue(address_space_, observer_, address, expected,
+                                value, thread_id, &AddressSpace::CompareExchange64);
 }
 
 DirectMemoryPageTable* CheckedMemoryBus::DirectPageTable() noexcept {

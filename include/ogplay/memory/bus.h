@@ -45,6 +45,23 @@ public:
                          std::uint64_t thread_id = 0) = 0;
     virtual void Write64(GuestAddress address, std::uint64_t value,
                          std::uint64_t thread_id = 0) = 0;
+    // Atomic value comparison; unsupported buses must fail explicitly.
+    [[nodiscard]] virtual bool CompareExchange8(GuestAddress, std::uint8_t,
+        std::uint8_t, std::uint64_t = 0) {
+        throw std::logic_error("memory bus atomic compare/exchange is unavailable");
+    }
+    [[nodiscard]] virtual bool CompareExchange16(GuestAddress, std::uint16_t,
+        std::uint16_t, std::uint64_t = 0) {
+        throw std::logic_error("memory bus atomic compare/exchange is unavailable");
+    }
+    [[nodiscard]] virtual bool CompareExchange32(GuestAddress, std::uint32_t,
+        std::uint32_t, std::uint64_t = 0) {
+        throw std::logic_error("memory bus atomic compare/exchange is unavailable");
+    }
+    [[nodiscard]] virtual bool CompareExchange64(GuestAddress, std::uint64_t,
+        std::uint64_t, std::uint64_t = 0) {
+        throw std::logic_error("memory bus atomic compare/exchange is unavailable");
+    }
     [[nodiscard]] virtual DirectMemoryPageTable* DirectPageTable() noexcept {
         return nullptr;
     }
@@ -75,6 +92,14 @@ public:
                  std::uint64_t thread_id = 0) override;
     void Write64(GuestAddress address, std::uint64_t value,
                  std::uint64_t thread_id = 0) override;
+    [[nodiscard]] bool CompareExchange8(GuestAddress address, std::uint8_t expected,
+        std::uint8_t value, std::uint64_t thread_id = 0) override;
+    [[nodiscard]] bool CompareExchange16(GuestAddress address, std::uint16_t expected,
+        std::uint16_t value, std::uint64_t thread_id = 0) override;
+    [[nodiscard]] bool CompareExchange32(GuestAddress address, std::uint32_t expected,
+        std::uint32_t value, std::uint64_t thread_id = 0) override;
+    [[nodiscard]] bool CompareExchange64(GuestAddress address, std::uint64_t expected,
+        std::uint64_t value, std::uint64_t thread_id = 0) override;
     [[nodiscard]] DirectMemoryPageTable* DirectPageTable() noexcept override;
 
 private:

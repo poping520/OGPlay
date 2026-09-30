@@ -26,8 +26,10 @@
   64 MiB（Dynarmic 上限 128 MiB，映射惰性提交）：16 MiB 会被真实标题稳定期打满，
   触发整缓存冲刷与逐帧重编译。
 - `DynarmicExecutionContext`：为同一 guest 进程的 JIT CPU 分配唯一 processor ID 并共享
-  exclusive monitor；普通写与 exclusive compare/write 也共享提交锁，使 LDREX/STREX
-  在真实宿主线程间保持原子语义。
+  exclusive monitor；STREX 通过 MemoryBus 的硬件原子 CompareExchange 提交，与普通 JIT
+  直接写竞争时不可覆盖已经发生的不同值写入。不能以仅覆盖回调的互斥锁模拟原子提交。
+  monitor 保留 exclusive peer 写入的 reservation 失效；普通直接写入后恢复原值的 ABA
+  不由值比较检测，本接口不宣称完整 ARM reservation granule/write-history 模拟。
 - `ExecutionBudget`：可选的进程共享并发名额和 token bucket，使用 Clock 单调纳秒计时。
   FIFO 入场、取消通知、RAII 释放与未消费 tick 退款；单片不超过 50000 tick，速率突发量
   为 `max(rate/20, 1)`（50 ms），限速时每片最多使用半桶额度，以容忍宿主计时粒度。

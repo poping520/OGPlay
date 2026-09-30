@@ -186,6 +186,7 @@ Declare_android_telephony_TelephonyManager(const Context &context);
 [[nodiscard]] Decl
 Declare_android_view_ContextThemeWrapper(const Context &context);
 [[nodiscard]] Decl Declare_android_view_KeyEvent(const Context &context);
+[[nodiscard]] Decl Declare_android_view_KeyCharacterMap(const Context &context);
 [[nodiscard]] Decl Declare_android_view_InputDevice(const Context &context);
 [[nodiscard]] Decl Declare_android_view_MotionEvent(const Context &context);
 [[nodiscard]] Decl

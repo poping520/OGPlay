@@ -800,6 +800,27 @@ TEST_CASE("Method invoke dispatches and boxes identically on both backends") {
     }
 }
 
+TEST_CASE("DEX parse diagnostics preserve source reason and offset") {
+    DexClassLinker linker;
+    for (const bool boot : {false, true}) {
+        try {
+            if (boot) {
+                linker.RegisterBootDex({});
+            } else {
+                linker.RegisterDex({});
+            }
+            FAIL("empty DEX must fail");
+        } catch (const ogplay::loader::DexError& error) {
+            CHECK(error.Reason() == ogplay::loader::DexErrorReason::truncated);
+            CHECK(error.Offset() == 0U);
+            const std::string message = error.what();
+            CHECK(message.find(boot ? "boot DEX" : "application DEX") !=
+                  std::string::npos);
+            CHECK(message.find("bytes=0") != std::string::npos);
+        }
+    }
+}
+
 TEST_CASE("Field runtime marker annotations dispatch on both backends") {
     for (const auto backend : {InterpreterBackend::switch_dispatch,
                                InterpreterBackend::threaded}) {

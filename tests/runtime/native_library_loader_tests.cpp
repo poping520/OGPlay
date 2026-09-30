@@ -1004,6 +1004,32 @@ TEST_CASE("Build and SystemProperties JNI use the BootDex owner") {
     }
 }
 
+TEST_CASE("DVM-206 JNI keyboard lookup resolves BootDex load and character queries") {
+    using namespace ogplay::runtime;
+    using namespace ogplay::runtime::dexvm;
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        ApplicationProcess fixture(backend);
+        fixture.context->input_devices = {{-1, "keyboard", "fixture:keyboard", kAndroidKeyboardSource, 2, {}}};
+        auto& bridge = *fixture.bridge;
+        auto& classes = fixture.session->Classes();
+        auto& invocations = fixture.session->Invocations();
+        const auto identity = classes.FindClass("android/view/KeyCharacterMap");
+        REQUIRE(identity.has_value());
+        const auto load = classes.GetMethodId(*identity, "load", "(I)Landroid/view/KeyCharacterMap;", true);
+        const auto get = classes.GetMethodId(*identity, "get", "(II)I", false);
+        REQUIRE(load.has_value()); REQUIRE(get.has_value());
+        const std::array<JniValue, 1> args{JniInt{-1}};
+        const auto map = std::get<JniReference>(invocations.InvokeStatic(1U, *identity, *load, args, JniArgumentSource::value_array));
+        REQUIRE_FALSE(map.IsNull());
+        for (const auto& [meta, expected] : std::array<std::pair<JniInt, JniInt>, 3>{{{0, 'a'}, {1, 'A'}, {0x3000, 0}}}) {
+            const std::array<JniValue, 2> key{JniInt{29}, meta};
+            CHECK(std::get<JniInt>(invocations.InvokeVirtual(1U, map, *identity, *get, key, JniArgumentSource::value_array)) == expected);
+        }
+        CHECK_FALSE(fixture.session->Environment().ExceptionCheck(1U));
+        CHECK_FALSE(bridge.Linker().Class(bridge.Model().ObjectClass(bridge.FromReference(map))).is_intrinsic);
+    }
+}
+
 TEST_CASE("JNI framework services use VM methods objects and state") {
     using namespace ogplay;
     using namespace runtime;

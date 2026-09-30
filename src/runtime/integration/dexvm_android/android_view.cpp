@@ -5,6 +5,8 @@
 #include "ogplay/runtime/integration/android_guest_call_session.h"
 
 #include <bit>
+#include <array>
+#include <algorithm>
 #include <cmath>
 #include <limits>
 
@@ -231,41 +233,57 @@ namespace ogplay::runtime::android_intrinsics {
 
 namespace {
 
-[[nodiscard]] std::int32_t UnicodeForKeyCode(const std::int32_t key_code,
-                                             const std::int32_t meta_state) {
-    constexpr std::int32_t kShiftMask = 0x1 | 0x40 | 0x80;
-    constexpr std::int32_t kAltControlMetaMask =
-        0x2 | 0x10 | 0x20 | 0x1000 | 0x2000 | 0x4000 |
-        0x10000 | 0x20000 | 0x40000;
-    if ((meta_state & kAltControlMetaMask) != 0) return 0;
-    const bool shifted = (meta_state & kShiftMask) != 0;
-    const bool caps_locked = (meta_state & 0x100000) != 0;
+struct VirtualKey { std::int32_t code, label, number; };
+struct VirtualKeyBehavior { std::int32_t code, meta, character, fallback; };
+#include "virtual_keymap.inc"
 
-    if (key_code >= 29 && key_code <= 54) {
-        const auto lower = 'a' + key_code - 29;
-        return shifted != caps_locked ? lower - ('a' - 'A') : lower;
+// API19 KeyCharacterMap.cpp::matchesMetaState. Native lookup keeps the
+// original modifier-pair matching; normalization remains BootDex Java.
+bool MatchesVirtualMeta(std::int32_t event, std::int32_t behavior) {
+    if ((event & behavior) != behavior) return false;
+    constexpr std::array<std::array<std::int32_t, 3>, 3> pairs{{
+        {{0x1000, 0x2000, 0x4000}}, {{2, 0x10, 0x20}},
+        {{0x10000, 0x20000, 0x40000}}}};
+    auto unmatched = event & ~behavior & 0x77032;
+    for (const auto& pair : pairs) {
+        if ((behavior & pair[0]) != 0) unmatched &= ~(pair[1] | pair[2]);
+        else if ((behavior & (pair[1] | pair[2])) != 0) unmatched &= ~pair[0];
     }
-    if (key_code >= 7 && key_code <= 16) {
-        constexpr char plain[] = "0123456789";
-        constexpr char shifted_chars[] = ")!@#$%^&*(";
-        const auto index = static_cast<std::size_t>(key_code - 7);
-        return shifted ? shifted_chars[index] : plain[index];
-    }
-    switch (key_code) {
-    case 55: return shifted ? '<' : ',';
-    case 56: return shifted ? '>' : '.';
-    case 62: return ' ';
-    case 68: return shifted ? '~' : '`';
-    case 69: return shifted ? '_' : '-';
-    case 70: return shifted ? '+' : '=';
-    case 71: return shifted ? '{' : '[';
-    case 72: return shifted ? '}' : ']';
-    case 73: return shifted ? '|' : '\\';
-    case 74: return shifted ? ':' : ';';
-    case 75: return shifted ? '"' : '\'';
-    case 76: return shifted ? '?' : '/';
-    default: return 0;
-    }
+    return unmatched == 0;
+}
+
+const VirtualKeyBehavior* VirtualBehavior(std::int32_t code, std::int32_t meta) {
+    const auto found = std::find_if(kVirtualKeyBehaviors.begin(), kVirtualKeyBehaviors.end(),
+        [=](const auto& row) { return row.code == code && MatchesVirtualMeta(meta, row.meta); });
+    return found == kVirtualKeyBehaviors.end() ? nullptr : &*found;
+}
+
+dx::VmValue RequireKeyMapOutcome(dx::Interpreter& vm, const dx::VmCallOutcome& result) {
+    if (result.exception.IsValid()) throw dx::VmJavaThrow{
+        vm.Linker().Class(result.exception_class).descriptor, result.exception_message, result.exception};
+    return result.value;
+}
+
+dx::VmObjectRef NewKeyCharacterMap(dx::Interpreter& vm, bool keyboard);
+
+std::int32_t UnicodeForKeyCode(dx::Interpreter& vm, std::int32_t code, std::int32_t meta) {
+    const auto map = NewKeyCharacterMap(vm, true);
+    const auto root = vm.ProtectReferences(std::array{map});
+    return CallAndroidMethod(vm, map, "get", "(II)I",
+        {dx::VmValue::Int(code), dx::VmValue::Int(meta)}).AsInt();
+}
+
+// mPtr is an immutable map selector, never a guest or host memory pointer.
+// 1 is the FULL virtual layout; 2 is an empty SPECIAL_FUNCTION device map.
+dx::VmObjectRef NewKeyCharacterMap(dx::Interpreter& vm, bool keyboard) {
+    const auto type = vm.Linker().ResolveDescriptor("Landroid/view/KeyCharacterMap;");
+    RequireKeyMapOutcome(vm, vm.EnsureClassInitialized(type));
+    const auto object = vm.NewIntrinsicInstance("Landroid/view/KeyCharacterMap;");
+    const auto root = vm.ProtectReferences(std::array{object});
+    const auto ctor = vm.Linker().FindDirectMethod(type, "<init>", "(I)V");
+    if (!ctor) throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "KeyCharacterMap constructor is unavailable"};
+    RequireKeyMapOutcome(vm, vm.Call(*ctor, std::array{dx::VmValue::Ref(object), dx::VmValue::Int(keyboard ? 1 : 2)}));
+    return object;
 }
 
 }  // namespace
@@ -306,7 +324,7 @@ Decl Declare_android_view_KeyEvent(const Context& context) {
             fields.SetInt(meta_state, 0);
             fields.SetInt(scan_code, 0);
             fields.SetInt(device_id, -1);
-            fields.SetInt(unicode_char, UnicodeForKeyCode(
+            fields.SetInt(unicode_char, UnicodeForKeyCode(call.vm,
                 call.arguments[1].AsInt(), 0));
             return dx::VmValue::Void();
         });
@@ -324,7 +342,7 @@ Decl Declare_android_view_KeyEvent(const Context& context) {
             fields.SetInt(meta_state, call.arguments[5].AsInt());
             fields.SetInt(device_id, call.arguments[6].AsInt());
             fields.SetInt(scan_code, call.arguments[7].AsInt());
-            fields.SetInt(unicode_char, UnicodeForKeyCode(
+            fields.SetInt(unicode_char, UnicodeForKeyCode(call.vm,
                 call.arguments[3].AsInt(), call.arguments[5].AsInt()));
             return dx::VmValue::Void();
         };
@@ -379,9 +397,108 @@ Decl Declare_android_view_KeyEvent(const Context& context) {
     builder.FinalMethod("getUnicodeChar", "(I)I",
         [key_code](dx::IntrinsicContext& call) {
             dx::IntrinsicCall fields(call);
-            return dx::VmValue::Int(UnicodeForKeyCode(
+            return dx::VmValue::Int(UnicodeForKeyCode(call.vm,
                 fields.GetInt(key_code), call.arguments[0].AsInt()));
         });
+    const auto unsupported = [](dx::IntrinsicContext& call) -> dx::VmValue {
+        if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.input_device_services", 0);
+        throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "KeyEvent system-key policy is unsupported"};
+    };
+    builder.DirectMethod("native_isSystemKey", "(I)Z", unsupported);
+    builder.DirectMethod("native_hasDefaultAction", "(I)Z", unsupported);
+    return std::move(builder).Build();
+}
+
+Decl Declare_android_view_KeyCharacterMap(const Context& context) {
+    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/view/KeyCharacterMap;", "Ljava/lang/Object;");
+    builder.StaticMethod("load", "(I)Landroid/view/KeyCharacterMap;", [context](dx::IntrinsicContext& call) {
+        const auto find = [&](std::int32_t id) {
+            return std::find_if(context->input_devices.begin(), context->input_devices.end(),
+                [id](const auto& device) { return device.id == id; });
+        };
+        auto device = find(call.arguments[0].AsInt());
+        if (device == context->input_devices.end()) device = find(kAndroidKeyboardDeviceId);
+        if (device == context->input_devices.end()) throw dx::VmJavaThrow{
+            "Landroid/view/KeyCharacterMap$UnavailableException;", "No virtual keyboard character map is installed"};
+        const bool keyboard = (device->sources & kAndroidKeyboardSource) == kAndroidKeyboardSource;
+        return dx::VmValue::Ref(NewKeyCharacterMap(call.vm, keyboard));
+    });
+    const auto full_map = [](dx::IntrinsicContext& call) {
+        const auto selector = call.arguments[0].AsInt();
+        if (selector != 1 && selector != 2) throw dx::VmJavaThrow{
+            "Ljava/lang/IllegalStateException;", "Invalid or disposed key character map"};
+        return selector == 1;
+    };
+    builder.StaticMethod("nativeGetCharacter", "(III)C", [full_map](dx::IntrinsicContext& call) {
+        const auto full = full_map(call);
+        const auto* row = full ? VirtualBehavior(call.arguments[1].AsInt(), call.arguments[2].AsInt()) : nullptr;
+        return dx::VmValue::Int(row ? row->character : 0);
+    }, dx::kAccPrivate);
+    const auto key_property = [full_map](bool number) {
+        return [full_map, number](dx::IntrinsicContext& call) {
+            const bool full = full_map(call);
+            const auto code = call.arguments[1].AsInt();
+            const auto found = std::find_if(kVirtualKeys.begin(), kVirtualKeys.end(),
+                [code](const auto& row) { return row.code == code; });
+            return dx::VmValue::Int(!full || found == kVirtualKeys.end() ? 0 : number ? found->number : found->label);
+        };
+    };
+    builder.StaticMethod("nativeGetNumber", "(II)C", key_property(true), dx::kAccPrivate);
+    builder.StaticMethod("nativeGetDisplayLabel", "(II)C", key_property(false), dx::kAccPrivate);
+    builder.StaticMethod("nativeGetKeyboardType", "(I)I", [full_map](dx::IntrinsicContext& call) {
+        return dx::VmValue::Int(full_map(call) ? 4 : 5);
+    }, dx::kAccPrivate);
+    builder.StaticMethod("nativeGetMatch", "(II[CI)C", [full_map](dx::IntrinsicContext& call) {
+        const bool full = full_map(call);
+        const auto chars = call.arguments[2].ref;
+        if (!chars.IsValid()) throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;", "characters must not be null"};
+        std::int32_t result = 0;
+        if (!full) return dx::VmValue::Int(result);
+        for (const auto& row : kVirtualKeyBehaviors) {
+            if (row.code != call.arguments[1].AsInt() || row.character == 0) continue;
+            for (JniSize i = 0; i < call.vm.Model().ArrayLength(chars); ++i) {
+                if (call.vm.Model().GetPrimitiveElement(chars, i) != static_cast<std::uint32_t>(row.character)) continue;
+                result = row.character;
+                if ((row.meta & call.arguments[3].AsInt()) == row.meta) return dx::VmValue::Int(result);
+                break;
+            }
+        }
+        return dx::VmValue::Int(result);
+    }, dx::kAccPrivate);
+    builder.StaticMethod("nativeGetFallbackAction", "(IIILandroid/view/KeyCharacterMap$FallbackAction;)Z",
+        [full_map](dx::IntrinsicContext& call) {
+            const bool full = full_map(call);
+            const auto* row = full ? VirtualBehavior(call.arguments[1].AsInt(), call.arguments[2].AsInt()) : nullptr;
+            const auto object = call.arguments[3].ref;
+            if (!object.IsValid()) throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;", "fallback action is null"};
+            for (const auto& [name, value] : std::array<std::pair<const char*, std::int32_t>, 2>{{
+                {"keyCode", row ? row->fallback : 0},
+                {"metaState", row && row->fallback ? call.arguments[2].AsInt() & ~row->meta : 0}}}) {
+                const auto field = call.vm.Linker().FindFieldRecursive(call.vm.Model().ObjectClass(object), name, "I");
+                if (!field) throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "FallbackAction field is missing"};
+                call.vm.Model().InstanceSlots(object)[call.vm.Linker().Field(*field).slot] = {
+                    static_cast<std::uint32_t>(value), dx::SlotTag::cat1};
+            }
+            return dx::VmValue::Int(row && row->fallback ? 1 : 0);
+        }, dx::kAccPrivate);
+    builder.StaticMethod("nativeDispose", "(I)V", [full_map](dx::IntrinsicContext& call) {
+        // Immutable selectors own no allocation; finalization only clears Java mPtr.
+        static_cast<void>(full_map(call));
+        return dx::VmValue::Void();
+    }, dx::kAccPrivate);
+    const auto unsupported = [](dx::IntrinsicContext& call) -> dx::VmValue {
+        if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.input_device_services", 0);
+        throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "KeyCharacterMap service, Unicode category or normalization capability is unsupported"};
+    };
+    builder.StaticMethod("nativeReadFromParcel", "(Landroid/os/Parcel;)I", unsupported, dx::kAccPrivate);
+    builder.StaticMethod("nativeWriteToParcel", "(ILandroid/os/Parcel;)V", unsupported, dx::kAccPrivate);
+    builder.StaticMethod("nativeGetEvents", "(I[C)[Landroid/view/KeyEvent;", unsupported, dx::kAccPrivate);
+    builder.StaticMethod("deviceHasKey", "(I)Z", unsupported);
+    builder.StaticMethod("deviceHasKeys", "([I)[Z", unsupported);
+    // These ordinary algorithms require core Unicode backends outside the
+    // admitted keyboard boundary. Fail explicitly until those are available.
+    builder.StaticMethod("getDeadChar", "(II)I", unsupported);
+    builder.VirtualMethod("isPrintingKey", "(I)Z", unsupported);
     return std::move(builder).Build();
 }
 
@@ -446,6 +563,9 @@ Decl Declare_android_view_InputDevice(const Context& context) {
         const auto name_root = call.vm.ProtectReferences(std::array{name});
         const auto descriptor = call.vm.NewStringUtf8(found->descriptor);
         const auto descriptor_root = call.vm.ProtectReferences(std::array{descriptor});
+        const auto key_map = NewKeyCharacterMap(call.vm,
+            (found->sources & kAndroidKeyboardSource) == kAndroidKeyboardSource);
+        const auto key_map_root = call.vm.ProtectReferences(std::array{key_map});
         const auto constructor = call.vm.Linker().FindDirectMethod(type, "<init>",
             "(IIILjava/lang/String;IILjava/lang/String;ZIILandroid/view/KeyCharacterMap;ZZ)V");
         const auto add_range = call.vm.Linker().FindDirectMethod(type, "addMotionRange", "(IIFFFFF)V");
@@ -455,7 +575,7 @@ Decl Declare_android_view_InputDevice(const Context& context) {
             dx::VmValue::Ref(object), dx::VmValue::Int(id), dx::VmValue::Int(0), dx::VmValue::Int(0),
             dx::VmValue::Ref(name), dx::VmValue::Int(0), dx::VmValue::Int(0),
             dx::VmValue::Ref(descriptor), dx::VmValue::Int(0), dx::VmValue::Int(found->sources),
-            dx::VmValue::Int(found->keyboard_type), dx::VmValue::Ref(dx::VmObjectRef{}),
+            dx::VmValue::Int(found->keyboard_type), dx::VmValue::Ref(key_map),
             dx::VmValue::Int(0), dx::VmValue::Int(0)}));
         for (const auto& range : found->ranges)
             check(call.vm.Call(*add_range, std::vector<dx::VmValue>{
@@ -468,9 +588,8 @@ Decl Declare_android_view_InputDevice(const Context& context) {
     const auto unsupported = [](dx::IntrinsicContext& call) -> dx::VmValue {
         if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.input_device_services", 0);
         throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
-            "InputDevice key map, key capability, vibrator and parcel services are unsupported"};
+            "InputDevice key capability, vibrator and parcel services are unsupported"};
     };
-    builder.VirtualMethod("getKeyCharacterMap", "()Landroid/view/KeyCharacterMap;", unsupported);
     builder.VirtualMethod("hasKeys", "([I)[Z", unsupported);
     builder.VirtualMethod("getVibrator", "()Landroid/os/Vibrator;", unsupported);
     builder.VirtualMethod("writeToParcel", "(Landroid/os/Parcel;I)V", unsupported);

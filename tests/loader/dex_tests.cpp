@@ -203,12 +203,79 @@ void SkipUleb128(const std::vector<std::uint8_t>& bytes,
     }
 }
 
+void AppendUleb128(std::vector<std::uint8_t>& bytes, std::uint32_t value) {
+    do {
+        auto byte = static_cast<std::uint8_t>(value & 0x7fU);
+        value >>= 7U;
+        if (value != 0U) byte |= 0x80U;
+        bytes.push_back(byte);
+    } while (value != 0U);
+}
+
+// One class, field and method, each referencing an annotation set. Arrays of
+// null values exercise dense valid encoded values without any title fixture.
+std::vector<std::uint8_t> LargeAnnotationDex(
+    const std::uint32_t array_size, const bool share_set = false,
+    const bool share_item = false, const std::uint8_t visibility = 1U) {
+    auto bytes = ClassDex();
+    const auto old_map = Read32(bytes, 52U);
+    std::vector<std::uint8_t> maps(
+        bytes.begin() + old_map + 4U, bytes.begin() + old_map + 4U + 8U * 12U);
+    const auto item_count = share_set || share_item ? 1U : 3U;
+    const auto items_at = static_cast<std::uint32_t>(bytes.size());
+    std::vector<std::uint32_t> items;
+    for (std::uint32_t i = 0; i < item_count; ++i) {
+        items.push_back(static_cast<std::uint32_t>(bytes.size()));
+        bytes.push_back(visibility);
+        AppendUleb128(bytes, 2U);  // Lsample/Peer;
+        AppendUleb128(bytes, 1U);
+        AppendUleb128(bytes, 5U);  // value
+        bytes.push_back(0x1cU);
+        AppendUleb128(bytes, array_size);
+        bytes.insert(bytes.end(), array_size, 0x1eU);
+    }
+    while ((bytes.size() & 3U) != 0U) bytes.push_back(0U);
+    const auto sets_at = static_cast<std::uint32_t>(bytes.size());
+    const auto set_count = share_set ? 1U : 3U;
+    std::vector<std::uint32_t> sets;
+    for (std::uint32_t i = 0; i < set_count; ++i) {
+        const auto at = bytes.size();
+        sets.push_back(static_cast<std::uint32_t>(at));
+        bytes.resize(at + 8U);
+        Put32(bytes, at, 1U);
+        Put32(bytes, at + 4U, items[item_count == 1U ? 0U : i]);
+    }
+    const auto directory = static_cast<std::uint32_t>(bytes.size());
+    bytes.resize(bytes.size() + 32U);
+    Put32(bytes, directory, sets[0]);
+    Put32(bytes, directory + 4U, 1U);
+    Put32(bytes, directory + 8U, 1U);
+    Put32(bytes, directory + 20U, sets[share_set ? 0U : 1U]);
+    Put32(bytes, directory + 28U, sets[share_set ? 0U : 2U]);
+    Put32(bytes, Read32(bytes, 100U) + 20U, directory);
+    const auto map = static_cast<std::uint32_t>(bytes.size());
+    bytes.resize(bytes.size() + 4U + 12U * 12U);
+    Put32(bytes, map, 12U);
+    std::copy(maps.begin(), maps.end(), bytes.begin() + map + 4U);
+    PutMap(bytes, map + 4U + 8U * 12U, 0x2004U, item_count, items_at);
+    PutMap(bytes, map + 4U + 9U * 12U, 0x1003U, set_count, sets_at);
+    PutMap(bytes, map + 4U + 10U * 12U, 0x2006U, 1U, directory);
+    PutMap(bytes, map + 4U + 11U * 12U, 0x1000U, 1U, map);
+    Put32(bytes, 32U, static_cast<std::uint32_t>(bytes.size()));
+    Put32(bytes, 52U, map);
+    Put32(bytes, 104U, static_cast<std::uint32_t>(bytes.size()) - Read32(bytes, 108U));
+    return bytes;
+}
+
 std::size_t FirstSystemAnnotationValue(
     const std::vector<std::uint8_t>& bytes) {
     const auto image = ogplay::loader::ParseDex(bytes);
     const auto annotated = std::find_if(
         image.classes.begin(), image.classes.end(),
-        [](const auto& item) { return item.annotations_offset != 0U; });
+        [&](const auto& item) {
+            return item.annotations_offset != 0U &&
+                   Read32(bytes, item.annotations_offset) != 0U;
+        });
     REQUIRE(annotated != image.classes.end());
     const auto annotation_set = Read32(bytes, annotated->annotations_offset);
     REQUIRE(annotation_set != 0U);
@@ -444,5 +511,135 @@ TEST_CASE("DEX class annotations reject invalid visibility") {
     const auto annotation_item = Read32(invalid, annotation_set + 4U);
     invalid[annotation_item] = 3U;
     CHECK_THROWS_AS(static_cast<void>(ogplay::loader::ParseDex(invalid)),
+                    ogplay::loader::DexError);
+}
+
+TEST_CASE("DEX annotations accept aggregate nodes above the old fixed budget") {
+    const auto image = ogplay::loader::ParseDex(LargeAnnotationDex(30000U));
+    CHECK(image.annotation_statistics.decoded_nodes == 90006U);
+    CHECK(image.annotation_statistics.unique_items == 3U);
+    CHECK(image.annotation_statistics.unique_sets == 3U);
+    CHECK(image.annotation_statistics.work_units <= image.annotation_statistics.work_limit);
+    CHECK(image.annotation_statistics.storage_bytes <= image.annotation_statistics.storage_limit);
+    REQUIRE(image.class_annotation_metadata[0].runtime_annotations.size() == 1U);
+    REQUIRE(image.field_runtime_metadata[0].annotations.size() == 1U);
+    CHECK(image.class_annotation_metadata[0].runtime_annotations[0].elements[0]
+              .value.values.size() == 30000U);
+    CHECK(image.field_runtime_metadata[0].annotations[0].elements[0]
+              .value.values.size() == 30000U);
+}
+
+TEST_CASE("DEX shared annotation items and sets decode once and preserve owned outputs") {
+    for (const bool share_set : {false, true}) {
+        auto image = ogplay::loader::ParseDex(LargeAnnotationDex(30000U, share_set, true));
+        CHECK(image.annotation_statistics.decoded_nodes == 30002U);
+        CHECK(image.annotation_statistics.unique_items == 1U);
+        CHECK(image.annotation_statistics.unique_sets == (share_set ? 1U : 3U));
+        CHECK(image.annotation_statistics.item_cache_hits == (share_set ? 0U : 2U));
+        CHECK(image.annotation_statistics.set_cache_hits == (share_set ? 2U : 0U));
+        auto& class_value = image.class_annotation_metadata[0].runtime_annotations[0]
+                                .elements[0].value.values[0];
+        const auto& field_value = image.field_runtime_metadata[0].annotations[0]
+                                      .elements[0].value.values[0];
+        class_value.kind = ogplay::loader::DexAnnotationValueKind::boolean_value;
+        CHECK(field_value.kind == ogplay::loader::DexAnnotationValueKind::null_reference);
+    }
+}
+
+TEST_CASE("DEX annotation limits distinguish item work and storage with diagnostics") {
+    const auto bytes = LargeAnnotationDex(10U, true);
+    const auto baseline = ogplay::loader::ParseDex(bytes);
+    for (const std::string kind : {"item_nodes", "work_units", "storage_bytes"}) {
+        ogplay::loader::DexAnnotationLimits limits;
+        if (kind == "item_nodes") limits.max_item_nodes = 4U;
+        if (kind == "work_units") {
+            limits.max_work_units = baseline.annotation_statistics.work_units - 1U;
+        }
+        if (kind == "storage_bytes") {
+            limits.max_storage_bytes = baseline.annotation_statistics.storage_bytes - 1U;
+        }
+        try {
+            static_cast<void>(ogplay::loader::ParseDex(bytes, limits));
+            FAIL("annotation resource limit was ignored");
+        } catch (const ogplay::loader::DexError& error) {
+            const std::string message = error.what();
+            CHECK(error.Reason() == ogplay::loader::DexErrorReason::resource_limit);
+            CHECK(message.find("kind=" + kind) != std::string::npos);
+            CHECK(message.find("used=") != std::string::npos);
+            CHECK(message.find("requested=") != std::string::npos);
+            CHECK(message.find("limit=") != std::string::npos);
+            CHECK(message.find("offset=" + std::to_string(error.Offset())) !=
+                  std::string::npos);
+            CHECK(message.find("data_size=") != std::string::npos);
+        }
+    }
+}
+
+TEST_CASE("DEX shared runtime annotation copies consume independent resource budgets") {
+    const auto discarded = ogplay::loader::ParseDex(
+        LargeAnnotationDex(1000U, true, true, 0U));
+    const auto runtime_bytes = LargeAnnotationDex(1000U, true, true, 1U);
+    const auto runtime = ogplay::loader::ParseDex(runtime_bytes);
+    CHECK(runtime.annotation_statistics.decoded_nodes ==
+          discarded.annotation_statistics.decoded_nodes);
+    CHECK(runtime.annotation_statistics.work_units > discarded.annotation_statistics.work_units);
+    CHECK(runtime.annotation_statistics.storage_bytes >
+          discarded.annotation_statistics.storage_bytes);
+    ogplay::loader::DexAnnotationLimits limits;
+    limits.max_work_units = discarded.annotation_statistics.work_units;
+    CHECK_THROWS_AS(static_cast<void>(ogplay::loader::ParseDex(runtime_bytes, limits)),
+                    ogplay::loader::DexError);
+    limits = {};
+    limits.max_storage_bytes = discarded.annotation_statistics.storage_bytes;
+    CHECK_THROWS_AS(static_cast<void>(ogplay::loader::ParseDex(runtime_bytes, limits)),
+                    ogplay::loader::DexError);
+}
+
+TEST_CASE("DEX annotation counts and offsets are checked before allocation") {
+    for (const std::string shape : {"set_count", "directory_count", "item_offset",
+                                    "set_alignment", "item_type"}) {
+        auto bytes = LargeAnnotationDex(1U, true);
+        const auto directory = Read32(bytes, Read32(bytes, 100U) + 20U);
+        const auto set = Read32(bytes, directory);
+        const auto item = Read32(bytes, set + 4U);
+        if (shape == "set_count") Put32(bytes, set, 0xffffffffU);
+        if (shape == "directory_count") Put32(bytes, directory + 4U, 0xffffffffU);
+        if (shape == "item_offset") Put32(bytes, set + 4U, 0U);
+        if (shape == "set_alignment") Put32(bytes, directory, set + 1U);
+        if (shape == "item_type") bytes[item + 1U] = 0x7fU;
+        CHECK_THROWS_AS(static_cast<void>(ogplay::loader::ParseDex(bytes)), ogplay::loader::DexError);
+    }
+}
+
+TEST_CASE("DEX annotation cache keeps declaration-specific default validation") {
+    auto bytes = ReadDexFixture("class_annotation.dex");
+    const auto image = ogplay::loader::ParseDex(bytes);
+    const auto named = std::find_if(
+        image.classes.begin(), image.classes.end(), [&](const auto& item) {
+            return image.types[item.class_type_index].descriptor == "Lann/Named;";
+        });
+    REQUIRE(named != image.classes.end());
+    const auto named_index = static_cast<std::size_t>(named - image.classes.begin());
+    REQUIRE(named_index + 1U < image.classes.size());
+    Put32(bytes, image.header.class_defs_offset + (named_index + 1U) * 32U + 20U,
+          named->annotations_offset);
+    CHECK_THROWS_WITH_AS(static_cast<void>(ogplay::loader::ParseDex(bytes)),
+                        "DEX AnnotationDefault type does not match the declaration",
+                        ogplay::loader::DexError);
+}
+
+TEST_CASE("DEX annotations retain depth and single-array complexity limits") {
+    auto deep = LargeAnnotationDex(64U, true);
+    const auto value = FirstSystemAnnotationValue(deep);
+    // Replace the one null leaf with nested singleton arrays ending in null.
+    const auto leaf = value + 2U;
+    for (std::size_t i = 0; i < 17U; ++i) {
+        deep[leaf + 2U * i] = 0x1cU;
+        deep[leaf + 2U * i + 1U] = 1U;
+    }
+    deep[leaf + 34U] = 0x1eU;
+    CHECK_THROWS_WITH_AS(static_cast<void>(ogplay::loader::ParseDex(deep)),
+                        "DEX encoded value nesting is too deep", ogplay::loader::DexError);
+    CHECK_THROWS_AS(static_cast<void>(ogplay::loader::ParseDex(LargeAnnotationDex(65536U))),
                     ogplay::loader::DexError);
 }

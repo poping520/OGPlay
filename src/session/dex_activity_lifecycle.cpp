@@ -1091,7 +1091,10 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
                         vm.Threads().SetWaitState(vm.CurrentContextToken(), dx::VmThreadWaitState::none);
                         continue;
                     }
-                    action = std::move(worker.action);
+                    // A moved-from std::function may still be callable. Swap
+                    // with the empty local so the pending command is consumed
+                    // exactly once on every standard-library implementation.
+                    action.swap(worker.action);
                     events = std::exchange(worker.events, false);
                 }
                 if (action) action();

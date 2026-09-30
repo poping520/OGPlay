@@ -40,7 +40,7 @@ public:
 
 private:
     [[nodiscard]] std::int32_t Spawn(const GuestThreadCloneRequest& request);
-    void RunChild(std::uint64_t thread_id, cpu::Cpu& cpu);
+    void PublishFailure(std::uint64_t thread_id, std::exception_ptr failure);
     void RunChildBody(std::uint64_t thread_id, cpu::Cpu& cpu);
 
     cpu::GuestThreadGroup& threads_;

@@ -379,18 +379,36 @@ public:
         HostCallHook host_call_{};
     };
 
+    struct ProcessorLease final {
+        explicit ProcessorLease(std::shared_ptr<DynarmicExecutionContext> owner)
+            : context(std::move(owner)), id(context->AcquireProcessor()) {}
+        ~ProcessorLease() { Release(); }
+        void Release() {
+            if (context) { context->ReleaseProcessor(id); context.reset(); }
+        }
+        std::shared_ptr<DynarmicExecutionContext> context;
+        std::size_t id;
+    };
+
     Impl(memory::MemoryBus& memory_bus,
          std::shared_ptr<DynarmicExecutionContext> execution_context)
         : context(std::move(execution_context)),
-          processor_id(context->AcquireProcessor()),
+          processor_lease(context),
+          processor_id(processor_lease.id),
           callbacks(memory_bus),
           jit(MakeConfig(callbacks, thread_pointer, *context, processor_id)) {
         callbacks.Attach(jit);
+        mapping_subscription = memory_bus.ObserveMappingChanges([this](memory::GuestRange range) {
+            jit.InvalidateCacheRange(range.Start().Value(), static_cast<std::size_t>(range.Size()));
+        });
         std::scoped_lock lock(context->impl_->mutex);
         context->impl_->jits[processor_id] = &jit;
     }
 
-    ~Impl() { context->ReleaseProcessor(processor_id); }
+    ~Impl() {
+        mapping_subscription.reset();
+        processor_lease.Release();
+    }
 
     static Dynarmic::A32::UserConfig MakeConfig(
         Callbacks& callbacks, std::uint32_t& thread_pointer,
@@ -419,10 +437,12 @@ public:
     }
 
     std::shared_ptr<DynarmicExecutionContext> context;
+    ProcessorLease processor_lease;
     std::size_t processor_id{};
     Callbacks callbacks;
     std::uint32_t thread_pointer{};
     Dynarmic::A32::Jit jit;
+    memory::MappingChangeSubscription mapping_subscription;
     std::uint64_t thread_id{};
     std::uint32_t fpexc{};
 };

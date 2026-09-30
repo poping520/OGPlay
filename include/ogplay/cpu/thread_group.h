@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <functional>
+#include <exception>
 #include <memory>
 
 #include "ogplay/cpu/cpu.h"
@@ -23,6 +24,7 @@ struct GuestThreadExit final {
 
 using CpuFactory = std::function<std::unique_ptr<Cpu>()>;
 using GuestThreadEntry = std::function<void(Cpu&)>;
+using GuestThreadFailureHandler = std::function<void(std::exception_ptr)>;
 
 class GuestThreadGroup final {
 public:
@@ -32,7 +34,8 @@ public:
     GuestThreadGroup(const GuestThreadGroup&) = delete;
     GuestThreadGroup& operator=(const GuestThreadGroup&) = delete;
 
-    void Spawn(GuestThreadStart start, GuestThreadEntry entry);
+    void Spawn(GuestThreadStart start, GuestThreadEntry entry,
+               GuestThreadFailureHandler failure_handler = {});
     [[nodiscard]] GuestThreadExit Join(std::uint64_t thread_id);
     [[nodiscard]] std::size_t ThreadCount() const;
     [[nodiscard]] std::size_t ActiveCount() const noexcept;

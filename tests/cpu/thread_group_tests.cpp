@@ -110,3 +110,26 @@ TEST_CASE("guest thread lifecycle rejects invalid use and propagates failure") {
     CHECK_THROWS_AS(join(7), std::logic_error);
     CHECK_THROWS_AS(join(99), std::out_of_range);
 }
+
+TEST_CASE("guest thread final state failure publishes outside record locks") {
+    using namespace ogplay;
+    class FinalStateFailureCpu final : public cpu::Cpu {
+    public:
+        cpu::RunResult Run(std::uint64_t) override { throw std::logic_error("unexpected Run"); }
+        cpu::A32State GetState() const override { throw std::runtime_error("final GetState failed"); }
+        void SetState(const cpu::A32State&) override {}
+        void RequestHalt() noexcept override {}
+    };
+    cpu::GuestThreadGroup group([] { return std::make_unique<FinalStateFailureCpu>(); });
+    std::atomic_bool published{};
+    group.Spawn({1, memory::GuestAddress{0}, {}}, [](cpu::Cpu&) {},
+        [&](std::exception_ptr error) {
+            CHECK(group.ThreadCount() == 1); // Callback can query the registry.
+            CHECK_THROWS_WITH(std::rethrow_exception(error), "final GetState failed");
+            published = true;
+            throw std::runtime_error("secondary callback failure");
+        });
+    CHECK_THROWS_WITH(static_cast<void>(group.Join(1)), "final GetState failed");
+    CHECK(published.load());
+    CHECK(group.ActiveCount() == 0);
+}

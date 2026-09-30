@@ -5,6 +5,7 @@
 #include <bit>
 #include <cstring>
 #include <mutex>
+#include <map>
 #include <type_traits>
 #include <utility>
 #include <vector>
@@ -51,6 +52,37 @@ MemoryFault::MemoryFault(const GuestAddress address, const AccessType access,
 
 class AddressSpace::Impl final {
 public:
+    struct MappingObservers final {
+        std::mutex mutex;
+        std::map<std::uint64_t, MappingChangeHandler> handlers;
+        std::uint64_t next_id{};
+    };
+    MappingChangeSubscription ObserveMappingChanges(MappingChangeHandler handler) {
+        if (!handler) throw std::invalid_argument("mapping change handler is empty");
+        const auto observers = mapping_observers_;
+        std::uint64_t id;
+        { std::scoped_lock lock(observers->mutex); id = ++observers->next_id; }
+        auto token = std::shared_ptr<void>(new std::uint64_t{id},
+            [weak = std::weak_ptr<MappingObservers>(observers), id](void* value) {
+                delete static_cast<std::uint64_t*>(value);
+                if (const auto registry = weak.lock()) {
+                    std::scoped_lock registry_lock(registry->mutex);
+                    registry->handlers.erase(id);
+                }
+            });
+        { std::scoped_lock lock(observers->mutex);
+          observers->handlers.emplace(id, std::move(handler)); }
+        return token;
+    }
+    void PublishMappingChange(GuestRange range) {
+        // Serialize retirement with callbacks, without holding the ledger lock.
+        std::scoped_lock lock(mapping_observers_->mutex);
+        for (const auto& [id, handler] : mapping_observers_->handlers) {
+            static_cast<void>(id);
+            handler(range);
+        }
+    }
+
     Impl() : reservation_(hal::ReserveVirtualMemory(kGuestAddressSpaceSize)) {
         host_page_size_ = reservation_->PageSize();
         if (host_page_size_ < kGuestPageSize ||
@@ -604,6 +636,7 @@ private:
     std::unique_ptr<DirectMemoryPageTable> direct_page_table_;
     mutable std::mutex mutex_;
     std::uint64_t mapping_generation_{};
+    std::shared_ptr<MappingObservers> mapping_observers_{std::make_shared<MappingObservers>()};
 };
 
 AddressSpace::AddressSpace() : impl_(std::make_unique<Impl>()) {}
@@ -613,21 +646,32 @@ AddressSpace& AddressSpace::operator=(AddressSpace&&) noexcept = default;
 
 std::uint64_t AddressSpace::ReservedSize() const noexcept { return impl_->ReservedSize(); }
 std::uint64_t AddressSpace::PageSize() const noexcept { return impl_->PageSize(); }
+MappingChangeSubscription AddressSpace::ObserveMappingChanges(MappingChangeHandler handler) {
+    return impl_->ObserveMappingChanges(std::move(handler));
+}
 void AddressSpace::Map(const GuestRange& range, const PageProtection protection) {
     impl_->Map(range, protection);
+    impl_->PublishMappingChange(range);
 }
 void AddressSpace::ReplaceAnonymous(const GuestRange& range, const PageProtection protection) {
     impl_->ReplaceAnonymous(range, protection);
+    impl_->PublishMappingChange(range);
 }
 
 GuestAddress AddressSpace::MapAnywhere(const GuestRange& bounds, const std::uint64_t size,
                                       const PageProtection protection) {
-    return impl_->MapAnywhere(bounds, size, protection);
+    const auto start = impl_->MapAnywhere(bounds, size, protection);
+    impl_->PublishMappingChange({start, size});
+    return start;
 }
 void AddressSpace::Protect(const GuestRange& range, const PageProtection protection) {
     impl_->Protect(range, protection);
+    impl_->PublishMappingChange(range);
 }
-void AddressSpace::Unmap(const GuestRange& range) { impl_->Unmap(range); }
+void AddressSpace::Unmap(const GuestRange& range) {
+    impl_->Unmap(range);
+    impl_->PublishMappingChange(range);
+}
 void AddressSpace::ValidateMapped(const GuestRange& range,
                                   const std::uint64_t thread_id) const {
     impl_->ValidateMapped(range, thread_id);
@@ -740,6 +784,7 @@ std::vector<MemoryMappingInfo> AddressSpace::DescribeMappings(const std::size_t 
 MemorySnapshot AddressSpace::CaptureSnapshot() const { return impl_->CaptureSnapshot(); }
 void AddressSpace::RestoreSnapshot(const MemorySnapshot& snapshot) {
     impl_->RestoreSnapshot(snapshot);
+    impl_->PublishMappingChange({GuestAddress{0}, kGuestAddressSpaceSize});
 }
 
 }  // namespace ogplay::memory

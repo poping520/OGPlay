@@ -14,6 +14,9 @@
   中所有存活 CPU 排队范围失效并中断正在运行的 peer，由各自执行线程处理缓存；注册与
   退役串行化。解释器直接取指，无缓存可清；其他未实现后端明确失败。内部失效的零 tick
   中断自行续跑，不作为 guest 无进展错误；不修改 guest 寄存器或模拟 CPU 时间。
+- Dynarmic 通过 MemoryBus 映射订阅对每个实例排队范围失效，包括独立 context；映射移除、
+  权限撤销、地址复用及快照恢复不能继续执行旧块。退役先解绑订阅；CPU 创建失败也释放
+  processor ID。普通内容写入仍须 guest 主动 cacheflush，不推断所有写入都是代码。
 - `HostCallHook`：可选的 backend-neutral A32 SVC hook，直接借用 16 个 live core
   registers；`handled` 继续当前 JIT run，`unhandled` 保持 supervisor stop，`fault` 形成
   显式 host-call fault stop。CPU 不解释 SVC 的上层含义。
@@ -38,7 +41,9 @@
   watchdog 预算不变，所有 SVC 先返回 runner 释放名额再分派。此模式不启用 fast host hook。
   BeginDrain 解除限额并唤醒等待者，供上层生命周期清理；不修改线程身份或宿主亲和性。
 - `GuestThreadGroup`：每个 guest thread ID 启动一个宿主线程和独立 CPU 实例，将
-  TLS 基址装入 CPU thread pointer，保存退出状态并提供真实 join 生命周期。
+  TLS 基址装入 CPU thread pointer，保存退出状态并提供真实 join 生命周期。可注入失败回调，
+  覆盖 CPU 构造、初始 SetState、执行与最终 GetState，保存原异常后在 record 锁外调用；
+  回调次生异常不得替换首错，析构 join 不持有线程注册锁。
 - `FutexTable`：以 32 位对齐 guest 地址为键，提供比较等待、精确 WAKE N、普通全局唤醒和
   失败清理所需的 sticky `InterruptAll`；中断会唤醒当前 waiter，并让之后的匹配等待立即
   返回 interrupted。M2 syscall 层负责把 interrupted 映射为 `-EINTR`，并把统一 Clock

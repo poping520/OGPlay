@@ -5,6 +5,7 @@
 namespace ogplay::runtime {
 
 inline constexpr memory::GuestAddress kArmKernelHelperPage{0xffff0000U};
+inline constexpr memory::GuestAddress kArmKernelCmpxchg64{0xffff0f60U};
 inline constexpr memory::GuestAddress kArmKernelMemoryBarrier{0xffff0fa0U};
 inline constexpr memory::GuestAddress kArmKernelCmpxchg{0xffff0fc0U};
 inline constexpr memory::GuestAddress kArmKernelGetTls{0xffff0fe0U};

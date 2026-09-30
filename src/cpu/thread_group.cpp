@@ -28,11 +28,16 @@ public:
     }
 
     ~Impl() {
-        std::scoped_lock lock(records_mutex_);
-        records_.clear();
+        decltype(records_) retired;
+        { std::scoped_lock lock(records_mutex_); retired.swap(records_); }
+        // Joining workers can invoke callbacks; never join under the registry lock.
+        for (const auto& [id, record] : retired) {
+            static_cast<void>(id);
+            if (record->host_thread->Joinable()) record->host_thread->Join();
+        }
     }
 
-    void Spawn(GuestThreadStart start, GuestThreadEntry entry) {
+    void Spawn(GuestThreadStart start, GuestThreadEntry entry, GuestThreadFailureHandler failure_handler) {
         if (start.thread_id == 0) {
             throw std::invalid_argument("guest thread id must be non-zero");
         }
@@ -56,7 +61,7 @@ public:
             throw std::invalid_argument("duplicate guest thread id");
         }
         record->host_thread = hal::StartHostThread(
-            [this, record, entry = std::move(entry)]() mutable {
+            [this, record, entry = std::move(entry), failure_handler = std::move(failure_handler)]() mutable {
                 active_count_.fetch_add(1);
                 try {
                     auto cpu = factory_();
@@ -66,8 +71,11 @@ public:
                     std::scoped_lock record_lock(record->mutex);
                     record->final_state = cpu->GetState();
                 } catch (...) {
-                    std::scoped_lock record_lock(record->mutex);
-                    record->failure = std::current_exception();
+                    const auto failure = std::current_exception();
+                    { std::scoped_lock record_lock(record->mutex); record->failure = failure; }
+                    if (failure_handler) {
+                        try { failure_handler(failure); } catch (...) { /* Keep original failure. */ }
+                    }
                 }
                 active_count_.fetch_sub(1);
             });
@@ -112,8 +120,9 @@ GuestThreadGroup::GuestThreadGroup(CpuFactory cpu_factory)
 
 GuestThreadGroup::~GuestThreadGroup() = default;
 
-void GuestThreadGroup::Spawn(GuestThreadStart start, GuestThreadEntry entry) {
-    impl_->Spawn(std::move(start), std::move(entry));
+void GuestThreadGroup::Spawn(GuestThreadStart start, GuestThreadEntry entry,
+                             GuestThreadFailureHandler failure_handler) {
+    impl_->Spawn(std::move(start), std::move(entry), std::move(failure_handler));
 }
 
 GuestThreadExit GuestThreadGroup::Join(const std::uint64_t thread_id) {

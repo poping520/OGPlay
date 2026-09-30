@@ -3,6 +3,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <span>
@@ -122,6 +123,11 @@ struct MemoryStatistics final {
     std::uint64_t generation{};
 };
 
+// Destroy the handle to unsubscribe; waits for an in-flight callback.
+// Callbacks run outside the mapping ledger lock and must not resubscribe.
+using MappingChangeSubscription = std::shared_ptr<void>;
+using MappingChangeHandler = std::function<void(GuestRange)>;
+
 class AddressSpace final {
 public:
     AddressSpace();
@@ -133,6 +139,7 @@ public:
 
     [[nodiscard]] std::uint64_t ReservedSize() const noexcept;
     [[nodiscard]] std::uint64_t PageSize() const noexcept;
+    [[nodiscard]] MappingChangeSubscription ObserveMappingChanges(MappingChangeHandler handler);
     void Map(const GuestRange& range, PageProtection protection);
     // Atomically replace guest pages (including holes) with zeroed anonymous
     // memory. Outside pages and ordinary Map overlap checks are preserved.

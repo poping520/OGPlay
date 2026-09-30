@@ -483,7 +483,7 @@ note = "M1 参考后端覆盖裸样本与基础诊断指令族；完整 ISA 不�
 [cpu.dynarmic]
 status = "complete"
 test = "tests/cpu/dynarmic_tests.cpp"
-note = "M1 Dynarmic A32/T32 后端遵守 MemoryBus、状态、tick、停止和 fault 契约；M2 与解释器一致支持 TPIDRURO；M5 WU-0290 接入受保护数据页表并保留跨页及 callback fault。WU-PERF-08 将成功的 ARM cacheflush 发布到共享 context 的全部代码缓存；SVC 桥接验证见 tests/runtime/syscall_bridge_tests.cpp，运行中 peer 的范围失效见本条测试入口。STREX 经 MemoryBus 原子 CAS 提交，不再以回调互斥锁模拟；定向覆盖直接 STR 解锁竞争及 exclusive peer ABA。普通直接写入恢复原值的 ABA/write-history 跟踪仍不支持。"
+note = "M1 Dynarmic A32/T32 后端遵守 MemoryBus、状态、tick、停止和 fault 契约；M2 与解释器一致支持 TPIDRURO；M5 WU-0290 接入受保护数据页表并保留跨页及 callback fault。WU-PERF-08 将成功的 ARM cacheflush 发布到共享 context 的全部代码缓存；SVC 桥接验证见 tests/runtime/syscall_bridge_tests.cpp，运行中 peer 的范围失效见本条测试入口。BND-48 增加内存映射范围订阅，覆盖权限撤销、地址复用、独立 context 与快照恢复。STREX 经 MemoryBus 原子 CAS 提交，不再以回调互斥锁模拟；定向覆盖直接 STR 解锁竞争及 exclusive peer ABA。普通直接写入恢复原值的 ABA/write-history 跟踪仍不支持。"
 
 [cpu.arm_user_coprocessor]
 status = "partial"
@@ -493,7 +493,7 @@ note = "BND-44/ADR-0082：A32/T32 旧式 CP15 DMB/DSB/ISB 复用原生屏障 IR�
 [cpu.thread_model]
 status = "complete"
 test = "tests/cpu/thread_group_tests.cpp; tests/runtime/guest_clone_thread_runtime_tests.cpp"
-note = "M1 一个 guest 线程对应一个真实宿主线程和独立 CPU，上下文与 TLS 生命周期明确；clone 执行宿主异常保存首错并退出线程组、中断等待，通过显式上层通知取消其他阻塞，调用路径及 join 保留原异常"
+note = "M1 一个 guest 线程对应一个真实宿主线程和独立 CPU，上下文与 TLS 生命周期明确；clone CPU 创建、初始 SetState、执行及最终 GetState 的宿主异常保存首错并退出线程组、中断等待，通过显式上层通知取消其他阻塞，调用路径及 join 保留原异常"
 
 [cpu.futex]
 status = "complete"
@@ -532,8 +532,8 @@ note = "M2 三平台完成 ELF32/ARM 多模块事务装载、TLS/版本/exidx、
 
 [runtime.syscall]
 status = "complete"
-test = "tests/runtime/syscall_tests.cpp"
-note = "M2 三平台完成 120 项 Android ARM 分组目录和样本所需调用；未实现项全部 ENOSYS+记账，绝不静默成功。DVM-89/ADR-0023 增加受检 nanosleep，并让 syscall 分发发布 observable progress：非零真实 sleep/futex park/正字节 I/O 为 advanced，查询/EOF/wake/yield/内存管理及默认为 idle。"
+test = "tests/runtime/syscall_tests.cpp; tests/runtime/arm_kernel_helpers_tests.cpp"
+note = "BND-48 补齐 ARM kuser v5 的 DMB、32/64 位比较交换、carry 返回及 reservation 失败重试；Windows Dynarmic 定向验证，不代表其他宿主后端验收。M2 三平台完成 120 项 Android ARM 分组目录和样本所需调用；未实现项全部 ENOSYS+记账，绝不静默成功。DVM-89/ADR-0023 增加受检 nanosleep，并让 syscall 分发发布 observable progress：非零真实 sleep/futex park/正字节 I/O 为 advanced，查询/EOF/wake/yield/内存管理及默认为 idle。"
 
 [runtime.bionic]
 status = "complete"

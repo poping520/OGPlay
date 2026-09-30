@@ -32,7 +32,9 @@
 namespace {
 
 struct GuestBindingsFixture final {
-    explicit GuestBindingsFixture(const bool direct_buffers = false)
+    explicit GuestBindingsFixture(const bool direct_buffers = false,
+        const ogplay::runtime::JniGuestStringLimits limits = {},
+        ogplay::runtime::JniGuestStringObserver observer = {})
         : bus(memory),
           cpu(bus),
           abi(memory),
@@ -63,6 +65,8 @@ struct GuestBindingsFixture final {
         ogplay::runtime::JniGuestBindingContext context{
             environment, classes, invocations, fields, strings, arrays,
             java_vm, objects, memory, &natives, direct_buffers ? &nio : nullptr};
+        context.string_limits = limits;
+        context.string_observer = std::move(observer);
         ogplay::runtime::BindJniGuestSlots(dispatcher, context);
     }
 
@@ -373,14 +377,25 @@ TEST_CASE("guest JNI NewStringUTF publishes a decoded local string") {
           std::vector<ogplay::runtime::JniChar>{'A', 0, 'B'});
 
     CHECK(fixture.CallEnvironment("NewStringUTF", 402U, 0U) == 0U);
+}
 
-    const std::vector<std::byte> unterminated(1024U, std::byte{'A'});
-    fixture.memory.Write(fixture.output.Add(0x400U), unterminated);
+TEST_CASE("guest JNI NewStringUTF distinguishes resource limit from unterminated memory") {
+    auto limits = ogplay::runtime::JniGuestStringLimits{};
+    limits.maximum_modified_utf8_bytes = 1024U;
+    GuestBindingsFixture fixture(false, limits);
+    REQUIRE(fixture.java_vm.AttachCurrentThread(402U, ogplay::runtime::kJniVersion1_6).status ==
+        ogplay::runtime::JniStatus::ok);
+    const ogplay::memory::GuestAddress source{0x73000000U};
+    fixture.memory.Map({source, 4096U}, ogplay::memory::PageProtection::read |
+        ogplay::memory::PageProtection::write);
+    const std::vector<std::byte> over_budget(1025U, std::byte{'A'});
+    fixture.memory.Write(source, over_budget);
+    fixture.Seal();
     try {
         static_cast<void>(
             fixture.CallEnvironment(
-                "NewStringUTF", 402U, fixture.output.Add(0x400U).Value()));
-        FAIL("unterminated NewStringUTF input did not fail");
+                "NewStringUTF", 402U, source.Value()));
+        FAIL("over-budget NewStringUTF input did not fail");
     } catch (const ogplay::runtime::JniGuestBindingError& error) {
         const std::string_view message{error.what()};
         CHECK(message.starts_with(
@@ -393,12 +408,164 @@ TEST_CASE("guest JNI NewStringUTF publishes a decoded local string") {
             "  registers:\n"));
         CHECK(message.find("    r0=0x71200420\n") !=
               std::string_view::npos);
-        CHECK(message.find("    r1=0x72000400\n") !=
+        CHECK(message.find("    r1=0x73000000\n") !=
               std::string_view::npos);
         CHECK(message.ends_with(
             "  cause:\n"
-            "    JNI guest modified UTF-8 is not null-terminated"));
+            "    modified UTF-8 scan limit reached: pointer=0x73000000 scanned_bytes=1025 payload_budget=1024"));
     }
+    fixture.memory.Write8(source.Add(1024U), 0U);
+    CHECK(fixture.CallEnvironment("NewStringUTF", 402U, source.Value()) != 0U);
+}
+
+TEST_CASE("guest JNI NewStringUTF accepts old scan boundaries and cross-page modified UTF") {
+    std::vector<std::size_t> observed;
+    GuestBindingsFixture fixture(false, {},
+        [&observed](const ogplay::runtime::JniGuestCallFrame& frame,
+            const std::size_t bytes, const std::size_t units) {
+            CHECK(frame.thread_id == 402U);
+            CHECK(units <= bytes);
+            observed.push_back(bytes);
+            throw std::runtime_error("diagnostic sink unavailable");
+        });
+    REQUIRE(fixture.java_vm.AttachCurrentThread(402U, ogplay::runtime::kJniVersion1_6).status ==
+        ogplay::runtime::JniStatus::ok);
+    const ogplay::memory::GuestAddress base{0x73000000U};
+    fixture.memory.Map({base, 8192U}, ogplay::memory::PageProtection::read |
+        ogplay::memory::PageProtection::write);
+    fixture.Seal();
+    for (const std::size_t size : {1023U, 1024U, 1025U, 4096U}) {
+        CAPTURE(size);
+        // Starts before a page boundary; the 1024-byte terminator is on the next page.
+        const auto source = base.Add(3072U);
+        auto bytes = std::vector<std::byte>(size + 1U, std::byte{'A'});
+        bytes.back() = std::byte{};
+        fixture.memory.Write(source, bytes);
+        const auto reference = ogplay::runtime::JniReference{
+            fixture.CallEnvironment("NewStringUTF", 402U, source.Value())};
+        const auto identity = fixture.environment.ResolveObjectForHle(402U, reference);
+        REQUIRE(identity.has_value());
+        CHECK(fixture.strings.Region(*identity, 0, static_cast<ogplay::runtime::JniSize>(size)) ==
+            std::vector<ogplay::runtime::JniChar>(size, 'A'));
+    }
+    const std::array<std::byte, 9> encoded{
+        std::byte{0xc0}, std::byte{0x80}, std::byte{0xed}, std::byte{0xa0},
+        std::byte{0xbd}, std::byte{0xed}, std::byte{0xb8}, std::byte{0x80}, std::byte{0}};
+    fixture.memory.Write(base.Add(4093U), encoded);
+    const auto reference = ogplay::runtime::JniReference{
+        fixture.CallEnvironment("NewStringUTF", 402U, base.Add(4093U).Value())};
+    const auto identity = fixture.environment.ResolveObjectForHle(402U, reference);
+    REQUIRE(identity.has_value());
+    CHECK(fixture.strings.Region(*identity, 0, 3) ==
+        std::vector<ogplay::runtime::JniChar>{0, 0xd83d, 0xde00});
+    CHECK(observed == std::vector<std::size_t>{1023U, 1024U, 1025U, 4096U, 8U});
+}
+
+TEST_CASE("guest JNI NewStringUTF distinguishes input faults encoding and decoded budgets") {
+    auto limits = ogplay::runtime::JniGuestStringLimits{};
+    limits.maximum_modified_utf8_bytes = 16U;
+    limits.maximum_utf16_code_units = 4U;
+    GuestBindingsFixture fixture(false, limits);
+    REQUIRE(fixture.java_vm.AttachCurrentThread(402U, ogplay::runtime::kJniVersion1_6).status ==
+        ogplay::runtime::JniStatus::ok);
+    fixture.Seal();
+    const auto failure = [&](const std::uint32_t pointer) {
+        try {
+            static_cast<void>(fixture.CallEnvironment("NewStringUTF", 402U, pointer));
+            FAIL("invalid string input was accepted");
+        } catch (const ogplay::runtime::JniGuestBindingError& error) {
+            return std::string(error.what());
+        }
+        return std::string{};
+    };
+    CHECK(failure(0x73000000U).find("input memory fault: unmapped") != std::string::npos);
+    fixture.WriteString(0x100U, std::string{"\xc2X", 2});
+    CHECK(failure(fixture.output.Add(0x100U).Value()).find("invalid Modified UTF-8 at byte=") != std::string::npos);
+    fixture.WriteString(0x100U, std::string{"\xf0\x9f\x98\x80", 4});
+    CHECK(failure(fixture.output.Add(0x100U).Value()).find("invalid Modified UTF-8") != std::string::npos);
+    fixture.WriteString(0x100U, "ABCDE");
+    CHECK(failure(fixture.output.Add(0x100U).Value()).find("UTF-16 resource budget exceeded") != std::string::npos);
+    // Encoded NULs count as UTF-16 units, not raw bytes.
+    fixture.WriteString(0x100U, std::string{"\xc0\x80\xc0\x80\xc0\x80\xc0\x80", 8});
+    CHECK(fixture.CallEnvironment("NewStringUTF", 402U, fixture.output.Add(0x100U).Value()) != 0U);
+    const ogplay::memory::GuestAddress protected_page{0x73000000U};
+    fixture.memory.Map({protected_page, 4096U}, ogplay::memory::PageProtection::none);
+    CHECK(failure(protected_page.Value()).find("input memory fault: permission_denied") != std::string::npos);
+    fixture.memory.Unmap({protected_page, 4096U});
+    fixture.memory.Map({protected_page, 4096U}, ogplay::memory::PageProtection::read |
+        ogplay::memory::PageProtection::write);
+    fixture.memory.Write8(protected_page.Add(4095U), 'A');
+    CHECK(failure(protected_page.Add(4095U).Value()).find("input memory fault: unmapped") != std::string::npos);
+    const ogplay::memory::GuestAddress last_page{0xfffff000U};
+    fixture.memory.Map({last_page, 4096U}, ogplay::memory::PageProtection::read |
+        ogplay::memory::PageProtection::write);
+    fixture.memory.Write8(last_page.Add(4095U), 0);
+    CHECK(fixture.CallEnvironment("NewStringUTF", 402U, 0xffffffffU) != 0U);
+    fixture.memory.Write8(last_page.Add(4095U), 'A');
+    CHECK(failure(0xffffffffU).find("guest address overflow") != std::string::npos);
+}
+
+TEST_CASE("guest JNI long strings round trip beyond both former copy arenas") {
+    GuestBindingsFixture fixture;
+    REQUIRE(fixture.java_vm.AttachCurrentThread(402U, ogplay::runtime::kJniVersion1_6).status ==
+        ogplay::runtime::JniStatus::ok);
+    const ogplay::memory::GuestAddress source{0x73000000U};
+    constexpr std::size_t size = 70000U;
+    fixture.memory.Map({source, 73728U}, ogplay::memory::PageProtection::read |
+        ogplay::memory::PageProtection::write);
+    auto bytes = std::vector<std::byte>(size + 1U, std::byte{'A'});
+    bytes.back() = std::byte{};
+    fixture.memory.Write(source, bytes);
+    fixture.Seal();
+    const auto reference = fixture.CallEnvironment("NewStringUTF", 402U, source.Value());
+    REQUIRE(reference != 0U);
+    const auto utf8 = ogplay::memory::GuestAddress{
+        fixture.CallEnvironment("GetStringUTFChars", 402U, reference)};
+    const auto utf16 = ogplay::memory::GuestAddress{
+        fixture.CallEnvironment("GetStringChars", 402U, reference)};
+    CHECK(utf8 != utf16);
+    std::vector<std::byte> copied(size + 1U);
+    fixture.memory.Read(utf8, copied);
+    CHECK(copied == bytes);
+    std::vector<std::byte> wide((size + 1U) * 2U);
+    fixture.memory.Read(utf16, wide);
+    std::vector<std::byte> expected(wide.size());
+    for (std::size_t index = 0; index < size; ++index) expected[index * 2U] = std::byte{'A'};
+    CHECK(wide == expected);
+    const auto copied_reference = fixture.CallEnvironment("NewString", 402U, utf16.Value(), size);
+    CHECK(fixture.CallEnvironment("GetStringUTFLength", 402U, copied_reference) == size);
+    static_cast<void>(fixture.CallEnvironment("ReleaseStringUTFChars", 402U, reference, utf8.Value()));
+    static_cast<void>(fixture.CallEnvironment("ReleaseStringChars", 402U, reference, utf16.Value()));
+    CHECK_THROWS_AS(fixture.memory.Read8(utf8), ogplay::memory::MemoryFault);
+    CHECK_THROWS_AS(fixture.memory.Read8(utf16), ogplay::memory::MemoryFault);
+}
+
+TEST_CASE("guest JNI string copy budget is shared released and failed outputs do not leak") {
+    auto limits = ogplay::runtime::JniGuestStringLimits{};
+    limits.maximum_copy_bytes = 4096U;
+    GuestBindingsFixture fixture(false, limits);
+    REQUIRE(fixture.java_vm.AttachCurrentThread(402U, ogplay::runtime::kJniVersion1_6).status ==
+        ogplay::runtime::JniStatus::ok);
+    const std::array<ogplay::runtime::JniChar, 1> chars{'A'};
+    const auto identity = fixture.strings.Create(chars);
+    const auto reference = fixture.environment.PublishLocalObject(402U, identity).Value();
+    const ogplay::memory::GuestAddress bad_output{0x73000000U};
+    fixture.memory.Map({bad_output, 4096U}, ogplay::memory::PageProtection::read);
+    fixture.Seal();
+    for (const auto slot : {"GetStringUTFChars", "GetStringChars"}) {
+        CHECK_THROWS_AS(static_cast<void>(fixture.CallEnvironment(slot, 402U, reference, bad_output.Value())),
+            ogplay::memory::MemoryFault);
+    }
+    const auto first = fixture.CallEnvironment("GetStringUTFChars", 402U, reference);
+    REQUIRE(first != 0U);
+    CHECK_THROWS_WITH_AS(static_cast<void>(fixture.CallEnvironment("GetStringChars", 402U, reference)),
+        "JNI string copy resource budget exhausted: requested_bytes=4096 used_bytes=4096 budget=4096",
+        ogplay::runtime::JniGuestBindingError);
+    static_cast<void>(fixture.CallEnvironment("ReleaseStringUTFChars", 402U, reference, first));
+    const auto second = fixture.CallEnvironment("GetStringChars", 402U, reference);
+    REQUIRE(second != 0U);
+    static_cast<void>(fixture.CallEnvironment("ReleaseStringChars", 402U, reference, second));
+    CHECK_NOTHROW(fixture.strings.Delete(identity));
 }
 
 TEST_CASE("guest JNI modified UTF string family owns checked guest leases") {

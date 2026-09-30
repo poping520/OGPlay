@@ -1,5 +1,7 @@
 #pragma once
 
+#include "ogplay/runtime/jni_guest/jni_guest_bindings.h"
+
 namespace ogplay::memory {
 class AddressSpace;
 }
@@ -10,12 +12,9 @@ class JniEnvironment;
 class JniGuestCallDispatcher;
 class JniStringStore;
 
-void BindJniGuestModifiedUtf8Slots(
+void BindJniGuestStringSlots(
     JniGuestCallDispatcher& dispatcher, JniEnvironment& environment,
-    JniStringStore& strings, memory::AddressSpace& address_space);
-
-void BindJniGuestUtf16Slots(
-    JniGuestCallDispatcher& dispatcher, JniEnvironment& environment,
-    JniStringStore& strings, memory::AddressSpace& address_space);
+    JniStringStore& strings, memory::AddressSpace& address_space,
+    JniGuestStringLimits limits = {});
 
 }  // namespace ogplay::runtime

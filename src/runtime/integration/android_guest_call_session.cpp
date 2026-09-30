@@ -850,6 +850,16 @@ public:
         JniGuestBindingContext jni_bindings{
             environment_, classes_, invocations_, fields_, strings_, arrays_,
             java_vm_, objects_, address_space_, &natives_, &nio_};
+        jni_bindings.string_observer = [this](const JniGuestCallFrame& frame,
+            const std::size_t bytes, const std::size_t units) {
+            if (!logger_ || bytes < 1024U) return;
+            logger_->Write(core::LogLevel::info, "guest.jni_string",
+                "long modified UTF-8 input accepted", {.guest_thread = frame.thread_id},
+                {{"pointer", core::GuestAddress{frame.registers[1]}},
+                 {"encoded_bytes", static_cast<std::uint64_t>(bytes)},
+                 {"utf16_units", static_cast<std::uint64_t>(units)},
+                 {"lr", core::GuestAddress{frame.link_register}}});
+        };
         BindJniGuestSlots(jni_dispatcher_, jni_bindings);
         jni_dispatcher_.Seal();
         const auto attached = java_vm_.AttachCurrentThread(

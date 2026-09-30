@@ -122,6 +122,12 @@
   f=1810 关闭剧情弹框，Mono open `/dev/urandom` 得 fd=91，read(8)=8，原随机源异常消失。
   f=1811 下一首错为 nativeRender/NewStringUTF 的 modified UTF-8 未终止，CLI 返回 1；
   游戏存档落盘及重载尚未验收。证据 `.local/random-game.stderr.log`、`.local/random-tests.log`。
+  [DVM-204](../tasks/dexvm/DVM-204.md) 已拆开 NewStringUTF 正文预算和名称扫描限制，
+  两种 chars 改为按需映射并共享副本预算；Windows 构建、定向 44 用例/4565 断言通过。
+  原关闭剧情路径实际输入为 2352 bytes，原首错消失，游戏/玩家进度落盘；强制结束后
+  同一沙盒重启进入任务地图、开场剧情未重现，加密进度哈希一致，保存重载已验证。
+  shutdown 仍停在 Profile lifecycle 清理（诊断 phase=teardown.begin），正常退出及
+  完整游戏兼容尚未验收。证据 `.local/jni-string-{tests.log,game.stderr.log,reload.png}`。
 - **Angry Birds 2.3.0**：无 Profile、空沙盒运行 5000 presented frames，
   `View.setScrollBarStyle/getScrollBarStyle` 原方法解析错未再出现，未触发新的致命首错。
   滚动条绘制和完整游戏兼容仍未验收。此前 SQLite/guest ICU、EventLog、

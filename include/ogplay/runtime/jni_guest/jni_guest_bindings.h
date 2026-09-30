@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstddef>
+#include <functional>
 #include <string_view>
 
 #include "ogplay/runtime/jni_guest/jni_guest_dispatch.h"
@@ -23,6 +25,15 @@ class JniNativeRegistry;
 class JniPrimitiveArrayStore;
 class JniStringStore;
 
+struct JniGuestStringLimits final {
+    std::size_t maximum_modified_utf8_bytes{3U * 1024U * 1024U};
+    std::size_t maximum_utf16_code_units{1024U * 1024U};
+    // Aggregate page-rounded guest copies, shared by both encodings.
+    std::size_t maximum_copy_bytes{16U * 1024U * 1024U};
+};
+using JniGuestStringObserver = std::function<void(
+    const JniGuestCallFrame&, std::size_t encoded_bytes, std::size_t utf16_units)>;
+
 struct JniGuestBindingContext final {
     JniEnvironment& environment;
     JniClassRegistry& classes;
@@ -35,6 +46,8 @@ struct JniGuestBindingContext final {
     memory::AddressSpace& address_space;
     JniNativeRegistry* natives{};
     dexvm::NioRuntime* nio{};
+    JniGuestStringLimits string_limits{};
+    JniGuestStringObserver string_observer{};
 };
 
 class JniGuestBindingError final : public std::runtime_error {
@@ -47,7 +60,9 @@ void BindJniGuestCoreSlots(JniGuestCallDispatcher& dispatcher,
                            JniClassRegistry& classes,
                            JniStringStore& strings,
                            JniPrimitiveArrayStore& arrays,
-                           memory::AddressSpace& address_space);
+                           memory::AddressSpace& address_space,
+                           JniGuestStringLimits limits = {},
+                           JniGuestStringObserver observer = {});
 
 void BindJniGuestJavaVmSlots(JniGuestCallDispatcher& dispatcher,
                              JniJavaVm& java_vm,

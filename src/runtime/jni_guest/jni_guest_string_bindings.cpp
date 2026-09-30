@@ -11,6 +11,7 @@
 #include <string>
 #include <string_view>
 #include <vector>
+#include <optional>
 
 #include "ogplay/memory/address_space.h"
 #include "ogplay/runtime/jni_guest/jni_guest_bindings.h"
@@ -23,11 +24,8 @@
 namespace ogplay::runtime {
 namespace {
 
-constexpr memory::GuestAddress kStringLeaseBegin{0x71300000U};
-constexpr std::uint64_t kStringLeaseSize = 64U * 1024U;
-constexpr memory::GuestAddress kUtf16LeaseBegin{0x71310000U};
-constexpr std::uint64_t kUtf16LeaseSize = 64U * 1024U;
-constexpr std::size_t kMaximumUtf16CodeUnits = 1024U * 1024U;
+// Shares the native mmap address-space ledger and skips all occupied pages.
+const memory::GuestRange kStringCopyBounds{memory::GuestAddress{0x60000000U}, 0xa0000000ULL};
 
 [[nodiscard]] JniSlot Slot(const std::string_view name) {
     const auto slot = FindJniSlot(name);
@@ -69,30 +67,50 @@ class GuestStringLeaseArena final {
 public:
     using Iterator = std::vector<GuestStringLease>::iterator;
 
-    GuestStringLeaseArena(const memory::GuestAddress begin,
-                          const std::uint64_t size,
-                          const std::string_view exceeds_error,
-                          const std::string_view full_error)
-        : begin_(begin), size_(size), exceeds_error_(exceeds_error),
-          full_error_(full_error) {}
+    class Budget final {
+    public:
+        explicit Budget(const std::size_t limit) : limit_(limit) {}
+        void Reserve(const std::size_t bytes) {
+            std::scoped_lock lock(mutex_);
+            if (bytes > limit_ - used_)
+                throw JniGuestBindingError("JNI string copy resource budget exhausted: requested_bytes=" +
+                    std::to_string(bytes) + " used_bytes=" + std::to_string(used_) + " budget=" + std::to_string(limit_));
+            used_ += bytes;
+        }
+        void Release(const std::size_t bytes) noexcept {
+            std::scoped_lock lock(mutex_); used_ -= bytes;
+        }
+    private:
+        std::mutex mutex_;
+        std::size_t limit_{}, used_{};
+    };
+
+    GuestStringLeaseArena(memory::AddressSpace& space, std::shared_ptr<Budget> budget)
+        : space_(&space), budget_(std::move(budget)) {}
+
+    ~GuestStringLeaseArena() {
+        for (const auto& lease : leases_) Discard(lease.pointer, lease.size);
+    }
 
     [[nodiscard]] memory::GuestAddress Allocate(
         const std::size_t requested) const {
-        if (requested == 0 || requested > size_) {
-            throw JniGuestBindingError(std::string(exceeds_error_));
+        const auto mapped = MappedSize(requested);
+        budget_->Reserve(mapped);
+        try {
+            return space_->MapAnywhere(kStringCopyBounds, mapped,
+                memory::PageProtection::read | memory::PageProtection::write);
+        } catch (const std::bad_alloc&) {
+            budget_->Release(mapped);
+            throw JniGuestBindingError("JNI string copy allocation failed");
+        } catch (...) {
+            budget_->Release(mapped); throw;
         }
-        auto ordered = leases_;
-        std::ranges::sort(ordered, {}, &GuestStringLease::pointer);
-        std::uint64_t offset{};
-        for (const auto& lease : ordered) {
-            const auto lease_offset = lease.pointer.Value() - begin_.Value();
-            if (requested <= lease_offset - offset) break;
-            offset = lease_offset + lease.size;
-        }
-        if (offset > size_ || requested > size_ - offset) {
-            throw JniGuestBindingError(std::string(full_error_));
-        }
-        return begin_.Add(offset);
+    }
+
+    void Discard(const memory::GuestAddress pointer, const std::size_t size) noexcept {
+        const auto mapped = MappedSize(size);
+        try { space_->Unmap({pointer, mapped}); } catch (...) {}
+        budget_->Release(mapped);
     }
 
     void Publish(const memory::GuestAddress pointer, const std::size_t size,
@@ -126,50 +144,49 @@ public:
         return found;
     }
 
-    void Erase(const Iterator lease) { leases_.erase(lease); }
+    void Erase(const Iterator lease) {
+        const auto mapped = MappedSize(lease->size);
+        space_->Unmap({lease->pointer, mapped});
+        budget_->Release(mapped);
+        leases_.erase(lease);
+    }
 
 private:
-    memory::GuestAddress begin_;
-    std::uint64_t size_{};
-    std::string_view exceeds_error_;
-    std::string_view full_error_;
+    [[nodiscard]] std::size_t MappedSize(const std::size_t size) const noexcept {
+        const auto page = static_cast<std::size_t>(space_->PageSize());
+        return ((size + page - 1U) / page) * page;
+    }
+    memory::AddressSpace* space_;
+    std::shared_ptr<Budget> budget_;
     std::vector<GuestStringLease> leases_;
 };
 
 class ModifiedUtf8Leases final {
 public:
     ModifiedUtf8Leases(JniEnvironment& environment, JniStringStore& strings,
-                       memory::AddressSpace& address_space)
+                       memory::AddressSpace& address_space, const JniGuestStringLimits limits,
+                       std::shared_ptr<GuestStringLeaseArena::Budget> budget)
         : environment_(&environment), strings_(&strings),
-          address_space_(&address_space),
-          arena_(kStringLeaseBegin, kStringLeaseSize,
-                 "JNI guest modified UTF-8 lease exceeds its arena",
-                 "JNI guest modified UTF-8 lease arena is full") {
-        address_space_->Map(
-            {kStringLeaseBegin, kStringLeaseSize},
-            memory::PageProtection::read | memory::PageProtection::write);
-    }
-
-    ~ModifiedUtf8Leases() {
-        std::scoped_lock lock(mutex_);
-        try {
-            address_space_->Unmap({kStringLeaseBegin, kStringLeaseSize});
-        } catch (...) {
-        }
-    }
+          address_space_(&address_space), limits_(limits), arena_(address_space, std::move(budget)) {}
 
     [[nodiscard]] std::uint32_t Acquire(const JniGuestCallFrame& frame) {
         const auto string = ResolveString(
             *environment_, frame, "GetStringUTFChars");
-        auto access = strings_->Acquire(
-            string, JniStringAccessKind::modified_utf8);
-        access.modified_utf8.push_back(0U);
+        const auto is_copy = memory::GuestAddress{frame.registers[2]};
+        if (!is_copy.IsNull()) address_space_->Validate({is_copy, 1U}, memory::AccessType::write, frame.thread_id);
+        const auto length = static_cast<std::size_t>(strings_->ModifiedUtf8Length(string));
+        if (length > limits_.maximum_modified_utf8_bytes)
+            throw JniGuestBindingError("JNI string modified UTF-8 resource budget exceeded");
         std::scoped_lock lock(mutex_);
+        const auto requested = length + 1U;
+        const auto pointer = arena_.Allocate(requested);
+        std::optional<JniStringAccess> access;
         try {
-            const auto pointer = arena_.Allocate(access.modified_utf8.size());
+            access = strings_->Acquire(string, JniStringAccessKind::modified_utf8);
+            access->modified_utf8.push_back(0U);
             address_space_->Write(
                 pointer,
-                std::as_bytes(std::span{access.modified_utf8}),
+                std::as_bytes(std::span{access->modified_utf8}),
                 frame.thread_id);
             if (frame.registers[2] != 0U) {
                 const std::byte copied{1};
@@ -177,12 +194,11 @@ public:
                     memory::GuestAddress{frame.registers[2]},
                     std::span{&copied, 1}, frame.thread_id);
             }
-            arena_.Publish(pointer, access.modified_utf8.size(), string,
-                           access.token);
+            arena_.Publish(pointer, requested, string, access->token);
             return pointer.Value();
         } catch (...) {
-            strings_->Release(string, access.token,
-                              JniStringAccessKind::modified_utf8);
+            arena_.Discard(pointer, requested);
+            if (access) strings_->Release(string, access->token, JniStringAccessKind::modified_utf8);
             throw;
         }
     }
@@ -204,6 +220,7 @@ private:
     JniStringStore* strings_{};
     memory::AddressSpace* address_space_{};
     mutable std::mutex mutex_;
+    JniGuestStringLimits limits_;
     GuestStringLeaseArena arena_;
 };
 
@@ -222,24 +239,10 @@ private:
 class Utf16Leases final {
 public:
     Utf16Leases(JniEnvironment& environment, JniStringStore& strings,
-                memory::AddressSpace& address_space)
+                memory::AddressSpace& address_space, const JniGuestStringLimits limits,
+                std::shared_ptr<GuestStringLeaseArena::Budget> budget)
         : environment_(&environment), strings_(&strings),
-          address_space_(&address_space),
-          arena_(kUtf16LeaseBegin, kUtf16LeaseSize,
-                 "JNI guest UTF-16 lease exceeds its arena",
-                 "JNI guest UTF-16 lease arena is full") {
-        address_space_->Map(
-            {kUtf16LeaseBegin, kUtf16LeaseSize},
-            memory::PageProtection::read | memory::PageProtection::write);
-    }
-
-    ~Utf16Leases() {
-        std::scoped_lock lock(mutex_);
-        try {
-            address_space_->Unmap({kUtf16LeaseBegin, kUtf16LeaseSize});
-        } catch (...) {
-        }
-    }
+          address_space_(&address_space), limits_(limits), arena_(address_space, std::move(budget)) {}
 
     [[nodiscard]] std::uint32_t Acquire(const JniGuestCallFrame& frame) {
         const auto string = ResolveString(*environment_, frame,
@@ -249,20 +252,25 @@ public:
             address_space_->Validate(
                 {is_copy, 1U}, memory::AccessType::write, frame.thread_id);
         }
-        auto access = strings_->Acquire(string, JniStringAccessKind::chars);
-        const auto bytes = EncodeUtf16(access.chars, true);
+        const auto length = static_cast<std::size_t>(strings_->Length(string));
+        if (length > limits_.maximum_utf16_code_units)
+            throw JniGuestBindingError("JNI string UTF-16 resource budget exceeded");
         std::scoped_lock lock(mutex_);
+        const auto requested = (length + 1U) * sizeof(JniChar);
+        const auto pointer = arena_.Allocate(requested);
+        std::optional<JniStringAccess> access;
         try {
-            const auto pointer = arena_.Allocate(bytes.size());
+            access = strings_->Acquire(string, JniStringAccessKind::chars);
+            const auto bytes = EncodeUtf16(access->chars, true);
             address_space_->Write(pointer, bytes, frame.thread_id);
             if (!is_copy.IsNull()) {
                 address_space_->Write8(is_copy, 1U, frame.thread_id);
             }
-            arena_.Publish(pointer, bytes.size(), string, access.token);
+            arena_.Publish(pointer, requested, string, access->token);
             return pointer.Value();
         } catch (...) {
-            strings_->Release(string, access.token,
-                              JniStringAccessKind::chars);
+            arena_.Discard(pointer, requested);
+            if (access) strings_->Release(string, access->token, JniStringAccessKind::chars);
             throw;
         }
     }
@@ -285,16 +293,20 @@ private:
     JniStringStore* strings_{};
     memory::AddressSpace* address_space_{};
     mutable std::mutex mutex_;
+    JniGuestStringLimits limits_;
     GuestStringLeaseArena arena_;
 };
 
 }  // namespace
 
-void BindJniGuestModifiedUtf8Slots(
+void BindJniGuestStringSlots(
     JniGuestCallDispatcher& dispatcher, JniEnvironment& environment,
-    JniStringStore& strings, memory::AddressSpace& address_space) {
+    JniStringStore& strings, memory::AddressSpace& address_space,
+    const JniGuestStringLimits limits) {
+    ValidateJniGuestStringLimits(limits);
+    const auto budget = std::make_shared<GuestStringLeaseArena::Budget>(limits.maximum_copy_bytes);
     const auto leases = std::make_shared<ModifiedUtf8Leases>(
-        environment, strings, address_space);
+        environment, strings, address_space, limits, budget);
     dispatcher.BindEnvironment(
         Slot("GetStringUTFLength"),
         [&environment, &strings](const JniGuestCallFrame& frame) {
@@ -334,24 +346,16 @@ void BindJniGuestModifiedUtf8Slots(
                 destination, std::as_bytes(std::span{bytes}), frame.thread_id);
             return JniGuestCallResult{};
         });
-}
-
-void BindJniGuestUtf16Slots(
-    JniGuestCallDispatcher& dispatcher, JniEnvironment& environment,
-    JniStringStore& strings, memory::AddressSpace& address_space) {
-    const auto leases = std::make_shared<Utf16Leases>(
-        environment, strings, address_space);
+    const auto utf16_leases = std::make_shared<Utf16Leases>(
+        environment, strings, address_space, limits, budget);
     dispatcher.BindEnvironment(
         Slot("NewString"),
         [&environment, &strings,
-         &address_space](const JniGuestCallFrame& frame) {
+         &address_space, limits](const JniGuestCallFrame& frame) {
             const auto length = std::bit_cast<JniSize>(frame.registers[2]);
-            if (length < 0 ||
-                static_cast<std::size_t>(length) >
-                    kMaximumUtf16CodeUnits) {
-                throw JniGuestBindingError(
-                    "NewString length is invalid");
-            }
+            if (length < 0) throw JniGuestBindingError("NewString length is invalid");
+            if (static_cast<std::size_t>(length) > limits.maximum_utf16_code_units)
+                throw JniGuestBindingError("JNI string UTF-16 resource budget exceeded");
             const auto count = static_cast<std::size_t>(length);
             const auto byte_size = count * sizeof(JniChar);
             const auto source = memory::GuestAddress{frame.registers[1]};
@@ -392,13 +396,13 @@ void BindJniGuestUtf16Slots(
         });
     dispatcher.BindEnvironment(
         Slot("GetStringChars"),
-        [leases](const JniGuestCallFrame& frame) {
-            return Word(leases->Acquire(frame));
+        [utf16_leases](const JniGuestCallFrame& frame) {
+            return Word(utf16_leases->Acquire(frame));
         });
     dispatcher.BindEnvironment(
         Slot("ReleaseStringChars"),
-        [leases](const JniGuestCallFrame& frame) {
-            leases->Release(frame);
+        [utf16_leases](const JniGuestCallFrame& frame) {
+            utf16_leases->Release(frame);
             return JniGuestCallResult{};
         });
     dispatcher.BindEnvironment(

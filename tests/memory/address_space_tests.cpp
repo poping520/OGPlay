@@ -330,7 +330,7 @@ TEST_CASE("VFS-05 mapping metadata tracks permissions replacement and holes") {
     REQUIRE(maps.size() == 3);
     CHECK(maps[1].range.Start().Value() == 0x11000);
     CHECK(maps[1].protection == PageProtection::none);
-    CHECK_THROWS_AS(space.DescribeMappings(2), std::length_error);
+    CHECK_THROWS_AS(static_cast<void>(space.DescribeMappings(2)), std::length_error);
     space.Unmap({GuestAddress{0x11000}, 0x1000});
     CHECK(space.DescribeMappings().size() == 2);
     space.ReplaceAnonymous({GuestAddress{0x11000}, 0x1000}, PageProtection::read | PageProtection::write);

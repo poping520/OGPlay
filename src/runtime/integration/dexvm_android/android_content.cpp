@@ -43,10 +43,10 @@ void UnbindLocalService(dx::Interpreter& vm, DexVmAndroidContext& context,
   const auto roots = vm.ProtectReferences(std::array{service.instance, service.binder, service.intent});
   context.local_services.erase(found);
   std::exception_ptr failure;
-  try { CallAndroidMethod(vm, service.instance, "onUnbind", "(Landroid/content/Intent;)Z",
-                          {dx::VmValue::Ref(service.intent)}); }
+  try { static_cast<void>(CallAndroidMethod(vm, service.instance, "onUnbind", "(Landroid/content/Intent;)Z",
+                                            {dx::VmValue::Ref(service.intent)})); }
   catch (...) { failure = std::current_exception(); }
-  try { CallAndroidMethod(vm, service.instance, "onDestroy", "()V"); }
+  try { static_cast<void>(CallAndroidMethod(vm, service.instance, "onDestroy", "()V")); }
   catch (...) { if (!failure) failure = std::current_exception(); }
   if (failure) std::rethrow_exception(failure);
 }
@@ -3259,10 +3259,10 @@ dx::VmCallOutcome DispatchLocalServiceBinding(dx::Interpreter& vm, DexVmAndroidC
       if (!ctor) UnsupportedLocalService(vm, "Service requires a no-argument constructor");
       const auto constructed = vm.Call(*ctor, std::array{dx::VmValue::Ref(instance)});
       if (constructed.exception.IsValid()) return constructed;
-      CallAndroidMethod(vm, instance, "attachBaseContext", "(Landroid/content/Context;)V",
-                        {dx::VmValue::Ref(context.application_base_context.IsValid()
-                            ? context.application_base_context : binding.owner)});
-      CallAndroidMethod(vm, instance, "onCreate", "()V");
+      static_cast<void>(CallAndroidMethod(vm, instance, "attachBaseContext", "(Landroid/content/Context;)V",
+                                          {dx::VmValue::Ref(context.application_base_context.IsValid()
+                                              ? context.application_base_context : binding.owner)}));
+      static_cast<void>(CallAndroidMethod(vm, instance, "onCreate", "()V"));
       if (!context.local_services.contains(binding.name)) return outcome;
       const auto binder = CallAndroidMethod(vm, instance, "onBind", "(Landroid/content/Intent;)Landroid/os/IBinder;",
                                            {dx::VmValue::Ref(binding.intent)}).ref;
@@ -3276,9 +3276,9 @@ dx::VmCallOutcome DispatchLocalServiceBinding(dx::Interpreter& vm, DexVmAndroidC
     if (current == context.local_service_bindings.end()) return outcome;
     current->delivered = true;
     if (service.binder.IsValid())
-      CallAndroidMethod(vm, binding.connection, "onServiceConnected",
+      static_cast<void>(CallAndroidMethod(vm, binding.connection, "onServiceConnected",
           "(Landroid/content/ComponentName;Landroid/os/IBinder;)V",
-          {dx::VmValue::Ref(binding.component), dx::VmValue::Ref(service.binder)});
+          {dx::VmValue::Ref(binding.component), dx::VmValue::Ref(service.binder)}));
   } catch (const dx::VmJavaThrow& error) {
     outcome.exception = error.existing.IsValid() ? error.existing : vm.MakeThrowable(error.descriptor, error.message);
     outcome.exception_class = vm.Model().ObjectClass(outcome.exception);

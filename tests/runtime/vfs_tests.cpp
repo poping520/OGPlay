@@ -984,14 +984,14 @@ TEST_CASE("VFS-05 generated files freeze each open and revoke safely") {
         return std::vector<std::byte>(4, static_cast<std::byte>(generation));
     });
     CHECK_FALSE(vfs.Stat("/proc/self/maps").writable);
-    CHECK_THROWS_AS(vfs.Open("/proc/self/maps", {.write = true}), VfsError);
-    CHECK_THROWS_AS(vfs.Open("/proc/self/maps", {.read = true, .create = true}), VfsError);
+    CHECK_THROWS_AS(static_cast<void>(vfs.Open("/proc/self/maps", {.write = true})), VfsError);
+    CHECK_THROWS_AS(static_cast<void>(vfs.Open("/proc/self/maps", {.read = true, .create = true})), VfsError);
     CHECK_THROWS_AS(vfs.RemoveFile("/proc/self/maps"), VfsError);
     CHECK_THROWS_AS(vfs.Rename("/proc/self/maps", "/proc/self/other"), VfsError);
     const auto first = vfs.Open("/proc/self/maps", {.read = true});
     generation = 2;
     const auto second = vfs.Open("/proc/self/maps", {.read = true});
-    CHECK_THROWS_AS(vfs.Open("/proc/self/maps", {.read = true}), VfsError);
+    CHECK_THROWS_AS(static_cast<void>(vfs.Open("/proc/self/maps", {.read = true})), VfsError);
     std::array<std::byte, 2> bytes{};
     CHECK(vfs.Read(first, bytes) == 2);
     CHECK(bytes[0] == std::byte{1});
@@ -1003,14 +1003,14 @@ TEST_CASE("VFS-05 generated files freeze each open and revoke safely") {
     CHECK(bytes[0] == std::byte{2});
     CHECK(vfs.DescriptorInfo(first).size == 4);
     registration.reset();
-    CHECK_THROWS_AS(vfs.Stat("/proc/self/maps"), VfsError);
-    CHECK_THROWS_AS(vfs.Open("/proc/self/maps", {.read = true}), VfsError);
+    CHECK_THROWS_AS(static_cast<void>(vfs.Stat("/proc/self/maps")), VfsError);
+    CHECK_THROWS_AS(static_cast<void>(vfs.Open("/proc/self/maps", {.read = true})), VfsError);
     CHECK(vfs.Read(first, bytes) == 2);
     CHECK(bytes[0] == std::byte{1});
     vfs.Close(first); vfs.Close(second);
     CHECK(vfs.IoStatistics().resource_memory_bytes == 0);
     auto bad = vfs.RegisterGeneratedReadOnly("/proc/self/maps", 2, [] { return std::vector<std::byte>(3); });
-    CHECK_THROWS_AS(vfs.Open("/proc/self/maps", {.read = true}), VfsError);
+    CHECK_THROWS_AS(static_cast<void>(vfs.Open("/proc/self/maps", {.read = true})), VfsError);
     CHECK(vfs.IoStatistics().resource_memory_bytes == 0);
 }
 
@@ -1030,7 +1030,7 @@ TEST_CASE("VFS-05 provider revocation waits for in-flight generation") {
     release.set_value();
     const auto fd = opening.get();
     retiring.get();
-    CHECK_THROWS_AS(vfs.Open("/proc/maps", {.read = true}), VfsError);
+    CHECK_THROWS_AS(static_cast<void>(vfs.Open("/proc/maps", {.read = true})), VfsError);
     std::array<std::byte, 1> bytes{};
     CHECK(vfs.Read(fd, bytes) == 1);
     CHECK(bytes[0] == std::byte{7});

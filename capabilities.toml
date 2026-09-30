@@ -582,8 +582,8 @@ note = "ADR-0071/VFS-01 将沙盒身份改为安装层显式 installation id，s
 
 [runtime.vfs]
 status = "complete"
-test = "tests/runtime/vfs_tests.cpp; tests/frontend/run_apk_vfs_tests.cpp; tests/loader/apk_tests.cpp; tests/dexvm/network_sqlite_tests.cpp"
-note = "ADR-0071/VFS-01..03 在既有事务挂载、alias 和目录语义上分离稳定节点、打开状态与 backing；新增 ReadAt/WriteAt、持有打开身份的宿主定位读、FD close/reuse 安全、节点级读写/截断排序及 VfsReadLease。统一 128 MiB 可注入资源预算覆盖可写快照、writable lazy 物化和 Deflate 块缓存；慢 backing/CRC/解压不持全局索引锁。APK/OBB stored/Deflate 通过严格 range reader 挂载；ADR-0074/VFS-04 增加标准路径下 OBB 原文件的宿主定位读，生产媒体不再依赖宿主路径"
+test = "tests/runtime/vfs_tests.cpp; tests/runtime/syscall_tests.cpp: VFS-06; tests/runtime/guest_cpu_environment_tests.cpp: VFS-06; tests/frontend/run_apk_vfs_tests.cpp; tests/loader/apk_tests.cpp; tests/dexvm/network_sqlite_tests.cpp"
+note = "ADR-0071/VFS-01..03 在既有事务挂载、alias 和目录语义上分离稳定节点、打开状态与 backing；新增 ReadAt/WriteAt、持有打开身份的宿主定位读、FD close/reuse 安全、节点级读写/截断排序及 VfsReadLease。统一 128 MiB 可注入资源预算覆盖可写快照、writable lazy 物化和 Deflate 块缓存；慢 backing/CRC/解压不持全局索引锁。APK/OBB stored/Deflate 通过严格 range reader 挂载；ADR-0074/VFS-04 增加标准路径下 OBB 原文件的宿主定位读，生产媒体不再依赖宿主路径。ADR-0086/VFS-06 增加按次读取的只读字符设备与 dup 共享打开状态；integration 向 /dev/urandom 与 /dev/random 注入 HAL OS CSPRNG，不模拟 Linux 熵池/阻塞/非 pipe readiness。原版 Mono 随机源异常已越过，真实存档闭环仍被后续 JNI NewStringUTF 首错阻塞"
 
 [runtime.jni]
 status = "complete"

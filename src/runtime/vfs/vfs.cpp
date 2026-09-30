@@ -227,6 +227,27 @@ void VirtualFileSystem::Impl::PutFile(const std::string_view path,
         files_.emplace(normalized, std::move(file));
     }
 
+VfsCharacterDeviceRegistration::~VfsCharacterDeviceRegistration() {
+    std::scoped_lock lock(state_->mutex);
+    state_->active = false;
+    state_->reader = {};
+}
+
+void VirtualFileSystem::Impl::RegisterReadOnlyCharacterDevice(
+    const std::string_view path, std::shared_ptr<VfsCharacterDeviceState> state) {
+    std::scoped_lock lock(mutex_);
+    const auto normalized = ResolvePath(path, std::nullopt, aliases_);
+    const auto found = files_.find(normalized);
+    if (found != files_.end() &&
+        (!found->second->character_device || found->second->character_device->active))
+        throw VfsError(kEexist, "VFS character device path already exists");
+    if (IsDirectoryLocked(normalized)) throw VfsError(kEisdir, "VFS device path is a directory");
+    auto file = std::make_shared<File>();
+    file->node_id = next_node_id_++;
+    file->character_device = std::move(state);
+    files_[normalized] = std::move(file);
+}
+
 void VirtualFileSystem::Impl::Mount(const VfsSource source, const std::string_view root,
                const std::span<const VfsMountEntry> entries) {
         if (source == VfsSource::runtime || entries.empty()) {
@@ -483,7 +504,7 @@ std::int32_t VirtualFileSystem::Impl::Open(const std::string_view path,
             throw VfsError(kEinval, "VFS open has no access mode");
         }
         if (options.directory) {
-            if (options.write || options.create || options.truncate) {
+            if (options.write || options.create || options.truncate || options.non_blocking) {
                 throw VfsError(kEinval,
                                "VFS directory open has file-only options");
             }
@@ -493,6 +514,7 @@ std::int32_t VirtualFileSystem::Impl::Open(const std::string_view path,
         const auto normalized = ResolvePath(path, working_directory_, aliases_);
         auto found = files_.find(normalized);
         if (found == files_.end()) {
+            if (options.non_blocking) throw VfsError(kEinval, "VFS nonblocking IO requires a character device");
             if (!options.create) throw VfsError(kEnoent, "VFS file not found");
             if (IsDirectoryLocked(normalized)) {
                 throw VfsError(kEisdir, "VFS path is a directory");
@@ -515,6 +537,14 @@ std::int32_t VirtualFileSystem::Impl::Open(const std::string_view path,
             MarkOverlayLocked(normalized, *found->second);
             SetNodeSizeDirtyLocked(*found->second, 0,
                                    !found->second->overlay_path.empty());
+        }
+        if (options.non_blocking && !found->second->character_device)
+            throw VfsError(kEinval, "VFS nonblocking IO requires a character device");
+        if (found->second->character_device) {
+            if (!found->second->character_device->active)
+                throw VfsError(kEnoent, "VFS character device retired");
+            if (options.write || options.create || options.truncate)
+                throw VfsError(kEacces, "VFS character device is read-only");
         }
         if (options.write && !found->second->writable) {
             throw VfsError(kEacces, "VFS file is read-only");
@@ -621,6 +651,21 @@ std::size_t VirtualFileSystem::Impl::Read(const std::int32_t descriptor,
         if (open->directory) throw VfsError(kEisdir, "VFS descriptor is a directory");
         if (!open->readable) throw VfsError(kEbadf, "VFS descriptor is not readable");
         auto file = open->file;
+        if (file->character_device) {
+            const auto state = file->character_device;
+            std::scoped_lock device_lock(state->mutex);
+            if (!state->active) throw VfsError(kEio, "VFS character device retired");
+            if (destination.empty()) return 0;
+            try {
+                const auto count = state->reader(destination);
+                if (count > destination.size()) throw VfsError(kEio, "VFS device reader exceeded buffer");
+                return count;
+            } catch (const VfsError&) {
+                throw;
+            } catch (const std::exception& error) {
+                throw VfsError(kEio, std::string("VFS device read failed: ") + error.what());
+            }
+        }
         std::scoped_lock file_lock(*file->mutex);
         const auto available = open->offset >= file->size ? 0 : file->size - open->offset;
         const auto count = static_cast<std::size_t>(
@@ -661,6 +706,7 @@ std::size_t VirtualFileSystem::Impl::ReadAt(
         std::scoped_lock operation(open->mutex);
         if (open->directory) throw VfsError(kEisdir, "VFS descriptor is a directory");
         if (open->pipe) throw VfsError(kEspipe, "VFS pipe does not support positioned IO");
+        if (open->file->character_device) throw VfsError(kEspipe, "VFS character device does not support positioned IO");
         if (!open->readable) throw VfsError(kEbadf, "VFS descriptor is not readable");
         auto file = open->file;
         std::scoped_lock file_lock(*file->mutex);
@@ -801,6 +847,7 @@ std::shared_ptr<const VfsReadLease> VirtualFileSystem::Impl::CaptureReadLease(
     if (!open->readable) throw VfsError(kEbadf, "VFS descriptor is not readable");
     auto file = open->file;
     std::scoped_lock file_lock(*file->mutex);
+    if (file->character_device) throw VfsError(95, "VFS character device has no read lease");
     if (offset > file->size) throw VfsError(kEinval, "VFS lease offset is past EOF");
     const auto available = file->size - offset;
     const auto length = requested_length == std::numeric_limits<std::uint64_t>::max()
@@ -860,6 +907,7 @@ std::uint64_t VirtualFileSystem::Impl::Seek(const std::int32_t descriptor,
             return result;
         }
         if (open->pipe) throw VfsError(kEspipe, "VFS pipe is not seekable");
+        if (open->file->character_device) throw VfsError(kEspipe, "VFS character device is not seekable");
         std::uint64_t base{};
         if (whence == VfsSeekWhence::current) base = open->offset;
         if (whence == VfsSeekWhence::end) {
@@ -903,6 +951,14 @@ void VirtualFileSystem::Impl::Close(const std::int32_t descriptor) {
         std::scoped_lock lock(mutex_);
         FlushFileLocked(*open->file);
     }
+
+std::int32_t VirtualFileSystem::Impl::Duplicate(const std::int32_t descriptor) {
+    std::scoped_lock lock(mutex_);
+    auto open = FindDescriptor(descriptor);
+    const auto duplicate = AllocateDescriptor();
+    descriptors_.emplace(duplicate, std::move(open));
+    return duplicate;
+}
 
 void VirtualFileSystem::Impl::Materialize(File& file) {
         if (!file.read_all) return;
@@ -1026,6 +1082,21 @@ std::string VirtualFileSystem::CanonicalPath(const std::string_view path) const 
 }
 VfsFileInfo VirtualFileSystem::Stat(const std::string_view path) const {
     return impl_->Stat(path);
+}
+
+std::unique_ptr<VfsCharacterDeviceRegistration> VirtualFileSystem::RegisterReadOnlyCharacterDevice(
+    const std::string_view path, const std::uint64_t device_number, VfsCharacterReader reader) {
+    if (!reader) throw VfsError(kEinval, "VFS character device requires a reader");
+    auto state = std::make_shared<VfsCharacterDeviceState>();
+    state->reader = std::move(reader);
+    state->device_number = device_number;
+    auto registration = std::unique_ptr<VfsCharacterDeviceRegistration>(new VfsCharacterDeviceRegistration(state));
+    impl_->RegisterReadOnlyCharacterDevice(path, std::move(state));
+    return registration;
+}
+
+std::int32_t VirtualFileSystem::Duplicate(const std::int32_t descriptor) {
+    return impl_->Duplicate(descriptor);
 }
 std::vector<VfsDirectoryEntry> VirtualFileSystem::ListDirectory(
     const std::string_view path) const {

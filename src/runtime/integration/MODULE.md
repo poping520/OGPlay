@@ -29,6 +29,12 @@ Android API 的详细行为以 [dexvm_android](dexvm_android/MODULE.md)为准；
 
 ## 进程与库加载
 
+- AndroidGuestProcess 注册 `/dev/urandom` (1:9) 与 `/dev/random` (1:8)，通过 VFS reader
+  注入 `hal::FillSecureRandom`；每次读取生成新的完整随机字节，失败由 VFS 映射 EIO。
+  两者均使用宿主 OS CSPRNG，不模拟 Linux 熵池；O_NONBLOCK 不引入 EAGAIN/熵量等待。
+  支持边界与生命周期见 [ADR-0086](../../../docs/adr/runtime.md#adr-0086)。
+  `--diag` 下设备 open/read/close 只记录路径、flags、字节数及返回值，不记录随机内容。
+
 - PreflightAndroidGuestLink 只用生产 Bionic namespace、API-sealed Virtual SO 元数据和 loader
   检查映射/重定位；不创建 boundary runtime、ANGLE 或 surface，缺导入明确失败。
 - InitializeApi19GuestProcess 事务建立 TLS/thread-info/preinit、独立环境页、4 MiB 栈、

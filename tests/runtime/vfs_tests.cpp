@@ -29,6 +29,108 @@ std::vector<std::byte> ReadLease(
 
 }  // namespace
 
+TEST_CASE("VFS-06 character devices read fresh bytes and share descriptor lifetime") {
+    using namespace ogplay::runtime;
+    VirtualFileSystem vfs;
+    unsigned calls{};
+    auto device = vfs.RegisterReadOnlyCharacterDevice("/dev/urandom", 0x109, [&](auto bytes) {
+        ++calls;
+        std::ranges::fill(bytes, static_cast<std::byte>(calls));
+        return bytes.size();
+    });
+    CHECK(vfs.Stat("/dev/urandom").is_character_device);
+    CHECK(vfs.Stat("/dev/urandom").device_number == 0x109);
+    CHECK(vfs.Stat("/dev/urandom").size == 0);
+    const auto fd = vfs.Open("/dev/urandom", {.read = true});
+    const auto dup = vfs.Duplicate(fd);
+    std::array<std::byte, 8192> bytes{};
+    for (unsigned i = 1; i <= 4; ++i) {
+        CHECK(vfs.Read(i % 2 ? fd : dup, bytes) == bytes.size());
+        CHECK(bytes.front() == static_cast<std::byte>(i));
+        CHECK(bytes.back() == static_cast<std::byte>(i));
+    }
+    CHECK(vfs.Read(fd, {}) == 0);
+    CHECK(calls == 4);
+    const auto fails = [&](auto operation, int expected) {
+        try { operation(); FAIL("operation succeeded"); }
+        catch (const VfsError& error) { CHECK(error.ErrorNumber() == expected); }
+    };
+    fails([&] { static_cast<void>(vfs.Seek(fd, 0, VfsSeekWhence::begin)); }, 29);
+    fails([&] { static_cast<void>(vfs.ReadAt(fd, 0, bytes)); }, 29);
+    fails([&] { static_cast<void>(vfs.CaptureReadLease(fd, 0)); }, 95);
+    fails([&] { vfs.Flush(fd); }, 22);
+    fails([&] { vfs.Truncate(fd, 0); }, 9);
+    fails([&] { static_cast<void>(vfs.Write(fd, bytes)); }, 9);
+    fails([&] { static_cast<void>(vfs.Open("/dev/urandom", {.write = true})); }, 13);
+    fails([&] { static_cast<void>(vfs.Open("/dev/urandom", {.read = true, .truncate = true})); }, 13);
+    fails([&] { vfs.RemoveFile("/dev/urandom"); }, 13);
+    vfs.PutFile("/dev/other", bytes, true);
+    fails([&] { vfs.Rename("/dev/other", "/dev/urandom"); }, 13);
+    vfs.Close(fd);
+    const auto reused = vfs.Open("/dev/other", {.read = true});
+    CHECK(reused == fd);
+    CHECK(vfs.Read(dup, bytes) == bytes.size());
+    CHECK(bytes.front() == std::byte{5});
+    device.reset();
+    fails([&] { static_cast<void>(vfs.Stat("/dev/urandom")); }, 2);
+    fails([&] { static_cast<void>(vfs.Read(dup, bytes)); }, 5);
+    auto replacement = vfs.RegisterReadOnlyCharacterDevice("/dev/urandom", 0x109,
+        [](auto output) { std::ranges::fill(output, std::byte{42}); return output.size(); });
+    const auto new_fd = vfs.Open("/dev/urandom", {.read = true});
+    CHECK(vfs.Read(new_fd, bytes) == bytes.size());
+    CHECK(bytes.front() == std::byte{42});
+    fails([&] { static_cast<void>(vfs.Read(dup, bytes)); }, 5);
+    vfs.Close(dup);
+    vfs.Close(reused);
+    vfs.Close(new_fd);
+    CHECK(vfs.IoStatistics().resource_memory_bytes == 0);
+}
+
+TEST_CASE("VFS-06 character device errors and short reads propagate") {
+    using namespace ogplay::runtime;
+    VirtualFileSystem vfs;
+    unsigned attempt{};
+    auto device = vfs.RegisterReadOnlyCharacterDevice("/dev/test", 0, [&](auto bytes) -> std::size_t {
+        if (++attempt == 1) throw std::runtime_error("OS random failure");
+        if (attempt == 2) throw VfsError(11, "temporarily unavailable");
+        if (attempt == 3) return bytes.size() + 1;
+        if (attempt == 4) return 2;
+        return bytes.size();
+    });
+    const auto fd = vfs.Open("/dev/test", {.read = true});
+    std::array<std::byte, 8> bytes{};
+    for (const auto expected : {5, 11, 5}) {
+        try { static_cast<void>(vfs.Read(fd, bytes)); FAIL("read succeeded"); }
+        catch (const VfsError& error) { CHECK(error.ErrorNumber() == expected); }
+    }
+    CHECK(vfs.Read(fd, bytes) == 2);
+    CHECK(vfs.Read(fd, bytes) == bytes.size());
+    vfs.Close(fd);
+}
+
+TEST_CASE("VFS-06 device read releases global lock and retirement waits") {
+    using namespace ogplay::runtime;
+    VirtualFileSystem vfs;
+    std::promise<void> entered, release;
+    auto ready = release.get_future().share();
+    auto device = vfs.RegisterReadOnlyCharacterDevice("/dev/test", 0, [&](auto bytes) {
+        entered.set_value(); ready.wait(); return bytes.size();
+    });
+    const auto fd = vfs.Open("/dev/test", {.read = true});
+    auto read = std::async(std::launch::async, [&] { std::array<std::byte, 1> b{}; return vfs.Read(fd, b); });
+    entered.get_future().wait();
+    auto metadata = std::async(std::launch::async, [&] { return vfs.Stat("/dev/test"); });
+    const auto metadata_status = metadata.wait_for(std::chrono::seconds(1));
+    auto retire = std::async(std::launch::async, [&] { device.reset(); });
+    const auto retirement_status = retire.wait_for(std::chrono::milliseconds(20));
+    release.set_value();
+    CHECK(metadata_status == std::future_status::ready);
+    CHECK(retirement_status == std::future_status::timeout);
+    CHECK(read.get() == 1);
+    retire.get();
+    vfs.Close(fd);
+}
+
 TEST_CASE("VFS indexes Android paths case insensitively and isolates offsets") {
     ogplay::runtime::VirtualFileSystem vfs;
     const std::array contents{std::byte{1}, std::byte{2}, std::byte{3}};

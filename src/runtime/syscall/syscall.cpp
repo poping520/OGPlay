@@ -699,9 +699,11 @@ void BindAndroidFileSyscalls(A32SyscallDispatcher& dispatcher,
         constexpr std::uint32_t kNoFollow = 0x8000;
         constexpr std::uint32_t kLargeFile = 0x20000;
         constexpr std::uint32_t kCloseOnExec = 0x80000;
+        constexpr std::uint32_t kNoControllingTerminal = 0x100;
+        constexpr std::uint32_t kNonBlocking = 0x800;
         constexpr std::uint32_t kKnown = 3 | kCreate | kTruncate |
                                          kLargeFile | kDirectory | kNoFollow |
-                                         kCloseOnExec;
+                                         kCloseOnExec | kNoControllingTerminal | kNonBlocking;
         if ((flags & ~kKnown) != 0 || (flags & 3U) == 3U) {
             throw VfsError(kEinval, "unsupported Android open flags");
         }
@@ -710,7 +712,8 @@ void BindAndroidFileSyscalls(A32SyscallDispatcher& dispatcher,
                               access == 1 || access == 2,
                               (flags & kCreate) != 0,
                               (flags & kTruncate) != 0,
-                              (flags & kDirectory) != 0};
+                              (flags & kDirectory) != 0,
+                              (flags & kNonBlocking) != 0};
     };
     struct DiagnosticDescriptors final {
         std::mutex mutex;
@@ -765,6 +768,13 @@ void BindAndroidFileSyscalls(A32SyscallDispatcher& dispatcher,
         });
     dispatcher.Implement(3, [&vfs, &address_space](const A32SyscallFrame& frame) {
         return syscall_detail::TransferFile(vfs, address_space, frame, false);
+    });
+    dispatcher.Implement(41, [&vfs](const A32SyscallFrame& frame) {
+        try {
+            return vfs.Duplicate(std::bit_cast<std::int32_t>(frame.arguments[0]));
+        } catch (const VfsError& error) {
+            return -error.ErrorNumber();
+        }
     });
     const auto emit = [&address_space, io_sink, diagnostic_descriptors](
                           const A32SyscallFrame& frame,

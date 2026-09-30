@@ -25,6 +25,7 @@
 #include "ogplay/cpu/dynarmic.h"
 #include "ogplay/cpu/execution_budget.h"
 #include "ogplay/hal/clock.h"
+#include "ogplay/hal/host_environment.h"
 #include "ogplay/runtime/bionic/bionic_profile.h"
 #include "ogplay/runtime/bionic/bionic_tls.h"
 #include "ogplay/runtime/debug/stall_diagnostics.h"
@@ -49,6 +50,7 @@
 #include "runtime/integration/nested_guest_cpu_pool.h"
 #include "runtime/integration/api19_linker_view.h"
 #include "runtime/integration/guest_cpu_environment.h"
+#include "runtime/syscall/guest_path_reader.h"
 
 namespace ogplay::runtime {
 namespace {
@@ -721,6 +723,12 @@ public:
                 "Android guest proc facts are invalid");
         }
         InstallApi19ProcFiles(*filesystem_, request.proc_facts);
+        const auto random_reader = [](const std::span<std::byte> bytes) {
+            hal::FillSecureRandom(bytes);
+            return bytes.size();
+        };
+        urandom_ = filesystem_->RegisterReadOnlyCharacterDevice("/dev/urandom", 0x109U, random_reader);
+        random_ = filesystem_->RegisterReadOnlyCharacterDevice("/dev/random", 0x108U, random_reader);
         cpu_environment_.Publish(*filesystem_);
         proc_maps_ = filesystem_->RegisterGeneratedReadOnly(
             "/proc/self/maps", 1024U * 1024U,
@@ -1710,11 +1718,43 @@ public:
                 lifecycle_.SetThreadPointer(thread_id, pointer);
                 return true;
             });
+        const auto device_paths = std::make_shared<std::map<std::int32_t, std::string>>();
         dispatcher_.SetObserver(
-            [this](const A32SyscallFrame& frame,
+            [this, device_paths](const A32SyscallFrame& frame,
                    const std::int32_t result) {
                 if ((frame.number == 3 || frame.number == 4 || frame.number == 6 || frame.number == 146) && result >= 0) {
                     boundary_.NotifyFileWrite();
+                }
+                // Diagnostic-only metadata; never expose random bytes or let
+                // a failed diagnostic read replace the original syscall result.
+                if (!diagnostics_ || !logger_) return;
+                try {
+                    std::string path;
+                    auto fd = static_cast<std::int32_t>(frame.arguments[0]);
+                    if (frame.number == 5 || frame.number == 322) {
+                        path = syscall_detail::ReadGuestPath(address_space_,
+                            frame.arguments[frame.number == 5 ? 0 : 1]);
+                        if (!path.starts_with("/dev/")) return;
+                        fd = result;
+                        if (result >= 0) (*device_paths)[fd] = path;
+                    } else if (frame.number == 3 || frame.number == 6) {
+                        const auto found = device_paths->find(fd);
+                        if (found == device_paths->end()) return;
+                        path = found->second;
+                        if (frame.number == 6 && result == 0) device_paths->erase(found);
+                    } else {
+                        return;
+                    }
+                    logger_->Write(core::LogLevel::info, "guest.device_io",
+                        "native device syscall result", {.guest_thread = frame.thread_id},
+                        {{"path", path}, {"syscall", static_cast<std::uint64_t>(frame.number)},
+                         {"fd", static_cast<std::int64_t>(fd)},
+                         {"flags", static_cast<std::uint64_t>(frame.number == 5 ? frame.arguments[1] : frame.number == 322 ? frame.arguments[2] : 0)},
+                         {"requested", static_cast<std::uint64_t>(frame.number == 3 ? frame.arguments[2] : 0)},
+                         {"result", static_cast<std::int64_t>(result)}},
+                        {.mode = core::RateLimitMode::none});
+                } catch (const std::exception&) {
+                    // The syscall outcome remains authoritative.
                 }
             });
         if (diagnostics_) {
@@ -2164,6 +2204,7 @@ private:
     // Declared after address_space_: provider revocation precedes memory teardown,
     // including constructor failure. Callback captures only the address space.
     std::unique_ptr<VfsGeneratedFileRegistration> proc_maps_;
+    std::unique_ptr<VfsCharacterDeviceRegistration> urandom_, random_;
     GuestCpuEnvironment cpu_environment_;
     memory::CheckedMemoryBus memory_bus_{address_space_};
     AndroidBoundaryHle boundary_;

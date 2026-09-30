@@ -24,6 +24,20 @@ namespace ogplay::runtime {
 
 class SandboxStore;
 struct VfsGeneratedFileState;
+struct VfsCharacterDeviceState;
+using VfsCharacterReader = std::function<std::size_t(std::span<std::byte>)>;
+// Retirement waits for in-flight reads; retained descriptors then fail with EIO.
+class VfsCharacterDeviceRegistration final {
+public:
+    ~VfsCharacterDeviceRegistration();
+    VfsCharacterDeviceRegistration(const VfsCharacterDeviceRegistration&) = delete;
+    VfsCharacterDeviceRegistration& operator=(const VfsCharacterDeviceRegistration&) = delete;
+private:
+    friend class VirtualFileSystem;
+    explicit VfsCharacterDeviceRegistration(std::shared_ptr<VfsCharacterDeviceState> state)
+        : state_(std::move(state)) {}
+    std::shared_ptr<VfsCharacterDeviceState> state_;
+};
 // Revokes the provider synchronously on destruction. Open snapshots remain valid.
 class VfsGeneratedFileRegistration final {
 public:
@@ -52,6 +66,7 @@ struct VfsOpenOptions final {
     bool create{};
     bool truncate{};
     bool directory{};
+    bool non_blocking{};
 };
 
 // sandbox: backed by the per-title persistent overlay (ADR-0020).
@@ -116,11 +131,14 @@ struct VfsFileInfo final {
     VfsSource source{VfsSource::runtime};
     bool is_directory{};
     std::uint64_t generation{};
+    bool is_character_device{};
+    std::uint64_t device_number{};
 };
 
 struct VfsDirectoryEntry final {
     std::string name;
     bool is_directory{};
+    bool is_character_device{};
 
     bool operator==(const VfsDirectoryEntry&) const = default;
 };
@@ -194,6 +212,10 @@ public:
     // Caller bounds allocation to maximum_bytes; the VFS reserves that budget first.
     [[nodiscard]] std::unique_ptr<VfsGeneratedFileRegistration> RegisterGeneratedReadOnly(
         std::string_view path, std::uint64_t maximum_bytes, VfsReadOnlyLoader provider);
+    // Reader runs per non-empty Read outside global/node locks. No EOF is
+    // inferred from st_size (zero); positioned IO and leases are unsupported.
+    [[nodiscard]] std::unique_ptr<VfsCharacterDeviceRegistration> RegisterReadOnlyCharacterDevice(
+        std::string_view path, std::uint64_t device_number, VfsCharacterReader reader);
     void PutFile(std::string_view path, std::span<const std::byte> contents,
                  bool writable);
     void Mount(VfsSource source, std::string_view root,
@@ -275,6 +297,8 @@ public:
     void Flush(std::int32_t descriptor);
     void FlushAll();
     void Close(std::int32_t descriptor);
+    // Shares the open state and its operation lock, as Linux dup does.
+    [[nodiscard]] std::int32_t Duplicate(std::int32_t descriptor);
 
 private:
     class Impl;

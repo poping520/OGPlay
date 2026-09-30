@@ -49,6 +49,12 @@ struct VfsGeneratedFileState final {
     VfsReadOnlyLoader provider;
     std::uint64_t maximum_bytes{};
 };
+struct VfsCharacterDeviceState final {
+    std::mutex mutex;
+    std::atomic_bool active{true};
+    VfsCharacterReader reader;
+    std::uint64_t device_number{};
+};
 
 struct File final {
     File() = default;
@@ -67,6 +73,7 @@ struct File final {
     // and leases must never use a pathname as content identity.
     std::uint64_t node_id{};
     std::shared_ptr<VfsGeneratedFileState> generated;
+    std::shared_ptr<VfsCharacterDeviceState> character_device;
     std::vector<std::byte> contents;
     std::uint64_t size{};
     VfsReadOnlyLoader read_all;
@@ -132,6 +139,7 @@ public:
     }
     // ---- mounts and files (vfs.cpp) -------------------------------------
     void RegisterGeneratedReadOnly(std::string_view path, std::shared_ptr<VfsGeneratedFileState> state);
+    void RegisterReadOnlyCharacterDevice(std::string_view path, std::shared_ptr<VfsCharacterDeviceState> state);
     void PutFile(std::string_view path, std::span<const std::byte> contents,
                  bool writable);
     void Mount(VfsSource source, std::string_view root,
@@ -171,6 +179,7 @@ public:
                                      std::int64_t offset,
                                      VfsSeekWhence whence);
     void Close(std::int32_t descriptor);
+    [[nodiscard]] std::int32_t Duplicate(std::int32_t descriptor);
 
     // ---- directories, metadata and the sandbox (vfs_sandbox.cpp) --------
     [[nodiscard]] VfsFileInfo Stat(std::string_view path) const;

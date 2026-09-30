@@ -60,6 +60,10 @@ exit/exit_group/clear-child-tid 所需的 guest 线程生命周期状态。
 
 ## 文件元数据与目录（ADR-0020）
 
+VFS 字符设备使用 ARM stat64 的 S_IFCHR、st_rdev（偏移 32）与 DT_CHR；文件大小为 0
+不限制 read。open 放行 O_NOCTTY（VFS 没有控制终端）及字符设备 O_NONBLOCK，普通文件
+的非阻塞 IO 仍明确 EINVAL。dup(41) 共享 VFS 打开状态，其他复制/fcntl 形式仍按账本失败。
+
 `BindAndroidFileMetadataSyscalls`（`syscall_file_metadata.cpp`）把
 mkdir/rmdir/unlink/rename 及其 `*at` 变体、stat64 家族、`getdents64`、
 `access`、`ftruncate`、`fsync`/`fdatasync` 与 `pread64`/`pwrite64` 绑到与

@@ -1265,3 +1265,73 @@ TEST_CASE("VFS-05 generated proc files share ARM access open and read semantics"
     CHECK(fixture.Call(5, {0x20000, 0, 0, 0, 0, 0}) == -2);
     CHECK(fixture.Call(6, {static_cast<std::uint32_t>(fd), 0, 0, 0, 0, 0}) == 0);
 }
+
+TEST_CASE("VFS-06 ARM random device flags metadata and errors") {
+    MetadataSyscallFixture fixture;
+    unsigned reads{};
+    auto device = fixture.vfs.RegisterReadOnlyCharacterDevice("/dev/urandom", 0x109,
+        [&](auto bytes) -> std::size_t {
+            ++reads;
+            if (reads == 3) throw std::runtime_error("OS entropy unavailable");
+            std::ranges::fill(bytes, static_cast<std::byte>(reads));
+            return bytes.size();
+        });
+    fixture.WriteString(0x20000, "/dev/urandom");
+    // Observed Mono flags: O_RDONLY | O_NOCTTY | O_NONBLOCK | O_LARGEFILE.
+    const auto fd = fixture.Call(5, {0x20000, 0x20900, 0, 0, 0, 0});
+    REQUIRE(fd >= 3);
+    const auto raw = static_cast<std::uint32_t>(fd);
+    CHECK(fixture.Call(197, {raw, 0x20200, 0, 0, 0, 0}) == 0);
+    CHECK(fixture.ReadField(0x20200, 16, 4) == 0020444);
+    CHECK(fixture.ReadField(0x20200, 32, 8) == 0x109);
+    CHECK(fixture.ReadField(0x20200, 48, 8) == 0);
+    CHECK(fixture.ReadField(0x20200, 64, 8) == 0);
+    CHECK(fixture.Call(195, {0x20000, 0x20200, 0, 0, 0, 0}) == 0);
+    CHECK(fixture.ReadField(0x20200, 16, 4) == 0020444);
+    CHECK(fixture.Call(3, {raw, 0x20300, 128, 0, 0, 0}) == 128);
+    CHECK(fixture.memory.Read8(GuestAddress{0x20300}) == 1);
+    const auto duplicate = fixture.Call(41, {raw, 0, 0, 0, 0, 0});
+    REQUIRE(duplicate > fd);
+    CHECK(fixture.Call(6, {raw, 0, 0, 0, 0, 0}) == 0);
+    const auto dup = static_cast<std::uint32_t>(duplicate);
+    CHECK(fixture.Call(3, {dup, 0x20300, 128, 0, 0, 0}) == 128);
+    CHECK(fixture.memory.Read8(GuestAddress{0x20300}) == 2);
+    CHECK(fixture.Call(3, {dup, 0x20300, 128, 0, 0, 0}) == -5);
+    CHECK(fixture.memory.Read8(GuestAddress{0x20300}) == 2);
+    CHECK(fixture.Call(3, {dup, 0xdead0000, 128, 0, 0, 0}) == -14);
+    CHECK(reads == 3);
+    CHECK(fixture.Call(19, {dup, 0, 0, 0, 0, 0}) == -29);
+    CHECK(fixture.Call(180, {dup, 0x20300, 128, 0, 0, 0}) == -29);
+    CHECK(fixture.Call(118, {dup, 0, 0, 0, 0, 0}) == -22);
+    CHECK(fixture.Call(5, {0x20000, 0x20901, 0, 0, 0, 0}) == -13);
+    CHECK(fixture.Call(5, {0x20000, 0x20940, 0, 0, 0, 0}) == -13);
+    CHECK(fixture.Call(5, {0x20000, 0x200000, 0, 0, 0, 0}) == -22);
+    fixture.WriteString(0x20000, "/dev");
+    const auto dir = fixture.Call(5, {0x20000, 0x4000, 0, 0, 0, 0});
+    REQUIRE(dir >= 3);
+    CHECK(fixture.Call(217, {static_cast<std::uint32_t>(dir), 0x20400, 128, 0, 0, 0}) > 0);
+    CHECK(fixture.memory.Read8(GuestAddress{0x20400 + 18}) == 2); // DT_CHR
+    device.reset();
+    CHECK(fixture.Call(3, {dup, 0x20300, 128, 0, 0, 0}) == -5);
+    CHECK(fixture.Call(6, {dup, 0, 0, 0, 0, 0}) == 0);
+    CHECK(fixture.Call(6, {static_cast<std::uint32_t>(dir), 0, 0, 0, 0, 0}) == 0);
+}
+
+TEST_CASE("VFS-06 ARM device transfers preserve completed bytes on later failure") {
+    MetadataSyscallFixture fixture;
+    fixture.memory.Map({GuestAddress{0x30000}, 128U * 1024U},
+        ogplay::memory::PageProtection::read | ogplay::memory::PageProtection::write);
+    unsigned calls{};
+    auto device = fixture.vfs.RegisterReadOnlyCharacterDevice("/dev/test", 0,
+        [&](auto bytes) -> std::size_t {
+            if (++calls == 2) throw std::runtime_error("random failed");
+            std::ranges::fill(bytes, std::byte{0xa5}); return bytes.size();
+        });
+    fixture.WriteString(0x20000, "/dev/test");
+    const auto fd = fixture.Call(322, {0xffffff9c, 0x20000, 0x20900, 0, 0, 0});
+    REQUIRE(fd >= 3);
+    CHECK(fixture.Call(3, {static_cast<std::uint32_t>(fd), 0x30000, 128U * 1024U, 0, 0, 0}) == 65536);
+    CHECK(fixture.memory.Read8(GuestAddress{0x3ffff}) == 0xa5);
+    CHECK(fixture.memory.Read8(GuestAddress{0x40000}) == 0);
+    CHECK(fixture.Call(6, {static_cast<std::uint32_t>(fd), 0, 0, 0, 0, 0}) == 0);
+}

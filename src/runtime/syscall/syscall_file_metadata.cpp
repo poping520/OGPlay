@@ -69,7 +69,9 @@ void PutLittleEndian(const std::span<std::byte> out, const std::size_t offset,
     // Permission bits come from the VFS writable fact rather than being
     // invented; timestamps stay 0 because the only time source is the
     // unified Clock and the VFS does not carry one (04 §2).
-    std::uint32_t mode = info.is_directory ? kModeDirectory : kModeRegular;
+    std::uint32_t mode = info.is_directory ? kModeDirectory :
+                         info.is_character_device ? 0020000U : kModeRegular;
+    PutLittleEndian(bytes, 32, info.device_number, 8);  // ARM st_rdev
     mode |= 0444U;
     if (info.writable) mode |= 0222U;
     if (info.is_directory) mode |= 0111U;
@@ -298,7 +300,7 @@ void BindAndroidFileMetadataSyscalls(A32SyscallDispatcher& dispatcher,
             PutLittleEndian(span, base + 8, base + record, 8);  // d_off
             PutLittleEndian(span, base + 16, record, 2);      // d_reclen
             span[base + 18] = static_cast<std::byte>(
-                entry.is_directory ? kDirentTypeDirectory : kDirentTypeRegular);
+                entry.is_directory ? kDirentTypeDirectory : entry.is_character_device ? 2 : kDirentTypeRegular);
             for (std::size_t index = 0; index < entry.name.size(); ++index) {
                 span[base + kDirentHeaderSize + index] =
                     static_cast<std::byte>(entry.name[index]);

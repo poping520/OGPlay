@@ -181,6 +181,7 @@ AndroidIntrinsicCatalog(const std::shared_ptr<DexVmAndroidContext> &context) {
       Declare_android_opengl_GLSurfaceView_EGLContextFactory(context),
       Declare_android_opengl_GLSurfaceView_Renderer(context),
       Declare_android_opengl_GLSurfaceView(context),
+      Declare_android_opengl_GLSurfaceView_GLThread(context),
       Declare_android_opengl_GLES10(context),
       Declare_android_opengl_GLES10Ext(context),
       Declare_android_opengl_GLES11(context),

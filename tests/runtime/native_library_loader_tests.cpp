@@ -10,6 +10,8 @@
 #include <cstddef>
 #include <cstdint>
 #include <fstream>
+#include <future>
+#include <thread>
 #include <iterator>
 #include <memory>
 #include <string>
@@ -5138,9 +5140,10 @@ TEST_CASE("DVM-197 renderer EGL policies establish current context before events
     namespace dx = runtime::dexvm;
     using runtime::android_intrinsics::CallAndroidMethod;
     for (const auto backend : {dx::InterpreterBackend::switch_dispatch, dx::InterpreterBackend::threaded}) {
-      for (const int mode : {0, 1, 2}) {
+      for (const int mode : {0, 1, 2, 3}) {
         const bool custom = mode != 0;
         const bool reject_context = mode == 2;
+        const bool reject_draw = mode == 3;
         OrchestratedApp fixture("fixture.LauncherActivity", true, false, {}, {}, true, backend);
         fixture.app->StartApplication();
         REQUIRE(fixture.app->StartLauncherActivity().state == session::LifecycleRunState::running);
@@ -5162,7 +5165,8 @@ TEST_CASE("DVM-197 renderer EGL policies establish current context before events
         const auto policy_type = linker.ResolveDescriptor("Lfixture/RendererPolicy;");
         const auto policy = vm.Model().NewInstance(policy_type, linker.Class(policy_type).instance_slots);
         const auto view = vm.NewIntrinsicInstance("Landroid/opengl/GLSurfaceView;");
-        const auto roots = vm.ProtectReferences(std::array{policy, view});
+        const auto ui_runnable = vm.Model().NewInstance(policy_type, linker.Class(policy_type).instance_slots);
+        const auto roots = vm.ProtectReferences(std::array{policy, view, ui_runnable});
         const auto ctor = linker.FindDirectMethod(vm.Model().ObjectClass(view), "<init>", "(Landroid/content/Context;)V");
         REQUIRE(ctor.has_value());
         REQUIRE_FALSE(vm.Call(*ctor, std::array{ref(view), ref(c.activity)}).exception.IsValid());
@@ -5173,8 +5177,37 @@ TEST_CASE("DVM-197 renderer EGL policies establish current context before events
             method.kind = dx::MethodKind::intrinsic;
             method.implementation = std::move(handler);
         };
+        const auto ui_host = std::this_thread::get_id();
+        const auto thread_type = linker.ResolveDescriptor("Ljava/lang/Thread;");
+        const auto current_thread_method = linker.FindDirectMethod(thread_type, "currentThread", "()Ljava/lang/Thread;");
+        REQUIRE(current_thread_method.has_value());
+        const auto ui_thread = vm.Call(*current_thread_method, {}).value.ref;
+        REQUIRE(ui_thread.IsValid());
+        std::thread::id gl_host;
+        dx::VmObjectRef gl_thread;
+        std::uint64_t gl_token{};
+        const auto thread_identity = [&] {
+            CHECK(std::this_thread::get_id() != ui_host);
+            CHECK(vm.CurrentContextToken() != 1);
+            const auto current_thread = vm.Threads().CurrentThreadObject();
+            CHECK(current_thread.IsValid());
+            CHECK(current_thread != ui_thread);
+            if (!gl_thread.IsValid()) {
+                gl_thread = current_thread;
+                gl_host = std::this_thread::get_id();
+                gl_token = vm.CurrentContextToken();
+            }
+            CHECK(current_thread == gl_thread);
+            CHECK(std::this_thread::get_id() == gl_host);
+            CHECK(vm.CurrentContextToken() == gl_token);
+        };
+        std::promise<void> ui_done;
+        auto ui_completed = ui_done.get_future();
+        bool ui_round_trip = false;
+        std::promise<void>* event_done = nullptr;
         std::vector<std::string> order;
         const auto current = [&] {
+            thread_identity();
             REQUIRE(c.renderer_context.IsValid());
             CHECK(call(c.renderer_egl, "eglGetCurrentContext", "()Ljavax/microedition/khronos/egl/EGLContext;").ref == c.renderer_context);
             const auto query = ints({0});
@@ -5182,20 +5215,45 @@ TEST_CASE("DVM-197 renderer EGL policies establish current context before events
             CHECK(call(c.renderer_egl, "eglQueryContext", "(Ljavax/microedition/khronos/egl/EGLDisplay;Ljavax/microedition/khronos/egl/EGLContext;I[I)Z",
                        {ref(c.renderer_display),ref(c.renderer_context),integer(0x3098),ref(query)}).AsInt() == 1);
             CHECK(vm.Model().GetPrimitiveElement(query,0) == 2);
+            const auto native_tid = c.native_thread_for_context(vm.CurrentContextToken());
+            CHECK(native_tid != 1);
+            // Java EGL and JNI/native calls must use one process TID.
+            CHECK(c.session->InvokeManagedEgl("eglGetCurrentContext", {}, native_tid) ==
+                  c.egl.contexts.at(c.renderer_context.Value()));
         };
-        hook("run", "()V", [&](dx::IntrinsicContext&) { current(); order.push_back("event"); return dx::VmValue::Void(); });
+        hook("run", "()V", [&](dx::IntrinsicContext& args) {
+            if (args.receiver == ui_runnable) {
+                CHECK(vm.CurrentContextToken() == 1);
+                CHECK(std::this_thread::get_id() == ui_host);
+                ui_done.set_value();
+            } else {
+                current(); order.push_back("event");
+                if (event_done) event_done->set_value();
+            }
+            return dx::VmValue::Void();
+        });
         hook("onSurfaceCreated", "(Ljavax/microedition/khronos/opengles/GL10;Ljavax/microedition/khronos/egl/EGLConfig;)V",
              [&](dx::IntrinsicContext& args) { current(); CHECK(args.arguments[0].ref == c.renderer_gl); CHECK(args.arguments[1].ref == c.renderer_config); order.push_back("created"); return dx::VmValue::Void(); });
         hook("onSurfaceChanged", "(Ljavax/microedition/khronos/opengles/GL10;II)V",
              [&](dx::IntrinsicContext& args) { current(); CHECK(args.arguments[1].AsInt() == 64); CHECK(args.arguments[2].AsInt() == 36); order.push_back("changed"); return dx::VmValue::Void(); });
         hook("onDrawFrame", "(Ljavax/microedition/khronos/opengles/GL10;)V",
              [&](dx::IntrinsicContext& args) { current(); CHECK(args.arguments[0].ref == c.renderer_gl); order.push_back("draw");
-                 static_cast<void>(c.session->InvokeManagedGles(gles::GlesApi::gles2, "glClearColor", std::array{0x3f800000U,0U,0U,0x3f800000U}, 1));
-                 static_cast<void>(c.session->InvokeManagedGles(gles::GlesApi::gles2, "glClear", std::array{0x4000U}, 1));
+                 if (reject_draw) throw std::runtime_error("renderer draw failure");
+                 if (!ui_round_trip) {
+                     call(c.activity, "runOnUiThread", "(Ljava/lang/Runnable;)V", {ref(ui_runnable)});
+                     const auto depth = vm.ExecutionLock().ReleaseForBlocking();
+                     const auto status = ui_completed.wait_for(std::chrono::seconds(2));
+                     vm.ExecutionLock().ReacquireAfterBlocking(depth);
+                     CHECK(status == std::future_status::ready);
+                     ui_round_trip = true;
+                 }
+                 static_cast<void>(c.session->InvokeManagedGles(gles::GlesApi::gles2, "glClearColor", std::array{0x3f800000U,0U,0U,0x3f800000U}, c.native_thread_for_context(vm.CurrentContextToken())));
+                 static_cast<void>(c.session->InvokeManagedGles(gles::GlesApi::gles2, "glClear", std::array{0x4000U}, c.native_thread_for_context(vm.CurrentContextToken())));
                  return dx::VmValue::Void(); });
         if (custom) {
             hook("chooseConfig", "(Ljavax/microedition/khronos/egl/EGL10;Ljavax/microedition/khronos/egl/EGLDisplay;)Ljavax/microedition/khronos/egl/EGLConfig;",
                  [&](dx::IntrinsicContext& args) {
+                    thread_identity();
                     order.push_back("choose");
                     const auto attrs=ints({0x3040,4,0x3038}), count=ints({0});
                     const auto configs=vm.Model().NewObjectArray(linker.ResolveDescriptor("[Ljavax/microedition/khronos/egl/EGLConfig;"),linker.ResolveDescriptor("Ljavax/microedition/khronos/egl/EGLConfig;"),1);
@@ -5206,6 +5264,7 @@ TEST_CASE("DVM-197 renderer EGL policies establish current context before events
                  });
             hook("createContext", "(Ljavax/microedition/khronos/egl/EGL10;Ljavax/microedition/khronos/egl/EGLDisplay;Ljavax/microedition/khronos/egl/EGLConfig;)Ljavax/microedition/khronos/egl/EGLContext;",
                  [&](dx::IntrinsicContext& args) {
+                    thread_identity();
                     order.push_back("create");
                     if (reject_context) return ref(c.egl.no_context);
                     const auto attrs=ints({0x3098,2,0x3038}); const auto root=vm.ProtectReferences(std::array{attrs});
@@ -5214,6 +5273,7 @@ TEST_CASE("DVM-197 renderer EGL policies establish current context before events
                  });
             hook("destroyContext", "(Ljavax/microedition/khronos/egl/EGL10;Ljavax/microedition/khronos/egl/EGLDisplay;Ljavax/microedition/khronos/egl/EGLContext;)V",
                  [&](dx::IntrinsicContext& args) {
+                    thread_identity();
                     order.push_back("destroy");
                     CHECK(call(args.arguments[0].ref,"eglDestroyContext","(Ljavax/microedition/khronos/egl/EGLDisplay;Ljavax/microedition/khronos/egl/EGLContext;)Z",{args.arguments[1],args.arguments[2]}).AsInt()==1);
                     return dx::VmValue::Void();
@@ -5229,6 +5289,15 @@ TEST_CASE("DVM-197 renderer EGL policies establish current context before events
             CHECK_THROWS_WITH_AS(static_cast<void>(fixture.app->ActivityLifecycle().StepFrame()), "renderer EGL context creation failed", session::DexActivityLifecycleError);
             CHECK(order == std::vector<std::string>{"choose", "create"});
             static_cast<void>(fixture.app->Stop());
+            CHECK_FALSE(c.renderer_context.IsValid());
+            CHECK_FALSE(c.renderer_surface.IsValid());
+            continue;
+        }
+        if (reject_draw) {
+            CHECK_THROWS_WITH_AS(static_cast<void>(fixture.app->ActivityLifecycle().StepFrame()),
+                "renderer draw failure", std::runtime_error);
+            CHECK(fixture.app->Stop().state == session::LifecycleRunState::failed);
+            CHECK_FALSE(vm.Threads().IsAlive(gl_thread));
             CHECK_FALSE(c.renderer_context.IsValid());
             CHECK_FALSE(c.renderer_surface.IsValid());
             continue;
@@ -5249,7 +5318,25 @@ TEST_CASE("DVM-197 renderer EGL policies establish current context before events
         static_cast<void>(fixture.app->ActivityLifecycle().StepFrame());
         expected.push_back("draw");
         CHECK(order == expected);
-        static_cast<void>(fixture.app->Stop());
+        // queueEvent must run while the lifecycle is idle, without StepFrame.
+        CHECK(fixture.app->ActivityLifecycle().Suspend().state == session::LifecycleRunState::running);
+        std::promise<void> idle_event;
+        auto idle_done = idle_event.get_future();
+        event_done = &idle_event;
+        call(view,"queueEvent","(Ljava/lang/Runnable;)V",{ref(policy)});
+        REQUIRE(idle_done.wait_for(std::chrono::seconds(2)) == std::future_status::ready);
+        event_done = nullptr;
+        expected.push_back("event");
+        CHECK(order == expected);
+        CHECK(fixture.app->ActivityLifecycle().Resume().state == session::LifecycleRunState::running);
+        CHECK(vm.CurrentContextToken() == 1);
+        CHECK(vm.Threads().CurrentThreadObject() == ui_thread);
+        CHECK_FALSE(call(c.renderer_egl, "eglGetCurrentContext", "()Ljavax/microedition/khronos/egl/EGLContext;").ref == c.renderer_context);
+        CHECK(fixture.app->Stop().state == session::LifecycleRunState::stopped);
+        CHECK_FALSE(vm.Threads().IsAlive(gl_thread));
+        CHECK_FALSE(c.run_gl_surface_thread);
+        CHECK_FALSE(c.wake_gl_surface_thread);
+        CHECK_THROWS(call(view,"queueEvent","(Ljava/lang/Runnable;)V",{ref(policy)}));
         if(custom) expected.push_back("destroy");
         CHECK(order == expected);
         CHECK_FALSE(c.renderer_context.IsValid());

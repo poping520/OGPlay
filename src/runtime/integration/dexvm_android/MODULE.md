@@ -135,7 +135,9 @@ Java GLES/EGL 通过 session managed 冷入口复用 [native boundary](../../bou
   sync long、mapped direct Buffer、active/uniform-block/transform-feedback 查询及 String[]
   使用专用编组；GLES20 glGetString 接受 SHADING_LANGUAGE_VERSION，GLUtils 按四种 Bitmap.Config
   编码。GLU 使用 API19 数学与 GL10 虚派，不入 native 目录，offset/失败不回写受检。
-- GLSurfaceView 逐 View 保存版本/config。queueEvent 保活 Runnable，在 current GL 渲染线程、
+- GLSurfaceView 逐 View 保存版本/config。其有界 GLThread 是真实 Java Thread，run 经显式
+  hook 进入 session 驱动；queueEvent 经唤醒 hook 通知该线程。线程不自动 prepare Looper。
+  queueEvent 保活 Runnable，在 current GL 渲染线程、
   renderer callback 前 FIFO 执行，不依赖绘帧；requestRender/WHEN_DIRTY 单次消费请求。
   PreserveEGLContextOnPause 默认 false、普通 boolean 字段、方法可覆盖、可先于 renderer 配置；
   onPause/onResume 当前仅 lifecycle 停帧，按该字段拆分 Surface/Context 重建和 context-loss 待实现。

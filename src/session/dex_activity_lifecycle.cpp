@@ -7,10 +7,21 @@
 #include <exception>
 #include <algorithm>
 #include <cmath>
+#include <condition_variable>
+#include <mutex>
 #include <unordered_set>
 #include <utility>
 
 namespace ogplay::session {
+
+struct DexActivityLifecycle::RendererThread {
+    runtime::dexvm::VmObjectRef object;
+    std::mutex mutex;
+    std::condition_variable changed;
+    std::function<void()> action;
+    std::exception_ptr failure;
+    bool busy{}, events{}, stopping{}, exited{};
+};
 
 bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
     const auto view = context.gl_surface_renderer_view;
@@ -230,6 +241,7 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
     }
 
     DexActivityLifecycle::~DexActivityLifecycle() {
+        try { StopRendererThread(); } catch (...) {}
         if (egl_pacer_attached_) {
             runtime::DetachEglSwapPacer(*bindings_.context,
                                         bindings_.bridge->Vm().ExecutionLock());
@@ -397,11 +409,8 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
             if (!context.content_view.IsValid()) {
                 Fail("onCreate did not install a content view");
             }
-            // The two render drivers are mutually exclusive. An intrinsic
-            // renderer keeps the context current on this lifecycle thread (the
-            // established exact path). A guest-owned GLSurfaceView has no
-            // context.renderer and needs currency handed to its GLThread before
-            // surface callbacks start the thread's EGL handshake.
+            // Guest-owned GLSurfaceView keeps its existing swap pacer. The
+            // intrinsic renderer releases host currency when its GLThread starts.
             if (!context.renderer.IsValid() &&
                 bindings_.release_surface_currency) {
                 runtime::AttachEglSwapPacer(context, vm.ExecutionLock());
@@ -435,7 +444,8 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
             // A renderer may not exist yet (installer phase draws nothing);
             // frames then only pump cooperative threads until the interpreted
             // glue registers one.
-            EnsureRendererCallbacks();
+            if (context.renderer.IsValid())
+                RunOnRenderer([this] { EnsureRendererCallbacks(); });
 
             state_ = LifecycleRunState::running;
             if (bindings_.diagnostics) bindings_.diagnostics->SetLifecyclePhase("running", false);
@@ -733,11 +743,12 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
             PumpVideo();
             PumpAudioTracks();
             ServiceActivitySwitch();
-            EnsureRendererCallbacks();
-            if (renderer_ready_) {
-                RunRendererEvents();
-                const bool draw = ConsumeGlSurfaceDrawRequest(*bindings_.context);
-                if (draw) {
+            if (context.renderer.IsValid()) {
+                RunOnRenderer([this] {
+                  auto& context = *bindings_.context;
+                  EnsureRendererCallbacks();
+                  RunRendererEvents();
+                  if (ConsumeGlSurfaceDrawRequest(context)) {
                     CallOnView(bindings_.context->renderer, "onDrawFrame",
                                "(Ljavax/microedition/khronos/opengles/GL10;)V",
                                {dx::VmValue::Ref(context.renderer_gl)});
@@ -746,7 +757,8 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
                         "(Ljavax/microedition/khronos/egl/EGLDisplay;Ljavax/microedition/khronos/egl/EGLSurface;)Z",
                         {dx::VmValue::Ref(context.renderer_display), dx::VmValue::Ref(context.renderer_surface)});
                     if (!swapped.AsInt()) Fail("renderer eglSwapBuffers failed");
-                }
+                  }
+                });
             } else if (!bindings_.context->renderer.IsValid() &&
                        bindings_.context->active_surface_holders.empty() &&
                        runtime::AnyVideoPlaying(*bindings_.context) == false &&
@@ -923,6 +935,7 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
             const auto surface_error = runtime::RetireSurfaceHolderGeneration(
                 vm, context);
             if (surface_error.has_value()) Fail(*surface_error);
+            StopRendererThread();
             CallActivity("onDestroy", "()V", {});
             activity_started_ = false;
             // The departing activity's own finish() is answered by its retirement.
@@ -936,7 +949,6 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
             gesture_touch_consumed_ = false;
             deep_touch_handle_ = 0U;
             runtime::ResetViewUiState(context);
-            ReleaseRendererEgl();
             context.renderer = dx::VmObjectRef{};
             context.egl_context_factory = dx::VmObjectRef{};
             context.egl_config_chooser = dx::VmObjectRef{};
@@ -1014,6 +1026,181 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
         }
         const auto roots = vm.ProtectReferences(events);
         for (const auto event : events) CallOnView(event, "run", "()V", {});
+    }
+
+    void DexActivityLifecycle::EnsureRendererThread() {
+        if (renderer_thread_) return;
+        auto& vm = bindings_.bridge->Vm();
+        const dx::VmExecutionLockScope execution(vm.ExecutionLock());
+        if (bindings_.release_surface_currency) bindings_.release_surface_currency();
+        auto thread = std::make_unique<RendererThread>();
+        thread->object = vm.NewIntrinsicInstance("Landroid/opengl/GLSurfaceView$GLThread;");
+        const auto roots = vm.ProtectReferences(std::array{thread->object});
+        const auto type = vm.Linker().ResolveDescriptor("Ljava/lang/Thread;");
+        const auto ctor = vm.Linker().FindDirectMethod(type, "<init>", "(Ljava/lang/String;)V");
+        if (!ctor) Fail("GLThread requires Thread(String)");
+        RequireOutcome(vm, vm.Call(*ctor, std::array{dx::VmValue::Ref(thread->object),
+            dx::VmValue::Ref(vm.NewStringUtf8("GLThread"))}), "GLThread <init>");
+        renderer_thread_ = std::move(thread);
+        bindings_.context->run_gl_surface_thread = [this] { RendererThreadBody(); };
+        bindings_.context->wake_gl_surface_thread = [this] {
+            auto& worker = *renderer_thread_;
+            std::scoped_lock lock(worker.mutex);
+            worker.events = true;
+            worker.changed.notify_all();
+        };
+        try { CallOnView(renderer_thread_->object, "start", "()V", {}); }
+        catch (...) {
+            bindings_.context->run_gl_surface_thread = {};
+            bindings_.context->wake_gl_surface_thread = {};
+            renderer_thread_.reset();
+            throw;
+        }
+    }
+
+    void DexActivityLifecycle::RendererThreadBody() {
+        auto& worker = *renderer_thread_;
+        auto& vm = bindings_.bridge->Vm();
+        auto& execution = vm.ExecutionLock();
+        try {
+            for (;;) {
+                std::function<void()> action;
+                bool events = false;
+                {
+                    std::unique_lock lock(worker.mutex);
+                    if (worker.stopping || vm.Threads().ShuttingDown()) break;
+                    if (!worker.action && !(worker.events && renderer_ready_)) {
+                        vm.Threads().SetWaitState(vm.CurrentContextToken(), dx::VmThreadWaitState::monitor);
+                        const auto depth = execution.ReleaseForBlocking();
+                        // Host wake scheduling only; no guest deadline or Clock change.
+                        worker.changed.wait_for(lock, std::chrono::milliseconds(2));
+                        lock.unlock();
+                        execution.ReacquireAfterBlocking(depth);
+                        vm.Threads().SetWaitState(vm.CurrentContextToken(), dx::VmThreadWaitState::none);
+                        continue;
+                    }
+                    action = std::move(worker.action);
+                    events = std::exchange(worker.events, false);
+                }
+                if (action) action();
+                if (events && renderer_ready_) RunRendererEvents();
+                {
+                    std::scoped_lock lock(worker.mutex);
+                    if (action) worker.busy = false;
+                    worker.changed.notify_all();
+                }
+            }
+        } catch (...) {
+            std::scoped_lock lock(worker.mutex);
+            worker.failure = std::current_exception();
+        }
+        if (renderer_ready_ && !worker.failure && !vm.Threads().ShuttingDown()) {
+            try {
+                // GLSurfaceView notifies the renderer before teardown.
+                auto& linker = bindings_.bridge->Linker();
+                const auto renderer_class =
+                        vm.Model().ObjectClass(bindings_.context->renderer);
+                const auto index = linker.FindVtableIndex(
+                    renderer_class, "surfaceDestroyed",
+                    "(Ljavax/microedition/khronos/opengles/GL10;)V");
+                if (index.has_value()) {
+                    RequireOutcome(
+                        vm,
+                        vm.Call(linker.Class(renderer_class).vtable[*index],
+                            std::vector<dx::VmValue>{
+                                dx::VmValue::Ref(bindings_.context->renderer),
+                                dx::VmValue::Ref(dx::VmObjectRef{})
+                            }),
+                        "surfaceDestroyed");
+                }
+            } catch (...) {
+                std::scoped_lock lock(worker.mutex);
+                if (!worker.failure) worker.failure = std::current_exception();
+            }
+        }
+        // EGL currency and custom factory destruction remain on their owner.
+        try { ReleaseRendererEgl(); }
+        catch (...) {
+            std::scoped_lock lock(worker.mutex);
+            if (!worker.failure) worker.failure = std::current_exception();
+        }
+        std::scoped_lock lock(worker.mutex);
+        bindings_.context->gl_surface_thread_stopped = true;
+        worker.exited = true;
+        worker.busy = false;
+        worker.changed.notify_all();
+    }
+
+    void DexActivityLifecycle::RunOnRenderer(std::function<void()> action) {
+        EnsureRendererThread();
+        auto& worker = *renderer_thread_;
+        auto& vm = bindings_.bridge->Vm();
+        const dx::VmExecutionLockScope execution(vm.ExecutionLock());
+        {
+            std::scoped_lock lock(worker.mutex);
+            if (worker.failure) std::rethrow_exception(worker.failure);
+            if (worker.exited || worker.stopping) Fail("GLThread is stopped");
+            if (worker.busy) Fail("recursive GLThread submission");
+            worker.action = std::move(action);
+            worker.busy = true;
+            worker.changed.notify_all();
+        }
+        for (;;) {
+            {
+                std::unique_lock lock(worker.mutex);
+                if (worker.failure) std::rethrow_exception(worker.failure);
+                if (worker.exited) Fail("GLThread stopped before completing its command");
+                if (!worker.busy) return;
+                if (!vm.Threads().IsAlive(worker.object)) {
+                    lock.unlock();
+                    RethrowFatalThreadFailure();
+                    Fail("GLThread terminated before completing its command");
+                }
+                vm.Threads().SetWaitState(dx::kRootLifecycleToken, dx::VmThreadWaitState::joining);
+                const auto depth = vm.ExecutionLock().ReleaseForBlocking();
+                worker.changed.wait_for(lock, std::chrono::milliseconds(2));
+                lock.unlock();
+                vm.ExecutionLock().ReacquireAfterBlocking(depth);
+                vm.Threads().SetWaitState(dx::kRootLifecycleToken, dx::VmThreadWaitState::none);
+            }
+            // A renderer may post to the UI and wait. Keep the real main Looper
+            // dispatching while its render command is in flight.
+            PumpJavaThreads();
+        }
+    }
+
+    void DexActivityLifecycle::StopRendererThread() {
+        if (!renderer_thread_) return;
+        auto& worker = *renderer_thread_;
+        auto& vm = bindings_.bridge->Vm();
+        const dx::VmExecutionLockScope execution(vm.ExecutionLock());
+        {
+            std::scoped_lock lock(worker.mutex);
+            worker.stopping = true;
+            worker.changed.notify_all();
+        }
+        // IsAlive becomes false only after native TLS/JNI detach. Unlike Java
+        // join(), this ownership wait must also complete during VM shutdown.
+        std::exception_ptr wait_failure;
+        while (vm.Threads().IsAlive(worker.object)) {
+            std::unique_lock lock(worker.mutex);
+            vm.Threads().SetWaitState(dx::kRootLifecycleToken, dx::VmThreadWaitState::joining);
+            const auto depth = vm.ExecutionLock().ReleaseForBlocking();
+            worker.changed.wait_for(lock, std::chrono::milliseconds(2));
+            lock.unlock();
+            vm.ExecutionLock().ReacquireAfterBlocking(depth);
+            vm.Threads().SetWaitState(dx::kRootLifecycleToken, dx::VmThreadWaitState::none);
+            if (!vm.Threads().ShuttingDown()) {
+                try { PumpJavaThreads(); }
+                catch (...) { if (!wait_failure) wait_failure = std::current_exception(); }
+            }
+        }
+        const auto failure = worker.failure;
+        bindings_.context->run_gl_surface_thread = {};
+        bindings_.context->wake_gl_surface_thread = {};
+        renderer_thread_.reset();
+        if (failure) std::rethrow_exception(failure);
+        if (wait_failure) std::rethrow_exception(wait_failure);
     }
 
     void DexActivityLifecycle::InitializeRendererEgl() {
@@ -1160,19 +1347,29 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
         phase("teardown.begin");
         const bool was_running = state_ == LifecycleRunState::running &&
                                  !bindings_.bridge->Vm().ExitCode().has_value();
-        // Device services and the graphics boundary outlive guest callbacks on
-        // Android. OGPlay owns both in-process, so retire graphics and publish
-        // cancellation before onPause can wait for a render-thread handshake.
+        bool pause_delivered = false;
+        if (was_running && !suspended_ && renderer_thread_) {
+            // onPause may queue a render-thread handshake and wait for it.
+            // Keep that thread available until the Activity callback returns.
+            pause_delivered = true;
+            try {
+                SetWindowFocus(false);
+                CallActivity("onPause", "()V", {});
+            } catch (...) { state_ = LifecycleRunState::failed; }
+        }
+        // The intrinsic driver has completed its pause handshake; release EGL
+        // on its owner before graphics retirement. Guest-owned drivers retain
+        // the cancellation-before-pause protocol for their blocking handshakes.
         try {
-            ReleaseRendererEgl();
-        } catch (const std::exception&) {
+            StopRendererThread();
+        } catch (...) {
             state_ = LifecycleRunState::failed;
         }
         runtime::RetireGuestEglSurface(*bindings_.context);
         bindings_.bridge->Session().BeginTeardown();
         phase("teardown.guest_callbacks");
         try {
-            if (was_running && !suspended_) {
+            if (was_running && !suspended_ && !pause_delivered) {
                 SetWindowFocus(false);
                 CallActivity("onPause", "()V", {});
             }
@@ -1180,26 +1377,6 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
                 const auto error = runtime::RetireSurfaceHolderGeneration(
                     bindings_.bridge->Vm(), *bindings_.context);
                 if (error.has_value()) state_ = LifecycleRunState::failed;
-            }
-            if (was_running && bindings_.context->renderer.IsValid()) {
-                // GLSurfaceView notifies the renderer before teardown.
-                auto& linker = bindings_.bridge->Linker();
-                auto& vm = bindings_.bridge->Vm();
-                const auto renderer_class =
-                        vm.Model().ObjectClass(bindings_.context->renderer);
-                const auto index = linker.FindVtableIndex(
-                    renderer_class, "surfaceDestroyed",
-                    "(Ljavax/microedition/khronos/opengles/GL10;)V");
-                if (index.has_value()) {
-                    RequireOutcome(
-                        vm,
-                        vm.Call(linker.Class(renderer_class).vtable[*index],
-                                std::vector<dx::VmValue>{
-                                    dx::VmValue::Ref(bindings_.context->renderer),
-                                    dx::VmValue::Ref(dx::VmObjectRef{})
-                                }),
-                        "surfaceDestroyed");
-                }
             }
             if (was_running) {
                 CallActivity("onStop", "()V", {});

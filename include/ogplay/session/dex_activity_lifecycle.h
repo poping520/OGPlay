@@ -63,9 +63,8 @@ struct DexActivityLifecycleBindings final {
     // Runs after guest onPause and again after Java threads stop during clean
     // teardown. The frontend binds this to VFS FlushAll (ADR-0020).
     std::function<void()> flush_persistent_state;
-    // Guest-owned GLSurfaceView needs the host-created ANGLE context released
-    // before holder callbacks start its GLThread. Intrinsic-renderer sessions
-    // retain the original currency so their exact render path is unchanged.
+    // Release host-created ANGLE currency before either guest-owned or
+    // intrinsic GLSurfaceView transfers rendering to its GLThread.
     std::function<void()> release_surface_currency;
     // Manifest-selected process Application. Kept at the aggregate tail so
     // existing lifecycle hosts retain source compatibility.
@@ -131,6 +130,12 @@ private:
     void InitializeRendererEgl();
     void ReleaseRendererEgl();
     void RunRendererEvents();
+    void EnsureRendererThread();
+    void RunOnRenderer(std::function<void()> action);
+    void StopRendererThread();
+    void RendererThreadBody();
+    struct RendererThread;
+    std::unique_ptr<RendererThread> renderer_thread_;
     // Publishes the sole window-focus fact before virtually notifying the
     // Activity and every currently attached View. Repeated values are silent.
     void SetWindowFocus(bool has_focus);

@@ -101,6 +101,8 @@ Android API 的详细行为以 [dexvm_android](dexvm_android/MODULE.md)为准；
   JNI 入向异常日志与出向 native 故障附带原异常的有界字段 cause 链（含 API19
   ClassNotFoundException.ex）；不执行 guest getCause/toString，循环/深度/文本截断显式标记。
 - 每个 guest Java thread 有独立 A32 CPU/栈、Bionic TLS/thread-info/TID、JNI attach/local frame。
+  Java EGL/GLES 经显式 token→process TID hook 使用相同线程身份，不用 Java Thread.id
+  代替 native TID；GLThread 的 Java/native current context 与错误状态共享。
   native 执行释放 VM 锁，JNI 回调重获；executor 按 thread 和重入深度复用 CPU/JIT，同层复用
   缓存、不同深度隔离现场，nested 使用 suspended SP/TLS，线程退出回收全部 executor。
   JNI monitor 使用 VM token/对象身份，与 Java synchronized 共享状态；TID 受 Bionic 16-bit 限制。

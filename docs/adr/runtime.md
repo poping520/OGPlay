@@ -519,3 +519,18 @@ shutdown 与线程退出均可中断等待。callback 与非 pipe fd 暂明确�
 
 这是游戏进程直接调用的对象生命周期，不引入 Binder IPC、system_server、外部安装包
 或支付实现。已有本地 Binder Java 对象仅作为 onBind 的原样返回值，禁止伪造连接成功。
+
+## ADR-0085：intrinsic GLSurfaceView 的独立渲染线程
+
+状态：接受（2026-09-30）。任务：[DVM-203](../tasks/dexvm/DVM-203.md)。
+
+不再将 intrinsic renderer 合并到 Activity 主线程。复用 VmThreadRuntime 的 Java Thread、
+解释上下文、host thread 与 JNI/TLS；GLSurfaceView$GLThread 的有界 run 通过显式 hook
+调用 session 驱动，避免增加第二套线程注册与退出机制。不自动给 GLThread 建立 Looper，
+ALooper_forThread 保持真实线程语义，输入队列迁移由 guest attach/detach 调用决定。
+Java EGL/GLES 经 bridge 的 execution token→process TID 映射与 JNI 共用线程身份。
+
+renderer、queueEvent、EGL 创建/current/swap/释放统一归属 GLThread；生命周期保持现有
+逐帧请求协议，等待时泵送主 Looper，queueEvent 可独立唤醒空闲线程。onPause 握手期间
+保留 GLThread，Activity 切换/停止时先退出并完成 native detach，再释放引用。
+不替换 guest 自带 GLSurfaceView，不扩展多 View 并行渲染、EGL 暂停重建或 NDK 事件 API。

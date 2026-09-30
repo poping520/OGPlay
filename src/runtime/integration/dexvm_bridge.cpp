@@ -1308,6 +1308,9 @@ DexVmGuestBridge::DexVmGuestBridge(
         android_context->prepare_native_looper = [bridge_state](std::uint64_t token) {
             static_cast<void>(bridge_state->session->PrepareThreadLooper(bridge_state->ProcessThreadForToken(token)));
         };
+        android_context->native_thread_for_context = [bridge_state](std::uint64_t token) {
+            return bridge_state->ProcessThreadForToken(token);
+        };
         // The Android main thread has a native Looper before Activity/JNI startup.
         static_cast<void>(session.PrepareThreadLooper(kRootThreadId));
     }
@@ -1550,6 +1553,7 @@ DexVmGuestBridge::~DexVmGuestBridge() {
         impl_->android_context->native_activity.reset();
         impl_->android_context->threads = nullptr;
         impl_->android_context->prepare_native_looper = {};
+        impl_->android_context->native_thread_for_context = {};
     }
     if (impl_->session) {
         impl_->session->Environment().SetMonitorHooks({});

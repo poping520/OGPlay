@@ -10,6 +10,10 @@
   可快照的 guest thread pointer；完整核心/扩展寄存器组支持等尺寸批量导入，供 JIT
   状态快照避免逐槽虚调用开销。
 - `Cpu::Run(ticks) -> RunResult`：以统一预算运行，返回停止原因和已消费 tick。
+- `Cpu::InvalidateCodeRange(GuestRange)`：发布同进程代码变更。Dynarmic 向共享 context
+  中所有存活 CPU 排队范围失效并中断正在运行的 peer，由各自执行线程处理缓存；注册与
+  退役串行化。解释器直接取指，无缓存可清；其他未实现后端明确失败。内部失效的零 tick
+  中断自行续跑，不作为 guest 无进展错误；不修改 guest 寄存器或模拟 CPU 时间。
 - `HostCallHook`：可选的 backend-neutral A32 SVC hook，直接借用 16 个 live core
   registers；`handled` 继续当前 JIT run，`unhandled` 保持 supervisor stop，`fault` 形成
   显式 host-call fault stop。CPU 不解释 SVC 的上层含义。

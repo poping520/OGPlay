@@ -488,7 +488,8 @@ struct OrchestratedApp final {
                              const ogplay::runtime::dexvm::InterpreterBackend
                                  interpreter_backend =
                                      ogplay::runtime::dexvm::InterpreterBackend::switch_dispatch,
-                             const std::string& application_class = "android.app.Application") {
+                             const std::string& application_class = "android.app.Application",
+                             std::function<void()> pump_host_events = {}) {
         if (activity == "android.app.NativeActivity" || activity == "fixture.NativeTakeoverActivity") native_a = NativeActivityElf();
         context->apk_bytes = {
             std::byte{0x50}, std::byte{0x4b}, std::byte{0x03}, std::byte{0x04}};
@@ -535,6 +536,7 @@ struct OrchestratedApp final {
         request.ledger = &ledger;
         request.logger = &logger;
         request.dexvm.interpreter.backend = interpreter_backend;
+        request.host.pump_host_events = std::move(pump_host_events);
         app = ogplay::session::AndroidAppProcess::Create(
             std::move(request));
     }
@@ -5144,10 +5146,25 @@ TEST_CASE("DVM-197 renderer EGL policies establish current context before events
         const bool custom = mode != 0;
         const bool reject_context = mode == 2;
         const bool reject_draw = mode == 3;
-        OrchestratedApp fixture("fixture.LauncherActivity", true, false, {}, {}, true, backend);
+        const auto owner_host = std::this_thread::get_id();
+        dx::Interpreter* pump_vm = nullptr;
+        std::promise<void> host_pumped;
+        auto host_ready = host_pumped.get_future();
+        std::atomic_bool waiting_for_host{false};
+        bool notified_host = false;
+        OrchestratedApp fixture("fixture.LauncherActivity", true, false, {}, {}, true, backend,
+            "android.app.Application", [&] {
+                CHECK(std::this_thread::get_id() == owner_host);
+                if (pump_vm) CHECK_FALSE(pump_vm->ExecutionLock().HeldByCurrentThread());
+                if (waiting_for_host.load() && !notified_host) {
+                    notified_host = true;
+                    host_pumped.set_value();
+                }
+            });
         fixture.app->StartApplication();
         REQUIRE(fixture.app->StartLauncherActivity().state == session::LifecycleRunState::running);
         auto& vm = fixture.app->DexVm().Vm();
+        pump_vm = &vm;
         auto& linker = vm.Linker();
         auto& c = *fixture.context;
         const auto ref = dx::VmValue::Ref;
@@ -5240,6 +5257,11 @@ TEST_CASE("DVM-197 renderer EGL policies establish current context before events
              [&](dx::IntrinsicContext& args) { current(); CHECK(args.arguments[0].ref == c.renderer_gl); order.push_back("draw");
                  if (reject_draw) throw std::runtime_error("renderer draw failure");
                  if (!ui_round_trip) {
+                     waiting_for_host.store(true);
+                     const auto host_depth = vm.ExecutionLock().ReleaseForBlocking();
+                     const auto host_status = host_ready.wait_for(std::chrono::seconds(2));
+                     vm.ExecutionLock().ReacquireAfterBlocking(host_depth);
+                     CHECK(host_status == std::future_status::ready);
                      call(c.activity, "runOnUiThread", "(Ljava/lang/Runnable;)V", {ref(ui_runnable)});
                      const auto depth = vm.ExecutionLock().ReleaseForBlocking();
                      const auto status = ui_completed.wait_for(std::chrono::seconds(2));

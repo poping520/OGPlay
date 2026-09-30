@@ -30,8 +30,8 @@ void BindAndroidArmPrivateSyscalls(
                     {memory::GuestAddress{start},
                      static_cast<std::uint64_t>(end) - start},
                     frame.thread_id);
-                // The interpreter fetches guest bytes directly and has no host
-                // instruction cache or translated-code cache to invalidate.
+                // The supervisor-call bridge publishes a successful range to
+                // the process-wide CPU code caches before guest execution resumes.
                 return 0;
             } catch (const memory::MemoryFault&) {
                 return -kEfault;

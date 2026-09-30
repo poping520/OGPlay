@@ -74,6 +74,8 @@ struct DexActivityLifecycleBindings final {
     std::shared_ptr<runtime::debug::DiagnosticState> diagnostics;
     std::string
         launcher_component_name; // Preserves manifest alias identity when present.
+    // Owner-thread OS message pump only; must not reenter the guest lifecycle.
+    std::function<void()> pump_host_events;
 };
 
 class DexActivityLifecycleError final : public std::runtime_error {

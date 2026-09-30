@@ -17,6 +17,8 @@ public:
     [[nodiscard]] A32State GetState() const override;
     void SetState(const A32State& state) override;
     void RequestHalt() noexcept override;
+    // Instructions are fetched directly from guest memory on every step.
+    void InvalidateCodeRange(memory::GuestRange) override {}
 
 private:
     [[nodiscard]] std::optional<RunResult> ExecuteA32(memory::GuestAddress pc,

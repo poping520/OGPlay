@@ -70,7 +70,9 @@ Dex activity 每帧在 guest 回调前泵送主 Looper，到帧尾只通过
   线程前唤醒 pacer。两种 GLSurfaceView 都释放打开线程 GL currency，交给各自 GLThread。
   intrinsic renderer 复用 VmThreadRuntime 建立独立 Java/host 线程，拥有 JNI/TLS、renderer
   回调、queueEvent 与 EGL 生命周期；不预先创建 Looper。生命周期等待绘帧时继续泵送主
-  Looper，空闲及暂停时 queueEvent 仍可唤醒 GLThread。Activity 切换或退出先停止并等待
+  Looper；通过 `AndroidAppProcessHost.pump_host_events` 透传的显式回调在等待线程上、
+  释放 worker/VM 锁后泵送宿主窗口消息，回调不得重入 guest 生命周期。空闲及暂停时
+  queueEvent 仍可唤醒 GLThread。Activity 切换或退出先停止并等待
   GLThread/native detach 完成再清空引用；onPause 的渲染握手先于该停止。
   intrinsic renderer 消费已登记 EGL chooser/factory 或默认 config/client version，
   经 Java EGL10 facade 创建并绑定 registry Context/Surface；回调传真实 GL/config wrapper，

@@ -128,6 +128,10 @@
   同一沙盒重启进入任务地图、开场剧情未重现，加密进度哈希一致，保存重载已验证。
   shutdown 仍停在 Profile lifecycle 清理（诊断 phase=teardown.begin），正常退出及
   完整游戏兼容尚未验收。证据 `.local/jni-string-{tests.log,game.stderr.log,reload.png}`。
+  [WU-PERF-08](../tasks/optimization/WU-PERF-08.md) 已修复 ARM cacheflush 未失效 JIT
+  缓存的问题，并在等待 renderer 时由窗口线程继续泵送 OS 消息；Windows Release 构建
+  与定向回归通过。用户实测确认 Loading 未再出现未响应、地图弹框流畅且 FPS 更稳定；
+  原退出停滞不在本次范围。
 - **Angry Birds 2.3.0**：无 Profile、空沙盒运行 5000 presented frames，
   `View.setScrollBarStyle/getScrollBarStyle` 原方法解析错未再出现，未触发新的致命首错。
   滚动条绘制和完整游戏兼容仍未验收。此前 SQLite/guest ICU、EventLog、

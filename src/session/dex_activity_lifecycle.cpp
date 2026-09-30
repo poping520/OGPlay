@@ -1172,6 +1172,15 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
                 const auto depth = vm.ExecutionLock().ReleaseForBlocking();
                 worker.changed.wait_for(lock, std::chrono::milliseconds(2));
                 lock.unlock();
+                // The window owner stays responsive even when a native render
+                // command takes seconds. No worker/VM lock is held by the pump.
+                try {
+                    if (bindings_.pump_host_events) bindings_.pump_host_events();
+                } catch (...) {
+                    vm.ExecutionLock().ReacquireAfterBlocking(depth);
+                    vm.Threads().SetWaitState(dx::kRootLifecycleToken, dx::VmThreadWaitState::none);
+                    throw;
+                }
                 vm.ExecutionLock().ReacquireAfterBlocking(depth);
                 vm.Threads().SetWaitState(dx::kRootLifecycleToken, dx::VmThreadWaitState::none);
             }

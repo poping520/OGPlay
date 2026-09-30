@@ -564,3 +564,20 @@ dup 复用同一打开状态与操作锁，不复制随机内容。支付服务�
 副本发布绑定现有 semantic access token，release 解除映射并归还预算，失败完整回滚。
 析构只清理 guest 映射，不反向访问可能先销毁的 string store。成功观察接口仅供上层
 记录长度与调用帧，观察失败不得替换运行结果，不记录正文或修改游戏数据。
+
+## ADR-0088：进程级 guest 代码缓存一致性
+
+状态：接受（2026-09-30）。任务：[WU-PERF-08](../tasks/optimization/WU-PERF-08.md)。
+
+ARM cacheflush 仍由 syscall 绑定校验地址和参数；成功的非空范围由 SVC bridge 经
+backend-neutral `Cpu::InvalidateCodeRange` 发布。CPU 不识别 Android syscall，解释器
+明确无需操作，未实现的其他后端明确失败。
+
+DynarmicExecutionContext 登记所有存活 JIT，注册、范围发布和退役使用同一锁；后端
+范围失效 API 将请求排队并中断活跃执行，实际缓存更新留在执行线程。不得直接跨线程
+修改寄存器或整缓存清空。包装层不能清除后端管理的 CacheInvalidation halt 位，避免
+覆盖刚到达的请求；只由失效导致的零 tick 返回在 CPU 内续跑。
+
+这是 guest 主动发布代码的边界，不自动推断每次数据写入都是代码修改，也不声称解决
+未发出 cacheflush 的代码重映射。窗口长帧等待另经显式宿主回调泵消息，保留 SDL owner
+线程与 guest 事件分派边界。

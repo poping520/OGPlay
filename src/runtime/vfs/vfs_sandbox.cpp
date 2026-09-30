@@ -22,8 +22,12 @@ VfsFileInfo VirtualFileSystem::Impl::Stat(const std::string_view path) const {
     if (found != files_.end()) {
         if (found->second->generated && !found->second->generated->active)
             throw VfsError(kEnoent, "VFS generated file provider retired");
+        if (found->second->character_device && !found->second->character_device->active)
+            throw VfsError(kEnoent, "VFS character device retired");
         return {found->second->size, found->second->writable,
-                found->second->source, false, found->second->generation};
+                found->second->source, false, found->second->generation,
+                static_cast<bool>(found->second->character_device),
+                found->second->character_device ? found->second->character_device->device_number : 0};
     }
     if (IsDirectoryLocked(normalized)) {
         return DirectoryInfoLocked(normalized);
@@ -39,6 +43,7 @@ std::vector<VfsDirectoryEntry> VirtualFileSystem::Impl::ListDirectory(
     // Merged from both indexes and deduplicated by name, so getdents64 sees
     // one stable order regardless of how a directory came to be.
     std::map<std::string, bool, std::less<>> children;
+    std::set<std::string, std::less<>> character_devices;
     const auto collect = [&](const std::string& key,
                              const bool leaf_is_directory) {
         if (!key.starts_with(prefix)) return;
@@ -53,7 +58,13 @@ std::vector<VfsDirectoryEntry> VirtualFileSystem::Impl::ListDirectory(
     };
     for (auto it = files_.lower_bound(prefix);
          it != files_.end() && it->first.starts_with(prefix); ++it) {
-        if (!it->second->generated || it->second->generated->active) collect(it->first, false);
+        if ((!it->second->generated || it->second->generated->active) &&
+            (!it->second->character_device || it->second->character_device->active)) {
+            collect(it->first, false);
+            const auto remainder = std::string_view(it->first).substr(prefix.size());
+            if (it->second->character_device && remainder.find('/') == std::string_view::npos)
+                character_devices.emplace(remainder);
+        }
     }
     for (auto it = directories_.lower_bound(prefix);
          it != directories_.end() && it->starts_with(prefix); ++it) {
@@ -62,7 +73,7 @@ std::vector<VfsDirectoryEntry> VirtualFileSystem::Impl::ListDirectory(
     std::vector<VfsDirectoryEntry> entries;
     entries.reserve(children.size());
     for (auto& [name, is_directory] : children) {
-        entries.push_back({name, is_directory});
+        entries.push_back({name, is_directory, !is_directory && character_devices.contains(name)});
     }
     return entries;
 }
@@ -74,7 +85,8 @@ bool VirtualFileSystem::Impl::IsDirectoryLocked(const std::string& path) const {
     prefix.push_back('/');
     for (auto file = files_.lower_bound(prefix);
          file != files_.end() && file->first.starts_with(prefix); ++file) {
-        if (!file->second->generated || file->second->generated->active) return true;
+        if ((!file->second->generated || file->second->generated->active) &&
+            (!file->second->character_device || file->second->character_device->active)) return true;
     }
     const auto directory = directories_.lower_bound(prefix);
     return directory != directories_.end() && directory->starts_with(prefix);
@@ -232,7 +244,8 @@ VfsFileInfo VirtualFileSystem::Impl::DescriptorInfo(
     const auto& open = found->second;
     if (open->directory) return open->directory->info;
     return {open->file->size, open->file->writable, open->file->source, false,
-            open->file->generation};
+            open->file->generation, static_cast<bool>(open->file->character_device),
+            open->file->character_device ? open->file->character_device->device_number : 0};
 }
 
 void VirtualFileSystem::Impl::CreateDirectory(const std::string_view path) {
@@ -313,9 +326,9 @@ void VirtualFileSystem::Impl::Rename(const std::string_view from,
     const auto target = ResolvePath(to, working_directory_, aliases_);
     auto found = files_.find(source);
     const auto target_file = files_.find(target);
-    if ((found != files_.end() && found->second->generated) ||
-        (target_file != files_.end() && target_file->second->generated))
-        throw VfsError(kEacces, "VFS generated file cannot be renamed or replaced");
+    if ((found != files_.end() && (found->second->generated || found->second->character_device)) ||
+        (target_file != files_.end() && (target_file->second->generated || target_file->second->character_device)))
+        throw VfsError(kEacces, "VFS provider node cannot be renamed or replaced");
     if (found == files_.end() || tombstones_.contains(source)) {
         if (source == target && IsDirectoryLocked(source)) return;
         if (IsDirectoryLocked(source)) {
@@ -364,8 +377,8 @@ void VirtualFileSystem::Impl::Rename(const std::string_view from,
         throw VfsError(kEacces, "VFS path is outside the writable namespace");
     }
     if (const auto current_target = files_.find(target);
-        current_target != files_.end() && current_target->second->generated)
-        throw VfsError(kEacces, "VFS generated file cannot be replaced");
+        current_target != files_.end() && (current_target->second->generated || current_target->second->character_device))
+        throw VfsError(kEacces, "VFS provider node cannot be replaced");
     files_.erase(found);
     if (const auto replaced = files_.find(target);
         replaced != files_.end() && replaced->second != file) {
@@ -423,6 +436,7 @@ void VirtualFileSystem::Impl::Flush(const std::int32_t descriptor) {
     }
     std::scoped_lock operation(open->mutex);
     if (open->directory) return;
+    if (open->file->character_device) throw VfsError(kEinval, "VFS character device cannot be flushed");
     std::scoped_lock file_lock(*open->file->mutex);
     std::scoped_lock lock(mutex_);
     FlushFileLocked(*open->file);

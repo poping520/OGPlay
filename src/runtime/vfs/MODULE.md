@@ -40,6 +40,21 @@ fstat 报当前快照大小。write/create/truncate/unlink/rename 拒绝，回�
 已有快照继续可读，close/lease 释放回收预算。退役路径可重新注册，不允许覆盖活跃节点。
 VFS 不依赖 provider 所属上层模块，也不调用宿主 procfs。
 
+## 只读字符设备
+
+`RegisterReadOnlyCharacterDevice` 注入按次读取的 reader 与 guest device number。
+设备共用稳定节点、FD 和操作锁；`Duplicate` 共享打开状态，关闭一个 FD 不影响其副本。
+read 不使用 size/offset 推断 EOF，每次非空读取调用 reader；空读返回 0。
+reader 在全局锁及节点锁外执行，由设备锁串行，短读与 `VfsError` 原样传播，其他标准异常
+转为 EIO，超长返回拒绝。注册句柄析构等待在途读取、撤销回调；旧 FD 后续读取返回 EIO，
+新 stat/open 返回 ENOENT，重新注册不会使旧 FD 指向新设备。
+
+stat/fstat 发布字符设备类型、size=0、只读权限和 rdev；目录条目保留 DT_CHR。
+write/create/truncate/unlink/rename/替换拒绝；seek/pread 返回 ESPIPE，lease 返回 ENOTSUP，
+fsync 返回 EINVAL。O_NONBLOCK 仅放行字符设备，reader 自身负责就绪策略；本层不创建
+熵池或等待队列，也不扩展 PipePollEvents 的非 pipe 轮询范围。回调不得递归读/撤销自身。
+随机设备的 HAL 装配与具体策略见 [ADR-0086](../../../docs/adr/runtime.md#adr-0086)。
+
 ## 安装实例沙盒
 
 `SandboxStore::Open(root, installation_id, package)` 只接收安装层已选定的实例 id，不分配

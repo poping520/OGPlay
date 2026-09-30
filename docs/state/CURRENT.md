@@ -117,6 +117,11 @@
   全 BootDex 类链接遍历完成，但仍因既有 MediaPlayer overlay 检查与过期类数断言（1729）
   整体失败。证据为 `.local/xmlpull-*.log` 与 `.local/xmlpull-dependencies.json`；
   游戏仍只是 reached-fault，未通过验收。
+  [VFS-06](../tasks/vfs/VFS-06.md) 已接通随机字符设备→HAL OS CSPRNG，补齐实际打开标志；
+  Windows Release 构建及定向 58 用例/458 断言通过。同一 APK/OBB、独立持久沙盒实跑，
+  f=1810 关闭剧情弹框，Mono open `/dev/urandom` 得 fd=91，read(8)=8，原随机源异常消失。
+  f=1811 下一首错为 nativeRender/NewStringUTF 的 modified UTF-8 未终止，CLI 返回 1；
+  游戏存档落盘及重载尚未验收。证据 `.local/random-game.stderr.log`、`.local/random-tests.log`。
 - **Angry Birds 2.3.0**：无 Profile、空沙盒运行 5000 presented frames，
   `View.setScrollBarStyle/getScrollBarStyle` 原方法解析错未再出现，未触发新的致命首错。
   滚动条绘制和完整游戏兼容仍未验收。此前 SQLite/guest ICU、EventLog、

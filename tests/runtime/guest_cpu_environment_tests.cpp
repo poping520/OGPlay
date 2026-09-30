@@ -5,6 +5,7 @@
 #include <fstream>
 #include <iterator>
 #include <string>
+#include <cstring>
 
 #include "ogplay/cpu/dynarmic.h"
 #include "ogplay/memory/bus.h"
@@ -203,4 +204,50 @@ TEST_CASE("ARM tkill real API19 libc wrapper preserves syscall errno") {
         CHECK(bytes[3] == std::byte{});
     }
     process->Stop();
+}
+
+TEST_CASE("VFS-06 real API19 ARM libc reads HAL secure random and closes duplicates") {
+    std::vector<std::vector<std::byte>> images;
+    std::vector<loader::Elf32ModuleInput> modules;
+    for (const auto* name : {"libc.so", "libdl.so"}) {
+        std::ifstream input(std::string(OGPLAY_SOURCE_DIR) + "/data/android/19/lib/" + name, std::ios::binary);
+        REQUIRE(input.good());
+        const std::vector<char> bytes{std::istreambuf_iterator<char>(input), {}};
+        auto& image = images.emplace_back(bytes.size());
+        std::transform(bytes.begin(), bytes.end(), image.begin(), [](char value) { return static_cast<std::byte>(value); });
+        modules.push_back({name, image, memory::GuestAddress{0x10000000U + static_cast<std::uint32_t>(modules.size()) * 0x10000000U}});
+    }
+    runtime::VirtualFileSystem fs;
+    auto process = runtime::AndroidGuestProcess::Start({19, modules, {}, 64, 36, 1000000, 1, &fs, {}});
+    const auto call = [&](std::string_view name, std::array<std::uint32_t, 4> args) {
+        return process->Invoke({process->FindModuleExport(0, name), args}).return_value;
+    };
+    const memory::GuestAddress scratch{call("malloc", {1024})};
+    REQUIRE(scratch.Value() != 0);
+    for (const auto* path : {"/dev/urandom", "/dev/random"}) {
+        process->GuestMemoryAccess().write(scratch, std::as_bytes(std::span{path, std::strlen(path) + 1}));
+        const auto fd = call("open", {scratch.Value(), 0x20900, 0});
+        REQUIRE(fd >= 3);
+        REQUIRE(fd != 0xffffffffU);
+        std::array<std::byte, 256> first{}, second{};
+        CHECK(call("read", {fd, scratch.Add(128).Value(), 256}) == 256);
+        process->GuestMemoryAccess().read(scratch.Add(128), first);
+        const auto dup = call("dup", {fd});
+        CHECK(call("close", {fd}) == 0);
+        CHECK(call("read", {dup, scratch.Add(128).Value(), 256}) == 256);
+        process->GuestMemoryAccess().read(scratch.Add(128), second);
+        CHECK(first != second);
+        CHECK(std::ranges::any_of(first, [](auto b) { return b != std::byte{}; }));
+        CHECK(call("read", {dup, scratch.Add(128).Value(), 0}) == 0);
+        CHECK(call("close", {dup}) == 0);
+        CHECK(call("read", {dup, scratch.Add(128).Value(), 1}) == 0xffffffffU);
+        const memory::GuestAddress errno_pointer{call("__errno", {})};
+        std::array<std::byte, 4> error{};
+        process->GuestMemoryAccess().read(errno_pointer, error);
+        CHECK(error[0] == std::byte{9});
+    }
+    static_cast<void>(call("free", {scratch.Value()}));
+    process->Stop();
+    process.reset();
+    CHECK_THROWS_AS(static_cast<void>(fs.Stat("/dev/urandom")), runtime::VfsError);
 }

@@ -534,3 +534,18 @@ renderer、queueEvent、EGL 创建/current/swap/释放统一归属 GLThread；�
 逐帧请求协议，等待时泵送主 Looper，queueEvent 可独立唤醒空闲线程。onPause 握手期间
 保留 GLThread，Activity 切换/停止时先退出并完成 native detach，再释放引用。
 不替换 guest 自带 GLSurfaceView，不扩展多 View 并行渲染、EGL 暂停重建或 NDK 事件 API。
+
+## ADR-0086：VFS 随机字符设备与 HAL 安全随机源
+
+状态：接受（2026-09-30）。任务：[VFS-06](../tasks/vfs/VFS-06.md)。
+
+native 库通过真实 guest Bionic open/read 获取安全随机数。VFS 提供最小只读字符设备
+reader，integration 注册 `/dev/urandom` 与 `/dev/random` 并注入现有 HAL OS CSPRNG；
+VFS 保持仅依赖标准库，不改 BootDex、Java 加密类或游戏代码。设备不使用打开快照，
+每次非空 read 请求新字节，不使用有限 size 推断 EOF，也不接受固定种子或失败降级。
+
+两条路径均定义为同步 OS CSPRNG 字节流，不模拟 Linux 熵池或阻塞/熵计数策略。
+O_NONBLOCK 不改变该策略，OS 失败返回 EIO；没有额外 readiness/poll 接口。
+只读权限、字符设备类型与 rdev 明确发布；seek/pread、lease、fsync 和修改设备的操作
+分别受 VFS 契约限制。注册撤销同步等待 reader，已有描述符保留身份但读取明确失败。
+dup 复用同一打开状态与操作锁，不复制随机内容。支付服务不在本能力范围。

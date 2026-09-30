@@ -139,6 +139,10 @@ public:
                     std::uint32_t usage);
     void BufferSubData(std::uint32_t target, std::int32_t offset,
                        std::span<const std::byte> data);
+    // Reads the current bound buffer without changing bindings; bounded and
+    // unmapped before returning. Never interprets offsets as host pointers.
+    [[nodiscard]] std::vector<std::byte> ReadBufferRange(
+        std::uint32_t target, std::uint32_t offset, std::uint64_t length);
     [[nodiscard]] std::int32_t GetBufferParameter(std::uint32_t target,
                                                    std::uint32_t parameter);
     [[nodiscard]] std::byte* MapBufferOes(std::uint32_t target,

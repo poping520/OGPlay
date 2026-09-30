@@ -2,6 +2,7 @@
 
 #include "ogplay/gles/etc1.h"
 #include "ogplay/gles/pvrtc.h"
+#include "ogplay/gles/guest_transfer.h"
 
 #include <algorithm>
 #include <limits>
@@ -534,6 +535,45 @@ bool AngleFrame::UnmapBufferOes(const std::uint32_t target) {
 bool AngleFrame::HasMappedBufferPointerOes(
     const std::uint32_t target, const std::uint32_t parameter) {
     return MappedBufferPointerOes(target, parameter) != nullptr;
+}
+
+std::vector<std::byte> AngleFrame::ReadBufferRange(
+    const std::uint32_t target, const std::uint32_t offset,
+    const std::uint64_t length) {
+#if OGPLAY_HAS_ANGLE
+    const auto size = GetBufferParameter(target, GL_BUFFER_SIZE);
+    if (size < 0 || offset > static_cast<std::uint32_t>(size) ||
+        length > static_cast<std::uint32_t>(size) - offset) {
+        throw GlesApiError("buffer read range", GL_INVALID_OPERATION);
+    }
+    if (length > kDefaultGuestTransferLimit) {
+        throw GuestTransferError("buffer read exceeds transfer budget");
+    }
+    if (GetBufferParameter(target, GL_BUFFER_MAPPED_OES) != 0) {
+        throw GlesApiError("buffer read while mapped", GL_INVALID_OPERATION);
+    }
+    std::vector<std::byte> bytes(static_cast<std::size_t>(length));
+    if (bytes.empty()) return bytes;
+    const bool core = lifecycle_.Info().client_version >= 3;
+    if (!core && !HasExtension(reinterpret_cast<const char*>(glGetString(GL_EXTENSIONS)),
+                               "GL_EXT_map_buffer_range")) {
+        throw std::runtime_error("ANGLE buffer read requires GL_EXT_map_buffer_range");
+    }
+    auto* mapped = core ? MapBufferRange(target, static_cast<std::int32_t>(offset),
+                                        static_cast<std::int32_t>(length), GL_MAP_READ_BIT_EXT)
+                        : static_cast<std::byte*>(glMapBufferRangeEXT(
+                              target, offset, static_cast<GLsizeiptr>(length), GL_MAP_READ_BIT_EXT));
+    if (!core) RequireNoError("glMapBufferRangeEXT");
+    if (!mapped) throw GlesApiError("buffer read mapping", GL_INVALID_OPERATION);
+    std::copy_n(mapped, bytes.size(), bytes.begin());
+    if (!(core ? UnmapBuffer(target) : UnmapBufferOes(target))) {
+        throw GlesApiError("buffer read contents", GL_INVALID_OPERATION);
+    }
+    return bytes;
+#else
+    static_cast<void>(target); static_cast<void>(offset); static_cast<void>(length);
+    throw EglLifecycleError(EglOperation::unavailable, 0);
+#endif
 }
 
 std::byte* AngleFrame::MappedBufferPointerOes(

@@ -632,8 +632,21 @@ public:
                         "glDrawElements expected a deferred index offset");
                 }
                 if (HasEnabledClientAttribute()) {
-                    throw std::runtime_error(
-                        "GLES2 cannot stage client arrays from an opaque element buffer");
+                    const auto width = type == kUnsignedByte ? 1U : type == kUnsignedShort ? 2U : 0U;
+                    if (width == 0U) throw gles::GlesApiError(symbol, 0x0500U);
+                    const auto indices = current.ReadBufferRange(kElementArrayBuffer, args[3],
+                        static_cast<std::uint64_t>(count) * width);
+                    try {
+                        StageClientAttributes(current, MaximumGuestIndex(indices, type), tid);
+                        current.DrawElements(args[0], count, type, args[3]);
+                    } catch (...) {
+                        // Preserve the original transfer/draw failure if the
+                        // backend also fails while restoring its bindings.
+                        try { RestoreBufferBindings(current); } catch (...) {}
+                        throw;
+                    }
+                    RestoreBufferBindings(current);
+                    return 0;
                 }
                 current.DrawElements(args[0], count, type, args[3]);
                 return 0;

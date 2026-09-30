@@ -155,9 +155,11 @@
 - Dead Trigger 已完成无 Profile 的 120 呈现帧启动冒烟并正常退出；本次无新致命首错，
   完整画面、交互及游戏兼容验收仍未完成。独立 GLThread 与输入接管已修正；点击路径
   [BND-46](../tasks/boundary/BND-46.md) 已补 API19 输入 getter 与队列事件快照，
-  Windows 构建、定向 12 用例/463 断言通过。原路径 120 帧点击弹框后越过
-  `AInputEvent_getSource` 缺失，121 帧下一首错为 `GLES2 cannot stage client arrays from an opaque element buffer`；
-  弹框关闭仍未验收。Java/NDK 共用快照、输入时钟、SDL 多点输入及取消已接入，
+  Windows 构建、定向 12 用例/463 断言通过。点击路径已越过 `AInputEvent_getSource` 缺失；
+  [BND-47](../tasks/boundary/BND-47.md) 修复 GLES2 element Buffer/client 属性混合绘制，
+  定向 6 用例/461 断言通过。启用诊断重跑，120 帧点击关闭弹框后到 180 帧无 guest fault，
+  已显示任务地图；随机源 CryptographicException 仍存在，存档及完整游戏兼容未验收。
+  首轮复现另有第 6 帧启动停滞，原因未确定。Java/NDK 共用快照、输入时钟、SDL 多点输入及取消已接入，
   联合定向 31 用例/1324 断言通过。event-watch 通知缓冲已接入并定向受检，
   按用户澄清，本次仅预留移动接口，移动入口同步暂停握手与真机验收属于后续移植工作，
   不作为当前输入任务的阻塞。

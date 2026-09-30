@@ -5293,11 +5293,43 @@ TEST_CASE("Android GLES boundary compiles and links guest shader sources") {
     REQUIRE(element_buffer != 0);
     static_cast<void>(fixture.Call("libGLESv2.so", "glBindBuffer",
                                    {0x8893U, element_buffer}));
-    CHECK_THROWS_WITH_AS(
-        fixture.Call("libGLESv2.so", "glDrawElements",
-                     {0x0004U, 3U, 0x1403U, 0U}),
-        "GLES2 cannot stage client arrays from an opaque element buffer",
-        std::runtime_error);
+    static_cast<void>(fixture.Call("libGLESv2.so", "glDrawElements",
+                                    {0x0004U, 3U, 0x1403U, 0U}));
+    CHECK(fixture.Call("libGLESv2.so", "glGetError") == 0x0502U);
+    // Empty allocation followed by a partial upload, with a nonzero index
+    // offset. The offset is not a readable guest address.
+    static_cast<void>(fixture.Call("libGLESv2.so", "glBufferData",
+                                    {0x8893U, 8U, 0U, 0x88E4U}));
+    static_cast<void>(fixture.Call("libGLESv2.so", "glBufferSubData",
+                                    {0x8893U, 2U, 6U, client_indices.Value()}));
+    CHECK_NOTHROW(static_cast<void>(fixture.Call("libGLESv2.so", "glDrawElements",
+                                    {0x0004U, 3U, 0x1403U, 2U})));
+    CHECK(fixture.Call("libGLESv2.so", "glGetError") == 0U);
+    static_cast<void>(fixture.Call("libGLESv2.so", "glGetIntegerv",
+                                    {0x8895U, query_output.Value()}));
+    CHECK(fixture.bus.Read32(query_output, 1) == element_buffer);
+    static_cast<void>(fixture.Call("libGLESv2.so", "glGetIntegerv",
+                                    {0x8894U, query_output.Value()}));
+    CHECK(fixture.bus.Read32(query_output, 1) == 0U);
+    const std::array<std::uint8_t, 3> sparse_indices{0, 1, 4};
+    fixture.memory.Write(client_indices, std::as_bytes(std::span(sparse_indices)), 1);
+    static_cast<void>(fixture.Call("libGLESv2.so", "glBufferSubData",
+                                    {0x8893U, 2U, 3U, client_indices.Value()}));
+    fixture.bus.Write32(fixture.stack, 0, 1);
+    fixture.bus.Write32(fixture.stack.Add(4), fixture.output.Add(fixture.memory.PageSize() - 24).Value(), 1);
+    static_cast<void>(fixture.Call("libGLESv2.so", "glVertexAttribPointer", {0, 2, 0x1406U, 0}));
+    // count is 3, but the largest index is 4: 5 vertices must be validated.
+    CHECK_THROWS_AS(fixture.Call("libGLESv2.so", "glDrawElements",
+                                 {0x0004U, 3U, 0x1401U, 2U}), ogplay::memory::MemoryFault);
+    static_cast<void>(fixture.Call("libGLESv2.so", "glGetIntegerv", {0x8894U, query_output.Value()}));
+    CHECK(fixture.bus.Read32(query_output, 1) == 0U);
+    static_cast<void>(fixture.Call("libGLESv2.so", "glGetIntegerv", {0x8895U, query_output.Value()}));
+    CHECK(fixture.bus.Read32(query_output, 1) == element_buffer);
+    fixture.bus.Write32(fixture.stack.Add(4), client_vertices.Value(), 1);
+    static_cast<void>(fixture.Call("libGLESv2.so", "glVertexAttribPointer", {0, 2, 0x1406U, 0}));
+    fixture.bus.Write8(client_indices.Add(2), 2, 1);
+    static_cast<void>(fixture.Call("libGLESv2.so", "glBufferSubData", {0x8893U, 2U, 3U, client_indices.Value()}));
+    CHECK_NOTHROW(static_cast<void>(fixture.Call("libGLESv2.so", "glDrawElements", {0x0004U, 3U, 0x1401U, 2U})));
     static_cast<void>(fixture.Call("libGLESv2.so", "glBindBuffer",
                                    {0x8893U, 0}));
     static_cast<void>(fixture.Call("libGLESv2.so", "glDisableVertexAttribArray",
@@ -5321,7 +5353,7 @@ TEST_CASE("Android GLES boundary compiles and links guest shader sources") {
                                    {0, 2, 0x1406U, 0}));
     static_cast<void>(fixture.Call("libGLESv1_CM.so", "glDrawArrays",
                                    {0x0004U, 0U, 3U}));
-    CHECK(fixture.boundary.Stats().draws == 5);
+    CHECK(fixture.boundary.Stats().draws == 7);
     static_cast<void>(fixture.Call("libGLESv2.so", "glDisableVertexAttribArray",
                                    {0}));
 
@@ -5339,7 +5371,7 @@ TEST_CASE("Android GLES boundary compiles and links guest shader sources") {
     const auto stats = fixture.boundary.Stats();
     CHECK(stats.shader_compiles == 2);
     CHECK(stats.program_links == 1);
-    CHECK(stats.draws == 5);
+    CHECK(stats.draws == 7);
 }
 
 TEST_CASE("GLES2 completion covers shader uniform and vertex query lifecycle") {

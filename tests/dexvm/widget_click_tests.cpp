@@ -1890,3 +1890,28 @@ TEST_CASE("DVM-123 hidden dynamic strip retains hierarchy drawable and listener"
     const auto& hidden = renderer.Render(vm.context->ui_tree, vm.context->ui_bitmaps, {100, 100});
     CHECK(hidden.rgba8 == std::vector<std::uint8_t>(100 * 100 * 4, 0));
 }
+
+
+TEST_CASE("BND46 deep touch dispatch preserves encoded action and cancels capture") {
+    ClickVm vm;
+    const auto view = vm.NewTouchView();
+    vm.CallOn(vm.activity, "setContentView", "(Landroid/view/View;)V", {VmValue::Ref(view)});
+    vm.ResetTouchView(true);
+    AndroidBoundaryInput snapshot;
+    snapshot.type = AndroidBoundaryInputType::pointer_motion;
+    snapshot.action = 5 | (1 << 8);
+    AndroidInputPointer first, second;
+    first.axes[0] = 12; first.axes[1] = 34;
+    second = first; second.id = 3;
+    snapshot.pointers = {first, second};
+    auto result = ogplay::session::DispatchDeepTouchEvent(
+        vm.interpreter, *vm.context, 5, 12, 34, view.Value(), &snapshot);
+    CHECK_FALSE(result.error.has_value());
+    CHECK(vm.TouchViewValue("getLastAction") == (5 | 1 << 8));
+    CHECK(result.captured_view == view.Value());
+    result = ogplay::session::DispatchDeepTouchEvent(
+        vm.interpreter, *vm.context, 3, 12, 34, view.Value(), &snapshot);
+    CHECK_FALSE(result.error.has_value());
+    CHECK(vm.TouchViewValue("getLastAction") == 3);
+    CHECK(result.captured_view == 0);
+}

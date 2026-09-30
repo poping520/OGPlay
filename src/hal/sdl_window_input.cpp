@@ -1,8 +1,10 @@
 #include "ogplay/hal/window_input.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <limits>
+#include <mutex>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -164,9 +166,15 @@ public:
             throw SdlError("SDL_InitSubSystem");
         }
         initialized_ = true;
+        if (!SDL_AddEventWatch(WatchLifecycle, this)) {
+            SDL_QuitSubSystem(kSdlSubsystems);
+            initialized_ = false;
+            throw SdlError("SDL_AddEventWatch");
+        }
     }
 
     ~SdlWindowInput() override {
+        SDL_RemoveEventWatch(WatchLifecycle, this);
         Close();
         if (initialized_) SDL_QuitSubSystem(kSdlSubsystems);
     }
@@ -192,6 +200,7 @@ public:
             throw SdlError("SDL_CreateRenderer");
         }
         present_count_ = 0;
+        modifiers_ = NormalizeKeyModifiers(SDL_GetModState());
     }
 
     void Close() noexcept override {
@@ -249,6 +258,26 @@ public:
         while (SDL_PollEvent(&event)) {
             AppendEvent(event, result);
         }
+        // A lifecycle callback may arrive on another thread or while a guest
+        // call pumps SDL. Keep it durable even if SDL subsequently flushes its
+        // event queue. Only this owner-thread boundary delivers it upstream.
+        std::scoped_lock lock(lifecycle_mutex_);
+        if (lifecycle_overflow_) {
+            throw std::runtime_error("SDL lifecycle notification budget exhausted");
+        }
+        if (lifecycle_count_ != 0) {
+            modifiers_ = 0;
+            // Cancel boundaries invalidate queued input, including a partial
+            // down/up pair. Do not replay a stale click after resuming.
+            std::erase_if(result, [](const auto& input) {
+                return input.type != InputEventType::quit &&
+                       input.type != InputEventType::gamepad_added &&
+                       input.type != InputEventType::gamepad_removed;
+            });
+            result.insert(result.begin(), lifecycle_events_.begin(),
+                          lifecycle_events_.begin() + lifecycle_count_);
+            lifecycle_count_ = 0;
+        }
         return result;
     }
 
@@ -298,6 +327,36 @@ public:
     }
 
 private:
+    static bool SDLCALL WatchLifecycle(void* userdata, SDL_Event* event) noexcept {
+        auto& self = *static_cast<SdlWindowInput*>(userdata);
+        const auto type = event->type;
+        if (type != SDL_EVENT_WILL_ENTER_BACKGROUND &&
+            type != SDL_EVENT_DID_ENTER_BACKGROUND &&
+            type != SDL_EVENT_DID_ENTER_FOREGROUND &&
+            type != SDL_EVENT_TERMINATING) return true;
+        // No SDL calls, allocation, guest calls or thread-completion waits
+        // here: SDL invokes watches while holding its event-watch lock.
+        std::scoped_lock lock(self.lifecycle_mutex_);
+        if (self.terminating_) return true;
+        InputEventType normalized;
+        if (type == SDL_EVENT_TERMINATING) {
+            self.terminating_ = true;
+            normalized = InputEventType::quit;
+        } else {
+            const bool background = type != SDL_EVENT_DID_ENTER_FOREGROUND;
+            if (background == self.background_) return true;
+            self.background_ = background;
+            normalized = background ? InputEventType::app_background : InputEventType::app_foreground;
+        }
+        if (self.lifecycle_count_ == self.lifecycle_events_.size()) {
+            self.lifecycle_overflow_ = true;
+        } else {
+            self.lifecycle_events_[self.lifecycle_count_++] = {
+                .type = normalized, .timestamp_ns = event->common.timestamp};
+        }
+        return true;
+    }
+
     void DestroyFrameTexture() noexcept {
         if (texture_ != nullptr) {
             SDL_DestroyTexture(texture_);
@@ -334,7 +393,7 @@ private:
         return id == 0 || id == SDL_GetWindowID(window_);
     }
 
-    void AppendEvent(const SDL_Event& event, std::vector<InputEvent>& result) const {
+    void AppendEvent(const SDL_Event& event, std::vector<InputEvent>& result) {
         switch (event.type) {
         case SDL_EVENT_QUIT:
             result.push_back({.type = InputEventType::quit,
@@ -347,9 +406,51 @@ private:
                                   .window_id = event.window.windowID});
             }
             break;
+        case SDL_EVENT_WINDOW_FOCUS_LOST:
+            if (IsOwnedWindow(event.window.windowID)) modifiers_ = 0;
+            [[fallthrough]];
+        case SDL_EVENT_WINDOW_RESIZED:
+        case SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED:
+        case SDL_EVENT_WINDOW_SAFE_AREA_CHANGED:
+            if (IsOwnedWindow(event.window.windowID))
+                result.push_back({.type = InputEventType::input_reset,
+                    .timestamp_ns = event.window.timestamp, .window_id = event.window.windowID});
+            break;
+        case SDL_EVENT_WILL_ENTER_BACKGROUND:
+        case SDL_EVENT_DID_ENTER_BACKGROUND:
+        case SDL_EVENT_DID_ENTER_FOREGROUND:
+        case SDL_EVENT_TERMINATING:
+            break; // Delivered by the durable lifecycle watch above.
+        case SDL_EVENT_MOUSE_REMOVED:
+        case SDL_EVENT_KEYBOARD_REMOVED:
+            if (event.type == SDL_EVENT_KEYBOARD_REMOVED) modifiers_ = 0;
+            result.push_back({.type = InputEventType::input_reset,
+                              .timestamp_ns = event.common.timestamp});
+            break;
+        case SDL_EVENT_FINGER_DOWN:
+        case SDL_EVENT_FINGER_MOTION:
+        case SDL_EVENT_FINGER_UP:
+        case SDL_EVENT_FINGER_CANCELED:
+            if (IsOwnedWindow(event.tfinger.windowID) && event.tfinger.touchID != SDL_MOUSE_TOUCHID) {
+                const auto state = State();
+                result.push_back({
+                    .type = event.type == SDL_EVENT_FINGER_DOWN ? InputEventType::touch_down :
+                        event.type == SDL_EVENT_FINGER_UP ? InputEventType::touch_up :
+                        event.type == SDL_EVENT_FINGER_CANCELED ? InputEventType::touch_cancel : InputEventType::touch_motion,
+                    .timestamp_ns = event.tfinger.timestamp,
+                    .window_id = event.tfinger.windowID,
+                    .x = event.tfinger.x * static_cast<float>(state.width),
+                    .y = event.tfinger.y * static_cast<float>(state.height),
+                    .key_modifiers = modifiers_,
+                    .touch_device_id = event.tfinger.touchID, .contact_id = event.tfinger.fingerID,
+                    .pressure = event.tfinger.pressure,
+                });
+            }
+            break;
         case SDL_EVENT_KEY_DOWN:
         case SDL_EVENT_KEY_UP:
             if (IsOwnedWindow(event.key.windowID)) {
+                modifiers_ = NormalizeKeyModifiers(event.key.mod);
                 result.push_back({
                     .type = InputEventType::key,
                     .timestamp_ns = event.key.timestamp,
@@ -361,12 +462,12 @@ private:
                     .key_symbol = static_cast<std::int32_t>(
                         SDL_GetKeyFromScancode(event.key.scancode,
                                                event.key.mod, true)),
-                    .key_modifiers = NormalizeKeyModifiers(event.key.mod),
+                    .key_modifiers = modifiers_,
                 });
             }
             break;
         case SDL_EVENT_MOUSE_MOTION:
-            if (IsOwnedWindow(event.motion.windowID)) {
+            if (IsOwnedWindow(event.motion.windowID) && event.motion.which != SDL_TOUCH_MOUSEID) {
                 result.push_back({
                     .type = InputEventType::pointer_motion,
                     .timestamp_ns = event.motion.timestamp,
@@ -376,12 +477,13 @@ private:
                     .y = event.motion.y,
                     .delta_x = event.motion.xrel,
                     .delta_y = event.motion.yrel,
+                    .key_modifiers = modifiers_,
                 });
             }
             break;
         case SDL_EVENT_MOUSE_BUTTON_DOWN:
         case SDL_EVENT_MOUSE_BUTTON_UP:
-            if (IsOwnedWindow(event.button.windowID)) {
+            if (IsOwnedWindow(event.button.windowID) && event.button.which != SDL_TOUCH_MOUSEID) {
                 result.push_back({
                     .type = InputEventType::pointer_button,
                     .timestamp_ns = event.button.timestamp,
@@ -392,6 +494,7 @@ private:
                     .x = event.button.x,
                     .y = event.button.y,
                     .pressed = event.button.down,
+                    .key_modifiers = modifiers_,
                 });
             }
             break;
@@ -429,12 +532,17 @@ private:
     }
 
     SDL_Window* window_{};
+    std::mutex lifecycle_mutex_;
+    std::array<InputEvent, 64> lifecycle_events_{};
+    std::size_t lifecycle_count_{};
+    bool background_{}, terminating_{}, lifecycle_overflow_{};
     SDL_Renderer* renderer_{};
     SDL_Texture* texture_{};
     std::uint32_t texture_width_{};
     std::uint32_t texture_height_{};
     bool initialized_{};
     std::uint64_t present_count_{};
+    std::uint32_t modifiers_{};
 };
 
 }  // namespace

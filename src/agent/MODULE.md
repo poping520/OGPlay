@@ -52,6 +52,7 @@
   未知 overlay 和未知字段必须明确失败。
 - MCP pointer gesture 的每个 down/move/up 阶段必须由独立 take 取得；整数插值包含精确终点，
   单个 swipe 不得超过 120 个 motion 阶段，待处理手势不得超过 64 个。
+  `CancelPending` 清空输入队列；调用方负责同时取消已交给 session 的手势。
 - MCP click 必须在最近帧边界内、参数完整且队列可用时才确认排队；队列满、无帧、负数、
   越界、未知字段和未接输入均返回显式 tool error。
 - MCP swipe 的起点和终点必须不同且都在最近帧边界内；五个参数完整、步数受限且队列可用时

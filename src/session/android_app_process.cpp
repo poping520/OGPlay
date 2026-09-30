@@ -249,7 +249,8 @@ public:
             {runtime::kAndroidTouchDeviceId, "OGPlay mapped touch", "ogplay:touch",
              runtime::kAndroidTouchSource, 0,
              {{0, runtime::kAndroidTouchSource, 0, static_cast<float>(request.surface_width - 1)},
-              {1, runtime::kAndroidTouchSource, 0, static_cast<float>(request.surface_height - 1)}}}};
+              {1, runtime::kAndroidTouchSource, 0, static_cast<float>(request.surface_height - 1)},
+              {2, runtime::kAndroidTouchSource, 0, 1}}}};
         context->surface_height = request.surface_height;
         context->api_level = static_cast<std::int32_t>(request.api_level);
         context->vfs = request.filesystem;

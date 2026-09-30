@@ -57,7 +57,8 @@
   Clock、输入、frame 或 present。
 - MCP 发布唯一 lifecycle/frame/ticks/presented-frame/movie/exit/fault 快照；fault 不冒充
   stop/success，截图只读已 present 的 RGBA8。`McpPointerDispatcher` 在 guest 主线程映射输入，
-  并与窗口手势互斥。
+  并与窗口鼠标/原生触摸手势互斥。输入重置时取消 session 中的按住状态，并清空
+  MCP 当前和待处理手势；后台暂停仅在对应前台通知后自动恢复，不覆盖手动暂停。
 - pointer 按最新 guest frame 与等比内容区映射；黑边不开始手势，既有 release 必须闭合。
   窗口 FPS 使用独立 `RealtimeClock`，不改变 guest Clock。
 - 音频只消费已解析的 resid/APK/VFS 字节区间；解码归 audio，补充有界，退出停止设备。

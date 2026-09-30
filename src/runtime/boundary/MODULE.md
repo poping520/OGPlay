@@ -118,7 +118,7 @@ Display/config 是进程事实，Context/Surface 使用单调句柄，保存版�
   identity 与 APK reader 显式注入。asset opaque token 随 owner 退役，单 asset 上限 64 MiB。
   window 每次创建新身份，acquire/release 可保留退役后的尺寸查询但不能重新激活；EGL
   create/bind/swap 拒绝失效窗口。只接受会话尺寸/RGBA8 geometry，其余 EINVAL。
-  InputQueue 只接收当前 owner 的 SDL 输入，支持所属 Looper ident poll/get/finish/detach；
+  InputQueue 只接收当前 owner 的输入快照，支持所属 Looper ident poll/get/finish/detach；
   callback 明确失败，managed Activity 失效句柄不得回退 standalone 行为。
 - libdl 只处理 ABI、逐线程消费式 dlerror 和有界只读返回区；ELF namespace、handle、sealed
   symbol/exidx 由 BionicDynamicLinkHooks 注入。查找失败按 null/-1 表达，不转为 trap。

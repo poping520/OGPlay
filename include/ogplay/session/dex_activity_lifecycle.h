@@ -11,6 +11,7 @@
 #include "ogplay/runtime/integration/dexvm_android.h"
 #include "ogplay/runtime/integration/dexvm_bridge.h"
 #include "ogplay/session/lifecycle.h"
+#include "ogplay/session/android_input_mapping.h"
 
 namespace ogplay::session {
 
@@ -32,7 +33,8 @@ struct DeepTouchDispatchResult final {
 [[nodiscard]] DeepTouchDispatchResult DispatchDeepTouchEvent(
     runtime::dexvm::Interpreter& vm,
     runtime::DexVmAndroidContext& context, std::int32_t action, float x,
-    float y, std::uint64_t captured_view);
+    float y, std::uint64_t captured_view,
+    const runtime::AndroidBoundaryInput* snapshot = nullptr);
 
 [[nodiscard]] bool ShouldInterceptScrollGesture(
     std::int32_t scroll_range, float down_y, float current_y,
@@ -95,6 +97,7 @@ public:
     [[nodiscard]] runtime::AndroidBoundaryFrame ComposePresentedFrame(
         runtime::AndroidBoundaryFrame frame);
     void QueueInput(const runtime::AndroidBoundaryInput& input);
+    void CancelInput();
     [[nodiscard]] LifecycleFrameState Stop();
     [[nodiscard]] LifecycleFrameState State() const;
     [[nodiscard]] std::uint64_t TicksPerSecond() const noexcept;
@@ -142,6 +145,7 @@ private:
 
     DexActivityLifecycleBindings bindings_;
     std::vector<runtime::AndroidBoundaryInput> pending_input_;
+    AndroidInputTimeline input_timeline_;
     hal::FixedStepClock clock_;
     LifecycleRunState state_{LifecycleRunState::ready};
     std::uint64_t frame_{};

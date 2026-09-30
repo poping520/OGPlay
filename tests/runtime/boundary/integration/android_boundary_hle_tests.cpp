@@ -4542,7 +4542,7 @@ TEST_CASE("BND45 Android looper polls real pipe readiness and attached input") {
     CHECK(fixture.Call("libandroid.so", "ALooper_pollAll", {0, 0, 0, fixture.output.Add(8).Value()}) == 2);
     CHECK(fixture.bus.Read32(fixture.output.Add(8)) == 0x87654321U);
     CHECK(fixture.Call("libandroid.so", "AInputQueue_getEvent", {2, fixture.output.Value()}) == 0);
-    fixture.Call("libandroid.so", "AInputQueue_finishEvent", {2, 0x6e003200U, 1});
+    fixture.Call("libandroid.so", "AInputQueue_finishEvent", {2, fixture.bus.Read32(fixture.output), 1});
     fixture.Call("libandroid.so", "AInputQueue_detachLooper", {2});
     fixture.boundary.PushInput({ogplay::runtime::AndroidBoundaryInputType::key, 30, 0, 0, true});
     CHECK(static_cast<std::int32_t>(fixture.Call("libandroid.so", "ALooper_pollOnce")) == -3);
@@ -6313,4 +6313,188 @@ TEST_CASE("DVM-195 NativeActivity window takeover retires old EGL surfaces") {
     CHECK(f.Call("libEGL.so", "eglDestroySurface", {1, first_surface}) == 1U);
     CHECK(f.Call("libEGL.so", "eglDestroySurface", {1, second_surface}) == 1U);
     CHECK(f.Call("libEGL.so", "eglTerminate", {1}) == 1U);
+}
+
+
+TEST_CASE("BND46 input snapshots expose API19 axes history and wide time on both ABI paths") {
+    using namespace ogplay;
+    BoundaryFixture f;
+    runtime::AndroidBoundaryInput input;
+    input.type = runtime::AndroidBoundaryInputType::pointer_motion;
+    input.action = 5 | (1 << 8);
+    input.source = 0x1002;
+    input.device_id = 7;
+    input.flags = 8; input.meta_state = 3; input.button_state = 2; input.edge_flags = 4;
+    input.down_time_ns = 0x123456789LL;
+    input.event_time_ns = 0x23456789aLL;
+    input.x_offset = 11; input.y_offset = 13;
+    input.x_precision = 0.5F; input.y_precision = 0.25F;
+    runtime::AndroidInputPointer first, second;
+    first.id = 9; second.id = 3; second.tool_type = 2;
+    for (std::size_t i = 0; i < 64; ++i) {
+        first.axes[i] = static_cast<float>(i) + 0.5F;
+        second.axes[i] = static_cast<float>(i) + 10.5F;
+    }
+    input.pointers = {first, second};
+    first.axes[0] = 90; second.axes[0] = 100;
+    input.history = {{0x200000001LL, {first, second}}};
+    f.boundary.PushInput(input);
+    // Mutation after enqueue cannot change the event visible to guest.
+    input.pointers[1].axes[0] = -100;
+    REQUIRE(f.Call("libandroid.so", "AInputQueue_getEvent", {2, f.output.Value()}) == 0);
+    const auto event = f.bus.Read32(f.output);
+    const auto scalar = [&](const char* name) { return f.Call("libandroid.so", name, {event}); };
+    CHECK(scalar("AInputEvent_getType") == 2);
+    CHECK(scalar("AInputEvent_getDeviceId") == 7);
+    CHECK(scalar("AInputEvent_getSource") == 0x1002);
+    CHECK(scalar("AMotionEvent_getAction") == (5 | 1 << 8));
+    CHECK(scalar("AMotionEvent_getFlags") == 8);
+    CHECK(scalar("AMotionEvent_getMetaState") == 3);
+    CHECK(scalar("AMotionEvent_getButtonState") == 2);
+    CHECK(scalar("AMotionEvent_getEdgeFlags") == 4);
+    CHECK(scalar("AMotionEvent_getPointerCount") == 2);
+    CHECK(scalar("AMotionEvent_getHistorySize") == 1);
+    CHECK(std::bit_cast<float>(scalar("AMotionEvent_getXOffset")) == 11);
+    CHECK(std::bit_cast<float>(scalar("AMotionEvent_getYOffset")) == 13);
+    CHECK(std::bit_cast<float>(scalar("AMotionEvent_getXPrecision")) == 0.5F);
+    CHECK(std::bit_cast<float>(scalar("AMotionEvent_getYPrecision")) == 0.25F);
+    CHECK(f.Call("libandroid.so", "AMotionEvent_getPointerId", {event, 1}) == 3);
+    CHECK(f.Call("libandroid.so", "AMotionEvent_getToolType", {event, 1}) == 2);
+    const std::array names{"X", "Y", "Pressure", "Size", "TouchMajor", "TouchMinor",
+                           "ToolMajor", "ToolMinor", "Orientation"};
+    for (std::size_t axis = 0; axis < names.size(); ++axis) {
+        const auto current = std::string("AMotionEvent_get") + names[axis];
+        const auto historical = std::string("AMotionEvent_getHistorical") + names[axis];
+        const float offset = axis == 0 ? 11.0F : axis == 1 ? 13.0F : 0.0F;
+        const auto expected = static_cast<float>(axis) + 10.5F + offset;
+        CHECK(std::bit_cast<float>(f.Call("libandroid.so", current, {event, 1})) == expected);
+        CHECK(std::bit_cast<float>(FastBoundaryCall(f, "libandroid.so", current, {event, 1})) == expected);
+        CHECK(std::bit_cast<float>(f.Call("libandroid.so", historical, {event, 1, 0})) ==
+              (axis == 0 ? 111.0F : expected));
+    }
+    CHECK(std::bit_cast<float>(f.Call("libandroid.so", "AMotionEvent_getRawX", {event, 1})) == 10.5F);
+    CHECK(std::bit_cast<float>(f.Call("libandroid.so", "AMotionEvent_getRawY", {event, 1})) == 11.5F);
+    CHECK(std::bit_cast<float>(f.Call("libandroid.so", "AMotionEvent_getHistoricalRawX", {event, 1, 0})) == 100.0F);
+    CHECK(std::bit_cast<float>(f.Call("libandroid.so", "AMotionEvent_getHistoricalRawY", {event, 1, 0})) == 11.5F);
+    CHECK(std::bit_cast<float>(f.Call("libandroid.so", "AMotionEvent_getAxisValue", {event, 63, 1})) == 73.5F);
+    CHECK(std::bit_cast<float>(f.Call("libandroid.so", "AMotionEvent_getHistoricalAxisValue", {event, 63, 1, 0})) == 73.5F);
+    CHECK(f.Call("libandroid.so", "AMotionEvent_getAxisValue", {event, 64, 1}) == 0);
+    const auto wide = [&](const char* name, std::uint64_t expected) {
+        f.Call("libandroid.so", name, {event, 0});
+        CHECK(f.cpu.GetState().Register(cpu::CoreRegister::r0) == static_cast<std::uint32_t>(expected));
+        CHECK(f.cpu.GetState().Register(cpu::CoreRegister::r1) == static_cast<std::uint32_t>(expected >> 32));
+        const auto address = f.boundary.Symbols().Lookup("libandroid.so", name);
+        REQUIRE(address.has_value());
+        std::array<std::uint32_t, 16> registers{};
+        registers[0] = event; registers[13] = f.stack.Value();
+        cpu::A32HostCallContext context{registers, 1, memory::GuestAddress{address->Value() & ~1U}};
+        const auto hook = f.boundary.FastHostCallHook();
+        REQUIRE(hook.invoke(hook.userdata, 2, context) == cpu::HostCallResult::handled);
+        CHECK(registers[0] == static_cast<std::uint32_t>(expected));
+        CHECK(registers[1] == static_cast<std::uint32_t>(expected >> 32));
+    };
+    wide("AMotionEvent_getDownTime", 0x123456789ULL);
+    wide("AMotionEvent_getEventTime", 0x23456789aULL);
+    wide("AMotionEvent_getHistoricalEventTime", 0x200000001ULL);
+    CHECK_THROWS(f.Call("libandroid.so", "AMotionEvent_getX", {event, 2}));
+    CHECK_THROWS(f.Call("libandroid.so", "AMotionEvent_getHistoricalX", {event, 0, 1}));
+    CHECK_THROWS(scalar("AKeyEvent_getFlags"));
+    f.Call("libandroid.so", "AInputQueue_finishEvent", {2, event, 1});
+    CHECK_THROWS(scalar("AInputEvent_getType"));
+}
+
+TEST_CASE("BND46 input queues preserve inflight events and failed reads") {
+    using namespace ogplay;
+    BoundaryFixture f;
+    runtime::AndroidBoundaryInput input;
+    input.type = runtime::AndroidBoundaryInputType::key;
+    input.action = 0; input.source = 0x101; input.device_id = -1;
+    input.code = 29; input.scan_code = 4; input.flags = 8; input.meta_state = 3;
+    input.repeat_count = 2;
+    input.down_time_ns = 0x123456789LL; input.event_time_ns = 0x200000001LL;
+    f.boundary.PushInput(input);
+    CHECK(f.Call("libandroid.so", "AInputQueue_hasEvents", {2}) == 1);
+    CHECK_THROWS(f.Call("libandroid.so", "AInputQueue_getEvent", {2, 0}));
+    REQUIRE(f.Call("libandroid.so", "AInputQueue_getEvent", {2, f.output.Value()}) == 0);
+    const auto first = f.bus.Read32(f.output);
+    input.code = 30;
+    f.boundary.PushInput(input);
+    REQUIRE(f.Call("libandroid.so", "AInputQueue_getEvent", {2, f.output.Value()}) == 0);
+    const auto second = f.bus.Read32(f.output);
+    CHECK(first != second);
+    CHECK(f.Call("libandroid.so", "AKeyEvent_getKeyCode", {first}) == 29);
+    CHECK(f.Call("libandroid.so", "AKeyEvent_getKeyCode", {second}) == 30);
+    CHECK(f.Call("libandroid.so", "AKeyEvent_getAction", {first}) == 0);
+    CHECK(f.Call("libandroid.so", "AKeyEvent_getFlags", {first}) == 8);
+    CHECK(f.Call("libandroid.so", "AKeyEvent_getScanCode", {first}) == 4);
+    CHECK(f.Call("libandroid.so", "AKeyEvent_getMetaState", {first}) == 3);
+    CHECK(f.Call("libandroid.so", "AKeyEvent_getRepeatCount", {first}) == 2);
+    CHECK(f.Call("libandroid.so", "AInputEvent_getSource", {first}) == 0x101);
+    CHECK(f.Call("libandroid.so", "AInputEvent_getDeviceId", {first}) == UINT32_MAX);
+    CHECK(f.Call("libandroid.so", "AKeyEvent_getDownTime", {first}) == 0x23456789U);
+    CHECK(f.cpu.GetState().Register(cpu::CoreRegister::r1) == 1);
+    CHECK(f.Call("libandroid.so", "AKeyEvent_getEventTime", {first}) == 1);
+    CHECK(f.cpu.GetState().Register(cpu::CoreRegister::r1) == 2);
+    CHECK_THROWS(f.Call("libandroid.so", "AMotionEvent_getPointerCount", {first}));
+    CHECK(f.Call("libandroid.so", "AInputQueue_hasEvents", {2}) == 0);
+    CHECK(static_cast<std::int32_t>(f.Call("libandroid.so", "AInputQueue_getEvent", {2, f.output.Value()})) == -11);
+    f.Call("libandroid.so", "AInputQueue_finishEvent", {2, second, 0});
+    CHECK(f.Call("libandroid.so", "AKeyEvent_getKeyCode", {first}) == 29);
+    CHECK_THROWS(f.Call("libandroid.so", "AInputQueue_preDispatchEvent", {2, second}));
+    f.Call("libandroid.so", "AInputQueue_finishEvent", {2, first, 1});
+    CHECK_THROWS(f.Call("libandroid.so", "AInputQueue_finishEvent", {2, first, 1}));
+}
+
+
+TEST_CASE("BND46 retired input queues reject stale and foreign event identities") {
+    using namespace ogplay;
+    BoundaryFixture f;
+    const auto first = f.output.Add(256), second = first.Add(256);
+    for (const auto activity : {first, second})
+        f.boundary.RegisterNativeActivity({activity, activity.Add(128), activity.Add(148), 4, 3,
+            [](std::string_view) -> std::optional<std::vector<std::byte>> { return std::nullopt; }});
+    f.boundary.SetNativeActivityInput(first, true);
+    f.boundary.PushInput({runtime::AndroidBoundaryInputType::pointer_button, 0, 10, 20, true});
+    REQUIRE(f.Call("libandroid.so", "AInputQueue_getEvent", {first.Add(148).Value(), f.output.Value()}) == 0);
+    const auto old = f.bus.Read32(f.output);
+    f.boundary.SetNativeActivityInput(second, true);
+    CHECK_THROWS(f.Call("libandroid.so", "AInputQueue_finishEvent", {second.Add(148).Value(), old, 1}));
+    CHECK_THROWS(f.Call("libandroid.so", "AInputQueue_preDispatchEvent", {second.Add(148).Value(), old}));
+    f.boundary.SetNativeActivityInput(first, false);
+    CHECK_THROWS(f.Call("libandroid.so", "AInputEvent_getSource", {old}));
+    f.boundary.PushInput({runtime::AndroidBoundaryInputType::pointer_button, 0, 30, 40, true});
+    REQUIRE(f.Call("libandroid.so", "AInputQueue_getEvent", {second.Add(148).Value(), f.output.Value()}) == 0);
+    const auto current = f.bus.Read32(f.output);
+    CHECK(current != old);
+    f.boundary.UnregisterNativeActivity(first);
+    CHECK(std::bit_cast<float>(f.Call("libandroid.so", "AMotionEvent_getX", {current, 0})) == 30.0F);
+    f.boundary.UnregisterNativeActivity(second);
+    CHECK_THROWS(f.Call("libandroid.so", "AInputEvent_getSource", {current}));
+}
+
+TEST_CASE("BND46 malformed snapshots fail before publication") {
+    using namespace ogplay;
+    runtime::AndroidBoundaryInput input;
+    input.type = runtime::AndroidBoundaryInputType::pointer_motion;
+    input.action = 2;
+    input.event_time_ns = 100;
+    input.pointers = {{}, {}};
+    CHECK_THROWS(static_cast<void>(runtime::NormalizeAndroidInput(input))); // duplicate identities
+    input.pointers[1].id = 1;
+    CHECK_NOTHROW(static_cast<void>(runtime::NormalizeAndroidInput(input)));
+    input.action = 5 | (2 << 8);
+    CHECK_THROWS(static_cast<void>(runtime::NormalizeAndroidInput(input)));
+    input.action = 2;
+    input.history = {{101, input.pointers}};
+    CHECK_THROWS(static_cast<void>(runtime::NormalizeAndroidInput(input)));
+    input.history[0].event_time_ns = 99;
+    input.history[0].pointers[1].id = 3;
+    CHECK_THROWS(static_cast<void>(runtime::NormalizeAndroidInput(input)));
+    input.history.clear();
+    input.down_time_ns = 101;
+    CHECK_THROWS(static_cast<void>(runtime::NormalizeAndroidInput(input)));
+    input.down_time_ns = 0;
+    input.pointers.resize(17);
+    for (std::size_t i = 0; i < input.pointers.size(); ++i) input.pointers[i].id = static_cast<std::int32_t>(i);
+    CHECK_THROWS(static_cast<void>(runtime::NormalizeAndroidInput(input)));
 }

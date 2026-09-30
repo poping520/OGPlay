@@ -5,6 +5,11 @@
 
 namespace ogplay::agent {
 
+void McpInputQueue::CancelPending() {
+    std::scoped_lock lock(mutex_);
+    gestures_.clear();
+}
+
 std::optional<std::uint64_t> McpInputQueue::TryEnqueueClick(
     const std::uint64_t frame_sequence, const std::uint32_t x,
     const std::uint32_t y) {

@@ -294,7 +294,7 @@ public:
         const A32CallFrame call(arguments, thread_id);
         const auto result = binding.slow(binding.self, call);
         RecordGpuCall(index, call.RegisterArguments(), binding.gpu);
-        return result;
+        return result.low;
     }
     [[nodiscard]] std::uint32_t InvokeManagedEgl(
         const std::string_view name,
@@ -322,7 +322,7 @@ public:
         const A32CallFrame call(arguments, thread_id);
         const auto result = binding.slow(binding.self, call);
         RecordGpuCall(index, call.RegisterArguments(), binding.gpu);
-        return result;
+        return result.low;
     }
     void RetireGuestGraphics() noexcept {
         guest_graphics_retired_.store(true, std::memory_order_release);
@@ -383,7 +383,7 @@ public:
         const A32CallFrame call(address_space_, state,
                                 descriptor->parameter_count);
         const auto arguments = call.RegisterArguments();
-        std::uint32_t result{};
+        BoundaryResult result{};
         try {
             result = binding.slow(binding.self, call);
         } catch (const gles::GuestTransferError& error) {
@@ -403,11 +403,12 @@ public:
                 " thread=" + std::to_string(state.ThreadId()));
         }
         RecordGpuCall(descriptor_index, arguments, binding.gpu);
-        state.SetRegister(cpu::CoreRegister::r0, result);
+        state.SetRegister(cpu::CoreRegister::r0, result.low);
+        if (result.wide) state.SetRegister(cpu::CoreRegister::r1, result.high);
         cpu.SetState(state);
 
         return detail::ClassifyAndroidBoundaryProgress(
-            descriptor->library, descriptor->name, result);
+            descriptor->library, descriptor->name, result.low);
     }
     memory::GuestAddress PrepareThreadLooper(std::uint64_t tid) { return android_module_.PrepareThreadLooper(tid); }
     void RetireThreadLooper(std::uint64_t tid) { android_module_.RetireThreadLooper(tid); }
@@ -582,7 +583,7 @@ private:
             std::distance(descriptors_.begin(), found)));
     }
 
-    static std::uint32_t InvokeProcSlow(void* userdata,
+    static BoundaryResult InvokeProcSlow(void* userdata,
                                         const A32CallFrame& call) {
         const auto& proc = *static_cast<ProcForwarder*>(userdata);
         const auto* target = proc.owner->ProcTarget(proc, call.ThreadId());
@@ -602,7 +603,7 @@ private:
         try {
             const A32CallFrame call(proc.owner->address_space_, context,
                                     proc.parameter_count);
-            context.registers[0] = InvokeProcSlow(userdata, call);
+            context.registers[0] = InvokeProcSlow(userdata, call).low;
             proc.owner->RecordGpuCall(proc.slot, call.RegisterArguments(), true);
             return cpu::HostCallResult::handled;
         } catch (...) {

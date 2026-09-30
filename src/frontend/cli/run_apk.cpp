@@ -31,7 +31,7 @@
 #include "ogplay/hal/audio.h"
 #include "ogplay/hal/clock.h"
 #include "ogplay/hal/window_input.h"
-#include "ogplay/input/mouse_touch_mapper.h"
+#include "ogplay/input/touch_mapper.h"
 #include "ogplay/loader/apk.h"
 #include "ogplay/runtime/bionic/bionic_profile.h"
 #include "ogplay/runtime/integration/android_guest_call_session.h"
@@ -559,7 +559,7 @@ int RunApkCommand(const int argc, const char* const argv[],
             window->SetTitle(FrameRateTitle(base_title, *fps));
         }
     };
-    input::MouseTouchMapper mouse_touch;
+    input::TouchMapper touch_mapper;
     McpPointerDispatcher mcp_pointer;
     {
         std::shared_ptr<runtime::DexVmAndroidContext> dex_context;
@@ -647,6 +647,7 @@ int RunApkCommand(const int argc, const char* const argv[],
             std::function<session::LifecycleFrameState()> state;
             std::function<void(const runtime::AndroidBoundaryInput&)>
                 queue_input;
+            std::function<void()> cancel_input;
         };
         LifecycleDriver driver;
         core::CapabilityLedger dexvm_ledger;
@@ -838,7 +839,7 @@ int RunApkCommand(const int argc, const char* const argv[],
                       [&] { return dex_lifecycle->State(); },
                       [&](const runtime::AndroidBoundaryInput& input) {
                           dex_lifecycle->QueueInput(input);
-                      }};
+                      }, [&] { dex_lifecycle->CancelInput(); }};
         }
         logger.Write(core::LogLevel::info, "frontend.run_apk",
                      "starting Profile lifecycle", {}, {},
@@ -884,6 +885,8 @@ int RunApkCommand(const int argc, const char* const argv[],
             }
             mcp_session->Publish(std::move(snapshot));
         };
+        bool host_background = false;
+        bool host_suspended_session = false;
         publish_session();
         Write(mcp_manual_step
                   ? "OGPlay: APK guest execution started in MCP manual-step mode.\n"
@@ -891,22 +894,41 @@ int RunApkCommand(const int argc, const char* const argv[],
         while (!quit && !guest->ExitRequested() &&
                !(dex_context &&
                  runtime::SessionExitRequested(*dex_context))) {
-            const auto window_state = window->State();
             for (const auto& event : window->PollEvents()) {
-                if (event.type == hal::InputEventType::quit) {
+                using Type = hal::InputEventType;
+                if (event.type == Type::quit) {
                     quit = true;
+                } else if (event.type == Type::input_reset || event.type == Type::app_background) {
+                    touch_mapper.Reset();
+                    mcp_pointer.Cancel(mcp_inputs.get());
+                    if (!failure) driver.cancel_input();
+                    if (event.type == Type::app_background) {
+                        host_background = true;
+                        if (!failure && mcp_lifecycle == agent::McpLifecycleState::running) {
+                            static_cast<void>(driver.suspend());
+                            if (audio_pump) audio_pump->SetSuspended(true);
+                            mcp_lifecycle = agent::McpLifecycleState::suspended;
+                            host_suspended_session = true;
+                            publish_session();
+                        }
+                    }
+                } else if (event.type == Type::app_foreground) {
+                    host_background = false;
+                    if (!failure && host_suspended_session) {
+                        static_cast<void>(driver.resume());
+                        if (audio_pump) audio_pump->SetSuspended(false);
+                        mcp_lifecycle = agent::McpLifecycleState::running;
+                        host_suspended_session = false;
+                        publish_session();
+                    }
                 } else if (mcp_pointer.SuppressWindowEvent(event.type)) {
                     continue;
-                } else if (mcp_lifecycle == agent::McpLifecycleState::suspended ||
-                           failure) {
+                } else if (mcp_lifecycle == agent::McpLifecycleState::suspended || failure) {
                     continue;
-                } else if (const auto mapped = mouse_touch.Map(
-                               event, window_state, guest_width, guest_height);
-                           mapped.has_value()) {
-                    if (const auto input = session::MapAndroidInput(*mapped);
-                        input.has_value()) {
-                        driver.queue_input(*input);
-                    }
+                } else if (const auto touch = touch_mapper.Map(event, window->State(), guest_width, guest_height)) {
+                    driver.queue_input(session::MapAndroidTouch(*touch));
+                } else if (event.type == Type::key) {
+                    if (const auto input = session::MapAndroidInput(event)) driver.queue_input(*input);
                 }
             }
             bool frame_presented = false;
@@ -920,14 +942,22 @@ int RunApkCommand(const int argc, const char* const argv[],
                         } else if (!failure && command->type == Command::Type::step) {
                             permitted_steps += command->frames;
                         } else if (!failure && command->type == Command::Type::suspend) {
-                            static_cast<void>(driver.suspend());
+                            touch_mapper.Reset();
+                            mcp_pointer.Cancel(mcp_inputs.get());
+                            if (mcp_lifecycle == agent::McpLifecycleState::running)
+                                static_cast<void>(driver.suspend());
+                            host_suspended_session = false;
                             if (audio_pump) audio_pump->SetSuspended(true);
                             mcp_lifecycle = agent::McpLifecycleState::suspended;
                             publish_session();
                         } else if (!failure && command->type == Command::Type::resume) {
-                            static_cast<void>(driver.resume());
-                            if (audio_pump) audio_pump->SetSuspended(false);
-                            mcp_lifecycle = agent::McpLifecycleState::running;
+                            if (host_background) host_suspended_session = true;
+                            else {
+                                if (mcp_lifecycle == agent::McpLifecycleState::suspended)
+                                    static_cast<void>(driver.resume());
+                                if (audio_pump) audio_pump->SetSuspended(false);
+                                mcp_lifecycle = agent::McpLifecycleState::running;
+                            }
                             publish_session();
                         }
                     }
@@ -940,7 +970,7 @@ int RunApkCommand(const int argc, const char* const argv[],
                     continue;
                 }
                 if (const auto input = mcp_pointer.TakeNext(
-                        mcp_inputs.get(), mouse_touch); input.has_value()) {
+                        mcp_inputs.get(), touch_mapper.Active()); input.has_value()) {
                     driver.queue_input(*input);
                 }
                 active_frame = driver.state().frame + 1U;

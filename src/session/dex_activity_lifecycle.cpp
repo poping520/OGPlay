@@ -44,8 +44,6 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
         constexpr std::int32_t kMotionActionUp = 1;
         constexpr std::int32_t kMotionActionMove = 2;
         constexpr std::int32_t kMotionActionCancel = 3;
-        constexpr std::int32_t kKeyActionDown = 0;
-        constexpr std::int32_t kKeyActionUp = 1;
         constexpr std::int64_t kMillisPerFrame = 16;
         constexpr std::size_t kInitialThreadQuiescenceYieldLimit = 64U;
 
@@ -180,7 +178,7 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
     DeepTouchDispatchResult DispatchDeepTouchEvent(
         dx::Interpreter& vm, runtime::DexVmAndroidContext& context,
         const std::int32_t action, const float x, const float y,
-        const std::uint64_t captured_view) {
+        const std::uint64_t captured_view, const runtime::AndroidBoundaryInput* snapshot) {
         auto& linker = vm.Linker();
         const auto invoke = [&](const std::uint64_t handle)
             -> DeepTouchDispatchResult {
@@ -198,7 +196,10 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
                 owner.descriptor == "Landroid/app/Activity;") {
                 return {};
             }
-            const auto event = runtime::MakeMotionEvent(vm, action, x, y, 0);
+            auto adjusted = snapshot ? *snapshot : runtime::AndroidBoundaryInput{};
+            if (snapshot && action == kMotionActionCancel) adjusted.action = kMotionActionCancel;
+            const auto event = snapshot ? runtime::MakeMotionEvent(vm, adjusted)
+                                       : runtime::MakeMotionEvent(vm, action, x, y, 0);
             const auto outcome = vm.Call(
                 method, std::vector<dx::VmValue>{dx::VmValue::Ref(receiver),
                                                  dx::VmValue::Ref(event)});
@@ -208,7 +209,7 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
             }
             const bool handled = outcome.value.AsInt() != 0;
             return {.handled = handled,
-                    .captured_view = action == kMotionActionUp ? 0U : handle};
+                    .captured_view = (action == kMotionActionUp || action == kMotionActionCancel) ? 0U : handle};
         };
 
         if (action != kMotionActionDown) {
@@ -287,6 +288,9 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
 
     void DexActivityLifecycle::SetWindowFocus(const bool has_focus) {
         auto& context = *bindings_.context;
+        if (!has_focus && state_ == LifecycleRunState::running) {
+            CancelInput();
+        }
         const auto activity = context.activity;
         if (!activity.IsValid()) Fail("window focus has no Activity owner");
         const auto owner = activity.Value();
@@ -502,14 +506,23 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
         return State();
     }
 
+    void DexActivityLifecycle::CancelInput() {
+        if (state_ != LifecycleRunState::running) return;
+        const auto cancelled = input_timeline_.Cancel(bindings_.context->uptime_millis.load() * 1000000);
+        pending_input_.insert(pending_input_.end(), cancelled.begin(), cancelled.end());
+        if (!pending_input_.empty()) DispatchInput();
+    }
+
     void DexActivityLifecycle::QueueInput(
         const runtime::AndroidBoundaryInput& input) {
         if (state_ != LifecycleRunState::running || suspended_) return;
-        pending_input_.push_back(input);
-        // Both Java dispatch and the native input queue expose the same
-        // logical devices. Host SDL ids belong to a different namespace.
-        pending_input_.back().device_id = input.type == runtime::AndroidBoundaryInputType::key
+        auto logical = input;
+        // Both delivery paths expose the process input inventory, not SDL ids.
+        logical.device_id = input.type == runtime::AndroidBoundaryInputType::key
             ? runtime::kAndroidKeyboardDeviceId : runtime::kAndroidTouchDeviceId;
+        const auto now = bindings_.context->uptime_millis.load() * 1000000;
+        if (auto snapshot = input_timeline_.Stamp(std::move(logical), now))
+            pending_input_.push_back(std::move(*snapshot));
     }
 
     void DexActivityLifecycle::DispatchInput() {
@@ -562,7 +575,7 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
                     vm.Model().ObjectClass(key_event);
                 const auto constructor = bindings_.bridge->Linker()
                     .FindDirectMethod(key_event_class, "<init>",
-                                      "(JJIIIIII)V");
+                                      "(JJIIIIIIII)V");
                 if (!constructor.has_value()) {
                     Fail("KeyEvent has no timed input constructor");
                 }
@@ -571,19 +584,25 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
                     vm.Call(*constructor,
                             std::vector<dx::VmValue>{
                                 dx::VmValue::Ref(key_event),
-                                dx::VmValue::Long(input.event_time_ms),
-                                dx::VmValue::Long(input.event_time_ms),
-                                dx::VmValue::Int(
-                                    input.pressed ? kKeyActionDown
-                                                  : kKeyActionUp),
+                                dx::VmValue::Long(input.down_time_ns / 1000000),
+                                dx::VmValue::Long(input.event_time_ns / 1000000),
+                                dx::VmValue::Int(input.action),
                                 dx::VmValue::Int(input.code),
                                 dx::VmValue::Int(input.repeat_count),
                                 dx::VmValue::Int(input.meta_state),
                                 dx::VmValue::Int(input.device_id),
-                                dx::VmValue::Int(input.scan_code)}),
+                                dx::VmValue::Int(input.scan_code),
+                                dx::VmValue::Int(input.flags),
+                                dx::VmValue::Int(input.source)}),
                     "KeyEvent <init>");
                 runtime::SetAndroidKeyEventUnicode(
                     vm, key_event, input.unicode_char);
+                if (input.action == 2) {
+                    CallActivity("onKeyMultiple", "(IILandroid/view/KeyEvent;)Z",
+                        {dx::VmValue::Int(input.code), dx::VmValue::Int(input.repeat_count),
+                         dx::VmValue::Ref(key_event)});
+                    continue;
+                }
                 CallActivity(input.pressed ? "onKeyDown" : "onKeyUp",
                              "(ILandroid/view/KeyEvent;)Z",
                              {
@@ -592,18 +611,11 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
                              });
                 continue;
             }
-            std::int32_t action{};
-            if (input.type == Type::pointer_button) {
-                action = input.pressed ? kMotionActionDown : kMotionActionUp;
-                pointer_down_ = input.pressed;
-                pointer_x_ = input.x;
-                pointer_y_ = input.y;
-            } else {
-                pointer_x_ = input.x;
-                pointer_y_ = input.y;
-                if (!pointer_down_) continue; // hover is not a touch
-                action = kMotionActionMove;
-            }
+            const auto action = input.action & 0xff;
+            pointer_x_ = input.x;
+            pointer_y_ = input.y;
+            if (action == kMotionActionDown) pointer_down_ = true;
+            if (action == kMotionActionUp || action == kMotionActionCancel) pointer_down_ = false;
             // A visible listener target may capture DOWN. Touch consumption and
             // click eligibility are independent; an unconsumed touch-only DOWN
             // falls through to Activity and does not retain the gesture.
@@ -657,13 +669,13 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
                             const auto cancelled = runtime::DispatchViewGestureEvent(
                                 vm, context, gesture_candidate_,
                                 kMotionActionCancel, pointer_x_, pointer_y_,
-                                gesture_click_eligible_, gesture_touch_consumed_);
+                                gesture_click_eligible_, gesture_touch_consumed_, &input);
                             if (cancelled.error.has_value()) Fail(*cancelled.error);
                         }
                         if (deep_touch_handle_ != 0U) {
                             const auto cancelled = DispatchDeepTouchEvent(
                                 vm, context, kMotionActionCancel, pointer_x_,
-                                pointer_y_, deep_touch_handle_);
+                                pointer_y_, deep_touch_handle_, &input);
                             if (cancelled.error.has_value()) Fail(*cancelled.error);
                         }
                         gesture_candidate_ = 0U;
@@ -686,7 +698,7 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
                     }
                 }
             }
-            if (action == kMotionActionUp) {
+            if (action == kMotionActionUp || action == kMotionActionCancel) {
                 scroll_view_handle_ = 0U;
                 if (scroll_dragging_) {
                     scroll_dragging_ = false;
@@ -698,7 +710,7 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
                 const auto result = runtime::DispatchViewGestureEvent(
                     vm, *bindings_.context, gesture_candidate_, action,
                     pointer_x_, pointer_y_, gesture_click_eligible_,
-                    gesture_touch_consumed_);
+                    gesture_touch_consumed_, &input);
                 if (result.error.has_value()) Fail(*result.error);
                 gesture_click_eligible_ = result.click_eligible;
                 gesture_touch_consumed_ = result.touch_consumed;
@@ -708,13 +720,13 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
             if (!had_listener_candidate) {
                 const auto result = DispatchDeepTouchEvent(
                     vm, *bindings_.context, action, pointer_x_, pointer_y_,
-                    deep_touch_handle_);
+                    deep_touch_handle_, &input);
                 if (result.error.has_value()) Fail(*result.error);
                 deep_touch_handle_ = result.captured_view;
                 if (result.handled) continue;
             }
             const auto event = runtime::MakeMotionEvent(
-                vm, action, pointer_x_, pointer_y_, 0);
+                vm, input);
             CallActivity("onTouchEvent", "(Landroid/view/MotionEvent;)Z",
                          {dx::VmValue::Ref(event)});
         }

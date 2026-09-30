@@ -35,7 +35,7 @@ public:
 
 
 #define OGPLAY_DECLARE_ANDROID(name, id, count, method) \
-    std::uint32_t method(const A32CallFrame& call);
+    BoundaryResult method(const A32CallFrame& call);
     OGPLAY_ANDROID_BOUNDARY_EXPORTS(OGPLAY_DECLARE_ANDROID)
 #undef OGPLAY_DECLARE_ANDROID
 
@@ -59,16 +59,26 @@ private:
     AndroidLooperHooks looper_hooks_;
     hal::RealtimeClock looper_clock_;
     bool loopers_shutdown_{};
-    memory::GuestAddress input_looper_{};
     template <std::uint16_t FunctionId>
-    std::uint32_t ExecuteExport(const A32CallFrame& call);
+    BoundaryResult ExecuteExport(const A32CallFrame& call);
 
     BoundaryCallServices& calls_;
     AndroidBoundaryServices& services_;
+    struct InputQueueState {
+        memory::GuestAddress looper{};
+        std::uint32_t ident{}, data{};
+        std::deque<AndroidBoundaryInput> pending;
+        std::map<std::uint32_t, AndroidBoundaryInput> inflight;
+    };
+    InputQueueState& InputQueue(std::uint32_t handle);
+    const AndroidBoundaryInput& InputEvent(memory::GuestAddress handle) const;
+    template <std::uint16_t FunctionId>
+    BoundaryResult ReadInput(const A32CallFrame& call);
     struct Resource {
         NativeActivityBoundaryResources resources;
         memory::GuestAddress window{};
         bool input_active{}, input_attached{};
+        InputQueueState input;
 
     };
     struct WindowResource {
@@ -92,10 +102,8 @@ private:
     WindowResource& Window(std::uint32_t handle);
     std::mutex mutex_;
     std::condition_variable ready_;
-    std::uint32_t input_ident_{};
-    std::uint32_t input_data_{};
-    std::deque<AndroidBoundaryInput> inputs_;
-    std::optional<AndroidBoundaryInput> active_input_;
+    InputQueueState standalone_input_;
+    memory::GuestAddress next_input_{0x6e200000U};
 };
 
 }  // namespace ogplay::runtime

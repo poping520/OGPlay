@@ -62,6 +62,7 @@ public:
         std::uint32_t steps);
     [[nodiscard]] std::optional<McpPointerEvent> TakeNextPointerEvent();
     [[nodiscard]] std::size_t PendingGestures() const;
+    void CancelPending();
 
 private:
     struct GestureState final {

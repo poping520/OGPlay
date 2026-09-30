@@ -174,3 +174,29 @@ guest 看不到标准路径下的原 `.obb` 文件。
 
 无 Profile 的 APK 可使用显式外部目录和标准 OBB 路径。Profile 保留特殊数据布局职责；
 本决定不为任意外部目录猜测游戏专属路径，也不扩大到多个 OBB 的 CLI 输入。
+
+
+<a id="adr-0086"></a>
+
+## ADR-0086 · 跨宿主输入与 Android guest 快照
+
+- 状态：Accepted
+- 日期：2026-09-30
+- 关联：[BND-46](../tasks/boundary/BND-46.md)
+- 范围：按用户明确要求，允许 Android/iOS 作为 OGPlay 宿主；替代原“禁止手机端运行能力”
+  在宿主移植上的限制。guest 仍为 Android 游戏进程，不扩展为完整 Android 系统。
+
+### 决定
+
+SDL3 采集宿主输入，经 HAL 的平台无关事件和 input 的坐标/手势状态进入 session。
+Android action/source、设备目录及时间单位投影属于 Android 适配层；Java 和 NDK
+消费同一不可变快照。宿主 Android 对象或 UIKit 对象均不得直接传给 guest。
+
+队列拥有 pending/inflight 事件；opaque guest 句柄不复用，finish 或队列退役使事件失效。
+NDK getter 完整读取快照，不读取实时设备状态。ARM32 的 int64 返回必须同时写 r0/r1。
+宿主事件泵保留在 SDL 所需线程，guest UI/GLThread 按现有独立线程契约消费事件。
+
+### 验证边界
+
+移动输入适配不等于移动运行时、图形、打包或整机兼容完成。Windows 定向测试、游戏
+交互复现和 Android/iOS 真机验收分别记账；不得互相替代。

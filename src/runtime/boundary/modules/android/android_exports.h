@@ -38,4 +38,50 @@
     X("ALooper_release", 33, 1, LooperRelease) \
     X("ALooper_pollOnce", 34, 4, LooperPollOnce) \
     X("ALooper_wake", 35, 1, LooperWake) \
-    X("ALooper_removeFd", 36, 2, LooperRemoveFd)
+    X("ALooper_removeFd", 36, 2, LooperRemoveFd) \
+    X("AInputEvent_getDeviceId", 37, 1, AInputEvent_getDeviceId) \
+    X("AInputEvent_getSource", 38, 1, AInputEvent_getSource) \
+    X("AKeyEvent_getFlags", 39, 1, AKeyEvent_getFlags) \
+    X("AKeyEvent_getScanCode", 40, 1, AKeyEvent_getScanCode) \
+    X("AKeyEvent_getMetaState", 41, 1, AKeyEvent_getMetaState) \
+    X("AKeyEvent_getRepeatCount", 42, 1, AKeyEvent_getRepeatCount) \
+    X("AKeyEvent_getDownTime", 43, 1, AKeyEvent_getDownTime) \
+    X("AKeyEvent_getEventTime", 44, 1, AKeyEvent_getEventTime) \
+    X("AMotionEvent_getFlags", 45, 1, AMotionEvent_getFlags) \
+    X("AMotionEvent_getMetaState", 46, 1, AMotionEvent_getMetaState) \
+    X("AMotionEvent_getButtonState", 47, 1, AMotionEvent_getButtonState) \
+    X("AMotionEvent_getEdgeFlags", 48, 1, AMotionEvent_getEdgeFlags) \
+    X("AMotionEvent_getDownTime", 49, 1, AMotionEvent_getDownTime) \
+    X("AMotionEvent_getEventTime", 50, 1, AMotionEvent_getEventTime) \
+    X("AMotionEvent_getXOffset", 51, 1, AMotionEvent_getXOffset) \
+    X("AMotionEvent_getYOffset", 52, 1, AMotionEvent_getYOffset) \
+    X("AMotionEvent_getXPrecision", 53, 1, AMotionEvent_getXPrecision) \
+    X("AMotionEvent_getYPrecision", 54, 1, AMotionEvent_getYPrecision) \
+    X("AMotionEvent_getPointerCount", 55, 1, AMotionEvent_getPointerCount) \
+    X("AMotionEvent_getPointerId", 56, 2, AMotionEvent_getPointerId) \
+    X("AMotionEvent_getToolType", 57, 2, AMotionEvent_getToolType) \
+    X("AMotionEvent_getRawX", 58, 2, AMotionEvent_getRawX) \
+    X("AMotionEvent_getRawY", 59, 2, AMotionEvent_getRawY) \
+    X("AMotionEvent_getPressure", 60, 2, AMotionEvent_getPressure) \
+    X("AMotionEvent_getSize", 61, 2, AMotionEvent_getSize) \
+    X("AMotionEvent_getTouchMajor", 62, 2, AMotionEvent_getTouchMajor) \
+    X("AMotionEvent_getTouchMinor", 63, 2, AMotionEvent_getTouchMinor) \
+    X("AMotionEvent_getToolMajor", 64, 2, AMotionEvent_getToolMajor) \
+    X("AMotionEvent_getToolMinor", 65, 2, AMotionEvent_getToolMinor) \
+    X("AMotionEvent_getOrientation", 66, 2, AMotionEvent_getOrientation) \
+    X("AMotionEvent_getAxisValue", 67, 3, AMotionEvent_getAxisValue) \
+    X("AMotionEvent_getHistorySize", 68, 1, AMotionEvent_getHistorySize) \
+    X("AMotionEvent_getHistoricalEventTime", 69, 2, AMotionEvent_getHistoricalEventTime) \
+    X("AMotionEvent_getHistoricalRawX", 70, 3, AMotionEvent_getHistoricalRawX) \
+    X("AMotionEvent_getHistoricalRawY", 71, 3, AMotionEvent_getHistoricalRawY) \
+    X("AMotionEvent_getHistoricalX", 72, 3, AMotionEvent_getHistoricalX) \
+    X("AMotionEvent_getHistoricalY", 73, 3, AMotionEvent_getHistoricalY) \
+    X("AMotionEvent_getHistoricalPressure", 74, 3, AMotionEvent_getHistoricalPressure) \
+    X("AMotionEvent_getHistoricalSize", 75, 3, AMotionEvent_getHistoricalSize) \
+    X("AMotionEvent_getHistoricalTouchMajor", 76, 3, AMotionEvent_getHistoricalTouchMajor) \
+    X("AMotionEvent_getHistoricalTouchMinor", 77, 3, AMotionEvent_getHistoricalTouchMinor) \
+    X("AMotionEvent_getHistoricalToolMajor", 78, 3, AMotionEvent_getHistoricalToolMajor) \
+    X("AMotionEvent_getHistoricalToolMinor", 79, 3, AMotionEvent_getHistoricalToolMinor) \
+    X("AMotionEvent_getHistoricalOrientation", 80, 3, AMotionEvent_getHistoricalOrientation) \
+    X("AMotionEvent_getHistoricalAxisValue", 81, 4, AMotionEvent_getHistoricalAxisValue) \
+    X("AInputQueue_hasEvents", 82, 1, InputQueueHasEvents)

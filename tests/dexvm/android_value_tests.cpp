@@ -1,3 +1,4 @@
+#include "ogplay/runtime/boundary/android_boundary_hle.h"
 #include "boot_dex.h"
 #include <doctest/doctest.h>
 
@@ -5744,7 +5745,8 @@ TEST_CASE("InputDevice queries use BootDex values and the process input director
         fixture.context->input_devices = {
             {-1, "keyboard", "fixture:keyboard", kAndroidKeyboardSource, 2, {}},
             {0, "touch", "fixture:touch", kAndroidTouchSource, 0,
-             {{0, kAndroidTouchSource, 0, 799}, {1, kAndroidTouchSource, 0, 479}}}};
+             {{0, kAndroidTouchSource, 0, 799}, {1, kAndroidTouchSource, 0, 479},
+              {2, kAndroidTouchSource, 0, 1}}}};
         const auto list = ids();
         REQUIRE(fixture.model.ArrayLength(list) == 2);
         CHECK(static_cast<std::int32_t>(fixture.model.GetPrimitiveElement(list, 0)) == -1);
@@ -5767,7 +5769,11 @@ TEST_CASE("InputDevice queries use BootDex values and the process input director
             {VmValue::Int(0), VmValue::Int(0x100008)}).ref.IsValid());
         CHECK_FALSE(fixture.On(touch, "getMotionRange", "(I)Landroid/view/InputDevice$MotionRange;", {VmValue::Int(9)}).ref.IsValid());
         const auto ranges = fixture.On(touch, "getMotionRanges", "()Ljava/util/List;").ref;
-        CHECK(fixture.On(ranges, "size", "()I").AsInt() == 2);
+        CHECK(fixture.On(ranges, "size", "()I").AsInt() == 3);
+        const auto pressure = fixture.On(touch, "getMotionRange", "(I)Landroid/view/InputDevice$MotionRange;", {VmValue::Int(2)}).ref;
+        REQUIRE(pressure.IsValid());
+        CHECK(fixture.On(pressure, "getMin", "()F").AsFloat() == 0);
+        CHECK(fixture.On(pressure, "getMax", "()F").AsFloat() == 1);
         const auto keyboard = device(-1);
         CHECK(fixture.On(keyboard, "getKeyboardType", "()I").AsInt() == 2);
         const auto unsupported = fixture.OnOutcome(keyboard, "hasKeys", "([I)[Z", {VmValue::Ref(VmObjectRef{})});
@@ -5874,5 +5880,76 @@ TEST_CASE("DVM-202 explicit local service bindings share instances and cancel qu
     REQUIRE_FALSE(PumpJavaThreads(f.vm, *f.context).has_value());
     ShutdownLocalServices(f.vm, *f.context);
     CHECK(destroyed == 4); CHECK(unbound == 4);
+  }
+}
+
+
+TEST_CASE("BND46 Java MotionEvent preserves snapshot axes history identity and GC ownership") {
+  for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    AndroidValueVm f(backend);
+    AndroidBoundaryInput input;
+    input.type = AndroidBoundaryInputType::pointer_motion;
+    input.action = 5 | (1 << 8); input.source = 0x1002; input.device_id = 7;
+    input.down_time_ns = 4'000'000'001LL; input.event_time_ns = 5'000'000'123LL;
+    input.flags = 8; input.meta_state = 3; input.button_state = 2; input.edge_flags = 4;
+    input.x_offset = 11; input.y_offset = 13; input.x_precision = 0.5F; input.y_precision = 0.25F;
+    AndroidInputPointer first, second;
+    first.id = 9; second.id = 3; second.tool_type = 2;
+    for (std::size_t i = 0; i < 64; ++i) second.axes[i] = static_cast<float>(i) + 10.5F;
+    input.pointers = {first, second};
+    second.axes[0] = 100;
+    input.history = {{4'500'000'001LL, {first, second}}};
+    const auto event = MakeMotionEvent(f.vm, input);
+    const auto root = f.vm.ProtectReferences(std::array{event});
+    input.pointers[1].axes[0] = -100;
+    static_cast<void>(f.vm.CollectGarbage("bnd46-motion-snapshot"));
+    const auto integer = [&](const char* name) { return f.On(event, name, "()I").AsInt(); };
+    CHECK(integer("getAction") == (5 | 1 << 8));
+    CHECK(integer("getActionMasked") == 5); CHECK(integer("getActionIndex") == 1);
+    CHECK(integer("getDeviceId") == 7); CHECK(integer("getSource") == 0x1002);
+    CHECK(integer("getFlags") == 8); CHECK(integer("getMetaState") == 3);
+    CHECK(integer("getButtonState") == 2); CHECK(integer("getEdgeFlags") == 4);
+    CHECK(integer("getPointerCount") == 2); CHECK(integer("getHistorySize") == 1);
+    CHECK(f.On(event, "getPointerId", "(I)I", {VmValue::Int(1)}).AsInt() == 3);
+    CHECK(f.On(event, "getToolType", "(I)I", {VmValue::Int(1)}).AsInt() == 2);
+    CHECK(f.On(event, "findPointerIndex", "(I)I", {VmValue::Int(9)}).AsInt() == 0);
+    CHECK(f.On(event, "findPointerIndex", "(I)I", {VmValue::Int(4)}).AsInt() == -1);
+    CHECK(f.On(event, "getDownTime", "()J").AsLong() == 4000);
+    CHECK(f.On(event, "getEventTime", "()J").AsLong() == 5000);
+    CHECK(f.On(event, "getEventTimeNano", "()J").AsLong() == 5'000'000'123LL);
+    CHECK(f.On(event, "getHistoricalEventTime", "(I)J", {VmValue::Int(0)}).AsLong() == 4500);
+    CHECK(f.On(event, "getHistoricalEventTimeNano", "(I)J", {VmValue::Int(0)}).AsLong() == 4'500'000'001LL);
+    const std::array names{"X", "Y", "Pressure", "Size", "TouchMajor", "TouchMinor", "ToolMajor", "ToolMinor", "Orientation"};
+    for (std::size_t axis = 0; axis < names.size(); ++axis) {
+        const auto name = std::string("get") + names[axis];
+        const auto history = std::string("getHistorical") + names[axis];
+        const float offset = axis == 0 ? 11.0F : axis == 1 ? 13.0F : 0;
+        CHECK(f.On(event, name.c_str(), "(I)F", {VmValue::Int(1)}).AsFloat() == static_cast<float>(axis) + 10.5F + offset);
+        CHECK(f.On(event, name.c_str(), "()F").AsFloat() == offset);
+        CHECK(f.On(event, history.c_str(), "(II)F", {VmValue::Int(1), VmValue::Int(0)}).AsFloat() ==
+              (axis == 0 ? 111.0F : static_cast<float>(axis) + 10.5F + offset));
+    }
+    CHECK(f.On(event, "getAxisValue", "(II)F", {VmValue::Int(63), VmValue::Int(1)}).AsFloat() == 73.5F);
+    CHECK(f.On(event, "getHistoricalAxisValue", "(III)F", {VmValue::Int(0), VmValue::Int(1), VmValue::Int(0)}).AsFloat() == 111);
+    CHECK(f.On(event, "getRawX", "()F").AsFloat() == 0);
+    CHECK(f.On(event, "getXPrecision", "()F").AsFloat() == 0.5F);
+    CHECK(f.On(event, "getYPrecision", "()F").AsFloat() == 0.25F);
+    CHECK(f.OnOutcome(event, "getX", "(I)F", {VmValue::Int(2)}).exception.IsValid());
+    CHECK(f.OnOutcome(event, "getHistoricalX", "(I)F", {VmValue::Int(1)}).exception.IsValid());
+    static_cast<void>(f.On(event, "recycle", "()V"));
+    CHECK(f.OnOutcome(event, "getAction", "()I").exception.IsValid());
+  }
+}
+
+TEST_CASE("BND46 timed KeyEvent retains metadata in both interpreters") {
+  for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    AndroidValueVm f(backend);
+    const auto event = f.New("Landroid/view/KeyEvent;", "(JJIIIIIIII)V",
+        {VmValue::Long(4000), VmValue::Long(5000), VmValue::Int(0), VmValue::Int(29),
+         VmValue::Int(2), VmValue::Int(3), VmValue::Int(-1), VmValue::Int(4), VmValue::Int(8), VmValue::Int(0x101)});
+    CHECK(f.On(event, "getDownTime", "()J").AsLong() == 4000);
+    CHECK(f.On(event, "getEventTime", "()J").AsLong() == 5000);
+    CHECK(f.On(event, "getFlags", "()I").AsInt() == 8);
+    CHECK(f.On(event, "getSource", "()I").AsInt() == 0x101);
   }
 }

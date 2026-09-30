@@ -132,6 +132,14 @@
   缓存的问题，并在等待 renderer 时由窗口线程继续泵送 OS 消息；Windows Release 构建
   与定向回归通过。用户实测确认 Loading 未再出现未响应、地图弹框流畅且 FPS 更稳定；
   原退出停滞不在本次范围。
+  已修复点击 Accept 后的 GC 锁停滞：STREX 的分离比较/写入改为内存层原子 CAS，
+  防止普通 JIT STR 解锁被覆盖；保留正常并行执行及直接访存。Windows Release 构建、
+  定向 12 用例/159 断言通过；确定性交错测试换回旧 CPU 实现时按预期失败。
+  原 APK/OBB、隔离存档、无并发限制复跑：f=1628 点击 Accept，成功进入第一关；
+  战斗画面稳定推进后 f=2663 下一首错为 `string constructor receiver is not an unbound
+  string instance`。证据 `.local/accept-stall/{cas-tests.log,cas-negative-test.log,
+  fixed-after-accept.png,fixed-gameplay.jsonl}`；未宣称关卡完整验收，普通直接写入的 ABA
+  历史跟踪及既有退出停滞仍未覆盖。
 - **Angry Birds 2.3.0**：无 Profile、空沙盒运行 5000 presented frames，
   `View.setScrollBarStyle/getScrollBarStyle` 原方法解析错未再出现，未触发新的致命首错。
   滚动条绘制和完整游戏兼容仍未验收。此前 SQLite/guest ICU、EventLog、

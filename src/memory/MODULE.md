@@ -25,6 +25,11 @@
   重新验证。
 - `MemoryFault`：携带 guest 地址、访问类型、失败原因和 guest 线程 ID。
 - `MemoryBus`：CPU 只依赖的 8/16/32/64 位小端数据访存及 16/32 位取指接口。
+- `AddressSpace/MemoryBus::CompareExchange8/16/32/64`：自然对齐、小端的强原子比较交换；
+  在账本锁内验证 read/write 权限、固定 backing，并使用宿主无锁原子指令与 JIT 直接写
+  竞争，禁止拆成独立读取与写入。失配返回 false；权限、映射、对齐错误保留 guest fault。
+  未实现的 bus 明确失败。它只比较当前值，不负责 ARM reservation 或检测 ABA。
+  observer 在提交并释放账本锁后收到 read，交换成功时再收到 write；fault 不发布事件。
 - `CheckedMemoryBus`：完整权限验证和观察器钩子的 soft-MMU 调试后端。
 - `DirectMemoryPageTable`：按 4 KiB guest 页索引的稳定数据页表；只有无 observer 的 RW
   非执行页可交给 JIT，其他页和跨页访问继续回退受检 bus。

@@ -458,7 +458,7 @@ note = "M1 预留 4 GiB；M2 固定 4 KiB Android guest 页并在 4/16 KiB 宿�
 [memory.soft_mmu]
 status = "complete"
 test = "tests/memory/bus_tests.cpp"
-note = "M1 CheckedMemoryBus 完成小端数据访问、独立 execute 取指、全区间验证与 watchpoint/trace 观察器；M5 WU-0290 在 observer、非 RW、execute 与跨页场景强制回退 callback"
+note = "M1 CheckedMemoryBus 完成小端数据访问、独立 execute 取指、全区间验证与 watchpoint/trace 观察器；M5 WU-0290 在 observer、非 RW、execute 与跨页场景强制回退 callback。CompareExchange8/16/32/64 在账本锁内验证权限/对齐并使用宿主无锁 CAS，与 JIT 直接写保持原子提交；失配不写入，observer 在操作完成后通知。"
 
 [memory.snapshot]
 status = "complete"
@@ -483,7 +483,7 @@ note = "M1 参考后端覆盖裸样本与基础诊断指令族；完整 ISA 不�
 [cpu.dynarmic]
 status = "complete"
 test = "tests/cpu/dynarmic_tests.cpp"
-note = "M1 Dynarmic A32/T32 后端遵守 MemoryBus、状态、tick、停止和 fault 契约；M2 与解释器一致支持 TPIDRURO；M5 WU-0290 接入受保护数据页表并保留跨页及 callback fault。WU-PERF-08 将成功的 ARM cacheflush 发布到共享 context 的全部代码缓存；SVC 桥接验证见 tests/runtime/syscall_bridge_tests.cpp，运行中 peer 的范围失效见本条测试入口。"
+note = "M1 Dynarmic A32/T32 后端遵守 MemoryBus、状态、tick、停止和 fault 契约；M2 与解释器一致支持 TPIDRURO；M5 WU-0290 接入受保护数据页表并保留跨页及 callback fault。WU-PERF-08 将成功的 ARM cacheflush 发布到共享 context 的全部代码缓存；SVC 桥接验证见 tests/runtime/syscall_bridge_tests.cpp，运行中 peer 的范围失效见本条测试入口。STREX 经 MemoryBus 原子 CAS 提交，不再以回调互斥锁模拟；定向覆盖直接 STR 解锁竞争及 exclusive peer ABA。普通直接写入恢复原值的 ABA/write-history 跟踪仍不支持。"
 
 [cpu.arm_user_coprocessor]
 status = "partial"

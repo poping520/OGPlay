@@ -268,6 +268,75 @@ TEST_CASE("Dynarmic exposes the guest thread pointer through TPIDRURO") {
           ogplay::memory::GuestAddress{0x56789000U});
 }
 
+TEST_CASE("Dynarmic exclusive store preserves a peer direct unlock") {
+    using namespace ogplay;
+    memory::AddressSpace space;
+    const memory::GuestAddress code{0x10000}, flag{0x20000};
+    const auto rw = memory::PageProtection::read | memory::PageProtection::write;
+    space.Map({code, 4096}, rw);
+    space.Map({flag, 4096}, rw);
+    memory::CheckedMemoryBus direct(space);
+    direct.Write32(code, 0xe1902f9fU);        // ldrex r2, [r0]
+    direct.Write32(code.Add(4), 0xe1803f91U); // strex r3, r1, [r0]
+    direct.Write32(code.Add(8), 0xef000001U);
+    direct.Write32(code.Add(64), 0xe5801000U); // str r1, [r0]
+    direct.Write32(code.Add(68), 0xef000001U);
+    direct.Write32(flag, 1);
+    space.Protect({code, 4096}, memory::PageProtection::read | memory::PageProtection::execute);
+    auto context = std::make_shared<cpu::DynarmicExecutionContext>(2);
+    cpu::DynarmicCpu owner(direct, context);
+    struct InterleavingBus final : memory::MemoryBus {
+        memory::CheckedMemoryBus& bus;
+        cpu::DynarmicCpu& owner;
+        memory::GuestAddress flag;
+        unsigned reads{};
+        bool owner_ran{};
+        InterleavingBus(memory::CheckedMemoryBus& b, cpu::DynarmicCpu& c,
+                        memory::GuestAddress f) : bus(b), owner(c), flag(f) {}
+        void Unlock() {
+            REQUIRE_FALSE(owner_ran);
+            REQUIRE(owner.Run(4).reason == cpu::RunStopReason::supervisor_call);
+            REQUIRE(bus.Read32(flag) == 0);
+            owner_ran = true;
+        }
+        std::uint32_t Read32(memory::GuestAddress a, std::uint64_t t) override {
+            const auto value = bus.Read32(a, t);
+            // The old implementation's second read was the comparison inside
+            // STREX. A direct STR here must never be overwritten by that STREX.
+            if (a == flag && ++reads == 2) Unlock();
+            return value;
+        }
+        bool CompareExchange32(memory::GuestAddress a, std::uint32_t expected,
+                               std::uint32_t value, std::uint64_t t) override {
+            Unlock();
+            return bus.CompareExchange32(a, expected, value, t);
+        }
+        std::uint8_t Read8(memory::GuestAddress a, std::uint64_t t) override { return bus.Read8(a, t); }
+        std::uint16_t Read16(memory::GuestAddress a, std::uint64_t t) override { return bus.Read16(a, t); }
+        std::uint64_t Read64(memory::GuestAddress a, std::uint64_t t) override { return bus.Read64(a, t); }
+        std::uint16_t Fetch16(memory::GuestAddress a, std::uint64_t t) override { return bus.Fetch16(a, t); }
+        std::uint32_t Fetch32(memory::GuestAddress a, std::uint64_t t) override { return bus.Fetch32(a, t); }
+        void Write8(memory::GuestAddress a, std::uint8_t v, std::uint64_t t) override { bus.Write8(a, v, t); }
+        void Write16(memory::GuestAddress a, std::uint16_t v, std::uint64_t t) override { bus.Write16(a, v, t); }
+        void Write32(memory::GuestAddress a, std::uint32_t v, std::uint64_t t) override { bus.Write32(a, v, t); }
+        void Write64(memory::GuestAddress a, std::uint64_t v, std::uint64_t t) override { bus.Write64(a, v, t); }
+    } interleaved(direct, owner, flag);
+    cpu::DynarmicCpu contender(interleaved, context);
+    cpu::A32State initial;
+    initial.SetRegister(cpu::CoreRegister::pc, code.Add(64).Value());
+    initial.SetRegister(cpu::CoreRegister::r0, flag.Value());
+    initial.SetRegister(cpu::CoreRegister::r1, 0);
+    owner.SetState(initial);
+    initial.SetRegister(cpu::CoreRegister::pc, code.Value());
+    initial.SetRegister(cpu::CoreRegister::r1, 1);
+    contender.SetState(initial);
+    REQUIRE(contender.Run(8).reason == cpu::RunStopReason::supervisor_call);
+    REQUIRE(interleaved.owner_ran);
+    CHECK(contender.GetState().Register(cpu::CoreRegister::r2) == 1);
+    CHECK(contender.GetState().Register(cpu::CoreRegister::r3) == 1);
+    CHECK(direct.Read32(flag) == 0);
+}
+
 TEST_CASE("Dynarmic executes ARM exclusive memory operations") {
     const ogplay::memory::GuestAddress code{sample::kCodeAddress};
     const ogplay::memory::GuestAddress counter{sample::kMailboxAddress};
@@ -305,6 +374,117 @@ TEST_CASE("Dynarmic executes ARM exclusive memory operations") {
     ogplay::cpu::DynarmicCpu second_cpu(bus, context);
     CHECK_THROWS_AS(ogplay::cpu::DynarmicCpu(bus, context),
                     std::runtime_error);
+}
+
+TEST_CASE("Dynarmic exclusive locks interoperate with direct unlocks on host threads") {
+    using namespace ogplay;
+    memory::AddressSpace space;
+    const memory::GuestAddress code{0x10000}, flag{0x20000}, counter{0x20004};
+    const auto rw = memory::PageProtection::read | memory::PageProtection::write;
+    space.Map({code, 4096}, rw);
+    space.Map({flag, 4096}, rw);
+    memory::CheckedMemoryBus bus(space);
+    // Acquire with LDREX/STREX; protect counter with DMB; unlock with a direct
+    // STR. Bounded Run budgets ensure a lost unlock fails instead of hanging.
+    const std::array program{
+        0xe1902f9fU, 0xe3520000U, 0x1afffffcU, 0xe3a01001U,
+        0xe1803f91U, 0xe3530000U, 0x1afffff8U, 0xf57ff05fU,
+        0xe5942000U, 0xe2822001U, 0xe5842000U, 0xf57ff05fU,
+        0xe3a01000U, 0xe5801000U, 0xe2555001U, 0x1affffefU,
+        0xef000001U};
+    for (std::size_t i = 0; i < program.size(); ++i) bus.Write32(code.Add(i * 4), program[i]);
+    space.Protect({code, 4096}, memory::PageProtection::read | memory::PageProtection::execute);
+    constexpr std::size_t workers = 4;
+    auto context = std::make_shared<cpu::DynarmicExecutionContext>(workers);
+    std::array<std::unique_ptr<cpu::DynarmicCpu>, workers> cpus;
+    std::array<std::future<cpu::RunResult>, workers> results;
+    std::promise<void> start;
+    auto ready = start.get_future().share();
+    for (std::size_t i = 0; i < workers; ++i) {
+        cpus[i] = std::make_unique<cpu::DynarmicCpu>(bus, context);
+        cpu::A32State state;
+        state.SetThreadId(i + 1);
+        state.SetRegister(cpu::CoreRegister::pc, code.Value());
+        state.SetRegister(cpu::CoreRegister::r0, flag.Value());
+        state.SetRegister(cpu::CoreRegister::r4, counter.Value());
+        state.SetRegister(cpu::CoreRegister::r5, 1000);
+        cpus[i]->SetState(state);
+        results[i] = std::async(std::launch::async, [&, i, ready] {
+            ready.wait();
+            return cpus[i]->Run(10000000);
+        });
+    }
+    start.set_value();
+    for (auto& result : results) CHECK(result.get().reason == cpu::RunStopReason::supervisor_call);
+    CHECK(bus.Read32(counter) == workers * 1000);
+    CHECK(bus.Read32(flag) == 0);
+}
+
+TEST_CASE("Dynarmic exclusive monitor rejects a peer exclusive ABA") {
+    using namespace ogplay;
+    memory::AddressSpace space;
+    const memory::GuestAddress code{0x10000}, flag{0x20000};
+    const auto rw = memory::PageProtection::read | memory::PageProtection::write;
+    space.Map({code, 4096}, rw);
+    space.Map({flag, 4096}, rw);
+    memory::CheckedMemoryBus bus(space);
+    const std::array first{0xe1902f9fU, 0xef000001U, 0xe1803f91U, 0xef000001U};
+    // Peer changes 1 -> 0 -> 1 using exclusive writes. Value comparison alone
+    // would miss this interference; the shared monitor must retain its role.
+    const std::array peer{0xe1902f9fU, 0xe1803f91U, 0xe1902f9fU,
+                          0xe3a01001U, 0xe1803f91U, 0xef000001U};
+    for (std::size_t i = 0; i < first.size(); ++i) bus.Write32(code.Add(i * 4), first[i]);
+    for (std::size_t i = 0; i < peer.size(); ++i) bus.Write32(code.Add(64 + i * 4), peer[i]);
+    bus.Write32(flag, 1);
+    space.Protect({code, 4096}, memory::PageProtection::read | memory::PageProtection::execute);
+    auto context = std::make_shared<cpu::DynarmicExecutionContext>(2);
+    cpu::DynarmicCpu contender(bus, context), writer(bus, context);
+    cpu::A32State state;
+    state.SetRegister(cpu::CoreRegister::pc, code.Value());
+    state.SetRegister(cpu::CoreRegister::r0, flag.Value());
+    state.SetRegister(cpu::CoreRegister::r1, 2);
+    contender.SetState(state);
+    state.SetRegister(cpu::CoreRegister::pc, code.Add(64).Value());
+    state.SetRegister(cpu::CoreRegister::r1, 0);
+    writer.SetState(state);
+    REQUIRE(contender.Run(8).reason == cpu::RunStopReason::supervisor_call);
+    REQUIRE(writer.Run(12).reason == cpu::RunStopReason::supervisor_call);
+    REQUIRE(bus.Read32(flag) == 1);
+    REQUIRE(contender.Run(8).reason == cpu::RunStopReason::supervisor_call);
+    CHECK(contender.GetState().Register(cpu::CoreRegister::r3) == 1);
+    CHECK(bus.Read32(flag) == 1);
+}
+
+TEST_CASE("Dynarmic exclusive store preserves permission fault attribution") {
+    using namespace ogplay;
+    memory::AddressSpace space;
+    const memory::GuestAddress code{0x10000}, flag{0x20000};
+    const auto rw = memory::PageProtection::read | memory::PageProtection::write;
+    space.Map({code, 4096}, rw);
+    space.Map({flag, 4096}, rw);
+    memory::CheckedMemoryBus bus(space);
+    bus.Write32(code, 0xe1902f9fU);
+    bus.Write32(code.Add(4), 0xef000001U);
+    bus.Write32(code.Add(8), 0xe1803f91U);
+    bus.Write32(code.Add(12), 0xef000001U);
+    space.Protect({code, 4096}, memory::PageProtection::read | memory::PageProtection::execute);
+    cpu::DynarmicCpu executor(bus);
+    cpu::A32State state;
+    state.SetThreadId(91);
+    state.SetRegister(cpu::CoreRegister::pc, code.Value());
+    state.SetRegister(cpu::CoreRegister::r0, flag.Value());
+    state.SetRegister(cpu::CoreRegister::r1, 2);
+    executor.SetState(state);
+    REQUIRE(executor.Run(8).reason == cpu::RunStopReason::supervisor_call);
+    space.Protect({flag, 4096}, memory::PageProtection::read);
+    const auto result = executor.Run(8);
+    REQUIRE(result.reason == cpu::RunStopReason::memory_fault);
+    REQUIRE(result.fault.has_value());
+    CHECK(result.fault->address == flag);
+    CHECK(result.fault->access == memory::AccessType::write);
+    CHECK(result.fault->reason == memory::FaultReason::permission_denied);
+    CHECK(result.fault->thread_id == 91);
+    CHECK(bus.Read32(flag) == 0);
 }
 
 TEST_CASE("Dynarmic reports callback-only data memory faults") {

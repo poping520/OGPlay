@@ -1,6 +1,7 @@
 #include "ogplay/memory/address_space.h"
 
 #include <algorithm>
+#include <atomic>
 #include <bit>
 #include <cstring>
 #include <mutex>
@@ -305,6 +306,41 @@ public:
             value = reversed;
         }
         std::memcpy(reservation_->Base() + address.Value(), &value, sizeof(value));
+    }
+
+    template <typename UInt>
+    [[nodiscard]] bool CompareExchange(const GuestAddress address, UInt expected,
+                                        UInt value, const std::uint64_t thread_id) {
+        // A locking atomic implementation would not synchronize with generated
+        // machine-code stores. Require a real host atomic instruction.
+        static_assert(std::atomic_ref<UInt>::is_always_lock_free);
+        static_assert(std::atomic_ref<UInt>::required_alignment <= sizeof(UInt));
+        const GuestRange range(address, sizeof(UInt));
+        std::scoped_lock lock(mutex_);
+        ValidateLocked(range, AccessType::read, thread_id);
+        ValidateLocked(range, AccessType::write, thread_id);
+        if (address.Value() % sizeof(UInt) != 0) {
+            throw MemoryFault(address, AccessType::write, FaultReason::misaligned,
+                              thread_id);
+        }
+        if constexpr (std::endian::native == std::endian::big) {
+            const auto reverse = [](UInt input) {
+                UInt output{};
+                for (std::size_t i = 0; i < sizeof(UInt); ++i) {
+                    output = static_cast<UInt>((output << 8U) | (input & 0xffU));
+                    input = static_cast<UInt>(input >> 8U);
+                }
+                return output;
+            };
+            expected = reverse(expected);
+            value = reverse(value);
+        }
+        // The ledger lock pins the backing and serializes checked accesses;
+        // CAS supplies atomicity against stores emitted by the JIT, which do
+        // not acquire that lock. Do not split this into ReadScalar/WriteScalar.
+        auto& storage = *reinterpret_cast<UInt*>(reservation_->Base() + address.Value());
+        return std::atomic_ref<UInt>(storage).compare_exchange_strong(
+            expected, value, std::memory_order_seq_cst);
     }
 
     [[nodiscard]] DirectMemoryPageTable* DirectPageTable() noexcept {
@@ -668,6 +704,30 @@ void AddressSpace::Write64(const GuestAddress address, const std::uint64_t value
                            const std::uint64_t thread_id) {
     impl_->WriteScalar(address, value, thread_id);
 }
+bool AddressSpace::CompareExchange8(const GuestAddress address,
+    const std::uint8_t expected, const std::uint8_t value,
+    const std::uint64_t thread_id) {
+    return impl_->CompareExchange(address, expected, value, thread_id);
+}
+
+bool AddressSpace::CompareExchange16(const GuestAddress address,
+    const std::uint16_t expected, const std::uint16_t value,
+    const std::uint64_t thread_id) {
+    return impl_->CompareExchange(address, expected, value, thread_id);
+}
+
+bool AddressSpace::CompareExchange32(const GuestAddress address,
+    const std::uint32_t expected, const std::uint32_t value,
+    const std::uint64_t thread_id) {
+    return impl_->CompareExchange(address, expected, value, thread_id);
+}
+
+bool AddressSpace::CompareExchange64(const GuestAddress address,
+    const std::uint64_t expected, const std::uint64_t value,
+    const std::uint64_t thread_id) {
+    return impl_->CompareExchange(address, expected, value, thread_id);
+}
+
 DirectMemoryPageTable* AddressSpace::DirectPageTable() noexcept {
     return impl_->DirectPageTable();
 }

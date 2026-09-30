@@ -28,7 +28,7 @@ enum class PageProtection : std::uint8_t {
 }
 
 enum class AccessType : std::uint8_t { read, write, execute };
-enum class FaultReason : std::uint8_t { unmapped, permission_denied };
+enum class FaultReason : std::uint8_t { unmapped, permission_denied, misaligned };
 
 // Diagnostic names for guest-fault reports; callers append the numeric value
 // so historical numeric workflows keep matching.
@@ -52,6 +52,8 @@ enum class FaultReason : std::uint8_t { unmapped, permission_denied };
             return "unmapped";
         case FaultReason::permission_denied:
             return "permission_denied";
+        case FaultReason::misaligned:
+            return "misaligned";
     }
     return "unknown";
 }
@@ -175,6 +177,16 @@ public:
                  std::uint64_t thread_id = 0);
     void Write64(GuestAddress address, std::uint64_t value,
                  std::uint64_t thread_id = 0);
+    // Naturally aligned, little-endian, atomic against JIT direct stores.
+    // A value comparison, not an ARM reservation or an ABA detector.
+    [[nodiscard]] bool CompareExchange8(GuestAddress address, std::uint8_t expected,
+                                        std::uint8_t value, std::uint64_t thread_id = 0);
+    [[nodiscard]] bool CompareExchange16(GuestAddress address, std::uint16_t expected,
+                                         std::uint16_t value, std::uint64_t thread_id = 0);
+    [[nodiscard]] bool CompareExchange32(GuestAddress address, std::uint32_t expected,
+                                         std::uint32_t value, std::uint64_t thread_id = 0);
+    [[nodiscard]] bool CompareExchange64(GuestAddress address, std::uint64_t expected,
+                                         std::uint64_t value, std::uint64_t thread_id = 0);
     [[nodiscard]] DirectMemoryPageTable* DirectPageTable() noexcept;
     [[nodiscard]] std::optional<MemoryStatistics> TrySnapshot() const;
     // Metadata only, bounded by maximum_ranges; never copies guest contents.

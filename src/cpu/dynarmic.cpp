@@ -96,7 +96,6 @@ public:
 
     Dynarmic::ExclusiveMonitor monitor;
     std::mutex mutex;
-    std::mutex memory_mutex;
     std::vector<bool> processors;
     // Protected by mutex, including registration and removal before destruction.
     std::vector<Dynarmic::A32::Jit*> jits;
@@ -136,9 +135,8 @@ class DynarmicCpu::Impl final {
 public:
     class Callbacks final : public Dynarmic::A32::UserCallbacks {
     public:
-        Callbacks(memory::MemoryBus& memory_bus,
-                  std::mutex& memory_mutex) noexcept
-            : memory_bus_(memory_bus), memory_mutex_(memory_mutex) {}
+        explicit Callbacks(memory::MemoryBus& memory_bus) noexcept
+            : memory_bus_(memory_bus) {}
 
         void Attach(Dynarmic::A32::Jit& jit) noexcept { jit_ = &jit; }
 
@@ -210,29 +208,25 @@ public:
                                    const std::uint8_t value,
                                    const std::uint8_t expected) override {
             return WriteExclusive(address, value, expected,
-                                  &memory::MemoryBus::Read8,
-                                  &memory::MemoryBus::Write8);
+                                  &memory::MemoryBus::CompareExchange8);
         }
         bool MemoryWriteExclusive16(const Dynarmic::A32::VAddr address,
                                     const std::uint16_t value,
                                     const std::uint16_t expected) override {
             return WriteExclusive(address, value, expected,
-                                  &memory::MemoryBus::Read16,
-                                  &memory::MemoryBus::Write16);
+                                  &memory::MemoryBus::CompareExchange16);
         }
         bool MemoryWriteExclusive32(const Dynarmic::A32::VAddr address,
                                     const std::uint32_t value,
                                     const std::uint32_t expected) override {
             return WriteExclusive(address, value, expected,
-                                  &memory::MemoryBus::Read32,
-                                  &memory::MemoryBus::Write32);
+                                  &memory::MemoryBus::CompareExchange32);
         }
         bool MemoryWriteExclusive64(const Dynarmic::A32::VAddr address,
                                     const std::uint64_t value,
                                     const std::uint64_t expected) override {
             return WriteExclusive(address, value, expected,
-                                  &memory::MemoryBus::Read64,
-                                  &memory::MemoryBus::Write64);
+                                  &memory::MemoryBus::CompareExchange64);
         }
 
         void InterpreterFallback(const Dynarmic::A32::VAddr pc,
@@ -336,7 +330,6 @@ public:
         void Write(const Dynarmic::A32::VAddr address, const UInt value,
                    const WriteFunction<UInt> function) {
             try {
-                std::scoped_lock lock(memory_mutex_);
                 (memory_bus_.*function)(memory::GuestAddress{address}, value, thread_id_);
             } catch (const memory::MemoryFault& fault) {
                 RecordFault(fault);
@@ -346,16 +339,13 @@ public:
         template <typename UInt>
         [[nodiscard]] bool WriteExclusive(
             const Dynarmic::A32::VAddr address, const UInt value,
-            const UInt expected, const ReadFunction<UInt> read,
-            const WriteFunction<UInt> write) {
+            const UInt expected,
+            bool (memory::MemoryBus::*compare_exchange)(memory::GuestAddress, UInt, UInt,
+                                                        std::uint64_t)) {
             try {
-                std::scoped_lock lock(memory_mutex_);
                 const auto guest_address = memory::GuestAddress{address};
-                if ((memory_bus_.*read)(guest_address, thread_id_) != expected) {
-                    return false;
-                }
-                (memory_bus_.*write)(guest_address, value, thread_id_);
-                return true;
+                return (memory_bus_.*compare_exchange)(guest_address, expected, value,
+                                                       thread_id_);
             } catch (const memory::MemoryFault& fault) {
                 RecordFault(fault);
                 return false;
@@ -381,7 +371,6 @@ public:
         }
 
         memory::MemoryBus& memory_bus_;
-        std::mutex& memory_mutex_;
         Dynarmic::A32::Jit* jit_{};
         std::uint64_t thread_id_{};
         std::uint64_t ticks_remaining_{};
@@ -394,7 +383,7 @@ public:
          std::shared_ptr<DynarmicExecutionContext> execution_context)
         : context(std::move(execution_context)),
           processor_id(context->AcquireProcessor()),
-          callbacks(memory_bus, context->impl_->memory_mutex),
+          callbacks(memory_bus),
           jit(MakeConfig(callbacks, thread_pointer, *context, processor_id)) {
         callbacks.Attach(jit);
         std::scoped_lock lock(context->impl_->mutex);

@@ -25,6 +25,7 @@
 #include "ogplay/core/logger.h"
 #include "ogplay/loader/elf.h"
 #include "ogplay/runtime/dexvm/access_flags.h"
+#include "ogplay/runtime/dexvm/class_loader_facade.h"
 #include "ogplay/runtime/integration/dexvm_android.h"
 #include "ogplay/runtime/integration/dexvm_bridge.h"
 #include "ogplay/runtime/integration/native_library_loader.h"
@@ -356,7 +357,8 @@ struct ApplicationProcess final {
     explicit ApplicationProcess(
         ogplay::runtime::dexvm::InterpreterBackend backend =
             ogplay::runtime::dexvm::InterpreterBackend::switch_dispatch,
-        const std::optional<std::string_view> working_directory = std::nullopt) {
+        const std::optional<std::string_view> working_directory = std::nullopt,
+        const std::string& dex_fixture = "application.dex") {
         if (working_directory.has_value()) {
             filesystem.SetWorkingDirectory(*working_directory);
         }
@@ -390,7 +392,7 @@ struct ApplicationProcess final {
         auto catalog = ogplay::runtime::AndroidIntrinsicCatalog(context);
         globals_before_bridge = session->Environment().GlobalReferenceCount();
         bridge = std::make_unique<ogplay::runtime::DexVmGuestBridge>(
-            *session, ReadDexFixture("application.dex"), catalog, context,
+            *session, ReadDexFixture(dex_fixture), catalog, context,
             ledger, &logger, ogplay::runtime::DexVmBridgeConfig{
                 .interpreter = {.backend = backend}}, ogplay::test::ReadBootDex());
         context->threads = &bridge->Threads();
@@ -1027,6 +1029,40 @@ TEST_CASE("DVM-206 JNI keyboard lookup resolves BootDex load and character queri
         }
         CHECK_FALSE(fixture.session->Environment().ExceptionCheck(1U));
         CHECK_FALSE(bridge.Linker().Class(bridge.Model().ObjectClass(bridge.FromReference(map))).is_intrinsic);
+    }
+}
+
+TEST_CASE("ClassLoader parent-first JNI lookup and app calls share bootstrap types") {
+    using namespace ogplay::runtime;
+    using namespace ogplay::runtime::dexvm;
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        ApplicationProcess fixture(backend, std::nullopt, "parent_first_jni_app.dex");
+        auto& bridge = *fixture.bridge;
+        auto& vm = bridge.Vm();
+        auto& linker = bridge.Linker();
+        const auto parent = linker.ResolveDescriptor("Lorg/apache/commons/codec/Decoder;");
+        CHECK(linker.Class(parent).is_boot_dex);
+        CHECK(linker.Class(parent).defining_loader == kBootstrapLoader);
+        const auto identity = fixture.session->Classes().FindClass("org/apache/commons/codec/Decoder");
+        REQUIRE(identity.has_value());
+        CHECK(bridge.RegisteredClassIdentity(parent) == identity);
+        CHECK(vm.ClassLoaders().LoadClass(kApplicationLoader, "org.apache.commons.codec.Decoder") == parent);
+        REQUIRE(fixture.session->Classes().GetMethodId(*identity, "decode",
+            "(Ljava/lang/Object;)Ljava/lang/Object;", false).has_value());
+        const auto concrete = fixture.session->Classes().FindClass("shared/JniDecoder");
+        REQUIRE(concrete.has_value());
+        const auto method = fixture.session->Classes().GetMethodId(*concrete, "decode",
+            "(Ljava/lang/Object;)Ljava/lang/Object;", false);
+        REQUIRE(method.has_value());
+        const auto receiver = vm.NewIntrinsicInstance("Lshared/JniDecoder;");
+        CHECK(linker.IsAssignable(parent, bridge.Model().ObjectClass(receiver)));
+        const auto marker = vm.NewStringUtf8("delegated");
+        const auto roots = vm.ProtectReferences(std::array{receiver, marker});
+        const std::array<JniValue, 1> args{bridge.PublishLocal(marker)};
+        const auto result = std::get<JniReference>(fixture.session->Invocations().InvokeVirtual(
+            1U, bridge.PublishLocal(receiver), *concrete, *method, args, JniArgumentSource::value_array));
+        CHECK(bridge.FromReference(result) == marker);
+        CHECK_FALSE(fixture.session->Environment().ExceptionCheck(1U));
     }
 }
 

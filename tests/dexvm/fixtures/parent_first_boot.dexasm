@@ -1,0 +1,36 @@
+# AOSP API19 ClassLoader.loadClass: parent definitions win regardless of package.
+.class public Lshared/ParentOwned;
+.super Ljava/lang/Object;
+.field public static seed:I = 3
+.method public constructor <init>()V
+.registers 1
+    invoke-direct {v0}, Ljava/lang/Object;-><init>()V
+    return-void
+.end method
+.method static constructor <clinit>()V
+.registers 1
+    const/16 v0, 42
+    sput v0, Lshared/ParentOwned;->seed:I
+    return-void
+.end method
+.method public static answer()I
+.registers 1
+    sget v0, Lshared/ParentOwned;->seed:I
+    return v0
+.end method
+
+.class public abstract interface Lshared/Contract;
+.super Ljava/lang/Object;
+.method public abstract value()I
+.end method
+
+# Minimal API19 marker/interface hierarchy required by the real Class intrinsic.
+.class public abstract interface Ljava/io/Serializable;
+.super Ljava/lang/Object;
+.class public abstract interface Ljava/lang/reflect/AnnotatedElement;
+.super Ljava/lang/Object;
+.class public abstract interface Ljava/lang/reflect/GenericDeclaration;
+.super Ljava/lang/Object;
+.implements Ljava/lang/reflect/AnnotatedElement;
+.class public abstract interface Ljava/lang/reflect/Type;
+.super Ljava/lang/Object;

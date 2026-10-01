@@ -1,0 +1,13 @@
+# Packaged API19 library copy; the curated bootstrap Decoder must win.
+.class public abstract interface Lorg/apache/commons/codec/Decoder;
+.super Ljava/lang/Object;
+.method public abstract decode(Ljava/lang/Object;)Ljava/lang/Object;
+.end method
+
+.class public Lshared/JniDecoder;
+.super Ljava/lang/Object;
+.implements Lorg/apache/commons/codec/Decoder;
+.method public decode(Ljava/lang/Object;)Ljava/lang/Object;
+.registers 2
+    return-object v1
+.end method

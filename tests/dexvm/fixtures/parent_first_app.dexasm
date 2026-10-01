@@ -1,0 +1,88 @@
+# These copies must contribute no hierarchy, members, metadata or initialization.
+.class public Lshared/ParentOwned;
+.super Lmissing/ShadowSuper;
+.field public static seed:I = 99
+.field public static appOnly:I
+.method static constructor <clinit>()V
+.registers 1
+    const/16 v0, 99
+    sput v0, Lshared/Observer;->hits:I
+    return-void
+.end method
+.method public static answer()I
+.registers 1
+    const/16 v0, 99
+    return v0
+.end method
+.method public static appOnly()I
+.registers 1
+    const/16 v0, 99
+    return v0
+.end method
+
+.class public abstract interface Lshared/Contract;
+.super Ljava/lang/Object;
+.method public abstract value()I
+.end method
+.method public abstract appOnly()I
+.end method
+
+.class public Lshared/IntrinsicOwned;
+.super Lmissing/ShadowSuper;
+.method public static answer()I
+.registers 1
+    const/16 v0, 99
+    return v0
+.end method
+
+.class public Lshared/Observer;
+.super Ljava/lang/Object;
+.field public static hits:I
+
+# Application-only classes in the same package remain available.
+.class public Lshared/AppOnly;
+.super Lshared/ParentOwned;
+.implements Lshared/Contract;
+.method public constructor <init>()V
+.registers 1
+    invoke-direct {v0}, Lshared/ParentOwned;-><init>()V
+    return-void
+.end method
+.method public value()I
+.registers 2
+    const/16 v0, 7
+    return v0
+.end method
+
+.class public Lshared/Caller;
+.super Ljava/lang/Object;
+.method public static readParent()I
+.registers 1
+    invoke-static {}, Lshared/ParentOwned;->answer()I
+    move-result v0
+    return v0
+.end method
+.method public static readField()I
+.registers 1
+    sget v0, Lshared/ParentOwned;->seed:I
+    return v0
+.end method
+.method public static readObserver()I
+.registers 1
+    sget v0, Lshared/Observer;->hits:I
+    return v0
+.end method
+.method public static readIntrinsic()I
+.registers 1
+    invoke-static {}, Lshared/IntrinsicOwned;->answer()I
+    move-result v0
+    return v0
+.end method
+.method public static useInterface()I
+.registers 1
+    new-instance v0, Lshared/AppOnly;
+    invoke-direct {v0}, Lshared/AppOnly;-><init>()V
+    invoke-interface {v0}, Lshared/Contract;->value()I
+    move-result v0
+    return v0
+.end method

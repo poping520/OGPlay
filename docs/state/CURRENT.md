@@ -9,10 +9,10 @@
 ## 运行状态
 
 - **Tales From Deep Space 1.0.0**：Boot/App 同名注册已按实际 bootstrap 身份 parent-first
-  修复。macOS 构建及定向回归 496 断言通过；原 APK、无 Profile/无 survey 越过 prepare，
-  装载游戏 SO 并进入 onCreate；
-  下一首错为 `SurfaceView(Context, AttributeSet)` 构造器缺失。完整游戏未验收。
-  证据：`.local/tales-class-collision-fix/`。
+  修复，定向 496 断言通过。SurfaceView(Context,null) 已复用统一 View 初始化；
+  macOS Release 构建及定向 264 断言通过。原 APK、无 Profile/无 survey 进入 onResume，
+  下一首错为 `InputMethodManager.restartInput(View)` 缺失；完整游戏未验收。
+  证据：`.local/tales-{class-collision,surface-constructor}-fix/`。
 
 - **PVZ（com.popcap.pvz_na）**：[DVM-205](../tasks/dexvm/DVM-205.md) 已修复 DEX
   注解预算误拒绝，使用共享解析缓存和分层资源预算。macOS Release 定向回归通过；

@@ -2,6 +2,8 @@
 #include <doctest/doctest.h>
 
 #include <cstdint>
+#include <fstream>
+#include <iterator>
 #include <memory>
 #include <string>
 #include <thread>
@@ -36,8 +38,9 @@ struct EglVm final {
 
     explicit EglVm(
         const InterpreterBackend backend = InterpreterBackend::switch_dispatch,
-        AndroidGuestCallSession* session = nullptr)
-        : interpreter([this]() -> DexClassLinker& {
+        AndroidGuestCallSession* session = nullptr,
+        const char* dex_fixture = nullptr)
+        : interpreter([this, dex_fixture]() -> DexClassLinker& {
               linker.RegisterIntrinsics(CoreIntrinsicCatalog());
               auto android = AndroidIntrinsicCatalog(context);
               android.push_back(std::move(
@@ -52,6 +55,15 @@ struct EglVm final {
                                     .Build());
               linker.RegisterIntrinsics(std::move(android));
               ogplay::test::RegisterBootDex(linker);
+              if (dex_fixture != nullptr) {
+                  const auto path = std::string(OGPLAY_DEXVM_FIXTURE_DIR) +
+                                    "/" + dex_fixture;
+                  std::ifstream stream(path, std::ios::binary);
+                  REQUIRE_MESSAGE(stream.good(), "missing fixture: ", path);
+                  linker.RegisterDex(std::vector<std::uint8_t>(
+                      std::istreambuf_iterator<char>(stream),
+                      std::istreambuf_iterator<char>()));
+              }
               linker.Link();
               return linker;
         }(), model, nullptr, ledger, {.backend = backend}) {
@@ -202,6 +214,80 @@ TEST_CASE("GLSurfaceView subclasses inherit a stable holder and initialized View
         CHECK(vm.CallOn(view, "getHolder", "()Landroid/view/SurfaceHolder;").ref == holder);
         vm.CallOn(holder, "setFormat", "(I)V", {VmValue::Int(-3)});
         CHECK(vm.CallOn(holder, "getSurface", "()Landroid/view/Surface;").ref.IsValid());
+    }
+}
+
+TEST_CASE("SurfaceView null-attribute constructors initialize DEX subclasses and reject unsupported inputs") {
+    constexpr auto subclass = "Lfixture/SurfaceSubclass;";
+    constexpr auto two_args =
+        "(Landroid/content/Context;Landroid/util/AttributeSet;)V";
+    for (const auto backend : {InterpreterBackend::switch_dispatch,
+                               InterpreterBackend::threaded}) {
+        EglVm vm(backend, nullptr, "surface_view_ctor.dex");
+        const auto type = vm.linker.ResolveDescriptor(subclass);
+        const auto context = vm.interpreter.NewIntrinsicInstance(
+            "Landroid/app/Application;");
+        const auto construct = [&](const VmObjectRef view,
+                                   const char* signature,
+                                   std::vector<VmValue> arguments) {
+            const auto method = vm.linker.FindDirectMethod(
+                type, "<init>", signature);
+            REQUIRE(method.has_value());
+            arguments.insert(arguments.begin(), VmValue::Ref(view));
+            return vm.interpreter.Call(*method, arguments);
+        };
+        const auto single = vm.interpreter.NewIntrinsicInstance(subclass);
+        const auto paired = vm.interpreter.NewIntrinsicInstance(subclass);
+        REQUIRE_FALSE(construct(single, "(Landroid/content/Context;)V",
+                                {VmValue::Ref(context)}).exception.IsValid());
+        REQUIRE_FALSE(construct(paired, two_args,
+                                {VmValue::Ref(context),
+                                 VmValue::Ref(VmObjectRef{})}).exception.IsValid());
+        for (const auto view : {single, paired}) {
+            CHECK(vm.CallOn(view, "getContext", "()Landroid/content/Context;")
+                      .ref == context);
+            const auto node = FindViewUiNode(*vm.context, view.Value());
+            REQUIRE(node.has_value());
+            CHECK_FALSE(vm.context->ui_tree.IsAttached(*node));
+            const auto holder = vm.CallOn(
+                view, "getHolder", "()Landroid/view/SurfaceHolder;").ref;
+            REQUIRE(holder.IsValid());
+            CHECK(vm.CallOn(view, "getHolder", "()Landroid/view/SurfaceHolder;")
+                      .ref == holder);
+            CHECK_FALSE(vm.context->active_surface_holders.contains(holder.Value()));
+        }
+        CHECK(FindViewUiNode(*vm.context, single.Value()) !=
+              FindViewUiNode(*vm.context, paired.Value()));
+        CHECK(vm.context->surface_holders.at(single.Value()) !=
+              vm.context->surface_holders.at(paired.Value()));
+
+        const auto node_count = vm.context->ui_tree.Size();
+        const auto missing_context = vm.interpreter.NewIntrinsicInstance(subclass);
+        const auto null_result = construct(
+            missing_context, two_args,
+            {VmValue::Ref(VmObjectRef{}), VmValue::Ref(VmObjectRef{})});
+        REQUIRE(null_result.exception.IsValid());
+        CHECK(vm.linker.Class(null_result.exception_class).descriptor ==
+              "Ljava/lang/NullPointerException;");
+        CHECK_FALSE(FindViewUiNode(*vm.context, missing_context.Value()).has_value());
+
+        const auto with_attrs = vm.interpreter.NewIntrinsicInstance(subclass);
+        const auto attrs = vm.interpreter.NewIntrinsicInstance(
+            "Lfixture/SurfaceAttributes;");
+        CHECK(vm.linker.IsAssignable(
+            vm.linker.ResolveDescriptor("Landroid/util/AttributeSet;"),
+            vm.model.ObjectClass(attrs)));
+        const auto attr_result = construct(
+            with_attrs, two_args, {VmValue::Ref(context), VmValue::Ref(attrs)});
+        REQUIRE(attr_result.exception.IsValid());
+        CHECK(vm.linker.Class(attr_result.exception_class).descriptor ==
+              "Ljava/lang/UnsupportedOperationException;");
+        CHECK_FALSE(FindViewUiNode(*vm.context, with_attrs.Value()).has_value());
+        CHECK(vm.context->ui_tree.Size() == node_count);
+        const auto hits = vm.ledger.Unimplemented();
+        REQUIRE(hits.size() == 1);
+        CHECK(hits[0].id == "dexvm.view_xml_attributes");
+        CHECK(hits[0].count == 1);
     }
 }
 

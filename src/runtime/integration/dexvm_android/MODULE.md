@@ -115,6 +115,8 @@ SettingsProvider、跨用户/观察者/host 设置。SystemProperties 仅受审 
   命中并虚派回调；键盘从 SDL scancode 映射 API19 keyCode/Unicode/meta/repeat。
 - SurfaceView holder 按 attach/host surface generation 严格 created→changed→destroyed；
   detached 子树不提前收事件或关闭 host surface。Canvas/Bitmap 为 ARGB，post 发布软件帧。
+  SurfaceView(Context,null) 构造复用 View 的 UiNode/Context 初始化；null Context 抛 NPE，
+  非空 AttributeSet 记账失败，不宣称 XML/theme 或三参数 defStyle 构造支持。
 - NativeActivity/NativeContentView 执行原 Java，仅 overlay 私有 native，经 NativeActivityRuntime
   接当前进程。takeSurface/takeInputQueue 支持 null/切换，先销毁旧 owner 再发布新对象；
   首次遍历前解除不收旧事件。Callback2 changed 后 redraw；主线程首次/dirty 遍历向已附着

@@ -867,6 +867,9 @@ namespace ogplay::runtime::android_intrinsics {
 Decl Declare_android_view_SurfaceView(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/view/SurfaceView;", "Landroid/view/View;");
     builder.Constructor("(Landroid/content/Context;)V", ViewInitHandler(context));
+    builder.Constructor(
+        "(Landroid/content/Context;Landroid/util/AttributeSet;)V",
+        ViewNullAttributeSetInitHandler(context));
     builder.FinalMethod("getHolder", "()Landroid/view/SurfaceHolder;",
         [context](dx::IntrinsicContext& call) {
             auto& holder = context->surface_holders[call.receiver.Value()];

@@ -1,0 +1,22 @@
+# API19 programmatic SurfaceView subclass: both constructors reach the
+# two-argument platform constructor, as in application Java code.
+.class public Lfixture/SurfaceSubclass;
+.super Landroid/view/SurfaceView;
+.method public constructor <init>(Landroid/content/Context;)V
+.registers 3
+    const/4 v0, 0
+    invoke-direct {v1, v2, v0}, Lfixture/SurfaceSubclass;-><init>(Landroid/content/Context;Landroid/util/AttributeSet;)V
+    return-void
+.end method
+
+.method public constructor <init>(Landroid/content/Context;Landroid/util/AttributeSet;)V
+.registers 3
+    invoke-direct {v0, v1, v2}, Landroid/view/SurfaceView;-><init>(Landroid/content/Context;Landroid/util/AttributeSet;)V
+    return-void
+.end method
+
+# A typed, non-null AttributeSet identity. No attributes may be read because
+# this constructor path explicitly rejects XML/theme input.
+.class public Lfixture/SurfaceAttributes;
+.super Ljava/lang/Object;
+.implements Landroid/util/AttributeSet;

@@ -3329,6 +3329,50 @@ TEST_CASE("DVM-142 PackageManager reflection resolves the BootDex ResolveInfo fa
     }
 }
 
+TEST_CASE("PackageManager getInstallerPackageName reports direct-load provenance") {
+    constexpr auto kQuery = "(Ljava/lang/String;)Ljava/lang/String;";
+    for (const auto backend : {InterpreterBackend::switch_dispatch,
+                               InterpreterBackend::threaded}) {
+        AndroidValueVm f(backend);
+        f.context->package_name = "org.example.game";
+        const auto base = f.New("Landroid/content/Context;");
+        const auto manager = f.On(base, "getPackageManager",
+                                 "()Landroid/content/pm/PackageManager;").ref;
+        const auto package = f.On(base, "getPackageName", "()Ljava/lang/String;").ref;
+        const auto roots = f.vm.ProtectReferences(std::array{base, manager, package});
+        const auto query = [&](VmObjectRef name) {
+            return f.OnOutcome(manager, "getInstallerPackageName", kQuery,
+                               {VmValue::Ref(name)});
+        };
+        const auto current = query(package);
+        REQUIRE_MESSAGE(!current.exception.IsValid(), current.exception_message);
+        CHECK_FALSE(current.value.ref.IsValid());
+
+        // API19 throws IllegalArgumentException, including for null input.
+        for (const auto* name : {"org.example.missing", "android", ""}) {
+            const auto unknown = query(f.vm.NewStringUtf8(name));
+            REQUIRE(unknown.exception.IsValid());
+            CHECK(f.linker.Class(unknown.exception_class).descriptor ==
+                  "Ljava/lang/IllegalArgumentException;");
+            CHECK(unknown.exception_message == std::string("Unknown package: ") + name);
+        }
+        const auto null_name = query(VmObjectRef{});
+        REQUIRE(null_name.exception.IsValid());
+        CHECK(f.linker.Class(null_name.exception_class).descriptor ==
+              "Ljava/lang/IllegalArgumentException;");
+        CHECK(null_name.exception_message == "Unknown package: null");
+        CHECK_FALSE(f.On(manager, "getInstallerPackageName", kQuery,
+                         {VmValue::Ref(package)}).ref.IsValid());
+
+        // An unconfigured Context must never make the empty string a package.
+        f.context->package_name.clear();
+        const auto empty = query(f.vm.NewStringUtf8(""));
+        REQUIRE(empty.exception.IsValid());
+        CHECK(f.linker.Class(empty.exception_class).descriptor ==
+              "Ljava/lang/IllegalArgumentException;");
+    }
+}
+
 TEST_CASE("DVM-180 getPackageInfo returns current-package Activity metadata") {
     using ogplay::loader::AndroidManifestActivityComponent;
     using ogplay::loader::AndroidManifestComponentKind;

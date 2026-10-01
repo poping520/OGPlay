@@ -3052,6 +3052,25 @@ Decl Declare_android_content_pm_PackageManager(const Context &context) {
                       "android.hardware.screen.portrait",
                       dx::kAccPublic | dx::kAccStatic | dx::kAccFinal);
   builder.VirtualMethod(
+      "getInstallerPackageName",
+      "(Ljava/lang/String;)Ljava/lang/String;",
+      [context](dx::IntrinsicContext &call) {
+        // API19 Settings.getInstallerPackageNameLPr treats null as an unknown
+        // package, unlike the NameNotFoundException queries below.
+        const auto package_ref = call.arguments[0].ref;
+        if (!package_ref.IsValid()) {
+          throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;",
+                                "Unknown package: null"};
+        }
+        const auto package = call.vm.StringUtf8(package_ref);
+        if (package.empty() || package != context->package_name) {
+          throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;",
+                                "Unknown package: " + package};
+        }
+        // The current APK is loaded directly; no Android installer is recorded.
+        return dx::VmValue::Ref(dx::VmObjectRef{});
+      });
+  builder.VirtualMethod(
       "getResourcesForApplication",
       "(Ljava/lang/String;)Landroid/content/res/Resources;",
       [context](dx::IntrinsicContext &call) {

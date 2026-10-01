@@ -124,8 +124,12 @@
   由 guest Java 适配到 CBC/NoPadding，Cipher 普通方法无 overlay。
   OGPlayCrypto 的 SecretKeyFactory 通过标准 Provider 配置进入 JCA；公开 API、PBE 规格及
   PKCS12 SHA-1/AES-256 SPI 都执行 guest Java，不新增 SecretKeyFactory 方法 overlay。
-  OGPlayOS 用 HAL CSPRNG 且拒绝 setSeed；SHA1PRNG 首次由同一 CSPRNG 播种，后续执行
+  OGPlayOS 用 HAL CSPRNG 且拒绝 setSeed；AndroidOpenSSL/SHA1PRNG 首次由同一 CSPRNG 播种，后续执行
   guest RAND_seed/RAND_bytes，调用方 seed 仅追加熵。IvParameterSpec 可用。
+  Crypto Provider 仅发布 API19 Harmony SHA1PRNG，注册构造为平台配置边界；算法及播种/
+  counter/输出缓存执行原版 BootDex，状态只在 guest 字段/数组。首次显式 seed 可复现字节流；
+  未播种与 generateSeed 通过既有 VFS /dev/urandom 获取熵，失败保真。默认 Provider 顺序不变；
+  不发布 Harmony DSA/完整 Provider，不将 Crypto 别名到 AndroidOpenSSL。
 - API 19 原版 `NativeCrypto` 是 BootDex 唯一定义；catalog 仅按类准入其原版 native 到
   guest JNI，不重列成员。原版 `javacrypto` 加载名映射统一 JNI，字段 token 资源由 VM 装配；
   OGPlay 私有证书验签使用独立 `NativeVerification`，不扩展原版 ABI。

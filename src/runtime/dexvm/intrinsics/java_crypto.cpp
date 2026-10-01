@@ -61,12 +61,36 @@ IntrinsicClassDecl SecurityConfiguration() {
         Put(vm, props, "security.provider.3", "org.ogplay.security.OgPlayKeyStoreProvider");
         Put(vm, props, "security.provider.4", "org.ogplay.security.OgPlayJsseProvider");
         Put(vm, props, "security.provider.5", "org.ogplay.security.OgPlayCryptoProvider");
+        Put(vm, props, "security.provider.6",
+            "org.apache.harmony.security.provider.crypto.CryptoProvider");
         Put(vm, props, "keystore.type", "BKS");
         Put(vm, props, "ssl.TrustManagerFactory.algorithm", "PKIX");
         Put(vm, props, "ssl.KeyManagerFactory.algorithm", "PKIX");
         const auto door = Construct(vm, "Ljava/security/Security$SecurityDoor;");
         vm.SetIntrinsicStaticRef("Lorg/apache/harmony/security/fortress/Engine;", "door",
                                  "Lorg/apache/harmony/security/fortress/SecurityAccess;", door);
+        return VmValue::Void();
+    });
+    return std::move(b).Build();
+}
+// API19's legacy provider is a configuration boundary. Its PRNG algorithm and
+// all instance state remain in the original BootDex SPI; do not advertise the
+// original provider's unsupported DSA services or change the default provider.
+IntrinsicClassDecl HarmonyCryptoProvider() {
+    auto b = IntrinsicClassBuilder::Class(
+        "Lorg/apache/harmony/security/provider/crypto/CryptoProvider;",
+        "Ljava/security/Provider;", {}, kAccPublic | kAccFinal);
+    b.Constructor("()V", [](IntrinsicContext& c) {
+        auto& vm = c.vm;
+        const auto name = vm.NewStringUtf8("Crypto");
+        const auto roots = vm.ProtectReferences(std::array{name});
+        Direct(vm, "Ljava/security/Provider;", "<init>",
+               "(Ljava/lang/String;DLjava/lang/String;)V",
+               {VmValue::Ref(c.receiver), VmValue::Ref(name), VmValue::Double(1.0),
+                VmValue::Ref(vm.NewStringUtf8("OGPlay API19 Harmony SHA1PRNG subset"))});
+        Put(vm, c.receiver, "SecureRandom.SHA1PRNG",
+            "org.apache.harmony.security.provider.crypto.SHA1PRNG_SecureRandomImpl");
+        Put(vm, c.receiver, "SecureRandom.SHA1PRNG ImplementedIn", "Software");
         return VmValue::Void();
     });
     return std::move(b).Build();
@@ -613,6 +637,7 @@ void AppendJavaCrypto(std::vector<IntrinsicClassDecl>& catalog,
                       const CoreIntrinsicServices& services) {
     catalog.push_back(SecurityConfiguration());
     catalog.push_back(CryptoProvider());
+    catalog.push_back(HarmonyCryptoProvider());
     catalog.push_back(DefaultAes());
     catalog.push_back(OsRandom(services));
     catalog.push_back(OpenSslRandom(services));

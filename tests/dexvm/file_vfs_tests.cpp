@@ -1727,7 +1727,7 @@ TEST_CASE("AssetManager open returns a readable concrete byte stream") {
     CHECK(vm.CallOn(stream, "read", "()I").AsInt() == -1);
 }
 
-TEST_CASE("Resources and Context share application assets and isolate system assets") {
+TEST_CASE("Resources Context and PackageManager share application assets and isolate system assets") {
     for (const auto backend : {InterpreterBackend::switch_dispatch,
                                InterpreterBackend::threaded}) {
         FileVm vm(nullptr, true, {.backend = backend});
@@ -1739,8 +1739,17 @@ TEST_CASE("Resources and Context share application assets and isolate system ass
         const auto context = vm.interpreter.NewIntrinsicInstance(
             "Landroid/content/Context;");
         const auto context_root = vm.interpreter.ProtectReferences(std::array{context});
+        const auto manager = vm.CallOn(
+            context, "getPackageManager", "()Landroid/content/pm/PackageManager;").ref;
+        const auto manager_root = vm.interpreter.ProtectReferences(std::array{manager});
+        constexpr auto kPackageResources =
+            "(Ljava/lang/String;)Landroid/content/res/Resources;";
+        const auto package = vm.interpreter.NewStringUtf8(vm.context->package_name);
+        const auto package_root = vm.interpreter.ProtectReferences(std::array{package});
+        // The package query must also materialize a cold resource pair.
         const auto resources = vm.CallOn(
-            context, "getResources", "()Landroid/content/res/Resources;").ref;
+            manager, "getResourcesForApplication", kPackageResources,
+            {VmValue::Ref(package)}).ref;
         const auto resources_root = vm.interpreter.ProtectReferences(
             std::array{resources});
         const auto direct_assets = vm.CallOn(
@@ -1751,6 +1760,8 @@ TEST_CASE("Resources and Context share application assets and isolate system ass
         CHECK(direct_assets == resource_assets);
         CHECK(vm.CallOn(context, "getResources",
                         "()Landroid/content/res/Resources;").ref == resources);
+        CHECK(vm.CallOn(manager, "getResourcesForApplication", kPackageResources,
+                        {VmValue::Ref(package)}).ref == resources);
         CHECK(vm.CallOn(resources, "getAssets",
                         "()Landroid/content/res/AssetManager;").ref == direct_assets);
         const auto wrapper = vm.interpreter.NewIntrinsicInstance(
@@ -1763,13 +1774,39 @@ TEST_CASE("Resources and Context share application assets and isolate system ass
         CHECK(vm.CallOn(wrapper, "getAssets",
                         "()Landroid/content/res/AssetManager;").ref == direct_assets);
         static_cast<void>(vm.interpreter.CollectGarbage("resources-assets-identity"));
+        CHECK(vm.CallOn(manager, "getResourcesForApplication", kPackageResources,
+                        {VmValue::Ref(package)}).ref == resources);
         CHECK(vm.CallOn(resources, "getAssets",
                         "()Landroid/content/res/AssetManager;").ref == direct_assets);
         const auto name = vm.interpreter.NewStringUtf8("gamecfg.bar");
         const auto name_root = vm.interpreter.ProtectReferences(std::array{name});
-        CHECK(vm.CallOn(direct_assets, "open",
-                        "(Ljava/lang/String;)Ljava/io/InputStream;",
-                        {VmValue::Ref(name)}).ref.IsValid());
+        const auto stream = vm.CallOn(resource_assets, "open",
+                                      "(Ljava/lang/String;)Ljava/io/InputStream;",
+                                      {VmValue::Ref(name)}).ref;
+        REQUIRE(stream.IsValid());
+        CHECK(vm.CallOn(stream, "read", "()I").AsInt() == 0x41);
+        CHECK(vm.CallOn(stream, "read", "()I").AsInt() == -1);
+        const auto missing_asset = vm.CallOnOutcome(
+            resource_assets, "open", "(Ljava/lang/String;)Ljava/io/InputStream;",
+            {VmValue::Ref(vm.interpreter.NewStringUtf8("missing.bin"))});
+        REQUIRE(missing_asset.exception.IsValid());
+        CHECK(vm.linker.Class(missing_asset.exception_class).descriptor ==
+              "Ljava/io/IOException;");
+
+        for (const auto* other_package : {"org.example.other", "", "system"}) {
+            const auto missing_package = vm.CallOnOutcome(
+                manager, "getResourcesForApplication", kPackageResources,
+                {VmValue::Ref(vm.interpreter.NewStringUtf8(other_package))});
+            REQUIRE(missing_package.exception.IsValid());
+            CHECK(vm.linker.Class(missing_package.exception_class).descriptor ==
+                  "Landroid/content/pm/PackageManager$NameNotFoundException;");
+        }
+        const auto null_package = vm.CallOnOutcome(
+            manager, "getResourcesForApplication", kPackageResources,
+            {VmValue::Ref(VmObjectRef{})});
+        REQUIRE(null_package.exception.IsValid());
+        CHECK(vm.linker.Class(null_package.exception_class).descriptor ==
+              "Ljava/lang/NullPointerException;");
 
         const auto system = vm.CallStatic(
             "Landroid/content/res/Resources;", "getSystem",

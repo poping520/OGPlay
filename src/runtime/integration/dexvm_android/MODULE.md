@@ -107,6 +107,10 @@ SettingsProvider、跨用户/观察者/host 设置。SystemProperties 仅受审 
 - 焦点由 lifecycle/UiTree 唯一拥有，requestFocus 重载共用可聚焦/触摸模式/祖先状态/转移/
   清除/监听器语义；无 Sensor/SystemUI/WMS 时不伪造回调。滚动条样式仅 mViewFlags 的
   0x03000000 位、默认 INSIDE_OVERLAY；scroll-container/开关只存状态，不实现绘制/inset 重算。
+- InputMethodManager 无 InputConnection 会话；restart/show/hide 先从当前窗口 owner 与
+  attached UiTree 焦点投影 checkFocus。无候选时 restart 返回、show/hide 为 false；有候选
+  时创建连接记账失败，包括无关 View/token 请求。不得按非编辑器跳过 dummy connection。
+  不发布 served View、输入连接或软键盘可见状态；不支持 proxy、ResultReceiver、桌面 IME。
 - clickable 实例方法可覆盖；setOnClickListener 登记前虚派 isClickable/setClickable(true)，
   null 仍设 clickable 但解绑监听器，setClickable(false) 不删监听器。触摸点击要求 clickable，
   程序化 InvokeViewOnClick 不要求；基础 onTouchEvent 只消费、不伪造点击，listener/子类不被禁用。

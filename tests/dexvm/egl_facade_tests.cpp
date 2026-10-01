@@ -2,6 +2,7 @@
 #include <doctest/doctest.h>
 
 #include <cstdint>
+#include <array>
 #include <fstream>
 #include <iterator>
 #include <memory>
@@ -39,8 +40,9 @@ struct EglVm final {
     explicit EglVm(
         const InterpreterBackend backend = InterpreterBackend::switch_dispatch,
         AndroidGuestCallSession* session = nullptr,
-        const char* dex_fixture = nullptr)
-        : interpreter([this, dex_fixture]() -> DexClassLinker& {
+        const char* dex_fixture = nullptr,
+        const std::vector<IntrinsicClassDecl>& extras = {})
+        : interpreter([this, dex_fixture, &extras]() -> DexClassLinker& {
               linker.RegisterIntrinsics(CoreIntrinsicCatalog());
               auto android = AndroidIntrinsicCatalog(context);
               android.push_back(std::move(
@@ -54,6 +56,7 @@ struct EglVm final {
                        "Landroid/opengl/GLSurfaceView$EGLConfigChooser;"}))
                                     .Build());
               linker.RegisterIntrinsics(std::move(android));
+              linker.RegisterIntrinsics(extras);
               ogplay::test::RegisterBootDex(linker);
               if (dex_fixture != nullptr) {
                   const auto path = std::string(OGPLAY_DEXVM_FIXTURE_DIR) +
@@ -288,6 +291,158 @@ TEST_CASE("SurfaceView null-attribute constructors initialize DEX subclasses and
         REQUIRE(hits.size() == 1);
         CHECK(hits[0].id == "dexvm.view_xml_attributes");
         CHECK(hits[0].count == 1);
+    }
+}
+
+TEST_CASE("SurfaceHolder frame publishes before callbacks and retains per-holder identity across generations") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch,
+                               InterpreterBackend::threaded}) {
+        struct Observation {
+            int phase;
+            VmObjectRef holder, frame;
+            int width, height;
+        };
+        std::vector<Observation> observations;
+        EglVm* active = nullptr;
+        auto callback = IntrinsicClassBuilder::Class(
+            "Lfixture/FrameCallback;", "Ljava/lang/Object;",
+            {"Landroid/view/SurfaceHolder$Callback;"});
+        for (const int phase : {0, 1, 2}) {
+            callback.VirtualMethod(
+                phase == 0 ? "surfaceCreated" : phase == 1 ? "surfaceChanged" : "surfaceDestroyed",
+                phase == 1 ? "(Landroid/view/SurfaceHolder;III)V" : "(Landroid/view/SurfaceHolder;)V",
+                [&, phase](IntrinsicContext& call) {
+                    const auto holder = call.arguments[0].ref;
+                    const auto frame = active->CallStatic(
+                        "Lfixture/SurfaceFrameProbe;", "read",
+                        "(Landroid/view/SurfaceHolder;)Landroid/graphics/Rect;",
+                        {VmValue::Ref(holder)}).ref;
+                    const auto width = active->CallOn(frame, "width", "()I").AsInt();
+                    const auto height = active->CallOn(frame, "height", "()I").AsInt();
+                    if (phase == 1) {
+                        CHECK(width == call.arguments[2].AsInt());
+                        CHECK(height == call.arguments[3].AsInt());
+                    }
+                    observations.push_back({phase, holder, frame, width, height});
+                    return VmValue::Void();
+                });
+        }
+        EglVm vm(backend, nullptr, "surface_frame.dex", {std::move(callback).Build()});
+        active = &vm;
+        const auto read = [&](VmObjectRef holder) {
+            return vm.CallStatic("Lfixture/SurfaceFrameProbe;", "read",
+                "(Landroid/view/SurfaceHolder;)Landroid/graphics/Rect;",
+                {VmValue::Ref(holder)}).ref;
+        };
+        const auto shape = [&](VmObjectRef frame, int width, int height) {
+            CHECK(vm.CallOn(frame, "width", "()I").AsInt() == width);
+            CHECK(vm.CallOn(frame, "height", "()I").AsInt() == height);
+            for (const auto* name : {"left", "top"}) {
+                CHECK(vm.CallStatic("Lfixture/SurfaceFrameProbe;", name,
+                    "(Landroid/graphics/Rect;)I", {VmValue::Ref(frame)}).AsInt() == 0);
+            }
+        };
+        const auto make_view = [&] {
+            const auto view = vm.interpreter.NewIntrinsicInstance("Landroid/view/SurfaceView;");
+            const auto owner = vm.interpreter.NewIntrinsicInstance("Landroid/content/Context;");
+            vm.CallStatic("Landroid/view/SurfaceView;", "<init>",
+                          "(Landroid/content/Context;)V",
+                          {VmValue::Ref(view), VmValue::Ref(owner)});
+            return view;
+        };
+        const auto view = make_view();
+        const auto holder = vm.CallOn(view, "getHolder", "()Landroid/view/SurfaceHolder;").ref;
+        const auto frame = read(holder);
+        REQUIRE(frame.IsValid());
+        CHECK(read(holder) == frame);
+        shape(frame, 0, 0);
+        const auto listener = vm.interpreter.NewIntrinsicInstance("Lfixture/FrameCallback;");
+        vm.CallOn(holder, "addCallback", "(Landroid/view/SurfaceHolder$Callback;)V",
+                  {VmValue::Ref(listener)});
+        const auto node = FindViewUiNode(*vm.context, view.Value());
+        REQUIRE(node.has_value());
+        // A detached holder must not acquire the managed window dimensions.
+        REQUIRE_FALSE(DispatchSurfaceHolderCallbacks(vm.interpreter, *vm.context,
+                                                    SurfaceHolderPhase::created).has_value());
+        CHECK(observations.empty());
+        shape(frame, 0, 0);
+        vm.context->ui_tree.Attach(vm.context->ui_tree.Root(), *node);
+        REQUIRE_FALSE(AttachSurfaceViewSubtree(vm.interpreter, *vm.context, *node).has_value());
+        REQUIRE(observations.size() == 2);
+        CHECK(observations[0].phase == 0);
+        CHECK(observations[0].frame == frame);
+        CHECK(observations[0].width == static_cast<int>(vm.context->surface_width));
+        CHECK(observations[0].height == static_cast<int>(vm.context->surface_height));
+        CHECK(observations[1].phase == 1);
+        // A late-created holder publishes geometry without replaying callbacks.
+        const auto late = make_view();
+        const auto late_node = FindViewUiNode(*vm.context, late.Value());
+        REQUIRE(late_node.has_value());
+        vm.context->ui_tree.Attach(vm.context->ui_tree.Root(), *late_node);
+        const auto late_holder = vm.CallOn(late, "getHolder", "()Landroid/view/SurfaceHolder;").ref;
+        const auto late_frame = read(late_holder);
+        CHECK(late_frame != frame);
+        shape(late_frame, static_cast<int>(vm.context->surface_width),
+                          static_cast<int>(vm.context->surface_height));
+        CHECK(observations.size() == 2);
+        vm.context->surface_width = 1024;
+        vm.context->surface_height = 600;
+        REQUIRE_FALSE(DispatchSurfaceHolderCallbacks(vm.interpreter, *vm.context,
+                                                    SurfaceHolderPhase::changed).has_value());
+        CHECK(read(holder) == frame);
+        shape(frame, 1024, 600);
+        shape(late_frame, 1024, 600);
+        vm.context->surface_width = 0x80000000U;
+        CHECK_THROWS_AS(DispatchSurfaceHolderCallbacks(
+            vm.interpreter, *vm.context, SurfaceHolderPhase::changed), VmJavaThrow);
+        shape(frame, 1024, 600);
+        vm.context->surface_width = 1024;
+        REQUIRE_FALSE(DetachSurfaceViewSubtree(vm.interpreter, *vm.context, *node).has_value());
+        vm.context->ui_tree.Detach(*node);
+        CHECK(observations.back().phase == 2);
+        shape(frame, 1024, 600);
+        vm.context->surface_width = 640;
+        vm.context->surface_height = 360;
+        REQUIRE_FALSE(DispatchSurfaceHolderCallbacks(vm.interpreter, *vm.context,
+                                                    SurfaceHolderPhase::changed).has_value());
+        shape(frame, 1024, 600);
+        shape(late_frame, 640, 360);
+        vm.context->ui_tree.Attach(vm.context->ui_tree.Root(), *node);
+        REQUIRE_FALSE(AttachSurfaceViewSubtree(vm.interpreter, *vm.context, *node).has_value());
+        CHECK(read(holder) == frame);
+        shape(frame, 640, 360);
+        // Retiring registrations does not clear fields on retained guest objects.
+        REQUIRE_FALSE(RetireSurfaceHolderGeneration(vm.interpreter, *vm.context).has_value());
+        vm.context->surface_width = 320;
+        vm.context->surface_height = 240;
+        REQUIRE_FALSE(DispatchSurfaceHolderCallbacks(vm.interpreter, *vm.context,
+                                                    SurfaceHolderPhase::created).has_value());
+        CHECK(read(holder) == frame);
+        shape(frame, 640, 360);
+        const auto replacement = vm.CallOn(view, "getHolder", "()Landroid/view/SurfaceHolder;").ref;
+        CHECK(replacement != holder);
+        CHECK(read(replacement) != frame);
+        shape(read(replacement), 320, 240);
+    }
+}
+
+TEST_CASE("SurfaceHolder frame follows its guest field in GC without a global root") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch,
+                               InterpreterBackend::threaded}) {
+        EglVm vm(backend);
+        const auto holder = vm.interpreter.NewIntrinsicInstance("Landroid/view/SurfaceHolder$Impl;");
+        const auto frame = vm.CallOn(holder, "getSurfaceFrame", "()Landroid/graphics/Rect;").ref;
+        vm.interpreter.SetGcIntegration({{}, {}, [holder](const VmRootVisitor& visit) { visit(holder); }});
+        CHECK(vm.interpreter.MarkReachable().IsMarked(frame));
+        static_cast<void>(vm.interpreter.CollectGarbage());
+        CHECK(vm.model.IsValidRef(frame));
+        CHECK(vm.CallOn(holder, "getSurfaceFrame", "()Landroid/graphics/Rect;").ref == frame);
+        vm.interpreter.SetGcIntegration({});
+        CHECK_FALSE(vm.interpreter.MarkReachable().IsMarked(holder));
+        CHECK_FALSE(vm.interpreter.MarkReachable().IsMarked(frame));
+        static_cast<void>(vm.interpreter.CollectGarbage());
+        CHECK_FALSE(vm.model.IsValidRef(holder));
+        CHECK_FALSE(vm.model.IsValidRef(frame));
     }
 }
 

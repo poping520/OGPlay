@@ -1,0 +1,18 @@
+.class public Lfixture/SurfaceFrameProbe;
+.super Ljava/lang/Object;
+.method public static read(Landroid/view/SurfaceHolder;)Landroid/graphics/Rect;
+.registers 1
+    invoke-interface {v0}, Landroid/view/SurfaceHolder;->getSurfaceFrame()Landroid/graphics/Rect;
+    move-result-object v0
+    return-object v0
+.end method
+.method public static left(Landroid/graphics/Rect;)I
+.registers 1
+    iget v0, v0, Landroid/graphics/Rect;->left:I
+    return v0
+.end method
+.method public static top(Landroid/graphics/Rect;)I
+.registers 1
+    iget v0, v0, Landroid/graphics/Rect;->top:I
+    return v0
+.end method

@@ -784,8 +784,60 @@ Decl Declare_android_view_SurfaceHolder_Callback(const Context& context) {
 
 // ---- migrated from android_view_SurfaceHolder_Impl.cpp ----
 #include "catalog.h"
+#include <limits>
 
 namespace ogplay::runtime::android_intrinsics {
+
+dx::VmObjectRef GetSurfaceHolderFrame(dx::Interpreter& vm,
+                                    DexVmAndroidContext& context,
+                                    const dx::VmObjectRef holder) {
+    if (!context.surface_holder_frame_field.has_value()) {
+        throw dx::DexVmError(dx::DexVmErrorReason::internal_invariant,
+                             "SurfaceHolder frame field is not bound");
+    }
+    const auto holder_root = vm.ProtectReferences(std::array{holder});
+    dx::IntrinsicContext call{vm, holder, {}};
+    dx::IntrinsicCall fields(call);
+    auto frame = fields.GetRef(*context.surface_holder_frame_field);
+    if (frame.IsValid()) return frame;
+    const auto type = vm.Linker().ResolveDescriptor("Landroid/graphics/Rect;");
+    const auto initialized = vm.EnsureClassInitialized(type);
+    if (initialized.exception.IsValid()) {
+        throw dx::VmJavaThrow{vm.Linker().Class(initialized.exception_class).descriptor,
+                              initialized.exception_message, initialized.exception};
+    }
+    frame = vm.NewIntrinsicInstance("Landroid/graphics/Rect;");
+    const auto frame_root = vm.ProtectReferences(std::array{frame});
+    const auto constructor = vm.Linker().FindDirectMethod(type, "<init>", "()V");
+    if (!constructor) {
+        throw dx::DexVmError(dx::DexVmErrorReason::unresolved_reference,
+                             "Rect constructor is not linked");
+    }
+    const auto outcome = vm.Call(*constructor, std::array{dx::VmValue::Ref(frame)});
+    if (outcome.exception.IsValid()) {
+        throw dx::VmJavaThrow{vm.Linker().Class(outcome.exception_class).descriptor,
+                              outcome.exception_message, outcome.exception};
+    }
+    fields.SetRef(*context.surface_holder_frame_field, frame);
+    return frame;
+}
+
+void PublishSurfaceHolderFrame(dx::Interpreter& vm, DexVmAndroidContext& context,
+                               const dx::VmObjectRef holder) {
+    constexpr auto max_extent =
+        static_cast<std::uint32_t>(std::numeric_limits<std::int32_t>::max());
+    if (context.surface_width > max_extent || context.surface_height > max_extent) {
+        throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;",
+                              "Surface dimensions exceed Rect range"};
+    }
+    const auto holder_root = vm.ProtectReferences(std::array{holder});
+    const auto frame = GetSurfaceHolderFrame(vm, context, holder);
+    static_cast<void>(CallAndroidMethod(
+        vm, frame, "set", "(IIII)V",
+        {dx::VmValue::Int(0), dx::VmValue::Int(0),
+         dx::VmValue::Int(static_cast<std::int32_t>(context.surface_width)),
+         dx::VmValue::Int(static_cast<std::int32_t>(context.surface_height))}));
+}
 
 namespace {
 
@@ -863,6 +915,13 @@ void AddCanvasMethods(dx::IntrinsicClassBuilder& builder,
 
 Decl Declare_android_view_SurfaceHolder_Impl(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/view/SurfaceHolder$Impl;", "Ljava/lang/Object;", {"Landroid/view/SurfaceHolder;"});
+    context->surface_holder_frame_field = builder.BoundInstanceField(
+        "mSurfaceFrame", "Landroid/graphics/Rect;", dx::kAccPrivate);
+    builder.FinalMethod("getSurfaceFrame", "()Landroid/graphics/Rect;",
+        [context](dx::IntrinsicContext& call) {
+            return dx::VmValue::Ref(GetSurfaceHolderFrame(
+                call.vm, *context, call.receiver));
+        });
     builder.FinalMethod("addCallback", "(Landroid/view/SurfaceHolder$Callback;)V", SurfaceHolderAddCallbackHandler(context));
     builder.FinalMethod("removeCallback", "(Landroid/view/SurfaceHolder$Callback;)V", SurfaceHolderRemoveCallbackHandler(context));
     builder.FinalMethod("setType", "(I)V", SurfaceHolderSetTypeHandler());
@@ -882,6 +941,8 @@ namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_view_SurfaceHolder(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Interface("Landroid/view/SurfaceHolder;");
+    builder.UnimplementedVirtual("getSurfaceFrame", "()Landroid/graphics/Rect;",
+                                 dx::kAccPublic | dx::kAccAbstract);
     builder.FinalMethod("getSurface", "()Landroid/view/Surface;", HolderGetSurface(context));
     builder.FinalMethod("addCallback", "(Landroid/view/SurfaceHolder$Callback;)V", SurfaceHolderAddCallbackHandler(context));
     builder.FinalMethod("removeCallback", "(Landroid/view/SurfaceHolder$Callback;)V", SurfaceHolderRemoveCallbackHandler(context));
@@ -926,6 +987,7 @@ Decl Declare_android_view_SurfaceView(const Context& context) {
                     // A late observer does not receive past created/changed,
                     // but it must observe the eventual destroyed event.
                     context->active_surface_holders.insert(holder.Value());
+                    PublishSurfaceHolderFrame(call.vm, *context, holder);
                 }
             }
             return dx::VmValue::Ref(holder);

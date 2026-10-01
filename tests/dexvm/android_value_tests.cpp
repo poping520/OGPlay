@@ -5048,6 +5048,93 @@ TEST_CASE("View scroll bar style is inherited and preserves unrelated flags") {
     }
 }
 
+TEST_CASE("InputMethodManager no-session branches follow UI and window focus and reject active connections") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch,
+                               InterpreterBackend::threaded}) {
+        AndroidValueVm fixture(backend);
+        const auto base = fixture.vm.NewIntrinsicInstance(
+            "Landroid/content/Context;");
+        const auto manager = fixture.On(
+            base, "getSystemService", "(Ljava/lang/String;)Ljava/lang/Object;",
+            {VmValue::Ref(fixture.vm.NewStringUtf8("input_method"))}).ref;
+        REQUIRE(manager.IsValid());
+        CHECK(fixture.On(
+            base, "getSystemService", "(Ljava/lang/String;)Ljava/lang/Object;",
+            {VmValue::Ref(fixture.vm.NewStringUtf8("input_method"))}).ref == manager);
+        const auto view = fixture.New(
+            "Landroid/view/View;", "(Landroid/content/Context;)V",
+            {VmValue::Ref(base)});
+        const auto unrelated = fixture.New(
+            "Landroid/view/View;", "(Landroid/content/Context;)V",
+            {VmValue::Ref(base)});
+        const auto node = FindViewUiNode(*fixture.context, view.Value());
+        REQUIRE(node.has_value());
+        fixture.On(view, "setFocusable", "(Z)V", {VmValue::Int(1)});
+        const auto expect_no_session = [&] {
+            REQUIRE_FALSE(fixture.OnOutcome(
+                manager, "restartInput", "(Landroid/view/View;)V",
+                {VmValue::Ref(view)}).exception.IsValid());
+            REQUIRE_FALSE(fixture.OnOutcome(
+                manager, "restartInput", "(Landroid/view/View;)V",
+                {VmValue::Ref(VmObjectRef{})}).exception.IsValid());
+            CHECK(fixture.On(manager, "showSoftInput", "(Landroid/view/View;I)Z",
+                             {VmValue::Ref(view), VmValue::Int(0)}).AsInt() == 0);
+            CHECK(fixture.On(manager, "hideSoftInputFromWindow",
+                             "(Landroid/os/IBinder;I)Z",
+                             {VmValue::Ref(VmObjectRef{}), VmValue::Int(0)}).AsInt() == 0);
+        };
+        // Initial onResume, before the window obtains input focus.
+        expect_no_session();
+        expect_no_session();
+        fixture.context->activity = fixture.vm.NewIntrinsicInstance(
+            "Landroid/app/Activity;");
+        fixture.context->window_focus_activity.store(fixture.context->activity.Value());
+        fixture.context->window_has_focus.store(true);
+        // A window alone does not create an input connection.
+        expect_no_session();
+        fixture.context->ui_tree.Attach(fixture.context->ui_tree.Root(), *node);
+        expect_no_session();
+        REQUIRE(fixture.On(view, "requestFocus", "()Z").AsInt() == 1);
+        const auto expect_gap = [&](const VmCallOutcome& outcome) {
+            REQUIRE(outcome.exception.IsValid());
+            CHECK(fixture.linker.Class(outcome.exception_class).descriptor ==
+                  "Ljava/lang/UnsupportedOperationException;");
+            CHECK(outcome.exception_message ==
+                  "InputConnection creation for the focused View is unsupported");
+        };
+        expect_gap(fixture.OnOutcome(manager, "restartInput", "(Landroid/view/View;)V",
+                                     {VmValue::Ref(view)}));
+        // checkFocus can start input before the caller/proxy/token guard.
+        expect_gap(fixture.OnOutcome(manager, "restartInput", "(Landroid/view/View;)V",
+                                     {VmValue::Ref(unrelated)}));
+        expect_gap(fixture.OnOutcome(manager, "showSoftInput", "(Landroid/view/View;I)Z",
+                                     {VmValue::Ref(unrelated), VmValue::Int(0)}));
+        expect_gap(fixture.OnOutcome(manager, "hideSoftInputFromWindow",
+                                     "(Landroid/os/IBinder;I)Z",
+                                     {VmValue::Ref(VmObjectRef{}), VmValue::Int(0)}));
+        const auto hits = fixture.ledger.Unimplemented();
+        REQUIRE(hits.size() == 1);
+        CHECK(hits[0].id == "dexvm.input_method_sessions");
+        CHECK(hits[0].count == 4);
+        CHECK(fixture.context->ui_tree.Focused() == node);
+        // Window focus and ownership use lifecycle facts, not a cached IMM bit.
+        fixture.context->window_has_focus.store(false);
+        expect_no_session();
+        fixture.context->window_has_focus.store(true);
+        fixture.context->window_focus_activity.store(unrelated.Value());
+        expect_no_session();
+        fixture.context->window_focus_activity.store(fixture.context->activity.Value());
+        fixture.On(view, "clearFocus", "()V");
+        expect_no_session();
+        REQUIRE(fixture.On(view, "requestFocus", "()Z").AsInt() == 1);
+        fixture.context->ui_tree.Detach(*node);
+        expect_no_session();
+        fixture.context->ui_tree.Reset();
+        expect_no_session();
+        CHECK(fixture.ledger.Unimplemented()[0].count == 4);
+    }
+}
+
 TEST_CASE("View focus and WebView configuration keep real per-instance state") {
     for (const auto backend :
          {InterpreterBackend::switch_dispatch,

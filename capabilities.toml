@@ -1555,6 +1555,11 @@ status = "complete"
 test = "tests/dexvm/android_value_tests.cpp: View focus and WebView configuration keep real per-instance state; tests/runtime/ui_tree_tests.cpp"
 note = "DVM-187：View 三个 requestFocus 重载、isFocused/hasFocus/clearFocus、focusable/touch-mode 与 OnFocusChangeListener 共用 UiTree 单一焦点 owner；不可见或禁用的自身/祖先拒绝请求，转移、隐藏、禁用与 detach 清理 owner。scroll-container 和双轴滚动条开关保存逐实例状态；未实现方向搜索、FOCUS_BLOCK_DESCENDANTS、滚动条绘制或 inset 布局。"
 
+[dexvm.input_method_sessions]
+status = "partial"
+test = "tests/dexvm/android_value_tests.cpp: InputMethodManager no-session branches"
+note = "DVM-207 无会话阶段：Context 的进程单例发布 restartInput(View)、showSoftInput(View,int)、hideSoftInputFromWindow(IBinder,int)。按 lifecycle 窗口 owner 与 attached UiTree 焦点投影 checkFocus，无候选时 restart 返回、show/hide false；有候选时创建 InputConnection 记账失败，不绕过无关 View/token 请求，不按非编辑器跳过 dummy connection。无独立焦点缓存或 served View/连接引用；proxy、ResultReceiver、EditorInfo/BaseInputConnection、桌面文本/composition 与软键盘显示未实现，不宣称完整 IME 或跨平台游戏输入验收。"
+
 [dexvm.webview_configuration_callbacks]
 status = "partial"
 test = "tests/dexvm/android_value_tests.cpp: View focus and WebView configuration keep real per-instance state; DVM-185 WebView.destroy isolates settings and enforces thread rules"

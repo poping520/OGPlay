@@ -216,10 +216,52 @@ Decl Declare_android_view_Display(const Context& context) {
 
 namespace ogplay::runtime::android_intrinsics {
 
+namespace {
+
+void CheckInputFocusWithoutConnection(dx::IntrinsicContext& call,
+                                     const Context& context) {
+    // API19 restart/show/hide first checkFocus(), which may itself start an
+    // input connection before checking the caller View or window token.
+    // No connection is published in this bounded phase. Derive eligibility
+    // from the existing owners rather than maintaining a second focus state.
+    if (!context->window_has_focus.load() || !context->activity.IsValid() ||
+        context->window_focus_activity.load() != context->activity.Value()) {
+        return;
+    }
+    const auto focused = context->ui_tree.Focused();
+    if (!focused.has_value() || !context->ui_tree.IsAttached(*focused)) {
+        return;
+    }
+    // A non-editor View can also supply a dummy InputConnection on API19.
+    // Do not silently skip it based on onCheckIsTextEditor or the request's
+    // receiver/token; a real served candidate requires the next capability.
+    if (auto* ledger = call.vm.Ledger()) {
+        ledger->RecordUnimplemented("dexvm.input_method_sessions", 0);
+    }
+    throw dx::VmJavaThrow{
+        "Ljava/lang/UnsupportedOperationException;",
+        "InputConnection creation for the focused View is unsupported"};
+}
+
+}  // namespace
+
 Decl Declare_android_view_inputmethod_InputMethodManager(const Context& context) {
-    static_cast<void>(context);
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/view/inputmethod/InputMethodManager;", "Ljava/lang/Object;");
-    builder.FinalMethod("hideSoftInputFromWindow", "(Landroid/os/IBinder;I)Z", TelephonyFalseHandler());
+    builder.FinalMethod("restartInput", "(Landroid/view/View;)V",
+        [context](dx::IntrinsicContext& call) {
+            CheckInputFocusWithoutConnection(call, context);
+            return dx::VmValue::Void();
+        });
+    builder.FinalMethod("showSoftInput", "(Landroid/view/View;I)Z",
+        [context](dx::IntrinsicContext& call) {
+            CheckInputFocusWithoutConnection(call, context);
+            return dx::VmValue::Int(0);
+        });
+    builder.FinalMethod("hideSoftInputFromWindow", "(Landroid/os/IBinder;I)Z",
+        [context](dx::IntrinsicContext& call) {
+            CheckInputFocusWithoutConnection(call, context);
+            return dx::VmValue::Int(0);
+        });
     return std::move(builder).Build();
 }
 

@@ -39,6 +39,7 @@ content/os/view/graphics/gl/media/database/device 等 family TU 同址。shared.
 
 | 查询 | 支持与失败边界 |
 | --- | --- |
+| getInstallerPackageName(String) | 仅当前直接加载的 APK，未记录 Android 安装器，返回 null；未知包（含空串、system、null）按 API19 抛 IllegalArgumentException；不推测商店来源 |
 | getResourcesForApplication(String) | 仅当前包，共用 Context 的应用 Resources/AssetManager；未知包（含空串、system）NameNotFoundException，null NPE；不支持跨包与其他重载 |
 | getPackageInfo | GET_ACTIVITIES/META_DATA/PERMISSIONS 组合；activities 仅请求时发布，按声明顺序保留 alias、默认排除禁用项，否则 null |
 | getActivityInfo/getReceiverInfo/getServiceInfo | 当前包完整组件名；0、GET_META_DATA、GET_DISABLED_COMPONENTS，按应用/组件启用状态过滤；缺失 NameNotFoundException |

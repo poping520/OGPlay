@@ -3052,6 +3052,14 @@ Decl Declare_android_content_pm_PackageManager(const Context &context) {
                       "android.hardware.screen.portrait",
                       dx::kAccPublic | dx::kAccStatic | dx::kAccFinal);
   builder.VirtualMethod(
+      "getResourcesForApplication",
+      "(Ljava/lang/String;)Landroid/content/res/Resources;",
+      [context](dx::IntrinsicContext &call) {
+        const auto package = RequiredString(call, 0U, "packageName");
+        RequireCurrentPackage(context, package);
+        return dx::VmValue::Ref(ResourceObject(call, context, false));
+      });
+  builder.VirtualMethod(
       "getApplicationInfo",
       "(Ljava/lang/String;I)Landroid/content/pm/ApplicationInfo;",
       [context](dx::IntrinsicContext &call) {

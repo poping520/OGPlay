@@ -2,6 +2,8 @@
 #include <doctest/doctest.h>
 
 #include <cstdint>
+#include <algorithm>
+#include <memory>
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
@@ -2839,5 +2841,230 @@ TEST_CASE("guest worker first Security.getProperty writes Engine.door") {
         ExpectDoor(f);
         static_cast<void>(f.vm.CollectGarbage("security-engine-door-worker"));
         ExpectDoor(f);
+    }
+}
+
+namespace {
+struct CryptoPrngVm final {
+    Dvm87Vm base;
+    Interpreter& vm{base.vm};
+    JavaObjectModel& model{base.model};
+    DexClassLinker& linker{base.linker};
+    std::size_t entropy_reads{};
+    bool fail_entropy{};
+    std::unique_ptr<VfsCharacterDeviceRegistration> entropy_device;
+    std::vector<Interpreter::RootScope> roots;
+
+    explicit CryptoPrngVm(InterpreterBackend backend,
+                          const std::vector<IntrinsicClassDecl>& extras = {})
+        : base(backend, "zh", "zho", "CHN", "GMT", extras) {
+        entropy_device = base.vfs.RegisterReadOnlyCharacterDevice(
+            "/dev/urandom", 0x109U, [this](std::span<std::byte> bytes) {
+                ++entropy_reads;
+                if (fail_entropy) throw VfsError(5, "test entropy failure");
+                std::fill(bytes.begin(), bytes.end(), std::byte{0x5a});
+                return bytes.size();
+            });
+    }
+    static void RequireOk(const VmCallOutcome& outcome) { Dvm87Vm::RequireOk(outcome); }
+    VmCallOutcome Static(std::string_view owner, std::string_view name,
+                         std::string_view signature, std::vector<VmValue> args = {}) {
+        return base.Static(owner, name, signature, std::move(args));
+    }
+    VmCallOutcome Virtual(VmObjectRef object, std::string_view name,
+                          std::string_view signature, std::vector<VmValue> args = {}) {
+        return base.Virtual(object, name, signature, std::move(args));
+    }
+    VmObjectRef Keep(VmObjectRef object) {
+        roots.push_back(vm.ProtectReferences(std::array{object}));
+        return object;
+    }
+    static std::vector<std::byte> Decode(std::string_view hex) {
+        REQUIRE(hex.size() % 2 == 0);
+        std::vector<std::byte> bytes;
+        for (std::size_t i = 0; i < hex.size(); i += 2)
+            bytes.push_back(static_cast<std::byte>(
+                std::stoul(std::string(hex.substr(i, 2)), nullptr, 16)));
+        return bytes;
+    }
+    static std::vector<std::byte> Expected(std::string_view name) {
+        std::ifstream file(std::filesystem::path(OGPLAY_SOURCE_DIR) /
+                           "tests/fixtures/sha1prng-api19.txt");
+        REQUIRE(file.good());
+        std::string key, hex;
+        while (file >> key >> hex) if (key == name) return Decode(hex);
+        FAIL("missing SHA1PRNG oracle vector");
+        return {};
+    }
+    VmValue Invoke(VmObjectRef object, std::string_view name,
+                   std::string_view signature, std::vector<VmValue> args = {}) {
+        const auto outcome = Virtual(object, name, signature, std::move(args));
+        RequireOk(outcome);
+        return outcome.value;
+    }
+    VmObjectRef NewRandom(VmObjectRef provider = VmObjectRef{}) {
+        auto args = std::vector{VmValue::Ref(vm.NewStringUtf8("SHA1PRNG")),
+                               VmValue::Ref(provider.IsValid() ? provider :
+                                   vm.NewStringUtf8("Crypto"))};
+        const auto result = Static("Ljava/security/SecureRandom;", "getInstance",
+            provider.IsValid() ?
+                "(Ljava/lang/String;Ljava/security/Provider;)Ljava/security/SecureRandom;" :
+                "(Ljava/lang/String;Ljava/lang/String;)Ljava/security/SecureRandom;", args);
+        RequireOk(result);
+        return Keep(result.value.ref);
+    }
+    void Seed(VmObjectRef random, std::string_view hex) {
+        const auto bytes = Decode(hex);
+        const auto array = vm.Model().NewPrimitiveArray(
+            linker.ResolveDescriptor("[B"), JniPrimitiveKind::byte,
+            static_cast<JniSize>(bytes.size()));
+        vm.Model().WriteByteRegion(array, 0, bytes);
+        static_cast<void>(Invoke(random, "setSeed", "([B)V", {VmValue::Ref(array)}));
+    }
+    std::vector<std::byte> Next(VmObjectRef random, JniSize count) {
+        const auto array = vm.Model().NewPrimitiveArray(
+            linker.ResolveDescriptor("[B"), JniPrimitiveKind::byte, count);
+        const auto root = vm.ProtectReferences(std::array{array});
+        static_cast<void>(Invoke(random, "nextBytes", "([B)V", {VmValue::Ref(array)}));
+        return vm.Model().ReadByteRegion(array, 0, count);
+    }
+};
+} // namespace
+
+TEST_CASE("DVM-208 Crypto SHA1PRNG preserves API19 seeded streams and Provider identity") {
+    for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        CryptoPrngVm f(backend);
+        for (auto name : {"SHA1PRNG_SecureRandomImpl", "SHA1Impl", "SHA1Constants"}) {
+            const auto type = f.linker.ResolveDescriptor(
+                std::string("Lorg/apache/harmony/security/provider/crypto/") + name + ";");
+            CHECK(f.linker.Class(type).is_boot_dex);
+            for (auto method : f.linker.Class(type).own_direct_methods)
+                CHECK(f.linker.Method(method).kind != MethodKind::intrinsic);
+            for (auto method : f.linker.Class(type).own_virtual_methods)
+                CHECK(f.linker.Method(method).kind != MethodKind::intrinsic);
+        }
+        const auto first = f.NewRandom();
+        const auto provider = f.Keep(f.Invoke(first, "getProvider", "()Ljava/security/Provider;").ref);
+        CHECK(f.vm.StringUtf8(f.Invoke(provider, "getName", "()Ljava/lang/String;").ref) == "Crypto");
+        const auto services = f.Keep(f.Invoke(provider, "getServices", "()Ljava/util/Set;").ref);
+        CHECK(f.Invoke(services, "size", "()I").AsInt() == 1);
+        const auto discovered = f.Static("Ljava/security/Security;", "getProviders",
+            "(Ljava/lang/String;)[Ljava/security/Provider;",
+            {VmValue::Ref(f.vm.NewStringUtf8("SecureRandom.SHA1PRNG"))});
+        f.RequireOk(discovered);
+        bool found{};
+        for (JniSize i = 0; i < f.model.ArrayLength(discovered.value.ref); ++i)
+            if (f.model.GetObjectElement(discovered.value.ref, i) == provider) found = true;
+        CHECK(found);
+        const auto default_random = f.Static("Ljava/security/SecureRandom;", "getInstance",
+            "(Ljava/lang/String;)Ljava/security/SecureRandom;",
+            {VmValue::Ref(f.vm.NewStringUtf8("SHA1PRNG"))});
+        f.RequireOk(default_random);
+        CHECK(f.vm.StringUtf8(f.Invoke(f.Invoke(default_random.value.ref, "getProvider",
+            "()Ljava/security/Provider;").ref, "getName", "()Ljava/lang/String;").ref) == "AndroidOpenSSL");
+
+        f.Seed(first, "0001020304050607");
+        const auto expected = f.Expected("seed8_128");
+        CHECK(f.Next(first, 128) == expected);
+        const auto second = f.NewRandom(provider);
+        f.Seed(second, "0001020304050607");
+        auto split = f.Next(second, 7);
+        static_cast<void>(f.vm.CollectGarbage("crypto-prng-continuation"));
+        const auto tail = f.Next(second, 121);
+        split.insert(split.end(), tail.begin(), tail.end());
+        CHECK(split == expected);
+        const auto long_seed = f.NewRandom();
+        f.Seed(long_seed, "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f");
+        CHECK(f.Next(long_seed, 64) == f.Expected("seed64_64"));
+        const auto append = f.NewRandom();
+        f.Seed(append, "0001020304050607"); f.Seed(append, "ff00");
+        CHECK(f.Next(append, 64) == f.Expected("append_before_64"));
+        const auto reseed = f.NewRandom();
+        f.Seed(reseed, "0001020304050607"); static_cast<void>(f.Next(reseed, 21)); f.Seed(reseed, "ff00");
+        CHECK(f.Next(reseed, 43) == f.Expected("reseed_after_43"));
+        const auto empty = f.NewRandom(); f.Seed(empty, "");
+        CHECK(f.Next(empty, 40) == f.Expected("empty_seed_40"));
+        CHECK(f.entropy_reads == 0);
+
+        const auto generator_result = f.Static("Ljavax/crypto/KeyGenerator;", "getInstance",
+            "(Ljava/lang/String;)Ljavax/crypto/KeyGenerator;", {VmValue::Ref(f.vm.NewStringUtf8("AES"))});
+        f.RequireOk(generator_result);
+        const auto generator = f.Keep(generator_result.value.ref);
+        for (int i = 0; i < 2; ++i) {
+            const auto random = f.NewRandom(); f.Seed(random, "0001020304050607");
+            static_cast<void>(f.Invoke(generator, "init", "(ILjava/security/SecureRandom;)V",
+                {VmValue::Int(128), VmValue::Ref(random)}));
+            const auto key = f.Keep(f.Invoke(generator, "generateKey", "()Ljavax/crypto/SecretKey;").ref);
+            const auto encoded = f.Invoke(key, "getEncoded", "()[B").ref;
+            CHECK(f.model.ReadByteRegion(encoded, 0, 16) ==
+                  std::vector<std::byte>(expected.begin(), expected.begin() + 16));
+        }
+    }
+}
+
+TEST_CASE("DVM-208 Crypto SHA1PRNG obtains entropy through VFS and propagates failure") {
+    for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        CryptoPrngVm f(backend);
+        const auto random = f.NewRandom();
+        CHECK(f.entropy_reads == 0);
+        CHECK(f.Next(random, 20).size() == 20);
+        CHECK(f.entropy_reads == 1);
+        static_cast<void>(f.Next(random, 21)); CHECK(f.entropy_reads == 1);
+        const auto seed = f.Invoke(random, "generateSeed", "(I)[B", {VmValue::Int(20)}).ref;
+        CHECK(f.model.ArrayLength(seed) == 20); CHECK(f.entropy_reads == 2);
+        const auto zero = f.Invoke(random, "generateSeed", "(I)[B", {VmValue::Int(0)}).ref;
+        CHECK(f.model.ArrayLength(zero) == 0); CHECK(f.entropy_reads == 2);
+        const auto negative = f.Virtual(random, "generateSeed", "(I)[B", {VmValue::Int(-1)});
+        REQUIRE(negative.exception.IsValid());
+        CHECK(f.linker.Class(negative.exception_class).descriptor == "Ljava/lang/NegativeArraySizeException;");
+        const auto null_seed = f.Virtual(random, "setSeed", "([B)V", {VmValue::Ref(VmObjectRef{})});
+        REQUIRE(null_seed.exception.IsValid());
+        CHECK(f.linker.Class(null_seed.exception_class).descriptor == "Ljava/lang/NullPointerException;");
+        f.fail_entropy = true;
+        const auto failed = f.Virtual(f.NewRandom(), "nextBytes", "([B)V", {
+            VmValue::Ref(f.model.NewPrimitiveArray(f.linker.ResolveDescriptor("[B"), JniPrimitiveKind::byte, 20))});
+        REQUIRE(failed.exception.IsValid());
+        CHECK(f.linker.Class(failed.exception_class).descriptor == "Ljava/security/ProviderException;");
+        const auto cause = f.Invoke(failed.exception, "getCause", "()Ljava/lang/Throwable;").ref;
+        REQUIRE(cause.IsValid());
+        CHECK(f.linker.IsAssignable(f.linker.ResolveDescriptor("Ljava/io/IOException;"), f.model.ObjectClass(cause)));
+    }
+}
+
+TEST_CASE("DVM-208 Crypto SHA1PRNG instances are isolated across guest threads") {
+    for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        auto action = std::make_shared<std::function<void()>>();
+        auto worker_class = IntrinsicClassBuilder::Class(
+            "Ltest/CryptoPrngWorker;", "Ljava/lang/Thread;");
+        worker_class.OverrideMethod("run", "()V", [action](IntrinsicContext&) {
+            (*action)();
+            return VmValue::Void();
+        });
+        CryptoPrngVm f(backend, {std::move(worker_class).Build()});
+        const auto main_random = f.NewRandom(); f.Seed(main_random, "0001020304050607");
+        auto main_output = f.Next(main_random, 7);
+        std::vector<std::byte> worker_output;
+        *action = [&] {
+            const auto result = f.Static("Ljava/security/SecureRandom;", "getInstance",
+                "(Ljava/lang/String;Ljava/lang/String;)Ljava/security/SecureRandom;",
+                {VmValue::Ref(f.vm.NewStringUtf8("SHA1PRNG")),
+                 VmValue::Ref(f.vm.NewStringUtf8("Crypto"))});
+            f.RequireOk(result);
+            const auto random = result.value.ref;
+            // RootScope must be released on the execution context that owns it.
+            const auto root = f.vm.ProtectReferences(std::array{random});
+            f.Seed(random, "0001020304050607");
+            worker_output = f.Next(random, 128);
+        };
+        const auto worker = f.Keep(f.vm.NewIntrinsicInstance("Ltest/CryptoPrngWorker;"));
+        f.base.Construct(worker, "Ljava/lang/Thread;", "()V");
+        static_cast<void>(f.Invoke(worker, "start", "()V"));
+        static_cast<void>(f.Invoke(worker, "join", "()V"));
+        REQUIRE_FALSE(f.base.threads.TakeFailure().has_value());
+        CHECK(worker_output == f.Expected("seed8_128"));
+        const auto tail = f.Next(main_random, 121);
+        main_output.insert(main_output.end(), tail.begin(), tail.end());
+        CHECK(main_output == worker_output);
+        CHECK(f.entropy_reads == 0);
     }
 }

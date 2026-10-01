@@ -8,11 +8,11 @@
 
 ## 运行状态
 
-- **Tales From Deep Space 1.0.0**：[DVM-90](../tasks/dexvm/DVM-90.md) 已补齐 holder frame
-  查询，尺寸在回调前发布、对象身份与 GC 受检。macOS Release 构建、双解释器定向
-  788 断言通过；原 APK 无 Profile/无 survey 越过 Surface 回调。
-  下一首错为 `PackageManager.getResourcesForApplication(String)` 缺失；
-  活跃输入连接及完整游戏未验收。证据：`.local/tales-surface-frame-fix/`。
+- **Tales From Deep Space 1.0.0**：JSON、当前包资源与 [DVM-208](../tasks/dexvm/DVM-208.md)
+  Crypto/SHA1PRNG 已补齐。BootDex build/check、macOS Release、双解释器定向 3702 断言通过；
+  原 APK 无 Profile/无 survey 越过可重复 PRNG 错，下一首错为
+  `PackageManager.getInstallerPackageName(String)` 缺失，退出 1、无超时。
+  活跃输入、在线服务及完整游戏未验收。证据：`.local/tales-crypto-prng-fix/`。
 
 - **PVZ（com.popcap.pvz_na）**：[DVM-205](../tasks/dexvm/DVM-205.md) 已修复 DEX
   注解预算误拒绝，使用共享解析缓存和分层资源预算。macOS Release 定向回归通过；

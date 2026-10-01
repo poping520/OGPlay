@@ -13,6 +13,14 @@ namespace dx = dexvm;
 using Decl = dexvm::IntrinsicClassDecl;
 using Context = std::shared_ptr<DexVmAndroidContext>;
 
+// One guest Rect per holder. Publish managed dimensions before callbacks;
+// destruction retains the last frame. No side-table references or UI bounds.
+[[nodiscard]] dx::VmObjectRef GetSurfaceHolderFrame(
+    dx::Interpreter& vm, DexVmAndroidContext& context, dx::VmObjectRef holder);
+void PublishSurfaceHolderFrame(dx::Interpreter& vm,
+                               DexVmAndroidContext& context,
+                               dx::VmObjectRef holder);
+
 // Private, GC-owned MotionEvent snapshot encoding. Header followed by (id, tool)
 // pairs and samples: timestamp + pointerCount * 64 axis bit patterns. Sample 0
 // is current; samples 1..N are historical in chronological order.

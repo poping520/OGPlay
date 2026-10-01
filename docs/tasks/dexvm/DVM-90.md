@@ -127,3 +127,21 @@ stop reason、fault access/reason 和全部地址以无标签十进制输出；�
   stop/fault/thread/registers/code 分层对齐。该结果验证诊断链，不表示 title 已进入游戏。
 
 状态：已完成（报告内 lifecycle 粒度与可诊断性已补强；独立 native fault 仅记录）。
+
+
+## Surface frame 查询（2026-10-01）
+
+SurfaceHolder 与 Impl 已发布 getSurfaceFrame():Rect。每个 holder 的普通 guest 字段
+持有唯一 BootDex Rect；初始零尺寸，created/changed 回调前及 late holder 发布当前
+managed surface 像素尺寸，destroyed 保留最后值。detach/retire 后旧对象不被后续
+窗口 generation 更新；没有新增 frame 根表，字段保活/释放由 GC 追踪。Rect 算法与
+构造执行原 Java，不用裸 slot 偏移，不从 UiTree bounds 推导独立 Surface buffer。
+
+macOS Release ogplay/ogplay_tests 构建通过；双解释器定向 7 用例、788 断言通过，
+覆盖真实 DEX 接口调用、回调前发布、稳定身份、late holder、detach/重建/retire、
+GC 字段保活/释放与非法尺寸拒绝，并复用原 Surface 生命周期与构造回归。
+
+原 APK 无 Profile/无 survey、隔离沙盒越过 surfaceCreated/surfaceChanged；下一首错为
+PackageManager.getResourcesForApplication(String) 缺失，未扩展范围修复。
+证据：`.local/tales-surface-frame-fix/`。这是 reached-fault，完整游戏及 Windows/Linux
+实跑未验收。独立 Surface、fixedSize/format 重建与合成层仍未支持。

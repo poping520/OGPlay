@@ -623,6 +623,11 @@ std::optional<std::string> DispatchHolderCallbacks(
             continue;
         }
 
+        if (phase != SurfaceHolderPhase::destroyed) {
+            android_intrinsics::PublishSurfaceHolderFrame(
+                vm, context, dx::VmObjectRef(holder_handle));
+        }
+
         const auto found = context.surface_callbacks.find(holder_handle);
         if (found == context.surface_callbacks.end()) continue;
         // SurfaceView.getSurfaceCallbacks() returns a snapshot. Guest code may

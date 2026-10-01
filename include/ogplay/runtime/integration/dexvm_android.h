@@ -717,6 +717,8 @@ struct DexVmAndroidContext final {
   // Bound View.mContext token. Guest object identity lives in the field slot
   // and is traced by GC; this is not a host-side Context table.
   std::optional<dexvm::IntrinsicFieldHandle> view_context_field;
+  // Binding only; the stable Rect is a normal GC-traced field on each holder.
+  std::optional<dexvm::IntrinsicFieldHandle> surface_holder_frame_field;
 };
 
 void RegisterAndroidAudioTrackStateTable(

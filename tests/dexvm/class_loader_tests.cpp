@@ -1,5 +1,7 @@
 #include "boot_dex.h"
 #include <cstddef>
+#include <algorithm>
+#include <array>
 #include <fstream>
 #include <iterator>
 #include <optional>
@@ -10,6 +12,9 @@
 #include <doctest/doctest.h>
 
 #include "ogplay/core/capability_ledger.h"
+#include "ogplay/loader/dex.h"
+#include "ogplay/runtime/dexvm/intrinsic_builder.h"
+#include "ogplay/runtime/dexvm/reflection.h"
 #include "ogplay/runtime/dexvm/class_loader_facade.h"
 #include "ogplay/runtime/dexvm/interpreter.h"
 
@@ -383,5 +388,128 @@ TEST_CASE("Class forName follows API19 caller loader initialization and errors")
         const auto& field = vm.linker.Field(*target_field);
         CHECK(failed.exception == VmObjectRef(
                   vm.linker.Class(failing).static_storage[field.slot]));
+    }
+}
+
+
+namespace {
+std::vector<IntrinsicClassDecl> ParentFirstCatalog() {
+    auto catalog = CoreIntrinsicCatalog();
+    std::erase_if(catalog, [](const auto& declaration) {
+        const auto& name = declaration.descriptor;
+        return name != "Ljava/lang/Object;" && name != "Ljava/lang/Class;" &&
+               name != "Ljava/lang/ClassLoader;" && name != "Ljava/lang/BootClassLoader;" &&
+               name != "Ldalvik/system/PathClassLoader;";
+    });
+    return catalog;
+}
+}  // namespace
+
+TEST_CASE("ClassLoader parent-first registration preserves bootstrap identity and app-only classes") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        DexClassLinker linker;
+        auto catalog = ParentFirstCatalog();
+        auto intrinsic = IntrinsicClassBuilder::Class("Lshared/IntrinsicOwned;");
+        intrinsic.StaticMethod("answer", "()I", [](IntrinsicContext&) { return VmValue::Int(71); });
+        catalog.push_back(std::move(intrinsic).Build());
+        linker.RegisterIntrinsics(catalog);
+        const auto boot = linker.RegisterBootDex(ReadFixture("parent_first_boot.dex"));
+        const auto original = linker.FindClass("Lshared/ParentOwned;");
+        REQUIRE(original.has_value());
+        const auto app_bytes = ReadFixture("parent_first_app.dex");
+        const auto image = ogplay::loader::ParseDex(app_bytes);
+        const auto app = linker.RegisterDex(app_bytes);
+        linker.Link();
+        CHECK(linker.FindClass("Lshared/ParentOwned;") == original);
+        CHECK(linker.Class(*original).dex_unit == boot);
+        CHECK(linker.Class(*original).defining_loader == kBootstrapLoader);
+        CHECK(linker.Class(*original).own_static_fields.size() == 1);
+        CHECK_FALSE(linker.FindFieldRecursive(*original, "appOnly", "I").has_value());
+        CHECK_FALSE(linker.FindDirectMethod(*original, "appOnly", "()I").has_value());
+        const auto child = linker.ResolveDescriptor("Lshared/AppOnly;");
+        CHECK(linker.Class(child).defining_loader == kApplicationLoader);
+        CHECK(linker.Class(child).super == original);
+        CHECK(linker.IsAssignable(linker.ResolveDescriptor("Lshared/Contract;"), child));
+        for (std::uint32_t i = 0; i < image.types.size(); ++i) {
+            if (image.types[i].descriptor == "Lshared/ParentOwned;")
+                CHECK(linker.ResolveTypeIndex(app, i) == *original);
+        }
+        for (std::uint32_t i = 0; i < image.methods.size(); ++i) {
+            const auto& entry = image.methods[i];
+            if (image.types[entry.class_type_index].descriptor != "Lshared/ParentOwned;") continue;
+            const auto& name = image.strings[entry.name_string_index].value;
+            if (name == u"answer") {
+                const auto call = linker.ResolveMethodIndex(app, i, InvokeKind::static_call);
+                CHECK(linker.Method(call.method).dex_unit == boot);
+            } else if (name == u"appOnly") {
+                CHECK_THROWS_AS(static_cast<void>(linker.ResolveMethodIndex(app, i, InvokeKind::static_call)), DexVmError);
+            }
+        }
+        JniStringStore strings;
+        JniPrimitiveArrayStore arrays;
+        JavaObjectModel model(strings, arrays);
+        ogplay::core::CapabilityLedger ledger;
+        Interpreter vm(linker, model, nullptr, ledger, {.backend = backend});
+        auto& loaders = vm.ClassLoaders();
+        CHECK_FALSE(linker.IsInitiatedBy(*original, kApplicationLoader));
+        CHECK(loaders.LoadClass(kApplicationLoader, "shared.ParentOwned") == *original);
+        CHECK(loaders.LoadClass(kBootstrapLoader, "shared.ParentOwned") == *original);
+        CHECK(linker.IsInitiatedBy(*original, kApplicationLoader));
+        CHECK(loaders.LoaderForClass(*original) == loaders.BootstrapLoader());
+        CHECK(loaders.LoaderForClass(child) == loaders.ApplicationLoader());
+        CHECK(model.ClassObject(linker.ResolveDescriptor("Lshared/ParentOwned;")) == model.ClassObject(*original));
+        CHECK(linker.Class(*original).clinit_state == ClinitState::uninitialized);
+        for (const auto& [name, expected] : std::array<std::pair<const char*, int>, 5>{{
+            {"readParent", 42}, {"readField", 42}, {"readObserver", 0},
+            {"readIntrinsic", 71}, {"useInterface", 7}}}) {
+            const auto method = linker.FindDirectMethod(linker.ResolveDescriptor("Lshared/Caller;"), name, "()I");
+            REQUIRE(method.has_value());
+            const auto result = vm.Call(*method, {});
+            REQUIRE_FALSE(result.exception.IsValid());
+            CHECK(result.value.AsInt() == expected);
+        }
+        CHECK(linker.Class(*original).clinit_state == ClinitState::initialized);
+        const auto fields = vm.Reflection().DeclaredFields(*original);
+        REQUIRE(fields.size() == 1);
+        CHECK(linker.Field(fields[0].field).name == "seed");
+        const auto methods = vm.Reflection().DeclaredMethods(*original);
+        REQUIRE(methods.size() == 1);
+        CHECK(linker.Method(methods[0].method).name == "answer");
+    }
+}
+
+TEST_CASE("ClassLoader parent-first registration also accepts identical boot and app definitions") {
+    DexClassLinker linker;
+    linker.RegisterIntrinsics(ParentFirstCatalog());
+    const auto bytes = ReadFixture("parent_first_boot.dex");
+    const auto boot = linker.RegisterBootDex(bytes);
+    const auto original = linker.FindClass("Lshared/ParentOwned;");
+    REQUIRE(original.has_value());
+    linker.RegisterDex(bytes);
+    linker.Link();
+    CHECK(linker.FindClass("Lshared/ParentOwned;") == original);
+    CHECK(linker.Class(*original).dex_unit == boot);
+    CHECK(linker.Class(*original).defining_loader == kBootstrapLoader);
+}
+
+TEST_CASE("ClassLoader parent-first registration still rejects malformed duplicate class definitions") {
+    const auto bytes = ReadFixture("parent_first_boot.dex");
+    const auto image = ogplay::loader::ParseDex(bytes);
+    REQUIRE(image.classes.size() >= 2);
+    auto invalid = bytes;
+    const auto offset = image.header.class_defs_offset;
+    std::copy_n(invalid.begin() + offset, 4, invalid.begin() + offset + 32);
+    for (const bool boot : {false, true}) {
+        DexClassLinker linker;
+        linker.RegisterIntrinsics(ParentFirstCatalog());
+        if (!boot) linker.RegisterBootDex(bytes);
+        try {
+            if (boot) linker.RegisterBootDex(invalid);
+            else linker.RegisterDex(invalid);
+            FAIL("duplicate class_def must fail even if a parent definition exists");
+        } catch (const ogplay::loader::DexError& error) {
+            CHECK(error.Reason() == ogplay::loader::DexErrorReason::invalid_class_def);
+            CHECK(error.Offset() == offset + 32);
+        }
     }
 }

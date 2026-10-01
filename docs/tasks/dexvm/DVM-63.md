@@ -49,3 +49,17 @@
   initialize false/true 与 init throwable identity 在 switch/threaded 后端一致。
 
 状态：完成（含 Chapter 11 closure 复验）。
+
+## Boot/App 同名注册修复（2026-10-01）
+
+注册 App 时按实际已登记的 bootstrap defining-loader 身份执行 parent-first；不按包名
+扩大忽略范围，也不比较或混合两份定义。APK 同包独有类保留；同 DEX 非法重复仍由
+ParseDex 在选类前拒绝。既有平台前缀封闭边界及不支持多 namespace 的约束不变。
+
+双解释器回归覆盖同名同/异内容、父类/接口/字段/方法解析、App-only、clinit、
+loader/反射/JNI 唯一身份及非法重复。原 APK 无 Profile/无 survey、隔离空沙盒越过
+prepare，装载游戏 SO 后进入 onCreate；下一首错为 SurfaceView(Context, AttributeSet)。
+Release 受影响目标构建及 10 用例、496 断言通过；证据在
+`.local/tales-class-collision-fix/`。这是 reached-fault，未验收完整游戏或 Windows/Linux。
+JNI 回归仅覆盖登记身份、可赋值关系及具体类调用；工具层直接以抽象接口 method ID
+虚调用的既有路由缺口另记在证据目录，未改动或宣称其分派验收。

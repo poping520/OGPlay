@@ -404,12 +404,21 @@ DexUnitId DexClassLinker::RegisterDexUnit(
         const auto& definition = image_ref.classes[class_index];
         const auto descriptor =
             image_ref.types[definition.class_type_index].descriptor;
+        const auto existing = FindClass(descriptor);
+        if (!boot && existing.has_value() &&
+            impl_->ClassAt(*existing).defining_loader == kBootstrapLoader) {
+            // API19 parent-first delegation: the registered bootstrap identity
+            // wins, irrespective of package name or bytecode equality. Never
+            // merge the app copy's hierarchy, members, annotations or clinit.
+            // Constant-pool references resolve lazily to that same identity.
+            // ParseDex has already rejected duplicates within this DEX unit.
+            continue;
+        }
         if (!boot && IsPlatformDescriptor(descriptor)) {
             // 临时规则判定为平台所有的 APK 类不参与解释（03 §1），由 intrinsic
             // catalog 胜出；android.support.* 已在上方作为应用类排除。
             continue;
         }
-        const auto existing = FindClass(descriptor);
         const bool merge_intrinsic =
             boot && existing.has_value() &&
             impl_->ClassAt(*existing).is_intrinsic;

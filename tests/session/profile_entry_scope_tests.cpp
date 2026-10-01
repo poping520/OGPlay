@@ -1396,6 +1396,20 @@ TEST_CASE("dynamic attached SurfaceView owns one callback generation") {
 
     const auto surface =
         interpreter.NewIntrinsicInstance("Landroid/view/SurfaceView;");
+    const auto constructor = linker.FindDirectMethod(
+        linker.ResolveDescriptor("Landroid/view/SurfaceView;"), "<init>",
+        "(Landroid/content/Context;Landroid/util/AttributeSet;)V");
+    REQUIRE(constructor.has_value());
+    const auto app_context = interpreter.NewIntrinsicInstance(
+        "Landroid/app/Application;");
+    const auto initialized = interpreter.Call(
+        *constructor,
+        std::vector<VmValue>{VmValue::Ref(surface), VmValue::Ref(app_context),
+                             VmValue::Ref(VmObjectRef{})});
+    REQUIRE_FALSE(initialized.exception.IsValid());
+    const auto surface_node = FindViewUiNode(*context, surface.Value());
+    REQUIRE(surface_node.has_value());
+    CHECK_FALSE(context->ui_tree.IsAttached(*surface_node));
     const auto holder = call_on(surface, "getHolder",
                                 "()Landroid/view/SurfaceHolder;")
                             .ref;

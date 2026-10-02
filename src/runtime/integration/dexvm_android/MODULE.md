@@ -198,6 +198,10 @@ Java GLES/EGL 通过 session managed 冷入口复用 [native boundary](../../bou
 - AudioTrack 普通协议归 BootDex，仅 overlay native；rate 来自 mixer，stream/static、通知、
   listener、pause/flush/release 共用状态，marker/period 默认及释放后查询按 AOSP 为 0。
   回压等待释放全部 VM 锁、恢复复验 owner；host 音频线程不得入 VM。
+- WifiLock/MulticastLock 客户端算法归 BootDex Java；native 租约校验 WAKE_LOCK、mode 1/2/3
+  或 CHANGE_WIFI_MULTICAST_STATE，后者获取/释放均受检。两类锁合计每 manager 最多 50 个，
+  逐 owner 释放，GC/退出沿统一清理；不改变连接、网卡或组播传输。WorkSource/无线服务
+  不支持，边界见 ADR-0092/0093。
 - 网络使用 core policy/transport，默认离线；Connectivity/Wifi 只发配置事实，不探测 host
   网络/DNS/代理/证书。传感器/电话只返回 API 允许缺席；location 仅值类型/listener/稳定 facade，
   无 provider/历史，更新注册/移除失败。KeyguardManager 不缓存对象，三项查询读进程 provider

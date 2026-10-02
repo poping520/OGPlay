@@ -65,6 +65,15 @@ JAVA_SOURCE_NAMES = tuple(sorted((
     "org/ogplay/security/TrustLimits.java",
     "org/ogplay/security/X509TrustManagerImpl.java",
 )))
+FRAMEWORK_JAVA_ROOT = ROOT / "src/guest/framework/java"
+FRAMEWORK_JAVA_NAMES = ("android/net/wifi/WifiManager.java",)
+
+
+def guest_java_sources() -> tuple[Path, ...]:
+    return tuple(JAVA_SOURCE_ROOT / name for name in JAVA_SOURCE_NAMES) + tuple(
+        FRAMEWORK_JAVA_ROOT / name for name in FRAMEWORK_JAVA_NAMES)
+
+
 WINDOWS_JAVAC = Path(r"D:\01_software\jdk-17.0.2\bin\javac.exe")
 WINDOWS_ANDROID_JAR = Path(
     r"D:\01_software\android-sdk\platforms\android-19\android.jar")
@@ -289,7 +298,7 @@ def javac_release() -> str:
 
 
 def compile_guest_java(work: Path) -> tuple[Path, tuple[str, ...]]:
-    sources = tuple(JAVA_SOURCE_ROOT / name for name in JAVA_SOURCE_NAMES)
+    sources = guest_java_sources()
     observed = tuple(sorted(
         path.relative_to(JAVA_SOURCE_ROOT).as_posix()
         for path in JAVA_SOURCE_ROOT.rglob("*.java")))
@@ -302,6 +311,11 @@ def compile_guest_java(work: Path) -> tuple[Path, tuple[str, ...]]:
         if missing:
             details.append("missing: " + ", ".join(missing))
         raise BuildError("guest Java source list changed (" + "; ".join(details) + ")")
+    framework_observed = tuple(sorted(
+        path.relative_to(FRAMEWORK_JAVA_ROOT).as_posix()
+        for path in FRAMEWORK_JAVA_ROOT.rglob("*.java")))
+    if framework_observed != FRAMEWORK_JAVA_NAMES:
+        raise BuildError("framework guest Java source list changed")
     if not all(path.is_file() for path in sources) or not JAVAC.is_file() or \
             not JAVA.is_file() or not ANDROID_JAR.is_file() or not D8_JAR.is_file():
         raise BuildError("KeyStore Java toolchain or sources are missing")
@@ -655,11 +669,12 @@ def boot_metadata(jar: bytes, dex: bytes,
             for source in recipe
         ] + [{
             "source_project": "OGPlay",
-            "source_root": "src/guest/crypto/java",
+            "source_root": "src/guest",
+            "source_roots": ["src/guest/crypto/java", "src/guest/framework/java"],
             "source_sha256": sha256(b"".join(
                 path.relative_to(ROOT).as_posix().encode("utf-8") + b"\0" +
                 path.read_bytes() for path in
-                (JAVA_SOURCE_ROOT / name for name in JAVA_SOURCE_NAMES))),
+                guest_java_sources())),
             "javac": javac_release(),
             "android_jar_sha256": ANDROID_JAR_SHA256,
             "d8_sha256": D8_JAR_SHA256,

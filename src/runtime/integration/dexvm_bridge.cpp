@@ -1537,6 +1537,7 @@ DexVmGuestBridge::~DexVmGuestBridge() {
         ShutdownAndroidScheduler(*impl_->android_context);
     }
     if (impl_->threads) impl_->threads->Shutdown();
+    if (impl_->android_context) impl_->android_context->wifi_lock_leases.clear();
     ReleaseAndroidDatabaseResources(impl_->android_context);
     if (impl_->vm) {
         try { impl_->vm->ReleaseGuestNativeResources(true); }

@@ -20,6 +20,8 @@
 
 ## lang、线程与退出
 
+- 根类 Object 保留 API19 protected finalize 的空实现，支持子类显式 super 调用；
+  不因此提供自动 Java finalizer 调度，资源清扫仍经现有 GC owner hooks。
 - String 的 UTF-16 由 VM/JNI 唯一拥有；内部 char[] 构造复制不可变快照，_getChars 只复制区间。
   三个 builder 与 IntegralToString 普通方法归 BootDex，value/count/shared 是唯一可变事实源，
   无 builder map、clone/sweep 或普通方法 overlay。RealToString 仅保留受检 native digit generator；

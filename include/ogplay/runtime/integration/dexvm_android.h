@@ -335,6 +335,8 @@ struct DexVmAndroidContext final {
     bool reference_counted{true};
   };
   std::unordered_map<std::uint32_t, WakeLockState> wake_locks;
+  // Shared WifiLock/MulticastLock offline leases; counters/held state live in Java.
+  std::unordered_map<std::uint32_t, dexvm::VmObjectRef> wifi_lock_leases;
   std::int64_t last_vibration_millis{};
 
   // Editable instance handle -> owning EditText handle; the text itself

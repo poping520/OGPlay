@@ -477,6 +477,12 @@ namespace ogplay::runtime::dexvm::intrinsics {
             return VmValue::Void();
         });
 
+        // API19 Object.finalize has an empty body; this is the superclass
+        // call target, not an automatic finalizer scheduler.
+        builder.VirtualMethod("finalize", "()V", [](IntrinsicContext&) {
+            return VmValue::Void();
+        }, kAccProtected);
+
         builder.VirtualMethod("equals", "(Ljava/lang/Object;)Z", [](IntrinsicContext& context) {
             const auto other = context.arguments.empty() ? VmObjectRef{} : context.arguments[0].ref;
             return VmValue::Int(context.receiver == other ? 1 : 0);

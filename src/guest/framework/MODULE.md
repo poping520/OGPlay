@@ -1,0 +1,14 @@
+# 模块：有界 Android framework guest Java
+
+拥有需替换系统服务传输的 API19 客户端算法；编入 BootDex，由 DexVM 执行。
+普通字段、计数、同步和异常归 guest 对象；仅平台租约经显式 native 进入 integration。
+不依赖宿主 JDK、Binder IPC、system_server 或手机服务。
+
+WifiLock/MulticastLock 沿用 AOSP 引用计数与 held 独立状态、模式切换和过量释放语义；保留二进制类名。
+以普通 monitor 代替 Binder monitor，租约只记录应用持锁事实，不启用网络或宿主网卡。
+MulticastLock finalize 按 API19 切换非计数再释放；两类锁合计每 manager 最多 50 个租约。
+组播释放只作用于本对象，区别于原 WifiService 同 UID 清理；边界见 ADR-0092/0093。
+WorkSource、组播传输及无线服务不在当前支持范围。
+
+算法来源：[AOSP Android 4.4.4 WifiManager.java](https://android.googlesource.com/platform/frameworks/base/+/android-4.4.4_r2.0.1/wifi/java/android/net/wifi/WifiManager.java)，
+保留 Apache-2.0 头；改编与支持边界由 ADR-0092/0093 记录。

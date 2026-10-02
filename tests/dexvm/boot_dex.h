@@ -58,7 +58,10 @@ inline void BindBootDexPlatformNatives(runtime::dexvm::DexClassLinker& linker) {
                 declaration.descriptor == "Landroid/os/SystemProperties;")
                 linker.RegisterIntrinsics(std::array{declaration});
             if (declaration.descriptor == "Landroid/view/KeyEvent;" ||
-                declaration.descriptor == "Landroid/view/KeyCharacterMap;")
+                declaration.descriptor == "Landroid/view/KeyCharacterMap;" ||
+                declaration.descriptor == "Landroid/net/wifi/WifiManager;" ||
+                declaration.descriptor == "Landroid/net/wifi/WifiManager$WifiLock;" ||
+                declaration.descriptor == "Landroid/net/wifi/WifiManager$MulticastLock;")
                 linker.RegisterIntrinsics(std::array{declaration});
         }
     }

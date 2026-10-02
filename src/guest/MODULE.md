@@ -9,4 +9,7 @@
 - [icu](icu/MODULE.md)：API 19 ICU/NativeDecimalFormat 的纯 C ABI JNI 桥。
 - [zip](zip/MODULE.md)：API 19 CRC32 到 guest zlib 的无状态 JNI 桥。
 
-上述源码模块统一链接为 `data/android/19/lib/libogplay_jni.so`，不产生模块私有共享库。
+- [framework](framework/MODULE.md)：有界 Android 客户端 Java，普通算法编入 BootDex，
+  平台租约经 runtime intrinsic，不进入 guest JNI 共享库。
+
+上述 C 源码模块统一链接为 `data/android/19/lib/libogplay_jni.so`，不产生模块私有共享库。

@@ -16,6 +16,8 @@
 
 - [ADR-0078 · Guest proc 文件的按打开映射快照](#adr-0078)
 - [ADR-0079 · 进程内 ARM guest 信号投递](#adr-0079)
+- [ADR-0092 · 有界 WifiLock 客户端 Java 与进程内租约](#adr-0092)
+- [ADR-0093 · WifiManager 两类锁共享租约与逐对象释放](#adr-0093)
 
 <a id="adr-0001"></a>
 
@@ -584,3 +586,65 @@ DynarmicExecutionContext 登记所有存活 JIT，注册、范围发布和退役
 回调不得重入映射变更或订阅管理。JIT 仍只排队失效，由执行线程更新缓存；此边界不承诺直接数据访问与并发卸载的完整
 quiescence 协议。窗口长帧等待另经显式宿主回调泵消息，保留 SDL owner 线程与 guest
 事件分派边界。
+
+
+<a id="adr-0092"></a>
+
+## ADR-0092 · 有界 WifiLock 客户端 Java 与进程内租约
+
+状态：Accepted。日期：2026-10-02。
+
+### 背景
+
+旧 WifiLock acquire/release 空操作且 isHeld 固定 false，缺失引用计数设置。
+完整原版 WifiManager 依赖无线服务和 Binder，直接纳入将越过进程兼容层边界。
+普通算法不能为跨平台适配而在 C++ 复制。
+
+### 决定
+
+在 framework guest Java 中保留公开二进制类名，按 AOSP API19 改编最小客户端：
+计数、held、同步、模式切换、字符串和异常仍执行 Java；Binder monitor 改为普通 Object。
+WifiManager 仅保留既有离线查询和锁工厂；平台调用为显式 native，不纳入 IPC/interface 服务。
+源文件、固定工具链及哈希由既有 BootDex builder 统一编译并记录，不改动 ROM 原版文件。
+
+C++ 只记录 owner-attached 的本进程租约与 manager 强边；权限不足抛 SecurityException，
+无支持的 mode 明确 UOE；每 manager 最多 50 个不同活跃 owner，满额拒绝而不发布新租约。
+GC sweep 和线程停止后的 bridge teardown 清理租约；不可 Cloneable 的锁不复制平台租约。
+该限额针对逻辑租约，不复刻 AOSP 持锁期间反复切换计数模式引起的 manager 计数副作用。
+引用计数和 held 保持独立，native 失败不擅自回滚 Java 的原版计数变化。
+
+### 后果
+
+持锁只表示应用租约成立，不表示连接成功，也不改变离线查询；各宿主共用同一 Java/CPP 路径。
+WorkSource、MulticastLock、手机无线/电源服务仍为未支持范围；本能力验收不等于 title 可玩。
+
+
+<a id="adr-0093"></a>
+
+## ADR-0093 · WifiManager 两类锁共享租约与逐对象释放
+
+状态：Accepted。日期：2026-10-02。
+Supersedes：ADR-0092 的 MulticastLock 未支持边界；其余决定保持。
+
+### 背景
+
+应用在 WifiLock 后直接调用 createMulticastLock、引用计数及 acquire/release。
+API19 两类锁共享 manager 的 50 个活跃锁上限；其服务端 multicast release 按 UID 清除
+全部登记，而多个 Java 锁的 held 独立。直接复制 WifiLock 或另开配额会产生错误边界。
+
+### 决定
+
+MulticastLock 工厂、计数、held、同步、异常、toString 和 finalize 在 BootDex 执行 Java。
+finalize 按 API19 先切换为非引用计数再 release；native 获取/释放检查
+CHANGE_WIFI_MULTICAST_STATE，区别于 WifiLock 的 WAKE_LOCK 权限。
+
+两类锁共用同一 owner→manager 租约账本，50 个不同活跃 owner 为合计上限；失败不发布
+新租约，重复获取不多占名额，GC/退出沿既有清理。MulticastLock native release 仅删除
+调用对象的租约，不复制 Android 同 UID 全清理副作用；另一对象持有的租约与 held 保持
+一致。只提供当前游戏进程的逻辑过滤请求，持锁不承诺组播报文接收或网络连接。
+
+### 后果
+
+不启用宿主网卡、不加入 multicast group、不改变 NetworkPolicy。实际组播传输、
+WorkSource、系统 WifiService 与 isMulticastEnabled 等未触达的查询仍不在支持范围。
+所有宿主共用 Java/native 算法；对照测试需证明混合配额、不同 manager 隔离和逐对象释放。

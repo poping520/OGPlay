@@ -176,6 +176,7 @@ AndroidIntrinsicCatalog(const std::shared_ptr<DexVmAndroidContext> &context) {
       Declare_android_net_NetworkInfo(context),
       Declare_android_net_wifi_WifiInfo(context),
       Declare_android_net_wifi_WifiManager_WifiLock(context),
+      Declare_android_net_wifi_WifiManager_MulticastLock(context),
       Declare_android_net_wifi_WifiManager(context),
       Declare_android_opengl_GLSurfaceView_EGLConfigChooser(context),
       Declare_android_opengl_GLSurfaceView_EGLContextFactory(context),

@@ -8,11 +8,11 @@
 
 ## 运行状态
 
-- **Tales From Deep Space 1.0.0**：[BND-49](../tasks/boundary/BND-49.md) 增加真实
-  RGB888 backing 与 clone 首错；[BND-50](../tasks/boundary/BND-50.md) 补齐
-  ATC 解码、能力查询及 guest/PBO 上传。macOS 构建、14 用例/1706 断言通过。
-  原 APK 无 Profile/survey、隔离沙盒：约 7 秒越过纹理空读 `0x10`，首错为
-  `WifiManager$WifiLock.setReferenceCounted(Z)V` 未实现。黑屏/title/跨平台未验收。证据：`.local/atc-fix/`。
+- **Tales From Deep Space 1.0.0**：[BND-49](../tasks/boundary/BND-49.md) RGB、
+  [BND-50](../tasks/boundary/BND-50.md) ATC、[DVM-209](../tasks/dexvm/DVM-209.md) 两类 Wi-Fi 锁已修复。
+  macOS 构建、BootDex/payload、双解释器定向 1721 断言通过。
+  原 APK 无 Profile/survey、隔离沙盒观察 60 秒无新致命报错；快照含绘制/换帧，
+  取证后强制结束。黑屏/title/跨平台未验收。证据：`.local/multicast-lock-fix/`。
 
 - **PVZ（com.popcap.pvz_na）**：[DVM-205](../tasks/dexvm/DVM-205.md) 已修复 DEX
   注解预算误拒绝，使用共享解析缓存和分层资源预算。macOS Release 定向回归通过；

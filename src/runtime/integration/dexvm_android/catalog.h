@@ -123,6 +123,7 @@ Declare_android_net_NetworkInfo_State(const Context &context);
 [[nodiscard]] Decl Declare_android_net_wifi_WifiInfo(const Context &context);
 [[nodiscard]] Decl
 Declare_android_net_wifi_WifiManager_WifiLock(const Context &context);
+[[nodiscard]] Decl Declare_android_net_wifi_WifiManager_MulticastLock(const Context &context);
 [[nodiscard]] Decl Declare_android_net_wifi_WifiManager(const Context &context);
 [[nodiscard]] Decl
 Declare_android_opengl_GLSurfaceView_EGLConfigChooser(const Context &context);

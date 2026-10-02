@@ -1640,6 +1640,11 @@ status = "complete"
 test = "tests/dexvm/android_value_tests.cpp; tests/session/profile_entry_scope_tests.cpp; architecture.dexvm_intrinsic_layout"
 note = "DVM-86 发布 API19 Base64/SparseArray family/TypedValue/TextUtils、Color/RectF/Point/Path/PorterDuff/BitmapDrawable/ColorDrawable、Parcelable/Parcel/Bundle transport 与 PowerManager/WakeLock/Vibrator/Process；DVM-107 的 Pair/SparseArray family/Parcelable 已迁入 BootDex，普通字段/数组由 GC 追踪；DVM-117 Bundle/ArrayMap 迁入 Java，Intent extras 归普通字段；其余值状态继续进入受检 side-table 和 GC trace，Parcel 写入时保存 Java Bundle 浅副本。power/vibrator service 为稳定进程内 facade，不实现 Binder、fd/cross-process transport 或宿主设备动作"
 
+[dexvm.wifi_lock]
+status = "partial"
+test = "tests/dexvm/android_value_tests.cpp: DVM-209; tools/bootdex/build_bootdex.py build/check"
+note = "DVM-209/ADR-0092/0093：WifiLock 与 MulticastLock 的 Java 计数/held 独立，native 仅登记离线租约；权限、模式、两类锁合计每 manager 50 个及逐 owner/GC/退出清理受检。WorkSource/组播传输/无线服务不支持；跨平台实跑未验收"
+
 [dexvm.java_util_algorithms]
 status = "complete"
 test = "tests/dexvm/bootdex_library_tests.cpp"

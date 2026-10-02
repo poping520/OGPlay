@@ -29,6 +29,10 @@
 - `DecodeEtc1Rgba8`：按 Khronos ETC1 64-bit block 规范解码 individual/differential、flip、
   modifier selector 与边缘部分块，输出受检 RGBA8；尺寸、压缩长度和非法 differential
   color 明确失败。
+- `DecodeAtcRgba8`：以固定版本、原样 vendor 的可移植 RGB block decoder 与 alpha 适配层
+  解码三种 ATC 格式为 RGBA8；块布局/字节序/精确长度/溢出受检，输出受 64 MiB 搬运预算
+  约束。ANGLE 上传共用紧密 unpack scope，PBO 经有界回读，失败恢复绑定；禁止的 ATC 子图
+  操作保留 GL_INVALID_OPERATION。扩展与压缩格式数组/计数/查询长度同时发布，见 ADR-0091。
 - `DecodePvrtc1Rgba8`：以薄适配层调用固定 commit、原样 vendor 的 PowerVR Native SDK
   `PVRTDecompressPVRTC`，解码 PVRTC1 2bpp/4bpp RGB/RGBA；适配层验证二次幂尺寸、最小
   编码面、精确压缩长度、输入对齐和所有大小溢出，并输出受检 RGBA8。
@@ -191,6 +195,9 @@
 
 ## BND-34 对象和搬运契约
 
+- guest registry 保留有界 RGBA/RGB888 配置，选择条件不能改写实际属性。RGB 优先用原生
+  config；Metal 经 HAL 客户端存储及 ANGLE GL_RGB 表面导入，alpha 位数/读回由 ANGLE 保证。
+  无真实 backing 不发布 RGB，客户端 RGB 表面拒绝 texture binding；见 ADR-0090。
 - `EglDisplayResources` 共享 display/config；`EglSurfaceResources` 独立拥有像素存储；
   `EglLifecycle::CreateContext` 创建唯一 native Context，`BindSurfaces` 绑定 draw/read。
   `MarkNotCurrent` 仅清除旧对象的 currency 记录，不能解绑已经切换到的新 Context。

@@ -295,25 +295,6 @@ void SetIntElement(dx::IntrinsicContext& call, const dx::VmObjectRef array,
         array, index, static_cast<std::uint32_t>(value));
 }
 
-void PreserveRequestedColorSizes(
-    dx::IntrinsicContext& call, const dx::VmObjectRef attributes,
-    const std::int32_t offset, const dx::VmObjectRef config,
-    std::unordered_map<std::uint32_t,
-        std::unordered_map<std::int32_t, std::int32_t>>& overrides) {
-    if (!attributes.IsValid()) return;
-    const auto length = call.vm.Model().ArrayLength(attributes);
-    for (auto index = offset; index + 1 < length; index += 2) {
-        const auto attribute = IntElement(call, attributes, index);
-        if (attribute == kNone) break;
-        if (attribute >= 0x3021 && attribute <= 0x3024) {
-            const auto requested = IntElement(call, attributes, index + 1);
-            if (requested != kDontCare) {
-                overrides[config.Value()][attribute] = requested;
-            }
-        }
-    }
-}
-
 [[nodiscard]] std::optional<bool> AttributeListMatches(
     dx::IntrinsicContext& call, const Context& context,
     const dx::VmObjectRef list) {
@@ -604,9 +585,6 @@ dx::IntrinsicHandler EglChooseConfigHandler(const Context& context) {
                                             EnsureConfig(call, context, handle);
                                         call.vm.Model().SetObjectElement(
                                             configs, index, wrapper);
-                                        PreserveRequestedColorSizes(
-                                            call, call.arguments[1].ref, 0,
-                                            wrapper, context->egl.config_attribute_overrides);
                                     }
                                 }
                             }
@@ -630,9 +608,6 @@ dx::IntrinsicHandler EglChooseConfigHandler(const Context& context) {
             }
             const auto wrapper = EnsureConfig(call, context, 1U);
             call.vm.Model().SetObjectElement(configs, 0, wrapper);
-            PreserveRequestedColorSizes(
-                call, call.arguments[1].ref, 0, wrapper,
-                context->egl.config_attribute_overrides);
         }
         return Bool(true);
     };
@@ -650,15 +625,6 @@ dx::IntrinsicHandler EglGetConfigAttribHandler(const Context& context) {
         }
         const auto attribute = call.arguments[2].AsInt();
         const auto config = call.arguments[1].ref;
-        if (const auto config_overrides =
-                context->egl.config_attribute_overrides.find(config.Value());
-            config_overrides != context->egl.config_attribute_overrides.end()) {
-            if (const auto value = config_overrides->second.find(attribute);
-                value != config_overrides->second.end()) {
-                SetIntElement(call, output, 0, value->second);
-                return Bool(true);
-            }
-        }
         if (context->session != nullptr) {
             const auto result = WithIntArray(call, context, output, true,
                 [&](const std::uint32_t output) {
@@ -1174,8 +1140,6 @@ dx::IntrinsicHandler EglTerminateHandler(const Context& context) {
                 context->egl.native_display = 0U;
                 context->egl.configs.clear();
                 context->egl.egl14_configs.clear();
-                context->egl.config_attribute_overrides.clear();
-                context->egl.egl14_config_attribute_overrides.clear();
                 context->egl.contexts.clear();
                 context->egl.surfaces.clear();
                 context->egl.window_surface = dx::VmObjectRef{};
@@ -1909,8 +1873,6 @@ dx::IntrinsicHandler Egl14SimpleHandler(const Context& context,
                 egl.native_display = 0U;
                 egl.configs.clear();
                 egl.egl14_configs.clear();
-                egl.config_attribute_overrides.clear();
-                egl.egl14_config_attribute_overrides.clear();
             }
             return Bool(result != 0U);
         }
@@ -2137,27 +2099,6 @@ dx::IntrinsicHandler Egl14QueryValueHandler(const Context& context,
             if (handle == 0U) {
                 LatchEglError(call, context, kBadConfig); return Bool(false);
             }
-            if (const auto config_overrides =
-                    egl.egl14_config_attribute_overrides.find(
-                        call.arguments[1].ref.Value());
-                config_overrides !=
-                    egl.egl14_config_attribute_overrides.end()) {
-                if (const auto value = config_overrides->second.find(
-                        call.arguments[2].AsInt());
-                    value != config_overrides->second.end()) {
-                    const auto output = call.arguments[3].ref;
-                    const auto offset = call.arguments[4].AsInt();
-                    if (!output.IsValid() || offset < 0 ||
-                        offset >= call.vm.Model().ArrayLength(output)) {
-                        throw dx::VmJavaThrow{
-                            "Ljava/lang/IllegalArgumentException;",
-                            "EGL output offset is outside the array"};
-                    }
-                    SetIntElement(call, call.arguments[3].ref,
-                                  offset, value->second);
-                    return Bool(true);
-                }
-            }
         } else if (name == "eglQueryContext") {
             const auto found = egl.egl14_contexts.find(call.arguments[1].ref.Value());
             if (found == egl.egl14_contexts.end()) {
@@ -2247,11 +2188,6 @@ dx::IntrinsicHandler Egl14ConfigsHandler(const Context& context,
                                 call.vm.Model().SetObjectElement(
                                     configs, configs_offset + index,
                                     wrapper);
-                                if (choose)
-                                    PreserveRequestedColorSizes(
-                                        call, call.arguments[1].ref,
-                                        call.arguments[2].AsInt(), wrapper,
-                                        egl.egl14_config_attribute_overrides);
                             }
                         }
                     }

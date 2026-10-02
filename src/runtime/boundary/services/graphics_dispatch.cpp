@@ -15,6 +15,7 @@
 
 #include "ogplay/cpu/cpu.h"
 #include "ogplay/gles/angle_frame.h"
+#include "ogplay/gles/atc.h"
 #include "ogplay/gles/gles_call_preparation.h"
 #include "ogplay/gles/gles_dispatch.h"
 #include "ogplay/gles/gles_transfer_state.h"
@@ -283,6 +284,8 @@ public:
             for (std::size_t index = 4; index < all.size(); ++index) {
                 all[index] = a32_call.Argument(index);
             }
+            if (gles::IsAtcFormat(all[2]) || gles::IsAtcFormat(all[6]))
+                throw gles::GlesApiError(symbol, 0x0502U);
             if (context_.Shared().transfer.BoundBuffer(0x88ECU) != 0U) {
                 RequireFrame(frame, symbol).TransferPixelBuffer(
                     gles::AngleFrame::PixelBufferOperation::image2d, all);
@@ -307,6 +310,9 @@ public:
             for (std::size_t index = 4; index < all.size(); ++index) {
                 all[index] = a32_call.Argument(index);
             }
+            if (gles::IsAtcFormat(all[6]) || gles::IsAtcFormat(
+                    context_.Shared().TextureBaseFormat(all[0]).value_or(0U)))
+                throw gles::GlesApiError(symbol, 0x0502U);
             if (context_.Shared().transfer.BoundBuffer(0x88ECU) != 0U) {
                 RequireFrame(frame, symbol).TransferPixelBuffer(
                     gles::AngleFrame::PixelBufferOperation::sub2d, all);

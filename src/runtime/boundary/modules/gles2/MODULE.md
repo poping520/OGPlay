@@ -10,3 +10,6 @@ program/shader 查询保留 GL error，允许可空的 info-log length 指针。
 超采样 viewport/scissor 只作用于默认 framebuffer；用户 FBO 始终使用 guest 像素尺寸。
 ES3 Context 复用的 glVertexAttribPointer 接受 HALF_FLOAT、INT/UNSIGNED_INT 与 packed
 2_10_10_10 类型；packed 类型要求 size=4，ES2 Context 仍保持原枚举范围。
+
+ATC 压缩上传使用下层解码回退；guest RAM/PBO 两条路径成功后维护相同 share-group
+纹理格式事实。ATC 禁止的子图更新在 guest 搬运前返回 GL_INVALID_OPERATION。

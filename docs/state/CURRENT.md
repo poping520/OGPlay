@@ -1,6 +1,6 @@
 # 当前状态
 
-更新：2026-10-01。
+更新：2026-10-02。
 
 本页只保留最新运行结果与未闭合边界。能力状态见 [capabilities.toml](../../capabilities.toml)，
 实现契约见各模块 MODULE；历史过程见 [任务总览](../tasks/README.md) 与
@@ -8,11 +8,11 @@
 
 ## 运行状态
 
-- **Tales From Deep Space 1.0.0**：GL/Looper 首错已修复；macOS 11 用例/610 断言通过。
-  APK 无 Profile/无 survey，60 秒至 f=39877 无呈现帧。黑屏根因：EGL 最低 RGB=4
-  错误覆盖配置属性，RGB888 选择失败；无 Context 后引擎 `strstr` 空读，clone 2 停止
-  却未发布首错。超时退出报 child 未正常结束；修复待实施，跨平台/游戏未验收。
-  证据：`.local/tales-black-screen-analysis/`。
+- **Tales From Deep Space 1.0.0**：[BND-49](../tasks/boundary/BND-49.md) 增加真实
+  RGB888 backing 与 clone 首错；[BND-50](../tasks/boundary/BND-50.md) 补齐
+  ATC 解码、能力查询及 guest/PBO 上传。macOS 构建、14 用例/1706 断言通过。
+  原 APK 无 Profile/survey、隔离沙盒：约 7 秒越过纹理空读 `0x10`，首错为
+  `WifiManager$WifiLock.setReferenceCounted(Z)V` 未实现。黑屏/title/跨平台未验收。证据：`.local/atc-fix/`。
 
 - **PVZ（com.popcap.pvz_na）**：[DVM-205](../tasks/dexvm/DVM-205.md) 已修复 DEX
   注解预算误拒绝，使用共享解析缓存和分层资源预算。macOS Release 定向回归通过；

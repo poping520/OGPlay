@@ -264,3 +264,50 @@ TEST_CASE("guest clone startup and final state failures reach the process failur
     CHECK(lifecycle.State(1).status == GuestThreadStatus::exit_requested);
     CHECK_THROWS_WITH(runtime.RethrowFailure(), expected);
 }
+
+TEST_CASE("guest clone CPU faults publish a process failure with guest diagnostics") {
+    using namespace ogplay;
+    using namespace runtime;
+    memory::AddressSpace memory;
+    memory::CheckedMemoryBus bus(memory);
+    const memory::GuestAddress code{0x10000U};
+    memory.Map({code, memory.PageSize()}, memory::PageProtection::read | memory::PageProtection::write);
+    bool bad_instruction = false;
+    SUBCASE("unmapped null read") {}
+    SUBCASE("unsupported instruction") { bad_instruction = true; }
+    bus.Write32(code, bad_instruction ? 0xe7f000f0U : 0xe5900000U); // UDF or ldr r0,[r0]
+    memory.Protect({code, memory.PageSize()}, memory::PageProtection::read | memory::PageProtection::execute);
+    core::CapabilityLedger ledger;
+    auto dispatcher = CreateAndroidArmSyscallDispatcher(ledger);
+    GuestThreadLifecycle lifecycle;
+    lifecycle.Register(1);
+    cpu::FutexTable futex;
+    cpu::GuestThreadGroup threads{[&bus] { return std::make_unique<cpu::InterpreterCpu>(bus); }};
+    std::atomic_bool notified{};
+    GuestCloneThreadRuntime runtime{threads, dispatcher, lifecycle, memory, bus, futex,
+                                    2, 64, {}, {}, [&] { notified = true; }};
+    A32SyscallFrame clone;
+    clone.number = 120;
+    clone.thread_id = 1;
+    clone.arguments[0] = kLinuxCloneVm | kLinuxCloneFs | kLinuxCloneFiles |
+                         kLinuxCloneSighand | kLinuxCloneThread | kLinuxCloneSysvsem;
+    clone.arguments[1] = 0x12000;
+    clone.cpu_state.emplace();
+    clone.cpu_state->SetThreadId(1);
+    clone.cpu_state->SetRegister(cpu::CoreRegister::pc, code.Value());
+    REQUIRE(dispatcher.Dispatch(clone) == 2);
+    std::string first;
+    try { static_cast<void>(runtime.Join(2)); FAIL("faulting clone silently exited"); }
+    catch (const A32GuestCallError& error) { first = error.what(); }
+    CHECK(first.find("thread:    guest=2") != std::string::npos);
+    CHECK(first.find("pc=0x00010000") != std::string::npos);
+    if (!bad_instruction) {
+        CHECK(first.find("reason=memory_fault(4)") != std::string::npos);
+        CHECK(first.find("address=0x00000000 access=read(0)") != std::string::npos);
+    }
+    CHECK_THROWS_WITH(runtime.RethrowFailure(), first.c_str());
+    CHECK_THROWS_WITH(runtime.RethrowFailure(), first.c_str());
+    CHECK(notified.load());
+    CHECK(lifecycle.State(1).status == GuestThreadStatus::exit_requested);
+    CHECK(lifecycle.State(2).status == GuestThreadStatus::exited);
+}

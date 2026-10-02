@@ -163,7 +163,8 @@ public:
                         "GL_OES_matrix_palette "
                         "GL_OES_mapbuffer "
                         "GL_OES_framebuffer_object "
-                        "GL_OES_rgb8_rgba8 "};
+                        "GL_OES_rgb8_rgba8 "
+                        "GL_AMD_compressed_ATC_texture "};
                     const auto extensions = GuestGlesExtensions(RequireFrame("glGetString"));
                     if (std::ranges::find(extensions, "GL_OES_EGL_image") != extensions.end())
                         result += "GL_OES_EGL_image ";

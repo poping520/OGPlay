@@ -8,6 +8,8 @@
 
 #include "ogplay/gles/angle_backend.h"
 
+namespace ogplay::hal { class RgbSurfaceStorage; }
+
 namespace ogplay::gles {
 
 using EglHandle = std::uintptr_t;
@@ -80,10 +82,11 @@ public:
     ~EglDisplayResources();
     EglApi& Api() const noexcept { return *api_; }
     EglHandle Display() const noexcept { return display_; }
-    EglHandle Config() const noexcept { return config_; }
+    EglHandle Config(bool rgb = false) const noexcept { return rgb ? rgb_config_ : config_; }
+    bool SupportsRgbSurface() const noexcept { return rgb_config_ != 0; }
     const EglContextInfo& Info() const noexcept { return info_; }
     std::string Extensions() const;
-    std::int32_t ConfigAttribute(std::uint32_t name) const;
+    std::int32_t ConfigAttribute(std::uint32_t name, bool rgb = false) const;
     EglHandle CreateSync(std::uint32_t type, std::span<const std::int32_t> attributes);
     void DestroySync(EglHandle sync);
     std::uint32_t ClientWaitSync(EglHandle sync, std::uint32_t flags, std::uint64_t timeout);
@@ -99,6 +102,9 @@ private:
     std::unique_ptr<EglApi> api_;
     EglHandle display_{};
     EglHandle config_{};
+    EglHandle rgb_config_{};
+    bool rgb_client_buffer_{};
+    friend class EglSurfaceResources;
     EglContextInfo info_{};
     bool initialized_{};
 };
@@ -108,7 +114,8 @@ public:
     static std::shared_ptr<EglSurfaceResources> Create(
         std::shared_ptr<EglDisplayResources> display,
         std::uint32_t width, std::uint32_t height,
-        std::uint32_t texture_format = 0x305CU, bool mipmap = false);
+        std::uint32_t texture_format = 0x305CU, bool mipmap = false,
+        bool rgb = false);
     ~EglSurfaceResources();
     EglHandle Surface() const noexcept { return surface_; }
     EglHandle Display() const noexcept { return display_->Display(); }
@@ -121,13 +128,14 @@ private:
     EglSurfaceResources() = default;
     std::shared_ptr<EglDisplayResources> display_;
     EglHandle surface_{};
+    std::unique_ptr<hal::RgbSurfaceStorage> rgb_storage_;
     std::uint32_t width_{}, height_{};
 };
 
 class EglLifecycle final {
 public:
     static EglLifecycle CreateContext(std::shared_ptr<EglDisplayResources> display,
-        int client_version, EglHandle share_context = 0);
+        int client_version, EglHandle share_context = 0, bool rgb = false);
     void BindSurfaces(std::shared_ptr<EglSurfaceResources> draw,
                       std::shared_ptr<EglSurfaceResources> read);
     static EglLifecycle CreatePbuffer(EglApi& api, AngleBackend backend,

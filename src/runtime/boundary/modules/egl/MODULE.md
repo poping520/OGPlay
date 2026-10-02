@@ -12,3 +12,7 @@ per-thread native error 槽，禁止 Java 层返回失败却让 eglGetError 仍�
 依赖 boundary core/services 和底层 gles。扩展必须按实际 ANGLE 能力发布，guest 指针先受检，
 禁止把 guest native-buffer 或 image 数值直接当 host 指针。测试：integration `BND34 EGL*`
 与原 EGL lifecycle/thread/proc 用例。完整边界见父级 boundary MODULE 和 ADR-0063。
+
+配置身份为有界 RGBA 与实际支持的 RGB888；choose 最低条件不改写属性。context/surface
+使用选中配置，draw/read 与 context 格式失配返回 EGL_BAD_MATCH。Java EGL10/14 共用事实；
+RGB565 与完整驱动配置集合未发布。实现依据 [ADR-0090](../../../../../docs/adr/media.md#adr-0090)。

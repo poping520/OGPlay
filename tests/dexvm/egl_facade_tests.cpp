@@ -23,6 +23,13 @@
 #include "ogplay/session/dex_activity_lifecycle.h"
 
 namespace {
+#if defined(_WIN32)
+constexpr auto kNativeRenderer = ogplay::gles::AngleRenderer::d3d11;
+#elif defined(__APPLE__)
+constexpr auto kNativeRenderer = ogplay::gles::AngleRenderer::metal;
+#else
+constexpr auto kNativeRenderer = ogplay::gles::AngleRenderer::vulkan;
+#endif
 
 using namespace ogplay::runtime;
 using namespace ogplay::runtime::dexvm;
@@ -728,7 +735,8 @@ TEST_CASE("WU-3 EGL14 arrays pbuffer and shared context use native registry") {
         "libc.so", libc, ogplay::memory::GuestAddress{0x10000000U}};
     VirtualFileSystem filesystem;
     auto session = AndroidGuestCallSession::Start(
-        {19, "libc.so", std::span{&module, 1}, {}, 4, 3,
+        {19, "libc.so", std::span{&module, 1},
+         {kNativeRenderer, ogplay::gles::AngleDevice::hardware}, 4, 3,
          1000, 1, &filesystem, {}});
     EglVm vm(InterpreterBackend::switch_dispatch, session.get());
     const auto display = vm.CallStatic(
@@ -1158,7 +1166,7 @@ TEST_CASE("EGL facade performs two-pass config selection and context state") {
                     "(Ljavax/microedition/khronos/egl/EGLDisplay;Ljavax/microedition/khronos/egl/EGLConfig;I[I)Z",
                     {VmValue::Ref(display), VmValue::Ref(config),
                      VmValue::Int(0x3024), VmValue::Ref(projected)}).AsInt() == 1);
-    CHECK(vm.model.GetPrimitiveElement(projected, 0) == 5);
+    CHECK(vm.model.GetPrimitiveElement(projected, 0) == 8);
     const auto context_attributes = vm.IntArray({12440, 2, 0x3038});
     const auto context = vm.CallOn(
         egl, "eglCreateContext",
@@ -1232,4 +1240,53 @@ TEST_CASE("EGL facade reports unknown config attributes through EGL error") {
     CHECK(vm.CallOn(egl, "eglGetError", "()I").AsInt() == 0x3004);
     CHECK(vm.CallOn(egl, "eglGetError", "()I").AsInt() == 0x3000);
     CHECK_FALSE(vm.ledger.Unimplemented().empty());
+}
+
+TEST_CASE("BND49 Java EGL10 and EGL14 share stable RGB config facts") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        auto libc = MinimalLibcElf();
+        const ogplay::loader::Elf32ModuleInput module{
+            "libc.so", libc, ogplay::memory::GuestAddress{0x10000000U}};
+        VirtualFileSystem filesystem;
+        auto session = AndroidGuestCallSession::Start(
+            {19, "libc.so", std::span{&module, 1},
+             {kNativeRenderer, ogplay::gles::AngleDevice::hardware}, 4, 3,
+             1000, 1, &filesystem, {}});
+        EglVm vm(backend, session.get());
+        const auto egl = vm.CallStatic("Ljavax/microedition/khronos/egl/EGLContext;", "getEGL",
+                                      "()Ljavax/microedition/khronos/egl/EGL;").ref;
+        const auto display = vm.CallOn(egl, "eglGetDisplay",
+            "(Ljava/lang/Object;)Ljavax/microedition/khronos/egl/EGLDisplay;",
+            {VmValue::Ref(VmObjectRef{})}).ref;
+        const auto output = vm.IntArray({0});
+        REQUIRE(vm.CallOn(egl, "eglInitialize", "(Ljavax/microedition/khronos/egl/EGLDisplay;[I)Z",
+                          {VmValue::Ref(display), VmValue::Ref(VmObjectRef{})}).AsInt() == 1);
+        const auto minimum = vm.IntArray({0x3024, 4, 0x3023, 4, 0x3022, 4, 0x3038});
+        const auto configs = vm.model.NewObjectArray(vm.linker.ResolveDescriptor("[Ljavax/microedition/khronos/egl/EGLConfig;"),
+            vm.linker.ResolveDescriptor("Ljavax/microedition/khronos/egl/EGLConfig;"), 2);
+        REQUIRE(vm.CallOn(egl, "eglChooseConfig", "(Ljavax/microedition/khronos/egl/EGLDisplay;[I[Ljavax/microedition/khronos/egl/EGLConfig;I[I)Z",
+            {VmValue::Ref(display), VmValue::Ref(minimum), VmValue::Ref(configs), VmValue::Int(2), VmValue::Ref(output)}).AsInt() == 1);
+        REQUIRE(vm.model.GetPrimitiveElement(output, 0) == 2);
+        for (int index = 0; index < 2; ++index) {
+            const auto config = vm.model.GetObjectElement(configs, index);
+            for (const auto [attribute, value] : {std::pair{0x3024, 8}, {0x3021, index == 0 ? 8 : 0}}) {
+                REQUIRE(vm.CallOn(egl, "eglGetConfigAttrib", "(Ljavax/microedition/khronos/egl/EGLDisplay;Ljavax/microedition/khronos/egl/EGLConfig;I[I)Z",
+                    {VmValue::Ref(display), VmValue::Ref(config), VmValue::Int(attribute), VmValue::Ref(output)}).AsInt() == 1);
+                CHECK(vm.model.GetPrimitiveElement(output, 0) == static_cast<std::uint32_t>(value));
+            }
+        }
+        const auto display14 = vm.CallStatic("Landroid/opengl/EGL14;", "eglGetDisplay", "(I)Landroid/opengl/EGLDisplay;", {VmValue::Int(0)}).ref;
+        REQUIRE(vm.CallStatic("Landroid/opengl/EGL14;", "eglInitialize", "(Landroid/opengl/EGLDisplay;[II[II)Z",
+            {VmValue::Ref(display14), VmValue::Ref(output), VmValue::Int(0), VmValue::Ref(output), VmValue::Int(0)}).AsInt() == 1);
+        const auto configs14 = vm.model.NewObjectArray(vm.linker.ResolveDescriptor("[Landroid/opengl/EGLConfig;"),
+            vm.linker.ResolveDescriptor("Landroid/opengl/EGLConfig;"), 2);
+        REQUIRE(vm.CallStatic("Landroid/opengl/EGL14;", "eglChooseConfig", "(Landroid/opengl/EGLDisplay;[II[Landroid/opengl/EGLConfig;II[II)Z",
+            {VmValue::Ref(display14), VmValue::Ref(minimum), VmValue::Int(0), VmValue::Ref(configs14), VmValue::Int(0), VmValue::Int(2), VmValue::Ref(output), VmValue::Int(0)}).AsInt() == 1);
+        REQUIRE(vm.model.GetPrimitiveElement(output, 0) == 2);
+        for (int index = 0; index < 2; ++index) {
+            REQUIRE(vm.CallStatic("Landroid/opengl/EGL14;", "eglGetConfigAttrib", "(Landroid/opengl/EGLDisplay;Landroid/opengl/EGLConfig;I[II)Z",
+                {VmValue::Ref(display14), VmValue::Ref(vm.model.GetObjectElement(configs14, index)), VmValue::Int(0x3021), VmValue::Ref(output), VmValue::Int(0)}).AsInt() == 1);
+            CHECK(vm.model.GetPrimitiveElement(output, 0) == (index == 0 ? 8U : 0U));
+        }
+    }
 }

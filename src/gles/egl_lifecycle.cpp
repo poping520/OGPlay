@@ -12,6 +12,8 @@
 #include <utility>
 
 #include "ogplay/hal/host_environment.h"
+#include "ogplay/hal/rgb_surface_storage.h"
+#include <vector>
 
 #if OGPLAY_HAS_ANGLE
 
@@ -295,6 +297,41 @@ std::shared_ptr<EglDisplayResources> EglDisplayResources::Create(const AngleBack
     result->initialized_ = true;
     if (!result->api_->ChoosePbufferConfig(result->display_, result->config_))
         ThrowLastError(*result->api_, EglOperation::choose_config);
+#if OGPLAY_HAS_ANGLE
+    // Alpha size in eglChooseConfig is a minimum. Select an exact RGB format
+    // from the returned candidates instead of relabelling an RGBA config.
+    const EGLint attributes[]{EGL_SURFACE_TYPE, EGL_PBUFFER_BIT,
+        EGL_RENDERABLE_TYPE, EGL_OPENGL_ES2_BIT | 0x0040, EGL_RED_SIZE, 8,
+        EGL_GREEN_SIZE, 8, EGL_BLUE_SIZE, 8, EGL_ALPHA_SIZE, 0,
+        EGL_DEPTH_SIZE, 24, EGL_STENCIL_SIZE, 8, EGL_NONE};
+    const auto native_display = ReinterpretHandle<EGLDisplay>(result->display_);
+    EGLint count{};
+    if (!eglChooseConfig(native_display, attributes, nullptr, 0, &count))
+        ThrowLastError(*result->api_, EglOperation::choose_config);
+    std::vector<EGLConfig> candidates(static_cast<std::size_t>(count));
+    if (count && !eglChooseConfig(native_display, attributes, candidates.data(), count, &count))
+        ThrowLastError(*result->api_, EglOperation::choose_config);
+    for (const auto candidate : candidates) {
+        const auto handle = ReinterpretHandle<EglHandle>(candidate);
+        EGLint alpha{}, red{}, green{}, blue{}, samples{};
+        if (!eglGetConfigAttrib(native_display, candidate, EGL_ALPHA_SIZE, &alpha) ||
+            !eglGetConfigAttrib(native_display, candidate, EGL_RED_SIZE, &red) ||
+            !eglGetConfigAttrib(native_display, candidate, EGL_GREEN_SIZE, &green) ||
+            !eglGetConfigAttrib(native_display, candidate, EGL_BLUE_SIZE, &blue) ||
+            !eglGetConfigAttrib(native_display, candidate, EGL_SAMPLES, &samples))
+            ThrowLastError(*result->api_, EglOperation::choose_config);
+        if (alpha == 0 && red == 8 && green == 8 && blue == 8 && samples == 0) {
+            result->rgb_config_ = handle;
+            break;
+        }
+    }
+    if (!result->rgb_config_ && backend.renderer == AngleRenderer::metal &&
+        hal::HasRgbSurfaceStorage() &&
+        (" " + result->Extensions() + " ").find(" EGL_ANGLE_iosurface_client_buffer ") != std::string::npos) {
+        result->rgb_config_ = result->config_;
+        result->rgb_client_buffer_ = true;
+    }
+#endif
     return result;
 }
 
@@ -304,22 +341,40 @@ EglDisplayResources::~EglDisplayResources() {
 
 std::shared_ptr<EglSurfaceResources> EglSurfaceResources::Create(
     std::shared_ptr<EglDisplayResources> display, const std::uint32_t width,
-    const std::uint32_t height, const std::uint32_t texture_format, const bool mipmap) {
+    const std::uint32_t height, const std::uint32_t texture_format, const bool mipmap,
+    const bool rgb) {
     auto result = std::shared_ptr<EglSurfaceResources>(new EglSurfaceResources);
     result->display_ = std::move(display);
     result->width_ = width; result->height_ = height;
     auto& api = result->display_->Api();
+    if (rgb && !result->display_->SupportsRgbSurface())
+        throw EglLifecycleError(EglOperation::create_surface, 0x3005U);
 #if OGPLAY_HAS_ANGLE
+    if (rgb && result->display_->rgb_client_buffer_) {
+        if (texture_format != EGL_NO_TEXTURE || mipmap)
+            throw EglLifecycleError(EglOperation::create_surface, EGL_BAD_MATCH);
+        result->rgb_storage_ = hal::CreateRgbSurfaceStorage(width, height);
+        const EGLint attributes[]{EGL_WIDTH, static_cast<EGLint>(width),
+            EGL_HEIGHT, static_cast<EGLint>(height), EGL_IOSURFACE_PLANE_ANGLE, 0,
+            EGL_TEXTURE_TARGET, EGL_TEXTURE_2D, EGL_TEXTURE_FORMAT, EGL_TEXTURE_RGBA,
+            EGL_TEXTURE_INTERNAL_FORMAT_ANGLE, 0x1907 /* GL_RGB */,
+            EGL_TEXTURE_TYPE_ANGLE, 0x1401 /* GL_UNSIGNED_BYTE */, EGL_NONE};
+        result->surface_ = ReinterpretHandle<EglHandle>(eglCreatePbufferFromClientBuffer(
+            ReinterpretHandle<EGLDisplay>(result->Display()), EGL_IOSURFACE_ANGLE,
+            result->rgb_storage_->NativeBuffer(),
+            ReinterpretHandle<EGLConfig>(result->display_->Config(true)), attributes));
+    } else {
     const EGLint attributes[]{EGL_WIDTH, static_cast<EGLint>(width), EGL_HEIGHT,
         static_cast<EGLint>(height), EGL_TEXTURE_FORMAT, static_cast<EGLint>(texture_format),
         EGL_TEXTURE_TARGET, texture_format == EGL_NO_TEXTURE ? EGL_NO_TEXTURE : EGL_TEXTURE_2D,
         EGL_MIPMAP_TEXTURE, mipmap ? EGL_TRUE : EGL_FALSE, EGL_NONE};
     result->surface_ = ReinterpretHandle<EglHandle>(eglCreatePbufferSurface(
         ReinterpretHandle<EGLDisplay>(result->Display()),
-        ReinterpretHandle<EGLConfig>(result->display_->Config()), attributes));
+        ReinterpretHandle<EGLConfig>(result->display_->Config(rgb)), attributes));
+    }
 #else
     static_cast<void>(texture_format); static_cast<void>(mipmap);
-    result->surface_ = api.CreatePbufferSurface(result->Display(), result->display_->Config(), width, height);
+    result->surface_ = api.CreatePbufferSurface(result->Display(), result->display_->Config(rgb), width, height);
 #endif
     if (!result->surface_) ThrowLastError(api, EglOperation::create_surface);
     return result;
@@ -352,14 +407,22 @@ std::string EglDisplayResources::Extensions() const {
 #endif
 }
 
-std::int32_t EglDisplayResources::ConfigAttribute(const std::uint32_t name) const {
+std::int32_t EglDisplayResources::ConfigAttribute(const std::uint32_t name, const bool rgb) const {
 #if OGPLAY_HAS_ANGLE
+    if (rgb && !SupportsRgbSurface()) throw EglLifecycleError(EglOperation::choose_config, EGL_BAD_CONFIG);
+    if (rgb && rgb_client_buffer_) {
+        switch (name) {
+        case EGL_ALPHA_SIZE: case EGL_BIND_TO_TEXTURE_RGB: case EGL_BIND_TO_TEXTURE_RGBA: return 0;
+        case EGL_BUFFER_SIZE: return 24;
+        default: break;
+        }
+    }
     EGLint value{};
     CheckEgl(eglGetConfigAttrib(ReinterpretHandle<EGLDisplay>(display_),
-        ReinterpretHandle<EGLConfig>(config_), static_cast<EGLint>(name), &value), *api_);
+        ReinterpretHandle<EGLConfig>(Config(rgb)), static_cast<EGLint>(name), &value), *api_);
     return value;
 #else
-    static_cast<void>(name); throw EglLifecycleError(EglOperation::unavailable, 0);
+    static_cast<void>(name); static_cast<void>(rgb); throw EglLifecycleError(EglOperation::unavailable, 0);
 #endif
 }
 
@@ -478,14 +541,16 @@ void EglSurfaceResources::SwapBuffers() {
 }
 
 EglLifecycle EglLifecycle::CreateContext(std::shared_ptr<EglDisplayResources> display,
-    const int client_version, const EglHandle share_context) {
+    const int client_version, const EglHandle share_context, const bool rgb) {
     auto& api = display->Api();
     EglLifecycle result(api, display->Info());
     result.registry_display_ = std::move(display);
     result.display_ = result.registry_display_->Display();
     result.info_.client_version = client_version;
     if (!api.BindOpenGlesApi()) ThrowLastError(api, EglOperation::bind_api);
-    result.context_ = api.CreateContext(result.display_, result.registry_display_->Config(),
+    if (rgb && !result.registry_display_->SupportsRgbSurface())
+        throw EglLifecycleError(EglOperation::create_context, 0x3005U);
+    result.context_ = api.CreateContext(result.display_, result.registry_display_->Config(rgb),
                                         client_version, share_context);
     if (!result.context_) ThrowLastError(api, EglOperation::create_context);
     return result;

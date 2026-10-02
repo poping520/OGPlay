@@ -706,7 +706,7 @@ TEST_CASE("Android EGL query strings and pbuffer attributes use guest memory") {
     for (const auto attribute : {0x3027U, 0x302FU, 0x3034U}) {
         REQUIRE(fixture.Call("libEGL.so", "eglGetConfigAttrib",
                              {1U, 2U, attribute, size.Value()}) == 1U);
-        CHECK(fixture.bus.Read32(size, 1U) == 0x3038U);
+        CHECK(fixture.bus.Read32(size, 1U) == (attribute == 0x302FU ? 0U : 0x3038U));
     }
     CHECK(fixture.Call("libEGL.so", "eglSwapInterval",
                        {1U, 0U, 0U, 0U}) == 0U);
@@ -6594,4 +6594,147 @@ TEST_CASE("BND46 malformed snapshots fail before publication") {
     input.pointers.resize(17);
     for (std::size_t i = 0; i < input.pointers.size(); ++i) input.pointers[i].id = static_cast<std::int32_t>(i);
     CHECK_THROWS(static_cast<void>(runtime::NormalizeAndroidInput(input)));
+}
+
+TEST_CASE("BND49 EGL minimum colors select distinct RGB storage with truthful alpha") {
+    if (!ogplay::gles::IsNativeAngleEglAvailable()) return;
+    BoundaryFixture f;
+    REQUIRE(f.Call("libEGL.so", "eglInitialize", {1, 0, 0}) == 1U);
+    const auto attributes = f.output.Add(256), configs = f.output.Add(320), count = f.output.Add(352);
+    const std::array<std::uint32_t, 11> minimum{0x3024, 4, 0x3023, 4, 0x3022, 4,
+                                             0x3040, 4, 0x3027, 0x3038, 0x3038};
+    for (std::size_t index = 0; index < minimum.size(); ++index)
+        f.bus.Write32(attributes.Add(index * 4U), minimum[index], 1U);
+    f.bus.Write32(f.stack, count.Value(), 1U);
+    REQUIRE(f.Call("libEGL.so", "eglChooseConfig", {1, attributes.Value(), 0, 0}) == 1U);
+    REQUIRE(f.bus.Read32(count, 1U) == 2U);
+    REQUIRE(f.Call("libEGL.so", "eglChooseConfig", {1, attributes.Value(), configs.Value(), 2}) == 1U);
+    REQUIRE(f.bus.Read32(count, 1U) == 2U);
+    const auto rgba = f.bus.Read32(configs, 1U), rgb = f.bus.Read32(configs.Add(4), 1U);
+    REQUIRE(rgb != rgba);
+    const auto query = [&](std::uint32_t config, std::uint32_t attribute) {
+        REQUIRE(f.Call("libEGL.so", "eglGetConfigAttrib", {1, config, attribute, count.Value()}) == 1U);
+        return f.bus.Read32(count, 1U);
+    };
+    for (const auto attribute : {0x3024U, 0x3023U, 0x3022U}) {
+        CHECK(query(rgb, attribute) == 8U);
+        CHECK(query(rgba, attribute) == 8U);
+    }
+    CHECK(query(rgb, 0x3021) == 0U);
+    CHECK(query(rgb, 0x3020) == 24U);
+    CHECK(query(rgba, 0x3021) == 8U);
+    // A later RGBA-only selection must not change either config's facts.
+    f.bus.Write32(attributes.Add(40), 0x3021, 1U);
+    f.bus.Write32(attributes.Add(44), 8, 1U);
+    f.bus.Write32(attributes.Add(48), 0x3038, 1U);
+    REQUIRE(FastBoundaryCall(f, "libEGL.so", "eglChooseConfig",
+                            {1, attributes.Value(), configs.Value(), 2}) == 1U);
+    CHECK(f.bus.Read32(count, 1U) == 1U);
+    CHECK(f.bus.Read32(configs, 1U) == rgba);
+    CHECK(query(rgb, 0x3021) == 0U);
+    const auto window = f.Call("libEGL.so", "eglCreateWindowSurface", {1, rgb, 3, 0}); REQUIRE(window != 0U);
+    f.bus.Write32(attributes, 0x3098, 1U); f.bus.Write32(attributes.Add(4), 2, 1U); f.bus.Write32(attributes.Add(8), 0x3038, 1U);
+    const auto context = f.Call("libEGL.so", "eglCreateContext", {1, rgb, 0, attributes.Value()}); REQUIRE(context != 0U);
+    const auto rgba_window = f.Call("libEGL.so", "eglCreateWindowSurface", {1, rgba, 3, 0}); REQUIRE(rgba_window != 0U);
+    CHECK(f.Call("libEGL.so", "eglMakeCurrent", {1, rgba_window, rgba_window, context}) == 0U);
+    CHECK(f.Call("libEGL.so", "eglGetError") == 0x3009U);
+    REQUIRE(f.Call("libEGL.so", "eglDestroySurface", {1, rgba_window}) == 1U);
+    AuditBind(f, context, window, window);
+    for (const auto [attribute, value] : {std::pair{0x0D52U, 8U}, {0x0D55U, 0U}, {0x0D56U, query(rgb, 0x3025)}, {0x0D57U, query(rgb, 0x3026)}}) {
+        AuditGl(f, "glGetIntegerv", {attribute, count.Value()}); CHECK(f.bus.Read32(count, 1U) == value);
+    }
+    AuditGl(f, "glClearColor", {0x3E800000U, 0x3F000000U, 0x3F400000U, 0}); AuditGl(f, "glClear", {0x4000});
+    CHECK((AuditPixel(f) >> 24U) == 255U);
+    REQUIRE(f.Call("libEGL.so", "eglSwapBuffers", {1, window}) == 1U);
+    const auto published = f.boundary.TakeLatestFrame(); REQUIRE(published);
+    CHECK(published->rgba8[0] == doctest::Approx(64).epsilon(.04));
+    CHECK(published->rgba8[3] == 255U);
+    CHECK(query(rgba, 0x3021) == 8U); // A second choose did not mutate another config.
+    REQUIRE(f.Call("libEGL.so", "eglMakeCurrent", {1, 0, 0, 0}) == 1U);
+    REQUIRE(f.Call("libEGL.so", "eglDestroyContext", {1, context}) == 1U);
+    REQUIRE(f.Call("libEGL.so", "eglDestroySurface", {1, window}) == 1U);
+}
+
+TEST_CASE("BND50 ATC queries agree across APIs and reject invalid updates") {
+    if (!ogplay::gles::IsNativeAngleEglAvailable()) return;
+    BoundaryFixture f;
+    REQUIRE(f.Call("libEGL.so","eglInitialize",{1})==1U);
+    const auto context = AuditContext(f,2), surface = AuditSurface(f);
+    AuditBind(f,context,surface);
+    for (const auto library : {"libGLESv2.so","libGLESv1_CM.so"}) {
+        CAPTURE(library);
+        const auto gl = [&](const std::string_view name,
+                            const std::initializer_list<std::uint32_t> args = {}) {
+            const auto entry = f.boundary.Symbols().Lookup(library, name);
+            REQUIRE(entry.has_value());
+            return BoundaryCallAddress(f,entry->Value(),{args.begin(),args.size()});
+        };
+        const auto string = gl("glGetString",{0x1f03});
+        const auto length = f.memory.CStringLength(ogplay::memory::GuestAddress{string},4096,1);
+        std::string text(length,'\0');
+        f.memory.Read(ogplay::memory::GuestAddress{string},std::as_writable_bytes(std::span(text)),1);
+        CHECK(text.find("GL_AMD_compressed_ATC_texture")!=std::string::npos);
+        gl("glGetIntegerv",{0x86a2,f.output.Value()});
+        const auto count = f.bus.Read32(f.output,1);
+        REQUIRE(count>0);REQUIRE(count<256);
+        const auto output = f.output.Add(64), sentinel = output.Add(count*4);
+        f.bus.Write32(sentinel,0xdeadbeef,1);
+        gl("glGetIntegerv",{0x86a3,output.Value()});
+        std::vector<std::uint32_t> formats;
+        for(std::uint32_t i=0;i<count;++i) formats.push_back(f.bus.Read32(output.Add(i*4),1));
+        for(const auto format : {0x8c92U,0x8c93U,0x87eeU}) CHECK(std::count(formats.begin(),formats.end(),format)==1);
+        CHECK(f.bus.Read32(sentinel,1)==0xdeadbeef);
+        gl("glGetFloatv",{0x86a3,output.Value()});
+        for(std::uint32_t i=0;i<count;++i) CHECK(std::bit_cast<float>(f.bus.Read32(output.Add(i*4),1))==static_cast<float>(formats[i]));
+        CHECK(f.bus.Read32(sentinel,1)==0xdeadbeef);
+        gl("glGetBooleanv",{0x86a3,output.Value()});
+        for(std::uint32_t i=0;i<count;++i) CHECK(f.bus.Read8(output.Add(i),1)==1U);
+        CHECK(f.bus.Read32(sentinel,1)==0xdeadbeef);
+        // Full array must be preflighted before any output is written.
+        const auto end = f.output.Add(f.memory.PageSize()-4);
+        f.bus.Write32(end,0xabcdef,1);
+        CHECK_THROWS_AS(gl("glGetIntegerv",{0x86a3,end.Value()}),ogplay::memory::MemoryFault);
+        CHECK(f.bus.Read32(end,1)==0xabcdef);
+        gl("glGenTextures",{1,f.output.Value()});
+        gl("glBindTexture",{0x0de1,f.bus.Read32(f.output,1)});
+        const auto data = f.output.Add(16);
+        const std::array<std::byte,16> bytes{};f.memory.Write(data,bytes,1);
+        CHECK(gl("glCompressedTexImage2D",{0x0de1,0,0x8c93,4,4,0,16,data.Value()})==0U);
+        CHECK(gl("glGetError")==0U);
+        gl("glTexSubImage2D",{0x0de1,0,0,0,4,4,0x1908,0x1401,0});
+        CHECK(gl("glGetError")==0x0502U);
+        gl("glCopyTexSubImage2D",{0x0de1,0,0,0,0,0,4,4});
+        CHECK(gl("glGetError")==0x0502U);
+        gl("glCompressedTexSubImage2D",{0x0de1,0,0,0,4,4,0x8c93,16,data.Value()});
+        CHECK(gl("glGetError")==0x0502U);
+        gl("glCompressedTexImage2D",{0x0de1,0,0x8c93,4,4,0,15,data.Value()});
+        CHECK(gl("glGetError")==0x0501U);
+    }
+}
+
+TEST_CASE("BND50 ATC PBO upload retains shared texture format metadata") {
+    if (!ogplay::gles::IsNativeAngleEglAvailable()) return;
+    BoundaryFixture f;
+    REQUIRE(f.Call("libEGL.so","eglInitialize",{1})==1U);
+    const auto context = AuditContext(f), surface = AuditSurface(f);
+    AuditBind(f,context,surface);
+    const auto texture = AuditName(f,"glGenTextures");
+    AuditGl(f,"glBindTexture",{0x0de1,texture});
+    const auto buffer = AuditName(f,"glGenBuffers");
+    AuditGl(f,"glBindBuffer",{0x88ec,buffer});
+    const std::array<std::byte,20> block{};f.memory.Write(f.output,block,1);
+    AuditGl(f,"glBufferData",{0x88ec,20,f.output.Value(),0x88e4});
+    AuditGl(f,"glCompressedTexImage2D",{0x0de1,0,0x8c93,4,4,0,16,4});
+    CHECK(AuditGl(f,"glGetError")==0U);
+    AuditGl(f,"glGetIntegerv",{0x88ef,f.output.Value()});
+    CHECK(f.bus.Read32(f.output,1)==buffer);
+    AuditGl(f,"glTexSubImage2D",{0x0de1,0,0,0,4,4,0x1908,0x1401,4});
+    CHECK(AuditGl(f,"glGetError")==0x0502U);
+    AuditGl(f,"glBindBuffer",{0x88ec,0});
+    // Replacing the level-zero image with ordinary RGBA removes the ATC restriction.
+    AuditGl(f,"glTexImage2D",{0x0de1,0,0x1908,4,4,0,0x1908,0x1401,0});
+    CHECK(AuditGl(f,"glGetError")==0U);
+    const std::array<std::byte,64> rgba{};f.memory.Write(f.output,rgba,1);
+    AuditGl(f,"glTexSubImage2D",{0x0de1,0,0,0,4,4,0x1908,0x1401,f.output.Value()});
+    CHECK(AuditGl(f,"glGetError")==0U);
 }

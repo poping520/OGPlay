@@ -62,7 +62,8 @@ public:
                              std::span<const std::uint32_t> arguments);
     void BindEglImage(std::uint32_t target, std::uintptr_t image, bool renderbuffer);
     static AngleFrame CreateContext(std::shared_ptr<EglDisplayResources> display,
-                                   int client_version, EglHandle share_context = 0);
+                                   int client_version, EglHandle share_context = 0,
+                                   bool rgb = false);
     void BindSurfaces(std::shared_ptr<EglSurfaceResources> draw,
                       std::shared_ptr<EglSurfaceResources> read);
     static AngleFrame CreatePbuffer(AngleBackend backend,
@@ -285,6 +286,7 @@ public:
                                   std::uint32_t depth_fail,
                                   std::uint32_t depth_pass);
     void Flush();
+    [[nodiscard]] std::vector<std::int32_t> CompressedTextureFormats();
     [[nodiscard]] std::vector<std::int32_t> GetIntegers(
         std::uint32_t parameter, std::size_t count);
     [[nodiscard]] std::vector<std::uint8_t> GetBooleans(

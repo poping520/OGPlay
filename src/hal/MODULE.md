@@ -56,6 +56,8 @@
   macOS 15 的 libc++ 未导出浮点 `from_chars` 符号，因此 macOS HAL 走 `strtof_l`/
   `strtod_l`，Windows/Linux 调用 `std::from_chars`。
 - `hal::HostFileSystem` / `CreateStandardHostFileSystem`：宿主文件状态、建目录及二进制读写。
+- `RgbSurfaceStorage`：拥有型宿主客户端像素存储；macOS 提供 IOSurface，其余宿主明确不可用。
+  仅向 ANGLE 装配接口提供 opaque host buffer，不承担 EGL/GLES 或 guest 语义。
 - video 接口按媒体能力需求在后续里程碑定义。
 
 ## 不变量

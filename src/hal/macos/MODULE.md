@@ -18,6 +18,9 @@
 - 诊断触发使用 `SIGUSR1` 写 nonblocking self-pipe；signal handler 只执行 async-signal-safe
   `write`，输出文件权限替换为 owner read/write。
 
+- RGB 客户端表面存储使用有界尺寸的 BGRA IOSurface，创建/释放只经公共 HAL；
+  BGRX/alpha 与绘制语义由 ANGLE 的 GL_RGB 导入处理。
+
 ## 测试
 
 契约测试放在 `tests/hal/`；需要窗口服务器的测试必须提供 headless 跳过条件。

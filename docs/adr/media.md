@@ -10,6 +10,8 @@
 - [ADR-0061 · EGL 对象 registry 与每 Context 图形状态](#adr-0061)
 - [ADR-0069 · 音频 Java 协议、宿主执行与会话输出边界](#adr-0069)
 - [ADR-0070 · 有界音乐增量解码与音源分流增益](#adr-0070)
+- [ADR-0090 · EGL 配置由真实表面格式决定](#adr-0090)
+- [ADR-0091 · ATC 纹理使用可移植解码回退](#adr-0091)
 
 <a id="adr-0003"></a>
 
@@ -335,3 +337,59 @@ AudioTrack/MediaPlayer 按播放器保存 stream，SoundPool 按池保存 stream
 MediaPlayer 阶段与本地资源状态归 native，BootDex 保留 Java wrapper/Handler 协议。
 门禁覆盖跨块/随机 seek PCM 对照、超过旧 PCM 上限的音乐、任务取消/预算、分流静音和
 错误唤醒；不把定向测试当作 title gate 或 CTS。
+
+<a id="adr-0090"></a>
+
+## ADR-0090 · EGL 配置由真实表面格式决定
+
+- 状态：Accepted
+- 日期：2026-10-02
+
+### 背景
+
+`eglChooseConfig` 颜色位数是最低要求，不能成为配置的实际属性。只提供 RGBA 的驱动
+也不能仅改报 alpha=0 来满足 RGB chooser，否则默认 framebuffer、混合和读回语义不一致。
+
+### 决定
+
+保留有界的 RGBA 与 RGB888 配置身份；属性查询、选择、Context 和 Surface 共用 registry。
+宿主直接提供 RGB config 时使用原生配置；Metal 的 RGB 存储由 HAL 管理 IOSurface，
+经 ANGLE 客户端表面以 GL_RGB 导入。OS 资源只归 HAL，GLES 与 alpha 语义仍归 ANGLE，
+不增加游戏分支、GLES 到桌面 GL 转译或硬件到软件的静默切换。原生错误保留，缺少实际
+backing 时不发布 RGB。当前不发布 RGB565，不承诺完整 EGL/Android 窗口系统。
+
+Metal 导入使用固定 SDK 已有的 RGBX 路径；ANGLE 自行初始化 alpha 为 1 并关闭 alpha 写入。
+依据：[固定 ANGLE 源码](https://github.com/google/angle/blob/c24d9971269a878a221238a5923abdcc933fa2e9/src/libANGLE/renderer/metal/IOSurfaceSurfaceMtl.mm)。
+
+### 后果
+
+Java/native config 查询稳定且不依赖调用者的上一次筛选。Surface 独立持有客户端存储，
+先销毁 ANGLE surface 再释放宿主存储；沿用 current/destroy/terminate 的既有生命周期。
+RGB 客户端表面不发布 texture binding，非法组合返回 EGL_BAD_MATCH。跨宿主策略统一，
+每个实际后端仍须分别验证，不以 macOS 测试代替 Windows/Linux 验收。
+
+<a id="adr-0091"></a>
+
+## ADR-0091 · ATC 纹理使用可移植解码回退
+
+- 状态：Accepted
+- 日期：2026-10-02
+
+### 背景
+
+旧 GLES 游戏可能固定加载 ATC 资源，宿主 ANGLE 后端不一定支持其格式。仅声明扩展
+不能提供实际上传能力，压缩格式查询也不能忽略软件回退。
+
+### 决定
+
+固定 AMD Compressonator 的可移植 C 颜色解码源与许可证，以薄适配层处理三种 ATC
+格式的 alpha、字节序、块布局、精确长度及有界 RGBA8 输出。只构建独立译单元，不引入
+完整 SDK。ATC 始终经同一 CPU 路径交给 ANGLE，避免宿主支持差异；既有 ETC1/PVRTC
+策略保持。原生格式列表与已实现软件格式去重合并，计数、查询长度及各标量查询共用。
+GLES1/2 发布 ATC 扩展，PBO 通过现有受检 Buffer 回读，禁止作为 guest 指针访问。
+
+### 后果
+
+RGBA8 增加存储成本，单次解码受搬运预算约束。ATC 禁止的子图操作返回真实 GL error；
+未知格式仍明确失败。上游源码/头文件/许可证固定哈希，算法差异只进入适配层。
+参考向量、实际纹理采样和原 APK 首错复现分别记录；平台实跑与 title gate 独立验收。

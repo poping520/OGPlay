@@ -18,6 +18,8 @@ JNI、framework 或 integration。
 - clone 从 CPU 创建、初始 SetState 到执行及最终 GetState 抛出宿主异常时先保存首错，再请求进程线程组退出并中断 futex；完成故障线程
   的退出清理，通过显式 notifier 取消上层其他等待。`RethrowFailure` 与 join 保留原异常，
   不允许已退出宿主线程仍保持 guest running、直到 join 才暴露失败。
+- clone 的非正常 CPU stop（内存、非法/未支持指令、backend 或未处理 trap）使用统一
+  formatter 转为进程首错并通知退出，不能仅结束 child 让主循环继续等待；正常取消不报故障。
 - 启用 signal runtime 时，主调用与 clone runner 每次 CPU 运行前投递信号，纯计算最多
   50000 tick 检查一次；目标 CPU 只由其所属宿主线程修改。clone 发布 child 前继承 mask，
   join 后退役信号状态，pending 与备用栈不继承。

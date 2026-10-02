@@ -1,3 +1,4 @@
+#include "ogplay/gles/atc.h"
 #include "gles2_module.h"
 
 #include <bit>
@@ -82,6 +83,8 @@ std::uint32_t Gles2Module::CompressedTexImage2D(const A32CallFrame& call) {
     if (graphics_.gl_context.Shared().transfer.BoundBuffer(0x88ECU) != 0U) {
         graphics_.RequireFrame("glCompressedTexImage2D").TransferPixelBuffer(
             gles::AngleFrame::PixelBufferOperation::compressed2d, arguments);
+        if (Signed(arguments[1]) == 0)
+            graphics_.gl_context.Shared().SetTextureBaseFormat(arguments[0], arguments[2]);
         return 0U;
     }
     auto prepared = Prepare(calls_, graphics_, 21U, call);
@@ -97,6 +100,9 @@ std::uint32_t Gles2Module::CompressedTexImage2D(const A32CallFrame& call) {
 
 std::uint32_t Gles2Module::CompressedTexSubImage2D(const A32CallFrame& call) {
     const auto arguments = call.Arguments();
+    if (gles::IsAtcFormat(arguments[6]) || gles::IsAtcFormat(
+            graphics_.gl_context.Shared().TextureBaseFormat(arguments[0]).value_or(0U)))
+        throw gles::GlesApiError("ATC compressed sub-image", 0x0502U);
     if (graphics_.gl_context.Shared().transfer.BoundBuffer(0x88ECU) != 0U) {
         graphics_.RequireFrame("glCompressedTexSubImage2D").TransferPixelBuffer(
             gles::AngleFrame::PixelBufferOperation::compressed_sub2d, arguments);
@@ -125,6 +131,8 @@ std::uint32_t Gles2Module::CopyTexImage2D(const A32CallFrame& call) {
 
 std::uint32_t Gles2Module::CopyTexSubImage2D(const A32CallFrame& call) {
     const auto arguments = call.Arguments();
+    if (gles::IsAtcFormat(graphics_.gl_context.Shared().TextureBaseFormat(arguments[0]).value_or(0U)))
+        throw gles::GlesApiError("ATC copy sub-image", 0x0502U);
     graphics_.RequireFrame("glCopyTexSubImage2D")
         .CopyTextureSubImage2D(arguments[0], Signed(arguments[1]), Signed(arguments[2]),
                                Signed(arguments[3]), Signed(arguments[4]), Signed(arguments[5]),

@@ -1,4 +1,5 @@
 #include "gles1_remaining.h"
+#include "ogplay/gles/atc.h"
 
 #include <algorithm>
 #include <array>
@@ -200,8 +201,10 @@ void BindAndroidBoundaryGles1Remaining(gles::GlesDispatchTable& dispatch,
     if (!require_frame) {
         throw std::invalid_argument("GLES1 remaining frame resolver is missing");
     }
-    dispatch.Bind("glCompressedTexSubImage2D", [&address_space, require_frame](const auto a,
+    dispatch.Bind("glCompressedTexSubImage2D", [&core, &address_space, require_frame](const auto a,
                                                                                const auto thread) {
+        if (gles::IsAtcFormat(a[6]) || gles::IsAtcFormat(core.TextureBaseFormat(a[0]).value_or(0U)))
+            throw gles::GlesApiError("ATC compressed sub-image", 0x0502U);
         const auto size = Signed(a[7]);
         if (size < 0)
             throw gles::GlesApiError("glCompressedTexSubImage2D", 0x0501U);
@@ -213,7 +216,9 @@ void BindAndroidBoundaryGles1Remaining(gles::GlesDispatchTable& dispatch,
                                          Signed(a[4]), Signed(a[5]), a[6], input.Bytes());
         return 0U;
     });
-    dispatch.Bind("glCopyTexSubImage2D", [require_frame](const auto a, const auto) {
+    dispatch.Bind("glCopyTexSubImage2D", [&core, require_frame](const auto a, const auto) {
+        if (gles::IsAtcFormat(core.TextureBaseFormat(a[0]).value_or(0U)))
+            throw gles::GlesApiError("ATC copy sub-image", 0x0502U);
         require_frame("glCopyTexSubImage2D")
             .CopyTextureSubImage2D(a[0], Signed(a[1]), Signed(a[2]), Signed(a[3]), Signed(a[4]),
                                    Signed(a[5]), Signed(a[6]), Signed(a[7]));

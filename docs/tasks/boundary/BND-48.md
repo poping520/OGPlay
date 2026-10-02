@@ -10,6 +10,8 @@
   回调不持有账本锁，解绑等待正在执行的回调；普通写入仍复用 cacheflush。
 - 整个 clone 宿主线程的启动/执行/最终状态失败统一发布首错、退出并中断等待；
   创建失败释放 CPU processor ID，通知或清理的次生异常不覆盖首错。
+  fast `host_call_fault` 经 HLE 还原原异常；process/session 可在不进入 guest 时观察首错，
+  dex activity 调度前优先检查，主 Looper 身份查询不重复 native prepare。
 - ARM kuser v5 提供 DMB 与 32/64 位原子比较交换，准确返回 carry、重试丢失的
   reservation，并保存 ABI 寄存器。实现使用现有 CAS，不另加临时互斥锁。
 

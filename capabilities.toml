@@ -492,8 +492,8 @@ note = "BND-44/ADR-0082：A32/T32 旧式 CP15 DMB/DSB/ISB 复用原生屏障 IR�
 
 [cpu.thread_model]
 status = "complete"
-test = "tests/cpu/thread_group_tests.cpp; tests/runtime/guest_clone_thread_runtime_tests.cpp"
-note = "M1 一个 guest 线程对应一个真实宿主线程和独立 CPU，上下文与 TLS 生命周期明确；clone CPU 创建、初始 SetState、执行及最终 GetState 的宿主异常保存首错并退出线程组、中断等待，通过显式上层通知取消其他阻塞，调用路径及 join 保留原异常"
+test = "tests/cpu/thread_group_tests.cpp; tests/runtime/guest_clone_thread_runtime_tests.cpp; tests/runtime/android_guest_call_session_tests.cpp"
+note = "M1 一个 guest 线程对应一个真实宿主线程和独立 CPU，上下文与 TLS 生命周期明确；clone CPU 创建、初始 SetState、执行及最终 GetState 的宿主异常保存首错并退出线程组、中断等待，通过显式上层通知取消其他阻塞，调用路径及 join 保留原异常；clone fast host_call_fault 同样还原异常，process/session 可不进入 guest 查询首错，dex activity 每帧与消息泵前优先检查"
 
 [cpu.futex]
 status = "complete"
@@ -753,7 +753,7 @@ note = "M4 提供受检 1..4x 布局和确定性 RGBA8 box resolve，覆盖溢�
 [runtime.android_boundary_hle]
 status = "partial"
 test = "tests/runtime/guest_looper_tests.cpp; tests/runtime/boundary/integration/android_boundary_hle_tests.cpp"
-note = "M4 最小 NativeActivity 所需 Android/Looper/input/EGL/GLES 导入已绑定到显式 Thumb trap；M5 WU-0292 增加严格布局帧归还与 1x RGBA8 高水位复用；BND-1..4 改为完整 Virtual SO catalog、multi-page arena、CPU fast host call 与 concrete module-local binding，删除旧 route/function-id 热路径；BND-45/ADR-0083 新增线程 Looper 身份、prepare/forThread、引用、wake/removeFd/pollOnce 与既有 ident polling；Java 主线程及 HandlerThread 关联，VFS pipe readiness、退出/shutdown、空输出指针与真实 ARM libdl 调用受检。BND-46 增加 API19 输入 getter 全集、不可变多指/历史快照、每队列 pending/inflight 及 int64 ABI；定向受检，Java/NDK 共用快照及 session Clock/取消已定向受检，SDL 多点采集/去重/取消已定向受检；event-watch 通知缓冲已定向受检，移动入口同步暂停握手与真机验收尚未完成。callback、非 pipe fd 与 Java 消息在 native poll 中派发未支持，完整 NDK 不在本能力范围"
+note = "M4 最小 NativeActivity 所需 Android/Looper/input/EGL/GLES 导入已绑定到显式 Thumb trap；M5 WU-0292 增加严格布局帧归还与 1x RGBA8 高水位复用；BND-1..4 改为完整 Virtual SO catalog、multi-page arena、CPU fast host call 与 concrete module-local binding，删除旧 route/function-id 热路径；BND-45/ADR-0083 新增线程 Looper 身份、prepare/forThread、引用、wake/removeFd/pollOnce 与既有 ident polling；Java 主线程及 HandlerThread 关联，VFS pipe readiness、退出/shutdown、空输出指针与真实 ARM libdl 调用受检。BND-46 增加 API19 输入 getter 全集、不可变多指/历史快照、每队列 pending/inflight 及 int64 ABI；定向受检，Java/NDK 共用快照及 session Clock/取消已定向受检，SDL 多点采集/去重/取消已定向受检；event-watch 通知缓冲已定向受检，移动入口同步暂停握手与真机验收尚未完成。callback、非 pipe fd 与 Java 消息在 native poll 中派发未支持，GLES1/2 glGetString 无调用线程 Context 返回 null，不借用全局帧；登记与 ANGLE current 失配明确失败，fast/slow/managed 查询和跨线程接力已定向受检。完整 NDK 不在本能力范围"
 
 [runtime.native_activity_session]
 status = "partial"

@@ -167,8 +167,10 @@ Java GLES/EGL 通过 session managed 冷入口复用 [native boundary](../../bou
 - Handler/Looper/HandlerThread/Timer/AsyncTask 共用 scheduler，uptime deadline 相同时按 sequence
   FIFO；主 Looper 在 lifecycle safe point 泵送，子 Looper 在对应 host 线程执行，不同步伪装 post。
   设备 Clock 默认确定性 60 秒 boot-age，无 suspend 时 uptime/elapsedRealtime 共用事实。
-- Java prepare/主 Looper 经 prepare_native_looper 显式 hook 关联 native 线程；Java scheduler
-  保留消息所有权，quit 不清除存活线程的 native Looper。myQueue 只发布稳定队列身份，范围外失败。
+- Java prepare/主 Looper 经 prepare_native_looper 显式 hook 关联 native 线程；主 Looper
+  仅在首次建立主 Looper 时调用关联 hook，既有身份查询及主消息泵不重复 prepare。
+  Java scheduler 保留消息所有权，quit 不清除存活线程的 native Looper。
+  myQueue 只发布稳定队列身份，范围外失败。
 - runOnUiThread 仅 root context 同步虚派，worker 投递唯一主 Looper；worker join 后、root JNI
   detach 前释放 native token。AsyncTask 的 DexVmError 保留线程故障并终止，不转 null 或继续
   onPostExecute。Thread/JNI 复用 core runtime/catalog/context；Runtime.nativeExit 发布退出标记

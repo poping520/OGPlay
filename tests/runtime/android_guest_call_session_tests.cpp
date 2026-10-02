@@ -486,6 +486,58 @@ TEST_CASE("Android guest process rejects invalid proc facts") {
         ogplay::runtime::AndroidGuestProcessError);
 }
 
+TEST_CASE("Android process observes native clone failure without another guest invocation") {
+    auto libc = LibdlDefaultLibcElf();
+    const auto* android = ogplay::runtime::AndroidBoundaryCatalog(
+        ogplay::runtime::AndroidApi::api19).FindModule("libandroid.so");
+    REQUIRE(android != nullptr);
+    const auto wake = std::ranges::find(android->exports, "ALooper_wake",
+        &ogplay::runtime::BoundaryExportDescriptor::name);
+    REQUIRE(wake != android->exports.end());
+    // Only the real clone child calls ALooper_wake with an invalid null identity.
+    const std::array code{
+        0xe3000f00U, 0xe3400005U, 0xe59f1018U, 0xe3a02000U,
+        0xe3a03000U, 0xe3a07078U, 0xef000000U, 0xe3500000U,
+        0x0a000001U, 0xe12fff1eU, 0x10010800U, 0xe51ff004U,
+        wake->address.Value() | 1U};
+    for (std::size_t index = 0; index < code.size(); ++index)
+        Put32(libc, 0x1000U + index * 4U, code[index]);
+    const ogplay::loader::Elf32ModuleInput module{
+        "libc.so", libc, ogplay::memory::GuestAddress{0x10000000U}};
+    ogplay::runtime::VirtualFileSystem filesystem;
+    ogplay::runtime::AndroidGuestProcessRequest request{
+        19, std::span{&module, 1}, {}, 64, 36, 100000, 1, &filesystem, {}};
+    SUBCASE("fast boundary") {}
+    SUBCASE("slow boundary") {
+        request.guest_call_slice_observer = [](std::uint64_t) {};
+    }
+    auto process = ogplay::runtime::AndroidGuestProcess::Start(request);
+    CHECK_NOTHROW(process->RethrowAsyncFailure());
+    std::string invocation_failure;
+    try {
+        const auto result = process->Invoke({ogplay::memory::GuestAddress{kLibdlFixtureBase}});
+        REQUIRE(result.return_value > 1U);
+        REQUIRE(result.return_value < 0x80000000U);
+    } catch (const std::exception& error) {
+        // The child can fail before the parent's invocation returns.
+        invocation_failure = error.what();
+    }
+    std::string failure;
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+    while (failure.empty() && std::chrono::steady_clock::now() < deadline) {
+        try { process->RethrowAsyncFailure(); }
+        catch (const std::exception& error) { failure = error.what(); }
+        std::this_thread::yield();
+    }
+    INFO(invocation_failure);
+    REQUIRE_FALSE(failure.empty());
+    CHECK(failure == "ALooper is stale or unregistered");
+    CHECK_THROWS_WITH(process->RethrowAsyncFailure(), failure.c_str());
+    auto session = ogplay::runtime::AndroidGuestCallSession::AdoptProcess(std::move(process));
+    CHECK_THROWS_WITH(session->RethrowAsyncFailure(), failure.c_str());
+    CHECK_THROWS_WITH(session->RethrowAsyncFailure(), failure.c_str());
+}
+
 TEST_CASE("OpenSL buffer callback runs on its guest thread and re-enqueues") {
     auto libc = OpenSlesCallbackLibcElf();
     const ogplay::loader::Elf32ModuleInput module{

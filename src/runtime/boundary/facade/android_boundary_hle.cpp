@@ -487,9 +487,19 @@ private:
     static gles::AngleFrame* ServiceCurrentFrame(
         void* owner, const std::string_view operation) {
         auto& self = *static_cast<Impl*>(owner);
+        const auto caller = std::this_thread::get_id();
         if (auto* frame = self.egl_module_.CurrentFrameForHostThread(
-                std::this_thread::get_id(), operation); frame != nullptr) {
+                caller, operation); frame != nullptr) {
+            if (operation == "glGetString" && !frame->IsCurrentOnCallingThread()) {
+                throw std::runtime_error("glGetString: EGL current binding mismatch");
+            }
             return frame;
+        }
+        if (operation == "glGetString") {
+            if (!self.angle_frame_ || self.gl_owner_ != caller) return nullptr;
+            if (!self.angle_frame_->IsCurrentOnCallingThread()) {
+                throw std::runtime_error("glGetString: managed GL current binding mismatch");
+            }
         }
         return self.angle_frame_.has_value() ? &*self.angle_frame_ : nullptr;
     }

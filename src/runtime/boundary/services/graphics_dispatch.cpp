@@ -533,6 +533,7 @@ public:
             return 0;
         }
         if (function_id == Id(Gles2Function::get_string)) {
+            if (frame == nullptr) return 0U;
             if (args[0] == 0x1F03U) {
                 static_cast<void>(RequireFrame(frame, symbol));
                 std::string value;

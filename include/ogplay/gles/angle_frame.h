@@ -81,6 +81,7 @@ public:
     void ReleaseCurrent();
     void MarkNotCurrent() noexcept { lifecycle_.MarkNotCurrent(); }
     [[nodiscard]] EglHandle NativeContext() const noexcept;
+    [[nodiscard]] bool IsCurrentOnCallingThread() const noexcept;
 
     void Viewport(std::int32_t x, std::int32_t y,
                   std::int32_t width, std::int32_t height);

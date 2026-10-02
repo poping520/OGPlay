@@ -12,6 +12,7 @@
   创建失败释放 CPU processor ID，通知或清理的次生异常不覆盖首错。
   fast `host_call_fault` 经 HLE 还原原异常；process/session 可在不进入 guest 时观察首错，
   dex activity 调度前优先检查，主 Looper 身份查询不重复 native prepare。
+  BND-49 继续将 clone 非正常 CPU stop 转为统一 A32 诊断与进程首错，取消/预算/正常退出保留原语义。
 - ARM kuser v5 提供 DMB 与 32/64 位原子比较交换，准确返回 carry、重试丢失的
   reservation，并保存 ABI 寄存器。实现使用现有 CAS，不另加临时互斥锁。
 

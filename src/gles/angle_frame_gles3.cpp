@@ -1,4 +1,5 @@
 #include "ogplay/gles/angle_frame.h"
+#include "ogplay/gles/atc.h"
 
 #include <algorithm>
 #include <bit>
@@ -42,15 +43,14 @@ void AngleFrame::TransferPixelBuffer(const PixelBufferOperation operation,
     if (operation == PixelBufferOperation::compressed2d || operation == PixelBufferOperation::compressed_sub2d) {
         const bool sub = operation == PixelBufferOperation::compressed_sub2d;
         const auto format = a[sub ? 6 : 2];
-        if (format == 0x8D64U || (format >= 0x8C00U && format <= 0x8C03U)) {
+        if (sub && IsAtcFormat(format))
+            throw GlesApiError("ATC compressed PBO sub-image", GL_INVALID_OPERATION);
+        if (IsAtcFormat(format) || format == 0x8D64U || (format >= 0x8C00U && format <= 0x8C03U)) {
             const auto length = i(a[sub ? 7 : 6]);
-            if (length <= 0) throw GlesApiError("compressed PBO size", GL_INVALID_VALUE);
+            if (length < 0) throw GlesApiError("compressed PBO size", GL_INVALID_VALUE);
             const auto buffer = BoundBuffer(GL_PIXEL_UNPACK_BUFFER);
-            std::vector<std::byte> bytes(static_cast<std::size_t>(length));
-            const auto* mapped = MapBufferRange(GL_PIXEL_UNPACK_BUFFER, a[sub ? 8 : 7], length, GL_MAP_READ_BIT);
-            if (mapped == nullptr) throw GlesApiError("compressed PBO mapping", GL_INVALID_OPERATION);
-            std::copy_n(mapped, bytes.size(), bytes.begin());
-            if (!UnmapBuffer(GL_PIXEL_UNPACK_BUFFER)) throw GlesApiError("compressed PBO contents", GL_INVALID_OPERATION);
+            const auto bytes = ReadBufferRange(GL_PIXEL_UNPACK_BUFFER,
+                a[sub ? 8 : 7], static_cast<std::size_t>(length));
             BindBuffer(GL_PIXEL_UNPACK_BUFFER, 0U);
             try {
                 if (sub) CompressedTextureSubImage2D(a[0], i(a[1]), i(a[2]), i(a[3]), i(a[4]), i(a[5]), format, bytes);

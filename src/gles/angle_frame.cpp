@@ -1,6 +1,7 @@
 #include "ogplay/gles/angle_frame.h"
 
 #include "ogplay/gles/etc1.h"
+#include "ogplay/gles/atc.h"
 #include "ogplay/gles/pvrtc.h"
 #include "ogplay/gles/guest_transfer.h"
 
@@ -96,9 +97,9 @@ AngleFrame AngleFrame::CreatePbuffer(const AngleBackend backend,
 }
 
 AngleFrame AngleFrame::CreateContext(std::shared_ptr<EglDisplayResources> display,
-    const int client_version, const EglHandle share_context) {
+    const int client_version, const EglHandle share_context, const bool rgb) {
     auto lifecycle = EglLifecycle::CreateContext(std::move(display), client_version,
-                                                 share_context);
+                                                 share_context, rgb);
     return AngleFrame(nullptr, std::move(lifecycle), 0U, 0U);
 }
 
@@ -755,6 +756,24 @@ void AngleFrame::CompressedTextureImage2D(
     const std::int32_t height, const std::int32_t border,
     const std::span<const std::byte> data) {
 #if OGPLAY_HAS_ANGLE
+    if (IsAtcFormat(internal_format)) {
+        if (width < 0 || height < 0 || level < 0 || border != 0)
+            throw GlesApiError("ATC image dimensions", GL_INVALID_VALUE);
+        if (target != GL_TEXTURE_2D &&
+            (target < GL_TEXTURE_CUBE_MAP_POSITIVE_X || target > GL_TEXTURE_CUBE_MAP_NEGATIVE_Z))
+            throw GlesApiError("ATC image target", GL_INVALID_ENUM);
+        if (data.size() != AtcImageBytes(static_cast<std::uint32_t>(width),
+                                        static_cast<std::uint32_t>(height), internal_format))
+            throw GlesApiError("ATC image size", GL_INVALID_VALUE);
+        // Keep one portable decoder path, independent of native ATC support.
+        const auto rgba = DecodeAtcRgba8(static_cast<std::uint32_t>(width),
+                                        static_cast<std::uint32_t>(height), internal_format, data);
+        const ScopedTightUnpack unpack(lifecycle_.Info().client_version >= 3);
+        glTexImage2D(target, level, GL_RGBA, width, height, border,
+                     GL_RGBA, GL_UNSIGNED_BYTE, rgba.empty() ? nullptr : rgba.data());
+        RequireNoError("glTexImage2D decoded ATC");
+        return;
+    }
     constexpr std::uint32_t kPvrtcRgb4 = 0x8c00U;
     constexpr std::uint32_t kPvrtcRgb2 = 0x8c01U;
     constexpr std::uint32_t kPvrtcRgba2 = 0x8c03U;
@@ -860,6 +879,8 @@ void AngleFrame::CompressedTextureSubImage2D(
     const std::int32_t width, const std::int32_t height,
     const std::uint32_t format, const std::span<const std::byte> data) {
 #if OGPLAY_HAS_ANGLE
+    if (IsAtcFormat(format))
+        throw GlesApiError("ATC compressed sub-image", GL_INVALID_OPERATION);
     constexpr std::uint32_t kPvrtcRgb4 = 0x8c00U;
     constexpr std::uint32_t kPvrtcRgb2 = 0x8c01U;
     constexpr std::uint32_t kPvrtcRgba2 = 0x8c03U;

@@ -21,6 +21,7 @@ GuestCloneThreadRuntime::GuestCloneThreadRuntime(
     : threads_(threads),
       dispatcher_(dispatcher),
       lifecycle_(lifecycle),
+      address_space_(address_space),
       memory_bus_(memory_bus),
       futex_table_(futex_table),
       committer_(lifecycle, address_space),
@@ -142,7 +143,12 @@ void GuestCloneThreadRuntime::RunChildBody(const std::uint64_t thread_id,
         }
     }
     if (outcome.reason != GuestThreadRunStop::guest_exit) {
-        lifecycle_.RequestExit(thread_id, -1);
+        if (lifecycle_.State(thread_id).status != GuestThreadStatus::exit_requested) {
+            throw A32GuestCallError("Android guest clone thread stopped unexpectedly:\n" +
+                DescribeA32GuestStop(outcome.cpu_stop, cpu.GetState(), address_space_));
+        }
+        // A concurrent process cancellation remains an orderly exit.
+        outcome.reason = GuestThreadRunStop::guest_exit;
         outcome.exit = lifecycle_.CompleteExit(
             thread_id, memory_bus_, futex_table_);
     }

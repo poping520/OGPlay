@@ -1,3 +1,4 @@
+#include "ogplay/gles/atc.h"
 #include "gles1_query.h"
 #include "gles1_fixed.h"
 
@@ -706,7 +707,9 @@ void BindAndroidBoundaryGles1Legacy(
             }
             const auto count = owned.has_value()
                                    ? 1U
-                                   : NativeIntegerQueryCount(arguments[0]);
+                                   : arguments[0] == 0x86A3U
+                                       ? require_frame("compressed formats").StateQueryCount(arguments[0])
+                                       : NativeIntegerQueryCount(arguments[0]);
             auto output = gles::GuestBuffer::Prepare(
                 address_space, memory::GuestAddress{arguments[1]}, count,
                 gles::GuestTransferDirection::output, false, thread_id);
@@ -724,6 +727,8 @@ void BindAndroidBoundaryGles1Legacy(
             const std::uint64_t thread_id) {
             std::size_t count{};
             switch (arguments[0]) {
+            case 0x86A2U: count = 1U; break;
+            case 0x86A3U: count = require_frame("glGetFloatv").StateQueryCount(arguments[0]); break;
             case 0x0BA6U:
             case 0x0BA7U:
             case 0x0BA8U: count = 16U; break;
@@ -741,7 +746,9 @@ void BindAndroidBoundaryGles1Legacy(
                 count * sizeof(std::uint32_t),
                 gles::GuestTransferDirection::output, false, thread_id);
             std::vector<float> values;
-            if (arguments[0] == kGles1MaxTextureAnisotropy) {
+            if (arguments[0] == 0x86A2U || arguments[0] == 0x86A3U) {
+                values = require_frame("glGetFloatv").GetFloats(arguments[0], count);
+            } else if (arguments[0] == kGles1MaxTextureAnisotropy) {
                 const auto queried = require_frame("glGetFloatv")
                                          .GetIntegers(arguments[0], 1U);
                 values = {static_cast<float>(queried.front())};
@@ -798,7 +805,9 @@ void BindAndroidBoundaryGles1Legacy(
                                    ? logical->size()
                                : owned.has_value()
                                    ? 1U
-                                   : NativeIntegerQueryCount(arguments[0]);
+                                   : arguments[0] == 0x86A3U
+                                       ? require_frame("compressed formats").StateQueryCount(arguments[0])
+                                       : NativeIntegerQueryCount(arguments[0]);
             auto output = gles::GuestBuffer::Prepare(
                 address_space, memory::GuestAddress{arguments[1]},
                 count * sizeof(std::uint32_t),
@@ -971,6 +980,8 @@ void BindAndroidBoundaryGles1Textures(
         [&state, &address_space, require_frame](
             const std::span<const std::uint32_t> arguments,
             const std::uint64_t thread_id) {
+            if (gles::IsAtcFormat(arguments[2]) || gles::IsAtcFormat(arguments[6]))
+                throw gles::GlesApiError("glTexImage2D", 0x0502U);
             auto pixels = PrepareTexturePixels(
                 address_space, state, "glTexImage2D", arguments, 8U, true,
                 thread_id);
@@ -997,6 +1008,8 @@ void BindAndroidBoundaryGles1Textures(
         [&state, &address_space, require_frame](
             const std::span<const std::uint32_t> arguments,
             const std::uint64_t thread_id) {
+            if (gles::IsAtcFormat(arguments[6]) || gles::IsAtcFormat(state.TextureBaseFormat(arguments[0]).value_or(0U)))
+                throw gles::GlesApiError("glTexSubImage2D", 0x0502U);
             auto pixels = PrepareTexturePixels(
                 address_space, state, "glTexSubImage2D", arguments, 8U, false,
                 thread_id);

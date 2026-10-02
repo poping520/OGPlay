@@ -46,6 +46,7 @@ private:
     cpu::GuestThreadGroup& threads_;
     A32SyscallDispatcher& dispatcher_;
     GuestThreadLifecycle& lifecycle_;
+    memory::AddressSpace& address_space_;
     memory::MemoryBus& memory_bus_;
     cpu::FutexTable& futex_table_;
     GuestThreadCloneCommitter committer_;

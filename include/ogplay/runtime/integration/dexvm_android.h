@@ -411,9 +411,6 @@ struct DexVmAndroidContext final {
     dexvm::VmObjectRef window_surface;
     std::uint32_t native_display{};
     std::unordered_map<std::uint32_t, std::uint32_t> configs;
-    std::unordered_map<std::uint32_t,
-                       std::unordered_map<std::int32_t, std::int32_t>>
-        config_attribute_overrides;
     std::unordered_map<std::uint32_t, std::uint32_t> contexts;
     std::unordered_map<std::uint32_t, std::uint32_t> surfaces;
     dexvm::VmObjectRef egl14_display;
@@ -423,9 +420,6 @@ struct DexVmAndroidContext final {
     std::unordered_map<std::uint32_t, std::uint32_t> egl14_contexts;
     std::unordered_map<std::uint32_t, std::uint32_t> egl14_surfaces;
     std::unordered_map<std::uint32_t, std::uint32_t> egl14_configs;
-    std::unordered_map<std::uint32_t,
-                       std::unordered_map<std::int32_t, std::int32_t>>
-        egl14_config_attribute_overrides;
     dexvm::VmObjectRef current_display;
     dexvm::VmObjectRef current_surface;
     dexvm::VmObjectRef current_context;

@@ -1,5 +1,6 @@
 #include <doctest/doctest.h>
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <string>
@@ -187,5 +188,80 @@ TEST_CASE("ANGLE pbuffer contexts share resources but keep framebuffer content")
     for (std::size_t offset = 0; offset < green.size(); offset += 4U) {
         CHECK(green[offset] == 0U);
         CHECK(green[offset + 1U] == 255U);
+    }
+}
+
+TEST_CASE("ATC fallback samples real textures and preserves PBO and unpack state") {
+    if (!ogplay::gles::IsNativeAngleEglAvailable()) return;
+    for (const int version : {2, 3}) {
+        CAPTURE(version);
+        auto frame = ogplay::gles::AngleFrame::CreatePbuffer(
+            {kNativeRenderer, ogplay::gles::AngleDevice::hardware}, 4, 4, version);
+        std::array<std::byte, 16> block{};
+        std::fill_n(block.begin(), 8, std::byte{0x88});
+        block[9] = std::byte{0x7c}; // Uniform red, explicit alpha = 136.
+        const auto tex = frame.GenerateTextures(1).front();
+        frame.BindTexture(0x0de1, tex);
+        frame.TextureParameter(0x0de1, 0x2801, 0x2600);
+        frame.TextureParameter(0x0de1, 0x2800, 0x2600);
+        frame.PixelStore(0x0cf5, 8);
+        frame.CompressedTextureImage2D(0x0de1, 0, 0x8c93, 4, 4, 0, block);
+        frame.CompressedTextureImage2D(0x0de1, 1, 0x8c93, 2, 2, 0, block);
+        CHECK(frame.GetIntegers(0x0cf5, 1).front() == 8);
+        if (version == 3) {
+            const auto pbo = frame.GenerateBuffers(1).front();
+            frame.BindBuffer(0x88ec, pbo);
+            std::array<std::byte, 32> storage{};
+            std::copy(block.begin(), block.end(), storage.begin() + 16);
+            frame.BufferData(0x88ec, storage.size(), std::span<const std::byte>(storage), 0x88e4);
+            frame.PixelStore(0x0cf2, 9);
+            frame.PixelStore(0x0cf4, 3);
+            const std::array<std::uint32_t, 8> args{0x0de1,0,0x8c93,4,4,0,16,16};
+            frame.TransferPixelBuffer(ogplay::gles::AngleFrame::PixelBufferOperation::compressed2d, args);
+            CHECK(frame.BoundBuffer(0x88ec) == pbo);
+            CHECK(frame.GetIntegers(0x0cf2,1).front() == 9);
+            CHECK(frame.GetIntegers(0x0cf4,1).front() == 3);
+            CHECK(frame.GetIntegers(0x0cf5,1).front() == 8);
+            auto invalid = args;invalid[7]=24;
+            CHECK_THROWS_AS(frame.TransferPixelBuffer(ogplay::gles::AngleFrame::PixelBufferOperation::compressed2d, invalid), ogplay::gles::GlesApiError);
+            CHECK(frame.BoundBuffer(0x88ec) == pbo);
+        }
+        const auto vs = frame.CreateShader(0x8b31), fs = frame.CreateShader(0x8b30);
+        const std::string vsrc = "attribute vec2 p;void main(){gl_Position=vec4(p,0.,1.);}";
+        const std::string fsrc = "precision mediump float;uniform sampler2D t;void main(){gl_FragColor=texture2D(t,vec2(.5));}";
+        frame.ShaderSource(vs, {&vsrc,1});frame.ShaderSource(fs,{&fsrc,1});
+        frame.CompileShader(vs);frame.CompileShader(fs);
+        const auto program = frame.CreateProgram();frame.AttachShader(program,vs);frame.AttachShader(program,fs);
+        frame.LinkProgram(program);REQUIRE(frame.GetProgramParameter(program,0x8b82)==1);
+        frame.UseProgram(program);frame.Uniform1i(frame.GetUniformLocation(program,"t"),0);
+        const std::array<float,6> triangle{-1,-1,3,-1,-1,3};
+        const auto vbo = frame.GenerateBuffers(1).front();frame.BindBuffer(0x8892,vbo);
+        frame.BufferData(0x8892,sizeof(triangle),std::as_bytes(std::span(triangle)),0x88e4);
+        const auto attrib = static_cast<std::uint32_t>(frame.GetAttribLocation(program,"p"));
+        frame.VertexAttributePointer(attrib,2,0x1406,false,0,0);frame.SetVertexAttributeEnabled(attrib,true);
+        frame.Viewport(0,0,4,4);frame.DrawArrays(4,0,3);
+        const auto pixels = frame.ReadRgba8();
+        REQUIRE(pixels.size()==64);
+        for(std::size_t i=0;i<pixels.size();i+=4) {
+            CHECK(pixels[i]==255);CHECK(pixels[i+1]==0);CHECK(pixels[i+2]==0);CHECK(pixels[i+3]==136);
+        }
+        if (version == 3) frame.BindBuffer(0x88ec,0);
+        const auto cube = frame.GenerateTextures(1).front();
+        frame.BindTexture(0x8513,cube);
+        for(std::uint32_t face=0x8515;face<=0x851a;++face)
+            frame.CompressedTextureImage2D(face,0,0x8c93,4,4,0,block);
+        CHECK(frame.GetError()==0U);
+        frame.BindTexture(0x0de1,tex);
+        const auto formats = frame.CompressedTextureFormats();
+        CHECK(frame.GetIntegers(0x86a2,1).front()==static_cast<std::int32_t>(formats.size()));
+        CHECK(frame.StateQueryCount(0x86a3)==formats.size());
+        CHECK(frame.GetIntegers(0x86a3,formats.size())==formats);
+        for(const auto format : {0x8c92,0x8c93,0x87ee})
+            CHECK(std::count(formats.begin(),formats.end(),format)==1);
+        CHECK(frame.GetString(0x1f03).find("GL_AMD_compressed_ATC_texture")!=std::string::npos);
+        CHECK_THROWS_AS(frame.CompressedTextureImage2D(0x0de1,0,0x8c93,4,4,0,std::span(block).first(15)),ogplay::gles::GlesApiError);
+        CHECK_THROWS_AS(frame.CompressedTextureImage2D(0x0de1,0,0x8c93,4,4,1,block),ogplay::gles::GlesApiError);
+        try { frame.CompressedTextureSubImage2D(0x0de1,0,0,0,4,4,0x8c93,block);FAIL("ATC subimage succeeded"); }
+        catch(const ogplay::gles::GlesApiError& error) { CHECK(error.Code()==0x0502); }
     }
 }

@@ -14,3 +14,6 @@ GL_OES_framebuffer_object 的 15 个独立 OES ABI 入口复用唯一 ANGLE 对�
 在 ES3 native Context 上执行固定绘制时使用内部 VAO，完成后恢复可编程 VAO 与属性常量。
 读回只提交像素行，保留 padding。测试：`BND34 GLES1*` 与 `gles1_fixed_tests.cpp`；整体
 一致性仍受已发布扩展与父级 boundary MODULE 的范围约束。
+
+压缩格式计数、数组与 boolean/float/integer 查询共用下层实际上传能力；ATC 格式
+元数据沿现有 share-group 保存，禁止的子图更新在 guest 搬运前返回 GL error。

@@ -1,4 +1,6 @@
 #include "ogplay/gles/angle_frame.h"
+#include "ogplay/gles/atc.h"
+#include <algorithm>
 
 #include <limits>
 #include <stdexcept>
@@ -288,8 +290,40 @@ std::size_t AngleFrame::StateQueryCount(const std::uint32_t pname) {
     }
 }
 
+std::vector<std::int32_t> AngleFrame::CompressedTextureFormats() {
+#if OGPLAY_HAS_ANGLE
+    GLint count{};
+    glGetIntegerv(GL_NUM_COMPRESSED_TEXTURE_FORMATS, &count);
+    RequireNoError("glGetIntegerv compressed format count");
+    if (count < 0 || count > 16384) throw std::length_error("GLES compressed format count exceeds limit");
+    std::vector<std::int32_t> formats(static_cast<std::size_t>(count));
+    if (count != 0) {
+        glGetIntegerv(GL_COMPRESSED_TEXTURE_FORMATS, formats.data());
+        RequireNoError("glGetIntegerv compressed formats");
+    }
+    // All software-backed formats are accepted by the same upload path.
+    constexpr std::array<std::int32_t, 8> decoded{
+        0x8d64, 0x8c00, 0x8c01, 0x8c02, 0x8c03,
+        kAtcRgb, kAtcRgbaExplicit, kAtcRgbaInterpolated};
+    for (const auto format : decoded)
+        if (std::find(formats.begin(), formats.end(), format) == formats.end())
+            formats.push_back(format);
+    std::sort(formats.begin(), formats.end());
+    formats.erase(std::unique(formats.begin(), formats.end()), formats.end());
+    return formats;
+#else
+    throw EglLifecycleError(EglOperation::unavailable, 0);
+#endif
+}
+
 std::vector<std::int32_t> AngleFrame::GetIntegers(
     const std::uint32_t parameter, const std::size_t count) {
+    if (parameter == 0x86a2U || parameter == 0x86a3U) {
+        auto formats = CompressedTextureFormats();
+        if (parameter == 0x86a2U) formats = {static_cast<std::int32_t>(formats.size())};
+        if (count != formats.size()) throw std::logic_error("GLES compressed query output size differs");
+        return formats;
+    }
     if (count > static_cast<std::size_t>((std::numeric_limits<std::int32_t>::max)())) {
         throw std::length_error("ANGLE integer query count overflows GLsizei");
     }
@@ -304,6 +338,12 @@ std::vector<std::int32_t> AngleFrame::GetIntegers(
 
 std::vector<std::uint8_t> AngleFrame::GetBooleans(
     const std::uint32_t parameter, const std::size_t count) {
+    if (parameter == 0x86a2U || parameter == 0x86a3U) {
+        const auto formats = GetIntegers(parameter, count);
+        std::vector<std::uint8_t> values;
+        for (const auto format : formats) values.push_back(format == 0 ? 0U : 1U);
+        return values;
+    }
     if (count > static_cast<std::size_t>(
                     (std::numeric_limits<std::int32_t>::max)())) {
         throw std::length_error("ANGLE boolean query count overflows GLsizei");
@@ -321,6 +361,12 @@ std::vector<std::uint8_t> AngleFrame::GetBooleans(
 
 std::vector<float> AngleFrame::GetFloats(
     const std::uint32_t parameter, const std::size_t count) {
+    if (parameter == 0x86a2U || parameter == 0x86a3U) {
+        const auto formats = GetIntegers(parameter, count);
+        std::vector<float> values;
+        for (const auto format : formats) values.push_back(static_cast<float>(format));
+        return values;
+    }
     if (count > static_cast<std::size_t>((std::numeric_limits<std::int32_t>::max)())) {
         throw std::length_error("ANGLE float query count overflows GLsizei");
     }
@@ -346,6 +392,10 @@ std::string AngleFrame::GetString(const std::uint32_t parameter) {
     if (parameter == kGlExtensions && !HasExtensionToken(result, kPvrtc)) {
         if (!result.empty()) result.push_back(' ');
         result.append(kPvrtc);
+    }
+    if (parameter == kGlExtensions && !HasExtensionToken(result, "GL_AMD_compressed_ATC_texture")) {
+        if (!result.empty()) result.push_back(' ');
+        result.append("GL_AMD_compressed_ATC_texture");
     }
     return result;
 #else

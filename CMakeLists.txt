@@ -91,6 +91,7 @@ add_library(ogplay_hal
     src/hal/thread.cpp
 )
 if(WIN32)
+    target_sources(ogplay_hal PRIVATE src/hal/rgb_surface_storage.cpp)
     target_link_libraries(ogplay_hal PRIVATE bcrypt)
       target_sources(ogplay_hal PRIVATE
           src/hal/windows/diagnostic_trigger.cpp
@@ -99,6 +100,8 @@ if(WIN32)
         src/hal/windows/shared_library.cpp
         src/hal/windows/virtual_memory.cpp)
 elseif(APPLE)
+    target_sources(ogplay_hal PRIVATE src/hal/macos/rgb_surface_storage.cpp)
+    target_link_libraries(ogplay_hal PRIVATE "-framework IOSurface" "-framework CoreFoundation")
       target_sources(ogplay_hal PRIVATE
           src/hal/macos/diagnostic_trigger.cpp
           src/hal/macos/from_chars.cpp
@@ -106,6 +109,7 @@ elseif(APPLE)
         src/hal/macos/shared_library.cpp
         src/hal/macos/virtual_memory.cpp)
 elseif(UNIX)
+    target_sources(ogplay_hal PRIVATE src/hal/rgb_surface_storage.cpp)
       target_sources(ogplay_hal PRIVATE
           src/hal/linux/diagnostic_trigger.cpp
           src/hal/from_chars.cpp
@@ -257,7 +261,29 @@ set_target_properties(ogplay_pvrtc_vendor PROPERTIES
     CXX_EXTENSIONS OFF
     POSITION_INDEPENDENT_CODE ON)
 
+# Pinned upstream decoder inputs must remain byte-for-byte reproducible.
+foreach(_atc_input IN ITEMS
+    "compressonatori_tc.c:ceef7ffc0b97a3c8d624cd650f0adea3d5fd8cdb5c6459c2c5d4bbb9c2e4013d"
+    "compressonator_tc.h:02871dd9632c093aaab7cc0d52adc08c68716dcb994aed3821ea3a9f2a2db653"
+    "LICENSE.txt:a408ebd610b0e0390aaa4be2139808e84f1968a54cd8ef40de8a3bed43b38906")
+    string(REPLACE ":" ";" _atc_parts "${_atc_input}")
+    list(GET _atc_parts 0 _atc_file)
+    list(GET _atc_parts 1 _atc_expected)
+    file(SHA256 "${CMAKE_CURRENT_SOURCE_DIR}/third_party/compressonator/${_atc_file}" _atc_actual)
+    if(NOT _atc_actual STREQUAL _atc_expected)
+        message(FATAL_ERROR "Pinned ATC vendor file changed: ${_atc_file}")
+    endif()
+endforeach()
+
+add_library(ogplay_atc_vendor OBJECT
+    third_party/compressonator/compressonatori_tc.c)
+target_include_directories(ogplay_atc_vendor PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/third_party/compressonator")
+set_target_properties(ogplay_atc_vendor PROPERTIES POSITION_INDEPENDENT_CODE ON)
+
 add_library(ogplay_gles
+    $<TARGET_OBJECTS:ogplay_atc_vendor>
+    src/gles/atc.cpp
     $<TARGET_OBJECTS:ogplay_pvrtc_vendor>
     src/gles/angle_backend.cpp
     src/gles/angle_frame.cpp
@@ -381,6 +407,7 @@ target_include_directories(ogplay_gles PUBLIC
     PRIVATE
         "${OGPLAY_GLES_GENERATED_DIR}"
         "${CMAKE_CURRENT_SOURCE_DIR}/third_party/powervr"
+        "${CMAKE_CURRENT_SOURCE_DIR}/third_party/compressonator"
 )
 ogplay_set_project_warnings(ogplay_gles)
 target_link_libraries(ogplay_gles PRIVATE OGPlay::Hal OGPlay::Memory)
@@ -790,6 +817,7 @@ if(OGPLAY_BUILD_TESTS)
         tests/gles/angle_backend_tests.cpp
         tests/gles/angle_frame_tests.cpp
         tests/gles/egl_lifecycle_tests.cpp
+        tests/gles/atc_tests.cpp
         tests/gles/etc1_tests.cpp
         tests/gles/gles_call_preparation_tests.cpp
         tests/gles/gles_dispatch_tests.cpp

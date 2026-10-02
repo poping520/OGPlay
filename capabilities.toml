@@ -493,7 +493,7 @@ note = "BND-44/ADR-0082：A32/T32 旧式 CP15 DMB/DSB/ISB 复用原生屏障 IR�
 [cpu.thread_model]
 status = "complete"
 test = "tests/cpu/thread_group_tests.cpp; tests/runtime/guest_clone_thread_runtime_tests.cpp; tests/runtime/android_guest_call_session_tests.cpp"
-note = "M1 一个 guest 线程对应一个真实宿主线程和独立 CPU，上下文与 TLS 生命周期明确；clone CPU 创建、初始 SetState、执行及最终 GetState 的宿主异常保存首错并退出线程组、中断等待，通过显式上层通知取消其他阻塞，调用路径及 join 保留原异常；clone fast host_call_fault 同样还原异常，process/session 可不进入 guest 查询首错，dex activity 每帧与消息泵前优先检查"
+note = "M1 一个 guest 线程对应一个真实宿主线程和独立 CPU，上下文与 TLS 生命周期明确；clone CPU 创建、初始 SetState、执行及最终 GetState 的宿主异常保存首错并退出线程组、中断等待，通过显式上层通知取消其他阻塞，调用路径及 join 保留原异常；clone fast host_call_fault 同样还原异常；非正常 CPU stop 经统一诊断转为进程首错，取消/预算/正常退出独立处理，process/session 可不进入 guest 查询首错，dex activity 每帧与消息泵前优先检查"
 
 [cpu.futex]
 status = "complete"
@@ -662,8 +662,8 @@ note = "M4 已在三平台完成真实 pbuffer 生命周期、guest 边界、SDL
 
 [gles.egl_lifecycle]
 status = "partial"
-test = "tests/gles/egl_lifecycle_tests.cpp; tests/gles/angle_frame_tests.cpp"
-note = "BND-34 将一个 guest Context 映射到唯一 eager native Context，Surface 独立持有 pbuffer，Display 引用计数；BND-36 使 terminate 保留所有线程 current 资源到合法解绑、重复 terminate 成功并允许重新 initialize。KHR image/sync 与 texture pbuffer 按 ANGLE 能力发布；完整 Android 窗口系统未实现，整体保持 partial。"
+test = "tests/gles/egl_lifecycle_tests.cpp; tests/gles/angle_frame_tests.cpp; tests/runtime/boundary/integration/android_boundary_hle_tests.cpp: BND49"
+note = "BND-34 将一个 guest Context 映射到唯一 eager native Context，Surface 独立持有 pbuffer，Display 引用计数；BND-36 使 terminate 保留所有线程 current 资源到合法解绑、重复 terminate 成功并允许重新 initialize。KHR image/sync 与 texture pbuffer 按 ANGLE 能力发布；BND-49 发布有实际 backing 的 RGB888 配置，Metal 使用 HAL IOSurface 经 ANGLE GL_RGB 导入，其他后端优先原生 RGB config；缺支持时不发布。完整 Android 窗口系统未实现，整体保持 partial。"
 
 [runtime.egl_api19_base_boundary]
 status = "complete"
@@ -1065,6 +1065,11 @@ status = "complete"
 test = "tests/gles/etc1_tests.cpp; tests/runtime/boundary/integration/android_boundary_hle_tests.cpp"
 note = "WU-0331 按 Khronos ETC1 block 规范闭合 individual/differential、selector、flip、partial block 与非法输入，并仅在 ANGLE 缺少原生/lossy ETC1 时回退"
 
+[gles.atc_decode_fallback]
+status = "complete"
+test = "tests/gles/atc_tests.cpp; tests/gles/angle_frame_tests.cpp: ATC; tests/runtime/boundary/integration/android_boundary_hle_tests.cpp: BND50"
+note = "BND-50 固定上游 RGB block decoder 与 alpha 适配层，覆盖 ATC RGB/显式及插值 alpha，受检输出 RGBA8；统一扩展/格式数组/计数/查询长度，PBO 有界回读与 share-group 格式同步，非法子图更新保留 GL error。macOS 定向验证；Windows/Linux 实跑未验收"
+
 [gles.pvrtc1_decode_fallback]
 status = "complete"
 test = "tests/gles/pvrtc_tests.cpp; Asphalt 5 exact APK bounded 300-frame smoke"
@@ -1133,7 +1138,7 @@ note = "DVM-31 批次 A 把 host-managed ANGLE currency 显式释放并按调用
 [dexvm.egl_facade]
 status = "complete"
 test = "tests/dexvm/egl_facade_tests.cpp; tests/dexvm/vm_monitor_tests.cpp; tests/runtime/boundary/integration/android_boundary_hle_tests.cpp; data/scenarios/asphalt6.bootstrap.scenario.toml"
-note = "BND-33 WU-3 让 Java EGL10 与 API19 EGL14 通过 managed 冷入口复用 Native EGL registry；BND-36 使 destroy 成功立即退役 wrapper，并支持 terminate 后原 Display 重新 initialize；BND-38 使 wrapper 参数失败锁存同一 per-thread native error，并让 EGL_EXTENSIONS 返回 native 发布清单。DVM-168 按容量回填多 config wrapper，并在 native 颜色格式为请求超集时投影显式请求位数，context/surface 仍使用真实 native handle。thread current、延迟销毁、pbuffer、shared context 与数组 offset 复用 Native registry；pixmap/client-buffer/texture-pbuffer 按 Native 能力明确拒绝。"
+note = "BND-33 WU-3 让 Java EGL10 与 API19 EGL14 通过 managed 冷入口复用 Native EGL registry；BND-36 使 destroy 成功立即退役 wrapper，并支持 terminate 后原 Display 重新 initialize；BND-38 使 wrapper 参数失败锁存同一 per-thread native error，并让 EGL_EXTENSIONS 返回 native 发布清单。DVM-168 按容量回填多 config wrapper；BND-49 删除 choose 最低颜色位数覆写，Java/native 查询同一真实配置事实。thread current、延迟销毁、pbuffer、shared context 与数组 offset 复用 Native registry；pixmap/client-buffer/texture-pbuffer 按 Native 能力明确拒绝。"
 
 [session.profile_guest_lifecycle]
 status = "complete"

@@ -8,12 +8,11 @@
 
 ## 运行状态
 
-- **Tales From Deep Space 1.0.0**：JSON、当前包资源与 [DVM-208](../tasks/dexvm/DVM-208.md)
-  Crypto/SHA1PRNG 及安装来源查询已补齐。
-  macOS Release、双解释器 312 断言通过；APK 无 Profile/无 survey 越过查询，
-  f=207 遇到 `ALooper_prepare on a retired thread`，退出 1、无超时；
-  退出阶段另报 `glGetString returned null`。活跃输入、在线服务及完整游戏未验收。
-  证据：`.local/tales-installer-package-fix/`。
+- **Tales From Deep Space 1.0.0**：GL/Looper 首错已修复；macOS 11 用例/610 断言通过。
+  APK 无 Profile/无 survey，60 秒至 f=39877 无呈现帧。黑屏根因：EGL 最低 RGB=4
+  错误覆盖配置属性，RGB888 选择失败；无 Context 后引擎 `strstr` 空读，clone 2 停止
+  却未发布首错。超时退出报 child 未正常结束；修复待实施，跨平台/游戏未验收。
+  证据：`.local/tales-black-screen-analysis/`。
 
 - **PVZ（com.popcap.pvz_na）**：[DVM-205](../tasks/dexvm/DVM-205.md) 已修复 DEX
   注解预算误拒绝，使用共享解析缓存和分层资源预算。macOS Release 定向回归通过；

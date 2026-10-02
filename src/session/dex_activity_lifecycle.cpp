@@ -739,6 +739,7 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
         }
         if (suspended_) return State();
         try {
+            RethrowFatalThreadFailure();
             auto& context = *bindings_.context;
             if (context.ui_tree.Get(context.ui_tree.Root())->layout_dirty) {
                 runtime::ui::LayoutUiTree(context.ui_tree, {
@@ -832,6 +833,7 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
     }
 
     void DexActivityLifecycle::RethrowFatalThreadFailure() {
+        bindings_.bridge->Session().RethrowAsyncFailure();
         // A Java thread that died takes the VM down with it, which is what
         // unblocked this thread. Report the death, not the teardown it caused.
         const auto failure = bindings_.bridge->Threads().TakeFailure();
@@ -846,6 +848,7 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
     }
 
     void DexActivityLifecycle::PumpJavaThreads() {
+        RethrowFatalThreadFailure();
         const auto error = runtime::PumpJavaThreads(bindings_.bridge->Vm(),
                                                     *bindings_.context);
         if (error.has_value()) Fail(*error);

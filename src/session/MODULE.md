@@ -6,6 +6,8 @@
 统一 Clock 和运行检查点。
 Dex activity 每帧在 guest 回调前泵送主 Looper，到帧尾只通过
 `AdvanceAndroidClock` 推进 Android 单调时钟；停止时先关闭 scheduler，再停止 guest 线程。
+每帧及主消息泵前观察 process/session 的 native 异步首错；异常收敛时同样优先报告
+原始 worker 故障，避免被退出阶段的 Looper 或图形二次异常遮蔽。
 
 ## 公共 API
 

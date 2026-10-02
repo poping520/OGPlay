@@ -44,6 +44,9 @@ public:
                                    (Id == 35U || Id == 36U);
         const auto symbol = gles::DescribeGlesFunction(Api, Id).name;
         try {
+            if constexpr (Api == gles::GlesApi::gles1 && Id == 63U) {
+                if (graphics_.CurrentFrame(symbol) == nullptr) return 0U;
+            }
             if constexpr (draw_call) {
                 if (graphics_.gl_context.SelectDrawRenderer(
                         draw_state_

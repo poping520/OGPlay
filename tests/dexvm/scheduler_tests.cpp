@@ -230,9 +230,16 @@ bool WaitFor(Predicate predicate) {
 }  // namespace
 
 TEST_CASE("Context exposes the stable scheduler main Looper through wrappers") {
-    SchedulerVm fixture;
+    auto backend = InterpreterBackend::switch_dispatch;
+    SUBCASE("switch") { backend = InterpreterBackend::switch_dispatch; }
+    SUBCASE("threaded") { backend = InterpreterBackend::threaded; }
+    SchedulerVm fixture(backend);
     std::uint64_t native_token{};
-    fixture.context->prepare_native_looper = [&](std::uint64_t token) { native_token = token; };
+    std::size_t prepares{};
+    fixture.context->prepare_native_looper = [&](std::uint64_t token) {
+        if (++prepares != 1U) throw std::runtime_error("native thread is retired");
+        native_token = token;
+    };
     const auto static_main = fixture.Direct(
         "Landroid/os/Looper;", "getMainLooper",
         "()Landroid/os/Looper;");
@@ -269,6 +276,9 @@ TEST_CASE("Context exposes the stable scheduler main Looper through wrappers") {
         handler, "getLooper", "()Landroid/os/Looper;");
     SchedulerVm::RequireOk(handler_looper);
     CHECK(handler_looper.value.ref == static_main.value.ref);
+    CHECK_FALSE(ogplay::runtime::PumpJavaThreads(fixture.vm, *fixture.context).has_value());
+    CHECK_FALSE(ogplay::runtime::PumpJavaThreads(fixture.vm, *fixture.context).has_value());
+    CHECK(prepares == 1U);
 }
 
 TEST_CASE("DVM-89 ResultReceiver dispatches locally and through its Handler") {

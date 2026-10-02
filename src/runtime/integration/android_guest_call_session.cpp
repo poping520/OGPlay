@@ -914,11 +914,15 @@ public:
         }
     }
 
-    A32GuestCallResult Invoke(const A32GuestCallFrame& frame) {
+    void RethrowAsyncFailure() {
         if (clone_runtime_) clone_runtime_->RethrowFailure();
         if (std::this_thread::get_id() != open_sles_callback_thread_.get_id()) {
             RethrowOpenSlesCallbackFailure();
         }
+    }
+
+    A32GuestCallResult Invoke(const A32GuestCallFrame& frame) {
+        RethrowAsyncFailure();
         if (!root_cpu_) {
             throw AndroidGuestProcessError(
                 "Android guest call session has no root CPU");
@@ -2387,6 +2391,7 @@ void AndroidGuestProcess::PrepareDexVmThread(
     const std::uint64_t thread_id, const std::uint32_t allocation_slot) {
     impl_->PrepareDexVmThread(thread_id, allocation_slot);
 }
+void AndroidGuestProcess::RethrowAsyncFailure() { impl_->RethrowAsyncFailure(); }
 memory::GuestAddress AndroidGuestProcess::PrepareThreadLooper(std::uint64_t tid) { return impl_->PrepareThreadLooper(tid); }
 void AndroidGuestProcess::ReleaseDexVmThread(
     const std::uint64_t thread_id) noexcept {
@@ -2596,6 +2601,7 @@ void AndroidGuestCallSession::PrepareDexVmThread(
     const std::uint64_t thread_id, const std::uint32_t allocation_slot) {
     process_->PrepareDexVmThread(thread_id, allocation_slot);
 }
+void AndroidGuestCallSession::RethrowAsyncFailure() { process_->RethrowAsyncFailure(); }
 memory::GuestAddress AndroidGuestCallSession::PrepareThreadLooper(std::uint64_t tid) { return process_->PrepareThreadLooper(tid); }
 void AndroidGuestCallSession::ReleaseDexVmThread(
     const std::uint64_t thread_id) noexcept {

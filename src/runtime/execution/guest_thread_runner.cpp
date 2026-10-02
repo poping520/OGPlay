@@ -277,7 +277,8 @@ GuestThreadRunOutcome RunAndroidArmGuestThread(
             return {consumed, GuestThreadRunStop::budget_exhausted, last,
                     std::nullopt};
         }
-        if (last.reason != cpu::RunStopReason::supervisor_call) {
+        if (last.reason != cpu::RunStopReason::supervisor_call &&
+            last.reason != cpu::RunStopReason::host_call_fault) {
             return {consumed, GuestThreadRunStop::cpu_stop, last,
                     std::nullopt};
         }

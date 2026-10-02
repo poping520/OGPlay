@@ -4626,6 +4626,8 @@ TEST_CASE("BND45 Android looper wake timeout shutdown and owner exit unblock wai
     SUBCASE("owner exits") { running = false; }
     SUBCASE("process shuts down") { f.boundary.ShutdownLoopers(); }
     CHECK(cancelled.get() == -4);
+    CHECK_THROWS_WITH(f.Call("libandroid.so", "ALooper_prepare"),
+                      "ALooper_prepare on a retired thread");
 }
 
 TEST_CASE("BND45 pipe readiness reflects data EOF peers and unsupported descriptors") {
@@ -5043,6 +5045,69 @@ TEST_CASE("Android boundary owns a managed GLSurface frame lifecycle") {
         fixture.boundary.CloseManagedSurface(),
         "Android boundary managed surface is not open",
         std::logic_error);
+}
+
+TEST_CASE("GLES string queries require calling-thread currency without acquiring it") {
+    if (!ogplay::gles::IsNativeAngleEglAvailable()) return;
+    BoundaryFixture fixture;
+    const std::array libraries{"libGLESv1_CM.so", "libGLESv2.so"};
+    const std::array parameters{0x1F02U, 0x1F03U};
+    const auto query = [&](bool bound, std::uint64_t tid) {
+        for (const auto library : libraries) {
+            for (const auto parameter : parameters) {
+                CHECK((fixture.Call(library, "glGetString", {parameter}) != 0U) == bound);
+                CHECK((FastBoundaryCall(fixture, library, "glGetString", {parameter}, tid) != 0U) == bound);
+                const std::array arguments{parameter};
+                const auto api = std::string_view(library) == "libGLESv2.so"
+                    ? ogplay::gles::GlesApi::gles2 : ogplay::gles::GlesApi::gles1;
+                CHECK((fixture.boundary.InvokeManagedGles(api, "glGetString", arguments, tid) != 0U) == bound);
+            }
+        }
+    };
+    query(false, 1U);
+    fixture.boundary.OpenManagedSurface();
+    fixture.boundary.BindManagedSurfaceOnCallingThread();
+    query(true, 1U);
+    std::exception_ptr worker_failure;
+    std::thread worker([&] {
+        try { query(false, 2U); }
+        catch (...) { worker_failure = std::current_exception(); }
+    });
+    worker.join();
+    REQUIRE(worker_failure == nullptr);
+    query(true, 1U);
+    fixture.boundary.ReleaseManagedSurfaceFromCallingThread();
+    query(false, 1U);
+    std::thread successor([&] {
+        try {
+            fixture.boundary.BindManagedSurfaceOnCallingThread();
+            query(true, 3U);
+            fixture.boundary.ReleaseManagedSurfaceFromCallingThread();
+            query(false, 3U);
+        } catch (...) { worker_failure = std::current_exception(); }
+    });
+    successor.join();
+    REQUIRE(worker_failure == nullptr);
+    fixture.boundary.CloseManagedSurface();
+
+    PrepareNativeEgl(fixture);
+    query(false, 1U);
+    REQUIRE(fixture.Call("libEGL.so", "eglMakeCurrent", {1U, 3U, 3U, 4U}) == 1U);
+    query(true, 1U);
+    std::thread unbound([&] {
+        try { query(false, 4U); }
+        catch (...) { worker_failure = std::current_exception(); }
+    });
+    unbound.join();
+    REQUIRE(worker_failure == nullptr);
+    // A backend context stolen outside the registry is a contract failure, not no-context.
+    auto other = ogplay::gles::AngleFrame::CreatePbuffer(
+        {kNativeRenderer, ogplay::gles::AngleDevice::hardware}, 4U, 3U);
+    CHECK_THROWS_WITH(fixture.Call("libGLESv2.so", "glGetString", {0x1F03U}),
+                      "glGetString: EGL current binding mismatch");
+    other.ReleaseCurrent();
+    REQUIRE(fixture.Call("libEGL.so", "eglMakeCurrent", {1U, 0U, 0U, 0U}) == 1U);
+    query(false, 1U);
 }
 
 TEST_CASE("managed GLSurface currency supports explicit cross-thread handoff") {

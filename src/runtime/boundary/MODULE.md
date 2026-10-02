@@ -45,7 +45,9 @@ TryTrace 只短锁复制有界记录，busy 不等待 graphics 线程。跨线�
   shadow 仅在 native mutation 成功后窄范围更新，不复制整个动态状态容器；reset 恢复规范默认。
 - GL 参数错误携精确 GLenum 写入 per-context 首错锁存；glGetError 先取锁存再查 ANGLE。
   负 count/first/stride/imageSize 等为 INVALID_VALUE，不误归 INVALID_ENUM；内存、生命周期、
-  内部逻辑错误继续硬失败，不能全局吞 invalid_argument。无当前 AngleFrame 明确失败。
+  内部逻辑错误继续硬失败，不能全局吞 invalid_argument。无当前 AngleFrame 明确失败，
+  `glGetString` 依 API19 无 Context 语义返回 guest null；不借用其他线程帧或隐式绑定。
+  已登记 current 与实际 ANGLE Context 不一致仍明确失败，GLES1/2 与 managed/fast/slow 共用此规则。
 - 同一 Context 的 GLES1/2 共用 buffer/texture、pack/unpack、active unit、framebuffer/
   renderbuffer、viewport/scissor、clear 与共有 capability；library origin 只决定 API 语义。
   texture 按 object/target 保存 base format、generate-mipmap，cube face 归一为 cube target；

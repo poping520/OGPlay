@@ -12,6 +12,7 @@
 #include <utility>
 
 #if OGPLAY_HAS_ANGLE
+#include <EGL/egl.h>
 #include <GLES2/gl2.h>
 #define GL_GLEXT_PROTOTYPES
 #include <GLES2/gl2ext.h>
@@ -128,6 +129,16 @@ void AngleFrame::ReleaseCurrent() {
 
 EglHandle AngleFrame::NativeContext() const noexcept {
     return lifecycle_.NativeContext();
+}
+
+bool AngleFrame::IsCurrentOnCallingThread() const noexcept {
+#if OGPLAY_HAS_ANGLE
+    const auto current = eglGetCurrentContext();
+    return current != EGL_NO_CONTEXT &&
+           reinterpret_cast<EglHandle>(current) == NativeContext();
+#else
+    return false;
+#endif
 }
 
 void AngleFrame::Viewport(const std::int32_t x, const std::int32_t y,

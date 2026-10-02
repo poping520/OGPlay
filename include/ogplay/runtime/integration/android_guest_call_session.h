@@ -244,6 +244,8 @@ public:
     AndroidGuestProcess& operator=(const AndroidGuestProcess&) = delete;
 
     [[nodiscard]] A32GuestCallResult Invoke(const A32GuestCallFrame& frame);
+    // Observe the first native worker failure without entering guest code.
+    void RethrowAsyncFailure();
     [[nodiscard]] std::optional<A32GuestCallResult>
     TryInvokeRegisteredNative(
         JniObjectIdentity java_class, std::string_view name,
@@ -367,6 +369,7 @@ public:
     AndroidGuestCallSession& operator=(const AndroidGuestCallSession&) = delete;
 
     [[nodiscard]] A32GuestCallResult Invoke(const A32GuestCallFrame& frame);
+    void RethrowAsyncFailure();
     // Empty means no RegisterNatives mapping. Once a target is resolved, any
     // execution failure is propagated and must not be treated as a miss.
     [[nodiscard]] std::optional<A32GuestCallResult>

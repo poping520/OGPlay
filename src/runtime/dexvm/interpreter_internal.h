@@ -8,6 +8,7 @@
 #include <deque>
 #include <mutex>
 #include <optional>
+#include <thread>
 #include <unordered_map>
 #include <vector>
 
@@ -62,6 +63,8 @@ struct InterpreterExecutionState final {
     std::vector<VmObjectRef> intrinsic_roots;
     std::uint64_t ticks{};
     std::uint64_t token{};
+    std::thread::id active_host;
+    std::size_t active_entries{};
     // Depth of guest native frames this context currently has live on the
     // root guest stack (04 §1 outbound marshaling).
     std::uint32_t native_depth{};
@@ -97,6 +100,7 @@ public:
 private:
     void* interpreter_{};
     InterpreterExecutionState* previous_{};
+    InterpreterExecutionState* execution_{};
 };
 
 class Interpreter::Impl final {

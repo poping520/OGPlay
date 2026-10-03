@@ -1315,6 +1315,40 @@ Decl Declare_android_content_Context(const Context &context) {
             ContextDirectory(call, context, path, "context_files_directory"));
       });
   builder.VirtualMethod(
+      "getDir", "(Ljava/lang/String;I)Ljava/io/File;",
+      [context](dx::IntrinsicContext &call) {
+        if (call.arguments[1].AsInt() != 0 || context->vfs == nullptr) {
+          if (auto *ledger = call.vm.Ledger())
+            ledger->RecordUnimplemented("dexvm.context_private_directory", 0);
+          throw dx::VmJavaThrow{
+              "Ljava/lang/UnsupportedOperationException;",
+              context->vfs == nullptr ? "guest filesystem is unavailable"
+                                      : "getDir: only MODE_PRIVATE is supported"};
+        }
+        // ContextImpl concatenates before validating: null becomes app_null.
+        const auto name = "app_" + (call.arguments[0].ref.IsValid()
+            ? call.vm.StringUtf8(call.arguments[0].ref) : std::string("null"));
+        if (name.find('/') != std::string::npos)
+          throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;",
+                                "File " + name + " contains a path separator"};
+        const auto path = "/data/data/" + context->package_name + "/" + name;
+        bool exists = false;
+        try {
+          static_cast<void>(context->vfs->Stat(path));
+          exists = true;
+        } catch (const VfsError &) {
+        }
+        if (!exists) {
+          try {
+            context->vfs->CreateDirectory(path);
+          } catch (const VfsError &) {
+            // API 19 ignores mkdir failure and still returns the File path.
+            // Subsequent File/stream operations expose the actual VFS state.
+          }
+        }
+        return dx::VmValue::Ref(NewContextFile(call, path));
+      });
+  builder.VirtualMethod(
       "getDatabasePath", "(Ljava/lang/String;)Ljava/io/File;",
       [context](dx::IntrinsicContext &call) {
         return dx::VmValue::Ref(NewContextFile(
@@ -1449,6 +1483,10 @@ Decl Declare_android_content_Context(const Context &context) {
       "getSystemService", "(Ljava/lang/String;)Ljava/lang/Object;",
       [context](dx::IntrinsicContext &call) {
         const auto name = call.vm.StringUtf8(call.arguments[0].ref);
+        if (name == "alarm") {
+          return dx::VmValue::Ref(Singleton(
+              call, context, "alarm", "Landroid/app/AlarmManager;"));
+        }
         if (name == "phone") {
           return dx::VmValue::Ref(Singleton(
               call, context, "phone", "Landroid/telephony/TelephonyManager;"));
@@ -1946,6 +1984,7 @@ Decl Declare_android_content_ContextWrapper(const Context &context) {
            "(Ljava/lang/String;Ljava/lang/String;)V");
   delegate("getApplicationContext", "()Landroid/content/Context;");
   delegate("getFilesDir", "()Ljava/io/File;");
+  delegate("getDir", "(Ljava/lang/String;I)Ljava/io/File;");
   delegate("getFileStreamPath", "(Ljava/lang/String;)Ljava/io/File;");
   delegate("openFileInput", "(Ljava/lang/String;)Ljava/io/FileInputStream;");
   delegate("openFileOutput", "(Ljava/lang/String;I)Ljava/io/FileOutputStream;");

@@ -300,6 +300,8 @@ public:
     [[nodiscard]] VmCallOutcome Call(
         const InterpreterExecutionContext& context, VmMethodId method,
         std::span<const VmValue> arguments);
+    // Resolves an existing context for integration routes identified by token.
+    [[nodiscard]] InterpreterExecutionContext ExecutionContext(std::uint64_t token);
 
     // Creates a new execution context. VmThreadRuntime gives each guest Java
     // thread one of these plus a real host thread; callers may also create

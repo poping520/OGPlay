@@ -11,6 +11,7 @@
 #include <cstdint>
 #include <fstream>
 #include <future>
+#include "ogplay/runtime/dexvm/vm_monitors.h"
 #include <thread>
 #include <iterator>
 #include <memory>
@@ -1250,6 +1251,87 @@ TEST_CASE("JNI native-only attachments detach without a DexVM monitor context") 
             CHECK(java_vm.GetEnv(5, kJniVersion1_6).status == JniStatus::detached);
             CHECK(java_vm.DetachCurrentThread(5) == JniStatus::detached);
         }
+    }
+}
+
+TEST_CASE("JNI native attachments isolate Java execution identity and detach cleanup") {
+    using namespace ogplay::runtime;
+    using namespace ogplay::runtime::dexvm;
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        ApplicationProcess f(backend);
+        auto& vm = f.bridge->Vm();
+        auto& model = f.bridge->Model();
+        auto& session = *f.session;
+        auto& env = session.Environment();
+        JniJavaVm java_vm(env);
+        const auto thread_class = session.Classes().FindClass("java/lang/Thread");
+        const auto long_class = session.Classes().FindClass("java/lang/Long");
+        REQUIRE(thread_class.has_value());
+        REQUIRE(long_class.has_value());
+        const auto current = session.Classes().GetMethodId(*thread_class, "currentThread", "()Ljava/lang/Thread;", true);
+        const auto parse = session.Classes().GetMethodId(*long_class, "parseLong", "(Ljava/lang/String;)J", true);
+        const auto is_daemon = session.Classes().GetMethodId(*thread_class, "isDaemon", "()Z", false);
+        REQUIRE(current.has_value());
+        REQUIRE(parse.has_value());
+        REQUIRE(is_daemon.has_value());
+        const auto root = std::get<JniReference>(session.Invocations().InvokeStatic(
+            1, *thread_class, *current, {}, JniArgumentSource::value_array));
+        const auto root_identity = env.ResolveObjectForHle(1, root);
+        const auto baseline = vm.StackSnapshot().size();
+        std::uint64_t previous_token = 1;
+        for (const bool daemon : {false, true}) {
+            const auto attached = daemon ? java_vm.AttachCurrentThreadAsDaemon(5, kJniVersion1_6)
+                                         : java_vm.AttachCurrentThread(5, kJniVersion1_6);
+            REQUIRE(attached.status == JniStatus::ok);
+            const auto result = std::async(std::launch::async, [&] {
+                const auto ref = std::get<JniReference>(session.Invocations().InvokeStatic(
+                    5, *thread_class, *current, {}, JniArgumentSource::value_array));
+                const auto identity = env.ResolveObjectForHle(5, ref);
+                REQUIRE(identity.has_value());
+                CHECK(identity != root_identity);
+                const auto object = model.FromIdentity(*identity);
+                CHECK(f.bridge->Threads().IsAlive(object));
+                CHECK(std::get<JniBoolean>(session.Invocations().InvokeVirtual(
+                    5, ref, *thread_class, *is_daemon, {}, JniArgumentSource::value_array)) == (daemon ? 1 : 0));
+                const auto text = vm.NewStringUtf8("4886718345");
+                const auto text_ref = env.PublishLocalObject(5, model.ToIdentity(text));
+                const std::array<JniValue, 1> args{text_ref};
+                CHECK(std::get<JniLong>(session.Invocations().InvokeStatic(
+                    5, *long_class, *parse, args, JniArgumentSource::value_array)) == INT64_C(4886718345));
+                const auto repeated = std::get<JniReference>(session.Invocations().InvokeStatic(
+                    5, *thread_class, *current, {}, JniArgumentSource::value_array));
+                CHECK(env.IsSameObject(5, ref, repeated));
+                env.MonitorEnter(5, ref);
+                env.MonitorEnter(5, ref);
+                return object;
+            }).get();
+            const auto stacks = vm.StackSnapshot();
+            CHECK(stacks.size() == baseline + 1);
+            const auto token = stacks.back().context_token;
+            CHECK(token > previous_token);
+            previous_token = token;
+            CHECK(vm.Monitors().HeldCount(token) == 1);
+            CHECK(java_vm.DetachCurrentThread(5) == JniStatus::ok);
+            CHECK_FALSE(env.IsThreadAttached(5));
+            CHECK_FALSE(f.bridge->Threads().IsAlive(result));
+            CHECK(vm.Monitors().HeldCount(token) == 0);
+            CHECK(vm.StackSnapshot().size() == baseline);
+            CHECK_FALSE(env.ExceptionCheck(1));
+        }
+        // The limit applies to live attachments; released slots are reusable.
+        for (std::uint64_t id = 200; id < 264; ++id) {
+            REQUIRE(java_vm.AttachCurrentThread(id, kJniVersion1_6).status == JniStatus::ok);
+            const auto ref = std::get<JniReference>(session.Invocations().InvokeStatic(
+                id, *thread_class, *current, {}, JniArgumentSource::value_array));
+            CHECK_FALSE(ref.IsNull());
+        }
+        REQUIRE(java_vm.AttachCurrentThread(264, kJniVersion1_6).status == JniStatus::ok);
+        CHECK_THROWS_WITH(session.Invocations().InvokeStatic(
+            264, *thread_class, *current, {}, JniArgumentSource::value_array),
+            doctest::Contains("native JNI execution context limit exceeded"));
+        for (std::uint64_t id = 200; id <= 264; ++id)
+            CHECK(java_vm.DetachCurrentThread(id) == JniStatus::ok);
+        CHECK(vm.StackSnapshot().size() == baseline);
     }
 }
 

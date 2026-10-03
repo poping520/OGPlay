@@ -73,7 +73,8 @@ fsync 返回 EINVAL。O_NONBLOCK 仅放行字符设备，reader 自身负责就�
 每实例 `ANDROID_ID`。旧 `fs/`、旧/缺失 schema、未知或混合布局、不匹配 meta 明确失败；
 不迁移、不删除、不以空沙盒降级。
 
-映射唯一集中在 `SandboxStore`：
+映射唯一集中在 `SandboxStore`：语义根按 VFS 的 ASCII case-fold 匹配并规范化；
+package/meta/安装目录保留原始拼写，根内文件名保留既有宿主布局，不迁移存档。
 
 - `/data/data/<package>/...` → `internal/...`
 - `/sdcard/Android/data/<package>/...` → `external/...`

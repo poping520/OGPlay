@@ -1483,6 +1483,8 @@ void RegisterAndroidValueStateTables(
     vm.RegisterIntrinsicStateTable({
         "android.value",
         [context](const dexvm::VmObjectRef owner, const dexvm::VmRootVisitor& visit) {
+            if (const auto pending = context->pending_intents.find(owner.Value());
+                pending != context->pending_intents.end()) visit(pending->second.intent);
             if (const auto lease = context->wifi_lock_leases.find(owner.Value());
                 lease != context->wifi_lock_leases.end()) visit(lease->second);
             if (const auto connections = context->service_connections.find(owner.Value());
@@ -1498,6 +1500,7 @@ void RegisterAndroidValueStateTables(
             }
         },
         [context](const dexvm::VmObjectRef owner) {
+            context->pending_intents.erase(owner.Value());
             context->service_connections.erase(owner.Value());
             context->paths.erase(owner.Value());
             if (const auto token = context->parcel_owner_tokens.find(owner.Value());

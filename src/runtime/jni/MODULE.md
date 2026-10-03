@@ -26,6 +26,8 @@ Bionic、syscall、execution 或 integration。
 - 默认严格执行 local reference 生命周期。仅由上层根据 Manifest `targetSdkVersion` 1..13
   显式启用 Dalvik app-bug 兼容：同一对象复用稳定 direct-style handle，失效 handle 可解析但
   不属于 GC roots；首次跨 frame 重发必须通过回调警告，不能静默兼容或取消 frame 清理。
+- AttachCurrentThread/AsDaemon 的 daemon 事实随 attachment 保存，重复 attach 保持原值，
+  detach 后再次 attach 可重新选择；上层可查询而不复制 JavaVM 状态。
 - local frame 的 attach/push 容量是 JNI 保证值而非硬上限；可自动增长到按线程
   `local_per_thread` 总上限，超过总上限仍明确失败。
 - JNI monitor 按强类型 object identity 隔离 owner guest thread、recursion 与 waiters；同线程

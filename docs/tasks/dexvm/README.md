@@ -28,6 +28,8 @@ Asphalt 5（pilot title）删除 profile 全部 `native_call` 与 `[[java.class]
 
 | WU | 一句话目标 | 状态 |
 | --- | --- | --- |
+| [DVM-211](DVM-211.md) | PendingIntent 令牌与闹钟取消 | 有界完成 |
+| [DVM-210](DVM-210.md) | 原生 JNI 附加线程的执行上下文、身份及清理 | 有界实现完成 |
 | [DVM-208](DVM-208.md) | API19 Crypto 确定性播种 PRNG | 有界实现完成 |
 | [DVM-207](DVM-207.md) | 输入方法服务的无会话分支与活跃连接失败边界 | 无会话阶段完成 |
 | [DVM-206](DVM-206.md) | 进程虚拟键盘字符映射与 JNI 查询 | 有界实现完成 |

@@ -206,22 +206,45 @@ public:
     // Guest path -> entry, ordered so enumeration is deterministic.
     std::map<std::string, SandboxEntry, std::less<>> entries;
 
+    // VFS folds path names, but package/installation identity keeps its original
+    // spelling. Canonicalize only the semantic root; preserve stored file names.
+    [[nodiscard]] std::string CanonicalGuestPath(const std::string_view path) const {
+        auto segments = SplitGuestPath(path);
+        const auto matches = [&](const std::initializer_list<std::string_view> prefix) {
+            if (segments.size() < prefix.size()) return false;
+            return std::equal(prefix.begin(), prefix.end(), segments.begin(),
+                [](const auto expected, const auto& actual) {
+                    return FoldGuestPath(expected) == FoldGuestPath(actual);
+                });
+        };
+        std::size_t root_size{};
+        if (matches({"data", "data", package})) root_size = 3;
+        else if (matches({"sdcard", "android", "data", package}) ||
+                 matches({"sdcard", "android", "obb", package})) root_size = 4;
+        else if (matches({"sdcard"})) root_size = 1;
+        else throw VfsError(kEinval, "sandbox path is outside its semantic roots");
+        for (std::size_t i = 0; i < root_size; ++i)
+            segments[i] = FoldGuestPath(segments[i]);
+        return JoinGuestPath(segments);
+    }
+
     [[nodiscard]] std::filesystem::path HostPathFor(
         const std::string_view guest_path, const bool tombstone) const {
-        const auto segments = SplitGuestPath(guest_path);
+        const auto segments = SplitGuestPath(CanonicalGuestPath(guest_path));
         std::filesystem::path host;
         std::size_t begin{};
         const auto matches = [&](const std::initializer_list<std::string_view> prefix) {
             if (segments.size() < prefix.size()) return false;
             return std::equal(prefix.begin(), prefix.end(), segments.begin());
         };
-        if (matches({"data", "data", package})) {
+        const auto folded_package = FoldGuestPath(package);
+        if (matches({"data", "data", folded_package})) {
             host = directory / "internal";
             begin = 3;
-        } else if (matches({"sdcard", "android", "data", package})) {
+        } else if (matches({"sdcard", "android", "data", folded_package})) {
             host = directory / "external";
             begin = 4;
-        } else if (matches({"sdcard", "android", "obb", package})) {
+        } else if (matches({"sdcard", "android", "obb", folded_package})) {
             host = directory / "obb";
             begin = 4;
         } else if (!segments.empty() && segments.front() == "sdcard") {
@@ -317,6 +340,7 @@ public:
             auto guest_path = std::string(guest_prefix);
             const auto relative_guest = JoinGuestPath(segments);
             guest_path.append(relative_guest);
+            guest_path = CanonicalGuestPath(guest_path);
             const auto folded = FoldGuestPath(guest_path);
             if (const auto conflict = folded_paths.find(folded);
                 conflict != folded_paths.end() &&
@@ -628,7 +652,8 @@ std::vector<SandboxEntry> SandboxStore::Entries() const {
 }
 
 std::vector<std::byte> SandboxStore::ReadFile(
-    const std::string_view guest_path) const {
+    const std::string_view raw_guest_path) const {
+    const auto guest_path = impl_->CanonicalGuestPath(raw_guest_path);
     const auto found = impl_->entries.find(guest_path);
     if (found == impl_->entries.end() || found->second.is_directory ||
         found->second.is_tombstone) {
@@ -647,8 +672,9 @@ std::vector<std::byte> SandboxStore::ReadFile(
     return contents;
 }
 
-void SandboxStore::WriteFileAtomic(const std::string_view guest_path,
+void SandboxStore::WriteFileAtomic(const std::string_view raw_guest_path,
                                    const std::span<const std::byte> contents) {
+    const auto guest_path = impl_->CanonicalGuestPath(raw_guest_path);
     RequireNoReservedSuffix(guest_path);
     const auto existing = impl_->entries.find(guest_path);
     if (existing != impl_->entries.end() && existing->second.is_directory) {
@@ -692,7 +718,8 @@ void SandboxStore::WriteFileAtomic(const std::string_view guest_path,
     impl_->entries.insert_or_assign(std::move(key), std::move(entry));
 }
 
-void SandboxStore::WriteTombstone(const std::string_view guest_path) {
+void SandboxStore::WriteTombstone(const std::string_view raw_guest_path) {
+    const auto guest_path = impl_->CanonicalGuestPath(raw_guest_path);
     RequireNoReservedSuffix(guest_path);
     const auto existing = impl_->entries.find(guest_path);
     if (existing != impl_->entries.end() && existing->second.is_tombstone) {
@@ -721,7 +748,8 @@ void SandboxStore::WriteTombstone(const std::string_view guest_path) {
     impl_->entries.insert_or_assign(std::move(key), std::move(entry));
 }
 
-void SandboxStore::CreateDirectory(const std::string_view guest_path) {
+void SandboxStore::CreateDirectory(const std::string_view raw_guest_path) {
+    const auto guest_path = impl_->CanonicalGuestPath(raw_guest_path);
     RequireNoReservedSuffix(guest_path);
     const auto existing = impl_->entries.find(guest_path);
     if (existing != impl_->entries.end() && !existing->second.is_tombstone) {
@@ -743,7 +771,8 @@ void SandboxStore::CreateDirectory(const std::string_view guest_path) {
     impl_->entries.insert_or_assign(std::move(key), std::move(entry));
 }
 
-void SandboxStore::Remove(const std::string_view guest_path) {
+void SandboxStore::Remove(const std::string_view raw_guest_path) {
+    const auto guest_path = impl_->CanonicalGuestPath(raw_guest_path);
     const auto found = impl_->entries.find(guest_path);
     if (found == impl_->entries.end()) {
         throw VfsError(kEnoent, "sandbox path not found");

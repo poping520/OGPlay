@@ -3165,13 +3165,17 @@ namespace ogplay::runtime::dexvm::intrinsics {
             if (const auto current = runtime.CurrentThreadObject(); current.IsValid()) {
                 return current;
             }
-            if (vm.CurrentContextToken() != 1U) {
+            const auto token = vm.CurrentContextToken();
+            const auto native_daemon = runtime.NativeContextDaemon(token);
+            if (token != 1U && !native_daemon.has_value()) {
                 throw DexVmError(DexVmErrorReason::internal_invariant, "child execution context has no Thread object");
             }
-            const auto root = vm.NewIntrinsicInstance("Ljava/lang/Thread;");
+            const auto object = vm.NewIntrinsicInstance("Ljava/lang/Thread;");
             // Publish the object before allocating its name: NewStringUtf8 may cross
-            // a GC safe allocation point, so the fresh root must already be strong.
-            runtime.SetRootThreadObject(root);
+            // a GC safe allocation point, so the fresh Thread must already be strong.
+            std::uint64_t id = 1;
+            if (native_daemon.has_value()) id = runtime.SetNativeThreadObject(token, object);
+            else runtime.SetRootThreadObject(object);
             const auto group_class =
                 vm.Linker().FindClass("Ljava/lang/ThreadGroup;");
             const auto initialized = vm.EnsureClassInitialized(*group_class);
@@ -3182,11 +3186,14 @@ namespace ogplay::runtime::dexvm::intrinsics {
             const auto group = VmObjectRef{
                 vm.Linker().Class(linked_group.owner)
                     .static_storage[linked_group.slot]};
-            InitializeFields(call, fields, root, VmObjectRef{},
-                             vm.NewStringUtf8("main"), 1, 5,
-                             vm.ClassLoaders().ApplicationLoader(), group);
-            call.SetInt(fields.has_been_started, root, 1);
-            return root;
+            InitializeFields(call, fields, object, VmObjectRef{},
+                             vm.NewStringUtf8(native_daemon.has_value()
+                                 ? "Thread-" + std::to_string(id) : "main"), id, 5,
+                             native_daemon.has_value() ? VmObjectRef{}
+                                 : vm.ClassLoaders().ApplicationLoader(), group);
+            call.SetInt(fields.has_been_started, object, 1);
+            call.SetInt(fields.daemon, object, native_daemon.value_or(false) ? 1 : 0);
+            return object;
         }
 
         [[nodiscard]] VmValue Construct(IntrinsicContext& context,

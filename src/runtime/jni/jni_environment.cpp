@@ -213,10 +213,10 @@ JniEnvironment::JniEnvironment(const JniReferenceLimits limits)
     : references_(limits) {}
 
 void JniEnvironment::AttachThread(const std::uint64_t thread_id,
-                                  const std::size_t initial_local_capacity) {
+                                  const std::size_t initial_local_capacity, const bool daemon) {
     exceptions_.AttachThread(thread_id);
     try {
-        references_.AttachThread(thread_id, initial_local_capacity);
+        references_.AttachThread(thread_id, initial_local_capacity, daemon);
     } catch (...) {
         exceptions_.DetachThread(thread_id);
         throw;
@@ -238,6 +238,10 @@ void JniEnvironment::DetachThread(const std::uint64_t thread_id) {
 bool JniEnvironment::IsThreadAttached(const std::uint64_t thread_id) const {
     return references_.IsThreadAttached(thread_id) &&
            exceptions_.IsThreadAttached(thread_id);
+}
+
+bool JniEnvironment::IsDaemonThread(const std::uint64_t thread_id) const {
+    return references_.IsDaemonThread(thread_id);
 }
 
 std::size_t JniEnvironment::GlobalReferenceCount() const {

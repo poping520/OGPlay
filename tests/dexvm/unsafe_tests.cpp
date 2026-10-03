@@ -311,15 +311,27 @@ TEST_CASE("Unsafe boots real API19 AtomicInteger and AQS") {
         CHECK(UnsafeVm::Ok(f.Virtual(object, "get", "()I")).AsInt() == 42);
         UnsafeVm::Ok(f.vm.EnsureClassInitialized(f.linker.ResolveDescriptor("Ljava/util/concurrent/locks/AbstractQueuedSynchronizer;")));
         UnsafeVm::Ok(f.vm.EnsureClassInitialized(f.linker.ResolveDescriptor("Ljava/util/concurrent/locks/LockSupport;")));
-        const auto lock = f.Allocate("Ljava/util/concurrent/locks/ReentrantLock;");
-        UnsafeVm::Ok(f.Static("Ljava/util/concurrent/locks/ReentrantLock;", "<init>", "()V",
-                             {VmValue::Ref(lock)}));
-        UnsafeVm::Ok(f.Virtual(lock, "lock", "()V"));
-        UnsafeVm::Ok(f.Virtual(lock, "lock", "()V"));
-        CHECK(UnsafeVm::Ok(f.Virtual(lock, "getHoldCount", "()I")).AsInt() == 2);
-        UnsafeVm::Ok(f.Virtual(lock, "unlock", "()V"));
-        UnsafeVm::Ok(f.Virtual(lock, "unlock", "()V"));
-        CHECK(UnsafeVm::Ok(f.Virtual(lock, "isLocked", "()Z")).AsInt() == 0);
+        for (const bool fair : {false, true}) {
+            INFO("fair=", fair);
+            const auto lock = f.Allocate("Ljava/util/concurrent/locks/ReentrantLock;");
+            const auto roots = f.vm.ProtectReferences(std::array{lock});
+            UnsafeVm::Ok(f.Static("Ljava/util/concurrent/locks/ReentrantLock;", "<init>", "(Z)V",
+                                 {VmValue::Ref(lock), VmValue::Int(fair ? 1 : 0)}));
+            CHECK(UnsafeVm::Ok(f.Virtual(lock, "isFair", "()Z")).AsInt() == (fair ? 1 : 0));
+            const auto sync = f.linker.ResolveDescriptor(fair
+                ? "Ljava/util/concurrent/locks/ReentrantLock$FairSync;"
+                : "Ljava/util/concurrent/locks/ReentrantLock$NonfairSync;");
+            CHECK(f.linker.Class(sync).is_boot_dex);
+            const auto acquire = f.linker.FindVtableIndex(sync, "tryAcquire", "(I)Z");
+            REQUIRE(acquire.has_value());
+            CHECK(f.linker.Method(f.linker.Class(sync).vtable[*acquire]).kind == MethodKind::interpreted);
+            UnsafeVm::Ok(f.Virtual(lock, "lock", "()V"));
+            UnsafeVm::Ok(f.Virtual(lock, "lock", "()V"));
+            CHECK(UnsafeVm::Ok(f.Virtual(lock, "getHoldCount", "()I")).AsInt() == 2);
+            UnsafeVm::Ok(f.Virtual(lock, "unlock", "()V"));
+            UnsafeVm::Ok(f.Virtual(lock, "unlock", "()V"));
+            CHECK(UnsafeVm::Ok(f.Virtual(lock, "isLocked", "()Z")).AsInt() == 0);
+        }
         const auto thread = UnsafeVm::Ok(f.Static("Ljava/lang/Thread;", "currentThread",
                                                  "()Ljava/lang/Thread;")).ref;
         UnsafeVm::Ok(f.Static("Ljava/util/concurrent/locks/LockSupport;", "parkNanos",

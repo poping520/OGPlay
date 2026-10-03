@@ -156,7 +156,7 @@ void VmExecutionLock::SetBlockingObserver(
 
 InterpreterExecutionScope::InterpreterExecutionScope(
     void* interpreter, InterpreterExecutionState& execution)
-    : interpreter_(interpreter) {
+    : interpreter_(interpreter), execution_(&execution) {
     const auto found = active_executions.find(interpreter_);
     previous_ = found == active_executions.end() ? nullptr : found->second;
     if (previous_ != nullptr && previous_ != &execution) {
@@ -164,10 +164,19 @@ InterpreterExecutionScope::InterpreterExecutionScope(
             DexVmErrorReason::internal_invariant,
             "cannot switch DexVM execution context inside an active call");
     }
+    const auto host = std::this_thread::get_id();
+    if (execution.active_entries != 0 && execution.active_host != host) {
+        throw DexVmError(DexVmErrorReason::internal_invariant,
+            "DexVM execution context " + std::to_string(execution.token) +
+            " is active on another host thread");
+    }
     active_executions[interpreter_] = &execution;
+    execution.active_host = host;
+    ++execution.active_entries;
 }
 
 InterpreterExecutionScope::~InterpreterExecutionScope() {
+    if (--execution_->active_entries == 0) execution_->active_host = {};
     if (previous_ == nullptr) {
         active_executions.erase(interpreter_);
     } else {
@@ -220,11 +229,12 @@ InterpreterExecutionContext Interpreter::CreateExecutionContext() {
 
 void Interpreter::DiscardExecutionContext(
     const InterpreterExecutionContext& context) {
+    VmExecutionLockScope lock_scope(impl_->execution_lock);
     const auto& execution = impl_->Execution(context);
-    if (!execution.frames.empty()) {
+    if (!execution.frames.empty() || execution.active_entries != 0 ||
+        execution.native_depth != 0) {
         throw DexVmError(DexVmErrorReason::internal_invariant,
-                         "cannot discard an execution context with live "
-                         "interpreted frames");
+                         "cannot discard an active execution context");
     }
     const std::lock_guard lock(impl_->executions_mutex);
     impl_->executions.erase(context.Token());

@@ -64,11 +64,27 @@ denied，CallingOrSelf 查询 self，enforce 拒绝抛 SecurityException。wrapp
 
 code/resource 共用只读 /data/app/<package>-1.apk，files/cache 位于 app VFS。getFileStreamPath
 与 openFileInput/Output 共用单文件名校验，前者不创建，后者 PRIVATE 覆盖/APPEND 追加。
+getDir(name, PRIVATE) 在已安装的 app 数据根下创建 app_<name>，wrapper 委托 base；
+每次返回普通 File，mkdir 失败仍返回路径，实际存在性/IO 由 VFS 决定。名称含 / 抛 IAE，
+null/空串按 API19 拼接；缺 VFS 或非 PRIVATE 模式明确失败并记账，不提供跨应用权限模式。
 getObbDir(s) 返回 primary external 的 Android/obb/<package> 并经 VFS overlay 建目录。
 
 Settings 公开协议/转换/moved-key 路由来自 BootDex，只 overlay NameValueCache 存储：Secure
 读取稳定沙盒身份，System 用进程隔离表，Secure/Global 特权写入记账并 false；无 Binder
 SettingsProvider、跨用户/观察者/host 设置。SystemProperties 仅受审 native 边界。
+
+## PendingIntent 与闹钟取消
+
+当前 APK 可创建 service/broadcast PendingIntent 令牌；创建不解析或启动目标组件。
+原版 BootDex Intent 复制/filterEquals/replaceExtras 保持快照及匹配语义，extras 不参与身份；
+种类、创建包、requestCode、ONE_SHOT/fill-in flags 参与身份，NO_CREATE/CANCEL_CURRENT/
+UPDATE_CURRENT 为查找控制位。CANCEL_CURRENT|NO_CREATE 按 API19 返回旧的已取消令牌。
+仅普通 Intent 与 BootDex Uri；selector、content MIME provider 推断和未知 flags 记账失败。
+registry 由 VM execution lock 串行访问，不永久保活；活 wrapper trace Intent，GC sweep 移除
+记录，闹钟条目作为 session roots 保活令牌。包装身份规范化到同一对象；不支持 Parcel/克隆令牌。
+`getSystemService("alarm")` 返回单例，cancel 移除匹配闹钟而保留令牌；null 或无闹钟正常返回。
+PendingIntent.cancel 使令牌失效，查询不再匹配；退出在 VM 锁内停止创建并清理两类记录。
+闹钟注册/调度、send 与 started service 未提供，记账抛 UnsupportedOperationException。
 
 ## 资源、Parcel、数据库与日志
 

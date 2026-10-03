@@ -57,6 +57,8 @@ public:
     mutable std::mutex mutex;
     std::condition_variable changed;
     std::unordered_map<std::uint32_t, std::unique_ptr<VmThreadRecord>> records;
+    struct NativeContext final { InterpreterExecutionContext context; bool daemon; };
+    std::unordered_map<std::uint64_t, NativeContext> native_contexts;
     VmObjectRef root_object;
     std::string root_name{"main"};
     std::uint64_t next_id{2};  // 1 is the root lifecycle thread
@@ -265,6 +267,58 @@ void VmThreadRuntime::SetRootThreadObject(const VmObjectRef thread_object) {
                          "root Thread object identity changed");
     }
     impl_->root_object = thread_object;
+}
+
+void VmThreadRuntime::RegisterNativeContext(
+    const InterpreterExecutionContext& context, const bool daemon) {
+    const std::lock_guard guard(impl_->mutex);
+    if (!context.BelongsTo(impl_->vm) || context.Token() <= 1 || impl_->shutting_down)
+        throw DexVmError(DexVmErrorReason::invalid_operand, "invalid native attachment context");
+    if (!impl_->native_contexts.emplace(context.Token(), Impl::NativeContext{context, daemon}).second)
+        throw DexVmError(DexVmErrorReason::internal_invariant, "native context registered twice");
+}
+
+std::optional<bool> VmThreadRuntime::NativeContextDaemon(const std::uint64_t token) const {
+    const std::lock_guard guard(impl_->mutex);
+    const auto found = impl_->native_contexts.find(token);
+    if (found == impl_->native_contexts.end()) return std::nullopt;
+    return found->second.daemon;
+}
+
+std::uint64_t VmThreadRuntime::SetNativeThreadObject(
+    const std::uint64_t token, const VmObjectRef object) {
+    const std::lock_guard guard(impl_->mutex);
+    const auto found = impl_->native_contexts.find(token);
+    if (found == impl_->native_contexts.end() || !object.IsValid())
+        throw DexVmError(DexVmErrorReason::invalid_operand, "unregistered native thread identity");
+    if (std::ranges::any_of(impl_->records, [token](const auto& entry) {
+            return entry.second->context.Token() == token;
+        }))
+        throw DexVmError(DexVmErrorReason::internal_invariant, "native thread identity already initialized");
+    auto record = std::make_unique<VmThreadRecord>();
+    record->id = impl_->next_id++;
+    record->object = object;
+    record->context = found->second.context;
+    record->status = VmThreadStatus::running;
+    record->name = "Thread-" + std::to_string(record->id);
+    const auto id = record->id;
+    impl_->records.emplace(object.Value(), std::move(record));
+    return id;
+}
+
+void VmThreadRuntime::DetachNativeContext(const std::uint64_t token) {
+    {
+        const std::lock_guard guard(impl_->mutex);
+        impl_->native_contexts.erase(token);
+        for (const auto& [_, record] : impl_->records) {
+            if (record->context.Token() == token) {
+                record->status = VmThreadStatus::finished;
+                record->wait_state = VmThreadWaitState::none;
+            }
+        }
+        ++impl_->progress_generation;
+    }
+    impl_->changed.notify_all();
 }
 
 void VmThreadRuntime::Start(const VmObjectRef thread_object, std::string name,
@@ -607,9 +661,14 @@ std::optional<std::string> VmThreadRuntime::TakeFailure() {
 VmObjectRef VmThreadRuntime::CurrentThreadObject() const {
     const auto found = current_records.find(impl_->vm);
     if (found != current_records.end()) return found->second->object;
-    if (impl_->vm->CurrentContextToken() != 1U) return VmObjectRef{};
+    const auto token = impl_->vm->CurrentContextToken();
     const std::lock_guard guard(impl_->mutex);
-    return impl_->root_object;
+    if (token == 1U) return impl_->root_object;
+    if (impl_->native_contexts.contains(token)) {
+        for (const auto& [_, record] : impl_->records)
+            if (record->context.Token() == token) return record->object;
+    }
+    return VmObjectRef{};
 }
 
 std::size_t VmThreadRuntime::LiveCount() const {
@@ -704,6 +763,8 @@ void VmThreadRuntime::RequestShutdown() {
     {
         const std::lock_guard guard(impl_->mutex);
         impl_->shutting_down = true;
+        for (const auto& [_, native] : impl_->native_contexts)
+            impl_->vm->RequestStop(native.context);
         for (const auto& [_, record] : impl_->records) {
             if (record->host) impl_->vm->RequestStop(record->context);
         }
@@ -723,6 +784,8 @@ void VmThreadRuntime::Shutdown() {
     {
         const std::lock_guard guard(impl_->mutex);
         impl_->shutting_down = true;
+        for (const auto& [_, native] : impl_->native_contexts)
+            impl_->vm->RequestStop(native.context);
         for (const auto& [_, record] : impl_->records) {
             if (record->host) live.push_back(record.get());
         }

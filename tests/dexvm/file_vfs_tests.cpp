@@ -1627,6 +1627,106 @@ TEST_CASE("Context private file streams use the app files directory on both back
     }
 }
 
+TEST_CASE("Context getDir private directories preserve API19 paths and VFS state") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch,
+                               InterpreterBackend::threaded}) {
+        InterpreterConfig config;
+        config.backend = backend;
+        FileVm vm(nullptr, true, config);
+        const auto base = vm.interpreter.NewIntrinsicInstance("Landroid/content/Context;");
+        static_cast<void>(vm.CallOn(base, "getFilesDir", "()Ljava/io/File;"));
+        const auto app = vm.interpreter.NewIntrinsicInstance("Landroid/app/Application;");
+        const auto activity = vm.interpreter.NewIntrinsicInstance("Landroid/app/Activity;");
+        for (const auto wrapper : {app, activity})
+            static_cast<void>(vm.CallOn(wrapper, "attachBaseContext",
+                "(Landroid/content/Context;)V", {VmValue::Ref(base)}));
+        constexpr auto signature = "(Ljava/lang/String;I)Ljava/io/File;";
+        const auto get_dir = [&](const VmObjectRef receiver, const char* name) {
+            return vm.CallOn(receiver, "getDir", signature,
+                {VmValue::Ref(name ? vm.interpreter.NewStringUtf8(name) : VmObjectRef{}),
+                 VmValue::Int(0)}).ref;
+        };
+        const auto first = get_dir(app, "sdk");
+        REQUIRE(first.IsValid());
+        const auto path = "/data/data/com.example.game/app_sdk";
+        CHECK(vm.interpreter.StringUtf8(vm.CallOn(first, "getPath",
+              "()Ljava/lang/String;").ref) == path);
+        CHECK(vm.BoolOn(first, "isDirectory"));
+        vm.JavaWrite(std::string(path) + "/state.dat", "saved");
+        const auto again = get_dir(activity, "sdk");
+        CHECK(first != again);
+        CHECK(vm.CallOn(first, "equals", "(Ljava/lang/Object;)Z",
+                        {VmValue::Ref(again)}).AsInt() == 1);
+        CHECK(vm.NativeRead(std::string(path) + "/state.dat") == "saved");
+        for (const auto& [name, expected] :
+             std::array<std::pair<const char*, const char*>, 4>{{
+                 {nullptr, "app_null"}, {"", "app_"},
+                 {"..", "app_.."}, {"other", "app_other"}}}) {
+            const auto file = get_dir(base, name);
+            CHECK(vm.interpreter.StringUtf8(vm.CallOn(file, "getPath",
+                  "()Ljava/lang/String;").ref) ==
+                  std::string("/data/data/com.example.game/") + expected);
+            CHECK(vm.BoolOn(file, "isDirectory"));
+        }
+        const auto invalid = vm.CallOnOutcome(base, "getDir", signature,
+            {VmValue::Ref(vm.interpreter.NewStringUtf8("../escape")), VmValue::Int(0)});
+        REQUIRE(invalid.exception.IsValid());
+        CHECK(vm.linker.Class(invalid.exception_class).descriptor ==
+              "Ljava/lang/IllegalArgumentException;");
+        vm.JavaWrite("/data/data/com.example.game/app_file", "existing");
+        CHECK(vm.BoolOn(get_dir(base, "file"), "isFile"));
+        CHECK(vm.NativeRead("/data/data/com.example.game/app_file") == "existing");
+        // An unavailable parent makes mkdir fail. AOSP still returns the File.
+        vm.context->package_name = "com.example.uninstalled";
+        const auto failed = get_dir(app, "sdk");
+        REQUIRE(failed.IsValid());
+        CHECK_FALSE(vm.BoolOn(failed, "exists"));
+        for (const auto mode : {1, 2, 4, 0x8000, -1}) {
+            const auto unsupported = vm.CallOnOutcome(base, "getDir", signature,
+                {VmValue::Ref(vm.interpreter.NewStringUtf8("unsupported")), VmValue::Int(mode)});
+            REQUIRE(unsupported.exception.IsValid());
+            CHECK(vm.linker.Class(unsupported.exception_class).descriptor ==
+                  "Ljava/lang/UnsupportedOperationException;");
+        }
+        vm.context->vfs = nullptr;
+        const auto unavailable = vm.CallOnOutcome(base, "getDir", signature,
+            {VmValue::Ref(vm.interpreter.NewStringUtf8("sdk")), VmValue::Int(0)});
+        REQUIRE(unavailable.exception.IsValid());
+        CHECK(vm.linker.Class(unavailable.exception_class).descriptor ==
+              "Ljava/lang/UnsupportedOperationException;");
+        const auto hits = vm.ledger.Unimplemented();
+        REQUIRE(hits.size() == 1);
+        CHECK(hits[0].id == "dexvm.context_private_directory");
+        CHECK(hits[0].count == 6);
+    }
+}
+
+TEST_CASE("Context getDir private directories persist across sessions") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch,
+                               InterpreterBackend::threaded}) {
+        InterpreterConfig config;
+        config.backend = backend;
+        const TemporaryRoot root(backend == InterpreterBackend::threaded
+                                 ? "getdir-threaded" : "getdir-switch");
+        for (const auto reload : {false, true}) {
+            auto store = SandboxStore::Open(root.path, kPackage, kPackage);
+            FileVm vm(store.get(), true, config);
+            const auto context = vm.interpreter.NewIntrinsicInstance("Landroid/content/Context;");
+            const auto directory = vm.CallOn(context, "getDir",
+                "(Ljava/lang/String;I)Ljava/io/File;",
+                {VmValue::Ref(vm.interpreter.NewStringUtf8("sdk")), VmValue::Int(0)}).ref;
+            REQUIRE(directory.IsValid());
+            CHECK(vm.BoolOn(directory, "isDirectory"));
+            const auto file = vm.NewFile(directory, "state.dat");
+            const auto path = vm.interpreter.StringUtf8(vm.CallOn(file, "getPath",
+                                                   "()Ljava/lang/String;").ref);
+            if (reload) CHECK(vm.NativeRead(path) == "retained");
+            else vm.JavaWrite(path, "retained");
+            vm.vfs.FlushAll();
+        }
+    }
+}
+
 TEST_CASE("Context internal directories return null when VFS is unavailable") {
     FileVm vm;
     vm.context->vfs = nullptr;

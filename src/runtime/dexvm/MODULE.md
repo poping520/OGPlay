@@ -61,6 +61,9 @@ switch/threaded 解释、异常、线程/monitor、反射及 `java.*` core intri
 - monitor owner 是 context token；wait 完全释放并恢复 recursion，notify/interrupt/shutdown/
   Clock 唤醒。非 owner 操作抛 IllegalMonitorStateException。deadline 只用注入 Clock；无 Clock
   明确失败，禁止读取宿主墙钟。
+- execution context 进入时验证活动宿主归属；阻塞释放 VM 锁不解除归属，禁止异宿主
+  重入或删除活动 context。JNI 附加线程注册既有 context，不创建宿主线程；Thread 身份
+  按需初始化，存活期间进入 GC roots，detach 后终止并唤醒 join。
 - stop 每指令检查；shutdown 先 stop/join 再展开 context。class init 对同 context 重入，其他
   context 释放执行锁等待，完成/失败/teardown 均唤醒。
 - host lifecycle 的 worker-progress 等待使用显式 wall-time 上限，且不获取 execution lock；

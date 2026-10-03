@@ -159,6 +159,18 @@ struct DexVmAndroidContext final {
   std::unordered_map<std::string, LocalService> local_services;
   std::uint64_t next_service_generation{1};
   bool local_services_stopping{};
+  // VM execution lock serializes token lookup, mutation and GC. Registry
+  // owners are weak; live wrappers trace their Intent snapshot. Alarm entries
+  // (when present) strongly retain wrappers until removal or process teardown.
+  struct PendingIntentRecord final {
+    dexvm::VmObjectRef object{}, intent{};
+    std::string creator_package;
+    std::int32_t kind{}, request_code{}, flags{};
+    bool canceled{};
+  };
+  std::unordered_map<std::uint32_t, PendingIntentRecord> pending_intents;
+  std::vector<dexvm::VmObjectRef> alarm_operations;
+  bool pending_intents_stopping{};
   std::unordered_set<std::string> granted_permissions;
   std::unordered_set<std::string> system_features;
   std::uint32_t surface_width{};
@@ -997,6 +1009,7 @@ void AdvanceAndroidClock(DexVmAndroidContext &context,
 // Stops all loopers and wakes HandlerThread teardown. Idempotent.
 void ShutdownAndroidScheduler(DexVmAndroidContext &context);
 void ShutdownLocalServices(dexvm::Interpreter&, DexVmAndroidContext&);
+void ShutdownPendingIntents(dexvm::Interpreter&, DexVmAndroidContext&);
 
 // Frame-boundary service for the main Looper and Java threads. Runs all due
 // main work in (deadline, sequence) order and drains uncaught thread failure.

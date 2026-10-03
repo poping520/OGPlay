@@ -33,6 +33,41 @@ void BigIntRuntime::Number::SetLong(std::uint64_t magnitude, bool sign) {
     negative = sign;
     Normalize();
 }
+int BigIntRuntime::Number::SetDecimal(const std::string_view text) {
+    if (text.size() > 1048576)
+        throw VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
+                          "integer input exceeds value codec limit"};
+    const std::size_t begin = !text.empty() && text.front() == '-' ? 1 : 0;
+    auto end = begin;
+    while (end < text.size() && text[end] >= '0' && text[end] <= '9') ++end;
+    if (end == begin) return 0;
+    Number value;
+    std::size_t work = 0;
+    for (auto i = begin; i < end;) {
+        std::uint32_t multiplier = 1;
+        std::uint64_t carry = 0;
+        // Nine decimal digits fit in one limb. Parse into a temporary so a
+        // budget failure leaves the existing NativeBN value intact.
+        for (unsigned count = 0; count < 9 && i < end; ++count, ++i) {
+            multiplier *= 10;
+            carry = carry * 10 + static_cast<unsigned>(text[i] - '0');
+        }
+        if (value.words.size() > 16777216 - work)
+            throw VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
+                              "decimal conversion exceeds value codec work limit"};
+        work += value.words.size();
+        for (auto& word : value.words) {
+            carry += static_cast<std::uint64_t>(word) * multiplier;
+            word = static_cast<std::uint32_t>(carry);
+            carry >>= 32U;
+        }
+        if (carry) value.words.push_back(static_cast<std::uint32_t>(carry));
+    }
+    value.negative = begin != 0;
+    value.Normalize();
+    *this = std::move(value);
+    return static_cast<int>(end);
+}
 void BigIntRuntime::Number::SetBytes(std::span<const std::byte> bytes, bool sign,
                                      bool twos_complement) {
     words.assign((bytes.size() + 3) / 4, 0);

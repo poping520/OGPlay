@@ -1843,11 +1843,18 @@ IntrinsicClassDecl Declare_java_math_NativeBN() {
             return VmValue::Ref(c.vm.NewStringUtf8(get(c, 0).String(16)));
         },
         kAccPublic | kAccNative);
+    b.StaticMethod(
+        "BN_dec2bn", "(JLjava/lang/String;)I",
+        [get](IntrinsicContext& c) {
+            auto& value = get(c, 0);
+            const auto text = IntrinsicCall(c).NonNullRef(1, "decimal string");
+            return VmValue::Int(value.SetDecimal(c.vm.StringUtf8(text)));
+        },
+        kAccPublic | kAccNative);
     // BootDex admission requires every native signature to be classified.
     // Retain explicit failing declarations for the unsupported big-number API.
     b.UnimplementedStatic("BN_add", "(JJJ)V", kAccPublic | kAccNative);
     b.UnimplementedStatic("BN_add_word", "(JI)V", kAccPublic | kAccNative);
-    b.UnimplementedStatic("BN_dec2bn", "(JLjava/lang/String;)I", kAccPublic | kAccNative);
     b.UnimplementedStatic("BN_div", "(JJJJ)V", kAccPublic | kAccNative);
     b.UnimplementedStatic("BN_exp", "(JJJ)V", kAccPublic | kAccNative);
     b.UnimplementedStatic("BN_gcd", "(JJJ)V", kAccPublic | kAccNative);

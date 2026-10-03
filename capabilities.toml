@@ -1748,7 +1748,7 @@ note = "DVM-104/ADR-0034 在一个 WU 内新增 131 类至 BootDex（共 521 类
 [dexvm.native_bn_asn1]
 status = "complete"
 test = "tests/dexvm/bootdex_library_tests.cpp; tests/dexvm/gc_tests.cpp"
-note = "DVM-104/106 为 X500 标签键与证书长序列号闭合 17 个 BigInt/NativeBN 值原语：原有分配/释放/拷贝/比较、long/符号/bitLength，新增大小端数组、二补码与十/十六进制编解码；输入最多 1 MiB。每 VM 单调逻辑令牌受检，BigInt owner GC 与 VM teardown 释放；长正负数、跨 32/64/160 位边界和 GC 后往返受检。其余 18 个 native 明确失败，不表示完整 BigInteger/BigDecimal 算术或宿主密码学实现。"
+note = "DVM-104/106 提供 BigInt/NativeBN 分配/释放/拷贝/比较、long/符号/bitLength、大小端数组、二补码与十/十六进制输出。补齐 BN_dec2bn 十进制输入，保留负号/有效前缀长度和负零归一化；输入最多 1 MiB，十进制转换最多 16777216 次 limb 操作，超限失败且旧值不变。每 VM 单调逻辑令牌受检，BigInt owner GC 与 VM teardown 释放；长正负数、跨 32/64/160 位边界和 GC 后往返受检。十六进制输入及大数算术等未支持 native 明确失败，不表示完整 BigInteger/BigDecimal 或宿主密码学实现。"
 
 [dexvm.cipher_aes]
 status = "complete"

@@ -1,6 +1,6 @@
 # 当前状态
 
-更新：2026-10-02。
+更新：2026-10-03。
 
 本页只保留最新运行结果与未闭合边界。能力状态见 [capabilities.toml](../../capabilities.toml)，
 实现契约见各模块 MODULE；历史过程见 [任务总览](../tasks/README.md) 与
@@ -9,10 +9,10 @@
 ## 运行状态
 
 - **Tales From Deep Space 1.0.0**：[BND-49](../tasks/boundary/BND-49.md) RGB、
-  [BND-50](../tasks/boundary/BND-50.md) ATC、[DVM-209](../tasks/dexvm/DVM-209.md) 两类 Wi-Fi 锁已修复。
-  macOS 构建、BootDex/payload、双解释器定向 1721 断言通过。
-  原 APK 无 Profile/survey、隔离沙盒观察 60 秒无新致命报错；快照含绘制/换帧，
-  取证后强制结束。黑屏/title/跨平台未验收。证据：`.local/multicast-lock-fix/`。
+  [BND-50](../tasks/boundary/BND-50.md) ATC、[DVM-209](../tasks/dexvm/DVM-209.md) Wi-Fi 锁已修复。
+  黑屏：Game:399 等待 A/B 参数；BN_dec2bn 缺口中断初始化，请求无回调。
+  已补十进制输入，定向 725 断言通过；下一首错 Context.getDir 缺失。进程已关闭。
+  title/跨平台未验收；证据：`.local/tales-black-screen-20261002/phase2/`。
 
 - **PVZ（com.popcap.pvz_na）**：[DVM-205](../tasks/dexvm/DVM-205.md) 已修复 DEX
   注解预算误拒绝，使用共享解析缓存和分层资源预算。macOS Release 定向回归通过；

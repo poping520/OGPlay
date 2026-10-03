@@ -2399,11 +2399,61 @@ TEST_CASE("DVM-106 BigInteger certificate values preserve long signed encodings"
                 f.Virtual(integer, "toString", "(I)Ljava/lang/String;", {VmValue::Int(16)});
             f.RequireOk(hex);
             CHECK(f.vm.StringUtf8(hex.value.ref) == value.hex);
+            const auto from_decimal = f.vm.NewIntrinsicInstance("Ljava/math/BigInteger;");
+            const auto decimal_root = f.vm.ProtectReferences(std::array{from_decimal});
+            f.Construct(from_decimal, "Ljava/math/BigInteger;", "(Ljava/lang/String;)V",
+                        {VmValue::Ref(f.vm.NewStringUtf8(value.decimal))});
+            const auto parsed = f.Virtual(from_decimal, "toByteArray", "()[B");
+            f.RequireOk(parsed);
+            CHECK(f.model.ReadByteRegion(parsed.value.ref, 0,
+                                         f.model.ArrayLength(parsed.value.ref)) == data);
             static_cast<void>(f.vm.CollectGarbage());
             CHECK(
                 f.vm.StringUtf8(f.Virtual(integer, "toString", "()Ljava/lang/String;").value.ref) ==
                 value.decimal);
         }
+    }
+}
+
+TEST_CASE("NativeBN decimal input preserves prefix count sign and bounded failure") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        Dvm87Vm f(backend);
+        const auto allocated = f.Static("Ljava/math/NativeBN;", "BN_new", "()J", {});
+        f.RequireOk(allocated);
+        const auto token = allocated.value;
+        const auto parse = [&](const std::string& text) {
+            return f.Static("Ljava/math/NativeBN;", "BN_dec2bn", "(JLjava/lang/String;)I",
+                            {token, VmValue::Ref(f.vm.NewStringUtf8(text))});
+        };
+        for (const auto& value : std::array{
+                 std::pair{"-0000", "0"}, std::pair{"0000123x", "123"},
+                 std::pair{"-18446744073709551617!", "-18446744073709551617"}}) {
+            const auto parsed = parse(value.first);
+            f.RequireOk(parsed);
+            const auto expected_count = std::string(value.first).find_first_of("x!");
+            CHECK(parsed.value.AsInt() == static_cast<int>(expected_count == std::string::npos
+                ? std::string(value.first).size() : expected_count));
+            CHECK(f.vm.BigInts().Require(static_cast<std::uint64_t>(token.AsLong())).String(10)
+                  == value.second);
+        }
+        for (const auto* invalid : {"", "-", "+1", "x1"}) {
+            const auto result = parse(invalid);
+            f.RequireOk(result);
+            CHECK(result.value.AsInt() == 0);
+        }
+        const auto null = f.Static("Ljava/math/NativeBN;", "BN_dec2bn", "(JLjava/lang/String;)I",
+                                   {token, VmValue::Ref(VmObjectRef{})});
+        REQUIRE(null.exception.IsValid());
+        CHECK(f.linker.Class(null.exception_class).descriptor == "Ljava/lang/NullPointerException;");
+        for (const auto size : {200000U, 1048577U}) {
+            const auto rejected = parse(std::string(size, '9'));
+            REQUIRE(rejected.exception.IsValid());
+            CHECK(f.linker.Class(rejected.exception_class).descriptor
+                  == "Ljava/lang/UnsupportedOperationException;");
+        }
+        CHECK(f.vm.BigInts().Require(static_cast<std::uint64_t>(token.AsLong())).String(10)
+              == "-18446744073709551617");
+        f.vm.BigInts().Free(static_cast<std::uint64_t>(token.AsLong()));
     }
 }
 

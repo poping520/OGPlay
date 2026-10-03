@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <span>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include <vector>
 
@@ -16,6 +17,7 @@ class BigIntRuntime final {
         void Normalize();
         void SetLong(std::uint64_t magnitude, bool sign);
         void SetBytes(std::span<const std::byte> bytes, bool sign, bool twos_complement);
+        int SetDecimal(std::string_view text);
         std::uint64_t LowLong() const;
         int Compare(const Number& other) const;
         int BitLength() const;

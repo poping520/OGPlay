@@ -632,7 +632,6 @@ TEST_CASE("dexvm core intrinsic catalog is unique and structurally stable") {
         "Ljava/math/NativeBN;.BN_bn2bin(J)[B",
         "Ljava/math/NativeBN;.BN_bn2dec(J)Ljava/lang/String;",
         "Ljava/math/NativeBN;.BN_bn2hex(J)Ljava/lang/String;",
-        "Ljava/math/NativeBN;.BN_dec2bn(JLjava/lang/String;)I",
         "Ljava/math/NativeBN;.BN_div(JJJJ)V",
         "Ljava/math/NativeBN;.BN_exp(JJJ)V",
         "Ljava/math/NativeBN;.BN_gcd(JJJ)V",

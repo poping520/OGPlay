@@ -3,10 +3,14 @@
 
 #include <array>
 #include <atomic>
+#include <chrono>
+#include <condition_variable>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <limits>
+#include <mutex>
+#include <string>
 #include <thread>
 #include <vector>
 
@@ -339,5 +343,126 @@ TEST_CASE("Unsafe boots real API19 AtomicInteger and AQS") {
         CHECK(f.millis.load() == 1);
         CHECK_FALSE(UnsafeVm::Ok(f.Static("Ljava/util/concurrent/locks/LockSupport;", "getBlocker",
             "(Ljava/lang/Thread;)Ljava/lang/Object;", {VmValue::Ref(thread)})).ref.IsValid());
+    }
+}
+
+TEST_CASE("API19 read write locks preserve reentrancy sharing and ThreadLocal holds") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        for (const bool fair : {false, true}) {
+            INFO("fair=", fair);
+            UnsafeVm f(backend, true);
+            constexpr auto descriptor = "Ljava/util/concurrent/locks/ReentrantReadWriteLock;";
+            const auto lock = f.Allocate(descriptor);
+            const auto lock_root = f.vm.ProtectReferences(std::array{lock});
+            UnsafeVm::Ok(f.Static(descriptor, "<init>", "(Z)V", {VmValue::Ref(lock), VmValue::Int(fair ? 1 : 0)}));
+            CHECK(f.linker.Class(f.model.ObjectClass(lock)).is_boot_dex);
+            CHECK(UnsafeVm::Ok(f.Virtual(lock, "isFair", "()Z")).AsInt() == (fair ? 1 : 0));
+            const auto read = UnsafeVm::Ok(f.Virtual(lock, "readLock", "()Ljava/util/concurrent/locks/ReentrantReadWriteLock$ReadLock;")).ref;
+            const auto write = UnsafeVm::Ok(f.Virtual(lock, "writeLock", "()Ljava/util/concurrent/locks/ReentrantReadWriteLock$WriteLock;")).ref;
+            const auto roots = f.vm.ProtectReferences(std::array{read, write});
+            const auto method = [&](VmObjectRef object, const char* name, const char* signature) {
+                const auto type = f.model.ObjectClass(object);
+                const auto index = f.linker.FindVtableIndex(type, name, signature);
+                REQUIRE(index.has_value());
+                const auto id = f.linker.Class(type).vtable[*index];
+                CHECK(f.linker.Method(id).kind == MethodKind::interpreted);
+                return id;
+            };
+            const auto read_try = method(read, "tryLock", "()Z");
+            const auto read_unlock = method(read, "unlock", "()V");
+            const auto write_try = method(write, "tryLock", "()Z");
+            const auto hold_count = method(lock, "getReadHoldCount", "()I");
+            UnsafeVm::Ok(f.Virtual(write, "lock", "()V"));
+            UnsafeVm::Ok(f.Virtual(write, "lock", "()V"));
+            CHECK(UnsafeVm::Ok(f.Virtual(lock, "getWriteHoldCount", "()I")).AsInt() == 2);
+            UnsafeVm::Ok(f.Virtual(read, "lock", "()V"));
+            UnsafeVm::Ok(f.Virtual(write, "unlock", "()V"));
+            UnsafeVm::Ok(f.Virtual(write, "unlock", "()V")); // downgrade leaves read ownership
+            CHECK(UnsafeVm::Ok(f.Virtual(lock, "isWriteLocked", "()Z")).AsInt() == 0);
+            CHECK(UnsafeVm::Ok(f.Virtual(lock, "getReadHoldCount", "()I")).AsInt() == 1);
+            CHECK(UnsafeVm::Ok(f.Virtual(write, "tryLock", "()Z")).AsInt() == 0); // no read-to-write upgrade
+            UnsafeVm::Ok(f.Virtual(read, "lock", "()V"));
+            CHECK(UnsafeVm::Ok(f.Virtual(lock, "getReadHoldCount", "()I")).AsInt() == 2);
+            UnsafeVm::Ok(f.Virtual(read, "unlock", "()V"));
+            UnsafeVm::Ok(f.Virtual(read, "unlock", "()V"));
+            CHECK(UnsafeVm::Ok(f.Virtual(lock, "getReadLockCount", "()I")).AsInt() == 0);
+            f.Throws(f.Virtual(read, "unlock", "()V"), "Ljava/lang/IllegalMonitorStateException;");
+            f.Throws(f.Virtual(write, "unlock", "()V"), "Ljava/lang/IllegalMonitorStateException;");
+            f.Throws(f.Virtual(read, "newCondition", "()Ljava/util/concurrent/locks/Condition;"), "Ljava/lang/UnsupportedOperationException;");
+
+            const auto worker_context = f.vm.CreateExecutionContext();
+            f.threads.RegisterNativeContext(worker_context, false);
+            const auto current_thread = f.linker.FindDirectMethod(f.linker.ResolveDescriptor("Ljava/lang/Thread;"), "currentThread", "()Ljava/lang/Thread;");
+            REQUIRE(current_thread.has_value());
+            const auto main_thread = UnsafeVm::Ok(f.Static("Ljava/lang/Thread;", "currentThread", "()Ljava/lang/Thread;")).ref;
+            const auto id_index = f.linker.FindVtableIndex(f.model.ObjectClass(main_thread), "getId", "()J");
+            REQUIRE(id_index.has_value());
+            const auto get_id = f.linker.Class(f.model.ObjectClass(main_thread)).vtable[*id_index];
+            const auto main_id = UnsafeVm::Ok(f.Virtual(main_thread, "getId", "()J")).AsLong();
+            std::mutex gate;
+            std::condition_variable_any changed;
+            bool ready{}, release{};
+            std::string worker_error;
+            std::array<int, 5> observations{};
+            std::int64_t worker_id{};
+            UnsafeVm::Ok(f.Virtual(read, "lock", "()V")); // firstReader fast path
+            std::jthread worker([&](std::stop_token stop) {
+                const auto call = [&](VmMethodId target, std::vector<VmValue> args) {
+                    const auto outcome = f.vm.Call(worker_context, target, args);
+                    if (outcome.exception.IsValid()) throw std::runtime_error(outcome.exception_message);
+                    return outcome.value;
+                };
+                try {
+                    const auto thread = call(*current_thread, {}).ref;
+                    worker_id = call(get_id, {VmValue::Ref(thread)}).AsLong();
+                    observations[0] = call(read_try, {VmValue::Ref(read)}).AsInt();
+                    observations[1] = call(read_try, {VmValue::Ref(read)}).AsInt();
+                    observations[2] = call(hold_count, {VmValue::Ref(lock)}).AsInt(); // ThreadLocalHoldCounter path
+                    observations[3] = call(write_try, {VmValue::Ref(write)}).AsInt();
+                    {
+                        std::unique_lock guard(gate);
+                        ready = true;
+                        changed.notify_all();
+                        changed.wait(guard, stop, [&] { return release; });
+                    }
+                    call(read_unlock, {VmValue::Ref(read)});
+                    call(read_unlock, {VmValue::Ref(read)});
+                    observations[4] = call(hold_count, {VmValue::Ref(lock)}).AsInt();
+                } catch (const std::exception& error) {
+                    std::lock_guard guard(gate);
+                    worker_error = error.what();
+                    ready = true;
+                    changed.notify_all();
+                }
+            });
+            {
+                std::unique_lock guard(gate);
+                REQUIRE(changed.wait_for(guard, std::chrono::seconds(5), [&] { return ready; }));
+                REQUIRE_MESSAGE(worker_error.empty(), worker_error);
+            }
+            CHECK(worker_id != main_id);
+            CHECK(observations[0] == 1);
+            CHECK(observations[1] == 1);
+            CHECK(observations[2] == 2);
+            CHECK(observations[3] == 0);
+            CHECK(UnsafeVm::Ok(f.Virtual(lock, "getReadLockCount", "()I")).AsInt() == 3);
+            CHECK(UnsafeVm::Ok(f.Virtual(lock, "getReadHoldCount", "()I")).AsInt() == 1);
+            CHECK(UnsafeVm::Ok(f.Virtual(write, "tryLock", "()Z")).AsInt() == 0);
+            UnsafeVm::Ok(f.Virtual(read, "unlock", "()V"));
+            CHECK(UnsafeVm::Ok(f.Virtual(lock, "getReadLockCount", "()I")).AsInt() == 2);
+            {
+                std::lock_guard guard(gate);
+                release = true;
+            }
+            changed.notify_all();
+            worker.join();
+            REQUIRE_MESSAGE(worker_error.empty(), worker_error);
+            CHECK(observations[4] == 0);
+            CHECK(UnsafeVm::Ok(f.Virtual(lock, "getReadLockCount", "()I")).AsInt() == 0);
+            CHECK(UnsafeVm::Ok(f.Virtual(write, "tryLock", "()Z")).AsInt() == 1);
+            UnsafeVm::Ok(f.Virtual(write, "unlock", "()V"));
+            f.threads.DetachNativeContext(worker_context.Token());
+            f.vm.DiscardExecutionContext(worker_context);
+        }
     }
 }

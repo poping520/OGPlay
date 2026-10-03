@@ -35,6 +35,8 @@
   统一毫秒 Clock。priority/daemon 仅为 guest fact，不映射宿主调度或自动退出。
 - Thread 字段用预绑定 handle/IntrinsicCall，禁止裸槽和逐调用 descriptor 查找。
   contextClassLoader 受 GC 追踪：root 为 application loader，子线程继承，setter 允许 null。
+  已注册 JNI 附加 context 的 currentThread 使用独立、已启动的 Thread；默认名称/priority 5、
+  main group、daemon 附加事实及 null context loader 遵循 API19 原生附加构造边界。
   实例 uncaught handler 优先于默认 handler；handler 自身异常按 API19 忽略，无 handler
   保留进程致命诊断。ThreadGroup 仅 bounded system/main、名称和存活枚举，结束后 group 为 null。
   线程栈来自本 VM safe-point snapshot，不伪造完整 ThreadGroup/State。

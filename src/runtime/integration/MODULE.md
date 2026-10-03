@@ -114,9 +114,11 @@ Android API 的详细行为以 [dexvm_android](dexvm_android/MODULE.md)为准；
   native 执行释放 VM 锁，JNI 回调重获；executor 按 thread 和重入深度复用 CPU/JIT，同层复用
   缓存、不同深度隔离现场，nested 使用 suspended SP/TLS，线程退出回收全部 executor。
   JNI monitor 使用 VM token/对象身份，与 Java synchronized 共享状态；TID 受 Bionic 16-bit 限制。
-  native-only JNI attachment 没有 VM token，也不能获取 VM monitor；detach 跳过不存在的
-  VM monitor 资源，仍释放 JNI local references/pending exception。已有 token 的线程严格
-  ReleaseAll，未映射线程的 MonitorEnter/Exit 仍明确失败。
+  原生 JNI 附加线程首次 Java 调用、字段 clinit 或 monitor 操作建立独立 VM token，最多
+  64 个存活附加 context；复用原生 clone CPU/SP/TLS 进行 Java→native 重入，不另起线程。
+  Thread 身份/daemon 归 VM runtime 与 JNI attachment，detach 要求 context 已空闲，再释放
+  monitor、context 映射、local refs/pending exception；未 attach 的调用明确失败。
+  尚未执行 Java 的纯 native attachment 可直接 detach。附加参数 name/group 仍不支持。
 - clone 宿主异常通过显式通知启动等待取消，native 调用入口、安全点及异常出口优先上报
   保存的原始子线程错误，不让后续 teardown/退出错误覆盖首错。
 - Manifest `targetSdkVersion` 为 1..13 时，DexVM bridge 按 KitKat

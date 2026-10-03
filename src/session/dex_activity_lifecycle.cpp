@@ -1430,6 +1430,7 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
             state_ = LifecycleRunState::failed;
             if (!persistence_failure) persistence_failure = std::current_exception();
         }
+        runtime::ShutdownPendingIntents(bindings_.bridge->Vm(), *bindings_.context);
         phase("teardown.scheduler_shutdown");
         runtime::ShutdownAndroidScheduler(*bindings_.context);
         // A callback may have entered a new futex after BeginTeardown's first

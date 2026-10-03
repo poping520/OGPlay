@@ -1156,6 +1156,14 @@ VmCallOutcome Interpreter::Call(
     return Call(method_id, arguments);
 }
 
+InterpreterExecutionContext Interpreter::ExecutionContext(const std::uint64_t token) {
+    InterpreterExecutionContext context;
+    context.owner_ = this;
+    context.token_ = token;
+    static_cast<void>(impl_->Execution(context));
+    return context;
+}
+
 VmCallOutcome Interpreter::EnsureClassInitialized(const DexClassId java_class) {
     VmExecutionLockScope lock_scope(impl_->execution_lock);
     auto& execution = impl_->Execution();

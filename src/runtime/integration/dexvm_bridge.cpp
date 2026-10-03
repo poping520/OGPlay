@@ -138,6 +138,7 @@ void VisitAndroidSessionRoots(const DexVmAndroidContext& context,
     for (const auto& [_, service] : context.local_services) {
         root(service.instance); root(service.binder); root(service.intent);
     }
+    for (const auto operation : context.alarm_operations) root(operation);
     root(context.renderer);
     root(context.egl_context_factory);
     root(context.egl_config_chooser);
@@ -346,6 +347,7 @@ public:
     std::unordered_map<std::uint64_t, std::uint64_t> process_thread_to_token{
         {kRootThreadId, 1}};
     std::unordered_map<std::uint64_t, std::uint32_t> process_thread_slots;
+    std::unordered_map<std::uint64_t, dx::InterpreterExecutionContext> native_attachments;
 
     DexVmGuestBridge* owner{};
 
@@ -437,15 +439,29 @@ public:
         return found->second;
     }
 
-    [[nodiscard]] std::uint64_t TokenForProcessThread(
-        const std::uint64_t thread) const {
-        const std::scoped_lock lock(thread_contexts_mutex);
-        const auto found = process_thread_to_token.find(thread);
-        if (found == process_thread_to_token.end()) {
-            throw JniMonitorError(JniMonitorErrorReason::invalid_thread,
-                                  "JNI monitor thread is not a DexVM thread");
+    [[nodiscard]] dx::InterpreterExecutionContext ContextForJniThread(
+        const std::uint64_t thread) {
+        std::uint64_t token{};
+        {
+            const std::scoped_lock lock(thread_contexts_mutex);
+            const auto found = process_thread_to_token.find(thread);
+            if (found != process_thread_to_token.end()) token = found->second;
         }
-        return found->second;
+        if (token == 0) {
+            if (!session->Environment().IsThreadAttached(thread))
+                throw DexVmBridgeError("Java invocation requires an attached JNI thread");
+            if (native_attachments.size() >= 64)
+                throw DexVmBridgeError("native JNI execution context limit exceeded");
+            const auto context = vm->CreateExecutionContext();
+            token = context.Token();
+            try { threads->RegisterNativeContext(context, session->Environment().IsDaemonThread(thread)); }
+            catch (...) { vm->DiscardExecutionContext(context); throw; }
+            const std::scoped_lock lock(thread_contexts_mutex);
+            native_attachments.emplace(thread, context);
+            process_thread_to_token.emplace(thread, token);
+            token_to_process_thread.emplace(token, thread);
+        }
+        return vm->ExecutionContext(token);
     }
 
     [[nodiscard]] dx::VmObjectRef FromReference(const JniReference reference,
@@ -478,7 +494,7 @@ public:
       const JniObjectIdentity identity, const std::uint64_t thread) {
     const auto java_class = ClassForJniIdentity(identity);
     if (!java_class.has_value()) return std::nullopt;
-    const auto outcome = vm->EnsureClassInitialized(*java_class);
+    const auto outcome = vm->EnsureClassInitialized(ContextForJniThread(thread), *java_class);
     if (!outcome.exception.IsValid()) return true;
     session->Environment().Throw(thread,
                                  PublishLocal(outcome.exception, thread));
@@ -877,6 +893,7 @@ public:
         // re-entry reacquires it so object-model and linker state still have
         // one writer, while unrelated Java threads may run between calls.
         const dx::VmExecutionLockScope execution_guard(vm->ExecutionLock());
+        const auto context = ContextForJniThread(invocation.thread_id);
         std::vector<dx::VmValue> arguments;
         arguments.reserve(invocation.arguments.size() + 1);
         if (!method.is_static) {
@@ -886,7 +903,7 @@ public:
         for (const auto& value : invocation.arguments) {
             arguments.push_back(ToVmValue(value, invocation.thread_id));
         }
-        const auto outcome = vm->Call(method_id, arguments);
+        const auto outcome = vm->Call(context, method_id, arguments);
         if (outcome.exception.IsValid()) {
             // JNI semantics: leave the exception pending for the caller.
             if (logger != nullptr) {
@@ -1434,7 +1451,7 @@ DexVmGuestBridge::DexVmGuestBridge(
             }
             bridge_state->vm->Monitors().Enter(
                 bridge_state->MonitorObject(identity),
-                bridge_state->TokenForProcessThread(thread));
+                bridge_state->ContextForJniThread(thread).Token());
         },
         [bridge_state](const JniObjectIdentity identity,
                        const std::uint64_t thread) {
@@ -1447,7 +1464,7 @@ DexVmGuestBridge::DexVmGuestBridge(
             try {
                 bridge_state->vm->Monitors().Exit(
                     bridge_state->MonitorObject(identity),
-                    bridge_state->TokenForProcessThread(thread));
+                    bridge_state->ContextForJniThread(thread).Token());
             } catch (const dx::VmJavaThrow&) {
                 throw JniMonitorError(JniMonitorErrorReason::not_owner,
                                       "JNI monitor exit by non-owner");
@@ -1456,9 +1473,6 @@ DexVmGuestBridge::DexVmGuestBridge(
         [bridge_state](const std::uint64_t thread) {
             const dx::VmExecutionLockScope guard(
                 bridge_state->vm->ExecutionLock());
-            // Native-only JNI attachments have no VM execution context and
-            // cannot own a VM monitor (MonitorEnter requires that context).
-            // Detaching them must still release their JNI references/exceptions.
             std::uint64_t token{};
             {
                 const std::scoped_lock lock(bridge_state->thread_contexts_mutex);
@@ -1467,6 +1481,17 @@ DexVmGuestBridge::DexVmGuestBridge(
                 token = found->second;
             }
             const auto held = bridge_state->vm->Monitors().HeldCount(token);
+            {
+                const std::scoped_lock lock(bridge_state->thread_contexts_mutex);
+                const auto attached = bridge_state->native_attachments.find(thread);
+                if (attached != bridge_state->native_attachments.end()) {
+                    bridge_state->vm->DiscardExecutionContext(attached->second);
+                    bridge_state->threads->DetachNativeContext(token);
+                    bridge_state->native_attachments.erase(attached);
+                    bridge_state->process_thread_to_token.erase(thread);
+                    bridge_state->token_to_process_thread.erase(token);
+                }
+            }
             bridge_state->vm->Monitors().ReleaseAll(token);
             return held;
         },
@@ -1537,7 +1562,10 @@ DexVmGuestBridge::~DexVmGuestBridge() {
         ShutdownAndroidScheduler(*impl_->android_context);
     }
     if (impl_->threads) impl_->threads->Shutdown();
-    if (impl_->android_context) impl_->android_context->wifi_lock_leases.clear();
+    if (impl_->android_context) {
+        impl_->android_context->wifi_lock_leases.clear();
+        if (impl_->vm) ShutdownPendingIntents(*impl_->vm, *impl_->android_context);
+    }
     ReleaseAndroidDatabaseResources(impl_->android_context);
     if (impl_->vm) {
         try { impl_->vm->ReleaseGuestNativeResources(true); }

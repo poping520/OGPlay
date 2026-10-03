@@ -10,9 +10,10 @@
 
 - **Tales From Deep Space 1.0.0**：[BND-49](../tasks/boundary/BND-49.md) RGB、
   [BND-50](../tasks/boundary/BND-50.md) ATC、[DVM-209](../tasks/dexvm/DVM-209.md) Wi-Fi 锁已修复。
-  黑屏：Game:399 等待 A/B 参数；BN_dec2bn 缺口中断初始化，请求无回调。
-  已补十进制输入，定向 725 断言通过；下一首错 Context.getDir 缺失。进程已关闭。
-  title/跨平台未验收；证据：`.local/tales-black-screen-20261002/phase2/`。
+  BN_dec2bn/getDir、[DVM-210](../tasks/dexvm/DVM-210.md) JNI/沙盒已修。
+  FairSync 已补；[DVM-211](../tasks/dexvm/DVM-211.md) 双后端 440 断言通过。
+  下一首错 ReentrantReadWriteLock；已关闭，黑屏/跨平台未验收。
+  证据：`.local/pending-intent-fix-20261003/`。
 
 - **PVZ（com.popcap.pvz_na）**：[DVM-205](../tasks/dexvm/DVM-205.md) 已修复 DEX
   注解预算误拒绝，使用共享解析缓存和分层资源预算。macOS Release 定向回归通过；
@@ -69,7 +70,7 @@
 ## 其余未闭合边界
 
 - GLSurfaceView EGL 暂停/恢复、context-loss 尚未闭合；NDK Looper callback/非 pipe fd
-  不支持，完整 native-attached Java 执行上下文未验收。首次 GLES1 vertex-array 首错尚未重达复验。
+  不支持，native-attached 参数/反射长尾未验收。首次 GLES1 vertex-array 首错尚未重达复验。
 - GC 全周期、普通直接写入的 ABA 历史跟踪、直接访存卸载 quiescence 与退出顺序风险未验收。
 - 全 BootDex 类链接检查曾因 MediaPlayer overlay 与过期类数断言失败，尚未整体复验；
   `architecture.dexvm_intrinsic_layout` 因媒体源码未列入清单仍失败，见

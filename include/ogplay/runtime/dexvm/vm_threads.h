@@ -61,6 +61,13 @@ public:
     [[nodiscard]] std::uint64_t AllocateThreadId();
     void SetRootThreadObject(VmObjectRef thread_object);
 
+    // JNI attachment borrows an existing native host thread/CPU. No host spawn
+    // or Java run() is performed. Thread identity is initialized on first use.
+    void RegisterNativeContext(const InterpreterExecutionContext& context, bool daemon);
+    [[nodiscard]] std::optional<bool> NativeContextDaemon(std::uint64_t token) const;
+    [[nodiscard]] std::uint64_t SetNativeThreadObject(std::uint64_t token, VmObjectRef object);
+    void DetachNativeContext(std::uint64_t token);
+
     // Starts virtual this.run() on a new host thread (Thread.start ->
     // VMThread.create -> dvmCreateInterpThread). The supplied id was allocated
     // when the Java object was constructed and remains stable after death.

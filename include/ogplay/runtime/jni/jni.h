@@ -175,9 +175,10 @@ public:
     JniReferenceTable& operator=(JniReferenceTable&&) noexcept;
 
     void AttachThread(std::uint64_t thread_id,
-                      std::size_t initial_local_capacity = 16);
+                      std::size_t initial_local_capacity = 16, bool daemon = false);
     void DetachThread(std::uint64_t thread_id);
     [[nodiscard]] bool IsThreadAttached(std::uint64_t thread_id) const;
+    [[nodiscard]] bool IsDaemonThread(std::uint64_t thread_id) const;
     void ConfigureLegacyLocalReferenceCompatibility(
         bool enabled, LegacyReferenceWarning warning = {});
 

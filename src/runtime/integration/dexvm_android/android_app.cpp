@@ -513,15 +513,176 @@ Decl Declare_android_app_Service(const Context& context) {
 
 namespace ogplay::runtime::android_intrinsics {
 
+namespace {
+constexpr std::int32_t kOneShot = 1 << 30;
+constexpr std::int32_t kNoCreate = 1 << 29;
+constexpr std::int32_t kCancelCurrent = 1 << 28;
+constexpr std::int32_t kUpdateCurrent = 1 << 27;
+constexpr std::int32_t kControlFlags = kNoCreate | kCancelCurrent | kUpdateCurrent;
+constexpr std::int32_t kIntentFillFlags = 0xff; // API19 FILL_IN_*.
+
+[[noreturn]] void UnsupportedPending(dx::IntrinsicContext& call,
+                                       const char* message) {
+    if (auto* ledger = call.vm.Ledger())
+        ledger->RecordUnimplemented("dexvm.pending_intent", 0);
+    throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", message};
+}
+
+[[nodiscard]] dx::VmObjectRef CopyPendingIntent(dx::Interpreter& vm,
+                                                dx::VmObjectRef source) {
+    const auto source_root = vm.ProtectReferences(std::array{source});
+    const auto initialized = vm.EnsureClassInitialized(
+        vm.Linker().ResolveDescriptor("Landroid/content/Intent;"));
+    if (initialized.exception.IsValid())
+        throw dx::VmJavaThrow{vm.Linker().Class(initialized.exception_class).descriptor,
+                              initialized.exception_message, initialized.exception};
+    const auto snapshot = vm.NewIntrinsicInstance("Landroid/content/Intent;");
+    const auto roots = vm.ProtectReferences(std::array{snapshot});
+    const auto init = vm.Linker().FindDirectMethod(vm.Model().ObjectClass(snapshot),
+        "<init>", "(Landroid/content/Intent;)V");
+    if (!init) throw dx::DexVmError(dx::DexVmErrorReason::internal_invariant,
+                                   "Intent copy constructor is not linked");
+    const auto outcome = vm.Call(*init,
+        std::vector{dx::VmValue::Ref(snapshot), dx::VmValue::Ref(source)});
+    if (outcome.exception.IsValid())
+        throw dx::VmJavaThrow{vm.Linker().Class(outcome.exception_class).descriptor,
+                              outcome.exception_message, outcome.exception};
+    return snapshot;
+}
+
+[[nodiscard]] dx::VmValue GetPendingIntent(dx::IntrinsicContext& call,
+                                          const Context& context, int kind) {
+    dx::IntrinsicCall args(call);
+    const auto owner = args.NonNullRef(0, "context");
+    const auto intent = args.NonNullRef(2, "intent");
+    const auto flags = args.Int(3);
+    if (call.vm.Model().ObjectClass(intent) !=
+        call.vm.Linker().ResolveDescriptor("Landroid/content/Intent;"))
+        UnsupportedPending(call, "PendingIntent requires an ordinary API19 Intent");
+    if (context->pending_intents_stopping)
+        UnsupportedPending(call, "PendingIntent process is stopping");
+    if ((flags & ~(kControlFlags | kOneShot | kIntentFillFlags)) != 0)
+        UnsupportedPending(call, "unsupported API19 PendingIntent flags");
+    const auto package = call.vm.StringUtf8(CallAndroidMethod(call.vm, owner,
+        "getPackageName", "()Ljava/lang/String;").ref);
+    if (package.empty() || package != context->package_name)
+        UnsupportedPending(call, "PendingIntent creator must be the current APK");
+    // All ordinary Intent value semantics execute the original BootDex code.
+    // Provider-based MIME inference would require a separate capability.
+    const auto type = CallAndroidMethod(call.vm, intent, "getType",
+                                        "()Ljava/lang/String;").ref;
+    const auto data = CallAndroidMethod(call.vm, intent, "getData",
+                                        "()Landroid/net/Uri;").ref;
+    if (data.IsValid() &&
+        !call.vm.Linker().Class(call.vm.Model().ObjectClass(data)).is_boot_dex)
+        UnsupportedPending(call, "custom PendingIntent Uri implementations are unsupported");
+    if (!type.IsValid() && data.IsValid()) {
+        const auto scheme = CallAndroidMethod(call.vm, data, "getScheme",
+                                              "()Ljava/lang/String;").ref;
+        if (scheme.IsValid() && call.vm.StringUtf8(scheme) == "content")
+            UnsupportedPending(call, "PendingIntent content MIME inference is unsupported");
+    }
+    if (CallAndroidMethod(call.vm, intent, "getSelector",
+                          "()Landroid/content/Intent;").ref.IsValid())
+        UnsupportedPending(call, "PendingIntent selector resolution is unsupported");
+
+    // Context callbacks above may park. Recheck teardown before registry access.
+    if (context->pending_intents_stopping)
+        UnsupportedPending(call, "PendingIntent process is stopping");
+    // Snapshot the weak registry before calls which can allocate/collect.
+    // Temporary roots keep candidate wrappers alive only for this lookup.
+    std::vector<DexVmAndroidContext::PendingIntentRecord> candidates;
+    std::vector<dx::VmObjectRef> candidate_roots;
+    for (const auto& [_, record] : context->pending_intents) {
+        if (!record.canceled && record.creator_package == package &&
+            record.kind == kind && record.request_code == args.Int(1) &&
+            record.flags == (flags & ~kControlFlags)) {
+            candidates.push_back(record);
+            candidate_roots.push_back(record.object);
+        }
+    }
+    const auto roots = call.vm.ProtectReferences(candidate_roots);
+    dx::VmObjectRef existing;
+    for (const auto& record : candidates) {
+        if (CallAndroidMethod(call.vm, record.intent, "filterEquals",
+            "(Landroid/content/Intent;)Z", {dx::VmValue::Ref(intent)}).AsInt() != 0) {
+            existing = record.object;
+            break;
+        }
+    }
+    if (existing.IsValid()) {
+        if ((flags & kCancelCurrent) != 0) {
+            context->pending_intents.at(existing.Value()).canceled = true;
+            std::erase(context->alarm_operations, existing);
+        } else {
+            if ((flags & kUpdateCurrent) != 0) {
+                const auto snapshot = context->pending_intents.at(existing.Value()).intent;
+                static_cast<void>(CallAndroidMethod(call.vm, snapshot, "replaceExtras",
+                    "(Landroid/content/Intent;)Landroid/content/Intent;",
+                    {dx::VmValue::Ref(intent)}));
+            }
+            return dx::VmValue::Ref(existing);
+        }
+    }
+    // API19 CANCEL_CURRENT|NO_CREATE returns the old (now canceled) token.
+    if ((flags & kNoCreate) != 0) return dx::VmValue::Ref(existing);
+    const auto snapshot = CopyPendingIntent(call.vm, intent);
+    const auto snapshot_root = call.vm.ProtectReferences(std::array{snapshot});
+    const auto object = call.vm.NewIntrinsicInstance("Landroid/app/PendingIntent;");
+    context->pending_intents.emplace(object.Value(),
+        DexVmAndroidContext::PendingIntentRecord{object, snapshot, package,
+            kind, args.Int(1), flags & ~kControlFlags, false});
+    return dx::VmValue::Ref(object);
+}
+} // namespace
+
 Decl Declare_android_app_PendingIntent(const Context& context) {
-    static_cast<void>(context);
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/app/PendingIntent;", "Ljava/lang/Object;");
-    builder.StaticMethod("getBroadcast",
-        "(Landroid/content/Context;ILandroid/content/Intent;I)"
-        "Landroid/app/PendingIntent;",
-        [](dx::IntrinsicContext&) {
-            return dx::VmValue::Ref(dx::VmObjectRef{});
+    constexpr auto signature = "(Landroid/content/Context;ILandroid/content/Intent;I)Landroid/app/PendingIntent;";
+    builder.StaticMethod("getService", signature,
+        [context](dx::IntrinsicContext& call) { return GetPendingIntent(call, context, 4); });
+    builder.StaticMethod("getBroadcast", signature,
+        [context](dx::IntrinsicContext& call) { return GetPendingIntent(call, context, 1); });
+    builder.VirtualMethod("cancel", "()V", [context](dx::IntrinsicContext& call) {
+        const auto found = context->pending_intents.find(call.receiver.Value());
+        if (found == context->pending_intents.end())
+            UnsupportedPending(call, "PendingIntent has no process token");
+        found->second.canceled = true;
+        std::erase(context->alarm_operations, call.receiver);
+        return dx::VmValue::Void();
+    });
+    const auto unsupported = [](dx::IntrinsicContext& call) -> dx::VmValue {
+        UnsupportedPending(call, "PendingIntent delivery is unsupported");
+    };
+    builder.VirtualMethod("send", "()V", unsupported);
+    builder.VirtualMethod("send", "(I)V", unsupported);
+    builder.VirtualMethod("send", "(Landroid/content/Context;ILandroid/content/Intent;)V", unsupported);
+    return std::move(builder).Build();
+}
+
+Decl Declare_android_app_AlarmManager(const Context& context) {
+    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/app/AlarmManager;", "Ljava/lang/Object;");
+    builder.VirtualMethod("cancel", "(Landroid/app/PendingIntent;)V",
+        [context](dx::IntrinsicContext& call) {
+            const auto operation = dx::IntrinsicCall(call).Ref(0);
+            // API19 AlarmManagerService.remove(null) returns without work.
+            if (!operation.IsValid()) return dx::VmValue::Void();
+            if (!context->pending_intents.contains(operation.Value()))
+                UnsupportedPending(call, "alarm operation has no process token");
+            // Unlike PendingIntent.cancel(), this leaves the sender valid.
+            std::erase(context->alarm_operations, operation);
+            return dx::VmValue::Void();
         });
+    const auto unsupported = [](dx::IntrinsicContext& call) -> dx::VmValue {
+        if (auto* ledger = call.vm.Ledger())
+            ledger->RecordUnimplemented("dexvm.alarm_manager", 0);
+        throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
+                              "alarm scheduling is unsupported"};
+    };
+    for (const auto* name : {"set", "setExact"})
+        builder.VirtualMethod(name, "(IJLandroid/app/PendingIntent;)V", unsupported);
+    for (const auto* name : {"setRepeating", "setInexactRepeating", "setWindow"})
+        builder.VirtualMethod(name, "(IJJLandroid/app/PendingIntent;)V", unsupported);
     return std::move(builder).Build();
 }
 
@@ -893,3 +1054,12 @@ Decl Declare_android_app_NativeActivity(const Context& context) {
 }
 
 }
+
+namespace ogplay::runtime {
+void ShutdownPendingIntents(dexvm::Interpreter& vm, DexVmAndroidContext& context) {
+    const dexvm::VmExecutionLockScope guard(vm.ExecutionLock());
+    context.pending_intents_stopping = true;
+    context.alarm_operations.clear();
+    context.pending_intents.clear();
+}
+} // namespace ogplay::runtime

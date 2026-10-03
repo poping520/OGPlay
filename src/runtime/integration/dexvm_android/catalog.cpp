@@ -113,6 +113,7 @@ AndroidIntrinsicCatalog(const std::shared_ptr<DexVmAndroidContext> &context) {
       Declare_android_app_IntentService(context),
       Declare_android_app_Service(context),
       Declare_android_app_PendingIntent(context),
+      Declare_android_app_AlarmManager(context),
       Declare_android_app_ProgressDialog(context),
       Declare_android_content_BroadcastReceiver(context),
       Declare_android_content_ContentResolver(context),

@@ -19,6 +19,7 @@ Declare_android_app_AlertDialog_Builder(const Context &context);
 [[nodiscard]] Decl Declare_android_app_IntentService(const Context &context);
 [[nodiscard]] Decl Declare_android_app_Service(const Context &context);
 [[nodiscard]] Decl Declare_android_app_PendingIntent(const Context &context);
+[[nodiscard]] Decl Declare_android_app_AlarmManager(const Context &context);
 [[nodiscard]] Decl Declare_android_app_ProgressDialog(const Context &context);
 [[nodiscard]] Decl
 Declare_android_content_BroadcastReceiver(const Context &context);

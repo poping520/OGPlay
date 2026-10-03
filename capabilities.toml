@@ -578,7 +578,7 @@ note = "ADR-0020 SBX-2 为 VFS 补齐 CreateDirectory/RemoveFile/RemoveDirectory
 [runtime.vfs_sandbox_persistence]
 status = "partial"
 test = "tests/runtime/sandbox_store_tests.cpp; tests/runtime/vfs_sandbox_tests.cpp; tests/runtime/preferences_xml_tests.cpp"
-note = "ADR-0071/VFS-01 将沙盒身份改为安装层显式 installation id，schema 3 仅接受 internal/external/obb/sdcard 四根；旧 fs/schema/混合布局明确拒绝且不迁移。同包多实例存档与 ANDROID_ID 隔离并跨重开稳定，library/sandbox 并集最小空缺编号及并发导入占位已验证。close/fsync/pause/shutdown 与元数据落盘点保持；用户级真实游戏存档闭环尚未演示，因此保持 partial"
+note = "ADR-0071/VFS-01 将沙盒身份改为安装层显式 installation id，schema 3 仅接受 internal/external/obb/sdcard 四根；旧 fs/schema/混合布局明确拒绝且不迁移。同包多实例存档与 ANDROID_ID 隔离并跨重开稳定，library/sandbox 并集最小空缺编号及并发导入占位已验证。close/fsync/pause/shutdown 与元数据落盘点保持；语义根与 VFS 共用 ASCII case-fold，原始 package/meta/安装目录保持不变；混合大小写包名四根写入/重开与实例隔离已验证。用户级真实游戏存档闭环尚未演示，因此保持 partial"
 
 [runtime.vfs]
 status = "complete"
@@ -1443,7 +1443,7 @@ note = "DVM-53..60 已交付只读 FastCode、computed-goto/MSVC 稠密 switch�
 [dexvm.execution_contexts]
 status = "complete"
 test = "tests/dexvm/interpreter_tests.cpp; Asphalt 5 exact title-flow regression"
-note = "DVM-27 显式 context 隔离帧栈、pending exception、返回值、tick 与 monitor recursion；DVM-50 补齐跨 context clinit 等待与同步方法展开。linker/object model/intrinsic 目录共享，解释执行继续由 VmExecutionLock 串行"
+note = "DVM-27 显式 context 隔离帧栈、pending exception、返回值、tick 与 monitor recursion；DVM-50 补齐跨 context clinit 等待与同步方法展开。linker/object model/intrinsic 目录共享，解释执行继续由 VmExecutionLock 串行；DVM-210 增加活动宿主归属检查，阻塞释放锁期间拒绝异宿主重入及活动 context 删除"
 
 [dexvm.trace]
 status = "complete"
@@ -1499,6 +1499,11 @@ note = "DVM-103 将 API 19 Observer/Observable 及 ArrayList 依赖迁入 BootDe
 status = "complete"
 test = "tests/dexvm/interpreter_tests.cpp; tests/runtime/jni_class_registry_tests.cpp; tests/runtime/jni_guest_bindings_tests.cpp; tests/runtime/guest_thread_runner_tests.cpp; tests/runtime/native_library_loader_tests.cpp; Asphalt 5 exact dexvm title-flow gate 3/3; Asphalt 6 DVM-26 exact bootstrap"
 note = "DVM-139 使 DexVM→JNI 类发布保留 direct interface 图与 interface 标记；assignability 遍历父类/接口闭包，interface MethodID 在实现类 receiver 上虚派到实际实现，static field 按 Dalvik 顺序搜索接口而 instance field 不跨接口。PvZ exact 已越过 ITracking.setEnable 的错误 incompatibility。DVM-130 guest 平台 JNI 入口统一 VM 发布，删除同名 HLE 遮蔽；activity.current 返回生命周期 VM Activity，36 项定向测试 1682 断言通过。DVM-14/15 descriptor 驱动 A32 soft-float 出向与 233 槽入向第三路由；DVM-50 按 execution context 选择独立 native thread，逐调用建立 JNI local frame，并从 r0:r1 解码 J/D 返回；DexVM ClassObject 与 JNI jclass 双向规范化为同一身份，JNI_OnLoad 可把 jclass 用作 Class instance receiver。DVM-82 绑定 NewDirectByteBuffer/GetDirectBufferAddress/GetDirectBufferCapacity，校验 guest range 并与 Java Buffer 共享 NioRuntime identity/address/capacity。DVM-89 发布 DEX 字段并以稳定 JniFieldId→VmFieldId 路由共享 instance/static 槽，GetFieldID 家族遵循类初始化，primitive/wide/reference 双向读写不建立影子状态。"
+
+[dexvm.native_attached_execution]
+status = "partial"
+test = "tests/dexvm/interpreter_tests.cpp: dexvm parked execution contexts reject foreign host reentry; tests/runtime/native_library_loader_tests.cpp: JNI native attachments isolate Java execution identity and detach cleanup; Tales original APK reached FairSync missing class"
+note = "DVM-210：JNI 附加原生线程首次 Java 调用/字段 clinit/monitor 操作分配独立 execution context，最多 64 个存活 context；复用 clone 的 CPU/SP/TLS 做嵌套出向。currentThread 提供独立稳定 Thread/id、daemon、存活/GC/monitor 状态，detach 要求空闲并释放 context/monitor/JNI refs，重复附加重新分配。附加参数 name/group、全部 JNI 反射执行路径、长运行与跨平台 title gate 未验收。"
 
 [dexvm.intrinsics_android_core]
 status = "partial"
@@ -1589,6 +1594,11 @@ note = "DVM-195 增加当前包 getActivityInfo，支持 0/GET_META_DATA/GET_DIS
 status = "complete"
 test = "tests/dexvm/file_vfs_tests.cpp: Context private file streams use the app files directory on both backends; Angry Birds reached JNI CallObjectMethodV return mismatch"
 note = "DVM-157 按 API 19 发布 Context.getFileStreamPath(String) 与 ContextWrapper base 委托；名称校验、应用 files 路径和 openFileInput/Output 共用唯一 VFS 事实，返回 BootDex File 新对象且不创建目标文件。"
+
+[dexvm.context_private_directory]
+status = "partial"
+test = "tests/dexvm/file_vfs_tests.cpp: Context getDir private directories preserve API19 paths and VFS state; Context getDir private directories persist across sessions"
+note = "Context.getDir(String,int) 与 wrapper base 委托支持 MODE_PRIVATE：在已安装应用的数据根创建 app_<name>，每次构造普通 BootDex File，mkdir 失败仍返回路径。名称含 / 抛 IAE，null/空串分别拼接 app_null/app_；现有文件不替换。读写与持久化共用 VFS/sandbox，无宿主路径分支。非 PRIVATE 模式和无 VFS 明确失败并记账；不实现跨应用权限、宿主 chmod 或完整 POSIX 权限模型。"
 
 [dexvm.intent_filter_matching]
 status = "partial"
@@ -1980,3 +1990,13 @@ note = "BND-42/ADR-0080 第一阶段：进程统一冻结 1..32 核与 1..10000 
 status = "complete"
 test = "tests/cpu/execution_budget_tests.cpp; tests/cpu/dynarmic_tests.cpp; tests/runtime/guest_cpu_environment_tests.cpp; tests/frontend/gui_launch_tests.cpp: BND-43"
 note = "BND-43/ADR-0081：complete 仅指默认关闭的 A32/T32 并发名额和进程总 backend tick 速率上限。共享 Dynarmic context 覆盖主/clone/Java native/重入 CPU，FIFO、Clock 计量、50ms 有限突发、未用额度退款、取消和 teardown drain 有机器回归；限额模式在 SVC 返回后释放名额，再经原有 runner 调用 HLE/JNI，默认模式保留 fast hook。CLI/单游戏设置接入，Windows 构建与定向 47 用例/683 断言通过；开启限额 APK 仍到达已有 coprocessor 断言。Java 字节码限速、宿主 CPU 占用/亲和性、物理周期模拟和完整游戏兼容不在该 complete 范围。"
+
+[dexvm.pending_intent]
+status = "partial"
+test = "tests/dexvm/android_value_tests.cpp: DVM-211"
+note = "DVM-211：当前 APK 的 service/broadcast 令牌创建、规范化身份、NO_CREATE/CANCEL_CURRENT/UPDATE_CURRENT、取消、Intent 快照、VM 锁并发、弱 registry GC 与退出清理。原版 Intent 执行匹配/复制/更新；ONE_SHOT 与 fill-in flags 只参与身份。selector、自定义 Intent/Uri、content MIME provider 推断、未知 flags、投递与 Parcel 明确失败或不提供；不启动 Service。"
+
+[dexvm.alarm_manager]
+status = "partial"
+test = "tests/dexvm/android_value_tests.cpp: DVM-211"
+note = "DVM-211：alarm 单例与 API19 cancel(null/无匹配/匹配令牌)；取消闹钟不使 PendingIntent 失效，条目保活与退出清理接入 session GC。尚无生产闹钟注册入口，所有已声明 set/setExact/setWindow/setRepeating/setInexactRepeating 调度入口均记账失败；不提供后台系统闹钟服务。"

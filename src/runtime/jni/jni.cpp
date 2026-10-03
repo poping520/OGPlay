@@ -295,7 +295,7 @@ public:
     }
 
     void AttachThread(const std::uint64_t thread_id,
-                      const std::size_t initial_capacity) {
+                      const std::size_t initial_capacity, const bool daemon) {
         if (thread_id == 0) Throw(JniReferenceErrorReason::invalid_thread,
                                   "JNI thread id cannot be zero");
         if (initial_capacity > limits_.local_per_thread) {
@@ -308,7 +308,7 @@ public:
                   "JNI thread is already attached");
         }
         threads_.emplace(thread_id,
-                         ThreadState{{LocalFrame{initial_capacity, {}}}});
+                         ThreadState{{LocalFrame{initial_capacity, {}}}, daemon});
     }
 
     void DetachThread(const std::uint64_t thread_id) {
@@ -324,6 +324,11 @@ public:
     [[nodiscard]] bool IsThreadAttached(const std::uint64_t thread_id) const {
         std::scoped_lock lock(mutex_);
         return threads_.contains(thread_id);
+    }
+
+    [[nodiscard]] bool IsDaemonThread(const std::uint64_t thread_id) const {
+        std::scoped_lock lock(mutex_);
+        return Thread(thread_id).daemon;
     }
 
     void ConfigureLegacyLocalReferenceCompatibility(
@@ -519,6 +524,7 @@ private:
 
     struct ThreadState final {
         std::vector<LocalFrame> frames;
+        bool daemon{};
     };
 
     using EntryIterator = std::map<std::uint32_t, Entry>::iterator;
@@ -702,8 +708,8 @@ JniReferenceTable::JniReferenceTable(JniReferenceTable&&) noexcept = default;
 JniReferenceTable& JniReferenceTable::operator=(JniReferenceTable&&) noexcept = default;
 
 void JniReferenceTable::AttachThread(const std::uint64_t thread_id,
-                                     const std::size_t initial_local_capacity) {
-    impl_->AttachThread(thread_id, initial_local_capacity);
+                                     const std::size_t initial_local_capacity, const bool daemon) {
+    impl_->AttachThread(thread_id, initial_local_capacity, daemon);
 }
 
 void JniReferenceTable::DetachThread(const std::uint64_t thread_id) {
@@ -712,6 +718,10 @@ void JniReferenceTable::DetachThread(const std::uint64_t thread_id) {
 
 bool JniReferenceTable::IsThreadAttached(const std::uint64_t thread_id) const {
     return impl_->IsThreadAttached(thread_id);
+}
+
+bool JniReferenceTable::IsDaemonThread(const std::uint64_t thread_id) const {
+    return impl_->IsDaemonThread(thread_id);
 }
 
 void JniReferenceTable::ConfigureLegacyLocalReferenceCompatibility(

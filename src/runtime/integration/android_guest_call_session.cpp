@@ -1179,8 +1179,21 @@ public:
 
     SupervisorCallProgress HandleBoundary(
         cpu::Cpu& cpu, const cpu::RunResult& stopped) {
-        // Entering any guest JNI target is the strongest progress signal the
-        // JNI boundary can expose; ADR-0023 records the bounded limitation.
+        if (stopped.reason != cpu::RunStopReason::supervisor_call || stopped.immediate != 3U)
+            return boundary_.HandleWithProgress(cpu, stopped);
+        // JNI on a native clone borrows that thread's CPU for nested calls.
+        // Java/root calls already publish the current CPU and nesting depth.
+        const auto found = active_guest_calls.find(this);
+        const auto previous = found == active_guest_calls.end() ? ActiveGuestCall{} : found->second;
+        struct RestoreCall final {
+            const Impl* owner;
+            ActiveGuestCall previous;
+            ~RestoreCall() {
+                if (previous.cpu) active_guest_calls[owner] = previous;
+                else active_guest_calls.erase(owner);
+            }
+        } restore{this, previous};
+        if (!previous.cpu) active_guest_calls[this] = {&cpu, 0U};
         if (jni_dispatcher_.Handle(cpu, stopped)) {
             return ClassifyJniReentry(true);
         }

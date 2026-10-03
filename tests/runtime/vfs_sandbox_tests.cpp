@@ -94,6 +94,71 @@ void WriteThrough(VirtualFileSystem& vfs, const std::string_view path,
 
 }  // namespace
 
+TEST_CASE("VFS sandbox preserves mixed-case package roots across reload and deletion") {
+    const TemporaryRoot root("mixed-package");
+    constexpr auto package = "com.example.MixedGame";
+    const std::vector<std::string> roots{"/data/data/com.example.MixedGame", "/sdcard"};
+    const std::array paths{
+        "/data/data/com.example.MixedGame/files/state.dat",
+        "/sdcard/Android/data/com.example.MixedGame/files/state.dat",
+        "/sdcard/Android/obb/com.example.MixedGame/main.obb"};
+    {
+        auto store = SandboxStore::Open(root.path, package, package);
+        VirtualFileSystem vfs;
+        vfs.AttachSandbox(*store, roots);
+        for (const auto* path : paths) {
+            const auto parent = std::string(path).substr(0, std::string(path).rfind('/'));
+            const auto directory = parent.ends_with("/files")
+                ? parent.substr(0, parent.rfind('/')) : parent;
+            if (ErrnoOf([&] { static_cast<void>(vfs.Stat(directory)); }) != 0) {
+                // Attached sdcard roots include implicit ancestors; create the
+                // missing package directory below Android/data or Android/obb.
+                std::string current;
+                std::size_t cursor = 1;
+                while (cursor <= directory.size()) {
+                    auto end = directory.find('/', cursor);
+                    if (end == std::string::npos) end = directory.size();
+                    current = directory.substr(0, end);
+                    if (ErrnoOf([&] { static_cast<void>(vfs.Stat(current)); }) != 0)
+                        vfs.CreateDirectory(current);
+                    cursor = end + 1;
+                }
+            }
+            if (parent != directory) vfs.CreateDirectory(parent);
+            WriteThrough(vfs, path, "saved");
+        }
+        CHECK(store->UsedBytes() == 15);
+        WriteThrough(vfs, paths[0], "new");
+        CHECK(store->UsedBytes() == 13);
+        vfs.FlushAll();
+        CHECK(std::filesystem::exists(root.path / package / "internal/files/state.dat"));
+        CHECK(std::filesystem::exists(root.path / package / "external/files/state.dat"));
+        CHECK(std::filesystem::exists(root.path / package / "obb/main.obb"));
+    }
+    {
+        auto store = SandboxStore::Open(root.path, package, package);
+        VirtualFileSystem vfs;
+        vfs.AttachSandbox(*store, roots);
+        CHECK(ReadAll(vfs, paths[0]) == "new");
+        CHECK(ReadAll(vfs, paths[1]) == "saved");
+        CHECK(ReadAll(vfs, paths[2]) == "saved");
+        vfs.RemoveFile(paths[0]);
+        CHECK(store->UsedBytes() == 10);
+        CHECK(ErrnoOf([&] { store->CreateDirectory("/data/data/com.example.Other/app_sdk"); }) == 22);
+        auto other = SandboxStore::Open(root.path, std::string(package) + "-2", package);
+        VirtualFileSystem isolated;
+        isolated.AttachSandbox(*other, roots);
+        CHECK(ErrnoOf([&] { static_cast<void>(isolated.Stat(paths[1])); }) == 2);
+    }
+    {
+        auto store = SandboxStore::Open(root.path, package, package);
+        VirtualFileSystem vfs;
+        vfs.AttachSandbox(*store, roots);
+        CHECK(ErrnoOf([&] { static_cast<void>(vfs.Stat(paths[0])); }) == 2);
+        CHECK(store->UsedBytes() == 10);
+    }
+}
+
 TEST_CASE("VFS sandbox keeps guest writes across two sessions") {
     const TemporaryRoot root("crosssession");
     {

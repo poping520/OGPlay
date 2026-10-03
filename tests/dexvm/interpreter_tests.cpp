@@ -3092,6 +3092,64 @@ TEST_CASE("dexvm fatal invoke diagnostics render bounded typed arguments") {
     });
 }
 
+TEST_CASE("dexvm parked execution contexts reject foreign host reentry") {
+    WithEachBackend([](InterpreterConfig config) {
+        std::mutex mutex;
+        std::condition_variable changed;
+        bool parked = false;
+        bool release = false;
+        auto b = IntrinsicClassBuilder::Class("Ltest/ParkedExecution;", "Ljava/lang/Object;");
+        b.StaticMethod("park", "()J", [&](IntrinsicContext& call) {
+            const auto depth = call.vm.ExecutionLock().ReleaseForBlocking();
+            {
+                std::unique_lock lock(mutex);
+                parked = true;
+                changed.notify_all();
+                changed.wait(lock, [&] { return release; });
+            }
+            call.vm.ExecutionLock().ReacquireAfterBlocking(depth);
+            return VmValue::Long(INT64_C(0x123456789));
+        });
+        Vm vm(config, {}, {std::move(b).Build()});
+        const auto park = vm.Static("Ltest/ParkedExecution;", "park", "()J");
+        const auto divide = vm.Static("LArith;", "divide", "(II)I");
+        const auto independent = vm.interpreter.CreateExecutionContext();
+        VmCallOutcome owner_result;
+        std::exception_ptr owner_error;
+        std::thread owner([&] {
+            try { owner_result = vm.interpreter.Call(park, {}); }
+            catch (...) { owner_error = std::current_exception(); }
+        });
+        {
+            std::unique_lock lock(mutex);
+            changed.wait(lock, [&] { return parked; });
+        }
+        const std::array arguments{VmValue::Int(12), VmValue::Int(3)};
+        bool rejected = false;
+        try { static_cast<void>(vm.interpreter.Call(divide, arguments)); }
+        catch (const DexVmError& error) {
+            rejected = std::string(error.what()).find("active on another host thread") != std::string::npos;
+        }
+        CHECK_THROWS_AS(vm.interpreter.DiscardExecutionContext(
+            vm.interpreter.ExecutionContext(1)), DexVmError);
+        const auto result = vm.interpreter.Call(independent, divide, arguments);
+        {
+            std::lock_guard lock(mutex);
+            release = true;
+        }
+        changed.notify_all();
+        owner.join();
+        CHECK(rejected);
+        CHECK_FALSE(owner_error);
+        ExpectInt(result, 4);
+        REQUIRE_FALSE(owner_result.exception.IsValid());
+        CHECK(owner_result.value.kind == VmValue::Kind::wide);
+        CHECK(owner_result.value.AsLong() == INT64_C(0x123456789));
+        ExpectInt(vm.interpreter.Call(divide, arguments), 4);
+        vm.interpreter.DiscardExecutionContext(independent);
+    });
+}
+
 TEST_CASE("dexvm diagnostic safe point reports busy instead of waiting") {
     WithEachBackend([](InterpreterConfig config) {
         config.diagnostics.trace_capacity = 8U;

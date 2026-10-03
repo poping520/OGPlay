@@ -170,7 +170,7 @@ public:
         if (next_environment_ == 0) {
             return {JniStatus::no_memory, JniEnvHandle{}};
         }
-        environment_->AttachThread(thread_id, initial_local_capacity);
+        environment_->AttachThread(thread_id, initial_local_capacity, daemon);
         const JniEnvHandle handle{next_environment_++};
         threads_.emplace(thread_id, ThreadEntry{handle, daemon});
         return {JniStatus::ok, handle};

@@ -18,27 +18,48 @@ dexvm::CoreIntrinsicServices AndroidCoreIntrinsicServices(
   services.language = context->language;
   services.iso3_language = context->iso3_language;
   services.iso3_country = context->iso3_country;
-  services.classpath_resource =
+  services.find_classpath_resource =
       [context](const dexvm::CoreIntrinsicServices::ClasspathLoader role,
                 const std::string_view name)
-      -> std::optional<std::vector<std::byte>> {
-    const auto read = [name](const std::vector<std::byte> &bytes,
+      -> std::optional<dexvm::CoreIntrinsicServices::ClasspathResource> {
+    const auto find = [name](const std::string_view path,
                              const loader::ApkArchive &archive)
-        -> std::optional<std::vector<std::byte>> {
+        -> std::optional<dexvm::CoreIntrinsicServices::ClasspathResource> {
       const auto found = std::find_if(
           archive.entries.begin(), archive.entries.end(),
           [name](const loader::ApkEntry &entry) { return entry.name == name; });
       if (found == archive.entries.end())
         return std::nullopt;
-      return loader::ReadApkEntry(bytes, archive, std::string(name));
+      return dexvm::CoreIntrinsicServices::ClasspathResource{
+          std::string(path), std::string(name)};
     };
-    if (const auto boot = read(context->boot_classpath_bytes,
-                               context->boot_classpath_archive)) {
+    if (const auto boot = find("/system/framework/bootdex.jar",
+                              context->boot_classpath_archive)) {
       return boot;
     }
     if (role == dexvm::CoreIntrinsicServices::ClasspathLoader::bootstrap)
       return std::nullopt;
-    return read(context->apk_bytes, context->archive);
+    return find(context->package_resource_path, context->archive);
+  };
+  services.read_classpath_resource =
+      [context](const dexvm::CoreIntrinsicServices::ClasspathResource &resource)
+      -> std::optional<std::vector<std::byte>> {
+    const auto boot = resource.archive_path == "/system/framework/bootdex.jar";
+    if (!boot && (context->package_resource_path.empty() ||
+                  resource.archive_path != context->package_resource_path)) {
+      throw std::invalid_argument("classpath archive is not registered: " +
+                               resource.archive_path);
+    }
+    const auto &archive = boot ? context->boot_classpath_archive : context->archive;
+    const auto found = std::find_if(
+        archive.entries.begin(), archive.entries.end(),
+        [&resource](const loader::ApkEntry &entry) {
+          return entry.name == resource.entry_name;
+        });
+    if (found == archive.entries.end()) return std::nullopt;
+    return loader::ReadApkEntry(
+        boot ? context->boot_classpath_bytes : context->apk_bytes,
+        archive, resource.entry_name);
   };
   services.singleton = [context](dexvm::Interpreter &vm,
                                  const std::string_view key,

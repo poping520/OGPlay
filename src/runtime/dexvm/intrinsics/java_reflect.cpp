@@ -292,51 +292,33 @@ IntrinsicClassDecl Declare_java_lang_Class(
                     context.vm.Linker().Class(Represented(context))
                         .descriptor)));
         });
-    builder.VirtualMethod(
-        "getResourceAsStream", "(Ljava/lang/String;)Ljava/io/InputStream;",
-        [services](IntrinsicContext& context) {
-            auto name = context.vm.StringUtf8(
-                IntrinsicCall(context).NonNullRef(0, "resourceName"));
-            const auto represented = Represented(context);
-            if (!name.empty() && name.front() == '/') {
-                name.erase(name.begin());
-            } else {
-                const auto binary = ClassNameCodec::ClassGetName(
-                    context.vm.Linker().Class(represented).descriptor);
-                const auto dot = binary.rfind('.');
-                if (dot != std::string::npos) {
-                    auto prefix = binary.substr(0, dot);
-                    std::replace(prefix.begin(), prefix.end(), '.', '/');
-                    name = prefix + "/" + name;
-                }
-            }
-            const auto role = context.vm.Linker().Class(represented).defining_loader ==
-                                      kBootstrapLoader
-                ? CoreIntrinsicServices::ClasspathLoader::bootstrap
-                : CoreIntrinsicServices::ClasspathLoader::application;
-            if (!services.classpath_resource) return VmValue::Ref(VmObjectRef{});
-            const auto bytes = services.classpath_resource(role, name);
-            if (!bytes.has_value()) return VmValue::Ref(VmObjectRef{});
-            const auto array = context.vm.Model().NewPrimitiveArray(
-                context.vm.Linker().ResolveDescriptor("[B"), JniPrimitiveKind::byte,
-                static_cast<JniSize>(bytes->size()));
-            const auto roots = context.vm.ProtectReferences(std::array{array});
-            if (!bytes->empty()) context.vm.Model().WriteByteRegion(array, 0, *bytes);
-            const auto stream = context.vm.NewIntrinsicInstance("Ljava/io/ByteArrayInputStream;");
-            const auto stream_roots = context.vm.ProtectReferences(std::array{stream});
-            const auto constructor = context.vm.Linker().FindDirectMethod(
-                context.vm.Linker().ResolveDescriptor("Ljava/io/ByteArrayInputStream;"),
-                "<init>", "([B)V");
-            if (!constructor.has_value()) throw DexVmError(
-                DexVmErrorReason::internal_invariant,
-                "ByteArrayInputStream constructor is not linked");
-            const auto outcome = context.vm.Call(
-                *constructor, std::array{VmValue::Ref(stream), VmValue::Ref(array)});
-            if (outcome.exception.IsValid()) throw VmJavaThrow{
-                context.vm.Linker().Class(outcome.exception_class).descriptor,
-                outcome.exception_message, outcome.exception};
-            return VmValue::Ref(stream);
-        });
+    // AOSP libdvm Class.java: strip one slash, or prepend the binary package.
+    const auto resource = [services](IntrinsicContext& context, const bool stream) {
+        auto name = context.vm.StringUtf8(
+            IntrinsicCall(context).NonNullRef(0, "resourceName"));
+        const auto& represented = context.vm.Linker().Class(Represented(context));
+        if (name.starts_with('/')) {
+            name.erase(name.begin());
+        } else {
+            const auto binary = ClassNameCodec::ClassGetName(represented.descriptor);
+            const auto dot = binary.rfind('.');
+            auto prefix = dot == std::string::npos ? std::string{} : binary.substr(0, dot);
+            std::replace(prefix.begin(), prefix.end(), '.', '/');
+            name = prefix + "/" + name;
+        }
+        // Primitive Class.getClassLoader() is null: API19 uses the system loader.
+        const auto role = represented.descriptor.size() != 1 &&
+                          represented.defining_loader == kBootstrapLoader
+            ? CoreIntrinsicServices::ClasspathLoader::bootstrap
+            : CoreIntrinsicServices::ClasspathLoader::application;
+        return VmValue::Ref(stream
+            ? detail::ClasspathResourceStream(context, services, role, name)
+            : detail::ClasspathResourceUrl(context, services, role, name));
+    };
+    builder.VirtualMethod("getResource", "(Ljava/lang/String;)Ljava/net/URL;",
+        [resource](IntrinsicContext& context) { return resource(context, false); });
+    builder.VirtualMethod("getResourceAsStream", "(Ljava/lang/String;)Ljava/io/InputStream;",
+        [resource](IntrinsicContext& context) { return resource(context, true); });
     builder.VirtualMethod("getPackage", "()Ljava/lang/Package;",
         [](IntrinsicContext& context) {
             const auto descriptor =

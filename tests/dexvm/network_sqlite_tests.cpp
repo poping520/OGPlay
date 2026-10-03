@@ -22,6 +22,7 @@
 #include "ogplay/loader/apk.h"
 #include "ogplay/runtime/database/database_runtime.h"
 #include "ogplay/runtime/dexvm/class_linker.h"
+#include "ogplay/runtime/dexvm/class_loader_facade.h"
 #include "ogplay/runtime/dexvm/interpreter.h"
 #include "ogplay/runtime/dexvm/intrinsic_builder.h"
 #include "ogplay/runtime/dexvm/network_runtime.h"
@@ -169,14 +170,17 @@ struct NetworkSqliteVm final {
   explicit NetworkSqliteVm(
       const InterpreterBackend backend = InterpreterBackend::switch_dispatch,
       std::vector<std::uint8_t> app_dex = {},
-      std::string package_name = "test.game")
+      std::string package_name = "test.game",
+      const bool sealed_classpath = false)
       : vm(
-            [this, &app_dex, &package_name]() -> DexClassLinker & {
+            [this, &app_dex, &package_name, sealed_classpath]() -> DexClassLinker & {
               ogplay::test::BindBootDexArchive(*context);
               context->package_name = package_name;
               context->vfs = &vfs;
-              linker.RegisterIntrinsics(CoreIntrinsicCatalog(
-                  {.current_time_millis = [] { return std::int64_t{1000}; }}));
+              auto services = sealed_classpath ? AndroidCoreIntrinsicServices(context)
+                                               : CoreIntrinsicServices{};
+              services.current_time_millis = [] { return std::int64_t{1000}; };
+              linker.RegisterIntrinsics(CoreIntrinsicCatalog(services));
               linker.RegisterIntrinsics(AndroidIntrinsicCatalog(context));
               auto helper = IntrinsicClassBuilder::Class(
                   "Ltest/SqliteOpenHelperFixture;",
@@ -1486,11 +1490,12 @@ TEST_CASE(
 
     fixture.vm.Network().Configure({true, true, false, {"example.com"}},
                                    &transport);
-    const auto http_unimplemented =
+    const auto enabled_connection =
         fixture.OnOutcome(url, "openConnection", "()Ljava/net/URLConnection;");
-    REQUIRE(http_unimplemented.exception.IsValid());
-    CHECK(fixture.linker.Class(http_unimplemented.exception_class).descriptor ==
-          "Ljava/lang/UnsupportedOperationException;");
+    REQUIRE_FALSE(enabled_connection.exception.IsValid());
+    REQUIRE(enabled_connection.value.ref.IsValid());
+    CHECK(fixture.On(enabled_connection.value.ref, "getURL", "()Ljava/net/URL;").ref == url);
+    CHECK(transport.connected.empty()); // Opening a connection does not perform I/O.
 
     const auto url_class = fixture.linker.ResolveDescriptor("Ljava/net/URL;");
     const auto constructor = fixture.linker.FindDirectMethod(
@@ -1899,5 +1904,50 @@ TEST_CASE(
         "Landroid/media/AudioTrack;", "Ljava/net/Socket;",
         "Landroid/database/sqlite/SQLiteDatabase;"}) {
     CHECK(fixture.linker.FindClass(descriptor).has_value());
+  }
+}
+
+TEST_CASE("Sealed classpath URLs read registered ZIP entries with parent first and CRC checks") {
+  for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto boot_present : {false, true}) {
+      NetworkSqliteVm fixture(backend, {}, "test.game", true);
+      const std::string name = "java/lang/config %!?# +.properties";
+      const std::string contents = "version=2.0.5\nplatform=android\n";
+      const std::string boot_contents = "version=boot\n";
+      auto& context = *fixture.context;
+      context.package_resource_path = "/data/app/test.game-1.apk";
+      context.apk_bytes = MakeStoredZip(name, std::as_bytes(std::span(contents)));
+      context.archive = ogplay::loader::ParseApkArchive(context.apk_bytes);
+      context.boot_classpath_archive = {};
+      if (boot_present) {
+        context.boot_classpath_bytes = MakeStoredZip(name, std::as_bytes(std::span(boot_contents)));
+        context.boot_classpath_archive = ogplay::loader::ParseApkArchive(context.boot_classpath_bytes);
+      }
+      const auto loader = fixture.vm.ClassLoaders().ApplicationLoader();
+      const auto url = fixture.On(loader, "getResource", "(Ljava/lang/String;)Ljava/net/URL;",
+                                 {VmValue::Ref(fixture.vm.NewStringUtf8(name))}).ref;
+      REQUIRE(url.IsValid());
+      const auto form = fixture.vm.StringUtf8(fixture.On(url, "toExternalForm", "()Ljava/lang/String;").ref);
+      CHECK(form == std::string("jar:file:") + (boot_present ? "/system/framework/bootdex.jar" :
+             "/data/app/test.game-1.apk") + "!/java/lang/config%20%25%21%3F%23%20%2B.properties");
+      const auto boot = fixture.vm.ClassLoaders().BootstrapLoader();
+      CHECK(fixture.On(boot, "getResource", "(Ljava/lang/String;)Ljava/net/URL;",
+            {VmValue::Ref(fixture.vm.NewStringUtf8(name))}).ref.IsValid() == boot_present);
+      const auto stream = fixture.On(url, "openStream", "()Ljava/io/InputStream;").ref;
+      const auto properties = fixture.New("Ljava/util/Properties;");
+      fixture.On(properties, "load", "(Ljava/io/InputStream;)V", {VmValue::Ref(stream)});
+      CHECK(fixture.vm.StringUtf8(fixture.On(properties, "getProperty", "(Ljava/lang/String;)Ljava/lang/String;",
+          {VmValue::Ref(fixture.vm.NewStringUtf8("version"))}).ref) == (boot_present ? "boot" : "2.0.5"));
+      fixture.On(stream, "close", "()V");
+      // Simulate sealed backing corruption without changing directory metadata.
+      auto& bytes = boot_present ? context.boot_classpath_bytes : context.apk_bytes;
+      bytes[30 + name.size()] ^= std::byte{1};
+      const auto broken = fixture.OnOutcome(url, "openStream", "()Ljava/io/InputStream;");
+      REQUIRE(broken.exception.IsValid());
+      CHECK(fixture.linker.Class(broken.exception_class).descriptor == "Ljava/io/IOException;");
+      CHECK(broken.exception_message.find("CRC32") != std::string::npos);
+      CHECK_FALSE(fixture.On(loader, "getResourceAsStream", "(Ljava/lang/String;)Ljava/io/InputStream;",
+            {VmValue::Ref(fixture.vm.NewStringUtf8(name))}).ref.IsValid());
+    }
   }
 }

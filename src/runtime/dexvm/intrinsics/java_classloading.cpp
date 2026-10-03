@@ -5,6 +5,9 @@
 #include "catalog.h"
 
 #include <array>
+#include <limits>
+#include <boost/url/encode.hpp>
+#include <boost/url/grammar/lut_chars.hpp>
 #include <utility>
 
 #include "ogplay/runtime/dexvm/intrinsic_builder.h"
@@ -93,27 +96,58 @@ struct ClassLoaderFields final {
 
 }  // namespace
 
+namespace detail {
 namespace {
 
-VmObjectRef ResourceInputStream(IntrinsicContext& context,
-                                const CoreIntrinsicServices& services,
-                                const CoreIntrinsicServices::ClasspathLoader loader,
-                                const std::string_view name) {
-    if (!services.classpath_resource) return VmObjectRef{};
-    const auto bytes = services.classpath_resource(loader, name);
-    if (!bytes.has_value()) return VmObjectRef{};
+[[noreturn]] void MissingResourceBackend(IntrinsicContext& context) {
+    if (auto* ledger = context.vm.Ledger()) {
+        ledger->RecordUnimplemented("dexvm.classloader.resource_url", 0);
+    }
+    throw VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
+                      "sealed classpath resource provider is unavailable"};
+}
+
+std::optional<CoreIntrinsicServices::ClasspathResource> FindResource(
+    IntrinsicContext& context, const CoreIntrinsicServices& services,
+    CoreIntrinsicServices::ClasspathLoader loader, std::string_view name) {
+    if (!services.find_classpath_resource) MissingResourceBackend(context);
+    return services.find_classpath_resource(loader, name);
+}
+
+}  // namespace
+
+VmObjectRef OpenClasspathResource(
+    IntrinsicContext& context, const CoreIntrinsicServices& services,
+    const CoreIntrinsicServices::ClasspathResource& resource) {
+    if (!services.read_classpath_resource) MissingResourceBackend(context);
+    std::optional<std::vector<std::byte>> bytes;
+    try {
+        bytes = services.read_classpath_resource(resource);
+    } catch (const std::invalid_argument& error) {
+        if (auto* ledger = context.vm.Ledger()) {
+            ledger->RecordUnimplemented("dexvm.classloader.resource_url", 0);
+        }
+        throw VmJavaThrow{"Ljava/io/IOException;", error.what()};
+    } catch (const std::runtime_error& error) {
+        throw VmJavaThrow{"Ljava/io/IOException;", error.what()};
+    }
+    if (!bytes) {
+        throw VmJavaThrow{"Ljava/io/FileNotFoundException;", resource.entry_name};
+    }
+    if (bytes->size() > static_cast<std::size_t>(std::numeric_limits<JniSize>::max())) {
+        throw VmJavaThrow{"Ljava/io/IOException;", "classpath resource exceeds Java array limit"};
+    }
     const auto array = context.vm.Model().NewPrimitiveArray(
         context.vm.Linker().ResolveDescriptor("[B"), JniPrimitiveKind::byte,
         static_cast<JniSize>(bytes->size()));
     const auto roots = context.vm.ProtectReferences(std::array{array});
     if (!bytes->empty()) context.vm.Model().WriteByteRegion(array, 0, *bytes);
-    const auto stream = context.vm.NewIntrinsicInstance(
-        "Ljava/io/ByteArrayInputStream;");
+    const auto stream = context.vm.NewIntrinsicInstance("Ljava/io/ByteArrayInputStream;");
     const auto stream_roots = context.vm.ProtectReferences(std::array{stream});
     const auto constructor = context.vm.Linker().FindDirectMethod(
         context.vm.Linker().ResolveDescriptor("Ljava/io/ByteArrayInputStream;"),
         "<init>", "([B)V");
-    if (!constructor.has_value()) {
+    if (!constructor) {
         throw DexVmError(DexVmErrorReason::internal_invariant,
                          "ByteArrayInputStream constructor is not linked");
     }
@@ -127,7 +161,49 @@ VmObjectRef ResourceInputStream(IntrinsicContext& context,
     return stream;
 }
 
-}  // namespace
+VmObjectRef ClasspathResourceUrl(
+    IntrinsicContext& context, const CoreIntrinsicServices& services,
+    CoreIntrinsicServices::ClasspathLoader loader, std::string_view name) {
+    const auto resource = FindResource(context, services, loader, name);
+    if (!resource) return VmObjectRef{};
+    constexpr boost::urls::grammar::lut_chars safe{
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~/"};
+    const auto spec = context.vm.NewStringUtf8(
+        "jar:file:" + boost::urls::encode(resource->archive_path, safe) + "!/" +
+        boost::urls::encode(resource->entry_name, safe));
+    const auto roots = context.vm.ProtectReferences(std::array{spec});
+    const auto url = context.vm.NewIntrinsicInstance("Ljava/net/URL;");
+    const auto url_roots = context.vm.ProtectReferences(std::array{url});
+    const auto constructor = context.vm.Linker().FindDirectMethod(
+        context.vm.Linker().ResolveDescriptor("Ljava/net/URL;"),
+        "<init>", "(Ljava/lang/String;)V");
+    if (!constructor) throw DexVmError(DexVmErrorReason::internal_invariant,
+                                      "URL constructor is not linked");
+    const auto outcome = context.vm.Call(
+        *constructor, std::array{VmValue::Ref(url), VmValue::Ref(spec)});
+    if (outcome.exception.IsValid()) throw VmJavaThrow{
+        context.vm.Linker().Class(outcome.exception_class).descriptor,
+        outcome.exception_message, outcome.exception};
+    return url;
+}
+
+VmObjectRef ClasspathResourceStream(
+    IntrinsicContext& context, const CoreIntrinsicServices& services,
+    CoreIntrinsicServices::ClasspathLoader loader, std::string_view name) {
+    const auto resource = FindResource(context, services, loader, name);
+    if (!resource) return VmObjectRef{};
+    try {
+        return OpenClasspathResource(context, services, *resource);
+    } catch (const VmJavaThrow& error) {
+        // API19 ClassLoader.getResourceAsStream catches IOException only.
+        const auto type = context.vm.Linker().ResolveDescriptor(error.descriptor);
+        const auto io = context.vm.Linker().ResolveDescriptor("Ljava/io/IOException;");
+        if (context.vm.Linker().IsAssignable(io, type)) return VmObjectRef{};
+        throw;
+    }
+}
+
+}  // namespace detail
 
 IntrinsicClassDecl Declare_java_lang_ClassLoader(
     const CoreIntrinsicServices& services) {
@@ -217,7 +293,7 @@ IntrinsicClassDecl Declare_java_lang_ClassLoader(
             const auto role = ReceiverRole(context) == kBootstrapLoader
                 ? CoreIntrinsicServices::ClasspathLoader::bootstrap
                 : CoreIntrinsicServices::ClasspathLoader::application;
-            return VmValue::Ref(ResourceInputStream(
+            return VmValue::Ref(detail::ClasspathResourceStream(
                 context, services, role, name));
         });
     builder.VirtualMethod(
@@ -256,12 +332,29 @@ IntrinsicClassDecl Declare_java_lang_ClassLoader(
         });
     builder.VirtualMethod(
         "getResource", "(Ljava/lang/String;)Ljava/net/URL;",
-        [](IntrinsicContext& context) {
-            static_cast<void>(IntrinsicCall(context).NonNullRef(0, "resourceName"));
-            if (auto* ledger = context.vm.Ledger()) {
-                ledger->RecordUnimplemented("dexvm.classloader.resource_url", 0);
-            }
-            return VmValue::Ref(VmObjectRef{});
+        [services](IntrinsicContext& context) {
+            const auto name = context.vm.StringUtf8(
+                IntrinsicCall(context).NonNullRef(0, "resourceName"));
+            const auto role = ReceiverRole(context) == kBootstrapLoader
+                ? CoreIntrinsicServices::ClasspathLoader::bootstrap
+                : CoreIntrinsicServices::ClasspathLoader::application;
+            return VmValue::Ref(detail::ClasspathResourceUrl(context, services, role, name));
+        });
+    builder.StaticMethod(
+        "getSystemResource", "(Ljava/lang/String;)Ljava/net/URL;",
+        [services](IntrinsicContext& context) {
+            const auto name = context.vm.StringUtf8(
+                IntrinsicCall(context).NonNullRef(0, "resourceName"));
+            return VmValue::Ref(detail::ClasspathResourceUrl(
+                context, services, CoreIntrinsicServices::ClasspathLoader::application, name));
+        });
+    builder.StaticMethod(
+        "getSystemResourceAsStream", "(Ljava/lang/String;)Ljava/io/InputStream;",
+        [services](IntrinsicContext& context) {
+            const auto name = context.vm.StringUtf8(
+                IntrinsicCall(context).NonNullRef(0, "resourceName"));
+            return VmValue::Ref(detail::ClasspathResourceStream(
+                context, services, CoreIntrinsicServices::ClasspathLoader::application, name));
         });
     builder.FinalMethod(
         "resolveClass", "(Ljava/lang/Class;)V",

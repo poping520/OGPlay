@@ -31,9 +31,17 @@ using HostStateDestructor = std::function<void(std::uint64_t)>;
 struct CoreIntrinsicServices final {
     std::uint32_t cpu_cores{1};
     enum class ClasspathLoader : std::uint8_t { bootstrap, application };
-    std::function<std::optional<std::vector<std::byte>>(
+    // Location names a sealed guest archive, never a host filesystem path.
+    struct ClasspathResource final {
+        std::string archive_path;
+        std::string entry_name;
+    };
+    std::function<std::optional<ClasspathResource>(
         ClasspathLoader, std::string_view)>
-        classpath_resource;
+        find_classpath_resource;
+    // Unknown origins fail explicitly; nullopt means a missing entry only.
+    std::function<std::optional<std::vector<std::byte>>(const ClasspathResource&)>
+        read_classpath_resource;
     std::function<void(std::span<std::byte>)> secure_random;
     std::string language{"en"};
     std::string default_timezone{"GMT"};

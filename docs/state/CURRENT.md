@@ -11,9 +11,9 @@
 - **Tales From Deep Space 1.0.0**：[BND-49](../tasks/boundary/BND-49.md) RGB、
   [BND-50](../tasks/boundary/BND-50.md) ATC、[DVM-209](../tasks/dexvm/DVM-209.md) Wi-Fi 锁已修复。
   BN_dec2bn/getDir、[DVM-210](../tasks/dexvm/DVM-210.md) JNI/沙盒已修。
-  FairSync/[DVM-211](../tasks/dexvm/DVM-211.md) 已修；读写锁回归 568 断言通过。
-  下一首错 Class.getResource；已关闭，黑屏/跨平台未验收。
-  证据：`.local/read-write-lock-fix-20261003/`。
+  [DVM-212](../tasks/dexvm/DVM-212.md) 资源 URL/流已修，658 断言通过。
+  APK f=193 首错 getPackageArchiveInfo；已关闭，黑屏/跨平台未验收。
+  证据：`.local/classpath-resource-url-fix-20261003/`。
 
 - **PVZ（com.popcap.pvz_na）**：[DVM-205](../tasks/dexvm/DVM-205.md) 已修复 DEX
   注解预算误拒绝，使用共享解析缓存和分层资源预算。macOS Release 定向回归通过；

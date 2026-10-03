@@ -117,19 +117,17 @@ void ExpectClassNotFound(LoaderVm& vm, const VmCallOutcome& outcome) {
 
 TEST_CASE("Class and ClassLoader resource streams preserve loader and package semantics") {
     CoreIntrinsicServices services;
-    services.classpath_resource = [](
-        const CoreIntrinsicServices::ClasspathLoader loader,
-        const std::string_view name)
-        -> std::optional<std::vector<std::byte>> {
-        if (loader == CoreIntrinsicServices::ClasspathLoader::bootstrap &&
-            name == "java/lang/boot.txt") {
-            return std::vector<std::byte>{std::byte{'b'}};
-        }
-        if (loader == CoreIntrinsicServices::ClasspathLoader::application &&
-            name == "app.txt") {
-            return std::vector<std::byte>{std::byte{'a'}};
-        }
+    services.find_classpath_resource = [](
+        const CoreIntrinsicServices::ClasspathLoader loader, const std::string_view name)
+        -> std::optional<CoreIntrinsicServices::ClasspathResource> {
+        if (name == "java/lang/boot.txt") return {{"/system/framework/bootdex.jar", std::string(name)}};
+        if (loader == CoreIntrinsicServices::ClasspathLoader::application && name == "app.txt")
+            return {{"/data/app/test-1.apk", std::string(name)}};
         return std::nullopt;
+    };
+    services.read_classpath_resource = [](const CoreIntrinsicServices::ClasspathResource& resource)
+        -> std::optional<std::vector<std::byte>> {
+        return std::vector<std::byte>{resource.entry_name == "app.txt" ? std::byte{'a'} : std::byte{'b'}};
     };
     LoaderVm vm(InterpreterBackend::switch_dispatch, std::move(services));
     const auto read = [&](const VmObjectRef stream) {
@@ -159,6 +157,118 @@ TEST_CASE("Class and ClassLoader resource streams preserve loader and package se
         boot_loader, "getResourceAsStream",
         "(Ljava/lang/String;)Ljava/io/InputStream;",
         {VmValue::Ref(vm.String("app.txt"))})).IsValid());
+}
+
+TEST_CASE("Class resource URLs preserve API19 names and open actual streams") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        using Role = CoreIntrinsicServices::ClasspathLoader;
+        using Resource = CoreIntrinsicServices::ClasspathResource;
+        CoreIntrinsicServices services;
+        services.find_classpath_resource = [](Role role, std::string_view name)
+            -> std::optional<Resource> {
+            if (name == "java/lang/boot.txt") return {{"/system/framework/bootdex.jar", std::string(name)}};
+            if (role == Role::application && name == "root %.txt")
+                return {{"/data/app/test-1.apk", std::string(name)}};
+            return std::nullopt;
+        };
+        services.read_classpath_resource = [](const Resource& resource)
+            -> std::optional<std::vector<std::byte>> {
+            if (resource.archive_path != "/system/framework/bootdex.jar" &&
+                resource.archive_path != "/data/app/test-1.apk") {
+                throw std::invalid_argument("unregistered archive");
+            }
+            if (resource.entry_name == "corrupt") throw std::runtime_error("CRC mismatch");
+            if (resource.entry_name != "root %.txt" && resource.entry_name != "java/lang/boot.txt")
+                return std::nullopt;
+            return std::vector<std::byte>{std::byte{'x'}, std::byte{'y'}};
+        };
+        LoaderVm vm(backend, services);
+        const auto app = vm.interpreter.ClassLoaders().ApplicationLoader();
+        const auto boot = vm.interpreter.ClassLoaders().BootstrapLoader();
+        const auto lookup = [&](VmObjectRef owner, std::string_view name) {
+            return Ref(vm.Virtual(owner, "getResource", "(Ljava/lang/String;)Ljava/net/URL;",
+                                  {VmValue::Ref(vm.String(name))}));
+        };
+        const auto text = [&](VmObjectRef owner, const char* method) {
+            return vm.interpreter.StringUtf8(Ref(vm.Virtual(owner, method, "()Ljava/lang/String;")));
+        };
+        const auto url = lookup(app, "root %.txt");
+        REQUIRE(url.IsValid());
+        CHECK(text(url, "toExternalForm") == "jar:file:/data/app/test-1.apk!/root%20%25.txt");
+        CHECK(text(url, "getProtocol") == "jar");
+        const auto connection = Ref(vm.Virtual(url, "openConnection", "()Ljava/net/URLConnection;"));
+        CHECK(Ref(vm.Virtual(connection, "getURL", "()Ljava/net/URL;")) == url);
+        const auto stream = Ref(vm.Virtual(connection, "getInputStream", "()Ljava/io/InputStream;"));
+        CHECK(vm.linker.Class(vm.model.ObjectClass(stream)).descriptor == "Ljava/io/ByteArrayInputStream;");
+        CHECK(vm.Virtual(stream, "read", "()I").value.AsInt() == 'x');
+        CHECK(vm.Virtual(stream, "read", "()I").value.AsInt() == 'y');
+        CHECK(vm.Virtual(stream, "read", "()I").value.AsInt() == -1);
+        const auto fresh = Ref(vm.Virtual(url, "openStream", "()Ljava/io/InputStream;"));
+        CHECK(fresh != stream);
+        CHECK(vm.Virtual(fresh, "read", "()I").value.AsInt() == 'x');
+        CHECK_FALSE(lookup(boot, "root %.txt").IsValid());
+        CHECK_FALSE(lookup(app, "missing").IsValid());
+        CHECK_FALSE(lookup(app, "/root %.txt").IsValid());
+        const auto string = vm.model.ClassObject(vm.linker.ResolveDescriptor("Ljava/lang/String;"));
+        CHECK(text(lookup(string, "boot.txt"), "toExternalForm") ==
+              "jar:file:/system/framework/bootdex.jar!/java/lang/boot.txt");
+        CHECK_FALSE(lookup(string, "/root %.txt").IsValid());
+        const auto counter = vm.model.ClassObject(vm.linker.ResolveDescriptor("LCounter;"));
+        CHECK(lookup(counter, "/root %.txt").IsValid());
+        CHECK_FALSE(lookup(counter, "root %.txt").IsValid()); // API19 default package prepends '/'.
+        CHECK_FALSE(lookup(counter, "//root %.txt").IsValid()); // strip exactly one slash.
+        const auto primitive = vm.model.ClassObject(vm.linker.ResolveDescriptor("I"));
+        CHECK(lookup(primitive, "/root %.txt").IsValid()); // null loader -> system loader.
+        CHECK(Ref(vm.Static("Ljava/lang/ClassLoader;", "getSystemResource",
+                           "(Ljava/lang/String;)Ljava/net/URL;",
+                           {VmValue::Ref(vm.String("root %.txt"))})).IsValid());
+        for (const auto owner : {app, string}) {
+            ExpectException(vm, vm.Virtual(owner, "getResource", "(Ljava/lang/String;)Ljava/net/URL;",
+                                          {VmValue::Ref(VmObjectRef{})}), "Ljava/lang/NullPointerException;");
+        }
+        const auto from_spec = [&](std::string_view spec) {
+            const auto result = vm.interpreter.NewIntrinsicInstance("Ljava/net/URL;");
+            REQUIRE_FALSE(vm.Direct(result, "<init>", "(Ljava/lang/String;)V",
+                                    {VmValue::Ref(vm.String(spec))}).exception.IsValid());
+            return result;
+        };
+        const auto restored = from_spec(text(url, "toExternalForm"));
+        CHECK(vm.Virtual(Ref(vm.Virtual(restored, "openStream", "()Ljava/io/InputStream;")),
+                         "read", "()I").value.AsInt() == 'x');
+        for (const auto spec : {"jar:file:/tmp/host.zip!/root%20%25.txt",
+                                "jar:https://example.com/a.jar!/x",
+                                "jar:file:/data/app/test-1.apk!/corrupt"}) {
+            ExpectException(vm, vm.Virtual(from_spec(spec), "openStream", "()Ljava/io/InputStream;"),
+                            "Ljava/io/IOException;");
+        }
+        ExpectException(vm, vm.Virtual(from_spec("jar:file:/data/app/test-1.apk!/missing"),
+                                      "openStream", "()Ljava/io/InputStream;"),
+                        "Ljava/io/FileNotFoundException;");
+        const auto rejected = vm.interpreter.NewIntrinsicInstance("Ljava/net/URL;");
+        ExpectException(vm, vm.Direct(rejected, "<init>", "(Ljava/lang/String;)V",
+            {VmValue::Ref(vm.String("jar:file:/data/app/test-1.apk!/bad%zz"))}),
+            "Ljava/net/MalformedURLException;");
+        const auto no_input = Ref(vm.Virtual(url, "openConnection", "()Ljava/net/URLConnection;"));
+        REQUIRE_FALSE(vm.Virtual(no_input, "setDoInput", "(Z)V", {VmValue::Int(0)}).exception.IsValid());
+        ExpectException(vm, vm.Virtual(no_input, "getInputStream", "()Ljava/io/InputStream;"),
+                        "Ljava/net/ProtocolException;");
+        const auto hits = vm.ledger.Unimplemented();
+        CHECK(std::any_of(hits.begin(), hits.end(),
+                          [](const auto& hit) { return hit.id == "dexvm.classloader.resource_url"; }));
+        const auto gc_connection = Ref(vm.Virtual(url, "openConnection", "()Ljava/net/URLConnection;"));
+        const auto gc_stream = Ref(vm.Virtual(gc_connection, "getInputStream", "()Ljava/io/InputStream;"));
+        CHECK(vm.Virtual(gc_stream, "read", "()I").value.AsInt() == 'x');
+        const auto roots = vm.interpreter.ProtectReferences(std::array{gc_connection});
+        static_cast<void>(vm.interpreter.CollectGarbage("classpath_connection_roots"));
+        CHECK(Ref(vm.Virtual(gc_connection, "getURL", "()Ljava/net/URL;")) == url);
+        CHECK(Ref(vm.Virtual(gc_connection, "getInputStream", "()Ljava/io/InputStream;")) == gc_stream);
+        CHECK(vm.Virtual(gc_stream, "read", "()I").value.AsInt() == 'y');
+    }
+    LoaderVm no_provider;
+    ExpectException(no_provider, no_provider.Virtual(
+        no_provider.interpreter.ClassLoaders().ApplicationLoader(), "getResource",
+        "(Ljava/lang/String;)Ljava/net/URL;", {VmValue::Ref(no_provider.String("x"))}),
+        "Ljava/lang/UnsupportedOperationException;");
 }
 
 TEST_CASE("ClassLoader system and bootstrap facades have stable API19 identity") {

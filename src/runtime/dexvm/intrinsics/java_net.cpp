@@ -295,7 +295,7 @@ namespace ogplay::runtime::dexvm::intrinsics {
                             return static_cast<char>(std::tolower(value));
                         });
                     if (scheme != "http" && scheme != "https" &&
-                        scheme != "file") {
+                        scheme != "file" && scheme != "jar") {
                         MalformedUrl(trimmed, "Unknown protocol");
                     }
 
@@ -364,7 +364,13 @@ namespace ogplay::runtime::dexvm::intrinsics {
                                    ? call.Vm().NewStringUtf8(*value)
                                    : VmObjectRef{};
                     };
-                    const auto path_text = parsed.path.value_or("");
+                    if (scheme == "jar" &&
+                        (parsed.scheme_specific_part.find("!/") == std::string::npos ||
+                         parsed.scheme_specific_part.find(':') == std::string::npos)) {
+                        MalformedUrl(trimmed, "Invalid jar URL");
+                    }
+                    const auto path_text = scheme == "jar"
+                        ? parsed.scheme_specific_part : parsed.path.value_or("");
                     std::string file_text = path_text;
                     if (parsed.query.has_value()) {
                         file_text.push_back('?');
@@ -446,6 +452,16 @@ namespace ogplay::runtime::dexvm::intrinsics {
                 IntrinsicCall call(context);
                 const auto protocol_text = call.Vm().StringUtf8(
                     call.GetRef(protocol));
+                if (protocol_text == "jar") {
+                    const auto connection = call.Vm().NewIntrinsicInstance(
+                        "Lorg/ogplay/io/ClasspathURLConnection;");
+                    const auto roots = call.Vm().ProtectReferences(
+                        std::array{connection, call.Receiver()});
+                    InvokeDirect(call.Vm(), "Lorg/ogplay/io/ClasspathURLConnection;",
+                                 "<init>", "(Ljava/net/URL;)V",
+                                 {VmValue::Ref(connection), VmValue::Ref(call.Receiver())});
+                    return VmValue::Ref(connection);
+                }
                 if (protocol_text == "file") {
                     throw VmJavaThrow{
                         "Ljava/io/IOException;",
@@ -482,14 +498,96 @@ namespace ogplay::runtime::dexvm::intrinsics {
             builder.FinalMethod("openConnection", "()Ljava/net/URLConnection;",
                                 open_connection);
             builder.FinalMethod("openStream", "()Ljava/io/InputStream;",
-                                open_connection);
+                [](IntrinsicContext& context) {
+                    const auto connection = detail::InvokeGuest(
+                        context.vm, context.receiver, "openConnection",
+                        "()Ljava/net/URLConnection;").ref;
+                    const auto roots = context.vm.ProtectReferences(std::array{connection});
+                    return detail::InvokeGuest(context.vm, connection,
+                                               "getInputStream", "()Ljava/io/InputStream;");
+                });
             return std::move(builder).Build();
         }
 
-        IntrinsicClassDecl DeclarePlatformUrlConnection() {
-            return std::move(IntrinsicClassBuilder::Class(
-                        "Ljava/net/URLConnection;", "Ljava/lang/Object;"))
-                    .Build();
+        struct UrlConnectionDeclaration final {
+            IntrinsicClassDecl declaration;
+            IntrinsicFieldHandle url;
+            IntrinsicFieldHandle connected;
+        };
+
+        UrlConnectionDeclaration DeclarePlatformUrlConnection() {
+            auto builder = IntrinsicClassBuilder::Class(
+                "Ljava/net/URLConnection;", "Ljava/lang/Object;");
+            const auto url = builder.BoundInstanceField("url", "Ljava/net/URL;", kAccProtected);
+            const auto connected = builder.BoundInstanceField("connected", "Z", kAccProtected);
+            return {std::move(builder).Build(), url, connected};
+        }
+
+        CoreIntrinsicServices::ClasspathResource JarResource(
+            IntrinsicContext& context, const std::string_view file) {
+            const auto unsupported = [&context]() -> void {
+                if (auto* ledger = context.vm.Ledger()) {
+                    ledger->RecordUnimplemented("dexvm.classloader.resource_url", 0);
+                }
+                throw VmJavaThrow{"Ljava/io/IOException;",
+                                  "jar URL requires a registered sealed guest archive"};
+            };
+            const auto separator = file.find("!/");
+            if (!file.starts_with("file:/") || file.starts_with("file://") ||
+                separator == std::string_view::npos) unsupported();
+            const auto decode = [](const std::string_view text) {
+                const auto encoded = boost::urls::make_pct_string_view(text);
+                if (!encoded) throw VmJavaThrow{"Ljava/io/IOException;", "invalid jar URL escape"};
+                boost::urls::encoding_opts options;
+                options.space_as_plus = false;
+                auto result = encoded->decode(options);
+                if (result.find('\0') != std::string::npos) {
+                    throw VmJavaThrow{"Ljava/io/IOException;", "NUL in jar resource name"};
+                }
+                return result;
+            };
+            return {decode(file.substr(5, separator - 5)),
+                    decode(file.substr(separator + 2))};
+        }
+
+        IntrinsicClassDecl DeclareClasspathUrlConnection(
+            const CoreIntrinsicServices& services,
+            const IntrinsicFieldHandle url, const IntrinsicFieldHandle connected) {
+            auto builder = IntrinsicClassBuilder::Class(
+                "Lorg/ogplay/io/ClasspathURLConnection;", "Ljava/net/URLConnection;",
+                {}, kAccPublic | kAccFinal);
+            const auto input = builder.BoundInstanceField(
+                "input", "Ljava/io/InputStream;", kAccPrivate);
+            builder.Constructor("(Ljava/net/URL;)V", [](IntrinsicContext& context) {
+                const auto target = IntrinsicCall(context).NonNullRef(0, "url");
+                InvokeDirect(context.vm, "Ljava/net/URLConnection;", "<init>",
+                             "(Ljava/net/URL;)V",
+                             {VmValue::Ref(context.receiver), VmValue::Ref(target)});
+                return VmValue::Void();
+            });
+            const auto connect = [=](IntrinsicContext& context) {
+                IntrinsicCall call(context);
+                if (call.GetInt(connected)) return VmValue::Void();
+                const auto file = detail::InvokeGuest(context.vm, call.GetRef(url),
+                    "getFile", "()Ljava/lang/String;").ref;
+                const auto roots = context.vm.ProtectReferences(std::array{file});
+                const auto resource = JarResource(context, context.vm.StringUtf8(file));
+                const auto stream = detail::OpenClasspathResource(context, services, resource);
+                call.SetRef(input, stream);
+                call.SetInt(connected, 1);
+                return VmValue::Void();
+            };
+            builder.OverrideMethod("connect", "()V", connect);
+            builder.OverrideMethod("getInputStream", "()Ljava/io/InputStream;",
+                [=](IntrinsicContext& context) {
+                    if (!detail::InvokeGuest(context.vm, context.receiver,
+                                             "getDoInput", "()Z").AsInt()) {
+                        throw VmJavaThrow{"Ljava/net/ProtocolException;", "doInput is false"};
+                    }
+                    connect(context);
+                    return VmValue::Ref(IntrinsicCall(context).GetRef(input));
+                });
+            return std::move(builder).Build();
         }
 
         constexpr boost::urls::grammar::lut_chars kFormUrlEncodedSafe{
@@ -1480,7 +1578,9 @@ namespace ogplay::runtime::dexvm::intrinsics {
         catalog.push_back(DeclarePlatformHttpURLConnection());
         catalog.push_back(DeclareProxySelector());
         catalog.push_back(DeclarePlatformUrl());
-        catalog.push_back(DeclarePlatformUrlConnection());
+        auto connection = DeclarePlatformUrlConnection();
+        catalog.push_back(std::move(connection.declaration));
+        catalog.push_back(DeclareClasspathUrlConnection(services, connection.url, connection.connected));
         catalog.push_back(DeclarePlatformUrlEncoder());
         catalog.push_back(DeclarePlatformUrlDecoder());
         AppendAddressNatives(catalog, services);

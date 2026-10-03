@@ -21,6 +21,16 @@
 
 namespace ogplay::runtime::dexvm::intrinsics::detail {
 
+[[nodiscard]] VmObjectRef ClasspathResourceUrl(
+    IntrinsicContext&, const CoreIntrinsicServices&,
+    CoreIntrinsicServices::ClasspathLoader, std::string_view);
+[[nodiscard]] VmObjectRef ClasspathResourceStream(
+    IntrinsicContext&, const CoreIntrinsicServices&,
+    CoreIntrinsicServices::ClasspathLoader, std::string_view);
+[[nodiscard]] VmObjectRef OpenClasspathResource(
+    IntrinsicContext&, const CoreIntrinsicServices&,
+    const CoreIntrinsicServices::ClasspathResource&);
+
 inline VmValue InvokeGuest(Interpreter& vm, VmObjectRef receiver,
                            const std::string& name, const std::string& signature,
                            std::vector<VmValue> args = {}) {

@@ -24,8 +24,9 @@ switch/threaded 解释、异常、线程/monitor、反射及 `java.*` core intri
   move-result；对照 API 19 `CodeVerify.cpp`，不做全量数据流。
 - 每 VM 只有稳定 application `PathClassLoader` 与 boot loader；application→boot→null。
   `findLoadedClass` 不链接/初始化/合成，`loadClass` 校验 binary name；`Class.forName` 使用真实
-  caller loader。classpath stream 只经注入的 sealed bootstrap/APK 资源源，application
-  parent-first；不开放宿主文件、动态定义、多 namespace 或自定义加载权限。
+  caller loader。classpath URL/stream 经注入的 sealed bootstrap/APK 查找及按来源读取，
+  application parent-first；jar:file URL 仅标识已登记 guest 归档，不开放宿主文件、动态
+  归档/定义、多 namespace 或自定义加载权限。
 - `ReflectionRuntime` 是 Method/Constructor/Field metadata 与 wrapper 的唯一工厂；cache 不持
   guest ref，wrapper 可回收。DVM-143：`getMethod/getDeclaredMethod` 按名称和参数沿本类、父类、
   接口定向查找，只解析同名候选，命中后才解析返回/异常类型；`getMethods` 等枚举接口才建立
@@ -98,7 +99,8 @@ switch/threaded 解释、异常、线程/monitor、反射及 `java.*` core intri
   RoutePlanner 选择直连；不读取宿主代理，也不登记 `Proxy`/默认 selector 的 BootDex 闭包。
 - URLConnection/HttpURLConnection/HttpsURLConnection 的请求属性、超时、method 和默认
   socket factory/hostname verifier 状态来自 API 19 BootDex；core 只 overlay connect 与
-  URL.openConnection 的 NetworkRuntime 边界。默认 NetworkPolicy disabled。真实客户端
+  URL.openConnection 的 NetworkRuntime 边界。封存 classpath 的只读连接复用原版父类状态与
+  ByteArrayInputStream；URL.openStream 虚派连接的 getInputStream。默认 NetworkPolicy disabled。真实客户端
   TLS/HTTPS 由 OGPlayJSSE 经 raw transport 与 guest libssl 完成，不在宿主重复加密。
   SSLEngine、server TLS 和公开互联网 CA 不在当前 complete 范围。
 - `System.lineSeparator` 在类初始化时通过初始 `line.separator` property 冻结，后续 property

@@ -20,7 +20,9 @@ content/os/view/graphics/gl/media/database/device 等 family TU 同址。shared.
   不复制继承成员。native token 只存 Java long，GC/teardown 登记清理，不保存 host 指针，
   浅 clone 不得提前释放共享 token。
 - 资源/设备/路径/身份来自显式 context，不探测 host 环境。classpath 只读封存 BootDex/APK：
-  bootstrap 不见 APK，application parent-first，不映射宿主文件，也不全局跨 VM 缓存。
+  bootstrap 不见 APK，application parent-first；查找返回归档 guest 路径/entry，读取校验
+  已登记来源并复用严格 ZIP/CRC。BootDex 的稳定身份为 `/system/framework/bootdex.jar`，
+  APK 使用 context 的 package_resource_path；不映射宿主文件，也不全局跨 VM 缓存。
 - 未实现记账并抛可捕获 Java 异常，禁止伪成功；结构化日志不吞异常，生命周期事件不丢代际。
   Clock 为唯一时间源，一个 guest 对应一个 host 线程，共用 VM 锁；图形 ANGLE、窗口/输入 SDL3。
 

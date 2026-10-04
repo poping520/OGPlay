@@ -8,11 +8,12 @@
 
 ## 运行状态
 
-- **Tales From Deep Space 1.0.0**：VideoView 已闭合；[BND-52](../tasks/boundary/BND-52.md) 按原生能力发布 packed depth/stencil，
-  原 APK 在 macOS 800×480/1280×720 均显示菜单，无 guestFault，已捕获 GL 错误为 0。
-  定向回归通过；菜单仍裁剪，shutdown 仍有独立内存故障（退出 1），
-  BND-29 EGL 终止后异常断言失败。进程全关闭；完整游戏/Windows/Linux 未验收。
-  证据：`.local/packed-depth-stencil-fix/`。
+- **Tales From Deep Space 1.0.0**：VideoView 与 packed depth/stencil 已闭合，macOS
+  800×480/1280×720 菜单仍裁剪；BND-29 终止断言失败。
+  [DVM-217](../tasks/dexvm/DVM-217.md) AtomicFile/清理异常隔离回归通过。
+  1920×1080 原 APK 越过缺类/pending 首错，f=4077 首次读存档 ENOENT 后遇到
+  `GetArrayLength requires a valid reference`，退出 1；进程全关闭。证据 `.local/atomic-file-fix/`。
+  存档交互、Windows/Linux 未验收。
 
 - **PVZ（com.popcap.pvz_na）**：[DVM-205](../tasks/dexvm/DVM-205.md) 已修复 DEX
   注解预算误拒绝，使用共享解析缓存和分层资源预算。macOS Release 定向回归通过；

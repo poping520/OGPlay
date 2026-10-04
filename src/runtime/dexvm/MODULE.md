@@ -45,6 +45,8 @@ switch/threaded 解释、异常、线程/monitor、反射及 `java.*` core intri
   API 19；异常构造有 64 KiB 应急区。
 - guest native 资源字段回收规则显式指定无效 token（默认 0，API19 ZIP streamHandle 为 -1）；
   未初始化的 0 不登记资源，GC/teardown 清字段时写回对应关闭标记并调用静态释放入口。
+  资源清理保存并 root VM 原异常/结果，通过 NativeMethodBridge 清理 scope 隔离 native
+  pending，退出恢复原状态；失败及未尝试资源回队列，不放宽正常 JNI 调用。
 - 堆按 ADR-0060 区分 initial target、growth limit 与 maximum：越过当前目标先 GC，再增长，
   越过增长上限时执行 before-OOM GC 后才失败；GC 后按 live set、利用率和 min/max free 调整目标。
 - `Interpreter::Call` 返回值或未捕获 Java 异常；寄存器带类别 tag，默认 512 帧。invoke 只有

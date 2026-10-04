@@ -40,6 +40,16 @@ template <typename Integer>
 
 namespace ogplay::runtime::android_intrinsics {
 
+Decl Declare_android_os_FileUtils(const Context&) {
+    auto builder = dx::IntrinsicClassBuilder::Class(
+        "Landroid/os/FileUtils;", "Ljava/lang/Object;");
+    // The fixed ROM adds this native to the otherwise original Java class.
+    // AtomicFile never uses it; querying a volume UUID remains unsupported.
+    builder.UnimplementedStatic("getVolumeUUID", "(Ljava/lang/String;)I",
+        dx::kAccPublic | dx::kAccStatic | dx::kAccNative);
+    return std::move(builder).Build();
+}
+
 Decl Declare_android_os_AsyncTask(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class(
         "Landroid/os/AsyncTask;", "Ljava/lang/Object;", {},

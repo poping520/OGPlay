@@ -1742,6 +1742,8 @@
       "Landroid/os/CancellationSignal$1;",
       "Landroid/os/CancellationSignal$OnCancelListener;",
       "Landroid/os/CancellationSignal;",
+      "Landroid/os/FileUtils$1;",
+      "Landroid/os/FileUtils;",
       "Landroid/os/IBinder$DeathRecipient;",
       "Landroid/os/IBinder;",
       "Landroid/os/IInterface;",
@@ -1804,6 +1806,7 @@
       "Landroid/util/Pools;",
       "Landroid/util/Printer;",
       "Landroid/util/Property;",
+      "Landroid/util/Slog;",
       "Landroid/util/SparseArray;",
       "Landroid/util/SparseBooleanArray;",
       "Landroid/util/SparseIntArray;",
@@ -1840,6 +1843,7 @@
       "Landroid/widget/RelativeLayout$LayoutParams;"
     ],
     "framework2.jar": [
+      "Lcom/android/internal/os/AtomicFile;",
       "Lcom/android/internal/os/IResultReceiver$Stub$Proxy;",
       "Lcom/android/internal/os/IResultReceiver$Stub;",
       "Lcom/android/internal/os/IResultReceiver;",

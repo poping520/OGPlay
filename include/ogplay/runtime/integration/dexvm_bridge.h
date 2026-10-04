@@ -69,6 +69,7 @@ public:
   [[nodiscard]] dexvm::VmValue
   Invoke(const dexvm::LinkedMethod &method, dexvm::VmObjectRef receiver,
         std::span<const dexvm::VmValue> arguments) override;
+    [[nodiscard]] std::unique_ptr<dexvm::NativeCleanupScope> EnterResourceCleanup() override;
     void AttachThread(std::uint64_t guest_thread_id,
                       std::uint64_t execution_token) override;
     void DetachThread(std::uint64_t guest_thread_id,

@@ -217,6 +217,7 @@ AndroidIntrinsicCatalog(const std::shared_ptr<DexVmAndroidContext> &context) {
       Declare_android_os_AsyncTask_Status(context),
       Declare_android_os_AsyncTask_Worker(context),
       Declare_android_os_SystemProperties(context),
+      Declare_android_os_FileUtils(context),
       Declare_android_os_Binder(context),
       Declare_android_os_StrictMode(context),
       Declare_android_os_CountDownTimer(context),

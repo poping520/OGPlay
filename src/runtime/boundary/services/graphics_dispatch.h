@@ -5,6 +5,7 @@
 #include <memory>
 #include <optional>
 #include <string_view>
+#include <vector>
 
 #include "ogplay/gles/gles_transfer_state.h"
 
@@ -26,6 +27,7 @@ inline constexpr std::array<std::string_view, 4> kGuestGlesExtensions{
     "GL_AMD_compressed_ATC_texture"};
 
 [[nodiscard]] std::vector<std::string_view> GuestGlesExtensions(gles::AngleFrame& frame);
+[[nodiscard]] std::vector<std::string_view> GuestGlesExtensions(std::string_view native_extensions);
 class GuestGlContext;
 class A32CallFrame;
 

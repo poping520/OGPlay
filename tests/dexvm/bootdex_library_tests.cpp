@@ -2255,7 +2255,7 @@ TEST_CASE("DVM-104 NativeBN tokens are isolated checked and swept with BigInt ow
     const auto token=static_cast<std::uint64_t>(slots[slot].bits)|(static_cast<std::uint64_t>(slots[slot+1].bits)<<32U);
     CHECK(f.vm.BigInts().Require(token).LowLong()==(UINT64_C(1)<<63U));
     CHECK(f.vm.BigInts().Size()==baseline+1);
-    const auto unsupported=f.Static("Ljava/math/NativeBN;", "BN_add", "(JJJ)V", {VmValue::Long(static_cast<std::int64_t>(token)),VmValue::Long(static_cast<std::int64_t>(token)),VmValue::Long(static_cast<std::int64_t>(token))}); REQUIRE(unsupported.exception.IsValid());
+    const auto unsupported=f.Static("Ljava/math/NativeBN;", "BN_gcd", "(JJJ)V", {VmValue::Long(static_cast<std::int64_t>(token)),VmValue::Long(static_cast<std::int64_t>(token)),VmValue::Long(static_cast<std::int64_t>(token))}); REQUIRE(unsupported.exception.IsValid());
 
     Dvm87Vm other;CHECK_THROWS(other.vm.BigInts().Require(token));
     static_cast<void>(f.vm.CollectGarbage());CHECK(f.vm.BigInts().Size()==baseline);CHECK_THROWS(f.vm.BigInts().Require(token));

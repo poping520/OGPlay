@@ -28,6 +28,7 @@ Asphalt 5（pilot title）删除 profile 全部 `native_call` 与 `[[java.class]
 
 | WU | 一句话目标 | 状态 |
 | --- | --- | --- |
+| [DVM-215](DVM-215.md) | API19 十进制 JSON 数值转换与有界 guest BIGNUM | 有界完成 |
 | [DVM-214](DVM-214.md) | API19 字节流压缩与 guest zlib | 有界完成 |
 | [DVM-213](DVM-213.md) | 封存 APK 的 PackageInfo 归档查询 | 有界完成 |
 | [DVM-212](DVM-212.md) | 封存 classpath 资源 URL 与只读连接 | 有界完成 |

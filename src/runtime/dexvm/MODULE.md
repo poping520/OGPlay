@@ -114,7 +114,9 @@ switch/threaded 解释、异常、线程/monitor、反射及 `java.*` core intri
 - `UnsafeRuntime` 使用逻辑字段令牌；访问校验类型/对齐/边界，CAS 要求执行锁，引用写入保留
   GC tag/assignability。令牌不是地址或 GC root。
 - guest ICU 固定为 ICU4C 51 与 `/system/usr/icu/icudt51l.dat`；令牌在 guest SO，teardown 关闭。
-  `BigIntRuntime` 只提供 ASN.1/证书所需子集，不提供大数密码算术。
+  `BigIntRuntime` 保持受检逻辑令牌、编码值和 owner/GC 生命周期；有界加/乘/word 乘/
+  移位/幂/商余数通过值快照调用 guest libcrypto 临时 BIGNUM，成功后原子提交。
+  不传令牌作地址，不新增持久 registry，不提供完整大数密码算术。
 - DVM-142 的 PM 值类闭包归 BootDex；DVM-143 后 PackageManager 方法查询不依赖无关签名。
 - 本地 Binder、IBinder/IInterface、Parcel、ResultReceiver/IResultReceiver 的普通 Java 协议归
   BootDex；integration 只覆盖 Binder 身份/线程策略 native 与 Parcel 字节/引用 native 边界。

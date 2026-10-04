@@ -34,6 +34,7 @@
 #include "runtime/boundary/modules/gles1/gles1_query.h"
 #include "runtime/boundary/modules/gles1/gles1_support.h"
 #include "runtime/boundary/core/boundary_symbols.h"
+#include "runtime/boundary/services/graphics_dispatch.h"
 #include "runtime/boundary/modules/opensles/opensles_abi.h"
 
 namespace {
@@ -6737,4 +6738,206 @@ TEST_CASE("BND50 ATC PBO upload retains shared texture format metadata") {
     const std::array<std::byte,64> rgba{};f.memory.Write(f.output,rgba,1);
     AuditGl(f,"glTexSubImage2D",{0x0de1,0,0,0,4,4,0x1908,0x1401,f.output.Value()});
     CHECK(AuditGl(f,"glGetError")==0U);
+}
+
+
+TEST_CASE("BND51 float extensions require exact native tokens and linear dependency") {
+    const auto check = [](const std::string_view native, const bool upload, const bool linear) {
+        const auto values = ogplay::runtime::GuestGlesExtensions(native);
+        CHECK((std::count(values.begin(), values.end(), "GL_OES_texture_float") == 1) == upload);
+        CHECK((std::count(values.begin(), values.end(), "GL_OES_texture_float_linear") == 1) == linear);
+        CHECK(std::count(values.begin(), values.end(), "GL_EXT_color_buffer_float") == 0);
+        CHECK(std::count(values.begin(), values.end(), "GL_OES_texture_half_float") == 0);
+    };
+    check("", false, false);
+    check("GL_OES_texture_float_linear", false, false);
+    check("GL_OES_texture_float", true, false);
+    check("GL_OES_texture_float GL_OES_texture_float_linear", true, true);
+    check("GL_OES_texture_float_extra xGL_OES_texture_float GL_OES_texture_float_linear_extra", false, false);
+    check("\tGL_OES_texture_float_linear\nGL_EXT_color_buffer_float GL_OES_texture_half_float\rGL_OES_texture_float GL_OES_texture_float ", true, true);
+}
+
+TEST_CASE("BND51 float extension string indexed queries and counts share context facts") {
+    if (!ogplay::gles::IsNativeAngleEglAvailable()) return;
+    BoundaryFixture f;
+    REQUIRE(f.Call("libEGL.so", "eglInitialize", {1}) == 1U);
+    const auto surface = AuditSurface(f);
+    const auto read = [&](const std::uint32_t pointer) {
+        const ogplay::memory::GuestAddress address{pointer};
+        REQUIRE(pointer != 0U);
+        std::string value(f.memory.CStringLength(address, 4096, 1), '\0');
+        f.memory.Read(address, std::as_writable_bytes(std::span(value)), 1);
+        return value;
+    };
+    for (const auto version : {2U, 3U}) {
+        CAPTURE(version);
+        const auto context = AuditContext(f, version);
+        AuditBind(f, context, surface);
+        const auto extensions = read(AuditGl(f, "glGetString", {0x1F03}));
+        std::vector<std::string> tokens;
+        std::size_t start = 0;
+        while (start < extensions.size()) {
+            const auto end = extensions.find(' ', start);
+            const auto token = extensions.substr(start, end - start);
+            if (!token.empty()) tokens.push_back(token);
+            if (end == std::string::npos) break;
+            start = end + 1;
+        }
+        const auto count = AuditInteger(f, 0x821D);
+        REQUIRE(count == tokens.size());
+        if (version >= 3U) {
+            for (std::uint32_t i = 0; i < count; ++i)
+                CHECK(read(AuditGl(f, "glGetStringi", {0x1F03, i})) == tokens[i]);
+            AuditGl(f, "glGetInteger64v", {0x821D, f.output.Value()});
+            CHECK(f.bus.Read32(f.output, 1) == count);
+            CHECK(f.bus.Read32(f.output.Add(4), 1) == 0U);
+        } else {
+            CHECK(AuditGl(f, "glGetStringi", {0x1F03, 0}) == 0U);
+            CHECK(AuditGl(f, "glGetError") == 0x0502U);
+        }
+        AuditGl(f, "glGetFloatv", {0x821D, f.output.Value()});
+        CHECK(std::bit_cast<float>(f.bus.Read32(f.output, 1)) == static_cast<float>(count));
+        AuditGl(f, "glGetBooleanv", {0x821D, f.output.Value()});
+        CHECK(f.bus.Read8(f.output, 1) == 1U);
+        if (version >= 3U) {
+            CHECK(AuditGl(f, "glGetStringi", {0x1F03, count}) == 0U);
+            CHECK(AuditGl(f, "glGetError") == 0x0501U);
+        }
+        CHECK(AuditGl(f, "glGetError") == 0U);
+        REQUIRE(f.Call("libEGL.so", "eglMakeCurrent", {1, 0, 0, 0}) == 1U);
+        REQUIRE(f.Call("libEGL.so", "eglDestroyContext", {1, context}) == 1U);
+    }
+}
+
+TEST_CASE("BND51 guest float 2D and six cube faces upload update and sample") {
+    if (!ogplay::gles::IsNativeAngleEglAvailable()) return;
+    BoundaryFixture f;
+    REQUIRE(f.Call("libEGL.so", "eglInitialize", {1}) == 1U);
+    const auto surface = AuditSurface(f), context = AuditContext(f, 2);
+    AuditBind(f, context, surface);
+    const auto pointer = AuditGl(f, "glGetString", {0x1F03});
+    const ogplay::memory::GuestAddress address{pointer};
+    std::string extensions(f.memory.CStringLength(address, 4096, 1), '\0');
+    f.memory.Read(address, std::as_writable_bytes(std::span(extensions)), 1);
+    REQUIRE((" " + extensions + " ").find(" GL_OES_texture_float ") != std::string::npos);
+    const bool linear = extensions.find("GL_OES_texture_float_linear") != std::string::npos;
+    // Four distinct floating texels expose both float stride and interpolation.
+    const std::array pixels{0.0F, 0.0F, 0.0F, 1.0F, 1.0F, 0.0F, 1.0F, 1.0F,
+                            0.0F, 1.0F, 1.0F, 1.0F, 1.0F, 1.0F, 0.0F, 1.0F};
+    const auto data = f.output.Add(1024), vertices = f.output.Add(1200);
+    f.memory.Write(data, std::as_bytes(std::span(pixels)), 1);
+    const std::array triangle{-1.0F, -1.0F, 3.0F, -1.0F, -1.0F, 3.0F};
+    f.memory.Write(vertices, std::as_bytes(std::span(triangle)), 1);
+    const auto compile = [&](const std::uint32_t type, const std::string_view source) {
+        const auto shader = AuditGl(f, "glCreateShader", {type});
+        WriteGuestString(f, f.output.Add(512), source);
+        f.bus.Write32(f.output.Add(256), f.output.Add(512).Value(), 1);
+        AuditGl(f, "glShaderSource", {shader, 1, f.output.Add(256).Value(), 0});
+        AuditGl(f, "glCompileShader", {shader});
+        AuditGl(f, "glGetShaderiv", {shader, 0x8B81, f.output.Value()});
+        REQUIRE(f.bus.Read32(f.output, 1) == 1U);
+        return shader;
+    };
+    for (const auto target : {0x0DE1U, 0x8513U}) {
+        CAPTURE(target);
+        const auto texture = AuditName(f, "glGenTextures");
+        AuditGl(f, "glBindTexture", {target, texture});
+        AuditGl(f, "glPixelStorei", {0x0CF5, 8});
+        f.memory.Write(data, std::as_bytes(std::span(pixels)), 1);
+        for (std::uint32_t i = 0; i < (target == 0x8513U ? 6U : 1U); ++i) {
+            const auto face = target == 0x8513U ? 0x8515U + i : target;
+            AuditGl(f, "glTexImage2D", {face, 0, 0x1908, 2, 2, 0, 0x1908, 0x1406, 0});
+            CHECK(AuditGl(f, "glGetError") == 0U);
+            AuditGl(f, "glTexSubImage2D", {face, 0, 0, 0, 2, 2, 0x1908, 0x1406, data.Value()});
+            CHECK(AuditGl(f, "glGetError") == 0U);
+        }
+        AuditGl(f, "glTexParameteri", {target, 0x2802, 0x812F});
+        AuditGl(f, "glTexParameteri", {target, 0x2803, 0x812F});
+        const auto vertex = compile(0x8B31, "attribute vec2 p;void main(){gl_Position=vec4(p,0.0,1.0);}");
+        const auto fragment = compile(0x8B30, target == 0x8513U
+            ? "precision highp float;uniform samplerCube t;uniform vec3 uv;uniform float decode;void main(){vec4 c=textureCube(t,uv);gl_FragColor=mix(c,vec4(c.r*.25,(c.g+2.0)*.25,c.b*4.0,1.0),decode);}"
+            : "precision highp float;uniform sampler2D t;uniform vec3 uv;uniform float decode;void main(){vec4 c=texture2D(t,uv.xy);gl_FragColor=mix(c,vec4(c.r*.25,(c.g+2.0)*.25,c.b*4.0,1.0),decode);}");
+        const auto program = AuditGl(f, "glCreateProgram");
+        AuditGl(f, "glAttachShader", {program, vertex});
+        AuditGl(f, "glAttachShader", {program, fragment});
+        AuditGl(f, "glLinkProgram", {program});
+        AuditGl(f, "glGetProgramiv", {program, 0x8B82, f.output.Value()});
+        REQUIRE(f.bus.Read32(f.output, 1) == 1U);
+        AuditGl(f, "glUseProgram", {program});
+        WriteGuestString(f, f.output.Add(256), "p");
+        const auto attribute = AuditGl(f, "glGetAttribLocation", {program, f.output.Add(256).Value()});
+        REQUIRE(attribute != UINT32_MAX);
+        AuditGl(f, "glVertexAttribPointer", {attribute, 2, 0x1406, 0, 0, vertices.Value()});
+        AuditGl(f, "glEnableVertexAttribArray", {attribute});
+        WriteGuestString(f, f.output.Add(256), "uv");
+        const auto uv = AuditGl(f, "glGetUniformLocation", {program, f.output.Add(256).Value()});
+        REQUIRE(uv != UINT32_MAX);
+        const auto word = [](const float value) { return std::bit_cast<std::uint32_t>(value); };
+        for (const auto filter : {0x2600U, 0x2601U}) {
+            if (filter == 0x2601U && !linear) continue;
+            AuditGl(f, "glTexParameteri", {target, 0x2800, filter});
+            AuditGl(f, "glTexParameteri", {target, 0x2801, filter});
+            const bool nearest = filter == 0x2600U;
+            AuditGl(f, "glUniform3f", {uv, word(target == 0x8513U ? 1.0F : (nearest ? .25F : .5F)),
+                word(target == 0x8513U ? (nearest ? .5F : 0.0F) : (nearest ? .25F : .5F)),
+                word(target == 0x8513U && nearest ? .5F : 0.0F)});
+            AuditGl(f, "glDrawArrays", {4, 0, 3});
+            const auto pixel = AuditPixel(f);
+            for (const auto shift : {0U, 8U, 16U})
+                CHECK(static_cast<int>((pixel >> shift) & 255U) == doctest::Approx(nearest ? 0 : 128).epsilon(.02));
+            CHECK((pixel >> 24U) == 255U);
+        }
+        // Replacing from guest memory still uses the original float layout.
+        const auto face = target == 0x8513U ? 0x8515U : target;
+        AuditGl(f, "glTexImage2D", {face, 0, 0x1908, 2, 2, 0, 0x1908, 0x1406, data.Value()});
+        CHECK(AuditGl(f, "glGetError") == 0U);
+        // Values outside [0,1] must survive upload; RGBA8 conversion would fail this draw.
+        auto wide_pixels = pixels;
+        for (std::size_t i = 0; i < wide_pixels.size(); i += 4) {
+            wide_pixels[i] = 2.0F; wide_pixels[i + 1] = -1.0F;
+            wide_pixels[i + 2] = .123456F; wide_pixels[i + 3] = 1.0F;
+        }
+        f.memory.Write(data, std::as_bytes(std::span(wide_pixels)), 1);
+        AuditGl(f, "glTexSubImage2D", {face, 0, 0, 0, 2, 2, 0x1908, 0x1406, data.Value()});
+        WriteGuestString(f, f.output.Add(256), "decode");
+        const auto decode = AuditGl(f, "glGetUniformLocation", {program, f.output.Add(256).Value()});
+        REQUIRE(decode != UINT32_MAX);
+        AuditGl(f, "glUniform1f", {decode, word(1)});
+        AuditGl(f, "glDrawArrays", {4, 0, 3});
+        const auto wide_pixel = AuditPixel(f);
+        CHECK((wide_pixel & 255U) == doctest::Approx(128).epsilon(.02));
+        CHECK(((wide_pixel >> 8U) & 255U) == doctest::Approx(64).epsilon(.02));
+        CHECK(((wide_pixel >> 16U) & 255U) == doctest::Approx(126).epsilon(.02));
+        const auto end = f.output.Add(f.memory.PageSize() - 16);
+        CHECK_THROWS_AS(AuditGl(f, "glTexImage2D", {face, 0, 0x1908, 2, 2, 0, 0x1908, 0x1406, end.Value()}), ogplay::memory::MemoryFault);
+        CHECK(AuditGl(f, "glGetError") == 0U);
+        AuditGl(f, "glDisableVertexAttribArray", {attribute});
+        AuditGl(f, "glUseProgram", {0});
+        AuditGl(f, "glDeleteProgram", {program});
+        AuditGl(f, "glDeleteShader", {vertex});
+        AuditGl(f, "glDeleteShader", {fragment});
+        f.bus.Write32(f.output, texture, 1);
+        AuditGl(f, "glDeleteTextures", {1, f.output.Value()});
+    }
+}
+
+TEST_CASE("BND51 float PBO uploads keep byte offsets bounded") {
+    if (!ogplay::gles::IsNativeAngleEglAvailable()) return;
+    BoundaryFixture f;
+    REQUIRE(f.Call("libEGL.so", "eglInitialize", {1}) == 1U);
+    const auto surface = AuditSurface(f), context = AuditContext(f);
+    AuditBind(f, context, surface);
+    const auto texture = AuditName(f, "glGenTextures");
+    AuditGl(f, "glBindTexture", {0x0DE1, texture});
+    const auto buffer = AuditName(f, "glGenBuffers");
+    AuditGl(f, "glBindBuffer", {0x88EC, buffer});
+    const std::array pixels{.25F, .5F, .75F, 1.0F};
+    f.memory.Write(f.output.Add(4), std::as_bytes(std::span(pixels)), 1);
+    AuditGl(f, "glBufferData", {0x88EC, 20, f.output.Value(), 0x88E4});
+    AuditGl(f, "glTexImage2D", {0x0DE1, 0, 0x8814, 1, 1, 0, 0x1908, 0x1406, 4});
+    CHECK(AuditGl(f, "glGetError") == 0U);
+    AuditGl(f, "glTexSubImage2D", {0x0DE1, 0, 0, 0, 1, 1, 0x1908, 0x1406, 8});
+    CHECK(AuditGl(f, "glGetError") == 0x0502U);
+    AuditGl(f, "glTexSubImage2D", {0x0DE1, 0, 0, 0, 1, 1, 0x1908, 0x1406, 4});
+    CHECK(AuditGl(f, "glGetError") == 0U);
 }

@@ -147,9 +147,28 @@ std::uint32_t QueryStringOffset(const std::uint32_t parameter) {
 }  // namespace
 
 std::vector<std::string_view> GuestGlesExtensions(gles::AngleFrame& frame) {
+    return GuestGlesExtensions(frame.GetString(0x1F03U));
+}
+
+std::vector<std::string_view> GuestGlesExtensions(const std::string_view native_extensions) {
     std::vector<std::string_view> values(kGuestGlesExtensions.begin(), kGuestGlesExtensions.end());
-    const auto native = " " + frame.GetString(0x1F03U) + " ";
-    if (native.find(" GL_OES_EGL_image ") != std::string::npos) values.push_back("GL_OES_EGL_image");
+    const auto supports = [native_extensions](const std::string_view extension) {
+        std::size_t begin = 0;
+        while ((begin = native_extensions.find_first_not_of(" \t\r\n", begin)) != std::string_view::npos) {
+            const auto end = native_extensions.find_first_of(" \t\r\n", begin);
+            if (native_extensions.substr(begin, end - begin) == extension) return true;
+            if (end == std::string_view::npos) break;
+            begin = end;
+        }
+        return false;
+    };
+    if (supports("GL_OES_EGL_image")) values.push_back("GL_OES_EGL_image");
+    // These use the audited format/type pixel transfer and native ANGLE sampling.
+    // Linear filtering is an additional capability; upload support alone is insufficient.
+    if (supports("GL_OES_texture_float")) {
+        values.push_back("GL_OES_texture_float");
+        if (supports("GL_OES_texture_float_linear")) values.push_back("GL_OES_texture_float_linear");
+    }
     return values;
 }
 

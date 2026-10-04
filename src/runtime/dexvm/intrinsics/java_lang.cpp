@@ -1689,6 +1689,88 @@ IntrinsicClassDecl Declare_java_lang_Character() {
 
 }  // namespace
 
+namespace {
+// Host tokens remain owned by BigIntRuntime. Guest arithmetic sees only value snapshots.
+VmValue NativeBnArithmetic(IntrinsicContext& c, const char* method, bool division,
+                           bool unary, bool in_place = false) {
+    auto& vm = c.vm;
+    const auto token = [&](std::size_t i) {
+        return static_cast<std::uint64_t>(c.arguments[i].AsLong());
+    };
+    const auto destination = token(0);
+    const auto remainder = division ? token(1) : 0;
+    if (destination) static_cast<void>(vm.BigInts().Require(destination));
+    else if (!division) static_cast<void>(vm.BigInts().Require(destination));
+    if (remainder) static_cast<void>(vm.BigInts().Require(remainder));
+    if (division && ((!destination && !remainder) || (destination && destination == remainder)))
+        throw VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "invalid quotient/remainder destinations"};
+    const auto a_index = division ? 2U : in_place ? 0U : 1U;
+    const auto a = vm.BigInts().Require(token(a_index));
+    const auto b = unary ? BigIntRuntime::Number{} : vm.BigInts().Require(token(a_index+1));
+    const auto encode = [&](const BigIntRuntime::Number& value) {
+        auto bytes = value.Bytes();
+        bytes.insert(bytes.begin(), value.negative ? std::byte{1} : std::byte{0});
+        const auto array = vm.Model().NewPrimitiveArray(vm.Linker().ResolveDescriptor("[B"),
+            JniPrimitiveKind::byte, static_cast<JniSize>(bytes.size()));
+        vm.Model().WriteByteRegion(array, 0, bytes);
+        return array;
+    };
+    const auto first = encode(a);
+    const auto first_root = vm.ProtectReferences(std::array{first});
+    const auto second = unary ? VmObjectRef{} : encode(b);
+    const auto second_root = vm.ProtectReferences(std::array{second});
+    const auto type = vm.Linker().ResolveDescriptor("Lorg/ogplay/math/NativeBigInteger;");
+    const auto signature = unary ? "([BI)[B" : "([B[B)[B";
+    const auto target = vm.Linker().FindDirectMethod(type, method, signature);
+    if (!target) throw DexVmError(DexVmErrorReason::unresolved_reference,
+                                  "NativeBigInteger arithmetic boundary missing");
+    const auto argument = unary ? VmValue::Int(c.arguments[in_place ? 1 : 2].AsInt())
+                                : VmValue::Ref(second);
+    const auto outcome = vm.Call(*target, std::array{VmValue::Ref(first), argument});
+    if (outcome.exception.IsValid()) {
+        const auto& descriptor = vm.Linker().Class(outcome.exception_class).descriptor;
+        if (descriptor == "Ljava/lang/UnsupportedOperationException;")
+            if (auto* ledger = vm.Ledger()) ledger->RecordUnimplemented("dexvm.native_bn_arithmetic.budget", 0);
+        throw VmJavaThrow{descriptor, outcome.exception_message, outcome.exception};
+    }
+    const auto result_root = vm.ProtectReferences(std::array{outcome.value.ref});
+    const auto length = vm.Model().ArrayLength(outcome.value.ref);
+    if (length < 1 || length > (division ? 2097158 : 1048577) ||
+        vm.Model().PrimitiveArrayKind(outcome.value.ref) != JniPrimitiveKind::byte)
+        throw DexVmError(DexVmErrorReason::internal_invariant, "invalid integer arithmetic result");
+    const auto encoded = vm.Model().ReadByteRegion(outcome.value.ref, 0, length);
+    const auto decode = [&](std::span<const std::byte> bytes) {
+        if (bytes.empty() || bytes.size() > 1048577 ||
+            (bytes[0] != std::byte{0} && bytes[0] != std::byte{1}))
+            throw DexVmError(DexVmErrorReason::internal_invariant, "invalid integer result encoding");
+        BigIntRuntime::Number value;
+        value.SetBytes(bytes.subspan(1), bytes[0] == std::byte{1}, false);
+        return value;
+    };
+    if (division) {
+        if (encoded.size() < 6)
+            throw DexVmError(DexVmErrorReason::internal_invariant, "invalid integer division result");
+        std::uint32_t quotient_length = 0;
+        for (unsigned i = 0; i < 4; ++i)
+            quotient_length = (quotient_length << 8) | std::to_integer<std::uint32_t>(encoded[i]);
+        if (quotient_length < 1 || quotient_length > encoded.size()-5)
+            throw DexVmError(DexVmErrorReason::internal_invariant, "invalid integer quotient length");
+        const auto payload = std::span<const std::byte>{encoded}.subspan(4);
+        auto quotient_value = decode(payload.first(quotient_length));
+        auto remainder_value = decode(payload.subspan(quotient_length));
+        // Validate both destinations again after nested execution, before either commit.
+        auto* quotient_slot = destination ? &vm.BigInts().Require(destination) : nullptr;
+        auto* remainder_slot = remainder ? &vm.BigInts().Require(remainder) : nullptr;
+        if (quotient_slot) *quotient_slot = std::move(quotient_value);
+        if (remainder_slot) *remainder_slot = std::move(remainder_value);
+    } else {
+        auto value = decode(encoded);
+        vm.BigInts().Require(destination) = std::move(value);
+    }
+    return VmValue::Void();
+}
+} // namespace
+
 IntrinsicClassDecl Declare_java_math_NativeBN() {
     auto b = IntrinsicClassBuilder::Class("Ljava/math/NativeBN;");
     b.StaticMethod(
@@ -1853,10 +1935,16 @@ IntrinsicClassDecl Declare_java_math_NativeBN() {
         kAccPublic | kAccNative);
     // BootDex admission requires every native signature to be classified.
     // Retain explicit failing declarations for the unsupported big-number API.
-    b.UnimplementedStatic("BN_add", "(JJJ)V", kAccPublic | kAccNative);
+    b.StaticMethod("BN_add", "(JJJ)V", [](IntrinsicContext& c) {
+        return NativeBnArithmetic(c, "add", false, false, false);
+    }, kAccPublic | kAccNative);
     b.UnimplementedStatic("BN_add_word", "(JI)V", kAccPublic | kAccNative);
-    b.UnimplementedStatic("BN_div", "(JJJJ)V", kAccPublic | kAccNative);
-    b.UnimplementedStatic("BN_exp", "(JJJ)V", kAccPublic | kAccNative);
+    b.StaticMethod("BN_div", "(JJJJ)V", [](IntrinsicContext& c) {
+        return NativeBnArithmetic(c, "divide", true, false, false);
+    }, kAccPublic | kAccNative);
+    b.StaticMethod("BN_exp", "(JJJ)V", [](IntrinsicContext& c) {
+        return NativeBnArithmetic(c, "power", false, false, false);
+    }, kAccPublic | kAccNative);
     b.UnimplementedStatic("BN_gcd", "(JJJ)V", kAccPublic | kAccNative);
     b.UnimplementedStatic("BN_generate_prime_ex", "(JIZJJJ)V", kAccPublic | kAccNative);
     b.UnimplementedStatic("BN_hex2bn", "(JLjava/lang/String;)I", kAccPublic | kAccNative);
@@ -1865,16 +1953,25 @@ IntrinsicClassDecl Declare_java_math_NativeBN() {
     b.UnimplementedStatic("BN_mod_exp", "(JJJJ)V", kAccPublic | kAccNative);
     b.UnimplementedStatic("BN_mod_inverse", "(JJJ)V", kAccPublic | kAccNative);
     b.UnimplementedStatic("BN_mod_word", "(JI)I", kAccPublic | kAccNative);
-    b.UnimplementedStatic("BN_mul", "(JJJ)V", kAccPublic | kAccNative);
-    b.UnimplementedStatic("BN_mul_word", "(JI)V", kAccPublic | kAccNative);
+    b.StaticMethod("BN_mul", "(JJJ)V", [](IntrinsicContext& c) {
+        return NativeBnArithmetic(c, "multiply", false, false, false);
+    }, kAccPublic | kAccNative);
+    b.StaticMethod("BN_mul_word", "(JI)V", [](IntrinsicContext& c) {
+        return NativeBnArithmetic(c, "multiplyWord", false, true, true);
+    }, kAccPublic | kAccNative);
     b.UnimplementedStatic("BN_nnmod", "(JJJ)V", kAccPublic | kAccNative);
-    b.UnimplementedStatic("BN_shift", "(JJI)V", kAccPublic | kAccNative);
+    b.StaticMethod("BN_shift", "(JJI)V", [](IntrinsicContext& c) {
+        return NativeBnArithmetic(c, "shift", false, true, false);
+    }, kAccPublic | kAccNative);
     b.UnimplementedStatic("BN_sub", "(JJJ)V", kAccPublic | kAccNative);
     return std::move(b).Build();
 }
 
 void AppendJavaLangPrimitiveWrappers(
     std::vector<IntrinsicClassDecl>& catalog) {
+    auto arithmetic = IntrinsicClassBuilder::Class("Lorg/ogplay/math/NativeBigInteger;");
+    arithmetic.AdmitBootNativeMethods();
+    catalog.push_back(std::move(arithmetic).Build());
     catalog.push_back(Declare_java_math_NativeBN());
     catalog.push_back(Declare_java_lang_Number());
     catalog.push_back(Declare_java_lang_Byte());
@@ -2566,6 +2663,14 @@ IntrinsicClassDecl Declare_java_lang_String() {
                                          ? u"true"
                                          : std::u16string(u"false"));
             });
+    builder.StaticMethod("valueOf", "([CII)Ljava/lang/String;", [](IntrinsicContext& c) {
+        const auto array = RequireArray(c.arguments[0].ref);
+        const auto start = c.arguments[1].AsInt(), count = c.arguments[2].AsInt();
+        const auto length = c.vm.Model().ArrayLength(array);
+        if (start < 0 || count < 0 || start > length || count > length-start)
+            throw VmJavaThrow{"Ljava/lang/StringIndexOutOfBoundsException;", "char array region out of bounds"};
+        return Make(c, CharsValue(c, array, start, count));
+    });
     builder.StaticMethod("valueOf", "(C)Ljava/lang/String;",
         [](IntrinsicContext& context) {
                 return Make(context,

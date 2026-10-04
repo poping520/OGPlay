@@ -65,6 +65,9 @@ JAVA_SOURCE_NAMES = tuple(sorted((
     "org/ogplay/security/TrustLimits.java",
     "org/ogplay/security/X509TrustManagerImpl.java",
 )))
+MATH_JAVA_ROOT = ROOT / "src/guest/math/java"
+MATH_JAVA_NAMES = ("org/ogplay/math/NativeBigInteger.java",)
+
 ZIP_JAVA_ROOT = ROOT / "src/guest/zip/java"
 ZIP_JAVA_NAMES = ("org/ogplay/zip/NativeZip.java",)
 
@@ -75,7 +78,8 @@ FRAMEWORK_JAVA_NAMES = ("android/net/wifi/WifiManager.java",)
 def guest_java_sources() -> tuple[Path, ...]:
     return tuple(JAVA_SOURCE_ROOT / name for name in JAVA_SOURCE_NAMES) + tuple(
         FRAMEWORK_JAVA_ROOT / name for name in FRAMEWORK_JAVA_NAMES) + tuple(
-        ZIP_JAVA_ROOT / name for name in ZIP_JAVA_NAMES)
+        ZIP_JAVA_ROOT / name for name in ZIP_JAVA_NAMES) + tuple(
+        MATH_JAVA_ROOT / name for name in MATH_JAVA_NAMES)
 
 
 WINDOWS_JAVAC = Path(r"D:\01_software\jdk-17.0.2\bin\javac.exe")
@@ -436,6 +440,10 @@ def zip_stream_native_signatures() -> dict[str, dict[str, int]]:
               "getTotalOutImpl(J)J", "resetImpl(J)V", "setDictionaryImpl([BIIJ)V",
               "setInputImpl([BIIJ)V"}
     return {
+        "Lorg/ogplay/math/NativeBigInteger;": {
+            **{m + "([B[B)[B": 0x109 for m in ("add", "multiply", "power")},
+            "divide([B[B)[B": 0x109, "shift([BI)[B": 0x109,
+            "multiplyWord([BI)[B": 0x109},
         "Ljava/util/zip/Deflater;": {m: 0x102 for m in common | {
             "createStream(IIZ)J", "deflateImpl([BIIJI)I", "setLevelsImpl(IIJ)V"}},
         "Ljava/util/zip/Inflater;": {m: 0x102 for m in common | {
@@ -446,7 +454,7 @@ def zip_stream_native_signatures() -> dict[str, dict[str, int]]:
 
 
 def audit_zip_streams(dex_bytes: bytes) -> None:
-    """Pin the admitted API19 ZIP stream natives, including the explicit FD gap."""
+    """Pin ZIP and value-arithmetic native ABIs, including the explicit ZIP FD gap."""
     expected = zip_stream_native_signatures()
     dex = dex_survey_lib.parse_dex(dex_bytes)
     observed = {owner: {} for owner in expected}
@@ -984,39 +992,40 @@ def self_test() -> int:
         reject_recipe(candidate, case)
     # Native admission mutations need neither AOSP inputs nor Java tooling.
     from types import SimpleNamespace
-    for mutation in ("valid", "signature", "flags", "extra", "missing"):
-        names, signatures, classes = [], [], []
-        for owner, members in zip_stream_native_signatures().items():
-            names.append(owner)
-            methods = []
-            for signature, flags in sorted(members.items()):
-                name, descriptor = signature.split("(", 1)
-                methods.append(SimpleNamespace(method_index=len(signatures), access_flags=flags))
-                signatures.append((owner, name, "(" + descriptor))
-            classes.append(SimpleNamespace(type_index=len(names)-1,
-                direct_methods=methods, virtual_methods=[]))
-        native = classes[0].direct_methods[0]
-        if mutation == "flags":
-            native.access_flags |= 8
-        elif mutation == "missing":
-            classes[0].direct_methods.remove(native)
-        elif mutation == "extra":
-            classes[0].direct_methods.append(SimpleNamespace(method_index=len(signatures), access_flags=0x102))
-            signatures.append((names[0], "unreviewedZipNative", "()V"))
-        elif mutation == "signature":
-            owner, _, descriptor = signatures[native.method_index]
-            signatures[native.method_index] = (owner, "unreviewedZipNative", descriptor)
-        parsed = SimpleNamespace(classes=classes, type_name=lambda i: names[i],
-                                 method_signature=lambda i: signatures[i])
-        with patch.object(dex_survey_lib, "parse_dex", return_value=parsed):
-            try:
-                audit_zip_streams(b"")
-            except BuildError:
-                if mutation == "valid":
-                    raise
-            else:
-                if mutation != "valid":
-                    raise BuildError(f"ZIP native drift accepted: {mutation}")
+    for target_index in (0, 1):  # Value arithmetic and ZIP instance-native admission.
+        for mutation in ("valid", "signature", "flags", "extra", "missing"):
+            names, signatures, classes = [], [], []
+            for owner, members in zip_stream_native_signatures().items():
+                names.append(owner)
+                methods = []
+                for signature, flags in sorted(members.items()):
+                    name, descriptor = signature.split("(", 1)
+                    methods.append(SimpleNamespace(method_index=len(signatures), access_flags=flags))
+                    signatures.append((owner, name, "(" + descriptor))
+                classes.append(SimpleNamespace(type_index=len(names)-1,
+                    direct_methods=methods, virtual_methods=[]))
+            native = classes[target_index].direct_methods[0]
+            if mutation == "flags":
+                native.access_flags ^= 8
+            elif mutation == "missing":
+                classes[target_index].direct_methods.remove(native)
+            elif mutation == "extra":
+                classes[target_index].direct_methods.append(SimpleNamespace(method_index=len(signatures), access_flags=0x102))
+                signatures.append((names[target_index], "unreviewedZipNative", "()V"))
+            elif mutation == "signature":
+                owner, _, descriptor = signatures[native.method_index]
+                signatures[native.method_index] = (owner, "unreviewedZipNative", descriptor)
+            parsed = SimpleNamespace(classes=classes, type_name=lambda i: names[i],
+                                     method_signature=lambda i: signatures[i])
+            with patch.object(dex_survey_lib, "parse_dex", return_value=parsed):
+                try:
+                    audit_zip_streams(b"")
+                except BuildError:
+                    if mutation == "valid":
+                        raise
+                else:
+                    if mutation != "valid":
+                        raise BuildError(f"ZIP native drift accepted: {mutation}")
     resources = load_system_resources()
     # Mutation checks need neither local framework inputs nor Java tooling.
     sample_resource = json.loads(json.dumps(resources))
@@ -1177,7 +1186,8 @@ def build_guest_jni() -> int:
                ROOT / "src/guest/crypto/tls_jni.c",
                ROOT / "src/guest/icu/icu_jni.c",
                ROOT / "src/guest/zip/crc32_jni.c",
-               ROOT / "src/guest/zip/zip_stream_jni.c"]
+               ROOT / "src/guest/zip/zip_stream_jni.c",
+               ROOT / "src/guest/math/big_integer_jni.c"]
     source_inputs = [*sources, ROOT / "src/guest/icu/icu51_capi.h"]
     for source in source_inputs:
         if not source.is_file():

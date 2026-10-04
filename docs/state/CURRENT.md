@@ -8,12 +8,11 @@
 
 ## 运行状态
 
-- **Tales From Deep Space 1.0.0**：[BND-49](../tasks/boundary/BND-49.md) RGB、
-  [BND-50](../tasks/boundary/BND-50.md) ATC、[DVM-209](../tasks/dexvm/DVM-209.md) Wi-Fi 锁已修复。
-  BN_dec2bn/getDir、[DVM-210](../tasks/dexvm/DVM-210.md) JNI/沙盒已修。
-  [DVM-214](../tasks/dexvm/DVM-214.md) GZIP 已修，1976 断言通过。
-  f=365 事件落盘，首错 BigDecimal 缺 Multiplication；强制关闭。
-  黑屏/跨平台未验收。证据：`.local/gzip-fix-20261004/`。
+- **Tales From Deep Space 1.0.0**：[DVM-215](../tasks/dexvm/DVM-215.md) 已越过
+  十进制 JSON 首错。[BND-51](../tasks/boundary/BND-51.md) 按 ANGLE 能力发布浮点
+  纹理/linear，8 用例/912 断言通过；原 APK 旧渲染线程读 0x10 故障消失。
+  f=1790/presentedFrame=73，下一首错为 VideoView.setOnPreparedListener 方法缺口。
+  退出需强杀，进程全关闭；黑屏/跨平台未验收。证据：`.local/tales-float-texture-fix/`。
 
 - **PVZ（com.popcap.pvz_na）**：[DVM-205](../tasks/dexvm/DVM-205.md) 已修复 DEX
   注解预算误拒绝，使用共享解析缓存和分层资源预算。macOS Release 定向回归通过；

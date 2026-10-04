@@ -190,6 +190,7 @@
       "Ljava/lang/reflect/Modifier;",
       "Ljava/lang/reflect/Proxy;",
       "Ljava/lang/reflect/TypeVariable;",
+      "Ljava/math/BigDecimal$1;",
       "Ljava/math/BigDecimal;",
       "Ljava/math/BigInt;",
       "Ljava/math/BigInteger;",
@@ -197,6 +198,7 @@
       "Ljava/math/Conversion;",
       "Ljava/math/Division;",
       "Ljava/math/MathContext;",
+      "Ljava/math/Multiplication;",
       "Ljava/math/NativeBN;",
       "Ljava/math/RoundingMode;",
       "Ljava/net/AddressCache$AddressCacheEntry;",
@@ -1947,12 +1949,14 @@
         "Ljava/lang/UnsupportedOperationException;",
         "Ljava/lang/ref/WeakReference;",
         "Ljava/lang/reflect/Modifier;",
+        "Ljava/math/BigDecimal$1;",
         "Ljava/math/BigDecimal;",
         "Ljava/math/BigInt;",
         "Ljava/math/BigInteger;",
         "Ljava/math/BitLevel;",
         "Ljava/math/Conversion;",
         "Ljava/math/MathContext;",
+        "Ljava/math/Multiplication;",
         "Ljava/math/RoundingMode;",
         "Ljava/nio/FileChannelImpl$1;",
         "Ljava/nio/FileChannelImpl$FileLockImpl;",
@@ -2073,9 +2077,7 @@
         "Lorg/apache/harmony/luni/internal/util/TimezoneGetter;"
       ],
       "deferred": [
-        "Ljava/math/BigDecimal$1;",
         "Ljava/math/Logical;",
-        "Ljava/math/Multiplication;",
         "Ljava/math/Primality;"
       ]
     },

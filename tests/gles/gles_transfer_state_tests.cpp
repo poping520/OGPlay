@@ -172,3 +172,20 @@ TEST_CASE("GLES transfer state rejects invalid mutations and shapes") {
     state.ClearUniformElementCounts(4);
     CHECK(state.Snapshot().uniform_shapes == 0);
 }
+
+
+TEST_CASE("BND51 float pixel transfers preserve row padding and reject overflow") {
+    ogplay::memory::AddressSpace memory;
+    MapTransferPage(memory);
+    ogplay::gles::GlesTransferState state;
+    state.PixelStore(0x0CF5, 8);
+    std::array<std::uint32_t, 9> image{0x0DE1, 0, 0x1907, 1, 2, 0, 0x1907, 0x1406, kStart.Value()};
+    auto prepared = ogplay::gles::PrepareGles2Call(memory, Thunk("glTexImage2D"), image, 0, &state);
+    REQUIRE(prepared.pointers.size() == 1);
+    CHECK(prepared.pointers[0].byte_size == 28); // Two RGB float rows: 12 + 4 padding + 12.
+    image[2] = image[6] = 0x1908;
+    prepared = ogplay::gles::PrepareGles2Call(memory, Thunk("glTexImage2D"), image, 0, &state);
+    CHECK(prepared.pointers[0].byte_size == 32);
+    image[3] = image[4] = 0x7FFFFFFF;
+    CHECK_THROWS_AS(ogplay::gles::PrepareGles2Call(memory, Thunk("glTexImage2D"), image, 0, &state), ogplay::gles::GlesTransferStateError);
+}

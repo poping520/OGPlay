@@ -68,10 +68,10 @@ std::uint32_t Gles1Module::InvokeBounds(
         draw_state_.CommitPointer(array, client_texture, next);
         return 0U;
     } catch (const gles::GlesApiError& error) {
-        graphics_.gl_context.Shared().SetGuestError(error.Code());
+        graphics_.SetGuestError(call, error.Code());
         return 0U;
     } catch (const std::invalid_argument&) {
-        graphics_.gl_context.Shared().SetGuestError(0x0500U);
+        graphics_.SetGuestError(call, 0x0500U);
         return 0U;
     }
 }

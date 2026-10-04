@@ -8,6 +8,8 @@ Context 的 GL shadow，可共享的对象元数据用独立共享所有权保�
 GLES2/3 浮点纹理扩展按当前 ANGLE 上下文的完整扩展 token 条件发布；线性过滤依赖
 基础浮点支持。字符串、已支持的索引与数量查询共用同一清单。浮点纹理采样不声明
 浮点颜色附件支持；GLES1 保持独立固定管线扩展范围。
+`GL_OES_packed_depth_stencil` 也按当前原生完整 token 发布，D24S8 storage/双附件
+与 framebuffer status 仍直接使用 ANGLE 的真实结果。
 
 GLES2 混合 client 属性与 element Buffer 绘制按实际 Buffer 的索引区间回读并计算最大索引，
 再预检/暂存 guest 属性；索引 offset 不解释为 guest 地址。临时 array binding 在成功与
@@ -18,3 +20,7 @@ GLES2 混合 client 属性与 element Buffer 绘制按实际 Buffer 的索引区
 图形用例、BND34 回归及 architecture.boundary_hot_path。其余服务遵守父级 MODULE 契约。
 
 FrameService::TryStats 只 try-lock 复制 GPU 标量统计，不复制 draw_targets，不执行 GL 或读取渲染对象；忙时 nullopt。
+
+GL 错误诊断由每次 A32CallFrame 的独立结果传递给 FrameService；一次边界返回错误的
+调用计数一次，trace 保留精确 GLenum。它不取代 Context 的首错锁存，不额外调用
+glGetError，也不覆盖未在边界捕获的原生错误、宿主异常或完整 GLES 验证。

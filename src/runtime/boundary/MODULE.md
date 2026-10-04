@@ -44,6 +44,8 @@ TryTrace 只短锁复制有界记录，busy 不等待 graphics 线程。跨线�
 - guest 输入在 ANGLE 调用或状态变化前完整预检、搬运；输出先整体预检，成功后一次提交。
   shadow 仅在 native mutation 成功后窄范围更新，不复制整个动态状态容器；reset 恢复规范默认。
 - GL 参数错误携精确 GLenum 写入 per-context 首错锁存；glGetError 先取锁存再查 ANGLE。
+  slow/fast/managed/proc 入口同时传递调用所属的错误给 FrameService 的计数与 trace；
+  诊断不消费锁存，不将前次或其他调用的错误归属给本次成功调用。
   负 count/first/stride/imageSize 等为 INVALID_VALUE，不误归 INVALID_ENUM；内存、生命周期、
   内部逻辑错误继续硬失败，不能全局吞 invalid_argument。无当前 AngleFrame 明确失败，
   `glGetString` 依 API19 无 Context 语义返回 guest null；不借用其他线程帧或隐式绑定。

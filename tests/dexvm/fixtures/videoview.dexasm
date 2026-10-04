@@ -2,8 +2,17 @@
 # is observable from the host-side tests.
 .class public LVideoListener;
 .super Ljava/lang/Object;
+.implements Landroid/media/MediaPlayer$OnCompletionListener;
+.implements Landroid/media/MediaPlayer$OnPreparedListener;
+.implements Landroid/media/MediaPlayer$OnErrorListener;
 
 .field static public completions:I
+.field static public prepared:I
+.field static public errors:I
+.field static public player:Landroid/media/MediaPlayer;
+.field static public completedPlayer:Landroid/media/MediaPlayer;
+.field static public stopOnPrepared:Z
+.field static public volumeOnPrepared:Z
 
 .method public constructor <init>()V
 .registers 1
@@ -13,6 +22,7 @@
 
 .method public onCompletion(Landroid/media/MediaPlayer;)V
 .registers 4
+    sput-object v3, LVideoListener;->completedPlayer:Landroid/media/MediaPlayer;
     sget v0, LVideoListener;->completions:I
     const/4 v1, 1
     add-int/2addr v0, v1
@@ -24,4 +34,57 @@
 .registers 1
     sget v0, LVideoListener;->completions:I
     return v0
+.end method
+
+.method public onPrepared(Landroid/media/MediaPlayer;)V
+.registers 4
+    sput-object v3, LVideoListener;->player:Landroid/media/MediaPlayer;
+    sget v0, LVideoListener;->prepared:I
+    const/4 v1, 1
+    add-int/2addr v0, v1
+    sput v0, LVideoListener;->prepared:I
+    sget-boolean v0, LVideoListener;->volumeOnPrepared:Z
+    if-eqz v0, :volume_done
+    const v0, 0x3f000000
+    const v1, 0x3e800000
+    invoke-virtual {v3, v0, v1}, Landroid/media/MediaPlayer;->setVolume(FF)V
+:volume_done
+    sget-boolean v0, LVideoListener;->stopOnPrepared:Z
+    if-eqz v0, :done
+    invoke-virtual {v3}, Landroid/media/MediaPlayer;->release()V
+:done
+    return-void
+.end method
+
+.method public onError(Landroid/media/MediaPlayer;II)Z
+.registers 6
+    sget v0, LVideoListener;->errors:I
+    const/4 v1, 1
+    add-int/2addr v0, v1
+    sput v0, LVideoListener;->errors:I
+    return v1
+.end method
+
+.method static public getPrepared()I
+.registers 1
+    sget v0, LVideoListener;->prepared:I
+    return v0
+.end method
+
+.method static public getErrors()I
+.registers 1
+    sget v0, LVideoListener;->errors:I
+    return v0
+.end method
+
+.method static public getPlayer()Landroid/media/MediaPlayer;
+.registers 1
+    sget-object v0, LVideoListener;->player:Landroid/media/MediaPlayer;
+    return-object v0
+.end method
+
+.method static public getCompletedPlayer()Landroid/media/MediaPlayer;
+.registers 1
+    sget-object v0, LVideoListener;->completedPlayer:Landroid/media/MediaPlayer;
+    return-object v0
 .end method

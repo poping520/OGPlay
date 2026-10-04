@@ -327,13 +327,13 @@ note = "M0 支持固定时钟 step/until/pause/resume"
 
 [agent.gpu_queries]
 status = "partial"
-test = "tests/agent/control_service_tests.cpp"
-note = "M4 已固定 gpu.stats/render_targets/capabilities/trace 契约并接入真实 draw、clear、shader compile、program link、默认 FBO、ANGLE 后端与有界 trace；guest shader 清单、FBO 与扩展查询尚待实现"
+test = "tests/agent/control_service_tests.cpp; tests/runtime/boundary/integration/android_boundary_hle_tests.cpp: BND52"
+note = "M4 已固定 gpu.stats/render_targets/capabilities/trace 契约；BND-52 为边界已捕获 GL 错误按调用记账并填入 trace，run-apk Dashboard 接入，保留 Context 首错语义。不覆盖所有原生错误；guest shader 清单、FBO 与扩展查询尚待实现"
 
 [runtime.native_activity_gpu_metrics]
 status = "partial"
 test = "tests/runtime/native_activity_runner_tests.cpp"
-note = "M4 NativeActivity 会报告真实 draw、clear、shader compile、program link、默认 RGBA8 FBO、ANGLE 后端及最近 2048 条成功调用；guest FBO 与失败调用错误码仍待接入"
+note = "M4 NativeActivity 会报告真实 draw、clear、shader compile、program link、默认 RGBA8 FBO、ANGLE 后端及最近 2048 条返回调用；BND-52 接入边界已捕获 GL 错误码及计数，guest FBO 清单仍待接入"
 
 [agent.sym]
 status = "complete"
@@ -733,7 +733,7 @@ note = "M4 真实 ANGLE 闭合 11 项 buffer/texture handler，名称数组显�
 [gles.framebuffer_resources]
 status = "complete"
 test = "tests/runtime/boundary/integration/android_boundary_hle_tests.cpp; data/scenarios/asphalt6.bootstrap.scenario.toml"
-note = "M8 WU-0372 一次闭合 GLES2 framebuffer/renderbuffer 10 项生命周期、绑定、storage、attachment、status 及 mipmap；exact Asphalt 6 越过 FBO 建立并进入 glBlendEquation"
+note = "M8 WU-0372 一次闭合 GLES2 framebuffer/renderbuffer 10 项生命周期、绑定、storage、attachment、status 及 mipmap；exact Asphalt 6 越过 FBO 建立并进入 glBlendEquation；BND-52 按 ANGLE 完整 token 发布 packed depth/stencil，D24S8 双附件、深度/模板测试和索引绘制在 macOS 定向验证，Windows/Linux 尚未实跑"
 
 [gles.vertex_uniform]
 status = "complete"
@@ -1518,7 +1518,7 @@ note = "DVM-210：JNI 附加原生线程首次 Java 调用/字段 clinit/monitor
 [dexvm.intrinsics_android_core]
 status = "partial"
 test = "tests/session/profile_entry_scope_tests.cpp; tests/dexvm/file_vfs_tests.cpp; tests/dexvm/android_value_tests.cpp; tests/loader/binary_xml_tests.cpp; tests/dexvm/videoview_tests.cpp; tests/dexvm/scheduler_tests.cpp; tests/runtime/native_library_loader_tests.cpp; Asphalt 5 exact dexvm title-flow gate 3/3; Dungeon Hunter exact 到标题画面渲染; Asphalt 6 bootstrap"
-note = "SharedPreferences 已于 ADR-0020 SBX-6 改为 shared_prefs XML 持久化（见 runtime.preferences_persistence）。DVM-18 按 pilot 测量面交付 Android 核心 surface/resource/IO/device/media/widget 能力；2026-08-30 补充 Resources.getXml、API19 XmlResourceParser 层级及 getEventType/next/getName/getText/close 有界 pull 面，resid 经唯一 ARSC/APK/AXML 链解析，缺失或畸形资源抛 Resources.NotFoundException。DVM-39 增加按 Context 身份的 receiver 生命周期、Intent.removeExtra、VideoView listener/control 与 deferred completion、Activity surface generation、稳定 application Context 及无连接 Wifi 事实；后续补齐 Intent Integer ArrayList typed put/get，同 String/Int 共享逻辑 key，guest list 由 owner-attached GC trace/sweep。后续批次增加 `Activity.isTaskRoot()Z` 与 API19 DisplayMetrics/Configuration bounded 事实；DVM-72 发布稳定 guest data/files VFS identity，DVM-77 发布当前 APK PackageManager P0；getResourcesForApplication(String) 仅当前包，共用 Context 的应用 Resources/AssetManager，未知包 NameNotFoundException、null NPE，不支持跨包及其他重载；getInstallerPackageName(String) 查询当前直接加载 APK 的安装来源，未记录 Android 安装器时返回 null，未知包（含空串、system、null）抛 IllegalArgumentException，不推测商店来源；并按 API 19 PackageParser 区分 application meta-data 的 android:value/resource：value 引用经 ARSC 解析为 String/Boolean/Integer，resource 保留 ID；DVM-129 修复资源型 application label 的 Unicode `CharSequence` 语义并隔离 fixed-font 限制；DVM-81 恢复 Context 继承链并补齐 `openFileInput/openFileOutput` 的 app files 目录读取、覆盖与追加桥接；后续按 AOSP 4.4.4 增加 Context final `getString(I)`，经虚派 `getResources()` 进入唯一 ARSC string resolver，wrapper/component 仅继承，失败抛 Resources.NotFoundException。后续补齐 `getObbDir(s)`：primary external 下 `/Android/obb/<package>` 经 VFS overlay 建目录，ContextWrapper 只委托 base；真实 PvZ 已越过该解析点，后续独立首错为大数组触发 heap budget OOM。DVM-88 发布 VFS SQLite bounded 数据面，DVM-89 发布 Bitmap.Config、APK path、软件 Surface/Canvas、AudioTrack、ResultReceiver/KeyEvent，并闭合 SDL scancode→Android keyCode、Unicode/meta/repeat 输入链与 getUnicodeChar 两个重载；DVM-90 建立 live UiTree 的 per-holder Surface generation。DVM-91 用真实逻辑 FileDescriptor 替换 PFD 空壳，闭合 PFD.open、AFD ctor/getter、stored AssetManager.openFd 与 MediaPlayer FD/区间数据源；DVM-94 缺陷修复按 Android 4.4.4 DEX 校准现有 protected callback access flags。后续补齐 Context `getPackageCodePath/getCacheDir/getApplicationInfo`：code/resource/sourceDir 共用只读 guest APK，cache 经 VFS 建目录，ApplicationInfo 为进程稳定身份且 wrapper 仅委托 base；Tales 关闭 survey 越过原首错。AttributeSet/XmlResourceParser 长尾、listener 回调、visibility/format/size 重建与完整 framework 仍 deferred；不引入 Binder、ActivityManager、service process、ContentProvider 或 title 分支，能力保持 partial。"
+note = "SharedPreferences 已于 ADR-0020 SBX-6 改为 shared_prefs XML 持久化（见 runtime.preferences_persistence）。DVM-18 按 pilot 测量面交付 Android 核心 surface/resource/IO/device/media/widget 能力；2026-08-30 补充 Resources.getXml、API19 XmlResourceParser 层级及 getEventType/next/getName/getText/close 有界 pull 面，resid 经唯一 ARSC/APK/AXML 链解析，缺失或畸形资源抛 Resources.NotFoundException。DVM-39 增加按 Context 身份的 receiver 生命周期、Intent.removeExtra、VideoView listener/control（DVM-216 已改为 Java 代际与真实 prepared/error/completion）、Activity surface generation、稳定 application Context 及无连接 Wifi 事实；后续补齐 Intent Integer ArrayList typed put/get，同 String/Int 共享逻辑 key，guest list 由 owner-attached GC trace/sweep。后续批次增加 `Activity.isTaskRoot()Z` 与 API19 DisplayMetrics/Configuration bounded 事实；DVM-72 发布稳定 guest data/files VFS identity，DVM-77 发布当前 APK PackageManager P0；getResourcesForApplication(String) 仅当前包，共用 Context 的应用 Resources/AssetManager，未知包 NameNotFoundException、null NPE，不支持跨包及其他重载；getInstallerPackageName(String) 查询当前直接加载 APK 的安装来源，未记录 Android 安装器时返回 null，未知包（含空串、system、null）抛 IllegalArgumentException，不推测商店来源；并按 API 19 PackageParser 区分 application meta-data 的 android:value/resource：value 引用经 ARSC 解析为 String/Boolean/Integer，resource 保留 ID；DVM-129 修复资源型 application label 的 Unicode `CharSequence` 语义并隔离 fixed-font 限制；DVM-81 恢复 Context 继承链并补齐 `openFileInput/openFileOutput` 的 app files 目录读取、覆盖与追加桥接；后续按 AOSP 4.4.4 增加 Context final `getString(I)`，经虚派 `getResources()` 进入唯一 ARSC string resolver，wrapper/component 仅继承，失败抛 Resources.NotFoundException。后续补齐 `getObbDir(s)`：primary external 下 `/Android/obb/<package>` 经 VFS overlay 建目录，ContextWrapper 只委托 base；真实 PvZ 已越过该解析点，后续独立首错为大数组触发 heap budget OOM。DVM-88 发布 VFS SQLite bounded 数据面，DVM-89 发布 Bitmap.Config、APK path、软件 Surface/Canvas、AudioTrack、ResultReceiver/KeyEvent，并闭合 SDL scancode→Android keyCode、Unicode/meta/repeat 输入链与 getUnicodeChar 两个重载；DVM-90 建立 live UiTree 的 per-holder Surface generation。DVM-91 用真实逻辑 FileDescriptor 替换 PFD 空壳，闭合 PFD.open、AFD ctor/getter、stored AssetManager.openFd 与 MediaPlayer FD/区间数据源；DVM-94 缺陷修复按 Android 4.4.4 DEX 校准现有 protected callback access flags。后续补齐 Context `getPackageCodePath/getCacheDir/getApplicationInfo`：code/resource/sourceDir 共用只读 guest APK，cache 经 VFS 建目录，ApplicationInfo 为进程稳定身份且 wrapper 仅委托 base；Tales 关闭 survey 越过原首错。AttributeSet/XmlResourceParser 长尾、listener 回调、visibility/format/size 重建与完整 framework 仍 deferred；不引入 Binder、ActivityManager、service process、ContentProvider 或 title 分支，能力保持 partial。"
 
 [dexvm.location_absent_facade]
 status = "complete"
@@ -1628,7 +1628,12 @@ note = "DVM-133 按 API 19 闭合 ContentResolver 五参 query 的无 provider �
 [dexvm.media_data_sources]
 status = "complete"
 test = "tests/dexvm/file_vfs_tests.cpp; tests/dexvm/videoview_tests.cpp; tests/audio/mp3_tests.cpp; tests/audio/java_sound_pool_mixer_tests.cpp; tests/audio/encoded_audio_tests.cpp; tests/audio/encoded_music_tests.cpp; tests/video/ffmpeg_video_player_tests.cpp"
-note = "DVM-91 窗口/FD/AFD 与 DVM-189 每实例 MediaPlayer；VFS-02 将音乐改为拥有型 Size/ReadAt 数据源，OGG/MP3/WAV 以不超过 64 KiB 的块增量解码且不复制完整编码源，SoundPool 短音效保留有界 ReadAll。VideoView 原子捕获同一 VFS lease，FFmpeg custom AVIO 使用 32 KiB ReadAt/seek 并移除 HostPathFor 生产入口；本机缺 FFmpeg 7 DLL，真实视频 source 解码留为环境验收缺口。native fd 与网络 Uri 不提供。"
+note = "DVM-91 窗口/FD/AFD 与 DVM-189 每实例 MediaPlayer；VFS-02 将音乐改为拥有型 Size/ReadAt 数据源，OGG/MP3/WAV 以不超过 64 KiB 的块增量解码且不复制完整编码源，SoundPool 短音效保留有界 ReadAll。VideoView 捕获 VFS lease 或当前 APK STORED raw-resource FD 的不可变 range；FFmpeg custom AVIO 使用 32 KiB ReadAt/seek 并移除 HostPathFor 生产入口。macOS FFmpeg 7 已复跑 raw-resource 视频；Windows/Linux 真实视频仍待验收。任意 native fd 与网络 Uri 不提供。"
+
+[dexvm.video_view_local]
+status = "partial"
+test = "tests/dexvm/videoview_tests.cpp; tests/dexvm/widget_click_tests.cpp; DVM-216 reached-fault"
+note = "ADR-0094/DVM-216：Java SurfaceView 子类保存监听器、目标状态和代际，初始化的 MediaPlayer 子类控制同一 FFmpeg 实例。主线程泵交付 prepared/error/completion，打开/解码失败不再回退完成；音频 worker 仅发布错误事实。支持本地 VFS、file 与当前 APK STORED android.resource URI、seek/start/pause/resume/stop、左右音量；代际/释放/detach/owner GC 清理，最多八个实例。最终呈现按 UiTree bounds/visibility/clip/alpha/onTop 叠加；GLES/Canvas 底图保持权威。未处理错误对话框、网络 URI、loop/reset 等缺口明确失败并记账。字幕、MediaController、完整 API19、影音同步及 Windows/Linux 实跑未验收。"
 
 [dexvm.surface_view_lifecycle]
 status = "partial"

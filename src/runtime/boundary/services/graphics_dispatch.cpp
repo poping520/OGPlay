@@ -163,6 +163,9 @@ std::vector<std::string_view> GuestGlesExtensions(const std::string_view native_
         return false;
     };
     if (supports("GL_OES_EGL_image")) values.push_back("GL_OES_EGL_image");
+    // Core renderbuffer storage/attachment handlers already forward D24S8 to ANGLE.
+    if (supports("GL_OES_packed_depth_stencil"))
+        values.push_back("GL_OES_packed_depth_stencil");
     // These use the audited format/type pixel transfer and native ANGLE sampling.
     // Linear filtering is an additional capability; upload support alone is insufficient.
     if (supports("GL_OES_texture_float")) {

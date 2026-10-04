@@ -72,7 +72,7 @@ ZIP_JAVA_ROOT = ROOT / "src/guest/zip/java"
 ZIP_JAVA_NAMES = ("org/ogplay/zip/NativeZip.java",)
 
 FRAMEWORK_JAVA_ROOT = ROOT / "src/guest/framework/java"
-FRAMEWORK_JAVA_NAMES = ("android/net/wifi/WifiManager.java",)
+FRAMEWORK_JAVA_NAMES = ("android/net/wifi/WifiManager.java", "android/widget/VideoView.java")
 
 
 def guest_java_sources() -> tuple[Path, ...]:
@@ -440,6 +440,13 @@ def zip_stream_native_signatures() -> dict[str, dict[str, int]]:
               "getTotalOutImpl(J)J", "resetImpl(J)V", "setDictionaryImpl([BIIJ)V",
               "setInputImpl([BIIJ)V"}
     return {
+        "Landroid/widget/VideoView;": {m: 0x102 for m in {
+            "nativeOpenPath(Ljava/lang/String;I)V", "nativeOpenFd(Ljava/io/FileDescriptor;JJI)V",
+            "nativeOpenError(ILjava/lang/String;)V", "nativeUnhandledError()V",
+            "nativeUnsupported(Ljava/lang/String;)V", "nativeStart(I)V", "nativePause(I)V",
+            "nativeStop(I)V", "nativeRelease(I)V", "nativeSeek(II)V", "nativeVolume(IFF)V",
+            "nativeDuration(I)I", "nativePosition(I)I", "nativeWidth(I)I", "nativeHeight(I)I",
+            "nativeIsPlaying(I)Z"}},
         "Lorg/ogplay/math/NativeBigInteger;": {
             **{m + "([B[B)[B": 0x109 for m in ("add", "multiply", "power")},
             "divide([B[B)[B": 0x109, "shift([BI)[B": 0x109,
@@ -992,7 +999,7 @@ def self_test() -> int:
         reject_recipe(candidate, case)
     # Native admission mutations need neither AOSP inputs nor Java tooling.
     from types import SimpleNamespace
-    for target_index in (0, 1):  # Value arithmetic and ZIP instance-native admission.
+    for target_index in (0, 1, 2):  # Video, value arithmetic and ZIP native admission.
         for mutation in ("valid", "signature", "flags", "extra", "missing"):
             names, signatures, classes = [], [], []
             for owner, members in zip_stream_native_signatures().items():

@@ -8,11 +8,11 @@
 
 ## 运行状态
 
-- **Tales From Deep Space 1.0.0**：[DVM-215](../tasks/dexvm/DVM-215.md) 已越过
-  十进制 JSON 首错。[BND-51](../tasks/boundary/BND-51.md) 按 ANGLE 能力发布浮点
-  纹理/linear，8 用例/912 断言通过；原 APK 旧渲染线程读 0x10 故障消失。
-  f=1790/presentedFrame=73，下一首错为 VideoView.setOnPreparedListener 方法缺口。
-  退出需强杀，进程全关闭；黑屏/跨平台未验收。证据：`.local/tales-float-texture-fix/`。
+- **Tales From Deep Space 1.0.0**：VideoView 已闭合；[BND-52](../tasks/boundary/BND-52.md) 按原生能力发布 packed depth/stencil，
+  原 APK 在 macOS 800×480/1280×720 均显示菜单，无 guestFault，已捕获 GL 错误为 0。
+  定向回归通过；菜单仍裁剪，shutdown 仍有独立内存故障（退出 1），
+  BND-29 EGL 终止后异常断言失败。进程全关闭；完整游戏/Windows/Linux 未验收。
+  证据：`.local/packed-depth-stencil-fix/`。
 
 - **PVZ（com.popcap.pvz_na）**：[DVM-205](../tasks/dexvm/DVM-205.md) 已修复 DEX
   注解预算误拒绝，使用共享解析缓存和分层资源预算。macOS Release 定向回归通过；

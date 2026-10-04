@@ -6941,3 +6941,132 @@ TEST_CASE("BND51 float PBO uploads keep byte offsets bounded") {
     AuditGl(f, "glTexSubImage2D", {0x0DE1, 0, 0, 0, 1, 1, 0x1908, 0x1406, 4});
     CHECK(AuditGl(f, "glGetError") == 0U);
 }
+
+
+TEST_CASE("BND52 packed depth stencil publication requires exact native token") {
+    for (const auto native : {"", "GL_OES_packed_depth_stencil_extra", "xGL_OES_packed_depth_stencil"}) {
+        const auto values = ogplay::runtime::GuestGlesExtensions(native);
+        CHECK(std::count(values.begin(), values.end(), "GL_OES_packed_depth_stencil") == 0);
+    }
+    const auto values = ogplay::runtime::GuestGlesExtensions(
+        "\tGL_OES_packed_depth_stencil\nGL_OES_packed_depth_stencil\r");
+    CHECK(std::count(values.begin(), values.end(), "GL_OES_packed_depth_stencil") == 1);
+}
+
+TEST_CASE("BND52 packed framebuffer supports depth stencil and indexed pixel draw") {
+    if (!ogplay::gles::IsNativeAngleEglAvailable()) return;
+    BoundaryFixture f;
+    REQUIRE(f.Call("libEGL.so", "eglInitialize", {1}) == 1U);
+    const auto surface = AuditSurface(f), context = AuditContext(f, 2);
+    AuditBind(f, context, surface);
+    const ogplay::memory::GuestAddress address{AuditGl(f, "glGetString", {0x1F03})};
+    std::string extensions(f.memory.CStringLength(address, 4096, 1), '\0');
+    f.memory.Read(address, std::as_writable_bytes(std::span(extensions)), 1);
+    REQUIRE((" " + extensions + " ").find(" GL_OES_packed_depth_stencil ") != std::string::npos);
+    const auto framebuffer = AuditName(f, "glGenFramebuffers");
+    const auto color = AuditName(f, "glGenRenderbuffers"), packed = AuditName(f, "glGenRenderbuffers");
+    AuditGl(f, "glBindFramebuffer", {0x8D40, framebuffer});
+    AuditGl(f, "glBindRenderbuffer", {0x8D41, color});
+    AuditGl(f, "glRenderbufferStorage", {0x8D41, 0x8058, 4, 4});
+    AuditGl(f, "glFramebufferRenderbuffer", {0x8D40, 0x8CE0, 0x8D41, color});
+    AuditGl(f, "glBindRenderbuffer", {0x8D41, packed});
+    AuditGl(f, "glRenderbufferStorage", {0x8D41, 0x88F0, 4, 4});
+    for (const auto attachment : {0x8D00U, 0x8D20U}) {
+        AuditGl(f, "glFramebufferRenderbuffer", {0x8D40, attachment, 0x8D41, packed});
+        AuditGl(f, "glGetFramebufferAttachmentParameteriv", {0x8D40, attachment, 0x8CD1, f.output.Value()});
+        CHECK(f.bus.Read32(f.output, 1) == packed);
+    }
+    REQUIRE(AuditGl(f, "glCheckFramebufferStatus", {0x8D40}) == 0x8CD5U);
+    const auto compile = [&](const std::uint32_t type, const std::string_view source) {
+        const auto shader = AuditGl(f, "glCreateShader", {type});
+        WriteGuestString(f, f.output.Add(512), source);
+        f.bus.Write32(f.output.Add(256), f.output.Add(512).Value(), 1);
+        AuditGl(f, "glShaderSource", {shader, 1, f.output.Add(256).Value(), 0});
+        AuditGl(f, "glCompileShader", {shader});
+        AuditGl(f, "glGetShaderiv", {shader, 0x8B81, f.output.Value()});
+        REQUIRE(f.bus.Read32(f.output, 1) == 1U);
+        return shader;
+    };
+    const auto vertex = compile(0x8B31, "attribute vec2 p; void main(){gl_Position=vec4(p,0.0,1.0);}");
+    const auto fragment = compile(0x8B30, "precision mediump float; void main(){gl_FragColor=vec4(1.0,0.0,0.0,1.0);}");
+    const auto program = AuditGl(f, "glCreateProgram");
+    AuditGl(f, "glAttachShader", {program, vertex}); AuditGl(f, "glAttachShader", {program, fragment});
+    AuditGl(f, "glLinkProgram", {program});
+    AuditGl(f, "glGetProgramiv", {program, 0x8B82, f.output.Value()});
+    REQUIRE(f.bus.Read32(f.output, 1) == 1U);
+    AuditGl(f, "glUseProgram", {program});
+    WriteGuestString(f, f.output.Add(256), "p");
+    const auto attribute = AuditGl(f, "glGetAttribLocation", {program, f.output.Add(256).Value()});
+    const std::array triangle{-1.0F, -1.0F, 3.0F, -1.0F, -1.0F, 3.0F};
+    const std::array<std::uint16_t, 3> indices{0, 1, 2};
+    f.memory.Write(f.output.Add(1024), std::as_bytes(std::span(triangle)), 1);
+    f.memory.Write(f.output.Add(1200), std::as_bytes(std::span(indices)), 1);
+    AuditGl(f, "glVertexAttribPointer", {attribute, 2, 0x1406, 0, 0, f.output.Add(1024).Value()});
+    AuditGl(f, "glEnableVertexAttribArray", {attribute});
+    AuditGl(f, "glViewport", {0, 0, 4, 4});
+    AuditGl(f, "glEnable", {0x0B71}); AuditGl(f, "glEnable", {0x0B90});
+    AuditGl(f, "glClearColor", {0, 0, 0, 0x3F800000});
+    AuditGl(f, "glClear", {0x4500});
+    AuditGl(f, "glDrawElements", {4, 3, 0x1403, f.output.Add(1200).Value()});
+    CHECK(AuditPixel(f) == 0xFF0000FFU);
+    AuditGl(f, "glClear", {0x4000});
+    AuditGl(f, "glDepthFunc", {0x0200}); // NEVER must reject the draw.
+    AuditGl(f, "glDrawElements", {4, 3, 0x1403, f.output.Add(1200).Value()});
+    CHECK(AuditPixel(f) == 0xFF000000U);
+    AuditGl(f, "glDepthFunc", {0x0207});
+    AuditGl(f, "glStencilFunc", {0x0200, 0, 0xFF});
+    AuditGl(f, "glDrawElements", {4, 3, 0x1403, f.output.Add(1200).Value()});
+    CHECK(AuditPixel(f) == 0xFF000000U);
+    AuditGl(f, "glStencilFunc", {0x0202, 0, 0xFF}); // EQUAL matches the cleared stencil.
+    AuditGl(f, "glDrawElements", {4, 3, 0x1403, f.output.Add(1200).Value()});
+    CHECK(AuditPixel(f) == 0xFF0000FFU);
+    CHECK(f.boundary.Stats().gl_errors == 0U);
+}
+
+TEST_CASE("BND52 call errors remain attributable across slow fast managed and proc dispatch") {
+    if (!ogplay::gles::IsNativeAngleEglAvailable()) return;
+    BoundaryFixture f;
+    REQUIRE(f.Call("libEGL.so", "eglInitialize", {1}) == 1U);
+    const auto surface = AuditSurface(f), context = AuditContext(f, 2);
+    AuditBind(f, context, surface);
+    const auto empty = AuditName(f, "glGenFramebuffers");
+    AuditGl(f, "glBindFramebuffer", {0x8D40, empty});
+    const auto before = f.boundary.Stats().gl_errors;
+    AuditGl(f, "glClear", {0x4000});
+    FastBoundaryCall(f, "libGLESv2.so", "glClear", {0x4000});
+    const std::array<std::uint32_t, 1> clear{0x4000};
+    static_cast<void>(f.boundary.InvokeManagedGles(ogplay::gles::GlesApi::gles2, "glClear", clear, 1));
+    WriteGuestString(f, f.output.Add(256), "glClear");
+    const auto proc = f.Call("libEGL.so", "eglGetProcAddress", {f.output.Add(256).Value()});
+    REQUIRE(proc != 0U);
+    BoundaryCallAddress(f, proc, clear);
+    std::array<std::uint32_t, 16> registers{};
+    registers[0] = 0x4000U; registers[13] = f.stack.Value();
+    ogplay::cpu::A32HostCallContext fast_proc{
+        registers, 1, ogplay::memory::GuestAddress{proc & ~UINT32_C(1)}};
+    const auto hook = f.boundary.FastHostCallHook();
+    REQUIRE(hook.invoke(hook.userdata, 2U, fast_proc) == ogplay::cpu::HostCallResult::handled);
+    CHECK(f.boundary.Stats().gl_errors == before + 5U);
+    const auto errors = f.boundary.Trace("glClear", 5);
+    REQUIRE(errors.size() == 5U);
+    for (const auto& entry : errors) CHECK(entry.error == 0x0506U);
+    // A legal call must not inherit the pending context error; reading it must not recount it.
+    AuditGl(f, "glClearColor", {0, 0, 0, 0});
+    REQUIRE(f.boundary.Trace("glClearColor", 1).size() == 1U);
+    CHECK_FALSE(f.boundary.Trace("glClearColor", 1).front().error.has_value());
+    AuditGl(f, "glEnable", {0xFFFFFFFF});
+    CHECK(f.boundary.Stats().gl_errors == before + 6U);
+    CHECK(f.boundary.Trace("glEnable", 1).front().error == 0x0500U);
+    CHECK(AuditGl(f, "glGetError") == 0x0506U);
+    CHECK(AuditGl(f, "glGetError") == 0U);
+    CHECK(f.boundary.Stats().gl_errors == before + 6U);
+    CHECK_FALSE(f.boundary.Trace("glGetError", 1).front().error.has_value());
+    const auto snapshot = f.boundary.TryTrace(32);
+    REQUIRE(snapshot.has_value());
+    CHECK(std::count_if(snapshot->begin(), snapshot->end(), [](const auto& e) { return e.error.has_value(); }) == 6);
+    const auto other = AuditContext(f, 2);
+    AuditBind(f, other, surface);
+    CHECK(AuditGl(f, "glGetError") == 0U);
+    AuditBind(f, context, surface);
+    CHECK(AuditGl(f, "glGetError") == 0U);
+}

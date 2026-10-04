@@ -12,6 +12,7 @@
 - [ADR-0070 · 有界音乐增量解码与音源分流增益](#adr-0070)
 - [ADR-0090 · EGL 配置由真实表面格式决定](#adr-0090)
 - [ADR-0091 · ATC 纹理使用可移植解码回退](#adr-0091)
+- [ADR-0094 · 本地 VideoView 的 Java 生命周期与真实视频事件](#adr-0094)
 
 <a id="adr-0003"></a>
 
@@ -393,3 +394,36 @@ GLES1/2 发布 ATC 扩展，PBO 通过现有受检 Buffer 回读，禁止作为 
 RGBA8 增加存储成本，单次解码受搬运预算约束。ATC 禁止的子图操作返回真实 GL error；
 未知格式仍明确失败。上游源码/头文件/许可证固定哈希，算法差异只进入适配层。
 参考向量、实际纹理采样和原 APK 首错复现分别记录；平台实跑与 title gate 独立验收。
+
+
+<a id="adr-0094"></a>
+
+## ADR-0094 · 本地 VideoView 的 Java 生命周期与真实视频事件
+
+- 状态：Accepted
+- 日期：2026-10-04
+- Supersedes：ADR-0021 中解码失败时回退到 completion 的条款；FFmpeg pull 后端保持。
+
+### 背景
+
+仅增加监听器方法不能保证 prepared、播放目标、资源 URI 和回调播放器身份正确。
+旧回退会把打不开的视频伪装成播放完成，掩盖资源或解码缺口。
+
+### 决定
+
+以 API19 VideoView 协议为依据，提供进程内 Java SurfaceView 子类，保存监听器、目标
+状态及 generation。初始化的 MediaPlayer 子类把所需控制转发到同一视频后端；其空音频
+实例按既有 MediaPlayer 生命周期释放。原始 MediaPlayer 音频路径不变。
+仅支持 VFS 本地路径、file URI 及当前 APK 的 STORED android.resource URI；读取使用
+既有不可变 range/read lease。每个进程至多八个视频实例，沿用解码器元数据及缓存预算。
+prepared/error/completion 由 guest 主线程视频泵派发；替换、释放和 detach 取消旧代际，
+Java 回调期间不持有视频锁。解码或打开失败交付 error，未处理错误明确失败并记账，
+不伪造 completion。网络源、字幕、MediaController 和系统错误对话框不在范围。
+画面按 UiTree 附着、可见性、位置、父裁剪、alpha 及 SurfaceView onTop 事实合成；
+视频 PCM 与原有混音共享 Clock，按实例应用左右音量。监听器普通 Java 字段由 GC 追踪，
+宿主播放器随 owner sweep 回收。
+
+### 后果
+
+不引入 Binder、系统媒体服务或宿主平台专属分支。真实 APK 首错复跑仅为 reached-fault；
+完整游戏、影音同步及各宿主运行验收另行记录。

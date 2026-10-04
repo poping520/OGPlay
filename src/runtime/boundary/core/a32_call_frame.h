@@ -90,12 +90,18 @@ public:
     [[nodiscard]] std::array<std::uint32_t, 4> RegisterArguments() const noexcept;
     [[nodiscard]] std::uint64_t ThreadId() const noexcept;
     [[nodiscard]] std::uint32_t LinkRegister() const noexcept;
+    // Call-owned diagnostic outcome; separate from the guest Context error latch.
+    void RecordGlError(std::uint32_t error) const noexcept {
+        if (gl_error_ == 0U) gl_error_ = error;
+    }
+    [[nodiscard]] std::uint32_t GlError() const noexcept { return gl_error_; }
 
 private:
     std::array<std::uint32_t, kMaximumA32CallArguments> arguments_{};
     std::size_t parameter_count_{};
     std::uint64_t thread_id_{};
     std::uint32_t link_register_{};
+    mutable std::uint32_t gl_error_{};
 };
 
 }  // namespace ogplay::runtime

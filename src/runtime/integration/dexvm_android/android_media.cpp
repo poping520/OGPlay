@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <utility>
 
 #include "ogplay/audio/encoded_music.h"
 #include "ogplay/audio/open_sles_pcm_mixer.h"
@@ -179,193 +180,175 @@ void RegisterAndroidAudioTrackStateTable(
 
 namespace ogplay::runtime::android_intrinsics {
 
+namespace {
+class EncodedVideoSource final : public video::VideoDataSource {
+public:
+    explicit EncodedVideoSource(std::shared_ptr<const audio::EncodedAudioDataSource> source)
+        : source_(std::move(source)) {}
+    std::uint64_t Size() const noexcept override { return source_->Size(); }
+    std::size_t ReadAt(std::uint64_t offset, std::span<std::byte> bytes) const override {
+        return source_->ReadAt(offset, bytes);
+    }
+private:
+    std::shared_ptr<const audio::EncodedAudioDataSource> source_;
+};
+
+void CheckVideoBudget(const Context& context, dx::IntrinsicContext& call) {
+    if (!context->video_views.contains(call.receiver.Value()) && context->video_views.size() >= 8U) {
+        if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("android.video.instance_budget", 0);
+        throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "video instance budget exceeded"};
+    }
+}
+
+void OpenVideoSource(const Context& context, dx::IntrinsicContext& call,
+                     std::shared_ptr<const video::VideoDataSource> source,
+                     std::string name, std::int32_t generation) {
+    std::scoped_lock lock(context->video_views_mutex);
+    CheckVideoBudget(context, call);
+    if (!context->video_source_player_factory) {
+        if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("android.video.decoder", 0);
+        throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "video decoder is unavailable"};
+    }
+    try {
+        if (!source || source->Size() == 0U) throw video::VideoPlayerError("video source is empty");
+        DexVmAndroidContext::VideoViewState state;
+        state.player = context->video_source_player_factory(std::move(source));
+        if (!state.player) throw video::VideoPlayerError("video decoder returned no player");
+        video::ValidateVideoMetadata(state.player->Metadata());
+        state.guest_path = std::move(name);
+        state.generation = generation;
+        const auto node = FindViewUiNode(*context, call.receiver.Value());
+        state.was_attached = node && context->ui_tree.IsAttached(*node);
+        state.duration_ms = state.player->Metadata().duration_ms;
+        state.pending_event = 1;
+        context->video_views.insert_or_assign(call.receiver.Value(), std::move(state));
+        if (const auto node = FindViewUiNode(*context, call.receiver.Value())) {
+            auto* view = context->ui_tree.Get(*node);
+            const auto& metadata = context->video_views.at(call.receiver.Value()).player->Metadata();
+            view->intrinsic = {static_cast<std::int32_t>(metadata.width), static_cast<std::int32_t>(metadata.height)};
+            context->ui_tree.MarkLayoutDirty(*node);
+        }
+        GuestLog(call, core::LogLevel::info, "VideoView: local video prepared; callback pending");
+    } catch (const video::VideoPlayerError& error) {
+        throw dx::VmJavaThrow{"Ljava/io/IOException;", error.what()};
+    }
+}
+} // namespace
+
 Decl Declare_android_widget_VideoView(const Context& context) {
-    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/widget/VideoView;", "Landroid/view/View;");
-    builder.Constructor("(Landroid/content/Context;)V", ViewInitHandler(context));
-    builder.FinalMethod("setVideoPath", "(Ljava/lang/String;)V",
-        [context](dx::IntrinsicContext& call) {
-            std::scoped_lock video_lock(context->video_views_mutex);
-            const auto handle = call.receiver.Value();
-            context->video_views.erase(handle);
-            context->pending_video_completion.erase(handle);
-            const auto path_ref = call.arguments[0].ref;
-            if (!path_ref.IsValid()) {
-                throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;",
-                                      "setVideoPath path is null"};
-            }
-            const auto guest_path = call.vm.StringUtf8(path_ref);
-            if (!context->video_source_player_factory) {
-                GuestLog(call, core::LogLevel::warn,
-                         "VideoView.setVideoPath: no video decoder is "
-                         "available; playback of " + guest_path +
-                             " will complete immediately (recorded gap)");
-                return dx::VmValue::Void();
-            }
-            if (context->vfs == nullptr) {
-                GuestLog(call, core::LogLevel::warn,
-                         "VideoView.setVideoPath: no guest filesystem is "
-                         "bound; playback of " + guest_path + " will "
-                         "complete immediately (recorded gap)");
-                return dx::VmValue::Void();
-            }
-            try {
-                DexVmAndroidContext::VideoViewState state;
-                const auto descriptor = context->vfs->Open(
-                    guest_path, {.read = true});
-                try {
-                    auto lease = context->vfs->CaptureReadLease(descriptor, 0);
-                    context->vfs->Close(descriptor);
-                    state.player = context->video_source_player_factory(
-                        std::make_shared<VfsVideoSource>(std::move(lease)));
-                } catch (...) {
-                    try { context->vfs->Close(descriptor); } catch (...) {}
-                    throw;
-                }
-                state.guest_path = guest_path;
-                state.duration_ms = state.player->Metadata().duration_ms;
-                context->video_views[handle] = std::move(state);
-            } catch (const VfsError& error) {
-                GuestLog(call, core::LogLevel::warn,
-                         "VideoView.setVideoPath: " + guest_path +
-                             " is not resolvable: " + error.what());
-                return dx::VmValue::Void();
-            }
-            catch (const video::VideoPlayerError& error) {
-                GuestLog(call, core::LogLevel::warn,
-                         "VideoView.setVideoPath: cannot open " + guest_path +
-                             ": " + error.what() +
-                             "; playback will complete immediately");
-                return dx::VmValue::Void();
-            }
-            GuestLog(call, core::LogLevel::info,
-                     "VideoView.setVideoPath: decoding " + guest_path);
-            return dx::VmValue::Void();
-        });
-    builder.FinalMethod("start", "()V",
-        [context](dx::IntrinsicContext& call) {
-            std::scoped_lock video_lock(context->video_views_mutex);
-            const auto handle = call.receiver.Value();
-            auto* state = VideoStateOf(context, handle);
-            if (state == nullptr || state->player == nullptr) {
-                // Honest fallback: no decoded playback exists, so schedule
-                // completion at the next video-pump boundary. A real
-                // MediaPlayer callback is asynchronous and must not re-enter
-                // guest code from inside start().
-                GuestLog(call, core::LogLevel::warn,
-                         "VideoView.start: no decoded playback; reporting "
-                         "deferred completion");
-                context->pending_video_completion.insert(handle);
-                return dx::VmValue::Void();
-            }
-            if (state->completed) {
-                state->player->SeekTo(0);
-                state->base_position_ms = 0;
-                state->completed = false;
-                state->pcm_phase = 0;
-                state->pcm_carry.clear();
-            }
-            state->playing = true;
-            state->start_uptime_ms = context->uptime_millis.load();
-            return dx::VmValue::Void();
-        });
-    builder.FinalMethod("pause", "()V",
-        [context](dx::IntrinsicContext& call) {
-            std::scoped_lock video_lock(context->video_views_mutex);
+    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/widget/VideoView;", "Landroid/view/SurfaceView;");
+    constexpr auto flags = dx::kAccPrivate | dx::kAccNative;
+    builder.DirectMethod("nativeOpenPath", "(Ljava/lang/String;I)V", [context](dx::IntrinsicContext& call) {
+        if (!context->vfs) throw dx::VmJavaThrow{"Ljava/io/IOException;", "video VFS unavailable"};
+        if (!call.arguments[0].ref.IsValid()) throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;", "video path is null"};
+        const auto path = call.vm.StringUtf8(call.arguments[0].ref);
+        try {
+            const auto fd = context->vfs->Open(path, {.read = true});
+            std::shared_ptr<const VfsReadLease> lease;
+            try { lease = context->vfs->CaptureReadLease(fd, 0); }
+            catch (...) { context->vfs->Close(fd); throw; }
+            context->vfs->Close(fd);
+            OpenVideoSource(context, call, std::make_shared<VfsVideoSource>(std::move(lease)), path, call.arguments[1].AsInt());
+        } catch (const VfsError& error) {
+            throw dx::VmJavaThrow{"Ljava/io/IOException;", error.what()};
+        }
+        return dx::VmValue::Void();
+    }, flags);
+    builder.DirectMethod("nativeOpenFd", "(Ljava/io/FileDescriptor;JJI)V", [context](dx::IntrinsicContext& call) {
+        const auto* fd = call.vm.IO().FindDescriptor(call.arguments[0].ref);
+        const auto offset = call.arguments[1].AsLong(), length = call.arguments[2].AsLong();
+        if (!fd || fd->closed || fd->kind != dx::IoRuntime::DescriptorKind::apk_entry ||
+            offset < 0 || length <= 0 || static_cast<std::uint64_t>(offset) < fd->base_offset)
+            throw dx::VmJavaThrow{"Ljava/io/IOException;", "invalid raw-resource descriptor range"};
+        audio::EncodedAudioSource source;
+        source.kind = audio::EncodedAudioSource::Kind::apk_entry;
+        source.name = fd->source;
+        source.offset = static_cast<std::uint64_t>(offset) - fd->base_offset;
+        source.length = static_cast<std::uint64_t>(length);
+        const auto data = LoadEncodedAudioSource(*context, source);
+        if (!data) throw dx::VmJavaThrow{"Ljava/io/IOException;", "raw-resource video range unavailable"};
+        OpenVideoSource(context, call, std::make_shared<EncodedVideoSource>(data), source.name, call.arguments[3].AsInt());
+        return dx::VmValue::Void();
+    }, flags);
+    builder.DirectMethod("nativeOpenError", "(ILjava/lang/String;)V", [context](dx::IntrinsicContext& call) {
+        std::scoped_lock lock(context->video_views_mutex);
+        CheckVideoBudget(context, call);
+        DexVmAndroidContext::VideoViewState state;
+        state.generation = call.arguments[0].AsInt();
+        state.pending_event = 100;
+        const auto node = FindViewUiNode(*context, call.receiver.Value());
+        state.was_attached = node && context->ui_tree.IsAttached(*node);
+        state.guest_path = call.vm.StringUtf8(call.arguments[1].ref).substr(0, 2048);
+        GuestLog(call, core::LogLevel::warn, "VideoView: " + state.guest_path);
+        context->video_views.insert_or_assign(call.receiver.Value(), std::move(state));
+        return dx::VmValue::Void();
+    }, flags);
+    builder.DirectMethod("nativeUnsupported", "(Ljava/lang/String;)V", [](dx::IntrinsicContext& call) -> dx::VmValue {
+        const auto operation = call.vm.StringUtf8(call.arguments[0].ref);
+        if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("android.video." + operation, 0);
+        throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "unsupported video operation: " + operation};
+    }, flags);
+    builder.DirectMethod("nativeUnhandledError", "()V", [](dx::IntrinsicContext& call) -> dx::VmValue {
+        if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("android.video.unhandled_error_ui", 0);
+        throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "video error was not handled; Android error dialog is unavailable"};
+    }, flags);
+    builder.DirectMethod("nativeRelease", "(I)V", [context](dx::IntrinsicContext& call) {
+        std::scoped_lock lock(context->video_views_mutex);
+        const auto found = context->video_views.find(call.receiver.Value());
+        if (found != context->video_views.end() && found->second.generation == call.arguments[0].AsInt()) {
+            context->video_views.erase(found);
+            if (const auto node = FindViewUiNode(*context, call.receiver.Value())) context->ui_tree.MarkDrawDirty(*node);
+        }
+        return dx::VmValue::Void();
+    }, flags);
+    const auto with_state = [context](auto operation) {
+        return [context, operation](dx::IntrinsicContext& call) {
+            std::scoped_lock lock(context->video_views_mutex);
             auto* state = VideoStateOf(context, call.receiver.Value());
-            if (state != nullptr && state->playing) {
-                state->base_position_ms =
-                    VideoPositionOf(*state, context->uptime_millis.load());
-                state->playing = false;
-            }
-            return dx::VmValue::Void();
-        });
-    builder.FinalMethod("seekTo", "(I)V",
-        [context](dx::IntrinsicContext& call) {
-            std::scoped_lock video_lock(context->video_views_mutex);
-            auto* state = VideoStateOf(context, call.receiver.Value());
-            if (state == nullptr || state->player == nullptr) {
-                return dx::VmValue::Void();
-            }
-            const auto requested = static_cast<std::int64_t>(
-                call.arguments[0].AsInt());
-            const auto position = std::clamp<std::int64_t>(
-                requested, 0, state->duration_ms);
-            state->player->SeekTo(position);
-            state->base_position_ms = position;
-            state->start_uptime_ms = context->uptime_millis.load();
-            state->completed = false;
-            state->pcm_phase = 0;
-            state->pcm_carry.clear();
-            return dx::VmValue::Void();
-        });
-    builder.FinalMethod("stopPlayback", "()V",
-        [context](dx::IntrinsicContext& call) {
-            std::scoped_lock video_lock(context->video_views_mutex);
-            context->video_views.erase(call.receiver.Value());
-            context->pending_video_completion.erase(call.receiver.Value());
-            return dx::VmValue::Void();
-        });
-    builder.FinalMethod("getDuration", "()I",
-        [context](dx::IntrinsicContext& call) {
-            std::scoped_lock video_lock(context->video_views_mutex);
-            const auto* state =
-                VideoStateOf(context, call.receiver.Value());
-            return dx::VmValue::Int(state == nullptr
-                                        ? 0
-                                        : static_cast<std::int32_t>(
-                                              state->duration_ms));
-        });
-    builder.FinalMethod("getCurrentPosition", "()I",
-        [context](dx::IntrinsicContext& call) {
-            std::scoped_lock video_lock(context->video_views_mutex);
-            const auto* state = VideoStateOf(context, call.receiver.Value());
-            if (state == nullptr) return dx::VmValue::Int(0);
-            return dx::VmValue::Int(static_cast<std::int32_t>(
-                VideoPositionOf(*state, context->uptime_millis.load())));
-        });
-    builder.FinalMethod("canSeekForward", "()Z",
-        [context](dx::IntrinsicContext& call) {
-            std::scoped_lock video_lock(context->video_views_mutex);
-            // AOSP reports the prepared stream capability. Every host
-            // VideoPlayer implements bounded SeekTo, while an unopened or
-            // released view has not reached the prepared state.
-            const auto* state = VideoStateOf(context, call.receiver.Value());
-            return dx::VmValue::Int(
-                state != nullptr && state->player != nullptr ? 1 : 0);
-        });
-    builder.FinalMethod("canSeekBackward", "()Z",
-        [context](dx::IntrinsicContext& call) {
-            std::scoped_lock video_lock(context->video_views_mutex);
-            const auto* state = VideoStateOf(context, call.receiver.Value());
-            return dx::VmValue::Int(
-                state != nullptr && state->player != nullptr ? 1 : 0);
-        });
-    builder.FinalMethod("canPause", "()Z",
-        [context](dx::IntrinsicContext& call) {
-            std::scoped_lock video_lock(context->video_views_mutex);
-            const auto* state = VideoStateOf(context, call.receiver.Value());
-            return dx::VmValue::Int(
-                state != nullptr && state->player != nullptr ? 1 : 0);
-        });
-    builder.FinalMethod("setOnCompletionListener", "(Landroid/media/MediaPlayer$OnCompletionListener;)V",
-        [context](dx::IntrinsicContext& call) {
-            std::scoped_lock video_lock(context->video_views_mutex);
-            context->video_completion[call.receiver.Value()] =
-                call.arguments[0].ref;
-            return dx::VmValue::Void();
-        });
-    builder.FinalMethod("setOnErrorListener",
-        "(Landroid/media/MediaPlayer$OnErrorListener;)V",
-        [context](dx::IntrinsicContext& call) {
-            std::scoped_lock video_lock(context->video_views_mutex);
-            const auto listener = call.arguments[0].ref;
-            if (listener.IsValid()) {
-                context->video_errors[call.receiver.Value()] = listener;
-            } else {
-                context->video_errors.erase(call.receiver.Value());
-            }
-            return dx::VmValue::Void();
-        });
+            if (!state || !state->player || state->generation != call.arguments[0].AsInt())
+                throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "video player is stale or unavailable"};
+            return operation(*state, call, *context);
+        };
+    };
+    builder.DirectMethod("nativeStart", "(I)V", with_state([](auto& state, auto&, auto& context) {
+        if (state.playing) return dx::VmValue::Void();
+        if (state.completed) {
+            state.player->SeekTo(0); state.base_position_ms = 0;
+            state.completed = false; state.pcm_phase = 0; state.pcm_carry.clear();
+        }
+        state.playing = true; state.start_uptime_ms = context.uptime_millis.load();
+        return dx::VmValue::Void();
+    }), flags);
+    builder.DirectMethod("nativePause", "(I)V", with_state([](auto& state, auto&, auto& context) {
+        state.base_position_ms = VideoPositionOf(state, context.uptime_millis.load());
+        state.playing = false; return dx::VmValue::Void();
+    }), flags);
+    builder.DirectMethod("nativeStop", "(I)V", with_state([](auto& state, auto&, auto&) {
+        state.player->SeekTo(0); state.base_position_ms = 0; state.playing = false;
+        state.pcm_phase = 0; state.pcm_carry.clear(); state.latest_frame.reset();
+        state.frame_requested = false;
+        return dx::VmValue::Void();
+    }), flags);
+    builder.DirectMethod("nativeSeek", "(II)V", with_state([](auto& state, auto& call, auto& context) {
+        const auto position = std::clamp<std::int64_t>(call.arguments[1].AsInt(), 0, state.duration_ms);
+        state.player->SeekTo(position); state.base_position_ms = position;
+        state.start_uptime_ms = context.uptime_millis.load(); state.completed = false;
+        state.pcm_phase = 0; state.pcm_carry.clear(); state.latest_frame.reset();
+        state.frame_requested = true;
+        return dx::VmValue::Void();
+    }), flags);
+    builder.DirectMethod("nativeVolume", "(IFF)V", with_state([](auto& state, auto& call, auto&) {
+        const auto left = call.arguments[1].AsFloat(), right = call.arguments[2].AsFloat();
+        if (!std::isfinite(left) || !std::isfinite(right))
+            throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "video volume must be finite"};
+        state.left_volume = std::clamp(left, 0.0F, 1.0F); state.right_volume = std::clamp(right, 0.0F, 1.0F);
+        return dx::VmValue::Void();
+    }), flags);
+    builder.DirectMethod("nativeDuration", "(I)I", with_state([](auto& state, auto&, auto&) { return dx::VmValue::Int(static_cast<std::int32_t>(state.duration_ms)); }), flags);
+    builder.DirectMethod("nativePosition", "(I)I", with_state([](auto& state, auto&, auto& context) { return dx::VmValue::Int(static_cast<std::int32_t>(VideoPositionOf(state, context.uptime_millis.load()))); }), flags);
+    builder.DirectMethod("nativeWidth", "(I)I", with_state([](auto& state, auto&, auto&) { return dx::VmValue::Int(static_cast<std::int32_t>(state.player->Metadata().width)); }), flags);
+    builder.DirectMethod("nativeHeight", "(I)I", with_state([](auto& state, auto&, auto&) { return dx::VmValue::Int(static_cast<std::int32_t>(state.player->Metadata().height)); }), flags);
+    builder.DirectMethod("nativeIsPlaying", "(I)Z", with_state([](auto& state, auto&, auto&) { return dx::VmValue::Int(state.playing ? 1 : 0); }), flags);
     return std::move(builder).Build();
 }
 
@@ -436,8 +419,8 @@ bool MixOneVideoView(DexVmAndroidContext::VideoViewState& state,
         const auto* samples = source.data() + index * channels;
         const auto left = samples[0];
         const auto right = channels >= 2U ? samples[1] : samples[0];
-        accumulator[frame * 2U] += left;
-        accumulator[frame * 2U + 1U] += right;
+        accumulator[frame * 2U] += static_cast<std::int64_t>(std::lround(left * state.left_volume));
+        accumulator[frame * 2U + 1U] += static_cast<std::int64_t>(std::lround(right * state.right_volume));
         phase += source_rate;
         while (phase >= output_rate) {
             phase -= output_rate;
@@ -480,8 +463,13 @@ std::size_t MixVideoPcmIntoAccumulator(
     std::size_t contributed = 0;
     for (auto& [handle, state] : context.video_views) {
         if (state.player == nullptr || !state.playing) continue;
-        if (MixOneVideoView(state, interleaved_stereo, output_rate)) {
-            ++contributed;
+        try {
+            if (MixOneVideoView(state, interleaved_stereo, output_rate)) ++contributed;
+        } catch (const video::VideoPlayerError&) {
+            // Audio workers publish only a fact. The guest main pump owns Java callbacks.
+            state.frame_requested = false;
+            state.playing = false;
+            state.pending_event = 100;
         }
     }
     return contributed;
@@ -723,58 +711,146 @@ std::optional<std::string> PumpAndroidAudioTracks(
     return PumpJavaThreads(vm, context);
 }
 
+void ComposeVideoViews(DexVmAndroidContext& context, std::vector<std::uint8_t>& canvas,
+                       const std::uint32_t width, const std::uint32_t height,
+                       const bool on_top) {
+    if (width == 0 || height == 0 ||
+        canvas.size() != static_cast<std::uint64_t>(width) * height * 4U) return;
+    std::scoped_lock lock(context.video_views_mutex);
+    if (context.video_views.empty()) return;
+    const auto intersect = [](ui::Rect a, const ui::Rect b) {
+        return ui::Rect{std::max(a.left, b.left), std::max(a.top, b.top),
+                        std::min(a.right, b.right), std::min(a.bottom, b.bottom)};
+    };
+    const auto visit = [&](const auto& self, const ui::UiNodeId id,
+                           ui::Rect clip, float alpha) -> void {
+        const auto* node = context.ui_tree.Get(id);
+        if (!node || node->visibility != ui::Visibility::Visible) return;
+        alpha *= std::clamp(node->alpha, 0.0F, 1.0F);
+        const auto object = context.ui_node_to_object.find(id);
+        if (object != context.ui_node_to_object.end() && node->surface_on_top == on_top) {
+            const auto found = context.video_views.find(object->second.Value());
+            if (found != context.video_views.end() && found->second.latest_frame) {
+                const auto& frame = *found->second.latest_frame;
+                const auto bounds = node->screen_frame;
+                const auto rect_width = static_cast<std::int64_t>(bounds.right) - bounds.left;
+                const auto rect_height = static_cast<std::int64_t>(bounds.bottom) - bounds.top;
+                if (rect_width > 0 && rect_height > 0 && frame.width > 0 && frame.height > 0 &&
+                    frame.rgba8.size() == static_cast<std::uint64_t>(frame.width) * frame.height * 4U) {
+                    // Scale only visible pixels; oversized guest layout bounds never allocate a canvas.
+                    const double scale = std::min(static_cast<double>(rect_width) / frame.width,
+                                                  static_cast<double>(rect_height) / frame.height);
+                    const auto image_width = std::max<std::int64_t>(1, static_cast<std::int64_t>(frame.width * scale));
+                    const auto image_height = std::max<std::int64_t>(1, static_cast<std::int64_t>(frame.height * scale));
+                    const auto image_left = bounds.left + (rect_width - image_width) / 2;
+                    const auto image_top = bounds.top + (rect_height - image_height) / 2;
+                    const auto visible = intersect(clip, bounds);
+                    for (auto y = visible.top; y < visible.bottom; ++y) {
+                        for (auto x = visible.left; x < visible.right; ++x) {
+                            const auto target = (static_cast<std::size_t>(y) * width + static_cast<std::size_t>(x)) * 4U;
+                            const bool in_image = x >= image_left && x < image_left + image_width &&
+                                                  y >= image_top && y < image_top + image_height;
+                            std::size_t source{};
+                            if (in_image) {
+                                const auto sx = static_cast<std::uint64_t>(x - image_left) * frame.width / static_cast<std::uint64_t>(image_width);
+                                const auto sy = static_cast<std::uint64_t>(y - image_top) * frame.height / static_cast<std::uint64_t>(image_height);
+                                source = static_cast<std::size_t>((sy * frame.width + sx) * 4U);
+                            }
+                            for (std::size_t channel = 0; channel < 3U; ++channel) {
+                                const auto value = in_image ? frame.rgba8[source + channel] : 0;
+                                canvas[target + channel] = static_cast<std::uint8_t>(
+                                    std::lround(value * alpha + canvas[target + channel] * (1.0F - alpha)));
+                            }
+                            canvas[target + 3U] = 255U;
+                        }
+                    }
+                }
+            }
+        }
+        if (node->clip_children) clip = intersect(clip, node->screen_frame);
+        if (node->clip_to_padding) {
+            auto padded = node->screen_frame;
+            padded.left += node->padding.left; padded.top += node->padding.top;
+            padded.right -= node->padding.right; padded.bottom -= node->padding.bottom;
+            clip = intersect(clip, padded);
+        }
+        for (const auto child : node->children) self(self, child, clip, alpha);
+    };
+    visit(visit, context.ui_tree.Root(),
+          ui::Rect{0, 0, static_cast<std::int32_t>(width), static_cast<std::int32_t>(height)}, 1.0F);
+}
+
 std::optional<std::string> PumpVideoViews(
     dexvm::Interpreter& vm, DexVmAndroidContext& context,
     const std::function<void(std::vector<std::uint8_t> rgba8)>& publish) {
-    std::scoped_lock video_lock(context.video_views_mutex);
-    // Missing/unopenable streams complete asynchronously just like a real
-    // MediaPlayer event. Clear the snapshot before invoking guest callbacks:
-    // a callback may stop or restart the same view.
-    std::vector<std::uint64_t> pending(
-        context.pending_video_completion.begin(),
-        context.pending_video_completion.end());
-    context.pending_video_completion.clear();
-    for (const auto handle : pending) {
-        const auto error = android_intrinsics::InvokeVideoCompletionListener(
-            vm, context, handle);
-        if (error.has_value()) return error;
-    }
-
-    // Handle list first: onCompletion may mutate video_views (stopPlayback,
-    // replay), which must not invalidate the iteration.
     std::vector<std::uint64_t> handles;
-    handles.reserve(context.video_views.size());
-    for (const auto& [handle, state] : context.video_views) {
-        if (state.player != nullptr && state.playing) {
-            handles.push_back(handle);
-        }
+    {
+        std::scoped_lock lock(context.video_views_mutex);
+        for (const auto& [handle, _] : context.video_views) handles.push_back(handle);
     }
-    const auto uptime = context.uptime_millis.load();
     for (const auto handle : handles) {
-        const auto found = context.video_views.find(handle);
-        if (found == context.video_views.end()) continue;
-        auto& state = found->second;
-        if (state.player == nullptr || !state.playing) continue;
-        const auto position =
-            android_intrinsics::VideoPositionOf(state, uptime);
-        try {
-            auto frame = state.player->TakeFrame(position);
-            if (frame.has_value() && publish) {
-                publish(video::ComposeRgbaOnCanvas(
-                    *frame, context.surface_width, context.surface_height));
-            }
-        } catch (const video::VideoPlayerError& error) {
-            return "video decode failed for " + state.guest_path + ": " +
-                   error.what();
+        std::int32_t generation{};
+        std::int32_t event{};
+        bool detached{};
+        {
+            std::scoped_lock lock(context.video_views_mutex);
+            const auto found = context.video_views.find(handle);
+            if (found == context.video_views.end()) continue;
+            auto& state = found->second;
+            const auto node = FindViewUiNode(context, handle);
+            const bool attached = node && context.ui_tree.IsAttached(*node);
+            detached = state.was_attached && !attached;
+            if (!attached && !detached) continue;
+            state.was_attached = attached;
+            generation = state.generation;
+            event = std::exchange(state.pending_event, 0);
         }
-        if (position >= state.duration_ms && !state.completed) {
-            state.playing = false;
-            state.base_position_ms = state.duration_ms;
-            state.completed = true;
-            const auto error =
-                android_intrinsics::InvokeVideoCompletionListener(
-                    vm, context, handle);
-            if (error.has_value()) return error;
+        // No video/audio lock is held across Java listener code. Release/reopen
+        // in a callback invalidates this generation before any decoder work.
+        if (detached) {
+            const auto type = vm.Linker().ResolveDescriptor("Landroid/widget/VideoView;");
+            const auto slot = vm.Linker().FindVtableIndex(type, "suspend", "()V");
+            if (!slot) return "VideoView suspend method is unavailable";
+            const dexvm::VmObjectRef view{static_cast<std::uint32_t>(handle)};
+            const auto root = vm.ProtectReferences(std::array{view});
+            const auto outcome = vm.Call(vm.Linker().Class(type).vtable[*slot],
+                                        std::array{dexvm::VmValue::Ref(view)});
+            if (outcome.exception.IsValid()) return outcome.exception_message;
+            continue;
+        }
+        if (event != 0) {
+            if (auto error = android_intrinsics::InvokeVideoEvent(vm, context, handle, generation, event)) return error;
+        }
+        std::optional<video::VideoFrame> frame;
+        event = 0;
+        {
+            std::scoped_lock lock(context.video_views_mutex);
+            const auto found = context.video_views.find(handle);
+            if (found == context.video_views.end() || found->second.generation != generation) continue;
+            auto& state = found->second;
+            if (!state.player || (!state.playing && !state.frame_requested)) continue;
+            const auto position = android_intrinsics::VideoPositionOf(state, context.uptime_millis.load());
+            try {
+                frame = state.player->TakeFrame(position);
+                if (frame) { state.latest_frame = *frame; state.frame_requested = false; }
+                if (state.playing && position >= state.duration_ms && !state.completed) {
+                    state.playing = false;
+                    state.base_position_ms = state.duration_ms;
+                    state.completed = true;
+                    event = 2;
+                }
+            } catch (const video::VideoPlayerError& error) {
+                if (auto* logger = vm.Log()) logger->Write(core::LogLevel::warn,
+                    "runtime.video.decode", error.what());
+                state.frame_requested = false;
+                state.playing = false;
+                state.latest_frame.reset();
+                event = 100;
+            }
+        }
+        if (frame && publish) publish(video::ComposeRgbaOnCanvas(*frame, context.surface_width, context.surface_height));
+        if (event != 0) {
+            if (auto error = android_intrinsics::InvokeVideoEvent(vm, context, handle, generation, event)) return error;
         }
     }
     return std::nullopt;

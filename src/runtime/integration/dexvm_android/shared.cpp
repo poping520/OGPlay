@@ -1888,30 +1888,17 @@ std::int64_t VideoPositionOf(
     return std::min(state.base_position_ms + elapsed, state.duration_ms);
 }
 
-std::optional<std::string> InvokeVideoCompletionListener(
+std::optional<std::string> InvokeVideoEvent(
     dx::Interpreter& vm, DexVmAndroidContext& context,
-    const std::uint64_t handle) {
-    const auto found = context.video_completion.find(handle);
-    if (found == context.video_completion.end() ||
-        !found->second.IsValid()) {
-        return std::nullopt;
-    }
-    auto& linker = vm.Linker();
-    const auto listener_class = vm.Model().ObjectClass(found->second);
-    const auto index = linker.FindVtableIndex(
-        listener_class, "onCompletion", "(Landroid/media/MediaPlayer;)V");
-    if (!index.has_value()) {
-        return "completion listener has no onCompletion method";
-    }
-    const auto player =
-        vm.NewIntrinsicInstance("Landroid/media/MediaPlayer;");
-    const auto outcome = vm.Call(
-        linker.Class(listener_class).vtable[*index],
-        std::vector<dx::VmValue>{dx::VmValue::Ref(found->second),
-                                 dx::VmValue::Ref(player)});
-    if (outcome.exception.IsValid()) {
-        return "onCompletion raised: " + outcome.exception_message;
-    }
+    const std::uint64_t handle, const std::int32_t generation, const std::int32_t event) {
+    static_cast<void>(context);
+    const auto view = dx::VmObjectRef{static_cast<std::uint32_t>(handle)};
+    const auto root = vm.ProtectReferences(std::array{view});
+    const auto type = vm.Linker().ResolveDescriptor("Landroid/widget/VideoView;");
+    const auto method = vm.Linker().FindDirectMethod(type, "dispatchEvent", "(II)V");
+    if (!method) return "VideoView event protocol is unavailable";
+    const auto outcome = vm.Call(*method, std::array{dx::VmValue::Ref(view), dx::VmValue::Int(generation), dx::VmValue::Int(event)});
+    if (outcome.exception.IsValid()) return "VideoView event raised: " + outcome.exception_message;
     return std::nullopt;
 }
 

@@ -42,7 +42,7 @@ public:
         graphics_.ActivateCurrentContext();
         const auto version = graphics_.api_routing.CurrentVersion(call.ThreadId());
         if (!version.has_value() || *version != 3U) {
-            graphics_.gl_context.Shared().SetGuestError(0x0502U);
+            graphics_.SetGuestError(call, 0x0502U);
             return 0U;
         }
         const auto symbol = gles::DescribeGlesFunction(
@@ -98,7 +98,7 @@ public:
             }
             return result;
         } catch (const gles::GlesApiError& error) {
-            graphics_.gl_context.Shared().SetGuestError(error.Code());
+            graphics_.SetGuestError(call, error.Code());
             return 0U;
         }
     }
@@ -133,7 +133,7 @@ private:
             constexpr std::array<std::uint32_t, 9> scalar_pnames{
                 0x2800U, 0x2801U, 0x2802U, 0x2803U, 0x8072U, 0x813AU, 0x813BU, 0x884CU, 0x884DU};
             if (std::ranges::find(scalar_pnames, call.Argument(1)) == scalar_pnames.end()) {
-                graphics_.gl_context.Shared().SetGuestError(0x0500U); return 0U;
+                graphics_.SetGuestError(call, 0x0500U); return 0U;
             }
         }
         constexpr bool output = FunctionId == 36U || FunctionId == 43U ||
@@ -155,7 +155,7 @@ private:
                 try {
                     graphics_.RequireFrame(symbol).InvokeGles3Words(36U, query, count);
                 } catch (const gles::GlesApiError& error) {
-                    graphics_.gl_context.Shared().SetGuestError(error.Code());
+                    graphics_.SetGuestError(call, error.Code());
                     return 0U;
                 }
                 word_count = count[0];
@@ -185,7 +185,7 @@ private:
             pointer_index = 1U; word_count = 4U;
         }
         if (word_count > gles::kDefaultGuestTransferLimit / 4U) {
-            graphics_.gl_context.Shared().SetGuestError(0x0501U);
+            graphics_.SetGuestError(call, 0x0501U);
             return 0U;
         }
         auto transfer = gles::GuestBuffer::Prepare(
@@ -207,7 +207,7 @@ private:
                 std::copy_n(words.begin(), 4, attribute.integer_current.begin());
             }
         } catch (const gles::GlesApiError& error) {
-            graphics_.gl_context.Shared().SetGuestError(error.Code());
+            graphics_.SetGuestError(call, error.Code());
             return 0U;
         }
         if constexpr (output) {
@@ -226,7 +226,7 @@ private:
                                     ? transfer.array_buffer != 0U
                                     : transfer.element_array_buffer != 0U;
         if (!has_buffer) {
-            graphics_.gl_context.Shared().SetGuestError(0x0502U);
+            graphics_.SetGuestError(call, 0x0502U);
             return 0U;
         }
         try {
@@ -242,7 +242,7 @@ private:
                 attribute.defined = true; attribute.integer = true;
             }
         } catch (const gles::GlesApiError& error) {
-            graphics_.gl_context.Shared().SetGuestError(error.Code());
+            graphics_.SetGuestError(call, error.Code());
         }
         return 0U;
     }
@@ -263,7 +263,7 @@ private:
                 if (found == syncs_.end() || found->second.share_group != graphics_.gl_context.ShareGroup()) {
                     if constexpr (FunctionId == 62U) return 0U;
                     if constexpr (FunctionId == 19U) { if (call.Argument(0) == 0U) return 0U; }
-                    graphics_.gl_context.Shared().SetGuestError(0x0501U);
+                    graphics_.SetGuestError(call, 0x0501U);
                     return 0U;
                 }
                 const auto native = found->second.native;
@@ -282,7 +282,7 @@ private:
                 } else {
                     const auto buffer_size = call.Scalar<std::int32_t>(2);
                     if (buffer_size < 0) {
-                        graphics_.gl_context.Shared().SetGuestError(0x0501U);
+                        graphics_.SetGuestError(call, 0x0501U);
                         return 0U;
                     }
                     auto length_out = gles::GuestBuffer::Prepare(
@@ -309,7 +309,7 @@ private:
                 }
             }
         } catch (const gles::GlesApiError& error) {
-            graphics_.gl_context.Shared().SetGuestError(error.Code());
+            graphics_.SetGuestError(call, error.Code());
             return 0U;
         }
     }
@@ -324,7 +324,7 @@ private:
                         gles::AngleFrame::PixelBufferOperation::compressed3d :
                         gles::AngleFrame::PixelBufferOperation::compressed_sub3d, call.Arguments());
                 } catch (const gles::GlesApiError& error) {
-                    graphics_.gl_context.Shared().SetGuestError(error.Code());
+                    graphics_.SetGuestError(call, error.Code());
                 }
                 return 0U;
             }
@@ -335,7 +335,7 @@ private:
                                              FunctionId == 14U ? 9U : 3U;
         const auto length = call.Scalar<std::int32_t>(length_index);
         if (length < 0) {
-            graphics_.gl_context.Shared().SetGuestError(0x0501U);
+            graphics_.SetGuestError(call, 0x0501U);
             return 0U;
         }
         std::vector<std::byte> storage;
@@ -348,7 +348,7 @@ private:
             graphics_.RequireFrame(symbol).InvokeGles3Bytes(
                 FunctionId, call.Arguments(), bytes);
         } catch (const gles::GlesApiError& error) {
-            graphics_.gl_context.Shared().SetGuestError(error.Code());
+            graphics_.SetGuestError(call, error.Code());
         }
         return 0U;
     }
@@ -373,7 +373,7 @@ private:
             std::memcpy(transfer.WritableBytes().data(), value.data(), value.size() * 8U);
             transfer.Commit();
         } catch (const gles::GlesApiError& error) {
-            graphics_.gl_context.Shared().SetGuestError(error.Code());
+            graphics_.SetGuestError(call, error.Code());
         }
         return 0U;
     }
@@ -394,19 +394,19 @@ private:
                 }
             } else {
                 if (call.Argument(0) != 0x1F03U) {
-                    graphics_.gl_context.Shared().SetGuestError(0x0500U);
+                    graphics_.SetGuestError(call, 0x0500U);
                     return 0U;
                 }
                 const auto extensions = GuestGlesExtensions(frame);
                 if (call.Argument(1) >= extensions.size()) {
-                    graphics_.gl_context.Shared().SetGuestError(0x0501U);
+                    graphics_.SetGuestError(call, 0x0501U);
                     return 0U;
                 }
                 return PublishString(extensions[call.Argument(1)],
                                      call.Argument(1), call.ThreadId());
             }
         } catch (const gles::GlesApiError& error) {
-            graphics_.gl_context.Shared().SetGuestError(error.Code());
+            graphics_.SetGuestError(call, error.Code());
             return 0U;
         }
     }
@@ -443,7 +443,7 @@ private:
                               const std::string_view symbol) {
         const auto count = call.Scalar<std::int32_t>(0);
         if (count < 0) {
-            graphics_.gl_context.Shared().SetGuestError(0x0501U);
+            graphics_.SetGuestError(call, 0x0501U);
             return 0U;
         }
         std::vector<std::uint32_t> names(static_cast<std::size_t>(count));
@@ -467,7 +467,7 @@ private:
                 graphics_.gl_context.Shared().transfer.BindBuffer(0x8893U, frame.BoundBuffer(0x8893U));
             }
         } catch (const gles::GlesApiError& error) {
-            graphics_.gl_context.Shared().SetGuestError(error.Code());
+            graphics_.SetGuestError(call, error.Code());
             return 0U;
         }
         if constexpr (FunctionId >= 31U) {
@@ -485,7 +485,7 @@ private:
         try {
             if constexpr (FunctionId == 35U || FunctionId == 52U) {
                 const auto capacity = call.Scalar<std::int32_t>(2);
-                if (capacity < 0) { graphics_.gl_context.Shared().SetGuestError(0x0501U); return 0U; }
+                if (capacity < 0) { graphics_.SetGuestError(call, 0x0501U); return 0U; }
                 auto length_out = PrepareOutput(call, 3U, 4U, true);
                 auto name_out = PrepareOutput(call, FunctionId == 35U ? 4U : 6U,
                                                capacity, capacity == 0);
@@ -521,7 +521,7 @@ private:
                 CommitVector(params_out, values);
             } else if constexpr (FunctionId == 45U) {
                 const auto capacity = call.Scalar<std::int32_t>(1);
-                if (capacity < 0) { graphics_.gl_context.Shared().SetGuestError(0x0501U); return 0U; }
+                if (capacity < 0) { graphics_.SetGuestError(call, 0x0501U); return 0U; }
                 auto length_out = PrepareOutput(call, 2U, 4U, true);
                 auto format_out = PrepareOutput(call, 3U, 4U, false);
                 auto binary_out = PrepareOutput(call, 4U, capacity, capacity == 0);
@@ -554,7 +554,7 @@ private:
                     call.Argument(0), call.Scalar<std::int32_t>(1), count));
             }
         } catch (const gles::GlesApiError& error) {
-            graphics_.gl_context.Shared().SetGuestError(error.Code());
+            graphics_.SetGuestError(call, error.Code());
         }
         return 0U;
     }
@@ -568,7 +568,7 @@ private:
                     gles::AngleFrame::PixelBufferOperation::image3d :
                     gles::AngleFrame::PixelBufferOperation::sub3d, call.Arguments());
             } catch (const gles::GlesApiError& error) {
-                graphics_.gl_context.Shared().SetGuestError(error.Code());
+                graphics_.SetGuestError(call, error.Code());
             }
             return 0U;
         }
@@ -588,7 +588,7 @@ private:
                 input.IsNull() ? std::nullopt
                                : std::optional<std::span<const std::byte>>(input.Bytes()));
         } catch (const gles::GlesApiError& error) {
-            graphics_.gl_context.Shared().SetGuestError(error.Code());
+            graphics_.SetGuestError(call, error.Code());
         }
         return 0U;
     }
@@ -601,18 +601,18 @@ private:
             if constexpr (FunctionId == 65U) {
                 if (!map_arena_mapped_) throw std::logic_error("GLES3 map arena is unavailable");
                 const auto length = call.Scalar<std::int32_t>(2);
-                if (length < 0) { graphics_.gl_context.Shared().SetGuestError(0x0501U); return 0U; }
+                if (length < 0) { graphics_.SetGuestError(call, 0x0501U); return 0U; }
                 const auto name = frame.BoundBuffer(call.Argument(0));
                 const auto buffer = name == 0U ? 0ULL :
                     (static_cast<std::uint64_t>(graphics_.gl_context.ShareGroup()) << 32U) | name;
                 if (buffer != 0U && frame.GetBufferParameter(call.Argument(0), 0x88BCU) == 0)
                     mappings_.erase(buffer);
                 if (buffer == 0U || mappings_.contains(buffer)) {
-                    graphics_.gl_context.Shared().SetGuestError(0x0502U);
+                    graphics_.SetGuestError(call, 0x0502U);
                     return 0U;
                 }
                 const auto guest = AllocateMapping(static_cast<std::uint32_t>(length));
-                if (guest == 0U) { graphics_.gl_context.Shared().SetGuestError(0x0505U); return 0U; }
+                if (guest == 0U) { graphics_.SetGuestError(call, 0x0505U); return 0U; }
                 const auto guest_access = call.Argument(3);
                 const bool preserve_contents =
                     (guest_access & 0x0002U) != 0U &&
@@ -638,27 +638,27 @@ private:
                     mappings_.erase(buffer);
                 const auto found = mappings_.find(buffer);
                 if (found != mappings_.end() && frame.MappedBufferPointer(call.Argument(0)) != found->second.host) {
-                    graphics_.gl_context.Shared().SetGuestError(0x0502U); return 0U;
+                    graphics_.SetGuestError(call, 0x0502U); return 0U;
                 }
                 if constexpr (FunctionId == 39U) {
                     if (call.Argument(1) != 0x88BDU) {
-                        graphics_.gl_context.Shared().SetGuestError(0x0500U);
+                        graphics_.SetGuestError(call, 0x0500U);
                         return 0U;
                     }
                     auto output = PrepareOutput(call, 2U, 4U, false);
                     const std::uint32_t pointer = found == mappings_.end() ? 0U : found->second.guest;
                     CommitScalar(output, pointer); return 0U;
                 }
-                if (found == mappings_.end()) { graphics_.gl_context.Shared().SetGuestError(0x0502U); return 0U; }
+                if (found == mappings_.end()) { graphics_.SetGuestError(call, 0x0502U); return 0U; }
                 auto& mapping = found->second;
                 if constexpr (FunctionId == 29U) {
                     if ((mapping.access & 0x0010U) == 0U) {
-                        graphics_.gl_context.Shared().SetGuestError(0x0502U); return 0U;
+                        graphics_.SetGuestError(call, 0x0502U); return 0U;
                     }
                     const auto offset = call.Scalar<std::int32_t>(1);
                     const auto length = call.Scalar<std::int32_t>(2);
                     if (offset < 0 || length < 0 || static_cast<std::uint64_t>(offset) + length > mapping.length) {
-                        graphics_.gl_context.Shared().SetGuestError(0x0501U); return 0U;
+                        graphics_.SetGuestError(call, 0x0501U); return 0U;
                     }
                     if ((mapping.access & 0x0002U) != 0U && length != 0)
                         calls_.address_space.Read(memory::GuestAddress{mapping.guest + offset},
@@ -674,7 +674,7 @@ private:
                 }
             }
         } catch (const gles::GlesApiError& error) {
-            graphics_.gl_context.Shared().SetGuestError(error.Code()); return 0U;
+            graphics_.SetGuestError(call, error.Code()); return 0U;
         }
     }
 

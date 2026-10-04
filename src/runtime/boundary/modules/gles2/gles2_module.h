@@ -42,13 +42,13 @@ public:
             return InvokeChecked<FunctionId>(call);
         } catch (const gles::GlesTransferStateError&) {
             if constexpr (FunctionId == 72U || FunctionId == 73U || FunctionId == 107U || FunctionId == 109U) {
-                graphics_.gl_context.Shared().SetGuestError(0x0500U); return 0U;
+                graphics_.SetGuestError(call, 0x0500U); return 0U;
             } else throw;
         } catch (const gles::GlesApiError& error) {
-            graphics_.gl_context.Shared().SetGuestError(error.Code());
+            graphics_.SetGuestError(call, error.Code());
             return 0U;
         } catch (const std::invalid_argument&) {
-            graphics_.gl_context.Shared().SetGuestError(0x0500U);
+            graphics_.SetGuestError(call, 0x0500U);
             return 0U;
         }
     }

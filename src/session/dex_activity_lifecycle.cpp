@@ -822,6 +822,7 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
                     static_cast<std::int32_t>(frame.height)
                 });
         }
+        runtime::ComposeVideoViews(context, frame.rgba8, frame.width, frame.height, false);
         const auto& overlay = context.ui_overlay_renderer.Render(
             context.ui_tree, context.ui_bitmaps,
             {
@@ -829,6 +830,7 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
                 static_cast<std::int32_t>(frame.height)
             });
         frame.rgba8 = ComposeUiOverlay(frame.rgba8, overlay);
+        runtime::ComposeVideoViews(context, frame.rgba8, frame.width, frame.height, true);
         return frame;
     }
 
@@ -857,14 +859,22 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
     void DexActivityLifecycle::PumpVideo() {
         {
             std::scoped_lock lock(bindings_.context->video_views_mutex);
-            if (bindings_.context->video_views.empty() &&
-                bindings_.context->pending_video_completion.empty()) {
+            if (bindings_.context->video_views.empty()) {
                 return;
             }
         }
         const auto error = runtime::PumpVideoViews(
             bindings_.bridge->Vm(), *bindings_.context,
-            bindings_.publish_video_frame);
+            [this](std::vector<std::uint8_t> rgba8) {
+                const auto& context = *bindings_.context;
+                // GLES/Canvas producers keep authority over the base frame.
+                // Video pixels are composed once at the frontend handoff.
+                if (context.renderer.IsValid() || !context.active_surface_holders.empty() ||
+                    !context.holder_canvases.empty()) return;
+                std::fill(rgba8.begin(), rgba8.end(), 0U);
+                for (std::size_t i = 3; i < rgba8.size(); i += 4) rgba8[i] = 255U;
+                if (bindings_.publish_video_frame) bindings_.publish_video_frame(std::move(rgba8));
+            });
         if (error.has_value()) Fail(*error);
     }
 

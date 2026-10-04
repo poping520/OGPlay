@@ -161,6 +161,7 @@ struct UiNode final {
     bool focusable{};
     bool focusable_in_touch_mode{};
     bool scroll_container{};
+    bool surface_on_top{};
     bool horizontal_scroll_bar_enabled{true};
     bool vertical_scroll_bar_enabled{true};
     Orientation orientation{Orientation::Horizontal};

@@ -5535,3 +5535,300 @@ TEST_CASE("DVM-202 teardown isolates pending JNI errors and still stops after cl
         CHECK_NOTHROW(static_cast<void>(f.app->Stop()));
     }
 }
+
+TEST_CASE("DVM-214 API19 gzip streams use guest zlib and release native state") {
+    using namespace ogplay;
+    using namespace runtime::dexvm;
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        CAPTURE(backend == InterpreterBackend::threaded ? "threaded" : "switch");
+        runtime::VirtualFileSystem filesystem;
+        core::CapabilityLedger ledger;
+        core::Logger logger;
+        std::vector<std::vector<std::byte>> contents;
+        std::vector<runtime::BionicModuleSource> libraries;
+        for (const auto name : {"libc.so", "libm.so", "libdl.so", "libstdc++.so", "libz.so",
+                               "libcrypto.so", "libssl.so", "libgabi++.so", "libicui18n.so",
+                               "libicuuc.so", "libstlport.so", "libogplay_jni.so"}) {
+            contents.push_back(ReadPayloadBytes(std::string("lib/") + name));
+            libraries.push_back({name, contents.back()});
+        }
+        auto context = std::make_shared<runtime::DexVmAndroidContext>();
+        context->apk_bytes = {std::byte{0x50}, std::byte{0x4b}, std::byte{3}, std::byte{4}};
+        session::AndroidAppProcessRequest request;
+        request.manifest = AppManifest("android.app.Activity");
+        request.system_libraries = libraries;
+        // Existing minimal APK fixture; compression classes come only from BootDex.
+        request.dex_bytes = ReadDexFixture("crc32.dex");
+        request.icu_data = ReadPayloadBytes("icu/icudt51l.dat");
+        request.boot_dex_bytes = test::ReadBootDex();
+        request.context = context;
+        request.dexvm.interpreter.backend = backend;
+        request.surface_width = 64;
+        request.surface_height = 36;
+        request.maximum_ticks_per_call = UINT64_C(100000000);
+#if defined(_WIN32)
+        request.backend = {gles::AngleRenderer::d3d11, gles::AngleDevice::hardware};
+#elif defined(__APPLE__)
+        request.backend = {gles::AngleRenderer::metal, gles::AngleDevice::hardware};
+#else
+        request.backend = {gles::AngleRenderer::vulkan, gles::AngleDevice::hardware};
+#endif
+        request.filesystem = &filesystem;
+        request.ledger = &ledger;
+        request.logger = &logger;
+        auto app = session::AndroidAppProcess::Create(std::move(request));
+        auto& vm = app->DexVm().Vm();
+        auto& linker = vm.Linker();
+        const auto direct = [&](const char* owner, const char* name, const char* descriptor,
+                                std::vector<VmValue> arguments) {
+            const auto method = linker.FindDirectMethod(linker.ResolveDescriptor(owner), name, descriptor);
+            REQUIRE(method.has_value());
+            return vm.Call(*method, arguments);
+        };
+        const auto invoke_result = [&](VmObjectRef object, const char* name, const char* descriptor,
+                                       std::vector<VmValue> arguments) {
+            const auto slot = linker.FindVtableIndex(vm.Model().ObjectClass(object), name, descriptor);
+            REQUIRE(slot.has_value());
+            arguments.insert(arguments.begin(), VmValue::Ref(object));
+            return vm.Call(linker.Class(vm.Model().ObjectClass(object)).vtable[*slot], arguments);
+        };
+        const auto invoke = [&](VmObjectRef object, const char* name, const char* descriptor,
+                                std::vector<VmValue> arguments = {}) {
+            INFO((std::string{name} + descriptor));
+            const auto outcome = invoke_result(object, name, descriptor, std::move(arguments));
+            REQUIRE_MESSAGE(!outcome.exception.IsValid(), outcome.exception_message);
+            return outcome.value;
+        };
+        const auto construct = [&](const char* owner, const char* descriptor = "()V",
+                                   std::vector<VmValue> arguments = {}) {
+            const auto object = vm.NewIntrinsicInstance(owner);
+            const auto root = vm.ProtectReferences(std::array{object});
+            arguments.insert(arguments.begin(), VmValue::Ref(object));
+            const auto outcome = direct(owner, "<init>", descriptor, std::move(arguments));
+            REQUIRE_MESSAGE(!outcome.exception.IsValid(), outcome.exception_message);
+            return object;
+        };
+        const auto byte_array = [&](const std::vector<std::byte>& data) {
+            const auto array = vm.Model().NewPrimitiveArray(linker.ResolveDescriptor("[B"),
+                runtime::JniPrimitiveKind::byte, static_cast<runtime::JniSize>(data.size()));
+            vm.Model().WriteByteRegion(array, 0, data);
+            return array;
+        };
+        const auto bytes = [&](VmObjectRef array) {
+            return vm.Model().ReadByteRegion(array, 0, vm.Model().ArrayLength(array));
+        };
+        const auto expect_exception = [&](const VmCallOutcome& outcome, const char* type) {
+            REQUIRE(outcome.exception.IsValid());
+            CHECK(linker.Class(outcome.exception_class).descriptor == type);
+        };
+        for (const auto name : {"GZIPOutputStream", "GZIPInputStream", "DeflaterOutputStream",
+                                "InflaterInputStream", "Deflater", "Inflater"}) {
+            const auto type = linker.ResolveDescriptor(std::string("Ljava/util/zip/") + name + ";");
+            linker.EnsureClassLinked(type);
+            CHECK(linker.Class(type).is_boot_dex);
+            CHECK_FALSE(linker.Class(type).is_intrinsic);
+            for (const auto id : linker.Class(type).own_virtual_methods)
+                CHECK(linker.Method(id).kind != MethodKind::intrinsic);
+        }
+        const auto gzip_encode = [&](const std::vector<std::byte>& data) {
+            const auto output = construct("Ljava/io/ByteArrayOutputStream;");
+            const auto output_root = vm.ProtectReferences(std::array{output});
+            const auto gzip = construct("Ljava/util/zip/GZIPOutputStream;", "(Ljava/io/OutputStream;)V",
+                                        {VmValue::Ref(output)});
+            const auto gzip_root = vm.ProtectReferences(std::array{gzip});
+            const auto input = byte_array(data);
+            const auto input_root = vm.ProtectReferences(std::array{input});
+            invoke(gzip, "write", "([BII)V", {VmValue::Ref(input), VmValue::Int(0),
+                                              VmValue::Int(static_cast<int>(data.size()))});
+            invoke(gzip, "flush", "()V");
+            static_cast<void>(vm.CollectGarbage("gzip-live-stream"));
+            invoke(gzip, "close", "()V");
+            invoke(gzip, "close", "()V"); // The application closes the stream twice.
+            expect_exception(invoke_result(gzip, "write", "(I)V", {VmValue::Int(1)}),
+                             "Ljava/io/IOException;");
+            return bytes(invoke(output, "toByteArray", "()[B").ref);
+        };
+        const auto gzip_decode = [&](const std::vector<std::byte>& compressed, bool valid) {
+            const auto array = byte_array(compressed);
+            const auto array_root = vm.ProtectReferences(std::array{array});
+            const auto input = construct("Ljava/io/ByteArrayInputStream;", "([B)V", {VmValue::Ref(array)});
+            const auto input_root = vm.ProtectReferences(std::array{input});
+            const auto gzip = construct("Ljava/util/zip/GZIPInputStream;", "(Ljava/io/InputStream;)V",
+                                        {VmValue::Ref(input)});
+            const auto gzip_root = vm.ProtectReferences(std::array{gzip});
+            const auto buffer = byte_array(std::vector<std::byte>(4096));
+            const auto buffer_root = vm.ProtectReferences(std::array{buffer});
+            std::vector<std::byte> result;
+            bool failed = false, eof = false;
+            for (int i = 0; i < 1000; ++i) {
+                const auto read = invoke_result(gzip, "read", "([BII)I",
+                    {VmValue::Ref(buffer), VmValue::Int(0), VmValue::Int(4096)});
+                if (read.exception.IsValid()) {
+                    CHECK(linker.IsAssignable(linker.ResolveDescriptor("Ljava/io/IOException;"), read.exception_class));
+                    failed = true;
+                    break;
+                }
+                const auto n = read.value.AsInt();
+                if (n == -1) { eof = true; break; }
+                REQUIRE(n > 0);
+                const auto chunk = vm.Model().ReadByteRegion(buffer, 0, n);
+                result.insert(result.end(), chunk.begin(), chunk.end());
+            }
+            CHECK(failed == !valid);
+            CHECK(eof == valid);
+            invoke(gzip, "close", "()V");
+            invoke(gzip, "close", "()V");
+            return result;
+        };
+        // Python's gzip.compress(mtime=0) provides an independent RFC1952 vector.
+        const std::vector<std::byte> oracle = [] {
+            std::vector<std::byte> result;
+            for (const auto b : {0x1f,0x8b,0x08,0x00,0x00,0x00,0x00,0x00,0x02,0xff,0x73,0x0c,
+                0xf0,0x34,0xb4,0x54,0x48,0xaf,0xca,0x2c,0x50,0x28,0xca,0x2f,0xcd,0x4b,0x51,
+                0x28,0x29,0xca,0x2c,0x00,0x00,0x8d,0x71,0xb8,0x3e,0x15,0x00,0x00,0x00})
+                result.push_back(static_cast<std::byte>(b));
+            return result;
+        }();
+        const std::string text = "API19 gzip round trip";
+        std::vector<std::byte> plain;
+        for (const char c : text) plain.push_back(static_cast<std::byte>(static_cast<unsigned char>(c)));
+        CHECK(gzip_decode(oracle, true) == plain);
+        CHECK(gzip_decode(gzip_encode({}), true).empty());
+        std::vector<std::byte> large(131073);
+        std::uint32_t random = 1;
+        for (auto& b : large) { random = random * 1664525U + 1013904223U; b = static_cast<std::byte>(random >> 24U); }
+        const auto encoded = gzip_encode(large);
+        REQUIRE(encoded.size() > 65536);
+        CHECK(encoded[0] == std::byte{0x1f});
+        CHECK(encoded[1] == std::byte{0x8b});
+        // Decode the emitted raw DEFLATE with the independent loader implementation.
+        // A synthetic local ZIP header reuses its existing strict CRC/size validation.
+        const auto little32 = [&](std::size_t offset) {
+            std::uint32_t value = 0;
+            for (unsigned i = 0; i < 4; ++i)
+                value |= std::to_integer<std::uint32_t>(encoded[offset+i]) << (8U*i);
+            return value;
+        };
+        const auto crc = little32(encoded.size()-8);
+        const auto size = little32(encoded.size()-4);
+        CHECK(size == large.size());
+        const auto compressed_size = static_cast<std::uint32_t>(encoded.size()-18);
+        std::vector<std::byte> zip(31);
+        Put32(zip, 0, 0x04034b50);
+        Put16(zip, 8, 8);
+        Put32(zip, 14, crc);
+        Put32(zip, 18, compressed_size);
+        Put32(zip, 22, size);
+        Put16(zip, 26, 1);
+        zip[30] = std::byte{'x'};
+        zip.insert(zip.end(), encoded.begin()+10, encoded.end()-8);
+        const loader::ApkArchive archive{{{"x", 0, 8, crc, compressed_size, size, 0}}};
+        CHECK(loader::ReadApkEntry(zip, archive, "x") == large);
+        CHECK(gzip_decode(encoded, true) == large);
+        auto damaged = oracle;
+        damaged[damaged.size() - 8] ^= std::byte{1};
+        static_cast<void>(gzip_decode(damaged, false));
+        damaged = oracle;
+        damaged.pop_back();
+        static_cast<void>(gzip_decode(damaged, false));
+        damaged = oracle;
+        damaged[damaged.size() - 4] ^= std::byte{1};
+        static_cast<void>(gzip_decode(damaged, false));
+
+        const auto deflater = construct("Ljava/util/zip/Deflater;");
+        const auto deflater_root = vm.ProtectReferences(std::array{deflater});
+        const auto inflater = construct("Ljava/util/zip/Inflater;");
+        const auto inflater_root = vm.ProtectReferences(std::array{inflater});
+        const auto input = byte_array(large);
+        const auto input_root = vm.ProtectReferences(std::array{input});
+        const auto output = byte_array(std::vector<std::byte>(200000));
+        const auto output_root = vm.ProtectReferences(std::array{output});
+        const auto decoded = byte_array(std::vector<std::byte>(large.size()));
+        const auto decoded_root = vm.ProtectReferences(std::array{decoded});
+        invoke(deflater, "setInput", "([B)V", {VmValue::Ref(input)});
+        // API19 snapshots input on setInput; later writes must not change native input.
+        vm.Model().WriteByteRegion(input, 0, std::vector<std::byte>{std::byte{0}});
+        invoke(deflater, "finish", "()V");
+        const auto count = invoke(deflater, "deflate", "([B)I", {VmValue::Ref(output)}).AsInt();
+        CHECK(count > 65536);
+        CHECK(invoke(deflater, "finished", "()Z").AsInt() == 1);
+        CHECK(invoke(deflater, "getBytesRead", "()J").AsLong() == static_cast<std::int64_t>(large.size()));
+        CHECK(invoke(deflater, "getBytesWritten", "()J").AsLong() == count);
+        invoke(inflater, "setInput", "([BII)V", {VmValue::Ref(output), VmValue::Int(0), VmValue::Int(count)});
+        CHECK(invoke(inflater, "inflate", "([B)I", {VmValue::Ref(decoded)}).AsInt() == static_cast<int>(large.size()));
+        CHECK(bytes(decoded) == large);
+        CHECK(invoke(inflater, "finished", "()Z").AsInt() == 1);
+        CHECK(invoke(inflater, "getRemaining", "()I").AsInt() == 0);
+        CHECK(invoke(inflater, "getBytesRead", "()J").AsLong() == count);
+        CHECK(invoke(inflater, "getBytesWritten", "()J").AsLong() == static_cast<std::int64_t>(large.size()));
+        invoke(deflater, "reset", "()V");
+        invoke(inflater, "reset", "()V");
+        CHECK(invoke(deflater, "getBytesRead", "()J").AsLong() == 0);
+        CHECK(invoke(inflater, "getBytesWritten", "()J").AsLong() == 0);
+        const auto dictionary = byte_array(plain);
+        const auto dictionary_root = vm.ProtectReferences(std::array{dictionary});
+        invoke(deflater, "setLevel", "(I)V", {VmValue::Int(9)});
+        invoke(deflater, "setStrategy", "(I)V", {VmValue::Int(1)});
+        // Apply changed parameters before installing a dictionary: API19 setInput calls
+        // deflateParams with no output buffer; changing them after setDictionary may flush.
+        invoke(deflater, "setInput", "([B)V", {VmValue::Ref(dictionary)});
+        invoke(deflater, "finish", "()V");
+        const auto parameter_count = invoke(deflater, "deflate", "([B)I", {VmValue::Ref(output)}).AsInt();
+        invoke(inflater, "setInput", "([BII)V", {VmValue::Ref(output), VmValue::Int(0), VmValue::Int(parameter_count)});
+        CHECK(invoke(inflater, "inflate", "([B)I", {VmValue::Ref(decoded)}).AsInt() == static_cast<int>(plain.size()));
+        CHECK(vm.Model().ReadByteRegion(decoded, 0, static_cast<int>(plain.size())) == plain);
+        invoke(deflater, "reset", "()V");
+        invoke(inflater, "reset", "()V");
+        invoke(deflater, "setDictionary", "([B)V", {VmValue::Ref(dictionary)});
+        invoke(deflater, "setInput", "([B)V", {VmValue::Ref(dictionary)});
+        invoke(deflater, "finish", "()V");
+        const auto dictionary_count = invoke(deflater, "deflate", "([B)I", {VmValue::Ref(output)}).AsInt();
+        invoke(inflater, "setInput", "([BII)V", {VmValue::Ref(output), VmValue::Int(0), VmValue::Int(dictionary_count)});
+        CHECK(invoke(inflater, "inflate", "([B)I", {VmValue::Ref(decoded)}).AsInt() == 0);
+        CHECK(invoke(inflater, "needsDictionary", "()Z").AsInt() == 1);
+        CHECK(invoke(inflater, "getAdler", "()I").AsInt() == invoke(deflater, "getAdler", "()I").AsInt());
+        invoke(inflater, "setDictionary", "([B)V", {VmValue::Ref(dictionary)});
+        CHECK(invoke(inflater, "inflate", "([B)I", {VmValue::Ref(decoded)}).AsInt() == static_cast<int>(plain.size()));
+        CHECK(vm.Model().ReadByteRegion(decoded, 0, static_cast<int>(plain.size())) == plain);
+        const auto field = *linker.FindFieldRecursive(linker.ResolveDescriptor("Ljava/util/zip/Deflater;"), "streamHandle", "J");
+        const auto slots = vm.Model().InstanceSlots(deflater);
+        const auto slot = linker.Field(field).slot;
+        const auto token = static_cast<std::int64_t>(std::uint64_t(slots[slot].bits) | (std::uint64_t(slots[slot+1].bits) << 32U));
+        expect_exception(direct("Ljava/util/zip/Deflater;", "setInputImpl", "([BIIJ)V",
+            {VmValue::Ref(deflater), VmValue::Ref(input), VmValue::Int(1), VmValue::Int(INT32_MAX), VmValue::Long(token)}),
+            "Ljava/lang/ArrayIndexOutOfBoundsException;");
+        expect_exception(direct("Ljava/util/zip/Inflater;", "getAdlerImpl", "(J)I",
+            {VmValue::Ref(inflater), VmValue::Long(token)}), "Ljava/lang/IllegalStateException;");
+        expect_exception(direct("Ljava/util/zip/Inflater;", "setFileInputImpl", "(Ljava/io/FileDescriptor;JIJ)I",
+            {VmValue::Ref(inflater), VmValue::Ref(VmObjectRef{}), VmValue::Long(0), VmValue::Int(1), VmValue::Long(0)}),
+            "Ljava/lang/UnsupportedOperationException;");
+        invoke(deflater, "end", "()V");
+        invoke(deflater, "end", "()V");
+        invoke(inflater, "end", "()V");
+        invoke(inflater, "end", "()V");
+        expect_exception(invoke_result(deflater, "getAdler", "()I", {}), "Ljava/lang/IllegalStateException;");
+        expect_exception(direct("Ljava/util/zip/Deflater;", "getAdlerImpl", "(J)I",
+            {VmValue::Ref(deflater), VmValue::Long(token)}), "Ljava/lang/IllegalStateException;");
+        static_cast<void>(vm.CollectGarbage("gzip-before-owner-test"));
+        const auto baseline = vm.GuestNativeResourceCount();
+        const auto alive = construct("Ljava/util/zip/Deflater;");
+        const auto alive_root = vm.ProtectReferences(std::array{alive});
+        std::int64_t abandoned_token = 0;
+        {
+            const auto abandoned = construct("Ljava/util/zip/Deflater;");
+            const auto abandoned_root = vm.ProtectReferences(std::array{abandoned});
+            const auto values = vm.Model().InstanceSlots(abandoned);
+            abandoned_token = static_cast<std::int64_t>(std::uint64_t(values[slot].bits) | (std::uint64_t(values[slot+1].bits) << 32U));
+            CHECK(vm.GuestNativeResourceCount() == baseline + 2);
+        }
+        static_cast<void>(vm.CollectGarbage("gzip-abandoned-owner"));
+        CHECK(vm.GuestNativeResourceCount() == baseline + 1);
+        expect_exception(direct("Ljava/util/zip/Deflater;", "getAdlerImpl", "(J)I",
+            {VmValue::Ref(alive), VmValue::Long(abandoned_token)}), "Ljava/lang/IllegalStateException;");
+        CHECK(invoke(alive, "getBytesRead", "()J").AsLong() == 0);
+        vm.ReleaseGuestNativeResources(true);
+        CHECK(vm.GuestNativeResourceCount() == 0);
+        invoke(alive, "end", "()V"); // Teardown writes API19's -1 sentinel, not zero.
+        expect_exception(invoke_result(alive, "getAdler", "()I", {}), "Ljava/lang/IllegalStateException;");
+    }
+}

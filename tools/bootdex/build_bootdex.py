@@ -65,13 +65,17 @@ JAVA_SOURCE_NAMES = tuple(sorted((
     "org/ogplay/security/TrustLimits.java",
     "org/ogplay/security/X509TrustManagerImpl.java",
 )))
+ZIP_JAVA_ROOT = ROOT / "src/guest/zip/java"
+ZIP_JAVA_NAMES = ("org/ogplay/zip/NativeZip.java",)
+
 FRAMEWORK_JAVA_ROOT = ROOT / "src/guest/framework/java"
 FRAMEWORK_JAVA_NAMES = ("android/net/wifi/WifiManager.java",)
 
 
 def guest_java_sources() -> tuple[Path, ...]:
     return tuple(JAVA_SOURCE_ROOT / name for name in JAVA_SOURCE_NAMES) + tuple(
-        FRAMEWORK_JAVA_ROOT / name for name in FRAMEWORK_JAVA_NAMES)
+        FRAMEWORK_JAVA_ROOT / name for name in FRAMEWORK_JAVA_NAMES) + tuple(
+        ZIP_JAVA_ROOT / name for name in ZIP_JAVA_NAMES)
 
 
 WINDOWS_JAVAC = Path(r"D:\01_software\jdk-17.0.2\bin\javac.exe")
@@ -425,6 +429,37 @@ def audit_crc32(dex_bytes: bytes) -> None:
     expected = {"updateImpl([BIIJ)J": 0x102, "updateByteImpl(BJ)J": 0x102}
     if observed != expected:
         raise BuildError(f"CRC32 private instance native signature drift: {observed}")
+
+
+def zip_stream_native_signatures() -> dict[str, dict[str, int]]:
+    common = {"endImpl(J)V", "getAdlerImpl(J)I", "getTotalInImpl(J)J",
+              "getTotalOutImpl(J)J", "resetImpl(J)V", "setDictionaryImpl([BIIJ)V",
+              "setInputImpl([BIIJ)V"}
+    return {
+        "Ljava/util/zip/Deflater;": {m: 0x102 for m in common | {
+            "createStream(IIZ)J", "deflateImpl([BIIJI)I", "setLevelsImpl(IIJ)V"}},
+        "Ljava/util/zip/Inflater;": {m: 0x102 for m in common | {
+            "createStream(Z)J", "inflateImpl([BIIJ)I",
+            "setFileInputImpl(Ljava/io/FileDescriptor;JIJ)I"}},
+        "Lorg/ogplay/zip/NativeZip;": {"release(J)V": 0x10a},
+    }
+
+
+def audit_zip_streams(dex_bytes: bytes) -> None:
+    """Pin the admitted API19 ZIP stream natives, including the explicit FD gap."""
+    expected = zip_stream_native_signatures()
+    dex = dex_survey_lib.parse_dex(dex_bytes)
+    observed = {owner: {} for owner in expected}
+    for cls in dex.classes:
+        owner = dex.type_name(cls.type_index)
+        if owner not in observed:
+            continue
+        for method in cls.direct_methods + cls.virtual_methods:
+            if method.access_flags & dex_survey_lib.ACC_NATIVE:
+                _, name, descriptor = dex.method_signature(method.method_index)
+                observed[owner][name + descriptor] = method.access_flags
+    if observed != expected:
+        raise BuildError(f"ZIP stream native signature drift: {observed}")
 
 
 def audit_native_crypto(dex_bytes: bytes) -> dict:
@@ -947,6 +982,41 @@ def self_test() -> int:
         else:
             policy["source"] = "framework.jar"
         reject_recipe(candidate, case)
+    # Native admission mutations need neither AOSP inputs nor Java tooling.
+    from types import SimpleNamespace
+    for mutation in ("valid", "signature", "flags", "extra", "missing"):
+        names, signatures, classes = [], [], []
+        for owner, members in zip_stream_native_signatures().items():
+            names.append(owner)
+            methods = []
+            for signature, flags in sorted(members.items()):
+                name, descriptor = signature.split("(", 1)
+                methods.append(SimpleNamespace(method_index=len(signatures), access_flags=flags))
+                signatures.append((owner, name, "(" + descriptor))
+            classes.append(SimpleNamespace(type_index=len(names)-1,
+                direct_methods=methods, virtual_methods=[]))
+        native = classes[0].direct_methods[0]
+        if mutation == "flags":
+            native.access_flags |= 8
+        elif mutation == "missing":
+            classes[0].direct_methods.remove(native)
+        elif mutation == "extra":
+            classes[0].direct_methods.append(SimpleNamespace(method_index=len(signatures), access_flags=0x102))
+            signatures.append((names[0], "unreviewedZipNative", "()V"))
+        elif mutation == "signature":
+            owner, _, descriptor = signatures[native.method_index]
+            signatures[native.method_index] = (owner, "unreviewedZipNative", descriptor)
+        parsed = SimpleNamespace(classes=classes, type_name=lambda i: names[i],
+                                 method_signature=lambda i: signatures[i])
+        with patch.object(dex_survey_lib, "parse_dex", return_value=parsed):
+            try:
+                audit_zip_streams(b"")
+            except BuildError:
+                if mutation == "valid":
+                    raise
+            else:
+                if mutation != "valid":
+                    raise BuildError(f"ZIP native drift accepted: {mutation}")
     resources = load_system_resources()
     # Mutation checks need neither local framework inputs nor Java tooling.
     sample_resource = json.loads(json.dumps(resources))
@@ -1089,7 +1159,8 @@ def build_guest_jni() -> int:
     if not properties.is_file() or f"Pkg.Revision = {NDK_REVISION}" not in properties.read_text(encoding="utf-8"):
         raise BuildError("build-guest-jni requires Android NDK r25c (25.2.9519653); "
                          "set OGPLAY_ANDROID_NDK if it is not at the documented path")
-    hosts = list((ndk / "toolchains/llvm/prebuilt").glob("*"))
+    hosts = [path for path in (ndk / "toolchains/llvm/prebuilt").glob("*")
+             if path.is_dir()]
     if len(hosts) != 1:
         raise BuildError("NDK r25c must contain exactly one host LLVM prebuilt")
     tool_bin = hosts[0] / "bin"
@@ -1105,7 +1176,8 @@ def build_guest_jni() -> int:
                ROOT / "src/guest/crypto/trust_jni.c",
                ROOT / "src/guest/crypto/tls_jni.c",
                ROOT / "src/guest/icu/icu_jni.c",
-               ROOT / "src/guest/zip/crc32_jni.c"]
+               ROOT / "src/guest/zip/crc32_jni.c",
+               ROOT / "src/guest/zip/zip_stream_jni.c"]
     source_inputs = [*sources, ROOT / "src/guest/icu/icu51_capi.h"]
     for source in source_inputs:
         if not source.is_file():
@@ -1196,6 +1268,7 @@ def main() -> int:
             return build_guest_jni()
         jar, dex, recipe = build()
         audit_crc32(dex)
+        audit_zip_streams(dex)
         native_crypto = audit_native_crypto(dex)
         manifest = manifest_bytes(boot_metadata(jar, dex, recipe))
         if arguments.mode == "build":

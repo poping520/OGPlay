@@ -81,9 +81,10 @@ void RefreshAndroidLayoutParams(dx::Interpreter& vm, const Context& context);
 // Materialize the current package's ApplicationInfo from sealed process
 // facts. Context keeps one object for the LoadedApk lifetime; bounded
 // PackageManager queries may request fresh copies with optional metadata.
+enum class PackageInfoKind : std::uint8_t { installed, archive };
 [[nodiscard]] dx::VmObjectRef MakeApplicationInfo(
     dx::IntrinsicContext& call, const Context& context,
-    bool include_meta_data);
+    bool include_meta_data, PackageInfoKind kind = PackageInfoKind::installed);
 void PutAndroidMetaData(dx::IntrinsicContext& call, const Context& context,
                         dx::VmObjectRef bundle, const std::string& name,
                         const loader::AndroidManifestMetaDataValue& value);

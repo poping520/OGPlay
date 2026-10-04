@@ -941,6 +941,22 @@ Interpreter::Interpreter(DexClassLinker& linker, JavaObjectModel& model,
     track_tls_field("Lorg/ogplay/security/OgPlaySslSocket;", "ssl", "freeSsl");
     track_tls_field("Lorg/ogplay/security/OgPlaySslContextSpi;", "nativeContext",
                     "freeContext");
+    if (const auto native = linker.FindClass("Lorg/ogplay/zip/NativeZip;");
+        native && linker.Class(*native).is_boot_dex) {
+        linker.EnsureClassLinked(*native);
+        const auto cleanup = linker.FindDirectMethod(*native, "release", "(J)V");
+        if (!cleanup) throw DexVmError(DexVmErrorReason::unresolved_reference,
+                                      "ZIP resource cleanup metadata");
+        for (const auto owner : {"Ljava/util/zip/Deflater;", "Ljava/util/zip/Inflater;"}) {
+            const auto type = linker.FindClass(owner);
+            if (!type || !linker.Class(*type).is_boot_dex) continue;
+            linker.EnsureClassLinked(*type);
+            const auto field = linker.FindFieldRecursive(*type, "streamHandle", "J");
+            if (!field) throw DexVmError(DexVmErrorReason::unresolved_reference,
+                                        "ZIP resource field metadata");
+            TrackGuestNativeResourceField(*field, *cleanup, -1);
+        }
+    }
     const auto string_class = linker.FindClass("Ljava/lang/String;");
     const auto class_class = linker.FindClass("Ljava/lang/Class;");
     if (string_class.has_value() && class_class.has_value()) {

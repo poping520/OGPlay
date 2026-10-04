@@ -28,6 +28,8 @@ Asphalt 5（pilot title）删除 profile 全部 `native_call` 与 `[[java.class]
 
 | WU | 一句话目标 | 状态 |
 | --- | --- | --- |
+| [DVM-214](DVM-214.md) | API19 字节流压缩与 guest zlib | 有界完成 |
+| [DVM-213](DVM-213.md) | 封存 APK 的 PackageInfo 归档查询 | 有界完成 |
 | [DVM-212](DVM-212.md) | 封存 classpath 资源 URL 与只读连接 | 有界完成 |
 | [DVM-211](DVM-211.md) | PendingIntent 令牌与闹钟取消 | 有界完成 |
 | [DVM-210](DVM-210.md) | 原生 JNI 附加线程的执行上下文、身份及清理 | 有界实现完成 |

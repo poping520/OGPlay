@@ -15,6 +15,7 @@
 #include <vector>
 
 #include "ogplay/hal/host_environment.h"
+#include "ogplay/runtime/vfs/vfs.h"
 #include "ogplay/runtime/database/database_runtime.h"
 #include "sqlite3.h"
 
@@ -2981,12 +2982,13 @@ MakeActivityInfo(dx::IntrinsicContext &call, const Context &context,
 
 [[nodiscard]] dx::VmObjectRef
 MakeActivityInfoArray(dx::IntrinsicContext &call, const Context &context,
-                      const dx::VmObjectRef application_info) {
+                      const dx::VmObjectRef application_info,
+                      const bool include_disabled) {
   std::vector<std::size_t> selected;
   selected.reserve(context->activity_components.size());
   for (std::size_t index = 0; index < context->activity_components.size();
        ++index) {
-    if (context->activity_components[index].enabled)
+    if (context->activity_components[index].enabled || include_disabled)
       selected.push_back(index);
   }
   const auto array_class =
@@ -3005,6 +3007,63 @@ MakeActivityInfoArray(dx::IntrinsicContext &call, const Context &context,
                          application_info));
   }
   return array;
+}
+
+// Both queries materialize the same sealed Manifest facts, with distinct
+// ApplicationInfo installation semantics. Never retain mutable guest results.
+[[nodiscard]] dx::VmObjectRef MakePackageInfo(
+    dx::IntrinsicContext &call, const Context &context,
+    const std::int32_t flags, const PackageInfoKind kind) {
+  const auto info = call.vm.NewIntrinsicInstance("Landroid/content/pm/PackageInfo;");
+  const auto info_root = call.vm.ProtectReferences(std::array{info});
+  SetRef(call, info, "packageName", "Ljava/lang/String;", String(call, context->package_name));
+  SetInt(call, info, "versionCode", static_cast<std::int32_t>(context->package_version_code));
+  SetRef(call, info, "versionName", "Ljava/lang/String;", String(call, context->package_version_name));
+  const auto application = MakeApplicationInfo(call, context, (flags & kGetMetaData) != 0, kind);
+  const auto roots = call.vm.ProtectReferences(std::array{application});
+  SetRef(call, info, "applicationInfo", "Landroid/content/pm/ApplicationInfo;", application);
+  if ((flags & kGetPermissions) != 0) {
+    SetRef(call, info, "requestedPermissions", "[Ljava/lang/String;",
+           MakeStringArray(call, context->requested_permissions));
+  }
+  if ((flags & kGetActivities) != 0 && !context->activity_components.empty()) {
+    SetRef(call, info, "activities", "[Landroid/content/pm/ActivityInfo;",
+           MakeActivityInfoArray(call, context, application, (flags & kGetDisabledComponents) != 0));
+  }
+  return info;
+}
+
+[[noreturn]] void UnsupportedPackageArchive(dx::IntrinsicContext &call, const char *reason) {
+  if (auto *ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.package_archive_info", 0);
+  throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
+                        std::string("getPackageArchiveInfo: ") + reason};
+}
+
+[[nodiscard]] dx::VmObjectRef PackageArchiveInfo(dx::IntrinsicContext &call, const Context &context) {
+  const auto path = RequiredString(call, 0U, "archiveFilePath");
+  if (!context->vfs) UnsupportedPackageArchive(call, "guest VFS is unavailable");
+  std::string canonical;
+  VfsFileInfo stat;
+  try {
+    canonical = context->vfs->CanonicalPath(path);
+    stat = context->vfs->Stat(path);
+  } catch (const VfsError &) {
+    // PackageParser first tests File.isFile(), which returns false on I/O failure.
+    return dx::VmObjectRef{};
+  }
+  if (stat.is_directory || stat.is_character_device) return dx::VmObjectRef{};
+  if (context->package_resource_path.empty() || context->package_name.empty())
+    UnsupportedPackageArchive(call, "sealed current-package facts are unavailable");
+  if (canonical != context->vfs->CanonicalPath(context->package_resource_path))
+    UnsupportedPackageArchive(call, "only the sealed current APK is supported");
+  if (stat.writable || context->apk_bytes.empty() || stat.size != context->apk_bytes.size())
+    UnsupportedPackageArchive(call, "current APK backing is not sealed");
+  const auto flags = call.arguments[1].AsInt();
+  if ((flags & ~(kGetActivities | kGetDisabledComponents)) != 0)
+    UnsupportedPackageArchive(call, "supported flags are GET_ACTIVITIES and GET_DISABLED_COMPONENTS");
+  if ((flags & kGetActivities) != 0 && !context->activity_inventory_known)
+    UnsupportedPackageArchive(call, "activity inventory is unavailable");
+  return MakePackageInfo(call, context, flags, PackageInfoKind::archive);
 }
 
 [[nodiscard]] std::string ApplicationPackageName(dx::IntrinsicContext &call,
@@ -3027,6 +3086,8 @@ Decl Declare_android_content_pm_PackageInfo(const Context &) {
   builder.InstanceField("packageName", "Ljava/lang/String;")
       .InstanceField("versionCode", "I")
       .InstanceField("versionName", "Ljava/lang/String;")
+      .InstanceField("firstInstallTime", "J")
+      .InstanceField("lastUpdateTime", "J")
       .InstanceField("applicationInfo", "Landroid/content/pm/ApplicationInfo;")
       .InstanceField("requestedPermissions", "[Ljava/lang/String;")
       .InstanceField("activities", "[Landroid/content/pm/ActivityInfo;");
@@ -3236,31 +3297,12 @@ Decl Declare_android_content_pm_PackageManager(const Context &context) {
         RequireCurrentPackage(context, package);
         RequireFlags(flags, kGetActivities | kGetMetaData | kGetPermissions,
                      "getPackageInfo");
-        const auto info =
-            call.vm.NewIntrinsicInstance("Landroid/content/pm/PackageInfo;");
-        const auto info_root = call.vm.ProtectReferences(std::array{info});
-        SetRef(call, info, "packageName", "Ljava/lang/String;",
-               String(call, context->package_name));
-        SetInt(call, info, "versionCode",
-               static_cast<std::int32_t>(context->package_version_code));
-        SetRef(call, info, "versionName", "Ljava/lang/String;",
-               String(call, context->package_version_name));
-        const auto application =
-            MakeApplicationInfo(call, context, (flags & kGetMetaData) != 0);
-        const auto roots =
-            call.vm.ProtectReferences(std::array{info, application});
-        SetRef(call, info, "applicationInfo",
-               "Landroid/content/pm/ApplicationInfo;", application);
-        if ((flags & kGetPermissions) != 0) {
-          SetRef(call, info, "requestedPermissions", "[Ljava/lang/String;",
-                 MakeStringArray(call, context->requested_permissions));
-        }
-        if ((flags & kGetActivities) != 0 &&
-            !context->activity_components.empty()) {
-          SetRef(call, info, "activities", "[Landroid/content/pm/ActivityInfo;",
-                 MakeActivityInfoArray(call, context, application));
-        }
-        return dx::VmValue::Ref(info);
+        return dx::VmValue::Ref(MakePackageInfo(call, context, flags, PackageInfoKind::installed));
+      });
+  builder.VirtualMethod(
+      "getPackageArchiveInfo", "(Ljava/lang/String;I)Landroid/content/pm/PackageInfo;",
+      [context](dx::IntrinsicContext &call) {
+        return dx::VmValue::Ref(PackageArchiveInfo(call, context));
       });
   builder.VirtualMethod(
       "getApplicationLabel",

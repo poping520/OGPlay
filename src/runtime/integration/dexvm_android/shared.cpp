@@ -288,7 +288,8 @@ void PutAndroidMetaData(dx::IntrinsicContext& call, const Context& context,
 
 dx::VmObjectRef MakeApplicationInfo(dx::IntrinsicContext& call,
                                     const Context& context,
-                                    const bool include_meta_data) {
+                                    const bool include_meta_data,
+                                    const PackageInfoKind kind) {
     const auto info = call.vm.NewIntrinsicInstance(
         "Landroid/content/pm/ApplicationInfo;");
     const auto string = [&call](const std::string& value) {
@@ -296,8 +297,6 @@ dx::VmObjectRef MakeApplicationInfo(dx::IntrinsicContext& call,
     };
     const auto package = string(context->package_name);
     const auto application_name = string(context->application_class_name);
-    const auto data_dir = string("/data/data/" + context->package_name);
-    const auto package_path = string(context->package_resource_path);
     SetApplicationInfoRef(call, info, "name", "Ljava/lang/String;",
                           application_name);
     SetApplicationInfoRef(call, info, "packageName", "Ljava/lang/String;",
@@ -314,21 +313,27 @@ dx::VmObjectRef MakeApplicationInfo(dx::IntrinsicContext& call,
     // the API19 PackageParser default unless android:hasCode explicitly says
     // otherwise; that attribute is not yet part of the sealed manifest facts.
     constexpr std::int32_t kApplicationFlagHasCode = 1 << 2;
-    SetApplicationInfoInt(call, info, "flags", kApplicationFlagHasCode);
+    // API19 getPackageArchiveInfo uses a default PackageUserState (installed=true).
+    constexpr std::int32_t kApplicationFlagInstalled = 1 << 23;
+    const auto archive = kind == PackageInfoKind::archive;
+    SetApplicationInfoInt(call, info, "flags", kApplicationFlagHasCode |
+                          (archive ? kApplicationFlagInstalled : 0));
     SetApplicationInfoInt(call, info, "uid",
-                          static_cast<std::int32_t>(context->application_uid));
+                          archive ? -1 : static_cast<std::int32_t>(context->application_uid));
     SetApplicationInfoInt(
         call, info, "targetSdkVersion",
         static_cast<std::int32_t>(context->target_sdk_version));
     SetApplicationInfoBoolean(call, info, "enabled", context->application_enabled);
-    SetApplicationInfoRef(call, info, "sourceDir", "Ljava/lang/String;",
-                          package_path);
-    SetApplicationInfoRef(call, info, "publicSourceDir", "Ljava/lang/String;",
-                          package_path);
-    SetApplicationInfoRef(call, info, "dataDir", "Ljava/lang/String;",
-                          data_dir);
-    SetApplicationInfoRef(call, info, "nativeLibraryDir", "Ljava/lang/String;",
-                          string("/data/app-lib"));
+    // PackageParser does not assign installed paths when inspecting an archive.
+    if (!archive) {
+        const auto package_path = string(context->package_resource_path);
+        SetApplicationInfoRef(call, info, "sourceDir", "Ljava/lang/String;", package_path);
+        SetApplicationInfoRef(call, info, "publicSourceDir", "Ljava/lang/String;", package_path);
+        SetApplicationInfoRef(call, info, "dataDir", "Ljava/lang/String;",
+                              string("/data/data/" + context->package_name));
+        SetApplicationInfoRef(call, info, "nativeLibraryDir", "Ljava/lang/String;",
+                              string("/data/app-lib"));
+    }
     if (context->application_label.has_value()) {
         if (const auto* resource = std::get_if<std::uint32_t>(
                 &*context->application_label)) {

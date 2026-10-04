@@ -43,6 +43,8 @@ switch/threaded 解释、异常、线程/monitor、反射及 `java.*` core intri
   intern/Class 与 integration roots。持 guest ref 的 intrinsic 状态用具名 state table trace/sweep；
   嵌套调用的新引用用 `RootScope`。Weak/SoftReference、JNI weak、intern 与 identity hash 遵循
   API 19；异常构造有 64 KiB 应急区。
+- guest native 资源字段回收规则显式指定无效 token（默认 0，API19 ZIP streamHandle 为 -1）；
+  未初始化的 0 不登记资源，GC/teardown 清字段时写回对应关闭标记并调用静态释放入口。
 - 堆按 ADR-0060 区分 initial target、growth limit 与 maximum：越过当前目标先 GC，再增长，
   越过增长上限时执行 before-OOM GC 后才失败；GC 后按 live set、利用率和 min/max free 调整目标。
 - `Interpreter::Call` 返回值或未捕获 Java 异常；寄存器带类别 tag，默认 512 帧。invoke 只有
@@ -141,7 +143,7 @@ switch/threaded 解释、异常、线程/monitor、反射及 `java.*` core intri
 - 依赖仅指向 core/loader/runtime-jni；平台 provider 经注入获得。guest 输入全部受检，未实现必须
   记账并失败。缓存不得跨可能扩容操作保存 class/member 引用或 host pointer。
 - 固定 BootDex 类可按类显式准入其原版 native 声明到 guest JNI；准入不定义类或复制成员，
-  未导出的符号仍明确失败。该机制用于 API 19 `NativeCrypto` 与 `CRC32`，
+  未导出的符号仍明确失败。该机制用于 API 19 `NativeCrypto`、`CRC32` 与压缩流 native，
   并由制品审计校验签名集合。
 - Gap survey 默认关闭，只对真实触达的平台缺口生成 0/null/void 并记账；结果不是兼容性结论。
 

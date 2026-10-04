@@ -26,6 +26,7 @@
 #include "ogplay/runtime/dexvm/reflection.h"
 #include "ogplay/runtime/dexvm/vm_threads.h"
 #include "ogplay/runtime/integration/dexvm_android.h"
+#include "ogplay/runtime/vfs/vfs.h"
 
 namespace {
 
@@ -3579,6 +3580,156 @@ TEST_CASE("DVM-180 getPackageInfo returns current-package Activity metadata") {
         REQUIRE(unsupported.exception.IsValid());
         CHECK(f.linker.Class(unsupported.exception_class).descriptor ==
               "Ljava/lang/UnsupportedOperationException;");
+        static_cast<void>(f.vm.CollectGarbage());
+    }
+}
+
+TEST_CASE("PackageManager archive queries preserve sealed path and API19 metadata semantics") {
+    constexpr auto signature = "(Ljava/lang/String;I)Landroid/content/pm/PackageInfo;";
+    constexpr auto activities_flag = 1;
+    constexpr auto disabled_flag = 0x200;
+    using Kind = ogplay::loader::AndroidManifestComponentKind;
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        VirtualFileSystem vfs;
+        AndroidValueVm f(backend);
+        auto& context = *f.context;
+        context.vfs = &vfs;
+        context.package_name = "org.example.game";
+        context.package_resource_path = "/data/app/org.example.game-1.apk";
+        context.package_version_code = 7;
+        context.package_version_name = "1.2.3";
+        context.application_class_name = "org.example.game.Application";
+        context.target_sdk_version = 19;
+        context.application_uid = 10000;
+        context.application_label = std::string("Game 名称");
+        context.application_enabled = false;
+        context.activity_inventory_known = true;
+        // Inject already-parsed, sealed facts; raw ZIP parsing is owned by startup.
+        context.apk_bytes = {std::byte{'a'}, std::byte{'p'}, std::byte{'k'}};
+        vfs.PutFile(context.package_resource_path, context.apk_bytes, false);
+        vfs.SetWorkingDirectory("/data/app");
+        vfs.AddPathAlias("/archive", "/data/app");
+        context.activity_components = {
+            {Kind::activity, ".Main", std::nullopt, true, {}, std::nullopt, false},
+            {Kind::activity, ".Disabled", std::nullopt, false, {}, std::nullopt, false},
+            {Kind::activity_alias, ".Alias", std::string(".Main"), true, {}, std::nullopt, false},
+        };
+        const auto manager = f.vm.NewIntrinsicInstance("Landroid/content/pm/PackageManager;");
+        const auto root = f.vm.ProtectReferences(std::array{manager});
+        const auto field = [&](VmObjectRef object, const char* name, const char* descriptor) {
+            const auto handle = f.linker.FindFieldRecursive(f.model.ObjectClass(object), name, descriptor);
+            REQUIRE(handle.has_value());
+            return f.model.InstanceSlots(object)[f.linker.Field(*handle).slot];
+        };
+        const auto ref_field = [&](VmObjectRef object, const char* name, const char* descriptor) {
+            const auto slot = field(object, name, descriptor);
+            return VmObjectRef(static_cast<std::uint32_t>(slot.bits));
+        };
+        const auto text = [&](VmObjectRef object, const char* name) {
+            return f.vm.StringUtf8(ref_field(object, name, "Ljava/lang/String;"));
+        };
+        const auto query = [&](const std::string& path, std::int32_t flags = activities_flag) {
+            return f.On(manager, "getPackageArchiveInfo", signature,
+                        {VmValue::Ref(f.vm.NewStringUtf8(path)), VmValue::Int(flags)}).ref;
+        };
+        const auto expect_unsupported = [&](const std::string& path, std::int32_t flags) {
+            const auto outcome = f.OnOutcome(manager, "getPackageArchiveInfo", signature,
+                        {VmValue::Ref(f.vm.NewStringUtf8(path)), VmValue::Int(flags)});
+            REQUIRE(outcome.exception.IsValid());
+            CHECK(f.linker.Class(outcome.exception_class).descriptor == "Ljava/lang/UnsupportedOperationException;");
+        };
+        const auto path = context.package_resource_path;
+        const auto info = query(path);
+        const auto info_root = f.vm.ProtectReferences(std::array{info});
+        REQUIRE(info.IsValid());
+        CHECK(text(info, "packageName") == context.package_name);
+        CHECK(text(info, "versionName") == "1.2.3");
+        CHECK(field(info, "versionCode", "I").bits == 7);
+        CHECK_FALSE(ref_field(info, "requestedPermissions", "[Ljava/lang/String;").IsValid());
+        // PackageInfo's long time fields are explicit zero archive facts, not host times.
+        for (const auto name : {"firstInstallTime", "lastUpdateTime"}) {
+            const auto handle = f.linker.FindFieldRecursive(f.model.ObjectClass(info), name, "J");
+            REQUIRE(handle.has_value());
+            const auto slot = f.linker.Field(*handle).slot;
+            CHECK(f.model.InstanceSlots(info)[slot].bits == 0);
+            CHECK(f.model.InstanceSlots(info)[slot + 1].bits == 0);
+        }
+        const auto application = ref_field(info, "applicationInfo", "Landroid/content/pm/ApplicationInfo;");
+        REQUIRE(application.IsValid());
+        CHECK(text(application, "packageName") == context.package_name);
+        CHECK(text(application, "className") == context.application_class_name);
+        CHECK(field(application, "uid", "I").bits == UINT32_MAX);
+        CHECK(field(application, "targetSdkVersion", "I").bits == 19);
+        CHECK(field(application, "enabled", "Z").bits == 0);
+        CHECK(field(application, "flags", "I").bits == ((1U << 2) | (1U << 23)));
+        for (const auto name : {"sourceDir", "publicSourceDir", "dataDir", "nativeLibraryDir"})
+            CHECK_FALSE(ref_field(application, name, "Ljava/lang/String;").IsValid());
+        CHECK_FALSE(ref_field(application, "metaData", "Landroid/os/Bundle;").IsValid());
+        auto array = ref_field(info, "activities", "[Landroid/content/pm/ActivityInfo;");
+        REQUIRE(f.model.ArrayLength(array) == 2);
+        const auto main = f.model.GetObjectElement(array, 0);
+        const auto alias = f.model.GetObjectElement(array, 1);
+        CHECK(text(main, "name") == "org.example.game.Main");
+        CHECK(text(alias, "name") == "org.example.game.Alias");
+        CHECK(text(alias, "targetActivity") == "org.example.game.Main");
+        CHECK(ref_field(alias, "applicationInfo", "Landroid/content/pm/ApplicationInfo;") == application);
+        CHECK_FALSE(ref_field(query(path, 0), "activities", "[Landroid/content/pm/ActivityInfo;").IsValid());
+        CHECK_FALSE(ref_field(query(path, disabled_flag), "activities", "[Landroid/content/pm/ActivityInfo;").IsValid());
+        const auto all = query(path, activities_flag | disabled_flag);
+        const auto all_array = ref_field(all, "activities", "[Landroid/content/pm/ActivityInfo;");
+        REQUIRE(f.model.ArrayLength(all_array) == 3);
+        CHECK(text(f.model.GetObjectElement(all_array, 1), "name") == "org.example.game.Disabled");
+        CHECK(field(f.model.GetObjectElement(all_array, 1), "enabled", "Z").bits == 0);
+        CHECK(text(f.model.GetObjectElement(all_array, 2), "name") == "org.example.game.Alias");
+        for (const auto spelling : {"/data/app/./org.example.game-1.apk", "/DATA/APP/ORG.EXAMPLE.GAME-1.APK",
+                                   "org.example.game-1.apk", "/archive/org.example.game-1.apk"})
+            CHECK(text(query(spelling), "packageName") == context.package_name);
+        for (const auto spelling : {"", "/", "/data/app", "/missing.apk", "/host/file.apk"})
+            CHECK_FALSE(query(spelling).IsValid());
+        const auto null_path = f.OnOutcome(manager, "getPackageArchiveInfo", signature,
+                                        {VmValue::Ref(VmObjectRef{}), VmValue::Int(0)});
+        REQUIRE(null_path.exception.IsValid());
+        CHECK(f.linker.Class(null_path.exception_class).descriptor == "Ljava/lang/NullPointerException;");
+        for (const auto flags : {2, 0x40, 0x80, 0x1000, -1}) expect_unsupported(path, flags);
+        vfs.PutFile("/data/app/other.apk", context.apk_bytes, false);
+        expect_unsupported("/data/app/other.apk", 0); // unregistered archive cannot pretend to be absent.
+        context.activity_inventory_known = false;
+        expect_unsupported(path, activities_flag);
+        CHECK(query(path, 0).IsValid());
+        context.activity_inventory_known = true;
+        // Guest mutation of a returned result cannot corrupt the next snapshot.
+        f.model.SetObjectElement(array, 0, VmObjectRef{});
+        const auto fresh = query(path);
+        CHECK(fresh != info);
+        CHECK(text(f.model.GetObjectElement(ref_field(fresh, "activities", "[Landroid/content/pm/ActivityInfo;"), 0),
+                   "name") == "org.example.game.Main");
+        const auto installed = f.On(manager, "getPackageInfo", signature,
+                    {VmValue::Ref(f.vm.NewStringUtf8(context.package_name)), VmValue::Int(activities_flag)}).ref;
+        const auto installed_app = ref_field(installed, "applicationInfo", "Landroid/content/pm/ApplicationInfo;");
+        CHECK(field(installed_app, "uid", "I").bits == 10000);
+        CHECK(text(installed_app, "sourceDir") == path);
+        CHECK(text(installed_app, "dataDir") == "/data/data/org.example.game");
+        CHECK(text(installed_app, "nativeLibraryDir") == "/data/app-lib");
+        CHECK_FALSE(ref_field(application, "sourceDir", "Ljava/lang/String;").IsValid());
+        context.activity_components[0].enabled = false;
+        context.activity_components[2].enabled = false;
+        CHECK(f.model.ArrayLength(ref_field(query(path), "activities", "[Landroid/content/pm/ActivityInfo;")) == 0);
+        context.activity_components.clear();
+        CHECK_FALSE(ref_field(query(path), "activities", "[Landroid/content/pm/ActivityInfo;").IsValid());
+        VirtualFileSystem writable_backing;
+        writable_backing.PutFile(path, context.apk_bytes, true);
+        context.vfs = &writable_backing;
+        expect_unsupported(path, 0);
+        VirtualFileSystem wrong_size;
+        wrong_size.PutFile(path, std::array{std::byte{0}}, false);
+        context.vfs = &wrong_size;
+        expect_unsupported(path, 0);
+        context.vfs = nullptr;
+        expect_unsupported(path, 0);
+        const auto hits = f.ledger.Unimplemented();
+        CHECK(std::any_of(hits.begin(), hits.end(), [](const auto& hit) {
+            return hit.id == "dexvm.package_archive_info" && hit.count >= 9;
+        }));
         static_cast<void>(f.vm.CollectGarbage());
     }
 }

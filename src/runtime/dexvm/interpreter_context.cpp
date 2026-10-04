@@ -579,7 +579,8 @@ GcSweepResult Interpreter::SweepGarbage(const GcMarkResult& mark) {
             }});
 }
 
-void Interpreter::TrackGuestNativeResourceField(VmFieldId field_id, VmMethodId cleanup) {
+void Interpreter::TrackGuestNativeResourceField(VmFieldId field_id, VmMethodId cleanup,
+                                                std::int64_t invalid_token) {
     VmExecutionLockScope lock_scope(impl_->execution_lock);
     const auto& field = Linker().Field(field_id);
     const auto& method = Linker().Method(cleanup);
@@ -587,11 +588,11 @@ void Interpreter::TrackGuestNativeResourceField(VmFieldId field_id, VmMethodId c
         throw DexVmError(DexVmErrorReason::invalid_operand, "invalid native resource field");
     for (const auto& rule : impl_->guest_native_resource_fields) {
         if (rule.field == field_id) {
-            if (rule.cleanup != cleanup) throw DexVmError(DexVmErrorReason::invalid_operand, "conflicting native cleanup");
+            if (rule.cleanup != cleanup || rule.invalid_token != invalid_token) throw DexVmError(DexVmErrorReason::invalid_operand, "conflicting native cleanup");
             return;
         }
     }
-    impl_->guest_native_resource_fields.push_back({field_id, cleanup});
+    impl_->guest_native_resource_fields.push_back({field_id, cleanup, invalid_token});
 }
 
 void Interpreter::Impl::QueueFieldNativeResources(const GcMarkResult* mark) {
@@ -605,13 +606,14 @@ void Interpreter::Impl::QueueFieldNativeResources(const GcMarkResult* mark) {
             auto slots = model->InstanceSlots(owner);
             const auto token = std::bit_cast<std::int64_t>(std::uint64_t(slots[field.slot].bits) |
                 (std::uint64_t(slots[field.slot + 1].bits) << 32U));
-            if (token == 0) return;
+            if (token == 0 || token == rule.invalid_token) return;
             const bool live = mark && mark->IsMarked(owner);
             auto& retained = tokens[{rule.cleanup.Value(), token}];
             retained = retained || live;
             if (!live) {
-                slots[field.slot].bits = 0;
-                slots[field.slot + 1].bits = 0;
+                const auto invalid = std::bit_cast<std::uint64_t>(rule.invalid_token);
+                slots[field.slot].bits = static_cast<std::uint32_t>(invalid);
+                slots[field.slot + 1].bits = static_cast<std::uint32_t>(invalid >> 32U);
             }
         });
     }
@@ -635,7 +637,7 @@ std::size_t Interpreter::Impl::FieldNativeResourceCount() const {
             const auto slots = model->InstanceSlots(owner);
             const auto token = std::bit_cast<std::int64_t>(std::uint64_t(slots[field.slot].bits) |
                 (std::uint64_t(slots[field.slot + 1].bits) << 32U));
-            if (token) tokens.emplace(rule.cleanup.Value(), token);
+            if (token != 0 && token != rule.invalid_token) tokens.emplace(rule.cleanup.Value(), token);
         });
     }
     return tokens.size();

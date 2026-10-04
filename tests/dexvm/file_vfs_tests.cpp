@@ -558,6 +558,80 @@ struct FileVm final {
 
 }  // namespace
 
+TEST_CASE("DVM-217 AtomicFile commits rolls back and recovers through VFS") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch,
+                               InterpreterBackend::threaded}) {
+        CAPTURE(backend == InterpreterBackend::threaded ? "threaded" : "switch");
+        const TemporaryRoot root("atomic-file");
+        const std::string path = std::string(kWritableRoots[0]) + "/save/progress";
+        InterpreterConfig config;
+        config.backend = backend;
+        {
+            auto store = SandboxStore::Open(root.path, kPackage, kPackage);
+            FileVm vm(store.get(), true, config);
+            const auto type = vm.linker.ResolveDescriptor("Lcom/android/internal/os/AtomicFile;");
+            CHECK(vm.linker.Class(type).is_boot_dex);
+            CHECK_FALSE(vm.linker.Class(type).is_intrinsic);
+            const auto file = vm.interpreter.NewIntrinsicInstance("Lcom/android/internal/os/AtomicFile;");
+            const auto file_root = vm.interpreter.ProtectReferences(std::array{file});
+            vm.CallOn(file, "<init>", "(Ljava/io/File;)V", {VmValue::Ref(vm.NewFile(path))});
+            const auto write = [&](const std::string& text, const char* finish) {
+                const auto stream = vm.CallOn(file, "startWrite", "()Ljava/io/FileOutputStream;").ref;
+                const auto stream_root = vm.interpreter.ProtectReferences(std::array{stream});
+                for (const char c : text)
+                    vm.CallOn(stream, "write", "(I)V", {VmValue::Int(static_cast<unsigned char>(c))});
+                if (finish)
+                    vm.CallOn(file, finish, "(Ljava/io/FileOutputStream;)V", {VmValue::Ref(stream)});
+                else
+                    vm.CallOn(stream, "close", "()V");
+            };
+            // Save into a new directory through the normal VFS open path.
+            write("committed", "finishWrite");
+            CHECK(vm.NativeRead(path) == "committed");
+            CHECK_FALSE(vm.BoolOn(vm.NewFile(path + ".bak"), "exists"));
+            const auto permissions = vm.linker.FindDirectMethod(
+                vm.linker.ResolveDescriptor("Landroid/os/FileUtils;"),
+                "setPermissions", "(Ljava/lang/String;III)I");
+            REQUIRE(permissions.has_value());
+            const auto permission_result = vm.interpreter.Call(*permissions, std::array{
+                VmValue::Ref(vm.interpreter.NewStringUtf8(path)),
+                VmValue::Int(0771), VmValue::Int(-1), VmValue::Int(-1)});
+            REQUIRE_FALSE(permission_result.exception.IsValid());
+            CHECK(permission_result.value.AsInt() == 38);
+            CHECK_FALSE(vm.logger.Snapshot(ogplay::core::LogLevel::warn).empty());
+            const auto hits = vm.ledger.Unimplemented();
+            REQUIRE(hits.size() == 1);
+            CHECK(hits[0].id == "libcore.io.Posix.chmod");
+            CHECK(hits[0].count == 1);
+            write("rolled back", "failWrite");
+            CHECK(vm.NativeRead(path) == "committed");
+            CHECK_FALSE(vm.BoolOn(vm.NewFile(path + ".bak"), "exists"));
+            write("replacement", "finishWrite");
+            CHECK(vm.NativeRead(path) == "replacement");
+            // Interrupt a write, persist both files, then open a new VM/store.
+            write("incomplete", nullptr);
+            CHECK(vm.NativeRead(path + ".bak") == "replacement");
+            vm.vfs.FlushAll();
+        }
+        {
+            auto store = SandboxStore::Open(root.path, kPackage, kPackage);
+            FileVm vm(store.get(), true, config);
+            const auto file = vm.interpreter.NewIntrinsicInstance("Lcom/android/internal/os/AtomicFile;");
+            const auto file_root = vm.interpreter.ProtectReferences(std::array{file});
+            vm.CallOn(file, "<init>", "(Ljava/io/File;)V", {VmValue::Ref(vm.NewFile(path))});
+            const auto bytes = vm.CallOn(file, "readFully", "()[B").ref;
+            const auto actual = vm.model.ReadByteRegion(bytes, 0, vm.model.ArrayLength(bytes));
+            const std::string expected = "replacement";
+            CHECK(actual.size() == expected.size());
+            for (std::size_t i = 0; i < actual.size(); ++i)
+                CHECK(actual[i] == static_cast<std::byte>(expected[i]));
+            CHECK(vm.NativeRead(path) == expected);
+            CHECK_FALSE(vm.BoolOn(vm.NewFile(path + ".bak"), "exists"));
+            vm.vfs.FlushAll();
+        }
+    }
+}
+
 TEST_CASE("File declarations match Android class shape through second batch") {
     const auto catalog = CoreIntrinsicCatalog();
     const auto declaration = [&](const std::string_view descriptor)

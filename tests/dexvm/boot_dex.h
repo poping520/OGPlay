@@ -58,7 +58,8 @@ inline void BindBootDexPlatformNatives(runtime::dexvm::DexClassLinker& linker) {
                 declaration.descriptor == "Landroid/util/EventLog;" ||
                 declaration.descriptor == "Landroid/os/Binder;" ||
                 declaration.descriptor == "Landroid/os/Parcel;" ||
-                declaration.descriptor == "Landroid/os/SystemProperties;")
+                declaration.descriptor == "Landroid/os/SystemProperties;" ||
+                declaration.descriptor == "Landroid/os/FileUtils;")
                 linker.RegisterIntrinsics(std::array{declaration});
             if (declaration.descriptor == "Landroid/view/KeyEvent;" ||
                 declaration.descriptor == "Landroid/view/KeyCharacterMap;" ||

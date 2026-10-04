@@ -679,6 +679,8 @@ void Interpreter::ReleaseGuestNativeResources(const bool all) {
         restore.result.kind == VmValue::Kind::ref ? restore.result.ref : VmObjectRef{}});
     execution.pending_exception = VmObjectRef{};
     execution.pending_exception_class = DexClassId{};
+    const auto native_cleanup = impl_->bridge != nullptr
+        ? impl_->bridge->EnterResourceCleanup() : nullptr;
     auto pending = std::move(impl_->pending_guest_cleanup);
     impl_->pending_guest_cleanup.clear();
     for (std::size_t index = 0; index < pending.size(); ++index) {

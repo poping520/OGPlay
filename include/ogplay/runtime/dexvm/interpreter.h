@@ -191,6 +191,11 @@ struct IntrinsicContext final {
 // Stage-2 boundary: native methods resolve through this bridge into the A32
 // guest call executor. Without a bridge, native invokes are accounted and
 // fail explicitly (never silently succeed).
+class NativeCleanupScope {
+public:
+    virtual ~NativeCleanupScope() = default;
+};
+
 class NativeMethodBridge {
 public:
     virtual ~NativeMethodBridge() = default;
@@ -203,6 +208,11 @@ public:
                               std::uint64_t execution_token) noexcept {
         static_cast<void>(guest_thread_id);
         static_cast<void>(execution_token);
+    }
+    // Only resource cleanup may isolate native-side pending exceptions. The
+    // scope restores the original state and roots it throughout cleanup.
+    [[nodiscard]] virtual std::unique_ptr<NativeCleanupScope> EnterResourceCleanup() {
+        return {};
     }
     [[nodiscard]] virtual VmValue Invoke(const LinkedMethod& method,
                                          VmObjectRef receiver,

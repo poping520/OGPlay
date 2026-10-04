@@ -3902,7 +3902,33 @@ TEST_CASE("DVM-105/169/175-180 crypto and BKS use BootDex and real guest libcryp
                   "(Ljava/lang/String;)Ljava/lang/String;",
                   {VmValue::Ref(vm.NewStringUtf8("Mac.HmacSHA1"))}).ref) ==
               "com.android.org.conscrypt.OpenSSLMac$HmacSHA1");
+        // Cleanup must work with the original native pending exception, while
+        // the normal JNI gate remains strict before and after the scope.
+        auto& cleanup_env = app->DexVm().Session().Environment();
+        const auto throwable = vm.MakeThrowable("Ljava/lang/IllegalStateException;", "original failure");
+        const auto original_ref = app->DexVm().PublishLocal(throwable);
+        cleanup_env.Throw(1, original_ref);
+        const auto original_pending = cleanup_env.PendingExceptionMetadata(1);
+        REQUIRE(original_pending.has_value());
+        CHECK_THROWS_AS(cleanup_env.NewGlobalRef(1, original_ref), runtime::JniExceptionError);
+        // Remove the caller's root: the cleanup guard alone must protect it.
+        cleanup_env.DeleteLocalRef(1, original_ref);
+        {
+            const auto scope = app->DexVm().EnterResourceCleanup();
+            CHECK_FALSE(cleanup_env.ExceptionCheck(1));
+            static_cast<void>(vm.CollectGarbage("pending exception cleanup"));
+            const auto second = vm.MakeThrowable("Ljava/lang/IllegalArgumentException;", "cleanup failure");
+            cleanup_env.Throw(1, app->DexVm().PublishLocal(second));
+        }
+        REQUIRE(cleanup_env.PendingExceptionMetadata(1).has_value());
+        CHECK(cleanup_env.PendingExceptionMetadata(1)->throwable == original_pending->throwable);
+        CHECK(vm.StringUtf8(vm.ThrowableMessage(throwable)) == "original failure");
         vm.ReleaseGuestNativeResources(true);
+        CHECK(cleanup_env.PendingExceptionMetadata(1)->throwable == original_pending->throwable);
+        const auto restored_ref = cleanup_env.ExceptionOccurred(1);
+        CHECK_THROWS_AS(cleanup_env.NewGlobalRef(1, restored_ref), runtime::JniExceptionError);
+        cleanup_env.ExceptionClear(1);
+        cleanup_env.DeleteLocalRef(1, restored_ref);
         CHECK(vm.GuestNativeResourceCount() == 0);
         static_cast<void>(app->Stop());
         }

@@ -132,6 +132,24 @@ Decl Declare_android_util_Log(const Context &context) {
                          return dx::VmValue::Ref(LogGetStackTraceString(
                              call.vm, call.arguments[0].ref));
                        });
+  builder.StaticMethod("println_native", "(IILjava/lang/String;Ljava/lang/String;)I",
+      [](dx::IntrinsicContext& call) {
+        const auto buffer = call.arguments[0].AsInt(), priority = call.arguments[1].AsInt();
+        if (buffer != 0 && buffer != 3) {
+          if (auto* ledger = call.vm.Ledger())
+            ledger->RecordUnimplemented("android.util.Log.println_native.buffer." + std::to_string(buffer), 0);
+          throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "log buffer is not supported"};
+        }
+        if (priority < 2 || priority > 7)
+          throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "log priority is out of range"};
+        if (!call.arguments[3].ref.IsValid())
+          throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;", "log message is null"};
+        const auto tag = call.arguments[2].ref.IsValid() ? call.vm.StringUtf8(call.arguments[2].ref) : std::string{};
+        const auto message = call.vm.StringUtf8(call.arguments[3].ref);
+        GuestLog(call, priority >= 6 ? core::LogLevel::error : priority == 5 ? core::LogLevel::warn :
+            priority == 4 ? core::LogLevel::info : core::LogLevel::debug, tag + ": " + message);
+        return dx::VmValue::Int(static_cast<std::int32_t>(tag.size() + message.size() + 3U));
+      }, dx::kAccPublic | dx::kAccStatic | dx::kAccNative);
   return std::move(builder).Build();
 }
 

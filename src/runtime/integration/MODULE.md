@@ -93,7 +93,9 @@ Android API 的详细行为以 [dexvm_android](dexvm_android/MODULE.md)为准；
   无 VM 的 native/HLE 会话不保留旧替身，独立 headless 契约和应用兼容回调除外。
 - String/primitive/object array 复用会话 store；jclass 双向规范化为同一 ClassObject。
   PublishLocal 用 EnsureRegistered 原子幂等发布真实类，GC 同步清扫 registry；不为所有
-  APK 类预占 global ref，只有 static native 出向的 jclass 按需缓存。
+  APK 类预占 global ref，只有 static native 出向的 jclass 按需缓存，发布使用调用线程身份。
+  native 资源清理 scope 以当前 JNI 线程 local ref 保活并暂清 pending，所有出口恢复原
+  throwable；清理错误独立传给调用方，普通 JNI pending gate 保持严格。
 - 类注册保留完整父类/direct interface 图；interface MethodID 在实际 receiver 上虚派。
   JNI 数组兼容/IsAssignableFrom 复用 linker 的类、接口、数组协变与 primitive 规则；
   任一侧不属于 VM 返回 nullopt 保留 JNI 校验，不能无条件放行或把不相等视作不兼容。

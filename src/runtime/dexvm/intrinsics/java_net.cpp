@@ -1082,6 +1082,14 @@ namespace ogplay::runtime::dexvm::intrinsics {
                         return VmValue::Void();
                     }, kAccPublic | kAccNative);
             }
+            // FileUtils expects a POSIX errno when chmod is unavailable. Do
+            // not convert private VFS storage into host permission changes.
+            posix.VirtualMethod("chmod", "(Ljava/lang/String;I)V",
+                [](IntrinsicContext& call) -> VmValue {
+                    if (auto* ledger = call.vm.Ledger())
+                        ledger->RecordUnimplemented("libcore.io.Posix.chmod", 0);
+                    ThrowErrno(call.vm, "chmod", 38, "VFS permission changes are not supported");
+                }, kAccPublic | kAccNative);
             posix.VirtualMethod("access", "(Ljava/lang/String;I)Z",
                 [](IntrinsicContext& call) {
                     return VmValue::Int(call.vm.IO().Stat(

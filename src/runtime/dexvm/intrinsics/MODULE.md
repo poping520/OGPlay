@@ -80,6 +80,8 @@
 
 - 普通 stream/reader/writer、File/FIS/FOS/RAF/FileChannelImpl、内存/过滤/缓冲流与对象流归
   BootDex；资源归 IoRuntime，文件调用经 Posix native 子集进入 VFS。
+  Posix.chmod 未实现权限变化，记账并抛 ErrnoException(ENOSYS)，不得静默成功；
+  原版 FileUtils 将该异常转换为 errno，原子文件普通算法仍由 BootDex 执行。
   FileDescriptor 是逻辑身份；FIS/FOS 通过共享 OpenFileDescription 直连 VFS descriptor，
   同一 FD 的流共享 VFS offset，append 每次写前定位末尾，借用/拥有关闭语义一致，不保存宿主句柄。
   FileChannel 当前受检的 size/position/transferTo/close 复用同一状态；transferTo 以有界缓冲

@@ -808,7 +808,7 @@ public:
   }
 
   [[nodiscard]] JniReference
-  GlobalClassReference(const dx::DexClassId class_id) {
+  GlobalClassReference(const dx::DexClassId class_id, const std::uint64_t thread) {
     if (const auto found = class_global_refs.find(class_id.Value());
         found != class_global_refs.end()) {
       return found->second;
@@ -822,7 +822,7 @@ public:
       throw DexVmBridgeError("dexvm bridge cannot publish a class reference");
     }
     const auto reference = session->Environment().PublishGlobalObjectForHle(
-        kRootThreadId, identity->second);
+        thread, identity->second);
     class_global_refs.emplace(class_id.Value(), reference);
     return reference;
   }
@@ -1044,7 +1044,7 @@ public:
         std::vector<std::uint32_t> words;
         words.push_back(session->GuestEnvironment().Value());
         if (method.is_static) {
-            words.push_back(GlobalClassReference(method.owner).Value());
+            words.push_back(GlobalClassReference(method.owner, process_thread).Value());
         } else {
             words.push_back(PublishLocal(receiver, process_thread).Value());
         }
@@ -1547,6 +1547,38 @@ DexVmGuestBridge::DexVmGuestBridge(
             });
     }
 
+}
+
+std::unique_ptr<dx::NativeCleanupScope> DexVmGuestBridge::EnterResourceCleanup() {
+    class Scope final : public dx::NativeCleanupScope {
+    public:
+        Scope(JniEnvironment& environment, const std::uint64_t thread, core::Logger* logger)
+            : environment_(environment), thread_(thread), logger_(logger),
+              original_(environment.ExceptionOccurred(thread)) {
+            environment_.ExceptionClear(thread_);
+        }
+        ~Scope() override {
+            try {
+                // Any cleanup exception has already propagated to its caller;
+                // never let it replace the saved native-side first exception.
+                environment_.ExceptionClear(thread_);
+                if (!original_.IsNull()) {
+                    environment_.Throw(thread_, original_);
+                    environment_.DeleteLocalRef(thread_, original_);
+                }
+            } catch (const std::exception& error) {
+                if (logger_) logger_->Write(core::LogLevel::error,
+                    "runtime.dexvm.native_cleanup", error.what());
+            }
+        }
+    private:
+        JniEnvironment& environment_;
+        std::uint64_t thread_;
+        core::Logger* logger_;
+        JniReference original_;
+    };
+    return std::make_unique<Scope>(impl_->session->Environment(),
+        impl_->ProcessThreadForToken(impl_->vm->CurrentContextToken()), impl_->logger);
 }
 
 DexVmGuestBridge::~DexVmGuestBridge() {

@@ -6,7 +6,6 @@ posix.UnimplementedDirect("sendtoBytes", "(Ljava/io/FileDescriptor;Ljava/lang/Ob
 posix.UnimplementedDirect("umaskImpl", "(I)I");
 posix.UnimplementedVirtual("accept", "(Ljava/io/FileDescriptor;Ljava/net/InetSocketAddress;)Ljava/io/FileDescriptor;");
 posix.UnimplementedVirtual("bind", "(Ljava/io/FileDescriptor;Ljava/net/InetAddress;I)V");
-posix.UnimplementedVirtual("chmod", "(Ljava/lang/String;I)V");
 posix.UnimplementedVirtual("chown", "(Ljava/lang/String;II)V");
 posix.UnimplementedVirtual("connect", "(Ljava/io/FileDescriptor;Ljava/net/InetAddress;I)V");
 posix.UnimplementedVirtual("dup", "(Ljava/io/FileDescriptor;)Ljava/io/FileDescriptor;");

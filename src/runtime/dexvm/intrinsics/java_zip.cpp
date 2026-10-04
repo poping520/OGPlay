@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "ogplay/runtime/dexvm/intrinsic_builder.h"
+#include "ogplay/runtime/dexvm/access_flags.h"
 #include "ogplay/runtime/dexvm/interpreter.h"
 #include "ogplay/runtime/dexvm/io_runtime.h"
 #include "ogplay/runtime/dexvm/zip_runtime.h"
@@ -18,8 +19,8 @@
 namespace ogplay::runtime::dexvm::intrinsics {
 namespace {
 
-IntrinsicClassDecl DeclareCRC32() {
-  auto builder = IntrinsicClassBuilder::Class("Ljava/util/zip/CRC32;");
+IntrinsicClassDecl DeclareZipNative(const char* owner) {
+  auto builder = IntrinsicClassBuilder::Class(owner);
   builder.AdmitBootNativeMethods();
   return std::move(builder).Build();
 }
@@ -175,7 +176,19 @@ DeclareZipInputStream(const IntrinsicFieldHandle entry_name) {
 } // namespace
 
 void AppendJavaUtilZip(std::vector<IntrinsicClassDecl> &catalog) {
-  catalog.push_back(DeclareCRC32());
+  for (const auto owner : {"Ljava/util/zip/CRC32;", "Ljava/util/zip/Deflater;",
+                           "Lorg/ogplay/zip/NativeZip;"})
+    catalog.push_back(DeclareZipNative(owner));
+  auto inflater = IntrinsicClassBuilder::Class("Ljava/util/zip/Inflater;");
+  inflater.AdmitBootNativeMethods();
+  inflater.DirectMethod("setFileInputImpl", "(Ljava/io/FileDescriptor;JIJ)I",
+      [](IntrinsicContext& context) -> VmValue {
+        if (auto* ledger = context.vm.Ledger())
+          ledger->RecordUnimplemented("dexvm.zip.file_input", 0);
+        throw VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
+                          "Inflater file descriptor input is not supported"};
+      }, kAccPrivate | kAccNative);
+  catalog.push_back(std::move(inflater).Build());
   auto entry = DeclareZipEntry();
   catalog.push_back(std::move(entry.declaration));
   catalog.push_back(DeclareZipInputStream(entry.name));

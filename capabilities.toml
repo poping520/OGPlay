@@ -1360,6 +1360,11 @@ status = "complete"
 test = "tests/runtime/native_library_loader_tests.cpp: DVM-105/DVM-106/DVM-108; tests/runtime/bionic_profile_tests.cpp; python tools/validate_android_payload.py --root data/android/19; python tools/bootdex/build_bootdex.py build-guest-jni"
 note = "DVM-122 将 crypto/ICU 统一为 libogplay_jni.so 和单一 JNI_OnLoad。NDK r25c ARMv7 API19 重复构建一致；ELF ABI、SONAME、DT_NEEDED、输入/输出哈希受构建器和 validator 约束。ICU data 禁止文件回退并立即初始化，teardown 先 cleanup 再释放；未审计 native 明确失败，不引入 libjavacore。"
 
+[dexvm.zip_byte_streams]
+status = "partial"
+test = "tests/runtime/native_library_loader_tests.cpp: DVM-214; tools/bootdex/build_bootdex.py build/check/build-guest-jni/--self-test; tools.android_payload_current"
+note = "DVM-214：API19 GZIP/Deflater/Inflater 的公开算法与状态归 BootDex；受审数组 native 经统一 guest JNI 到既有 libz。逻辑 token、输入快照、有界输出 scratch 与 GC/teardown 释放；文件描述符输入记账抛 UOE。ZipFile.RAFStream 仅作原版类型依赖，不包含 ZipFile、Adler32 或完整 ZIP/JAR；macOS 双解释器标准/大数组、独立解码、损坏流、字典/reset、token/GC/teardown 定向验证通过，Windows/Linux 实跑未验收。"
+
 [dexvm.crc32]
 status = "complete"
 test = "tests/runtime/native_library_loader_tests.cpp: DVM-201; tools/bootdex/build_bootdex.py build/check/build-guest-jni; tools.android_payload_current"
@@ -1594,6 +1599,11 @@ note = "DVM-185/188 在 WebView facade 按 API 19 提供可覆盖 destroy()：�
 status = "complete"
 test = "tests/dexvm/android_value_tests.cpp: DVM-180, DVM-195; tests/loader/apk_manifest_tests.cpp: DVM-180, DVM-195; architecture.dexvm_intrinsic_layout; Angry Birds no-Profile interstitial reached Class.getAnnotation"
 note = "DVM-195 增加当前包 getActivityInfo，支持 0/GET_META_DATA/GET_DISABLED_COMPONENTS，Activity 自身 metadata 与 application 分离，未知 flags/无 inventory 明确失败。DVM-180 在 PackageManager.getPackageInfo 按 API 19 支持 GET_ACTIVITIES 与既有 GET_META_DATA/GET_PERMISSIONS 组合。当前包 activities 从 sealed Manifest 的 activity/activity-alias 生成，保留顺序与 alias 身份，默认过滤禁用组件；未请求时保持 null。exported 来自 Manifest 或 intent-filter 缺省。requestedPermissions 仍是声明列表，不等于已授予。不宣称完整 PackageManager、组件启动或广告可用。"
+
+[dexvm.package_archive_info]
+status = "partial"
+test = "tests/dexvm/android_value_tests.cpp: PackageManager archive queries, DVM-180 getPackageInfo"
+note = "DVM-213：只读当前封存 APK，guest VFS 规范路径及来源验证，复用启动时 Manifest；0/GET_ACTIVITIES/GET_DISABLED_COMPONENTS，保留声明顺序与 alias、禁用过滤。归档 ApplicationInfo 与安装视图分开，uid=-1、安装目录 null、安装时间 0；缺路径/非普通文件返回 null，未登记归档/缺 provider 或事实/未知 flags 明确失败。不实现任意归档解析、签名/权限/其他组件查询或安装数据库；完整游戏和跨平台未验收。"
 
 [dexvm.context_file_stream_path]
 status = "complete"

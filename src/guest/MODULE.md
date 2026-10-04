@@ -7,7 +7,7 @@
 - [crypto](crypto/MODULE.md)：API 19 ARM 的 Cipher、Digest 与 Signature JNI 桥及统一
   `JNI_OnLoad`。
 - [icu](icu/MODULE.md)：API 19 ICU/NativeDecimalFormat 的纯 C ABI JNI 桥。
-- [zip](zip/MODULE.md)：API 19 CRC32 到 guest zlib 的无状态 JNI 桥。
+- [zip](zip/MODULE.md)：API 19 CRC32 与字节流压缩/解压到 guest zlib 的 JNI 桥。
 
 - [framework](framework/MODULE.md)：有界 Android 客户端 Java，普通算法编入 BootDex，
   平台租约经 runtime intrinsic，不进入 guest JNI 共享库。

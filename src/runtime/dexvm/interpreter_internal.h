@@ -130,7 +130,9 @@ public:
     struct GuestNativeResource final { VmMethodId cleanup; std::int64_t token; };
     std::unordered_map<std::uint32_t, GuestNativeResource> guest_native_resources;
     std::vector<GuestNativeResource> pending_guest_cleanup;
-    struct GuestNativeResourceField final { VmFieldId field; VmMethodId cleanup; };
+    struct GuestNativeResourceField final {
+        VmFieldId field; VmMethodId cleanup; std::int64_t invalid_token;
+    };
     std::vector<GuestNativeResourceField> guest_native_resource_fields;
     void QueueFieldNativeResources(const GcMarkResult* mark);
     std::size_t FieldNativeResourceCount() const;

@@ -349,6 +349,7 @@ def validate(root: Path) -> None:
                 "src/guest/crypto/tls_jni.c",
                 "src/guest/icu/icu_jni.c",
                 "src/guest/zip/crc32_jni.c",
+                "src/guest/zip/zip_stream_jni.c",
                 "src/guest/icu/icu51_capi.h",
             ]
             if not isinstance(build, dict) or build.get("ndk_revision") != "25.2.9519653" or \

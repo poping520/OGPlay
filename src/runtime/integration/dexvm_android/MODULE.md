@@ -43,6 +43,7 @@ content/os/view/graphics/gl/media/database/device 等 family TU 同址。shared.
 | --- | --- |
 | getInstallerPackageName(String) | 仅当前直接加载的 APK，未记录 Android 安装器，返回 null；未知包（含空串、system、null）按 API19 抛 IllegalArgumentException；不推测商店来源 |
 | getResourcesForApplication(String) | 仅当前包，共用 Context 的应用 Resources/AssetManager；未知包（含空串、system）NameNotFoundException，null NPE；不支持跨包与其他重载 |
+| getPackageArchiveInfo | 仅当前封存只读 APK，路径经 guest VFS 规范化；0/GET_ACTIVITIES/GET_DISABLED_COMPONENTS；归档 UID=-1、安装目录 null、安装时间 0；路径缺失/非普通文件返回 null，未登记归档/缺事实/未知 flags 记账失败 |
 | getPackageInfo | GET_ACTIVITIES/META_DATA/PERMISSIONS 组合；activities 仅请求时发布，按声明顺序保留 alias、默认排除禁用项，否则 null |
 | getActivityInfo/getReceiverInfo/getServiceInfo | 当前包完整组件名；0、GET_META_DATA、GET_DISABLED_COMPONENTS，按应用/组件启用状态过滤；缺失 NameNotFoundException |
 | getPermissionInfo | 仅 Manifest `<permission>` 定义；0/GET_META_DATA；仅请求或已授权未定义仍 NameNotFoundException |

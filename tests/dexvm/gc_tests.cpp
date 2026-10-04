@@ -22,6 +22,26 @@ namespace {
 using namespace ogplay::runtime;
 using namespace ogplay::runtime::dexvm;
 
+TEST_CASE("DVM-214 native ZIP admission placeholders do not require BootDex metadata") {
+    JniStringStore strings;
+    JniPrimitiveArrayStore arrays;
+    JavaObjectModel model{strings, arrays};
+    DexClassLinker linker;
+    std::vector<IntrinsicClassDecl> catalog;
+    catalog.push_back(std::move(IntrinsicClassBuilder::RootClass("Ljava/lang/Object;")).Build());
+    for (const auto owner : {"Lorg/ogplay/zip/NativeZip;", "Ljava/util/zip/Deflater;",
+                             "Ljava/util/zip/Inflater;"}) {
+        auto builder = IntrinsicClassBuilder::Class(owner);
+        builder.AdmitBootNativeMethods();
+        catalog.push_back(std::move(builder).Build());
+    }
+    linker.RegisterIntrinsics(catalog);
+    linker.Link();
+    ogplay::core::CapabilityLedger ledger;
+    Interpreter vm(linker, model, nullptr, ledger);
+    CHECK(vm.GuestNativeResourceCount() == 0);
+}
+
 struct GcVm final {
     JniStringStore strings;
     JniPrimitiveArrayStore arrays;

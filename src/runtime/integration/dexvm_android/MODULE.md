@@ -241,3 +241,7 @@ Dashboard AudioTrack/UiTree 仅 TryAcquire VM 锁，PCM 用 mixer try-lock，忙
 frontend lifecycle；相关行为覆盖 switch/threaded 及架构约束。title 探索不等于 Scenario 验收。
 外部 package/service resolver、ContentProvider、完整 UI/framework/传感器、现代支付/社交/反作弊
 仍不在范围；能力状态与运行证据见 capabilities、CURRENT 和对应任务单。
+
+本地 VideoView native 仅维护受限 source/decoder/Clock/PCM 事实。主线程泵交付
+prepared/error/completion，guest 回调期间释放视频锁；实例替换或释放取消旧代际。
+打开/解码失败交付 error，不允许回退 completion。未处理错误对话框明确记账失败。

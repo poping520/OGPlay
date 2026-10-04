@@ -237,11 +237,6 @@ void RegisterAndroidOwnerAttachedStateTable(
                 found != context->text_watchers.end()) {
                 for (const auto watcher : found->second) visit_ref(watcher);
             }
-            if (const auto found = context->video_completion.find(key);
-                found != context->video_completion.end()) visit_ref(found->second);
-            if (const auto found = context->video_errors.find(key);
-                found != context->video_errors.end()) visit_ref(found->second);
-
         },
         [context](const dx::VmObjectRef owner) {
             const auto key = owner.Value();
@@ -310,9 +305,6 @@ void RegisterAndroidOwnerAttachedStateTable(
                 context->ui_view_backgrounds.erase(background);
             }
             context->ui_drawables.erase(key);
-            context->video_completion.erase(key);
-            context->pending_video_completion.erase(key);
-            context->video_errors.erase(key);
             {
                 std::scoped_lock video_lock(context->video_views_mutex);
                 context->video_views.erase(key);

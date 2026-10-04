@@ -16,7 +16,7 @@ struct BoundaryCallServices final {
     BoundaryFaultStore& faults;
     void* gpu_owner{};
     void (*record_gpu_call)(void*, std::size_t,
-                            const std::array<std::uint32_t, 4>&, bool){};
+                            const std::array<std::uint32_t, 4>&, bool, std::uint32_t){};
 
     void RecordFastFault(
         const cpu::A32HostCallContext& context) const noexcept {
@@ -24,9 +24,9 @@ struct BoundaryCallServices final {
     }
     void RecordGpuCall(const std::size_t slot,
                        const std::array<std::uint32_t, 4>& arguments,
-                       const bool gpu) const {
+                       const bool gpu, const std::uint32_t error = 0U) const {
         if (record_gpu_call != nullptr) {
-            record_gpu_call(gpu_owner, slot, arguments, gpu);
+            record_gpu_call(gpu_owner, slot, arguments, gpu, error);
         }
     }
 };
@@ -72,7 +72,7 @@ cpu::HostCallResult InvokeBoundaryFast(
             constexpr std::uint32_t kThunkStride = 4U;
             const auto slot = static_cast<std::size_t>(
                 (context.pc.Value() - kBionicHleThunkBegin) / kThunkStride);
-            services.RecordGpuCall(slot, arguments, true);
+            services.RecordGpuCall(slot, arguments, true, call.GlError());
         }
         context.registers[0] = result.low;
         if (result.wide) context.registers[1] = result.high;

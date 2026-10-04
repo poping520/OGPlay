@@ -92,15 +92,20 @@ void FrameService::RecordProgramLink() {
 
 void FrameService::RecordGpuCall(
     const std::size_t descriptor_index,
-    const std::array<std::uint32_t, 4>& arguments, const bool gpu) {
+    const std::array<std::uint32_t, 4>& arguments, const bool gpu,
+    const std::uint32_t error) {
     if (!gpu) return;
     if (descriptor_index >= descriptors_.size() ||
         descriptor_index > (std::numeric_limits<std::uint16_t>::max)()) {
         throw std::logic_error("GPU trace descriptor is outside its catalog");
     }
+    if (error != 0U) {
+        std::scoped_lock lock(mutex_);
+        ++gpu_stats_.gl_errors;
+    }
     std::scoped_lock lock(trace_mutex_);
     gpu_trace_[gpu_trace_write_] = {
-        static_cast<std::uint16_t>(descriptor_index), arguments};
+        static_cast<std::uint16_t>(descriptor_index), arguments, error};
     gpu_trace_write_ = (gpu_trace_write_ + 1U) % gpu_trace_.size();
     gpu_trace_count_ = std::min(gpu_trace_count_ + 1U, gpu_trace_.size());
 }
@@ -134,6 +139,7 @@ std::vector<core::GpuTraceEntry> FrameService::Trace(
             continue;
         }
         core::GpuTraceEntry entry;
+        if (raw.error != 0U) entry.error = raw.error;
         entry.call = name;
         for (std::size_t argument = 0; argument < raw.registers.size();
              ++argument) {
@@ -160,6 +166,7 @@ std::optional<std::vector<core::GpuTraceEntry>> FrameService::TryTrace(
             gpu_trace_.size();
         const auto& raw = gpu_trace_[index];
         core::GpuTraceEntry entry;
+        if (raw.error != 0U) entry.error = raw.error;
         entry.call = descriptors_[raw.descriptor_index].name;
         for (std::size_t argument = 0; argument < raw.registers.size();
              ++argument) {

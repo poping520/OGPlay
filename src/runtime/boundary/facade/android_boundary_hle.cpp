@@ -294,7 +294,7 @@ public:
         const auto& binding = fast_router_.Entry(index);
         const A32CallFrame call(arguments, thread_id);
         const auto result = binding.slow(binding.self, call);
-        RecordGpuCall(index, call.RegisterArguments(), binding.gpu);
+        RecordGpuCall(index, call.RegisterArguments(), binding.gpu, call.GlError());
         return result.low;
     }
     [[nodiscard]] std::uint32_t InvokeManagedEgl(
@@ -322,7 +322,7 @@ public:
         const auto& binding = fast_router_.Entry(index);
         const A32CallFrame call(arguments, thread_id);
         const auto result = binding.slow(binding.self, call);
-        RecordGpuCall(index, call.RegisterArguments(), binding.gpu);
+        RecordGpuCall(index, call.RegisterArguments(), binding.gpu, call.GlError());
         return result.low;
     }
     void RetireGuestGraphics() noexcept {
@@ -403,7 +403,7 @@ public:
                     state.Register(cpu::CoreRegister::lr)) +
                 " thread=" + std::to_string(state.ThreadId()));
         }
-        RecordGpuCall(descriptor_index, arguments, binding.gpu);
+        RecordGpuCall(descriptor_index, arguments, binding.gpu, call.GlError());
         state.SetRegister(cpu::CoreRegister::r0, result.low);
         if (result.wide) state.SetRegister(cpu::CoreRegister::r1, result.high);
         cpu.SetState(state);
@@ -478,8 +478,9 @@ private:
     }
     static void ServiceRecordGpuCall(
         void* owner, const std::size_t slot,
-        const std::array<std::uint32_t, 4>& arguments, const bool gpu) {
-        static_cast<Impl*>(owner)->RecordGpuCall(slot, arguments, gpu);
+        const std::array<std::uint32_t, 4>& arguments, const bool gpu,
+        const std::uint32_t error) {
+        static_cast<Impl*>(owner)->RecordGpuCall(slot, arguments, gpu, error);
     }
     static gles::AngleFrame& ServiceRequireFrame(
         void* owner, const std::string_view operation) {
@@ -615,7 +616,7 @@ private:
             const A32CallFrame call(proc.owner->address_space_, context,
                                     proc.parameter_count);
             context.registers[0] = InvokeProcSlow(userdata, call).low;
-            proc.owner->RecordGpuCall(proc.slot, call.RegisterArguments(), true);
+            proc.owner->RecordGpuCall(proc.slot, call.RegisterArguments(), true, call.GlError());
             return cpu::HostCallResult::handled;
         } catch (...) {
             proc.owner->fault_store_.RecordCurrent(context);
@@ -960,8 +961,8 @@ private:
     }
     void RecordGpuCall(const std::size_t descriptor_index,
                        const std::array<std::uint32_t, 4>& args,
-                       const bool gpu) {
-        frame_service_.RecordGpuCall(descriptor_index, args, gpu);
+                       const bool gpu, const std::uint32_t error) {
+        frame_service_.RecordGpuCall(descriptor_index, args, gpu, error);
     }
     memory::AddressSpace& address_space_;
     gles::AngleBackend backend_;

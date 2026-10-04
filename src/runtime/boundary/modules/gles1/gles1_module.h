@@ -98,13 +98,13 @@ public:
                 throw;
             }
         } catch (const gles::GlesApiError& error) {
-            graphics_.gl_context.Shared().SetGuestError(error.Code());
+            graphics_.SetGuestError(call, error.Code());
             return 0U;
         } catch (const std::invalid_argument&) {
             // A driver reports invalid enums through the per-context error
             // latch and keeps running; only host-side contract breaches stay
             // fatal here.
-            graphics_.gl_context.Shared().SetGuestError(0x0500U);
+            graphics_.SetGuestError(call, 0x0500U);
             return 0U;
         }
     }

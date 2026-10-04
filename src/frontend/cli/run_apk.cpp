@@ -814,7 +814,7 @@ int RunApkCommand(const int argc, const char* const argv[],
             sources.jni = [&] { return app_process->NativeProcess().Environment().TrySnapshot(); };
             sources.memory = [&] { return app_process->NativeProcess().TryMemorySnapshot(); };
             sources.cpu = [&] { return app_process->NativeProcess().TryCpuSnapshot(); };
-            sources.gpu_errors_available = false; // FrameService does not account GL errors.
+            sources.gpu_errors_available = true; // Per-call boundary-reported GL errors.
             sources.gpu = [&] { return app_process->NativeProcess().TryStats(); };
             sources.filesystem = [&] { return filesystem.TrySnapshot(); };
             sources.audio = [&] { return runtime::TrySnapshotAndroidAudioTracks(app_process->DexVm().Vm(), *app_process->Context()); };

@@ -110,7 +110,7 @@ $guestProcessId = 12345 # 替换为该会话的 process_id
 | 空心 GC/欠载/能力缺口/flush 标记 | 累计计数在观测间隔内变化，首次从零基线观察 | 精确发生帧/时刻；首次增量全部刚发生 |
 | 空泳道、空表、无匹配记录 | 可能未装配、缺共享键、被筛选或已覆盖 | 没有事件、没有缺口 |
 | CPU 缓存 | 最近完成 Run 的 owner 发布值，行时间戳可查 | 当前运行中的即时值；未发布不等于零 |
-| GL error | 当前 FrameService 未记账，字段 null、事件来源 unavailable | GL 错误为 0，或由 trace 无 error 证明无错 |
+| GL error | run-apk 统计边界已捕获的 GL 错误调用次数，trace 带精确 GLenum；未装配来源仍为 null/unavailable | 全部原生 GL 错误；零计数或有界 trace 无 error 证明游戏无错 |
 | AudioTrack / VideoView / UiTree | 已接入 player 统计、视频基准位置、树/dirty/focus | 全部音源、实时解码队列或输入 capture/队列 |
 
 FFmpeg 不可用原因在视频面板显示；解码未装配不是播放器没有请求。

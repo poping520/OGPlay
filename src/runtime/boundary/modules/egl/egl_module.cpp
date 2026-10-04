@@ -368,14 +368,14 @@ std::uint32_t EglModule::ExecuteExport(const A32CallFrame& call) {
             std::scoped_lock lock(mutex_);
             const auto image = images_.find(call.Argument(1));
             if (image == images_.end()) {
-                context_.graphics.gl_context.Shared().SetGuestError(0x0501U); return 0U;
+                context_.graphics.SetGuestError(call, 0x0501U); return 0U;
             }
             native = image->second;
         }
         try { context_.graphics.RequireFrame("glEGLImageTarget").BindEglImage(
             call.Argument(0), native, FunctionId == 0xF101U); }
         catch (const gles::GlesApiError& error) {
-            context_.graphics.gl_context.Shared().SetGuestError(error.Code());
+            context_.graphics.SetGuestError(call, error.Code());
         }
         return 0U;
     }

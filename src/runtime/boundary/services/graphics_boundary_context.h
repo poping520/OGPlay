@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "ogplay/gles/angle_frame.h"
+#include "runtime/boundary/core/a32_call_frame.h"
 #include "ogplay/gles/gles_dispatch.h"
 #include "ogplay/gles/supersample.h"
 #include "runtime/boundary/services/graphics_dispatch.h"
@@ -51,6 +52,10 @@ struct GraphicsBoundaryContext final {
     [[nodiscard]] gles::AngleFrame& RequireFrame(
         const std::string_view operation) const {
         return require_frame(owner, operation);
+    }
+    void SetGuestError(const A32CallFrame& call, const std::uint32_t error) const noexcept {
+        gl_context.Shared().SetGuestError(error);
+        call.RecordGlError(error);
     }
     void InitializeGuestGlDefaults() const { initialize_defaults(owner); }
     void ReleaseManagedSurfaceFromCallingThread() const { release_surface(owner); }

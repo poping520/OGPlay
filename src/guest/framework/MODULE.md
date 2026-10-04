@@ -12,3 +12,6 @@ WorkSource、组播传输及无线服务不在当前支持范围。
 
 算法来源：[AOSP Android 4.4.4 WifiManager.java](https://android.googlesource.com/platform/frameworks/base/+/android-4.4.4_r2.0.1/wifi/java/android/net/wifi/WifiManager.java)，
 保留 Apache-2.0 头；改编与支持边界由 ADR-0092/0093 记录。
+
+本地 VideoView 适配器以 Java 字段保存监听器、播放目标和代际。回调传入初始化的
+MediaPlayer 子类，所需控制绑定同一视频实例；不支持系统媒体服务、字幕或网络源。

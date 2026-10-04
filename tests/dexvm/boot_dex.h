@@ -51,6 +51,9 @@ inline void BindBootDexPlatformNatives(runtime::dexvm::DexClassLinker& linker) {
                 declaration.descriptor == "Landroid/database/sqlite/SQLiteGlobal;" ||
                 declaration.descriptor == "Landroid/media/AudioTrack;" ||
                 declaration.descriptor == "Landroid/media/MediaPlayer;" ||
+                declaration.descriptor == "Landroid/widget/VideoView;" ||
+                declaration.descriptor == "Landroid/view/SurfaceView;" ||
+                declaration.descriptor == "Landroid/view/View;" ||
                 declaration.descriptor == "Landroid/media/SoundPool$SoundPoolImpl;" ||
                 declaration.descriptor == "Landroid/util/EventLog;" ||
                 declaration.descriptor == "Landroid/os/Binder;" ||

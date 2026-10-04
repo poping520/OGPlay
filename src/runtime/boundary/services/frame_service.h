@@ -34,7 +34,7 @@ public:
     void RecordProgramLink();
     void RecordGpuCall(std::size_t descriptor_index,
                        const std::array<std::uint32_t, 4>& arguments,
-                       bool gpu);
+                       bool gpu, std::uint32_t error = 0U);
 
     [[nodiscard]] std::optional<core::GpuStats> TryStats() const;
     [[nodiscard]] core::GpuStats Stats() const;
@@ -48,6 +48,7 @@ private:
     struct RawGpuTraceEntry final {
         std::uint16_t descriptor_index{};
         std::array<std::uint32_t, 4> registers{};
+        std::uint32_t error{};
     };
 
     const gles::SupersampleLayout& layout_;

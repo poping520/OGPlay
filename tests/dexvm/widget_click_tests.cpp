@@ -23,6 +23,9 @@
 #include "ogplay/runtime/vfs/vfs.h"
 #include "ogplay/session/dex_activity_lifecycle.h"
 #include "ogplay/video/fake_video_player.h"
+#include "ogplay/audio/encoded_music.h"
+#include "ogplay/runtime/dexvm/vm_threads.h"
+#include "ogplay/runtime/dexvm/vm_monitors.h"
 
 namespace {
 
@@ -77,6 +80,7 @@ struct ClickVm final {
     ogplay::core::Logger logger;
     std::shared_ptr<DexVmAndroidContext> context;
     VirtualFileSystem vfs;
+    ogplay::audio::EncodedMusicMixer music;
     std::int32_t content_view_events{};
     bool content_view_handled{};
     std::int32_t key_down_events{};
@@ -87,6 +91,7 @@ struct ClickVm final {
     std::vector<std::string> text_events;
     std::array<std::int32_t, 3> last_text_range{};
     Interpreter interpreter;
+    std::unique_ptr<VmThreadRuntime> threads;
     VmObjectRef activity;
     VmObjectRef video_view;
     VmObjectRef skip_button;
@@ -178,9 +183,19 @@ struct ClickVm final {
                   return linker;
               }(),
               model, nullptr, ledger, {}) {
+        interpreter.Monitors().SetTimeSource([state = context] { return state->uptime_millis.load(); });
         context->surface_width = 100U;
         context->surface_height = 100U;
         context->vfs = &vfs;
+        context->encoded_music = &music;
+        threads = std::make_unique<VmThreadRuntime>(interpreter);
+        context->threads = threads.get();
+        RegisterAndroidSchedulerStateTable(interpreter, context);
+        const auto looper = linker.ResolveDescriptor("Landroid/os/Looper;");
+        const auto prepare = linker.FindDirectMethod(looper, "prepareMainLooper", "()V");
+        REQUIRE(prepare.has_value());
+        const auto prepared = interpreter.Call(*prepare, {});
+        REQUIRE_MESSAGE(!prepared.exception.IsValid(), prepared.exception_message);
         context->video_source_player_factory =
             [factory = FakeFactory()](
                 std::shared_ptr<const ogplay::video::VideoDataSource>) {

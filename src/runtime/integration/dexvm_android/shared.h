@@ -176,8 +176,9 @@ void CancelTimer(const Context& context, dx::VmObjectRef timer);
     const Context& context, std::uint64_t handle);
 [[nodiscard]] std::int64_t VideoPositionOf(
     const DexVmAndroidContext::VideoViewState& state, std::int64_t uptime_ms);
-[[nodiscard]] std::optional<std::string> InvokeVideoCompletionListener(
-    dx::Interpreter& vm, DexVmAndroidContext& context, std::uint64_t handle);
+[[nodiscard]] std::optional<std::string> InvokeVideoEvent(
+    dx::Interpreter& vm, DexVmAndroidContext& context, std::uint64_t handle,
+    std::int32_t generation, std::int32_t event);
 
 // Non-goal SMS/network actions fail with accounting instead of pretending.
 dx::VmValue UnsupportedNetwork(dx::IntrinsicContext&);

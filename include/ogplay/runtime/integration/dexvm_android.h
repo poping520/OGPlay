@@ -690,23 +690,21 @@ struct DexVmAndroidContext final {
   // shared in ui_bitmaps while alpha/bounds stay per Drawable instance.
   std::unordered_map<std::uint64_t, dexvm::VmObjectRef> ui_view_backgrounds;
   std::unordered_map<std::uint64_t, UiDrawableState> ui_drawables;
-  // VideoView -> OnCompletionListener. The guest video pump fires it once
-  // at end of stream; fallback completion is also deferred to that boundary
-  // so callbacks never run re-entrantly inside start().
-  std::unordered_map<std::uint64_t, dexvm::VmObjectRef> video_completion;
-  std::unordered_set<std::uint64_t> pending_video_completion;
-  // VideoView -> OnErrorListener. Registration is real; callbacks are only
-  // eligible once the host video path publishes a concrete async error.
-  std::unordered_map<std::uint64_t, dexvm::VmObjectRef> video_errors;
-
   // Real VideoView playback (ADR-0021). The factory is injected by the
-  // frontend; when it is missing or open fails, setVideoPath records the
-  // gap and start() schedules the deferred-completion fallback.
+  // frontend. Preparation and errors are deferred to the guest main pump;
+  // listeners and the bound MediaPlayer identity are ordinary Java fields.
   video::VideoSourcePlayerFactory video_source_player_factory;
   mutable std::recursive_mutex video_views_mutex;
   struct VideoViewState final {
     std::unique_ptr<video::VideoPlayer> player;
     std::string guest_path;
+    std::int32_t generation{};
+    std::int32_t pending_event{};
+    bool was_attached{};
+    bool frame_requested{};
+    float left_volume{1.0F};
+    float right_volume{1.0F};
+    std::optional<video::VideoFrame> latest_frame;
     std::int64_t duration_ms{};
     // Playback position = base_position_ms + (uptime - start_uptime)
     // while playing; frozen at base_position_ms otherwise.
@@ -812,9 +810,14 @@ void RetireGuestEglSurface(DexVmAndroidContext &context);
 void PaceEglSwap(DexVmAndroidContext &context,
                  dexvm::VmExecutionLock &execution_lock);
 
-// Advances every playing VideoView to the shared uptime clock: publishes new
-// frames through publish (letterboxed to the surface size) and fires the
-// registered onCompletion exactly once per playback at end of stream.
+// Composes attached decoded video over the current base or UI according to
+// the SurfaceView layer fact; uses the same UiTree geometry and visibility.
+void ComposeVideoViews(DexVmAndroidContext &context, std::vector<std::uint8_t> &rgba8,
+                       std::uint32_t width, std::uint32_t height, bool on_top);
+
+// Pumps attached generations at the shared uptime clock; delivers prepared,
+// error and single-shot completion on the guest main thread. Listener code may
+// release or replace its owner. publish signals each decoded frame to the session.
 // Returns a rendered message when a guest callback raised.
 [[nodiscard]] std::optional<std::string> PumpVideoViews(
     dexvm::Interpreter &vm, DexVmAndroidContext &context,

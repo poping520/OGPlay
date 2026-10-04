@@ -2,7 +2,7 @@
 // VideoView real-playback semantics against the deterministic Fake backend:
 // frames publish letterboxed to the surface, position follows the shared
 // uptime clock, onCompletion fires exactly once per playback, and the
-// no-decoder fallback still completes immediately.
+// failures deliver error without fabricating completion.
 
 #include <doctest/doctest.h>
 
@@ -15,6 +15,9 @@
 #include <vector>
 
 #include "ogplay/audio/encoded_music.h"
+#include "ogplay/loader/apk.h"
+#include "ogplay/runtime/dexvm/io_runtime.h"
+#include "ogplay/runtime/integration/dexvm_io_vfs.h"
 #include "ogplay/core/capability_ledger.h"
 #include "ogplay/core/logger.h"
 #include "ogplay/runtime/dexvm/class_linker.h"
@@ -83,6 +86,52 @@ constexpr const char* kGuestVideoPath = "/sdcard/short-mp4v-aac.mp4";
     };
 }
 
+void Append16(std::vector<std::byte>& bytes, std::uint16_t value) {
+    bytes.push_back(static_cast<std::byte>(value));
+    bytes.push_back(static_cast<std::byte>(value >> 8U));
+}
+void Append32(std::vector<std::byte>& bytes, std::uint32_t value) {
+    Append16(bytes, static_cast<std::uint16_t>(value));
+    Append16(bytes, static_cast<std::uint16_t>(value >> 16U));
+}
+std::vector<std::byte> MakeStoredZip(const std::string_view name,
+                                     const std::span<const std::byte> payload) {
+    std::uint32_t crc = 0xffffffffU;
+    for (const auto byte : payload) {
+        crc ^= std::to_integer<std::uint8_t>(byte);
+        for (unsigned bit = 0; bit < 8; ++bit) {
+            const auto mask = 0U - (crc & 1U);
+            crc = (crc >> 1U) ^ (0xedb88320U & mask);
+        }
+    }
+    crc = ~crc;
+    const auto append_name = [&](std::vector<std::byte>& bytes) {
+        for (const auto value : name) {
+            bytes.push_back(static_cast<std::byte>(value));
+        }
+    };
+    std::vector<std::byte> bytes;
+    Append32(bytes, 0x04034b50U); Append16(bytes, 20); Append16(bytes, 0);
+    Append16(bytes, 0); Append16(bytes, 0); Append16(bytes, 0);
+    Append32(bytes, crc); Append32(bytes, static_cast<std::uint32_t>(payload.size()));
+    Append32(bytes, static_cast<std::uint32_t>(payload.size()));
+    Append16(bytes, static_cast<std::uint16_t>(name.size())); Append16(bytes, 0);
+    append_name(bytes); bytes.insert(bytes.end(), payload.begin(), payload.end());
+    const auto central_offset = static_cast<std::uint32_t>(bytes.size());
+    Append32(bytes, 0x02014b50U); Append16(bytes, 20); Append16(bytes, 20);
+    Append16(bytes, 0); Append16(bytes, 0); Append16(bytes, 0); Append16(bytes, 0);
+    Append32(bytes, crc); Append32(bytes, static_cast<std::uint32_t>(payload.size()));
+    Append32(bytes, static_cast<std::uint32_t>(payload.size()));
+    Append16(bytes, static_cast<std::uint16_t>(name.size()));
+    Append16(bytes, 0); Append16(bytes, 0); Append16(bytes, 0); Append16(bytes, 0);
+    Append32(bytes, 0); Append32(bytes, 0); append_name(bytes);
+    const auto central_size = static_cast<std::uint32_t>(bytes.size()) - central_offset;
+    Append32(bytes, 0x06054b50U); Append16(bytes, 0); Append16(bytes, 0);
+    Append16(bytes, 1); Append16(bytes, 1); Append32(bytes, central_size);
+    Append32(bytes, central_offset); Append16(bytes, 0);
+    return bytes;
+}
+
 struct VideoVm final {
     JniStringStore strings;
     JniPrimitiveArrayStore arrays;
@@ -92,9 +141,12 @@ struct VideoVm final {
     ogplay::core::Logger logger;
     std::shared_ptr<DexVmAndroidContext> context;
     VirtualFileSystem vfs;
+    DexVmIoVfsAdapter io_file_system{vfs};
+    ogplay::audio::EncodedMusicMixer music;
     Interpreter interpreter;
+    std::unique_ptr<VmThreadRuntime> threads;
 
-    explicit VideoVm(ogplay::video::VideoPlayerFactory factory)
+    explicit VideoVm(ogplay::video::VideoPlayerFactory factory, const InterpreterConfig config = {})
         : model(strings, arrays),
           context(std::make_shared<DexVmAndroidContext>()),
           interpreter(
@@ -106,11 +158,25 @@ struct VideoVm final {
                   linker.Link();
                   return linker;
               }(),
-              model, nullptr, ledger, {}) {
-        interpreter.Monitors().SetTimeSource([] { return std::int64_t{1}; });
+              model, nullptr, ledger, config) {
+        interpreter.Monitors().SetTimeSource([state = context] { return state->uptime_millis.load(); });
         context->surface_width = 64U;
         context->surface_height = 32U;
         context->vfs = &vfs;
+        interpreter.IO().SetFileSystem(&io_file_system);
+        context->encoded_music = &music;
+        threads = std::make_unique<VmThreadRuntime>(interpreter);
+        context->threads = threads.get();
+        RegisterAndroidSchedulerStateTable(interpreter, context);
+        const auto looper = linker.ResolveDescriptor("Landroid/os/Looper;");
+        const auto prepare = linker.FindDirectMethod(looper, "prepareMainLooper", "()V");
+        REQUIRE(prepare.has_value());
+        const auto prepared = interpreter.Call(*prepare, {});
+        REQUIRE_MESSAGE(!prepared.exception.IsValid(), prepared.exception_message);
+        RegisterAndroidOwnerAttachedStateTable(interpreter, context);
+        interpreter.SetGcIntegration({{}, {}, [state = context](const VmRootVisitor& visit) {
+            VisitAndroidSessionRoots(*state, visit);
+        }});
         if (factory) {
             context->video_source_player_factory =
                 [factory = std::move(factory)](
@@ -125,7 +191,20 @@ struct VideoVm final {
     }
 
     [[nodiscard]] VmObjectRef NewVideoView() {
-        return interpreter.NewIntrinsicInstance("Landroid/widget/VideoView;");
+        const auto view = interpreter.NewIntrinsicInstance("Landroid/widget/VideoView;");
+        const auto owner = linker.ResolveDescriptor("Landroid/widget/VideoView;");
+        const auto ctor = linker.FindDirectMethod(owner, "<init>", "(Landroid/content/Context;)V");
+        REQUIRE(ctor.has_value());
+        const auto activity = interpreter.NewIntrinsicInstance("Landroid/content/Context;");
+        const auto result = interpreter.Call(*ctor, std::array{VmValue::Ref(view), VmValue::Ref(activity)});
+        REQUIRE_MESSAGE(!result.exception.IsValid(), result.exception_message);
+        const auto node = FindViewUiNode(*context, view.Value());
+        REQUIRE(node.has_value());
+        context->ui_tree.Attach(context->ui_tree.Root(), *node);
+        auto* state = context->ui_tree.Get(*node);
+        state->layout.width.mode = ui::SizeMode::MatchParent;
+        state->layout.height.mode = ui::SizeMode::MatchParent;
+        return view;
     }
 
     VmValue CallOn(const VmObjectRef receiver, const std::string& name,
@@ -161,16 +240,28 @@ struct VideoVm final {
         return listener;
     }
 
-    [[nodiscard]] std::int32_t Completions() {
+    [[nodiscard]] std::int32_t Count(const char* name) {
         const auto java_class = linker.FindClass("LVideoListener;");
         REQUIRE(java_class.has_value());
         const auto method = linker.FindDirectMethod(
-            *java_class, "getCompletions", "()I");
+            *java_class, name, "()I");
         REQUIRE(method.has_value());
         const auto outcome = interpreter.Call(*method, {});
         REQUIRE_MESSAGE(!outcome.exception.IsValid(),
                         outcome.exception_message);
         return outcome.value.AsInt();
+    }
+
+    [[nodiscard]] std::int32_t Completions() { return Count("getCompletions"); }
+    [[nodiscard]] std::int32_t Prepared() { return Count("getPrepared"); }
+    [[nodiscard]] std::int32_t Errors() { return Count("getErrors"); }
+    [[nodiscard]] VmObjectRef Player(const char* name = "getPlayer") {
+        const auto owner = linker.ResolveDescriptor("LVideoListener;");
+        const auto method = linker.FindDirectMethod(owner, name, "()Landroid/media/MediaPlayer;");
+        REQUIRE(method.has_value());
+        const auto result = interpreter.Call(*method, {});
+        REQUIRE_MESSAGE(!result.exception.IsValid(), result.exception_message);
+        return result.value.ref;
     }
 
     [[nodiscard]] std::size_t Pump(std::vector<std::vector<std::uint8_t>>*
@@ -182,6 +273,9 @@ struct VideoVm final {
                 ++published;
                 if (frames != nullptr) frames->push_back(std::move(rgba8));
             });
+        std::string diagnostics;
+        for (const auto& record : logger.Snapshot(ogplay::core::LogLevel::warn)) diagnostics += record.message + "\n";
+        INFO(diagnostics);
         REQUIRE_MESSAGE(!error.has_value(), error.value_or(""));
         return published;
     }
@@ -198,6 +292,7 @@ TEST_CASE("videoview plays through the fake backend and completes once") {
               {VmValue::Ref(listener)});
     vm.CallOn(view, "setVideoPath", "(Ljava/lang/String;)V",
               {VmValue::Ref(vm.interpreter.NewStringUtf8(kGuestVideoPath))});
+    static_cast<void>(vm.Pump());
     CHECK(vm.CallOn(view, "getDuration", "()I").AsInt() == 1000);
 
     vm.CallOn(view, "start", "()V");
@@ -236,6 +331,7 @@ TEST_CASE("videoview letterboxes frames onto the surface canvas") {
     const auto view = vm.NewVideoView();
     vm.CallOn(view, "setVideoPath", "(Ljava/lang/String;)V",
               {VmValue::Ref(vm.interpreter.NewStringUtf8(kGuestVideoPath))});
+    static_cast<void>(vm.Pump());
     vm.CallOn(view, "start", "()V");
     std::vector<std::vector<std::uint8_t>> frames;
     REQUIRE(vm.Pump(&frames) == 1U);
@@ -254,6 +350,7 @@ TEST_CASE("videoview pause freezes and seekTo moves the position") {
     const auto view = vm.NewVideoView();
     vm.CallOn(view, "setVideoPath", "(Ljava/lang/String;)V",
               {VmValue::Ref(vm.interpreter.NewStringUtf8(kGuestVideoPath))});
+    static_cast<void>(vm.Pump());
     vm.CallOn(view, "start", "()V");
     const auto origin = vm.context->uptime_millis.load();
     vm.context->uptime_millis = origin + 300;
@@ -265,6 +362,8 @@ TEST_CASE("videoview pause freezes and seekTo moves the position") {
     // Resume-from-checkpoint path (MyVideoView-style seekTo + start).
     vm.CallOn(view, "seekTo", "(I)V", {VmValue::Int(100)});
     CHECK(vm.CallOn(view, "getCurrentPosition", "()I").AsInt() == 100);
+    CHECK(vm.Pump() == 1U); // seeking while paused presents the selected frame
+    CHECK_FALSE(vm.CallOn(view, "isPlaying", "()Z").AsInt());
     vm.CallOn(view, "start", "()V");
     const auto resume = vm.context->uptime_millis.load();
     vm.context->uptime_millis = resume + 100;
@@ -280,9 +379,10 @@ TEST_CASE("videoview stopPlayback releases the player") {
     const auto view = vm.NewVideoView();
     vm.CallOn(view, "setVideoPath", "(Ljava/lang/String;)V",
               {VmValue::Ref(vm.interpreter.NewStringUtf8(kGuestVideoPath))});
+    static_cast<void>(vm.Pump());
     CHECK(vm.CallOn(view, "getDuration", "()I").AsInt() == 1000);
     vm.CallOn(view, "stopPlayback", "()V");
-    CHECK(vm.CallOn(view, "getDuration", "()I").AsInt() == 0);
+    CHECK(vm.CallOn(view, "getDuration", "()I").AsInt() == -1);
     CHECK(vm.context->video_views.empty());
 }
 
@@ -295,6 +395,7 @@ TEST_CASE("videoview production source factory consumes a VFS lease") {
     const auto view = vm.NewVideoView();
     vm.CallOn(view, "setVideoPath", "(Ljava/lang/String;)V",
               {VmValue::Ref(vm.interpreter.NewStringUtf8(kGuestVideoPath))});
+    static_cast<void>(vm.Pump());
     CHECK(opened);
     CHECK(bytes_read == 4U);
     CHECK(vm.CallOn(view, "getDuration", "()I").AsInt() == 1000);
@@ -328,6 +429,7 @@ TEST_CASE("videoview source factory consumes an APK-backed VFS lease") {
     vm.CallOn(view, "setVideoPath", "(Ljava/lang/String;)V",
               {VmValue::Ref(vm.interpreter.NewStringUtf8(
                   "/apk/movie.bin"))});
+    static_cast<void>(vm.Pump());
     CHECK(opened);
     CHECK(bytes_read == payload.size());
     CHECK(full_reads == 0U);
@@ -343,6 +445,7 @@ TEST_CASE("videoview media controls follow prepared player state") {
 
     vm.CallOn(view, "setVideoPath", "(Ljava/lang/String;)V",
               {VmValue::Ref(vm.interpreter.NewStringUtf8(kGuestVideoPath))});
+    static_cast<void>(vm.Pump());
     CHECK(vm.CallOn(view, "canSeekForward", "()Z").AsInt() == 1);
     CHECK(vm.CallOn(view, "canSeekBackward", "()Z").AsInt() == 1);
     CHECK(vm.CallOn(view, "canPause", "()Z").AsInt() == 1);
@@ -353,54 +456,40 @@ TEST_CASE("videoview media controls follow prepared player state") {
     CHECK_FALSE(vm.CallOn(view, "canPause", "()Z").AsInt());
 }
 
-TEST_CASE("videoview fallback completion is deferred to the video pump") {
+TEST_CASE("videoview missing decoder reports error without completion") {
     VideoVm vm(ogplay::video::VideoPlayerFactory{});
     const auto view = vm.NewVideoView();
     const auto listener = vm.NewListener();
-    vm.CallOn(view, "setOnCompletionListener",
-              "(Landroid/media/MediaPlayer$OnCompletionListener;)V",
-              {VmValue::Ref(listener)});
-    vm.CallOn(view, "setVideoPath", "(Ljava/lang/String;)V",
-              {VmValue::Ref(vm.interpreter.NewStringUtf8(kGuestVideoPath))});
-    CHECK(vm.CallOn(view, "getDuration", "()I").AsInt() == 0);
+    vm.CallOn(view, "setOnCompletionListener", "(Landroid/media/MediaPlayer$OnCompletionListener;)V", {VmValue::Ref(listener)});
+    vm.CallOn(view, "setOnErrorListener", "(Landroid/media/MediaPlayer$OnErrorListener;)V", {VmValue::Ref(listener)});
+    vm.CallOn(view, "setVideoPath", "(Ljava/lang/String;)V", {VmValue::Ref(vm.interpreter.NewStringUtf8(kGuestVideoPath))});
     vm.CallOn(view, "start", "()V");
+    CHECK(vm.Errors() == 0);
+    CHECK(vm.Pump() == 0U);
+    CHECK(vm.Errors() == 1);
     CHECK(vm.Completions() == 0);
     CHECK(vm.Pump() == 0U);
-    CHECK(vm.Completions() == 1);
-    CHECK(vm.Pump() == 0U);
-    CHECK(vm.Completions() == 1);
+    CHECK(vm.Errors() == 1);
 }
 
-TEST_CASE("videoview error listener registration can be replaced and cleared") {
+TEST_CASE("videoview error listener replacement and unhandled error are observable") {
     VideoVm vm(FakeFactory());
     const auto view = vm.NewVideoView();
-    const auto first = vm.NewListener();
-    const auto second = vm.NewListener();
-    constexpr auto descriptor =
-        "(Landroid/media/MediaPlayer$OnErrorListener;)V";
-    vm.CallOn(view, "setOnErrorListener", descriptor, {VmValue::Ref(first)});
-    CHECK(vm.context->video_errors.at(view.Value()) == first);
-    vm.CallOn(view, "setOnErrorListener", descriptor, {VmValue::Ref(second)});
-    CHECK(vm.context->video_errors.at(view.Value()) == second);
-    vm.CallOn(view, "setOnErrorListener", descriptor,
-              {VmValue::Ref(VmObjectRef{})});
-    CHECK_FALSE(vm.context->video_errors.contains(view.Value()));
+    const auto listener = vm.NewListener();
+    vm.CallOn(view, "setOnErrorListener", "(Landroid/media/MediaPlayer$OnErrorListener;)V", {VmValue::Ref(listener)});
+    vm.CallOn(view, "setVideoPath", "(Ljava/lang/String;)V", {VmValue::Ref(vm.interpreter.NewStringUtf8("/sdcard/missing.mp4"))});
+    CHECK(vm.Pump() == 0U);
+    CHECK(vm.Errors() == 1);
+    vm.CallOn(view, "setOnErrorListener", "(Landroid/media/MediaPlayer$OnErrorListener;)V", {VmValue::Ref(VmObjectRef{})});
+    vm.CallOn(view, "setVideoPath", "(Ljava/lang/String;)V", {VmValue::Ref(vm.interpreter.NewStringUtf8("/sdcard/missing.mp4"))});
+    const auto error = PumpVideoViews(vm.interpreter, *vm.context, {});
+    REQUIRE(error.has_value());
+    CHECK(error->find("video error was not handled") != std::string::npos);
+    CHECK(vm.Completions() == 0);
 }
 
 TEST_CASE("MediaPlayer accepts error and prepared listeners and resets") {
     VideoVm vm(FakeFactory());
-    ogplay::audio::EncodedMusicMixer music;
-    vm.context->encoded_music = &music;
-    VmThreadRuntime threads(vm.interpreter);
-    vm.context->threads = &threads;
-    RegisterAndroidSchedulerStateTable(vm.interpreter, vm.context);
-    const auto looper =
-        vm.linker.ResolveDescriptor("Landroid/os/Looper;");
-    const auto prepare = vm.linker.FindDirectMethod(
-        looper, "prepareMainLooper", "()V");
-    REQUIRE(prepare.has_value());
-    const auto prepared = vm.interpreter.Call(*prepare, {});
-    REQUIRE_MESSAGE(!prepared.exception.IsValid(), prepared.exception_message);
     const auto player =
         vm.interpreter.NewIntrinsicInstance("Landroid/media/MediaPlayer;");
     const auto klass =
@@ -420,7 +509,6 @@ TEST_CASE("MediaPlayer accepts error and prepared listeners and resets") {
     vm.CallOn(player, "reset", "()V");
     CHECK(vm.CallOn(player, "isPlaying", "()Z").AsInt() == 0);
     ShutdownAndroidScheduler(*vm.context);
-    threads.Shutdown();
 }
 
 TEST_CASE("WifiInfo without a connection does not invent a MAC address") {
@@ -535,6 +623,7 @@ TEST_CASE("AnyVideoPlaying reports only actively playing views") {
     const auto view = vm.NewVideoView();
     vm.CallOn(view, "setVideoPath", "(Ljava/lang/String;)V",
               {VmValue::Ref(vm.interpreter.NewStringUtf8(kGuestVideoPath))});
+    static_cast<void>(vm.Pump());
     CHECK_FALSE(AnyVideoPlaying(*vm.context));
     vm.CallOn(view, "start", "()V");
     CHECK(AnyVideoPlaying(*vm.context));
@@ -552,6 +641,7 @@ TEST_CASE("video audio mixes into the stereo output with resampling") {
     const auto view = vm.NewVideoView();
     vm.CallOn(view, "setVideoPath", "(Ljava/lang/String;)V",
               {VmValue::Ref(vm.interpreter.NewStringUtf8(kGuestVideoPath))});
+    static_cast<void>(vm.Pump());
     vm.CallOn(view, "start", "()V");
 
     std::vector<std::int16_t> buffer(16U, 100);
@@ -569,6 +659,7 @@ TEST_CASE("video audio resampling stays continuous across pump batches") {
     const auto view = vm.NewVideoView();
     vm.CallOn(view, "setVideoPath", "(Ljava/lang/String;)V",
               {VmValue::Ref(vm.interpreter.NewStringUtf8(kGuestVideoPath))});
+    static_cast<void>(vm.Pump());
     vm.CallOn(view, "start", "()V");
 
     std::vector<std::int16_t> first(6U, 0);
@@ -584,6 +675,7 @@ TEST_CASE("video audio downsampling skips unread source frames across 1-frame pu
     const auto view = vm.NewVideoView();
     vm.CallOn(view, "setVideoPath", "(Ljava/lang/String;)V",
               {VmValue::Ref(vm.interpreter.NewStringUtf8(kGuestVideoPath))});
+    static_cast<void>(vm.Pump());
     vm.CallOn(view, "start", "()V");
 
     std::vector<std::int16_t> first(2U, 0);
@@ -599,6 +691,7 @@ TEST_CASE("paused, stopped and audioless videos contribute silence") {
     const auto view = vm.NewVideoView();
     vm.CallOn(view, "setVideoPath", "(Ljava/lang/String;)V",
               {VmValue::Ref(vm.interpreter.NewStringUtf8(kGuestVideoPath))});
+    static_cast<void>(vm.Pump());
     std::vector<std::int16_t> buffer(8U, 0);
     // Not started yet.
     CHECK(MixVideoPcmIntoStereo(*vm.context, buffer, 16000U) == 0U);
@@ -614,6 +707,7 @@ TEST_CASE("paused, stopped and audioless videos contribute silence") {
     silent.CallOn(silent_view, "setVideoPath", "(Ljava/lang/String;)V",
                   {VmValue::Ref(
                       silent.interpreter.NewStringUtf8(kGuestVideoPath))});
+    static_cast<void>(silent.Pump());
     silent.CallOn(silent_view, "start", "()V");
     CHECK(MixVideoPcmIntoStereo(*silent.context, buffer, 16000U) == 0U);
 }
@@ -624,8 +718,10 @@ TEST_CASE("two playing VideoViews mix into one stereo buffer") {
     const auto second = vm.NewVideoView();
     vm.CallOn(first, "setVideoPath", "(Ljava/lang/String;)V",
               {VmValue::Ref(vm.interpreter.NewStringUtf8(kGuestVideoPath))});
+    static_cast<void>(vm.Pump());
     vm.CallOn(second, "setVideoPath", "(Ljava/lang/String;)V",
               {VmValue::Ref(vm.interpreter.NewStringUtf8(kGuestVideoPath))});
+    static_cast<void>(vm.Pump());
     vm.CallOn(first, "start", "()V");
     vm.CallOn(second, "start", "()V");
     std::vector<std::int16_t> buffer(4U, 0);
@@ -637,6 +733,7 @@ TEST_CASE("videoview seekTo resets the PCM cursor") {
     const auto view = vm.NewVideoView();
     vm.CallOn(view, "setVideoPath", "(Ljava/lang/String;)V",
               {VmValue::Ref(vm.interpreter.NewStringUtf8(kGuestVideoPath))});
+    static_cast<void>(vm.Pump());
     vm.CallOn(view, "start", "()V");
     std::vector<std::int16_t> first(2U, 0);
     CHECK(MixVideoPcmIntoStereo(*vm.context, first, 8000U) == 1U);
@@ -646,19 +743,245 @@ TEST_CASE("videoview seekTo resets the PCM cursor") {
     CHECK(again == first);
 }
 
-TEST_CASE("videoview missing file completion is deferred to the video pump") {
+TEST_CASE("videoview missing file dispatches error once") {
     VideoVm vm(FakeFactory());
     const auto view = vm.NewVideoView();
     const auto listener = vm.NewListener();
-    vm.CallOn(view, "setOnCompletionListener",
-              "(Landroid/media/MediaPlayer$OnCompletionListener;)V",
-              {VmValue::Ref(listener)});
-    vm.CallOn(view, "setVideoPath", "(Ljava/lang/String;)V",
-              {VmValue::Ref(
-                  vm.interpreter.NewStringUtf8("/sdcard/missing.mp4"))});
+    vm.CallOn(view, "setOnErrorListener", "(Landroid/media/MediaPlayer$OnErrorListener;)V", {VmValue::Ref(listener)});
+    vm.CallOn(view, "setVideoPath", "(Ljava/lang/String;)V", {VmValue::Ref(vm.interpreter.NewStringUtf8("/sdcard/missing.mp4"))});
     vm.CallOn(view, "start", "()V");
+    CHECK(vm.Errors() == 0);
+    CHECK(vm.Pump() == 0U);
+    CHECK(vm.Errors() == 1);
+    CHECK(vm.Pump() == 0U);
     CHECK(vm.Completions() == 0);
-    CHECK(vm.Pump() == 0U);
+}
+
+TEST_CASE("DVM216 VideoView prepares asynchronously with the same controllable player") {
+    VideoVm vm(FakeAudioFactory(8000U, 2U));
+    const auto view = vm.NewVideoView();
+    const auto listener = vm.NewListener();
+    vm.CallOn(view, "setOnPreparedListener", "(Landroid/media/MediaPlayer$OnPreparedListener;)V", {VmValue::Ref(listener)});
+    vm.CallOn(view, "setOnCompletionListener", "(Landroid/media/MediaPlayer$OnCompletionListener;)V", {VmValue::Ref(listener)});
+    vm.interpreter.SetStaticFieldBits("LVideoListener;", "volumeOnPrepared", "Z", 1);
+    vm.CallOn(view, "setVideoPath", "(Ljava/lang/String;)V", {VmValue::Ref(vm.interpreter.NewStringUtf8(kGuestVideoPath))});
+    CHECK(vm.Prepared() == 0);
+    CHECK(vm.CallOn(view, "getDuration", "()I").AsInt() == -1);
+    vm.CallOn(view, "seekTo", "(I)V", {VmValue::Int(100)});
+    vm.CallOn(view, "start", "()V");
+    CHECK_FALSE(AnyVideoPlaying(*vm.context));
+    CHECK(vm.Pump() == 1U);
+    CHECK(vm.Prepared() == 1);
+    const auto player = vm.Player();
+    REQUIRE(player.IsValid());
+    CHECK(vm.CallOn(player, "getCurrentPosition", "()I").AsInt() == 100);
+    CHECK(vm.CallOn(player, "getVideoWidth", "()I").AsInt() == 8);
+    CHECK(vm.context->video_views.at(view.Value()).left_volume == 0.5F);
+    CHECK(vm.context->video_views.at(view.Value()).right_volume == 0.25F);
+    std::vector<std::int16_t> samples(4, 0);
+    CHECK(MixVideoPcmIntoStereo(*vm.context, samples, 8000U) == 1U);
+    // Fake audio cursor is 800 frames after seek; real per-instance gains apply.
+    CHECK(samples == std::vector<std::int16_t>{400, 200, 401, 200});
+    const auto origin = vm.context->uptime_millis.load();
+    vm.context->uptime_millis = origin + 900;
+    static_cast<void>(vm.Pump());
+    CHECK(vm.Prepared() == 1);
     CHECK(vm.Completions() == 1);
+    CHECK(vm.Player("getCompletedPlayer") == player);
+    vm.CallOn(view, "stopPlayback", "()V");
+    CHECK(vm.context->media_players.empty());
+    CHECK(vm.context->video_views.empty());
+}
+
+TEST_CASE("DVM216 VideoView releases and replaces pending generations") {
+    VideoVm vm(FakeFactory());
+    const auto view = vm.NewVideoView();
+    const auto listener = vm.NewListener();
+    vm.CallOn(view, "setOnPreparedListener", "(Landroid/media/MediaPlayer$OnPreparedListener;)V", {VmValue::Ref(listener)});
+    const auto path = vm.interpreter.NewStringUtf8(kGuestVideoPath);
+    vm.CallOn(view, "setVideoPath", "(Ljava/lang/String;)V", {VmValue::Ref(path)});
+    vm.CallOn(view, "setVideoPath", "(Ljava/lang/String;)V", {VmValue::Ref(path)});
+    CHECK(vm.context->media_players.size() == 1U);
+    static_cast<void>(vm.Pump());
+    CHECK(vm.Prepared() == 1);
+    vm.CallOn(view, "resume", "()V");
+    vm.CallOn(view, "stopPlayback", "()V");
     CHECK(vm.Pump() == 0U);
+    CHECK(vm.Prepared() == 1);
+    CHECK(vm.context->media_players.empty());
+    vm.CallOn(view, "resume", "()V");
+    vm.interpreter.SetStaticFieldBits("LVideoListener;", "stopOnPrepared", "Z", 1);
+    vm.CallOn(view, "start", "()V");
+    CHECK(vm.Pump() == 0U); // callback releases the player before deferred start
+    CHECK(vm.Prepared() == 2);
+    CHECK(vm.context->video_views.empty());
+    CHECK(vm.context->media_players.empty());
+}
+
+TEST_CASE("DVM216 VideoView surface composition respects bounds visibility clip and onTop") {
+    VideoVm vm(FakeFactory());
+    const auto view = vm.NewVideoView();
+    vm.CallOn(view, "setVideoPath", "(Ljava/lang/String;)V", {VmValue::Ref(vm.interpreter.NewStringUtf8(kGuestVideoPath))});
+    vm.CallOn(view, "start", "()V");
+    static_cast<void>(vm.Pump());
+    const auto node = *FindViewUiNode(*vm.context, view.Value());
+    auto* state = vm.context->ui_tree.Get(node);
+    state->layout.width = {ui::SizeMode::Fixed, 16};
+    state->layout.height = {ui::SizeMode::Fixed, 8};
+    state->layout.margin.left = 4;
+    state->layout.margin.top = 2;
+    ui::LayoutUiTree(vm.context->ui_tree, {64, 32});
+    const auto original = std::vector<std::uint8_t>(64U * 32U * 4U, 123U);
+    auto canvas = original;
+    ComposeVideoViews(*vm.context, canvas, 64, 32, false);
+    CHECK(canvas[0] == 123);
+    const auto offset = (2U * 64U + 4U) * 4U;
+    CHECK(canvas[offset + 3] == 255);
+    CHECK(canvas[offset] != 123);
+    vm.CallOn(view, "setZOrderOnTop", "(Z)V", {VmValue::Int(1)});
+    canvas = original;
+    ComposeVideoViews(*vm.context, canvas, 64, 32, false);
+    CHECK(canvas == original);
+    ComposeVideoViews(*vm.context, canvas, 64, 32, true);
+    CHECK(canvas[offset + 3] == 255);
+    vm.context->ui_tree.Get(vm.context->ui_tree.Root())->padding.left = 10;
+    canvas = original;
+    ComposeVideoViews(*vm.context, canvas, 64, 32, true);
+    CHECK(canvas[offset] == 123);
+    state->visibility = ui::Visibility::Invisible;
+    canvas = original;
+    ComposeVideoViews(*vm.context, canvas, 64, 32, true);
+    CHECK(canvas == original);
+    vm.context->ui_tree.Detach(node);
+    static_cast<void>(vm.Pump());
+    CHECK(vm.context->video_views.empty());
+    CHECK(vm.context->media_players.empty());
+}
+
+TEST_CASE("DVM216 VideoView resource URIs retain a sealed APK range after AFD close") {
+    VideoVm vm(FakeFactory());
+    vm.context->package_name = "org.ogplay.video";
+    const std::array payload{std::byte{'v'}, std::byte{'i'}, std::byte{'d'}, std::byte{'0'}};
+    vm.context->apk_bytes = MakeStoredZip("res/raw/movie.mp4", payload);
+    vm.context->archive = ogplay::loader::ParseApkArchive(vm.context->apk_bytes);
+    vm.context->arsc.entries.push_back({.resource_id = 0x7f040001U, .type_name = "raw",
+        .entry_name = "movie", .string_value = "res/raw/movie.mp4", .value_type = 3});
+    std::shared_ptr<const ogplay::video::VideoDataSource> retained;
+    vm.context->video_source_player_factory = [&](auto source) {
+        retained = source;
+        return FakeFactory()({});
+    };
+    const auto view = vm.NewVideoView();
+    const auto listener = vm.NewListener();
+    vm.CallOn(view, "setOnPreparedListener", "(Landroid/media/MediaPlayer$OnPreparedListener;)V", {VmValue::Ref(listener)});
+    for (const auto text : {"android.resource://org.ogplay.video/raw/movie", "android.resource://org.ogplay.video/2130968577"}) {
+        const auto owner = vm.linker.ResolveDescriptor("Landroid/net/Uri;");
+        const auto parse = vm.linker.FindDirectMethod(owner, "parse", "(Ljava/lang/String;)Landroid/net/Uri;");
+        REQUIRE(parse.has_value());
+        const auto result = vm.interpreter.Call(*parse, std::array{VmValue::Ref(vm.interpreter.NewStringUtf8(text))});
+        REQUIRE_MESSAGE(!result.exception.IsValid(), result.exception_message);
+        vm.CallOn(view, "setVideoURI", "(Landroid/net/Uri;)V", {result.value});
+        static_cast<void>(vm.Pump());
+        REQUIRE(retained != nullptr);
+        CHECK(retained->Size() == payload.size());
+        std::array<std::byte, 8> read{};
+        CHECK(retained->ReadAt(0, read) == payload.size());
+        CHECK(std::equal(payload.begin(), payload.end(), read.begin()));
+        CHECK(retained->ReadAt(payload.size(), read) == 0U);
+        CHECK(vm.CallOn(view, "getDuration", "()I").AsInt() == 1000);
+    }
+    CHECK(vm.Prepared() == 2);
+    vm.CallOn(view, "stopPlayback", "()V");
+    retained.reset();
+    CHECK(vm.context->video_views.empty());
+}
+
+TEST_CASE("DVM216 VideoView owners and Java listeners survive GC then release backend state") {
+    VideoVm vm(FakeFactory());
+    const auto view = vm.NewVideoView();
+    const auto listener = vm.NewListener();
+    vm.CallOn(view, "setOnCompletionListener", "(Landroid/media/MediaPlayer$OnCompletionListener;)V", {VmValue::Ref(listener)});
+    vm.CallOn(view, "setVideoPath", "(Ljava/lang/String;)V", {VmValue::Ref(vm.interpreter.NewStringUtf8(kGuestVideoPath))});
+    static_cast<void>(vm.interpreter.CollectGarbage("video-prepared-owner"));
+    vm.CallOn(view, "start", "()V");
+    static_cast<void>(vm.Pump());
+    vm.context->uptime_millis += 1000;
+    static_cast<void>(vm.Pump());
+    CHECK(vm.Completions() == 1);
+    // Remove the fixture's static callback identity and all UI session roots.
+    vm.interpreter.SetStaticFieldBits("LVideoListener;", "completedPlayer", "Landroid/media/MediaPlayer;", 0);
+    const auto node = *FindViewUiNode(*vm.context, view.Value());
+    vm.context->ui_tree.Detach(node);
+    vm.context->ui_node_to_object.erase(node);
+    static_cast<void>(vm.interpreter.CollectGarbage("video-unreachable-owner"));
+    CHECK(vm.context->video_views.empty());
+    CHECK(vm.context->media_players.empty());
+}
+
+TEST_CASE("DVM216 local video event protocol runs in both interpreter backends") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        CAPTURE(backend);
+        InterpreterConfig config;
+        config.backend = backend;
+        VideoVm vm(FakeFactory(), config);
+        const auto view = vm.NewVideoView();
+        const auto listener = vm.NewListener();
+        vm.CallOn(view, "setOnPreparedListener", "(Landroid/media/MediaPlayer$OnPreparedListener;)V", {VmValue::Ref(listener)});
+        vm.CallOn(view, "setOnErrorListener", "(Landroid/media/MediaPlayer$OnErrorListener;)V", {VmValue::Ref(listener)});
+        vm.CallOn(view, "setVideoPath", "(Ljava/lang/String;)V", {VmValue::Ref(vm.interpreter.NewStringUtf8("file:///sdcard/short-mp4v-aac.mp4"))});
+        CHECK(vm.Prepared() == 0);
+        vm.CallOn(view, "start", "()V");
+        CHECK(vm.Pump() == 1U);
+        CHECK(vm.Prepared() == 1);
+        CHECK(vm.CallOn(vm.Player(), "isPlaying", "()Z").AsInt() == 1);
+        vm.CallOn(view, "setVideoPath", "(Ljava/lang/String;)V", {VmValue::Ref(vm.interpreter.NewStringUtf8("https://invalid.example/movie.mp4"))});
+        CHECK(vm.Errors() == 0);
+        CHECK(vm.Pump() == 0U);
+        CHECK(vm.Errors() == 1);
+        CHECK(vm.Completions() == 0);
+        const auto gaps = vm.ledger.Unimplemented();
+        CHECK(std::any_of(gaps.begin(), gaps.end(), [](const auto& gap) { return gap.id == "android.video.uri_scheme"; }));
+        vm.CallOn(view, "stopPlayback", "()V");
+        CHECK(vm.context->video_views.empty());
+    }
+}
+
+TEST_CASE("DVM216 decoder and audio failures dispatch error through the main video pump") {
+    class FailingPlayer final : public ogplay::video::VideoPlayer {
+    public:
+        explicit FailingPlayer(bool fail_frames) : frames_(fail_frames),
+            backing_({8, 4, 1000, 8000, 1}, 10) {}
+        const ogplay::video::VideoMetadata& Metadata() const noexcept override { return backing_.Metadata(); }
+        std::optional<ogplay::video::VideoFrame> TakeFrame(std::int64_t position) override {
+            if (frames_) throw ogplay::video::VideoPlayerError("frame decode failed");
+            return backing_.TakeFrame(position);
+        }
+        std::size_t ReadPcm(std::span<std::int16_t>) override { throw ogplay::video::VideoPlayerError("audio decode failed"); }
+        void SeekTo(std::int64_t position) override { backing_.SeekTo(position); }
+    private:
+        bool frames_;
+        ogplay::video::FakeVideoPlayer backing_;
+    };
+    for (const bool frame_failure : {true, false}) {
+        VideoVm vm([frame_failure](const std::filesystem::path&) {
+            return std::make_unique<FailingPlayer>(frame_failure);
+        });
+        const auto view = vm.NewVideoView();
+        const auto listener = vm.NewListener();
+        vm.CallOn(view, "setOnErrorListener", "(Landroid/media/MediaPlayer$OnErrorListener;)V", {VmValue::Ref(listener)});
+        vm.CallOn(view, "setVideoPath", "(Ljava/lang/String;)V", {VmValue::Ref(vm.interpreter.NewStringUtf8(kGuestVideoPath))});
+        vm.CallOn(view, "start", "()V");
+        CHECK(vm.Pump() == (frame_failure ? 0U : 1U));
+        if (!frame_failure) {
+            std::vector<std::int16_t> samples(4, 0);
+            CHECK(MixVideoPcmIntoStereo(*vm.context, samples, 8000U) == 0U);
+            CHECK(vm.Errors() == 0); // the audio worker never invokes Java
+            CHECK(vm.Pump() == 0U);
+        }
+        CHECK(vm.Errors() == 1);
+        CHECK(vm.Pump() == 0U);
+        CHECK(vm.Errors() == 1);
+        CHECK(vm.Completions() == 0);
+        vm.CallOn(view, "stopPlayback", "()V");
+    }
 }

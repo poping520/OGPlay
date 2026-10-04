@@ -81,18 +81,18 @@
           "src/guest/crypto/java",
           "src/guest/framework/java"
         ],
-        "source_sha256": "ed7dbef0986107b56486f4e6039331e5d0c19acd89428084139c07b93d205427",
+        "source_sha256": "08fcf5451a6322e3f8b1106f73c795609cd9375d23e5a35402cc4f6c2eb2bf4a",
         "javac": "17.0.18",
         "android_jar_sha256": "4032a201eeb1d0430c7d9f1075151dd280427de5ca9e36f734f464ab605cb690",
         "d8_sha256": "d9e6acde0cb6f2453d6835b52c31d2066054394fb79e91115dd4978bde6afd16"
       }
     ],
-    "size": 2810772,
-    "sha256": "b2e1a51d6200141e04b038e3cde6223750238671dea6a76dca9e007c9f948a78",
+    "size": 2815832,
+    "sha256": "96c11d508c490c8519f5e64b31f78b902489c4583b6861cde5f705b8e1936adf",
     "dex_entry": "classes.dex",
-    "dex_size": 2806152,
-    "dex_sha256": "af8e931e2de87e2a14321d34e82cbcfe747f64bdf22628eb01ca5cc12223487a",
-    "class_count": 1874,
+    "dex_size": 2811212,
+    "dex_sha256": "3de0ecdf789a40acc0f71371c13653ec871764ab2914b5c6684e46fd9730956d",
+    "class_count": 1876,
     "selection_policy": "load-all",
     "notice": "notices/bootdex.jar.txt",
     "notice_sha256": "c5bf8c6efc379e6d5401a40fbf7810aedf9ee81dfa9f2deaa174faa97ded310a"

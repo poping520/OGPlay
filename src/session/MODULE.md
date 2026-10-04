@@ -213,3 +213,6 @@ DexActivityLifecycle 成功启动与恢复后向已连接 DiagnosticState 发布
 
 退出前记录并退役已失败调用的 root JNI 异常；本地服务在 scheduler 关闭前解绑。
 native 清理失败仍继续关闭进程和 surface；前端保留运行首错，独立报告清理错误。
+
+本地视频在最终 frame handoff 按 UiTree 的 SurfaceView 层事实合成（ADR-0094）；
+GLES/Canvas producer 活跃时视频泵不覆盖底图。纯视频窗口使用空软件底图触发统一合成。

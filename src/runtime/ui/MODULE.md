@@ -90,3 +90,6 @@ ImageView scale destination 与 CENTER_CROP exact pixel golden；另锁定 `clip
 DVM-120：内置字体 BOLD 以行像素并集加粗、ITALIC 按行右移，四种样式共用测量与绘制
 的 advance/边界；半透明加粗像素只混合一次。text_style 随 UiNode dirty 一起失效。
 不依赖系统字体或 Skia，不承诺 Android 字体像素一致性。
+
+SurfaceView onTop 为 UiNode 事实；视频像素由上层在 UiTree 可见、附着、布局、
+父裁剪及 alpha 边界内合成，onTop 决定在 UI overlay 前后呈现。UiTree 不依赖解码器。

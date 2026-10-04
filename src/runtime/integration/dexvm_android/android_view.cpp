@@ -992,6 +992,14 @@ Decl Declare_android_view_SurfaceView(const Context& context) {
             }
             return dx::VmValue::Ref(holder);
         });
+    builder.VirtualMethod("setZOrderOnTop", "(Z)V",
+        [context](dx::IntrinsicContext& call) {
+            const auto node = FindViewUiNode(*context, call.receiver.Value());
+            if (!node) throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "SurfaceView has no UI node"};
+            context->ui_tree.Get(*node)->surface_on_top = call.arguments[0].AsInt() != 0;
+            context->ui_tree.MarkDrawDirty(*node);
+            return dx::VmValue::Void();
+        });
     return std::move(builder).Build();
 }
 

@@ -76,6 +76,7 @@ struct DexActivityLifecycleBindings final {
         launcher_component_name; // Preserves manifest alias identity when present.
     // Owner-thread OS message pump only; must not reenter the guest lifecycle.
     std::function<void()> pump_host_events;
+    core::Logger* logger{};
 };
 
 class DexActivityLifecycleError final : public std::runtime_error {
@@ -167,6 +168,7 @@ private:
     bool gesture_touch_consumed_{};
     std::uint64_t deep_touch_handle_{};
     bool guest_finalized_{};
+    bool stop_completed_{};
     // Renderer callbacks fire once when the interpreted glue registers a
     // renderer; installer phases run frames without one.
     bool renderer_ready_{};

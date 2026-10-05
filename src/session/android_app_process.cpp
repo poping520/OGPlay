@@ -303,13 +303,18 @@ public:
                 env.ExceptionClear(1);
             }
             std::exception_ptr failure;
-            try { bridge->Vm().ReleaseGuestNativeResources(true); }
+            try {
+                if (!session->NativeExitCode()) session->RunTeardownCleanup([this] {
+                    bridge->Vm().ReleaseGuestNativeResources(true);
+                });
+            }
             catch (const runtime::dexvm::VmJavaThrow& error) {
                 failure = std::make_exception_ptr(runtime::AndroidGuestProcessError(
                     "native cleanup failed: " + error.descriptor + ": " + error.message));
             } catch (...) { failure = std::current_exception(); }
             try {
-                if (context->native_activity) context->native_activity->Release();
+                if (context->native_activity && !session->NativeExitCode())
+                    session->RunTeardownCleanup([this] { context->native_activity->Release(); });
             } catch (...) { if (!failure) failure = std::current_exception(); }
             try { session->Stop(); }
             catch (...) { if (!failure) failure = std::current_exception(); }
@@ -322,6 +327,7 @@ public:
             session->ReleaseManagedSurfaceFromCallingThread();
         };
         bindings.diagnostics = request.diagnostics;
+        bindings.logger = request.logger;
         bindings.pump_host_events = std::move(host.pump_host_events);
         lifecycle =
             std::make_unique<DexActivityLifecycle>(std::move(bindings));

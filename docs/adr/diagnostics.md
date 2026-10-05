@@ -8,6 +8,7 @@
 - [ADR-0024 · 生命周期首帧使用可观测线程静默握手](#adr-0024)
 - [ADR-0025 · teardown 使用单向图形退役与独立取消事实](#adr-0025)
 - [ADR-0026 · 停滞诊断使用有界部分快照与外部宿主栈](#adr-0026)
+- [ADR-0095 · 退出清理准入与 native 退出控制](#adr-0095)
 
 <a id="adr-0006"></a>
 
@@ -192,3 +193,39 @@ Futex 只能报告等待集合和 wake 历史；没有 owner edge 时不得生�
 停滞现场可以在不重新插桩、不依赖 SDL 主循环的条件下取得，但各 section 不是全局原子
 时刻。输出必须携带 schema、采样时间、generation 和 section 状态；自动预算只报警取证，
 不改变 ADR-0025 的退出取消语义。
+
+<a id="adr-0095"></a>
+
+## ADR-0095 · 退出清理准入与 native 退出控制
+
+- 状态：Accepted
+- 日期：2026-10-05
+- Supersedes：ADR-0025 中取消标志无差别中断新发起退出 JNI 回调的条款。
+- 关联：[DVM-218](../tasks/dexvm/DVM-218.md)
+
+### 背景
+
+全局 teardown 标志误取消 onPause 的 native 调用，首错被吞掉且 onDestroy 未执行，
+未完成清理即进入 DSO fini，随后读取无效对象。宿主取消与 libc exit 也未区分。
+
+### 决定
+
+BeginTeardown 保持单向封闭图形、唤醒阻塞及取消普通 renewable 帧。进程创建 owner
+可在 teardown 阶段通过显式同步 scope 执行根线程清理，重入继承准入；共享有限 tick
+预算不因 advanced 边界续期，不清取消标志、不复活线程、不允许新增线程或模块。
+生命周期各回调独立尝试，保留首错；已发生 guest exit 时不再执行 guest 回调。
+onPause/surfaceDestroyed/onStop 完成后，先封闭 scheduler、join native 与 Java worker，
+再执行 onDestroy，因为该回调本身可能进入 libc 全局析构。native drain 不释放仍由
+Java worker 使用的 CPU/TLS；其 backing 留到 VM join 后的 Stop 回收。
+
+原生 exit/exit_group 以携带来源及退出码的控制展开传播，区别于 host cancel、signal
+和 CPU 故障；libc 自身执行的析构不替换为宿主算法。根线程退出后不再次执行 DSO fini
+或 JNI 资源清理。未退出且清理成功的宿主 Stop 保留有序卸载；清理失败时仅取消并回收
+宿主资源，报告原错，不进入状态已不可靠的 DSO 析构。Stop 即使失败也完成 join、JNI
+detach、monitor shutdown 并保持幂等；不跳过单个 guest 析构器或吞掉 memory fault。
+
+### 边界
+
+不提供完整 Android 进程退出或 non-daemon 自动退出；不抢占 EGL owner 的 currency。
+有限 tick 预算沿用统一 CPU 预算，宿主阻塞仍通过既有 drain/wake 协议退出。跨平台
+实现共用状态协议，实跑证据分别记录。

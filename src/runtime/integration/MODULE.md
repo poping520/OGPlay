@@ -139,7 +139,10 @@ Android API 的详细行为以 [dexvm_android](dexvm_android/MODULE.md)为准；
   native 顺序为 child 退出/临时唤醒 → join → guest fini/destructor → root JNI detach →
   永久 JNI monitor shutdown；finalizer 期间 MonitorEnter 必须可用，Stop 幂等。
 - BeginTeardown 是不可逆、幂等的 process 退出门：封闭 EGL/GLES，取消 renewable JNI frame，
-  中断当前及后续阻塞；既有 slice/boundary 安全点观察取消，非 renewable finalizer 不变。
+  中断当前及后续阻塞；既有 slice/boundary 安全点观察取消。RunTeardownCleanup 仅
+  允许创建 owner 在退出阶段准入 live root 的同步清理，重入共享有限且不可续期的 tick
+  预算；新增 Java/native 线程或模块拒绝。普通取消以控制展开停止相应线程，不能发布
+  为异步进程故障。清理失败不再进入 DSO fini；原生根 exit 后也不重复 guest 析构。
   生命周期在 Java thread join 前再次中断，覆盖回调中新建的 futex wait。
 - Runtime 的 hook 与 exit/halt 普通协议归 BootDex；平台只绑定 nativeExit，发布 session
   退出标记并调用 VM.Exit，保留退出码、非 Java 展开，不从 worker 同步 Stop/join。

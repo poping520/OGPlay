@@ -1158,6 +1158,17 @@ public:
                 frame.target = *target;
                 result = session->Invoke(frame);
             }
+        } catch (const A32GuestCallCancelled&) {
+            execution_lock.ReacquireAfterBlocking(execution_depth);
+            // Native-attached JNI contexts must unwind all the way to the
+            // clone runner. Java-owned contexts use the VM stop protocol.
+            if (native_attachments.contains(process_thread)) throw;
+            throw dx::DexVmError(dx::DexVmErrorReason::thread_stopped,
+                                 "guest native frame cancelled for teardown");
+        } catch (const A32GuestCallExit&) {
+            execution_lock.ReacquireAfterBlocking(execution_depth);
+            if (const auto code = session->NativeExitCode()) vm->Exit(*code);
+            throw;
         } catch (const AndroidGuestCallSessionError& error) {
             execution_lock.ReacquireAfterBlocking(execution_depth);
             std::string pending_details;
@@ -1591,7 +1602,7 @@ DexVmGuestBridge::~DexVmGuestBridge() {
         if (impl_->vm) ShutdownPendingIntents(*impl_->vm, *impl_->android_context);
     }
     ReleaseAndroidDatabaseResources(impl_->android_context);
-    if (impl_->vm) {
+    if (impl_->vm && impl_->session->Running() && !impl_->session->NativeExitCode()) {
         try { impl_->vm->ReleaseGuestNativeResources(true); }
         catch (const dx::VmJavaThrow& error) {
             if (impl_->logger) impl_->logger->Write(core::LogLevel::error,

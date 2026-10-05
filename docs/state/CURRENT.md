@@ -1,6 +1,6 @@
 # 当前状态
 
-更新：2026-10-04。
+更新：2026-10-05。
 
 本页只保留最新运行结果与未闭合边界。能力状态见 [capabilities.toml](../../capabilities.toml)，
 实现契约见各模块 MODULE；历史过程见 [任务总览](../tasks/README.md) 与
@@ -8,12 +8,12 @@
 
 ## 运行状态
 
-- **Tales From Deep Space 1.0.0**：VideoView 与 packed depth/stencil 已闭合，macOS
-  800×480/1280×720 菜单仍裁剪；BND-29 终止断言失败。
-  [DVM-217](../tasks/dexvm/DVM-217.md) AtomicFile/清理异常隔离回归通过。
-  1920×1080 原 APK 越过缺类/pending 首错，f=4077 首次读存档 ENOENT 后遇到
-  `GetArrayLength requires a valid reference`，退出 1；进程全关闭。证据 `.local/atomic-file-fix/`。
-  存档交互、Windows/Linux 未验收。
+- **Tales From Deep Space 1.0.0**：VideoView/packed depth/stencil 已闭合；macOS
+  800×480/1280×720 菜单裁剪，BND-29 终止断言失败。
+  [DVM-217](../tasks/dexvm/DVM-217.md)：1920×1080 存档重载恢复关卡通过。
+  [DVM-218](../tasks/dexvm/DVM-218.md) 已修复取消误杀/首错遮蔽，先 join 再 onDestroy。
+  退出仍读 0x315f0001：池先释放，布局后遍历，仍在办。
+  证据 `.local/tales-exit-fix/`；进程已关闭，title gate 未验收。
 
 - **PVZ（com.popcap.pvz_na）**：[DVM-205](../tasks/dexvm/DVM-205.md) 已修复 DEX
   注解预算误拒绝，使用共享解析缓存和分层资源预算。macOS Release 定向回归通过；

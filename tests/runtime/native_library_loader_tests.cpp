@@ -2171,6 +2171,29 @@ TEST_CASE("DVM-89 initial traversal without workers keeps focus deferred") {
     static_cast<void>(fixture.app->Stop());
 }
 
+TEST_CASE("DVM-218 lifecycle preserves onPause failure and attempts later cleanup") {
+    using namespace ogplay;
+    using runtime::dexvm::InterpreterBackend;
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        OrchestratedApp fixture("fixture.TeardownFailureActivity", true, false,
+                                {}, {}, true, backend);
+        fixture.app->StartApplication();
+        REQUIRE(fixture.app->StartLauncherActivity().state == session::LifecycleRunState::running);
+        try {
+            static_cast<void>(fixture.app->Stop());
+            FAIL("onPause failure was swallowed");
+        } catch (const std::exception& error) {
+            const std::string message = error.what();
+            CHECK(message.find("pause-primary") != std::string::npos);
+            CHECK(message.find("destroy-secondary") == std::string::npos);
+        }
+        CHECK(fixture.CallStaticInt("Lfixture/TeardownFailureActivity;", "getStage") == 3);
+        CHECK_FALSE(fixture.app->NativeProcess().Running());
+        CHECK_FALSE(fixture.app->NativeProcess().Environment().IsThreadAttached(1));
+        CHECK_NOTHROW(static_cast<void>(fixture.app->Stop()));
+    }
+}
+
 TEST_CASE("DVM-125 lifecycle owns coherent Activity and View window focus") {
     using namespace ogplay;
     using runtime::dexvm::InterpreterBackend;

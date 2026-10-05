@@ -512,7 +512,10 @@ TEST_CASE("guest exit syscall report keeps syscall and call-site evidence") {
             fixture.stack.Add(fixture.memory.PageSize()), fixture.code.Add(64),
             4U));
         FAIL("exit syscall unexpectedly returned to the guest caller");
-    } catch (const ogplay::runtime::A32GuestCallError& error) {
+    } catch (const ogplay::runtime::A32GuestCallExit& error) {
+        CHECK(error.State().exit_code == 23);
+        CHECK(error.State().exit_request.origin ==
+              ogplay::runtime::GuestThreadExitOrigin::syscall_exit);
         const std::string message = error.what();
         INFO(message);
         CHECK(message.find("origin=syscall_exit code=23") != std::string::npos);

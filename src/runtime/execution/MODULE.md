@@ -54,3 +54,8 @@ JNI、framework 或 integration。
 ## 测试
 
 对应 guest lifecycle、guest thread runner 和 clone runtime 测试。
+
+- 原生 exit/exit_group 从 A32 调用以 A32GuestCallExit 携带真实 lifecycle 来源及代码
+  展开；host cancel/signal/CPU fault 不转换为正常 native 返回。A32GuestCallCancelled
+  从嵌套 JNI 展开到匹配 clone，只终止该线程并完成 clear_child_tid/wake；非匹配线程
+  或真实异常仍报告故障。clone 准入受进程单向 teardown 门约束，拒绝返回 EAGAIN。

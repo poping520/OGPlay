@@ -1374,109 +1374,109 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
     }
 
     LifecycleFrameState DexActivityLifecycle::Stop() {
-        if (state_ == LifecycleRunState::stopped) return State();
-        const auto phase = [this](const std::string_view name,
+        if (state_ == LifecycleRunState::stopped || stop_completed_) return State();
+        std::string_view current_phase;
+        const auto phase = [this, &current_phase](const std::string_view name,
                                   const bool active = true) {
-            if (bindings_.diagnostics) {
+            current_phase = name;
+            if (bindings_.diagnostics)
                 bindings_.diagnostics->SetLifecyclePhase(name, active);
+        };
+        auto& session = bindings_.bridge->Session();
+        const auto live = [&] {
+            return !bindings_.bridge->Vm().ExitCode() && !session.NativeExitCode();
+        };
+        std::exception_ptr first_failure;
+        const auto record_failure = [&] {
+            state_ = LifecycleRunState::failed;
+            if (!first_failure) {
+                first_failure = std::current_exception();
+            } else if (bindings_.logger) {
+                try { throw; }
+                catch (const dx::VmJavaThrow& error) {
+                    bindings_.logger->Write(core::LogLevel::error, "session.teardown.secondary",
+                        error.descriptor + ": " + error.message, {},
+                        {{"phase", std::string(current_phase)}});
+                } catch (const std::exception& error) {
+                    bindings_.logger->Write(core::LogLevel::error, "session.teardown.secondary",
+                        error.what(), {}, {{"phase", std::string(current_phase)}});
+                } catch (...) {
+                    bindings_.logger->Write(core::LogLevel::error, "session.teardown.secondary",
+                        "non-standard cleanup exception", {}, {{"phase", std::string(current_phase)}});
+                }
+            }
+        };
+        const auto attempt = [&](const auto& action) {
+            try { action(); }
+            catch (...) {
+                record_failure();
+            }
+        };
+        const auto guest = [&](const auto& action, const bool admitted = true) {
+            if (!live()) return;
+            try {
+                if (admitted) session.RunTeardownCleanup(action);
+                else action();
+            } catch (...) {
+                if (live()) {
+                    record_failure();
+                }
             }
         };
         phase("teardown.begin");
-        const bool was_running = state_ == LifecycleRunState::running &&
-                                 !bindings_.bridge->Vm().ExitCode().has_value();
-        bool pause_delivered = false;
+        const bool was_running = state_ == LifecycleRunState::running && live();
+        bool pause_delivered{};
         if (was_running && !suspended_ && renderer_thread_) {
-            // onPause may queue a render-thread handshake and wait for it.
-            // Keep that thread available until the Activity callback returns.
+            // The intrinsic renderer must finish its pause handshake before join.
             pause_delivered = true;
-            try {
-                SetWindowFocus(false);
-                CallActivity("onPause", "()V", {});
-            } catch (...) { state_ = LifecycleRunState::failed; }
+            guest([&] { SetWindowFocus(false); }, false);
+            guest([&] { CallActivity("onPause", "()V", {}); }, false);
         }
-        // The intrinsic driver has completed its pause handshake; release EGL
-        // on its owner before graphics retirement. Guest-owned drivers retain
-        // the cancellation-before-pause protocol for their blocking handshakes.
-        try {
-            StopRendererThread();
-        } catch (...) {
-            state_ = LifecycleRunState::failed;
-        }
+        attempt([&] { StopRendererThread(); });
         runtime::RetireGuestEglSurface(*bindings_.context);
-        bindings_.bridge->Session().BeginTeardown();
+        session.BeginTeardown();
         phase("teardown.guest_callbacks");
-        try {
-            if (was_running && !suspended_ && !pause_delivered) {
-                SetWindowFocus(false);
-                CallActivity("onPause", "()V", {});
-            }
-            if (was_running) {
-                const auto error = runtime::RetireSurfaceHolderGeneration(
-                    bindings_.bridge->Vm(), *bindings_.context);
-                if (error.has_value()) state_ = LifecycleRunState::failed;
-            }
-            if (was_running) {
-                CallActivity("onStop", "()V", {});
-                CallActivity("onDestroy", "()V", {});
-            }
-        } catch (const std::exception&) {
-            // Teardown continues; the guest still gets finalized below.
-            if (!bindings_.bridge->Vm().ExitCode().has_value())
-                state_ = LifecycleRunState::failed;
+        if (was_running && !suspended_ && !pause_delivered) {
+            guest([&] { SetWindowFocus(false); });
+            guest([&] { CallActivity("onPause", "()V", {}); });
         }
-        // 04 §2 step 10: guest Java threads are interrupted and joined before
-        // the native side is finalized, so no interpreted frame can still be
-        // running when the object world is torn down.
-        std::exception_ptr persistence_failure;
-        if (egl_pacer_attached_) {
-            runtime::ShutdownEglSwapPacer(*bindings_.context);
+        if (was_running) {
+            guest([&] {
+                if (const auto error = runtime::RetireSurfaceHolderGeneration(
+                        bindings_.bridge->Vm(), *bindings_.context))
+                    throw std::runtime_error(*error);
+            });
+            guest([&] { CallActivity("onStop", "()V", {}); });
         }
-        try { runtime::ShutdownLocalServices(bindings_.bridge->Vm(), *bindings_.context); }
-        catch (const dx::VmJavaThrow& error) {
-            state_ = LifecycleRunState::failed;
-            if (!persistence_failure) persistence_failure = std::make_exception_ptr(
-                std::runtime_error("service cleanup failed: " + error.descriptor + ": " + error.message));
-        } catch (...) {
-            state_ = LifecycleRunState::failed;
-            if (!persistence_failure) persistence_failure = std::current_exception();
-        }
-        runtime::ShutdownPendingIntents(bindings_.bridge->Vm(), *bindings_.context);
+        if (egl_pacer_attached_) runtime::ShutdownEglSwapPacer(*bindings_.context);
+        guest([&] { runtime::ShutdownLocalServices(bindings_.bridge->Vm(), *bindings_.context); });
+        attempt([&] { runtime::ShutdownPendingIntents(bindings_.bridge->Vm(), *bindings_.context); });
         phase("teardown.scheduler_shutdown");
-        runtime::ShutdownAndroidScheduler(*bindings_.context);
-        // A callback may have entered a new futex after BeginTeardown's first
-        // wake. Re-interrupt immediately before join so every waiter observes
-        // cancellation instead of making shutdown depend on a guest wake.
-        if (bindings_.interrupt_guest_waits) bindings_.interrupt_guest_waits();
+        attempt([&] { runtime::ShutdownAndroidScheduler(*bindings_.context); });
+        if (bindings_.interrupt_guest_waits) attempt(bindings_.interrupt_guest_waits);
         phase("teardown.thread_join");
-        bindings_.bridge->Threads().Shutdown();
+        attempt([&] { session.QuiesceNativeWorkers(); });
+        attempt([&] { bindings_.bridge->Threads().Shutdown(); });
+        // onDestroy may call libc exit, which runs global destructors before
+        // exit_group. All workers must be quiescent before entering it.
+        phase("teardown.destroy");
+        if (was_running) guest([&] { CallActivity("onDestroy", "()V", {}); });
         phase("teardown.persistence");
-        if (bindings_.flush_persistent_state) {
-            try {
-                bindings_.flush_persistent_state();
-            } catch (...) {
-                state_ = LifecycleRunState::failed;
-                persistence_failure = std::current_exception();
-            }
-        }
+        if (bindings_.flush_persistent_state) attempt(bindings_.flush_persistent_state);
         phase("teardown.guest_finalize");
         if (!guest_finalized_ && bindings_.finalize_guest) {
             guest_finalized_ = true;
-            try { bindings_.finalize_guest(); }
-            catch (...) {
-                state_ = LifecycleRunState::failed;
-                if (!persistence_failure) persistence_failure = std::current_exception();
-            }
+            attempt(bindings_.finalize_guest);
         }
         phase("teardown.surface_close");
         if (surface_open_ && bindings_.close_surface) {
-            bindings_.close_surface();
+            attempt(bindings_.close_surface);
             surface_open_ = false;
         }
         phase("teardown.complete", false);
-        if (persistence_failure) std::rethrow_exception(persistence_failure);
-        if (state_ != LifecycleRunState::failed) {
-            state_ = LifecycleRunState::stopped;
-        }
+        stop_completed_ = true;
+        if (state_ != LifecycleRunState::failed) state_ = LifecycleRunState::stopped;
+        if (first_failure) std::rethrow_exception(first_failure);
         return State();
     }
 

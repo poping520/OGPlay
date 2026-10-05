@@ -873,7 +873,7 @@ note = "历史 Profile invocation assembler 已由 ADR-0022/DVM-25 从生产代�
 [runtime.a32_guest_call_executor]
 status = "complete"
 test = "tests/runtime/guest_thread_runner_tests.cpp"
-note = "M5 WU-0236/0322/0325 以通用 AAPCS 执行器装入调用帧；长计算按 2000 万 tick 切片发布 observer，总预算与返回 trap 语义不变；WU-0338 在预算耗尽诊断中保留 consumed tick、PC 与 LR；DVM-89/ADR-0023 将 JNI native watchdog 从任意 handled 边界续期收紧为仅 observable advanced progress 续期，纯查询/EOF 空转保持预算约束，exit request 抢占不变"
+note = "M5 WU-0236/0322/0325 以通用 AAPCS 执行器装入调用帧；长计算按 2000 万 tick 切片发布 observer，总预算与返回 trap 语义不变；WU-0338 在预算耗尽诊断中保留 consumed tick、PC 与 LR；DVM-89/ADR-0023 将 JNI native watchdog 从任意 handled 边界续期收紧为仅 observable advanced progress 续期，纯查询/EOF 空转保持预算约束，exit request 抢占不变；DVM-218 原生 exit/exit_group 以携带 lifecycle 来源和代码的控制展开传播，host cancel 与 signal/CPU fault 保持区分，不伪造 native 返回"
 
 [runtime.jni_guest_trap_dispatch]
 status = "complete"
@@ -1117,8 +1117,8 @@ note = "M5 WU-0240 在执行前完整预检 Profile invocation 批次，再按�
 
 [runtime.android_guest_call_session]
 status = "complete"
-test = "tests/runtime/android_guest_call_session_tests.cpp"
-note = "M5 WU-0241/0313/0324 组合 Bionic guest process 与 Android HLE，接受 A32 frame、发布退出请求，并把显式 slice observer 传给每次 guest call；WU-0337 发布 wait interruption；M8 WU-0375 让 child 在首 slice 前/间响应 exit，session 全量 join 后才析构；DVM-89 将 API19 /proc/meminfo 改为显式 GuestProcFacts 注入及固定派生，默认字节不变、非法 facts 明确失败"
+test = "tests/runtime/android_guest_call_session_tests.cpp; tests/runtime/guest_clone_thread_runtime_tests.cpp; tests/runtime/native_library_loader_tests.cpp"
+note = "M5 WU-0241/0313/0324 组合 Bionic guest process 与 Android HLE，接受 A32 frame、发布退出请求，并把显式 slice observer 传给每次 guest call；WU-0337 发布 wait interruption；M8 WU-0375 让 child 在首 slice 前/间响应 exit，session 全量 join 后才析构；DVM-89 将 API19 /proc/meminfo 改为显式 GuestProcFacts 注入及固定派生，默认字节不变、非法 facts 明确失败；DVM-218/ADR-0095 提供 owner/root/阶段受检的有界清理 scope，重入共用不可续期 tick 预算；普通取消只停止相应线程，不发布为 async fault。新增线程/模块封闭；native worker 单独 quiesce 后仍允许根清理，Stop 即使 fini 失败也 detach/关闭且幂等；根原生退出后不重复 DSO fini。macOS 定向受检，完整退出对象生命周期及跨平台实跑未验收"
 
 [runtime.legacy_audio_track]
 status = "complete"
@@ -1728,7 +1728,7 @@ note = "DVM-15 严格 resources.arsc 读取：resid↔(type,name,文件路径)�
 [session.dex_activity_lifecycle]
 status = "complete"
 test = "Asphalt 5 exact dexvm title-flow gate 3/3; tests/session/lifecycle_tests.cpp; tests/runtime/native_library_loader_tests.cpp"
-note = "DVM-18 生命周期反转模板：实例化 launcher→<clinit>→onCreate/onStart/onResume→onSizeChanged→focus→onSurfaceCreated/Changed→逐帧 onDrawFrame→输入经 MotionEvent/onTouchEvent→suspend/resume→surfaceDestroyed/onStop/onDestroy 接存量 teardown 顺序；DVM-125 将窗口焦点收敛为 lifecycle 唯一事实，初始 onResume 为 false、Surface 后下一帧获焦，状态先于 Activity/attached View 虚回调发布并去重，Suspend/Resume、Activity 切换与 Stop 共用转换；DecorView/attached View 查询同步，detached View 与旧 Activity 为 false"
+note = "DVM-18 生命周期反转模板：实例化 launcher→<clinit>→onCreate/onStart/onResume→onSizeChanged→focus→onSurfaceCreated/Changed→逐帧 onDrawFrame→输入经 MotionEvent/onTouchEvent→suspend/resume→surfaceDestroyed/onStop/onDestroy 接存量 teardown 顺序；DVM-125 将窗口焦点收敛为 lifecycle 唯一事实，初始 onResume 为 false、Surface 后下一帧获焦，状态先于 Activity/attached View 虚回调发布并去重，Suspend/Resume、Activity 切换与 Stop 共用转换；DecorView/attached View 查询同步，detached View 与旧 Activity 为 false；DVM-218 将退出回调分阶段尝试并保留首错，secondary 错误独立日志；onStop 后先 join native/Java worker，再进入可能调用 libc exit 的 onDestroy。已退出 guest 不再执行 JNI/ELF 清理；原 APK 菜单可达，但其 exit 析构中的内存故障尚未闭合"
 
 [session.title_profile_v2]
 status = "complete"

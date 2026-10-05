@@ -1005,6 +1005,155 @@ TEST_CASE("Android guest process teardown interrupts blocked AudioTrack write") 
     process->Stop();
 }
 
+// Runnable RX code and a deliberately failing fini prove that cancellation
+// and process exit are not treated as a successful DSO unload.
+TEST_CASE("DVM-218 teardown cleanup is owner scoped and cumulatively bounded") {
+    using namespace ogplay;
+    auto libc = LibdlDefaultLibcElf();
+    Put32(libc, 0x130, loader::kElfDynamicFini);
+    Put32(libc, 0x134, 0x11040U);
+    Put32(libc, 0x138, 0U);
+    Put32(libc, 100, 64U);
+    Put32(libc, 104, 64U);
+    Put32(libc, 0x1000, 0xe3a07014U); // getpid; svc; bx lr
+    Put32(libc, 0x1004, 0xef000000U);
+    Put32(libc, 0x1008, 0xe12fff1eU);
+    Put32(libc, 0x1040, 0xe5900000U); // fini reads null if attempted
+    const loader::Elf32ModuleInput module{
+        "libc.so", libc, memory::GuestAddress{0x10000000U}};
+    runtime::VirtualFileSystem filesystem;
+    auto process = runtime::AndroidGuestProcess::Start(
+        {19, std::span{&module, 1}, {}, 64, 36, 40, 1, &filesystem, {}});
+    const runtime::A32GuestCallFrame frame{
+        memory::GuestAddress{0x10011000U}, {}, {}, 1, true};
+    CHECK_THROWS_WITH(process->RunTeardownCleanup([] {}),
+                      "teardown cleanup admission rejected");
+    process->BeginTeardown();
+    CHECK_THROWS_AS(static_cast<void>(process->Invoke(frame)),
+                    runtime::A32GuestCallCancelled);
+    std::atomic<bool> rejected{};
+    std::jthread other([&] {
+        try { process->RunTeardownCleanup([] {}); }
+        catch (const runtime::AndroidGuestProcessError&) { rejected = true; }
+    });
+    other.join();
+    CHECK(rejected.load());
+    CHECK_THROWS_WITH(process->PrepareDexVmThread(16385, 0),
+                      "new guest thread rejected during teardown");
+    std::size_t returned{};
+    CHECK_THROWS(process->RunTeardownCleanup([&] {
+        // Nested scopes cannot reset the process cleanup budget.
+        for (std::size_t index = 0; index < 100; ++index) {
+            process->RunTeardownCleanup([&] {
+                const auto result = process->Invoke(frame);
+                CHECK(result.return_value != 0U);
+                ++returned;
+            });
+        }
+    }));
+    CHECK(returned > 0U);
+    CHECK(returned < 40U);
+    // Failed cleanup does not enter the faulty fini; host resources still close.
+    CHECK_NOTHROW(process->Stop());
+    CHECK_FALSE(process->Running());
+    CHECK(process->AttachedJniThreadCount() == 0U);
+    CHECK_NOTHROW(process->Stop());
+    CHECK_THROWS_WITH(process->RunTeardownCleanup([] {}),
+                      "teardown cleanup admission rejected");
+}
+
+TEST_CASE("DVM-218 native process exit skips a second fini and keeps its code") {
+    using namespace ogplay;
+    auto libc = LibdlDefaultLibcElf();
+    Put32(libc, 0x130, loader::kElfDynamicFini);
+    Put32(libc, 0x134, 0x11040U);
+    Put32(libc, 0x138, 0U);
+    Put32(libc, 100, 64U);
+    Put32(libc, 104, 64U);
+    Put32(libc, 0x1000, 0xe3a00017U); // exit_group(23)
+    Put32(libc, 0x1004, 0xe3a070f8U);
+    Put32(libc, 0x1008, 0xef000000U);
+    Put32(libc, 0x1040, 0xe5900000U); // fini would read null
+    const loader::Elf32ModuleInput module{
+        "libc.so", libc, memory::GuestAddress{0x10000000U}};
+    runtime::VirtualFileSystem filesystem;
+    auto session = runtime::AndroidGuestCallSession::Start(
+        {19, "libc.so", std::span{&module, 1}, {}, 64, 36, 100, 1, &filesystem, {}});
+    session->BeginTeardown();
+    try {
+        session->RunTeardownCleanup([&] {
+            static_cast<void>(session->Invoke({memory::GuestAddress{0x10011000U}, {}, {}, 1, true}));
+            FAIL("exit_group returned to its caller");
+        });
+        FAIL("exit_group did not unwind");
+    } catch (const runtime::A32GuestCallExit& exit) {
+        CHECK(exit.State().exit_code == 23);
+        CHECK(exit.State().exit_request.origin == runtime::GuestThreadExitOrigin::syscall_exit_group);
+    }
+    CHECK(session->NativeExitCode() == 23);
+    CHECK_NOTHROW(session->Stop());
+    CHECK_FALSE(session->Running());
+    CHECK_FALSE(session->Environment().IsThreadAttached(1));
+    CHECK_NOTHROW(session->Stop());
+}
+
+TEST_CASE("DVM-218 native worker quiescence preserves root cleanup and closes clone admission") {
+    using namespace ogplay;
+    auto libc = LibdlDefaultLibcElf();
+    Put32(libc, 0x130, loader::kElfDynamicFini);
+    Put32(libc, 0x134, 0x11040U);
+    Put32(libc, 0x138, 0U);
+    Put32(libc, 100, 64U);
+    Put32(libc, 104, 64U);
+    const std::array code{0xe3a07078U, 0xef000000U, 0xe3500000U, 0x1a000003U,
+                          0xe3a07014U, 0xef000000U, 0xeafffffcU, 0xe1a00000U, 0xe12fff1eU};
+    for (std::size_t index = 0; index < code.size(); ++index)
+        Put32(libc, 0x1000U + index * 4U, code[index]);
+    Put32(libc, 0x1040, 0xe5900000U);
+    const loader::Elf32ModuleInput module{
+        "libc.so", libc, memory::GuestAddress{0x10000000U}};
+    runtime::VirtualFileSystem filesystem;
+    auto process = runtime::AndroidGuestProcess::Start(
+        {19, std::span{&module, 1}, {}, 64, 36, 100, 1, &filesystem, {}});
+    const auto flags = runtime::kLinuxCloneVm | runtime::kLinuxCloneFs |
+        runtime::kLinuxCloneFiles | runtime::kLinuxCloneSighand |
+        runtime::kLinuxCloneThread | runtime::kLinuxCloneSysvsem;
+    const runtime::A32GuestCallFrame frame{memory::GuestAddress{0x10011000U},
+        {flags, 0x10010ff0U, 0U, 0U}, {}, 1, true};
+    CHECK(process->Invoke(frame).return_value == 2U);
+    CHECK_NOTHROW(process->QuiesceNativeWorkers());
+    CHECK(process->Running());
+    CHECK(process->Environment().IsThreadAttached(1));
+    CHECK_NOTHROW(process->QuiesceNativeWorkers());
+    process->RunTeardownCleanup([&] {
+        CHECK(static_cast<std::int32_t>(process->Invoke(frame).return_value) == -11);
+    });
+    CHECK_THROWS(process->Stop()); // quiescence did not prematurely execute fini
+    CHECK_FALSE(process->Running());
+    CHECK(process->AttachedJniThreadCount() == 0U);
+    CHECK_NOTHROW(process->Stop());
+}
+
+TEST_CASE("DVM-218 failed fini is reported after host detach and is not retried") {
+    using namespace ogplay;
+    auto libc = LibdlDefaultLibcElf();
+    Put32(libc, 0x130, loader::kElfDynamicFini);
+    Put32(libc, 0x134, 0x11040U);
+    Put32(libc, 0x138, 0U);
+    Put32(libc, 100, 64U);
+    Put32(libc, 104, 64U);
+    Put32(libc, 0x1040, 0xe5900000U);
+    const loader::Elf32ModuleInput module{
+        "libc.so", libc, memory::GuestAddress{0x10000000U}};
+    runtime::VirtualFileSystem filesystem;
+    auto process = runtime::AndroidGuestProcess::Start(
+        {19, std::span{&module, 1}, {}, 64, 36, 100, 1, &filesystem, {}});
+    CHECK_THROWS(process->Stop());
+    CHECK_FALSE(process->Running());
+    CHECK(process->AttachedJniThreadCount() == 0U);
+    CHECK_NOTHROW(process->Stop());
+}
+
 TEST_CASE("Android guest call session validates its complete launch request") {
     ogplay::runtime::VirtualFileSystem filesystem;
     const std::array<std::byte, 4> bytes{};

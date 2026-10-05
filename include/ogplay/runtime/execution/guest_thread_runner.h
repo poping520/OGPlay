@@ -7,6 +7,7 @@
 #include <span>
 #include <stdexcept>
 #include <string>
+#include <utility>
 
 #include "ogplay/memory/address_space.h"
 #include "ogplay/runtime/syscall/guest_thread_lifecycle.h"
@@ -53,6 +54,26 @@ struct A32GuestCallResult final {
     std::uint64_t ticks_consumed{};
     std::uint32_t return_value{};
     std::uint32_t return_value_high{};
+};
+
+// Host cancellation is a control unwind, distinct from CPU/guest failures.
+class A32GuestCallCancelled final : public std::runtime_error {
+public:
+    explicit A32GuestCallCancelled(std::uint64_t thread)
+        : std::runtime_error("A32 renewable native frame cancelled for teardown"), thread_(thread) {}
+    [[nodiscard]] std::uint64_t ThreadId() const noexcept { return thread_; }
+private:
+    std::uint64_t thread_;
+};
+
+// Non-returning guest syscall control, never a fabricated native return value.
+class A32GuestCallExit final : public std::runtime_error {
+public:
+    A32GuestCallExit(std::string message, GuestThreadRuntimeState state)
+        : std::runtime_error(std::move(message)), state_(state) {}
+    [[nodiscard]] const GuestThreadRuntimeState& State() const noexcept { return state_; }
+private:
+    GuestThreadRuntimeState state_;
 };
 
 class A32GuestCallError final : public std::runtime_error {

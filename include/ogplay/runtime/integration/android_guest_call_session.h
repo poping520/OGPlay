@@ -314,6 +314,11 @@ public:
     // Idempotently enters process teardown: native waits are interrupted,
     // guest graphics are retired, and renewable JNI frames become cancellable.
     void BeginTeardown() noexcept;
+    // Synchronous owner-only root cleanup; nested calls share a finite budget.
+    void RunTeardownCleanup(const std::function<void()>& cleanup);
+    // Join native workers before a callback may enter libc exit destructors.
+    void QuiesceNativeWorkers();
+    [[nodiscard]] std::optional<std::int32_t> NativeExitCode() const;
     void Stop();
     [[nodiscard]] bool Running() const noexcept;
     [[nodiscard]] bool ExitRequested() const noexcept;
@@ -430,6 +435,11 @@ public:
         std::span<std::int16_t> output, std::uint32_t sample_rate);
     [[nodiscard]] std::size_t InterruptBlockingWaits();
     void BeginTeardown() noexcept;
+    // Synchronous owner-only root cleanup; nested calls share a finite budget.
+    void RunTeardownCleanup(const std::function<void()>& cleanup);
+    // Join native workers before a callback may enter libc exit destructors.
+    void QuiesceNativeWorkers();
+    [[nodiscard]] std::optional<std::int32_t> NativeExitCode() const;
     void Stop();
     [[nodiscard]] bool Running() const noexcept;
     [[nodiscard]] bool ExitRequested() const noexcept;

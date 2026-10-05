@@ -58,13 +58,13 @@ Dex activity 每帧在 guest 回调前泵送主 Looper，到帧尾只通过
   在线程停止后、guest finalizer 前再次调用，失败向上层传播。
   guest EGL swap 在 intrinsic 内 publish，不由 lifecycle 再次 present。lifecycle
   仅在 guest-owned GLSurfaceView 路径注册 driver 线程，并在每帧尾推进条件 swap
-  pacer。进程 teardown 在任何 guest 回调前永久退役 Java/native 图形入口、发布
+  pacer。进程 teardown 在 guest-owned 回调前永久退役 Java/native 图形入口、发布
   renewable JNI frame 取消并唤醒 blocking wait；回调期间可能新建等待，因此 join
   前再次 interrupt。该顺序是 OGPlay 进程退出策略，不伪称 AOSP 在
   `surfaceDestroyed` 回调前使 Surface 失效。
   注入诊断状态时，Stop 额外发布 begin、guest callbacks、scheduler、thread join、
   persistence、guest finalize、surface close 与 complete 阶段；阶段只供取证，不改变退出
-  顺序、异常传播或 ADR-0025 取消语义。Suspend 同样发布 begin/complete；Android app
+  控制协议；退出清理准入与首错传播见 ADR-0095。Suspend 同样发布 begin/complete；Android app
   process 向统一快照注入 DVM trace/Java 栈、monitor owner/waiter、EGL pacer 与 GLES trace
   的不等待 provider，并在 provider owner 析构前清除回调。
   intrinsic-renderer 不安装 observer。driver 可运行时维持一帧一 swap，driver 停泊于
@@ -216,3 +216,9 @@ native 清理失败仍继续关闭进程和 surface；前端保留运行首错�
 
 本地视频在最终 frame handoff 按 UiTree 的 SurfaceView 层事实合成（ADR-0094）；
 GLES/Canvas producer 活跃时视频泵不覆盖底图。纯视频窗口使用空软件底图触发统一合成。
+
+DVM-218 / ADR-0095：退出后新发起的根线程清理由创建 owner 显式准入，有限预算覆盖
+重入且不续期；onPause、surfaceDestroyed、onStop、onDestroy 独立尝试并传播首错。
+onStop 后先关闭 scheduler 并 join native/Java worker，再进入可能运行 libc 析构的 onDestroy。
+guest 原生 exit/exit_group 发布真实退出码并展开 VM，已退出后不再调用 JNI 清理或
+DSO fini。Stop 失败仍 join、flush、detach、关闭 surface，完成后幂等；取消不冒充卸载。

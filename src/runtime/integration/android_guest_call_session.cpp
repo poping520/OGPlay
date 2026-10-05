@@ -876,7 +876,8 @@ public:
             futex_table_, 2, 100000,
             [this](cpu::Cpu& cpu, const cpu::RunResult& stopped) {
                 return HandleBoundary(cpu, stopped);
-            }, diagnostics_, [this] { BeginTeardown(); });
+            }, diagnostics_, [this] { BeginTeardown(); },
+            [this] { return !teardown_requested_.load(std::memory_order_acquire); });
         root_cpu_ = std::make_unique<cpu::DynarmicCpu>(
             memory_bus_, execution_context_);
         ConfigureFastHostCalls(*root_cpu_);
@@ -923,6 +924,19 @@ public:
 
     A32GuestCallResult Invoke(const A32GuestCallFrame& frame) {
         RethrowAsyncFailure();
+        const bool cleanup = std::this_thread::get_id() == owner_thread_ &&
+                             cleanup_depth_ != 0U;
+        auto admitted_frame = frame;
+        if (cleanup) {
+            if (frame.thread_id != kRootThreadId || NativeExitCode())
+                throw AndroidGuestProcessError("teardown cleanup requires a live root thread");
+            admitted_frame.renewable_native_frame = false;
+            if (cleanup_ticks_remaining_ == 0U)
+                throw A32GuestCallError("teardown cleanup tick budget exhausted");
+        } else if (frame.renewable_native_frame &&
+                   teardown_requested_.load(std::memory_order_acquire)) {
+            throw A32GuestCallCancelled(frame.thread_id);
+        }
         if (!root_cpu_) {
             throw AndroidGuestProcessError(
                 "Android guest call session has no root CPU");
@@ -972,7 +986,7 @@ public:
         // Renewable frames must observe each HLE result in the slow consumer;
         // a fast host call continues inside Cpu::Run and cannot report its
         // progress category to the watchdog loop.
-        if (frame.renewable_native_frame) target->SetHostCallHook({});
+        if (frame.renewable_native_frame || cleanup) target->SetHostCallHook({});
         active_guest_calls[this] = {
             target, active == active_guest_calls.end()
                         ? 0U
@@ -990,18 +1004,30 @@ public:
             }
         } diagnostic_scope{diagnostics_, execution};
         try {
+            std::uint64_t charged{};
+            const auto charge = [this, cleanup, &charged](const std::uint64_t consumed) {
+                if (!cleanup) return;
+                const auto delta = consumed - charged;
+                charged = consumed;
+                if (delta > cleanup_ticks_remaining_) {
+                    cleanup_ticks_remaining_ = 0U;
+                    throw A32GuestCallError("teardown cleanup tick budget exhausted");
+                }
+                cleanup_ticks_remaining_ -= delta;
+            };
             A32GuestCallSliceObserver observer =
-                [this, target, execution](const std::uint64_t consumed) {
+                [this, target, execution, &charge](const std::uint64_t consumed) {
                     if (diagnostics_ && execution != 0U) {
                         diagnostics_->UpdateExecution(
                             execution, target->GetState().Register(
                                 cpu::CoreRegister::pc));
                     }
+                    charge(consumed);
                     if (clone_runtime_) clone_runtime_->RethrowFailure();
                     if (slice_observer_) slice_observer_(consumed);
                 };
-            if (frame.renewable_native_frame) {
-                observer = [this, target, execution](
+            if (admitted_frame.renewable_native_frame) {
+                observer = [this, target, execution, &frame](
                                const std::uint64_t consumed) {
                     if (diagnostics_ && execution != 0U) {
                         diagnostics_->UpdateExecution(
@@ -1009,27 +1035,29 @@ public:
                                 cpu::CoreRegister::pc));
                     }
                     if (teardown_requested_.load(std::memory_order_acquire)) {
-                        throw A32GuestCallError(
-                            "A32 renewable native frame cancelled for teardown");
+                        throw A32GuestCallCancelled(frame.thread_id);
                     }
                     if (clone_runtime_) clone_runtime_->RethrowFailure();
                     if (slice_observer_) slice_observer_(consumed);
                 };
             }
             auto result = InvokeA32GuestCall(
-                *target, dispatcher_, lifecycle_, address_space_, frame,
-                stack_top, process_memory_.return_trap, maximum_ticks_,
+                *target, dispatcher_, lifecycle_, address_space_, admitted_frame,
+                stack_top, process_memory_.return_trap,
+                cleanup ? cleanup_ticks_remaining_ : maximum_ticks_,
                 [this](cpu::Cpu& cpu, const cpu::RunResult& stopped) {
                     return HandleBoundary(cpu, stopped);
                 }, observer);
-            if (frame.renewable_native_frame) ConfigureFastHostCalls(*target);
+            charge(result.ticks_consumed);
+            if (frame.renewable_native_frame || cleanup) ConfigureFastHostCalls(*target);
             if (previous.cpu != nullptr) active_guest_calls[this] = previous;
             else active_guest_calls.erase(this);
             return result;
         } catch (...) {
-            if (frame.renewable_native_frame) ConfigureFastHostCalls(*target);
+            if (frame.renewable_native_frame || cleanup) ConfigureFastHostCalls(*target);
             if (previous.cpu != nullptr) active_guest_calls[this] = previous;
             else active_guest_calls.erase(this);
+            if (NativeExitCode()) process_state_.RequestExit();
             if (clone_runtime_) clone_runtime_->RethrowFailure();
             throw;
         }
@@ -1038,6 +1066,8 @@ public:
     void PrepareDexVmThread(const std::uint64_t thread_id,
                             const std::uint32_t allocation_slot,
                             const bool attach_jni = true) {
+        if (teardown_requested_.load(std::memory_order_acquire))
+            throw AndroidGuestProcessError("new guest thread rejected during teardown");
         constexpr std::uint64_t kBionicPthreadMutexMaximumTid = 0xffffU;
         if (thread_id == 0U || thread_id == kRootThreadId ||
             thread_id > kBionicPthreadMutexMaximumTid ||
@@ -1607,6 +1637,56 @@ public:
         if (failure) std::rethrow_exception(failure);
     }
 
+    void QuiesceNativeWorkers() {
+        if (std::this_thread::get_id() != owner_thread_)
+            throw AndroidGuestProcessError("native worker drain requires process owner");
+        if (native_workers_quiesced_) {
+            if (native_workers_failure_) std::rethrow_exception(native_workers_failure_);
+            return;
+        }
+        BeginTeardown();
+        StopOpenSlesCallbackThread();
+        auto children = lifecycle_.States();
+        {
+            const std::scoped_lock lock(dexvm_threads_mutex_);
+            std::erase_if(children, [this](const GuestThreadRuntimeState& state) {
+                return state.thread_id == kRootThreadId || dexvm_threads_.contains(state.thread_id);
+            });
+        }
+        for (const auto& child : children) {
+            if (child.status == GuestThreadStatus::running) {
+                lifecycle_.RequestExit(child.thread_id, 0);
+            }
+        }
+        static_cast<void>(InterruptBlockingWaits());
+
+        for (const auto& child : children) {
+            try {
+                const auto joined = clone_runtime_->Join(child.thread_id);
+                if (joined.run.reason != GuestThreadRunStop::guest_exit) {
+                    throw AndroidGuestProcessError(
+                        "Android guest child did not exit cleanly");
+                }
+            } catch (...) {
+                if (!native_workers_failure_) {
+                    native_workers_failure_ = std::current_exception();
+                }
+            }
+            try {
+                if (environment_.IsThreadAttached(child.thread_id) &&
+                    java_vm_.DetachCurrentThread(child.thread_id) != JniStatus::ok)
+                    throw AndroidGuestProcessError("native worker JNI detachment failed");
+            } catch (...) {
+                if (!native_workers_failure_) native_workers_failure_ = std::current_exception();
+            }
+        }
+        native_workers_quiesced_ = true;
+        if (native_workers_failure_) {
+            teardown_cleanup_failed_ = true;
+            std::rethrow_exception(native_workers_failure_);
+        }
+    }
+
     void Stop() {
         if (!running_) return;
         boundary_.ShutdownLoopers();
@@ -1614,6 +1694,9 @@ public:
         static_cast<void>(
             boundary_.PcmPlayback().InterruptBlockingWaits());
         StopOpenSlesCallbackThread();
+        std::exception_ptr first_child_failure;
+        try { QuiesceNativeWorkers(); }
+        catch (...) { first_child_failure = std::current_exception(); }
         std::vector<std::uint64_t> dexvm_thread_ids;
         {
             const std::scoped_lock lock(dexvm_threads_mutex_);
@@ -1625,51 +1708,32 @@ public:
         for (const auto thread_id : dexvm_thread_ids) {
             ReleaseDexVmThread(thread_id);
         }
-        auto children = lifecycle_.States();
-        std::erase_if(children, [](const GuestThreadRuntimeState& state) {
-            return state.thread_id == kRootThreadId;
-        });
-        for (const auto& child : children) {
-            if (child.status == GuestThreadStatus::running) {
-                lifecycle_.RequestExit(child.thread_id, 0);
-            }
-        }
-        static_cast<void>(InterruptBlockingWaits());
-        std::exception_ptr first_child_failure;
-        for (const auto& child : children) {
+        // A process exit has already run libc's exit protocol. A failed
+        // cleanup leaves guest object invariants unknown: retain the first
+        // error and reclaim the process, rather than pretending to dlclose it.
+        auto failure = first_child_failure;
+        if (!failure && !NativeExitCode() && !teardown_cleanup_failed_) {
             try {
-                const auto joined = clone_runtime_->Join(child.thread_id);
-                if (joined.run.reason != GuestThreadRunStop::guest_exit) {
-                    throw AndroidGuestProcessError(
-                        "Android guest child did not exit cleanly");
-                }
-            } catch (...) {
-                if (!first_child_failure) {
-                    first_child_failure = std::current_exception();
-                }
-            }
+                auto fini_order = guest_load_order_;
+                std::reverse(fini_order.begin(), fini_order.end());
+                const auto finalization = BuildGuestFinalizationPlan(
+                    lifecycle_modules_, fini_order);
+                ExecuteGuestLifecycle(
+                    finalization, [this](const GuestLifecycleCall& call) {
+                        static_cast<void>(Invoke({call.address, {}, {}}));
+                    });
+            } catch (const A32GuestCallExit&) {
+                // A fini itself may request process exit; do not re-enter it.
+            } catch (...) { failure = std::current_exception(); }
         }
-        if (first_child_failure) {
-            running_ = false;
-            static_cast<void>(environment_.ShutdownMonitors());
-            std::rethrow_exception(first_child_failure);
-        }
-        auto fini_order = guest_load_order_;
-        std::reverse(fini_order.begin(), fini_order.end());
-        const auto finalization = BuildGuestFinalizationPlan(
-            lifecycle_modules_, fini_order);
-        ExecuteGuestLifecycle(
-            finalization, [this](const GuestLifecycleCall& call) {
-                static_cast<void>(Invoke(
-                    {call.address, {}, {}}));
-            });
         const auto detached = java_vm_.DetachCurrentThread(kRootThreadId);
         static_cast<void>(environment_.ShutdownMonitors());
-        if (detached != JniStatus::ok) {
-            throw AndroidGuestProcessError(
-                "Android guest root JNI thread detachment failed");
-        }
         running_ = false;
+        if (detached != JniStatus::ok && !failure) {
+            failure = std::make_exception_ptr(AndroidGuestProcessError(
+                "Android guest root JNI thread detachment failed"));
+        }
+        if (failure) std::rethrow_exception(failure);
     }
 
     void BindSyscalls() {
@@ -2014,6 +2078,33 @@ public:
         static_cast<void>(InterruptBlockingWaits());
     }
 
+    void RunTeardownCleanup(const std::function<void()>& cleanup) {
+        if (std::this_thread::get_id() != owner_thread_ ||
+            !teardown_requested_.load(std::memory_order_acquire) ||
+            !running_ || NativeExitCode() || !cleanup)
+            throw AndroidGuestProcessError("teardown cleanup admission rejected");
+        ++cleanup_depth_;
+        try {
+            cleanup();
+        } catch (const A32GuestCallExit&) {
+            --cleanup_depth_;
+            throw;
+        } catch (...) {
+            --cleanup_depth_;
+            if (!NativeExitCode()) teardown_cleanup_failed_ = true;
+            throw;
+        }
+        --cleanup_depth_;
+    }
+    std::optional<std::int32_t> NativeExitCode() const {
+        const auto root = lifecycle_.State(kRootThreadId);
+        if (root.status != GuestThreadStatus::running &&
+            (root.exit_request.origin == GuestThreadExitOrigin::syscall_exit ||
+             root.exit_request.origin == GuestThreadExitOrigin::syscall_exit_group))
+            return root.exit_code;
+        return std::nullopt;
+    }
+
     bool Running() const noexcept { return running_; }
     bool ExitRequested() const noexcept { return process_state_.ExitRequested(); }
     std::size_t ApplicationModuleCount() const noexcept {
@@ -2032,6 +2123,8 @@ public:
     AndroidGuestApplicationLoad LoadApplicationModules(
         const std::string_view root_module,
         const std::span<const AndroidGuestApplicationModuleSource> sources) {
+        if (teardown_requested_.load(std::memory_order_acquire))
+            throw AndroidGuestProcessError("new guest module rejected during teardown");
         if (!running_ || root_module.empty()) {
             throw AndroidGuestProcessError(
                 "dynamic application load request is incomplete");
@@ -2314,6 +2407,12 @@ private:
     std::vector<std::size_t> guest_load_order_;
     std::uint64_t maximum_ticks_{};
     std::atomic<bool> teardown_requested_{false};
+    const std::thread::id owner_thread_{std::this_thread::get_id()};
+    std::size_t cleanup_depth_{};
+    std::uint64_t cleanup_ticks_remaining_{maximum_ticks_};
+    bool teardown_cleanup_failed_{};
+    bool native_workers_quiesced_{};
+    std::exception_ptr native_workers_failure_;
     std::function<void(std::string_view)> progress_;
     A32GuestCallSliceObserver slice_observer_;
     std::shared_ptr<debug::DiagnosticState> diagnostics_;
@@ -2353,6 +2452,10 @@ std::unique_ptr<AndroidGuestProcess> AndroidGuestProcess::Start(
         return std::unique_ptr<AndroidGuestProcess>(
             new AndroidGuestProcess(
                 std::make_unique<Impl>(RootlessStartup(request))));
+    } catch (const A32GuestCallCancelled&) {
+        throw;
+    } catch (const A32GuestCallExit&) {
+        throw;
     } catch (const AndroidGuestProcessError&) {
         throw;
     } catch (const std::exception& error) {
@@ -2374,6 +2477,10 @@ A32GuestCallResult AndroidGuestProcess::Invoke(
     const A32GuestCallFrame& frame) {
     try {
         return impl_->Invoke(frame);
+    } catch (const A32GuestCallCancelled&) {
+        throw;
+    } catch (const A32GuestCallExit&) {
+        throw;
     } catch (const AndroidGuestProcessError&) {
         throw;
     } catch (const std::exception& error) {
@@ -2390,6 +2497,10 @@ AndroidGuestProcess::TryInvokeRegisteredNative(
     try {
         return impl_->TryInvokeRegisteredNative(java_class, name, descriptor,
                                                 frame);
+    } catch (const A32GuestCallCancelled&) {
+        throw;
+    } catch (const A32GuestCallExit&) {
+        throw;
     } catch (const std::exception& error) {
         throw AndroidGuestProcessError(
             "registered JNI native invocation failed:\n"
@@ -2404,6 +2515,9 @@ void AndroidGuestProcess::PrepareDexVmThread(
     const std::uint64_t thread_id, const std::uint32_t allocation_slot) {
     impl_->PrepareDexVmThread(thread_id, allocation_slot);
 }
+void AndroidGuestProcess::QuiesceNativeWorkers() { impl_->QuiesceNativeWorkers(); }
+void AndroidGuestProcess::RunTeardownCleanup(const std::function<void()>& cleanup) { impl_->RunTeardownCleanup(cleanup); }
+std::optional<std::int32_t> AndroidGuestProcess::NativeExitCode() const { return impl_->NativeExitCode(); }
 void AndroidGuestProcess::RethrowAsyncFailure() { impl_->RethrowAsyncFailure(); }
 memory::GuestAddress AndroidGuestProcess::PrepareThreadLooper(std::uint64_t tid) { return impl_->PrepareThreadLooper(tid); }
 void AndroidGuestProcess::ReleaseDexVmThread(
@@ -2470,6 +2584,10 @@ std::optional<memory::GuestAddress> AndroidGuestProcess::FindNativeExport(
 void AndroidGuestProcess::InitializeJniLibrary() {
     try {
         impl_->InitializeJniLibrary();
+    } catch (const A32GuestCallCancelled&) {
+        throw;
+    } catch (const A32GuestCallExit&) {
+        throw;
     } catch (const AndroidGuestProcessError&) {
         throw;
     } catch (const std::exception& error) {
@@ -2521,6 +2639,10 @@ AndroidGuestApplicationLoad AndroidGuestProcess::LoadApplicationModules(
     const std::span<const AndroidGuestApplicationModuleSource> modules) {
     try {
         return impl_->LoadApplicationModules(root_module, modules);
+    } catch (const A32GuestCallCancelled&) {
+        throw;
+    } catch (const A32GuestCallExit&) {
+        throw;
     } catch (const AndroidGuestProcessError&) {
         throw;
     } catch (const std::exception& error) {
@@ -2534,6 +2656,10 @@ AndroidGuestProcess::InitializeExplicitJniLibrary(
     const std::string_view root_module) {
     try {
         return impl_->InitializeExplicitJniLibrary(root_module);
+    } catch (const A32GuestCallCancelled&) {
+        throw;
+    } catch (const A32GuestCallExit&) {
+        throw;
     } catch (const AndroidGuestProcessError&) {
         throw;
     } catch (const std::exception& error) {
@@ -2591,6 +2717,10 @@ A32GuestCallResult AndroidGuestCallSession::Invoke(
     const A32GuestCallFrame& frame) {
     try {
         return process_->Invoke(frame);
+    } catch (const A32GuestCallCancelled&) {
+        throw;
+    } catch (const A32GuestCallExit&) {
+        throw;
     } catch (const AndroidGuestCallSessionError&) {
         throw;
     } catch (const std::exception& error) {
@@ -2604,6 +2734,10 @@ AndroidGuestCallSession::TryInvokeRegisteredNative(
     try {
         return process_->TryInvokeRegisteredNative(
             java_class, name, descriptor, frame);
+    } catch (const A32GuestCallCancelled&) {
+        throw;
+    } catch (const A32GuestCallExit&) {
+        throw;
     } catch (const AndroidGuestCallSessionError&) {
         throw;
     } catch (const std::exception& error) {
@@ -2614,6 +2748,9 @@ void AndroidGuestCallSession::PrepareDexVmThread(
     const std::uint64_t thread_id, const std::uint32_t allocation_slot) {
     process_->PrepareDexVmThread(thread_id, allocation_slot);
 }
+void AndroidGuestCallSession::QuiesceNativeWorkers() { process_->QuiesceNativeWorkers(); }
+void AndroidGuestCallSession::RunTeardownCleanup(const std::function<void()>& cleanup) { process_->RunTeardownCleanup(cleanup); }
+std::optional<std::int32_t> AndroidGuestCallSession::NativeExitCode() const { return process_->NativeExitCode(); }
 void AndroidGuestCallSession::RethrowAsyncFailure() { process_->RethrowAsyncFailure(); }
 memory::GuestAddress AndroidGuestCallSession::PrepareThreadLooper(std::uint64_t tid) { return process_->PrepareThreadLooper(tid); }
 void AndroidGuestCallSession::ReleaseDexVmThread(
@@ -2646,6 +2783,10 @@ std::optional<memory::GuestAddress> AndroidGuestCallSession::FindNativeExport(st
 void AndroidGuestCallSession::InitializeJniLibrary() {
     try {
         process_->InitializeJniLibrary();
+    } catch (const A32GuestCallCancelled&) {
+        throw;
+    } catch (const A32GuestCallExit&) {
+        throw;
     } catch (const AndroidGuestCallSessionError&) {
         throw;
     } catch (const std::exception& error) {
@@ -2676,6 +2817,10 @@ void AndroidGuestCallSession::CloseManagedSurface() { process_->CloseManagedSurf
 void AndroidGuestCallSession::PushInput(const AndroidBoundaryInput& input) {
     try {
         process_->PushInput(input);
+    } catch (const A32GuestCallCancelled&) {
+        throw;
+    } catch (const A32GuestCallExit&) {
+        throw;
     } catch (const AndroidGuestCallSessionError&) {
         throw;
     } catch (const std::exception& error) {
@@ -2691,6 +2836,10 @@ void AndroidGuestCallSession::BeginTeardown() noexcept { process_->BeginTeardown
 void AndroidGuestCallSession::Stop() {
     try {
         process_->Stop();
+    } catch (const A32GuestCallCancelled&) {
+        throw;
+    } catch (const A32GuestCallExit&) {
+        throw;
     } catch (const AndroidGuestCallSessionError&) {
         throw;
     } catch (const std::exception& error) {

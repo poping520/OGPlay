@@ -17,7 +17,8 @@ GuestCloneThreadRuntime::GuestCloneThreadRuntime(
     const std::uint64_t tick_slice,
     GuestSupervisorCallHandler hle_handler,
     std::shared_ptr<debug::DiagnosticState> diagnostics,
-    std::function<void()> failure_notifier)
+    std::function<void()> failure_notifier,
+    std::function<bool()> spawn_allowed)
     : threads_(threads),
       dispatcher_(dispatcher),
       lifecycle_(lifecycle),
@@ -29,7 +30,8 @@ GuestCloneThreadRuntime::GuestCloneThreadRuntime(
       tick_slice_(tick_slice),
       hle_handler_(std::move(hle_handler)),
       diagnostics_(std::move(diagnostics)),
-      failure_notifier_(std::move(failure_notifier)) {
+      failure_notifier_(std::move(failure_notifier)),
+      spawn_allowed_(std::move(spawn_allowed)) {
     if (first_child_thread_id == 0 || tick_slice == 0) {
         throw std::invalid_argument(
             "clone runtime requires non-zero thread id and tick slice");
@@ -43,6 +45,7 @@ GuestCloneThreadRuntime::GuestCloneThreadRuntime(
 std::int32_t GuestCloneThreadRuntime::Spawn(
     const GuestThreadCloneRequest& request) {
     constexpr std::int32_t kEagain = 11;
+    if (spawn_allowed_ && !spawn_allowed_()) return -kEagain;
     for (;;) {
         const auto child_thread_id = next_thread_id_.fetch_add(1);
         if (child_thread_id == 0 ||
@@ -126,9 +129,20 @@ void GuestCloneThreadRuntime::RunChildBody(const std::uint64_t thread_id,
         return;
     }
     for (;;) {
-        outcome = RunAndroidArmGuestThread(
-            cpu, dispatcher_, lifecycle_, memory_bus_, futex_table_,
-            tick_slice_, hle_handler_);
+        try {
+            outcome = RunAndroidArmGuestThread(
+                cpu, dispatcher_, lifecycle_, memory_bus_, futex_table_,
+                tick_slice_, hle_handler_);
+        } catch (const A32GuestCallCancelled& cancelled) {
+            if (cancelled.ThreadId() != thread_id) throw;
+            // Intentional cancellation from nested JNI must not poison the
+            // whole process with an asynchronous worker failure.
+            if (lifecycle_.State(thread_id).status == GuestThreadStatus::running)
+                lifecycle_.RequestExit(thread_id, 0);
+            outcome.reason = GuestThreadRunStop::guest_exit;
+            outcome.exit = lifecycle_.CompleteExit(thread_id, memory_bus_, futex_table_);
+            break;
+        }
         if (diagnostics_ && execution != 0U) {
             diagnostics_->UpdateExecution(
                 execution, cpu.GetState().Register(cpu::CoreRegister::pc));

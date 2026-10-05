@@ -1009,3 +1009,45 @@
 .super Ljava/lang/Object;
 .method public static native release(J)V
 .end method
+
+# DVM-218: an early callback failure cannot suppress later cleanup or replace its error.
+.class public Lfixture/TeardownFailureActivity;
+.super Lfixture/WindowFocusActivity;
+.field static public stage:I
+
+.method public constructor <init>()V
+.registers 1
+    invoke-direct {v0}, Lfixture/WindowFocusActivity;-><init>()V
+    return-void
+.end method
+
+.method protected onPause()V
+.registers 3
+    new-instance v0, Ljava/lang/RuntimeException;
+    const-string v1, "pause-primary"
+    invoke-direct {v0, v1}, Ljava/lang/RuntimeException;-><init>(Ljava/lang/String;)V
+    throw v0
+.end method
+
+.method protected onStop()V
+.registers 2
+    const/4 v0, 2
+    sput v0, Lfixture/TeardownFailureActivity;->stage:I
+    return-void
+.end method
+
+.method protected onDestroy()V
+.registers 3
+    const/4 v0, 3
+    sput v0, Lfixture/TeardownFailureActivity;->stage:I
+    new-instance v0, Ljava/lang/RuntimeException;
+    const-string v1, "destroy-secondary"
+    invoke-direct {v0, v1}, Ljava/lang/RuntimeException;-><init>(Ljava/lang/String;)V
+    throw v0
+.end method
+
+.method static public getStage()I
+.registers 1
+    sget v0, Lfixture/TeardownFailureActivity;->stage:I
+    return v0
+.end method

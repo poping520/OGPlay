@@ -182,8 +182,12 @@ A32GuestCallResult InvokeA32GuestCall(
         if (current_before_run.status != GuestThreadStatus::running) {
             const cpu::RunResult interrupted{0, cpu::RunStopReason::halt_requested,
                 memory::GuestAddress{cpu.GetState().Register(cpu::CoreRegister::pc)}, 0, 0, std::nullopt};
-            throw A32GuestCallError(DescribeGuestCallExit(frame, consumed, interrupted,
-                cpu.GetState(), current_before_run, address_space));
+            const auto message = DescribeGuestCallExit(frame, consumed, interrupted,
+                cpu.GetState(), current_before_run, address_space);
+            if (current_before_run.exit_request.origin == GuestThreadExitOrigin::syscall_exit ||
+                current_before_run.exit_request.origin == GuestThreadExitOrigin::syscall_exit_group)
+                throw A32GuestCallExit(message, current_before_run);
+            throw A32GuestCallError(message);
         }
         const auto remaining = tick_budget - watchdog_consumed;
         const auto slice_ticks = std::min(remaining, dispatcher.signal_binding->runtime
@@ -219,9 +223,12 @@ A32GuestCallResult InvokeA32GuestCall(
         }
         const auto current = lifecycle.State(state.ThreadId());
         if (current.status != GuestThreadStatus::running) {
-            throw A32GuestCallError(DescribeGuestCallExit(
-                frame, consumed, stopped, cpu.GetState(), current,
-                address_space));
+            const auto message = DescribeGuestCallExit(
+                frame, consumed, stopped, cpu.GetState(), current, address_space);
+            if (current.exit_request.origin == GuestThreadExitOrigin::syscall_exit ||
+                current.exit_request.origin == GuestThreadExitOrigin::syscall_exit_group)
+                throw A32GuestCallExit(message, current);
+            throw A32GuestCallError(message);
         }
         auto updated = cpu.GetState();
         updated.SetThreadPointer(current.thread_pointer);

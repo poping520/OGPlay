@@ -32,7 +32,8 @@ public:
                             std::uint64_t tick_slice = 100000,
                             GuestSupervisorCallHandler hle_handler = {},
                             std::shared_ptr<debug::DiagnosticState> diagnostics = {},
-                            std::function<void()> failure_notifier = {});
+                            std::function<void()> failure_notifier = {},
+                            std::function<bool()> spawn_allowed = {});
 
     void RethrowFailure() const;
 
@@ -55,6 +56,7 @@ private:
     GuestSupervisorCallHandler hle_handler_;
     std::shared_ptr<debug::DiagnosticState> diagnostics_;
     std::function<void()> failure_notifier_;
+    std::function<bool()> spawn_allowed_;
     mutable std::mutex failure_mutex_;
     std::exception_ptr failure_;
     std::mutex outcomes_mutex_;

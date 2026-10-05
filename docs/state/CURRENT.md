@@ -14,6 +14,11 @@
   [DVM-218](../tasks/dexvm/DVM-218.md) 已修复取消误杀/首错遮蔽，先 join 再 onDestroy。
   退出仍读 0x315f0001：池先释放，布局后遍历，仍在办。
   证据 `.local/tales-exit-fix/`；进程已关闭，title gate 未验收。
+  [WU-PERF-09](../tasks/optimization/WU-PERF-09.md)：Release 2560×1600 局部对照
+  同 MCP/diag 对照 10.60 → 33.06 FPS（读页表/原子回调/边界与帧搬运优化，2 核）；
+  不传 `--diag` 时对话/教学场景 35.91/35.52 FPS，42 项定向回归通过。
+  原命令追加 `--cpu-cores 2`；60 FPS、完整关卡及退出问题未闭合，补测一轮退出超时。
+  证据 `.local/tales-perf-20261005/optimization-report.md`。
 
 - **PVZ（com.popcap.pvz_na）**：[DVM-205](../tasks/dexvm/DVM-205.md) 已修复 DEX
   注解预算误拒绝，使用共享解析缓存和分层资源预算。macOS Release 定向回归通过；

@@ -188,7 +188,11 @@ Android API 的详细行为以 [dexvm_android](dexvm_android/MODULE.md)为准；
 NativeActivitySession 只支持 API19 ARMv7，执行 Bionic 初始化、ANativeActivity_onCreate、
 glue child 和销毁；child 异常必须唤醒 waiter，在 root/帧/输入边界报告原始原因。
 supersample_factor 受检为 1..4，guest 保持逻辑尺寸，由 ANGLE 放大并确定性 resolve。
-DiagnosticState 只收稳定 ID/整数/执行进展；A32 slice observer 由上层注入。GPU trace 只写
+DiagnosticState 只收稳定 ID/整数/执行进展；A32 slice observer 由上层注入，可限定宿主线程。
+外部 observer 未限定时覆盖所有线程；限定后仅在该线程调用，其他线程可使用普通 HLE
+快路。内部诊断、取消、预算与 clone 首错观察不受该限定影响，renewable/cleanup 仍走
+runner。JNI 保留 runner 分派以先发布当前 CPU，支持 Java→native 嵌套重入；JNI fast fault
+交回原 dispatcher 还原首错。GPU trace 只写
 固定 raw ring（最近 2048 调用）与独立 mutex，文本延迟格式化；TryTrace 不竞争主 boundary
 锁，不伪造扩展/FBO/限制。debug 层不得反向依赖 integration。
 

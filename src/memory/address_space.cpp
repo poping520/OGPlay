@@ -98,6 +98,8 @@ public:
             kGuestAddressSpaceSize / host_page_size_), false);
         direct_page_table_ = std::make_unique<DirectMemoryPageTable>();
         direct_page_table_->fill(nullptr);
+        direct_read_page_table_ = std::make_unique<DirectMemoryPageTable>();
+        direct_read_page_table_->fill(nullptr);
     }
 
     [[nodiscard]] std::uint64_t ReservedSize() const noexcept { return reservation_->Size(); }
@@ -378,6 +380,9 @@ public:
     [[nodiscard]] DirectMemoryPageTable* DirectPageTable() noexcept {
         return direct_page_table_.get();
     }
+    [[nodiscard]] DirectMemoryPageTable* DirectReadPageTable() noexcept {
+        return direct_read_page_table_.get();
+    }
 
     [[nodiscard]] std::vector<MemoryMappingInfo> DescribeMappings(const std::size_t maximum_ranges) const {
         std::scoped_lock lock(mutex_);
@@ -624,6 +629,10 @@ private:
                 direct ? reinterpret_cast<std::uint8_t*>(
                              base + index * kGuestPageSize)
                        : nullptr;
+            (*direct_read_page_table_)[index] =
+                mapped_[index] && Allows(protection, AccessType::read)
+                    ? reinterpret_cast<std::uint8_t*>(base + index * kGuestPageSize)
+                    : nullptr;
         }
     }
 
@@ -634,6 +643,7 @@ private:
     std::vector<bool> mapped_;
     std::vector<bool> host_committed_;
     std::unique_ptr<DirectMemoryPageTable> direct_page_table_;
+    std::unique_ptr<DirectMemoryPageTable> direct_read_page_table_;
     mutable std::mutex mutex_;
     std::uint64_t mapping_generation_{};
     std::shared_ptr<MappingObservers> mapping_observers_{std::make_shared<MappingObservers>()};
@@ -774,6 +784,9 @@ bool AddressSpace::CompareExchange64(const GuestAddress address,
 
 DirectMemoryPageTable* AddressSpace::DirectPageTable() noexcept {
     return impl_->DirectPageTable();
+}
+DirectMemoryPageTable* AddressSpace::DirectReadPageTable() noexcept {
+    return impl_->DirectReadPageTable();
 }
 std::optional<MemoryStatistics> AddressSpace::TrySnapshot() const { return impl_->TrySnapshot(); }
 

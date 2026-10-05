@@ -43,6 +43,8 @@ SDL、ANGLE 或视频解码。
   draw dirty 改变时重建。窗口先裁剪 content root；父容器 `clipChildren`（默认 true）把子
   View 裁到其 `screen_frame`；容器 `clipToPadding`（默认 true）再把子孙裁到 padding box。
   两个开关互不替代，关闭某一容器不解除祖先或输出边界裁剪。clip 改变只标 draw dirty。
+  输出 `fully_transparent` 只在所有实际绘制后的 alpha 均为零时为 true，并随缓存重建；
+  其他 producer 创建的帧默认 false，消费者不得从命令数量猜测透明性。
 - `TextView/Button`：UiNode 唯一保存 text、RGBA textColor、textSize、gravity 与行数边界；
   内置 5x7 ASCII 大小写字形同时提供确定性 measure/raster，两者共用按词换行结果；空文本
   控件仍保留一行字体高度。wrap_content 加入 padding，Button

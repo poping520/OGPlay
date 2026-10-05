@@ -15,6 +15,7 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <thread>
 #include <vector>
 
 #include "ogplay/audio/encoded_music.h"
@@ -194,6 +195,9 @@ struct AndroidGuestCallSessionRequest final {
     AndroidGuestPlatformConfig platform{};
     GuestProcFacts proc_facts{};
     std::shared_ptr<debug::DiagnosticState> diagnostics;
+    // Unset means observe every host thread; set limits the external observer
+    // to this host thread without suppressing internal safety observers.
+    std::optional<std::thread::id> guest_call_slice_observer_thread;
 };
 
 // Creates the Android-native process substrate before any APK application
@@ -218,6 +222,7 @@ struct AndroidGuestProcessRequest final {
     GuestProcFacts proc_facts{};
     std::shared_ptr<debug::DiagnosticState> diagnostics;
     std::shared_ptr<const GuestProcessEnvironment> initial_environment;
+    std::optional<std::thread::id> guest_call_slice_observer_thread;
 };
 
 class AndroidGuestProcessError final : public std::runtime_error {

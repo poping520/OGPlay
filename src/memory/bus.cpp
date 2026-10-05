@@ -167,5 +167,8 @@ bool CheckedMemoryBus::CompareExchange64(const GuestAddress address,
 DirectMemoryPageTable* CheckedMemoryBus::DirectPageTable() noexcept {
     return observer_ == nullptr ? address_space_.DirectPageTable() : nullptr;
 }
+DirectMemoryPageTable* CheckedMemoryBus::DirectReadPageTable() noexcept {
+    return observer_ == nullptr ? address_space_.DirectReadPageTable() : nullptr;
+}
 
 }  // namespace ogplay::memory

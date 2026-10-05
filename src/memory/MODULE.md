@@ -37,6 +37,8 @@
 - `CheckedMemoryBus`：完整权限验证和观察器钩子的 soft-MMU 调试后端。
 - `DirectMemoryPageTable`：按 4 KiB guest 页索引的稳定数据页表；只有无 observer 的 RW
   非执行页可交给 JIT，其他页和跨页访问继续回退受检 bus。
+- `DirectReadPageTable`：独立的数据读取页表，仅发布已映射且具有 read 权限的页，
+  包含 R/RX；不得用于写入或取指。observer 禁用，两张表使用相同映射发布及恢复边界。
 - `DescribeMappings(maximum_ranges)`：同一锁内按地址合并连续同权限已映射页，仅返回
   range/protection；包含 PROT_NONE，超限明确失败，不复制 guest 内容。
 - `MemorySnapshot`：带版本、4 KiB guest 页尺寸、映射权限与内容的最小内存快照。
@@ -50,9 +52,9 @@
 - 映射状态可序列化。
 - Android guest 页固定为 4 KiB，不得暴露或继承宿主 16 KiB 等页面粒度。
 - guest 映射与权限按 4 KiB 独立记账；共享同一宿主页的相邻 guest 页不得互相影响。
-- 宿主后备页保持可读写且不可执行；guest execute、observer、非 RW 权限和跨页访问必须
-  经过 `CheckedMemoryBus`。直接数据页表只能发布账本确认的 RW 非执行页，并随映射、保护、
-  匿名替换、卸载和快照恢复同步更新。
+- 宿主后备页保持可读写且不可执行；取指、observer、跨页及不满足对应数据权限的访问必须
+  经过 `CheckedMemoryBus`。读写直接表只发布 RW 非执行页，独立读表只发布 readable 页；
+  两者随映射、保护、匿名替换、卸载和快照恢复同步更新。
 - 不完整或不兼容的快照不得改变当前地址空间。
 - 页索引和小端编解码必须在 32/64 位宿主及 GCC/Clang/MSVC 严格告警下保持类型安全；
   8/16 位值也必须先在足够宽的类型中移位和合并。
@@ -60,7 +62,7 @@
 ## 禁止
 
 - 不得为兼容性全局扩大低地址映射。
-- 不得暴露脱离权限账本生命周期的宿主指针，或让 observer/可执行页进入直接数据页表。
+- 不得暴露脱离权限账本生命周期的宿主指针，或让 observer/可执行页进入读写直接表。
 
 ## 测试
 

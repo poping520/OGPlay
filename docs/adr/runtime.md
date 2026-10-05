@@ -18,6 +18,7 @@
 - [ADR-0079 · 进程内 ARM guest 信号投递](#adr-0079)
 - [ADR-0092 · 有界 WifiLock 客户端 Java 与进程内租约](#adr-0092)
 - [ADR-0093 · WifiManager 两类锁共享租约与逐对象释放](#adr-0093)
+- [ADR-0096 · 分离 JIT 数据读取与写入页表](#adr-0096)
 
 <a id="adr-0001"></a>
 
@@ -648,3 +649,31 @@ CHANGE_WIFI_MULTICAST_STATE，区别于 WifiLock 的 WAKE_LOCK 权限。
 不启用宿主网卡、不加入 multicast group、不改变 NetworkPolicy。实际组播传输、
 WorkSource、系统 WifiService 与 isMulticastEnabled 等未触达的查询仍不在支持范围。
 所有宿主共用 Java/native 算法；对照测试需证明混合配额、不同 manager 隔离和逐对象释放。
+
+<a id="adr-0096"></a>
+
+## ADR-0096 · 分离 JIT 数据读取与写入页表
+
+- 状态：Accepted
+- 日期：2026-10-05
+- Supersedes：ADR-0016 中“所有非 RW/执行页的数据访问都回退”的限制；保留写入、
+  observer、取指、跨页及映射生命周期约束。
+
+### 背景
+
+只读常量和 RX 页中的数据读取反复进入全局账本锁，原生多线程运行中形成高频回调与竞争。
+将这些页直接加入读写共享表会错误放开写权限。
+
+### 决定
+
+AddressSpace 单独发布 readable 数据页表，MemoryBus 显式提供只读访问能力；ARM64
+Dynarmic 通过哈希受检的构建目录扩展，仅在普通 data load 时选择该表。store 保留原
+RW 非执行页表，instruction fetch 保留受检 bus；exclusive monitor 不变，回调可在已发布
+readable 页内读取、在自然对齐的 RW 非执行页内使用真实 host CAS，其余回退受检 bus。
+观察器存在时两张表都禁用；跨页继续回调。无 read 权限和未映射页保持空项。
+
+### 后果
+
+两张表同时随映射、保护、替换、卸载、快照恢复更新，订阅失效仍由各 CPU 执行线程处理。
+不修改固定 vendor submodule；x64 后端保留既有路径。该变更沿用已有直接访存生命周期，
+不宣称补齐 CURRENT 中尚未验收的并发卸载 quiescence 或普通写 ABA 历史跟踪。

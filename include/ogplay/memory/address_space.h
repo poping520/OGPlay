@@ -195,6 +195,8 @@ public:
     [[nodiscard]] bool CompareExchange64(GuestAddress address, std::uint64_t expected,
                                          std::uint64_t value, std::uint64_t thread_id = 0);
     [[nodiscard]] DirectMemoryPageTable* DirectPageTable() noexcept;
+    // Read permission only. Never use these entries for stores or fetches.
+    [[nodiscard]] DirectMemoryPageTable* DirectReadPageTable() noexcept;
     [[nodiscard]] std::optional<MemoryStatistics> TrySnapshot() const;
     // Metadata only, bounded by maximum_ranges; never copies guest contents.
     [[nodiscard]] std::vector<MemoryMappingInfo> DescribeMappings(

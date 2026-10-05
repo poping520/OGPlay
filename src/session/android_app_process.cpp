@@ -145,7 +145,8 @@ public:
              std::move(request.sound_resource_loader),
              std::move(request.guest_call_slice_observer),
              std::move(request.platform), request.proc_facts,
-             request.diagnostics, std::move(guest_environment)});
+             request.diagnostics, std::move(guest_environment),
+             request.guest_call_slice_observer_thread});
         session = runtime::AndroidGuestCallSession::AdoptProcess(
             std::move(native_process));
         state = AndroidAppProcessState::native_process_ready;

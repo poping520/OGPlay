@@ -227,6 +227,13 @@ public:
             return 0;
         }
         if (function_id == Id(Gles2Function::bind_buffer)) {
+            // These two bindings only replace a scalar. Copying transfer also
+            // clones every cached uniform/query shape on each draw's rebind.
+            if (args[0] == 0x8892U || args[0] == 0x8893U) {
+                RequireFrame(frame, symbol).BindBuffer(args[0], args[1]);
+                context_.Shared().transfer.BindBuffer(args[0], args[1]);
+                return 0;
+            }
             auto next = context_.Shared().transfer;
             next.BindBuffer(args[0], args[1]);
             RequireFrame(frame, symbol).BindBuffer(args[0], args[1]);
@@ -290,10 +297,11 @@ public:
         }
         if (function_id == Id(Gles2Function::pixel_store_i)) {
             const auto value = std::bit_cast<std::int32_t>(args[1]);
-            auto next = context_.Shared().transfer;
-            next.PixelStore(args[0], value);
+            // Validation depends only on pname/value; commit changes one scalar.
+            gles::GlesTransferState validation;
+            validation.PixelStore(args[0], value);
             RequireFrame(frame, symbol).PixelStore(args[0], value);
-            context_.Shared().transfer = std::move(next);
+            context_.Shared().transfer.PixelStore(args[0], value);
             return 0;
         }
         if (function_id == Id(Gles2Function::tex_parameter_i)) {

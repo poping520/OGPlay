@@ -4,15 +4,15 @@
 
 namespace ogplay::session {
 
-std::vector<std::uint8_t> ComposeUiOverlay(
-    const std::span<const std::uint8_t> base_rgba8,
+void ComposeUiOverlayInPlace(
+    const std::span<std::uint8_t> result,
     const runtime::ui::UiOverlayFrame& overlay) {
-    if (base_rgba8.size() != overlay.rgba8.size() ||
+    if (result.size() != overlay.rgba8.size() ||
         overlay.rgba8.size() != static_cast<std::size_t>(overlay.width) *
                                     overlay.height * 4U) {
         throw std::invalid_argument("UI composition frame layouts differ");
     }
-    std::vector<std::uint8_t> result(base_rgba8.begin(), base_rgba8.end());
+    if (overlay.fully_transparent) return;
     for (std::size_t offset = 0; offset < result.size(); offset += 4U) {
         const auto alpha = overlay.rgba8[offset + 3U];
         if (alpha == 0) continue;
@@ -30,6 +30,13 @@ std::vector<std::uint8_t> ComposeUiOverlay(
                      127U) /
                         255U);
     }
+}
+
+std::vector<std::uint8_t> ComposeUiOverlay(
+    const std::span<const std::uint8_t> base_rgba8,
+    const runtime::ui::UiOverlayFrame& overlay) {
+    std::vector<std::uint8_t> result(base_rgba8.begin(), base_rgba8.end());
+    ComposeUiOverlayInPlace(result, overlay);
     return result;
 }
 

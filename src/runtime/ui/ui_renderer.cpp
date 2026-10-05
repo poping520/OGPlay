@@ -334,6 +334,7 @@ void PaintRect(UiOverlayFrame& frame, const Rect rect, const Rect clip,
                 (static_cast<std::size_t>(y) * frame.width +
                  static_cast<std::size_t>(x)) * 4U;
             pixel(x, y, frame.rgba8.data() + offset);
+            if (frame.rgba8[offset + 3U] != 0) frame.fully_transparent = false;
         }
     }
 }
@@ -451,7 +452,7 @@ UiOverlayFrame RasterizeUiOverlay(const UiRenderList& commands,
     }
     UiOverlayFrame frame{.width = static_cast<std::uint32_t>(metrics.width),
                          .height = static_cast<std::uint32_t>(metrics.height),
-                         .rgba8 = {}};
+                         .rgba8 = {}, .fully_transparent = true};
     frame.rgba8.resize(static_cast<std::size_t>(frame.width) * frame.height * 4U);
     std::vector<Rect> clips{{0, 0, metrics.width, metrics.height}};
     for (const auto& command : commands) {

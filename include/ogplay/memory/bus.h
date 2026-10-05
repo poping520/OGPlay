@@ -70,6 +70,9 @@ public:
     [[nodiscard]] virtual DirectMemoryPageTable* DirectPageTable() noexcept {
         return nullptr;
     }
+    [[nodiscard]] virtual DirectMemoryPageTable* DirectReadPageTable() noexcept {
+        return nullptr;
+    }
 };
 
 class CheckedMemoryBus final : public MemoryBus {
@@ -109,6 +112,7 @@ public:
         return address_space_.ObserveMappingChanges(std::move(handler));
     }
     [[nodiscard]] DirectMemoryPageTable* DirectPageTable() noexcept override;
+    [[nodiscard]] DirectMemoryPageTable* DirectReadPageTable() noexcept override;
 
 private:
     AddressSpace& address_space_;

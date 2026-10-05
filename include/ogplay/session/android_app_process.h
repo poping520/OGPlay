@@ -66,6 +66,7 @@ struct AndroidAppProcessRequest final {
     AndroidAppProcessHost host;
     runtime::GuestProcFacts proc_facts{};
     std::shared_ptr<runtime::debug::DiagnosticState> diagnostics;
+    std::optional<std::thread::id> guest_call_slice_observer_thread;
 };
 
 class AndroidAppProcessError final : public std::runtime_error {

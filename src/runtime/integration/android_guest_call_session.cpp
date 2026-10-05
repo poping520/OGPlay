@@ -597,6 +597,7 @@ struct AndroidGuestProcessStartup final {
     GuestProcFacts proc_facts;
     std::shared_ptr<debug::DiagnosticState> diagnostics;
     std::shared_ptr<const GuestProcessEnvironment> initial_environment;
+    std::optional<std::thread::id> guest_call_slice_observer_thread;
 };
 
 [[nodiscard]] AndroidGuestProcessStartup RootlessStartup(
@@ -622,7 +623,8 @@ struct AndroidGuestProcessStartup final {
             0,
             request.proc_facts,
             request.diagnostics,
-            request.initial_environment};
+            request.initial_environment,
+            request.guest_call_slice_observer_thread};
 }
 
 [[nodiscard]] AndroidGuestProcessStartup LegacyStartup(
@@ -648,7 +650,7 @@ struct AndroidGuestProcessStartup final {
             1,
             request.proc_facts,
             request.diagnostics,
-            {}};
+            {}, request.guest_call_slice_observer_thread};
 }
 
 }  // namespace
@@ -701,6 +703,7 @@ public:
           maximum_ticks_(request.maximum_ticks_per_call),
           progress_(request.progress),
           slice_observer_(request.guest_call_slice_observer),
+          slice_observer_thread_(request.guest_call_slice_observer_thread),
           diagnostics_(request.diagnostics),
           api_(request.api),
           application_module_count_(request.application_module_count) {
@@ -1024,7 +1027,7 @@ public:
                     }
                     charge(consumed);
                     if (clone_runtime_) clone_runtime_->RethrowFailure();
-                    if (slice_observer_) slice_observer_(consumed);
+                    if (ObservesCurrentThread()) slice_observer_(consumed);
                 };
             if (admitted_frame.renewable_native_frame) {
                 observer = [this, target, execution, &frame](
@@ -1038,7 +1041,7 @@ public:
                         throw A32GuestCallCancelled(frame.thread_id);
                     }
                     if (clone_runtime_) clone_runtime_->RethrowFailure();
-                    if (slice_observer_) slice_observer_(consumed);
+                    if (ObservesCurrentThread()) slice_observer_(consumed);
                 };
             }
             auto result = InvokeA32GuestCall(
@@ -1209,7 +1212,8 @@ public:
 
     SupervisorCallProgress HandleBoundary(
         cpu::Cpu& cpu, const cpu::RunResult& stopped) {
-        if (stopped.reason != cpu::RunStopReason::supervisor_call || stopped.immediate != 3U)
+        if ((stopped.reason != cpu::RunStopReason::supervisor_call &&
+             stopped.reason != cpu::RunStopReason::host_call_fault) || stopped.immediate != 3U)
             return boundary_.HandleWithProgress(cpu, stopped);
         // JNI on a native clone borrows that thread's CPU for nested calls.
         // Java/root calls already publish the current CPU and nesting depth.
@@ -1230,8 +1234,14 @@ public:
         return boundary_.HandleWithProgress(cpu, stopped);
     }
 
+    [[nodiscard]] bool ObservesCurrentThread() const noexcept {
+        return slice_observer_ &&
+               (!slice_observer_thread_ ||
+                *slice_observer_thread_ == std::this_thread::get_id());
+    }
+
     void ConfigureFastHostCalls(cpu::Cpu& cpu) {
-        if (!slice_observer_) {
+        if (!slice_observer_ || slice_observer_thread_) {
             cpu.SetHostCallHook({&DispatchFastHostCall, this});
         }
     }
@@ -1241,7 +1251,11 @@ public:
         cpu::A32HostCallContext& call) noexcept {
         if (userdata == nullptr) return cpu::HostCallResult::unhandled;
         auto& self = *static_cast<Impl*>(userdata);
-        if (svc == 3U) return self.jni_dispatcher_.TryFastCall(call);
+        if (self.ObservesCurrentThread()) return cpu::HostCallResult::unhandled;
+        // JNI can enter Java and then another guest native. The runner must
+        // publish the current CPU before that reentry; live JIT registers
+        // alone are insufficient for a native clone's thread context.
+        if (svc == 3U) return cpu::HostCallResult::unhandled;
         const auto boundary = self.boundary_.FastHostCallHook();
         return boundary.invoke(boundary.userdata, svc, call);
     }
@@ -2415,6 +2429,7 @@ private:
     std::exception_ptr native_workers_failure_;
     std::function<void(std::string_view)> progress_;
     A32GuestCallSliceObserver slice_observer_;
+    std::optional<std::thread::id> slice_observer_thread_;
     std::shared_ptr<debug::DiagnosticState> diagnostics_;
     std::uint32_t api_{19};
     std::size_t application_module_count_{};

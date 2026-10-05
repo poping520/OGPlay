@@ -57,6 +57,9 @@ struct UiOverlayFrame final {
     std::uint32_t width{};
     std::uint32_t height{};
     std::vector<std::uint8_t> rgba8;
+    // Rasterizer certifies all alpha bytes are zero. Default is conservative
+    // for frames assembled by other producers.
+    bool fully_transparent{};
 };
 
 struct FixedTextMetrics final {

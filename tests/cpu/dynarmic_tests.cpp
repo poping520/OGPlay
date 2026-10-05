@@ -382,6 +382,66 @@ TEST_CASE("Dynarmic executes ARM exclusive memory operations") {
                     std::runtime_error);
 }
 
+TEST_CASE("Dynarmic exclusive direct and observed paths preserve all scalar widths") {
+    using namespace ogplay;
+    memory::AddressSpace space;
+    const memory::GuestAddress code{0x10000}, data{0x20000};
+    const auto rw = memory::PageProtection::read | memory::PageProtection::write;
+    space.Map({code, 4096}, rw);
+    space.Map({data, 4096}, rw);
+    ThreadObserver observer;
+    memory::MemoryAccessObserver* selected{};
+    SUBCASE("published direct pages") {}
+    SUBCASE("observed callbacks") { selected = &observer; }
+    memory::CheckedMemoryBus bus(space, selected);
+    struct Program { std::uint32_t load, store; unsigned bytes; };
+    for (const auto program : {Program{0xe1d02f9fU, 0xe1c04f96U, 1},
+                              Program{0xe1f02f9fU, 0xe1e04f96U, 2},
+                              Program{0xe1902f9fU, 0xe1804f96U, 4},
+                              Program{0xe1b02f9fU, 0xe1a04f96U, 8}}) {
+        INFO(program.bytes);
+        space.Protect({code, 4096}, rw);
+        bus.Write32(code, program.load); // ldrex[b/h/d] r2[,r3], [r0]
+        bus.Write32(code.Add(4), 0xef000001U);
+        bus.Write32(code.Add(8), program.store); // strex[b/h/d] r4, r6[,r7], [r0]
+        bus.Write32(code.Add(12), 0xef000001U);
+        space.Protect({code, 4096}, memory::PageProtection::read | memory::PageProtection::execute);
+        constexpr auto initial = UINT64_C(0x1122334455667788);
+        constexpr auto desired = UINT64_C(0xaabbccddabcdef01);
+        const auto mask = program.bytes == 8 ? UINT64_MAX
+                         : (UINT64_C(1) << (program.bytes * 8)) - 1;
+        bus.Write64(data, initial);
+        observer.accesses.clear();
+        cpu::DynarmicCpu cpu(bus);
+        cpu::A32State state;
+        state.SetThreadId(17);
+        state.SetRegister(cpu::CoreRegister::pc, code.Value());
+        state.SetRegister(cpu::CoreRegister::r0, data.Value());
+        state.SetRegister(cpu::CoreRegister::r6, static_cast<std::uint32_t>(desired));
+        state.SetRegister(cpu::CoreRegister::r7, static_cast<std::uint32_t>(desired >> 32));
+        cpu.SetState(state);
+        REQUIRE(cpu.Run(8).reason == cpu::RunStopReason::supervisor_call);
+        CHECK(cpu.GetState().Register(cpu::CoreRegister::r2) ==
+              static_cast<std::uint32_t>(initial & mask));
+        REQUIRE(cpu.Run(8).reason == cpu::RunStopReason::supervisor_call);
+        CHECK(cpu.GetState().Register(cpu::CoreRegister::r4) == 0);
+        CHECK(bus.Read64(data) == ((initial & ~mask) | (desired & mask)));
+        if (selected) {
+            CHECK(std::ranges::any_of(observer.accesses, [&](const auto& access) {
+                return access.address == data && access.type == memory::BusAccessType::write &&
+                       access.size == program.bytes && access.thread_id == 17;
+            }));
+        }
+        // Ordinary peer store between load and exclusive store must win.
+        cpu.SetState(state);
+        REQUIRE(cpu.Run(8).reason == cpu::RunStopReason::supervisor_call);
+        bus.Write64(data, 0);
+        REQUIRE(cpu.Run(8).reason == cpu::RunStopReason::supervisor_call);
+        CHECK(cpu.GetState().Register(cpu::CoreRegister::r4) == 1);
+        CHECK(bus.Read64(data) == 0);
+    }
+}
+
 TEST_CASE("Dynarmic exclusive locks interoperate with direct unlocks on host threads") {
     using namespace ogplay;
     memory::AddressSpace space;
@@ -520,6 +580,66 @@ TEST_CASE("Dynarmic reports callback-only data memory faults") {
     CHECK(result.fault->address == unmapped);
     CHECK(result.fault->access == ogplay::memory::AccessType::read);
     CHECK(result.fault->thread_id == 304);
+}
+
+TEST_CASE("Dynarmic read pages preserve protected data and live permission changes") {
+    using namespace ogplay;
+    memory::AddressSpace memory;
+    const memory::GuestAddress code{sample::kCodeAddress};
+    const memory::GuestAddress data{sample::kMailboxAddress};
+    const auto rw = memory::PageProtection::read | memory::PageProtection::write;
+    memory.Map({code, memory.PageSize()}, rw);
+    memory.Map({data, memory.PageSize() * 2}, rw);
+    memory::CheckedMemoryBus bus(memory);
+    bus.Write32(code, 0xe5901000U); // ldr r1, [r0]
+    bus.Write32(code.Add(4), 0xef000001U);
+    bus.Write32(code.Add(8), 0xe5801000U); // str r1, [r0]
+    bus.Write32(code.Add(12), 0xef000001U);
+    bus.Write32(data, 0x12345678U);
+    memory.Protect({code, memory.PageSize()},
+                   memory::PageProtection::read | memory::PageProtection::execute);
+    memory.Protect({data, memory.PageSize()}, memory::PageProtection::read);
+    cpu::DynarmicCpu cpu(bus);
+    cpu::A32State state;
+    state.SetThreadId(304);
+    state.SetRegister(cpu::CoreRegister::r0, data.Value());
+    const auto run = [&](const memory::GuestAddress pc) {
+        state.SetRegister(cpu::CoreRegister::pc, pc.Value());
+        cpu.SetState(state);
+        return cpu.Run(8);
+    };
+    REQUIRE(run(code).reason == cpu::RunStopReason::supervisor_call);
+    CHECK(cpu.GetState().Register(cpu::CoreRegister::r1) == 0x12345678U);
+    // The readable table must never grant writes to a read-only page.
+    state.SetRegister(cpu::CoreRegister::r1, 0xffffffffU);
+    auto result = run(code.Add(8));
+    REQUIRE(result.fault.has_value());
+    CHECK(result.fault->access == memory::AccessType::write);
+    CHECK(result.fault->reason == memory::FaultReason::permission_denied);
+    CHECK(bus.Read32(data) == 0x12345678U);
+    // Same CPU and cached load, now from executable/readable data.
+    memory.Protect({data, memory.PageSize()},
+                   memory::PageProtection::read | memory::PageProtection::execute);
+    REQUIRE(run(code).reason == cpu::RunStopReason::supervisor_call);
+    CHECK(cpu.GetState().Register(cpu::CoreRegister::r1) == 0x12345678U);
+    // Execute permission alone cannot authorize data reads.
+    memory.Protect({data, memory.PageSize()}, memory::PageProtection::execute);
+    result = run(code);
+    REQUIRE(result.fault.has_value());
+    CHECK(result.fault->access == memory::AccessType::read);
+    CHECK(result.fault->thread_id == 304);
+    // Cross-page reads must validate the second page before reading it.
+    memory.Protect({data, memory.PageSize()}, memory::PageProtection::read);
+    memory.Protect({data.Add(memory.PageSize()), memory.PageSize()}, memory::PageProtection::none);
+    state.SetRegister(cpu::CoreRegister::r0, data.Add(memory.PageSize() - 2).Value());
+    result = run(code);
+    REQUIRE(result.fault.has_value());
+    CHECK(result.fault->address == data.Add(memory.PageSize()));
+    memory.Unmap({data, memory.PageSize()});
+    state.SetRegister(cpu::CoreRegister::r0, data.Value());
+    result = run(code);
+    REQUIRE(result.fault.has_value());
+    CHECK(result.fault->reason == memory::FaultReason::unmapped);
 }
 
 TEST_CASE("Dynarmic direct memory falls back for cross-page permission checks") {

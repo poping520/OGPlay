@@ -64,6 +64,7 @@
 - 音频只消费已解析的 resid/APK/VFS 字节区间；解码归 audio，补充有界，退出停止设备。
 - process exit、fault、shutdown 均走正常 teardown；native finalizer 先于 ANGLE surface 关闭。
   observer 只在 SDL 宿主线程泵事件，guest Java worker 不触碰窗口或共享进度。
+  CLI 显式将外部 observer 限定到窗口宿主线程，后台普通 HLE 可走快路。
   等待 renderer 的生命周期回调复用同一 owner 检查和 Clock 节流泵；只收集 OS 消息，
   输入消费与生命周期命令仍留在帧循环，不从等待回调递归进入 guest。
 - 日志保留 backend 来源、Profile、bootstrap、生命周期和原始 JNI/CPU 故障上下文。CLI 顶层

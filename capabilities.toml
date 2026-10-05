@@ -23,7 +23,7 @@ note = "BND-5 按 Android 4.4.4 system/core/liblog 的 target 源完整发布并
 [runtime.fast_host_call]
 status = "complete"
 test = "tests/cpu/dynarmic_tests.cpp; tests/runtime/boundary/integration/android_boundary_hle_tests.cpp; tests/runtime/jni_guest_abi_tests.cpp; cmake/CheckBoundaryHotPath.cmake"
-note = "BND-2 增加 CPU generic handled/unhandled/fault HostCallHook、multi-page sealed thunk arena 与 live-register dense SVC #2 direct-handler path；BND-3 将 JNI SVC #3 接入同一 transport，fast fault 按 thread/PC pending 并在 JIT 外恢复原 exception identity；BND-4 增加 0/4/stack/GLES/JNI/forced-slow end-to-end benchmark，observer 保持 slow fallback"
+note = "BND-2 增加 CPU generic handled/unhandled/fault HostCallHook、multi-page sealed thunk arena 与 live-register dense SVC #2 direct-handler path；BND-3 将 JNI SVC #3 接入同一 transport，fast fault 按 thread/PC pending 并在 JIT 外恢复原 exception identity；BND-4 增加 0/4/stack/GLES/JNI/forced-slow end-to-end benchmark；WU-PERF-09 可将外部 observer 限定到宿主线程，被观察线程保持 slow fallback，内部诊断/取消仍逐 slice 执行；AndroidGuestProcess 的 JNI 保留 runner 上下文以支持 Java→native 重入，fast fault 也由 JNI dispatcher 恢复原异常"
 
 [runtime.guest_symbol_override]
 status = "complete"
@@ -68,12 +68,12 @@ note = "LUI-6 horizontal LinearLayout 按 document order 计算主/交叉轴，G
 [runtime.ui_rgba_renderer]
 status = "complete"
 test = "tests/runtime/ui_renderer_tests.cpp"
-note = "LUI-7 从 resolved UiTree 生成 solid/bitmap/clip render list，以 deterministic integer source-over raster 透明 RGBA8；LUI-16 将 layout/draw dirty 消费拆分，layout 后文字与 GONE mutation 均强制 cache rebuild；drawable 按 resource id 解码缓存"
+note = "LUI-7 从 resolved UiTree 生成 solid/bitmap/clip render list，以 deterministic integer source-over raster 透明 RGBA8；LUI-16 将 layout/draw dirty 消费拆分，layout 后文字与 GONE mutation 均强制 cache rebuild；drawable 按 resource id 解码缓存；WU-PERF-09 在光栅化时认证全透明叠层，合成仍先校验布局"
 
 [session.ui_composition]
 status = "complete"
 test = "tests/session/ui_compositor_tests.cpp; tests/dexvm/videoview_tests.cpp"
-note = "LUI-8 在 frontend 唯一 frame handoff 调 session ComposePresentedFrame，将最终 VideoView/GLES base 与 cached UI overlay integer source-over；不抢占异步 GL frame store，透明 overlay 保持 base exact，video 模块无 UI 依赖"
+note = "LUI-8 在 frontend 唯一 frame handoff 调 session ComposePresentedFrame，将最终 VideoView/GLES base 与 cached UI overlay integer source-over；不抢占异步 GL frame store，透明 overlay 保持 base exact，video 模块无 UI 依赖；WU-PERF-09 对拥有的 base 原地合成并跳过已认证全透明叠层，保留值返回接口"
 
 [runtime.ui_pointer_dispatch]
 status = "complete"
@@ -453,12 +453,12 @@ note = "M5 WU-0296 让声明 audio.sound_pool 的 GLSurfaceView Profile 按纯�
 [memory.direct_address_space]
 status = "complete"
 test = "tests/memory/address_space_tests.cpp"
-note = "M1 预留 4 GiB；M2 固定 4 KiB Android guest 页并在 4/16 KiB 宿主页上保持独立映射、权限与释放；M5 WU-0290 为 RW 非执行页维护稳定 JIT 数据页表；优化 WU-PERF-02..03 增加一次锁 page-aware C string scan 与映射世代 write-preflight 票据；SBX-15 增加先准备 backing 的原子匿名替换，清零目标页及空洞，保留邻页并发布权限/账本/直接页表/世代"
+note = "M1 预留 4 GiB；M2 固定 4 KiB Android guest 页并在 4/16 KiB 宿主页上保持独立映射、权限与释放；M5 WU-0290 为 RW 非执行页维护稳定 JIT 写页表；WU-PERF-09/ADR-0096 独立发布 R/RX/RW 可读数据页表，同步映射、权限和快照撤销；优化 WU-PERF-02..03 增加一次锁 page-aware C string scan 与映射世代 write-preflight 票据；SBX-15 增加先准备 backing 的原子匿名替换，清零目标页及空洞，保留邻页并发布权限/账本/直接页表/世代"
 
 [memory.soft_mmu]
 status = "complete"
 test = "tests/memory/bus_tests.cpp"
-note = "M1 CheckedMemoryBus 完成小端数据访问、独立 execute 取指、全区间验证与 watchpoint/trace 观察器；M5 WU-0290 在 observer、非 RW、execute 与跨页场景强制回退 callback。CompareExchange8/16/32/64 在账本锁内验证权限/对齐并使用宿主无锁 CAS，与 JIT 直接写保持原子提交；失配不写入，observer 在操作完成后通知。"
+note = "M1 CheckedMemoryBus 完成小端数据访问、独立 execute 取指、全区间验证与 watchpoint/trace 观察器；observer 禁用所有直接数据页表；读表允许 R/RX，写表仅 RW 非执行页，跨页、缺权限仍回退受检 callback。CompareExchange8/16/32/64 在账本锁内验证权限/对齐并使用宿主无锁 CAS，与 JIT 直接写保持原子提交；失配不写入，observer 在操作完成后通知。"
 
 [memory.snapshot]
 status = "complete"
@@ -483,7 +483,7 @@ note = "M1 参考后端覆盖裸样本与基础诊断指令族；完整 ISA 不�
 [cpu.dynarmic]
 status = "complete"
 test = "tests/cpu/dynarmic_tests.cpp"
-note = "M1 Dynarmic A32/T32 后端遵守 MemoryBus、状态、tick、停止和 fault 契约；M2 与解释器一致支持 TPIDRURO；M5 WU-0290 接入受保护数据页表并保留跨页及 callback fault。WU-PERF-08 将成功的 ARM cacheflush 发布到共享 context 的全部代码缓存；SVC 桥接验证见 tests/runtime/syscall_bridge_tests.cpp，运行中 peer 的范围失效见本条测试入口。BND-48 增加内存映射范围订阅，覆盖权限撤销、地址复用、独立 context 与快照恢复。STREX 经 MemoryBus 原子 CAS 提交，不再以回调互斥锁模拟；定向覆盖直接 STR 解锁竞争及 exclusive peer ABA。普通直接写入恢复原值的 ABA/write-history 跟踪仍不支持。"
+note = "M1 Dynarmic A32/T32 后端遵守 MemoryBus、状态、tick、停止和 fault 契约；M2 与解释器一致支持 TPIDRURO；M5 WU-0290 接入受保护数据页表并保留跨页及 callback fault。WU-PERF-08 将成功的 ARM cacheflush 发布到共享 context 的全部代码缓存；SVC 桥接验证见 tests/runtime/syscall_bridge_tests.cpp，运行中 peer 的范围失效见本条测试入口。BND-48 增加内存映射范围订阅，覆盖权限撤销、地址复用、独立 context 与快照恢复。WU-PERF-09 在 ARM64 backend 分离读/写页表；exclusive 回调借用当前已发布的单页 backing，以真实宿主 CAS 提交，observer/未对齐/跨页/缺权限回退 MemoryBus；定向覆盖直接 STR 解锁竞争及 exclusive peer ABA。普通直接写入恢复原值的 ABA/write-history 跟踪仍不支持。"
 
 [cpu.arm_user_coprocessor]
 status = "partial"

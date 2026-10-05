@@ -511,6 +511,14 @@ TEST_CASE("Android process observes native clone failure without another guest i
     SUBCASE("slow boundary") {
         request.guest_call_slice_observer = [](std::uint64_t) {};
     }
+    SUBCASE("owner observer with fast clone boundary") {
+        const auto owner = std::this_thread::get_id();
+        request.guest_call_slice_observer_thread = owner;
+        request.guest_call_slice_observer = [owner](std::uint64_t) {
+            if (std::this_thread::get_id() != owner)
+                throw std::logic_error("external observer escaped its host thread");
+        };
+    }
     auto process = ogplay::runtime::AndroidGuestProcess::Start(request);
     CHECK_NOTHROW(process->RethrowAsyncFailure());
     std::string invocation_failure;

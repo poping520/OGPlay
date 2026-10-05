@@ -4,8 +4,11 @@
 #include "dynarmic_guest_fault.h"
 
 #include <algorithm>
+#include <atomic>
+#include <bit>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -136,7 +139,9 @@ public:
     class Callbacks final : public Dynarmic::A32::UserCallbacks {
     public:
         explicit Callbacks(memory::MemoryBus& memory_bus) noexcept
-            : memory_bus_(memory_bus) {}
+            : memory_bus_(memory_bus),
+              direct_pages_(memory_bus.DirectPageTable()),
+              read_pages_(memory_bus.DirectReadPageTable()) {}
 
         void Attach(Dynarmic::A32::Jit& jit) noexcept { jit_ = &jit; }
 
@@ -161,7 +166,10 @@ public:
         }
 
         [[nodiscard]] memory::DirectMemoryPageTable* DirectPageTable() noexcept {
-            return memory_bus_.DirectPageTable();
+            return direct_pages_;
+        }
+        [[nodiscard]] memory::DirectMemoryPageTable* DirectReadPageTable() noexcept {
+            return read_pages_;
         }
 
         std::optional<std::uint32_t> MemoryReadCode(
@@ -315,6 +323,15 @@ public:
         [[nodiscard]] UInt Read(const Dynarmic::A32::VAddr address,
                                 const ReadFunction<UInt> function) {
             try {
+                // Exclusive loads use backend callbacks even with page tables.
+                // Borrow the same published backing as ordinary JIT loads.
+                if constexpr (std::endian::native == std::endian::little) {
+                    if (auto* storage = DirectStorage<UInt>(read_pages_, address)) {
+                        UInt value{};
+                        std::memcpy(&value, storage, sizeof(value));
+                        return value;
+                    }
+                }
                 return (memory_bus_.*function)(memory::GuestAddress{address}, thread_id_);
             } catch (const memory::MemoryFault& fault) {
                 RecordFault(fault);
@@ -343,6 +360,18 @@ public:
             bool (memory::MemoryBus::*compare_exchange)(memory::GuestAddress, UInt, UInt,
                                                         std::uint64_t)) {
             try {
+                if constexpr (std::endian::native == std::endian::little) {
+                    static_assert(std::atomic_ref<UInt>::is_always_lock_free);
+                    static_assert(std::atomic_ref<UInt>::required_alignment <= sizeof(UInt));
+                    if (address % sizeof(UInt) == 0) {
+                        if (auto* storage = DirectStorage<UInt>(direct_pages_, address)) {
+                            auto& scalar = *reinterpret_cast<UInt*>(storage);
+                            auto comparison = expected;
+                            return std::atomic_ref<UInt>(scalar).compare_exchange_strong(
+                                comparison, value, std::memory_order_seq_cst);
+                        }
+                    }
+                }
                 const auto guest_address = memory::GuestAddress{address};
                 return (memory_bus_.*compare_exchange)(guest_address, expected, value,
                                                        thread_id_);
@@ -350,6 +379,17 @@ public:
                 RecordFault(fault);
                 return false;
             }
+        }
+
+        template <typename UInt>
+        [[nodiscard]] static std::uint8_t* DirectStorage(
+            const memory::DirectMemoryPageTable* table,
+            const Dynarmic::A32::VAddr address) noexcept {
+            constexpr auto page_size = std::size_t{1} << memory::kGuestPageBits;
+            const auto offset = address & (page_size - 1);
+            if (table == nullptr || offset > page_size - sizeof(UInt)) return nullptr;
+            auto* page = (*table)[address >> memory::kGuestPageBits];
+            return page == nullptr ? nullptr : page + offset;
         }
 
         void RecordFault(const memory::MemoryFault& fault) {
@@ -371,6 +411,8 @@ public:
         }
 
         memory::MemoryBus& memory_bus_;
+        memory::DirectMemoryPageTable* direct_pages_;
+        memory::DirectMemoryPageTable* read_pages_;
         Dynarmic::A32::Jit* jit_{};
         std::uint64_t thread_id_{};
         std::uint64_t ticks_remaining_{};
@@ -419,6 +461,9 @@ public:
         config.arch_version = Dynarmic::A32::ArchVersion::v7;
         config.always_little_endian = true;
         config.page_table = callbacks.DirectPageTable();
+#if defined(__aarch64__) || defined(_M_ARM64)
+        config.read_page_table = callbacks.DirectReadPageTable();
+#endif
         config.detect_misaligned_access_via_page_table =
             8U | 16U | 32U | 64U;
         config.only_detect_misalignment_via_page_table_on_page_boundary = true;

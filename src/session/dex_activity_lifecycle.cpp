@@ -829,7 +829,7 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
                 static_cast<std::int32_t>(frame.width),
                 static_cast<std::int32_t>(frame.height)
             });
-        frame.rgba8 = ComposeUiOverlay(frame.rgba8, overlay);
+        ComposeUiOverlayInPlace(frame.rgba8, overlay);
         runtime::ComposeVideoViews(context, frame.rgba8, frame.width, frame.height, true);
         return frame;
     }

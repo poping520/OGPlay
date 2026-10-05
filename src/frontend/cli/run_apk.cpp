@@ -741,6 +741,7 @@ int RunApkCommand(const int argc, const char* const argv[],
             .allow_gles1_material_single_face = ProfileEnablesQuirk(
                 profile, "gles1_material_front_face")};
         app_request.guest_call_slice_observer = guest_slice_observer;
+        app_request.guest_call_slice_observer_thread = std::this_thread::get_id();
         app_request.platform = {
             .installation_id = sandbox.installation_id,
             .android_id = sandbox.android_id,

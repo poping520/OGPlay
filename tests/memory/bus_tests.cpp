@@ -100,6 +100,43 @@ TEST_CASE("direct page table publishes only unobserved non-executable RW pages")
     CHECK(observed.DirectPageTable() == nullptr);
 }
 
+TEST_CASE("read page table follows read permission independently of write and execute") {
+    using namespace ogplay::memory;
+    AddressSpace space;
+    CheckedMemoryBus bus(space);
+    const GuestAddress start{0x10000};
+    const auto index = start.Value() >> kGuestPageBits;
+    auto* reads = bus.DirectReadPageTable();
+    auto* writes = bus.DirectPageTable();
+    REQUIRE(reads != nullptr);
+    REQUIRE(writes != nullptr);
+    CHECK((*reads)[index] == nullptr);
+    space.Map({start, space.PageSize()}, PageProtection::read | PageProtection::write);
+    bus.Write32(start, 0x78563412U);
+    for (const auto protection : {PageProtection::read,
+            PageProtection::read | PageProtection::execute}) {
+        space.Protect({start, space.PageSize()}, protection);
+        REQUIRE((*reads)[index] != nullptr);
+        CHECK((*reads)[index][0] == 0x12);
+        CHECK((*writes)[index] == nullptr);
+    }
+    const auto snapshot = space.CaptureSnapshot();
+    for (const auto protection : {PageProtection::none, PageProtection::execute}) {
+        space.Protect({start, space.PageSize()}, protection);
+        CHECK((*reads)[index] == nullptr);
+    }
+    space.Unmap({start, space.PageSize()});
+    CHECK((*reads)[index] == nullptr);
+    space.RestoreSnapshot(snapshot);
+    CHECK(bus.DirectReadPageTable() == reads);
+    REQUIRE((*reads)[index] != nullptr);
+    CHECK((*reads)[index][0] == 0x12);
+    CHECK((*writes)[index] == nullptr);
+    RecordingObserver observer;
+    CheckedMemoryBus observed(space, &observer);
+    CHECK(observed.DirectReadPageTable() == nullptr);
+}
+
 TEST_CASE("instruction fetch uses execute permission independently from data reads") {
     RecordingObserver observer;
     ogplay::memory::AddressSpace memory;

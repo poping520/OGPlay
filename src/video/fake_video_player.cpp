@@ -109,4 +109,9 @@ void FakeVideoPlayer::SeekTo(std::int64_t position_ms) {
     }
 }
 
+bool FakeVideoPlayer::PcmEnded() const {
+    return !metadata_.HasAudio() || pcm_cursor_frames_ >=
+        metadata_.duration_ms * metadata_.audio_sample_rate / 1000;
+}
+
 }  // namespace ogplay::video

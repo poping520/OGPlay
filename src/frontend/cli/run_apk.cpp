@@ -46,6 +46,7 @@
 #include "ogplay/session/profile_entry_scope.h"
 #include "ogplay/session/profile_vfs.h"
 #include "ogplay/video/ffmpeg_video_player.h"
+#include "ogplay/video/buffered_video_player.h"
 #include "ogplay/session/quirk_registry.h"
 #include "ogplay/session/title_profile.h"
 #include "ogplay/session/android_app_process.h"
@@ -587,7 +588,11 @@ int RunApkCommand(const int argc, const char* const argv[],
             // keeps the immediate-completion fallback (ADR-0021).
             if (video::FfmpegAvailable()) {
                 dex_context->video_source_player_factory =
-                    video::MakeFfmpegVideoSourcePlayerFactory();
+                    [realtime = !mcp_manual_step](auto source) {
+                        auto player = video::OpenFfmpegVideo(std::move(source));
+                        return realtime ? video::MakeBufferedVideoPlayer(std::move(player))
+                                        : std::move(player);
+                    };
             } else {
                 logger.Write(
                     core::LogLevel::warn, "frontend.run_apk",
@@ -608,13 +613,9 @@ int RunApkCommand(const int argc, const char* const argv[],
         audio_output = hal::CreateSdlAudioOutput(kDesktopAudioOutputSpec);
         audio_output->Start();
         std::uint64_t active_frame{};
-        // Real-time pacing while a VideoView plays: the dex lifecycle
-        // advances its deterministic uptime by 16 ms per frame, so during
-        // free-running playback each frame must also cost 16 ms of wall
-        // time or the video (and its audio) races ahead. Games without
-        // active playback keep the unthrottled loop; manual stepping is
-        // never paced.
-        std::chrono::steady_clock::time_point video_pace_deadline{};
+        // Pace fast video steps; the lifecycle catches up slow steps using
+        // the same unified host Clock. Manual stepping remains deterministic.
+        std::uint64_t video_pace_deadline_ns{};
         RunApkGuestCallProgress call_progress{logger};
         HostEventThreadGate event_thread_gate;
         constexpr std::uint64_t kGuestCallEventPumpHz = 250U;
@@ -833,6 +834,7 @@ int RunApkCommand(const int argc, const char* const argv[],
         }
         auto* guest = &app_process->NativeProcess();
         auto* dex_lifecycle = &app_process->ActivityLifecycle();
+        dex_lifecycle->SetRealtimeVideoClock(!mcp_manual_step);
         {
             driver = {[&] {
                           app_process->StartApplication();
@@ -1000,16 +1002,16 @@ int RunApkCommand(const int argc, const char* const argv[],
                 if (mcp_manual_step) --permitted_steps;
                 if (!mcp_manual_step && dex_context &&
                     runtime::AnyVideoPlaying(*dex_context)) {
-                    constexpr auto kVideoFramePeriod =
-                        std::chrono::milliseconds(16);
-                    const auto now = std::chrono::steady_clock::now();
-                    if (video_pace_deadline < now - kVideoFramePeriod) {
-                        video_pace_deadline = now;  // playback (re)started
+                    constexpr std::uint64_t kVideoFramePeriodNs = 16'000'000U;
+                    const auto now = hal::Clock::SteadyTimestampNs();
+                    if (video_pace_deadline_ns + kVideoFramePeriodNs < now) {
+                        video_pace_deadline_ns = now;
                     }
-                    video_pace_deadline += kVideoFramePeriod;
-                    std::this_thread::sleep_until(video_pace_deadline);
+                    video_pace_deadline_ns += kVideoFramePeriodNs;
+                    if (video_pace_deadline_ns > now) std::this_thread::sleep_for(
+                        std::chrono::nanoseconds(video_pace_deadline_ns - now));
                 } else {
-                    video_pace_deadline = {};
+                    video_pace_deadline_ns = 0;
                 }
                 if (auto frame = guest->TakeLatestFrame(); frame.has_value()) {
                     *frame = dex_lifecycle->ComposePresentedFrame(

@@ -34,7 +34,14 @@ public:
                    const loader::ApkArchive& archive, std::string name,
                    const std::uint64_t offset, const std::uint64_t length)
         : bytes_(bytes), archive_(&archive), name_(std::move(name)),
-          offset_(offset), length_(length) {}
+          offset_(offset), length_(length) {
+        const auto entry = std::find_if(archive.entries.begin(), archive.entries.end(),
+            [this](const auto& value) { return value.name == name_; });
+        if (entry != archive.entries.end() && entry->compression_method == 0U) {
+            stored_ = loader::ValidatedStoredApkEntryData(bytes_, archive, name_)
+                .subspan(static_cast<std::size_t>(offset_), static_cast<std::size_t>(length_));
+        }
+    }
     [[nodiscard]] std::uint64_t Size() const noexcept override { return length_; }
     [[nodiscard]] std::size_t ReadAt(
         const std::uint64_t offset, const std::span<std::byte> destination,
@@ -42,6 +49,11 @@ public:
         if (stop.stop_requested() || offset >= length_) return 0;
         const auto count = static_cast<std::size_t>(std::min<std::uint64_t>(
             destination.size(), length_ - offset));
+        if (stored_) {
+            std::copy_n(stored_->begin() + static_cast<std::ptrdiff_t>(offset), count,
+                        destination.begin());
+            return count;
+        }
         return loader::ReadApkEntryRange(bytes_, *archive_, name_, offset_ + offset,
                                          destination.first(count), stop);
     }
@@ -51,6 +63,7 @@ private:
     std::string name_;
     std::uint64_t offset_{};
     std::uint64_t length_{};
+    std::optional<std::span<const std::byte>> stored_;
 };
 
 [[nodiscard]] bool TakesRemainder(const std::uint64_t length) {
@@ -113,8 +126,14 @@ std::shared_ptr<const audio::EncodedAudioDataSource> LoadEncodedAudioSource(
         const auto available = found->uncompressed_size - source.offset;
         const auto length = WindowLength(available, source.length);
         if (length > available || length > audio::kMaximumEncodedAudioBytes) return nullptr;
-        return std::make_shared<ApkAudioSource>(
-            context.apk_bytes, context.archive, apk_name, source.offset, length);
+        try {
+            return std::make_shared<ApkAudioSource>(
+                context.apk_bytes, context.archive, apk_name, source.offset, length);
+        } catch (const std::runtime_error&) {
+            // Preserve the existing unavailable-source result; Java consumers
+            // report prepare/open failure rather than a host exception.
+            return nullptr;
+        }
     }
     if (context.vfs == nullptr) return nullptr;
     try {

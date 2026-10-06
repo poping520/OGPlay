@@ -167,6 +167,7 @@ add_library(ogplay_video
     src/video/fake_video_player.cpp
     src/video/ffmpeg_loader.cpp
     src/video/ffmpeg_video_player.cpp
+    src/video/buffered_video_player.cpp
     src/video/rgba_canvas.cpp
 )
 add_library(OGPlay::Video ALIAS ogplay_video)

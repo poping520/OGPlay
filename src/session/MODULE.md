@@ -6,6 +6,8 @@
 统一 Clock 和运行检查点。
 Dex activity 每帧在 guest 回调前泵送主 Looper，到帧尾只通过
 `AdvanceAndroidClock` 推进 Android 单调时钟；停止时先关闭 scheduler，再停止 guest 线程。
+显式实时 VideoView 模式按统一 Clock 的步间墙钟补时，单次总推进上限 100 ms，
+扣除该步 Java 阻塞已推进的时间；手动步进保留固定 16 ms，resume 重置墙钟锚点。
 每帧及主消息泵前观察 process/session 的 native 异步首错；异常收敛时同样优先报告
 原始 worker 故障，避免被退出阶段的 Looper 或图形二次异常遮蔽。
 
@@ -102,6 +104,10 @@ Dex activity 每帧在 guest 回调前泵送主 Looper，到帧尾只通过
   listener，再构造新 Activity；旧 Activity UI 不得参与新一帧 draw/input。入口 Activity
   实例化时把自身句柄发布为 `task_root_activity`（进程唯一 task 的根，
   `Activity.isTaskRoot()` 的判定依据），switch 到达的 Activity 不是根。
+- 全屏不透明视频按已解析 UiTree bounds/祖先可见性/alpha/裁剪认证覆盖。
+  session 经显式 readback filter 向 boundary 提供证书；查询只 try-acquire VM 锁，
+  忙或脏布局时保留读回。新视频帧发布软件基帧，在原入口合成一次；guest GLES 仍执行，
+  隐藏/detach 后恢复底图，关闭前清除回调。
 - frontend 取回最终 present frame 后必须交 session `ComposePresentedFrame` 与 cached UI
   overlay 做整数 source-over；纯 View Activity 在 UiTree dirty 且没有 guest renderer 时由
   lifecycle 发布不透明软件基帧，再走同一合成入口。screenshot/window 只读取返回结果，

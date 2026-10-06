@@ -12,11 +12,14 @@
   有界事实；越界在构造播放器前明确失败。
 - `VideoPlayer`：拉模型接口。`TakeFrame(position_ms)` 返回该位置应显示且尚未
   交付的最新帧（无新帧返回空）；`ReadPcm` 从内部音频游标填充交错 S16 并返回
-  帧数；`SeekTo` 同步移动画面与音频游标。完成是调用方事实：
+  帧数；`PcmEnded` 区分真实 EOF 与暂时空读，buffered 不把背压空读伪装成 EOF；
+  `SeekTo` 同步移动画面与音频游标。完成是调用方事实：
   `position >= duration_ms`。
 - `VideoDataSource` / `VideoSourcePlayerFactory`：拥有型来源只发布 `Size`/`ReadAt`；
   guest VideoView 只经该接口消费 VFS lease，不接受或反查宿主路径。
 - `VideoPlayerFactory`：保留给独立宿主路径调用方的窄兼容入口；不在 guest 生产消费链中。
+- `MakeBufferedVideoPlayer`：为同步后端建立内部 worker。实时拉取只消费已解数据，
+  不做 I/O 或等待解码；open/seek 预读 250 ms。seek/析构先 join，错误由后续拉取抛出。
 - `FakeVideoPlayer`：固定帧率、纯色帧（颜色由帧号确定，`FrameColorRgba` 可
   预测）、斜坡 PCM 的合成后端；无 I/O、无线程，供行为测试与端到端断言使用。
 - `FfmpegAvailable` / `FfmpegUnavailableReason` / `OpenFfmpegVideo` /
@@ -41,6 +44,9 @@
   视频共用 demux cursor，视频队列达到 48 帧时暂停音频侧继续 demux，保留 decoder
   headroom；receive 达 64 帧时施加背压等待 `TakeFrame` 消费，不丢帧、不伪造 EOF。
   PCM 上限及其他真实越界仍明确抛错。
+- buffered 后端 PCM 水位 500 ms（最多额外一个 10 ms chunk），RGBA ≤64 帧且 ≤64 MiB；
+  图片积压时淘汰最旧图片，不用图片背压截断音频。无音轨/音轨 EOF 后视频最多领先
+  请求位置 500 ms。空 PCM 也可表示临时欠载，不伪造 EOF。
 - custom AVIO 的来源由 player 共享拥有，关闭顺序为 format/codec → AVIO context/buffer
   → 来源；不得双重释放。seek 可回退，读取请求不得超过 32 KiB。
 - 每帧 RGBA 缓冲大小恒等于 `width * height * 4`；PCM span 长度必须是声道数

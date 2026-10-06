@@ -313,6 +313,7 @@ public:
     [[nodiscard]] std::optional<AndroidBoundaryFrame> TakeLatestFrame();
     void PublishSoftwareFrame(std::vector<std::uint8_t> rgba8);
     void RecycleFrame(AndroidBoundaryFrame&& frame);
+    void SetFrameReadbackFilter(std::function<bool()> covered);
     [[nodiscard]] std::size_t RenderStereoAudio(
         std::span<std::int16_t> output, std::uint32_t sample_rate);
     [[nodiscard]] std::size_t InterruptBlockingWaits();
@@ -436,6 +437,7 @@ public:
     [[nodiscard]] std::optional<AndroidBoundaryFrame> TakeLatestFrame();
     void PublishSoftwareFrame(std::vector<std::uint8_t> rgba8);
     void RecycleFrame(AndroidBoundaryFrame&& frame);
+    void SetFrameReadbackFilter(std::function<bool()> covered);
     [[nodiscard]] std::size_t RenderStereoAudio(
         std::span<std::int16_t> output, std::uint32_t sample_rate);
     [[nodiscard]] std::size_t InterruptBlockingWaits();

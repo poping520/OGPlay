@@ -37,6 +37,11 @@ struct ApkEntryRangeStatistics final {
 [[nodiscard]] std::uint64_t StoredApkEntryDataOffset(
     std::span<const std::byte> bytes, const ApkArchive& archive,
     std::string_view name);
+// Validates all metadata and CRC once and borrows the STORED payload. Caller
+// must keep the APK bytes alive and immutable for the lifetime of this view.
+[[nodiscard]] std::span<const std::byte> ValidatedStoredApkEntryData(
+    std::span<const std::byte> bytes, const ApkArchive& archive,
+    std::string_view name, std::stop_token stop = {});
 // Validates local/central metadata and CRC, then copies only the requested
 // uncompressed window. Stored entries never allocate the full payload.
 [[nodiscard]] std::size_t ReadApkEntryRange(

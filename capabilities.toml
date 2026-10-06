@@ -1628,12 +1628,12 @@ note = "DVM-133 按 API 19 闭合 ContentResolver 五参 query 的无 provider �
 [dexvm.media_data_sources]
 status = "complete"
 test = "tests/dexvm/file_vfs_tests.cpp; tests/dexvm/videoview_tests.cpp; tests/audio/mp3_tests.cpp; tests/audio/java_sound_pool_mixer_tests.cpp; tests/audio/encoded_audio_tests.cpp; tests/audio/encoded_music_tests.cpp; tests/video/ffmpeg_video_player_tests.cpp"
-note = "DVM-91 窗口/FD/AFD 与 DVM-189 每实例 MediaPlayer；VFS-02 将音乐改为拥有型 Size/ReadAt 数据源，OGG/MP3/WAV 以不超过 64 KiB 的块增量解码且不复制完整编码源，SoundPool 短音效保留有界 ReadAll。VideoView 捕获 VFS lease 或当前 APK STORED raw-resource FD 的不可变 range；FFmpeg custom AVIO 使用 32 KiB ReadAt/seek 并移除 HostPathFor 生产入口。macOS FFmpeg 7 已复跑 raw-resource 视频；Windows/Linux 真实视频仍待验收。任意 native fd 与网络 Uri 不提供。"
+note = "DVM-91 窗口/FD/AFD 与 DVM-189 每实例 MediaPlayer；VFS-02 将音乐改为拥有型 Size/ReadAt 数据源，OGG/MP3/WAV 以不超过 64 KiB 的块增量解码且不复制完整编码源，SoundPool 短音效保留有界 ReadAll。VideoView 捕获 VFS lease 或当前 APK STORED raw-resource FD 的不可变 range；FFmpeg custom AVIO 使用 32 KiB ReadAt/seek 并移除 HostPathFor 生产入口。封存 STORED APK 媒体先完整校验 CRC 一次，再借用只读 payload 区间，避免每次小读取重复全条目扫描；借用期间 APK 不变且保活，Deflate 保留原窗口校验（tests/loader/apk_tests.cpp；WU-PERF-11）。macOS FFmpeg 7 已复跑 raw-resource 视频；Windows/Linux 真实视频仍待验收。任意 native fd 与网络 Uri 不提供。"
 
 [dexvm.video_view_local]
 status = "partial"
-test = "tests/dexvm/videoview_tests.cpp; tests/dexvm/widget_click_tests.cpp; DVM-216 reached-fault"
-note = "ADR-0094/DVM-216：Java SurfaceView 子类保存监听器、目标状态和代际，初始化的 MediaPlayer 子类控制同一 FFmpeg 实例。主线程泵交付 prepared/error/completion，打开/解码失败不再回退完成；音频 worker 仅发布错误事实。支持本地 VFS、file 与当前 APK STORED android.resource URI、seek/start/pause/resume/stop、左右音量；代际/释放/detach/owner GC 清理，最多八个实例。最终呈现按 UiTree bounds/visibility/clip/alpha/onTop 叠加；GLES/Canvas 底图保持权威。未处理错误对话框、网络 URI、loop/reset 等缺口明确失败并记账。字幕、MediaController、完整 API19、影音同步及 Windows/Linux 实跑未验收。"
+test = "tests/dexvm/videoview_tests.cpp; tests/dexvm/widget_click_tests.cpp; tests/video/video_player_tests.cpp; tests/video/ffmpeg_video_player_tests.cpp; tests/session/ui_compositor_tests.cpp; tests/runtime/boundary/integration/android_boundary_hle_tests.cpp; WU-PERF-11 local playback"
+note = "ADR-0099/WU-PERF-11：实时 frontend 使用有界解码 worker，音频拉取只消费 PCM，EOF 与暂时空读分离；统一 Clock 单次补时至 100 ms，手动步进保持确定性。全屏不透明视频证书允许省略 host present 读回，图形仍执行；macOS 2560×1600 原路径成功 present 采样 32.15/24.51 FPS，两段原 APK 区间音频在无画面消费下 PCM 全量一致且无空读。ADR-0094/DVM-216：Java SurfaceView 子类保存监听器、目标状态和代际，初始化的 MediaPlayer 子类控制同一 FFmpeg 实例。主线程泵交付 prepared/error/completion，打开/解码失败不再回退完成；音频 worker 仅发布错误事实。支持本地 VFS、file 与当前 APK STORED android.resource URI、seek/start/pause/resume/stop、左右音量；代际/释放/detach/owner GC 清理，最多八个实例。最终呈现按 UiTree bounds/visibility/clip/alpha/onTop 叠加；GLES/Canvas 底图保持权威。未处理错误对话框、网络 URI、loop/reset 等缺口明确失败并记账。字幕、MediaController、完整 API19、影音同步及 Windows/Linux 实跑未验收。"
 
 [dexvm.surface_view_lifecycle]
 status = "partial"

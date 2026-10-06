@@ -4,6 +4,11 @@
 #include <vector>
 
 #include "ogplay/video/fake_video_player.h"
+#include "ogplay/video/buffered_video_player.h"
+#include "ogplay/hal/clock.h"
+#include <condition_variable>
+#include <mutex>
+#include <thread>
 #include "ogplay/video/rgba_canvas.h"
 #include "ogplay/video/video_player.h"
 
@@ -219,4 +224,112 @@ TEST_CASE("fake player rejects out-of-bounds construction") {
     auto bad = SmallClip();
     bad.height = 5000U;
     CHECK_THROWS_AS(FakeVideoPlayer(bad, 10U), VideoPlayerError);
+}
+
+TEST_CASE("buffered video preserves all PCM when presentation is stalled and seek retires queued data") {
+    auto metadata = SmallClip();
+    metadata.duration_ms = 5000;
+    metadata.audio_sample_rate = 8000;
+    metadata.audio_channels = 1;
+    auto player = ogplay::video::MakeBufferedVideoPlayer(
+        std::make_unique<FakeVideoPlayer>(metadata, 120U));
+    std::vector<std::int16_t> pcm(256);
+    std::size_t total{};
+    const auto deadline = ogplay::hal::Clock::SteadyTimestampNs() + 3'000'000'000ULL;
+    // Deliberately do not consume a single picture: > 48 / 64 decoded
+    // pictures must never backpressure the audio consumer.
+    while (total < 40000U && ogplay::hal::Clock::SteadyTimestampNs() < deadline) {
+        total += player->ReadPcm(pcm);
+        std::this_thread::yield();
+    }
+    CHECK(total == 40000U);
+    player->SeekTo(0);
+    const auto frame = player->TakeFrame(0);
+    REQUIRE(frame.has_value());
+    CHECK(frame->position_ms == 0);
+    REQUIRE(player->ReadPcm(pcm) == pcm.size());
+    CHECK(pcm.front() == 0);
+    CHECK_THROWS_AS(player->SeekTo(5001), VideoPlayerError);
+    CHECK_THROWS_AS((void)player->TakeFrame(-1), VideoPlayerError);
+}
+
+TEST_CASE("buffered video pulls do not wait for blocked decoder IO") {
+    struct Gate {
+        std::mutex mutex;
+        std::condition_variable changed;
+        bool blocked{};
+        bool released{};
+    };
+    class BlockingDecoder final : public ogplay::video::VideoPlayer {
+    public:
+        explicit BlockingDecoder(std::shared_ptr<Gate> gate) : gate_(std::move(gate)),
+            fake_(VideoMetadata{8, 4, 2000, 8000, 1}, 30) {}
+        const VideoMetadata& Metadata() const noexcept override { return fake_.Metadata(); }
+        std::optional<ogplay::video::VideoFrame> TakeFrame(std::int64_t position) override {
+            if (position >= 550) {
+                std::unique_lock lock(gate_->mutex);
+                gate_->blocked = true;
+                gate_->changed.notify_all();
+                gate_->changed.wait(lock, [&] { return gate_->released; });
+            }
+            return fake_.TakeFrame(position);
+        }
+        std::size_t ReadPcm(std::span<std::int16_t> pcm) override { return fake_.ReadPcm(pcm); }
+        void SeekTo(std::int64_t position) override { fake_.SeekTo(position); }
+    private:
+        std::shared_ptr<Gate> gate_;
+        FakeVideoPlayer fake_;
+    };
+    auto gate = std::make_shared<Gate>();
+    auto player = ogplay::video::MakeBufferedVideoPlayer(std::make_unique<BlockingDecoder>(gate));
+    std::vector<std::int16_t> pcm(1024);
+    REQUIRE(player->ReadPcm(pcm) == pcm.size());
+    {
+        std::unique_lock lock(gate->mutex);
+        const bool blocked = gate->changed.wait_for(lock, std::chrono::seconds(2), [&] { return gate->blocked; });
+        // Release even on failure so a failed assertion cannot strand join.
+        if (!blocked) { gate->released = true; gate->changed.notify_all(); }
+        REQUIRE(blocked);
+    }
+    // Both calls complete while the decoder remains blocked, with exact data
+    // from pre-roll. No timing threshold is used to assert nonblocking pulls.
+    const auto frame = player->TakeFrame(100);
+    const auto got = player->ReadPcm(pcm);
+    {
+        std::scoped_lock lock(gate->mutex);
+        gate->released = true;
+        gate->changed.notify_all();
+    }
+    CHECK(frame.has_value());
+    CHECK(got == pcm.size());
+}
+
+TEST_CASE("buffered video does not turn a temporary empty PCM read into EOF") {
+    class EmptyOnceDecoder final : public ogplay::video::VideoPlayer {
+    public:
+        const VideoMetadata& Metadata() const noexcept override { return fake_.Metadata(); }
+        std::optional<ogplay::video::VideoFrame> TakeFrame(std::int64_t position) override {
+            return fake_.TakeFrame(position);
+        }
+        std::size_t ReadPcm(std::span<std::int16_t> pcm) override {
+            if (empty_) { empty_ = false; return 0; }
+            return fake_.ReadPcm(pcm);
+        }
+        bool PcmEnded() const override { return fake_.PcmEnded(); }
+        void SeekTo(std::int64_t position) override { fake_.SeekTo(position); }
+    private:
+        FakeVideoPlayer fake_{VideoMetadata{8, 4, 1000, 8000, 1}, 30};
+        bool empty_{true};
+    };
+    auto player = ogplay::video::MakeBufferedVideoPlayer(std::make_unique<EmptyOnceDecoder>());
+    CHECK_FALSE(player->PcmEnded());
+    std::vector<std::int16_t> pcm(256);
+    std::size_t total{};
+    const auto deadline = ogplay::hal::Clock::SteadyTimestampNs() + 3'000'000'000ULL;
+    while (total < 8000U && ogplay::hal::Clock::SteadyTimestampNs() < deadline) {
+        total += player->ReadPcm(pcm);
+        std::this_thread::yield();
+    }
+    CHECK(total == 8000U);
+    CHECK(player->PcmEnded());
 }

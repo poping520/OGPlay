@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstring>
 #include <limits>
 #include <utility>
 
@@ -449,6 +450,48 @@ bool AnyVideoPlaying(const DexVmAndroidContext& context) {
     return false;
 }
 
+bool HasOpaqueFullscreenVideo(const DexVmAndroidContext& context) {
+    if (context.ui_tree.Get(context.ui_tree.Root())->layout_dirty) return false;
+    std::scoped_lock lock(context.video_views_mutex);
+    for (const auto& [handle, state] : context.video_views) {
+        if (!state.latest_frame) continue;
+        const auto& frame = *state.latest_frame;
+        if (frame.width == 0 || frame.height == 0 ||
+            frame.rgba8.size() != static_cast<std::uint64_t>(frame.width) * frame.height * 4U) continue;
+        const auto id = FindViewUiNode(context, handle);
+        if (!id || !context.ui_tree.IsAttached(*id)) continue;
+        const auto* node = context.ui_tree.Get(*id);
+        const ui::Rect window{0, 0, static_cast<std::int32_t>(context.surface_width),
+                                  static_cast<std::int32_t>(context.surface_height)};
+        const auto covers = [&](const ui::Rect rect) {
+            return rect.left <= 0 && rect.top <= 0 &&
+                   rect.right >= window.right && rect.bottom >= window.bottom;
+        };
+        if (!covers(node->screen_frame)) continue;
+        bool opaque = true;
+        for (auto current = *id; current; ) {
+            node = context.ui_tree.Get(current);
+            if (!node || node->visibility != ui::Visibility::Visible || node->alpha != 1.0F) {
+                opaque = false;
+                break;
+            }
+            // Parent clipping uses exactly the same bounds as composition.
+            if (current != *id && node->clip_children && !covers(node->screen_frame)) opaque = false;
+            if (current != *id && node->clip_to_padding) {
+                auto clip = node->screen_frame;
+                clip.left += node->padding.left; clip.top += node->padding.top;
+                clip.right -= node->padding.right; clip.bottom -= node->padding.bottom;
+                if (!covers(clip)) opaque = false;
+            }
+            current = node->parent.value_or(ui::UiNodeId{});
+        }
+        // The compositor overwrites the whole VideoView rectangle, including
+        // opaque black letterbox bars. Source-frame alpha is not blended.
+        if (opaque) return true;
+    }
+    return false;
+}
+
 std::size_t MixVideoPcmIntoAccumulator(
     DexVmAndroidContext& context,
     const std::span<std::int64_t> interleaved_stereo,
@@ -745,6 +788,45 @@ void ComposeVideoViews(DexVmAndroidContext& context, std::vector<std::uint8_t>& 
                     const auto image_left = bounds.left + (rect_width - image_width) / 2;
                     const auto image_top = bounds.top + (rect_height - image_height) / 2;
                     const auto visible = intersect(clip, bounds);
+                    if (alpha == 1.0F && visible.right > visible.left && visible.bottom > visible.top) {
+                        // Resolve each column once, then reuse identical source
+                        // rows. Integer nearest-neighbour pixels remain exact.
+                        constexpr auto black = std::numeric_limits<std::size_t>::max();
+                        const auto row_bytes = static_cast<std::size_t>(visible.right - visible.left) * 4U;
+                        std::vector<std::size_t> columns(row_bytes / 4U, black);
+                        for (auto x = visible.left; x < visible.right; ++x) {
+                            if (x >= image_left && x < image_left + image_width) {
+                                columns[static_cast<std::size_t>(x - visible.left)] = static_cast<std::size_t>(
+                                    static_cast<std::uint64_t>(x - image_left) * frame.width /
+                                    static_cast<std::uint64_t>(image_width)) * 4U;
+                            }
+                        }
+                        std::size_t previous_row = black - 1U;
+                        for (auto y = visible.top; y < visible.bottom; ++y) {
+                            const bool in_image = y >= image_top && y < image_top + image_height;
+                            const auto source_row = in_image ? static_cast<std::size_t>(
+                                static_cast<std::uint64_t>(y - image_top) * frame.height /
+                                static_cast<std::uint64_t>(image_height)) : black;
+                            auto* target = canvas.data() + (static_cast<std::size_t>(y) * width +
+                                static_cast<std::size_t>(visible.left)) * 4U;
+                            if (source_row == previous_row) {
+                                std::memcpy(target, target - static_cast<std::size_t>(width) * 4U, row_bytes);
+                            } else {
+                                for (std::size_t x = 0; x < columns.size(); ++x) {
+                                    if (in_image && columns[x] != black) {
+                                        std::memcpy(target + x * 4U, frame.rgba8.data() +
+                                            source_row * frame.width * 4U + columns[x], 4U);
+                                    } else {
+                                        std::fill_n(target + x * 4U, 4U, 0U);
+                                    }
+                                    target[x * 4U + 3U] = 255U;
+                                }
+                            }
+                            previous_row = source_row;
+                        }
+                        // Child traversal still applies below; only this
+                        // surface's pixel loop has been completed.
+                    } else {
                     for (auto y = visible.top; y < visible.bottom; ++y) {
                         for (auto x = visible.left; x < visible.right; ++x) {
                             const auto target = (static_cast<std::size_t>(y) * width + static_cast<std::size_t>(x)) * 4U;
@@ -756,13 +838,20 @@ void ComposeVideoViews(DexVmAndroidContext& context, std::vector<std::uint8_t>& 
                                 const auto sy = static_cast<std::uint64_t>(y - image_top) * frame.height / static_cast<std::uint64_t>(image_height);
                                 source = static_cast<std::size_t>((sy * frame.width + sx) * 4U);
                             }
-                            for (std::size_t channel = 0; channel < 3U; ++channel) {
+                            if (alpha == 1.0F) {
+                                if (in_image) {
+                                    std::copy_n(frame.rgba8.data() + source, 3U, canvas.data() + target);
+                                } else {
+                                    canvas[target] = canvas[target + 1U] = canvas[target + 2U] = 0;
+                                }
+                            } else for (std::size_t channel = 0; channel < 3U; ++channel) {
                                 const auto value = in_image ? frame.rgba8[source + channel] : 0;
                                 canvas[target + channel] = static_cast<std::uint8_t>(
                                     std::lround(value * alpha + canvas[target + channel] * (1.0F - alpha)));
                             }
                             canvas[target + 3U] = 255U;
                         }
+                    }
                     }
                 }
             }
@@ -782,7 +871,8 @@ void ComposeVideoViews(DexVmAndroidContext& context, std::vector<std::uint8_t>& 
 
 std::optional<std::string> PumpVideoViews(
     dexvm::Interpreter& vm, DexVmAndroidContext& context,
-    const std::function<void(std::vector<std::uint8_t> rgba8)>& publish) {
+    const std::function<void(std::vector<std::uint8_t> rgba8)>& publish,
+    const bool compose_canvas) {
     std::vector<std::uint64_t> handles;
     {
         std::scoped_lock lock(context.video_views_mutex);
@@ -848,7 +938,9 @@ std::optional<std::string> PumpVideoViews(
                 event = 100;
             }
         }
-        if (frame && publish) publish(video::ComposeRgbaOnCanvas(*frame, context.surface_width, context.surface_height));
+        if (frame && publish) publish(compose_canvas
+            ? video::ComposeRgbaOnCanvas(*frame, context.surface_width, context.surface_height)
+            : std::vector<std::uint8_t>{});
         if (event != 0) {
             if (auto error = android_intrinsics::InvokeVideoEvent(vm, context, handle, generation, event)) return error;
         }

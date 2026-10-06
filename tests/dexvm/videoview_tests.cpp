@@ -28,6 +28,7 @@
 #include "ogplay/runtime/integration/dexvm_android.h"
 #include "ogplay/runtime/vfs/vfs.h"
 #include "ogplay/video/fake_video_player.h"
+#include "ogplay/video/rgba_canvas.h"
 
 namespace {
 
@@ -984,4 +985,93 @@ TEST_CASE("DVM216 decoder and audio failures dispatch error through the main vid
         CHECK(vm.Completions() == 0);
         vm.CallOn(view, "stopPlayback", "()V");
     }
+}
+
+TEST_CASE("fullscreen video readback certificate rejects transparency clipping dirty layout and detach") {
+    VideoVm vm(FakeFactory());
+    const auto view = vm.NewVideoView();
+    vm.CallOn(view, "setVideoPath", "(Ljava/lang/String;)V", {VmValue::Ref(vm.interpreter.NewStringUtf8(kGuestVideoPath))});
+    vm.CallOn(view, "start", "()V");
+    static_cast<void>(vm.Pump());
+    const auto node = *FindViewUiNode(*vm.context, view.Value());
+    auto* state = vm.context->ui_tree.Get(node);
+    ui::LayoutUiTree(vm.context->ui_tree, {64, 32});
+    REQUIRE(HasOpaqueFullscreenVideo(*vm.context));
+    // Letterboxed pictures still replace their rectangle with opaque black.
+    vm.context->video_views.at(view.Value()).latest_frame->height = 16;
+    vm.context->video_views.at(view.Value()).latest_frame->rgba8.resize(8U * 16U * 4U);
+    CHECK(HasOpaqueFullscreenVideo(*vm.context));
+    state->alpha = 0.5F;
+    CHECK_FALSE(HasOpaqueFullscreenVideo(*vm.context));
+    state->alpha = 1.0F;
+    auto* root = vm.context->ui_tree.Get(vm.context->ui_tree.Root());
+    root->alpha = 0.5F;
+    CHECK_FALSE(HasOpaqueFullscreenVideo(*vm.context));
+    root->alpha = 1.0F;
+    root->padding.left = 1;
+    CHECK_FALSE(HasOpaqueFullscreenVideo(*vm.context));
+    root->padding.left = 0;
+    state->visibility = ui::Visibility::Invisible;
+    CHECK_FALSE(HasOpaqueFullscreenVideo(*vm.context));
+    state->visibility = ui::Visibility::Visible;
+    state->screen_frame.right = 63;
+    CHECK_FALSE(HasOpaqueFullscreenVideo(*vm.context));
+    state->screen_frame.right = 64;
+    root->layout_dirty = true;
+    CHECK_FALSE(HasOpaqueFullscreenVideo(*vm.context));
+    root->layout_dirty = false;
+    vm.context->ui_tree.Detach(node);
+    CHECK_FALSE(HasOpaqueFullscreenVideo(*vm.context));
+}
+
+TEST_CASE("videoview opaque scaled rows preserve nearest-neighbour pixels and letterbox bars") {
+    VideoVm vm(FakeFactory());
+    const auto view = vm.NewVideoView();
+    vm.CallOn(view, "setVideoPath", "(Ljava/lang/String;)V", {VmValue::Ref(vm.interpreter.NewStringUtf8(kGuestVideoPath))});
+    vm.CallOn(view, "start", "()V");
+    static_cast<void>(vm.Pump());
+    ui::LayoutUiTree(vm.context->ui_tree, {64, 32});
+    auto& frame = *vm.context->video_views.at(view.Value()).latest_frame;
+    frame.width = 7;
+    frame.height = 3;
+    frame.rgba8.resize(7U * 3U * 4U);
+    for (std::size_t i = 0; i < frame.rgba8.size(); i += 4) {
+        frame.rgba8[i] = static_cast<std::uint8_t>(i);
+        frame.rgba8[i + 1] = static_cast<std::uint8_t>(i / 4U);
+        frame.rgba8[i + 2] = static_cast<std::uint8_t>(255U - i);
+        frame.rgba8[i + 3] = 255;
+    }
+    auto canvas = std::vector<std::uint8_t>(64U * 32U * 4U, 123U);
+    ComposeVideoViews(*vm.context, canvas, 64, 32, false);
+    CHECK(canvas == ogplay::video::ComposeRgbaOnCanvas(frame, 64, 32));
+}
+
+TEST_CASE("video APK media source validates once and retains exact stored range reads") {
+    VideoVm vm(FakeFactory());
+    const std::vector<std::byte> payload{std::byte{1},std::byte{2},std::byte{3},std::byte{4},
+        std::byte{5},std::byte{6},std::byte{7},std::byte{8}};
+    vm.context->apk_bytes = MakeStoredZip("res/raw/movie.mp4", payload);
+    vm.context->archive = ogplay::loader::ParseApkArchive(vm.context->apk_bytes);
+    ogplay::audio::EncodedAudioSource source;
+    source.kind = ogplay::audio::EncodedAudioSource::Kind::apk_entry;
+    source.name = "res/raw/movie.mp4";
+    source.offset = 2;
+    source.length = 4;
+    auto data = LoadEncodedAudioSource(*vm.context, source);
+    REQUIRE(data != nullptr);
+    CHECK(data->Size() == 4U);
+    std::array<std::byte, 3> read{};
+    REQUIRE(data->ReadAt(1, read) == 3U);
+    CHECK(read == std::array{std::byte{4},std::byte{5},std::byte{6}});
+    REQUIRE(data->ReadAt(0, read) == 3U);
+    CHECK(read == std::array{std::byte{3},std::byte{4},std::byte{5}});
+    CHECK(data->ReadAt(4, read) == 0U);
+    std::stop_source stop;
+    stop.request_stop();
+    CHECK(data->ReadAt(0, read, stop.get_token()) == 0U);
+    data.reset();
+    // Corrupt before capturing a new sealed source; the old view is retired.
+    const auto offset = ogplay::loader::StoredApkEntryDataOffset(vm.context->apk_bytes, vm.context->archive, source.name);
+    vm.context->apk_bytes[static_cast<std::size_t>(offset)] = std::byte{9};
+    CHECK(LoadEncodedAudioSource(*vm.context, source) == nullptr);
 }

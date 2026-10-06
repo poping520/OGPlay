@@ -13,6 +13,7 @@
 - [ADR-0090 · EGL 配置由真实表面格式决定](#adr-0090)
 - [ADR-0091 · ATC 纹理使用可移植解码回退](#adr-0091)
 - [ADR-0094 · 本地 VideoView 的 Java 生命周期与真实视频事件](#adr-0094)
+- [ADR-0099 · 实时视频解码与音频消费隔离](#adr-0099)
 
 <a id="adr-0003"></a>
 
@@ -427,3 +428,39 @@ Java 回调期间不持有视频锁。解码或打开失败交付 error，未处
 
 不引入 Binder、系统媒体服务或宿主平台专属分支。真实 APK 首错复跑仅为 reached-fault；
 完整游戏、影音同步及各宿主运行验收另行记录。
+
+<a id="adr-0099"></a>
+
+## ADR-0099 · 实时视频解码与音频消费隔离
+
+- 状态：Accepted
+- 日期：2026-10-06
+
+### 背景
+
+同步 VideoPlayer 在主帧和音频 worker 共享的视频锁内 demux/解码。视频积压背压会使
+实时音频缺 PCM，固定步进时钟在帧耗时超标时慢放；被视频完全覆盖的 GPU 底图仍读回。
+
+### 决定
+
+沿用 FFmpeg 7 同步后端，为实时 frontend 注入有界 buffered wrapper；手动步进仍用同步
+后端。内部 worker 独占 decoder/AVIO，拉取只复制已解 PCM/移动 RGBA。open/seek 预读
+250 ms；PCM 水位 500 ms，额外 chunk ≤10 ms。RGBA ≤64 帧且 ≤64 MiB，积压时丢最旧
+图片而不丢 PCM。无音轨或音轨 EOF 后按画面请求位置有限预读；错误经拉取向原 error
+事件链传播。seek/析构先停止并 join，不留旧代际或借用来源。
+
+实时视频位置仍来自统一 Android Clock；步间真实耗时补到 16..100 ms，扣除该步已显式
+推进的 guest 时间，暂停恢复重置锚点。手动步进与无视频游戏维持原固定时钟。
+全屏不透明视频由 session 按已解析 UiTree 及祖先裁剪认证，经显式 callback 允许 boundary
+跳过仅用于 host present 的读回。回调 try-acquire VM 锁，脏布局/忙时不能跳过；不持有
+FrameService 锁回调。图形逻辑继续执行；新视频帧发布基帧并在原 handoff 合成一次。
+
+封存 APK 的 STORED 媒体在捕获来源时校验全部元数据及 CRC 一次，借用不可变 payload
+区间读取，不再对每个 32 KiB AVIO 请求重新扫描完整视频。API 要求调用方保活且不修改
+APK；Deflate 保留原窗口校验。损坏来源在打开阶段明确失败，禁止跳过首次校验。
+
+### 后果
+
+有限预读增加启动和 seek 成本；真实解码供给不足仍可产生临时 PCM 欠载，不能伪造成功。
+视频滞后时跳过过期图片是实时同步策略，不计作重复 present。完整影音同步、硬件解码、
+任意分辨率实时性能及跨宿主验收另行验证，不引入 title 分支或 Android 系统媒体服务。

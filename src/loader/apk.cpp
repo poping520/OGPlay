@@ -527,6 +527,21 @@ std::uint64_t StoredApkEntryDataOffset(
     return static_cast<std::uint64_t>(data.data() - bytes.data());
 }
 
+std::span<const std::byte> ValidatedStoredApkEntryData(
+    const std::span<const std::byte> bytes, const ApkArchive& archive,
+    const std::string_view name, const std::stop_token stop) {
+    const auto found = std::find_if(archive.entries.begin(), archive.entries.end(),
+        [name](const ApkEntry& entry) { return entry.name == name; });
+    if (found == archive.entries.end()) throw std::runtime_error("APK entry was not found");
+    if (found->compression_method != kStoredMethod ||
+        found->compressed_size != found->uncompressed_size) {
+        throw std::runtime_error("APK entry is not stored without compression");
+    }
+    const auto data = ReadCompressedEntryData(bytes, *found, "APK stored entry data");
+    if (Crc32(data, stop) != found->crc32) throw std::runtime_error("APK stored entry CRC32 mismatch");
+    return data;
+}
+
 std::vector<std::byte> ReadApkEntry(const std::span<const std::byte> bytes,
                                     const ApkArchive& archive,
                                     const std::string_view name) {

@@ -268,3 +268,22 @@ TEST_CASE("APK parser rejects unsafe entry paths") {
     CHECK_THROWS_WITH(static_cast<void>(ogplay::loader::ParseApkArchive(bytes)),
                       "APK entry name contains an unsafe path segment");
 }
+
+TEST_CASE("APK validated stored view borrows exact bytes and rejects corruption compression and cancellation") {
+    const std::vector<std::byte> payload{std::byte{1}, std::byte{2}, std::byte{3}};
+    auto bytes = MakeZip("assets/movie.bin", payload);
+    const auto archive = ogplay::loader::ParseApkArchive(bytes);
+    const auto view = ogplay::loader::ValidatedStoredApkEntryData(bytes, archive, "assets/movie.bin");
+    CHECK(view.size() == payload.size());
+    CHECK(view.data() == bytes.data() + ogplay::loader::StoredApkEntryDataOffset(bytes, archive, "assets/movie.bin"));
+    CHECK(std::vector<std::byte>(view.begin(), view.end()) == payload);
+    std::stop_source stop;
+    stop.request_stop();
+    CHECK_THROWS(static_cast<void>(ogplay::loader::ValidatedStoredApkEntryData(bytes, archive, "assets/movie.bin", stop.get_token())));
+    auto corrupt = bytes;
+    corrupt[static_cast<std::size_t>(view.data() - bytes.data())] = std::byte{9};
+    CHECK_THROWS_WITH(static_cast<void>(ogplay::loader::ValidatedStoredApkEntryData(corrupt, archive, "assets/movie.bin")), "APK stored entry CRC32 mismatch");
+    const auto compressed = MakeZip("assets/movie.bin", payload, 12, payload);
+    const auto compressed_archive = ogplay::loader::ParseApkArchive(compressed);
+    CHECK_THROWS(static_cast<void>(ogplay::loader::ValidatedStoredApkEntryData(compressed, compressed_archive, "assets/movie.bin")));
+}

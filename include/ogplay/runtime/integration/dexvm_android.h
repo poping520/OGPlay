@@ -821,7 +821,8 @@ void ComposeVideoViews(DexVmAndroidContext &context, std::vector<std::uint8_t> &
 // Returns a rendered message when a guest callback raised.
 [[nodiscard]] std::optional<std::string> PumpVideoViews(
     dexvm::Interpreter &vm, DexVmAndroidContext &context,
-    const std::function<void(std::vector<std::uint8_t> rgba8)> &publish);
+    const std::function<void(std::vector<std::uint8_t> rgba8)> &publish,
+    bool compose_canvas = true);
 
 // Delivers AudioTrack marker/period callbacks from the lifecycle frame thread
 // according to the shared PCM mixer's real playback head. Guest callbacks
@@ -867,6 +868,8 @@ void ApplyAudioStreamPolicy(DexVmAndroidContext &context, std::int32_t stream);
 // the deterministic per-frame uptime clock matches the wall clock during
 // playback (manual stepping stays unpaced and reproducible).
 [[nodiscard]] bool AnyVideoPlaying(const DexVmAndroidContext &context);
+// Caller holds the VM execution lock; dirty layout cannot certify coverage.
+[[nodiscard]] bool HasOpaqueFullscreenVideo(const DexVmAndroidContext& context);
 
 // Mixes decoded audio of every playing VideoView into the interleaved
 // stereo S16 buffer (saturating add on top of the existing content), pulling

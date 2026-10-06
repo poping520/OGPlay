@@ -26,6 +26,7 @@ public:
     void PublishSoftwareFrame(std::vector<std::uint8_t> rgba8);
     void PublishAngleFrame(gles::AngleFrame& frame);
     void RecycleFrame(AndroidBoundaryFrame&& frame);
+    void SetReadbackFilter(std::function<bool()> covered);
 
     void SetRenderTargetReady(bool ready);
     void RecordDraw();
@@ -63,6 +64,7 @@ private:
     std::size_t gpu_trace_write_{};
     std::size_t gpu_trace_count_{};
     bool gpu_render_target_ready_{};
+    std::function<bool()> readback_filter_;
 };
 
 }  // namespace ogplay::runtime

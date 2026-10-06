@@ -69,10 +69,16 @@ public:
         std::int64_t position_ms) = 0;
 
     // Fills interleaved S16 PCM from the internal audio cursor and returns
-    // sample frames written; 0 at end of audio or when the stream has no
-    // audio. The span size must be a multiple of the channel count.
+    // sample frames written; 0 at end of audio, with no audio, or while a
+    // buffered realtime backend is temporarily empty. The span size must
+    // be a multiple of the channel count.
     [[nodiscard]] virtual std::size_t ReadPcm(
         std::span<std::int16_t> interleaved) = 0;
+
+    // Distinguishes actual decoder EOF from an empty read under backpressure.
+    [[nodiscard]] virtual bool PcmEnded() const {
+        return !Metadata().HasAudio();
+    }
 
     // Moves both frame and audio cursors; position_ms must be within
     // [0, duration_ms], violations throw VideoPlayerError.

@@ -38,6 +38,9 @@ public:
     [[nodiscard]] std::size_t ReadPcm(
         std::span<std::int16_t> interleaved) override;
     void SeekTo(std::int64_t position_ms) override;
+    [[nodiscard]] bool PcmEnded() const override {
+        return audio_eof_ && pcm_buffer_.empty();
+    }
 
 private:
     void OpenStreams(const std::filesystem::path& host_path);

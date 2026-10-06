@@ -44,6 +44,11 @@ struct DeepTouchDispatchResult final {
 [[nodiscard]] bool ConsumeGlSurfaceDrawRequest(
     runtime::DexVmAndroidContext& context);
 
+// Real-time video catch-up is bounded; guest time already advanced by a
+// blocking Java call counts towards the elapsed interval.
+[[nodiscard]] std::int64_t VideoClockAdvanceMillis(
+    std::uint64_t elapsed_ms, std::int64_t advanced_ms) noexcept;
+
 // dex_activity lifecycle template (docs/design/dexvm/04-integration.md §2):
 // the real interpreted onCreate/onStart/onResume drive the title; the host
 // render loop calls the captured Renderer's onDrawFrame; input dispatches
@@ -97,6 +102,7 @@ public:
     [[nodiscard]] LifecycleFrameState Suspend();
     [[nodiscard]] LifecycleFrameState Resume();
     [[nodiscard]] LifecycleFrameState StepFrame();
+    void SetRealtimeVideoClock(bool enabled) noexcept;
     [[nodiscard]] runtime::AndroidBoundaryFrame ComposePresentedFrame(
         runtime::AndroidBoundaryFrame frame);
     void QueueInput(const runtime::AndroidBoundaryInput& input);
@@ -181,6 +187,8 @@ private:
     // it until the first frame also lets guest worker threads observe their
     // completed Surface setup before native resume callbacks run.
     bool initial_focus_pending_{};
+    bool realtime_video_clock_{};
+    std::uint64_t previous_step_ns_{};
 };
 
 }  // namespace ogplay::session

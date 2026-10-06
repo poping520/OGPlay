@@ -22,6 +22,7 @@ public:
     [[nodiscard]] std::size_t ReadPcm(
         std::span<std::int16_t> interleaved) override;
     void SeekTo(std::int64_t position_ms) override;
+    [[nodiscard]] bool PcmEnded() const override;
 
     [[nodiscard]] std::int64_t TotalFrames() const noexcept;
     // Deterministic fill colour of a frame, exposed so tests and end-to-end

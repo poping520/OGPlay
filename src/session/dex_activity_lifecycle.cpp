@@ -497,6 +497,7 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
             CallActivity("onResume", "()V", {});
             SetWindowFocus(true);
             suspended_ = false;
+            previous_step_ns_ = 0;
             if (bindings_.diagnostics) bindings_.diagnostics->SetLifecyclePhase("running", false);
         } catch (...) {
             if (bindings_.bridge->Vm().ExitCode().has_value()) return Stop();
@@ -733,19 +734,42 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
         pending_input_.clear();
     }
 
+    std::int64_t VideoClockAdvanceMillis(const std::uint64_t elapsed_ms,
+                                        const std::int64_t advanced_ms) noexcept {
+        const auto elapsed = static_cast<std::int64_t>(
+            std::clamp<std::uint64_t>(elapsed_ms, 16U, 100U));
+        return std::max<std::int64_t>(0, elapsed - std::max<std::int64_t>(0, advanced_ms));
+    }
+
+    void DexActivityLifecycle::SetRealtimeVideoClock(const bool enabled) noexcept {
+        realtime_video_clock_ = enabled;
+        previous_step_ns_ = 0;
+    }
+
     LifecycleFrameState DexActivityLifecycle::StepFrame() {
         if (state_ != LifecycleRunState::running) {
             Fail("dex_activity lifecycle is not running");
         }
         if (suspended_) return State();
+        const auto wall_ns = hal::Clock::SteadyTimestampNs();
+        const auto elapsed_ms = previous_step_ns_ == 0 ? 16U
+            : (wall_ns - previous_step_ns_) / 1'000'000U;
+        // Keep fractional milliseconds across steps instead of losing a
+        // fraction of the playback duration on every frame.
+        previous_step_ns_ = previous_step_ns_ == 0 ? wall_ns
+            : previous_step_ns_ + elapsed_ms * 1'000'000U;
+        const auto uptime_before = bindings_.context->uptime_millis.load();
         try {
             RethrowFatalThreadFailure();
             auto& context = *bindings_.context;
-            if (context.ui_tree.Get(context.ui_tree.Root())->layout_dirty) {
+            {
+              const dx::VmExecutionLockScope execution(bindings_.bridge->Vm().ExecutionLock());
+              if (context.ui_tree.Get(context.ui_tree.Root())->layout_dirty) {
                 runtime::ui::LayoutUiTree(context.ui_tree, {
                     static_cast<std::int32_t>(context.surface_width),
                     static_cast<std::int32_t>(context.surface_height)});
                 runtime::DispatchAndroidGlobalLayout(bindings_.bridge->Vm(), context);
+              }
             }
             DispatchInput();
             PumpJavaThreads();
@@ -797,7 +821,10 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
             }
             clock_.AdvanceFrames(1);
             runtime::AdvanceAndroidClock(*bindings_.context,
-                                         kMillisPerFrame);
+                realtime_video_clock_ && runtime::AnyVideoPlaying(context)
+                    ? VideoClockAdvanceMillis(elapsed_ms,
+                        context.uptime_millis.load() - uptime_before)
+                    : kMillisPerFrame);
             ++frame_;
             if (egl_pacer_attached_) {
                 runtime::AdvanceEglSwapPacer(*bindings_.context);
@@ -813,6 +840,7 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
 
     runtime::AndroidBoundaryFrame DexActivityLifecycle::ComposePresentedFrame(
         runtime::AndroidBoundaryFrame frame) {
+        const dx::VmExecutionLockScope execution(bindings_.bridge->Vm().ExecutionLock());
         auto& context = *bindings_.context;
         if (context.ui_tree.Get(context.ui_tree.Root())->layout_dirty) {
             runtime::ui::LayoutUiTree(
@@ -857,6 +885,7 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
     }
 
     void DexActivityLifecycle::PumpVideo() {
+        const dx::VmExecutionLockScope execution(bindings_.bridge->Vm().ExecutionLock());
         {
             std::scoped_lock lock(bindings_.context->video_views_mutex);
             if (bindings_.context->video_views.empty()) {
@@ -869,12 +898,13 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
                 const auto& context = *bindings_.context;
                 // GLES/Canvas producers keep authority over the base frame.
                 // Video pixels are composed once at the frontend handoff.
-                if (context.renderer.IsValid() || !context.active_surface_holders.empty() ||
-                    !context.holder_canvases.empty()) return;
-                std::fill(rgba8.begin(), rgba8.end(), 0U);
+                if (!runtime::HasOpaqueFullscreenVideo(context) &&
+                    (context.renderer.IsValid() || !context.active_surface_holders.empty() ||
+                     !context.holder_canvases.empty())) return;
+                rgba8.assign(static_cast<std::size_t>(context.surface_width) * context.surface_height * 4U, 0U);
                 for (std::size_t i = 3; i < rgba8.size(); i += 4) rgba8[i] = 255U;
                 if (bindings_.publish_video_frame) bindings_.publish_video_frame(std::move(rgba8));
-            });
+            }, false);
         if (error.has_value()) Fail(*error);
     }
 

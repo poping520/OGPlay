@@ -25,6 +25,12 @@
   59.26–60.05 FPS、教学 49.99 FPS（2560×1600、MCP 无 `--diag`）。
   72 项/2166 断言通过，临时取证 hook 已移除，测试进程已关闭；全场景 60 FPS、
   持续移动及退出问题仍未闭合。证据 `.local/tales-perf-20261006/optimization-report.md`。
+  [WU-PERF-11](../tasks/optimization/WU-PERF-11.md)：实时视频后台解码/Clock 补时、全屏覆盖
+  省读回及 STORED 媒体一次 CRC 校验已闭合。原 2560×1600、默认 1 核路径成功 present
+  采样 Amazon 32.15 FPS、Frontier 24.51 FPS（源片 30/24 FPS）；57 项/986 断言及
+  两段原 APK 区间 PCM 完整一致、无空读验证通过；用户复测确认两个卡顿问题已解决。
+  测试会话已关闭，退出仍为既有
+  0x315f0001 读取错；完整影音同步/跨平台/title gate 未验收。证据 `.local/video-playback-20261006/`。
 
 - **PVZ（com.popcap.pvz_na）**：[DVM-205](../tasks/dexvm/DVM-205.md) 已修复 DEX
   注解预算误拒绝，使用共享解析缓存和分层资源预算。macOS Release 定向回归通过；

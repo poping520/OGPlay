@@ -7070,3 +7070,24 @@ TEST_CASE("BND52 call errors remain attributable across slow fast managed and pr
     AuditBind(f, context, surface);
     CHECK(AuditGl(f, "glGetError") == 0U);
 }
+
+TEST_CASE("opaque video readback filter preserves GL drawing and resumes fresh base frames") {
+    BoundaryFixture fixture;
+    fixture.boundary.OpenManagedSurface();
+    fixture.boundary.SetFrameReadbackFilter([] { return true; });
+    CHECK(fixture.Call("libGLESv2.so", "glClearColor",
+        {std::bit_cast<std::uint32_t>(1.0F), 0U, 0U, std::bit_cast<std::uint32_t>(1.0F)}) == 0U);
+    CHECK(fixture.Call("libGLESv2.so", "glClear", {0x00004000U}) == 0U);
+    fixture.boundary.PresentManagedSurface();
+    CHECK_FALSE(fixture.boundary.TakeLatestFrame().has_value());
+    CHECK(fixture.boundary.Stats().clears == 1U);
+    fixture.boundary.SetFrameReadbackFilter([] { return false; });
+    fixture.boundary.PresentManagedSurface();
+    const auto frame = fixture.boundary.TakeLatestFrame();
+    REQUIRE(frame.has_value());
+    CHECK(frame->rgba8[0] == 255U);
+    CHECK(frame->rgba8[1] == 0U);
+    CHECK(frame->sequence == 1U);
+    fixture.boundary.SetFrameReadbackFilter({});
+    fixture.boundary.CloseManagedSurface();
+}

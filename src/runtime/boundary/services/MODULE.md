@@ -21,6 +21,9 @@ GLES2 混合 client 属性与 element Buffer 绘制按实际 Buffer 的索引区
 
 FrameService::TryStats 只 try-lock 复制 GPU 标量统计，不复制 draw_targets，不执行 GL 或读取渲染对象；忙时 nullopt。
 
+FrameService 接受显式上层 readback filter，在不持有帧存储锁时查询。认证覆盖时仅省略
+宿主 present 的 ANGLE 读回；guest 绘制、readPixels 与统计仍执行。未认证立即恢复读回。
+
 GL 错误诊断由每次 A32CallFrame 的独立结果传递给 FrameService；一次边界返回错误的
 调用计数一次，trace 保留精确 GLenum。它不取代 Context 的首错锁存，不额外调用
 glGetError，也不覆盖未在边界捕获的原生错误、宿主异常或完整 GLES 验证。

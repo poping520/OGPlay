@@ -211,6 +211,8 @@ Java GLES/EGL 通过 session managed 冷入口复用 [native boundary](../../bou
   或第二播放器。EncodedMusicMixer 每实例、JavaSoundPoolMixer 每池隔离；音乐增量读取资源/
   APK/VFS 窗口或 lease，仅短音效全量读取。VideoView 原子捕获 lease，FD 关闭仍保留窗口，
   同路径替换不得复用旧缓存；不查询 host 路径。openRawResourceFd 仅 stored 文件型资源。
+  封存 APK 的 STORED 媒体来源先完整 CRC 校验一次，再借用受检 payload 区间；
+  原 APK 必须随 context 存活且不变。Deflate 仍走原有逐窗口校验，损坏来源明确失败。
 - MediaPlayer 原事件经 postEventFromNative/Handler，mNativeContext 为非零 32 位 token。
   显式维护 Idle/Initialized/Preparing/Prepared/Started/Paused/Stopped/PlaybackCompleted/Error
   阶段；stop 幂等且需重新 prepare，非法 transport 停音源并发 error，非法 prepare 抛 ISE；

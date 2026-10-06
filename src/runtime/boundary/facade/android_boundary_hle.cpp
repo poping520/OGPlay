@@ -435,6 +435,9 @@ public:
     void RecycleFrame(AndroidBoundaryFrame&& frame) {
         frame_service_.RecycleFrame(std::move(frame));
     }
+    void SetFrameReadbackFilter(std::function<bool()> covered) {
+        frame_service_.SetReadbackFilter(std::move(covered));
+    }
     std::vector<audio::OpenSlesConsumedBuffer> MixOpenSlesPcm16(
         const std::span<std::int16_t> output,
         const std::uint32_t output_rate) {
@@ -1086,6 +1089,9 @@ std::optional<AndroidBoundaryFrame> AndroidBoundaryHle::TakeLatestFrame() {
 }
 void AndroidBoundaryHle::PublishSoftwareFrame(std::vector<std::uint8_t> rgba8) {
     impl_->PublishSoftwareFrame(std::move(rgba8));
+}
+void AndroidBoundaryHle::SetFrameReadbackFilter(std::function<bool()> covered) {
+    impl_->SetFrameReadbackFilter(std::move(covered));
 }
 void AndroidBoundaryHle::RecycleFrame(AndroidBoundaryFrame&& frame) {
     impl_->RecycleFrame(std::move(frame));

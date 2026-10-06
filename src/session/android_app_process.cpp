@@ -278,6 +278,18 @@ public:
         DexActivityLifecycleBindings bindings;
         bindings.bridge = bridge.get();
         bindings.context = context;
+        session->SetFrameReadbackFilter([this] {
+            auto& lock = bridge->Vm().ExecutionLock();
+            if (!lock.TryAcquire()) return false;
+            try {
+                const bool covered = runtime::HasOpaqueFullscreenVideo(*context);
+                lock.Release();
+                return covered;
+            } catch (...) {
+                lock.Release();
+                throw;
+            }
+        });
         bindings.launcher_descriptor = launcher_descriptor;
         bindings.launcher_component_name = launcher_component_name;
         bindings.application_descriptor = application_descriptor;
@@ -321,7 +333,10 @@ public:
             catch (...) { if (!failure) failure = std::current_exception(); }
             if (failure) std::rethrow_exception(failure);
         };
-        bindings.close_surface = [this] { session->CloseManagedSurface(); };
+        bindings.close_surface = [this] {
+            session->SetFrameReadbackFilter({});
+            session->CloseManagedSurface();
+        };
         bindings.flush_persistent_state =
             std::move(host.flush_persistent_state);
         bindings.release_surface_currency = [this] {
@@ -337,6 +352,7 @@ public:
     }
 
     ~Impl() {
+        if (session) session->SetFrameReadbackFilter({});
         if (!diagnostics) return;
         diagnostics->SetNativeMethodResolver({});
         diagnostics->SetDexVmProvider({});

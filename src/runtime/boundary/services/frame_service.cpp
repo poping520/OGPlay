@@ -35,6 +35,12 @@ void FrameService::PublishSoftwareFrame(std::vector<std::uint8_t> rgba8) {
 }
 
 void FrameService::PublishAngleFrame(gles::AngleFrame& angle_frame) {
+    std::function<bool()> covered;
+    {
+        std::scoped_lock lock(mutex_);
+        covered = readback_filter_;
+    }
+    if (covered && covered()) return;
     std::vector<std::uint8_t> readback;
     if (layout_.factor == 1U) {
         std::scoped_lock lock(mutex_);
@@ -51,6 +57,11 @@ void FrameService::PublishAngleFrame(gles::AngleFrame& angle_frame) {
         recycled_rgba8_ = std::move(latest_frame_->rgba8);
     }
     latest_frame_ = std::move(frame);
+}
+
+void FrameService::SetReadbackFilter(std::function<bool()> covered) {
+    std::scoped_lock lock(mutex_);
+    readback_filter_ = std::move(covered);
 }
 
 void FrameService::RecycleFrame(AndroidBoundaryFrame&& frame) {

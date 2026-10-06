@@ -5,6 +5,7 @@
 #include <vector>
 
 #include "ogplay/session/ui_compositor.h"
+#include "ogplay/session/dex_activity_lifecycle.h"
 
 namespace ui = ogplay::runtime::ui;
 
@@ -46,4 +47,13 @@ TEST_CASE("session UI compositor changes only overlay region") {
         static_cast<void>(ogplay::session::ComposeUiOverlay(
             std::span{base}.first(4), overlay)),
         std::invalid_argument);
+}
+
+TEST_CASE("real-time video clock catches up within 100ms without counting guest advances twice") {
+    using ogplay::session::VideoClockAdvanceMillis;
+    CHECK(VideoClockAdvanceMillis(8, 0) == 16);
+    CHECK(VideoClockAdvanceMillis(40, 0) == 40);
+    CHECK(VideoClockAdvanceMillis(1000, 0) == 100);
+    CHECK(VideoClockAdvanceMillis(40, 25) == 15);
+    CHECK(VideoClockAdvanceMillis(40, 80) == 0);
 }

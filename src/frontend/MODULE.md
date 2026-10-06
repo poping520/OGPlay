@@ -7,6 +7,8 @@
 
 ## 公共入口
 
+- 实时 run-apk 启用能力受检的异步窗口读回；手动步进不启用。实时暂停/空闲时仍
+  可呈现已完成末帧，不执行 guest step 或推进 Clock，FPS 只累积实际成功 present。
 - `run-apk`：选择 compatibility Profile，挂载数据，创建 SDL3/ANGLE surface，装配 Android
   guest、DexVM 与 Activity lifecycle；VFS 使用 `/` 作为默认 guest cwd，Profile 显式
   working directory 可覆盖它。

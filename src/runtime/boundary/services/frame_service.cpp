@@ -10,10 +10,35 @@ namespace ogplay::runtime {
 
 FrameService::FrameService(
     const gles::SupersampleLayout& layout,
-    const std::span<const detail::HleThunkDescriptor> descriptors) noexcept
-    : layout_(layout), descriptors_(descriptors) {}
+    const std::span<const detail::HleThunkDescriptor> descriptors,
+    const bool async_readback) noexcept
+    : layout_(layout), descriptors_(descriptors), async_enabled_(async_readback) {}
+
+FrameService::~FrameService() {
+    try { ResetReadback(); } catch (...) { /* Explicit lifecycle paths report failures. */ }
+}
+
+void FrameService::ResetReadback() {
+    std::shared_ptr<gles::AsyncAngleReadback> retired;
+    {
+        std::scoped_lock lock(mutex_);
+        ++readback_epoch_;
+        retired = std::move(async_readback_);
+    }
+    // No frame-store lock across worker join or callback delivery.
+    if (retired) {
+        retired->Stop();
+        retired->RethrowFailure();
+    }
+}
 
 std::optional<AndroidBoundaryFrame> FrameService::TakeLatestFrame() {
+    std::shared_ptr<gles::AsyncAngleReadback> readback;
+    {
+        std::scoped_lock lock(mutex_);
+        readback = async_readback_;
+    }
+    if (readback) readback->RethrowFailure();
     std::scoped_lock lock(mutex_);
     auto result = std::move(latest_frame_);
     latest_frame_.reset();
@@ -27,6 +52,7 @@ void FrameService::PublishSoftwareFrame(std::vector<std::uint8_t> rgba8) {
         throw std::invalid_argument(
             "software frame does not match the logical surface layout");
     }
+    ResetReadback();
     AndroidBoundaryFrame frame{layout_.logical_width, layout_.logical_height,
                                0, std::move(rgba8)};
     std::scoped_lock lock(mutex_);
@@ -35,22 +61,58 @@ void FrameService::PublishSoftwareFrame(std::vector<std::uint8_t> rgba8) {
 }
 
 void FrameService::PublishAngleFrame(gles::AngleFrame& angle_frame) {
-    std::function<bool()> covered;
+    FrameReadbackFilter covered;
     {
         std::scoped_lock lock(mutex_);
         covered = readback_filter_;
     }
-    if (covered && covered()) return;
+    if (covered.covered && covered.covered(covered.owner)) { ResetReadback(); return; }
+    std::shared_ptr<gles::AsyncAngleReadback> pipeline;
+    {
+        std::scoped_lock lock(mutex_);
+        pipeline = async_readback_;
+    }
+    if (pipeline && !pipeline->Matches(angle_frame)) {
+        ResetReadback();
+        pipeline.reset();
+    }
+    if (pipeline) {
+        static_cast<void>(pipeline->Enqueue());
+        return;
+    }
     std::vector<std::uint8_t> readback;
     if (layout_.factor == 1U) {
         std::scoped_lock lock(mutex_);
         readback = std::move(recycled_rgba8_);
     }
+    std::uint64_t epoch{};
+    {
+        std::scoped_lock lock(mutex_);
+        epoch = readback_epoch_;
+    }
     angle_frame.ReadRgba8(readback);
+    PublishReadback(std::move(readback), epoch);
+    // First frame is current and synchronous. The next swap queues frame 2;
+    // only its completion publishes it, so frame 1 is never counted twice.
+    bool current_epoch{};
+    { std::scoped_lock lock(mutex_); current_epoch = epoch == readback_epoch_; }
+    if (async_enabled_ && current_epoch) {
+        auto pipeline = gles::AsyncAngleReadback::Create(angle_frame,
+            [this, epoch](std::vector<std::uint8_t> pixels) {
+                PublishReadback(std::move(pixels), epoch);
+            });
+        std::scoped_lock lock(mutex_);
+        if (epoch == readback_epoch_) async_readback_ = std::move(pipeline);
+    }
+}
+
+void FrameService::PublishReadback(std::vector<std::uint8_t> readback,
+                                 const std::uint64_t epoch) {
     AndroidBoundaryFrame frame{
         layout_.logical_width, layout_.logical_height, 0,
         gles::ResolveSupersampledRgba8(std::move(readback), layout_)};
     std::scoped_lock lock(mutex_);
+    if (epoch != readback_epoch_) return;
     frame.sequence = ++frame_sequence_;
     if (layout_.factor == 1U && latest_frame_.has_value() &&
         latest_frame_->rgba8.capacity() >= recycled_rgba8_.capacity()) {
@@ -59,7 +121,7 @@ void FrameService::PublishAngleFrame(gles::AngleFrame& angle_frame) {
     latest_frame_ = std::move(frame);
 }
 
-void FrameService::SetReadbackFilter(std::function<bool()> covered) {
+void FrameService::SetReadbackFilter(FrameReadbackFilter covered) {
     std::scoped_lock lock(mutex_);
     readback_filter_ = std::move(covered);
 }
@@ -80,6 +142,7 @@ void FrameService::RecycleFrame(AndroidBoundaryFrame&& frame) {
 }
 
 void FrameService::SetRenderTargetReady(const bool ready) {
+    if (!ready) ResetReadback();
     std::scoped_lock lock(mutex_);
     gpu_render_target_ready_ = ready;
 }

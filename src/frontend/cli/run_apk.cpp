@@ -740,7 +740,8 @@ int RunApkCommand(const int argc, const char* const argv[],
         app_request.progress = runtime_progress;
         app_request.boundary_options = {
             .allow_gles1_material_single_face = ProfileEnablesQuirk(
-                profile, "gles1_material_front_face")};
+                profile, "gles1_material_front_face"),
+            .async_present_readback = !mcp_manual_step};
         app_request.guest_call_slice_observer = guest_slice_observer;
         app_request.guest_call_slice_observer_thread = std::this_thread::get_id();
         app_request.platform = {
@@ -900,6 +901,25 @@ int RunApkCommand(const int argc, const char* const argv[],
         Write(mcp_manual_step
                   ? "OGPlay: APK guest execution started in MCP manual-step mode.\n"
                   : "OGPlay: APK guest execution started; close the window to stop.\n");
+        const auto present_latest = [&] {
+            bool did_present = false;
+            if (auto frame = guest->TakeLatestFrame(); frame.has_value()) {
+                *frame = dex_lifecycle->ComposePresentedFrame(
+                    std::move(*frame));
+                window->PresentRgba8(frame->rgba8, frame->width, frame->height);
+                guest_width = frame->width;
+                guest_height = frame->height;
+                ++presented;
+                did_present = true;
+                update_frame_rate();
+                PublishPresentedFrame(mcp_frames.get(), std::move(*frame), *guest);
+                if (exit_after_frames.has_value() &&
+                    presented >= *exit_after_frames) {
+                    quit = true;
+                }
+            }
+            return did_present;
+        };
         while (!quit && !guest->ExitRequested() &&
                !(dex_context &&
                  runtime::SessionExitRequested(*dex_context))) {
@@ -975,6 +995,10 @@ int RunApkCommand(const int argc, const char* const argv[],
                     mcp_lifecycle == agent::McpLifecycleState::running &&
                     (!mcp_manual_step || permitted_steps != 0U);
                 if (!advance || quit) {
+                    if (!quit && !failure && !mcp_manual_step) {
+                        static_cast<void>(present_latest());
+                        publish_session();
+                    }
                     std::this_thread::sleep_for(std::chrono::milliseconds(1));
                     continue;
                 }
@@ -1013,21 +1037,7 @@ int RunApkCommand(const int argc, const char* const argv[],
                 } else {
                     video_pace_deadline_ns = 0;
                 }
-                if (auto frame = guest->TakeLatestFrame(); frame.has_value()) {
-                    *frame = dex_lifecycle->ComposePresentedFrame(
-                        std::move(*frame));
-                    window->PresentRgba8(frame->rgba8, frame->width, frame->height);
-                    guest_width = frame->width;
-                    guest_height = frame->height;
-                    ++presented;
-                    frame_presented = true;
-                    update_frame_rate();
-                    PublishPresentedFrame(mcp_frames.get(), std::move(*frame), *guest);
-                    if (exit_after_frames.has_value() &&
-                        presented >= *exit_after_frames) {
-                        quit = true;
-                    }
-                }
+                frame_presented = present_latest();
                 const auto stats = guest->Stats();
                 LogProfileFrameProgress(
                     logger, stepped.frame, stepped.clock_ticks,

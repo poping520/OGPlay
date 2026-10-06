@@ -120,6 +120,12 @@ struct AndroidBoundaryOptions final {
     BionicDynamicLinkHooks dynamic_link{};
     OpenSlesCallbackSink open_sles_callbacks{};
     AndroidLooperHooks loopers{};
+    bool async_present_readback{};
+};
+
+struct FrameReadbackFilter final {
+    void* owner{};
+    bool (*covered)(void*){};
 };
 
 class AndroidBoundaryHle final : public core::GpuStateProvider {
@@ -176,7 +182,7 @@ public:
     void RecycleFrame(AndroidBoundaryFrame&& frame);
     // Explicit upper-layer coverage certificate; true suppresses only host
     // present readback. Guest GL/readPixels execution is unaffected.
-    void SetFrameReadbackFilter(std::function<bool()> covered);
+    void SetFrameReadbackFilter(FrameReadbackFilter covered);
     [[nodiscard]] std::vector<audio::OpenSlesConsumedBuffer>
     MixOpenSlesPcm16(std::span<std::int16_t> output,
                      std::uint32_t output_rate);

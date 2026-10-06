@@ -713,7 +713,7 @@ note = "M4 完成 pack/unpack、array/element buffer 与动态输出形状解析
 [gles.angle_frame]
 status = "complete"
 test = "tests/gles/angle_frame_tests.cpp"
-note = "M4 在真实 ANGLE pbuffer 上闭合综合样例所需 state/query/draw/readback、资源、shader 与 uniform；M5 WU-0292 优先使用 ANGLE reverse-row pack 直接输出 top-left RGBA8、无冗余 glFinish，并允许调用方复用 readback 存储；WU-PERF-10 的 Metal 呈现读回在 PBO/map 能力满足时经私有 buffer 同步 map/copy，完整恢复 pack 状态及方向"
+note = "M4 在真实 ANGLE pbuffer 上闭合综合样例所需 state/query/draw/readback、资源、shader 与 uniform；M5 WU-0292 优先使用 ANGLE reverse-row pack 直接输出 top-left RGBA8、无冗余 glFinish，并允许调用方复用 readback 存储；WU-PERF-10 的 Metal 呈现读回在 PBO/map 能力满足时经私有 buffer 同步 map/copy，完整恢复 pack 状态及方向；ADR-0100/WU-PERF-12 为实时窗口启用受检双 PBO/fence 和宿主共享 collector context，首帧同步、完成后发布、末帧无需后续 swap，旧来源代际退役且背压/错误明确。同步 guest 读取与手动步进保持；macOS 2560×1600/3 核教学 57.59→60.13 FPS。跨平台及完整关卡未验收"
 
 [gles.angle_scalar_state]
 status = "complete"

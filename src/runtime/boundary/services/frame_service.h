@@ -11,6 +11,7 @@
 
 #include "ogplay/core/gpu_state.h"
 #include "ogplay/gles/angle_frame.h"
+#include "ogplay/gles/angle_readback.h"
 #include "ogplay/gles/supersample.h"
 #include "ogplay/runtime/boundary/android_boundary_hle.h"
 #include "runtime/boundary/core/boundary_symbols.h"
@@ -20,13 +21,16 @@ namespace ogplay::runtime {
 class FrameService final {
 public:
     FrameService(const gles::SupersampleLayout& layout,
-                 std::span<const detail::HleThunkDescriptor> descriptors) noexcept;
+                 std::span<const detail::HleThunkDescriptor> descriptors,
+                 bool async_readback = false) noexcept;
+    ~FrameService();
 
     [[nodiscard]] std::optional<AndroidBoundaryFrame> TakeLatestFrame();
     void PublishSoftwareFrame(std::vector<std::uint8_t> rgba8);
     void PublishAngleFrame(gles::AngleFrame& frame);
     void RecycleFrame(AndroidBoundaryFrame&& frame);
-    void SetReadbackFilter(std::function<bool()> covered);
+    void SetReadbackFilter(FrameReadbackFilter covered);
+    void ResetReadback();
 
     void SetRenderTargetReady(bool ready);
     void RecordDraw();
@@ -46,6 +50,7 @@ public:
         std::size_t limit) const;
 
 private:
+    void PublishReadback(std::vector<std::uint8_t> pixels, std::uint64_t epoch);
     struct RawGpuTraceEntry final {
         std::uint16_t descriptor_index{};
         std::array<std::uint32_t, 4> registers{};
@@ -64,7 +69,10 @@ private:
     std::size_t gpu_trace_write_{};
     std::size_t gpu_trace_count_{};
     bool gpu_render_target_ready_{};
-    std::function<bool()> readback_filter_;
+    FrameReadbackFilter readback_filter_;
+    bool async_enabled_{};
+    std::uint64_t readback_epoch_{};
+    std::shared_ptr<gles::AsyncAngleReadback> async_readback_;
 };
 
 }  // namespace ogplay::runtime

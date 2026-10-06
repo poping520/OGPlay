@@ -167,6 +167,12 @@
   `GL_ANGLE_pack_reverse_row_order` 时由驱动直接反向打包并恢复既有 pack 状态，否则
   在宿主内翻转，禁止把坐标系差异泄漏到每个消费者。`glReadPixels` 自身的同步语义已足够，
   全帧 readback 前不得额外强制 `glFinish`。
+- `AsyncAngleReadback`：显式实时窗口优化，Metal + 实际 PBO/map/EGL fence 能力才启用。
+  两个私有槽各 ≤64 MiB；producer 只读当前 framebuffer、插入 fence 并 flush，collector
+  在内部共享 context 等待完成、map/copy。两槽占用时背压，末帧不依赖下一次 swap。
+  此宿主 context 不进入 guest registry、不调用 guest；同步 ReadRgba8/ReadPixels 保持原样。
+  Stop 唤醒 producer/有限 fence 等待并 join，私有对象/context 在 collector 线程释放。
+  NativeContext/Surface/尺寸身份必须匹配；pack 状态及方向完整恢复，错误显式传播。
 - Metal 全帧呈现 readback 在 ES3 或 NV PBO/map 扩展满足时可通过私有 pack buffer
   读回并同步 map/copy；buffer 在本次调用内释放，pack binding/alignment/row/skip/reverse
   状态完整恢复，不改变 guest `glReadPixels`、输出像素、方向或完成语义。

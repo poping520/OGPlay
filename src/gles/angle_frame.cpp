@@ -133,6 +133,9 @@ EglHandle AngleFrame::NativeContext() const noexcept {
     return lifecycle_.NativeContext();
 }
 
+EglHandle AngleFrame::NativeDisplay() const noexcept { return lifecycle_.NativeDisplay(); }
+EglHandle AngleFrame::NativeSurface() const noexcept { return lifecycle_.NativeSurface(); }
+
 bool AngleFrame::IsCurrentOnCallingThread() const noexcept {
 #if OGPLAY_HAS_ANGLE
     const auto current = eglGetCurrentContext();

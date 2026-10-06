@@ -80,7 +80,7 @@ public:
           descriptors_(detail::BuildAndroidBoundaryDescriptors(symbols_)),
           provider_(symbols_),
           thunk_arena_(address_space_), fast_router_(thunk_arena_),
-          frame_service_(layout_, descriptors_),
+          frame_service_(layout_, descriptors_, options.async_present_readback),
           gles_dispatch_(address_space, gl_context_),
           gles1_state_(gl_context_.Shared()),
           gles1_draw_state_(
@@ -341,13 +341,13 @@ public:
             throw std::logic_error(
                 "Android boundary managed surface is not open");
         }
+        frame_service_.SetRenderTargetReady(false);
         gl_owner_.reset();
         angle_frame_.reset();
         managed_surface_ = false;
         gles1_map_buffer_state_.RetireShareGroup(gl_context_.ShareGroup());
         gles3_module_.RetireShareGroup(gl_context_.ShareGroup());
         ResetGuestGraphics();
-        frame_service_.SetRenderTargetReady(false);
     }
     [[nodiscard]] SupervisorCallProgress HandleWithProgress(
         cpu::Cpu& cpu, const cpu::RunResult& stopped) {
@@ -435,7 +435,7 @@ public:
     void RecycleFrame(AndroidBoundaryFrame&& frame) {
         frame_service_.RecycleFrame(std::move(frame));
     }
-    void SetFrameReadbackFilter(std::function<bool()> covered) {
+    void SetFrameReadbackFilter(FrameReadbackFilter covered) {
         frame_service_.SetReadbackFilter(std::move(covered));
     }
     std::vector<audio::OpenSlesConsumedBuffer> MixOpenSlesPcm16(
@@ -1090,7 +1090,7 @@ std::optional<AndroidBoundaryFrame> AndroidBoundaryHle::TakeLatestFrame() {
 void AndroidBoundaryHle::PublishSoftwareFrame(std::vector<std::uint8_t> rgba8) {
     impl_->PublishSoftwareFrame(std::move(rgba8));
 }
-void AndroidBoundaryHle::SetFrameReadbackFilter(std::function<bool()> covered) {
+void AndroidBoundaryHle::SetFrameReadbackFilter(FrameReadbackFilter covered) {
     impl_->SetFrameReadbackFilter(std::move(covered));
 }
 void AndroidBoundaryHle::RecycleFrame(AndroidBoundaryFrame&& frame) {

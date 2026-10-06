@@ -31,6 +31,10 @@
   两段原 APK 区间 PCM 完整一致、无空读验证通过；用户复测确认两个卡顿问题已解决。
   测试会话已关闭，退出仍为既有
   0x315f0001 读取错；完整影音同步/跨平台/title gate 未验收。证据 `.local/video-playback-20261006/`。
+  [WU-PERF-12](../tasks/optimization/WU-PERF-12.md)：Metal 实时双 PBO/fence 与共享 collector
+  读回已实现；同步读取/手动步进保持。2560×1600、3 核同场景教学 57.59→60.13 FPS、
+  对话 62.02→66.36 FPS，29 项/1244 断言通过。3 项 EGL 旧失败及既有架构违规保留，
+  退出/全关卡/跨平台未验收。证据 `.local/tales-async-readback-20261006/`。
 
 - **PVZ（com.popcap.pvz_na）**：[DVM-205](../tasks/dexvm/DVM-205.md) 已修复 DEX
   注解预算误拒绝，使用共享解析缓存和分层资源预算。macOS Release 定向回归通过；

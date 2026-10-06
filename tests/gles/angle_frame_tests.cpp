@@ -5,8 +5,13 @@
 #include <cstdint>
 #include <string>
 #include <array>
+#include <condition_variable>
+#include <mutex>
+#include <thread>
 
 #include "ogplay/gles/angle_frame.h"
+#include "ogplay/gles/angle_readback.h"
+#include "ogplay/hal/clock.h"
 
 namespace {
 
@@ -322,5 +327,106 @@ TEST_CASE("ATC fallback samples real textures and preserves PBO and unpack state
         CHECK_THROWS_AS(frame.CompressedTextureImage2D(0x0de1,0,0x8c93,4,4,1,block),ogplay::gles::GlesApiError);
         try { frame.CompressedTextureSubImage2D(0x0de1,0,0,0,4,4,0x8c93,block);FAIL("ATC subimage succeeded"); }
         catch(const ogplay::gles::GlesApiError& error) { CHECK(error.Code()==0x0502); }
+    }
+}
+
+TEST_CASE("ANGLE async readback preserves pack state and current pixels while collector is blocked") {
+    if (!ogplay::gles::IsNativeAngleEglAvailable()) return;
+    for (const int version : {2, 3}) {
+        CAPTURE(version);
+        auto frame = ogplay::gles::AngleFrame::CreatePbuffer(
+            {kNativeRenderer, ogplay::gles::AngleDevice::hardware}, 5, 3, version);
+        struct Capture {
+            std::mutex mutex;
+            std::condition_variable changed;
+            std::vector<std::vector<std::uint8_t>> frames;
+            bool blocked{}, released{}, second_done{};
+        } capture;
+        auto pipeline = ogplay::gles::AsyncAngleReadback::Create(frame, [&](auto pixels) {
+            std::unique_lock lock(capture.mutex);
+            capture.frames.push_back(std::move(pixels));
+            if (capture.frames.size() == 1) {
+                capture.blocked = true;
+                capture.changed.notify_all();
+                capture.changed.wait(lock, [&] { return capture.released; });
+            }
+            capture.changed.notify_all();
+        });
+        if (kNativeRenderer != ogplay::gles::AngleRenderer::metal) {
+            CHECK(pipeline == nullptr);
+            continue;
+        }
+        REQUIRE(pipeline != nullptr);
+        struct Release {
+            Capture& capture;
+            ~Release() { std::scoped_lock lock(capture.mutex); capture.released = true; capture.changed.notify_all(); }
+        } release{capture};
+        CHECK(frame.IsCurrentOnCallingThread());
+        const auto buffers = frame.GenerateBuffers(1);
+        frame.BindBuffer(0x88EBU, buffers[0]);
+        const std::array<std::byte, 16> marker{std::byte{0x5a}, std::byte{0xa5}};
+        frame.BufferData(0x88EBU, 16, std::span<const std::byte>{marker}, 0x88E4U);
+        frame.PixelStore(0x0D05U, 8);
+        if (version >= 3) {
+            frame.PixelStore(0x0D02U, 11);
+            frame.PixelStore(0x0D03U, 2);
+            frame.PixelStore(0x0D04U, 3);
+        }
+        frame.ClearColor(0, 0, 1, 1);
+        frame.Clear(0x4000U);
+        frame.SetScissorEnabled(true);
+        frame.Scissor(0, 2, 5, 1);
+        frame.ClearColor(1, 0, 0, 1);
+        frame.Clear(0x4000U);
+        frame.SetScissorEnabled(false);
+        const auto expected = frame.ReadRgba8();
+        REQUIRE(pipeline->Enqueue());
+        {
+            std::unique_lock lock(capture.mutex);
+            REQUIRE(capture.changed.wait_for(lock, std::chrono::seconds(3), [&] { return capture.blocked; }));
+        }
+        frame.ClearColor(0, 1, 0, 1);
+        frame.Clear(0x4000U);
+        // A watchdog only prevents a regression from hanging the suite. The
+        // assertion observes the blocked collector, not elapsed performance.
+        std::jthread watchdog([&] {
+            std::unique_lock lock(capture.mutex);
+            if (!capture.changed.wait_for(lock, std::chrono::seconds(3), [&] { return capture.second_done; })) {
+                capture.released = true;
+                capture.changed.notify_all();
+            }
+        });
+        REQUIRE(pipeline->Enqueue());
+        {
+            std::scoped_lock lock(capture.mutex);
+            CHECK_FALSE(capture.released);
+            capture.second_done = true;
+            capture.changed.notify_all();
+        }
+        watchdog.join();
+        CHECK(frame.GetIntegers(0x88EDU, 1).front() == static_cast<std::int32_t>(buffers[0]));
+        CHECK(frame.GetIntegers(0x0D05U, 1).front() == 8);
+        if (version >= 3) {
+            CHECK(frame.GetIntegers(0x0D02U, 1).front() == 11);
+            CHECK(frame.GetIntegers(0x0D03U, 1).front() == 2);
+            CHECK(frame.GetIntegers(0x0D04U, 1).front() == 3);
+        }
+        CHECK(frame.ReadBufferRange(0x88EBU, 0, 16) == std::vector<std::byte>(marker.begin(), marker.end()));
+        const auto current = frame.ReadRgba8();
+        CHECK(current[0] == 0);
+        CHECK(current[1] == 255);
+        CHECK(current[2] == 0);
+        {
+            std::unique_lock lock(capture.mutex);
+            capture.released = true;
+            capture.changed.notify_all();
+            REQUIRE(capture.changed.wait_for(lock, std::chrono::seconds(3), [&] { return capture.frames.size() == 2; }));
+            CHECK(capture.frames[0] == expected);
+            CHECK(capture.frames[1] == current);
+        }
+        pipeline->Stop();
+        pipeline->RethrowFailure();
+        CHECK_FALSE(pipeline->Enqueue());
+        frame.DeleteBuffers(buffers);
     }
 }

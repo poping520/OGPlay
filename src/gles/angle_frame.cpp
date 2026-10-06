@@ -6,6 +6,7 @@
 #include "ogplay/gles/guest_transfer.h"
 
 #include <algorithm>
+#include <cstring>
 #include <limits>
 #include <span>
 #include <stdexcept>
@@ -1094,12 +1095,23 @@ void AngleFrame::ReadRgba8(std::vector<std::uint8_t>& result) {
     glGetIntegerv(GL_PACK_ALIGNMENT, &pack_alignment);
     glPixelStorei(GL_PACK_ALIGNMENT, 1);
     const bool es3 = lifecycle_.Info().client_version >= 3;
+    const auto* extensions = reinterpret_cast<const char*>(glGetString(GL_EXTENSIONS));
+    const bool has_pbo = es3 || HasExtension(extensions, "GL_NV_pixel_buffer_object");
+    // Metal's direct client-memory read calls Texture::getBytes repeatedly.
+    // A pack buffer uses its GPU buffer-copy path, then one synchronized map.
+    // Keep this synchronous and private to the presentation readback.
+    const bool use_pbo = lifecycle_.Info().backend.renderer == AngleRenderer::metal &&
+        result.size() <= static_cast<std::size_t>(std::numeric_limits<std::int32_t>::max()) &&
+        (es3 || (has_pbo && HasExtension(extensions, "GL_EXT_map_buffer_range") &&
+                           HasExtension(extensions, "GL_OES_mapbuffer")));
     constexpr std::array<GLenum, 3> pack_names{0x0D02U, 0x0D03U, 0x0D04U};
     std::array<GLint, 3> pack_values{};
     GLint pack_buffer{};
-    if (es3) {
+    if (has_pbo) {
         glGetIntegerv(0x88EDU, &pack_buffer);
         glBindBuffer(0x88EBU, 0U);
+    }
+    if (es3) {
         for (std::size_t index = 0; index < pack_names.size(); ++index) {
             glGetIntegerv(pack_names[index], &pack_values[index]);
             glPixelStorei(pack_names[index], 0);
@@ -1110,10 +1122,9 @@ void AngleFrame::ReadRgba8(std::vector<std::uint8_t>& result) {
         if (es3) {
             for (std::size_t index = 0; index < pack_names.size(); ++index)
                 glPixelStorei(pack_names[index], pack_values[index]);
-            glBindBuffer(0x88EBU, static_cast<GLuint>(pack_buffer));
         }
+        if (has_pbo) glBindBuffer(0x88EBU, static_cast<GLuint>(pack_buffer));
     };
-    const auto* extensions = reinterpret_cast<const char*>(glGetString(GL_EXTENSIONS));
     const auto reverse_rows = HasExtension(
         extensions, "GL_ANGLE_pack_reverse_row_order");
     GLint previous_reverse_rows{};
@@ -1123,12 +1134,40 @@ void AngleFrame::ReadRgba8(std::vector<std::uint8_t>& result) {
         glPixelStorei(GL_PACK_REVERSE_ROW_ORDER_ANGLE, GL_TRUE);
         RequireNoError("glPixelStorei(GL_PACK_REVERSE_ROW_ORDER_ANGLE)");
     }
+    GLuint readback_buffer{};
     try {
+        if (use_pbo) {
+            glGenBuffers(1, &readback_buffer);
+            RequireNoError("presentation glGenBuffers");
+            glBindBuffer(0x88EBU, readback_buffer);
+            glBufferData(0x88EBU, static_cast<GLsizeiptr>(result.size()), nullptr,
+                         0x88E1U /* GL_STREAM_READ */);
+            RequireNoError("presentation glBufferData");
+        }
         glReadPixels(0, 0, static_cast<GLsizei>(width_),
                      static_cast<GLsizei>(height_), GL_RGBA, GL_UNSIGNED_BYTE,
-                     result.data());
+                     use_pbo ? nullptr : result.data());
         RequireNoError("glReadPixels");
+        if (use_pbo) {
+            auto* mapped = es3
+                ? MapBufferRange(0x88EBU, 0, static_cast<std::int32_t>(result.size()), 1U)
+                : static_cast<std::byte*>(glMapBufferRangeEXT(
+                      0x88EBU, 0, static_cast<GLsizeiptr>(result.size()), GL_MAP_READ_BIT_EXT));
+            RequireNoError("presentation PBO map");
+            if (mapped == nullptr) throw std::runtime_error("presentation PBO map returned null");
+            std::memcpy(result.data(), mapped, result.size());
+            const auto valid = es3 ? UnmapBuffer(0x88EBU) : glUnmapBufferOES(0x88EBU) == GL_TRUE;
+            RequireNoError("presentation PBO unmap");
+            if (!valid) throw std::runtime_error("presentation PBO contents invalidated");
+            glDeleteBuffers(1, &readback_buffer);
+            readback_buffer = 0U;
+            RequireNoError("presentation glDeleteBuffers");
+        }
     } catch (...) {
+        if (readback_buffer != 0U) {
+            glDeleteBuffers(1, &readback_buffer);
+            static_cast<void>(glGetError());
+        }
         if (reverse_rows) {
             glPixelStorei(GL_PACK_REVERSE_ROW_ORDER_ANGLE,
                           previous_reverse_rows);

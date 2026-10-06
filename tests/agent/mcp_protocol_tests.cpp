@@ -588,9 +588,11 @@ TEST_CASE("MCP session control exchanges atomic snapshots and bounded FIFO comma
         .guest_ticks = 34U,
         .presented_frame = 11U,
         .movie_request = ogplay::agent::McpMovieRequestSnapshot{2U, "logo.mp4"},
+        .successful_presents = 9U,
     });
     const auto snapshot = control.Snapshot();
     CHECK(snapshot.frame == 12U);
+    CHECK(snapshot.successful_presents == 9U);
     REQUIRE(snapshot.movie_request.has_value());
     CHECK(snapshot.movie_request->name == "logo.mp4");
 

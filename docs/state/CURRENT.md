@@ -1,6 +1,6 @@
 # 当前状态
 
-更新：2026-10-05。
+更新：2026-10-06。
 
 本页只保留最新运行结果与未闭合边界。能力状态见 [capabilities.toml](../../capabilities.toml)，
 实现契约见各模块 MODULE；历史过程见 [任务总览](../tasks/README.md) 与
@@ -19,6 +19,12 @@
   不传 `--diag` 时对话/教学场景 35.91/35.52 FPS，42 项定向回归通过。
   原命令追加 `--cpu-cores 2`；60 FPS、完整关卡及退出问题未闭合，补测一轮退出超时。
   证据 `.local/tales-perf-20261005/optimization-report.md`。
+  [WU-PERF-10](../tasks/optimization/WU-PERF-10.md)：本阶段收尾，后续优化按用户要求暂停；新增实际成功
+  present 计数，2 核基线复验 36.71 FPS，inline exclusive/Looper/PBO 组合 38.06 FPS。
+  页表访存/跨块 FPSR 保留及回调保护已定向验证，2 核对话 57.90 FPS，3 核对话
+  59.26–60.05 FPS、教学 49.99 FPS（2560×1600、MCP 无 `--diag`）。
+  72 项/2166 断言通过，临时取证 hook 已移除，测试进程已关闭；全场景 60 FPS、
+  持续移动及退出问题仍未闭合。证据 `.local/tales-perf-20261006/optimization-report.md`。
 
 - **PVZ（com.popcap.pvz_na）**：[DVM-205](../tasks/dexvm/DVM-205.md) 已修复 DEX
   注解预算误拒绝，使用共享解析缓存和分层资源预算。macOS Release 定向回归通过；

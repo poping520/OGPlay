@@ -366,7 +366,9 @@ ControlResponse DashboardService::Request(std::string_view method, core::JsonVal
                         if (connected) if (const auto s = sources_.session->TrySnapshot()) {
                             const auto value = writer.Object(); writer.AddString(value, "lifecycle", McpLifecycleStateName(s->lifecycle));
                             writer.AddUnsignedInteger(value, "frame", s->frame); writer.AddUnsignedInteger(value, "guest_ticks", s->guest_ticks);
-                            Optional(writer, value, "presented_frame", s->presented_frame); writer.AddBool(value, "shutdown_requested", s->shutdown_requested);
+                            Optional(writer, value, "presented_frame", s->presented_frame);
+                            Optional(writer, value, "successful_presents", s->successful_presents);
+                            writer.AddBool(value, "shutdown_requested", s->shutdown_requested);
                             writer.AddBool(value, "process_exit", s->process_exit);
                             if (s->guest_fault) writer.AddString(value, "guest_fault", Text(*s->guest_fault)); else writer.AddNull(value, "guest_fault");
                             section(name, "complete", 0, "", value); continue;

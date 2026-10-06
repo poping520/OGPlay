@@ -35,6 +35,9 @@ struct McpSessionSnapshot final {
     bool process_exit{};
     std::optional<std::string> guest_fault;
     bool shutdown_requested{};
+    // Actual successful host presents. presented_frame identifies the latest
+    // source frame, whose sequence can skip when a producer outruns the window.
+    std::optional<std::uint64_t> successful_presents;
 };
 
 struct McpSessionCommand final {

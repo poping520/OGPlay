@@ -143,7 +143,7 @@ note = "M6 WU-0355 为 Scenario v1 增加 closed-enum step/click/swipe/lifecycle
 [automation.mcp_session_control]
 status = "complete"
 test = "tests/agent/mcp_protocol_tests.cpp"
-note = "M6 WU-0356 发布 session_state/step/lifecycle/shutdown closed-schema MCP 工具；线程安全原子快照与 64 项命令 FIFO 让网络 worker 不直接调用 guest，step 严格限制 1..1000000 帧"
+note = "M6 WU-0356 发布 session_state/step/lifecycle/shutdown closed-schema MCP 工具；线程安全原子快照与 64 项命令 FIFO 让网络 worker 不直接调用 guest，step 严格限制 1..1000000 帧；WU-PERF-10 区分源帧序号 presentedFrame 与成功宿主呈现次数 successfulPresents，后者未连接为 null"
 
 [automation.profile_session]
 status = "complete"
@@ -483,7 +483,7 @@ note = "M1 参考后端覆盖裸样本与基础诊断指令族；完整 ISA 不�
 [cpu.dynarmic]
 status = "complete"
 test = "tests/cpu/dynarmic_tests.cpp"
-note = "M1 Dynarmic A32/T32 后端遵守 MemoryBus、状态、tick、停止和 fault 契约；M2 与解释器一致支持 TPIDRURO；M5 WU-0290 接入受保护数据页表并保留跨页及 callback fault。WU-PERF-08 将成功的 ARM cacheflush 发布到共享 context 的全部代码缓存；SVC 桥接验证见 tests/runtime/syscall_bridge_tests.cpp，运行中 peer 的范围失效见本条测试入口。BND-48 增加内存映射范围订阅，覆盖权限撤销、地址复用、独立 context 与快照恢复。WU-PERF-09 在 ARM64 backend 分离读/写页表；exclusive 回调借用当前已发布的单页 backing，以真实宿主 CAS 提交，observer/未对齐/跨页/缺权限回退 MemoryBus；定向覆盖直接 STR 解锁竞争及 exclusive peer ABA。普通直接写入恢复原值的 ABA/write-history 跟踪仍不支持。"
+note = "M1 Dynarmic A32/T32 后端遵守 MemoryBus、状态、tick、停止和 fault 契约；M2 与解释器一致支持 TPIDRURO；M5 WU-0290 接入受保护数据页表并保留跨页及 callback fault。WU-PERF-08 将成功的 ARM cacheflush 发布到共享 context 的全部代码缓存；SVC 桥接验证见 tests/runtime/syscall_bridge_tests.cpp，运行中 peer 的范围失效见本条测试入口。BND-48 增加内存映射范围订阅，覆盖权限撤销、地址复用、独立 context 与快照恢复。WU-PERF-09 在 ARM64 backend 分离读/写页表；exclusive 回调借用当前已发布的单页 backing，以真实宿主 CAS 提交，observer/未对齐/跨页/缺权限回退 MemoryBus；定向覆盖直接 STR 解锁竞争及 exclusive peer ABA。WU-PERF-10/ADR-0097 在 ARM64 自然对齐单页内 inline exclusive，保留同一共享 monitor、真实 CAS 及失败回退；processor high-water bound 在首次 Run 前发布，退役不缩小；普通页表访存保留 live FPSR，wrapped memory fallback 保存/恢复 host FPSR，保持 guest 累积异常；ADR-0098 在 A32 ARM64 Run 内跨块保留 FPSR，在 C++/查询/改写/退出边界同步并恢复宿主状态，软件浮点异常更新仍保留。普通直接写入恢复原值的 ABA/write-history 跟踪仍不支持。"
 
 [cpu.arm_user_coprocessor]
 status = "partial"
@@ -713,7 +713,7 @@ note = "M4 完成 pack/unpack、array/element buffer 与动态输出形状解析
 [gles.angle_frame]
 status = "complete"
 test = "tests/gles/angle_frame_tests.cpp"
-note = "M4 在真实 ANGLE pbuffer 上闭合综合样例所需 state/query/draw/readback、资源、shader 与 uniform；M5 WU-0292 优先使用 ANGLE reverse-row pack 直接输出 top-left RGBA8、无冗余 glFinish，并允许调用方复用 readback 存储"
+note = "M4 在真实 ANGLE pbuffer 上闭合综合样例所需 state/query/draw/readback、资源、shader 与 uniform；M5 WU-0292 优先使用 ANGLE reverse-row pack 直接输出 top-left RGBA8、无冗余 glFinish，并允许调用方复用 readback 存储；WU-PERF-10 的 Metal 呈现读回在 PBO/map 能力满足时经私有 buffer 同步 map/copy，完整恢复 pack 状态及方向"
 
 [gles.angle_scalar_state]
 status = "complete"

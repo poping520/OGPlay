@@ -167,6 +167,9 @@
   `GL_ANGLE_pack_reverse_row_order` 时由驱动直接反向打包并恢复既有 pack 状态，否则
   在宿主内翻转，禁止把坐标系差异泄漏到每个消费者。`glReadPixels` 自身的同步语义已足够，
   全帧 readback 前不得额外强制 `glFinish`。
+- Metal 全帧呈现 readback 在 ES3 或 NV PBO/map 扩展满足时可通过私有 pack buffer
+  读回并同步 map/copy；buffer 在本次调用内释放，pack binding/alignment/row/skip/reverse
+  状态完整恢复，不改变 guest `glReadPixels`、输出像素、方向或完成语义。
 - 超采样尺寸、输入字节数和布局必须完整匹配；resolve 使用整数求和与固定四舍五入，
   禁止因宿主浮点或图形驱动产生黄金帧漂移；拥有型 1× resolve 必须保留输入存储。
 - GLES dispatch table 只允许在初始化阶段绑定；`Seal()` 发布不可变 handler 表后，

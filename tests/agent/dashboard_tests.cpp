@@ -77,6 +77,7 @@ TEST_CASE("Dashboard closed RPC schemas reject invalid requests before providers
 TEST_CASE("Dashboard unavailable partial and structured sources preserve read-only state") {
     agent::McpSessionControl control;
     agent::McpSessionSnapshot state; state.frame = 91; state.guest_ticks = 9007199254740993ULL;
+    state.presented_frame = 100U; state.successful_presents = 93U;
     control.Publish(state);
     REQUIRE(control.TryEnqueue(agent::McpSessionCommand::Type::step, 2));
     core::Logger logger; core::CapabilityLedger ledger;
@@ -95,6 +96,8 @@ TEST_CASE("Dashboard unavailable partial and structured sources preserve read-on
         CHECK(At(At(result, name), "data").IsNull());
     }
     CHECK(Uint(At(At(result, "session"), "data"), "guest_ticks") == state.guest_ticks);
+    CHECK(Uint(At(At(result, "session"), "data"), "successful_presents") == 93U);
+    CHECK(Uint(At(At(result, "session"), "data"), "presented_frame") == 100U);
     CHECK(control.Snapshot().frame == 91);
     CHECK(control.PendingCommands() == 1);
     const auto logs = At(At(result, "log"), "data"); REQUIRE(logs.Size() == 1);

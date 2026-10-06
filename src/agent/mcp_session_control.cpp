@@ -49,6 +49,9 @@ void AddSnapshot(core::JsonWriter& writer, const core::JsonWriter::Value object,
     } else {
         writer.AddNull(object, "presentedFrame");
     }
+    if (snapshot.successful_presents)
+        writer.AddUnsignedInteger(object, "successfulPresents", *snapshot.successful_presents);
+    else writer.AddNull(object, "successfulPresents");
     if (snapshot.movie_request) {
         const auto movie = writer.Object();
         writer.AddUnsignedInteger(movie, "sequence", snapshot.movie_request->sequence);
@@ -125,7 +128,7 @@ core::JsonWriter::Value OutputSchema(core::JsonWriter& writer,
         integer("frame");
         integer("guestTicks");
         for (const std::string_view field :
-             {"presentedFrame", "movieRequest", "guestFault"}) {
+             {"presentedFrame", "successfulPresents", "movieRequest", "guestFault"}) {
             const auto property = writer.Object();
             const auto types = writer.Array();
             writer.Append(types, writer.String(field == "movieRequest" ? "object" :

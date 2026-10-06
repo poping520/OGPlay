@@ -4,6 +4,7 @@
 #include <atomic>
 #include <chrono>
 #include <cstdint>
+#include <future>
 #include <memory>
 #include <thread>
 #include <vector>
@@ -279,6 +280,34 @@ TEST_CASE("Context exposes the stable scheduler main Looper through wrappers") {
     CHECK_FALSE(ogplay::runtime::PumpJavaThreads(fixture.vm, *fixture.context).has_value());
     CHECK_FALSE(ogplay::runtime::PumpJavaThreads(fixture.vm, *fixture.context).has_value());
     CHECK(prepares == 1U);
+}
+
+TEST_CASE("empty scheduler pump uses the attached main Thread without acquiring the VM lock") {
+    SchedulerVm fixture;
+    const auto main = fixture.Direct("Landroid/os/Looper;", "getMainLooper",
+                                     "()Landroid/os/Looper;");
+    SchedulerVm::RequireOk(main);
+    REQUIRE(main.value.ref.IsValid());
+    REQUIRE(fixture.context->loopers.at(main.value.ref.Value()).thread.IsValid());
+    std::promise<void> entered, release;
+    auto entered_future = entered.get_future();
+    auto released = release.get_future();
+    auto holder = std::async(std::launch::async, [&] {
+        VmExecutionLockScope lock(fixture.vm.ExecutionLock());
+        entered.set_value();
+        released.wait();
+    });
+    entered_future.wait();
+    auto pump = std::async(std::launch::async, [&] {
+        return PumpJavaThreads(fixture.vm, *fixture.context);
+    });
+    const auto ready = pump.wait_for(std::chrono::milliseconds(500));
+    // Always unblock before assertions, including on the old implementation.
+    release.set_value();
+    holder.get();
+    CHECK(ready == std::future_status::ready);
+    CHECK_FALSE(pump.get().has_value());
+    CHECK(fixture.context->main_looper == main.value.ref);
 }
 
 TEST_CASE("DVM-89 ResultReceiver dispatches locally and through its Handler") {

@@ -2,8 +2,10 @@
 
 #include <algorithm>
 #include <array>
+#include <cfenv>
 #include <cstdint>
 #include <future>
+#include <memory>
 #include <thread>
 #include <vector>
 
@@ -26,6 +28,39 @@ public:
     }
 
     std::vector<ogplay::memory::BusAccess> accesses;
+};
+
+class FpsrClobberBus final : public ogplay::memory::MemoryBus {
+public:
+    explicit FpsrClobberBus(ogplay::memory::AddressSpace& space) : checked(space) {}
+#define FPBUS_ACCESS(bits, type) \
+    type Read##bits(ogplay::memory::GuestAddress address, std::uint64_t tid) override { \
+        const auto value = checked.Read##bits(address, tid); \
+        ++reads; std::feraiseexcept(FE_INVALID); return value; \
+    } \
+    void Write##bits(ogplay::memory::GuestAddress address, type value, std::uint64_t tid) override { \
+        checked.Write##bits(address, value, tid); \
+        ++writes; std::feraiseexcept(FE_INVALID); \
+    }
+    FPBUS_ACCESS(8, std::uint8_t)
+    FPBUS_ACCESS(16, std::uint16_t)
+    FPBUS_ACCESS(32, std::uint32_t)
+    FPBUS_ACCESS(64, std::uint64_t)
+#undef FPBUS_ACCESS
+    std::uint16_t Fetch16(ogplay::memory::GuestAddress a, std::uint64_t tid) override {
+        return checked.Fetch16(a, tid);
+    }
+    std::uint32_t Fetch32(ogplay::memory::GuestAddress a, std::uint64_t tid) override {
+        return checked.Fetch32(a, tid);
+    }
+    ogplay::memory::DirectMemoryPageTable* DirectPageTable() noexcept override {
+        return checked.DirectPageTable();
+    }
+    ogplay::memory::DirectMemoryPageTable* DirectReadPageTable() noexcept override {
+        return checked.DirectReadPageTable();
+    }
+    ogplay::memory::CheckedMemoryBus checked;
+    unsigned reads{}, writes{};
 };
 
 struct Outcome final {
@@ -553,6 +588,56 @@ TEST_CASE("Dynarmic exclusive store preserves permission fault attribution") {
     CHECK(bus.Read32(flag) == 0);
 }
 
+TEST_CASE("Dynarmic exclusive reservations include sparse processor IDs and callback peers") {
+    using namespace ogplay;
+    memory::AddressSpace space;
+    const memory::GuestAddress code{0x10000}, flag{0x20000};
+    const auto rw = memory::PageProtection::read | memory::PageProtection::write;
+    space.Map({code, 4096}, rw);
+    space.Map({flag, 4096}, rw);
+    memory::CheckedMemoryBus bus(space);
+    ThreadObserver observer;
+    memory::MemoryAccessObserver* selected{};
+    SUBCASE("inline high-ID peer") {}
+    SUBCASE("callback high-ID peer") { selected = &observer; }
+    memory::CheckedMemoryBus peer_bus(space, selected);
+    const std::array first{0xe1902f9fU, 0xef000001U, 0xe1803f91U, 0xef000001U};
+    const std::array peer{0xe1902f9fU, 0xe1803f91U, 0xe1902f9fU,
+                          0xe3a01001U, 0xe1803f91U, 0xef000001U};
+    for (std::size_t i = 0; i < first.size(); ++i) bus.Write32(code.Add(i * 4), first[i]);
+    for (std::size_t i = 0; i < peer.size(); ++i) bus.Write32(code.Add(64 + i * 4), peer[i]);
+    space.Protect({code, 4096}, memory::PageProtection::read | memory::PageProtection::execute);
+    auto context = std::make_shared<cpu::DynarmicExecutionContext>(1024);
+    cpu::DynarmicCpu contender(bus, context);
+    std::vector<std::unique_ptr<cpu::DynarmicCpu>> holes;
+    for (std::size_t i = 0; i < 32; ++i)
+        holes.push_back(std::make_unique<cpu::DynarmicCpu>(bus, context));
+    auto writer = std::make_unique<cpu::DynarmicCpu>(peer_bus, context);
+    holes.clear(); // Leave an executing high ID above a large retired gap.
+    cpu::A32State state;
+    state.SetRegister(cpu::CoreRegister::pc, code.Value());
+    state.SetRegister(cpu::CoreRegister::r0, flag.Value());
+    state.SetRegister(cpu::CoreRegister::r1, 2);
+    // The second iteration reuses a retired low ID. The high-water bound must
+    // remain conservative and no retired processor may retain a reservation.
+    for (unsigned reuse = 0; reuse < 2; ++reuse) {
+        if (reuse != 0) writer = std::make_unique<cpu::DynarmicCpu>(peer_bus, context);
+        bus.Write32(flag, 1);
+        contender.SetState(state);
+        auto peer_state = state;
+        peer_state.SetRegister(cpu::CoreRegister::pc, code.Add(64).Value());
+        peer_state.SetRegister(cpu::CoreRegister::r1, 0);
+        writer->SetState(peer_state);
+        REQUIRE(contender.Run(8).reason == cpu::RunStopReason::supervisor_call);
+        REQUIRE(writer->Run(16).reason == cpu::RunStopReason::supervisor_call);
+        REQUIRE(bus.Read32(flag) == 1);
+        REQUIRE(contender.Run(8).reason == cpu::RunStopReason::supervisor_call);
+        CHECK(contender.GetState().Register(cpu::CoreRegister::r3) == 1);
+        CHECK(bus.Read32(flag) == 1);
+        writer.reset();
+    }
+}
+
 TEST_CASE("Dynarmic reports callback-only data memory faults") {
     const ogplay::memory::GuestAddress code{sample::kCodeAddress};
     const ogplay::memory::GuestAddress unmapped{0x30000U};
@@ -640,6 +725,136 @@ TEST_CASE("Dynarmic read pages preserve protected data and live permission chang
     result = run(code);
     REQUIRE(result.fault.has_value());
     CHECK(result.fault->reason == memory::FaultReason::unmapped);
+}
+
+TEST_CASE("Dynarmic cumulative FPSR spans linked blocks host callbacks software FP and overwrite") {
+    using namespace ogplay;
+    memory::AddressSpace memory;
+    const memory::GuestAddress code{0x10000};
+    memory.Map({code, 4096}, memory::PageProtection::read | memory::PageProtection::write);
+    memory::CheckedMemoryBus bus(memory);
+    const std::array program{0xee800a81U, 0xeaffffffU, // 0/0, then branch
+        0xef000002U, 0xeaffffffU, // handled host hook, then branch
+        0xf3bb0542U, 0xeaffffffU, // vrecpe.f32 q0,q1 software helper, then branch
+        0xee344aa4U, 0xeef12a10U, 0xef000001U,
+        0xeee14a10U, 0xeaffffffU, // VMSR clears cumulative state, then branch
+        0xeef12a10U, 0xef000001U};
+    for (std::size_t i = 0; i < program.size(); ++i) bus.Write32(code.Add(i * 4), program[i]);
+    memory.Protect({code, 4096}, memory::PageProtection::read | memory::PageProtection::execute);
+    cpu::DynarmicCpu cpu(bus);
+    unsigned hooks{};
+    cpu.SetHostCallHook({+[](void* userdata, std::uint32_t svc,
+                            cpu::A32HostCallContext&) noexcept {
+        if (svc != 2) return cpu::HostCallResult::unhandled;
+        ++*static_cast<unsigned*>(userdata);
+        std::feclearexcept(FE_ALL_EXCEPT);
+        std::feraiseexcept(FE_OVERFLOW); // Host arithmetic must not become guest FPSR.
+        return cpu::HostCallResult::handled;
+    }, &hooks});
+    cpu::A32State state;
+    state.SetRegister(cpu::CoreRegister::pc, code.Value());
+    state.SetExtendedRegister(9, 0x3f800000U);
+    cpu.SetState(state);
+    std::feclearexcept(FE_ALL_EXCEPT);
+    std::feraiseexcept(FE_INEXACT);
+    auto stop = cpu.Run(64);
+    const auto caller_flags = std::fetestexcept(FE_ALL_EXCEPT);
+    std::feclearexcept(FE_ALL_EXCEPT);
+    REQUIRE(stop.reason == cpu::RunStopReason::supervisor_call);
+    auto result = cpu.GetState();
+    CHECK(hooks == 1U);
+    CHECK(result.Fpscr() == 3U); // INVALID from division plus DZC from software reciprocal.
+    CHECK(result.Register(cpu::CoreRegister::r2) == 3U);
+    CHECK(result.ExtendedRegisters()[0] == 0x7f800000U);
+    CHECK(result.ExtendedRegisters()[8] == 0x40000000U);
+#if defined(__aarch64__) || defined(_M_ARM64)
+    CHECK(caller_flags == FE_INEXACT);
+#else
+    static_cast<void>(caller_flags);
+#endif
+    stop = cpu.Run(32);
+    REQUIRE(stop.reason == cpu::RunStopReason::supervisor_call);
+    result = cpu.GetState();
+    CHECK(result.Register(cpu::CoreRegister::r2) == 0U);
+    CHECK(result.Fpscr() == 0U);
+}
+
+TEST_CASE("Dynarmic adjacent VFP compare VMRS preserves conditions and FPSCR flags") {
+    using namespace ogplay;
+    struct Case { std::uint32_t a, b, condition, flags; };
+    for (const auto item : {Case{0x3f800000U, 0x3f800000U, 1, 0x60000000U},
+                           Case{0xbf800000U, 0x3f800000U, 2, 0x80000000U},
+                           Case{0x40000000U, 0x3f800000U, 3, 0x20000000U},
+                           Case{0x7fc00000U, 0x3f800000U, 4, 0x30000001U}}) {
+        CAPTURE(item.a);
+        memory::AddressSpace memory;
+        const memory::GuestAddress code{0x10000};
+        memory.Map({code, 4096}, memory::PageProtection::read | memory::PageProtection::write);
+        memory::CheckedMemoryBus bus(memory);
+        const std::array program{0xeeb40ae0U, 0xeef1fa10U,
+            0x03a00001U, 0x43a00002U, 0xc3a00003U, 0x63a00004U,
+            0xeef12a10U, 0xef000001U};
+        for (std::size_t i = 0; i < program.size(); ++i) bus.Write32(code.Add(i * 4), program[i]);
+        memory.Protect({code, 4096}, memory::PageProtection::read | memory::PageProtection::execute);
+        cpu::DynarmicCpu cpu(bus);
+        cpu::A32State state;
+        state.SetRegister(cpu::CoreRegister::pc, code.Value());
+        state.SetExtendedRegister(0, item.a);
+        state.SetExtendedRegister(1, item.b);
+        cpu.SetState(state);
+        REQUIRE(cpu.Run(32).reason == cpu::RunStopReason::supervisor_call);
+        const auto result = cpu.GetState();
+        CHECK(result.Register(cpu::CoreRegister::r0) == item.condition);
+        CHECK(result.Register(cpu::CoreRegister::r2) == item.flags);
+        CHECK(result.Fpscr() == item.flags);
+        CHECK((result.Cpsr() & 0xf0000000U) == (item.flags & 0xf0000000U));
+    }
+}
+
+TEST_CASE("Dynarmic page memory preserves floating exceptions through fast and clobbering fallback paths") {
+    using namespace ogplay;
+    for (const bool store : {false, true}) {
+        for (const bool crossing : {false, true}) {
+            CAPTURE(store);
+            CAPTURE(crossing);
+            memory::AddressSpace memory;
+            const memory::GuestAddress code{0x10000}, data{0x20000};
+            const auto rw = memory::PageProtection::read | memory::PageProtection::write;
+            memory.Map({code, 4096}, rw);
+            memory.Map({data, 8192}, rw);
+            FpsrClobberBus bus(memory);
+            const std::array program{0xee800a81U, // vdiv.f32 s0,s1,s2: divide by zero
+                store ? 0xe5804000U : 0xe5904000U, // str/ldr r4,[r0]
+                0xee701aa0U, // vadd.f32 s3,s1,s1: exact result after memory
+                0xeef12a10U, // vmrs r2,FPSCR
+                0xef000001U};
+            for (std::size_t i = 0; i < program.size(); ++i)
+                bus.checked.Write32(code.Add(i * 4), program[i]);
+            const auto address = data.Add(crossing ? 4094U : 16U);
+            bus.checked.Write32(address, 0x12345678U);
+            memory.Protect({code, 4096}, memory::PageProtection::read | memory::PageProtection::execute);
+            cpu::DynarmicCpu cpu(bus);
+            cpu::A32State state;
+            state.SetRegister(cpu::CoreRegister::pc, code.Value());
+            state.SetRegister(cpu::CoreRegister::r0, address.Value());
+            state.SetRegister(cpu::CoreRegister::r4, 0x87654321U);
+            state.SetExtendedRegister(1, 0x3f800000U); // 1.0f
+            state.SetExtendedRegister(2, 0U); // 0.0f
+            std::feclearexcept(FE_ALL_EXCEPT);
+            cpu.SetState(state);
+            const auto stop = cpu.Run(32);
+            const auto result = cpu.GetState();
+            std::feclearexcept(FE_ALL_EXCEPT);
+            REQUIRE(stop.reason == cpu::RunStopReason::supervisor_call);
+            CHECK(result.Register(cpu::CoreRegister::r2) == 2U);
+            CHECK(result.Fpscr() == 2U); // DZC, no callback-origin INVALID flag
+            CHECK(result.ExtendedRegisters()[0] == 0x7f800000U);
+            CHECK(result.ExtendedRegisters()[3] == 0x40000000U);
+            CHECK(bus.reads == (crossing && !store ? 1U : 0U));
+            CHECK(bus.writes == (crossing && store ? 1U : 0U));
+            CHECK(bus.checked.Read32(address) == (store ? 0x87654321U : 0x12345678U));
+        }
+    }
 }
 
 TEST_CASE("Dynarmic direct memory falls back for cross-page permission checks") {

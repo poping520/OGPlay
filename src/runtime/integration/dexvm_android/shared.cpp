@@ -1294,6 +1294,14 @@ dx::VmObjectRef EnsureMainLooper(dx::Interpreter& vm,
         }
     }
     if (vm.CurrentContextToken() == 1U) {
+        {
+            std::scoped_lock lock(context->scheduler_mutex);
+            const auto found = context->loopers.find(main.Value());
+            // Root Thread identity is stable after it is attached. Empty
+            // scheduler pumps must not enter Java merely to fetch it again.
+            if (found != context->loopers.end() && found->second.thread.IsValid())
+                return main;
+        }
         const auto thread = CurrentJavaThread(vm);
         std::scoped_lock lock(context->scheduler_mutex);
         const auto found = context->loopers.find(main.Value());

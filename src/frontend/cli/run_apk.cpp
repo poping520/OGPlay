@@ -881,6 +881,7 @@ int RunApkCommand(const int argc, const char* const argv[],
                 .guest_ticks = state.clock_ticks,
                 .process_exit = guest->ExitRequested(),
                 .guest_fault = guest_fault,
+                .successful_presents = presented,
             };
             if (const auto frame = mcp_frames->LatestMetadata(); frame) {
                 snapshot.presented_frame = frame->sequence;

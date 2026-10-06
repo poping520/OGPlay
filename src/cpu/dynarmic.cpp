@@ -104,6 +104,9 @@ public:
     std::vector<Dynarmic::A32::Jit*> jits;
     std::vector<DynarmicCacheSnapshot> snapshots;
     const std::shared_ptr<ExecutionBudget> budget;
+    // Publish before a leased processor can create any reservation. Never
+    // shrink: retired IDs can still be conservatively scanned and reused.
+    std::atomic<std::size_t> processor_high_water{};
 };
 
 DynarmicExecutionContext::DynarmicExecutionContext(
@@ -117,6 +120,9 @@ std::size_t DynarmicExecutionContext::AcquireProcessor() {
     for (std::size_t index = 0; index < impl_->processors.size(); ++index) {
         if (!impl_->processors[index]) {
             impl_->processors[index] = true;
+            impl_->processor_high_water.store(
+                std::max(impl_->processor_high_water.load(std::memory_order_relaxed), index + 1),
+                std::memory_order_release);
             impl_->snapshots[index] = {index, 0, 0, 0, 0};
             return index;
         }
@@ -462,7 +468,11 @@ public:
         config.always_little_endian = true;
         config.page_table = callbacks.DirectPageTable();
 #if defined(__aarch64__) || defined(_M_ARM64)
+        static_assert(std::atomic<std::size_t>::is_always_lock_free);
+        static_assert(sizeof(std::atomic<std::size_t>) == sizeof(std::size_t));
         config.read_page_table = callbacks.DirectReadPageTable();
+        config.exclusive_processor_bound = &context.impl_->processor_high_water;
+        config.inline_exclusive_memory = true;
 #endif
         config.detect_misaligned_access_via_page_table =
             8U | 16U | 32U | 64U;

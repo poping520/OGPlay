@@ -19,6 +19,8 @@
 - [ADR-0092 · 有界 WifiLock 客户端 Java 与进程内租约](#adr-0092)
 - [ADR-0093 · WifiManager 两类锁共享租约与逐对象释放](#adr-0093)
 - [ADR-0096 · 分离 JIT 数据读取与写入页表](#adr-0096)
+- [ADR-0097 · ARM64 受保护页内的 inline exclusive](#adr-0097)
+- [ADR-0098 · A32 JIT Run 内保留累积 FPSR](#adr-0098)
 
 <a id="adr-0001"></a>
 
@@ -677,3 +679,62 @@ readable 页内读取、在自然对齐的 RW 非执行页内使用真实 host C
 两张表同时随映射、保护、替换、卸载、快照恢复更新，订阅失效仍由各 CPU 执行线程处理。
 不修改固定 vendor submodule；x64 后端保留既有路径。该变更沿用已有直接访存生命周期，
 不宣称补齐 CURRENT 中尚未验收的并发卸载 quiescence 或普通写 ABA 历史跟踪。
+
+<a id="adr-0097"></a>
+
+## ADR-0097 · ARM64 受保护页内的 inline exclusive
+
+- 状态：Accepted
+- 日期：2026-10-06
+- Supersedes：ADR-0096 中 exclusive 必须经回调的执行方式；不改变权限、共享
+  reservation、observer、真实原子提交或映射生命周期约束。
+
+### 背景
+
+ARM64 的 LDREX/STREX 在已发布直接页上仍退出 JIT 调用 C++，每次 exclusive 写还遍历
+固定容量的全部 processor 槽。高频同步路径需要减少回调和空槽扫描，不能忽略全局 monitor。
+
+### 决定
+
+受检构建 overlay 显式启用 8/16/32/64 位自然对齐、单页的 inline exclusive。读取使用
+可读表、写入使用 RW 非执行表；生成代码使用同一 monitor 的 lock/address/value 存储，
+STREX 先检查 reservation 并使同址 peer 失效，再以宿主 LDAXR/STLXR 循环进行真实 CAS。
+未匹配值不写入；local exclusive、guest 内存屏障和原失败回调保持原语义。
+
+context 在 processor ID 分配完成、任何 Run 之前以 release 发布单调 high-water bound；
+inline 写在 monitor 锁内 acquire 读取该界限，仅省略从未分配的尾部槽。退役不缩小界限，
+ID 可复用。observer、跨页、未对齐、权限不足或不可直接访问仍走原 monitor/callback。
+
+### 后果
+
+monitor 布局和 vendor tree 不修改；指针 accessors 复用其既有 friend 边界，生成代码的
+存储生命周期由 execution context 保证。x64 保留原路径。稀疏高 ID、ID 复用、直接/回调
+peer 混用、各宽度 CAS、多线程及权限撤销需定向回归。并发卸载 quiescence 与普通写入
+ABA 历史仍未闭合；性能目标必须另以真实成功 present 计数验证。
+
+<a id="adr-0098"></a>
+
+## ADR-0098 · A32 JIT Run 内保留累积 FPSR
+
+- 状态：Accepted
+- 日期：2026-10-06
+
+### 背景
+
+ARM64 翻译 A32 浮点计算时，每个链接块都清空 native FPSR，再读取并合并到 guest
+状态；密集标量浮点与条件分支使状态搬运占据明显 JIT 样本。不能通过丢弃异常状态提速。
+
+### 决定
+
+仅 A32 ARM64 的受检构建 overlay 启用 Run 内 FPSR 保留；FpsrManager 默认模式及 x64
+不变。Run 保存宿主 FPSR 并装载 guest 累积状态，链接块边界保持 native guest FPSR。
+进入 C++/dispatcher 前发布、返回后从 guest 状态恢复；直接软件浮点 helper 经状态槽
+增加的异常必须保留。块内普通页表访存不改 FPSR，wrapped memory callback 独立保护
+live 状态。VMRS/VMSR、停止/fault 和 Run 出口保持 guest 可观察状态，出口恢复宿主 FPSR。
+
+### 后果
+
+仅改变内部状态搬运，不启用 unsafe math、改变舍入/NaN/异常语义或合并浮点运算。
+影子 FpsrManager/StackLayout 头加入统一 ABI 重编译边界；固定 vendor tree 不修改。
+定向验证必须覆盖跨块累积、回调污染、软件浮点更新、FPSCR 清除与宿主恢复，再以真实
+成功 present 测量性能。该决定不等于完整 ISA、跨平台或游戏 title gate 验收。

@@ -122,6 +122,65 @@ TEST_CASE("ANGLE frame clears and reads back an exact GLES2 pbuffer") {
     }
 }
 
+TEST_CASE("ANGLE presentation readback preserves pack buffers state and top row") {
+    if (!ogplay::gles::IsNativeAngleEglAvailable()) return;
+    for (const int version : {2, 3}) {
+        CAPTURE(version);
+        auto frame = ogplay::gles::AngleFrame::CreatePbuffer(
+            {kNativeRenderer, ogplay::gles::AngleDevice::hardware}, 5, 3, version);
+        const auto extensions = frame.GetString(0x1F03U);
+        const bool has_pbo = version >= 3 ||
+            extensions.find("GL_NV_pixel_buffer_object") != std::string::npos;
+        const bool has_reverse = extensions.find("GL_ANGLE_pack_reverse_row_order") != std::string::npos;
+        std::vector<std::uint32_t> buffers;
+        const std::array<std::byte, 16> marker{std::byte{0x5a}, std::byte{0xa5}};
+        if (has_pbo) {
+            buffers = frame.GenerateBuffers(1);
+            frame.BindBuffer(0x88EBU, buffers[0]);
+            frame.BufferData(0x88EBU, 16, std::span<const std::byte>{marker}, 0x88E4U);
+        }
+        frame.PixelStore(0x0D05U, 8); // PACK_ALIGNMENT
+        if (version >= 3) {
+            frame.PixelStore(0x0D02U, 11); // PACK_ROW_LENGTH
+            frame.PixelStore(0x0D03U, 2); // PACK_SKIP_ROWS
+            frame.PixelStore(0x0D04U, 3); // PACK_SKIP_PIXELS
+        }
+        frame.ClearColor(0, 0, 1, 1);
+        frame.Clear(0x4000U);
+        frame.SetScissorEnabled(true);
+        frame.Scissor(0, 2, 5, 1);
+        frame.ClearColor(1, 0, 0, 1);
+        frame.Clear(0x4000U);
+        frame.SetScissorEnabled(false);
+        for (const auto reverse : {0, 1}) {
+            if (has_reverse) frame.PixelStore(0x93A4U, reverse);
+            const auto pixels = frame.ReadRgba8();
+            REQUIRE(pixels.size() == 60U);
+            for (std::size_t y = 0; y < 3; ++y) {
+                for (std::size_t x = 0; x < 5; ++x) {
+                    const auto offset = (y * 5 + x) * 4;
+                    CHECK(pixels[offset] == (y == 0 ? 255 : 0));
+                    CHECK(pixels[offset + 1] == 0);
+                    CHECK(pixels[offset + 2] == (y == 0 ? 0 : 255));
+                    CHECK(pixels[offset + 3] == 255);
+                }
+            }
+            CHECK(frame.GetIntegers(0x0D05U, 1).front() == 8);
+            if (has_reverse) CHECK(frame.GetIntegers(0x93A4U, 1).front() == reverse);
+            if (version >= 3) {
+                CHECK(frame.GetIntegers(0x0D02U, 1).front() == 11);
+                CHECK(frame.GetIntegers(0x0D03U, 1).front() == 2);
+                CHECK(frame.GetIntegers(0x0D04U, 1).front() == 3);
+            }
+            if (has_pbo) {
+                CHECK(frame.GetIntegers(0x88EDU, 1).front() == static_cast<std::int32_t>(buffers[0]));
+                CHECK(frame.ReadBufferRange(0x88EBU, 0, 16) == std::vector<std::byte>(marker.begin(), marker.end()));
+            }
+        }
+        frame.DeleteBuffers(buffers);
+    }
+}
+
 TEST_CASE("ANGLE uniform discovery accepts OES texture 3D samplers") {
     if (!ogplay::gles::IsNativeAngleEglAvailable()) return;
     auto frame = ogplay::gles::AngleFrame::CreatePbuffer(

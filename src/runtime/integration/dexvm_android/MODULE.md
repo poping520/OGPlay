@@ -189,6 +189,8 @@ Java GLES/EGL 通过 session managed 冷入口复用 [native boundary](../../bou
 - Java prepare/主 Looper 经 prepare_native_looper 显式 hook 关联 native 线程；主 Looper
   仅在首次建立主 Looper 时调用关联 hook，既有身份查询及主消息泵不重复 prepare。
   Java scheduler 保留消息所有权，quit 不清除存活线程的 native Looper。
+- 主 Looper 已绑定的 root Thread 身份保持稳定；空消息泵复用该身份，不为重复查询
+  进入 Java/获取 VM execution lock。有实际回调时仍走正常 VM 执行与错误路径。
   myQueue 只发布稳定队列身份，范围外失败。
 - runOnUiThread 仅 root context 同步虚派，worker 投递唯一主 Looper；worker join 后、root JNI
   detach 前释放 native token。AsyncTask 的 DexVmError 保留线程故障并终止，不转 null 或继续

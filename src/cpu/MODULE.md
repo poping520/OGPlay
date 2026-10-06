@@ -30,7 +30,10 @@
   触发整缓存冲刷与逐帧重编译。
 - `DynarmicExecutionContext`：为同一 guest 进程的 JIT CPU 分配唯一 processor ID 并共享
   exclusive monitor；STREX 在无 observer、自然对齐的 RW 非执行直接页上用宿主 CAS
-  提交，其他访问通过 MemoryBus 的硬件原子 CompareExchange；与普通 JIT
+  提交；ARM64 可在自然对齐单页内 inline 读写，使用同一共享 monitor 的锁和 reservation
+  存储及真实宿主 CAS，peer 失效扫描仅省略单调 high-water bound 之外从未分配的槽。
+  bound 在 processor 首次 Run 前发布，退役不缩小，ID 复用不继承 reservation。
+  其他访问通过 MemoryBus 的硬件原子 CompareExchange；与普通 JIT
   直接写竞争时不可覆盖已经发生的不同值写入。不能以仅覆盖回调的互斥锁模拟原子提交。
   monitor 保留 exclusive peer 写入的 reservation 失效；普通直接写入后恢复原值的 ABA
   不由值比较检测，本接口不宣称完整 ARM reservation granule/write-history 模拟。
@@ -63,9 +66,15 @@
 - 内存失败产生 Fault，不得返回零；CPU 只调用无上层语义的显式 HostCallHook。
 - CPU 后端只通过 `MemoryBus` 及其显式页表能力访存；ARM64 的独立读表允许 R/RX 数据
   读取，写入仍只使用 RW 非执行页表。observer、取指及跨页访问回退受检 bus；exclusive
-  保持原有 monitor；其回调只在对应已发布页内借用 backing，跨页/对齐/权限不满足即回退，
+  保持原有 monitor；inline 及其回调只在对应已发布页内借用 backing，跨页/对齐/权限不满足即回退，
   不额外保存宿主指针。寄存器状态不得包含宿主指针。ARM64 读表通过哈希受检构建扩展
   接入 Dynarmic，其他宿主保留既有读写表路径。
+- ARM64 A32 普通页表访存保留 live FPSR，不在纯整数访存上反复 spill/reload；受检
+  wrapped memory fallback 在调用 C++ 前后保存/恢复 FPSR。浮点结果、累积异常、VMRS
+  和普通 ABI/host-call 的原状态边界保持一致。
+- ARM64 A32 的 guest FPSR 在一次 Run 内可跨链接块保留；C++/dispatcher 入口发布、
+  出口从 guest 状态恢复，软件浮点 helper 修改的累积异常不能丢失。VMSR/VMRS、停止、
+  fault 与快照保持可观察语义；Run 保存/恢复宿主调用者 FPSR，x64 不变。
 - `Run` 的 tick 预算和消费量必须确定且可测试。
 - 所有停止结果必须显式初始化指令、立即数和 fault 字段，跨编译器不得依赖聚合尾字段补零。
 - Dynarmic 指令能力缺口返回 `unsupported_instruction`，不是 guest 非法指令；其 fallback

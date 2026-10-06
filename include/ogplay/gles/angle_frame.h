@@ -52,6 +52,7 @@ struct AngleUniformValueCount final {
 class AngleFrame final {
 public:
     [[nodiscard]] int ClientVersion() const noexcept { return lifecycle_.Info().client_version; }
+    [[nodiscard]] AngleBackend Backend() const noexcept { return lifecycle_.Info().backend; }
     [[nodiscard]] std::byte* MappedBufferPointer(std::uint32_t target);
     [[nodiscard]] std::byte* MappedBufferPointerOes(std::uint32_t target, std::uint32_t parameter);
     enum class PixelBufferOperation {
@@ -82,6 +83,8 @@ public:
     void ReleaseCurrent();
     void MarkNotCurrent() noexcept { lifecycle_.MarkNotCurrent(); }
     [[nodiscard]] EglHandle NativeContext() const noexcept;
+    [[nodiscard]] EglHandle NativeDisplay() const noexcept;
+    [[nodiscard]] EglHandle NativeSurface() const noexcept;
     [[nodiscard]] bool IsCurrentOnCallingThread() const noexcept;
 
     void Viewport(std::int32_t x, std::int32_t y,

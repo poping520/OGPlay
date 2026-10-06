@@ -14,6 +14,7 @@
 #include <string>
 #include <string_view>
 #include <thread>
+#include "ogplay/hal/clock.h"
 #include <future>
 #include "ogplay/runtime/vfs/vfs.h"
 #include <unordered_map>
@@ -57,7 +58,8 @@ public:
         std::vector<ogplay::runtime::OpenSlesGuestCallback>* callbacks = nullptr,
         const ogplay::runtime::BionicDynamicLinkHooks dynamic_link = {},
         const bool allow_single_stage_texcoord_fallback = true,
-        ogplay::runtime::AndroidLooperHooks loopers = {})
+        ogplay::runtime::AndroidLooperHooks loopers = {},
+        const bool async_readback = false)
         : bus(memory), cpu(bus), boundary(memory,
               {kNativeRenderer,
                ogplay::gles::AngleDevice::hardware}, 4, 3,
@@ -85,7 +87,8 @@ public:
                                ogplay::runtime::OpenSlesGuestCallback>*>(owner)
                                ->push_back(callback);
                        }
-                   }}, .loopers = std::move(loopers)}) {
+                   }}, .loopers = std::move(loopers),
+               .async_present_readback = async_readback}) {
         memory.Map({stack, memory.PageSize()},
                    ogplay::memory::PageProtection::read |
                        ogplay::memory::PageProtection::write);
@@ -7074,14 +7077,14 @@ TEST_CASE("BND52 call errors remain attributable across slow fast managed and pr
 TEST_CASE("opaque video readback filter preserves GL drawing and resumes fresh base frames") {
     BoundaryFixture fixture;
     fixture.boundary.OpenManagedSurface();
-    fixture.boundary.SetFrameReadbackFilter([] { return true; });
+    fixture.boundary.SetFrameReadbackFilter({nullptr, +[](void*) { return true; }});
     CHECK(fixture.Call("libGLESv2.so", "glClearColor",
         {std::bit_cast<std::uint32_t>(1.0F), 0U, 0U, std::bit_cast<std::uint32_t>(1.0F)}) == 0U);
     CHECK(fixture.Call("libGLESv2.so", "glClear", {0x00004000U}) == 0U);
     fixture.boundary.PresentManagedSurface();
     CHECK_FALSE(fixture.boundary.TakeLatestFrame().has_value());
     CHECK(fixture.boundary.Stats().clears == 1U);
-    fixture.boundary.SetFrameReadbackFilter([] { return false; });
+    fixture.boundary.SetFrameReadbackFilter({nullptr, +[](void*) { return false; }});
     fixture.boundary.PresentManagedSurface();
     const auto frame = fixture.boundary.TakeLatestFrame();
     REQUIRE(frame.has_value());
@@ -7090,4 +7093,75 @@ TEST_CASE("opaque video readback filter preserves GL drawing and resumes fresh b
     CHECK(frame->sequence == 1U);
     fixture.boundary.SetFrameReadbackFilter({});
     fixture.boundary.CloseManagedSurface();
+}
+
+TEST_CASE("async window presentation warms once drains final frame and retires old GPU jobs") {
+    BoundaryFixture fixture(1, nullptr, {}, true, {}, true);
+    REQUIRE(fixture.Call("libEGL.so", "eglInitialize", {1U}) == 1U);
+    REQUIRE(fixture.Call("libEGL.so", "eglCreateWindowSurface", {1U,2U,1U,0U}) == 3U);
+    fixture.bus.Write32(fixture.output, 0x3098U, 1U);
+    fixture.bus.Write32(fixture.output.Add(4U), 2U, 1U);
+    fixture.bus.Write32(fixture.output.Add(8U), 0x3038U, 1U);
+    REQUIRE(fixture.Call("libEGL.so", "eglCreateContext", {1U,2U,0U,fixture.output.Value()}) == 4U);
+    REQUIRE(fixture.Call("libEGL.so", "eglMakeCurrent", {1,3,3,4}) == 1U);
+    const auto clear = [&](float r, float g, float b) {
+        CHECK(fixture.Call("libGLESv2.so", "glClearColor", {std::bit_cast<std::uint32_t>(r),
+            std::bit_cast<std::uint32_t>(g), std::bit_cast<std::uint32_t>(b), std::bit_cast<std::uint32_t>(1.0F)}) == 0U);
+        CHECK(fixture.Call("libGLESv2.so", "glClear", {0x4000U}) == 0U);
+    };
+    clear(1,0,0);
+    REQUIRE(fixture.Call("libEGL.so", "eglSwapBuffers", {1U, 3U}) == 1U);
+    const auto first = fixture.boundary.TakeLatestFrame();
+    REQUIRE(first.has_value());
+    CHECK(first->sequence == 1U);
+    CHECK(first->rgba8[0] == 255U);
+    CHECK_FALSE(fixture.boundary.TakeLatestFrame().has_value());
+    clear(0,1,0);
+    REQUIRE(fixture.Call("libEGL.so", "eglSwapBuffers", {1U, 3U}) == 1U);
+    fixture.bus.Write32(fixture.stack, 0x1908U, 1U);
+    fixture.bus.Write32(fixture.stack.Add(4U), 0x1401U, 1U);
+    fixture.bus.Write32(fixture.stack.Add(8U), fixture.output.Value(), 1U);
+    REQUIRE(fixture.Call("libGLESv2.so", "glReadPixels", {0,0,1,1}) == 0U);
+    CHECK(fixture.bus.Read8(fixture.output, 1U) == 0U);
+    CHECK(fixture.bus.Read8(fixture.output.Add(1U), 1U) == 255U);
+    CHECK(fixture.bus.Read8(fixture.output.Add(2U), 1U) == 0U);
+    std::optional<ogplay::runtime::AndroidBoundaryFrame> last;
+    const auto deadline = ogplay::hal::Clock::SteadyTimestampNs() + 3'000'000'000ULL;
+    // No next swap: an idle/WHEN_DIRTY producer must still deliver its last frame.
+    while (!last && ogplay::hal::Clock::SteadyTimestampNs() < deadline) {
+        last = fixture.boundary.TakeLatestFrame();
+        std::this_thread::yield();
+    }
+    REQUIRE(last.has_value());
+    CHECK(last->sequence == 2U);
+    CHECK(last->rgba8[0] == 0U);
+    CHECK(last->rgba8[1] == 255U);
+    clear(0,0,1);
+    REQUIRE(fixture.Call("libEGL.so", "eglSwapBuffers", {1U, 3U}) == 1U);
+    fixture.boundary.PublishSoftwareFrame(std::vector<std::uint8_t>(4U*3U*4U, 77));
+    const auto software = fixture.boundary.TakeLatestFrame();
+    REQUIRE(software.has_value());
+    CHECK(software->rgba8 == std::vector<std::uint8_t>(48U,77U));
+    CHECK_FALSE(fixture.boundary.TakeLatestFrame().has_value());
+    clear(1,0,0);
+    REQUIRE(fixture.Call("libEGL.so", "eglSwapBuffers", {1U, 3U}) == 1U);
+    const auto restarted = fixture.boundary.TakeLatestFrame();
+    REQUIRE(restarted.has_value());
+    CHECK(restarted->rgba8[0] == 255U);
+    clear(0,0,1);
+    REQUIRE(fixture.Call("libEGL.so", "eglSwapBuffers", {1U,3U}) == 1U);
+    fixture.bus.Write32(fixture.output, 0x3098U, 1U);
+    fixture.bus.Write32(fixture.output.Add(4U), 2U, 1U);
+    fixture.bus.Write32(fixture.output.Add(8U), 0x3038U, 1U);
+    const auto other_context = fixture.Call("libEGL.so", "eglCreateContext", {1U,2U,4U,fixture.output.Value()});
+    REQUIRE(other_context != 0U);
+    REQUIRE(fixture.Call("libEGL.so", "eglMakeCurrent", {1U,3U,3U,other_context}) == 1U);
+    clear(0,1,0);
+    REQUIRE(fixture.Call("libEGL.so", "eglSwapBuffers", {1U,3U}) == 1U);
+    const auto switched = fixture.boundary.TakeLatestFrame();
+    REQUIRE(switched.has_value());
+    CHECK(switched->rgba8[0] == 0U);
+    CHECK(switched->rgba8[1] == 255U);
+    CHECK_FALSE(fixture.boundary.TakeLatestFrame().has_value());
+    CHECK(fixture.Call("libEGL.so", "eglMakeCurrent", {1,0,0,0}) == 1U);
 }

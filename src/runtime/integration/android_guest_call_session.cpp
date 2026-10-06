@@ -2058,7 +2058,7 @@ public:
     void PublishSoftwareFrame(std::vector<std::uint8_t> rgba8) {
         boundary_.PublishSoftwareFrame(std::move(rgba8));
     }
-    void SetFrameReadbackFilter(std::function<bool()> covered) {
+    void SetFrameReadbackFilter(FrameReadbackFilter covered) {
         boundary_.SetFrameReadbackFilter(std::move(covered));
     }
     void RecycleFrame(AndroidBoundaryFrame&& frame) {
@@ -2638,7 +2638,7 @@ void AndroidGuestProcess::CloseManagedSurface() { impl_->CloseManagedSurface(); 
 void AndroidGuestProcess::PushInput(const AndroidBoundaryInput& input) { impl_->PushInput(input); }
 std::optional<AndroidBoundaryFrame> AndroidGuestProcess::TakeLatestFrame() { return impl_->TakeLatestFrame(); }
 void AndroidGuestProcess::PublishSoftwareFrame(std::vector<std::uint8_t> rgba8) { impl_->PublishSoftwareFrame(std::move(rgba8)); }
-void AndroidGuestProcess::SetFrameReadbackFilter(std::function<bool()> covered) { impl_->SetFrameReadbackFilter(std::move(covered)); }
+void AndroidGuestProcess::SetFrameReadbackFilter(FrameReadbackFilter covered) { impl_->SetFrameReadbackFilter(std::move(covered)); }
 void AndroidGuestProcess::RecycleFrame(AndroidBoundaryFrame&& frame) { impl_->RecycleFrame(std::move(frame)); }
 std::size_t AndroidGuestProcess::RenderStereoAudio(const std::span<std::int16_t> output,
                                                    const std::uint32_t sample_rate) { return impl_->RenderStereoAudio(output, sample_rate); }
@@ -2848,7 +2848,7 @@ void AndroidGuestCallSession::PushInput(const AndroidBoundaryInput& input) {
 }
 std::optional<AndroidBoundaryFrame> AndroidGuestCallSession::TakeLatestFrame() { return process_->TakeLatestFrame(); }
 void AndroidGuestCallSession::PublishSoftwareFrame(std::vector<std::uint8_t> rgba8) { process_->PublishSoftwareFrame(std::move(rgba8)); }
-void AndroidGuestCallSession::SetFrameReadbackFilter(std::function<bool()> covered) { process_->SetFrameReadbackFilter(std::move(covered)); }
+void AndroidGuestCallSession::SetFrameReadbackFilter(FrameReadbackFilter covered) { process_->SetFrameReadbackFilter(std::move(covered)); }
 void AndroidGuestCallSession::RecycleFrame(AndroidBoundaryFrame&& frame) { process_->RecycleFrame(std::move(frame)); }
 std::size_t AndroidGuestCallSession::RenderStereoAudio(std::span<std::int16_t> output, std::uint32_t sample_rate) { return process_->RenderStereoAudio(output, sample_rate); }
 std::size_t AndroidGuestCallSession::InterruptBlockingWaits() { return process_->InterruptBlockingWaits(); }

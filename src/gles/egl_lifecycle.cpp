@@ -665,7 +665,9 @@ bool EglLifecycle::IsCurrent() const noexcept {
 
 EglHandle EglLifecycle::NativeDisplay() const noexcept { return display_; }
 EglHandle EglLifecycle::NativeContext() const noexcept { return context_; }
-EglHandle EglLifecycle::NativeSurface() const noexcept { return surface_; }
+EglHandle EglLifecycle::NativeSurface() const noexcept {
+    return draw_ ? draw_->Surface() : surface_;
+}
 
 void EglLifecycle::BindCurrentOnCallingThread() {
     if (registry_display_) { BindSurfaces(draw_, read_); return; }

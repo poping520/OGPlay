@@ -27,3 +27,9 @@ FrameService 接受显式上层 readback filter，在不持有帧存储锁时查
 GL 错误诊断由每次 A32CallFrame 的独立结果传递给 FrameService；一次边界返回错误的
 调用计数一次，trace 保留精确 GLenum。它不取代 Context 的首错锁存，不额外调用
 glGetError，也不覆盖未在边界捕获的原生错误、宿主异常或完整 GLES 验证。
+
+FrameService 的 async_present_readback 为显式实时选项，默认 false；可用 Metal 后端首帧
+同步发布，随后只发布 collector 已完成数据。帧序号按实际发布递增，队列预热不重复计数。
+context/surface/尺寸变更、软件帧、覆盖及关闭退役旧读回代际，旧 callback 不得覆盖新帧。
+回调只锁 frame store，不查询 UI/guest；Reset/析构不持有此锁 join。显式路径传播 worker
+错误，析构仅兜底清理；同步和不具备实际能力的路径保持原完成语义。

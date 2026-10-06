@@ -283,6 +283,7 @@ target_include_directories(ogplay_atc_vendor PRIVATE
 set_target_properties(ogplay_atc_vendor PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
 add_library(ogplay_gles
+    src/gles/angle_readback.cpp
     $<TARGET_OBJECTS:ogplay_atc_vendor>
     src/gles/atc.cpp
     $<TARGET_OBJECTS:ogplay_pvrtc_vendor>

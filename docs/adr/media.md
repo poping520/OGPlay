@@ -14,6 +14,7 @@
 - [ADR-0091 · ATC 纹理使用可移植解码回退](#adr-0091)
 - [ADR-0094 · 本地 VideoView 的 Java 生命周期与真实视频事件](#adr-0094)
 - [ADR-0099 · 实时视频解码与音频消费隔离](#adr-0099)
+- [ADR-0100 · 实时窗口有界异步读回](#adr-0100)
 
 <a id="adr-0003"></a>
 
@@ -464,3 +465,38 @@ APK；Deflate 保留原窗口校验。损坏来源在打开阶段明确失败，
 有限预读增加启动和 seek 成本；真实解码供给不足仍可产生临时 PCM 欠载，不能伪造成功。
 视频滞后时跳过过期图片是实时同步策略，不计作重复 present。完整影音同步、硬件解码、
 任意分辨率实时性能及跨宿主验收另行验证，不引入 title 分支或 Android 系统媒体服务。
+
+<a id="adr-0100"></a>
+
+## ADR-0100 · 实时窗口有界异步读回
+
+- 状态：Accepted
+- 日期：2026-10-06
+
+### 背景
+
+Metal 呈现读回在当前 GL 线程提交 PBO 后立即同步 map，GPU 完成前下一帧 guest CPU
+不能推进。仅在下一次 swap 取旧帧会重复首帧，且 WHEN_DIRTY/暂停后的末帧可能不交付。
+
+### 决定
+
+显式实时呈现选项仅对具有实际 PBO/map/EGL KHR fence 能力的 Metal 后端启用；
+默认窄接口、guest glReadPixels/ReadRgba8 及手动步进保持同步。首帧仍同步发布当前
+像素，之后 producer 在原 guest GL 线程向两块私有 PBO 提交读取、fence 和 glFlush。
+每槽 ≤64 MiB；两槽都在用时背压，禁止覆写未消费数据。
+
+内部独立共享 context 的宿主 collector 等待 fence、只读 map/copy 并发布完整 RGBA，
+不调用 guest、不更改其 context/state，不在完成等待时占用 producer 锁。它不是 guest
+Context 的第二个 native Context，不加入 guest registry。独立收取让没有下一次 swap
+的末帧也可交付；实时 frontend 在暂停/空闲时仍可取回已完成帧，且不推进 guest。
+
+pack binding/alignment/row/skip/reverse 全部恢复；上下方向及 supersample resolve 保持原
+算法。native context/surface/尺寸改变时重启管线；软件帧、覆盖省读回及关闭使来源代际
+退役，旧完成不能覆盖新输出。Stop 唤醒背压、有限 fence 等待并 join，在 collector 所属
+线程释放私有对象/context；错误在下一次提交或取帧传播，不伪造成功。
+
+### 后果
+
+增加最多两帧 PBO 存储及一个宿主共享 context，显示可延后约一帧。glFlush 不保证完成，
+GPU 本身满载时仍有等待；CPU 拷贝/SDL 上传成本不消失。必须以实际成功 present 和等待
+采样验证收益，不以 swap 请求、队列预热或重复旧帧计数证明 FPS。

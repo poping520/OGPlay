@@ -16,6 +16,7 @@
 #include "ogplay/gles/gles_dispatch.h"
 #include "ogplay/runtime/bionic/bionic_profile.h"
 #include "ogplay/runtime/boundary/opensles_callback.h"
+#include "ogplay/runtime/boundary/bitmap_boundary.h"
 #include "ogplay/runtime/common/supervisor_call_progress.h"
 
 namespace ogplay::core {
@@ -140,6 +141,7 @@ public:
     AndroidBoundaryHle& operator=(const AndroidBoundaryHle&) = delete;
 
     void MapThunks();
+    void SetBitmapHooks(AndroidBitmapHooks hooks);
     void OpenManagedSurface();
     void BindManagedSurfaceOnCallingThread();
     void ReleaseManagedSurfaceFromCallingThread();

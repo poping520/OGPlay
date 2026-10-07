@@ -10,6 +10,7 @@
 
 // ---- migrated from android_graphics_Bitmap_Config.cpp ----
 #include "catalog.h"
+#include "ogplay/runtime/integration/bitmap_pixels.h"
 
 namespace ogplay::runtime::android_intrinsics {
 
@@ -180,15 +181,13 @@ namespace {
     state.width = width;
     state.height = height;
     state.config = BitmapConfigValue(call, config);
-    state.argb.resize(static_cast<std::size_t>(width) *
-                      static_cast<std::size_t>(height));
+    state.pixels = std::make_shared<BitmapPixels>(width, height, state.config);
     for (std::int32_t row = 0; row < height; ++row) {
         for (std::int32_t column = 0; column < width; ++column) {
-            state.argb[static_cast<std::size_t>(row) *
+            state.pixels->Set(static_cast<std::size_t>(row) *
                            static_cast<std::size_t>(width) +
-                       static_cast<std::size_t>(column)] =
-                static_cast<std::uint32_t>(model.GetPrimitiveElement(
-                    array, offset + row * stride + column));
+                       static_cast<std::size_t>(column), static_cast<std::uint32_t>(model.GetPrimitiveElement(
+                    array, offset + row * stride + column)));
         }
     }
     const auto instance =
@@ -214,7 +213,7 @@ namespace {
     state.width = width;
     state.height = height;
     state.config = config_value;
-    state.argb.resize(pixel_count);
+    state.pixels = std::make_shared<BitmapPixels>(width, height, state.config);
     const auto instance =
         call.vm.NewIntrinsicInstance("Landroid/graphics/Bitmap;");
     context->bitmaps[instance.Value()] = std::move(state);
@@ -296,10 +295,10 @@ Decl Declare_android_graphics_Bitmap(const Context& context) {
             for (std::int32_t row = 0; row < height; ++row) {
                 for (std::int32_t column = 0; column < width; ++column) {
                     const auto pixel =
-                        state.argb[static_cast<std::size_t>(y + row) *
+                        state.pixels->Get(static_cast<std::size_t>(y + row) *
                                        static_cast<std::size_t>(
                                            state.width) +
-                                   static_cast<std::size_t>(x + column)];
+                                   static_cast<std::size_t>(x + column));
                     model.SetPrimitiveElement(array,
                                               offset + row * stride + column,
                                               pixel);
@@ -343,11 +342,10 @@ Decl Declare_android_graphics_Bitmap(const Context& context) {
             }
             for (std::int32_t row = 0; row < height; ++row) {
                 for (std::int32_t column = 0; column < width; ++column) {
-                    state.argb[static_cast<std::size_t>(y + row) *
+                    state.pixels->Set(static_cast<std::size_t>(y + row) *
                                    static_cast<std::size_t>(state.width) +
-                               static_cast<std::size_t>(x + column)] =
-                        static_cast<std::uint32_t>(model.GetPrimitiveElement(
-                            array, offset + row * stride + column));
+                               static_cast<std::size_t>(x + column), static_cast<std::uint32_t>(model.GetPrimitiveElement(
+                            array, offset + row * stride + column)));
                 }
             }
             return dx::VmValue::Void();
@@ -358,8 +356,7 @@ Decl Declare_android_graphics_Bitmap(const Context& context) {
             const auto found = context->bitmaps.find(call.receiver.Value());
             if (found != context->bitmaps.end()) {
                 found->second.recycled = true;
-                found->second.argb.clear();
-                found->second.argb.shrink_to_fit();
+                found->second.pixels->Retire();
             }
             return dx::VmValue::Void();
         });
@@ -408,7 +405,7 @@ Decl Declare_android_graphics_BitmapFactory(const Context& context) {
             DexVmAndroidContext::BitmapState state;
             state.width = decoded->width;
             state.height = decoded->height;
-            state.argb = std::move(decoded->argb);
+            state.pixels = std::make_shared<BitmapPixels>(state.width, state.height, state.config, std::move(decoded->argb));
             const auto instance =
                 call.vm.NewIntrinsicInstance("Landroid/graphics/Bitmap;");
             context->bitmaps[instance.Value()] = std::move(state);
@@ -496,7 +493,7 @@ Decl Declare_android_graphics_Canvas(const Context& context) {
                     }
                     target.argb[static_cast<std::size_t>(destination_y) *
                                     target.width + destination_x] =
-                        source.argb[static_cast<std::size_t>(y) * source.width + x];
+                        source.pixels->Get(static_cast<std::size_t>(y) * source.width + x);
                 }
             }
             return dx::VmValue::Void();

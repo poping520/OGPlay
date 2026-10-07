@@ -11,6 +11,7 @@
 #include "ogplay/runtime/bionic/guest_symbol_override.h"
 #include "runtime/boundary/core/boundary_symbols.h"
 #include "runtime/boundary/modules/android/android_exports.h"
+#include "runtime/boundary/modules/bitmap/bitmap_exports.h"
 #include "runtime/boundary/modules/egl/egl_exports.h"
 #include "runtime/boundary/modules/gles1/gles1_bounds_exports.h"
 #include "runtime/boundary/modules/log/log_exports.h"
@@ -27,6 +28,7 @@ struct NamedExport final {
 };
 
 #define OGPLAY_NAMED_METADATA(name, id, count, method) NamedExport{name, id, count},
+constexpr std::array kBitmapExports{OGPLAY_BITMAP_BOUNDARY_EXPORTS(OGPLAY_NAMED_METADATA)};
 constexpr std::array kAndroidExports{
     OGPLAY_ANDROID_BOUNDARY_EXPORTS(OGPLAY_NAMED_METADATA)};
 constexpr std::array kEglExports{
@@ -121,7 +123,7 @@ void AddOpenSlesModule(
 BoundaryCatalog BuildCatalog(const AndroidApi api) {
     std::vector<std::vector<BoundaryExportDefinition>> storage;
     std::vector<BoundaryModuleDefinition> modules;
-    storage.reserve(6);
+    storage.reserve(7);
     AddNamedModule(modules, storage, "libandroid.so", kAndroidExports);
     AddNamedModule(modules, storage, "libEGL.so", kEglExports);
     constexpr std::array gles1_apis{gles::GlesApi::gles1,
@@ -133,6 +135,7 @@ BoundaryCatalog BuildCatalog(const AndroidApi api) {
     AddGlesModule(modules, storage, "libGLESv2.so", gles2_apis, kGlesImageExports);
     AddNamedModule(modules, storage, "liblog.so", kLogExports);
     AddOpenSlesModule(modules, storage);
+    AddNamedModule(modules, storage, "libjnigraphics.so", kBitmapExports);
     return BoundaryCatalog(api, modules);
 }
 

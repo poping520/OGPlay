@@ -1900,6 +1900,7 @@ public:
     }
 
     dexvm::NioDirectMemoryAccess GuestMemoryAccess() const { return direct_memory_access_; }
+    void SetBitmapHooks(AndroidBitmapHooks hooks) { boundary_.SetBitmapHooks(hooks); }
     memory::GuestAddress FindModuleExport(const std::size_t index, const std::string_view name) const {
         std::scoped_lock lock(dynamic_link_mutex_);
         if (index >= loaded_.link_namespace.modules.size())
@@ -2888,4 +2889,8 @@ void AndroidGuestProcess::RegisterNativeActivity(NativeActivityBoundaryResources
 void AndroidGuestProcess::UnregisterNativeActivity(memory::GuestAddress activity) { impl_->UnregisterNativeActivity(activity); }
 memory::GuestAddress AndroidGuestProcess::SetNativeActivityWindow(memory::GuestAddress activity, bool active) { return impl_->SetNativeActivityWindow(activity, active); }
 void AndroidGuestProcess::SetNativeActivityInput(memory::GuestAddress activity, bool active) { impl_->SetNativeActivityInput(activity, active); }
+}
+
+namespace ogplay::runtime {
+void AndroidGuestProcess::SetBitmapHooks(AndroidBitmapHooks hooks) { impl_->SetBitmapHooks(hooks); }
 }

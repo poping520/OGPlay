@@ -1,3 +1,4 @@
+#include "ogplay/runtime/integration/bitmap_pixels.h"
 #include "ogplay/runtime/integration/native_activity_runtime.h"
 #include "ogplay/runtime/integration/dexvm_bridge.h"
 #include "ogplay/runtime/debug/stall_diagnostics.h"
@@ -154,6 +155,7 @@ void VisitAndroidSessionRoots(const DexVmAndroidContext& context,
     }
     root(context.current_intent);
     for (const auto& [_, value] : context.singletons) root(value);
+    for (const auto& [_, value] : context.bitmap_lock_roots) root(value);
     root(context.egl.display);
     root(context.egl.no_display);
     root(context.egl.no_context);
@@ -342,6 +344,87 @@ public:
     std::unordered_map<std::uint64_t, dx::InterpreterExecutionContext> native_attachments;
 
     DexVmGuestBridge* owner{};
+
+    bool BitmapEnvironment(std::uint64_t thread, memory::GuestAddress env) const {
+        return env == session->GuestEnvironment() && session->Environment().IsThreadAttached(thread);
+    }
+    std::pair<dx::VmObjectRef, DexVmAndroidContext::BitmapState*> BitmapObject(
+        std::uint64_t thread, BitmapJavaReference input, bool allow_recycled = false) {
+        dx::VmObjectRef object;
+        try { object = FromReference(JniReference{input.token}, thread); }
+        catch (const DexVmBridgeError&) {
+            throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "invalid JNI bitmap reference"};
+        }
+        const auto found = android_context->bitmaps.find(object.Value());
+        if (found == android_context->bitmaps.end() || !found->second.pixels)
+            throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "object is not a backed Bitmap"};
+        if (found->second.recycled && !allow_recycled)
+            throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "bitmap is recycled"};
+        return {object, &found->second};
+    }
+    std::int32_t BitmapException(std::uint64_t thread, const dx::VmJavaThrow& error) {
+        const auto execution = ContextForJniThread(thread);
+        const auto type = linker.ResolveDescriptor(error.descriptor);
+        const auto initialized = vm->EnsureClassInitialized(execution, type);
+        if (initialized.exception.IsValid()) {
+            session->Environment().Throw(thread, PublishLocal(initialized.exception, thread));
+            return -2;
+        }
+        const auto exception = model->NewInstance(type, linker.Class(type).instance_slots);
+        const auto roots = vm->ProtectReferences(std::array{exception});
+        const auto message = vm->NewStringUtf8(error.message);
+        const auto message_root = vm->ProtectReferences(std::array{message});
+        const auto constructor = linker.FindDirectMethod(type, "<init>", "(Ljava/lang/String;)V");
+        if (!constructor) throw DexVmBridgeError("NDK Bitmap exception constructor is missing");
+        const auto result = vm->Call(execution, *constructor,
+            std::array{dx::VmValue::Ref(exception), dx::VmValue::Ref(message)});
+        session->Environment().Throw(thread, PublishLocal(result.exception.IsValid() ? result.exception : exception, thread));
+        return -2;
+    }
+    std::int32_t BitmapInfo(std::uint64_t thread, memory::GuestAddress env,
+                            BitmapJavaReference input, AndroidBitmapInfo& info) {
+        const dx::VmExecutionLockScope guard(vm->ExecutionLock());
+        if (!BitmapEnvironment(thread, env)) return -1;
+        if (session->Environment().ExceptionCheck(thread)) return -2;
+        try {
+            const auto [object, state] = BitmapObject(thread, input);
+            info = {static_cast<std::uint32_t>(state->width), static_cast<std::uint32_t>(state->height),
+                    state->pixels->Stride(), state->pixels->Format(), 0};
+            return 0;
+        } catch (const dx::VmJavaThrow& error) { return BitmapException(thread, error); }
+    }
+    std::int32_t BitmapLock(std::uint64_t thread, memory::GuestAddress env,
+                            BitmapJavaReference input, memory::GuestAddress& address) {
+        const dx::VmExecutionLockScope guard(vm->ExecutionLock());
+        if (!BitmapEnvironment(thread, env)) return -1;
+        if (session->Environment().ExceptionCheck(thread)) return -2;
+        try {
+            const auto [object, state] = BitmapObject(thread, input);
+            android_context->bitmap_lock_roots.emplace(object.Value(), object);
+            try { address = state->pixels->Lock(session->Process().GuestMemoryAccess()); }
+            catch (...) {
+                if (state->pixels->Locks() == 0) android_context->bitmap_lock_roots.erase(object.Value());
+                throw;
+            }
+            return 0;
+        } catch (const std::bad_alloc&) { return -3; }
+          catch (const dx::VmJavaThrow& error) { return BitmapException(thread, error); }
+    }
+    std::int32_t BitmapUnlock(std::uint64_t thread, memory::GuestAddress env,
+                              BitmapJavaReference input) {
+        const dx::VmExecutionLockScope guard(vm->ExecutionLock());
+        if (!BitmapEnvironment(thread, env)) return -1;
+        if (session->Environment().ExceptionCheck(thread)) return -2;
+        try {
+            const auto [object, state] = BitmapObject(thread, input, true);
+            if (state->pixels->Locks() == 0)
+                throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "bitmap has no pixel lock"};
+            state->pixels->Unlock();
+            if (state->pixels->Locks() == 0) android_context->bitmap_lock_roots.erase(object.Value());
+            return 0;
+        } catch (const std::bad_alloc&) { return -3; }
+          catch (const dx::VmJavaThrow& error) { return BitmapException(thread, error); }
+    }
 
     [[nodiscard]] JniObjectIdentity JniClassIdentity(
         const dx::DexClassId java_class) {
@@ -1538,6 +1621,7 @@ DexVmGuestBridge::DexVmGuestBridge(
         }});
 
     impl_->RegisterDexClasses();
+
     if (android_context != nullptr) {
         android_context->native_activity = std::make_shared<NativeActivityRuntime>(
             session, android_context,
@@ -1556,6 +1640,19 @@ DexVmGuestBridge::DexVmGuestBridge(
                 return JniValue{bridge_state->PublishLocal(context->activity,
                                                           invocation.thread_id)};
             });
+    }
+
+    if (android_context) {
+        session.Process().SetBitmapHooks({bridge_state,
+            +[](void* owner, std::uint64_t thread, memory::GuestAddress env, BitmapJavaReference ref, AndroidBitmapInfo& info) {
+                return static_cast<Impl*>(owner)->BitmapInfo(thread, env, ref, info);
+            },
+            +[](void* owner, std::uint64_t thread, memory::GuestAddress env, BitmapJavaReference ref, memory::GuestAddress& address) {
+                return static_cast<Impl*>(owner)->BitmapLock(thread, env, ref, address);
+            },
+            +[](void* owner, std::uint64_t thread, memory::GuestAddress env, BitmapJavaReference ref) {
+                return static_cast<Impl*>(owner)->BitmapUnlock(thread, env, ref);
+            }});
     }
 
 }
@@ -1597,6 +1694,19 @@ DexVmGuestBridge::~DexVmGuestBridge() {
         ShutdownAndroidScheduler(*impl_->android_context);
     }
     if (impl_->threads) impl_->threads->Shutdown();
+    impl_->session->Process().SetBitmapHooks({});
+    if (impl_->android_context) {
+        for (const auto& [_, bitmap] : impl_->android_context->bitmaps) {
+            if (!bitmap.pixels) continue;
+            try { bitmap.pixels->AbortLocks(); }
+            catch (const std::exception& error) {
+                if (impl_->logger) impl_->logger->Write(core::LogLevel::error,
+                    "runtime.bitmap_ndk", error.what());
+            }
+        }
+        impl_->android_context->bitmap_lock_roots.clear();
+    }
+
     if (impl_->android_context) {
         impl_->android_context->wifi_lock_leases.clear();
         if (impl_->vm) ShutdownPendingIntents(*impl_->vm, *impl_->android_context);

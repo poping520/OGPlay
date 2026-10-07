@@ -15,6 +15,9 @@ core 及显式注入的服务；不得依赖 JNI、jni_guest、framework、integ
 
 共享服务不反向依赖 concrete module。GLES1 fixed/draw 状态显式注入；EGL/GLES 共用唯一
 GuestGlContext、ANGLE backing 与 shared shadow。FrameService 拥有帧回收、指标和 trace；
+libjnigraphics 的三项 API19 AndroidBitmap 导出属于独立 BitmapModule；JNI/Bitmap
+通过显式 hooks 注入，输出先校验再操作，source info 固定 20 字节 little-endian。
+不依赖 Android runtime/Skia；pixel lock 为地址 lease，不伪称像素互斥锁。
 TryTrace 只短锁复制有界记录，busy 不等待 graphics 线程。跨线程 input/readback 必须受锁保护。
 
 ## 导出与调用契约

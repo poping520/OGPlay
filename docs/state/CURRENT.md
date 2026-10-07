@@ -18,11 +18,14 @@
   原 content view 首错与 tzdata 缺失日志消失，主 Handler 回调进入 StartGame。
   [DVM-220](../tasks/dexvm/DVM-220.md) 已将两代传感器接口、客户端与值类归入 BootDex，
   仅保留无设备 native 边界；build/check、payload 校验、Release 构建及双解释器/JNI
-  3 项/1682 断言通过。原 SensorListener 首错消失；当前 Game.<clinit> 加载
-  `libjnigraphics.so` 时缺少该 ELF，退出 1，尚未执行游戏内传感器注册。
+  3 项/1682 断言通过。原 SensorListener 首错消失。
+  [DVM-221](../tasks/dexvm/DVM-221.md) 已发布 libjnigraphics 三项 ABI，统一 Bitmap
+  像素 lease；Release 构建、定向 7 项/303 断言通过。原 APK 成功加载引擎/JNI_OnLoad
+  并进入 Game.onCreate；当前 BeamSender 链接缺少
+  `android.nfc.NfcAdapter$CreateNdefMessageCallback`，退出 1。原 boundary 架构违规仍在。
   进程已退出，授权路径及完整游戏未验收。
   证据 `.local/wb-classloader-analysis/`、`.local/wb-subscriber-fix/`、`.local/wb-lifecycle-fix/`、
-  `.local/wb-sensor-fix/`。
+  `.local/wb-sensor-fix/`、`.local/wb-jnigraphics-fix/`。
 
 - **Tales From Deep Space 1.0.0**：VideoView/packed depth/stencil 已闭合；macOS
   800×480/1280×720 菜单裁剪，BND-29 终止断言失败。

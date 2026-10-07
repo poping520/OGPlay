@@ -260,6 +260,7 @@ public:
     void ReleaseDexVmThread(std::uint64_t thread_id) noexcept;
     memory::GuestAddress PrepareThreadLooper(std::uint64_t thread_id);
     [[nodiscard]] dexvm::NioDirectMemoryAccess GuestMemoryAccess() const;
+    void SetBitmapHooks(AndroidBitmapHooks hooks);
     [[nodiscard]] memory::GuestAddress FindModuleExport(std::size_t module_index,
                                                        std::string_view name) const;
     [[nodiscard]] memory::GuestAddress GuestEnvironment() const noexcept;

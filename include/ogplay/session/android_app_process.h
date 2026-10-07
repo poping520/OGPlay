@@ -67,6 +67,8 @@ struct AndroidAppProcessRequest final {
     runtime::GuestProcFacts proc_facts{};
     std::shared_ptr<runtime::debug::DiagnosticState> diagnostics;
     std::optional<std::thread::id> guest_call_slice_observer_thread;
+    // Pinned API19 system time-zone archive, mounted read-only when supplied.
+    std::vector<std::byte> tzdata;
 };
 
 class AndroidAppProcessError final : public std::runtime_error {

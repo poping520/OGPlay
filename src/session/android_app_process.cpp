@@ -102,6 +102,10 @@ public:
                  "ANDROID_ID");
         }
         state = AndroidAppProcessState::package_ready;
+        if (!request.tzdata.empty()) {
+            request.filesystem->PutFile("/system/usr/share/zoneinfo/tzdata",
+                                        request.tzdata, false);
+        }
         const auto guest_jni = std::find_if(
             request.system_libraries.begin(), request.system_libraries.end(),
             [](const auto& source) { return source.name == "libogplay_jni.so"; });

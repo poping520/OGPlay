@@ -503,6 +503,15 @@ struct OrchestratedApp final {
         if (with_native) libraries.push_back(Library("liba.so", native_a));
         ogplay::session::AndroidAppProcessRequest request;
         request.manifest = AppManifest(activity, has_launcher);
+        // Handoff fixtures must declare their destination, like a sealed APK.
+        if (activity == "fixture.WindowFocusActivity" ||
+            activity == "fixture.TaskRootLauncherActivity") {
+            const auto target = activity == "fixture.WindowFocusActivity"
+                ? "fixture.WindowFocusSecondActivity" : "fixture.TaskRootChildActivity";
+            request.manifest.activity_components.push_back({
+                ogplay::loader::AndroidManifestComponentKind::activity,
+                target, std::nullopt, true, {}});
+        }
         if (activity == "android.app.NativeActivity" || activity == "fixture.NativeTakeoverActivity") {
             request.manifest.activity_components.front().meta_data.push_back({"android.app.lib_name", std::string("a")});
             request.manifest.application_meta_data.push_back({"android.app.lib_name", std::string("wrong_application_library")});
@@ -2194,6 +2203,150 @@ TEST_CASE("DVM-218 lifecycle preserves onPause failure and attempts later cleanu
         CHECK_FALSE(fixture.app->NativeProcess().Running());
         CHECK_FALSE(fixture.app->NativeProcess().Environment().IsThreadAttached(1));
         CHECK_NOTHROW(static_cast<void>(fixture.app->Stop()));
+    }
+}
+
+TEST_CASE("DVM-219 pinned tzdata serves real Bionic UTC and Shanghai queries") {
+    using namespace ogplay;
+    runtime::VirtualFileSystem filesystem;
+    core::CapabilityLedger ledger;
+    core::Logger logger;
+    std::vector<std::vector<std::byte>> contents;
+    std::vector<runtime::BionicModuleSource> libraries;
+    for (const auto* name : {"libc.so", "libdl.so", "libm.so", "libstdc++.so"}) {
+        contents.push_back(ReadPayloadBytes(std::string("lib/") + name));
+        libraries.push_back({name, contents.back()});
+    }
+    session::AndroidAppProcessRequest request;
+    request.manifest = AppManifest("fixture.DelayedContentActivity");
+    request.system_libraries = libraries;
+    request.dex_bytes = ReadDexFixture("application.dex");
+    request.boot_dex_bytes = test::ReadBootDex();
+    request.context = std::make_shared<runtime::DexVmAndroidContext>();
+    request.filesystem = &filesystem;
+    request.ledger = &ledger;
+    request.logger = &logger;
+    request.platform.android_id = "0123456789abcdef";
+    request.tzdata = ReadPayloadBytes("zoneinfo/tzdata");
+    auto app = session::AndroidAppProcess::Create(std::move(request));
+    auto& process = app->NativeProcess();
+    CHECK(process.ProcessEnvironmentValue("TZ") == std::optional<std::string>{"UTC"});
+    const auto file = filesystem.Open("/system/usr/share/zoneinfo/tzdata", {.read = true});
+    filesystem.Close(file);
+    CHECK_THROWS_AS(static_cast<void>(filesystem.Open(
+        "/system/usr/share/zoneinfo/tzdata", {.write = true})), runtime::VfsError);
+    const auto memory = process.GuestMemoryAccess();
+    const auto storage = memory.allocate(96);
+    std::array<std::byte, 96> bytes{};
+    const std::string name = "TZ";
+    const std::string zone = "Asia/Shanghai";
+    std::memcpy(bytes.data() + 48, name.c_str(), name.size() + 1);
+    std::memcpy(bytes.data() + 52, zone.c_str(), zone.size() + 1);
+    memory.write(storage, bytes);
+    const auto invoke = [&](const char* name, std::array<std::uint32_t, 4> arguments) {
+        const auto target = process.FindModuleExport(0, name);
+        REQUIRE(target.Value() != 0U);
+        return process.Invoke({target, arguments, {}}).return_value;
+    };
+    const auto word = [&](std::size_t offset) {
+        std::array<std::byte, 4> value{};
+        memory.read(storage.Add(offset), value);
+        std::uint32_t result{};
+        for (std::size_t i = 0; i < value.size(); ++i)
+            result |= std::to_integer<std::uint32_t>(value[i]) << (8U * i);
+        return result;
+    };
+    CHECK(invoke("localtime_r", {storage.Value(), storage.Add(4).Value(), 0, 0}) == storage.Add(4).Value());
+    CHECK(word(12) == 0U); // tm_hour
+    CHECK(word(16) == 1U); // tm_mday
+    CHECK(word(24) == 70U); // tm_year
+    CHECK(invoke("setenv", {storage.Add(48).Value(), storage.Add(52).Value(), 1, 0}) == 0U);
+    static_cast<void>(invoke("tzset", {}));
+    CHECK(invoke("localtime_r", {storage.Value(), storage.Add(4).Value(), 0, 0}) == storage.Add(4).Value());
+    CHECK(word(12) == 8U);
+    CHECK(word(40) == 28800U); // tm_gmtoff
+    CHECK(logger.Snapshot(core::LogLevel::error, "guest.stderr").empty());
+    memory.release(storage, 96);
+    static_cast<void>(app->Stop());
+}
+
+TEST_CASE("DVM-219 empty Activity pumps delayed content handoff and finish") {
+    using namespace ogplay;
+    using runtime::dexvm::InterpreterBackend;
+    for (const auto backend : {InterpreterBackend::switch_dispatch,
+                               InterpreterBackend::threaded}) {
+        SUBCASE("late SurfaceView is sized before one callback generation") {
+            OrchestratedApp fixture("fixture.DelayedContentActivity", true, false,
+                                    {}, {}, true, backend);
+            fixture.app->StartApplication();
+            CHECK(fixture.app->StartLauncherActivity().state == session::LifecycleRunState::running);
+            CHECK_FALSE(fixture.context->content_view.IsValid());
+            CHECK(fixture.CallStaticInt("Lfixture/DelayedContentActivity;", "getResumed") == 1);
+            auto& lifecycle = fixture.app->ActivityLifecycle();
+            static_cast<void>(lifecycle.StepFrame());
+            static_cast<void>(lifecycle.StepFrame());
+            CHECK_FALSE(fixture.context->content_view.IsValid());
+            static_cast<void>(lifecycle.StepFrame());
+            CHECK(fixture.context->content_view.IsValid());
+            CHECK(fixture.CallStaticInt("Lfixture/LateSurfaceView;", "getWidth") == 64);
+            CHECK(fixture.CallStaticInt("Lfixture/LateSurfaceView;", "getEvents") == 123);
+            static_cast<void>(lifecycle.StepFrame());
+            CHECK(fixture.CallStaticInt("Lfixture/LateSurfaceView;", "getEvents") == 123);
+            // Reinstalling the same object after retirement creates a new
+            // UiTree node and must not reuse its old initialization identity.
+            auto& vm = fixture.app->DexVm().Vm();
+            const auto original = fixture.context->content_view;
+            const auto roots = vm.ProtectReferences(std::array{original});
+            const auto temporary = vm.NewIntrinsicInstance("Landroid/view/View;");
+            const auto temporary_roots = vm.ProtectReferences(std::array{temporary});
+            const auto constructor = vm.Linker().FindDirectMethod(vm.Model().ObjectClass(temporary),
+                "<init>", "(Landroid/content/Context;)V");
+            REQUIRE(constructor.has_value());
+            REQUIRE_FALSE(vm.Call(*constructor, std::array{
+                runtime::dexvm::VmValue::Ref(temporary),
+                runtime::dexvm::VmValue::Ref(fixture.context->activity)}).exception.IsValid());
+            const auto type = vm.Model().ObjectClass(fixture.context->activity);
+            const auto index = vm.Linker().FindVtableIndex(type, "setContentView", "(Landroid/view/View;)V");
+            REQUIRE(index.has_value());
+            for (const auto view : {temporary, original}) {
+                const auto result = vm.Call(vm.Linker().Class(type).vtable[*index],
+                    std::array{runtime::dexvm::VmValue::Ref(fixture.context->activity),
+                               runtime::dexvm::VmValue::Ref(view)});
+                REQUIRE_FALSE(result.exception.IsValid());
+            }
+            CHECK(fixture.CallStaticInt("Lfixture/LateSurfaceView;", "getEvents") == 1234);
+            static_cast<void>(lifecycle.StepFrame());
+            CHECK(fixture.CallStaticInt("Lfixture/LateSurfaceView;", "getEvents") == 123);
+            static_cast<void>(fixture.app->Stop());
+            CHECK(fixture.CallStaticInt("Lfixture/LateSurfaceView;", "getEvents") == 1234);
+        }
+        SUBCASE("delayed handoff may enter another empty Activity") {
+            OrchestratedApp fixture("fixture.DelayedSwitchActivity", true, false,
+                                    {}, {}, true, backend);
+            fixture.app->StartApplication();
+            static_cast<void>(fixture.app->StartLauncherActivity());
+            const auto old = fixture.context->activity;
+            auto& lifecycle = fixture.app->ActivityLifecycle();
+            for (int i = 0; i < 3; ++i) static_cast<void>(lifecycle.StepFrame());
+            CHECK(fixture.context->activity != old);
+            CHECK_FALSE(fixture.context->content_view.IsValid());
+            CHECK(fixture.CallStaticInt("Lfixture/DelayedContentActivity;", "getInstances") == 2);
+            CHECK_FALSE(runtime::SessionExitRequested(*fixture.context));
+            for (int i = 0; i < 3; ++i) static_cast<void>(lifecycle.StepFrame());
+            CHECK(runtime::SessionExitRequested(*fixture.context));
+            static_cast<void>(fixture.app->Stop());
+        }
+        SUBCASE("finish in onCreate needs no content or onResume") {
+            OrchestratedApp fixture("fixture.FinishingEmptyActivity", true, false,
+                                    {}, {}, true, backend);
+            fixture.app->StartApplication();
+            static_cast<void>(fixture.app->StartLauncherActivity());
+            CHECK_FALSE(fixture.context->content_view.IsValid());
+            CHECK(runtime::SessionExitRequested(*fixture.context));
+            CHECK(fixture.CallStaticInt("Lfixture/DelayedContentActivity;", "getResumed") == 0);
+            static_cast<void>(fixture.app->Stop());
+            CHECK(fixture.CallStaticInt("Lfixture/DelayedContentActivity;", "getResumed") == 1000);
+        }
     }
 }
 

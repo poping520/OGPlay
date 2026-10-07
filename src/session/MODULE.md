@@ -51,6 +51,10 @@ Dex activity 每帧在 guest 回调前泵送主 Looper，到帧尾只通过
   resolve→`<clinit>`→construct→attach base Context→虚派 `onCreate` 建立稳定的 process
   Application root，再实例化入口 Activity 并解释执行 onCreate/onStart/onResume、
   renderer surface/frame、输入、suspend/resume 与 surfaceDestroyed/onStop/onDestroy；
+  空 Activity 可继续消息泵和 Clock，finish 后由既有退出协议收尾；onCreate 内 finish
+  的实例不接收 onStart/onResume/onPause/onStop。内容按对象与 UiTree 节点身份在
+  owner-thread traversal 初始化尺寸，再交付 Surface/布局与已到达的窗口焦点；
+  首次启动、延迟安装和切换共用该路径，不要求 onCreate 安装内容。
   未捕获 Java 异常携带具体 class descriptor、消息和解释器栈失败。每帧同时泵 VideoView
   与 AudioTrack position notification；音频回调只在生命周期解释器单写者线程执行，guest 异常使 lifecycle
   失败。首次 Surface traversal 前按 ADR-0024 冻结 onStart/onResume 后已存在的 worker
@@ -92,6 +96,9 @@ Dex activity 每帧在 guest 回调前泵送主 Looper，到帧尾只通过
   即使不触发绘制也会执行。
   未捕获 Java 异常文本按失败阶段、exception、message、stack trace 分行输出；原始类描述符、
   消息、方法与 pc 不改写。
+  AndroidAppProcessRequest 可注入固定 API19 tzdata，process 创建前以只读文件发布到
+  `/system/usr/share/zoneinfo/tzdata`；CLI 必须提供随 payload 发布的原版归档，合成 fixture
+  可省略。初始 guest TZ=UTC，与统一 Clock 分工为时区转换数据和时间源；不读取 host TZ。
 - `MapAndroidInput`：在 HAL 与 Android guest 边界把通用 USB HID/SDL 物理 scancode
   转为 API 19 keyCode，把左右 modifier/caps/num 转为 metaState，并保留当前布局 Unicode、
   repeatCount、scanCode 与 eventTime；未知物理键明确成为 `KEYCODE_UNKNOWN`。

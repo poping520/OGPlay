@@ -40,6 +40,8 @@ Android API 的详细行为以 [dexvm_android](dexvm_android/MODULE.md)为准；
 - InitializeApi19GuestProcess 事务建立 TLS/thread-info/preinit、独立环境页、4 MiB 栈、
   SVC #1 返回 trap 与空 property area，只写受检 libc 导出槽；冲突/非法名称/写失败回滚。
   配置来自 guest；Java 环境查询读 Bionic 当前 environ，不读宿主或另存影子快照。
+  默认 API19 环境显式设置 TZ=UTC；guest 后续 setenv 可修改本进程时区，时间读取仍经
+  统一 Clock，不继承宿主 TZ/时区数据库。
 - AndroidGuestProcess 是 native 资源 owner。rootless create 只接收 API19 system closure，
   用 libc 建立 namespace、process memory、syscall/clone、boundary、JNI/JavaVM/root attach；
   不接受 app ELF，返回时 ApplicationModuleCount 为 0，此后只随成功动态加载增加。

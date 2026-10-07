@@ -208,7 +208,8 @@ Decl Declare_android_app_Activity(const Context& context) {
             }
             if (!parent.has_value()) {
                 context->ui_tree.Attach(context->ui_tree.Root(), node);
-                if (const auto error = AttachSurfaceViewSubtree(
+                if (const auto error = context->defer_content_surface_callbacks
+                        ? std::optional<std::string>{} : AttachSurfaceViewSubtree(
                         call.vm, *context, node);
                     error.has_value()) {
                     throw dx::VmJavaThrow{"Ljava/lang/RuntimeException;", *error};
@@ -240,7 +241,8 @@ Decl Declare_android_app_Activity(const Context& context) {
                 const auto node = FindViewUiNode(
                     *context, context->content_view.Value());
                 if (node.has_value()) {
-                    if (const auto error = AttachSurfaceViewSubtree(
+                    if (const auto error = context->defer_content_surface_callbacks
+                            ? std::optional<std::string>{} : AttachSurfaceViewSubtree(
                             call.vm, *context, *node);
                         error.has_value()) {
                         throw dx::VmJavaThrow{"Ljava/lang/RuntimeException;",

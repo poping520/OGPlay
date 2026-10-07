@@ -1010,6 +1010,185 @@
 .method public static native release(J)V
 .end method
 
+# Empty launchers keep pumping Handler work before content or a handoff exists.
+.class public Lfixture/DelayedContentActivity;
+.super Landroid/app/Activity;
+.implements Ljava/lang/Runnable;
+.field static public instances:I
+.field static public resumed:I
+
+.method public constructor <init>()V
+.registers 2
+    invoke-direct {v1}, Landroid/app/Activity;-><init>()V
+    sget v0, Lfixture/DelayedContentActivity;->instances:I
+    add-int/lit8 v0, v0, 1
+    sput v0, Lfixture/DelayedContentActivity;->instances:I
+    return-void
+.end method
+
+.method protected onCreate(Landroid/os/Bundle;)V
+.registers 5
+    new-instance v0, Landroid/os/Handler;
+    invoke-direct {v0}, Landroid/os/Handler;-><init>()V
+    const-wide/16 v1, 32
+    invoke-virtual {v0, v3, v1, v2}, Landroid/os/Handler;->postDelayed(Ljava/lang/Runnable;J)Z
+    return-void
+.end method
+
+.method protected onResume()V
+.registers 2
+    const/4 v0, 1
+    sput v0, Lfixture/DelayedContentActivity;->resumed:I
+    return-void
+.end method
+
+.method public run()V
+.registers 3
+    new-instance v0, Lfixture/LateSurfaceView;
+    invoke-direct {v0, v2}, Lfixture/LateSurfaceView;-><init>(Landroid/content/Context;)V
+    invoke-virtual {v0}, Landroid/view/SurfaceView;->getHolder()Landroid/view/SurfaceHolder;
+    move-result-object v1
+    invoke-interface {v1, v0}, Landroid/view/SurfaceHolder;->addCallback(Landroid/view/SurfaceHolder$Callback;)V
+    invoke-virtual {v2, v0}, Landroid/app/Activity;->setContentView(Landroid/view/View;)V
+    return-void
+.end method
+
+.method public static getInstances()I
+.registers 1
+    sget v0, Lfixture/DelayedContentActivity;->instances:I
+    return v0
+.end method
+
+.method public static getResumed()I
+.registers 1
+    sget v0, Lfixture/DelayedContentActivity;->resumed:I
+    return v0
+.end method
+
+.class public Lfixture/DelayedSwitchActivity;
+.super Lfixture/DelayedContentActivity;
+
+.method public constructor <init>()V
+.registers 1
+    invoke-direct {v0}, Lfixture/DelayedContentActivity;-><init>()V
+    return-void
+.end method
+
+.method public run()V
+.registers 4
+    invoke-static {}, Lfixture/DelayedContentActivity;->getInstances()I
+    move-result v0
+    const/4 v1, 1
+    if-ne v0, v1, :finish
+    new-instance v0, Landroid/content/Intent;
+    invoke-direct {v0}, Landroid/content/Intent;-><init>()V
+    const-string v1, "fixture"
+    const-string v2, "fixture.DelayedSwitchActivity"
+    invoke-virtual {v0, v1, v2}, Landroid/content/Intent;->setClassName(Ljava/lang/String;Ljava/lang/String;)Landroid/content/Intent;
+    invoke-virtual {v3, v0}, Landroid/content/Context;->startActivity(Landroid/content/Intent;)V
+:finish
+    invoke-virtual {v3}, Landroid/app/Activity;->finish()V
+    return-void
+.end method
+
+.class public Lfixture/FinishingEmptyActivity;
+.super Lfixture/DelayedContentActivity;
+.method public constructor <init>()V
+.registers 1
+    invoke-direct {v0}, Lfixture/DelayedContentActivity;-><init>()V
+    return-void
+.end method
+.method protected onCreate(Landroid/os/Bundle;)V
+.registers 2
+    invoke-virtual {v0}, Landroid/app/Activity;->finish()V
+    return-void
+.end method
+
+.method protected onPause()V
+.registers 3
+    sget v0, Lfixture/DelayedContentActivity;->resumed:I
+    const/16 v1, 10
+    add-int v0, v0, v1
+    sput v0, Lfixture/DelayedContentActivity;->resumed:I
+    return-void
+.end method
+
+.method protected onStop()V
+.registers 3
+    sget v0, Lfixture/DelayedContentActivity;->resumed:I
+    const/16 v1, 100
+    add-int v0, v0, v1
+    sput v0, Lfixture/DelayedContentActivity;->resumed:I
+    return-void
+.end method
+
+.method protected onDestroy()V
+.registers 3
+    sget v0, Lfixture/DelayedContentActivity;->resumed:I
+    const/16 v1, 1000
+    add-int v0, v0, v1
+    sput v0, Lfixture/DelayedContentActivity;->resumed:I
+    return-void
+.end method
+
+.class public Lfixture/LateSurfaceView;
+.super Landroid/view/SurfaceView;
+.implements Landroid/view/SurfaceHolder$Callback;
+.field static public events:I
+.field static public width:I
+
+.method public constructor <init>(Landroid/content/Context;)V
+.registers 2
+    invoke-direct {v0, v1}, Landroid/view/SurfaceView;-><init>(Landroid/content/Context;)V
+    return-void
+.end method
+
+.method protected onSizeChanged(IIII)V
+.registers 6
+    const/4 v0, 1
+    sput v0, Lfixture/LateSurfaceView;->events:I
+    sput v2, Lfixture/LateSurfaceView;->width:I
+    return-void
+.end method
+
+.method public surfaceCreated(Landroid/view/SurfaceHolder;)V
+.registers 3
+    sget v0, Lfixture/LateSurfaceView;->events:I
+    mul-int/lit8 v0, v0, 10
+    add-int/lit8 v0, v0, 2
+    sput v0, Lfixture/LateSurfaceView;->events:I
+    return-void
+.end method
+
+.method public surfaceChanged(Landroid/view/SurfaceHolder;III)V
+.registers 6
+    sget v0, Lfixture/LateSurfaceView;->events:I
+    mul-int/lit8 v0, v0, 10
+    add-int/lit8 v0, v0, 3
+    sput v0, Lfixture/LateSurfaceView;->events:I
+    return-void
+.end method
+
+.method public surfaceDestroyed(Landroid/view/SurfaceHolder;)V
+.registers 3
+    sget v0, Lfixture/LateSurfaceView;->events:I
+    mul-int/lit8 v0, v0, 10
+    add-int/lit8 v0, v0, 4
+    sput v0, Lfixture/LateSurfaceView;->events:I
+    return-void
+.end method
+
+.method public static getEvents()I
+.registers 1
+    sget v0, Lfixture/LateSurfaceView;->events:I
+    return v0
+.end method
+.method public static getWidth()I
+.registers 1
+    sget v0, Lfixture/LateSurfaceView;->width:I
+    return v0
+.end method
+
 # DVM-218: an early callback failure cannot suppress later cleanup or replace its error.
 .class public Lfixture/TeardownFailureActivity;
 .super Lfixture/WindowFocusActivity;

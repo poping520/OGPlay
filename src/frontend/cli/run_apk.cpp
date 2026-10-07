@@ -724,6 +724,8 @@ int RunApkCommand(const int argc, const char* const argv[],
         app_request.icu_data = ReadBytes(
             bundled_data.root / bionic.data_directory / "icu" /
             "icudt51l.dat");
+        app_request.tzdata = ReadBytes(
+            bundled_data.root / bionic.data_directory / "zoneinfo" / "tzdata");
         app_request.context = dex_context;
         if (profile.runtime.entry.has_value()) {
             app_request.launcher_override =

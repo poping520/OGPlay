@@ -1,6 +1,6 @@
 # 当前状态
 
-更新：2026-10-06。
+更新：2026-10-07。
 
 本页只保留最新运行结果与未闭合边界。能力状态见 [capabilities.toml](../../capabilities.toml)，
 实现契约见各模块 MODULE；历史过程见 [任务总览](../tasks/README.md) 与
@@ -35,6 +35,13 @@
   读回已实现；同步读取/手动步进保持。2560×1600、3 核同场景教学 57.59→60.13 FPS、
   对话 62.02→66.36 FPS，29 项/1244 断言通过。3 项 EGL 旧失败及既有架构违规保留，
   退出/全关卡/跨平台未验收。证据 `.local/tales-async-readback-20261006/`。
+  [WU-PERF-13](../tasks/optimization/WU-PERF-13.md)：ARM64 exclusive 读侧版本校验、原子
+  reservation 及 128 字节 processor 槽隔离、整数路径保留 FPSR 已定向验证。2560×1600、
+  4 核无 diag：对话 93.32 FPS、教学连续窗口 88.25/86.75/85.05 FPS、关卡移动 86.08 FPS；
+  源序号差与成功 present 次数差一致，27 项/767 断言通过。初始场景 80 FPS 目标已达，
+  同核基线对话 54.70、教学 50.33、移动 51.21 FPS；分析进程已关闭。
+  全关卡、跨平台及既有退出问题未验收。
+  证据 `.local/tales-fps80-20261006/`。
 
 - **PVZ（com.popcap.pvz_na）**：[DVM-205](../tasks/dexvm/DVM-205.md) 已修复 DEX
   注解预算误拒绝，使用共享解析缓存和分层资源预算。macOS Release 定向回归通过；

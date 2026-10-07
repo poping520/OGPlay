@@ -243,7 +243,7 @@
       ],
       "build": {
         "generator": "tools/bootdex/build_bootdex.py",
-        "generator_sha256": "3676a01ee3bc63142bd8c6052f80726de315a8bafff516107a4a783e234ac7a6",
+        "generator_sha256": "937814a94b47a1f3b4ab1e24f40b35317e2b0efecaf89972fd5fb5743fb3381f",
         "ndk_revision": "25.2.9519653",
         "target": "armv7a-linux-androideabi19",
         "language": "C11",
@@ -349,5 +349,16 @@
       "notice": "notices/libz.so.txt",
       "notice_sha256": "60c2c920b6af058e3b9659a19e2e667985c9ac193d426309925077a511f32a45"
     }
-  ]
+  ],
+  "tzdata": {
+    "project": "platform/bionic",
+    "commit": "081db840befec895fb86e709ae95832ade2d065c",
+    "source_path": "libc/zoneinfo/tzdata",
+    "path": "zoneinfo/tzdata",
+    "version": "2014a",
+    "size": 560918,
+    "sha256": "75daa7d948b866727d778dd354d5d408af71e2a0dc84cc3541b4df6b4272ecf4",
+    "notice": "notices/tzdata.txt",
+    "notice_sha256": "0b79c8a0e10961301cfca725ef7df3571ca6a150e3a9539cde57c06607d5e6ee"
+  }
 }

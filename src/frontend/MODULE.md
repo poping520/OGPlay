@@ -51,6 +51,8 @@
 
 - CLI/GUI 共用 session、Profile、quirk 与 bundled payload。Profile 决定 API 和入口；系统
   库依赖闭包不得由 CLI 手写。API 19 缺 `bootdex.jar` 与缺 ELF 同样在装配前失败。
+  run-apk 读取固定 payload 的 `zoneinfo/tzdata` 并注入 session，缺失明确失败；来源、
+  格式与哈希由 Android payload 校验入口维护，不使用宿主时区数据。
 - 仅接受规范化的 `dex_activity` Profile。entry/presets 在生命周期前应用，required 数据先
   验证；`--external-dir` 最多一个。quirk 必须在 `data/quirks.toml` 注册并有测试引用。
 - `--preflight` 只验证身份、ELF 闭包、API、surface 与 boundary 映射，不执行 guest。

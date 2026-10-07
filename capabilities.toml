@@ -1728,7 +1728,7 @@ note = "DVM-15 严格 resources.arsc 读取：resid↔(type,name,文件路径)�
 [session.dex_activity_lifecycle]
 status = "complete"
 test = "Asphalt 5 exact dexvm title-flow gate 3/3; tests/session/lifecycle_tests.cpp; tests/runtime/native_library_loader_tests.cpp"
-note = "DVM-18 生命周期反转模板：实例化 launcher→<clinit>→onCreate/onStart/onResume→onSizeChanged→focus→onSurfaceCreated/Changed→逐帧 onDrawFrame→输入经 MotionEvent/onTouchEvent→suspend/resume→surfaceDestroyed/onStop/onDestroy 接存量 teardown 顺序；DVM-125 将窗口焦点收敛为 lifecycle 唯一事实，初始 onResume 为 false、Surface 后下一帧获焦，状态先于 Activity/attached View 虚回调发布并去重，Suspend/Resume、Activity 切换与 Stop 共用转换；DecorView/attached View 查询同步，detached View 与旧 Activity 为 false；DVM-218 将退出回调分阶段尝试并保留首错，secondary 错误独立日志；onStop 后先 join native/Java worker，再进入可能调用 libc exit 的 onDestroy。已退出 guest 不再执行 JNI/ELF 清理；原 APK 菜单可达，但其 exit 析构中的内存故障尚未闭合"
+note = "DVM-18 生命周期反转模板：实例化 launcher→<clinit>→onCreate/onStart/onResume→onSizeChanged→focus→onSurfaceCreated/Changed→逐帧 onDrawFrame→输入经 MotionEvent/onTouchEvent→suspend/resume→surfaceDestroyed/onStop/onDestroy 接存量 teardown 顺序；DVM-125 将窗口焦点收敛为 lifecycle 唯一事实，初始 onResume 为 false、Surface 后下一帧获焦，状态先于 Activity/attached View 虚回调发布并去重，Suspend/Resume、Activity 切换与 Stop 共用转换；DecorView/attached View 查询同步，detached View 与旧 Activity 为 false；DVM-218 将退出回调分阶段尝试并保留首错，secondary 错误独立日志；onStop 后先 join native/Java worker，再进入可能调用 libc exit 的 onDestroy。已退出 guest 不再执行 JNI/ELF 清理；原 APK 菜单可达，但其 exit 析构中的内存故障尚未闭合。DVM-219 允许空 Activity 持续主消息泵，首次/延迟/切换按 content 与 UiTree 节点身份统一尺寸和 Surface 初始化；onCreate finish 不接收 start/resume/pause/stop，晚附着 View 接收已到达的窗口焦点。双解释器、既有 Surface/focus/退出回归通过；不提供完整 Activity stack 或多窗口。"
 
 [session.title_profile_v2]
 status = "complete"
@@ -2025,3 +2025,8 @@ note = "DVM-211：当前 APK 的 service/broadcast 令牌创建、规范化身�
 status = "partial"
 test = "tests/dexvm/android_value_tests.cpp: DVM-211"
 note = "DVM-211：alarm 单例与 API19 cancel(null/无匹配/匹配令牌)；取消闹钟不使 PendingIntent 失效，条目保活与退出清理接入 session GC。尚无生产闹钟注册入口，所有已声明 set/setExact/setWindow/setRepeating/setInexactRepeating 调度入口均记账失败；不提供后台系统闹钟服务。"
+
+[runtime.guest_timezone_data]
+status = "partial"
+test = "tools.android_payload_current; tests/runtime/native_library_loader_tests.cpp: DVM-219 pinned tzdata; tests/runtime/api19_guest_process_tests.cpp"
+note = "DVM-219：固定 API19 Bionic tzdata 2014a 原版归档按来源/哈希/header/index/TZif 校验进入 payload；run-apk 注入 AndroidAppProcess 并以只读 /system/usr/share/zoneinfo/tzdata 在 native 初始化前发布。初始环境 TZ=UTC，guest setenv/tzset 可修改本进程时区；真实 ARM localtime_r 验证 UTC 与 Asia/Shanghai，无宿主 TZ/数据库或新增时间源。Java ZoneInfoDB/full TimeZone、全部地区/DST/2038 边界未验收，合成 app process request 可不注入归档。"

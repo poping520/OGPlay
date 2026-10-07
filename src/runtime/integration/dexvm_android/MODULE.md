@@ -121,6 +121,8 @@ PendingIntent.cancel 使令牌失效，查询不再匹配；退出在 VM 锁内�
 - live View 对应唯一 UiNode，hierarchy/id/visibility/layout/text/style、动态 attach/detach 与
   查找共用 UiTree；Java 字段修改不自动 traversal。getContext 返回构造/inflation 的 mContext。
   addView(width,height) 虚派默认 LayoutParams、写 BootDex 字段后走统一 attach；不复制参数对象。
+  managed lifecycle 的 setContentView 只发布附着树，Surface 回调由 owner-thread 内容
+  traversal 在尺寸回调后交付；普通子树 attach/detach 仍复用受检 holder 代际。
 - Background getter/setter 保持 guest Drawable 身份；Button 构造/inflation 默认非空背景，
   普通 View 可为 null。alpha 仅经仍有效的 callback node 重绘，替换/清空解除旧 callback。
 - setText、Editable、host EditText 共用文本事务：过滤/变更区间/watcher 快照/同步回调/失效

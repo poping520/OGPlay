@@ -306,6 +306,11 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
         CallActivity("onWindowFocusChanged", "(Z)V",
                      {dx::VmValue::Int(has_focus ? 1 : 0)});
 
+        DispatchViewWindowFocus(has_focus);
+    }
+
+    void DexActivityLifecycle::DispatchViewWindowFocus(const bool has_focus) {
+        auto& context = *bindings_.context;
         std::vector<dx::VmObjectRef> attached;
         std::vector<runtime::ui::UiNodeId> pending{
             context.ui_tree.Root()};
@@ -340,6 +345,7 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
             auto& vm = bindings_.bridge->Vm();
             auto& linker = bindings_.bridge->Linker();
             auto& context = *bindings_.context;
+            context.defer_content_surface_callbacks = true;
 
             // The process Application is fully initialized before any Activity
             // class initialization, construction, or surface side effect.
@@ -393,7 +399,8 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
             // starts, matching the platform contract.
             CallActivity("onCreate", "(Landroid/os/Bundle;)V",
                          {dx::VmValue::Ref(dx::VmObjectRef{})});
-            if (context.pending_activity_descriptor.empty()) {
+            if (context.pending_activity_descriptor.empty() &&
+                !runtime::SessionExitRequested(context)) {
                 CallActivity("onStart", "()V", {});
                 CallActivity("onResume", "()V", {});
                 activity_started_ = true;
@@ -405,14 +412,10 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
                 AwaitInitialThreadQuiescence();
             }
 
-            // Installer-style launchers may request the game activity right in
-            // onCreate (startActivity + finish); service that before demanding
-            // a content view.
+            // Consume immediate handoffs before the first traversal. Empty
+            // launchers may instead post a handoff to the regular frame pump.
             ServiceActivitySwitch();
 
-            if (!context.content_view.IsValid()) {
-                Fail("onCreate did not install a content view");
-            }
             // Guest-owned GLSurfaceView keeps its existing swap pacer. The
             // intrinsic renderer releases host currency when its GLThread starts.
             if (!context.renderer.IsValid() &&
@@ -423,14 +426,7 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
             }
             // Surface geometry precedes renderer callbacks (GLSurfaceView
             // semantics; the pilot's onSurfaceCreated spins until size != -1).
-            CallOnView(context.content_view, "onSizeChanged", "(IIII)V",
-                       {
-                           dx::VmValue::Int(static_cast<std::int32_t>(
-                               context.surface_width)),
-                           dx::VmValue::Int(static_cast<std::int32_t>(
-                               context.surface_height)),
-                           dx::VmValue::Int(0), dx::VmValue::Int(0)
-                       });
+            SynchronizeContentView();
 
             // A title that brings its own GLSurfaceView is waiting on these
             // before it will touch EGL; the intrinsic one ignores them.
@@ -780,6 +776,7 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
             PumpVideo();
             PumpAudioTracks();
             ServiceActivitySwitch();
+            SynchronizeContentView();
             if (context.renderer.IsValid()) {
                 RunOnRenderer([this] {
                   auto& context = *bindings_.context;
@@ -999,6 +996,8 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
             auto finished = departing;
             context.finishing_activity.compare_exchange_strong(finished, 0U);
             context.content_view = dx::VmObjectRef{};
+            sized_content_view_ = dx::VmObjectRef{};
+            sized_content_node_.reset();
             gesture_candidate_ = 0U;
             gesture_click_eligible_ = false;
             gesture_touch_consumed_ = false;
@@ -1042,27 +1041,15 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
 
             CallActivity("onCreate", "(Landroid/os/Bundle;)V",
                          {dx::VmValue::Ref(dx::VmObjectRef{})});
-            if (context.pending_activity_descriptor.empty()) {
+            if (context.pending_activity_descriptor.empty() &&
+                !runtime::SessionExitRequested(context)) {
                 CallActivity("onStart", "()V", {});
                 CallActivity("onResume", "()V", {});
                 activity_started_ = true;
             }
 
-            if (!context.content_view.IsValid() &&
-                context.pending_activity_descriptor.empty()) {
-                Fail("activity did not install a content view: " + descriptor);
-            }
-            if (context.content_view.IsValid()) {
-                CallOnView(context.content_view, "onSizeChanged", "(IIII)V",
-                           {
-                               dx::VmValue::Int(static_cast<std::int32_t>(
-                                   context.surface_width)),
-                               dx::VmValue::Int(static_cast<std::int32_t>(
-                                   context.surface_height)),
-                               dx::VmValue::Int(0), dx::VmValue::Int(0)
-                           });
-                if (activity_started_) SetWindowFocus(true);
-            }
+            SynchronizeContentView();
+            if (activity_started_) SetWindowFocus(true);
             // A replacement Activity installs a new SurfaceView generation.
             // Callbacks registered during onCreate must observe the already-open
             // managed host surface before its GL thread can render.
@@ -1070,6 +1057,35 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
             DispatchSurfaceHolder(runtime::SurfaceHolderPhase::changed);
             runtime::DispatchAndroidGlobalLayout(vm, context);
         }
+    }
+
+    void DexActivityLifecycle::SynchronizeContentView() {
+        const dx::VmExecutionLockScope execution(bindings_.bridge->Vm().ExecutionLock());
+        auto& context = *bindings_.context;
+        const auto content = context.content_view;
+        const auto node = content.IsValid()
+            ? runtime::FindViewUiNode(context, content.Value()) : std::nullopt;
+        if (content == sized_content_view_ && node == sized_content_node_) return;
+        sized_content_view_ = content;
+        sized_content_node_ = node;
+        if (!content.IsValid()) return;
+        const auto roots = bindings_.bridge->Vm().ProtectReferences(std::array{content});
+        CallOnView(content, "onSizeChanged", "(IIII)V", {
+            dx::VmValue::Int(static_cast<std::int32_t>(context.surface_width)),
+            dx::VmValue::Int(static_cast<std::int32_t>(context.surface_height)),
+            dx::VmValue::Int(0), dx::VmValue::Int(0)});
+        // A virtual size callback may replace its own content. Reconcile the
+        // replacement next frame; never attach the retired subtree.
+        if (context.content_view != content ||
+            runtime::FindViewUiNode(context, content.Value()) != node) return;
+        if (!context.managed_host_surface_open) return;
+        if (node.has_value()) {
+            const auto error = runtime::AttachSurfaceViewSubtree(
+                bindings_.bridge->Vm(), context, *node);
+            if (error.has_value()) Fail(*error);
+        }
+        runtime::DispatchAndroidGlobalLayout(bindings_.bridge->Vm(), context);
+        if (context.window_has_focus.load()) DispatchViewWindowFocus(true);
     }
 
     void DexActivityLifecycle::RunRendererEvents() {
@@ -1456,7 +1472,7 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
         phase("teardown.begin");
         const bool was_running = state_ == LifecycleRunState::running && live();
         bool pause_delivered{};
-        if (was_running && !suspended_ && renderer_thread_) {
+        if (was_running && activity_started_ && !suspended_ && renderer_thread_) {
             // The intrinsic renderer must finish its pause handshake before join.
             pause_delivered = true;
             guest([&] { SetWindowFocus(false); }, false);
@@ -1466,7 +1482,7 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
         runtime::RetireGuestEglSurface(*bindings_.context);
         session.BeginTeardown();
         phase("teardown.guest_callbacks");
-        if (was_running && !suspended_ && !pause_delivered) {
+        if (was_running && activity_started_ && !suspended_ && !pause_delivered) {
             guest([&] { SetWindowFocus(false); });
             guest([&] { CallActivity("onPause", "()V", {}); });
         }
@@ -1476,7 +1492,7 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
                         bindings_.bridge->Vm(), *bindings_.context))
                     throw std::runtime_error(*error);
             });
-            guest([&] { CallActivity("onStop", "()V", {}); });
+            if (activity_started_) guest([&] { CallActivity("onStop", "()V", {}); });
         }
         if (egl_pacer_attached_) runtime::ShutdownEglSwapPacer(*bindings_.context);
         guest([&] { runtime::ShutdownLocalServices(bindings_.bridge->Vm(), *bindings_.context); });
@@ -1504,6 +1520,9 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
             surface_open_ = false;
         }
         phase("teardown.complete", false);
+        bindings_.context->defer_content_surface_callbacks = false;
+        sized_content_view_ = dx::VmObjectRef{};
+        sized_content_node_.reset();
         stop_completed_ = true;
         if (state_ != LifecycleRunState::failed) state_ = LifecycleRunState::stopped;
         if (first_failure) std::rethrow_exception(first_failure);

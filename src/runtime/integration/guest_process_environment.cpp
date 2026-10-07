@@ -59,6 +59,7 @@ GuestProcessEnvironment GuestProcessEnvironment::Api19(
         {"PATH", "/sbin:/vendor/bin:/system/sbin:/system/bin:/system/xbin"},
         {"ANDROID_ROOT", "/system"},
         {"ANDROID_DATA", "/data"},
+        {"TZ", "UTC"},
         {"EXTERNAL_STORAGE", std::move(external_storage_root)},
     });
 }

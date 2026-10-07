@@ -50,13 +50,15 @@ NOTICES = {
 BOOT_DEX = "framework/bootdex.jar"
 BOOT_DEX_NOTICE = "notices/bootdex.jar.txt"
 ICU_DATA = "icu/icudt51l.dat"
+TZDATA = "zoneinfo/tzdata"
+TZDATA_NOTICE = "notices/tzdata.txt"
 ICU_NOTICES = {
     "notices/icu4c-license.html",
     "notices/icu4c-unicode-license.txt",
 }
 PAYLOAD_FILES = LIBRARIES | NOTICES | {
     BOOT_DEX, BOOT_DEX_NOTICE, ICU_DATA, "manifest.json",
-    "source-manifest.xml"} | ICU_NOTICES
+    "source-manifest.xml", TZDATA, TZDATA_NOTICE} | ICU_NOTICES
 SHA256 = re.compile(r"[0-9a-f]{64}")
 
 
@@ -185,6 +187,28 @@ def _validate_source_manifest(root: Path, source: dict[str, Any]) -> set[str]:
     return {name for name in projects if name is not None}
 
 
+def validate_tzdata(image: bytes) -> None:
+    if len(image) < 24 or image[:12] != b"tzdata2014a\0":
+        raise PayloadError("tzdata must be the pinned API19 2014a archive")
+    index, data, tab = struct.unpack_from(">III", image, 12)
+    if not (index == 24 < data < tab <= len(image)) or (data - index) % 52:
+        raise PayloadError("tzdata section bounds are invalid")
+    previous = b""
+    names = set()
+    for cursor in range(index, data, 52):
+        name = image[cursor:cursor + 40].split(b"\0", 1)[0]
+        offset, length = struct.unpack_from(">II", image, cursor + 40)
+        start = data + offset
+        if not name or name <= previous or start + length > tab or length < 44:
+            raise PayloadError("tzdata index is invalid")
+        if image[start:start + 4] != b"TZif":
+            raise PayloadError("tzdata record is not TZif")
+        names.add(name)
+        previous = name
+    if not {b"UTC", b"GMT", b"Asia/Shanghai"}.issubset(names):
+        raise PayloadError("tzdata lacks the required guest time zones")
+
+
 def validate(root: Path) -> None:
     root = root.resolve()
     actual_files = {
@@ -217,6 +241,23 @@ def validate(root: Path) -> None:
             source.get("worktrees_clean") is not True:
         raise PayloadError("source provenance is incomplete")
     source_projects = _validate_source_manifest(root, source)
+
+    tzdata = _mapping(manifest.get("tzdata"), "tzdata")
+    expected_tzdata = {
+        "project": "platform/bionic",
+        "commit": "081db840befec895fb86e709ae95832ade2d065c",
+        "source_path": "libc/zoneinfo/tzdata",
+        "path": TZDATA, "version": "2014a", "size": 560918,
+        "sha256": "75daa7d948b866727d778dd354d5d408af71e2a0dc84cc3541b4df6b4272ecf4",
+        "notice": TZDATA_NOTICE,
+    }
+    for key, expected in expected_tzdata.items():
+        if tzdata.get(key) != expected:
+            raise PayloadError(f"tzdata.{key} does not match")
+    _validate_digest(root / TZDATA, tzdata["size"], tzdata["sha256"], "tzdata")
+    validate_tzdata((root / TZDATA).read_bytes())
+    if _digest(root / TZDATA_NOTICE) != tzdata.get("notice_sha256"):
+        raise PayloadError("tzdata notice SHA-256 does not match")
 
     try:
         recipe = bootdex.load_recipe()
@@ -421,7 +462,7 @@ def main() -> int:
         validate(args.root)
     except (OSError, PayloadError) as error:
         parser.error(str(error))
-    print("Android runtime payload validated: API 19, boot dex, ICU 51.1, 12 declared guest libraries")
+    print("Android runtime payload validated: API 19, boot dex, ICU 51.1, tzdata 2014a, 12 declared guest libraries")
     return 0
 
 

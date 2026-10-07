@@ -138,6 +138,8 @@ private:
     // be observed parked once or terminal. The bounded fallback is fail-open.
     void AwaitInitialThreadQuiescence();
     void ServiceActivitySwitch();
+    void SynchronizeContentView();
+    void DispatchViewWindowFocus(bool has_focus);
     void EnsureRendererCallbacks();
     void InitializeRendererEgl();
     void ReleaseRendererEgl();
@@ -187,6 +189,9 @@ private:
     // it until the first frame also lets guest worker threads observe their
     // completed Surface setup before native resume callbacks run.
     bool initial_focus_pending_{};
+    // Identity only: the current content is rooted by the Android context.
+    runtime::dexvm::VmObjectRef sized_content_view_;
+    std::optional<runtime::ui::UiNodeId> sized_content_node_;
     bool realtime_video_clock_{};
     std::uint64_t previous_step_ns_{};
 };

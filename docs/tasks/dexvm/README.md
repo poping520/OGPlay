@@ -28,6 +28,7 @@ Asphalt 5（pilot title）删除 profile 全部 `native_call` 与 `[[java.class]
 
 | WU | 一句话目标 | 状态 |
 | --- | --- | --- |
+| [DVM-219](DVM-219.md) | 空 Activity、延迟内容初始化与固定时区数据 | 有界完成 |
 | [DVM-218](DVM-218.md) | 有界退出清理与 native 退出控制 | 通用退出链已实现；内存故障在办 |
 | [DVM-217](DVM-217.md) | 原版原子文件与 native 资源清理异常隔离 | 有界完成 |
 | [DVM-215](DVM-215.md) | API19 十进制 JSON 数值转换与有界 guest BIGNUM | 有界完成 |

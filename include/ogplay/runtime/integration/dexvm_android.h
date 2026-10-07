@@ -254,6 +254,9 @@ struct DexVmAndroidContext final {
   std::function<void()> wake_gl_surface_thread;
   bool gl_surface_thread_stopped{};
   dexvm::VmObjectRef content_view;
+  // A managed lifecycle sizes a newly installed content root before exposing
+  // its SurfaceHolder callbacks at the next owner-thread traversal.
+  bool defer_content_surface_callbacks{};
 
   // Shared guest filesystem: the single world view for Java File I/O and
   // native fopen alike (external mounts, APK assets, and the per-title

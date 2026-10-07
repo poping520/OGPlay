@@ -1,0 +1,8 @@
+Android API19 tzdata 2014a
+
+Source: AOSP platform/bionic, commit 081db840befec895fb86e709ae95832ade2d065c
+Path: libc/zoneinfo/tzdata
+https://android.googlesource.com/platform/bionic/+/081db840befec895fb86e709ae95832ade2d065c/libc/zoneinfo/tzdata
+
+The upstream libc/zoneinfo directory declares MODULE_LICENSE_PUBLIC_DOMAIN.
+This archive is retained unchanged; no host time-zone database is used.

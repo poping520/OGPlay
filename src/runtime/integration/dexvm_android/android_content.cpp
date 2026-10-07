@@ -1509,6 +1509,9 @@ Decl Declare_android_content_Context(const Context &context) {
         if (name == "sensor") {
           return dx::VmValue::Ref(SensorManagerForContext(call, context));
         }
+        if (name == "nfc") {
+          return dx::VmValue::Ref(NfcManagerForContext(call, context));
+        }
         if (name == "location") {
           return dx::VmValue::Ref(Singleton(
               call, context, "location", "Landroid/location/LocationManager;"));

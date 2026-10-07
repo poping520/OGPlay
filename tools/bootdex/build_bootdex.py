@@ -78,6 +78,7 @@ FRAMEWORK_JAVA_NAMES = (
     "android/hardware/Sensor.java",
     "android/hardware/SensorManager.java",
     "android/net/wifi/WifiManager.java",
+    "android/nfc/NfcAdapter.java",
     "android/widget/VideoView.java",
 )
 
@@ -447,6 +448,9 @@ def zip_stream_native_signatures() -> dict[str, dict[str, int]]:
               "getTotalOutImpl(J)J", "resetImpl(J)V", "setDictionaryImpl([BIIJ)V",
               "setInputImpl([BIIJ)V"}
     return {
+        "Landroid/nfc/NfcAdapter;": {
+            "nativeGetAdapter()Landroid/nfc/NfcAdapter;": 0x10a,
+            "nativeUnsupported(Ljava/lang/String;)V": 0x10a},
         "Landroid/widget/VideoView;": {m: 0x102 for m in {
             "nativeOpenPath(Ljava/lang/String;I)V", "nativeOpenFd(Ljava/io/FileDescriptor;JJI)V",
             "nativeOpenError(ILjava/lang/String;)V", "nativeUnhandledError()V",
@@ -1006,7 +1010,7 @@ def self_test() -> int:
         reject_recipe(candidate, case)
     # Native admission mutations need neither AOSP inputs nor Java tooling.
     from types import SimpleNamespace
-    for target_index in (0, 1, 2):  # Video, value arithmetic and ZIP native admission.
+    for target_index in (0, 1, 2, 3):  # NFC, video, value arithmetic and ZIP native admission.
         for mutation in ("valid", "signature", "flags", "extra", "missing"):
             names, signatures, classes = [], [], []
             for owner, members in zip_stream_native_signatures().items():

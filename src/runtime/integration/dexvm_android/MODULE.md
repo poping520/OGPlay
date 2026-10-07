@@ -78,6 +78,13 @@ Settings 公开协议/转换/moved-key 路由来自 BootDex，只 overlay NameVa
 读取稳定沙盒身份，System 用进程隔离表，Secure/Global 特权写入记账并 false；无 Binder
 SettingsProvider、跨用户/观察者/host 设置。SystemProperties 仅受审 native 边界。
 
+## NFC 无设备发现
+
+`getSystemService("nfc")` 正常初始化并缓存 BootDex NfcManager；其原版构造器捕获
+native 工厂的 UnsupportedOperationException，保存 null 适配器。Java 查询和参数
+错误沿用 API19，feature 集合不发布 NFC。只有无设备工厂与越界操作拒绝进入
+integration；后者记账并抛 Java 异常，不保存/派发监听器，不实现 NFC 通信。
+
 ## PendingIntent 与闹钟取消
 
 当前 APK 可创建 service/broadcast PendingIntent 令牌；创建不解析或启动目标组件。

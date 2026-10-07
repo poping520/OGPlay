@@ -279,5 +279,7 @@ Declare_javax_microedition_khronos_opengles_GL10_Impl(const Context &context);
 [[nodiscard]] Decl Declare_android_hardware_LocalSensorManager(const Context& context);
 [[nodiscard]] Decl Declare_android_hardware_LegacySensorManager(const Context& context);
 [[nodiscard]] dx::VmObjectRef SensorManagerForContext(dx::IntrinsicContext& call, const Context& context);
+[[nodiscard]] Decl Declare_android_nfc_NfcAdapter(const Context& context);
+[[nodiscard]] dx::VmObjectRef NfcManagerForContext(dx::IntrinsicContext& call, const Context& context);
 
 } // namespace ogplay::runtime::android_intrinsics

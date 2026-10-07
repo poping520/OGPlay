@@ -21,11 +21,14 @@
   3 项/1682 断言通过。原 SensorListener 首错消失。
   [DVM-221](../tasks/dexvm/DVM-221.md) 已发布 libjnigraphics 三项 ABI，统一 Bitmap
   像素 lease；Release 构建、定向 7 项/303 断言通过。原 APK 成功加载引擎/JNI_OnLoad
-  并进入 Game.onCreate；当前 BeamSender 链接缺少
-  `android.nfc.NfcAdapter$CreateNdefMessageCallback`，退出 1。原 boundary 架构违规仍在。
+  并进入 Game.onCreate。[DVM-222](../tasks/dexvm/DVM-222.md) 补齐 NFC Java 类型与
+  无设备发现，不实现通信；BootDex build/check、payload 校验、Release 构建及
+  NFC/sensor 双解释器 2 项/308 断言通过。原 NFC 首错消失并进入 Game.onStart；
+  当前 startInstallerIfNeeded 缺少 `startActivityForResult(Intent, int)`，退出 1。
+  原 boundary 架构违规仍在。
   进程已退出，授权路径及完整游戏未验收。
   证据 `.local/wb-classloader-analysis/`、`.local/wb-subscriber-fix/`、`.local/wb-lifecycle-fix/`、
-  `.local/wb-sensor-fix/`、`.local/wb-jnigraphics-fix/`。
+  `.local/wb-sensor-fix/`、`.local/wb-jnigraphics-fix/`、`.local/wb-nfc-absence-fix/`。
 
 - **Tales From Deep Space 1.0.0**：VideoView/packed depth/stencil 已闭合；macOS
   800×480/1280×720 菜单裁剪，BND-29 终止断言失败。

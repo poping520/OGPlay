@@ -794,3 +794,20 @@ recycle 拒绝新访问但延后回收已有锁内存；bridge 在停止线程�
 格式转换以 API19 为基线，低位格式及预乘 alpha 可能量化颜色；当前 Java Bitmap 的
 完整 Skia/颜色管理语义不因此宣称验收。公开元数据必须与实际 guest 视图一致，
 错误按 NDK 返回码/pending throwable 传播，缺实现可查询且不得返回成功。
+
+<a id="adr-0103"></a>
+
+## ADR-0103 · NFC 保留 Java 契约并明确报告无设备
+
+- 状态：Accepted
+- 日期：2026-10-07
+
+应用的可选 NFC 客户端可能在查询硬件前就因监听接口缺失而无法链接。
+提供固定 API19 接口/事件/值类型，不因无硬件删除 Java 契约或放宽 linker。
+NfcAdapter 的公开发现流程及 NfcManager 的字段/异常转换由 BootDex 执行；
+Context 正常构造 manager，唯一设备工厂明确抛 UnsupportedOperationException，
+由原版 manager 捕获并保存 null。合法发现返回 null，参数错误仍按 API19 抛出。
+
+OGPlay 不发布 NFC feature、不创建真实适配器，也不提供 NFC 通信、系统服务、
+Binder 或回调派发。已有注册入口及反射构造经拒绝边界记账并失败，不伪造成功。
+NDEF 纯 Java 值类型复用原版配方，数据处理与设备通信的支持状态分开记录。

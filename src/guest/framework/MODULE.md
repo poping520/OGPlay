@@ -19,3 +19,6 @@ MediaPlayer 子类，所需控制绑定同一视频实例；不支持系统媒�
 传感器客户端见 [hardware](java/android/hardware/MODULE.md)：Sensor/SensorManager 保留
 固定 API19 原版源码；Legacy 的映射和转换在 Java，仅替换构造器 WMS 旋转查询。
 Context 选择 LocalSensorManager 空设备后端，不提供 SensorService 或真实事件队列。
+
+NFC 的 [Java 客户端](java/android/nfc/MODULE.md) 只支持类型链接及无适配器发现；
+查询与 manager 状态在 BootDex，平台边界报告无设备，不提供 NFC 通信或回调。

@@ -2040,3 +2040,13 @@ note = "DVM-220：两代 sensor 监听接口及事件/trigger 值类型来自原
 status = "partial"
 test = "tests/runtime/native_library_loader_tests.cpp: DVM-221; tests/dexvm/android_value_tests.cpp: Bitmap Config; tests/dexvm/egl_facade_tests.cpp: DVM-83; tests/runtime/bionic_profile_tests.cpp"
 note = "DVM-221/ADR-0102：sealed libjnigraphics.so 发布三项 API19 AndroidBitmap；boundary 不依赖 JNI/DexVM，由 bridge hooks 解析线程/env/reference 并维护 pending throwable。20-byte info、可空输出、错误输出不改变锁、guest 像素地址、重入锁计数、GC 强根及 recycle/退出退役受检。BitmapPixels 在逻辑 ARGB 与 guest 格式间转移唯一权威数据，Java/GLUtils/Canvas 共用；四种格式/stride及 RGBA 预乘、native/Java 双向修改有真实 ARM 回归。原 APK 已加载引擎并进入 onCreate，下一首错独立为 NFC 接口缺失；完整 Skia/Java颜色管理、未同步并发写、所有线程/格式输入和游戏 title gate 未验收。原 boundary_hot_path 因未改动 android_module.cpp 的 std::function 仍失败。"
+
+[dexvm.nfc_absent_facade]
+status = "partial"
+test = "tools/bootdex/build_bootdex.py build/check; tools.android_payload_current; tests/dexvm/android_value_tests.cpp: DVM-222"
+note = "DVM-222/ADR-0103：API19 两个 NDEF 回调接口与两个公开/旧式 adapter 查询方法在 BootDex；固定 framework.jar 提供 NfcManager/事件/NDEF 值类。Context 正常初始化并缓存 manager，private native 工厂明确报告无硬件，原 manager 捕获异常后保存 null；正常查询 null、非法 Context 的 IAE、旧式查询 UOE、feature false、session GC 与拒绝注册无回调有双解释器回归。无适配器实例、NFC feature 或系统服务；值类完整算法/Parcel、独立 JNI 查询、跨平台及 title gate 未验收。"
+
+[dexvm.nfc_transport]
+status = "unimplemented"
+test = "tests/dexvm/android_value_tests.cpp: DVM-222"
+note = "不实现 NFC 通信、标签读写、Beam、扫描或卡模拟。已声明的 adapter 构造/回调注册入口经 native 拒绝边界记账并抛 UnsupportedOperationException；不保存监听器或派发成功回调。"

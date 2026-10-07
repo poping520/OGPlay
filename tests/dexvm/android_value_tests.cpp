@@ -1313,6 +1313,85 @@ TEST_CASE("DVM-220 BootDex sensor clients share an honest empty device boundary"
     }
 }
 
+TEST_CASE("DVM-222 NFC discovery preserves API19 absence without transport") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch,
+                               InterpreterBackend::threaded}) {
+        std::int32_t callbacks{};
+        auto listener = IntrinsicClassBuilder::Class("Ltest/NdefClient;", "Ljava/lang/Object;",
+            {"Landroid/nfc/NfcAdapter$CreateNdefMessageCallback;",
+             "Landroid/nfc/NfcAdapter$OnNdefPushCompleteCallback;"});
+        listener.Constructor("()V", [](IntrinsicContext&) { return VmValue::Void(); });
+        listener.VirtualMethod("createNdefMessage", "(Landroid/nfc/NfcEvent;)Landroid/nfc/NdefMessage;",
+            [&callbacks](IntrinsicContext&) { ++callbacks; return VmValue::Ref(VmObjectRef{}); });
+        listener.VirtualMethod("onNdefPushComplete", "(Landroid/nfc/NfcEvent;)V",
+            [&callbacks](IntrinsicContext&) { ++callbacks; return VmValue::Void(); });
+        auto mock = IntrinsicClassBuilder::Class("Ltest/NoApplicationContext;", "Landroid/content/Context;");
+        mock.OverrideMethod("getApplicationContext", "()Landroid/content/Context;",
+            [](IntrinsicContext&) { return VmValue::Ref(VmObjectRef{}); });
+        AndroidValueVm f(backend, {std::move(listener).Build(), std::move(mock).Build()});
+        f.vm.SetGcIntegration({{}, {}, [&f](const VmRootVisitor& visit) {
+            VisitAndroidSessionRoots(*f.context, visit);
+        }});
+        for (const auto* descriptor : {"Landroid/nfc/NfcAdapter;", "Landroid/nfc/NfcManager;",
+             "Landroid/nfc/NfcEvent;", "Landroid/nfc/NdefMessage;", "Landroid/nfc/NdefRecord;"})
+            CHECK(f.linker.Class(f.linker.ResolveDescriptor(descriptor)).is_boot_dex);
+        const auto client = f.New("Ltest/NdefClient;");
+        const auto base = f.New("Landroid/content/Context;");
+        const auto roots = f.vm.ProtectReferences(std::array{client, base});
+        for (const auto* descriptor : {"Landroid/nfc/NfcAdapter$CreateNdefMessageCallback;",
+                                      "Landroid/nfc/NfcAdapter$OnNdefPushCompleteCallback;"}) {
+            const auto type = f.linker.ResolveDescriptor(descriptor);
+            CHECK(f.linker.Class(type).is_boot_dex);
+            CHECK(f.linker.Class(type).is_interface);
+            CHECK(f.linker.IsAssignable(type, f.model.ObjectClass(client)));
+        }
+        const auto service = [&] {
+            return f.On(base, "getSystemService", "(Ljava/lang/String;)Ljava/lang/Object;",
+                {VmValue::Ref(f.vm.NewStringUtf8("nfc"))}).ref;
+        };
+        const auto manager = service();
+        REQUIRE(manager.IsValid());
+        CHECK(f.linker.Class(f.model.ObjectClass(manager)).descriptor == "Landroid/nfc/NfcManager;");
+        CHECK_FALSE(f.On(manager, "getDefaultAdapter", "()Landroid/nfc/NfcAdapter;").ref.IsValid());
+        CHECK_FALSE(f.Static("Landroid/nfc/NfcAdapter;", "getDefaultAdapter",
+            "(Landroid/content/Context;)Landroid/nfc/NfcAdapter;", {VmValue::Ref(base)}).ref.IsValid());
+        const auto pm = f.On(base, "getPackageManager", "()Landroid/content/pm/PackageManager;").ref;
+        for (const auto* feature : {"android.hardware.nfc", "android.hardware.nfc.hce"})
+            CHECK(f.On(pm, "hasSystemFeature", "(Ljava/lang/String;)Z",
+                {VmValue::Ref(f.vm.NewStringUtf8(feature))}).AsInt() == 0);
+        const auto no_application = f.vm.NewIntrinsicInstance("Ltest/NoApplicationContext;");
+        for (const auto context : {VmObjectRef{}, no_application}) {
+            const auto result = f.StaticOutcome("Landroid/nfc/NfcAdapter;", "getDefaultAdapter",
+                "(Landroid/content/Context;)Landroid/nfc/NfcAdapter;", {VmValue::Ref(context)});
+            REQUIRE(result.exception.IsValid());
+            CHECK(f.linker.Class(result.exception_class).descriptor == "Ljava/lang/IllegalArgumentException;");
+        }
+        const auto legacy = f.StaticOutcome("Landroid/nfc/NfcAdapter;", "getDefaultAdapter",
+                                            "()Landroid/nfc/NfcAdapter;");
+        REQUIRE(legacy.exception.IsValid());
+        CHECK(f.linker.Class(legacy.exception_class).descriptor == "Ljava/lang/UnsupportedOperationException;");
+        // Inject an otherwise unobtainable receiver to verify that registration
+        // never silently succeeds or retains a callback outside the device path.
+        const auto adapter = f.vm.NewIntrinsicInstance("Landroid/nfc/NfcAdapter;");
+        for (const auto& [name, signature] : std::array{
+             std::pair{"setNdefPushMessageCallback", "(Landroid/nfc/NfcAdapter$CreateNdefMessageCallback;Landroid/app/Activity;[Landroid/app/Activity;)V"},
+             std::pair{"setOnNdefPushCompleteCallback", "(Landroid/nfc/NfcAdapter$OnNdefPushCompleteCallback;Landroid/app/Activity;[Landroid/app/Activity;)V"}}) {
+            const auto result = f.OnOutcome(adapter, name, signature,
+                {VmValue::Ref(client), VmValue::Ref(VmObjectRef{}), VmValue::Ref(VmObjectRef{})});
+            REQUIRE(result.exception.IsValid());
+            CHECK(f.linker.Class(result.exception_class).descriptor == "Ljava/lang/UnsupportedOperationException;");
+        }
+        const auto hits = f.ledger.Unimplemented();
+        REQUIRE(hits.size() == 1);
+        CHECK(hits[0].id == "dexvm.nfc_transport");
+        CHECK(hits[0].count == 2);
+        static_cast<void>(f.vm.CollectGarbage("nfc-no-device"));
+        CHECK(service() == manager);
+        CHECK_FALSE(f.On(manager, "getDefaultAdapter", "()Landroid/nfc/NfcAdapter;").ref.IsValid());
+        CHECK(callbacks == 0);
+    }
+}
+
 TEST_CASE("DVM-136 API 19 OrientationEventListener preserves absent sensor semantics") {
     for (const auto backend :
          {InterpreterBackend::switch_dispatch,

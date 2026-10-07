@@ -7,6 +7,47 @@
 
 namespace ogplay::runtime::android_intrinsics {
 
+Decl Declare_android_nfc_NfcAdapter(const Context&) {
+    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/nfc/NfcAdapter;");
+    constexpr auto flags = dx::kAccPrivate | dx::kAccNative;
+    builder.StaticMethod("nativeGetAdapter", "()Landroid/nfc/NfcAdapter;",
+        [](dx::IntrinsicContext&) -> dx::VmValue {
+            // NfcManager's API19 constructor catches this absent-device result.
+            throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
+                                  "NFC hardware is not available"};
+        }, flags);
+    builder.StaticMethod("nativeUnsupported", "(Ljava/lang/String;)V",
+        [](dx::IntrinsicContext& call) -> dx::VmValue {
+            if (auto* ledger = call.vm.Ledger())
+                ledger->RecordUnimplemented("dexvm.nfc_transport", 0);
+            throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
+                                  "NFC transport is outside the compatibility scope"};
+        }, flags);
+    return std::move(builder).Build();
+}
+
+dx::VmObjectRef NfcManagerForContext(dx::IntrinsicContext& call, const Context& context) {
+    const auto found = context->singletons.find("nfc");
+    if (found != context->singletons.end()) return found->second;
+    auto& vm = call.vm;
+    const auto type = vm.Linker().ResolveDescriptor("Landroid/nfc/NfcManager;");
+    const auto require = [&](const dx::VmCallOutcome& outcome) {
+        if (outcome.exception.IsValid())
+            throw dx::VmJavaThrow{vm.Linker().Class(outcome.exception_class).descriptor,
+                                  outcome.exception_message, outcome.exception};
+    };
+    require(vm.EnsureClassInitialized(type));
+    const auto instance = vm.NewIntrinsicInstance("Landroid/nfc/NfcManager;");
+    const auto roots = vm.ProtectReferences(std::array{instance});
+    const auto constructor = vm.Linker().FindDirectMethod(type, "<init>", "(Landroid/content/Context;)V");
+    if (!constructor)
+        throw dx::DexVmError(dx::DexVmErrorReason::unresolved_reference,
+                             "NfcManager constructor is missing");
+    require(vm.Call(*constructor, std::array{dx::VmValue::Ref(instance), dx::VmValue::Ref(call.receiver)}));
+    context->singletons.emplace("nfc", instance);
+    return instance;
+}
+
 Decl Declare_android_location_LocationListener(const Context& context) {
     static_cast<void>(context);
     auto builder = dx::IntrinsicClassBuilder::Interface(

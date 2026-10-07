@@ -183,6 +183,7 @@ AndroidIntrinsicCatalog(const std::shared_ptr<DexVmAndroidContext> &context) {
       Declare_android_graphics_drawable_ColorDrawable(context),
       Declare_android_hardware_LocalSensorManager(context),
       Declare_android_hardware_LegacySensorManager(context),
+      Declare_android_nfc_NfcAdapter(context),
       Declare_android_location_LocationListener(context),
       Declare_android_location_Criteria(context),
       Declare_android_location_Location(context),

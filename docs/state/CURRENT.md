@@ -15,10 +15,14 @@
   无 survey、隔离空沙盒越过两处方法缺失并加载 libnativeinterface.so。
   [DVM-219](../tasks/dexvm/DVM-219.md) 支持空 Activity/延迟内容与固定 tzdata；Release
   定向 20 项/465 断言、payload 校验和真实 Bionic UTC/Shanghai 查询通过。
-  原 content view 首错与 tzdata 缺失日志消失，主 Handler 回调进入 StartGame；当前
-  const-class 链接 Game 时缺少 `android.hardware.SensorListener`，退出 1。
+  原 content view 首错与 tzdata 缺失日志消失，主 Handler 回调进入 StartGame。
+  [DVM-220](../tasks/dexvm/DVM-220.md) 已将两代传感器接口、客户端与值类归入 BootDex，
+  仅保留无设备 native 边界；build/check、payload 校验、Release 构建及双解释器/JNI
+  3 项/1682 断言通过。原 SensorListener 首错消失；当前 Game.<clinit> 加载
+  `libjnigraphics.so` 时缺少该 ELF，退出 1，尚未执行游戏内传感器注册。
   进程已退出，授权路径及完整游戏未验收。
-  证据 `.local/wb-classloader-analysis/`、`.local/wb-subscriber-fix/`、`.local/wb-lifecycle-fix/`。
+  证据 `.local/wb-classloader-analysis/`、`.local/wb-subscriber-fix/`、`.local/wb-lifecycle-fix/`、
+  `.local/wb-sensor-fix/`。
 
 - **Tales From Deep Space 1.0.0**：VideoView/packed depth/stencil 已闭合；macOS
   800×480/1280×720 菜单裁剪，BND-29 终止断言失败。

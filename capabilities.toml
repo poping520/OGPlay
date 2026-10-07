@@ -2030,3 +2030,8 @@ note = "DVM-211：alarm 单例与 API19 cancel(null/无匹配/匹配令牌)；�
 status = "partial"
 test = "tools.android_payload_current; tests/runtime/native_library_loader_tests.cpp: DVM-219 pinned tzdata; tests/runtime/api19_guest_process_tests.cpp"
 note = "DVM-219：固定 API19 Bionic tzdata 2014a 原版归档按来源/哈希/header/index/TZif 校验进入 payload；run-apk 注入 AndroidAppProcess 并以只读 /system/usr/share/zoneinfo/tzdata 在 native 初始化前发布。初始环境 TZ=UTC，guest setenv/tzset 可修改本进程时区；真实 ARM localtime_r 验证 UTC 与 Asia/Shanghai，无宿主 TZ/数据库或新增时间源。Java ZoneInfoDB/full TimeZone、全部地区/DST/2038 边界未验收，合成 app process request 可不注入归档。"
+
+[dexvm.sensor_absent_facade]
+status = "partial"
+test = "tools/bootdex/build_bootdex.py build/check; tools.android_payload_current; tests/dexvm/android_value_tests.cpp: DVM-220 and DVM-136; tests/runtime/native_library_loader_tests.cpp: JNI framework services"
+note = "DVM-220：两代 sensor 监听接口及事件/trigger 值类型来自原版 API19 framework.jar，Sensor/SensorManager 保留原版 Java 源码进入 BootDex；Legacy 普通字段、缓存、位掩码和转换算法仍由 Java 执行，仅 WMS 初始化改为 private native 旋转查询。Context 执行 LocalSensorManager 原构造器并缓存进程单例；native 提供空目录、注册/trigger/flush false、无登记注销和 API19 null 参数错误，managed viewport 固定 ROTATION_0，无回调或 C++ 监听器副本。双解释器及 JNI 无设备路径/GC/OrientationEventListener 受检；未提供宿主传感器、动态目录、真实事件/Clock 时间戳及旋转 watcher，未验收全部数学算法或游戏传感器路径。"

@@ -100,12 +100,6 @@ Declare_android_graphics_drawable_PaintDrawable(const Context &context);
 Declare_android_graphics_drawable_BitmapDrawable(const Context &context);
 [[nodiscard]] Decl
 Declare_android_graphics_drawable_ColorDrawable(const Context &context);
-[[nodiscard]] Decl Declare_android_hardware_Sensor(const Context &context);
-[[nodiscard]] Decl Declare_android_hardware_SensorEvent(const Context &context);
-[[nodiscard]] Decl
-Declare_android_hardware_SensorEventListener(const Context &context);
-[[nodiscard]] Decl
-Declare_android_hardware_SensorManager(const Context &context);
 [[nodiscard]] Decl
 Declare_android_location_LocationListener(const Context &context);
 [[nodiscard]] Decl Declare_android_location_Criteria(const Context &context);
@@ -281,5 +275,9 @@ Declare_javax_microedition_khronos_opengles_GL(const Context &context);
 Declare_javax_microedition_khronos_opengles_GL10(const Context &context);
 [[nodiscard]] Decl
 Declare_javax_microedition_khronos_opengles_GL10_Impl(const Context &context);
+
+[[nodiscard]] Decl Declare_android_hardware_LocalSensorManager(const Context& context);
+[[nodiscard]] Decl Declare_android_hardware_LegacySensorManager(const Context& context);
+[[nodiscard]] dx::VmObjectRef SensorManagerForContext(dx::IntrinsicContext& call, const Context& context);
 
 } // namespace ogplay::runtime::android_intrinsics

@@ -240,6 +240,9 @@ Decl Declare_android_telephony_TelephonyManager(const Context& context) {
         [context](dx::IntrinsicContext& call) { return MakeString(call, context->device_id); });
     builder.FinalMethod("getDeviceSoftwareVersion", "()Ljava/lang/String;",
         [context](dx::IntrinsicContext& call) { return MakeString(call, context->device_software_version); });
+    // API19 returns null when subscriber information is unavailable.
+    builder.VirtualMethod("getSubscriberId", "()Ljava/lang/String;",
+        [](dx::IntrinsicContext&) { return dx::VmValue::Ref(dx::VmObjectRef{}); });
     builder.FinalMethod("getLine1Number", "()Ljava/lang/String;",
         [context](dx::IntrinsicContext& call) { return MakeString(call, context->line_number); });
     builder.FinalMethod("getNetworkOperator", "()Ljava/lang/String;",

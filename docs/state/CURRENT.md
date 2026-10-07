@@ -8,6 +8,15 @@
 
 ## 运行状态
 
+- **Wild Blood 1.0.4（SamsungApps）**：已补齐 Context.getClassLoader，复用稳定应用
+  loader，ContextWrapper 虚派委托 base；TelephonyManager.getSubscriberId 按无蜂窝
+  订阅语义返回 null。macOS Release 构建、ClassLoader 双解释器 2 项/194 断言及
+  电话缺席/Java-JNI 一致性 2 项/1486 断言通过。原 APK/外部数据、无 Profile/
+  无 survey、隔离空沙盒越过两处方法缺失并加载 libnativeinterface.so；当前第 0 帧
+  致命错误为 `onCreate did not install a content view`，另有 guest tzdata 缺失日志。
+  进程已退出，授权路径及完整游戏未验收。
+  证据 `.local/wb-classloader-analysis/`、`.local/wb-subscriber-fix/`。
+
 - **Tales From Deep Space 1.0.0**：VideoView/packed depth/stencil 已闭合；macOS
   800×480/1280×720 菜单裁剪，BND-29 终止断言失败。
   [DVM-217](../tasks/dexvm/DVM-217.md)：1920×1080 存档重载恢复关卡通过。

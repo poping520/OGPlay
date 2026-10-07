@@ -30,8 +30,12 @@
   触发整缓存冲刷与逐帧重编译。
 - `DynarmicExecutionContext`：为同一 guest 进程的 JIT CPU 分配唯一 processor ID 并共享
   exclusive monitor；STREX 在无 observer、自然对齐的 RW 非执行直接页上用宿主 CAS
-  提交；ARM64 可在自然对齐单页内 inline 读写，使用同一共享 monitor 的锁和 reservation
-  存储及真实宿主 CAS，peer 失效扫描仅省略单调 high-water bound 之外从未分配的槽。
+  提交；ARM64 可在自然对齐单页内 inline 读写：直接读以 writer epoch 校验并原子
+  发布 reservation，写及 callback reader 仍使用共享 monitor 锁与真实宿主 CAS。地址和
+  保存值按 processor 以 128 字节对齐槽隔离；所有地址槽访问均原子化。直接读遇到奇数/
+  变化版本即丢弃 reservation，允许 STREX 失败重试；写者和 Clear 必须先以完整屏障
+  发布奇数版本，结束时 release 发布偶数版本。peer 失效扫描仅省略单调 high-water bound
+  之外从未分配的槽。
   bound 在 processor 首次 Run 前发布，退役不缩小，ID 复用不继承 reservation。
   其他访问通过 MemoryBus 的硬件原子 CompareExchange；与普通 JIT
   直接写竞争时不可覆盖已经发生的不同值写入。不能以仅覆盖回调的互斥锁模拟原子提交。
@@ -71,7 +75,8 @@
   接入 Dynarmic，其他宿主保留既有读写表路径。
 - ARM64 A32 普通页表访存保留 live FPSR，不在纯整数访存上反复 spill/reload；受检
   wrapped memory fallback 在调用 C++ 前后保存/恢复 FPSR。浮点结果、累积异常、VMRS
-  和普通 ABI/host-call 的原状态边界保持一致。
+  和普通 ABI/host-call 的原状态边界保持一致。inline exclusive 的整数寄存器准备也
+  保留 live FPSR，其 fallback trampoline 负责发布/恢复状态。
 - ARM64 A32 的 guest FPSR 在一次 Run 内可跨链接块保留；C++/dispatcher 入口发布、
   出口从 guest 状态恢复，软件浮点 helper 修改的累积异常不能丢失。VMSR/VMRS、停止、
   fault 与快照保持可观察语义；Run 保存/恢复宿主调用者 FPSR，x64 不变。

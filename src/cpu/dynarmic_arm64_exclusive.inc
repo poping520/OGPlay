@@ -1,14 +1,15 @@
 // Included in the checked ARM64 memory-emitter overlay, inside its anonymous
 // namespace. Only scalar, aligned single-page accesses borrow published backing.
 // PrepareForCall releases IR caller registers; X0-X8 are scratch until the result
-// is defined. The fallback uses the original monitor/callback trampoline.
+// is defined. The fallback monitor/callback trampoline publishes and reloads
+// live FPSR, so the integer path can prepare registers without spilling it.
 template<size_t bitsize>
 void InlineExclusiveReadMemory(oaknut::CodeGenerator& code, EmitContext& ctx, IR::Inst* inst) {
     auto args = ctx.reg_alloc.GetArgumentInfo(inst);
-    ctx.reg_alloc.PrepareForCall({}, args[1]);
+    ctx.reg_alloc.PrepareForCall({}, args[1], {}, {}, ctx.conf.retain_fpsr_between_blocks);
     code.MOV(W1, W1); // Canonical A32 address, including its zero upper half.
     const bool ordered = IsOrdered(args[2].GetImmediateAccType());
-    oaknut::Label fallback, end;
+    oaknut::Label fallback, invalidated, marked, end;
     auto fallback_ptr = std::shared_ptr<oaknut::Label>(&fallback, [](auto*) {});
 
     if constexpr (bitsize > 8) {
@@ -17,15 +18,27 @@ void InlineExclusiveReadMemory(oaknut::CodeGenerator& code, EmitContext& ctx, IR
     }
     const auto [base, offset] = InlinePageTableEmitVAddrLookup<bitsize>(code, ctx, X1, fallback_ptr, true);
     code.ADD(X0, base, offset);
-    code.MOV(Xscratch2, ctx.conf.exclusive_lock_pointer);
-    Dynarmic::EmitSpinLockLock(code, Xscratch2);
+    // Observe a writer epoch, read, then publish the reservation. The full
+    // barrier makes publication visible before validating the epoch. A writer
+    // overlapping this interval may only cause a spurious STREX failure.
+    code.MOV(X3, ctx.conf.exclusive_epoch_pointer);
+    code.LDAR(X4, X3);
     EmitMemoryLdr<bitsize>(code, 0, X0, XZR, false);
-    code.MOV(Xscratch0, ctx.conf.exclusive_address_pointer);
-    code.STR(X1, Xscratch0);
     code.MOV(Xscratch0, ctx.conf.exclusive_value_pointer);
     if constexpr (bitsize == 64) code.STR(X0, Xscratch0);
     else code.STR(W0, Xscratch0);
-    Dynarmic::EmitSpinLockUnlock(code, Xscratch2);
+    code.MOV(Xscratch0, ctx.conf.exclusive_address_pointer);
+    code.STLR(X1, Xscratch0);
+    code.DMB(oaknut::BarrierOp::ISH);
+    code.LDAR(X5, X3);
+    code.CMP(X4, X5);
+    code.B(NE, invalidated);
+    code.TBNZ(X4, 0, invalidated);
+    code.B(marked);
+    code.l(invalidated);
+    code.MOV(X6, 0xDEAD'DEAD'DEAD'DEADull);
+    code.STLR(X6, Xscratch0);
+    code.l(marked);
     code.B(end);
 
     code.l(fallback);
@@ -40,7 +53,7 @@ void InlineExclusiveReadMemory(oaknut::CodeGenerator& code, EmitContext& ctx, IR
 template<size_t bitsize>
 void InlineExclusiveWriteMemory(oaknut::CodeGenerator& code, EmitContext& ctx, IR::Inst* inst) {
     auto args = ctx.reg_alloc.GetArgumentInfo(inst);
-    ctx.reg_alloc.PrepareForCall({}, args[1], args[2]);
+    ctx.reg_alloc.PrepareForCall({}, args[1], args[2], {}, ctx.conf.retain_fpsr_between_blocks);
     code.MOV(W1, W1);
     const bool ordered = IsOrdered(args[3].GetImmediateAccType());
     oaknut::Label fallback, failed, end, unlock_failed, peers, next_peer, cas_retry, cas_mismatch;
@@ -58,8 +71,13 @@ void InlineExclusiveWriteMemory(oaknut::CodeGenerator& code, EmitContext& ctx, I
     code.ADD(X0, base, offset);
     code.MOV(Xscratch2, ctx.conf.exclusive_lock_pointer);
     Dynarmic::EmitSpinLockLock(code, Xscratch2);
+    code.MOV(X7, ctx.conf.exclusive_epoch_pointer);
+    code.LDAR(X8, X7);
+    code.ADD(X8, X8, 1);
+    code.STLR(X8, X7);
+    code.DMB(oaknut::BarrierOp::ISH);
     code.MOV(X3, ctx.conf.exclusive_address_pointer);
-    code.LDR(X4, X3);
+    code.LDAR(X4, X3);
     code.CMP(X4, X1);
     code.B(NE, unlock_failed);
 
@@ -72,15 +90,17 @@ void InlineExclusiveWriteMemory(oaknut::CodeGenerator& code, EmitContext& ctx, I
     } else {
         code.MOV(X4, ctx.conf.exclusive_processor_count);
     }
-    code.ADD(X4, X3, X4, LSL, 3);
+    code.MOV(X5, ctx.conf.exclusive_reservation_stride);
+    code.MUL(X4, X4, X5);
+    code.ADD(X4, X3, X4);
     code.MOV(X6, 0xDEAD'DEAD'DEAD'DEADull);
     code.l(peers);
-    code.LDR(X5, X3);
+    code.LDAR(X5, X3);
     code.CMP(X5, X1);
     code.B(NE, next_peer);
-    code.STR(X6, X3);
+    code.STLR(X6, X3);
     code.l(next_peer);
-    code.ADD(X3, X3, 8);
+    code.ADD(X3, X3, ctx.conf.exclusive_reservation_stride);
     code.CMP(X3, X4);
     code.B(NE, peers);
 
@@ -102,6 +122,8 @@ void InlineExclusiveWriteMemory(oaknut::CodeGenerator& code, EmitContext& ctx, I
     else if constexpr (bitsize == 16) code.STLXRH(W3, W2, X0);
     else code.STLXRB(W3, W2, X0);
     code.CBNZ(W3, cas_retry);
+    code.ADD(X8, X8, 1);
+    code.STLR(X8, X7);
     Dynarmic::EmitSpinLockUnlock(code, Xscratch2);
     code.MOV(W0, 0);
     code.B(end);
@@ -109,6 +131,8 @@ void InlineExclusiveWriteMemory(oaknut::CodeGenerator& code, EmitContext& ctx, I
     code.l(cas_mismatch);
     code.CLREX();
     code.l(unlock_failed);
+    code.ADD(X8, X8, 1);
+    code.STLR(X8, X7);
     Dynarmic::EmitSpinLockUnlock(code, Xscratch2);
     code.l(failed);
     code.MOV(W0, 1);

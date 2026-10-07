@@ -21,6 +21,7 @@
 - [ADR-0096 · 分离 JIT 数据读取与写入页表](#adr-0096)
 - [ADR-0097 · ARM64 受保护页内的 inline exclusive](#adr-0097)
 - [ADR-0098 · A32 JIT Run 内保留累积 FPSR](#adr-0098)
+- [ADR-0101 · ARM64 exclusive 读侧版本校验](#adr-0101)
 
 <a id="adr-0001"></a>
 
@@ -738,3 +739,37 @@ live 状态。VMRS/VMSR、停止/fault 和 Run 出口保持 guest 可观察状�
 影子 FpsrManager/StackLayout 头加入统一 ABI 重编译边界；固定 vendor tree 不修改。
 定向验证必须覆盖跨块累积、回调污染、软件浮点更新、FPSCR 清除与宿主恢复，再以真实
 成功 present 测量性能。该决定不等于完整 ISA、跨平台或游戏 title gate 验收。
+
+<a id="adr-0101"></a>
+
+## ADR-0101 · ARM64 exclusive 读侧版本校验
+
+- 状态：Accepted
+- 日期：2026-10-06
+- Supersedes：ADR-0097 的直接读侧锁及 monitor 存储布局；写侧锁、CAS 和失效语义保持。
+
+### 背景
+
+多线程任务队列频繁以 LDREX 读取状态，读操作也取得同一进程 monitor 的全局锁。
+增加 worker 后锁等待使吞吐下降；缩短浮点状态搬运及扫描不能消除读者之间的竞争。
+
+### 决定
+
+仅在 ARM64 A32 自然对齐单页直接 LDREX 上启用无锁读取。每个 processor 的地址槽
+使用原子发布/失效；地址与保存值合在每 processor 一个 128 字节对齐槽中，避免
+并行读者反复写同一缓存行。保存值仅由对应 CPU 线程访问。共享 64 位 writer epoch：写者持有
+原锁，将版本置奇数并以完整屏障先发布，完成失效和真实 CAS 后以 release 发布偶数。
+C++ exclusive writer 和 Clear 同样参与版本协议；callback reader 保留原锁。
+
+直接读者先 acquire 读取版本，再读数据、保存值并 release 发布地址，完整屏障后再次
+读取版本。版本为奇数或发生变化时清除自己的 reservation；正常返回已读取的数据，
+后续 STREX 可以失败并由 guest 重试。写者始终检查地址槽并使匹配 peer reservation
+失效，不以值相等代替 monitor，保留 exclusive peer ABA 和同值写的失效。
+
+### 后果
+
+读者之间不再竞争锁；并发写入允许保守的 reservation 丢失，不允许错误提交。版本协议
+依赖 ARM64 的屏障和原子存储，所有地址槽访问（含 callback/清理）必须原子化，禁止
+与普通或 SIMD 批量写混用。x64 及固定 vendor tree 不变，overlay 头变化统一重编译。
+普通直接写的 ABA/write-history 仍不支持。验收覆盖直接/callback 混用、同值写、ABA、
+多宿主线程原子计数、槽位复用、访存 fault 和 live FPSR，再以同场景 present 实测决定保留。

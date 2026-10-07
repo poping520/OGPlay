@@ -32,7 +32,9 @@ public:
 
 class FpsrClobberBus final : public ogplay::memory::MemoryBus {
 public:
-    explicit FpsrClobberBus(ogplay::memory::AddressSpace& space) : checked(space) {}
+    explicit FpsrClobberBus(ogplay::memory::AddressSpace& space,
+                           ogplay::memory::MemoryAccessObserver* observer = nullptr)
+        : checked(space, observer) {}
 #define FPBUS_ACCESS(bits, type) \
     type Read##bits(ogplay::memory::GuestAddress address, std::uint64_t tid) override { \
         const auto value = checked.Read##bits(address, tid); \
@@ -41,6 +43,11 @@ public:
     void Write##bits(ogplay::memory::GuestAddress address, type value, std::uint64_t tid) override { \
         checked.Write##bits(address, value, tid); \
         ++writes; std::feraiseexcept(FE_INVALID); \
+    } \
+    bool CompareExchange##bits(ogplay::memory::GuestAddress address, type expected, \
+                               type value, std::uint64_t tid) override { \
+        const auto result = checked.CompareExchange##bits(address, expected, value, tid); \
+        ++exchanges; std::feraiseexcept(FE_OVERFLOW); return result; \
     }
     FPBUS_ACCESS(8, std::uint8_t)
     FPBUS_ACCESS(16, std::uint16_t)
@@ -60,7 +67,7 @@ public:
         return checked.DirectReadPageTable();
     }
     ogplay::memory::CheckedMemoryBus checked;
-    unsigned reads{}, writes{};
+    unsigned reads{}, writes{}, exchanges{};
 };
 
 struct Outcome final {
@@ -495,19 +502,27 @@ TEST_CASE("Dynarmic exclusive locks interoperate with direct unlocks on host thr
         0xef000001U};
     for (std::size_t i = 0; i < program.size(); ++i) bus.Write32(code.Add(i * 4), program[i]);
     space.Protect({code, 4096}, memory::PageProtection::read | memory::PageProtection::execute);
+    bool independent = false, mixed = false;
+    SUBCASE("shared lock and counter") {}
+    SUBCASE("independent locks and counters") { independent = true; }
+    SUBCASE("independent direct and callback processors") { independent = true; mixed = true; }
     constexpr std::size_t workers = 4;
+    std::array<ThreadObserver, workers> observers;
+    std::array<std::unique_ptr<memory::CheckedMemoryBus>, workers> callback_buses;
     auto context = std::make_shared<cpu::DynarmicExecutionContext>(workers);
     std::array<std::unique_ptr<cpu::DynarmicCpu>, workers> cpus;
     std::array<std::future<cpu::RunResult>, workers> results;
     std::promise<void> start;
     auto ready = start.get_future().share();
     for (std::size_t i = 0; i < workers; ++i) {
-        cpus[i] = std::make_unique<cpu::DynarmicCpu>(bus, context);
+        callback_buses[i] = std::make_unique<memory::CheckedMemoryBus>(space, &observers[i]);
+        auto& selected_bus = mixed && (i % 2) != 0 ? *callback_buses[i] : bus;
+        cpus[i] = std::make_unique<cpu::DynarmicCpu>(selected_bus, context);
         cpu::A32State state;
         state.SetThreadId(i + 1);
         state.SetRegister(cpu::CoreRegister::pc, code.Value());
-        state.SetRegister(cpu::CoreRegister::r0, flag.Value());
-        state.SetRegister(cpu::CoreRegister::r4, counter.Value());
+        state.SetRegister(cpu::CoreRegister::r0, flag.Add(independent ? i * 8 : 0).Value());
+        state.SetRegister(cpu::CoreRegister::r4, counter.Add(independent ? i * 8 : 0).Value());
         state.SetRegister(cpu::CoreRegister::r5, 1000);
         cpus[i]->SetState(state);
         results[i] = std::async(std::launch::async, [&, i, ready] {
@@ -517,8 +532,10 @@ TEST_CASE("Dynarmic exclusive locks interoperate with direct unlocks on host thr
     }
     start.set_value();
     for (auto& result : results) CHECK(result.get().reason == cpu::RunStopReason::supervisor_call);
-    CHECK(bus.Read32(counter) == workers * 1000);
-    CHECK(bus.Read32(flag) == 0);
+    for (std::size_t i = 0; i < (independent ? workers : 1); ++i) {
+        CHECK(bus.Read32(counter.Add(i * 8)) == (independent ? 1000 : workers * 1000));
+        CHECK(bus.Read32(flag.Add(i * 8)) == 0);
+    }
 }
 
 TEST_CASE("Dynarmic exclusive monitor rejects a peer exclusive ABA") {
@@ -554,6 +571,47 @@ TEST_CASE("Dynarmic exclusive monitor rejects a peer exclusive ABA") {
     REQUIRE(contender.Run(8).reason == cpu::RunStopReason::supervisor_call);
     CHECK(contender.GetState().Register(cpu::CoreRegister::r3) == 1);
     CHECK(bus.Read32(flag) == 1);
+}
+
+TEST_CASE("Dynarmic exclusive same-value peer writes invalidate direct and callback reservations") {
+    using namespace ogplay;
+    for (const bool reader_observed : {false, true}) {
+        for (const bool writer_observed : {false, true}) {
+            CAPTURE(reader_observed);
+            CAPTURE(writer_observed);
+            memory::AddressSpace space;
+            const memory::GuestAddress code{0x10000}, flag{0x20000};
+            const auto rw = memory::PageProtection::read | memory::PageProtection::write;
+            space.Map({code, 4096}, rw);
+            space.Map({flag, 4096}, rw);
+            ThreadObserver reader_observer, writer_observer;
+            memory::CheckedMemoryBus direct(space);
+            memory::CheckedMemoryBus reader_bus(space, reader_observed ? &reader_observer : nullptr);
+            memory::CheckedMemoryBus writer_bus(space, writer_observed ? &writer_observer : nullptr);
+            const std::array reader{0xe1902f9fU, 0xef000001U, 0xe1803f91U, 0xef000001U};
+            const std::array writer{0xe1902f9fU, 0xe1803f91U, 0xef000001U};
+            for (std::size_t i = 0; i < reader.size(); ++i) direct.Write32(code.Add(i * 4), reader[i]);
+            for (std::size_t i = 0; i < writer.size(); ++i) direct.Write32(code.Add(64 + i * 4), writer[i]);
+            direct.Write32(flag, 1);
+            space.Protect({code, 4096}, memory::PageProtection::read | memory::PageProtection::execute);
+            auto context = std::make_shared<cpu::DynarmicExecutionContext>(2);
+            cpu::DynarmicCpu contender(reader_bus, context), peer(writer_bus, context);
+            cpu::A32State state;
+            state.SetRegister(cpu::CoreRegister::pc, code.Value());
+            state.SetRegister(cpu::CoreRegister::r0, flag.Value());
+            state.SetRegister(cpu::CoreRegister::r1, 2);
+            contender.SetState(state);
+            state.SetRegister(cpu::CoreRegister::pc, code.Add(64).Value());
+            state.SetRegister(cpu::CoreRegister::r1, 1); // Same value still loses the peer reservation.
+            peer.SetState(state);
+            REQUIRE(contender.Run(8).reason == cpu::RunStopReason::supervisor_call);
+            REQUIRE(peer.Run(8).reason == cpu::RunStopReason::supervisor_call);
+            CHECK(peer.GetState().Register(cpu::CoreRegister::r3) == 0);
+            REQUIRE(contender.Run(8).reason == cpu::RunStopReason::supervisor_call);
+            CHECK(contender.GetState().Register(cpu::CoreRegister::r3) == 1);
+            CHECK(direct.Read32(flag) == 1);
+        }
+    }
 }
 
 TEST_CASE("Dynarmic exclusive store preserves permission fault attribution") {
@@ -777,6 +835,72 @@ TEST_CASE("Dynarmic cumulative FPSR spans linked blocks host callbacks software 
     result = cpu.GetState();
     CHECK(result.Register(cpu::CoreRegister::r2) == 0U);
     CHECK(result.Fpscr() == 0U);
+}
+
+TEST_CASE("Dynarmic exclusive memory preserves live FPSR and clobbering callback boundaries") {
+    using namespace ogplay;
+    struct Program { std::uint32_t load, store; unsigned bytes; };
+    for (const bool observed : {false, true}) {
+        for (const bool software : {false, true}) {
+            for (const auto operation : {Program{0xe1d02f9fU, 0xe1c04f96U, 1},
+                                        Program{0xe1f02f9fU, 0xe1e04f96U, 2},
+                                        Program{0xe1902f9fU, 0xe1804f96U, 4},
+                                        Program{0xe1b02f9fU, 0xe1a04f96U, 8}}) {
+                CAPTURE(observed);
+                CAPTURE(software);
+                CAPTURE(operation.bytes);
+                memory::AddressSpace memory;
+                const memory::GuestAddress code{0x10000}, data{0x20000};
+                const auto rw = memory::PageProtection::read | memory::PageProtection::write;
+                memory.Map({code, 4096}, rw);
+                memory.Map({data, 4096}, rw);
+                ThreadObserver observer;
+                FpsrClobberBus bus(memory, observed ? &observer : nullptr);
+                // The software helper leaves FPSR in guest state. The integer
+                // path must load it once, then preserve it across direct/fallback
+                // exclusives and linked blocks. Callback host flags must not leak.
+                const std::array program{
+                    0xee800a81U, 0xeaffffffU, // 0/0, branch
+                    software ? 0xf3bb0542U : 0xe1a00000U, 0xeaffffffU,
+                    operation.load, operation.store, 0xeaffffffU,
+                    0xeef15a10U, 0xef000001U}; // vmrs r5,FPSCR
+                for (std::size_t i = 0; i < program.size(); ++i)
+                    bus.checked.Write32(code.Add(i * 4), program[i]);
+                constexpr auto initial = UINT64_C(0x1122334455667788);
+                constexpr auto desired = UINT64_C(0xaabbccddabcdef01);
+                bus.checked.Write64(data, initial);
+                memory.Protect({code, 4096}, memory::PageProtection::read | memory::PageProtection::execute);
+                cpu::DynarmicCpu cpu(bus);
+                cpu::A32State state;
+                state.SetRegister(cpu::CoreRegister::pc, code.Value());
+                state.SetRegister(cpu::CoreRegister::r0, data.Value());
+                state.SetRegister(cpu::CoreRegister::r6, static_cast<std::uint32_t>(desired));
+                state.SetRegister(cpu::CoreRegister::r7, static_cast<std::uint32_t>(desired >> 32));
+                cpu.SetState(state);
+                std::feclearexcept(FE_ALL_EXCEPT);
+                std::feraiseexcept(FE_INEXACT);
+                const auto stop = cpu.Run(64);
+                const auto caller_flags = std::fetestexcept(FE_ALL_EXCEPT);
+                std::feclearexcept(FE_ALL_EXCEPT);
+                REQUIRE(stop.reason == cpu::RunStopReason::supervisor_call);
+                const auto result = cpu.GetState();
+                const auto expected_flags = software ? 3U : 1U;
+                CHECK(result.Register(cpu::CoreRegister::r4) == 0U);
+                CHECK(result.Register(cpu::CoreRegister::r5) == expected_flags);
+                CHECK(result.Fpscr() == expected_flags);
+                const auto mask = operation.bytes == 8 ? UINT64_MAX
+                    : (UINT64_C(1) << (operation.bytes * 8)) - 1;
+                CHECK(bus.checked.Read64(data) == ((initial & ~mask) | (desired & mask)));
+                CHECK(bus.reads == (observed ? 1U : 0U));
+                CHECK(bus.exchanges == (observed ? 1U : 0U));
+#if defined(__aarch64__) || defined(_M_ARM64)
+                CHECK(caller_flags == FE_INEXACT);
+#else
+                static_cast<void>(caller_flags);
+#endif
+            }
+        }
+    }
 }
 
 TEST_CASE("Dynarmic adjacent VFP compare VMRS preserves conditions and FPSCR flags") {

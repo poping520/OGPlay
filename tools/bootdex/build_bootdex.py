@@ -72,7 +72,14 @@ ZIP_JAVA_ROOT = ROOT / "src/guest/zip/java"
 ZIP_JAVA_NAMES = ("org/ogplay/zip/NativeZip.java",)
 
 FRAMEWORK_JAVA_ROOT = ROOT / "src/guest/framework/java"
-FRAMEWORK_JAVA_NAMES = ("android/net/wifi/WifiManager.java", "android/widget/VideoView.java")
+FRAMEWORK_JAVA_NAMES = (
+    "android/hardware/LegacySensorManager.java",
+    "android/hardware/LocalSensorManager.java",
+    "android/hardware/Sensor.java",
+    "android/hardware/SensorManager.java",
+    "android/net/wifi/WifiManager.java",
+    "android/widget/VideoView.java",
+)
 
 
 def guest_java_sources() -> tuple[Path, ...]:

@@ -41,7 +41,7 @@
     "path": "framework/bootdex.jar",
     "generator": "tools/bootdex/build_bootdex.py",
     "recipe": "tools/bootdex/api19.json",
-    "recipe_sha256": "1f6c0317d8806babf042feb763bf9c99ea139224f003a8e9bd4826f3caf17a72",
+    "recipe_sha256": "1163993a5a452766baa4ceebe5529d132c4d6bb10b077e78a82cd36e5572113b",
     "system_resources": {
       "table": "tools/bootdex/api19-system-resources.json",
       "table_sha256": "65768857b28b9ba572bd84eb89a33e223188bf0731ffb6fe80d4e701558b9ab3",
@@ -81,18 +81,18 @@
           "src/guest/crypto/java",
           "src/guest/framework/java"
         ],
-        "source_sha256": "08fcf5451a6322e3f8b1106f73c795609cd9375d23e5a35402cc4f6c2eb2bf4a",
+        "source_sha256": "ef783f2d3c434058054e2d59b54ca5cfae23cd53568ccdd90db0ee5d7e9c8956",
         "javac": "17.0.18",
         "android_jar_sha256": "4032a201eeb1d0430c7d9f1075151dd280427de5ca9e36f734f464ab605cb690",
         "d8_sha256": "d9e6acde0cb6f2453d6835b52c31d2066054394fb79e91115dd4978bde6afd16"
       }
     ],
-    "size": 2823852,
-    "sha256": "1f3d0333172f529c3b67f234987e36cc90c04aee461e768dfcadf02d9b13a2aa",
+    "size": 2839584,
+    "sha256": "b3cc5fb0df13b5f828aa5682fc25e35fcac525cceba2b0df0c4857a2d4b7a59a",
     "dex_entry": "classes.dex",
-    "dex_size": 2819232,
-    "dex_sha256": "eae7ed24f177edc799d25935a33f45f29359bcba6b7bae83d74e267cf0dc30b3",
-    "class_count": 1880,
+    "dex_size": 2834964,
+    "dex_sha256": "76f01b5d0cd6fa5e5c955806399c238d3b5817986f0e3522eba27e716ecaad7d",
+    "class_count": 1892,
     "selection_policy": "load-all",
     "notice": "notices/bootdex.jar.txt",
     "notice_sha256": "c5bf8c6efc379e6d5401a40fbf7810aedf9ee81dfa9f2deaa174faa97ded310a"
@@ -243,7 +243,7 @@
       ],
       "build": {
         "generator": "tools/bootdex/build_bootdex.py",
-        "generator_sha256": "937814a94b47a1f3b4ab1e24f40b35317e2b0efecaf89972fd5fb5743fb3381f",
+        "generator_sha256": "d52303df179693f726bbc7e268c856956828e4c885445de3b1e6a8ba92a1084d",
         "ndk_revision": "25.2.9519653",
         "target": "armv7a-linux-androideabi19",
         "language": "C11",

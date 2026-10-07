@@ -231,6 +231,10 @@ Java GLES/EGL 通过 session managed 冷入口复用 [native boundary](../../bou
   不支持，边界见 ADR-0092/0093。
 - 网络使用 core policy/transport，默认离线；Connectivity/Wifi 只发配置事实，不探测 host
   网络/DNS/代理/证书。传感器/电话只返回 API 允许缺席。
+  Sensor/SensorEvent/监听接口和 SensorManager 普通方法归 BootDex；Context 的 sensor
+  单例先执行 LocalSensorManager 原构造器。唯一 native 设备边界提供空目录、注册 false
+  与无登记注销；Legacy 私有旋转查询使用 managed viewport 固定 ROTATION_0，不建 WMS。
+  列表缓存、旧位掩码适配和监听器映射由 Java 字段持有，不维护 C++ 副本或生成回调。
   TelephonyManager.getSubscriberId 为可覆盖公开方法，无蜂窝订阅时返回 null，Java/JNI 共用。
   location 仅值类型/listener/稳定 facade，无 provider/历史，更新注册/移除失败。
   KeyguardManager 不缓存对象，三项查询读进程 provider

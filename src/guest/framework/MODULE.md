@@ -1,7 +1,7 @@
 # 模块：有界 Android framework guest Java
 
 拥有需替换系统服务传输的 API19 客户端算法；编入 BootDex，由 DexVM 执行。
-普通字段、计数、同步和异常归 guest 对象；仅平台租约经显式 native 进入 integration。
+普通字段、计数、同步和异常归 guest 对象；平台租约/设备目录经显式 native 进入 integration。
 不依赖宿主 JDK、Binder IPC、system_server 或手机服务。
 
 WifiLock/MulticastLock 沿用 AOSP 引用计数与 held 独立状态、模式切换和过量释放语义；保留二进制类名。
@@ -15,3 +15,7 @@ WorkSource、组播传输及无线服务不在当前支持范围。
 
 本地 VideoView 适配器以 Java 字段保存监听器、播放目标和代际。回调传入初始化的
 MediaPlayer 子类，所需控制绑定同一视频实例；不支持系统媒体服务、字幕或网络源。
+
+传感器客户端见 [hardware](java/android/hardware/MODULE.md)：Sensor/SensorManager 保留
+固定 API19 原版源码；Legacy 的映射和转换在 Java，仅替换构造器 WMS 旋转查询。
+Context 选择 LocalSensorManager 空设备后端，不提供 SensorService 或真实事件队列。

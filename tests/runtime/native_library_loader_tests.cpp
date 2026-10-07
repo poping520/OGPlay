@@ -1144,6 +1144,14 @@ TEST_CASE("JNI framework services use VM methods objects and state") {
         CHECK_FALSE(bridge.FromReference(std::get<JniReference>(call(
             bridge.FromReference(phone), "getSubscriberId", "()Ljava/lang/String;"))).IsValid());
         CHECK_FALSE(fixture.session->Environment().ExceptionCheck(1U));
+        const auto sensor = std::get<JniReference>(call(activity, "getSystemService",
+            "(Ljava/lang/String;)Ljava/lang/Object;", {text("sensor")}));
+        CHECK(std::get<JniInt>(call(bridge.FromReference(sensor), "getSensors", "()I")) == 0);
+        CHECK_FALSE(bridge.FromReference(std::get<JniReference>(call(bridge.FromReference(sensor),
+            "getDefaultSensor", "(I)Landroid/hardware/Sensor;", {JniInt{1}}))).IsValid());
+        CHECK(std::get<JniBoolean>(call(bridge.FromReference(sensor), "registerListener",
+            "(Landroid/hardware/SensorListener;I)Z", {JniReference{}, JniInt{1}})) == JniBoolean{false});
+        CHECK_FALSE(fixture.session->Environment().ExceptionCheck(1U));
         const auto resolver = std::get<JniReference>(call(activity, "getContentResolver", "()Landroid/content/ContentResolver;"));
         CHECK(bridge.FromReference(resolver).Value() == fixture.context->singletons.at("content_resolver").Value());
         const auto secure = *classes.FindClass("android/provider/Settings$Secure");

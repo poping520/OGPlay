@@ -1233,6 +1233,85 @@ TEST_CASE("DVM-132 API 19 Uri executes from BootDex on both interpreters") {
     }
 }
 
+TEST_CASE("DVM-220 BootDex sensor clients share an honest empty device boundary") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch,
+                               InterpreterBackend::threaded}) {
+        std::int32_t callbacks{};
+        auto listener = IntrinsicClassBuilder::Class("Ltest/SensorClient;", "Ljava/lang/Object;",
+            {"Landroid/hardware/SensorListener;", "Landroid/hardware/SensorEventListener;"});
+        listener.Constructor("()V", [](IntrinsicContext&) { return VmValue::Void(); });
+        const auto callback = [&callbacks](IntrinsicContext&) { ++callbacks; return VmValue::Void(); };
+        listener.VirtualMethod("onSensorChanged", "(I[F)V", callback);
+        listener.VirtualMethod("onAccuracyChanged", "(II)V", callback);
+        listener.VirtualMethod("onSensorChanged", "(Landroid/hardware/SensorEvent;)V", callback);
+        listener.VirtualMethod("onAccuracyChanged", "(Landroid/hardware/Sensor;I)V", callback);
+        AndroidValueVm f(backend, {std::move(listener).Build()});
+        for (const auto* name : {"Sensor", "SensorEvent", "SensorManager", "LocalSensorManager",
+                                "LegacySensorManager", "TriggerEvent", "TriggerEventListener"}) {
+            const auto type = f.linker.ResolveDescriptor(std::string("Landroid/hardware/") + name + ";");
+            CHECK(f.linker.Class(type).is_boot_dex);
+        }
+        for (const auto* name : {"SensorListener", "SensorEventListener"}) {
+            const auto type = f.linker.ResolveDescriptor(std::string("Landroid/hardware/") + name + ";");
+            CHECK(f.linker.Class(type).is_boot_dex);
+            CHECK(f.linker.Class(type).is_interface);
+            CHECK(f.linker.MethodsOf(type).size() == 2);
+        }
+        const auto base = f.New("Landroid/content/Context;");
+        const auto base_root = f.vm.ProtectReferences(std::array{base});
+        const auto service = [&] {
+            return f.On(base, "getSystemService", "(Ljava/lang/String;)Ljava/lang/Object;",
+                {VmValue::Ref(f.vm.NewStringUtf8("sensor"))}).ref;
+        };
+        const auto manager = service();
+        const auto manager_root = f.vm.ProtectReferences(std::array{manager});
+        const auto client = f.New("Ltest/SensorClient;");
+        const auto client_root = f.vm.ProtectReferences(std::array{client});
+        CHECK(f.linker.IsAssignable(f.linker.ResolveDescriptor("Landroid/hardware/SensorManager;"),
+                                   f.model.ObjectClass(manager)));
+        const auto get_list = [&](int type) {
+            return f.On(manager, "getSensorList", "(I)Ljava/util/List;", {VmValue::Int(type)}).ref;
+        };
+        const auto list = get_list(1);
+        CHECK(f.On(list, "size", "()I").AsInt() == 0);
+        CHECK(get_list(1) == list);
+        CHECK(f.On(get_list(-1), "size", "()I").AsInt() == 0);
+        CHECK_FALSE(f.On(manager, "getDefaultSensor", "(I)Landroid/hardware/Sensor;",
+                         {VmValue::Int(1)}).ref.IsValid());
+        const auto add = f.OnOutcome(list, "add", "(Ljava/lang/Object;)Z", {VmValue::Ref(VmObjectRef{})});
+        REQUIRE(add.exception.IsValid());
+        CHECK(f.linker.Class(add.exception_class).descriptor == "Ljava/lang/UnsupportedOperationException;");
+        CHECK(f.On(manager, "getSensors", "()I").AsInt() == 0);
+        for (const auto mask : {1, 2, 128}) {
+            CHECK(f.On(manager, "registerListener", "(Landroid/hardware/SensorListener;I)Z",
+                {VmValue::Ref(client), VmValue::Int(mask)}).AsInt() == 0);
+            CHECK(f.On(manager, "registerListener", "(Landroid/hardware/SensorListener;II)Z",
+                {VmValue::Ref(client), VmValue::Int(mask), VmValue::Int(3)}).AsInt() == 0);
+            f.On(manager, "unregisterListener", "(Landroid/hardware/SensorListener;I)V",
+                 {VmValue::Ref(client), VmValue::Int(mask)});
+        }
+        f.On(manager, "unregisterListener", "(Landroid/hardware/SensorListener;)V", {VmValue::Ref(client)});
+        CHECK(f.On(manager, "registerListener",
+            "(Landroid/hardware/SensorEventListener;Landroid/hardware/Sensor;I)Z",
+            {VmValue::Ref(client), VmValue::Ref(VmObjectRef{}), VmValue::Int(3)}).AsInt() == 0);
+        f.On(manager, "unregisterListener", "(Landroid/hardware/SensorEventListener;)V", {VmValue::Ref(client)});
+        CHECK(f.On(manager, "flush", "(Landroid/hardware/SensorEventListener;)Z", {VmValue::Ref(client)}).AsInt() == 0);
+        for (const auto& failure : {
+                 f.OnOutcome(manager, "flush", "(Landroid/hardware/SensorEventListener;)Z", {VmValue::Ref(VmObjectRef{})}),
+                 f.OnOutcome(manager, "requestTriggerSensor",
+                     "(Landroid/hardware/TriggerEventListener;Landroid/hardware/Sensor;)Z",
+                     {VmValue::Ref(VmObjectRef{}), VmValue::Ref(VmObjectRef{})})}) {
+            REQUIRE(failure.exception.IsValid());
+            CHECK(f.linker.Class(failure.exception_class).descriptor == "Ljava/lang/IllegalArgumentException;");
+        }
+        static_cast<void>(f.vm.CollectGarbage("sensor-client-empty-directory"));
+        CHECK(service() == manager);
+        CHECK(get_list(1) == list);
+        CHECK(f.On(manager, "getSensors", "()I").AsInt() == 0);
+        CHECK(callbacks == 0);
+    }
+}
+
 TEST_CASE("DVM-136 API 19 OrientationEventListener preserves absent sensor semantics") {
     for (const auto backend :
          {InterpreterBackend::switch_dispatch,

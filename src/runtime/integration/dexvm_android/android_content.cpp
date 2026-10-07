@@ -1507,8 +1507,7 @@ Decl Declare_android_content_Context(const Context &context) {
                                             "Landroid/net/wifi/WifiManager;"));
         }
         if (name == "sensor") {
-          return dx::VmValue::Ref(Singleton(
-              call, context, "sensor", "Landroid/hardware/SensorManager;"));
+          return dx::VmValue::Ref(SensorManagerForContext(call, context));
         }
         if (name == "location") {
           return dx::VmValue::Ref(Singleton(

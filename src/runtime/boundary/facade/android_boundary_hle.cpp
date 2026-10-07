@@ -61,6 +61,9 @@
 #include "runtime/boundary/modules/opensles/opensles_abi.h"
 #include "runtime/boundary/modules/opensles/opensles_exports.h"
 
+#include "runtime/boundary/modules/bitmap/bitmap_module.h"
+#include "runtime/boundary/modules/bitmap/bitmap_exports.h"
+
 namespace ogplay::runtime {
 namespace {
 constexpr std::size_t kMaximumShaderSourceCount = 1024;
@@ -104,6 +107,7 @@ public:
                            return static_cast<Impl*>(owner)->android_module_.NativeWindowIsCurrent(window);
                        }},
           android_module_(call_services_, android_services_, options.loopers),
+          bitmap_module_(call_services_),
           egl_module_(call_services_, egl_context_),
           gles1_module_(call_services_, graphics_context_, gles1_state_,
                         gles1_legacy_state_, gles1_draw_state_,
@@ -197,6 +201,7 @@ public:
             options.allow_gles1_material_single_face);
         SealBindings();
     }
+    void SetBitmapHooks(AndroidBitmapHooks hooks) { bitmap_module_.SetHooks(hooks); }
     void MapThunks() {
         graphics_context_.retire_share_group = [](void* owner, const std::uint32_t group) {
             auto& self = *static_cast<Impl*>(owner);
@@ -712,6 +717,11 @@ private:
                    false>(android, name, android_module_);
         OGPLAY_ANDROID_BOUNDARY_EXPORTS(OGPLAY_BIND_ANDROID)
 #undef OGPLAY_BIND_ANDROID
+        const auto& bitmap = require("libjnigraphics.so");
+#define OGPLAY_BIND_BITMAP(name, id, count, method) \
+        BindExport<BitmapModule, &BitmapModule::method, count, false>(bitmap, name, bitmap_module_);
+        OGPLAY_BITMAP_BOUNDARY_EXPORTS(OGPLAY_BIND_BITMAP)
+#undef OGPLAY_BIND_BITMAP
         const auto& egl = require("libEGL.so");
 #define OGPLAY_BIND_EGL(name, id, count, method)                                \
         BindExport<EglModule, &EglModule::method, count, true>(                 \
@@ -998,6 +1008,7 @@ private:
     GraphicsBoundaryContext graphics_context_;
     EglBoundaryContext egl_context_;
     AndroidModule android_module_;
+    BitmapModule bitmap_module_;
     EglModule egl_module_;
     Gles1Module gles1_module_;
     Gles2Module gles2_module_;
@@ -1141,4 +1152,8 @@ void AndroidBoundaryHle::RegisterNativeActivity(NativeActivityBoundaryResources 
 void AndroidBoundaryHle::UnregisterNativeActivity(memory::GuestAddress activity) { impl_->UnregisterNativeActivity(activity); }
 memory::GuestAddress AndroidBoundaryHle::SetNativeActivityWindow(memory::GuestAddress activity, bool active) { return impl_->SetNativeActivityWindow(activity, active); }
 void AndroidBoundaryHle::SetNativeActivityInput(memory::GuestAddress activity, bool active) { impl_->SetNativeActivityInput(activity, active); }
+}
+
+namespace ogplay::runtime {
+void AndroidBoundaryHle::SetBitmapHooks(AndroidBitmapHooks hooks) { impl_->SetBitmapHooks(hooks); }
 }

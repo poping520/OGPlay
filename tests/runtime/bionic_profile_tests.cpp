@@ -56,7 +56,7 @@ TEST_CASE("Bionic profiles select only API 19 22 and 23") {
     CHECK(api19.guest_libraries.size() == 12);
     CHECK(std::find(api19.guest_libraries.begin(), api19.guest_libraries.end(),
                     "libssl.so") != api19.guest_libraries.end());
-    CHECK(ogplay::runtime::AndroidBoundaryCatalog(api19.api).Modules().size() == 6);
+    CHECK(ogplay::runtime::AndroidBoundaryCatalog(api19.api).Modules().size() == 7);
     CHECK_THROWS_AS(static_cast<void>(ogplay::runtime::SelectBionicProfile(21)),
                     ogplay::runtime::BionicProfileError);
 }

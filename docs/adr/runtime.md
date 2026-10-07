@@ -773,3 +773,24 @@ C++ exclusive writer 和 Clear 同样参与版本协议；callback reader 保留
 与普通或 SIMD 批量写混用。x64 及固定 vendor tree 不变，overlay 头变化统一重编译。
 普通直接写的 ABA/write-history 仍不支持。验收覆盖直接/callback 混用、同值写、ABA、
 多宿主线程原子计数、槽位复用、访存 fault 和 live FPSR，再以同场景 present 实测决定保留。
+
+<a id="adr-0102"></a>
+
+## ADR-0102 · NDK Bitmap 通过 Virtual SO 访问唯一像素 backing
+
+- 状态：Accepted
+- 日期：2026-10-07
+
+API19 libjnigraphics 仅发布 getInfo/lockPixels/unlockPixels。采用 sealed concrete module，
+由 integration 注入显式函数接口解析 JNIEnv/jobject，boundary 不依赖 JNI/DexVM。
+不加载依赖 Android runtime/Skia 的原版库，不忽略 DT_NEEDED 或发布空库。
+
+Bitmap 的逻辑 ARGB backing 在首个锁期间转移为稳定 guest 格式缓冲，宿主副本停止
+作为像素来源；Java、GLUtils、Canvas 均经同一 backing 读取/修改。最后 unlock 将
+格式/预乘值转换回逻辑存储并退役 guest view。只有一份当前权威值，不并存独立缓存。
+锁仅保证地址存活，不伪称互斥锁；调用者负责同步像素并发写。active lock 为 GC 强根，
+recycle 拒绝新访问但延后回收已有锁内存；bridge 在停止线程后解除 hooks 并清理 lease。
+
+格式转换以 API19 为基线，低位格式及预乘 alpha 可能量化颜色；当前 Java Bitmap 的
+完整 Skia/颜色管理语义不因此宣称验收。公开元数据必须与实际 guest 视图一致，
+错误按 NDK 返回码/pending throwable 传播，缺实现可查询且不得返回成功。

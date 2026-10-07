@@ -211,6 +211,11 @@ Java GLES/EGL 通过 session managed 冷入口复用 [native boundary](../../bou
 
 ## 媒体、网络、设备与 JNI
 
+- Bitmap/getPixels/setPixels、Canvas.drawBitmap 与 GLUtils 共用 BitmapPixels；首个 NDK
+  lock 将权威颜色转移到 guest 格式，最后 unlock 回写逻辑值并退役地址。API19 四种
+  格式、实际 stride 和预乘/低位量化由同一 backing 管理；recycle 禁止新访问，旧锁
+  继续保活到 unlock/退出。完整颜色管理、Skia 与未同步像素并发写不在此契约内。
+
 - MediaPlayer/VideoView 只消费受检资源/路径/逻辑 FD 区间，交唯一 decoder/mixer，不建 host fd
   或第二播放器。EncodedMusicMixer 每实例、JavaSoundPoolMixer 每池隔离；音乐增量读取资源/
   APK/VFS 窗口或 lease，仅短音效全量读取。VideoView 原子捕获 lease，FD 关闭仍保留窗口，

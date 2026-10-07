@@ -53,6 +53,11 @@ Android API 的详细行为以 [dexvm_android](dexvm_android/MODULE.md)为准；
   ELF 段），offset/device/inode 为 0、pathname 为空；不推测原 ROM 文件身份。
   provider 只捕获 address space，由注册句柄在地址空间析构前同步撤销，构造失败同样回收。
   不读取宿主 maps，不实现完整 procfs 或 `/proc/self/stat`。
+  NDK Bitmap hooks 在 DexVM bridge 完成构造后发布，退役等待活跃调用完成；JNI env/
+  reference 解析与 pending throwable 归 bridge，boundary 仅处理 ABI。活跃像素锁是
+  VM 强根，recycle 延后退役 guest view，bridge 停止线程后解除 hooks 并清理 lease。
+  BitmapPixels 在逻辑 ARGB 和 guest 格式存储间转移唯一权威值，Java/GLUtils/Canvas
+  共用它；低位格式/预乘 alpha 的量化及调用者无同步并发写不等于完整 Skia 验收。
 - /proc/meminfo 是启动时写入 VFS 的只读 GuestProcFacts 快照：受检 total/free，Buffers/
   Swap 为 0，Cached 为 total/4；不读取宿主内存或动态刷新。
 - `dl_unwind_find_exidx` 按 PC 查询 process-owned namespace 的实际 load range，返回所属模块

@@ -39,6 +39,7 @@ class EncodedAudioDataSource;
 }
 
 namespace ogplay::runtime {
+class BitmapPixels;
 struct AndroidBoundaryInput;
 
 namespace database {
@@ -512,17 +513,18 @@ struct DexVmAndroidContext final {
   };
   std::unordered_map<std::uint32_t, AudioTrackState> audio_tracks;
 
-  // Bitmap pixel stores by instance handle: real host-side ARGB8888
-  // buffers so getPixels/createBitmap round-trip actual data.
+  // Bitmap backing by instance handle: logical colors when unlocked and
+  // a stable guest-format authority during active NDK pixel leases.
   struct BitmapState final {
     std::int32_t width{};
     std::int32_t height{};
-    std::vector<std::uint32_t> argb;
+    std::shared_ptr<BitmapPixels> pixels;
     bool recycled{};
     // android.graphics.Bitmap.Config nativeInt (API 19 values 1/3/4/5).
     std::int32_t config{5};
   };
   std::unordered_map<std::uint32_t, BitmapState> bitmaps;
+  std::unordered_map<std::uint32_t, dexvm::VmObjectRef> bitmap_lock_roots;
 
   // SurfaceHolder software rendering owns a Canvas only while locked. The
   // Canvas buffer uses Android ARGB words and is converted to boundary RGBA

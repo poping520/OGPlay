@@ -1,3 +1,4 @@
+#include "ogplay/runtime/integration/bitmap_pixels.h"
 // DVM-80: API-family translation unit. Physical consolidation only.
 
 // ---- migrated from android_opengl_GLSurfaceView_EGLConfigChooser.cpp ----
@@ -1654,9 +1655,10 @@ dx::IntrinsicHandler JavaGlesHandler(const Context& context,
     const bool unsigned_byte = type == 0x1401U;
     const auto bytes_per_pixel = unsigned_byte
         ? (format == 0x1906U ? 1U : format == 0x190AU ? 2U : 4U) : 2U;
-    std::vector<std::byte> bytes(bitmap.argb.size() * bytes_per_pixel);
-    for (std::size_t index = 0; index < bitmap.argb.size(); ++index) {
-        const auto pixel = bitmap.argb[index];
+    const auto colors = bitmap.pixels->Snapshot();
+    std::vector<std::byte> bytes(colors.size() * bytes_per_pixel);
+    for (std::size_t index = 0; index < colors.size(); ++index) {
+        const auto pixel = colors[index];
         if (unsigned_byte && format == 0x1906U) {
             bytes[index] = static_cast<std::byte>(pixel >> 24U);
         } else if (unsigned_byte && format == 0x190AU && bitmap.config == 3) {

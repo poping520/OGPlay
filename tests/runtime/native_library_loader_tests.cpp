@@ -1,3 +1,5 @@
+#include "ogplay/runtime/integration/bitmap_pixels.h"
+#include "runtime/boundary/core/boundary_symbols.h"
 #include "ogplay/runtime/dexvm/big_int_runtime.h"
 #include <set>
 #include "ogplay/runtime/integration/native_activity_runtime.h"
@@ -2211,6 +2213,129 @@ TEST_CASE("DVM-218 lifecycle preserves onPause failure and attempts later cleanu
         CHECK_FALSE(fixture.app->NativeProcess().Running());
         CHECK_FALSE(fixture.app->NativeProcess().Environment().IsThreadAttached(1));
         CHECK_NOTHROW(static_cast<void>(fixture.app->Stop()));
+    }
+}
+
+TEST_CASE("DVM-221 pixel formats use API19 stride and native packed layout") {
+    using namespace ogplay;
+    OrchestratedApp f("fixture.DelayedContentActivity", true, false);
+    const auto access = f.app->NativeProcess().GuestMemoryAccess();
+    for (const auto spec : {std::array<std::uint32_t, 5>{1, 8, 0x80000000U, 0x80, 0},
+                            std::array<std::uint32_t, 5>{3, 4, 0xffff0000U, 0, 0xf8},
+                            std::array<std::uint32_t, 5>{4, 7, 0xff00ff00U, 0x0f, 0x0f}}) {
+        runtime::BitmapPixels pixels(1, 2, static_cast<std::int32_t>(spec[0]), {spec[2], spec[2]});
+        CHECK(pixels.Format() == static_cast<std::int32_t>(spec[1])); CHECK(pixels.Stride() == 4);
+        const auto address = pixels.Lock(access);
+        std::array<std::byte, 8> bytes{}; access.read(address, bytes);
+        CHECK(bytes[0] == static_cast<std::byte>(spec[3])); CHECK(bytes[4] == bytes[0]);
+        if (spec[0] != 1) { CHECK(bytes[1] == static_cast<std::byte>(spec[4])); CHECK(bytes[5] == bytes[1]); }
+        CHECK(bytes[2] == std::byte{0}); CHECK(bytes[3] == std::byte{0});
+        CHECK(pixels.Snapshot() == std::vector<std::uint32_t>{spec[2], spec[2]});
+        pixels.Unlock(); CHECK_FALSE(access.validate(address, 8));
+    }
+    runtime::BitmapPixels failed(1, 1, 5);
+    auto unavailable = access; unavailable.allocate = [](std::uint32_t) { return memory::GuestAddress{}; };
+    CHECK_THROWS_AS(static_cast<void>(failed.Lock(unavailable)), std::bad_alloc);
+    CHECK(failed.Locks() == 0); CHECK(failed.Snapshot() == std::vector<std::uint32_t>{0});
+    static_cast<void>(f.app->Stop());
+}
+
+TEST_CASE("DVM-221 real ARM NDK Bitmap shares Java pixels and survives GC and recycle") {
+    using namespace ogplay;
+    using namespace runtime::dexvm;
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        OrchestratedApp f("fixture.DelayedContentActivity", true, false, {}, {}, true, backend);
+        auto& bridge = f.app->DexVm(); auto& vm = bridge.Vm(); auto& linker = bridge.Linker();
+        auto& process = f.app->NativeProcess(); auto& env = process.Environment();
+        const auto access = process.GuestMemoryAccess();
+        const auto scratch = access.allocate(256);
+        std::array<std::byte, 256> bytes{};
+        const std::string library = "libjnigraphics.so", symbol = "AndroidBitmap_getInfo";
+        std::memcpy(bytes.data() + 64, library.c_str(), library.size() + 1);
+        std::memcpy(bytes.data() + 100, symbol.c_str(), symbol.size() + 1);
+        access.write(scratch, bytes);
+        const auto symbols = runtime::detail::BuildAndroidBoundarySymbols();
+        const runtime::BionicHleSymbolProvider provider(symbols);
+        const auto invoke = [&](const char* library_name, const char* name, std::array<std::uint32_t, 4> args) {
+            const auto target = provider.Lookup(library_name, name); REQUIRE(target.has_value());
+            return process.Invoke({*target, args, {}}).return_value;
+        };
+        const auto handle = invoke("libdl.so", "dlopen", {scratch.Add(64).Value(), 2, 0, 0});
+        CHECK(handle != 0);
+        CHECK(invoke("libdl.so", "dlsym", {handle, scratch.Add(100).Value(), 0, 0}) ==
+              provider.Lookup("libjnigraphics.so", "AndroidBitmap_getInfo")->Value());
+        const auto stat = [&](const char* type, const char* name, const char* sig, std::vector<VmValue> args) {
+            const auto id = linker.FindDirectMethod(linker.ResolveDescriptor(type), name, sig);
+            REQUIRE(id.has_value()); const auto result = vm.Call(*id, args);
+            REQUIRE_MESSAGE(!result.exception.IsValid(), result.exception_message); return result.value;
+        };
+        const auto config = stat("Landroid/graphics/Bitmap$Config;", "valueOf",
+            "(Ljava/lang/String;)Landroid/graphics/Bitmap$Config;", {VmValue::Ref(vm.NewStringUtf8("ARGB_8888"))}).ref;
+        const auto bitmap = stat("Landroid/graphics/Bitmap;", "createBitmap",
+            "(IILandroid/graphics/Bitmap$Config;)Landroid/graphics/Bitmap;",
+            {VmValue::Int(2), VmValue::Int(1), VmValue::Ref(config)}).ref;
+        auto reference = bridge.PublishLocal(bitmap);
+        const auto on = [&](const char* name, const char* sig, std::vector<VmValue> args) {
+            const auto type = vm.Model().ObjectClass(bitmap); const auto index = linker.FindVtableIndex(type, name, sig);
+            REQUIRE(index.has_value()); args.insert(args.begin(), VmValue::Ref(bitmap));
+            const auto result = vm.Call(linker.Class(type).vtable[*index], args);
+            REQUIRE_FALSE(result.exception.IsValid()); return result.value;
+        };
+        const auto colors = vm.Model().NewPrimitiveArray(linker.ResolveDescriptor("[I"), runtime::JniPrimitiveKind::integer, 2);
+        const auto colors_root = vm.ProtectReferences(std::array{colors});
+        vm.Model().SetPrimitiveElement(colors, 0, 0x80804020U); vm.Model().SetPrimitiveElement(colors, 1, 0xff112233U);
+        on("setPixels", "([IIIIIII)V", {VmValue::Ref(colors), VmValue::Int(0), VmValue::Int(2),
+            VmValue::Int(0), VmValue::Int(0), VmValue::Int(2), VmValue::Int(1)});
+        const auto ndk = [&](const char* name, std::uint32_t out = 0) {
+            return invoke("libjnigraphics.so", name, {process.GuestEnvironment().Value(), reference.Value(), out, 0});
+        };
+        const auto word = [&](std::uint32_t offset) {
+            std::array<std::byte, 4> out{}; access.read(scratch.Add(offset), out);
+            std::uint32_t value{}; for (std::size_t i = 0; i < 4; ++i) value |= std::to_integer<std::uint32_t>(out[i]) << (8U * i);
+            return value;
+        };
+        CHECK(ndk("AndroidBitmap_getInfo", scratch.Value()) == 0);
+        CHECK(word(0) == 2); CHECK(word(4) == 1); CHECK(word(8) == 8); CHECK(word(12) == 1); CHECK(word(16) == 0);
+        CHECK(ndk("AndroidBitmap_getInfo") == 0);
+        CHECK(ndk("AndroidBitmap_lockPixels", 1) == UINT32_MAX);
+        CHECK(f.context->bitmaps.at(bitmap.Value()).pixels->Locks() == 0);
+        CHECK(ndk("AndroidBitmap_lockPixels", scratch.Add(24).Value()) == 0);
+        const memory::GuestAddress pixels{word(24)}; CHECK(!pixels.IsNull());
+        std::array<std::byte, 8> actual{}; access.read(pixels, actual);
+        CHECK(actual == std::array<std::byte, 8>{std::byte{64}, std::byte{32}, std::byte{16}, std::byte{128},
+            std::byte{17}, std::byte{34}, std::byte{51}, std::byte{255}});
+        CHECK(ndk("AndroidBitmap_lockPixels", scratch.Add(28).Value()) == 0); CHECK(word(28) == pixels.Value());
+        env.DeleteLocalRef(1, reference);
+        static_cast<void>(vm.CollectGarbage("ndk-bitmap-lock-root"));
+        CHECK(f.context->bitmap_lock_roots.contains(bitmap.Value()));
+        reference = bridge.PublishLocal(bitmap);
+        const std::array changed{std::byte{5}, std::byte{6}, std::byte{7}, std::byte{255}};
+        access.write(pixels, changed);
+        on("getPixels", "([IIIIIII)V", {VmValue::Ref(colors), VmValue::Int(0), VmValue::Int(2),
+            VmValue::Int(0), VmValue::Int(0), VmValue::Int(2), VmValue::Int(1)});
+        CHECK(vm.Model().GetPrimitiveElement(colors, 0) == 0xff050607U);
+        vm.Model().SetPrimitiveElement(colors, 0, 0xffaabbccU);
+        on("setPixels", "([IIIIIII)V", {VmValue::Ref(colors), VmValue::Int(0), VmValue::Int(2),
+            VmValue::Int(0), VmValue::Int(0), VmValue::Int(2), VmValue::Int(1)});
+        access.read(pixels, actual);
+        CHECK(actual[0] == std::byte{0xaa}); CHECK(actual[1] == std::byte{0xbb}); CHECK(actual[2] == std::byte{0xcc});
+        CHECK(ndk("AndroidBitmap_unlockPixels") == 0); CHECK(f.context->bitmap_lock_roots.contains(bitmap.Value()));
+        CHECK(ndk("AndroidBitmap_unlockPixels") == 0); CHECK_FALSE(f.context->bitmap_lock_roots.contains(bitmap.Value()));
+        CHECK(f.context->bitmaps.at(bitmap.Value()).pixels->Snapshot()[0] == 0xffaabbccU);
+        CHECK(ndk("AndroidBitmap_unlockPixels") == UINT32_MAX - 1);
+        REQUIRE(env.ExceptionCheck(1)); const auto pending = env.ExceptionOccurred(1);
+        CHECK(ndk("AndroidBitmap_getInfo", scratch.Value()) == UINT32_MAX - 1);
+        const auto repeated = env.ExceptionOccurred(1); env.ExceptionClear(1);
+        CHECK(bridge.FromReference(repeated) == bridge.FromReference(pending));
+        CHECK(ndk("AndroidBitmap_lockPixels", scratch.Add(24).Value()) == 0);
+        const memory::GuestAddress held{word(24)};
+        on("recycle", "()V", {}); access.read(held, actual);
+        CHECK(ndk("AndroidBitmap_lockPixels", scratch.Add(24).Value()) == UINT32_MAX - 1);
+        CHECK(env.ExceptionCheck(1)); env.ExceptionClear(1);
+        CHECK(ndk("AndroidBitmap_unlockPixels") == 0);
+        CHECK_FALSE(f.context->bitmap_lock_roots.contains(bitmap.Value()));
+        CHECK(invoke("libdl.so", "dlclose", {handle, 0, 0, 0}) == 0);
+        access.release(scratch, 256); static_cast<void>(f.app->Stop());
     }
 }
 

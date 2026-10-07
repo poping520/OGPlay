@@ -1,3 +1,4 @@
+#include "ogplay/runtime/integration/bitmap_pixels.h"
 #include "boot_dex.h"
 #include <doctest/doctest.h>
 
@@ -1072,7 +1073,7 @@ TEST_CASE("DVM-83 publishes the API 19 Java GLES link surface") {
     const auto bitmap = vm.interpreter.NewIntrinsicInstance(
         "Landroid/graphics/Bitmap;");
     vm.context->bitmaps.emplace(bitmap.Value(),
-        DexVmAndroidContext::BitmapState{1, 1, {0xff112233U}, false});
+        DexVmAndroidContext::BitmapState{1, 1, std::make_shared<ogplay::runtime::BitmapPixels>(1, 1, 5, std::vector<std::uint32_t>{0xff112233U}), false});
     CHECK(vm.CallStatic("Landroid/opengl/GLUtils;", "getInternalFormat",
                         "(Landroid/graphics/Bitmap;)I",
                         {VmValue::Ref(bitmap)}).AsInt() == 0x1908);

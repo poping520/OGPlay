@@ -1,3 +1,4 @@
+#include "ogplay/runtime/integration/bitmap_pixels.h"
 #include "ogplay/runtime/boundary/android_boundary_hle.h"
 #include "boot_dex.h"
 #include <doctest/doctest.h>
@@ -2716,7 +2717,7 @@ TEST_CASE("Bitmap Config matches the API 19 enum and native mapping") {
     REQUIRE(bitmap.IsValid());
     REQUIRE(fixture.context->bitmaps.contains(bitmap.Value()));
     CHECK(fixture.context->bitmaps.at(bitmap.Value()).config == 3);
-    CHECK(fixture.context->bitmaps.at(bitmap.Value()).argb ==
+    CHECK(fixture.context->bitmaps.at(bitmap.Value()).pixels->Snapshot() ==
           std::vector<std::uint32_t>(4, 0U));
     const auto pixels = fixture.model.NewPrimitiveArray(
         fixture.linker.ResolveDescriptor("[I"), JniPrimitiveKind::integer, 4);
@@ -2729,7 +2730,7 @@ TEST_CASE("Bitmap Config matches the API 19 enum and native mapping") {
                {VmValue::Ref(pixels), VmValue::Int(0), VmValue::Int(2),
                 VmValue::Int(0), VmValue::Int(0), VmValue::Int(2),
                 VmValue::Int(2)});
-    CHECK(fixture.context->bitmaps.at(bitmap.Value()).argb ==
+    CHECK(fixture.context->bitmaps.at(bitmap.Value()).pixels->Snapshot() ==
           std::vector<std::uint32_t>(colors.begin(), colors.end()));
 
     const auto canvas = fixture.vm.NewIntrinsicInstance(

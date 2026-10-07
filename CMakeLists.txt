@@ -480,6 +480,7 @@ add_library(ogplay_runtime
     src/runtime/boundary/services/frame_service.cpp
     src/runtime/boundary/services/graphics_dispatch.cpp
     src/runtime/boundary/services/guest_gl_context.cpp
+    src/runtime/boundary/modules/bitmap/bitmap_module.cpp
     src/runtime/boundary/modules/android/android_module.cpp
     src/runtime/boundary/modules/android/android_input.cpp
     src/runtime/boundary/modules/android/android_looper.cpp
@@ -501,6 +502,7 @@ add_library(ogplay_runtime
     src/runtime/boundary/facade/android_boundary_hle.cpp
     src/runtime/integration/android_link_preflight.cpp
     ${OGPLAY_DEXVM_ANDROID_SOURCES}
+    src/runtime/integration/bitmap_pixels.cpp
     src/runtime/integration/dexvm_bridge.cpp
     src/runtime/integration/dexvm_io_vfs.cpp
     src/runtime/integration/host_image_decode.cpp

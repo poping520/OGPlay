@@ -20,6 +20,7 @@
 #include "ogplay/core/logger.h"
 #include "ogplay/runtime/dexvm/access_flags.h"
 #include "ogplay/runtime/dexvm/class_linker.h"
+#include "ogplay/runtime/dexvm/class_loader_facade.h"
 #include "ogplay/runtime/dexvm/interpreter.h"
 #include "ogplay/runtime/dexvm/intrinsic_builder.h"
 #include "ogplay/runtime/dexvm/object_model.h"
@@ -135,6 +136,130 @@ struct AndroidValueVm final {
 };
 
 }  // namespace
+
+TEST_CASE("Context class loader preserves application identity and virtual base delegation") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch,
+                               InterpreterBackend::threaded}) {
+        auto custom = IntrinsicClassBuilder::Class(
+            "Ltest/LoaderContext;", "Landroid/content/Context;");
+        custom.Constructor("()V", [](IntrinsicContext&) { return VmValue::Void(); });
+        custom.OverrideMethod("getClassLoader", "()Ljava/lang/ClassLoader;",
+            [](IntrinsicContext& call) {
+                return VmValue::Ref(call.vm.ClassLoaders().BootstrapLoader());
+            });
+        AndroidValueVm f(backend, {std::move(custom).Build()});
+        const auto base = f.New("Landroid/content/Context;");
+        const auto base_root = f.vm.ProtectReferences(std::array{base});
+        const auto loader = f.On(base, "getClassLoader", "()Ljava/lang/ClassLoader;").ref;
+        CHECK(loader == f.vm.ClassLoaders().ApplicationLoader());
+        CHECK(f.On(loader, "getParent", "()Ljava/lang/ClassLoader;").ref ==
+              f.vm.ClassLoaders().BootstrapLoader());
+        for (const auto* type : {"Landroid/app/Application;", "Landroid/app/Activity;",
+                                 "Landroid/app/Service;"}) {
+            const auto object = f.New(type);
+            const auto object_root = f.vm.ProtectReferences(std::array{object});
+            f.On(object, "attachBaseContext", "(Landroid/content/Context;)V",
+                 {VmValue::Ref(base)});
+            CHECK(f.On(object, "getClassLoader", "()Ljava/lang/ClassLoader;").ref == loader);
+            // The framework object's defining loader is not its Context loader.
+            CHECK(f.On(f.model.ClassObject(f.model.ObjectClass(object)),
+                       "getClassLoader", "()Ljava/lang/ClassLoader;").ref != loader);
+            static_cast<void>(f.vm.CollectGarbage("context-class-loader"));
+            CHECK(f.On(object, "getClassLoader", "()Ljava/lang/ClassLoader;").ref == loader);
+        }
+        const auto overridden = f.New("Ltest/LoaderContext;");
+        const auto overridden_root = f.vm.ProtectReferences(std::array{overridden});
+        const auto wrapper = f.New("Landroid/content/ContextWrapper;",
+            "(Landroid/content/Context;)V", {VmValue::Ref(overridden)});
+        const auto wrapper_root = f.vm.ProtectReferences(std::array{wrapper});
+        const auto nested = f.New("Landroid/content/ContextWrapper;",
+            "(Landroid/content/Context;)V", {VmValue::Ref(wrapper)});
+        const auto nested_root = f.vm.ProtectReferences(std::array{nested});
+        CHECK(f.On(nested, "getClassLoader", "()Ljava/lang/ClassLoader;").ref ==
+              f.vm.ClassLoaders().BootstrapLoader());
+        const auto unattached = f.New("Landroid/content/ContextWrapper;",
+            "(Landroid/content/Context;)V", {VmValue::Ref(VmObjectRef{})});
+        const auto failure = f.OnOutcome(unattached, "getClassLoader",
+                                         "()Ljava/lang/ClassLoader;");
+        REQUIRE(failure.exception.IsValid());
+        CHECK(f.linker.Class(failure.exception_class).descriptor ==
+              "Ljava/lang/NullPointerException;");
+    }
+}
+
+TEST_CASE("Context class loader reflects BootDex system properties with API19 defaults") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch,
+                               InterpreterBackend::threaded}) {
+        AndroidValueVm f(backend);
+        const auto base = f.New("Landroid/content/Context;");
+        const auto base_root = f.vm.ProtectReferences(std::array{base});
+        const auto application = f.New("Landroid/app/Application;");
+        const auto application_root = f.vm.ProtectReferences(std::array{application});
+        f.On(application, "attachBaseContext", "(Landroid/content/Context;)V",
+             {VmValue::Ref(base)});
+        const auto loader = f.On(application, "getClassLoader", "()Ljava/lang/ClassLoader;").ref;
+        const auto type = f.On(loader, "loadClass", "(Ljava/lang/String;)Ljava/lang/Class;",
+            {VmValue::Ref(f.vm.NewStringUtf8("android.os.SystemProperties"))}).ref;
+        CHECK(type == f.model.ClassObject(f.linker.ResolveDescriptor("Landroid/os/SystemProperties;")));
+        CHECK(f.On(type, "getClassLoader", "()Ljava/lang/ClassLoader;").ref ==
+              f.vm.ClassLoaders().BootstrapLoader());
+        const auto parameters = f.model.NewObjectArray(
+            f.linker.ResolveDescriptor("[Ljava/lang/Class;"),
+            f.linker.ResolveDescriptor("Ljava/lang/Class;"), 2);
+        const auto parameters_root = f.vm.ProtectReferences(std::array{parameters});
+        const auto string_class = f.model.ClassObject(f.linker.ResolveDescriptor("Ljava/lang/String;"));
+        f.model.SetObjectElement(parameters, 0, string_class);
+        f.model.SetObjectElement(parameters, 1, string_class);
+        const auto method = f.On(type, "getMethod",
+            "(Ljava/lang/String;[Ljava/lang/Class;)Ljava/lang/reflect/Method;",
+            {VmValue::Ref(f.vm.NewStringUtf8("get")), VmValue::Ref(parameters)}).ref;
+        const auto method_root = f.vm.ProtectReferences(std::array{method});
+        CHECK(f.linker.Method(f.vm.Reflection().MethodMetadata(method).method).kind ==
+              MethodKind::interpreted);
+        const auto arguments = f.model.NewObjectArray(
+            f.linker.ResolveDescriptor("[Ljava/lang/Object;"),
+            f.linker.ResolveDescriptor("Ljava/lang/Object;"), 2);
+        const auto arguments_root = f.vm.ProtectReferences(std::array{arguments});
+        f.model.SetObjectElement(arguments, 0, f.vm.NewStringUtf8("ro.serialno"));
+        f.model.SetObjectElement(arguments, 1, f.vm.NewStringUtf8("Unknown"));
+        const auto read = [&] {
+            return f.vm.StringUtf8(f.On(method, "invoke",
+                "(Ljava/lang/Object;[Ljava/lang/Object;)Ljava/lang/Object;",
+                {VmValue::Ref(type), VmValue::Ref(arguments)}).ref);
+        };
+        CHECK(read() == "Unknown");
+        static_cast<void>(f.vm.CollectGarbage("context-properties-reflection"));
+        CHECK(read() == "Unknown");
+        f.model.SetObjectElement(arguments, 0, f.vm.NewStringUtf8("ro.build.version.sdk"));
+        CHECK(read() == "19");
+    }
+}
+
+TEST_CASE("Telephony subscriber identity is unavailable without a cellular subscription") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch,
+                               InterpreterBackend::threaded}) {
+        AndroidValueVm f(backend);
+        const auto base = f.New("Landroid/content/Context;");
+        const auto base_root = f.vm.ProtectReferences(std::array{base});
+        const auto phone = f.On(base, "getSystemService",
+            "(Ljava/lang/String;)Ljava/lang/Object;",
+            {VmValue::Ref(f.vm.NewStringUtf8("phone"))}).ref;
+        REQUIRE(phone.IsValid());
+        const auto phone_root = f.vm.ProtectReferences(std::array{phone});
+        const auto type = f.model.ObjectClass(phone);
+        const auto index = f.linker.FindVtableIndex(type, "getSubscriberId",
+                                                   "()Ljava/lang/String;");
+        REQUIRE(index.has_value());
+        const auto flags = f.linker.Method(f.linker.Class(type).vtable[*index]).access_flags;
+        CHECK((flags & kAccPublic) != 0U);
+        CHECK((flags & (kAccFinal | kAccStatic)) == 0U);
+        CHECK(f.On(phone, "getPhoneType", "()I").AsInt() == 0);
+        CHECK(f.On(phone, "getSimState", "()I").AsInt() == 1);
+        CHECK_FALSE(f.On(phone, "getSubscriberId", "()Ljava/lang/String;").ref.IsValid());
+        static_cast<void>(f.vm.CollectGarbage("telephony-subscriber-absence"));
+        CHECK_FALSE(f.On(phone, "getSubscriberId", "()Ljava/lang/String;").ref.IsValid());
+    }
+}
 
 TEST_CASE("DVM-128 Settings.Secure reads the injected API 19 identity") {
     for (const auto backend :

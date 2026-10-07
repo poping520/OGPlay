@@ -30,6 +30,8 @@ content/os/view/graphics/gl/media/database/device 等 family TU 同址。shared.
 
 - Context→ContextWrapper→Application/Service/ContextThemeWrapper→Activity 层级固定；
   process Application/base Context/ClassLoader/descriptor 身份稳定，wrapper 虚派委托 base。
+  Context.getClassLoader 返回 VM 稳定 application facade，wrapper 委托 base 的虚方法；
+  不以 receiver 的 defining loader 或 Thread context loader 替代关联应用加载器。
   Activity 仅顶层，isChild=false，不支持嵌入式 child Activity。
 - Intent component、Activity intent 以普通字段为准。同包显式启动受检；隐式只在 sealed
   当前 APK 内匹配 action/category、无 data/type、含 DEFAULT 的唯一 enabled Activity。
@@ -226,8 +228,10 @@ Java GLES/EGL 通过 session managed 冷入口复用 [native boundary](../../bou
   逐 owner 释放，GC/退出沿统一清理；不改变连接、网卡或组播传输。WorkSource/无线服务
   不支持，边界见 ADR-0092/0093。
 - 网络使用 core policy/transport，默认离线；Connectivity/Wifi 只发配置事实，不探测 host
-  网络/DNS/代理/证书。传感器/电话只返回 API 允许缺席；location 仅值类型/listener/稳定 facade，
-  无 provider/历史，更新注册/移除失败。KeyguardManager 不缓存对象，三项查询读进程 provider
+  网络/DNS/代理/证书。传感器/电话只返回 API 允许缺席。
+  TelephonyManager.getSubscriberId 为可覆盖公开方法，无蜂窝订阅时返回 null，Java/JNI 共用。
+  location 仅值类型/listener/稳定 facade，无 provider/历史，更新注册/移除失败。
+  KeyguardManager 不缓存对象，三项查询读进程 provider
   快照，未注入表示桌面无锁屏，后续只替换 provider，不散入 host/Binder/WMS 查询。
 - load/loadLibrary 经 process loader 携 application ClassLoader，失败映射 Java 异常；soundpool/
   media_jni 仅为平台库身份、不加载 ELF。固定 Conscrypt javacrypto 映射 ogplay_jni，其余名称

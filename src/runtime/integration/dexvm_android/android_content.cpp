@@ -15,6 +15,7 @@
 #include <vector>
 
 #include "ogplay/hal/host_environment.h"
+#include "ogplay/runtime/dexvm/class_loader_facade.h"
 #include "ogplay/runtime/vfs/vfs.h"
 #include "ogplay/runtime/database/database_runtime.h"
 #include "sqlite3.h"
@@ -1193,6 +1194,11 @@ Decl Declare_android_content_Context(const Context &context) {
                       dx::kAccPublic | dx::kAccStatic | dx::kAccFinal);
   builder.Constructor(
       "()V", [](dx::IntrinsicContext &) { return dx::VmValue::Void(); });
+  builder.VirtualMethod("getClassLoader", "()Ljava/lang/ClassLoader;",
+                        [](dx::IntrinsicContext &call) {
+                          return dx::VmValue::Ref(
+                              call.vm.ClassLoaders().ApplicationLoader());
+                        });
   builder.VirtualMethod("getAssets", "()Landroid/content/res/AssetManager;",
                          [context](dx::IntrinsicContext &call) {
                            return dx::VmValue::Ref(
@@ -1969,6 +1975,7 @@ Decl Declare_android_content_ContextWrapper(const Context &context) {
     builder.OverrideMethod(name, descriptor,
                            DelegateContextMethod(base, name, descriptor));
   };
+  delegate("getClassLoader", "()Ljava/lang/ClassLoader;");
   delegate("getAssets", "()Landroid/content/res/AssetManager;");
   delegate("getPackageName", "()Ljava/lang/String;");
   delegate("getPackageResourcePath", "()Ljava/lang/String;");

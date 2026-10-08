@@ -29,7 +29,9 @@
   五个 UTF-16 array 原语，无 builder 状态；详见 DVM-151 / ADR-0057。
 - Math 普通方法/常量/random 归 BootDex，仅保留 24 个 libm native；不宣称 fdlibm 逐位一致。
   Throwable/StackTraceElement/异常家族归 BootDex，仅保留两个栈 native；消息虚派、原异常
-  身份、cause/suppressed 与输出格式归 Java。PrintStream 只接结构化输出，空追加不输出。
+  身份、cause/suppressed 与输出格式归 Java。PrintStream 来自 BootDex，保存实际 OutputStream
+  强边及编码/错误/刷新/关闭；System.out/err 正常构造并包装独立 Java LogOutputStream，
+  只有该诊断端点的 private native emit 接入结构化日志，空片段不产生记录。
 - Thread 声明字段和 Java 校验；start 虚派 this.run，基类 run 才虚派 target。
   线程、identity、sleep/join/park/interrupt 只用 VmThreadRuntime/monitor；纳秒向上取整到
   统一毫秒 Clock。priority/daemon 仅为 guest fact，不映射宿主调度或自动退出。
@@ -92,7 +94,8 @@
   不与 ENOENT 混淆；setWritable 仅在既有可写对象上报告成功，不伪造权限改变。
 - InputStreamReader 用 Reader.lock 保护固定 ICU 六标准编码的增量转换，close/GC/teardown
   回收。OutputStreamWriter 使用同一编码集合写入真实 OutputStream，并传播 write/flush/close
-  异常；PrintStream 保持 OutputStream 继承并把字节写入结构化 guest 日志。基类 bulk
+  异常；PrintStream 保留原版 FilterOutputStream 继承和目标路由，不覆盖普通方法。
+  String 的命名字符集范围构造复用既有 codec/范围检查；日志端点不暴露宿主 FD。基类 bulk
   read/write 必须虚派子类，不能要求任意 guest 流存在宿主资源状态。
   ObjectStreamClass 仅保留六个受检反射原语；ObjectOutputStream.getFieldL、Proxy 生成和
   VMStack 除 getClasses 外的四个 native 明确失败。宿主资源不因迁入对象流自动可序列化。

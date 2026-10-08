@@ -2153,6 +2153,20 @@ IntrinsicClassDecl Declare_java_lang_String() {
             c.vm.Model().ReadByteRegion(array, 0, c.vm.Model().ArrayLength(array)), name));
         return VmValue::Void();
     });
+    builder.Constructor("([BIILjava/lang/String;)V", [](IntrinsicContext& c) {
+        const auto array = RequireArray(c.arguments[0].ref);
+        if (!c.arguments[3].ref.IsValid())
+            throw VmJavaThrow{"Ljava/lang/NullPointerException;", "charset == null"};
+        const auto offset = c.arguments[1].AsInt();
+        const auto count = c.arguments[2].AsInt();
+        CheckRegion(c.vm.Model().ArrayLength(array), offset, count);
+        std::string name;
+        try { name = CanonicalCharset(c.vm.StringUtf8(c.arguments[3].ref)); }
+        catch (const VmJavaThrow& e) { throw VmJavaThrow{"Ljava/io/UnsupportedEncodingException;", e.message}; }
+        c.vm.Model().BindString(c.receiver, DecodeCharset(
+            c.vm.Model().ReadByteRegion(array, offset, count), name));
+        return VmValue::Void();
+    });
     for (const bool ranged : {false, true}) {
         builder.Constructor(ranged ? "([BIILjava/nio/charset/Charset;)V" : "([BLjava/nio/charset/Charset;)V",
             [ranged](IntrinsicContext& c) {
@@ -3118,10 +3132,12 @@ IntrinsicClassDecl Declare_java_lang_System(const CoreIntrinsicServices& service
             auto& vm = context.vm;
             vm.SetIntrinsicStaticRef("Ljava/lang/System;", "out",
                                      "Ljava/io/PrintStream;",
-                    vm.NewIntrinsicInstance("Ljava/io/PrintStream;"));
+                    InvokeGuestDirect(vm, "Lorg/ogplay/io/LogOutputStream;", "createPrintStream",
+                                      "()Ljava/io/PrintStream;", {}).ref);
             vm.SetIntrinsicStaticRef("Ljava/lang/System;", "err",
                                      "Ljava/io/PrintStream;",
-                    vm.NewIntrinsicInstance("Ljava/io/PrintStream;"));
+                    InvokeGuestDirect(vm, "Lorg/ogplay/io/LogOutputStream;", "createPrintStream",
+                                      "()Ljava/io/PrintStream;", {}).ref);
             const auto key = vm.NewStringUtf8("line.separator");
             const auto roots = vm.ProtectReferences(std::array{key});
             const auto value = InvokeGuestDirect(

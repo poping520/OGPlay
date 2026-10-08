@@ -1335,6 +1335,11 @@ status = "complete"
 test = "tools.bootdex_builder_self_test; python3 tools/bootdex/build_bootdex.py audit"
 note = "DVM-102/122 从 pinned API 19 core.jar 冻结日期闭包：42 class_def、127 object types、1273 methods、479 fields、44 native；25 项 required_backend、19 项 explicit_failure 和 6 个 overlay 均由 api19.json/audit 门禁。ICU 51 来源、哈希、许可及 Locale/时区边界固定。"
 
+[dexvm.print_stream_bootdex]
+status = "partial"
+test = "tests/dexvm/android_value_tests.cpp: DVM226; tools/bootdex/build_bootdex.py build/check; tools.validate_android_payload"
+note = "DVM-226：原版 PrintStream 从 core.jar 进入 BootDex，移除日志专用 C++ 类壳；目标流/编码/刷新/错误/关闭与 append/Throwable 输出归 Java。System.out/err 包装独立 LogOutputStream，只有 private native emit 写结构化 logger，pending/monitor/closed 与 GC 归 Java。ByteArrayOutputStream 及命名编码的 String 范围构造受检，后者复用既有 codec。printf/format 继续受 Formatter/ICU 长尾限制，文件目标沿 VFS；完整格式化/任意编码/二进制终端和跨平台未验收。"
+
 [dexvm.throwable_bootdex]
 status = "complete"
 test = "tests/dexvm/interpreter_tests.cpp: DVM-115; tests/runtime/native_library_loader_tests.cpp: DVM-108/109; tests/dexvm/thread_intrinsic_tests.cpp"
@@ -1912,8 +1917,8 @@ note = "DVM-119/ADR-0046：通用/边距/Frame/Linear/Relative 五类 LayoutPara
 
 [dexvm.display_values_bootdex]
 status = "complete"
-test = "tests/dexvm/android_value_tests.cpp: DVM-118; tests/session/profile_entry_scope_tests.cpp"
-note = "DVM-118：DisplayMetrics/TypedValue 原版字段和普通方法执行 BootDex。Resources.getDisplayMetrics 返回每实例稳定 mMetrics，按 managed surface 的尺寸/density 刷新；Display getMetrics/getRealMetrics 同源。唯一私有 getDeviceDensity 边界读取注入 density 并校验范围。双后端验证 Java copy/defaults/equals/hashCode、GC、非兼容字段与 px/dp/sp/pt/in/mm 换算；无宿主显示器或 Android 系统资源配置能力扩展。"
+test = "tests/dexvm/android_value_tests.cpp: DVM-118/DVM118; tests/dexvm/network_sqlite_tests.cpp: DVM-198/DVM-194; tests/session/profile_entry_scope_tests.cpp"
+note = "DVM-118：DisplayMetrics/TypedValue 原版字段和普通方法执行 BootDex。Resources.getDisplayMetrics 返回每实例稳定 mMetrics，按 managed surface 的尺寸/density 刷新；Display getMetrics/getRealMetrics 同源。唯一私有 getDeviceDensity 边界读取注入 density 并校验范围。后续 Resources.getText/getString 复用已有资源配置/引用解析及原版 TypedValue.coerceToString，Context 委托与 CharSequence.toString 虚派一致；系统映射整数也可转文本，复杂/null/不可转换值记为 NotFoundException，不扩展 styled text/主题/locale qualifier。双后端验证 Java copy/defaults/equals/hashCode、GC、非兼容字段与 px/dp/sp/pt/in/mm 换算；无宿主显示器或 Android 系统资源配置能力扩展。"
 
 [dexvm.math_bootdex]
 status = "partial"

@@ -1063,7 +1063,9 @@ TEST_CASE("DVM-194 SQLiteGlobal reads reviewed system resources through BootDex"
       const auto id = static_cast<std::int32_t>(*entry.Member("id")->Integer());
       if (entry.Member("type")->String() == "integer") {
         CHECK(fixture.On(resources, "getInteger", "(I)I", {VmValue::Int(id)}).AsInt() == *entry.Member("value")->Integer());
-        CHECK(fixture.OnOutcome(resources, "getString", "(I)Ljava/lang/String;", {VmValue::Int(id)}).exception_class == not_found);
+        const auto expected = std::to_string(*entry.Member("value")->Integer());
+        CHECK(fixture.vm.StringUtf8(fixture.On(resources, "getString", "(I)Ljava/lang/String;", {VmValue::Int(id)}).ref) == expected);
+        CHECK(fixture.vm.StringUtf8(fixture.On(resources, "getText", "(I)Ljava/lang/CharSequence;", {VmValue::Int(id)}).ref) == expected);
       } else {
         CHECK(fixture.OnOutcome(resources, "getInteger", "(I)I", {VmValue::Int(id)}).exception_class == not_found);
       }

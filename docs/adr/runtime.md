@@ -868,3 +868,19 @@ allowIndirectBuffers 用当前 APK targetSdk 替代系统包管理查询，不�
 包数据库。direct Buffer 地址来自已有 NIO 存储；旧 targetSdk 所允许的间接 client
 array 尚无持久 backing，必须记账拒绝，不能使用短期编组内存冒充长期 pointer。
 同一 native 目录与 ANGLE 共用 current/error/像素事实；Java 类型发布不扩大发布扩展。
+
+<a id="adr-0108"></a>
+
+## ADR-0108 · PrintStream 算法归 BootDex，日志只作为 System 输出目标
+
+- 状态：Accepted
+- 日期：2026-10-08
+
+PrintStream 从固定 core.jar 导入；目标流、编码、刷新、关闭与错误状态均由原版 Java
+维护。不能只补构造器而仍将任意 print/write 重定向为 logger，也不能保留重复 C++
+类或方法。System.out/err 以正常 Java 工厂构造 PrintStream，分别包装独立 LogOutputStream。
+
+日志适配器的缓冲/关闭/同步归普通 Java 对象与 GC；只有 emit 文本进入宿主结构化日志。
+不持宿主 FD/指针，不创建任意终端或宿主文件路径。其他 OutputStream 仍受原流/VFS
+契约约束。ByteArrayOutputStream 命名编码读取的 String 重载复用 VM 现有编码，不复制
+字符集实现；Formatter/ICU 长尾仍按已有能力账本限制。

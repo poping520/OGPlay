@@ -110,96 +110,21 @@ namespace ogplay::runtime::dexvm::intrinsics {
 } // namespace ogplay::runtime::dexvm::intrinsics
 
 
-// ---- migrated from java_io_PrintStream.cpp ----
+// Diagnostic sink native boundary; PrintStream itself belongs to BootDex.
 #include "catalog.h"
 #include "shared.h"
 
-#include "ogplay/runtime/dexvm/intrinsic_builder.h"
-
 namespace ogplay::runtime::dexvm::intrinsics {
-    using namespace detail;
-
-    IntrinsicClassDecl Declare_java_io_PrintStream() {
-        auto builder = IntrinsicClassBuilder::Class("Ljava/io/PrintStream;", "Ljava/io/OutputStream;", {"Ljava/lang/Appendable;"});
-        builder.OverrideMethod("write", "(I)V", [](IntrinsicContext& c) {
-            const auto value = static_cast<char>(c.arguments[0].AsInt() & 0xff);
-            GuestLine(c, std::string(1, value));
+    IntrinsicClassDecl Declare_org_ogplay_io_LogOutputStream() {
+        auto builder = IntrinsicClassBuilder::Class("Lorg/ogplay/io/LogOutputStream;");
+        builder.StaticMethod("emit", "(Ljava/lang/String;)V", [](IntrinsicContext& c) {
+            const auto text = IntrinsicCall(c).NonNullRef(0, "text");
+            detail::GuestLine(c, c.vm.StringUtf8(text));
             return VmValue::Void();
-        });
-        builder.OverrideMethod("write", "([BII)V", [](IntrinsicContext& c) {
-            const auto array = c.arguments[0].ref;
-            if (!array.IsValid())
-                throw VmJavaThrow{"Ljava/lang/NullPointerException;", "buffer == null"};
-            const auto offset = c.arguments[1].AsInt();
-            const auto count = c.arguments[2].AsInt();
-            if (offset < 0 || count < 0 ||
-                static_cast<std::int64_t>(offset) + count >
-                    c.vm.Model().ArrayLength(array))
-                throw VmJavaThrow{"Ljava/lang/IndexOutOfBoundsException;", "write range"};
-            const auto bytes = c.vm.Model().ReadByteRegion(array, offset, count);
-            if (!bytes.empty())
-                GuestLine(c, std::string(
-                    reinterpret_cast<const char*>(bytes.data()), bytes.size()));
-            return VmValue::Void();
-        });
-        for (const auto* result : {"Ljava/io/PrintStream;", "Ljava/lang/Appendable;"}) {
-            builder.VirtualMethod("append", std::string("(Ljava/lang/CharSequence;)") + result,
-                [](IntrinsicContext& c) {
-                    const auto ref = c.arguments[0].ref;
-                    const auto text = ref.IsValid() ? InvokeGuest(c.vm, ref, "toString", "()Ljava/lang/String;").ref : c.vm.NewStringUtf8("null");
-                    const auto bytes = c.vm.StringUtf8(text);
-                    if (!bytes.empty()) GuestLine(c, bytes);
-                    return VmValue::Ref(c.receiver);
-                });
-            builder.VirtualMethod("append", std::string("(C)") + result,
-                [](IntrinsicContext& c) {
-                    const auto text = c.vm.Model().NewString(std::u16string(1, static_cast<char16_t>(c.arguments[0].AsInt())));
-                    const auto bytes = c.vm.StringUtf8(text);
-                    if (!bytes.empty()) GuestLine(c, bytes);
-                    return VmValue::Ref(c.receiver);
-                });
-            builder.VirtualMethod("append", std::string("(Ljava/lang/CharSequence;II)") + result,
-                [](IntrinsicContext& c) {
-                    const auto ref = c.arguments[0].ref.IsValid() ? c.arguments[0].ref : c.vm.NewStringUtf8("null");
-                    const auto part = InvokeGuest(c.vm, ref, "subSequence", "(II)Ljava/lang/CharSequence;",
-                        {c.arguments[1], c.arguments[2]}).ref;
-                    const auto text = InvokeGuest(c.vm, part, "toString", "()Ljava/lang/String;").ref;
-                    const auto bytes = c.vm.StringUtf8(text);
-                    if (!bytes.empty()) GuestLine(c, bytes);
-                    return VmValue::Ref(c.receiver);
-                });
-        }
-        builder.FinalMethod("println", "(Ljava/lang/String;)V",
-                            [](IntrinsicContext& context) {
-                                const auto argument = context.arguments[0].ref;
-                                GuestLine(context, argument.IsValid()
-                                                       ? Narrow(Value(context, argument))
-                                                       : std::string("null"));
-                                return VmValue::Void();
-                            });
-        builder.FinalMethod("println", "(I)V",
-                            [](IntrinsicContext& context) {
-                                GuestLine(context, std::to_string(context.arguments[0].AsInt()));
-                                return VmValue::Void();
-                            });
-        builder.FinalMethod("println", "()V",
-                            [](IntrinsicContext& context) {
-                                GuestLine(context, "");
-                                return VmValue::Void();
-                            });
-        builder.FinalMethod("print", "(Ljava/lang/String;)V",
-                            [](IntrinsicContext& context) {
-                                const auto argument = context.arguments[0].ref;
-                                GuestLine(context, argument.IsValid()
-                                                       ? Narrow(Value(context, argument))
-                                                       : std::string("null"));
-                                return VmValue::Void();
-                            });
-        auto result = std::move(builder).Build();
-        return result;
+        }, kAccPrivate | kAccNative);
+        return std::move(builder).Build();
     }
-} // namespace ogplay::runtime::dexvm::intrinsics
-
+}
 
 // ---- migrated from java_io_Serializable.cpp ----
 #include "catalog.h"

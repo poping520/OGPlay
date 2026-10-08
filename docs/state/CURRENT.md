@@ -44,9 +44,20 @@
   实际 I/O 仍拒绝，失败后重复断开安全。macOS Release 与定向 6 项/922 断言通过；
   loopback oracle 既有 pclose 收尾等待经手动结束测试子进程闭合。复制用户复现沙盒
   越过 HTTPS disconnect 空接收者首错；f=74 下一首错为 Analytics q.run pc19
-  对 az.a 的空接收者 NPE，退出 1、无超时。进程已退出，跨平台、授权路径及完整游戏未验收。
+  对 az.a 的空接收者 NPE，退出 1、无超时。
+  [DVM-118 后续修复](../tasks/dexvm/DVM-118.md) 让 Resources.getText/getString 按原版
+  TypedValue 转换简单资源值，引用/配置与虚派受检；macOS Release、定向 6 项/734 断言
+  通过。复制用户沙盒复跑已到 Analytics setting appName；新首错提前在 GAThread.run
+  pc65 缺 PrintStream(OutputStream) 构造器，退出 1、无超时，未再重达原一秒 TimerTask。
+  [DVM-226](../tasks/dexvm/DVM-226.md) 将原版 PrintStream 归 BootDex，System 两个流
+  包装独立 Java 日志端点；PrintStream 与 String 范围构造、ABI/载荷受检，macOS Release
+  与定向 4 项/428 断言通过。两项 core-only fixture 缺 Activity native 装配，未通过。
+  原构造器首错消失，GAThread 已打印被捕获的 NativeDecimalFormat.formatDouble 缺口，
+  SDK 自行关闭 Analytics；游戏进入主视图，原 q.run NPE 未再出现。f=109 下一致命
+  首错为 PushTheme.extractColors 缺 android.app.Notification 值类，退出 1、无超时。
+  进程已退出，跨平台、授权路径及完整游戏未验收。
   证据 `.local/wb-classloader-analysis/`、`.local/wb-subscriber-fix/`、`.local/wb-lifecycle-fix/`、
-  `.local/wb-sensor-fix/`、`.local/wb-jnigraphics-fix/`、`.local/wb-nfc-absence-fix/`、`.local/wb-activity-result-fix/`、`.local/wb-notification-cancel-fix/`、`.local/wb-rgb565-fix/`、`.local/wb-java-gl-fix/`、`.local/wb-http-lazy-fix/`。
+  `.local/wb-sensor-fix/`、`.local/wb-jnigraphics-fix/`、`.local/wb-nfc-absence-fix/`、`.local/wb-activity-result-fix/`、`.local/wb-notification-cancel-fix/`、`.local/wb-rgb565-fix/`、`.local/wb-java-gl-fix/`、`.local/wb-http-lazy-fix/`、`.local/wb-resource-text-fix/`、`.local/wb-printstream-fix/`。
 
 - **Tales From Deep Space 1.0.0**：VideoView/packed depth/stencil 已闭合；macOS
   800×480/1280×720 菜单裁剪，BND-29 终止断言失败。

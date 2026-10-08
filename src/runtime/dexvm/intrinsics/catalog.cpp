@@ -23,7 +23,7 @@ std::vector<IntrinsicClassDecl> CoreIntrinsicCatalog(
         Declare_java_lang_String(),
         Declare_java_lang_RealToString(),
         Declare_java_lang_System(services),
-        Declare_java_io_PrintStream(),
+        Declare_org_ogplay_io_LogOutputStream(),
         Declare_java_lang_Math(),
         Declare_java_lang_Runtime(services),
         Declare_libcore_io_IoUtils(),

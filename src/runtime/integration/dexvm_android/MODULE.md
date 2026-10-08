@@ -123,12 +123,17 @@ PendingIntent.cancel 使令牌失效，查询不再匹配；退出在 VM 锁内�
 - AssetManager/Resources 只读 APK/ARSC/AXML；open 返回 ByteArrayInputStream，openFd 仅 STORED
   entry 的逻辑 FD+区间，失败映射 IOException/NotFoundException。应用 Resources/AssetManager
   是同一对象对，mAssets 为 GC 强边；getSystem 用独立对象对且不读应用 APK。
+- Resources.getText/getString 可覆盖，getString 虚派 getText 后调用 CharSequence.toString；
+  Context.getString 沿既有 getResources 委托。APK 资源先选择配置/解析引用，字符串读原值，
+  其他 simple value 由 BootDex TypedValue.coerceToString 转换；复杂/null/未知类型与无效引用
+  抛 NotFoundException。仅普通未带 spans 的字符串池文本，不扩大主题或 locale qualifier。
 - getXml 的 AXML 仅 getEventType/next/getName/getText/close；其余完整 XmlPullParser 接口
   记账抛 UnsatisfiedLinkError。文本 XML 用 BootDex KXml，不进入二进制 AXML reader。
 - 系统 getString/getInteger 每 context 一次从 BootDex 封存归档读取 system-resources.json
   （META-INF/ogplay，schema 1/API19，stored，≤64 KiB/256 项）。配方拥有名称/类型/消费者/
   配置，ID 从最终 DEX 提取，build/check 验证。无 APK/host 回退或旧 ID 别名；缺失/重复/
-  畸形映射抛 ISE，未知 ID/错类型抛 NotFoundException。journal=DELETE，WAL 不支持。
+  畸形映射抛 ISE，未知 ID/非整数 getInteger 抛 NotFoundException；已映射的整数可按
+  API19 getText/getString 转文本。journal=DELETE，WAL 不支持。
 - Configuration 稳定对象使用同一 VM Locale.getDefault 并调用原版 setLayoutDirection；
   TextUtils 仅确认 ROOT/en/zh 的 LTR，其他 locale 在 likely-subtags 接通前记账失败。
 - Parcel 普通协议归 BootDex，integration 提供 VM 隔离 backing/游标/本地 Binder 对象记录与

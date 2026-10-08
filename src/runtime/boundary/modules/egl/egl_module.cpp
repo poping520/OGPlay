@@ -22,6 +22,12 @@ namespace {
 constexpr std::uint32_t kFakeDisplay = 1U;
 constexpr std::uint32_t kDefaultConfig = 2U;
 constexpr std::uint32_t kRgbConfig = 0x10000U;
+constexpr std::uint32_t kPackedRgbConfig = 0x10001U;
+gles::EglColorFormat ColorFormat(std::uint32_t config) {
+    return config==kPackedRgbConfig ? gles::EglColorFormat::rgb565 :
+        config==kRgbConfig ? gles::EglColorFormat::rgb888 : gles::EglColorFormat::rgba8888;
+}
+std::uint32_t ConfigId(std::uint32_t config) { return config==kDefaultConfig ? 1U : config==kRgbConfig ? 2U : 3U; }
 constexpr std::uint32_t kFakeSurface = 3U;
 constexpr std::uint32_t kFakeContext = 4U;
 constexpr std::uint32_t kEglSuccess = 0x3000U;
@@ -238,21 +244,22 @@ void EglModule::ActivateStateForHostThread(const std::thread::id host_thread) {
 
 bool EglModule::IsConfig(const std::uint32_t handle) {
     if (handle == kDefaultConfig) return true;
-    if (handle != kRgbConfig) return false;
+    if (handle != kRgbConfig && handle != kPackedRgbConfig) return false;
     std::scoped_lock lock(mutex_);
     if (!native_display_) native_display_ = gles::EglDisplayResources::Create(context_.graphics.backend);
-    return native_display_->SupportsRgbSurface();
+    return handle==kPackedRgbConfig ? native_display_->SupportsRgb565Surface() : native_display_->SupportsRgbSurface();
 }
 
 std::uint32_t EglModule::ConfigAttributeLocked(const std::uint32_t handle,
                                               const std::uint32_t attribute) {
     if (!native_display_) native_display_ = gles::EglDisplayResources::Create(context_.graphics.backend);
     if (handle != kDefaultConfig &&
-        (handle != kRgbConfig || !native_display_->SupportsRgbSurface()))
+        (handle != kRgbConfig || !native_display_->SupportsRgbSurface()) &&
+        (handle != kPackedRgbConfig || !native_display_->SupportsRgb565Surface()))
         throw gles::EglLifecycleError(gles::EglOperation::choose_config, kEglBadConfig);
-    if (attribute == kEglConfigId) return handle == kDefaultConfig ? 1U : 2U;
+    if (attribute == kEglConfigId) return ConfigId(handle);
     if (attribute == kEglSurfaceType) return kEglWindowBit | kEglPbufferBit;
-    auto value = static_cast<std::uint32_t>(native_display_->ConfigAttribute(attribute, handle == kRgbConfig));
+    auto value = static_cast<std::uint32_t>(native_display_->ConfigAttribute(attribute, ColorFormat(handle)));
     // GLES1 uses the existing GLES2 compatibility implementation.
     if ((attribute == kEglRenderableType || attribute == kEglConformant) &&
         (value & kEglOpenGlEs2Bit)) value |= kEglOpenGlEsBit;
@@ -411,8 +418,9 @@ std::uint32_t EglModule::ExecuteExport(const A32CallFrame& call) {
             const auto attributes = ReadAttributes(call.Pointer<std::int32_t>(1), tid);
             if (!native_display_) native_display_ = gles::EglDisplayResources::Create(graphics.backend);
             std::vector<std::uint32_t> matches;
-            for (const auto config : {kDefaultConfig, kRgbConfig}) {
+            for (const auto config : {kDefaultConfig, kRgbConfig, kPackedRgbConfig}) {
                 if (config == kRgbConfig && !native_display_->SupportsRgbSurface()) continue;
+                if (config == kPackedRgbConfig && !native_display_->SupportsRgb565Surface()) continue;
                 bool match = true;
                 for (std::size_t index = 0; index + 1U < attributes.size(); index += 2U) {
                     const auto attribute = static_cast<std::uint32_t>(attributes[index]);
@@ -523,7 +531,7 @@ std::uint32_t EglModule::ExecuteExport(const A32CallFrame& call) {
             if (!native_display_) native_display_ = gles::EglDisplayResources::Create(graphics.backend);
             const auto share_native = args[2] == 0U ? 0U : contexts_.at(args[2]).frame->NativeContext();
             state.frame = std::make_unique<gles::AngleFrame>(gles::AngleFrame::CreateContext(
-                native_display_, static_cast<int>(version == 1U ? 2U : version), share_native, args[1] == kRgbConfig));
+                native_display_, static_cast<int>(version == 1U ? 2U : version), share_native, ColorFormat(args[1])));
         } catch (const gles::EglLifecycleError& error) {
             threads_[tid].error = error.NativeError(); return 0U;
         }
@@ -580,12 +588,14 @@ std::uint32_t EglModule::ExecuteExport(const A32CallFrame& call) {
                         auto& surface = surfaces_.at(handle);
                         if (!surface.backing) surface.backing = gles::EglSurfaceResources::Create(
                             native_display_, surface.width * graphics.layout.factor,
-                            surface.height * graphics.layout.factor, surface.texture_format, surface.mipmap, surface.config == kRgbConfig);
+                            surface.height * graphics.layout.factor, surface.texture_format, surface.mipmap, ColorFormat(surface.config));
                     }
                     target.frame->BindSurfaces(surfaces_.at(args[1]).backing,
                                                surfaces_.at(args[2]).backing);
                 } catch (const gles::EglLifecycleError& error) {
                     threads_[tid].error = error.NativeError(); return 0U;
+                } catch (const gles::GlesApiError& error) {
+                    threads_[tid].error = error.Code() == 0x0505U ? 0x3003U : kEglBadMatch; return 0U;
                 }
                 if (!target.viewport_initialized) {
                     const auto& surface = surfaces_.at(args[1]);
@@ -646,7 +656,7 @@ std::uint32_t EglModule::ExecuteExport(const A32CallFrame& call) {
             switch (args[2]) {
             case kEglWidth: value = surface->second.width; break;
             case kEglHeight: value = surface->second.height; break;
-            case kEglConfigId: value = surface->second.config == kDefaultConfig ? 1U : 2U; break;
+            case kEglConfigId: value = ConfigId(surface->second.config); break;
             case kEglLargestPbuffer: value = 0U; break;
             case kEglMipmapTexture: value = surface->second.mipmap ? 1U : 0U; break;
             case kEglMipmapLevel: value = surface->second.mipmap_level; break;
@@ -774,8 +784,10 @@ std::uint32_t EglModule::ExecuteExport(const A32CallFrame& call) {
         std::scoped_lock lock(mutex_);
         try {
             if (!native_display_) native_display_ = gles::EglDisplayResources::Create(graphics.backend);
-            const std::array configs{kDefaultConfig, kRgbConfig};
-            const auto available = native_display_->SupportsRgbSurface() ? 2U : 1U;
+            std::vector<std::uint32_t> configs{kDefaultConfig};
+            if (native_display_->SupportsRgbSurface()) configs.push_back(kRgbConfig);
+            if (native_display_->SupportsRgb565Surface()) configs.push_back(kPackedRgbConfig);
+            const auto available = static_cast<std::uint32_t>(configs.size());
             const auto count = args[1] == 0U ? available : std::min(available, static_cast<std::uint32_t>(size));
             if (args[1] != 0U) for (std::uint32_t index = 0; index < count; ++index)
                 graphics.Write32(memory::GuestAddress{args[1]}.Add(index * 4U).Value(), configs[index], tid);
@@ -809,7 +821,7 @@ std::uint32_t EglModule::ExecuteExport(const A32CallFrame& call) {
             if (!initialized_) { threads_[tid].error = kEglNotInitialized; return 0U; }
             const auto context = contexts_.find(args[1]);
             if (context == contexts_.end()) { threads_[tid].error = kEglBadContext; return 0U; }
-            if (args[2] == kEglConfigId) value = context->second.config == kDefaultConfig ? 1U : 2U;
+            if (args[2] == kEglConfigId) value = ConfigId(context->second.config);
             else if (args[2] == kEglContextClientType) value = kEglOpenGlEsApi;
             else if (args[2] == kEglContextClientVersion) value = context->second.client_version;
             else { threads_[tid].error = kEglBadAttribute; return 0U; }

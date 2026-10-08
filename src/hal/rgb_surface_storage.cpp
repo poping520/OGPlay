@@ -4,6 +4,10 @@
 
 namespace ogplay::hal {
 bool HasRgbSurfaceStorage() noexcept { return false; }
+bool HasPackedRgbSurfaceStorage() noexcept { return false; }
+std::unique_ptr<RgbSurfaceStorage> CreatePackedRgbSurfaceStorage(void*, std::uint32_t, std::uint32_t) {
+    throw std::runtime_error("host packed RGB storage is unavailable");
+}
 std::unique_ptr<RgbSurfaceStorage> CreateRgbSurfaceStorage(std::uint32_t, std::uint32_t) {
     throw std::runtime_error("host RGB client-buffer storage is unavailable");
 }

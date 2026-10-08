@@ -1413,7 +1413,40 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
                 Fail("renderer EGL config is unavailable");
             c.renderer_config = vm.Model().GetObjectElement(configs,0);
         }
-        if (!c.renderer_config.IsValid()) Fail("renderer config chooser returned null");
+        if (!c.renderer_config.IsValid()) {
+            std::string message = "renderer config chooser returned null";
+            if (c.egl_config_chooser.IsValid())
+                message += "; chooser=" + vm.Linker().Class(vm.Model().ObjectClass(c.egl_config_chooser)).descriptor;
+            try {
+                const auto count = ints({0}); const auto cr = vm.ProtectReferences(std::array{count});
+                if (on(c.renderer_egl,"eglGetConfigs",
+                    "(Ljavax/microedition/khronos/egl/EGLDisplay;[Ljavax/microedition/khronos/egl/EGLConfig;I[I)Z",
+                    {ref(c.renderer_display),ref(dx::VmObjectRef{}),integer(0),ref(count)}).AsInt()) {
+                    const auto size = std::min<std::uint32_t>(vm.Model().GetPrimitiveElement(count,0),16U);
+                    const auto configs = vm.Model().NewObjectArray(vm.Linker().ResolveDescriptor("[Ljavax/microedition/khronos/egl/EGLConfig;"),
+                        vm.Linker().ResolveDescriptor("Ljavax/microedition/khronos/egl/EGLConfig;"),static_cast<runtime::JniSize>(size));
+                    const auto roots = vm.ProtectReferences(std::array{configs});
+                    if (on(c.renderer_egl,"eglGetConfigs",
+                        "(Ljavax/microedition/khronos/egl/EGLDisplay;[Ljavax/microedition/khronos/egl/EGLConfig;I[I)Z",
+                        {ref(c.renderer_display),ref(configs),integer(static_cast<int>(size)),ref(count)}).AsInt()) {
+                        message += "; candidates=";
+                        for (std::uint32_t i=0;i<size;++i) {
+                            const auto config = vm.Model().GetObjectElement(configs,static_cast<runtime::JniSize>(i));
+                            if (!config.IsValid()) continue;
+                            message += " [";
+                            for (const auto attribute : {0x3024,0x3023,0x3022,0x3021,0x3025,0x3026}) {
+                                if (on(c.renderer_egl,"eglGetConfigAttrib",
+                                    "(Ljavax/microedition/khronos/egl/EGLDisplay;Ljavax/microedition/khronos/egl/EGLConfig;I[I)Z",
+                                    {ref(c.renderer_display),ref(config),integer(attribute),ref(count)}).AsInt())
+                                    message += std::to_string(vm.Model().GetPrimitiveElement(count,0)) + "/";
+                            }
+                            message += "]";
+                        }
+                    }
+                }
+            } catch (const std::exception&) { message += "; config diagnostics unavailable"; }
+            Fail(message);
+        }
         if (c.egl_context_factory.IsValid()) {
             c.renderer_context = on(c.egl_context_factory, "createContext",
                 "(Ljavax/microedition/khronos/egl/EGL10;Ljavax/microedition/khronos/egl/EGLDisplay;Ljavax/microedition/khronos/egl/EGLConfig;)Ljavax/microedition/khronos/egl/EGLContext;",

@@ -662,8 +662,8 @@ note = "M4 已在三平台完成真实 pbuffer 生命周期、guest 边界、SDL
 
 [gles.egl_lifecycle]
 status = "partial"
-test = "tests/gles/egl_lifecycle_tests.cpp; tests/gles/angle_frame_tests.cpp; tests/runtime/boundary/integration/android_boundary_hle_tests.cpp: BND49"
-note = "BND-34 将一个 guest Context 映射到唯一 eager native Context，Surface 独立持有 pbuffer，Display 引用计数；BND-36 使 terminate 保留所有线程 current 资源到合法解绑、重复 terminate 成功并允许重新 initialize。KHR image/sync 与 texture pbuffer 按 ANGLE 能力发布；BND-49 发布有实际 backing 的 RGB888 配置，Metal 使用 HAL IOSurface 经 ANGLE GL_RGB 导入，其他后端优先原生 RGB config；缺支持时不发布。完整 Android 窗口系统未实现，整体保持 partial。"
+test = "tests/gles/egl_lifecycle_tests.cpp; tests/gles/angle_frame_tests.cpp; tests/runtime/boundary/integration/android_boundary_hle_tests.cpp: BND49/BND53; tests/gles/angle_frame_tests.cpp: BND53"
+note = "BND-34 将一个 guest Context 映射到唯一 eager native Context，Surface 独立持有 pbuffer，Display 引用计数；BND-36 使 terminate 保留所有线程 current 资源到合法解绑、重复 terminate 成功并允许重新 initialize。KHR image/sync 与 texture pbuffer 按 ANGLE 能力发布；BND-49 发布有实际 backing 的 RGB888 配置，Metal 使用 HAL IOSurface 经 ANGLE GL_RGB 导入，其他后端优先原生 RGB config；缺支持时不发布。BND-53 增加精确 native RGB565，Metal 经 HAL B5G6R5 纹理/EGLImage 和私有默认 FBO 承载，实际 bits/量化/alpha 探测通过才发布；Surface 跨 share group 存储、独立 draw/read、guest FBO 名称/绑定隔离及失败 currency 回退受检。Metal fallback 限 GLES1 compatibility/GLES2、D0/S0/MSAA0，不支持 texture binding/mipmap 或 fallback GLES3。完整 Android 窗口系统未实现，整体保持 partial。"
 
 [runtime.egl_api19_base_boundary]
 status = "complete"

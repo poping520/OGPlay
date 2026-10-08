@@ -1,6 +1,10 @@
 cmake_minimum_required(VERSION 3.25)
 
 project(OGPlay VERSION 0.1.0 LANGUAGES C CXX)
+if(APPLE)
+    enable_language(OBJCXX)
+    set(CMAKE_OBJCXX_STANDARD 20)
+endif()
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -101,6 +105,8 @@ if(WIN32)
         src/hal/windows/virtual_memory.cpp)
 elseif(APPLE)
     target_sources(ogplay_hal PRIVATE src/hal/macos/rgb_surface_storage.cpp)
+    target_sources(ogplay_hal PRIVATE src/hal/macos/packed_rgb_surface_storage.mm)
+    target_link_libraries(ogplay_hal PRIVATE "-framework Metal" "-framework Foundation")
     target_link_libraries(ogplay_hal PRIVATE "-framework IOSurface" "-framework CoreFoundation")
       target_sources(ogplay_hal PRIVATE
           src/hal/macos/diagnostic_trigger.cpp

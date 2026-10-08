@@ -330,6 +330,8 @@ std::vector<std::int32_t> AngleFrame::GetIntegers(
 #if OGPLAY_HAS_ANGLE
     std::vector<std::int32_t> values(count);
     glGetIntegerv(parameter, values.data()); RequireNoError("glGetIntegerv");
+    if (packed_default_ && (parameter==0x8CA6U || parameter==0x8CAAU))
+        for (auto& value:values) value=GuestFramebufferBinding(value);
     return values;
 #else
     static_cast<void>(parameter); throw EglLifecycleError(EglOperation::unavailable, 0);
@@ -338,6 +340,10 @@ std::vector<std::int32_t> AngleFrame::GetIntegers(
 
 std::vector<std::uint8_t> AngleFrame::GetBooleans(
     const std::uint32_t parameter, const std::size_t count) {
+    if (packed_default_ && (parameter==0x8CA6U || parameter==0x8CAAU)) {
+        const auto integers=GetIntegers(parameter,count);std::vector<std::uint8_t> result;
+        for (const auto value:integers) result.push_back(value!=0);return result;
+    }
     if (parameter == 0x86a2U || parameter == 0x86a3U) {
         const auto formats = GetIntegers(parameter, count);
         std::vector<std::uint8_t> values;
@@ -361,6 +367,10 @@ std::vector<std::uint8_t> AngleFrame::GetBooleans(
 
 std::vector<float> AngleFrame::GetFloats(
     const std::uint32_t parameter, const std::size_t count) {
+    if (packed_default_ && (parameter==0x8CA6U || parameter==0x8CAAU)) {
+        const auto integers=GetIntegers(parameter,count);std::vector<float> result;
+        for (const auto value:integers) result.push_back(static_cast<float>(value));return result;
+    }
     if (parameter == 0x86a2U || parameter == 0x86a3U) {
         const auto formats = GetIntegers(parameter, count);
         std::vector<float> values;

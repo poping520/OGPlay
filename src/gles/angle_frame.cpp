@@ -104,10 +104,34 @@ AngleFrame AngleFrame::CreateContext(std::shared_ptr<EglDisplayResources> displa
     return AngleFrame(nullptr, std::move(lifecycle), 0U, 0U);
 }
 
+AngleFrame AngleFrame::CreateContext(std::shared_ptr<EglDisplayResources> display,
+    const int client_version,const EglHandle share_context,const EglColorFormat format) {
+    const bool packed=format==EglColorFormat::rgb565 && display->UsesPackedRgbFramebuffer();
+    auto lifecycle=EglLifecycle::CreateContext(std::move(display),client_version,share_context,format);
+    AngleFrame result(nullptr,std::move(lifecycle),0,0);result.packed_default_=packed;return result;
+}
+
 void AngleFrame::BindSurfaces(std::shared_ptr<EglSurfaceResources> draw,
                               std::shared_ptr<EglSurfaceResources> read) {
     const auto width = draw->Width(), height = draw->Height();
+    const auto draw_image=draw->PackedRgbImage(),read_image=read->PackedRgbImage();
+    const auto old_draw = lifecycle_.DrawSurface(), old_read = lifecycle_.ReadSurface();
+#if OGPLAY_HAS_ANGLE
+    const auto previous_display=eglGetCurrentDisplay(), previous_draw=eglGetCurrentSurface(EGL_DRAW), previous_read=eglGetCurrentSurface(EGL_READ);
+    const auto previous_context=eglGetCurrentContext();
+#endif
     lifecycle_.BindSurfaces(std::move(draw), std::move(read));
+    try {
+        if (packed_default_) BindPackedDefault(draw_image,read_image);
+    } catch (...) {
+        if (old_draw && old_read) lifecycle_.BindSurfaces(old_draw,old_read);
+        else lifecycle_.MarkNotCurrent();
+#if OGPLAY_HAS_ANGLE
+        if (previous_context != EGL_NO_CONTEXT) eglMakeCurrent(previous_display,previous_draw,previous_read,previous_context);
+        else eglMakeCurrent(reinterpret_cast<EGLDisplay>(NativeDisplay()),EGL_NO_SURFACE,EGL_NO_SURFACE,EGL_NO_CONTEXT);
+#endif
+        throw;
+    }
     width_ = width; height_ = height;
 }
 

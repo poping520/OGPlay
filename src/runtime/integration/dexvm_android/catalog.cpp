@@ -308,7 +308,6 @@ AndroidIntrinsicCatalog(const std::shared_ptr<DexVmAndroidContext> &context) {
       Declare_android_opengl_EGLDisplay(context),
       Declare_android_opengl_EGLSurface(context),
       Declare_javax_microedition_khronos_egl_EGLConfig(context),
-      Declare_javax_microedition_khronos_opengles_GL10(context),
       // Historical compatibility tail. DVM-61 decouples Java identity hash
       // from linker ids and object handles, so future catalog insertion no
       // longer changes Object.hashCode/default toString identity.
@@ -318,8 +317,7 @@ AndroidIntrinsicCatalog(const std::shared_ptr<DexVmAndroidContext> &context) {
       Declare_javax_microedition_khronos_egl_EGLContext(context),
       Declare_javax_microedition_khronos_egl_EGLDisplay(context),
       Declare_javax_microedition_khronos_egl_EGLSurface(context),
-      Declare_javax_microedition_khronos_opengles_GL(context),
-      Declare_javax_microedition_khronos_opengles_GL10_Impl(context),
+      Declare_com_google_android_gles_jni_GLImpl(context),
       Declare_android_app_Application(context),
   };
 }

@@ -1,0 +1,17 @@
+.class public Lfixture/GlInterfaceProbe;
+.super Ljava/lang/Object;
+.method public static clear(Ljavax/microedition/khronos/opengles/GL10;FFFF)V
+.registers 6
+    invoke-interface {v1, v2, v3, v4, v5}, Ljavax/microedition/khronos/opengles/GL10;->glClearColor(FFFF)V
+    const/16 v0, 16384
+    invoke-interface {v1, v0}, Ljavax/microedition/khronos/opengles/GL10;->glClear(I)V
+    return-void
+.end method
+.method public static pointer(Ljavax/microedition/khronos/opengles/GL10;Ljava/nio/Buffer;)V
+.registers 6
+    const/4 v0, 3
+    const/16 v1, 5126
+    const/4 v2, 0
+    invoke-interface {v4, v0, v1, v2, v5}, Ljavax/microedition/khronos/opengles/GL10;->glVertexPointer(IIILjava/nio/Buffer;)V
+    return-void
+.end method

@@ -1861,7 +1861,13 @@
       "Lcom/android/internal/os/IResultReceiver$Stub$Proxy;",
       "Lcom/android/internal/os/IResultReceiver$Stub;",
       "Lcom/android/internal/os/IResultReceiver;",
-      "Lcom/android/internal/util/ArrayUtils;"
+      "Lcom/android/internal/util/ArrayUtils;",
+      "Ljavax/microedition/khronos/opengles/GL10;",
+      "Ljavax/microedition/khronos/opengles/GL10Ext;",
+      "Ljavax/microedition/khronos/opengles/GL11;",
+      "Ljavax/microedition/khronos/opengles/GL11Ext;",
+      "Ljavax/microedition/khronos/opengles/GL11ExtensionPack;",
+      "Ljavax/microedition/khronos/opengles/GL;"
     ]
   },
   "date_family_audit": {

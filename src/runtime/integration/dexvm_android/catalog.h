@@ -271,13 +271,7 @@ Declare_javax_microedition_khronos_egl_EGLContext(const Context &context);
 Declare_javax_microedition_khronos_egl_EGLDisplay(const Context &context);
 [[nodiscard]] Decl
 Declare_javax_microedition_khronos_egl_EGLSurface(const Context &context);
-[[nodiscard]] Decl
-Declare_javax_microedition_khronos_opengles_GL(const Context &context);
-[[nodiscard]] Decl
-Declare_javax_microedition_khronos_opengles_GL10(const Context &context);
-[[nodiscard]] Decl
-Declare_javax_microedition_khronos_opengles_GL10_Impl(const Context &context);
-
+[[nodiscard]] Decl Declare_com_google_android_gles_jni_GLImpl(const Context& context);
 [[nodiscard]] Decl Declare_android_hardware_LocalSensorManager(const Context& context);
 [[nodiscard]] Decl Declare_android_hardware_LegacySensorManager(const Context& context);
 [[nodiscard]] dx::VmObjectRef SensorManagerForContext(dx::IntrinsicContext& call, const Context& context);

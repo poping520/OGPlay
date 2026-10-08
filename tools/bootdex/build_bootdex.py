@@ -82,6 +82,7 @@ FRAMEWORK_JAVA_NAMES = (
     "android/net/wifi/WifiManager.java",
     "android/nfc/NfcAdapter.java",
     "android/widget/VideoView.java",
+    "com/google/android/gles_jni/GLImpl.java",
 )
 
 

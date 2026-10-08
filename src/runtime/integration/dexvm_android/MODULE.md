@@ -195,6 +195,11 @@ PendingIntent.cancel 使令牌失效，查询不再匹配；退出在 VM 锁内�
 
 ## GLES/EGL 与渲染调度
 
+javax GL 接口归 BootDex；GLImpl 的 native 使用生成的精确 ABI 绑定既有 GLES 编组。
+每个 javax EGLContext 以普通字段持有独立 GLImpl，类初始化与构造正常执行，Buffer
+强边经 Java 字段追踪。调用目标以线程 current 为准；direct client Buffer 保留稳定 NIO
+地址，堆 Buffer 不保存临时地址，按 targetSdk 报参数错误或记账拒绝。
+
 Java GLES/EGL 通过 session managed 冷入口复用 [native boundary](../../boundary/MODULE.md)
 的 binding/registry/current/error，参数错误进 guest 锁存，host 契约故障硬失败。
 

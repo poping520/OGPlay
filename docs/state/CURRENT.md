@@ -33,12 +33,16 @@
   Java 异常，阻塞原因未定位；复现进程已结束，不宣称 clean shutdown。
   最新用户复现首错为 renderer config chooser returned null；
   [BND-53](../tasks/boundary/BND-53.md) 新增真实 RGB565 backing/配置，macOS Release
-  与定向 7 项/399 断言通过。原 chooser 首错消失，GLThread 进入 onDrawFrame 后
-  GL10.glClear 在 GL10$Impl 上虚分派失败，退出 1；regular EGL 既有 separate-surface
-  回归仍失败，与旧日志一致。原 boundary 架构违规仍在。
-  进程已退出，授权路径及完整游戏未验收。
+  与定向 7 项/399 断言通过，原 chooser 首错消失。regular EGL 既有 separate-surface
+  回归仍失败，与旧日志一致；原 boundary 架构违规仍在。
+  [DVM-225](../tasks/dexvm/DVM-225.md) 将 GL 接口与 GLImpl 普通状态归 BootDex，
+  native 复用既有 GLES；每个 EGLContext 独立持有 GLImpl，direct Buffer 按普通字段
+  保活，heap client arrays 明确拒绝。BootDex build/check、自检、ABI/生成/载荷校验、
+  macOS Release 与定向 38 项/2143 断言通过。原 glClear 分派首错消失；空沙盒
+  presented=4，退出 0、无超时，本次短运行未触达下一致命首错。
+  进程已退出，跨平台、授权路径及完整游戏未验收。
   证据 `.local/wb-classloader-analysis/`、`.local/wb-subscriber-fix/`、`.local/wb-lifecycle-fix/`、
-  `.local/wb-sensor-fix/`、`.local/wb-jnigraphics-fix/`、`.local/wb-nfc-absence-fix/`、`.local/wb-activity-result-fix/`、`.local/wb-notification-cancel-fix/`、`.local/wb-rgb565-fix/`。
+  `.local/wb-sensor-fix/`、`.local/wb-jnigraphics-fix/`、`.local/wb-nfc-absence-fix/`、`.local/wb-activity-result-fix/`、`.local/wb-notification-cancel-fix/`、`.local/wb-rgb565-fix/`、`.local/wb-java-gl-fix/`。
 
 - **Tales From Deep Space 1.0.0**：VideoView/packed depth/stencil 已闭合；macOS
   800×480/1280×720 菜单裁剪，BND-29 终止断言失败。

@@ -1655,6 +1655,11 @@ status = "complete"
 test = "tests/dexvm/egl_facade_tests.cpp; tests/dexvm/nio_runtime_tests.cpp; tests/runtime/boundary/integration/android_boundary_hle_tests.cpp; tools/generate_java_gles_surface.py --check"
 note = "DVM-83 发布 API19 Java GLES surface；BND-35/BND-38 为 GLES30 indexed String、mapped direct Buffer、sync long、String[]、info log/source、active/uniform-block/transform-feedback 查询增加专用桥接；BND-37/BND-38 补齐 GLSurfaceView Context/config、current GL 线程 queueEvent 与 requestRender/WHEN_DIRTY；BND-38 专用实现 GLU 六类方法，并让 GLUtils 按 API19 四种 Bitmap.Config 转换。DVM-197 让 intrinsic renderer 消费 EGL chooser/factory、建立真实 current 并在 Surface 回调前执行事件，使用真实 surface swap；GC roots、失败路径与释放受检（tests/runtime/native_library_loader_tests.cpp）。DVM-203 将 intrinsic renderer 迁到独立 Java/host GLThread，统一 renderer/queueEvent/EGL 归属，等待绘帧时泵送主 Looper，Java EGL/GLES 与 JNI 共用 process TID；线程及资源清理受检。GLSurfaceView 的 set/getPreserveEGLContextOnPause 已提供默认 false 的逐实例字段与可覆盖方法；仅配置读写受检，按该设置销毁/保留 EGLContext、Surface 重建及 context-loss 恢复未闭合。complete 限于已发布 API19 Java GLES/GLU/GLUtils 与 managed surface 边界，不包含完整 GLSurfaceView 暂停/恢复，不代表 CTS/Khronos 认证。"
 
+[dexvm.java_gl_interfaces]
+status = "partial"
+test = "tests/dexvm/egl_facade_tests.cpp: DVM225; tools/generate_java_gles_surface.py --check; tools/bootdex/build_bootdex.py build/check"
+note = "DVM-225：API19 javax GL 接口与 GLImpl 普通状态归 BootDex，native 复用现有 Java GLES/ANGLE 边界；每个 EGLContext 普通字段独立持有 GLImpl，线程 current 决定调用目标。支持 direct Buffer client arrays；heap pointer 现代 targetSdk 报 IAE，旧兼容条件用 sealed targetSdk 查询，但持久 backing 未实现而记账报 UOE。目录外 native 明确失败；完整 JNI 参数检查、间接 Buffer backing、暂停恢复/context-loss 与跨平台未验收。"
+
 [dexvm.audio_track]
 status = "complete"
 test = "tests/dexvm/audio_track_tests.cpp; tests/runtime/native_library_loader_tests.cpp; tests/audio/open_sles_pcm_mixer_tests.cpp; tests/audio/encoded_music_tests.cpp"

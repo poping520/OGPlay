@@ -28,3 +28,6 @@ Activity 的 [Java 客户端](java/android/app/MODULE.md) 保存每实例结果�
 
 NotificationManager 的普通 Context 字段、构造/from 与重载在 android.app Java 客户端；
 平台事实为发布禁用、通知集合已知为空。取消正常完成，发布失败；无系统通知服务。
+
+GLImpl 的 [Java 客户端](java/com/google/android/gles_jni/MODULE.md) 保留 API19 Buffer
+强引用与普通转发；仅将系统包管理查询改为当前 APK targetSdk 的 native 边界。

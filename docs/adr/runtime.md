@@ -851,3 +851,20 @@ native overlay 仅提交平台动作。session 保留每实例 identity/Intent/�
 宣称成功。跨包访问失败；未知库存不能使用空集合语义。
 若未来允许发布或导入通知状态，必须同时修改取消 backing 与本契约，不能保留空取消。
 原版 Notification/Builder/RemoteViews 是独立依赖，不为本次取消引入整套构建/渲染链。
+
+<a id="adr-0107"></a>
+
+## ADR-0107 · Java GL 接口与实例状态归 BootDex
+
+- 状态：Accepted
+- 日期：2026-10-08
+
+javax GL 接口用固定 API19 类，GLImpl 用保留原算法的有界 Java 客户端；integration
+只适配其 native ABI。GLImpl 的 pointer Buffer 引用属于普通 Java 对象，不保存 C++
+侧复制状态，不逐条补 GL10$Impl 方法。EGLContext 字段拥有本实例的 GLImpl，调用
+仍走线程 current，不以 receiver 选择 native Context。GC 按普通字段追踪。
+
+allowIndirectBuffers 用当前 APK targetSdk 替代系统包管理查询，不引入 Binder 或外部
+包数据库。direct Buffer 地址来自已有 NIO 存储；旧 targetSdk 所允许的间接 client
+array 尚无持久 backing，必须记账拒绝，不能使用短期编组内存冒充长期 pointer。
+同一 native 目录与 ANGLE 共用 current/error/像素事实；Java 类型发布不扩大发布扩展。

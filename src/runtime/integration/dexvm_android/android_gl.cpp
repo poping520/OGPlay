@@ -3179,8 +3179,27 @@ Decl Declare_javax_microedition_khronos_egl_EGLContext(const Context& context) {
     builder.StaticMethod("getEGL", "()Ljavax/microedition/khronos/egl/EGL;", [context](dx::IntrinsicContext& call) {
         return dx::VmValue::Ref(Singleton(call, context, "egl10_impl", "Ljavax/microedition/khronos/egl/EGL10$Impl;"));
     });
-    builder.FinalMethod("getGL", "()Ljavax/microedition/khronos/opengles/GL;", [context](dx::IntrinsicContext& call) {
-        return dx::VmValue::Ref(Singleton(call, context, "gl10_impl", "Ljavax/microedition/khronos/opengles/GL10$Impl;"));
+    const auto gl_field = builder.BoundInstanceField("mGLContext", "Lcom/google/android/gles_jni/GLImpl;", dx::kAccPrivate);
+    builder.FinalMethod("getGL", "()Ljavax/microedition/khronos/opengles/GL;", [gl_field](dx::IntrinsicContext& call) {
+        dx::IntrinsicCall bound{call};
+        auto gl = bound.GetRef(gl_field);
+        if (!gl.IsValid()) {
+            auto& vm = call.vm;
+            const auto type = vm.Linker().ResolveDescriptor("Lcom/google/android/gles_jni/GLImpl;");
+            const auto require = [&](const dx::VmCallOutcome& result) {
+                if (result.exception.IsValid())
+                    throw dx::VmJavaThrow{vm.Linker().Class(result.exception_class).descriptor,
+                                          result.exception_message, result.exception};
+            };
+            require(vm.EnsureClassInitialized(type));
+            gl = vm.NewIntrinsicInstance("Lcom/google/android/gles_jni/GLImpl;");
+            const auto roots = vm.ProtectReferences(std::array{gl});
+            const auto constructor = vm.Linker().FindDirectMethod(type, "<init>", "()V");
+            if (!constructor.has_value()) ModelFailure(call, "GLImpl constructor is absent");
+            require(vm.Call(*constructor, std::array{dx::VmValue::Ref(gl)}));
+            bound.SetRef(gl_field, gl);
+        }
+        return dx::VmValue::Ref(gl);
     });
     return std::move(builder).Build();
 }
@@ -3197,23 +3216,58 @@ Decl Declare_javax_microedition_khronos_egl_EGLSurface(const Context& context) {
     return std::move(builder).Build();
 }
 
-Decl Declare_javax_microedition_khronos_opengles_GL(const Context& context) {
-    static_cast<void>(context);
-    auto builder = dx::IntrinsicClassBuilder::Interface("Ljavax/microedition/khronos/opengles/GL;");
-    return std::move(builder).Build();
-}
-
-Decl Declare_javax_microedition_khronos_opengles_GL10(const Context& context) {
-    static_cast<void>(context);
-    auto builder = dx::IntrinsicClassBuilder::Interface("Ljavax/microedition/khronos/opengles/GL10;", {"Ljavax/microedition/khronos/opengles/GL;"});
-    builder.VirtualMethod("glGetString", "(I)Ljava/lang/String;",
-                        EglUnsupportedHandler("GL10.glGetString"));
-    return std::move(builder).Build();
-}
-
-Decl Declare_javax_microedition_khronos_opengles_GL10_Impl(const Context& context) {
-    auto builder = dx::IntrinsicClassBuilder::Class("Ljavax/microedition/khronos/opengles/GL10$Impl;", "Ljava/lang/Object;", {"Ljavax/microedition/khronos/opengles/GL10;"});
-    builder.FinalMethod("glGetString", "(I)Ljava/lang/String;", GlGetStringHandler(context));
+Decl Declare_com_google_android_gles_jni_GLImpl(const Context& context) {
+    auto builder = dx::IntrinsicClassBuilder::Class("Lcom/google/android/gles_jni/GLImpl;");
+    for (const auto& method : generated_java_gles::kGLImplNativeMethods) {
+        dx::IntrinsicHandler handler;
+        std::string name = method.name;
+        std::string descriptor = method.descriptor;
+        if (name == "_nativeClassInit") {
+            // The original initializer caches JNI IDs. Host adapters use the
+            // linker/NIO APIs directly and need no process-global JNI cache.
+            handler = [](dx::IntrinsicContext&) { return dx::VmValue::Void(); };
+        } else if (name == "nativeAllowIndirectBuffers") {
+            handler = [context](dx::IntrinsicContext&) {
+                return dx::VmValue::Int(context->target_sdk_version <= 3U);
+            };
+        } else {
+            if (name == "_glGetString") name = "glGetString";
+            const bool bounds = name.ends_with("Bounds");
+            if (bounds) {
+                name.resize(name.size() - 6U);
+                descriptor.erase(descriptor.size() - 3U, 1U);
+            }
+            const auto api = gles::FindGlesFunction(gles::GlesApi::gles1, name).has_value()
+                ? gles::GlesApi::gles1 : gles::GlesApi::gles1_extensions;
+            auto bridge = JavaGlesHandler(context, api, name, descriptor);
+            const bool client_pointer = name.ends_with("Pointer") || name.ends_with("PointerOES");
+            handler = [context, bridge = std::move(bridge), bounds, client_pointer,
+                       descriptor = std::move(descriptor)](dx::IntrinsicContext& call) {
+                if (client_pointer && descriptor.find("Ljava/nio/Buffer;") != std::string::npos) {
+                    const auto pointer = call.arguments[call.arguments.size() - (bounds ? 2U : 1U)].ref;
+                    if (!pointer.IsValid())
+                        throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;", "pointer"};
+                    const auto identity = call.vm.Model().ToIdentity(pointer);
+                    const auto snapshot = call.vm.NIO().Snapshot(identity);
+                    if (!snapshot.direct) {
+                        if (context->target_sdk_version > 3U)
+                            throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "pointer must be a direct Buffer"};
+                        Record(call, "dexvm.gl_client_array.indirect_buffer");
+                        throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "persistent indirect GL buffers are not supported"};
+                    }
+                    if (bounds && call.arguments.back().AsInt() != snapshot.limit - snapshot.position)
+                        throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "pointer remaining count mismatch"};
+                }
+                dx::IntrinsicContext adapted{call.vm, call.receiver,
+                    bounds ? call.arguments.first(call.arguments.size() - 1U) : call.arguments};
+                return bridge(adapted);
+            };
+        }
+        const auto flags = dx::kAccNative | (method.is_private ? dx::kAccPrivate : dx::kAccPublic);
+        if (method.is_static) builder.StaticMethod(method.name, method.descriptor, std::move(handler), flags);
+        else if (method.is_private) builder.DirectMethod(method.name, method.descriptor, std::move(handler), flags);
+        else builder.VirtualMethod(method.name, method.descriptor, std::move(handler), flags);
+    }
     return std::move(builder).Build();
 }
 

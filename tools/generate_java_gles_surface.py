@@ -87,6 +87,24 @@ def render(source_root: Path) -> str:
             lines.append("};")
         else:
             lines.append(f"inline constexpr std::array<ConstantSpec, 0> k{class_name}Constants{{}};")
+    # GLImpl keeps Java pointer wrappers/fields in BootDex. Publish only natives.
+    gl_impl = Path(__file__).resolve().parent.parent / (
+        "src/guest/framework/java/com/google/android/gles_jni/GLImpl.java")
+    text = gl_impl.read_text(encoding="utf-8")
+    shape = parse_java(re.sub(r"\bprivate\b", "public", text),
+                       gl_impl.as_posix(), available)
+    private_names = set(re.findall(
+        r"private\s+(?:static\s+)?native\s+\w+\s+(\w+)\s*\(", text))
+    private_names.add("_nativeClassInit")  # original uses native private static
+    lines.append("struct NativeMethodSpec final { const char* name; const char* descriptor; bool is_static; bool is_private; };")
+    lines.append("inline constexpr NativeMethodSpec kGLImplNativeMethods[] = {")
+    for method in shape["methods"]:
+        if "native" not in method["modifiers"]:
+            continue
+        static = "true" if "static" in method["modifiers"] else "false"
+        private = "true" if method["name"] in private_names else "false"
+        lines.append(f'    {{"{method["name"]}", "{method["descriptor"]}", {static}, {private}}},')
+    lines.append("};")
     lines.append("}  // namespace generated_java_gles")
     return "\n".join(lines) + "\n"
 

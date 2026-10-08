@@ -1291,3 +1291,132 @@ TEST_CASE("BND49 Java EGL10 and EGL14 share stable RGB config facts") {
         }
     }
 }
+
+TEST_CASE("DVM225 BootDex GL interfaces clear pixels and retain context-local direct buffers") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        auto libc = MinimalLibcElf();
+        const ogplay::loader::Elf32ModuleInput module{
+            "libc.so", libc, ogplay::memory::GuestAddress{0x10000000U}};
+        VirtualFileSystem filesystem;
+        auto session = AndroidGuestCallSession::Start(
+            {19, "libc.so", std::span{&module, 1},
+             {kNativeRenderer, ogplay::gles::AngleDevice::hardware}, 4, 3,
+             1000, 1, &filesystem, {}});
+        EglVm vm(backend, session.get(), "gl_interface.dex");
+        vm.interpreter.SetNioRuntime(&session->NIO());
+        const auto ref = VmValue::Ref;
+        const auto egl = vm.CallStatic("Ljavax/microedition/khronos/egl/EGLContext;", "getEGL",
+            "()Ljavax/microedition/khronos/egl/EGL;").ref;
+        const auto display = vm.CallOn(egl, "eglGetDisplay",
+            "(Ljava/lang/Object;)Ljavax/microedition/khronos/egl/EGLDisplay;", {ref(VmObjectRef{})}).ref;
+        CHECK(vm.CallOn(egl, "eglInitialize", "(Ljavax/microedition/khronos/egl/EGLDisplay;[I)Z",
+            {ref(display), ref(VmObjectRef{})}).AsInt() == 1);
+        const auto config_class = vm.linker.ResolveDescriptor("Ljavax/microedition/khronos/egl/EGLConfig;");
+        const auto configs = vm.model.NewObjectArray(vm.linker.ResolveDescriptor(
+            "[Ljavax/microedition/khronos/egl/EGLConfig;"), config_class, 1);
+        const auto count = vm.IntArray({0});
+        REQUIRE(vm.CallOn(egl, "eglChooseConfig",
+            "(Ljavax/microedition/khronos/egl/EGLDisplay;[I[Ljavax/microedition/khronos/egl/EGLConfig;I[I)Z",
+            {ref(display), ref(vm.IntArray({0x3021, 8, 0x3038})), ref(configs), VmValue::Int(1), ref(count)}).AsInt() == 1);
+        const auto config = vm.model.GetObjectElement(configs, 0);
+        const auto make_context = [&] {
+            return vm.CallOn(egl, "eglCreateContext",
+                "(Ljavax/microedition/khronos/egl/EGLDisplay;Ljavax/microedition/khronos/egl/EGLConfig;Ljavax/microedition/khronos/egl/EGLContext;[I)Ljavax/microedition/khronos/egl/EGLContext;",
+                {ref(display), ref(config), ref(vm.context->egl.no_context), ref(vm.IntArray({0x3098, 2, 0x3038}))}).ref;
+        };
+        const auto first = make_context();
+        const auto second = make_context();
+        REQUIRE(first != vm.context->egl.no_context);
+        REQUIRE(second != vm.context->egl.no_context);
+        const auto gl = vm.CallOn(first, "getGL", "()Ljavax/microedition/khronos/opengles/GL;").ref;
+        const auto other = vm.CallOn(second, "getGL", "()Ljavax/microedition/khronos/opengles/GL;").ref;
+        CHECK(gl != other);
+        CHECK(vm.CallOn(first, "getGL", "()Ljavax/microedition/khronos/opengles/GL;").ref == gl);
+        CHECK(vm.linker.Class(vm.model.ObjectClass(gl)).descriptor == "Lcom/google/android/gles_jni/GLImpl;");
+        CHECK_FALSE(vm.linker.Class(vm.model.ObjectClass(gl)).is_intrinsic);
+        for (const auto* name : {"GL", "GL10", "GL10Ext", "GL11", "GL11Ext", "GL11ExtensionPack"}) {
+            const auto type = vm.linker.ResolveDescriptor(std::string("Ljavax/microedition/khronos/opengles/") + name + ";");
+            CHECK_FALSE(vm.linker.Class(type).is_intrinsic);
+            CHECK(vm.linker.IsAssignable(type, vm.model.ObjectClass(gl)));
+        }
+        const auto surface = vm.CallOn(egl, "eglCreatePbufferSurface",
+            "(Ljavax/microedition/khronos/egl/EGLDisplay;Ljavax/microedition/khronos/egl/EGLConfig;[I)Ljavax/microedition/khronos/egl/EGLSurface;",
+            {ref(display), ref(config), ref(vm.IntArray({0x3057, 2, 0x3056, 2, 0x3038}))}).ref;
+        REQUIRE(surface != vm.context->egl.no_surface);
+        const auto bind = [&](VmObjectRef context) {
+            CHECK(vm.CallOn(egl, "eglMakeCurrent",
+                "(Ljavax/microedition/khronos/egl/EGLDisplay;Ljavax/microedition/khronos/egl/EGLSurface;Ljavax/microedition/khronos/egl/EGLSurface;Ljavax/microedition/khronos/egl/EGLContext;)Z",
+                {ref(display), ref(surface), ref(surface), ref(context)}).AsInt() == 1);
+        };
+        bind(first);
+        vm.CallStatic("Lfixture/GlInterfaceProbe;", "clear", "(Ljavax/microedition/khronos/opengles/GL10;FFFF)V",
+            {ref(gl), VmValue::Float(.25F), VmValue::Float(.5F), VmValue::Float(.75F), VmValue::Float(1)});
+        std::array<std::byte, 4> staging{};
+        std::vector<std::byte> pixel;
+        const auto read_pixel = [&] {
+            static_cast<void>(session->NIO().WithTemporaryGuestMemory(staging, true, [&](ogplay::memory::GuestAddress address) {
+                return session->InvokeManagedGles(ogplay::gles::GlesApi::gles2, "glReadPixels",
+                    std::array{0U, 0U, 1U, 1U, 0x1908U, 0x1401U, address.Value()}, 1U);
+            }, &pixel));
+        };
+        read_pixel();
+        REQUIRE(pixel.size() == 4U);
+        CHECK(std::to_integer<int>(pixel[0]) == doctest::Approx(64).epsilon(.04));
+        CHECK(std::to_integer<int>(pixel[1]) == doctest::Approx(128).epsilon(.04));
+        CHECK(std::to_integer<int>(pixel[2]) == doctest::Approx(191).epsilon(.04));
+        CHECK(vm.CallOn(gl, "glGetError", "()I").AsInt() == 0);
+        const auto buffer = vm.CallStatic("Ljava/nio/ByteBuffer;", "allocateDirect", "(I)Ljava/nio/ByteBuffer;", {VmValue::Int(36)}).ref;
+        vm.CallStatic("Lfixture/GlInterfaceProbe;", "pointer", "(Ljavax/microedition/khronos/opengles/GL10;Ljava/nio/Buffer;)V", {ref(gl), ref(buffer)});
+        CHECK(vm.CallOn(gl, "glGetError", "()I").AsInt() == 0);
+        const auto field = vm.linker.FindFieldRecursive(vm.model.ObjectClass(gl), "_vertexPointer", "Ljava/nio/Buffer;");
+        REQUIRE(field.has_value());
+        CHECK(vm.model.InstanceSlots(gl)[vm.linker.Field(*field).slot].bits == buffer.Value());
+        CHECK_FALSE((vm.model.InstanceSlots(other)[vm.linker.Field(*field).slot].bits != 0U));
+        vm.interpreter.SetGcIntegration({{}, {}, [first, second, egl, display, surface](const VmRootVisitor& visit) { visit(first); visit(second); visit(egl); visit(display); visit(surface); }});
+        CHECK(vm.interpreter.MarkReachable().IsMarked(gl));
+        CHECK(vm.interpreter.MarkReachable().IsMarked(buffer));
+        static_cast<void>(vm.interpreter.CollectGarbage());
+        CHECK(vm.model.IsValidRef(buffer));
+        const auto identity = vm.model.ToIdentity(buffer);
+        session->NIO().SetOrder(identity, NioByteOrder::little_endian);
+        const std::array vertices{-1.F, -1.F, 0.F, 3.F, -1.F, 0.F, -1.F, 3.F, 0.F};
+        for (std::size_t i = 0; i < vertices.size(); ++i)
+            session->NIO().PutScalar(identity, NioElementKind::float_value,
+                static_cast<std::int32_t>(i * 4U), std::bit_cast<std::uint32_t>(vertices[i]));
+        vm.CallOn(gl, "glViewport", "(IIII)V", {VmValue::Int(0), VmValue::Int(0), VmValue::Int(2), VmValue::Int(2)});
+        vm.CallOn(gl, "glColor4f", "(FFFF)V", {VmValue::Float(1), VmValue::Float(0), VmValue::Float(0), VmValue::Float(1)});
+        vm.CallOn(gl, "glEnableClientState", "(I)V", {VmValue::Int(0x8074)});
+        vm.CallOn(gl, "glDrawArrays", "(III)V", {VmValue::Int(4), VmValue::Int(0), VmValue::Int(3)});
+        CHECK(vm.CallOn(gl, "glGetError", "()I").AsInt() == 0);
+        read_pixel();
+        CHECK(std::to_integer<int>(pixel[0]) == 255);
+        CHECK(std::to_integer<int>(pixel[1]) == 0);
+        CHECK(std::to_integer<int>(pixel[2]) == 0);
+        const auto heap = vm.CallStatic("Ljava/nio/ByteBuffer;", "allocate", "(I)Ljava/nio/ByteBuffer;", {VmValue::Int(36)}).ref;
+        vm.context->target_sdk_version = 19;
+        auto failure = vm.CallOnOutcome(gl, "glVertexPointer", "(IIILjava/nio/Buffer;)V",
+            {VmValue::Int(3), VmValue::Int(0x1406), VmValue::Int(0), ref(heap)});
+        CHECK(vm.linker.Class(failure.exception_class).descriptor == "Ljava/lang/IllegalArgumentException;");
+        vm.context->target_sdk_version = 3;
+        failure = vm.CallOnOutcome(gl, "glVertexPointer", "(IIILjava/nio/Buffer;)V",
+            {VmValue::Int(3), VmValue::Int(0x1406), VmValue::Int(0), ref(heap)});
+        CHECK(vm.linker.Class(failure.exception_class).descriptor == "Ljava/lang/UnsupportedOperationException;");
+        CHECK(vm.model.InstanceSlots(gl)[vm.linker.Field(*field).slot].bits == buffer.Value());
+        CHECK(vm.CallStatic("Lcom/google/android/gles_jni/GLImpl;", "nativeAllowIndirectBuffers", "()Z").AsInt() == 1);
+        vm.context->target_sdk_version = 19;
+        CHECK(vm.CallStatic("Lcom/google/android/gles_jni/GLImpl;", "nativeAllowIndirectBuffers", "()Z").AsInt() == 0);
+        const auto null_error = vm.CallOnOutcome(gl, "glVertexPointer", "(IIILjava/nio/Buffer;)V",
+            {VmValue::Int(3), VmValue::Int(0x1406), VmValue::Int(0), ref(VmObjectRef{})});
+        CHECK(vm.linker.Class(null_error.exception_class).descriptor == "Ljava/lang/NullPointerException;");
+        vm.interpreter.SetGcIntegration({});
+        CHECK_FALSE(vm.interpreter.MarkReachable().IsMarked(gl));
+        CHECK_FALSE(vm.interpreter.MarkReachable().IsMarked(buffer));
+        vm.CallOn(egl, "eglMakeCurrent",
+            "(Ljavax/microedition/khronos/egl/EGLDisplay;Ljavax/microedition/khronos/egl/EGLSurface;Ljavax/microedition/khronos/egl/EGLSurface;Ljavax/microedition/khronos/egl/EGLContext;)Z",
+            {ref(display), ref(vm.context->egl.no_surface), ref(vm.context->egl.no_surface), ref(vm.context->egl.no_context)});
+        for (const auto context : {first, second}) vm.CallOn(egl, "eglDestroyContext",
+            "(Ljavax/microedition/khronos/egl/EGLDisplay;Ljavax/microedition/khronos/egl/EGLContext;)Z", {ref(display), ref(context)});
+        vm.CallOn(egl, "eglDestroySurface", "(Ljavax/microedition/khronos/egl/EGLDisplay;Ljavax/microedition/khronos/egl/EGLSurface;)Z", {ref(display), ref(surface)});
+        vm.CallOn(egl, "eglTerminate", "(Ljavax/microedition/khronos/egl/EGLDisplay;)Z", {ref(display)});
+    }
+}

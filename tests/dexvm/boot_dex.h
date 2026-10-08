@@ -43,7 +43,8 @@ inline void BindBootDexPlatformNatives(runtime::dexvm::DexClassLinker& linker) {
     if (!linker.FindClass("Landroid/graphics/Typeface;")) {
         const auto context = std::make_shared<runtime::DexVmAndroidContext>();
         for (const auto& declaration : runtime::AndroidIntrinsicCatalog(context)) {
-            if (declaration.descriptor == "Landroid/graphics/Typeface;" ||
+            if (declaration.descriptor == "Lcom/google/android/gles_jni/GLImpl;" ||
+                declaration.descriptor == "Landroid/graphics/Typeface;" ||
                 declaration.descriptor == "Landroid/app/NativeActivity;" ||
                 declaration.descriptor == "Landroid/database/CursorWindow;" ||
                 declaration.descriptor == "Landroid/database/sqlite/SQLiteConnection;" ||

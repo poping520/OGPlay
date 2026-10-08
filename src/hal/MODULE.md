@@ -101,3 +101,7 @@
 DVM-105：host_environment.h 的 FillSecureRandom(span<byte>) 提供 OS CSPRNG。
 macOS 使用 arc4random_buf；Linux getrandom 处理 EINTR/短读；Windows BCryptGenRandom。
 失败抛出，不使用 PRNG fallback；该边界不执行 Cipher 算法。
+
+macOS packed RGB storage：仅从 gles 已验证的 native Metal device 创建 B5G6R5 纹理，
+HAL 持有/释放原生对象，向上层只提供 opaque buffer。不是 guest 指针；不执行 GLES、
+配置选择或呈现。其他宿主返回不可用，由原生 EGL 路径或明确失败处理。

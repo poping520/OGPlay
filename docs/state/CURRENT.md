@@ -31,10 +31,14 @@
   payload、Release 构建及定向 3 项/1808 断言通过。原 notification 异常未再出现；
   单帧运行到主动停止日志，f=1 长 guest call 后 30 秒退出阶段超时，未取得下一条
   Java 异常，阻塞原因未定位；复现进程已结束，不宣称 clean shutdown。
-  原 boundary 架构违规仍在。
+  最新用户复现首错为 renderer config chooser returned null；
+  [BND-53](../tasks/boundary/BND-53.md) 新增真实 RGB565 backing/配置，macOS Release
+  与定向 7 项/399 断言通过。原 chooser 首错消失，GLThread 进入 onDrawFrame 后
+  GL10.glClear 在 GL10$Impl 上虚分派失败，退出 1；regular EGL 既有 separate-surface
+  回归仍失败，与旧日志一致。原 boundary 架构违规仍在。
   进程已退出，授权路径及完整游戏未验收。
   证据 `.local/wb-classloader-analysis/`、`.local/wb-subscriber-fix/`、`.local/wb-lifecycle-fix/`、
-  `.local/wb-sensor-fix/`、`.local/wb-jnigraphics-fix/`、`.local/wb-nfc-absence-fix/`、`.local/wb-activity-result-fix/`、`.local/wb-notification-cancel-fix/`。
+  `.local/wb-sensor-fix/`、`.local/wb-jnigraphics-fix/`、`.local/wb-nfc-absence-fix/`、`.local/wb-activity-result-fix/`、`.local/wb-notification-cancel-fix/`、`.local/wb-rgb565-fix/`。
 
 - **Tales From Deep Space 1.0.0**：VideoView/packed depth/stencil 已闭合；macOS
   800×480/1280×720 菜单裁剪，BND-29 终止断言失败。

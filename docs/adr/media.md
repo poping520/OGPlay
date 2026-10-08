@@ -500,3 +500,29 @@ pack binding/alignment/row/skip/reverse 全部恢复；上下方向及 supersamp
 增加最多两帧 PBO 存储及一个宿主共享 context，显示可延后约一帧。glFlush 不保证完成，
 GPU 本身满载时仍有等待；CPU 拷贝/SDL 上传成本不消失。必须以实际成功 present 和等待
 采样验证收益，不以 swap 请求、队列预热或重复旧帧计数证明 FPS。
+
+<a id="adr-0106"></a>
+
+## ADR-0106 · RGB565 真实颜色存储与默认 framebuffer 映射
+
+- 状态：Accepted
+- 日期：2026-10-08
+- Extends：ADR-0090（其 RGB888 路径不变）
+
+精确颜色 chooser 需要 5/6/5/0 配置，最低筛选不能将 RGBA/RGB888 改报为 RGB565。
+优先使用宿主 native config；固定 ANGLE Metal 不发布 RGB565 config，但可通过
+EGL_ANGLE_metal_texture_client_buffer 导入真实 B5G6R5 纹理并用 OES EGLImage 附着。
+HAL 拥有 Metal 资源，ANGLE 拥有 GLES 操作；device 从 EGL 查询，绝不接收 guest 指针。
+
+Metal fallback 使用 carrier pbuffer 建立 currency，以 imported RGB565 attachment 作为
+唯一 guest 默认颜色存储。Surface 拥有 image/texture，Context 分别导入 draw/read，
+不同 share group 也能看到同一存储。私有 framebuffer namespace 与 guest 隔离；查询
+返回 guest 身份，默认 framebuffer 不接受附件修改。临时导入完全就绪后提交，失败
+恢复原绑定/currency。真实 framebuffer bits、读回量化和 opaque alpha 决定发布能力。
+
+fallback 限 GLES1 compatibility/GLES2，depth/stencil/samples=0，拒绝 texture binding、
+mipmap 与 GLES3；其他 host native 路径按实际属性。缺少真实支持则不发布，不提供
+临时 RGBA chooser fallback、游戏分支或隐式切换软件。完整 FBO/驱动矩阵仍需分宿主验收。
+
+来源：[固定 ANGLE ImageMtl](https://github.com/google/angle/blob/c24d9971269a878a221238a5923abdcc933fa2e9/src/libANGLE/renderer/metal/ImageMtl.mm)，
+[Metal texture client buffer 扩展](https://github.com/google/angle/blob/c24d9971269a878a221238a5923abdcc933fa2e9/extensions/EGL_ANGLE_metal_texture_client_buffer.txt)。

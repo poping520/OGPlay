@@ -10,6 +10,7 @@
 #include <string>
 #include <string_view>
 #include <vector>
+#include <unordered_map>
 
 #include "ogplay/gles/egl_lifecycle.h"
 
@@ -65,6 +66,8 @@ public:
     static AngleFrame CreateContext(std::shared_ptr<EglDisplayResources> display,
                                    int client_version, EglHandle share_context = 0,
                                    bool rgb = false);
+    static AngleFrame CreateContext(std::shared_ptr<EglDisplayResources> display,
+                                   int client_version, EglHandle share_context, EglColorFormat format);
     void BindSurfaces(std::shared_ptr<EglSurfaceResources> draw,
                       std::shared_ptr<EglSurfaceResources> read);
     static AngleFrame CreatePbuffer(AngleBackend backend,
@@ -371,6 +374,10 @@ private:
     AngleFrame(std::unique_ptr<EglApi> api, EglLifecycle lifecycle,
                std::uint32_t width, std::uint32_t height) noexcept;
     void RequireNoError(const char* operation) const;
+    void BindPackedDefault(EglHandle draw_image, EglHandle read_image);
+    std::uint32_t ResolveFramebuffer(std::uint32_t target, std::uint32_t guest, bool create);
+    std::int32_t GuestFramebufferBinding(std::int32_t native) const;
+    bool IsDefaultFramebufferTarget(std::uint32_t target) const;
 
     std::unique_ptr<EglApi> api_;
     EglLifecycle lifecycle_;
@@ -380,6 +387,11 @@ private:
     std::uint64_t readback_count_{};
     std::uint64_t shader_compile_count_{};
     std::uint64_t program_link_count_{};
+    bool packed_default_{};
+    std::array<std::uint32_t,2> packed_framebuffers_{};
+    std::array<std::uint32_t,2> guest_framebuffer_bindings_{};
+    std::unordered_map<std::uint32_t,std::uint32_t> framebuffer_names_;
+    std::uint32_t next_framebuffer_name_{1};
 };
 
 }  // namespace ogplay::gles

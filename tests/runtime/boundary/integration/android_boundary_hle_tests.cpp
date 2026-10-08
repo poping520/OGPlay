@@ -6611,7 +6611,7 @@ TEST_CASE("BND49 EGL minimum colors select distinct RGB storage with truthful al
         f.bus.Write32(attributes.Add(index * 4U), minimum[index], 1U);
     f.bus.Write32(f.stack, count.Value(), 1U);
     REQUIRE(f.Call("libEGL.so", "eglChooseConfig", {1, attributes.Value(), 0, 0}) == 1U);
-    REQUIRE(f.bus.Read32(count, 1U) == 2U);
+    REQUIRE(f.bus.Read32(count, 1U) >= 2U);
     REQUIRE(f.Call("libEGL.so", "eglChooseConfig", {1, attributes.Value(), configs.Value(), 2}) == 1U);
     REQUIRE(f.bus.Read32(count, 1U) == 2U);
     const auto rgba = f.bus.Read32(configs, 1U), rgb = f.bus.Read32(configs.Add(4), 1U);
@@ -7164,4 +7164,46 @@ TEST_CASE("async window presentation warms once drains final frame and retires o
     CHECK(switched->rgba8[1] == 255U);
     CHECK_FALSE(fixture.boundary.TakeLatestFrame().has_value());
     CHECK(fixture.Call("libEGL.so", "eglMakeCurrent", {1,0,0,0}) == 1U);
+}
+
+TEST_CASE("BND53 EGL registry exposes RGB565 storage consistently and preserves current lifetime") {
+    if (!ogplay::gles::IsNativeAngleEglAvailable()) return;
+    BoundaryFixture f;
+    REQUIRE(f.Call("libEGL.so","eglInitialize",{1,0,0})==1U);
+    const auto attrs=f.output.Add(256),configs=f.output.Add(384),count=f.output.Add(448);
+    const std::array<std::uint32_t,11> spec{0x3024,5,0x3023,4,0x3022,5,0x3040,4,0x3033,4,0x3038};
+    for(std::size_t i=0;i<spec.size();++i) f.bus.Write32(attrs.Add(static_cast<std::uint32_t>(i*4)),spec[i],1U);
+    f.bus.Write32(f.stack,count.Value(),1U);
+    REQUIRE(f.Call("libEGL.so","eglChooseConfig",{1,attrs.Value(),configs.Value(),8})==1U);
+    const auto total=f.bus.Read32(count,1U);REQUIRE(total>0);
+    const auto query=[&](std::uint32_t cfg,std::uint32_t p){
+        REQUIRE(f.Call("libEGL.so","eglGetConfigAttrib",{1,cfg,p,count.Value()})==1U);
+        return f.bus.Read32(count,1U);
+    };
+    std::uint32_t packed{};
+    for(std::uint32_t i=0;i<total;++i){const auto cfg=f.bus.Read32(configs.Add(i*4),1U);
+        if(query(cfg,0x3024)==5 && query(cfg,0x3023)==6 && query(cfg,0x3022)==5 && query(cfg,0x3021)==0)packed=cfg;
+    }
+#if defined(__APPLE__)
+    REQUIRE(packed!=0);
+#else
+    if(!packed)return;
+#endif
+    CHECK(query(packed,0x3020)==16);
+    f.bus.Write32(attrs,0x3098,1U);f.bus.Write32(attrs.Add(4),2,1U);f.bus.Write32(attrs.Add(8),0x3038,1U);
+    const auto ctx=f.Call("libEGL.so","eglCreateContext",{1,packed,0,attrs.Value()});REQUIRE(ctx);
+    const auto surface=f.Call("libEGL.so","eglCreateWindowSurface",{1,packed,3,0});REQUIRE(surface);
+    AuditBind(f,ctx,surface,surface);
+    for(const auto [p,value]:{std::pair{0x0D52U,5U},std::pair{0x0D53U,6U},std::pair{0x0D54U,5U},std::pair{0x0D55U,0U}}){
+        AuditGl(f,"glGetIntegerv",{p,count.Value()});CHECK(f.bus.Read32(count,1U)==value);
+    }
+    AuditGl(f,"glClearColor",{0x3dcccccdu,0x3e4ccccdu,0x3e99999au,0});AuditGl(f,"glClear",{0x4000});
+    const auto pixel=AuditPixel(f);CHECK((pixel>>24)==255);
+    REQUIRE(f.Call("libEGL.so","eglSwapBuffers",{1,surface})==1U);
+    const auto frame=f.boundary.TakeLatestFrame();REQUIRE(frame);CHECK(frame->rgba8[3]==255);
+    CHECK(frame->rgba8[0]>=24);CHECK(frame->rgba8[0]<=25);
+    REQUIRE(f.Call("libEGL.so","eglDestroySurface",{1,surface})==1U);
+    CHECK(f.Call("libEGL.so","eglGetCurrentSurface",{0x3059})==surface);
+    REQUIRE(f.Call("libEGL.so","eglMakeCurrent",{1,0,0,0})==1U);
+    REQUIRE(f.Call("libEGL.so","eglDestroyContext",{1,ctx})==1U);
 }

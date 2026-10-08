@@ -204,7 +204,7 @@
 
 ## BND-34 对象和搬运契约
 
-- guest registry 保留有界 RGBA/RGB888 配置，选择条件不能改写实际属性。RGB 优先用原生
+- guest registry 保留有界 RGBA/RGB888/RGB565 配置，选择条件不能改写实际属性。RGB 优先用原生
   config；Metal 经 HAL 客户端存储及 ANGLE GL_RGB 表面导入，alpha 位数/读回由 ANGLE 保证。
   无真实 backing 不发布 RGB，客户端 RGB 表面拒绝 texture binding；见 ADR-0090。
 - `EglDisplayResources` 共享 display/config；`EglSurfaceResources` 独立拥有像素存储；
@@ -219,3 +219,9 @@
   完成后恢复 guest pixel-store/PBO 状态。
 - 依据 [ADR-0063](../../docs/adr/media.md#adr-0063)。验证在 boundary integration 的
   `BND34*`、原 EGL/GLES/ANGLE 定向用例与 catalog gates；不宣称完整 Android 窗口系统。
+
+RGB565 扩展见 ADR-0106：精确 native config 优先；Metal fallback 经 HAL 真实 B5G6R5
+纹理与 ANGLE EGLImage 导入，私有 draw/read 默认 FBO 映射为 guest 0，FBO 名称隔离，
+binding 查询归一化且不允许 guest 改写默认附件。存储独立于 Context/share group，
+临时导入成功后才提交，失败恢复 binding/currency；探测实际 bit/量化/alpha 后才发布。
+fallback 为 D0/S0、无 MSAA、GLES1 compatibility/GLES2，不支持 GLES3、texture binding/mipmap。

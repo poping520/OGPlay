@@ -13,6 +13,7 @@ namespace ogplay::hal { class RgbSurfaceStorage; }
 namespace ogplay::gles {
 
 using EglHandle = std::uintptr_t;
+enum class EglColorFormat { rgba8888, rgb888, rgb565 };
 
 enum class EglOperation {
     unavailable,
@@ -83,10 +84,16 @@ public:
     EglApi& Api() const noexcept { return *api_; }
     EglHandle Display() const noexcept { return display_; }
     EglHandle Config(bool rgb = false) const noexcept { return rgb ? rgb_config_ : config_; }
+    EglHandle Config(EglColorFormat format) const noexcept;
+    bool SupportsRgb565Surface() const noexcept { return rgb565_config_ != 0 || packed_rgb_framebuffer_; }
+    bool UsesPackedRgbFramebuffer() const noexcept { return packed_rgb_framebuffer_; }
+    EglHandle CreatePackedRgbImage(std::uint32_t width, std::uint32_t height,
+                                  std::unique_ptr<hal::RgbSurfaceStorage>& storage);
     bool SupportsRgbSurface() const noexcept { return rgb_config_ != 0; }
     const EglContextInfo& Info() const noexcept { return info_; }
     std::string Extensions() const;
     std::int32_t ConfigAttribute(std::uint32_t name, bool rgb = false) const;
+    std::int32_t ConfigAttribute(std::uint32_t name, EglColorFormat format) const;
     EglHandle CreateSync(std::uint32_t type, std::span<const std::int32_t> attributes);
     void DestroySync(EglHandle sync);
     std::uint32_t ClientWaitSync(EglHandle sync, std::uint32_t flags, std::uint64_t timeout);
@@ -104,9 +111,13 @@ private:
     EglHandle config_{};
     EglHandle rgb_config_{};
     bool rgb_client_buffer_{};
+    EglHandle rgb565_config_{};
+    void* packed_rgb_device_{};
+    bool packed_rgb_framebuffer_{};
     friend class EglSurfaceResources;
     EglContextInfo info_{};
     bool initialized_{};
+    void InitializePackedRgbSupport();
 };
 
 class EglSurfaceResources final {
@@ -116,6 +127,9 @@ public:
         std::uint32_t width, std::uint32_t height,
         std::uint32_t texture_format = 0x305CU, bool mipmap = false,
         bool rgb = false);
+    static std::shared_ptr<EglSurfaceResources> Create(
+        std::shared_ptr<EglDisplayResources> display, std::uint32_t width,
+        std::uint32_t height, std::uint32_t texture_format, bool mipmap, EglColorFormat format);
     ~EglSurfaceResources();
     EglHandle Surface() const noexcept { return surface_; }
     EglHandle Display() const noexcept { return display_->Display(); }
@@ -124,11 +138,13 @@ public:
     void BindTexture(bool bind);
     void SetAttribute(std::uint32_t name, std::int32_t value);
     void SwapBuffers();
+    EglHandle PackedRgbImage() const noexcept { return packed_rgb_image_; }
 private:
     EglSurfaceResources() = default;
     std::shared_ptr<EglDisplayResources> display_;
     EglHandle surface_{};
     std::unique_ptr<hal::RgbSurfaceStorage> rgb_storage_;
+    EglHandle packed_rgb_image_{};
     std::uint32_t width_{}, height_{};
 };
 
@@ -136,6 +152,8 @@ class EglLifecycle final {
 public:
     static EglLifecycle CreateContext(std::shared_ptr<EglDisplayResources> display,
         int client_version, EglHandle share_context = 0, bool rgb = false);
+    static EglLifecycle CreateContext(std::shared_ptr<EglDisplayResources> display,
+        int client_version, EglHandle share_context, EglColorFormat format);
     void BindSurfaces(std::shared_ptr<EglSurfaceResources> draw,
                       std::shared_ptr<EglSurfaceResources> read);
     static EglLifecycle CreatePbuffer(EglApi& api, AngleBackend backend,
@@ -158,6 +176,8 @@ public:
     void BindCurrentOnCallingThread();
     void ReleaseCurrent();
     void MarkNotCurrent() noexcept { current_ = false; draw_.reset(); read_.reset(); }
+    const std::shared_ptr<EglSurfaceResources>& DrawSurface() const noexcept { return draw_; }
+    const std::shared_ptr<EglSurfaceResources>& ReadSurface() const noexcept { return read_; }
 
 private:
     EglLifecycle(EglApi& api, EglContextInfo info) noexcept;

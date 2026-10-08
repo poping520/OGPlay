@@ -430,3 +430,50 @@ TEST_CASE("ANGLE async readback preserves pack state and current pixels while co
         frame.DeleteBuffers(buffers);
     }
 }
+
+TEST_CASE("BND53 RGB565 uses real storage across contexts and isolates framebuffer names") {
+    using namespace ogplay::gles;
+    if (!IsNativeAngleEglAvailable()) return;
+    auto display=EglDisplayResources::Create({kNativeRenderer,AngleDevice::hardware});
+#if defined(__APPLE__)
+    REQUIRE(display->SupportsRgb565Surface());
+#else
+    if (!display->SupportsRgb565Surface()) return;
+#endif
+    auto a=EglSurfaceResources::Create(display,4,2,0x305CU,false,EglColorFormat::rgb565);
+    auto b=EglSurfaceResources::Create(display,4,2,0x305CU,false,EglColorFormat::rgb565);
+    auto first=AngleFrame::CreateContext(display,2,0,EglColorFormat::rgb565);
+    first.BindSurfaces(a,a);
+    for (const auto [p,value]:{std::pair{0x0D52U,5},std::pair{0x0D53U,6},std::pair{0x0D54U,5},std::pair{0x0D55U,0}})
+        CHECK(first.GetIntegers(p,1)[0]==value);
+    first.ClearColor(.1f,.2f,.3f,.2f);first.Clear(0x4000U);first.Finish();
+    auto pixels=first.ReadRgba8();
+    CHECK(static_cast<int>(pixels[0])>=24);CHECK(static_cast<int>(pixels[0])<=25);
+    CHECK(static_cast<int>(pixels[1])>=51);CHECK(static_cast<int>(pixels[1])<=53);
+    CHECK(static_cast<int>(pixels[2])>=74);CHECK(static_cast<int>(pixels[2])<=75);
+    CHECK(static_cast<int>(pixels[3])==255);
+    CHECK(first.GetIntegers(0x8CA6U,1)[0]==0);
+    if (display->UsesPackedRgbFramebuffer()) {
+        auto incompatible=EglSurfaceResources::Create(display,4,2);
+        CHECK_THROWS_AS(first.BindSurfaces(incompatible,incompatible),GlesApiError);
+        CHECK(first.IsCurrentOnCallingThread());
+        CHECK(first.ReadRgba8()==pixels);
+        CHECK(first.GetIntegers(0x8CA6U,1)[0]==0);
+    }
+    auto names=first.GenerateFramebuffers(1);
+    CHECK_FALSE(first.IsFramebuffer(names[0]));
+    first.BindFramebuffer(0x8D40U,names[0]);CHECK(first.IsFramebuffer(names[0]));
+    CHECK(first.GetIntegers(0x8CA6U,1)[0]==static_cast<int>(names[0]));
+    first.DeleteFramebuffers(names);
+    CHECK(first.GetIntegers(0x8CA6U,1)[0]==0);
+    CHECK(first.CheckFramebufferStatus(0x8D40U)==0x8CD5U);
+    CHECK_THROWS_AS(first.FramebufferRenderbuffer(0x8D40U,0x8CE0U,0x8D41U,0),GlesApiError);
+    auto second=AngleFrame::CreateContext(display,2,0,EglColorFormat::rgb565);
+    second.BindSurfaces(b,a);
+    second.ClearColor(1,0,0,.1f);second.Clear(0x4000U);second.Finish();
+    CHECK(second.ReadRgba8()==pixels); // Default read and draw surfaces are independent.
+    second.BindSurfaces(b,b);auto red=second.ReadRgba8();
+    CHECK(static_cast<int>(red[0])==255);CHECK(static_cast<int>(red[1])==0);
+    first.BindSurfaces(b,b);CHECK(first.ReadRgba8()==red); // An unshared context sees the same surface.
+    first.ReleaseCurrent();second.ReleaseCurrent();
+}

@@ -1482,11 +1482,13 @@ TEST_CASE(
 
     const auto offline =
         fixture.OnOutcome(url, "openConnection", "()Ljava/net/URLConnection;");
-    REQUIRE(offline.exception.IsValid());
-    CHECK(fixture.linker.Class(offline.exception_class).descriptor ==
-          "Ljava/net/UnknownHostException;");
-    CHECK(offline.exception_message ==
-          "network policy is offline for example.com");
+    REQUIRE_FALSE(offline.exception.IsValid());
+    REQUIRE(offline.value.ref.IsValid());
+    CHECK(fixture.On(offline.value.ref, "getURL", "()Ljava/net/URL;").ref == url);
+    fixture.On(offline.value.ref, "disconnect", "()V");
+    fixture.On(offline.value.ref, "disconnect", "()V");
+    CHECK(transport.resolved.empty());
+    CHECK(transport.connected.empty());
 
     fixture.vm.Network().Configure({true, true, false, {"example.com"}},
                                    &transport);
@@ -1948,6 +1950,45 @@ TEST_CASE("Sealed classpath URLs read registered ZIP entries with parent first a
       CHECK(broken.exception_message.find("CRC32") != std::string::npos);
       CHECK_FALSE(fixture.On(loader, "getResourceAsStream", "(Ljava/lang/String;)Ljava/io/InputStream;",
             {VmValue::Ref(fixture.vm.NewStringUtf8(name))}).ref.IsValid());
+    }
+  }
+}
+
+
+TEST_CASE("DVM164 offline HTTP objects configure and disconnect after failed I/O") {
+  for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    FakeNetwork transport;
+    NetworkSqliteVm fixture(backend);
+    fixture.vm.Network().Configure({}, &transport);
+    const auto url = fixture.New("Ljava/net/URL;", "(Ljava/lang/String;)V",
+        {VmValue::Ref(fixture.vm.NewStringUtf8("http://game.test/resource"))});
+    const auto io_exception = fixture.linker.ResolveDescriptor("Ljava/io/IOException;");
+    for (const auto* operation : {"connect", "getResponseCode", "getInputStream"}) {
+      const auto connection = fixture.On(url, "openConnection", "()Ljava/net/URLConnection;").ref;
+      REQUIRE(connection.IsValid());
+      fixture.On(connection, "setRequestMethod", "(Ljava/lang/String;)V",
+          {VmValue::Ref(fixture.vm.NewStringUtf8("GET"))});
+      fixture.On(connection, "setRequestProperty", "(Ljava/lang/String;Ljava/lang/String;)V",
+          {VmValue::Ref(fixture.vm.NewStringUtf8("X-Test")), VmValue::Ref(fixture.vm.NewStringUtf8("offline"))});
+      fixture.On(connection, "setConnectTimeout", "(I)V", {VmValue::Int(100)});
+      fixture.On(connection, "setReadTimeout", "(I)V", {VmValue::Int(200)});
+      CHECK(fixture.On(connection, "getConnectTimeout", "()I").AsInt() == 100);
+      CHECK(fixture.On(connection, "getReadTimeout", "()I").AsInt() == 200);
+      CHECK(transport.resolved.empty());
+      CHECK(transport.connected.empty());
+      fixture.On(connection, "disconnect", "()V");
+      const auto* descriptor = std::string_view(operation) == "getResponseCode" ? "()I"
+          : std::string_view(operation) == "getInputStream" ? "()Ljava/io/InputStream;" : "()V";
+      const auto failure = fixture.OnOutcome(connection, operation, descriptor);
+      REQUIRE(failure.exception.IsValid());
+      CHECK(fixture.linker.IsAssignable(io_exception, failure.exception_class));
+      CHECK(failure.exception_message.find("offline") != std::string::npos);
+      fixture.On(connection, "disconnect", "()V");
+      fixture.On(connection, "disconnect", "()V");
+      CHECK(transport.resolved.empty());
+      CHECK(transport.connected.empty());
+      CHECK(transport.sent.empty());
+      CHECK(transport.close_count == 0);
     }
   }
 }

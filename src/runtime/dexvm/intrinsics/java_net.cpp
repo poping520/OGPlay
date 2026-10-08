@@ -447,7 +447,7 @@ namespace ogplay::runtime::dexvm::intrinsics {
             builder.FinalOverrideMethod("toString", "()Ljava/lang/String;",
                                         external_form);
 
-            const auto open_connection = [host, protocol](IntrinsicContext& context)
+            const auto open_connection = [protocol](IntrinsicContext& context)
                 -> VmValue {
                 IntrinsicCall call(context);
                 const auto protocol_text = call.Vm().StringUtf8(
@@ -468,13 +468,9 @@ namespace ogplay::runtime::dexvm::intrinsics {
                         "file URL I/O is not implemented"
                     };
                 }
-                const auto host_text = call.Vm().StringUtf8(call.GetRef(host));
-                if (!call.Vm().Network().Policy().enabled) {
-                    throw VmJavaThrow{
-                        "Ljava/net/UnknownHostException;",
-                        "network policy is offline for " + host_text
-                    };
-                }
+                // HTTP(S) construction is value-only. Policy is enforced by
+                // NetworkRuntime at DNS/connect/I/O, after callers own a
+                // connection they can configure and disconnect on failure.
                 const char* descriptor = protocol_text == "https"
                     ? "Lorg/ogplay/security/OgPlayHttpsURLConnection;"
                     : protocol_text == "http"

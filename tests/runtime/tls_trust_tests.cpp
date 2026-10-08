@@ -843,9 +843,14 @@ TEST_CASE("TLS-02 SSLContext init does not replace the HTTPS factory") {
                 VmValue::Ref(app.Vm().NewStringUtf8("https://tls.test/"))});
     auto connection = app.InvokeResult(url, "openConnection",
                                        "()Ljava/net/URLConnection;");
-    REQUIRE(connection.exception.IsValid());
-    CHECK(app.Linker().Class(connection.exception_class).descriptor ==
-          "Ljava/net/UnknownHostException;");
+    REQUIRE_FALSE(connection.exception.IsValid());
+    REQUIRE(connection.value.ref.IsValid());
+    auto failure = app.InvokeResult(connection.value.ref, "connect", "()V");
+    REQUIRE(failure.exception.IsValid());
+    CHECK(app.Linker().IsAssignable(app.Linker().ResolveDescriptor("Ljava/io/IOException;"), failure.exception_class));
+    CHECK(failure.exception_message.find("offline") != std::string::npos);
+    app.Invoke(connection.value.ref, "disconnect", "()V");
+    app.Invoke(connection.value.ref, "disconnect", "()V");
     (void)defaults;
     (void)created_default;
 }
@@ -1096,15 +1101,34 @@ TEST_CASE("TLS-02 mutual TLS installs a BKS client certificate") {
 }
 
 TEST_CASE("TLS-02 network stays offline by default") {
-    TlsApp app;
-    CHECK_FALSE(app.Vm().Network().Policy().enabled);
-    auto url = app.Vm().NewIntrinsicInstance("Ljava/net/URL;");
-    app.Direct("Ljava/net/URL;", "<init>", "(Ljava/lang/String;)V",
-               {VmValue::Ref(url),
-                VmValue::Ref(app.Vm().NewStringUtf8("https://tls.test/"))});
-    auto opened = app.InvokeResult(url, "openConnection",
-                                   "()Ljava/net/URLConnection;");
-    REQUIRE(opened.exception.IsValid());
-    CHECK(app.Linker().Class(opened.exception_class).descriptor ==
-          "Ljava/net/UnknownHostException;");
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        TlsApp app(nullptr, backend);
+        CHECK_FALSE(app.Vm().Network().Policy().enabled);
+        auto url = app.Vm().NewIntrinsicInstance("Ljava/net/URL;");
+        app.Direct("Ljava/net/URL;", "<init>", "(Ljava/lang/String;)V",
+                   {VmValue::Ref(url), VmValue::Ref(app.Vm().NewStringUtf8("https://tls.test/"))});
+        const auto io_exception = app.Linker().ResolveDescriptor("Ljava/io/IOException;");
+        for (const auto* operation : {"connect", "getResponseCode", "getInputStream"}) {
+            auto opened = app.InvokeResult(url, "openConnection", "()Ljava/net/URLConnection;");
+            REQUIRE_FALSE(opened.exception.IsValid());
+            REQUIRE(opened.value.ref.IsValid());
+            const auto connection = opened.value.ref;
+            app.Invoke(connection, "setRequestMethod", "(Ljava/lang/String;)V",
+                       {VmValue::Ref(app.Vm().NewStringUtf8("GET"))});
+            app.Invoke(connection, "setRequestProperty", "(Ljava/lang/String;Ljava/lang/String;)V",
+                       {VmValue::Ref(app.Vm().NewStringUtf8("Connection")), VmValue::Ref(app.Vm().NewStringUtf8("close"))});
+            app.Invoke(connection, "setConnectTimeout", "(I)V", {VmValue::Int(100)});
+            CHECK(app.Invoke(connection, "getConnectTimeout", "()I").AsInt() == 100);
+            app.Invoke(connection, "disconnect", "()V");
+            const auto* descriptor = std::string_view(operation) == "getResponseCode" ? "()I"
+                : std::string_view(operation) == "getInputStream" ? "()Ljava/io/InputStream;" : "()V";
+            auto failure = app.InvokeResult(connection, operation, descriptor);
+            REQUIRE(failure.exception.IsValid());
+            CHECK(app.Linker().IsAssignable(io_exception, failure.exception_class));
+            CHECK(failure.exception_message.find("offline") != std::string::npos);
+            app.Invoke(connection, "disconnect", "()V");
+            app.Invoke(connection, "disconnect", "()V");
+            CHECK_FALSE(app.Vm().Network().Policy().enabled);
+        }
+    }
 }

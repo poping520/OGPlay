@@ -40,9 +40,13 @@
   保活，heap client arrays 明确拒绝。BootDex build/check、自检、ABI/生成/载荷校验、
   macOS Release 与定向 38 项/2143 断言通过。原 glClear 分派首错消失；空沙盒
   presented=4，退出 0、无超时，本次短运行未触达下一致命首错。
-  进程已退出，跨平台、授权路径及完整游戏未验收。
+  [DVM-164 后续修复](../tasks/dexvm/DVM-164.md) 使离线 HTTP/HTTPS 先构造连接，
+  实际 I/O 仍拒绝，失败后重复断开安全。macOS Release 与定向 6 项/922 断言通过；
+  loopback oracle 既有 pclose 收尾等待经手动结束测试子进程闭合。复制用户复现沙盒
+  越过 HTTPS disconnect 空接收者首错；f=74 下一首错为 Analytics q.run pc19
+  对 az.a 的空接收者 NPE，退出 1、无超时。进程已退出，跨平台、授权路径及完整游戏未验收。
   证据 `.local/wb-classloader-analysis/`、`.local/wb-subscriber-fix/`、`.local/wb-lifecycle-fix/`、
-  `.local/wb-sensor-fix/`、`.local/wb-jnigraphics-fix/`、`.local/wb-nfc-absence-fix/`、`.local/wb-activity-result-fix/`、`.local/wb-notification-cancel-fix/`、`.local/wb-rgb565-fix/`、`.local/wb-java-gl-fix/`。
+  `.local/wb-sensor-fix/`、`.local/wb-jnigraphics-fix/`、`.local/wb-nfc-absence-fix/`、`.local/wb-activity-result-fix/`、`.local/wb-notification-cancel-fix/`、`.local/wb-rgb565-fix/`、`.local/wb-java-gl-fix/`、`.local/wb-http-lazy-fix/`。
 
 - **Tales From Deep Space 1.0.0**：VideoView/packed depth/stencil 已闭合；macOS
   800×480/1280×720 菜单裁剪，BND-29 终止断言失败。

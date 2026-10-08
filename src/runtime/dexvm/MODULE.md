@@ -103,7 +103,9 @@ switch/threaded 解释、异常、线程/monitor、反射及 `java.*` core intri
   RoutePlanner 选择直连；不读取宿主代理，也不登记 `Proxy`/默认 selector 的 BootDex 闭包。
 - URLConnection/HttpURLConnection/HttpsURLConnection 的请求属性、超时、method 和默认
   socket factory/hostname verifier 状态来自 API 19 BootDex；core 只 overlay connect 与
-  URL.openConnection 的 NetworkRuntime 边界。封存 classpath 的只读连接复用原版父类状态与
+  URL.openConnection 的 NetworkRuntime 边界。HTTP/HTTPS openConnection 仅正常构造对象，
+  离线也可配置请求；policy 在实际 DNS/connect/I/O 时拒绝，未连接或失败后可安全 disconnect。
+  封存 classpath 的只读连接复用原版父类状态与
   ByteArrayInputStream；URL.openStream 虚派连接的 getInputStream。默认 NetworkPolicy disabled。真实客户端
   TLS/HTTPS 由 OGPlayJSSE 经 raw transport 与 guest libssl 完成，不在宿主重复加密。
   SSLEngine、server TLS 和公开互联网 CA 不在当前 complete 范围。

@@ -1698,7 +1698,7 @@ note = "DVM-87 的 FutureTask、串行 executor 继续复用 VmThreadRuntime。D
 [dexvm.java_network]
 status = "complete"
 test = "tests/dexvm/network_sqlite_tests.cpp; tests/dexvm/bootdex_library_tests.cpp: DVM-103/DVM-149; Angry Birds no-Profile smoke"
-note = "ProxySelector 采用无进程代理 intrinsic，getDefault 返回 null。DVM-153 将 URI/UrlUtils、DVM-152 将 InetAddress 闭包迁入 BootDex。DVM-164 将 URLConnection/HttpURLConnection/HttpsURLConnection、NoPreloadHolder 与默认 hostname verifier Java 状态迁入 API19 BootDex，删除重复 Https C++ 类壳；仅 connect/disconnect/input 和 SSL factory/context 保留 NetworkRuntime 边界。NetworkPolicy 默认 disabled。DVM-173 将 HTTPS 出口接到 OGPlayJSSE；客户端握手尚未闭合，不启用公网、不伪造握手/证书。"
+note = "ProxySelector 采用无进程代理 intrinsic，getDefault 返回 null。DVM-153 将 URI/UrlUtils、DVM-152 将 InetAddress 闭包迁入 BootDex。DVM-164 将 URLConnection/HttpURLConnection/HttpsURLConnection、NoPreloadHolder 与默认 hostname verifier Java 状态迁入 API19 BootDex，删除重复 Https C++ 类壳；仅 connect/disconnect/input 和 SSL factory/context 保留 NetworkRuntime 边界。NetworkPolicy 默认 disabled。DVM-164 后续修复让离线 HTTP/HTTPS openConnection 正常创建 Java 对象，实际 DNS/connect/I/O 仍受 policy 拒绝，失败后 disconnect 安全且可重复；DVM-173 将 HTTPS 出口接到 OGPlayJSSE；客户端握手尚未闭合，不启用公网、不伪造握手/证书。"
 
 [dexvm.apache_http_bootdex]
 status = "partial"

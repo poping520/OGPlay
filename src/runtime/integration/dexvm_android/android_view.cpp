@@ -1247,6 +1247,7 @@ void DispatchViewFocusChange(dx::Interpreter& vm, const dx::VmObjectRef view,
 
 Decl Declare_android_view_View(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/view/View;", "Ljava/lang/Object;");
+    const auto decor_owner = builder.BoundInstanceField("mOgplayWindowOwner", "Landroid/app/Activity;", dx::kAccPrivate);
     builder.ConstantInt("SYSTEM_UI_FLAG_VISIBLE", "I", 0, dx::kAccPublic)
         .ConstantInt("SYSTEM_UI_FLAG_LOW_PROFILE", "I", 0x00000001,
                      dx::kAccPublic)
@@ -1307,15 +1308,13 @@ Decl Declare_android_view_View(const Context& context) {
                 kScrollbarsStyleMask);
         });
     builder.VirtualMethod("hasWindowFocus", "()Z",
-        [context](dx::IntrinsicContext& call) {
+        [context, decor_owner](dx::IntrinsicContext& call) {
             if (!context->window_has_focus.load()) {
                 return dx::VmValue::Int(0);
             }
-            const auto decor = context->singletons.find("window_decor_view");
-            if (decor != context->singletons.end() &&
-                decor->second == call.receiver) {
-                return dx::VmValue::Int(1);
-            }
+            const auto owner = dx::IntrinsicCall(call).GetRef(decor_owner);
+            if (owner.IsValid())
+                return dx::VmValue::Int(context->window_focus_activity.load() == owner.Value() ? 1 : 0);
             const auto node = FindViewUiNode(*context, call.receiver.Value());
             return dx::VmValue::Int(
                 node.has_value() && context->ui_tree.IsAttached(*node));
@@ -2172,8 +2171,17 @@ namespace {
 
 [[nodiscard]] dx::VmObjectRef Attributes(dx::IntrinsicContext& call,
                                          const Context& context) {
-    return Singleton(call, context, "window_attributes",
-                     "Landroid/view/WindowManager$LayoutParams;");
+    static_cast<void>(context);
+    const auto field = call.vm.Linker().FindFieldRecursive(call.vm.Model().ObjectClass(call.receiver),
+        "mWindowAttributes", "Landroid/view/WindowManager$LayoutParams;");
+    if (!field) throw dx::DexVmError(dx::DexVmErrorReason::internal_invariant, "Window attributes field is missing");
+    const auto slot = call.vm.Linker().Field(*field).slot;
+    auto value = dx::VmObjectRef(call.vm.Model().InstanceSlots(call.receiver)[slot].bits);
+    if (!value.IsValid()) {
+        value = call.vm.NewIntrinsicInstance("Landroid/view/WindowManager$LayoutParams;");
+        call.vm.Model().InstanceSlots(call.receiver)[slot] = {value.Value(), dx::SlotTag::ref};
+    }
+    return value;
 }
 
 [[nodiscard]] const dx::LinkedField& IntField(dx::IntrinsicContext& call,
@@ -2207,6 +2215,7 @@ void WriteIntField(dx::IntrinsicContext& call, const dx::VmObjectRef object,
 
 Decl Declare_android_view_Window(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/view/Window;", "Ljava/lang/Object;");
+    static_cast<void>(builder.BoundInstanceField("mWindowAttributes", "Landroid/view/WindowManager$LayoutParams;", dx::kAccPrivate));
     builder.VirtualMethod("takeSurface", "(Landroid/view/SurfaceHolder$Callback2;)V",
         [context](dx::IntrinsicContext& call) {
             SetWindowSurfaceCallback(call.vm, *context, call.arguments[0].ref);
@@ -2267,10 +2276,22 @@ Decl Declare_android_view_Window(const Context& context) {
         [context](dx::IntrinsicContext& call) {
             return dx::VmValue::Ref(Attributes(call, context));
         });
+    const auto owner = builder.BoundInstanceField("mOgplayOwner", "Landroid/app/Activity;", dx::kAccPrivate);
+    const auto decor = builder.BoundInstanceField("mDecor", "Landroid/view/View;", dx::kAccPrivate);
     builder.VirtualMethod("getDecorView", "()Landroid/view/View;",
-        [context](dx::IntrinsicContext& call) {
-            return dx::VmValue::Ref(Singleton(
-                call, context, "window_decor_view", "Landroid/view/View;"));
+        [decor, owner](dx::IntrinsicContext& call) {
+            dx::IntrinsicCall fields(call);
+            auto value = fields.GetRef(decor);
+            if (!value.IsValid()) {
+                value = call.vm.NewIntrinsicInstance("Landroid/view/View;");
+                const auto field = call.vm.Linker().FindFieldRecursive(call.vm.Model().ObjectClass(value),
+                    "mOgplayWindowOwner", "Landroid/app/Activity;");
+                if (!field) throw dx::DexVmError(dx::DexVmErrorReason::internal_invariant, "decor owner field is missing");
+                call.vm.Model().InstanceSlots(value)[call.vm.Linker().Field(*field).slot] = {
+                    fields.GetRef(owner).Value(), dx::SlotTag::ref};
+                fields.SetRef(decor, value);
+            }
+            return dx::VmValue::Ref(value);
         });
     return std::move(builder).Build();
 }

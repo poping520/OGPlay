@@ -22,3 +22,9 @@ Context 选择 LocalSensorManager 空设备后端，不提供 SensorService 或�
 
 NFC 的 [Java 客户端](java/android/nfc/MODULE.md) 只支持类型链接及无适配器发现；
 查询与 manager 状态在 BootDex，平台边界报告无设备，不提供 NFC 通信或回调。
+
+Activity 的 [Java 客户端](java/android/app/MODULE.md) 保存每实例结果字段及普通转发；
+两个 native 只提交平台启动/结束，返回栈与结果交付由 session 编排。
+
+NotificationManager 的普通 Context 字段、构造/from 与重载在 android.app Java 客户端；
+平台事实为发布禁用、通知集合已知为空。取消正常完成，发布失败；无系统通知服务。

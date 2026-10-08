@@ -138,6 +138,8 @@ private:
     // be observed parked once or terminal. The bounded fallback is fail-open.
     void AwaitInitialThreadQuiescence();
     void ServiceActivitySwitch();
+    void StartCurrentActivity();
+    void RestoreActivity();
     void SynchronizeContentView();
     void DispatchViewWindowFocus(bool has_focus);
     void EnsureRendererCallbacks();
@@ -184,6 +186,7 @@ private:
     // finish inside onCreate; a never-started activity retires with just
     // onDestroy (no onPause/onStop).
     bool activity_started_{};
+    bool activity_resumed_{};
     bool egl_pacer_attached_{};
     // Initial focus is a post-traversal message, not part of Start(). Keeping
     // it until the first frame also lets guest worker threads observe their

@@ -107,8 +107,13 @@ Dex activity 每帧在 guest 回调前泵送主 Looper，到帧尾只通过
   touch CANCEL 与 key UP，UI listener、深层 View 与 Activity 均接收完整触点快照。
   `MapAndroidTouch` 将平台无关 TouchSnapshot 转为 API19 的 DOWN/POINTER_DOWN/
   MOVE/POINTER_UP/UP/CANCEL 与 action index；坐标变换不在这里重复执行。
-  Activity switch 在旧 `onDestroy` 后推进 UI content generation，清空旧 UiTree binding/
-  listener，再构造新 Activity；旧 Activity UI 不得参与新一帧 draw/input。入口 Activity
+  Activity 转换在 VM execution lock 下消费 FIFO 命令，以每实例返回栈保留调用方、
+  Intent/普通内容树/焦点与待结果；旧内容 detach 后不参与 draw/input，结束时仅退役该子树。
+  恢复原实例时 restart/start、结果虚派后 resume；栈/命令/结果由 session GC roots 保活。
+  单任务/单前台窗口、standard 和非栈顶 singleTop 新实例；活动 GL/Surface/native window/
+  视频调用方不能保留，明确失败，已有 startActivity+finish 可退役旧渲染实例。
+  最后实例结束才退出；重复/中间 finish 不错误退出，Stop 在 join 后销毁全部保留实例。
+  入口 Activity
   实例化时把自身句柄发布为 `task_root_activity`（进程唯一 task 的根，
   `Activity.isTaskRoot()` 的判定依据），switch 到达的 Activity 不是根。
 - 全屏不透明视频按已解析 UiTree bounds/祖先可见性/alpha/裁剪认证覆盖。

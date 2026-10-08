@@ -1728,7 +1728,7 @@ note = "DVM-15 严格 resources.arsc 读取：resid↔(type,name,文件路径)�
 [session.dex_activity_lifecycle]
 status = "complete"
 test = "Asphalt 5 exact dexvm title-flow gate 3/3; tests/session/lifecycle_tests.cpp; tests/runtime/native_library_loader_tests.cpp"
-note = "DVM-18 生命周期反转模板：实例化 launcher→<clinit>→onCreate/onStart/onResume→onSizeChanged→focus→onSurfaceCreated/Changed→逐帧 onDrawFrame→输入经 MotionEvent/onTouchEvent→suspend/resume→surfaceDestroyed/onStop/onDestroy 接存量 teardown 顺序；DVM-125 将窗口焦点收敛为 lifecycle 唯一事实，初始 onResume 为 false、Surface 后下一帧获焦，状态先于 Activity/attached View 虚回调发布并去重，Suspend/Resume、Activity 切换与 Stop 共用转换；DecorView/attached View 查询同步，detached View 与旧 Activity 为 false；DVM-218 将退出回调分阶段尝试并保留首错，secondary 错误独立日志；onStop 后先 join native/Java worker，再进入可能调用 libc exit 的 onDestroy。已退出 guest 不再执行 JNI/ELF 清理；原 APK 菜单可达，但其 exit 析构中的内存故障尚未闭合。DVM-219 允许空 Activity 持续主消息泵，首次/延迟/切换按 content 与 UiTree 节点身份统一尺寸和 Surface 初始化；onCreate finish 不接收 start/resume/pause/stop，晚附着 View 接收已到达的窗口焦点。双解释器、既有 Surface/focus/退出回归通过；不提供完整 Activity stack 或多窗口。"
+note = "DVM-18 生命周期反转模板：实例化 launcher→<clinit>→onCreate/onStart/onResume→onSizeChanged→focus→onSurfaceCreated/Changed→逐帧 onDrawFrame→输入经 MotionEvent/onTouchEvent→suspend/resume→surfaceDestroyed/onStop/onDestroy 接存量 teardown 顺序；DVM-125 将窗口焦点收敛为 lifecycle 唯一事实，初始 onResume 为 false、Surface 后下一帧获焦，状态先于 Activity/attached View 虚回调发布并去重，Suspend/Resume、Activity 切换与 Stop 共用转换；DecorView/attached View 查询同步，detached View 与旧 Activity 为 false；DVM-218 将退出回调分阶段尝试并保留首错，secondary 错误独立日志；onStop 后先 join native/Java worker，再进入可能调用 libc exit 的 onDestroy。已退出 guest 不再执行 JNI/ELF 清理；原 APK 菜单可达，但其 exit 析构中的内存故障尚未闭合。DVM-219 允许空 Activity 持续主消息泵，首次/延迟/切换按 content 与 UiTree 节点身份统一尺寸和 Surface 初始化；onCreate finish 不接收 start/resume/pause/stop，晚附着 View 接收已到达的窗口焦点。双解释器、既有 Surface/focus/退出回归通过；DVM-223 新增有界单任务返回栈，见 dexvm.activity_result；不提供完整 task/multi-window 或保留活动 GL/Surface/video 调用方的返回。"
 
 [session.title_profile_v2]
 status = "complete"
@@ -2050,3 +2050,18 @@ note = "DVM-222/ADR-0103：API19 两个 NDEF 回调接口与两个公开/旧式 
 status = "unimplemented"
 test = "tests/dexvm/android_value_tests.cpp: DVM-222"
 note = "不实现 NFC 通信、标签读写、Beam、扫描或卡模拟。已声明的 adapter 构造/回调注册入口经 native 拒绝边界记账并抛 UnsupportedOperationException；不保存监听器或派发成功回调。"
+
+[dexvm.activity_result]
+status = "partial"
+test = "tools/bootdex/build_bootdex.py build/check; tools.android_payload_current; tests/runtime/native_library_loader_tests.cpp: DVM-223; tests/loader/apk_manifest_tests.cpp: DVM-223"
+note = "DVM-223/ADR-0104：BootDex Activity 保存每实例结果字段、monitor/setResult/转发；两个 native 提交 FIFO 启动/结束快照。单任务栈保留原调用方、Intent 副本、普通 View 内容与焦点，Window/attributes/decor 与焦点按实例隔离，后台 findViewById 查询自身子树；结果在恢复时先于 resume 虚派，默认取消、负请求无结果、自定义码保留。重复/中间 finish、嵌套、GC 及 onStart 启动/onCreate 结束有双解释器回归。Manifest launchMode 保留且 ActivityInfo 发布；standard 与非栈顶 singleTop 新建，复用/task 模式、非空 options、for-result 非零 flags/跨包明确失败。保留活动 GL/Surface/native callback/video 调用方及后台换前台内容不支持；完整 Fragment/task/多窗口、跨进程 Parcel/URI 授权、跨平台与 title gate 未验收。"
+
+[dexvm.notification_cancel]
+status = "partial"
+test = "tools/bootdex/build_bootdex.py build/check; tools.android_payload_current; tests/dexvm/android_value_tests.cpp: DVM-224"
+note = "DVM-224/ADR-0105：Context 正常初始化并缓存 BootDex NotificationManager，原版 Context 字段/构造/from 和重载归 Java；取消作用于当前应用的已知空集合，支持 null/空 tag、任意 int id、重复 cancel/cancelAll；不取消 PendingIntent。native 验证当前包，跨包 factory/取消拒绝且记账；单例与生产 session GC roots 受检。没有发布生产者或持久库存，不虚构状态表。原服务异常未再出现，单帧主动停止后 30 秒退出超时，尚无下一条 Java 异常；跨平台/完整游戏未验收。"
+
+[dexvm.notification_post]
+status = "unimplemented"
+test = "tests/dexvm/android_value_tests.cpp: DVM-224"
+note = "通知发布禁用：notify(null) NPE，非空请求走 private nativeRejectPost，记账并抛 UnsupportedOperationException，不存储对象或静默丢弃。仅纳入管理器原型，不包含 Notification/Builder/RemoteViews 值构建、状态栏、系统弹窗、声振、点击/删除 PendingIntent 派发、跨用户或通知持久化。"

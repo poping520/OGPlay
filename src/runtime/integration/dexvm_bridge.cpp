@@ -131,6 +131,14 @@ void VisitAndroidSessionRoots(const DexVmAndroidContext& context,
         }
     };
     root(context.activity);
+    for (const auto& record : context.activity_stack) {
+        root(record.object); root(record.intent); root(record.content); root(record.caller);
+        root(record.focused_edit_text);
+        for (const auto& result : record.results) root(result.data);
+    }
+    for (const auto& command : context.activity_commands) {
+        root(command.owner); root(command.intent);
+    }
     root(context.application);
     root(context.application_base_context);
     for (const auto& binding : context.local_service_bindings) {

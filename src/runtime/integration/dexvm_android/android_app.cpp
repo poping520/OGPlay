@@ -12,6 +12,63 @@
 
 namespace ogplay::runtime::android_intrinsics {
 
+namespace {
+void RequireNotificationPackage(dx::IntrinsicContext& call, const Context& context) {
+    if (!call.arguments[0].ref.IsValid())
+        throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;", "packageName"};
+    if (call.vm.StringUtf8(call.arguments[0].ref) != context->package_name) {
+        if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.notification_cancel", 0);
+        throw dx::VmJavaThrow{"Ljava/lang/SecurityException;", "notification access is limited to the current application"};
+    }
+}
+}
+
+Decl Declare_android_app_NotificationManager(const Context& context) {
+    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/app/NotificationManager;");
+    builder.DirectMethod("nativeCancel", "(Ljava/lang/String;Ljava/lang/String;IZ)V",
+        [context](dx::IntrinsicContext& call) {
+            RequireNotificationPackage(call, context);
+            // Publication is rejected by the only post boundary. No other
+            // producer or persisted inventory exists, so the set is known empty.
+            // Cancellation must not invalidate an unrelated PendingIntent.
+            return dx::VmValue::Void();
+        }, dx::kAccPrivate | dx::kAccNative);
+    builder.DirectMethod("nativeRejectPost", "(Ljava/lang/String;)V",
+        [context](dx::IntrinsicContext& call) -> dx::VmValue {
+            RequireNotificationPackage(call, context);
+            if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.notification_post", 0);
+            throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "notification publication is disabled"};
+        }, dx::kAccPrivate | dx::kAccNative);
+    return std::move(builder).Build();
+}
+
+dx::VmObjectRef NotificationManagerForContext(dx::IntrinsicContext& call, const Context& context) {
+    const auto package = CallAndroidMethod(call.vm, call.receiver, "getPackageName", "()Ljava/lang/String;").ref;
+    if (!package.IsValid() || call.vm.StringUtf8(package) != context->package_name) {
+        if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.notification_cancel", 0);
+        throw dx::VmJavaThrow{"Ljava/lang/SecurityException;", "notification manager requires the current application context"};
+    }
+    const auto found = context->singletons.find("notification");
+    if (found != context->singletons.end()) return found->second;
+    auto& vm = call.vm;
+    const auto type = vm.Linker().ResolveDescriptor("Landroid/app/NotificationManager;");
+    const auto require = [&](const dx::VmCallOutcome& outcome) {
+        if (outcome.exception.IsValid())
+            throw dx::VmJavaThrow{vm.Linker().Class(outcome.exception_class).descriptor,
+                                  outcome.exception_message, outcome.exception};
+    };
+    require(vm.EnsureClassInitialized(type));
+    const auto object = vm.NewIntrinsicInstance("Landroid/app/NotificationManager;");
+    const auto owner = context->application_base_context.IsValid() ? context->application_base_context : call.receiver;
+    const auto roots = vm.ProtectReferences(std::array{object, owner});
+    const auto constructor = vm.Linker().FindDirectMethod(type, "<init>", "(Landroid/content/Context;Landroid/os/Handler;)V");
+    if (!constructor)
+        throw dx::DexVmError(dx::DexVmErrorReason::unresolved_reference, "NotificationManager constructor is missing");
+    require(vm.Call(*constructor, std::array{dx::VmValue::Ref(object), dx::VmValue::Ref(owner), dx::VmValue::Ref(dx::VmObjectRef{})}));
+    context->singletons.emplace("notification", object);
+    return object;
+}
+
 Decl Declare_android_app_KeyguardManager(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class(
         "Landroid/app/KeyguardManager;", "Ljava/lang/Object;");
@@ -117,9 +174,6 @@ Decl Declare_android_app_Activity(const Context& context) {
                 "(Ljava/lang/String;I)Landroid/content/SharedPreferences;",
                 {dx::VmValue::Ref(name), call.arguments[0]});
         });
-    builder.Constructor("()V", [](dx::IntrinsicContext&) {
-        return dx::VmValue::Void();
-    });
     // OGPlay only creates top-level application activities; embedded child
     // activities and ActivityGroup are outside the process compatibility boundary.
     builder.VirtualMethod(
@@ -154,10 +208,20 @@ Decl Declare_android_app_Activity(const Context& context) {
         });
     builder.VirtualMethod("onConfigurationChanged",
         "(Landroid/content/res/Configuration;)V", lifecycle_noop);
+    const auto window = builder.BoundInstanceField("mWindow", "Landroid/view/Window;", dx::kAccPrivate);
     builder.FinalMethod("getWindow", "()Landroid/view/Window;",
-        [context](dx::IntrinsicContext& call) {
-            return dx::VmValue::Ref(
-                Singleton(call, context, "window", "Landroid/view/Window;"));
+        [window](dx::IntrinsicContext& call) {
+            dx::IntrinsicCall fields(call);
+            auto value = fields.GetRef(window);
+            if (!value.IsValid()) {
+                value = call.vm.NewIntrinsicInstance("Landroid/view/Window;");
+                const auto owner = call.vm.Linker().FindFieldRecursive(call.vm.Model().ObjectClass(value),
+                    "mOgplayOwner", "Landroid/app/Activity;");
+                if (!owner) throw dx::DexVmError(dx::DexVmErrorReason::internal_invariant, "Window owner field is missing");
+                call.vm.Model().InstanceSlots(value)[call.vm.Linker().Field(*owner).slot] = {call.receiver.Value(), dx::SlotTag::ref};
+                fields.SetRef(window, value);
+            }
+            return dx::VmValue::Ref(value);
         });
     builder.FinalMethod("getApplication", "()Landroid/app/Application;",
         [context](dx::IntrinsicContext&) {
@@ -168,6 +232,10 @@ Decl Declare_android_app_Activity(const Context& context) {
     builder.FinalMethod("setContentView", "(Landroid/view/View;)V",
         [context](dx::IntrinsicContext& call) {
             const auto view = call.arguments[0].ref;
+            if (!context->activity_stack.empty() && call.receiver != context->activity) {
+                if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.activity_result", 0);
+                throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "background Activity cannot replace foreground content"};
+            }
             if (!view.IsValid()) {
                 throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;",
                                       "content view is null"};
@@ -225,6 +293,10 @@ Decl Declare_android_app_Activity(const Context& context) {
         [context](dx::IntrinsicContext& call) {
             const auto layout_id =
                 static_cast<std::uint32_t>(call.arguments[0].AsInt());
+            if (!context->activity_stack.empty() && call.receiver != context->activity) {
+                if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.activity_result", 0);
+                throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "background Activity cannot replace foreground content"};
+            }
             try {
                 const auto old_content =
                     context->ui_tree.Get(context->ui_tree.Root())->children;
@@ -261,6 +333,25 @@ Decl Declare_android_app_Activity(const Context& context) {
         });
     builder.FinalMethod("findViewById", "(I)Landroid/view/View;",
         [context](dx::IntrinsicContext& call) {
+            if (call.arguments[0].AsInt() == -1) return dx::VmValue::Ref(dx::VmObjectRef{});
+            if (!context->activity_stack.empty() && call.receiver != context->activity) {
+                const auto record = std::find_if(context->activity_stack.begin(), context->activity_stack.end(),
+                    [&](const auto& item) { return item.object == call.receiver; });
+                if (record == context->activity_stack.end() || !record->content.IsValid())
+                    return dx::VmValue::Ref(dx::VmObjectRef{});
+                const auto root = FindViewUiNode(*context, record->content.Value());
+                if (!root) return dx::VmValue::Ref(dx::VmObjectRef{});
+                std::vector<ui::UiNodeId> nodes{*root};
+                while (!nodes.empty()) {
+                    const auto node = nodes.back(); nodes.pop_back();
+                    const auto* state = context->ui_tree.Get(node);
+                    if (!state) continue;
+                    if (state->android_id == call.arguments[0].AsInt())
+                        return dx::VmValue::Ref(ViewObjectForUiNode(*context, node));
+                    nodes.insert(nodes.end(), state->children.rbegin(), state->children.rend());
+                }
+                return dx::VmValue::Ref(dx::VmObjectRef{});
+            }
             const auto found = context->ui_tree.FindByAndroidId(
                 call.arguments[0].AsInt());
             if (!found.has_value()) {
@@ -346,11 +437,37 @@ Decl Declare_android_app_Activity(const Context& context) {
         on_key_false);
     builder.VirtualMethod("onTouchEvent", "(Landroid/view/MotionEvent;)Z",
         [](dx::IntrinsicContext&) { return dx::VmValue::Int(0); });
-    builder.VirtualMethod("finish", "()V",
+    builder.DirectMethod("nativeStartActivityForResult",
+        "(Landroid/content/Intent;ILandroid/os/Bundle;)V",
+        [context](dx::IntrinsicContext& call) -> dx::VmValue {
+            const auto reject = [&] {
+                if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.activity_result", 0);
+                throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
+                                      "Activity result launch requires the active caller, no options and standard flags"};
+            };
+            if (call.arguments[2].ref.IsValid() ||
+                (context->activity.IsValid() && call.receiver != context->activity)) reject();
+            if (call.arguments[1].AsInt() >= 0 && (context->renderer.IsValid() ||
+                !context->active_surface_holders.empty() || context->window_surface_callback.IsValid() ||
+                AnyVideoPlaying(*context))) reject();
+            if (!call.arguments[0].ref.IsValid())
+                throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;", "intent is null"};
+            if (CallAndroidMethod(call.vm, call.arguments[0].ref, "getFlags", "()I").AsInt() != 0) reject();
+            return StartAndroidActivity(call, context, call.arguments[1].AsInt());
+        }, dx::kAccPrivate | dx::kAccNative);
+    builder.DirectMethod("nativeFinish", "(ILandroid/content/Intent;)V",
         [context](dx::IntrinsicContext& call) {
             context->finishing_activity = call.receiver.Value();
+            if (std::ranges::any_of(context->activity_stack, [&](const auto& record) { return record.object == call.receiver; }) &&
+                !std::ranges::any_of(context->activity_commands, [&](const auto& command) {
+                    return command.kind == DexVmAndroidContext::ActivityCommand::Kind::finish && command.owner == call.receiver;
+                })) {
+                context->activity_commands.push_back({DexVmAndroidContext::ActivityCommand::Kind::finish,
+                    call.receiver, call.arguments[1].ref, {}, {}, -1, call.arguments[0].AsInt()});
+                context->activity_switch_pending = true;
+            }
             return dx::VmValue::Void();
-        });
+        }, dx::kAccPrivate | dx::kAccNative);
     // AOSP Activity.isTaskRoot: whether this activity is the first one of
     // its task. OGPlay runs one task per process; the manifest launcher
     // opened it, in-process startActivity handoffs did not. The retired

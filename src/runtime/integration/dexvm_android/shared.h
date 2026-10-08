@@ -12,6 +12,8 @@ namespace dx = dexvm;
 
 using Decl = dexvm::IntrinsicClassDecl;
 using Context = std::shared_ptr<DexVmAndroidContext>;
+[[nodiscard]] dx::VmValue StartAndroidActivity(dx::IntrinsicContext& call,
+    const Context& context, std::int32_t request_code);
 
 // One guest Rect per holder. Publish managed dimensions before callbacks;
 // destruction retains the last frame. No side-table references or UI bounds.

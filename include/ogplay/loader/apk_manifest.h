@@ -100,6 +100,7 @@ struct AndroidManifestActivityComponent final {
     // Absent means API 19 default: exported iff the component has intent-filters.
     std::optional<bool> exported;
     std::vector<AndroidManifestMetaData> meta_data{};
+    std::uint32_t launch_mode{};
 };
 
 [[nodiscard]] inline bool AndroidManifestActivityExported(

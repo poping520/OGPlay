@@ -155,6 +155,248 @@ void RequireAbsentService(dx::IntrinsicContext &call, const Context &context,
 }
 } // namespace
 
+dx::VmValue StartAndroidActivity(dx::IntrinsicContext& call, const Context& context,
+                                 const std::int32_t request_code) {
+        const auto intent = call.arguments[0].ref;
+        if (!intent.IsValid())
+          throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;",
+                                "intent is null"};
+        const auto component =
+            CallAndroidMethod(call.vm, intent, "getComponent",
+                              "()Landroid/content/ComponentName;")
+                .ref;
+        const auto roots = call.vm.ProtectReferences(std::array{component});
+        std::string component_name;
+        std::string activity_class;
+        if (component.IsValid()) {
+          const auto package =
+              CallAndroidMethod(call.vm, component, "getPackageName",
+                                "()Ljava/lang/String;")
+                  .ref;
+          if (call.vm.StringUtf8(package) != context->package_name) {
+            const auto action = CallAndroidMethod(
+                call.vm, intent, "getAction", "()Ljava/lang/String;").ref;
+            const auto data = CallAndroidMethod(
+                call.vm, intent, "getData", "()Landroid/net/Uri;").ref;
+            const auto external_roots =
+                call.vm.ProtectReferences(std::array{action, data});
+            if (action.IsValid() && data.IsValid() &&
+                call.vm.StringUtf8(action) == "android.intent.action.VIEW") {
+              const auto uri_text = call.vm.StringUtf8(
+                  CallAndroidMethod(call.vm, data, "toString",
+                                    "()Ljava/lang/String;").ref);
+              const auto target = ParseDisabledWebTarget(uri_text);
+              if (target.http_or_https && !context->strict_webview_errors) {
+                if (request_code >= 0) {
+                  if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.activity_result", 0);
+                  throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "external Activity results are unavailable"};
+                }
+                LogDisabledWeb(call.vm, "external_browser", target);
+                return dx::VmValue::Void();
+              }
+            }
+            throw dx::VmJavaThrow{
+                "Ljava/lang/UnsupportedOperationException;",
+                "startActivity outside this package is not supported"};
+          }
+          component_name = call.vm.StringUtf8(
+              CallAndroidMethod(call.vm, component, "getClassName",
+                                "()Ljava/lang/String;")
+                  .ref);
+          activity_class = component_name;
+          if (context->activity_inventory_known) {
+            const auto declared = std::find_if(
+                context->activity_components.begin(),
+                context->activity_components.end(), [&](const auto &candidate) {
+                  return candidate.name == component_name;
+                });
+            if (!context->application_enabled ||
+                declared == context->activity_components.end() ||
+                !declared->enabled) {
+              throw dx::VmJavaThrow{
+                  "Landroid/content/ActivityNotFoundException;",
+                  "No enabled Activity found for component " + component_name};
+            }
+            if (declared->target_activity) {
+              const auto target = std::find_if(
+                  context->activity_components.begin(),
+                  context->activity_components.end(),
+                  [&](const auto &candidate) {
+                    return candidate.kind ==
+                               loader::AndroidManifestComponentKind::activity &&
+                           candidate.name == *declared->target_activity;
+                  });
+              if (target == context->activity_components.end() ||
+                  !target->enabled)
+                throw dx::VmJavaThrow{
+                    "Landroid/content/ActivityNotFoundException;",
+                    "Activity alias target is not enabled: " +
+                        *declared->target_activity};
+            }
+            activity_class = declared->target_activity.value_or(declared->name);
+          }
+        } else {
+          const auto unsupported = [&](const std::string &reason) -> void {
+            if (auto *ledger = call.vm.Ledger())
+              ledger->RecordUnimplemented("dexvm.activity_resolution", 0);
+            throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
+                                  reason};
+          };
+          const auto data = CallAndroidMethod(call.vm, intent, "getData",
+                                              "()Landroid/net/Uri;")
+                                .ref;
+          const auto type = CallAndroidMethod(call.vm, intent, "getType",
+                                              "()Ljava/lang/String;")
+                                .ref;
+          const auto action = CallAndroidMethod(call.vm, intent, "getAction",
+                                                "()Ljava/lang/String;")
+                                  .ref;
+          const auto intent_roots =
+              call.vm.ProtectReferences(std::array{data, type, action});
+          if (action.IsValid() && data.IsValid() &&
+              call.vm.StringUtf8(action) == "android.intent.action.VIEW") {
+            const auto uri_text = call.vm.StringUtf8(
+                CallAndroidMethod(call.vm, data, "toString",
+                                  "()Ljava/lang/String;")
+                    .ref);
+            const auto target = ParseDisabledWebTarget(uri_text);
+            if (target.http_or_https) {
+              if (context->strict_webview_errors)
+                unsupported("external browser launch is disabled");
+              if (request_code >= 0) {
+                if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.activity_result", 0);
+                throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "external Activity results are unavailable"};
+              }
+              LogDisabledWeb(call.vm, "external_browser", target);
+              return dx::VmValue::Void();
+            }
+          }
+          if (!context->activity_inventory_known)
+            unsupported("activity inventory is unavailable");
+          if (data.IsValid() || type.IsValid())
+            unsupported("data and MIME activity resolution is not supported");
+          if (!action.IsValid())
+            throw dx::VmJavaThrow{
+                "Landroid/content/ActivityNotFoundException;",
+                "No Activity found for an Intent without an action"};
+          const auto action_name = call.vm.StringUtf8(action);
+          std::vector<std::string> categories;
+          const auto category_set =
+              CallAndroidMethod(call.vm, intent, "getCategories",
+                                "()Ljava/util/Set;")
+                  .ref;
+          if (category_set.IsValid()) {
+            const auto iterator =
+                CallAndroidMethod(call.vm, category_set, "iterator",
+                                  "()Ljava/util/Iterator;")
+                    .ref;
+            const auto category_roots =
+                call.vm.ProtectReferences(std::array{category_set, iterator});
+            while (CallAndroidMethod(call.vm, iterator, "hasNext", "()Z")
+                       .AsInt()) {
+              const auto category = CallAndroidMethod(call.vm, iterator, "next",
+                                                      "()Ljava/lang/Object;")
+                                        .ref;
+              categories.push_back(call.vm.StringUtf8(category));
+            }
+          }
+          std::vector<const loader::AndroidManifestActivityComponent *> matches;
+          if (context->application_enabled) {
+            for (const auto &candidate : context->activity_components) {
+              if (!candidate.enabled)
+                continue;
+              if (candidate.target_activity) {
+                const auto target = std::find_if(
+                    context->activity_components.begin(),
+                    context->activity_components.end(), [&](const auto &item) {
+                      return item.kind == loader::AndroidManifestComponentKind::
+                                              activity &&
+                             item.name == *candidate.target_activity;
+                    });
+                if (target == context->activity_components.end() ||
+                    !target->enabled)
+                  continue;
+              }
+              for (const auto &filter : candidate.intent_filters) {
+                if (filter.has_data)
+                  continue;
+                if (std::find(filter.actions.begin(), filter.actions.end(),
+                              action_name) == filter.actions.end())
+                  continue;
+                if (std::find(filter.categories.begin(),
+                              filter.categories.end(),
+                              "android.intent.category.DEFAULT") ==
+                    filter.categories.end())
+                  continue;
+                const auto categories_match = std::ranges::all_of(
+                    categories, [&](const std::string &category) {
+                      return std::find(filter.categories.begin(),
+                                       filter.categories.end(),
+                                       category) != filter.categories.end();
+                    });
+                if (!categories_match)
+                  continue;
+                matches.push_back(&candidate);
+                break;
+              }
+            }
+          }
+          if (matches.empty())
+            throw dx::VmJavaThrow{"Landroid/content/ActivityNotFoundException;",
+                                  "No Activity found for action " +
+                                      action_name};
+          if (matches.size() != 1U)
+            unsupported(
+                "multiple matching activities require chooser resolution");
+          const auto &resolved = *matches.front();
+          component_name = resolved.name;
+          activity_class = resolved.target_activity.value_or(resolved.name);
+          const auto package = call.vm.NewStringUtf8(context->package_name);
+          const auto name = call.vm.NewStringUtf8(component_name);
+          const auto resolved_component =
+              NewAndroidComponentName(call.vm, package, name);
+          const auto resolved_roots = call.vm.ProtectReferences(
+              std::array{package, name, resolved_component});
+          static_cast<void>(CallAndroidMethod(
+              call.vm, intent, "setComponent",
+              "(Landroid/content/ComponentName;)Landroid/content/Intent;",
+              {dx::VmValue::Ref(resolved_component)}));
+        }
+        if (context->activity_inventory_known) {
+          const auto target = std::find_if(context->activity_components.begin(), context->activity_components.end(),
+              [&](const auto& item) { return item.name == activity_class; });
+          if (target != context->activity_components.end()) {
+            auto descriptor = "L" + activity_class + ";";
+            std::replace(descriptor.begin(), descriptor.end(), '.', '/');
+            const bool same_top = context->activity.IsValid() &&
+                call.vm.Linker().Class(call.vm.Model().ObjectClass(context->activity)).descriptor == descriptor;
+            if (target->launch_mode > 1 || (target->launch_mode == 1 && same_top)) {
+              if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.activity_result", 0);
+              throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
+                  "Activity launch mode requires unsupported reuse or task semantics"};
+            }
+          }
+        }
+        std::replace(activity_class.begin(), activity_class.end(), '.', '/');
+        const auto type = call.vm.Linker().ResolveDescriptor("Landroid/content/Intent;");
+        const auto copy = call.vm.NewIntrinsicInstance("Landroid/content/Intent;");
+        const auto copy_roots = call.vm.ProtectReferences(std::array{copy});
+        const auto constructor = call.vm.Linker().FindDirectMethod(type, "<init>", "(Landroid/content/Intent;)V");
+        if (!constructor) throw dx::DexVmError(dx::DexVmErrorReason::unresolved_reference, "Intent copy constructor is missing");
+        const auto copied = call.vm.Call(*constructor, std::array{dx::VmValue::Ref(copy), dx::VmValue::Ref(intent)});
+        if (copied.exception.IsValid())
+            throw dx::VmJavaThrow{call.vm.Linker().Class(copied.exception_class).descriptor,
+                                  copied.exception_message, copied.exception};
+        context->activity_commands.push_back({DexVmAndroidContext::ActivityCommand::Kind::launch,
+            context->activity, copy, "L" + activity_class + ";", component_name, request_code, 0});
+        context->pending_activity_descriptor = context->activity_commands.back().descriptor;
+        context->pending_activity_component_name = context->activity_commands.back().component;
+        context->activity_switch_pending = true;
+        context->current_intent = copy;
+        return dx::VmValue::Void();
+
+}
+
 Decl Declare_android_content_pm_PackageManager_NameNotFoundException(
     const Context &context);
 
@@ -1512,6 +1754,9 @@ Decl Declare_android_content_Context(const Context &context) {
         if (name == "nfc") {
           return dx::VmValue::Ref(NfcManagerForContext(call, context));
         }
+        if (name == "notification") {
+          return dx::VmValue::Ref(NotificationManagerForContext(call, context));
+        }
         if (name == "location") {
           return dx::VmValue::Ref(Singleton(
               call, context, "location", "Landroid/location/LocationManager;"));
@@ -1619,213 +1864,8 @@ Decl Declare_android_content_Context(const Context &context) {
         }
         return dx::VmValue::Void();
       });
-  builder.VirtualMethod(
-      "startActivity", "(Landroid/content/Intent;)V",
-      [context](dx::IntrinsicContext &call) -> dx::VmValue {
-        const auto intent = call.arguments[0].ref;
-        if (!intent.IsValid())
-          throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;",
-                                "intent is null"};
-        const auto component =
-            CallAndroidMethod(call.vm, intent, "getComponent",
-                              "()Landroid/content/ComponentName;")
-                .ref;
-        const auto roots = call.vm.ProtectReferences(std::array{component});
-        std::string component_name;
-        std::string activity_class;
-        if (component.IsValid()) {
-          const auto package =
-              CallAndroidMethod(call.vm, component, "getPackageName",
-                                "()Ljava/lang/String;")
-                  .ref;
-          if (call.vm.StringUtf8(package) != context->package_name) {
-            const auto action = CallAndroidMethod(
-                call.vm, intent, "getAction", "()Ljava/lang/String;").ref;
-            const auto data = CallAndroidMethod(
-                call.vm, intent, "getData", "()Landroid/net/Uri;").ref;
-            const auto external_roots =
-                call.vm.ProtectReferences(std::array{action, data});
-            if (action.IsValid() && data.IsValid() &&
-                call.vm.StringUtf8(action) == "android.intent.action.VIEW") {
-              const auto uri_text = call.vm.StringUtf8(
-                  CallAndroidMethod(call.vm, data, "toString",
-                                    "()Ljava/lang/String;").ref);
-              const auto target = ParseDisabledWebTarget(uri_text);
-              if (target.http_or_https && !context->strict_webview_errors) {
-                LogDisabledWeb(call.vm, "external_browser", target);
-                return dx::VmValue::Void();
-              }
-            }
-            throw dx::VmJavaThrow{
-                "Ljava/lang/UnsupportedOperationException;",
-                "startActivity outside this package is not supported"};
-          }
-          component_name = call.vm.StringUtf8(
-              CallAndroidMethod(call.vm, component, "getClassName",
-                                "()Ljava/lang/String;")
-                  .ref);
-          activity_class = component_name;
-          if (context->activity_inventory_known) {
-            const auto declared = std::find_if(
-                context->activity_components.begin(),
-                context->activity_components.end(), [&](const auto &candidate) {
-                  return candidate.name == component_name;
-                });
-            if (!context->application_enabled ||
-                declared == context->activity_components.end() ||
-                !declared->enabled) {
-              throw dx::VmJavaThrow{
-                  "Landroid/content/ActivityNotFoundException;",
-                  "No enabled Activity found for component " + component_name};
-            }
-            if (declared->target_activity) {
-              const auto target = std::find_if(
-                  context->activity_components.begin(),
-                  context->activity_components.end(),
-                  [&](const auto &candidate) {
-                    return candidate.kind ==
-                               loader::AndroidManifestComponentKind::activity &&
-                           candidate.name == *declared->target_activity;
-                  });
-              if (target == context->activity_components.end() ||
-                  !target->enabled)
-                throw dx::VmJavaThrow{
-                    "Landroid/content/ActivityNotFoundException;",
-                    "Activity alias target is not enabled: " +
-                        *declared->target_activity};
-            }
-            activity_class = declared->target_activity.value_or(declared->name);
-          }
-        } else {
-          const auto unsupported = [&](const std::string &reason) -> void {
-            if (auto *ledger = call.vm.Ledger())
-              ledger->RecordUnimplemented("dexvm.activity_resolution", 0);
-            throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
-                                  reason};
-          };
-          const auto data = CallAndroidMethod(call.vm, intent, "getData",
-                                              "()Landroid/net/Uri;")
-                                .ref;
-          const auto type = CallAndroidMethod(call.vm, intent, "getType",
-                                              "()Ljava/lang/String;")
-                                .ref;
-          const auto action = CallAndroidMethod(call.vm, intent, "getAction",
-                                                "()Ljava/lang/String;")
-                                  .ref;
-          const auto intent_roots =
-              call.vm.ProtectReferences(std::array{data, type, action});
-          if (action.IsValid() && data.IsValid() &&
-              call.vm.StringUtf8(action) == "android.intent.action.VIEW") {
-            const auto uri_text = call.vm.StringUtf8(
-                CallAndroidMethod(call.vm, data, "toString",
-                                  "()Ljava/lang/String;")
-                    .ref);
-            const auto target = ParseDisabledWebTarget(uri_text);
-            if (target.http_or_https) {
-              if (context->strict_webview_errors)
-                unsupported("external browser launch is disabled");
-              LogDisabledWeb(call.vm, "external_browser", target);
-              return dx::VmValue::Void();
-            }
-          }
-          if (!context->activity_inventory_known)
-            unsupported("activity inventory is unavailable");
-          if (data.IsValid() || type.IsValid())
-            unsupported("data and MIME activity resolution is not supported");
-          if (!action.IsValid())
-            throw dx::VmJavaThrow{
-                "Landroid/content/ActivityNotFoundException;",
-                "No Activity found for an Intent without an action"};
-          const auto action_name = call.vm.StringUtf8(action);
-          std::vector<std::string> categories;
-          const auto category_set =
-              CallAndroidMethod(call.vm, intent, "getCategories",
-                                "()Ljava/util/Set;")
-                  .ref;
-          if (category_set.IsValid()) {
-            const auto iterator =
-                CallAndroidMethod(call.vm, category_set, "iterator",
-                                  "()Ljava/util/Iterator;")
-                    .ref;
-            const auto category_roots =
-                call.vm.ProtectReferences(std::array{category_set, iterator});
-            while (CallAndroidMethod(call.vm, iterator, "hasNext", "()Z")
-                       .AsInt()) {
-              const auto category = CallAndroidMethod(call.vm, iterator, "next",
-                                                      "()Ljava/lang/Object;")
-                                        .ref;
-              categories.push_back(call.vm.StringUtf8(category));
-            }
-          }
-          std::vector<const loader::AndroidManifestActivityComponent *> matches;
-          if (context->application_enabled) {
-            for (const auto &candidate : context->activity_components) {
-              if (!candidate.enabled)
-                continue;
-              if (candidate.target_activity) {
-                const auto target = std::find_if(
-                    context->activity_components.begin(),
-                    context->activity_components.end(), [&](const auto &item) {
-                      return item.kind == loader::AndroidManifestComponentKind::
-                                              activity &&
-                             item.name == *candidate.target_activity;
-                    });
-                if (target == context->activity_components.end() ||
-                    !target->enabled)
-                  continue;
-              }
-              for (const auto &filter : candidate.intent_filters) {
-                if (filter.has_data)
-                  continue;
-                if (std::find(filter.actions.begin(), filter.actions.end(),
-                              action_name) == filter.actions.end())
-                  continue;
-                if (std::find(filter.categories.begin(),
-                              filter.categories.end(),
-                              "android.intent.category.DEFAULT") ==
-                    filter.categories.end())
-                  continue;
-                const auto categories_match = std::ranges::all_of(
-                    categories, [&](const std::string &category) {
-                      return std::find(filter.categories.begin(),
-                                       filter.categories.end(),
-                                       category) != filter.categories.end();
-                    });
-                if (!categories_match)
-                  continue;
-                matches.push_back(&candidate);
-                break;
-              }
-            }
-          }
-          if (matches.empty())
-            throw dx::VmJavaThrow{"Landroid/content/ActivityNotFoundException;",
-                                  "No Activity found for action " +
-                                      action_name};
-          if (matches.size() != 1U)
-            unsupported(
-                "multiple matching activities require chooser resolution");
-          const auto &resolved = *matches.front();
-          component_name = resolved.name;
-          activity_class = resolved.target_activity.value_or(resolved.name);
-          const auto package = call.vm.NewStringUtf8(context->package_name);
-          const auto name = call.vm.NewStringUtf8(component_name);
-          const auto resolved_component =
-              NewAndroidComponentName(call.vm, package, name);
-          const auto resolved_roots = call.vm.ProtectReferences(
-              std::array{package, name, resolved_component});
-          static_cast<void>(CallAndroidMethod(
-              call.vm, intent, "setComponent",
-              "(Landroid/content/ComponentName;)Landroid/content/Intent;",
-              {dx::VmValue::Ref(resolved_component)}));
-        }
-        std::replace(activity_class.begin(), activity_class.end(), '.', '/');
-        context->pending_activity_descriptor = "L" + activity_class + ";";
-        context->pending_activity_component_name = component_name;
-        context->activity_switch_pending = true;
-        context->current_intent = intent;
-        return dx::VmValue::Void();
-      });
+  builder.VirtualMethod("startActivity", "(Landroid/content/Intent;)V",
+      [context](dx::IntrinsicContext& call) { return StartAndroidActivity(call, context, -1); });
   builder.VirtualMethod(
       "getSharedPreferences",
       "(Ljava/lang/String;I)Landroid/content/SharedPreferences;",
@@ -2798,6 +2838,13 @@ MakeActivityInfo(dx::IntrinsicContext &call, const Context &context,
       component.enabled, loader::AndroidManifestActivityExported(component),
       context->application_process_name, std::nullopt, application_info);
   const auto roots = call.vm.ProtectReferences(std::array{info});
+  auto mode = component.launch_mode;
+  if (component.target_activity) {
+    const auto target = std::find_if(context->activity_components.begin(), context->activity_components.end(),
+        [&](const auto& item) { return item.name == *component.target_activity; });
+    if (target != context->activity_components.end()) mode = target->launch_mode;
+  }
+  SetInt(call, info, "launchMode", static_cast<std::int32_t>(mode));
   if (component.kind == loader::AndroidManifestComponentKind::activity_alias &&
       component.target_activity.has_value()) {
     SetRef(call, info, "targetActivity", "Ljava/lang/String;",

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <deque>
+
 #include <array>
 #include <atomic>
 #include <condition_variable>
@@ -212,12 +214,33 @@ struct DexVmAndroidContext final {
   // activity handle: a finish() from an already retired activity can no
   // longer be mistaken for the session ending. Ask SessionExitRequested.
   std::atomic<std::uint32_t> finishing_activity{0};
-  // Raised with the pending activity target so the exit predicate can see
-  // an in-flight handoff without reading that string across threads.
+  // Raised with a queued transition so the exit predicate can observe work
+  // without reading the queue or stack across threads.
   std::atomic<bool> activity_switch_pending{false};
 
   // Captured lifecycle facts.
   dexvm::VmObjectRef activity;
+  struct ActivityResult final {
+    std::int32_t request_code{}, result_code{};
+    dexvm::VmObjectRef data{};
+  };
+  struct ActivityRecord final {
+    dexvm::VmObjectRef object{}, intent{}, content{}, caller{};
+    std::int32_t request_code{-1};
+    bool started{};
+    std::vector<ActivityResult> results;
+    std::optional<ui::UiNodeId> focused_node;
+    dexvm::VmObjectRef focused_edit_text{};
+  };
+  struct ActivityCommand final {
+    enum class Kind { launch, finish } kind{Kind::launch};
+    dexvm::VmObjectRef owner{}, intent{};
+    std::string descriptor, component;
+    std::int32_t request_code{-1}, result_code{};
+  };
+  std::vector<ActivityRecord> activity_stack;
+  std::atomic<std::size_t> activity_stack_depth{};
+  std::deque<ActivityCommand> activity_commands;
   // DexActivityLifecycle is the sole writer of main-window focus. Queries
   // and callbacks read the same fact; the owner token keeps retired
   // Activity instances from observing the replacement window's focus.
@@ -657,6 +680,7 @@ struct DexVmAndroidContext final {
   dexvm::VmThreadRuntime *threads{};
 
   // Intent component/extras live in ordinary mComponent/mExtras fields.
+  // Compatibility query snapshots only; the FIFO queue owns execution.
   std::string pending_activity_descriptor;
   // Manifest component identity may differ from the instantiated class for
   // an activity-alias.
@@ -926,6 +950,7 @@ FindViewUiNode(const DexVmAndroidContext &context, std::uint64_t view_handle);
 [[nodiscard]] dexvm::VmObjectRef
 ViewObjectForUiNode(const DexVmAndroidContext &context, ui::UiNodeId node);
 void ResetViewUiState(DexVmAndroidContext &context);
+void RetireViewUiSubtree(DexVmAndroidContext& context, ui::UiNodeId node);
 void InitializeDefaultViewBackground(dexvm::Interpreter &vm,
                                      DexVmAndroidContext &context,
                                      dexvm::VmObjectRef view,

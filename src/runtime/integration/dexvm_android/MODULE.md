@@ -78,6 +78,26 @@ Settings 公开协议/转换/moved-key 路由来自 BootDex，只 overlay NameVa
 读取稳定沙盒身份，System 用进程隔离表，Secure/Global 特权写入记账并 false；无 Binder
 SettingsProvider、跨用户/观察者/host 设置。SystemProperties 仅受审 native 边界。
 
+## Activity 返回结果
+
+BootDex 保存 Activity 每实例结果字段/monitor/setResult、转发及默认回调；integration
+只通过 private native 启动/结束提交 FIFO 平台命令。启动复用 sealed Manifest resolver，
+Intent 使用原版复制构造器。Window/attributes/decor 按 Activity/Window 实例持有，decor 以 owner 判断焦点，不共享结果字段。
+挂起实例 findViewById 只查询自身内容子树，不落入前台全局索引。
+非空 options、for-result 非零 flags、非前台调用方、跨包结果及需要复用/task 的 launchMode
+记账失败；非栈顶 singleTop 可创建新实例。后台换前台内容明确失败。
+GC roots 覆盖命令、返回栈及待结果；退出线程只读 atomic 深度，不跨线程读取栈容器。
+UiTree reset 在托管栈存在时只清理前台子树，保留脱离前台的内容；Surface 返回的限制见 session。
+
+## 通知禁用与空集合取消
+
+Context 正常初始化并缓存 BootDex NotificationManager，owner 为进程 base Context
+（无 Application 的独立宿主使用当前 Context）；字段/构造/from 与重载归 Java。
+当前包以外的 factory/取消/发布请求拒绝并记账，Java 异常真实可捕获。
+发布始终拒绝，无外部生产者或持久库存，故合法取消作用于已知空集合，不登记通知表、
+不保存通知对象或修改 PendingIntent。状态未知不能视为空；新增发布必须更新取消 backing。
+native 仅取消边界及拒绝发布，不接入系统通知/Binder/展示/声振/点击派发。
+
 ## NFC 无设备发现
 
 `getSystemService("nfc")` 正常初始化并缓存 BootDex NfcManager；其原版构造器捕获

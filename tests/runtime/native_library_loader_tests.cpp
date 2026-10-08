@@ -514,6 +514,16 @@ struct OrchestratedApp final {
                 ogplay::loader::AndroidManifestComponentKind::activity,
                 target, std::nullopt, true, {}});
         }
+        if (activity == "fixture.ResultCaller" || activity == "fixture.ResultOnStartCaller") {
+            request.manifest.activity_components.push_back({
+                ogplay::loader::AndroidManifestComponentKind::activity,
+                "fixture.ResultChild", std::nullopt, true, {}});
+        }
+        if (activity == "fixture.ResultOnStartCaller") {
+            request.manifest.activity_components.push_back({
+                ogplay::loader::AndroidManifestComponentKind::activity,
+                "fixture.ResultImmediateChild", std::nullopt, true, {}});
+        }
         if (activity == "android.app.NativeActivity" || activity == "fixture.NativeTakeoverActivity") {
             request.manifest.activity_components.front().meta_data.push_back({"android.app.lib_name", std::string("a")});
             request.manifest.application_meta_data.push_back({"android.app.lib_name", std::string("wrong_application_library")});
@@ -2401,6 +2411,188 @@ TEST_CASE("DVM-219 pinned tzdata serves real Bionic UTC and Shanghai queries") {
     CHECK(logger.Snapshot(core::LogLevel::error, "guest.stderr").empty());
     memory.release(storage, 96);
     static_cast<void>(app->Stop());
+}
+
+TEST_CASE("DVM-223 Activity result stack restores caller identity and content") {
+    using namespace ogplay;
+    using namespace runtime::dexvm;
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        OrchestratedApp f("fixture.ResultCaller", true, false, {}, {}, true, backend);
+        f.app->StartApplication();
+        REQUIRE(f.app->StartLauncherActivity().state == session::LifecycleRunState::running);
+        auto& vm = f.app->DexVm().Vm();
+        auto& linker = vm.Linker();
+        auto& lifecycle = f.app->ActivityLifecycle();
+        const auto on = [&](VmObjectRef object, const char* name, const char* signature,
+                            std::vector<VmValue> args = {}) {
+            const auto type = vm.Model().ObjectClass(object);
+            const auto index = linker.FindVtableIndex(type, name, signature);
+            REQUIRE(index.has_value());
+            args.insert(args.begin(), VmValue::Ref(object));
+            auto result = vm.Call(linker.Class(type).vtable[*index], args);
+            REQUIRE_MESSAGE(!result.exception.IsValid(), result.exception_message);
+            return result.value;
+        };
+        const auto intent = [&] {
+            const auto type = linker.ResolveDescriptor("Landroid/content/Intent;");
+            const auto object = vm.NewIntrinsicInstance("Landroid/content/Intent;");
+            const auto init = linker.FindDirectMethod(type, "<init>", "()V");
+            REQUIRE(init.has_value());
+            REQUIRE_FALSE(vm.Call(*init, std::array{VmValue::Ref(object)}).exception.IsValid());
+            on(object, "setClassName", "(Ljava/lang/String;Ljava/lang/String;)Landroid/content/Intent;",
+               {VmValue::Ref(vm.NewStringUtf8("fixture")), VmValue::Ref(vm.NewStringUtf8("fixture.ResultChild"))});
+            return object;
+        };
+        const auto launch = [&](std::int32_t code) {
+            on(f.context->activity, "startActivityForResult", "(Landroid/content/Intent;I)V",
+                {VmValue::Ref(intent()), VmValue::Int(code)});
+            static_cast<void>(lifecycle.StepFrame());
+        };
+        const auto reset_events = [&] {
+            const auto method = linker.FindDirectMethod(linker.ResolveDescriptor("Lfixture/ResultCaller;"), "resetEvents", "()V");
+            REQUIRE(method.has_value()); REQUIRE_FALSE(vm.Call(*method, {}).exception.IsValid());
+        };
+        const auto parent = f.context->activity;
+        const auto content = f.context->content_view;
+        const auto node = runtime::FindViewUiNode(*f.context, content.Value());
+        const auto parent_window = on(parent, "getWindow", "()Landroid/view/Window;").ref;
+        const auto parent_attributes = on(parent_window, "getAttributes", "()Landroid/view/WindowManager$LayoutParams;").ref;
+        const auto parent_decor = on(parent_window, "getDecorView", "()Landroid/view/View;").ref;
+        on(content, "setId", "(I)V", {VmValue::Int(11)});
+        f.context->activity_components.back().launch_mode = 1; // singleTop creates when target is not the top.
+        launch(100);
+        f.context->activity_components.back().launch_mode = 0;
+
+        const auto child = f.context->activity;
+        const auto child_content = f.context->content_view;
+        CHECK(child != parent);
+        CHECK(f.context->activity_stack.size() == 2);
+        CHECK(on(child, "getWindow", "()Landroid/view/Window;").ref != parent_window);
+        const auto child_window = on(child, "getWindow", "()Landroid/view/Window;").ref;
+        CHECK(on(child_window, "getAttributes", "()Landroid/view/WindowManager$LayoutParams;").ref != parent_attributes);
+        CHECK(on(child_window, "getDecorView", "()Landroid/view/View;").ref != parent_decor);
+        on(child_content, "setId", "(I)V", {VmValue::Int(11)});
+        CHECK(on(parent, "findViewById", "(I)Landroid/view/View;", {VmValue::Int(11)}).ref == content);
+        CHECK(on(child, "findViewById", "(I)Landroid/view/View;", {VmValue::Int(11)}).ref == child_content);
+        CHECK_FALSE(f.context->ui_tree.IsAttached(*node));
+        on(child, "setResult", "(I)V", {VmValue::Int(1)});
+        static_cast<void>(vm.CollectGarbage("activity-return-roots"));
+        reset_events();
+        on(child, "finish", "()V");
+        on(child, "finish", "()V");
+        CHECK_FALSE(runtime::SessionExitRequested(*f.context));
+        static_cast<void>(lifecycle.StepFrame());
+        CHECK(f.context->activity == parent);
+        CHECK(f.context->content_view == content);
+        CHECK(f.context->ui_tree.IsAttached(*node));
+        CHECK_FALSE(runtime::FindViewUiNode(*f.context, child_content.Value()).has_value());
+        CHECK(on(parent, "getWindow", "()Landroid/view/Window;").ref == parent_window);
+        CHECK(on(parent_window, "getDecorView", "()Landroid/view/View;").ref == parent_decor);
+        CHECK(f.CallStaticInt("Lfixture/ResultCaller;", "getInstances") == 1);
+        CHECK(f.CallStaticInt("Lfixture/ResultCaller;", "getEvents") == 1234);
+        CHECK(f.CallStaticInt("Lfixture/ResultCaller;", "getCallbacks") == 1);
+        CHECK(f.CallStaticInt("Lfixture/ResultCaller;", "getRequest") == 100);
+        CHECK(f.CallStaticInt("Lfixture/ResultCaller;", "getResult") == 1);
+        // Invalid requests fail synchronously and never enqueue a transition.
+        const auto reject = [&](VmObjectRef requested, VmObjectRef options) {
+            const auto type = vm.Model().ObjectClass(parent);
+            const auto index = linker.FindVtableIndex(type, "startActivityForResult", "(Landroid/content/Intent;ILandroid/os/Bundle;)V");
+            REQUIRE(index.has_value());
+            const auto outcome = vm.Call(linker.Class(type).vtable[*index], std::array{
+                VmValue::Ref(parent), VmValue::Ref(requested), VmValue::Int(77), VmValue::Ref(options)});
+            REQUIRE(outcome.exception.IsValid());
+            CHECK(linker.Class(outcome.exception_class).descriptor == "Ljava/lang/UnsupportedOperationException;");
+            CHECK(f.context->activity_commands.empty());
+        };
+        const auto options = vm.NewIntrinsicInstance("Landroid/os/Bundle;");
+        reject(intent(), options);
+        const auto flagged = intent();
+        on(flagged, "setFlags", "(I)Landroid/content/Intent;", {VmValue::Int(0x10000000)});
+        reject(flagged, VmObjectRef{});
+        for (const auto mode : {2U, 3U}) {
+            f.context->activity_components.back().launch_mode = mode;
+            reject(intent(), VmObjectRef{});
+        }
+        f.context->activity_components.back().launch_mode = 0;
+        // No setResult means cancellation; a negative requestCode has no callback.
+        for (const auto code : {101, -1}) {
+            launch(code);
+            on(f.context->activity, "finish", "()V");
+            static_cast<void>(lifecycle.StepFrame());
+            CHECK(f.context->activity == parent);
+        }
+        CHECK(f.CallStaticInt("Lfixture/ResultCaller;", "getCallbacks") == 2);
+        CHECK(f.CallStaticInt("Lfixture/ResultCaller;", "getRequest") == 101);
+        CHECK(f.CallStaticInt("Lfixture/ResultCaller;", "getResult") == 0);
+        // Nested calls return to the immediate live instance.
+        launch(102);
+        const auto middle = f.context->activity;
+        launch(103);
+        CHECK(f.context->activity_stack.size() == 3);
+        on(f.context->activity, "finish", "()V");
+        static_cast<void>(lifecycle.StepFrame());
+        CHECK(f.context->activity == middle);
+        const auto data = intent();
+        on(middle, "setResult", "(ILandroid/content/Intent;)V", {VmValue::Int(2), VmValue::Ref(data)});
+        on(middle, "finish", "()V");
+        static_cast<void>(vm.CollectGarbage("queued-activity-result"));
+        static_cast<void>(lifecycle.StepFrame());
+        CHECK(f.context->activity == parent);
+        CHECK(f.CallStaticInt("Lfixture/ResultCaller;", "getCallbacks") == 3);
+        CHECK(f.CallStaticInt("Lfixture/ResultCaller;", "getResult") == 2);
+        const auto getter = linker.FindDirectMethod(linker.ResolveDescriptor("Lfixture/ResultCaller;"), "getData", "()Landroid/content/Intent;");
+        REQUIRE(getter.has_value());
+        const auto delivered = vm.Call(*getter, {}).value.ref;
+        REQUIRE(delivered.IsValid());
+        CHECK(delivered != data);
+        CHECK(on(delivered, "getComponent", "()Landroid/content/ComponentName;").ref.IsValid());
+        // Starting another Activity then finishing the middle one keeps the new top.
+        launch(104);
+        const auto departing = f.context->activity;
+        on(departing, "startActivity", "(Landroid/content/Intent;)V", {VmValue::Ref(intent())});
+        on(departing, "setResult", "(I)V", {VmValue::Int(1)});
+        on(departing, "finish", "()V");
+        static_cast<void>(lifecycle.StepFrame());
+        CHECK(f.context->activity != parent);
+        CHECK(f.context->activity_stack.size() == 2);
+        CHECK(f.CallStaticInt("Lfixture/ResultCaller;", "getCallbacks") == 3);
+        on(f.context->activity, "finish", "()V");
+        static_cast<void>(lifecycle.StepFrame());
+        CHECK(f.context->activity == parent);
+        CHECK(f.CallStaticInt("Lfixture/ResultCaller;", "getCallbacks") == 4);
+        // A last-instance finish followed by a launch in the same guest turn
+        // does not lose either command or exit before the new Activity exists.
+        on(parent, "finish", "()V");
+        on(parent, "startActivity", "(Landroid/content/Intent;)V", {VmValue::Ref(intent())});
+        static_cast<void>(lifecycle.StepFrame());
+        CHECK(f.context->activity != parent);
+        CHECK(f.context->activity_stack.size() == 1);
+        CHECK_FALSE(runtime::SessionExitRequested(*f.context));
+        on(f.context->activity, "finish", "()V");
+        static_cast<void>(lifecycle.StepFrame());
+        CHECK(runtime::SessionExitRequested(*f.context));
+        static_cast<void>(f.app->Stop());
+        CHECK(f.context->activity_stack.empty());
+        CHECK(f.context->activity_commands.empty());
+    }
+}
+
+TEST_CASE("DVM-223 onStart launch and onCreate finish return before caller resume") {
+    using namespace ogplay;
+    using runtime::dexvm::InterpreterBackend;
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        OrchestratedApp f("fixture.ResultOnStartCaller", true, false, {}, {}, true, backend);
+        f.app->StartApplication();
+        REQUIRE(f.app->StartLauncherActivity().state == session::LifecycleRunState::running);
+        CHECK(f.context->activity_stack.size() == 1);
+        CHECK(f.app->DexVm().Vm().Linker().Class(f.app->DexVm().Vm().Model().ObjectClass(f.context->activity)).descriptor == "Lfixture/ResultOnStartCaller;");
+        CHECK(f.CallStaticInt("Lfixture/ResultCaller;", "getInstances") == 1);
+        CHECK(f.CallStaticInt("Lfixture/ResultCaller;", "getCallbacks") == 1);
+        CHECK(f.CallStaticInt("Lfixture/ResultCaller;", "getEvents") == 21234);
+        CHECK(f.CallStaticInt("Lfixture/ResultCaller;", "getResult") == 1);
+        CHECK_FALSE(runtime::SessionExitRequested(*f.context));
+        static_cast<void>(f.app->Stop());
+    }
 }
 
 TEST_CASE("DVM-219 empty Activity pumps delayed content handoff and finish") {

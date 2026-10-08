@@ -811,3 +811,43 @@ Context 正常构造 manager，唯一设备工厂明确抛 UnsupportedOperationE
 OGPlay 不发布 NFC feature、不创建真实适配器，也不提供 NFC 通信、系统服务、
 Binder 或回调派发。已有注册入口及反射构造经拒绝边界记账并失败，不伪造成功。
 NDEF 纯 Java 值类型复用原版配方，数据处理与设备通信的支持状态分开记录。
+
+<a id="adr-0104"></a>
+
+## ADR-0104 · Activity 命令队列与有界进程内返回栈
+
+- 状态：Accepted
+- 日期：2026-10-07
+
+结果启动需要保留原调用方，不能沿用销毁旧 Activity 的单目标 handoff。
+采用 VM execution lock 下的 FIFO launch/finish 命令，携带 owner、Intent 副本、目标
+组件及 request/result code；session 安全点消费，不从 intrinsic 递归执行生命周期。
+兼容 pending 字段仅作启动查询快照，命令队列是执行的唯一来源。
+
+BootDex 有界 Activity 客户端拥有普通结果字段、monitor 与原版赋值/转发方法；
+native overlay 仅提交平台动作。session 保留每实例 identity/Intent/内容/焦点和待交付结果，
+每实例 Window 属性独立；普通内容挂起时 detach，结束时仅清理该子树，不清空其他实例。
+调用方再次前台化时 restart/start→结果虚派→resume；无结果请求不产生回调。
+队列/栈/待结果均为 GC 强根，线程侧退出判断只读 atomic 深度及现有 finish/pending 标记。
+
+只支持单任务、单前台窗口、standard 及非栈顶 singleTop 的新实例；不实现完整 AMS。
+保留活动 GL/Surface/native window/video 调用方暂不闭合，明确拒绝；即将结束的旧实例
+仍走既有 surface 退役协议。复杂 flags/options、task launchMode 和后台换前台内容失败。
+终止进程仍复用先停止/等待线程、再 onDestroy 的既有协议；不伪造结果或重建调用方。
+
+<a id="adr-0105"></a>
+
+## ADR-0105 · 无通知发布能力时支持已知空集合取消
+
+- 状态：Accepted
+- 日期：2026-10-08
+
+取消是删除已有记录，应用可在没有任何发布记录时执行清理。提供正常 Java manager
+而不是 null；保留 API19 字段、构造与重载转发，native 边界只提供当前应用的明确
+禁用策略及包校验。不引入 Binder/系统通知服务、展示、声音/震动或 PendingIntent 派发。
+
+当前发布入口均拒绝，不存在外部生产者/持久库存，通知集合因此恒为空；合法取消
+正常完成，不建立虚构记录或修改 PendingIntent。发布记账并失败，不能静默丢弃后
+宣称成功。跨包访问失败；未知库存不能使用空集合语义。
+若未来允许发布或导入通知状态，必须同时修改取消 backing 与本契约，不能保留空取消。
+原版 Notification/Builder/RemoteViews 是独立依赖，不为本次取消引入整套构建/渲染链。

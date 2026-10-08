@@ -52,7 +52,7 @@ Declare_java_lang_Thread_UncaughtExceptionHandler();
 [[nodiscard]] IntrinsicClassDecl Declare_java_lang_RealToString();
 [[nodiscard]] IntrinsicClassDecl Declare_java_lang_System(
     const CoreIntrinsicServices& services);
-[[nodiscard]] IntrinsicClassDecl Declare_java_io_PrintStream();
+[[nodiscard]] IntrinsicClassDecl Declare_org_ogplay_io_LogOutputStream();
 [[nodiscard]] IntrinsicClassDecl Declare_java_lang_Math();
 [[nodiscard]] IntrinsicClassDecl Declare_java_lang_Runtime(const CoreIntrinsicServices& services);
 [[nodiscard]] IntrinsicClassDecl Declare_libcore_io_IoUtils();

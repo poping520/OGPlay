@@ -86,6 +86,7 @@
       "Ljava/io/ObjectStreamField;",
       "Ljava/io/OptionalDataException;",
       "Ljava/io/OutputStream;",
+      "Ljava/io/PrintStream;",
       "Ljava/io/PrintWriter;",
       "Ljava/io/PushbackInputStream;",
       "Ljava/io/PushbackReader;",

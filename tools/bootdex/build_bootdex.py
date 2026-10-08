@@ -71,6 +71,9 @@ MATH_JAVA_NAMES = ("org/ogplay/math/NativeBigInteger.java",)
 ZIP_JAVA_ROOT = ROOT / "src/guest/zip/java"
 ZIP_JAVA_NAMES = ("org/ogplay/zip/NativeZip.java",)
 
+IO_JAVA_ROOT = ROOT / "src/guest/io/java"
+IO_JAVA_NAMES = ("org/ogplay/io/LogOutputStream.java",)
+
 FRAMEWORK_JAVA_ROOT = ROOT / "src/guest/framework/java"
 FRAMEWORK_JAVA_NAMES = (
     "android/app/Activity.java",
@@ -90,7 +93,8 @@ def guest_java_sources() -> tuple[Path, ...]:
     return tuple(JAVA_SOURCE_ROOT / name for name in JAVA_SOURCE_NAMES) + tuple(
         FRAMEWORK_JAVA_ROOT / name for name in FRAMEWORK_JAVA_NAMES) + tuple(
         ZIP_JAVA_ROOT / name for name in ZIP_JAVA_NAMES) + tuple(
-        MATH_JAVA_ROOT / name for name in MATH_JAVA_NAMES)
+        MATH_JAVA_ROOT / name for name in MATH_JAVA_NAMES) + tuple(
+        IO_JAVA_ROOT / name for name in IO_JAVA_NAMES)
 
 
 WINDOWS_JAVAC = Path(r"D:\01_software\jdk-17.0.2\bin\javac.exe")
@@ -335,6 +339,10 @@ def compile_guest_java(work: Path) -> tuple[Path, tuple[str, ...]]:
         for path in FRAMEWORK_JAVA_ROOT.rglob("*.java")))
     if framework_observed != FRAMEWORK_JAVA_NAMES:
         raise BuildError("framework guest Java source list changed")
+    io_observed = tuple(sorted(path.relative_to(IO_JAVA_ROOT).as_posix()
+                              for path in IO_JAVA_ROOT.rglob("*.java")))
+    if io_observed != IO_JAVA_NAMES:
+        raise BuildError("IO guest Java source list changed")
     if not all(path.is_file() for path in sources) or not JAVAC.is_file() or \
             not JAVA.is_file() or not ANDROID_JAR.is_file() or not D8_JAR.is_file():
         raise BuildError("KeyStore Java toolchain or sources are missing")
@@ -740,7 +748,7 @@ def boot_metadata(jar: bytes, dex: bytes,
         ] + [{
             "source_project": "OGPlay",
             "source_root": "src/guest",
-            "source_roots": ["src/guest/crypto/java", "src/guest/framework/java"],
+            "source_roots": ["src/guest/crypto/java", "src/guest/framework/java", "src/guest/io/java"],
             "source_sha256": sha256(b"".join(
                 path.relative_to(ROOT).as_posix().encode("utf-8") + b"\0" +
                 path.read_bytes() for path in

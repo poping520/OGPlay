@@ -1,3 +1,4 @@
+#include <bit>
 // DVM-80: API-family translation unit. Physical consolidation only.
 
 // ---- migrated from android_content_res_AssetFileDescriptor.cpp ----
@@ -887,27 +888,59 @@ Decl Declare_android_content_res_Resources(const Context &context) {
         }
         return dx::VmValue::Ref(MakeXmlParser(call, events));
       });
-  builder.FinalMethod(
-      "getString", "(I)Ljava/lang/String;",
+  builder.VirtualMethod(
+      "getText", "(I)Ljava/lang/CharSequence;",
       [context, system_resources](dx::IntrinsicContext &call) -> dx::VmValue {
-        const auto resource_id =
-            static_cast<std::uint32_t>(call.arguments[0].AsInt());
-        if (const auto *resource = FindSystemResource(context, *system_resources, resource_id);
-            resource != nullptr && std::holds_alternative<std::string>(*resource)) {
-          return dx::VmValue::Ref(call.vm.NewStringUtf8(std::get<std::string>(*resource)));
+        const auto id = static_cast<std::uint32_t>(call.arguments[0].AsInt());
+        const auto coerce = [&](std::uint8_t type, std::uint32_t data) {
+          const auto owner = call.vm.Linker().ResolveDescriptor("Landroid/util/TypedValue;");
+          const auto method = call.vm.Linker().FindDirectMethod(
+              owner, "coerceToString", "(II)Ljava/lang/String;");
+          if (!method)
+            throw dx::DexVmError(dx::DexVmErrorReason::internal_invariant,
+                                 "TypedValue.coerceToString is not linked");
+          const auto outcome = call.vm.Call(*method, std::array{
+              dx::VmValue::Int(type), dx::VmValue::Int(std::bit_cast<std::int32_t>(data))});
+          if (outcome.exception.IsValid())
+            throw dx::VmJavaThrow{call.vm.Linker().Class(outcome.exception_class).descriptor,
+                                  outcome.exception_message, outcome.exception};
+          if (!outcome.value.ref.IsValid())
+            throw dx::VmJavaThrow{"Landroid/content/res/Resources$NotFoundException;",
+                                  "resource has no text value: " + std::to_string(id)};
+          return outcome.value;
+        };
+        if (const auto *resource = FindSystemResource(context, *system_resources, id);
+            resource != nullptr) {
+          if (const auto* text = std::get_if<std::string>(resource))
+            return dx::VmValue::Ref(call.vm.NewStringUtf8(*text));
+          return coerce(0x10U, std::bit_cast<std::uint32_t>(std::get<std::int32_t>(*resource)));
         }
         if (IsSystemResources(context, call.receiver))
           throw dx::VmJavaThrow{"Landroid/content/res/Resources$NotFoundException;",
-                                "system string resource is unavailable"};
+                                "system text resource is unavailable"};
+        const loader::ArscEntry* entry = nullptr;
         try {
-          return dx::VmValue::Ref(call.vm.NewStringUtf8(
-              ResolveResourceString(*context, resource_id)));
-        } catch (const std::exception &error) {
-          throw dx::VmJavaThrow{
-              "Landroid/content/res/Resources$NotFoundException;",
-              "string resource cannot be resolved: " +
-                  std::string(error.what())};
+          entry = &ResolveUiResourceEntry(*context, id);
+        } catch (const std::runtime_error &error) {
+          throw dx::VmJavaThrow{"Landroid/content/res/Resources$NotFoundException;", error.what()};
         }
+        if (entry->is_complex)
+          throw dx::VmJavaThrow{"Landroid/content/res/Resources$NotFoundException;",
+                                "complex resource has no text value: " + std::to_string(id)};
+        if (entry->value_type == 0x03U && entry->string_value.has_value())
+          return dx::VmValue::Ref(call.vm.NewStringUtf8(*entry->string_value));
+        return coerce(entry->value_type, entry->value_data);
+      });
+  builder.VirtualMethod(
+      "getString", "(I)Ljava/lang/String;",
+      [](dx::IntrinsicContext &call) -> dx::VmValue {
+        const auto text = CallAndroidMethod(call.vm, call.receiver, "getText",
+            "(I)Ljava/lang/CharSequence;", {call.arguments[0]}).ref;
+        if (!text.IsValid())
+          throw dx::VmJavaThrow{"Landroid/content/res/Resources$NotFoundException;",
+                                "resource has no text value"};
+        const auto roots = call.vm.ProtectReferences(std::array{text});
+        return CallAndroidMethod(call.vm, text, "toString", "()Ljava/lang/String;");
       });
   return std::move(builder).Build();
 }

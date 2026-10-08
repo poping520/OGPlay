@@ -254,3 +254,5 @@ Scenario gate 与 profile 迁移）以 [`docs/state/CURRENT.md`](../../state/CUR
 - [DVM-216 · API19 本地 VideoView 生命周期](DVM-216.md)
 
 - [DVM-225 · BootDex Java GL 接口与 native 适配](DVM-225.md)
+
+- [DVM-226 · 原版 PrintStream 与 System 日志端点](DVM-226.md)

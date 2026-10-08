@@ -7108,3 +7108,225 @@ TEST_CASE("DVM-211 concurrent contexts share one PendingIntent token") {
         f.vm.DiscardExecutionContext(first); f.vm.DiscardExecutionContext(second);
     }
 }
+
+TEST_CASE("DVM118 resource text coerces simple values and preserves reference selection errors") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        AndroidValueVm f(backend);
+        f.context->surface_width = 800;
+        f.context->surface_height = 480;
+        const auto add = [&](std::uint32_t id, std::uint8_t type, std::uint32_t data,
+                             std::optional<std::string> text = {}) {
+            ogplay::loader::ArscEntry entry{};
+            entry.resource_id = id;
+            entry.value_type = type;
+            entry.value_data = data;
+            entry.string_value = std::move(text);
+            f.context->arsc.entries.push_back(std::move(entry));
+        };
+        struct Value { std::uint8_t type; std::uint32_t data; const char* expected; };
+        const std::array values{
+            Value{0x12, 0, "false"}, Value{0x12, 0xffffffffU, "true"},
+            Value{0x10, 30, "30"}, Value{0x10, 0xfffffff9U, "-7"},
+            Value{0x11, 0x80000000U, "0x80000000"}, Value{0x1c, 0xff010203U, "#ff010203"},
+            Value{0x04, std::bit_cast<std::uint32_t>(3.25F), "3.25"},
+            Value{0x05, 0x501, "5.0dip"}, Value{0x06, 0x40000030, "50.0%"},
+            Value{0x03, 0, "hello"}};
+        for (std::size_t i = 0; i < values.size(); ++i)
+            add(0x7f010000U + static_cast<std::uint32_t>(i), values[i].type, values[i].data,
+                values[i].type == 3 ? std::optional<std::string>{"hello"} : std::nullopt);
+        add(0x7f010080, 1, 0x7f010081);
+        add(0x7f010081, 1, 0x7f010002);
+        for (const auto [orientation, text] : {std::pair{0, "default"}, {1, "portrait"}, {2, "landscape"}}) {
+            add(0x7f010090, 3, 0, text);
+            f.context->arsc.entries.back().orientation = static_cast<std::uint8_t>(orientation);
+        }
+        add(0x7f010091, 1, 0x7f010090);
+        add(0x7f010100, 0, 0);
+        add(0x7f010101, 0x0f, 0);
+        add(0x7f010102, 3, 0);
+        add(0x7f010103, 3, 0, "bag");
+        f.context->arsc.entries.back().is_complex = true;
+        add(0x7f010104, 1, 0);
+        add(0x7f010105, 1, 0x7f010106);
+        add(0x7f010106, 1, 0x7f010105);
+        const auto context = f.vm.NewIntrinsicInstance("Landroid/content/Context;");
+        const auto resources = f.On(context, "getResources", "()Landroid/content/res/Resources;").ref;
+        const auto roots = f.vm.ProtectReferences(std::array{context, resources});
+        for (std::size_t i = 0; i < values.size(); ++i) {
+            const auto id = VmValue::Int(static_cast<std::int32_t>(0x7f010000U + i));
+            for (const auto [receiver, method, signature] : {
+                std::tuple{resources, "getText", "(I)Ljava/lang/CharSequence;"},
+                std::tuple{resources, "getString", "(I)Ljava/lang/String;"},
+                std::tuple{context, "getString", "(I)Ljava/lang/String;"}}) {
+                const auto text = f.On(receiver, method, signature, {id}).ref;
+                CHECK(f.vm.StringUtf8(text) == values[i].expected);
+            }
+        }
+        CHECK(f.vm.StringUtf8(f.On(resources, "getString", "(I)Ljava/lang/String;", {VmValue::Int(0x7f010080)}).ref) == "30");
+        CHECK(f.vm.StringUtf8(f.On(resources, "getString", "(I)Ljava/lang/String;", {VmValue::Int(0x7f010091)}).ref) == "landscape");
+        f.context->surface_width = 480;
+        f.context->surface_height = 800;
+        CHECK(f.vm.StringUtf8(f.On(resources, "getString", "(I)Ljava/lang/String;", {VmValue::Int(0x7f010091)}).ref) == "portrait");
+        const auto not_found = f.linker.ResolveDescriptor("Landroid/content/res/Resources$NotFoundException;");
+        for (const auto id : {0, 0x7f01ffff, 0x7f010100, 0x7f010101, 0x7f010102, 0x7f010103, 0x7f010104, 0x7f010105}) {
+            for (const auto [method, signature] : {
+                 std::pair{"getText", "(I)Ljava/lang/CharSequence;"}, {"getString", "(I)Ljava/lang/String;"}}) {
+                const auto result = f.OnOutcome(resources, method, signature, {VmValue::Int(id)});
+                REQUIRE(result.exception.IsValid());
+                CHECK(result.exception_class == not_found);
+            }
+        }
+    }
+}
+
+TEST_CASE("DVM118 getString dispatches getText and CharSequence toString through Context") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        auto text = std::make_shared<VmObjectRef>();
+        auto resources = std::make_shared<VmObjectRef>();
+        auto custom = IntrinsicClassBuilder::Class("Ltest/TextResources;", "Landroid/content/res/Resources;");
+        custom.OverrideMethod("getText", "(I)Ljava/lang/CharSequence;",
+            [text](IntrinsicContext&) { return VmValue::Ref(*text); });
+        auto owner = IntrinsicClassBuilder::Class("Ltest/TextContext;", "Landroid/content/Context;");
+        owner.OverrideMethod("getResources", "()Landroid/content/res/Resources;",
+            [resources](IntrinsicContext&) { return VmValue::Ref(*resources); });
+        AndroidValueVm f(backend, {std::move(custom).Build(), std::move(owner).Build()});
+        *text = f.New("Ljava/lang/StringBuilder;", "(Ljava/lang/String;)V",
+            {VmValue::Ref(f.vm.NewStringUtf8("overridden"))});
+        *resources = f.vm.NewIntrinsicInstance("Ltest/TextResources;");
+        const auto context = f.vm.NewIntrinsicInstance("Ltest/TextContext;");
+        const auto roots = f.vm.ProtectReferences(std::array{*text, *resources, context});
+        CHECK(f.On(*resources, "getText", "(I)Ljava/lang/CharSequence;", {VmValue::Int(0)}).ref == *text);
+        CHECK(f.vm.StringUtf8(f.On(*resources, "getString", "(I)Ljava/lang/String;", {VmValue::Int(0)}).ref) == "overridden");
+        CHECK(f.vm.StringUtf8(f.On(context, "getString", "(I)Ljava/lang/String;", {VmValue::Int(0)}).ref) == "overridden");
+        *text = VmObjectRef{};
+        const auto failure = f.OnOutcome(*resources, "getString", "(I)Ljava/lang/String;", {VmValue::Int(0)});
+        REQUIRE(failure.exception.IsValid());
+        CHECK(f.linker.Class(failure.exception_class).descriptor == "Landroid/content/res/Resources$NotFoundException;");
+    }
+}
+
+TEST_CASE("DVM226 BootDex PrintStream captures bytes stack traces encoding and GC without logging") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        AndroidValueVm f(backend);
+        const auto buffer = f.New("Ljava/io/ByteArrayOutputStream;");
+        const auto stream = f.New("Ljava/io/PrintStream;", "(Ljava/io/OutputStream;)V", {VmValue::Ref(buffer)});
+        const auto roots = f.vm.ProtectReferences(std::array{stream});
+        const auto klass = f.model.ObjectClass(stream);
+        CHECK(f.linker.Class(klass).is_boot_dex);
+        CHECK(f.linker.Class(*f.linker.Class(klass).super).descriptor == "Ljava/io/FilterOutputStream;");
+        f.On(stream, "print", "(Ljava/lang/String;)V", {VmValue::Ref(f.vm.NewStringUtf8("中文"))});
+        CHECK(f.On(stream, "append", "(C)Ljava/io/PrintStream;", {VmValue::Int('!')}).ref == stream);
+        f.On(stream, "println", "(I)V", {VmValue::Int(42)});
+        f.On(stream, "flush", "()V");
+        CHECK(f.vm.StringUtf8(f.On(buffer, "toString", "(Ljava/lang/String;)Ljava/lang/String;",
+            {VmValue::Ref(f.vm.NewStringUtf8("UTF-8"))}).ref) == "中文!42\n");
+        CHECK(f.logger.Snapshot(std::nullopt, "runtime.dexvm.guest").empty());
+        CHECK(f.vm.MarkReachable().IsMarked(buffer));
+        static_cast<void>(f.vm.CollectGarbage());
+        CHECK(f.model.IsValidRef(buffer));
+        const auto error = f.New("Ljava/lang/RuntimeException;", "(Ljava/lang/String;)V",
+            {VmValue::Ref(f.vm.NewStringUtf8("original"))});
+        const auto error_root = f.vm.ProtectReferences(std::array{error});
+        const auto cause = f.New("Ljava/lang/IllegalArgumentException;", "(Ljava/lang/String;)V",
+            {VmValue::Ref(f.vm.NewStringUtf8("cause"))});
+        f.On(error, "initCause", "(Ljava/lang/Throwable;)Ljava/lang/Throwable;", {VmValue::Ref(cause)});
+        f.On(error, "printStackTrace", "(Ljava/io/PrintStream;)V", {VmValue::Ref(stream)});
+        f.On(stream, "flush", "()V");
+        const auto trace = f.vm.StringUtf8(f.On(buffer, "toString", "()Ljava/lang/String;").ref);
+        CHECK(trace.find("java.lang.RuntimeException: original") != std::string::npos);
+        CHECK(trace.find("Caused by: java.lang.IllegalArgumentException: cause") != std::string::npos);
+        CHECK(f.logger.Snapshot(std::nullopt, "runtime.dexvm.guest").empty());
+        f.On(stream, "close", "()V");
+        f.On(stream, "close", "()V");
+        f.On(stream, "print", "(Ljava/lang/String;)V", {VmValue::Ref(f.vm.NewStringUtf8("after-close"))});
+        CHECK(f.On(stream, "checkError", "()Z").AsInt() == 1);
+        CHECK(f.vm.StringUtf8(f.On(buffer, "toString", "()Ljava/lang/String;").ref) == trace);
+        const auto encoded = f.New("Ljava/io/ByteArrayOutputStream;");
+        const auto latin = f.New("Ljava/io/PrintStream;", "(Ljava/io/OutputStream;ZLjava/lang/String;)V",
+            {VmValue::Ref(encoded), VmValue::Int(1), VmValue::Ref(f.vm.NewStringUtf8("ISO-8859-1"))});
+        f.On(latin, "print", "(Ljava/lang/String;)V", {VmValue::Ref(f.vm.NewStringUtf8("é"))});
+        const auto bytes = f.On(encoded, "toByteArray", "()[B").ref;
+        CHECK(f.model.ArrayLength(bytes) == 1);
+        CHECK((f.model.GetPrimitiveElement(bytes, 0) & 255U) == 0xe9U);
+        const auto construct = [&](const char* signature, std::vector<VmValue> args) {
+            const auto object = f.vm.NewIntrinsicInstance("Ljava/io/PrintStream;");
+            const auto method = f.linker.FindDirectMethod(klass, "<init>", signature);
+            REQUIRE(method.has_value());
+            args.insert(args.begin(), VmValue::Ref(object));
+            return f.vm.Call(*method, args);
+        };
+        const auto null_stream = construct("(Ljava/io/OutputStream;)V", {VmValue::Ref(VmObjectRef{})});
+        REQUIRE(null_stream.exception.IsValid());
+        CHECK(f.linker.Class(null_stream.exception_class).descriptor == "Ljava/lang/NullPointerException;");
+        const auto bad_charset = construct("(Ljava/io/OutputStream;ZLjava/lang/String;)V",
+            {VmValue::Ref(buffer), VmValue::Int(0), VmValue::Ref(f.vm.NewStringUtf8("not-an-encoding"))});
+        REQUIRE(bad_charset.exception.IsValid());
+        CHECK(f.linker.Class(bad_charset.exception_class).descriptor == "Ljava/io/UnsupportedEncodingException;");
+        const auto input = f.Bytes("!abc?");
+        CHECK(f.vm.StringUtf8(f.New("Ljava/lang/String;", "([BIILjava/lang/String;)V",
+            {VmValue::Ref(input), VmValue::Int(1), VmValue::Int(3), VmValue::Ref(f.vm.NewStringUtf8("UTF-8"))})) == "abc");
+        const auto string_class = f.linker.ResolveDescriptor("Ljava/lang/String;");
+        const auto string_ctor = f.linker.FindDirectMethod(string_class, "<init>", "([BIILjava/lang/String;)V");
+        REQUIRE(string_ctor.has_value());
+        const auto range_error = f.vm.Call(*string_ctor, std::array{
+            VmValue::Ref(f.vm.NewIntrinsicInstance("Ljava/lang/String;")), VmValue::Ref(input),
+            VmValue::Int(3), VmValue::Int(3), VmValue::Ref(f.vm.NewStringUtf8("UTF-8"))});
+        REQUIRE(range_error.exception.IsValid());
+        CHECK(f.linker.Class(range_error.exception_class).descriptor == "Ljava/lang/StringIndexOutOfBoundsException;");
+    }
+}
+
+TEST_CASE("DVM226 PrintStream owns error and autoFlush semantics and System streams use only log sinks") {
+    struct Target { std::vector<char> bytes; int flushes{}; int closes{}; bool fail_write{}; };
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        auto target = std::make_shared<Target>();
+        auto out = IntrinsicClassBuilder::Class("Ltest/PrintTarget;", "Ljava/io/OutputStream;");
+        out.Constructor("()V", [](IntrinsicContext&) { return VmValue::Void(); });
+        out.OverrideMethod("write", "(I)V", [target](IntrinsicContext& c) {
+            if (target->fail_write) throw VmJavaThrow{"Ljava/io/IOException;", "write failed"};
+            target->bytes.push_back(static_cast<char>(c.arguments[0].AsInt()));
+            return VmValue::Void();
+        });
+        out.OverrideMethod("flush", "()V", [target](IntrinsicContext&) { ++target->flushes; return VmValue::Void(); });
+        out.OverrideMethod("close", "()V", [target](IntrinsicContext&) { ++target->closes; return VmValue::Void(); });
+        AndroidValueVm f(backend, {std::move(out).Build()});
+        const auto sink = f.New("Ltest/PrintTarget;");
+        const auto stream = f.New("Ljava/io/PrintStream;", "(Ljava/io/OutputStream;Z)V", {VmValue::Ref(sink), VmValue::Int(1)});
+        f.On(stream, "write", "(I)V", {VmValue::Int('x')});
+        CHECK(target->flushes == 0);
+        f.On(stream, "write", "(I)V", {VmValue::Int('\n')});
+        CHECK(target->flushes == 1);
+        CHECK(std::string(target->bytes.begin(), target->bytes.end()) == "x\n");
+        target->fail_write = true;
+        CHECK_FALSE(f.OnOutcome(stream, "write", "(I)V", {VmValue::Int('x')}).exception.IsValid());
+        CHECK(f.On(stream, "checkError", "()Z").AsInt() == 1);
+        f.On(stream, "close", "()V");
+        f.On(stream, "close", "()V");
+        CHECK(target->closes == 1);
+        const auto initialized = f.vm.EnsureClassInitialized(f.linker.ResolveDescriptor("Ljava/lang/System;"));
+        REQUIRE_FALSE(initialized.exception.IsValid());
+        const auto system = f.linker.ResolveDescriptor("Ljava/lang/System;");
+        const auto get = [&](const char* name) {
+            const auto field = f.linker.FindFieldRecursive(system, name, "Ljava/io/PrintStream;");
+            REQUIRE(field.has_value());
+            return VmObjectRef{f.linker.Class(system).static_storage[f.linker.Field(*field).slot]};
+        };
+        const auto stdout_stream = get("out");
+        const auto stderr_stream = get("err");
+        CHECK(stdout_stream != stderr_stream);
+        f.On(stdout_stream, "println", "(Ljava/lang/String;)V", {VmValue::Ref(f.vm.NewStringUtf8("stdout 中文"))});
+        f.On(stderr_stream, "println", "(Ljava/lang/String;)V", {VmValue::Ref(f.vm.NewStringUtf8("stderr"))});
+        f.On(stdout_stream, "append", "(Ljava/lang/CharSequence;)Ljava/io/PrintStream;", {VmValue::Ref(f.vm.NewStringUtf8(""))});
+        auto logs = f.logger.Snapshot();
+        REQUIRE(logs.size() == 2);
+        CHECK(logs[0].message == "stdout 中文");
+        CHECK(logs[1].message == "stderr");
+        f.On(stdout_stream, "close", "()V");
+        f.On(stderr_stream, "println", "(Ljava/lang/String;)V", {VmValue::Ref(f.vm.NewStringUtf8("still-open"))});
+        logs = f.logger.Snapshot();
+        CHECK(logs.back().message == "still-open");
+        CHECK(f.On(stdout_stream, "checkError", "()Z").AsInt() == 0);
+        f.On(stdout_stream, "print", "(Ljava/lang/String;)V", {VmValue::Ref(f.vm.NewStringUtf8("closed"))});
+        CHECK(f.On(stdout_stream, "checkError", "()Z").AsInt() == 1);
+    }
+}

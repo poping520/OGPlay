@@ -28,6 +28,8 @@ Asphalt 5（pilot title）删除 profile 全部 `native_call` 与 `[[java.class]
 
 | WU | 一句话目标 | 状态 |
 | --- | --- | --- |
+| [DVM-224](DVM-224.md) | 禁用通知后的 Java manager 与空集合取消 | 有界完成 |
+| [DVM-223](DVM-223.md) | 同进程 Activity 返回栈、结果与调用方恢复 | 有界完成 |
 | [DVM-222](DVM-222.md) | NFC 类型链接与无设备发现；无通信 | 有界完成 |
 | [DVM-221](DVM-221.md) | libjnigraphics 与共用 Bitmap 像素 lease | 有界完成 |
 | [DVM-220](DVM-220.md) | BootDex 传感器客户端与无设备后端 | 有界完成 |

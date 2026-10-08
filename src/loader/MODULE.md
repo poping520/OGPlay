@@ -20,7 +20,8 @@
 - `ParseAndroidBinaryManifest` / `ReadAndroidManifest`：受检解析 binary XML chunk、UTF-8/
   UTF-16 string pool、元素与 typed attribute，产出 package/version/SDK、默认或自定义
   Application 类，以及按声明顺序保留 enabled、逐 intent-filter、alias target 的 Activity
-  组件事实；`NormalizeAndroidManifestClassName` 对齐 API 19 `buildClassName`，
+  组件事实；Activity 另保留受检 launchMode（0..3，缺省 standard），上层决定支持边界。
+  `NormalizeAndroidManifestClassName` 对齐 API 19 `buildClassName`，
   `ResolveLauncherComponent` 确定性选择首个 enabled MAIN+LAUNCHER 组件并把 alias 映射到
   已声明 target，no-launcher/非法 alias 以 typed error 失败。Activity/`activity-alias`
   各自保存独立 `meta-data`，不与 application 或兄弟组件合并；

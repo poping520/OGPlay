@@ -1313,6 +1313,77 @@ TEST_CASE("DVM-220 BootDex sensor clients share an honest empty device boundary"
     }
 }
 
+TEST_CASE("DVM-224 notification cancellation uses an explicit empty application inventory") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        auto foreign = IntrinsicClassBuilder::Class("Ltest/ForeignNotificationContext;", "Landroid/content/Context;");
+        foreign.OverrideMethod("getPackageName", "()Ljava/lang/String;",
+            [](IntrinsicContext& call) { return VmValue::Ref(call.vm.NewStringUtf8("other.application")); });
+        AndroidValueVm f(backend, {std::move(foreign).Build()});
+        f.context->package_name = "fixture";
+        f.vm.SetGcIntegration({{}, {}, [&f](const VmRootVisitor& visit) {
+            VisitAndroidSessionRoots(*f.context, visit);
+        }});
+        const auto base = f.New("Landroid/content/Context;");
+        const auto root = f.vm.ProtectReferences(std::array{base});
+        const auto service = [&] {
+            return f.On(base, "getSystemService", "(Ljava/lang/String;)Ljava/lang/Object;",
+                {VmValue::Ref(f.vm.NewStringUtf8("notification"))}).ref;
+        };
+        const auto manager = service();
+        REQUIRE(manager.IsValid());
+        CHECK(f.linker.Class(f.model.ObjectClass(manager)).is_boot_dex);
+        CHECK(f.Static("Landroid/app/NotificationManager;", "from",
+            "(Landroid/content/Context;)Landroid/app/NotificationManager;", {VmValue::Ref(base)}).ref == manager);
+        for (const auto id : {-1, 0, 123, 2147483647}) {
+            f.On(manager, "cancel", "(I)V", {VmValue::Int(id)});
+            for (const auto tag : {VmObjectRef{}, f.vm.NewStringUtf8(""), f.vm.NewStringUtf8("download")}) {
+                f.On(manager, "cancel", "(Ljava/lang/String;I)V", {VmValue::Ref(tag), VmValue::Int(id)});
+                f.On(manager, "cancel", "(Ljava/lang/String;I)V", {VmValue::Ref(tag), VmValue::Int(id)});
+            }
+        }
+        f.On(manager, "cancelAll", "()V");
+        f.On(manager, "cancelAll", "()V");
+        CHECK(f.ledger.Unimplemented().empty());
+        // Cancellation never invalidates process-local PendingIntent tokens.
+        const auto intent = f.New("Landroid/content/Intent;");
+        const auto operation = f.Static("Landroid/app/PendingIntent;", "getService",
+            "(Landroid/content/Context;ILandroid/content/Intent;I)Landroid/app/PendingIntent;",
+            {VmValue::Ref(base), VmValue::Int(4), VmValue::Ref(intent), VmValue::Int(0)}).ref;
+        const auto operation_root = f.vm.ProtectReferences(std::array{operation});
+        f.On(manager, "cancelAll", "()V");
+        REQUIRE(f.context->pending_intents.contains(operation.Value()));
+        CHECK_FALSE(f.context->pending_intents.at(operation.Value()).canceled);
+        static_cast<void>(f.vm.CollectGarbage("notification-empty-inventory"));
+        CHECK(service() == manager);
+        f.On(manager, "cancel", "(I)V", {VmValue::Int(123)});
+        const auto null_post = f.OnOutcome(manager, "notify", "(ILandroid/app/Notification;)V",
+            {VmValue::Int(1), VmValue::Ref(VmObjectRef{})});
+        REQUIRE(null_post.exception.IsValid());
+        CHECK(f.linker.Class(null_post.exception_class).descriptor == "Ljava/lang/NullPointerException;");
+        // The private publication boundary must fail even before value/renderer support is added.
+        const auto post = f.linker.FindDirectMethod(f.model.ObjectClass(manager), "nativeRejectPost", "(Ljava/lang/String;)V");
+        REQUIRE(post.has_value());
+        const auto rejected = f.vm.Call(*post, std::array{VmValue::Ref(manager), VmValue::Ref(f.vm.NewStringUtf8("fixture"))});
+        REQUIRE(rejected.exception.IsValid());
+        CHECK(f.linker.Class(rejected.exception_class).descriptor == "Ljava/lang/UnsupportedOperationException;");
+        const auto hits = f.ledger.Unimplemented();
+        REQUIRE(hits.size() == 1);
+        CHECK(hits[0].id == "dexvm.notification_post");
+        CHECK(hits[0].count == 1);
+        const auto other = f.vm.NewIntrinsicInstance("Ltest/ForeignNotificationContext;");
+        const auto denied = f.OnOutcome(other, "getSystemService", "(Ljava/lang/String;)Ljava/lang/Object;",
+            {VmValue::Ref(f.vm.NewStringUtf8("notification"))});
+        REQUIRE(denied.exception.IsValid());
+        CHECK(f.linker.Class(denied.exception_class).descriptor == "Ljava/lang/SecurityException;");
+        const auto cancel = f.linker.FindDirectMethod(f.model.ObjectClass(manager), "nativeCancel", "(Ljava/lang/String;Ljava/lang/String;IZ)V");
+        REQUIRE(cancel.has_value());
+        const auto foreign_cancel = f.vm.Call(*cancel, std::array{VmValue::Ref(manager),
+            VmValue::Ref(f.vm.NewStringUtf8("other.application")), VmValue::Ref(VmObjectRef{}), VmValue::Int(1), VmValue::Int(0)});
+        REQUIRE(foreign_cancel.exception.IsValid());
+        CHECK(f.linker.Class(foreign_cancel.exception_class).descriptor == "Ljava/lang/SecurityException;");
+    }
+}
+
 TEST_CASE("DVM-222 NFC discovery preserves API19 absence without transport") {
     for (const auto backend : {InterpreterBackend::switch_dispatch,
                                InterpreterBackend::threaded}) {

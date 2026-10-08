@@ -352,6 +352,7 @@ struct ComponentFixture final {
     bool isolated_process{};
     bool single_user{};
     bool service_meta_data{};
+    std::optional<std::uint32_t> launch_mode;
 };
 
 std::vector<std::byte> StartupManifest(
@@ -367,7 +368,7 @@ std::vector<std::byte> StartupManifest(
         "intent-filter", "action", "category", "service", "data", "theme", "exported", "org.example.game",
         "http://schemas.android.com/apk/res/android", "process", "permission",
         "stopWithTask", "isolatedProcess", "singleUser", "meta-data",
-        "value", "resource", "service.string", "service.bool", "service.int",
+        "launchMode", "value", "resource", "service.string", "service.bool", "service.int",
         "service.value-ref", "service.resource", "ready"};
     const auto add = [&](const std::string& value) {
         if (std::find(strings.begin(), strings.end(), value) == strings.end()) {
@@ -427,6 +428,7 @@ std::vector<std::byte> StartupManifest(
         std::vector<Attribute> attributes{
             {index("name"), index(component.name), 0x03,
              index(component.name), android_namespace}};
+        if (component.launch_mode) attributes.push_back({index("launchMode"), 0xffffffffU, 0x10, *component.launch_mode, android_namespace});
         if (component.theme) attributes.push_back({index("theme"), 0xffffffffU, 0x01, *component.theme, android_namespace});
         if (!component.enabled) {
             attributes.push_back({index("enabled"), 0xffffffffU, 0x12, 0,
@@ -952,4 +954,17 @@ TEST_CASE("DVM-195 Manifest keeps activity metadata separate from application an
     CHECK(std::get<std::string>(facts.activity_components[0].meta_data[0].value) == "ready");
     CHECK(facts.activity_components[1].meta_data.empty());
     CHECK(facts.application_meta_data.empty());
+}
+
+TEST_CASE("DVM-223 Manifest retains launch modes and rejects invalid values") {
+    ComponentFixture activity;
+    activity.name = ".Result";
+    for (const auto mode : {0U, 1U, 2U, 3U}) {
+        activity.launch_mode = mode;
+        const auto facts = ogplay::loader::ParseAndroidBinaryManifest(StartupManifest(std::nullopt, {activity}));
+        REQUIRE(facts.activity_components.size() == 1);
+        CHECK(facts.activity_components[0].launch_mode == mode);
+    }
+    activity.launch_mode = 4U;
+    CHECK_THROWS(ogplay::loader::ParseAndroidBinaryManifest(StartupManifest(std::nullopt, {activity})));
 }

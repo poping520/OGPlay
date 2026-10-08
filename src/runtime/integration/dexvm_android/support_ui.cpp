@@ -90,6 +90,12 @@ void InitializeDefaultViewBackground(dexvm::Interpreter& vm,
 }
 
 void ResetViewUiState(DexVmAndroidContext& context) {
+    if (!context.activity_stack.empty()) {
+        const auto children = context.ui_tree.Get(context.ui_tree.Root())->children;
+        for (const auto child : children) RetireViewUiSubtree(context, child);
+        context.focused_edit_text = dexvm::VmObjectRef{};
+        return;
+    }
     context.ui_tree.Reset();
     context.object_to_ui_node.clear();
     context.ui_node_to_object.clear();
@@ -100,6 +106,30 @@ void ResetViewUiState(DexVmAndroidContext& context) {
     context.ui_drawables.clear();
     context.text_watchers.clear();
     context.focused_edit_text = dexvm::VmObjectRef{};
+}
+
+void RetireViewUiSubtree(DexVmAndroidContext& context, const ui::UiNodeId node) {
+    std::vector<ui::UiNodeId> nodes{node};
+    while (!nodes.empty()) {
+        const auto current = nodes.back(); nodes.pop_back();
+        const auto* state = context.ui_tree.Get(current);
+        if (!state) continue;
+        nodes.insert(nodes.end(), state->children.begin(), state->children.end());
+        const auto found = context.ui_node_to_object.find(current);
+        if (found != context.ui_node_to_object.end()) {
+            const auto object = found->second.Value();
+            context.object_to_ui_node.erase(object);
+            context.ui_view_layout_params.erase(object);
+            context.ui_view_backgrounds.erase(object);
+            context.text_watchers.erase(object);
+            if (context.focused_edit_text.Value() == object)
+                context.focused_edit_text = dexvm::VmObjectRef{};
+            context.ui_node_to_object.erase(found);
+        }
+        context.ui_click_listeners.erase(current);
+        context.ui_touch_listeners.erase(current);
+    }
+    context.ui_tree.DestroySubtree(node);
 }
 
 }  // namespace ogplay::runtime

@@ -665,6 +665,11 @@ AndroidManifestFacts ParseAndroidBinaryManifest(const std::span<const std::byte>
                         ReadBooleanAttribute(*exported, name + " exported");
                 }
                 if (component.kind == AndroidManifestComponentKind::activity) {
+                    if (const auto* mode = FindAttribute(attributes, "launchMode", kAndroidNamespace)) {
+                        component.launch_mode = ReadIntegerAttribute(*mode, "activity launchMode");
+                        if (component.launch_mode > 3)
+                            throw std::runtime_error("binary AndroidManifest activity launchMode is invalid");
+                    }
                     if (const auto* theme = FindAttribute(attributes, "theme", kAndroidNamespace))
                         component.theme = ReadReferenceAttribute(*theme, "activity theme");
                 }

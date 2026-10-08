@@ -73,6 +73,8 @@ ZIP_JAVA_NAMES = ("org/ogplay/zip/NativeZip.java",)
 
 FRAMEWORK_JAVA_ROOT = ROOT / "src/guest/framework/java"
 FRAMEWORK_JAVA_NAMES = (
+    "android/app/Activity.java",
+    "android/app/NotificationManager.java",
     "android/hardware/LegacySensorManager.java",
     "android/hardware/LocalSensorManager.java",
     "android/hardware/Sensor.java",
@@ -448,6 +450,9 @@ def zip_stream_native_signatures() -> dict[str, dict[str, int]]:
               "getTotalOutImpl(J)J", "resetImpl(J)V", "setDictionaryImpl([BIIJ)V",
               "setInputImpl([BIIJ)V"}
     return {
+        "Landroid/app/Activity;": {
+            "nativeStartActivityForResult(Landroid/content/Intent;ILandroid/os/Bundle;)V": 0x102,
+            "nativeFinish(ILandroid/content/Intent;)V": 0x102},
         "Landroid/nfc/NfcAdapter;": {
             "nativeGetAdapter()Landroid/nfc/NfcAdapter;": 0x10a,
             "nativeUnsupported(Ljava/lang/String;)V": 0x10a},
@@ -468,6 +473,9 @@ def zip_stream_native_signatures() -> dict[str, dict[str, int]]:
             "createStream(Z)J", "inflateImpl([BIIJ)I",
             "setFileInputImpl(Ljava/io/FileDescriptor;JIJ)I"}},
         "Lorg/ogplay/zip/NativeZip;": {"release(J)V": 0x10a},
+        "Landroid/app/NotificationManager;": {
+            "nativeCancel(Ljava/lang/String;Ljava/lang/String;IZ)V": 0x102,
+            "nativeRejectPost(Ljava/lang/String;)V": 0x102},
     }
 
 
@@ -1010,7 +1018,7 @@ def self_test() -> int:
         reject_recipe(candidate, case)
     # Native admission mutations need neither AOSP inputs nor Java tooling.
     from types import SimpleNamespace
-    for target_index in (0, 1, 2, 3):  # NFC, video, value arithmetic and ZIP native admission.
+    for target_index in (0, 1, 2, 3, 4, 7):  # Activity, NFC, video, value arithmetic, ZIP and notification admission.
         for mutation in ("valid", "signature", "flags", "extra", "missing"):
             names, signatures, classes = [], [], []
             for owner, members in zip_stream_native_signatures().items():

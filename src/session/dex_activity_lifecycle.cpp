@@ -374,6 +374,8 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
             const auto activity = vm.Model().NewInstance(
                 *activity_class, linker.Class(*activity_class).instance_slots);
             context.activity = activity;
+            context.activity_stack.push_back({activity});
+            context.activity_stack_depth.store(context.activity_stack.size());
             context.window_focus_activity.store(activity.Value());
             // The manifest launcher opened the process's single task, so it
             // stays the task root across later startActivity handoffs.
@@ -399,17 +401,9 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
             // starts, matching the platform contract.
             CallActivity("onCreate", "(Landroid/os/Bundle;)V",
                          {dx::VmValue::Ref(dx::VmObjectRef{})});
-            if (context.pending_activity_descriptor.empty() &&
-                !runtime::SessionExitRequested(context)) {
-                CallActivity("onStart", "()V", {});
-                CallActivity("onResume", "()V", {});
-                activity_started_ = true;
-                // Threads created by onStart/onResume run concurrently on
-                // Android. Before the first traversal, observe each worker
-                // that exists now reach a real park point (or terminate).
-                // The handshake is bounded and deliberately ignores workers
-                // created after this requirement set is captured.
-                AwaitInitialThreadQuiescence();
+            if (context.activity_commands.empty() && !runtime::SessionExitRequested(context)) {
+                StartCurrentActivity();
+                if (activity_resumed_) AwaitInitialThreadQuiescence();
             }
 
             // Consume immediate handoffs before the first traversal. Empty
@@ -959,103 +953,189 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
         }
     }
 
+    void DexActivityLifecycle::StartCurrentActivity() {
+        auto& context = *bindings_.context;
+        activity_started_ = true;
+        CallActivity("onStart", "()V", {});
+        const auto transitioning = [&] {
+            return std::ranges::any_of(context.activity_commands, [&](const auto& command) {
+                return command.kind == runtime::DexVmAndroidContext::ActivityCommand::Kind::launch ||
+                       command.owner == context.activity;
+            });
+        };
+        if (transitioning() || runtime::SessionExitRequested(context)) return;
+        auto& vm = bindings_.bridge->Vm();
+        auto results = std::move(context.activity_stack.back().results);
+        context.activity_stack.back().results.clear();
+        std::vector<dx::VmObjectRef> data;
+        for (const auto& result : results) data.push_back(result.data);
+        const auto roots = vm.ProtectReferences(data);
+        for (const auto& result : results)
+            CallActivity("onActivityResult", "(IILandroid/content/Intent;)V",
+                {dx::VmValue::Int(result.request_code), dx::VmValue::Int(result.result_code), dx::VmValue::Ref(result.data)});
+        if (!transitioning() && !runtime::SessionExitRequested(context)) {
+            CallActivity("onResume", "()V", {});
+            activity_resumed_ = true;
+        }
+    }
+
+    void DexActivityLifecycle::RestoreActivity() {
+        auto& context = *bindings_.context;
+        auto& record = context.activity_stack.back();
+        context.activity = record.object;
+        context.current_intent = record.intent;
+        context.content_view = record.content;
+        context.focused_edit_text = record.focused_edit_text;
+        context.window_focus_activity.store(record.object.Value());
+        activity_started_ = false;
+        activity_resumed_ = false;
+        if (record.content.IsValid()) {
+            const auto node = runtime::FindViewUiNode(context, record.content.Value());
+            if (node && !context.ui_tree.Get(*node)->parent)
+                context.ui_tree.Attach(context.ui_tree.Root(), *node);
+        }
+        if (record.focused_node && context.ui_tree.Get(*record.focused_node))
+            static_cast<void>(context.ui_tree.RequestFocus(*record.focused_node, false));
+        if (record.started) CallActivity("onRestart", "()V", {});
+        StartCurrentActivity();
+        SynchronizeContentView();
+        if (activity_resumed_) SetWindowFocus(true);
+    }
+
     void DexActivityLifecycle::ServiceActivitySwitch() {
         auto& context = *bindings_.context;
-        while (!context.pending_activity_descriptor.empty()) {
-            const auto descriptor =
-                    std::exchange(context.pending_activity_descriptor, {});
-            const auto pending_component =
-                    std::exchange(context.pending_activity_component_name, {});
-            context.activity_switch_pending = false;
-            const auto departing = context.activity.Value();
-            if (auto* logger = bindings_.bridge->Vm().Log(); logger != nullptr) {
-                logger->Write(core::LogLevel::info, "session.dex_lifecycle",
-                              "switching activity: " + descriptor);
+        auto& vm = bindings_.bridge->Vm();
+        const dx::VmExecutionLockScope execution(vm.ExecutionLock());
+        using Command = runtime::DexVmAndroidContext::ActivityCommand;
+        const auto refresh = [&] {
+            context.activity_stack_depth.store(context.activity_stack.size());
+            context.activity_switch_pending.store(!context.activity_commands.empty());
+            context.pending_activity_descriptor = context.activity_commands.empty() ? "" : context.activity_commands.front().descriptor;
+            context.pending_activity_component_name = context.activity_commands.empty() ? "" : context.activity_commands.front().component;
+        };
+        const auto retire_active = [&] {
+            CancelInput();
+            SetWindowFocus(false);
+            if (activity_resumed_) CallActivity("onPause", "()V", {});
+            if (activity_started_) CallActivity("onStop", "()V", {});
+            if (!context.activity_stack.empty() && context.activity_stack.back().object == context.activity) {
+                auto& record = context.activity_stack.back();
+                record.content = context.content_view;
+                record.focused_node = context.ui_tree.Focused();
+                record.focused_edit_text = context.focused_edit_text;
             }
-
-            auto& vm = bindings_.bridge->Vm();
-            auto& linker = bindings_.bridge->Linker();
-
-            // Retire the old activity deterministically before the new one.
-            // A never-started activity (finished inside its onCreate) only
-            // receives onDestroy, as on the platform.
-            if (activity_started_) {
-                SetWindowFocus(false);
-                CallActivity("onPause", "()V", {});
-                CallActivity("onStop", "()V", {});
-            }
-            const auto surface_error = runtime::RetireSurfaceHolderGeneration(
-                vm, context);
-            if (surface_error.has_value()) Fail(*surface_error);
+            if (const auto error = runtime::RetireSurfaceHolderGeneration(vm, context)) Fail(*error);
             StopRendererThread();
-            CallActivity("onDestroy", "()V", {});
-            activity_started_ = false;
-            // The departing activity's own finish() is answered by its retirement.
-            // Its run() may still be executing on its host thread and repeat the
-            // call afterwards; that lands on a handle nothing owns any more.
-            auto finished = departing;
-            context.finishing_activity.compare_exchange_strong(finished, 0U);
+            if (context.content_view.IsValid()) {
+                const auto node = runtime::FindViewUiNode(context, context.content_view.Value());
+                if (node) context.ui_tree.Detach(*node);
+            }
             context.content_view = dx::VmObjectRef{};
-            sized_content_view_ = dx::VmObjectRef{};
-            sized_content_node_.reset();
-            gesture_candidate_ = 0U;
-            gesture_click_eligible_ = false;
-            gesture_touch_consumed_ = false;
-            deep_touch_handle_ = 0U;
-            runtime::ResetViewUiState(context);
-            context.renderer = dx::VmObjectRef{};
-            context.egl_context_factory = dx::VmObjectRef{};
-            context.egl_config_chooser = dx::VmObjectRef{};
-            renderer_ready_ = false;
-
-            const auto activity_class = linker.FindClass(descriptor);
-            if (!activity_class.has_value()) {
-                Fail("startActivity target is not in the dex: " + descriptor);
+            context.focused_edit_text = dx::VmObjectRef{};
+            context.renderer = dx::VmObjectRef{}; context.egl_context_factory = dx::VmObjectRef{}; context.egl_config_chooser = dx::VmObjectRef{};
+            sized_content_view_ = dx::VmObjectRef{}; sized_content_node_.reset();
+            gesture_candidate_ = 0; gesture_click_eligible_ = false; gesture_touch_consumed_ = false; deep_touch_handle_ = 0;
+            renderer_ready_ = false; activity_started_ = false; activity_resumed_ = false;
+        };
+        std::size_t serviced{};
+        while (!context.activity_commands.empty()) {
+            if (++serviced > 128) Fail("Activity transition limit exceeded");
+            auto command = std::move(context.activity_commands.front());
+            context.activity_commands.pop_front();
+            const auto command_roots = vm.ProtectReferences(std::array{command.owner, command.intent});
+            refresh();
+            if (command.kind == Command::Kind::finish) {
+                const auto found = std::find_if(context.activity_stack.begin(), context.activity_stack.end(),
+                    [&](const auto& record) { return record.object == command.owner; });
+                if (found == context.activity_stack.end()) continue;
+                const bool top = std::next(found) == context.activity_stack.end();
+                if (top && context.activity_stack.size() == 1) {
+                    context.finishing_activity.store(command.owner.Value());
+                    const bool launching = std::ranges::any_of(context.activity_commands, [](const auto& item) {
+                        return item.kind == Command::Kind::launch;
+                    });
+                    if (!launching) {
+                        context.activity_commands.clear();
+                        refresh();
+                        return;
+                    }
+                    // The last instance remains alive until an already queued
+                    // launch can establish the replacement foreground.
+                    context.activity_commands.push_back(std::move(command));
+                    refresh();
+                    continue;
+                }
+                if (top) found->content = context.content_view;
+                if (top) retire_active();
+                const auto old = *found;
+                // Background finish destroys that instance without changing foreground identity.
+                CallOnView(old.object, "onDestroy", "()V", {});
+                if (old.content.IsValid()) {
+                    const auto node = runtime::FindViewUiNode(context, old.content.Value());
+                    if (node) runtime::RetireViewUiSubtree(context, *node);
+                }
+                context.activity_stack.erase(found);
+                if (old.request_code >= 0 && old.caller.IsValid()) {
+                    const auto caller = std::find_if(context.activity_stack.begin(), context.activity_stack.end(),
+                        [&](const auto& record) { return record.object == old.caller; });
+                    if (caller != context.activity_stack.end())
+                        caller->results.push_back({old.request_code, command.result_code, command.intent});
+                }
+                auto finishing = command.owner.Value();
+                context.finishing_activity.compare_exchange_strong(finishing, 0U);
+                refresh();
+                if (top) RestoreActivity();
+                continue;
             }
-            RequireOutcome(vm, vm.EnsureClassInitialized(*activity_class),
-                           "activity <clinit>");
-            const auto init = linker.FindDirectMethod(*activity_class,
-                                                      "<init>", "()V");
-            if (!init.has_value()) {
-                Fail("activity has no default constructor: " + descriptor);
+            if (context.activity_stack.size() >= 32) Fail("Activity stack limit exceeded");
+            const bool retiring = std::ranges::any_of(context.activity_commands, [&](const auto& item) {
+                return item.kind == Command::Kind::finish && item.owner == context.activity;
+            });
+            if (!retiring && (context.renderer.IsValid() || !context.active_surface_holders.empty() ||
+                              context.window_surface_callback.IsValid() || runtime::AnyVideoPlaying(context))) {
+                if (auto* ledger = vm.Ledger()) ledger->RecordUnimplemented("dexvm.activity_result", 0);
+                throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
+                    "retaining an Activity with live renderer, native surface or video is unsupported"};
             }
-            const auto activity = vm.Model().NewInstance(
-                *activity_class, linker.Class(*activity_class).instance_slots);
-            context.activity = activity;
-            RequireOutcome(
-                vm,
-                vm.Call(*init, std::vector<dx::VmValue>{
-                            dx::VmValue::Ref(activity)
-                        }),
-                "activity <init>");
-            AttachBaseContext(vm, linker, *activity_class, activity,
-                              context.application_base_context, "Activity");
-            auto component_name = pending_component;
-            if (component_name.empty()) {
-                component_name = vm.Linker().Class(*activity_class).descriptor;
-                component_name = component_name.substr(1, component_name.size() - 2);
-                std::replace(component_name.begin(), component_name.end(), '/', '.');
+            if (!context.activity_stack.empty()) {
+                auto& record = context.activity_stack.back();
+                record.content = context.content_view;
+                record.focused_node = context.ui_tree.Focused();
+                record.focused_edit_text = context.focused_edit_text;
+                record.intent = CallOnView(record.object, "getIntent", "()Landroid/content/Intent;", {}).ref;
+                record.started = activity_started_;
+                retire_active();
             }
-            runtime::AttachAndroidActivityIdentity(vm, bindings_.context, activity,
-                                                   component_name);
-
-            CallActivity("onCreate", "(Landroid/os/Bundle;)V",
-                         {dx::VmValue::Ref(dx::VmObjectRef{})});
-            if (context.pending_activity_descriptor.empty() &&
-                !runtime::SessionExitRequested(context)) {
-                CallActivity("onStart", "()V", {});
-                CallActivity("onResume", "()V", {});
-                activity_started_ = true;
-            }
-
+            auto& linker = vm.Linker();
+            const auto type = linker.FindClass(command.descriptor);
+            if (!type) Fail("startActivity target is not in the dex: " + command.descriptor);
+            RequireOutcome(vm, vm.EnsureClassInitialized(*type), "activity <clinit>");
+            const auto init = linker.FindDirectMethod(*type, "<init>", "()V");
+            if (!init) Fail("Activity has no default constructor");
+            const auto activity = vm.Model().NewInstance(*type, linker.Class(*type).instance_slots);
+            context.activity = activity; context.current_intent = command.intent;
+            context.activity_stack.push_back({activity, command.intent, dx::VmObjectRef{},
+                command.request_code >= 0 ? command.owner : dx::VmObjectRef{}, command.request_code});
+            refresh();
+            context.window_focus_activity.store(activity.Value());
+            RequireOutcome(vm, vm.Call(*init, std::array{dx::VmValue::Ref(activity)}), "activity <init>");
+            AttachBaseContext(vm, linker, *type, activity, context.application_base_context, "Activity");
+            runtime::AttachAndroidActivityIdentity(vm, bindings_.context, activity, command.component);
+            CallActivity("onCreate", "(Landroid/os/Bundle;)V", {dx::VmValue::Ref(dx::VmObjectRef{})});
+            const bool own_transition = std::ranges::any_of(context.activity_commands, [&](const auto& item) {
+                return item.kind == Command::Kind::launch || item.owner == activity;
+            });
+            if (!own_transition && !runtime::SessionExitRequested(context)) StartCurrentActivity();
             SynchronizeContentView();
-            if (activity_started_) SetWindowFocus(true);
-            // A replacement Activity installs a new SurfaceView generation.
-            // Callbacks registered during onCreate must observe the already-open
-            // managed host surface before its GL thread can render.
+            if (activity_resumed_) SetWindowFocus(true);
             DispatchSurfaceHolder(runtime::SurfaceHolderPhase::created);
             DispatchSurfaceHolder(runtime::SurfaceHolderPhase::changed);
             runtime::DispatchAndroidGlobalLayout(vm, context);
+        }
+        refresh();
+        if (activity_started_ && !activity_resumed_ && !runtime::SessionExitRequested(context)) {
+            CallActivity("onResume", "()V", {});
+            activity_resumed_ = true;
         }
     }
 
@@ -1506,7 +1586,16 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
         // onDestroy may call libc exit, which runs global destructors before
         // exit_group. All workers must be quiescent before entering it.
         phase("teardown.destroy");
-        if (was_running) guest([&] { CallActivity("onDestroy", "()V", {}); });
+        if (was_running) {
+            guest([&] { CallActivity("onDestroy", "()V", {}); });
+            for (const auto& record : bindings_.context->activity_stack)
+                if (record.object != bindings_.context->activity)
+                    guest([&] { CallOnView(record.object, "onDestroy", "()V", {}); });
+        }
+        bindings_.context->activity_stack.clear();
+        bindings_.context->activity_commands.clear();
+        bindings_.context->activity_stack_depth.store(0);
+        bindings_.context->activity_switch_pending.store(false);
         phase("teardown.persistence");
         if (bindings_.flush_persistent_state) attempt(bindings_.flush_persistent_state);
         phase("teardown.guest_finalize");

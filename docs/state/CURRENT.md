@@ -1,6 +1,6 @@
 # 当前状态
 
-更新：2026-10-07。
+更新：2026-10-08。
 
 本页只保留最新运行结果与未闭合边界。能力状态见 [capabilities.toml](../../capabilities.toml)，
 实现契约见各模块 MODULE；历史过程见 [任务总览](../tasks/README.md) 与
@@ -24,11 +24,17 @@
   并进入 Game.onCreate。[DVM-222](../tasks/dexvm/DVM-222.md) 补齐 NFC Java 类型与
   无设备发现，不实现通信；BootDex build/check、payload 校验、Release 构建及
   NFC/sensor 双解释器 2 项/308 断言通过。原 NFC 首错消失并进入 Game.onStart；
-  当前 startInstallerIfNeeded 缺少 `startActivityForResult(Intent, int)`，退出 1。
+  [DVM-223](../tasks/dexvm/DVM-223.md) 支持有界 Activity 返回栈与结果，保留普通 View
+  调用方；BootDex build/check、payload、Release 构建及定向 13 项/2576 断言通过。
+  原 startActivityForResult 首错消失。[DVM-224](../tasks/dexvm/DVM-224.md) 正常构造
+  通知 manager 并支持已知空集合取消，发布拒绝且记账；BootDex build/check、自检、
+  payload、Release 构建及定向 3 项/1808 断言通过。原 notification 异常未再出现；
+  单帧运行到主动停止日志，f=1 长 guest call 后 30 秒退出阶段超时，未取得下一条
+  Java 异常，阻塞原因未定位；复现进程已结束，不宣称 clean shutdown。
   原 boundary 架构违规仍在。
   进程已退出，授权路径及完整游戏未验收。
   证据 `.local/wb-classloader-analysis/`、`.local/wb-subscriber-fix/`、`.local/wb-lifecycle-fix/`、
-  `.local/wb-sensor-fix/`、`.local/wb-jnigraphics-fix/`、`.local/wb-nfc-absence-fix/`。
+  `.local/wb-sensor-fix/`、`.local/wb-jnigraphics-fix/`、`.local/wb-nfc-absence-fix/`、`.local/wb-activity-result-fix/`、`.local/wb-notification-cancel-fix/`。
 
 - **Tales From Deep Space 1.0.0**：VideoView/packed depth/stencil 已闭合；macOS
   800×480/1280×720 菜单裁剪，BND-29 终止断言失败。

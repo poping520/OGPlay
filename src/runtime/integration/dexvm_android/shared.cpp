@@ -2031,7 +2031,7 @@ bool SessionExitRequested(const DexVmAndroidContext& context) {
     // The last activity finishing itself ends the session; a handoff still
     // in flight does not. finish() is published after the startActivity it
     // follows, so observing the former guarantees the latter is visible.
-    return !context.activity_switch_pending.load();
+    return !context.activity_switch_pending.load() && context.activity_stack_depth.load() <= 1;
 }
 
 dx::VmObjectRef MakeMotionEvent(dx::Interpreter& vm, const AndroidBoundaryInput& input) {

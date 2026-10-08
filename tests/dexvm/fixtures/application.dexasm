@@ -1230,3 +1230,157 @@
     sget v0, Lfixture/TeardownFailureActivity;->stage:I
     return v0
 .end method
+
+# Activity result fixtures keep caller identity and observable lifecycle ordering.
+.class public Lfixture/ResultCaller;
+.super Landroid/app/Activity;
+.field static public instances:I
+.field static public events:I
+.field static public callbacks:I
+.field static public request:I
+.field static public result:I
+.field static public data:Landroid/content/Intent;
+.method public constructor <init>()V
+.registers 2
+    invoke-direct {v1}, Landroid/app/Activity;-><init>()V
+    sget v0, Lfixture/ResultCaller;->instances:I
+    add-int/lit8 v0, v0, 1
+    sput v0, Lfixture/ResultCaller;->instances:I
+    return-void
+.end method
+.method protected onCreate(Landroid/os/Bundle;)V
+.registers 3
+    new-instance v0, Landroid/view/View;
+    invoke-direct {v0, v1}, Landroid/view/View;-><init>(Landroid/content/Context;)V
+    invoke-virtual {v1, v0}, Landroid/app/Activity;->setContentView(Landroid/view/View;)V
+    return-void
+.end method
+.method protected onRestart()V
+.registers 2
+    sget v0, Lfixture/ResultCaller;->events:I
+    mul-int/lit8 v0, v0, 10
+    add-int/lit8 v0, v0, 1
+    sput v0, Lfixture/ResultCaller;->events:I
+    return-void
+.end method
+.method protected onStart()V
+.registers 2
+    sget v0, Lfixture/ResultCaller;->events:I
+    mul-int/lit8 v0, v0, 10
+    add-int/lit8 v0, v0, 2
+    sput v0, Lfixture/ResultCaller;->events:I
+    return-void
+.end method
+.method protected onResume()V
+.registers 2
+    sget v0, Lfixture/ResultCaller;->events:I
+    mul-int/lit8 v0, v0, 10
+    add-int/lit8 v0, v0, 4
+    sput v0, Lfixture/ResultCaller;->events:I
+    return-void
+.end method
+.method protected onActivityResult(IILandroid/content/Intent;)V
+.registers 5
+    sget v0, Lfixture/ResultCaller;->events:I
+    mul-int/lit8 v0, v0, 10
+    add-int/lit8 v0, v0, 3
+    sput v0, Lfixture/ResultCaller;->events:I
+    sget v0, Lfixture/ResultCaller;->callbacks:I
+    add-int/lit8 v0, v0, 1
+    sput v0, Lfixture/ResultCaller;->callbacks:I
+    sput v2, Lfixture/ResultCaller;->request:I
+    sput v3, Lfixture/ResultCaller;->result:I
+    sput-object v4, Lfixture/ResultCaller;->data:Landroid/content/Intent;
+    return-void
+.end method
+.method public static getInstances()I
+.registers 1
+    sget v0, Lfixture/ResultCaller;->instances:I
+    return v0
+.end method
+.method public static getEvents()I
+.registers 1
+    sget v0, Lfixture/ResultCaller;->events:I
+    return v0
+.end method
+.method public static getCallbacks()I
+.registers 1
+    sget v0, Lfixture/ResultCaller;->callbacks:I
+    return v0
+.end method
+.method public static getRequest()I
+.registers 1
+    sget v0, Lfixture/ResultCaller;->request:I
+    return v0
+.end method
+.method public static getResult()I
+.registers 1
+    sget v0, Lfixture/ResultCaller;->result:I
+    return v0
+.end method
+.method public static resetEvents()V
+.registers 1
+    const/4 v0, 0
+    sput v0, Lfixture/ResultCaller;->events:I
+    return-void
+.end method
+.method public static getData()Landroid/content/Intent;
+.registers 1
+    sget-object v0, Lfixture/ResultCaller;->data:Landroid/content/Intent;
+    return-object v0
+.end method
+.class public Lfixture/ResultChild;
+.super Landroid/app/Activity;
+.method public constructor <init>()V
+.registers 1
+    invoke-direct {v0}, Landroid/app/Activity;-><init>()V
+    return-void
+.end method
+.method protected onCreate(Landroid/os/Bundle;)V
+.registers 3
+    new-instance v0, Landroid/view/View;
+    invoke-direct {v0, v1}, Landroid/view/View;-><init>(Landroid/content/Context;)V
+    invoke-virtual {v1, v0}, Landroid/app/Activity;->setContentView(Landroid/view/View;)V
+    return-void
+.end method
+
+.class public Lfixture/ResultOnStartCaller;
+.super Lfixture/ResultCaller;
+.field static public once:I
+.method public constructor <init>()V
+.registers 1
+    invoke-direct {v0}, Lfixture/ResultCaller;-><init>()V
+    return-void
+.end method
+.method protected onStart()V
+.registers 5
+    invoke-super {v4}, Lfixture/ResultCaller;->onStart()V
+    sget v0, Lfixture/ResultOnStartCaller;->once:I
+    if-nez v0, :done
+    const/4 v0, 1
+    sput v0, Lfixture/ResultOnStartCaller;->once:I
+    new-instance v0, Landroid/content/Intent;
+    invoke-direct {v0}, Landroid/content/Intent;-><init>()V
+    const-string v1, "fixture"
+    const-string v2, "fixture.ResultImmediateChild"
+    invoke-virtual {v0, v1, v2}, Landroid/content/Intent;->setClassName(Ljava/lang/String;Ljava/lang/String;)Landroid/content/Intent;
+    const/16 v3, 100
+    invoke-virtual {v4, v0, v3}, Landroid/app/Activity;->startActivityForResult(Landroid/content/Intent;I)V
+:done
+    return-void
+.end method
+.class public Lfixture/ResultImmediateChild;
+.super Lfixture/ResultChild;
+.method public constructor <init>()V
+.registers 1
+    invoke-direct {v0}, Lfixture/ResultChild;-><init>()V
+    return-void
+.end method
+.method protected onCreate(Landroid/os/Bundle;)V
+.registers 3
+    invoke-super {v1, v2}, Lfixture/ResultChild;->onCreate(Landroid/os/Bundle;)V
+    const/4 v0, 1
+    invoke-virtual {v1, v0}, Landroid/app/Activity;->setResult(I)V
+    invoke-virtual {v1}, Landroid/app/Activity;->finish()V
+    return-void
+.end method

@@ -17,8 +17,26 @@
 #include <vector>
 
 #include "ogplay/runtime/vfs/vfs.h"
+#include "ogplay/hal/fs.h"
 
 namespace {
+
+struct HostMountFixture final {
+    std::filesystem::path root = std::filesystem::temp_directory_path() /
+        ("ogplay-host-pool-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+    HostMountFixture() { std::filesystem::create_directories(root); }
+    ~HostMountFixture() { std::error_code error; std::filesystem::remove_all(root, error); }
+    void Put(const std::string& name, const std::string& bytes = "AB") const {
+        std::ofstream output(root / name, std::ios::binary | std::ios::trunc);
+        output.write(bytes.data(), static_cast<std::streamsize>(bytes.size()));
+        REQUIRE(output.good());
+    }
+};
+
+void ExpectHostErrno(const std::function<void()>& action, const int expected) {
+    try { action(); FAIL("host operation unexpectedly succeeded"); }
+    catch (const ogplay::runtime::VfsError& error) { CHECK(error.ErrorNumber() == expected); }
+}
 
 std::vector<std::byte> ReadLease(
     const std::shared_ptr<const ogplay::runtime::VfsReadLease>& lease) {
@@ -696,6 +714,177 @@ TEST_CASE("VFS large host file small reads stay positioned and unmaterialized") 
     std::error_code error;
     std::filesystem::remove_all(root, error);
     CHECK_FALSE(error);
+}
+
+TEST_CASE("VFS host mounts index 5000 files and bound idle handles") {
+    using namespace ogplay::runtime;
+    ExpectHostErrno([] { static_cast<void>(VirtualFileSystem({.host_file_handle_budget = 0})); }, 22);
+    HostMountFixture fixture;
+    for (int i = 0; i < 5000; ++i) fixture.Put(std::to_string(i), std::string{static_cast<char>(i % 127), 'Z'});
+    VirtualFileSystem vfs({.host_file_handle_budget = 4});
+    vfs.MountHostDirectory("/host", fixture.root);
+    CHECK(vfs.IoStatistics().host_file_handles == 0);
+    CHECK(vfs.ListDirectory("/host").size() == 5000);
+    for (int i = 0; i < 5000; ++i) {
+        const auto fd = vfs.Open("/host/" + std::to_string(i), {.read = true});
+        std::array<std::byte, 2> bytes{};
+        CHECK(vfs.ReadAt(fd, 0, bytes) == 2);
+        CHECK(bytes[0] == static_cast<std::byte>(i % 127));
+        CHECK(bytes[1] == std::byte{'Z'});
+        CHECK(vfs.Seek(fd, 0, VfsSeekWhence::current) == 0);
+        vfs.Close(fd);
+    }
+    const auto stats = vfs.IoStatistics();
+    CHECK(stats.host_file_handles == 4);
+    CHECK(stats.host_file_handle_high_water == 4);
+    CHECK(stats.host_file_handle_evictions == 4996);
+    CHECK(stats.full_materialized_bytes == 0);
+    CHECK(stats.backing_read_bytes == 10000);
+    REQUIRE(vfs.TrySnapshot().has_value());
+    CHECK(vfs.TrySnapshot()->io.host_file_handle_high_water == 4);
+}
+
+TEST_CASE("VFS host active descriptors and dup enforce the shared budget") {
+    using namespace ogplay::runtime;
+    HostMountFixture fixture;
+    fixture.Put("a"); fixture.Put("b");
+    VirtualFileSystem vfs({.host_file_handle_budget = 1});
+    vfs.MountHostDirectory("/host", fixture.root);
+    const auto first = vfs.Open("/host/a", {.read = true});
+    const auto second = vfs.Open("/host/a", {.read = true});
+    const auto duplicate = vfs.Duplicate(first);
+    vfs.Close(first); vfs.Close(second);
+    ExpectHostErrno([&] { static_cast<void>(vfs.Open("/host/b", {.read = true})); }, 24);
+    std::array<std::byte, 2> bytes{};
+    CHECK(vfs.Read(duplicate, bytes) == 2);
+    vfs.Close(duplicate);
+    const auto next = vfs.Open("/host/b", {.read = true});
+    CHECK(vfs.Read(next, bytes) == 2);
+    vfs.Close(next);
+    CHECK(vfs.IoStatistics().host_file_handle_high_water == 1);
+    CHECK(vfs.IoStatistics().host_file_handle_evictions == 1);
+    vfs.MountHostFile(VfsSource::obb, "/obb", fixture.root / "a");
+    const auto lease_fd = vfs.Open("/obb/a", {.read = true});
+    auto lease = vfs.CaptureReadLease(lease_fd, 0);
+    vfs.Close(lease_fd);
+    ExpectHostErrno([&] { static_cast<void>(vfs.Open("/host/b", {.read = true})); }, 24);
+    lease.reset();
+    const auto recovered = vfs.Open("/host/b", {.read = true});
+    CHECK(vfs.Read(recovered, bytes) == 2);
+    vfs.Close(recovered);
+}
+
+TEST_CASE("VFS host leases pin identity across close rename replacement and teardown") {
+    using namespace ogplay::runtime;
+    HostMountFixture fixture;
+    fixture.Put("a", "old"); fixture.Put("b", "bbb");
+    std::shared_ptr<const VfsReadLease> lease;
+    {
+        VirtualFileSystem vfs({.host_file_handle_budget = 1});
+        vfs.MountHostFile(VfsSource::obb, "/obb", fixture.root / "a");
+        vfs.MountHostFile(VfsSource::obb, "/obb", fixture.root / "b");
+        const auto fd = vfs.Open("/obb/a", {.read = true});
+        lease = vfs.CaptureReadLease(fd, 0);
+        vfs.Close(fd);
+        ExpectHostErrno([&] { static_cast<void>(vfs.Open("/obb/b", {.read = true})); }, 24);
+        std::filesystem::rename(fixture.root / "a", fixture.root / "retired");
+        fixture.Put("a", "new");
+        CHECK(ReadLease(lease) == std::vector<std::byte>{std::byte{'o'}, std::byte{'l'}, std::byte{'d'}});
+        std::stop_source cancellation; cancellation.request_stop();
+        std::array<std::byte, 3> output{};
+        ExpectHostErrno([&] { static_cast<void>(lease->ReadAt(0, output, cancellation.get_token())); }, 125);
+        CHECK(output == std::array<std::byte, 3>{});
+    }
+    CHECK(ReadLease(lease) == std::vector<std::byte>{std::byte{'o'}, std::byte{'l'}, std::byte{'d'}});
+    lease.reset();
+    // All native ownership is now gone, including the retired file.
+    CHECK(std::filesystem::remove(fixture.root / "retired"));
+}
+
+TEST_CASE("VFS host LRU evicts only idle handles and rejects changed identities") {
+    using namespace ogplay::runtime;
+    HostMountFixture fixture;
+    fixture.Put("a", "aa"); fixture.Put("b", "bb"); fixture.Put("c", "cc");
+    VirtualFileSystem vfs({.host_file_handle_budget = 2});
+    vfs.MountHostDirectory("/host", fixture.root);
+    const auto touch = [&](const char* path) { const auto fd = vfs.Open(path, {.read = true}); vfs.Close(fd); };
+    touch("/host/a"); touch("/host/b"); touch("/host/a");
+    std::filesystem::rename(fixture.root / "a", fixture.root / "old-a");
+    std::filesystem::rename(fixture.root / "b", fixture.root / "old-b");
+    fixture.Put("a", "AA"); fixture.Put("b", "BB");
+    touch("/host/c"); // b is least recently used; a still has its old identity.
+    const auto fd = vfs.Open("/host/a", {.read = true});
+    std::array<std::byte, 2> bytes{};
+    CHECK(vfs.Read(fd, bytes) == 2);
+    CHECK(bytes[0] == std::byte{'a'});
+    vfs.Close(fd);
+    ExpectHostErrno([&] { static_cast<void>(vfs.Open("/host/b", {.read = true})); }, 5);
+    CHECK(vfs.IoStatistics().host_file_handle_high_water == 2);
+    touch("/host/c"); // Failed reopen did not leak a handle or corrupt the pool.
+}
+
+TEST_CASE("VFS host truncation and memory conversion preserve error and budget semantics") {
+    using namespace ogplay::runtime;
+    HostMountFixture fixture;
+    fixture.Put("a", "abcdef"); fixture.Put("b", "BB");
+    VirtualFileSystem vfs({.host_file_handle_budget = 1});
+    vfs.MountHostDirectory("/host", fixture.root);
+    const auto fd = vfs.Open("/host/a", {.read = true});
+    fixture.Put("a", "a");
+    std::array<std::byte, 6> bytes{};
+    ExpectHostErrno([&] { static_cast<void>(vfs.Read(fd, bytes)); }, 5);
+    CHECK(vfs.Seek(fd, 0, VfsSeekWhence::current) == 0);
+    vfs.Close(fd);
+    const auto write = vfs.Open("/host/a", {.write = true, .truncate = true});
+    CHECK(vfs.Write(write, std::array{std::byte{'x'}}) == 1);
+    vfs.Close(write);
+    const auto next = vfs.Open("/host/b", {.read = true});
+    CHECK(vfs.Read(next, bytes) == 2);
+    vfs.Close(next);
+    fixture.Put("b", "longer");
+    // Force b out of the cache, then detect the size change on reopening it.
+    fixture.Put("c", "cc");
+    vfs.MountHostFile(VfsSource::obb, "/obb", fixture.root / "c");
+    const auto other = vfs.Open("/obb/c", {.read = true}); vfs.Close(other);
+    ExpectHostErrno([&] { static_cast<void>(vfs.Open("/host/b", {.read = true})); }, 5);
+}
+
+TEST_CASE("VFS host native positioned reads are concurrent and cancellable") {
+    HostMountFixture fixture;
+    fixture.Put("a", "0123456789");
+    const auto native = ogplay::hal::OpenHostReadFile(fixture.root / "a");
+    std::atomic_int failures{};
+    {
+        std::vector<std::jthread> threads;
+        for (int i = 0; i < 8; ++i) threads.emplace_back([&, i] {
+            try {
+                for (int n = 0; n < 100; ++n) {
+                    std::array<std::byte, 1> byte{};
+                    if (native->ReadAt(static_cast<std::uint64_t>(i), byte) != 1 ||
+                        byte[0] != static_cast<std::byte>('0' + i)) ++failures;
+                }
+            } catch (...) { ++failures; }
+        });
+    }
+    CHECK(failures == 0);
+    std::stop_source cancellation; cancellation.request_stop();
+    std::array<std::byte, 1> output{};
+    CHECK_THROWS_AS(static_cast<void>(native->ReadAt(0, output, cancellation.get_token())), std::system_error);
+}
+
+TEST_CASE("VFS host reopening rejects new symbolic links") {
+    using namespace ogplay::runtime;
+    HostMountFixture fixture;
+    fixture.Put("a"); fixture.Put("b");
+    VirtualFileSystem vfs({.host_file_handle_budget = 1});
+    vfs.MountHostDirectory("/host", fixture.root);
+    const auto fd = vfs.Open("/host/a", {.read = true}); vfs.Close(fd);
+    const auto next = vfs.Open("/host/b", {.read = true}); vfs.Close(next);
+    std::filesystem::rename(fixture.root / "a", fixture.root / "retired");
+    std::error_code error;
+    std::filesystem::create_symlink(fixture.root / "b", fixture.root / "a", error);
+    if (error) { WARN_MESSAGE(false, "host does not permit symlink creation; symlink assertion skipped"); return; }
+    ExpectHostErrno([&] { static_cast<void>(vfs.Open("/host/a", {.read = true})); }, 13);
 }
 
 TEST_CASE("VFS large virtual source reads only requested windows") {

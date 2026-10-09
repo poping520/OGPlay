@@ -6,6 +6,9 @@
 
 ## 依赖与边界
 
+- 宿主只读文件使用可共享删除/替换的原生 HANDLE；每次读取独立 OVERLAPPED/event，
+  完成前保持缓冲与操作状态存活。文件 identity 来自卷编号与 file index。
+
 - 可依赖公开 HAL 接口、SDL3 及 Windows SDK。
 - 不得被除 HAL 装配点之外的上层模块直接包含。
 - 回调上层必须经过显式 HAL 接口，不包含 guest、游戏或 Android 语义。

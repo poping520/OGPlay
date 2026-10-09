@@ -19,6 +19,7 @@
 
 #include "ogplay/runtime/vfs/sandbox_store.h"
 #include "ogplay/runtime/vfs/vfs.h"
+#include "host_file_backing.h"
 
 namespace ogplay::runtime {
 
@@ -78,6 +79,10 @@ struct File final {
     std::uint64_t size{};
     VfsReadOnlyLoader read_all;
     VfsReadAtLoader read_at;
+    std::shared_ptr<HostFileBacking> host_backing;
+    // Immutable after publication; ordinary/injected nodes must not acquire
+    // the node IO lock merely to open another descriptor.
+    bool host_mounted{};
     // Retained only when a writable lazy backing was converted to owned
     // memory; the reservation is acquired before read_all allocates.
     std::vector<std::shared_ptr<const VfsResourceReservation>>
@@ -119,6 +124,7 @@ struct OpenFile final {
     bool writable{};
     std::shared_ptr<OpenDirectoryState> directory;
     bool pipe{};
+    std::shared_ptr<const hal::HostReadFile> host_pin;
 };
 
 struct ResourceBudget final {
@@ -136,6 +142,7 @@ public:
         if (config.resource_memory_budget_bytes == 0U)
             throw VfsError(kEinval, "VFS resource budget must be positive");
         resource_budget_->limit = config.resource_memory_budget_bytes;
+        host_pool_ = std::make_shared<HostFilePool>(config.host_file_handle_budget);
     }
     // ---- mounts and files (vfs.cpp) -------------------------------------
     void RegisterGeneratedReadOnly(std::string_view path, std::shared_ptr<VfsGeneratedFileState> state);
@@ -145,7 +152,8 @@ public:
     void Mount(VfsSource source, std::string_view root,
                std::span<const VfsMountEntry> entries);
     void MountLazy(VfsSource source, std::string_view root,
-                   std::span<const VfsLazyMountEntry> entries, bool writable);
+                   std::span<const VfsLazyMountEntry> entries, bool writable,
+                   std::span<const std::shared_ptr<HostFileBacking>> host_backings = {});
     void MountHostDirectory(std::string_view root,
                             const std::filesystem::path& directory);
     void MountHostFile(VfsSource source, std::string_view root,
@@ -242,6 +250,7 @@ public:
     std::int64_t dirty_overlay_delta_{};
     std::shared_ptr<ResourceBudget> resource_budget_{
         std::make_shared<ResourceBudget>()};
+    std::shared_ptr<HostFilePool> host_pool_;
     std::uint64_t next_node_id_{1U};
     std::atomic_uint64_t flushes_{};
     std::atomic_uint64_t backing_read_bytes_{};

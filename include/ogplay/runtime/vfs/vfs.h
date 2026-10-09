@@ -155,6 +155,9 @@ struct VfsIoStatistics final {
     std::uint64_t resource_memory_high_water{};
     std::uint64_t lease_snapshot_bytes{};
     std::uint64_t lease_snapshot_high_water{};
+    std::uint64_t host_file_handles{};
+    std::uint64_t host_file_handle_high_water{};
+    std::uint64_t host_file_handle_evictions{};
 };
 
 struct VfsDescriptorSnapshot final {
@@ -176,6 +179,9 @@ struct VfsConfig final {
     // One aggregate budget for every retained resource buffer, including
     // writable lease snapshots and decompressed archive cache blocks.
     std::uint64_t resource_memory_budget_bytes{128ULL * 1024ULL * 1024ULL};
+    // Includes idle cached handles and active FD/lease pins, shared by all
+    // host mounts in this VFS. Exhaustion fails explicitly with EMFILE.
+    std::uint32_t host_file_handle_budget{128U};
 };
 
 class VfsResourceReservation final {

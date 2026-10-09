@@ -187,5 +187,5 @@ TEST_CASE("BND51 float pixel transfers preserve row padding and reject overflow"
     prepared = ogplay::gles::PrepareGles2Call(memory, Thunk("glTexImage2D"), image, 0, &state);
     CHECK(prepared.pointers[0].byte_size == 32);
     image[3] = image[4] = 0x7FFFFFFF;
-    CHECK_THROWS_AS(ogplay::gles::PrepareGles2Call(memory, Thunk("glTexImage2D"), image, 0, &state), ogplay::gles::GlesTransferStateError);
+    CHECK_THROWS_AS(static_cast<void>(ogplay::gles::PrepareGles2Call(memory, Thunk("glTexImage2D"), image, 0, &state)), ogplay::gles::GlesTransferStateError);
 }

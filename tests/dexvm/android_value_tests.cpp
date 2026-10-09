@@ -3993,7 +3993,7 @@ TEST_CASE("PackageManager archive queries preserve sealed path and API19 metadat
         const auto text = [&](VmObjectRef object, const char* name) {
             return f.vm.StringUtf8(ref_field(object, name, "Ljava/lang/String;"));
         };
-        const auto query = [&](const std::string& path, std::int32_t flags = activities_flag) {
+        const auto query = [&](const std::string& path, std::int32_t flags = 1 /* GET_ACTIVITIES */) {
             return f.On(manager, "getPackageArchiveInfo", signature,
                         {VmValue::Ref(f.vm.NewStringUtf8(path)), VmValue::Int(flags)}).ref;
         };

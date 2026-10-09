@@ -46,33 +46,33 @@
       "table": "tools/bootdex/api19-system-resources.json",
       "table_sha256": "65768857b28b9ba572bd84eb89a33e223188bf0731ffb6fe80d4e701558b9ab3",
       "entry": "META-INF/ogplay/system-resources.json",
-      "payload_sha256": "d818e8e8fabbc422c5794489a3850126ac96e435b057acda57000a9639678130"
+      "payload_sha256": "e920b02a5b6e776e7e69c43e300f72a4e8c5b802d7f021c93ebe9876344ba081"
     },
     "sources": [
       {
         "source_project": "platform/libcore",
         "source_jar": "core.jar",
-        "source_jar_sha256": "996557954e45f7192b187b2394259bc8aca6e3946652e03b99d837432f83d1ef"
+        "source_jar_sha256": "60b6cdf3eded2fdf157c6166402477e4f72ade215b334817439960522c0e64ee"
       },
       {
         "source_project": "platform/libcore",
         "source_jar": "conscrypt.jar",
-        "source_jar_sha256": "43ab6b953bd5a9e25f0f0d4411a5aa3f0660d16954a0a84e95ad834558b21a1e"
+        "source_jar_sha256": "c7d0849cde38cd0d0dc99d89ee61bd33a65618567fc18171d6605dc6b8e15004"
       },
       {
         "source_project": "platform/external/apache-http",
         "source_jar": "ext.jar",
-        "source_jar_sha256": "618663a2f417f7eb4ae903d25809ffdd90fe5b5236184c530228dd66bfcdb65c"
+        "source_jar_sha256": "e95d35989f0e1b438b3b6fea2777a798a0398f457a32875cdadfe3e2573a4ca2"
       },
       {
         "source_project": "platform/frameworks/base",
         "source_jar": "framework.jar",
-        "source_jar_sha256": "90fc9fd36b45db1810ecf51e40119222da081b552f9a64a6d0c09cac09f98a48"
+        "source_jar_sha256": "422e232e121425268f04044f5349072ce42d7b4403267d21569e8ce70d07bc4b"
       },
       {
         "source_project": "platform/frameworks/base",
         "source_jar": "framework2.jar",
-        "source_jar_sha256": "b6aba8bec45e2a2faa7a4e1e8ae3d8e450259f7e28c8dae6ca2c31dc34e06bea"
+        "source_jar_sha256": "5866d4e62e5fe44ffaf6ff441b6c361baeb1f8b91e30bb555481ef13ef837973"
       },
       {
         "source_project": "OGPlay",
@@ -83,16 +83,16 @@
           "src/guest/io/java"
         ],
         "source_sha256": "7e768b86ee31c3d632d058798724535c35022e6ab66ec14a1933594e183cb3cc",
-        "javac": "17.0.18",
+        "javac": "17.0.2",
         "android_jar_sha256": "4032a201eeb1d0430c7d9f1075151dd280427de5ca9e36f734f464ab605cb690",
         "d8_sha256": "d9e6acde0cb6f2453d6835b52c31d2066054394fb79e91115dd4978bde6afd16"
       }
     ],
-    "size": 2895656,
-    "sha256": "409e572d502b528b42fbaf51f4409c99dac782c3402247bddfd65aa644162ea8",
+    "size": 2858024,
+    "sha256": "2c2cf3f97b2f06e3f6b816648fa6d6f4aaf69983d1983f10bab321ed78933707",
     "dex_entry": "classes.dex",
-    "dex_size": 2891036,
-    "dex_sha256": "a0bcef062094f588bf0f2563d50d123f1513d95ef81a591117e8c0dbbd4eec4c",
+    "dex_size": 2853404,
+    "dex_sha256": "b49bfdb9b09fa3a92aac80922ee48199e0164a9348bf7cf84c500f05e13775a3",
     "class_count": 1916,
     "selection_policy": "load-all",
     "notice": "notices/bootdex.jar.txt",

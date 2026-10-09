@@ -966,5 +966,5 @@ TEST_CASE("DVM-223 Manifest retains launch modes and rejects invalid values") {
         CHECK(facts.activity_components[0].launch_mode == mode);
     }
     activity.launch_mode = 4U;
-    CHECK_THROWS(ogplay::loader::ParseAndroidBinaryManifest(StartupManifest(std::nullopt, {activity})));
+    CHECK_THROWS(static_cast<void>(ogplay::loader::ParseAndroidBinaryManifest(StartupManifest(std::nullopt, {activity}))));
 }

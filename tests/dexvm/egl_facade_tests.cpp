@@ -401,8 +401,8 @@ TEST_CASE("SurfaceHolder frame publishes before callbacks and retains per-holder
         shape(frame, 1024, 600);
         shape(late_frame, 1024, 600);
         vm.context->surface_width = 0x80000000U;
-        CHECK_THROWS_AS(DispatchSurfaceHolderCallbacks(
-            vm.interpreter, *vm.context, SurfaceHolderPhase::changed), VmJavaThrow);
+        CHECK_THROWS_AS(static_cast<void>(DispatchSurfaceHolderCallbacks(
+            vm.interpreter, *vm.context, SurfaceHolderPhase::changed)), VmJavaThrow);
         shape(frame, 1024, 600);
         vm.context->surface_width = 1024;
         REQUIRE_FALSE(DetachSurfaceViewSubtree(vm.interpreter, *vm.context, *node).has_value());

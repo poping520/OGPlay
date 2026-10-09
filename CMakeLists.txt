@@ -101,6 +101,7 @@ if(WIN32)
           src/hal/windows/diagnostic_trigger.cpp
           src/hal/from_chars.cpp
         src/hal/windows/host_environment.cpp
+        src/hal/windows/host_read_file.cpp
         src/hal/windows/shared_library.cpp
         src/hal/windows/virtual_memory.cpp)
 elseif(APPLE)
@@ -112,6 +113,7 @@ elseif(APPLE)
           src/hal/macos/diagnostic_trigger.cpp
           src/hal/macos/from_chars.cpp
         src/hal/macos/host_environment.cpp
+        src/hal/macos/host_read_file.cpp
         src/hal/macos/shared_library.cpp
         src/hal/macos/virtual_memory.cpp)
 elseif(UNIX)
@@ -120,6 +122,7 @@ elseif(UNIX)
           src/hal/linux/diagnostic_trigger.cpp
           src/hal/from_chars.cpp
         src/hal/linux/host_environment.cpp
+        src/hal/linux/host_read_file.cpp
         src/hal/linux/shared_library.cpp
         src/hal/linux/virtual_memory.cpp)
 else()
@@ -577,6 +580,7 @@ add_library(ogplay_runtime
     src/runtime/syscall/syscall_thread_lifecycle.cpp
     src/runtime/vfs/sandbox_store.cpp
     src/runtime/vfs/vfs.cpp
+    src/runtime/vfs/host_file_backing.cpp
     src/runtime/vfs/vfs_sandbox.cpp
     ${OGPLAY_BOOST_URL_CODEC_SOURCES}
 )

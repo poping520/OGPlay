@@ -86,6 +86,7 @@ struct ClickVm final {
     VirtualFileSystem vfs;
     ogplay::audio::EncodedMusicMixer music;
     std::int32_t content_view_events{};
+    std::int32_t removal_layout_requests{};
     bool content_view_handled{};
     std::int32_t key_down_events{};
     std::int32_t key_up_events{};
@@ -180,6 +181,14 @@ struct ClickVm final {
                           return VmValue::Void();
                       });
                   test_catalog.push_back(std::move(text_watcher).Build());
+                  auto removal_probe = IntrinsicClassBuilder::Class(
+                      "LRemovalLayoutProbe;", "Landroid/widget/LinearLayout;");
+                  removal_probe.OverrideMethod("requestLayout", "()V",
+                      [this](IntrinsicContext&) {
+                          ++removal_layout_requests;
+                          return VmValue::Void();
+                      });
+                  test_catalog.push_back(std::move(removal_probe).Build());
                   linker.RegisterIntrinsics(test_catalog);
                   linker.RegisterDex(ReadFixture("widgetclick.dex"));
                   ogplay::test::RegisterBootDex(linker);
@@ -1165,6 +1174,95 @@ TEST_CASE("dynamic ViewGroup hierarchy shares layout params and geometry") {
     vm.CallOn(column, "removeViews", "(II)V",
               {VmValue::Int(0), VmValue::Int(1)});
     CHECK_FALSE(vm.context->ui_tree.Get(*fixed_node)->parent.has_value());
+}
+
+
+TEST_CASE("DVM-233 in-layout removal preserves geometry and invalidates the actual overlay") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        ClickVm vm(backend);
+        const auto group = vm.interpreter.NewIntrinsicInstance("Landroid/widget/LinearLayout;");
+        const auto first = vm.interpreter.NewIntrinsicInstance("Landroid/view/View;");
+        const auto second = vm.interpreter.NewIntrinsicInstance("Landroid/view/View;");
+        const auto outsider = vm.interpreter.NewIntrinsicInstance("Landroid/view/View;");
+        vm.CallOn(group, "setOrientation", "(I)V", {VmValue::Int(1)});
+        vm.CallOn(first, "setId", "(I)V", {VmValue::Int(123)});
+        vm.CallOn(first, "setBackgroundColor", "(I)V", {VmValue::Int(static_cast<std::int32_t>(0xffff0000U))});
+        vm.CallOn(second, "setBackgroundColor", "(I)V", {VmValue::Int(static_cast<std::int32_t>(0xff00ff00U))});
+        for (const auto view : {first, second})
+            vm.CallOn(group, "addView", "(Landroid/view/View;II)V",
+                {VmValue::Ref(view), VmValue::Int(20), VmValue::Int(20)});
+        vm.CallOn(vm.activity, "setContentView", "(Landroid/view/View;)V", {VmValue::Ref(group)});
+        CHECK(vm.CallOn(second, "getTop", "()I").AsInt() == 20);
+        const auto first_node = *FindViewUiNode(*vm.context, first.Value());
+        const auto group_node = *FindViewUiNode(*vm.context, group.Value());
+        auto& tree = vm.context->ui_tree;
+        ui::UiOverlayRenderer renderer;
+        const auto pixel = (5U * 100U + 5U) * 4U;
+        CHECK(renderer.Render(tree, vm.context->ui_bitmaps, {100, 100}).rgba8[pixel] == 255);
+        CHECK_FALSE(tree.Get(tree.Root())->layout_dirty);
+        CHECK_FALSE(tree.Get(tree.Root())->draw_dirty);
+        vm.CallOn(group, "removeViewInLayout", "(Landroid/view/View;)V", {VmValue::Ref(first)});
+        CHECK_FALSE(vm.CallOn(first, "getParent", "()Landroid/view/ViewParent;").ref.IsValid());
+        CHECK(tree.Get(group_node)->children.size() == 1);
+        CHECK_FALSE(tree.FindByAndroidId(123));
+        CHECK(tree.Get(first_node) != nullptr); // detach is not destruction
+        CHECK_FALSE(tree.Get(tree.Root())->layout_dirty);
+        CHECK(tree.Get(tree.Root())->draw_dirty);
+        CHECK(vm.CallOn(second, "getTop", "()I").AsInt() == 20);
+        CHECK(renderer.Render(tree, vm.context->ui_bitmaps, {100, 100}).rgba8[pixel + 3] == 0);
+        vm.CallOn(group, "removeViewInLayout", "(Landroid/view/View;)V", {VmValue::Ref(first)});
+        vm.CallOn(group, "removeViewInLayout", "(Landroid/view/View;)V", {VmValue::Ref(outsider)});
+        vm.CallOn(group, "removeViewInLayout", "(Landroid/view/View;)V", {VmValue::Ref(VmObjectRef{})});
+        CHECK_FALSE(tree.Get(tree.Root())->layout_dirty);
+        CHECK_FALSE(tree.Get(tree.Root())->draw_dirty);
+        vm.CallOn(group, "requestLayout", "()V");
+        CHECK(vm.CallOn(second, "getTop", "()I").AsInt() == 0);
+        vm.CallOn(group, "addView", "(Landroid/view/View;II)V",
+            {VmValue::Ref(first), VmValue::Int(20), VmValue::Int(20)});
+        CHECK(vm.CallOn(first, "getTop", "()I").AsInt() == 20);
+        CHECK(tree.FindByAndroidId(123) == first_node);
+        vm.CallOn(first, "setVisibility", "(I)V", {VmValue::Int(8)});
+        CHECK(tree.Get(tree.Root())->layout_dirty);
+        vm.CallOn(group, "removeViewInLayout", "(Landroid/view/View;)V", {VmValue::Ref(first)});
+        CHECK(tree.Get(tree.Root())->layout_dirty); // never erase a pre-existing request
+        static_cast<void>(vm.CallOn(second, "getTop", "()I"));
+        tree.ClearDrawDirty();
+        vm.CallOn(group, "removeView", "(Landroid/view/View;)V", {VmValue::Ref(second)});
+        CHECK(tree.Get(tree.Root())->layout_dirty);
+        CHECK(tree.Get(tree.Root())->draw_dirty);
+
+        const auto owner = vm.linker.ResolveDescriptor("Landroid/view/ViewGroup;");
+        const auto slot = vm.linker.FindVtableIndex(owner, "removeViewInLayout", "(Landroid/view/View;)V");
+        REQUIRE(slot);
+        const auto& method = vm.linker.Method(vm.linker.Class(owner).vtable[*slot]);
+        CHECK((method.access_flags & kAccPublic) != 0);
+        CHECK((method.access_flags & kAccFinal) == 0);
+        const auto probe = vm.interpreter.NewIntrinsicInstance("LRemovalLayoutProbe;");
+        vm.CallOn(probe, "removeViewInLayout", "(Landroid/view/View;)V", {VmValue::Ref(VmObjectRef{})});
+        CHECK(vm.removal_layout_requests == 0);
+        vm.CallOn(probe, "removeView", "(Landroid/view/View;)V", {VmValue::Ref(VmObjectRef{})});
+        CHECK(vm.removal_layout_requests == 1);
+
+        const auto identity = vm.model.ToIdentity(first);
+        {
+            const auto root = vm.interpreter.ProtectReferences(std::array{first});
+            vm.CallOn(first, "setVisibility", "(I)V", {VmValue::Int(0)});
+            vm.CallOn(first, "setFocusable", "(Z)V", {VmValue::Int(1)});
+            vm.CallOn(group, "addView", "(Landroid/view/View;II)V",
+                {VmValue::Ref(first), VmValue::Int(20), VmValue::Int(20)});
+            CHECK(vm.CallOn(first, "requestFocus", "()Z").AsInt() == 1);
+            CHECK(vm.CallOn(group, "hasFocus", "()Z").AsInt() == 1);
+            vm.CallOn(group, "removeViewInLayout", "(Landroid/view/View;)V", {VmValue::Ref(first)});
+            CHECK(vm.CallOn(first, "isFocused", "()Z").AsInt() == 0);
+            CHECK(vm.CallOn(group, "hasFocus", "()Z").AsInt() == 0);
+            static_cast<void>(vm.interpreter.CollectGarbage("removed-view-retained"));
+            CHECK(vm.model.FindIdentity(identity) == first);
+            vm.CallOn(group, "addView", "(Landroid/view/View;II)V",
+                {VmValue::Ref(first), VmValue::Int(20), VmValue::Int(20)});
+            CHECK(vm.CallOn(first, "getParent", "()Landroid/view/ViewParent;").ref == group);
+            vm.CallOn(group, "removeViewInLayout", "(Landroid/view/View;)V", {VmValue::Ref(first)});
+        }
+    }
 }
 
 TEST_CASE("direct View window focus callback does not dispatch descendants") {

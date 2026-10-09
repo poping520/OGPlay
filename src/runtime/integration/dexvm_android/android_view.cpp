@@ -1908,6 +1908,44 @@ void ApplyParams(dx::Interpreter& vm, const Context& context, const dx::VmObject
         context->ui_tree.Get(node)->layout = ReadAndroidLayoutParams(vm, assigned->second);
 }
 
+void RemoveChild(dx::IntrinsicContext& call, const Context& context,
+                 const dx::VmObjectRef child, const ui::DetachLayoutPolicy layout) {
+    if (!child.IsValid()) return;
+    const auto parent = FindViewUiNode(*context, call.receiver.Value());
+    const auto node = FindViewUiNode(*context, child.Value());
+    if (!parent || !node || context->ui_tree.Get(*node)->parent != parent) return;
+    const auto roots = call.vm.ProtectReferences(std::array{call.receiver, child});
+    if (const auto error = DetachSurfaceViewSubtree(call.vm, *context, *node))
+        throw dx::VmJavaThrow{"Ljava/lang/RuntimeException;", *error};
+    // Surface callbacks may replace the content tree or reparent the child.
+    // Never detach a replacement node or a child now owned by another parent.
+    const auto current_parent = FindViewUiNode(*context, call.receiver.Value());
+    const auto current_node = FindViewUiNode(*context, child.Value());
+    if (current_parent != parent || current_node != node ||
+        !current_node || context->ui_tree.Get(*current_node)->parent != parent) return;
+    const auto focused = context->ui_tree.Focused();
+    const auto focus_object = focused
+        ? ViewObjectForUiNode(*context, *focused) : dx::VmObjectRef{};
+    const auto focus_root = call.vm.ProtectReferences(std::array{focus_object});
+    context->ui_tree.Detach(*current_node, layout);
+    if (focused && !context->ui_tree.Focused())
+        DispatchViewFocusChange(call.vm, focus_object, false);
+}
+
+void RequestRemovalLayout(dx::IntrinsicContext& call) {
+    static_cast<void>(CallAndroidMethod(call.vm, call.receiver, "requestLayout", "()V", {}));
+    static_cast<void>(CallAndroidMethod(call.vm, call.receiver, "invalidate", "()V", {}));
+}
+
+dx::IntrinsicHandler RemoveViewHandler(const Context& context,
+                                      const ui::DetachLayoutPolicy layout) {
+    return [context, layout](dx::IntrinsicContext& call) {
+        RemoveChild(call, context, call.arguments[0].ref, layout);
+        if (layout == ui::DetachLayoutPolicy::request_layout) RequestRemovalLayout(call);
+        return dx::VmValue::Void();
+    };
+}
+
 dx::IntrinsicHandler AddHandler(const Context& context, const bool has_index,
                                 const bool has_params) {
     return [context, has_index, has_params](dx::IntrinsicContext& call) {
@@ -2037,28 +2075,9 @@ Decl Declare_android_view_ViewGroup(const Context& context) {
         "addView", "(Landroid/view/View;Landroid/view/ViewGroup$LayoutParams;)V",
         AddHandler(context, false, true));
     builder.FinalMethod("removeView", "(Landroid/view/View;)V",
-        [context](dx::IntrinsicContext& call) {
-            const auto child = call.arguments[0].ref;
-            if (!child.IsValid()) return dx::VmValue::Void();
-            const auto parent = FindViewUiNode(*context, call.receiver.Value());
-            const auto node = FindViewUiNode(*context, child.Value());
-            if (parent.has_value() && node.has_value() &&
-                context->ui_tree.Get(*node)->parent == parent) {
-                const auto focused = context->ui_tree.Focused();
-                if (const auto error = DetachSurfaceViewSubtree(
-                        call.vm, *context, *node);
-                    error.has_value()) {
-                    throw dx::VmJavaThrow{"Ljava/lang/RuntimeException;", *error};
-                }
-                context->ui_tree.Detach(*node);
-                if (focused.has_value() &&
-                    !context->ui_tree.Focused().has_value()) {
-                    DispatchViewFocusChange(
-                        call.vm, ViewObjectForUiNode(*context, *focused), false);
-                }
-            }
-            return dx::VmValue::Void();
-        });
+        RemoveViewHandler(context, ui::DetachLayoutPolicy::request_layout));
+    builder.VirtualMethod("removeViewInLayout", "(Landroid/view/View;)V",
+        RemoveViewHandler(context, ui::DetachLayoutPolicy::preserve_layout));
     builder.FinalMethod("removeViews", "(II)V",
         [context](dx::IntrinsicContext& call) {
             const auto parent = NodeFor(call, context, call.receiver);
@@ -2072,22 +2091,20 @@ Decl Declare_android_view_ViewGroup(const Context& context) {
                 throw dx::VmJavaThrow{"Ljava/lang/IndexOutOfBoundsException;",
                                       "removeViews range is outside children"};
             }
-            for (std::int32_t offset = count; offset > 0; --offset) {
-                const auto child = children[static_cast<std::size_t>(
-                    start + offset - 1)];
-                const auto focused = context->ui_tree.Focused();
-                if (const auto error = DetachSurfaceViewSubtree(
-                        call.vm, *context, child);
-                    error.has_value()) {
-                    throw dx::VmJavaThrow{"Ljava/lang/RuntimeException;", *error};
-                }
-                context->ui_tree.Detach(child);
-                if (focused.has_value() &&
-                    !context->ui_tree.Focused().has_value()) {
-                    DispatchViewFocusChange(
-                        call.vm, ViewObjectForUiNode(*context, *focused), false);
-                }
+            std::vector<dx::VmObjectRef> removed;
+            removed.reserve(static_cast<std::size_t>(count));
+            for (std::int32_t offset = 0; offset < count; ++offset) {
+                const auto child = ViewObjectForUiNode(*context,
+                    children[static_cast<std::size_t>(start + offset)]);
+                if (!child.IsValid())
+                    throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;",
+                                          "ViewGroup child has no live guest binding"};
+                removed.push_back(child);
             }
+            const auto roots = call.vm.ProtectReferences(removed);
+            for (auto child = removed.rbegin(); child != removed.rend(); ++child)
+                RemoveChild(call, context, *child, ui::DetachLayoutPolicy::request_layout);
+            RequestRemovalLayout(call);
             return dx::VmValue::Void();
         });
     builder.FinalMethod(

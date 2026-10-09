@@ -53,6 +53,11 @@ enum class Visibility : std::uint8_t {
     Gone,
 };
 
+enum class DetachLayoutPolicy : std::uint8_t {
+    request_layout,
+    preserve_layout,
+};
+
 enum class SizeMode : std::uint8_t {
     Fixed,
     MatchParent,
@@ -216,7 +221,8 @@ public:
     UiNodeId CreateNode(UiClass kind);
     void Attach(UiNodeId parent, UiNodeId child,
                 std::optional<std::size_t> index = std::nullopt);
-    void Detach(UiNodeId child);
+    void Detach(UiNodeId child,
+                DetachLayoutPolicy layout = DetachLayoutPolicy::request_layout);
     void DestroySubtree(UiNodeId node);
     void Reset();
 

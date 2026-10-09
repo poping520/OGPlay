@@ -302,6 +302,68 @@ TEST_CASE("SurfaceView null-attribute constructors initialize DEX subclasses and
     }
 }
 
+
+TEST_CASE("DVM-233 in-layout removal retires Surface callbacks once and preserves reparenting") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        EglVm* active{};
+        VmObjectRef parent, child, replacement;
+        int created{}, destroyed{};
+        bool reparent{};
+        auto callback = IntrinsicClassBuilder::Class("Lfixture/RemovalSurfaceCallback;", "Ljava/lang/Object;",
+            {"Landroid/view/SurfaceHolder$Callback;"});
+        callback.VirtualMethod("surfaceCreated", "(Landroid/view/SurfaceHolder;)V", [&](IntrinsicContext&) {
+            ++created;
+            return VmValue::Void();
+        });
+        callback.VirtualMethod("surfaceChanged", "(Landroid/view/SurfaceHolder;III)V", [](IntrinsicContext&) {
+            return VmValue::Void();
+        });
+        callback.VirtualMethod("surfaceDestroyed", "(Landroid/view/SurfaceHolder;)V", [&](IntrinsicContext&) {
+            ++destroyed;
+            if (reparent) {
+                // Reentrant removal observes the already-retired holder.
+                active->CallOn(parent, "removeViewInLayout", "(Landroid/view/View;)V", {VmValue::Ref(child)});
+                active->CallOn(replacement, "addView", "(Landroid/view/View;)V", {VmValue::Ref(child)});
+            }
+            return VmValue::Void();
+        });
+        EglVm vm(backend, nullptr, nullptr, {std::move(callback).Build()});
+        active = &vm;
+        const auto owner = vm.interpreter.NewIntrinsicInstance("Landroid/content/Context;");
+        parent = vm.interpreter.NewIntrinsicInstance("Landroid/widget/FrameLayout;");
+        replacement = vm.interpreter.NewIntrinsicInstance("Landroid/widget/FrameLayout;");
+        child = vm.interpreter.NewIntrinsicInstance("Landroid/view/SurfaceView;");
+        vm.CallStatic("Landroid/view/SurfaceView;", "<init>", "(Landroid/content/Context;)V",
+            {VmValue::Ref(child), VmValue::Ref(owner)});
+        const auto holder = vm.CallOn(child, "getHolder", "()Landroid/view/SurfaceHolder;").ref;
+        const auto listener = vm.interpreter.NewIntrinsicInstance("Lfixture/RemovalSurfaceCallback;");
+        vm.CallOn(holder, "addCallback", "(Landroid/view/SurfaceHolder$Callback;)V", {VmValue::Ref(listener)});
+        vm.CallOn(parent, "addView", "(Landroid/view/View;)V", {VmValue::Ref(child)});
+        const auto parent_node = *FindViewUiNode(*vm.context, parent.Value());
+        vm.context->ui_tree.Attach(vm.context->ui_tree.Root(), parent_node);
+        REQUIRE_FALSE(DispatchSurfaceHolderCallbacks(vm.interpreter, *vm.context, SurfaceHolderPhase::created));
+        REQUIRE_FALSE(AttachSurfaceViewSubtree(vm.interpreter, *vm.context, parent_node));
+        CHECK(created == 1);
+        vm.context->ui_tree.ClearLayoutDirty();
+        vm.CallOn(parent, "removeViewInLayout", "(Landroid/view/View;)V", {VmValue::Ref(child)});
+        CHECK(destroyed == 1);
+        CHECK_FALSE(vm.CallOn(child, "getParent", "()Landroid/view/ViewParent;").ref.IsValid());
+        CHECK_FALSE(vm.context->ui_tree.Get(vm.context->ui_tree.Root())->layout_dirty);
+        CHECK(vm.context->managed_host_surface_open);
+        vm.CallOn(parent, "removeViewInLayout", "(Landroid/view/View;)V", {VmValue::Ref(child)});
+        CHECK(destroyed == 1);
+        vm.CallOn(parent, "addView", "(Landroid/view/View;)V", {VmValue::Ref(child)});
+        CHECK(created == 2);
+        reparent = true;
+        vm.CallOn(parent, "removeViewInLayout", "(Landroid/view/View;)V", {VmValue::Ref(child)});
+        CHECK(destroyed == 2);
+        CHECK(vm.CallOn(child, "getParent", "()Landroid/view/ViewParent;").ref == replacement);
+        CHECK(vm.context->ui_tree.Get(parent_node)->children.empty());
+        const auto child_node = *FindViewUiNode(*vm.context, child.Value());
+        CHECK(vm.context->ui_tree.Get(child_node)->parent == FindViewUiNode(*vm.context, replacement.Value()));
+    }
+}
+
 TEST_CASE("SurfaceHolder frame publishes before callbacks and retains per-holder identity across generations") {
     for (const auto backend : {InterpreterBackend::switch_dispatch,
                                InterpreterBackend::threaded}) {

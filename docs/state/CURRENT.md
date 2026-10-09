@@ -1,6 +1,6 @@
 # 当前状态
 
-更新：2026-10-09。
+更新：2026-10-10。
 
 本页只保留最新运行结果与未闭合边界。能力状态见 [capabilities.toml](../../capabilities.toml)，
 实现契约见各模块 MODULE；历史过程见 [任务总览](../tasks/README.md) 与
@@ -112,6 +112,13 @@
   macOS Release 和定向回归通过；原 APK 完成 appInit，f=28785 下一首错为
   RelativeLayout.removeViewInLayout(View) 缺失。析构等待明确报预算耗尽，退出 1、无超时，
   进程已结束；完整画面/clean shutdown/跨平台未验收。证据 `.local/wb-storage-cleanup-fix/`。
+
+  [DVM-233](../tasks/dexvm/DVM-233.md) 已提供通用 removeViewInLayout，共享实际移除
+  和 Surface 退役，布局期间不新增 layout dirty，普通移除仍请求布局；macOS Release
+  与双解释器定向 7 项/974 断言通过。原 APK 本次未报旧方法缺失，f=10875 新首错为
+  nativeRender 读取 0xC 的 Thumb memory_fault，退出 1、无超时、进程已结束。
+  实际画面/跨平台未验收；现有 UI registry 保留 detached View 的 GC 策略未改变。
+  证据 `.local/wb-in-layout-fix/`。
 
 
 - **Tales From Deep Space 1.0.0**：VideoView/packed depth/stencil 已闭合；macOS

@@ -422,12 +422,16 @@ std::shared_ptr<EglSurfaceResources> EglSurfaceResources::Create(
     result->surface_ = api.CreatePbufferSurface(result->Display(), result->display_->Config(rgb), width, height);
 #endif
     if (!result->surface_) ThrowLastError(api, EglOperation::create_surface);
-    if (format == EglColorFormat::rgb565 && result->display_->UsesPackedRgbFramebuffer())
+    if (format == EglColorFormat::rgb565 && result->display_->UsesPackedRgbFramebuffer()) {
         result->packed_rgb_image_ = result->display_->CreatePackedRgbImage(width,height,result->rgb_storage_);
+        if (result->display_->HasPackedDepthStencil())
+            result->packed_depth_image_ = result->display_->CreatePackedDepthStencilImage(width,height,result->depth_storage_);
+    }
     return result;
 }
 
 EglSurfaceResources::~EglSurfaceResources() {
+    if (packed_depth_image_) display_->DestroyImage(packed_depth_image_);
     if (packed_rgb_image_) display_->DestroyImage(packed_rgb_image_);
     if (surface_) static_cast<void>(display_->Api().DestroySurface(Display(), surface_));
 }
@@ -453,16 +457,25 @@ EglHandle EglDisplayResources::Config(EglColorFormat format) const noexcept {
 
 EglHandle EglDisplayResources::CreatePackedRgbImage(std::uint32_t width,std::uint32_t height,
     std::unique_ptr<hal::RgbSurfaceStorage>& storage) {
+    return CreatePackedImage(width,height,storage,false);
+}
+EglHandle EglDisplayResources::CreatePackedDepthStencilImage(std::uint32_t width,std::uint32_t height,
+    std::unique_ptr<hal::RgbSurfaceStorage>& storage) {
+    return CreatePackedImage(width,height,storage,true);
+}
+EglHandle EglDisplayResources::CreatePackedImage(std::uint32_t width,std::uint32_t height,
+    std::unique_ptr<hal::RgbSurfaceStorage>& storage, bool depth_stencil) {
 #if OGPLAY_HAS_ANGLE
-    storage = hal::CreatePackedRgbSurfaceStorage(packed_rgb_device_,width,height);
-    const EGLint attributes[]{EGL_TEXTURE_INTERNAL_FORMAT_ANGLE,GL_RGB565,EGL_NONE};
+    storage = depth_stencil ? hal::CreatePackedDepthStencilStorage(packed_rgb_device_,width,height)
+                            : hal::CreatePackedRgbSurfaceStorage(packed_rgb_device_,width,height);
+    const EGLint attributes[]{EGL_TEXTURE_INTERNAL_FORMAT_ANGLE,depth_stencil ? GL_DEPTH24_STENCIL8 : GL_RGB565,EGL_NONE};
     const auto image = EglExtension<PFNEGLCREATEIMAGEKHRPROC>("eglCreateImageKHR")(
         ReinterpretHandle<EGLDisplay>(display_),EGL_NO_CONTEXT,EGL_METAL_TEXTURE_ANGLE,
         storage->NativeBuffer(),attributes);
     if (!image) ThrowLastError(*api_,EglOperation::create_surface);
     return ReinterpretHandle<EglHandle>(image);
 #else
-    static_cast<void>(width);static_cast<void>(height);static_cast<void>(storage);
+    static_cast<void>(width);static_cast<void>(height);static_cast<void>(storage);static_cast<void>(depth_stencil);
     throw EglLifecycleError(EglOperation::unavailable,0);
 #endif
 }
@@ -479,7 +492,8 @@ void EglDisplayResources::InitializePackedRgbSupport() {
     packed_rgb_device_=reinterpret_cast<void*>(metal);
     const auto old_d=eglGetCurrentDisplay(); const auto old_c=eglGetCurrentContext();
     const auto old_draw=eglGetCurrentSurface(EGL_DRAW); const auto old_read=eglGetCurrentSurface(EGL_READ);
-    EglHandle context{},surface{},image{};
+    EglHandle context{},surface{},image{},depth_image{};
+    std::unique_ptr<hal::RgbSurfaceStorage> depth_storage;
     std::unique_ptr<hal::RgbSurfaceStorage> storage;
     bool supported{};
     try {
@@ -506,8 +520,27 @@ void EglDisplayResources::InitializePackedRgbSupport() {
         std::array<GLubyte,4> px{};glReadPixels(0,0,1,1,GL_RGBA,GL_UNSIGNED_BYTE,px.data());
         supported=complete && r==5 && g==6 && b==5 && a==0 && px[0]>=24 && px[0]<=25 &&
             px[1]>=51 && px[1]<=53 && px[2]>=74 && px[2]<=75 && px[3]==255 && glGetError()==GL_NO_ERROR;
+        if (supported) {
+            GLuint depth_rb{};
+            try {
+                depth_image=CreatePackedDepthStencilImage(2,2,depth_storage);
+                glGenRenderbuffers(1,&depth_rb);glBindRenderbuffer(GL_RENDERBUFFER,depth_rb);
+                bind(GL_RENDERBUFFER,reinterpret_cast<void*>(depth_image));
+                glFramebufferRenderbuffer(GL_FRAMEBUFFER,GL_DEPTH_ATTACHMENT,GL_RENDERBUFFER,depth_rb);
+                glFramebufferRenderbuffer(GL_FRAMEBUFFER,GL_STENCIL_ATTACHMENT,GL_RENDERBUFFER,depth_rb);
+                GLint depth{},stencil{};
+                glGetIntegerv(GL_DEPTH_BITS,&depth);glGetIntegerv(GL_STENCIL_BITS,&stencil);
+                if (glCheckFramebufferStatus(GL_FRAMEBUFFER)==GL_FRAMEBUFFER_COMPLETE &&
+                    glGetError()==GL_NO_ERROR && depth==24 && stencil==8) {
+                    packed_depth_bits_=depth;packed_stencil_bits_=stencil;
+                }
+            } catch (const std::exception&) { for (unsigned drain=0;drain<8 && glGetError()!=GL_NO_ERROR;++drain) {} }
+            if (depth_rb) glDeleteRenderbuffers(1,&depth_rb);
+        }
         glDeleteFramebuffers(1,&fbo);glDeleteRenderbuffers(1,&rb);
     } catch (const std::exception&) { supported=false; }
+    if (depth_image) DestroyImage(depth_image);
+    depth_storage.reset();
     if (image) DestroyImage(image);
     storage.reset();
     if (old_c!=EGL_NO_CONTEXT) eglMakeCurrent(old_d,old_draw,old_read,old_c);
@@ -528,7 +561,9 @@ std::int32_t EglDisplayResources::ConfigAttribute(std::uint32_t name,EglColorFor
         case EGL_GREEN_SIZE:return 6;
         case EGL_BUFFER_SIZE:return 16;
         case EGL_RENDERABLE_TYPE:case EGL_CONFORMANT:return EGL_OPENGL_ES2_BIT;
-        case EGL_ALPHA_SIZE:case EGL_DEPTH_SIZE:case EGL_STENCIL_SIZE:case EGL_SAMPLES:
+        case EGL_DEPTH_SIZE:return packed_depth_bits_;
+        case EGL_STENCIL_SIZE:return packed_stencil_bits_;
+        case EGL_ALPHA_SIZE:case EGL_SAMPLES:
         case EGL_SAMPLE_BUFFERS:case EGL_BIND_TO_TEXTURE_RGB:case EGL_BIND_TO_TEXTURE_RGBA:return 0;
         default:break;
         }

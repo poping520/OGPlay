@@ -25,7 +25,7 @@ void ValidateCount(const std::size_t count, const char* resource) {
 
 }  // namespace
 
-void AngleFrame::BindPackedDefault(EglHandle draw_image, EglHandle read_image) {
+void AngleFrame::BindPackedDefault(EglHandle draw_image, EglHandle read_image, EglHandle draw_depth, EglHandle read_depth) {
 #if OGPLAY_HAS_ANGLE
     if (!draw_image || !read_image) throw GlesApiError("packed framebuffer image", GL_INVALID_OPERATION);
     GLint rb{}, old_draw{}, old_read{};
@@ -34,13 +34,14 @@ void AngleFrame::BindPackedDefault(EglHandle draw_image, EglHandle read_image) {
     glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &old_read);
     auto bind = reinterpret_cast<void(*)(GLenum,void*)>(eglGetProcAddress("glEGLImageTargetRenderbufferStorageOES"));
     if (!bind) throw GlesApiError("packed framebuffer import", GL_INVALID_OPERATION);
-    std::array<GLuint,2> imported{}, framebuffers{};
-    glGenRenderbuffers(2, imported.data());
+    std::array<GLuint,4> imported{};
+    std::array<GLuint,2> framebuffers{};
+    glGenRenderbuffers(4, imported.data());
     glGenFramebuffers(2, framebuffers.data());
     const auto clean_imports = [&] {
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
         glBindRenderbuffer(GL_RENDERBUFFER, static_cast<GLuint>(rb));
-        glDeleteRenderbuffers(2, imported.data());
+        glDeleteRenderbuffers(4, imported.data());
     };
     try {
         RequireNoError("packed framebuffer allocation");
@@ -49,6 +50,13 @@ void AngleFrame::BindPackedDefault(EglHandle draw_image, EglHandle read_image) {
             glBindRenderbuffer(GL_RENDERBUFFER, imported[i]);
             bind(GL_RENDERBUFFER, reinterpret_cast<void*>(i ? read_image : draw_image));
             glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_RENDERBUFFER, imported[i]);
+            const auto depth_image=i ? read_depth : draw_depth;
+            if (depth_image) {
+                glBindRenderbuffer(GL_RENDERBUFFER, imported[i+2]);
+                bind(GL_RENDERBUFFER,reinterpret_cast<void*>(depth_image));
+                glFramebufferRenderbuffer(GL_FRAMEBUFFER,GL_DEPTH_ATTACHMENT,GL_RENDERBUFFER,imported[i+2]);
+                glFramebufferRenderbuffer(GL_FRAMEBUFFER,GL_STENCIL_ATTACHMENT,GL_RENDERBUFFER,imported[i+2]);
+            }
             RequireNoError("packed framebuffer import");
             if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
                 throw GlesApiError("packed framebuffer completeness", GL_INVALID_FRAMEBUFFER_OPERATION);
@@ -70,7 +78,7 @@ void AngleFrame::BindPackedDefault(EglHandle draw_image, EglHandle read_image) {
     glBindFramebuffer(GL_READ_FRAMEBUFFER, ResolveFramebuffer(GL_READ_FRAMEBUFFER, guest_framebuffer_bindings_[1], false));
     RequireNoError("packed framebuffer bind");
 #else
-    static_cast<void>(draw_image); static_cast<void>(read_image);
+    static_cast<void>(draw_image); static_cast<void>(read_image);static_cast<void>(draw_depth);static_cast<void>(read_depth);
     throw EglLifecycleError(EglOperation::unavailable, 0);
 #endif
 }

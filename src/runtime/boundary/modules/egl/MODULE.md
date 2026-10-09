@@ -15,6 +15,7 @@ per-thread native error 槽，禁止 Java 层返回失败却让 eglGetError 仍�
 
 配置身份为有界 RGBA、实际支持的 RGB888/RGB565；choose 最低条件不改写属性。context/surface
 使用选中配置，draw/read 与 context 格式失配返回 EGL_BAD_MATCH。Java EGL10/14 共用事实；
-RGB565 仅在真实存储探测通过后发布，Metal fallback 为 5/6/5/0、D0/S0、GLES1 compatibility/GLES2；
+RGB565 仅在真实存储探测通过后发布；Metal fallback 为 5/6/5/0，depth/stencil 经真实
+Surface 图像导入探测可为 D24S8（否则 D0/S0），GLES1 compatibility/GLES2；
 纹理 binding/mipmap 与 fallback GLES3 失败，完整驱动配置集合未发布。
 依据 [ADR-0106](../../../../../docs/adr/media.md#adr-0106)；Java/native 共用格式事实。实现依据 [ADR-0090](../../../../../docs/adr/media.md#adr-0090)。

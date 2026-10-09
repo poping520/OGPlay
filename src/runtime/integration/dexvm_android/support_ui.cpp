@@ -147,6 +147,7 @@ void ResetViewUiState(DexVmAndroidContext& context) {
         return;
     }
     context.ui_tree.Reset();
+    context.ui_notified_view_sizes.clear();context.ui_layout_metrics.reset();
     context.object_to_ui_node.clear();
     context.ui_node_to_object.clear();
     context.ui_click_listeners.clear();
@@ -165,6 +166,7 @@ void RetireViewUiSubtree(DexVmAndroidContext& context, const ui::UiNodeId node) 
         const auto current = nodes.back(); nodes.pop_back();
         const auto* state = context.ui_tree.Get(current);
         if (!state) continue;
+        context.ui_notified_view_sizes.erase(current);
         nodes.insert(nodes.end(), state->children.begin(), state->children.end());
         const auto found = context.ui_node_to_object.find(current);
         if (found != context.ui_node_to_object.end()) {

@@ -15,12 +15,12 @@ private:
 };
 }
 bool HasPackedRgbSurfaceStorage() noexcept { return true; }
-std::unique_ptr<RgbSurfaceStorage> CreatePackedRgbSurfaceStorage(void* native_device,
-    std::uint32_t width, std::uint32_t height) {
+static std::unique_ptr<RgbSurfaceStorage> CreatePackedTextureStorage(void* native_device,
+    std::uint32_t width, std::uint32_t height, MTLPixelFormat format) {
     if (!native_device || !width || !height || width > INT_MAX || height > INT_MAX)
         throw std::invalid_argument("packed RGB storage requires a device and positive dimensions");
     @autoreleasepool {
-        auto descriptor = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatB5G6R5Unorm
+        auto descriptor = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:format
             width:width height:height mipmapped:NO];
         descriptor.usage = MTLTextureUsageRenderTarget | MTLTextureUsageShaderRead;
         descriptor.storageMode = MTLStorageModePrivate;
@@ -30,4 +30,11 @@ std::unique_ptr<RgbSurfaceStorage> CreatePackedRgbSurfaceStorage(void* native_de
         catch (...) { [texture release]; throw; }
     }
 }
+std::unique_ptr<RgbSurfaceStorage> CreatePackedRgbSurfaceStorage(void* device, std::uint32_t w, std::uint32_t h) {
+    return CreatePackedTextureStorage(device,w,h,MTLPixelFormatB5G6R5Unorm);
+}
+std::unique_ptr<RgbSurfaceStorage> CreatePackedDepthStencilStorage(void* device, std::uint32_t w, std::uint32_t h) {
+    return CreatePackedTextureStorage(device,w,h,MTLPixelFormatDepth32Float_Stencil8);
+}
+
 }

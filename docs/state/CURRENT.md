@@ -88,6 +88,13 @@
   f=0、180 秒超时后结束进程，MCP 未 ready。实际资源 Handler 尚未重达，完整游戏及
   macOS/Linux 本轮未验收。证据 `.local/drawable-egl-game-20261009-190837/`。
 
+  [DVM-230](../tasks/dexvm/DVM-230.md) 与 BND-53 macOS 后续：Surface 独立持有真实
+  RGB565+D24S8 backing，附着子树先尺寸回调再 Surface 创建；macOS Release 与定向
+  10 项/848 断言通过。原 APK/用户沙盒副本已越过 chooser-null 和 onSurfaceCreated
+  尺寸等待，进入 onSurfaceChanged/nativeInit；f=111 新首错为 JNI guest receiver is
+  not a registered instance，退出 1、无超时、进程已结束。游戏画面/下一 JNI 缺口未验收；
+  Windows/Linux 本轮未复验。证据 `.local/wb-macos-render-fix/`。
+
 - **Tales From Deep Space 1.0.0**：VideoView/packed depth/stencil 已闭合；macOS
   800×480/1280×720 菜单裁剪，BND-29 终止断言失败。
   [DVM-217](../tasks/dexvm/DVM-217.md)：1920×1080 存档重载恢复关卡通过。

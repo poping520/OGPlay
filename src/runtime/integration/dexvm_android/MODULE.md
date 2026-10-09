@@ -213,6 +213,14 @@ PendingIntent.cancel 使令牌失效，查询不再匹配；退出在 VM 锁内�
   实时宿主状态。Java 毫秒/纳秒接口按 API19 转换，索引越界抛 IllegalArgumentException；
   recycle 清除本对象的数组引用，后续读取明确失败。KeyEvent 保留 down/event time、flags/source。
 
+## View 尺寸派发
+
+root guest 线程按已解析 UiTree frame 向附着子树派发 onSizeChanged，传入上次尺寸，
+未变化不重复；detached/GONE 不派发，节点销毁/reset 清理缓存。guest 快照 RootScope
+保活且逐项复核 binding/attachment，内容替换停止旧子树；布局改变最多 8 轮重排，
+不收敛明确失败。动态 attach/全局 Surface creation 与 lifecycle 先完成尺寸，再交付
+Surface 回调；重入时延后新 Surface。缓存仅记录已交付尺寸，UI 保持唯一几何事实。
+
 ## GLES/EGL 与渲染调度
 
 javax GL 接口归 BootDex；GLImpl 的 native 使用生成的精确 ABI 绑定既有 GLES 编组。

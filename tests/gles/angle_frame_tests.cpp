@@ -435,7 +435,7 @@ TEST_CASE("RGB565 D24S8 surface preserves depth and stencil across unshared cont
     using namespace ogplay::gles;
     if (!IsNativeAngleEglAvailable()) return;
     auto display=EglDisplayResources::Create({kNativeRenderer,AngleDevice::hardware});
-#if defined(_WIN32)
+#if defined(_WIN32) || defined(__APPLE__)
     REQUIRE(display->SupportsRgb565Surface());
     REQUIRE(display->ConfigAttribute(0x3025,EglColorFormat::rgb565)==24);
     REQUIRE(display->ConfigAttribute(0x3026,EglColorFormat::rgb565)==8);

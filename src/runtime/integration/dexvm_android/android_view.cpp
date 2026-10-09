@@ -2369,6 +2369,54 @@ Decl Declare_android_view_Surface(const Context& context) {
 } // namespace ogplay::runtime::android_intrinsics
 
 namespace ogplay::runtime {
+bool DispatchAndroidViewSizes(dexvm::Interpreter& vm, DexVmAndroidContext& context) {
+    if (context.ui_layout_dispatching) return false;
+    if (vm.CurrentContextToken()!=1U)
+        throw dexvm::VmJavaThrow{"Ljava/lang/IllegalStateException;", "View layout callbacks require the root guest thread"};
+    context.ui_layout_dispatching=true;
+    struct Reset { bool& value; ~Reset() { value=false; } } reset{context.ui_layout_dispatching};
+    const auto initial_content=context.content_view;
+    bool changed{};
+    const ui::Size metrics{static_cast<std::int32_t>(context.surface_width), static_cast<std::int32_t>(context.surface_height)};
+    if (context.ui_layout_metrics!=metrics) {
+        context.ui_tree.MarkLayoutDirty(context.ui_tree.Root());context.ui_layout_metrics=metrics;
+    }
+    std::erase_if(context.ui_notified_view_sizes,[&](const auto& item) { return context.ui_tree.Get(item.first)==nullptr; });
+    for (unsigned pass=0;pass<8;++pass) {
+        if (context.ui_tree.Get(context.ui_tree.Root())->layout_dirty) {
+            ui::LayoutUiTree(context.ui_tree,{metrics.width,metrics.height});changed=true;
+        }
+        struct Target { ui::UiNodeId node; dexvm::VmObjectRef view; ui::Size size; };
+        std::vector<Target> targets;
+        std::vector<ui::UiNodeId> pending{context.ui_tree.Root()};
+        while (!pending.empty()) {
+            const auto id=pending.back();pending.pop_back();
+            const auto* node=context.ui_tree.Get(id);
+            if (!node || node->visibility==ui::Visibility::Gone) continue;
+            pending.insert(pending.end(),node->children.rbegin(),node->children.rend());
+            const auto view=ViewObjectForUiNode(context,id);
+            if (view.IsValid()) targets.push_back({id,view,{node->frame.right-node->frame.left,node->frame.bottom-node->frame.top}});
+        }
+        std::vector<dexvm::VmObjectRef> objects;
+        for (const auto& target:targets) objects.push_back(target.view);
+        const auto roots=vm.ProtectReferences(objects);
+        for (const auto& target:targets) {
+            if (!context.ui_tree.IsAttached(target.node) || ViewObjectForUiNode(context,target.node)!=target.view) continue;
+            const auto old=context.ui_notified_view_sizes.find(target.node);
+            const auto previous=old==context.ui_notified_view_sizes.end() ? ui::Size{} : old->second;
+            if (target.size==previous) continue;
+            context.ui_notified_view_sizes[target.node]=target.size;changed=true;
+            static_cast<void>(android_intrinsics::CallAndroidMethod(vm,target.view,"onSizeChanged","(IIII)V",
+                {dexvm::VmValue::Int(target.size.width),dexvm::VmValue::Int(target.size.height),
+                 dexvm::VmValue::Int(previous.width),dexvm::VmValue::Int(previous.height)}));
+            if (context.content_view!=initial_content) return changed;
+            if (context.ui_tree.Get(context.ui_tree.Root())->layout_dirty) break;
+        }
+        if (!context.ui_tree.Get(context.ui_tree.Root())->layout_dirty) return changed;
+    }
+    throw dexvm::VmJavaThrow{"Ljava/lang/IllegalStateException;", "View size callbacks did not settle after bounded layout passes"};
+}
+
 void DispatchAndroidGlobalLayout(dexvm::Interpreter& vm, DexVmAndroidContext& context) {
     std::vector<dexvm::VmObjectRef> callbacks;
     for (const auto& [view, observer] : context.view_tree_observers) {

@@ -1146,15 +1146,13 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
         const auto content = context.content_view;
         const auto node = content.IsValid()
             ? runtime::FindViewUiNode(context, content.Value()) : std::nullopt;
-        if (content == sized_content_view_ && node == sized_content_node_) return;
+        const bool content_changed=content!=sized_content_view_ || node!=sized_content_node_;
         sized_content_view_ = content;
         sized_content_node_ = node;
         if (!content.IsValid()) return;
         const auto roots = bindings_.bridge->Vm().ProtectReferences(std::array{content});
-        CallOnView(content, "onSizeChanged", "(IIII)V", {
-            dx::VmValue::Int(static_cast<std::int32_t>(context.surface_width)),
-            dx::VmValue::Int(static_cast<std::int32_t>(context.surface_height)),
-            dx::VmValue::Int(0), dx::VmValue::Int(0)});
+        const bool layout_changed=runtime::DispatchAndroidViewSizes(bindings_.bridge->Vm(),context);
+        if (!content_changed && !layout_changed) return;
         // A virtual size callback may replace its own content. Reconcile the
         // replacement next frame; never attach the retired subtree.
         if (context.content_view != content ||
@@ -1165,8 +1163,10 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
                 bindings_.bridge->Vm(), context, *node);
             if (error.has_value()) Fail(*error);
         }
-        runtime::DispatchAndroidGlobalLayout(bindings_.bridge->Vm(), context);
-        if (context.window_has_focus.load()) DispatchViewWindowFocus(true);
+        if (content_changed || layout_changed) {
+            runtime::DispatchAndroidGlobalLayout(bindings_.bridge->Vm(), context);
+            if (context.window_has_focus.load()) DispatchViewWindowFocus(true);
+        }
     }
 
     void DexActivityLifecycle::RunRendererEvents() {

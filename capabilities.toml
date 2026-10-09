@@ -668,7 +668,7 @@ note = "M4 已在三平台完成真实 pbuffer 生命周期、guest 边界、SDL
 [gles.egl_lifecycle]
 status = "partial"
 test = "tests/gles/egl_lifecycle_tests.cpp; tests/gles/angle_frame_tests.cpp; tests/runtime/boundary/integration/android_boundary_hle_tests.cpp: BND49/BND53; tests/gles/angle_frame_tests.cpp: BND53"
-note = "BND-34 将一个 guest Context 映射到唯一 eager native Context，Surface 独立持有 pbuffer，Display 引用计数；BND-36 使 terminate 保留所有线程 current 资源到合法解绑、重复 terminate 成功并允许重新 initialize。KHR image/sync 与 texture pbuffer 按 ANGLE 能力发布；BND-49 发布有实际 backing 的 RGB888 配置，Metal 使用 HAL IOSurface 经 ANGLE GL_RGB 导入，其他后端优先原生 RGB config；缺支持时不发布。BND-53 增加精确 native RGB565，Metal 经 HAL B5G6R5 纹理/EGLImage 和私有默认 FBO 承载，实际 bits/量化/alpha 探测通过才发布；Surface 跨 share group 存储、独立 draw/read、guest FBO 名称/绑定隔离及失败 currency 回退受检。Metal fallback 限 GLES1 compatibility/GLES2、D0/S0/MSAA0，不支持 texture binding/mipmap 或 fallback GLES3。完整 Android 窗口系统未实现，整体保持 partial。"
+note = "BND-34 将一个 guest Context 映射到唯一 eager native Context，Surface 独立持有 pbuffer，Display 引用计数；BND-36 使 terminate 保留所有线程 current 资源到合法解绑、重复 terminate 成功并允许重新 initialize。KHR image/sync 与 texture pbuffer 按 ANGLE 能力发布；BND-49 发布有实际 backing 的 RGB888 配置，Metal 使用 HAL IOSurface 经 ANGLE GL_RGB 导入，其他后端优先原生 RGB config；缺支持时不发布。BND-53 增加精确 native RGB565，Metal 经 HAL B5G6R5 纹理/EGLImage 和私有默认 FBO 承载，实际 bits/量化/alpha 探测通过才发布；Surface 跨 share group 存储、独立 draw/read、guest FBO 名称/绑定隔离及失败 currency 回退受检。Metal fallback 的 Surface 独立拥有颜色及 depth/stencil backing；真实导入/位数探测通过可公开 D24S8，否则 D0/S0。跨非共享 Context 深度/模板保留受检。限 GLES1 compatibility/GLES2、MSAA0，不支持 texture binding/mipmap 或 fallback GLES3。完整 Android 窗口系统未实现，整体保持 partial。"
 
 [runtime.egl_api19_base_boundary]
 status = "complete"
@@ -1674,6 +1674,11 @@ note = "DVM-225：API19 javax GL 接口与 GLImpl 普通状态归 BootDex，nati
 status = "complete"
 test = "tests/dexvm/audio_track_tests.cpp; tests/runtime/native_library_loader_tests.cpp; tests/audio/open_sles_pcm_mixer_tests.cpp; tests/audio/encoded_music_tests.cpp"
 note = "DVM-189 AUD-02：BootDex AudioTrack native overlay、Handler 位置通知、释放后 getter 返回 0。DVM-84/89/159/93 底座保留；PCM8/16 STREAM/STATIC 与 OpenSL、JNI 共用唯一 mixer。不宣称 CTS 或 title 兼容。"
+
+[dexvm.view_size_delivery]
+status = "partial"
+test = "tests/dexvm/egl_facade_tests.cpp: View subtree sizes / View size callback subtree; tests/session/profile_entry_scope_tests.cpp: managed/dynamic SurfaceView"
+note = "DVM-230：root guest 线程按真实 UiTree frame 向附着子树派发 onSizeChanged，旧值/不重复/detach/reattach 和 mutation snapshot 受检；先尺寸再 Surface 回调，重入延后新 Surface。只有交付缓存，不重建布局。完整 ViewRoot/onLayout、内容替换/无限重布局矩阵及跨平台未验收。"
 
 [dexvm.android_scheduler]
 status = "complete"

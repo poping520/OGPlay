@@ -43,3 +43,13 @@ Windows Release 构建及 DVM-229/UI/EGL 定向 8 项/429 断言通过，新增�
 随后子 View 尺寸回调缺失导致 f=0 停滞，180 秒超时结束进程。macOS/Linux 本轮未复跑。
 证据 `.local/drawable-egl-complete-{build,tests}.log`、
 `.local/drawable-egl-game-20261009-190837/`；资源链与下一阻塞详见 DVM-229。
+
+macOS 后续（2026-10-09，[ADR-0110](../../adr/media.md#adr-0110)）：为 packed Surface
+增加独立 HAL depth/stencil storage/EGLImage，在 ANGLE 按 GL_DEPTH24_STENCIL8 导入；
+本机实际查询 24/8、FBO complete。颜色/深度/模板资源均归 Surface，非共享 Context
+导入同一 backing，私有 renderbuffer names 删除后附件保活。临时探测通过才公开 D24S8，
+否则仍为既有 D0/S0；旧精确 native config 路径不变。跨 Context 深度遮挡、模板保留/
+比较与查询直接回归通过；相邻 packed color/default FBO/rollback 和 UI 时序合计
+10 项/848 断言通过，macOS Release 构建通过。原 APK chooser-null 消失，进一步尺寸
+等待也已修复；nativeInit 的下一 JNI 错误及边界见 [DVM-230](../dexvm/DVM-230.md)。
+本轮 Windows/Linux 未复验，完整游戏未验收。证据 `.local/wb-macos-render-fix/`。

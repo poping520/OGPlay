@@ -89,6 +89,9 @@ public:
     bool UsesPackedRgbFramebuffer() const noexcept { return packed_rgb_framebuffer_; }
     EglHandle CreatePackedRgbImage(std::uint32_t width, std::uint32_t height,
                                   std::unique_ptr<hal::RgbSurfaceStorage>& storage);
+    EglHandle CreatePackedDepthStencilImage(std::uint32_t width, std::uint32_t height,
+        std::unique_ptr<hal::RgbSurfaceStorage>& storage);
+    bool HasPackedDepthStencil() const noexcept { return packed_depth_bits_ != 0; }
     bool SupportsRgbSurface() const noexcept { return rgb_config_ != 0; }
     const EglContextInfo& Info() const noexcept { return info_; }
     std::string Extensions() const;
@@ -114,6 +117,9 @@ private:
     EglHandle rgb565_config_{};
     void* packed_rgb_device_{};
     bool packed_rgb_framebuffer_{};
+    std::int32_t packed_depth_bits_{}, packed_stencil_bits_{};
+    EglHandle CreatePackedImage(std::uint32_t width, std::uint32_t height,
+        std::unique_ptr<hal::RgbSurfaceStorage>& storage, bool depth_stencil);
     friend class EglSurfaceResources;
     EglContextInfo info_{};
     bool initialized_{};
@@ -139,12 +145,15 @@ public:
     void SetAttribute(std::uint32_t name, std::int32_t value);
     void SwapBuffers();
     EglHandle PackedRgbImage() const noexcept { return packed_rgb_image_; }
+    EglHandle PackedDepthStencilImage() const noexcept { return packed_depth_image_; }
 private:
     EglSurfaceResources() = default;
     std::shared_ptr<EglDisplayResources> display_;
     EglHandle surface_{};
     std::unique_ptr<hal::RgbSurfaceStorage> rgb_storage_;
     EglHandle packed_rgb_image_{};
+    EglHandle packed_depth_image_{};
+    std::unique_ptr<hal::RgbSurfaceStorage> depth_storage_;
     std::uint32_t width_{}, height_{};
 };
 

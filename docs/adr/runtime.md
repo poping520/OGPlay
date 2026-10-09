@@ -923,3 +923,27 @@ VFS 内 unlink/rename/overlay、FD Close 与 VFS 销毁不得破坏存活只读 
 Windows 用 CreateFileW/独立 OVERLAPPED，macOS/Linux 用 open/fstat/pread；均 RAII，
 定位 IO 不修改共享 offset、无线程池。池锁不覆盖实际读取，原生 open 不持 VFS 全局锁。
 预算计数/高水位/淘汰数可查询，诊断读取原子值而不等待池的 IO 锁。
+
+<a id="adr-0111"></a>
+
+## ADR-0111 · ActivityManager 内存查询共用 guest 事实
+
+- 状态：Accepted
+- 日期：2026-10-09
+
+提供有界 ActivityManager 客户端及 API19 MemoryInfo 值对象。普通字段、构造、Parcel
+值算法与 lowMemory 分级比较保留在 Java；native 只提交当前 guest 的受检内存事实。
+不引入 ActivityManagerNative/Binder/AMS/LMK，也不声明进程枚举或任务管理已实现。
+getRunningAppProcesses 经 native 记账抛可捕获 UOE；缺少注入事实同样明确失败。
+
+GuestProcFacts 默认总量改为 1048576 KiB（1 GiB）、空闲 524288 KiB，缓存缺省按
+total/4 派生；可显式提供 cached/buffers。total 非零且 free+cached+buffers 不超过
+total，运算用 64 位；API19 availMem=(MemFree+Cached)*1024，不计 Buffers。
+压力阈值为显式 query policy，默认选 AOSP API19 1 GiB 高内存 buckets：HOME/CACHED/
+SERVICE 96 MiB、VISIBLE 60 MiB、FOREGROUND 48 MiB；按顺序校验。lowMemory 仍按
+availMem < HOME+(CACHED-HOME)/2，查询策略不执行进程清理。其他机型策略须显式注入。
+
+进程创建时一次生成快照，/proc/meminfo 与 Java/JNI 共用；不读取宿主内存，不动态
+伪装实际余量，也不把系统总量当作 DexVM 堆配额。旧 VFS meminfo 只能在只读且内容
+与配置相同的时候复用，冲突拒绝。manager 按当前进程缓存，ContextWrapper 委托 base，
+Context 字段及 GC roots 保持实例寿命。后续动态统计必须同时升级快照来源与 proc 表达。

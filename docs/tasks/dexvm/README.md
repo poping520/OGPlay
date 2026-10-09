@@ -258,3 +258,5 @@ Scenario gate 与 profile 迁移）以 [`docs/state/CURRENT.md`](../../state/CUR
 - [DVM-226 · 原版 PrintStream 与 System 日志端点](DVM-226.md)
 
 - [DVM-227 · Notification 值对象与缺席的系统模板](DVM-227.md)
+
+- [DVM-228 · ActivityManager 内存查询与统一 1 GiB guest 快照](DVM-228.md)

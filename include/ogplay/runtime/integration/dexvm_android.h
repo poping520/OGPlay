@@ -1,4 +1,5 @@
 #pragma once
+#include "ogplay/runtime/common/guest_memory_facts.h"
 
 #include <deque>
 
@@ -88,6 +89,8 @@ struct AndroidInputDevice final {
 // (sound mixer, VFS, platform identity) through this shared context.
 
 struct DexVmAndroidContext final {
+  // Set from the owning native process before linking/startup. No host query.
+  std::optional<GuestMemorySnapshot> memory_snapshot;
   // Installed before Application startup; no host device or Binder discovery.
   std::vector<AndroidInputDevice> input_devices;
   AndroidGuestCallSession *session{};

@@ -30,6 +30,7 @@
 #include "ogplay/runtime/dexvm/reflection.h"
 #include "ogplay/runtime/dexvm/vm_threads.h"
 #include "ogplay/runtime/integration/dexvm_android.h"
+#include "ogplay/runtime/integration/android_guest_call_session.h"
 #include "ogplay/runtime/vfs/vfs.h"
 
 namespace {
@@ -1320,6 +1321,75 @@ TEST_CASE("DVM-220 BootDex sensor clients share an honest empty device boundary"
         CHECK(get_list(1) == list);
         CHECK(f.On(manager, "getSensors", "()I").AsInt() == 0);
         CHECK(callbacks == 0);
+    }
+}
+
+TEST_CASE("DVM228 ActivityManager queries preserve guest memory units thresholds and ownership") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        AndroidValueVm f(backend);
+        f.vm.SetGcIntegration({{}, {}, [&f](const VmRootVisitor& visit) { VisitAndroidSessionRoots(*f.context, visit); }});
+        const auto base = f.New("Landroid/content/Context;");
+        f.context->application_base_context = base;
+        const auto base_root = f.vm.ProtectReferences(std::array{base});
+        const auto service = [&] { return f.On(base, "getSystemService", "(Ljava/lang/String;)Ljava/lang/Object;",
+            {VmValue::Ref(f.vm.NewStringUtf8("activity"))}).ref; };
+        const auto manager = service();
+        CHECK(f.linker.Class(f.model.ObjectClass(manager)).is_boot_dex);
+        const auto info = f.New("Landroid/app/ActivityManager$MemoryInfo;");
+        const auto roots = f.vm.ProtectReferences(std::array{info});
+        const auto field_slot = [&](const char* name, const char* type) {
+            const auto field = f.linker.FindFieldRecursive(f.model.ObjectClass(info), name, type);
+            REQUIRE(field.has_value()); return f.linker.Field(*field).slot;
+        };
+        const auto number = [&](const char* name) {
+            const auto slot = field_slot(name, "J");
+            const auto values = f.model.InstanceSlots(info);
+            return static_cast<std::uint64_t>(values[slot].bits) |
+                (static_cast<std::uint64_t>(values[slot + 1U].bits) << 32U);
+        };
+        const auto low = [&] { return f.model.InstanceSlots(info)[field_slot("lowMemory", "Z")].bits != 0; };
+        const auto query = [&] { f.On(manager, "getMemoryInfo", "(Landroid/app/ActivityManager$MemoryInfo;)V", {VmValue::Ref(info)}); };
+        const auto absent = f.OnOutcome(manager, "getMemoryInfo", "(Landroid/app/ActivityManager$MemoryInfo;)V", {VmValue::Ref(info)});
+        REQUIRE(absent.exception.IsValid());
+        CHECK(f.linker.Class(absent.exception_class).descriptor == "Ljava/lang/UnsupportedOperationException;");
+        CHECK(number("availMem") == 0);
+        CHECK_FALSE(f.ledger.Unimplemented().empty());
+        f.context->memory_snapshot = MakeGuestMemorySnapshot({});
+        query();
+        CHECK(number("totalMem") == UINT64_C(1073741824));
+        CHECK(number("availMem") == UINT64_C(805306368));
+        CHECK(number("threshold") == UINT64_C(100663296));
+        CHECK(number("hiddenAppThreshold") == UINT64_C(100663296));
+        CHECK(number("secondaryServerThreshold") == UINT64_C(100663296));
+        CHECK(number("visibleAppThreshold") == UINT64_C(62914560));
+        CHECK(number("foregroundAppThreshold") == UINT64_C(50331648));
+        CHECK_FALSE(low());
+        GuestProcFacts pressure;
+        pressure.memory_free_kb = 65536; pressure.memory_cached_kb = 32768;
+        pressure.memory_pressure = {65536, 131072, 65536, 49152, 32768};
+        f.context->memory_snapshot = MakeGuestMemorySnapshot(pressure);
+        query(); CHECK_FALSE(low()); // Exactly HOME + (CACHED-HOME)/2, strict comparison.
+        pressure.memory_free_kb -= 1;
+        f.context->memory_snapshot = MakeGuestMemorySnapshot(pressure);
+        query(); CHECK(low());
+        CHECK(number("threshold") == UINT64_C(67108864));
+        GuestProcFacts wide;
+        wide.memory_total_kb = 8388608; wide.memory_free_kb = 4194304;
+        f.context->memory_snapshot = MakeGuestMemorySnapshot(wide);
+        query();
+        CHECK(number("totalMem") == UINT64_C(8589934592));
+        CHECK(number("availMem") == UINT64_C(6442450944));
+        const auto null = f.OnOutcome(manager, "getMemoryInfo", "(Landroid/app/ActivityManager$MemoryInfo;)V", {VmValue::Ref(VmObjectRef{})});
+        REQUIRE(null.exception.IsValid());
+        CHECK(f.linker.Class(null.exception_class).descriptor == "Ljava/lang/NullPointerException;");
+        const auto refused = f.OnOutcome(manager, "getRunningAppProcesses", "()Ljava/util/List;");
+        REQUIRE(refused.exception.IsValid());
+        CHECK(f.linker.Class(refused.exception_class).descriptor == "Ljava/lang/UnsupportedOperationException;");
+        const auto wrapper = f.New("Landroid/content/ContextWrapper;", "(Landroid/content/Context;)V", {VmValue::Ref(base)});
+        CHECK(f.On(wrapper, "getSystemService", "(Ljava/lang/String;)Ljava/lang/Object;", {VmValue::Ref(f.vm.NewStringUtf8("activity"))}).ref == manager);
+        static_cast<void>(f.vm.CollectGarbage("activity-memory-service"));
+        CHECK(service() == manager);
+        query(); CHECK(number("availMem") == UINT64_C(6442450944));
     }
 }
 

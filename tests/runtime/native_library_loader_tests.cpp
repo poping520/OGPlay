@@ -1143,6 +1143,22 @@ TEST_CASE("JNI framework services use VM methods objects and state") {
         const auto base = vm.NewIntrinsicInstance("Landroid/content/Context;");
         static_cast<void>(call(activity, "attachBaseContext", "(Landroid/content/Context;)V", {bridge.PublishLocal(base)}));
         REQUIRE_FALSE(fixture.session->Environment().ExceptionCheck(1U));
+        const auto manager_ref = std::get<JniReference>(call(activity, "getSystemService",
+            "(Ljava/lang/String;)Ljava/lang/Object;", {text("activity")}));
+        const auto manager = bridge.FromReference(manager_ref);
+        const auto memory_info = construct("Landroid/app/ActivityManager$MemoryInfo;", "()V");
+        const auto memory_ref = bridge.PublishLocal(memory_info);
+        static_cast<void>(call(manager, "getMemoryInfo", "(Landroid/app/ActivityManager$MemoryInfo;)V", {memory_ref}));
+        REQUIRE_FALSE(fixture.session->Environment().ExceptionCheck(1U));
+        const auto info_class = *bridge.RegisteredClassIdentity(vm.Model().ObjectClass(memory_info));
+        const auto info_identity = fixture.session->Environment().ResolveObjectForHle(1U, memory_ref);
+        REQUIRE(info_identity.has_value());
+        for (const auto& [name, expected] : std::array<std::pair<const char*, std::int64_t>, 3>{{
+                {"totalMem", 1073741824}, {"availMem", 805306368}, {"threshold", 100663296}}}) {
+            const auto field = classes.GetFieldId(info_class, name, "J", false);
+            REQUIRE(field.has_value());
+            CHECK(std::get<JniLong>(fixture.session->Fields().GetInstance(*info_identity, info_class, *field, 1U)) == expected);
+        }
         fixture.context->activity = activity;
         const auto legacy = classes.RegisterClass({"fixture/CurrentActivity", {},
             {{"get", "()Landroid/app/Activity;", "activity.current", true}}, {}});

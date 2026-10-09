@@ -69,6 +69,12 @@
   宿主句柄池 Windows/Linux 定向通过，macOS 待原生验证。证据
   `.local/wb-windows-vfs-fix-20261009-121725/`；进程已退出。
 
+  [DVM-228](../tasks/dexvm/DVM-228.md) 已提供 ActivityManager 内存查询，默认总量
+  1 GiB；Java/JNI 与 proc 共用快照。Windows Release、BootDex/载荷及定向 8 项/1684
+  断言通过。原 activity 服务首错消失，进入 onResume/surfaceCreated；f=42 下一首错
+  为 Game$14.run pc20 缺 Message.obtain(Handler,int,int,int,Object)。退出 1、无超时，
+  进程已退出；macOS/Linux 与完整游戏未验收。证据 `.local/activity-memory-game-20261009-132205/`。
+
 - **Tales From Deep Space 1.0.0**：VideoView/packed depth/stencil 已闭合；macOS
   800×480/1280×720 菜单裁剪，BND-29 终止断言失败。
   [DVM-217](../tasks/dexvm/DVM-217.md)：1920×1080 存档重载恢复关卡通过。

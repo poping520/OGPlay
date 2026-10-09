@@ -41,6 +41,69 @@ Decl Declare_android_app_Notification(const Context&) {
     return std::move(builder).Build();
 }
 
+Decl Declare_android_app_ActivityManager(const Context&) {
+    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/app/ActivityManager;");
+    builder.StaticMethod("nativeUnsupported", "(Ljava/lang/String;)Ljava/lang/UnsupportedOperationException;",
+        [](dx::IntrinsicContext& call) -> dx::VmValue {
+            static_cast<void>(dx::IntrinsicCall(call).NonNullRef(0, "operation"));
+            if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.activity_process_query", 0);
+            throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "ActivityManager process enumeration is not provided"};
+        }, dx::kAccPrivate | dx::kAccNative);
+    return std::move(builder).Build();
+}
+
+Decl Declare_android_app_ActivityManager_MemoryInfo(const Context& context) {
+    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/app/ActivityManager$MemoryInfo;");
+    const std::array fields{
+        builder.BoundInstanceField("availMem", "J", dx::kAccPublic),
+        builder.BoundInstanceField("totalMem", "J", dx::kAccPublic),
+        builder.BoundInstanceField("threshold", "J", dx::kAccPublic),
+        builder.BoundInstanceField("hiddenAppThreshold", "J", dx::kAccPublic),
+        builder.BoundInstanceField("secondaryServerThreshold", "J", dx::kAccPublic),
+        builder.BoundInstanceField("visibleAppThreshold", "J", dx::kAccPublic),
+        builder.BoundInstanceField("foregroundAppThreshold", "J", dx::kAccPublic)};
+    builder.DirectMethod("nativeRead", "()V", [context, fields](dx::IntrinsicContext& call) {
+        if (!context->memory_snapshot) {
+            if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.activity_memory_query", 0);
+            throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "guest memory facts are not installed"};
+        }
+        const auto& memory = *context->memory_snapshot;
+        const auto& policy = memory.pressure;
+        const std::array<std::uint64_t, 7> values{memory.AvailableBytes(), memory.TotalBytes(),
+            static_cast<std::uint64_t>(policy.home_kb) * 1024U,
+            static_cast<std::uint64_t>(policy.cached_kb) * 1024U,
+            static_cast<std::uint64_t>(policy.service_kb) * 1024U,
+            static_cast<std::uint64_t>(policy.visible_kb) * 1024U,
+            static_cast<std::uint64_t>(policy.foreground_kb) * 1024U};
+        const dx::IntrinsicCall api(call);
+        for (std::size_t i = 0; i < fields.size(); ++i)
+            api.SetLong(fields[i], static_cast<std::int64_t>(values[i]));
+        return dx::VmValue::Void();
+    }, dx::kAccPrivate | dx::kAccNative);
+    return std::move(builder).Build();
+}
+
+dx::VmObjectRef ActivityManagerForContext(dx::IntrinsicContext& call, const Context& context) {
+    const auto found = context->singletons.find("activity");
+    if (found != context->singletons.end()) return found->second;
+    auto& vm = call.vm;
+    const auto type = vm.Linker().ResolveDescriptor("Landroid/app/ActivityManager;");
+    const auto require = [&](const dx::VmCallOutcome& outcome) {
+        if (outcome.exception.IsValid())
+            throw dx::VmJavaThrow{vm.Linker().Class(outcome.exception_class).descriptor,
+                                  outcome.exception_message, outcome.exception};
+    };
+    require(vm.EnsureClassInitialized(type));
+    const auto object = vm.NewIntrinsicInstance("Landroid/app/ActivityManager;");
+    const auto owner = context->application_base_context.IsValid() ? context->application_base_context : call.receiver;
+    const auto roots = vm.ProtectReferences(std::array{object, owner});
+    const auto constructor = vm.Linker().FindDirectMethod(type, "<init>", "(Landroid/content/Context;Landroid/os/Handler;)V");
+    if (!constructor) throw dx::DexVmError(dx::DexVmErrorReason::unresolved_reference, "ActivityManager constructor is missing");
+    require(vm.Call(*constructor, std::array{dx::VmValue::Ref(object), dx::VmValue::Ref(owner), dx::VmValue::Ref(dx::VmObjectRef{})}));
+    context->singletons.emplace("activity", object);
+    return object;
+}
+
 Decl Declare_android_app_NotificationManager(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/app/NotificationManager;");
     builder.DirectMethod("nativeCancel", "(Ljava/lang/String;Ljava/lang/String;IZ)V",

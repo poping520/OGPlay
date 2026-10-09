@@ -28,6 +28,11 @@ content/os/view/graphics/gl/media/database/device 等 family TU 同址。shared.
 
 ## Context、组件与权限
 
+- ActivityManager 为当前 guest 的有界缓存客户端，ContextWrapper 共用 base 返回值；
+  MemoryInfo 普通字段/算法来自 BootDex，private nativeRead 只写已注入的进程内存快照。
+  API19 availMem=(free+cached)*1024，64 位字段与显式阈值完整赋值；lowMemory 比较归 Java。
+  未注入事实和进程枚举记账抛 UOE；无 Binder/AMS/LMK、任务管理或宿主内存采样。
+
 - Context→ContextWrapper→Application/Service/ContextThemeWrapper→Activity 层级固定；
   process Application/base Context/ClassLoader/descriptor 身份稳定，wrapper 虚派委托 base。
   Context.getClassLoader 返回 VM 稳定 application facade，wrapper 委托 base 的虚方法；

@@ -77,6 +77,7 @@ IO_JAVA_NAMES = ("org/ogplay/io/LogOutputStream.java",)
 FRAMEWORK_JAVA_ROOT = ROOT / "src/guest/framework/java"
 FRAMEWORK_JAVA_NAMES = (
     "android/app/Activity.java",
+    "android/app/ActivityManager.java",
     "android/app/Notification.java",
     "android/app/NotificationManager.java",
     "android/hardware/LegacySensorManager.java",

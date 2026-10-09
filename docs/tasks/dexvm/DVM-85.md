@@ -5,6 +5,19 @@
 让 `SystemClock`、主/子 Looper、Handler、Timer、CountDownTimer 与 AsyncTask 共用
 `DexVmAndroidContext::uptime_millis` 和一个确定性 deadline 队列。
 
+## 后续局部修复 · Message 五参数工厂（2026-10-09）
+
+补齐 API19 obtain(Handler,int,int,int,Object)，复用现有 MakeMessage；arg1/arg2
+通过字段绑定写入，保留 what/obj/target 和既有三参数零默认值。sendToTarget 仍经
+Handler.sendMessage 排队，在主 Looper 泵送时虚派，不改变调度/线程/GC 契约。
+Windows Release ogplay/ogplay_tests 构建与定向 3 项/197 断言通过，覆盖两种解释器、
+非零/负数、引用保活、FIFO、异步及 null target。证据 `.local/message-obtain-{build,final-build,tests}.log`。
+原 APK/外部数据、无 Profile/无 survey、空沙盒已进入主线程 Game$2.handleMessage
+pc358；f=36 下一首错为 Resources.getDrawable(int) 方法缺失，原五参数首错消失。
+GLThread 另捕获 createContext failed: 12288 并退出，未定位/修复。CLI 退出 1、无超时，
+进程和 15971 listener 已结束，未宣称游戏/图形验收；macOS/Linux 未实跑。
+证据 `.local/message-obtain-game-20261009-161853/{args.json,stderr.log,result.json}`。
+
 ## 依赖
 
 - DVM-48/50：`VmThreadRuntime`、执行锁释放与统一 monitor Clock。

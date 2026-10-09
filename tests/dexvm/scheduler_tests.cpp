@@ -370,6 +370,75 @@ TEST_CASE("DVM-89 ResultReceiver dispatches locally and through its Handler") {
     CHECK(fixture.receiver_results[2] == std::pair{11, bundle});
 }
 
+TEST_CASE("Message five-argument obtain preserves fields and queued ownership on both backends") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        SchedulerVm fixture(backend);
+        fixture.vm.SetGcIntegration({{}, {}, [&fixture](const VmRootVisitor& visit) {
+            VisitAndroidSessionRoots(*fixture.context, visit);
+        }});
+        const auto handler = fixture.New("Ltest/RecordingHandler;");
+        VmObjectRef first, second, payload;
+        const auto slot = [&](VmObjectRef message, const char* name, const char* descriptor) {
+            const auto field = fixture.linker.FindFieldRecursive(fixture.model.ObjectClass(message), name, descriptor);
+            REQUIRE(field.has_value()); return fixture.linker.Field(*field).slot;
+        };
+        const auto number = [&](VmObjectRef message, const char* name) {
+            return static_cast<std::int32_t>(fixture.model.InstanceSlots(message)[slot(message, name, "I")].bits);
+        };
+        const auto reference = [&](VmObjectRef message, const char* name, const char* type) {
+            return VmObjectRef(fixture.model.InstanceSlots(message)[slot(message, name, type)].bits);
+        };
+        {
+            const auto handler_root = fixture.vm.ProtectReferences(std::array{handler});
+            fixture.ConstructAs(handler, "Landroid/os/Handler;", "()V");
+            payload = fixture.vm.NewStringUtf8("NULL");
+            const auto payload_root = fixture.vm.ProtectReferences(std::array{payload});
+            const auto obtained = fixture.Direct("Landroid/os/Message;", "obtain",
+                "(Landroid/os/Handler;IIILjava/lang/Object;)Landroid/os/Message;",
+                {VmValue::Ref(handler), VmValue::Int(12), VmValue::Int(10223772), VmValue::Int(65537), VmValue::Ref(payload)});
+            SchedulerVm::RequireOk(obtained); first = obtained.value.ref;
+            const auto first_root = fixture.vm.ProtectReferences(std::array{first});
+            const auto next = fixture.Direct("Landroid/os/Message;", "obtain",
+                "(Landroid/os/Handler;IIILjava/lang/Object;)Landroid/os/Message;",
+                {VmValue::Ref(handler), VmValue::Int(13), VmValue::Int(-9), VmValue::Int(4), VmValue::Ref(VmObjectRef{})});
+            SchedulerVm::RequireOk(next); second = next.value.ref;
+            const auto second_root = fixture.vm.ProtectReferences(std::array{second});
+            CHECK(first != second);
+            CHECK(number(first, "what") == 12);
+            CHECK(number(first, "arg1") == 10223772);
+            CHECK(number(first, "arg2") == 65537);
+            CHECK(reference(first, "obj", "Ljava/lang/Object;") == payload);
+            CHECK(reference(first, "target", "Landroid/os/Handler;") == handler);
+            const auto legacy = fixture.Direct("Landroid/os/Message;", "obtain",
+                "(Landroid/os/Handler;ILjava/lang/Object;)Landroid/os/Message;",
+                {VmValue::Ref(handler), VmValue::Int(99), VmValue::Ref(payload)});
+            SchedulerVm::RequireOk(legacy);
+            CHECK(number(legacy.value.ref, "arg1") == 0);
+            CHECK(number(legacy.value.ref, "arg2") == 0);
+            SchedulerVm::RequireOk(fixture.Virtual(first, "sendToTarget", "()V"));
+            SchedulerVm::RequireOk(fixture.Virtual(second, "sendToTarget", "()V"));
+            CHECK(fixture.messages.empty()); // Delivery remains asynchronous.
+        }
+        static_cast<void>(fixture.vm.CollectGarbage("queued-five-argument-message"));
+        CHECK(number(first, "arg1") == 10223772);
+        CHECK(number(first, "arg2") == 65537);
+        CHECK(number(second, "arg1") == -9);
+        CHECK(number(second, "arg2") == 4);
+        CHECK(fixture.vm.StringUtf8(reference(first, "obj", "Ljava/lang/Object;")) == "NULL");
+        CHECK_FALSE(reference(second, "obj", "Ljava/lang/Object;").IsValid());
+        CHECK(reference(first, "target", "Landroid/os/Handler;") == handler);
+        CHECK_FALSE(PumpJavaThreads(fixture.vm, *fixture.context).has_value());
+        CHECK(fixture.messages == std::vector<std::int32_t>{12, 13});
+        const auto untargeted = fixture.Direct("Landroid/os/Message;", "obtain",
+            "(Landroid/os/Handler;IIILjava/lang/Object;)Landroid/os/Message;",
+            {VmValue::Ref(VmObjectRef{}), VmValue::Int(7), VmValue::Int(-1), VmValue::Int(2), VmValue::Ref(VmObjectRef{})});
+        SchedulerVm::RequireOk(untargeted);
+        const auto invalid = fixture.Virtual(untargeted.value.ref, "sendToTarget", "()V");
+        REQUIRE(invalid.exception.IsValid());
+        CHECK(fixture.linker.Class(invalid.exception_class).descriptor == "Ljava/lang/NullPointerException;");
+    }
+}
+
 TEST_CASE("DVM-85 Handler queue is delayed ordered and removable") {
     SchedulerVm fixture;
     CHECK(fixture.Direct("Landroid/os/SystemClock;", "uptimeMillis", "()J")

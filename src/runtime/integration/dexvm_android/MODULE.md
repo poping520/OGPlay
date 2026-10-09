@@ -96,7 +96,10 @@ Context 正常初始化并缓存 BootDex NotificationManager，owner 为进程 b
 当前包以外的 factory/取消/发布请求拒绝并记账，Java 异常真实可捕获。
 发布始终拒绝，无外部生产者或持久库存，故合法取消作用于已知空集合，不登记通知表、
 不保存通知对象或修改 PendingIntent。状态未知不能视为空；新增发布必须更新取消 backing。
-native 仅取消边界及拒绝发布，不接入系统通知/Binder/展示/声振/点击派发。
+Notification 的常见字段、值构造和 extras 在有界 Java 客户端；private nativeUnsupported
+只按固定操作拒绝系统模板/Parcel 并分别记账，不更改对象或创建 contentView。
+模板缺席用真实 Java UOE，null Context 按 Java NPE；Parcelable 标记不提供传输。
+native 仅取消、拒绝发布与缺席能力，不接入系统通知/Binder/展示/声振/点击派发。
 
 ## NFC 无设备发现
 

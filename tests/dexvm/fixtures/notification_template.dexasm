@@ -1,0 +1,17 @@
+.class public Lfixture/NotificationTemplateProbe;
+.super Ljava/lang/Object;
+.method public static fallback(Landroid/content/Context;)I
+.registers 5
+    const/4 v0, 0
+:try_start
+    new-instance v1, Landroid/app/Notification;
+    invoke-direct {v1}, Landroid/app/Notification;-><init>()V
+    invoke-virtual {v1, v4, v0, v0, v0}, Landroid/app/Notification;->setLatestEventInfo(Landroid/content/Context;Ljava/lang/CharSequence;Ljava/lang/CharSequence;Landroid/app/PendingIntent;)V
+:try_end
+    return v0
+:handler
+    move-exception v1
+    const/4 v0, 1
+    return v0
+    .catch Ljava/lang/Exception; :try_start :try_end :handler
+.end method

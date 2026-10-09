@@ -1,6 +1,6 @@
 # 当前状态
 
-更新：2026-10-08。
+更新：2026-10-09。
 
 本页只保留最新运行结果与未闭合边界。能力状态见 [capabilities.toml](../../capabilities.toml)，
 实现契约见各模块 MODULE；历史过程见 [任务总览](../tasks/README.md) 与
@@ -55,9 +55,14 @@
   原构造器首错消失，GAThread 已打印被捕获的 NativeDecimalFormat.formatDouble 缺口，
   SDK 自行关闭 Analytics；游戏进入主视图，原 q.run NPE 未再出现。f=109 下一致命
   首错为 PushTheme.extractColors 缺 android.app.Notification 值类，退出 1、无超时。
+  [DVM-227](../tasks/dexvm/DVM-227.md) 提供 Notification 有界值对象，系统模板与
+  Parcel 请求记账抛可捕获 UOE，发布仍禁用。BootDex/ABI/载荷、自检、macOS Release
+  与双解释器定向 2 项/362 断言通过。复制用户沙盒越过 Notification 缺类首错，
+  PushTheme/C2DM 初始化已越过；f=115 下一首错为 systemStartupCheck pc27 请求
+  activity 系统服务被拒绝，退出 1、无超时。Analytics formatDouble 旧错误仍被捕获。
   进程已退出，跨平台、授权路径及完整游戏未验收。
   证据 `.local/wb-classloader-analysis/`、`.local/wb-subscriber-fix/`、`.local/wb-lifecycle-fix/`、
-  `.local/wb-sensor-fix/`、`.local/wb-jnigraphics-fix/`、`.local/wb-nfc-absence-fix/`、`.local/wb-activity-result-fix/`、`.local/wb-notification-cancel-fix/`、`.local/wb-rgb565-fix/`、`.local/wb-java-gl-fix/`、`.local/wb-http-lazy-fix/`、`.local/wb-resource-text-fix/`、`.local/wb-printstream-fix/`。
+  `.local/wb-sensor-fix/`、`.local/wb-jnigraphics-fix/`、`.local/wb-nfc-absence-fix/`、`.local/wb-activity-result-fix/`、`.local/wb-notification-cancel-fix/`、`.local/wb-rgb565-fix/`、`.local/wb-java-gl-fix/`、`.local/wb-http-lazy-fix/`、`.local/wb-resource-text-fix/`、`.local/wb-printstream-fix/`、`.local/wb-notification-value-fix/`。
 
 - **Tales From Deep Space 1.0.0**：VideoView/packed depth/stencil 已闭合；macOS
   800×480/1280×720 菜单裁剪，BND-29 终止断言失败。

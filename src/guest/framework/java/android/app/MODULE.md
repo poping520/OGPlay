@@ -13,5 +13,10 @@
 NotificationManager 保留 API19 Context 字段/构造/from 与普通重载转发；取消及
 拒绝发布进入两个 private native。backend 明确禁用发布且库存恒为空，只允许
 当前应用取消；notify(null) NPE，其他发布失败并记账。无 Binder、系统通知或
-PendingIntent 派发，也不纳入 Notification/Builder/RemoteViews 构建链。
+PendingIntent 派发。Notification 有界值对象保存普通字段、两种原版值构造及 extras；
+系统模板与 Parcel 传输经 private native 记账抛 UOE，null 参数按 Java 校验。
+Builder/Style/Action/RemoteViews 执行未纳入；typed 字段声明不代表完整类型反射闭包。
 来源：固定 API19 AOSP NotificationManager.java，保留 Apache-2.0 头。
+
+Notification 客户端来源：固定 Android 4.4.4 Notification.java，保留 Apache-2.0 头；
+原版值构造和字段初始化保留，模板/Parcel 以明确不支持边界替代，无系统通知服务。

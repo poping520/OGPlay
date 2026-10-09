@@ -884,3 +884,19 @@ PrintStream 从固定 core.jar 导入；目标流、编码、刷新、关闭与�
 不持宿主 FD/指针，不创建任意终端或宿主文件路径。其他 OutputStream 仍受原流/VFS
 契约约束。ByteArrayOutputStream 命名编码读取的 String 重载复用 VM 现有编码，不复制
 字符集实现；Formatter/ICU 长尾仍按已有能力账本限制。
+
+<a id="adr-0109"></a>
+
+## ADR-0109 · 通知值对象独立于系统模板与发布能力
+
+- 状态：Accepted
+- 日期：2026-10-09
+
+提供有界 Notification Java 值对象，按 API19 构造并保存常见字段；支持值的存在不代表
+有 NotificationManagerService 或可发布通知。System 模板/主题事实缺席时，旧模板构建
+请求在平台边界记账并抛可捕获 UOE，让客户端处理自己的失败路径。不能用缺类硬失败
+代替不支持操作，也不能伪造 contentView 或跳过应用代码。
+
+仅在 BootDex 保存普通字段/构造/Bundle/CREATOR；private native 只拒绝模板/Parcel。
+Builder/Style/Action/RemoteViews 执行、系统渲染、声振和派发保持独立能力，不因本次值
+类型增加而引入。通知发布仍拒绝，空集合取消不改变；Parcel 类型存在不宣称序列化成功。

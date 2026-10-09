@@ -23,6 +23,24 @@ void RequireNotificationPackage(dx::IntrinsicContext& call, const Context& conte
 }
 }
 
+Decl Declare_android_app_Notification(const Context&) {
+    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/app/Notification;");
+    builder.StaticMethod("nativeUnsupported", "(Ljava/lang/String;)V",
+        [](dx::IntrinsicContext& call) -> dx::VmValue {
+            const auto operation = dx::IntrinsicCall(call).NonNullRef(0, "operation");
+            const auto name = call.vm.StringUtf8(operation);
+            const bool template_request = name == "system_template";
+            if (!template_request && name != "parcel")
+                throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "unknown notification operation"};
+            if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented(
+                template_request ? "dexvm.notification_template" : "dexvm.notification_parcel", 0);
+            throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
+                template_request ? "Android system notification templates are not available"
+                                 : "notification parcel transport is not supported"};
+        }, dx::kAccPrivate | dx::kAccNative);
+    return std::move(builder).Build();
+}
+
 Decl Declare_android_app_NotificationManager(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/app/NotificationManager;");
     builder.DirectMethod("nativeCancel", "(Ljava/lang/String;Ljava/lang/String;IZ)V",

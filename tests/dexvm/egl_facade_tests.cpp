@@ -1420,3 +1420,76 @@ TEST_CASE("DVM225 BootDex GL interfaces clear pixels and retain context-local di
         vm.CallOn(egl, "eglTerminate", "(Ljavax/microedition/khronos/egl/EGLDisplay;)Z", {ref(display)});
     }
 }
+
+TEST_CASE("View subtree sizes are delivered once before Surface creation and include old sizes") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        std::vector<std::array<int,4>> sizes;
+        int created{};
+        auto child = IntrinsicClassBuilder::Class("Ltest/SizedSurface;", "Landroid/view/SurfaceView;");
+        child.OverrideMethod("onSizeChanged", "(IIII)V", [&](IntrinsicContext& c) {
+            CHECK(c.vm.CurrentContextToken()==1U);
+            sizes.push_back({c.arguments[0].AsInt(),c.arguments[1].AsInt(),c.arguments[2].AsInt(),c.arguments[3].AsInt()});
+            return VmValue::Void();
+        });
+        auto callback = IntrinsicClassBuilder::Class("Ltest/SizedSurfaceCallback;", "Ljava/lang/Object;", {"Landroid/view/SurfaceHolder$Callback;"});
+        callback.VirtualMethod("surfaceCreated", "(Landroid/view/SurfaceHolder;)V", [&](IntrinsicContext&) {
+            CHECK(sizes.size()==1);CHECK(sizes.back()[0]==120);CHECK(sizes.back()[1]==80);++created;
+            return VmValue::Void();
+        });
+        callback.VirtualMethod("surfaceChanged", "(Landroid/view/SurfaceHolder;III)V", [](IntrinsicContext&) { return VmValue::Void(); });
+        callback.VirtualMethod("surfaceDestroyed", "(Landroid/view/SurfaceHolder;)V", [](IntrinsicContext&) { return VmValue::Void(); });
+        EglVm vm(backend,nullptr,nullptr,{std::move(child).Build(),std::move(callback).Build()});
+        auto& c=*vm.context;c.surface_width=800;c.surface_height=480;
+        const auto context=vm.interpreter.NewIntrinsicInstance("Landroid/content/Context;");
+        const auto parent=vm.interpreter.NewIntrinsicInstance("Landroid/widget/FrameLayout;");
+        const auto root=c.ui_tree.CreateNode(ui::UiClass::FrameLayout);
+        BindViewToUiNode(c,parent,root);
+        c.ui_tree.Get(root)->layout.width={ui::SizeMode::MatchParent,0};
+        c.ui_tree.Get(root)->layout.height={ui::SizeMode::MatchParent,0};
+        c.ui_tree.Attach(c.ui_tree.Root(),root);c.content_view=parent;
+        const auto surface=vm.interpreter.NewIntrinsicInstance("Ltest/SizedSurface;");
+        vm.CallStatic("Landroid/view/SurfaceView;", "<init>", "(Landroid/content/Context;)V", {VmValue::Ref(surface),VmValue::Ref(context)});
+        const auto node=*FindViewUiNode(c,surface.Value());
+        c.ui_tree.Get(node)->layout.width={ui::SizeMode::Fixed,120};
+        c.ui_tree.Get(node)->layout.height={ui::SizeMode::Fixed,80};
+        c.ui_tree.Attach(root,node);
+        const auto holder=vm.CallOn(surface,"getHolder","()Landroid/view/SurfaceHolder;").ref;
+        vm.CallOn(holder,"addCallback","(Landroid/view/SurfaceHolder$Callback;)V",{VmValue::Ref(vm.interpreter.NewIntrinsicInstance("Ltest/SizedSurfaceCallback;"))});
+        REQUIRE_FALSE(DispatchSurfaceHolderCallbacks(vm.interpreter,c,SurfaceHolderPhase::created).has_value());
+        CHECK(created==1);REQUIRE(sizes.size()==1);CHECK(sizes[0]==std::array<int,4>{120,80,0,0});
+        CHECK_FALSE(DispatchAndroidViewSizes(vm.interpreter,c));CHECK(sizes.size()==1);
+        c.ui_tree.Get(node)->layout.width.px=160;c.ui_tree.MarkLayoutDirty(node);
+        CHECK(DispatchAndroidViewSizes(vm.interpreter,c));REQUIRE(sizes.size()==2);CHECK(sizes[1]==std::array<int,4>{160,80,120,80});
+        c.ui_tree.Detach(node);
+        c.ui_tree.Get(node)->layout.width.px=200;
+        static_cast<void>(DispatchAndroidViewSizes(vm.interpreter,c));CHECK(sizes.size()==2);
+        c.ui_tree.Attach(root,node);
+        static_cast<void>(DispatchAndroidViewSizes(vm.interpreter,c));REQUIRE(sizes.size()==3);CHECK(sizes[2]==std::array<int,4>{200,80,160,80});
+        REQUIRE_FALSE(RetireSurfaceHolderGeneration(vm.interpreter,c).has_value());
+    }
+}
+
+TEST_CASE("View size callback subtree replacement never notifies detached snapshot children") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        auto state=std::make_shared<DexVmAndroidContext>();
+        ui::UiNodeId child_node{};int child_calls{};
+        auto parent=IntrinsicClassBuilder::Class("Ltest/MutatingSizeParent;", "Landroid/widget/FrameLayout;");
+        parent.OverrideMethod("onSizeChanged","(IIII)V",[&](IntrinsicContext&) {
+            state->ui_tree.Detach(child_node);return VmValue::Void();
+        });
+        auto child=IntrinsicClassBuilder::Class("Ltest/UnusedSizeChild;", "Landroid/view/View;");
+        child.OverrideMethod("onSizeChanged","(IIII)V",[&](IntrinsicContext&) {++child_calls;return VmValue::Void();});
+        EglVm vm(backend,nullptr,nullptr,{std::move(parent).Build(),std::move(child).Build()});state=vm.context;
+        state->surface_width=200;state->surface_height=100;
+        const auto parent_view=vm.interpreter.NewIntrinsicInstance("Ltest/MutatingSizeParent;");
+        const auto p=state->ui_tree.CreateNode(ui::UiClass::FrameLayout);
+        BindViewToUiNode(*state,parent_view,p);state->ui_tree.Attach(state->ui_tree.Root(),p);
+        state->ui_tree.Get(p)->layout.width={ui::SizeMode::MatchParent,0};state->ui_tree.Get(p)->layout.height={ui::SizeMode::MatchParent,0};
+        const auto child_view=vm.interpreter.NewIntrinsicInstance("Ltest/UnusedSizeChild;");
+        child_node=state->ui_tree.CreateNode(ui::UiClass::View);BindViewToUiNode(*state,child_view,child_node);
+        state->ui_tree.Get(child_node)->layout.width={ui::SizeMode::Fixed,30};state->ui_tree.Get(child_node)->layout.height={ui::SizeMode::Fixed,20};
+        state->ui_tree.Attach(p,child_node);
+        CHECK(DispatchAndroidViewSizes(vm.interpreter,*state));CHECK(child_calls==0);
+        CHECK_FALSE(state->ui_layout_dispatching);
+    }
+}

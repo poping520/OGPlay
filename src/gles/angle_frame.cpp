@@ -115,6 +115,7 @@ void AngleFrame::BindSurfaces(std::shared_ptr<EglSurfaceResources> draw,
                               std::shared_ptr<EglSurfaceResources> read) {
     const auto width = draw->Width(), height = draw->Height();
     const auto draw_image=draw->PackedRgbImage(),read_image=read->PackedRgbImage();
+    const auto draw_depth=draw->PackedDepthStencilImage(),read_depth=read->PackedDepthStencilImage();
     const auto old_draw = lifecycle_.DrawSurface(), old_read = lifecycle_.ReadSurface();
 #if OGPLAY_HAS_ANGLE
     const auto previous_display=eglGetCurrentDisplay(), previous_draw=eglGetCurrentSurface(EGL_DRAW), previous_read=eglGetCurrentSurface(EGL_READ);
@@ -122,7 +123,7 @@ void AngleFrame::BindSurfaces(std::shared_ptr<EglSurfaceResources> draw,
 #endif
     lifecycle_.BindSurfaces(std::move(draw), std::move(read));
     try {
-        if (packed_default_) BindPackedDefault(draw_image,read_image);
+        if (packed_default_) BindPackedDefault(draw_image,read_image,draw_depth,read_depth);
     } catch (...) {
         if (old_draw && old_read) lifecycle_.BindSurfaces(old_draw,old_read);
         else lifecycle_.MarkNotCurrent();

@@ -34,5 +34,5 @@ macOS `~/Library/Application Support/OGPlay`、Linux `$XDG_DATA_HOME/ogplay` 或
 
 DVM-105：FillSecureRandom 使用系统 arc4random_buf 产生 CSPRNG 字节。
 
-Packed RGB storage 拥有 native Metal B5G6R5 纹理；dimensions/device 受检，
+Packed storage 拥有 native Metal B5G6R5 或 Depth32Float_Stencil8 纹理；dimensions/device 受检，
 仅允许 upper gles 的 host device。无 guest 地址解引用或 GLES/ANGLE 逻辑。

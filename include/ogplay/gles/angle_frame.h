@@ -374,7 +374,7 @@ private:
     AngleFrame(std::unique_ptr<EglApi> api, EglLifecycle lifecycle,
                std::uint32_t width, std::uint32_t height) noexcept;
     void RequireNoError(const char* operation) const;
-    void BindPackedDefault(EglHandle draw_image, EglHandle read_image);
+    void BindPackedDefault(EglHandle draw_image, EglHandle read_image, EglHandle draw_depth, EglHandle read_depth);
     std::uint32_t ResolveFramebuffer(std::uint32_t target, std::uint32_t guest, bool create);
     std::int32_t GuestFramebufferBinding(std::int32_t native) const;
     bool IsDefaultFramebufferTarget(std::uint32_t target) const;

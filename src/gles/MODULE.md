@@ -225,4 +225,6 @@ RGB565 扩展见 ADR-0106：精确 native config 优先；原生候选优先保�
 纹理与 ANGLE EGLImage 导入，私有 draw/read 默认 FBO 映射为 guest 0，FBO 名称隔离，
 binding 查询归一化且不允许 guest 改写默认附件。存储独立于 Context/share group，
 临时导入成功后才提交，失败恢复 binding/currency；探测实际 bit/量化/alpha 后才发布。
-fallback 为 D0/S0、无 MSAA、GLES1 compatibility/GLES2，不支持 GLES3、texture binding/mipmap。
+fallback 经真实导入探测可公开 D24S8（否则 D0/S0）；Surface 拥有独立 depth/stencil
+Metal texture/EGLImage，非共享 Context 私有 FBO 导入同一内容。无 MSAA、仅 GLES1
+compatibility/GLES2，不支持 GLES3、texture binding/mipmap；见 ADR-0110。

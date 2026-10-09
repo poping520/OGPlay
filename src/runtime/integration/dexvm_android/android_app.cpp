@@ -1109,6 +1109,8 @@ std::optional<std::string> DispatchSurfaceHolderCallbacks(
     std::vector<std::uint32_t> holders;
     if (phase == SurfaceHolderPhase::created) {
         context.managed_host_surface_open = true;
+        try { static_cast<void>(DispatchAndroidViewSizes(vm,context)); }
+        catch (const dexvm::VmJavaThrow& error) { return error.descriptor + ": " + error.message; }
         holders = AttachedHolderHandles(context);
         if (context.window_surface_callback.IsValid())
             holders.push_back(context.window_surface_holder.Value());
@@ -1134,6 +1136,10 @@ std::optional<std::string> AttachSurfaceViewSubtree(
         !context.ui_tree.IsAttached(subtree)) {
         return std::nullopt;
     }
+    if (context.ui_layout_dispatching) return std::nullopt;
+    try { static_cast<void>(DispatchAndroidViewSizes(vm,context)); }
+    catch (const dexvm::VmJavaThrow& error) { return error.descriptor + ": " + error.message; }
+    if (!context.ui_tree.IsAttached(subtree)) return std::nullopt;
     const auto holders = SubtreeHolderHandles(context, subtree);
     if (const auto error = DispatchHolderCallbacks(
             vm, context, holders, SurfaceHolderPhase::created);

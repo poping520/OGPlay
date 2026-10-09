@@ -526,3 +526,21 @@ mipmap 与 GLES3；其他 host native 路径按实际属性。缺少真实支持
 
 来源：[固定 ANGLE ImageMtl](https://github.com/google/angle/blob/c24d9971269a878a221238a5923abdcc933fa2e9/src/libANGLE/renderer/metal/ImageMtl.mm)，
 [Metal texture client buffer 扩展](https://github.com/google/angle/blob/c24d9971269a878a221238a5923abdcc933fa2e9/extensions/EGL_ANGLE_metal_texture_client_buffer.txt)。
+
+<a id="adr-0110"></a>
+
+## ADR-0110 · Metal packed 表面的深度/模板存储归 Surface
+
+- 状态：Accepted
+- 日期：2026-10-09
+
+在已有 B5G6R5 EGLImage 之外，Surface 独立拥有 HAL Metal depth/stencil texture 与
+ANGLE EGLImage。使用 ANGLE 的 GL_DEPTH24_STENCIL8 图像导入/逻辑格式；实际硬件
+纹理为 Depth32Float_Stencil8，查询深度/模板位数以 ANGLE 导入后真实 GL 结果为准。
+只在临时 Context 的 FBO 完整且位数为 24/8 时发布 D24S8；失败仍保留已受检的 D0/S0
+颜色支持。不能只修改配置查询，也不能把深度资源放进每个 Context 而丢失跨 Context
+的 Surface 内容。非共享 Context 各自导入同一存储为私有 draw/read FBO 附件，名称隐藏。
+
+Surface lifetime/current/deferred destroy 继承 EGL registry；深度/模板和颜色一起绑定，
+失败仍保留旧 binding/currency。纹理绑定、MSAA 与 packed fallback GLES3 边界不扩充，
+原生配置仍优先；不更改 ANGLE SDK 或引入系统窗口/图形服务。

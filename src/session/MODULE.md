@@ -85,6 +85,8 @@ Dex activity 每帧在 guest 回调前泵送主 Looper，到帧尾只通过
   释放 worker/VM 锁后泵送宿主窗口消息，回调不得重入 guest 生命周期。空闲及暂停时
   queueEvent 仍可唤醒 GLThread。Activity 切换或退出先停止并等待
   GLThread/native detach 完成再清空引用；onPause 的渲染握手先于该停止。
+  内容同步先调用 integration 的附着子树尺寸派发，再交付 Surface creation/global layout；
+  未变尺寸不重复，callback 替换内容后仅在后续同步处理新 root，不启动旧子树。
   intrinsic renderer 消费已登记 EGL chooser/factory 或默认 config/client version，
   经 Java EGL10 facade 创建并绑定 registry Context/Surface；回调传真实 GL/config wrapper，
   绘制后由该 surface swap 发布。其 EGL wrapper 持有 GC roots，Activity 切换/退出时解除

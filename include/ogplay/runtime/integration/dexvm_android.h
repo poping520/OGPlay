@@ -699,6 +699,9 @@ struct DexVmAndroidContext final {
   std::uint32_t ui_bitmap_config_height{};
   std::uint32_t ui_bitmap_config_density_bits{};
   ui::UiOverlayRenderer ui_overlay_renderer;
+  std::unordered_map<ui::UiNodeId, ui::Size, ui::UiNodeIdHash> ui_notified_view_sizes;
+  std::optional<ui::Size> ui_layout_metrics;
+  bool ui_layout_dispatching{};
   std::unordered_map<std::uint64_t, ui::UiNodeId> object_to_ui_node;
   std::unordered_map<ui::UiNodeId, dexvm::VmObjectRef, ui::UiNodeIdHash>
       ui_node_to_object;
@@ -1017,6 +1020,7 @@ InvokeViewOnClick(dexvm::Interpreter &vm, DexVmAndroidContext &context,
 // EGL, so the managed surface lifecycle has to deliver them. There is one
 // managed surface, so every registered holder callback gets the same event.
 // Returns a rendered message when a guest callback raised.
+bool DispatchAndroidViewSizes(dexvm::Interpreter&, DexVmAndroidContext&);
 void DispatchAndroidGlobalLayout(dexvm::Interpreter&, DexVmAndroidContext&);
 void SetWindowSurfaceCallback(dexvm::Interpreter&, DexVmAndroidContext&, dexvm::VmObjectRef);
 void SetWindowInputCallback(dexvm::Interpreter&, DexVmAndroidContext&, dexvm::VmObjectRef);

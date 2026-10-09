@@ -1190,6 +1190,7 @@ ui::LayoutParams ReadAndroidLayoutParams(dx::Interpreter& vm, const dx::VmObject
 }
 
 void RefreshAndroidLayoutParams(dx::Interpreter& vm, const Context& context) {
+    RefreshAndroidImageDrawables(*context);
     const auto assigned = context->ui_view_layout_params;
     std::vector<dx::VmObjectRef> refs;
     for (const auto& [view, params] : assigned) {

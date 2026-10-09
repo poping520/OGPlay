@@ -187,12 +187,20 @@ void AppendNode(const UiTree& tree, const UiNodeId id,
                                         node.alpha * node.background_alpha});
         }
     }
-    if (node.image_resource_id != 0) {
+    if (node.image_color) {
+        const Rect content{node.screen_frame.left + node.padding.left,
+                           node.screen_frame.top + node.padding.top,
+                           node.screen_frame.right - node.padding.right,
+                           node.screen_frame.bottom - node.padding.bottom};
+        out.emplace_back(DrawSolidRect{content, *node.image_color, node.alpha * node.image_alpha});
+    } else if (node.image_resource_id != 0 || node.image_bitmap) {
         const auto found = bitmaps.find(node.image_resource_id);
-        if (found != bitmaps.end() && found->second != nullptr) {
-            const auto& bitmap = *found->second;
+        const auto image = node.image_bitmap ? node.image_bitmap :
+            found != bitmaps.end() ? found->second : nullptr;
+        if (image) {
+            const auto& bitmap = *image;
             out.emplace_back(DrawBitmap{ImageDestination(node, bitmap),
-                                        found->second, node.alpha});
+                                        image, node.alpha * node.image_alpha});
         }
     }
     if (!node.text.empty() ||

@@ -57,7 +57,8 @@ Android API 的详细行为以 [dexvm_android](dexvm_android/MODULE.md)为准；
   reference 解析与 pending throwable 归 bridge，boundary 仅处理 ABI。活跃像素锁是
   VM 强根，recycle 延后退役 guest view，bridge 停止线程后解除 hooks 并清理 lease。
   BitmapPixels 在逻辑 ARGB 和 guest 格式存储间转移唯一权威值，Java/GLUtils/Canvas
-  共用它；低位格式/预乘 alpha 的量化及调用者无同步并发写不等于完整 Skia 验收。
+  共用它；成功写入与最后 unlock 推进像素版本，活跃原生锁期间不能仅按版本复用投影。
+  低位格式/预乘 alpha 的量化及调用者无同步并发写不等于完整 Skia 验收。
 - /proc/meminfo 是进程创建时的只读 GuestMemorySnapshot，来自受检 GuestProcFacts：默认
   总量 1 GiB、free=total/2、Cached 缺省 total/4，cached/buffers 可显式注入，Swap 为 0。
   free+cached+buffers 不超过 total；与已有 meminfo 内容冲突时拒绝启动。Java/JNI

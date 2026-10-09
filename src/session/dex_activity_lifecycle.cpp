@@ -833,6 +833,7 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
         runtime::AndroidBoundaryFrame frame) {
         const dx::VmExecutionLockScope execution(bindings_.bridge->Vm().ExecutionLock());
         auto& context = *bindings_.context;
+        runtime::RefreshAndroidImageDrawables(context);
         if (context.ui_tree.Get(context.ui_tree.Root())->layout_dirty) {
             runtime::ui::LayoutUiTree(
                 context.ui_tree,

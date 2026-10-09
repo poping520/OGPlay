@@ -4,11 +4,61 @@
 // ---- migrated from support_ui_binding.cpp ----
 #include "ogplay/runtime/integration/dexvm_android.h"
 #include "ogplay/runtime/dexvm/intrinsic_builder.h"
+#include "catalog.h"
 
 #include <stdexcept>
 #include <tuple>
+#include "ogplay/runtime/integration/bitmap_pixels.h"
 
 namespace ogplay::runtime {
+
+void RefreshAndroidImageDrawables(DexVmAndroidContext& context) {
+    for (const auto& [view, drawable] : context.ui_view_images) {
+        const auto node = FindViewUiNode(context, view);
+        if (!node) continue;
+        auto& state = context.ui_drawables.at(drawable.Value());
+        std::shared_ptr<const ui::UiBitmap> image;
+        std::optional<std::uint32_t> color;
+        ui::Size intrinsic{};
+        if (state.bitmap.IsValid()) {
+            const auto found = context.bitmaps.find(state.bitmap.Value());
+            if (found == context.bitmaps.end() || found->second.recycled)
+                throw std::runtime_error("ImageView Drawable bitmap is recycled or unavailable");
+            const auto& bitmap = found->second;
+            if (!state.image_projection || state.bitmap_revision != bitmap.pixels->Revision() || bitmap.pixels->Locks() != 0) {
+                auto projected = std::make_shared<ui::UiBitmap>();
+                projected->width = bitmap.width; projected->height = bitmap.height;
+                const auto argb = bitmap.pixels->Snapshot();
+                projected->rgba8.reserve(argb.size() * 4U);
+                for (const auto value : argb) {
+                    projected->rgba8.push_back(static_cast<std::uint8_t>(value >> 16U));
+                    projected->rgba8.push_back(static_cast<std::uint8_t>(value >> 8U));
+                    projected->rgba8.push_back(static_cast<std::uint8_t>(value));
+                    projected->rgba8.push_back(static_cast<std::uint8_t>(value >> 24U));
+                }
+                state.image_projection = std::move(projected);
+                state.bitmap_revision = bitmap.pixels->Revision();
+            }
+            image = state.image_projection; intrinsic = {bitmap.width, bitmap.height};
+        } else if (state.color) {
+            color = (*state.color << 8U) | (*state.color >> 24U);
+        } else if (state.resource_id != 0) {
+            image = ResolveUiDrawable(context, state.resource_id);
+            intrinsic = {image->width, image->height};
+        } else if (!state.bitmap_drawable) {
+            throw std::runtime_error("ImageView Drawable has no supported backing");
+        }
+        auto* target = context.ui_tree.Get(*node);
+        const auto alpha = static_cast<float>(state.alpha) / 255.0F;
+        if (target->intrinsic != intrinsic) {
+            target->intrinsic = intrinsic; context.ui_tree.MarkLayoutDirty(*node);
+        }
+        if (target->image_bitmap != image || target->image_color != color || target->image_alpha != alpha) {
+            target->image_bitmap = std::move(image); target->image_color = color; target->image_alpha = alpha;
+            context.ui_tree.MarkDrawDirty(*node);
+        }
+    }
+}
 
 void AssignViewContext(dexvm::Interpreter& vm, DexVmAndroidContext& context,
                        const dexvm::VmObjectRef view,
@@ -103,6 +153,7 @@ void ResetViewUiState(DexVmAndroidContext& context) {
     context.ui_touch_listeners.clear();
     context.ui_view_layout_params.clear();
     context.ui_view_backgrounds.clear();
+    context.ui_view_images.clear();
     context.ui_drawables.clear();
     context.text_watchers.clear();
     context.focused_edit_text = dexvm::VmObjectRef{};
@@ -121,6 +172,7 @@ void RetireViewUiSubtree(DexVmAndroidContext& context, const ui::UiNodeId node) 
             context.object_to_ui_node.erase(object);
             context.ui_view_layout_params.erase(object);
             context.ui_view_backgrounds.erase(object);
+            context.ui_view_images.erase(object);
             context.text_watchers.erase(object);
             if (context.focused_edit_text.Value() == object)
                 context.focused_edit_text = dexvm::VmObjectRef{};
@@ -809,6 +861,87 @@ std::shared_ptr<const ui::UiBitmap> ResolveUiDrawable(
     context.ui_bitmaps.emplace(resource_id, immutable);
     return immutable;
 }
+
+namespace android_intrinsics {
+dx::VmObjectRef MakeResourceDrawable(dx::IntrinsicContext& call,
+    const Context& context, const std::uint32_t resource_id) {
+    const auto& entry = ResolveUiResourceEntry(*context, resource_id);
+    if (entry.string_value && entry.string_value->ends_with(".xml")) {
+        if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.drawable_resource", 0);
+        throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "XML Drawable objects are not implemented"};
+    }
+    const auto decoded = ResolveUiDrawable(*context, resource_id);
+    const bool color = entry.value_type >= kTypeFirstColor && entry.value_type <= kTypeLastColor;
+    if (decoded->nine_patch) {
+        if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.drawable_resource", 0);
+        throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "resource NinePatch Drawable objects are not implemented"};
+    }
+    auto& vm = call.vm;
+    const char* descriptor = color ? "Landroid/graphics/drawable/ColorDrawable;" : "Landroid/graphics/drawable/BitmapDrawable;";
+    const auto object = vm.NewIntrinsicInstance(descriptor);
+    const auto object_root = vm.ProtectReferences(std::array{object});
+    dx::VmObjectRef bitmap;
+    std::vector<dx::VmValue> args{dx::VmValue::Ref(object)};
+    const char* signature = "(I)V";
+    if (color) args.push_back(dx::VmValue::Int(static_cast<std::int32_t>(entry.value_data)));
+    else {
+        bitmap = vm.NewIntrinsicInstance("Landroid/graphics/Bitmap;");
+        std::vector<std::uint32_t> argb;
+        argb.reserve(decoded->rgba8.size() / 4U);
+        for (std::size_t i = 0; i < decoded->rgba8.size(); i += 4U) {
+            argb.push_back((static_cast<std::uint32_t>(decoded->rgba8[i + 3U]) << 24U) |
+                (static_cast<std::uint32_t>(decoded->rgba8[i]) << 16U) |
+                (static_cast<std::uint32_t>(decoded->rgba8[i + 1U]) << 8U) | decoded->rgba8[i + 2U]);
+        }
+        context->bitmaps[bitmap.Value()] = {decoded->width, decoded->height,
+            std::make_shared<BitmapPixels>(decoded->width, decoded->height, 5, std::move(argb))};
+        signature = "(Landroid/content/res/Resources;Landroid/graphics/Bitmap;)V";
+        args.push_back(dx::VmValue::Ref(call.receiver)); args.push_back(dx::VmValue::Ref(bitmap));
+    }
+    const auto roots = vm.ProtectReferences(std::array{object, bitmap});
+    const auto constructor = vm.Linker().FindDirectMethod(vm.Model().ObjectClass(object), "<init>", signature);
+    if (!constructor) throw std::logic_error("resource Drawable constructor is unavailable");
+    const auto outcome = vm.Call(*constructor, args);
+    if (outcome.exception.IsValid()) throw dx::VmJavaThrow{
+        vm.Linker().Class(outcome.exception_class).descriptor, outcome.exception_message, outcome.exception};
+    context->ui_drawables[object.Value()].resource_id = resource_id;
+    return object;
+}
+
+void BindImageDrawable(dx::Interpreter& vm, const Context& context,
+    const dx::VmObjectRef view, const dx::VmObjectRef drawable) {
+    const auto node = EnsureViewUiNode(*context, view, UiClassForObject(vm, view));
+    if (drawable.IsValid() && !context->ui_drawables.contains(drawable.Value())) {
+        if (auto* ledger = vm.Ledger()) ledger->RecordUnimplemented("dexvm.drawable_resource", 0);
+        throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "unregistered Drawable image backing"};
+    }
+    if (drawable.IsValid()) {
+        const auto& state = context->ui_drawables.at(drawable.Value());
+        if (!state.bitmap_drawable && !state.color && state.resource_id == 0) {
+            if (auto* ledger = vm.Ledger()) ledger->RecordUnimplemented("dexvm.drawable_resource", 0);
+            throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "Drawable image backing is not implemented"};
+        }
+        if (state.bitmap.IsValid()) {
+            const auto bitmap = context->bitmaps.find(state.bitmap.Value());
+            if (bitmap == context->bitmaps.end() || bitmap->second.recycled)
+                throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "Drawable bitmap is recycled"};
+        }
+    }
+    if (const auto old = context->ui_view_images.find(view.Value()); old != context->ui_view_images.end()) {
+        if (const auto state = context->ui_drawables.find(old->second.Value()); state != context->ui_drawables.end() && state->second.callback_node == node)
+            state->second.callback_node.reset();
+    }
+    auto* projected = context->ui_tree.Get(node);
+    projected->image_resource_id = 0; projected->image_bitmap.reset(); projected->image_color.reset();
+    projected->image_alpha = 1.0F; projected->intrinsic = {};
+    if (drawable.IsValid()) {
+        context->ui_view_images[view.Value()] = drawable;
+        context->ui_drawables.at(drawable.Value()).callback_node = node;
+        RefreshAndroidImageDrawables(*context);
+    } else context->ui_view_images.erase(view.Value());
+    context->ui_tree.MarkLayoutDirty(node);
+}
+} // namespace android_intrinsics
 
 namespace {
 

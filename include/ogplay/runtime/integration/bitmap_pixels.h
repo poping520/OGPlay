@@ -17,6 +17,7 @@ public:
     std::uint32_t Stride() const noexcept { return stride_; }
     std::int32_t Format() const noexcept { return format_; }
     std::uint32_t Locks() const noexcept { return locks_; }
+    std::uint64_t Revision() const noexcept { return revision_; }
     memory::GuestAddress Lock(const dexvm::NioDirectMemoryAccess& access);
     void Unlock();
     void Retire();
@@ -32,5 +33,6 @@ private:
     dexvm::NioDirectMemoryAccess access_;
     memory::GuestAddress address_;
     bool retired_{};
+    std::uint64_t revision_{1};
 };
 }

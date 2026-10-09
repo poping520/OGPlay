@@ -142,6 +142,16 @@ namespace ogplay::runtime::android_intrinsics {
 Decl Declare_android_widget_ImageView(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/widget/ImageView;", "Landroid/view/View;");
     builder.Constructor("(Landroid/content/Context;)V", ViewInitHandler(context));
+    builder.VirtualMethod("setImageDrawable", "(Landroid/graphics/drawable/Drawable;)V",
+        [context](dx::IntrinsicContext& call) {
+            BindImageDrawable(call.vm, context, call.receiver, call.arguments[0].ref);
+            return dx::VmValue::Void();
+        });
+    builder.VirtualMethod("getDrawable", "()Landroid/graphics/drawable/Drawable;",
+        [context](dx::IntrinsicContext& call) {
+            const auto found = context->ui_view_images.find(call.receiver.Value());
+            return dx::VmValue::Ref(found == context->ui_view_images.end() ? dx::VmObjectRef{} : found->second);
+        });
     builder.FinalMethod("setImageResource", "(I)V",
         [context](dx::IntrinsicContext& call) {
             const auto node = EnsureViewUiNode(
@@ -150,6 +160,7 @@ Decl Declare_android_widget_ImageView(const Context& context) {
             const auto resource_id =
                 static_cast<std::uint32_t>(call.arguments[0].AsInt());
             if (resource_id == 0U) {
+                BindImageDrawable(call.vm, context, call.receiver, dx::VmObjectRef{});
                 context->ui_tree.Get(node)->image_resource_id = 0;
                 context->ui_tree.Get(node)->intrinsic = {};
             } else {
@@ -160,6 +171,8 @@ Decl Declare_android_widget_ImageView(const Context& context) {
                     throw dx::VmJavaThrow{"Landroid/content/res/Resources$NotFoundException;",
                                           error.what()};
                 }
+                if (context->ui_view_images.contains(call.receiver.Value()))
+                    BindImageDrawable(call.vm, context, call.receiver, dx::VmObjectRef{});
                 context->ui_tree.Get(node)->image_resource_id = resource_id;
                 context->ui_tree.Get(node)->intrinsic = {bitmap->width,
                                                          bitmap->height};

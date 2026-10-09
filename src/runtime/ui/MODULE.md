@@ -59,6 +59,8 @@ SDL、ANGLE 或视频解码。
   编译 PNG 的 `npTc` 两轴 stretch div 与 padding 进入共享 UiBitmap；光栅化保持四周固定区，
   只缩放中心区。Drawable 的 alpha/bounds 仍是逐实例状态。
 - `ImageView/ImageButton`：UiNode 保存 CENTER/CENTER_INSIDE/FIT_CENTER/FIT_XY/CENTER_CROP；
+  图片可来自资源缓存或 integration 提供的不可变 RGBA 投影，颜色使用 RGBA 填充；
+  image alpha 与 View alpha 相乘。UI 不持有 guest Drawable/Bitmap，不读取 guest 像素。
   render-list 在 node content box 内按 API19 对齐语义生成目标 rect，CPU raster 使用确定性
   nearest-neighbor scale。CENTER_CROP 的 dest 可超出 content box；默认父容器
   `clipChildren` 把该子 View 裁回自身 bounds。关闭父容器 clip 后，溢出仍受祖先与输出

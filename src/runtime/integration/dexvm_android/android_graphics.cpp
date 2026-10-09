@@ -510,6 +510,25 @@ namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_graphics_drawable_Drawable(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/graphics/drawable/Drawable;", "Ljava/lang/Object;");
+    const auto dimension = [context](const bool width) {
+        return dx::IntrinsicHandler([context, width](dx::IntrinsicContext& call) {
+            const auto found = context->ui_drawables.find(call.receiver.Value());
+            if (found == context->ui_drawables.end() || found->second.color) return dx::VmValue::Int(-1);
+            if (found->second.bitmap.IsValid()) {
+                const auto bitmap = context->bitmaps.find(found->second.bitmap.Value());
+                if (bitmap == context->bitmaps.end() || bitmap->second.recycled)
+                    throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "Drawable bitmap is recycled"};
+                return dx::VmValue::Int(width ? bitmap->second.width : bitmap->second.height);
+            }
+            if (found->second.resource_id != 0) {
+                const auto bitmap = ResolveUiDrawable(*context, found->second.resource_id);
+                return dx::VmValue::Int(width ? bitmap->width : bitmap->height);
+            }
+            return dx::VmValue::Int(-1);
+        });
+    };
+    builder.VirtualMethod("getIntrinsicWidth", "()I", dimension(true));
+    builder.VirtualMethod("getIntrinsicHeight", "()I", dimension(false));
     builder.VirtualMethod("setAlpha", "(I)V", [context](dx::IntrinsicContext& call) {
         const auto alpha = call.arguments[0].AsInt();
         if (alpha < 0 || alpha > 255) {
@@ -534,6 +553,7 @@ Decl Declare_android_graphics_drawable_Drawable(const Context& context) {
                 static_cast<float>(alpha) / 255.0F;
             context->ui_tree.MarkDrawDirty(*state.callback_node);
         }
+        RefreshAndroidImageDrawables(*context);
         return dx::VmValue::Void();
     });
     builder.FinalMethod("setBounds", "(IIII)V", [context](dx::IntrinsicContext& call) {
@@ -890,15 +910,19 @@ Decl Declare_android_graphics_PorterDuff(const Context& context) {
 }
 
 Decl Declare_android_graphics_drawable_BitmapDrawable(const Context& context) {
-    static_cast<void>(context);
     auto builder = dx::IntrinsicClassBuilder::Class(
         "Landroid/graphics/drawable/BitmapDrawable;", "Landroid/graphics/drawable/Drawable;");
     builder.InstanceField("bitmap", "Landroid/graphics/Bitmap;",
                           dx::kAccPrivate | dx::kAccFinal);
-    const auto bitmap_ctor = [](const std::size_t index) {
-        return dx::IntrinsicHandler([index](dx::IntrinsicContext& call) {
+    const auto bitmap_ctor = [context](const std::size_t index) {
+        return dx::IntrinsicHandler([context, index](dx::IntrinsicContext& call) {
+            const auto bitmap = call.arguments[index].ref;
+            if (bitmap.IsValid() && !context->bitmaps.contains(bitmap.Value()))
+                throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "BitmapDrawable requires a Bitmap backing"};
             call.vm.Model().InstanceSlots(call.receiver)[0] = {
-                call.arguments[index].ref.Value(), dx::SlotTag::ref};
+                bitmap.Value(), dx::SlotTag::ref};
+            context->ui_drawables[call.receiver.Value()].bitmap = bitmap;
+            context->ui_drawables[call.receiver.Value()].bitmap_drawable = true;
             return dx::VmValue::Void();
         });
     };
@@ -911,14 +935,18 @@ Decl Declare_android_graphics_drawable_BitmapDrawable(const Context& context) {
 }
 
 Decl Declare_android_graphics_drawable_ColorDrawable(const Context& context) {
-    static_cast<void>(context);
     auto builder = dx::IntrinsicClassBuilder::Class(
         "Landroid/graphics/drawable/ColorDrawable;", "Landroid/graphics/drawable/Drawable;");
     builder.InstanceField("color", "I", dx::kAccPrivate);
-    builder.Constructor("()V", GraphicsNoopHandler());
-    const auto set = [](dx::IntrinsicContext& call) {
+    builder.Constructor("()V", [context](dx::IntrinsicContext& call) {
+        context->ui_drawables[call.receiver.Value()].color = 0;
+        return dx::VmValue::Void();
+    });
+    const auto set = [context](dx::IntrinsicContext& call) {
         call.vm.Model().InstanceSlots(call.receiver)[0] = {
             static_cast<std::uint32_t>(call.arguments[0].AsInt()), dx::SlotTag::cat1};
+        context->ui_drawables[call.receiver.Value()].color = call.arguments[0].cat1;
+        RefreshAndroidImageDrawables(*context);
         return dx::VmValue::Void();
     };
     builder.Constructor("(I)V", set).FinalMethod("setColor", "(I)V", set);

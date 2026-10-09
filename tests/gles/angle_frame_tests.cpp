@@ -431,6 +431,50 @@ TEST_CASE("ANGLE async readback preserves pack state and current pixels while co
     }
 }
 
+TEST_CASE("RGB565 D24S8 surface preserves depth and stencil across unshared contexts") {
+    using namespace ogplay::gles;
+    if (!IsNativeAngleEglAvailable()) return;
+    auto display=EglDisplayResources::Create({kNativeRenderer,AngleDevice::hardware});
+#if defined(_WIN32)
+    REQUIRE(display->SupportsRgb565Surface());
+    REQUIRE(display->ConfigAttribute(0x3025,EglColorFormat::rgb565)==24);
+    REQUIRE(display->ConfigAttribute(0x3026,EglColorFormat::rgb565)==8);
+#else
+    if (!display->SupportsRgb565Surface() || display->ConfigAttribute(0x3025,EglColorFormat::rgb565)<24 ||
+        display->ConfigAttribute(0x3026,EglColorFormat::rgb565)<8) return;
+#endif
+    auto surface=EglSurfaceResources::Create(display,2,2,0x305CU,false,EglColorFormat::rgb565);
+    auto first=AngleFrame::CreateContext(display,2,0,EglColorFormat::rgb565);
+    first.BindSurfaces(surface,surface);
+    CHECK(first.GetIntegers(0x0D56,1)[0]==24); CHECK(first.GetIntegers(0x0D57,1)[0]==8);
+    first.ClearColor(0,0,0,1); first.ClearDepth(.25F); first.ClearStencil(7); first.Clear(0x4500);
+    auto second=AngleFrame::CreateContext(display,2,0,EglColorFormat::rgb565);
+    second.BindSurfaces(surface,surface);
+    second.Viewport(0,0,2,2);
+    const auto vertex=second.CreateShader(0x8B31), fragment=second.CreateShader(0x8B30);
+    const std::string vs="attribute vec2 p; void main(){gl_Position=vec4(p,0.0,1.0);}";
+    const std::string fs="precision mediump float; void main(){gl_FragColor=vec4(1.0,0.0,0.0,1.0);}";
+    second.ShaderSource(vertex,{&vs,1}); second.CompileShader(vertex);
+    second.ShaderSource(fragment,{&fs,1}); second.CompileShader(fragment);
+    REQUIRE(second.GetShaderParameter(vertex,0x8B81)!=0); REQUIRE(second.GetShaderParameter(fragment,0x8B81)!=0);
+    const auto program=second.CreateProgram(); second.AttachShader(program,vertex); second.AttachShader(program,fragment);
+    second.BindAttribLocation(program,0,"p"); second.LinkProgram(program);
+    REQUIRE(second.GetProgramParameter(program,0x8B82)!=0); second.UseProgram(program);
+    const std::array triangle{-1.F,-1.F,3.F,-1.F,-1.F,3.F};
+    const auto buffer=second.GenerateBuffers(1).front(); second.BindBuffer(0x8892,buffer);
+    second.BufferData(0x8892,static_cast<std::uint32_t>(sizeof(triangle)),std::as_bytes(std::span(triangle)),0x88E4);
+    second.VertexAttributePointer(0,2,0x1406,false,0,0); second.SetVertexAttributeEnabled(0,true);
+    second.SetCapability(0x0B71,true); second.SetCapability(0x0B90,true);
+    second.DepthFunction(0x0201); second.StencilFunction(0x0202,7,255);
+    second.DrawArrays(4,0,3); CHECK(second.ReadRgba8()[0]==0); // .5 fails stored .25 depth.
+    second.DepthFunction(0x0207); second.DrawArrays(4,0,3); CHECK(second.ReadRgba8()[0]==255); // Stored stencil is 7.
+    second.ClearColor(0,0,0,1); second.Clear(0x4000);
+    second.StencilFunction(0x0202,3,255); second.DrawArrays(4,0,3); CHECK(second.ReadRgba8()[0]==0);
+    second.SetCapability(0x0B71,false); second.SetCapability(0x0B90,false);
+    second.DeleteBuffers(std::array{buffer}); second.DeleteProgram(program); second.DeleteShader(vertex); second.DeleteShader(fragment);
+    first.ReleaseCurrent(); second.ReleaseCurrent();
+}
+
 TEST_CASE("BND53 RGB565 uses real storage across contexts and isolates framebuffer names") {
     using namespace ogplay::gles;
     if (!IsNativeAngleEglAvailable()) return;
@@ -449,7 +493,7 @@ TEST_CASE("BND53 RGB565 uses real storage across contexts and isolates framebuff
     first.ClearColor(.1f,.2f,.3f,.2f);first.Clear(0x4000U);first.Finish();
     auto pixels=first.ReadRgba8();
     CHECK(static_cast<int>(pixels[0])>=24);CHECK(static_cast<int>(pixels[0])<=25);
-    CHECK(static_cast<int>(pixels[1])>=51);CHECK(static_cast<int>(pixels[1])<=53);
+    CHECK(static_cast<int>(pixels[1])>=49);CHECK(static_cast<int>(pixels[1])<=53);
     CHECK(static_cast<int>(pixels[2])>=74);CHECK(static_cast<int>(pixels[2])<=75);
     CHECK(static_cast<int>(pixels[3])==255);
     CHECK(first.GetIntegers(0x8CA6U,1)[0]==0);

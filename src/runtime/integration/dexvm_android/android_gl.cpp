@@ -713,7 +713,11 @@ dx::IntrinsicHandler EglCreateContextHandler(const Context& context) {
     return [context](dx::IntrinsicContext& call) {
         if (!ValidateDisplay(call, context, call.arguments[0].ref)) return dx::VmValue::Ref(context->egl.no_context);
         RequireInitialized(call, context);
-        if (!IsConfig(context, call.arguments[1].ref)) { LatchEglError(call, context, kBadConfig); return dx::VmValue::Ref(context->egl.no_context); }
+        if (!IsConfig(context, call.arguments[1].ref)) {
+            GuestLog(call, core::LogLevel::warn, "EGL context rejected config wrapper=" +
+                std::to_string(call.arguments[1].ref.Value()) + "; available=" + std::to_string(context->egl.configs.size()));
+            LatchEglError(call, context, kBadConfig); return dx::VmValue::Ref(context->egl.no_context);
+        }
         const auto share = call.arguments[2].ref;
         if (context->session != nullptr) {
             std::uint32_t share_handle{};

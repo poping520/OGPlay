@@ -28,6 +28,7 @@ Asphalt 5（pilot title）删除 profile 全部 `native_call` 与 `[[java.class]
 
 | WU | 一句话目标 | 状态 |
 | --- | --- | --- |
+| [DVM-229](DVM-229.md) | 资源 Drawable、BitmapPixels 与 ImageView 的有界显示链 | 定向验证完成，游戏路径阻塞 |
 | [DVM-224](DVM-224.md) | 禁用通知后的 Java manager 与空集合取消 | 有界完成 |
 | [DVM-223](DVM-223.md) | 同进程 Activity 返回栈、结果与调用方恢复 | 有界完成 |
 | [DVM-222](DVM-222.md) | NFC 类型链接与无设备发现；无通信 | 有界完成 |

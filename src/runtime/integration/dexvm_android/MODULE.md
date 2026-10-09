@@ -135,6 +135,13 @@ PendingIntent.cancel 使令牌失效，查询不再匹配；退出在 VM 锁内�
   Context.getString 沿既有 getResources 委托。APK 资源先选择配置/解析引用，字符串读原值，
   其他 simple value 由 BootDex TypedValue.coerceToString 转换；复杂/null/未知类型与无效引用
   抛 NotFoundException。仅普通未带 spans 的字符串池文本，不扩大主题或 locale qualifier。
+- Resources.getDrawable 复用应用 ARSC 配置/引用与 APK 图片解码，返回有实际 BitmapPixels
+  的 BitmapDrawable 或 ColorDrawable；无效 ID/缺失资源抛 NotFoundException。
+  XML Drawable 与资源 NinePatch 对象记账抛 UOE；系统 Drawable 不回退应用 APK。
+  ImageView.setImageDrawable/getDrawable 保持对象身份，View→Drawable→Bitmap 为 GC 强边；
+  每实例 alpha 独立，空 BitmapDrawable 不绘制，替换/清空解绑旧 callback。
+  BitmapPixels 变更在布局/呈现前投影到不可变 UiBitmap；原生锁期间读取当前像素，
+  不复制一份可变像素权威状态。任意自定义 Drawable 绘制仍明确拒绝。
 - getXml 的 AXML 仅 getEventType/next/getName/getText/close；其余完整 XmlPullParser 接口
   记账抛 UnsatisfiedLinkError。文本 XML 用 BootDex KXml，不进入二进制 AXML reader。
 - 系统 getString/getInteger 每 context 一次从 BootDex 封存归档读取 system-resources.json

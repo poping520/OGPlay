@@ -5,11 +5,13 @@
 #include <cstdint>
 #include <compare>
 #include <optional>
+#include <memory>
 #include <string>
 #include <unordered_map>
 #include <vector>
 
 namespace ogplay::runtime::ui {
+struct UiBitmap;
 
 class UiNodeId final {
 public:
@@ -167,6 +169,9 @@ struct UiNode final {
     Orientation orientation{Orientation::Horizontal};
     std::uint32_t gravity{};
     std::uint32_t image_resource_id{};
+    std::shared_ptr<const UiBitmap> image_bitmap;
+    std::optional<std::uint32_t> image_color;
+    float image_alpha{1.0F};
     ImageScaleType image_scale_type{ImageScaleType::FitCenter};
     // TextView compound drawables: left, top, right, bottom.
     std::array<CompoundDrawable, 4> compound_drawables{};

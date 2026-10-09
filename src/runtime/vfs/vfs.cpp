@@ -6,7 +6,6 @@
 #include <cstdint>
 #include <functional>
 #include <filesystem>
-#include <fstream>
 #include <limits>
 #include <map>
 #include <memory>
@@ -20,41 +19,12 @@
 
 namespace ogplay::runtime {
 
-class HostFileReader final {
-public:
-    explicit HostFileReader(const std::filesystem::path& path)
-        : input_(path, std::ios::binary) {
-        if (!input_) {
-            throw std::runtime_error("cannot open host backing file: " +
-                                     path.string());
-        }
-    }
-
-    std::size_t ReadAt(const std::uint64_t offset,
-                       const std::span<std::byte> destination) {
-        std::unique_lock lock(mutex_);
-        input_.clear();
-        input_.seekg(static_cast<std::streamoff>(offset));
-        if (!input_) throw std::runtime_error("cannot seek host backing file");
-        input_.read(reinterpret_cast<char*>(destination.data()),
-                    static_cast<std::streamsize>(destination.size()));
-        const auto count = static_cast<std::size_t>(input_.gcount());
-        if (count != destination.size() && !input_.eof()) {
-            throw std::runtime_error("cannot read host backing file");
-        }
-        return count;
-    }
-
-private:
-    std::mutex mutex_;
-    std::ifstream input_;
-};
-
 class BackingLease final : public VfsReadLease {
 public:
     BackingLease(std::shared_ptr<File> file, const std::uint64_t begin,
-                 const std::uint64_t length)
-        : file_(std::move(file)), begin_(begin), length_(length) {}
+                 const std::uint64_t length,
+                 std::shared_ptr<const hal::HostReadFile> host_pin)
+        : file_(std::move(file)), begin_(begin), length_(length), host_pin_(std::move(host_pin)) {}
     std::uint64_t Size() const noexcept override { return length_; }
     std::size_t ReadAt(const std::uint64_t offset,
                        const std::span<std::byte> destination,
@@ -91,6 +61,7 @@ private:
     std::shared_ptr<File> file_;
     std::uint64_t begin_{};
     std::uint64_t length_{};
+    std::shared_ptr<const hal::HostReadFile> host_pin_;
 };
 
 class SnapshotLease final : public VfsReadLease {
@@ -301,11 +272,13 @@ void VirtualFileSystem::Impl::Mount(const VfsSource source, const std::string_vi
 void VirtualFileSystem::Impl::MountLazy(
         const VfsSource source, const std::string_view root,
         const std::span<const VfsLazyMountEntry> entries,
-        const bool writable) {
+        const bool writable,
+        const std::span<const std::shared_ptr<HostFileBacking>> host_backings) {
         const auto valid_source = source == VfsSource::apk ||
                                   source == VfsSource::obb ||
                                   source == VfsSource::external;
         if (!valid_source || entries.empty() ||
+            (!host_backings.empty() && host_backings.size() != entries.size()) ||
             (writable && source != VfsSource::external)) {
             throw VfsError(kEinval,
                            "lazy VFS mount requires a compatible source and entries");
@@ -339,6 +312,10 @@ void VirtualFileSystem::Impl::MountLazy(
                 std::make_shared<File>(File{
                     {}, entry.size, entry.read_all, entry.read_at, writable, source,
                     false, {}}));
+            if (!host_backings.empty()) {
+                pending.back().second->host_backing = host_backings[pending.size() - 1U];
+                pending.back().second->host_mounted = true;
+            }
         }
         std::scoped_lock lock(mutex_);
         for (const auto& [path, file] : pending) {
@@ -365,6 +342,7 @@ void VirtualFileSystem::Impl::MountHostDirectory(const std::string_view root,
         }
 
         std::vector<VfsLazyMountEntry> entries;
+        std::vector<std::shared_ptr<HostFileBacking>> host_backings;
         std::filesystem::recursive_directory_iterator iterator(directory, error);
         const std::filesystem::recursive_directory_iterator end;
         if (error) {
@@ -393,7 +371,8 @@ void VirtualFileSystem::Impl::MountHostDirectory(const std::string_view root,
                     throw VfsError(kEacces,
                                    "external VFS backing entry escaped its root");
                 }
-                const auto reader = std::make_shared<HostFileReader>(path);
+                const auto reader = std::make_shared<HostFileBacking>(host_pool_, directory, path, size);
+                host_backings.push_back(reader);
                 entries.push_back({
                     relative.generic_string(), size,
                     [reader, size] {
@@ -410,8 +389,8 @@ void VirtualFileSystem::Impl::MountHostDirectory(const std::string_view root,
                         return result;
                     },
                     [reader](const std::uint64_t offset,
-                             const std::span<std::byte> destination) {
-                        return reader->ReadAt(offset, destination);
+                             const std::span<std::byte> destination, const std::stop_token stop) {
+                        return reader->ReadAt(offset, destination, stop);
                     },
                 });
             } else if (!std::filesystem::is_directory(status)) {
@@ -428,7 +407,7 @@ void VirtualFileSystem::Impl::MountHostDirectory(const std::string_view root,
             throw VfsError(kEinval,
                            "external VFS backing directory has no files");
         }
-        MountLazy(VfsSource::external, root, entries, true);
+        MountLazy(VfsSource::external, root, entries, true, host_backings);
     }
 
 void VirtualFileSystem::Impl::MountHostFile(
@@ -445,7 +424,8 @@ void VirtualFileSystem::Impl::MountHostFile(
     }
     const auto size = std::filesystem::file_size(path, error);
     if (error) throw VfsError(kEio, "cannot size OBB backing file");
-    const auto reader = std::make_shared<HostFileReader>(path);
+    const auto reader = std::make_shared<HostFileBacking>(host_pool_,
+        std::filesystem::absolute(path).parent_path(), path, size);
     const std::array entries{VfsLazyMountEntry{
         path.filename().string(), size,
         [reader, size] {
@@ -459,10 +439,11 @@ void VirtualFileSystem::Impl::MountHostFile(
             return bytes;
         },
         [reader](const std::uint64_t offset,
-                 const std::span<std::byte> destination) {
-            return reader->ReadAt(offset, destination);
+                 const std::span<std::byte> destination, const std::stop_token stop) {
+            return reader->ReadAt(offset, destination, stop);
         }}};
-    MountLazy(source, root, entries, false);
+    const std::array host_backings{reader};
+    MountLazy(source, root, entries, false, host_backings);
 }
 
 void VirtualFileSystem::Impl::SetWorkingDirectory(const std::string_view path) {
@@ -588,14 +569,26 @@ std::int32_t VirtualFileSystem::Impl::Open(const std::string_view path,
             file->contents.clear();
             file->read_all = {};
             file->read_at = {};
+            file->host_backing.reset();
             lock.lock();
             ++file->generation;
             SetNodeSizeDirtyLocked(*file, 0,
                                    file->dirty || !file->overlay_path.empty());
         }
+        // Native open/identity checks may block, so never hold the path/FD
+        // metadata lock across them. The selected node remains owned.
+        std::shared_ptr<const hal::HostReadFile> host_pin;
+        if (selected_file->host_mounted) {
+            lock.unlock();
+            std::scoped_lock file_lock(*selected_file->mutex);
+            if (selected_file->host_backing) host_pin = selected_file->host_backing->Pin();
+            lock.lock();
+        }
         const auto descriptor = AllocateDescriptor();
-        descriptors_.emplace(descriptor, std::make_shared<OpenFile>(
-            std::move(selected_file), 0, options.read, options.write, nullptr));
+        auto opened = std::make_shared<OpenFile>(
+            std::move(selected_file), 0, options.read, options.write, nullptr);
+        opened->host_pin = std::move(host_pin);
+        descriptors_.emplace(descriptor, std::move(opened));
         return descriptor;
     }
 
@@ -859,7 +852,7 @@ std::shared_ptr<const VfsReadLease> VirtualFileSystem::Impl::CaptureReadLease(
         // legacy read_all-only backing has no positioned lifetime contract,
         // so freeze it once at capture and account the materialization.
         if (!file->read_at && file->read_all) Materialize(*file);
-        return std::make_shared<BackingLease>(file, offset, length);
+        return std::make_shared<BackingLease>(file, offset, length, open->host_pin);
     }
     if (length > std::numeric_limits<std::size_t>::max())
         throw VfsError(kEfbig, "VFS writable lease is too large");
@@ -988,6 +981,7 @@ void VirtualFileSystem::Impl::Materialize(File& file) {
                                            std::memory_order_relaxed);
         file.read_all = {};
         file.read_at = {};
+        file.host_backing.reset();
     }
 
 std::int32_t VirtualFileSystem::Impl::AllocateDescriptor() const {
@@ -1217,6 +1211,7 @@ std::optional<VfsSnapshot> VirtualFileSystem::Impl::TrySnapshot() const {
     if (!budget_lock.owns_lock()) return std::nullopt;
     result.io = {backing_read_bytes_.load(std::memory_order_relaxed), full_materialized_bytes_.load(std::memory_order_relaxed),
         resource_budget_->used, resource_budget_->high_water, resource_budget_->snapshot_used, resource_budget_->snapshot_high_water};
+    host_pool_->AddStatistics(result.io);
     return result;
 }
 }

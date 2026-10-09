@@ -340,6 +340,9 @@ ControlResponse DashboardService::Request(std::string_view method, core::JsonVal
                             writer.AddUnsignedInteger(value, "resource_memory_high_water", s->io.resource_memory_high_water);
                             writer.AddUnsignedInteger(value, "lease_snapshot_bytes", s->io.lease_snapshot_bytes);
                             writer.AddUnsignedInteger(value, "lease_snapshot_high_water", s->io.lease_snapshot_high_water);
+                            writer.AddUnsignedInteger(value, "host_file_handles", s->io.host_file_handles);
+                            writer.AddUnsignedInteger(value, "host_file_handle_high_water", s->io.host_file_handle_high_water);
+                            writer.AddUnsignedInteger(value, "host_file_handle_evictions", s->io.host_file_handle_evictions);
                             writer.AddUnsignedInteger(value, "total_descriptors", s->total_descriptors); writer.AddUnsignedInteger(value, "total_mounts", s->total_mounts);
                             writer.AddBool(value, "sandbox_attached", s->sandbox_attached); writer.AddUnsignedInteger(value, "flushes", s->flushes);
                             for (const auto& mount : s->mounts) { const auto row = writer.Object(); writer.AddString(row, "root", Text(mount.root));
@@ -391,6 +394,9 @@ ControlResponse DashboardService::Request(std::string_view method, core::JsonVal
                             writer.AddUnsignedInteger(value, "resource_memory_high_water", s->resource_memory_high_water);
                             writer.AddUnsignedInteger(value, "lease_snapshot_bytes", s->lease_snapshot_bytes);
                             writer.AddUnsignedInteger(value, "lease_snapshot_high_water", s->lease_snapshot_high_water);
+                            writer.AddUnsignedInteger(value, "host_file_handles", s->host_file_handles);
+                            writer.AddUnsignedInteger(value, "host_file_handle_high_water", s->host_file_handle_high_water);
+                            writer.AddUnsignedInteger(value, "host_file_handle_evictions", s->host_file_handle_evictions);
                             section(name, "partial", 0, "IO statistics only; mount/FD snapshots pending", value); continue;
                         }
                     } else if (name == "capabilities") {

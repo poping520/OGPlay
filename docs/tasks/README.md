@@ -27,6 +27,7 @@ Work Unit 按所属里程碑或语义化专项存放，创建后不因完成状�
 | GUI v2（WebView） | GUI-1..7 | Windows 按阶段推进 | [`gui/`](gui/README.md) | [设计](../design/gui/README.md) |
 | Layout UI | LUI-1..16 | 完成 | [`layoutui/`](layoutui/) | [设计](../design/layout-ui/README.md) |
 | 基础工具维护 | UTIL-1.. | 进行中 | [`maintenance/`](maintenance/README.md) | 跨模块纯基础设施收敛 |
+| VFS 宿主文件资源 | VFS-07 | Windows/Linux 已验证，macOS 待验证 | [`vfs/VFS-07.md`](vfs/VFS-07.md) | [ADR-0110](../adr/runtime.md#adr-0110) |
 
 ## 规则
 

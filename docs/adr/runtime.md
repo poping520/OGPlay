@@ -900,3 +900,26 @@ PrintStream 从固定 core.jar 导入；目标流、编码、刷新、关闭与�
 仅在 BootDex 保存普通字段/构造/Bundle/CREATOR；private native 只拒绝模板/Parcel。
 Builder/Style/Action/RemoteViews 执行、系统渲染、声振和派发保持独立能力，不因本次值
 类型增加而引入。通知发布仍拒绝，空集合取消不改变；Parcel 类型存在不宣称序列化成功。
+
+<a id="adr-0110"></a>
+
+## ADR-0110 · 宿主文件按需打开与有界句柄保活
+
+- 状态：Accepted
+- 日期：2026-10-09
+
+宿主目录挂载不再为全部文件保留 CRT stream。节点只保存受检路径、挂载大小和来源，
+首次 guest Open 绑定原生打开对象身份。VFS 的所有宿主目录/OBB 共用可注入预算
+（默认 128），空闲句柄 LRU 回收；打开状态、dup、只读 lease 与在途读取拥有强引用，
+不可淘汰。无空闲名额明确 EMFILE，不提高进程上限、不等待潜在自身持有的名额。
+
+首次 Open 之前不承诺挂载时的宿主对象身份；回收后重新打开必须复核已绑定身份及
+挂载大小，替换/消失明确失败。外部原地修改不保证内容快照，截断短读仍 EIO。
+VFS 内 unlink/rename/overlay、FD Close 与 VFS 销毁不得破坏存活只读 lease 的来源。
+宿主数据目录仍为可信来源：检查挂载根及其后代的 symlink，并在原生打开时拒绝
+最终 reparse/symlink 与非普通文件；不承诺抵御宿主恶意并发重命名中间目录。
+
+对原“VFS 仅标准库”的窄例外是 Runtime → HAL HostReadFile：原生句柄不跨公开接口，
+Windows 用 CreateFileW/独立 OVERLAPPED，macOS/Linux 用 open/fstat/pread；均 RAII，
+定位 IO 不修改共享 offset、无线程池。池锁不覆盖实际读取，原生 open 不持 VFS 全局锁。
+预算计数/高水位/淘汰数可查询，诊断读取原子值而不等待池的 IO 锁。

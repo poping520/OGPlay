@@ -64,6 +64,11 @@
   证据 `.local/wb-classloader-analysis/`、`.local/wb-subscriber-fix/`、`.local/wb-lifecycle-fix/`、
   `.local/wb-sensor-fix/`、`.local/wb-jnigraphics-fix/`、`.local/wb-nfc-absence-fix/`、`.local/wb-activity-result-fix/`、`.local/wb-notification-cancel-fix/`、`.local/wb-rgb565-fix/`、`.local/wb-java-gl-fix/`、`.local/wb-http-lazy-fix/`、`.local/wb-resource-text-fix/`、`.local/wb-printstream-fix/`、`.local/wb-notification-value-fix/`。
 
+  [VFS-07 Windows 复现](../tasks/vfs/VFS-07.md) 已越过外部数据挂载的文件流耗尽；
+  进程打开窗口后在 prepare 报 SensorManager intrinsic 层级未注册，尚未进入游戏。
+  宿主句柄池 Windows/Linux 定向通过，macOS 待原生验证。证据
+  `.local/wb-windows-vfs-fix-20261009-121725/`；进程已退出。
+
 - **Tales From Deep Space 1.0.0**：VideoView/packed depth/stencil 已闭合；macOS
   800×480/1280×720 菜单裁剪，BND-29 终止断言失败。
   [DVM-217](../tasks/dexvm/DVM-217.md)：1920×1080 存档重载恢复关卡通过。

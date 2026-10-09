@@ -6,6 +6,9 @@
 
 ## 依赖与边界
 
+- 宿主只读文件使用 O_CLOEXEC/O_NOFOLLOW fd 与 pread；身份来自 fstat dev/inode，
+  EINTR 重试、取消及错误传播，不使用共享文件偏移。
+
 - 可依赖公开 HAL 接口、SDL3 及 Apple 宿主框架。
 - 不得被除 HAL 装配点之外的上层模块直接包含。
 - 回调上层必须经过显式 HAL 接口，不包含 guest、游戏或 Android 语义。

@@ -472,6 +472,7 @@ VfsIoStatistics VirtualFileSystem::Impl::IoStatistics() const {
         .full_materialized_bytes =
             full_materialized_bytes_.load(std::memory_order_relaxed),
     };
+    host_pool_->AddStatistics(result);
     std::scoped_lock lock(resource_budget_->mutex);
     result.resource_memory_bytes = resource_budget_->used;
     result.resource_memory_high_water = resource_budget_->high_water;

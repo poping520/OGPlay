@@ -3,7 +3,7 @@
 ## 职责
 
 提供唯一 Android 路径索引、节点/backing/打开状态、定位与顺序 IO、目录操作，以及按安装
-实例持久化的 `SandboxStore`。VFS 只依赖标准库；ZIP/OBB、媒体、Java 与 syscall 只能从
+实例持久化的 `SandboxStore`。核心使用标准库，宿主文件仅通过 HAL 的窄定位读取接口；ZIP/OBB、媒体、Java 与 syscall 只能从
 上层注入或调用，VFS 不反向依赖它们。
 
 ## 核心模型与公共边界
@@ -16,15 +16,19 @@
   `ReadAt`/`WriteAt` 不移动 offset；普通 Read/Write/Seek 在同一打开状态串行，同一节点
   的读写/截断由节点锁排序。失败未交付字节时不推进 offset。
 - 宿主目录挂载在发布前拒绝 symlink、特殊文件、空目录与大小写歧义；单个 OBB 宿主文件
-  可按原文件名只读挂载。每个文件持有一次
-  打开的宿主文件身份并做定位读取，不按路径重复打开。小读不触发全文件物化；宿主外部
+  可按原文件名只读挂载。挂载只索引元数据，首次 guest Open 绑定打开对象身份。
+  所有宿主挂载共用 `host_file_handle_budget`，默认 128；空闲句柄 LRU 回收，独立
+  FD/dup 打开状态、只读 lease 与在途读取强引用保活，不能淘汰。全部占用返回 EMFILE。
+  回收后重新打开复核身份与挂载大小，变化失败；挂载至首次 Open 之间不保证原身份。
+  不通过无界重开或提高 OS/CRT 上限兜底。小读不触发全文件物化；宿主外部
   原地修改不承诺快照，截断造成短读时明确 `-EIO`。
 - `VfsReadLease` 固定节点来源版本与窗口，独立于 FD offset/Close/unlink/rename。只读
   backing 共享拥有状态，并将每次读取的取消 token 传到上层注入的区间 reader；lease
   不提供无预算的全量复制接口。可写来源捕获时在统一资源预算内复制窗口，超限 `-ENOSPC`。
   `VfsConfig::resource_memory_budget_bytes` 默认 128 MiB，也覆盖归档缓存和可写 lazy
   backing 物化及后续扩容；调用方必须先取得 `ReserveResourceMemory` token，再分配并在
-  资源存活期持有。`IoStatistics` 发布 backing 读取、全量物化及总预算/快照当前值与高水位。
+  资源存活期持有。`IoStatistics` 发布 backing 读取、全量物化、总预算/快照及宿主句柄
+  当前值、高水位与淘汰数。
 - 全局锁只用于路径、FD 表和必要元数据；backing 读取、CRC/解压均在锁外。锁序为
   open-state → node → global metadata；不得持 global 等待 backing/node IO。同步沙盒
   fsync/Close/rename 仍允许阻塞落盘，本模块不创建后台预读或线程池。

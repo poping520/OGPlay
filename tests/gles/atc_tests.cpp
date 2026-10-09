@@ -2,6 +2,7 @@
 #include "ogplay/gles/atc.h"
 #include <array>
 #include <limits>
+#include <ostream>
 #include <stdexcept>
 #include <string_view>
 namespace {

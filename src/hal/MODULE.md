@@ -7,6 +7,11 @@
 
 ## 公共 API
 
+- `HostReadFile` / `OpenHostReadFile`：拥有打开对象的身份与尺寸，拒绝最终路径 symlink/
+  reparse point 和非普通文件；原生定位读取不共享 offset，取消与 IO 错误明确传播。
+  Windows 使用原生 HANDLE/独立 OVERLAPPED，macOS/Linux 使用 fd/pread；无 CRT stream、
+  无宿主线程池，不泄漏原生句柄。身份不承诺外部原地修改的内容快照。
+
 - `WebViewHost`：仅宿主启动器使用的静态页面窗口、RPC 字符串回调、事件轮询与脚本投递；
   不暴露 native handle，不创建 guest。当前仅 Windows 实现；冒烟可记录响应并保存 PNG。
 - `WebViewHost::OpenDashboard/CloseDashboard`：按实例复用独立 loopback 窗口，仅允许指定

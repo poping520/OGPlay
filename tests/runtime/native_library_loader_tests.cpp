@@ -1359,8 +1359,8 @@ TEST_CASE("JNI native attachments isolate Java execution identity and detach cle
             CHECK_FALSE(ref.IsNull());
         }
         REQUIRE(java_vm.AttachCurrentThread(264, kJniVersion1_6).status == JniStatus::ok);
-        CHECK_THROWS_WITH(session.Invocations().InvokeStatic(
-            264, *thread_class, *current, {}, JniArgumentSource::value_array),
+        CHECK_THROWS_WITH(static_cast<void>(session.Invocations().InvokeStatic(
+            264, *thread_class, *current, {}, JniArgumentSource::value_array)),
             doctest::Contains("native JNI execution context limit exceeded"));
         for (std::uint64_t id = 200; id <= 264; ++id)
             CHECK(java_vm.DetachCurrentThread(id) == JniStatus::ok);
@@ -4414,7 +4414,7 @@ TEST_CASE("DVM-105/169/175-180 crypto and BKS use BootDex and real guest libcryp
         cleanup_env.Throw(1, original_ref);
         const auto original_pending = cleanup_env.PendingExceptionMetadata(1);
         REQUIRE(original_pending.has_value());
-        CHECK_THROWS_AS(cleanup_env.NewGlobalRef(1, original_ref), runtime::JniExceptionError);
+        CHECK_THROWS_AS(static_cast<void>(cleanup_env.NewGlobalRef(1, original_ref)), runtime::JniExceptionError);
         // Remove the caller's root: the cleanup guard alone must protect it.
         cleanup_env.DeleteLocalRef(1, original_ref);
         {
@@ -4430,7 +4430,7 @@ TEST_CASE("DVM-105/169/175-180 crypto and BKS use BootDex and real guest libcryp
         vm.ReleaseGuestNativeResources(true);
         CHECK(cleanup_env.PendingExceptionMetadata(1)->throwable == original_pending->throwable);
         const auto restored_ref = cleanup_env.ExceptionOccurred(1);
-        CHECK_THROWS_AS(cleanup_env.NewGlobalRef(1, restored_ref), runtime::JniExceptionError);
+        CHECK_THROWS_AS(static_cast<void>(cleanup_env.NewGlobalRef(1, restored_ref)), runtime::JniExceptionError);
         cleanup_env.ExceptionClear(1);
         cleanup_env.DeleteLocalRef(1, restored_ref);
         CHECK(vm.GuestNativeResourceCount() == 0);

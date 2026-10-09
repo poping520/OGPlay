@@ -296,6 +296,9 @@ TEST_CASE("Dashboard busy FD access flags remain unknown") {
     agent::DashboardSources sources;
     sources.filesystem = []() -> std::optional<runtime::VfsSnapshot> {
         runtime::VfsSnapshot snapshot; runtime::VfsDescriptorSnapshot row; row.fd = 3; row.busy = true;
+        snapshot.io.host_file_handles = 2;
+        snapshot.io.host_file_handle_high_water = 4;
+        snapshot.io.host_file_handle_evictions = 8;
         snapshot.descriptors.push_back(row); snapshot.partial = true; return snapshot;
     };
     agent::DashboardService service(sources);
@@ -303,4 +306,20 @@ TEST_CASE("Dashboard busy FD access flags remain unknown") {
     const auto rows = At(At(At(Result(snapshot), "vfs"), "data"), "descriptors");
     CHECK(At(*rows.Element(0), "readable").IsNull());
     CHECK(At(*rows.Element(0), "writable").IsNull());
+    const auto vfs = At(At(Result(snapshot), "vfs"), "data");
+    CHECK(Uint(vfs, "host_file_handles") == 2);
+    CHECK(Uint(vfs, "host_file_handle_high_water") == 4);
+    CHECK(Uint(vfs, "host_file_handle_evictions") == 8);
+    sources.filesystem = {};
+    sources.vfs = []() -> std::optional<runtime::VfsIoStatistics> {
+        runtime::VfsIoStatistics io;
+        io.host_file_handles = 1; io.host_file_handle_high_water = 3; io.host_file_handle_evictions = 9;
+        return io;
+    };
+    agent::DashboardService fallback(sources);
+    const auto fallback_snapshot = Call(fallback, "dash.snapshot", R"({"sections":["vfs"]})");
+    const auto fallback_vfs = At(At(Result(fallback_snapshot), "vfs"), "data");
+    CHECK(Uint(fallback_vfs, "host_file_handles") == 1);
+    CHECK(Uint(fallback_vfs, "host_file_handle_high_water") == 3);
+    CHECK(Uint(fallback_vfs, "host_file_handle_evictions") == 9);
 }

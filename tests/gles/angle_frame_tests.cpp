@@ -277,7 +277,7 @@ TEST_CASE("ATC fallback samples real textures and preserves PBO and unpack state
             frame.BindBuffer(0x88ec, pbo);
             std::array<std::byte, 32> storage{};
             std::copy(block.begin(), block.end(), storage.begin() + 16);
-            frame.BufferData(0x88ec, storage.size(), std::span<const std::byte>(storage), 0x88e4);
+            frame.BufferData(0x88ec, static_cast<std::uint32_t>(storage.size()), std::span<const std::byte>(storage), 0x88e4);
             frame.PixelStore(0x0cf2, 9);
             frame.PixelStore(0x0cf4, 3);
             const std::array<std::uint32_t, 8> args{0x0de1,0,0x8c93,4,4,0,16,16};

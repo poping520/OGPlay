@@ -223,11 +223,11 @@ void OpenVideoSource(const Context& context, dx::IntrinsicContext& call,
         state.duration_ms = state.player->Metadata().duration_ms;
         state.pending_event = 1;
         context->video_views.insert_or_assign(call.receiver.Value(), std::move(state));
-        if (const auto node = FindViewUiNode(*context, call.receiver.Value())) {
-            auto* view = context->ui_tree.Get(*node);
+        if (const auto view_node = FindViewUiNode(*context, call.receiver.Value())) {
+            auto* view = context->ui_tree.Get(*view_node);
             const auto& metadata = context->video_views.at(call.receiver.Value()).player->Metadata();
             view->intrinsic = {static_cast<std::int32_t>(metadata.width), static_cast<std::int32_t>(metadata.height)};
-            context->ui_tree.MarkLayoutDirty(*node);
+            context->ui_tree.MarkLayoutDirty(*view_node);
         }
         GuestLog(call, core::LogLevel::info, "VideoView: local video prepared; callback pending");
     } catch (const video::VideoPlayerError& error) {

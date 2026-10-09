@@ -207,8 +207,6 @@ namespace {
             "createBitmap dimensions are invalid: " +
                 std::to_string(width) + "x" + std::to_string(height)};
     }
-    const auto pixel_count = static_cast<std::size_t>(width) *
-                             static_cast<std::size_t>(height);
     DexVmAndroidContext::BitmapState state;
     state.width = width;
     state.height = height;

@@ -262,7 +262,7 @@ std::uint32_t AngleFrame::CreateShader(const std::uint32_t type) {
 
 void AngleFrame::ShaderSource(const std::uint32_t shader,
                               const std::span<const std::string> sources) {
-    if (sources.size() > static_cast<std::size_t>(std::numeric_limits<std::int32_t>::max())) {
+    if (sources.size() > static_cast<std::size_t>((std::numeric_limits<std::int32_t>::max)())) {
         throw std::length_error("ANGLE shader source count overflows GLsizei");
     }
 #if OGPLAY_HAS_ANGLE
@@ -271,7 +271,7 @@ void AngleFrame::ShaderSource(const std::uint32_t shader,
     pointers.reserve(sources.size());
     lengths.reserve(sources.size());
     for (const auto& source : sources) {
-        if (source.size() > static_cast<std::size_t>(std::numeric_limits<GLint>::max())) {
+        if (source.size() > static_cast<std::size_t>((std::numeric_limits<GLint>::max)())) {
             throw std::length_error("ANGLE shader source length overflows GLint");
         }
         pointers.push_back(source.data());
@@ -1111,7 +1111,7 @@ void AngleFrame::ReadPixels(
 void AngleFrame::ReadRgba8(std::vector<std::uint8_t>& result) {
     constexpr std::uint64_t kChannels = 4;
     const auto pixels = static_cast<std::uint64_t>(width_) * height_;
-    if (pixels > std::numeric_limits<std::size_t>::max() / kChannels) {
+    if (pixels > (std::numeric_limits<std::size_t>::max)() / kChannels) {
         throw std::overflow_error("ANGLE frame readback size overflows");
     }
     result.resize(static_cast<std::size_t>(pixels * kChannels));
@@ -1128,7 +1128,7 @@ void AngleFrame::ReadRgba8(std::vector<std::uint8_t>& result) {
     // A pack buffer uses its GPU buffer-copy path, then one synchronized map.
     // Keep this synchronous and private to the presentation readback.
     const bool use_pbo = lifecycle_.Info().backend.renderer == AngleRenderer::metal &&
-        result.size() <= static_cast<std::size_t>(std::numeric_limits<std::int32_t>::max()) &&
+        result.size() <= static_cast<std::size_t>((std::numeric_limits<std::int32_t>::max)()) &&
         (es3 || (has_pbo && HasExtension(extensions, "GL_EXT_map_buffer_range") &&
                            HasExtension(extensions, "GL_OES_mapbuffer")));
     constexpr std::array<GLenum, 3> pack_names{0x0D02U, 0x0D03U, 0x0D04U};

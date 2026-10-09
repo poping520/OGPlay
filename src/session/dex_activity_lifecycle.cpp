@@ -1422,7 +1422,7 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
                 if (on(c.renderer_egl,"eglGetConfigs",
                     "(Ljavax/microedition/khronos/egl/EGLDisplay;[Ljavax/microedition/khronos/egl/EGLConfig;I[I)Z",
                     {ref(c.renderer_display),ref(dx::VmObjectRef{}),integer(0),ref(count)}).AsInt()) {
-                    const auto size = std::min<std::uint32_t>(vm.Model().GetPrimitiveElement(count,0),16U);
+                    const auto size = std::min<std::uint64_t>(vm.Model().GetPrimitiveElement(count,0),16U);
                     const auto configs = vm.Model().NewObjectArray(vm.Linker().ResolveDescriptor("[Ljavax/microedition/khronos/egl/EGLConfig;"),
                         vm.Linker().ResolveDescriptor("Ljavax/microedition/khronos/egl/EGLConfig;"),static_cast<runtime::JniSize>(size));
                     const auto roots = vm.ProtectReferences(std::array{configs});

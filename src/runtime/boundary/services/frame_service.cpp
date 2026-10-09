@@ -97,12 +97,12 @@ void FrameService::PublishAngleFrame(gles::AngleFrame& angle_frame) {
     bool current_epoch{};
     { std::scoped_lock lock(mutex_); current_epoch = epoch == readback_epoch_; }
     if (async_enabled_ && current_epoch) {
-        auto pipeline = gles::AsyncAngleReadback::Create(angle_frame,
+        auto new_pipeline = gles::AsyncAngleReadback::Create(angle_frame,
             [this, epoch](std::vector<std::uint8_t> pixels) {
                 PublishReadback(std::move(pixels), epoch);
             });
         std::scoped_lock lock(mutex_);
-        if (epoch == readback_epoch_) async_readback_ = std::move(pipeline);
+        if (epoch == readback_epoch_) async_readback_ = std::move(new_pipeline);
     }
 }
 

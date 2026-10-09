@@ -2066,6 +2066,21 @@ status = "partial"
 test = "tools/bootdex/build_bootdex.py build/check; tools.android_payload_current; tests/runtime/native_library_loader_tests.cpp: DVM-223; tests/loader/apk_manifest_tests.cpp: DVM-223"
 note = "DVM-223/ADR-0104：BootDex Activity 保存每实例结果字段、monitor/setResult/转发；两个 native 提交 FIFO 启动/结束快照。单任务栈保留原调用方、Intent 副本、普通 View 内容与焦点，Window/attributes/decor 与焦点按实例隔离，后台 findViewById 查询自身子树；结果在恢复时先于 resume 虚派，默认取消、负请求无结果、自定义码保留。重复/中间 finish、嵌套、GC 及 onStart 启动/onCreate 结束有双解释器回归。Manifest launchMode 保留且 ActivityInfo 发布；standard 与非栈顶 singleTop 新建，复用/task 模式、非空 options、for-result 非零 flags/跨包明确失败。保留活动 GL/Surface/native callback/video 调用方及后台换前台内容不支持；完整 Fragment/task/多窗口、跨进程 Parcel/URI 授权、跨平台与 title gate 未验收。"
 
+[dexvm.notification_values]
+status = "partial"
+test = "tests/dexvm/android_value_tests.cpp: DVM227; tools/bootdex/build_bootdex.py build/check; tools.android_payload_current"
+note = "DVM-227/ADR-0109：Notification 有界 Java 值对象保留 API19 常见字段/常量、Bundle、默认及 icon/ticker/when 构造，普通字段/GC/统一 Clock 受检。setLatestEventInfo 对缺席的系统模板记账抛可捕获 UOE，不改现有值或构造 contentView。Parcelable/CREATOR 形状存在，传输拒绝；完整 Builder/Style/Action/RemoteViews 执行和反射闭包、clone、跨平台/完整游戏未验收。"
+
+[dexvm.notification_template]
+status = "unimplemented"
+test = "tests/dexvm/android_value_tests.cpp: DVM227"
+note = "无 Android 系统通知模板/主题事实，合法 setLatestEventInfo 请求明确拒绝并记账，客户端可捕获 UOE 回退；null Context 按 Java NPE。不伪造布局或发布通知。"
+
+[dexvm.notification_parcel]
+status = "unimplemented"
+test = "tests/dexvm/android_value_tests.cpp: DVM227"
+note = "Notification Parcel 构造/写出拒绝并记账，不提供跨进程通知传输；Parcelable 标记及 CREATOR.newArray 仅类型/普通数组语义。"
+
 [dexvm.notification_cancel]
 status = "partial"
 test = "tools/bootdex/build_bootdex.py build/check; tools.android_payload_current; tests/dexvm/android_value_tests.cpp: DVM-224"
@@ -2074,4 +2089,4 @@ note = "DVM-224/ADR-0105：Context 正常初始化并缓存 BootDex Notification
 [dexvm.notification_post]
 status = "unimplemented"
 test = "tests/dexvm/android_value_tests.cpp: DVM-224"
-note = "通知发布禁用：notify(null) NPE，非空请求走 private nativeRejectPost，记账并抛 UnsupportedOperationException，不存储对象或静默丢弃。仅纳入管理器原型，不包含 Notification/Builder/RemoteViews 值构建、状态栏、系统弹窗、声振、点击/删除 PendingIntent 派发、跨用户或通知持久化。"
+note = "通知发布禁用：notify(null) NPE，非空请求走 private nativeRejectPost，记账并抛 UnsupportedOperationException，不存储对象或静默丢弃。Notification 有界值对象独立纳入 DVM-227，不包含 Builder/RemoteViews 模板执行、状态栏、系统弹窗、声振、点击/删除 PendingIntent 派发、跨用户或通知持久化。"

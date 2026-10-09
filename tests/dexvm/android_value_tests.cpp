@@ -10,6 +10,8 @@
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <fstream>
+#include <iterator>
 #include <memory>
 #include <optional>
 #include <string>
@@ -48,14 +50,22 @@ struct AndroidValueVm final {
 
     AndroidValueVm(InterpreterBackend backend = InterpreterBackend::switch_dispatch,
                    const std::vector<IntrinsicClassDecl>& extras = {},
-                   bool force_all_bridge = false)
+                   bool force_all_bridge = false,
+                   const char* dex_fixture = nullptr)
         : vm(
-              [this, &extras]() -> DexClassLinker& {
+              [this, &extras, dex_fixture]() -> DexClassLinker& {
                   linker.RegisterIntrinsics(CoreIntrinsicCatalog(
                       AndroidCoreIntrinsicServices(context)));
                   linker.RegisterIntrinsics(AndroidIntrinsicCatalog(context));
                   ogplay::test::RegisterBootDex(linker);
                   linker.RegisterIntrinsics(extras);
+                  if (dex_fixture != nullptr) {
+                      const auto path = std::string(OGPLAY_DEXVM_FIXTURE_DIR) + "/" + dex_fixture;
+                      std::ifstream input(path, std::ios::binary);
+                      REQUIRE_MESSAGE(input.good(), "missing fixture: ", path);
+                      linker.RegisterDex(std::vector<std::uint8_t>(
+                          std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>()));
+                  }
                   linker.Link();
                   return linker;
               }(),
@@ -7328,5 +7338,93 @@ TEST_CASE("DVM226 PrintStream owns error and autoFlush semantics and System stre
         CHECK(f.On(stdout_stream, "checkError", "()Z").AsInt() == 0);
         f.On(stdout_stream, "print", "(Ljava/lang/String;)V", {VmValue::Ref(f.vm.NewStringUtf8("closed"))});
         CHECK(f.On(stdout_stream, "checkError", "()Z").AsInt() == 1);
+    }
+}
+
+TEST_CASE("DVM227 notification values reject system templates with catchable recorded failure") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        AndroidValueVm f(backend, {}, false, "notification_template.dex");
+        f.context->package_name = "fixture";
+        const auto base = f.New("Landroid/content/Context;");
+        const auto before = f.Static("Ljava/lang/System;", "currentTimeMillis", "()J").AsLong();
+        const auto notification = f.New("Landroid/app/Notification;");
+        const auto after = f.Static("Ljava/lang/System;", "currentTimeMillis", "()J").AsLong();
+        const auto type = f.model.ObjectClass(notification);
+        CHECK(f.linker.Class(type).is_boot_dex);
+        CHECK(f.linker.IsAssignable(f.linker.ResolveDescriptor("Landroid/os/Parcelable;"), type));
+        const auto field = [&](const char* name, const char* descriptor) {
+            const auto found = f.linker.FindFieldRecursive(type, name, descriptor);
+            REQUIRE(found.has_value());
+            return f.linker.Field(*found).slot;
+        };
+        const auto timestamp_slot = field("when", "J");
+        const auto timestamp = static_cast<std::uint64_t>(f.model.InstanceSlots(notification)[timestamp_slot].bits) |
+            static_cast<std::uint64_t>(f.model.InstanceSlots(notification)[timestamp_slot + 1].bits) << 32U;
+        CHECK(timestamp >= static_cast<std::uint64_t>(before));
+        CHECK(timestamp <= static_cast<std::uint64_t>(after));
+        CHECK(f.model.InstanceSlots(notification)[field("priority", "I")].bits == 0);
+        CHECK(f.model.InstanceSlots(notification)[field("audioStreamType", "I")].bits == UINT32_MAX);
+        const auto extras = VmObjectRef{f.model.InstanceSlots(notification)[field("extras", "Landroid/os/Bundle;")].bits};
+        REQUIRE(extras.IsValid());
+        const auto title = f.vm.NewStringUtf8("title");
+        const auto legacy = f.New("Landroid/app/Notification;", "(ILjava/lang/CharSequence;J)V",
+            {VmValue::Int(17), VmValue::Ref(title), VmValue::Long(0x123456789LL)});
+        CHECK(f.model.InstanceSlots(legacy)[field("icon", "I")].bits == 17);
+        CHECK(f.model.InstanceSlots(legacy)[field("tickerText", "Ljava/lang/CharSequence;")].bits == title.Value());
+        CHECK(f.model.InstanceSlots(legacy)[timestamp_slot].bits == 0x23456789U);
+        CHECK(f.model.InstanceSlots(legacy)[timestamp_slot + 1].bits == 1U);
+        const auto roots = f.vm.ProtectReferences(std::array{base, notification, legacy});
+        CHECK(f.vm.MarkReachable().IsMarked(extras));
+        CHECK(f.vm.MarkReachable().IsMarked(title));
+        static_cast<void>(f.vm.CollectGarbage());
+        CHECK(f.model.IsValidRef(extras));
+        CHECK(f.On(notification, "describeContents", "()I").AsInt() == 0);
+        const auto signature = "(Landroid/content/Context;Ljava/lang/CharSequence;Ljava/lang/CharSequence;Landroid/app/PendingIntent;)V";
+        const auto result = f.OnOutcome(legacy, "setLatestEventInfo", signature,
+            {VmValue::Ref(base), VmValue::Ref(title), VmValue::Ref(VmObjectRef{}), VmValue::Ref(VmObjectRef{})});
+        REQUIRE(result.exception.IsValid());
+        CHECK(f.linker.Class(result.exception_class).descriptor == "Ljava/lang/UnsupportedOperationException;");
+        CHECK(f.model.InstanceSlots(legacy)[field("icon", "I")].bits == 17);
+        CHECK(f.model.InstanceSlots(legacy)[field("tickerText", "Ljava/lang/CharSequence;")].bits == title.Value());
+        CHECK(f.model.InstanceSlots(legacy)[field("contentView", "Landroid/widget/RemoteViews;")].bits == 0);
+        CHECK(f.model.InstanceSlots(legacy)[field("contentIntent", "Landroid/app/PendingIntent;")].bits == 0);
+        CHECK(f.Static("Lfixture/NotificationTemplateProbe;", "fallback", "(Landroid/content/Context;)I", {VmValue::Ref(base)}).AsInt() == 1);
+        auto hits = f.ledger.Unimplemented();
+        REQUIRE(hits.size() == 1);
+        CHECK(hits[0].id == "dexvm.notification_template");
+        CHECK(hits[0].count == 2);
+        const auto null_context = f.OnOutcome(legacy, "setLatestEventInfo", signature,
+            {VmValue::Ref(VmObjectRef{}), VmValue::Ref(title), VmValue::Ref(VmObjectRef{}), VmValue::Ref(VmObjectRef{})});
+        REQUIRE(null_context.exception.IsValid());
+        CHECK(f.linker.Class(null_context.exception_class).descriptor == "Ljava/lang/NullPointerException;");
+        CHECK(f.ledger.Unimplemented()[0].count == 2);
+        const auto parcel = f.Static("Landroid/os/Parcel;", "obtain", "()Landroid/os/Parcel;").ref;
+        const auto rejected_parcel = f.OnOutcome(notification, "writeToParcel", "(Landroid/os/Parcel;I)V", {VmValue::Ref(parcel), VmValue::Int(0)});
+        REQUIRE(rejected_parcel.exception.IsValid());
+        CHECK(f.linker.Class(rejected_parcel.exception_class).descriptor == "Ljava/lang/UnsupportedOperationException;");
+        hits = f.ledger.Unimplemented();
+        CHECK(std::ranges::any_of(hits, [](const auto& hit) { return hit.id == "dexvm.notification_parcel" && hit.count == 1; }));
+        const auto parcel_ctor = f.linker.FindDirectMethod(type, "<init>", "(Landroid/os/Parcel;)V");
+        REQUIRE(parcel_ctor.has_value());
+        const auto from_parcel = f.vm.Call(*parcel_ctor, std::array{
+            VmValue::Ref(f.vm.NewIntrinsicInstance("Landroid/app/Notification;")), VmValue::Ref(parcel)});
+        REQUIRE(from_parcel.exception.IsValid());
+        CHECK(f.linker.Class(from_parcel.exception_class).descriptor == "Ljava/lang/UnsupportedOperationException;");
+        hits = f.ledger.Unimplemented();
+        CHECK(std::ranges::any_of(hits, [](const auto& hit) { return hit.id == "dexvm.notification_parcel" && hit.count == 2; }));
+        const auto creator_field = f.linker.FindFieldRecursive(type, "CREATOR", "Landroid/os/Parcelable$Creator;");
+        REQUIRE(creator_field.has_value());
+        const auto creator = VmObjectRef{f.linker.Class(type).static_storage[f.linker.Field(*creator_field).slot]};
+        const auto array = f.On(creator, "newArray", "(I)[Ljava/lang/Object;", {VmValue::Int(3)}).ref;
+        CHECK(f.model.ArrayLength(array) == 3);
+        CHECK_FALSE(f.model.GetObjectElement(array, 0).IsValid());
+        const auto manager = f.On(base, "getSystemService", "(Ljava/lang/String;)Ljava/lang/Object;",
+            {VmValue::Ref(f.vm.NewStringUtf8("notification"))}).ref;
+        const auto post = f.OnOutcome(manager, "notify", "(ILandroid/app/Notification;)V", {VmValue::Int(1), VmValue::Ref(notification)});
+        REQUIRE(post.exception.IsValid());
+        CHECK(f.linker.Class(post.exception_class).descriptor == "Ljava/lang/UnsupportedOperationException;");
+        f.On(manager, "cancelAll", "()V");
+        hits = f.ledger.Unimplemented();
+        CHECK(std::ranges::any_of(hits, [](const auto& hit) { return hit.id == "dexvm.notification_post" && hit.count == 1; }));
     }
 }

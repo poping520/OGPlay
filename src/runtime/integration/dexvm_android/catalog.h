@@ -8,6 +8,7 @@ namespace ogplay::runtime::android_intrinsics {
 [[nodiscard]] Decl Declare_android_view_Surface(const Context& context);
 Decl Declare_android_view_InputQueue(const Context &context);
 [[nodiscard]] Decl Declare_android_app_Activity(const Context &context);
+[[nodiscard]] Decl Declare_android_app_Notification(const Context& context);
 [[nodiscard]] Decl Declare_android_app_NotificationManager(const Context& context);
 [[nodiscard]] dx::VmObjectRef NotificationManagerForContext(dx::IntrinsicContext& call, const Context& context);
 [[nodiscard]] Decl Declare_android_app_KeyguardManager(const Context &context);

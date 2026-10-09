@@ -75,6 +75,12 @@
   为 Game$14.run pc20 缺 Message.obtain(Handler,int,int,int,Object)。退出 1、无超时，
   进程已退出；macOS/Linux 与完整游戏未验收。证据 `.local/activity-memory-game-20261009-132205/`。
 
+  [DVM-85 后续](../tasks/dexvm/DVM-85.md) 已补五参数 Message.obtain；Windows Release
+  与定向 3 项/197 断言通过。消息已进入主线程 Game$2.handleMessage pc358，f=36
+  下一首错为 Resources.getDrawable(int) 缺失；GLThread 另捕获 EGL createContext
+  failed: 12288 后退出，未定位。CLI 退出 1、无超时，进程已结束；图形/完整游戏未验收。
+  证据 `.local/message-obtain-game-20261009-161853/`。
+
 - **Tales From Deep Space 1.0.0**：VideoView/packed depth/stencil 已闭合；macOS
   800×480/1280×720 菜单裁剪，BND-29 终止断言失败。
   [DVM-217](../tasks/dexvm/DVM-217.md)：1920×1080 存档重载恢复关卡通过。

@@ -907,8 +907,8 @@ Decl Declare_android_os_Message(const Context& context) {
     static_cast<void>(context);
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/os/Message;", "Ljava/lang/Object;");
     builder.InstanceField("what", "I");
-    builder.InstanceField("arg1", "I");
-    builder.InstanceField("arg2", "I");
+    const auto arg1 = builder.BoundInstanceField("arg1", "I");
+    const auto arg2 = builder.BoundInstanceField("arg2", "I");
     builder.InstanceField("obj", "Ljava/lang/Object;");
     builder.InstanceField("target", "Landroid/os/Handler;");
     builder.StaticMethod("obtain", "(Landroid/os/Handler;ILjava/lang/Object;)Landroid/os/Message;",
@@ -916,6 +916,16 @@ Decl Declare_android_os_Message(const Context& context) {
             return dx::VmValue::Ref(MakeMessage(
                 call, call.arguments[1].AsInt(), call.arguments[2].ref,
                 call.arguments[0].ref));
+        });
+    builder.StaticMethod("obtain", "(Landroid/os/Handler;IIILjava/lang/Object;)Landroid/os/Message;",
+        [arg1, arg2](dx::IntrinsicContext& call) {
+            const auto message = MakeMessage(call, call.arguments[1].AsInt(),
+                call.arguments[4].ref, call.arguments[0].ref);
+            const auto root = call.vm.ProtectReferences(std::array{message});
+            const dx::IntrinsicCall api(call);
+            api.SetInt(arg1, message, call.arguments[2].AsInt());
+            api.SetInt(arg2, message, call.arguments[3].AsInt());
+            return dx::VmValue::Ref(message);
         });
     builder.FinalMethod("sendToTarget", "()V", [](dx::IntrinsicContext& call) {
         const auto slots = call.vm.Model().InstanceSlots(call.receiver);

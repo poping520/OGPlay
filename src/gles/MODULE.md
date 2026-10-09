@@ -220,7 +220,8 @@
 - 依据 [ADR-0063](../../docs/adr/media.md#adr-0063)。验证在 boundary integration 的
   `BND34*`、原 EGL/GLES/ANGLE 定向用例与 catalog gates；不宣称完整 Android 窗口系统。
 
-RGB565 扩展见 ADR-0106：精确 native config 优先；Metal fallback 经 HAL 真实 B5G6R5
+RGB565 扩展见 ADR-0106：精确 native config 优先；原生候选优先保留模板位数、再保留
+深度位数，不因驱动排序丢弃已有 D24S8 backing。Metal fallback 经 HAL 真实 B5G6R5
 纹理与 ANGLE EGLImage 导入，私有 draw/read 默认 FBO 映射为 guest 0，FBO 名称隔离，
 binding 查询归一化且不允许 guest 改写默认附件。存储独立于 Context/share group，
 临时导入成功后才提交，失败恢复 binding/currency；探测实际 bit/量化/alpha 后才发布。

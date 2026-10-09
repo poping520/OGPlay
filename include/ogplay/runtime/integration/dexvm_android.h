@@ -717,10 +717,15 @@ struct DexVmAndroidContext final {
     std::uint8_t alpha{255};
     ui::Rect bounds;
     std::optional<ui::UiNodeId> callback_node;
+        dexvm::VmObjectRef bitmap{};
+        bool bitmap_drawable{false};
+    std::shared_ptr<const ui::UiBitmap> image_projection;
+    std::uint64_t bitmap_revision{};
   };
   // View owns the guest Drawable reference; immutable decoded pixels remain
   // shared in ui_bitmaps while alpha/bounds stay per Drawable instance.
   std::unordered_map<std::uint64_t, dexvm::VmObjectRef> ui_view_backgrounds;
+  std::unordered_map<std::uint64_t, dexvm::VmObjectRef> ui_view_images;
   std::unordered_map<std::uint64_t, UiDrawableState> ui_drawables;
   // Real VideoView playback (ADR-0021). The factory is injected by the
   // frontend. Preparation and errors are deferred to the guest main pump;
@@ -1063,6 +1068,7 @@ void RegisterAndroidOwnerAttachedStateTable(
     const std::shared_ptr<DexVmAndroidContext> &context);
 void VisitAndroidSessionRoots(const DexVmAndroidContext &context,
                               const dexvm::VmRootVisitor &visit);
+void RefreshAndroidImageDrawables(DexVmAndroidContext& context);
 
 // True when the guest asked for the session to end: System.exit(), or the
 // activity that currently owns the screen finished itself with no successor

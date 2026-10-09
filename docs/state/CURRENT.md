@@ -81,6 +81,13 @@
   failed: 12288 后退出，未定位。CLI 退出 1、无超时，进程已结束；图形/完整游戏未验收。
   证据 `.local/message-obtain-game-20261009-161853/`。
 
+  [DVM-229](../tasks/dexvm/DVM-229.md) 接通有实际像素/颜色及 GC 保活的 Drawable→ImageView；
+  [BND-53 后续](../tasks/boundary/BND-53.md) 修正 Windows 原生 RGB565 配置选择，保留 D24S8。
+  Windows Release 与定向 8 项/429 断言通过；原 APK 已越过 EGL 配置错误并进入
+  renderer.onSurfaceCreated。下一阻塞是子 View 未收到 onSizeChanged，渲染线程等待尺寸；
+  f=0、180 秒超时后结束进程，MCP 未 ready。实际资源 Handler 尚未重达，完整游戏及
+  macOS/Linux 本轮未验收。证据 `.local/drawable-egl-game-20261009-190837/`。
+
 - **Tales From Deep Space 1.0.0**：VideoView/packed depth/stencil 已闭合；macOS
   800×480/1280×720 菜单裁剪，BND-29 终止断言失败。
   [DVM-217](../tasks/dexvm/DVM-217.md)：1920×1080 存档重载恢复关卡通过。

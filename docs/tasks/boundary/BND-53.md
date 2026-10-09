@@ -33,3 +33,13 @@ BND34 regular EGL separate surface 回归仍失败 2 断言，与旧 baseline/pr
 原 APK/外部数据、无 Profile/无 survey、隔离沙盒越过 chooser-null 首错，GLThread
 进入 GPUInstallerRenderer.onDrawFrame；下一首错为 GL10.glClear 在 GL10$Impl 上的
 virtual dispatch failed，退出 1，进程已关闭。此 reached-fault 不是完整游戏验收。
+
+Windows 后续（2026-10-09）：ANGLE 已有原生 RGB565 D24S8，但旧代码取第一个
+D0/S0，导致带深度/模板要求的 chooser 返回 null。现优先模板位数、再深度位数，
+查询仍来自真实 native config；Metal fallback 的原支持边界不变。
+Windows Release 构建及 DVM-229/UI/EGL 定向 8 项/429 断言通过，新增深度/模板
+跨非共享 Context 的实际绘制回归；原颜色量化范围兼容 D3D11 的向下量化。
+原 APK 成功 createContext/createSurface/makeCurrent，进入 renderer.onSurfaceCreated；
+随后子 View 尺寸回调缺失导致 f=0 停滞，180 秒超时结束进程。macOS/Linux 本轮未复跑。
+证据 `.local/drawable-egl-complete-{build,tests}.log`、
+`.local/drawable-egl-game-20261009-190837/`；资源链与下一阻塞详见 DVM-229。

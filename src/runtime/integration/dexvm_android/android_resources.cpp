@@ -685,6 +685,16 @@ Decl Declare_android_content_res_Resources(const Context &context) {
   const auto assets = builder.BoundInstanceField(
       "mAssets", "Landroid/content/res/AssetManager;",
       dx::kAccPrivate | dx::kAccFinal);
+  builder.VirtualMethod("getDrawable", "(I)Landroid/graphics/drawable/Drawable;",
+      [context](dx::IntrinsicContext& call) {
+          if (IsSystemResources(context, call.receiver))
+              throw dx::VmJavaThrow{"Landroid/content/res/Resources$NotFoundException;", "system Drawable resources are not available"};
+          try { return dx::VmValue::Ref(MakeResourceDrawable(call, context, static_cast<std::uint32_t>(call.arguments[0].AsInt()))); }
+          catch (const dx::VmJavaThrow&) { throw; }
+          catch (const std::runtime_error& error) {
+              throw dx::VmJavaThrow{"Landroid/content/res/Resources$NotFoundException;", error.what()};
+          }
+      });
   builder.StaticMethod("getSystem", "()Landroid/content/res/Resources;",
                        [context](dx::IntrinsicContext &call) {
                          return dx::VmValue::Ref(ResourceObject(call, context, true));

@@ -331,18 +331,27 @@ std::shared_ptr<EglDisplayResources> EglDisplayResources::Create(const AngleBack
         EGL_RENDERABLE_TYPE,EGL_OPENGL_ES2_BIT,EGL_RED_SIZE,5,EGL_GREEN_SIZE,6,
         EGL_BLUE_SIZE,5,EGL_ALPHA_SIZE,0,EGL_NONE};
     EGLint packed_count{};
+    EGLint packed_depth{-1}, packed_stencil{-1};
     if (eglChooseConfig(native_display,packed_attributes,nullptr,0,&packed_count)) {
         std::vector<EGLConfig> packed(static_cast<std::size_t>(packed_count));
         if (packed_count && eglChooseConfig(native_display,packed_attributes,packed.data(),packed_count,&packed_count)) {
             for (const auto candidate : packed) {
-                EGLint r{},g{},b{},a{},samples{};
+                EGLint r{},g{},b{},a{},samples{},depth{},stencil{};
                 if (eglGetConfigAttrib(native_display,candidate,EGL_RED_SIZE,&r) &&
                     eglGetConfigAttrib(native_display,candidate,EGL_GREEN_SIZE,&g) &&
                     eglGetConfigAttrib(native_display,candidate,EGL_BLUE_SIZE,&b) &&
                     eglGetConfigAttrib(native_display,candidate,EGL_ALPHA_SIZE,&a) &&
                     eglGetConfigAttrib(native_display,candidate,EGL_SAMPLES,&samples) &&
+                    eglGetConfigAttrib(native_display,candidate,EGL_DEPTH_SIZE,&depth) &&
+                    eglGetConfigAttrib(native_display,candidate,EGL_STENCIL_SIZE,&stencil) &&
                     r==5 && g==6 && b==5 && a==0 && samples==0) {
-                    result->rgb565_config_=ReinterpretHandle<EglHandle>(candidate); break;
+                    // EGL sorts depth/stencil ascending. Retain the most capable
+                    // native backing instead of discarding it for the first D0/S0.
+                    if (stencil > packed_stencil ||
+                        (stencil == packed_stencil && depth > packed_depth)) {
+                        result->rgb565_config_=ReinterpretHandle<EglHandle>(candidate);
+                        packed_depth=depth; packed_stencil=stencil;
+                    }
                 }
             }
         }

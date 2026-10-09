@@ -4,6 +4,8 @@
 #include <doctest/doctest.h>
 
 #include <array>
+#include <algorithm>
+#include <iterator>
 #include <filesystem>
 #include <fstream>
 #include <memory>
@@ -19,6 +21,8 @@
 #include "ogplay/runtime/dexvm/intrinsic_builder.h"
 #include "ogplay/runtime/dexvm/object_model.h"
 #include "ogplay/runtime/integration/dexvm_android.h"
+#include "ogplay/runtime/integration/bitmap_pixels.h"
+#include "ogplay/loader/apk.h"
 #include "ogplay/runtime/ui/ui_renderer.h"
 #include "ogplay/runtime/vfs/vfs.h"
 #include "ogplay/session/dex_activity_lifecycle.h"
@@ -97,7 +101,7 @@ struct ClickVm final {
     VmObjectRef skip_button;
     VmObjectRef other_button;
 
-    ClickVm()
+    explicit ClickVm(const InterpreterBackend backend = InterpreterBackend::switch_dispatch)
         : model(strings, arrays),
           context(std::make_shared<DexVmAndroidContext>()),
           interpreter(
@@ -182,7 +186,7 @@ struct ClickVm final {
                   linker.Link();
                   return linker;
               }(),
-              model, nullptr, ledger, {}) {
+              model, nullptr, ledger, {.backend = backend}) {
         interpreter.Monitors().SetTimeSource([state = context] { return state->uptime_millis.load(); });
         context->surface_width = 100U;
         context->surface_height = 100U;
@@ -1602,6 +1606,125 @@ TEST_CASE("Button three-argument constructor applies the pinned default style") 
     };
     reject(VmObjectRef{}, 0x01010044);  // unregistered framework attr
     reject(attributes, 0x01010049);
+}
+
+TEST_CASE("DVM229 resource Drawables retain image backing alpha and queued GC ownership") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        ClickVm vm(backend);
+        const auto base = vm.interpreter.NewIntrinsicInstance("Landroid/content/Context;");
+        const auto base_root = vm.interpreter.ProtectReferences(std::array{base});
+        vm.CallDirect(base, "Landroid/content/Context;", "<init>", "()V");
+        vm.CallOn(vm.activity, "attachBaseContext", "(Landroid/content/Context;)V", {VmValue::Ref(base)});
+        std::ifstream input(std::filesystem::path(OGPLAY_SOURCE_DIR) / "tests/fixtures/ui/drawable_resource.zip", std::ios::binary);
+        REQUIRE(input.good());
+        const std::vector<char> data{std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>()};
+        vm.context->apk_bytes.resize(data.size());
+        std::transform(data.begin(), data.end(), vm.context->apk_bytes.begin(), [](char value) { return static_cast<std::byte>(value); });
+        vm.context->archive = ogplay::loader::ParseApkArchive(vm.context->apk_bytes);
+        vm.context->arsc.entries = {
+            {.resource_id=101, .type_name="drawable", .entry_name="image", .string_value="res/drawable/test.png", .value_type=3},
+            {.resource_id=102, .type_name="drawable", .entry_name="alias", .value_type=1, .value_data=101},
+            {.resource_id=103, .type_name="color", .entry_name="color", .value_type=0x1c, .value_data=0xff112233},
+            {.resource_id=104, .type_name="drawable", .entry_name="xml", .string_value="res/drawable/test.xml", .value_type=3}};
+        const auto resources = vm.CallOn(vm.activity, "getResources", "()Landroid/content/res/Resources;").ref;
+        const auto resource_roots = vm.interpreter.ProtectReferences(std::array{resources});
+        const auto get = [&](int id) { return vm.CallOn(resources, "getDrawable", "(I)Landroid/graphics/drawable/Drawable;", {VmValue::Int(id)}).ref; };
+        const auto image = vm.interpreter.NewIntrinsicInstance("Landroid/widget/ImageView;");
+        const auto image_root = vm.interpreter.ProtectReferences(std::array{image});
+        vm.CallDirect(image, "Landroid/widget/ImageView;", "<init>", "(Landroid/content/Context;)V", {VmValue::Ref(vm.activity)});
+        VmObjectRef drawable, bitmap;
+        {
+            drawable = get(102);
+            const auto root = vm.interpreter.ProtectReferences(std::array{drawable});
+            CHECK(vm.linker.Class(vm.model.ObjectClass(drawable)).descriptor == "Landroid/graphics/drawable/BitmapDrawable;");
+            CHECK(vm.CallOn(drawable, "getIntrinsicWidth", "()I").AsInt() == 2);
+            CHECK(vm.CallOn(drawable, "getIntrinsicHeight", "()I").AsInt() == 1);
+            bitmap = vm.CallOn(drawable, "getBitmap", "()Landroid/graphics/Bitmap;").ref;
+            REQUIRE(bitmap.IsValid());
+            const auto second = get(101);
+            const auto second_root = vm.interpreter.ProtectReferences(std::array{second});
+            CHECK(second != drawable);
+            vm.CallOn(drawable, "setAlpha", "(I)V", {VmValue::Int(128)});
+            CHECK(vm.context->ui_drawables.at(second.Value()).alpha == 255);
+            vm.CallOn(image, "setImageDrawable", "(Landroid/graphics/drawable/Drawable;)V", {VmValue::Ref(drawable)});
+        }
+        static_cast<void>(vm.interpreter.CollectGarbage("resource-image-binding"));
+        CHECK(vm.CallOn(image, "getDrawable", "()Landroid/graphics/drawable/Drawable;").ref == drawable);
+        CHECK(vm.CallOn(drawable, "getBitmap", "()Landroid/graphics/Bitmap;").ref == bitmap);
+        const auto node = *FindViewUiNode(*vm.context, image.Value());
+        auto* projected = vm.context->ui_tree.Get(node);
+        projected->layout.width = {ui::SizeMode::Fixed, 2}; projected->layout.height = {ui::SizeMode::Fixed, 1};
+        vm.context->ui_tree.Attach(vm.context->ui_tree.Root(), node);
+        const auto render = [&] {
+            RefreshAndroidImageDrawables(*vm.context);
+            ui::LayoutUiTree(vm.context->ui_tree, {100,100});
+            return ui::RasterizeUiOverlay(ui::BuildUiRenderList(vm.context->ui_tree, vm.context->ui_bitmaps), {100,100});
+        };
+        auto frame = render();
+        CHECK(frame.rgba8[0] == 128); CHECK(frame.rgba8[1] == 0); CHECK(frame.rgba8[3] == 128);
+        CHECK(frame.rgba8[4] == 0); CHECK(frame.rgba8[5] == 128); CHECK(frame.rgba8[7] == 128);
+        vm.context->bitmaps.at(bitmap.Value()).pixels->Set(0, 0xff0000ff);
+        frame = render(); CHECK(frame.rgba8[0] == 0); CHECK(frame.rgba8[2] == 128);
+        std::vector<std::byte> native_pixels;
+        const ogplay::memory::GuestAddress native_base(0x1000);
+        const NioDirectMemoryAccess access{
+            .allocate = [&](std::uint32_t size) { native_pixels.resize(size); return native_base; },
+            .release = [&](ogplay::memory::GuestAddress, std::uint32_t) { native_pixels.clear(); },
+            .read = [&](ogplay::memory::GuestAddress address, std::span<std::byte> output) {
+                std::copy_n(native_pixels.begin() + (address.Value() - native_base.Value()), output.size(), output.begin());
+            },
+            .write = [&](ogplay::memory::GuestAddress address, std::span<const std::byte> input) {
+                std::copy(input.begin(), input.end(), native_pixels.begin() + (address.Value() - native_base.Value()));
+            }};
+        const auto pixels = vm.context->bitmaps.at(bitmap.Value()).pixels;
+        static_cast<void>(pixels->Lock(access));
+        native_pixels[0] = std::byte{0}; native_pixels[1] = std::byte{255}; native_pixels[2] = std::byte{0};
+        frame = render(); CHECK(frame.rgba8[1] == 128); CHECK(frame.rgba8[2] == 0);
+        pixels->Unlock();
+        frame = render(); CHECK(frame.rgba8[1] == 128); CHECK(frame.rgba8[2] == 0);
+        const auto color = get(103);
+        const auto color_root = vm.interpreter.ProtectReferences(std::array{color});
+        CHECK(vm.linker.Class(vm.model.ObjectClass(color)).descriptor == "Landroid/graphics/drawable/ColorDrawable;");
+        CHECK(vm.CallOn(color, "getIntrinsicWidth", "()I").AsInt() == -1);
+        vm.CallOn(image, "setImageDrawable", "(Landroid/graphics/drawable/Drawable;)V", {VmValue::Ref(color)});
+        frame = render(); CHECK(frame.rgba8[0] == 0x11); CHECK(frame.rgba8[1] == 0x22); CHECK(frame.rgba8[2] == 0x33);
+        vm.CallOn(color, "setColor", "(I)V", {VmValue::Int(static_cast<std::int32_t>(0xff445566U))});
+        frame = render(); CHECK(frame.rgba8[0] == 0x44); CHECK(frame.rgba8[1] == 0x55); CHECK(frame.rgba8[2] == 0x66);
+        projected->padding.left = 1;
+        frame = render(); CHECK(frame.rgba8[3] == 0); CHECK(frame.rgba8[4] == 0x44);
+        projected->padding.left = 0;
+        const auto previous = vm.CallOn(image, "getDrawable", "()Landroid/graphics/drawable/Drawable;").ref;
+        const auto resource_class = vm.model.ObjectClass(resources);
+        const auto method = *vm.linker.FindVtableIndex(resource_class, "getDrawable", "(I)Landroid/graphics/drawable/Drawable;");
+        const auto invalid = vm.interpreter.Call(vm.linker.Class(resource_class).vtable[method], std::vector{VmValue::Ref(resources), VmValue::Int(0)});
+        REQUIRE(invalid.exception.IsValid());
+        CHECK(vm.linker.Class(invalid.exception_class).descriptor == "Landroid/content/res/Resources$NotFoundException;");
+        const auto system = vm.interpreter.Call(*vm.linker.FindDirectMethod(resource_class, "getSystem", "()Landroid/content/res/Resources;"), std::vector<VmValue>{}).value.ref;
+        const auto system_root = vm.interpreter.ProtectReferences(std::array{system});
+        const auto system_image = vm.interpreter.Call(vm.linker.Class(resource_class).vtable[method], std::vector{VmValue::Ref(system), VmValue::Int(101)});
+        REQUIRE(system_image.exception.IsValid());
+        CHECK(vm.linker.Class(system_image.exception_class).descriptor == "Landroid/content/res/Resources$NotFoundException;");
+        const auto unsupported = vm.interpreter.Call(vm.linker.Class(resource_class).vtable[method], std::vector{VmValue::Ref(resources), VmValue::Int(104)});
+        REQUIRE(unsupported.exception.IsValid());
+        CHECK(vm.linker.Class(unsupported.exception_class).descriptor == "Ljava/lang/UnsupportedOperationException;");
+        CHECK(vm.CallOn(image, "getDrawable", "()Landroid/graphics/drawable/Drawable;").ref == previous);
+        vm.CallOn(image, "setImageDrawable", "(Landroid/graphics/drawable/Drawable;)V", {VmValue::Ref(VmObjectRef{})});
+        CHECK_FALSE(vm.CallOn(image, "getDrawable", "()Landroid/graphics/drawable/Drawable;").ref.IsValid());
+        frame = render(); CHECK(frame.rgba8[3] == 0);
+        const auto empty = vm.interpreter.NewIntrinsicInstance("Landroid/graphics/drawable/BitmapDrawable;");
+        const auto empty_root = vm.interpreter.ProtectReferences(std::array{empty});
+        vm.CallDirect(empty, "Landroid/graphics/drawable/BitmapDrawable;", "<init>", "(Landroid/graphics/Bitmap;)V", {VmValue::Ref(VmObjectRef{})});
+        CHECK_FALSE(vm.CallOn(empty, "getBitmap", "()Landroid/graphics/Bitmap;").ref.IsValid());
+        CHECK(vm.CallOn(empty, "getIntrinsicWidth", "()I").AsInt() == -1);
+        vm.CallOn(image, "setImageDrawable", "(Landroid/graphics/drawable/Drawable;)V", {VmValue::Ref(empty)});
+        frame = render(); CHECK(frame.rgba8[3] == 0);
+        const auto legacy = get(101);
+        const auto legacy_root = vm.interpreter.ProtectReferences(std::array{legacy});
+        vm.CallOn(image, "setImageDrawable", "(Landroid/graphics/drawable/Drawable;)V", {VmValue::Ref(legacy)});
+        vm.CallOn(image, "setImageResource", "(I)V", {VmValue::Int(101)});
+        CHECK_FALSE(vm.context->ui_view_images.contains(image.Value()));
+        frame = render(); CHECK(frame.rgba8[0] == 255); CHECK(frame.rgba8[1] == 0); CHECK(frame.rgba8[3] == 255);
+    }
 }
 
 TEST_CASE("Button inherits View background identity and Drawable alpha invalidates") {

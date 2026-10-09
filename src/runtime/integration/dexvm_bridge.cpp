@@ -196,6 +196,7 @@ void VisitAndroidSessionRoots(const DexVmAndroidContext& context,
     }
     for (const auto& [_, ref] : context.ui_node_to_object) root(ref);
     for (const auto& [_, ref] : context.ui_view_backgrounds) root(ref);
+    for (const auto& [_, ref] : context.ui_view_images) root(ref);
 }
 
 void RegisterAndroidOwnerAttachedStateTable(
@@ -236,6 +237,8 @@ void RegisterAndroidOwnerAttachedStateTable(
                 found != context->holder_canvases.end()) visit_ref(found->second);
             if (const auto found = context->ui_view_layout_params.find(key);
                 found != context->ui_view_layout_params.end()) visit_ref(found->second);
+            if (const auto image = context->ui_view_images.find(key); image != context->ui_view_images.end()) visit_ref(image->second);
+            if (const auto state = context->ui_drawables.find(key); state != context->ui_drawables.end()) visit_ref(state->second.bitmap);
             if (const auto node = context->object_to_ui_node.find(key);
                 node != context->object_to_ui_node.end()) {
                 if (const auto found = context->ui_click_listeners.find(node->second);
@@ -315,6 +318,10 @@ void RegisterAndroidOwnerAttachedStateTable(
                 context->ui_view_backgrounds.erase(background);
             }
             context->ui_drawables.erase(key);
+            if (const auto image = context->ui_view_images.find(key); image != context->ui_view_images.end()) {
+                if (const auto state = context->ui_drawables.find(image->second.Value()); state != context->ui_drawables.end()) state->second.callback_node.reset();
+                context->ui_view_images.erase(image);
+            }
             {
                 std::scoped_lock video_lock(context->video_views_mutex);
                 context->video_views.erase(key);

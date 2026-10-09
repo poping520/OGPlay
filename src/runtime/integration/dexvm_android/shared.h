@@ -205,6 +205,10 @@ void DeliverMessage(dx::IntrinsicContext& call, dx::VmObjectRef handler,
                                           std::int32_t what,
                                           dx::VmObjectRef object,
                                           dx::VmObjectRef target);
+[[nodiscard]] dx::VmObjectRef MakeResourceDrawable(dx::IntrinsicContext& call,
+    const Context& context, std::uint32_t resource_id);
+void BindImageDrawable(dx::Interpreter& vm, const Context& context,
+    dx::VmObjectRef view, dx::VmObjectRef drawable);
 
 // Shared handler factories: cross-class handlers built on demand by the
 // per-class declaration units. Factories that bind session state take the

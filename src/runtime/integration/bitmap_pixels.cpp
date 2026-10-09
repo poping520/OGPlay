@@ -72,10 +72,11 @@ std::uint32_t BitmapPixels::Get(std::size_t i) const {
 }
 void BitmapPixels::Set(std::size_t i, std::uint32_t c) {
     const auto offset = Offset(i);
-    if (address_.IsNull()) { colors_.at(i) = c; return; }
+    if (address_.IsNull()) { colors_.at(i) = c; ++revision_; return; }
     std::array<std::byte, 4> bytes{};
     Encode(c, bytes);
     access_.write(address_.Add(offset), std::span(bytes).first(bytes_per_pixel_));
+    ++revision_;
 }
 std::vector<std::uint32_t> BitmapPixels::Snapshot() const {
     if (address_.IsNull()) return colors_;
@@ -107,6 +108,7 @@ void BitmapPixels::Unlock() {
     auto colors = retired_ ? std::vector<std::uint32_t>{} : Snapshot();
     access_.release(address_, byte_count_);
     colors_ = std::move(colors); address_ = memory::GuestAddress{}; access_ = {}; locks_ = 0;
+    ++revision_;
 }
 void BitmapPixels::Retire() { retired_ = true; if (locks_ == 0) colors_.clear(); }
 void BitmapPixels::AbortLocks() {

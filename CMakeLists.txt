@@ -474,6 +474,7 @@ add_library(ogplay_runtime
     src/runtime/integration/api19_linker_view.cpp
     src/runtime/integration/android_guest_call_session.cpp
     src/runtime/integration/guest_cpu_environment.cpp
+    src/runtime/integration/guest_memory_facts.cpp
     src/runtime/integration/nested_guest_cpu_pool.cpp
     src/runtime/integration/android_guest_java_movie.cpp
     src/runtime/integration/android_guest_java_platform.cpp

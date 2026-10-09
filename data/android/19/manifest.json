@@ -82,18 +82,18 @@
           "src/guest/framework/java",
           "src/guest/io/java"
         ],
-        "source_sha256": "7e768b86ee31c3d632d058798724535c35022e6ab66ec14a1933594e183cb3cc",
+        "source_sha256": "12e8bd7472c85f4d410c12d442d7876cff76988ee7912aec536d4a628edaa4f5",
         "javac": "17.0.2",
         "android_jar_sha256": "4032a201eeb1d0430c7d9f1075151dd280427de5ca9e36f734f464ab605cb690",
         "d8_sha256": "d9e6acde0cb6f2453d6835b52c31d2066054394fb79e91115dd4978bde6afd16"
       }
     ],
-    "size": 2858024,
-    "sha256": "2c2cf3f97b2f06e3f6b816648fa6d6f4aaf69983d1983f10bab321ed78933707",
+    "size": 2860000,
+    "sha256": "1521cc72973f62d16939fde43326a5e5bfb383aa80668fcd3cb9540e26240233",
     "dex_entry": "classes.dex",
-    "dex_size": 2853404,
-    "dex_sha256": "b49bfdb9b09fa3a92aac80922ee48199e0164a9348bf7cf84c500f05e13775a3",
-    "class_count": 1916,
+    "dex_size": 2855380,
+    "dex_sha256": "92270d961c612001995c0cde9318ceaafb093383ef3fe87173ddd91bcdca594f",
+    "class_count": 1920,
     "selection_policy": "load-all",
     "notice": "notices/bootdex.jar.txt",
     "notice_sha256": "c5bf8c6efc379e6d5401a40fbf7810aedf9ee81dfa9f2deaa174faa97ded310a"
@@ -244,7 +244,7 @@
       ],
       "build": {
         "generator": "tools/bootdex/build_bootdex.py",
-        "generator_sha256": "a34bc7a87919efcfde1a07f4a35059bdcc6c7b2c50d2d46f15bd401e91c0fdad",
+        "generator_sha256": "05bdd239ca642fbfe1a67ebc3db6a986b3d648fefc0ac0979ff1f7396d420738",
         "ndk_revision": "25.2.9519653",
         "target": "armv7a-linux-androideabi19",
         "language": "C11",

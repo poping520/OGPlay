@@ -1367,6 +1367,7 @@ DexVmGuestBridge::DexVmGuestBridge(
         });
 
     auto core_services = AndroidCoreIntrinsicServices(android_context);
+    if (android_context) android_context->memory_snapshot = session.MemorySnapshot();
     core_services.cpu_cores = session.CpuConfig().cores;
     auto core_catalog = dx::CoreIntrinsicCatalog(std::move(core_services));
     BindPlatformCoreHandlers(core_catalog, android_context);

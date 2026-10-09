@@ -1,6 +1,7 @@
 #pragma once
 
 #include "ogplay/runtime/common/guest_cpu_config.h"
+#include "ogplay/runtime/common/guest_memory_facts.h"
 
 #include <atomic>
 #include "ogplay/cpu/dynarmic.h"
@@ -169,14 +170,6 @@ void BindAndroidGuestJavaPlatformHandlers(
 
 void InstallAndroidGuestFrameworkPlatform(JniClassRegistry& classes);
 
-// Virtual-device facts published to API 19 guest /proc files. Values are
-// explicit session configuration and never observations of the host machine.
-struct GuestProcFacts final {
-    std::uint32_t memory_total_kb{524288};
-    std::uint32_t memory_free_kb{262144};
-    GuestCpuConfig cpu;
-};
-
 struct AndroidGuestCallSessionRequest final {
     std::uint32_t api{19};
     std::string root_module;
@@ -282,6 +275,7 @@ public:
         std::function<void(std::span<std::int64_t>, std::uint32_t)> mix);
     [[nodiscard]] VirtualFileSystem* Filesystem() noexcept;
     [[nodiscard]] const GuestCpuConfig& CpuConfig() const noexcept;
+    [[nodiscard]] const GuestMemorySnapshot& MemorySnapshot() const noexcept;
     [[nodiscard]] std::optional<std::string> ProcessEnvironmentValue(
         std::string_view name) const;
     [[nodiscard]] std::vector<GuestProcessEnvironmentEntry>
@@ -411,6 +405,7 @@ public:
         std::function<void(std::span<std::int64_t>, std::uint32_t)> mix);
     [[nodiscard]] VirtualFileSystem* Filesystem() noexcept;
     [[nodiscard]] const GuestCpuConfig& CpuConfig() const noexcept;
+    [[nodiscard]] const GuestMemorySnapshot& MemorySnapshot() const noexcept;
     [[nodiscard]] AndroidGuestProcess& Process() noexcept;
     // Resolves a Java_ native export (short then long JNI name) across the
     // loaded guest namespace; empty when the method is not exported.

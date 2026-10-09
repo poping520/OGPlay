@@ -360,10 +360,10 @@ TEST_CASE("Android guest process starts and stops without an application ELF") {
     CHECK(process->GuestJavaVm().Value() != 0);
     CHECK(process->AttachedJniThreadCount() == 1);
     constexpr std::string_view expected_meminfo =
-        "MemTotal:         524288 kB\n"
-        "MemFree:          262144 kB\n"
+        "MemTotal:        1048576 kB\n"
+        "MemFree:          524288 kB\n"
         "Buffers:               0 kB\n"
-        "Cached:           131072 kB\n"
+        "Cached:           262144 kB\n"
         "SwapCached:            0 kB\n"
         "SwapTotal:             0 kB\n"
         "SwapFree:              0 kB\n";
@@ -427,6 +427,8 @@ TEST_CASE("Android guest proc memory values come from injected facts") {
         19, std::span{&module, 1}, {}, 64, 36,
         1000, 1, &filesystem, {}};
     request.proc_facts = {1998156U, 966564U};
+    request.proc_facts.memory_cached_kb = 586872U;
+    request.proc_facts.memory_buffers_kb = 42304U;
     auto process = ogplay::runtime::AndroidGuestProcess::Start(request);
 
     const auto meminfo = ReadVfsText(filesystem, "/proc/meminfo");
@@ -434,21 +436,23 @@ TEST_CASE("Android guest proc memory values come from injected facts") {
           request.proc_facts.memory_total_kb);
     CHECK(ProcMemoryValue(meminfo, "MemFree:") ==
           request.proc_facts.memory_free_kb);
-    CHECK(ProcMemoryValue(meminfo, "Buffers:") == 0U);
+    CHECK(ProcMemoryValue(meminfo, "Buffers:") == 42304U);
     CHECK(ProcMemoryValue(meminfo, "Cached:") ==
-          request.proc_facts.memory_total_kb / 4U);
+          586872U);
+    CHECK(process->MemorySnapshot().TotalBytes() == UINT64_C(1998156) * 1024U);
+    CHECK(process->MemorySnapshot().AvailableBytes() == UINT64_C(1553436) * 1024U);
     CHECK(ProcMemoryValue(meminfo, "SwapCached:") == 0U);
     CHECK(ProcMemoryValue(meminfo, "SwapTotal:") == 0U);
     CHECK(ProcMemoryValue(meminfo, "SwapFree:") == 0U);
     process->Stop();
 }
 
-TEST_CASE("Android guest proc installation preserves an existing snapshot") {
+TEST_CASE("Android guest proc installation preserves a matching snapshot and rejects conflicts") {
     auto libc = MinimalLibcElf();
     const ogplay::loader::Elf32ModuleInput module{
         "libc.so", libc, ogplay::memory::GuestAddress{0x10000000U}};
     ogplay::runtime::VirtualFileSystem filesystem;
-    constexpr std::string_view existing = "explicit existing snapshot\n";
+    const auto existing = ogplay::runtime::MakeGuestMemorySnapshot({}).ProcText();
     filesystem.PutFile(
         "/proc/meminfo",
         std::as_bytes(std::span{existing.data(), existing.size()}), false);
@@ -458,6 +462,12 @@ TEST_CASE("Android guest proc installation preserves an existing snapshot") {
     CHECK(ReadVfsText(filesystem, "/proc/meminfo") == existing);
     CHECK(ReadVfsText(filesystem, "/proc/cpuinfo").find("processor\t: 0") != std::string::npos);
     process->Stop();
+    ogplay::runtime::VirtualFileSystem conflict;
+    constexpr std::string_view stale = "explicit conflicting snapshot\n";
+    conflict.PutFile("/proc/meminfo", std::as_bytes(std::span{stale.data(), stale.size()}), false);
+    CHECK_THROWS_WITH_AS(static_cast<void>(ogplay::runtime::AndroidGuestProcess::Start(
+        {19, std::span{&module, 1}, {}, 64, 36, 1000, 1, &conflict, {}})),
+        "guest proc memory snapshot conflicts with configured facts", ogplay::runtime::AndroidGuestProcessError);
 }
 
 TEST_CASE("Android guest process rejects invalid proc facts") {
@@ -484,6 +494,16 @@ TEST_CASE("Android guest process rejects invalid proc facts") {
             ogplay::runtime::AndroidGuestProcess::Start(excess_free)),
         "Android guest proc facts are invalid",
         ogplay::runtime::AndroidGuestProcessError);
+    auto excess_cached = excess_free;
+    excess_cached.proc_facts.memory_free_kb = 512;
+    excess_cached.proc_facts.memory_cached_kb = 513;
+    CHECK_THROWS_WITH_AS(static_cast<void>(ogplay::runtime::AndroidGuestProcess::Start(excess_cached)),
+        "Android guest proc facts are invalid", ogplay::runtime::AndroidGuestProcessError);
+    auto invalid_pressure = excess_free;
+    invalid_pressure.proc_facts = {};
+    invalid_pressure.proc_facts.memory_pressure.home_kb = 1;
+    CHECK_THROWS_WITH_AS(static_cast<void>(ogplay::runtime::AndroidGuestProcess::Start(invalid_pressure)),
+        "Android guest proc facts are invalid", ogplay::runtime::AndroidGuestProcessError);
 }
 
 TEST_CASE("Android process observes native clone failure without another guest invocation") {

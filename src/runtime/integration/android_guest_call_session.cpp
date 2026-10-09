@@ -79,16 +79,6 @@ constexpr std::uint32_t kNioDirectArenaEnd = 0x78000000U;
     return result;
 }
 
-void AppendProcMemoryLine(std::string& output, const std::string_view name,
-                          const std::uint32_t value_kb) {
-    const auto value = std::to_string(value_kb);
-    constexpr std::size_t kUnitColumn = 24;
-    output += name;
-    output.append(kUnitColumn - name.size() - value.size(), ' ');
-    output += value;
-    output += " kB\n";
-}
-
 std::vector<std::byte> BuildGuestProcMaps(const memory::AddressSpace& space) {
     std::vector<memory::MemoryMappingInfo> mappings;
     try {
@@ -124,26 +114,32 @@ std::vector<std::byte> BuildGuestProcMaps(const memory::AddressSpace& space) {
 }
 
 void InstallApi19ProcFiles(VirtualFileSystem& filesystem,
-                           const GuestProcFacts& facts) {
+                           const GuestMemorySnapshot& facts) {
+    const auto meminfo = facts.ProcText();
+    std::optional<VfsFileInfo> existing;
     try {
-        const auto existing = filesystem.Stat("/proc/meminfo");
-        if (existing.writable) {
+        existing = filesystem.Stat("/proc/meminfo");
+    } catch (const VfsError& error) {
+        if (error.ErrorNumber() != 2) throw;
+    }
+    if (existing) {
+        if (existing->writable) {
             throw AndroidGuestProcessError(
                 "API 19 /proc/meminfo must be read only");
         }
+        if (existing->size != meminfo.size())
+            throw AndroidGuestProcessError("guest proc memory snapshot conflicts with configured facts");
+        const auto fd = filesystem.Open("/proc/meminfo", {.read = true});
+        std::vector<std::byte> bytes(meminfo.size());
+        std::size_t count{};
+        try { count = filesystem.Read(fd, bytes); }
+        catch (...) { filesystem.Close(fd); throw; }
+        filesystem.Close(fd);
+        if (count != bytes.size() || !std::equal(bytes.begin(), bytes.end(),
+                std::as_bytes(std::span{meminfo.data(), meminfo.size()}).begin()))
+            throw AndroidGuestProcessError("guest proc memory snapshot conflicts with configured facts");
         return;
-    } catch (const VfsError&) {
     }
-    std::string meminfo;
-    AppendProcMemoryLine(meminfo, "MemTotal:", facts.memory_total_kb);
-    AppendProcMemoryLine(meminfo, "MemFree:", facts.memory_free_kb);
-    // This startup snapshot uses deterministic virtual-device derivations;
-    // none of these values are sampled from the host.
-    AppendProcMemoryLine(meminfo, "Buffers:", 0U);
-    AppendProcMemoryLine(meminfo, "Cached:", facts.memory_total_kb / 4U);
-    AppendProcMemoryLine(meminfo, "SwapCached:", 0U);
-    AppendProcMemoryLine(meminfo, "SwapTotal:", 0U);
-    AppendProcMemoryLine(meminfo, "SwapFree:", 0U);
     filesystem.PutFile(
         "/proc/meminfo",
         std::as_bytes(std::span{meminfo.data(), meminfo.size()}), false);
@@ -719,13 +715,8 @@ public:
             throw AndroidGuestProcessError(
                 "Android guest call session request is incomplete");
         }
-        if (request.proc_facts.memory_total_kb == 0U ||
-            request.proc_facts.memory_free_kb >
-                request.proc_facts.memory_total_kb) {
-            throw AndroidGuestProcessError(
-                "Android guest proc facts are invalid");
-        }
-        InstallApi19ProcFiles(*filesystem_, request.proc_facts);
+        memory_snapshot_ = MakeGuestMemorySnapshot(request.proc_facts);
+        InstallApi19ProcFiles(*filesystem_, memory_snapshot_);
         const auto random_reader = [](const std::span<std::byte> bytes) {
             hal::FillSecureRandom(bytes);
             return bytes.size();
@@ -1938,6 +1929,7 @@ public:
     }
     VirtualFileSystem* Filesystem() noexcept { return filesystem_; }
     const GuestCpuConfig& CpuConfig() const noexcept { return cpu_environment_.Config(); }
+    const GuestMemorySnapshot& MemorySnapshot() const noexcept { return memory_snapshot_; }
     std::vector<GuestProcessEnvironmentEntry> ProcessEnvironmentEntries()
         const {
         constexpr std::size_t kMaximumEntryBytes = 4096U;
@@ -2344,6 +2336,7 @@ private:
     std::unique_ptr<VfsGeneratedFileRegistration> proc_maps_;
     std::unique_ptr<VfsCharacterDeviceRegistration> urandom_, random_;
     GuestCpuEnvironment cpu_environment_;
+    GuestMemorySnapshot memory_snapshot_;
     memory::CheckedMemoryBus memory_bus_{address_space_};
     AndroidBoundaryHle boundary_;
     GuestJniAbi guest_jni_;
@@ -2587,6 +2580,7 @@ VirtualFileSystem* AndroidGuestProcess::Filesystem() noexcept {
 }
 
 const GuestCpuConfig& AndroidGuestProcess::CpuConfig() const noexcept { return impl_->CpuConfig(); }
+const GuestMemorySnapshot& AndroidGuestProcess::MemorySnapshot() const noexcept { return impl_->MemorySnapshot(); }
 std::optional<std::string> AndroidGuestProcess::ProcessEnvironmentValue(
     const std::string_view name) const {
     return impl_->ProcessEnvironmentValue(name);
@@ -2798,6 +2792,7 @@ void AndroidGuestCallSession::SetAuxiliaryAudioMix(
 }
 VirtualFileSystem* AndroidGuestCallSession::Filesystem() noexcept { return process_->Filesystem(); }
 const GuestCpuConfig& AndroidGuestCallSession::CpuConfig() const noexcept { return process_->CpuConfig(); }
+const GuestMemorySnapshot& AndroidGuestCallSession::MemorySnapshot() const noexcept { return process_->MemorySnapshot(); }
 AndroidGuestProcess& AndroidGuestCallSession::Process() noexcept { return *process_; }
 std::optional<memory::GuestAddress> AndroidGuestCallSession::FindNativeExport(std::string_view class_name, std::string_view method_name, std::string_view descriptor) const { return process_->FindNativeExport(class_name, method_name, descriptor); }
 void AndroidGuestCallSession::InitializeJniLibrary() {

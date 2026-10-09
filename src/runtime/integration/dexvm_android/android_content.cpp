@@ -1732,6 +1732,9 @@ Decl Declare_android_content_Context(const Context &context) {
       "getSystemService", "(Ljava/lang/String;)Ljava/lang/Object;",
       [context](dx::IntrinsicContext &call) {
         const auto name = call.vm.StringUtf8(call.arguments[0].ref);
+        if (name == "activity") {
+          return dx::VmValue::Ref(ActivityManagerForContext(call, context));
+        }
         if (name == "alarm") {
           return dx::VmValue::Ref(Singleton(
               call, context, "alarm", "Landroid/app/AlarmManager;"));

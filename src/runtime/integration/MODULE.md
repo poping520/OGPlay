@@ -58,8 +58,10 @@ Android API 的详细行为以 [dexvm_android](dexvm_android/MODULE.md)为准；
   VM 强根，recycle 延后退役 guest view，bridge 停止线程后解除 hooks 并清理 lease。
   BitmapPixels 在逻辑 ARGB 和 guest 格式存储间转移唯一权威值，Java/GLUtils/Canvas
   共用它；低位格式/预乘 alpha 的量化及调用者无同步并发写不等于完整 Skia 验收。
-- /proc/meminfo 是启动时写入 VFS 的只读 GuestProcFacts 快照：受检 total/free，Buffers/
-  Swap 为 0，Cached 为 total/4；不读取宿主内存或动态刷新。
+- /proc/meminfo 是进程创建时的只读 GuestMemorySnapshot，来自受检 GuestProcFacts：默认
+  总量 1 GiB、free=total/2、Cached 缺省 total/4，cached/buffers 可显式注入，Swap 为 0。
+  free+cached+buffers 不超过 total；与已有 meminfo 内容冲突时拒绝启动。Java/JNI
+  ActivityManager 共用同一快照；不读取宿主内存或动态刷新，不改变 DexVM 堆配额。
 - `dl_unwind_find_exidx` 按 PC 查询 process-owned namespace 的实际 load range，返回所属模块
   经 load bias 重定位的 `PT_ARM_EXIDX` 地址与 8-byte 表项数；初始和动态模块共用 linker 锁。
 - libdl handle 表归 process。dlopen 只解析 guest basename，nullptr 为 RTLD_DEFAULT，

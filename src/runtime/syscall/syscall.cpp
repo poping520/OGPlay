@@ -307,7 +307,8 @@ A32SyscallDispatcher CreateAndroidArmSyscallDispatcher(
 
 void BindAndroidTimeSyscalls(A32SyscallDispatcher& dispatcher,
                              hal::Clock& clock,
-                             memory::AddressSpace& address_space) {
+                             memory::AddressSpace& address_space,
+                             std::function<void(std::uint64_t, std::chrono::nanoseconds)> admit_sleep) {
     constexpr std::int32_t kEfault = 14;
     constexpr std::int32_t kEinval = 22;
     constexpr std::int32_t kEoverflow = 75;
@@ -393,7 +394,7 @@ void BindAndroidTimeSyscalls(A32SyscallDispatcher& dispatcher,
             }
         });
     dispatcher.Implement(
-        162, [&address_space, read32](const A32SyscallFrame& frame)
+        162, [&address_space, read32, admit_sleep = std::move(admit_sleep)](const A32SyscallFrame& frame)
                  -> A32SyscallOutcome {
             try {
                 const memory::GuestAddress request{frame.arguments[0]};
@@ -412,6 +413,7 @@ void BindAndroidTimeSyscalls(A32SyscallDispatcher& dispatcher,
                 const auto duration = std::chrono::seconds(seconds) +
                                       std::chrono::nanoseconds(nanoseconds);
                 if (duration.count() == 0) return 0;
+                if (admit_sleep) admit_sleep(frame.thread_id, duration);
                 std::this_thread::sleep_for(duration);
                 return {0, SupervisorCallProgress::handled_advanced};
             } catch (const memory::MemoryFault&) {

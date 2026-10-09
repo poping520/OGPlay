@@ -95,6 +95,25 @@
   not a registered instance，退出 1、无超时、进程已结束。游戏画面/下一 JNI 缺口未验收；
   Windows/Linux 本轮未复验。证据 `.local/wb-macos-render-fix/`。
 
+  [DVM-231](../tasks/dexvm/DVM-231.md) 补齐 JNI 创建 String/数组的按需真实类型登记；
+  macOS Release 与双后端定向 8 项/417 断言通过。原 String.getBytes 首错消失，
+  Game.nativeInit/GameRenderer.nativeInit 正常返回，进入 nativeRender/appInit；下一
+  nativeRender 抛错后停在 teardown.guest_finalize，主 guest 持续 nanosleep，原异常正文
+  尚未输出。两次取证后超时结束进程，游戏画面/clean shutdown/跨平台未验收。
+  证据 `.local/wb-jni-type-fix/`。
+
+  后续取证定位 nativeRender 首错为 LoadCoalescedFile 的 InputFile != NULL 断言：
+  本地 ETC 配置存在，但 guest 请求 /mnt/sdcard，CLI 仅挂 /sdcard 且缺少对应别名。
+  临时别名对照使原断言消失、appInit 进入步骤 2/3；对照改动已撤回，正式修复待实施。
+  退出仍停滞，取证进程已结束，未取得游戏画面。证据 `.local/wb-solid-color-analysis/`。
+
+  VFS-04 正式补 /mnt/sdcard 别名；[DVM-232](../tasks/dexvm/DVM-232.md) 为健康 fini
+  增加累计墙钟预算/睡眠准入，隔离致命 CPU fault 后的 guest 清理，并提前记录首错。
+  macOS Release 和定向回归通过；原 APK 完成 appInit，f=28785 下一首错为
+  RelativeLayout.removeViewInLayout(View) 缺失。析构等待明确报预算耗尽，退出 1、无超时，
+  进程已结束；完整画面/clean shutdown/跨平台未验收。证据 `.local/wb-storage-cleanup-fix/`。
+
+
 - **Tales From Deep Space 1.0.0**：VideoView/packed depth/stencil 已闭合；macOS
   800×480/1280×720 菜单裁剪，BND-29 终止断言失败。
   [DVM-217](../tasks/dexvm/DVM-217.md)：1920×1080 存档重载恢复关卡通过。

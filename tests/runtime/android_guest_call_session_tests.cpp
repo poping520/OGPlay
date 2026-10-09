@@ -1090,6 +1090,108 @@ TEST_CASE("DVM-218 teardown cleanup is owner scoped and cumulatively bounded") {
                       "teardown cleanup admission rejected");
 }
 
+
+TEST_CASE("DVM-232 DSO fini has a shared wall deadline and rejects oversized sleeps") {
+    using namespace ogplay;
+    for (const bool long_sleep : {false, true}) {
+        auto libc = LibdlDefaultLibcElf();
+        Put32(libc, 0x130, loader::kElfDynamicFini);
+        Put32(libc, 0x134, 0x11040U);
+        Put32(libc, 0x138, 0U);
+        Put32(libc, 100, 64U);
+        Put32(libc, 104, 64U);
+        Put32(libc, 0x1040, 0xe92d4080U); // push r7,lr
+        Put32(libc, 0x1044, 0xe24dd008U); // reserve timespec
+        Put32(libc, 0x1048, long_sleep ? 0xe3a0201eU : 0xe3a02000U);
+        Put32(libc, 0x104c, 0xe58d2000U); // seconds
+        Put32(libc, 0x1050, 0xe59f2018U); // nanoseconds literal
+        Put32(libc, 0x1054, 0xe58d2004U);
+        Put32(libc, 0x1058, 0xe1a0000dU); // request = sp
+        Put32(libc, 0x105c, 0xe3a070a2U); // nanosleep
+        Put32(libc, 0x1060, 0xef000000U);
+        Put32(libc, 0x1064, 0xeafffffbU); // repeat
+        Put32(libc, 0x1070, long_sleep ? 0U : 10000000U);
+        const loader::Elf32ModuleInput module{
+            "libc.so", libc, memory::GuestAddress{0x10000000U}};
+        runtime::VirtualFileSystem filesystem;
+        auto process = runtime::AndroidGuestProcess::Start(
+            {19, std::span{&module, 1}, {}, 64, 36, 10000000, 1, &filesystem, {}});
+        const auto start = hal::Clock::SteadyTimestampNs();
+        std::string failure;
+        try { process->Stop(); }
+        catch (const std::exception& error) { failure = error.what(); }
+        REQUIRE(failure.find("teardown cleanup wall-time budget exhausted") != std::string::npos);
+        const auto elapsed = hal::Clock::SteadyTimestampNs() - start;
+        CHECK(elapsed < UINT64_C(4000000000));
+        if (!long_sleep) CHECK(elapsed > UINT64_C(1000000000));
+        CHECK_FALSE(process->Running());
+        CHECK(process->AttachedJniThreadCount() == 0);
+        CHECK_NOTHROW(process->Stop());
+    }
+}
+
+
+TEST_CASE("DVM-232 healthy DSO fini executes once before host retirement") {
+    using namespace ogplay;
+    auto libc = LibdlDefaultLibcElf();
+    Put32(libc, 0x130, loader::kElfDynamicFini);
+    Put32(libc, 0x134, 0x11040U);
+    Put32(libc, 0x138, 0U);
+    Put32(libc, 100, 64U);
+    Put32(libc, 104, 64U);
+    Put32(libc, 0x1040, 0xe59f0010U); // load marker address
+    Put32(libc, 0x1044, 0xe5901000U);
+    Put32(libc, 0x1048, 0xe2811001U);
+    Put32(libc, 0x104c, 0xe5801000U); // increment once
+    Put32(libc, 0x1050, 0xe12fff1eU);
+    Put32(libc, 0x1058, 0x10010300U);
+    const loader::Elf32ModuleInput module{
+        "libc.so", libc, memory::GuestAddress{0x10000000U}};
+    runtime::VirtualFileSystem filesystem;
+    auto process = runtime::AndroidGuestProcess::Start(
+        {19, std::span{&module, 1}, {}, 64, 36, 100000, 1, &filesystem, {}});
+    const auto read_marker = [&] {
+        std::array<std::byte, 4> bytes{};
+        process->GuestMemoryAccess().read(memory::GuestAddress{0x10010300U}, bytes);
+        return core::ReadLittleEndian<std::uint32_t>(std::span{bytes}, 0);
+    };
+    CHECK(read_marker() == 0);
+    CHECK_NOTHROW(process->Stop());
+    CHECK(read_marker() == 1);
+    CHECK(process->AttachedJniThreadCount() == 0);
+    CHECK_NOTHROW(process->Stop());
+    CHECK(read_marker() == 1);
+}
+
+TEST_CASE("DVM-232 fatal native CPU faults quarantine guest calls and skip fini") {
+    using namespace ogplay;
+    auto libc = LibdlDefaultLibcElf();
+    Put32(libc, 0x130, loader::kElfDynamicFini);
+    Put32(libc, 0x134, 0x11040U);
+    Put32(libc, 0x138, 0U);
+    Put32(libc, 100, 64U);
+    Put32(libc, 104, 64U);
+    Put32(libc, 0x1000, 0xe5901000U); // native entry reads null
+    Put32(libc, 0x1040, 0xe5902000U); // fini also faults if attempted
+    const loader::Elf32ModuleInput module{
+        "libc.so", libc, memory::GuestAddress{0x10000000U}};
+    runtime::VirtualFileSystem filesystem;
+    auto process = runtime::AndroidGuestProcess::Start(
+        {19, std::span{&module, 1}, {}, 64, 36, 100000, 1, &filesystem, {}});
+    std::string failure;
+    try { static_cast<void>(process->Invoke({memory::GuestAddress{0x10011000U}})); }
+    catch (const std::exception& error) { failure = error.what(); }
+    CHECK(failure.find("reason=memory_fault(4)") != std::string::npos);
+    CHECK_THROWS_WITH(static_cast<void>(process->Invoke({memory::GuestAddress{0x10011040U}})),
+        "guest native state is unsafe after a CPU fault");
+    process->BeginTeardown();
+    CHECK_THROWS_WITH(process->RunTeardownCleanup([] {}), "guest cleanup unavailable after a CPU fault");
+    CHECK_NOTHROW(process->Stop());
+    CHECK_FALSE(process->Running());
+    CHECK(process->AttachedJniThreadCount() == 0);
+    CHECK_NOTHROW(process->Stop());
+}
+
 TEST_CASE("DVM-218 native process exit skips a second fini and keeps its code") {
     using namespace ogplay;
     auto libc = LibdlDefaultLibcElf();

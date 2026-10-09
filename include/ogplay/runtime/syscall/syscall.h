@@ -1,6 +1,7 @@
 #pragma once
 
 #include <array>
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
@@ -182,7 +183,9 @@ private:
     core::CapabilityLedger& ledger, AndroidProcessIdentity identity = {});
 void BindAndroidTimeSyscalls(A32SyscallDispatcher& dispatcher,
                              hal::Clock& clock,
-                             memory::AddressSpace& address_space);
+                             memory::AddressSpace& address_space,
+                             std::function<void(std::uint64_t, std::chrono::nanoseconds)>
+                                 admit_sleep = {});
 void BindAndroidMemorySyscalls(A32SyscallDispatcher& dispatcher,
                                memory::AddressSpace& address_space);
 void BindAndroidThreadSyscalls(A32SyscallDispatcher& dispatcher,

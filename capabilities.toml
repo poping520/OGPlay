@@ -293,7 +293,7 @@ note = "M5 WU-0215 以不可变所有权 bundle 汇总已导入 VFS/audio 字节
 [frontend.run_apk_external]
 status = "complete"
 test = "frontend.run_apk_options; tests/frontend/run_apk_vfs_tests.cpp; bounded exact-APK run-apk smoke"
-note = "ADR-0074/VFS-04：显式 external 目录有 Profile 声明时沿用其唯一 guest 根，无声明时默认挂到 /sdcard，可用 --external-guest-dir 指定 /sdcard 内路径；required 输入与 manifest 仍在窗口创建前校验。Android 4.4 /storage/emulated/0 与 /sdcard 共用 VFS 节点和保存 overlay"
+note = "ADR-0074/VFS-04：显式 external 目录有 Profile 声明时沿用其唯一 guest 根，无声明时默认挂到 /sdcard，可用 --external-guest-dir 指定 /sdcard 内路径；required 输入与 manifest 仍在窗口创建前校验。Android 4.4 /mnt/sdcard、/storage/emulated/0 与 /sdcard 共用 VFS 节点和保存 overlay"
 
 [frontend.gui_shell]
 status = "complete"
@@ -1123,7 +1123,7 @@ note = "M5 WU-0240 在执行前完整预检 Profile invocation 批次，再按�
 [runtime.android_guest_call_session]
 status = "complete"
 test = "tests/runtime/android_guest_call_session_tests.cpp; tests/runtime/guest_clone_thread_runtime_tests.cpp; tests/runtime/native_library_loader_tests.cpp"
-note = "M5 WU-0241/0313/0324 组合 Bionic guest process 与 Android HLE，接受 A32 frame、发布退出请求，并把显式 slice observer 传给每次 guest call；WU-0337 发布 wait interruption；M8 WU-0375 让 child 在首 slice 前/间响应 exit，session 全量 join 后才析构；DVM-89 将 API19 /proc/meminfo 改为显式 GuestProcFacts 注入及固定派生，非法 facts 明确失败；DVM-228 默认总量改为1 GiB、空闲512 MiB、缓存256 MiB，Java/JNI 与 proc 共用受检快照，已有 proc 冲突拒绝；DVM-218/ADR-0095 提供 owner/root/阶段受检的有界清理 scope，重入共用不可续期 tick 预算；普通取消只停止相应线程，不发布为 async fault。新增线程/模块封闭；native worker 单独 quiesce 后仍允许根清理，Stop 即使 fini 失败也 detach/关闭且幂等；根原生退出后不重复 DSO fini。macOS 定向受检，完整退出对象生命周期及跨平台实跑未验收"
+note = "M5 WU-0241/0313/0324 组合 Bionic guest process 与 Android HLE，接受 A32 frame、发布退出请求，并把显式 slice observer 传给每次 guest call；WU-0337 发布 wait interruption；M8 WU-0375 让 child 在首 slice 前/间响应 exit，session 全量 join 后才析构；DVM-89 将 API19 /proc/meminfo 改为显式 GuestProcFacts 注入及固定派生，非法 facts 明确失败；DVM-228 默认总量改为1 GiB、空闲512 MiB、缓存256 MiB，Java/JNI 与 proc 共用受检快照，已有 proc 冲突拒绝；DVM-218/ADR-0095 提供 owner/root/阶段受检的有界清理 scope，重入共用不可续期 tick 预算；普通取消只停止相应线程，不发布为 async fault。新增线程/模块封闭；native worker 单独 quiesce 后仍允许根清理，Stop 即使 fini 失败也 detach/关闭且幂等；根原生退出后不重复 DSO fini。DVM-232 将健康 fini 纳入 scope，增加 Clock 计量的 2 秒累计墙钟预算及 nanosleep 执行前准入；未处理 CPU stop 用 typed fault 隔离 native 状态、拒绝后续 guest 调用并跳过不安全 fini，宿主 retirement/detach 仍完成。CLI 清理前记录首错，清理错误独立报告。macOS 定向受检，完整退出对象生命周期及跨平台实跑未验收"
 
 [runtime.legacy_audio_track]
 status = "complete"
@@ -1937,8 +1937,8 @@ note = "DVM-118：Math 普通方法/常量/Random 状态来自 BootDex；24 个 
 
 [dexvm.jni_array_element_publication]
 status = "complete"
-test = "tests/runtime/jni_guest_instance_calls_tests.cpp: DVM-141; tests/runtime/native_library_loader_tests.cpp: DVM-141"
-note = "DVM-141 对象数组元素发布 JNI 引用前依据其真实 java_class 原子幂等注册；与 DexVmGuestBridge.PublishLocal 共用 EnsureRegistered，冲突明确失败，不放宽 ClassOf。双后端覆盖 Java Map→Object[]→JNI entrySet、重复发布、类型查询、local ref GC 保活及回收"
+test = "tests/runtime/jni_guest_instance_calls_tests.cpp: DVM-141; tests/runtime/native_library_loader_tests.cpp: DVM-141/DVM-231"
+note = "DVM-141 对象数组元素发布 JNI 引用前依据其真实 java_class 原子幂等注册；与 DexVmGuestBridge.PublishLocal 共用 EnsureRegistered，冲突明确失败。DVM-231 在 JNI ClassOf 查表未命中时，显式委托 bridge 只识别存活的共享 String/primitive/object array，在 VM 执行锁内导入并登记实际类；八种 primitive kind 保持精确数组 descriptor。未知 identity 严格失败，不按 method owner 猜类型；GC 清扫/teardown 撤销保持。双后端覆盖 Java Map→Object[]→JNI entrySet、原生创建字符串后的 CallObjectMethod/V/A、字符串 IsInstanceOf、数组类查询、local/global 引用和 GC 回收；不扩展 synthetic array 的 FindClass/成员解析范围"
 
 [dexvm.intent_put_extras_bundle]
 status = "complete"

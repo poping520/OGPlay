@@ -918,10 +918,13 @@ public:
 
     A32GuestCallResult Invoke(const A32GuestCallFrame& frame) {
         RethrowAsyncFailure();
+        if (native_state_faulted_.load(std::memory_order_acquire))
+            throw AndroidGuestProcessError("guest native state is unsafe after a CPU fault");
         const bool cleanup = std::this_thread::get_id() == owner_thread_ &&
                              cleanup_depth_ != 0U;
         auto admitted_frame = frame;
         if (cleanup) {
+            CheckCleanupDeadline();
             if (frame.thread_id != kRootThreadId || NativeExitCode())
                 throw AndroidGuestProcessError("teardown cleanup requires a live root thread");
             admitted_frame.renewable_native_frame = false;
@@ -1001,6 +1004,7 @@ public:
             std::uint64_t charged{};
             const auto charge = [this, cleanup, &charged](const std::uint64_t consumed) {
                 if (!cleanup) return;
+                CheckCleanupDeadline();
                 const auto delta = consumed - charged;
                 charged = consumed;
                 if (delta > cleanup_ticks_remaining_) {
@@ -1048,6 +1052,10 @@ public:
             else active_guest_calls.erase(this);
             return result;
         } catch (...) {
+            try { throw; }
+            catch (const A32GuestCallFault&) {
+                native_state_faulted_.store(true, std::memory_order_release);
+            } catch (...) {}
             if (frame.renewable_native_frame || cleanup) ConfigureFastHostCalls(*target);
             if (previous.cpu != nullptr) active_guest_calls[this] = previous;
             else active_guest_calls.erase(this);
@@ -1694,6 +1702,7 @@ public:
 
     void Stop() {
         if (!running_) return;
+        BeginTeardown();
         boundary_.ShutdownLoopers();
         if (execution_budget_) execution_budget_->BeginDrain();
         static_cast<void>(
@@ -1717,16 +1726,19 @@ public:
         // cleanup leaves guest object invariants unknown: retain the first
         // error and reclaim the process, rather than pretending to dlclose it.
         auto failure = first_child_failure;
-        if (!failure && !NativeExitCode() && !teardown_cleanup_failed_) {
+        if (!failure && !NativeExitCode() && !teardown_cleanup_failed_ &&
+            !native_state_faulted_.load(std::memory_order_acquire)) {
             try {
                 auto fini_order = guest_load_order_;
                 std::reverse(fini_order.begin(), fini_order.end());
                 const auto finalization = BuildGuestFinalizationPlan(
                     lifecycle_modules_, fini_order);
-                ExecuteGuestLifecycle(
-                    finalization, [this](const GuestLifecycleCall& call) {
-                        static_cast<void>(Invoke({call.address, {}, {}}));
-                    });
+                RunTeardownCleanup([&] {
+                    ExecuteGuestLifecycle(
+                        finalization, [this](const GuestLifecycleCall& call) {
+                            static_cast<void>(Invoke({call.address, {}, {}}));
+                        });
+                });
             } catch (const A32GuestCallExit&) {
                 // A fini itself may request process exit; do not re-enter it.
             } catch (...) { failure = std::current_exception(); }
@@ -1742,7 +1754,15 @@ public:
     }
 
     void BindSyscalls() {
-        BindAndroidTimeSyscalls(dispatcher_, clock_, address_space_);
+        BindAndroidTimeSyscalls(dispatcher_, clock_, address_space_,
+            [this](std::uint64_t thread, std::chrono::nanoseconds duration) {
+                if (thread != kRootThreadId || std::this_thread::get_id() != owner_thread_ ||
+                    cleanup_depth_ == 0U) return;
+                const auto now = hal::Clock::SteadyTimestampNs();
+                if (now >= *cleanup_deadline_ns_ ||
+                    static_cast<std::uint64_t>(duration.count()) > *cleanup_deadline_ns_ - now)
+                    throw A32GuestCallError("teardown cleanup wall-time budget exhausted by nanosleep");
+            });
         BindAndroidMemorySyscalls(dispatcher_, address_space_);
         BindAndroidThreadSyscalls(
             dispatcher_, futex_table_, memory_bus_);
@@ -2093,9 +2113,15 @@ public:
             !teardown_requested_.load(std::memory_order_acquire) ||
             !running_ || NativeExitCode() || !cleanup)
             throw AndroidGuestProcessError("teardown cleanup admission rejected");
+        if (native_state_faulted_.load(std::memory_order_acquire))
+            throw AndroidGuestProcessError("guest cleanup unavailable after a CPU fault");
+        if (!cleanup_deadline_ns_)
+            cleanup_deadline_ns_ = hal::Clock::SteadyTimestampNs() + kCleanupWallBudgetNs;
         ++cleanup_depth_;
         try {
+            CheckCleanupDeadline();
             cleanup();
+            CheckCleanupDeadline();
         } catch (const A32GuestCallExit&) {
             --cleanup_depth_;
             throw;
@@ -2105,6 +2131,10 @@ public:
             throw;
         }
         --cleanup_depth_;
+    }
+    void CheckCleanupDeadline() const {
+        if (cleanup_deadline_ns_ && hal::Clock::SteadyTimestampNs() >= *cleanup_deadline_ns_)
+            throw A32GuestCallError("teardown cleanup wall-time budget exhausted");
     }
     std::optional<std::int32_t> NativeExitCode() const {
         const auto root = lifecycle_.State(kRootThreadId);
@@ -2418,9 +2448,12 @@ private:
     std::vector<std::size_t> guest_load_order_;
     std::uint64_t maximum_ticks_{};
     std::atomic<bool> teardown_requested_{false};
+    std::atomic<bool> native_state_faulted_{false};
     const std::thread::id owner_thread_{std::this_thread::get_id()};
     std::size_t cleanup_depth_{};
     std::uint64_t cleanup_ticks_remaining_{maximum_ticks_};
+    static constexpr std::uint64_t kCleanupWallBudgetNs = UINT64_C(2000000000);
+    std::optional<std::uint64_t> cleanup_deadline_ns_;
     bool teardown_cleanup_failed_{};
     bool native_workers_quiesced_{};
     std::exception_ptr native_workers_failure_;

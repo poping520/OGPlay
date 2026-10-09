@@ -1,6 +1,8 @@
 #pragma once
 
 #include <memory>
+#include <functional>
+#include <optional>
 
 #include "ogplay/runtime/jni_guest/jni_guest_dispatch.h"
 
@@ -29,6 +31,12 @@ public:
     // Idempotent publication; a conflicting runtime class is an error.
     void EnsureRegistered(JniObjectIdentity object, JniObjectIdentity java_class);
     void Forget(JniObjectIdentity object);
+    // Authoritative fallback for objects owned by shared semantic stores.
+    // Called outside the registry lock; unknown identities must return nullopt.
+    // Install before use; clear only after guest threads have stopped.
+    using RuntimeClassResolver =
+        std::function<std::optional<JniObjectIdentity>(JniObjectIdentity)>;
+    void SetRuntimeClassResolver(RuntimeClassResolver resolver);
     [[nodiscard]] JniObjectIdentity ClassOf(JniObjectIdentity object) const;
     [[nodiscard]] JniObjectArrayStore& ObjectArrays() noexcept;
     [[nodiscard]] const JniObjectArrayStore& ObjectArrays() const noexcept;

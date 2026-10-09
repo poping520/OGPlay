@@ -1046,7 +1046,13 @@ int RunApkCommand(const int argc, const char* const argv[],
                     presented, stats.draws, stats.clears);
                 publish_session();
             } catch (const std::exception& error) {
-                if (!failure) failure = std::current_exception();
+                if (!failure) {
+                    failure = std::current_exception();
+                    try {
+                        logger.Write(core::LogLevel::error, "frontend.run_apk.fault",
+                                     error.what(), {.frame = driver.state().frame}, {}, kUnrestrictedLog);
+                    } catch (...) { /* logging must not replace the original fault */ }
+                }
                 guest_fault = error.what();
                 mcp_lifecycle = agent::McpLifecycleState::failed;
                 permitted_steps = 0U;

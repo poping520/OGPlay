@@ -75,10 +75,12 @@ public:
             throw JniGuestBindingError(
                 "JNI guest receiver is not a registered instance");
         }
+        RuntimeClassResolver resolver;
         {
             std::scoped_lock lock(mutex_);
             const auto found = objects_.find(Key(object));
             if (found != objects_.end()) return found->second;
+            resolver = runtime_class_resolver_;
         }
 
         // AOSP Dalvik Jni.cpp::FindClass publishes the ClassObject itself as
@@ -92,8 +94,19 @@ public:
             }
         } catch (const JniClassRegistryError&) {
         }
+        if (resolver) {
+            if (const auto java_class = resolver(object)) {
+                Validate(object, *java_class);
+                return *java_class;
+            }
+        }
         throw JniGuestBindingError(
             "JNI guest receiver is not a registered instance");
+    }
+
+    void SetRuntimeClassResolver(RuntimeClassResolver resolver) {
+        std::scoped_lock lock(mutex_);
+        runtime_class_resolver_ = std::move(resolver);
     }
 
     [[nodiscard]] JniObjectArrayStore& ObjectArrays() noexcept {
@@ -133,6 +146,7 @@ private:
     JniObjectArrayStore object_arrays_;
     mutable std::mutex mutex_;
     std::map<ObjectKey, JniObjectIdentity> objects_;
+    RuntimeClassResolver runtime_class_resolver_;
 };
 
 JniGuestObjectRegistry::JniGuestObjectRegistry(
@@ -157,6 +171,9 @@ void JniGuestObjectRegistry::Forget(const JniObjectIdentity object) {
 void JniGuestObjectRegistry::EnsureRegistered(const JniObjectIdentity object,
                                              const JniObjectIdentity java_class) {
     impl_->EnsureRegistered(object, java_class);
+}
+void JniGuestObjectRegistry::SetRuntimeClassResolver(RuntimeClassResolver resolver) {
+    impl_->SetRuntimeClassResolver(std::move(resolver));
 }
 JniObjectIdentity JniGuestObjectRegistry::ClassOf(
     const JniObjectIdentity object) const {

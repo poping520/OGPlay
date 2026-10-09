@@ -70,6 +70,7 @@ struct JavaObjectInterop final {
         resolve_object_array_class;
     std::function<std::optional<std::uint16_t>(DexClassId)>
         resolve_instance_slots;
+    std::function<DexClassId(JniPrimitiveKind)> resolve_primitive_array_class;
 };
 
 struct GcMarkResult final {

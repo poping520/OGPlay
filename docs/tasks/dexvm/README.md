@@ -263,3 +263,7 @@ Scenario gate 与 profile 迁移）以 [`docs/state/CURRENT.md`](../../state/CUR
 - [DVM-228 · ActivityManager 内存查询与统一 1 GiB guest 快照](DVM-228.md)
 
 - [DVM-230 · 附着 View 子树的尺寸回调](DVM-230.md)
+
+- [DVM-231 · JNI semantic 对象的真实类型登记](DVM-231.md)
+
+- [DVM-232 · 原生故障隔离与有界析构](DVM-232.md)

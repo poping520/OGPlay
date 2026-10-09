@@ -18,7 +18,7 @@
   `profiles/`、`quirks.toml` 与 `framework/bootdex.jar`，源码树仅作开发回退。
 - `--external-dir` 有 Profile external 声明时挂到其唯一 guest 根，否则挂到 `/sdcard`；
   无声明时可用 `--external-guest-dir` 指定 `/sdcard` 内的 guest 根。
-  `/storage/emulated/0` 与 `/sdcard` 共用节点。`--obb` 将原文件只读挂到
+  `/mnt/sdcard`、`/storage/emulated/0` 与 `/sdcard` 共用节点。`--obb` 将原文件只读挂到
   `/sdcard/Android/obb/<package>/<filename>`；Profile OBB 声明可额外挂载归档条目。
   `--supersample` 选择 1..4×；`--dexvm-interpreter` 覆盖 Profile，
   默认 `switch`。
@@ -73,7 +73,7 @@
   输入消费与生命周期命令仍留在帧循环，不从等待回调递归进入 guest。
 - 日志保留 backend 来源、Profile、bootstrap、生命周期和原始 JNI/CPU 故障上下文。CLI 顶层
   每个失败只输出一个缩进的 `error [ogplay]` 块；运行循环仍发布 MCP `guest_fault`、清理并
-  传播，不重复打印。
+  传播；运行首错在清理前立即写结构化日志，日志失败不得替换原错。
 - GUI 子进程关闭 stdin、继承 stdout、stderr 覆盖写入 `last-run.log`；同 installation id 单实例，
   GUI 退出不杀游戏。存档固定在库根 `sandbox/`；删除条目不删除 external 或存档。macOS CLI
   名为 `ogplay-cli`。所有用户可见失败同时写结构化日志并给出下一步。

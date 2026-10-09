@@ -21,6 +21,9 @@ SDL、ANGLE 或视频解码。
   禁用、detach、destroy/reset 会清除旧 owner。`isFocused` 只认自身，`hasFocus` 包含子孙。
 - dirty 消费严格分相：`LayoutUiTree` 只清 `layout_dirty`；`UiOverlayRenderer` 只在 overlay
   成功重建后清 `draw_dirty`。layout traversal 不得吞掉尚未 rasterize 的 mutation。
+- Detach 的默认策略请求布局；preserve_layout 策略只标祖先 draw dirty，保留已有
+  layout dirty 和剩余节点的 resolved geometry。两者都更新 parent/children、id index
+  和焦点，不销毁节点；不通过事后清 dirty 模拟布局期间移除。
 - `Reset`：推进 generation，销毁全部旧 node/id index 并创建新的 content root；旧
   `UiNodeId` 永不重新变为有效。
 - `LayoutUiTree`：以 surface `UiMetrics` 的 EXACTLY root constraint 执行有界

@@ -170,6 +170,11 @@ PendingIntent.cancel 使令牌失效，查询不再匹配；退出在 VM 锁内�
   addView(width,height) 虚派默认 LayoutParams、写 BootDex 字段后走统一 attach；不复制参数对象。
   managed lifecycle 的 setContentView 只发布附着树，Surface 回调由 owner-thread 内容
   traversal 在尺寸回调后交付；普通子树 attach/detach 仍复用受检 holder 代际。
+- ViewGroup.removeViewInLayout 是 public virtual 的通用入口，与 removeView/removeViews
+  共用子树退役、层级移除和焦点处理；布局期间移除不调用 requestLayout/invalidate，
+  仅使实际绘制缓存失效，普通移除仍虚派 requestLayout 后刷新。callback 后重查原节点和
+  parent，避免删除被换代或转移的子树；快照 guest 引用保活，不销毁可复挂的 View。
+  不扩展 disappearing animation、accessibility 或 hierarchy-change listener 协议。
 - Background getter/setter 保持 guest Drawable 身份；Button 构造/inflation 默认非空背景，
   普通 View 可为 null。alpha 仅经仍有效的 callback node 重绘，替换/清空解除旧 callback。
 - setText、Editable、host EditText 共用文本事务：过滤/变更区间/watcher 快照/同步回调/失效

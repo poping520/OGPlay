@@ -70,7 +70,7 @@ void UiTree::Attach(const UiNodeId parent, const UiNodeId child,
     MarkAncestors(parent, true, true);
 }
 
-void UiTree::Detach(const UiNodeId child) {
+void UiTree::Detach(const UiNodeId child, const DetachLayoutPolicy layout) {
     auto& child_node = Require(child);
     if (child == root_) {
         throw std::runtime_error("UI content root cannot be detached");
@@ -87,7 +87,7 @@ void UiTree::Detach(const UiNodeId child) {
     siblings.erase(found);
     child_node.parent.reset();
     if (was_attached) RebuildIndex();
-    MarkAncestors(parent, true, true);
+    MarkAncestors(parent, layout == DetachLayoutPolicy::request_layout, true);
 }
 
 void UiTree::DestroySubtree(const UiNodeId node) {

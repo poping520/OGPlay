@@ -31,6 +31,8 @@ exit/exit_group/clear-child-tid 所需的 guest 线程生命周期状态。
   定位 IO 沿用 seek/restore（不承诺并发原子性），错误路径同样恢复原 offset。
 - API 19 `nanosleep` 受检读取 32-bit timespec；只有非零请求实际 host sleep 后报告 advanced，
   零时长与错误为 idle。
+  可由进程 owner 注入非零睡眠准入回调，在实际 sleep 前拒绝超出退出预算的请求；
+  控制失败原样展开，不伪造睡眠成功，默认无回调时语义保持。
 - API 19 futex wait 的 timeout 是 guest 32-bit 相对 timespec；超时返回 `-ETIMEDOUT`，
   非法 timespec 与坏指针分别明确返回 `-EINVAL`/`-EFAULT`。
 - guest `mmap/mprotect` 可表达解释执行所需的逻辑 RWX；AddressSpace 的宿主 backing 不授予

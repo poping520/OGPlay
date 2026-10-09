@@ -46,7 +46,9 @@ JNI、framework 或 integration。
   管理及未分类的已处理边界均为 `handled_idle`，不得因经过边界清零。exit request 检查仍
   独立优先于下一轮执行。
 - A32 非正常停止由统一 formatter 报告：execution state 与 stop/fault 枚举同时保留名字和
-  数值，指令字/地址/核心寄存器使用固定宽度十六进制；stop、fault、thread、registers 与 code
+  数值；未处理 stop 通过 A32GuestCallFault（A32GuestCallError 子类）保留不可恢复故障类型，
+  上层不得按错误字符串推断 guest 状态。指令字/地址/核心寄存器使用固定宽度
+  十六进制；stop、fault、thread、registers 与 code
   使用对齐的独立行，r0-r3 与 r12/SP/LR 分组。报告尽力读取 PC-8 起的有界指令窗口，读取
   失败不得遮蔽原始 stop；PC 低于 8 时保留原错，尽力附加 LR 前指令字节，不推测栈帧。上层可以添加调用边界，但不得重新拼装一份信息更少的 CPU
   fault 文本。

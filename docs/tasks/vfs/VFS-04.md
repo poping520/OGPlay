@@ -17,3 +17,11 @@
 同 APK 的显式 external guest 根预检通过；非法 OBB 文件名和缺文件均明确失败。
 实际 `--exit-after-frames 1` 在 guest `Application.onCreate` 进入 Urban Airship 后，
 首错为 `Resources.getAssets()` 未解析；这是下一项 DexVM 缺口，不是本工作单的挂载失败。
+
+## primary storage 别名后续（2026-10-09）
+
+CLI external 挂载统一增加 `/mnt/sdcard → /sdcard`，与 `/storage/emulated/0` 共享同一
+VFS 节点/写入/overlay；默认根、显式根及 Profile 挂载均适用，不扫描宿主备用路径。
+已有挂载回归补元数据、节点身份、目录、跨路径写读和前缀边界检查。
+原 APK 复跑已越过必需 Coalesced 配置的 ENOENT/UE3 断言并完成引擎初始化，
+下一首错及原生清理验证见 [DVM-232](../dexvm/DVM-232.md)。

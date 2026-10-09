@@ -218,7 +218,7 @@ A32GuestCallResult InvokeA32GuestCall(
         const auto boundary_progress = ConsumeAndroidArmSupervisorCall(
             cpu, stopped, dispatcher, hle_handler);
         if (boundary_progress == SupervisorCallProgress::not_handled) {
-            throw A32GuestCallError(
+            throw A32GuestCallFault(
                 DescribeGuestCallStop(stopped, cpu.GetState(), address_space));
         }
         const auto current = lifecycle.State(state.ThreadId());

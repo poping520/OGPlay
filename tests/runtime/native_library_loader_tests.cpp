@@ -925,7 +925,7 @@ TEST_CASE("DexVM preserves failure from a resolved RegisterNatives target") {
     try {
         static_cast<void>(bridge->Vm().Call(*method, {}));
         FAIL("faulting registered native unexpectedly returned");
-    } catch (const runtime::AndroidGuestCallSessionError& error) {
+    } catch (const runtime::AndroidGuestProcessError& error) {
         const std::string message = error.what();
         CHECK(message.find("registered JNI native invocation failed") !=
               std::string::npos);
@@ -1853,6 +1853,133 @@ TEST_CASE("DVM-112 BootDex ServiceConnection links and the shared bridge takes t
     }
 }
 
+
+TEST_CASE("DVM-231 JNI-created strings and arrays expose their actual runtime classes") {
+    using namespace ogplay;
+    using namespace runtime;
+    using namespace runtime::dexvm;
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        ApplicationProcess f(backend);
+        auto& env = f.session->Environment();
+        auto& objects = f.session->Objects();
+        auto& model = f.bridge->Model();
+        auto& vm = f.bridge->Vm();
+        auto& linker = f.bridge->Linker();
+        memory::AddressSpace memory;
+        memory::CheckedMemoryBus bus(memory);
+        cpu::InterpreterCpu cpu(bus);
+        GuestJniAbi abi(memory);
+        JniGuestCallDispatcher dispatcher(f.ledger);
+        JniJavaVm java_vm(env);
+        constexpr memory::GuestAddress data{0x72000000U};
+        memory.Map({data, memory.PageSize()},
+            memory::PageProtection::read | memory::PageProtection::write);
+        JniGuestBindingContext context{env, f.session->Classes(), f.session->Invocations(),
+            f.session->Fields(), f.session->Strings(), f.session->Arrays(), java_vm, objects, memory};
+        BindJniGuestSlots(dispatcher, context);
+        dispatcher.Seal();
+        const auto call = [&](const char* name, std::uint32_t r1, std::uint32_t r2 = 0,
+                              std::uint32_t r3 = 0, std::uint64_t thread = 1) {
+            const auto slot = FindJniSlot(name);
+            REQUIRE(slot.has_value());
+            const auto target = bus.Read32(kJniGuestEnvironmentTable.Add(slot->Value() * 4U));
+            cpu::A32State state;
+            state.SetThreadId(thread);
+            state.SetState(cpu::ExecutionState::thumb);
+            state.SetRegister(cpu::CoreRegister::pc, target & ~1U);
+            state.SetRegister(cpu::CoreRegister::r0, abi.Environment().Value());
+            state.SetRegister(cpu::CoreRegister::r1, r1);
+            state.SetRegister(cpu::CoreRegister::r2, r2);
+            state.SetRegister(cpu::CoreRegister::r3, r3);
+            state.SetRegister(cpu::CoreRegister::sp, data.Add(0x800U).Value());
+            cpu.SetState(state);
+            const auto handled = dispatcher.Handle(cpu, cpu.Run(1));
+            REQUIRE(handled);
+            return cpu.GetState().Register(cpu::CoreRegister::r0);
+        };
+        const auto write32 = [&](std::uint32_t offset, std::uint32_t value) {
+            std::vector<std::byte> bytes(4);
+            Put32(bytes, 0, value);
+            memory.Write(data.Add(offset), bytes);
+        };
+        const std::array text{std::byte{'h'}, std::byte{0xc3}, std::byte{0xa9}, std::byte{}};
+        const std::array utf16{std::byte{'h'}, std::byte{}, std::byte{0xe9}, std::byte{}};
+        const std::array charset{std::byte{'U'}, std::byte{'T'}, std::byte{'F'},
+            std::byte{'-'}, std::byte{'8'}, std::byte{}};
+        memory.Write(data, text);
+        memory.Write(data.Add(0x20U), utf16);
+        memory.Write(data.Add(0x40U), charset);
+        const auto string_class = *f.session->Classes().FindClass("java/lang/String");
+        const auto object_class = *f.session->Classes().FindClass("java/lang/Object");
+        const auto class_ref = env.PublishLocalObject(1, string_class);
+        const auto object_ref = env.PublishLocalObject(1, object_class);
+        const auto get_bytes = *f.session->Classes().GetMethodId(string_class, "getBytes",
+            "(Ljava/lang/String;)[B", false);
+        env.PushLocalFrame(1, 64);
+        const auto encoding = call("NewStringUTF", data.Add(0x40U).Value());
+        const auto utf = call("NewStringUTF", data.Value());
+        const auto unicode = call("NewString", data.Add(0x20U).Value(), 2);
+        // First operation on either string is a Java call, with no VM publication.
+        for (const auto receiver : {utf, unicode}) {
+            for (const auto name : {"CallObjectMethod", "CallObjectMethodV", "CallObjectMethodA"}) {
+                write32(0x100U, encoding);
+                write32(0x104U, 0);
+                const auto args = std::string_view(name) == "CallObjectMethod"
+                    ? encoding : data.Add(0x100U).Value();
+                const auto bytes = JniReference{call(name, receiver, get_bytes.Value(), args)};
+                const auto array = f.bridge->FromReference(bytes);
+                CHECK(model.ReadByteRegion(array, 0, model.ArrayLength(array)) ==
+                    std::vector<std::byte>{std::byte{0x68}, std::byte{0xc3}, std::byte{0xa9}});
+                CHECK(linker.Class(model.ObjectClass(array)).descriptor == "[B");
+            }
+            CHECK(*env.ResolveObjectForHle(1, JniReference{call("GetObjectClass", receiver)}) == string_class);
+            CHECK(call("IsInstanceOf", receiver, class_ref.Value()) == 1);
+            CHECK(call("IsInstanceOf", receiver, object_ref.Value()) == 1);
+        }
+        // Querying a newly created string must also work before any Java call.
+        const auto fresh = call("NewStringUTF", data.Value());
+        CHECK(*env.ResolveObjectForHle(1, JniReference{call("GetObjectClass", fresh)}) == string_class);
+        const auto fresh_identity = *env.ResolveObjectForHle(1, JniReference{fresh});
+        CHECK_THROWS_AS(objects.EnsureRegistered(fresh_identity, object_class), JniGuestBindingError);
+        constexpr std::array names{"NewBooleanArray", "NewByteArray", "NewCharArray", "NewShortArray",
+            "NewIntArray", "NewLongArray", "NewFloatArray", "NewDoubleArray"};
+        constexpr std::array descriptors{"[Z", "[B", "[C", "[S", "[I", "[J", "[F", "[D"};
+        for (std::size_t index = 0; index < names.size(); ++index) {
+            const auto array = JniReference{call(names[index], 2)};
+            const auto native_class = *env.ResolveObjectForHle(1,
+                JniReference{call("GetObjectClass", array.Value())});
+            CHECK(native_class == JniObjectIdentity{JniObjectDomain::dex_vm,
+                linker.ResolveDescriptor(descriptors[index]).Value()});
+            const auto imported = f.bridge->FromReference(array);
+            CHECK(linker.Class(model.ObjectClass(imported)).descriptor == descriptors[index]);
+            CHECK(model.ArrayLength(imported) == 2);
+        }
+        const auto array = JniReference{call("NewObjectArray", 1, class_ref.Value(), utf)};
+        const auto array_class = *env.ResolveObjectForHle(1,
+            JniReference{call("GetObjectClass", array.Value())});
+        CHECK(array_class == JniObjectIdentity{JniObjectDomain::dex_vm,
+            linker.ResolveDescriptor("[Ljava/lang/String;").Value()});
+        CHECK(call("GetObjectArrayElement", array.Value(), 0) != 0);
+        const auto global = env.NewGlobalRef(1, JniReference{fresh});
+        static_cast<void>(env.PopLocalFrame(1));
+        static_cast<void>(vm.CollectGarbage("jni-native-types"));
+        CHECK_THROWS(static_cast<void>(call("GetObjectClass", fresh)));
+        CHECK(objects.ClassOf(fresh_identity) == string_class);
+        env.AttachThread(777);
+        CHECK(*env.ResolveObjectForHle(777,
+            JniReference{call("GetObjectClass", global.Value(), 0, 0, 777)}) == string_class);
+        static_cast<void>(env.DetachThread(777));
+        env.DeleteGlobalRef(1, global);
+        static_cast<void>(vm.CollectGarbage("jni-native-types-dead"));
+        CHECK_FALSE(f.session->Strings().Contains(fresh_identity));
+        CHECK_THROWS_AS(objects.ClassOf(fresh_identity), JniGuestBindingError);
+        const auto forged = env.PublishLocalObject(1, AllocateJniHostObjectIdentity());
+        CHECK_THROWS_AS(static_cast<void>(call("GetObjectClass", forged.Value())), JniGuestBindingError);
+        f.bridge.reset();
+        CHECK_THROWS_AS(objects.ClassOf(f.session->Strings().Create({})), JniGuestBindingError);
+    }
+}
+
 TEST_CASE("DexVM imports JNI-created application objects with instance slots") {
     using namespace ogplay;
     ApplicationProcess fixture;
@@ -1893,6 +2020,7 @@ TEST_CASE("DexVM imports JNI-created application objects with instance slots") {
     REQUIRE_MESSAGE(!outcome.exception.IsValid(), outcome.exception_message);
     CHECK(outcome.value.AsInt() == 7);
 
+    // Activity is an API19 BootDex class; its JNI allocation imports VM fields.
     const auto intrinsic_identity =
         fixture.session->Objects().Allocate(*activity_identity);
     const auto intrinsic_reference =
@@ -1900,7 +2028,7 @@ TEST_CASE("DexVM imports JNI-created application objects with instance slots") {
                                                           intrinsic_identity);
     const auto intrinsic = fixture.bridge->FromReference(intrinsic_reference);
     CHECK(fixture.bridge->Model().Kind(intrinsic) ==
-          runtime::dexvm::VmObjectKind::external);
+          runtime::dexvm::VmObjectKind::vm_instance);
 }
 
 TEST_CASE("DexVM Intent ArrayList extras trace children and sweep with owner") {

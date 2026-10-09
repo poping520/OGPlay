@@ -39,6 +39,8 @@ switch/threaded 解释、异常、线程/monitor、反射及 `java.*` core intri
 - `JavaObjectModel` 提供 session 级非移动句柄（0=null）；VM 实例/Object[] 自有存储，String/
   primitive array 复用 JNI store。clone 生成新 identity 并浅拷贝；host-backed 对象必须显式声明
   clone/destructor 策略。
+  JNI primitive array 导入时通过显式 interop callback 取得 kind 对应的真实数组类，
+  不将数组声明成 Object 或按元素宽度合并类型；无 VM interop 的独立 store 不推造类 ID。
 - GC 是分配驱动的精确 STW mark-sweep；roots 包括 frame、结果/异常、static、JNI、Thread、
   intern/Class 与 integration roots。持 guest ref 的 intrinsic 状态用具名 state table trace/sweep；
   嵌套调用的新引用用 `RootScope`。Weak/SoftReference、JNI weak、intern 与 identity hash 遵循

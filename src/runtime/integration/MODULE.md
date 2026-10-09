@@ -104,6 +104,9 @@ Android API 的详细行为以 [dexvm_android](dexvm_android/MODULE.md)为准；
 - String/primitive/object array 复用会话 store；jclass 双向规范化为同一 ClassObject。
   PublishLocal 用 EnsureRegistered 原子幂等发布真实类，GC 同步清扫 registry；不为所有
   APK 类预占 global ref，只有 static native 出向的 jclass 按需缓存，发布使用调用线程身份。
+  原生创建的 String/primitive/object array 首次 JNI 类型查询时，仅在共享 store 确认存活后，
+  于 VM 执行锁内导入并登记真实类；primitive kind 对应精确数组 descriptor。该按需登记
+  与 GC 同锁，不增加引用根，未知 external identity 不递归导入，teardown 撤销解析器。
   native 资源清理 scope 以当前 JNI 线程 local ref 保活并暂清 pending，所有出口恢复原
   throwable；清理错误独立传给调用方，普通 JNI pending gate 保持严格。
 - 类注册保留完整父类/direct interface 图；interface MethodID 在实际 receiver 上虚派。
@@ -154,6 +157,10 @@ Android API 的详细行为以 [dexvm_android](dexvm_android/MODULE.md)为准；
   预算；新增 Java/native 线程或模块拒绝。普通取消以控制展开停止相应线程，不能发布
   为异步进程故障。清理失败不再进入 DSO fini；原生根 exit 后也不重复 guest 析构。
   生命周期在 Java thread join 前再次中断，覆盖回调中新建的 futex wait。
+  DSO fini 同样进入根清理 scope；所有 scope 还共用通过 Clock 计量的 2 秒墙钟预算。
+  nanosleep 在执行前校验剩余预算，返回/SVC/slice 边界检查超时；不会因真实睡眠续期。
+  未处理 CPU stop 以 typed fault 标记 native 状态不安全，拒绝后续 guest 调用/清理并跳过
+  DSO fini；宿主线程回收、JNI detach 和 monitor shutdown 仍执行，原错由调用方保留。
 - Runtime 的 hook 与 exit/halt 普通协议归 BootDex；平台只绑定 nativeExit，发布 session
   退出标记并调用 VM.Exit，保留退出码、非 Java 展开，不从 worker 同步 Stop/join。
   宿主 Stop 仍为取消，不自动运行 hook；详见 [DVM-150](../../../docs/tasks/dexvm/DVM-150.md)。

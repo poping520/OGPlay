@@ -76,9 +76,15 @@ private:
     GuestThreadRuntimeState state_;
 };
 
-class A32GuestCallError final : public std::runtime_error {
+class A32GuestCallError : public std::runtime_error {
 public:
     using std::runtime_error::runtime_error;
+};
+
+// An unhandled CPU stop leaves native state unsafe for guest finalization.
+class A32GuestCallFault final : public A32GuestCallError {
+public:
+    using A32GuestCallError::A32GuestCallError;
 };
 
 // Renders an unhandled A32 stop for "stopped outside a handled boundary"

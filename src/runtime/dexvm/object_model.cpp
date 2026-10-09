@@ -272,6 +272,10 @@ VmObjectRef JavaObjectModel::FromIdentity(const JniObjectIdentity identity) {
         try {
             record.primitive_kind = impl_->arrays->Kind(identity);
             record.kind = VmObjectKind::primitive_array;
+            if (impl_->interop.resolve_primitive_array_class) {
+                record.java_class = impl_->interop.resolve_primitive_array_class(
+                    record.primitive_kind);
+            }
         } catch (const JniArrayError&) {
             if (impl_->interop.object_arrays != nullptr &&
                 impl_->interop.object_arrays->Contains(identity)) {

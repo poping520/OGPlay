@@ -229,3 +229,20 @@ detach、monitor shutdown 并保持幂等；不跳过单个 guest 析构器或�
 不提供完整 Android 进程退出或 non-daemon 自动退出；不抢占 EGL owner 的 currency。
 有限 tick 预算沿用统一 CPU 预算，宿主阻塞仍通过既有 drain/wake 协议退出。跨平台
 实现共用状态协议，实跑证据分别记录。
+
+## ADR-0112 · 不安全 native 状态隔离与析构墙钟预算
+
+- 状态：Accepted
+- 日期：2026-10-09
+- 关联：[DVM-232](../tasks/dexvm/DVM-232.md)
+- 补充：ADR-0095 的原生析构准入/失败边界。
+
+未处理 ARM CPU stop 使用 typed fault 标记进程 native 状态不安全，拒绝后续 guest
+调用/清理并跳过 DSO fini；保留原故障，宿主资源回收及 JNI detach/monitor shutdown
+照常执行。普通 JNI/HLE 异常、宿主取消、guest exit 不自动归入此类别。
+
+健康 DSO fini 纳入既有 owner/root teardown 清理 scope，嵌套调用和各析构器共用
+有限 tick 与 Clock 计量的 2 秒累计墙钟预算。真实睡眠不延长预算，nanosleep 的请求
+超出剩余预算时在睡眠前明确失败，SVC/slice/返回也核对 deadline。
+超时不发布成功卸载；完成 host retirement 后报告清理失败，保留运行首错。
+此边界不承诺抢占任意 Java 回调或宿主库内部等待，不引入完整 Android 退出模型。

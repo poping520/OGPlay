@@ -237,11 +237,27 @@ TEST_CASE("run-apk mounts an external directory without a Profile") {
     generic.identity.package = "org.example.game";
     ogplay::runtime::VirtualFileSystem vfs;
     ogplay::frontend::MountExternalDirectory(generic, tree.path, vfs);
+    CHECK(vfs.Stat("/mnt/sdcard/data.bin").size == vfs.Stat("/sdcard/data.bin").size);
+    const auto legacy = vfs.Open("/mnt/sdcard/data.bin", {.read = true});
+    const auto canonical = vfs.Open("/sdcard/data.bin", {.read = true});
+    CHECK(vfs.TryDescriptorNode(legacy) == vfs.TryDescriptorNode(canonical));
+    vfs.Close(legacy);
+    vfs.Close(canonical);
+    CHECK(vfs.ListDirectory("/mnt/sdcard") == vfs.ListDirectory("/sdcard"));
+    const auto writer = vfs.Open("/mnt/sdcard/data.bin", {.write = true});
+    const std::array replacement{std::byte{'E'}};
+    CHECK(vfs.Write(writer, replacement) == 1);
+    vfs.Close(writer);
+    const auto reader = vfs.Open("/sdcard/data.bin", {.read = true});
+    std::array<std::byte, 1> shared{};
+    CHECK(vfs.Read(reader, shared) == 1);
+    CHECK(shared == replacement);
+    vfs.Close(reader);
     const auto descriptor = vfs.Open("/storage/emulated/0/data.bin", {.read = true});
     std::array<std::byte, 8> output{};
     CHECK(vfs.Read(descriptor, output) == output.size());
     CHECK(std::string(reinterpret_cast<const char*>(output.data()), output.size()) ==
-          "external");
+          "External");
     CHECK(vfs.DescriptorInfo(descriptor).source ==
           ogplay::runtime::VfsSource::external);
     vfs.Close(descriptor);
@@ -252,6 +268,9 @@ TEST_CASE("run-apk mounts an external directory without a Profile") {
         std::string{"/sdcard/Android/data/org.example.game/files"});
     CHECK_NOTHROW(static_cast<void>(explicit_vfs.Stat(
         "/sdcard/Android/data/org.example.game/files/data.bin")));
+    CHECK_NOTHROW(static_cast<void>(explicit_vfs.Stat(
+        "/mnt/sdcard/Android/data/org.example.game/files/data.bin")));
+    CHECK_THROWS(static_cast<void>(explicit_vfs.Stat("/mnt/sdcard-other/data.bin")));
     CHECK_THROWS(static_cast<void>(explicit_vfs.Stat("/sdcard/data.bin")));
     ogplay::runtime::VirtualFileSystem invalid_vfs;
     CHECK_THROWS(ogplay::frontend::MountExternalDirectory(
@@ -262,6 +281,7 @@ TEST_CASE("run-apk mounts an external directory without a Profile") {
     ogplay::runtime::VirtualFileSystem profiled_vfs;
     ogplay::frontend::MountExternalDirectory(generic, tree.path, profiled_vfs);
     CHECK_NOTHROW(static_cast<void>(profiled_vfs.Stat("/sdcard/game/data.bin")));
+    CHECK_NOTHROW(static_cast<void>(profiled_vfs.Stat("/mnt/sdcard/game/data.bin")));
     CHECK_THROWS(static_cast<void>(profiled_vfs.Stat("/sdcard/data.bin")));
     CHECK_THROWS(ogplay::frontend::MountExternalDirectory(
         generic, tree.path, profiled_vfs, std::string{"/sdcard/elsewhere"}));

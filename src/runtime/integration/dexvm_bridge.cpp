@@ -1413,6 +1413,22 @@ DexVmGuestBridge::DexVmGuestBridge(
                     return std::nullopt;
                 }
                 return linked.instance_slots;
+            },
+            [bridge_state](const JniPrimitiveKind kind) {
+                const auto descriptor = [&]() -> const char* {
+                    switch (kind) {
+                        case JniPrimitiveKind::boolean: return "[Z";
+                        case JniPrimitiveKind::byte: return "[B";
+                        case JniPrimitiveKind::character: return "[C";
+                        case JniPrimitiveKind::short_integer: return "[S";
+                        case JniPrimitiveKind::integer: return "[I";
+                        case JniPrimitiveKind::long_integer: return "[J";
+                        case JniPrimitiveKind::float_value: return "[F";
+                        case JniPrimitiveKind::double_value: return "[D";
+                    }
+                    throw DexVmBridgeError("JNI primitive array kind is invalid");
+                }();
+                return bridge_state->linker.ResolveDescriptor(descriptor);
             }});
 
     impl_->vm = std::make_unique<dx::Interpreter>(
@@ -1447,6 +1463,32 @@ DexVmGuestBridge::DexVmGuestBridge(
         }
     }
     impl_->vm->SetLogger(logger);
+    session.Objects().SetRuntimeClassResolver(
+        [bridge_state](const JniObjectIdentity identity)
+            -> std::optional<JniObjectIdentity> {
+            const dx::VmExecutionLockScope guard(bridge_state->vm->ExecutionLock());
+            bool known = bridge_state->session->Strings().Contains(identity) ||
+                bridge_state->session->Objects().ObjectArrays().Contains(identity);
+            if (!known) {
+                try {
+                    static_cast<void>(bridge_state->session->Arrays().Kind(identity));
+                    known = true;
+                } catch (const JniArrayError& error) {
+                    if (error.Reason() != JniArrayErrorReason::unknown_object) throw;
+                }
+            }
+            // Do not import unknown external identities: their class resolver
+            // uses this registry and would recurse without a storage fact.
+            if (!known) return std::nullopt;
+            const auto ref = bridge_state->model->FromIdentity(identity);
+            const auto java_class = bridge_state->model->ObjectClass(ref);
+            if (!java_class.IsValid())
+                throw DexVmBridgeError("JNI semantic object has no runtime class");
+            const auto native_class = bridge_state->JniClassIdentity(java_class);
+            // Registration and adoption share the execution lock with GC.
+            bridge_state->session->Objects().EnsureRegistered(identity, native_class);
+            return native_class;
+        });
     impl_->threads = std::make_unique<dx::VmThreadRuntime>(*impl_->vm);
     session.Objects().ObjectArrays().SetAssignability(
         [bridge_state](JniObjectIdentity target, JniObjectIdentity source) -> std::optional<bool> {
@@ -1628,8 +1670,8 @@ DexVmGuestBridge::DexVmGuestBridge(
             try {
                 session.Objects().Forget(identity);
             } catch (const JniGuestBindingError&) {
-                // Strings and primitive arrays have dedicated stores and are
-                // intentionally absent from the generic object registry.
+                // Untyped semantic objects may be swept before their first
+                // JNI class query and therefore have no registry entry yet.
             }
         },
         [android_context](const dx::VmRootVisitor& visit) {
@@ -1749,6 +1791,7 @@ DexVmGuestBridge::~DexVmGuestBridge() {
         impl_->session->Environment().SetMonitorHooks({});
         impl_->session->Environment().SetReflectionHooks({});
         impl_->session->Objects().ObjectArrays().SetAssignability({});
+        impl_->session->Objects().SetRuntimeClassResolver({});
         impl_->session->Fields().SetAccessHooks({});
     }
 }

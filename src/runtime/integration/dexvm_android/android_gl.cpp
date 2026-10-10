@@ -2234,7 +2234,7 @@ void AttachEglSwapPacer(DexVmAndroidContext& context,
             }
             {
                 std::scoped_lock lock(egl.pace_mutex);
-                if (egl.pace_shutdown || egl.pace_driver != thread) {
+                if (egl.pace_driver != thread) {
                     return;
                 }
                 egl.pace_driver_blocked = blocked;

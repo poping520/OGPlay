@@ -16,6 +16,7 @@
 #include <vector>
 
 #include "ogplay/core/capability_ledger.h"
+#include "ogplay/hal/clock.h"
 #include "ogplay/runtime/dexvm/class_linker.h"
 #include "ogplay/runtime/dexvm/interpreter.h"
 #include "ogplay/runtime/dexvm/object_model.h"
@@ -49,12 +50,14 @@ struct MonitorVm final {
     // it explicitly, so timed waits stay reproducible.
     std::atomic<std::int64_t> clock_millis{0};
 
-    MonitorVm()
+    explicit MonitorVm(const bool platform_bindings = false)
         : model(strings, arrays, {}),
           linker(),
           interpreter(
-              [this]() -> DexClassLinker& {
+              [this, platform_bindings]() -> DexClassLinker& {
                   linker.RegisterIntrinsics(CoreIntrinsicCatalog());
+                  if (platform_bindings) linker.RegisterIntrinsics(AndroidIntrinsicCatalog(
+                      std::make_shared<DexVmAndroidContext>()));
                   linker.RegisterDex(ReadFixture("interp.dex"));
                   ogplay::test::RegisterBootDex(linker);
                   linker.Link();
@@ -542,4 +545,53 @@ TEST_CASE("DVM-103 GC notification wakes a guest waiter without owning its monit
     CHECK(woke);
     CHECK_FALSE(vm.threads.TakeFailure().has_value());
     CHECK(vm.interpreter.Monitors().WaitingCount(lock) == 0U);
+}
+
+TEST_CASE("DVM-234 lifecycle deadline ends indefinite monitor wait without a fake notification") {
+    MonitorVm fixture(true);
+    auto& vm = fixture.interpreter;
+    const auto object = fixture.Lock();
+    const VmExecutionLockScope execution(vm.ExecutionLock());
+    vm.Monitors().Enter(object, 1);
+    vm.Monitors().Enter(object, 1);
+    const auto deadline = ogplay::hal::Clock::SteadyTimestampNs() + 20'000'000;
+    CHECK_THROWS_WITH_AS(vm.RunWithExecutionDeadline(deadline, [&] {
+        static_cast<void>(vm.Monitors().Wait(object, 1, 0));
+    }), doctest::Contains("lifecycle execution wall-time budget exhausted"), DexVmError);
+    CHECK(vm.Monitors().WaitingCount(object) == 0);
+    CHECK_FALSE(vm.Monitors().IsOwner(object, 1));
+    CHECK_FALSE(vm.HasExecutionDeadline());
+    vm.Monitors().Enter(object, 1);
+    vm.Monitors().Exit(object, 1);
+}
+
+TEST_CASE("DVM-234 lifecycle deadline bounds sleep without advancing the guest clock") {
+    MonitorVm fixture(true);
+    fixture.UseTestClock();
+    const VmExecutionLockScope execution(fixture.interpreter.ExecutionLock());
+    CHECK_THROWS_WITH_AS(fixture.interpreter.RunWithExecutionDeadline(
+        ogplay::hal::Clock::SteadyTimestampNs() + 20'000'000, [&] {
+            fixture.threads.Sleep(10000);
+        }), doctest::Contains("lifecycle execution wall-time budget exhausted"), DexVmError);
+    CHECK(fixture.clock_millis.load() == 0);
+    CHECK_FALSE(fixture.interpreter.HasExecutionDeadline());
+}
+
+TEST_CASE("DVM-234 pacer shutdown preserves actual driver blocking facts") {
+    MonitorVm fixture(true);
+    DexVmAndroidContext context;
+    auto& lock = fixture.interpreter.ExecutionLock();
+    AttachEglSwapPacer(context, lock);
+    ShutdownEglSwapPacer(context);
+    {
+        const VmExecutionLockScope execution(lock);
+        const auto depth = lock.ReleaseForBlocking();
+        const auto parked = TryEglSwapPacerSnapshot(context);
+        CHECK(parked->shutdown);
+        CHECK(parked->driver_blocked);
+        CHECK_FALSE(parked->surface_retired);
+        lock.ReacquireAfterBlocking(depth);
+        CHECK_FALSE(TryEglSwapPacerSnapshot(context)->driver_blocked);
+    }
+    DetachEglSwapPacer(context, lock);
 }

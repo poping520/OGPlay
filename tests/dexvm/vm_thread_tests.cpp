@@ -7,6 +7,7 @@
 
 #include <doctest/doctest.h>
 
+#include <array>
 #include <chrono>
 #include <fstream>
 #include <functional>
@@ -286,6 +287,31 @@ TEST_CASE("dexvm uncaught thread exceptions are recorded, not thrown at join") {
     CHECK(failure->find("thrower (id 2)") != std::string::npos);
     // Draining is one-shot.
     CHECK(!vm.threads.TakeFailure().has_value());
+}
+
+TEST_CASE("DVM-234 uncaught dispatcher retains its child context and throwable roots") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        ThreadedVm fixture(nullptr, backend, true);
+        auto& vm = fixture.interpreter;
+        vm.BindDefaultExecutionHost();
+        const auto target = fixture.Make("LThreadThrower;", "()Ljava/lang/Runnable;");
+        const auto method = fixture.Static("LFlow;", "loopSum", "(I)I");
+        std::uint64_t observed{};
+        fixture.threads.Start(target, "dispatch-context", fixture.threads.AllocateThreadId(),
+            [&](Interpreter& callback_vm, VmObjectRef thread, VmObjectRef exception) {
+                observed = callback_vm.CurrentContextToken();
+                CHECK(observed != 1);
+                CHECK(callback_vm.Threads().CurrentThreadObject() == thread);
+                static_cast<void>(callback_vm.CollectGarbage("uncaught-dispatch"));
+                CHECK(fixture.linker.Class(fixture.model.ObjectClass(exception)).descriptor == "LMyError;");
+                CHECK(callback_vm.Call(method, std::array{VmValue::Int(10)}).value.AsInt() == 45);
+                return true;
+            });
+        fixture.threads.Join(target);
+        CHECK(observed != 0);
+        CHECK_FALSE(fixture.threads.TakeFailure().has_value());
+        CHECK(fixture.StatusOf(target) == VmThreadStatus::finished);
+    }
 }
 
 TEST_CASE("dexvm interrupt raises the flag and clears once") {

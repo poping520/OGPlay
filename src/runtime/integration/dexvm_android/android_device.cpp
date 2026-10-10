@@ -305,8 +305,9 @@ Decl Declare_android_telephony_TelephonyManager(const Context& context) {
             const auto listener = call.arguments[0].ref;
             const auto events = call.arguments[1].AsInt();
             if (!listener.IsValid()) {
-                throw dx::DexVmError(dx::DexVmErrorReason::invalid_operand,
-                    "TelephonyManager.listen requires a listener");
+                // API19 catches the NPE from listener.callback/service absence.
+                // There is no listener to register or remove in this case.
+                return dx::VmValue::Void();
             }
             if (events == 0) context->telephony_listeners.erase(listener.Value());
             else context->telephony_listeners[listener.Value()] = events;

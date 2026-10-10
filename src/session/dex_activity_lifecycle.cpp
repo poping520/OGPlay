@@ -1354,6 +1354,7 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
             lock.unlock();
             vm.ExecutionLock().ReacquireAfterBlocking(depth);
             vm.Threads().SetWaitState(dx::kRootLifecycleToken, dx::VmThreadWaitState::none);
+            vm.CheckExecutionDeadline();
             if (!vm.Threads().ShuttingDown()) {
                 try { PumpJavaThreads(); }
                 catch (...) { if (!wait_failure) wait_failure = std::current_exception(); }
@@ -1572,11 +1573,19 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
                 record_failure();
             }
         };
-        const auto guest = [&](const auto& action, const bool admitted = true) {
+        bool retired{};
+        const auto guest = [&](const auto& action) {
             if (!live()) return;
+            const auto deadline = session.CleanupDeadlineNs();
+            if (first_failure && deadline != 0 &&
+                hal::Clock::SteadyTimestampNs() >= deadline) return;
             try {
-                if (admitted) session.RunTeardownCleanup(action);
-                else action();
+                const auto bounded = [&] {
+                    bindings_.bridge->Vm().RunWithExecutionDeadline(
+                        session.CleanupDeadlineNs(), action);
+                };
+                if (retired) session.RunTeardownCleanup(bounded);
+                else session.RunGracefulCleanup(bounded);
             } catch (...) {
                 if (live()) {
                     record_failure();
@@ -1585,22 +1594,16 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
         };
         phase("teardown.begin");
         const bool was_running = state_ == LifecycleRunState::running && live();
-        bool pause_delivered{};
-        if (was_running && activity_started_ && !suspended_ && renderer_thread_) {
-            // The intrinsic renderer must finish its pause handshake before join.
-            pause_delivered = true;
-            guest([&] { SetWindowFocus(false); }, false);
-            guest([&] { CallActivity("onPause", "()V", {}); }, false);
-        }
-        attempt([&] { StopRendererThread(); });
-        runtime::RetireGuestEglSurface(*bindings_.context);
-        session.BeginTeardown();
+        // Stop producing host frame permits, but retain real graphics and live
+        // workers until the application's cooperative callbacks have returned.
+        if (egl_pacer_attached_) runtime::ShutdownEglSwapPacer(*bindings_.context);
         phase("teardown.guest_callbacks");
-        if (was_running && activity_started_ && !suspended_ && !pause_delivered) {
+        if (was_running && activity_started_ && !suspended_) {
             guest([&] { SetWindowFocus(false); });
             guest([&] { CallActivity("onPause", "()V", {}); });
         }
         if (was_running) {
+            guest([&] { StopRendererThread(); });
             guest([&] {
                 if (const auto error = runtime::RetireSurfaceHolderGeneration(
                         bindings_.bridge->Vm(), *bindings_.context))
@@ -1611,6 +1614,10 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
         if (egl_pacer_attached_) runtime::ShutdownEglSwapPacer(*bindings_.context);
         guest([&] { runtime::ShutdownLocalServices(bindings_.bridge->Vm(), *bindings_.context); });
         attempt([&] { runtime::ShutdownPendingIntents(bindings_.bridge->Vm(), *bindings_.context); });
+        runtime::RetireGuestEglSurface(*bindings_.context);
+        session.BeginTeardown();
+        retired = true;
+        attempt([&] { StopRendererThread(); });
         phase("teardown.scheduler_shutdown");
         attempt([&] { runtime::ShutdownAndroidScheduler(*bindings_.context); });
         if (bindings_.interrupt_guest_waits) attempt(bindings_.interrupt_guest_waits);

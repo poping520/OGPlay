@@ -269,3 +269,5 @@ Scenario gate 与 profile 迁移）以 [`docs/state/CURRENT.md`](../../state/CUR
 - [DVM-232 · 原生故障隔离与有界析构](DVM-232.md)
 
 - [DVM-233 · ViewGroup 布局期间移除](DVM-233.md)
+
+- [DVM-234 · 有界协作停止与解释器轮转](DVM-234.md)

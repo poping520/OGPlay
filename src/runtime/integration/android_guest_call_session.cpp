@@ -871,7 +871,7 @@ public:
             [this](cpu::Cpu& cpu, const cpu::RunResult& stopped) {
                 return HandleBoundary(cpu, stopped);
             }, diagnostics_, [this] { BeginTeardown(); },
-            [this] { return !teardown_requested_.load(std::memory_order_acquire); });
+            [this] { return !cleanup_requested_.load(std::memory_order_acquire); });
         root_cpu_ = std::make_unique<cpu::DynarmicCpu>(
             memory_bus_, execution_context_);
         ConfigureFastHostCalls(*root_cpu_);
@@ -1068,7 +1068,7 @@ public:
     void PrepareDexVmThread(const std::uint64_t thread_id,
                             const std::uint32_t allocation_slot,
                             const bool attach_jni = true) {
-        if (teardown_requested_.load(std::memory_order_acquire))
+        if (cleanup_requested_.load(std::memory_order_acquire))
             throw AndroidGuestProcessError("new guest thread rejected during teardown");
         constexpr std::uint64_t kBionicPthreadMutexMaximumTid = 0xffffU;
         if (thread_id == 0U || thread_id == kRootThreadId ||
@@ -2099,6 +2099,7 @@ public:
                environment_.InterruptMonitorWaiters();
     }
     void BeginTeardown() noexcept {
+        cleanup_requested_.store(true, std::memory_order_release);
         if (teardown_requested_.exchange(true, std::memory_order_acq_rel)) return;
         if (execution_budget_) execution_budget_->BeginDrain();
         boundary_.ShutdownLoopers();
@@ -2109,12 +2110,22 @@ public:
     }
 
     void RunTeardownCleanup(const std::function<void()>& cleanup) {
+        RunCleanup(cleanup, true);
+    }
+    void RunGracefulCleanup(const std::function<void()>& cleanup) {
+        RunCleanup(cleanup, false);
+    }
+    std::uint64_t CleanupDeadlineNs() const noexcept {
+        return cleanup_deadline_ns_.value_or(0);
+    }
+    void RunCleanup(const std::function<void()>& cleanup, const bool retired) {
         if (std::this_thread::get_id() != owner_thread_ ||
-            !teardown_requested_.load(std::memory_order_acquire) ||
+            (retired != teardown_requested_.load(std::memory_order_acquire)) ||
             !running_ || NativeExitCode() || !cleanup)
             throw AndroidGuestProcessError("teardown cleanup admission rejected");
         if (native_state_faulted_.load(std::memory_order_acquire))
             throw AndroidGuestProcessError("guest cleanup unavailable after a CPU fault");
+        cleanup_requested_.store(true, std::memory_order_release);
         if (!cleanup_deadline_ns_)
             cleanup_deadline_ns_ = hal::Clock::SteadyTimestampNs() + kCleanupWallBudgetNs;
         ++cleanup_depth_;
@@ -2163,7 +2174,7 @@ public:
     AndroidGuestApplicationLoad LoadApplicationModules(
         const std::string_view root_module,
         const std::span<const AndroidGuestApplicationModuleSource> sources) {
-        if (teardown_requested_.load(std::memory_order_acquire))
+        if (cleanup_requested_.load(std::memory_order_acquire))
             throw AndroidGuestProcessError("new guest module rejected during teardown");
         if (!running_ || root_module.empty()) {
             throw AndroidGuestProcessError(
@@ -2448,6 +2459,7 @@ private:
     std::vector<std::size_t> guest_load_order_;
     std::uint64_t maximum_ticks_{};
     std::atomic<bool> teardown_requested_{false};
+    std::atomic<bool> cleanup_requested_{false};
     std::atomic<bool> native_state_faulted_{false};
     const std::thread::id owner_thread_{std::this_thread::get_id()};
     std::size_t cleanup_depth_{};
@@ -2562,6 +2574,8 @@ void AndroidGuestProcess::PrepareDexVmThread(
 }
 void AndroidGuestProcess::QuiesceNativeWorkers() { impl_->QuiesceNativeWorkers(); }
 void AndroidGuestProcess::RunTeardownCleanup(const std::function<void()>& cleanup) { impl_->RunTeardownCleanup(cleanup); }
+void AndroidGuestProcess::RunGracefulCleanup(const std::function<void()>& cleanup) { impl_->RunGracefulCleanup(cleanup); }
+std::uint64_t AndroidGuestProcess::CleanupDeadlineNs() const noexcept { return impl_->CleanupDeadlineNs(); }
 std::optional<std::int32_t> AndroidGuestProcess::NativeExitCode() const { return impl_->NativeExitCode(); }
 void AndroidGuestProcess::RethrowAsyncFailure() { impl_->RethrowAsyncFailure(); }
 memory::GuestAddress AndroidGuestProcess::PrepareThreadLooper(std::uint64_t tid) { return impl_->PrepareThreadLooper(tid); }
@@ -2797,6 +2811,8 @@ void AndroidGuestCallSession::PrepareDexVmThread(
 }
 void AndroidGuestCallSession::QuiesceNativeWorkers() { process_->QuiesceNativeWorkers(); }
 void AndroidGuestCallSession::RunTeardownCleanup(const std::function<void()>& cleanup) { process_->RunTeardownCleanup(cleanup); }
+void AndroidGuestCallSession::RunGracefulCleanup(const std::function<void()>& cleanup) { process_->RunGracefulCleanup(cleanup); }
+std::uint64_t AndroidGuestCallSession::CleanupDeadlineNs() const noexcept { return process_->CleanupDeadlineNs(); }
 std::optional<std::int32_t> AndroidGuestCallSession::NativeExitCode() const { return process_->NativeExitCode(); }
 void AndroidGuestCallSession::RethrowAsyncFailure() { process_->RethrowAsyncFailure(); }
 memory::GuestAddress AndroidGuestCallSession::PrepareThreadLooper(std::uint64_t tid) { return process_->PrepareThreadLooper(tid); }

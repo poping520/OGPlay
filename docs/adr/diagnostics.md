@@ -246,3 +246,21 @@ detach、monitor shutdown 并保持幂等；不跳过单个 guest 析构器或�
 超出剩余预算时在睡眠前明确失败，SVC/slice/返回也核对 deadline。
 超时不发布成功卸载；完成 host retirement 后报告清理失败，保留运行首错。
 此边界不承诺抢占任意 Java 回调或宿主库内部等待，不引入完整 Android 退出模型。
+
+## ADR-0113 · 有界协作停止先于强制退役
+
+- 状态：Accepted
+- 日期：2026-10-10
+- 关联：[DVM-234](../tasks/dexvm/DVM-234.md)
+- 修订：ADR-0095/0112 的回调前取消顺序与 Java 等待预算边界。
+
+失焦、onPause、surfaceDestroyed/onStop 是依赖现有 worker 的协作阶段，先以
+有界根 scope 执行，图形与线程仍存活。只解除宿主帧节奏等待，协作完成或失败
+后才进入不可逆 BeginTeardown、取消/线程 join，再按既有安全准入进行析构。
+不同 renderer 所有权共用该原则，不修改 APK 私有状态、不复活取消的线程。
+
+根 scope 的 Clock 墙钟 deadline 不续期，Java 指令与阻塞原语也检查到期。
+到期以内部非 Java 控制故障展开，不允许 guest catch 吞掉取消；超时后的 guest
+回调不再执行，宿主回收继续且保留原错。宿主第三方库内部不可抢占等待仍不承诺。
+字节码稳定安全点在 VM 锁有竞争时公平轮转，保留 guest monitor/递归深度与
+GC roots，不把轮转冒充真实阻塞，不刷新总 tick 预算。线程映射与 VM 单写不变。

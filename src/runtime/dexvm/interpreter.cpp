@@ -1,6 +1,7 @@
 #include "ogplay/runtime/dexvm/interpreter.h"
 
 #include <algorithm>
+#include <chrono>
 #include <deque>
 #include <optional>
 #include <string_view>
@@ -279,14 +280,18 @@ void Interpreter::Impl::EnsureInitialized(
                 auto& lock = execution_lock;
                 const auto depth = lock.ReleaseForBlocking();
                 std::unique_lock wait_lock(clinit_wait_mutex);
-                clinit_changed.wait(wait_lock, [&] {
+                const auto ready = [&] {
                     return clinit_generation.load(std::memory_order_acquire) !=
                                generation ||
                            execution.stop_requested.load(
-                               std::memory_order_relaxed);
-                });
+                               std::memory_order_relaxed) || owner->ExecutionDeadlineExpired();
+                };
+                if (owner->HasExecutionDeadline()) {
+                    while (!ready()) clinit_changed.wait_for(wait_lock, std::chrono::milliseconds(2));
+                } else clinit_changed.wait(wait_lock, ready);
                 wait_lock.unlock();
                 lock.ReacquireAfterBlocking(depth);
+                owner->CheckExecutionDeadline();
                 Tick(execution, 0);
             }
             continue;
@@ -1025,6 +1030,13 @@ VmCallOutcome Interpreter::Call(const VmMethodId method_id,
                          "guest VM has exited");
     }
     auto& execution = impl_->Execution();
+    if (execution.active_entries != 0 && execution.active_host != std::this_thread::get_id()) {
+        const auto& target = impl_->linker->Method(method_id);
+        throw DexVmError(DexVmErrorReason::internal_invariant,
+            "DexVM execution context " + std::to_string(execution.token) +
+            " is active on another host thread; incoming=" +
+            impl_->linker->Class(target.owner).descriptor + "." + target.name);
+    }
     InterpreterExecutionScope execution_scope(impl_.get(), execution);
     auto& frames = execution.frames;
     auto& pending_exception = execution.pending_exception;
@@ -1183,6 +1195,12 @@ InterpreterExecutionContext Interpreter::ExecutionContext(const std::uint64_t to
 VmCallOutcome Interpreter::EnsureClassInitialized(const DexClassId java_class) {
     VmExecutionLockScope lock_scope(impl_->execution_lock);
     auto& execution = impl_->Execution();
+    if (execution.active_entries != 0 && execution.active_host != std::this_thread::get_id()) {
+        throw DexVmError(DexVmErrorReason::internal_invariant,
+            "DexVM execution context " + std::to_string(execution.token) +
+            " is active on another host thread; incoming clinit=" +
+            impl_->linker->Class(java_class).descriptor);
+    }
     InterpreterExecutionScope execution_scope(impl_.get(), execution);
     auto& pending_exception = execution.pending_exception;
     auto& pending_exception_class = execution.pending_exception_class;

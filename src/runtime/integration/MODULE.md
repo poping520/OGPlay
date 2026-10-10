@@ -157,7 +157,9 @@ Android API 的详细行为以 [dexvm_android](dexvm_android/MODULE.md)为准；
   预算；新增 Java/native 线程或模块拒绝。普通取消以控制展开停止相应线程，不能发布
   为异步进程故障。清理失败不再进入 DSO fini；原生根 exit 后也不重复 guest 析构。
   生命周期在 Java thread join 前再次中断，覆盖回调中新建的 futex wait。
-  DSO fini 同样进入根清理 scope；所有 scope 还共用通过 Clock 计量的 2 秒墙钟预算。
+    DSO fini 同样进入根清理 scope；所有 scope 还共用通过 Clock 计量的 2 秒墙钟预算。
+    其前的 RunGracefulCleanup 只关闭新线程/模块准入，保留已有线程与图形供协作回调；
+    创建 owner 的 live root 同步 scope 与 RunTeardownCleanup 共用上述累计预算。
   nanosleep 在执行前校验剩余预算，返回/SVC/slice 边界检查超时；不会因真实睡眠续期。
   未处理 CPU stop 以 typed fault 标记 native 状态不安全，拒绝后续 guest 调用/清理并跳过
   DSO fini；宿主线程回收、JNI detach 和 monitor shutdown 仍执行，原错由调用方保留。

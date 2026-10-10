@@ -321,9 +321,13 @@ public:
                 env.ExceptionClear(1);
             }
             std::exception_ptr failure;
+            const auto deadline = session->CleanupDeadlineNs();
+            const bool expired = deadline != 0 && hal::Clock::SteadyTimestampNs() >= deadline;
             try {
-                if (!session->NativeExitCode()) session->RunTeardownCleanup([this] {
-                    bridge->Vm().ReleaseGuestNativeResources(true);
+                if (!expired && !session->NativeExitCode()) session->RunTeardownCleanup([this] {
+                    bridge->Vm().RunWithExecutionDeadline(session->CleanupDeadlineNs(), [this] {
+                        bridge->Vm().ReleaseGuestNativeResources(true);
+                    });
                 });
             }
             catch (const runtime::dexvm::VmJavaThrow& error) {
@@ -331,8 +335,12 @@ public:
                     "native cleanup failed: " + error.descriptor + ": " + error.message));
             } catch (...) { failure = std::current_exception(); }
             try {
-                if (context->native_activity && !session->NativeExitCode())
-                    session->RunTeardownCleanup([this] { context->native_activity->Release(); });
+                if (!expired && context->native_activity && !session->NativeExitCode())
+                    session->RunTeardownCleanup([this] {
+                        bridge->Vm().RunWithExecutionDeadline(session->CleanupDeadlineNs(), [this] {
+                            context->native_activity->Release();
+                        });
+                    });
             } catch (...) { if (!failure) failure = std::current_exception(); }
             try { session->Stop(); }
             catch (...) { if (!failure) failure = std::current_exception(); }

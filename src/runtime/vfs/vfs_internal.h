@@ -123,6 +123,7 @@ struct OpenFile final {
     bool readable{};
     bool writable{};
     std::shared_ptr<OpenDirectoryState> directory;
+    bool append{};
     bool pipe{};
     std::shared_ptr<const hal::HostReadFile> host_pin;
 };

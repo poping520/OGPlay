@@ -7,6 +7,8 @@
 #include <optional>
 #include <span>
 #include <stdexcept>
+#include <new>
+#include <vector>
 
 #include "ogplay/memory/address_space.h"
 #include "ogplay/runtime/syscall/syscall.h"
@@ -25,6 +27,19 @@ inline std::int32_t TransferFile(VirtualFileSystem& vfs,
     std::array<std::byte, 64U * 1024U> scratch;
     std::uint32_t completed{};
     try {
+        const auto fd = std::bit_cast<std::int32_t>(frame.arguments[0]);
+        // Append records must not be split across independent node-locked
+        // writes. Large append requests stage once within the shared budget;
+        // ordinary positioned/sequential IO keeps its bounded chunk path.
+        if (write && count > scratch.size() && vfs.IsAppend(fd)) {
+            const auto address = memory::GuestAddress{frame.arguments[1]};
+            memory.Validate({address, count}, memory::AccessType::read, frame.thread_id);
+            const auto reservation = vfs.ReserveResourceMemory(count);
+            std::vector<std::byte> payload(count);
+            memory.Read(address, payload, frame.thread_id);
+            return static_cast<std::int32_t>(offset
+                ? vfs.WriteAt(fd, *offset, payload) : vfs.Write(fd, payload));
+        }
         while (completed < count) {
             const auto address = memory::GuestAddress{frame.arguments[1]}.Add(completed);
             const auto size = std::min<std::size_t>(scratch.size(), count - completed);
@@ -54,6 +69,8 @@ inline std::int32_t TransferFile(VirtualFileSystem& vfs,
         return completed != 0U ? static_cast<std::int32_t>(completed) : -14;
     } catch (const VfsError& error) {
         return completed != 0U ? static_cast<std::int32_t>(completed) : -error.ErrorNumber();
+    } catch (const std::bad_alloc&) {
+        return completed != 0U ? static_cast<std::int32_t>(completed) : -12;
     }
     return static_cast<std::int32_t>(completed);
 }

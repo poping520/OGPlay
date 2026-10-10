@@ -120,6 +120,18 @@
   实际画面/跨平台未验收；现有 UI registry 保留 detached View 的 GC 策略未改变。
   证据 `.local/wb-in-layout-fix/`。
 
+  后续取证闭合 0xC 原因：TrackingManager 以 a 重开 glot_log.txt，open flags=0x20441
+  含 O_APPEND，被当前 syscall decoder 拒绝为 EINVAL；fopen 返回 null 后仍传给
+  fputs/__sfvwrite，读取空 FILE+12 崩溃。通用 append 语义修复待实施；临时取证已撤回，
+  复现退出 1、无超时、进程已结束。证据 `.local/wb-stdio-analysis/`。
+
+  [VFS-08](../tasks/vfs/VFS-08.md) 已实现通用 O_APPEND 状态、原子 EOF 写及有界向量/
+  大追加请求，macOS Release 与定向 16 项/489 断言通过。原 fputs 读 0xC 首错未再出现，
+  native 日志落盘 11 条 JSON，appInit 完成；达到帧限后 nativeCanInterrupt 在 onPause
+  清理中耗尽墙钟预算，退出 1、无超时、进程已结束。游戏画面/clean shutdown/跨平台
+  未验收。证据 `.local/wb-append-fix/`。
+
+
 
 - **Tales From Deep Space 1.0.0**：VideoView/packed depth/stencil 已闭合；macOS
   800×480/1280×720 菜单裁剪，BND-29 终止断言失败。

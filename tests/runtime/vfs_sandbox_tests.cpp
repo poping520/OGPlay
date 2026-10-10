@@ -445,3 +445,36 @@ TEST_CASE("VFS refuses a second sandbox attachment") {
     CHECK(ErrnoOf([&] { vfs.AttachSandbox(*second, kWritableRoots); }) == 17);
     CHECK(ErrnoOf([&] { vfs.AttachSandbox(*second, {}); }) == 17);
 }
+
+
+TEST_CASE("VFS-08 append respects dirty quota and persists across reopen") {
+    const TemporaryRoot root("append-quota");
+    SandboxConfig config; config.byte_quota = 6;
+    {
+        auto store = SandboxStore::Open(root.path, kPackage, kPackage, config);
+        VirtualFileSystem vfs;
+        vfs.AttachSandbox(*store, kWritableRoots);
+        WriteThrough(vfs, "/sdcard/log", "abc");
+        const auto writer = vfs.Open("/sdcard/log", {.write = true, .append = true});
+        const auto duplicate = vfs.Duplicate(writer);
+        REQUIRE(vfs.Write(duplicate, Bytes("def")) == 3);
+        CHECK(vfs.Seek(writer, 0, VfsSeekWhence::begin) == 0);
+        const auto generation = vfs.Stat("/sdcard/log").generation;
+        CHECK(ErrnoOf([&] { static_cast<void>(vfs.Write(writer, Bytes("x"))); }) == 28);
+        CHECK(vfs.Seek(duplicate, 0, VfsSeekWhence::current) == 0);
+        CHECK(vfs.Stat("/sdcard/log").generation == generation);
+        CHECK(ReadAll(vfs, "/sdcard/log") == "abcdef");
+        vfs.Flush(writer); vfs.Close(writer); vfs.Close(duplicate);
+        CHECK(store->UsedBytes() == 6);
+    }
+    {
+        auto store = SandboxStore::Open(root.path, kPackage, kPackage, config);
+        VirtualFileSystem vfs;
+        vfs.AttachSandbox(*store, kWritableRoots);
+        CHECK(ReadAll(vfs, "/sdcard/log") == "abcdef");
+        const auto writer = vfs.Open("/sdcard/log", {.write = true, .truncate = true, .append = true});
+        CHECK(vfs.Write(writer, Bytes("reset")) == 5);
+        vfs.Close(writer);
+        CHECK(ReadAll(vfs, "/sdcard/log") == "reset");
+    }
+}

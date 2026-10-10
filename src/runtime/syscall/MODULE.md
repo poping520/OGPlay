@@ -70,6 +70,12 @@ exit/exit_group/clear-child-tid 所需的 guest 线程生命周期状态。
 VFS 字符设备使用 ARM stat64 的 S_IFCHR、st_rdev（偏移 32）与 DT_CHR；文件大小为 0
 不限制 read。open 放行 O_NOCTTY（VFS 没有控制终端）及字符设备 O_NONBLOCK，普通文件
 的非阻塞 IO 仍明确 EINVAL。dup(41) 共享 VFS 打开状态，其他复制/fcntl 形式仍按账本失败。
+open/openat 显式解码 ARM O_APPEND=0x400，传入 VFS 打开状态，不由 syscall seek 模拟。
+writev 完整预检向量/输入，在共享资源预算内合并后只提交一次 Write；向量上限 64，
+每段至多 1 MiB，坏输入/超预算在写入前失败。大于 64 KiB scratch 的 append write/
+pwrite64 也在共享预算内一次暂存并提交，保持整条追加记录的节点锁；非 append IO
+沿用原分块/短 IO 语义。pwrite64 保持顺序 offset，append fd 使用 Linux EOF 写入规则。
+不提供 fcntl 状态修改、跨进程/NFS 追加或通用 Linux open flags。
 
 `BindAndroidFileMetadataSyscalls`（`syscall_file_metadata.cpp`）把
 mkdir/rmdir/unlink/rename 及其 `*at` 变体、stat64 家族、`getdents64`、

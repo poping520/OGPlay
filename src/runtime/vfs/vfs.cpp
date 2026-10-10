@@ -485,7 +485,7 @@ std::int32_t VirtualFileSystem::Impl::Open(const std::string_view path,
             throw VfsError(kEinval, "VFS open has no access mode");
         }
         if (options.directory) {
-            if (options.write || options.create || options.truncate || options.non_blocking) {
+            if (options.write || options.create || options.truncate || options.non_blocking || options.append) {
                 throw VfsError(kEinval,
                                "VFS directory open has file-only options");
             }
@@ -587,6 +587,7 @@ std::int32_t VirtualFileSystem::Impl::Open(const std::string_view path,
         const auto descriptor = AllocateDescriptor();
         auto opened = std::make_shared<OpenFile>(
             std::move(selected_file), 0, options.read, options.write, nullptr);
+        opened->append = options.append;
         opened->host_pin = std::move(host_pin);
         descriptors_.emplace(descriptor, std::move(opened));
         return descriptor;
@@ -744,7 +745,13 @@ std::size_t VirtualFileSystem::Impl::Write(
         auto file = open->file;
         std::scoped_lock file_lock(*file->mutex);
         Materialize(*file);
-        const auto end = open->offset + source.size();
+        if (source.empty()) return 0;
+        // EOF selection and the write share the node lock across independent
+        // opens and aliases; a prior seek cannot disable append mode.
+        const auto offset = open->append ? file->size : open->offset;
+        if (source.size() > std::numeric_limits<std::uint64_t>::max() - offset)
+            throw VfsError(kEfbig, "VFS write overflows");
+        const auto end = offset + source.size();
         if (end > std::numeric_limits<std::size_t>::max()) {
             throw VfsError(kEfbig, "VFS file size is not representable");
         }
@@ -768,7 +775,7 @@ std::size_t VirtualFileSystem::Impl::Write(
             using Difference = std::vector<std::byte>::difference_type;
             std::copy(source.begin(), source.end(),
                       file->contents.begin() +
-                          static_cast<Difference>(open->offset));
+                          static_cast<Difference>(offset));
             ++file->generation;
             open->offset = end;
             SetNodeSizeDirtyLocked(*file, file->contents.size(),
@@ -778,7 +785,7 @@ std::size_t VirtualFileSystem::Impl::Write(
     }
 
 std::size_t VirtualFileSystem::Impl::WriteAt(
-        const std::int32_t descriptor, const std::uint64_t offset,
+        const std::int32_t descriptor, const std::uint64_t requested_offset,
         const std::span<const std::byte> source) {
         std::shared_ptr<OpenFile> open;
         {
@@ -792,6 +799,10 @@ std::size_t VirtualFileSystem::Impl::WriteAt(
         auto file = open->file;
         std::scoped_lock file_lock(*file->mutex);
         Materialize(*file);
+        if (source.empty()) return 0;
+        // Linux pwrite on O_APPEND ignores its requested offset, but never
+        // changes the open description's sequential offset.
+        const auto offset = open->append ? file->size : requested_offset;
         if (source.size() > std::numeric_limits<std::uint64_t>::max() - offset) {
             throw VfsError(kEfbig, "VFS positioned write overflows");
         }
@@ -1115,6 +1126,11 @@ std::int32_t VirtualFileSystem::Open(const std::string_view path,
 }
 std::int32_t VirtualFileSystem::OpenDirectory(const std::string_view path) {
     return impl_->OpenDirectory(path);
+}
+
+bool VirtualFileSystem::IsAppend(const std::int32_t descriptor) const {
+    std::scoped_lock lock(impl_->mutex_);
+    return impl_->FindDescriptor(descriptor)->append;
 }
 std::vector<VfsDirectoryEntry> VirtualFileSystem::ReadDirectory(
     const std::int32_t descriptor, const std::size_t maximum) {

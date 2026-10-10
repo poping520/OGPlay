@@ -1,6 +1,6 @@
 # 当前状态
 
-更新：2026-10-10。
+更新：2026-10-11。
 
 本页保留最新运行结果、当前阻塞与验收缺口。能力范围见
 [capabilities.toml](../../capabilities.toml)，实现契约见各模块 MODULE；历史过程见
@@ -8,25 +8,20 @@
 
 ## 运行状态
 
-- **Wild Blood 1.0.4（SamsungApps）**：Windows 原 APK/外部数据、用户沙盒副本、
-  无 Profile/无 survey，已进入中文菜单并验证暂停恢复持续出帧。
-  [DVM-234](../tasks/dexvm/DVM-234.md) 的有界协作退出、Java 等待预算、公平轮转、
-  root 宿主绑定与异常分派 context 保持已完成；Windows Release、25 项/1830 断言通过。
-  直接关窗及暂停恢复后关窗分别约 0.547/0.563 秒退出 1，无超时/强杀；原 nativePause
-  预算耗尽与 Surface 等待消失。**当前首错**：第二个保留 Game 实例 onDestroy 对
-  静态 m_sInstance 的空接收者 NPE。Analytics 的 formatDouble 缺口仍被 SDK 捕获。
-  正常退出、长时间暂停、完整关卡及最新改动的 macOS/Linux/title gate 未验收。
-  证据 `.local/dvm234-close-20261010-131033/`、`.local/dvm234-pause-20261010-130750/`；
-  进程与 listener 已退出。先前启动缺口与 append 修复见 DexVM/VFS 任务记录。
-  [DVM-235](../tasks/dexvm/DVM-235.md) 已实现每实例窗口、Surface/GL 归属与可逆暂停。
-  国王村 CG 实际播放并显示中文字幕；自然结束与提前跳过均返回原游戏，
-  自然结束后已进入角色操作/教学画面，无 guest fault。两条路径关窗无清理超时，
-  仍因上述独立 onDestroy NPE 退出 1。失败驱动收尾曾出现的 native finalizer
-  `nanosleep` 超时根因未闭合，不能用正常播放后的退出替代其验收。
-  证据 `.local/wb-cg-analysis-20261010-231301/`、`.local/wb-cg-analysis-20261010-232049/`。
-  最终二进制播放中 MCP shutdown 约 0.608 秒退出 1，无超时/强杀；证据
-  `.local/wb-cg-analysis-20261010-232641/`，进程与 listener 已退出。
-  Windows Release、36 项/3004 断言定向及 UI 31 项/202 断言通过；BootDex/载荷校验通过。
+- **Wild Blood 1.0.4（SamsungApps）**：Windows 原 APK/外部数据、沙盒副本、无 Profile/survey，
+  已进入中文菜单，暂停/恢复持续出帧。[DVM-234](../tasks/dexvm/DVM-234.md) 的协作退出/公平轮转
+  与 [DVM-235](../tasks/dexvm/DVM-235.md) 的每实例窗口、Surface/GL 往返及中文字幕已定向验证。
+  CG 自然完成和提前跳过均返回原游戏，已进入角色操作/教学；上述路径 guestFault=null。
+  [DVM-236](../tasks/dexvm/DVM-236.md) 将 Activity.finish 与进程关闭分离，结束进程不合成全栈
+  onDestroy 或模块卸载式 DSO fini；owner 取消/join 后退役资源，首错/预算/幂等保持。
+  CG 点击后播放中 WM_CLOSE 约 0.570 秒、自然完成后 MCP shutdown 约 0.676 秒退出 **0**，
+  无 NPE、清理超时或强杀。原先 nativePause、批量 Game.onDestroy NPE 及这条进程关闭中的
+  fini/nanosleep 等待均不再出现；“单独点击导致崩溃”仍未复现，不作已修复结论。
+  Analytics formatDouble 缺口仍被 SDK 捕获；长时运行、完整关卡、macOS/Linux/title gate 未验收。
+  证据 `.local/wb-cg-analysis-20261011-001405/`、`.local/wb-cg-analysis-20261011-002133/`，
+  最终二进制跳过后关闭约 0.695 秒退出 0，证据 `.local/wb-cg-analysis-20261011-003853/`；
+  相关进程与 listener 已退出。Windows Release、30 项/2876 断言关闭/生命周期与
+  60 项/7439 断言媒体回归通过；独立 permitted fini 的执行、失败及预算回归保持。
 
 - **Tales From Deep Space 1.0.0**：macOS 已验证
   [1920×1080 存档重载恢复关卡](../tasks/dexvm/DVM-217.md)；

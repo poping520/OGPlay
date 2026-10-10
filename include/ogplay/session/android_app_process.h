@@ -89,7 +89,8 @@ public:
 
     void StartApplication();
     [[nodiscard]] LifecycleFrameState StartLauncherActivity();
-    [[nodiscard]] LifecycleFrameState Stop();
+    [[nodiscard]] LifecycleFrameState Stop(
+        DexProcessStopReason reason = DexProcessStopReason::host_shutdown);
 
     [[nodiscard]] AndroidAppProcessState State() const noexcept;
     [[nodiscard]] std::optional<loader::AndroidArmAbi> SelectedAbi() const noexcept;

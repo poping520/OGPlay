@@ -89,6 +89,7 @@ struct AndroidInputDevice final {
 // (sound mixer, VFS, platform identity) through this shared context.
 
 struct DexVmAndroidContext final {
+  std::atomic_bool process_stopping{};
   // Set from the owning native process before linking/startup. No host query.
   std::optional<GuestMemorySnapshot> memory_snapshot;
   // Installed before Application startup; no host device or Binder discovery.
@@ -786,6 +787,9 @@ struct DexVmAndroidContext final {
 void RegisterAndroidAudioTrackStateTable(
     dexvm::Interpreter &vm,
     const std::shared_ptr<DexVmAndroidContext> &context);
+
+// Called after guest workers are joined; retires media without Java callbacks.
+void ReleaseAndroidMediaResources(DexVmAndroidContext& context);
 
 void RegisterAndroidValueStateTables(
     dexvm::Interpreter &vm,

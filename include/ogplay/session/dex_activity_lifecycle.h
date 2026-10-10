@@ -15,6 +15,12 @@
 
 namespace ogplay::session {
 
+enum class DexProcessStopReason : std::uint8_t {
+    host_shutdown,
+    guest_exit,
+    runtime_failure,
+};
+
 // Minimal API-19 Application startup. Repeated calls for the same descriptor
 // return the process root; a different descriptor or a failed startup is an
 // explicit error and never permits Activity startup to continue.
@@ -107,7 +113,8 @@ public:
         runtime::AndroidBoundaryFrame frame);
     void QueueInput(const runtime::AndroidBoundaryInput& input);
     void CancelInput();
-    [[nodiscard]] LifecycleFrameState Stop();
+    [[nodiscard]] LifecycleFrameState Stop(
+        DexProcessStopReason reason = DexProcessStopReason::host_shutdown);
     [[nodiscard]] LifecycleFrameState State() const;
     [[nodiscard]] std::uint64_t TicksPerSecond() const noexcept;
 

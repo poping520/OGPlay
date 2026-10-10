@@ -648,7 +648,7 @@ int RunApkCommand(const int argc, const char* const argv[],
             std::function<session::LifecycleFrameState()> suspend;
             std::function<session::LifecycleFrameState()> resume;
             std::function<session::LifecycleFrameState()> step;
-            std::function<session::LifecycleFrameState()> stop;
+            std::function<session::LifecycleFrameState(session::DexProcessStopReason)> stop;
             std::function<session::LifecycleFrameState()> state;
             std::function<void(const runtime::AndroidBoundaryInput&)>
                 queue_input;
@@ -847,7 +847,7 @@ int RunApkCommand(const int argc, const char* const argv[],
                       [&] { return dex_lifecycle->Suspend(); },
                       [&] { return dex_lifecycle->Resume(); },
                       [&] { return dex_lifecycle->StepFrame(); },
-                      [&] { return app_process->Stop(); },
+                      [&](const session::DexProcessStopReason reason) { return app_process->Stop(reason); },
                       [&] { return dex_lifecycle->State(); },
                       [&](const runtime::AndroidBoundaryInput& input) {
                           dex_lifecycle->QueueInput(input);
@@ -1070,7 +1070,8 @@ int RunApkCommand(const int argc, const char* const argv[],
                      "stopping Profile lifecycle",
                      {.frame = driver.state().frame}, {}, kUnrestrictedLog);
         try {
-            static_cast<void>(driver.stop());
+            static_cast<void>(driver.stop(failure ? session::DexProcessStopReason::runtime_failure
+                                                 : session::DexProcessStopReason::host_shutdown));
             if (!failure) mcp_lifecycle = agent::McpLifecycleState::stopped;
         } catch (const std::exception& error) {
             logger.Write(core::LogLevel::error, "frontend.run_apk.teardown",

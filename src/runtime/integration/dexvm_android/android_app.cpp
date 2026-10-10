@@ -541,6 +541,8 @@ Decl Declare_android_app_Activity(const Context& context) {
         }, dx::kAccPrivate | dx::kAccNative);
     builder.DirectMethod("nativeFinish", "(ILandroid/content/Intent;)V",
         [context](dx::IntrinsicContext& call) {
+            if (context->process_stopping)
+                throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "process is stopping"};
             context->finishing_activity = call.receiver.Value();
             if (std::ranges::any_of(context->activity_stack, [&](const auto& record) { return record.object == call.receiver; }) &&
                 !std::ranges::any_of(context->activity_commands, [&](const auto& command) {

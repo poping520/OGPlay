@@ -2363,7 +2363,7 @@ TEST_CASE("DVM-218 lifecycle preserves onPause failure and attempts later cleanu
             CHECK(message.find("pause-primary") != std::string::npos);
             CHECK(message.find("destroy-secondary") == std::string::npos);
         }
-        CHECK(fixture.CallStaticInt("Lfixture/TeardownFailureActivity;", "getStage") == 3);
+        CHECK(fixture.CallStaticInt("Lfixture/TeardownFailureActivity;", "getStage") == 2);
         CHECK_FALSE(fixture.app->NativeProcess().Running());
         CHECK_FALSE(fixture.app->NativeProcess().Environment().IsThreadAttached(1));
         CHECK_NOTHROW(static_cast<void>(fixture.app->Stop()));
@@ -5909,7 +5909,7 @@ TEST_CASE("DVM-195 original NativeActivity runs in the existing Java native proc
         runtime::SetWindowInputCallback(vm, *fixture.context, activity);
         CHECK(read(trace.Add(4)) == 11);
         static_cast<void>(fixture.app->Stop());
-        CHECK(read(trace.Add(4)) == 5); // onDestroy, even without GLSurfaceView renderer
+        CHECK(read(trace.Add(4)) == 4); // native onStop; process close does not call Java onDestroy
         CHECK(fixture.context->native_activity->InputQueuePointer(activity).IsNull());
         CHECK_FALSE(memory.validate(native, 4));
         CHECK_THROWS(static_cast<void>(bridge.FromReference(actual_activity)));
@@ -6048,11 +6048,12 @@ TEST_CASE("DVM-197 renderer EGL policies establish current context before events
     namespace dx = runtime::dexvm;
     using runtime::android_intrinsics::CallAndroidMethod;
     for (const auto backend : {dx::InterpreterBackend::switch_dispatch, dx::InterpreterBackend::threaded}) {
-      for (const int mode : {0, 1, 2, 3}) {
+      for (const int mode : {0, 1, 2, 3, 4}) {
         INFO("renderer mode=" << mode << " backend=" << static_cast<int>(backend));
         const bool custom = mode != 0;
         const bool reject_context = mode == 2;
         const bool reject_draw = mode == 3;
+        const bool exit_draw = mode == 4;
         const auto owner_host = std::this_thread::get_id();
         dx::Interpreter* pump_vm = nullptr;
         std::promise<void> host_pumped;
@@ -6163,6 +6164,7 @@ TEST_CASE("DVM-197 renderer EGL policies establish current context before events
         hook("onDrawFrame", "(Ljavax/microedition/khronos/opengles/GL10;)V",
              [&](dx::IntrinsicContext& args) { current(); CHECK(args.arguments[0].ref == c.renderer_gl); order.push_back("draw");
                  if (reject_draw) throw std::runtime_error("renderer draw failure");
+                 if (exit_draw) vm.Exit(19);
                  if (!ui_round_trip) {
                      waiting_for_host.store(true);
                      const auto host_depth = vm.ExecutionLock().ReleaseForBlocking();
@@ -6221,6 +6223,14 @@ TEST_CASE("DVM-197 renderer EGL policies establish current context before events
             CHECK_THROWS_WITH_AS(static_cast<void>(fixture.app->Stop()), "renderer EGL context creation failed", session::DexActivityLifecycleError);
             CHECK_FALSE(c.renderer_context.IsValid());
             CHECK_FALSE(c.renderer_surface.IsValid());
+            continue;
+        }
+        if (exit_draw) {
+            CHECK(fixture.app->ActivityLifecycle().StepFrame().state == session::LifecycleRunState::stopped);
+            CHECK(vm.ExitCode() == 19);
+            CHECK_FALSE(vm.Threads().IsAlive(gl_thread));
+            CHECK(fixture.app->NativeProcess().AttachedJniThreadCount() == 0);
+            CHECK_NOTHROW(static_cast<void>(fixture.app->Stop()));
             continue;
         }
         if (reject_draw) {
@@ -6886,5 +6896,113 @@ TEST_CASE("DVM-215 API19 decimal JSON uses bounded guest BIGNUM arithmetic") {
         const auto again_root = vm.ProtectReferences(std::array{again});
         CHECK(std::bit_cast<std::uint64_t>(invoke(again, "doubleValue", "()D").AsDouble()) == UINT64_C(0x3fb999999999999a));
         // Scope teardown releases VM-owned tokens; native temporaries never persist.
+    }
+}
+
+TEST_CASE("DVM-236 process close never synthesizes instance destruction but finish still does") {
+    using namespace ogplay;
+    using namespace runtime::dexvm;
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+      for (const int mode : {0, 1, 2}) {
+        INFO("mode=" << mode << " backend=" << static_cast<int>(backend));
+        OrchestratedApp f("fixture.ResultCaller", true, false, {}, {}, true, backend);
+        f.app->StartApplication();
+        REQUIRE(f.app->StartLauncherActivity().state == session::LifecycleRunState::running);
+        auto& vm = f.app->DexVm().Vm();
+        auto& linker = vm.Linker();
+        const auto caller = f.context->activity;
+        const auto type = vm.Model().ObjectClass(caller);
+        const auto slot = linker.FindVtableIndex(type, "onDestroy", "()V");
+        REQUIRE(slot.has_value());
+        int destroyed{};
+        auto& method = linker.MutableMethod(linker.Class(type).vtable[*slot]);
+        method.kind = MethodKind::intrinsic;
+        method.implementation = [&](IntrinsicContext&) {
+            ++destroyed;
+            if (mode == 2 || destroyed > 1)
+                throw VmJavaThrow{"Ljava/lang/IllegalStateException;", "shared owner already destroyed"};
+            return VmValue::Void();
+        };
+        const auto intent = vm.NewIntrinsicInstance("Landroid/content/Intent;");
+        const auto ctor = linker.FindDirectMethod(vm.Model().ObjectClass(intent), "<init>", "()V");
+        REQUIRE(ctor.has_value());
+        REQUIRE_FALSE(vm.Call(*ctor, std::array{VmValue::Ref(intent)}).exception.IsValid());
+        const auto on = [&](VmObjectRef object, const char* name, const char* signature,
+                            std::vector<VmValue> args = {}) {
+            return runtime::android_intrinsics::CallAndroidMethod(vm, object, name, signature, args);
+        };
+        on(intent, "setClassName", "(Ljava/lang/String;Ljava/lang/String;)Landroid/content/Intent;",
+           {VmValue::Ref(vm.NewStringUtf8("fixture")), VmValue::Ref(vm.NewStringUtf8("fixture.ResultCaller"))});
+        on(caller, "startActivity", "(Landroid/content/Intent;)V", {VmValue::Ref(intent)});
+        static_cast<void>(f.app->ActivityLifecycle().StepFrame());
+        REQUIRE(f.context->activity_stack.size() == 2);
+        REQUIRE(f.context->activity != caller);
+        if (mode != 0) {
+            on(f.context->activity, "finish", "()V");
+            if (mode == 2) {
+                CHECK_THROWS_WITH(static_cast<void>(f.app->ActivityLifecycle().StepFrame()),
+                    doctest::Contains("shared owner already destroyed"));
+            } else {
+                static_cast<void>(f.app->ActivityLifecycle().StepFrame());
+                CHECK(f.context->activity == caller);
+            }
+            CHECK(destroyed == 1);
+        }
+        f.context->video_views[999].guest_path = "retained source";
+        f.context->encoded_audio_leases[999] = {};
+        REQUIRE(f.context->pcm_playback != nullptr);
+        const auto player = f.context->pcm_playback->CreatePlayer({48000, 2, 16}, 2);
+        f.context->audio_tracks[999].player = player;
+        REQUIRE(f.context->pcm_playback->HasPlayer(player));
+        CHECK_NOTHROW(static_cast<void>(f.app->Stop()));
+        CHECK(destroyed == (mode == 0 ? 0 : 1));
+        CHECK(f.context->video_views.empty());
+        CHECK(f.context->encoded_audio_leases.empty());
+        CHECK_FALSE(f.context->pcm_playback->HasPlayer(player));
+        CHECK(f.context->activity_stack.empty());
+        CHECK(f.context->process_stopping);
+        CHECK_FALSE(f.app->NativeProcess().Running());
+        CHECK(f.app->NativeProcess().AttachedJniThreadCount() == 0);
+        CHECK_NOTHROW(static_cast<void>(f.app->Stop()));
+        CHECK(destroyed == (mode == 0 ? 0 : 1));
+      }
+    }
+}
+
+TEST_CASE("DVM-236 guest process exit and runtime fault forbid Activity callbacks") {
+    using namespace ogplay;
+    using namespace runtime::dexvm;
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+      for (const bool guest_exit : {false, true}) {
+        OrchestratedApp f("fixture.ResultCaller", true, false, {}, {}, true, backend);
+        f.app->StartApplication();
+        REQUIRE(f.app->StartLauncherActivity().state == session::LifecycleRunState::running);
+        auto& vm = f.app->DexVm().Vm();
+        auto& linker = vm.Linker();
+        const auto type = vm.Model().ObjectClass(f.context->activity);
+        int callbacks{};
+        for (const auto name : {"onPause", "onStop", "onDestroy"}) {
+            const auto slot = linker.FindVtableIndex(type, name, "()V");
+            REQUIRE(slot.has_value());
+            auto& method = linker.MutableMethod(linker.Class(type).vtable[*slot]);
+            method.kind = MethodKind::intrinsic;
+            method.implementation = [&](IntrinsicContext&) { ++callbacks; return VmValue::Void(); };
+        }
+        if (guest_exit) {
+            const auto release = linker.FindDirectMethod(linker.ResolveDescriptor("Lfixture/FailingNativeCleanup;"), "release", "(J)V");
+            REQUIRE(release.has_value());
+            vm.TrackGuestNativeResource(f.context->activity, *release, 1);
+            const auto process = linker.ResolveDescriptor("Landroid/os/Process;");
+            const auto kill = linker.FindDirectMethod(process, "killProcess", "(I)V");
+            REQUIRE(kill.has_value());
+            CHECK_THROWS_AS(static_cast<void>(vm.Call(*kill, std::array{VmValue::Int(1)})), DexVmError);
+            CHECK(vm.ExitCode() == 0);
+        }
+        CHECK_NOTHROW(static_cast<void>(f.app->Stop(guest_exit ? session::DexProcessStopReason::host_shutdown
+                                                           : session::DexProcessStopReason::runtime_failure)));
+        CHECK(callbacks == 0);
+        CHECK_FALSE(f.app->NativeProcess().Running());
+        CHECK(f.app->NativeProcess().AttachedJniThreadCount() == 0);
+      }
     }
 }

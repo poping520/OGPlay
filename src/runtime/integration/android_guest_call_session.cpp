@@ -1700,7 +1700,7 @@ public:
         }
     }
 
-    void Stop() {
+    void Stop(const GuestFinalizationPolicy policy = GuestFinalizationPolicy::permitted) {
         if (!running_) return;
         BeginTeardown();
         boundary_.ShutdownLoopers();
@@ -1726,7 +1726,7 @@ public:
         // cleanup leaves guest object invariants unknown: retain the first
         // error and reclaim the process, rather than pretending to dlclose it.
         auto failure = first_child_failure;
-        if (!failure && !NativeExitCode() && !teardown_cleanup_failed_ &&
+        if (policy == GuestFinalizationPolicy::permitted && !failure && !NativeExitCode() && !teardown_cleanup_failed_ &&
             !native_state_faulted_.load(std::memory_order_acquire)) {
             try {
                 auto fini_order = guest_load_order_;
@@ -2686,7 +2686,7 @@ std::size_t AndroidGuestProcess::RenderStereoAudio(const std::span<std::int16_t>
                                                    const std::uint32_t sample_rate) { return impl_->RenderStereoAudio(output, sample_rate); }
 std::size_t AndroidGuestProcess::InterruptBlockingWaits() { return impl_->InterruptBlockingWaits(); }
 void AndroidGuestProcess::BeginTeardown() noexcept { impl_->BeginTeardown(); }
-void AndroidGuestProcess::Stop() { impl_->Stop(); }
+void AndroidGuestProcess::Stop(const GuestFinalizationPolicy policy) { impl_->Stop(policy); }
 bool AndroidGuestProcess::Running() const noexcept { return impl_->Running(); }
 bool AndroidGuestProcess::ExitRequested() const noexcept { return impl_->ExitRequested(); }
 std::size_t AndroidGuestProcess::ApplicationModuleCount() const noexcept { return impl_->ApplicationModuleCount(); }
@@ -2898,9 +2898,9 @@ void AndroidGuestCallSession::RecycleFrame(AndroidBoundaryFrame&& frame) { proce
 std::size_t AndroidGuestCallSession::RenderStereoAudio(std::span<std::int16_t> output, std::uint32_t sample_rate) { return process_->RenderStereoAudio(output, sample_rate); }
 std::size_t AndroidGuestCallSession::InterruptBlockingWaits() { return process_->InterruptBlockingWaits(); }
 void AndroidGuestCallSession::BeginTeardown() noexcept { process_->BeginTeardown(); }
-void AndroidGuestCallSession::Stop() {
+void AndroidGuestCallSession::Stop(const GuestFinalizationPolicy policy) {
     try {
-        process_->Stop();
+        process_->Stop(policy);
     } catch (const A32GuestCallCancelled&) {
         throw;
     } catch (const A32GuestCallExit&) {

@@ -527,7 +527,7 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
 
     void DexActivityLifecycle::QueueInput(
         const runtime::AndroidBoundaryInput& input) {
-        if (state_ != LifecycleRunState::running || suspended_) return;
+        if (state_ != LifecycleRunState::running || suspended_ || bindings_.context->process_stopping) return;
         auto logical = input;
         // Both delivery paths expose the process input inventory, not SDL ids.
         logical.device_id = input.type == runtime::AndroidBoundaryInputType::key
@@ -1424,11 +1424,19 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
                     worker.changed.notify_all();
                 }
             }
+        } catch (const dx::DexVmError& error) {
+            if (error.Reason() != dx::DexVmErrorReason::thread_stopped ||
+                (!vm.ExitCode() && !bindings_.bridge->Session().NativeExitCode())) {
+                std::scoped_lock lock(worker.mutex);
+                worker.failure = std::current_exception();
+            }
         } catch (...) {
             std::scoped_lock lock(worker.mutex);
             worker.failure = std::current_exception();
         }
-        if (state.ready && !worker.failure && !vm.Threads().ShuttingDown()) {
+        const bool guest_live = !runtime::SessionExitRequested(*bindings_.context) &&
+            !vm.ExitCode() && !bindings_.bridge->Session().NativeExitCode();
+        if (guest_live && state.ready && !worker.failure && !vm.Threads().ShuttingDown()) {
             try {
                 auto& linker = bindings_.bridge->Linker();
                 const auto type = vm.Model().ObjectClass(state.renderer);
@@ -1439,7 +1447,7 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
                         {dx::VmValue::Ref(dx::VmObjectRef{})});
             } catch (...) { worker.failure = std::current_exception(); }
         }
-        try { ReleaseRendererEgl(state); }
+        try { if (guest_live) ReleaseRendererEgl(state); }
         catch (...) { if (!worker.failure) worker.failure = std::current_exception(); }
         std::scoped_lock lock(worker.mutex);
         state.stopped = true;
@@ -1706,7 +1714,7 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
              dx::VmValue::Int(static_cast<std::int32_t>(bindings_.context->surface_height))});
     }
 
-    LifecycleFrameState DexActivityLifecycle::Stop() {
+    LifecycleFrameState DexActivityLifecycle::Stop(DexProcessStopReason reason) {
         if (state_ == LifecycleRunState::stopped || stop_completed_) return State();
         std::string_view current_phase;
         const auto phase = [this, &current_phase](const std::string_view name,
@@ -1717,8 +1725,19 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
         };
         auto& session = bindings_.bridge->Session();
         const auto live = [&] {
-            return !bindings_.bridge->Vm().ExitCode() && !session.NativeExitCode();
+            return !runtime::SessionExitRequested(*bindings_.context) &&
+                !bindings_.bridge->Vm().ExitCode() && !session.NativeExitCode();
         };
+        if (!live()) reason = DexProcessStopReason::guest_exit;
+        else if (state_ == LifecycleRunState::failed) reason = DexProcessStopReason::runtime_failure;
+        if (reason == DexProcessStopReason::runtime_failure) state_ = LifecycleRunState::failed;
+        bindings_.context->process_stopping = true;
+        if (bindings_.logger) {
+            const auto name = reason == DexProcessStopReason::host_shutdown ? "host_shutdown" :
+                reason == DexProcessStopReason::guest_exit ? "guest_exit" : "runtime_failure";
+            bindings_.logger->Write(core::LogLevel::info, "session.process_stop",
+                "stopping guest process", {}, {{"reason", name}});
+        }
         std::exception_ptr first_failure;
         const auto record_failure = [&] {
             state_ = LifecycleRunState::failed;
@@ -1745,7 +1764,6 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
                 record_failure();
             }
         };
-        bool retired{};
         const auto guest = [&](const auto& action) {
             if (!live()) return;
             const auto deadline = session.CleanupDeadlineNs();
@@ -1756,8 +1774,7 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
                     bindings_.bridge->Vm().RunWithExecutionDeadline(
                         session.CleanupDeadlineNs(), action);
                 };
-                if (retired) session.RunTeardownCleanup(bounded);
-                else session.RunGracefulCleanup(bounded);
+                session.RunGracefulCleanup(bounded);
             } catch (...) {
                 if (live()) {
                     record_failure();
@@ -1765,7 +1782,8 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
             }
         };
         phase("teardown.begin");
-        const bool was_running = state_ == LifecycleRunState::running && live();
+        const bool was_running = reason == DexProcessStopReason::host_shutdown &&
+            state_ == LifecycleRunState::running && live();
         // Stop producing host frame permits, but retain real graphics and live
         // workers until the application's cooperative callbacks have returned.
         if (egl_pacer_attached_) runtime::ShutdownEglSwapPacer(*bindings_.context);
@@ -1788,23 +1806,28 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
         attempt([&] { runtime::ShutdownPendingIntents(bindings_.bridge->Vm(), *bindings_.context); });
         runtime::RetireGuestEglSurface(*bindings_.context);
         session.BeginTeardown();
-        retired = true;
-        attempt([&] { StopRendererThread(); });
+        attempt([&] { StopAllRenderers(); });
         phase("teardown.scheduler_shutdown");
         attempt([&] { runtime::ShutdownAndroidScheduler(*bindings_.context); });
         if (bindings_.interrupt_guest_waits) attempt(bindings_.interrupt_guest_waits);
         phase("teardown.thread_join");
         attempt([&] { session.QuiesceNativeWorkers(); });
         attempt([&] { bindings_.bridge->Threads().Shutdown(); });
-        // onDestroy may call libc exit, which runs global destructors before
-        // exit_group. All workers must be quiescent before entering it.
-        phase("teardown.destroy");
-        if (was_running) {
-            guest([&] { CallActivity("onDestroy", "()V", {}); });
-            for (const auto& record : bindings_.context->activity_stack)
-                if (record.object != bindings_.context->activity)
-                    guest([&] { CallOnView(record.object, "onDestroy", "()V", {}); });
-        }
+        // A process close is not Activity.finish(). Instance destruction remains
+        // in ServiceActivitySwitch; never synthesize onDestroy for the stack.
+        phase("teardown.media_retire");
+        attempt([&] { runtime::ReleaseAndroidMediaResources(*bindings_.context); });
+        GlSurfaceRuntime retired_renderer;
+        retired_renderer.view = bindings_.context->gl_surface_renderer_view;
+        ProjectRenderer(*bindings_.context, retired_renderer);
+        bindings_.context->gl_surface_renderer_view = dx::VmObjectRef{};
+        bindings_.context->gl_surface_runtimes.clear();
+        bindings_.context->active_surface_holders.clear();
+        bindings_.context->surface_callbacks.clear();
+        bindings_.context->holder_surfaces.clear();
+        bindings_.context->surface_holders.clear();
+        bindings_.context->surface_callback_sizes.clear();
+        bindings_.context->managed_host_surface_open = false;
         bindings_.context->activity_stack.clear();
         window_handoffs_.clear();
         bindings_.context->activity_commands.clear();

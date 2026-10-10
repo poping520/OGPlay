@@ -157,6 +157,8 @@ void RequireAbsentService(dx::IntrinsicContext &call, const Context &context,
 
 dx::VmValue StartAndroidActivity(dx::IntrinsicContext& call, const Context& context,
                                  const std::int32_t request_code) {
+        if (context->process_stopping)
+          throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "process is stopping"};
         const auto intent = call.arguments[0].ref;
         if (!intent.IsValid())
           throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;",

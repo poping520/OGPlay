@@ -69,10 +69,10 @@ void Measure(UiTree& tree, const UiNodeId id, const MeasureSpec width_spec,
                 1, width_spec.size - node.padding.left - node.padding.right);
             laid_out_value = WrapFixedText(laid_out_value, node.text_size_px,
                                            node.text_style, content_width,
-                                           node.max_lines);
+                                           node.max_lines, node.fallback_font.get());
         }
         const auto laid_out_text = MeasureFixedText(
-            laid_out_value, node.text_size_px, node.text_style);
+            laid_out_value, node.text_size_px, node.text_style, node.fallback_font.get());
         // API19 TextView.onMeasure/getDesiredHeight: top/bottom contribute
         // to the text band's width; left/right contribute to its height.
         // Compound padding is then added on both axes, even with empty text.
@@ -369,46 +369,34 @@ void LayoutRelativeChildren(UiTree& tree, const UiNodeId id,
         }
         if (visit == RelativeVisit::Resolved) return lefts.at(child_id);
         visit = RelativeVisit::Visiting;
-        const auto& child = *tree.Get(child_id);
+        auto& child = *tree.Get(child_id);
         const auto& rules = child.layout.relative;
-        const bool centered = rules.center_in_parent || rules.center_horizontal;
-        const auto rule_count = static_cast<unsigned>(centered) +
-                                static_cast<unsigned>(rules.align_parent_left) +
-                                static_cast<unsigned>(rules.align_parent_right) +
-                                static_cast<unsigned>(rules.left_of.has_value()) +
-                                static_cast<unsigned>(rules.right_of.has_value()) +
-                                static_cast<unsigned>(rules.align_left.has_value()) +
-                                static_cast<unsigned>(rules.align_right.has_value());
-        if (rule_count > 1U) {
-            throw std::runtime_error(
-                "RelativeLayout has conflicting horizontal rules");
-        }
-        std::int32_t left = content_left + child.layout.margin.left;
-        if (centered) {
-            left = content_left +
-                   (content_right - content_left - child.measured.width) / 2 +
-                   child.layout.margin.left - child.layout.margin.right;
-        } else if (rules.align_parent_right) {
-            left = content_right - child.measured.width -
-                   child.layout.margin.right;
-        } else if (rules.left_of.has_value()) {
-            const auto anchor = anchor_for(*rules.left_of);
-            left = resolve_horizontal(anchor) - child.layout.margin.right -
-                   child.measured.width;
-        } else if (rules.right_of.has_value()) {
+        std::optional<std::int32_t> left_edge, right_edge;
+        // API19 applyHorizontalSizeRules: later edge rules override earlier
+        // rules on that same edge; centering is only a fallback.
+        if (rules.left_of) right_edge = resolve_horizontal(anchor_for(*rules.left_of)) - child.layout.margin.right;
+        if (rules.right_of) {
             const auto anchor = anchor_for(*rules.right_of);
-            const auto& anchor_node = *tree.Get(anchor);
-            left = resolve_horizontal(anchor) + anchor_node.measured.width +
-                   child.layout.margin.left;
-        } else if (rules.align_left.has_value()) {
-            left = resolve_horizontal(anchor_for(*rules.align_left)) +
-                   child.layout.margin.left;
-        } else if (rules.align_right.has_value()) {
-            const auto anchor = anchor_for(*rules.align_right);
-            const auto& anchor_node = *tree.Get(anchor);
-            left = resolve_horizontal(anchor) + anchor_node.measured.width -
-                   child.measured.width - child.layout.margin.right;
+            left_edge = resolve_horizontal(anchor) + tree.Get(anchor)->measured.width + child.layout.margin.left;
         }
+        if (rules.align_left) left_edge = resolve_horizontal(anchor_for(*rules.align_left)) + child.layout.margin.left;
+        if (rules.align_right) {
+            const auto anchor = anchor_for(*rules.align_right);
+            right_edge = resolve_horizontal(anchor) + tree.Get(anchor)->measured.width - child.layout.margin.right;
+        }
+        if (rules.align_parent_left) left_edge = content_left + child.layout.margin.left;
+        if (rules.align_parent_right) right_edge = content_right - child.layout.margin.right;
+        if (left_edge && right_edge) {
+            Measure(tree, child_id, {MeasureMode::Exactly, std::max(0, *right_edge - *left_edge)},
+                ChildSpec({MeasureMode::Exactly, content_bottom - content_top},
+                    child.layout.margin.top + child.layout.margin.bottom, child.layout.height));
+        }
+        auto left = content_left + child.layout.margin.left;
+        if (left_edge) left = *left_edge;
+        else if (right_edge) left = *right_edge - child.measured.width;
+        else if (rules.center_in_parent || rules.center_horizontal)
+            left = content_left + (content_right - content_left - child.measured.width) / 2
+                + child.layout.margin.left - child.layout.margin.right;
         lefts.emplace(child_id, left);
         visit = RelativeVisit::Resolved;
         return left;
@@ -423,46 +411,30 @@ void LayoutRelativeChildren(UiTree& tree, const UiNodeId id,
         }
         if (visit == RelativeVisit::Resolved) return tops.at(child_id);
         visit = RelativeVisit::Visiting;
-        const auto& child = *tree.Get(child_id);
+        auto& child = *tree.Get(child_id);
         const auto& rules = child.layout.relative;
-        const bool centered = rules.center_in_parent || rules.center_vertical;
-        const auto rule_count = static_cast<unsigned>(centered) +
-                                static_cast<unsigned>(rules.align_parent_top) +
-                                static_cast<unsigned>(rules.align_parent_bottom) +
-                                static_cast<unsigned>(rules.above.has_value()) +
-                                static_cast<unsigned>(rules.below.has_value()) +
-                                static_cast<unsigned>(rules.align_top.has_value()) +
-                                static_cast<unsigned>(rules.align_bottom.has_value());
-        if (rule_count > 1U) {
-            throw std::runtime_error(
-                "RelativeLayout has conflicting vertical rules");
-        }
-        std::int32_t top = content_top + child.layout.margin.top;
-        if (centered) {
-            top = content_top +
-                  (content_bottom - content_top - child.measured.height) / 2 +
-                  child.layout.margin.top - child.layout.margin.bottom;
-        } else if (rules.align_parent_bottom) {
-            top = content_bottom - child.measured.height -
-                  child.layout.margin.bottom;
-        } else if (rules.above.has_value()) {
-            const auto anchor = anchor_for(*rules.above);
-            top = resolve_vertical(anchor) - child.layout.margin.bottom -
-                  child.measured.height;
-        } else if (rules.below.has_value()) {
+        std::optional<std::int32_t> top_edge, bottom_edge;
+        if (rules.above) bottom_edge = resolve_vertical(anchor_for(*rules.above)) - child.layout.margin.bottom;
+        if (rules.below) {
             const auto anchor = anchor_for(*rules.below);
-            const auto& anchor_node = *tree.Get(anchor);
-            top = resolve_vertical(anchor) + anchor_node.measured.height +
-                  child.layout.margin.top;
-        } else if (rules.align_top.has_value()) {
-            top = resolve_vertical(anchor_for(*rules.align_top)) +
-                  child.layout.margin.top;
-        } else if (rules.align_bottom.has_value()) {
-            const auto anchor = anchor_for(*rules.align_bottom);
-            const auto& anchor_node = *tree.Get(anchor);
-            top = resolve_vertical(anchor) + anchor_node.measured.height -
-                  child.measured.height - child.layout.margin.bottom;
+            top_edge = resolve_vertical(anchor) + tree.Get(anchor)->measured.height + child.layout.margin.top;
         }
+        if (rules.align_top) top_edge = resolve_vertical(anchor_for(*rules.align_top)) + child.layout.margin.top;
+        if (rules.align_bottom) {
+            const auto anchor = anchor_for(*rules.align_bottom);
+            bottom_edge = resolve_vertical(anchor) + tree.Get(anchor)->measured.height - child.layout.margin.bottom;
+        }
+        if (rules.align_parent_top) top_edge = content_top + child.layout.margin.top;
+        if (rules.align_parent_bottom) bottom_edge = content_bottom - child.layout.margin.bottom;
+        if (top_edge && bottom_edge)
+            Measure(tree, child_id, {MeasureMode::Exactly, child.measured.width},
+                {MeasureMode::Exactly, std::max(0, *bottom_edge - *top_edge)});
+        auto top = content_top + child.layout.margin.top;
+        if (top_edge) top = *top_edge;
+        else if (bottom_edge) top = *bottom_edge - child.measured.height;
+        else if (rules.center_in_parent || rules.center_vertical)
+            top = content_top + (content_bottom - content_top - child.measured.height) / 2
+                + child.layout.margin.top - child.layout.margin.bottom;
         tops.emplace(child_id, top);
         visit = RelativeVisit::Resolved;
         return top;
@@ -470,6 +442,8 @@ void LayoutRelativeChildren(UiTree& tree, const UiNodeId id,
 
     for (const auto child_id : parent.children) {
         static_cast<void>(resolve_horizontal(child_id));
+    }
+    for (const auto child_id : parent.children) {
         static_cast<void>(resolve_vertical(child_id));
     }
     // RelativeLayout gravity moves the resolved children as one group.

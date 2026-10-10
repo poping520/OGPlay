@@ -1855,7 +1855,8 @@
       "Landroid/view/animation/Animation$AnimationListener;",
       "Landroid/widget/FrameLayout$LayoutParams;",
       "Landroid/widget/LinearLayout$LayoutParams;",
-      "Landroid/widget/RelativeLayout$LayoutParams;"
+      "Landroid/widget/RelativeLayout$LayoutParams;",
+      "Landroid/widget/TextView$BufferType;"
     ],
     "framework2.jar": [
       "Lcom/android/internal/os/AtomicFile;",

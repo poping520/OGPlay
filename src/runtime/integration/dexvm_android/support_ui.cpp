@@ -141,7 +141,7 @@ void InitializeDefaultViewBackground(dexvm::Interpreter& vm,
 
 void ResetViewUiState(DexVmAndroidContext& context) {
     if (!context.activity_stack.empty()) {
-        const auto children = context.ui_tree.Get(context.ui_tree.Root())->children;
+        const auto children = context.ui_tree.Get(ActivityContentRoot(context))->children;
         for (const auto child : children) RetireViewUiSubtree(context, child);
         context.focused_edit_text = dexvm::VmObjectRef{};
         return;
@@ -160,6 +160,36 @@ void ResetViewUiState(DexVmAndroidContext& context) {
     context.focused_edit_text = dexvm::VmObjectRef{};
 }
 
+void DetachGlSurfaceSubtree(DexVmAndroidContext& context, const ui::UiNodeId subtree) {
+    std::vector<ui::UiNodeId> nodes{subtree};
+    while (!nodes.empty()) {
+        const auto node = nodes.back(); nodes.pop_back();
+        const auto* state = context.ui_tree.Get(node);
+        if (!state) continue;
+        nodes.insert(nodes.end(), state->children.begin(), state->children.end());
+        const auto view = ViewObjectForUiNode(context, node);
+        if (context.gl_surface_runtimes.contains(view.Value()) && context.retire_gl_surface_view)
+            context.retire_gl_surface_view(view);
+    }
+}
+
+ui::UiNodeId ActivityContentRoot(DexVmAndroidContext& context) {
+    if (context.activity_stack.empty()) return context.ui_tree.Root();
+    const auto found = std::find_if(context.activity_stack.begin(), context.activity_stack.end(),
+        [&](const auto& record) { return record.object == context.activity; });
+    if (found == context.activity_stack.end())
+        throw std::logic_error("foreground Activity has no window record");
+    if (!found->window_root || !context.ui_tree.Get(*found->window_root)) {
+        const auto node = context.ui_tree.CreateNode(ui::UiClass::FrameLayout);
+        context.ui_tree.Get(node)->layout.width.mode = ui::SizeMode::MatchParent;
+        context.ui_tree.Get(node)->layout.height.mode = ui::SizeMode::MatchParent;
+        context.ui_tree.Attach(context.ui_tree.Root(), node);
+        found->window_root = node;
+        found->visible = true;
+    }
+    return *found->window_root;
+}
+
 void RetireViewUiSubtree(DexVmAndroidContext& context, const ui::UiNodeId node) {
     std::vector<ui::UiNodeId> nodes{node};
     while (!nodes.empty()) {
@@ -171,6 +201,18 @@ void RetireViewUiSubtree(DexVmAndroidContext& context, const ui::UiNodeId node) 
         const auto found = context.ui_node_to_object.find(current);
         if (found != context.ui_node_to_object.end()) {
             const auto object = found->second.Value();
+            if (context.gl_surface_runtimes.contains(object)) {
+                if (context.retire_gl_surface_view) context.retire_gl_surface_view(found->second);
+                context.gl_surface_runtimes.erase(object);
+            }
+            if (const auto holder = context.surface_holders.find(object); holder != context.surface_holders.end()) {
+                const auto key = holder->second.Value();
+                context.surface_callbacks.erase(key);
+                context.holder_surfaces.erase(key);
+                context.active_surface_holders.erase(key);
+                context.surface_callback_sizes.erase(key);
+                context.surface_holders.erase(holder);
+            }
             context.object_to_ui_node.erase(object);
             context.ui_view_layout_params.erase(object);
             context.ui_view_backgrounds.erase(object);
@@ -470,14 +512,20 @@ void ApplyTextAppearance(const DexVmAndroidContext& context,
     switch (resource_id) {
         case 0x01030042U:
         case 0x01030043U:
+        case 0x010300fdU:
+        case 0x010300feU:
             node.text_size_px = 22.0F * context.ui_scaled_density;
             return;
         case 0x01030044U:
         case 0x01030045U:
+        case 0x010300ffU:
+        case 0x01030100U:
             node.text_size_px = 18.0F * context.ui_scaled_density;
             return;
         case 0x01030046U:
         case 0x01030047U:
+        case 0x01030101U:
+        case 0x01030102U:
             node.text_size_px = 14.0F * context.ui_scaled_density;
             return;
         default: break;
@@ -653,7 +701,7 @@ void ApplyAttribute(DexVmAndroidContext& context, const ui::UiNodeId node_id,
     } else if (name == "textSize") {
         const auto size = static_cast<float>(
             DimensionValue(context, attribute, true));
-        static_cast<void>(ui::MeasureFixedText(node.text, size));
+        static_cast<void>(ui::MeasureFixedText(node.text, size, 0, node.fallback_font.get()));
         node.text_size_px = size;
     } else if (name == "singleLine") {
         node.max_lines = attribute.data == 0U
@@ -1156,7 +1204,7 @@ dexvm::VmObjectRef InflateUiElements(
             const auto& element = document[index];
             const auto parent_node =
                 element.parent < 0
-                    ? context.ui_tree.Root()
+                    ? ActivityContentRoot(context)
                     : node_of[static_cast<std::size_t>(element.parent)];
             if (element.name == "merge") {
                 if (index != 0 || element.parent >= 0) {
@@ -1175,9 +1223,18 @@ dexvm::VmObjectRef InflateUiElements(
                                          element.name);
             }
             const auto view = vm.NewIntrinsicInstance(widget->dex_descriptor);
+            const auto view_root = vm.ProtectReferences(std::array{view});
             const auto node = context.ui_tree.CreateNode(widget->kind);
             BindViewToUiNode(context, view, node);
             AssignViewContext(vm, context, view, inflater_context);
+            const auto constructor = vm.Linker().FindDirectMethod(vm.Model().ObjectClass(view),
+                "<init>", "(Landroid/content/Context;)V");
+            if (!constructor) throw std::runtime_error("inflatable widget requires a Context constructor");
+            const auto initialized = vm.Call(*constructor,
+                std::array{dexvm::VmValue::Ref(view), dexvm::VmValue::Ref(inflater_context)});
+            if (initialized.exception.IsValid())
+                throw dexvm::VmJavaThrow{vm.Linker().Class(initialized.exception_class).descriptor,
+                    initialized.exception_message, initialized.exception};
             ApplyInflatedWidgetDefaults(context, *context.ui_tree.Get(node));
             InitializeDefaultViewBackground(vm, context, view, node);
             std::uint32_t drawable_id = element.src;
@@ -1211,7 +1268,15 @@ dexvm::VmObjectRef InflateUiElements(
                     continue;
                 }
                 try {
-                    ApplyAttribute(context, node, attribute, drawable_id);
+                    if (attribute.name == "textAppearance" && attribute.value_type == 2) {
+                        auto resolved = attribute;
+                        resolved.value_type = kTypeReference;
+                        resolved.data = android_intrinsics::ResolveTextAppearanceAttribute(
+                            vm, context, inflater_context, attribute.data);
+                        ApplyAttribute(context, node, resolved, drawable_id);
+                    } else {
+                        ApplyAttribute(context, node, attribute, drawable_id);
+                    }
                 } catch (const std::runtime_error&) {
                     if (auto* ledger = vm.Ledger(); ledger != nullptr) {
                         ledger->RecordUnimplemented(
@@ -1331,7 +1396,7 @@ void EnsureLayout(DexVmAndroidContext& context) {
     const DexVmAndroidContext& context, const ui::UiNodeId id, const float x,
     const float y) {
     const auto* node = context.ui_tree.Get(id);
-    if (node == nullptr || node->visibility != ui::Visibility::Visible ||
+    if (node == nullptr || !node->window_visible || node->visibility != ui::Visibility::Visible ||
         !node->enabled || !Contains(node->screen_frame, x, y)) {
         return std::nullopt;
     }
@@ -1358,7 +1423,7 @@ void CollectTouchReceivers(const DexVmAndroidContext& context,
                            const float y,
                            std::vector<std::uint64_t>& receivers) {
     const auto* node = context.ui_tree.Get(id);
-    if (node == nullptr || !context.ui_tree.IsAttached(id) ||
+    if (node == nullptr || !context.ui_tree.IsVisible(id) ||
         node->visibility != ui::Visibility::Visible || !node->enabled ||
         !Contains(node->screen_frame, x, y)) {
         return;

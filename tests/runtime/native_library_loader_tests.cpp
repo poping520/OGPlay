@@ -1972,11 +1972,11 @@ TEST_CASE("DVM-231 JNI-created strings and arrays expose their actual runtime cl
         env.DeleteGlobalRef(1, global);
         static_cast<void>(vm.CollectGarbage("jni-native-types-dead"));
         CHECK_FALSE(f.session->Strings().Contains(fresh_identity));
-        CHECK_THROWS_AS(objects.ClassOf(fresh_identity), JniGuestBindingError);
+        CHECK_THROWS_AS(static_cast<void>(objects.ClassOf(fresh_identity)), JniGuestBindingError);
         const auto forged = env.PublishLocalObject(1, AllocateJniHostObjectIdentity());
         CHECK_THROWS_AS(static_cast<void>(call("GetObjectClass", forged.Value())), JniGuestBindingError);
         f.bridge.reset();
-        CHECK_THROWS_AS(objects.ClassOf(f.session->Strings().Create({})), JniGuestBindingError);
+        CHECK_THROWS_AS(static_cast<void>(objects.ClassOf(f.session->Strings().Create({}))), JniGuestBindingError);
     }
 }
 
@@ -2618,7 +2618,8 @@ TEST_CASE("DVM-223 Activity result stack restores caller identity and content") 
         on(child_content, "setId", "(I)V", {VmValue::Int(11)});
         CHECK(on(parent, "findViewById", "(I)Landroid/view/View;", {VmValue::Int(11)}).ref == content);
         CHECK(on(child, "findViewById", "(I)Landroid/view/View;", {VmValue::Int(11)}).ref == child_content);
-        CHECK_FALSE(f.context->ui_tree.IsAttached(*node));
+        CHECK(f.context->ui_tree.IsAttached(*node));
+        CHECK_FALSE(f.context->ui_tree.IsVisible(*node));
         on(child, "setResult", "(I)V", {VmValue::Int(1)});
         static_cast<void>(vm.CollectGarbage("activity-return-roots"));
         reset_events();
@@ -2633,7 +2634,7 @@ TEST_CASE("DVM-223 Activity result stack restores caller identity and content") 
         CHECK(on(parent, "getWindow", "()Landroid/view/Window;").ref == parent_window);
         CHECK(on(parent_window, "getDecorView", "()Landroid/view/View;").ref == parent_decor);
         CHECK(f.CallStaticInt("Lfixture/ResultCaller;", "getInstances") == 1);
-        CHECK(f.CallStaticInt("Lfixture/ResultCaller;", "getEvents") == 1234);
+        CHECK(f.CallStaticInt("Lfixture/ResultCaller;", "getEvents") == 3124);
         CHECK(f.CallStaticInt("Lfixture/ResultCaller;", "getCallbacks") == 1);
         CHECK(f.CallStaticInt("Lfixture/ResultCaller;", "getRequest") == 100);
         CHECK(f.CallStaticInt("Lfixture/ResultCaller;", "getResult") == 1);
@@ -2721,6 +2722,92 @@ TEST_CASE("DVM-223 Activity result stack restores caller identity and content") 
     }
 }
 
+TEST_CASE("DVM-235 live Surface window is hidden and restored without losing registrations") {
+    using namespace ogplay;
+    using namespace runtime::dexvm;
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        OrchestratedApp f("fixture.ResultCaller", true, false, {}, {}, true, backend);
+        f.app->StartApplication();
+        REQUIRE(f.app->StartLauncherActivity().state == session::LifecycleRunState::running);
+        auto& vm = f.app->DexVm().Vm();
+        auto& linker = vm.Linker();
+        auto& lifecycle = f.app->ActivityLifecycle();
+        const auto caller = f.context->activity;
+        const auto call = [&](VmObjectRef object, const char* name, const char* signature,
+                              std::vector<VmValue> args = {}) {
+            const auto type = vm.Model().ObjectClass(object);
+            const auto slot = linker.FindVtableIndex(type, name, signature);
+            REQUIRE(slot.has_value());
+            args.insert(args.begin(), VmValue::Ref(object));
+            const auto result = vm.Call(linker.Class(type).vtable[*slot], args);
+            REQUIRE_MESSAGE(!result.exception.IsValid(), result.exception_message);
+            return result.value;
+        };
+        const auto surface = vm.NewIntrinsicInstance("Landroid/view/SurfaceView;");
+        const auto init_surface = linker.FindDirectMethod(vm.Model().ObjectClass(surface),
+            "<init>", "(Landroid/content/Context;)V");
+        REQUIRE(init_surface.has_value());
+        REQUIRE_FALSE(vm.Call(*init_surface, std::array{
+            VmValue::Ref(surface), VmValue::Ref(caller)}).exception.IsValid());
+        int source_focus_gains{};
+        const auto focus_slot = linker.FindVtableIndex(vm.Model().ObjectClass(surface), "onWindowFocusChanged", "(Z)V");
+        REQUIRE(focus_slot.has_value());
+        auto& focus_method = linker.MutableMethod(linker.Class(vm.Model().ObjectClass(surface)).vtable[*focus_slot]);
+        focus_method.kind = MethodKind::intrinsic;
+        focus_method.implementation = [surface, &source_focus_gains](IntrinsicContext& call) {
+            if (call.receiver == surface && call.arguments[0].AsInt() != 0) ++source_focus_gains;
+            return VmValue::Void();
+        };
+        const auto holder = call(surface, "getHolder", "()Landroid/view/SurfaceHolder;").ref;
+        REQUIRE(holder.IsValid());
+        call(holder, "setFixedSize", "(II)V", {VmValue::Int(64), VmValue::Int(36)});
+        const auto fixed_frame = call(holder, "getSurfaceFrame", "()Landroid/graphics/Rect;").ref;
+        CHECK(call(fixed_frame, "width", "()I").AsInt() == 64);
+        CHECK(call(fixed_frame, "height", "()I").AsInt() == 36);
+        call(caller, "setContentView", "(Landroid/view/View;)V", {VmValue::Ref(surface)});
+        static_cast<void>(lifecycle.StepFrame());
+        REQUIRE_FALSE(f.context->active_surface_holders.empty());
+        const auto before = lifecycle.State();
+        CHECK(source_focus_gains == 1);
+        const auto intent = vm.NewIntrinsicInstance("Landroid/content/Intent;");
+        const auto init_intent = linker.FindDirectMethod(vm.Model().ObjectClass(intent), "<init>", "()V");
+        REQUIRE(init_intent.has_value());
+        REQUIRE_FALSE(vm.Call(*init_intent, std::array{VmValue::Ref(intent)}).exception.IsValid());
+        call(intent, "setClassName", "(Ljava/lang/String;Ljava/lang/String;)Landroid/content/Intent;",
+             {VmValue::Ref(vm.NewStringUtf8("fixture")), VmValue::Ref(vm.NewStringUtf8("fixture.ResultChild"))});
+        call(intent, "addFlags", "(I)Landroid/content/Intent;", {VmValue::Int(0x10000)});
+        call(caller, "startActivity", "(Landroid/content/Intent;)V", {VmValue::Ref(intent)});
+        REQUIRE(f.context->activity_commands.size() == 1);
+        static_cast<void>(lifecycle.StepFrame());
+        CHECK(lifecycle.State().state == session::LifecycleRunState::running);
+        CHECK(lifecycle.State().frame == before.frame + 1);
+        CHECK(f.context->activity != caller);
+        const auto node = runtime::FindViewUiNode(*f.context, surface.Value());
+        REQUIRE(node.has_value());
+        CHECK(f.context->ui_tree.IsAttached(*node));
+        CHECK_FALSE(f.context->ui_tree.IsVisible(*node));
+        CHECK(f.context->surface_holders.contains(surface.Value()));
+        CHECK(f.context->activity_stack.size() == 2);
+        CHECK(source_focus_gains == 1);
+        CHECK_FALSE(runtime::AttachSurfaceViewSubtree(vm, *f.context, *node).has_value());
+        CHECK_FALSE(f.context->active_surface_holders.contains(holder.Value()));
+        CHECK(f.ledger.Unimplemented().empty());
+        call(f.context->activity, "finish", "()V");
+        static_cast<void>(lifecycle.StepFrame());
+        CHECK(f.context->activity == caller);
+        CHECK(f.context->content_view == surface);
+        CHECK(f.context->ui_tree.IsVisible(*node));
+        CHECK_FALSE(f.context->active_surface_holders.empty());
+        CHECK(source_focus_gains == 2);
+        static_cast<void>(f.app->Stop());
+        CHECK_FALSE(f.app->NativeProcess().Running());
+        CHECK(f.context->activity_stack.empty());
+        CHECK(f.context->activity_commands.empty());
+        CHECK(f.app->State() == session::AndroidAppProcessState::stopped);
+        static_cast<void>(f.app->Stop());
+    }
+}
+
 TEST_CASE("DVM-223 onStart launch and onCreate finish return before caller resume") {
     using namespace ogplay;
     using runtime::dexvm::InterpreterBackend;
@@ -2732,7 +2819,7 @@ TEST_CASE("DVM-223 onStart launch and onCreate finish return before caller resum
         CHECK(f.app->DexVm().Vm().Linker().Class(f.app->DexVm().Vm().Model().ObjectClass(f.context->activity)).descriptor == "Lfixture/ResultOnStartCaller;");
         CHECK(f.CallStaticInt("Lfixture/ResultCaller;", "getInstances") == 1);
         CHECK(f.CallStaticInt("Lfixture/ResultCaller;", "getCallbacks") == 1);
-        CHECK(f.CallStaticInt("Lfixture/ResultCaller;", "getEvents") == 21234);
+        CHECK(f.CallStaticInt("Lfixture/ResultCaller;", "getEvents") == 234);
         CHECK(f.CallStaticInt("Lfixture/ResultCaller;", "getResult") == 1);
         CHECK_FALSE(runtime::SessionExitRequested(*f.context));
         static_cast<void>(f.app->Stop());
@@ -5962,6 +6049,7 @@ TEST_CASE("DVM-197 renderer EGL policies establish current context before events
     using runtime::android_intrinsics::CallAndroidMethod;
     for (const auto backend : {dx::InterpreterBackend::switch_dispatch, dx::InterpreterBackend::threaded}) {
       for (const int mode : {0, 1, 2, 3}) {
+        INFO("renderer mode=" << mode << " backend=" << static_cast<int>(backend));
         const bool custom = mode != 0;
         const bool reject_context = mode == 2;
         const bool reject_draw = mode == 3;
@@ -6125,6 +6213,7 @@ TEST_CASE("DVM-197 renderer EGL policies establish current context before events
             call(view,"setEGLContextClientVersion","(I)V",{integer(2)});
         }
         call(view,"setRenderer","(Landroid/opengl/GLSurfaceView$Renderer;)V",{ref(policy)});
+        call(c.activity,"setContentView","(Landroid/view/View;)V",{ref(view)});
         call(view,"queueEvent","(Ljava/lang/Runnable;)V",{ref(policy)});
         if (reject_context) {
             CHECK_THROWS_WITH_AS(static_cast<void>(fixture.app->ActivityLifecycle().StepFrame()), "renderer EGL context creation failed", session::DexActivityLifecycleError);
@@ -6173,6 +6262,55 @@ TEST_CASE("DVM-197 renderer EGL policies establish current context before events
         CHECK(vm.CurrentContextToken() == 1);
         CHECK(vm.Threads().CurrentThreadObject() == ui_thread);
         CHECK_FALSE(call(c.renderer_egl, "eglGetCurrentContext", "()Ljavax/microedition/khronos/egl/EGLContext;").ref == c.renderer_context);
+        for (const auto preserve : {false, true}) {
+            call(view, "setPreserveEGLContextOnPause", "(Z)V", {integer(preserve ? 1 : 0)});
+            const auto old_context = c.renderer_context;
+            call(view, "onPause", "()V");
+            CHECK(c.gl_surface_runtimes.at(view.Value())->paused);
+            CHECK_FALSE(c.renderer_surface.IsValid());
+            CHECK(c.renderer_context.IsValid() == preserve);
+            call(view, "onResume", "()V");
+            static_cast<void>(fixture.app->ActivityLifecycle().StepFrame());
+            CHECK_FALSE(c.gl_surface_runtimes.at(view.Value())->paused);
+            CHECK(c.renderer_surface.IsValid());
+            CHECK((c.renderer_context == old_context) == preserve);
+            CHECK(vm.Threads().IsAlive(gl_thread));
+            if (!preserve) {
+                if (custom) {
+                    expected.push_back("destroy"); expected.push_back("choose"); expected.push_back("create");
+                }
+                expected.push_back("created");
+            }
+            expected.push_back("changed"); expected.push_back("draw");
+            CHECK(order == expected);
+        }
+        const auto source_activity = c.activity;
+        const auto source_content = c.content_view;
+        const auto source_runtime = c.gl_surface_runtimes.at(view.Value());
+        c.activity_components.push_back({loader::AndroidManifestComponentKind::activity,
+            "fixture.ResultChild", std::nullopt, true, {}});
+        const auto intent = vm.NewIntrinsicInstance("Landroid/content/Intent;");
+        const auto intent_ctor = linker.FindDirectMethod(vm.Model().ObjectClass(intent), "<init>", "()V");
+        REQUIRE(intent_ctor.has_value());
+        REQUIRE_FALSE(vm.Call(*intent_ctor, std::array{ref(intent)}).exception.IsValid());
+        call(intent, "setClassName", "(Ljava/lang/String;Ljava/lang/String;)Landroid/content/Intent;",
+             {ref(vm.NewStringUtf8("fixture")), ref(vm.NewStringUtf8("fixture.ResultChild"))});
+        call(source_activity, "startActivity", "(Landroid/content/Intent;)V", {ref(intent)});
+        static_cast<void>(fixture.app->ActivityLifecycle().StepFrame());
+        CHECK(c.activity != source_activity);
+        CHECK_FALSE(c.renderer.IsValid());
+        CHECK_FALSE(source_runtime->surface_available);
+        CHECK(source_runtime->renderer_context.IsValid());
+        CHECK(vm.Threads().IsAlive(gl_thread));
+        call(c.activity, "finish", "()V");
+        static_cast<void>(fixture.app->ActivityLifecycle().StepFrame());
+        CHECK(c.activity == source_activity);
+        CHECK(c.content_view == source_content);
+        CHECK(c.gl_surface_runtimes.at(view.Value()) == source_runtime);
+        CHECK(source_runtime->surface_available);
+        CHECK(vm.Threads().IsAlive(gl_thread));
+        expected.push_back("changed"); expected.push_back("draw");
+        CHECK(order == expected);
         CHECK(fixture.app->Stop().state == session::LifecycleRunState::stopped);
         CHECK_FALSE(vm.Threads().IsAlive(gl_thread));
         CHECK_FALSE(c.run_gl_surface_thread);

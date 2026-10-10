@@ -45,6 +45,7 @@ struct DrawText final {
     float size_px{8.0F};
     float alpha{1.0F};
     std::uint32_t style{};
+    std::shared_ptr<const UiFallbackFont> fallback_font;
 };
 
 struct PushClip final { Rect rect; };
@@ -70,14 +71,14 @@ struct FixedTextMetrics final {
     constexpr auto operator<=>(const FixedTextMetrics&) const = default;
 };
 
-// Deterministic built-in 5x7 ASCII font. Unsupported glyphs and invalid sizes
-// fail explicitly.
+// Deterministic built-in 5x7 ASCII font, with optional trusted API19 BMP
+// fallback. Unsupported glyphs and invalid sizes fail explicitly.
 [[nodiscard]] FixedTextMetrics MeasureFixedText(std::u16string_view text,
-                                                float size_px, std::uint32_t style = 0);
+                                                float size_px, std::uint32_t style = 0, const UiFallbackFont* fallback = nullptr);
 [[nodiscard]] std::u16string WrapFixedText(std::u16string_view text,
                                            float size_px, std::uint32_t style,
                                            std::int32_t width_px,
-                                           std::int32_t max_lines);
+                                           std::int32_t max_lines, const UiFallbackFont* fallback = nullptr);
 
 [[nodiscard]] UiRenderList BuildUiRenderList(const UiTree& tree,
                                              const UiBitmapCache& bitmaps);

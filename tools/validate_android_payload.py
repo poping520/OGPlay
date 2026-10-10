@@ -52,13 +52,15 @@ BOOT_DEX_NOTICE = "notices/bootdex.jar.txt"
 ICU_DATA = "icu/icudt51l.dat"
 TZDATA = "zoneinfo/tzdata"
 TZDATA_NOTICE = "notices/tzdata.txt"
+UI_FONT = "fonts/DroidSansFallback.ttf"
+UI_FONT_NOTICE = "notices/fonts.txt"
 ICU_NOTICES = {
     "notices/icu4c-license.html",
     "notices/icu4c-unicode-license.txt",
 }
 PAYLOAD_FILES = LIBRARIES | NOTICES | {
     BOOT_DEX, BOOT_DEX_NOTICE, ICU_DATA, "manifest.json",
-    "source-manifest.xml", TZDATA, TZDATA_NOTICE} | ICU_NOTICES
+    "source-manifest.xml", TZDATA, TZDATA_NOTICE, UI_FONT, UI_FONT_NOTICE, "fonts/README.md"} | ICU_NOTICES
 SHA256 = re.compile(r"[0-9a-f]{64}")
 
 
@@ -211,6 +213,8 @@ def validate_tzdata(image: bytes) -> None:
 
 def validate(root: Path) -> None:
     root = root.resolve()
+    if _digest(root / UI_FONT) != "05d71b179ef97b82cf1bb91cef290c600a510f77f39b4964359e3ef88378c79d":
+        raise PayloadError("API19 fallback font does not match its trusted source")
     actual_files = {
         path.relative_to(root).as_posix()
         for path in root.rglob("*") if path.is_file()
@@ -226,6 +230,12 @@ def validate(root: Path) -> None:
             "manifest")
     except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
         raise PayloadError(f"manifest.json is invalid: {error}") from error
+    font = _mapping(manifest.get("ui_fallback_font"), "ui_fallback_font")
+    for key, relative in (("font", UI_FONT), ("notice", UI_FONT_NOTICE), ("provenance", "fonts/README.md")):
+        entry = _mapping(font.get(key), f"ui_fallback_font.{key}")
+        if entry.get("path") != relative:
+            raise PayloadError("fallback font asset path differs")
+        _validate_digest(root / relative, entry.get("bytes"), entry.get("sha256"), f"ui_fallback_font.{key}")
     if manifest.get("schema_version") != 1 or manifest.get("api_level") != 19 \
             or manifest.get("android_release") != "4.4.4":
         raise PayloadError("manifest does not describe Android 4.4.4 API 19")

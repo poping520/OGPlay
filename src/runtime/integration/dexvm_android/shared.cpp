@@ -178,7 +178,7 @@ bool ApplyTextEdit(dx::Interpreter& vm, DexVmAndroidContext& context,
                   static_cast<std::size_t>(before_count), filtered);
     if (after == state->text) return false;
     try {
-        static_cast<void>(ui::MeasureFixedText(after, 8.0F));
+        static_cast<void>(ui::MeasureFixedText(after, 8.0F, 0, context.ui_tree.FallbackFont().get()));
     } catch (const std::runtime_error& error) {
         throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
                               error.what()};

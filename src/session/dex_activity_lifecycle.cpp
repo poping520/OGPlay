@@ -14,8 +14,26 @@
 
 namespace ogplay::session {
 
+namespace {
+void ProjectRenderer(runtime::DexVmAndroidContext& context,
+                     const runtime::DexVmAndroidContext::GlSurfaceRuntime& state) {
+    if (context.gl_surface_renderer_view != state.view) return;
+    context.renderer = state.renderer;
+    context.egl_context_factory = state.egl_context_factory;
+    context.egl_config_chooser = state.egl_config_chooser;
+    context.renderer_egl = state.renderer_egl;
+    context.renderer_display = state.renderer_display;
+    context.renderer_config = state.renderer_config;
+    context.renderer_context = state.renderer_context;
+    context.renderer_surface = state.renderer_surface;
+    context.renderer_gl = state.renderer_gl;
+}
+}
+
 struct DexActivityLifecycle::RendererThread {
     runtime::dexvm::VmObjectRef object;
+    std::shared_ptr<runtime::DexVmAndroidContext::GlSurfaceRuntime> state;
+    std::uint64_t context_token{};
     std::mutex mutex;
     std::condition_variable changed;
     std::function<void()> action;
@@ -239,10 +257,13 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
             Fail("dex_activity lifecycle requires a bridge, a platform context "
                 "and Application/launcher descriptors");
         }
+        bindings_.context->retire_gl_surface_view = [this](const dx::VmObjectRef view) { StopRendererThread(view); };
     }
 
     DexActivityLifecycle::~DexActivityLifecycle() {
-        try { StopRendererThread(); } catch (...) {}
+        try { StopAllRenderers(); } catch (...) {}
+        bindings_.context->retire_gl_surface_view = {};
+        bindings_.context->run_gl_surface_thread = {};
         if (egl_pacer_attached_) {
             runtime::DetachEglSwapPacer(*bindings_.context,
                                         bindings_.bridge->Vm().ExecutionLock());
@@ -313,12 +334,12 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
         auto& context = *bindings_.context;
         std::vector<dx::VmObjectRef> attached;
         std::vector<runtime::ui::UiNodeId> pending{
-            context.ui_tree.Root()};
+            runtime::ActivityContentRoot(context)};
         while (!pending.empty()) {
             const auto node = pending.back();
             pending.pop_back();
             const auto* state = context.ui_tree.Get(node);
-            if (state == nullptr) continue;
+            if (state == nullptr || !context.ui_tree.IsVisible(node)) continue;
             for (auto child = state->children.rbegin();
                  child != state->children.rend(); ++child) {
                 pending.push_back(*child);
@@ -763,28 +784,35 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
             }
             DispatchInput();
             PumpJavaThreads();
-            if (initial_focus_pending_) {
-                if (activity_started_) SetWindowFocus(true);
-                initial_focus_pending_ = false;
-            }
             PumpVideo();
             PumpAudioTracks();
             ServiceActivitySwitch();
             SynchronizeContentView();
+            CompleteWindowHandoffs();
+            if (initial_focus_pending_) {
+                if (activity_started_) SetWindowFocus(true);
+                initial_focus_pending_ = false;
+            }
             if (context.renderer.IsValid()) {
                 RunOnRenderer([this] {
                   auto& context = *bindings_.context;
+                  auto runtime = RendererState();
+                  if (runtime->paused || !runtime->surface_available) return;
                   EnsureRendererCallbacks();
                   RunRendererEvents();
                   if (ConsumeGlSurfaceDrawRequest(context)) {
-                    CallOnView(bindings_.context->renderer, "onDrawFrame",
+                    CallOnView(runtime->renderer, "onDrawFrame",
                                "(Ljavax/microedition/khronos/opengles/GL10;)V",
-                               {dx::VmValue::Ref(context.renderer_gl)});
+                               {dx::VmValue::Ref(runtime->renderer_gl)});
                     const auto swapped = CallOnView(
-                        context.renderer_egl, "eglSwapBuffers",
+                        runtime->renderer_egl, "eglSwapBuffers",
                         "(Ljavax/microedition/khronos/egl/EGLDisplay;Ljavax/microedition/khronos/egl/EGLSurface;)Z",
-                        {dx::VmValue::Ref(context.renderer_display), dx::VmValue::Ref(context.renderer_surface)});
-                    if (!swapped.AsInt()) Fail("renderer eglSwapBuffers failed");
+                        {dx::VmValue::Ref(runtime->renderer_display), dx::VmValue::Ref(runtime->renderer_surface)});
+                    if (!swapped.AsInt()) {
+                        const auto error = CallOnView(runtime->renderer_egl, "eglGetError", "()I", {}).AsInt();
+                        if (error == 0x300e) ReleaseRendererEgl(*runtime);
+                        else Fail("renderer eglSwapBuffers failed: EGL error=" + std::to_string(error));
+                    }
                   }
                 });
             } else if (!bindings_.context->renderer.IsValid() &&
@@ -956,8 +984,14 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
 
     void DexActivityLifecycle::StartCurrentActivity() {
         auto& context = *bindings_.context;
-        activity_started_ = true;
-        CallActivity("onStart", "()V", {});
+        auto& record = context.activity_stack.back();
+        if (!record.started || record.stopped) {
+            if (record.stopped) CallActivity("onRestart", "()V", {});
+            activity_started_ = true;
+            CallActivity("onStart", "()V", {});
+            record.started = true;
+            record.stopped = false;
+        } else activity_started_ = true;
         const auto transitioning = [&] {
             return std::ranges::any_of(context.activity_commands, [&](const auto& command) {
                 return command.kind == runtime::DexVmAndroidContext::ActivityCommand::Kind::launch ||
@@ -965,6 +999,17 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
             });
         };
         if (transitioning() || runtime::SessionExitRequested(context)) return;
+        DeliverActivityResults();
+        if (!transitioning() && !runtime::SessionExitRequested(context)) {
+            CallActivity("onResume", "()V", {});
+            activity_resumed_ = true;
+            context.activity_stack.back().resumed = true;
+            record.resumed = true;
+        }
+    }
+
+    void DexActivityLifecycle::DeliverActivityResults() {
+        auto& context = *bindings_.context;
         auto& vm = bindings_.bridge->Vm();
         auto results = std::move(context.activity_stack.back().results);
         context.activity_stack.back().results.clear();
@@ -974,10 +1019,29 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
         for (const auto& result : results)
             CallActivity("onActivityResult", "(IILandroid/content/Intent;)V",
                 {dx::VmValue::Int(result.request_code), dx::VmValue::Int(result.result_code), dx::VmValue::Ref(result.data)});
-        if (!transitioning() && !runtime::SessionExitRequested(context)) {
-            CallActivity("onResume", "()V", {});
-            activity_resumed_ = true;
+    }
+
+    void DexActivityLifecycle::SetActivityWindowVisible(const dx::VmObjectRef activity, const bool visible) {
+        auto& context = *bindings_.context;
+        const auto found = std::find_if(context.activity_stack.begin(), context.activity_stack.end(),
+            [&](const auto& record) { return record.object == activity; });
+        if (found == context.activity_stack.end() || !found->window_root || found->visible == visible) return;
+        found->visible = visible;
+        context.ui_tree.SetWindowVisible(*found->window_root, visible);
+        std::vector<dx::VmObjectRef> views;
+        std::vector<runtime::ui::UiNodeId> nodes{*found->window_root};
+        while (!nodes.empty()) {
+            const auto node = nodes.back(); nodes.pop_back();
+            const auto* state = context.ui_tree.Get(node);
+            if (!state) continue;
+            nodes.insert(nodes.end(), state->children.rbegin(), state->children.rend());
+            const auto view = runtime::ViewObjectForUiNode(context, node);
+            if (view.IsValid()) views.push_back(view);
         }
+        auto& vm = bindings_.bridge->Vm();
+        const auto roots = vm.ProtectReferences(views);
+        for (const auto view : views)
+            CallOnView(view, "onWindowVisibilityChanged", "(I)V", {dx::VmValue::Int(visible ? 0 : 4)});
     }
 
     void DexActivityLifecycle::RestoreActivity() {
@@ -987,9 +1051,15 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
         context.current_intent = record.intent;
         context.content_view = record.content;
         context.focused_edit_text = record.focused_edit_text;
+        context.gl_surface_renderer_view = record.render_view;
+        context.renderer = dx::VmObjectRef{};
+        if (const auto state = context.gl_surface_runtimes.find(record.render_view.Value()); state != context.gl_surface_runtimes.end()) {
+            ProjectRenderer(context, *state->second);
+        }
         context.window_focus_activity.store(record.object.Value());
         activity_started_ = false;
         activity_resumed_ = false;
+        SetActivityWindowVisible(record.object, true);
         if (record.content.IsValid()) {
             const auto node = runtime::FindViewUiNode(context, record.content.Value());
             if (node && !context.ui_tree.Get(*node)->parent)
@@ -997,7 +1067,7 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
         }
         if (record.focused_node && context.ui_tree.Get(*record.focused_node))
             static_cast<void>(context.ui_tree.RequestFocus(*record.focused_node, false));
-        if (record.started) CallActivity("onRestart", "()V", {});
+        DeliverActivityResults();
         StartCurrentActivity();
         SynchronizeContentView();
         if (activity_resumed_) SetWindowFocus(true);
@@ -1025,18 +1095,25 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
                 record.focused_node = context.ui_tree.Focused();
                 record.focused_edit_text = context.focused_edit_text;
             }
-            if (const auto error = runtime::RetireSurfaceHolderGeneration(vm, context)) Fail(*error);
+            if (context.window_surface_callback.IsValid()) {
+                if (const auto error = runtime::RetireSurfaceHolderGeneration(vm, context)) Fail(*error);
+            } else if (context.content_view.IsValid()) {
+                const auto node = runtime::FindViewUiNode(context, context.content_view.Value());
+                if (node) {
+                    if (const auto error = runtime::DetachSurfaceViewSubtree(vm, context, *node)) Fail(*error);
+                }
+            }
             StopRendererThread();
             if (context.content_view.IsValid()) {
                 const auto node = runtime::FindViewUiNode(context, context.content_view.Value());
-                if (node) context.ui_tree.Detach(*node);
+                if (node) context.ui_tree.SetWindowVisible(*node, false);
             }
             context.content_view = dx::VmObjectRef{};
             context.focused_edit_text = dx::VmObjectRef{};
             context.renderer = dx::VmObjectRef{}; context.egl_context_factory = dx::VmObjectRef{}; context.egl_config_chooser = dx::VmObjectRef{};
             sized_content_view_ = dx::VmObjectRef{}; sized_content_node_.reset();
             gesture_candidate_ = 0; gesture_click_eligible_ = false; gesture_touch_consumed_ = false; deep_touch_handle_ = 0;
-            renderer_ready_ = false; activity_started_ = false; activity_resumed_ = false;
+            activity_started_ = false; activity_resumed_ = false;
         };
         std::size_t serviced{};
         while (!context.activity_commands.empty()) {
@@ -1066,12 +1143,18 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
                     refresh();
                     continue;
                 }
-                if (top) found->content = context.content_view;
+                if (top) {
+                    found->content = context.content_view;
+                    found->render_view = context.gl_surface_renderer_view;
+                }
                 if (top) retire_active();
                 const auto old = *found;
+                StopRendererThread(old.render_view);
                 // Background finish destroys that instance without changing foreground identity.
                 CallOnView(old.object, "onDestroy", "()V", {});
-                if (old.content.IsValid()) {
+                if (old.window_root) {
+                    runtime::RetireViewUiSubtree(context, *old.window_root);
+                } else if (old.content.IsValid()) {
                     const auto node = runtime::FindViewUiNode(context, old.content.Value());
                     if (node) runtime::RetireViewUiSubtree(context, *node);
                 }
@@ -1092,12 +1175,15 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
             const bool retiring = std::ranges::any_of(context.activity_commands, [&](const auto& item) {
                 return item.kind == Command::Kind::finish && item.owner == context.activity;
             });
-            if (!retiring && (context.renderer.IsValid() || !context.active_surface_holders.empty() ||
-                              context.window_surface_callback.IsValid() || runtime::AnyVideoPlaying(context))) {
+            if (!retiring && (context.window_surface_callback.IsValid() || runtime::AnyVideoPlaying(context))) {
                 if (auto* ledger = vm.Ledger()) ledger->RecordUnimplemented("dexvm.activity_result", 0);
-                throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
-                    "retaining an Activity with live renderer, native surface or video is unsupported"};
+                // This deferred command runs outside vm.Call: a VmJavaThrow
+                // here would escape conversion into a Java throwable.
+                Fail("Activity switch failed: retaining an Activity with live renderer, "
+                     "native surface or video is unsupported");
             }
+            const auto source = context.activity;
+            const bool source_started = activity_started_;
             if (!context.activity_stack.empty()) {
                 auto& record = context.activity_stack.back();
                 record.content = context.content_view;
@@ -1105,7 +1191,26 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
                 record.focused_edit_text = context.focused_edit_text;
                 record.intent = CallOnView(record.object, "getIntent", "()Landroid/content/Intent;", {}).ref;
                 record.started = activity_started_;
-                retire_active();
+                record.render_view = context.gl_surface_renderer_view;
+                if (retiring) retire_active();
+                else {
+                    CancelInput();
+                    SetWindowFocus(false);
+                    if (activity_resumed_) CallActivity("onPause", "()V", {});
+                    record.resumed = false;
+                    context.renderer = dx::VmObjectRef{};
+                    context.gl_surface_renderer_view = dx::VmObjectRef{};
+                    context.egl_context_factory = dx::VmObjectRef{};
+                    context.egl_config_chooser = dx::VmObjectRef{};
+                    context.renderer_egl = dx::VmObjectRef{}; context.renderer_display = dx::VmObjectRef{}; context.renderer_config = dx::VmObjectRef{};
+                    context.renderer_context = dx::VmObjectRef{}; context.renderer_surface = dx::VmObjectRef{}; context.renderer_gl = dx::VmObjectRef{};
+                    context.content_view = dx::VmObjectRef{};
+                    context.focused_edit_text = dx::VmObjectRef{};
+                    sized_content_view_ = dx::VmObjectRef{};
+                    sized_content_node_.reset();
+                    activity_started_ = false;
+                    activity_resumed_ = false;
+                }
             }
             auto& linker = vm.Linker();
             const auto type = linker.FindClass(command.descriptor);
@@ -1132,11 +1237,45 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
             DispatchSurfaceHolder(runtime::SurfaceHolderPhase::created);
             DispatchSurfaceHolder(runtime::SurfaceHolderPhase::changed);
             runtime::DispatchAndroidGlobalLayout(vm, context);
+            if (!retiring) window_handoffs_.push_back({source, activity, source_started});
+            CompleteWindowHandoffs();
         }
         refresh();
+        CompleteWindowHandoffs();
         if (activity_started_ && !activity_resumed_ && !runtime::SessionExitRequested(context)) {
             CallActivity("onResume", "()V", {});
             activity_resumed_ = true;
+        }
+    }
+
+    void DexActivityLifecycle::CompleteWindowHandoffs() {
+        auto& context = *bindings_.context;
+        auto& vm = bindings_.bridge->Vm();
+        const auto current = std::find_if(context.activity_stack.begin(), context.activity_stack.end(),
+            [&](const auto& record) { return record.object == context.activity; });
+        for (auto pending = window_handoffs_.begin(); pending != window_handoffs_.end();) {
+            const auto source = std::find_if(context.activity_stack.begin(), context.activity_stack.end(),
+                [&](const auto& record) { return record.object == pending->source; });
+            if (source == context.activity_stack.end() || source == current) {
+                pending = window_handoffs_.erase(pending);
+                continue;
+            }
+            if (current == context.activity_stack.end() || current < source || !current->resumed ||
+                !current->window_root || !current->visible) { ++pending; continue; }
+            if (pending->source_started && !source->stopped) {
+                CallOnView(source->object, "onStop", "()V", {});
+                source->stopped = true;
+            }
+            if (const auto state = context.gl_surface_runtimes.find(source->render_view.Value()); state != context.gl_surface_runtimes.end())
+                RunOnRenderer(state->second, [this, runtime = state->second] { ReleaseRendererEgl(*runtime, true); });
+            if (source->content.IsValid()) {
+                const auto node = runtime::FindViewUiNode(context, source->content.Value());
+                if (node) {
+                    if (const auto error = runtime::DetachSurfaceViewSubtree(vm, context, *node)) Fail(*error);
+                }
+            }
+            SetActivityWindowVisible(source->object, false);
+            pending = window_handoffs_.erase(pending);
         }
     }
 
@@ -1146,13 +1285,29 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
         const auto content = context.content_view;
         const auto node = content.IsValid()
             ? runtime::FindViewUiNode(context, content.Value()) : std::nullopt;
+        std::shared_ptr<GlSurfaceRuntime> selected;
+        if (node) {
+            for (const auto& [_, state] : context.gl_surface_runtimes) {
+                if (!state->renderer.IsValid()) continue;
+                auto current = runtime::FindViewUiNode(context, state->view.Value());
+                if (!current || !context.ui_tree.IsVisible(*current)) continue;
+                while (current && *current != *node) current = context.ui_tree.Get(*current)->parent;
+                if (!current) continue;
+                if (selected) Fail("multiple intrinsic GL producers in one content tree are unsupported");
+                selected = state;
+            }
+        }
+        context.renderer = selected ? selected->renderer : dx::VmObjectRef{};
+        context.gl_surface_renderer_view = selected ? selected->view : dx::VmObjectRef{};
+        if (selected) { selected->owner = context.activity; ProjectRenderer(context, *selected); }
         const bool content_changed=content!=sized_content_view_ || node!=sized_content_node_;
         sized_content_view_ = content;
         sized_content_node_ = node;
         if (!content.IsValid()) return;
         const auto roots = bindings_.bridge->Vm().ProtectReferences(std::array{content});
+        const bool layout_dirty = context.ui_tree.Get(context.ui_tree.Root())->layout_dirty;
         const bool layout_changed=runtime::DispatchAndroidViewSizes(bindings_.bridge->Vm(),context);
-        if (!content_changed && !layout_changed) return;
+        if (!content_changed && !layout_changed && !layout_dirty) return;
         // A virtual size callback may replace its own content. Reconcile the
         // replacement next frame; never attach the retired subtree.
         if (context.content_view != content ||
@@ -1169,23 +1324,32 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
         }
     }
 
+
+    std::shared_ptr<DexActivityLifecycle::GlSurfaceRuntime> DexActivityLifecycle::RendererState() {
+        const auto token = bindings_.bridge->Vm().CurrentContextToken();
+        for (const auto& [_, worker] : renderer_threads_)
+            if (worker->context_token == token) return worker->state;
+        const auto found = bindings_.context->gl_surface_runtimes.find(bindings_.context->gl_surface_renderer_view.Value());
+        if (found == bindings_.context->gl_surface_runtimes.end()) Fail("renderer has no instance runtime");
+        return found->second;
+    }
+
     void DexActivityLifecycle::RunRendererEvents() {
+        auto state = RendererState();
         auto& vm = bindings_.bridge->Vm();
         std::vector<dx::VmObjectRef> events;
-        {
-            std::scoped_lock lock(bindings_.context->scheduler_mutex);
-            events.swap(bindings_.context->gl_surface_events);
-        }
+        { std::scoped_lock lock(bindings_.context->scheduler_mutex); events.swap(state->events); }
         const auto roots = vm.ProtectReferences(events);
         for (const auto event : events) CallOnView(event, "run", "()V", {});
     }
 
-    void DexActivityLifecycle::EnsureRendererThread() {
-        if (renderer_thread_) return;
+    void DexActivityLifecycle::EnsureRendererThread(const std::shared_ptr<GlSurfaceRuntime>& state) {
+        if (renderer_threads_.contains(state->view.Value())) return;
         auto& vm = bindings_.bridge->Vm();
         const dx::VmExecutionLockScope execution(vm.ExecutionLock());
         if (bindings_.release_surface_currency) bindings_.release_surface_currency();
         auto thread = std::make_unique<RendererThread>();
+        thread->state = state;
         thread->object = vm.NewIntrinsicInstance("Landroid/opengl/GLSurfaceView$GLThread;");
         const auto roots = vm.ProtectReferences(std::array{thread->object});
         const auto type = vm.Linker().ResolveDescriptor("Ljava/lang/Thread;");
@@ -1193,27 +1357,43 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
         if (!ctor) Fail("GLThread requires Thread(String)");
         RequireOutcome(vm, vm.Call(*ctor, std::array{dx::VmValue::Ref(thread->object),
             dx::VmValue::Ref(vm.NewStringUtf8("GLThread"))}), "GLThread <init>");
-        renderer_thread_ = std::move(thread);
-        bindings_.context->run_gl_surface_thread = [this] { RendererThreadBody(); };
-        bindings_.context->wake_gl_surface_thread = [this] {
-            auto& worker = *renderer_thread_;
-            std::scoped_lock lock(worker.mutex);
-            worker.events = true;
-            worker.changed.notify_all();
+        auto* worker = thread.get();
+        renderer_threads_.emplace(state->view.Value(), std::move(thread));
+        bindings_.context->run_gl_surface_thread = [this](const dx::VmObjectRef object) { RendererThreadBody(object); };
+        state->wake = [worker] {
+            std::scoped_lock lock(worker->mutex);
+            worker->events = true;
+            worker->changed.notify_all();
         };
-        try { CallOnView(renderer_thread_->object, "start", "()V", {}); }
+        state->pause = [this, weak = std::weak_ptr<GlSurfaceRuntime>{state}](const bool paused) {
+            const auto runtime = weak.lock();
+            if (!runtime || runtime->stopped) Fail("GLThread is stopped");
+            RunOnRenderer(runtime, [this, runtime, paused] {
+                if (paused && !runtime->paused) {
+                    const bool preserve = CallOnView(runtime->view, "getPreserveEGLContextOnPause", "()Z", {}).AsInt() != 0;
+                    ReleaseRendererEgl(*runtime, preserve);
+                }
+                runtime->paused = paused;
+            });
+        };
+        try { CallOnView(worker->object, "start", "()V", {}); }
         catch (...) {
-            bindings_.context->run_gl_surface_thread = {};
-            bindings_.context->wake_gl_surface_thread = {};
-            renderer_thread_.reset();
+            state->wake = {}; state->pause = {};
+            renderer_threads_.erase(state->view.Value());
             throw;
         }
     }
 
-    void DexActivityLifecycle::RendererThreadBody() {
-        auto& worker = *renderer_thread_;
+    void DexActivityLifecycle::RendererThreadBody(const dx::VmObjectRef object) {
+        RendererThread* current{};
+        for (const auto& [_, candidate] : renderer_threads_)
+            if (candidate->object == object) current = candidate.get();
+        if (!current) Fail("GLThread has no owning View");
+        auto& worker = *current;
         auto& vm = bindings_.bridge->Vm();
         auto& execution = vm.ExecutionLock();
+        worker.context_token = vm.CurrentContextToken();
+        auto& state = *worker.state;
         try {
             for (;;) {
                 std::function<void()> action;
@@ -1221,24 +1401,23 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
                 {
                     std::unique_lock lock(worker.mutex);
                     if (worker.stopping || vm.Threads().ShuttingDown()) break;
-                    if (!worker.action && !(worker.events && renderer_ready_)) {
+                    if (!worker.action && !worker.events) {
                         vm.Threads().SetWaitState(vm.CurrentContextToken(), dx::VmThreadWaitState::monitor);
                         const auto depth = execution.ReleaseForBlocking();
-                        // Host wake scheduling only; no guest deadline or Clock change.
                         worker.changed.wait_for(lock, std::chrono::milliseconds(2));
                         lock.unlock();
                         execution.ReacquireAfterBlocking(depth);
                         vm.Threads().SetWaitState(vm.CurrentContextToken(), dx::VmThreadWaitState::none);
                         continue;
                     }
-                    // A moved-from std::function may still be callable. Swap
-                    // with the empty local so the pending command is consumed
-                    // exactly once on every standard-library implementation.
                     action.swap(worker.action);
                     events = std::exchange(worker.events, false);
                 }
                 if (action) action();
-                if (events && renderer_ready_) RunRendererEvents();
+                if (events) {
+                    if (!state.paused && state.surface_available) EnsureRendererCallbacks();
+                    RunRendererEvents();
+                }
                 {
                     std::scoped_lock lock(worker.mutex);
                     if (action) worker.busy = false;
@@ -1249,46 +1428,32 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
             std::scoped_lock lock(worker.mutex);
             worker.failure = std::current_exception();
         }
-        if (renderer_ready_ && !worker.failure && !vm.Threads().ShuttingDown()) {
+        if (state.ready && !worker.failure && !vm.Threads().ShuttingDown()) {
             try {
-                // GLSurfaceView notifies the renderer before teardown.
                 auto& linker = bindings_.bridge->Linker();
-                const auto renderer_class =
-                        vm.Model().ObjectClass(bindings_.context->renderer);
-                const auto index = linker.FindVtableIndex(
-                    renderer_class, "surfaceDestroyed",
-                    "(Ljavax/microedition/khronos/opengles/GL10;)V");
-                if (index.has_value()) {
-                    RequireOutcome(
-                        vm,
-                        vm.Call(linker.Class(renderer_class).vtable[*index],
-                            std::vector<dx::VmValue>{
-                                dx::VmValue::Ref(bindings_.context->renderer),
-                                dx::VmValue::Ref(dx::VmObjectRef{})
-                            }),
-                        "surfaceDestroyed");
-                }
-            } catch (...) {
-                std::scoped_lock lock(worker.mutex);
-                if (!worker.failure) worker.failure = std::current_exception();
-            }
+                const auto type = vm.Model().ObjectClass(state.renderer);
+                if (linker.FindVtableIndex(type, "surfaceDestroyed",
+                        "(Ljavax/microedition/khronos/opengles/GL10;)V"))
+                    CallOnView(state.renderer, "surfaceDestroyed",
+                        "(Ljavax/microedition/khronos/opengles/GL10;)V",
+                        {dx::VmValue::Ref(dx::VmObjectRef{})});
+            } catch (...) { worker.failure = std::current_exception(); }
         }
-        // EGL currency and custom factory destruction remain on their owner.
-        try { ReleaseRendererEgl(); }
-        catch (...) {
-            std::scoped_lock lock(worker.mutex);
-            if (!worker.failure) worker.failure = std::current_exception();
-        }
+        try { ReleaseRendererEgl(state); }
+        catch (...) { if (!worker.failure) worker.failure = std::current_exception(); }
         std::scoped_lock lock(worker.mutex);
-        bindings_.context->gl_surface_thread_stopped = true;
-        worker.exited = true;
-        worker.busy = false;
+        state.stopped = true;
+        worker.exited = true; worker.busy = false;
         worker.changed.notify_all();
     }
 
     void DexActivityLifecycle::RunOnRenderer(std::function<void()> action) {
-        EnsureRendererThread();
-        auto& worker = *renderer_thread_;
+        RunOnRenderer(RendererState(), std::move(action));
+    }
+
+    void DexActivityLifecycle::RunOnRenderer(const std::shared_ptr<GlSurfaceRuntime>& state, std::function<void()> action) {
+        EnsureRendererThread(state);
+        auto& worker = *renderer_threads_.at(state->view.Value());
         auto& vm = bindings_.bridge->Vm();
         const dx::VmExecutionLockScope execution(vm.ExecutionLock());
         {
@@ -1296,8 +1461,7 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
             if (worker.failure) std::rethrow_exception(worker.failure);
             if (worker.exited || worker.stopping) Fail("GLThread is stopped");
             if (worker.busy) Fail("recursive GLThread submission");
-            worker.action = std::move(action);
-            worker.busy = true;
+            worker.action = std::move(action); worker.busy = true;
             worker.changed.notify_all();
         }
         for (;;) {
@@ -1307,52 +1471,45 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
                 if (worker.exited) Fail("GLThread stopped before completing its command");
                 if (!worker.busy) return;
                 if (!vm.Threads().IsAlive(worker.object)) {
-                    lock.unlock();
-                    RethrowFatalThreadFailure();
+                    lock.unlock(); RethrowFatalThreadFailure();
                     Fail("GLThread terminated before completing its command");
                 }
                 vm.Threads().SetWaitState(dx::kRootLifecycleToken, dx::VmThreadWaitState::joining);
                 const auto depth = vm.ExecutionLock().ReleaseForBlocking();
                 worker.changed.wait_for(lock, std::chrono::milliseconds(2));
                 lock.unlock();
-                // The window owner stays responsive even when a native render
-                // command takes seconds. No worker/VM lock is held by the pump.
-                try {
-                    if (bindings_.pump_host_events) bindings_.pump_host_events();
-                } catch (...) {
-                    vm.ExecutionLock().ReacquireAfterBlocking(depth);
-                    vm.Threads().SetWaitState(dx::kRootLifecycleToken, dx::VmThreadWaitState::none);
-                    throw;
-                }
                 vm.ExecutionLock().ReacquireAfterBlocking(depth);
                 vm.Threads().SetWaitState(dx::kRootLifecycleToken, dx::VmThreadWaitState::none);
+                vm.CheckExecutionDeadline();
+                if (bindings_.pump_host_events) {
+                    const auto unlocked = vm.ExecutionLock().ReleaseForBlocking();
+                    try { bindings_.pump_host_events(); }
+                    catch (...) { vm.ExecutionLock().ReacquireAfterBlocking(unlocked); throw; }
+                    vm.ExecutionLock().ReacquireAfterBlocking(unlocked);
+                }
             }
-            // A renderer may post to the UI and wait. Keep the real main Looper
-            // dispatching while its render command is in flight.
             PumpJavaThreads();
         }
     }
 
     void DexActivityLifecycle::StopRendererThread() {
-        if (!renderer_thread_) return;
-        auto& worker = *renderer_thread_;
+        StopRendererThread(bindings_.context->gl_surface_renderer_view);
+    }
+
+    void DexActivityLifecycle::StopRendererThread(const dx::VmObjectRef view) {
+        const auto found = renderer_threads_.find(view.Value());
+        if (found == renderer_threads_.end()) return;
+        auto& worker = *found->second;
         auto& vm = bindings_.bridge->Vm();
         const dx::VmExecutionLockScope execution(vm.ExecutionLock());
-        {
-            std::scoped_lock lock(worker.mutex);
-            worker.stopping = true;
-            worker.changed.notify_all();
-        }
-        // IsAlive becomes false only after native TLS/JNI detach. Unlike Java
-        // join(), this ownership wait must also complete during VM shutdown.
+        { std::scoped_lock lock(worker.mutex); worker.stopping = true; worker.changed.notify_all(); }
         std::exception_ptr wait_failure;
         while (vm.Threads().IsAlive(worker.object)) {
             std::unique_lock lock(worker.mutex);
             vm.Threads().SetWaitState(dx::kRootLifecycleToken, dx::VmThreadWaitState::joining);
             const auto depth = vm.ExecutionLock().ReleaseForBlocking();
             worker.changed.wait_for(lock, std::chrono::milliseconds(2));
-            lock.unlock();
-            vm.ExecutionLock().ReacquireAfterBlocking(depth);
+            lock.unlock(); vm.ExecutionLock().ReacquireAfterBlocking(depth);
             vm.Threads().SetWaitState(dx::kRootLifecycleToken, dx::VmThreadWaitState::none);
             vm.CheckExecutionDeadline();
             if (!vm.Threads().ShuttingDown()) {
@@ -1361,16 +1518,27 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
             }
         }
         const auto failure = worker.failure;
-        bindings_.context->run_gl_surface_thread = {};
-        bindings_.context->wake_gl_surface_thread = {};
-        renderer_thread_.reset();
+        worker.state->wake = {}; worker.state->pause = {};
+        renderer_threads_.erase(found);
+        if (renderer_threads_.empty()) bindings_.context->run_gl_surface_thread = {};
         if (failure) std::rethrow_exception(failure);
         if (wait_failure) std::rethrow_exception(wait_failure);
     }
 
-    void DexActivityLifecycle::InitializeRendererEgl() {
+    void DexActivityLifecycle::StopAllRenderers() {
+        std::vector<dx::VmObjectRef> views;
+        for (const auto& [_, worker] : renderer_threads_) views.push_back(worker->state->view);
+        std::exception_ptr failure;
+        for (const auto view : views) {
+            try { StopRendererThread(view); }
+            catch (...) { if (!failure) failure = std::current_exception(); }
+        }
+        if (failure) std::rethrow_exception(failure);
+    }
+
+    void DexActivityLifecycle::InitializeRendererEgl(GlSurfaceRuntime& r) {
         auto& c = *bindings_.context;
-        if (c.renderer_context.IsValid()) return;
+        if (r.renderer_surface.IsValid()) return;
         auto& vm = bindings_.bridge->Vm();
         const auto ref = dx::VmValue::Ref;
         const auto integer = dx::VmValue::Int;
@@ -1385,24 +1553,25 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
                 vm.Model().SetPrimitiveElement(array, static_cast<runtime::JniSize>(i), static_cast<std::uint32_t>(values[i]));
             return array;
         };
+        if (!r.renderer_context.IsValid()) {
         const auto type = vm.Linker().ResolveDescriptor("Ljavax/microedition/khronos/egl/EGLContext;");
         const auto get = vm.Linker().FindDirectMethod(type, "getEGL", "()Ljavax/microedition/khronos/egl/EGL;");
         if (!get) Fail("EGLContext.getEGL is unavailable");
         const auto result = vm.Call(*get, {});
         RequireOutcome(vm, result, "EGLContext.getEGL");
-        c.renderer_egl = result.value.ref;
-        c.renderer_display = on(c.renderer_egl, "eglGetDisplay", "(Ljava/lang/Object;)Ljavax/microedition/khronos/egl/EGLDisplay;", {ref(dx::VmObjectRef{})}).ref;
-        if (!on(c.renderer_egl, "eglInitialize", "(Ljavax/microedition/khronos/egl/EGLDisplay;[I)Z",
-                {ref(c.renderer_display), ref(dx::VmObjectRef{})}).AsInt()) Fail("renderer eglInitialize failed");
-        if (c.egl_config_chooser.IsValid()) {
-            c.renderer_config = on(c.egl_config_chooser, "chooseConfig",
+        r.renderer_egl = result.value.ref;
+        r.renderer_display = on(r.renderer_egl, "eglGetDisplay", "(Ljava/lang/Object;)Ljavax/microedition/khronos/egl/EGLDisplay;", {ref(dx::VmObjectRef{})}).ref;
+        if (!on(r.renderer_egl, "eglInitialize", "(Ljavax/microedition/khronos/egl/EGLDisplay;[I)Z",
+                {ref(r.renderer_display), ref(dx::VmObjectRef{})}).AsInt()) Fail("renderer eglInitialize failed");
+        if (r.egl_config_chooser.IsValid()) {
+            r.renderer_config = on(r.egl_config_chooser, "chooseConfig",
                 "(Ljavax/microedition/khronos/egl/EGL10;Ljavax/microedition/khronos/egl/EGLDisplay;)Ljavax/microedition/khronos/egl/EGLConfig;",
-                {ref(c.renderer_egl), ref(c.renderer_display)}).ref;
+                {ref(r.renderer_egl), ref(r.renderer_display)}).ref;
         } else {
-            const auto version_it = c.gl_surface_client_versions.find(c.gl_surface_renderer_view.Value());
+            const auto version_it = c.gl_surface_client_versions.find(r.view.Value());
             const int version = version_it == c.gl_surface_client_versions.end() ? 1 : version_it->second;
             std::vector<std::int32_t> attrs{0x3024, 8, 0x3023, 8, 0x3022, 8, 0x3025, 16};
-            if (const auto it = c.gl_surface_config_specs.find(c.gl_surface_renderer_view.Value()); it != c.gl_surface_config_specs.end()) {
+            if (const auto it = c.gl_surface_config_specs.find(r.view.Value()); it != c.gl_surface_config_specs.end()) {
                 attrs = {0x3024,it->second[0],0x3023,it->second[1],0x3022,it->second[2],0x3021,it->second[3],0x3025,it->second[4],0x3026,it->second[5]};
             }
             attrs.insert(attrs.end(), {0x3040, version >= 3 ? 0x40 : version == 2 ? 4 : 1, 0x3038});
@@ -1410,36 +1579,36 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
             const auto count = ints({0}); const auto cr = vm.ProtectReferences(std::array{count});
             const auto configs = vm.Model().NewObjectArray(vm.Linker().ResolveDescriptor("[Ljavax/microedition/khronos/egl/EGLConfig;"), vm.Linker().ResolveDescriptor("Ljavax/microedition/khronos/egl/EGLConfig;"), 1);
             const auto roots = vm.ProtectReferences(std::array{configs});
-            if (!on(c.renderer_egl, "eglChooseConfig", "(Ljavax/microedition/khronos/egl/EGLDisplay;[I[Ljavax/microedition/khronos/egl/EGLConfig;I[I)Z",
-                    {ref(c.renderer_display),ref(attributes),ref(configs),integer(1),ref(count)}).AsInt() || vm.Model().GetPrimitiveElement(count,0)==0)
+            if (!on(r.renderer_egl, "eglChooseConfig", "(Ljavax/microedition/khronos/egl/EGLDisplay;[I[Ljavax/microedition/khronos/egl/EGLConfig;I[I)Z",
+                    {ref(r.renderer_display),ref(attributes),ref(configs),integer(1),ref(count)}).AsInt() || vm.Model().GetPrimitiveElement(count,0)==0)
                 Fail("renderer EGL config is unavailable");
-            c.renderer_config = vm.Model().GetObjectElement(configs,0);
+            r.renderer_config = vm.Model().GetObjectElement(configs,0);
         }
-        if (!c.renderer_config.IsValid()) {
+        if (!r.renderer_config.IsValid()) {
             std::string message = "renderer config chooser returned null";
-            if (c.egl_config_chooser.IsValid())
-                message += "; chooser=" + vm.Linker().Class(vm.Model().ObjectClass(c.egl_config_chooser)).descriptor;
+            if (r.egl_config_chooser.IsValid())
+                message += "; chooser=" + vm.Linker().Class(vm.Model().ObjectClass(r.egl_config_chooser)).descriptor;
             try {
                 const auto count = ints({0}); const auto cr = vm.ProtectReferences(std::array{count});
-                if (on(c.renderer_egl,"eglGetConfigs",
+                if (on(r.renderer_egl,"eglGetConfigs",
                     "(Ljavax/microedition/khronos/egl/EGLDisplay;[Ljavax/microedition/khronos/egl/EGLConfig;I[I)Z",
-                    {ref(c.renderer_display),ref(dx::VmObjectRef{}),integer(0),ref(count)}).AsInt()) {
+                    {ref(r.renderer_display),ref(dx::VmObjectRef{}),integer(0),ref(count)}).AsInt()) {
                     const auto size = std::min<std::uint64_t>(vm.Model().GetPrimitiveElement(count,0),16U);
                     const auto configs = vm.Model().NewObjectArray(vm.Linker().ResolveDescriptor("[Ljavax/microedition/khronos/egl/EGLConfig;"),
                         vm.Linker().ResolveDescriptor("Ljavax/microedition/khronos/egl/EGLConfig;"),static_cast<runtime::JniSize>(size));
                     const auto roots = vm.ProtectReferences(std::array{configs});
-                    if (on(c.renderer_egl,"eglGetConfigs",
+                    if (on(r.renderer_egl,"eglGetConfigs",
                         "(Ljavax/microedition/khronos/egl/EGLDisplay;[Ljavax/microedition/khronos/egl/EGLConfig;I[I)Z",
-                        {ref(c.renderer_display),ref(configs),integer(static_cast<int>(size)),ref(count)}).AsInt()) {
+                        {ref(r.renderer_display),ref(configs),integer(static_cast<int>(size)),ref(count)}).AsInt()) {
                         message += "; candidates=";
                         for (std::uint32_t i=0;i<size;++i) {
                             const auto config = vm.Model().GetObjectElement(configs,static_cast<runtime::JniSize>(i));
                             if (!config.IsValid()) continue;
                             message += " [";
                             for (const auto attribute : {0x3024,0x3023,0x3022,0x3021,0x3025,0x3026}) {
-                                if (on(c.renderer_egl,"eglGetConfigAttrib",
+                                if (on(r.renderer_egl,"eglGetConfigAttrib",
                                     "(Ljavax/microedition/khronos/egl/EGLDisplay;Ljavax/microedition/khronos/egl/EGLConfig;I[I)Z",
-                                    {ref(c.renderer_display),ref(config),integer(attribute),ref(count)}).AsInt())
+                                    {ref(r.renderer_display),ref(config),integer(attribute),ref(count)}).AsInt())
                                     message += std::to_string(vm.Model().GetPrimitiveElement(count,0)) + "/";
                             }
                             message += "]";
@@ -1449,89 +1618,92 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
             } catch (const std::exception&) { message += "; config diagnostics unavailable"; }
             Fail(message);
         }
-        if (c.egl_context_factory.IsValid()) {
-            c.renderer_context = on(c.egl_context_factory, "createContext",
+        if (r.egl_context_factory.IsValid()) {
+            r.renderer_context = on(r.egl_context_factory, "createContext",
                 "(Ljavax/microedition/khronos/egl/EGL10;Ljavax/microedition/khronos/egl/EGLDisplay;Ljavax/microedition/khronos/egl/EGLConfig;)Ljavax/microedition/khronos/egl/EGLContext;",
-                {ref(c.renderer_egl),ref(c.renderer_display),ref(c.renderer_config)}).ref;
+                {ref(r.renderer_egl),ref(r.renderer_display),ref(r.renderer_config)}).ref;
         } else {
-            const auto it = c.gl_surface_client_versions.find(c.gl_surface_renderer_view.Value());
+            const auto it = c.gl_surface_client_versions.find(r.view.Value());
             const auto attributes = ints({0x3098,it == c.gl_surface_client_versions.end() ? 1 : it->second,0x3038});
             const auto roots = vm.ProtectReferences(std::array{attributes});
-            c.renderer_context = on(c.renderer_egl,"eglCreateContext",
+            r.renderer_context = on(r.renderer_egl,"eglCreateContext",
                 "(Ljavax/microedition/khronos/egl/EGLDisplay;Ljavax/microedition/khronos/egl/EGLConfig;Ljavax/microedition/khronos/egl/EGLContext;[I)Ljavax/microedition/khronos/egl/EGLContext;",
-                {ref(c.renderer_display),ref(c.renderer_config),ref(c.egl.no_context),ref(attributes)}).ref;
+                {ref(r.renderer_display),ref(r.renderer_config),ref(c.egl.no_context),ref(attributes)}).ref;
         }
-        if (!c.renderer_context.IsValid() || c.renderer_context == c.egl.no_context) Fail("renderer EGL context creation failed");
-        const auto holder = on(c.gl_surface_renderer_view,"getHolder","()Landroid/view/SurfaceHolder;").ref;
-        c.renderer_surface = on(c.renderer_egl,"eglCreateWindowSurface",
+        if (!r.renderer_context.IsValid() || r.renderer_context == c.egl.no_context) Fail("renderer EGL context creation failed");
+        }
+        const auto holder = on(r.view,"getHolder","()Landroid/view/SurfaceHolder;").ref;
+        r.renderer_surface = on(r.renderer_egl,"eglCreateWindowSurface",
             "(Ljavax/microedition/khronos/egl/EGLDisplay;Ljavax/microedition/khronos/egl/EGLConfig;Ljava/lang/Object;[I)Ljavax/microedition/khronos/egl/EGLSurface;",
-            {ref(c.renderer_display),ref(c.renderer_config),ref(holder),ref(dx::VmObjectRef{})}).ref;
-        if (!c.renderer_surface.IsValid() || c.renderer_surface == c.egl.no_surface) Fail("renderer EGL surface creation failed");
-        if (!on(c.renderer_egl,"eglMakeCurrent",
+            {ref(r.renderer_display),ref(r.renderer_config),ref(holder),ref(dx::VmObjectRef{})}).ref;
+        if (!r.renderer_surface.IsValid() || r.renderer_surface == c.egl.no_surface) {
+            const auto error = on(r.renderer_egl, "eglGetError", "()I").AsInt();
+            Fail("renderer EGL surface creation failed: EGL error=" + std::to_string(error));
+        }
+        if (!on(r.renderer_egl,"eglMakeCurrent",
                 "(Ljavax/microedition/khronos/egl/EGLDisplay;Ljavax/microedition/khronos/egl/EGLSurface;Ljavax/microedition/khronos/egl/EGLSurface;Ljavax/microedition/khronos/egl/EGLContext;)Z",
-                {ref(c.renderer_display),ref(c.renderer_surface),ref(c.renderer_surface),ref(c.renderer_context)}).AsInt()) Fail("renderer eglMakeCurrent failed");
-        c.renderer_gl = on(c.renderer_context,"getGL","()Ljavax/microedition/khronos/opengles/GL;").ref;
+                {ref(r.renderer_display),ref(r.renderer_surface),ref(r.renderer_surface),ref(r.renderer_context)}).AsInt()) Fail("renderer eglMakeCurrent failed");
+        r.renderer_gl = on(r.renderer_context,"getGL","()Ljavax/microedition/khronos/opengles/GL;").ref;
+        ProjectRenderer(c, r);
     }
 
-    void DexActivityLifecycle::ReleaseRendererEgl() {
+    void DexActivityLifecycle::ReleaseRendererEgl(GlSurfaceRuntime& r, const bool preserve_context) {
         auto& c = *bindings_.context;
-        if (!c.renderer_egl.IsValid() || !c.renderer_display.IsValid()) return;
+        if (!r.renderer_egl.IsValid() || !r.renderer_display.IsValid()) return;
         const auto ref = dx::VmValue::Ref;
-        if (c.renderer_context.IsValid() && c.renderer_context != c.egl.no_context) {
-            if (!CallOnView(c.renderer_egl, "eglMakeCurrent",
+        if (r.renderer_context.IsValid() && r.renderer_context != c.egl.no_context) {
+            if (!CallOnView(r.renderer_egl, "eglMakeCurrent",
                     "(Ljavax/microedition/khronos/egl/EGLDisplay;Ljavax/microedition/khronos/egl/EGLSurface;Ljavax/microedition/khronos/egl/EGLSurface;Ljavax/microedition/khronos/egl/EGLContext;)Z",
-                    {ref(c.renderer_display), ref(c.egl.no_surface), ref(c.egl.no_surface), ref(c.egl.no_context)}).AsInt())
+                    {ref(r.renderer_display), ref(c.egl.no_surface), ref(c.egl.no_surface), ref(c.egl.no_context)}).AsInt())
                 Fail("renderer EGL release current failed");
         }
-        if (c.renderer_surface.IsValid() && c.renderer_surface != c.egl.no_surface) {
-            if (!CallOnView(c.renderer_egl, "eglDestroySurface",
+        if (r.renderer_surface.IsValid() && r.renderer_surface != c.egl.no_surface) {
+            if (!CallOnView(r.renderer_egl, "eglDestroySurface",
                     "(Ljavax/microedition/khronos/egl/EGLDisplay;Ljavax/microedition/khronos/egl/EGLSurface;)Z",
-                    {ref(c.renderer_display), ref(c.renderer_surface)}).AsInt())
+                    {ref(r.renderer_display), ref(r.renderer_surface)}).AsInt())
                 Fail("renderer EGL surface destruction failed");
-            c.renderer_surface = dx::VmObjectRef{};
+            r.renderer_surface = dx::VmObjectRef{};
         }
-        if (c.renderer_context.IsValid() && c.renderer_context != c.egl.no_context) {
-            if (c.egl_context_factory.IsValid()) {
-                CallOnView(c.egl_context_factory, "destroyContext",
+        if (preserve_context) { ProjectRenderer(c, r); return; }
+        if (r.renderer_context.IsValid() && r.renderer_context != c.egl.no_context) {
+            if (r.egl_context_factory.IsValid()) {
+                CallOnView(r.egl_context_factory, "destroyContext",
                     "(Ljavax/microedition/khronos/egl/EGL10;Ljavax/microedition/khronos/egl/EGLDisplay;Ljavax/microedition/khronos/egl/EGLContext;)V",
-                    {ref(c.renderer_egl), ref(c.renderer_display), ref(c.renderer_context)});
-            } else if (!CallOnView(c.renderer_egl, "eglDestroyContext",
+                    {ref(r.renderer_egl), ref(r.renderer_display), ref(r.renderer_context)});
+            } else if (!CallOnView(r.renderer_egl, "eglDestroyContext",
                     "(Ljavax/microedition/khronos/egl/EGLDisplay;Ljavax/microedition/khronos/egl/EGLContext;)Z",
-                    {ref(c.renderer_display), ref(c.renderer_context)}).AsInt()) {
+                    {ref(r.renderer_display), ref(r.renderer_context)}).AsInt()) {
                 Fail("renderer EGL context destruction failed");
             }
         }
-        c.renderer_context = dx::VmObjectRef{};
-        c.renderer_surface = dx::VmObjectRef{};
-        c.renderer_config = dx::VmObjectRef{};
-        c.renderer_display = dx::VmObjectRef{};
-        c.renderer_egl = dx::VmObjectRef{};
-        c.renderer_gl = dx::VmObjectRef{};
-        renderer_ready_ = false;
+        r.renderer_context = dx::VmObjectRef{};
+        r.renderer_surface = dx::VmObjectRef{};
+        r.renderer_config = dx::VmObjectRef{};
+        r.renderer_display = dx::VmObjectRef{};
+        r.renderer_egl = dx::VmObjectRef{};
+        r.renderer_gl = dx::VmObjectRef{};
+        r.ready = false;
+        ProjectRenderer(c, r);
     }
 
+
     void DexActivityLifecycle::EnsureRendererCallbacks() {
-        auto& context = *bindings_.context;
-        if (renderer_ready_ || !context.renderer.IsValid()) return;
-        InitializeRendererEgl();
+        auto runtime = RendererState();
+        auto& r = *runtime;
+        if (r.paused || !r.surface_available || !r.renderer.IsValid()) return;
+        const bool surface_created = !r.renderer_surface.IsValid();
+        InitializeRendererEgl(r);
         RunRendererEvents();
-        CallOnView(context.renderer, "onSurfaceCreated",
-                   "(Ljavax/microedition/khronos/opengles/GL10;"
-                   "Ljavax/microedition/khronos/egl/EGLConfig;)V",
-                   {
-                       dx::VmValue::Ref(context.renderer_gl),
-                       dx::VmValue::Ref(context.renderer_config)
-                   });
-        CallOnView(context.renderer, "onSurfaceChanged",
-                   "(Ljavax/microedition/khronos/opengles/GL10;II)V",
-                   {
-                       dx::VmValue::Ref(context.renderer_gl),
-                       dx::VmValue::Int(static_cast<std::int32_t>(
-                           context.surface_width)),
-                       dx::VmValue::Int(static_cast<std::int32_t>(
-                           context.surface_height))
-                   });
-        renderer_ready_ = true;
+        if (!r.ready) {
+            CallOnView(r.renderer, "onSurfaceCreated",
+                "(Ljavax/microedition/khronos/opengles/GL10;Ljavax/microedition/khronos/egl/EGLConfig;)V",
+                {dx::VmValue::Ref(r.renderer_gl), dx::VmValue::Ref(r.renderer_config)});
+            r.ready = true;
+        }
+        if (surface_created) CallOnView(r.renderer, "onSurfaceChanged",
+            "(Ljavax/microedition/khronos/opengles/GL10;II)V",
+            {dx::VmValue::Ref(r.renderer_gl), dx::VmValue::Int(static_cast<std::int32_t>(bindings_.context->surface_width)),
+             dx::VmValue::Int(static_cast<std::int32_t>(bindings_.context->surface_height))});
     }
 
     LifecycleFrameState DexActivityLifecycle::Stop() {
@@ -1603,7 +1775,7 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
             guest([&] { CallActivity("onPause", "()V", {}); });
         }
         if (was_running) {
-            guest([&] { StopRendererThread(); });
+            guest([&] { StopAllRenderers(); });
             guest([&] {
                 if (const auto error = runtime::RetireSurfaceHolderGeneration(
                         bindings_.bridge->Vm(), *bindings_.context))
@@ -1634,6 +1806,7 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
                     guest([&] { CallOnView(record.object, "onDestroy", "()V", {}); });
         }
         bindings_.context->activity_stack.clear();
+        window_handoffs_.clear();
         bindings_.context->activity_commands.clear();
         bindings_.context->activity_stack_depth.store(0);
         bindings_.context->activity_switch_pending.store(false);

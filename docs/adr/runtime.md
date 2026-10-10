@@ -947,3 +947,24 @@ availMem < HOME+(CACHED-HOME)/2，查询策略不执行进程清理。其他机�
 伪装实际余量，也不把系统总量当作 DexVM 堆配额。旧 VFS meminfo 只能在只读且内容
 与配置相同的时候复用，冲突拒绝。manager 按当前进程缓存，ContextWrapper 委托 base，
 Context 字段及 GC roots 保持实例寿命。后续动态统计必须同时升级快照来源与 proc 表达。
+
+## ADR-0114 · 每实例窗口与可逆图形生命周期
+
+采用 AOSP API19 每 Activity 的生命周期/Window 事实与窗口可见性语义，在 OGPlay
+单宿主窗口、唯一 UiTree 和 ANGLE registry 上实现。保留窗口隐藏而不移除视图，
+Surface callback 注册按 View 保持，backing 按窗口代次退役；新前台 resume 的前置
+条件是旧实例 pause 完成，旧 stop 可在新窗口建立后交付。
+
+renderer driver 与视频资源按 View/Window owner 归属；context 的前台投影不能成为
+后台 worker 的资源来源。暂停、Surface loss、Context loss 与永久线程退出分离，
+复用 1:1 guest/host 线程、统一 Clock 与既有有界退出规则。同步校验无副作用，已执行
+Java/native 回调的失败不承诺无条件回滚；原始错误必须保留。
+
+支持边界与验证按 [DVM-235](../tasks/dexvm/DVM-235.md) 分阶段发布；不扩展到完整
+ActivityThread/Binder/task/multi-window，未验证渲染路径不能随另一条路径标 complete。
+
+CG 字幕触达 ASCII 固定字体边界：UI 通过显式、每 tree 的不可变字体资源提供 BMP
+fallback glyph，保留已有 ASCII 像素/布局路径。stb_truetype 1.26 固定源码修订用于
+字形栅格化，只接收解析前 SHA-256 验证的 AOSP API19 DroidSansFallback，禁止从 APK
+直接传入字体；缓存最多 128 个字形。shaping/bidi、补充平面及任意 app font 不在范围。
+字体随受审 payload 发布，缺失或校验失败明确失败，不依赖宿主安装字体，不删除字幕。

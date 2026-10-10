@@ -92,7 +92,13 @@ Intent 使用原版复制构造器。Window/attributes/decor 按 Activity/Window
 非空 options、for-result 非零 flags、非前台调用方、跨包结果及需要复用/task 的 launchMode
 记账失败；非栈顶 singleTop 可创建新实例。后台换前台内容明确失败。
 GC roots 覆盖命令、返回栈及待结果；退出线程只读 atomic 深度，不跨线程读取栈容器。
-UiTree reset 在托管栈存在时只清理前台子树，保留脱离前台的内容；Surface 返回的限制见 session。
+UiTree reset 在托管栈存在时只清理前台窗口子树，后台窗口保持附着与独立可见性；
+受支持标签 inflation 执行 Context 构造器，保留原版控件初始化；主题 textAppearance
+属性复用有界继承/引用解析。TextView 的 BufferType.NORMAL 重载复用普通文本编辑路径，
+span/editable 模式仍明确受限。
+SurfaceHolder.setFixedSize 只接受与真实托管 buffer 一致的请求并保存每 holder 状态；
+setSizeFromLayout 解除固定请求。独立 buffer 几何与物理尺寸不一致时明确失败。
+Surface 返回的限制见 session。
 
 ## 通知禁用与空集合取消
 
@@ -248,7 +254,9 @@ Java GLES/EGL 通过 session managed 冷入口复用 [native boundary](../../bou
   queueEvent 保活 Runnable，在 current GL 渲染线程、
   renderer callback 前 FIFO 执行，不依赖绘帧；requestRender/WHEN_DIRTY 单次消费请求。
   PreserveEGLContextOnPause 默认 false、普通 boolean 字段、方法可覆盖、可先于 renderer 配置；
-  onPause/onResume 当前仅 lifecycle 停帧，按该字段拆分 Surface/Context 重建和 context-loss 待实现。
+  onPause/onResume 经显式 per-View driver hook 在所属线程完成暂停确认和 EGLSurface
+  释放/恢复；Context 按 preserve 请求保留或重建。driver、事件与 EGL wrapper 属于
+  稳定 View runtime，foreground 字段仅为投影；backend context-loss 仍须按验证范围记账。
 
 ## Looper、线程与 WebView
 

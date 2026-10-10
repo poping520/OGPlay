@@ -1,3 +1,4 @@
+#include "ogplay/runtime/ui/ui_fallback_font.h"
 #include "ogplay/runtime/ui/ui_renderer.h"
 
 #include <algorithm>
@@ -169,7 +170,7 @@ void AppendNode(const UiTree& tree, const UiNodeId id,
                 const UiBitmapCache& bitmaps, UiRenderList& out,
                 const bool parent_clips_children) {
     const auto& node = *tree.Get(id);
-    if (node.visibility != Visibility::Visible) return;
+    if (!node.window_visible || node.visibility != Visibility::Visible) return;
     // Parent clipChildren clips this view to its bounds (AOSP View.draw).
     const bool clip_to_bounds = parent_clips_children;
     if (clip_to_bounds) {
@@ -225,10 +226,10 @@ void AppendNode(const UiTree& tree, const UiNodeId id,
         if (node.max_lines > 1 && !rendered_text.empty()) {
             rendered_text = WrapFixedText(
                 rendered_text, node.text_size_px, node.text_style,
-                text_content.right - text_content.left, node.max_lines);
+                text_content.right - text_content.left, node.max_lines, node.fallback_font.get());
         }
         const auto metrics = MeasureFixedText(rendered_text, node.text_size_px,
-                                              node.text_style);
+                                              node.text_style, node.fallback_font.get());
         const auto drawable_rect =
             [&text_content](const std::size_t index, const Rect content_box,
                         const std::int32_t width, const std::int32_t height) {
@@ -285,7 +286,7 @@ void AppendNode(const UiTree& tree, const UiNodeId id,
         }
         if (!rendered_text.empty()) {
             out.emplace_back(DrawText{x, y, rendered_text, node.text_color,
-                                      node.text_size_px, node.alpha, node.text_style});
+                                      node.text_size_px, node.alpha, node.text_style, node.fallback_font});
         }
     }
     // clipToPadding clips descendants to the padding box (AOSP dispatchDraw),
@@ -350,7 +351,7 @@ void PaintRect(UiOverlayFrame& frame, const Rect rect, const Rect clip,
 }  // namespace
 
 FixedTextMetrics MeasureFixedText(const std::u16string_view text,
-                                  const float size_px, const std::uint32_t style) {
+                                  const float size_px, const std::uint32_t style, const UiFallbackFont* fallback) {
     if (style > 3U) throw std::runtime_error("invalid built-in font style");
     if (!std::isfinite(size_px) || size_px < 1.0F || size_px > 128.0F) {
         throw std::runtime_error("fixed-font text size is outside 1..128 px");
@@ -360,7 +361,8 @@ FixedTextMetrics MeasureFixedText(const std::u16string_view text,
     }
     for (const auto unit : text) {
         if (unit == u'\n' || unit == u'\r') continue;
-        static_cast<void>(GlyphRows(unit));
+        if (unit > 127 && fallback) static_cast<void>(fallback->Glyph(unit, std::max(1, static_cast<int>(std::lround(size_px / 8.0F))) * 8 - 1));
+        else static_cast<void>(GlyphRows(unit));
     }
     const auto scale = std::max(1, static_cast<std::int32_t>(
                                        std::lround(size_px / 8.0F)));
@@ -374,12 +376,12 @@ FixedTextMetrics MeasureFixedText(const std::u16string_view text,
             columns = 0;
             ++lines;
         } else if (unit != u'\r') {
-            ++columns;
+            columns += (unit > 127 ? 8 : 6) + extra;
         }
     }
     max_columns = std::max(max_columns, columns);
     const auto width = max_columns == 0 ? 0 :
-        (max_columns * (6 + extra) - 1) * scale;
+        (max_columns - 1) * scale;
     if (width > std::numeric_limits<std::int32_t>::max()) {
         throw std::runtime_error("fixed-font measured width overflows");
     }
@@ -391,7 +393,22 @@ FixedTextMetrics MeasureFixedText(const std::u16string_view text,
 std::u16string WrapFixedText(const std::u16string_view text,
                              const float size_px, const std::uint32_t style,
                              const std::int32_t width_px,
-                             const std::int32_t max_lines) {
+                             const std::int32_t max_lines, const UiFallbackFont* fallback) {
+    if (fallback && std::any_of(text.begin(), text.end(), [](const auto c) { return c > 127; })) {
+        const auto metrics = MeasureFixedText(text, size_px, style, fallback);
+        std::u16string result;
+        std::int32_t x{}, line = 1;
+        for (const auto unit : text) {
+            if (unit == u'\r') continue;
+            if (unit == u'\n') { result.push_back(unit); x = 0; ++line; continue; }
+            const auto advance = ((unit > 127 ? 8 : 6) + ((style & 1U) ? 1 : 0) + ((style & 2U) ? 2 : 0)) * metrics.scale;
+            if (width_px > 0 && x > 0 && x + advance > width_px && line < max_lines) {
+                result.push_back(u'\n'); x = 0; ++line;
+            }
+            result.push_back(unit); x += advance;
+        }
+        return result;
+    }
     if (text.empty() || max_lines <= 1 || width_px <= 0) {
         return std::u16string(text);
     }
@@ -542,7 +559,7 @@ UiOverlayFrame RasterizeUiOverlay(const UiRenderList& commands,
                 Blend(dst, src[0], src[1], src[2], alpha);
             });
         } else if (const auto* text = std::get_if<DrawText>(&command)) {
-            const auto text_metrics = MeasureFixedText(text->text, text->size_px, text->style);
+            const auto text_metrics = MeasureFixedText(text->text, text->size_px, text->style, text->fallback_font.get());
             const int bold = (text->style & 1U) ? 1 : 0;
             const int italic = (text->style & 2U) ? 2 : 0;
             const auto alpha = static_cast<std::uint8_t>(
@@ -559,10 +576,29 @@ UiOverlayFrame RasterizeUiOverlay(const UiRenderList& commands,
                     continue;
                 }
                 if (text->text[index] == u'\r') continue;
+                const auto unit = text->text[index];
+                const auto origin_x = text->x + column_index * text_metrics.scale;
+                column_index += (unit > 127 ? 8 : 6) + bold + italic;
+                if (unit > 127 && text->fallback_font) {
+                    const auto glyph = text->fallback_font->Glyph(unit, text_metrics.scale * 8 - 1);
+                    for (std::int32_t row = 0; row < glyph->height; ++row) {
+                        const auto skew = italic ? std::max(0, (glyph->height - row) / 3) : 0;
+                        for (std::int32_t col = 0; col < glyph->width; ++col) {
+                            const auto coverage = glyph->alpha[static_cast<std::size_t>(row) * glyph->width + col];
+                            if (!coverage) continue;
+                            const auto x = origin_x + glyph->x + col + skew;
+                            const auto y = text->y + line_index * 8 * text_metrics.scale + glyph->y + row;
+                            const auto a = static_cast<std::uint8_t>((static_cast<unsigned>(alpha) * coverage + 127U) / 255U);
+                            PaintRect(frame, Rect{x, y, x + 1 + bold, y + 1}, clips.back(),
+                                [text, a](auto, auto, auto* dst) { Blend(dst,
+                                    static_cast<std::uint8_t>(text->rgba >> 24U), static_cast<std::uint8_t>(text->rgba >> 16U),
+                                    static_cast<std::uint8_t>(text->rgba >> 8U), a); });
+                        }
+                    }
+                    continue;
+                }
                 const auto glyph = GlyphRows(text->text[index]);
-                const auto origin_x =
-                    text->x + column_index++ *
-                                  (6 + bold + italic) * text_metrics.scale;
+
                 for (std::int32_t row = 0; row < 7; ++row) {
                     const auto row_bits = static_cast<unsigned>(glyph[static_cast<std::size_t>(row)]);
                     const auto styled_bits = bold ? (row_bits << 1U) | row_bits : row_bits;

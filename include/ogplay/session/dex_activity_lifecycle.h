@@ -139,19 +139,27 @@ private:
     void AwaitInitialThreadQuiescence();
     void ServiceActivitySwitch();
     void StartCurrentActivity();
+    void DeliverActivityResults();
     void RestoreActivity();
+    void CompleteWindowHandoffs();
+    void SetActivityWindowVisible(runtime::dexvm::VmObjectRef activity, bool visible);
     void SynchronizeContentView();
     void DispatchViewWindowFocus(bool has_focus);
     void EnsureRendererCallbacks();
-    void InitializeRendererEgl();
-    void ReleaseRendererEgl();
+    using GlSurfaceRuntime = runtime::DexVmAndroidContext::GlSurfaceRuntime;
+    [[nodiscard]] std::shared_ptr<GlSurfaceRuntime> RendererState();
+    void InitializeRendererEgl(GlSurfaceRuntime& state);
+    void ReleaseRendererEgl(GlSurfaceRuntime& state, bool preserve_context = false);
     void RunRendererEvents();
-    void EnsureRendererThread();
+    void EnsureRendererThread(const std::shared_ptr<GlSurfaceRuntime>& state);
     void RunOnRenderer(std::function<void()> action);
+    void RunOnRenderer(const std::shared_ptr<GlSurfaceRuntime>& state, std::function<void()> action);
     void StopRendererThread();
-    void RendererThreadBody();
+    void StopRendererThread(runtime::dexvm::VmObjectRef view);
+    void StopAllRenderers();
+    void RendererThreadBody(runtime::dexvm::VmObjectRef thread);
     struct RendererThread;
-    std::unique_ptr<RendererThread> renderer_thread_;
+    std::unordered_map<std::uint32_t, std::unique_ptr<RendererThread>> renderer_threads_;
     // Publishes the sole window-focus fact before virtually notifying the
     // Activity and every currently attached View. Repeated values are silent.
     void SetWindowFocus(bool has_focus);
@@ -179,6 +187,11 @@ private:
     std::uint64_t deep_touch_handle_{};
     bool guest_finalized_{};
     bool stop_completed_{};
+    struct WindowHandoff final {
+        runtime::dexvm::VmObjectRef source{}, target{};
+        bool source_started{};
+    };
+    std::vector<WindowHandoff> window_handoffs_;
     // Renderer callbacks fire once when the interpreted glue registers a
     // renderer; installer phases run frames without one.
     bool renderer_ready_{};

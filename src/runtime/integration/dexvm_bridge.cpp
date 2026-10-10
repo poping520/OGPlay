@@ -149,6 +149,13 @@ void VisitAndroidSessionRoots(const DexVmAndroidContext& context,
     }
     for (const auto operation : context.alarm_operations) root(operation);
     root(context.renderer);
+    for (const auto& [_, state] : context.gl_surface_runtimes) {
+        root(state->view); root(state->owner); root(state->renderer);
+        root(state->egl_context_factory); root(state->egl_config_chooser);
+        root(state->renderer_egl); root(state->renderer_display); root(state->renderer_config);
+        root(state->renderer_context); root(state->renderer_surface); root(state->renderer_gl);
+        for (const auto event : state->events) root(event);
+    }
     root(context.egl_context_factory);
     root(context.egl_config_chooser);
     root(context.renderer_egl); root(context.renderer_display); root(context.renderer_config);

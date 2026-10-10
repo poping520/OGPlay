@@ -824,6 +824,16 @@ dx::VmObjectRef GetSurfaceHolderFrame(dx::Interpreter& vm,
 
 void PublishSurfaceHolderFrame(dx::Interpreter& vm, DexVmAndroidContext& context,
                                const dx::VmObjectRef holder) {
+    for (const auto& [name, actual] : std::array{
+            std::pair{"mRequestedWidth", context.surface_width}, std::pair{"mRequestedHeight", context.surface_height}}) {
+        const auto field = vm.Linker().FindFieldRecursive(vm.Model().ObjectClass(holder), name, "I");
+        if (!field) continue;
+        const auto requested = static_cast<std::int32_t>(vm.Model().InstanceSlots(holder)[vm.Linker().Field(*field).slot].bits);
+        if (requested > 0 && static_cast<std::uint32_t>(requested) != actual) {
+            if (auto* ledger = vm.Ledger()) ledger->RecordUnimplemented("dexvm.surface_buffer_geometry", 0);
+            throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "fixed Surface buffer differs from managed geometry"};
+        }
+    }
     constexpr auto max_extent =
         static_cast<std::uint32_t>(std::numeric_limits<std::int32_t>::max());
     if (context.surface_width > max_extent || context.surface_height > max_extent) {
@@ -917,6 +927,27 @@ Decl Declare_android_view_SurfaceHolder_Impl(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/view/SurfaceHolder$Impl;", "Ljava/lang/Object;", {"Landroid/view/SurfaceHolder;"});
     context->surface_holder_frame_field = builder.BoundInstanceField(
         "mSurfaceFrame", "Landroid/graphics/Rect;", dx::kAccPrivate);
+    const auto requested_width = builder.BoundInstanceField("mRequestedWidth", "I", dx::kAccPrivate);
+    const auto requested_height = builder.BoundInstanceField("mRequestedHeight", "I", dx::kAccPrivate);
+    builder.FinalMethod("setFixedSize", "(II)V", [context, requested_width, requested_height](dx::IntrinsicContext& call) {
+        const auto width = call.arguments[0].AsInt(), height = call.arguments[1].AsInt();
+        if ((width > 0 && static_cast<std::uint32_t>(width) != context->surface_width) ||
+            (height > 0 && static_cast<std::uint32_t>(height) != context->surface_height)) {
+            if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.surface_buffer_geometry", 0);
+            throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "independent Surface buffer geometry is unavailable"};
+        }
+        dx::IntrinsicCall fields(call);
+        fields.SetInt(requested_width, width);
+        fields.SetInt(requested_height, height);
+        PublishSurfaceHolderFrame(call.vm, *context, call.receiver);
+        return dx::VmValue::Void();
+    });
+    builder.FinalMethod("setSizeFromLayout", "()V", [requested_width, requested_height](dx::IntrinsicContext& call) {
+        dx::IntrinsicCall fields(call);
+        fields.SetInt(requested_width, 0);
+        fields.SetInt(requested_height, 0);
+        return dx::VmValue::Void();
+    });
     builder.FinalMethod("getSurfaceFrame", "()Landroid/graphics/Rect;",
         [context](dx::IntrinsicContext& call) {
             return dx::VmValue::Ref(GetSurfaceHolderFrame(
@@ -948,6 +979,12 @@ Decl Declare_android_view_SurfaceHolder(const Context& context) {
     builder.FinalMethod("removeCallback", "(Landroid/view/SurfaceHolder$Callback;)V", SurfaceHolderRemoveCallbackHandler(context));
     builder.FinalMethod("setType", "(I)V", SurfaceHolderSetTypeHandler());
     builder.FinalMethod("setFormat", "(I)V", SurfaceHolderSetFormatHandler());
+    const auto unsupported_geometry = [context](dx::IntrinsicContext& call) -> dx::VmValue {
+        if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.surface_buffer_geometry", 0);
+        throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "SurfaceHolder geometry requires a managed holder"};
+    };
+    builder.FinalMethod("setFixedSize", "(II)V", unsupported_geometry);
+    builder.FinalMethod("setSizeFromLayout", "()V", unsupported_geometry);
     builder.FinalMethod("lockCanvas", "()Landroid/graphics/Canvas;",
                         LockCanvasHandler(context));
     builder.FinalMethod(
@@ -1302,6 +1339,18 @@ Decl Declare_android_view_View(const Context& context) {
                               (style & kScrollbarsStyleMask));
             return dx::VmValue::Void();
         });
+    builder.VirtualMethod("onWindowVisibilityChanged", "(I)V", WidgetNoopHandler());
+    builder.VirtualMethod("getWindowVisibility", "()I", [context](dx::IntrinsicContext& call) {
+        const auto node = FindViewUiNode(*context, call.receiver.Value());
+        if (!node || !context->ui_tree.IsAttached(*node)) return dx::VmValue::Int(8);
+        auto current = node;
+        while (current) {
+            const auto* state = context->ui_tree.Get(*current);
+            if (!state->window_visible) return dx::VmValue::Int(4);
+            current = state->parent;
+        }
+        return dx::VmValue::Int(0);
+    });
     builder.VirtualMethod("getScrollBarStyle", "()I",
         [view_flags](dx::IntrinsicContext& call) {
             return dx::VmValue::Int(
@@ -1917,6 +1966,7 @@ void RemoveChild(dx::IntrinsicContext& call, const Context& context,
     const auto roots = call.vm.ProtectReferences(std::array{call.receiver, child});
     if (const auto error = DetachSurfaceViewSubtree(call.vm, *context, *node))
         throw dx::VmJavaThrow{"Ljava/lang/RuntimeException;", *error};
+    DetachGlSurfaceSubtree(*context, *node);
     // Surface callbacks may replace the content tree or reparent the child.
     // Never detach a replacement node or a child now owned by another parent.
     const auto current_parent = FindViewUiNode(*context, call.receiver.Value());
@@ -2378,7 +2428,8 @@ Decl Declare_android_view_Surface(const Context& context) {
     builder.FinalMethod("isValid", "()Z", [context](dx::IntrinsicContext& call) {
         for (const auto& [holder, surface] : context->holder_surfaces)
             if (surface == call.receiver)
-                return dx::VmValue::Int(context->active_surface_holders.contains(holder));
+                return dx::VmValue::Int(context->active_surface_holders.contains(holder) ||
+                                       context->destroying_surface_holders.contains(holder));
         return dx::VmValue::Int(0);
     });
     return std::move(builder).Build();

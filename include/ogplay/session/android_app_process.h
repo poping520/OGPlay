@@ -69,6 +69,7 @@ struct AndroidAppProcessRequest final {
     std::optional<std::thread::id> guest_call_slice_observer_thread;
     // Pinned API19 system time-zone archive, mounted read-only when supplied.
     std::vector<std::byte> tzdata;
+    std::vector<std::byte> ui_fallback_font;
 };
 
 class AndroidAppProcessError final : public std::runtime_error {

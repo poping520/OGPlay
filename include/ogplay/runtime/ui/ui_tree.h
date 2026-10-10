@@ -11,6 +11,7 @@
 #include <vector>
 
 namespace ogplay::runtime::ui {
+class UiFallbackFont;
 struct UiBitmap;
 
 class UiNodeId final {
@@ -163,6 +164,9 @@ struct UiNode final {
     UiClass kind{UiClass::View};
     std::int32_t android_id{-1};
     Visibility visibility{Visibility::Visible};
+    std::shared_ptr<const UiFallbackFont> fallback_font;
+    // Window visibility is independent of the guest View's visibility.
+    bool window_visible{true};
     bool enabled{true};
     bool clickable{};
     bool focusable{};
@@ -208,6 +212,8 @@ struct UiNode final {
 
 class UiTree final {
 public:
+    void SetFallbackFont(std::shared_ptr<const UiFallbackFont> font);
+    [[nodiscard]] const std::shared_ptr<const UiFallbackFont>& FallbackFont() const { return fallback_font_; }
     static constexpr std::size_t kMaxNodes = 4096;
     static constexpr std::size_t kMaxChildren = 1024;
     static constexpr std::size_t kMaxDepth = 128;
@@ -239,6 +245,8 @@ public:
 
     void SetAndroidId(UiNodeId node, std::int32_t android_id);
     void SetVisibility(UiNodeId node, Visibility visibility);
+    void SetWindowVisible(UiNodeId node, bool visible);
+    [[nodiscard]] bool IsVisible(UiNodeId node) const;
     void SetEnabled(UiNodeId node, bool enabled);
     void SetClickable(UiNodeId node, bool clickable);
     void MarkLayoutDirty(UiNodeId node);
@@ -257,6 +265,7 @@ private:
     void MarkAncestors(UiNodeId node, bool layout, bool draw);
 
     std::uint32_t generation_{};
+    std::shared_ptr<const UiFallbackFont> fallback_font_;
     std::uint32_t next_node_{};
     UiNodeId root_;
     std::optional<UiNodeId> focused_;

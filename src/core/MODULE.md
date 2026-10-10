@@ -7,6 +7,7 @@
 ## 公共 API
 
 - `ogplay::core::Logger`：结构化记录、环形缓冲、限流、sink、符号化与诊断包。
+- `Sha256`：对只读 bytes 计算确定的十六进制 SHA-256，供 Loader 与受审运行资源校验共用。
 - `ConsoleSink` / `FileSink`：文本或 JSONL 输出；Agent 通过 Logger 快照读取同源记录。
 - `GuestSymbolProvider`：由 Loader 提供的地址符号化抽象，core 不依赖 ELF 实现。
 - `GpuStateProvider`：图形实现注入统计、渲染目标、能力与有界 trace 的强类型只读快照；

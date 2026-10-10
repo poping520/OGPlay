@@ -4,10 +4,44 @@
 #include <memory>
 #include <stdexcept>
 #include <vector>
+#include <filesystem>
+#include <fstream>
+#include <iterator>
+#include <cstring>
+#include "ogplay/runtime/ui/ui_fallback_font.h"
+#include "ogplay/core/sha256.h"
 
 #include "ogplay/runtime/ui/ui_renderer.h"
 
 namespace ui = ogplay::runtime::ui;
+
+TEST_CASE("DVM-235 trusted API19 fallback font renders distinct CJK glyphs") {
+    const auto root = std::filesystem::path(__FILE__).parent_path().parent_path().parent_path();
+    std::ifstream input(root / "data/android/19/fonts/DroidSansFallback.ttf", std::ios::binary);
+    REQUIRE(input.good());
+    const std::vector<char> raw{std::istreambuf_iterator<char>{input}, std::istreambuf_iterator<char>{}};
+    std::vector<std::byte> bytes(raw.size());
+    std::memcpy(bytes.data(), raw.data(), raw.size());
+    const auto font = std::make_shared<ui::UiFallbackFont>(bytes);
+    const auto king = font->Glyph(u'王', 15), village = font->Glyph(u'村', 15);
+    REQUIRE_FALSE(king->alpha.empty());
+    REQUIRE_FALSE(village->alpha.empty());
+    CHECK(king->alpha != village->alpha);
+    CHECK_FALSE(font->Glyph(u'\u2026', 15)->alpha.empty());
+    CHECK_FALSE(font->Glyph(u'\u201c', 15)->alpha.empty());
+    CHECK(ui::MeasureFixedText(u"国王村", 16, 0, font.get()).width == 46);
+    const ui::UiRenderList commands{ui::DrawText{0, 0, u"国王村", 0xffffffffU, 16, 1, 0, font}};
+    const auto frame = ui::RasterizeUiOverlay(commands, {64, 24});
+    CHECK_FALSE(frame.fully_transparent);
+    bytes[0] ^= std::byte{1};
+    CHECK_THROWS_WITH(ui::UiFallbackFont{bytes}, "fallback font is not the pinned API19 trusted payload");
+    CHECK_THROWS(static_cast<void>(font->Glyph(u'ا', 15)));
+    CHECK_THROWS(static_cast<void>(font->Glyph(u'\u202e', 15)));
+    CHECK_THROWS(static_cast<void>(font->Glyph(u'\u20d0', 15)));
+    CHECK_THROWS(static_cast<void>(font->Glyph(u'\u0301', 15)));
+    CHECK_THROWS(static_cast<void>(font->Glyph(u'\ufe0f', 15)));
+    CHECK(ogplay::core::Sha256({}) == "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
+}
 
 namespace {
 
@@ -162,6 +196,8 @@ TEST_CASE("fixed UI font raster matches the exact HI golden") {
     tree.Get(text)->layout.width = {ui::SizeMode::Fixed, 11};
     tree.Get(text)->layout.height = {ui::SizeMode::Fixed, 7};
     tree.Get(text)->text = u"HI";
+    // This golden checks raster pixels, independently of the word-wrap policy.
+    tree.Get(text)->max_lines = 1;
     tree.Get(text)->text_color = 0xff0000ffU;
     tree.Attach(tree.Root(), text);
     ui::LayoutUiTree(tree, {11, 7});

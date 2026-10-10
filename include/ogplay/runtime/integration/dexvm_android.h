@@ -234,6 +234,9 @@ struct DexVmAndroidContext final {
     std::vector<ActivityResult> results;
     std::optional<ui::UiNodeId> focused_node;
     dexvm::VmObjectRef focused_edit_text{};
+    std::optional<ui::UiNodeId> window_root;
+    bool resumed{}, visible{}, stopped{};
+    dexvm::VmObjectRef render_view{};
   };
   struct ActivityCommand final {
     enum class Kind { launch, finish } kind{Kind::launch};
@@ -262,6 +265,17 @@ struct DexVmAndroidContext final {
   dexvm::VmObjectRef application_base_context;
   std::string application_descriptor;
   dexvm::VmObjectRef renderer;
+  struct GlSurfaceRuntime final {
+    dexvm::VmObjectRef view{}, owner{}, renderer{}, egl_context_factory{}, egl_config_chooser{};
+    dexvm::VmObjectRef renderer_egl{}, renderer_display{}, renderer_config{};
+    dexvm::VmObjectRef renderer_context{}, renderer_surface{}, renderer_gl{};
+    std::vector<dexvm::VmObjectRef> events;
+    std::function<void()> wake;
+    std::function<void(bool)> pause;
+    bool paused{}, stopped{}, ready{}, surface_available{};
+  };
+  std::unordered_map<std::uint32_t, std::shared_ptr<GlSurfaceRuntime>> gl_surface_runtimes;
+  std::function<void(dexvm::VmObjectRef)> retire_gl_surface_view;
   dexvm::VmObjectRef egl_context_factory;
   dexvm::VmObjectRef egl_config_chooser;
   // Owned by the intrinsic renderer, backed by the normal EGL registry.
@@ -277,7 +291,7 @@ struct DexVmAndroidContext final {
       gl_surface_config_specs;
   std::vector<dexvm::VmObjectRef> gl_surface_events;
   // Session-owned intrinsic GLThread driver, reached through explicit hooks.
-  std::function<void()> run_gl_surface_thread;
+  std::function<void(dexvm::VmObjectRef)> run_gl_surface_thread;
   std::function<void()> wake_gl_surface_thread;
   bool gl_surface_thread_stopped{};
   dexvm::VmObjectRef content_view;
@@ -446,6 +460,8 @@ struct DexVmAndroidContext final {
   std::unordered_map<std::uint32_t, dexvm::VmObjectRef> holder_surfaces;
   std::int32_t window_format{1};
   std::unordered_set<std::uint32_t> active_surface_holders;
+  std::unordered_set<std::uint32_t> destroying_surface_holders;
+  std::unordered_map<std::uint32_t, std::pair<std::uint32_t, std::uint32_t>> surface_callback_sizes;
 
   struct EglFacadeState final {
     dexvm::VmObjectRef display;
@@ -962,6 +978,8 @@ FindViewUiNode(const DexVmAndroidContext &context, std::uint64_t view_handle);
 ViewObjectForUiNode(const DexVmAndroidContext &context, ui::UiNodeId node);
 void ResetViewUiState(DexVmAndroidContext &context);
 void RetireViewUiSubtree(DexVmAndroidContext& context, ui::UiNodeId node);
+[[nodiscard]] ui::UiNodeId ActivityContentRoot(DexVmAndroidContext& context);
+void DetachGlSurfaceSubtree(DexVmAndroidContext& context, ui::UiNodeId subtree);
 void InitializeDefaultViewBackground(dexvm::Interpreter &vm,
                                      DexVmAndroidContext &context,
                                      dexvm::VmObjectRef view,

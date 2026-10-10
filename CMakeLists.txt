@@ -60,6 +60,7 @@ function(ogplay_stage_angle_runtime target)
 endfunction()
 
 add_library(ogplay_core
+    src/core/sha256.cpp
     third_party/yyjson/src/yyjson.c
     src/core/capability_ledger.cpp
     src/core/encoding.cpp
@@ -455,6 +456,7 @@ add_library(ogplay_runtime
     src/runtime/debug/stall_diagnostics.cpp
     src/runtime/ui/ui_layout.cpp
     src/runtime/ui/ui_renderer.cpp
+    src/runtime/ui/ui_fallback_font.cpp
     src/runtime/ui/ui_tree.cpp
     src/runtime/syscall/arm_kernel_helpers.cpp
     src/runtime/bionic/bionic_module_set.cpp

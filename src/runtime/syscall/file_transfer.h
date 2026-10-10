@@ -47,7 +47,6 @@ inline std::int32_t TransferFile(VirtualFileSystem& vfs,
             memory.Validate({address, size}, write ? memory::AccessType::read
                                                   : memory::AccessType::write,
                             frame.thread_id);
-            const auto fd = std::bit_cast<std::int32_t>(frame.arguments[0]);
             std::size_t actual{};
             if (write) {
                 memory.Read(address, bytes, frame.thread_id);

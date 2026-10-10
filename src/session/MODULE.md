@@ -24,6 +24,7 @@ Dex activity 每帧在 guest 回调前泵送主 Looper，到帧尾只通过
   在 `GET_ACTIVITIES` 下发布当前包 Activity 元数据；receiver 声明独立注入，供当前包
   `getReceiverInfo/queryBroadcastReceivers` 使用，逐过滤器事实不合并。`AndroidAppProcessRequest` 同时把显式 `GuestProcFacts` 原样传给 native process；session
   还接收前端已解包的 curated API 19 Boot DEX，并与应用 DEX 一起交给 bridge；session
+  可接收受审 API19 fallback font bytes，交给 UI 校验并绑定进程 UiTree；不读取宿主字体。
   不选择 Boot 类、不读取宿主内存，也不从 Profile 隐式覆盖虚拟设备 `/proc` 事实。
   外部 guest slice observer 及其可选宿主线程限定原样传给 native process。呈现帧的 UI
   overlay 在自有 RGBA8 buffer 上合成；经 renderer 认证的全透明 overlay 省略扫描，
@@ -115,8 +116,12 @@ Dex activity 每帧在 guest 回调前泵送主 Looper，到帧尾只通过
   Activity 转换在 VM execution lock 下消费 FIFO 命令，以每实例返回栈保留调用方、
   Intent/普通内容树/焦点与待结果；旧内容 detach 后不参与 draw/input，结束时仅退役该子树。
   恢复原实例时 restart/start、结果虚派后 resume；栈/命令/结果由 session GC roots 保活。
-  单任务/单前台窗口、standard 和非栈顶 singleTop 新实例；活动 GL/Surface/native window/
-  视频调用方不能保留，明确失败，已有 startActivity+finish 可退役旧渲染实例。
+  单任务/单前台窗口、standard 和非栈顶 singleTop 新实例；每实例内容在唯一 UiTree
+  的窗口 root 下保持附着，后台以独立 window visibility 隐藏，Surface 按子树派发。
+  holder/callback 保留，恢复同一实例；native window callback 与播放中的视频调用方
+  返回仍受限。已有 startActivity+finish 可退役旧渲染实例。
+  intrinsic renderer 按 View 持有稳定 runtime/worker，后台回调不读前台 renderer 投影。
+  pause/resume 在所属 GLThread 确认，EGLSurface 可重建，Context 按 preserve 请求释放。
   最后实例结束才退出；重复/中间 finish 不错误退出，Stop 在 join 后销毁全部保留实例。
   入口 Activity
   实例化时把自身句柄发布为 `task_root_activity`（进程唯一 task 的根，

@@ -48,6 +48,18 @@ Decl Declare_android_opengl_GLSurfaceView_Renderer(const Context& context) {
 
 namespace ogplay::runtime::android_intrinsics {
 
+namespace {
+std::shared_ptr<DexVmAndroidContext::GlSurfaceRuntime> GlRuntime(const Context& context, dx::IntrinsicContext& call) {
+    auto& state = context->gl_surface_runtimes[call.receiver.Value()];
+    if (!state) {
+        state = std::make_shared<DexVmAndroidContext::GlSurfaceRuntime>();
+        state->view = call.receiver;
+        state->owner = CallAndroidMethod(call.vm, call.receiver, "getContext", "()Landroid/content/Context;").ref;
+    }
+    return state;
+}
+}
+
 Decl Declare_android_opengl_GLSurfaceView(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/opengl/GLSurfaceView;", "Landroid/view/SurfaceView;");
     builder.ConstantInt("RENDERMODE_WHEN_DIRTY", "I", 0)
@@ -71,22 +83,33 @@ Decl Declare_android_opengl_GLSurfaceView(const Context& context) {
     builder.FinalMethod("setRenderer",
         "(Landroid/opengl/GLSurfaceView$Renderer;)V",
         [context](dx::IntrinsicContext& call) {
-            context->renderer = call.arguments[0].ref;
-            context->gl_surface_thread_stopped = false;
-            context->gl_surface_renderer_view = call.receiver;
+            const auto state = GlRuntime(context, call);
+            if (state->renderer.IsValid())
+                throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "renderer is already set"};
+            if (state->owner == context->activity || context->activity_stack.empty()) {
+                context->renderer = call.arguments[0].ref;
+                context->gl_surface_thread_stopped = false;
+                context->gl_surface_renderer_view = call.receiver;
+                context->egl_context_factory = state->egl_context_factory;
+                context->egl_config_chooser = state->egl_config_chooser;
+            }
             context->gl_surface_render_requests[call.receiver.Value()] = true;
+            state->renderer = call.arguments[0].ref;
+            state->stopped = false;
             return dx::VmValue::Void();
         });
     builder.FinalMethod("setEGLContextFactory",
         "(Landroid/opengl/GLSurfaceView$EGLContextFactory;)V",
         [context](dx::IntrinsicContext& call) {
-            context->egl_context_factory = call.arguments[0].ref;
+            if (context->gl_surface_renderer_view == call.receiver) context->egl_context_factory = call.arguments[0].ref;
+            GlRuntime(context, call)->egl_context_factory = call.arguments[0].ref;
             return dx::VmValue::Void();
         });
     builder.FinalMethod("setEGLConfigChooser",
         "(Landroid/opengl/GLSurfaceView$EGLConfigChooser;)V",
         [context](dx::IntrinsicContext& call) {
-            context->egl_config_chooser = call.arguments[0].ref;
+            if (context->gl_surface_renderer_view == call.receiver) context->egl_config_chooser = call.arguments[0].ref;
+            GlRuntime(context, call)->egl_config_chooser = call.arguments[0].ref;
             return dx::VmValue::Void();
         });
     builder.FinalMethod("setEGLContextClientVersion", "(I)V",
@@ -151,29 +174,35 @@ Decl Declare_android_opengl_GLSurfaceView(const Context& context) {
                                       "runnable must not be null"};
             }
             std::scoped_lock lock(context->scheduler_mutex);
-            if (context->scheduler_shutdown || context->gl_surface_thread_stopped) {
+            const auto state = context->gl_surface_runtimes.find(call.receiver.Value());
+            if (context->scheduler_shutdown || state == context->gl_surface_runtimes.end() || state->second->stopped) {
                 throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;",
                                       "GL thread is stopped"};
             }
-            context->gl_surface_events.push_back(runnable);
-            if (context->wake_gl_surface_thread) context->wake_gl_surface_thread();
+            state->second->events.push_back(runnable);
+            if (state->second->wake) state->second->wake();
             return dx::VmValue::Void();
         });
-    // Render pause/resume is owned by the lifecycle driver.
-    const auto lifecycle_noop = dx::IntrinsicHandler(
-        [](dx::IntrinsicContext&) { return dx::VmValue::Void(); });
-    builder.FinalMethod("onPause", "()V", lifecycle_noop);
-    builder.FinalMethod("onResume", "()V", lifecycle_noop);
+    const auto pause = [context](dx::IntrinsicContext& call, const bool paused) {
+        const auto state = context->gl_surface_runtimes.find(call.receiver.Value());
+        if (state == context->gl_surface_runtimes.end())
+            throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "GLSurfaceView has no renderer"};
+        if (state->second->pause) state->second->pause(paused);
+        else state->second->paused = paused;
+        return dx::VmValue::Void();
+    };
+    builder.FinalMethod("onPause", "()V", [pause](dx::IntrinsicContext& call) { return pause(call, true); });
+    builder.FinalMethod("onResume", "()V", [pause](dx::IntrinsicContext& call) { return pause(call, false); });
     return std::move(builder).Build();
 }
 
 Decl Declare_android_opengl_GLSurfaceView_GLThread(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class(
         "Landroid/opengl/GLSurfaceView$GLThread;", "Ljava/lang/Thread;");
-    builder.OverrideMethod("run", "()V", [context](dx::IntrinsicContext&) {
+    builder.OverrideMethod("run", "()V", [context](dx::IntrinsicContext& call) {
         if (!context->run_gl_surface_thread)
             throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "GL thread has no driver"};
-        context->run_gl_surface_thread();
+        context->run_gl_surface_thread(call.receiver);
         return dx::VmValue::Void();
     });
     return std::move(builder).Build();
@@ -776,11 +805,13 @@ dx::IntrinsicHandler EglCreateWindowSurfaceHandler(const Context& context) {
         const auto registered_holder = std::find_if(
             context->surface_holders.begin(), context->surface_holders.end(),
             [holder](const auto& entry) { return entry.second == holder; });
-        if (!holder.IsValid() || registered_holder == context->surface_holders.end()) {
+        if (!holder.IsValid() || registered_holder == context->surface_holders.end() ||
+            !context->active_surface_holders.contains(holder.Value())) {
             LatchEglError(call, context, kBadNativeWindow); return dx::VmValue::Ref(context->egl.no_surface);
         }
         if (context->session == nullptr || !context->session->ManagedSurfaceIsOpen()) ModelFailure(call, "managed surface is not open");
-        if (context->egl.window_surface.IsValid()) ModelFailure(call, "a second window surface is unsupported");
+        if (context->session == nullptr && context->egl.window_surface.IsValid())
+            ModelFailure(call, "a second headless window surface is unsupported");
         const auto attributes = call.arguments[3].ref;
         if (context->session != nullptr) {
             return WithIntArray(call, context, attributes, false,

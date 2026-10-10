@@ -4,6 +4,56 @@
 
 namespace ui = ogplay::runtime::ui;
 
+TEST_CASE("DVM-235 window visibility preserves attachment and guest View visibility") {
+    ui::UiTree tree;
+    const auto window = tree.CreateNode(ui::UiClass::FrameLayout);
+    const auto view = tree.CreateNode(ui::UiClass::Button);
+    tree.Get(view)->focusable = true;
+    tree.Attach(tree.Root(), window);
+    tree.Attach(window, view);
+    REQUIRE(tree.RequestFocus(view, false));
+    tree.SetWindowVisible(window, false);
+    CHECK(tree.IsAttached(view));
+    CHECK_FALSE(tree.IsVisible(view));
+    CHECK(tree.Get(view)->visibility == ui::Visibility::Visible);
+    CHECK_FALSE(tree.Focused().has_value());
+    CHECK_FALSE(tree.RequestFocus(view, false));
+    tree.SetWindowVisible(window, true);
+    CHECK(tree.IsVisible(view));
+    CHECK(tree.RequestFocus(view, false));
+    tree.SetVisibility(view, ui::Visibility::Invisible);
+    tree.SetWindowVisible(window, false);
+    tree.SetWindowVisible(window, true);
+    CHECK_FALSE(tree.IsVisible(view));
+    CHECK(tree.Get(view)->visibility == ui::Visibility::Invisible);
+}
+
+TEST_CASE("DVM-235 RelativeLayout edge pairs stretch and take precedence over centering") {
+    ui::UiTree tree;
+    const auto parent = tree.CreateNode(ui::UiClass::RelativeLayout);
+    tree.Get(parent)->layout.width = {ui::SizeMode::MatchParent, 0};
+    tree.Get(parent)->layout.height = {ui::SizeMode::MatchParent, 0};
+    tree.Attach(tree.Root(), parent);
+    const auto child = tree.CreateNode(ui::UiClass::View);
+    tree.Get(child)->layout.width = {ui::SizeMode::Fixed, 10};
+    tree.Get(child)->layout.height = {ui::SizeMode::Fixed, 12};
+    tree.Get(child)->layout.relative.align_parent_left = true;
+    tree.Get(child)->layout.relative.align_parent_right = true;
+    tree.Get(child)->layout.relative.align_parent_top = true;
+    tree.Get(child)->layout.relative.align_parent_bottom = true;
+    tree.Get(child)->layout.relative.center_in_parent = true;
+    tree.Get(child)->layout.margin = {3, 4, 5, 6};
+    tree.Attach(parent, child);
+    ui::LayoutUiTree(tree, {100, 80});
+    CHECK(tree.Get(child)->frame == ui::Rect{3, 4, 95, 74});
+    CHECK(tree.Get(child)->measured == ui::Size{92, 70});
+    tree.Get(child)->layout.relative.align_parent_left = false;
+    tree.Get(child)->layout.relative.align_parent_top = false;
+    tree.MarkLayoutDirty(parent);
+    ui::LayoutUiTree(tree, {100, 80});
+    CHECK(tree.Get(child)->frame == ui::Rect{85, 62, 95, 74});
+}
+
 TEST_CASE("UI tree preserves hierarchy order and attached id lookup") {
     ui::UiTree tree;
     const auto parent = tree.CreateNode(ui::UiClass::FrameLayout);

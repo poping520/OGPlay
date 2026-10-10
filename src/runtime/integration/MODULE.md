@@ -192,8 +192,9 @@ Android API 的详细行为以 [dexvm_android](dexvm_android/MODULE.md)为准；
   release/GC 回收 player；回压阻塞释放 VM 锁。OpenSL callback 经专用 A32 thread/CPU/TLS/栈，
   不隐式 attach JNI，允许 SVC 重入，失败在后续 process call 报告；混音只向 HAL 提交一次。
 - VideoView 从 guest 路径原子捕获 VFS read lease，并注入 VideoSourcePlayerFactory；统一 uptime 驱动位置；取帧
-  letterbox 发布，完成回调一次。工厂/路径/打开失败记录 warn，并在 start 回调 completion，
-  不宣称播放成功。PCM 最近邻重采样饱和混入，停/暂停/结束静默；自由运行可按真实时间节流，
+  letterbox 发布，完成回调一次。工厂/路径/打开失败交付真实 error，不能回退为 completion。
+  callback 按 View/source generation 保持，窗口可见性参与呈现准入。
+  PCM 最近邻重采样饱和混入，停/暂停/结束静默；自由运行可按真实时间节流，
   手动步进保持确定性。SoundPool 解码成功才原子提交 loaded，失败保留 pending/错误事实。
 - legacy media 的 no-op/返回值只表示 Java 契约；volume/pitch/loaded/voice 为受检会话状态。
   资源必须真实非空且受 JNI size 限制；audio.load_movie 仅登记最多 4096 UTF-16 单元的请求，

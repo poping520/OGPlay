@@ -2,6 +2,7 @@
 
 // ---- migrated from android_widget_AbsoluteLayout_LayoutParams.cpp ----
 #include "catalog.h"
+#include <array>
 
 // Defined by the TextView section below: constructor handler that also
 // resolves the framework default style carried by defStyleAttr.
@@ -400,7 +401,7 @@ bool IsFrameworkAttribute(dx::Interpreter& vm, std::uint32_t id) {
     return false;
 }
 
-void MergeTextStyle(dx::Interpreter& vm, const Context& context, std::uint32_t id,
+void MergeTextStyle(dx::Interpreter& vm, DexVmAndroidContext& context, std::uint32_t id,
                     TextAttributes& values, std::unordered_set<std::uint32_t>& seen) {
     if (id == 0) return;
     if (seen.size() >= 16 || !seen.insert(id).second)
@@ -410,6 +411,14 @@ void MergeTextStyle(dx::Interpreter& vm, const Context& context, std::uint32_t i
     const bool legacy = id >= 0x01030005U && id <= 0x01030011U;
     const bool holo = id == 0x0103006bU || id == 0x01030128U;
     if (legacy || holo) {
+        constexpr std::array<std::uint32_t, 6> legacy_appearances{
+            0x01030042U, 0x01030044U, 0x01030046U, 0x01030043U, 0x01030045U, 0x01030047U};
+        constexpr std::array<std::uint32_t, 6> holo_appearances{
+            0x010300fdU, 0x010300ffU, 0x01030101U, 0x010300feU, 0x01030100U, 0x01030102U};
+        for (std::uint32_t i = 0; i < 6; ++i) {
+            const auto attr = 0x01010040U + i;
+            values[attr] = {attr, 1, (holo ? holo_appearances : legacy_appearances)[i], {}};
+        }
         const bool light = id >= 0x0103000cU && id <= 0x0103000eU;
         const auto color = [&](std::uint32_t attr, std::uint32_t argb) {
             values[attr] = {attr, 0x1c, argb, {}};
@@ -430,7 +439,7 @@ void MergeTextStyle(dx::Interpreter& vm, const Context& context, std::uint32_t i
         if (IsFrameworkAttribute(vm, id) || id == 0x01030040U || id == 0x01030048U) return;
         UnsupportedTextStyle(vm, "framework text style is outside the registered resource projection");
     }
-    const auto* entry = context->arsc.FindById(id);
+    const auto* entry = context.arsc.FindById(id);
     if (!entry) throw dx::VmJavaThrow{"Landroid/content/res/Resources$NotFoundException;", "text style resource is missing"};
     if (entry->value_type == 1) {
         MergeTextStyle(vm, context, entry->value_data, values, seen);
@@ -443,10 +452,10 @@ void MergeTextStyle(dx::Interpreter& vm, const Context& context, std::uint32_t i
     for (const auto& value : entry->bag) values[value.name] = value;
 }
 
-TextAttributes ResolveTextTheme(dx::Interpreter& vm, const Context& context,
+TextAttributes ResolveTextTheme(dx::Interpreter& vm, DexVmAndroidContext& context,
                                 dx::VmObjectRef owner) {
     if (!owner.IsValid()) throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;", "text appearance Context is null"};
-    auto theme = context->application_theme;
+    auto theme = context.application_theme;
     std::unordered_set<std::uint32_t> wrappers;
     for (auto current = owner; current.IsValid();) {
         if (wrappers.size() >= 16 || !wrappers.insert(current.Value()).second)
@@ -461,8 +470,8 @@ TextAttributes ResolveTextTheme(dx::Interpreter& vm, const Context& context,
         current = dx::VmObjectRef(vm.Model().InstanceSlots(current)[vm.Linker().Field(*base).slot].bits);
         if (!current.IsValid()) throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;", "ContextWrapper base is null"};
     }
-    if (theme == 0) theme = context->target_sdk_version < 11 ? 0x01030005U :
-                            context->target_sdk_version < 14 ? 0x0103006bU : 0x01030128U;
+    if (theme == 0) theme = context.target_sdk_version < 11 ? 0x01030005U :
+                            context.target_sdk_version < 14 ? 0x0103006bU : 0x01030128U;
     TextAttributes theme_values;
     std::unordered_set<std::uint32_t> seen;
     MergeTextStyle(vm, context, theme, theme_values, seen);
@@ -471,10 +480,10 @@ TextAttributes ResolveTextTheme(dx::Interpreter& vm, const Context& context,
 
 TextAttributes ResolveTextAppearance(dx::Interpreter& vm, const Context& context,
                                       dx::VmObjectRef owner, std::uint32_t id) {
-    const auto theme_values = ResolveTextTheme(vm, context, owner);
+    const auto theme_values = ResolveTextTheme(vm, *context, owner);
     auto values = theme_values;
     std::unordered_set<std::uint32_t> seen;
-    MergeTextStyle(vm, context, id, values, seen);
+    MergeTextStyle(vm, *context, id, values, seen);
     // Attribute references resolve against the theme, not against the overlay.
     for (const auto attr : {0x01010095U, 0x01010096U, 0x01010097U, 0x01010098U,
                            0x01010099U, 0x0101009aU, 0x0101009bU, 0x01010161U,
@@ -519,6 +528,22 @@ constexpr std::uint32_t kButtonStyleSmallAttr = 0x01010049U;
 
 }  // namespace
 
+std::uint32_t ResolveTextAppearanceAttribute(dx::Interpreter& vm,
+    DexVmAndroidContext& context, const dx::VmObjectRef owner, std::uint32_t attribute) {
+    const auto values = ResolveTextTheme(vm, context, owner);
+    std::unordered_set<std::uint32_t> seen;
+    for (;;) {
+        if (seen.size() >= 16 || !seen.insert(attribute).second)
+            UnsupportedTextStyle(vm, "textAppearance theme attribute cycle or depth exceeds 16");
+        const auto found = values.find(attribute);
+        if (found == values.end()) UnsupportedTextStyle(vm, "textAppearance theme attribute is unavailable");
+        const auto& value = found->second;
+        if (value.value_type == 1 && value.value_data != 0) return value.value_data;
+        if (value.value_type != 2) UnsupportedTextStyle(vm, "textAppearance theme value is not a style reference");
+        attribute = value.value_data;
+    }
+}
+
 dx::IntrinsicHandler ViewDefaultStyleInitHandler(const Context& context) {
     return dx::IntrinsicHandler(
         [context](dx::IntrinsicContext& call) {
@@ -552,7 +577,7 @@ dx::IntrinsicHandler ViewDefaultStyleInitHandler(const Context& context) {
             // Resolve against the actual constructor Context, including theme
             // inheritance and aliases. Never silently replace an app override
             // or a Holo/DeviceDefault widget with the legacy projection.
-            const auto theme = ResolveTextTheme(call.vm, context, owner);
+            const auto theme = ResolveTextTheme(call.vm, *context, owner);
             const auto resolve = [&](std::uint32_t attr) {
                 const auto found = theme.find(attr);
                 if (found == theme.end())
@@ -660,13 +685,22 @@ Decl Declare_android_widget_TextView(const Context& context) {
             context->ui_tree.MarkLayoutDirty(node);
             return dx::VmValue::Void();
         });
+    builder.FinalMethod("setText", "(Ljava/lang/CharSequence;Landroid/widget/TextView$BufferType;)V",
+        [context](dx::IntrinsicContext& call) {
+            const auto buffer = call.arguments[1].ref;
+            if (buffer.IsValid() && CallAndroidMethod(call.vm, buffer, "ordinal", "()I").AsInt() != 0) {
+                if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("runtime.ui_text_widgets", 0);
+                throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "TextView BufferType span/editable projection is unavailable"};
+            }
+            return CallAndroidMethod(call.vm, call.receiver, "setText", "(Ljava/lang/CharSequence;)V", {call.arguments[0]});
+        });
     builder.FinalMethod("setText", "(Ljava/lang/CharSequence;)V",
         [context](dx::IntrinsicContext& call) {
             const auto value = call.arguments[0].ref;
             auto text = value.IsValid() ? call.vm.Model().StringValue(value)
                                         : std::u16string();
             try {
-                static_cast<void>(ui::MeasureFixedText(text, 8.0F));
+                static_cast<void>(ui::MeasureFixedText(text, 8.0F, 0, context->ui_tree.FallbackFont().get()));
             } catch (const std::runtime_error& error) {
                 throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
                                       error.what()};

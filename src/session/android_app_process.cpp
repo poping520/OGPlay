@@ -1,4 +1,5 @@
 #include "ogplay/session/android_app_process.h"
+#include "ogplay/runtime/ui/ui_fallback_font.h"
 
 #include <algorithm>
 #include <span>
@@ -102,6 +103,8 @@ public:
                  "ANDROID_ID");
         }
         state = AndroidAppProcessState::package_ready;
+        if (!request.ui_fallback_font.empty())
+            context->ui_tree.SetFallbackFont(std::make_shared<runtime::ui::UiFallbackFont>(request.ui_fallback_font));
         if (!request.tzdata.empty()) {
             request.filesystem->PutFile("/system/usr/share/zoneinfo/tzdata",
                                         request.tzdata, false);

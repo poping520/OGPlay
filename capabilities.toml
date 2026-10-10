@@ -98,7 +98,12 @@ note = "LUI-12 将 TextView/Button text/textColor/textSize/gravity 收敛到 UiN
 [runtime.ui_relative_layout]
 status = "complete"
 test = "tests/runtime/ui_tree_tests.cpp; tests/dexvm/widget_click_tests.cpp"
-note = "LUI-13 实现 parent align/center 与 sibling above/below/left/right/align-edge；横纵依赖图按 sibling android id 确定性解析，XML 与 Java addRule 共用 typed LayoutParams，missing/duplicate/conflict/cycle 明确失败；DVM-121 按 AOSP rule > 0 过滤把 addRule(verb) 的 TRUE(-1) 及非正 sibling 锚点视为无锚点"
+note = "LUI-13 实现 parent align/center 与 sibling above/below/left/right/align-edge；横纵依赖图按 sibling android id 确定性解析，XML 与 Java addRule 共用 typed LayoutParams，missing/duplicate/cycle 明确失败。DVM-235 按 API19 同边规则优先级定位，双边约束重新测量，center 仅在无边约束时生效。DVM-121 按 AOSP rule > 0 过滤非正 sibling 锚点。"
+
+[runtime.ui_fallback_font]
+status = "partial"
+test = "tests/runtime/ui_renderer_tests.cpp: DVM-235; tools.android_payload_current; Windows original APK CG with Chinese subtitles"
+note = "DVM-235/ADR-0114：注入固定 SHA-256 的 API19 DroidSansFallback，stb_truetype 有界栅格化独立 BMP 字形，支持中文及普通标点；ASCII 保留既有固定字体。缓存有界，不读取宿主/应用字体；缺字、需要 shaping/bidi 的文字与补充平面明确失败。不是完整 Android 字体排版，跨平台与 title gate 未验收。"
 
 [runtime.ui_include_resources_images]
 status = "complete"
@@ -2083,8 +2088,13 @@ note = "ActivityManager.getRunningAppProcesses明确记账并抛可捕获Unsuppo
 
 [dexvm.activity_result]
 status = "partial"
-test = "tools/bootdex/build_bootdex.py build/check; tools.android_payload_current; tests/runtime/native_library_loader_tests.cpp: DVM-223; tests/loader/apk_manifest_tests.cpp: DVM-223"
-note = "DVM-223/ADR-0104：BootDex Activity 保存每实例结果字段、monitor/setResult/转发；两个 native 提交 FIFO 启动/结束快照。单任务栈保留原调用方、Intent 副本、普通 View 内容与焦点，Window/attributes/decor 与焦点按实例隔离，后台 findViewById 查询自身子树；结果在恢复时先于 resume 虚派，默认取消、负请求无结果、自定义码保留。重复/中间 finish、嵌套、GC 及 onStart 启动/onCreate 结束有双解释器回归。Manifest launchMode 保留且 ActivityInfo 发布；standard 与非栈顶 singleTop 新建，复用/task 模式、非空 options、for-result 非零 flags/跨包明确失败。保留活动 GL/Surface/native callback/video 调用方及后台换前台内容不支持；完整 Fragment/task/多窗口、跨进程 Parcel/URI 授权、跨平台与 title gate 未验收。"
+test = "tools/bootdex/build_bootdex.py build/check; tools.android_payload_current; tests/runtime/native_library_loader_tests.cpp: DVM-223/DVM-235/DVM-197; tests/loader/apk_manifest_tests.cpp: DVM-223"
+note = "DVM-223/235、ADR-0104/0114：同包单任务栈保留原实例、Intent、每窗口内容/焦点与结果。后台窗口保持附着并隐藏，命令按调用方身份提交；结果先于恢复回调，未 stop 的调用方不重复 start。窗口交接等待新前台就绪，Surface 按子树保持 holder/callback。intrinsic GL runtime/worker/EGL/events 按 View 归属，pause 确认、Context 保留/重建与 Activity 返回经双解释器定向检查；guest-owned GL 保留原 Java 调度。native window callback、继续保留播放中的视频调用方、后台替换前台内容、复杂 task/reuse/options/跨包结果仍受限。多窗口、透明 Activity、实际 backend context-loss、跨平台与 title gate 未验收。"
+
+[dexvm.surface_buffer_geometry]
+status = "partial"
+test = "tests/runtime/native_library_loader_tests.cpp: DVM-235"
+note = "托管 SurfaceHolder 支持固定为当前真实 buffer 尺寸及返回 layout 模式，requested size 属于 holder；surfaceCreated/Changed 的 Rect 与回调保持真实一致。独立 buffer 尺寸与固定请求不匹配新托管尺寸时明确失败并记账，不伪造 resize。"
 
 [dexvm.notification_values]
 status = "partial"

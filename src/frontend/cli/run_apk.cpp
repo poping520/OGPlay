@@ -727,6 +727,7 @@ int RunApkCommand(const int argc, const char* const argv[],
         app_request.tzdata = ReadBytes(
             bundled_data.root / bionic.data_directory / "zoneinfo" / "tzdata");
         app_request.context = dex_context;
+        app_request.ui_fallback_font = ReadBytes(bundled_data.root / bionic.data_directory / "fonts" / "DroidSansFallback.ttf");
         if (profile.runtime.entry.has_value()) {
             app_request.launcher_override =
                 profile.runtime.entry->launch_activity;

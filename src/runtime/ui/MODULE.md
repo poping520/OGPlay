@@ -6,6 +6,10 @@
 render 与 hit-test 事实。本模块不执行 guest Java，不保存 DexVM object/listener，也不拥有
 SDL、ANGLE 或视频解码。
 
+`UiFallbackFont` 只解析 SHA-256 固定的 API19 system font，由上层 bytes 注入每 tree；
+BMP glyph 按字形/像素高度缓存，最多 128 项，ASCII 保持原有固定字体路径。缺字、
+shaping/bidi 与补充平面明确失败，不读取宿主字体或任意应用字体。
+
 ## 公共 API
 
 - `UiTree`：每 generation 建立唯一 synthetic `ContentRoot`；创建、按稳定顺序 attach、
@@ -15,6 +19,8 @@ SDL、ANGLE 或视频解码。
   gravity、image resource、layout params、padding、
   `clipChildren`/`clipToPadding`（默认 true）、measured/frame/screen frame、alpha 与
   dirty state。
+- `window_visible` 及 `SetWindowVisible` 保存独立窗口可见性；隐藏窗口保留 hierarchy，
+  不改变 guest View.visibility。有效可见性包含祖先窗口状态，绘制、输入、焦点共同使用。
 - `SetVisibility`：VISIBLE/INVISIBLE 只标 draw dirty；任意 GONE 转换同时从 node 到 root
   标 layout/draw dirty。
 - 焦点归 `UiTree` 单一 owner；请求需节点及祖先可见/启用并满足 focusable，转移、隐藏、
@@ -36,7 +42,8 @@ SDL、ANGLE 或视频解码。
   参与可用空间和最终 frame；负值/NaN/Inf 明确失败。
 - `RelativeLayout`：LayoutParams 保存 parent align/center 与 sibling above/below/left/right/
   align-edge 规则；横纵依赖图分别确定性解析且不依赖 document order，missing sibling、重复
-  sibling id、同轴冲突与 cycle 明确失败。sibling 规则值为非正数（含
+  sibling id 与 cycle 明确失败。同轴边缘规则按 API19 覆盖顺序解析，双边缘确定尺寸，
+  居中仅在两边均未定位时生效。sibling 规则值为非正数（含
   `addRule(verb)` 写入的 TRUE=-1）时按 AOSP `rule > 0` 过滤语义视为无锚点。
 - DVM-119：RelativeLayout gravity 在相对定位后按含 margin 的非 GONE 子节点整体
   边界平移，支持右/下/居中，默认 START/TOP 保留原定位。Java 参数经 integration

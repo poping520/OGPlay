@@ -12,6 +12,8 @@ namespace dx = dexvm;
 
 using Decl = dexvm::IntrinsicClassDecl;
 using Context = std::shared_ptr<DexVmAndroidContext>;
+[[nodiscard]] std::uint32_t ResolveTextAppearanceAttribute(dx::Interpreter& vm,
+    DexVmAndroidContext& context, dx::VmObjectRef owner, std::uint32_t attribute);
 [[nodiscard]] dx::VmValue StartAndroidActivity(dx::IntrinsicContext& call,
     const Context& context, std::int32_t request_code);
 

@@ -15,9 +15,18 @@
   直接关窗及暂停恢复后关窗分别约 0.547/0.563 秒退出 1，无超时/强杀；原 nativePause
   预算耗尽与 Surface 等待消失。**当前首错**：第二个保留 Game 实例 onDestroy 对
   静态 m_sInstance 的空接收者 NPE。Analytics 的 formatDouble 缺口仍被 SDK 捕获。
-  正常退出、长时间暂停、关卡及最新改动的 macOS/Linux/title gate 未验收。
+  正常退出、长时间暂停、完整关卡及最新改动的 macOS/Linux/title gate 未验收。
   证据 `.local/dvm234-close-20261010-131033/`、`.local/dvm234-pause-20261010-130750/`；
   进程与 listener 已退出。先前启动缺口与 append 修复见 DexVM/VFS 任务记录。
+  [DVM-235](../tasks/dexvm/DVM-235.md) 已实现每实例窗口、Surface/GL 归属与可逆暂停。
+  国王村 CG 实际播放并显示中文字幕；自然结束与提前跳过均返回原游戏，
+  自然结束后已进入角色操作/教学画面，无 guest fault。两条路径关窗无清理超时，
+  仍因上述独立 onDestroy NPE 退出 1。失败驱动收尾曾出现的 native finalizer
+  `nanosleep` 超时根因未闭合，不能用正常播放后的退出替代其验收。
+  证据 `.local/wb-cg-analysis-20261010-231301/`、`.local/wb-cg-analysis-20261010-232049/`。
+  最终二进制播放中 MCP shutdown 约 0.608 秒退出 1，无超时/强杀；证据
+  `.local/wb-cg-analysis-20261010-232641/`，进程与 listener 已退出。
+  Windows Release、36 项/3004 断言定向及 UI 31 项/202 断言通过；BootDex/载荷校验通过。
 
 - **Tales From Deep Space 1.0.0**：macOS 已验证
   [1920×1080 存档重载恢复关卡](../tasks/dexvm/DVM-217.md)；
@@ -63,7 +72,8 @@
 
 ## 其余未闭合边界
 
-- 通用 GLSurfaceView EGL 暂停/恢复与 context-loss 未闭合；首次 GLES1 vertex-array 首错
+- GLSurfaceView 按 View 暂停/恢复与 Context 保留/重建已定向验证；实际 backend context-loss、
+  多窗口/透明 Activity 与跨平台返回未验收。首次 GLES1 vertex-array 首错
   未重达复验。NDK Looper callback/非 pipe fd 不支持，native-attached 参数/反射长尾未验收。
 - GC 全周期、普通直接写入的 ABA 历史跟踪、直接访存卸载 quiescence 与其他退出顺序风险未验收。
 - 全 BootDex 类链接检查曾因 MediaPlayer overlay/过期类数断言失败，尚未整体复验；多 ROM

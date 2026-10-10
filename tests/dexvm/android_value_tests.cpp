@@ -4839,6 +4839,17 @@ TEST_CASE("DVM-121 text appearance resolves theme bags and preserves Java color 
             return f.OnOutcome(text, "setTextAppearance", "(Landroid/content/Context;I)V",
                 {VmValue::Ref(activity), VmValue::Int(static_cast<std::int32_t>(id))});
         };
+        const auto buffer_type = f.vm.Linker().ResolveDescriptor("Landroid/widget/TextView$BufferType;");
+        const auto values = f.vm.Linker().FindDirectMethod(buffer_type, "values", "()[Landroid/widget/TextView$BufferType;");
+        REQUIRE(values.has_value());
+        const auto buffers = f.vm.Call(*values, {});
+        REQUIRE_FALSE(buffers.exception.IsValid());
+        const auto buffer_root = f.vm.ProtectReferences(std::array{buffers.value.ref});
+        CHECK(f.vm.Model().ArrayLength(buffers.value.ref) == 3);
+        const auto normal = f.vm.Model().GetObjectElement(buffers.value.ref, 0);
+        f.On(text, "setText", "(Ljava/lang/CharSequence;Landroid/widget/TextView$BufferType;)V",
+            {VmValue::Ref(f.vm.NewStringUtf8("CG subtitle")), VmValue::Ref(normal)});
+        CHECK(f.vm.StringUtf8(f.On(text, "getText", "()Ljava/lang/CharSequence;").ref) == "CG subtitle");
         // A public attr id is metadata, not a reference to TextAppearance.Small.
         REQUIRE_FALSE(apply(0x01010042).exception.IsValid());
         CHECK(f.On(text, "getTextSize", "()F").AsFloat() == 16);

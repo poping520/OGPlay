@@ -23,6 +23,7 @@ UiNodeId UiTree::CreateNode(const UiClass kind) {
     auto [created, inserted] =
         nodes_.emplace(id, UiNode{.id = id, .kind = kind});
     static_cast<void>(inserted);
+    created->second.fallback_font = fallback_font_;
     if (kind == UiClass::Button) {
         created->second.background_color = 0x404040ffU;
         created->second.padding = {6, 4, 6, 4};
@@ -168,6 +169,31 @@ void UiTree::SetEnabled(const UiNodeId node, const bool enabled) {
     MarkAncestors(node, false, true);
 }
 
+void UiTree::SetWindowVisible(const UiNodeId node, const bool visible) {
+    auto& target = Require(node);
+    if (target.window_visible == visible) return;
+    target.window_visible = visible;
+    if (!visible && focused_.has_value() && HasFocus(node)) focused_.reset();
+    MarkAncestors(node, false, true);
+}
+
+void UiTree::SetFallbackFont(std::shared_ptr<const UiFallbackFont> font) {
+    fallback_font_ = std::move(font);
+    for (auto& [_, node] : nodes_) node.fallback_font = fallback_font_;
+    MarkLayoutDirty(root_);
+}
+
+bool UiTree::IsVisible(const UiNodeId node) const {
+    if (!IsAttached(node)) return false;
+    auto current = std::optional<UiNodeId>{node};
+    while (current) {
+        const auto* state = Get(*current);
+        if (!state || !state->window_visible || state->visibility != Visibility::Visible) return false;
+        current = state->parent;
+    }
+    return true;
+}
+
 bool UiTree::IsFocused(const UiNodeId node) const {
     static_cast<void>(Require(node));
     return focused_ == node;
@@ -190,7 +216,7 @@ bool UiTree::RequestFocus(const UiNodeId node, const bool touch_mode) {
     for (auto cursor = std::optional<UiNodeId>{node}; cursor.has_value();
          cursor = Require(*cursor).parent) {
         const auto& ancestor = Require(*cursor);
-        if (!ancestor.enabled || ancestor.visibility != Visibility::Visible) {
+        if (!ancestor.enabled || !ancestor.window_visible || ancestor.visibility != Visibility::Visible) {
             return false;
         }
     }

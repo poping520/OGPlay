@@ -251,7 +251,7 @@ Decl Declare_android_widget_VideoView(const Context& context) {
             context->vfs->Close(fd);
             OpenVideoSource(context, call, std::make_shared<VfsVideoSource>(std::move(lease)), path, call.arguments[1].AsInt());
         } catch (const VfsError& error) {
-            throw dx::VmJavaThrow{"Ljava/io/IOException;", error.what()};
+            throw dx::VmJavaThrow{"Ljava/io/IOException;", "video source " + path + ": " + error.what()};
         }
         return dx::VmValue::Void();
     }, flags);
@@ -459,7 +459,7 @@ bool HasOpaqueFullscreenVideo(const DexVmAndroidContext& context) {
         if (frame.width == 0 || frame.height == 0 ||
             frame.rgba8.size() != static_cast<std::uint64_t>(frame.width) * frame.height * 4U) continue;
         const auto id = FindViewUiNode(context, handle);
-        if (!id || !context.ui_tree.IsAttached(*id)) continue;
+        if (!id || !context.ui_tree.IsVisible(*id)) continue;
         const auto* node = context.ui_tree.Get(*id);
         const ui::Rect window{0, 0, static_cast<std::int32_t>(context.surface_width),
                                   static_cast<std::int32_t>(context.surface_height)};
@@ -471,7 +471,7 @@ bool HasOpaqueFullscreenVideo(const DexVmAndroidContext& context) {
         bool opaque = true;
         for (auto current = *id; current; ) {
             node = context.ui_tree.Get(current);
-            if (!node || node->visibility != ui::Visibility::Visible || node->alpha != 1.0F) {
+            if (!node || !node->window_visible || node->visibility != ui::Visibility::Visible || node->alpha != 1.0F) {
                 opaque = false;
                 break;
             }
@@ -768,7 +768,7 @@ void ComposeVideoViews(DexVmAndroidContext& context, std::vector<std::uint8_t>& 
     const auto visit = [&](const auto& self, const ui::UiNodeId id,
                            ui::Rect clip, float alpha) -> void {
         const auto* node = context.ui_tree.Get(id);
-        if (!node || node->visibility != ui::Visibility::Visible) return;
+        if (!node || !node->window_visible || node->visibility != ui::Visibility::Visible) return;
         alpha *= std::clamp(node->alpha, 0.0F, 1.0F);
         const auto object = context.ui_node_to_object.find(id);
         if (object != context.ui_node_to_object.end() && node->surface_on_top == on_top) {
@@ -888,7 +888,7 @@ std::optional<std::string> PumpVideoViews(
             if (found == context.video_views.end()) continue;
             auto& state = found->second;
             const auto node = FindViewUiNode(context, handle);
-            const bool attached = node && context.ui_tree.IsAttached(*node);
+            const bool attached = node && context.ui_tree.IsVisible(*node);
             detached = state.was_attached && !attached;
             if (!attached && !detached) continue;
             state.was_attached = attached;

@@ -387,8 +387,11 @@ dx::VmValue StartAndroidActivity(dx::IntrinsicContext& call, const Context& cont
         if (copied.exception.IsValid())
             throw dx::VmJavaThrow{call.vm.Linker().Class(copied.exception_class).descriptor,
                                   copied.exception_message, copied.exception};
+        const auto owner = std::ranges::any_of(context->activity_stack,
+            [&](const auto& record) { return record.object == call.receiver; })
+            ? call.receiver : context->activity;
         context->activity_commands.push_back({DexVmAndroidContext::ActivityCommand::Kind::launch,
-            context->activity, copy, "L" + activity_class + ";", component_name, request_code, 0});
+            owner, copy, "L" + activity_class + ";", component_name, request_code, 0});
         context->pending_activity_descriptor = context->activity_commands.back().descriptor;
         context->pending_activity_component_name = context->activity_commands.back().component;
         context->activity_switch_pending = true;

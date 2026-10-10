@@ -64,6 +64,7 @@ struct InterpreterExecutionState final {
     std::uint64_t ticks{};
     std::uint64_t token{};
     std::thread::id active_host;
+    std::thread::id bound_host;
     std::size_t active_entries{};
     // Depth of guest native frames this context currently has live on the
     // root guest stack (04 §1 outbound marshaling).
@@ -71,6 +72,7 @@ struct InterpreterExecutionState final {
     bool constructing_throwable{};
     // Teardown handshake, read once per instruction by Tick().
     std::atomic<bool> stop_requested{false};
+    std::atomic<std::uint64_t> deadline_ns{};
 };
 
 void AppendFaultInvokeArguments(std::string& rendered, const Frame& frame,
@@ -347,8 +349,12 @@ public:
     // threads the reference through Run/Step/Tick instead of re-resolving
     // the thread-local routing on every instruction.
     void Tick(InterpreterExecutionState& execution,
-              const std::uint64_t amount = 1) {
+                const std::uint64_t amount = 1) {
         execution.ticks += amount;
+        if (amount == 1U && (execution.ticks & 1023U) == 0U) {
+            owner->CheckExecutionDeadline();
+            execution_lock.YieldToWaiter();
+        }
         if (execution.stop_requested.load(std::memory_order_relaxed)) {
             throw DexVmError(DexVmErrorReason::thread_stopped,
                              "dexvm thread stopped at teardown after " +

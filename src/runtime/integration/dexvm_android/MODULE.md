@@ -306,6 +306,7 @@ Java GLES/EGL 通过 session managed 冷入口复用 [native boundary](../../bou
   与无登记注销；Legacy 私有旋转查询使用 managed viewport 固定 ROTATION_0，不建 WMS。
   列表缓存、旧位掩码适配和监听器映射由 Java 字段持有，不维护 C++ 副本或生成回调。
   TelephonyManager.getSubscriberId 为可覆盖公开方法，无蜂窝订阅时返回 null，Java/JNI 共用。
+  listen 的 null listener 按 API19 被捕获的 NPE 返回，不登记或伪造监听器。
   location 仅值类型/listener/稳定 facade，无 provider/历史，更新注册/移除失败。
   KeyguardManager 不缓存对象，三项查询读进程 provider
   快照，未注入表示桌面无锁屏，后续只替换 provider，不散入 host/Binder/WMS 查询。

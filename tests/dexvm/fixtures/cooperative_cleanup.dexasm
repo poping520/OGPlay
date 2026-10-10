@@ -1,0 +1,24 @@
+.class public LCooperativeCleanup;
+.super Ljava/lang/Object;
+.field static public stop:I
+
+.method static public spin(Ljava/lang/Object;)I
+.registers 3
+    monitor-enter v2
+    monitor-enter v2
+    invoke-static {}, Lcleanup/Host;->started()V
+    :again
+    sget v0, LCooperativeCleanup;->stop:I
+    if-eqz v0, :again
+    monitor-exit v2
+    monitor-exit v2
+    const/4 v0, 7
+    return v0
+.end method
+
+.method static public release()V
+.registers 1
+    const/4 v0, 1
+    sput v0, LCooperativeCleanup;->stop:I
+    return-void
+.end method

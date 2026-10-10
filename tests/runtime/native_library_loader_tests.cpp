@@ -6129,7 +6129,7 @@ TEST_CASE("DVM-197 renderer EGL policies establish current context before events
         if (reject_context) {
             CHECK_THROWS_WITH_AS(static_cast<void>(fixture.app->ActivityLifecycle().StepFrame()), "renderer EGL context creation failed", session::DexActivityLifecycleError);
             CHECK(order == std::vector<std::string>{"choose", "create"});
-            static_cast<void>(fixture.app->Stop());
+            CHECK_THROWS_WITH_AS(static_cast<void>(fixture.app->Stop()), "renderer EGL context creation failed", session::DexActivityLifecycleError);
             CHECK_FALSE(c.renderer_context.IsValid());
             CHECK_FALSE(c.renderer_surface.IsValid());
             continue;
@@ -6137,7 +6137,7 @@ TEST_CASE("DVM-197 renderer EGL policies establish current context before events
         if (reject_draw) {
             CHECK_THROWS_WITH_AS(static_cast<void>(fixture.app->ActivityLifecycle().StepFrame()),
                 "renderer draw failure", std::runtime_error);
-            CHECK(fixture.app->Stop().state == session::LifecycleRunState::failed);
+            CHECK_THROWS_WITH_AS(static_cast<void>(fixture.app->Stop()), "renderer draw failure", std::runtime_error);
             CHECK_FALSE(vm.Threads().IsAlive(gl_thread));
             CHECK_FALSE(c.renderer_context.IsValid());
             CHECK_FALSE(c.renderer_surface.IsValid());

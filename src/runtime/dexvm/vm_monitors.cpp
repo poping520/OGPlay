@@ -93,16 +93,23 @@ public:
             const auto depth = lock.ReleaseForBlocking();
             {
                 std::unique_lock parked(mutex);
-                changed.wait(parked, [&] {
+                const auto ready = [&] {
                     auto& current = MonitorFor(object);
                     return shutting_down || current.recursion == 0 ||
-                           current.owner == owner;
-                });
+                           current.owner == owner || vm->ExecutionDeadlineExpired(owner);
+                };
+                if (vm->HasExecutionDeadline(owner)) {
+                    while (!ready()) changed.wait_for(parked, kDeadlinePoll);
+                } else changed.wait(parked, ready);
             }
             lock.ReacquireAfterBlocking(depth);
             SetMonitorWaitState(owner, VmThreadWaitState::none);
             guard.lock();
             monitor = &MonitorFor(object);
+            if (vm->ExecutionDeadlineExpired(owner)) {
+                std::erase(monitor->entry_waiters, owner);
+                vm->CheckExecutionDeadline(owner);
+            }
         }
         if (registered) {
             const auto waiter = std::find(monitor->entry_waiters.begin(),
@@ -290,9 +297,14 @@ VmWaitOutcome VmMonitorTable::Wait(const VmObjectRef object,
     auto& lock = impl_->vm->ExecutionLock();
     const auto depth = lock.ReleaseForBlocking();
     bool advanced = false;
+    bool deadline_expired = false;
     {
         std::unique_lock parked(impl_->mutex);
         while (true) {
+            if (impl_->vm->ExecutionDeadlineExpired(owner)) {
+                deadline_expired = true;
+                break;
+            }
             if (impl_->shutting_down) {
                 outcome = VmWaitOutcome::shut_down;
                 break;
@@ -309,13 +321,13 @@ VmWaitOutcome VmMonitorTable::Wait(const VmObjectRef object,
                 outcome = VmWaitOutcome::timed_out;
                 break;
             }
-            if (timed) {
+            if (timed || impl_->vm->HasExecutionDeadline(owner)) {
                 // Deadline decisions stay with the unified Clock; this only
                 // schedules the next re-check.
                 impl_->changed.wait_for(parked, kDeadlinePoll);
                 // Root parks always fast-forward. Worker parks do so only
                 // while the lifecycle clock driver is itself blocked.
-                if (!advanced) {
+                if (timed && !advanced) {
                     parked.unlock();
                     advanced = TryAdvanceClockForTimedPark(
                         owner, deadline);
@@ -328,11 +340,31 @@ VmWaitOutcome VmMonitorTable::Wait(const VmObjectRef object,
     }
     lock.ReacquireAfterBlocking(depth);
 
+    if (deadline_expired || impl_->vm->ExecutionDeadlineExpired(owner)) {
+        // Internal scope failure abandons guest execution, rather than returning
+        // an InterruptedException the application could swallow and retry.
+        {
+            const std::lock_guard guard(impl_->mutex);
+            std::erase(impl_->MonitorFor(object).wait_set, owner);
+            impl_->woken.erase(owner);
+        }
+        impl_->SetMonitorWaitState(owner, VmThreadWaitState::none);
+        impl_->vm->CheckExecutionDeadline(owner);
+    }
+
     // Re-acquire the monitor and restore the recursion depth before this
     // call returns or its caller throws (JLS ordering, AOSP "done:" label).
     {
         std::unique_lock guard(impl_->mutex);
-        impl_->AcquireLocked(guard, object, owner, saved_recursion);
+        try {
+            impl_->AcquireLocked(guard, object, owner, saved_recursion);
+        } catch (...) {
+            std::erase(impl_->MonitorFor(object).wait_set, owner);
+            impl_->woken.erase(owner);
+            guard.unlock();
+            impl_->SetMonitorWaitState(owner, VmThreadWaitState::none);
+            throw;
+        }
         auto& monitor = impl_->MonitorFor(object);
         const auto position = std::find(monitor.wait_set.begin(),
                                         monitor.wait_set.end(), owner);

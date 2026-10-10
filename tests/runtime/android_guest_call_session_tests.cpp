@@ -1035,6 +1035,39 @@ TEST_CASE("Android guest process teardown interrupts blocked AudioTrack write") 
 
 // Runnable RX code and a deliberately failing fini prove that cancellation
 // and process exit are not treated as a successful DSO unload.
+TEST_CASE("DVM-234 graceful cleanup retains native execution until retirement") {
+    using namespace ogplay;
+    auto libc = LibdlDefaultLibcElf();
+    Put32(libc, 0x1000, 0xe3a07014U); // getpid; svc; bx lr
+    Put32(libc, 0x1004, 0xef000000U);
+    Put32(libc, 0x1008, 0xe12fff1eU);
+    const loader::Elf32ModuleInput module{
+        "libc.so", libc, memory::GuestAddress{0x10000000U}};
+    runtime::VirtualFileSystem filesystem;
+    auto process = runtime::AndroidGuestProcess::Start(
+        {19, std::span{&module, 1}, {}, 64, 36, 100, 1, &filesystem, {}});
+    const runtime::A32GuestCallFrame frame{
+        memory::GuestAddress{0x10011000U}, {}, {}, 1, true};
+    CHECK(process->Invoke(frame).return_value != 0U);
+    process->RunGracefulCleanup([&] {
+        CHECK(process->CleanupDeadlineNs() != 0);
+        CHECK(process->Invoke(frame).return_value != 0U);
+    });
+    const auto deadline = process->CleanupDeadlineNs();
+    CHECK(process->Invoke(frame).return_value != 0U);
+    CHECK_THROWS_WITH(process->PrepareDexVmThread(16385, 0),
+                      "new guest thread rejected during teardown");
+    process->BeginTeardown();
+    CHECK_THROWS_AS(static_cast<void>(process->Invoke(frame)), runtime::A32GuestCallCancelled);
+    CHECK_THROWS_WITH(process->RunGracefulCleanup([] {}), "teardown cleanup admission rejected");
+    process->RunTeardownCleanup([&] {
+        CHECK(process->CleanupDeadlineNs() == deadline);
+        CHECK(process->Invoke(frame).return_value != 0U);
+    });
+    CHECK_NOTHROW(process->Stop());
+    CHECK_FALSE(process->Running());
+}
+
 TEST_CASE("DVM-218 teardown cleanup is owner scoped and cumulatively bounded") {
     using namespace ogplay;
     auto libc = LibdlDefaultLibcElf();

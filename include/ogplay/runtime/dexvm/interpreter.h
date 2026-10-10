@@ -158,6 +158,9 @@ public:
     // a blocking primitive can restore it; 0 when the caller held nothing.
     [[nodiscard]] std::size_t ReleaseForBlocking();
     void ReacquireAfterBlocking(std::size_t depth);
+    // Stable bytecode safe point: hand off to queued hosts without publishing
+    // a guest blocking transition or releasing guest monitors.
+    void YieldToWaiter();
     [[nodiscard]] bool HeldByCurrentThread() const;
     // Observes real host threads entering/leaving guest blocking scopes.
     // The callback runs outside the execution-lock mutex and must not throw.
@@ -325,6 +328,19 @@ public:
     // with DexVmErrorReason::thread_stopped instead of being killed. Checked
     // once per instruction, so a guest loop cannot ignore it.
     void RequestStop(const InterpreterExecutionContext& context);
+    // Production lifecycle binds its default guest thread to one actual host.
+    void BindDefaultExecutionHost();
+    // Includes host-side Java callbacks surrounding a Call(), such as a
+    // thread's uncaught-exception dispatcher, in that thread's own context.
+    void RunInExecutionContext(const InterpreterExecutionContext& context,
+                               const std::function<void()>& action);
+    // Owner-thread scope; nested calls keep the earlier Clock wall deadline.
+    void RunWithExecutionDeadline(std::uint64_t deadline_ns,
+                                  const std::function<void()>& action);
+    [[nodiscard]] std::uint64_t ExecutionDeadlineNs(std::uint64_t context = 0) const;
+    [[nodiscard]] bool ExecutionDeadlineExpired(std::uint64_t context = 0) const;
+    [[nodiscard]] bool HasExecutionDeadline(std::uint64_t context = 0) const;
+    void CheckExecutionDeadline(std::uint64_t context = 0) const;
 
     // Runtime.nativeExit: stop this VM without joining the calling thread.
     // The process owner performs teardown after the guest stack unwinds.

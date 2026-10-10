@@ -7,6 +7,7 @@
 #include <doctest/doctest.h>
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <bit>
 #include <chrono>
@@ -28,12 +29,14 @@
 
 #include "ogplay/core/capability_ledger.h"
 #include "ogplay/core/text.h"
+#include "ogplay/hal/clock.h"
 #include "ogplay/runtime/dexvm/access_flags.h"
 #include "ogplay/runtime/dexvm/class_linker.h"
 #include "ogplay/runtime/dexvm/intrinsic_builder.h"
 #include "ogplay/runtime/dexvm/interpreter.h"
 #include "ogplay/runtime/dexvm/object_model.h"
 #include "ogplay/runtime/dexvm/vm_threads.h"
+#include "ogplay/runtime/dexvm/vm_monitors.h"
 
 namespace {
 
@@ -59,18 +62,19 @@ struct Vm final {
 
     explicit Vm(const InterpreterConfig config = {},
                 const JavaObjectModelConfig model_config = {},
-                std::vector<IntrinsicClassDecl> extra_catalog = {})
+                std::vector<IntrinsicClassDecl> extra_catalog = {},
+                const std::string& extra_fixture = {})
         : model(strings, arrays, model_config),
           linker(),
           interpreter(
-              [this, &extra_catalog]() -> DexClassLinker& {
+              [this, &extra_catalog, &extra_fixture]() -> DexClassLinker& {
                   auto catalog = CoreIntrinsicCatalog();
                   catalog.insert(
                       catalog.end(),
                       std::make_move_iterator(extra_catalog.begin()),
                       std::make_move_iterator(extra_catalog.end()));
                   linker.RegisterIntrinsics(catalog);
-                  linker.RegisterDex(ReadFixture("interp.dex"));
+                  linker.RegisterDex(ReadFixture(extra_fixture.empty() ? "interp.dex" : extra_fixture));
                   ogplay::test::RegisterBootDex(linker);
                   linker.Link();
                   return linker;
@@ -3520,4 +3524,148 @@ TEST_CASE("DVM-105 Throwable cause retains identity across GC and rejects overwr
     CHECK_THROWS_AS(vm.InitThrowableCause(self, self), VmJavaThrow);
     vm.InitThrowableCause(self, VmObjectRef{});
     CHECK_THROWS_AS(vm.InitThrowableCause(self, inner), VmJavaThrow);
+}
+
+TEST_CASE("DVM-234 bytecode handoff preserves monitors and live frame roots") {
+    WithEachBackend([](InterpreterConfig config) {
+        std::atomic<bool> started{};
+        auto host = IntrinsicClassBuilder::Class("Lcleanup/Host;");
+        host.StaticMethod("started", "()V", [&](IntrinsicContext&) {
+            started.store(true);
+            return VmValue::Void();
+        });
+        auto catalog = AndroidIntrinsicCatalog(std::make_shared<DexVmAndroidContext>());
+        catalog.push_back(std::move(host).Build());
+        Vm fixture(config, {}, std::move(catalog), "cooperative_cleanup.dex");
+        auto& vm = fixture.interpreter;
+        const auto object = fixture.model.NewInstance(
+            *fixture.linker.FindClass("Ljava/lang/Object;"), 0);
+        const auto context = vm.CreateExecutionContext();
+        const auto spin = fixture.Static("LCooperativeCleanup;", "spin", "(Ljava/lang/Object;)I");
+        const auto release = fixture.Static("LCooperativeCleanup;", "release", "()V");
+        std::exception_ptr failure;
+        VmCallOutcome outcome;
+        std::thread worker([&] {
+            try { outcome = vm.Call(context, spin, std::array{VmValue::Ref(object)}); }
+            catch (...) { failure = std::current_exception(); }
+        });
+        const auto limit = std::chrono::steady_clock::now() + std::chrono::seconds(1);
+        while (!started.load() && std::chrono::steady_clock::now() < limit)
+            std::this_thread::yield();
+        CHECK(started.load());
+        if (started.load()) {
+            const VmExecutionLockScope lock(vm.ExecutionLock());
+            CHECK(vm.Monitors().IsOwner(object, context.Token()));
+            CHECK(vm.Monitors().Snapshot(object).recursion == 2);
+            CHECK(vm.ExecutionSnapshot(context).ticks > 0);
+            static_cast<void>(vm.CollectGarbage("cooperative-handoff"));
+            CHECK(fixture.model.ObjectClass(object) == *fixture.linker.FindClass("Ljava/lang/Object;"));
+            CHECK_FALSE(vm.Call(release, {}).exception.IsValid());
+        } else vm.RequestStop(context);
+        worker.join();
+        if (failure) std::rethrow_exception(failure);
+        CHECK(outcome.value.AsInt() == 7);
+        CHECK_FALSE(vm.Monitors().IsOwner(object, context.Token()));
+        vm.DiscardExecutionContext(context);
+    });
+}
+
+TEST_CASE("DVM-234 Java loops honor a non Java lifecycle deadline on both backends") {
+    WithEachBackend([](InterpreterConfig config) {
+        Vm fixture(config, {}, AndroidIntrinsicCatalog(std::make_shared<DexVmAndroidContext>()));
+        const auto begin = ogplay::hal::Clock::SteadyTimestampNs();
+        CHECK_THROWS_WITH_AS(fixture.interpreter.RunWithExecutionDeadline(
+            begin + 20'000'000, [&] {
+                static_cast<void>(fixture.CallStatic("LFlow;", "loopSum", "(I)I",
+                    {VmValue::Int(std::numeric_limits<std::int32_t>::max())}));
+            }), doctest::Contains("lifecycle execution wall-time budget exhausted"), DexVmError);
+        CHECK(ogplay::hal::Clock::SteadyTimestampNs() - begin < 1'000'000'000);
+        CHECK_FALSE(fixture.interpreter.HasExecutionDeadline());
+        ExpectInt(fixture.CallStatic("LFlow;", "loopSum", "(I)I", {VmValue::Int(10)}), 45);
+    });
+}
+
+TEST_CASE("DVM-234 foreign GC defers guest cleanup while root execution is yielded") {
+    WithEachBackend([](InterpreterConfig config) {
+        std::atomic<bool> started{};
+        std::size_t cleaned{};
+        auto host = IntrinsicClassBuilder::Class("Lcleanup/Host;");
+        host.StaticMethod("started", "()V", [&](IntrinsicContext&) {
+            started.store(true);
+            return VmValue::Void();
+        });
+        host.StaticMethod("cleanup", "(J)V", [&](IntrinsicContext& call) {
+            CHECK(call.arguments[0].AsLong() == 123);
+            ++cleaned;
+            return VmValue::Void();
+        });
+        auto catalog = AndroidIntrinsicCatalog(std::make_shared<DexVmAndroidContext>());
+        catalog.push_back(std::move(host).Build());
+        Vm fixture(config, {}, std::move(catalog), "cooperative_cleanup.dex");
+        auto& vm = fixture.interpreter;
+        const auto klass = *fixture.linker.FindClass("Ljava/lang/Object;");
+        const auto monitor = fixture.model.NewInstance(klass, 0);
+        const auto resource = fixture.model.NewInstance(klass, 0);
+        vm.TrackGuestNativeResource(resource,
+            fixture.Static("Lcleanup/Host;", "cleanup", "(J)V"), 123);
+        const auto spin = fixture.Static("LCooperativeCleanup;", "spin", "(Ljava/lang/Object;)I");
+        const auto release = fixture.Static("LCooperativeCleanup;", "release", "()V");
+        const auto peer = vm.CreateExecutionContext();
+        std::exception_ptr failure;
+        std::thread root([&] {
+            try { CHECK(vm.Call(spin, std::array{VmValue::Ref(monitor)}).value.AsInt() == 7); }
+            catch (...) { failure = std::current_exception(); }
+        });
+        const auto limit = std::chrono::steady_clock::now() + std::chrono::seconds(1);
+        while (!started.load() && std::chrono::steady_clock::now() < limit)
+            std::this_thread::yield();
+        CHECK(started.load());
+        if (started.load()) {
+            const VmExecutionLockScope lock(vm.ExecutionLock());
+            static_cast<void>(vm.CollectGarbage("foreign-host-allocation"));
+            CHECK(cleaned == 0);
+            CHECK(vm.GuestNativeResourceCount() == 1);
+            CHECK_FALSE(vm.Call(peer, release, {}).exception.IsValid());
+        } else vm.RequestStop(vm.ExecutionContext(1));
+        root.join();
+        if (failure) std::rethrow_exception(failure);
+        CHECK_NOTHROW(vm.ReleaseGuestNativeResources());
+        CHECK(cleaned == 1);
+        CHECK(vm.GuestNativeResourceCount() == 0);
+        vm.DiscardExecutionContext(peer);
+    });
+}
+
+TEST_CASE("DVM-234 idle production root cannot be borrowed for foreign GC cleanup") {
+    WithEachBackend([](InterpreterConfig config) {
+        std::size_t cleaned{};
+        auto host = IntrinsicClassBuilder::Class("Lcleanup/Host;");
+        host.StaticMethod("cleanup", "(J)V", [&](IntrinsicContext&) {
+            ++cleaned;
+            return VmValue::Void();
+        });
+        auto catalog = AndroidIntrinsicCatalog(std::make_shared<DexVmAndroidContext>());
+        catalog.push_back(std::move(host).Build());
+        Vm fixture(config, {}, std::move(catalog), "cooperative_cleanup.dex");
+        auto& vm = fixture.interpreter;
+        vm.BindDefaultExecutionHost();
+        const auto resource = fixture.model.NewInstance(
+            *fixture.linker.FindClass("Ljava/lang/Object;"), 0);
+        const auto cleanup = fixture.Static("Lcleanup/Host;", "cleanup", "(J)V");
+        vm.TrackGuestNativeResource(resource, cleanup, 123);
+        std::exception_ptr failure;
+        std::thread collector([&] {
+            try {
+                static_cast<void>(vm.CollectGarbage("idle-foreign-allocation"));
+                CHECK_THROWS_AS(static_cast<void>(vm.Call(cleanup, std::array{VmValue::Long(123)})), DexVmError);
+            } catch (...) { failure = std::current_exception(); }
+        });
+        collector.join();
+        if (failure) std::rethrow_exception(failure);
+        CHECK(cleaned == 0);
+        CHECK(vm.GuestNativeResourceCount() == 1);
+        vm.ReleaseGuestNativeResources();
+        CHECK(cleaned == 1);
+        CHECK(vm.GuestNativeResourceCount() == 0);
+    });
 }

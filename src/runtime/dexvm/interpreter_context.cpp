@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <atomic>
 #include <condition_variable>
+#include <deque>
 #include <mutex>
 #include <thread>
 #include <unordered_map>
@@ -59,6 +60,8 @@ public:
     std::condition_variable released;
     std::thread::id owner;
     std::size_t depth{};
+    std::deque<std::uint64_t> waiters;
+    std::uint64_t next_ticket{};
     std::atomic<void*> blocking_observer_context{};
     std::atomic<BlockingObserver> blocking_observer{};
 };
@@ -73,7 +76,12 @@ void VmExecutionLock::Acquire() {
         ++impl_->depth;
         return;
     }
-    impl_->released.wait(lock, [this] { return impl_->depth == 0; });
+    const auto ticket = impl_->next_ticket++;
+    impl_->waiters.push_back(ticket);
+    impl_->released.wait(lock, [this, ticket] {
+        return impl_->depth == 0 && impl_->waiters.front() == ticket;
+    });
+    impl_->waiters.pop_front();
     impl_->owner = self;
     impl_->depth = 1;
 }
@@ -87,6 +95,7 @@ bool VmExecutionLock::TryAcquire() {
         ++impl_->depth;
         return true;
     }
+    if (!impl_->waiters.empty()) return false;
     impl_->owner = self;
     impl_->depth = 1U;
     return true;
@@ -148,6 +157,26 @@ bool VmExecutionLock::HeldByCurrentThread() const {
     return impl_->depth > 0 && impl_->owner == std::this_thread::get_id();
 }
 
+void VmExecutionLock::YieldToWaiter() {
+    std::unique_lock lock(impl_->mutex);
+    if (impl_->waiters.empty()) return;
+    if (impl_->depth == 0 || impl_->owner != std::this_thread::get_id())
+        throw DexVmError(DexVmErrorReason::internal_invariant,
+                         "bytecode handoff requires the execution lock");
+    const auto held = impl_->depth;
+    const auto ticket = impl_->next_ticket++;
+    impl_->waiters.push_back(ticket);
+    impl_->depth = 0;
+    impl_->owner = {};
+    impl_->released.notify_all();
+    impl_->released.wait(lock, [this, ticket] {
+        return impl_->depth == 0 && impl_->waiters.front() == ticket;
+    });
+    impl_->waiters.pop_front();
+    impl_->owner = std::this_thread::get_id();
+    impl_->depth = held;
+}
+
 void VmExecutionLock::SetBlockingObserver(
     void* context, const BlockingObserver observer) noexcept {
     impl_->blocking_observer_context.store(context, std::memory_order_relaxed);
@@ -165,6 +194,10 @@ InterpreterExecutionScope::InterpreterExecutionScope(
             "cannot switch DexVM execution context inside an active call");
     }
     const auto host = std::this_thread::get_id();
+    if (execution.bound_host != std::thread::id{} && execution.bound_host != host) {
+        throw DexVmError(DexVmErrorReason::internal_invariant,
+                         "default guest execution is bound to another host thread");
+    }
     if (execution.active_entries != 0 && execution.active_host != host) {
         throw DexVmError(DexVmErrorReason::internal_invariant,
             "DexVM execution context " + std::to_string(execution.token) +
@@ -258,6 +291,68 @@ void Interpreter::RequestStop(const InterpreterExecutionContext& context) {
     impl_->Execution(context).stop_requested.store(true,
                                                    std::memory_order_relaxed);
     impl_->clinit_changed.notify_all();
+}
+
+void Interpreter::BindDefaultExecutionHost() {
+    VmExecutionLockScope lock_scope(impl_->execution_lock);
+    auto& execution = *impl_->default_execution;
+    const auto host = std::this_thread::get_id();
+    if ((execution.bound_host != std::thread::id{} && execution.bound_host != host) ||
+        (execution.active_entries != 0 && execution.active_host != host))
+        throw DexVmError(DexVmErrorReason::internal_invariant, "default execution host cannot be rebound");
+    execution.bound_host = host;
+}
+
+void Interpreter::RunInExecutionContext(
+    const InterpreterExecutionContext& context, const std::function<void()>& action) {
+    VmExecutionLockScope lock_scope(impl_->execution_lock);
+    auto& execution = impl_->Execution(context);
+    InterpreterExecutionScope execution_scope(impl_.get(), execution);
+    action();
+}
+
+std::uint64_t Interpreter::ExecutionDeadlineNs(const std::uint64_t context) const {
+    if (context == 0) return impl_->Execution().deadline_ns.load(std::memory_order_relaxed);
+    const std::lock_guard guard(impl_->executions_mutex);
+    const auto found = impl_->executions.find(context);
+    return found == impl_->executions.end() ? 0 :
+        found->second->deadline_ns.load(std::memory_order_relaxed);
+}
+
+bool Interpreter::ExecutionDeadlineExpired(const std::uint64_t context) const {
+    const auto deadline = ExecutionDeadlineNs(context);
+    return deadline != 0 && hal::Clock::SteadyTimestampNs() >= deadline;
+}
+
+bool Interpreter::HasExecutionDeadline(const std::uint64_t context) const {
+    return ExecutionDeadlineNs(context) != 0;
+}
+
+void Interpreter::CheckExecutionDeadline(const std::uint64_t context) const {
+    if (ExecutionDeadlineExpired(context))
+        throw DexVmError(DexVmErrorReason::budget_exhausted,
+                         "lifecycle execution wall-time budget exhausted");
+}
+
+void Interpreter::RunWithExecutionDeadline(
+    const std::uint64_t deadline_ns, const std::function<void()>& action) {
+    if (deadline_ns == 0 || !action)
+        throw DexVmError(DexVmErrorReason::invalid_operand, "invalid lifecycle deadline scope");
+    VmExecutionLockScope lock_scope(impl_->execution_lock);
+    auto& execution = impl_->Execution();
+    InterpreterExecutionScope execution_scope(impl_.get(), execution);
+    const auto previous = execution.deadline_ns.load(std::memory_order_relaxed);
+    execution.deadline_ns = previous == 0 ? deadline_ns :
+        std::min(previous, deadline_ns);
+    try {
+        CheckExecutionDeadline();
+        action();
+        CheckExecutionDeadline();
+    } catch (...) {
+        execution.deadline_ns = previous;
+        throw;
+    }
+    execution.deadline_ns = previous;
 }
 
 std::optional<std::int32_t> Interpreter::ExitCode() const noexcept {
@@ -655,6 +750,16 @@ std::size_t Interpreter::GuestNativeResourceCount() const {
 }
 void Interpreter::ReleaseGuestNativeResources(const bool all) {
     VmExecutionLockScope lock_scope(impl_->execution_lock);
+    auto& execution = impl_->Execution();
+    // Foreign host-side allocations may collect while a root call is yielded.
+    // They can sweep under the VM lock, but cannot borrow its live Java stack
+    // to invoke cleanup. Keep the queue for the next owner collection/teardown.
+    if ((execution.bound_host != std::thread::id{} && execution.bound_host != std::this_thread::get_id()) ||
+        (execution.active_entries != 0 && execution.active_host != std::this_thread::get_id())) {
+        if (all) throw DexVmError(DexVmErrorReason::internal_invariant,
+                                 "native resource cleanup requires its execution owner");
+        return;
+    }
     if (all) {
         impl_->QueueFieldNativeResources(nullptr);
         for (const auto& [owner, resource] : impl_->guest_native_resources) {
@@ -663,7 +768,6 @@ void Interpreter::ReleaseGuestNativeResources(const bool all) {
         }
         impl_->guest_native_resources.clear();
     }
-    auto& execution = impl_->Execution();
     struct RestorePending final {
         InterpreterExecutionState& execution;
         VmObjectRef exception;

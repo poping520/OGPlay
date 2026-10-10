@@ -317,6 +317,10 @@ public:
     void BeginTeardown() noexcept;
     // Synchronous owner-only root cleanup; nested calls share a finite budget.
     void RunTeardownCleanup(const std::function<void()>& cleanup);
+    // Graceful root callbacks retain existing worker/graphics dependencies.
+    // Both phases share the same non-renewable cleanup deadline.
+    void RunGracefulCleanup(const std::function<void()>& cleanup);
+    [[nodiscard]] std::uint64_t CleanupDeadlineNs() const noexcept;
     // Join native workers before a callback may enter libc exit destructors.
     void QuiesceNativeWorkers();
     [[nodiscard]] std::optional<std::int32_t> NativeExitCode() const;
@@ -440,6 +444,8 @@ public:
     void BeginTeardown() noexcept;
     // Synchronous owner-only root cleanup; nested calls share a finite budget.
     void RunTeardownCleanup(const std::function<void()>& cleanup);
+    void RunGracefulCleanup(const std::function<void()>& cleanup);
+    [[nodiscard]] std::uint64_t CleanupDeadlineNs() const noexcept;
     // Join native workers before a callback may enter libc exit destructors.
     void QuiesceNativeWorkers();
     [[nodiscard]] std::optional<std::int32_t> NativeExitCode() const;

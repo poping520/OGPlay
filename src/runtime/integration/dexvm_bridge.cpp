@@ -1433,6 +1433,7 @@ DexVmGuestBridge::DexVmGuestBridge(
 
     impl_->vm = std::make_unique<dx::Interpreter>(
         impl_->linker, *impl_->model, this, ledger, config.interpreter);
+    impl_->vm->BindDefaultExecutionHost();
     impl_->vm->SetNioRuntime(&session.NIO());
     if (android_context != nullptr) {
         impl_->vm->Network().Configure(android_context->network_policy,
@@ -1572,7 +1573,7 @@ DexVmGuestBridge::DexVmGuestBridge(
             [android_context](const std::int64_t delta_millis) {
                 AdvanceAndroidClock(*android_context, delta_millis);
             });
-        impl_->vm->Monitors().SetClockDriverBlockedProbe([android_context] {
+        impl_->vm->Monitors().SetClockDriverBlockedProbe([android_context, bounded_vm = impl_->vm.get()] {
             // Runtime.exit joins hooks on the lifecycle clock driver, also
             // in headless/pure Java sessions with no EGL pacer. Timed hooks
             // must use the same unified Clock fast-forward as timed root waits.
@@ -1580,7 +1581,8 @@ DexVmGuestBridge::DexVmGuestBridge(
                 return true;
             const auto pacer = TryEglSwapPacerSnapshot(*android_context);
             return pacer.has_value() && pacer->attached &&
-                   pacer->driver_blocked && !pacer->shutdown &&
+                   pacer->driver_blocked &&
+                   (!pacer->shutdown || bounded_vm->HasExecutionDeadline(dx::kRootLifecycleToken)) &&
                    !pacer->surface_retired;
         });
     }

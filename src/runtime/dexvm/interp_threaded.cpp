@@ -99,6 +99,11 @@ void Interpreter::Impl::StepThreaded(
 
 #define OGPLAY_FETCH_AND_TICK()                                 \
     do {                                                        \
+        if ((ticks & 1023U) == 0U) {                            \
+            OGPLAY_SYNC_EXECUTION();                            \
+            owner->CheckExecutionDeadline();                    \
+            execution_lock.YieldToWaiter();                      \
+        }                                                       \
         insn = &code_ptr->instructions[ip];                     \
         frame_ptr->pc = insn->dex_pc;                           \
         if (insn->handler == FastHandler::bridge) goto bridge;  \

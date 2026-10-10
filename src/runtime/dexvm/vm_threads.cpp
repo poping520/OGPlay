@@ -6,6 +6,7 @@
 #include "ogplay/runtime/dexvm/vm_threads.h"
 
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <condition_variable>
 #include <functional>
@@ -171,30 +172,26 @@ public:
                 ++progress_generation;
             }
             changed.notify_all();
-            const std::vector<VmValue> arguments{VmValue::Ref(record->object)};
-            const auto outcome =
-                vm->Call(record->context, record->run_method, arguments);
-            if (outcome.exception.IsValid()) {
-                const auto handled = record->uncaught_dispatcher &&
-                                     record->uncaught_dispatcher(
-                                         *vm, record->object,
-                                         outcome.exception);
-                if (!handled) {
-                    final_status = VmThreadStatus::failed;
-                    failure_text = "uncaught exception on Java thread " +
-                                   DescribeForReport(record) + ": " +
-                                   vm->Linker()
-                                       .Class(outcome.exception_class)
-                                       .descriptor +
-                                   ": " + outcome.exception_message;
-                    for (const auto& entry : outcome.exception_stack) {
-                        failure_text +=
-                            "\n  at " + entry.class_descriptor + "." +
-                            entry.method_name + " (pc " +
-                            std::to_string(entry.pc) + ")";
+            vm->RunInExecutionContext(record->context, [&] {
+                const std::vector<VmValue> arguments{VmValue::Ref(record->object)};
+                const auto outcome = vm->Call(record->run_method, arguments);
+                const auto roots = vm->ProtectReferences(std::array{outcome.exception});
+                if (outcome.exception.IsValid()) {
+                    const auto handled = record->uncaught_dispatcher &&
+                        record->uncaught_dispatcher(*vm, record->object, outcome.exception);
+                    if (!handled) {
+                        final_status = VmThreadStatus::failed;
+                        failure_text = "uncaught exception on Java thread " +
+                            DescribeForReport(record) + ": " +
+                            vm->Linker().Class(outcome.exception_class).descriptor +
+                            ": " + outcome.exception_message;
+                        for (const auto& entry : outcome.exception_stack) {
+                            failure_text += "\n  at " + entry.class_descriptor + "." +
+                                entry.method_name + " (pc " + std::to_string(entry.pc) + ")";
+                        }
                     }
                 }
-            }
+            });
         } catch (const DexVmError& error) {
             if (error.Reason() == DexVmErrorReason::thread_stopped) {
                 final_status = VmThreadStatus::stopped;
@@ -477,6 +474,7 @@ void VmThreadRuntime::Sleep(const std::int64_t timeout_millis) {
         std::unique_lock guard(impl_->mutex);
         while (!(stopped = impl_->shutting_down) &&
                !(interrupted = monitors.Interrupted(self)) &&
+               !impl_->vm->ExecutionDeadlineExpired() &&
                clock() < deadline) {
             impl_->changed.wait_for(guard, std::chrono::milliseconds(2));
             if (!advanced) {
@@ -491,6 +489,7 @@ void VmThreadRuntime::Sleep(const std::int64_t timeout_millis) {
     if (timeout_millis > 0) {
         SetWaitState(self, VmThreadWaitState::none);
     }
+    impl_->vm->CheckExecutionDeadline();
     if (interrupted) {
         static_cast<void>(monitors.ClearInterrupt(self));
         throw VmJavaThrow{"Ljava/lang/InterruptedException;",

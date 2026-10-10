@@ -67,8 +67,9 @@ Dex activity 每帧在 guest 回调前泵送主 Looper，到帧尾只通过
   在线程停止后、guest finalizer 前再次调用，失败向上层传播。
   guest EGL swap 在 intrinsic 内 publish，不由 lifecycle 再次 present。lifecycle
   仅在 guest-owned GLSurfaceView 路径注册 driver 线程，并在每帧尾推进条件 swap
-  pacer。进程 teardown 在 guest-owned 回调前永久退役 Java/native 图形入口、发布
-  renewable JNI frame 取消并唤醒 blocking wait；回调期间可能新建等待，因此 join
+  pacer。进程 teardown 在 guest-owned 回调前只解除宿主帧 pacer 等待；在有界 root
+  scope 中完成失焦、onPause、surfaceDestroyed/onStop，再永久退役 Java/native 图形与
+  取消 renewable JNI frame。回调期间可能新建等待，因此 join
   前再次 interrupt。该顺序是 OGPlay 进程退出策略，不伪称 AOSP 在
   `surfaceDestroyed` 回调前使 Surface 失效。
   注入诊断状态时，Stop 额外发布 begin、guest callbacks、scheduler、thread join、
@@ -79,6 +80,8 @@ Dex activity 每帧在 guest 回调前泵送主 Looper，到帧尾只通过
   intrinsic-renderer 不安装 observer。driver 可运行时维持一帧一 swap，driver 停泊于
   guest 阻塞原语时由执行锁 observer 放行 GLThread。停止在 shutdown/join guest Java
   线程前唤醒 pacer。两种 GLSurfaceView 都释放打开线程 GL currency，交给各自 GLThread。
+  pacer 停止仍维护真实 driver blocked 事实；有界协作 scope、Surface 尚存时可为
+  worker 的 timed park 补统一 Clock，使暂停/Surface 销毁握手不依赖已停止的帧泵。
   intrinsic renderer 复用 VmThreadRuntime 建立独立 Java/host 线程，拥有 JNI/TLS、renderer
   回调、queueEvent 与 EGL 生命周期；不预先创建 Looper。生命周期等待绘帧时继续泵送主
   Looper；通过 `AndroidAppProcessHost.pump_host_events` 透传的显式回调在等待线程上、

@@ -49,6 +49,8 @@ switch/threaded 解释、异常、线程/monitor、反射及 `java.*` core intri
   未初始化的 0 不登记资源，GC/teardown 清字段时写回对应关闭标记并调用静态释放入口。
   资源清理保存并 root VM 原异常/结果，通过 NativeMethodBridge 清理 scope 隔离 native
   pending，退出恢复原状态；失败及未尝试资源回队列，不放宽正常 JNI 调用。
+  外部宿主 GC 遇到绑定到其他宿主的默认 execution 时只扫堆，将 guest 清理留队，
+  由合法 execution 所有者的后续 GC/退出释放，不借用活动 Java 栈。
 - 堆按 ADR-0060 区分 initial target、growth limit 与 maximum：越过当前目标先 GC，再增长，
   越过增长上限时执行 before-OOM GC 后才失败；GC 后按 live set、利用率和 min/max free 调整目标。
 - `Interpreter::Call` 返回值或未捕获 Java 异常；寄存器带类别 tag，默认 512 帧。invoke 只有
@@ -59,6 +61,8 @@ switch/threaded 解释、异常、线程/monitor、反射及 `java.*` core intri
   `force_all_bridge` 是永久等价门禁。
 - `VmExecutionLock` 是可重入全 VM 单写/STW 边界；阻塞按原深度释放/恢复。锁序固定为
   execution→thread runtime→context table；安全分配点外不得触发 GC。
+  锁竞争按 FIFO 准入；普通字节码每 1024 tick 的稳定安全点可向等待宿主让出，保留
+  guest monitor、完整递归深度及 frame roots，不发布真实阻塞或重置总 tick 预算。
 
 ### 线程、monitor、时间
 
@@ -68,9 +72,15 @@ switch/threaded 解释、异常、线程/monitor、反射及 `java.*` core intri
 - monitor owner 是 context token；wait 完全释放并恢复 recursion，notify/interrupt/shutdown/
   Clock 唤醒。非 owner 操作抛 IllegalMonitorStateException。deadline 只用注入 Clock；无 Clock
   明确失败，禁止读取宿主墙钟。
+  有界生命周期 scope 另使用统一 Clock 的 steady deadline；Java 指令、monitor/睡眠与
+  clinit 等待检查同一不可续期预算。到期以非 Java 控制故障退出、移除等待账本，
+  不返回伪造通知；正常 Java wait/异常仍按原规则恢复 monitor。
 - execution context 进入时验证活动宿主归属；阻塞释放 VM 锁不解除归属，禁止异宿主
   重入或删除活动 context。JNI 附加线程注册既有 context，不创建宿主线程；Thread 身份
   按需初始化，存活期间进入 GC roots，detach 后终止并唤醒 join。
+  生产 bridge 还将默认 root execution 绑定到创建宿主，空闲时也禁止由后台借用。
+  Java worker 的 run 与未捕获异常分派共用其 execution scope；分派期间的异常引用
+  显式保活，处理器中的 Java/native 调用不回落到默认 root。
 - stop 每指令检查；shutdown 先 stop/join 再展开 context。class init 对同 context 重入，其他
   context 释放执行锁等待，完成/失败/teardown 均唤醒。
 - host lifecycle 的 worker-progress 等待使用显式 wall-time 上限，且不获取 execution lock；

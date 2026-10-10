@@ -267,6 +267,11 @@ TEST_CASE("Telephony subscriber identity is unavailable without a cellular subsc
         CHECK((flags & (kAccFinal | kAccStatic)) == 0U);
         CHECK(f.On(phone, "getPhoneType", "()I").AsInt() == 0);
         CHECK(f.On(phone, "getSimState", "()I").AsInt() == 1);
+        for (const auto events : {0, 1}) {
+            CHECK_NOTHROW(f.On(phone, "listen", "(Landroid/telephony/PhoneStateListener;I)V",
+                {VmValue::Ref(VmObjectRef{}), VmValue::Int(events)}));
+            CHECK(f.context->telephony_listeners.empty());
+        }
         CHECK_FALSE(f.On(phone, "getSubscriberId", "()Ljava/lang/String;").ref.IsValid());
         static_cast<void>(f.vm.CollectGarbage("telephony-subscriber-absence"));
         CHECK_FALSE(f.On(phone, "getSubscriberId", "()Ljava/lang/String;").ref.IsValid());

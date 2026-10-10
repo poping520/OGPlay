@@ -32,6 +32,11 @@
 
 namespace ogplay::runtime {
 
+enum class GuestFinalizationPolicy : std::uint8_t {
+    permitted,
+    forbidden,
+};
+
 namespace debug { class DiagnosticState; }
 
 namespace dexvm { class NioRuntime; struct NioDirectMemoryAccess; }
@@ -324,7 +329,7 @@ public:
     // Join native workers before a callback may enter libc exit destructors.
     void QuiesceNativeWorkers();
     [[nodiscard]] std::optional<std::int32_t> NativeExitCode() const;
-    void Stop();
+    void Stop(GuestFinalizationPolicy policy = GuestFinalizationPolicy::permitted);
     [[nodiscard]] bool Running() const noexcept;
     [[nodiscard]] bool ExitRequested() const noexcept;
     [[nodiscard]] std::size_t ApplicationModuleCount() const noexcept;
@@ -449,7 +454,7 @@ public:
     // Join native workers before a callback may enter libc exit destructors.
     void QuiesceNativeWorkers();
     [[nodiscard]] std::optional<std::int32_t> NativeExitCode() const;
-    void Stop();
+    void Stop(GuestFinalizationPolicy policy = GuestFinalizationPolicy::permitted);
     [[nodiscard]] bool Running() const noexcept;
     [[nodiscard]] bool ExitRequested() const noexcept;
     [[nodiscard]] std::optional<AndroidGuestMovieRequest>

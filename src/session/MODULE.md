@@ -51,7 +51,7 @@ Dex activity 每帧在 guest 回调前泵送主 Looper，到帧尾只通过
 - `StartDexApplication` / `DexActivityLifecycle`：先按
   resolve→`<clinit>`→construct→attach base Context→虚派 `onCreate` 建立稳定的 process
   Application root，再实例化入口 Activity 并解释执行 onCreate/onStart/onResume、
-  renderer surface/frame、输入、suspend/resume 与 surfaceDestroyed/onStop/onDestroy；
+  renderer surface/frame、输入、suspend/resume 与 surfaceDestroyed/onStop；实例 finish 执行 onDestroy；
   空 Activity 可继续消息泵和 Clock，finish 后由既有退出协议收尾；onCreate 内 finish
   的实例不接收 onStart/onResume/onPause/onStop。内容按对象与 UiTree 节点身份在
   owner-thread traversal 初始化尺寸，再交付 Surface/布局与已到达的窗口焦点；
@@ -87,7 +87,7 @@ Dex activity 每帧在 guest 回调前泵送主 Looper，到帧尾只通过
   回调、queueEvent 与 EGL 生命周期；不预先创建 Looper。生命周期等待绘帧时继续泵送主
   Looper；通过 `AndroidAppProcessHost.pump_host_events` 透传的显式回调在等待线程上、
   释放 worker/VM 锁后泵送宿主窗口消息，回调不得重入 guest 生命周期。空闲及暂停时
-  queueEvent 仍可唤醒 GLThread。Activity 切换或退出先停止并等待
+  queueEvent 仍可唤醒 GLThread。真正 detach/finish 或进程关闭先停止并等待
   GLThread/native detach 完成再清空引用；onPause 的渲染握手先于该停止。
   内容同步先调用 integration 的附着子树尺寸派发，再交付 Surface creation/global layout；
   未变尺寸不重复，callback 替换内容后仅在后续同步处理新 root，不启动旧子树。
@@ -248,8 +248,12 @@ native 清理失败仍继续关闭进程和 surface；前端保留运行首错�
 本地视频在最终 frame handoff 按 UiTree 的 SurfaceView 层事实合成（ADR-0094）；
 GLES/Canvas producer 活跃时视频泵不覆盖底图。纯视频窗口使用空软件底图触发统一合成。
 
-DVM-218 / ADR-0095：退出后新发起的根线程清理由创建 owner 显式准入，有限预算覆盖
-重入且不续期；onPause、surfaceDestroyed、onStop、onDestroy 独立尝试并传播首错。
-onStop 后先关闭 scheduler 并 join native/Java worker，再进入可能运行 libc 析构的 onDestroy。
-guest 原生 exit/exit_group 发布真实退出码并展开 VM，已退出后不再调用 JNI 清理或
-DSO fini。Stop 失败仍 join、flush、detach、关闭 surface，完成后幂等；取消不冒充卸载。
+DVM-218/236、ADR-0095/0115：进程 Stop 显式区分 host shutdown、guest exit 与运行 fault，
+退出事实优先。健康宿主关闭在既有预算内独立尝试前台失焦/pause、Surface retire/stop，
+不合成全栈 onDestroy；普通 Activity.finish 仍按实例执行 destroy 并传播异常。
+进程关闭拒绝新转换/输入，关闭 scheduler、join native/Java worker 后由 owner 退役媒体/图形
+资源，再执行仍允许的 native cleanup。退出预算覆盖重入且不续期，首错保持、重复 Stop 幂等。
+进程 Stop 不执行模块卸载式 DSO fini；底层显式 permitted 卸载/停机的执行与失败传播保持。
+Java/native 进程退出事实发布后不再调用 guest 生命周期或 JNI 清理；原生
+exit/exit_group 的真实退出码与展开规则保持。Stop 失败仍 join、flush、detach、关闭 surface；
+取消不冒充卸载，native finalization 失败仍报告。

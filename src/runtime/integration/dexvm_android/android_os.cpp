@@ -1467,10 +1467,11 @@ Decl Declare_android_os_Process(const Context& context) {
         .StaticMethod("myUid", "()I", [context](dx::IntrinsicContext&) {
             return dx::VmValue::Int(static_cast<std::int32_t>(context->application_uid));
         }).StaticMethod("myTid", "()I", [](dx::IntrinsicContext&) { return dx::VmValue::Int(1); })
-        .StaticMethod("killProcess", "(I)V", [context](dx::IntrinsicContext& call) {
+        .StaticMethod("killProcess", "(I)V", [context](dx::IntrinsicContext& call) -> dx::VmValue {
             if (call.arguments[0].AsInt() != 1)
                 throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "foreign process"};
-            context->exit_requested = true; return dx::VmValue::Void();
+            context->exit_requested = true;
+            call.vm.Exit(0);
         }).StaticMethod("setThreadPriority", "(I)V", [](dx::IntrinsicContext& call) {
             const auto priority = call.arguments[0].AsInt();
             if (priority < -20 || priority > 19)

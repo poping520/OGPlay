@@ -1164,8 +1164,15 @@ TEST_CASE("DVM-232 DSO fini has a shared wall deadline and rejects oversized sle
 }
 
 
-TEST_CASE("DVM-232 healthy DSO fini executes once before host retirement") {
+TEST_CASE("DVM-232/DVM-236 healthy DSO fini honors termination policy and runs at most once") {
     using namespace ogplay;
+    auto policy = runtime::GuestFinalizationPolicy::permitted;
+    std::uint32_t expected = 1;
+    SUBCASE("healthy host shutdown permits fini") {}
+    SUBCASE("terminated guest forbids another fini") {
+        policy = runtime::GuestFinalizationPolicy::forbidden;
+        expected = 0;
+    }
     auto libc = LibdlDefaultLibcElf();
     Put32(libc, 0x130, loader::kElfDynamicFini);
     Put32(libc, 0x134, 0x11040U);
@@ -1189,11 +1196,11 @@ TEST_CASE("DVM-232 healthy DSO fini executes once before host retirement") {
         return core::ReadLittleEndian<std::uint32_t>(std::span{bytes}, 0);
     };
     CHECK(read_marker() == 0);
-    CHECK_NOTHROW(process->Stop());
-    CHECK(read_marker() == 1);
+    CHECK_NOTHROW(process->Stop(policy));
+    CHECK(read_marker() == expected);
     CHECK(process->AttachedJniThreadCount() == 0);
     CHECK_NOTHROW(process->Stop());
-    CHECK(read_marker() == 1);
+    CHECK(read_marker() == expected);
 }
 
 TEST_CASE("DVM-232 fatal native CPU faults quarantine guest calls and skip fini") {

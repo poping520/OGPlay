@@ -134,6 +134,12 @@ PendingIntent.cancel 使令牌失效，查询不再匹配；退出在 VM 锁内�
 
 ## 资源、Parcel、数据库与日志
 
+进程关闭标记拒绝新的 Activity launch/finish 命令。
+自进程 Process.killProcess 与 Runtime.nativeExit 共用 VM 退出协议，立即展开 Java 并终止
+所有 execution context；外部进程仍明确拒绝。
+guest worker 静止后，`ReleaseAndroidMediaResources` 退役 decoder、媒体状态、mixer player/pool 与 source lease，
+不调用 Java prepared/completion/destroy；decoder 退出等待在视频共享锁之外完成。
+
 - AssetManager/Resources 只读 APK/ARSC/AXML；open 返回 ByteArrayInputStream，openFd 仅 STORED
   entry 的逻辑 FD+区间，失败映射 IOException/NotFoundException。应用 Resources/AssetManager
   是同一对象对，mAssets 为 GC 强边；getSystem 用独立对象对且不读应用 APK。

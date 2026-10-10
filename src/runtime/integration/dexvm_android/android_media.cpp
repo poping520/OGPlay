@@ -1021,3 +1021,26 @@ std::optional<std::vector<AndroidVideoSnapshot>> TrySnapshotAndroidVideo(const D
     return result;
 }
 }
+
+namespace ogplay::runtime {
+void ReleaseAndroidMediaResources(DexVmAndroidContext& context) {
+    // The audio producer is stopped and guest workers are joined by the owner.
+    // Detach decoder state under the shared lock, then join decoders outside it.
+    decltype(context.video_views) videos;
+    {
+        std::scoped_lock lock(context.video_views_mutex);
+        videos.swap(context.video_views);
+    }
+    videos.clear();
+    for (const auto& [_, state] : context.media_players)
+        if (context.encoded_music && state.music) context.encoded_music->Destroy(state.music);
+    context.media_players.clear();
+    for (const auto& [_, state] : context.sound_pools)
+        if (context.encoded_audio_playback) context.encoded_audio_playback->DestroyPool(state.pool);
+    context.sound_pools.clear();
+    for (const auto& [_, state] : context.audio_tracks)
+        if (context.pcm_playback) context.pcm_playback->DestroyPlayer(state.player);
+    context.audio_tracks.clear();
+    context.encoded_audio_leases.clear();
+}
+} // namespace ogplay::runtime

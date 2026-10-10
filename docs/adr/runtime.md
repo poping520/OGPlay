@@ -968,3 +968,22 @@ fallback glyph，保留已有 ASCII 像素/布局路径。stb_truetype 1.26 固�
 字形栅格化，只接收解析前 SHA-256 验证的 AOSP API19 DroidSansFallback，禁止从 APK
 直接传入字体；缓存最多 128 个字形。shaping/bidi、补充平面及任意 app font 不在范围。
 字体随受审 payload 发布，缺失或校验失败明确失败，不依赖宿主安装字体，不删除字幕。
+
+## ADR-0115 · 实例销毁与进程终止分离
+
+Activity.finish 是实例生命周期；宿主 close/shutdown、guest exit 与运行 fault 是进程终止。
+API19 ActivityThread.performDestroyActivity 按 token 销毁单个记录；Activity.onDestroy 文档
+明确进程被杀时不保证调用。OGPlay 不把关闭宿主窗口映射为全栈 finish，也不通过识别
+游戏静态字段、调整 destroy 顺序或吞 NPE 来修复这一语义差异。
+
+健康宿主关闭可在既有预算内对前台失焦/pause、Surface retire/stop；随后拒绝新转换/输入，
+关闭 scheduler、取消并 join worker，由 host owner 释放媒体/EGL/JNI/TLS/VFS/内存。
+进程关闭禁止模块卸载式 DSO fini：API19 进程终止不执行用户回调/析构，取消工作线程后
+也不能满足任意应用析构的 shutdown 协议。独立底层 permitted finalization 仍执行并报告失败；
+这不是按错误或游戏身份禁用某个析构。仍存活的 host-owned JNI resource cleanup 保持有界准入。
+运行 fault 不重入 Activity 生命周期；guest 退出事实发布后禁止 guest cleanup/fini。
+普通 finish 仍执行该实例 onDestroy 并传播其异常，进程级 Stop 不合成 Activity.onDestroy。
+Java 与原生退出共用显式终止事实和 finalization 准入，重复 Stop 幂等，预算不续期。
+
+范围与验证见 [DVM-236](../tasks/dexvm/DVM-236.md)。不实现完整 Android 进程管理；
+不把 native fini 失败或其他开放退出首错标为成功。

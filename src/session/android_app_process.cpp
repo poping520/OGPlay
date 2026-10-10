@@ -319,15 +319,19 @@ public:
             // Retire the already-reported root JNI exception before cleanup.
             // It must not masquerade as a failure of an unrelated native free.
             auto& env = session->Environment();
-            if (env.ExceptionCheck(1)) {
+            if (env.IsThreadAttached(1) && env.ExceptionCheck(1)) {
                 env.ExceptionDescribe(1);
                 env.ExceptionClear(1);
             }
             std::exception_ptr failure;
+            const auto guest_live = [this] {
+                return !session->NativeExitCode() && !bridge->Vm().ExitCode() &&
+                    !runtime::SessionExitRequested(*context);
+            };
             const auto deadline = session->CleanupDeadlineNs();
             const bool expired = deadline != 0 && hal::Clock::SteadyTimestampNs() >= deadline;
             try {
-                if (!expired && !session->NativeExitCode()) session->RunTeardownCleanup([this] {
+                if (!expired && guest_live()) session->RunTeardownCleanup([this] {
                     bridge->Vm().RunWithExecutionDeadline(session->CleanupDeadlineNs(), [this] {
                         bridge->Vm().ReleaseGuestNativeResources(true);
                     });
@@ -338,14 +342,17 @@ public:
                     "native cleanup failed: " + error.descriptor + ": " + error.message));
             } catch (...) { failure = std::current_exception(); }
             try {
-                if (!expired && context->native_activity && !session->NativeExitCode())
+                if (!expired && context->native_activity && guest_live())
                     session->RunTeardownCleanup([this] {
                         bridge->Vm().RunWithExecutionDeadline(session->CleanupDeadlineNs(), [this] {
                             context->native_activity->Release();
                         });
                     });
             } catch (...) { if (!failure) failure = std::current_exception(); }
-            try { session->Stop(); }
+            // This owner terminates a process, rather than unloading its DSOs.
+            // Cancellation/join cannot satisfy a DSO destructor's application
+            // shutdown protocol; Android process termination does not run fini.
+            try { session->Stop(runtime::GuestFinalizationPolicy::forbidden); }
             catch (...) { if (!failure) failure = std::current_exception(); }
             if (failure) std::rethrow_exception(failure);
         };
@@ -546,17 +553,17 @@ LifecycleFrameState AndroidAppProcess::StartLauncherActivity() {
     return result;
 }
 
-LifecycleFrameState AndroidAppProcess::Stop() {
+LifecycleFrameState AndroidAppProcess::Stop(const DexProcessStopReason reason) {
     if (impl_->state == AndroidAppProcessState::stopped) {
         return impl_->lifecycle->State();
     }
     auto& env = impl_->session->Environment();
-    if (env.ExceptionCheck(1)) {
+    if (env.IsThreadAttached(1) && env.ExceptionCheck(1)) {
         env.ExceptionDescribe(1);
         env.ExceptionClear(1);
     }
     try {
-        const auto result = impl_->lifecycle->Stop();
+        const auto result = impl_->lifecycle->Stop(reason);
         impl_->state = AndroidAppProcessState::stopped;
         return result;
     } catch (...) {

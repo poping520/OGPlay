@@ -587,8 +587,8 @@ note = "ADR-0071/VFS-01 将沙盒身份改为安装层显式 installation id，s
 
 [runtime.vfs]
 status = "complete"
-test = "tests/runtime/vfs_tests.cpp; tests/runtime/syscall_tests.cpp: VFS-06; tests/runtime/guest_cpu_environment_tests.cpp: VFS-06; tests/frontend/run_apk_vfs_tests.cpp; tests/loader/apk_tests.cpp; tests/dexvm/network_sqlite_tests.cpp"
-note = "ADR-0071/VFS-01..03 在既有事务挂载、alias 和目录语义上分离稳定节点、打开状态与 backing；新增 ReadAt/WriteAt、持有打开身份的宿主定位读、FD close/reuse 安全、节点级读写/截断排序及 VfsReadLease。统一 128 MiB 可注入资源预算覆盖可写快照、writable lazy 物化和 Deflate 块缓存；慢 backing/CRC/解压不持全局索引锁。APK/OBB stored/Deflate 通过严格 range reader 挂载；ADR-0074/VFS-04 增加标准路径下 OBB 原文件的宿主定位读，生产媒体不再依赖宿主路径。ADR-0086/VFS-06 增加按次读取的只读字符设备与 dup 共享打开状态；integration 向 /dev/urandom 与 /dev/random 注入 HAL OS CSPRNG，不模拟 Linux 熵池/阻塞/非 pipe readiness。原版 Mono 随机源异常已越过，真实存档闭环仍被后续 JNI NewStringUTF 首错阻塞 ADR-0110/VFS-07：宿主目录只索引，首次 Open 绑定原生身份；128 默认句柄预算、空闲 LRU、活跃 FD/lease 保活及重新打开复核，预算满明确 EMFILE。Windows 和 WSL Linux 低 FD 上限定向通过；macOS 后端已实现，原生验证待完成。"
+test = "tests/runtime/vfs_tests.cpp; tests/runtime/syscall_tests.cpp: VFS-06/VFS-08; tests/runtime/guest_cpu_environment_tests.cpp: VFS-06; tests/frontend/run_apk_vfs_tests.cpp; tests/loader/apk_tests.cpp; tests/dexvm/network_sqlite_tests.cpp"
+note = "ADR-0071/VFS-01..03 在既有事务挂载、alias 和目录语义上分离稳定节点、打开状态与 backing；新增 ReadAt/WriteAt、持有打开身份的宿主定位读、FD close/reuse 安全、节点级读写/截断排序及 VfsReadLease。统一 128 MiB 可注入资源预算覆盖可写快照、writable lazy 物化和 Deflate 块缓存；慢 backing/CRC/解压不持全局索引锁。APK/OBB stored/Deflate 通过严格 range reader 挂载；ADR-0074/VFS-04 增加标准路径下 OBB 原文件的宿主定位读，生产媒体不再依赖宿主路径。ADR-0086/VFS-06 增加按次读取的只读字符设备与 dup 共享打开状态；integration 向 /dev/urandom 与 /dev/random 注入 HAL OS CSPRNG，不模拟 Linux 熵池/阻塞/非 pipe readiness。原版 Mono 随机源异常已越过，真实存档闭环仍被后续 JNI NewStringUTF 首错阻塞 ADR-0110/VFS-07：宿主目录只索引，首次 Open 绑定原生身份；128 默认句柄预算、空闲 LRU、活跃 FD/lease 保活及重新打开复核，预算满明确 EMFILE。Windows 和 WSL Linux 低 FD 上限定向通过；macOS 后端已实现，原生验证待完成。VFS-08 增加 ARM O_APPEND 打开状态和节点锁内 EOF 写入、dup/alias 一致性及 Linux append pwrite 规则；writev/大 append 请求在既有共享预算内一次暂存提交，超限/坏输入在写前失败，非 append IO 保持分块定位语义。macOS 定向与真实 stdio 已验证；fcntl 状态读改和跨进程追加未实现。"
 
 [runtime.jni]
 status = "complete"

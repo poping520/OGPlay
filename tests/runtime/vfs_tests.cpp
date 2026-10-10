@@ -11,6 +11,7 @@
 #include <future>
 #include <mutex>
 #include <condition_variable>
+#include <set>
 #include <string>
 #include <string_view>
 #include <thread>
@@ -1326,4 +1327,86 @@ TEST_CASE("VFS-05 provider revocation waits for in-flight generation") {
     CHECK(vfs.Read(fd, bytes) == 1);
     CHECK(bytes[0] == std::byte{7});
     vfs.Close(fd);
+}
+
+
+TEST_CASE("VFS-08 append state survives seek dup aliases and positioned writes") {
+    using namespace ogplay::runtime;
+    VirtualFileSystem vfs;
+    const std::array seed{std::byte{'A'}, std::byte{'B'}, std::byte{'C'}};
+    vfs.PutFile("/sdcard/log", seed, true);
+    vfs.AddPathAlias("/legacy", "/sdcard");
+    const auto first = vfs.Open("/sdcard/log", {.read = true, .write = true, .append = true});
+    const auto peer = vfs.Open("/legacy/log", {.write = true, .append = true});
+    const auto duplicate = vfs.Duplicate(first);
+    CHECK(vfs.Seek(first, 0, VfsSeekWhence::current) == 0);
+    CHECK(vfs.Write(peer, std::array{std::byte{'D'}}) == 1);
+    CHECK(vfs.Seek(first, 0, VfsSeekWhence::begin) == 0);
+    CHECK(vfs.Write(duplicate, std::array{std::byte{'E'}}) == 1);
+    CHECK(vfs.Seek(first, 0, VfsSeekWhence::current) == 5);
+    CHECK(vfs.Seek(peer, 0, VfsSeekWhence::current) == 4);
+    CHECK(vfs.Seek(first, 1, VfsSeekWhence::begin) == 1);
+    CHECK(vfs.WriteAt(first, 0, std::array{std::byte{'F'}}) == 1);
+    CHECK(vfs.Seek(first, 0, VfsSeekWhence::current) == 1);
+    const auto generation = vfs.Stat("/sdcard/log").generation;
+    CHECK(vfs.Write(first, {}) == 0);
+    CHECK(vfs.WriteAt(first, 99, {}) == 0);
+    CHECK(vfs.Stat("/sdcard/log").generation == generation);
+    CHECK(vfs.Seek(first, 0, VfsSeekWhence::current) == 1);
+    std::array<std::byte, 6> bytes{};
+    CHECK(vfs.ReadAt(first, 0, bytes) == bytes.size());
+    CHECK(bytes == std::array{std::byte{'A'}, std::byte{'B'}, std::byte{'C'},
+        std::byte{'D'}, std::byte{'E'}, std::byte{'F'}});
+    const auto readonly = vfs.Open("/sdcard/log", {.read = true, .append = true});
+    ExpectHostErrno([&] { static_cast<void>(vfs.Write(readonly, seed)); }, 9);
+    vfs.Close(first);
+    CHECK(vfs.Write(duplicate, std::array{std::byte{'G'}}) == 1);
+    CHECK(vfs.Stat("/legacy/log").size == 7);
+    vfs.Close(duplicate); vfs.Close(peer); vfs.Close(readonly);
+}
+
+TEST_CASE("VFS-08 independent append writers keep complete records") {
+    using namespace ogplay::runtime;
+    VirtualFileSystem vfs;
+    vfs.AddPathAlias("/legacy", "/sdcard");
+    constexpr std::size_t writers = 4, records = 40;
+    std::array<std::int32_t, writers> descriptors{};
+    for (std::size_t i = 0; i < writers; ++i)
+        descriptors[i] = vfs.Open(i % 2 ? "/legacy/log" : "/sdcard/log",
+            {.write = true, .create = true, .append = true});
+    std::atomic<bool> failed{};
+    std::vector<std::jthread> threads;
+    for (std::size_t i = 0; i < writers; ++i) {
+        threads.emplace_back([&, i] {
+            try {
+                for (std::size_t j = 0; j < records; ++j) {
+                    const std::array record{static_cast<std::byte>('A' + i),
+                        static_cast<std::byte>('0' + j / 10),
+                        static_cast<std::byte>('0' + j % 10), std::byte{'\n'}};
+                    static_cast<void>(vfs.Seek(descriptors[i], 0, VfsSeekWhence::begin));
+                    if (vfs.Write(descriptors[i], record) != record.size()) failed = true;
+                }
+            } catch (...) { failed = true; }
+        });
+    }
+    for (auto& thread : threads) thread.join();
+    CHECK_FALSE(failed.load());
+    const auto reader = vfs.Open("/sdcard/log", {.read = true});
+    REQUIRE(vfs.Stat("/sdcard/log").size == writers * records * 4);
+    std::vector<std::byte> bytes(writers * records * 4);
+    REQUIRE(vfs.Read(reader, bytes) == bytes.size());
+    std::set<std::string> observed;
+    for (std::size_t i = 0; i < bytes.size(); i += 4) {
+        CHECK(bytes[i + 3] == std::byte{'\n'});
+        std::string record;
+        for (std::size_t j = 0; j < 3; ++j) record.push_back(static_cast<char>(bytes[i + j]));
+        observed.insert(record);
+    }
+    CHECK(observed.size() == writers * records);
+    for (std::size_t i = 0; i < writers; ++i)
+        for (std::size_t j = 0; j < records; ++j)
+            CHECK(observed.contains(std::string{static_cast<char>('A' + i),
+                static_cast<char>('0' + j / 10), static_cast<char>('0' + j % 10)}));
+    for (const auto descriptor : descriptors) vfs.Close(descriptor);
+    vfs.Close(reader);
 }

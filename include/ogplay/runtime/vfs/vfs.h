@@ -67,6 +67,8 @@ struct VfsOpenOptions final {
     bool truncate{};
     bool directory{};
     bool non_blocking{};
+    // Open-description status shared by Duplicate; writes select EOF atomically.
+    bool append{};
 };
 
 // sandbox: backed by the per-title persistent overlay (ADR-0020).
@@ -262,6 +264,8 @@ public:
     [[nodiscard]] std::vector<VfsDirectoryEntry> ReadDirectory(
         std::int32_t descriptor, std::size_t maximum);
     [[nodiscard]] VfsFileInfo DescriptorInfo(std::int32_t descriptor) const;
+    // Append status is immutable for the lifetime of an open description.
+    [[nodiscard]] bool IsAppend(std::int32_t descriptor) const;
     [[nodiscard]] VfsPipeDescriptors CreatePipe();
     // ALOOPER-style bits: read=1, write=2, error=4, hangup=8, invalid=16.
     // nullopt means the descriptor type is outside the pipe polling contract.

@@ -959,9 +959,9 @@ struct MetadataSyscallFixture final {
     ogplay::runtime::VirtualFileSystem vfs;
     ogplay::memory::AddressSpace memory;
 
-    MetadataSyscallFixture()
+    explicit MetadataSyscallFixture(ogplay::runtime::VfsConfig config = {})
         : dispatcher(
-              ogplay::runtime::CreateAndroidArmSyscallDispatcher(ledger)) {
+              ogplay::runtime::CreateAndroidArmSyscallDispatcher(ledger)), vfs(config) {
         memory.Map({GuestAddress{0x20000}, memory.PageSize()},
                    ogplay::memory::PageProtection::read |
                        ogplay::memory::PageProtection::write);
@@ -1057,6 +1057,95 @@ TEST_CASE("Android mkdir, stat64 and unlink syscalls reach the VFS") {
     CHECK(fixture.Call(10, {0x20100, 0, 0, 0, 0, 0}) == 0);
     CHECK(fixture.Call(40, {0x20000, 0, 0, 0, 0, 0}) == 0);
     CHECK(fixture.Call(195, {0x20000, 0x20200, 0, 0, 0, 0}) == -2);
+}
+
+
+TEST_CASE("VFS-08 ARM append openat writev and pwrite64 use one shared file state") {
+    MetadataSyscallFixture fixture;
+    const std::array seed{std::byte{'b'}, std::byte{'a'}, std::byte{'s'}, std::byte{'e'}};
+    fixture.vfs.PutFile("/sdcard/log", seed, true);
+    fixture.WriteString(0x20000, "/sdcard/log");
+    const auto opened = fixture.Call(322, {static_cast<std::uint32_t>(-100), 0x20000, 0x20441, 0, 0, 0});
+    REQUIRE(opened >= 3);
+    const auto fd = static_cast<std::uint32_t>(opened);
+    const std::array payload{std::byte{'1'}, std::byte{'2'}, std::byte{'3'}, std::byte{'A'}, std::byte{'B'}};
+    fixture.memory.Write(GuestAddress{0x20300}, payload);
+    CHECK(fixture.Call(4, {fd, 0x20300, 1, 0, 0, 0}) == 1);
+    CHECK(fixture.Call(19, {fd, 0, 0, 0, 0, 0}) == 0);
+    const auto duplicate = fixture.Call(41, {fd, 0, 0, 0, 0, 0});
+    REQUIRE(duplicate >= 3);
+    CHECK(fixture.Call(4, {static_cast<std::uint32_t>(duplicate), 0x20301, 1, 0, 0, 0}) == 1);
+    CHECK(fixture.Call(181, {fd, 0x20302, 1, 0, 0, 0}) == 1);
+    CHECK(fixture.Call(19, {fd, 0, 1, 0, 0, 0}) == 6);
+    const auto encode32 = [&](std::uint32_t address, std::uint32_t word) {
+        std::array<std::byte, 4> bytes{};
+        for (std::size_t i = 0; i < 4; ++i) bytes[i] = static_cast<std::byte>((word >> (8 * i)) & 255);
+        fixture.memory.Write(GuestAddress{address}, bytes);
+    };
+    encode32(0x20400, 0x20303); encode32(0x20404, 1);
+    encode32(0x20408, 0x20304); encode32(0x2040c, 1);
+    CHECK(fixture.Call(146, {fd, 0x20400, 2, 0, 0, 0}) == 2);
+    CHECK(fixture.Call(19, {fd, 0, 1, 0, 0, 0}) == 9);
+    CHECK(fixture.vfs.IoStatistics().resource_memory_bytes == 0);
+    const auto generation = fixture.vfs.Stat("/sdcard/log").generation;
+    encode32(0x20408, 0x40000000);
+    CHECK(fixture.Call(146, {fd, 0x20400, 2, 0, 0, 0}) == -14);
+    CHECK(fixture.vfs.Stat("/sdcard/log").size == 9);
+    CHECK(fixture.vfs.Stat("/sdcard/log").generation == generation);
+    CHECK(fixture.Call(146, {fd, 0, 0, 0, 0, 0}) == 0);
+    CHECK(fixture.Call(146, {0xffffffffU, 0, 0, 0, 0, 0}) == -9);
+    CHECK(fixture.Call(5, {0x20000, 0x1000000U | 0x401U, 0, 0, 0, 0}) == -22);
+    CHECK(fixture.Call(55, {fd, 3, 0, 0, 0, 0}) == -38); // fcntl remains explicitly unbound
+    const auto reader = fixture.vfs.Open("/sdcard/log", {.read = true});
+    std::array<std::byte, 9> bytes{};
+    REQUIRE(fixture.vfs.Read(reader, bytes) == bytes.size());
+    CHECK(bytes == std::array{std::byte{'b'}, std::byte{'a'}, std::byte{'s'}, std::byte{'e'},
+        std::byte{'1'}, std::byte{'2'}, std::byte{'3'}, std::byte{'A'}, std::byte{'B'}});
+    fixture.vfs.Close(reader); fixture.vfs.Close(opened); fixture.vfs.Close(duplicate);
+}
+
+
+TEST_CASE("VFS-08 large append writes stay one record across the transfer scratch boundary") {
+    MetadataSyscallFixture fixture;
+    constexpr std::uint32_t base = 0x300000;
+    constexpr std::uint32_t length = 64U * 1024U + 3U;
+    fixture.memory.Map({GuestAddress{base}, 128U * 1024U},
+        ogplay::memory::PageProtection::read | ogplay::memory::PageProtection::write);
+    std::vector<std::byte> payload(length);
+    for (std::size_t i = 0; i < payload.size(); ++i) payload[i] = static_cast<std::byte>('a' + i % 26);
+    fixture.memory.Write(GuestAddress{base}, payload);
+    fixture.WriteString(0x20000, "/sdcard/log");
+    const auto opened = fixture.Call(5, {0x20000, 0x441, 0, 0, 0, 0});
+    REQUIRE(opened >= 3);
+    const auto fd = static_cast<std::uint32_t>(opened);
+    REQUIRE(fixture.Call(4, {fd, base, length, 0, 0, 0}) == static_cast<std::int32_t>(length));
+    CHECK(fixture.vfs.Stat("/sdcard/log").generation == 2); // one committed write, not two chunks
+    CHECK(fixture.Call(19, {fd, 0, 0, 0, 0, 0}) == 0);
+    REQUIRE(fixture.Call(181, {fd, base, length, 0, 0, 0}) == static_cast<std::int32_t>(length));
+    CHECK(fixture.Call(19, {fd, 0, 1, 0, 0, 0}) == 0);
+    CHECK(fixture.vfs.Stat("/sdcard/log").generation == 3);
+    const auto reader = fixture.vfs.Open("/sdcard/log", {.read = true});
+    std::vector<std::byte> actual(length * 2U);
+    REQUIRE(fixture.vfs.Read(reader, actual) == actual.size());
+    CHECK(std::equal(payload.begin(), payload.end(), actual.begin()));
+    CHECK(std::equal(payload.begin(), payload.end(), actual.begin() + length));
+    CHECK(fixture.vfs.IoStatistics().resource_memory_bytes == 0);
+    fixture.vfs.Close(opened); fixture.vfs.Close(reader);
+}
+
+TEST_CASE("VFS-08 writev staging uses the shared resource budget before mutation") {
+    MetadataSyscallFixture fixture({.resource_memory_budget_bytes = 1});
+    fixture.WriteString(0x20000, "/sdcard/log");
+    const auto opened = fixture.Call(5, {0x20000, 0x441, 0, 0, 0, 0});
+    REQUIRE(opened >= 3);
+    fixture.WriteString(0x20300, "abc");
+    const std::array vector{std::byte{0}, std::byte{3}, std::byte{2}, std::byte{0},
+        std::byte{3}, std::byte{0}, std::byte{0}, std::byte{0}};
+    fixture.memory.Write(GuestAddress{0x20400}, vector);
+    CHECK(fixture.Call(146, {static_cast<std::uint32_t>(opened), 0x20400, 1, 0, 0, 0}) == -28);
+    CHECK(fixture.vfs.Stat("/sdcard/log").size == 0);
+    CHECK(fixture.vfs.Seek(opened, 0, ogplay::runtime::VfsSeekWhence::current) == 0);
+    fixture.vfs.Close(opened);
 }
 
 TEST_CASE("Android getdents64 emits aligned records and pages") {

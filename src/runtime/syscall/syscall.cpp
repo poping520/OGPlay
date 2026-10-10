@@ -9,6 +9,7 @@
 #include <cstdint>
 #include <limits>
 #include <memory>
+#include <new>
 #include <mutex>
 #include <string>
 #include <thread>
@@ -694,6 +695,7 @@ void BindAndroidFileSyscalls(A32SyscallDispatcher& dispatcher,
     const auto options = [](const std::uint32_t flags) {
         constexpr std::uint32_t kCreate = 0x40;
         constexpr std::uint32_t kTruncate = 0x200;
+        constexpr std::uint32_t kAppend = 0x400;
         // arch/arm/include/uapi/asm/fcntl.h, not asm-generic: the guest is
         // an ARM EABI process, and ARM swaps these four around. bionic
         // opendir() passes O_DIRECTORY = 040000.
@@ -703,7 +705,7 @@ void BindAndroidFileSyscalls(A32SyscallDispatcher& dispatcher,
         constexpr std::uint32_t kCloseOnExec = 0x80000;
         constexpr std::uint32_t kNoControllingTerminal = 0x100;
         constexpr std::uint32_t kNonBlocking = 0x800;
-        constexpr std::uint32_t kKnown = 3 | kCreate | kTruncate |
+        constexpr std::uint32_t kKnown = 3 | kCreate | kTruncate | kAppend |
                                          kLargeFile | kDirectory | kNoFollow |
                                          kCloseOnExec | kNoControllingTerminal | kNonBlocking;
         if ((flags & ~kKnown) != 0 || (flags & 3U) == 3U) {
@@ -715,7 +717,8 @@ void BindAndroidFileSyscalls(A32SyscallDispatcher& dispatcher,
                               (flags & kCreate) != 0,
                               (flags & kTruncate) != 0,
                               (flags & kDirectory) != 0,
-                              (flags & kNonBlocking) != 0};
+                              (flags & kNonBlocking) != 0,
+                              (flags & kAppend) != 0};
     };
     struct DiagnosticDescriptors final {
         std::mutex mutex;
@@ -841,57 +844,67 @@ void BindAndroidFileSyscalls(A32SyscallDispatcher& dispatcher,
                 diagnostic_endpoint = found->second;
             }
         }
-        std::vector<std::byte> diagnostic_payload;
-        for (std::size_t index = 0; index < count; ++index) {
-            try {
+        struct Vector final {
+            memory::GuestAddress address{};
+            std::uint32_t length{};
+        };
+        std::array<Vector, kMaximumVectors> vectors{};
+        try {
+            // Preflight the complete vector before any file mutation. One
+            // writev is one node-locked write, including on append descriptors.
+            for (std::size_t index = 0; index < count; ++index) {
                 std::array<std::byte, 8> encoded{};
                 address_space.Read(
                     memory::GuestAddress{frame.arguments[1]}.Add(index * 8U),
                     encoded, frame.thread_id);
                 const auto word = [&encoded](const std::size_t offset) {
                     std::uint32_t value{};
-                    for (std::size_t byte = 0; byte < 4; ++byte) {
+                    for (std::size_t byte = 0; byte < 4; ++byte)
                         value |= static_cast<std::uint32_t>(
-                                     std::to_integer<std::uint8_t>(encoded[offset + byte]))
-                                 << static_cast<unsigned>(byte * 8U);
-                    }
+                            std::to_integer<std::uint8_t>(encoded[offset + byte]))
+                            << static_cast<unsigned>(byte * 8U);
                     return value;
                 };
                 const auto length = word(4);
                 if (length > 1024U * 1024U ||
                     length > static_cast<std::uint32_t>(
-                                 std::numeric_limits<std::int32_t>::max() - total)) {
+                        std::numeric_limits<std::int32_t>::max() - total))
                     return -kEoverflow;
-                }
-                std::vector<std::byte> bytes(length);
-                if (!bytes.empty()) {
-                    address_space.Read(memory::GuestAddress{word(0)}, bytes,
-                                       frame.thread_id);
-                }
-                if (diagnostic_stream) {
-                    diagnostic_payload.insert(diagnostic_payload.end(),
-                                              bytes.begin(), bytes.end());
-                } else {
-                    const auto actual = vfs.Write(fd, bytes);
-                    total += static_cast<std::int32_t>(actual);
-                    if (actual != bytes.size()) return total;
-                    continue;
-                }
+                vectors[index] = {memory::GuestAddress{word(0)}, length};
+                if (length != 0)
+                    address_space.Validate({vectors[index].address, length},
+                        memory::AccessType::read, frame.thread_id);
                 total += static_cast<std::int32_t>(length);
-            } catch (const memory::MemoryFault&) {
-                return total == 0 ? -kEfault : total;
-            } catch (const std::overflow_error&) {
-                return total == 0 ? -kEfault : total;
-            } catch (const VfsError& error) {
-                return total == 0 ? -error.ErrorNumber() : total;
             }
+            std::shared_ptr<const VfsResourceReservation> reservation;
+            if (!diagnostic_stream && total != 0)
+                reservation = vfs.ReserveResourceMemory(static_cast<std::uint64_t>(total));
+            std::vector<std::byte> payload(static_cast<std::size_t>(total));
+            std::size_t offset{};
+            for (std::size_t index = 0; index < count; ++index) {
+                const auto length = vectors[index].length;
+                if (length != 0)
+                    address_space.Read(vectors[index].address,
+                        std::span{payload}.subspan(offset, length), frame.thread_id);
+                offset += length;
+            }
+            if (diagnostic_stream) {
+                if (!io_sink) return -9;
+                if (!payload.empty())
+                    io_sink({*diagnostic_stream, std::move(diagnostic_endpoint),
+                             std::move(payload), frame.thread_id});
+                return total;
+            }
+            return static_cast<std::int32_t>(vfs.Write(fd, payload));
+        } catch (const memory::MemoryFault&) {
+            return -kEfault;
+        } catch (const std::overflow_error&) {
+            return -kEfault;
+        } catch (const VfsError& error) {
+            return -error.ErrorNumber();
+        } catch (const std::bad_alloc&) {
+            return -12;
         }
-        if (diagnostic_stream) {
-            if (!io_sink) return -9;
-            io_sink({*diagnostic_stream, std::move(diagnostic_endpoint),
-                     std::move(diagnostic_payload), frame.thread_id});
-        }
-        return total;
     });
     dispatcher.Implement(
         42, [&vfs, &address_space](const A32SyscallFrame& frame) {

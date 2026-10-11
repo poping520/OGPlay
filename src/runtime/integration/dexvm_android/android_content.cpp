@@ -3228,6 +3228,30 @@ Decl Declare_android_content_pm_PackageManager(const Context &context) {
         return dx::VmValue::Ref(ResourceObject(call, context, false));
       });
   builder.VirtualMethod(
+      "getInstalledApplications", "(I)Ljava/util/List;",
+      [context](dx::IntrinsicContext &call) {
+        const auto flags = call.arguments[0].AsInt();
+        if (!context->package_inventory_known || context->package_name.empty() ||
+            context->package_resource_path.empty() ||
+            context->package_resource_path.front() != '/' ||
+            (flags & ~kGetMetaData) != 0) {
+          if (auto *ledger = call.vm.Ledger())
+            ledger->RecordUnimplemented("dexvm.installed_applications", 0);
+          throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
+              "getInstalledApplications requires the sealed single-APK "
+              "installed inventory and flags 0 or GET_META_DATA"};
+        }
+        const auto list = NewQueryObject(call, "Ljava/util/ArrayList;");
+        const auto list_root = call.vm.ProtectReferences(std::array{list});
+        // AOSP lists installed applications even when enabled=false.
+        // Each query gets a fresh value; Context's stable object is separate.
+        const auto application = MakeApplicationInfo(call, context, (flags & kGetMetaData) != 0);
+        const auto application_root = call.vm.ProtectReferences(std::array{application});
+        static_cast<void>(CallAndroidMethod(call.vm, list, "add", "(Ljava/lang/Object;)Z",
+                                           {dx::VmValue::Ref(application)}));
+        return dx::VmValue::Ref(list);
+      });
+  builder.VirtualMethod(
       "getApplicationInfo",
       "(Ljava/lang/String;I)Landroid/content/pm/ApplicationInfo;",
       [context](dx::IntrinsicContext &call) {

@@ -1625,6 +1625,11 @@ status = "partial"
 test = "tests/dexvm/android_value_tests.cpp: PackageManager archive queries, DVM-180 getPackageInfo"
 note = "DVM-213：只读当前封存 APK，guest VFS 规范路径及来源验证，复用启动时 Manifest；0/GET_ACTIVITIES/GET_DISABLED_COMPONENTS，保留声明顺序与 alias、禁用过滤。归档 ApplicationInfo 与安装视图分开，uid=-1、安装目录 null、安装时间 0；缺路径/非普通文件返回 null，未登记归档/缺 provider 或事实/未知 flags 明确失败。不实现任意归档解析、签名/权限/其他组件查询或安装数据库；完整游戏和跨平台未验收。"
 
+[dexvm.installed_applications]
+status = "partial"
+test = "tests/dexvm/android_value_tests.cpp: DVM-240; tests/runtime/native_library_loader_tests.cpp: DVM-240; tests/dexvm/android_value_tests.cpp: PackageManager archive queries"
+note = "DVM-240/ADR-0119：session 显式封存 guest 单包安装清单；getInstalledApplications 支持 0/GET_META_DATA，原版 BootDex ArrayList 和独立 ApplicationInfo 共用 Manifest/路径/UID/元数据物化。sourceDir/publicSourceDir 与 Context 共用真实 guest APK 路径，安装视图补齐 FLAG_INSTALLED；应用禁用仍在清单，enabled=false。缺清单/身份/guest 路径及未知 flags 记账抛 UOE。无外部包/宿主应用扫描、卸载残留、共享库或完整 PMS/Binder；跨平台及完整游戏未验收。"
+
 [dexvm.context_file_stream_path]
 status = "complete"
 test = "tests/dexvm/file_vfs_tests.cpp: Context private file streams use the app files directory on both backends; Angry Birds reached JNI CallObjectMethodV return mismatch"

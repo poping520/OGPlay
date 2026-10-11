@@ -60,10 +60,12 @@
   闭合 GLES2 OES 与共用映射状态，定向回归通过；原 APK 已加载引擎并进入 onCreate。
   [DVM-239](../tasks/dexvm/DVM-239.md) 接入原版 Debug.MemoryInfo/Creator 与当前进程查询，
   显式虚拟私有提交模型及双解释器/ARM JNI 回归通过；原 APK 越过内存查询。
-  **当前首错**：`PackageManager.getInstalledApplications(0)` 缺方法，onCreateUE3JavaApp
-  dex_pc=108；尚未到游戏 Asset 调用或首帧。证据 `.local/manifest-duplicate-fix-20261011/`、
+  [DVM-240](../tasks/dexvm/DVM-240.md) 提供封存单包安装清单、独立 ApplicationInfo 与
+  原版 ArrayList；4 用例/926 断言通过，原 APK 越过 getInstalledApplications。
+  **当前首错**：后台 Thread-2 的 `NetworkInfo.isConnected()` 缺方法，receiver=null，
+  AndroidPhoneHome$1.run dex_pc=19；尚未到首帧。证据 `.local/manifest-duplicate-fix-20261011/`、
   `.local/ndk-assets-fix-20261011/`、`.local/gles-mapbuffer-fix-20261011/`、
-  `.local/debug-memory-fix-20261011/`；取证进程已退出。
+  `.local/debug-memory-fix-20261011/`、`.local/installed-applications-fix-20261011/`；取证进程已退出。
 
 - **Angry Birds 2.3.0**：无 Profile、空沙盒运行 5000 呈现帧，滚动条方法解析错消失，
   未触发新致命首错；绘制与完整兼容未验收。见 [DVM-186](../tasks/dexvm/DVM-186.md)。

@@ -313,11 +313,12 @@ dx::VmObjectRef MakeApplicationInfo(dx::IntrinsicContext& call,
     // the API19 PackageParser default unless android:hasCode explicitly says
     // otherwise; that attribute is not yet part of the sealed manifest facts.
     constexpr std::int32_t kApplicationFlagHasCode = 1 << 2;
-    // API19 getPackageArchiveInfo uses a default PackageUserState (installed=true).
+    // Both the current installed APK and API19 archive queries' default
+    // PackageUserState have installed=true.
     constexpr std::int32_t kApplicationFlagInstalled = 1 << 23;
     const auto archive = kind == PackageInfoKind::archive;
     SetApplicationInfoInt(call, info, "flags", kApplicationFlagHasCode |
-                          (archive ? kApplicationFlagInstalled : 0));
+                          kApplicationFlagInstalled);
     SetApplicationInfoInt(call, info, "uid",
                           archive ? -1 : static_cast<std::int32_t>(context->application_uid));
     SetApplicationInfoInt(

@@ -20,6 +20,8 @@ Dex activity 每帧在 guest 回调前泵送主 Looper，到帧尾只通过
   process mode。DVM-77 把同一 sealed Manifest 的 package/version/target SDK/application
   label/icon/meta-data/requested permissions 注入 DexVM Android context；requested permissions
   是 bounded compatibility process 的显式 granted set，不宣称模拟 protection level。
+  安装事实装配后显式封存单包清单，当前 guest 仅安装本次 APK；独立未装配 context
+  不视为空安装清单，也不读取宿主或 Launcher 的应用列表。
   同一 sealed Manifest 的 activity/activity-alias 也注入 context，供 `getPackageInfo`
   在 `GET_ACTIVITIES` 下发布当前包 Activity 元数据；Activity 主题注册按组件名以后声明覆盖，
   alias 直接使用 loader 封存的继承主题。receiver 声明独立注入，供当前包

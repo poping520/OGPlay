@@ -1054,3 +1054,18 @@ enabled=false 的条目；meta-data 按 flags 物化。未知 flags、缺安装�
 记账并抛 Java UOE。范围不扩展到宿主应用、Launcher 库、多包/多用户/卸载残留状态；
 后续直接调用的包查询继续共用这份封存事实，不引入 PMS/Binder/system_server。
 验证与边界见 [DVM-240](../tasks/dexvm/DVM-240.md)。
+
+## ADR-0120 · 离线逻辑网络类型与原版状态值
+
+默认虚拟 guest 支持断开的逻辑 WiFi 网络类型，不代表宿主适配器或可开启的无线电。
+类型支持、连接状态与 I/O 授权独立：offline_connectivity 显式提供支持目录（可缺席），
+NetworkInfo 为 DISCONNECTED/不可用，活动网络缺席；Wifi 仍禁用、无连接记录、拒绝启用。
+未支持类型返回 null，不能把断开误作类型缺席。未提供状态事实或启用在线 policy 时
+状态查询记账抛 UOE，不用固定离线值冒充未知在线状态；ACCESS_NETWORK_STATE 缺失抛
+SecurityException。实际 I/O 沿用 NetworkPolicy/transport，默认拒绝，不探测宿主网络。
+
+API19 NetworkInfo、完整枚举与 Creator 原版选入 BootDex，删除对应 intrinsic 类壳。
+ConnectivityManager 只保留有界 Java 查询和原版类型常量/范围算法，用两个 private native
+替换服务传输；事实工厂调用原版构造/状态 setter，同步、复制与 Parcel 全部解释执行。每次查询新建快照，
+不让调用方修改影响平台目录。在线 provider、广播/监听、完整 ConnectivityService 与
+无线网络控制另属能力；验证见 [DVM-241](../tasks/dexvm/DVM-241.md)。

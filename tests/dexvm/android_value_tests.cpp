@@ -2872,6 +2872,102 @@ TEST_CASE("DVM-86 graphics value classes keep geometry and path state") {
     CHECK(fixture.On(path, "isEmpty", "()Z").AsInt() == 0);
 }
 
+TEST_CASE("DVM-241 offline connectivity distinguishes unsupported types and preserves original values") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        AndroidValueVm f(backend);
+        f.context->granted_permissions.insert("android.permission.ACCESS_NETWORK_STATE");
+        const auto base = f.New("Landroid/content/Context;");
+        const auto base_root = f.vm.ProtectReferences(std::array{base});
+        const auto service_name = f.vm.NewStringUtf8("connectivity");
+        const auto manager = f.On(base, "getSystemService", "(Ljava/lang/String;)Ljava/lang/Object;",
+                                  {VmValue::Ref(service_name)}).ref;
+        const auto manager_root = f.vm.ProtectReferences(std::array{manager});
+        CHECK(f.linker.Class(f.model.ObjectClass(manager)).is_boot_dex);
+        const auto query = [&](int type) {
+            return f.OnOutcome(manager, "getNetworkInfo", "(I)Landroid/net/NetworkInfo;", {VmValue::Int(type)});
+        };
+        const auto fail = [&](const VmCallOutcome& outcome, const char* exception) {
+            REQUIRE(outcome.exception.IsValid());
+            CHECK(f.linker.Class(outcome.exception_class).descriptor == exception);
+        };
+        for (const int type : {-1, 0, 9, 14, 15}) {
+            const auto result = query(type);
+            REQUIRE_FALSE(result.exception.IsValid()); CHECK_FALSE(result.value.ref.IsValid());
+        }
+        CHECK(f.Static("Landroid/net/ConnectivityManager;", "isNetworkTypeValid", "(I)Z", {VmValue::Int(14)}).AsInt() == 1);
+        CHECK(f.Static("Landroid/net/ConnectivityManager;", "isNetworkTypeValid", "(I)Z", {VmValue::Int(15)}).AsInt() == 0);
+        const auto result = query(1);
+        REQUIRE_FALSE(result.exception.IsValid()); REQUIRE(result.value.ref.IsValid());
+        const auto info = result.value.ref;
+        const auto info_root = f.vm.ProtectReferences(std::array{info});
+        CHECK(f.linker.Class(f.model.ObjectClass(info)).is_boot_dex);
+        CHECK_FALSE(f.On(info, "isConnected", "()Z").AsInt());
+        CHECK_FALSE(f.On(info, "isConnectedOrConnecting", "()Z").AsInt());
+        CHECK_FALSE(f.On(info, "isAvailable", "()Z").AsInt());
+        CHECK(f.On(info, "getType", "()I").AsInt() == 1);
+        CHECK(f.On(info, "getSubtype", "()I").AsInt() == 0);
+        CHECK(f.vm.StringUtf8(f.On(info, "getTypeName", "()Ljava/lang/String;").ref) == "WIFI");
+        const auto state = f.On(info, "getState", "()Landroid/net/NetworkInfo$State;").ref;
+        CHECK(f.vm.StringUtf8(f.On(state, "name", "()Ljava/lang/String;").ref) == "DISCONNECTED");
+        CHECK(f.On(info, "getReason", "()Ljava/lang/String;").ref == VmObjectRef{});
+        const auto copy = f.New("Landroid/net/NetworkInfo;", "(Landroid/net/NetworkInfo;)V", {VmValue::Ref(info)});
+        const auto copy_root = f.vm.ProtectReferences(std::array{copy});
+        CHECK(copy != info); CHECK_FALSE(f.On(copy, "isConnected", "()Z").AsInt());
+        const auto connected = f.Static("Landroid/net/NetworkInfo$DetailedState;", "valueOf",
+            "(Ljava/lang/String;)Landroid/net/NetworkInfo$DetailedState;",
+            {VmValue::Ref(f.vm.NewStringUtf8("CONNECTED"))}).ref;
+        f.On(copy, "setDetailedState", "(Landroid/net/NetworkInfo$DetailedState;Ljava/lang/String;Ljava/lang/String;)V",
+            {VmValue::Ref(connected), VmValue::Ref(VmObjectRef{}), VmValue::Ref(VmObjectRef{})});
+        CHECK(f.On(copy, "isConnected", "()Z").AsInt() == 1);
+        CHECK_FALSE(f.On(info, "isConnected", "()Z").AsInt());
+        const auto fresh = query(1);
+        REQUIRE_FALSE(fresh.exception.IsValid()); CHECK(fresh.value.ref != info);
+        const auto fresh_root = f.vm.ProtectReferences(std::array{fresh.value.ref});
+        CHECK_FALSE(f.On(fresh.value.ref, "isConnected", "()Z").AsInt());
+        const auto parcel = f.Static("Landroid/os/Parcel;", "obtain", "()Landroid/os/Parcel;").ref;
+        const auto parcel_root = f.vm.ProtectReferences(std::array{parcel});
+        f.On(info, "writeToParcel", "(Landroid/os/Parcel;I)V", {VmValue::Ref(parcel), VmValue::Int(0)});
+        f.On(parcel, "setDataPosition", "(I)V", {VmValue::Int(0)});
+        const auto info_type = f.model.ObjectClass(info);
+        const auto creator_field = f.linker.FindFieldRecursive(info_type, "CREATOR", "Landroid/os/Parcelable$Creator;");
+        REQUIRE(creator_field.has_value());
+        const auto creator = VmObjectRef{f.linker.Class(info_type).static_storage[f.linker.Field(*creator_field).slot]};
+        const auto roundtrip = f.On(creator, "createFromParcel", "(Landroid/os/Parcel;)Ljava/lang/Object;", {VmValue::Ref(parcel)}).ref;
+        const auto roundtrip_root = f.vm.ProtectReferences(std::array{roundtrip});
+        CHECK_FALSE(f.On(roundtrip, "isConnected", "()Z").AsInt());
+        CHECK(f.On(roundtrip, "getState", "()Landroid/net/NetworkInfo$State;").ref == state);
+        CHECK(f.On(roundtrip, "getType", "()I").AsInt() == 1);
+        f.On(parcel, "recycle", "()V");
+        static_cast<void>(f.vm.CollectGarbage()); CHECK(f.vm.MarkReachable().IsMarked(info));
+        CHECK_FALSE(f.On(manager, "getActiveNetworkInfo", "()Landroid/net/NetworkInfo;").ref.IsValid());
+        const auto wifi = f.New("Landroid/net/wifi/WifiManager;");
+        const auto wifi_root = f.vm.ProtectReferences(std::array{wifi});
+        CHECK_FALSE(f.On(wifi, "isWifiEnabled", "()Z").AsInt());
+        CHECK(f.On(wifi, "getWifiState", "()I").AsInt() == 1);
+        CHECK_FALSE(f.On(wifi, "getConnectionInfo", "()Landroid/net/wifi/WifiInfo;").ref.IsValid());
+        CHECK_THROWS_AS(static_cast<void>(f.vm.Network().Resolve("offline.test")), NetworkRuntimeError);
+        f.context->offline_connectivity->wifi_type_supported = false;
+        const auto unsupported = query(1);
+        REQUIRE_FALSE(unsupported.exception.IsValid()); CHECK_FALSE(unsupported.value.ref.IsValid());
+        f.context->offline_connectivity.reset();
+        fail(query(1), "Ljava/lang/UnsupportedOperationException;");
+        fail(f.OnOutcome(wifi, "getWifiState", "()I"), "Ljava/lang/UnsupportedOperationException;");
+        f.context->offline_connectivity = AndroidOfflineConnectivity{};
+        f.context->network_policy.enabled = true;
+        fail(query(1), "Ljava/lang/UnsupportedOperationException;");
+        f.context->network_policy.enabled = false;
+        NetworkPolicy online; online.enabled = true;
+        f.vm.Network().Configure(std::move(online), nullptr);
+        fail(query(1), "Ljava/lang/UnsupportedOperationException;");
+        f.vm.Network().Configure({}, nullptr);
+        f.context->granted_permissions.clear();
+        fail(query(1), "Ljava/lang/SecurityException;");
+        fail(f.OnOutcome(manager, "getActiveNetworkInfo", "()Landroid/net/NetworkInfo;"), "Ljava/lang/SecurityException;");
+        const auto hits = f.ledger.Unimplemented();
+        REQUIRE(hits.size() == 1); CHECK(hits.front().id == "dexvm.connectivity_offline");
+    }
+}
+
 TEST_CASE("DVM-98 Android platform enums share generated enum behavior") {
     AndroidValueVm fixture;
     const std::vector<std::pair<std::string, std::vector<std::string>>> specs{
@@ -2884,7 +2980,7 @@ TEST_CASE("DVM-98 Android platform enums share generated enum behavior") {
           "DST_IN", "SRC_OUT", "DST_OUT", "SRC_ATOP", "DST_ATOP",
           "XOR", "DARKEN", "LIGHTEN", "MULTIPLY", "SCREEN", "ADD",
           "OVERLAY"}},
-        {"Landroid/net/NetworkInfo$State;", {"CONNECTED"}},
+        {"Landroid/net/NetworkInfo$State;", {"CONNECTING", "CONNECTED", "SUSPENDED", "DISCONNECTING", "DISCONNECTED", "UNKNOWN"}},
         {"Landroid/os/AsyncTask$Status;",
          {"PENDING", "RUNNING", "FINISHED"}},
         {"Landroid/widget/ImageView$ScaleType;",

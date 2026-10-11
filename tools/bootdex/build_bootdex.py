@@ -84,6 +84,7 @@ FRAMEWORK_JAVA_NAMES = (
     "android/hardware/LocalSensorManager.java",
     "android/hardware/Sensor.java",
     "android/hardware/SensorManager.java",
+    "android/net/ConnectivityManager.java",
     "android/net/wifi/WifiManager.java",
     "android/nfc/NfcAdapter.java",
     "android/widget/VideoView.java",

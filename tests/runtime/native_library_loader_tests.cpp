@@ -2676,6 +2676,65 @@ TEST_CASE("DVM-240 ARM JNI installed applications expose the session APK and rej
     }
 }
 
+TEST_CASE("DVM-245 ARM JNI content append and lookup preserve the shared hierarchy") {
+    using namespace ogplay;
+    using namespace runtime;
+    using namespace runtime::dexvm;
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        ApplicationProcess f(backend);
+        auto& bridge = *f.bridge; auto& vm = bridge.Vm();
+        auto& process = f.session->Process(); auto& env = f.session->Environment();
+        const auto memory = process.GuestMemoryAccess(); const auto scratch = memory.allocate(512);
+        env.PushLocalFrame(1, 32);
+        const auto activity = vm.NewIntrinsicInstance("Landroid/app/Activity;");
+        const auto activity_ref = bridge.PublishLocal(activity);
+        const auto klass = bridge.PublishLocal(vm.Model().ClassObject(vm.Model().ObjectClass(activity)));
+        const auto first = vm.NewIntrinsicInstance("Landroid/view/View;");
+        const auto first_ref = bridge.PublishLocal(first);
+        const auto second = vm.NewIntrinsicInstance("Landroid/view/View;");
+        const auto second_ref = bridge.PublishLocal(second);
+        const auto invoke = [&](const char* name, std::array<std::uint32_t, 4> args) {
+            return process.Invoke({memory::GuestAddress{EnvironmentThunk(name)}, args, {}}).return_value;
+        };
+        const auto method = [&](const char* name, const char* descriptor) {
+            std::array<std::byte, 256> data{};
+            std::memcpy(data.data(), name, std::strlen(name) + 1);
+            std::memcpy(data.data() + 64, descriptor, std::strlen(descriptor) + 1);
+            memory.write(scratch, data);
+            const auto id = invoke("GetMethodID", {process.GuestEnvironment().Value(), klass.Value(), scratch.Value(), scratch.Add(64).Value()});
+            REQUIRE(id != 0); REQUIRE_FALSE(env.ExceptionCheck(1)); return id;
+        };
+        const auto arguments = [&](std::uint32_t a, std::uint32_t b = 0) {
+            std::array<std::byte, 16> data{};
+            for (std::size_t i = 0; i < 4; ++i) {
+                data[i] = static_cast<std::byte>(a >> (8 * i));
+                data[8 + i] = static_cast<std::byte>(b >> (8 * i));
+            }
+            memory.write(scratch.Add(256), data);
+        };
+        const auto setter = method("setContentView", "(Landroid/view/View;)V");
+        arguments(first_ref.Value());
+        static_cast<void>(invoke("CallVoidMethodA", {process.GuestEnvironment().Value(), activity_ref.Value(), setter, scratch.Add(256).Value()}));
+        REQUIRE_FALSE(env.ExceptionCheck(1));
+        const auto append = method("addContentView", "(Landroid/view/View;Landroid/view/ViewGroup$LayoutParams;)V");
+        arguments(second_ref.Value());
+        static_cast<void>(invoke("CallVoidMethodA", {process.GuestEnvironment().Value(), activity_ref.Value(), append, scratch.Add(256).Value()}));
+        REQUIRE_FALSE(env.ExceptionCheck(1));
+        const auto find = method("findViewById", "(I)Landroid/view/View;");
+        arguments(0x01020002);
+        const auto result = JniReference{invoke("CallObjectMethodA", {process.GuestEnvironment().Value(), activity_ref.Value(), find, scratch.Add(256).Value()})};
+        REQUIRE_FALSE(env.ExceptionCheck(1)); REQUIRE_FALSE(result.IsNull());
+        const auto parent = bridge.FromReference(result);
+        const auto node = *FindViewUiNode(*f.context, parent.Value());
+        static_cast<void>(vm.CollectGarbage("window-content-jni"));
+        CHECK(f.context->ui_tree.Get(node)->children.size() == 2);
+        CHECK(f.context->ui_tree.Get(*FindViewUiNode(*f.context, first.Value()))->parent == node);
+        CHECK(f.context->ui_tree.Get(*FindViewUiNode(*f.context, second.Value()))->parent == node);
+        CHECK(f.context->content_view == first);
+        static_cast<void>(env.PopLocalFrame(1)); memory.release(scratch, 512);
+    }
+}
+
 TEST_CASE("DVM-244 ARM JNI resource bitmap decoding publishes shared pixel storage") {
     using namespace ogplay;
     using namespace runtime;
@@ -3431,6 +3490,24 @@ TEST_CASE("DVM-235 live Surface window is hidden and restored without losing reg
         REQUIRE_FALSE(f.context->active_surface_holders.empty());
         const auto before = lifecycle.State();
         CHECK(source_focus_gains == 1);
+        const auto original_surface = call(holder, "getSurface", "()Landroid/view/Surface;").ref;
+        const auto overlay = vm.NewIntrinsicInstance("Landroid/view/View;");
+        const auto overlay_root = vm.ProtectReferences(std::array{overlay});
+        const auto overlay_init = linker.FindDirectMethod(vm.Model().ObjectClass(overlay), "<init>", "(Landroid/content/Context;)V");
+        REQUIRE(overlay_init.has_value());
+        REQUIRE_FALSE(vm.Call(*overlay_init, std::array{VmValue::Ref(overlay), VmValue::Ref(caller)}).exception.IsValid());
+        const auto overlay_params = vm.NewIntrinsicInstance("Landroid/view/ViewGroup$LayoutParams;");
+        const auto params_root = vm.ProtectReferences(std::array{overlay_params});
+        const auto params_init = linker.FindDirectMethod(vm.Model().ObjectClass(overlay_params), "<init>", "(II)V");
+        REQUIRE(params_init.has_value());
+        REQUIRE_FALSE(vm.Call(*params_init, std::array{VmValue::Ref(overlay_params), VmValue::Int(-1), VmValue::Int(-1)}).exception.IsValid());
+        call(caller, "addContentView", "(Landroid/view/View;Landroid/view/ViewGroup$LayoutParams;)V", {VmValue::Ref(overlay), VmValue::Ref(overlay_params)});
+        static_cast<void>(lifecycle.StepFrame());
+        CHECK(f.context->holder_surfaces.at(holder.Value()) == original_surface);
+        CHECK(source_focus_gains == 1);
+        const auto container = call(caller, "findViewById", "(I)Landroid/view/View;", {VmValue::Int(0x01020002)}).ref;
+        CHECK(call(surface, "getParent", "()Landroid/view/ViewParent;").ref == container);
+        CHECK(call(overlay, "getParent", "()Landroid/view/ViewParent;").ref == container);
         const auto intent = vm.NewIntrinsicInstance("Landroid/content/Intent;");
         const auto init_intent = linker.FindDirectMethod(vm.Model().ObjectClass(intent), "<init>", "()V");
         REQUIRE(init_intent.has_value());
@@ -3442,12 +3519,13 @@ TEST_CASE("DVM-235 live Surface window is hidden and restored without losing reg
         REQUIRE(f.context->activity_commands.size() == 1);
         static_cast<void>(lifecycle.StepFrame());
         CHECK(lifecycle.State().state == session::LifecycleRunState::running);
-        CHECK(lifecycle.State().frame == before.frame + 1);
+        CHECK(lifecycle.State().frame == before.frame + 2);
         CHECK(f.context->activity != caller);
         const auto node = runtime::FindViewUiNode(*f.context, surface.Value());
         REQUIRE(node.has_value());
         CHECK(f.context->ui_tree.IsAttached(*node));
         CHECK_FALSE(f.context->ui_tree.IsVisible(*node));
+        CHECK_FALSE(f.context->ui_tree.IsVisible(*runtime::FindViewUiNode(*f.context, overlay.Value())));
         CHECK(f.context->surface_holders.contains(surface.Value()));
         CHECK(f.context->activity_stack.size() == 2);
         CHECK(source_focus_gains == 1);
@@ -3459,6 +3537,8 @@ TEST_CASE("DVM-235 live Surface window is hidden and restored without losing reg
         CHECK(f.context->activity == caller);
         CHECK(f.context->content_view == surface);
         CHECK(f.context->ui_tree.IsVisible(*node));
+        CHECK(f.context->ui_tree.IsVisible(*runtime::FindViewUiNode(*f.context, overlay.Value())));
+        CHECK(call(overlay, "getParent", "()Landroid/view/ViewParent;").ref == container);
         CHECK_FALSE(f.context->active_surface_holders.empty());
         CHECK(source_focus_gains == 2);
         static_cast<void>(f.app->Stop());
@@ -3488,6 +3568,44 @@ TEST_CASE("DVM-223 onStart launch and onCreate finish return before caller resum
     }
 }
 
+TEST_CASE("DVM-245 lifecycle traverses direct content children without a primary View projection") {
+    using namespace ogplay;
+    using namespace runtime::dexvm;
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        OrchestratedApp f("fixture.DelayedContentActivity", true, false, {}, {}, true, backend);
+        f.app->StartApplication();
+        REQUIRE(f.app->StartLauncherActivity().state == session::LifecycleRunState::running);
+        auto& vm = f.app->DexVm().Vm(); auto& linker = vm.Linker();
+        const auto call = [&](VmObjectRef object, const char* name, const char* signature, std::vector<VmValue> args = {}) {
+            const auto type = vm.Model().ObjectClass(object);
+            const auto index = linker.FindVtableIndex(type, name, signature);
+            REQUIRE(index.has_value()); args.insert(args.begin(), VmValue::Ref(object));
+            const auto result = vm.Call(linker.Class(type).vtable[*index], args);
+            REQUIRE_MESSAGE(!result.exception.IsValid(), result.exception_message); return result.value;
+        };
+        REQUIRE_FALSE(f.context->content_view.IsValid());
+        const auto container = call(f.context->activity, "findViewById", "(I)Landroid/view/View;", {VmValue::Int(0x01020002)}).ref;
+        const auto surface = vm.NewIntrinsicInstance("Landroid/view/SurfaceView;");
+        const auto root = vm.ProtectReferences(std::array{surface});
+        const auto constructor = linker.FindDirectMethod(vm.Model().ObjectClass(surface), "<init>", "(Landroid/content/Context;)V");
+        REQUIRE(constructor.has_value());
+        REQUIRE_FALSE(vm.Call(*constructor, std::array{VmValue::Ref(surface), VmValue::Ref(f.context->activity)}).exception.IsValid());
+        const auto holder = call(surface, "getHolder", "()Landroid/view/SurfaceHolder;").ref;
+        call(container, "addView", "(Landroid/view/View;II)V", {VmValue::Ref(surface), VmValue::Int(64), VmValue::Int(36)});
+        REQUIRE_FALSE(f.context->content_view.IsValid());
+        const auto backing = call(holder, "getSurface", "()Landroid/view/Surface;").ref;
+        static_cast<void>(f.app->ActivityLifecycle().StepFrame());
+        CHECK(f.context->active_surface_holders.contains(holder.Value()));
+        CHECK(call(holder, "getSurface", "()Landroid/view/Surface;").ref == backing);
+        CHECK(call(surface, "getParent", "()Landroid/view/ViewParent;").ref == container);
+        call(container, "removeView", "(Landroid/view/View;)V", {VmValue::Ref(surface)});
+        CHECK_FALSE(f.context->active_surface_holders.contains(holder.Value()));
+        CHECK_FALSE(f.context->content_view.IsValid());
+        static_cast<void>(f.app->Stop());
+        CHECK(f.app->State() == session::AndroidAppProcessState::stopped);
+    }
+}
+
 TEST_CASE("DVM-219 empty Activity pumps delayed content handoff and finish") {
     using namespace ogplay;
     using runtime::dexvm::InterpreterBackend;
@@ -3510,8 +3628,8 @@ TEST_CASE("DVM-219 empty Activity pumps delayed content handoff and finish") {
             CHECK(fixture.CallStaticInt("Lfixture/LateSurfaceView;", "getEvents") == 123);
             static_cast<void>(lifecycle.StepFrame());
             CHECK(fixture.CallStaticInt("Lfixture/LateSurfaceView;", "getEvents") == 123);
-            // Reinstalling the same object after retirement creates a new
-            // UiTree node and must not reuse its old initialization identity.
+            // Removing/reinstalling the same View retains its geometry and
+            // Java identity; an unchanged size does not repeat onSizeChanged.
             auto& vm = fixture.app->DexVm().Vm();
             const auto original = fixture.context->content_view;
             const auto roots = vm.ProtectReferences(std::array{original});
@@ -3534,9 +3652,9 @@ TEST_CASE("DVM-219 empty Activity pumps delayed content handoff and finish") {
             }
             CHECK(fixture.CallStaticInt("Lfixture/LateSurfaceView;", "getEvents") == 1234);
             static_cast<void>(lifecycle.StepFrame());
-            CHECK(fixture.CallStaticInt("Lfixture/LateSurfaceView;", "getEvents") == 123);
+            CHECK(fixture.CallStaticInt("Lfixture/LateSurfaceView;", "getEvents") == 123423);
             static_cast<void>(fixture.app->Stop());
-            CHECK(fixture.CallStaticInt("Lfixture/LateSurfaceView;", "getEvents") == 1234);
+            CHECK(fixture.CallStaticInt("Lfixture/LateSurfaceView;", "getEvents") == 1234234);
         }
         SUBCASE("delayed handoff may enter another empty Activity") {
             OrchestratedApp fixture("fixture.DelayedSwitchActivity", true, false,
@@ -3563,7 +3681,8 @@ TEST_CASE("DVM-219 empty Activity pumps delayed content handoff and finish") {
             CHECK(runtime::SessionExitRequested(*fixture.context));
             CHECK(fixture.CallStaticInt("Lfixture/DelayedContentActivity;", "getResumed") == 0);
             static_cast<void>(fixture.app->Stop());
-            CHECK(fixture.CallStaticInt("Lfixture/DelayedContentActivity;", "getResumed") == 1000);
+            // DVM-236: process Stop does not synthesize Activity.onDestroy.
+            CHECK(fixture.CallStaticInt("Lfixture/DelayedContentActivity;", "getResumed") == 0);
         }
     }
 }

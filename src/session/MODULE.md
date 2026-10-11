@@ -121,6 +121,10 @@ Dex activity 每帧在 guest 回调前泵送主 Looper，到帧尾只通过
   恢复原实例时 restart/start、结果虚派后 resume；栈/命令/结果由 session GC roots 保活。
   单任务/单前台窗口、standard 和非栈顶 singleTop 新实例；每实例内容在唯一 UiTree
   的窗口 root 下保持附着，后台以独立 window visibility 隐藏，Surface 按子树派发。
+  稳定内容容器下的全部兄弟子树共同参与 renderer/Surface 遍历、隐藏与恢复；
+  content_view/record.content 仅作首个内容 View 投影。内容代次在尺寸回调后核对，
+  重入变更延后新树交付。每 live View 缓存已交付的窗口焦点，追加/布局不重复通知
+  原子树，detach/退役清理缓存；窗口焦点事实仍由 lifecycle 唯一持有。
   holder/callback 保留，恢复同一实例；native window callback 与播放中的视频调用方
   返回仍受限。已有 startActivity+finish 可退役旧渲染实例。
   intrinsic renderer 按 View 持有稳定 runtime/worker，后台回调不读前台 renderer 投影。

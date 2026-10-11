@@ -353,6 +353,11 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
         }
         const auto roots = bindings_.bridge->Vm().ProtectReferences(attached);
         for (const auto view : attached) {
+            const auto node = runtime::FindViewUiNode(context, view.Value());
+            if (!node || !context.ui_tree.IsVisible(*node)) continue;
+            const auto delivered = context.ui_notified_window_focus.find(*node);
+            if (delivered != context.ui_notified_window_focus.end() && delivered->second == has_focus) continue;
+            context.ui_notified_window_focus[*node] = has_focus;
             CallOnView(view, "onWindowFocusChanged", "(Z)V",
                        {dx::VmValue::Int(has_focus ? 1 : 0)});
         }
@@ -819,7 +824,8 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
                        bindings_.context->active_surface_holders.empty() &&
                        runtime::AnyVideoPlaying(*bindings_.context) == false &&
                        bindings_.context->holder_canvases.empty() &&
-                       bindings_.context->content_view.IsValid() &&
+                       !bindings_.context->ui_tree.Get(
+                           runtime::ActivityContentRoot(*bindings_.context))->children.empty() &&
                        bindings_.context->session != nullptr &&
                        bindings_.context->ui_tree.Get(
                            bindings_.context->ui_tree.Root())->draw_dirty) {
@@ -1060,11 +1066,6 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
         activity_started_ = false;
         activity_resumed_ = false;
         SetActivityWindowVisible(record.object, true);
-        if (record.content.IsValid()) {
-            const auto node = runtime::FindViewUiNode(context, record.content.Value());
-            if (node && !context.ui_tree.Get(*node)->parent)
-                context.ui_tree.Attach(context.ui_tree.Root(), *node);
-        }
         if (record.focused_node && context.ui_tree.Get(*record.focused_node))
             static_cast<void>(context.ui_tree.RequestFocus(*record.focused_node, false));
         DeliverActivityResults();
@@ -1097,17 +1098,10 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
             }
             if (context.window_surface_callback.IsValid()) {
                 if (const auto error = runtime::RetireSurfaceHolderGeneration(vm, context)) Fail(*error);
-            } else if (context.content_view.IsValid()) {
-                const auto node = runtime::FindViewUiNode(context, context.content_view.Value());
-                if (node) {
-                    if (const auto error = runtime::DetachSurfaceViewSubtree(vm, context, *node)) Fail(*error);
-                }
-            }
+            } else if (const auto error = runtime::DetachSurfaceViewSubtree(
+                vm, context, runtime::ActivityContentRoot(context))) Fail(*error);
             StopRendererThread();
-            if (context.content_view.IsValid()) {
-                const auto node = runtime::FindViewUiNode(context, context.content_view.Value());
-                if (node) context.ui_tree.SetWindowVisible(*node, false);
-            }
+            context.ui_tree.SetWindowVisible(runtime::ActivityContentRoot(context), false);
             context.content_view = dx::VmObjectRef{};
             context.focused_edit_text = dx::VmObjectRef{};
             context.renderer = dx::VmObjectRef{}; context.egl_context_factory = dx::VmObjectRef{}; context.egl_config_chooser = dx::VmObjectRef{};
@@ -1283,8 +1277,8 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
         const dx::VmExecutionLockScope execution(bindings_.bridge->Vm().ExecutionLock());
         auto& context = *bindings_.context;
         const auto content = context.content_view;
-        const auto node = content.IsValid()
-            ? runtime::FindViewUiNode(context, content.Value()) : std::nullopt;
+        const auto node = std::optional{runtime::ActivityContentRoot(context)};
+        const auto content_revision = context.ui_content_revision;
         std::shared_ptr<GlSurfaceRuntime> selected;
         if (node) {
             for (const auto& [_, state] : context.gl_surface_runtimes) {
@@ -1300,18 +1294,20 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
         context.renderer = selected ? selected->renderer : dx::VmObjectRef{};
         context.gl_surface_renderer_view = selected ? selected->view : dx::VmObjectRef{};
         if (selected) { selected->owner = context.activity; ProjectRenderer(context, *selected); }
-        const bool content_changed=content!=sized_content_view_ || node!=sized_content_node_;
+        const bool content_changed=content!=sized_content_view_ || node!=sized_content_node_ ||
+            content_revision != sized_content_revision_;
+        sized_content_revision_ = content_revision;
         sized_content_view_ = content;
         sized_content_node_ = node;
-        if (!content.IsValid()) return;
+        if (context.ui_tree.Get(*node)->children.empty()) return;
         const auto roots = bindings_.bridge->Vm().ProtectReferences(std::array{content});
         const bool layout_dirty = context.ui_tree.Get(context.ui_tree.Root())->layout_dirty;
         const bool layout_changed=runtime::DispatchAndroidViewSizes(bindings_.bridge->Vm(),context);
         if (!content_changed && !layout_changed && !layout_dirty) return;
         // A virtual size callback may replace its own content. Reconcile the
         // replacement next frame; never attach the retired subtree.
-        if (context.content_view != content ||
-            runtime::FindViewUiNode(context, content.Value()) != node) return;
+        if (context.content_view != content || context.ui_content_revision != content_revision ||
+            !context.ui_tree.Get(*node)) return;
         if (!context.managed_host_surface_open) return;
         if (node.has_value()) {
             const auto error = runtime::AttachSurfaceViewSubtree(

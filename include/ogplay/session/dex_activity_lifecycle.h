@@ -214,6 +214,7 @@ private:
     bool initial_focus_pending_{};
     // Identity only: the current content is rooted by the Android context.
     runtime::dexvm::VmObjectRef sized_content_view_;
+    std::uint64_t sized_content_revision_{};
     std::optional<runtime::ui::UiNodeId> sized_content_node_;
     bool realtime_video_clock_{};
     std::uint64_t previous_step_ns_{};

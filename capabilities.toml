@@ -55,6 +55,11 @@ status = "complete"
 test = "tests/dexvm/widget_click_tests.cpp: 29 focused assertions; PvZ non-survey reached-fault"
 note = "LUI-4 以固定 UiWidgetDescriptor registry 从 generic typed AXML 构造 guest object + UiTree；普通 root/merge attach synthetic content root，非法 parent/root、nested merge、unknown structural tag/attr 事务失败且不发布部分 tree。API 19 XML style 在显式属性前应用：基础 TextAppearance reference 与 ProgressBar progressBarStyleHorizontal theme attr 属于已登记投影，未知 style 明确失败；ProgressBar 状态与绘制未因此扩张。"
 
+[dexvm.window_content]
+status = "partial"
+test = "tests/dexvm/widget_click_tests.cpp: DVM-245; tests/runtime/native_library_loader_tests.cpp: DVM-245, DVM-223, DVM-235, DVM-219"
+note = "DVM-245/ADR-0124 每 Window 的稳定 FrameLayout 内容容器与 android.R.id.content；Activity/Window setContentView 重载和 addContentView 共用替换/追加链、原参数与真实 parent，查询隔离窗口。XML 可指定父容器并局部失败清理；onContentChanged 虚派/异常/重入代次、GC、全部内容子树的 Surface/renderer/窗口往返及焦点通知去重受检。content_view 仅作首内容 View 投影。macOS 双解释器/ARM JNI 定向验证；背景内容修改记账拒绝，完整 Decor/主题/ActionBar、透明窗口、跨平台/title gate 未验收。"
+
 [runtime.ui_frame_layout]
 status = "complete"
 test = "tests/runtime/ui_tree_tests.cpp"

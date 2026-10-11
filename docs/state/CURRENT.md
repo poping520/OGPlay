@@ -70,13 +70,16 @@
   SQLite 的 /data 查询；6 用例/192 断言及 BootDex/载荷校验通过，原 APK 越过空间查询。
   [DVM-244](../tasks/dexvm/DVM-244.md) 接通有界资源位图解码与独立 BitmapPixels；
   5 用例/486 断言及 BootDex/载荷校验通过，原 APK 已获得非空启动 Bitmap。
-  **当前首错**：`ImageView.setImageBitmap(Bitmap)` 缺方法，PostStartup dex_pc=221；
+  [DVM-229](../tasks/dexvm/DVM-229.md) 补齐 setImageBitmap 的 API19 Drawable 虚派链；
+  双解释器/ARM JNI 与资源 Drawable 回归 3 用例/410 断言通过，原 APK 已越过设置启动图。
+  **当前首错**：`Activity.addContentView(View,LayoutParams)` 缺方法，PostStartup dex_pc=398；
   尚未到首帧。
   崩溃报告另触发 LocaleData 初始化失败。证据 `.local/manifest-duplicate-fix-20261011/`、
   `.local/ndk-assets-fix-20261011/`、`.local/gles-mapbuffer-fix-20261011/`、
   `.local/debug-memory-fix-20261011/`、`.local/installed-applications-fix-20261011/`、
   `.local/connectivity-fix-20261011/`、`.local/alloc-object-fix-20261011/`、
-  `.local/statfs-fix-20261011/`、`.local/bitmap-resource-fix-20261011/`；取证进程已退出。
+  `.local/statfs-fix-20261011/`、`.local/bitmap-resource-fix-20261011/`、
+  `.local/image-bitmap-fix-20261011/`；取证进程已退出。
 
 - **Angry Birds 2.3.0**：无 Profile、空沙盒运行 5000 呈现帧，滚动条方法解析错消失，
   未触发新致命首错；绘制与完整兼容未验收。见 [DVM-186](../tasks/dexvm/DVM-186.md)。

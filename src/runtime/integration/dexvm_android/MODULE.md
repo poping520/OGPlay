@@ -166,6 +166,8 @@ guest worker 静止后，`ReleaseAndroidMediaResources` 退役 decoder、媒体�
   的 BitmapDrawable 或 ColorDrawable；无效 ID/缺失资源抛 NotFoundException。
   XML Drawable 与资源 NinePatch 对象记账抛 UOE；系统 Drawable 不回退应用 APK。
   ImageView.setImageDrawable/getDrawable 保持对象身份，View→Drawable→Bitmap 为 GC 强边；
+  setImageBitmap 按 API19 每次新建 BitmapDrawable（包括 null Bitmap），通过 View Context
+  虚派 getResources，再虚派 setImageDrawable；临时对象保活，委托异常保持 guest 身份。
   每实例 alpha 独立，空 BitmapDrawable 不绘制，替换/清空解绑旧 callback。
   BitmapPixels 变更在布局/呈现前投影到不可变 UiBitmap；原生锁期间读取当前像素，
   不复制一份可变像素权威状态。任意自定义 Drawable 绘制仍明确拒绝。

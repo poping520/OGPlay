@@ -36,6 +36,9 @@ switch/threaded 解释、异常、线程/monitor、反射及 `java.*` core intri
 
 ### 对象、GC、执行
 
+- AllocateJniObject 使用当前调用线程 context，按 API19 拒绝不可实例化类，运行类初始化
+  与分配安全点后创建真实继承布局的零值实例，不执行实例构造器或自动创建 native peer。
+  clinit/堆预算/宿主分配错误返回 Java throwable；成功和异常均交给 owner 发布引用。
 - `JavaObjectModel` 提供 session 级非移动句柄（0=null）；VM 实例/Object[] 自有存储，String/
   primitive array 复用 JNI store。clone 生成新 identity 并浅拷贝；host-backed 对象必须显式声明
   clone/destructor 策略。

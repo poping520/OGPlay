@@ -150,6 +150,10 @@ public:
         JniObjectIdentity object) const;
     void SetMonitorHooks(JniMonitorHooks hooks);
     void SetReflectionHooks(JniReflectionHooks hooks);
+    // VM-owned allocation publishes a local reference in the calling thread.
+    using ObjectAllocationHook = std::function<JniReference(std::uint64_t, JniReference)>;
+    void SetObjectAllocationHook(ObjectAllocationHook hook);
+    [[nodiscard]] JniReference AllocObject(std::uint64_t thread, JniReference java_class);
     [[nodiscard]] JniMethodId FromReflectedMethod(std::uint64_t thread, JniReference object);
     [[nodiscard]] JniFieldId FromReflectedField(std::uint64_t thread, JniReference object);
     [[nodiscard]] JniReference ToReflectedMethod(std::uint64_t thread, JniReference owner,
@@ -162,6 +166,8 @@ private:
 
     mutable std::mutex reflection_hooks_mutex_;
     JniReflectionHooks reflection_hooks_;
+    mutable std::mutex object_allocation_mutex_;
+    ObjectAllocationHook object_allocation_hook_;
     JniReferenceTable references_;
     JniExceptionState exceptions_;
     JniMonitorTable monitors_;

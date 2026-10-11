@@ -16,6 +16,9 @@ Bionic、syscall、execution 或 integration。
 
 ## 不变量
 
+- AllocObject 通过 owner 安装的分配回调进入共享对象模型；引用、线程与 pending gate
+  在本层校验。回调在独立锁外执行、发布当前线程 local reference；无后端明确失败，
+  owner 在调用静止后撤销。本层不复制类布局或执行构造器。
 - 233 个 JNIEnv 槽与 8 个 JavaVM 槽的索引稳定。
 - 未绑定槽记账并 trap；引用类别、线程作用域和 pending exception gate 必须严格检查。
 - 按 API19 CheckJNI，pending exception 下允许 Push/PopLocalFrame，原异常身份不变；

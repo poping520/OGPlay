@@ -1,4 +1,57 @@
 # APS-6 process Application startup fixtures.
+# DVM-242 raw JNI allocation, constructor bypass and inherited storage.
+.class public Lfixture/AllocParent;
+.super Ljava/lang/Object;
+.field public inherited:J
+.field public parentRef:Ljava/lang/Object;
+.method public constructor <init>()V
+.registers 3
+    invoke-direct {v2}, Ljava/lang/Object;-><init>()V
+    const-wide/16 v0, 13
+    iput-wide v0, v2, Lfixture/AllocParent;->inherited:J
+    return-void
+.end method
+
+.class public Lfixture/AllocChild;
+.super Lfixture/AllocParent;
+.field static public initialized:I
+.field static public constructed:I
+.field public number:I
+.method static constructor <clinit>()V
+.registers 1
+    const/4 v0, 1
+    sput v0, Lfixture/AllocChild;->initialized:I
+    return-void
+.end method
+.method public constructor <init>()V
+.registers 2
+    invoke-direct {v1}, Lfixture/AllocParent;-><init>()V
+    const/4 v0, 7
+    iput v0, v1, Lfixture/AllocChild;->number:I
+    sput v0, Lfixture/AllocChild;->constructed:I
+    return-void
+.end method
+.method public numberValue()I
+.registers 1
+    iget v0, v0, Lfixture/AllocChild;->number:I
+    return v0
+.end method
+
+.class public Lfixture/AllocNoConstructor;
+.super Ljava/lang/Object;
+.field public value:I
+
+.class public abstract Lfixture/AllocAbstract;
+.super Ljava/lang/Object;
+
+.class public Lfixture/AllocFailInit;
+.super Ljava/lang/Object;
+.method static constructor <clinit>()V
+.registers 1
+    new-instance v0, Ljava/lang/IllegalStateException;
+    invoke-direct {v0}, Ljava/lang/IllegalStateException;-><init>()V
+    throw v0
+.end method
 .class public Lfixture/CustomApplication;
 .super Landroid/app/Application;
 

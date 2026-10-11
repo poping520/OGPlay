@@ -630,6 +630,34 @@ public:
     return false;
   }
 
+    [[nodiscard]] JniReference AllocJniObject(std::uint64_t thread, JniReference class_ref) {
+        const auto identity = session->Environment().ResolveObjectForHle(thread, class_ref);
+        if (!identity) throw DexVmBridgeError("AllocObject requires a class reference");
+        const auto type = identity->domain == JniObjectDomain::dex_vm
+            ? std::optional{DexClassIdentity(*identity)} : ClassForJniIdentity(*identity);
+        if (!type) throw DexVmBridgeError("AllocObject reference is not a VM class");
+        JniReference reference;
+        vm->RunInExecutionContext(ContextForJniThread(thread), [&] {
+            const auto outcome = vm->AllocateJniObject(*type);
+            const auto root = vm->ProtectReferences(std::array{outcome.exception, outcome.value.ref});
+            if (outcome.exception.IsValid()) {
+                session->Environment().Throw(thread, PublishLocal(outcome.exception, thread));
+                return;
+            }
+            try { reference = PublishLocal(outcome.value.ref, thread); }
+            catch (...) {
+                // The zeroed object owns no native peers. Unpublished VM
+                // storage is left unrooted for the ordinary collector.
+                try { session->Objects().Forget(model->ToIdentity(outcome.value.ref)); }
+                catch (const JniGuestBindingError&) {
+                    // Registration itself may have failed before publication.
+                }
+                throw;
+            }
+        });
+        return reference;
+    }
+
   [[nodiscard]] JniValue ReadFieldSlots(
       const dx::LinkedField& field, const std::span<const dx::Slot> slots,
       const std::uint64_t thread) {
@@ -1785,6 +1813,11 @@ DexVmGuestBridge::DexVmGuestBridge(
         };
     }
 
+    session.Environment().SetObjectAllocationHook(
+        [bridge_state](std::uint64_t thread, JniReference java_class) {
+            const dx::VmExecutionLockScope guard(bridge_state->vm->ExecutionLock());
+            return bridge_state->AllocJniObject(thread, java_class);
+        });
 }
 
 std::unique_ptr<dx::NativeCleanupScope> DexVmGuestBridge::EnterResourceCleanup() {
@@ -1868,6 +1901,7 @@ DexVmGuestBridge::~DexVmGuestBridge() {
     if (impl_->session) {
         impl_->session->Environment().SetMonitorHooks({});
         impl_->session->Environment().SetReflectionHooks({});
+        impl_->session->Environment().SetObjectAllocationHook({});
         impl_->session->Objects().ObjectArrays().SetAssignability({});
         impl_->session->Objects().SetRuntimeClassResolver({});
         impl_->session->Fields().SetAccessHooks({});

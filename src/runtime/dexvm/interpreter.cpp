@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <chrono>
 #include <deque>
+#include <new>
 #include <optional>
 #include <string_view>
 #include <utility>
@@ -1527,6 +1528,38 @@ void Interpreter::SetStaticFieldBits(const std::string_view class_descriptor,
         owner.static_storage[field.slot + 1U] =
             static_cast<std::uint32_t>(bits >> 32U);
     }
+}
+
+VmCallOutcome Interpreter::AllocateJniObject(const DexClassId java_class) {
+    const VmExecutionLockScope guard(impl_->execution_lock);
+    VmCallOutcome outcome;
+    const auto failure = [&](const char* descriptor, const std::string& message) {
+        outcome.exception = MakeThrowable(descriptor, message);
+        outcome.exception_class = impl_->model->ObjectClass(outcome.exception);
+        outcome.exception_message = message;
+        outcome.value = VmValue::Ref(VmObjectRef{});
+    };
+    try {
+        impl_->linker->EnsureClassLinked(java_class);
+        const auto& type = impl_->linker->Class(java_class);
+        const auto slots = type.instance_slots;
+        // AOSP Jni.cpp::canAllocClass: no abstract/interface/array/Class.
+        if (type.is_interface || type.is_array || (type.access_flags & kAccAbstract) ||
+            type.descriptor == "Ljava/lang/Class;" || type.descriptor.size() == 1) {
+            failure("Ljava/lang/InstantiationException;", "cannot allocate " + type.descriptor);
+            return outcome;
+        }
+        const auto initialized = EnsureClassInitialized(java_class);
+        if (initialized.exception.IsValid()) return initialized;
+        impl_->PrepareSafeAllocation(JavaObjectModel::EstimateInstanceBytes(slots), "jni-alloc-object");
+        outcome.value = VmValue::Ref(impl_->AllocateInstance(java_class));
+    } catch (const DexVmError& error) {
+        if (error.Reason() != DexVmErrorReason::heap_budget_exhausted) throw;
+        failure("Ljava/lang/OutOfMemoryError;", error.what());
+    } catch (const std::bad_alloc&) {
+        failure("Ljava/lang/OutOfMemoryError;", "host allocation failed during JNI AllocObject");
+    }
+    return outcome;
 }
 
 VmObjectRef

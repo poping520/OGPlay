@@ -106,6 +106,10 @@ Android API 的详细行为以 [dexvm_android](dexvm_android/MODULE.md)为准；
 
 ## DexVM / JNI 唯一身份与执行
 
+- JNI AllocObject 分配回调在 VM 执行锁内选择调用线程 context，委托 AllocateJniObject，
+  Java 失败以真实 pending throwable/null 返回。成功对象使用既有 local 发布/字段桥；
+  发布失败移除 registry 映射，未发布实例无永久根，由普通 GC 回收。guest worker 与
+  资源清理结束后撤销回调，不能跨 session 保存捕获的 VM 指针。
 - DexVmGuestBridge 按 core+android intrinsic → curated BootDex → app DEX 装配；同签名
   intrinsic 是精确 overlay，其余解释执行。已迁移平台类由 VM 发布 JNI，禁止同名 HLE 遮蔽；
   无 VM 的 native/HLE 会话不保留旧替身，独立 headless 契约和应用兼容回调除外。

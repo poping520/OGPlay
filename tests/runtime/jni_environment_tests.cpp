@@ -4,6 +4,31 @@
 
 #include "ogplay/runtime/jni/jni_environment.h"
 
+TEST_CASE("DVM-242 JNI allocation hook owns publication and obeys the pending gate") {
+    using namespace ogplay::runtime;
+    JniEnvironment env;
+    env.AttachThread(9);
+    const auto clazz = env.PublishLocalObject(9, {JniObjectDomain::host, 43});
+    CHECK_THROWS_AS(static_cast<void>(env.AllocObject(9, clazz)), std::runtime_error);
+    CHECK_THROWS_AS(static_cast<void>(env.AllocObject(9, JniReference{})), std::invalid_argument);
+    int calls{};
+    env.SetObjectAllocationHook([&](std::uint64_t thread, JniReference type) {
+        ++calls; CHECK(thread == 9); CHECK(type == clazz);
+        // Hook callbacks run outside the hook mutex.
+        env.SetObjectAllocationHook({});
+        return env.PublishLocalObject(thread, {JniObjectDomain::host, 44});
+    });
+    const auto object = env.AllocObject(9, clazz);
+    CHECK(env.ResolveObjectForHle(9, object)->value == 44);
+    CHECK(calls == 1);
+    CHECK_THROWS_AS(static_cast<void>(env.AllocObject(9, clazz)), std::runtime_error);
+    env.SetObjectAllocationHook([&](std::uint64_t, JniReference) { ++calls; return JniReference{}; });
+    env.Throw(9, object);
+    CHECK_THROWS_AS(static_cast<void>(env.AllocObject(9, clazz)), JniExceptionError);
+    CHECK(calls == 1); CHECK(env.ExceptionCheck(9));
+    env.ExceptionClear(9); env.SetObjectAllocationHook({}); env.DetachThread(9);
+}
+
 TEST_CASE("JNI environment closes common reference operations") {
     ogplay::runtime::JniEnvironment environment({8, 4, 4});
     environment.AttachThread(11, 4);

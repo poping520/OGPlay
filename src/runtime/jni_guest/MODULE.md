@@ -37,7 +37,7 @@ nonvirtual、monitor、JavaVM)与 root `JNI_OnLoad` 库生命周期。语义本�
   JIT 后必须由 dispatcher 恢复原 exception type/message，不得退化为 generic fault。
 - production 只通过 `BindJniGuestSlots` 的统一 context 显式组合 Core、Class/Instance、
   Static Call、Static/Instance Field、String、Array 与 JavaVM family,随后封口 dispatcher;
-  aggregate contract 以精确 slot 集合等价(基础 218 个 JNIEnv、注入 NIO 后 221 个，及
+  aggregate contract 以精确 slot 集合等价(基础 219 个 JNIEnv、注入 NIO 后 222 个，及
   4 个 JavaVM)机器验证，数量本身只是辅助诊断；DVM-82 的 DirectByteBuffer 三槽仅在
   显式注入共享 `NioRuntime` 时绑定；Critical string、FatalError 与
   DestroyJavaVM 属于显式 expected-unbound 清单,不得为提高覆盖率注册假 handler。Core
@@ -75,6 +75,10 @@ nonvirtual、monitor、JavaVM)与 root `JNI_OnLoad` 库生命周期。语义本�
   栈地址均明确失败。
   static/instance FieldID binding 只共享校验→查类→查字段骨架，storage kind 与错误上下文仍分开。
 - JNI guest class/object/instance family 只解析 class registry 已声明的精确名称与
+  class 引用；AllocObject 只搬运强类型引用与调用线程，由 JniEnvironment owner 回调
+  初始化类、创建零值 VM 对象并发布 local ref，不复用 NewObject 的构造调用。
+  未配置分配后端不能返回假对象；Java 分配错误返回 null、保留 pending exception。
+  该 family 的
   instance method descriptor;三种 NewObject 仅接受 void `<init>` 并在失败时回滚
   ref/object 映射。会话级 `JniGuestObjectRegistry` 让 guest 构造对象和 framework HLE
   预注册的 host object 共享精确 class identity；`FindClass` 返回的 `jclass` 同时是

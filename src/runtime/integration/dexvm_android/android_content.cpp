@@ -396,30 +396,6 @@ dx::VmValue StartAndroidActivity(dx::IntrinsicContext& call, const Context& cont
 Decl Declare_android_content_pm_PackageManager_NameNotFoundException(
     const Context &context);
 
-Decl Declare_android_content_DialogInterface_OnCancelListener(
-    const Context &context) {
-  static_cast<void>(context);
-  auto builder = dx::IntrinsicClassBuilder::Interface(
-      "Landroid/content/DialogInterface$OnCancelListener;");
-  return std::move(builder).Build();
-}
-
-Decl Declare_android_content_DialogInterface_OnClickListener(
-    const Context &context) {
-  static_cast<void>(context);
-  auto builder = dx::IntrinsicClassBuilder::Interface(
-      "Landroid/content/DialogInterface$OnClickListener;");
-  return std::move(builder).Build();
-}
-
-Decl Declare_android_content_DialogInterface_OnDismissListener(
-    const Context &context) {
-  static_cast<void>(context);
-  auto builder = dx::IntrinsicClassBuilder::Interface(
-      "Landroid/content/DialogInterface$OnDismissListener;");
-  return std::move(builder).Build();
-}
-
 Decl Declare_android_content_IntentSender(const Context &) {
   return std::move(dx::IntrinsicClassBuilder::Class(
                        "Landroid/content/IntentSender;", "Ljava/lang/Object;",
@@ -3172,13 +3148,14 @@ Decl Declare_android_content_pm_PackageManager(const Context &context) {
           throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
                                 "resolveService: " + reason};
         };
-        if (call.arguments[1].AsInt() != 0)
-          unsupported("only flags=0 is supported");
+        if ((call.arguments[1].AsInt() & ~0x40) != 0)
+          unsupported("only GET_RESOLVED_FILTER is supported");
         RequireAbsentService(call, context, intent);
         // This process installs only its APK; there is no external service
         // catalog.
         return dx::VmValue::Ref(dx::VmObjectRef{});
       });
+  builder.ConstantInt("GET_RESOLVED_FILTER", "I", 0x40, dx::kAccPublic | dx::kAccStatic | dx::kAccFinal);
   builder
       .ConstantInt("GET_ACTIVITIES", "I", kGetActivities,
                    dx::kAccPublic | dx::kAccStatic | dx::kAccFinal)

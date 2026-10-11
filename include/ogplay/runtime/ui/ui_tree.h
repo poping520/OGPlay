@@ -167,6 +167,7 @@ struct UiNode final {
     std::shared_ptr<const UiFallbackFont> fallback_font;
     // Window visibility is independent of the guest View's visibility.
     bool window_visible{true};
+    bool modal_layer{}; // Direct content-root child rendered above Surface/video planes.
     bool enabled{true};
     bool clickable{};
     bool focusable{};

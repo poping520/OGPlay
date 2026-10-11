@@ -98,7 +98,7 @@ note = "LUI-11 实现 horizontal/vertical LinearLayout 的 padding/margin/finite
 [runtime.ui_text_widgets]
 status = "complete"
 test = "tests/runtime/ui_renderer_tests.cpp; tests/dexvm/widget_click_tests.cpp"
-note = "LUI-12 将 TextView/Button text/textColor/textSize/gravity 收敛到 UiNode；内置 5x7 fixed ASCII font 的大小写、按词换行与行高由 measure/raster 共用；DVM-121 增加 compound drawables。Button/TextView 三参构造按实际 Context/Resources 解析 legacy 默认样式及主题继承/别名。DVM-148 接通 Terms 所需布局、NinePatch、Drawable 和 EditText；DVM-149 增加 ScrollView 8dp slop/ACTION_CANCEL、背景旧 callback 解绑、统一文本编辑事务及 producer-aware 软件基帧。Dialog presentation、状态色列表和完整 Android 字体排版仍不在当前范围"
+note = "LUI-12 将 TextView/Button text/textColor/textSize/gravity 收敛到 UiNode；内置 5x7 fixed ASCII font 的大小写、按词换行与行高由 measure/raster 共用；DVM-121 增加 compound drawables。Button/TextView 三参构造按实际 Context/Resources 解析 legacy 默认样式及主题继承/别名。DVM-148 接通 Terms 所需布局、NinePatch、Drawable 和 EditText；DVM-149 增加 ScrollView 8dp slop/ACTION_CANCEL、背景旧 callback 解绑、统一文本编辑事务及 producer-aware 软件基帧。完整 Dialog 主题/内容、状态色列表和完整 Android 字体排版仍不在当前范围"
 
 [runtime.ui_relative_layout]
 status = "complete"
@@ -116,9 +116,9 @@ test = "tests/dexvm/ui_include_tests.cpp; tests/dexvm/widget_click_tests.cpp; te
 note = "LUI-14 实现 include root/merge 展开、override、depth/cycle guard；Arsc simple type/data 驱动 16 层 string/color/dimen/reference 与 bitmap/color drawable resolver；ImageView XML/Java 共用五种 scaleType 和 exact crop raster。DVM-149 对已保留的 screenLayout size、方向、sw/w/h、density、SDK 按 API 19 顺序选择，配置变化使 drawable cache 失效；locale 等未保留 qualifier 仍明确在范围外"
 
 [runtime.ui_dialog_presentation]
-status = "unimplemented"
-test = "tests/dexvm/widget_click_tests.cpp"
-note = "DVM-149 禁止 AlertDialog.show 与 WebView.loadUrl 伪成功；Dialog show 记录 runtime.ui.dialog.presentation 后抛 UnsupportedOperationException。受控 modal UiTree 与外部 URI host policy 尚未实现"
+status = "partial"
+test = "tests/dexvm/widget_click_tests.cpp: DVM-246; tests/runtime/native_library_loader_tests.cpp: DVM-246; tests/runtime/ui_renderer_tests.cpp: DVM-246; tools.android_payload_current"
+note = "DVM-246/ADR-0125：managed Dialog 缓存/Bundle/创建准备、Dialog 状态与 AlertDialog Builder 三按钮/listener 归 guest Java；原版 DialogInterface。native 投影有界 plain String 模态 UiTree，输入捕获、焦点/owner 可见性、Surface 保留及顶层合成、GC/重入/退出受检。macOS 双解释器/ARM JNI 与原 APK 实际提示通过，点击后的原应用退出被独立视频 LayoutInflater 缺口阻断。主题、items/custom content、Window facade、外触取消、保存恢复/完整 Fragment/跨平台/title gate 未验收或明确拒绝。无伪造商店/授权服务。"
 
 [dexvm.drawable_resource]
 status = "partial"
@@ -1998,7 +1998,7 @@ note = "DVM-116/ADR-0044：BackupManager/RestoreObserver 执行 pinned API 19 Ja
 [dexvm.service_resolution]
 status = "partial"
 test = "tests/loader/apk_manifest_tests.cpp; tests/dexvm/android_value_tests.cpp; tests/runtime/native_library_loader_tests.cpp; DVM-112; DVM-202"
-note = "DVM-112/ADR-0042：ServiceConnection 原版双回调接口选入 BootDex；Manifest 保存 application enabled、service 名称/enabled/过滤器 action/category/data 存在标记，AndroidAppProcess 装配唯一 context。resolveService 仅接受非空 action、无 component/data/type/categories、flags=0 的查询，基于当前 APK 信息排除 disabled 与 action 不匹配项，无候选返回 null；没有外部安装包/平台服务目录。未装配信息、潜在匹配、data 条件或其他查询形态记账并抛 UnsupportedOperationException；null Intent 抛 NPE。DVM-142 补齐 ResolveInfo/ServiceInfo 返回类型及相关值类，使 PackageManager 公共方法反射可解析；仍不物化正匹配结果。bindService 复用缺席判定并在返回 false 前登记连接，unbindService 清理登记且重复解绑明确失败；能力保持 partial。 DVM-202/ADR-0084：现已支持主线程 BIND_AUTO_CREATE、component-only、当前 APK 启用的同进程 Service，主 Looper 异步绑定、共享本地 Binder、取消、GC 和退出清理；跨进程 IPC 与支付仍不支持。"
+note = "DVM-112/ADR-0042：ServiceConnection 原版双回调接口选入 BootDex；Manifest 保存 application enabled、service 名称/enabled/过滤器 action/category/data 存在标记，AndroidAppProcess 装配唯一 context。resolveService 仅接受非空 action、无 component/data/type/categories、0/GET_RESOLVED_FILTER 的查询，投影标志不改变匹配，基于当前 APK 信息排除 disabled 与 action 不匹配项，无候选返回 null；没有外部安装包/平台服务目录。未装配信息、潜在匹配、data 条件或其他查询形态记账并抛 UnsupportedOperationException；null Intent 抛 NPE。DVM-142 补齐 ResolveInfo/ServiceInfo 返回类型及相关值类，使 PackageManager 公共方法反射可解析；仍不物化正匹配结果。bindService 复用缺席判定并在返回 false 前登记连接，unbindService 清理登记且重复解绑明确失败；能力保持 partial。 DVM-202/ADR-0084：现已支持主线程 BIND_AUTO_CREATE、component-only、当前 APK 启用的同进程 Service，主 Looper 异步绑定、共享本地 Binder、取消、GC 和退出清理；跨进程 IPC 与支付仍不支持。"
 
 [dexvm.receiver_query]
 status = "partial"

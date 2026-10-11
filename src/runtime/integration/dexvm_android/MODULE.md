@@ -64,7 +64,7 @@ content/os/view/graphics/gl/media/database/device 等 family TU 同址。shared.
 | getActivityInfo/getReceiverInfo/getServiceInfo | 当前包完整组件名；0、GET_META_DATA、GET_DISABLED_COMPONENTS，按应用/组件启用状态过滤；缺失 NameNotFoundException；同名 Activity 查询最后声明 |
 | getPermissionInfo | 仅 Manifest `<permission>` 定义；0/GET_META_DATA；仅请求或已授权未定义仍 NameNotFoundException |
 | queryBroadcastReceivers | flags=0、非空 action、同一 filter category 子集，不要求 DEFAULT；排除禁用项，同组件取首个匹配，API19 稳定排序 |
-| resolveService | 非空 action、无 component/data/type/categories、flags=0；仅能确定无候选，返回 null；潜在匹配或未知条件失败 |
+| resolveService | 非空 action、无 component/data/type/categories、0/GET_RESOLVED_FILTER；仅能确定无候选，返回 null；投影标志不改变匹配，潜在匹配或未知条件失败 |
 | bindService/unbindService | 缺席查询沿用原规则；另支持主线程 BIND_AUTO_CREATE、component-only、当前 APK 启用的同进程服务，见 ADR-0084 |
 
 广播查询返回真实 ArrayList/ResolveInfo/ActivityInfo，保留 priority/match/isDefault/filter label/icon；
@@ -311,7 +311,15 @@ Java GLES/EGL 通过 session managed 冷入口复用 [native boundary](../../bou
   onPostExecute。Thread/JNI 复用 core runtime/catalog/context；Runtime.nativeExit 发布退出标记
   并调用不可返回 VM Exit，System.exit 不得设标记后返回。
 - ResultReceiver 本地协议归 BootDex：有 Handler 排队、无 Handler 同步；Parcel 保留本地 Binder
-  identity，不建远程 scheduler。Dialog 展示明确失败。
+  identity，不建远程 scheduler。
+- Dialog/AlertDialog 的协议在 guest Java；native 只将 plain String 标题/消息/三按钮
+  投影为临时 UiTree 模态节点，active presentation 持有 Dialog/Activity roots。
+  沿 actual geometry 捕获指针/键盘，取消旧捕获，Listener 委托仍由 owner Looper 排队。
+  owner 窗口隐藏/恢复同步模态可见性，普通实例退役先 dismiss，进程停止仅退役投影。
+  最多 8 个窗口，title 512/message 4096/button 128 UTF-16 单元，density (0,8]，视口
+  ≥48×48；内容必须完整适配视口，否则记账抛 UOE。不替换底层内容或退役 Surface。
+  模态根为 UiTree direct content-root child；字体/布局/像素使用既有底座，不建第二份
+  可变协议/子节点权威状态。theme/items/custom view/Window facade 明确拒绝。
 - WebView.destroy 可覆盖；按构造 Looper 检查线程，targetSdk≥18 跨线程抛 RuntimeException。
   清理 WebSettings/client/interface 且不重建，重复销毁防御幂等；不宣称完整 AOSP 等价。
   配置/RenderPriority 只存状态/提示，不影响 host 调度；引用由 guest 字段/HashMap 保活。

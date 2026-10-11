@@ -277,8 +277,6 @@ Decl Declare_android_app_Activity(const Context& context) {
                           dx::kAccProtected);
     builder.VirtualMethod("onStop", "()V", lifecycle_noop,
                           dx::kAccProtected);
-    builder.VirtualMethod("onDestroy", "()V", lifecycle_noop,
-                          dx::kAccProtected);
     builder.VirtualMethod("onWindowFocusChanged", "(Z)V", lifecycle_noop);
     builder.VirtualMethod("hasWindowFocus", "()Z",
         [context](dx::IntrinsicContext& call) {
@@ -466,61 +464,30 @@ Decl Declare_android_app_Activity(const Context& context) {
 
 namespace ogplay::runtime::android_intrinsics {
 
-Decl Declare_android_app_AlertDialog_Builder(const Context& context) {
-    static_cast<void>(context);
-    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/app/AlertDialog$Builder;", "Ljava/lang/Object;");
-    builder.Constructor("(Landroid/content/Context;)V", WidgetNoopHandler());
-    const auto self = dx::IntrinsicHandler([](dx::IntrinsicContext& call) {
-        return Self(call);
-    });
-    builder.FinalMethod("setTitle", "(Ljava/lang/CharSequence;)Landroid/app/AlertDialog$Builder;", self);
-    builder.FinalMethod("setMessage", "(Ljava/lang/CharSequence;)Landroid/app/AlertDialog$Builder;", self);
-    builder.FinalMethod("setCancelable", "(Z)Landroid/app/AlertDialog$Builder;", self);
-    builder.FinalMethod("setOnKeyListener", "(Landroid/content/DialogInterface$OnKeyListener;)Landroid/app/AlertDialog$Builder;", self);
-    builder.FinalMethod("setPositiveButton", "(Ljava/lang/CharSequence;Landroid/content/DialogInterface$OnClickListener;)Landroid/app/AlertDialog$Builder;", self);
-    builder.FinalMethod("setItems", "([Ljava/lang/CharSequence;Landroid/content/DialogInterface$OnClickListener;)Landroid/app/AlertDialog$Builder;", self);
-    builder.FinalMethod("create", "()Landroid/app/AlertDialog;",
-        [](dx::IntrinsicContext& call) {
-            return dx::VmValue::Ref(
-                call.vm.NewIntrinsicInstance("Landroid/app/AlertDialog;"));
-        });
-    return std::move(builder).Build();
+Decl Declare_android_app_AlertDialog_Builder(const Context&) {
+    return std::move(dx::IntrinsicClassBuilder::Class("Landroid/app/AlertDialog$Builder;")).Build();
 }
-
-}  // namespace ogplay::runtime::android_intrinsics
-
-
-// ---- migrated from android_app_AlertDialog.cpp ----
-#include "catalog.h"
-
-namespace ogplay::runtime::android_intrinsics {
-
-Decl Declare_android_app_AlertDialog(const Context& context) {
-    static_cast<void>(context);
-    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/app/AlertDialog;", "Landroid/app/Dialog;");
-    return std::move(builder).Build();
+Decl Declare_android_app_AlertDialog(const Context&) {
+    return std::move(dx::IntrinsicClassBuilder::Class("Landroid/app/AlertDialog;", "Landroid/app/Dialog;")).Build();
 }
-
-}  // namespace ogplay::runtime::android_intrinsics
-
-
-// ---- migrated from android_app_Dialog.cpp ----
-#include "catalog.h"
-
-namespace ogplay::runtime::android_intrinsics {
-
 Decl Declare_android_app_Dialog(const Context& context) {
-    static_cast<void>(context);
-    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/app/Dialog;", "Ljava/lang/Object;");
-    builder.Constructor("()V", NeutralHandler('V'));
-    builder.FinalMethod("show", "()V", [](dx::IntrinsicContext& call) -> dx::VmValue {
-        if (auto* ledger = call.vm.Ledger()) {
-            ledger->RecordUnimplemented("runtime.ui.dialog.presentation", 0);
-        }
-        throw dx::VmJavaThrow{
-            "Ljava/lang/UnsupportedOperationException;",
-            "Dialog presentation is not implemented"};
-    });
+    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/app/Dialog;", "Ljava/lang/Object;", {"Landroid/content/DialogInterface;"});
+    const auto generation = builder.BoundInstanceField("mGeneration", "J", dx::kAccPrivate);
+    builder.DirectMethod("nativeShow", "(Landroid/content/Context;Landroid/app/Activity;Ljava/lang/CharSequence;Ljava/lang/CharSequence;[Ljava/lang/CharSequence;J)V",
+        [context, generation](dx::IntrinsicContext& call) { ShowAndroidDialog(call, context, generation); return dx::VmValue::Void(); }, dx::kAccPrivate | dx::kAccNative);
+    builder.DirectMethod("nativeDismiss", "()V", [context](dx::IntrinsicContext& call) {
+        DismissAndroidDialog(*context, call.receiver); return dx::VmValue::Void();
+    }, dx::kAccPrivate | dx::kAccNative);
+    builder.DirectMethod("nativeVisible", "(Z)V", [context](dx::IntrinsicContext& call) {
+        SetAndroidDialogVisible(*context, call.receiver, call.arguments[0].AsInt() != 0); return dx::VmValue::Void();
+    }, dx::kAccPrivate | dx::kAccNative);
+    builder.DirectMethod("nativeFocus", "(I)I", [context](dx::IntrinsicContext& call) {
+        return dx::VmValue::Int(FocusAndroidDialog(*context, call.receiver, call.arguments[0].AsInt()));
+    }, dx::kAccPrivate | dx::kAccNative);
+    builder.StaticMethod("nativeUnsupported", "(Ljava/lang/String;)V", [](dx::IntrinsicContext& call) -> dx::VmValue {
+        if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("runtime.ui.dialog.presentation", 0);
+        throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "unsupported Dialog option: " + call.vm.StringUtf8(call.arguments[0].ref)};
+    }, dx::kAccStatic | dx::kAccNative);
     return std::move(builder).Build();
 }
 

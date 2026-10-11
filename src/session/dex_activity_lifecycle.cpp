@@ -307,8 +307,10 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
         return outcome.value;
     }
 
-    void DexActivityLifecycle::SetWindowFocus(const bool has_focus) {
+    void DexActivityLifecycle::SetWindowFocus(const bool requested) {
+        requested_window_focus_ = requested;
         auto& context = *bindings_.context;
+        const bool has_focus = requested && !runtime::HasAndroidModalDialog(context);
         if (!has_focus && state_ == LifecycleRunState::running) {
             CancelInput();
         }
@@ -546,6 +548,11 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
         auto& vm = bindings_.bridge->Vm();
         auto& context = *bindings_.context;
         for (const auto& input: pending_input_) {
+            if (runtime::DispatchAndroidDialogInput(vm, context, input)) {
+                gesture_candidate_ = 0; gesture_click_eligible_ = false; gesture_touch_consumed_ = false;
+                deep_touch_handle_ = 0; scroll_view_handle_ = 0; scroll_dragging_ = false;
+                continue;
+            }
             if (context.window_input_queue.IsValid()) {
                 bindings_.bridge->Session().PushInput(input);
                 continue;
@@ -586,34 +593,7 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
                         }
                     }
                 }
-                const auto key_event =
-                    vm.NewIntrinsicInstance("Landroid/view/KeyEvent;");
-                const auto key_event_class =
-                    vm.Model().ObjectClass(key_event);
-                const auto constructor = bindings_.bridge->Linker()
-                    .FindDirectMethod(key_event_class, "<init>",
-                                      "(JJIIIIIIII)V");
-                if (!constructor.has_value()) {
-                    Fail("KeyEvent has no timed input constructor");
-                }
-                RequireOutcome(
-                    vm,
-                    vm.Call(*constructor,
-                            std::vector<dx::VmValue>{
-                                dx::VmValue::Ref(key_event),
-                                dx::VmValue::Long(input.down_time_ns / 1000000),
-                                dx::VmValue::Long(input.event_time_ns / 1000000),
-                                dx::VmValue::Int(input.action),
-                                dx::VmValue::Int(input.code),
-                                dx::VmValue::Int(input.repeat_count),
-                                dx::VmValue::Int(input.meta_state),
-                                dx::VmValue::Int(input.device_id),
-                                dx::VmValue::Int(input.scan_code),
-                                dx::VmValue::Int(input.flags),
-                                dx::VmValue::Int(input.source)}),
-                    "KeyEvent <init>");
-                runtime::SetAndroidKeyEventUnicode(
-                    vm, key_event, input.unicode_char);
+                const auto key_event = runtime::MakeAndroidKeyEvent(vm, input);
                 if (input.action == 2) {
                     CallActivity("onKeyMultiple", "(IILandroid/view/KeyEvent;)Z",
                         {dx::VmValue::Int(input.code), dx::VmValue::Int(input.repeat_count),
@@ -877,14 +857,21 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
                 });
         }
         runtime::ComposeVideoViews(context, frame.rgba8, frame.width, frame.height, false);
+        const bool ui_dirty = context.ui_tree.Get(context.ui_tree.Root())->draw_dirty;
         const auto& overlay = context.ui_overlay_renderer.Render(
             context.ui_tree, context.ui_bitmaps,
             {
                 static_cast<std::int32_t>(frame.width),
                 static_cast<std::int32_t>(frame.height)
-            });
+            }, runtime::ui::UiRenderPlane::normal);
         ComposeUiOverlayInPlace(frame.rgba8, overlay);
         runtime::ComposeVideoViews(context, frame.rgba8, frame.width, frame.height, true);
+        if (runtime::HasAndroidModalDialog(context)) {
+            const auto& modal = context.ui_modal_renderer.Render(context.ui_tree, context.ui_bitmaps,
+                {static_cast<std::int32_t>(frame.width), static_cast<std::int32_t>(frame.height)},
+                runtime::ui::UiRenderPlane::modal, ui_dirty);
+            ComposeUiOverlayInPlace(frame.rgba8, modal);
+        }
         return frame;
     }
 
@@ -1146,6 +1133,7 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
                 StopRendererThread(old.render_view);
                 // Background finish destroys that instance without changing foreground identity.
                 CallOnView(old.object, "onDestroy", "()V", {});
+                runtime::DismissAndroidActivityDialogs(vm, context, old.object);
                 if (old.window_root) {
                     runtime::RetireViewUiSubtree(context, *old.window_root);
                 } else if (old.content.IsValid()) {
@@ -1276,6 +1264,8 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
     void DexActivityLifecycle::SynchronizeContentView() {
         const dx::VmExecutionLockScope execution(bindings_.bridge->Vm().ExecutionLock());
         auto& context = *bindings_.context;
+        runtime::SynchronizeAndroidDialogs(context);
+        if (activity_resumed_) SetWindowFocus(requested_window_focus_);
         const auto content = context.content_view;
         const auto node = std::optional{runtime::ActivityContentRoot(context)};
         const auto content_revision = context.ui_content_revision;
@@ -1812,6 +1802,7 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
         // A process close is not Activity.finish(). Instance destruction remains
         // in ServiceActivitySwitch; never synthesize onDestroy for the stack.
         phase("teardown.media_retire");
+        attempt([&] { runtime::ReleaseAndroidDialogs(*bindings_.context); });
         attempt([&] { runtime::ReleaseAndroidMediaResources(*bindings_.context); });
         GlSurfaceRuntime retired_renderer;
         retired_renderer.view = bindings_.context->gl_surface_renderer_view;

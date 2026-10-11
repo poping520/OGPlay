@@ -90,6 +90,11 @@ struct ClickVm final {
     std::function<void(IntrinsicContext&)> content_change_hook;
     std::int32_t content_surface_creates{}, content_surface_destroys{};
     std::function<void()> content_surface_destroy_hook;
+    std::int32_t dialog_creates{}, dialog_prepares{};
+    std::vector<std::string> dialog_events;
+    std::function<void(IntrinsicContext&)> dialog_click_hook;
+    std::function<void(IntrinsicContext&)> dialog_prepare_hook;
+    bool dialog_key_consumed{};
     std::int32_t removal_layout_requests{};
     bool content_view_handled{};
     std::int32_t key_down_events{};
@@ -247,6 +252,43 @@ struct ClickVm final {
                           return VmValue::Void();
                       });
                   test_catalog.push_back(std::move(content_surface).Build());
+                  auto managed = IntrinsicClassBuilder::Class("LManagedDialogActivity;", "Landroid/app/Activity;");
+                  const auto supplied = managed.BoundInstanceField("supplied", "Landroid/app/Dialog;", kAccPrivate);
+                  const auto prepared = managed.BoundInstanceField("lastArgs", "Landroid/os/Bundle;", kAccPublic);
+                  managed.VirtualMethod("supply", "(Landroid/app/Dialog;)V", [supplied](IntrinsicContext& call) {
+                      IntrinsicCall(call).SetRef(supplied, call.arguments[0].ref); return VmValue::Void();
+                  });
+                  managed.OverrideMethod("onCreateDialog", "(I)Landroid/app/Dialog;", [this, supplied](IntrinsicContext& call) {
+                      ++dialog_creates; return VmValue::Ref(IntrinsicCall(call).GetRef(supplied));
+                  }, kAccProtected);
+                  managed.OverrideMethod("onPrepareDialog", "(ILandroid/app/Dialog;Landroid/os/Bundle;)V",
+                      [this, prepared](IntrinsicContext& call) {
+                          ++dialog_prepares; IntrinsicCall(call).SetRef(prepared, call.arguments[2].ref);
+                          if (dialog_prepare_hook) dialog_prepare_hook(call);
+                          const auto type = call.vm.Model().ObjectClass(call.arguments[1].ref);
+                          const auto index = *call.vm.Linker().FindVtableIndex(type, "setOwnerActivity", "(Landroid/app/Activity;)V");
+                          const auto result = call.vm.Call(call.vm.Linker().Class(type).vtable[index],
+                              std::array{call.arguments[1], VmValue::Ref(call.receiver)});
+                          REQUIRE_FALSE(result.exception.IsValid()); return VmValue::Void();
+                      }, kAccProtected);
+                  test_catalog.push_back(std::move(managed).Build());
+                  auto observer = IntrinsicClassBuilder::Class("LDialogObserver;", "Ljava/lang/Object;",
+                      {"Landroid/content/DialogInterface$OnClickListener;", "Landroid/content/DialogInterface$OnCancelListener;",
+                       "Landroid/content/DialogInterface$OnDismissListener;", "Landroid/content/DialogInterface$OnShowListener;",
+                       "Landroid/content/DialogInterface$OnKeyListener;"});
+                  observer.VirtualMethod("onClick", "(Landroid/content/DialogInterface;I)V", [this](IntrinsicContext& call) {
+                      dialog_events.push_back("click:" + std::to_string(call.arguments[1].AsInt()));
+                      if (dialog_click_hook) dialog_click_hook(call); return VmValue::Void();
+                  });
+                  for (const auto name : {"onCancel", "onDismiss", "onShow"}) {
+                      observer.VirtualMethod(name, "(Landroid/content/DialogInterface;)V", [this, name](IntrinsicContext&) {
+                          dialog_events.push_back(name); return VmValue::Void();
+                      });
+                  }
+                  observer.VirtualMethod("onKey", "(Landroid/content/DialogInterface;ILandroid/view/KeyEvent;)Z", [this](IntrinsicContext&) {
+                      return VmValue::Int(dialog_key_consumed ? 1 : 0);
+                  });
+                  test_catalog.push_back(std::move(observer).Build());
                   linker.RegisterIntrinsics(test_catalog);
                   linker.RegisterDex(ReadFixture("widgetclick.dex"));
                   ogplay::test::RegisterBootDex(linker);
@@ -334,6 +376,24 @@ struct ClickVm final {
         REQUIRE_MESSAGE(!outcome.exception.IsValid(),
                         outcome.exception_message);
         return outcome.value;
+    }
+    VmObjectRef NewTextDialog(VmObjectRef owner, VmObjectRef listener, bool cancelable = true) {
+        context->surface_width = 800; context->surface_height = 480; context->activity = owner;
+        const auto builder = interpreter.NewIntrinsicInstance("Landroid/app/AlertDialog$Builder;");
+        const auto roots = interpreter.ProtectReferences(std::array{builder, owner, listener});
+        CallDirect(builder, "Landroid/app/AlertDialog$Builder;", "<init>", "(Landroid/content/Context;)V", {VmValue::Ref(owner)});
+        CallOn(builder, "setTitle", "(Ljava/lang/CharSequence;)Landroid/app/AlertDialog$Builder;", {VmValue::Ref(interpreter.NewStringUtf8("Saved title"))});
+        CallOn(builder, "setMessage", "(Ljava/lang/CharSequence;)Landroid/app/AlertDialog$Builder;", {VmValue::Ref(interpreter.NewStringUtf8("A real message"))});
+        CallOn(builder, "setNeutralButton", "(Ljava/lang/CharSequence;Landroid/content/DialogInterface$OnClickListener;)Landroid/app/AlertDialog$Builder;",
+            {VmValue::Ref(interpreter.NewStringUtf8("OK")), VmValue::Ref(listener)});
+        CallOn(builder, "setCancelable", "(Z)Landroid/app/AlertDialog$Builder;", {VmValue::Int(cancelable ? 1 : 0)});
+        CallOn(builder, "setOnCancelListener", "(Landroid/content/DialogInterface$OnCancelListener;)Landroid/app/AlertDialog$Builder;", {VmValue::Ref(listener)});
+        CallOn(builder, "setOnDismissListener", "(Landroid/content/DialogInterface$OnDismissListener;)Landroid/app/AlertDialog$Builder;", {VmValue::Ref(listener)});
+        const auto dialog = CallOn(builder, "create", "()Landroid/app/AlertDialog;").ref;
+        const auto dialog_root = interpreter.ProtectReferences(std::array{dialog});
+        CallOn(dialog, "setOnShowListener", "(Landroid/content/DialogInterface$OnShowListener;)V", {VmValue::Ref(listener)});
+        CallOn(dialog, "setOnKeyListener", "(Landroid/content/DialogInterface$OnKeyListener;)V", {VmValue::Ref(listener)});
+        return dialog;
     }
     VmValue CallDirect(const VmObjectRef receiver,
                        const std::string& class_descriptor,
@@ -2260,8 +2320,137 @@ TEST_CASE("API 19 resource qualifiers use ordered matching independent of table 
     CHECK(ResolveUiDrawable(*vm.context, 206)->rgba8[2] == 0xff);
 }
 
-TEST_CASE("unsupported dialog and WebView presentation fail explicitly") {
+TEST_CASE("DVM-246 managed Dialog caches instances prepares args and preserves exceptional entries") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        ClickVm vm(backend);
+        const auto owner = vm.interpreter.NewIntrinsicInstance("LManagedDialogActivity;");
+        const auto listener = vm.interpreter.NewIntrinsicInstance("LDialogObserver;");
+        const auto roots = vm.interpreter.ProtectReferences(std::array{owner, listener});
+        const auto dialog = vm.NewTextDialog(owner, listener);
+        vm.CallOn(owner, "supply", "(Landroid/app/Dialog;)V", {VmValue::Ref(dialog)});
+        vm.CallOn(owner, "showDialog", "(I)V", {VmValue::Int(1763356438)});
+        REQUIRE(vm.context->dialog_presentations.size() == 1);
+        CHECK(vm.context->dialog_presentations.front().dialog == dialog);
+        CHECK(vm.CallOn(dialog, "getOwnerActivity", "()Landroid/app/Activity;").ref == owner);
+        CHECK(vm.CallOn(dialog, "isShowing", "()Z").AsInt() == 1);
+        const auto second = vm.NewTextDialog(owner, listener);
+        const auto second_root = vm.interpreter.ProtectReferences(std::array{second});
+        vm.CallOn(owner, "supply", "(Landroid/app/Dialog;)V", {VmValue::Ref(second)});
+        const auto args = vm.interpreter.NewIntrinsicInstance("Landroid/os/Bundle;");
+        const auto args_root = vm.interpreter.ProtectReferences(std::array{args});
+        CHECK(vm.CallOn(owner, "showDialog", "(ILandroid/os/Bundle;)Z", {VmValue::Int(1763356438), VmValue::Ref(args)}).AsInt() == 1);
+        CHECK(vm.dialog_creates == 1); CHECK(vm.dialog_prepares == 2);
+        CHECK(vm.context->dialog_presentations.front().dialog == dialog);
+        const auto prepared = *vm.linker.FindFieldRecursive(vm.model.ObjectClass(owner), "lastArgs", "Landroid/os/Bundle;");
+        CHECK(vm.model.InstanceSlots(owner)[vm.linker.Field(prepared).slot].bits == args.Value());
+        vm.CallOn(owner, "supply", "(Landroid/app/Dialog;)V", {VmValue::Ref(VmObjectRef{})});
+        CHECK(vm.CallOn(owner, "showDialog", "(ILandroid/os/Bundle;)Z", {VmValue::Int(77), VmValue::Ref(args)}).AsInt() == 0);
+        CHECK(vm.dialog_creates == 2); CHECK(vm.dialog_prepares == 2);
+        vm.CallOn(owner, "removeDialog", "(I)V", {VmValue::Int(77)});
+        const auto invoke = [&](const char* method, int id) {
+            const auto type = vm.model.ObjectClass(owner);
+            const auto slot = *vm.linker.FindVtableIndex(type, method, "(I)V");
+            return vm.interpreter.Call(vm.linker.Class(type).vtable[slot], std::array{VmValue::Ref(owner), VmValue::Int(id)});
+        };
+        const auto absent = invoke("dismissDialog", 77);
+        REQUIRE(absent.exception.IsValid());
+        CHECK(vm.linker.Class(absent.exception_class).descriptor == "Ljava/lang/IllegalArgumentException;");
+        const auto exception = vm.interpreter.NewIntrinsicInstance("Ljava/lang/IllegalStateException;");
+        const auto exception_root = vm.interpreter.ProtectReferences(std::array{exception});
+        vm.dialog_prepare_hook = [exception](IntrinsicContext&) { throw VmJavaThrow{"Ljava/lang/IllegalStateException;", "prepare", exception}; };
+        CHECK(invoke("showDialog", 1763356438).exception == exception);
+        CHECK(vm.context->dialog_presentations.size() == 1);
+        vm.dialog_prepare_hook = {};
+        vm.CallOn(owner, "dismissDialog", "(I)V", {VmValue::Int(1763356438)});
+        CHECK(vm.context->dialog_presentations.empty());
+        CHECK(vm.CallOn(dialog, "isShowing", "()Z").AsInt() == 0);
+        static_cast<void>(vm.interpreter.CollectGarbage("managed-dialog-messages"));
+        CHECK_FALSE(PumpJavaThreads(vm.interpreter, *vm.context).has_value());
+        CHECK(vm.dialog_events == std::vector<std::string>{"onShow", "onDismiss"});
+        vm.CallOn(owner, "showDialog", "(I)V", {VmValue::Int(1763356438)});
+        CHECK(vm.context->dialog_presentations.front().dialog == dialog);
+        CHECK(vm.dialog_creates == 2);
+        vm.CallOn(owner, "removeDialog", "(I)V", {VmValue::Int(1763356438)});
+        vm.CallOn(owner, "supply", "(Landroid/app/Dialog;)V", {VmValue::Ref(second)});
+        vm.CallOn(owner, "showDialog", "(I)V", {VmValue::Int(1763356438)});
+        CHECK(vm.context->dialog_presentations.front().dialog == second);
+        CHECK(vm.dialog_creates == 3);
+        vm.CallOn(owner, "onDestroy", "()V");
+        CHECK(vm.context->dialog_presentations.empty());
+    }
+}
+
+TEST_CASE("DVM-246 Dialog draws text blocks underlying input and queues button cancel key semantics") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        ClickVm vm(backend);
+        const auto listener = vm.interpreter.NewIntrinsicInstance("LDialogObserver;");
+        const auto listener_root = vm.interpreter.ProtectReferences(std::array{listener});
+        const auto dialog = vm.NewTextDialog(vm.activity, listener, false);
+        const auto roots = vm.interpreter.ProtectReferences(std::array{vm.activity, dialog});
+        vm.CallOn(dialog, "show", "()V"); vm.CallOn(dialog, "show", "()V");
+        REQUIRE(vm.context->dialog_presentations.size() == 1);
+        auto& modal = vm.context->dialog_presentations.front();
+        const auto button = *modal.buttons[2];
+        const auto rect = vm.context->ui_tree.Get(button)->screen_frame;
+        CHECK(vm.context->ui_tree.Get(button)->text == u"OK");
+        ui::UiOverlayRenderer renderer;
+        const auto& frame = renderer.Render(vm.context->ui_tree, vm.context->ui_bitmaps, {800, 480});
+        CHECK(frame.rgba8[3] >= 128);
+        CHECK(frame.rgba8[(static_cast<std::size_t>(rect.top + 1) * 800 + static_cast<std::size_t>(rect.left + 1)) * 4] > 128);
+        const auto pointer = [&](int action, float x, float y) {
+            return DispatchAndroidDialogInput(vm.interpreter, *vm.context,
+                {.type=AndroidBoundaryInputType::pointer_button, .x=x, .y=y, .pressed=action==0, .action=action});
+        };
+        const auto key = [&](int action, int code) {
+            return DispatchAndroidDialogInput(vm.interpreter, *vm.context,
+                {.type=AndroidBoundaryInputType::key, .code=code, .pressed=action==0, .action=action});
+        };
+        CHECK(pointer(0, 1, 1)); CHECK(pointer(1, 1, 1));
+        CHECK(key(0, 4)); CHECK(key(1, 4));
+        CHECK(vm.CallOn(dialog, "isShowing", "()Z").AsInt() == 1);
+        CHECK_FALSE(PumpJavaThreads(vm.interpreter, *vm.context).has_value());
+        CHECK(vm.dialog_events == std::vector<std::string>{"onShow"});
+        vm.dialog_click_hook = [&](IntrinsicContext&) {
+            vm.CallOn(dialog, "setTitle", "(Ljava/lang/CharSequence;)V", {VmValue::Ref(vm.interpreter.NewStringUtf8("Updated"))});
+        };
+        CHECK(pointer(0, static_cast<float>(rect.left + 2), static_cast<float>(rect.top + 2)));
+        CHECK(pointer(1, static_cast<float>(rect.left + 2), static_cast<float>(rect.top + 2)));
+        CHECK(vm.CallOn(dialog, "isShowing", "()Z").AsInt() == 1); // callback is queued, not inline.
+        CHECK_FALSE(PumpJavaThreads(vm.interpreter, *vm.context).has_value());
+        CHECK(vm.dialog_events == std::vector<std::string>{"onShow", "click:-3", "onDismiss"});
+        CHECK(vm.context->dialog_presentations.empty());
+        vm.dialog_click_hook = {};
+        vm.dialog_events.clear();
+        vm.CallOn(dialog, "setCancelable", "(Z)V", {VmValue::Int(1)});
+        vm.CallOn(dialog, "show", "()V");
+        vm.dialog_key_consumed = true;
+        CHECK(key(0, 4)); CHECK(key(1, 4));
+        CHECK(vm.CallOn(dialog, "isShowing", "()Z").AsInt() == 1);
+        vm.dialog_key_consumed = false;
+        CHECK(key(0, 4)); CHECK(key(1, 4));
+        CHECK_FALSE(PumpJavaThreads(vm.interpreter, *vm.context).has_value());
+        CHECK(vm.dialog_events == std::vector<std::string>{"onShow", "onCancel", "onDismiss"});
+        CHECK(vm.context->dialog_presentations.empty());
+        vm.dialog_events.clear();
+        vm.CallOn(dialog, "show", "()V");
+        vm.dialog_click_hook = [&](IntrinsicContext&) {
+            vm.CallOn(dialog, "dismiss", "()V"); vm.CallOn(dialog, "show", "()V");
+        };
+        CHECK(key(0, 66)); CHECK(key(1, 66));
+        CHECK_FALSE(PumpJavaThreads(vm.interpreter, *vm.context).has_value());
+        CHECK(vm.CallOn(dialog, "isShowing", "()Z").AsInt() == 1); // old click cannot dismiss the new generation.
+        CHECK(vm.context->dialog_presentations.size() == 1);
+        vm.CallOn(dialog, "hide", "()V");
+        CHECK_FALSE(HasAndroidModalDialog(*vm.context)); CHECK(vm.CallOn(dialog, "isShowing", "()Z").AsInt() == 1);
+        vm.CallOn(dialog, "show", "()V"); CHECK(HasAndroidModalDialog(*vm.context));
+        vm.CallOn(dialog, "dismiss", "()V");
+        CHECK_FALSE(pointer(0, 1, 1));
+    }
+}
+
+TEST_CASE("unconfigured dialog and strict WebView presentation fail explicitly") {
     ClickVm vm;
+    vm.context->strict_webview_errors = true;
     const auto invoke = [&](const VmObjectRef receiver, const char* name,
                             const char* descriptor,
                             std::vector<VmValue> arguments = {}) {

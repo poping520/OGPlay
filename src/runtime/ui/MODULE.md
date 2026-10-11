@@ -21,6 +21,10 @@ shaping/bidi 与补充平面明确失败，不读取宿主字体或任意应用�
   dirty state。
 - `window_visible` 及 `SetWindowVisible` 保存独立窗口可见性；隐藏窗口保留 hierarchy，
   不改变 guest View.visibility。有效可见性包含祖先窗口状态，绘制、输入、焦点共同使用。
+- direct content-root child 的 `modal_layer` 标记合成平面；render-list 可选 all/normal/modal，
+  默认 all 保持既有行为。选择只过滤相应根子树，沿用唯一 geometry/clip/raster；不读取
+  guest Dialog 或改变可见性来模拟层序。分层 cache 的调用方在消费 draw dirty 前保留
+  变更证据，以 force_rebuild 同步另一层；平面改变本身也使 cache 失效。
 - `SetVisibility`：VISIBLE/INVISIBLE 只标 draw dirty；任意 GONE 转换同时从 node 到 root
   标 layout/draw dirty。
 - 焦点归 `UiTree` 单一 owner；请求需节点及祖先可见/启用并满足 focusable，转移、隐藏、

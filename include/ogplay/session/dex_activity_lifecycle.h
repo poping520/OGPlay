@@ -179,6 +179,7 @@ private:
     std::uint64_t frame_{};
     bool surface_open_{};
     bool suspended_{};
+    bool requested_window_focus_{};
     bool pointer_down_{};
     float pointer_x_{};
     float pointer_y_{};

@@ -15,6 +15,44 @@
 
 namespace ui = ogplay::runtime::ui;
 
+TEST_CASE("DVM-246 modal render plane separates Surface ordering and shares dirty evidence") {
+    ui::UiTree tree;
+    const auto normal = tree.CreateNode(ui::UiClass::FrameLayout);
+    tree.Get(normal)->layout.width.mode = ui::SizeMode::MatchParent;
+    tree.Get(normal)->layout.height.mode = ui::SizeMode::MatchParent;
+    tree.Get(normal)->background_color = 0xff0000ffU;
+    tree.Attach(tree.Root(), normal);
+    const auto modal = tree.CreateNode(ui::UiClass::FrameLayout);
+    tree.Get(modal)->modal_layer = true;
+    tree.Get(modal)->layout.width.mode = ui::SizeMode::MatchParent;
+    tree.Get(modal)->layout.height.mode = ui::SizeMode::MatchParent;
+    tree.Get(modal)->background_color = 0x00000088U;
+    tree.Attach(tree.Root(), modal);
+    const auto panel = tree.CreateNode(ui::UiClass::View);
+    tree.Get(panel)->layout.width = {ui::SizeMode::Fixed, 20};
+    tree.Get(panel)->layout.height = {ui::SizeMode::Fixed, 20};
+    tree.Get(panel)->layout.layout_gravity = 0x11;
+    tree.Get(panel)->background_color = 0xffffffffU;
+    tree.Attach(modal, panel);
+    ui::LayoutUiTree(tree, {100, 100});
+    ui::UiOverlayRenderer first, last;
+    const bool dirty = tree.Get(tree.Root())->draw_dirty;
+    const auto& before_surface = first.Render(tree, {}, {100, 100}, ui::UiRenderPlane::normal);
+    CHECK(before_surface.rgba8[0] == 255); CHECK(before_surface.rgba8[3] == 255);
+    const auto& after_surface = last.Render(tree, {}, {100, 100}, ui::UiRenderPlane::modal, dirty);
+    CHECK(after_surface.rgba8[0] == 0); CHECK(after_surface.rgba8[3] == 136);
+    const auto center = (50U * 100U + 50U) * 4U;
+    CHECK(after_surface.rgba8[center] == 255); CHECK(after_surface.rgba8[center + 3] == 255);
+    tree.Get(panel)->background_color = 0x00ff00ffU; tree.MarkDrawDirty(panel);
+    const bool changed = tree.Get(tree.Root())->draw_dirty;
+    static_cast<void>(first.Render(tree, {}, {100, 100}, ui::UiRenderPlane::normal));
+    CHECK_FALSE(tree.Get(tree.Root())->draw_dirty);
+    CHECK(last.Render(tree, {}, {100, 100}, ui::UiRenderPlane::modal, changed).rgba8[center + 1] == 255);
+    CHECK(last.BuildCount() == 2);
+    static_cast<void>(last.Render(tree, {}, {100, 100}, ui::UiRenderPlane::modal));
+    CHECK(last.BuildCount() == 2);
+}
+
 TEST_CASE("DVM-235 trusted API19 fallback font renders distinct CJK glyphs") {
     const auto root = std::filesystem::path(__FILE__).parent_path().parent_path().parent_path();
     std::ifstream input(root / "data/android/19/fonts/DroidSansFallback.ttf", std::ios::binary);

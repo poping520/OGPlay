@@ -8,6 +8,13 @@
 
 ## 核心模型与公共边界
 
+- StatVfs 在同一索引锁内按规范路径/别名校验存在性并读取 attached sandbox 写配额卷。
+  所有 writable roots 及其非根目录祖先共用安装身份 fsid，不改变写权限；
+  字节已用量含 persisted+dirty delta，4096
+  为报告块单位、向下取整、无 reserved blocks。条目预算含活动持久项与新 dirty 文件，
+  不计 tombstone/immutable base；无配置 mount flags，name 上限为现有 encoded backing
+  name 约束，转义/辅助文件可能提前失败。未知卷/无 sandbox 为 ENOTSUP，范围/账本
+  异常明确失败；这是 overlay 写预算，不是物理磁盘/inode 或写入成功保证。
 - `File` 是稳定节点：拥有进程内唯一 `node_id`、来源、权限、尺寸、`generation` 与
   overlay 归属；路径只是可替换的名字。`OpenFile` 独立拥有 offset、权限和操作锁，FD 表
   保存其 `shared_ptr`。Close 先移除表项，再等待旧打开状态的在途操作；复用同一数字不会

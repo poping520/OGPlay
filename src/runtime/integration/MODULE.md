@@ -187,6 +187,7 @@ Android API 的详细行为以 [dexvm_android](dexvm_android/MODULE.md)为准；
 ## VFS、Android 与媒体边界
 
 - DexVmIoVfsAdapter 是 core IoFileSystem 到唯一会话 VFS 的桥，Java/native IO 看同一世界；
+  StatVfs 共用 VFS 卷统计并保留 errno，Android 不另持宿主剩余空间或无路径统计。
   mkdir/mkdirs、list/delete/rename/read/write/flush/close 保留真实语义，异常出口关闭临时 FD。
   只透传 guest cwd/writable；Java File 布尔 API 才把 VFS 错误收敛为 false。
 - APK bytes/inventory/Manifest 由上层 sealed 输入；resource/package 路径为 guest 路径，

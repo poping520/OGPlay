@@ -13,6 +13,7 @@
 #include <vector>
 
 #include "ogplay/runtime/dexvm/dexvm_types.h"
+#include "ogplay/runtime/common/guest_filesystem_stats.h"
 
 namespace ogplay::runtime::dexvm {
 
@@ -41,6 +42,9 @@ public:
   virtual ~IoFileSystem() = default;
   [[nodiscard]] virtual std::optional<IoFileInfo>
   Stat(std::string_view path) const = 0;
+  [[nodiscard]] virtual GuestFileSystemStats StatVfs(std::string_view) const {
+    throw IoRuntimeError("filesystem statistics are unavailable", 38);
+  }
   [[nodiscard]] virtual std::optional<std::vector<std::string>>
   List(std::string_view path) const = 0;
   [[nodiscard]] virtual std::optional<std::string> WorkingDirectory() const = 0;
@@ -113,6 +117,7 @@ public:
   };
   void SetFileSystem(IoFileSystem *file_system) noexcept;
   [[nodiscard]] bool HasFileSystem() const noexcept;
+  [[nodiscard]] GuestFileSystemStats StatVfs(std::string_view path) const;
 
   std::shared_ptr<InputState> SetInput(VmObjectRef owner, InputState state,
                                        bool close_underlying = true);

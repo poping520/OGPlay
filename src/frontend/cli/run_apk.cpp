@@ -600,14 +600,7 @@ int RunApkCommand(const int argc, const char* const argv[],
                         video::FfmpegUnavailableReason(),
                     {}, {}, kUnrestrictedLog);
             }
-            if (external_directory.has_value()) {
-                std::error_code space_error;
-                const auto space = std::filesystem::space(
-                    *external_directory, space_error);
-                if (!space_error) {
-                    dex_context->external_free_bytes = space.available;
-                }
-            }
+
         }
         std::unique_ptr<hal::AudioOutput> audio_output;
         audio_output = hal::CreateSdlAudioOutput(kDesktopAudioOutputSpec);

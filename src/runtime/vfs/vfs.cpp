@@ -1088,6 +1088,9 @@ std::string VirtualFileSystem::CanonicalPath(const std::string_view path) const 
 VfsFileInfo VirtualFileSystem::Stat(const std::string_view path) const {
     return impl_->Stat(path);
 }
+GuestFileSystemStats VirtualFileSystem::StatVfs(std::string_view path) const {
+    return impl_->StatVfs(path);
+}
 
 std::unique_ptr<VfsCharacterDeviceRegistration> VirtualFileSystem::RegisterReadOnlyCharacterDevice(
     const std::string_view path, const std::uint64_t device_number, VfsCharacterReader reader) {

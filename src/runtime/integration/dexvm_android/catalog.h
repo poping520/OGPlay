@@ -159,7 +159,6 @@ Declare_android_opengl_GLSurfaceView_Renderer(const Context &context);
 [[nodiscard]] Decl Declare_android_os_MessageQueue(const Context &context);
 [[nodiscard]] Decl Declare_android_os_Message(const Context &context);
 [[nodiscard]] Decl Declare_android_os_SystemClock(const Context &context);
-[[nodiscard]] Decl Declare_android_os_StatFs(const Context &context);
 [[nodiscard]] Decl Declare_android_os_Parcel(const Context &context);
 [[nodiscard]] Decl
 Declare_android_os_ParcelFileDescriptor(const Context &context);

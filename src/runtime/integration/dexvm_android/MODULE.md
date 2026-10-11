@@ -143,6 +143,10 @@ PendingIntent.cancel 使令牌失效，查询不再匹配；退出在 VM 锁内�
 
 ## 资源、Parcel、数据库与日志
 
+StatFs 普通字段、构造/restat 与 getter 全部来自原版 BootDex；只有 Posix.statvfs
+平台边界查询 guest VFS。支持沙盒写配额卷，其他卷明确失败；不采样宿主剩余空间。
+快照刷新与错误转换归 Java，详细模型见 [ADR-0122](../../../../docs/adr/runtime.md#adr-0122)。
+
 进程关闭标记拒绝新的 Activity launch/finish 命令。
 自进程 Process.killProcess 与 Runtime.nativeExit 共用 VM 退出协议，立即展开 Java 并终止
 所有 execution context；外部进程仍明确拒绝。

@@ -1,5 +1,7 @@
 #pragma once
 
+#include "ogplay/runtime/common/guest_filesystem_stats.h"
+
 // Android-path virtual filesystem core shared by syscall and framework HLE.
 
 #include <cstddef>
@@ -243,6 +245,7 @@ public:
     // operations, including path aliases.
     [[nodiscard]] std::string CanonicalPath(std::string_view path) const;
     [[nodiscard]] VfsFileInfo Stat(std::string_view path) const;
+    [[nodiscard]] GuestFileSystemStats StatVfs(std::string_view path) const;
     // Immediate children (sorted, deduplicated) of a directory path; empty
     // when nothing is below it. Directories exist both implicitly, through
     // the files mounted beneath them, and explicitly through CreateDirectory.

@@ -1047,6 +1047,34 @@ namespace ogplay::runtime::dexvm::intrinsics {
                         ThrowErrno(call.vm, "fstat", error.ErrorNumber(), error.what());
                     }
                 }, kAccPublic | kAccNative);
+            posix.VirtualMethod("statvfs", "(Ljava/lang/String;)Llibcore/io/StructStatVfs;",
+                [](IntrinsicContext& call) {
+                    const auto path_ref = IntrinsicCall(call).NonNullRef(0, "path");
+                    try {
+                        const auto stats = call.vm.IO().StatVfs(call.vm.StringUtf8(path_ref));
+                        const auto& v = stats.values;
+                        for (auto value : v) if (value > static_cast<std::uint64_t>(INT64_MAX))
+                            throw IoRuntimeError("filesystem statistic exceeds API19 long", 75);
+                        if (!v[0] || !v[1] || v[4] > v[3] || v[3] > v[2] ||
+                            v[7] > v[6] || v[6] > v[5] || v[2] > static_cast<std::uint64_t>(INT64_MAX) / v[0])
+                            throw IoRuntimeError("filesystem statistics are inconsistent", 5);
+                        const auto type = call.vm.Linker().ResolveDescriptor("Llibcore/io/StructStatVfs;");
+                        const auto initialized = call.vm.EnsureClassInitialized(type);
+                        if (initialized.exception.IsValid())
+                            throw VmJavaThrow{call.vm.Linker().Class(initialized.exception_class).descriptor,
+                                              initialized.exception_message, initialized.exception};
+                        const auto object = call.vm.NewIntrinsicInstance("Llibcore/io/StructStatVfs;");
+                        const auto root = call.vm.ProtectReferences(std::array{object});
+                        std::vector<VmValue> arguments{VmValue::Ref(object)};
+                        for (auto value : v) arguments.push_back(VmValue::Long(static_cast<std::int64_t>(value)));
+                        InvokeDirect(call.vm, "Llibcore/io/StructStatVfs;", "<init>", "(JJJJJJJJJJJ)V", std::move(arguments));
+                        return VmValue::Ref(object);
+                    } catch (const IoRuntimeError& error) {
+                        if ((error.ErrorNumber() == 38 || error.ErrorNumber() == 95) && call.vm.Ledger())
+                            call.vm.Ledger()->RecordUnimplemented("runtime.vfs_filesystem_stats", 0);
+                        ThrowErrno(call.vm, "statvfs", error.ErrorNumber(), error.what());
+                    }
+                }, kAccPublic | kAccNative);
             for (const auto* name : {"stat", "lstat"}) {
                 posix.VirtualMethod(name,
                     "(Ljava/lang/String;)Llibcore/io/StructStat;",

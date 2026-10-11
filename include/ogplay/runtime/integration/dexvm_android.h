@@ -216,11 +216,8 @@ struct DexVmAndroidContext final {
   // from app SharedPreferences and from telephony/serial identities.
   std::map<std::string, std::string, std::less<>> secure_settings;
 
-  // External storage facts: the guest-visible root and the real free
-  // space of the backing host volume (filled by the frontend; 0 when no
-  // external mount exists, which StatFs then truthfully reports).
+  // Guest-visible external root. Filesystem capacity comes from guest VFS.
   std::string external_storage_root{"/sdcard"};
-  std::uint64_t external_free_bytes{};
 
   // Deterministic time published by the lifecycle driver (unified Clock).
   std::atomic<std::int64_t> uptime_millis{kDefaultAndroidDeviceUptimeMillis};

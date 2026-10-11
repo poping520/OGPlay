@@ -234,7 +234,6 @@ AndroidIntrinsicCatalog(const std::shared_ptr<DexVmAndroidContext> &context) {
         Declare_android_os_MessageQueue(context),
       Declare_android_os_Message(context),
       Declare_android_os_SystemClock(context),
-      Declare_android_os_StatFs(context),
       Declare_android_os_Parcel(context),
       Declare_android_os_ParcelFileDescriptor(context),
       Declare_android_os_PowerManager(context),

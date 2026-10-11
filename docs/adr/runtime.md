@@ -1084,3 +1084,22 @@ clinit 与 OOME 保留真实 Java throwable，返回 null、置 JNI pending；�
 发布失败移除 registry 映射，未发布实例无资源、无永久根，由常规 GC 回收。local/
 global/weak 生命周期沿用原机制；回调只在 guest worker/资源清理结束后撤销。
 该工作不改变 NewObject 的构造路径或扩大模拟器范围；验证见 [DVM-242](../tasks/dexvm/DVM-242.md)。
+
+## ADR-0122 · guest 沙盒配额卷统计
+
+容量统计以 guest VFS 的 writable namespace 归属为准，同一个 attached sandbox 的
+所有根与别名共享写配额卷；其非根目录祖先（如 /data）也可查询，供原 SQLite
+页面大小路径使用，不因此授予写权限。已有路径才可查询，未知/只读外部卷及无事实明确失败。
+容量是 quota 减 persisted 与所有 dirty delta，不是宿主素材目录剩余空间，亦不把
+immutable APK/OBB 大小算作沙盒写入。4096 为报告块单位、计数向下取整，无保留块；
+inode 字段表达持久元数据额度与新 dirty 项预算，tombstone 不消耗活动项额度。
+fsid 按安装身份稳定派生，mount flags 为未配置（0），name 上限来自已有 encoded
+backing-name 约束；转义/辅助文件的额外限制仍可能提前失败，不改变命名行为。
+这个显式 quota model 不声称物理磁盘/inode；host IO 与 VFS 内存预算独立约束写入。
+
+原版 API19 StatFs 与 StructStatVfs 保留 Java 字段、snapshot/restat、异常转换、int
+截断和字节算法；唯一新增平台边界 Posix.statvfs 经 core IoFileSystem 窄接口到 VFS。
+查询与 dirty 账本在同一 VFS 锁内完成；回填先检查 API19 long 范围/计数不变量。
+不在 Android family 重写 getters 或保留无路径的 host-free 标量。初始闭环仅支持
+沙盒卷；其他 provider、fstatvfs 与 ARM statfs ABI 按实际触达另加，共用同一事实类型。
+支持与验证见 [DVM-243](../tasks/dexvm/DVM-243.md)。

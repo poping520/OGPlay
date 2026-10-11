@@ -192,6 +192,8 @@ public:
 
     // ---- directories, metadata and the sandbox (vfs_sandbox.cpp) --------
     [[nodiscard]] VfsFileInfo Stat(std::string_view path) const;
+    [[nodiscard]] GuestFileSystemStats StatVfs(std::string_view path) const;
+    [[nodiscard]] VfsFileInfo StatLocked(const std::string& normalized) const;
     [[nodiscard]] std::vector<VfsDirectoryEntry> ListDirectory(
         std::string_view path) const;
     void CreateDirectory(std::string_view path);

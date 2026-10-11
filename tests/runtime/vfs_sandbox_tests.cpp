@@ -94,6 +94,50 @@ void WriteThrough(VirtualFileSystem& vfs, const std::string_view path,
 
 }  // namespace
 
+TEST_CASE("DVM-243 sandbox statvfs shares alias identity and dirty quota facts") {
+    const TemporaryRoot root("statvfs");
+    constexpr std::uint64_t quota = 8 * 4096;
+    auto store = SandboxStore::Open(root.path, kPackage, kPackage, {.byte_quota = quota, .maximum_files = 8});
+    VirtualFileSystem vfs;
+    vfs.AttachSandbox(*store, kWritableRoots);
+    vfs.AddPathAlias("/storage/emulated/0", "/sdcard");
+    const auto original = vfs.StatVfs("/sdcard");
+    CHECK(original.values[0] == 4096); CHECK(original.values[2] == 8);
+    CHECK(original.values[3] == 8); CHECK(original.values[4] == 8);
+    CHECK(original.values[5] == 8); CHECK(original.values[6] == 8);
+    CHECK(original.values[10] == SandboxStore::MaximumEncodedNameBytes());
+    CHECK(vfs.StatVfs("/storage/emulated/0").values == original.values);
+    CHECK(vfs.StatVfs("/data/data/com.example.game").values[8] == original.values[8]);
+    CHECK(vfs.StatVfs("/data").values == original.values);
+    CHECK(vfs.StatVfs("/data/data").values == original.values);
+    const auto fd = vfs.Open("/sdcard/state", {.read = true, .write = true, .create = true});
+    const std::vector<std::byte> contents(4097);
+    CHECK(vfs.Write(fd, contents) == contents.size());
+    CHECK(store->UsedBytes() == 0); // Still unflushed, but fully charged.
+    CHECK(vfs.StatVfs("/sdcard/state").values[3] == 6);
+    CHECK(vfs.StatVfs("/sdcard").values[6] == 7);
+    vfs.Flush(fd);
+    CHECK(store->UsedBytes() == 4097);
+    CHECK(vfs.StatVfs("/sdcard").values[3] == 6);
+    vfs.Truncate(fd, 4096);
+    CHECK(vfs.StatVfs("/sdcard").values[3] == 7);
+    vfs.RemoveFile("/sdcard/state");
+    CHECK(vfs.StatVfs("/sdcard").values == original.values);
+    vfs.Close(fd); // Orphan close must not resurrect the quota charge.
+    CHECK(vfs.StatVfs("/sdcard").values == original.values);
+    vfs.CreateDirectory("/sdcard/folder");
+    CHECK(vfs.StatVfs("/sdcard").values[6] == 7);
+    vfs.RemoveDirectory("/sdcard/folder");
+    CHECK(vfs.StatVfs("/sdcard").values[6] == 8);
+    vfs.PutFile("/system/readonly", {}, false);
+    CHECK(ErrnoOf([&] { static_cast<void>(vfs.StatVfs("/system/readonly")); }) == 95);
+    CHECK(ErrnoOf([&] { static_cast<void>(vfs.StatVfs("/sdcard/missing")); }) == 2);
+    CHECK(ErrnoOf([&] { static_cast<void>(vfs.StatVfs("/sdcard/../escape")); }) == 13);
+    VirtualFileSystem missing;
+    missing.CreateDirectory("/sdcard");
+    CHECK(ErrnoOf([&] { static_cast<void>(missing.StatVfs("/sdcard")); }) == 95);
+}
+
 TEST_CASE("VFS sandbox preserves mixed-case package roots across reload and deletion") {
     const TemporaryRoot root("mixed-package");
     constexpr auto package = "com.example.MixedGame";

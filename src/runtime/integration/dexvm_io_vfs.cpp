@@ -23,6 +23,11 @@ void CloseIfOpen(VirtualFileSystem &file_system,
 DexVmIoVfsAdapter::DexVmIoVfsAdapter(VirtualFileSystem &file_system) noexcept
     : file_system_(file_system) {}
 
+GuestFileSystemStats DexVmIoVfsAdapter::StatVfs(std::string_view path) const {
+  try { return file_system_.StatVfs(path); }
+  catch (const VfsError& error) { throw dexvm::IoRuntimeError(error.what(), error.ErrorNumber()); }
+}
+
 std::optional<dexvm::IoFileInfo>
 DexVmIoVfsAdapter::Stat(const std::string_view path) const {
   try {

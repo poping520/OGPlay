@@ -12,6 +12,7 @@ public:
 
   [[nodiscard]] std::optional<dexvm::IoFileInfo>
   Stat(std::string_view path) const override;
+  [[nodiscard]] GuestFileSystemStats StatVfs(std::string_view path) const override;
   [[nodiscard]] std::optional<std::vector<std::string>>
   List(std::string_view path) const override;
   [[nodiscard]] std::optional<std::string> WorkingDirectory() const override;

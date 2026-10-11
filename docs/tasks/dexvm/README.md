@@ -28,6 +28,7 @@ Asphalt 5（pilot title）删除 profile 全部 `native_call` 与 `[[java.class]
 
 | WU | 一句话目标 | 状态 |
 | --- | --- | --- |
+| [DVM-243](DVM-243.md) | 原版 StatFs 与沙盒卷容量统一查询 | 有界能力/首错验证完成 |
 | [DVM-242](DVM-242.md) | JNI 原始对象分配与 VM 共享存储 | 有界能力/首错验证完成 |
 | [DVM-241](DVM-241.md) | 原版 NetworkInfo 与通用离线连接状态 | 有界能力/首错验证完成 |
 | [DVM-240](DVM-240.md) | 单包安装事实与已安装应用查询 | 有界能力/首错验证完成 |

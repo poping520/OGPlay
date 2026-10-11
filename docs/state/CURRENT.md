@@ -66,11 +66,15 @@
   类型；9 用例/2323 断言及 BootDex/载荷校验通过，原 APK 继续推进到 EGL 初始化。
   [DVM-242](../tasks/dexvm/DVM-242.md) 提供 JNI 原始 VM 对象分配；5 用例/170 断言通过，
   原 APK 越过 AllocObject/EGL 参数初始化，进入 PostStartup。
-  **当前首错**：`StatFs.restat("/sdcard")` 缺方法，PostStartup dex_pc=62；尚未到首帧。
+  [DVM-243](../tasks/dexvm/DVM-243.md) 接入原版 StatFs 与统一 VFS 配额卷统计，包含
+  SQLite 的 /data 查询；6 用例/192 断言及 BootDex/载荷校验通过，原 APK 越过空间查询。
+  **当前首错**：`BitmapFactory.decodeResource(Resources,int)` 缺方法，PostStartup dex_pc=209；
+  尚未到首帧。
   崩溃报告另触发 LocaleData 初始化失败。证据 `.local/manifest-duplicate-fix-20261011/`、
   `.local/ndk-assets-fix-20261011/`、`.local/gles-mapbuffer-fix-20261011/`、
   `.local/debug-memory-fix-20261011/`、`.local/installed-applications-fix-20261011/`、
-  `.local/connectivity-fix-20261011/`、`.local/alloc-object-fix-20261011/`；取证进程已退出。
+  `.local/connectivity-fix-20261011/`、`.local/alloc-object-fix-20261011/`、
+  `.local/statfs-fix-20261011/`；取证进程已退出。
 
 - **Angry Birds 2.3.0**：无 Profile、空沙盒运行 5000 呈现帧，滚动条方法解析错消失，
   未触发新致命首错；绘制与完整兼容未验收。见 [DVM-186](../tasks/dexvm/DVM-186.md)。

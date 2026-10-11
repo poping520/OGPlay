@@ -2675,6 +2675,62 @@ TEST_CASE("DVM-240 ARM JNI installed applications expose the session APK and rej
     }
 }
 
+TEST_CASE("DVM-243 ARM JNI StatFs refresh observes the shared sandbox volume") {
+    using namespace ogplay;
+    using namespace runtime;
+    using namespace runtime::dexvm;
+    const auto root = std::filesystem::temp_directory_path() / "ogplay-jni-statfs";
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        std::filesystem::remove_all(root);
+        std::filesystem::create_directories(root);
+        {
+            auto store = SandboxStore::Open(root, "fixture", "fixture", {.byte_quota = 16 * 4096});
+            ApplicationProcess f(backend, std::string_view("/"));
+            const std::array<std::string, 2> writable{"/data/data/fixture", "/sdcard"};
+            f.filesystem.AttachSandbox(*store, writable);
+            auto& bridge = *f.bridge; auto& vm = bridge.Vm(); auto& env = f.session->Environment();
+            auto& process = f.session->Process(); const auto memory = process.GuestMemoryAccess();
+            const auto scratch = memory.allocate(256);
+            env.PushLocalFrame(1, 32);
+            const auto klass = bridge.PublishLocal(vm.Model().ClassObject(vm.Linker().ResolveDescriptor("Landroid/os/StatFs;")));
+            const auto path = bridge.PublishLocal(vm.NewStringUtf8("/sdcard"));
+            const auto invoke = [&](const char* name, std::array<std::uint32_t, 4> args) {
+                return process.Invoke({memory::GuestAddress{EnvironmentThunk(name)}, args, {}});
+            };
+            const auto method = [&](const char* name, const char* signature) {
+                std::array<std::byte, 256> bytes{};
+                std::memcpy(bytes.data(), name, std::strlen(name) + 1);
+                std::memcpy(bytes.data() + 64, signature, std::strlen(signature) + 1);
+                for (std::size_t i = 0; i < 4; ++i) bytes[128 + i] = static_cast<std::byte>(path.Value() >> (i * 8));
+                memory.write(scratch, bytes);
+                const auto id = invoke("GetMethodID", {process.GuestEnvironment().Value(), klass.Value(), scratch.Value(), scratch.Add(64).Value()}).return_value;
+                REQUIRE(id != 0); REQUIRE_FALSE(env.ExceptionCheck(1));
+                return id;
+            };
+            const auto constructor = method("<init>", "(Ljava/lang/String;)V");
+            const auto object = JniReference{invoke("NewObjectA", {process.GuestEnvironment().Value(), klass.Value(), constructor, scratch.Add(128).Value()}).return_value};
+            REQUIRE_FALSE(object.IsNull()); REQUIRE_FALSE(env.ExceptionCheck(1));
+            const auto available = method("getAvailableBlocksLong", "()J");
+            const auto query = [&] {
+                const auto value = invoke("CallLongMethodA", {process.GuestEnvironment().Value(), object.Value(), available, 0});
+                REQUIRE_FALSE(env.ExceptionCheck(1));
+                return (static_cast<std::uint64_t>(value.return_value_high) << 32) | value.return_value;
+            };
+            CHECK(query() == 16);
+            const auto fd = f.filesystem.Open("/sdcard/save", {.write = true, .create = true});
+            const std::vector<std::byte> bytes(4096);
+            REQUIRE(f.filesystem.Write(fd, bytes) == bytes.size());
+            CHECK(query() == 16);
+            const auto refresh = method("restat", "(Ljava/lang/String;)V");
+            static_cast<void>(invoke("CallVoidMethodA", {process.GuestEnvironment().Value(), object.Value(), refresh, scratch.Add(128).Value()}));
+            REQUIRE_FALSE(env.ExceptionCheck(1)); CHECK(query() == 15);
+            f.filesystem.Close(fd);
+            static_cast<void>(env.PopLocalFrame(1)); memory.release(scratch, 256);
+        }
+        std::filesystem::remove_all(root);
+    }
+}
+
 TEST_CASE("DVM-242 ARM JNI AllocObject shares zeroed inherited fields without constructors") {
     using namespace ogplay;
     using namespace runtime;

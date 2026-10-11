@@ -18,8 +18,9 @@ public:
     using Publish = std::function<JniReference(dexvm::VmObjectRef, std::uint64_t)>;
     using Resolve = std::function<dexvm::VmObjectRef(JniReference, std::uint64_t)>;
     using Thread = std::function<std::uint64_t(std::uint64_t)>;
+    using Assets = std::function<memory::GuestAddress(dexvm::VmObjectRef)>;
     NativeActivityRuntime(AndroidGuestCallSession&, std::weak_ptr<DexVmAndroidContext>,
-                          Publish, Resolve, Thread, core::Logger* logger = nullptr);
+                          Publish, Resolve, Thread, Assets, core::Logger* logger = nullptr);
     ~NativeActivityRuntime();
     dexvm::VmValue Call(dexvm::IntrinsicContext&, std::string_view method);
     // Call after Java workers join and before the session detaches JNI.

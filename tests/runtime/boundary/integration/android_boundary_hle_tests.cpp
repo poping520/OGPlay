@@ -152,6 +152,34 @@ void WriteGuestString(BoundaryFixture& fixture,
     fixture.memory.Write(address, bytes, 1);
 }
 
+class BoundaryAssetSource final : public ogplay::runtime::AndroidAssetSource {
+public:
+    std::uint64_t length{3};
+    bool compressed{};
+    mutable std::size_t largest_read{}, descriptor_opens{}, descriptor_closes{};
+    std::uint64_t Length() const override { return length; }
+    std::size_t ReadAt(std::uint64_t offset, std::span<std::byte> output) const override {
+        const auto count = static_cast<std::size_t>(std::min<std::uint64_t>(output.size(), length - offset));
+        largest_read = std::max(largest_read, count);
+        const std::array payload{std::byte{'a'}, std::byte{'b'}, std::byte{'c'}};
+        for (std::size_t i = 0; i < count; ++i) output[i] = payload[(offset + i) % payload.size()];
+        return count;
+    }
+    ogplay::runtime::AssetFileDescriptor OpenFileDescriptor() const override {
+        if (compressed) return {};
+        ++descriptor_opens;
+        return {42, 123, length};
+    }
+    void CloseFileDescriptor(std::int32_t) const override { ++descriptor_closes; }
+};
+class BoundaryAssetManager final : public ogplay::runtime::AndroidAssetManagerSource {
+public:
+    std::shared_ptr<BoundaryAssetSource> source = std::make_shared<BoundaryAssetSource>();
+    std::shared_ptr<const ogplay::runtime::AndroidAssetSource> Open(std::string_view name) override {
+        return name == "hello" ? source : nullptr;
+    }
+};
+
 std::uint32_t FastBoundaryCall(
     BoundaryFixture& fixture, const std::string_view library,
     const std::string_view symbol,
@@ -6306,12 +6334,9 @@ TEST_CASE("BND34 EGL fences images and texture pbuffers use real ANGLE objects")
 TEST_CASE("DVM-195 registered NativeActivity assets window and input are bounded and retired") {
     using namespace ogplay;
     BoundaryFixture f;
-    const auto activity = f.output.Add(256), assets = activity.Add(128), queue = activity.Add(148);
-    f.boundary.RegisterNativeActivity({activity, assets, queue, 4, 3,
-        [](std::string_view name) -> std::optional<std::vector<std::byte>> {
-            if (name != "hello") return std::nullopt;
-            return std::vector{std::byte{'a'}, std::byte{'b'}, std::byte{'c'}};
-        }});
+    const auto activity = f.output.Add(256), queue = activity.Add(148);
+    const auto assets = f.boundary.RegisterAssetManager(std::make_shared<BoundaryAssetManager>());
+    f.boundary.RegisterNativeActivity({activity, assets, queue, 4, 3});
     WriteGuestString(f, f.output, "hello");
     const auto asset = f.Call("libandroid.so", "AAssetManager_open", {assets.Value(), f.output.Value(), 2});
     REQUIRE(asset != 0);
@@ -6353,15 +6378,20 @@ TEST_CASE("DVM-195 registered NativeActivity assets window and input are bounded
     CHECK_THROWS(f.Call("libandroid.so", "ANativeWindow_getWidth", {window.Value()}));
     CHECK_THROWS(f.Call("libandroid.so", "AInputQueue_getEvent", {queue.Value(), f.output.Value()}));
     CHECK_THROWS(f.Call("libandroid.so", "ANativeWindow_setBuffersGeometry", {window.Value(), 0, 0, 0}));
+    WriteGuestString(f, f.output, "hello");
+    const auto independent_asset = f.Call("libandroid.so", "AAssetManager_open", {assets.Value(), f.output.Value(), 2});
+    REQUIRE(independent_asset != 0);
+    f.boundary.UnregisterAssetManager(assets);
     CHECK_THROWS(f.Call("libandroid.so", "AAssetManager_open", {assets.Value(), f.output.Value(), 2}));
+    CHECK(f.Call("libandroid.so", "AAsset_read", {independent_asset, f.output.Add(32).Value(), 3}) == 3);
+    f.Call("libandroid.so", "AAsset_close", {independent_asset});
 }
 
 TEST_CASE("DVM-195 NativeActivity window takeover retires old EGL surfaces") {
     using namespace ogplay;
     BoundaryFixture f;
     const auto activity = f.output.Add(256);
-    f.boundary.RegisterNativeActivity({activity, activity.Add(128), activity.Add(148), 4, 3,
-        [](std::string_view) -> std::optional<std::vector<std::byte>> { return std::nullopt; }});
+    f.boundary.RegisterNativeActivity({activity, activity.Add(128), activity.Add(148), 4, 3});
     REQUIRE(f.Call("libEGL.so", "eglInitialize", {1, 0, 0}) == 1U);
     const auto create = [&](memory::GuestAddress window) {
         return f.Call("libEGL.so", "eglCreateWindowSurface", {1, 2, window.Value(), 0});
@@ -6414,6 +6444,57 @@ TEST_CASE("DVM-195 NativeActivity window takeover retires old EGL surfaces") {
     CHECK(f.Call("libEGL.so", "eglDestroySurface", {1, first_surface}) == 1U);
     CHECK(f.Call("libEGL.so", "eglDestroySurface", {1, second_surface}) == 1U);
     CHECK(f.Call("libEGL.so", "eglTerminate", {1}) == 1U);
+}
+
+TEST_CASE("DVM-237 NDK Asset large sources and FD output preflight do not materialize data") {
+    using namespace ogplay;
+    BoundaryFixture f;
+    const auto manager_source = std::make_shared<BoundaryAssetManager>();
+    manager_source->source->length = 495689473;
+    const auto manager = f.boundary.RegisterAssetManager(manager_source);
+    WriteGuestString(f, f.output, "hello");
+    CHECK(f.Call("libandroid.so", "AAssetManager_open", {manager.Value(), f.output.Value(), 4}) == 0);
+    const auto asset = f.Call("libandroid.so", "AAssetManager_open", {manager.Value(), f.output.Value(), 3});
+    REQUIRE(asset != 0);
+    CHECK(manager_source->source->largest_read == 0);
+    CHECK(f.Call("libandroid.so", "AAsset_getLength", {asset}) == 495689473);
+    CHECK(f.Call("libandroid.so", "AAsset_read", {asset, f.output.Add(32).Value(), 16}) == 16);
+    CHECK(manager_source->source->largest_read == 16);
+    CHECK_THROWS(f.Call("libandroid.so", "AAsset_read", {asset, 1, 16}));
+    CHECK(f.Call("libandroid.so", "AAsset_getRemainingLength", {asset}) == 495689473 - 16);
+    f.bus.Write32(f.output.Add(64), 0x11223344);
+    CHECK_THROWS(f.Call("libandroid.so", "AAsset_openFileDescriptor", {asset, f.output.Add(64).Value(), 1}));
+    CHECK(f.bus.Read32(f.output.Add(64)) == 0x11223344);
+    CHECK(manager_source->source->descriptor_opens == 0);
+    CHECK(f.Call("libandroid.so", "AAsset_openFileDescriptor", {asset, f.output.Add(64).Value(), f.output.Add(68).Value()}) == 42);
+    CHECK(f.bus.Read32(f.output.Add(64)) == 123);
+    CHECK(f.bus.Read32(f.output.Add(68)) == 495689473);
+    manager_source->source->compressed = true;
+    f.bus.Write32(f.output.Add(64), 0x11223344);
+    CHECK(static_cast<std::int32_t>(f.Call("libandroid.so", "AAsset_openFileDescriptor",
+        {asset, f.output.Add(64).Value(), f.output.Add(68).Value()})) == -1);
+    CHECK(f.bus.Read32(f.output.Add(64)) == 0x11223344);
+    f.boundary.UnregisterAssetManager(manager);
+    CHECK(f.Call("libandroid.so", "AAsset_read", {asset, f.output.Add(32).Value(), 3}) == 3);
+    f.Call("libandroid.so", "AAsset_close", {asset});
+    CHECK_THROWS(f.Call("libandroid.so", "AAsset_getLength", {asset}));
+}
+
+TEST_CASE("DVM-237 retiring Asset hooks releases sources and stale handles") {
+    using namespace ogplay;
+    BoundaryFixture f;
+    auto source = std::make_shared<BoundaryAssetManager>();
+    const std::weak_ptr<const runtime::AndroidAssetSource> weak = source->source;
+    const auto manager = f.boundary.RegisterAssetManager(source);
+    WriteGuestString(f, f.output, "hello");
+    const auto asset = f.Call("libandroid.so", "AAssetManager_open", {manager.Value(), f.output.Value(), 2});
+    REQUIRE(asset != 0);
+    source.reset();
+    CHECK_FALSE(weak.expired());
+    f.boundary.SetAssetManagerHooks({});
+    CHECK(weak.expired());
+    CHECK_THROWS(f.Call("libandroid.so", "AAsset_getLength", {asset}));
+    CHECK_THROWS(f.Call("libandroid.so", "AAssetManager_open", {manager.Value(), f.output.Value(), 2}));
 }
 
 
@@ -6552,8 +6633,7 @@ TEST_CASE("BND46 retired input queues reject stale and foreign event identities"
     BoundaryFixture f;
     const auto first = f.output.Add(256), second = first.Add(256);
     for (const auto activity : {first, second})
-        f.boundary.RegisterNativeActivity({activity, activity.Add(128), activity.Add(148), 4, 3,
-            [](std::string_view) -> std::optional<std::vector<std::byte>> { return std::nullopt; }});
+        f.boundary.RegisterNativeActivity({activity, activity.Add(128), activity.Add(148), 4, 3});
     f.boundary.SetNativeActivityInput(first, true);
     f.boundary.PushInput({runtime::AndroidBoundaryInputType::pointer_button, 0, 10, 20, true});
     REQUIRE(f.Call("libandroid.so", "AInputQueue_getEvent", {first.Add(148).Value(), f.output.Value()}) == 0);

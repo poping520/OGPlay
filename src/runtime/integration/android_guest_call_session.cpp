@@ -1912,6 +1912,9 @@ public:
 
     dexvm::NioDirectMemoryAccess GuestMemoryAccess() const { return direct_memory_access_; }
     void SetBitmapHooks(AndroidBitmapHooks hooks) { boundary_.SetBitmapHooks(hooks); }
+    void SetAssetManagerHooks(AndroidAssetManagerHooks hooks) { boundary_.SetAssetManagerHooks(hooks); }
+    memory::GuestAddress RegisterAssetManager(std::shared_ptr<AndroidAssetManagerSource> source) { return boundary_.RegisterAssetManager(std::move(source)); }
+    void UnregisterAssetManager(memory::GuestAddress manager) { boundary_.UnregisterAssetManager(manager); }
     memory::GuestAddress FindModuleExport(const std::size_t index, const std::string_view name) const {
         std::scoped_lock lock(dynamic_link_mutex_);
         if (index >= loaded_.link_namespace.modules.size())
@@ -2937,4 +2940,7 @@ void AndroidGuestProcess::SetNativeActivityInput(memory::GuestAddress activity, 
 
 namespace ogplay::runtime {
 void AndroidGuestProcess::SetBitmapHooks(AndroidBitmapHooks hooks) { impl_->SetBitmapHooks(hooks); }
+void AndroidGuestProcess::SetAssetManagerHooks(AndroidAssetManagerHooks hooks) { impl_->SetAssetManagerHooks(hooks); }
+memory::GuestAddress AndroidGuestProcess::RegisterAssetManager(std::shared_ptr<AndroidAssetManagerSource> source) { return impl_->RegisterAssetManager(std::move(source)); }
+void AndroidGuestProcess::UnregisterAssetManager(memory::GuestAddress manager) { impl_->UnregisterAssetManager(manager); }
 }

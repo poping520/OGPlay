@@ -33,6 +33,7 @@
 #include "ogplay/runtime/integration/dexvm_android.h"
 #include "ogplay/runtime/integration/dexvm_bridge.h"
 #include "ogplay/runtime/integration/native_library_loader.h"
+#include "ogplay/runtime/integration/apk_assets.h"
 #include "ogplay/runtime/jni/jni.h"
 #include "ogplay/runtime/jni/jni_java_vm.h"
 #include "ogplay/runtime/jni/jni_field_store.h"
@@ -2367,6 +2368,178 @@ TEST_CASE("DVM-218 lifecycle preserves onPause failure and attempts later cleanu
         CHECK_FALSE(fixture.app->NativeProcess().Running());
         CHECK_FALSE(fixture.app->NativeProcess().Environment().IsThreadAttached(1));
         CHECK_NOTHROW(static_cast<void>(fixture.app->Stop()));
+    }
+}
+
+TEST_CASE("DVM-237 real ARM AssetManager shares JNI identity and independent APK descriptors") {
+    using namespace ogplay;
+    using namespace runtime::dexvm;
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+      for (const bool compressed : {false, true}) {
+        runtime::VirtualFileSystem filesystem;
+        core::CapabilityLedger ledger;
+        core::Logger logger;
+        auto context = std::make_shared<runtime::DexVmAndroidContext>();
+        // Local ZIP fixture exercises the same metadata/CRC/range reader as a
+        // parsed sealed archive. The FD still exposes the complete ZIP backing.
+        const std::string entry = "assets/hello";
+        const std::vector<std::byte> payload{std::byte{'a'}, std::byte{'b'}, std::byte{'c'}};
+        const std::vector<std::byte> deflate{std::byte{0x4b}, std::byte{0x4c}, std::byte{0x4a}, std::byte{0x06}, std::byte{0x00}};
+        const auto& encoded = compressed ? deflate : payload;
+        auto& zip = context->apk_bytes;
+        zip.resize(30 + entry.size());
+        Put32(zip, 0, 0x04034b50);
+        Put16(zip, 8, compressed ? 8 : 0);
+        Put32(zip, 14, 0x352441c2);
+        Put32(zip, 18, static_cast<std::uint32_t>(encoded.size()));
+        Put32(zip, 22, 3);
+        Put16(zip, 26, static_cast<std::uint16_t>(entry.size()));
+        std::memcpy(zip.data() + 30, entry.data(), entry.size());
+        zip.insert(zip.end(), encoded.begin(), encoded.end());
+        context->archive.entries.push_back({entry, 0, static_cast<std::uint16_t>(compressed ? 8 : 0),
+            0x352441c2, static_cast<std::uint32_t>(encoded.size()), 3, 0});
+        std::vector<std::vector<std::byte>> contents;
+        std::vector<runtime::BionicModuleSource> libraries;
+        for (const auto* name : {"libc.so", "libdl.so", "libm.so", "libstdc++.so"}) {
+            contents.push_back(ReadPayloadBytes(std::string("lib/") + name));
+            libraries.push_back({name, contents.back()});
+        }
+        session::AndroidAppProcessRequest request;
+        request.manifest = AppManifest("fixture.DelayedContentActivity");
+        request.system_libraries = libraries;
+        request.dex_bytes = ReadDexFixture("application.dex");
+        request.boot_dex_bytes = test::ReadBootDex();
+        request.context = context;
+        request.filesystem = &filesystem;
+        request.ledger = &ledger;
+        request.logger = &logger;
+        request.platform.android_id = "0123456789abcdef";
+        request.dexvm.interpreter.backend = backend;
+        auto app = session::AndroidAppProcess::Create(std::move(request));
+        auto& process = app->NativeProcess();
+        auto& bridge = app->DexVm();
+        auto& vm = bridge.Vm();
+        auto& env = process.Environment();
+        const auto memory = process.GuestMemoryAccess();
+        const auto scratch = memory.allocate(256);
+        std::array<std::byte, 256> bytes{};
+        std::memcpy(bytes.data(), "hello", 6);
+        memory.write(scratch, bytes);
+        const auto symbols = runtime::detail::BuildAndroidBoundarySymbols();
+        const runtime::BionicHleSymbolProvider provider(symbols);
+        const auto invoke = [&](const char* name, std::array<std::uint32_t, 4> args) {
+            const auto target = provider.Lookup("libandroid.so", name);
+            REQUIRE(target.has_value());
+            return process.Invoke({*target, args, {}}).return_value;
+        };
+        const auto libc = [&](const char* name, std::array<std::uint32_t, 4> args) {
+            const auto target = process.FindModuleExport(0, name);
+            REQUIRE_FALSE(target.IsNull());
+            return process.Invoke({target, args, {}}).return_value;
+        };
+        const auto word = [&](std::uint32_t offset) {
+            std::array<std::byte, 4> out{}; memory.read(scratch.Add(offset), out);
+            std::uint32_t result{};
+            for (std::size_t i = 0; i < out.size(); ++i) result |= std::to_integer<std::uint32_t>(out[i]) << (i * 8);
+            return result;
+        };
+        const auto object = vm.NewIntrinsicInstance("Landroid/content/res/AssetManager;");
+        auto reference = bridge.PublishLocal(object);
+        const auto convert = [&](runtime::JniReference ref) {
+            return invoke("AAssetManager_fromJava", {process.GuestEnvironment().Value(), ref.Value(), 0, 0});
+        };
+        const auto manager = convert(reference);
+        REQUIRE(manager != 0);
+        CHECK(convert(reference) == manager);
+        const auto weak = env.NewWeakGlobalRef(1, reference);
+        CHECK(convert(weak) == manager);
+        const auto second_object = vm.NewIntrinsicInstance("Landroid/content/res/AssetManager;");
+        const auto second_reference = bridge.PublishLocal(second_object);
+        CHECK(convert(second_reference) != manager);
+        env.DeleteLocalRef(1, second_reference);
+        CHECK(invoke("AAssetManager_fromJava", {scratch.Value(), reference.Value(), 0, 0}) == 0);
+        CHECK_FALSE(env.ExceptionCheck(1));
+        CHECK(convert(runtime::JniReference{}) == 0);
+        REQUIRE(env.ExceptionCheck(1));
+        env.ExceptionClear(1);
+        const auto system_object = vm.NewIntrinsicInstance("Landroid/content/res/AssetManager;");
+        context->singletons.emplace("system_assets", system_object);
+        const auto system_reference = bridge.PublishLocal(system_object);
+        CHECK(convert(system_reference) == 0);
+        REQUIRE(env.ExceptionCheck(1));
+        const auto system_exception = env.ExceptionOccurred(1);
+        env.ExceptionClear(1);
+        CHECK(vm.Linker().Class(vm.Model().ObjectClass(bridge.FromReference(system_exception))).descriptor ==
+            "Ljava/lang/UnsupportedOperationException;");
+        env.DeleteLocalRef(1, system_exception); env.DeleteLocalRef(1, system_reference);
+        context->singletons.erase("system_assets");
+        const auto global = env.NewGlobalRef(1, reference);
+        CHECK(convert(global) == manager);
+        const auto open = [&](const char* path) {
+            std::array<std::byte, 32> text{};
+            std::memcpy(text.data(), path, std::strlen(path));
+            memory.write(scratch, text);
+            return invoke("AAssetManager_open", {manager, scratch.Value(), 2, 0});
+        };
+        CHECK(open("missing") == 0);
+        CHECK(open("../hello") == 0);
+        CHECK(open("/hello") == 0);
+        const auto asset = open("hello"), other = open("hello");
+        REQUIRE(asset != 0); REQUIRE(other != 0);
+        CHECK(asset != other);
+        if (!compressed) {
+            auto damaged = std::make_shared<runtime::DexVmAndroidContext>();
+            damaged->apk_bytes = context->apk_bytes;
+            damaged->archive = context->archive;
+            damaged->apk_bytes.back() ^= std::byte{1};
+            CHECK_THROWS(runtime::ApkAssets(damaged)->Open("hello"));
+        }
+        CHECK(invoke("AAsset_read", {asset, scratch.Add(32).Value(), 2, 0}) == 2);
+        CHECK(invoke("AAsset_getRemainingLength", {asset, 0, 0, 0}) == 1);
+        CHECK(invoke("AAsset_getRemainingLength", {other, 0, 0, 0}) == 3);
+        const auto fd = invoke("AAsset_openFileDescriptor", {asset, scratch.Add(64).Value(), scratch.Add(68).Value(), 0});
+        if (compressed) {
+            CHECK(static_cast<std::int32_t>(fd) == -1);
+            CHECK(word(64) == 0); CHECK(word(68) == 0);
+        } else {
+            REQUIRE(static_cast<std::int32_t>(fd) >= 0);
+            CHECK(word(64) == 30 + entry.size()); CHECK(word(68) == 3);
+            const auto second_fd = invoke("AAsset_openFileDescriptor", {asset, scratch.Add(72).Value(), scratch.Add(76).Value(), 0});
+            REQUIRE(second_fd != fd);
+            CHECK(libc("lseek", {fd, word(64), 0, 0}) == word(64));
+            CHECK(libc("read", {fd, scratch.Add(96).Value(), 3, 0}) == 3);
+            std::array<std::byte, 3> actual{}; memory.read(scratch.Add(96), actual);
+            CHECK(std::vector(actual.begin(), actual.end()) == payload);
+            invoke("AAsset_close", {asset, 0, 0, 0});
+            CHECK(libc("lseek", {second_fd, word(72), 0, 0}) == word(72));
+            CHECK(libc("read", {second_fd, scratch.Add(96).Value(), 3, 0}) == 3);
+            CHECK(libc("close", {fd, 0, 0, 0}) == 0);
+            CHECK(libc("close", {second_fd, 0, 0, 0}) == 0);
+        }
+        if (compressed) invoke("AAsset_close", {asset, 0, 0, 0});
+        // Conversion must preserve a pending throwable and never root a manager.
+        const auto throwable = vm.NewIntrinsicInstance("Ljava/lang/IllegalStateException;");
+        const auto throwable_reference = bridge.PublishLocal(throwable);
+        env.Throw(1, throwable_reference);
+        CHECK(convert(reference) == 0);
+        const auto pending = env.ExceptionOccurred(1);
+        env.ExceptionClear(1);
+        CHECK(bridge.FromReference(pending) == throwable);
+        env.DeleteLocalRef(1, pending);
+        env.DeleteLocalRef(1, throwable_reference);
+        const auto wrong = bridge.PublishLocal(vm.NewStringUtf8("not an asset manager"));
+        CHECK(convert(wrong) == 0); REQUIRE(env.ExceptionCheck(1));
+        env.ExceptionClear(1); env.DeleteLocalRef(1, wrong);
+        env.DeleteLocalRef(1, reference); env.DeleteGlobalRef(1, global);
+        static_cast<void>(vm.CollectGarbage("ndk-asset-manager-lifetime"));
+        CHECK(convert(weak) == 0); REQUIRE(env.ExceptionCheck(1));
+        env.ExceptionClear(1); env.DeleteWeakGlobalRef(1, weak);
+        CHECK(invoke("AAsset_read", {other, scratch.Add(32).Value(), 3, 0}) == 3);
+        invoke("AAsset_close", {other, 0, 0, 0});
+        CHECK_THROWS(invoke("AAssetManager_open", {manager, scratch.Value(), 2, 0}));
+        memory.release(scratch, 256);
+        static_cast<void>(app->Stop());
+      }
     }
 }
 
@@ -5887,7 +6060,15 @@ TEST_CASE("DVM-195 original NativeActivity runs in the existing Java native proc
         const runtime::JniReference actual_activity(read(native.Add(12)));
         CHECK(bridge.FromReference(actual_activity) == activity);
         const auto asset_manager = runtime::android_intrinsics::CallAndroidMethod(vm, activity, "getAssets", "()Landroid/content/res/AssetManager;").ref;
-        CHECK(bridge.FromReference(runtime::JniReference(read(native.Add(128)))) == asset_manager);
+        const auto asset_reference = bridge.PublishLocal(asset_manager);
+        const auto native_symbols = runtime::detail::BuildAndroidBoundarySymbols();
+        const runtime::BionicHleSymbolProvider asset_provider(native_symbols);
+        const auto convert = asset_provider.Lookup("libandroid.so", "AAssetManager_fromJava");
+        REQUIRE(convert.has_value());
+        const auto native_manager = process.Invoke({*convert,
+            {process.GuestEnvironment().Value(), asset_reference.Value(), 0, 0}, {}}).return_value;
+        CHECK(read(native.Add(32)) == native_manager);
+        process.Environment().DeleteLocalRef(1, asset_reference);
         CHECK(read(native.Add(160+8)) == 64); CHECK(read(native.Add(160+12)) == 36);
         CHECK(read(native.Add(108)) == 1); // actual guest JNI invocation
         CHECK(fixture.context->window_input_queue.IsValid());

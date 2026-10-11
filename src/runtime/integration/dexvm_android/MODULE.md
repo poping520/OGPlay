@@ -145,6 +145,8 @@ guest worker 静止后，`ReleaseAndroidMediaResources` 退役 decoder、媒体�
 - AssetManager/Resources 只读 APK/ARSC/AXML；open 返回 ByteArrayInputStream，openFd 仅 STORED
   entry 的逻辑 FD+区间，失败映射 IOException/NotFoundException。应用 Resources/AssetManager
   是同一对象对，mAssets 为 GC 强边；getSystem 用独立对象对且不读应用 APK。
+  openFd/raw-resource FD 与 NDK 共用 STORED 校验/范围事实；AssetFileDescriptor.close 同时
+  关闭逻辑 IO 状态并将 FileDescriptor 的 Java descriptor 字段置为 -1，保持 valid() 语义。
 - Resources.getText/getString 可覆盖，getString 虚派 getText 后调用 CharSequence.toString；
   Context.getString 沿既有 getResources 委托。APK 资源先选择配置/解析引用，字符串读原值，
   其他 simple value 由 BootDex TypedValue.coerceToString 转换；复杂/null/未知类型与无效引用

@@ -22,6 +22,7 @@
 #include "ogplay/runtime/jni/jni_field_store.h"
 #include "ogplay/runtime/dexvm/vm_monitors.h"
 #include "ogplay/runtime/integration/dexvm_io_vfs.h"
+#include "ogplay/runtime/integration/apk_assets.h"
 
 namespace ogplay::runtime {
 namespace {
@@ -366,8 +367,38 @@ public:
     std::unordered_map<std::uint64_t, dx::InterpreterExecutionContext> native_attachments;
 
     DexVmGuestBridge* owner{};
+    std::unordered_map<std::uint64_t, memory::GuestAddress> asset_managers;
 
-    bool BitmapEnvironment(std::uint64_t thread, memory::GuestAddress env) const {
+    memory::GuestAddress AssetManagerObject(dx::VmObjectRef object) {
+        if (!object.IsValid())
+            throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;", "assetManager is null"};
+        if (linker.Class(model->ObjectClass(object)).descriptor != "Landroid/content/res/AssetManager;")
+            throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "object is not an AssetManager"};
+        if (!android_context || android_intrinsics::IsSystemAssets(android_context, object)) {
+            if (auto* ledger = vm->Ledger()) ledger->RecordUnimplemented("runtime.asset_manager", 0);
+            throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "system NDK assets are unavailable"};
+        }
+        const auto identity = model->ToIdentity(object).value;
+        if (const auto found = asset_managers.find(identity); found != asset_managers.end()) return found->second;
+        const auto manager = session->Process().RegisterAssetManager(ApkAssets(android_context));
+        try { asset_managers.emplace(identity, manager); }
+        catch (...) { session->Process().UnregisterAssetManager(manager); throw; }
+        return manager;
+    }
+    memory::GuestAddress AssetManagerFromJava(std::uint64_t thread,
+        memory::GuestAddress env, AssetManagerJavaReference reference) {
+        const dx::VmExecutionLockScope guard(vm->ExecutionLock());
+        if (!NativeEnvironment(thread, env) || session->Environment().ExceptionCheck(thread)) return memory::GuestAddress{};
+        try { return AssetManagerObject(FromReference(JniReference{reference.token}, thread)); }
+        catch (const dx::VmJavaThrow& error) { static_cast<void>(NativeApiException(thread, error)); }
+        catch (const std::exception& error) {
+            static_cast<void>(NativeApiException(thread,
+                dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", error.what()}));
+        }
+        return memory::GuestAddress{};
+    }
+
+    bool NativeEnvironment(std::uint64_t thread, memory::GuestAddress env) const {
         return env == session->GuestEnvironment() && session->Environment().IsThreadAttached(thread);
     }
     std::pair<dx::VmObjectRef, DexVmAndroidContext::BitmapState*> BitmapObject(
@@ -384,7 +415,7 @@ public:
             throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "bitmap is recycled"};
         return {object, &found->second};
     }
-    std::int32_t BitmapException(std::uint64_t thread, const dx::VmJavaThrow& error) {
+    std::int32_t NativeApiException(std::uint64_t thread, const dx::VmJavaThrow& error) {
         const auto execution = ContextForJniThread(thread);
         const auto type = linker.ResolveDescriptor(error.descriptor);
         const auto initialized = vm->EnsureClassInitialized(execution, type);
@@ -397,7 +428,7 @@ public:
         const auto message = vm->NewStringUtf8(error.message);
         const auto message_root = vm->ProtectReferences(std::array{message});
         const auto constructor = linker.FindDirectMethod(type, "<init>", "(Ljava/lang/String;)V");
-        if (!constructor) throw DexVmBridgeError("NDK Bitmap exception constructor is missing");
+        if (!constructor) throw DexVmBridgeError("NDK exception constructor is missing");
         const auto result = vm->Call(execution, *constructor,
             std::array{dx::VmValue::Ref(exception), dx::VmValue::Ref(message)});
         session->Environment().Throw(thread, PublishLocal(result.exception.IsValid() ? result.exception : exception, thread));
@@ -406,19 +437,19 @@ public:
     std::int32_t BitmapInfo(std::uint64_t thread, memory::GuestAddress env,
                             BitmapJavaReference input, AndroidBitmapInfo& info) {
         const dx::VmExecutionLockScope guard(vm->ExecutionLock());
-        if (!BitmapEnvironment(thread, env)) return -1;
+        if (!NativeEnvironment(thread, env)) return -1;
         if (session->Environment().ExceptionCheck(thread)) return -2;
         try {
             const auto [object, state] = BitmapObject(thread, input);
             info = {static_cast<std::uint32_t>(state->width), static_cast<std::uint32_t>(state->height),
                     state->pixels->Stride(), state->pixels->Format(), 0};
             return 0;
-        } catch (const dx::VmJavaThrow& error) { return BitmapException(thread, error); }
+        } catch (const dx::VmJavaThrow& error) { return NativeApiException(thread, error); }
     }
     std::int32_t BitmapLock(std::uint64_t thread, memory::GuestAddress env,
                             BitmapJavaReference input, memory::GuestAddress& address) {
         const dx::VmExecutionLockScope guard(vm->ExecutionLock());
-        if (!BitmapEnvironment(thread, env)) return -1;
+        if (!NativeEnvironment(thread, env)) return -1;
         if (session->Environment().ExceptionCheck(thread)) return -2;
         try {
             const auto [object, state] = BitmapObject(thread, input);
@@ -430,12 +461,12 @@ public:
             }
             return 0;
         } catch (const std::bad_alloc&) { return -3; }
-          catch (const dx::VmJavaThrow& error) { return BitmapException(thread, error); }
+          catch (const dx::VmJavaThrow& error) { return NativeApiException(thread, error); }
     }
     std::int32_t BitmapUnlock(std::uint64_t thread, memory::GuestAddress env,
                               BitmapJavaReference input) {
         const dx::VmExecutionLockScope guard(vm->ExecutionLock());
-        if (!BitmapEnvironment(thread, env)) return -1;
+        if (!NativeEnvironment(thread, env)) return -1;
         if (session->Environment().ExceptionCheck(thread)) return -2;
         try {
             const auto [object, state] = BitmapObject(thread, input, true);
@@ -445,7 +476,7 @@ public:
             if (state->pixels->Locks() == 0) android_context->bitmap_lock_roots.erase(object.Value());
             return 0;
         } catch (const std::bad_alloc&) { return -3; }
-          catch (const dx::VmJavaThrow& error) { return BitmapException(thread, error); }
+          catch (const dx::VmJavaThrow& error) { return NativeApiException(thread, error); }
     }
 
     [[nodiscard]] JniObjectIdentity JniClassIdentity(
@@ -1674,7 +1705,12 @@ DexVmGuestBridge::DexVmGuestBridge(
         [&session](const std::function<void(JniObjectIdentity)>& visit) {
             session.Environment().VisitReferenceRoots(visit);
         },
-        [&session](const JniObjectIdentity identity) {
+        [&session, bridge_state](const JniObjectIdentity identity) {
+            if (const auto found = bridge_state->asset_managers.find(identity.value);
+                found != bridge_state->asset_managers.end()) {
+                session.Process().UnregisterAssetManager(found->second);
+                bridge_state->asset_managers.erase(found);
+            }
             session.Environment().ClearWeakReferencesTo(identity);
             try {
                 session.Objects().Forget(identity);
@@ -1694,7 +1730,8 @@ DexVmGuestBridge::DexVmGuestBridge(
             session, android_context,
             [bridge_state](dx::VmObjectRef ref, std::uint64_t thread) { return bridge_state->PublishLocal(ref, thread); },
             [bridge_state](JniReference ref, std::uint64_t thread) { return bridge_state->FromReference(ref, thread); },
-            [bridge_state](std::uint64_t token) { return bridge_state->ProcessThreadForToken(token); }, logger);
+            [bridge_state](std::uint64_t token) { return bridge_state->ProcessThreadForToken(token); },
+            [bridge_state](dx::VmObjectRef object) { return bridge_state->AssetManagerObject(object); }, logger);
         session.Invocations().RegisterHandler(
             "activity.current",
             [bridge_state, weak_context = std::weak_ptr<DexVmAndroidContext>(android_context)](
@@ -1710,6 +1747,10 @@ DexVmGuestBridge::DexVmGuestBridge(
     }
 
     if (android_context) {
+        session.Process().SetAssetManagerHooks({bridge_state,
+            +[](void* owner, std::uint64_t thread, memory::GuestAddress env, AssetManagerJavaReference ref) {
+                return static_cast<Impl*>(owner)->AssetManagerFromJava(thread, env, ref);
+            }});
         session.Process().SetBitmapHooks({bridge_state,
             +[](void* owner, std::uint64_t thread, memory::GuestAddress env, BitmapJavaReference ref, AndroidBitmapInfo& info) {
                 return static_cast<Impl*>(owner)->BitmapInfo(thread, env, ref, info);
@@ -1762,6 +1803,10 @@ DexVmGuestBridge::~DexVmGuestBridge() {
     }
     if (impl_->threads) impl_->threads->Shutdown();
     impl_->session->Process().SetBitmapHooks({});
+    impl_->session->Process().SetAssetManagerHooks({});
+    for (const auto& [_, manager] : impl_->asset_managers)
+        impl_->session->Process().UnregisterAssetManager(manager);
+    impl_->asset_managers.clear();
     if (impl_->android_context) {
         for (const auto& [_, bitmap] : impl_->android_context->bitmaps) {
             if (!bitmap.pixels) continue;

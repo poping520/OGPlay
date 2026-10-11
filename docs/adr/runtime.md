@@ -987,3 +987,21 @@ Java 与原生退出共用显式终止事实和 finalization 准入，重复 Sto
 
 范围与验证见 [DVM-236](../tasks/dexvm/DVM-236.md)。不实现完整 Android 进程管理；
 不把 native fini 失败或其他开放退出首错标为成功。
+
+## ADR-0116 · 进程级 APK Asset 身份与资源区间
+
+NDK Asset 不附属于某个 Activity。`AAssetManager_fromJava` 经显式 bridge hooks
+解析真实 JNI env/thread/object，同一 Java 对象返回同一 opaque guest manager；
+NativeActivity 的 assetManager 使用同一注册结果。转换不持有永久 Java global ref，
+caller 按 API19 保持引用；GC 退役 manager，NativeActivity 保持已有 global ref 生命周期。
+
+boundary 只处理 ABI、句柄、游标及显式 source 接口，不依赖 JNI/DexVM/loader/VFS。
+integration 的 APK source 持有封存范围、按需校验及定位读取；STORED 首次完整 CRC
+校验后复用原 backing，不为 open 分配整条目副本。压缩读取复用 loader 的有界区间读取。
+Asset lease 与 Java manager 独立，不阻碍 manager GC；每次 FD 打开得到独立 guest VFS
+descriptor，指向完整 APK并发布原物理 offset/length，绝不向 guest 暴露宿主 descriptor。
+输出预检先于打开，失败回滚新 FD；压缩来源按 API19 返回负值，不伪造可直接访问。
+
+Java openFd/raw-resource FD 使用同一 STORED 校验事实，保留现有逻辑 descriptor 通道。
+APK 来源在 source 存活期间不可变；不在本单改造整个 APK 装载器或实现完整 Android
+AssetManager。支持范围与分阶段验收见 [DVM-237](../tasks/dexvm/DVM-237.md)。

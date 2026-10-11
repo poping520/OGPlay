@@ -515,6 +515,7 @@ add_library(ogplay_runtime
     src/runtime/integration/android_link_preflight.cpp
     ${OGPLAY_DEXVM_ANDROID_SOURCES}
     src/runtime/integration/bitmap_pixels.cpp
+    src/runtime/integration/apk_assets.cpp
     src/runtime/integration/dexvm_bridge.cpp
     src/runtime/integration/dexvm_io_vfs.cpp
     src/runtime/integration/host_image_decode.cpp

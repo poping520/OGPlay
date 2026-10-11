@@ -72,14 +72,18 @@
   5 用例/486 断言及 BootDex/载荷校验通过，原 APK 已获得非空启动 Bitmap。
   [DVM-229](../tasks/dexvm/DVM-229.md) 补齐 setImageBitmap 的 API19 Drawable 虚派链；
   双解释器/ARM JNI 与资源 Drawable 回归 3 用例/410 断言通过，原 APK 已越过设置启动图。
-  **当前首错**：`Activity.addContentView(View,LayoutParams)` 缺方法，PostStartup dex_pc=398；
-  尚未到首帧。
-  崩溃报告另触发 LocaleData 初始化失败。证据 `.local/manifest-duplicate-fix-20261011/`、
+  [DVM-245](../tasks/dexvm/DVM-245.md) 接通稳定窗口内容容器与追加/替换、全部子树遍历；
+  双解释器/ARM JNI 和相邻窗口/Surface 回归 25 用例/1863 断言通过。最终原 APK 已越过
+  addContentView，预算复现日志推进 **f=32**，presented=1、退出 0，无运行期致命首错；
+  画面/交互未核验。**保留缺口**：前置复现 f=25 退出后 guest_finalize 报
+  `unknown guest thread id`，退出 1；最终单次未复现，不声明已消除。
+  前置复现 SDK 另捕获 resolveService flags 未支持；此前崩溃报告触发过 LocaleData 初始化失败。
+  证据 `.local/manifest-duplicate-fix-20261011/`、
   `.local/ndk-assets-fix-20261011/`、`.local/gles-mapbuffer-fix-20261011/`、
   `.local/debug-memory-fix-20261011/`、`.local/installed-applications-fix-20261011/`、
   `.local/connectivity-fix-20261011/`、`.local/alloc-object-fix-20261011/`、
   `.local/statfs-fix-20261011/`、`.local/bitmap-resource-fix-20261011/`、
-  `.local/image-bitmap-fix-20261011/`；取证进程已退出。
+  `.local/image-bitmap-fix-20261011/`、`.local/window-content-fix-20261011/`；取证进程已退出。
 
 - **Angry Birds 2.3.0**：无 Profile、空沙盒运行 5000 呈现帧，滚动条方法解析错消失，
   未触发新致命首错；绘制与完整兼容未验收。见 [DVM-186](../tasks/dexvm/DVM-186.md)。

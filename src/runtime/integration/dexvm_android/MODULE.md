@@ -205,6 +205,14 @@ guest worker 静止后，`ReleaseAndroidMediaResources` 退役 decoder、媒体�
   addView(width,height) 虚派默认 LayoutParams、写 BootDex 字段后走统一 attach；不复制参数对象。
   managed lifecycle 的 setContentView 只发布附着树，Surface 回调由 owner-thread 内容
   traversal 在尺寸回调后交付；普通子树 attach/detach 仍复用受检 holder 代际。
+- Window 持有稳定的真实 FrameLayout 内容容器，位于每实例 synthetic window root 下；
+  android.R.id.content/普通 parent 查询返回真实 guest 身份，查询范围不跨窗口。
+  Activity 虚派委托 Window，setContentView 重载替换容器子 View，addContentView 仅追加；
+  参数及 attach/detach 复用 ViewGroup，null 参数生成 FrameLayout 默认值。XML 可指定
+  父容器，失败只清理本次节点/绑定，不销毁稳定容器或其他窗口。成功后虚派
+  onContentChanged，回调异常保持对象身份，重入内容变更中止旧操作；不回滚已执行回调。
+  content_view 是首个内容 View 的兼容投影，窗口 root 是遍历边界。移除保留 View/参数/
+  几何，未变尺寸不重复回调；真正实例退役才清理子树。不提供主题 Decor/ActionBar。
 - ViewGroup.removeViewInLayout 是 public virtual 的通用入口，与 removeView/removeViews
   共用子树退役、层级移除和焦点处理；布局期间移除不调用 requestLayout/invalidate，
   仅使实际绘制缓存失效，普通移除仍虚派 requestLayout 后刷新。callback 后重查原节点和

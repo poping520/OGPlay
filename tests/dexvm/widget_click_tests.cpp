@@ -86,6 +86,10 @@ struct ClickVm final {
     VirtualFileSystem vfs;
     ogplay::audio::EncodedMusicMixer music;
     std::int32_t content_view_events{};
+    std::int32_t content_change_events{};
+    std::function<void(IntrinsicContext&)> content_change_hook;
+    std::int32_t content_surface_creates{}, content_surface_destroys{};
+    std::function<void()> content_surface_destroy_hook;
     std::int32_t removal_layout_requests{};
     bool content_view_handled{};
     std::int32_t key_down_events{};
@@ -220,6 +224,29 @@ struct ClickVm final {
                           return result.value;
                       });
                   test_catalog.push_back(std::move(image_probe).Build());
+                  auto content_activity = IntrinsicClassBuilder::Class(
+                      "LContentActivityProbe;", "Landroid/app/Activity;");
+                  content_activity.OverrideMethod("onContentChanged", "()V",
+                      [this](IntrinsicContext& call) {
+                          ++content_change_events;
+                          static_cast<void>(call.vm.CollectGarbage("window-content-callback"));
+                          if (content_change_hook) content_change_hook(call);
+                          return VmValue::Void();
+                      });
+                  test_catalog.push_back(std::move(content_activity).Build());
+                  auto content_surface = IntrinsicClassBuilder::Class(
+                      "LContentSurfaceCallback;", "Ljava/lang/Object;", {"Landroid/view/SurfaceHolder$Callback;"});
+                  content_surface.VirtualMethod("surfaceCreated", "(Landroid/view/SurfaceHolder;)V",
+                      [this](IntrinsicContext&) { ++content_surface_creates; return VmValue::Void(); });
+                  content_surface.VirtualMethod("surfaceChanged", "(Landroid/view/SurfaceHolder;III)V",
+                      [](IntrinsicContext&) { return VmValue::Void(); });
+                  content_surface.VirtualMethod("surfaceDestroyed", "(Landroid/view/SurfaceHolder;)V",
+                      [this](IntrinsicContext&) {
+                          ++content_surface_destroys;
+                          if (content_surface_destroy_hook) content_surface_destroy_hook();
+                          return VmValue::Void();
+                      });
+                  test_catalog.push_back(std::move(content_surface).Build());
                   linker.RegisterIntrinsics(test_catalog);
                   linker.RegisterDex(ReadFixture("widgetclick.dex"));
                   ogplay::test::RegisterBootDex(linker);
@@ -539,6 +566,11 @@ TEST_CASE("UI hit test chooses the topmost resolved clickable node") {
 }
 TEST_CASE("View id and Activity lookup share the bound guest identity") {
     ClickVm vm;
+    const auto skip_node = *FindViewUiNode(*vm.context, vm.skip_button.Value());
+    const auto bar_node = *vm.context->ui_tree.Get(skip_node)->parent;
+    const auto bar = ViewObjectForUiNode(*vm.context, bar_node);
+    vm.context->ui_tree.Detach(bar_node);
+    vm.CallOn(vm.activity, "setContentView", "(Landroid/view/View;)V", {VmValue::Ref(bar)});
     CHECK(vm.CallOn(vm.skip_button, "getId", "()I").AsInt() == -1);
     CHECK_FALSE(vm.CallOn(
         vm.activity, "findViewById", "(I)Landroid/view/View;",
@@ -1853,6 +1885,192 @@ TEST_CASE("DVM229 resource Drawables retain image backing alpha and queued GC ow
         vm.CallOn(image, "setImageResource", "(I)V", {VmValue::Int(101)});
         CHECK_FALSE(vm.context->ui_view_images.contains(image.Value()));
         frame = render(); CHECK(frame.rgba8[0] == 255); CHECK(frame.rgba8[1] == 0); CHECK(frame.rgba8[3] == 255);
+    }
+}
+
+TEST_CASE("DVM-245 Window content appends overlays with stable parents and replacement") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        ClickVm vm(backend);
+        const auto activity = vm.interpreter.NewIntrinsicInstance("LContentActivityProbe;");
+        const auto activity_root = vm.interpreter.ProtectReferences(std::array{activity});
+        vm.context->activity = activity;
+        const auto window = vm.CallOn(activity, "getWindow", "()Landroid/view/Window;").ref;
+        const auto content = vm.CallOn(activity, "findViewById", "(I)Landroid/view/View;", {VmValue::Int(0x01020002)}).ref;
+        REQUIRE(content.IsValid());
+        CHECK(vm.linker.Class(vm.model.ObjectClass(content)).descriptor == "Landroid/widget/FrameLayout;");
+        CHECK_FALSE(vm.context->content_view.IsValid());
+        const auto make = [&](int id, std::uint32_t color) {
+            const auto view = vm.interpreter.NewIntrinsicInstance("Landroid/view/View;");
+            const auto root = vm.interpreter.ProtectReferences(std::array{view});
+            vm.CallDirect(view, "Landroid/view/View;", "<init>", "(Landroid/content/Context;)V", {VmValue::Ref(activity)});
+            vm.CallOn(view, "setId", "(I)V", {VmValue::Int(id)});
+            vm.CallOn(view, "setBackgroundColor", "(I)V", {VmValue::Int(static_cast<std::int32_t>(color))});
+            return view;
+        };
+        const auto first = make(101, 0xffff0000);
+        vm.CallOn(activity, "setContentView", "(Landroid/view/View;)V", {VmValue::Ref(first)});
+        CHECK(vm.content_change_events == 1);
+        CHECK(vm.context->content_view == first);
+        CHECK(vm.CallOn(first, "getParent", "()Landroid/view/ViewParent;").ref == content);
+        const auto overlay = make(102, 0xff0000ff);
+        const auto params = vm.interpreter.NewIntrinsicInstance("Landroid/view/ViewGroup$LayoutParams;");
+        const auto params_root = vm.interpreter.ProtectReferences(std::array{params});
+        vm.CallDirect(params, "Landroid/view/ViewGroup$LayoutParams;", "<init>", "(II)V", {VmValue::Int(20), VmValue::Int(10)});
+        vm.CallOn(window, "addContentView", "(Landroid/view/View;Landroid/view/ViewGroup$LayoutParams;)V",
+            {VmValue::Ref(overlay), VmValue::Ref(params)});
+        CHECK(vm.content_change_events == 2);
+        CHECK(vm.context->content_view == first);
+        CHECK(vm.CallOn(overlay, "getParent", "()Landroid/view/ViewParent;").ref == content);
+        CHECK(vm.CallOn(activity, "findViewById", "(I)Landroid/view/View;", {VmValue::Int(102)}).ref == overlay);
+        CHECK(vm.CallOn(window, "findViewById", "(I)Landroid/view/View;", {VmValue::Int(101)}).ref == first);
+        const auto node = *FindViewUiNode(*vm.context, content.Value());
+        CHECK(vm.context->ui_tree.Get(node)->children.size() == 2);
+        ui::LayoutUiTree(vm.context->ui_tree, {100, 100});
+        ui::UiOverlayRenderer renderer;
+        const auto& frame = renderer.Render(vm.context->ui_tree, vm.context->ui_bitmaps, {100, 100});
+        CHECK(frame.rgba8[2] == 255);
+        CHECK(frame.rgba8[(30 * 100 + 30) * 4] == 255);
+        CHECK(vm.CallOn(overlay, "getWidth", "()I").AsInt() == 20);
+        CHECK(vm.CallOn(overlay, "getHeight", "()I").AsInt() == 10);
+        vm.CallOn(content, "removeView", "(Landroid/view/View;)V", {VmValue::Ref(overlay)});
+        CHECK_FALSE(vm.CallOn(overlay, "getParent", "()Landroid/view/ViewParent;").ref.IsValid());
+        vm.CallOn(activity, "addContentView", "(Landroid/view/View;Landroid/view/ViewGroup$LayoutParams;)V",
+            {VmValue::Ref(overlay), VmValue::Ref(VmObjectRef{})});
+        CHECK(vm.CallOn(overlay, "getWidth", "()I").AsInt() == 100);
+        const auto replacement = make(103, 0xff00ff00);
+        vm.CallOn(window, "setContentView", "(Landroid/view/View;Landroid/view/ViewGroup$LayoutParams;)V",
+            {VmValue::Ref(replacement), VmValue::Ref(params)});
+        CHECK(vm.content_change_events == 4);
+        CHECK(vm.context->content_view == replacement);
+        CHECK(vm.context->ui_tree.Get(node)->children.size() == 1);
+        CHECK_FALSE(vm.CallOn(first, "getParent", "()Landroid/view/ViewParent;").ref.IsValid());
+        CHECK_FALSE(vm.CallOn(overlay, "getParent", "()Landroid/view/ViewParent;").ref.IsValid());
+        CHECK(vm.CallOn(activity, "findViewById", "(I)Landroid/view/View;", {VmValue::Int(0x01020002)}).ref == content);
+        CHECK_FALSE(vm.CallOn(activity, "findViewById", "(I)Landroid/view/View;", {VmValue::Int(101)}).ref.IsValid());
+        static_cast<void>(vm.interpreter.CollectGarbage("window-content-owner"));
+        CHECK(vm.CallOn(window, "findViewById", "(I)Landroid/view/View;", {VmValue::Int(103)}).ref == replacement);
+        const auto method = *vm.linker.FindVtableIndex(vm.model.ObjectClass(activity), "addContentView", "(Landroid/view/View;Landroid/view/ViewGroup$LayoutParams;)V");
+        for (const auto bad : {VmObjectRef{}, replacement}) {
+            const auto result = vm.interpreter.Call(vm.linker.Class(vm.model.ObjectClass(activity)).vtable[method],
+                std::array{VmValue::Ref(activity), VmValue::Ref(bad), VmValue::Ref(params)});
+            REQUIRE(result.exception.IsValid());
+            CHECK(vm.context->ui_tree.Get(node)->children.size() == 1);
+            CHECK(vm.content_change_events == 4);
+        }
+        CHECK(vm.context->ui_content_mutation_depth == 0);
+        // Reentry replaces the just-published tree; the outer operation stops.
+        const auto final = make(104, 0xffffffff);
+        bool reentered{};
+        vm.content_change_hook = [&](IntrinsicContext&) {
+            if (reentered) return;
+            reentered = true;
+            vm.CallOn(activity, "setContentView", "(Landroid/view/View;)V", {VmValue::Ref(final)});
+        };
+        vm.CallOn(activity, "setContentView", "(Landroid/view/View;)V", {VmValue::Ref(replacement)});
+        CHECK(vm.context->content_view == final);
+        CHECK(vm.context->ui_tree.Get(node)->children.size() == 1);
+        CHECK(vm.CallOn(final, "getParent", "()Landroid/view/ViewParent;").ref == content);
+        CHECK(vm.context->ui_content_mutation_depth == 0);
+        const auto exception = vm.interpreter.NewIntrinsicInstance("Ljava/lang/IllegalStateException;");
+        const auto exception_root = vm.interpreter.ProtectReferences(std::array{exception});
+        vm.content_change_hook = [exception](IntrinsicContext&) {
+            throw VmJavaThrow{"Ljava/lang/IllegalStateException;", "content callback", exception};
+        };
+        const auto result = vm.interpreter.Call(vm.linker.Class(vm.model.ObjectClass(activity)).vtable[method],
+            std::array{VmValue::Ref(activity), VmValue::Ref(replacement), VmValue::Ref(params)});
+        CHECK(result.exception == exception);
+        CHECK(vm.context->ui_tree.Get(node)->children.size() == 2);
+        CHECK(vm.context->ui_content_mutation_depth == 0);
+    }
+}
+
+TEST_CASE("DVM-245 Window append preserves Surface and destruction reentry stops stale installs") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        ClickVm vm(backend);
+        vm.context->activity = vm.activity;
+        vm.context->managed_host_surface_open = true;
+        const auto surface = vm.interpreter.NewIntrinsicInstance("Landroid/view/SurfaceView;");
+        const auto surface_root = vm.interpreter.ProtectReferences(std::array{surface});
+        vm.CallDirect(surface, "Landroid/view/SurfaceView;", "<init>", "(Landroid/content/Context;)V", {VmValue::Ref(vm.activity)});
+        const auto holder = vm.CallOn(surface, "getHolder", "()Landroid/view/SurfaceHolder;").ref;
+        const auto callback = vm.interpreter.NewIntrinsicInstance("LContentSurfaceCallback;");
+        vm.CallOn(holder, "addCallback", "(Landroid/view/SurfaceHolder$Callback;)V", {VmValue::Ref(callback)});
+        vm.CallOn(vm.activity, "setContentView", "(Landroid/view/View;)V", {VmValue::Ref(surface)});
+        REQUIRE(vm.content_surface_creates == 1);
+        const auto backing = vm.CallOn(holder, "getSurface", "()Landroid/view/Surface;").ref;
+        const auto overlay = vm.interpreter.NewIntrinsicInstance("Landroid/view/View;");
+        const auto overlay_root = vm.interpreter.ProtectReferences(std::array{overlay});
+        vm.CallOn(vm.activity, "addContentView", "(Landroid/view/View;Landroid/view/ViewGroup$LayoutParams;)V",
+            {VmValue::Ref(overlay), VmValue::Ref(VmObjectRef{})});
+        CHECK(vm.content_surface_creates == 1);
+        CHECK(vm.content_surface_destroys == 0);
+        CHECK(vm.context->holder_surfaces.at(holder.Value()) == backing);
+        const auto parent = vm.CallOn(surface, "getParent", "()Landroid/view/ViewParent;").ref;
+        const auto final = vm.interpreter.NewIntrinsicInstance("Landroid/view/View;");
+        const auto temporary = vm.interpreter.NewIntrinsicInstance("Landroid/view/View;");
+        const auto roots = vm.interpreter.ProtectReferences(std::array{final, temporary});
+        bool reentered{};
+        vm.content_surface_destroy_hook = [&] {
+            if (reentered) return;
+            reentered = true;
+            vm.CallOn(vm.activity, "setContentView", "(Landroid/view/View;)V", {VmValue::Ref(final)});
+        };
+        vm.CallOn(vm.activity, "setContentView", "(Landroid/view/View;)V", {VmValue::Ref(temporary)});
+        CHECK(reentered);
+        CHECK(vm.content_surface_destroys == 1);
+        CHECK(vm.context->content_view == final);
+        CHECK(vm.CallOn(final, "getParent", "()Landroid/view/ViewParent;").ref == parent);
+        CHECK_FALSE(vm.CallOn(temporary, "getParent", "()Landroid/view/ViewParent;").ref.IsValid());
+        CHECK_FALSE(vm.CallOn(overlay, "getParent", "()Landroid/view/ViewParent;").ref.IsValid());
+        CHECK_FALSE(vm.context->active_surface_holders.contains(holder.Value()));
+        CHECK(vm.context->ui_content_mutation_depth == 0);
+    }
+}
+
+TEST_CASE("DVM-245 scoped XML inflation keeps other windows and the stable container") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        ClickVm vm(backend);
+        const auto first = vm.interpreter.NewIntrinsicInstance("Landroid/app/Activity;");
+        const auto second = vm.interpreter.NewIntrinsicInstance("Landroid/app/Activity;");
+        const auto roots = vm.interpreter.ProtectReferences(std::array{first, second});
+        const auto query = [&](VmObjectRef activity, int id) {
+            return vm.CallOn(activity, "findViewById", "(I)Landroid/view/View;", {VmValue::Int(id)}).ref;
+        };
+        const auto parent = query(first, 0x01020002);
+        const auto other = query(second, 0x01020002);
+        CHECK(parent != other);
+        const auto node = *FindViewUiNode(*vm.context, parent.Value());
+        const auto other_node = *FindViewUiNode(*vm.context, other.Value());
+        std::vector<ogplay::loader::BinaryXmlElement> elements(3);
+        elements[0].name = "merge";
+        for (std::size_t i = 1; i < 3; ++i) {
+            elements[i].name = "View"; elements[i].parent = 0;
+            elements[i].attributes = {AndroidAttribute("id", 1, static_cast<std::uint32_t>(100 + i)),
+                AndroidAttribute("layout_width", 0x10, 30), AndroidAttribute("layout_height", 0x10, 10)};
+        }
+        const auto other_child = InflateUiElements(vm.interpreter, *vm.context, elements, second, other_node);
+        const auto child = InflateUiElements(vm.interpreter, *vm.context, elements, first, node);
+        CHECK(vm.context->ui_tree.Get(node)->children.size() == 2);
+        CHECK(vm.context->ui_tree.Get(other_node)->children.size() == 2);
+        CHECK(vm.CallOn(child, "getParent", "()Landroid/view/ViewParent;").ref == parent);
+        CHECK(query(first, 101) == child);
+        CHECK(query(second, 101) == other_child);
+        const auto before = vm.context->object_to_ui_node.size();
+        // Failure after a bound but not-yet-attached node must not leak its binding.
+        elements[1].attributes[1] = AndroidAttribute("layout_width", 5, 0x0000010f);
+        CHECK_THROWS(static_cast<void>(InflateUiElements(vm.interpreter, *vm.context, elements, first, node)));
+        CHECK(vm.context->ui_tree.Get(node)->children.empty());
+        CHECK(vm.context->object_to_ui_node.size() == before - 2);
+        CHECK(query(first, 0x01020002) == parent);
+        CHECK(query(second, 101) == other_child);
+        // The Window XML entry preserves the same isolation on resource failure.
+        const auto type = vm.model.ObjectClass(first);
+        const auto method = *vm.linker.FindVtableIndex(type, "setContentView", "(I)V");
+        const auto result = vm.interpreter.Call(vm.linker.Class(type).vtable[method],
+            std::array{VmValue::Ref(first), VmValue::Int(999)});
+        REQUIRE(result.exception.IsValid());
+        CHECK(query(first, 0x01020002) == parent);
+        CHECK(query(second, 101) == other_child);
     }
 }
 

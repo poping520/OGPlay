@@ -307,6 +307,10 @@ struct DexVmAndroidContext final {
   std::function<void()> wake_gl_surface_thread;
   bool gl_surface_thread_stopped{};
   dexvm::VmObjectRef content_view;
+  // Compatibility projection of the first installed View; traversal uses the
+  // window root, including its stable guest content container and all children.
+  std::uint64_t ui_content_revision{};
+  std::uint32_t ui_content_mutation_depth{};
   // A managed lifecycle sizes a newly installed content root before exposing
   // its SurfaceHolder callbacks at the next owner-thread traversal.
   bool defer_content_surface_callbacks{};
@@ -731,6 +735,7 @@ struct DexVmAndroidContext final {
   std::uint32_t ui_bitmap_config_density_bits{};
   ui::UiOverlayRenderer ui_overlay_renderer;
   std::unordered_map<ui::UiNodeId, ui::Size, ui::UiNodeIdHash> ui_notified_view_sizes;
+  std::unordered_map<ui::UiNodeId, bool, ui::UiNodeIdHash> ui_notified_window_focus;
   std::optional<ui::Size> ui_layout_metrics;
   bool ui_layout_dispatching{};
   std::unordered_map<std::uint64_t, ui::UiNodeId> object_to_ui_node;
@@ -839,11 +844,13 @@ void AssignViewContext(dexvm::Interpreter &vm, DexVmAndroidContext &context,
 [[nodiscard]] dexvm::VmObjectRef
 InflateUiElements(dexvm::Interpreter &vm, DexVmAndroidContext &context,
                   std::span<const loader::BinaryXmlElement> elements,
-                  dexvm::VmObjectRef inflater_context = dexvm::VmObjectRef{});
+                  dexvm::VmObjectRef inflater_context = dexvm::VmObjectRef{},
+                  std::optional<ui::UiNodeId> parent = std::nullopt);
 [[nodiscard]] dexvm::VmObjectRef InflateUiLayoutResource(
     dexvm::Interpreter &vm, DexVmAndroidContext &context,
     std::uint32_t layout_id,
-    dexvm::VmObjectRef inflater_context = dexvm::VmObjectRef{});
+    dexvm::VmObjectRef inflater_context = dexvm::VmObjectRef{},
+    std::optional<ui::UiNodeId> parent = std::nullopt);
 [[nodiscard]] std::u16string ResolveUiString(const DexVmAndroidContext &context,
                                              std::uint32_t resource_id);
 [[nodiscard]] std::string
@@ -996,7 +1003,8 @@ FindViewUiNode(const DexVmAndroidContext &context, std::uint64_t view_handle);
 ViewObjectForUiNode(const DexVmAndroidContext &context, ui::UiNodeId node);
 void ResetViewUiState(DexVmAndroidContext &context);
 void RetireViewUiSubtree(DexVmAndroidContext& context, ui::UiNodeId node);
-[[nodiscard]] ui::UiNodeId ActivityContentRoot(DexVmAndroidContext& context);
+[[nodiscard]] ui::UiNodeId ActivityContentRoot(DexVmAndroidContext& context,
+    dexvm::VmObjectRef owner = dexvm::VmObjectRef{});
 void DetachGlSurfaceSubtree(DexVmAndroidContext& context, ui::UiNodeId subtree);
 void InitializeDefaultViewBackground(dexvm::Interpreter &vm,
                                      DexVmAndroidContext &context,

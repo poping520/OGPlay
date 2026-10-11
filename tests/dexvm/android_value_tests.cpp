@@ -898,8 +898,8 @@ TEST_CASE("DVM-138 View.getParent follows the live UiTree hierarchy") {
 
         f.On(activity, "setContentView", "(Landroid/view/View;)V",
              {VmValue::Ref(first_parent)});
-        CHECK_FALSE(f.On(first_parent, "getParent",
-                         "()Landroid/view/ViewParent;").ref.IsValid());
+        CHECK(f.On(first_parent, "getParent", "()Landroid/view/ViewParent;").ref ==
+              f.On(activity, "findViewById", "(I)Landroid/view/View;", {VmValue::Int(0x01020002)}).ref);
     }
 }
 

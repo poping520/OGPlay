@@ -1285,6 +1285,20 @@ void DispatchViewFocusChange(dx::Interpreter& vm, const dx::VmObjectRef view,
 
 Decl Declare_android_view_View(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/view/View;", "Ljava/lang/Object;");
+    builder.VirtualMethod("findViewById", "(I)Landroid/view/View;",
+        [context](dx::IntrinsicContext& call) {
+            const auto id = call.arguments[0].AsInt();
+            if (id == -1) return dx::VmValue::Ref(dx::VmObjectRef{});
+            const auto root = EnsureViewUiNode(*context, call.receiver, UiClassForObject(call.vm, call.receiver));
+            std::vector<ui::UiNodeId> pending{root};
+            while (!pending.empty()) {
+                const auto node = pending.back(); pending.pop_back();
+                const auto* state = context->ui_tree.Get(node);
+                if (state->android_id == id) return dx::VmValue::Ref(ViewObjectForUiNode(*context, node));
+                pending.insert(pending.end(), state->children.rbegin(), state->children.rend());
+            }
+            return dx::VmValue::Ref(dx::VmObjectRef{});
+        });
     const auto decor_owner = builder.BoundInstanceField("mOgplayWindowOwner", "Landroid/app/Activity;", dx::kAccPrivate);
     builder.ConstantInt("SYSTEM_UI_FLAG_VISIBLE", "I", 0, dx::kAccPublic)
         .ConstantInt("SYSTEM_UI_FLAG_LOW_PROFILE", "I", 0x00000001,
@@ -1973,6 +1987,13 @@ void RemoveChild(dx::IntrinsicContext& call, const Context& context,
     const auto current_node = FindViewUiNode(*context, child.Value());
     if (current_parent != parent || current_node != node ||
         !current_node || context->ui_tree.Get(*current_node)->parent != parent) return;
+    std::vector<ui::UiNodeId> detached{*current_node};
+    while (!detached.empty()) {
+        const auto id = detached.back(); detached.pop_back();
+        context->ui_notified_window_focus.erase(id);
+        const auto* state = context->ui_tree.Get(id);
+        detached.insert(detached.end(), state->children.begin(), state->children.end());
+    }
     const auto focused = context->ui_tree.Focused();
     const auto focus_object = focused
         ? ViewObjectForUiNode(*context, *focused) : dx::VmObjectRef{};
@@ -2017,7 +2038,8 @@ dx::IntrinsicHandler AddHandler(const Context& context, const bool has_index,
             throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;",
                                   error.what()};
         }
-        if (const auto error = AttachSurfaceViewSubtree(
+        if (const auto error = context->ui_content_mutation_depth != 0
+                ? std::optional<std::string>{} : AttachSurfaceViewSubtree(
                 call.vm, *context, child_node);
             error.has_value()) {
             throw dx::VmJavaThrow{"Ljava/lang/RuntimeException;", *error};
@@ -2346,6 +2368,107 @@ Decl Declare_android_view_Window(const Context& context) {
         });
     const auto owner = builder.BoundInstanceField("mOgplayOwner", "Landroid/app/Activity;", dx::kAccPrivate);
     const auto decor = builder.BoundInstanceField("mDecor", "Landroid/view/View;", dx::kAccPrivate);
+    const auto content_parent = builder.BoundInstanceField(
+        "mContentParent", "Landroid/widget/FrameLayout;", dx::kAccPrivate);
+    const auto parent_for = [context, owner, content_parent](dx::IntrinsicContext& call) {
+        const dx::IntrinsicCall fields(call);
+        auto parent = fields.GetRef(content_parent);
+        if (parent.IsValid()) return parent;
+        const auto activity = fields.GetRef(owner);
+        if (!activity.IsValid())
+            throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "Window has no Activity owner"};
+        const auto type = call.vm.Linker().ResolveDescriptor("Landroid/widget/FrameLayout;");
+        const auto checked = [&call](const dx::VmCallOutcome& result) {
+            if (result.exception.IsValid())
+                throw dx::VmJavaThrow{call.vm.Linker().Class(result.exception_class).descriptor,
+                                      result.exception_message, result.exception};
+        };
+        checked(call.vm.EnsureClassInitialized(type));
+        parent = call.vm.NewIntrinsicInstance("Landroid/widget/FrameLayout;");
+        const auto roots = call.vm.ProtectReferences(std::array{parent});
+        const auto constructor = call.vm.Linker().FindDirectMethod(type, "<init>", "(Landroid/content/Context;)V");
+        if (!constructor) throw std::logic_error("Window content FrameLayout constructor is missing");
+        checked(call.vm.Call(*constructor, std::array{dx::VmValue::Ref(parent), dx::VmValue::Ref(activity)}));
+        const auto node = *FindViewUiNode(*context, parent.Value());
+        context->ui_tree.Get(node)->layout.width.mode = ui::SizeMode::MatchParent;
+        context->ui_tree.Get(node)->layout.height.mode = ui::SizeMode::MatchParent;
+        // API19 framework public.xml: android.R.id.content.
+        context->ui_tree.SetAndroidId(node, 0x01020002);
+        context->ui_tree.Attach(ActivityContentRoot(*context, activity), node);
+        fields.SetRef(content_parent, parent);
+        return parent;
+    };
+    builder.VirtualMethod("findViewById", "(I)Landroid/view/View;",
+        [parent_for](dx::IntrinsicContext& call) {
+            const auto id = call.arguments[0].AsInt();
+            if (id == -1) return dx::VmValue::Ref(dx::VmObjectRef{});
+            const auto parent = parent_for(call);
+            const auto roots = call.vm.ProtectReferences(std::array{parent});
+            return CallAndroidMethod(call.vm, parent, "findViewById", "(I)Landroid/view/View;", {dx::VmValue::Int(id)});
+        });
+    const auto mutate = [context, owner, parent_for](const bool replace, const bool xml) {
+        return dx::IntrinsicHandler([context, owner, parent_for, replace, xml](dx::IntrinsicContext& call) {
+            const auto activity = dx::IntrinsicCall(call).GetRef(owner);
+            if (!context->activity_stack.empty() && activity != context->activity) {
+                if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.activity_result", 0);
+                throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "background Activity cannot mutate foreground content"};
+            }
+            if (!xml && !call.arguments[0].ref.IsValid())
+                throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;", "content view is null"};
+            const auto parent = parent_for(call);
+            const auto roots = call.vm.ProtectReferences(std::array{activity, parent});
+            const auto node = *FindViewUiNode(*context, parent.Value());
+            const auto revision = ++context->ui_content_revision;
+            ++context->ui_content_mutation_depth;
+            struct MutationScope { DexVmAndroidContext& context; ~MutationScope() { --context.ui_content_mutation_depth; } } scope{*context};
+            const auto current = [&] {
+                return context->ui_content_revision == revision && context->ui_tree.Get(node) &&
+                    (context->activity_stack.empty() || context->activity == activity);
+            };
+            if (replace) {
+                const auto count = context->ui_tree.Get(node)->children.size();
+                if (count != 0) static_cast<void>(CallAndroidMethod(call.vm, parent, "removeViews", "(II)V",
+                    {dx::VmValue::Int(0), dx::VmValue::Int(static_cast<std::int32_t>(count))}));
+                if (!current()) return dx::VmValue::Void();
+                context->content_view = dx::VmObjectRef{};
+            }
+            if (xml) {
+                try {
+                    static_cast<void>(InflateUiLayoutResource(call.vm, *context,
+                        static_cast<std::uint32_t>(call.arguments[0].AsInt()), activity, node));
+                } catch (const dx::DexVmError&) { throw; }
+                catch (const std::runtime_error& error) {
+                    throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", std::string("layout inflation failed: ") + error.what()};
+                }
+            } else {
+                auto params = call.arguments[1].ref;
+                if (!params.IsValid()) params = NewAndroidLayoutParams(call.vm,
+                    "Landroid/widget/FrameLayout$LayoutParams;", -1, -1);
+                const auto params_root = call.vm.ProtectReferences(std::array{params});
+                static_cast<void>(CallAndroidMethod(call.vm, parent, "addView",
+                    "(Landroid/view/View;Landroid/view/ViewGroup$LayoutParams;)V", {call.arguments[0], dx::VmValue::Ref(params)}));
+            }
+            if (!current()) return dx::VmValue::Void();
+            const auto children = context->ui_tree.Get(node)->children;
+            context->content_view = children.empty() ? dx::VmObjectRef{} : ViewObjectForUiNode(*context, children.front());
+            static_cast<void>(CallAndroidMethod(call.vm, activity, "onContentChanged", "()V"));
+            if (!current()) return dx::VmValue::Void();
+            if (!context->defer_content_surface_callbacks) {
+                if (const auto error = AttachSurfaceViewSubtree(call.vm, *context, node))
+                    throw dx::VmJavaThrow{"Ljava/lang/RuntimeException;", *error};
+            }
+            return dx::VmValue::Void();
+        });
+    };
+    builder.VirtualMethod("setContentView", "(I)V", mutate(true, true));
+    builder.VirtualMethod("setContentView", "(Landroid/view/View;Landroid/view/ViewGroup$LayoutParams;)V", mutate(true, false));
+    builder.VirtualMethod("addContentView", "(Landroid/view/View;Landroid/view/ViewGroup$LayoutParams;)V", mutate(false, false));
+    builder.VirtualMethod("setContentView", "(Landroid/view/View;)V", [](dx::IntrinsicContext& call) {
+        const auto params = NewAndroidLayoutParams(call.vm, "Landroid/view/ViewGroup$LayoutParams;", -1, -1);
+        const auto roots = call.vm.ProtectReferences(std::array{params});
+        return CallAndroidMethod(call.vm, call.receiver, "setContentView",
+            "(Landroid/view/View;Landroid/view/ViewGroup$LayoutParams;)V", {call.arguments[0], dx::VmValue::Ref(params)});
+    });
     builder.VirtualMethod("getDecorView", "()Landroid/view/View;",
         [decor, owner](dx::IntrinsicContext& call) {
             dx::IntrinsicCall fields(call);
@@ -2444,6 +2567,7 @@ bool DispatchAndroidViewSizes(dexvm::Interpreter& vm, DexVmAndroidContext& conte
     context.ui_layout_dispatching=true;
     struct Reset { bool& value; ~Reset() { value=false; } } reset{context.ui_layout_dispatching};
     const auto initial_content=context.content_view;
+    const auto initial_revision=context.ui_content_revision;
     bool changed{};
     const ui::Size metrics{static_cast<std::int32_t>(context.surface_width), static_cast<std::int32_t>(context.surface_height)};
     if (context.ui_layout_metrics!=metrics) {
@@ -2477,7 +2601,7 @@ bool DispatchAndroidViewSizes(dexvm::Interpreter& vm, DexVmAndroidContext& conte
             static_cast<void>(android_intrinsics::CallAndroidMethod(vm,target.view,"onSizeChanged","(IIII)V",
                 {dexvm::VmValue::Int(target.size.width),dexvm::VmValue::Int(target.size.height),
                  dexvm::VmValue::Int(previous.width),dexvm::VmValue::Int(previous.height)}));
-            if (context.content_view!=initial_content) return changed;
+            if (context.content_view!=initial_content || context.ui_content_revision!=initial_revision) return changed;
             if (context.ui_tree.Get(context.ui_tree.Root())->layout_dirty) break;
         }
         if (!context.ui_tree.Get(context.ui_tree.Root())->layout_dirty) return changed;

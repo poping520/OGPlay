@@ -148,6 +148,7 @@ void ResetViewUiState(DexVmAndroidContext& context) {
     }
     context.ui_tree.Reset();
     context.ui_notified_view_sizes.clear();context.ui_layout_metrics.reset();
+    context.ui_notified_window_focus.clear();
     context.object_to_ui_node.clear();
     context.ui_node_to_object.clear();
     context.ui_click_listeners.clear();
@@ -173,10 +174,11 @@ void DetachGlSurfaceSubtree(DexVmAndroidContext& context, const ui::UiNodeId sub
     }
 }
 
-ui::UiNodeId ActivityContentRoot(DexVmAndroidContext& context) {
+ui::UiNodeId ActivityContentRoot(DexVmAndroidContext& context,
+    const dexvm::VmObjectRef owner) {
     if (context.activity_stack.empty()) return context.ui_tree.Root();
     const auto found = std::find_if(context.activity_stack.begin(), context.activity_stack.end(),
-        [&](const auto& record) { return record.object == context.activity; });
+        [&](const auto& record) { return record.object == (owner.IsValid() ? owner : context.activity); });
     if (found == context.activity_stack.end())
         throw std::logic_error("foreground Activity has no window record");
     if (!found->window_root || !context.ui_tree.Get(*found->window_root)) {
@@ -185,7 +187,8 @@ ui::UiNodeId ActivityContentRoot(DexVmAndroidContext& context) {
         context.ui_tree.Get(node)->layout.height.mode = ui::SizeMode::MatchParent;
         context.ui_tree.Attach(context.ui_tree.Root(), node);
         found->window_root = node;
-        found->visible = true;
+        found->visible = !owner.IsValid() || owner == context.activity;
+        context.ui_tree.SetWindowVisible(node, found->visible);
     }
     return *found->window_root;
 }
@@ -197,6 +200,7 @@ void RetireViewUiSubtree(DexVmAndroidContext& context, const ui::UiNodeId node) 
         const auto* state = context.ui_tree.Get(current);
         if (!state) continue;
         context.ui_notified_view_sizes.erase(current);
+        context.ui_notified_window_focus.erase(current);
         nodes.insert(nodes.end(), state->children.begin(), state->children.end());
         const auto found = context.ui_node_to_object.find(current);
         if (found != context.ui_node_to_object.end()) {
@@ -1174,8 +1178,15 @@ std::span<const UiWidgetDescriptor> UiWidgetRegistry() { return kWidgets; }
 dexvm::VmObjectRef InflateUiElements(
     dexvm::Interpreter& vm, DexVmAndroidContext& context,
     const std::span<const loader::BinaryXmlElement> elements,
-    const dexvm::VmObjectRef inflater_context) {
-    ResetViewUiState(context);
+    const dexvm::VmObjectRef inflater_context,
+    const std::optional<ui::UiNodeId> parent) {
+    const auto reset = [&] {
+        if (!parent) { ResetViewUiState(context); return; }
+        const auto children = context.ui_tree.Get(*parent)->children;
+        for (const auto child : children) RetireViewUiSubtree(context, child);
+    };
+    reset();
+    std::vector<ui::UiNodeId> created;
     try {
         auto expanded = ExpandUiIncludes(
             elements, [&context](const std::uint32_t layout_id) {
@@ -1204,7 +1215,7 @@ dexvm::VmObjectRef InflateUiElements(
             const auto& element = document[index];
             const auto parent_node =
                 element.parent < 0
-                    ? ActivityContentRoot(context)
+                    ? (parent ? *parent : ActivityContentRoot(context))
                     : node_of[static_cast<std::size_t>(element.parent)];
             if (element.name == "merge") {
                 if (index != 0 || element.parent >= 0) {
@@ -1225,6 +1236,7 @@ dexvm::VmObjectRef InflateUiElements(
             const auto view = vm.NewIntrinsicInstance(widget->dex_descriptor);
             const auto view_root = vm.ProtectReferences(std::array{view});
             const auto node = context.ui_tree.CreateNode(widget->kind);
+            created.push_back(node);
             BindViewToUiNode(context, view, node);
             AssignViewContext(vm, context, view, inflater_context);
             const auto constructor = vm.Linker().FindDirectMethod(vm.Model().ObjectClass(view),
@@ -1323,7 +1335,9 @@ dexvm::VmObjectRef InflateUiElements(
         }
         return content_view;
     } catch (...) {
-        ResetViewUiState(context);
+        reset();
+        for (const auto node : created)
+            if (context.ui_tree.Get(node)) RetireViewUiSubtree(context, node);
         throw;
     }
 }
@@ -1331,7 +1345,8 @@ dexvm::VmObjectRef InflateUiElements(
 dexvm::VmObjectRef InflateUiLayoutResource(
     dexvm::Interpreter& vm, DexVmAndroidContext& context,
     const std::uint32_t layout_id,
-    const dexvm::VmObjectRef inflater_context) {
+    const dexvm::VmObjectRef inflater_context,
+    const std::optional<ui::UiNodeId> parent) {
     try {
         const auto root = LoadLayout(context, layout_id);
         const auto expanded = ExpandUiIncludes(
@@ -1340,9 +1355,12 @@ dexvm::VmObjectRef InflateUiLayoutResource(
                 return LoadLayout(context, included_id);
             },
             layout_id);
-        return InflateUiElements(vm, context, expanded, inflater_context);
+        return InflateUiElements(vm, context, expanded, inflater_context, parent);
     } catch (...) {
-        ResetViewUiState(context);
+        if (parent) {
+            const auto children = context.ui_tree.Get(*parent)->children;
+            for (const auto child : children) RetireViewUiSubtree(context, child);
+        } else ResetViewUiState(context);
         throw;
     }
 }

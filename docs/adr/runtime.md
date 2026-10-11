@@ -1119,3 +1119,20 @@ BitmapFactory.Options 保留 API19 源码，普通参数/资源密度/关闭协�
 stream 保留；已知资源/格式/IO 失败 null，未支持 Options/NinePatch 记账 UOE，resource
 wrapper 特意保留 UOE，不吞成假成功/静默 null。在线/动画/完整 Skia 与其他模式另属能力。
 范围和验证见 [DVM-244](../tasks/dexvm/DVM-244.md)。
+
+## ADR-0124 · 窗口内容容器与全部子树遍历
+
+按 API19 Window/PhoneWindow 的 content parent 语义，在既有每 Activity 的 synthetic
+窗口 root 下建立一个真实 FrameLayout；Window 字段持有它，普通子 View 的 parent
+查询返回这个容器，android.R.id.content 查询保持身份。synthetic 宿主 root 不伪造
+ViewParent。setContentView 清理容器子 View 后安装，addContentView 保留已有内容并追加。
+参数、attach/detach、像素、输入均复用现有 UiTree/ViewGroup，不维护第二份子节点清单。
+
+context.content_view/ActivityRecord.content 仅保留首个内容 View 的兼容投影，不作为
+renderer、Surface、焦点或查询的子树边界；这些遍历每实例窗口 root。内容变更代次
+在虚派回调后核对，避免重入替换后继续发布旧树；已发生的 guest 回调不承诺回滚。
+空 Activity 保持可泵消息；GC 与退役沿每实例 Window/View owner。XML inflater 可指定
+父容器，失败仅清理本次容器内容，不重置其他窗口或销毁稳定容器。
+
+支持普通内容/叠层与 onContentChanged，不引入完整 Decor/主题/ActionBar、远程窗口服务
+或透明多窗口。范围与验证见 [DVM-245](../tasks/dexvm/DVM-245.md)。

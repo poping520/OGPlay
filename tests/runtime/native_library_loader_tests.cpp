@@ -2721,6 +2721,34 @@ TEST_CASE("DVM-244 ARM JNI resource bitmap decoding publishes shared pixel stora
         REQUIRE(width.has_value());
         const auto result=vm.Call(linker.Class(vm.Model().ObjectClass(first)).vtable[*width],std::array{VmValue::Ref(first)});
         REQUIRE_FALSE(result.exception.IsValid()); CHECK(result.value.AsInt()==2);
+        // The decoded object also reaches the same ImageView binding through ARM JNI.
+        const auto owner = vm.NewIntrinsicInstance("Landroid/content/Context;");
+        const auto owner_root = vm.ProtectReferences(std::array{owner});
+        const auto image = vm.NewIntrinsicInstance("Landroid/widget/ImageView;");
+        const auto image_ref = bridge.PublishLocal(image);
+        const auto image_type = vm.Model().ObjectClass(image);
+        const auto constructor = linker.FindDirectMethod(image_type, "<init>", "(Landroid/content/Context;)V");
+        REQUIRE(constructor.has_value());
+        REQUIRE_FALSE(vm.Call(*constructor, std::array{VmValue::Ref(image), VmValue::Ref(owner)}).exception.IsValid());
+        const auto image_class = bridge.PublishLocal(vm.Model().ClassObject(image_type));
+        constexpr char setter_name[] = "setImageBitmap";
+        constexpr char setter_descriptor[] = "(Landroid/graphics/Bitmap;)V";
+        std::memcpy(data.data(), setter_name, sizeof(setter_name));
+        std::memcpy(data.data() + 64, setter_descriptor, sizeof(setter_descriptor));
+        for (std::size_t i = 0; i < 4; ++i)
+            data[128 + i] = static_cast<std::byte>(first_ref.Value() >> (8 * i));
+        memory.write(scratch, data);
+        const auto setter = invoke("GetMethodID", {process.GuestEnvironment().Value(), image_class.Value(), scratch.Value(), scratch.Add(64).Value()});
+        REQUIRE(setter != 0); REQUIRE_FALSE(env.ExceptionCheck(1));
+        static_cast<void>(invoke("CallVoidMethodA", {process.GuestEnvironment().Value(), image_ref.Value(), setter, scratch.Add(128).Value()}));
+        REQUIRE_FALSE(env.ExceptionCheck(1));
+        static_cast<void>(vm.CollectGarbage("image-bitmap-jni"));
+        const auto drawable = f.context->ui_view_images.at(image.Value());
+        CHECK(f.context->ui_drawables.at(drawable.Value()).bitmap == first);
+        const auto node = *FindViewUiNode(*f.context, image.Value());
+        REQUIRE(f.context->ui_tree.Get(node)->image_bitmap);
+        CHECK(f.context->ui_tree.Get(node)->image_bitmap->rgba8[0] == 255);
+        CHECK(f.context->ui_tree.Get(node)->image_bitmap->rgba8[6] == 255);
         static_cast<void>(env.PopLocalFrame(1)); memory.release(scratch,256);
     }
 }

@@ -3,6 +3,7 @@
 // ---- migrated from android_widget_AbsoluteLayout_LayoutParams.cpp ----
 #include "catalog.h"
 #include <array>
+#include <stdexcept>
 
 // Defined by the TextView section below: constructor handler that also
 // resolves the framework default style carried by defStyleAttr.
@@ -143,6 +144,47 @@ namespace ogplay::runtime::android_intrinsics {
 Decl Declare_android_widget_ImageView(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/widget/ImageView;", "Landroid/view/View;");
     builder.Constructor("(Landroid/content/Context;)V", ViewInitHandler(context));
+    builder.VirtualMethod("setImageBitmap", "(Landroid/graphics/Bitmap;)V",
+        [context](dx::IntrinsicContext& call) {
+            auto& vm = call.vm;
+            auto& linker = vm.Linker();
+            const auto checked = [&linker](const dx::VmCallOutcome& outcome) {
+                if (outcome.exception.IsValid()) {
+                    throw dx::VmJavaThrow{linker.Class(outcome.exception_class).descriptor,
+                                          outcome.exception_message, outcome.exception};
+                }
+                return outcome.value;
+            };
+            const auto invoke = [&](const dx::VmObjectRef receiver,
+                                    const char* name, const char* descriptor,
+                                    std::vector<dx::VmValue> arguments) {
+                if (!receiver.IsValid()) {
+                    throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;", "ImageView Context is null"};
+                }
+                const auto type = vm.Model().ObjectClass(receiver);
+                const auto index = linker.FindVtableIndex(type, name, descriptor);
+                if (!index) throw std::logic_error("ImageView delegate method is unavailable");
+                arguments.insert(arguments.begin(), dx::VmValue::Ref(receiver));
+                return checked(vm.Call(linker.Class(type).vtable[*index], arguments));
+            };
+            const auto type = linker.ResolveDescriptor("Landroid/graphics/drawable/BitmapDrawable;");
+            checked(vm.EnsureClassInitialized(type));
+            const auto drawable = vm.NewIntrinsicInstance("Landroid/graphics/drawable/BitmapDrawable;");
+            const auto drawable_root = vm.ProtectReferences(std::array{drawable});
+            const auto owner = dx::IntrinsicCall(call).GetRef(*context->view_context_field);
+            const auto resources = invoke(owner, "getResources",
+                "()Landroid/content/res/Resources;", {}).ref;
+            const auto resource_root = vm.ProtectReferences(std::array{resources});
+            const auto constructor = linker.FindDirectMethod(type, "<init>",
+                "(Landroid/content/res/Resources;Landroid/graphics/Bitmap;)V");
+            if (!constructor) throw std::logic_error("BitmapDrawable constructor is unavailable");
+            checked(vm.Call(*constructor, std::array{dx::VmValue::Ref(drawable),
+                dx::VmValue::Ref(resources), call.arguments[0]}));
+            // API19 creates a fresh wrapper even for the same or a null Bitmap.
+            invoke(call.receiver, "setImageDrawable",
+                "(Landroid/graphics/drawable/Drawable;)V", {dx::VmValue::Ref(drawable)});
+            return dx::VmValue::Void();
+        });
     builder.VirtualMethod("setImageDrawable", "(Landroid/graphics/drawable/Drawable;)V",
         [context](dx::IntrinsicContext& call) {
             BindImageDrawable(call.vm, context, call.receiver, call.arguments[0].ref);

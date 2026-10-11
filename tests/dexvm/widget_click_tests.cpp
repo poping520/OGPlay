@@ -94,6 +94,8 @@ struct ClickVm final {
     std::int32_t last_key_code{};
     std::int32_t system_ui_visibility_events{};
     std::vector<std::string> text_events;
+    std::int32_t image_resource_queries{};
+    VmObjectRef image_delegate_exception;
     std::array<std::int32_t, 3> last_text_range{};
     Interpreter interpreter;
     std::unique_ptr<VmThreadRuntime> threads;
@@ -189,6 +191,35 @@ struct ClickVm final {
                           return VmValue::Void();
                       });
                   test_catalog.push_back(std::move(removal_probe).Build());
+                  auto image_context = IntrinsicClassBuilder::Class(
+                      "LImageContextProbe;", "Landroid/content/Context;");
+                  image_context.OverrideMethod("getResources", "()Landroid/content/res/Resources;",
+                      [this](IntrinsicContext& call) {
+                          ++image_resource_queries;
+                          static_cast<void>(call.vm.CollectGarbage("image-resource-delegate"));
+                          if (image_delegate_exception.IsValid())
+                              throw VmJavaThrow{"Ljava/lang/IllegalStateException;", "resource delegate", image_delegate_exception};
+                          return VmValue::Ref(call.vm.NewIntrinsicInstance("Landroid/content/res/Resources;"));
+                      });
+                  test_catalog.push_back(std::move(image_context).Build());
+                  auto image_probe = IntrinsicClassBuilder::Class(
+                      "LImageDrawableProbe;", "Landroid/widget/ImageView;");
+                  const auto observed = image_probe.BoundInstanceField(
+                      "observed", "Landroid/graphics/drawable/Drawable;", kAccPublic);
+                  image_probe.OverrideMethod("setImageDrawable", "(Landroid/graphics/drawable/Drawable;)V",
+                      [this, observed](IntrinsicContext& call) {
+                          IntrinsicCall(call).SetRef(observed, call.arguments[0].ref);
+                          static_cast<void>(call.vm.CollectGarbage("image-delegate"));
+                          if (image_delegate_exception.IsValid())
+                              throw VmJavaThrow{"Ljava/lang/IllegalStateException;", "image delegate", image_delegate_exception};
+                          const auto parent = call.vm.Linker().ResolveDescriptor("Landroid/widget/ImageView;");
+                          const auto index = *call.vm.Linker().FindVtableIndex(parent, "setImageDrawable", "(Landroid/graphics/drawable/Drawable;)V");
+                          const auto result = call.vm.Call(call.vm.Linker().Class(parent).vtable[index],
+                              std::array{VmValue::Ref(call.receiver), call.arguments[0]});
+                          REQUIRE_FALSE(result.exception.IsValid());
+                          return result.value;
+                      });
+                  test_catalog.push_back(std::move(image_probe).Build());
                   linker.RegisterIntrinsics(test_catalog);
                   linker.RegisterDex(ReadFixture("widgetclick.dex"));
                   ogplay::test::RegisterBootDex(linker);
@@ -1822,6 +1853,97 @@ TEST_CASE("DVM229 resource Drawables retain image backing alpha and queued GC ow
         vm.CallOn(image, "setImageResource", "(I)V", {VmValue::Int(101)});
         CHECK_FALSE(vm.context->ui_view_images.contains(image.Value()));
         frame = render(); CHECK(frame.rgba8[0] == 255); CHECK(frame.rgba8[1] == 0); CHECK(frame.rgba8[3] == 255);
+    }
+}
+
+TEST_CASE("ImageView setImageBitmap delegates virtually and retains shared pixels") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        ClickVm vm(backend);
+        const auto owner = vm.interpreter.NewIntrinsicInstance("LImageContextProbe;");
+        const auto owner_root = vm.interpreter.ProtectReferences(std::array{owner});
+        vm.CallDirect(owner, "Landroid/content/Context;", "<init>", "()V");
+        const auto image = vm.interpreter.NewIntrinsicInstance("LImageDrawableProbe;");
+        const auto image_root = vm.interpreter.ProtectReferences(std::array{image});
+        vm.CallDirect(image, "Landroid/widget/ImageView;", "<init>",
+                      "(Landroid/content/Context;)V", {VmValue::Ref(owner)});
+        const auto set = [&](VmObjectRef bitmap) {
+            vm.CallOn(image, "setImageBitmap", "(Landroid/graphics/Bitmap;)V", {VmValue::Ref(bitmap)});
+            return vm.CallOn(image, "getDrawable", "()Landroid/graphics/drawable/Drawable;").ref;
+        };
+        const auto node = *FindViewUiNode(*vm.context, image.Value());
+        vm.context->ui_tree.Attach(vm.context->ui_tree.Root(), node);
+        vm.context->ui_tree.Get(node)->layout.width = {ui::SizeMode::Fixed, 2};
+        vm.context->ui_tree.Get(node)->layout.height = {ui::SizeMode::Fixed, 1};
+        const auto render = [&] {
+            RefreshAndroidImageDrawables(*vm.context);
+            ui::LayoutUiTree(vm.context->ui_tree, {100, 100});
+            return ui::RasterizeUiOverlay(ui::BuildUiRenderList(vm.context->ui_tree, vm.context->ui_bitmaps), {100, 100});
+        };
+        VmObjectRef bitmap, replacement;
+        {
+            bitmap = vm.interpreter.NewIntrinsicInstance("Landroid/graphics/Bitmap;");
+            const auto pixels = std::make_shared<BitmapPixels>(2, 1, 5,
+                std::vector<std::uint32_t>{0xffff0000, 0xff0000ff});
+            vm.context->bitmaps[bitmap.Value()] = {2, 1, pixels};
+            const auto first = set(bitmap);
+            const auto first_root = vm.interpreter.ProtectReferences(std::array{first});
+            REQUIRE(first.IsValid());
+            CHECK(vm.linker.Class(vm.model.ObjectClass(first)).descriptor == "Landroid/graphics/drawable/BitmapDrawable;");
+            CHECK(vm.CallOn(first, "getBitmap", "()Landroid/graphics/Bitmap;").ref == bitmap);
+            CHECK(vm.context->ui_drawables.at(first.Value()).callback_node == node);
+            static_cast<void>(vm.interpreter.CollectGarbage("image-bitmap-owner"));
+            CHECK(vm.context->bitmaps.contains(bitmap.Value()));
+            auto frame = render();
+            CHECK(frame.rgba8[0] == 255); CHECK(frame.rgba8[3] == 255);
+            CHECK(frame.rgba8[6] == 255); CHECK(frame.rgba8[7] == 255);
+            vm.CallOn(first, "setAlpha", "(I)V", {VmValue::Int(64)});
+            const auto again = set(bitmap);
+            const auto again_root = vm.interpreter.ProtectReferences(std::array{again});
+            CHECK(again != first);
+            CHECK_FALSE(vm.context->ui_drawables.at(first.Value()).callback_node.has_value());
+            CHECK(vm.context->ui_drawables.at(again.Value()).alpha == 255);
+            CHECK(vm.context->bitmaps.at(bitmap.Value()).pixels == pixels);
+            pixels->Set(0, 0xff00ff00);
+            frame = render(); CHECK(frame.rgba8[0] == 0); CHECK(frame.rgba8[1] == 255);
+            replacement = vm.interpreter.NewIntrinsicInstance("Landroid/graphics/Bitmap;");
+            vm.context->bitmaps[replacement.Value()] = {1, 1,
+                std::make_shared<BitmapPixels>(1, 1, 5, std::vector<std::uint32_t>{0xffffffff})};
+            const auto changed = set(replacement);
+            const auto changed_root = vm.interpreter.ProtectReferences(std::array{changed});
+            CHECK_FALSE(vm.context->ui_drawables.at(again.Value()).callback_node.has_value());
+            CHECK(vm.context->ui_tree.Get(node)->intrinsic == ui::Size{1, 1});
+            CHECK_FALSE(vm.context->bitmaps.at(bitmap.Value()).recycled);
+            const auto empty = set(VmObjectRef{});
+            REQUIRE(empty.IsValid());
+            CHECK_FALSE(vm.CallOn(empty, "getBitmap", "()Landroid/graphics/Bitmap;").ref.IsValid());
+            CHECK_FALSE(vm.context->ui_drawables.at(changed.Value()).callback_node.has_value());
+            CHECK(vm.context->ui_tree.Get(node)->intrinsic == ui::Size{});
+            frame = render(); CHECK(frame.rgba8[3] == 0);
+            CHECK(vm.image_resource_queries == 4);
+        }
+        static_cast<void>(vm.interpreter.CollectGarbage("image-bitmap-replaced"));
+        CHECK_FALSE(vm.context->bitmaps.contains(bitmap.Value()));
+        CHECK_FALSE(vm.context->bitmaps.contains(replacement.Value()));
+        const auto previous = vm.CallOn(image, "getDrawable", "()Landroid/graphics/drawable/Drawable;").ref;
+        vm.image_delegate_exception = vm.interpreter.NewIntrinsicInstance("Ljava/lang/IllegalStateException;");
+        const auto exception_root = vm.interpreter.ProtectReferences(std::array{vm.image_delegate_exception});
+        const auto method = *vm.linker.FindVtableIndex(vm.model.ObjectClass(image), "setImageBitmap", "(Landroid/graphics/Bitmap;)V");
+        const auto invoke = [&] {
+            return vm.interpreter.Call(vm.linker.Class(vm.model.ObjectClass(image)).vtable[method],
+                std::array{VmValue::Ref(image), VmValue::Ref(VmObjectRef{})});
+        };
+        // Resource delegate failures propagate before replacing the current image.
+        auto outcome = invoke();
+        CHECK(outcome.exception == vm.image_delegate_exception);
+        CHECK(vm.CallOn(image, "getDrawable", "()Landroid/graphics/drawable/Drawable;").ref == previous);
+        const auto base = vm.interpreter.NewIntrinsicInstance("Landroid/content/Context;");
+        const auto base_root = vm.interpreter.ProtectReferences(std::array{base});
+        vm.CallDirect(base, "Landroid/content/Context;", "<init>", "()V");
+        AssignViewContext(vm.interpreter, *vm.context, image, base);
+        // setImageDrawable overrides preserve their exception object after allocation/GC.
+        outcome = invoke();
+        CHECK(outcome.exception == vm.image_delegate_exception);
+        CHECK(vm.CallOn(image, "getDrawable", "()Landroid/graphics/drawable/Drawable;").ref == previous);
     }
 }
 

@@ -2,7 +2,8 @@
 
 GLES1 core/选定 OES 扩展编组、固定管线状态、client arrays 和 shader draw。绘制使用 ANGLE，
 不实现桌面 OpenGL 转译。fixed、legacy、matrix palette 和 client array 状态按 Context 保存；
-VBO 内容按 share group 共享。OES map 返回 guest arena 地址，回写前校验 native 映射身份。
+VBO 内容按 share group 共享。OES map/query/unmap 使用共用 BufferMappingService，与
+GLES2 OES/GLES3 core 保持同一身份；回写和缓存同步由 services 负责。
 
 Matrix palette 四入口、32 矩阵、最多 4 权重通过受检 RAM/VBO 数组生成位置和法线。
 关闭 lighting 时奇异 modelview 不触发 normal inverse；fog 只混合 RGB，二维纹理坐标保留

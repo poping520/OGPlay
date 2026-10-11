@@ -37,8 +37,8 @@ def validate_idl(document: Any) -> dict[str, Any]:
         raise IdlError("IDL root must be an object")
     if document.get("schema_version") != 1:
         raise IdlError("schema_version must be 1")
-    if document.get("api") not in {"gles1", "gles1_extensions", "gles2", "gles3"}:
-        raise IdlError("api must be gles1, gles1_extensions, gles2 or gles3")
+    if document.get("api") not in {"gles1", "gles1_extensions", "gles2", "gles3", "gles2_extensions"}:
+        raise IdlError("api must be gles1, gles1_extensions, gles2, gles3 or gles2_extensions")
     if document.get("header_scope", "complete") not in {"complete", "subset"}:
         raise IdlError("header_scope must be complete or subset")
     _require_string(document.get("library"), "library")

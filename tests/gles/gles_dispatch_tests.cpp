@@ -45,6 +45,20 @@ TEST_CASE("generated GLES3 delta catalog matches API 19 core additions") {
     CHECK_FALSE(FindGlesFunction(GlesApi::gles3, "glClear"));
 }
 
+TEST_CASE("DVM-238 GLES2 OES catalog preserves core and pointer ABI") {
+    using namespace ogplay::gles;
+    CHECK(GlesFunctionCount(GlesApi::gles2) == 142);
+    CHECK(GlesFunctionCount(GlesApi::gles2_extensions) == 3);
+    const auto map = FindGlesFunction(GlesApi::gles2_extensions, "glMapBufferOES");
+    REQUIRE(map.has_value());
+    CHECK(DescribeGlesFunction(GlesApi::gles2_extensions, *map).return_type == "void*");
+    CHECK(DescribeGlesFunction(GlesApi::gles2_extensions, *map).abi_word_count == 2);
+    const auto query = FindGlesFunction(GlesApi::gles2_extensions, "glGetBufferPointervOES");
+    REQUIRE(query.has_value());
+    CHECK(DescribeGlesFunction(GlesApi::gles2_extensions, *query).pointer_parameter_count == 1);
+    CHECK(DescribeGlesFunction(GlesApi::gles2_extensions, *query).abi_word_count == 3);
+}
+
 TEST_CASE("GLES2 dispatch invokes only an explicitly bound exact handler") {
     ogplay::gles::GlesDispatchTable dispatch;
     const auto clear = ogplay::gles::GlesDispatchTable::Find("glClear");

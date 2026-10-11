@@ -153,12 +153,7 @@ std::uint32_t Gles2Module::GetBooleanv(const A32CallFrame& call) {
 }
 
 std::uint32_t Gles2Module::GetBufferParameteriv(const A32CallFrame& call) {
-    const auto arguments = call.Arguments();
-    auto prepared = Prepare(calls_, graphics_, 59U, call);
-    const auto value = graphics_.RequireFrame("glGetBufferParameteriv")
-                           .GetBufferParameter(arguments[0], arguments[1]);
-    WriteInteger(OnlyPointer(prepared), value);
-    return 0U;
+    return InvokeBufferParameter(call, graphics_, calls_);
 }
 
 std::uint32_t Gles2Module::GetFloatv(const A32CallFrame& call) {

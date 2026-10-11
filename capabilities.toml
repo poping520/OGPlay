@@ -1290,6 +1290,11 @@ status = "complete"
 test = "tests/runtime/boundary/modules/gles1_fixed_tests.cpp; bounded exact-APK run-apk smoke"
 note = "M5 WU-0264 按 GLES1 规范绑定 7 个 lighting/material/fog 入口并保存可重置受检状态；BND-38 使 position 与 spot direction 在设置时按当前 modelview 转为 eye space。exact-APK 暴露 GL_FRONT material face 兼容边界"
 
+[runtime.gles_buffer_mapping]
+status = "partial"
+test = "tests/gles/gles_dispatch_tests.cpp: DVM-238; tests/runtime/boundary/integration/android_boundary_hle_tests.cpp: DVM-238, GLES1 OES mapbuffer, BND34 mapping; tests/gles/angle_frame_tests.cpp: bounded buffer read; tools.gles2_extensions_catalog_current; architecture.boundary_hot_path"
+note = "DVM-238/ADR-0117：独立 GLES2 extension subset 发布 OES map/unmap/get-pointer，GLES1 OES/GLES3 range/flush/query/unmap 共用 share-group+buffer 映射服务和 32 MiB guest arena。输出为 guest 地址，操作复核 native mapped/pointer；删除/最后 owner 退役，空闲区可复用。内部合法 READ|WRITE/预取保留未修改内容，guest flags/range 查询保持，显式 flush 不被 unmap 覆盖；GLES1 缓存通过 observer 同步。ES2 OES+EXT range 或 ES3 core 满足条件才发布扩展。macOS 定向验证与原 APK reached-fault；Windows/Linux、真实游戏 mapping/context-loss、EXT range 新导出及脏区优化未验收，UNSYNCHRONIZED 的必要预取不保证无等待性能。"
+
 [gles.gles1_extension_catalog]
 status = "complete"
 test = "tools.gles1_extensions_catalog_current"

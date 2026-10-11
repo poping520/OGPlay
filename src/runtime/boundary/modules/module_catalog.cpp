@@ -131,7 +131,8 @@ BoundaryCatalog BuildCatalog(const AndroidApi api) {
     AddGlesModule(modules, storage, "libGLESv1_CM.so", gles1_apis,
                   kGles1BoundsExports);
     constexpr std::array gles2_apis{gles::GlesApi::gles2,
-                                    gles::GlesApi::gles3};
+                                    gles::GlesApi::gles3,
+                                    gles::GlesApi::gles2_extensions};
     AddGlesModule(modules, storage, "libGLESv2.so", gles2_apis, kGlesImageExports);
     AddNamedModule(modules, storage, "liblog.so", kLogExports);
     AddOpenSlesModule(modules, storage);
@@ -212,7 +213,8 @@ std::vector<HleThunkDescriptor> BuildAndroidBoundaryDescriptors(
     for (const auto api : {gles::GlesApi::gles1,
                            gles::GlesApi::gles1_extensions,
                            gles::GlesApi::gles2,
-                           gles::GlesApi::gles3}) {
+                           gles::GlesApi::gles3,
+                           gles::GlesApi::gles2_extensions}) {
         for (std::size_t index = 0; index < gles::GlesFunctionCount(api);
              ++index) {
             const auto function = gles::DescribeGlesFunction(

@@ -630,6 +630,39 @@ std::byte* AngleFrame::MappedBufferPointerOes(
 #endif
 }
 
+std::byte* AngleFrame::MapBufferRangeCompat(std::uint32_t target,
+    std::int32_t offset, std::int32_t length, std::uint32_t access) {
+#if OGPLAY_HAS_ANGLE
+    if (ClientVersion() >= 3) return MapBufferRange(target, offset, length, access);
+    if (!HasExtension(reinterpret_cast<const char*>(glGetString(GL_EXTENSIONS)),
+                      "GL_EXT_map_buffer_range"))
+        throw GlesApiError("ANGLE range mapping is unavailable", GL_INVALID_OPERATION);
+    auto* result = glMapBufferRangeEXT(target, offset, length, access);
+    RequireNoError("glMapBufferRangeEXT");
+    return static_cast<std::byte*>(result);
+#else
+    static_cast<void>(target); static_cast<void>(offset);
+    static_cast<void>(length); static_cast<void>(access);
+    throw EglLifecycleError(EglOperation::unavailable, 0);
+#endif
+}
+
+void AngleFrame::FlushMappedBufferRangeCompat(std::uint32_t target,
+    std::int32_t offset, std::int32_t length) {
+#if OGPLAY_HAS_ANGLE
+    if (ClientVersion() >= 3) {
+        const std::array args{target, static_cast<std::uint32_t>(offset), static_cast<std::uint32_t>(length)};
+        static_cast<void>(InvokeGles3Scalar(29U, args));
+        return;
+    }
+    glFlushMappedBufferRangeEXT(target, offset, length);
+    RequireNoError("glFlushMappedBufferRange");
+#else
+    static_cast<void>(target); static_cast<void>(offset); static_cast<void>(length);
+    throw EglLifecycleError(EglOperation::unavailable, 0);
+#endif
+}
+
 bool AngleFrame::IsBuffer(const std::uint32_t buffer) {
 #if OGPLAY_HAS_ANGLE
     const auto result = glIsBuffer(buffer) == GL_TRUE;

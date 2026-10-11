@@ -13,6 +13,7 @@
 #include "runtime/boundary/core/boundary_binding.h"
 #include "runtime/boundary/modules/gles1/gles1_support.h"
 #include "runtime/boundary/services/graphics_boundary_context.h"
+#include "runtime/boundary/services/buffer_mapping.h"
 
 namespace ogplay::runtime {
 
@@ -29,6 +30,20 @@ public:
         : calls_(calls), graphics_(graphics) {}
 
     [[nodiscard]] BoundaryCallServices& CallServices() noexcept { return calls_; }
+    template <gles::GlesThunkId Id>
+    std::uint32_t InvokeExtension(const A32CallFrame& call) {
+        static_assert(Id < 3);
+        std::scoped_lock execution_lock(graphics_.execution_mutex);
+        graphics_.ActivateCurrentContext();
+        try {
+            if constexpr (Id == 0) return InvokeMapPointer(call, graphics_, calls_);
+            if constexpr (Id == 1) return InvokeOesMap(call, graphics_);
+            if constexpr (Id == 2) return InvokeBufferUnmap(call, graphics_);
+        } catch (const gles::GlesApiError& error) {
+            graphics_.SetGuestError(call, error.Code());
+        }
+        return 0U;
+    }
 
     template <gles::GlesThunkId FunctionId>
     std::uint32_t Invoke(const A32CallFrame& call) {

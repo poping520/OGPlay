@@ -159,8 +159,9 @@ TEST_CASE("GLES1 fixed matrix and scalar completion is directly bound") {
     };
     ogplay::runtime::detail::BindAndroidBoundaryGles1Core(
         dispatch, core, address_space, 1U, no_frame);
+    ogplay::runtime::BufferMappingService mappings(address_space);
     ogplay::runtime::detail::BindAndroidBoundaryGles1Textures(
-        dispatch, core, address_space, no_frame);
+        dispatch, core, address_space, no_frame, mappings);
     ogplay::runtime::detail::BindAndroidBoundaryGles1Draw(
         dispatch, extensions, draw, core, legacy, address_space, no_frame);
     ogplay::runtime::detail::BindAndroidBoundaryGles1Queries(

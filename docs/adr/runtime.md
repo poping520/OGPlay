@@ -1005,3 +1005,17 @@ descriptor，指向完整 APK并发布原物理 offset/length，绝不向 guest 
 Java openFd/raw-resource FD 使用同一 STORED 校验事实，保留现有逻辑 descriptor 通道。
 APK 来源在 source 存活期间不可变；不在本单改造整个 APK 装载器或实现完整 Android
 AssetManager。支持范围与分阶段验收见 [DVM-237](../tasks/dexvm/DVM-237.md)。
+
+## ADR-0117 · API 独立导出与共用 GLES buffer mapping
+
+GLES2 扩展以单独 subset 配方发布，不改固定 core 集合。OES 三项在 GLES1/2 各有
+受检 ABI 入口，后端共用服务并与 GLES3 range/flush/query/unmap 共用映射注册与 arena。
+不从宿主扩展列表推测 guest 支持，不通过扩充依赖闭包绕过 libGLESv2.so 强符号缺口。
+
+buffer 身份来自 current ANGLE Context 的绑定与 EGL share group；删除与最后成员退出
+主动退役，重分配/访问时复核 native mapped 状态/指针。映射返回强类型 guest 地址，
+宿主地址不得写入 guest；宿主 GL 操作仍由 ANGLE 执行，不引入手写 GL 转译。
+旧内容通过合法 READ|WRITE 内部映射或预取保留，不读取 WRITE_ONLY 宿主 lease。
+guest 权限/范围查询使用原请求；明确 flush 的映射只回写已声明范围，unmap 不再次全量
+覆盖。UNSYNCHRONIZED 写映射保留合法 host flags，必要旧内容单独预取；不承诺额外性能。
+支持范围与验证见 [DVM-238](../tasks/dexvm/DVM-238.md)。

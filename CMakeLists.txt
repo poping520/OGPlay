@@ -411,6 +411,21 @@ add_custom_command(
 add_custom_target(ogplay_gles1_extensions_codegen
     DEPENDS "${OGPLAY_GLES1_EXTENSIONS_CATALOG}")
 add_dependencies(ogplay_gles_codegen ogplay_gles1_extensions_codegen)
+set(OGPLAY_GLES2_EXTENSIONS_CATALOG
+    "${OGPLAY_GLES_GENERATED_DIR}/ogplay/gles/generated/gles2_extensions_catalog.h")
+add_custom_command(
+    OUTPUT "${OGPLAY_GLES2_EXTENSIONS_CATALOG}"
+    COMMAND ${Python3_EXECUTABLE}
+        "${CMAKE_CURRENT_SOURCE_DIR}/tools/generate_gles_api.py"
+        --idl "${CMAKE_CURRENT_SOURCE_DIR}/data/gles/gles2_extensions.json"
+        --output "${OGPLAY_GLES2_EXTENSIONS_CATALOG}"
+    DEPENDS
+        "${CMAKE_CURRENT_SOURCE_DIR}/tools/generate_gles_api.py"
+        "${CMAKE_CURRENT_SOURCE_DIR}/data/gles/gles2_extensions.json"
+    VERBATIM
+)
+add_custom_target(ogplay_gles2_extensions_codegen DEPENDS "${OGPLAY_GLES2_EXTENSIONS_CATALOG}")
+add_dependencies(ogplay_gles_codegen ogplay_gles2_extensions_codegen)
 add_dependencies(ogplay_gles ogplay_gles_codegen)
 add_library(OGPlay::Gles ALIAS ogplay_gles)
 target_include_directories(ogplay_gles PUBLIC
@@ -491,6 +506,7 @@ add_library(ogplay_runtime
     src/runtime/boundary/core/boundary_thunk_arena.cpp
     src/runtime/boundary/services/frame_service.cpp
     src/runtime/boundary/services/graphics_dispatch.cpp
+    src/runtime/boundary/services/buffer_mapping.cpp
     src/runtime/boundary/services/guest_gl_context.cpp
     src/runtime/boundary/modules/bitmap/bitmap_module.cpp
     src/runtime/boundary/modules/android/android_module.cpp
@@ -1203,6 +1219,17 @@ if(OGPLAY_BUILD_TESTS)
             ${CMAKE_CURRENT_SOURCE_DIR}/tests/tools/test_align_host_threads.py
     )
     set_tests_properties(tools.diagnostics_align_host_threads PROPERTIES LABELS tools)
+
+    add_test(
+        NAME tools.gles2_extensions_catalog_current
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/generate_gles_api.py
+            --idl ${CMAKE_CURRENT_SOURCE_DIR}/data/gles/gles2_extensions.json
+            --output ${OGPLAY_GLES2_EXTENSIONS_CATALOG}
+            --check
+            --verify-header ${OGPLAY_ANGLE_SDK_ROOT}/include/GLES2/gl2ext.h
+    )
+    set_tests_properties(tools.gles2_extensions_catalog_current PROPERTIES LABELS tools)
 
     add_test(
         NAME tools.gles2_catalog_current

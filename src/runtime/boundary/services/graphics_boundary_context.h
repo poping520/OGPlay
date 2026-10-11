@@ -20,6 +20,7 @@
 #include "runtime/boundary/services/frame_service.h"
 
 namespace ogplay::runtime {
+class BufferMappingService;
 
 struct GraphicsBoundaryContext final {
     gles::AngleBackend& backend;
@@ -48,6 +49,7 @@ struct GraphicsBoundaryContext final {
     gles::AngleFrame* (*current_frame)(void*, std::string_view){};
     void (*activate_context)(void*){};
     void (*retire_share_group)(void*, std::uint32_t){};
+    BufferMappingService* buffer_mappings{};
 
     [[nodiscard]] gles::AngleFrame& RequireFrame(
         const std::string_view operation) const {

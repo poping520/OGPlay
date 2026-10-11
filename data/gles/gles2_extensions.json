@@ -1,0 +1,58 @@
+{
+  "schema_version": 1,
+  "api": "gles2_extensions",
+  "library": "libGLESv2.so",
+  "header_scope": "subset",
+  "functions": [
+    {
+      "name": "glGetBufferPointervOES",
+      "thunk_id": 0,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "target",
+          "type": "GLenum"
+        },
+        {
+          "name": "pname",
+          "type": "GLenum"
+        },
+        {
+          "name": "params",
+          "type": "void",
+          "pointer": true,
+          "indirection": 2,
+          "direction": "out",
+          "nullable": false,
+          "count": "1"
+        }
+      ]
+    },
+    {
+      "name": "glMapBufferOES",
+      "thunk_id": 1,
+      "return": "void*",
+      "parameters": [
+        {
+          "name": "target",
+          "type": "GLenum"
+        },
+        {
+          "name": "access",
+          "type": "GLenum"
+        }
+      ]
+    },
+    {
+      "name": "glUnmapBufferOES",
+      "thunk_id": 2,
+      "return": "GLboolean",
+      "parameters": [
+        {
+          "name": "target",
+          "type": "GLenum"
+        }
+      ]
+    }
+  ]
+}

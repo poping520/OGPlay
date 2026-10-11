@@ -5,6 +5,15 @@ GraphicsBoundaryContext 使用显式 owner/callback 连接组合层；GuestGlCon
 Context 的 GL shadow，可共享的对象元数据用独立共享所有权保存。FrameService 发布统一
 拥有型帧；graphics dispatch 搬运 guest 数组与输出，native 调用由底层 ANGLE 执行。
 
+BufferMappingService 统一 GLES1/2 OES 与 GLES3 core 的映射记录及 32 MiB guest arena。
+注册以 EGL share group + current ANGLE buffer 名称为键，删除/最后 Context 退役释放记录，
+访问复核实际 mapped 状态与 native 指针，重分配的旧记录在再次访问时退役。
+guest 指针为强类型地址；API 调用在 graphics execution lock 内串行，不暴露宿主地址。
+旧内容通过合法 READ|WRITE 内部 lease 或预取保存，查询发布原 guest flags/range，
+explicit flush 只回写指定区间，unmap 不再覆盖它。GLES1 CPU buffer 缓存通过显式 observer
+同步；WRITE_ONLY host lease 的回调数据从 guest arena 读取。UNSYNCHRONIZED 的必要预取
+不承诺无等待性能；EXT range 新导出与脏区优化尚未纳入。
+
 GLES2/3 浮点纹理扩展按当前 ANGLE 上下文的完整扩展 token 条件发布；线性过滤依赖
 基础浮点支持。字符串、已支持的索引与数量查询共用同一清单。浮点纹理采样不声明
 浮点颜色附件支持；GLES1 保持独立固定管线扩展范围。

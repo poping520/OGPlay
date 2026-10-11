@@ -52,7 +52,7 @@ private:
     InvokeFn invoke_{};
 };
 
-enum class GlesApi : std::uint8_t { gles1, gles1_extensions, gles2, gles3 };
+enum class GlesApi : std::uint8_t { gles1, gles1_extensions, gles2, gles3, gles2_extensions };
 
 struct GlesFunctionInfo final {
     GlesThunkId id{};

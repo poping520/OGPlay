@@ -81,6 +81,14 @@ Android API 的详细行为以 [dexvm_android](dexvm_android/MODULE.md)为准；
   registry：同 loader 幂等、同线程递归返回现有 handle、跨 loader 拒绝、Failed 重试稳定失败。
   app resolver 只用 selected-ABI inventory，basename 为身份，DT_SONAME 为受检别名；
   DT_NEEDED 可用二者，别名歧义、ET_DYN、依赖/重定位、constructor/JNI version 均受检。
+- NDK AssetManager 经 bridge hooks 校验 JNI env/thread/reference，与 NativeActivity 共享
+  同一 Java 对象的 opaque 身份；不永久保活 Java 对象，GC 撤销 manager，现存 Asset
+  持有独立来源。bridge 在停止线程后撤销 hooks、退役所有来源和注册。
+  `ApkAssets/StoredApkAsset` 共用封存 APK 的受检 STORED offset/length，首次完整 CRC
+  校验后缓存事实；open/read 不复制整个资源，压缩读取沿用 loader 区间接口。
+  每次直接 FD 为完整只读 guest APK 的独立 VFS descriptor，caller 自行 close；
+  不暴露宿主 FD，不随 Asset.close 关闭 FD。source 存活期间 APK 字节/元数据不可变，
+  manager 弱持 context，打开的 Asset 保持 sealed context；source 不保活 Java manager。
 - NativeActivityRuntime 借用当前 process 的 guest 分配、模块导出查询、JNI/JavaVM 与执行器，
   只拥有 ARMv7 ANativeActivity/callbacks、路径/state backing 和真实 Activity/AssetManager global
   refs；回调要求创建线程，native 执行释放 VM 锁，销毁退役注册并解除引用。

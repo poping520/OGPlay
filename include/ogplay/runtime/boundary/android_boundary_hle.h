@@ -17,6 +17,7 @@
 #include "ogplay/runtime/bionic/bionic_profile.h"
 #include "ogplay/runtime/boundary/opensles_callback.h"
 #include "ogplay/runtime/boundary/bitmap_boundary.h"
+#include "ogplay/runtime/boundary/asset_boundary.h"
 #include "ogplay/runtime/common/supervisor_call_progress.h"
 
 namespace ogplay::core {
@@ -94,15 +95,14 @@ struct BionicDynamicLinkHooks final {
 inline constexpr memory::GuestAddress kNativeActivityWindowHandleBegin{0x6e400000U};
 inline constexpr memory::GuestAddress kNativeActivityWindowHandleEnd{0x6e800000U};
 
-// Opaque NDK identities backed by the current process. The owner retains these
-// allocations until UnregisterNativeActivity. Window generations are allocated
-// separately by the boundary; no host pointer crosses this API.
+// Activity/queue allocations remain owned until UnregisterNativeActivity.
+// The asset manager is a separate process identity, shared with Java/JNI;
+// windows have independent generations. No host address crosses the guest ABI.
 struct NativeActivityBoundaryResources final {
     memory::GuestAddress activity;
     memory::GuestAddress assets;
     memory::GuestAddress queue;
     std::uint32_t width{}, height{};
-    std::function<std::optional<std::vector<std::byte>>(std::string_view)> read_asset;
 };
 
 struct AndroidLooperHooks final {
@@ -142,6 +142,10 @@ public:
 
     void MapThunks();
     void SetBitmapHooks(AndroidBitmapHooks hooks);
+    // Install before guest calls; clear only after workers stop, retiring assets.
+    void SetAssetManagerHooks(AndroidAssetManagerHooks hooks);
+    [[nodiscard]] memory::GuestAddress RegisterAssetManager(std::shared_ptr<AndroidAssetManagerSource> source);
+    void UnregisterAssetManager(memory::GuestAddress manager);
     void OpenManagedSurface();
     void BindManagedSurfaceOnCallingThread();
     void ReleaseManagedSurfaceFromCallingThread();

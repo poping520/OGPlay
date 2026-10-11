@@ -259,6 +259,9 @@ public:
     memory::GuestAddress PrepareThreadLooper(std::uint64_t thread_id);
     [[nodiscard]] dexvm::NioDirectMemoryAccess GuestMemoryAccess() const;
     void SetBitmapHooks(AndroidBitmapHooks hooks);
+    void SetAssetManagerHooks(AndroidAssetManagerHooks hooks);
+    [[nodiscard]] memory::GuestAddress RegisterAssetManager(std::shared_ptr<AndroidAssetManagerSource> source);
+    void UnregisterAssetManager(memory::GuestAddress manager);
     [[nodiscard]] memory::GuestAddress FindModuleExport(std::size_t module_index,
                                                        std::string_view name) const;
     [[nodiscard]] memory::GuestAddress GuestEnvironment() const noexcept;

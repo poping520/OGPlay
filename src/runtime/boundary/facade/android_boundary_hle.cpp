@@ -202,6 +202,9 @@ public:
         SealBindings();
     }
     void SetBitmapHooks(AndroidBitmapHooks hooks) { bitmap_module_.SetHooks(hooks); }
+    void SetAssetManagerHooks(AndroidAssetManagerHooks hooks) { android_module_.SetAssetManagerHooks(hooks); }
+    memory::GuestAddress RegisterAssetManager(std::shared_ptr<AndroidAssetManagerSource> source) { return android_module_.RegisterAssetManager(std::move(source)); }
+    void UnregisterAssetManager(memory::GuestAddress manager) { android_module_.UnregisterAssetManager(manager); }
     void MapThunks() {
         graphics_context_.retire_share_group = [](void* owner, const std::uint32_t group) {
             auto& self = *static_cast<Impl*>(owner);
@@ -1156,4 +1159,7 @@ void AndroidBoundaryHle::SetNativeActivityInput(memory::GuestAddress activity, b
 
 namespace ogplay::runtime {
 void AndroidBoundaryHle::SetBitmapHooks(AndroidBitmapHooks hooks) { impl_->SetBitmapHooks(hooks); }
+void AndroidBoundaryHle::SetAssetManagerHooks(AndroidAssetManagerHooks hooks) { impl_->SetAssetManagerHooks(hooks); }
+memory::GuestAddress AndroidBoundaryHle::RegisterAssetManager(std::shared_ptr<AndroidAssetManagerSource> source) { return impl_->RegisterAssetManager(std::move(source)); }
+void AndroidBoundaryHle::UnregisterAssetManager(memory::GuestAddress manager) { impl_->UnregisterAssetManager(manager); }
 }

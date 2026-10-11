@@ -12,6 +12,7 @@
 #include <set>
 #include <variant>
 #include "ogplay/runtime/dexvm/io_runtime.h"
+#include "ogplay/runtime/integration/apk_assets.h"
 
 namespace ogplay::runtime::android_intrinsics {
 
@@ -141,8 +142,7 @@ dx::VmObjectRef MakeStoredApkAssetFileDescriptor(
   }
   std::uint64_t data_offset{};
   try {
-    data_offset = loader::StoredApkEntryDataOffset(
-        context->apk_bytes, context->archive, path);
+    data_offset = StoredApkAsset(context, path).start;
   } catch (const std::exception &error) {
     throw dx::VmJavaThrow{"Ljava/io/FileNotFoundException;",
                           "APK resource cannot provide a descriptor: " + path +
@@ -198,8 +198,13 @@ Decl Declare_android_content_res_AssetFileDescriptor(const Context &) {
     if (pfd.IsValid()) {
       const auto fd =
           dx::VmObjectRef(call.vm.Model().InstanceSlots(pfd)[0].bits);
-      if (fd.IsValid())
+      if (fd.IsValid()) {
         call.vm.IO().CloseDescriptor(fd);
+        // FileDescriptor.valid() is original Java and reads its descriptor
+        // field, independently of IoRuntime's logical close bookkeeping.
+        static_cast<void>(CallAndroidMethod(call.vm, fd, "setInt$", "(I)V",
+            {dx::VmValue::Int(-1)}));
+      }
     }
     return dx::VmValue::Void();
   });
@@ -244,8 +249,7 @@ Decl Declare_android_content_res_AssetManager(const Context &context) {
         }
         std::uint64_t data_offset{};
         try {
-          data_offset = loader::StoredApkEntryDataOffset(
-              context->apk_bytes, context->archive, path);
+          data_offset = StoredApkAsset(context, path).start;
         } catch (const std::exception &error) {
           throw dx::VmJavaThrow{"Ljava/io/FileNotFoundException;",
                                 "APK asset cannot provide a descriptor: " +

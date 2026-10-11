@@ -84,4 +84,6 @@
     X("AMotionEvent_getHistoricalToolMinor", 79, 3, AMotionEvent_getHistoricalToolMinor) \
     X("AMotionEvent_getHistoricalOrientation", 80, 3, AMotionEvent_getHistoricalOrientation) \
     X("AMotionEvent_getHistoricalAxisValue", 81, 4, AMotionEvent_getHistoricalAxisValue) \
-    X("AInputQueue_hasEvents", 82, 1, InputQueueHasEvents)
+    X("AInputQueue_hasEvents", 82, 1, InputQueueHasEvents) \
+    X("AAssetManager_fromJava", 83, 2, AssetManagerFromJava) \
+    X("AAsset_openFileDescriptor", 84, 3, AssetOpenFileDescriptor)

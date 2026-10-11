@@ -43,6 +43,7 @@ class EncodedAudioDataSource;
 
 namespace ogplay::runtime {
 class BitmapPixels;
+class AndroidAssetManagerSource;
 struct AndroidBoundaryInput;
 
 namespace database {
@@ -123,6 +124,8 @@ struct DexVmAndroidContext final {
   // ApplicationInfo source paths expose this instead of leaking the
   // frontend's host path.
   std::string package_resource_path;
+  // Internal sealed APK source, initialized only by ApkAssets().
+  std::shared_ptr<AndroidAssetManagerSource> apk_asset_source;
   std::uint32_t package_version_code{};
   std::string package_version_name;
   std::uint32_t target_sdk_version{};

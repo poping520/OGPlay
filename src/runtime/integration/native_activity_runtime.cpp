@@ -36,15 +36,16 @@ public:
     Publish publish;
     Resolve resolve;
     Thread thread;
+    Assets asset_manager;
     core::Logger* logger;
     dx::NioDirectMemoryAccess memory;
     std::map<std::uint32_t, Instance> instances;
     std::uint32_t next_handle{1};
 
     Impl(AndroidGuestCallSession& s, std::weak_ptr<DexVmAndroidContext> c,
-         Publish p, Resolve r, Thread t, core::Logger* l)
+         Publish p, Resolve r, Thread t, Assets a, core::Logger* l)
         : session(s), context(std::move(c)), publish(std::move(p)), resolve(std::move(r)),
-          thread(std::move(t)), logger(l), memory(s.Process().GuestMemoryAccess()) {}
+          thread(std::move(t)), asset_manager(std::move(a)), logger(l), memory(s.Process().GuestMemoryAccess()) {}
 
     void Write(memory::GuestAddress address, std::uint32_t value) {
         std::array<std::byte, 4> bytes{};
@@ -186,19 +187,11 @@ public:
             Write(item.address.Add(16), internal ? item.address.Add(internal).Value() : 0);
             Write(item.address.Add(20), external ? item.address.Add(external).Value() : 0);
             Write(item.address.Add(24), call.arguments[6].cat1);
-            Write(item.address.Add(32), item.address.Add(128).Value());
-            Write(item.address.Add(128), item.assets.Value());
+            const auto manager = asset_manager(typed.NonNullRef(7, "assets"));
+            Write(item.address.Add(32), manager.Value());
             Write(item.address.Add(36), obb ? item.address.Add(obb).Value() : 0);
-            session.Process().RegisterNativeActivity({item.address, item.address.Add(128),
-                item.address.Add(148), ctx->surface_width, ctx->surface_height,
-                [weak = context](std::string_view name) -> std::optional<std::vector<std::byte>> {
-                    const auto context = weak.lock();
-                    if (!context) throw std::runtime_error("NativeActivity assets retired");
-                    const auto path = "assets/" + std::string(name);
-                    if (std::ranges::none_of(context->archive.entries, [&](const auto& entry) { return entry.name == path; }))
-                        return std::nullopt;
-                    return loader::ReadApkEntry(context->apk_bytes, context->archive, path);
-                }});
+            session.Process().RegisterNativeActivity({item.address, manager,
+                item.address.Add(148), ctx->surface_width, ctx->surface_height});
             item.registered = true;
             const std::array args{item.address.Value(), saved_size ? item.address.Add(saved_offset).Value() : 0U, saved_size};
             static_cast<void>(Invoke(call, item, entry, args));
@@ -294,8 +287,8 @@ public:
 };
 
 NativeActivityRuntime::NativeActivityRuntime(AndroidGuestCallSession& s,
-        std::weak_ptr<DexVmAndroidContext> c, Publish p, Resolve r, Thread t, core::Logger* logger)
-    : impl_(std::make_unique<Impl>(s, std::move(c), std::move(p), std::move(r), std::move(t), logger)) {}
+        std::weak_ptr<DexVmAndroidContext> c, Publish p, Resolve r, Thread t, Assets a, core::Logger* logger)
+    : impl_(std::make_unique<Impl>(s, std::move(c), std::move(p), std::move(r), std::move(t), std::move(a), logger)) {}
 NativeActivityRuntime::~NativeActivityRuntime() {
     try { Release(); }
     catch (const std::exception& error) {

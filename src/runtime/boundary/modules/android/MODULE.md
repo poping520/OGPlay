@@ -3,6 +3,20 @@
 拥有 libandroid.so 的导出、进程内 opaque 对象及输入状态。只依赖 boundary services、
 memory、core/hal；VFS 和线程存活事实通过 AndroidLooperHooks 注入，不反向依赖 integration。
 
+## APK Asset
+
+- manager 身份与 Activity 分离：fromJava 经显式 hooks 转换真实 JNI 引用，NativeActivity
+  使用同一 manager。句柄单调分配且不复用，最多 1024 个 live manager/4096 个 Asset。
+- source 接口只发布 length/ReadAt/直接 FD，不依赖 JNI、loader 或 VFS。open 在 registry
+  锁外查询；每个 Asset 有独立游标和操作锁，read 使用至多 64 KiB 的临时窗口，不物化
+  整个条目。读输出预检失败不推进游标。seek 限于资源范围，EOF 为真实零字节读取。
+- openFileDescriptor 先预检两个 32 位输出，再获取完整 APK 的新 guest FD 与 start/length；
+  失败回滚新 FD，压缩资源返回负值且不改输出；API19 的 32 位范围截断保持。
+  Asset.close 不关闭交付的 FD；manager 退役不销毁已打开 Asset 的来源。
+- NativeActivity 退役只处理窗口/输入；Java manager GC 独立撤销注册。owner 停止 guest
+  线程后解除 hooks，同时退役所有 Asset/manager source。无永久 Java 引用、宿主指针或 FD。
+  目录、64 位导出和 getBuffer 未实现。验证范围见 DVM-237。
+
 ## 输入事件
 
 - API19 AInputEvent/AKeyEvent/AMotionEvent getter 读取不可变 AndroidBoundaryInput 快照。

@@ -33,10 +33,37 @@ bool AndroidModule::NativeWindowIsCurrent(memory::GuestAddress window) {
 
 void AndroidModule::NotifyFileWrite() { ready_.notify_all(); }
 
+void AndroidModule::SetAssetManagerHooks(AndroidAssetManagerHooks hooks) {
+    std::scoped_lock guard(asset_hook_mutex_);
+    asset_hooks_ = hooks;
+    if (!hooks.from_java) {
+        // Owner retires hooks only after guest workers have stopped. Release
+        // native leases too; no resource survives until a later VM destruction.
+        std::scoped_lock lock(mutex_);
+        asset_managers_.clear();
+        assets_.clear();
+    }
+}
+memory::GuestAddress AndroidModule::RegisterAssetManager(std::shared_ptr<AndroidAssetManagerSource> source) {
+    if (!source) throw std::invalid_argument("AssetManager source is missing");
+    std::scoped_lock guard(mutex_);
+    if (asset_managers_.size() >= 1024 || next_asset_manager_.Value() == 0x6e400000U)
+        throw std::runtime_error("AssetManager handle budget exhausted");
+    const auto handle = next_asset_manager_;
+    asset_managers_.emplace(handle.Value(), std::move(source));
+    next_asset_manager_ = handle.Add(1);
+    return handle;
+}
+void AndroidModule::UnregisterAssetManager(memory::GuestAddress manager) {
+    std::scoped_lock guard(mutex_);
+    // Existing Assets have independent backing leases, like API19 _FileAsset.
+    asset_managers_.erase(manager.Value());
+}
+
 void AndroidModule::RegisterNativeActivity(NativeActivityBoundaryResources resources) {
     std::scoped_lock lock(mutex_);
     if (resources.activity.IsNull() || resources.assets.IsNull() ||
-        resources.queue.IsNull() || !resources.read_asset)
+        resources.queue.IsNull())
         throw std::invalid_argument("incomplete NativeActivity boundary resources");
     managed_activity_seen_ = true;
     const auto key = resources.activity.Value();
@@ -48,8 +75,6 @@ void AndroidModule::UnregisterNativeActivity(memory::GuestAddress activity) {
     std::scoped_lock lock(mutex_);
     const auto found = resources_.find(activity.Value());
     if (found == resources_.end()) return;
-    const auto manager = found->second.resources.assets;
-    std::erase_if(assets_, [manager](const auto& pair) { return pair.second.manager == manager; });
     RetireWindow(found->second);
     resources_.erase(found);
 }
@@ -144,6 +169,13 @@ template <std::uint16_t FunctionId>
 BoundaryResult AndroidModule::ExecuteExport(const A32CallFrame& call) {
     const auto args = call.RegisterArguments();
     const auto tid = call.ThreadId();
+    if constexpr (FunctionId == 83U) {
+        std::scoped_lock guard(asset_hook_mutex_);
+        if (!asset_hooks_.from_java)
+            throw std::runtime_error("NDK AssetManager JNI backend is unavailable");
+        return asset_hooks_.from_java(asset_hooks_.owner, tid,
+            call.Pointer<void>(0).Address(), AssetManagerJavaReference{args[1]}).Value();
+    }
     if constexpr ((FunctionId >= 13U && FunctionId <= 18U) ||
                   (FunctionId >= 37U && FunctionId <= 81U)) {
         return ReadInput<FunctionId>(call);
@@ -187,13 +219,13 @@ BoundaryResult AndroidModule::ExecuteExport(const A32CallFrame& call) {
         }
     }
     if constexpr (FunctionId == 20U) {
-        std::function<std::optional<std::vector<std::byte>>(std::string_view)> read;
+        std::shared_ptr<AndroidAssetManagerSource> manager;
         {
             std::scoped_lock lock(mutex_);
-            for (const auto& [_, item] : resources_)
-                if (item.resources.assets.Value() == args[0]) read = item.resources.read_asset;
+            const auto found = asset_managers_.find(args[0]);
+            if (found != asset_managers_.end()) manager = found->second;
         }
-        if (!read) throw std::invalid_argument("AAssetManager is stale or unregistered");
+        if (!manager) throw std::invalid_argument("AAssetManager is stale or unregistered");
         if (args[2] > 3) return 0;
         std::string name;
         for (std::size_t i=0; i<4096; ++i) {
@@ -203,40 +235,76 @@ BoundaryResult AndroidModule::ExecuteExport(const A32CallFrame& call) {
             name.push_back(static_cast<char>(byte[0]));
             if (i == 4095) throw std::invalid_argument("asset path exceeds budget");
         }
-        auto bytes = read(name);
-        if (!bytes) return 0;
-        if (bytes->size() > 64U*1024U*1024U) throw std::runtime_error("NDK asset exceeds 64 MiB budget");
+        const auto source = manager->Open(name);
+        if (!source) return 0;
         std::scoped_lock lock(mutex_);
-        if (std::ranges::none_of(resources_, [&](const auto& pair) { return pair.second.resources.assets.Value() == args[0]; }))
+        if (!asset_managers_.contains(args[0]))
             throw std::invalid_argument("AAssetManager retired during open");
-        if (next_asset_ == 0x6e200000U) throw std::runtime_error("NDK asset handle budget exhausted");
+        if (assets_.size() >= 4096 || next_asset_ == 0x6e200000U)
+            throw std::runtime_error("NDK asset handle budget exhausted");
         const auto handle = next_asset_++;
-        assets_.emplace(handle, Asset{memory::GuestAddress{args[0]}, std::move(*bytes), 0});
+        auto asset = std::make_shared<Asset>();
+        asset->source = source;
+        assets_.emplace(handle, std::move(asset));
         return handle;
     }
-    if constexpr (FunctionId >= 21U && FunctionId <= 25U) {
-        std::scoped_lock lock(mutex_);
-        const auto found = assets_.find(args[0]);
-        if (found == assets_.end()) throw std::invalid_argument("AAsset is stale or unregistered");
-        auto& asset = found->second;
-        if constexpr (FunctionId == 21U) {
-            const auto count = std::min<std::size_t>(args[2], asset.bytes.size() - asset.offset);
-            if (count > INT32_MAX) return SignedResult(-1);
-            services_.address_space.Write(call.Pointer<std::byte>(1).Address(),
-                std::span(asset.bytes).subspan(asset.offset, count), tid);
-            asset.offset += count;
-            return static_cast<std::uint32_t>(count);
+    if constexpr ((FunctionId >= 21U && FunctionId <= 25U) || FunctionId == 84U) {
+        std::shared_ptr<Asset> owner;
+        {
+            std::scoped_lock lock(mutex_);
+            const auto found = assets_.find(args[0]);
+            if (found == assets_.end()) throw std::invalid_argument("AAsset is stale or unregistered");
+            owner = found->second;
+            if constexpr (FunctionId == 22U) { assets_.erase(found); return 0; }
         }
-        if constexpr (FunctionId == 22U) { assets_.erase(found); return 0; }
-        if constexpr (FunctionId == 23U) return static_cast<std::uint32_t>(asset.bytes.size());
-        if constexpr (FunctionId == 24U) return static_cast<std::uint32_t>(asset.bytes.size() - asset.offset);
+        auto& asset = *owner;
+        std::scoped_lock guard(asset.mutex);
+        if constexpr (FunctionId == 21U) {
+            const auto count = std::min<std::uint64_t>(args[2], asset.source->Length() - asset.offset);
+            if (count > INT32_MAX) return SignedResult(-1);
+            const auto output = call.Pointer<std::byte>(1).Address();
+            if (count != 0) services_.address_space.Validate(
+                memory::GuestRange(output, count), memory::AccessType::write, tid);
+            std::array<std::byte, 65536> bytes{};
+            std::uint64_t completed{};
+            while (completed < count) {
+                const auto part = static_cast<std::size_t>(std::min<std::uint64_t>(bytes.size(), count - completed));
+                const auto got = asset.source->ReadAt(asset.offset + completed, std::span(bytes).first(part));
+                if (got > part) throw std::runtime_error("asset source returned too many bytes");
+                if (got == 0) break;
+                services_.address_space.Write(output.Add(completed), std::span(bytes).first(got), tid);
+                completed += got;
+            }
+            asset.offset += completed;
+            return static_cast<std::uint32_t>(completed);
+        }
+        if constexpr (FunctionId == 23U) return static_cast<std::uint32_t>(asset.source->Length());
+        if constexpr (FunctionId == 24U) return static_cast<std::uint32_t>(asset.source->Length() - asset.offset);
         if constexpr (FunctionId == 25U) {
             if (args[2] > 2) return SignedResult(-1);
-            const auto base = args[2] == 0 ? 0 : args[2] == 1 ? asset.offset : asset.bytes.size();
+            const auto base = args[2] == 0 ? 0 : args[2] == 1 ? asset.offset : asset.source->Length();
             const auto offset = static_cast<std::int64_t>(base) + std::bit_cast<std::int32_t>(args[1]);
-            if (offset < 0 || static_cast<std::uint64_t>(offset) > asset.bytes.size()) return SignedResult(-1);
-            asset.offset = static_cast<std::size_t>(offset);
+            if (offset < 0 || static_cast<std::uint64_t>(offset) > asset.source->Length()) return SignedResult(-1);
+            asset.offset = static_cast<std::uint64_t>(offset);
             return static_cast<std::uint32_t>(offset);
+        }
+        if constexpr (FunctionId == 84U) {
+            const auto start = services_.address_space.PreflightWrite(
+                memory::GuestRange(call.Pointer<std::uint32_t>(1).Address(), 4), tid);
+            const auto length = services_.address_space.PreflightWrite(
+                memory::GuestRange(call.Pointer<std::uint32_t>(2).Address(), 4), tid);
+            const auto descriptor = asset.source->OpenFileDescriptor();
+            if (descriptor.fd < 0) return SignedResult(descriptor.fd);
+            const auto encode = [](std::uint64_t value) {
+                std::array<std::byte, 4> bytes{};
+                for (std::size_t i = 0; i < bytes.size(); ++i) bytes[i] = static_cast<std::byte>(value >> (i * 8));
+                return bytes;
+            };
+            try {
+                services_.address_space.WritePrevalidated(start, encode(descriptor.start));
+                services_.address_space.WritePrevalidated(length, encode(descriptor.length));
+            } catch (...) { asset.source->CloseFileDescriptor(descriptor.fd); throw; }
+            return SignedResult(descriptor.fd);
         }
     }
     if constexpr (FunctionId == 3U || FunctionId == 4U) {

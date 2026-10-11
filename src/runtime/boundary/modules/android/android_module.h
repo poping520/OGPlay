@@ -32,6 +32,9 @@ public:
     void UnregisterNativeActivity(memory::GuestAddress activity);
     memory::GuestAddress SetNativeActivityWindow(memory::GuestAddress activity, bool active);
     void SetNativeActivityInput(memory::GuestAddress activity, bool active);
+    void SetAssetManagerHooks(AndroidAssetManagerHooks hooks);
+    memory::GuestAddress RegisterAssetManager(std::shared_ptr<AndroidAssetManagerSource> source);
+    void UnregisterAssetManager(memory::GuestAddress manager);
 
 
 #define OGPLAY_DECLARE_ANDROID(name, id, count, method) \
@@ -89,13 +92,17 @@ private:
     memory::GuestAddress next_window_{kNativeActivityWindowHandleBegin};
     void RetireWindow(Resource& resource);
     struct Asset {
-        memory::GuestAddress manager;
-        std::vector<std::byte> bytes;
-        std::size_t offset{};
+        std::shared_ptr<const AndroidAssetSource> source;
+        std::uint64_t offset{};
+        std::mutex mutex;
     };
     bool managed_activity_seen_{};
     std::map<std::uint32_t, Resource> resources_;
-    std::map<std::uint32_t, Asset> assets_;
+    std::map<std::uint32_t, std::shared_ptr<Asset>> assets_;
+    std::map<std::uint32_t, std::shared_ptr<AndroidAssetManagerSource>> asset_managers_;
+    memory::GuestAddress next_asset_manager_{0x6e300000U};
+    std::recursive_mutex asset_hook_mutex_;
+    AndroidAssetManagerHooks asset_hooks_;
     // Asset handles are opaque tokens, never dereferenced as guest structures.
     std::uint32_t next_asset_{0x6e100000U};
     Resource& Queue(std::uint32_t handle);

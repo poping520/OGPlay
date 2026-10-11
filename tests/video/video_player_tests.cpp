@@ -1,10 +1,12 @@
 #include <doctest/doctest.h>
 
 #include <cstdint>
+#include <atomic>
 #include <vector>
 
 #include "ogplay/video/fake_video_player.h"
 #include "ogplay/video/buffered_video_player.h"
+#include "ogplay/video/decoded_video_player.h"
 #include "ogplay/hal/clock.h"
 #include <condition_variable>
 #include <mutex>
@@ -27,6 +29,61 @@ using ogplay::video::VideoPlayerError;
     metadata.audio_channels = 2U;
     return metadata;
 }
+
+struct PictureGate {
+    std::atomic<std::size_t> converted{};
+    std::atomic<std::size_t> alive{};
+    std::mutex mutex;
+    std::condition_variable changed;
+    bool block{};
+    bool entered{};
+    bool release{};
+    bool fail{};
+};
+
+class GatedPicture final : public ogplay::video::DecodedVideoPicture {
+public:
+    GatedPicture(ogplay::video::VideoFrame frame, std::shared_ptr<PictureGate> gate)
+        : frame_(std::move(frame)), gate_(std::move(gate)) { ++gate_->alive; }
+    ~GatedPicture() override { --gate_->alive; }
+    std::int64_t PositionMs() const noexcept override { return frame_.position_ms; }
+    std::size_t StorageBytes() const noexcept override { return frame_.rgba8.size(); }
+    ogplay::video::VideoFrame ToRgba() override {
+        if (gate_->fail) throw VideoPlayerError("test picture conversion failed");
+        if (frame_.position_ms >= 100 && gate_->block) {
+            std::unique_lock lock(gate_->mutex);
+            gate_->entered = true;
+            gate_->changed.notify_all();
+            gate_->changed.wait(lock, [&] { return gate_->release; });
+        }
+        ++gate_->converted;
+        return std::move(frame_);
+    }
+private:
+    ogplay::video::VideoFrame frame_;
+    std::shared_ptr<PictureGate> gate_;
+};
+
+class GatedDecoder final : public ogplay::video::DecodedVideoPlayer {
+public:
+    explicit GatedDecoder(std::shared_ptr<PictureGate> gate)
+        : gate_(std::move(gate)), fake_(SmallClip(), 120) {}
+    const VideoMetadata& Metadata() const noexcept override { return fake_.Metadata(); }
+    std::unique_ptr<ogplay::video::DecodedVideoPicture> TakeDecodedPicture(std::int64_t position) override {
+        auto frame = fake_.TakeFrame(position);
+        return frame ? std::make_unique<GatedPicture>(std::move(*frame), gate_) : nullptr;
+    }
+    std::optional<ogplay::video::VideoFrame> TakeFrame(std::int64_t position) override {
+        auto picture = TakeDecodedPicture(position);
+        return picture ? std::optional{picture->ToRgba()} : std::nullopt;
+    }
+    std::size_t ReadPcm(std::span<std::int16_t> pcm) override { return fake_.ReadPcm(pcm); }
+    bool PcmEnded() const override { return fake_.PcmEnded(); }
+    void SeekTo(std::int64_t position) override { fake_.SeekTo(position); }
+private:
+    std::shared_ptr<PictureGate> gate_;
+    FakeVideoPlayer fake_;
+};
 
 }  // namespace
 
@@ -284,6 +341,9 @@ TEST_CASE("buffered video pulls do not wait for blocked decoder IO") {
     auto player = ogplay::video::MakeBufferedVideoPlayer(std::make_unique<BlockingDecoder>(gate));
     std::vector<std::int16_t> pcm(1024);
     REQUIRE(player->ReadPcm(pcm) == pcm.size());
+    // Advance the picture clock too: device-ahead PCM now shares the same
+    // pre-roll budget instead of extending the decoder horizon indefinitely.
+    (void)player->TakeFrame(100);
     {
         std::unique_lock lock(gate->mutex);
         const bool blocked = gate->changed.wait_for(lock, std::chrono::seconds(2), [&] { return gate->blocked; });
@@ -293,7 +353,7 @@ TEST_CASE("buffered video pulls do not wait for blocked decoder IO") {
     }
     // Both calls complete while the decoder remains blocked, with exact data
     // from pre-roll. No timing threshold is used to assert nonblocking pulls.
-    const auto frame = player->TakeFrame(100);
+    const auto frame = player->TakeFrame(200);
     const auto got = player->ReadPcm(pcm);
     {
         std::scoped_lock lock(gate->mutex);
@@ -332,4 +392,213 @@ TEST_CASE("buffered video does not turn a temporary empty PCM read into EOF") {
     }
     CHECK(total == 8000U);
     CHECK(player->PcmEnded());
+}
+
+TEST_CASE("buffered 1080p video delivers due pictures under normal audio consumption") {
+    // 64 MiB holds only eight pictures. The old 500 ms pre-roll discarded all
+    // due pictures at 30 fps even with a perfectly fast decoder and consumer.
+    std::uint32_t fps = 30;
+    SUBCASE("30 fps") { fps = 30; }
+    SUBCASE("120 fps") { fps = 120; }
+    auto player = ogplay::video::MakeBufferedVideoPlayer(
+        std::make_unique<FakeVideoPlayer>(VideoMetadata{1920, 1080, 3000, 8000, 1}, fps));
+    std::vector<std::int16_t> pcm(80); // 10 ms
+    std::size_t total{};
+    std::int64_t latest_pts = -1;
+    bool pcm_ordered = true;
+    const auto deadline = ogplay::hal::Clock::SteadyTimestampNs() + 5'000'000'000ULL;
+    for (std::int64_t position = 0; position < 3000; position += 10) {
+        const auto take = [&] {
+            if (auto frame = player->TakeFrame(position)) {
+                CHECK(frame->position_ms <= position);
+                CHECK(frame->position_ms > latest_pts);
+                latest_pts = frame->position_ms;
+            }
+        };
+        take();
+        std::size_t filled{};
+        while (filled < pcm.size() && ogplay::hal::Clock::SteadyTimestampNs() < deadline) {
+            const auto got = player->ReadPcm(std::span{pcm}.subspan(filled));
+            filled += got;
+            if (got == 0U) std::this_thread::yield();
+        }
+        REQUIRE(filled == pcm.size());
+        for (std::size_t i = 0; i < filled; ++i)
+            pcm_ordered &= pcm[i] == static_cast<std::int16_t>((total + i) & 0x7FFFU);
+        total += filled;
+        take();
+        if (position % 100 == 0) {
+            // RGBA is produced asynchronously only after the picture clock
+            // requests it. Let that work complete without advancing the clock
+            // or using an elapsed-time threshold as a correctness assertion.
+            while (latest_pts < position - 33 &&
+                   ogplay::hal::Clock::SteadyTimestampNs() < deadline) {
+                take();
+                std::this_thread::yield();
+            }
+            CHECK(latest_pts >= position - 33);
+        }
+    }
+    CHECK(total == 24000U);
+    CHECK(pcm_ordered);
+    CHECK(latest_pts >= 2900);
+    player->SeekTo(0);
+    const auto rewound = player->TakeFrame(0);
+    REQUIRE(rewound.has_value());
+    CHECK(rewound->position_ms == 0);
+    REQUIRE(player->ReadPcm(pcm) == pcm.size());
+    CHECK(pcm.front() == 0);
+}
+
+TEST_CASE("buffered 1080p video retains current and next pictures while audio drains") {
+    auto player = ogplay::video::MakeBufferedVideoPlayer(
+        std::make_unique<FakeVideoPlayer>(VideoMetadata{1920, 1080, 1500, 8000, 1}, 30));
+    std::vector<std::int16_t> pcm(256);
+    std::size_t total{};
+    bool pcm_ordered = true;
+    const auto deadline = ogplay::hal::Clock::SteadyTimestampNs() + 5'000'000'000ULL;
+    while (!player->PcmEnded() && ogplay::hal::Clock::SteadyTimestampNs() < deadline) {
+        const auto got = player->ReadPcm(pcm);
+        for (std::size_t i = 0; i < got; ++i)
+            pcm_ordered &= pcm[i] == static_cast<std::int16_t>((total + i) & 0x7FFFU);
+        total += got;
+        if (got == 0U) std::this_thread::yield();
+    }
+    REQUIRE(player->PcmEnded());
+    CHECK(total == 12000U);
+    CHECK(pcm_ordered);
+    const auto current = player->TakeFrame(0);
+    REQUIRE(current.has_value());
+    CHECK(current->position_ms == 0);
+    std::optional<ogplay::video::VideoFrame> next;
+    while (!next && ogplay::hal::Clock::SteadyTimestampNs() < deadline) {
+        next = player->TakeFrame(34);
+        if (!next) std::this_thread::yield();
+    }
+    REQUIRE(next.has_value());
+    CHECK(next->position_ms == 33);
+    std::optional<ogplay::video::VideoFrame> late;
+    while (!late && ogplay::hal::Clock::SteadyTimestampNs() < deadline) {
+        late = player->TakeFrame(1499);
+        if (!late) std::this_thread::yield();
+    }
+    REQUIRE(late.has_value());
+    CHECK(late->position_ms >= 1400);
+}
+
+TEST_CASE("buffered two-picture video primes and no-audio playback progresses") {
+    // Two 32 MiB pictures exercise the minimum capacity: pre-roll must not
+    // wait for more PCM than its adaptive watermark permits before returning.
+    auto player = ogplay::video::MakeBufferedVideoPlayer(
+        std::make_unique<FakeVideoPlayer>(VideoMetadata{4096, 2048, 200, 8000, 1}, 30));
+    const auto first = player->TakeFrame(0);
+    REQUIRE(first.has_value());
+    CHECK(first->position_ms == 0);
+    player.reset();
+
+    auto silent = ogplay::video::MakeBufferedVideoPlayer(
+        std::make_unique<FakeVideoPlayer>(VideoMetadata{1920, 1080, 1000, 0, 0}, 30));
+    const auto silent_first = silent->TakeFrame(0);
+    REQUIRE(silent_first.has_value());
+    CHECK(silent_first->position_ms == 0);
+    const auto deadline = ogplay::hal::Clock::SteadyTimestampNs() + 3'000'000'000ULL;
+    std::int64_t latest_pts = silent_first->position_ms;
+    for (const auto position : {0, 100, 500, 999}) {
+        while (latest_pts < position - 33 &&
+               ogplay::hal::Clock::SteadyTimestampNs() < deadline) {
+            if (auto frame = silent->TakeFrame(position)) latest_pts = frame->position_ms;
+            else std::this_thread::yield();
+        }
+        CHECK(latest_pts >= position - 33);
+        CHECK(latest_pts <= position);
+    }
+    CHECK(silent->PcmEnded());
+    CHECK_THROWS_AS((void)ogplay::video::MakeBufferedVideoPlayer(
+        std::make_unique<FakeVideoPlayer>(VideoMetadata{4096, 4096, 1000, 0, 0}, 30)),
+        VideoPlayerError);
+}
+
+TEST_CASE("buffered staged video converts only requested pictures and retires seek generations") {
+    auto gate = std::make_shared<PictureGate>();
+    auto player = ogplay::video::MakeBufferedVideoPlayer(std::make_unique<GatedDecoder>(gate));
+    std::vector<std::int16_t> pcm(256);
+    std::size_t total{};
+    const auto deadline = ogplay::hal::Clock::SteadyTimestampNs() + 3'000'000'000ULL;
+    while (!player->PcmEnded() && ogplay::hal::Clock::SteadyTimestampNs() < deadline) {
+        total += player->ReadPcm(pcm);
+        std::this_thread::yield();
+    }
+    REQUIRE(player->PcmEnded());
+    CHECK(total == 8000U);
+    // Audio pre-roll/consumption must not convert the many future pictures.
+    CHECK(gate->converted.load() == 1U);
+    const auto first = player->TakeFrame(0);
+    REQUIRE(first.has_value());
+    CHECK(first->position_ms == 0);
+    std::optional<ogplay::video::VideoFrame> last;
+    while (!last && ogplay::hal::Clock::SteadyTimestampNs() < deadline) {
+        last = player->TakeFrame(999);
+        if (!last) std::this_thread::yield();
+    }
+    REQUIRE(last.has_value());
+    CHECK(last->position_ms >= 980);
+    // EOF may still flush one last due picture after the clock jump.
+    CHECK(gate->converted.load() >= 2U);
+    CHECK(gate->converted.load() <= 3U);
+    player->SeekTo(0);
+    const auto rewind = player->TakeFrame(0);
+    REQUIRE(rewind.has_value());
+    CHECK(rewind->position_ms == 0);
+    CHECK(rewind->rgba8 == first->rgba8);
+    player.reset();
+    CHECK(gate->alive.load() == 0U);
+}
+
+TEST_CASE("buffered staged conversion never holds foreground or PCM pulls") {
+    auto gate = std::make_shared<PictureGate>();
+    gate->block = true;
+    auto player = ogplay::video::MakeBufferedVideoPlayer(std::make_unique<GatedDecoder>(gate));
+    (void)player->TakeFrame(100);
+    {
+        std::unique_lock lock(gate->mutex);
+        const auto entered = gate->changed.wait_for(lock, std::chrono::seconds(2), [&] { return gate->entered; });
+        if (!entered) { gate->release = true; gate->changed.notify_all(); }
+        REQUIRE(entered);
+    }
+    const auto frame = player->TakeFrame(120);
+    std::vector<std::int16_t> pcm(256);
+    const auto got = player->ReadPcm(pcm);
+    {
+        std::scoped_lock lock(gate->mutex);
+        gate->release = true;
+        gate->changed.notify_all();
+    }
+    CHECK_FALSE(frame.has_value());
+    CHECK(got == 128U);
+}
+
+TEST_CASE("buffered staged conversion failure retires owned pictures") {
+    auto gate = std::make_shared<PictureGate>();
+    gate->fail = true;
+    CHECK_THROWS_AS((void)ogplay::video::MakeBufferedVideoPlayer(
+        std::make_unique<GatedDecoder>(gate)), VideoPlayerError);
+    CHECK(gate->alive.load() == 0U);
+}
+
+TEST_CASE("buffered RGBA adapter accounts for reserved pixel backing") {
+    class ReservedDecoder final : public ogplay::video::VideoPlayer {
+    public:
+        const VideoMetadata& Metadata() const noexcept override { return fake_.Metadata(); }
+        std::optional<ogplay::video::VideoFrame> TakeFrame(std::int64_t position) override {
+            auto frame = fake_.TakeFrame(position);
+            if (frame) frame->rgba8.reserve(33U * 1024U * 1024U);
+            return frame;
+        }
+        std::size_t ReadPcm(std::span<std::int16_t> pcm) override { return fake_.ReadPcm(pcm); }
+        void SeekTo(std::int64_t position) override { fake_.SeekTo(position); }
+    private:
+        FakeVideoPlayer fake_{SmallClip(), 30};
+    };
+    CHECK_THROWS_AS((void)ogplay::video::MakeBufferedVideoPlayer(
+        std::make_unique<ReservedDecoder>()), VideoPlayerError);
 }

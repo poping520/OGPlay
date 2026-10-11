@@ -15,6 +15,7 @@
 - [ADR-0094 · 本地 VideoView 的 Java 生命周期与真实视频事件](#adr-0094)
 - [ADR-0099 · 实时视频解码与音频消费隔离](#adr-0099)
 - [ADR-0100 · 实时窗口有界异步读回](#adr-0100)
+- [ADR-0116 · 原生视频图片缓存与到期转换](#adr-0116)
 
 <a id="adr-0003"></a>
 
@@ -544,3 +545,49 @@ ANGLE EGLImage。使用 ANGLE 的 GL_DEPTH24_STENCIL8 图像导入/逻辑格式�
 Surface lifetime/current/deferred destroy 继承 EGL registry；深度/模板和颜色一起绑定，
 失败仍保留旧 binding/currency。纹理绑定、MSAA 与 packed fallback GLES3 边界不扩充，
 原生配置仍优先；不更改 ANGLE SDK 或引入系统窗口/图形服务。
+
+
+<a id="adr-0116"></a>
+
+## ADR-0116 · 原生视频图片缓存与到期转换
+
+- 状态：Accepted
+- 日期：2026-10-11
+- Supersedes：ADR-0099 的固定预读、提前生成 RGBA 和无条件淘汰最旧图片条款；
+  其余 Clock、worker/AVIO 所有权、VFS 与呈现规则保持。
+- 实施：[WU-PERF-14](../tasks/optimization/WU-PERF-14.md)、[WU-PERF-15](../tasks/optimization/WU-PERF-15.md)。
+
+### 背景
+
+音频 500 ms 水位驱动预读时，1080p RGBA 在 64 MiB 中只能保留八帧。无条件淘汰队首
+会删掉全部到期图片，使声音继续而画面长期保留开头黑帧。提前转换随后要丢弃的未来帧
+也消耗 CPU 和内存；仅按帧数约束 FFmpeg 内部缓存不能约束高分辨率像素 backing。
+
+### 决定
+
+提供可选 DecodedVideoPlayer/DecodedVideoPicture 接口，交付带 PTS 的拥有型原生图片，
+普通 VideoPlayer 使用 RGBA adapter。FFmpeg 图片持有 AVFrame pixel refs 和共享转换器；
+同一 owner 串行调用，单次转换，seek/decoder 退役不使已交付图片悬空。
+不扩展 FFmpeg 主版本；avutil 59 的 AVBufferRef 前导字段与平面查询用于去重计数，
+包含实际 stride/padding。非法尺寸、平面/ownership、输出或资源越界明确失败。
+
+后台仍只有一个 worker 独占 demux/codec/AVIO。图片缓存保留原生格式，只挑最新到期
+图片在锁外转换到单槽 RGBA；主帧/音频拉取不做转换也不等待它。解码 EOF 后仍响应剩余
+到期帧转换；seek/析构先取消并 join，再清空旧代际。图片队列 ≤64 帧、≤64 MiB，
+待交付 RGBA 单槽 ≤64 MiB，转换时允许一张临时输出；codec 私有工作区和调用方留存
+不属于该队列预算，不把它冒充进程总内存。
+
+容量由已观察最大图片字节数计算，至少两帧；预读按容量减去两帧余量、PTS 最小间隔和
+音频拉取相对画面请求的领先量调整，范围 10..500 ms。open/seek 预读为其一半且最多
+250 ms。过期图片先合并，压力下保护最新到期与最近未来图片，然后丢更远未来图片；
+PCM 不丢、不因呈现停滞而阻断，空读不伪造 EOF。
+
+FFmpeg 内部队列仍 ≤64 帧，另有一张 pending，两者像素 backing 合计 ≤256 MiB；
+音频 demux 在 48 帧或 192 MiB 背压，receive 保留已观察最大帧空间。移动至 pending
+不能漏记其 backing，seek 清零；格式变化超预算明确失败。它与 wrapper 缓存分别计量。
+
+### 后果
+
+降低未来帧的 RGBA 存储与无效转换成本，允许主帧拉取暂时为空、随后交付后台结果。
+供给不足或压力下仍可能跳帧；不承诺完整影音同步、任意片源/分辨率实时性能。
+媒体主时钟改造与跨平台/title gate 留待后续，不新增 Android 系统媒体服务或游戏分支。

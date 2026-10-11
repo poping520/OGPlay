@@ -131,6 +131,12 @@ struct Frame final {
     // trailing fields omitted
 };
 
+struct BufferRef final {
+    void* buffer;
+    std::uint8_t* data;
+    std::size_t size;
+};
+
 inline constexpr int kMediaTypeVideo = 0;
 inline constexpr int kMediaTypeAudio = 1;
 inline constexpr int kPixFmtRgba = 26;
@@ -157,6 +163,8 @@ struct Api final {
     Frame* (*av_frame_alloc)();
     void (*av_frame_free)(Frame**);
     void (*av_frame_unref)(Frame*);
+    BufferRef* (*av_frame_get_plane_buffer)(const Frame*, int);
+    int (*av_pix_fmt_count_planes)(int);
     int (*av_opt_set)(void*, const char*, const char*, int);
     int (*av_opt_set_int)(void*, const char*, std::int64_t, int);
     const char* (*av_get_sample_fmt_name)(int);

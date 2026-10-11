@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "ogplay/video/ffmpeg_video_player.h"
+#include "ogplay/video/decoded_video_player.h"
 #include "ogplay/video/video_player.h"
 
 namespace {
@@ -139,4 +140,53 @@ TEST_CASE("ffmpeg backend rejects missing and non-video files" *
         (void)ogplay::video::OpenFfmpegVideo(std::filesystem::path{
             OGPLAY_SOURCE_DIR} / "tests/fixtures/audio/short-vorbis.ogg"),
         ogplay::video::VideoPlayerError);
+}
+
+TEST_CASE("ffmpeg native picture owns pixels across seek and player retirement" *
+          doctest::skip(!ogplay::video::FfmpegAvailable())) {
+    auto player = ogplay::video::OpenFfmpegVideo(FixturePath());
+    auto* staged = dynamic_cast<ogplay::video::DecodedVideoPlayer*>(player.get());
+    REQUIRE(staged != nullptr);
+    auto picture = staged->TakeDecodedPicture(0);
+    REQUIRE(picture != nullptr);
+    CHECK(picture->PositionMs() == 0);
+    CHECK(picture->StorageBytes() > 0U);
+    player->SeekTo(700);
+    player.reset();
+    const auto rgba = picture->ToRgba();
+    CHECK(rgba.position_ms == 0);
+    CHECK(rgba.width == 64U);
+    CHECK(rgba.height == 32U);
+    CHECK(rgba.rgba8.size() == 64U * 32U * 4U);
+    auto reference = ogplay::video::OpenFfmpegVideo(FixturePath());
+    const auto first = reference->TakeFrame(0);
+    REQUIRE(first.has_value());
+    CHECK(rgba.rgba8 == first->rgba8);
+    CHECK_THROWS_AS((void)picture->ToRgba(), ogplay::video::VideoPlayerError);
+}
+
+TEST_CASE("ffmpeg 4k native buffering backpressures bytes and resumes without losing PCM" *
+          doctest::skip(!ogplay::video::FfmpegAvailable())) {
+    auto player = ogplay::video::OpenFfmpegVideo(
+        std::filesystem::path{OGPLAY_SOURCE_DIR} / "tests/fixtures/video/4k60-h264-aac.mp4");
+    auto* staged = dynamic_cast<ogplay::video::DecodedVideoPlayer*>(player.get());
+    REQUIRE(staged != nullptr);
+    std::vector<std::int16_t> pcm(48000);
+    std::size_t total = player->ReadPcm(pcm);
+    // At 4k/60 fps the pixel-byte watermark is reached well before 48
+    // pictures. Backpressure must remain a temporary short read, not EOF.
+    CHECK(total > 0U);
+    CHECK(total < 30000U);
+    CHECK_FALSE(player->PcmEnded());
+    for (std::int64_t position = 0; position <= 1500; position += 20) {
+        (void)staged->TakeDecodedPicture(position);
+        total += player->ReadPcm(pcm);
+    }
+    CHECK(player->PcmEnded());
+    CHECK(total >= 48000U);
+    CHECK(total <= 49152U); // one AAC frame of trailing encoder padding
+    player->SeekTo(0);
+    const auto first = staged->TakeDecodedPicture(0);
+    REQUIRE(first != nullptr);
+    CHECK(first->PositionMs() == 0);
 }

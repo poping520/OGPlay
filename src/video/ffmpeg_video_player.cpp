@@ -1,12 +1,15 @@
 #include "ogplay/video/ffmpeg_video_player.h"
 
 #include <algorithm>
+#include <array>
 #include <deque>
+#include <limits>
 #include <string>
 #include <utility>
 #include <vector>
 
 #include "ffmpeg_api.h"
+#include "ogplay/video/decoded_video_player.h"
 
 namespace ogplay::video {
 namespace {
@@ -14,6 +17,8 @@ namespace {
 using ffabi::Api;
 
 constexpr std::size_t kMaxQueuedVideoFrames = 64U;
+constexpr std::size_t kMaxQueuedVideoBytes = 256U * 1024U * 1024U;
+constexpr std::size_t kVideoBackpressureBytes = 192U * 1024U * 1024U;
 constexpr std::size_t kVideoBackpressureThreshold = 48U;
 constexpr std::size_t kMaxBufferedPcmSamples = 8U * 1024U * 1024U;
 
@@ -23,7 +28,114 @@ constexpr std::size_t kMaxBufferedPcmSamples = 8U * 1024U * 1024U;
     return value * time_base.num * 1000 / time_base.den;
 }
 
-class FfmpegVideoPlayer final : public VideoPlayer {
+std::size_t PixelStorageBytes(const Api* api, const ffabi::Frame* frame) {
+    if (frame->width <= 0 || frame->height <= 0 || frame->width > 4096 || frame->height > 4096)
+        throw VideoPlayerError("ffmpeg decoded picture has out-of-bounds dimensions");
+    std::size_t bytes{};
+    const auto planes = api->av_pix_fmt_count_planes(frame->format);
+    if (planes <= 0 || planes > 8)
+        throw VideoPlayerError("ffmpeg decoded picture has unsupported plane layout");
+    std::array<const void*, 8> buffers{};
+    std::array<std::size_t, 8> sizes{};
+    std::size_t count{};
+    for (int plane = 0; plane < planes; ++plane) {
+        const auto* ref = api->av_frame_get_plane_buffer(frame, plane);
+        if (!ref || !ref->buffer || ref->size == 0U)
+            throw VideoPlayerError("ffmpeg decoded picture lacks owned pixel backing");
+        auto slot = std::find(buffers.begin(), buffers.begin() + static_cast<std::ptrdiff_t>(count), ref->buffer);
+        if (slot == buffers.begin() + static_cast<std::ptrdiff_t>(count)) {
+            buffers[count] = ref->buffer;
+            sizes[count++] = ref->size;
+        } else {
+            const auto index = static_cast<std::size_t>(slot - buffers.begin());
+            sizes[index] = std::max(sizes[index], ref->size);
+        }
+    }
+    for (std::size_t i = 0; i < count; ++i) {
+        if (sizes[i] > std::numeric_limits<std::size_t>::max() - bytes)
+            throw VideoPlayerError("ffmpeg decoded picture storage overflow");
+        bytes += sizes[i];
+    }
+    return bytes;
+}
+
+class FrameConverter final {
+public:
+    FrameConverter(const Api* api, VideoMetadata metadata) : api_(api), metadata_(metadata) {}
+    ~FrameConverter() { if (sws_) api_->sws_freeContext(sws_); }
+    VideoFrame Convert(ffabi::Frame* frame);
+private:
+    const Api* api_;
+    VideoMetadata metadata_;
+    void* sws_{};
+    int sws_src_width_{};
+    int sws_src_height_{};
+    int sws_src_format_{-1};
+};
+
+struct FrameDeleter final {
+    const Api* api;
+    void operator()(ffabi::Frame* frame) const { if (frame) api->av_frame_free(&frame); }
+};
+
+class FfmpegPicture final : public DecodedVideoPicture {
+public:
+    FfmpegPicture(const Api* api, std::unique_ptr<ffabi::Frame, FrameDeleter> frame,
+                  std::int64_t position, std::shared_ptr<FrameConverter> converter)
+        : frame_(std::move(frame)), position_(position), converter_(std::move(converter)) {
+        bytes_ = PixelStorageBytes(api, frame_.get());
+    }
+    std::int64_t PositionMs() const noexcept override { return position_; }
+    std::size_t StorageBytes() const noexcept override { return bytes_; }
+    VideoFrame ToRgba() override {
+        if (!frame_) throw VideoPlayerError("decoded picture was already converted");
+        auto frame = std::move(frame_);
+        auto result = converter_->Convert(frame.get());
+        result.position_ms = position_;
+        return result;
+    }
+private:
+    std::unique_ptr<ffabi::Frame, FrameDeleter> frame_;
+    std::int64_t position_{};
+    std::size_t bytes_{};
+    std::shared_ptr<FrameConverter> converter_;
+};
+
+VideoFrame FrameConverter::Convert(ffabi::Frame* frame) {
+    if (sws_ != nullptr &&
+        (sws_src_width_ != frame->width || sws_src_height_ != frame->height ||
+         sws_src_format_ != frame->format)) {
+        api_->sws_freeContext(sws_);
+        sws_ = nullptr;
+    }
+    if (sws_ == nullptr) {
+        sws_ = api_->sws_getContext(
+            frame->width, frame->height, frame->format,
+            static_cast<int>(metadata_.width),
+            static_cast<int>(metadata_.height), ffabi::kPixFmtRgba,
+            ffabi::kSwsBilinear, nullptr, nullptr, nullptr);
+        if (sws_ == nullptr) {
+            throw VideoPlayerError("ffmpeg pixel converter creation failed");
+        }
+        sws_src_width_ = frame->width;
+        sws_src_height_ = frame->height;
+        sws_src_format_ = frame->format;
+    }
+    VideoFrame result;
+    result.width = metadata_.width;
+    result.height = metadata_.height;
+    result.rgba8.resize(static_cast<std::size_t>(metadata_.width) *
+                        metadata_.height * 4U);
+    std::uint8_t* dst[1] = {result.rgba8.data()};
+    const int dst_linesize[1] = {static_cast<int>(metadata_.width) * 4};
+    if (api_->sws_scale(sws_, frame->data, frame->linesize, 0, frame->height,
+                        dst, dst_linesize) <= 0) {
+        throw VideoPlayerError("ffmpeg pixel conversion failed");
+    }
+    return result;
+}
+
+class FfmpegVideoPlayer final : public DecodedVideoPlayer {
 public:
     FfmpegVideoPlayer(const Api* api, const std::filesystem::path& host_path);
     FfmpegVideoPlayer(const Api* api,
@@ -35,6 +147,7 @@ public:
     }
     [[nodiscard]] std::optional<VideoFrame> TakeFrame(
         std::int64_t position_ms) override;
+    std::unique_ptr<DecodedVideoPicture> TakeDecodedPicture(std::int64_t position_ms) override;
     [[nodiscard]] std::size_t ReadPcm(
         std::span<std::int16_t> interleaved) override;
     void SeekTo(std::int64_t position_ms) override;
@@ -63,7 +176,6 @@ private:
     void AppendPcm(const ffabi::Frame* frame);
     // Moves the next decoded video frame into pending_; false at video EOF.
     [[nodiscard]] bool EnsurePendingVideoFrame();
-    [[nodiscard]] VideoFrame ConvertToRgba(ffabi::Frame* frame);
     void ReleaseFrame(ffabi::Frame*& frame);
     void ClearDecodeState();
 
@@ -81,13 +193,14 @@ private:
     std::int64_t frame_duration_estimate_ms_ = 33;
     void* video_codec_ = nullptr;
     void* audio_codec_ = nullptr;
-    void* sws_ = nullptr;
-    int sws_src_width_ = 0;
-    int sws_src_height_ = 0;
-    int sws_src_format_ = -1;
+    std::shared_ptr<FrameConverter> converter_;
     void* swr_ = nullptr;
     ffabi::Packet* packet_ = nullptr;
     std::deque<ffabi::Frame*> video_queue_;
+    // Includes pending_: moving a future picture out of the deque must not
+    // make its pixel backing disappear from the demux budget.
+    std::size_t queued_video_bytes_{};
+    std::size_t max_video_frame_bytes_{};
     ffabi::Frame* pending_ = nullptr;
     std::int64_t pending_pts_ms_ = 0;
     std::int64_t last_video_pts_ms_ = 0;
@@ -105,6 +218,7 @@ FfmpegVideoPlayer::FfmpegVideoPlayer(const Api* api,
     : api_(api) {
     try {
         OpenStreams(host_path);
+        converter_ = std::make_shared<FrameConverter>(api_, metadata_);
     } catch (...) {
         ClearDecodeState();
         throw;
@@ -117,6 +231,7 @@ FfmpegVideoPlayer::FfmpegVideoPlayer(
     if (!source_) throw VideoPlayerError("video data source is null");
     try {
         OpenStreams();
+        converter_ = std::make_shared<FrameConverter>(api_, metadata_);
     } catch (...) {
         ClearDecodeState();
         throw;
@@ -132,10 +247,7 @@ void FfmpegVideoPlayer::ClearDecodeState() {
         video_queue_.pop_front();
     }
     if (packet_ != nullptr) api_->av_packet_free(&packet_);
-    if (sws_ != nullptr) {
-        api_->sws_freeContext(sws_);
-        sws_ = nullptr;
-    }
+    converter_.reset();
     if (swr_ != nullptr) api_->swr_free(&swr_);
     if (video_codec_ != nullptr) api_->avcodec_free_context(&video_codec_);
     if (audio_codec_ != nullptr) api_->avcodec_free_context(&audio_codec_);
@@ -372,7 +484,9 @@ void FfmpegVideoPlayer::ReceiveQueuedVideoFrames() {
         // Audio and video share one demux cursor. Audio reads may run ahead
         // of the presentation clock, so leave decoded output in the codec
         // until TakeFrame drains the bounded host queue.
-        if (video_queue_.size() >= kMaxQueuedVideoFrames) return;
+        if (video_queue_.size() >= kMaxQueuedVideoFrames ||
+            (max_video_frame_bytes_ != 0U &&
+             queued_video_bytes_ > kMaxQueuedVideoBytes - max_video_frame_bytes_)) return;
         ffabi::Frame* frame = api_->av_frame_alloc();
         if (frame == nullptr) {
             throw VideoPlayerError("ffmpeg frame allocation failed");
@@ -387,7 +501,14 @@ void FfmpegVideoPlayer::ReceiveQueuedVideoFrames() {
             }
             throw VideoPlayerError("ffmpeg video decode failed");
         }
+        auto owned = std::unique_ptr<ffabi::Frame, FrameDeleter>(frame, FrameDeleter{api_});
+        const auto bytes = PixelStorageBytes(api_, frame);
+        if (bytes > kMaxQueuedVideoBytes - queued_video_bytes_)
+            throw VideoPlayerError("ffmpeg decoded video exceeds pixel buffer budget");
         video_queue_.push_back(frame);
+        (void)owned.release();
+        queued_video_bytes_ += bytes;
+        max_video_frame_bytes_ = std::max(max_video_frame_bytes_, bytes);
     }
 }
 
@@ -521,41 +642,14 @@ bool FfmpegVideoPlayer::EnsurePendingVideoFrame() {
     return true;
 }
 
-VideoFrame FfmpegVideoPlayer::ConvertToRgba(ffabi::Frame* frame) {
-    if (sws_ != nullptr &&
-        (sws_src_width_ != frame->width || sws_src_height_ != frame->height ||
-         sws_src_format_ != frame->format)) {
-        api_->sws_freeContext(sws_);
-        sws_ = nullptr;
-    }
-    if (sws_ == nullptr) {
-        sws_ = api_->sws_getContext(
-            frame->width, frame->height, frame->format,
-            static_cast<int>(metadata_.width),
-            static_cast<int>(metadata_.height), ffabi::kPixFmtRgba,
-            ffabi::kSwsBilinear, nullptr, nullptr, nullptr);
-        if (sws_ == nullptr) {
-            throw VideoPlayerError("ffmpeg pixel converter creation failed");
-        }
-        sws_src_width_ = frame->width;
-        sws_src_height_ = frame->height;
-        sws_src_format_ = frame->format;
-    }
-    VideoFrame result;
-    result.width = metadata_.width;
-    result.height = metadata_.height;
-    result.rgba8.resize(static_cast<std::size_t>(metadata_.width) *
-                        metadata_.height * 4U);
-    std::uint8_t* dst[1] = {result.rgba8.data()};
-    const int dst_linesize[1] = {static_cast<int>(metadata_.width) * 4};
-    if (api_->sws_scale(sws_, frame->data, frame->linesize, 0, frame->height,
-                        dst, dst_linesize) <= 0) {
-        throw VideoPlayerError("ffmpeg pixel conversion failed");
-    }
-    return result;
+
+std::optional<VideoFrame> FfmpegVideoPlayer::TakeFrame(std::int64_t position_ms) {
+    auto picture = TakeDecodedPicture(position_ms);
+    if (!picture) return std::nullopt;
+    return picture->ToRgba();
 }
 
-std::optional<VideoFrame> FfmpegVideoPlayer::TakeFrame(
+std::unique_ptr<DecodedVideoPicture> FfmpegVideoPlayer::TakeDecodedPicture(
     std::int64_t position_ms) {
     if (position_ms < 0) {
         throw VideoPlayerError("ffmpeg player position must be >= 0");
@@ -566,18 +660,15 @@ std::optional<VideoFrame> FfmpegVideoPlayer::TakeFrame(
     }
     last_position_ms_ = position_ms;
 
-    ffabi::Frame* current = nullptr;
+    std::unique_ptr<ffabi::Frame, FrameDeleter> current{nullptr, FrameDeleter{api_}};
     std::int64_t current_pts = 0;
     while (EnsurePendingVideoFrame() && pending_pts_ms_ <= position_ms) {
-        ReleaseFrame(current);
-        current = std::exchange(pending_, nullptr);
+        queued_video_bytes_ -= PixelStorageBytes(api_, pending_);
+        current.reset(std::exchange(pending_, nullptr));
         current_pts = pending_pts_ms_;
     }
-    if (current == nullptr) return std::nullopt;
-    VideoFrame frame = ConvertToRgba(current);
-    frame.position_ms = current_pts;
-    ReleaseFrame(current);
-    return frame;
+    if (!current) return nullptr;
+    return std::make_unique<FfmpegPicture>(api_, std::move(current), current_pts, converter_);
 }
 
 std::size_t FfmpegVideoPlayer::ReadPcm(std::span<std::int16_t> interleaved) {
@@ -588,7 +679,8 @@ std::size_t FfmpegVideoPlayer::ReadPcm(std::span<std::int16_t> interleaved) {
             "ffmpeg player pcm span not a multiple of channel count");
     }
     while (pcm_buffer_.size() < interleaved.size() && !audio_eof_) {
-        if (video_queue_.size() >= kVideoBackpressureThreshold) break;
+        if (video_queue_.size() >= kVideoBackpressureThreshold ||
+            queued_video_bytes_ >= kVideoBackpressureBytes) break;
         if (!ReadAndRoutePacket()) {
             DrainAudioFrames();
             if (demux_eof_) break;
@@ -619,6 +711,8 @@ void FfmpegVideoPlayer::SeekTo(std::int64_t position_ms) {
         ReleaseFrame(video_queue_.front());
         video_queue_.pop_front();
     }
+    queued_video_bytes_ = 0;
+    max_video_frame_bytes_ = 0;
     pcm_buffer_.clear();
     demux_eof_ = false;
     video_eof_ = false;

@@ -96,6 +96,7 @@ struct AndroidManifestActivityComponent final {
     std::optional<std::string> target_activity;
     bool enabled{true};
     std::vector<AndroidManifestIntentFilter> intent_filters;
+    // Aliases snapshot the first preceding target's supported configuration.
     std::optional<std::uint32_t> theme;
     // Absent means API 19 default: exported iff the component has intent-filters.
     std::optional<bool> exported;
@@ -163,6 +164,11 @@ struct AndroidManifestFacts final {
 
 [[nodiscard]] std::string NormalizeAndroidManifestClassName(
     std::string_view package, std::string_view class_name);
+// API 19's component-name registry keeps the last declaration; the declaration
+// list and its independent intent-filters remain in document order.
+[[nodiscard]] const AndroidManifestActivityComponent* FindAndroidManifestActivityComponent(
+    std::span<const AndroidManifestActivityComponent> components,
+    std::string_view name);
 [[nodiscard]] AndroidManifestLauncherComponent ResolveLauncherComponent(
     const AndroidManifestFacts& facts);
 

@@ -564,6 +564,67 @@ TEST_CASE("binary AndroidManifest resolves activity-alias to its target") {
           "org.example.game.RealActivity");
 }
 
+TEST_CASE("binary AndroidManifest preserves duplicate Activity declarations and filters") {
+    using namespace ogplay::loader;
+    ComponentFixture first;
+    first.name = ".Main";
+    first.filters = {{std::string(kMain), std::string(kLauncher)}};
+    ComponentFixture view;
+    view.name = "org.example.game.Main";
+    view.filters = {{"android.intent.action.VIEW"}};
+    ComponentFixture last;
+    last.name = "Main";
+    last.launch_mode = 2;
+    last.theme = 0x01030007U;
+    const auto facts = ParseAndroidBinaryManifest(
+        StartupManifest(std::nullopt, {first, view, last}));
+    REQUIRE(facts.activity_components.size() == 3);
+    for (const auto& component : facts.activity_components)
+        CHECK(component.name == "org.example.game.Main");
+    CHECK(facts.activity_components[0].intent_filters[0].actions[0] == kMain);
+    CHECK(facts.activity_components[1].intent_filters[0].actions[0] == "android.intent.action.VIEW");
+    CHECK(facts.activity_components[2].intent_filters.empty());
+    const auto* registered = FindAndroidManifestActivityComponent(
+        facts.activity_components, "org.example.game.Main");
+    REQUIRE(registered == &facts.activity_components.back());
+    CHECK(registered->launch_mode == 2);
+    CHECK(registered->theme == 0x01030007U);
+    CHECK(FindAndroidManifestActivityComponent(facts.activity_components, "missing") == nullptr);
+    CHECK(ResolveLauncherComponent(facts).activity_class == "org.example.game.Main");
+
+    last.enabled = false;
+    const auto disabled = ParseAndroidBinaryManifest(
+        StartupManifest(std::nullopt, {first, view, last}));
+    CHECK_FALSE(disabled.launcher_activity.has_value());
+}
+
+TEST_CASE("binary AndroidManifest alias snapshots the first preceding duplicate target") {
+    using namespace ogplay::loader;
+    ComponentFixture first;
+    first.name = ".Target";
+    first.theme = 0x7f030001U;
+    first.launch_mode = 1;
+    ComponentFixture second = first;
+    second.theme = 0x7f030002U;
+    second.launch_mode = 2;
+    ComponentFixture alias;
+    alias.tag = "activity-alias";
+    alias.name = ".Alias";
+    alias.target = ".Target";
+    alias.filters = {{std::string(kMain), std::string(kLauncher)}};
+    ComponentFixture later = second;
+    later.theme = 0x7f030003U;
+    later.launch_mode = 3;
+    const auto facts = ParseAndroidBinaryManifest(
+        StartupManifest(std::nullopt, {first, second, alias, later}));
+    REQUIRE(facts.activity_components.size() == 4);
+    CHECK(facts.activity_components[2].theme == first.theme);
+    CHECK(facts.activity_components[2].launch_mode == first.launch_mode);
+    CHECK(FindAndroidManifestActivityComponent(facts.activity_components,
+        "org.example.game.Target")->launch_mode == 3);
+    CHECK(ResolveLauncherComponent(facts).activity_class == "org.example.game.Target");
+}
+
 TEST_CASE("launcher action and category must belong to one intent-filter") {
     const auto facts = ogplay::loader::ParseAndroidBinaryManifest(StartupManifest(
         std::nullopt,
@@ -905,7 +966,7 @@ TEST_CASE("DVM-121 Manifest retains application and Activity themes with alias i
     CHECK(facts.application_theme == 0x01030007U);
     REQUIRE(facts.activity_components.size() == 2);
     CHECK(facts.activity_components[0].theme == 0x7f030001U);
-    CHECK_FALSE(facts.activity_components[1].theme.has_value());
+    CHECK(facts.activity_components[1].theme == 0x7f030001U);
 }
 
 TEST_CASE("DVM-180 Manifest resolves Activity exported from attribute or intent-filters") {

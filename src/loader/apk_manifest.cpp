@@ -434,6 +434,15 @@ std::string ManifestProcessName(const std::string_view package,
 }
 }  // namespace
 
+const AndroidManifestActivityComponent* FindAndroidManifestActivityComponent(
+    const std::span<const AndroidManifestActivityComponent> components,
+    const std::string_view name) {
+    for (auto index = components.size(); index != 0; --index) {
+        if (components[index - 1].name == name) return &components[index - 1];
+    }
+    return nullptr;
+}
+
 AndroidManifestLauncherComponent ResolveLauncherComponent(
     const AndroidManifestFacts& facts) {
     const auto has_value = [](const std::vector<std::string>& values,
@@ -450,18 +459,22 @@ AndroidManifestLauncherComponent ResolveLauncherComponent(
             });
         if (!launcher) continue;
 
-        if (component.kind == AndroidManifestComponentKind::activity) {
-            return {component.name, component.name, false};
+        const auto* registered = FindAndroidManifestActivityComponent(
+            facts.activity_components, component.name);
+        if (!registered->enabled) continue;
+
+        if (registered->kind == AndroidManifestComponentKind::activity) {
+            return {registered->name, registered->name, false};
         }
         const auto target = std::find_if(
             facts.activity_components.begin(), facts.activity_components.end(),
             [&](const AndroidManifestActivityComponent& candidate) {
                 return candidate.kind == AndroidManifestComponentKind::activity &&
-                       component.target_activity.has_value() &&
-                       candidate.name == *component.target_activity;
+                       registered->target_activity.has_value() &&
+                       candidate.name == *registered->target_activity;
             });
         if (target != facts.activity_components.end()) {
-            return {component.name, target->name, true};
+            return {registered->name, target->name, true};
         }
     }
     throw AndroidManifestStartupError(
@@ -644,17 +657,6 @@ AndroidManifestFacts ParseAndroidBinaryManifest(const std::span<const std::byte>
                 component.name = NormalizeAndroidManifestClassName(
                     facts.package,
                     ReadStringAttribute(*component_name, strings, name + " name"));
-                if (const auto duplicate = std::find_if(
-                        facts.activity_components.begin(),
-                        facts.activity_components.end(),
-                        [&](const AndroidManifestActivityComponent& candidate) {
-                            return candidate.name == component.name;
-                        }); duplicate != facts.activity_components.end()) {
-                    throw AndroidManifestStartupError(
-                        AndroidManifestStartupErrorReason::duplicate_component,
-                        "binary AndroidManifest contains duplicate activity component " +
-                            component.name);
-                }
                 if (const auto* enabled =
                         FindAttribute(attributes, "enabled", kAndroidNamespace)) {
                     component.enabled = ReadBooleanAttribute(*enabled, name + " enabled");
@@ -700,6 +702,8 @@ AndroidManifestFacts ParseAndroidBinaryManifest(const std::span<const std::byte>
                                 *component.target_activity +
                                 " was not declared before the alias");
                     }
+                    component.theme = target_activity->theme;
+                    component.launch_mode = target_activity->launch_mode;
                 }
                 facts.activity_components.push_back(std::move(component));
                 current_component = facts.activity_components.size() - 1U;

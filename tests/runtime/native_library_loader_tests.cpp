@@ -5,6 +5,7 @@
 #include "ogplay/runtime/integration/native_activity_runtime.h"
 #include "ogplay/runtime/dexvm/nio_runtime.h"
 #include "runtime/integration/dexvm_android/shared.h"
+#include "../fixtures/bitmap_decode_data.h"
 #include <chrono>
 #include "ogplay/runtime/vfs/sandbox_store.h"
 #include "../dexvm/boot_dex.h"
@@ -2672,6 +2673,55 @@ TEST_CASE("DVM-240 ARM JNI installed applications expose the session APK and rej
         env.DeleteLocalRef(1, reference); env.DeleteLocalRef(1, clazz);
         memory.release(scratch, 256);
         static_cast<void>(f.app->Stop());
+    }
+}
+
+TEST_CASE("DVM-244 ARM JNI resource bitmap decoding publishes shared pixel storage") {
+    using namespace ogplay;
+    using namespace runtime;
+    using namespace runtime::dexvm;
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        ApplicationProcess f(backend);
+        f.context->apk_bytes = ogplay::test::BitmapDecodeApk();
+        f.context->archive = loader::ParseApkArchive(f.context->apk_bytes);
+        f.context->arsc.entries = {{.resource_id=0x7f020001, .type_name="drawable", .entry_name="fixture",
+            .string_value="res/drawable/fixture.png", .value_type=3, .density=160}};
+        auto& bridge=*f.bridge; auto& vm=bridge.Vm(); auto& linker=vm.Linker();
+        auto& process=f.session->Process(); auto& env=f.session->Environment();
+        const auto memory=process.GuestMemoryAccess(); const auto scratch=memory.allocate(256);
+        env.PushLocalFrame(1,32);
+        const auto factory=bridge.PublishLocal(vm.Model().ClassObject(linker.ResolveDescriptor("Landroid/graphics/BitmapFactory;")));
+        const auto resources=bridge.PublishLocal(vm.NewIntrinsicInstance("Landroid/content/res/Resources;"));
+        std::array<std::byte,256> data{};
+        constexpr char name[]="decodeResource";
+        constexpr char descriptor[]="(Landroid/content/res/Resources;I)Landroid/graphics/Bitmap;";
+        std::memcpy(data.data(),name,sizeof(name)); std::memcpy(data.data()+64,descriptor,sizeof(descriptor));
+        for(std::size_t i=0;i<4;++i) {
+            data[128+i]=static_cast<std::byte>(resources.Value()>>(8*i));
+            data[136+i]=static_cast<std::byte>(0x7f020001U>>(8*i));
+        }
+        memory.write(scratch,data);
+        const auto invoke=[&](const char* slot,std::array<std::uint32_t,4> args) {
+            return process.Invoke({memory::GuestAddress{EnvironmentThunk(slot)},args,{}}).return_value;
+        };
+        const auto method=invoke("GetStaticMethodID",{process.GuestEnvironment().Value(),factory.Value(),scratch.Value(),scratch.Add(64).Value()});
+        REQUIRE(method!=0); REQUIRE_FALSE(env.ExceptionCheck(1));
+        const auto decode=[&] {
+            const auto ref=JniReference{invoke("CallStaticObjectMethodA",{process.GuestEnvironment().Value(),factory.Value(),method,scratch.Add(128).Value()})};
+            REQUIRE_FALSE(env.ExceptionCheck(1)); REQUIRE_FALSE(ref.IsNull()); return ref;
+        };
+        const auto first_ref=decode(); const auto first=bridge.FromReference(first_ref);
+        const auto second_ref=decode(); const auto second=bridge.FromReference(second_ref);
+        CHECK(first!=second);
+        CHECK(f.context->bitmaps.at(first.Value()).pixels!=f.context->bitmaps.at(second.Value()).pixels);
+        CHECK(f.context->bitmaps.at(first.Value()).pixels->Get(0)==0xffff0000);
+        CHECK(f.context->bitmaps.at(first.Value()).pixels->Get(1)==0xff0000ff);
+        static_cast<void>(vm.CollectGarbage("bitmap-resource-jni"));
+        const auto width=linker.FindVtableIndex(vm.Model().ObjectClass(first),"getWidth","()I");
+        REQUIRE(width.has_value());
+        const auto result=vm.Call(linker.Class(vm.Model().ObjectClass(first)).vtable[*width],std::array{VmValue::Ref(first)});
+        REQUIRE_FALSE(result.exception.IsValid()); CHECK(result.value.AsInt()==2);
+        static_cast<void>(env.PopLocalFrame(1)); memory.release(scratch,256);
     }
 }
 

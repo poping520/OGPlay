@@ -1103,3 +1103,19 @@ backing-name 约束；转义/辅助文件的额外限制仍可能提前失败，
 不在 Android family 重写 getters 或保留无路径的 host-free 标量。初始闭环仅支持
 沙盒卷；其他 provider、fstatvfs 与 ARM statfs ABI 按实际触达另加，共用同一事实类型。
 支持与验证见 [DVM-243](../tasks/dexvm/DVM-243.md)。
+
+## ADR-0123 · Java 图片协议与有界 native 解码
+
+BitmapFactory.Options 保留 API19 源码，普通参数/资源密度/关闭协议放在有界 Java
+客户端。Resources 两参 raw-resource 工厂复用既有配置/引用选择与 sealed APK，选中
+文件/density 写入 TypedValue；system raw 缺席不回退 APK。native 只做参数支持检查、
+预算内 stream/array 读取、图片 codec、密度 resampling 和权威 BitmapPixels 装配。
+不以 getDrawable 的 color/XML fallback 假装 BitmapFactory 图片成功。
+
+复用既有 stb codec，输入/像素与输出缩放先验有界；逻辑 ARGB 与原 NDK/UI 共用。
+密度按 API19 大小舍入，半像素 bilinear 在预乘颜色空间插值；不宣称与 Skia 全部像素
+逐位一致。bounds 不分配像素且不执行密度缩放；普通解码默认不可变，可明确 inMutable。
+每次结果独立，bitmap recycle/GC 生命周期沿用既有 owner。资源流 finally close，调用者
+stream 保留；已知资源/格式/IO 失败 null，未支持 Options/NinePatch 记账 UOE，resource
+wrapper 特意保留 UOE，不吞成假成功/静默 null。在线/动画/完整 Skia 与其他模式另属能力。
+范围和验证见 [DVM-244](../tasks/dexvm/DVM-244.md)。

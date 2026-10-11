@@ -80,6 +80,7 @@ FRAMEWORK_JAVA_NAMES = (
     "android/app/ActivityManager.java",
     "android/app/Notification.java",
     "android/app/NotificationManager.java",
+    "android/graphics/BitmapFactory.java",
     "android/hardware/LegacySensorManager.java",
     "android/hardware/LocalSensorManager.java",
     "android/hardware/Sensor.java",

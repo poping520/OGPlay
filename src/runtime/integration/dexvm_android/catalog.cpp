@@ -124,6 +124,8 @@ AndroidIntrinsicCatalog(const std::shared_ptr<DexVmAndroidContext> &context) {
   DebugMemoryInfoFields memory_fields;
   auto debug_memory_info = Declare_android_os_Debug_MemoryInfo(context, memory_fields);
   auto debug = Declare_android_os_Debug(context, memory_fields);
+  std::vector<dx::IntrinsicFieldHandle> bitmap_options;
+  auto options_decl = Declare_android_graphics_BitmapFactory_Options(context, bitmap_options);
   return {
       std::move(debug_memory_info), std::move(debug),
       Declare_android_app_NativeActivity(context),
@@ -172,7 +174,7 @@ AndroidIntrinsicCatalog(const std::shared_ptr<DexVmAndroidContext> &context) {
       Declare_android_database_sqlite_SQLiteGlobal(context),
       Declare_android_graphics_Bitmap_Config(context),
       Declare_android_graphics_Bitmap(context),
-      Declare_android_graphics_BitmapFactory(context),
+      std::move(options_decl), Declare_android_graphics_BitmapFactory(context, bitmap_options),
       Declare_android_graphics_Canvas(context),
       Declare_android_graphics_Matrix(context),
       Declare_android_graphics_Paint(context),

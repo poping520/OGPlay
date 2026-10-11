@@ -32,6 +32,9 @@
 #include "ogplay/runtime/integration/dexvm_android.h"
 #include "ogplay/runtime/integration/android_guest_call_session.h"
 #include "ogplay/runtime/vfs/vfs.h"
+#include "ogplay/runtime/integration/bitmap_pixels.h"
+#include "ogplay/runtime/integration/host_image_decode.h"
+#include "../fixtures/bitmap_decode_data.h"
 
 namespace {
 
@@ -2848,6 +2851,133 @@ TEST_CASE("Activity top-level identity reports that it is not a child") {
         AndroidValueVm fixture(backend);
         const auto activity = fixture.New("Landroid/app/Activity;");
         CHECK(fixture.On(activity, "isChild", "()Z").AsInt() == 0);
+    }
+}
+
+TEST_CASE("DVM-244 bitmap resource decoding shares ARSC selection pixels and density") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        AndroidValueVm f(backend);
+        f.context->ui_density = 2;
+        f.context->apk_bytes = ogplay::test::BitmapDecodeApk();
+        f.context->archive = ogplay::loader::ParseApkArchive(f.context->apk_bytes);
+        f.context->arsc.entries = {
+            {.resource_id=0x7f020001, .type_name="drawable", .entry_name="fixture", .string_value="res/drawable/fixture.png", .value_type=3, .density=160},
+            {.resource_id=0x7f020002, .type_name="drawable", .entry_name="alias", .value_type=1, .value_data=0x7f020001},
+            {.resource_id=0x7f020003, .type_name="drawable", .entry_name="nodpi", .string_value="res/drawable/fixture.png", .value_type=3, .density=65535}};
+        const auto res = f.vm.NewIntrinsicInstance("Landroid/content/res/Resources;");
+        const auto roots = f.vm.ProtectReferences(std::array{res});
+        const auto query = [&](int id, VmObjectRef opts = VmObjectRef{}) {
+            return f.StaticOutcome("Landroid/graphics/BitmapFactory;", "decodeResource",
+                "(Landroid/content/res/Resources;ILandroid/graphics/BitmapFactory$Options;)Landroid/graphics/Bitmap;",
+                {VmValue::Ref(res), VmValue::Int(id), VmValue::Ref(opts)});
+        };
+        const auto field = [&](VmObjectRef object, const char* name, const char* descriptor) -> Slot& {
+            const auto id = f.linker.FindFieldRecursive(f.model.ObjectClass(object), name, descriptor);
+            REQUIRE(id.has_value());
+            auto& slot = f.model.InstanceSlots(object)[f.linker.Field(*id).slot];
+            // Direct fixture writes must carry the same scalar tag as iput.
+            if (descriptor[0]=='I' || descriptor[0]=='Z') slot.tag=SlotTag::cat1;
+            return slot;
+        };
+        const auto first = f.Static("Landroid/graphics/BitmapFactory;", "decodeResource",
+            "(Landroid/content/res/Resources;I)Landroid/graphics/Bitmap;", {VmValue::Ref(res), VmValue::Int(0x7f020002)}).ref;
+        const auto bitmap_root = f.vm.ProtectReferences(std::array{first});
+        REQUIRE(first.IsValid()); CHECK(f.On(first,"getWidth","()I").AsInt()==4);
+        CHECK(f.On(first,"getHeight","()I").AsInt()==2); CHECK(f.On(first,"getDensity","()I").AsInt()==320);
+        CHECK_FALSE(f.On(first,"isMutable","()Z").AsInt());
+        const auto opts = f.New("Landroid/graphics/BitmapFactory$Options;");
+        const auto opts_root = f.vm.ProtectReferences(std::array{opts});
+        field(opts,"inJustDecodeBounds","Z").bits=1;
+        const auto bounds = query(0x7f020001, opts);
+        REQUIRE_FALSE(bounds.exception.IsValid()); CHECK_FALSE(bounds.value.ref.IsValid());
+        CHECK(field(opts,"outWidth","I").bits==2); CHECK(field(opts,"outHeight","I").bits==1);
+        CHECK(field(opts,"inDensity","I").bits==160); CHECK(field(opts,"inTargetDensity","I").bits==320);
+        CHECK(f.vm.StringUtf8(VmObjectRef{field(opts,"outMimeType","Ljava/lang/String;").bits})=="image/png");
+        field(opts,"inJustDecodeBounds","Z").bits=0; field(opts,"inScaled","Z").bits=0;
+        field(opts,"inMutable","Z").bits=1;
+        const auto unscaled = query(0x7f020001, opts);
+        REQUIRE_FALSE(unscaled.exception.IsValid()); REQUIRE(unscaled.value.ref.IsValid());
+        const auto unscaled_root = f.vm.ProtectReferences(std::array{unscaled.value.ref});
+        CHECK(f.On(unscaled.value.ref,"getWidth","()I").AsInt()==2);
+        CHECK(f.On(unscaled.value.ref,"getDensity","()I").AsInt()==160);
+        CHECK(f.On(unscaled.value.ref,"isMutable","()Z").AsInt()==1);
+        const auto colors=f.model.NewPrimitiveArray(f.linker.ResolveDescriptor("[I"),JniPrimitiveKind::integer,2);
+        const auto colors_root=f.vm.ProtectReferences(std::array{colors});
+        f.model.SetPrimitiveElement(colors,0,0xff00ff00); f.model.SetPrimitiveElement(colors,1,0xffff0000);
+        f.On(unscaled.value.ref,"setPixels","([IIIIIII)V",{VmValue::Ref(colors),VmValue::Int(0),VmValue::Int(2),VmValue::Int(0),VmValue::Int(0),VmValue::Int(2),VmValue::Int(1)});
+        CHECK(f.context->bitmaps.at(unscaled.value.ref.Value()).pixels->Get(0)==0xff00ff00);
+        CHECK(f.context->bitmaps.at(first.Value()).pixels->Get(0)==0xffff0000);
+        const auto immutable=f.OnOutcome(first,"setPixels","([IIIIIII)V",{VmValue::Ref(colors),VmValue::Int(0),VmValue::Int(2),VmValue::Int(0),VmValue::Int(0),VmValue::Int(2),VmValue::Int(1)});
+        REQUIRE(immutable.exception.IsValid()); CHECK(f.linker.Class(immutable.exception_class).descriptor=="Ljava/lang/IllegalStateException;");
+        const auto nodpi = query(0x7f020003);
+        REQUIRE_FALSE(nodpi.exception.IsValid()); REQUIRE(nodpi.value.ref.IsValid());
+        const auto nodpi_root = f.vm.ProtectReferences(std::array{nodpi.value.ref});
+        CHECK(f.On(nodpi.value.ref,"getWidth","()I").AsInt()==2);
+        CHECK(f.On(nodpi.value.ref,"getDensity","()I").AsInt()==320);
+        const auto again = query(0x7f020001);
+        REQUIRE_FALSE(again.exception.IsValid()); CHECK(again.value.ref != first);
+        CHECK(f.context->bitmaps.at(again.value.ref.Value()).pixels != f.context->bitmaps.at(first.Value()).pixels);
+        const auto bad = query(0x7f020099); REQUIRE_FALSE(bad.exception.IsValid()); CHECK_FALSE(bad.value.ref.IsValid());
+        field(opts,"inSampleSize","I").bits=2;
+        const auto unsupported = query(0x7f020001,opts); REQUIRE(unsupported.exception.IsValid());
+        CHECK(f.linker.Class(unsupported.exception_class).descriptor=="Ljava/lang/UnsupportedOperationException;");
+        field(opts,"inSampleSize","I").bits=0;
+        f.On(opts,"requestCancelDecode","()V");
+        const auto cancelled = query(0x7f020001,opts); REQUIRE_FALSE(cancelled.exception.IsValid()); CHECK_FALSE(cancelled.value.ref.IsValid());
+        CHECK(field(opts,"outWidth","I").bits==UINT32_MAX);
+        static_cast<void>(f.vm.CollectGarbage());
+        CHECK(f.On(first,"getWidth","()I").AsInt()==4);
+    }
+}
+
+TEST_CASE("DVM-244 byte stream decode preserves null errors ownership and pixel budgets") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        int closed{}; bool sent{}; VmObjectRef resource_source;
+        auto stream = IntrinsicClassBuilder::Class("Ltest/ImageStream;","Ljava/io/InputStream;");
+        stream.Constructor("()V",[](IntrinsicContext&) {return VmValue::Void();});
+        stream.OverrideMethod("read","([BII)I",[&](IntrinsicContext& call) {
+            if(sent) return VmValue::Int(-1);
+            sent=true; const auto bytes=ogplay::test::BitmapDecodePng();
+            call.vm.Model().WriteByteRegion(call.arguments[0].ref,0,bytes);
+            return VmValue::Int(static_cast<int>(bytes.size()));
+        });
+        stream.OverrideMethod("close","()V",[&](IntrinsicContext&) {++closed;return VmValue::Void();});
+        auto resources = IntrinsicClassBuilder::Class("Ltest/ImageResources;", "Landroid/content/res/Resources;");
+        resources.OverrideMethod("openRawResource", "(ILandroid/util/TypedValue;)Ljava/io/InputStream;",
+            [&](IntrinsicContext&) { sent = false; return VmValue::Ref(resource_source); });
+        AndroidValueVm f(backend,{std::move(stream).Build(), std::move(resources).Build()});
+        const auto source=f.New("Ltest/ImageStream;");
+        const auto source_root=f.vm.ProtectReferences(std::array{source});
+        const auto bitmap=f.Static("Landroid/graphics/BitmapFactory;","decodeStream","(Ljava/io/InputStream;)Landroid/graphics/Bitmap;",{VmValue::Ref(source)}).ref;
+        const auto bitmap_root=f.vm.ProtectReferences(std::array{bitmap});
+        REQUIRE(bitmap.IsValid()); CHECK(closed==0); CHECK(f.On(bitmap,"getWidth","()I").AsInt()==2);
+        resource_source = source;
+        const auto res = f.vm.NewIntrinsicInstance("Ltest/ImageResources;");
+        const auto res_root = f.vm.ProtectReferences(std::array{res});
+        const auto resource_bitmap = f.Static("Landroid/graphics/BitmapFactory;", "decodeResource",
+            "(Landroid/content/res/Resources;I)Landroid/graphics/Bitmap;", {VmValue::Ref(res), VmValue::Int(1)}).ref;
+        REQUIRE(resource_bitmap.IsValid()); CHECK(closed==1);
+        CHECK_FALSE(f.Static("Landroid/graphics/BitmapFactory;","decodeStream","(Ljava/io/InputStream;)Landroid/graphics/Bitmap;",{VmValue::Ref(VmObjectRef{})}).ref.IsValid());
+        const auto bytes=ogplay::test::BitmapDecodePng();
+        std::string payload; for(auto b:bytes) payload.push_back(static_cast<char>(std::to_integer<unsigned>(b)));
+        const auto array=f.Bytes(payload); const auto array_root=f.vm.ProtectReferences(std::array{array});
+        const auto decoded=f.Static("Landroid/graphics/BitmapFactory;","decodeByteArray","([BII)Landroid/graphics/Bitmap;",{VmValue::Ref(array),VmValue::Int(0),VmValue::Int(static_cast<int>(bytes.size()))}).ref;
+        const auto decoded_root=f.vm.ProtectReferences(std::array{decoded});
+        REQUIRE(decoded.IsValid()); CHECK(f.On(decoded,"getWidth","()I").AsInt()==2);
+        const auto bad=f.StaticOutcome("Landroid/graphics/BitmapFactory;","decodeByteArray","([BII)Landroid/graphics/Bitmap;",{VmValue::Ref(array),VmValue::Int(-1),VmValue::Int(1)});
+        REQUIRE(bad.exception.IsValid()); CHECK(f.linker.Class(bad.exception_class).descriptor=="Ljava/lang/ArrayIndexOutOfBoundsException;");
+        const auto null=f.StaticOutcome("Landroid/graphics/BitmapFactory;","decodeByteArray","([BII)Landroid/graphics/Bitmap;",{VmValue::Ref(VmObjectRef{}),VmValue::Int(0),VmValue::Int(1)});
+        REQUIRE(null.exception.IsValid()); CHECK(f.linker.Class(null.exception_class).descriptor=="Ljava/lang/NullPointerException;");
+        CHECK_FALSE(f.Static("Landroid/graphics/BitmapFactory;","decodeByteArray","([BII)Landroid/graphics/Bitmap;",{VmValue::Ref(f.Bytes("bad")),VmValue::Int(0),VmValue::Int(3)}).ref.IsValid());
+        payload[16]=0;payload[17]=0;payload[18]=0x20;payload[19]=1; // IHDR width 8193, rejected before pixel allocation
+        const auto huge=f.StaticOutcome("Landroid/graphics/BitmapFactory;","decodeByteArray","([BII)Landroid/graphics/Bitmap;",{VmValue::Ref(f.Bytes(payload)),VmValue::Int(0),VmValue::Int(static_cast<int>(payload.size()))});
+        REQUIRE(huge.exception.IsValid()); CHECK(f.linker.Class(huge.exception_class).descriptor=="Ljava/lang/OutOfMemoryError;");
+        const auto info=ogplay::runtime::ProbeImage(bytes); REQUIRE(info.has_value()); CHECK(info->width==2);
+        CHECK_FALSE(ogplay::runtime::ImageDimensionsSupported(8193,1)); CHECK_FALSE(ogplay::runtime::ImageDimensionsSupported(8192,8192));
+        const auto image=ogplay::runtime::DecodeImageToArgb(bytes); REQUIRE(image.has_value());
+        const auto scaled=ogplay::runtime::ResizeArgbImage(*image,4,1);
+        CHECK(scaled.argb.front()==0xffff0000); CHECK(scaled.argb.back()==0xff0000ff);
+        CHECK(scaled.argb[1]==0xffbf0040); CHECK(scaled.argb[2]==0xff4000bf);
     }
 }
 

@@ -17,6 +17,17 @@ struct DecodedImage final {
     std::vector<std::uint32_t> argb;
 };
 
+struct ImageInfo final {
+    std::int32_t width{}, height{};
+    const char* mime_type{};
+};
+inline constexpr std::size_t kMaximumImageEncodedBytes = 16U * 1024U * 1024U;
+inline constexpr std::size_t kMaximumImagePixels = 16U * 1024U * 1024U;
+[[nodiscard]] std::optional<ImageInfo> ProbeImage(std::span<const std::byte> bytes);
+[[nodiscard]] bool ImageDimensionsSupported(std::int32_t width, std::int32_t height) noexcept;
+// Bilinear filtering in premultiplied color space, returned as logical ARGB.
+[[nodiscard]] DecodedImage ResizeArgbImage(DecodedImage image, std::int32_t width, std::int32_t height);
+
 // Returns nullopt when the payload is not a decodable image; the caller
 // maps that to the documented BitmapFactory null result.
 [[nodiscard]] std::optional<DecodedImage> DecodeImageToArgb(

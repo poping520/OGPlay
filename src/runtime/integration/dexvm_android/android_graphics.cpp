@@ -257,6 +257,13 @@ Decl Declare_android_graphics_Bitmap(const Context& context) {
         [context](dx::IntrinsicContext& call) {
             return dx::VmValue::Int(BitmapOf(call, context).height);
         });
+    builder.VirtualMethod("getDensity", "()I", [context](dx::IntrinsicContext& call) { return dx::VmValue::Int(BitmapOf(call, context).density); });
+    builder.VirtualMethod("setDensity", "(I)V", [context](dx::IntrinsicContext& call) {
+        const auto density = call.arguments[0].AsInt();
+        if (density < 0) throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "bitmap density cannot be negative"};
+        BitmapOf(call, context).density = density; return dx::VmValue::Void();
+    });
+    builder.VirtualMethod("isMutable", "()Z", [context](dx::IntrinsicContext& call) { return dx::VmValue::Int(BitmapOf(call, context).mutable_pixels); });
     builder.FinalMethod("getPixels", "([IIIIIII)V",
         [context](dx::IntrinsicContext& call) {
             auto& model = call.vm.Model();
@@ -308,6 +315,7 @@ Decl Declare_android_graphics_Bitmap(const Context& context) {
         [context](dx::IntrinsicContext& call) {
             auto& model = call.vm.Model();
             auto& state = BitmapOf(call, context);
+            if (!state.mutable_pixels) throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "bitmap is immutable"};
             const auto array = call.arguments[0].ref;
             const auto offset = call.arguments[1].AsInt();
             const auto stride = call.arguments[2].AsInt();
@@ -371,44 +379,156 @@ Decl Declare_android_graphics_Bitmap(const Context& context) {
 
 namespace ogplay::runtime::android_intrinsics {
 
-Decl Declare_android_graphics_BitmapFactory(const Context& context) {
-    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/graphics/BitmapFactory;", "Ljava/lang/Object;");
-    builder.StaticMethod("decodeByteArray", "([BII)Landroid/graphics/Bitmap;",
-        [context](dx::IntrinsicContext& call) {
-            auto& model = call.vm.Model();
-            const auto array = call.arguments[0].ref;
-            const auto offset = call.arguments[1].AsInt();
-            const auto length = call.arguments[2].AsInt();
-            if (!array.IsValid()) {
-                throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;",
-                                      "decodeByteArray data is null"};
+namespace {
+enum DecodeField : std::size_t { reuse, config, sample, density, target_density, screen_density,
+    scaled, bounds, mutable_flag, premultiplied, dither, purgeable, shareable, quality,
+    cancel, out_width, out_height, out_mime, temp_storage };
+using DecodeFields = std::vector<dx::IntrinsicFieldHandle>;
+
+[[noreturn]] void DecodeUnsupported(dx::IntrinsicContext& call, const char* message) {
+    if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.bitmap_decode", 0);
+    throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", message};
+}
+void ValidateDecodeOptions(dx::IntrinsicContext& call, const DecodeFields& fields, dx::VmObjectRef opts) {
+    if (!opts.IsValid()) return;
+    const dx::IntrinsicCall api(call);
+    const auto preferred = api.GetRef(fields[config], opts);
+    if (api.GetRef(fields[reuse], opts).IsValid() || api.GetInt(fields[sample], opts) > 1 ||
+        (preferred.IsValid() && BitmapConfigValue(call, preferred) != 5) ||
+        !api.GetInt(fields[premultiplied], opts) || api.GetInt(fields[dither], opts) ||
+        api.GetInt(fields[purgeable], opts) || api.GetInt(fields[quality], opts))
+        DecodeUnsupported(call, "BitmapFactory supports default ARGB8888, bounds and density scaling; reuse/sampling/purge/dither/quality modes are unavailable");
+    if (api.GetInt(fields[density], opts) < 0 || api.GetInt(fields[target_density], opts) < 0 || api.GetInt(fields[screen_density], opts) < 0)
+        throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "bitmap density cannot be negative"};
+}
+void ResetDecodeOutput(dx::IntrinsicContext& call, const DecodeFields& fields, dx::VmObjectRef opts) {
+    if (!opts.IsValid()) return;
+    const dx::IntrinsicCall api(call);
+    api.SetInt(fields[out_width], opts, -1); api.SetInt(fields[out_height], opts, -1);
+    api.SetRef(fields[out_mime], opts, dx::VmObjectRef{});
+}
+bool Cancelled(dx::IntrinsicContext& call, const DecodeFields& fields, dx::VmObjectRef opts) {
+    return opts.IsValid() && dx::IntrinsicCall(call).GetInt(fields[cancel], opts);
+}
+bool HasNinePatchChunk(std::span<const std::byte> bytes) {
+    if (bytes.size() < 8 || std::to_integer<unsigned>(bytes[0]) != 137) return false;
+    for (std::size_t pos = 8; pos + 12 <= bytes.size();) {
+        std::uint32_t size{};
+        for (std::size_t i = 0; i < 4; ++i) size = (size << 8) | std::to_integer<unsigned>(bytes[pos+i]);
+        if (size > bytes.size() - pos - 12) break;
+        if (std::to_integer<char>(bytes[pos+4]) == 'n' && std::to_integer<char>(bytes[pos+5]) == 'p' &&
+            std::to_integer<char>(bytes[pos+6]) == 'T' && std::to_integer<char>(bytes[pos+7]) == 'c') return true;
+        pos += size + 12;
+    }
+    return false;
+}
+dx::VmValue DecodeBitmapBytes(dx::IntrinsicContext& call, const Context& context,
+    const DecodeFields& fields, std::span<const std::byte> bytes, dx::VmObjectRef opts) {
+    const dx::IntrinsicCall api(call);
+    if (bytes.size() > kMaximumImageEncodedBytes)
+        throw dx::VmJavaThrow{"Ljava/lang/OutOfMemoryError;", "encoded bitmap exceeds decode budget"};
+    if (Cancelled(call, fields, opts)) return dx::VmValue::Ref(dx::VmObjectRef{});
+    const auto info = ProbeImage(bytes);
+    if (!info) return dx::VmValue::Ref(dx::VmObjectRef{});
+    if (!ImageDimensionsSupported(info->width, info->height))
+        throw dx::VmJavaThrow{"Ljava/lang/OutOfMemoryError;", "bitmap dimensions exceed decode budget"};
+    if (HasNinePatchChunk(bytes)) DecodeUnsupported(call, "BitmapFactory resource NinePatch decoding is unavailable");
+    const bool only_bounds = opts.IsValid() && api.GetInt(fields[bounds], opts);
+    int width = info->width, height = info->height;
+    if (!only_bounds && opts.IsValid() && api.GetInt(fields[scaled], opts)) {
+        const auto source = api.GetInt(fields[density], opts), target = api.GetInt(fields[target_density], opts);
+        if (source && target && source != target && source != api.GetInt(fields[screen_density], opts)) {
+            const auto ratio = static_cast<float>(target) / static_cast<float>(source);
+            const auto w = static_cast<double>(width) * ratio + 0.5;
+            const auto h = static_cast<double>(height) * ratio + 0.5;
+            if (w > 8192 || h > 8192) throw dx::VmJavaThrow{"Ljava/lang/OutOfMemoryError;", "scaled bitmap exceeds decode budget"};
+            width = static_cast<int>(w); height = static_cast<int>(h);
+            if (!ImageDimensionsSupported(width, height))
+                throw dx::VmJavaThrow{"Ljava/lang/OutOfMemoryError;", "scaled bitmap dimensions are invalid"};
+        }
+    }
+    auto image = only_bounds ? std::optional<DecodedImage>{} : DecodeImageToArgb(bytes);
+    if (!only_bounds && !image) return dx::VmValue::Ref(dx::VmObjectRef{});
+    if (opts.IsValid()) {
+        api.SetInt(fields[out_width], opts, width); api.SetInt(fields[out_height], opts, height);
+        api.SetRef(fields[out_mime], opts, info->mime_type ? call.vm.NewStringUtf8(info->mime_type) : dx::VmObjectRef{});
+    }
+    if (only_bounds) return dx::VmValue::Ref(dx::VmObjectRef{});
+    auto result = ResizeArgbImage(std::move(*image), width, height);
+    DexVmAndroidContext::BitmapState state;
+    state.width = width; state.height = height;
+    if (!std::isfinite(context->ui_density) || context->ui_density <= 0 || context->ui_density > 8192)
+        throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "default bitmap density is invalid"};
+    state.density = static_cast<int>(std::lround(context->ui_density * 160.0F));
+    state.mutable_pixels = opts.IsValid() && api.GetInt(fields[mutable_flag], opts);
+    state.pixels = std::make_shared<BitmapPixels>(width, height, state.config, std::move(result.argb));
+    const auto object = call.vm.NewIntrinsicInstance("Landroid/graphics/Bitmap;");
+    context->bitmaps[object.Value()] = std::move(state);
+    return dx::VmValue::Ref(object);
+}
+} // namespace
+
+Decl Declare_android_graphics_BitmapFactory_Options(const Context&, DecodeFields& fields) {
+    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/graphics/BitmapFactory$Options;");
+    constexpr std::array<std::pair<const char*, const char*>, 19> shape{{
+        {"inBitmap", "Landroid/graphics/Bitmap;"}, {"inPreferredConfig", "Landroid/graphics/Bitmap$Config;"},
+        {"inSampleSize", "I"}, {"inDensity", "I"}, {"inTargetDensity", "I"}, {"inScreenDensity", "I"},
+        {"inScaled", "Z"}, {"inJustDecodeBounds", "Z"}, {"inMutable", "Z"}, {"inPremultiplied", "Z"},
+        {"inDither", "Z"}, {"inPurgeable", "Z"}, {"inInputShareable", "Z"}, {"inPreferQualityOverSpeed", "Z"},
+        {"mCancel", "Z"}, {"outWidth", "I"}, {"outHeight", "I"}, {"outMimeType", "Ljava/lang/String;"}, {"inTempStorage", "[B"}}};
+    for (const auto& [name, type] : shape) fields.push_back(builder.BoundInstanceField(name, type, dx::kAccPublic));
+    // Java mCancel is authoritative. Serialized synchronous decode has no
+    // separately registered Skia job; cancellation remains best effort.
+    builder.DirectMethod("requestCancel", "()V", [fields](dx::IntrinsicContext& call) {
+        dx::IntrinsicCall(call).SetInt(fields[cancel], call.receiver, 1);
+        return dx::VmValue::Void();
+    }, dx::kAccPrivate | dx::kAccNative);
+    return std::move(builder).Build();
+}
+
+Decl Declare_android_graphics_BitmapFactory(const Context& context, const DecodeFields& fields) {
+    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/graphics/BitmapFactory;");
+    builder.StaticMethod("nativeValidateOptions", "(Landroid/graphics/BitmapFactory$Options;)V",
+        [fields](dx::IntrinsicContext& call) { ValidateDecodeOptions(call, fields, call.arguments[0].ref); return dx::VmValue::Void(); },
+        dx::kAccPrivate | dx::kAccStatic | dx::kAccNative);
+    builder.StaticMethod("nativeDecodeByteArray", "([BIILandroid/graphics/BitmapFactory$Options;)Landroid/graphics/Bitmap;",
+        [context, fields](dx::IntrinsicContext& call) {
+            const auto opts = call.arguments[3].ref;
+            ValidateDecodeOptions(call, fields, opts); ResetDecodeOutput(call, fields, opts);
+            const auto array = dx::IntrinsicCall(call).NonNullRef(0, "data");
+            const auto offset = call.arguments[1].AsInt(), length = call.arguments[2].AsInt();
+            if (offset < 0 || length < 0 || static_cast<std::int64_t>(offset) + length > call.vm.Model().ArrayLength(array))
+                throw dx::VmJavaThrow{"Ljava/lang/ArrayIndexOutOfBoundsException;", "bitmap byte range is invalid"};
+            if (static_cast<std::size_t>(length) > kMaximumImageEncodedBytes)
+                throw dx::VmJavaThrow{"Ljava/lang/OutOfMemoryError;", "encoded bitmap exceeds decode budget"};
+            return DecodeBitmapBytes(call, context, fields, call.vm.Model().ReadByteRegion(array, offset, length), opts);
+        }, dx::kAccPrivate | dx::kAccStatic | dx::kAccNative);
+    builder.StaticMethod("nativeDecodeStream", "(Ljava/io/InputStream;Landroid/graphics/Rect;Landroid/graphics/BitmapFactory$Options;)Landroid/graphics/Bitmap;",
+        [context, fields](dx::IntrinsicContext& call) {
+            const auto stream = dx::IntrinsicCall(call).NonNullRef(0, "stream");
+            const auto opts = call.arguments[2].ref;
+            ValidateDecodeOptions(call, fields, opts); ResetDecodeOutput(call, fields, opts);
+            if (call.arguments[1].ref.IsValid())
+                static_cast<void>(CallAndroidMethod(call.vm, call.arguments[1].ref, "set", "(IIII)V",
+                    {dx::VmValue::Int(-1), dx::VmValue::Int(-1), dx::VmValue::Int(-1), dx::VmValue::Int(-1)}));
+            const auto buffer = call.vm.Model().NewPrimitiveArray(call.vm.Linker().ResolveDescriptor("[B"), JniPrimitiveKind::byte, 4096);
+            const auto root = call.vm.ProtectReferences(std::array{buffer});
+            std::vector<std::byte> bytes;
+            unsigned stalled{};
+            while (!Cancelled(call, fields, opts)) {
+                const auto count = CallAndroidMethod(call.vm, stream, "read", "([BII)I",
+                    {dx::VmValue::Ref(buffer), dx::VmValue::Int(0), dx::VmValue::Int(4096)}).AsInt();
+                if (count < 0) break;
+                if (count > 4096) throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "bitmap stream returned an invalid byte count"};
+                if (!count) { if (++stalled > 8) DecodeUnsupported(call, "bitmap stream made no progress"); continue; }
+                stalled = 0;
+                if (bytes.size() + static_cast<std::size_t>(count) > kMaximumImageEncodedBytes)
+                    throw dx::VmJavaThrow{"Ljava/lang/OutOfMemoryError;", "bitmap stream exceeds decode budget"};
+                const auto chunk = call.vm.Model().ReadByteRegion(buffer, 0, count);
+                bytes.insert(bytes.end(), chunk.begin(), chunk.end());
             }
-            const auto array_length =
-                static_cast<std::int64_t>(model.ArrayLength(array));
-            if (offset < 0 || length < 0 ||
-                static_cast<std::int64_t>(offset) + length > array_length) {
-                throw dx::VmJavaThrow{
-                    "Ljava/lang/ArrayIndexOutOfBoundsException;",
-                    "decodeByteArray range exceeds the data array"};
-            }
-            const auto bytes = model.ReadByteRegion(array, offset, length);
-            const auto decoded = DecodeImageToArgb(bytes);
-            if (!decoded.has_value()) {
-                // Documented decode-failure result is null, not a throw.
-                GuestLog(call, core::LogLevel::warn,
-                         "BitmapFactory.decodeByteArray: undecodable image (" +
-                             std::to_string(length) + " bytes)");
-                return dx::VmValue::Ref(dx::VmObjectRef{});
-            }
-            DexVmAndroidContext::BitmapState state;
-            state.width = decoded->width;
-            state.height = decoded->height;
-            state.pixels = std::make_shared<BitmapPixels>(state.width, state.height, state.config, std::move(decoded->argb));
-            const auto instance =
-                call.vm.NewIntrinsicInstance("Landroid/graphics/Bitmap;");
-            context->bitmaps[instance.Value()] = std::move(state);
-            return dx::VmValue::Ref(instance);
-        });
+            return DecodeBitmapBytes(call, context, fields, bytes, opts);
+        }, dx::kAccPrivate | dx::kAccStatic | dx::kAccNative);
     return std::move(builder).Build();
 }
 

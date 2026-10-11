@@ -87,7 +87,8 @@ Declare_android_content_res_Resources(const Context &context);
 Declare_android_graphics_Bitmap_Config(const Context &context);
 [[nodiscard]] Decl Declare_android_graphics_Bitmap(const Context &context);
 [[nodiscard]] Decl
-Declare_android_graphics_BitmapFactory(const Context &context);
+Declare_android_graphics_BitmapFactory(const Context &context, const std::vector<dx::IntrinsicFieldHandle>& fields);
+[[nodiscard]] Decl Declare_android_graphics_BitmapFactory_Options(const Context&, std::vector<dx::IntrinsicFieldHandle>& fields);
 [[nodiscard]] Decl Declare_android_graphics_Canvas(const Context &context);
 [[nodiscard]] Decl Declare_android_graphics_Matrix(const Context &context);
 [[nodiscard]] Decl Declare_android_graphics_Paint(const Context &context);

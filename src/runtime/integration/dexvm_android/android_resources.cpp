@@ -828,22 +828,38 @@ Decl Declare_android_content_res_Resources(const Context &context) {
             entry == nullptr ? 0
                              : static_cast<std::int32_t>(entry->resource_id));
       });
-  builder.FinalMethod(
+  builder.VirtualMethod(
       "openRawResource", "(I)Ljava/io/InputStream;",
-      [context](dx::IntrinsicContext &call) {
+      [](dx::IntrinsicContext& call) {
+        return CallAndroidMethod(call.vm, call.receiver, "openRawResource",
+            "(ILandroid/util/TypedValue;)Ljava/io/InputStream;",
+            {call.arguments[0], dx::VmValue::Ref(dx::VmObjectRef{})});
+      });
+  builder.VirtualMethod(
+      "openRawResource", "(ILandroid/util/TypedValue;)Ljava/io/InputStream;",
+      [context](dx::IntrinsicContext& call) {
         if (IsSystemResources(context, call.receiver))
-          throw dx::VmJavaThrow{"Landroid/content/res/Resources$NotFoundException;",
-                                "system raw resource is unavailable"};
-        const auto resource_id =
-            static_cast<std::uint32_t>(call.arguments[0].AsInt());
-        const auto *entry = context->arsc.FindById(resource_id);
-        if (entry == nullptr || !entry->string_value.has_value()) {
-          throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;",
-                                "resource id has no file entry: " +
-                                    std::to_string(resource_id)};
+          throw dx::VmJavaThrow{"Landroid/content/res/Resources$NotFoundException;", "system raw resource is unavailable"};
+        const auto id = static_cast<std::uint32_t>(call.arguments[0].AsInt());
+        try {
+          const auto& entry = ResolveUiResourceEntry(*context, id);
+          if (entry.value_type != 3 || !entry.string_value)
+            throw std::runtime_error("raw resource is not a file");
+          const auto value = call.arguments[1].ref;
+          if (value.IsValid()) {
+            SetIntField(call, value, "type", entry.value_type);
+            SetIntField(call, value, "data", static_cast<std::int32_t>(entry.value_data));
+            SetIntField(call, value, "resourceId", static_cast<std::int32_t>(entry.resource_id));
+            SetIntField(call, value, "assetCookie", 1);
+            SetIntField(call, value, "density", entry.density);
+            SetRefField(call, value, "string", "Ljava/lang/CharSequence;", call.vm.NewStringUtf8(*entry.string_value));
+          }
+          return dx::VmValue::Ref(OpenStream(call, context, ReadApkFile(context, *entry.string_value)));
+        } catch (const dx::DexVmError&) { throw;
+        } catch (const std::bad_alloc&) { throw;
+        } catch (const std::exception& error) {
+          throw dx::VmJavaThrow{"Landroid/content/res/Resources$NotFoundException;", error.what()};
         }
-        return dx::VmValue::Ref(OpenStream(
-            call, context, ReadApkFile(context, *entry->string_value)));
       });
   builder.FinalMethod(
       "openRawResourceFd", "(I)Landroid/content/res/AssetFileDescriptor;",

@@ -4,6 +4,9 @@
 普通字段、计数、同步和异常归 guest 对象；平台租约/设备目录经显式 native 进入 integration。
 不依赖宿主 JDK、Binder IPC、system_server 或手机服务。
 
+图片 [Java 客户端](java/android/graphics/MODULE.md) 保留 BitmapFactory.Options 和
+资源密度/流关闭协议，使用有界 native codec；未支持模式明确失败，不引入完整 Skia。
+
 连接状态的 [Java 客户端](java/android/net/MODULE.md) 只支持显式离线拓扑查询；
 类型范围算法在 Java，native 事实工厂调用原版 NetworkInfo 构造与状态 setter，
 不重写状态判断/枚举/复制/Parcel，不提供在线状态或系统网络服务。

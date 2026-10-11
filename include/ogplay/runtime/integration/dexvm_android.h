@@ -577,6 +577,8 @@ struct DexVmAndroidContext final {
     bool recycled{};
     // android.graphics.Bitmap.Config nativeInt (API 19 values 1/3/4/5).
     std::int32_t config{5};
+    std::int32_t density{160};
+    bool mutable_pixels{true};
   };
   std::unordered_map<std::uint32_t, BitmapState> bitmaps;
   std::unordered_map<std::uint32_t, dexvm::VmObjectRef> bitmap_lock_roots;

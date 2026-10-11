@@ -169,6 +169,12 @@ guest worker 静止后，`ReleaseAndroidMediaResources` 退役 decoder、媒体�
   每实例 alpha 独立，空 BitmapDrawable 不绘制，替换/清空解绑旧 callback。
   BitmapPixels 变更在布局/呈现前投影到不可变 UiBitmap；原生锁期间读取当前像素，
   不复制一份可变像素权威状态。任意自定义 Drawable 绘制仍明确拒绝。
+- openRawResource 两重载共用配置/引用选择，TypedValue 发布选中文件、ID/cookie/density；
+  system raw 缺席不回退 APK，缺/非文件资源为 NotFoundException。BitmapFactory Java
+  包装拥有资源流关闭和默认 density 协议；private native 同源解码 stream/array 并生成
+  独立 BitmapPixels。ARGB8888、bounds/inMutable/density scaling 支持；其他选项和资源
+  NinePatch 记账 UOE。编码/像素预算先验，超限 OOME；普通失败 null。Bitmap density
+  与解码 mutability 保存在 owner，默认解码不可变；JNI/UI/Canvas 共用像素与 recycle/GC。
 - getXml 的 AXML 仅 getEventType/next/getName/getText/close；其余完整 XmlPullParser 接口
   记账抛 UnsatisfiedLinkError。文本 XML 用 BootDex KXml，不进入二进制 AXML reader。
 - 系统 getString/getInteger 每 context 一次从 BootDex 封存归档读取 system-resources.json

@@ -2091,6 +2091,11 @@ status = "partial"
 test = "tests/runtime/native_library_loader_tests.cpp: DVM-237, DVM-195; tests/runtime/boundary/integration/android_boundary_hle_tests.cpp: DVM-237; tests/dexvm/file_vfs_tests.cpp: AssetManager openFd, Parcel and asset file descriptors; architecture.boundary_hot_path"
 note = "DVM-237/ADR-0116：API19 AAssetManager_fromJava/open 与 AAsset read/seek/length/remaining/close/openFileDescriptor；真实 JNI manager 与 NativeActivity 共用身份，不永久保活 Java manager，GC/退出退役。APK STORED 共用校验/区间并避免整条目物化，压缩可区间读取而直接 FD 返回负值；完整只读 APK 的新 guest VFS FD 携带原物理 start/length，caller 独立关闭。Java openFd/raw-resource FD 共用范围校验，AssetFileDescriptor.close 同步 Java descriptor=-1。系统 assets 明确记账拒绝；目录、64 位导出、getBuffer、Java AssetManager close/addAssetPath 和压缩流性能扩展未闭合；跨平台与完整游戏未验收。"
 
+[dexvm.bitmap_decode]
+status = "partial"
+test = "tools/bootdex/build_bootdex.py build/check; tools.android_payload_current; tests/dexvm/android_value_tests.cpp: DVM-244; tests/runtime/native_library_loader_tests.cpp: DVM-244/DVM-221"
+note = "DVM-244/ADR-0123：BitmapFactory 有界 Java 客户端、原版 Options、Resources.openRawResource(int,TypedValue) 复用 ARSC 配置/引用/density；resource/stream/array 解码共用 codec/BitmapPixels，独立结果及 GC/NDK/UI。默认 ARGB8888、bounds、inMutable 与密度缩放，Java 原密度/流关闭协议；半像素 bilinear/预乘插值，不宣称完整 Skia 一致性。输入≤16MiB，宽高≤8192、像素≤16Mi，先验预算/超限 OOME；已知资源/格式/IO 失败 null，reuse/sample>1/其他config/purge/dither/quality/资源NinePatch 记账 UOE，不被resource catch吞掉。原 mCancel 为 best-effort；跨平台/动画/完整游戏未验收。"
+
 [runtime.bitmap_ndk]
 status = "partial"
 test = "tests/runtime/native_library_loader_tests.cpp: DVM-221; tests/dexvm/android_value_tests.cpp: Bitmap Config; tests/dexvm/egl_facade_tests.cpp: DVM-83; tests/runtime/bionic_profile_tests.cpp"

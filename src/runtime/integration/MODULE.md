@@ -58,6 +58,9 @@ Android API 的详细行为以 [dexvm_android](dexvm_android/MODULE.md)为准；
   VM 强根，recycle 延后退役 guest view，bridge 停止线程后解除 hooks 并清理 lease。
   BitmapPixels 在逻辑 ARGB 和 guest 格式存储间转移唯一权威值，Java/GLUtils/Canvas
   共用它；成功写入与最后 unlock 推进像素版本，活跃原生锁期间不能仅按版本复用投影。
+  图片 codec 对 encoded bytes/尺寸/像素有先验上限，密度缩放半像素 bilinear 在预乘
+  颜色空间完成，返回逻辑 ARGB；不声称完整 Skia 像素一致性。BitmapFactory 普通协议
+  在 Java，native 不复制资源选择/关闭/默认 Options 算法。
   低位格式/预乘 alpha 的量化及调用者无同步并发写不等于完整 Skia 验收。
 - /proc/meminfo 是进程创建时的只读 GuestMemorySnapshot，来自受检 GuestProcFacts：默认
   总量 1 GiB、free=total/2、Cached 缺省 total/4，cached/buffers 可显式注入，Swap 为 0。

@@ -235,6 +235,7 @@ public:
         context->service_components = manifest.service_components;
         context->receiver_components = manifest.receiver_components;
         context->application_enabled = manifest.application_enabled;
+        context->package_inventory_known = true;
         context->activity_inventory_known = true;
         context->service_inventory_known = true;
         context->receiver_inventory_known = true;

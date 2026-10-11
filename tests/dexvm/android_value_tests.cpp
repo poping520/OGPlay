@@ -4105,6 +4105,114 @@ TEST_CASE("DVM-180 getPackageInfo returns current-package Activity metadata") {
     }
 }
 
+TEST_CASE("DVM-240 installed applications use sealed facts independent values and API19 flags") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        AndroidValueVm f(backend);
+        auto& context = *f.context;
+        context.package_name = "org.example.game";
+        context.package_resource_path = "/data/app/org.example.game-1.apk";
+        context.application_class_name = "org.example.GameApplication";
+        context.application_process_name = "org.example.game:main";
+        context.application_uid = 10042;
+        context.target_sdk_version = 19;
+        context.application_meta_data.emplace("fixture.setting", std::string("sealed"));
+        const auto base = f.New("Landroid/content/Context;");
+        const auto base_root = f.vm.ProtectReferences(std::array{base});
+        const auto manager = f.On(base, "getPackageManager", "()Landroid/content/pm/PackageManager;").ref;
+        const auto manager_root = f.vm.ProtectReferences(std::array{manager});
+        const auto query = [&](int flags) {
+            return f.OnOutcome(manager, "getInstalledApplications", "(I)Ljava/util/List;",
+                               {VmValue::Int(flags)});
+        };
+        const auto unsupported = [&](const VmCallOutcome& result) {
+            REQUIRE(result.exception.IsValid());
+            CHECK(f.linker.Class(result.exception_class).descriptor == "Ljava/lang/UnsupportedOperationException;");
+        };
+        const auto field = [&](VmObjectRef object, const char* name, const char* descriptor) -> Slot& {
+            const auto found = f.linker.FindFieldRecursive(f.model.ObjectClass(object), name, descriptor);
+            REQUIRE(found.has_value());
+            return f.model.InstanceSlots(object)[f.linker.Field(*found).slot];
+        };
+        const auto ref = [&](VmObjectRef object, const char* name) {
+            return VmObjectRef{field(object, name, "Ljava/lang/String;").bits};
+        };
+        unsupported(query(0)); // Populated fields alone do not seal the inventory.
+        context.package_inventory_known = true;
+        const auto plain = query(0);
+        REQUIRE_FALSE(plain.exception.IsValid());
+        const auto list = plain.value.ref;
+        const auto list_root = f.vm.ProtectReferences(std::array{list});
+        CHECK(f.linker.Class(f.model.ObjectClass(list)).descriptor == "Ljava/util/ArrayList;");
+        CHECK(f.linker.Class(f.model.ObjectClass(list)).is_boot_dex);
+        CHECK(f.On(list, "size", "()I").AsInt() == 1);
+        const auto iterator = f.On(list, "iterator", "()Ljava/util/Iterator;").ref;
+        const auto iterator_root = f.vm.ProtectReferences(std::array{iterator});
+        CHECK(f.On(iterator, "hasNext", "()Z").AsInt() == 1);
+        const auto info = f.On(iterator, "next", "()Ljava/lang/Object;").ref;
+        CHECK(f.On(iterator, "hasNext", "()Z").AsInt() == 0);
+        CHECK(f.vm.StringUtf8(ref(info, "packageName")) == context.package_name);
+        CHECK(f.vm.StringUtf8(ref(info, "sourceDir")) == context.package_resource_path);
+        CHECK(f.vm.StringUtf8(ref(info, "dataDir")) == "/data/data/org.example.game");
+        CHECK(field(info, "uid", "I").bits == 10042);
+        CHECK(field(info, "targetSdkVersion", "I").bits == 19);
+        CHECK((field(info, "flags", "I").bits & (1U << 23)) != 0);
+        CHECK(field(info, "metaData", "Landroid/os/Bundle;").bits == 0);
+        const auto stable = f.On(base, "getApplicationInfo", "()Landroid/content/pm/ApplicationInfo;").ref;
+        const auto package = f.vm.NewStringUtf8(context.package_name);
+        const auto package_root = f.vm.ProtectReferences(std::array{package});
+        const auto direct = f.On(manager, "getApplicationInfo",
+            "(Ljava/lang/String;I)Landroid/content/pm/ApplicationInfo;", {VmValue::Ref(package), VmValue::Int(0)}).ref;
+        const auto direct_root = f.vm.ProtectReferences(std::array{direct});
+        CHECK(info != stable); CHECK(info != direct);
+        for (const auto* name : {"packageName", "className", "processName", "sourceDir", "publicSourceDir", "dataDir", "nativeLibraryDir"}) {
+            CHECK(f.vm.StringUtf8(ref(info, name)) == f.vm.StringUtf8(ref(stable, name)));
+            CHECK(f.vm.StringUtf8(ref(info, name)) == f.vm.StringUtf8(ref(direct, name)));
+        }
+        CHECK(f.vm.StringUtf8(f.On(base, "getPackageCodePath", "()Ljava/lang/String;").ref) == context.package_resource_path);
+        CHECK((field(stable, "flags", "I").bits & (1U << 23)) != 0);
+        CHECK((field(direct, "flags", "I").bits & (1U << 23)) != 0);
+        const auto replacement = f.vm.NewStringUtf8("/invalid.apk");
+        field(info, "sourceDir", "Ljava/lang/String;") = {replacement.Value(), SlotTag::ref};
+        f.On(list, "clear", "()V");
+        context.application_enabled = false;
+        const auto detailed = query(0x80);
+        REQUIRE_FALSE(detailed.exception.IsValid());
+        const auto detailed_list = detailed.value.ref;
+        const auto detailed_root = f.vm.ProtectReferences(std::array{detailed_list});
+        REQUIRE(f.On(detailed_list, "size", "()I").AsInt() == 1);
+        const auto detailed_info = f.On(detailed_list, "get", "(I)Ljava/lang/Object;", {VmValue::Int(0)}).ref;
+        CHECK(field(detailed_info, "enabled", "Z").bits == 0);
+        CHECK(f.vm.StringUtf8(ref(detailed_info, "sourceDir")) == context.package_resource_path);
+        CHECK(f.vm.StringUtf8(ref(stable, "sourceDir")) == context.package_resource_path);
+        const auto metadata = VmObjectRef{field(detailed_info, "metaData", "Landroid/os/Bundle;").bits};
+        REQUIRE(metadata.IsValid());
+        const auto key = f.vm.NewStringUtf8("fixture.setting");
+        const auto key_root = f.vm.ProtectReferences(std::array{key});
+        CHECK(f.vm.StringUtf8(f.On(metadata, "getString", "(Ljava/lang/String;)Ljava/lang/String;", {VmValue::Ref(key)}).ref) == "sealed");
+        f.On(metadata, "putString", "(Ljava/lang/String;Ljava/lang/String;)V", {VmValue::Ref(key), VmValue::Ref(replacement)});
+        const auto fresh = query(0x80);
+        REQUIRE_FALSE(fresh.exception.IsValid());
+        const auto fresh_root = f.vm.ProtectReferences(std::array{fresh.value.ref});
+        const auto fresh_info = f.On(fresh.value.ref, "get", "(I)Ljava/lang/Object;", {VmValue::Int(0)}).ref;
+        CHECK(fresh_info != detailed_info);
+        const auto fresh_metadata = VmObjectRef{field(fresh_info, "metaData", "Landroid/os/Bundle;").bits};
+        CHECK(f.vm.StringUtf8(f.On(fresh_metadata, "getString", "(Ljava/lang/String;)Ljava/lang/String;", {VmValue::Ref(key)}).ref) == "sealed");
+        static_cast<void>(f.vm.CollectGarbage());
+        CHECK(f.vm.MarkReachable().IsMarked(fresh_info));
+        CHECK(f.vm.MarkReachable().IsMarked(fresh_metadata));
+        for (int flags : {1, 0x200, 0x400, 0x2000, -1}) unsupported(query(flags));
+        context.package_inventory_known = false; unsupported(query(0));
+        context.package_inventory_known = true;
+        context.package_resource_path.clear(); unsupported(query(0));
+        context.package_resource_path = "host-relative.apk"; unsupported(query(0));
+        context.package_resource_path = "/data/app/org.example.game-1.apk";
+        context.package_name.clear(); unsupported(query(0));
+        const auto hits = f.ledger.Unimplemented();
+        REQUIRE(hits.size() == 1);
+        CHECK(hits.front().id == "dexvm.installed_applications");
+    }
+}
+
 TEST_CASE("PackageManager archive queries preserve sealed path and API19 metadata semantics") {
     constexpr auto signature = "(Ljava/lang/String;I)Landroid/content/pm/PackageInfo;";
     constexpr auto activities_flag = 1;

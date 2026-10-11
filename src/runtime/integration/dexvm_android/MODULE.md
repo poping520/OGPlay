@@ -51,9 +51,12 @@ content/os/view/graphics/gl/media/database/device 等 family TU 同址。shared.
 - PackageManager 只发布当前 APK sealed Manifest/path/label/permission/feature；值对象来自
   BootDex，integration 写受检字段。meta-data 的 value 解码 ARSC 类型，resource 保留 ID；
   application 与组件 metaData 分别物化。nativeLibraryDir=/data/app-lib，selected-ABI 库只读挂 VFS。
+  安装视图的 FLAG_INSTALLED 为已知事实；Context 保持稳定对象，PackageManager 查询
+  返回独立值。单包清单仅由 session 显式封存，不从非空默认字段推测安装状态。
 
 | 查询 | 支持与失败边界 |
 | --- | --- |
+| getInstalledApplications | 已封存的当前 guest 单包清单；0/GET_META_DATA，返回原版 ArrayList 与独立 ApplicationInfo，禁用应用仍在列表；缺清单/身份/guest 路径及未知 flags 记账抛 UOE |
 | getInstallerPackageName(String) | 仅当前直接加载的 APK，未记录 Android 安装器，返回 null；未知包（含空串、system、null）按 API19 抛 IllegalArgumentException；不推测商店来源 |
 | getResourcesForApplication(String) | 仅当前包，共用 Context 的应用 Resources/AssetManager；未知包（含空串、system）NameNotFoundException，null NPE；不支持跨包与其他重载 |
 | getPackageArchiveInfo | 仅当前封存只读 APK，路径经 guest VFS 规范化；0/GET_ACTIVITIES/GET_DISABLED_COMPONENTS；归档 UID=-1、安装目录 null、安装时间 0；路径缺失/非普通文件返回 null，未登记归档/缺事实/未知 flags 记账失败 |

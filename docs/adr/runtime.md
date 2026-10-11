@@ -1040,3 +1040,17 @@ virtual-private-committed 模型：当前 VM 堆账本按 KiB 向上取整计 da
 模型在首次使用写结构化日志，能力保持有界；需要真实 residency/shared/clean/GPU
 分类时另加 provider，不悄悄改变既有模型。缺 provider/快照忙则明确失败，不返回假零。
 所有统计校验先于结果对象修改，bridge 析构撤销自有 provider；范围见 [DVM-239](../tasks/dexvm/DVM-239.md)。
+
+## ADR-0119 · 封存单包已安装清单
+
+OGPlay 的 guest 安装世界仅包含本次加载的 APK。session 在装配 Manifest/安装路径
+后显式声明清单已知；未装配的 standalone context 不得凭默认字段返回空清单或假包。
+getInstalledApplications 仅支持 0/GET_META_DATA，以现有 MakeApplicationInfo 生成
+独立的安装视图，放入原版 BootDex ArrayList；Context 的稳定对象不借给可变查询。
+安装视图与 archive 共用字段来源，保留各自路径/UID 差异并校准 FLAG_INSTALLED。
+
+按 API19 PackageManagerService/PackageParser，应用禁用不等于未安装，故列表保留
+enabled=false 的条目；meta-data 按 flags 物化。未知 flags、缺安装清单/身份/guest 路径
+记账并抛 Java UOE。范围不扩展到宿主应用、Launcher 库、多包/多用户/卸载残留状态；
+后续直接调用的包查询继续共用这份封存事实，不引入 PMS/Binder/system_server。
+验证与边界见 [DVM-240](../tasks/dexvm/DVM-240.md)。

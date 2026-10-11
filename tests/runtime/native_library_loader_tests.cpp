@@ -2605,6 +2605,75 @@ TEST_CASE("DVM-239 ARM JNI Debug query observes virtual RAM growth and release")
     }
 }
 
+TEST_CASE("DVM-240 ARM JNI installed applications expose the session APK and reject unknown flags") {
+    using namespace ogplay;
+    using namespace runtime::dexvm;
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        OrchestratedApp f("fixture.DelayedContentActivity", true, false, {}, {}, true, backend);
+        REQUIRE(f.context->package_inventory_known);
+        static_cast<void>(f.app->StartApplication());
+        auto& bridge = f.app->DexVm(); auto& vm = bridge.Vm(); auto& linker = vm.Linker();
+        auto& process = f.app->NativeProcess(); auto& env = process.Environment();
+        const auto memory = process.GuestMemoryAccess();
+        const auto scratch = memory.allocate(256);
+        std::array<std::byte, 256> bytes{};
+        constexpr char method_name[] = "getInstalledApplications";
+        constexpr char signature[] = "(I)Ljava/util/List;";
+        std::memcpy(bytes.data(), method_name, sizeof(method_name));
+        std::memcpy(bytes.data() + 32, signature, sizeof(signature));
+        memory.write(scratch, bytes);
+        const auto base = f.context->application_base_context;
+        REQUIRE(base.IsValid());
+        const auto slot = linker.FindVtableIndex(vm.Model().ObjectClass(base), "getPackageManager", "()Landroid/content/pm/PackageManager;");
+        REQUIRE(slot.has_value());
+        const auto result = vm.Call(linker.Class(vm.Model().ObjectClass(base)).vtable[*slot], std::array{VmValue::Ref(base)});
+        REQUIRE_FALSE(result.exception.IsValid());
+        const auto manager = result.value.ref;
+        const auto reference = bridge.PublishLocal(manager);
+        const auto clazz = bridge.PublishLocal(vm.Model().ClassObject(vm.Model().ObjectClass(manager)));
+        const auto invoke = [&](const char* name, std::array<std::uint32_t, 4> args) {
+            return process.Invoke({memory::GuestAddress{EnvironmentThunk(name)}, args, {}}).return_value;
+        };
+        const auto method = invoke("GetMethodID", {process.GuestEnvironment().Value(), clazz.Value(),
+            scratch.Value(), scratch.Add(32).Value()});
+        REQUIRE(method != 0); REQUIRE_FALSE(env.ExceptionCheck(1));
+        const auto list_reference = runtime::JniReference{invoke("CallObjectMethodA", {
+            process.GuestEnvironment().Value(), reference.Value(), method, scratch.Add(128).Value()})};
+        REQUIRE_FALSE(env.ExceptionCheck(1));
+        const auto list = bridge.FromReference(list_reference);
+        const auto roots = vm.ProtectReferences(std::array{list});
+        CHECK(linker.Class(vm.Model().ObjectClass(list)).is_boot_dex);
+        const auto get = linker.FindVtableIndex(vm.Model().ObjectClass(list), "get", "(I)Ljava/lang/Object;");
+        REQUIRE(get.has_value());
+        const auto item = vm.Call(linker.Class(vm.Model().ObjectClass(list)).vtable[*get],
+                                 std::array{VmValue::Ref(list), VmValue::Int(0)});
+        REQUIRE_FALSE(item.exception.IsValid());
+        const auto source = linker.FindFieldRecursive(vm.Model().ObjectClass(item.value.ref), "sourceDir", "Ljava/lang/String;");
+        REQUIRE(source.has_value());
+        const auto path = VmObjectRef{vm.Model().InstanceSlots(item.value.ref)[linker.Field(*source).slot].bits};
+        CHECK(vm.StringUtf8(path) == f.context->package_resource_path);
+        CHECK(vm.StringUtf8(path) == "/data/app/fixture-1.apk");
+        const auto fd = f.filesystem.Open(vm.StringUtf8(path), {.read = true});
+        std::array<std::byte, 4> apk_header{};
+        CHECK(f.filesystem.Read(fd, apk_header) == apk_header.size());
+        CHECK(std::equal(apk_header.begin(), apk_header.end(), f.context->apk_bytes.begin()));
+        f.filesystem.Close(fd);
+        // GET_SHARED_LIBRARY_FILES is outside the declared bounded query.
+        bytes[129] = std::byte{4};
+        memory.write(scratch, bytes);
+        CHECK(invoke("CallObjectMethodA", {process.GuestEnvironment().Value(), reference.Value(),
+                                          method, scratch.Add(128).Value()}) == 0);
+        REQUIRE(env.ExceptionCheck(1));
+        const auto throwable = env.ExceptionOccurred(1);
+        env.ExceptionClear(1);
+        CHECK(linker.Class(vm.Model().ObjectClass(bridge.FromReference(throwable))).descriptor == "Ljava/lang/UnsupportedOperationException;");
+        env.DeleteLocalRef(1, throwable); env.DeleteLocalRef(1, list_reference);
+        env.DeleteLocalRef(1, reference); env.DeleteLocalRef(1, clazz);
+        memory.release(scratch, 256);
+        static_cast<void>(f.app->Stop());
+    }
+}
+
 TEST_CASE("DVM-221 pixel formats use API19 stride and native packed layout") {
     using namespace ogplay;
     OrchestratedApp f("fixture.DelayedContentActivity", true, false);

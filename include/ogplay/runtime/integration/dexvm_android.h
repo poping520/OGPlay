@@ -126,6 +126,9 @@ struct DexVmAndroidContext final {
   // ApplicationInfo source paths expose this instead of leaking the
   // frontend's host path.
   std::string package_resource_path;
+  // The installed guest inventory is sealed and contains only this APK.
+  // Missing standalone context facts are not an empty installation list.
+  bool package_inventory_known{};
   // Internal sealed APK source, initialized only by ApkAssets().
   std::shared_ptr<AndroidAssetManagerSource> apk_asset_source;
   std::uint32_t package_version_code{};

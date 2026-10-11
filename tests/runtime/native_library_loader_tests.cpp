@@ -363,7 +363,8 @@ struct ApplicationProcess final {
         ogplay::runtime::dexvm::InterpreterBackend backend =
             ogplay::runtime::dexvm::InterpreterBackend::switch_dispatch,
         const std::optional<std::string_view> working_directory = std::nullopt,
-        const std::string& dex_fixture = "application.dex") {
+        const std::string& dex_fixture = "application.dex",
+        const ogplay::runtime::dexvm::JavaObjectModelConfig heap = {}) {
         if (working_directory.has_value()) {
             filesystem.SetWorkingDirectory(*working_directory);
         }
@@ -399,7 +400,7 @@ struct ApplicationProcess final {
         bridge = std::make_unique<ogplay::runtime::DexVmGuestBridge>(
             *session, ReadDexFixture(dex_fixture), catalog, context,
             ledger, &logger, ogplay::runtime::DexVmBridgeConfig{
-                .interpreter = {.backend = backend}}, ogplay::test::ReadBootDex());
+                .interpreter = {.backend = backend}, .heap = heap}, ogplay::test::ReadBootDex());
         context->threads = &bridge->Threads();
     }
 
@@ -2671,6 +2672,139 @@ TEST_CASE("DVM-240 ARM JNI installed applications expose the session APK and rej
         env.DeleteLocalRef(1, reference); env.DeleteLocalRef(1, clazz);
         memory.release(scratch, 256);
         static_cast<void>(f.app->Stop());
+    }
+}
+
+TEST_CASE("DVM-242 ARM JNI AllocObject shares zeroed inherited fields without constructors") {
+    using namespace ogplay;
+    using namespace runtime;
+    using namespace runtime::dexvm;
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        ApplicationProcess f(backend);
+        auto& bridge = *f.bridge; auto& vm = bridge.Vm(); auto& linker = vm.Linker();
+        auto& process = f.session->Process(); auto& env = f.session->Environment();
+        const auto memory = process.GuestMemoryAccess();
+        const auto scratch = memory.allocate(256);
+        const auto invoke = [&](const char* name, std::array<std::uint32_t, 4> args) {
+            return process.Invoke({memory::GuestAddress{EnvironmentThunk(name)}, args, {}}).return_value;
+        };
+        const auto clazz = [&](const char* descriptor) {
+            return bridge.PublishLocal(vm.Model().ClassObject(linker.ResolveDescriptor(descriptor)));
+        };
+        const auto allocate = [&](JniReference type) {
+            return JniReference{invoke("AllocObject", {process.GuestEnvironment().Value(), type.Value(), 0, 0})};
+        };
+        const auto child = linker.ResolveDescriptor("Lfixture/AllocChild;");
+        const auto child_class = clazz("Lfixture/AllocChild;");
+        CHECK(linker.Class(child).clinit_state == ClinitState::uninitialized);
+        const auto reference = allocate(child_class);
+        REQUIRE_FALSE(env.ExceptionCheck(1)); REQUIRE_FALSE(reference.IsNull());
+        const auto object = bridge.FromReference(reference);
+        CHECK(vm.Model().ObjectClass(object) == child);
+        for (const auto slot : vm.Model().InstanceSlots(object)) CHECK(slot.bits == 0);
+        const auto static_value = [&](const char* name) {
+            const auto field = linker.FindFieldRecursive(child, name, "I");
+            REQUIRE(field.has_value());
+            return linker.Class(child).static_storage[linker.Field(*field).slot];
+        };
+        CHECK(static_value("initialized") == 1); CHECK(static_value("constructed") == 0);
+        const auto field_id = [&](const char* name, const char* signature) {
+            std::array<std::byte, 256> data{};
+            std::memcpy(data.data(), name, std::strlen(name) + 1);
+            std::memcpy(data.data() + 64, signature, std::strlen(signature) + 1);
+            memory.write(scratch, data);
+            return invoke("GetFieldID", {process.GuestEnvironment().Value(), child_class.Value(), scratch.Value(), scratch.Add(64).Value()});
+        };
+        const auto number = field_id("number", "I");
+        REQUIRE(number != 0);
+        invoke("SetIntField", {process.GuestEnvironment().Value(), reference.Value(), number, 17});
+        const auto method = linker.FindVtableIndex(child, "numberValue", "()I");
+        REQUIRE(method.has_value());
+        const auto read = vm.Call(linker.Class(child).vtable[*method], std::array{VmValue::Ref(object)});
+        REQUIRE_FALSE(read.exception.IsValid()); CHECK(read.value.AsInt() == 17);
+        const auto inherited = field_id("inherited", "J");
+        CHECK(invoke("GetLongField", {process.GuestEnvironment().Value(), reference.Value(), inherited, 0}) == 0);
+        const auto object_class = JniReference{invoke("GetObjectClass", {process.GuestEnvironment().Value(), reference.Value(), 0, 0})};
+        CHECK(env.IsSameObject(1, child_class, object_class)); env.DeleteLocalRef(1, object_class);
+        const auto global = env.NewGlobalRef(1, reference);
+        const auto weak = env.NewWeakGlobalRef(1, reference);
+        env.DeleteLocalRef(1, reference);
+        static_cast<void>(vm.CollectGarbage("alloc-object-global"));
+        CHECK(vm.MarkReachable().IsMarked(object));
+        env.DeleteGlobalRef(1, global);
+        static_cast<void>(vm.CollectGarbage("alloc-object-weak"));
+        CHECK_FALSE(env.ResolveObjectForHle(1, weak).has_value()); env.DeleteWeakGlobalRef(1, weak);
+        const auto no_constructor = clazz("Lfixture/AllocNoConstructor;");
+        const auto no_init = allocate(no_constructor);
+        REQUIRE_FALSE(no_init.IsNull()); REQUIRE_FALSE(env.ExceptionCheck(1));
+        env.DeleteLocalRef(1, no_init);
+        const auto constructor = f.session->Classes().GetMethodId(
+            *env.ResolveObjectForHle(1, child_class), "<init>", "()V", false);
+        REQUIRE(constructor.has_value());
+        const auto constructed = JniReference{invoke("NewObjectA", {process.GuestEnvironment().Value(), child_class.Value(), constructor->Value(), 0})};
+        REQUIRE_FALSE(env.ExceptionCheck(1)); REQUIRE_FALSE(constructed.IsNull());
+        CHECK(invoke("GetIntField", {process.GuestEnvironment().Value(), constructed.Value(), number, 0}) == 7);
+        CHECK(invoke("GetLongField", {process.GuestEnvironment().Value(), constructed.Value(), inherited, 0}) == 13);
+        env.DeleteLocalRef(1, constructed);
+        CHECK(static_value("initialized") == 1); CHECK(static_value("constructed") == 7);
+        const auto expect_exception = [&](JniReference type, const char* descriptor) {
+            CHECK(allocate(type).IsNull()); REQUIRE(env.ExceptionCheck(1));
+            const auto exception = env.ExceptionOccurred(1); env.ExceptionClear(1);
+            CHECK(linker.Class(vm.Model().ObjectClass(bridge.FromReference(exception))).descriptor == descriptor);
+            env.DeleteLocalRef(1, exception);
+        };
+        for (const char* type : {"Lfixture/AllocAbstract;", "Ljava/lang/Runnable;", "[I", "Ljava/lang/Class;"}) {
+            const auto klass = clazz(type);
+            expect_exception(klass, "Ljava/lang/InstantiationException;"); env.DeleteLocalRef(1, klass);
+        }
+        const auto failed = clazz("Lfixture/AllocFailInit;");
+        expect_exception(failed, "Ljava/lang/ExceptionInInitializerError;");
+        expect_exception(failed, "Ljava/lang/NoClassDefFoundError;"); env.DeleteLocalRef(1, failed);
+        // Exhaust local reference publication; allocation must not leak a
+        // registry entry or a permanent heap root when publication fails.
+        std::vector<JniReference> aliases;
+        for (int i = 0; i < 512; ++i) {
+            try { aliases.push_back(env.NewLocalRef(1, child_class)); }
+            catch (const JniReferenceError&) { break; }
+        }
+        REQUIRE(aliases.size() > 100);
+        CHECK_THROWS_AS(static_cast<void>(env.AllocObject(1, child_class)), JniReferenceError);
+        for (auto alias : aliases) env.DeleteLocalRef(1, alias);
+        static_cast<void>(vm.CollectGarbage("alloc-object-publication-failure"));
+        const auto recovered = allocate(child_class);
+        REQUIRE_FALSE(recovered.IsNull()); env.DeleteLocalRef(1, recovered);
+        CHECK_THROWS_AS(static_cast<void>(env.AllocObject(1, JniReference{})), std::invalid_argument);
+        env.DeleteLocalRef(1, no_constructor);
+        memory.release(scratch, 256);
+        f.bridge.reset();
+        CHECK_THROWS_AS(static_cast<void>(env.AllocObject(1, child_class)), std::runtime_error);
+        env.DeleteLocalRef(1, child_class);
+    }
+}
+
+TEST_CASE("DVM-242 JNI allocation translates exhausted VM heap to a pending Java error") {
+    using namespace ogplay;
+    using namespace runtime;
+    using namespace runtime::dexvm;
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        constexpr std::uint64_t limit = 64 * 1024;
+        ApplicationProcess f(backend, std::nullopt, "application.dex",
+            {.initial_heap_target_bytes = limit, .heap_growth_limit_bytes = limit,
+             .maximum_heap_bytes = limit, .min_free_bytes = 0, .max_free_bytes = 0});
+        auto& vm = f.bridge->Vm(); auto& linker = vm.Linker(); auto& env = f.session->Environment();
+        const auto type = linker.ResolveDescriptor("Lfixture/AllocNoConstructor;");
+        const auto klass = f.bridge->PublishLocal(vm.Model().ClassObject(type));
+        REQUIRE_FALSE(vm.EnsureClassInitialized(type).exception.IsValid());
+        const auto array_type = linker.ResolveDescriptor("[B");
+        const auto occupied = vm.Model().AllocatedBytes();
+        REQUIRE(occupied + 32 < limit);
+        const auto padding = vm.Model().NewPrimitiveArray(array_type, JniPrimitiveKind::byte,
+                                                        static_cast<JniSize>(limit - occupied - 32));
+        const auto roots = vm.ProtectReferences(std::array{padding});
+        CHECK(env.AllocObject(1, klass).IsNull()); REQUIRE(env.ExceptionCheck(1));
+        const auto error = env.ExceptionOccurred(1); env.ExceptionClear(1);
+        CHECK(linker.Class(vm.Model().ObjectClass(f.bridge->FromReference(error))).descriptor == "Ljava/lang/OutOfMemoryError;");
+        env.DeleteLocalRef(1, error); env.DeleteLocalRef(1, klass);
     }
 }
 

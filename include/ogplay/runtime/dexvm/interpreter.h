@@ -479,6 +479,9 @@ public:
                             std::string_view field_name,
                             std::string_view field_descriptor,
                             std::uint64_t bits);
+    // API19 JNI raw allocation: class initialization, zero fields, no <init>.
+    // Java failures are returned in the outcome; select the caller context first.
+    [[nodiscard]] VmCallOutcome AllocateJniObject(DexClassId java_class);
     // Allocates an intrinsic-class instance (vm_instance form).
   [[nodiscard]] VmObjectRef
   NewIntrinsicInstance(std::string_view class_descriptor);

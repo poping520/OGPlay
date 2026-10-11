@@ -975,6 +975,11 @@ status = "complete"
 test = "tests/runtime/jni_guest_instance_calls_tests.cpp"
 note = "M8 WU-0367 让 NewObject 与 framework HLE 预注册 host object 共享会话级精确 class registry；GetObjectClass、IsInstanceOf 与 30 个 instance call 槽统一查询，FindClass 返回的 jclass 可作为 java.lang.Class receiver，错误对象明确失败"
 
+[runtime.jni_guest_alloc_object]
+status = "partial"
+test = "tests/runtime/jni_environment_tests.cpp: DVM-242; tests/runtime/jni_guest_bindings_tests.cpp: aggregate slot sets; tests/runtime/native_library_loader_tests.cpp: DVM-242"
+note = "DVM-242/ADR-0121：API19 AllocObject 由 JniEnvironment 显式 owner 回调委托 VM，在调用线程 context/锁内检查类、初始化并分配真实继承布局的零值实例；跳过实例构造器，无 native peer。JNI 字段、Java 回调、GC 与 local/global/weak 共用身份；abstract/interface/array/Class/primitive 类拒绝，clinit/OOME 返回 null 和真实 pending Java 异常。非法引用/无 VM 后端配置明确失败，发布失败清 registry、无永久堆根，退出撤销回调。双解释器真实 ARM JNI、引用生命周期/发布失败/堆预算及槽集合受检；跨平台与完整游戏未验收。"
+
 [runtime.jni_guest_object_call_void_compat]
 status = "complete"
 test = "tests/runtime/jni_guest_instance_calls_tests.cpp: guest JNI object-call void follows API 19 Dalvik behavior; Angry Birds run-apk smoke"

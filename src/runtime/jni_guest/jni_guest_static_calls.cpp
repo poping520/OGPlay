@@ -627,6 +627,12 @@ void BindJniGuestClassAndInstanceSlots(
                                            objects,
                                            [](JniGuestObjectRegistry*) {});
     dispatcher.BindEnvironment(
+        EnvironmentSlot("AllocObject"),
+        [&environment](const JniGuestCallFrame& frame) {
+            return EncodeResult(JniValue{environment.AllocObject(
+                frame.thread_id, JniReference{frame.registers[1]})}, JniTypeKind::object);
+        });
+    dispatcher.BindEnvironment(
         EnvironmentSlot("FindClass"),
         [&environment, &classes,
          &address_space](const JniGuestCallFrame& frame) {

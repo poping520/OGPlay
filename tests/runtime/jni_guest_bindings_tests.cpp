@@ -191,7 +191,7 @@ constexpr std::string_view kArrayTypes[]{
         "DeleteLocalRef", "IsSameObject", "NewLocalRef", "EnsureLocalCapacity",
         "GetJavaVM", "NewWeakGlobalRef", "DeleteWeakGlobalRef",
         "MonitorEnter", "MonitorExit", "FindClass", "GetMethodID",
-        "GetStaticMethodID", "GetObjectClass", "IsInstanceOf", "NewObject",
+        "GetStaticMethodID", "GetObjectClass", "IsInstanceOf", "AllocObject", "NewObject",
         "NewObjectV", "NewObjectA", "RegisterNatives", "UnregisterNatives",
         "GetFieldID", "GetStaticFieldID", "NewStringUTF", "GetStringUTFLength",
         "GetStringUTFChars", "ReleaseStringUTFChars", "GetStringUTFRegion",
@@ -275,7 +275,7 @@ TEST_CASE("guest JNI aggregate binds the exact behavior-backed slot sets") {
     CHECK(Missing(expected_environment, bound_environment).empty());
     CHECK(Missing(bound_environment, expected_environment).empty());
     CHECK(bound_environment == expected_environment);
-    CHECK(bound_environment.size() == 218U);
+    CHECK(bound_environment.size() == 219U);
 
     const std::set<std::string> expected_java_vm{
         "AttachCurrentThread", "AttachCurrentThreadAsDaemon",

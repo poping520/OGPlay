@@ -1069,3 +1069,18 @@ ConnectivityManager 只保留有界 Java 查询和原版类型常量/范围算�
 替换服务传输；事实工厂调用原版构造/状态 setter，同步、复制与 Parcel 全部解释执行。每次查询新建快照，
 不让调用方修改影响平台目录。在线 provider、广播/监听、完整 ConnectivityService 与
 无线网络控制另属能力；验证见 [DVM-241](../tasks/dexvm/DVM-241.md)。
+
+## ADR-0121 · JNI AllocObject 由 VM 分配
+
+AllocObject 绑定只传递调用线程与强类型 jclass 引用；JniEnvironment 不依赖 VM，
+其显式分配回调由 integration owner 安装。回调在 VM 执行锁和调用线程 context 内
+执行，不在下层建立假对象、复制字段或通过 NewObject 运行实例构造器。
+VM 复用继承布局、类初始化、分配安全点/堆预算及原始零值实例；Class/abstract/
+interface/array/primitive 不可分配，按 API19 canAllocClass 发布 InstantiationException。
+clinit 与 OOME 保留真实 Java throwable，返回 null、置 JNI pending；未知类引用或
+没有分配后端明确失败，不伪造空成功。零值对象不自动创建需要构造/native 初始化的 peer。
+
+对象经既有 local reference 发布，JNI 字段/Java 回调及 GC 共用唯一 VM identity。
+发布失败移除 registry 映射，未发布实例无资源、无永久根，由常规 GC 回收。local/
+global/weak 生命周期沿用原机制；回调只在 guest worker/资源清理结束后撤销。
+该工作不改变 NewObject 的构造路径或扩大模拟器范围；验证见 [DVM-242](../tasks/dexvm/DVM-242.md)。

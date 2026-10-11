@@ -441,6 +441,24 @@ void JniEnvironment::SetReflectionHooks(JniReflectionHooks hooks) {
     reflection_hooks_ = std::move(hooks);
 }
 
+void JniEnvironment::SetObjectAllocationHook(ObjectAllocationHook hook) {
+    const std::scoped_lock lock(object_allocation_mutex_);
+    object_allocation_hook_ = std::move(hook);
+}
+
+JniReference JniEnvironment::AllocObject(std::uint64_t thread, JniReference java_class) {
+    RequireAllowed(thread, "AllocObject");
+    if (!references_.Resolve(thread, java_class).has_value())
+        throw std::invalid_argument("AllocObject requires a valid class reference");
+    ObjectAllocationHook hook;
+    {
+        const std::scoped_lock lock(object_allocation_mutex_);
+        hook = object_allocation_hook_;
+    }
+    if (!hook) throw std::runtime_error("JNI object allocation backend is unavailable");
+    return hook(thread, java_class);
+}
+
 JniMethodId JniEnvironment::FromReflectedMethod(std::uint64_t thread, JniReference object) {
     RequireAllowed(thread, "FromReflectedMethod");
     if (!references_.Resolve(thread, object).has_value())

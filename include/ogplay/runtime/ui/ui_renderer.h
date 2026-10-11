@@ -80,8 +80,9 @@ struct FixedTextMetrics final {
                                            std::int32_t width_px,
                                            std::int32_t max_lines, const UiFallbackFont* fallback = nullptr);
 
+enum class UiRenderPlane : std::uint8_t { all, normal, modal };
 [[nodiscard]] UiRenderList BuildUiRenderList(const UiTree& tree,
-                                             const UiBitmapCache& bitmaps);
+    const UiBitmapCache& bitmaps, UiRenderPlane plane = UiRenderPlane::all);
 [[nodiscard]] UiOverlayFrame RasterizeUiOverlay(
     const UiRenderList& commands, UiMetrics metrics);
 
@@ -89,7 +90,9 @@ class UiOverlayRenderer final {
 public:
     [[nodiscard]] const UiOverlayFrame& Render(UiTree& tree,
                                                const UiBitmapCache& bitmaps,
-                                               UiMetrics metrics);
+                                               UiMetrics metrics,
+                                               UiRenderPlane plane = UiRenderPlane::all,
+                                               bool force_rebuild = false);
     [[nodiscard]] std::uint64_t BuildCount() const { return build_count_; }
 
 private:
@@ -97,6 +100,7 @@ private:
     std::uint32_t generation_{};
     UiMetrics metrics_{};
     std::uint64_t build_count_{};
+    UiRenderPlane plane_{UiRenderPlane::all};
 };
 
 }  // namespace ogplay::runtime::ui

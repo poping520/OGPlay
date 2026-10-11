@@ -1136,3 +1136,22 @@ renderer、Surface、焦点或查询的子树边界；这些遍历每实例窗�
 
 支持普通内容/叠层与 onContentChanged，不引入完整 Decor/主题/ActionBar、远程窗口服务
 或透明多窗口。范围与验证见 [DVM-245](../tasks/dexvm/DVM-245.md)。
+
+## ADR-0125 · guest Dialog 协议与受控模态投影
+
+Activity 的托管 Dialog 缓存、Dialog/AlertDialog 字段、创建/准备/按钮与监听器协议归
+有界 guest Java，按 API19 保留调用时序；不加载完整 Activity/Dialog/PhoneWindow 的
+系统依赖闭包。原版 DialogInterface 及监听器选入 BootDex，平台 overlay 只承接 native。
+按钮与 show/cancel/dismiss 消息沿所属 Looper 排队，回调重入不作用于新一代呈现。
+
+native 从 Java 状态生成唯一 UiTree 的临时模态节点，使用现有文字/按钮光栅与几何。
+active presentation 持有 Dialog/Activity roots；关闭清理投影，不另建可变协议副本。
+输入仅投递最上层可见 modal，底层 Surface 保持；Activity 窗口焦点暂失，但无合成
+pause/stop 或 Surface 退役。owner 窗口隐藏则隐藏提示，实例结束/进程退出退役呈现；
+进程关闭不额外执行任意 guest dismiss 回调。
+模态根为 direct content-root child，UI 提供 normal/modal 选择；普通 UI 与 onTop 视频
+完成后再合成 modal，同一 draw dirty 证据传给两层 cache，避免遮挡或重复 scrim。
+
+查询 GET_RESOLVED_FILTER 只影响返回投影，不把已知缺席变成异常；服务信息仍来自
+封存目录。没有外部服务时诚实返回 null；不伪造商店、授权、购买或网络成功。
+范围与证据见 [DVM-246](../tasks/dexvm/DVM-246.md)。

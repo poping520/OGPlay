@@ -21,6 +21,7 @@ import android.content.Intent;
 import android.os.Bundle;
 import android.view.ContextThemeWrapper;
 import android.view.Window;
+import android.util.SparseArray;
 
 /** Bounded API19 client; platform methods are supplied by integration overlays. */
 public class Activity extends ContextThemeWrapper {
@@ -68,6 +69,56 @@ public class Activity extends ContextThemeWrapper {
             data = mResultData;
         }
         nativeFinish(code, data == null ? null : new Intent(data));
+    }
+
+    private static final class ManagedDialog {
+        Dialog mDialog;
+        Bundle mArgs;
+    }
+    private SparseArray<ManagedDialog> mManagedDialogs;
+
+    protected Dialog onCreateDialog(int id) { return null; }
+    protected Dialog onCreateDialog(int id, Bundle args) { return onCreateDialog(id); }
+    protected void onPrepareDialog(int id, Dialog dialog) { dialog.setOwnerActivity(this); }
+    protected void onPrepareDialog(int id, Dialog dialog, Bundle args) { onPrepareDialog(id, dialog); }
+
+    public final void showDialog(int id) { showDialog(id, null); }
+    public final boolean showDialog(int id, Bundle args) {
+        if (mManagedDialogs == null) mManagedDialogs = new SparseArray<ManagedDialog>();
+        ManagedDialog md = mManagedDialogs.get(id);
+        if (md == null) {
+            md = new ManagedDialog();
+            md.mDialog = onCreateDialog(id, args);
+            if (md.mDialog == null) return false;
+            md.mDialog.dispatchOnCreate(null);
+            mManagedDialogs.put(id, md);
+        }
+        md.mArgs = args;
+        onPrepareDialog(id, md.mDialog, args);
+        if (mManagedDialogs == null || mManagedDialogs.get(id) != md) return false;
+        md.mDialog.show();
+        return true;
+    }
+    public final void dismissDialog(int id) {
+        ManagedDialog md = mManagedDialogs == null ? null : mManagedDialogs.get(id);
+        if (md == null) throw new IllegalArgumentException("no dialog with id " + id + " was ever shown via Activity#showDialog");
+        md.mDialog.dismiss();
+    }
+    public final void removeDialog(int id) {
+        if (mManagedDialogs == null) return;
+        ManagedDialog md = mManagedDialogs.get(id);
+        if (md != null) {
+            md.mDialog.dismiss();
+            // A dismiss callback may replace the entry; do not remove its replacement.
+            if (mManagedDialogs.get(id) == md) mManagedDialogs.remove(id);
+        }
+    }
+    protected void onDestroy() {
+        SparseArray<ManagedDialog> dialogs = mManagedDialogs;
+        mManagedDialogs = null;
+        if (dialogs != null) {
+            for (int i = 0; i < dialogs.size(); i++) dialogs.valueAt(i).mDialog.dismiss();
+        }
     }
 
     private native void nativeStartActivityForResult(Intent intent, int requestCode, Bundle options);

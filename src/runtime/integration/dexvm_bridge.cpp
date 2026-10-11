@@ -162,6 +162,9 @@ void VisitAndroidSessionRoots(const DexVmAndroidContext& context,
     root(context.renderer_egl); root(context.renderer_display); root(context.renderer_config);
     root(context.renderer_context); root(context.renderer_surface); root(context.renderer_gl);
     root(context.content_view);
+    for (const auto& presentation : context.dialog_presentations) {
+        root(presentation.dialog); root(presentation.owner);
+    }
     root(context.window_surface_callback);
     root(context.window_surface_holder);
     root(context.window_input_callback);

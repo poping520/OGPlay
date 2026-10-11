@@ -498,7 +498,8 @@ struct OrchestratedApp final {
                                  interpreter_backend =
                                      ogplay::runtime::dexvm::InterpreterBackend::switch_dispatch,
                              const std::string& application_class = "android.app.Application",
-                             std::function<void()> pump_host_events = {}) {
+                             std::function<void()> pump_host_events = {},
+                             ogplay::runtime::ui::UiMetrics viewport = {64, 36}) {
         if (activity == "android.app.NativeActivity" || activity == "fixture.NativeTakeoverActivity") native_a = NativeActivityElf();
         context->apk_bytes = {
             std::byte{0x50}, std::byte{0x4b}, std::byte{0x03}, std::byte{0x04}};
@@ -546,8 +547,8 @@ struct OrchestratedApp final {
         request.dex_bytes = ReadDexFixture("application.dex");
         request.boot_dex_bytes = ogplay::test::ReadBootDex();
         request.context = context;
-        request.surface_width = 64;
-        request.surface_height = 36;
+        request.surface_width = static_cast<std::uint32_t>(viewport.width);
+        request.surface_height = static_cast<std::uint32_t>(viewport.height);
         request.maximum_ticks_per_call = UINT64_C(200000);
 #if defined(_WIN32)
         request.backend = {ogplay::gles::AngleRenderer::d3d11,
@@ -3565,6 +3566,104 @@ TEST_CASE("DVM-223 onStart launch and onCreate finish return before caller resum
         CHECK(f.CallStaticInt("Lfixture/ResultCaller;", "getResult") == 1);
         CHECK_FALSE(runtime::SessionExitRequested(*f.context));
         static_cast<void>(f.app->Stop());
+    }
+}
+
+TEST_CASE("DVM-246 ARM JNI Dialog preserves Surface owner focus modal pixels and window return") {
+    using namespace ogplay;
+    using namespace runtime::dexvm;
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        OrchestratedApp f("fixture.ResultCaller", true, false, {}, {}, true, backend,
+                          "android.app.Application", {}, {800, 480});
+        f.app->StartApplication();
+        REQUIRE(f.app->StartLauncherActivity().state == session::LifecycleRunState::running);
+        auto& bridge = f.app->DexVm(); auto& vm = bridge.Vm(); auto& linker = vm.Linker();
+        auto& lifecycle = f.app->ActivityLifecycle();
+        const auto owner = f.context->activity;
+        const auto call = [&](VmObjectRef object, const char* name, const char* signature, std::vector<VmValue> args = {}) {
+            const auto type = vm.Model().ObjectClass(object);
+            const auto index = linker.FindVtableIndex(type, name, signature);
+            REQUIRE(index.has_value()); args.insert(args.begin(), VmValue::Ref(object));
+            const auto result = vm.Call(linker.Class(type).vtable[*index], args);
+            REQUIRE_MESSAGE(!result.exception.IsValid(), result.exception_message); return result.value;
+        };
+        const auto construct = [&](VmObjectRef object, const char* signature, std::vector<VmValue> args) {
+            const auto init = linker.FindDirectMethod(vm.Model().ObjectClass(object), "<init>", signature);
+            REQUIRE(init.has_value()); args.insert(args.begin(), VmValue::Ref(object));
+            REQUIRE_FALSE(vm.Call(*init, args).exception.IsValid());
+        };
+        const auto surface = vm.NewIntrinsicInstance("Landroid/view/SurfaceView;");
+        const auto surface_root = vm.ProtectReferences(std::array{surface});
+        construct(surface, "(Landroid/content/Context;)V", {VmValue::Ref(owner)});
+        call(owner, "setContentView", "(Landroid/view/View;)V", {VmValue::Ref(surface)});
+        static_cast<void>(lifecycle.StepFrame());
+        const auto holder = call(surface, "getHolder", "()Landroid/view/SurfaceHolder;").ref;
+        const auto backing = call(holder, "getSurface", "()Landroid/view/Surface;").ref;
+        const auto builder = vm.NewIntrinsicInstance("Landroid/app/AlertDialog$Builder;");
+        const auto builder_root = vm.ProtectReferences(std::array{builder});
+        construct(builder, "(Landroid/content/Context;)V", {VmValue::Ref(owner)});
+        call(builder, "setTitle", "(Ljava/lang/CharSequence;)Landroid/app/AlertDialog$Builder;", {VmValue::Ref(vm.NewStringUtf8("Confirm"))});
+        call(builder, "setMessage", "(Ljava/lang/CharSequence;)Landroid/app/AlertDialog$Builder;", {VmValue::Ref(vm.NewStringUtf8("Visible modal"))});
+        call(builder, "setNeutralButton", "(Ljava/lang/CharSequence;Landroid/content/DialogInterface$OnClickListener;)Landroid/app/AlertDialog$Builder;",
+             {VmValue::Ref(vm.NewStringUtf8("OK")), VmValue::Ref(VmObjectRef{})});
+        const auto dialog = call(builder, "create", "()Landroid/app/AlertDialog;").ref;
+        auto& guest = bridge.Session(); auto& process = guest.Process(); auto& env = guest.Environment();
+        const auto memory = process.GuestMemoryAccess(); const auto scratch = memory.allocate(256);
+        env.PushLocalFrame(1, 32);
+        const auto ref = bridge.PublishLocal(dialog);
+        const auto klass = bridge.PublishLocal(vm.Model().ClassObject(vm.Model().ObjectClass(dialog)));
+        const auto invoke = [&](const char* name, std::array<std::uint32_t, 4> args) {
+            return process.Invoke({memory::GuestAddress{EnvironmentThunk(name)}, args, {}}).return_value;
+        };
+        const auto method = [&](const char* name, const char* signature) {
+            std::array<std::byte, 256> data{};
+            std::memcpy(data.data(), name, std::strlen(name) + 1);
+            std::memcpy(data.data() + 64, signature, std::strlen(signature) + 1); memory.write(scratch, data);
+            const auto id = invoke("GetMethodID", {process.GuestEnvironment().Value(), klass.Value(), scratch.Value(), scratch.Add(64).Value()});
+            REQUIRE(id != 0); REQUIRE_FALSE(env.ExceptionCheck(1)); return id;
+        };
+        const auto show = method("show", "()V");
+        const auto showing = method("isShowing", "()Z");
+        const auto motion_class = bridge.PublishLocal(vm.Model().ClassObject(linker.ResolveDescriptor("Landroid/view/MotionEvent;")));
+        for (const auto& [name, expected] : std::array{std::pair{"AXIS_X", 0U}, std::pair{"AXIS_Y", 1U}, std::pair{"AXIS_GENERIC_16", 47U}}) {
+            std::array<std::byte, 256> data{};
+            std::memcpy(data.data(), name, std::strlen(name) + 1); data[64] = std::byte{'I'}; memory.write(scratch, data);
+            const auto field = invoke("GetStaticFieldID", {process.GuestEnvironment().Value(), motion_class.Value(), scratch.Value(), scratch.Add(64).Value()});
+            REQUIRE(field != 0); REQUIRE_FALSE(env.ExceptionCheck(1));
+            CHECK(invoke("GetStaticIntField", {process.GuestEnvironment().Value(), motion_class.Value(), field, 0}) == expected);
+        }
+        static_cast<void>(invoke("CallVoidMethodA", {process.GuestEnvironment().Value(), ref.Value(), show, 0}));
+        REQUIRE_FALSE(env.ExceptionCheck(1));
+        CHECK(invoke("CallBooleanMethodA", {process.GuestEnvironment().Value(), ref.Value(), showing, 0}) == 1);
+        static_cast<void>(lifecycle.StepFrame());
+        CHECK_FALSE(f.context->window_has_focus.load());
+        CHECK(call(holder, "getSurface", "()Landroid/view/Surface;").ref == backing);
+        runtime::AndroidBoundaryFrame frame{.width=800, .height=480, .rgba8=std::vector<std::uint8_t>(800 * 480 * 4)};
+        for (std::size_t i = 0; i < frame.rgba8.size(); i += 4) { frame.rgba8[i + 2] = 255; frame.rgba8[i + 3] = 255; }
+        const auto composed = lifecycle.ComposePresentedFrame(frame);
+        CHECK(composed.rgba8[2] == 119); // Exactly one modal scrim, above the base producer.
+        REQUIRE(f.context->dialog_presentations.size() == 1);
+        const auto modal_root = f.context->dialog_presentations.front().root;
+        const auto intent = vm.NewIntrinsicInstance("Landroid/content/Intent;");
+        const auto intent_root = vm.ProtectReferences(std::array{intent}); construct(intent, "()V", {});
+        call(intent, "setClassName", "(Ljava/lang/String;Ljava/lang/String;)Landroid/content/Intent;",
+             {VmValue::Ref(vm.NewStringUtf8("fixture")), VmValue::Ref(vm.NewStringUtf8("fixture.ResultChild"))});
+        call(owner, "startActivity", "(Landroid/content/Intent;)V", {VmValue::Ref(intent)});
+        static_cast<void>(lifecycle.StepFrame());
+        CHECK_FALSE(f.context->ui_tree.IsVisible(modal_root));
+        CHECK_FALSE(runtime::HasAndroidModalDialog(*f.context));
+        call(f.context->activity, "finish", "()V"); static_cast<void>(lifecycle.StepFrame());
+        CHECK(f.context->activity == owner); CHECK(f.context->ui_tree.IsVisible(modal_root));
+        CHECK_FALSE(f.context->window_has_focus.load());
+        const auto dismiss = method("dismiss", "()V");
+        static_cast<void>(invoke("CallVoidMethodA", {process.GuestEnvironment().Value(), ref.Value(), dismiss, 0}));
+        REQUIRE_FALSE(env.ExceptionCheck(1));
+        static_cast<void>(lifecycle.StepFrame());
+        CHECK(f.context->window_has_focus.load()); CHECK(f.context->dialog_presentations.empty());
+        CHECK(call(holder, "getSurface", "()Landroid/view/Surface;").ref.IsValid());
+        static_cast<void>(vm.CollectGarbage("dialog-jni-owner"));
+        static_cast<void>(env.PopLocalFrame(1)); memory.release(scratch, 256);
+        static_cast<void>(f.app->Stop()); CHECK(f.context->dialog_presentations.empty());
     }
 }
 

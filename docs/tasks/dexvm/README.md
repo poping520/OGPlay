@@ -285,3 +285,5 @@ Scenario gate 与 profile 迁移）以 [`docs/state/CURRENT.md`](../../state/CUR
 - [DVM-236 · Activity finish 与进程关闭分离](DVM-236.md)
 
 - [DVM-245 · 稳定窗口内容容器](DVM-245.md)
+
+- [DVM-246 · 托管 Dialog 与有界模态提示](DVM-246.md)

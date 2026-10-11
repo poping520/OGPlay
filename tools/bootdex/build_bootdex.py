@@ -78,6 +78,8 @@ FRAMEWORK_JAVA_ROOT = ROOT / "src/guest/framework/java"
 FRAMEWORK_JAVA_NAMES = (
     "android/app/Activity.java",
     "android/app/ActivityManager.java",
+    "android/app/AlertDialog.java",
+    "android/app/Dialog.java",
     "android/app/Notification.java",
     "android/app/NotificationManager.java",
     "android/graphics/BitmapFactory.java",

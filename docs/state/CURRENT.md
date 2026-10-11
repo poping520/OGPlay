@@ -78,12 +78,18 @@
   画面/交互未核验。**保留缺口**：前置复现 f=25 退出后 guest_finalize 报
   `unknown guest thread id`，退出 1；最终单次未复现，不声明已消除。
   前置复现 SDK 另捕获 resolveService flags 未支持；此前崩溃报告触发过 LocaleData 初始化失败。
+  [DVM-246](../tasks/dexvm/DVM-246.md) 接通 managed Dialog/AlertDialog 有界模态显示及
+  合法服务查询投影标志；22 用例/1864 断言与 BootDex/载荷校验通过。最终 MCP 原 APK
+  f=160、guestFault=null、presented=2，已核验实际 Appstore required 提示；服务缺席
+  保持真实失败。点击推进后 **最新首错**：视频 Runnable 缺 getLayoutInflater()，dex_pc=12，
+  因此按钮→原应用退出未验收。输入依赖的 API19 MotionEvent 轴常量已对照原版补齐。
   证据 `.local/manifest-duplicate-fix-20261011/`、
   `.local/ndk-assets-fix-20261011/`、`.local/gles-mapbuffer-fix-20261011/`、
   `.local/debug-memory-fix-20261011/`、`.local/installed-applications-fix-20261011/`、
   `.local/connectivity-fix-20261011/`、`.local/alloc-object-fix-20261011/`、
   `.local/statfs-fix-20261011/`、`.local/bitmap-resource-fix-20261011/`、
-  `.local/image-bitmap-fix-20261011/`、`.local/window-content-fix-20261011/`；取证进程已退出。
+  `.local/image-bitmap-fix-20261011/`、`.local/window-content-fix-20261011/`、
+  `.local/dialog-fix-20261011/`；取证进程已退出。
 
 - **Angry Birds 2.3.0**：无 Profile、空沙盒运行 5000 呈现帧，滚动条方法解析错消失，
   未触发新致命首错；绘制与完整兼容未验收。见 [DVM-186](../tasks/dexvm/DVM-186.md)。

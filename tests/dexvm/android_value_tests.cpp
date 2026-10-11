@@ -3985,6 +3985,9 @@ TEST_CASE("DVM-112 resolveService distinguishes absent candidates from unsupport
         fail(query(intent));  // Missing inventory is not an empty installed-service list.
         f.context->service_inventory_known = true;
         absent();
+        const auto filtered = query(intent, 0x40);
+        REQUIRE_FALSE(filtered.exception.IsValid());
+        CHECK_FALSE(filtered.value.ref.IsValid());
         f.context->service_components = {
             {"example.Plain", true, {}},
             {"example.Other", true, {{{"example.OTHER"}, {}, false}}},
@@ -3997,6 +4000,7 @@ TEST_CASE("DVM-112 resolveService distinguishes absent candidates from unsupport
         f.context->service_components.push_back(
             {"example.Candidate", true, {{{"example.SERVICE"}, {"example.EXTRA"}, false}}});
         fail(query(intent));  // An Intent without categories can match a filter with categories.
+        fail(query(intent, 0x40));  // Projection flags do not pretend a positive match is absent.
         f.context->service_components.back().intent_filters[0].has_data = true;
         fail(query(intent));  // Data constraints cannot be silently discarded.
         f.context->application_enabled = false;
@@ -4026,7 +4030,7 @@ TEST_CASE("DVM-112 resolveService distinguishes absent candidates from unsupport
         f.On(intent, "setComponent", "(Landroid/content/ComponentName;)Landroid/content/Intent;", {VmValue::Ref(VmObjectRef{})});
         static_cast<void>(f.vm.CollectGarbage());
         absent();
-        CHECK(f.ledger.Unimplemented()[0].count == 11);
+        CHECK(f.ledger.Unimplemented()[0].count == 12);
     }
 }
 

@@ -311,6 +311,17 @@ struct DexVmAndroidContext final {
   // window root, including its stable guest content container and all children.
   std::uint64_t ui_content_revision{};
   std::uint32_t ui_content_mutation_depth{};
+  struct DialogPresentation final {
+    dexvm::VmObjectRef dialog, owner;
+    ui::UiNodeId root;
+    std::array<std::optional<ui::UiNodeId>, 3> buttons;
+    std::optional<ui::UiNodeId> prior_focus;
+    bool visible{true};
+  };
+  std::vector<DialogPresentation> dialog_presentations;
+  bool dialog_pointer_active{};
+  std::optional<ui::UiNodeId> dialog_pressed_button;
+  std::unordered_set<std::int32_t> dialog_keys_down;
   // A managed lifecycle sizes a newly installed content root before exposing
   // its SurfaceHolder callbacks at the next owner-thread traversal.
   bool defer_content_surface_callbacks{};
@@ -734,6 +745,7 @@ struct DexVmAndroidContext final {
   std::uint32_t ui_bitmap_config_height{};
   std::uint32_t ui_bitmap_config_density_bits{};
   ui::UiOverlayRenderer ui_overlay_renderer;
+  ui::UiOverlayRenderer ui_modal_renderer;
   std::unordered_map<ui::UiNodeId, ui::Size, ui::UiNodeIdHash> ui_notified_view_sizes;
   std::unordered_map<ui::UiNodeId, bool, ui::UiNodeIdHash> ui_notified_window_focus;
   std::optional<ui::Size> ui_layout_metrics;
@@ -1002,6 +1014,15 @@ FindViewUiNode(const DexVmAndroidContext &context, std::uint64_t view_handle);
 [[nodiscard]] dexvm::VmObjectRef
 ViewObjectForUiNode(const DexVmAndroidContext &context, ui::UiNodeId node);
 void ResetViewUiState(DexVmAndroidContext &context);
+[[nodiscard]] bool HasAndroidModalDialog(const DexVmAndroidContext& context);
+void SynchronizeAndroidDialogs(DexVmAndroidContext& context);
+void ReleaseAndroidDialogs(DexVmAndroidContext& context);
+void DismissAndroidActivityDialogs(dexvm::Interpreter& vm, DexVmAndroidContext& context,
+    dexvm::VmObjectRef owner);
+[[nodiscard]] bool DispatchAndroidDialogInput(dexvm::Interpreter& vm,
+    DexVmAndroidContext& context, const AndroidBoundaryInput& input);
+[[nodiscard]] dexvm::VmObjectRef MakeAndroidKeyEvent(dexvm::Interpreter& vm,
+    const AndroidBoundaryInput& input);
 void RetireViewUiSubtree(DexVmAndroidContext& context, ui::UiNodeId node);
 [[nodiscard]] ui::UiNodeId ActivityContentRoot(DexVmAndroidContext& context,
     dexvm::VmObjectRef owner = dexvm::VmObjectRef{});

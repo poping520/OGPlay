@@ -32,6 +32,8 @@ NFC 的 [Java 客户端](java/android/nfc/MODULE.md) 只支持类型链接及无
 
 Activity 的 [Java 客户端](java/android/app/MODULE.md) 保存每实例结果字段及普通转发；
 两个 native 只提交平台启动/结束，返回栈与结果交付由 session 编排。
+Dialog/AlertDialog 和 managed Dialog 的缓存/字段/回调也在此客户端；native 仅投影
+有界模态 UI 与输入，不接入完整 Android WindowManager。
 
 NotificationManager 的普通 Context 字段、构造/from 与重载在 android.app Java 客户端；
 平台事实为发布禁用、通知集合已知为空。取消正常完成，发布失败；无系统通知服务。

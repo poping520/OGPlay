@@ -168,7 +168,7 @@ using Glyph = std::array<std::uint8_t, 7>;
 
 void AppendNode(const UiTree& tree, const UiNodeId id,
                 const UiBitmapCache& bitmaps, UiRenderList& out,
-                const bool parent_clips_children) {
+                const bool parent_clips_children, UiRenderPlane plane) {
     const auto& node = *tree.Get(id);
     if (!node.window_visible || node.visibility != Visibility::Visible) return;
     // Parent clipChildren clips this view to its bounds (AOSP View.draw).
@@ -176,7 +176,7 @@ void AppendNode(const UiTree& tree, const UiNodeId id,
     if (clip_to_bounds) {
         out.emplace_back(PushClip{node.screen_frame});
     }
-    if (node.background_color.has_value()) {
+    if (node.background_color.has_value() && !(id == tree.Root() && plane == UiRenderPlane::modal)) {
         out.emplace_back(DrawSolidRect{node.screen_frame,
                                        *node.background_color,
                                        node.alpha * node.background_alpha});
@@ -297,7 +297,9 @@ void AppendNode(const UiTree& tree, const UiNodeId id,
         out.emplace_back(PushClip{ContentBox(node)});
     }
     for (const auto child : node.children) {
-        AppendNode(tree, child, bitmaps, out, node.clip_children);
+        if (id == tree.Root() && plane != UiRenderPlane::all &&
+            tree.Get(child)->modal_layer != (plane == UiRenderPlane::modal)) continue;
+        AppendNode(tree, child, bitmaps, out, node.clip_children, plane);
     }
     if (clip_children_to_padding) {
         out.emplace_back(PopClip{});
@@ -462,11 +464,11 @@ std::u16string WrapFixedText(const std::u16string_view text,
 }
 
 UiRenderList BuildUiRenderList(const UiTree& tree,
-                               const UiBitmapCache& bitmaps) {
+                               const UiBitmapCache& bitmaps, UiRenderPlane plane) {
     UiRenderList commands;
     // The window clips the content root to its bounds, matching default
     // parent clipChildren=true.
-    AppendNode(tree, tree.Root(), bitmaps, commands, true);
+    AppendNode(tree, tree.Root(), bitmaps, commands, true, plane);
     return commands;
 }
 
@@ -635,15 +637,17 @@ UiOverlayFrame RasterizeUiOverlay(const UiRenderList& commands,
 
 const UiOverlayFrame& UiOverlayRenderer::Render(UiTree& tree,
                                                 const UiBitmapCache& bitmaps,
-                                                const UiMetrics metrics) {
+                                                const UiMetrics metrics,
+                                                UiRenderPlane plane, bool force_rebuild) {
     const auto* root = tree.Get(tree.Root());
-    const bool rebuild = generation_ != tree.Generation() ||
+    const bool rebuild = force_rebuild || plane_ != plane || generation_ != tree.Generation() ||
                          metrics_.width != metrics.width ||
                          metrics_.height != metrics.height || root->draw_dirty;
     if (rebuild) {
-        cached_ = RasterizeUiOverlay(BuildUiRenderList(tree, bitmaps), metrics);
+        cached_ = RasterizeUiOverlay(BuildUiRenderList(tree, bitmaps, plane), metrics);
         generation_ = tree.Generation();
         metrics_ = metrics;
+        plane_ = plane;
         ++build_count_;
         tree.ClearDrawDirty();
     }

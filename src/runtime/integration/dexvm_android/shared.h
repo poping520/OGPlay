@@ -12,6 +12,12 @@ namespace dx = dexvm;
 
 using Decl = dexvm::IntrinsicClassDecl;
 using Context = std::shared_ptr<DexVmAndroidContext>;
+void ShowAndroidDialog(dx::IntrinsicContext& call, const Context& context,
+    dx::IntrinsicFieldHandle generation);
+void DismissAndroidDialog(DexVmAndroidContext& context, dx::VmObjectRef dialog);
+void SetAndroidDialogVisible(DexVmAndroidContext& context, dx::VmObjectRef dialog, bool visible);
+[[nodiscard]] std::int32_t FocusAndroidDialog(DexVmAndroidContext& context,
+    dx::VmObjectRef dialog, std::int32_t direction);
 [[nodiscard]] std::uint32_t ResolveTextAppearanceAttribute(dx::Interpreter& vm,
     DexVmAndroidContext& context, dx::VmObjectRef owner, std::uint32_t attribute);
 [[nodiscard]] dx::VmValue StartAndroidActivity(dx::IntrinsicContext& call,

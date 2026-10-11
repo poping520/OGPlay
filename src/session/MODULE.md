@@ -125,6 +125,11 @@ Dex activity 每帧在 guest 回调前泵送主 Looper，到帧尾只通过
   content_view/record.content 仅作首个内容 View 投影。内容代次在尺寸回调后核对，
   重入变更延后新树交付。每 live View 缓存已交付的窗口焦点，追加/布局不重复通知
   原子树，detach/退役清理缓存；窗口焦点事实仍由 lifecycle 唯一持有。
+  模态输入在 Java View/NativeActivity 转发之前捕获，不进入底层游戏。实际宿主焦点请求
+  与 Activity 有效窗口焦点分离，visible modal 暂使 Activity 失焦，不合成 pause/stop 或
+  Surface 退役。合成顺序为普通视频→普通 UI→onTop 视频→模态 UI；两层缓存共用变更
+  证据，不重复叠加 scrim，无 modal 时跳过额外合成。实例结束与进程关闭分别按 Dialog
+  客户端及投影退役协议处理。
   holder/callback 保留，恢复同一实例；native window callback 与播放中的视频调用方
   返回仍受限。已有 startActivity+finish 可退役旧渲染实例。
   intrinsic renderer 按 View 持有稳定 runtime/worker，后台回调不读前台 renderer 投影。

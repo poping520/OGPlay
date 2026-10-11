@@ -68,6 +68,12 @@ struct AndroidKeyguardState final {
 
 using AndroidKeyguardStateProvider = std::function<AndroidKeyguardState()>;
 
+// Explicit bounded guest topology: a disabled logical WiFi network type,
+// independent of host adapters. Online states require a separate capability.
+struct AndroidOfflineConnectivity final {
+  bool wifi_type_supported{true};
+};
+
 // Process-visible logical devices, independent of SDL's host device ids.
 inline constexpr std::int32_t kAndroidKeyboardDeviceId = -1;
 inline constexpr std::int32_t kAndroidTouchDeviceId = 0;
@@ -317,6 +323,7 @@ struct DexVmAndroidContext final {
   // by publishing both an explicit policy and a narrow injected transport.
   dexvm::NetworkPolicy network_policy;
   dexvm::NetworkTransport *network_transport{};
+  std::optional<AndroidOfflineConnectivity> offline_connectivity{AndroidOfflineConnectivity{}};
 
   // SharedPreferences, keyed by prefs file name. Loaded from and written
   // back to /data/data/<pkg>/shared_prefs/<name>.xml through the VFS, so

@@ -2674,6 +2674,56 @@ TEST_CASE("DVM-240 ARM JNI installed applications expose the session APK and rej
     }
 }
 
+TEST_CASE("DVM-241 ARM JNI connectivity query returns the original disconnected value") {
+    using namespace ogplay;
+    using namespace runtime::dexvm;
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        OrchestratedApp f("fixture.DelayedContentActivity", true, false, {}, {}, true, backend);
+        f.context->granted_permissions.insert("android.permission.ACCESS_NETWORK_STATE");
+        auto& bridge = f.app->DexVm(); auto& vm = bridge.Vm(); auto& linker = vm.Linker();
+        auto& process = f.app->NativeProcess(); auto& env = process.Environment();
+        const auto memory = process.GuestMemoryAccess();
+        const auto scratch = memory.allocate(256);
+        const auto manager = vm.NewIntrinsicInstance("Landroid/net/ConnectivityManager;");
+        const auto roots = vm.ProtectReferences(std::array{manager});
+        env.PushLocalFrame(1, 32);
+        const auto reference = bridge.PublishLocal(manager);
+        const auto invoke = [&](const char* name, std::array<std::uint32_t, 4> args) {
+            return process.Invoke({memory::GuestAddress{EnvironmentThunk(name)}, args, {}}).return_value;
+        };
+        const auto method_id = [&](VmObjectRef object, const char* name, const char* signature) {
+            std::array<std::byte, 256> bytes{};
+            std::memcpy(bytes.data(), name, std::strlen(name) + 1);
+            std::memcpy(bytes.data() + 64, signature, std::strlen(signature) + 1);
+            bytes[128] = std::byte{1}; // jvalue networkType=TYPE_WIFI
+            memory.write(scratch, bytes);
+            const auto clazz = bridge.PublishLocal(vm.Model().ClassObject(vm.Model().ObjectClass(object)));
+            const auto method = invoke("GetMethodID", {process.GuestEnvironment().Value(), clazz.Value(),
+                                                       scratch.Value(), scratch.Add(64).Value()});
+            REQUIRE_FALSE(env.ExceptionCheck(1)); REQUIRE(method != 0);
+            return method;
+        };
+        const auto query = method_id(manager, "getNetworkInfo", "(I)Landroid/net/NetworkInfo;");
+        const auto info_reference = runtime::JniReference{invoke("CallObjectMethodA", {
+            process.GuestEnvironment().Value(), reference.Value(), query, scratch.Add(128).Value()})};
+        REQUIRE_FALSE(env.ExceptionCheck(1));
+        const auto info = bridge.FromReference(info_reference);
+        REQUIRE(info.IsValid()); CHECK(linker.Class(vm.Model().ObjectClass(info)).is_boot_dex);
+        const auto connected = method_id(info, "isConnected", "()Z");
+        CHECK(invoke("CallBooleanMethodA", {process.GuestEnvironment().Value(), info_reference.Value(), connected, 0}) == 0);
+        REQUIRE_FALSE(env.ExceptionCheck(1));
+        f.context->granted_permissions.clear();
+        CHECK(invoke("CallObjectMethodA", {process.GuestEnvironment().Value(), reference.Value(), query,
+                                          scratch.Add(128).Value()}) == 0);
+        REQUIRE(env.ExceptionCheck(1));
+        const auto exception = env.ExceptionOccurred(1); env.ExceptionClear(1);
+        CHECK(linker.Class(vm.Model().ObjectClass(bridge.FromReference(exception))).descriptor == "Ljava/lang/SecurityException;");
+        static_cast<void>(env.PopLocalFrame(1, runtime::JniReference{}));
+        memory.release(scratch, 256);
+        static_cast<void>(f.app->Stop());
+    }
+}
+
 TEST_CASE("DVM-221 pixel formats use API19 stride and native packed layout") {
     using namespace ogplay;
     OrchestratedApp f("fixture.DelayedContentActivity", true, false);

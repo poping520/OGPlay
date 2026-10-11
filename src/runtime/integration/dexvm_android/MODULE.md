@@ -326,6 +326,11 @@ Java GLES/EGL 通过 session managed 冷入口复用 [native boundary](../../bou
   不支持，边界见 ADR-0092/0093。
 - 网络使用 core policy/transport，默认离线；Connectivity/Wifi 只发配置事实，不探测 host
   网络/DNS/代理/证书。传感器/电话只返回 API 允许缺席。
+  offline_connectivity 明确默认支持断开的逻辑 WiFi 类型，可声明类型缺席；对应
+  NetworkInfo 为原版独立快照、DISCONNECTED/不可用，活动网络 null、Wifi 禁用。
+  网络查询要求 ACCESS_NETWORK_STATE；缺状态事实或 online policy 记账抛 UOE，
+  不支持类型按 API19 返回 null。完整值/枚举/Parcel 与范围算法在 BootDex；native
+  只校验事实并调用原构造/setter，在线 provider、事件和无线控制另属能力。
   Sensor/SensorEvent/监听接口和 SensorManager 普通方法归 BootDex；Context 的 sensor
   单例先执行 LocalSensorManager 原构造器。唯一 native 设备边界提供空目录、注册 false
   与无登记注销；Legacy 私有旋转查询使用 managed viewport 固定 ROTATION_0，不建 WMS。

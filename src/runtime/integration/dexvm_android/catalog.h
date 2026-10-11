@@ -122,9 +122,6 @@ Declare_android_location_LocationManager(const Context &context);
 [[nodiscard]] Decl Declare_android_media_SoundPoolImpl(const Context &context);
 [[nodiscard]] Decl
 Declare_android_net_ConnectivityManager(const Context &context);
-[[nodiscard]] Decl
-Declare_android_net_NetworkInfo_State(const Context &context);
-[[nodiscard]] Decl Declare_android_net_NetworkInfo(const Context &context);
 [[nodiscard]] Decl Declare_android_net_wifi_WifiInfo(const Context &context);
 [[nodiscard]] Decl
 Declare_android_net_wifi_WifiManager_WifiLock(const Context &context);

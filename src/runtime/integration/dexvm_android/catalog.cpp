@@ -201,8 +201,6 @@ AndroidIntrinsicCatalog(const std::shared_ptr<DexVmAndroidContext> &context) {
       Declare_android_media_MediaPlayer(context),
       Declare_android_media_SoundPoolImpl(context),
       Declare_android_net_ConnectivityManager(context),
-      Declare_android_net_NetworkInfo_State(context),
-      Declare_android_net_NetworkInfo(context),
       Declare_android_net_wifi_WifiInfo(context),
       Declare_android_net_wifi_WifiManager_WifiLock(context),
       Declare_android_net_wifi_WifiManager_MulticastLock(context),

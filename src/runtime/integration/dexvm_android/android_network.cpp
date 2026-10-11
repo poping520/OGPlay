@@ -4,53 +4,75 @@
 #include "catalog.h"
 
 namespace ogplay::runtime::android_intrinsics {
+namespace {
+const AndroidOfflineConnectivity& RequireOfflineConnectivity(
+    dx::IntrinsicContext& call, const Context& context, bool network_permission) {
+    if (network_permission &&
+        !context->granted_permissions.contains("android.permission.ACCESS_NETWORK_STATE"))
+        throw dx::VmJavaThrow{"Ljava/lang/SecurityException;", "ACCESS_NETWORK_STATE is required"};
+    if (!context->offline_connectivity || context->network_policy.enabled ||
+        call.vm.Network().Policy().enabled) {
+        if (auto* ledger = call.vm.Ledger())
+            ledger->RecordUnimplemented("dexvm.connectivity_offline", 0);
+        throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
+            "offline connectivity facts are absent or an online policy requires a separate state provider"};
+    }
+    return *context->offline_connectivity;
+}
+
+// The SDK compile stubs hide these constructors/setters. The native fact
+// factory invokes the original BootDex methods; it does not reimplement them.
+dx::VmObjectRef NewOfflineWifiInfo(dx::IntrinsicContext& call) {
+    auto& vm = call.vm;
+    auto& linker = vm.Linker();
+    const auto propagate = [&](const dx::VmCallOutcome& outcome) {
+        if (outcome.exception.IsValid())
+            throw dx::VmJavaThrow{linker.Class(outcome.exception_class).descriptor,
+                                 outcome.exception_message, outcome.exception};
+    };
+    const auto type = linker.ResolveDescriptor("Landroid/net/NetworkInfo;");
+    propagate(vm.EnsureClassInitialized(type));
+    const auto info = vm.NewIntrinsicInstance("Landroid/net/NetworkInfo;");
+    const auto root = vm.ProtectReferences(std::array{info});
+    const auto type_name = vm.NewStringUtf8("WIFI");
+    const auto type_name_root = vm.ProtectReferences(std::array{type_name});
+    const auto subtype_name = vm.NewStringUtf8("");
+    const auto strings_root = vm.ProtectReferences(std::array{subtype_name});
+    const auto constructor = linker.FindDirectMethod(type, "<init>", "(IILjava/lang/String;Ljava/lang/String;)V");
+    if (!constructor)
+        throw dx::DexVmError(dx::DexVmErrorReason::internal_invariant, "NetworkInfo constructor is unavailable");
+    propagate(vm.Call(*constructor, std::array{dx::VmValue::Ref(info), dx::VmValue::Int(1),
+        dx::VmValue::Int(0), dx::VmValue::Ref(type_name), dx::VmValue::Ref(subtype_name)}));
+    const auto detailed_type = linker.ResolveDescriptor("Landroid/net/NetworkInfo$DetailedState;");
+    propagate(vm.EnsureClassInitialized(detailed_type));
+    const auto field = linker.FindFieldRecursive(detailed_type, "DISCONNECTED", "Landroid/net/NetworkInfo$DetailedState;");
+    if (!field)
+        throw dx::DexVmError(dx::DexVmErrorReason::internal_invariant, "NetworkInfo state is unavailable");
+    const auto disconnected = dx::VmObjectRef{linker.Class(detailed_type).static_storage[linker.Field(*field).slot]};
+    static_cast<void>(CallAndroidMethod(vm, info, "setDetailedState",
+        "(Landroid/net/NetworkInfo$DetailedState;Ljava/lang/String;Ljava/lang/String;)V",
+        {dx::VmValue::Ref(disconnected), dx::VmValue::Ref(dx::VmObjectRef{}), dx::VmValue::Ref(dx::VmObjectRef{})}));
+    static_cast<void>(CallAndroidMethod(vm, info, "setIsAvailable", "(Z)V", {dx::VmValue::Int(0)}));
+    return info;
+}
+} // namespace
 
 Decl Declare_android_net_ConnectivityManager(const Context& context) {
-    static_cast<void>(context);
-    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/net/ConnectivityManager;", "Ljava/lang/Object;");
-    builder.FinalMethod("getActiveNetworkInfo", "()Landroid/net/NetworkInfo;",
-        [](dx::IntrinsicContext&) {
-            // Truthful offline fact: no active network (documented null).
+    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/net/ConnectivityManager;");
+    builder.DirectMethod("nativeRequireOffline", "()V", [context](dx::IntrinsicContext& call) {
+        static_cast<void>(RequireOfflineConnectivity(call, context, true));
+        return dx::VmValue::Void();
+    }, dx::kAccPrivate | dx::kAccNative);
+    builder.DirectMethod("nativeGetNetworkInfo", "(I)Landroid/net/NetworkInfo;", [context](dx::IntrinsicContext& call) {
+        const auto& facts = RequireOfflineConnectivity(call, context, true);
+        if (call.arguments[0].AsInt() != 1 || !facts.wifi_type_supported)
             return dx::VmValue::Ref(dx::VmObjectRef{});
-        });
-    builder.FinalMethod("getNetworkInfo", "(I)Landroid/net/NetworkInfo;",
-        [](dx::IntrinsicContext&) {
-            // No network of any type is connected on this platform.
-            return dx::VmValue::Ref(dx::VmObjectRef{});
-        });
+        return dx::VmValue::Ref(NewOfflineWifiInfo(call));
+    }, dx::kAccPrivate | dx::kAccNative);
     return std::move(builder).Build();
 }
 
-}  // namespace ogplay::runtime::android_intrinsics
-
-
-// ---- migrated from android_net_NetworkInfo_State.cpp ----
-#include "catalog.h"
-
-namespace ogplay::runtime::android_intrinsics {
-
-Decl Declare_android_net_NetworkInfo_State(const Context& context) {
-    static_cast<void>(context);
-    return dx::IntrinsicEnumBuilder(
-               "Landroid/net/NetworkInfo$State;", {"CONNECTED"})
-        .Build();
-}
-
-}  // namespace ogplay::runtime::android_intrinsics
-
-
-// ---- migrated from android_net_NetworkInfo.cpp ----
-#include "catalog.h"
-
-namespace ogplay::runtime::android_intrinsics {
-
-Decl Declare_android_net_NetworkInfo(const Context& context) {
-    static_cast<void>(context);
-    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/net/NetworkInfo;", "Ljava/lang/Object;");
-    return std::move(builder).Build();
-}
-
-}  // namespace ogplay::runtime::android_intrinsics
+} // namespace ogplay::runtime::android_intrinsics
 
 
 // ---- migrated from android_net_wifi_WifiInfo.cpp ----
@@ -148,18 +170,22 @@ Decl Declare_android_net_wifi_WifiManager_MulticastLock(const Context& context) 
 }
 
 Decl Declare_android_net_wifi_WifiManager(const Context& context) {
-    static_cast<void>(context);
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/net/wifi/WifiManager;", "Ljava/lang/Object;");
     builder.FinalMethod("isWifiEnabled", "()Z",
-        [](dx::IntrinsicContext&) { return dx::VmValue::Int(0); });
-    builder.FinalMethod("getWifiState", "()I", [](dx::IntrinsicContext&) {
+        [context](dx::IntrinsicContext& call) {
+            static_cast<void>(RequireOfflineConnectivity(call, context, false));
+            return dx::VmValue::Int(0);
+        });
+    builder.FinalMethod("getWifiState", "()I", [context](dx::IntrinsicContext& call) {
+        static_cast<void>(RequireOfflineConnectivity(call, context, false));
         return dx::VmValue::Int(1);  // WIFI_STATE_DISABLED
     });
     builder.FinalMethod("setWifiEnabled", "(Z)Z", [](dx::IntrinsicContext&) {
         return dx::VmValue::Int(0);  // There is no radio to enable.
     });
     builder.FinalMethod("getConnectionInfo", "()Landroid/net/wifi/WifiInfo;",
-        [](dx::IntrinsicContext&) {
+        [context](dx::IntrinsicContext& call) {
+            static_cast<void>(RequireOfflineConnectivity(call, context, false));
             return dx::VmValue::Ref(dx::VmObjectRef{});
         });
     return std::move(builder).Build();

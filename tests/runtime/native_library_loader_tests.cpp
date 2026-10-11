@@ -2493,6 +2493,46 @@ TEST_CASE("DVM-221 real ARM NDK Bitmap shares Java pixels and survives GC and re
     }
 }
 
+TEST_CASE("Android app process registers the last Activity theme and preserves alias snapshots") {
+    using namespace ogplay;
+    runtime::VirtualFileSystem filesystem;
+    core::CapabilityLedger ledger;
+    core::Logger logger;
+    const auto libc = LibcElf();
+    const runtime::BionicModuleSource system{"libc.so", libc};
+    session::AndroidAppProcessRequest request;
+    request.manifest = AppManifest("fixture.DelayedContentActivity");
+    request.manifest.application_theme = 0x01030007U;
+    auto& first = request.manifest.activity_components.front();
+    first.theme = 0x7f030001U;
+    auto alias = first;
+    alias.kind = loader::AndroidManifestComponentKind::activity_alias;
+    alias.name = "fixture.Alias";
+    alias.target_activity = first.name;
+    alias.intent_filters.clear();
+    auto last = first;
+    last.theme = 0x7f030002U;
+    last.intent_filters.clear();
+    request.manifest.activity_components.push_back(alias);
+    request.manifest.activity_components.push_back(last);
+    last.theme.reset();
+    last.name = "fixture.DefaultTheme";
+    request.manifest.activity_components.push_back(last);
+    request.system_libraries = std::span{&system, 1};
+    request.dex_bytes = ReadDexFixture("application.dex");
+    request.boot_dex_bytes = test::ReadBootDex();
+    request.context = std::make_shared<runtime::DexVmAndroidContext>();
+    request.platform.android_id = "0123456789abcdef";
+    request.filesystem = &filesystem;
+    request.ledger = &ledger;
+    request.logger = &logger;
+    auto app = session::AndroidAppProcess::Create(std::move(request));
+    CHECK(app->Context()->activity_themes.at("fixture.DelayedContentActivity") == 0x7f030002U);
+    CHECK(app->Context()->activity_themes.at("fixture.Alias") == 0x7f030001U);
+    CHECK(app->Context()->activity_themes.at("fixture.DefaultTheme") == 0x01030007U);
+    static_cast<void>(app->Stop());
+}
+
 TEST_CASE("DVM-219 pinned tzdata serves real Bionic UTC and Shanghai queries") {
     using namespace ogplay;
     runtime::VirtualFileSystem filesystem;

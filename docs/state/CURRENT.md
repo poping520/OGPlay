@@ -53,6 +53,11 @@
   macOS 原 APK、无 Profile/无 survey、隔离沙盒完成首帧，进入 TermsActivity 并退出 0；
   后续帧、交互及完整兼容未验收。证据 `.local/annotation-budget-analysis/`。
 
+- **Lili 1.06**：macOS Release 原 APK、无 Profile/无 survey 已越过重复 Activity 的 Manifest
+  拒载。通用修复保留声明/过滤器，组件查询及启动取最后配置，alias 封存继承配置；定向回归通过。
+  **当前首错**：`UE3JavaApp.<clinit>` 加载 native 库缺少强符号 `AAssetManager_fromJava`，
+  尚未进入首帧。证据 `.local/manifest-duplicate-fix-20261011/`；取证进程已退出。
+
 - **Angry Birds 2.3.0**：无 Profile、空沙盒运行 5000 呈现帧，滚动条方法解析错消失，
   未触发新致命首错；绘制与完整兼容未验收。见 [DVM-186](../tasks/dexvm/DVM-186.md)。
   首界面背景音乐已获用户确认。

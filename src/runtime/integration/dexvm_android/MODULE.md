@@ -42,6 +42,8 @@ content/os/view/graphics/gl/media/database/device 等 family TU 同址。shared.
   当前 APK 内匹配 action/category、无 data/type、含 DEFAULT 的唯一 enabled Activity。
   零匹配抛 ActivityNotFoundException，多匹配/潜在 data 匹配明确失败。alias 保留组件身份、
   实例化 target；不支持跨包 resolver/chooser/Instrumentation/ActivityManager。
+  重复声明的过滤器独立匹配，候选按组件名去重；组件查询与启动使用最后声明的配置，
+  alias 使用解析时继承的 launchMode，不从最终目标声明重新推导。
 - PackageManager 只发布当前 APK sealed Manifest/path/label/permission/feature；值对象来自
   BootDex，integration 写受检字段。meta-data 的 value 解码 ARSC 类型，resource 保留 ID；
   application 与组件 metaData 分别物化。nativeLibraryDir=/data/app-lib，selected-ABI 库只读挂 VFS。
@@ -52,7 +54,7 @@ content/os/view/graphics/gl/media/database/device 等 family TU 同址。shared.
 | getResourcesForApplication(String) | 仅当前包，共用 Context 的应用 Resources/AssetManager；未知包（含空串、system）NameNotFoundException，null NPE；不支持跨包与其他重载 |
 | getPackageArchiveInfo | 仅当前封存只读 APK，路径经 guest VFS 规范化；0/GET_ACTIVITIES/GET_DISABLED_COMPONENTS；归档 UID=-1、安装目录 null、安装时间 0；路径缺失/非普通文件返回 null，未登记归档/缺事实/未知 flags 记账失败 |
 | getPackageInfo | GET_ACTIVITIES/META_DATA/PERMISSIONS 组合；activities 仅请求时发布，按声明顺序保留 alias、默认排除禁用项，否则 null |
-| getActivityInfo/getReceiverInfo/getServiceInfo | 当前包完整组件名；0、GET_META_DATA、GET_DISABLED_COMPONENTS，按应用/组件启用状态过滤；缺失 NameNotFoundException |
+| getActivityInfo/getReceiverInfo/getServiceInfo | 当前包完整组件名；0、GET_META_DATA、GET_DISABLED_COMPONENTS，按应用/组件启用状态过滤；缺失 NameNotFoundException；同名 Activity 查询最后声明 |
 | getPermissionInfo | 仅 Manifest `<permission>` 定义；0/GET_META_DATA；仅请求或已授权未定义仍 NameNotFoundException |
 | queryBroadcastReceivers | flags=0、非空 action、同一 filter category 子集，不要求 DEFAULT；排除禁用项，同组件取首个匹配，API19 稳定排序 |
 | resolveService | 非空 action、无 component/data/type/categories、flags=0；仅能确定无候选，返回 null；潜在匹配或未知条件失败 |

@@ -6456,12 +6456,99 @@ TEST_CASE("DVM-195 getActivityInfo returns only the requested activity metadata"
         CHECK(f.vm.StringUtf8(library) == "activity");
         const auto app = field(full.value.ref, "applicationInfo", "Landroid/content/pm/ApplicationInfo;");
         CHECK(f.vm.StringUtf8(field(app, "nativeLibraryDir", "Ljava/lang/String;")) == "/data/app-lib");
+        component.launch_mode = 2;
+        component.meta_data.front().value = std::string("last declaration");
+        f.context->activity_components.push_back(component);
+        const auto duplicate = query(0x80);
+        REQUIRE_FALSE(duplicate.exception.IsValid());
+        const auto duplicate_metadata = field(duplicate.value.ref, "metaData", "Landroid/os/Bundle;");
+        CHECK(f.vm.StringUtf8(f.On(duplicate_metadata, "getString", "(Ljava/lang/String;)Ljava/lang/String;",
+            {VmValue::Ref(f.vm.NewStringUtf8("android.app.lib_name"))}).ref) == "last declaration");
+        const auto mode = f.linker.FindFieldRecursive(f.model.ObjectClass(duplicate.value.ref), "launchMode", "I");
+        REQUIRE(mode.has_value());
+        CHECK(f.model.InstanceSlots(duplicate.value.ref)[f.linker.Field(*mode).slot].bits == 2);
+        const auto package_info = f.On(manager, "getPackageInfo", "(Ljava/lang/String;I)Landroid/content/pm/PackageInfo;",
+            {VmValue::Ref(f.vm.NewStringUtf8("fixture")), VmValue::Int(1)}).ref;
+        const auto activities = field(package_info, "activities", "[Landroid/content/pm/ActivityInfo;");
+        REQUIRE(f.model.ArrayLength(activities) == 2);
+        CHECK(f.model.InstanceSlots(f.model.GetObjectElement(activities, 0))[f.linker.Field(*mode).slot].bits == 0);
+        CHECK(f.model.InstanceSlots(f.model.GetObjectElement(activities, 1))[f.linker.Field(*mode).slot].bits == 2);
         CHECK(query(1).exception.IsValid());
-        f.context->activity_components.front().enabled = false;
+        f.context->activity_components.back().enabled = false;
         CHECK(query(0).exception.IsValid());
         CHECK_FALSE(query(0x200).exception.IsValid());
+        auto alias = component;
+        alias.kind = ogplay::loader::AndroidManifestComponentKind::activity_alias;
+        alias.name = "fixture.Alias";
+        alias.target_activity = component.name;
+        alias.launch_mode = 1; // Snapshot differs from the registered target.
+        f.context->activity_components.push_back(alias);
+        const auto alias_name = f.New("Landroid/content/ComponentName;", "(Ljava/lang/String;Ljava/lang/String;)V",
+            {VmValue::Ref(f.vm.NewStringUtf8("fixture")), VmValue::Ref(f.vm.NewStringUtf8("fixture.Alias"))});
+        const auto alias_info = f.On(manager, "getActivityInfo", "(Landroid/content/ComponentName;I)Landroid/content/pm/ActivityInfo;",
+            {VmValue::Ref(alias_name), VmValue::Int(0)}).ref;
+        CHECK(f.model.InstanceSlots(alias_info)[f.linker.Field(*mode).slot].bits == 1);
         f.context->activity_inventory_known = false;
         CHECK(query(0).exception.IsValid());
+    }
+}
+
+TEST_CASE("duplicate Activity filters resolve once and launches use the registered configuration") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        AndroidValueVm f(backend);
+        f.context->package_name = "fixture";
+        f.context->activity_inventory_known = true;
+        ogplay::loader::AndroidManifestActivityComponent first;
+        first.name = "fixture.Main";
+        first.intent_filters = {{{"fixture.OPEN", "fixture.FIRST"},
+            {"android.intent.category.DEFAULT"}, false}};
+        auto last = first;
+        last.intent_filters.front().actions = {"fixture.OPEN", "fixture.LAST"};
+        f.context->activity_components = {first, last};
+        const auto base = f.New("Landroid/content/Context;");
+        const auto root = f.vm.ProtectReferences(std::array{base});
+        const auto launch = [&](const char* action, bool explicit_component) {
+            f.context->activity_commands.clear();
+            f.context->activity_switch_pending = false;
+            f.context->pending_activity_descriptor.clear();
+            const auto intent = f.New("Landroid/content/Intent;", "(Ljava/lang/String;)V",
+                {VmValue::Ref(f.vm.NewStringUtf8(action))});
+            const auto intent_root = f.vm.ProtectReferences(std::array{intent});
+            if (explicit_component)
+                f.On(intent, "setClassName", "(Ljava/lang/String;Ljava/lang/String;)Landroid/content/Intent;",
+                    {VmValue::Ref(f.vm.NewStringUtf8("fixture")),
+                     VmValue::Ref(f.vm.NewStringUtf8("fixture.Main"))});
+            return f.OnOutcome(base, "startActivity", "(Landroid/content/Intent;)V", {VmValue::Ref(intent)});
+        };
+        for (const auto* action : {"fixture.OPEN", "fixture.FIRST", "fixture.LAST"}) {
+            CHECK_FALSE(launch(action, false).exception.IsValid());
+            CHECK(f.context->pending_activity_descriptor == "Lfixture/Main;");
+            CHECK(f.context->pending_activity_component_name == "fixture.Main");
+        }
+        CHECK_FALSE(launch("fixture.OPEN", true).exception.IsValid());
+
+        // Keeping two declarations must not hide unsupported task reuse.
+        f.context->activity_components.back().launch_mode = 2;
+        for (const bool explicit_component : {false, true}) {
+            const auto blocked = launch("fixture.FIRST", explicit_component);
+            REQUIRE(blocked.exception.IsValid());
+            CHECK(f.linker.Class(blocked.exception_class).descriptor == "Ljava/lang/UnsupportedOperationException;");
+            CHECK_FALSE(f.context->activity_switch_pending);
+        }
+        f.context->activity_components.back().launch_mode = 0;
+        f.context->activity_components.back().enabled = false;
+        for (const bool explicit_component : {false, true}) {
+            const auto blocked = launch("fixture.OPEN", explicit_component);
+            REQUIRE(blocked.exception.IsValid());
+            CHECK(f.linker.Class(blocked.exception_class).descriptor == "Landroid/content/ActivityNotFoundException;");
+        }
+        f.context->activity_components.back().enabled = true;
+        auto other = last;
+        other.name = "fixture.Other";
+        f.context->activity_components.push_back(other);
+        const auto ambiguous = launch("fixture.OPEN", false);
+        REQUIRE(ambiguous.exception.IsValid());
+        CHECK(f.linker.Class(ambiguous.exception_class).descriptor == "Ljava/lang/UnsupportedOperationException;");
     }
 }
 

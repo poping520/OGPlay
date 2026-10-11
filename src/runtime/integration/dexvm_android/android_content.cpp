@@ -207,28 +207,19 @@ dx::VmValue StartAndroidActivity(dx::IntrinsicContext& call, const Context& cont
                   .ref);
           activity_class = component_name;
           if (context->activity_inventory_known) {
-            const auto declared = std::find_if(
-                context->activity_components.begin(),
-                context->activity_components.end(), [&](const auto &candidate) {
-                  return candidate.name == component_name;
-                });
+            const auto* declared = loader::FindAndroidManifestActivityComponent(
+                context->activity_components, component_name);
             if (!context->application_enabled ||
-                declared == context->activity_components.end() ||
+                declared == nullptr ||
                 !declared->enabled) {
               throw dx::VmJavaThrow{
                   "Landroid/content/ActivityNotFoundException;",
                   "No enabled Activity found for component " + component_name};
             }
             if (declared->target_activity) {
-              const auto target = std::find_if(
-                  context->activity_components.begin(),
-                  context->activity_components.end(),
-                  [&](const auto &candidate) {
-                    return candidate.kind ==
-                               loader::AndroidManifestComponentKind::activity &&
-                           candidate.name == *declared->target_activity;
-                  });
-              if (target == context->activity_components.end() ||
+              const auto* target = loader::FindAndroidManifestActivityComponent(
+                  context->activity_components, *declared->target_activity);
+              if (target == nullptr ||
                   !target->enabled)
                 throw dx::VmJavaThrow{
                     "Landroid/content/ActivityNotFoundException;",
@@ -305,17 +296,14 @@ dx::VmValue StartAndroidActivity(dx::IntrinsicContext& call, const Context& cont
           std::vector<const loader::AndroidManifestActivityComponent *> matches;
           if (context->application_enabled) {
             for (const auto &candidate : context->activity_components) {
-              if (!candidate.enabled)
+              const auto* registered = loader::FindAndroidManifestActivityComponent(
+                  context->activity_components, candidate.name);
+              if (!candidate.enabled || !registered->enabled)
                 continue;
-              if (candidate.target_activity) {
-                const auto target = std::find_if(
-                    context->activity_components.begin(),
-                    context->activity_components.end(), [&](const auto &item) {
-                      return item.kind == loader::AndroidManifestComponentKind::
-                                              activity &&
-                             item.name == *candidate.target_activity;
-                    });
-                if (target == context->activity_components.end() ||
+              if (registered->target_activity) {
+                const auto* target = loader::FindAndroidManifestActivityComponent(
+                    context->activity_components, *registered->target_activity);
+                if (target == nullptr ||
                     !target->enabled)
                   continue;
               }
@@ -338,7 +326,10 @@ dx::VmValue StartAndroidActivity(dx::IntrinsicContext& call, const Context& cont
                     });
                 if (!categories_match)
                   continue;
-                matches.push_back(&candidate);
+                if (std::ranges::none_of(matches, [&](const auto* match) {
+                      return match->name == registered->name;
+                    }))
+                  matches.push_back(registered);
                 break;
               }
             }
@@ -365,9 +356,9 @@ dx::VmValue StartAndroidActivity(dx::IntrinsicContext& call, const Context& cont
               {dx::VmValue::Ref(resolved_component)}));
         }
         if (context->activity_inventory_known) {
-          const auto target = std::find_if(context->activity_components.begin(), context->activity_components.end(),
-              [&](const auto& item) { return item.name == activity_class; });
-          if (target != context->activity_components.end()) {
+          const auto* target = loader::FindAndroidManifestActivityComponent(
+              context->activity_components, component_name);
+          if (target != nullptr) {
             auto descriptor = "L" + activity_class + ";";
             std::replace(descriptor.begin(), descriptor.end(), '.', '/');
             const bool same_top = context->activity.IsValid() &&
@@ -2846,13 +2837,7 @@ MakeActivityInfo(dx::IntrinsicContext &call, const Context &context,
       component.enabled, loader::AndroidManifestActivityExported(component),
       context->application_process_name, std::nullopt, application_info);
   const auto roots = call.vm.ProtectReferences(std::array{info});
-  auto mode = component.launch_mode;
-  if (component.target_activity) {
-    const auto target = std::find_if(context->activity_components.begin(), context->activity_components.end(),
-        [&](const auto& item) { return item.name == *component.target_activity; });
-    if (target != context->activity_components.end()) mode = target->launch_mode;
-  }
-  SetInt(call, info, "launchMode", static_cast<std::int32_t>(mode));
+  SetInt(call, info, "launchMode", static_cast<std::int32_t>(component.launch_mode));
   if (component.kind == loader::AndroidManifestComponentKind::activity_alias &&
       component.target_activity.has_value()) {
     SetRef(call, info, "targetActivity", "Ljava/lang/String;",
@@ -3266,9 +3251,9 @@ Decl Declare_android_content_pm_PackageManager(const Context &context) {
         RequireComponentInfoQuery(call, context->activity_inventory_known, flags,
                                   "dexvm.activity_info", "getActivityInfo");
         const auto [package, name] = ReadComponentIdentity(call, context, component);
-        const auto found = std::ranges::find_if(context->activity_components,
-            [&](const auto &item) { return item.name == name; });
-        if (found == context->activity_components.end() ||
+        const auto* found = loader::FindAndroidManifestActivityComponent(
+            context->activity_components, name);
+        if (found == nullptr ||
             (!(flags & kGetDisabledComponents) &&
              (!context->application_enabled || !found->enabled)))
           throw dx::VmJavaThrow{"Landroid/content/pm/PackageManager$NameNotFoundException;",

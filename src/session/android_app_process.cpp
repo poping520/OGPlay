@@ -221,13 +221,8 @@ public:
         context->activity_themes.clear();
         for (const auto& component : manifest.activity_components) {
             auto theme = component.theme.value_or(0U);
-            if (component.target_activity && !component.theme) {
-                for (const auto& target : manifest.activity_components)
-                    if (target.name == *component.target_activity)
-                        theme = target.theme.value_or(0U);
-            }
             if (theme == 0) theme = context->application_theme;
-            context->activity_themes.emplace(component.name, theme);
+            context->activity_themes.insert_or_assign(component.name, theme);
         }
         context->application_meta_data.clear();
         for (const auto& item : manifest.application_meta_data) {

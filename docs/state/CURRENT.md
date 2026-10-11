@@ -58,9 +58,12 @@
   [DVM-237](../tasks/dexvm/DVM-237.md) 已提供通用 JNI/NativeActivity Asset 身份、区间和
   guest FD；独立 ARM/双解释器及相关清理回归通过。[DVM-238](../tasks/dexvm/DVM-238.md)
   闭合 GLES2 OES 与共用映射状态，定向回归通过；原 APK 已加载引擎并进入 onCreate。
-  **当前首错**：`onCreateUE3JavaApp` 缺 `android.os.Debug$MemoryInfo`；尚未到游戏 Asset
-  调用或首帧。证据 `.local/manifest-duplicate-fix-20261011/`、`.local/ndk-assets-fix-20261011/`、
-  `.local/gles-mapbuffer-fix-20261011/`；取证进程已退出。
+  [DVM-239](../tasks/dexvm/DVM-239.md) 接入原版 Debug.MemoryInfo/Creator 与当前进程查询，
+  显式虚拟私有提交模型及双解释器/ARM JNI 回归通过；原 APK 越过内存查询。
+  **当前首错**：`PackageManager.getInstalledApplications(0)` 缺方法，onCreateUE3JavaApp
+  dex_pc=108；尚未到游戏 Asset 调用或首帧。证据 `.local/manifest-duplicate-fix-20261011/`、
+  `.local/ndk-assets-fix-20261011/`、`.local/gles-mapbuffer-fix-20261011/`、
+  `.local/debug-memory-fix-20261011/`；取证进程已退出。
 
 - **Angry Birds 2.3.0**：无 Profile、空沙盒运行 5000 呈现帧，滚动条方法解析错消失，
   未触发新致命首错；绘制与完整兼容未验收。见 [DVM-186](../tasks/dexvm/DVM-186.md)。

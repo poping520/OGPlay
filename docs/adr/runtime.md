@@ -1019,3 +1019,24 @@ buffer 身份来自 current ANGLE Context 的绑定与 EGL share group；删除�
 guest 权限/范围查询使用原请求；明确 flush 的映射只回写已声明范围，unmap 不再次全量
 覆盖。UNSYNCHRONIZED 写映射保留合法 host flags，必要旧内容单独预取；不承诺额外性能。
 支持范围与验证见 [DVM-238](../tasks/dexvm/DVM-238.md)。
+
+## ADR-0118 · Debug 当前进程内存统计的显式模型
+
+Debug.MemoryInfo 及 Creator 采用固定 API19 原版值类；外层 Debug 仅声明当前实际需要
+的 getMemoryInfo native 边界，不引入 VMDebug/DDMS/trace/完整调试系统。构造、汇总和
+Parcel 不在 C++ 重写。受检 GuestProcessMemorySnapshot 独立于系统 GuestMemorySnapshot，
+保留 API19 dalvik/native/other 七列及 16 other + 5 Dalvik detail 的原始 KiB 布局。
+
+精确已知快照可显式注入；默认进程 provider 使用有来源标记的
+virtual-private-committed 模型：当前 VM 堆账本按 KiB 向上取整计 dalvik，AddressSpace
+的所有已映射 guest 页计 other/unknown。Map/ReplaceAnonymous 实际提交并清零这些
+私有匿名 RAM，包括映射的 PROT_NONE；未映射的 4 GiB 地址预留及宿主页对齐余量不计。
+未分类 native heap 不被伪装为已测 heap；其占用仍在 other。PSS/USS/privateDirty 在此
+无 guest swap/跨进程共享、匿名提交模型中相等，其余分类为已知缺席。subcategories
+不将 unknown 塞进 Dalvik Other；原版普通数组保存分类，未分类总量只在 core other。
+
+这不是 Android smaps/memtrack 或宿主 RSS；VM 堆账本是明确虚拟 RAM charge，不等于
+宿主分配器驻留。不得把映射权限当成脏页测量，也不从系统 total-free 派生进程占用。
+模型在首次使用写结构化日志，能力保持有界；需要真实 residency/shared/clean/GPU
+分类时另加 provider，不悄悄改变既有模型。缺 provider/快照忙则明确失败，不返回假零。
+所有统计校验先于结果对象修改，bridge 析构撤销自有 provider；范围见 [DVM-239](../tasks/dexvm/DVM-239.md)。

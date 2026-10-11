@@ -93,6 +93,8 @@ struct DexVmAndroidContext final {
   std::atomic_bool process_stopping{};
   // Set from the owning native process before linking/startup. No host query.
   std::optional<GuestMemorySnapshot> memory_snapshot;
+  std::optional<GuestProcessMemorySnapshot> process_memory_snapshot;
+  std::function<std::optional<GuestProcessMemorySnapshot>()> read_process_memory;
   // Installed before Application startup; no host device or Binder discovery.
   std::vector<AndroidInputDevice> input_devices;
   AndroidGuestCallSession *session{};

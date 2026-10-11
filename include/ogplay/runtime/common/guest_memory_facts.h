@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <array>
 #include <optional>
 #include <string>
 #include "ogplay/runtime/common/guest_cpu_config.h"
@@ -34,4 +35,16 @@ struct GuestMemorySnapshot final {
 };
 
 [[nodiscard]] GuestMemorySnapshot MakeGuestMemorySnapshot(const GuestProcFacts& facts);
+
+enum class GuestProcessMemoryBasis : std::uint8_t { injected_api19, virtual_private_committed };
+// API19 order: PSS, swappable PSS, private/shared dirty, private/shared clean,
+// swapped out. Units are KiB. Class algorithms stay in the original BootDex.
+struct GuestProcessMemorySnapshot final {
+    GuestProcessMemoryBasis basis{GuestProcessMemoryBasis::injected_api19};
+    std::array<std::array<std::int32_t, 7>, 3> heaps{}; // dalvik, native, other
+    std::array<std::int32_t, 147> other_stats{};
+};
+void ValidateGuestProcessMemorySnapshot(const GuestProcessMemorySnapshot& snapshot);
+[[nodiscard]] GuestProcessMemorySnapshot MakeVirtualPrivateProcessMemorySnapshot(
+    std::uint64_t managed_bytes, std::uint64_t committed_arm_bytes);
 } // namespace ogplay::runtime

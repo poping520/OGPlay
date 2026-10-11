@@ -2543,6 +2543,68 @@ TEST_CASE("DVM-237 real ARM AssetManager shares JNI identity and independent APK
     }
 }
 
+TEST_CASE("DVM-239 ARM JNI Debug query observes virtual RAM growth and release") {
+    using namespace ogplay;
+    using namespace runtime::dexvm;
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        OrchestratedApp f("fixture.DelayedContentActivity", true, false, {}, {}, true, backend);
+        {
+        auto& bridge = f.app->DexVm(); auto& vm = bridge.Vm(); auto& linker = vm.Linker();
+        auto& process = f.app->NativeProcess(); auto& env = process.Environment();
+        const auto memory = process.GuestMemoryAccess();
+        const auto scratch = memory.allocate(256);
+        std::array<std::byte, 256> bytes{};
+        constexpr char method_name[] = "getMemoryInfo";
+        constexpr char signature[] = "(Landroid/os/Debug$MemoryInfo;)V";
+        std::memcpy(bytes.data(), method_name, sizeof(method_name));
+        std::memcpy(bytes.data() + 32, signature, sizeof(signature));
+        memory.write(scratch, bytes);
+        const auto debug_class = linker.ResolveDescriptor("Landroid/os/Debug;");
+        const auto clazz = bridge.PublishLocal(vm.Model().ClassObject(debug_class));
+        const auto info_class = linker.ResolveDescriptor("Landroid/os/Debug$MemoryInfo;");
+        const auto initialized = vm.EnsureClassInitialized(info_class);
+        REQUIRE_FALSE(initialized.exception.IsValid());
+        const auto info = vm.NewIntrinsicInstance("Landroid/os/Debug$MemoryInfo;");
+        const auto roots = vm.ProtectReferences(std::array{info});
+        const auto constructor = linker.FindDirectMethod(info_class, "<init>", "()V");
+        REQUIRE(constructor.has_value());
+        REQUIRE_FALSE(vm.Call(*constructor, std::array{VmValue::Ref(info)}).exception.IsValid());
+        const auto reference = bridge.PublishLocal(info);
+        const auto invoke = [&](const char* name, std::array<std::uint32_t, 4> args) {
+            return process.Invoke({memory::GuestAddress{EnvironmentThunk(name)}, args, {}}).return_value;
+        };
+        const auto method = invoke("GetStaticMethodID", {process.GuestEnvironment().Value(), clazz.Value(),
+            scratch.Value(), scratch.Add(32).Value()});
+        REQUIRE(method != 0); REQUIRE_FALSE(env.ExceptionCheck(1));
+        for (std::size_t i = 0; i < 4; ++i) bytes[128 + i] = static_cast<std::byte>(reference.Value() >> (i * 8));
+        memory.write(scratch, bytes);
+        const auto query = [&] {
+            invoke("CallStaticVoidMethodA", {process.GuestEnvironment().Value(), clazz.Value(), method, scratch.Add(128).Value()});
+            REQUIRE_FALSE(env.ExceptionCheck(1));
+            const auto slot = linker.FindVtableIndex(info_class, "getTotalPss", "()I");
+            REQUIRE(slot.has_value());
+            const auto result = vm.Call(linker.Class(info_class).vtable[*slot], std::array{VmValue::Ref(info)});
+            REQUIRE_FALSE(result.exception.IsValid());
+            return result.value.AsInt();
+        };
+        const auto before = query();
+        CHECK(before > 0);
+        const auto extra = memory.allocate(8192);
+        const auto grown = query();
+        CHECK(grown >= before + 8);
+        memory.release(extra, 8192);
+        CHECK(query() < grown);
+        f.context->process_memory_snapshot = runtime::MakeVirtualPrivateProcessMemorySnapshot(1024, 2048);
+        CHECK(query() == 3);
+        env.DeleteLocalRef(1, reference); env.DeleteLocalRef(1, clazz);
+        memory.release(scratch, 256);
+        }
+        static_cast<void>(f.app->Stop());
+        f.app.reset();
+        CHECK_FALSE(f.context->read_process_memory);
+    }
+}
+
 TEST_CASE("DVM-221 pixel formats use API19 stride and native packed layout") {
     using namespace ogplay;
     OrchestratedApp f("fixture.DelayedContentActivity", true, false);

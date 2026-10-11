@@ -16,6 +16,9 @@
   值快照：默认总量 1 GiB、空闲 512 MiB，缓存缺省 total/4。64 位字节查询与 proc
   格式共享同一值对象；验证、进程所有权和发布只在 integration 装配，不采样宿主内存。
 
+- GuestProcessMemorySnapshot 独立表达 API19 进程 KiB 七列、三类及明细，保留注入/虚拟
+  提交来源；不是系统 availMem 或宿主 RSS。校验和计账模型在 integration 实现。
+
 ## 禁止
 
 - 不把便利 helper、业务状态或可变全局状态堆入 common。

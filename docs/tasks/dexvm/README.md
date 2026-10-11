@@ -28,6 +28,7 @@ Asphalt 5（pilot title）删除 profile 全部 `native_call` 与 `[[java.class]
 
 | WU | 一句话目标 | 状态 |
 | --- | --- | --- |
+| [DVM-239](DVM-239.md) | 原版 Debug.MemoryInfo 与有界进程内存统计 | 有界能力/首错验证完成 |
 | [DVM-238](DVM-238.md) | GLES2 OES 导出与 GLES1/2/3 共用 buffer mapping | macOS 有界完成，原 APK 已进入 onCreate |
 | [DVM-237](DVM-237.md) | JNI / NativeActivity 共用 APK Asset 身份、区间与 guest FD | macOS 有界完成，游戏重定位仍阻塞 |
 | [DVM-229](DVM-229.md) | 资源 Drawable、BitmapPixels 与 ImageView 的有界显示链 | 定向验证完成，游戏路径阻塞 |

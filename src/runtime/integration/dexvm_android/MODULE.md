@@ -33,6 +33,10 @@ content/os/view/graphics/gl/media/database/device 等 family TU 同址。shared.
   API19 availMem=(free+cached)*1024，64 位字段与显式阈值完整赋值；lowMemory 比较归 Java。
   未注入事实和进程枚举记账抛 UOE；无 Binder/AMS/LMK、任务管理或宿主内存采样。
 
+- Debug.MemoryInfo 的字段、构造、汇总与 Parcel 来自 API19 BootDex；仅当前进程
+  getMemoryInfo native 写受检快照，先校验全部数值/数组再更新。注入快照优先于 provider；
+  缺事实/忙则记账抛 UOE，非法数据抛 IAE，空参数 NPE。不提供 PID 查询、trace/DDMS。
+
 - Context→ContextWrapper→Application/Service/ContextThemeWrapper→Activity 层级固定；
   process Application/base Context/ClassLoader/descriptor 身份稳定，wrapper 虚派委托 base。
   Context.getClassLoader 返回 VM 稳定 application facade，wrapper 委托 base 的虚方法；

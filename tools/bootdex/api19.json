@@ -1757,6 +1757,8 @@
       "Landroid/os/CancellationSignal$1;",
       "Landroid/os/CancellationSignal$OnCancelListener;",
       "Landroid/os/CancellationSignal;",
+      "Landroid/os/Debug$MemoryInfo$1;",
+      "Landroid/os/Debug$MemoryInfo;",
       "Landroid/os/FileUtils$1;",
       "Landroid/os/FileUtils;",
       "Landroid/os/IBinder$DeathRecipient;",

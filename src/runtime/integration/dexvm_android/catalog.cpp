@@ -121,7 +121,11 @@ dexvm::CoreIntrinsicServices AndroidCoreIntrinsicServices(
 std::vector<dexvm::IntrinsicClassDecl>
 AndroidIntrinsicCatalog(const std::shared_ptr<DexVmAndroidContext> &context) {
   using namespace android_intrinsics;
+  DebugMemoryInfoFields memory_fields;
+  auto debug_memory_info = Declare_android_os_Debug_MemoryInfo(context, memory_fields);
+  auto debug = Declare_android_os_Debug(context, memory_fields);
   return {
+      std::move(debug_memory_info), std::move(debug),
       Declare_android_app_NativeActivity(context),
       Declare_android_view_InputQueue(context),
         Declare_android_view_Surface(context),

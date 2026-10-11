@@ -211,6 +211,12 @@ Android API 的详细行为以 [dexvm_android](dexvm_android/MODULE.md)为准；
   传感器、电话或在线服务。Activity 当前/根身份来自 lifecycle，finish/handoff 不混为进程退出；
   SQL 持久化只用 guest VFS，SAX 未支持 parse 明确失败。Typeface/主题边界见 Android 子模块。
 
+Debug 当前进程查询的默认 provider 在 bridge 装配后安装，析构撤销自有回调；
+外部 provider 保留。VM 执行锁内读取托管堆账本和 guest 已映射页（含 PROT_NONE），
+采用显式虚拟私有提交模型：托管 charge 计 dalvik，未分类 ARM RAM 计 other，KiB
+向上取整。无宿主 RSS、GPU/媒体缓存或未映射预留；映射快照忙则明确缺事实。
+模型边界见 [ADR-0118](../../../docs/adr/runtime.md#adr-0118)。
+
 ## Runner、诊断与验证
 
 NativeActivitySession 只支持 API19 ARMv7，执行 Bionic 初始化、ANativeActivity_onCreate、

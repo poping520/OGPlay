@@ -2091,6 +2091,11 @@ status = "partial"
 test = "tools/bootdex/build_bootdex.py build/check; tools.android_payload_current; tests/dexvm/android_value_tests.cpp: DVM228; tests/runtime/android_guest_call_session_tests.cpp: proc memory; tests/runtime/native_library_loader_tests.cpp: JNI framework services"
 note = "DVM-228/ADR-0111：有界 ActivityManager 客户端与 API19 MemoryInfo 字段/算法归 BootDex，private nativeRead 只提交受检的进程快照；默认总量1 GiB、空闲512 MiB、缓存256 MiB，可显式提供cached/buffers。API19 availMem=MemFree+Cached，以64位字节值返回，不计Buffers；HOME/CACHED分级比较归Java，默认压力查询策略取AOSP高内存buckets，不执行LMK。Java/JNI/proc共用事实，旧proc内容冲突拒绝；缓存/GC、空参数、未注入失败及两种解释器受检。Windows原APK越过activity服务首错，下一首错为Message.obtain五参数缺失；macOS/Linux实跑、动态统计、其他ActivityManager服务及完整游戏未验收。"
 
+[dexvm.debug_process_memory]
+status = "partial"
+test = "tools/bootdex/build_bootdex.py build/check; tools.android_payload_current; tests/dexvm/android_value_tests.cpp: DVM-239; tests/runtime/native_library_loader_tests.cpp: DVM-239"
+note = "DVM-239/ADR-0118：API19 Debug.MemoryInfo/Creator 原版字段、构造、汇总和 Parcel；当前进程 getMemoryInfo Java/ARM JNI 边界先校验再提交 KiB 快照，缺事实/忙 UOE、非法数据 IAE、空参数 NPE。显式注入优先；默认 virtual-private-committed 模型以 VM 堆账本计 dalvik、已映射私有 guest RAM（含 PROT_NONE）计 other，未分类 native 占用包含于 other，native 不单独分类。无 guest swap/共享，非 Android smaps/宿主 RSS；GPU/媒体缓存、真实 residency/全面分类、PID 重载及其他 Debug API 未提供。跨平台及完整游戏未验收。"
+
 [dexvm.activity_process_query]
 status = "unimplemented"
 test = "tests/dexvm/android_value_tests.cpp: DVM228"

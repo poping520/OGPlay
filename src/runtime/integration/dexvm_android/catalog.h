@@ -1,8 +1,12 @@
 #pragma once
 
 #include "shared.h"
+#include <vector>
 
 namespace ogplay::runtime::android_intrinsics {
+using DebugMemoryInfoFields = std::vector<dx::IntrinsicFieldHandle>;
+[[nodiscard]] Decl Declare_android_os_Debug_MemoryInfo(const Context&, DebugMemoryInfoFields&);
+[[nodiscard]] Decl Declare_android_os_Debug(const Context&, const DebugMemoryInfoFields&);
 
 [[nodiscard]] Decl Declare_android_app_NativeActivity(const Context &context);
 [[nodiscard]] Decl Declare_android_view_Surface(const Context& context);

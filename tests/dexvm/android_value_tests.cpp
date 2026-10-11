@@ -1398,6 +1398,87 @@ TEST_CASE("DVM228 ActivityManager queries preserve guest memory units thresholds
     }
 }
 
+TEST_CASE("DVM-239 Debug MemoryInfo keeps original values Parcel and failure semantics") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        AndroidValueVm f(backend);
+        const auto info = f.New("Landroid/os/Debug$MemoryInfo;");
+        const auto root = f.vm.ProtectReferences(std::array{info});
+        CHECK(f.linker.Class(f.model.ObjectClass(info)).is_boot_dex);
+        CHECK(f.On(info, "getTotalPss", "()I").AsInt() == 0);
+        const auto query = [&](VmObjectRef object) {
+            return f.StaticOutcome("Landroid/os/Debug;", "getMemoryInfo",
+                "(Landroid/os/Debug$MemoryInfo;)V", {VmValue::Ref(object)});
+        };
+        const auto absent = query(info);
+        REQUIRE(absent.exception.IsValid());
+        CHECK(f.linker.Class(absent.exception_class).descriptor == "Ljava/lang/UnsupportedOperationException;");
+        CHECK(f.On(info, "getTotalPss", "()I").AsInt() == 0);
+        GuestProcessMemorySnapshot snapshot;
+        snapshot.heaps = {{{20, 2, 10, 1, 5, 1, 0}, {30, 3, 20, 1, 5, 1, 0}, {40, 4, 20, 1, 10, 1, 0}}};
+        snapshot.other_stats[0] = 4;
+        snapshot.other_stats[2] = 4;
+        f.context->process_memory_snapshot = snapshot;
+        REQUIRE_FALSE(query(info).exception.IsValid());
+        CHECK(f.On(info, "getTotalPss", "()I").AsInt() == 90);
+        CHECK(f.On(info, "getTotalUss", "()I").AsInt() == 70);
+        CHECK(f.On(info, "getTotalPrivateDirty", "()I").AsInt() == 50);
+        CHECK(f.On(info, "getTotalSwappablePss", "()I").AsInt() == 9);
+        CHECK(f.On(info, "getOtherPss", "(I)I", {VmValue::Int(0)}).AsInt() == 4);
+        const auto parcel = f.Static("Landroid/os/Parcel;", "obtain", "()Landroid/os/Parcel;").ref;
+        const auto parcel_root = f.vm.ProtectReferences(std::array{parcel});
+        f.On(info, "writeToParcel", "(Landroid/os/Parcel;I)V", {VmValue::Ref(parcel), VmValue::Int(0)});
+        f.On(parcel, "setDataPosition", "(I)V", {VmValue::Int(0)});
+        const auto copy = f.New("Landroid/os/Debug$MemoryInfo;");
+        const auto copy_root = f.vm.ProtectReferences(std::array{copy});
+        f.On(copy, "readFromParcel", "(Landroid/os/Parcel;)V", {VmValue::Ref(parcel)});
+        CHECK(f.On(copy, "getTotalPss", "()I").AsInt() == 90);
+        CHECK(f.On(copy, "getOtherPss", "(I)I", {VmValue::Int(0)}).AsInt() == 4);
+        f.On(parcel, "recycle", "()V");
+        f.context->process_memory_snapshot->heaps[1][0] = -1;
+        const auto invalid = query(info);
+        REQUIRE(invalid.exception.IsValid());
+        CHECK(f.linker.Class(invalid.exception_class).descriptor == "Ljava/lang/IllegalArgumentException;");
+        CHECK(f.On(info, "getTotalPss", "()I").AsInt() == 90);
+        const auto null = query(VmObjectRef{});
+        REQUIRE(null.exception.IsValid());
+        CHECK(f.linker.Class(null.exception_class).descriptor == "Ljava/lang/NullPointerException;");
+        const auto model = MakeVirtualPrivateProcessMemorySnapshot(1025, 8192);
+        CHECK(model.basis == GuestProcessMemoryBasis::virtual_private_committed);
+        CHECK(model.heaps[0][0] == 2); CHECK(model.heaps[2][0] == 8);
+        CHECK_THROWS(MakeVirtualPrivateProcessMemorySnapshot(UINT64_MAX, 0));
+        auto incoherent = model; incoherent.heaps[0][2] = 3;
+        CHECK_THROWS(ValidateGuestProcessMemorySnapshot(incoherent));
+        f.context->process_memory_snapshot = model;
+        REQUIRE_FALSE(query(info).exception.IsValid());
+        CHECK(f.On(info, "getTotalPss", "()I").AsInt() == 10);
+        CHECK(f.On(info, "getTotalUss", "()I").AsInt() == 10);
+        CHECK(f.On(info, "getTotalSwappablePss", "()I").AsInt() == 0);
+        CHECK(f.On(info, "getOtherPss", "(I)I", {VmValue::Int(0)}).AsInt() == 0);
+        f.context->process_memory_snapshot.reset();
+        int queries = 0;
+        f.context->read_process_memory = [&] { ++queries; return std::optional{model}; };
+        REQUIRE_FALSE(query(info).exception.IsValid());
+        CHECK(queries == 1);
+        f.context->read_process_memory = []() -> std::optional<GuestProcessMemorySnapshot> {
+            return std::nullopt;
+        };
+        const auto busy = query(info);
+        REQUIRE(busy.exception.IsValid());
+        CHECK(f.linker.Class(busy.exception_class).descriptor == "Ljava/lang/UnsupportedOperationException;");
+        CHECK(f.On(info, "getTotalPss", "()I").AsInt() == 10);
+        f.context->read_process_memory = []() -> std::optional<GuestProcessMemorySnapshot> {
+            return MakeVirtualPrivateProcessMemorySnapshot(UINT64_MAX, 0);
+        };
+        const auto overflow = query(info);
+        REQUIRE(overflow.exception.IsValid());
+        CHECK(f.linker.Class(overflow.exception_class).descriptor == "Ljava/lang/IllegalArgumentException;");
+        CHECK(f.On(info, "getTotalPss", "()I").AsInt() == 10);
+        auto excessive = model;
+        excessive.heaps[0][3] = excessive.heaps[1][3] = INT32_MAX;
+        CHECK_THROWS(ValidateGuestProcessMemorySnapshot(excessive));
+    }
+}
+
 TEST_CASE("DVM-224 notification cancellation uses an explicit empty application inventory") {
     for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
         auto foreign = IntrinsicClassBuilder::Class("Ltest/ForeignNotificationContext;", "Landroid/content/Context;");

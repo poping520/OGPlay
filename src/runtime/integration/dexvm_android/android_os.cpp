@@ -12,6 +12,54 @@
 #include "catalog.h"
 
 namespace ogplay::runtime::android_intrinsics {
+Decl Declare_android_os_Debug_MemoryInfo(const Context&, DebugMemoryInfoFields& fields) {
+    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/os/Debug$MemoryInfo;");
+    constexpr std::array names{
+        "dalvikPss", "dalvikSwappablePss", "dalvikPrivateDirty", "dalvikSharedDirty",
+        "dalvikPrivateClean", "dalvikSharedClean", "dalvikSwappedOut",
+        "nativePss", "nativeSwappablePss", "nativePrivateDirty", "nativeSharedDirty",
+        "nativePrivateClean", "nativeSharedClean", "nativeSwappedOut",
+        "otherPss", "otherSwappablePss", "otherPrivateDirty", "otherSharedDirty",
+        "otherPrivateClean", "otherSharedClean", "otherSwappedOut"};
+    fields.reserve(22);
+    for (const auto* name : names)
+        fields.push_back(builder.BoundInstanceField(name, "I", dx::kAccPublic));
+    fields.push_back(builder.BoundInstanceField("otherStats", "[I", dx::kAccPrivate));
+    return std::move(builder).Build();
+}
+
+Decl Declare_android_os_Debug(const Context& context, const DebugMemoryInfoFields& fields) {
+    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/os/Debug;", "Ljava/lang/Object;");
+    builder.StaticMethod("getMemoryInfo", "(Landroid/os/Debug$MemoryInfo;)V",
+        [context, fields](dx::IntrinsicContext& call) {
+            const dx::IntrinsicCall api(call);
+            const auto info = api.NonNullRef(0, "memoryInfo");
+            auto snapshot = context->process_memory_snapshot;
+            try {
+                if (!snapshot && context->read_process_memory) snapshot = context->read_process_memory();
+                if (snapshot) ValidateGuestProcessMemorySnapshot(*snapshot);
+            } catch (const std::exception& error) {
+                throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", error.what()};
+            }
+            if (!snapshot) {
+                if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.debug_process_memory", 0);
+                throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "guest process memory facts are unavailable"};
+            }
+            const auto other = api.GetRef(fields.back(), info);
+            if (!other.IsValid() || call.vm.Model().ArrayLength(other) != 147)
+                throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "MemoryInfo.otherStats has invalid shape"};
+            // All validation precedes the first write; algorithms and ownership
+            // of the result/array remain in the unmodified API19 value class.
+            for (std::size_t heap = 0; heap < snapshot->heaps.size(); ++heap)
+                for (std::size_t column = 0; column < 7; ++column)
+                    api.SetInt(fields[heap * 7 + column], info, snapshot->heaps[heap][column]);
+            for (std::size_t index = 0; index < snapshot->other_stats.size(); ++index)
+                call.vm.Model().SetPrimitiveElement(other, static_cast<JniSize>(index),
+                    static_cast<std::uint32_t>(snapshot->other_stats[index]));
+            return dx::VmValue::Void();
+        }, dx::kAccPublic | dx::kAccStatic | dx::kAccNative);
+    return std::move(builder).Build();
+}
 namespace {
 
 

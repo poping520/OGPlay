@@ -345,6 +345,7 @@ public:
     core::Logger* logger{};
     DexVmBridgeConfig config;
     std::shared_ptr<DexVmAndroidContext> android_context;
+    bool owns_process_memory_reader{};
 
     dx::DexClassLinker linker;
     std::unique_ptr<dx::JavaObjectModel> model;
@@ -1763,6 +1764,27 @@ DexVmGuestBridge::DexVmGuestBridge(
             }});
     }
 
+    if (android_context && !android_context->read_process_memory) {
+        impl_->owns_process_memory_reader = true;
+        android_context->read_process_memory = [bridge_state, logged = false]() mutable
+            -> std::optional<GuestProcessMemorySnapshot> {
+            const auto memory = bridge_state->session->Process().TryMemorySnapshot();
+            if (!memory) return std::nullopt;
+            std::uint64_t pages{};
+            for (auto count : memory->pages_by_protection) pages += count;
+            const auto snapshot = MakeVirtualPrivateProcessMemorySnapshot(
+                bridge_state->model->AllocatedBytes(), pages * (UINT64_C(1) << memory::kGuestPageBits));
+            if (!logged && bridge_state->logger) {
+                bridge_state->logger->Write(core::LogLevel::info, "runtime.process_memory",
+                    "using virtual-private-committed process memory model", {},
+                    {{"dalvik_pss_kib", static_cast<std::uint64_t>(snapshot.heaps[0][0])},
+                     {"other_pss_kib", static_cast<std::uint64_t>(snapshot.heaps[2][0])}});
+                logged = true;
+            }
+            return snapshot;
+        };
+    }
+
 }
 
 std::unique_ptr<dx::NativeCleanupScope> DexVmGuestBridge::EnterResourceCleanup() {
@@ -1798,6 +1820,8 @@ std::unique_ptr<dx::NativeCleanupScope> DexVmGuestBridge::EnterResourceCleanup()
 }
 
 DexVmGuestBridge::~DexVmGuestBridge() {
+    if (impl_->android_context && impl_->owns_process_memory_reader)
+        impl_->android_context->read_process_memory = {};
     if (impl_->android_context) {
         ShutdownAndroidScheduler(*impl_->android_context);
     }

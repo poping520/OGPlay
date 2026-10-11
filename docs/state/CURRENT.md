@@ -20,6 +20,13 @@
   Analytics formatDouble 缺口仍被 SDK 捕获；长时运行、完整关卡、macOS/Linux/title gate 未验收。
   证据 `.local/wb-cg-analysis-20261011-001405/`、`.local/wb-cg-analysis-20261011-002133/`，
   最终二进制跳过后关闭约 0.695 秒退出 0，证据 `.local/wb-cg-analysis-20261011-003853/`；
+  macOS [WU-PERF-14](../tasks/optimization/WU-PERF-14.md) 已修复 1080p CG 预读淘汰到期帧：
+  原路径点击国王村后约 4 秒出图（包含约 2 秒原片黑场），guestFault=null，退出 0；
+  用户确认画面很快出现。证据 `.local/wb-cg-buffer-fix-20261011/`。
+  [WU-PERF-15](../tasks/optimization/WU-PERF-15.md) 已继续分离原生图片与到期 RGBA 转换，
+  字节背压及 30 项视频回归通过；同路径仍约 4 秒出图、guestFault=null、退出 0，
+  整段 PCM 与同步基准一致。证据 `.local/wb-cg-staged-fix-20261011/`；第二步待用户复测，
+  媒体主时钟改造与完整影音同步仍待后续。
   相关进程与 listener 已退出。Windows Release、30 项/2876 断言关闭/生命周期与
   60 项/7439 断言媒体回归通过；独立 permitted fini 的执行、失败及预算回归保持。
 

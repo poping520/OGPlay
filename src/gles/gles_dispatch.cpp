@@ -9,6 +9,7 @@
 #include "ogplay/gles/generated/gles1_catalog.h"
 #include "ogplay/gles/generated/gles1_extensions_catalog.h"
 #include "ogplay/gles/generated/gles3_catalog.h"
+#include "ogplay/gles/generated/gles2_extensions_catalog.h"
 
 namespace ogplay::gles {
 namespace {
@@ -57,7 +58,7 @@ GlesFunctionInfo DescribeInCatalog(const Functions& functions,
                                                const std::uint64_t thread_id) {
     std::ostringstream stream;
     const auto api_name = api == GlesApi::gles3 ? "GLES3" :
-                          api == GlesApi::gles2 ? "GLES2" : "GLES1";
+                          (api == GlesApi::gles2 || api == GlesApi::gles2_extensions) ? "GLES2" : "GLES1";
     stream << "unimplemented " << api_name
            << " call " << name << " (thunk " << id
            << ", guest thread " << thread_id << ')';
@@ -251,6 +252,7 @@ std::size_t GlesFunctionCount(const GlesApi api) noexcept {
         return generated::gles1_extensions::kFunctions.size();
     case GlesApi::gles2: return generated::gles2::kFunctions.size();
     case GlesApi::gles3: return generated::gles3::kFunctions.size();
+    case GlesApi::gles2_extensions: return generated::gles2_extensions::kFunctions.size();
     }
     return 0;
 }
@@ -266,6 +268,8 @@ std::optional<GlesThunkId> FindGlesFunction(
         return FindInCatalog(generated::gles2::kFunctions, name);
     case GlesApi::gles3:
         return FindInCatalog(generated::gles3::kFunctions, name);
+    case GlesApi::gles2_extensions:
+        return FindInCatalog(generated::gles2_extensions::kFunctions, name);
     }
     return std::nullopt;
 }
@@ -286,6 +290,9 @@ GlesFunctionInfo DescribeGlesFunction(const GlesApi api,
     case GlesApi::gles3:
         return DescribeInCatalog(generated::gles3::kFunctions,
                                  generated::gles3::kParameters, id, "GLES3");
+    case GlesApi::gles2_extensions:
+        return DescribeInCatalog(generated::gles2_extensions::kFunctions,
+                                 generated::gles2_extensions::kParameters, id, "GLES2 extensions");
     }
     throw GlesDispatchError("unknown GLES API catalog");
 }

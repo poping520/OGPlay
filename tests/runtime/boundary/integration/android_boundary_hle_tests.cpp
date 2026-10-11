@@ -977,7 +977,7 @@ TEST_CASE("Android EGL creates ES3 and routes vertex array core calls") {
     }
     const auto mapped = fixture.Call("libGLESv2.so", "glMapBufferRange",
                                      {0x8892U, 0U, 16U, 0x0002U});
-    REQUIRE(mapped >= 0x78000000U);
+    REQUIRE(mapped >= ogplay::runtime::kBufferMapArenaBegin);
     fixture.bus.Write32(ogplay::memory::GuestAddress{mapped}, 0x12345678U, 1U);
     const auto pointer_out = fixture.output.Add(112U);
     CHECK(fixture.Call("libGLESv2.so", "glGetBufferPointerv",
@@ -987,7 +987,7 @@ TEST_CASE("Android EGL creates ES3 and routes vertex array core calls") {
     CHECK(fixture.Call("libGLESv2.so", "glGetError") == 0U);
     const auto remapped = fixture.Call("libGLESv2.so", "glMapBufferRange",
                                        {0x8892U, 0U, 16U, 0x0001U});
-    REQUIRE(remapped >= 0x78000000U);
+    REQUIRE(remapped >= ogplay::runtime::kBufferMapArenaBegin);
     CHECK(fixture.bus.Read32(ogplay::memory::GuestAddress{remapped}, 1U) ==
           0x12345678U);
     CHECK(fixture.Call("libGLESv2.so", "glUnmapBuffer", {0x8892U}) == 1U);
@@ -6068,6 +6068,157 @@ TEST_CASE("BND34 GLES1 mappings survive releasing a different context") {
     AuditBind(f, b, surface);
     REQUIRE(f.Call("libGLESv1_CM.so", "glUnmapBufferOES", {0x8892}) == 1U);
     CHECK(f.Call("libGLESv1_CM.so", "glGetError") == 0U);
+}
+
+TEST_CASE("DVM-238 OES mapping shares guest identity and preserves bytes across GLES APIs") {
+    if (!ogplay::gles::IsNativeAngleEglAvailable()) return;
+    for (const auto version : {2U, 3U}) {
+        CAPTURE(version);
+        BoundaryFixture f;
+        REQUIRE(f.Call("libEGL.so", "eglInitialize", {1, 0, 0}) == 1);
+        const auto surface = AuditSurface(f), context = AuditContext(f, version);
+        AuditBind(f, context, surface);
+        const auto buffer = AuditName(f, "glGenBuffers");
+        AuditGl(f, "glBindBuffer", {0x8892, buffer});
+        f.bus.Write32(f.output.Add(32), 0x11223344);
+        f.bus.Write32(f.output.Add(36), 0x55667788);
+        AuditGl(f, "glBufferData", {0x8892, 8, f.output.Add(32).Value(), 0x88E8});
+        const auto mapped = AuditGl(f, "glMapBufferOES", {0x8892, 0x88B9});
+        REQUIRE(mapped >= ogplay::runtime::kBufferMapArenaBegin);
+        CHECK(mapped < ogplay::runtime::kBufferMapArenaBegin + ogplay::runtime::kBufferMapArenaBytes);
+        CHECK(f.bus.Read32(ogplay::memory::GuestAddress{mapped}.Add(4)) == 0x55667788);
+        f.bus.Write32(ogplay::memory::GuestAddress{mapped}, 0xDEADBEEF);
+        f.Call("libGLESv1_CM.so", "glGetBufferPointervOES", {0x8892, 0x88BD, f.output.Add(64).Value()});
+        CHECK(f.bus.Read32(f.output.Add(64)) == mapped);
+        for (const auto pname : {0x88BBU, 0x911FU}) {
+            AuditGl(f, "glGetBufferParameteriv", {0x8892, pname, f.output.Add(64).Value()});
+            CHECK(f.bus.Read32(f.output.Add(64)) == (pname == 0x88BBU ? 0x88B9U : 2U));
+        }
+        CHECK(AuditGl(f, "glMapBufferOES", {0x8892, 0x88B9}) == 0);
+        CHECK(AuditGl(f, "glGetError") == 0x0502);
+        if (version == 3) {
+            AuditGl(f, "glGetBufferPointerv", {0x8892, 0x88BD, f.output.Add(64).Value()});
+            CHECK(f.bus.Read32(f.output.Add(64)) == mapped);
+            REQUIRE(AuditGl(f, "glUnmapBuffer", {0x8892}) == 1);
+        } else REQUIRE(AuditGl(f, "glUnmapBufferOES", {0x8892}) == 1);
+        const auto again = AuditGl(f, "glMapBufferOES", {0x8892, 0x88B9});
+        REQUIRE(again != 0);
+        CHECK(f.bus.Read32(ogplay::memory::GuestAddress{again}) == 0xDEADBEEF);
+        CHECK(f.bus.Read32(ogplay::memory::GuestAddress{again}.Add(4)) == 0x55667788);
+        REQUIRE(f.Call("libGLESv1_CM.so", "glUnmapBufferOES", {0x8892}) == 1);
+        AuditGl(f, "glGetBufferPointervOES", {0x8892, 0x88BD, f.output.Add(64).Value()});
+        CHECK(f.bus.Read32(f.output.Add(64)) == 0);
+        CHECK(AuditGl(f, "glMapBufferOES", {0x8892, 0x88B8}) == 0);
+        CHECK(AuditGl(f, "glGetError") == 0x0500);
+        WriteGuestString(f, f.output.Add(96), "glMapBufferOES");
+        const auto proc = f.Call("libEGL.so", "eglGetProcAddress", {f.output.Add(96).Value()});
+        REQUIRE(proc != 0);
+        const auto through_proc = BoundaryCallAddress(f, proc, std::array<std::uint32_t, 2>{0x8892, 0x88B9});
+        REQUIRE(through_proc != 0);
+        REQUIRE(AuditGl(f, "glUnmapBufferOES", {0x8892}) == 1);
+        // Deletion must retire the record before GLuint reuse can occur.
+        REQUIRE(AuditGl(f, "glMapBufferOES", {0x8892, 0x88B9}) != 0);
+        f.bus.Write32(f.output.Add(64), buffer);
+        AuditGl(f, "glDeleteBuffers", {1, f.output.Add(64).Value()});
+        AuditGl(f, "glBindBuffer", {0x8892, buffer});
+        AuditGl(f, "glBufferData", {0x8892, 8, 0, 0x88E8});
+        REQUIRE(AuditGl(f, "glMapBufferOES", {0x8892, 0x88B9}) != 0);
+        REQUIRE(AuditGl(f, "glUnmapBufferOES", {0x8892}) == 1);
+        CHECK(AuditGl(f, "glGetError") == 0);
+    }
+}
+
+TEST_CASE("DVM-238 range mappings retain guest flags and explicit flush semantics through OES") {
+    if (!ogplay::gles::IsNativeAngleEglAvailable()) return;
+    BoundaryFixture f;
+    REQUIRE(f.Call("libEGL.so", "eglInitialize", {1}) == 1);
+    const auto surface = AuditSurface(f), context = AuditContext(f);
+    AuditBind(f, context, surface);
+    const auto buffer = AuditName(f, "glGenBuffers");
+    AuditGl(f, "glBindBuffer", {0x8892, buffer});
+    f.bus.Write32(f.output.Add(32), 0x11223344); f.bus.Write32(f.output.Add(36), 0x55667788);
+    AuditGl(f, "glBufferData", {0x8892, 8, f.output.Add(32).Value(), 0x88E8});
+    const auto map = AuditGl(f, "glMapBufferRange", {0x8892, 0, 8, 0x12});
+    REQUIRE(map != 0);
+    AuditGl(f, "glGetBufferPointervOES", {0x8892, 0x88BD, f.output.Add(64).Value()});
+    CHECK(f.bus.Read32(f.output.Add(64)) == map);
+    AuditGl(f, "glGetBufferParameteriv", {0x8892, 0x911F, f.output.Add(64).Value()});
+    CHECK(f.bus.Read32(f.output.Add(64)) == 0x12);
+    f.bus.Write32(ogplay::memory::GuestAddress{map}, 0xAABBCCDD);
+    AuditGl(f, "glFlushMappedBufferRange", {0x8892, 0, 4});
+    f.bus.Write32(ogplay::memory::GuestAddress{map}, 0xFFFFFFFF);
+    REQUIRE(AuditGl(f, "glUnmapBufferOES", {0x8892}) == 1);
+    const auto read = AuditGl(f, "glMapBufferRange", {0x8892, 0, 8, 1});
+    REQUIRE(read != 0);
+    CHECK(f.bus.Read32(ogplay::memory::GuestAddress{read}) == 0xAABBCCDD);
+    CHECK(f.bus.Read32(ogplay::memory::GuestAddress{read}.Add(4)) == 0x55667788);
+    REQUIRE(AuditGl(f, "glUnmapBuffer", {0x8892}) == 1);
+    const auto unsync = AuditGl(f, "glMapBufferRange", {0x8892, 0, 8, 0x22});
+    REQUIRE(unsync != 0);
+    f.bus.Write32(ogplay::memory::GuestAddress{unsync}, 0x12345678);
+    REQUIRE(AuditGl(f, "glUnmapBuffer", {0x8892}) == 1);
+    const auto verify = AuditGl(f, "glMapBufferRange", {0x8892, 0, 8, 1});
+    REQUIRE(verify != 0);
+    CHECK(f.bus.Read32(ogplay::memory::GuestAddress{verify}) == 0x12345678);
+    CHECK(f.bus.Read32(ogplay::memory::GuestAddress{verify}.Add(4)) == 0x55667788);
+    REQUIRE(AuditGl(f, "glUnmapBuffer", {0x8892}) == 1);
+    const auto large = AuditName(f, "glGenBuffers");
+    AuditGl(f, "glBindBuffer", {0x8892, large});
+    AuditGl(f, "glBufferData", {0x8892, ogplay::runtime::kBufferMapArenaBytes + 16, 0, 0x88E8});
+    CHECK(AuditGl(f, "glMapBufferOES", {0x8892, 0x88B9}) == 0);
+    CHECK(AuditGl(f, "glGetError") == 0x0505);
+    AuditGl(f, "glGetBufferParameteriv", {0x8892, 0x88BC, f.output.Add(64).Value()});
+    CHECK(f.bus.Read32(f.output.Add(64)) == 0);
+}
+
+TEST_CASE("DVM-238 shared contexts keep a mapping until the last owner retires") {
+    if (!ogplay::gles::IsNativeAngleEglAvailable()) return;
+    BoundaryFixture f;
+    const auto read_string = [&](ogplay::memory::GuestAddress address) {
+        std::string value(f.memory.CStringLength(address, 4096, 1), '\0');
+        f.memory.Read(address, std::as_writable_bytes(std::span(value)), 1);
+        return value;
+    };
+    REQUIRE(f.Call("libEGL.so", "eglInitialize", {1}) == 1);
+    const auto surface = AuditSurface(f), first = AuditContext(f, 3);
+    const auto shared = AuditContext(f, 3, first);
+    AuditBind(f, first, surface);
+    const auto buffer = AuditName(f, "glGenBuffers");
+    AuditGl(f, "glBindBuffer", {0x8892, buffer});
+    AuditGl(f, "glBufferData", {0x8892, 8, 0, 0x88E8});
+    const auto mapped = AuditGl(f, "glMapBufferOES", {0x8892, 0x88B9});
+    REQUIRE(mapped != 0);
+    f.bus.Write32(ogplay::memory::GuestAddress{mapped}, 0x12345678);
+    AuditBind(f, shared, surface);
+    AuditGl(f, "glBindBuffer", {0x8892, buffer});
+    AuditGl(f, "glGetBufferPointerv", {0x8892, 0x88BD, f.output.Add(64).Value()});
+    CHECK(f.bus.Read32(f.output.Add(64)) == mapped);
+    REQUIRE(f.Call("libEGL.so", "eglDestroyContext", {1, first}) == 1);
+    REQUIRE(AuditGl(f, "glUnmapBufferOES", {0x8892}) == 1);
+    const auto verify = AuditGl(f, "glMapBufferRange", {0x8892, 0, 8, 1});
+    REQUIRE(verify != 0);
+    CHECK(f.bus.Read32(ogplay::memory::GuestAddress{verify}) == 0x12345678);
+    REQUIRE(AuditGl(f, "glUnmapBuffer", {0x8892}) == 1);
+    const auto extensions = AuditGl(f, "glGetString", {0x1F03});
+    CHECK(read_string(ogplay::memory::GuestAddress{extensions}).find("GL_OES_mapbuffer") != std::string::npos);
+    const auto count = AuditInteger(f, 0x821D);
+    bool found = false;
+    for (std::uint32_t index = 0; index < count; ++index) {
+        const auto name = AuditGl(f, "glGetStringi", {0x1F03, index});
+        if (read_string(ogplay::memory::GuestAddress{name}) == "GL_OES_mapbuffer") found = true;
+    }
+    CHECK(found);
+    REQUIRE(AuditGl(f, "glMapBufferOES", {0x8892, 0x88B9}) != 0);
+    REQUIRE(f.Call("libEGL.so", "eglMakeCurrent", {1, 0, 0, 0}) == 1);
+    REQUIRE(f.Call("libEGL.so", "eglDestroyContext", {1, shared}) == 1);
+    const auto fresh = AuditContext(f, 3);
+    AuditBind(f, fresh, surface);
+    const auto replacement = AuditName(f, "glGenBuffers");
+    AuditGl(f, "glBindBuffer", {0x8892, replacement});
+    AuditGl(f, "glBufferData", {0x8892, 8, 0, 0x88E8});
+    REQUIRE(AuditGl(f, "glMapBufferOES", {0x8892, 0x88B9}) != 0);
+    REQUIRE(AuditGl(f, "glUnmapBufferOES", {0x8892}) == 1);
+    CHECK(AuditGl(f, "glGetError") == 0);
 }
 
 TEST_CASE("BND34 EGL separates context state surface content and read surface") {

@@ -1,3 +1,4 @@
+#include "runtime/boundary/services/buffer_mapping.h"
 #include "runtime/boundary/services/graphics_dispatch.h"
 
 #include <algorithm>
@@ -147,7 +148,10 @@ std::uint32_t QueryStringOffset(const std::uint32_t parameter) {
 }  // namespace
 
 std::vector<std::string_view> GuestGlesExtensions(gles::AngleFrame& frame) {
-    return GuestGlesExtensions(frame.GetString(0x1F03U));
+    auto values = GuestGlesExtensions(frame.GetString(0x1F03U));
+    if (frame.ClientVersion() >= 3 && std::ranges::find(values, "GL_OES_mapbuffer") == values.end())
+        values.push_back("GL_OES_mapbuffer");
+    return values;
 }
 
 std::vector<std::string_view> GuestGlesExtensions(const std::string_view native_extensions) {
@@ -163,6 +167,8 @@ std::vector<std::string_view> GuestGlesExtensions(const std::string_view native_
         return false;
     };
     if (supports("GL_OES_EGL_image")) values.push_back("GL_OES_EGL_image");
+    if (supports("GL_OES_mapbuffer") && supports("GL_EXT_map_buffer_range"))
+        values.push_back("GL_OES_mapbuffer");
     // Core renderbuffer storage/attachment handlers already forward D24S8 to ANGLE.
     if (supports("GL_OES_packed_depth_stencil"))
         values.push_back("GL_OES_packed_depth_stencil");
@@ -181,6 +187,8 @@ public:
         : address_space_(address_space), context_(context) {
         ValidateGles2FunctionIds();
     }
+
+    void SetBufferMappings(BufferMappingService& mappings) noexcept { mappings_ = &mappings; }
 
     std::optional<std::uint32_t> Dispatch(
         const gles::GlesThunkId function_id,
@@ -213,6 +221,7 @@ public:
             const auto names = ReadWords(Pointer(call));
             if (function_id == Id(Gles2Function::delete_buffers)) {
                 RequireFrame(frame, symbol).DeleteBuffers(names);
+                if (mappings_) mappings_->RetireBuffers(context_.ShareGroup(), names);
                 context_.Shared().transfer.DeleteBuffers(names);
             } else if (function_id == Id(Gles2Function::delete_textures)) {
                 RequireFrame(frame, symbol).DeleteTextures(names);
@@ -1029,6 +1038,7 @@ private:
 
     memory::AddressSpace& address_space_;
     GuestGlContext& context_;
+    BufferMappingService* mappings_{};
     bool query_string_page_mapped_{};
 };
 
@@ -1039,6 +1049,9 @@ AndroidBoundaryGles::AndroidBoundaryGles(memory::AddressSpace& address_space,
                                          GuestGlContext& context)
     : impl_(std::make_unique<Impl>(address_space, context)) {}
 AndroidBoundaryGles::~AndroidBoundaryGles() = default;
+void AndroidBoundaryGles::SetBufferMappings(BufferMappingService& mappings) noexcept {
+    impl_->SetBufferMappings(mappings);
+}
 
 std::optional<std::uint32_t> AndroidBoundaryGles::Dispatch(
     const std::string_view symbol,

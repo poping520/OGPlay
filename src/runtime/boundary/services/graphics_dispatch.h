@@ -29,6 +29,7 @@ inline constexpr std::array<std::string_view, 4> kGuestGlesExtensions{
 [[nodiscard]] std::vector<std::string_view> GuestGlesExtensions(gles::AngleFrame& frame);
 [[nodiscard]] std::vector<std::string_view> GuestGlesExtensions(std::string_view native_extensions);
 class GuestGlContext;
+class BufferMappingService;
 class A32CallFrame;
 
 class AndroidBoundaryGles final {
@@ -47,6 +48,7 @@ public:
         gles::GlesThunkId function_id,
         const A32CallFrame& call, gles::AngleFrame* frame);
     [[nodiscard]] bool HasEnabledVertexAttribute() const noexcept;
+    void SetBufferMappings(BufferMappingService& mappings) noexcept;
     void SetVertexAttributeValue(std::uint32_t index,
                                  std::array<float, 4> value);
     [[nodiscard]] std::int32_t VertexAttributeParameter(

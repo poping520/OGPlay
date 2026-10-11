@@ -100,6 +100,9 @@
   indirection，宿主指针返回使用专门返回类型，禁止按 32 位标量误传。
 - thunk ID 只在所选 API 的有序生成目录内有效；分派前必须验证参数槽数量，handler 不得
   在分派锁内执行。
+  GLES2 扩展由独立 subset 目录发布，保持 core 完全集合与编号不变；OES mapbuffer 三项
+  供 boundary 进行 guest mapping，AngleFrame 的 range/flush compatibility 只调用
+  native ES3 core 或实际支持的 ES2 EXT，不发布宿主地址给 guest。
 - 未绑定 GLES 调用必须记录函数、thunk、命中数与 first/last guest thread 后明确失败。
 - 长度求值器不是通用脚本引擎；负数、未知标量、乘法溢出和缺失 resolver 必须在任何
   handler 前失败。二级指针的顶层数组元素固定为 32 位 guest 指针。

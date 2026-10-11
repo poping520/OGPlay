@@ -23,6 +23,7 @@
 #include "ogplay/gles/angle_frame.h"
 #include "ogplay/gles/gles_dispatch.h"
 #include "ogplay/gles/generated/gles1_catalog.h"
+#include "ogplay/gles/generated/gles2_extensions_catalog.h"
 #include "ogplay/gles/generated/gles1_extensions_catalog.h"
 #include "ogplay/gles/generated/gles2_catalog.h"
 #include "ogplay/gles/generated/gles3_catalog.h"
@@ -131,7 +132,7 @@ public:
             gles1_dispatch_, gles1_state_, address_space_,
             [this](const std::string_view operation) -> gles::AngleFrame& {
                 return RequireFrame(operation);
-            });
+            }, buffer_mappings_);
         detail::BindAndroidBoundaryGles1Draw(
             gles1_dispatch_, gles1_extensions_dispatch_, gles1_draw_state_, gles1_state_,
             gles1_legacy_state_, address_space_,
@@ -139,7 +140,7 @@ public:
                 return RequireFrame(operation);
             });
         detail::BindAndroidBoundaryGles1MapBuffer(
-            gles1_extensions_dispatch_, gles1_map_buffer_state_, gles1_state_,
+            gles1_extensions_dispatch_, buffer_mappings_, gles1_state_,
             address_space_,
             [this](const std::string_view operation) -> gles::AngleFrame& {
                 return RequireFrame(operation);
@@ -165,11 +166,12 @@ public:
                         "GL_OES_compressed_ETC1_RGB8_texture "
                         "GL_IMG_texture_compression_pvrtc "
                         "GL_OES_matrix_palette "
-                        "GL_OES_mapbuffer "
                         "GL_OES_framebuffer_object "
                         "GL_OES_rgb8_rgba8 "
                         "GL_AMD_compressed_ATC_texture "};
                     const auto extensions = GuestGlesExtensions(RequireFrame("glGetString"));
+                    if (std::ranges::find(extensions, "GL_OES_mapbuffer") != extensions.end())
+                        result += "GL_OES_mapbuffer ";
                     if (std::ranges::find(extensions, "GL_OES_EGL_image") != extensions.end())
                         result += "GL_OES_EGL_image ";
                     return result;
@@ -206,9 +208,19 @@ public:
     memory::GuestAddress RegisterAssetManager(std::shared_ptr<AndroidAssetManagerSource> source) { return android_module_.RegisterAssetManager(std::move(source)); }
     void UnregisterAssetManager(memory::GuestAddress manager) { android_module_.UnregisterAssetManager(manager); }
     void MapThunks() {
+        graphics_context_.buffer_mappings = &buffer_mappings_;
+        gles_dispatch_.SetBufferMappings(buffer_mappings_);
+        buffer_mappings_.SetDataObserver(this,
+            +[](void* owner, std::uint32_t group, std::uint32_t target,
+                std::uint32_t offset, std::span<const std::byte> bytes, bool whole) {
+                auto& self = *static_cast<Impl*>(owner);
+                if (self.gl_context_.ShareGroup() != group || (target != 0x8892U && target != 0x8893U)) return;
+                if (whole) self.gles1_state_.SetBufferData(target, bytes);
+                else self.gles1_state_.SetBufferSubData(target, offset, bytes);
+            });
         graphics_context_.retire_share_group = [](void* owner, const std::uint32_t group) {
             auto& self = *static_cast<Impl*>(owner);
-            self.gles1_map_buffer_state_.RetireShareGroup(group);
+            self.buffer_mappings_.RetireShareGroup(group);
             self.gles3_module_.RetireShareGroup(group);
         };
         thunk_arena_.Map(descriptors_.size());
@@ -219,8 +231,7 @@ public:
         }
         MapOpenSlesStaticAbi(address_space_, *open_sles);
         open_sles_module_.MapGuestObjectArena();
-        gles1_map_buffer_state_.MapGuestArena(address_space_);
-        gles3_module_.MapGuestArena();
+        buffer_mappings_.MapGuestArena();
         libdl_override_module_.MapErrorArena();
     }
 
@@ -286,7 +297,7 @@ public:
         }
         if (guest_graphics_retired_.load(std::memory_order_acquire)) return 0U;
         const std::string_view library =
-            (api == gles::GlesApi::gles2 || api == gles::GlesApi::gles3)
+            (api == gles::GlesApi::gles2 || api == gles::GlesApi::gles3 || api == gles::GlesApi::gles2_extensions)
                                              ? "libGLESv2.so"
                                              : "libGLESv1_CM.so";
         const auto found = std::ranges::find_if(
@@ -353,7 +364,7 @@ public:
         gl_owner_.reset();
         angle_frame_.reset();
         managed_surface_ = false;
-        gles1_map_buffer_state_.RetireShareGroup(gl_context_.ShareGroup());
+        buffer_mappings_.RetireShareGroup(gl_context_.ShareGroup());
         gles3_module_.RetireShareGroup(gl_context_.ShareGroup());
         ResetGuestGraphics();
     }
@@ -693,6 +704,14 @@ private:
     }
 
     template <std::size_t... Index>
+    void BindGles2Extensions(const BoundaryModuleDescriptor& descriptor, std::index_sequence<Index...>) {
+        (BindExport<Gles2Module,
+            &Gles2Module::template InvokeExtension<static_cast<gles::GlesThunkId>(Index)>,
+            gles::generated::gles2_extensions::kFunctions[Index].abi_word_count, true>(descriptor,
+            gles::generated::gles2_extensions::kFunctions[Index].name, gles2_module_), ...);
+    }
+
+    template <std::size_t... Index>
     void BindGles3(const BoundaryModuleDescriptor& descriptor,
                    std::index_sequence<Index...>) {
         (BindExport<Gles3Module,
@@ -753,6 +772,8 @@ private:
                               gles::generated::gles2::kFunctions.size()>{});
         BindGles3(gles2, std::make_index_sequence<
                               gles::generated::gles3::kFunctions.size()>{});
+        BindGles2Extensions(gles2, std::make_index_sequence<
+                              gles::generated::gles2_extensions::kFunctions.size()>{});
         const auto& log = require("liblog.so");
 #define OGPLAY_BIND_LOG(name, id, count, method)                                \
         BindExport<LogModule, &LogModule::method, count, false>(                \
@@ -994,7 +1015,7 @@ private:
     AndroidBoundaryGles gles_dispatch_;
     detail::AndroidBoundaryGles1State gles1_state_;
     detail::AndroidBoundaryGles1DrawState gles1_draw_state_;
-    detail::AndroidBoundaryGles1MapBufferState gles1_map_buffer_state_;
+    BufferMappingService buffer_mappings_{address_space_};
     detail::AndroidBoundaryGles1QueryStrings gles1_query_strings_{address_space_};
     detail::AndroidBoundaryGles1LegacyState gles1_legacy_state_;
     gles::GlesDispatchTable gles1_dispatch_{gles::GlesApi::gles1};

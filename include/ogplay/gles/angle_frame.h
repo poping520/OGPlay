@@ -365,6 +365,10 @@ public:
         std::optional<std::span<const std::byte>> pixels);
     [[nodiscard]] std::byte* MapBufferRange(std::uint32_t target,
         std::int32_t offset, std::int32_t length, std::uint32_t access);
+    [[nodiscard]] std::byte* MapBufferRangeCompat(std::uint32_t target,
+        std::int32_t offset, std::int32_t length, std::uint32_t access);
+    void FlushMappedBufferRangeCompat(std::uint32_t target,
+        std::int32_t offset, std::int32_t length);
     [[nodiscard]] bool UnmapBuffer(std::uint32_t target);
     [[nodiscard]] std::uint32_t BoundBuffer(std::uint32_t target);
     [[nodiscard]] std::vector<std::uint8_t> ReadRgba8();

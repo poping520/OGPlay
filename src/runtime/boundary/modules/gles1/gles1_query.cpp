@@ -25,18 +25,6 @@ namespace {
 constexpr std::uint32_t kTexture0 = 0x84C0U;
 constexpr std::uint32_t kArrayBuffer = 0x8892U;
 constexpr std::uint32_t kElementArrayBuffer = 0x8893U;
-constexpr std::uint32_t kBufferSize = 0x8764U;
-constexpr std::uint32_t kWriteOnlyOes = 0x88B9U;
-constexpr std::uint32_t kBufferMapPointerOes = 0x88BDU;
-
-[[nodiscard]] std::uint32_t BoundBuffer(
-    const AndroidBoundaryGles1State& core, const std::uint32_t target) {
-    const auto transfer = core.TransferState().Snapshot();
-    if (target == kArrayBuffer) return transfer.array_buffer;
-    if (target == kElementArrayBuffer) return transfer.element_array_buffer;
-    throw std::invalid_argument("GL_OES_mapbuffer target is invalid");
-}
-
 [[nodiscard]] bool IsScalarTextureEnvironmentPname(
     const std::uint32_t pname) noexcept {
     return pname == kGles1TextureEnvironmentMode ||
@@ -216,169 +204,9 @@ void GenerateAutomaticMipmap(AndroidBoundaryGles1State& state,
 }
 }  // namespace
 
-void AndroidBoundaryGles1MapBufferState::MapGuestArena(
-    memory::AddressSpace& address_space) {
-    if (arena_mapped_) {
-        throw std::logic_error("GLES1 map-buffer guest arena is already mapped");
-    }
-    address_space.Map(
-        {memory::GuestAddress{kGles1MapBufferArenaBegin},
-         kGles1MapBufferArenaBytes},
-        memory::PageProtection::read | memory::PageProtection::write);
-    arena_mapped_ = true;
-    Reset();
-}
-
-void AndroidBoundaryGles1MapBufferState::Reset() noexcept {
-    mappings_.clear();
-    free_ranges_.clear();
-    if (arena_mapped_) {
-        free_ranges_.push_back({0U, kGles1MapBufferArenaBytes});
-    }
-}
-
-std::uint32_t AndroidBoundaryGles1MapBufferState::Allocate(
-    const std::uint32_t size) {
-    constexpr std::uint32_t kAlignment = 16U;
-    const auto allocation = std::max(size, 1U);
-    if (allocation > kGles1MapBufferArenaBytes - (kAlignment - 1U)) {
-        throw std::length_error("GLES1 mapped buffer exceeds the guest arena");
-    }
-    const auto aligned = (allocation + kAlignment - 1U) & ~(kAlignment - 1U);
-    for (auto iterator = free_ranges_.begin(); iterator != free_ranges_.end();
-         ++iterator) {
-        if (iterator->size < aligned) continue;
-        const auto address = kGles1MapBufferArenaBegin + iterator->offset;
-        iterator->offset += aligned;
-        iterator->size -= aligned;
-        if (iterator->size == 0U) free_ranges_.erase(iterator);
-        return address;
-    }
-    throw std::length_error("GLES1 mapped buffers exhaust the guest arena");
-}
-
-void AndroidBoundaryGles1MapBufferState::Release(
-    const std::uint32_t guest_address, const std::uint32_t size) noexcept {
-    constexpr std::uint32_t kAlignment = 16U;
-    const auto allocation = std::max(size, 1U);
-    const auto aligned = (allocation + kAlignment - 1U) & ~(kAlignment - 1U);
-    free_ranges_.push_back({guest_address - kGles1MapBufferArenaBegin, aligned});
-    std::ranges::sort(free_ranges_, {}, &FreeRange::offset);
-    for (std::size_t index = 1U; index < free_ranges_.size();) {
-        auto& previous = free_ranges_[index - 1U];
-        const auto& current = free_ranges_[index];
-        if (previous.offset + previous.size == current.offset) {
-            previous.size += current.size;
-            free_ranges_.erase(free_ranges_.begin() +
-                               static_cast<std::ptrdiff_t>(index));
-        } else {
-            ++index;
-        }
-    }
-}
-
-std::uint32_t AndroidBoundaryGles1MapBufferState::Map(
-    gles::AngleFrame& frame, const AndroidBoundaryGles1State& core,
-    memory::AddressSpace& address_space, const std::uint32_t target,
-    const std::uint32_t access, const std::uint64_t thread_id) {
-    if (!arena_mapped_) {
-        throw std::logic_error("GLES1 map-buffer guest arena is not mapped");
-    }
-    if (access != kWriteOnlyOes) {
-        throw std::invalid_argument(
-            "glMapBufferOES access must be GL_WRITE_ONLY_OES");
-    }
-    const auto buffer = BoundBuffer(core, target);
-    const auto key = (static_cast<std::uint64_t>(core.Shared().resource_group) << 32U) | buffer;
-    if (const auto old = mappings_.find(key); old != mappings_.end() &&
-        !frame.HasMappedBufferPointerOes(target, kBufferMapPointerOes)) {
-        Release(old->second.guest_address, old->second.size); mappings_.erase(old);
-    }
-    if (buffer == 0U || mappings_.contains(key)) {
-        throw std::invalid_argument(
-            "glMapBufferOES requires an unmapped bound buffer");
-    }
-    const auto signed_size = frame.GetBufferParameter(target, kBufferSize);
-    if (signed_size < 0) {
-        throw std::runtime_error("ANGLE returned a negative mapped buffer size");
-    }
-    const auto size = static_cast<std::uint32_t>(signed_size);
-    auto* const host_address = frame.MapBufferOes(target, access);
-    if (host_address == nullptr) return 0U;
-
-    std::uint32_t guest_address{};
-    try {
-        guest_address = Allocate(size);
-        if (size != 0U) {
-            address_space.Write(
-                memory::GuestAddress{guest_address},
-                std::span<const std::byte>{host_address, size}, thread_id);
-        }
-    } catch (...) {
-        static_cast<void>(frame.UnmapBufferOes(target));
-        throw;
-    }
-    mappings_.emplace(key, Mapping{guest_address, size, host_address});
-    return guest_address;
-}
-
-void AndroidBoundaryGles1MapBufferState::RetireShareGroup(const std::uint32_t group) noexcept {
-    std::erase_if(mappings_, [&](const auto& entry) {
-        if ((entry.first >> 32U) != group) return false;
-        Release(entry.second.guest_address, entry.second.size); return true;
-    });
-}
-
-bool AndroidBoundaryGles1MapBufferState::Unmap(
-    gles::AngleFrame& frame, AndroidBoundaryGles1State& core,
-    memory::AddressSpace& address_space, const std::uint32_t target,
-    const std::uint64_t thread_id) {
-    const auto buffer = BoundBuffer(core, target);
-    const auto key = (static_cast<std::uint64_t>(core.Shared().resource_group) << 32U) | buffer;
-    const auto found = mappings_.find(key);
-    if (found == mappings_.end()) {
-        throw std::invalid_argument(
-            "glUnmapBufferOES requires a mapped bound buffer");
-    }
-    const auto mapping = found->second;
-    if (frame.MappedBufferPointerOes(target, kBufferMapPointerOes) != mapping.host_address) {
-        Release(mapping.guest_address, mapping.size); mappings_.erase(found);
-        throw gles::GlesApiError("glUnmapBufferOES stale mapping", 0x0502U);
-    }
-    if (mapping.size != 0U) {
-        address_space.Read(
-            memory::GuestAddress{mapping.guest_address},
-            std::span<std::byte>{mapping.host_address, mapping.size}, thread_id);
-    }
-    core.SetBufferData(target, std::span<const std::byte>{mapping.host_address, mapping.size});
-    const auto intact = frame.UnmapBufferOes(target);
-    mappings_.erase(found);
-    Release(mapping.guest_address, mapping.size);
-    return intact;
-}
-
-std::uint32_t AndroidBoundaryGles1MapBufferState::Pointer(
-    gles::AngleFrame& frame, const AndroidBoundaryGles1State& core,
-    const std::uint32_t target, const std::uint32_t parameter) const {
-    if (parameter != kBufferMapPointerOes) {
-        throw std::invalid_argument("glGetBufferPointervOES pname is invalid");
-    }
-    const auto buffer = BoundBuffer(core, target);
-    const auto key = (static_cast<std::uint64_t>(core.Shared().resource_group) << 32U) | buffer;
-    if (!frame.HasMappedBufferPointerOes(target, parameter)) return 0U;
-    const auto found = mappings_.find(key);
-    if (found == mappings_.end()) {
-        throw std::logic_error(
-            "ANGLE mapped buffer has no guest arena identity");
-    }
-    if (frame.MappedBufferPointerOes(target, parameter) != found->second.host_address)
-        throw gles::GlesApiError("glGetBufferPointervOES stale identity", 0x0502U);
-    return found->second.guest_address;
-}
-
 void BindAndroidBoundaryGles1MapBuffer(
     gles::GlesDispatchTable& extension_dispatch,
-    AndroidBoundaryGles1MapBufferState& map_buffer,
+    BufferMappingService& map_buffer,
     AndroidBoundaryGles1State& core,
     memory::AddressSpace& address_space,
     AndroidBoundaryFrameResolver require_frame) {
@@ -388,18 +216,17 @@ void BindAndroidBoundaryGles1MapBuffer(
     }
     extension_dispatch.Bind(
         "glMapBufferOES",
-        [&map_buffer, &core, &address_space, require_frame](
+        [&map_buffer, &core, require_frame](
             const auto arguments, const std::uint64_t thread_id) {
-            return map_buffer.Map(require_frame("glMapBufferOES"), core,
-                                  address_space, arguments[0], arguments[1],
-                                  thread_id);
+            return map_buffer.MapOes(require_frame("glMapBufferOES"), core.Shared().resource_group,
+                                     arguments[0], arguments[1], thread_id).Value();
         });
     extension_dispatch.Bind(
         "glUnmapBufferOES",
-        [&map_buffer, &core, &address_space, require_frame](
+        [&map_buffer, &core, require_frame](
             const auto arguments, const std::uint64_t thread_id) {
-            return map_buffer.Unmap(require_frame("glUnmapBufferOES"), core,
-                                    address_space, arguments[0], thread_id)
+            return map_buffer.Unmap(require_frame("glUnmapBufferOES"), core.Shared().resource_group,
+                                    arguments[0], thread_id)
                        ? 1U
                        : 0U;
         });
@@ -412,8 +239,8 @@ void BindAndroidBoundaryGles1MapBuffer(
                 sizeof(std::uint32_t), gles::GuestTransferDirection::output,
                 false, thread_id);
             const std::array value{map_buffer.Pointer(
-                require_frame("glGetBufferPointervOES"), core,
-                arguments[0], arguments[1])};
+                require_frame("glGetBufferPointervOES"), core.Shared().resource_group,
+                arguments[0], arguments[1]).Value()};
             gles_io::StoreWordsLE(output.WritableBytes(), value);
             output.Commit();
             return 0U;
@@ -828,7 +655,7 @@ void BindAndroidBoundaryGles1Legacy(
 void BindAndroidBoundaryGles1Textures(
     gles::GlesDispatchTable& dispatch, AndroidBoundaryGles1State& state,
     memory::AddressSpace& address_space,
-    AndroidBoundaryFrameResolver require_frame) {
+    AndroidBoundaryFrameResolver require_frame, BufferMappingService& mappings) {
     if (!require_frame) {
         throw std::invalid_argument("GLES1 texture frame resolver is missing");
     }
@@ -844,7 +671,7 @@ void BindAndroidBoundaryGles1Textures(
         WriteGuestNames(output, names);
         return 0U;
     });
-    dispatch.Bind("glDeleteBuffers", [&state, &address_space, require_frame](
+    dispatch.Bind("glDeleteBuffers", [&state, &address_space, &mappings, require_frame](
                                          const auto arguments,
                                          const std::uint64_t thread_id) {
         const auto count = Gles1ResourceCount(arguments[0], "glDeleteBuffers");
@@ -854,6 +681,7 @@ void BindAndroidBoundaryGles1Textures(
             false, thread_id);
         const auto names = ReadGuestNames(input);
         require_frame("glDeleteBuffers").DeleteBuffers(names);
+        mappings.RetireBuffers(state.Shared().resource_group, names);
         state.DeleteBufferData(names);
         auto next = state.TransferState();
         const auto bound = next.Snapshot();

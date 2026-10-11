@@ -558,6 +558,82 @@ struct FileVm final {
 
 }  // namespace
 
+TEST_CASE("DVM-243 original StatFs snapshots refresh guest quota and preserve errors") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        const TemporaryRoot root("statfs");
+        auto store = SandboxStore::Open(root.path, kPackage, kPackage,
+                                       {.byte_quota = 16 * 4096, .maximum_files = 32});
+        FileVm f(store.get(), true, {.backend = backend});
+        f.vfs.AddPathAlias("/storage/emulated/0", "/sdcard");
+        const auto type = f.linker.ResolveDescriptor("Landroid/os/StatFs;");
+        CHECK(f.linker.Class(type).is_boot_dex);
+        const auto stat = f.interpreter.NewIntrinsicInstance("Landroid/os/StatFs;");
+        const auto roots = f.interpreter.ProtectReferences(std::array{stat});
+        const auto refresh = [&](const char* path) {
+            return f.CallOnOutcome(stat, "restat", "(Ljava/lang/String;)V",
+                                   {VmValue::Ref(f.interpreter.NewStringUtf8(path))});
+        };
+        f.CallOn(stat, "<init>", "(Ljava/lang/String;)V",
+                 {VmValue::Ref(f.interpreter.NewStringUtf8("/sdcard"))});
+        CHECK(f.CallOn(stat, "getBlockSizeLong", "()J").AsLong() == 4096);
+        CHECK(f.CallOn(stat, "getBlockCountLong", "()J").AsLong() == 16);
+        CHECK(f.CallOn(stat, "getFreeBlocks", "()I").AsInt() == 16);
+        CHECK(f.CallOn(stat, "getAvailableBytes", "()J").AsLong() == 16 * 4096);
+        REQUIRE_FALSE(refresh("/data").exception.IsValid()); // SQLiteGlobal page-size path
+        CHECK(f.CallOn(stat, "getBlockSize", "()I").AsInt() == 4096);
+        const auto fd = f.vfs.Open("/sdcard/save", {.write = true, .create = true});
+        const std::vector<std::byte> data(4096);
+        REQUIRE(f.vfs.Write(fd, data) == data.size());
+        CHECK(f.CallOn(stat, "getFreeBlocks", "()I").AsInt() == 16); // cached snapshot
+        REQUIRE_FALSE(refresh("/storage/emulated/0/save").exception.IsValid());
+        CHECK(f.CallOn(stat, "getFreeBlocksLong", "()J").AsLong() == 15);
+        CHECK(f.CallOn(stat, "getFreeBytes", "()J").AsLong() == 15 * 4096);
+        CHECK(f.CallOn(stat, "getTotalBytes", "()J").AsLong() == 16 * 4096);
+        const auto fail = [&](const VmCallOutcome& outcome, const char* exception) {
+            REQUIRE(outcome.exception.IsValid());
+            CHECK(f.linker.Class(outcome.exception_class).descriptor == exception);
+        };
+        fail(refresh("/sdcard/absent"), "Ljava/lang/IllegalArgumentException;");
+        CHECK(f.CallOn(stat, "getFreeBlocksLong", "()J").AsLong() == 15);
+        f.vfs.PutFile("/system/ro", {}, false);
+        fail(refresh("/system/ro"), "Ljava/lang/IllegalArgumentException;");
+        CHECK(f.CallOn(stat, "getFreeBlocksLong", "()J").AsLong() == 15);
+        const auto null = f.CallOnOutcome(stat, "restat", "(Ljava/lang/String;)V", {VmValue::Ref(VmObjectRef{})});
+        fail(null, "Ljava/lang/NullPointerException;");
+        f.interpreter.IO().SetFileSystem(nullptr);
+        fail(refresh("/sdcard"), "Ljava/lang/IllegalArgumentException;");
+        f.interpreter.IO().SetFileSystem(&f.io_file_system);
+        f.vfs.Truncate(fd, 0);
+        REQUIRE_FALSE(refresh("/data/data/com.example.game").exception.IsValid());
+        CHECK(f.CallOn(stat, "getAvailableBlocks", "()I").AsInt() == 16);
+        f.vfs.Close(fd); f.vfs.RemoveFile("/sdcard/save");
+        const auto other = f.interpreter.NewIntrinsicInstance("Landroid/os/StatFs;");
+        const auto other_root = f.interpreter.ProtectReferences(std::array{other});
+        fail(f.CallOnOutcome(other, "<init>", "(Ljava/lang/String;)V",
+                              {VmValue::Ref(f.interpreter.NewStringUtf8("/bad/path"))}),
+             "Ljava/lang/IllegalArgumentException;");
+        static_cast<void>(f.interpreter.CollectGarbage());
+        CHECK(f.CallOn(stat, "getFreeBlocksLong", "()J").AsLong() == 16);
+        const auto hits = f.ledger.Unimplemented();
+        REQUIRE(hits.size() == 1); CHECK(hits.front().id == "runtime.vfs_filesystem_stats");
+    }
+}
+
+TEST_CASE("DVM-243 original StatFs retains long values and API19 int truncation") {
+    constexpr auto blocks = (UINT64_C(1) << 31) + 5;
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        const TemporaryRoot root("statfs-large");
+        auto store = SandboxStore::Open(root.path, kPackage, kPackage, {.byte_quota = blocks * 4096});
+        FileVm f(store.get(), true, {.backend = backend});
+        const auto stat = f.interpreter.NewIntrinsicInstance("Landroid/os/StatFs;");
+        const auto roots = f.interpreter.ProtectReferences(std::array{stat});
+        f.CallOn(stat, "<init>", "(Ljava/lang/String;)V", {VmValue::Ref(f.interpreter.NewStringUtf8("/sdcard"))});
+        CHECK(f.CallOn(stat, "getAvailableBlocksLong", "()J").AsLong() == static_cast<std::int64_t>(blocks));
+        CHECK(f.CallOn(stat, "getFreeBlocks", "()I").AsInt() == INT32_MIN + 5);
+        CHECK(f.CallOn(stat, "getTotalBytes", "()J").AsLong() == static_cast<std::int64_t>(blocks * 4096));
+    }
+}
+
 TEST_CASE("DVM-217 AtomicFile commits rolls back and recovers through VFS") {
     for (const auto backend : {InterpreterBackend::switch_dispatch,
                                InterpreterBackend::threaded}) {

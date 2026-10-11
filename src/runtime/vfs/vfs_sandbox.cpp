@@ -15,6 +15,10 @@ namespace ogplay::runtime {
 VfsFileInfo VirtualFileSystem::Impl::Stat(const std::string_view path) const {
     std::scoped_lock lock(mutex_);
     const auto normalized = ResolvePath(path, working_directory_, aliases_);
+    return StatLocked(normalized);
+}
+
+VfsFileInfo VirtualFileSystem::Impl::StatLocked(const std::string& normalized) const {
     if (tombstones_.contains(normalized)) {
         throw VfsError(kEnoent, "VFS file was deleted");
     }
@@ -33,6 +37,51 @@ VfsFileInfo VirtualFileSystem::Impl::Stat(const std::string_view path) const {
         return DirectoryInfoLocked(normalized);
     }
     throw VfsError(kEnoent, "VFS file not found");
+}
+
+GuestFileSystemStats VirtualFileSystem::Impl::StatVfs(std::string_view path) const {
+    std::scoped_lock lock(mutex_);
+    const auto normalized = ResolvePath(path, working_directory_, aliases_);
+    const auto info = StatLocked(normalized);
+    // Container directories such as /data and /data/data describe the
+    // single attached quota volume too; this does not grant write access.
+    const bool ancestor = info.is_directory && normalized != "/" &&
+        std::ranges::any_of(writable_roots_, [&](const auto& root) {
+            return root.starts_with(normalized + "/");
+        });
+    if (!sandbox_ || (!IsWritableNamespaceLocked(normalized) && !ancestor))
+        throw VfsError(95, "filesystem statistics require the attached sandbox volume");
+    const auto quota = sandbox_->QuotaBytes();
+    if (quota > static_cast<std::uint64_t>(INT64_MAX) || sandbox_->UsedBytes() > quota)
+        throw VfsError(75, "sandbox quota exceeds supported filesystem statistics range");
+    const auto persisted = static_cast<std::int64_t>(sandbox_->UsedBytes());
+    if (dirty_overlay_delta_ > 0 && persisted > INT64_MAX - dirty_overlay_delta_)
+        throw VfsError(75, "sandbox dirty quota exceeds statistics range");
+    const auto used = persisted + dirty_overlay_delta_;
+    if (used < 0 || static_cast<std::uint64_t>(used) > quota)
+        throw VfsError(5, "sandbox dirty quota accounting is inconsistent");
+    // Persisted metadata and pending new overlay files share the same entry
+    // budget. Immutable base entries and tombstones do not consume it.
+    std::set<std::string, std::less<>> entries;
+    for (const auto& entry : sandbox_->Entries())
+        if (!entry.is_tombstone) entries.insert(NormalizePath(entry.path));
+    for (const auto& [_, file] : files_)
+        if (file->dirty && !file->overlay_path.empty()) entries.insert(file->overlay_path);
+    const auto entry_quota = sandbox_->EntryQuota();
+    const auto free_entries = entry_quota > entries.size() ? entry_quota - entries.size() : 0;
+    std::uint64_t fsid = UINT64_C(14695981039346656037);
+    for (const auto c : sandbox_->InstallationId() + "/" + sandbox_->Package()) {
+        fsid ^= static_cast<unsigned char>(c); fsid *= UINT64_C(1099511628211);
+    }
+    fsid &= static_cast<std::uint64_t>(INT64_MAX);
+    if (!fsid) fsid = 1;
+    constexpr std::uint64_t block = 4096;
+    const auto free = (quota - static_cast<std::uint64_t>(used)) / block;
+    // Explicit virtual quota volume: no reserved blocks or mount-option
+    // flags. namemax is the existing encoded backing-name upper bound;
+    // escaping/tombstone overhead can reject a guest name sooner.
+    return {{block, block, quota / block, free, free, entry_quota,
+             free_entries, free_entries, fsid, 0, SandboxStore::MaximumEncodedNameBytes()}};
 }
 
 std::vector<VfsDirectoryEntry> VirtualFileSystem::Impl::ListDirectory(

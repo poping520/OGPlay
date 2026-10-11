@@ -15,6 +15,11 @@ bool IoRuntime::HasFileSystem() const noexcept {
   return file_system_ != nullptr;
 }
 
+GuestFileSystemStats IoRuntime::StatVfs(std::string_view path) const {
+  if (!file_system_) throw IoRuntimeError("guest filesystem statistics are unavailable", 38);
+  return file_system_->StatVfs(path);
+}
+
 std::shared_ptr<IoRuntime::InputState>
 IoRuntime::SetInput(const VmObjectRef owner, InputState state,
                     const bool close_underlying) {

@@ -802,6 +802,8 @@ std::uint64_t SandboxStore::FileCount() const {
 std::uint64_t SandboxStore::QuotaBytes() const {
     return impl_->config.byte_quota;
 }
+std::uint64_t SandboxStore::EntryQuota() const { return impl_->config.maximum_files; }
+std::uint64_t SandboxStore::MaximumEncodedNameBytes() { return kMaximumSegmentLength; }
 const std::string& SandboxStore::Package() const { return impl_->package; }
 const std::string& SandboxStore::InstallationId() const {
     return impl_->installation_id;

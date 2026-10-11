@@ -1783,6 +1783,7 @@
       "Landroid/os/ResultReceiver$MyResultReceiver;",
       "Landroid/os/ResultReceiver$MyRunnable;",
       "Landroid/os/ResultReceiver;",
+      "Landroid/os/StatFs;",
       "Landroid/os/SystemProperties;",
       "Landroid/os/UserHandle$1;",
       "Landroid/os/UserHandle;",

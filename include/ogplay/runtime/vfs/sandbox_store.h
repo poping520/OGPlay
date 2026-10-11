@@ -72,6 +72,8 @@ public:
     [[nodiscard]] std::uint64_t UsedBytes() const;
     [[nodiscard]] std::uint64_t FileCount() const;
     [[nodiscard]] std::uint64_t QuotaBytes() const;
+    [[nodiscard]] std::uint64_t EntryQuota() const;
+    [[nodiscard]] static std::uint64_t MaximumEncodedNameBytes();
     [[nodiscard]] const std::string& Package() const;
     [[nodiscard]] const std::string& InstallationId() const;
     [[nodiscard]] const std::filesystem::path& Directory() const;

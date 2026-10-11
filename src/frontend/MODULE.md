@@ -12,6 +12,8 @@
 - `run-apk`：选择 compatibility Profile，挂载数据，创建 SDL3/ANGLE surface，装配 Android
   guest、DexVM 与 Activity lifecycle；VFS 使用 `/` 作为默认 guest cwd，Profile 显式
   working directory 可覆盖它。
+  文件系统容量只由 guest VFS 的配额卷统计发布，前端不再将 external-dir 的宿主
+  剩余空间写为无路径 StatFs 标量。
 - `ogplay-gui` / `ogplay gui`：共用 GUI shell；ready 条目只启动同目录 `run-apk`，回收状态
   与退出码。
 - `HostBundledDataPaths`：优先读取可执行文件同目录（macOS bundle Resources）的

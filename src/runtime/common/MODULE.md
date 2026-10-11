@@ -6,6 +6,8 @@
 
 ## 不变量
 
+- GuestFileSystemStats 保存 API19 statvfs 的 11 个无符号数值字段；块/条目单位、
+  来源与支持范围由 provider 决定，Java 回填检查 long 范围；不含宿主路径或指针。
 - 只依赖标准库和更低层公共类型；不得包含 session、integration、JNI、syscall 或 boundary
   实现。
 - `SupervisorCallProgress` 只表达可观测进展分类，不决定 watchdog 预算或 teardown 策略。

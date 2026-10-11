@@ -36,6 +36,9 @@ switch/threaded 解释、异常、线程/monitor、反射及 `java.*` core intri
 
 ### 对象、GC、执行
 
+- Posix.statvfs 经 IoRuntime/IoFileSystem 查询 GuestFileSystemStats，检查计数不变量与
+  API19 long 范围后调用原版 StructStatVfs 构造。errno 穿透；未知统计后端记账失败。
+  StatFs 的快照/restat/异常转换/字节算法与旧 int 截断执行 BootDex，不提供 fstatvfs。
 - AllocateJniObject 使用当前调用线程 context，按 API19 拒绝不可实例化类，运行类初始化
   与分配安全点后创建真实继承布局的零值实例，不执行实例构造器或自动创建 native peer。
   clinit/堆预算/宿主分配错误返回 Java throwable；成功和异常均交给 owner 发布引用。

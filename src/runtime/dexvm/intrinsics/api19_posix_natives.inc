@@ -68,7 +68,6 @@ posix.UnimplementedVirtual("setuid", "(I)V");
 posix.UnimplementedVirtual("shutdown", "(Ljava/io/FileDescriptor;I)V");
 posix.UnimplementedVirtual("socket", "(III)Ljava/io/FileDescriptor;");
 posix.UnimplementedVirtual("socketpair", "(IIILjava/io/FileDescriptor;Ljava/io/FileDescriptor;)V");
-posix.UnimplementedVirtual("statvfs", "(Ljava/lang/String;)Llibcore/io/StructStatVfs;");
 posix.UnimplementedVirtual("strsignal", "(I)Ljava/lang/String;");
 posix.UnimplementedVirtual("symlink", "(Ljava/lang/String;Ljava/lang/String;)V");
 posix.UnimplementedVirtual("tcdrain", "(Ljava/io/FileDescriptor;)V");

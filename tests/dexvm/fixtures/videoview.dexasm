@@ -5,6 +5,7 @@
 .implements Landroid/media/MediaPlayer$OnCompletionListener;
 .implements Landroid/media/MediaPlayer$OnPreparedListener;
 .implements Landroid/media/MediaPlayer$OnErrorListener;
+.implements Landroid/media/MediaPlayer$OnVideoSizeChangedListener;
 
 .field static public completions:I
 .field static public prepared:I
@@ -13,6 +14,28 @@
 .field static public completedPlayer:Landroid/media/MediaPlayer;
 .field static public stopOnPrepared:Z
 .field static public volumeOnPrepared:Z
+.field static public startOnPrepared:Z
+.field static public width:I
+.field static public height:I
+
+.method public onVideoSizeChanged(Landroid/media/MediaPlayer;II)V
+.registers 4
+    sput v2, LVideoListener;->width:I
+    sput v3, LVideoListener;->height:I
+    return-void
+.end method
+
+.method static public getWidth()I
+.registers 1
+    sget v0, LVideoListener;->width:I
+    return v0
+.end method
+
+.method static public getHeight()I
+.registers 1
+    sget v0, LVideoListener;->height:I
+    return v0
+.end method
 
 .method public constructor <init>()V
 .registers 1
@@ -49,6 +72,10 @@
     const v1, 0x3e800000
     invoke-virtual {v3, v0, v1}, Landroid/media/MediaPlayer;->setVolume(FF)V
 :volume_done
+    sget-boolean v0, LVideoListener;->startOnPrepared:Z
+    if-eqz v0, :start_done
+    invoke-virtual {v3}, Landroid/media/MediaPlayer;->start()V
+:start_done
     sget-boolean v0, LVideoListener;->stopOnPrepared:Z
     if-eqz v0, :done
     invoke-virtual {v3}, Landroid/media/MediaPlayer;->release()V

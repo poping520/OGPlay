@@ -176,6 +176,9 @@ void AppendNode(const UiTree& tree, const UiNodeId id,
     if (clip_to_bounds) {
         out.emplace_back(PushClip{node.screen_frame});
     }
+    if (node.surface_has_frame && node.surface_layer != SurfaceLayer::on_top) {
+        out.emplace_back(ClearSurfaceRect{node.screen_frame});
+    }
     if (node.background_color.has_value() && !(id == tree.Root() && plane == UiRenderPlane::modal)) {
         out.emplace_back(DrawSolidRect{node.screen_frame,
                                        *node.background_color,
@@ -488,6 +491,10 @@ UiOverlayFrame RasterizeUiOverlay(const UiRenderList& commands,
         } else if (std::holds_alternative<PopClip>(command)) {
             if (clips.size() <= 1) throw std::runtime_error("UI clip stack underflow");
             clips.pop_back();
+        } else if (const auto* clear = std::get_if<ClearSurfaceRect>(&command)) {
+            PaintRect(frame, clear->rect, clips.back(), [](auto, auto, auto* dst) {
+                std::fill_n(dst, 4, std::uint8_t{});
+            });
         } else if (const auto* solid = std::get_if<DrawSolidRect>(&command)) {
             const auto alpha = static_cast<std::uint8_t>(
                 (static_cast<std::uint32_t>(solid->rgba & 0xffU) *
@@ -632,6 +639,11 @@ UiOverlayFrame RasterizeUiOverlay(const UiRenderList& commands,
         }
     }
     if (clips.size() != 1) throw std::runtime_error("UI clip stack is unbalanced");
+    // Clear commands may erase earlier opaque pixels. Certify the final result.
+    frame.fully_transparent = true;
+    for (std::size_t offset = 3; offset < frame.rgba8.size(); offset += 4) {
+        if (frame.rgba8[offset] != 0) { frame.fully_transparent = false; break; }
+    }
     return frame;
 }
 

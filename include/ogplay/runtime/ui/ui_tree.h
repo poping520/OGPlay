@@ -48,6 +48,8 @@ enum class UiClass : std::uint8_t {
     VideoView,
 };
 
+enum class SurfaceLayer : std::uint8_t { media, media_overlay, on_top };
+
 enum class Visibility : std::uint8_t {
     Visible,
     Invisible,
@@ -173,7 +175,9 @@ struct UiNode final {
     bool focusable{};
     bool focusable_in_touch_mode{};
     bool scroll_container{};
-    bool surface_on_top{};
+    SurfaceLayer surface_layer{SurfaceLayer::media};
+    // Published by the frame compositor from live producers, not decoder ownership.
+    bool surface_has_frame{};
     bool horizontal_scroll_bar_enabled{true};
     bool vertical_scroll_bar_enabled{true};
     Orientation orientation{Orientation::Horizontal};

@@ -848,6 +848,7 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
         const dx::VmExecutionLockScope execution(bindings_.bridge->Vm().ExecutionLock());
         auto& context = *bindings_.context;
         runtime::RefreshAndroidImageDrawables(context);
+        runtime::RefreshAndroidSurfaceFrames(context);
         if (context.ui_tree.Get(context.ui_tree.Root())->layout_dirty) {
             runtime::ui::LayoutUiTree(
                 context.ui_tree,
@@ -922,7 +923,9 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
     }
 
     void DexActivityLifecycle::PumpAudioTracks() {
-        if (bindings_.context->audio_tracks.empty()) return;
+        if (bindings_.context->audio_tracks.empty() &&
+            bindings_.context->media_players.empty() &&
+            bindings_.context->sound_pools.empty()) return;
         const auto error = runtime::PumpAndroidAudioTracks(
             bindings_.bridge->Vm(), *bindings_.context);
         if (error.has_value()) Fail(*error);

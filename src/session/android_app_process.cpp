@@ -186,19 +186,8 @@ public:
         session->SetAuxiliaryAudioMix(
             [android_context](const std::span<std::int64_t> accumulator,
                               const std::uint32_t rate) {
-                std::vector<std::int64_t> video(accumulator.size());
                 static_cast<void>(runtime::MixVideoPcmIntoAccumulator(
-                    *android_context, video, rate));
-                std::scoped_lock lock(android_context->audio_policy_mutex);
-                constexpr std::size_t kMusicStream = 3U;
-                const auto gain = android_context->stream_mute[kMusicStream]
-                                      ? 0.0
-                                      : static_cast<double>(
-                                            android_context->stream_volume[kMusicStream]) /
-                                            15.0;
-                for (std::size_t i = 0; i < accumulator.size(); ++i) {
-                    accumulator[i] += static_cast<std::int64_t>(video[i] * gain);
-                }
+                    *android_context, accumulator, rate));
             });
         context->native_libraries = native_libraries.get();
         context->package_name = manifest.package;

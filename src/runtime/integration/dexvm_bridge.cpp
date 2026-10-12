@@ -379,7 +379,7 @@ public:
         if (linker.Class(model->ObjectClass(object)).descriptor != "Landroid/content/res/AssetManager;")
             throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "object is not an AssetManager"};
         if (!android_context || android_intrinsics::IsSystemAssets(android_context, object)) {
-            if (auto* ledger = vm->Ledger()) ledger->RecordUnimplemented("runtime.asset_manager", 0);
+            if (auto* vm_ledger = vm->Ledger()) vm_ledger->RecordUnimplemented("runtime.asset_manager", 0);
             throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "system NDK assets are unavailable"};
         }
         const auto identity = model->ToIdentity(object).value;

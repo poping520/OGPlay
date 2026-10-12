@@ -15,6 +15,47 @@
 
 namespace ui = ogplay::runtime::ui;
 
+TEST_CASE("DVM-248 Surface hole follows paint order clipping and final transparency") {
+    ui::UiTree tree;
+    tree.Get(tree.Root())->background_color = 0x000000ffU;
+    const auto surface = tree.CreateNode(ui::UiClass::View);
+    tree.Get(surface)->layout.width = {ui::SizeMode::Fixed, 8};
+    tree.Get(surface)->layout.height = {ui::SizeMode::Fixed, 8};
+    tree.Get(surface)->layout.margin.left = 2;
+    tree.Get(surface)->surface_has_frame = true;
+    tree.Attach(tree.Root(), surface);
+    const auto label = tree.CreateNode(ui::UiClass::View);
+    tree.Get(label)->layout.width = {ui::SizeMode::Fixed, 2};
+    tree.Get(label)->layout.height = {ui::SizeMode::Fixed, 2};
+    tree.Get(label)->layout.margin.left = 4;
+    tree.Get(label)->background_color = 0xffffffffU;
+    tree.Attach(tree.Root(), label);
+    ui::LayoutUiTree(tree, {12, 8});
+    ui::UiOverlayRenderer renderer;
+    auto frame = renderer.Render(tree, {}, {12, 8});
+    CHECK(frame.rgba8[3] == 255); // black outside Surface
+    CHECK(frame.rgba8[2 * 4 + 3] == 0); // video hole
+    CHECK(frame.rgba8[4 * 4] == 255); // later label survives
+    CHECK(frame.rgba8[4 * 4 + 3] == 255);
+    tree.Get(surface)->surface_layer = ui::SurfaceLayer::on_top;
+    tree.MarkDrawDirty(surface);
+    frame = renderer.Render(tree, {}, {12, 8});
+    CHECK(frame.rgba8[2 * 4 + 3] == 255); // no window hole for onTop
+    tree.Get(surface)->surface_layer = ui::SurfaceLayer::media_overlay;
+    tree.MarkDrawDirty(surface);
+    tree.Get(tree.Root())->padding.left = 3;
+    frame = renderer.Render(tree, {}, {12, 8});
+    CHECK(frame.rgba8[2 * 4 + 3] == 255); // ancestor clipping
+    CHECK(frame.rgba8[3 * 4 + 3] == 0);
+    tree.SetVisibility(surface, ui::Visibility::Invisible);
+    frame = renderer.Render(tree, {}, {12, 8});
+    CHECK(frame.rgba8[3 * 4 + 3] == 255);
+    const auto cleared = ui::RasterizeUiOverlay({ui::DrawSolidRect{{0, 0, 8, 8}, 0xff0000ffU},
+        ui::ClearSurfaceRect{{0, 0, 8, 8}}}, {8, 8});
+    CHECK(cleared.fully_transparent);
+    CHECK(std::all_of(cleared.rgba8.begin(), cleared.rgba8.end(), [](auto byte) { return byte == 0; }));
+}
+
 TEST_CASE("DVM-246 modal render plane separates Surface ordering and shares dirty evidence") {
     ui::UiTree tree;
     const auto normal = tree.CreateNode(ui::UiClass::FrameLayout);

@@ -109,5 +109,8 @@ DVM-120：内置字体 BOLD 以行像素并集加粗、ITALIC 按行右移，四
 的 advance/边界；半透明加粗像素只混合一次。text_style 随 UiNode dirty 一起失效。
 不依赖系统字体或 Skia，不承诺 Android 字体像素一致性。
 
-SurfaceView onTop 为 UiNode 事实；视频像素由上层在 UiTree 可见、附着、布局、
-父裁剪及 alpha 边界内合成，onTop 决定在 UI overlay 前后呈现。UiTree 不依赖解码器。
+SurfaceView 三种 surface_layer 为 UiNode 唯一配置事实；上层发布 surface_has_frame，
+仅有真实输出的普通媒体/媒体叠层在 View 绘制顺序中输出 ClearSurfaceRect。
+开孔沿用相同 clip，后绘制的控件保留；窗口上层不对 UI 开孔。光栅后重新认证最终
+透明性，清除已绘制像素也能正确失效缓存。视频仍由上层按同一 geometry 合成，
+UiTree 不持有播放器或 guest 引用，不依赖解码器。

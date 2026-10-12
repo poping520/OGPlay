@@ -289,3 +289,7 @@ Scenario gate 与 profile 迁移）以 [`docs/state/CURRENT.md`](../../state/CUR
 - [DVM-246 · 托管 Dialog 与有界模态提示](DVM-246.md)
 
 - [DVM-247 · 有界动态 XML 膨胀协议](DVM-247.md)
+
+- [DVM-248 · 有界 Surface 层序与窗口开孔](DVM-248.md)
+
+- [DVM-249 · 普通 MediaPlayer 本地视频输出](DVM-249.md)

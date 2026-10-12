@@ -912,6 +912,14 @@ dx::IntrinsicHandler HolderGetSurface(const Context& context) {
 
 void AddCanvasMethods(dx::IntrinsicClassBuilder& builder,
                       const Context& context) {
+    builder.FinalMethod("setKeepScreenOn", "(Z)V", [](dx::IntrinsicContext& call) {
+        if (call.arguments[0].AsInt() != 0) {
+            if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.surface_keep_screen_on", 0);
+            throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "display wake inhibition is unavailable"};
+        }
+        // No supported wake lease exists; clearing the request is truthful.
+        return dx::VmValue::Void();
+    });
     builder.FinalMethod("lockCanvas", "()Landroid/graphics/Canvas;",
                         LockCanvasHandler(context));
     builder.FinalMethod("lockCanvas",
@@ -973,6 +981,7 @@ namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_view_SurfaceHolder(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Interface("Landroid/view/SurfaceHolder;");
+    builder.UnimplementedVirtual("setKeepScreenOn", "(Z)V", dx::kAccPublic | dx::kAccAbstract);
     builder.UnimplementedVirtual("getSurfaceFrame", "()Landroid/graphics/Rect;",
                                  dx::kAccPublic | dx::kAccAbstract);
     builder.FinalMethod("getSurface", "()Landroid/view/Surface;", HolderGetSurface(context));
@@ -1034,7 +1043,17 @@ Decl Declare_android_view_SurfaceView(const Context& context) {
         [context](dx::IntrinsicContext& call) {
             const auto node = FindViewUiNode(*context, call.receiver.Value());
             if (!node) throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "SurfaceView has no UI node"};
-            context->ui_tree.Get(*node)->surface_on_top = call.arguments[0].AsInt() != 0;
+            context->ui_tree.Get(*node)->surface_layer = call.arguments[0].AsInt() != 0
+                ? ui::SurfaceLayer::on_top : ui::SurfaceLayer::media;
+            context->ui_tree.MarkDrawDirty(*node);
+            return dx::VmValue::Void();
+        });
+    builder.VirtualMethod("setZOrderMediaOverlay", "(Z)V",
+        [context](dx::IntrinsicContext& call) {
+            const auto node = FindViewUiNode(*context, call.receiver.Value());
+            if (!node) throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "SurfaceView has no UI node"};
+            context->ui_tree.Get(*node)->surface_layer = call.arguments[0].AsInt() != 0
+                ? ui::SurfaceLayer::media_overlay : ui::SurfaceLayer::media;
             context->ui_tree.MarkDrawDirty(*node);
             return dx::VmValue::Void();
         });

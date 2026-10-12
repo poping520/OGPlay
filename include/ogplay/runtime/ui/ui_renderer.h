@@ -50,8 +50,9 @@ struct DrawText final {
 
 struct PushClip final { Rect rect; };
 struct PopClip final {};
+struct ClearSurfaceRect final { Rect rect; };
 using UiDrawCommand =
-    std::variant<DrawSolidRect, DrawBitmap, DrawText, PushClip, PopClip>;
+    std::variant<DrawSolidRect, DrawBitmap, DrawText, PushClip, PopClip, ClearSurfaceRect>;
 using UiRenderList = std::vector<UiDrawCommand>;
 
 struct UiOverlayFrame final {

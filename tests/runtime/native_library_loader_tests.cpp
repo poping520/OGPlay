@@ -47,6 +47,7 @@
 #include "ogplay/memory/bus.h"
 #include "ogplay/session/android_app_process.h"
 #include "ogplay/session/dex_activity_lifecycle.h"
+#include "ogplay/video/fake_video_player.h"
 
 namespace {
 
@@ -3723,6 +3724,49 @@ TEST_CASE("DVM-246 ARM JNI Dialog preserves Surface owner focus modal pixels and
         static_cast<void>(vm.CollectGarbage("dialog-jni-owner"));
         static_cast<void>(env.PopLocalFrame(1)); memory.release(scratch, 256);
         static_cast<void>(f.app->Stop()); CHECK(f.context->dialog_presentations.empty());
+    }
+}
+
+TEST_CASE("DVM-249 lifecycle prepares MediaPlayer video without any AudioTrack") {
+    using namespace ogplay;
+    using namespace runtime::dexvm;
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        OrchestratedApp f("fixture.DelayedContentActivity", true, false, {}, {}, true, backend);
+        f.filesystem.MountHostDirectory("/movies", std::filesystem::path{OGPLAY_SOURCE_DIR} / "tests/fixtures/video");
+        f.context->video_source_player_factory = [](auto) {
+            video::VideoMetadata metadata;
+            metadata.width = 8; metadata.height = 4; metadata.duration_ms = 1000;
+            return std::make_unique<video::FakeVideoPlayer>(metadata, 10);
+        };
+        f.app->StartApplication();
+        REQUIRE(f.app->StartLauncherActivity().state == session::LifecycleRunState::running);
+        auto& vm = f.app->DexVm().Vm(); auto& linker = vm.Linker();
+        const auto player = vm.NewIntrinsicInstance("Landroid/media/MediaPlayer;");
+        const auto root = vm.ProtectReferences(std::array{player});
+        const auto owner = vm.Model().ObjectClass(player);
+        const auto ctor = linker.FindDirectMethod(owner, "<init>", "()V");
+        REQUIRE(ctor);
+        REQUIRE_FALSE(vm.Call(*ctor, std::array{VmValue::Ref(player)}).exception.IsValid());
+        const auto call = [&](const char* name, const char* signature, std::vector<VmValue> args = {}) {
+            const auto slot = linker.FindVtableIndex(owner, name, signature);
+            REQUIRE(slot); args.insert(args.begin(), VmValue::Ref(player));
+            const auto result = vm.Call(linker.Class(owner).vtable[*slot], args);
+            REQUIRE_MESSAGE(!result.exception.IsValid(), result.exception_message);
+        };
+        call("setDataSource", "(Ljava/lang/String;)V", {VmValue::Ref(vm.NewStringUtf8("/movies/short-mp4v-aac.mp4"))});
+        call("prepareAsync", "()V");
+        REQUIRE(f.context->audio_tracks.empty());
+        using Phase = runtime::DexVmAndroidContext::MediaPlayerState::Phase;
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+        while (f.context->media_players.at(player.Value()).phase == Phase::preparing && std::chrono::steady_clock::now() < deadline) {
+            static_cast<void>(f.app->ActivityLifecycle().StepFrame()); std::this_thread::yield();
+        }
+        REQUIRE(f.context->media_players.at(player.Value()).phase == Phase::prepared);
+        static_cast<void>(f.app->ActivityLifecycle().StepFrame());
+        CHECK(f.context->video_views.at(player.Value()).pending_event == 0);
+        CHECK(f.context->audio_tracks.empty());
+        static_cast<void>(f.app->Stop());
+        CHECK(f.context->video_views.empty()); CHECK(f.context->media_players.empty());
     }
 }
 

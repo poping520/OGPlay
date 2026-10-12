@@ -127,7 +127,8 @@ Dex activity 每帧在 guest 回调前泵送主 Looper，到帧尾只通过
   原子树，detach/退役清理缓存；窗口焦点事实仍由 lifecycle 唯一持有。
   模态输入在 Java View/NativeActivity 转发之前捕获，不进入底层游戏。实际宿主焦点请求
   与 Activity 有效窗口焦点分离，visible modal 暂使 Activity 失焦，不合成 pause/stop 或
-  Surface 退役。合成顺序为普通视频→普通 UI→onTop 视频→模态 UI；两层缓存共用变更
+  Surface 退役。合成顺序为普通媒体→媒体叠层→普通 UI→onTop 视频→模态 UI；
+  实际 producer 的开孔事实在 UI 缓存渲染前刷新。两层缓存共用变更
   证据，不重复叠加 scrim，无 modal 时跳过额外合成。实例结束与进程关闭分别按 Dialog
   客户端及投影退役协议处理。
   holder/callback 保留，恢复同一实例；native window callback 与播放中的视频调用方
@@ -178,7 +179,8 @@ Dex activity 每帧在 guest 回调前泵送主 Looper，到帧尾只通过
   未注入 `sound_resource_loader` 时默认走 `LoadEncodedAudioWindow`。
   MCP 手动步进不启动实时 worker，只按 lifecycle Clock tick 差推进离线混音；mixer/callback
   异常保留原异常并交还主循环，设备提交失败单独记录。进程按 stream 初始化 native gain，
-  VideoView 的 MUSIC gain 只作用于视频音轨，不二次缩放其他混音结果。
+  视频混音底座按每播放器 stream 应用增益；VideoView 固定 MUSIC，普通 MediaPlayer
+  按已设置 stream，不在 session 再次缩放。
 
 ## 不变量
 

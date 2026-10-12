@@ -800,6 +800,7 @@ Decl Declare_android_media_MediaPlayer(const Context& context) {
     builder.DirectMethod(
         "native_finalize", "()V",
         [context](dx::IntrinsicContext& call) {
+            ReleaseAndroidMediaVideo(*context, call.receiver.Value());
             const auto found =
                 context->media_players.find(call.receiver.Value());
             if (found != context->media_players.end()) {
@@ -828,13 +829,14 @@ Decl Declare_android_media_MediaPlayer(const Context& context) {
                                            call.arguments[2].AsLong());
             auto data = LoadEncodedAudioSource(*context, source);
             if (!context->encoded_music->SetSource(state.music,
-                                                   std::move(data))) {
+                                                   data)) {
                 if (source.lease) context->encoded_audio_leases.erase(source.lease);
                 throw dx::VmJavaThrow{
                     "Ljava/io/IOException;",
                     "MediaPlayer source is empty or too large"};
             }
             state.source = std::move(source);
+            state.source_data = std::move(data);
             state.phase = Phase::initialized;
             return dx::VmValue::Void();
         };
@@ -867,12 +869,13 @@ Decl Declare_android_media_MediaPlayer(const Context& context) {
             static_cast<void>(CaptureEncodedAudioWindow(*context, source));
             auto data = LoadEncodedAudioSource(*context, source);
             if (!context->encoded_music->SetSource(state.music,
-                                                   std::move(data))) {
+                                                   data)) {
                 if (source.lease) context->encoded_audio_leases.erase(source.lease);
                 throw dx::VmJavaThrow{"Ljava/io/IOException;",
                                       "MediaPlayer path could not be read"};
             }
             state.source = std::move(source);
+            state.source_data = std::move(data);
             state.phase = Phase::initialized;
             return dx::VmValue::Void();
         },
@@ -888,12 +891,23 @@ Decl Declare_android_media_MediaPlayer(const Context& context) {
                 throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;",
                                       "MediaPlayer prepare in invalid state"};
             }
+            ReleaseAndroidMediaVideo(*context, call.receiver.Value());
+            if (state.source_data && !context->encoded_music->HasEncoded(state.music))
+                static_cast<void>(context->encoded_music->SetSource(state.music, state.source_data));
             if (!context->encoded_music->Prepare(state.music)) {
+                try {
+                    if (PrepareAndroidMediaVideo(*context, call.receiver.Value())) return dx::VmValue::Void();
+                } catch (const dx::VmJavaThrow&) {
+                    state.phase = Phase::error;
+                    if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.media.video_prepare", 0);
+                    throw;
+                }
                 state.phase = Phase::error;
                 throw dx::VmJavaThrow{"Ljava/io/IOException;",
                                       "MediaPlayer prepare failed"};
             }
             state.phase = Phase::prepared;
+            state.prepared_event_pending = true;
             return dx::VmValue::Void();
         },
         kPubNat);
@@ -908,6 +922,9 @@ Decl Declare_android_media_MediaPlayer(const Context& context) {
                 throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;",
                                       "MediaPlayer prepareAsync in invalid state"};
             }
+            ReleaseAndroidMediaVideo(*context, call.receiver.Value());
+            if (state.source_data && !context->encoded_music->HasEncoded(state.music))
+                static_cast<void>(context->encoded_music->SetSource(state.music, state.source_data));
             if (context->encoded_music == nullptr ||
                 !context->encoded_music->BeginPrepare(state.music)) {
                 throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;",
@@ -921,14 +938,27 @@ Decl Declare_android_media_MediaPlayer(const Context& context) {
         "_start", "()V",
         [context](dx::IntrinsicContext& call) {
             auto& state = RequireMedia(context, call);
+            std::scoped_lock video_lock(context->video_views_mutex);
+            auto* video = VideoStateOf(context, call.receiver.Value());
             if (state.phase != Phase::prepared && state.phase != Phase::started &&
                 state.phase != Phase::paused && state.phase != Phase::completed) {
                 state.phase = Phase::error;
                 state.error_event_pending = true;
                 context->encoded_music->Pause(state.music);
+                if (video) video->playing = false;
                 return dx::VmValue::Void();
             }
-            context->encoded_music->Start(state.music);
+            if (video) {
+                if (!video->playing) {
+                    if (video->completed) {
+                        video->player->SeekTo(0); video->base_position_ms = 0;
+                        video->completed = false; video->pcm_phase = 0; video->pcm_carry.clear();
+                    }
+                    video->playing = true;
+                    video->loop_index = 0;
+                    video->start_uptime_ms = context->uptime_millis.load();
+                }
+            } else context->encoded_music->Start(state.music);
             state.phase = Phase::started;
             return dx::VmValue::Void();
         },
@@ -937,14 +967,20 @@ Decl Declare_android_media_MediaPlayer(const Context& context) {
         "_pause", "()V",
         [context](dx::IntrinsicContext& call) {
             auto& state = RequireMedia(context, call);
+            std::scoped_lock video_lock(context->video_views_mutex);
+            auto* video = VideoStateOf(context, call.receiver.Value());
             if (state.phase != Phase::started && state.phase != Phase::paused &&
                 state.phase != Phase::completed) {
                 state.phase = Phase::error;
                 state.error_event_pending = true;
                 context->encoded_music->Pause(state.music);
+                if (video) video->playing = false;
                 return dx::VmValue::Void();
             }
-            context->encoded_music->Pause(state.music);
+            if (video) {
+                video->base_position_ms = VideoPositionOf(*video, context->uptime_millis.load());
+                video->playing = false;
+            } else context->encoded_music->Pause(state.music);
             state.phase = Phase::paused;
             return dx::VmValue::Void();
         },
@@ -953,15 +989,24 @@ Decl Declare_android_media_MediaPlayer(const Context& context) {
         "_stop", "()V",
         [context](dx::IntrinsicContext& call) {
             auto& state = RequireMedia(context, call);
+            std::scoped_lock video_lock(context->video_views_mutex);
+            auto* video = VideoStateOf(context, call.receiver.Value());
             if (state.phase != Phase::prepared && state.phase != Phase::started &&
                 state.phase != Phase::paused && state.phase != Phase::completed &&
                 state.phase != Phase::stopped) {
                 state.phase = Phase::error;
                 state.error_event_pending = true;
                 context->encoded_music->Pause(state.music);
+                if (video) video->playing = false;
                 return dx::VmValue::Void();
             }
-            context->encoded_music->Stop(state.music);
+            if (video) {
+                video->playing = false; video->pending_event = 0;
+                video->latest_frame.reset(); video->frame_requested = false;
+                video->base_position_ms = 0;
+            } else context->encoded_music->Stop(state.music);
+            state.prepared_event_pending = false;
+            state.seek_event_pending = false;
             state.phase = Phase::stopped;
             return dx::VmValue::Void();
         },
@@ -969,6 +1014,7 @@ Decl Declare_android_media_MediaPlayer(const Context& context) {
     builder.DirectMethod(
         "_release", "()V",
         [context](dx::IntrinsicContext& call) {
+            ReleaseAndroidMediaVideo(*context, call.receiver.Value());
             const auto found =
                 context->media_players.find(call.receiver.Value());
             if (found != context->media_players.end()) {
@@ -986,6 +1032,7 @@ Decl Declare_android_media_MediaPlayer(const Context& context) {
     builder.DirectMethod(
         "_reset", "()V",
         [context](dx::IntrinsicContext& call) {
+            ReleaseAndroidMediaVideo(*context, call.receiver.Value());
             const auto found =
                 context->media_players.find(call.receiver.Value());
             if (found == context->media_players.end() ||
@@ -997,6 +1044,9 @@ Decl Declare_android_media_MediaPlayer(const Context& context) {
                 context->encoded_audio_leases.erase(found->second.source.lease);
             }
             found->second.source = {};
+            found->second.source_data.reset();
+            found->second.looping = false;
+            found->second.left_volume = found->second.right_volume = 1.0F;
             found->second.prepared_event_pending = false;
             found->second.seek_event_pending = false;
             found->second.error_event_pending = false;
@@ -1008,15 +1058,23 @@ Decl Declare_android_media_MediaPlayer(const Context& context) {
         "seekTo", "(I)V",
         [context](dx::IntrinsicContext& call) {
             auto& state = RequireMedia(context, call);
+            std::scoped_lock video_lock(context->video_views_mutex);
+            auto* video = VideoStateOf(context, call.receiver.Value());
             if (state.phase != Phase::prepared && state.phase != Phase::started &&
                 state.phase != Phase::paused && state.phase != Phase::completed) {
                 state.phase = Phase::error;
                 state.error_event_pending = true;
                 context->encoded_music->Pause(state.music);
+                if (video) video->playing = false;
                 return dx::VmValue::Void();
             }
-            context->encoded_music->SeekMs(state.music,
-                                           call.arguments[0].AsInt());
+            if (video) {
+                const auto position = std::clamp<std::int64_t>(call.arguments[0].AsInt(), 0, video->duration_ms);
+                video->player->SeekTo(position); video->base_position_ms = position;
+                video->start_uptime_ms = context->uptime_millis.load(); video->loop_index = 0;
+                video->pcm_phase = 0; video->pcm_carry.clear(); video->latest_frame.reset();
+                video->completed = false; video->frame_requested = true;
+            } else context->encoded_music->SeekMs(state.music, call.arguments[0].AsInt());
             state.seek_event_pending = true;
             return dx::VmValue::Void();
         },
@@ -1024,6 +1082,9 @@ Decl Declare_android_media_MediaPlayer(const Context& context) {
     builder.VirtualMethod(
         "isPlaying", "()Z",
         [context](dx::IntrinsicContext& call) {
+            std::scoped_lock video_lock(context->video_views_mutex);
+            if (const auto* video = VideoStateOf(context, call.receiver.Value()))
+                return dx::VmValue::Int(video->playing ? 1 : 0);
             const auto found =
                 context->media_players.find(call.receiver.Value());
             return dx::VmValue::Int(
@@ -1037,6 +1098,9 @@ Decl Declare_android_media_MediaPlayer(const Context& context) {
     builder.VirtualMethod(
         "isLooping", "()Z",
         [context](dx::IntrinsicContext& call) {
+            std::scoped_lock video_lock(context->video_views_mutex);
+            if (const auto* video = VideoStateOf(context, call.receiver.Value()))
+                return dx::VmValue::Int(video->looping ? 1 : 0);
             const auto found =
                 context->media_players.find(call.receiver.Value());
             return dx::VmValue::Int(
@@ -1050,6 +1114,17 @@ Decl Declare_android_media_MediaPlayer(const Context& context) {
     builder.VirtualMethod(
         "setLooping", "(Z)V",
         [context](dx::IntrinsicContext& call) {
+            std::scoped_lock video_lock(context->video_views_mutex);
+            auto& media = RequireMedia(context, call);
+            media.looping = call.arguments[0].AsInt() != 0;
+            if (auto* video = VideoStateOf(context, call.receiver.Value())) {
+                // Rebase on a configuration change so a previous cycle does
+                // not become an immediate completion when looping is disabled.
+                video->base_position_ms = VideoPositionOf(*video, context->uptime_millis.load());
+                video->start_uptime_ms = context->uptime_millis.load(); video->loop_index = 0;
+                video->looping = media.looping;
+                return dx::VmValue::Void();
+            }
             context->encoded_music->SetLooping(
                 RequireMedia(context, call).music,
                 call.arguments[0].AsInt() != 0);
@@ -1059,6 +1134,16 @@ Decl Declare_android_media_MediaPlayer(const Context& context) {
     builder.VirtualMethod(
         "setVolume", "(FF)V",
         [context](dx::IntrinsicContext& call) {
+            std::scoped_lock video_lock(context->video_views_mutex);
+            auto& media = RequireMedia(context, call);
+            if (!std::isfinite(call.arguments[0].AsFloat()) || !std::isfinite(call.arguments[1].AsFloat()))
+                throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "volume must be finite"};
+            media.left_volume = std::clamp(call.arguments[0].AsFloat(), 0.0F, 1.0F);
+            media.right_volume = std::clamp(call.arguments[1].AsFloat(), 0.0F, 1.0F);
+            if (auto* video = VideoStateOf(context, call.receiver.Value())) {
+                video->left_volume = media.left_volume; video->right_volume = media.right_volume;
+                return dx::VmValue::Void();
+            }
             context->encoded_music->SetVolume(
                 RequireMedia(context, call).music, call.arguments[0].AsFloat(),
                 call.arguments[1].AsFloat());
@@ -1068,6 +1153,9 @@ Decl Declare_android_media_MediaPlayer(const Context& context) {
     builder.VirtualMethod(
         "getDuration", "()I",
         [context](dx::IntrinsicContext& call) {
+            std::scoped_lock video_lock(context->video_views_mutex);
+            if (const auto* video = VideoStateOf(context, call.receiver.Value()))
+                return dx::VmValue::Int(static_cast<std::int32_t>(video->duration_ms));
             return dx::VmValue::Int(context->encoded_music->DurationMs(
                 RequireMedia(context, call).music));
         },
@@ -1075,16 +1163,27 @@ Decl Declare_android_media_MediaPlayer(const Context& context) {
     builder.VirtualMethod(
         "getCurrentPosition", "()I",
         [context](dx::IntrinsicContext& call) {
+            std::scoped_lock video_lock(context->video_views_mutex);
+            if (const auto* video = VideoStateOf(context, call.receiver.Value()))
+                return dx::VmValue::Int(static_cast<std::int32_t>(VideoPositionOf(*video, context->uptime_millis.load())));
             return dx::VmValue::Int(context->encoded_music->PositionMs(
                 RequireMedia(context, call).music));
         },
         kPubNat);
     builder.VirtualMethod(
         "getVideoWidth", "()I",
-        [](dx::IntrinsicContext&) { return dx::VmValue::Int(0); }, kPubNat);
+        [context](dx::IntrinsicContext& call) {
+            std::scoped_lock video_lock(context->video_views_mutex);
+            const auto* video = VideoStateOf(context, call.receiver.Value());
+            return dx::VmValue::Int(video ? static_cast<std::int32_t>(video->player->Metadata().width) : 0);
+        }, kPubNat);
     builder.VirtualMethod(
         "getVideoHeight", "()I",
-        [](dx::IntrinsicContext&) { return dx::VmValue::Int(0); }, kPubNat);
+        [context](dx::IntrinsicContext& call) {
+            std::scoped_lock video_lock(context->video_views_mutex);
+            const auto* video = VideoStateOf(context, call.receiver.Value());
+            return dx::VmValue::Int(video ? static_cast<std::int32_t>(video->player->Metadata().height) : 0);
+        }, kPubNat);
     builder.VirtualMethod(
         "getAudioSessionId", "()I",
         [](dx::IntrinsicContext&) { return dx::VmValue::Int(1); }, kPubNat);
@@ -1101,7 +1200,10 @@ Decl Declare_android_media_MediaPlayer(const Context& context) {
             if (state.phase != Phase::idle && state.phase != Phase::initialized &&
                 state.phase != Phase::stopped)
                 throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "stream type after prepare"};
+            std::scoped_lock video_lock(context->video_views_mutex);
+            if (auto* video = VideoStateOf(context, call.receiver.Value())) video->audio_stream = stream;
             context->encoded_music->SetAudioStream(state.music, stream);
+            state.audio_stream = stream;
             return dx::VmValue::Void();
         }, kPubNat);
     builder.VirtualMethod(
@@ -1124,7 +1226,16 @@ Decl Declare_android_media_MediaPlayer(const Context& context) {
         kPubNat);
     builder.DirectMethod(
         "_setVideoSurface", "(Landroid/view/Surface;)V",
-        [](dx::IntrinsicContext&) { return dx::VmValue::Void(); }, kPrivNat);
+        [context](dx::IntrinsicContext& call) {
+            static_cast<void>(RequireMedia(context, call));
+            try { BindAndroidMediaSurface(*context, call.receiver.Value(), call.arguments[0].ref); }
+            catch (const dx::VmJavaThrow& error) {
+                if (error.descriptor == "Ljava/lang/UnsupportedOperationException;")
+                    if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.media.video_surface", 0);
+                throw;
+            }
+            return dx::VmValue::Void();
+        }, kPrivNat);
     builder.DirectMethod(
         "_suspend", "()Z",
         [](dx::IntrinsicContext&) { return dx::VmValue::Int(0); }, kPrivNat);

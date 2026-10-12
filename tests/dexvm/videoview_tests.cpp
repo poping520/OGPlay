@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <filesystem>
 #include <fstream>
 #include <memory>
@@ -26,6 +27,8 @@
 #include "ogplay/runtime/dexvm/vm_monitors.h"
 #include "ogplay/runtime/dexvm/vm_threads.h"
 #include "ogplay/runtime/integration/dexvm_android.h"
+#include "ogplay/session/ui_compositor.h"
+#include "ogplay/video/ffmpeg_video_player.h"
 #include "ogplay/runtime/vfs/vfs.h"
 #include "ogplay/video/fake_video_player.h"
 #include "ogplay/video/rgba_canvas.h"
@@ -152,7 +155,9 @@ struct VideoVm final {
           context(std::make_shared<DexVmAndroidContext>()),
           interpreter(
               [this]() -> DexClassLinker& {
-                  linker.RegisterIntrinsics(CoreIntrinsicCatalog());
+                  CoreIntrinsicServices services;
+                  services.current_time_millis = [state = context] { return state->uptime_millis.load(); };
+                  linker.RegisterIntrinsics(CoreIntrinsicCatalog(services));
                   linker.RegisterIntrinsics(AndroidIntrinsicCatalog(context));
                   linker.RegisterDex(ReadFixture("videoview.dex"));
                   ogplay::test::RegisterBootDex(linker);
@@ -175,6 +180,7 @@ struct VideoVm final {
         const auto prepared = interpreter.Call(*prepare, {});
         REQUIRE_MESSAGE(!prepared.exception.IsValid(), prepared.exception_message);
         RegisterAndroidOwnerAttachedStateTable(interpreter, context);
+        RegisterAndroidAudioTrackStateTable(interpreter, context);
         interpreter.SetGcIntegration({{}, {}, [state = context](const VmRootVisitor& visit) {
             VisitAndroidSessionRoots(*state, visit);
         }});
@@ -208,6 +214,47 @@ struct VideoVm final {
         return view;
     }
 
+    [[nodiscard]] VmObjectRef NewPlainPlayer() {
+        const auto player = interpreter.NewIntrinsicInstance("Landroid/media/MediaPlayer;");
+        const auto owner = linker.ResolveDescriptor("Landroid/media/MediaPlayer;");
+        const auto ctor = linker.FindDirectMethod(owner, "<init>", "()V");
+        REQUIRE(ctor);
+        const auto result = interpreter.Call(*ctor, std::array{VmValue::Ref(player)});
+        REQUIRE_MESSAGE(!result.exception.IsValid(), result.exception_message);
+        return player;
+    }
+
+    [[nodiscard]] VmObjectRef NewSurfaceView() {
+        const auto view = interpreter.NewIntrinsicInstance("Landroid/view/SurfaceView;");
+        const auto owner = linker.ResolveDescriptor("Landroid/view/SurfaceView;");
+        const auto ctor = linker.FindDirectMethod(owner, "<init>", "(Landroid/content/Context;)V");
+        REQUIRE(ctor);
+        const auto activity = interpreter.NewIntrinsicInstance("Landroid/content/Context;");
+        const auto result = interpreter.Call(*ctor, std::array{VmValue::Ref(view), VmValue::Ref(activity)});
+        REQUIRE_MESSAGE(!result.exception.IsValid(), result.exception_message);
+        const auto node = *FindViewUiNode(*context, view.Value());
+        context->ui_tree.Attach(context->ui_tree.Root(), node);
+        context->ui_tree.Get(node)->layout.width.mode = ui::SizeMode::MatchParent;
+        context->ui_tree.Get(node)->layout.height.mode = ui::SizeMode::MatchParent;
+        context->managed_host_surface_open = true;
+        static_cast<void>(CallOn(view, "getHolder", "()Landroid/view/SurfaceHolder;"));
+        return view;
+    }
+
+    void PreparePlain(VmObjectRef player, VmObjectRef surface) {
+        CallOn(player, "setDataSource", "(Ljava/lang/String;)V",
+               {VmValue::Ref(interpreter.NewStringUtf8(kGuestVideoPath))});
+        const auto holder = CallOn(surface, "getHolder", "()Landroid/view/SurfaceHolder;").ref;
+        CallOn(player, "setDisplay", "(Landroid/view/SurfaceHolder;)V", {VmValue::Ref(holder)});
+        CallOn(player, "prepare", "()V");
+    }
+
+    void PumpMediaEvents() {
+        static_cast<void>(Pump());
+        const auto error = PumpAndroidAudioTracks(interpreter, *context);
+        REQUIRE_MESSAGE(!error, error.value_or(""));
+    }
+
     VmValue CallOn(const VmObjectRef receiver, const std::string& name,
                    const std::string& descriptor,
                    std::vector<VmValue> arguments = {}) {
@@ -218,8 +265,16 @@ struct VideoVm final {
         arguments.insert(arguments.begin(), VmValue::Ref(receiver));
         const auto outcome = interpreter.Call(
             linker.Class(receiver_class).vtable[*index], arguments);
+        INFO(name, descriptor);
+        std::string exception_detail;
+        if (outcome.exception.IsValid()) {
+            exception_detail = linker.Class(model.ObjectClass(outcome.exception)).descriptor;
+            for (const auto& frame : outcome.exception_stack) {
+                exception_detail += "\n" + frame.class_descriptor + "->" + frame.method_name + " pc=" + std::to_string(frame.pc);
+            }
+        }
         REQUIRE_MESSAGE(!outcome.exception.IsValid(),
-                        outcome.exception_message);
+                        exception_detail, outcome.exception_message);
         return outcome.value;
     }
 
@@ -1074,4 +1129,242 @@ TEST_CASE("video APK media source validates once and retains exact stored range 
     const auto offset = ogplay::loader::StoredApkEntryDataOffset(vm.context->apk_bytes, vm.context->archive, source.name);
     vm.context->apk_bytes[static_cast<std::size_t>(offset)] = std::byte{9};
     CHECK(LoadEncodedAudioSource(*vm.context, source) == nullptr);
+}
+
+TEST_CASE("DVM-248 Surface layer override isolation and exact media overlay composition") {
+    for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        InterpreterConfig config; config.backend = backend;
+        VideoVm vm(FakeFactory(), config);
+        vm.context->ui_tree.Get(vm.context->ui_tree.Root())->background_color = 0x000000ffU;
+        const auto overlay = vm.NewSurfaceView(), ordinary = vm.NewSurfaceView();
+        vm.CallOn(overlay, "setZOrderOnTop", "(Z)V", {VmValue::Int(1)});
+        vm.CallOn(overlay, "setZOrderMediaOverlay", "(Z)V", {VmValue::Int(1)});
+        auto* node = vm.context->ui_tree.Get(*FindViewUiNode(*vm.context, overlay.Value()));
+        auto* other = vm.context->ui_tree.Get(*FindViewUiNode(*vm.context, ordinary.Value()));
+        CHECK(node->surface_layer == ui::SurfaceLayer::media_overlay);
+        CHECK(other->surface_layer == ui::SurfaceLayer::media);
+        vm.CallOn(overlay, "setZOrderOnTop", "(Z)V", {VmValue::Int(0)});
+        CHECK(node->surface_layer == ui::SurfaceLayer::media);
+        vm.CallOn(overlay, "setZOrderOnTop", "(Z)V", {VmValue::Int(1)});
+        vm.CallOn(overlay, "setZOrderMediaOverlay", "(Z)V", {VmValue::Int(0)});
+        CHECK(node->surface_layer == ui::SurfaceLayer::media);
+        vm.CallOn(overlay, "setZOrderMediaOverlay", "(Z)V", {VmValue::Int(1)});
+        const auto first = vm.NewPlainPlayer(), second = vm.NewPlainPlayer();
+        vm.PreparePlain(first, overlay); vm.PreparePlain(second, ordinary);
+        vm.CallOn(first, "start", "()V"); vm.CallOn(second, "start", "()V");
+        vm.PumpMediaEvents();
+        auto& top = *vm.context->video_views.at(first.Value()).latest_frame;
+        auto& lower = *vm.context->video_views.at(second.Value()).latest_frame;
+        for (std::size_t i = 0; i < top.rgba8.size(); i += 4) {
+            top.rgba8[i] = 200; lower.rgba8[i] = 50;
+        }
+        // A regular UI item painted after the Surface must survive its hole.
+        const auto label = vm.context->ui_tree.CreateNode(ui::UiClass::View);
+        vm.context->ui_tree.Get(label)->layout.width = {ui::SizeMode::Fixed, 2};
+        vm.context->ui_tree.Get(label)->layout.height = {ui::SizeMode::Fixed, 2};
+        vm.context->ui_tree.Get(label)->background_color = 0xffffffffU;
+        vm.context->ui_tree.Attach(vm.context->ui_tree.Root(), label);
+        RefreshAndroidSurfaceFrames(*vm.context);
+        ui::LayoutUiTree(vm.context->ui_tree, {64, 32});
+        const auto compose = [&] {
+            std::vector<std::uint8_t> canvas(64U * 32U * 4U, 123);
+            ComposeVideoViews(*vm.context, canvas, 64, 32, false);
+            const auto ui_frame = ui::RasterizeUiOverlay(ui::BuildUiRenderList(vm.context->ui_tree, {}), {64, 32});
+            ogplay::session::ComposeUiOverlayInPlace(canvas, ui_frame);
+            ComposeVideoViews(*vm.context, canvas, 64, 32, true);
+            return canvas;
+        };
+        auto canvas = compose();
+        CHECK(canvas[0] == 255); // upper window UI
+        CHECK(canvas[(10U * 64U + 10U) * 4U] == 200); // media overlay beats later ordinary Surface
+        vm.CallOn(overlay, "setZOrderOnTop", "(Z)V", {VmValue::Int(1)});
+        canvas = compose();
+        CHECK(canvas[0] == 200); // onTop covers window UI
+        vm.CallOn(first, "release", "()V"); vm.CallOn(second, "release", "()V");
+        RefreshAndroidSurfaceFrames(*vm.context);
+        CHECK_FALSE(node->surface_has_frame);
+        CHECK_FALSE(other->surface_has_frame);
+    }
+}
+
+TEST_CASE("DVM-249 ordinary MediaPlayer video events transport looping and Surface retirement") {
+    for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        InterpreterConfig config; config.backend = backend;
+        VideoVm vm(FakeAudioFactory(8000, 2), config);
+        const auto surface = vm.NewSurfaceView(), player = vm.NewPlainPlayer(), listener = vm.NewListener();
+        for (const auto name : {"setOnPreparedListener", "setOnCompletionListener", "setOnErrorListener", "setOnVideoSizeChangedListener"}) {
+            const std::string type = std::string(name).substr(3);
+            vm.CallOn(player, name, "(Landroid/media/MediaPlayer$" + type + ";)V", {VmValue::Ref(listener)});
+        }
+        vm.interpreter.SetStaticFieldBits("LVideoListener;", "startOnPrepared", "Z", 1);
+        vm.PreparePlain(player, surface);
+        CHECK(vm.Prepared() == 0);
+        CHECK(vm.CallOn(player, "getVideoWidth", "()I").AsInt() == 8);
+        CHECK(vm.CallOn(player, "getVideoHeight", "()I").AsInt() == 4);
+        vm.PumpMediaEvents();
+        CHECK(vm.Prepared() == 1); CHECK(vm.Count("getWidth") == 8); CHECK(vm.Count("getHeight") == 4);
+        CHECK(vm.Player() == player);
+        CHECK(vm.CallOn(player, "isPlaying", "()Z").AsInt() == 1);
+        static_cast<void>(vm.Pump());
+        REQUIRE(vm.context->video_views.at(player.Value()).latest_frame);
+        vm.CallOn(player, "setLooping", "(Z)V", {VmValue::Int(1)});
+        const auto now = vm.context->uptime_millis.load();
+        vm.context->uptime_millis = now + 1250;
+        vm.PumpMediaEvents();
+        CHECK(vm.Completions() == 0);
+        CHECK(vm.CallOn(player, "getCurrentPosition", "()I").AsInt() == 250);
+        vm.CallOn(player, "pause", "()V");
+        vm.context->uptime_millis += 250;
+        CHECK(vm.CallOn(player, "getCurrentPosition", "()I").AsInt() == 250);
+        vm.CallOn(player, "seekTo", "(I)V", {VmValue::Int(100)});
+        vm.CallOn(player, "setVolume", "(FF)V", {VmValue::Float(0.5F), VmValue::Float(0.25F)});
+        vm.CallOn(player, "start", "()V");
+        std::vector<std::int16_t> pcm(4);
+        REQUIRE(MixVideoPcmIntoStereo(*vm.context, pcm, 8000) == 1);
+        CHECK(pcm == std::vector<std::int16_t>{400, 200, 401, 200});
+        vm.context->stream_mute[3] = true;
+        pcm.assign(4, 0); REQUIRE(MixVideoPcmIntoStereo(*vm.context, pcm, 8000) == 1);
+        CHECK(pcm == std::vector<std::int16_t>(4, 0));
+        vm.context->stream_mute[3] = false;
+        const auto error = DispatchSurfaceHolderCallbacks(vm.interpreter, *vm.context, SurfaceHolderPhase::destroyed);
+        REQUIRE_FALSE(error);
+        CHECK_FALSE(vm.context->media_players.at(player.Value()).display_view.IsValid());
+        CHECK_FALSE(vm.context->video_views.at(player.Value()).latest_frame);
+        static_cast<void>(vm.Pump()); // decoding continues, no reattachment
+        REQUIRE_FALSE(DispatchSurfaceHolderCallbacks(vm.interpreter, *vm.context, SurfaceHolderPhase::created));
+        CHECK_FALSE(vm.context->media_players.at(player.Value()).display_view.IsValid());
+        const auto holder = vm.CallOn(surface, "getHolder", "()Landroid/view/SurfaceHolder;").ref;
+        vm.CallOn(player, "setDisplay", "(Landroid/view/SurfaceHolder;)V", {VmValue::Ref(holder)});
+        CHECK(vm.context->media_players.at(player.Value()).display_view == surface);
+        vm.CallOn(player, "setLooping", "(Z)V", {VmValue::Int(0)});
+        vm.context->uptime_millis += 1000;
+        vm.PumpMediaEvents(); vm.PumpMediaEvents();
+        CHECK(vm.Completions() == 1); CHECK(vm.Player("getCompletedPlayer") == player);
+        vm.CallOn(player, "stop", "()V"); vm.CallOn(player, "prepare", "()V");
+        vm.CallOn(player, "reset", "()V");
+        CHECK(vm.context->video_views.empty()); CHECK_FALSE(vm.context->media_players.at(player.Value()).source_data);
+        vm.CallOn(player, "release", "()V"); CHECK(vm.context->media_players.empty());
+    }
+}
+
+TEST_CASE("DVM-249 ordinary video FD range survives close and prepared callback release") {
+    VideoVm vm(FakeFactory());
+    vm.context->package_name = "org.ogplay.video";
+    const std::array payload{std::byte{1}, std::byte{2}, std::byte{3}, std::byte{4}, std::byte{5}, std::byte{6}};
+    vm.context->apk_bytes = MakeStoredZip("res/raw/movie.mp4", payload);
+    vm.context->archive = ogplay::loader::ParseApkArchive(vm.context->apk_bytes);
+    vm.context->arsc.entries.push_back({.resource_id = 0x7f040001U, .type_name = "raw",
+        .entry_name = "movie", .string_value = "res/raw/movie.mp4", .value_type = 3});
+    const auto surface = vm.NewSurfaceView(), player = vm.NewPlainPlayer();
+    const auto context = vm.CallOn(surface, "getContext", "()Landroid/content/Context;").ref;
+    const auto resources = vm.CallOn(context, "getResources", "()Landroid/content/res/Resources;").ref;
+    const auto afd = vm.CallOn(resources, "openRawResourceFd", "(I)Landroid/content/res/AssetFileDescriptor;", {VmValue::Int(0x7f040001)}).ref;
+    const auto fd = vm.CallOn(afd, "getFileDescriptor", "()Ljava/io/FileDescriptor;").ref;
+    const auto offset = vm.CallOn(afd, "getStartOffset", "()J").AsLong();
+    vm.CallOn(player, "setDataSource", "(Ljava/io/FileDescriptor;JJ)V", {VmValue::Ref(fd), VmValue::Long(offset + 1), VmValue::Long(3)});
+    vm.CallOn(afd, "close", "()V");
+    std::shared_ptr<const ogplay::video::VideoDataSource> captured;
+    vm.context->video_source_player_factory = [&](auto source) {
+        captured = source; return FakeFactory()({});
+    };
+    vm.CallOn(player, "prepare", "()V");
+    REQUIRE(captured); CHECK(captured->Size() == 3);
+    std::array<std::byte, 3> read{}; CHECK(captured->ReadAt(0, read) == 3);
+    CHECK(read == std::array{std::byte{2}, std::byte{3}, std::byte{4}});
+    const auto listener = vm.NewListener();
+    vm.interpreter.SetStaticFieldBits("LVideoListener;", "stopOnPrepared", "Z", 1);
+    vm.CallOn(player, "setOnPreparedListener", "(Landroid/media/MediaPlayer$OnPreparedListener;)V", {VmValue::Ref(listener)});
+    vm.PumpMediaEvents(); CHECK(vm.Prepared() == 1);
+    CHECK(vm.context->video_views.empty()); CHECK(vm.context->media_players.empty());
+}
+
+TEST_CASE("DVM-249 ordinary MediaPlayer decodes a real local FFmpeg video") {
+    REQUIRE_MESSAGE(ogplay::video::FfmpegAvailable(), ogplay::video::FfmpegUnavailableReason());
+    VideoVm vm(ogplay::video::VideoPlayerFactory{});
+    vm.context->video_source_player_factory = ogplay::video::MakeFfmpegVideoSourcePlayerFactory();
+    const auto surface = vm.NewSurfaceView(), player = vm.NewPlainPlayer();
+    vm.PreparePlain(player, surface);
+    CHECK(vm.CallOn(player, "getVideoWidth", "()I").AsInt() > 0);
+    CHECK(vm.CallOn(player, "getVideoHeight", "()I").AsInt() > 0);
+    vm.CallOn(player, "start", "()V");
+    REQUIRE(vm.Pump() == 1); REQUIRE(vm.context->video_views.at(player.Value()).latest_frame);
+    std::vector<std::int16_t> pcm(480);
+    CHECK(MixVideoPcmIntoStereo(*vm.context, pcm, 24000) == 1);
+    vm.CallOn(player, "release", "()V");
+}
+
+TEST_CASE("DVM-249 Surface binding rejects stale competing and wake requests") {
+    VideoVm vm(FakeFactory());
+    const auto view = vm.NewSurfaceView(), player = vm.NewPlainPlayer(), second = vm.NewPlainPlayer();
+    const auto holder = vm.CallOn(view, "getHolder", "()Landroid/view/SurfaceHolder;").ref;
+    const auto surface = vm.CallOn(holder, "getSurface", "()Landroid/view/Surface;").ref;
+    const auto outcome = [&](VmObjectRef object, const char* name, const char* signature, VmValue argument) {
+        const auto type = vm.model.ObjectClass(object);
+        const auto slot = vm.linker.FindVtableIndex(type, name, signature);
+        REQUIRE(slot);
+        return vm.interpreter.Call(vm.linker.Class(type).vtable[*slot], std::array{VmValue::Ref(object), argument});
+    };
+    vm.PreparePlain(player, view); vm.CallOn(player, "start", "()V"); static_cast<void>(vm.Pump());
+    CHECK(outcome(second, "setSurface", "(Landroid/view/Surface;)V", VmValue::Ref(surface)).exception.IsValid());
+    CHECK_FALSE(vm.context->media_players.at(second.Value()).display_view.IsValid());
+    vm.CallOn(holder, "setKeepScreenOn", "(Z)V", {VmValue::Int(0)});
+    CHECK(outcome(holder, "setKeepScreenOn", "(Z)V", VmValue::Int(1)).exception.IsValid());
+    const auto gaps = vm.ledger.Unimplemented();
+    CHECK(std::any_of(gaps.begin(), gaps.end(), [](const auto& gap) { return gap.id == "dexvm.surface_keep_screen_on"; }));
+    vm.CallOn(player, "pause", "()V");
+    vm.CallOn(player, "setSurface", "(Landroid/view/Surface;)V", {VmValue::Ref(VmObjectRef{})});
+    CHECK_FALSE(vm.context->video_views.at(player.Value()).latest_frame);
+    vm.CallOn(player, "setSurface", "(Landroid/view/Surface;)V", {VmValue::Ref(surface)});
+    CHECK(vm.Pump() == 1); // same paused position is decoded for the new binding
+    vm.CallOn(player, "setSurface", "(Landroid/view/Surface;)V", {VmValue::Ref(surface)});
+    CHECK(vm.context->video_views.at(player.Value()).latest_frame.has_value()); // repeat is idempotent
+    vm.CallOn(player, "start", "()V");
+    vm.CallOn(player, "setSurface", "(Landroid/view/Surface;)V", {VmValue::Ref(VmObjectRef{})});
+    vm.context->uptime_millis += 100;
+    CHECK(vm.Pump() == 0); // unbound video does not publish a host frame
+    REQUIRE_FALSE(DispatchSurfaceHolderCallbacks(vm.interpreter, *vm.context, SurfaceHolderPhase::destroyed));
+    CHECK(outcome(player, "setSurface", "(Landroid/view/Surface;)V", VmValue::Ref(surface)).exception.IsValid());
+    vm.CallOn(player, "release", "()V"); vm.CallOn(second, "release", "()V");
+}
+
+TEST_CASE("DVM-249 async video preparation failure GC and owner shutdown are honest") {
+    for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        InterpreterConfig config; config.backend = backend;
+        VideoVm vm(FakeFactory(), config);
+        const auto player = vm.NewPlainPlayer(), listener = vm.NewListener();
+        vm.CallOn(player, "setOnPreparedListener", "(Landroid/media/MediaPlayer$OnPreparedListener;)V", {VmValue::Ref(listener)});
+        vm.CallOn(player, "setOnErrorListener", "(Landroid/media/MediaPlayer$OnErrorListener;)V", {VmValue::Ref(listener)});
+        vm.CallOn(player, "setDataSource", "(Ljava/lang/String;)V", {VmValue::Ref(vm.interpreter.NewStringUtf8(kGuestVideoPath))});
+        vm.CallOn(player, "prepareAsync", "()V");
+        CHECK(vm.Prepared() == 0);
+        const auto roots = vm.interpreter.ProtectReferences(std::array{player});
+        static_cast<void>(vm.interpreter.CollectGarbage("ordinary-video-preparing"));
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+        while (vm.Prepared() == 0 && std::chrono::steady_clock::now() < deadline) {
+            vm.PumpMediaEvents(); std::this_thread::yield();
+        }
+        REQUIRE(vm.Prepared() == 1);
+        CHECK(vm.Player() == player); CHECK(vm.Errors() == 0);
+        vm.CallOn(player, "reset", "()V");
+        vm.context->video_source_player_factory = [](auto) -> std::unique_ptr<ogplay::video::VideoPlayer> {
+            throw ogplay::video::VideoPlayerError("invalid video source");
+        };
+        vm.CallOn(player, "setDataSource", "(Ljava/lang/String;)V", {VmValue::Ref(vm.interpreter.NewStringUtf8(kGuestVideoPath))});
+        vm.CallOn(player, "prepareAsync", "()V");
+        const auto error_deadline = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+        while (vm.Errors() == 0 && std::chrono::steady_clock::now() < error_deadline) {
+            vm.PumpMediaEvents(); std::this_thread::yield();
+        }
+        REQUIRE(vm.Errors() == 1); vm.PumpMediaEvents();
+        CHECK(vm.Errors() == 1); CHECK(vm.Completions() == 0);
+        CHECK(vm.Prepared() == 1); CHECK(vm.context->video_views.empty());
+        ReleaseAndroidMediaResources(*vm.context);
+        CHECK(vm.context->media_players.empty()); CHECK(vm.context->encoded_audio_leases.empty());
+    }
+    VideoVm vm(FakeFactory());
+    const auto player = vm.NewPlainPlayer(), surface = vm.NewSurfaceView();
+    vm.PreparePlain(player, surface);
+    REQUIRE(vm.context->video_views.size() == 1);
+    static_cast<void>(vm.interpreter.CollectGarbage("ordinary-video-unreachable-owner"));
+    CHECK(vm.context->video_views.empty()); CHECK(vm.context->media_players.empty());
 }

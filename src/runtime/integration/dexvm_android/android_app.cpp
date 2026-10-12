@@ -873,6 +873,7 @@ std::optional<std::string> DispatchHolderCallbacks(
             context.active_surface_holders.insert(holder_handle);
         } else if (phase == SurfaceHolderPhase::destroyed) {
             if (context.active_surface_holders.erase(holder_handle) == 0U) continue;
+            DetachAndroidMediaSurface(context, holder_handle);
             context.surface_callback_sizes.erase(holder_handle);
             // AOSP clears mSurfaceCreated before invoking callbacks.
         } else if (!context.active_surface_holders.contains(holder_handle)) {

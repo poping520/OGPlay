@@ -1894,13 +1894,53 @@ std::int64_t VideoPositionOf(
     if (!state.playing) return state.base_position_ms;
     const auto elapsed = std::max<std::int64_t>(
         uptime_ms - state.start_uptime_ms, 0);
-    return std::min(state.base_position_ms + elapsed, state.duration_ms);
+    const auto position = state.base_position_ms + elapsed;
+    return state.looping && state.duration_ms > 0 ? position % state.duration_ms
+                                                : std::min(position, state.duration_ms);
 }
 
 std::optional<std::string> InvokeVideoEvent(
     dx::Interpreter& vm, DexVmAndroidContext& context,
     const std::uint64_t handle, const std::int32_t generation, const std::int32_t event) {
-    static_cast<void>(context);
+    {
+        dexvm::VmObjectRef weak;
+        std::int32_t width{}, height{};
+        bool media_player{};
+        {
+            std::scoped_lock lock(context.video_views_mutex);
+            const auto video = context.video_views.find(handle);
+            if (video == context.video_views.end() || video->second.generation != generation) return std::nullopt;
+            media_player = video->second.media_player;
+            if (media_player) {
+                const auto media = context.media_players.find(static_cast<std::uint32_t>(handle));
+                if (media == context.media_players.end()) return std::nullopt;
+                weak = media->second.jni_weak;
+                if (video->second.player) {
+                    width = static_cast<std::int32_t>(video->second.player->Metadata().width);
+                    height = static_cast<std::int32_t>(video->second.player->Metadata().height);
+                }
+                using Phase = DexVmAndroidContext::MediaPlayerState::Phase;
+                if (event == 2) media->second.phase = Phase::completed;
+                if (event == 100) media->second.phase = Phase::error;
+            }
+        }
+        if (media_player) {
+            const auto owner = dx::VmObjectRef{static_cast<std::uint32_t>(handle)};
+            const auto roots = vm.ProtectReferences(std::array{owner, weak});
+            const auto type = vm.Linker().ResolveDescriptor("Landroid/media/MediaPlayer;");
+            const auto method = vm.Linker().FindDirectMethod(type, "postEventFromNative",
+                "(Ljava/lang/Object;IIILjava/lang/Object;)V");
+            if (!method) return "MediaPlayer event protocol is unavailable";
+            const auto post = [&](int what, int arg1, int arg2) -> std::optional<std::string> {
+                const auto outcome = vm.Call(*method, std::array{dx::VmValue::Ref(weak), dx::VmValue::Int(what),
+                    dx::VmValue::Int(arg1), dx::VmValue::Int(arg2), dx::VmValue::Ref(dx::VmObjectRef{})});
+                if (outcome.exception.IsValid()) return "MediaPlayer event raised: " + outcome.exception_message;
+                return std::nullopt;
+            };
+            if (event == 1) if (auto error = post(5, width, height)) return error;
+            return post(event, event == 100 ? 1 : 0, event == 100 ? -1 : 0);
+        }
+    }
     const auto view = dx::VmObjectRef{static_cast<std::uint32_t>(handle)};
     const auto root = vm.ProtectReferences(std::array{view});
     const auto type = vm.Linker().ResolveDescriptor("Landroid/widget/VideoView;");

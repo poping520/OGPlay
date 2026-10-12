@@ -210,6 +210,9 @@ Android API 的详细行为以 [dexvm_android](dexvm_android/MODULE.md)为准；
 - VideoView 从 guest 路径原子捕获 VFS read lease，并注入 VideoSourcePlayerFactory；统一 uptime 驱动位置；取帧
   letterbox 发布，完成回调一次。工厂/路径/打开失败交付真实 error，不能回退为 completion。
   callback 按 View/source generation 保持，窗口可见性参与呈现准入。
+  普通 MediaPlayer 的本地视频复用同一 decoder/Clock/PCM/合成状态；播放器为 owner，
+  managed Surface 为可撤销输出目标，销毁后必须显式重绑。仅有 MediaPlayer 的会话
+  也泵送原版 Handler 媒体事件，不依赖创建 AudioTrack。
   PCM 最近邻重采样饱和混入，停/暂停/结束静默；自由运行可按真实时间节流，
   手动步进保持确定性。SoundPool 解码成功才原子提交 loaded，失败保留 pending/错误事实。
 - legacy media 的 no-op/返回值只表示 Java 契约；volume/pitch/loaded/voice 为受检会话状态。

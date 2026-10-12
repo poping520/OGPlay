@@ -1155,3 +1155,21 @@ pause/stop 或 Surface 退役。owner 窗口隐藏则隐藏提示，实例结束
 查询 GET_RESOLVED_FILTER 只影响返回投影，不把已知缺席变成异常；服务信息仍来自
 封存目录。没有外部服务时诚实返回 null；不伪造商店、授权、购买或网络成功。
 范围与证据见 [DVM-246](../tasks/dexvm/DVM-246.md)。
+
+## ADR-0126 · 动态 XML 构建与窗口内容安装分离
+
+按 API19 LayoutInflater 的 root/attach/merge 协议提供有界 guest Java 客户端。
+ContextThemeWrapper 在 Java 持有绑定自身的克隆；基础 Context 的本地服务通过普通
+guest 字段缓存，Window 从 owner 查询，Activity 委托 Window。无全局 inflater 表。
+Context、clone、同步及重载在 Java，private native 只承接已有资源/AXML/UiTree。
+
+共享 registry builder 先构建独立子树，父容器存在时调用其默认参数工厂并将已解析
+XML 参数写入 BootDex 类型字段；既有 LTR/Margin/Frame/Linear/Relative 支持范围不变。
+固定 registry 构造器及属性投影仍是当前边界，不宣称完整 AttributeSet/自定义工厂。
+子树 onFinishInflate 在添加到父容器前执行；文档根完成后通过普通 addView 追加。
+merge 仅允许非空 root 且 attach，返回给定 root；空 merge 合法。普通 inflate 永不
+清理已有内容，只有旧安装 API/Window.setContentView 明确拥有替换职责。
+
+失败只回收本次节点/绑定，不 reset 窗口、Dialog 或其他树；callback 身份/代次受检，
+已执行的 guest 回调不回滚。detached Surface 不提前收到宿主事件。解析器重载、完整
+主题、Factory/反射控件及系统服务不在本轮范围。见 [DVM-247](../tasks/dexvm/DVM-247.md)。

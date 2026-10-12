@@ -36,63 +36,20 @@ void ReplaceViewBackgroundBinding(DexVmAndroidContext& context,
 
 }  // namespace
 
-namespace {
-
-bool CallContextWrapperConstructor(dx::IntrinsicContext& context,
-                                   const dx::VmObjectRef base) {
-    auto& linker = context.vm.Linker();
-    const auto owner = linker.FindClass("Landroid/content/ContextWrapper;");
-    if (!owner.has_value()) {
-        throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;",
-                              "ContextWrapper is not linked"};
-    }
-    const auto constructor = linker.FindDirectMethod(
-        *owner, "<init>", "(Landroid/content/Context;)V");
-    if (!constructor.has_value()) {
-        throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;",
-                              "ContextWrapper constructor is unavailable"};
-    }
-    const auto outcome = context.vm.Call(
-        *constructor,
-        std::vector<dx::VmValue>{dx::VmValue::Ref(context.receiver),
-                                 dx::VmValue::Ref(base)});
-    if (!outcome.exception.IsValid()) return true;
-    context.vm.SetPendingException(outcome.exception);
-    return false;
+Decl Declare_android_view_ContextThemeWrapper(const Context&) {
+    return dx::IntrinsicClassBuilder::Class("Landroid/view/ContextThemeWrapper;",
+        "Landroid/content/ContextWrapper;").Build();
 }
 
-}  // namespace
-
-Decl Declare_android_view_ContextThemeWrapper(const Context& context) {
-    static_cast<void>(context);
-    auto builder = dx::IntrinsicClassBuilder::Class(
-        "Landroid/view/ContextThemeWrapper;",
-        "Landroid/content/ContextWrapper;");
-    const auto theme_resource =
-        builder.BoundInstanceField("mThemeResource", "I", dx::kAccPrivate);
-    builder.Constructor("()V", [](dx::IntrinsicContext&) {
-        return dx::VmValue::Void();
-    });
-    builder.Constructor("(Landroid/content/Context;I)V",
-        [theme_resource](dx::IntrinsicContext& context) {
-            if (CallContextWrapperConstructor(context,
-                                              context.arguments[0].ref)) {
-                dx::IntrinsicCall(context).SetInt(
-                    theme_resource, context.arguments[1].AsInt());
-            }
-            return dx::VmValue::Void();
-        });
-    builder.VirtualMethod("setTheme", "(I)V",
-        [theme_resource](dx::IntrinsicContext& context) {
-            dx::IntrinsicCall(context).SetInt(
-                theme_resource, context.arguments[0].AsInt());
-            return dx::VmValue::Void();
-        });
-    builder.VirtualMethod("getThemeResId", "()I",
-        [theme_resource](dx::IntrinsicContext& context) {
-            return dx::VmValue::Int(
-                dx::IntrinsicCall(context).GetInt(theme_resource));
-        });
+Decl Declare_android_view_LayoutInflater(const Context& context) {
+    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/view/LayoutInflater;");
+    builder.DirectMethod("nativeInflate",
+        "(Landroid/content/Context;ILandroid/view/ViewGroup;Z)Landroid/view/View;",
+        [context](dx::IntrinsicContext& call) {
+            return dx::VmValue::Ref(BuildUiLayoutResource(call.vm, *context,
+                static_cast<std::uint32_t>(call.arguments[1].AsInt()), call.arguments[0].ref,
+                call.arguments[2].ref, call.arguments[3].AsInt() != 0));
+        }, dx::kAccPrivate | dx::kAccNative);
     return std::move(builder).Build();
 }
 
@@ -1945,6 +1902,9 @@ Decl Declare_android_view_View(const Context& context) {
             }
             return dx::VmValue::Void();
         });
+    builder.VirtualMethod("onFinishInflate", "()V", [](dx::IntrinsicContext&) {
+        return dx::VmValue::Void();
+    }, dx::kAccProtected);
     builder.VirtualMethod("setSystemUiVisibility", "(I)V",
         [system_ui_visibility](dx::IntrinsicContext& context) {
             dx::IntrinsicCall(context).SetInt(
@@ -2411,6 +2371,16 @@ Decl Declare_android_view_Window(const Context& context) {
             return dx::VmValue::Ref(Attributes(call, context));
         });
     const auto owner = builder.BoundInstanceField("mOgplayOwner", "Landroid/app/Activity;", dx::kAccPrivate);
+    builder.VirtualMethod("getLayoutInflater", "()Landroid/view/LayoutInflater;",
+        [owner](dx::IntrinsicContext& call) {
+            const auto activity = dx::IntrinsicCall(call).GetRef(owner);
+            if (!activity.IsValid())
+                throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "Window has no Activity owner"};
+            const auto service = call.vm.NewStringUtf8("layout_inflater");
+            const auto roots = call.vm.ProtectReferences(std::array{activity, service});
+            return CallAndroidMethod(call.vm, activity, "getSystemService",
+                "(Ljava/lang/String;)Ljava/lang/Object;", {dx::VmValue::Ref(service)});
+        });
     const auto decor = builder.BoundInstanceField("mDecor", "Landroid/view/View;", dx::kAccPrivate);
     const auto content_parent = builder.BoundInstanceField(
         "mContentParent", "Landroid/widget/FrameLayout;", dx::kAccPrivate);

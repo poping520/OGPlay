@@ -863,6 +863,14 @@ InflateUiElements(dexvm::Interpreter &vm, DexVmAndroidContext &context,
     std::uint32_t layout_id,
     dexvm::VmObjectRef inflater_context = dexvm::VmObjectRef{},
     std::optional<ui::UiNodeId> parent = std::nullopt);
+// Non-destructive XML construction. root=null always leaves the subtree detached.
+[[nodiscard]] dexvm::VmObjectRef BuildUiElements(
+    dexvm::Interpreter &vm, DexVmAndroidContext &context,
+    std::span<const loader::BinaryXmlElement> elements, dexvm::VmObjectRef inflater_context,
+    dexvm::VmObjectRef root = dexvm::VmObjectRef{}, bool attach_to_root = false);
+[[nodiscard]] dexvm::VmObjectRef BuildUiLayoutResource(
+    dexvm::Interpreter &vm, DexVmAndroidContext &context, std::uint32_t layout_id,
+    dexvm::VmObjectRef inflater_context, dexvm::VmObjectRef root, bool attach_to_root);
 [[nodiscard]] std::u16string ResolveUiString(const DexVmAndroidContext &context,
                                              std::uint32_t resource_id);
 [[nodiscard]] std::string

@@ -4,6 +4,7 @@
 #include <functional>
 #include <limits>
 #include <stdexcept>
+#include <utility>
 
 namespace ogplay::runtime::ui {
 
@@ -58,6 +59,13 @@ void UiTree::Attach(const UiNodeId parent, const UiNodeId child,
         if (*cursor == child || ++depth > kMaxDepth) {
             throw std::runtime_error("UI tree attachment would create a cycle");
         }
+    }
+    // Detached subtrees can be built bottom-up; count their descendants too.
+    std::vector<std::pair<UiNodeId, std::size_t>> subtree{{child, depth}};
+    while (!subtree.empty()) {
+        const auto [node, level] = subtree.back(); subtree.pop_back();
+        if (level > kMaxDepth) throw std::runtime_error("UI tree depth limit exceeded");
+        for (const auto descendant : Require(node).children) subtree.emplace_back(descendant, level + 1);
     }
     const auto position = index.value_or(parent_node.children.size());
     if (position > parent_node.children.size()) {

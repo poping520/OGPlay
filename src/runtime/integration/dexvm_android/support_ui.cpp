@@ -8,6 +8,7 @@
 
 #include <stdexcept>
 #include <tuple>
+#include <bit>
 #include <cmath>
 #include "ogplay/runtime/integration/bitmap_pixels.h"
 
@@ -316,8 +317,9 @@ constexpr std::uint8_t kTypeString = 0x03;
 constexpr std::uint8_t kTypeFirstColor = 0x1c;
 constexpr std::uint8_t kTypeLastColor = 0x1f;
 
-constexpr std::array<UiWidgetDescriptor, 16> kWidgets{{
+constexpr std::array<UiWidgetDescriptor, 17> kWidgets{{
     {"View", "Landroid/view/View;", ui::UiClass::View},
+    {"SurfaceView", "Landroid/view/SurfaceView;", ui::UiClass::View},
     {"TextView", "Landroid/widget/TextView;", ui::UiClass::TextView},
     {"Button", "Landroid/widget/Button;", ui::UiClass::Button},
     {"EditText", "Landroid/widget/EditText;", ui::UiClass::EditText},
@@ -1096,6 +1098,9 @@ private:
     void Emit(const std::span<const loader::BinaryXmlElement> elements,
               const std::size_t index, const std::int32_t output_parent,
               const loader::BinaryXmlElement* overrides) {
+        std::size_t depth = 1;
+        for (auto cursor = output_parent; cursor >= 0; cursor = output_[static_cast<std::size_t>(cursor)].parent)
+            if (++depth > ui::UiTree::kMaxDepth) throw std::runtime_error("expanded layout depth limit exceeded");
         const auto& element = elements[index];
         if (element.name == "include") {
             for (std::size_t child = index + 1; child < elements.size(); ++child) {
@@ -1176,55 +1181,81 @@ std::vector<loader::BinaryXmlElement> ExpandUiIncludes(
 
 std::span<const UiWidgetDescriptor> UiWidgetRegistry() { return kWidgets; }
 
-dexvm::VmObjectRef InflateUiElements(
+namespace {
+// Attribute parsing stays in the shared registry. Java LayoutParams fields become
+// the sole mutable parameter state before the ordinary ViewGroup attach path.
+void AssignInflatedParams(dexvm::Interpreter& vm, DexVmAndroidContext& context,
+                          dexvm::VmObjectRef parent, dexvm::VmObjectRef view,
+                          ui::UiNodeId node) {
+    using namespace android_intrinsics;
+    if (!parent.IsValid()) return; // legacy synthetic roots are not ViewGroups
+    const auto layout = context.ui_tree.Get(node)->layout;
+    const auto params = CallAndroidMethod(vm, parent, "generateDefaultLayoutParams",
+        "()Landroid/view/ViewGroup$LayoutParams;").ref;
+    const auto roots = vm.ProtectReferences(std::array{parent, view, params});
+    if (!params.IsValid()) throw dexvm::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "null generated LayoutParams"};
+    const auto type = vm.Model().ObjectClass(params);
+    const auto put = [&](const char* name, std::uint32_t bits, const char* descriptor = "I") {
+        const auto field = vm.Linker().FindFieldRecursive(type, name, descriptor);
+        if (!field) throw dexvm::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "unsupported inflated LayoutParams field: " + std::string(name)};
+        vm.Model().InstanceSlots(params)[vm.Linker().Field(*field).slot] = {bits, dexvm::SlotTag::cat1};
+    };
+    const auto dim = [](const ui::DimensionSpec value) {
+        return static_cast<std::uint32_t>(value.mode == ui::SizeMode::MatchParent ? -1 :
+            value.mode == ui::SizeMode::WrapContent ? -2 : value.px);
+    };
+    put("width", dim(layout.width)); put("height", dim(layout.height));
+    const auto is = [&](const char* descriptor) { return vm.Linker().IsAssignable(vm.Linker().ResolveDescriptor(descriptor), type); };
+    if (is("Landroid/view/ViewGroup$MarginLayoutParams;")) {
+        static_cast<void>(CallAndroidMethod(vm, params, "setMargins", "(IIII)V", {
+            dexvm::VmValue::Int(layout.margin.left), dexvm::VmValue::Int(layout.margin.top),
+            dexvm::VmValue::Int(layout.margin.right), dexvm::VmValue::Int(layout.margin.bottom)}));
+    }
+    if (layout.layout_gravity != 0 && (is("Landroid/widget/FrameLayout$LayoutParams;") || is("Landroid/widget/LinearLayout$LayoutParams;")))
+        put("gravity", layout.layout_gravity);
+    if (is("Landroid/widget/LinearLayout$LayoutParams;")) put("weight", std::bit_cast<std::uint32_t>(layout.weight), "F");
+    if (is("Landroid/widget/RelativeLayout$LayoutParams;")) {
+        const auto& r = layout.relative;
+        const std::array<int, 16> rules{r.left_of.value_or(0), r.right_of.value_or(0),
+            r.above.value_or(0), r.below.value_or(0), 0, r.align_left.value_or(0),
+            r.align_top.value_or(0), r.align_right.value_or(0), r.align_bottom.value_or(0),
+            r.align_parent_left ? -1 : 0, r.align_parent_top ? -1 : 0,
+            r.align_parent_right ? -1 : 0, r.align_parent_bottom ? -1 : 0,
+            r.center_in_parent ? -1 : 0, r.center_horizontal ? -1 : 0, r.center_vertical ? -1 : 0};
+        for (std::size_t i = 0; i < rules.size(); ++i) if (rules[i] != 0)
+            static_cast<void>(CallAndroidMethod(vm, params, "addRule", "(II)V", {
+                dexvm::VmValue::Int(static_cast<int>(i)), dexvm::VmValue::Int(rules[i])}));
+    }
+    static_cast<void>(CallAndroidMethod(vm, view, "setLayoutParams", "(Landroid/view/ViewGroup$LayoutParams;)V", {dexvm::VmValue::Ref(params)}));
+}
+
+dexvm::VmObjectRef BuildUiElementsAt(
     dexvm::Interpreter& vm, DexVmAndroidContext& context,
     const std::span<const loader::BinaryXmlElement> elements,
     const dexvm::VmObjectRef inflater_context,
-    const std::optional<ui::UiNodeId> parent) {
-    const auto reset = [&] {
-        if (!parent) { ResetViewUiState(context); return; }
-        const auto children = context.ui_tree.Get(*parent)->children;
-        for (const auto child : children) RetireViewUiSubtree(context, child);
-    };
-    reset();
+    const std::optional<ui::UiNodeId> parent, const bool attach) {
+    const auto owner_roots = vm.ProtectReferences(std::array{inflater_context,
+        parent ? ViewObjectForUiNode(context, *parent) : dexvm::VmObjectRef{}});
     std::vector<ui::UiNodeId> created;
     try {
-        auto expanded = ExpandUiIncludes(
-            elements, [&context](const std::uint32_t layout_id) {
-                return LoadLayout(context, layout_id);
-            });
+        const auto expanded = ExpandUiIncludes(elements, [&context](std::uint32_t id) { return LoadLayout(context, id); });
         const auto document = std::span<const loader::BinaryXmlElement>{expanded};
-        if (document.empty()) {
-            throw std::runtime_error("layout has no root element");
+        if (document.empty()) throw std::runtime_error("layout has no root element");
+        std::size_t root_count{};
+        for (std::size_t i = 0; i < document.size(); ++i) {
+            if (document[i].parent < 0) { ++root_count; if (i != 0) throw std::runtime_error("layout root must be first"); }
+            else if (static_cast<std::size_t>(document[i].parent) >= i) throw std::runtime_error("layout parent order is invalid");
         }
-        std::size_t root_count = 0;
-        for (std::size_t index = 0; index < document.size(); ++index) {
-            const auto parent = document[index].parent;
-            if (parent < 0) {
-                ++root_count;
-            } else if (static_cast<std::size_t>(parent) >= index) {
-                throw std::runtime_error("layout parent order is invalid");
-            }
-        }
-        if (root_count != 1) {
-            throw std::runtime_error("layout must have exactly one root element");
-        }
-
-        std::vector<ui::UiNodeId> node_of(document.size());
+        if (root_count != 1) throw std::runtime_error("layout must have exactly one root element");
+        const bool merge = document.front().name == "merge";
+        if (merge && (!parent || !attach)) throw std::runtime_error("merge requires a root and attachToRoot=true");
         dexvm::VmObjectRef content_view;
-        for (std::size_t index = 0; index < document.size(); ++index) {
+        // Construct children in document order, finish each subtree before adding
+        // it to its parent, and publish the document roots only after construction.
+        const auto build = [&](auto&& self, std::size_t index,
+                               std::optional<ui::UiNodeId> parent_node) -> dexvm::VmObjectRef {
             const auto& element = document[index];
-            const auto parent_node =
-                element.parent < 0
-                    ? (parent ? *parent : ActivityContentRoot(context))
-                    : node_of[static_cast<std::size_t>(element.parent)];
-            if (element.name == "merge") {
-                if (index != 0 || element.parent >= 0) {
-                    throw std::runtime_error("merge must be the layout root");
-                }
-                node_of[index] = parent_node;
-                continue;
-            }
+            if (element.name == "merge") throw std::runtime_error("merge must be the layout root");
             const auto* widget = FindWidget(element.name);
             if (widget == nullptr) {
                 if (auto* ledger = vm.Ledger(); ledger != nullptr) {
@@ -1321,25 +1352,121 @@ dexvm::VmObjectRef InflateUiElements(
                 context.ui_tree.SetAndroidId(
                     node, static_cast<std::int32_t>(element.id));
             }
-            context.ui_tree.Attach(parent_node, node);
-            node_of[index] = node;
-            if (!content_view.IsValid()) content_view = view;
 
+            if (parent_node) AssignInflatedParams(vm, context, ViewObjectForUiNode(context, *parent_node), view, node);
             if (drawable_id != 0U) {
                 const auto image = ResolveUiDrawable(context, drawable_id);
-                context.ui_tree.Get(node)->intrinsic = {image->width,
-                                                        image->height};
+                context.ui_tree.Get(node)->intrinsic = {image->width, image->height};
             }
+            for (std::size_t child = index + 1; child < document.size(); ++child) {
+                if (document[child].parent != static_cast<std::int32_t>(index)) continue;
+                if (!vm.Linker().IsAssignable(vm.Linker().ResolveDescriptor("Landroid/view/ViewGroup;"), vm.Model().ObjectClass(view)))
+                    throw std::runtime_error("inflated children require a ViewGroup parent");
+                const auto child_view = self(self, child, node);
+                static_cast<void>(android_intrinsics::CallAndroidMethod(vm, view, "addView",
+                    "(Landroid/view/View;Landroid/view/ViewGroup$LayoutParams;)V",
+                    {dexvm::VmValue::Ref(child_view), dexvm::VmValue::Ref(context.ui_view_layout_params.at(child_view.Value()))}));
+                if (FindViewUiNode(context, view.Value()) != node || !context.ui_tree.Get(node))
+                    throw std::runtime_error("inflated parent retired during callback");
+            }
+            static_cast<void>(android_intrinsics::CallAndroidMethod(vm, view, "onFinishInflate", "()V"));
+            if (FindViewUiNode(context, view.Value()) != node || !context.ui_tree.Get(node) || context.ui_tree.Get(node)->parent)
+                throw std::runtime_error("inflated view retired or attached during callback");
+            return view;
+        };
+        std::vector<dexvm::VmObjectRef> document_roots;
+        if (merge) {
+            for (std::size_t i = 1; i < document.size(); ++i)
+                if (document[i].parent == 0) document_roots.push_back(build(build, i, parent));
+        } else document_roots.push_back(build(build, 0, parent));
+        if (document_roots.empty()) {
+            // Empty merge is a valid append of zero children.
+            return parent ? ViewObjectForUiNode(context, *parent) : dexvm::VmObjectRef{};
         }
-        if (!content_view.IsValid()) {
-            throw std::runtime_error("layout produced no inflatable widget");
+        content_view = document_roots.front();
+        const auto result_roots = vm.ProtectReferences(document_roots);
+        if (parent && attach) {
+            const auto parent_view = ViewObjectForUiNode(context, *parent);
+            if (!context.ui_tree.Get(*parent)) throw std::runtime_error("inflation root retired during callback");
+            for (const auto view : document_roots) {
+                const auto node = FindViewUiNode(context, view.Value());
+                if (!node) throw std::runtime_error("inflated root retired during callback");
+                if (parent_view.IsValid()) {
+                    static_cast<void>(android_intrinsics::CallAndroidMethod(vm, parent_view, "addView",
+                        "(Landroid/view/View;Landroid/view/ViewGroup$LayoutParams;)V",
+                        {dexvm::VmValue::Ref(view), dexvm::VmValue::Ref(context.ui_view_layout_params.at(view.Value()))}));
+                } else context.ui_tree.Attach(*parent, *node);
+            }
         }
         return content_view;
     } catch (...) {
-        reset();
-        for (const auto node : created)
-            if (context.ui_tree.Get(node)) RetireViewUiSubtree(context, node);
+        // Do not reset existing content or reclaim an external View moved by a callback.
+        for (auto it = created.rbegin(); it != created.rend(); ++it) {
+            if (const auto* state = context.ui_tree.Get(*it)) {
+                const auto children = state->children;
+                for (const auto child : children)
+                    if (std::find(created.begin(), created.end(), child) == created.end()) context.ui_tree.Detach(child);
+                RetireViewUiSubtree(context, *it);
+            }
+        }
         throw;
+    }
+}
+} // namespace
+
+dexvm::VmObjectRef BuildUiElements(dexvm::Interpreter& vm, DexVmAndroidContext& context,
+    std::span<const loader::BinaryXmlElement> elements, dexvm::VmObjectRef inflater_context,
+    dexvm::VmObjectRef root, bool attach_to_root) {
+    const auto roots = vm.ProtectReferences(std::array{root, inflater_context});
+    std::optional<ui::UiNodeId> parent;
+    if (root.IsValid()) {
+        if (!vm.Linker().IsAssignable(vm.Linker().ResolveDescriptor("Landroid/view/ViewGroup;"), vm.Model().ObjectClass(root)))
+            throw dexvm::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "inflation root is not a ViewGroup"};
+        parent = EnsureViewUiNode(context, root, android_intrinsics::UiClassForObject(vm, root));
+    }
+    try {
+        const auto view = BuildUiElementsAt(vm, context, elements, inflater_context, parent, attach_to_root);
+        return root.IsValid() && attach_to_root ? root : view;
+    } catch (const dexvm::VmJavaThrow&) { throw; }
+      catch (const dexvm::DexVmError&) { throw; }
+      catch (const std::runtime_error& error) {
+        throw dexvm::VmJavaThrow{"Landroid/view/InflateException;", error.what()};
+    }
+}
+
+dexvm::VmObjectRef InflateUiElements(dexvm::Interpreter& vm, DexVmAndroidContext& context,
+    std::span<const loader::BinaryXmlElement> elements, dexvm::VmObjectRef inflater_context,
+    std::optional<ui::UiNodeId> parent) {
+    // Compatibility install API: its caller explicitly requests replacement.
+    if (!parent) ResetViewUiState(context);
+    else {
+        const auto children = context.ui_tree.Get(*parent)->children;
+        for (const auto child : children) RetireViewUiSubtree(context, child);
+    }
+    return BuildUiElementsAt(vm, context, elements, inflater_context,
+        parent ? parent : std::optional{ActivityContentRoot(context)}, true);
+}
+
+dexvm::VmObjectRef BuildUiLayoutResource(dexvm::Interpreter& vm, DexVmAndroidContext& context,
+    std::uint32_t layout_id, dexvm::VmObjectRef inflater_context, dexvm::VmObjectRef root, bool attach_to_root) {
+    const auto roots = vm.ProtectReferences(std::array{inflater_context, root});
+    // Resource lookup failures have the API19 Resources exception, not an empty View.
+    const auto& entry = [&]() -> const loader::ArscEntry& {
+        try { return ResolveUiResourceEntry(context, layout_id); }
+        catch (const std::runtime_error& error) {
+            throw dexvm::VmJavaThrow{"Landroid/content/res/Resources$NotFoundException;", error.what()};
+        }
+    }();
+    if (entry.type_name != "layout" || !entry.string_value)
+        throw dexvm::VmJavaThrow{"Landroid/content/res/Resources$NotFoundException;", "resource is not a layout file"};
+    try {
+        const auto expanded = ExpandUiIncludes(LoadLayout(context, layout_id),
+            [&context](std::uint32_t id) { return LoadLayout(context, id); }, layout_id);
+        return BuildUiElements(vm, context, expanded, inflater_context, root, attach_to_root);
+    } catch (const dexvm::VmJavaThrow&) { throw; }
+      catch (const dexvm::DexVmError&) { throw; }
+      catch (const std::runtime_error& error) {
+        throw dexvm::VmJavaThrow{"Landroid/view/InflateException;", error.what()};
     }
 }
 

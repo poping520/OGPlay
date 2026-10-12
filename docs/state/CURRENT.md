@@ -1,6 +1,6 @@
 # 当前状态
 
-更新：2026-10-11。
+更新：2026-10-12。
 
 本页保留最新运行结果、当前阻塞与验收缺口。能力范围见
 [capabilities.toml](../../capabilities.toml)，实现契约见各模块 MODULE；历史过程见
@@ -81,8 +81,15 @@
   [DVM-246](../tasks/dexvm/DVM-246.md) 接通 managed Dialog/AlertDialog 有界模态显示及
   合法服务查询投影标志；22 用例/1864 断言与 BootDex/载荷校验通过。最终 MCP 原 APK
   f=160、guestFault=null、presented=2，已核验实际 Appstore required 提示；服务缺席
-  保持真实失败。点击推进后 **最新首错**：视频 Runnable 缺 getLayoutInflater()，dex_pc=12，
+  保持真实失败。点击推进后当时首错：视频 Runnable 缺 getLayoutInflater()，dex_pc=12，
   因此按钮→原应用退出未验收。输入依赖的 API19 MotionEvent 轴常量已对照原版补齐。
+  [DVM-247](../tasks/dexvm/DVM-247.md) 已接通 LayoutInflater Context/from/clone、独立 XML
+  构建、父类型参数与追加/merge；25 用例/1518 断言、BootDex/载荷校验通过。最终原 APK
+  MCP f=168 已越过 getLayoutInflater/inflate/addContentView，**最新首错**为
+  SurfaceView.setZOrderMediaOverlay(Z)V，视频 Runnable dex_pc=153；完整视频/按钮退出未验收。
+  快速推进后未触达视频的前置复现，关闭时再次出现既有 unknown guest thread id；不声明
+  已修复。最终 reached-fault 会话 MCP shutdown 后退出 1、listener 关闭；所有 OGPlay
+  进程已关闭。证据 `.local/layout-inflater-fix-20261012/`。
   证据 `.local/manifest-duplicate-fix-20261011/`、
   `.local/ndk-assets-fix-20261011/`、`.local/gles-mapbuffer-fix-20261011/`、
   `.local/debug-memory-fix-20261011/`、`.local/installed-applications-fix-20261011/`、

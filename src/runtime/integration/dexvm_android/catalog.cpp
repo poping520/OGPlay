@@ -256,6 +256,7 @@ AndroidIntrinsicCatalog(const std::shared_ptr<DexVmAndroidContext> &context) {
       Declare_android_util_DisplayMetrics(context),
       Declare_android_view_Display(context),
       Declare_android_view_ContextThemeWrapper(context),
+      Declare_android_view_LayoutInflater(context),
       Declare_android_view_KeyEvent(context),
       Declare_android_view_KeyCharacterMap(context),
       Declare_android_view_MotionEvent(context),

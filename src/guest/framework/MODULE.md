@@ -40,3 +40,7 @@ NotificationManager 的普通 Context 字段、构造/from 与重载在 android.
 
 GLImpl 的 [Java 客户端](java/com/google/android/gles_jni/MODULE.md) 保留 API19 Buffer
 强引用与普通转发；仅将系统包管理查询改为当前 APK targetSdk 的 native 边界。
+
+[view 客户端](java/android/view/MODULE.md) 提供 LayoutInflater 的 Context、clone/from、
+同步/重载以及 ContextThemeWrapper 服务缓存；native 复用固定注册表的 XML 构建，
+构建与窗口替换分离，不加载完整 PhoneWindow 或反射工厂。

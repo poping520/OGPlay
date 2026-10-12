@@ -287,3 +287,5 @@ Scenario gate 与 profile 迁移）以 [`docs/state/CURRENT.md`](../../state/CUR
 - [DVM-245 · 稳定窗口内容容器](DVM-245.md)
 
 - [DVM-246 · 托管 Dialog 与有界模态提示](DVM-246.md)
+
+- [DVM-247 · 有界动态 XML 膨胀协议](DVM-247.md)

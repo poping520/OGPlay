@@ -1842,6 +1842,7 @@
       "Landroid/util/StateSet;",
       "Landroid/util/TimeFormatException;",
       "Landroid/util/TypedValue;",
+      "Landroid/view/InflateException;",
       "Landroid/view/InputDevice$1;",
       "Landroid/view/InputDevice$MotionRange;",
       "Landroid/view/InputDevice;",

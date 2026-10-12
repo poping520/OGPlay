@@ -9,6 +9,7 @@ using DebugMemoryInfoFields = std::vector<dx::IntrinsicFieldHandle>;
 [[nodiscard]] Decl Declare_android_os_Debug(const Context&, const DebugMemoryInfoFields&);
 
 [[nodiscard]] Decl Declare_android_app_NativeActivity(const Context &context);
+[[nodiscard]] Decl Declare_android_view_LayoutInflater(const Context& context);
 [[nodiscard]] Decl Declare_android_view_Surface(const Context& context);
 Decl Declare_android_view_InputQueue(const Context &context);
 [[nodiscard]] Decl Declare_android_app_Activity(const Context &context);

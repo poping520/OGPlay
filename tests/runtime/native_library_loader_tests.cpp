@@ -2736,6 +2736,65 @@ TEST_CASE("DVM-245 ARM JNI content append and lookup preserve the shared hierarc
     }
 }
 
+TEST_CASE("DVM-247 ARM JNI inherited inflater lookup Context and native resource failure") {
+    using namespace ogplay;
+    using namespace runtime;
+    using namespace runtime::dexvm;
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        ApplicationProcess f(backend);
+        auto& bridge = *f.bridge; auto& vm = bridge.Vm(); auto& linker = vm.Linker();
+        auto& process = f.session->Process(); auto& env = f.session->Environment();
+        const auto memory = process.GuestMemoryAccess(); const auto scratch = memory.allocate(512);
+        env.PushLocalFrame(1, 32);
+        const auto base = vm.NewIntrinsicInstance("Landroid/content/Context;");
+        const auto base_ref = bridge.PublishLocal(base);
+        const auto activity = vm.NewIntrinsicInstance("Landroid/app/Activity;");
+        const auto activity_ref = bridge.PublishLocal(activity);
+        const auto attach = *linker.FindVtableIndex(vm.Model().ObjectClass(activity), "attachBaseContext", "(Landroid/content/Context;)V");
+        REQUIRE_FALSE(vm.Call(linker.Class(vm.Model().ObjectClass(activity)).vtable[attach], std::array{VmValue::Ref(activity), VmValue::Ref(base)}).exception.IsValid());
+        const auto invoke = [&](const char* name, std::array<std::uint32_t, 4> args) {
+            return process.Invoke({memory::GuestAddress{EnvironmentThunk(name)}, args, {}}).return_value;
+        };
+        const auto method = [&](VmObjectRef object, const char* name, const char* descriptor) {
+            const auto klass = bridge.PublishLocal(vm.Model().ClassObject(vm.Model().ObjectClass(object)));
+            std::array<std::byte, 256> data{};
+            std::memcpy(data.data(), name, std::strlen(name) + 1);
+            std::memcpy(data.data() + 64, descriptor, std::strlen(descriptor) + 1);
+            memory.write(scratch, data);
+            const auto id = invoke("GetMethodID", {process.GuestEnvironment().Value(), klass.Value(), scratch.Value(), scratch.Add(64).Value()});
+            REQUIRE(id != 0); REQUIRE_FALSE(env.ExceptionCheck(1)); return id;
+        };
+        const auto getter = method(activity, "getLayoutInflater", "()Landroid/view/LayoutInflater;");
+        const auto query = [&](JniReference object, std::uint32_t id) {
+            const auto result = JniReference{invoke("CallObjectMethodA", {process.GuestEnvironment().Value(), object.Value(), id, scratch.Add(256).Value()})};
+            REQUIRE_FALSE(env.ExceptionCheck(1)); REQUIRE_FALSE(result.IsNull()); return result;
+        };
+        const auto inflater_ref = query(activity_ref, getter);
+        const auto inflater = bridge.FromReference(inflater_ref);
+        CHECK(bridge.FromReference(query(activity_ref, getter)) == inflater);
+        const auto get_context = method(inflater, "getContext", "()Landroid/content/Context;");
+        CHECK(bridge.FromReference(query(inflater_ref, get_context)) == activity);
+        const auto clone = method(inflater, "cloneInContext", "(Landroid/content/Context;)Landroid/view/LayoutInflater;");
+        std::array<std::byte, 32> args{};
+        for (std::size_t i = 0; i < 4; ++i) args[i] = static_cast<std::byte>(base_ref.Value() >> (8 * i));
+        memory.write(scratch.Add(256), args);
+        const auto clone_ref = query(inflater_ref, clone);
+        CHECK(bridge.FromReference(clone_ref) != inflater);
+        CHECK(bridge.FromReference(query(clone_ref, get_context)) == base);
+        static_cast<void>(vm.CollectGarbage("inflater-jni-fields"));
+        const auto inflate = method(inflater, "inflate", "(ILandroid/view/ViewGroup;Z)Landroid/view/View;");
+        args.fill(std::byte{0}); args[0] = std::byte{0x7b};
+        memory.write(scratch.Add(256), args);
+        static_cast<void>(invoke("CallObjectMethodA", {process.GuestEnvironment().Value(), inflater_ref.Value(), inflate, scratch.Add(256).Value()}));
+        REQUIRE(env.ExceptionCheck(1));
+        const auto error_ref = env.ExceptionOccurred(1);
+        env.ExceptionClear(1);
+        const auto error = bridge.FromReference(error_ref);
+        CHECK(linker.Class(vm.Model().ObjectClass(error)).descriptor == "Landroid/content/res/Resources$NotFoundException;");
+        static_cast<void>(env.PopLocalFrame(1)); memory.release(scratch, 512);
+    }
+}
+
 TEST_CASE("DVM-244 ARM JNI resource bitmap decoding publishes shared pixel storage") {
     using namespace ogplay;
     using namespace runtime;

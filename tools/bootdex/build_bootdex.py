@@ -90,6 +90,8 @@ FRAMEWORK_JAVA_NAMES = (
     "android/net/ConnectivityManager.java",
     "android/net/wifi/WifiManager.java",
     "android/nfc/NfcAdapter.java",
+    "android/view/ContextThemeWrapper.java",
+    "android/view/LayoutInflater.java",
     "android/widget/VideoView.java",
     "com/google/android/gles_jni/GLImpl.java",
 )
@@ -491,6 +493,8 @@ def zip_stream_native_signatures() -> dict[str, dict[str, int]]:
         "Landroid/app/NotificationManager;": {
             "nativeCancel(Ljava/lang/String;Ljava/lang/String;IZ)V": 0x102,
             "nativeRejectPost(Ljava/lang/String;)V": 0x102},
+        "Landroid/view/LayoutInflater;": {
+            "nativeInflate(Landroid/content/Context;ILandroid/view/ViewGroup;Z)Landroid/view/View;": 0x102},
     }
 
 
@@ -1033,7 +1037,7 @@ def self_test() -> int:
         reject_recipe(candidate, case)
     # Native admission mutations need neither AOSP inputs nor Java tooling.
     from types import SimpleNamespace
-    for target_index in (0, 1, 2, 3, 4, 7):  # Activity, NFC, video, value arithmetic, ZIP and notification admission.
+    for target_index in (0, 1, 2, 3, 4, 7, 8):  # Activity, NFC, video, value arithmetic, ZIP and notification admission.
         for mutation in ("valid", "signature", "flags", "extra", "missing"):
             names, signatures, classes = [], [], []
             for owner, members in zip_stream_native_signatures().items():

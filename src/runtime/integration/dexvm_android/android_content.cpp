@@ -1373,6 +1373,7 @@ void LoadPreferencesOnce(const Context &context, const std::string &name) {
 Decl Declare_android_content_Context(const Context &context) {
   auto builder = dx::IntrinsicClassBuilder::Class("Landroid/content/Context;",
                                                   "Ljava/lang/Object;");
+  const auto inflater = builder.BoundInstanceField("mOgplayInflater", "Landroid/view/LayoutInflater;", dx::kAccPrivate);
   constexpr std::int32_t kGuestProcessId = 1;
   constexpr std::int32_t kPermissionGranted = 0;
   constexpr std::int32_t kPermissionDenied = -1;
@@ -1702,8 +1703,23 @@ Decl Declare_android_content_Context(const Context &context) {
       });
   builder.VirtualMethod(
       "getSystemService", "(Ljava/lang/String;)Ljava/lang/Object;",
-      [context](dx::IntrinsicContext &call) {
+      [context, inflater](dx::IntrinsicContext &call) {
         const auto name = call.vm.StringUtf8(call.arguments[0].ref);
+        if (name == "layout_inflater") {
+          dx::IntrinsicCall fields(call);
+          auto value = fields.GetRef(inflater);
+          if (!value.IsValid()) {
+            const auto type = call.vm.Linker().ResolveDescriptor("Landroid/view/LayoutInflater;");
+            const auto factory = call.vm.Linker().FindDirectMethod(type, "createLocal",
+                "(Landroid/content/Context;)Landroid/view/LayoutInflater;");
+            if (!factory) throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "LayoutInflater factory is missing"};
+            const auto result = call.vm.Call(*factory, std::array{dx::VmValue::Ref(call.receiver)});
+            if (result.exception.IsValid()) { call.vm.SetPendingException(result.exception); return dx::VmValue::Ref(dx::VmObjectRef{}); }
+            value = result.value.ref;
+            fields.SetRef(inflater, value);
+          }
+          return dx::VmValue::Ref(value);
+        }
         if (name == "activity") {
           return dx::VmValue::Ref(ActivityManagerForContext(call, context));
         }

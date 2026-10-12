@@ -213,6 +213,14 @@ guest worker 静止后，`ReleaseAndroidMediaResources` 退役 decoder、媒体�
   onContentChanged，回调异常保持对象身份，重入内容变更中止旧操作；不回滚已执行回调。
   content_view 是首个内容 View 的兼容投影，窗口 root 是遍历边界。移除保留 View/参数/
   几何，未变尺寸不重复回调；真正实例退役才清理子树。不提供主题 Decor/ActionBar。
+- LayoutInflater 的 Context/from/clone/重载归有界 Java，ContextThemeWrapper 缓存克隆，
+  Window/Activity 查询同一 owner 服务；基础 Context 以 guest 字段保存本地服务缓存。
+  registry builder 构建独立子树、物化父容器类型的 BootDex LayoutParams，再通过 addView
+  追加；root=null 不附着，有 root/attach=false 只生成参数，attach=true 返回 root。
+  merge 只允许 root 非空且 attach；空 merge 合法。onFinishInflate 按文档顺序子到父，
+  在各子树加入父容器前交付；GC/节点身份/深度受检，失败只回收本次新增节点，不 reset
+  旧内容、其他窗口或 Dialog。已执行回调不回滚。仍仅固定注册控件和已登记属性/样式，
+  不提供 parser 重载、完整主题、Factory/反射构造或系统服务。
 - ViewGroup.removeViewInLayout 是 public virtual 的通用入口，与 removeView/removeViews
   共用子树退役、层级移除和焦点处理；布局期间移除不调用 requestLayout/invalidate，
   仅使实际绘制缓存失效，普通移除仍虚派 requestLayout 后刷新。callback 后重查原节点和
@@ -243,7 +251,8 @@ guest worker 静止后，`ReleaseAndroidMediaResources` 退役 decoder、媒体�
   回调前与 late holder 发布 managed surface 像素尺寸，destroyed 保留末次尺寸。旧 holder
   不跟随后续 generation；不从 UiTree bounds 推导独立 buffer，不新增全局 frame 根表。
   SurfaceView(Context,null) 构造复用 View 的 UiNode/Context 初始化；null Context 抛 NPE，
-  非空 AttributeSet 记账失败，不宣称 XML/theme 或三参数 defStyle 构造支持。
+  非空 AttributeSet 记账失败，注册表 XML 通过 Context 构造与既有属性投影支持；不提供完整 AttributeSet/theme 或
+  三参数 defStyle 构造支持。
 - NativeActivity/NativeContentView 执行原 Java，仅 overlay 私有 native，经 NativeActivityRuntime
   接当前进程。takeSurface/takeInputQueue 支持 null/切换，先销毁旧 owner 再发布新对象；
   首次遍历前解除不收旧事件。Callback2 changed 后 redraw；主线程首次/dirty 遍历向已附着

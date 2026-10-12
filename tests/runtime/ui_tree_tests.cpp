@@ -414,3 +414,22 @@ TEST_CASE("RelativeLayout fails deterministically on missing refs and cycles") {
     CHECK_THROWS_WITH(ui::LayoutUiTree(cycle, {20, 20}),
                       "RelativeLayout vertical dependency cycle");
 }
+
+
+TEST_CASE("DVM-247 detached subtree attachment enforces the total depth budget") {
+    using namespace ogplay::runtime::ui;
+    UiTree tree;
+    const auto leaf = tree.CreateNode(UiClass::View);
+    auto root = leaf;
+    for (std::size_t depth = 1; depth < UiTree::kMaxDepth; ++depth) {
+        const auto parent = tree.CreateNode(UiClass::FrameLayout);
+        tree.Attach(parent, root); root = parent;
+    }
+    CHECK_THROWS_WITH(tree.Attach(tree.Root(), root), "UI tree depth limit exceeded");
+    CHECK_FALSE(tree.Get(root)->parent.has_value());
+    CHECK(tree.Get(tree.Root())->children.empty());
+    const auto child = tree.Get(root)->children.front();
+    tree.Detach(child);
+    tree.Attach(tree.Root(), child);
+    CHECK(tree.IsAttached(leaf));
+}

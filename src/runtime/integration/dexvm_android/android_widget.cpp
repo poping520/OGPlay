@@ -86,6 +86,11 @@ namespace ogplay::runtime::android_intrinsics {
 Decl Declare_android_widget_FrameLayout(const Context& context) {
     static_cast<void>(context);
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/widget/FrameLayout;", "Landroid/view/ViewGroup;");
+    builder.OverrideMethod("generateDefaultLayoutParams", "()Landroid/view/ViewGroup$LayoutParams;",
+        [](dx::IntrinsicContext& call) {
+            return dx::VmValue::Ref(NewAndroidLayoutParams(call.vm,
+                "Landroid/widget/FrameLayout$LayoutParams;", -1, -1));
+        }, dx::kAccProtected);
     builder.Constructor("(Landroid/content/Context;)V", ViewInitHandler(context));
     return std::move(builder).Build();
 }
@@ -251,6 +256,12 @@ namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_widget_LinearLayout(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/widget/LinearLayout;", "Landroid/view/ViewGroup;");
+    builder.OverrideMethod("generateDefaultLayoutParams", "()Landroid/view/ViewGroup$LayoutParams;",
+        [context](dx::IntrinsicContext& call) {
+            return dx::VmValue::Ref(NewAndroidLayoutParams(call.vm,
+                "Landroid/widget/LinearLayout$LayoutParams;",
+                context->ui_tree.Get(EnsureViewUiNode(*context, call.receiver, ui::UiClass::LinearLayout))->orientation == ui::Orientation::Horizontal ? -2 : -1, -2));
+        }, dx::kAccProtected);
     builder.Constructor("(Landroid/content/Context;)V", ViewInitHandler(context));
     builder.Constructor("(Landroid/content/Context;Landroid/util/AttributeSet;)V",
                         ViewNullAttributeSetInitHandler(context));

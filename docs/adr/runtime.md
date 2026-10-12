@@ -1173,3 +1173,21 @@ merge 仅允许非空 root 且 attach，返回给定 root；空 merge 合法。�
 失败只回收本次节点/绑定，不 reset 窗口、Dialog 或其他树；callback 身份/代次受检，
 已执行的 guest 回调不回滚。detached Surface 不提前收到宿主事件。解析器重载、完整
 主题、Factory/反射控件及系统服务不在本轮范围。见 [DVM-247](../tasks/dexvm/DVM-247.md)。
+
+## ADR-0127 · Surface 层序与共享本地视频底座
+
+应用可观察的三种 Surface 层序由唯一 UiTree 保存，媒体叠层位于普通媒体之上、
+窗口 UI 之下；窗口上层位于普通 UI 之上，模态窗口仍最后合成。维持现有配置即时
+影响有界 compositor 的行为，不承诺 API19 WMS 的动态窗口重建。公开方法和覆盖规则
+对齐 API19；实际视频 producer 区域按 View 绘制顺序开孔，后绘制的控件不被清除。
+无独立 GLES 多层 framebuffer、任意透明 Surface 或完整 SurfaceFlinger。
+
+普通 MediaPlayer 与 VideoView 共用一个有界视频状态表、FFmpeg 来源工厂、统一 Clock、
+PCM 混音与最终合成入口。普通播放器以自身为 owner，Surface 仅为可撤销输出目标。
+已捕获的 VFS/APK 来源区间不受 caller 关闭 FD 影响；prepare 选择已有音频后端或
+视频后端，同一来源不同时播放两份。视频尺寸来自 decoder，事件进入原版 Java Handler。
+Surface 销毁先撤销绑定及旧画面，再执行 guest 回调；解码/音频可以继续，但不会自动
+附着下一代 Surface。reset/release/GC/退出退役 owner 的 decoder 和来源。
+
+支持本地来源、循环和现有 transport；不伪造解码完成或外部商店/授权。范围与证据见
+[DVM-248](../tasks/dexvm/DVM-248.md)、[DVM-249](../tasks/dexvm/DVM-249.md)。

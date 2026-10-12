@@ -1680,6 +1680,16 @@ status = "partial"
 test = "tests/session/profile_entry_scope_tests.cpp; tests/dexvm/egl_facade_tests.cpp: SurfaceView constructors and SurfaceHolder frame lifecycle/GC"
 note = "DVM-90 对照 AOSP 4.4.4 ViewGroup conditional attach/detach 与 SurfaceView.mSurfaceCreated：初始 lifecycle 只激活 live UiTree holder，动态子树 add/remove 形成独立 created/changed/destroyed generation，callback 使用稳定快照且 removeCallback 幂等。SurfaceView(Context,null) 复用统一 View 初始化，null Context 抛 NPE，非空 AttributeSet 记账失败；三参数 defStyle 构造未支持。getSurfaceFrame 返回 holder 普通 guest 字段中的稳定 BootDex Rect：初始零尺寸，回调前/late holder 发布 managed surface 像素尺寸，销毁保留末次值，GC 经字段追踪；旧对象不被新 generation 更新。OGPlay 仍只拥有一个 managed host surface；visibility、format/size 重建、独立合成层和 SurfaceFlinger 不在有界能力内。"
 
+[dexvm.surface_video_layers]
+status = "partial"
+test = "tests/dexvm/videoview_tests.cpp: DVM-248; tests/runtime/ui_renderer_tests.cpp: DVM-248; tests/session/ui_compositor_tests.cpp"
+note = "DVM-248/ADR-0127：UiTree 唯一保存 media/media_overlay/on_top，setZOrderMediaOverlay 与 setZOrderOnTop 后调用覆盖前调用。真实视频区域按 View 绘制顺序开孔，后绘制普通 UI 和模态层保留；裁剪/隐藏/退役/最终透明证书及双解释器像素验证通过。有界配置即时生效，不承诺 API19 WMS 动态重建、任意透明 Surface 或多 GLES framebuffer。原 APK 已越过原首错，下一首错 bringToFront；完整视频/跨平台未验收。"
+
+[dexvm.media_player_local_video]
+status = "partial"
+test = "tests/dexvm/videoview_tests.cpp: DVM-249; tests/runtime/native_library_loader_tests.cpp: DVM-249 lifecycle; tests/dexvm/audio_track_tests.cpp: MediaPlayer"
+note = "DVM-249/ADR-0127：普通 MediaPlayer 本地路径/FD 区间与 VideoView 共用 FFmpeg/Clock/PCM/合成；已有音频 decoder 优先，失败后启用视频工厂，已被音频接受的混合容器不额外视频探测。来源≤64MiB、共享八个视频实例。setDisplay/setSurface 绑定 active managed holder，失效/双 producer 拒绝；销毁撤销绑定，显式重绑恢复，reset/release/GC/退出退役。真实尺寸、原版 Handler prepared/size/error/completion、loop/transport/stream 增益、无 AudioTrack lifecycle 泵与真实 MP4 制品通过。原 APK 被下一 bringToFront 缺口阻断，完整影音同步、无缝循环、格式长尾/跨平台/title gate 未验收；外部商店/授权/网络/DRM 不提供。"
+
 [dexvm.input_device_services]
 status = "partial"
 test = "tests/dexvm/android_value_tests.cpp: InputDevice queries, DVM-206; tests/runtime/native_library_loader_tests.cpp: InputDevice production directory, DVM-206; tools/generate_virtual_keymap.py --check"

@@ -618,6 +618,12 @@ struct DexVmAndroidContext final {
     std::uint32_t music{};
     audio::EncodedAudioSource source;
     dexvm::VmObjectRef jni_weak;
+    std::shared_ptr<const audio::EncodedAudioDataSource> source_data;
+    dexvm::VmObjectRef display_surface{}, display_view{};
+    std::int32_t video_generation{};
+    std::int32_t audio_stream{3};
+    bool looping{};
+    float left_volume{1.0F}, right_volume{1.0F};
     bool prepared_event_pending{};
     bool seek_event_pending{};
     bool error_event_pending{};
@@ -789,6 +795,13 @@ struct DexVmAndroidContext final {
     std::int32_t generation{};
     std::int32_t pending_event{};
     bool was_attached{};
+    // Zero for VideoView (map key is the view); ordinary MediaPlayer has a
+    // separate output View and keeps decoding while the output is detached.
+    bool media_player{};
+    dexvm::VmObjectRef display_view{};
+    bool looping{};
+    std::int32_t audio_stream{3};
+    std::int64_t loop_index{};
     bool frame_requested{};
     float left_volume{1.0F};
     float right_volume{1.0F};
@@ -915,6 +928,14 @@ void PaceEglSwap(DexVmAndroidContext &context,
 // the SurfaceView layer fact; uses the same UiTree geometry and visibility.
 void ComposeVideoViews(DexVmAndroidContext &context, std::vector<std::uint8_t> &rgba8,
                        std::uint32_t width, std::uint32_t height, bool on_top);
+// Owner-thread helpers; video state is shared with the existing video/PCM pump.
+[[nodiscard]] bool PrepareAndroidMediaVideo(DexVmAndroidContext &context,
+                                           std::uint32_t owner);
+void ReleaseAndroidMediaVideo(DexVmAndroidContext &context, std::uint32_t owner);
+void BindAndroidMediaSurface(DexVmAndroidContext &context, std::uint32_t owner,
+                             dexvm::VmObjectRef surface);
+void DetachAndroidMediaSurface(DexVmAndroidContext &context, std::uint32_t holder);
+void RefreshAndroidSurfaceFrames(DexVmAndroidContext &context);
 
 // Pumps attached generations at the shared uptime clock; delivers prepared,
 // error and single-shot completion on the guest main thread. Listener code may

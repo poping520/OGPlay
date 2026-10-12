@@ -213,6 +213,7 @@ void RetireViewUiSubtree(DexVmAndroidContext& context, const ui::UiNodeId node) 
             }
             if (const auto holder = context.surface_holders.find(object); holder != context.surface_holders.end()) {
                 const auto key = holder->second.Value();
+                DetachAndroidMediaSurface(context, key);
                 context.surface_callbacks.erase(key);
                 context.holder_surfaces.erase(key);
                 context.active_surface_holders.erase(key);

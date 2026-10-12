@@ -2,6 +2,7 @@
 
 #include <array>
 #include <cstdint>
+#include <ostream>
 
 #include "ogplay/gles/gles_dispatch.h"
 

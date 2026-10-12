@@ -1448,7 +1448,7 @@ TEST_CASE("DVM-239 Debug MemoryInfo keeps original values Parcel and failure sem
         const auto model = MakeVirtualPrivateProcessMemorySnapshot(1025, 8192);
         CHECK(model.basis == GuestProcessMemoryBasis::virtual_private_committed);
         CHECK(model.heaps[0][0] == 2); CHECK(model.heaps[2][0] == 8);
-        CHECK_THROWS(MakeVirtualPrivateProcessMemorySnapshot(UINT64_MAX, 0));
+        CHECK_THROWS(static_cast<void>(MakeVirtualPrivateProcessMemorySnapshot(UINT64_MAX, 0)));
         auto incoherent = model; incoherent.heaps[0][2] = 3;
         CHECK_THROWS(ValidateGuestProcessMemorySnapshot(incoherent));
         f.context->process_memory_snapshot = model;

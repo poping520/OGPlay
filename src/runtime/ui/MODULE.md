@@ -34,6 +34,9 @@ shaping/bidi 与补充平面明确失败，不读取宿主字体或任意应用�
 - Detach 的默认策略请求布局；preserve_layout 策略只标祖先 draw dirty，保留已有
   layout dirty 和剩余节点的 resolved geometry。两者都更新 parent/children、id index
   和焦点，不销毁节点；不通过事后清 dirty 模拟布局期间移除。
+- `BringChildToFront(parent, child)`：仅直接子节点按 API19 数组移动到末尾，保持 attach、
+  焦点及 Surface 生命周期，已接入时重建 id index、只标祖先 draw dirty；非子节点返回 false。
+  requestLayout/invalidate 由调用方派发。
 - `Reset`：推进 generation，销毁全部旧 node/id index 并创建新的 content root；旧
   `UiNodeId` 永不重新变为有效。
 - `LayoutUiTree`：以 surface `UiMetrics` 的 EXACTLY root constraint 执行有界

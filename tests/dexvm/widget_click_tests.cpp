@@ -10,6 +10,7 @@
 #include <fstream>
 #include <memory>
 #include <string>
+#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -99,6 +100,8 @@ struct ClickVm final {
     std::function<void(IntrinsicContext&)> dialog_prepare_hook;
     bool dialog_key_consumed{};
     std::int32_t removal_layout_requests{};
+    std::int32_t bring_front_requests{};
+    std::int32_t remove_all_in_layout_requests{};
     bool content_view_handled{};
     std::int32_t key_down_events{};
     std::int32_t key_up_events{};
@@ -224,6 +227,22 @@ struct ClickVm final {
                           return VmValue::Void();
                       });
                   test_catalog.push_back(std::move(removal_probe).Build());
+                  auto bring_probe = IntrinsicClassBuilder::Class(
+                      "LBringFrontProbe;", "Landroid/widget/FrameLayout;");
+                  bring_probe.OverrideMethod("bringChildToFront", "(Landroid/view/View;)V",
+                      [this](IntrinsicContext&) {
+                          ++bring_front_requests;
+                          return VmValue::Void();
+                      });
+                  test_catalog.push_back(std::move(bring_probe).Build());
+                  auto remove_all_probe = IntrinsicClassBuilder::Class(
+                      "LRemoveAllProbe;", "Landroid/widget/FrameLayout;");
+                  remove_all_probe.OverrideMethod("removeAllViewsInLayout", "()V",
+                      [this](IntrinsicContext&) {
+                          ++remove_all_in_layout_requests;
+                          return VmValue::Void();
+                      });
+                  test_catalog.push_back(std::move(remove_all_probe).Build());
                   auto image_context = IntrinsicClassBuilder::Class(
                       "LImageContextProbe;", "Landroid/content/Context;");
                   image_context.OverrideMethod("getResources", "()Landroid/content/res/Resources;",
@@ -1412,6 +1431,188 @@ TEST_CASE("DVM-233 in-layout removal preserves geometry and invalidates the actu
     }
 }
 
+TEST_CASE("View bringToFront reorders paint through the virtual ViewParent") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        ClickVm vm(backend);
+        const auto group = vm.interpreter.NewIntrinsicInstance("Landroid/widget/FrameLayout;");
+        const auto first = vm.interpreter.NewIntrinsicInstance("Landroid/view/View;");
+        const auto second = vm.interpreter.NewIntrinsicInstance("Landroid/view/View;");
+        const auto outsider = vm.interpreter.NewIntrinsicInstance("Landroid/view/View;");
+        vm.CallOn(first, "setBackgroundColor", "(I)V", {VmValue::Int(static_cast<std::int32_t>(0xffff0000U))});
+        vm.CallOn(second, "setBackgroundColor", "(I)V", {VmValue::Int(static_cast<std::int32_t>(0xff00ff00U))});
+        for (const auto view : {first, second})
+            vm.CallOn(group, "addView", "(Landroid/view/View;II)V",
+                {VmValue::Ref(view), VmValue::Int(20), VmValue::Int(20)});
+        vm.CallOn(vm.activity, "setContentView", "(Landroid/view/View;)V", {VmValue::Ref(group)});
+        vm.CallOn(first, "setFocusable", "(Z)V", {VmValue::Int(1)});
+        REQUIRE(vm.CallOn(first, "requestFocus", "()Z").AsInt() == 1);
+        const auto first_node = *FindViewUiNode(*vm.context, first.Value());
+        const auto second_node = *FindViewUiNode(*vm.context, second.Value());
+        const auto group_node = *FindViewUiNode(*vm.context, group.Value());
+        auto& tree = vm.context->ui_tree;
+        ui::UiOverlayRenderer renderer;
+        const auto pixel = (5U * 100U + 5U) * 4U;
+        static_cast<void>(vm.CallOn(first, "getTop", "()I"));
+        CHECK(renderer.Render(tree, vm.context->ui_bitmaps, {100, 100}).rgba8[pixel + 1] == 255);
+
+        vm.CallOn(first, "bringToFront", "()V");
+        CHECK(tree.Get(group_node)->children == std::vector<ui::UiNodeId>{second_node, first_node});
+        CHECK(vm.CallOn(first, "getParent", "()Landroid/view/ViewParent;").ref == group);
+        CHECK(vm.CallOn(first, "isFocused", "()Z").AsInt() == 1);
+        CHECK(tree.Get(tree.Root())->layout_dirty); // requestLayout() dispatched
+        static_cast<void>(vm.CallOn(first, "getTop", "()I"));
+        CHECK(renderer.Render(tree, vm.context->ui_bitmaps, {100, 100}).rgba8[pixel] == 255);
+
+        // Non-children, null and detached views follow API 19 and do nothing.
+        tree.ClearLayoutDirty();
+        tree.ClearDrawDirty();
+        vm.CallOn(group, "bringChildToFront", "(Landroid/view/View;)V", {VmValue::Ref(outsider)});
+        vm.CallOn(group, "bringChildToFront", "(Landroid/view/View;)V", {VmValue::Ref(VmObjectRef{})});
+        vm.CallOn(outsider, "bringToFront", "()V");
+        CHECK_FALSE(tree.Get(tree.Root())->layout_dirty);
+        CHECK_FALSE(tree.Get(tree.Root())->draw_dirty);
+        // The window container's parent is the synthetic root (ViewRootImpl).
+        const auto container = vm.CallOn(group, "getParent", "()Landroid/view/ViewParent;").ref;
+        REQUIRE(container.IsValid());
+        CHECK_FALSE(vm.CallOn(container, "getParent", "()Landroid/view/ViewParent;").ref.IsValid());
+        vm.CallOn(container, "bringToFront", "()V");
+        CHECK_FALSE(tree.Get(tree.Root())->draw_dirty);
+
+        const auto probe = vm.interpreter.NewIntrinsicInstance("LBringFrontProbe;");
+        vm.CallOn(probe, "addView", "(Landroid/view/View;)V", {VmValue::Ref(outsider)});
+        vm.CallOn(outsider, "bringToFront", "()V");
+        CHECK(vm.bring_front_requests == 1);
+        const auto layout_probe = vm.interpreter.NewIntrinsicInstance("LRemovalLayoutProbe;");
+        const auto lone = vm.interpreter.NewIntrinsicInstance("Landroid/view/View;");
+        vm.CallOn(layout_probe, "addView", "(Landroid/view/View;)V", {VmValue::Ref(lone)});
+        vm.CallOn(lone, "bringToFront", "()V");
+        CHECK(vm.removal_layout_requests == 1);
+
+        for (const auto& [descriptor, name, signature] : {
+                 std::tuple{"Landroid/view/View;", "bringToFront", "()V"},
+                 std::tuple{"Landroid/view/ViewGroup;", "bringChildToFront", "(Landroid/view/View;)V"}}) {
+            const auto owner = vm.linker.ResolveDescriptor(descriptor);
+            const auto slot = vm.linker.FindVtableIndex(owner, name, signature);
+            REQUIRE(slot);
+            const auto& method = vm.linker.Method(vm.linker.Class(owner).vtable[*slot]);
+            CHECK((method.access_flags & kAccPublic) != 0);
+            CHECK((method.access_flags & kAccFinal) == 0);
+        }
+    }
+}
+
+TEST_CASE("ViewGroup child access and removal follow API 19 semantics") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        ClickVm vm(backend);
+        vm.context->activity = vm.activity;
+        vm.context->managed_host_surface_open = true;
+        const auto group = vm.interpreter.NewIntrinsicInstance("Landroid/widget/FrameLayout;");
+        const auto first = vm.interpreter.NewIntrinsicInstance("Landroid/view/View;");
+        const auto second = vm.interpreter.NewIntrinsicInstance("Landroid/view/View;");
+        const auto outsider = vm.interpreter.NewIntrinsicInstance("Landroid/view/View;");
+        const auto surface = vm.interpreter.NewIntrinsicInstance("Landroid/view/SurfaceView;");
+        const auto roots = vm.interpreter.ProtectReferences(std::array{group, first, second, outsider, surface});
+        vm.CallDirect(surface, "Landroid/view/SurfaceView;", "<init>", "(Landroid/content/Context;)V",
+            {VmValue::Ref(vm.activity)});
+        const auto count = [&] { return vm.CallOn(group, "getChildCount", "()I").AsInt(); };
+        const auto at = [&](int index) {
+            return vm.CallOn(group, "getChildAt", "(I)Landroid/view/View;", {VmValue::Int(index)}).ref;
+        };
+        const auto index_of = [&](VmObjectRef view) {
+            return vm.CallOn(group, "indexOfChild", "(Landroid/view/View;)I", {VmValue::Ref(view)}).AsInt();
+        };
+        const auto thrown = [&](const char* name, const char* signature, std::vector<VmValue> arguments) {
+            const auto owner = vm.model.ObjectClass(group);
+            const auto slot = vm.linker.FindVtableIndex(owner, name, signature);
+            REQUIRE(slot);
+            arguments.insert(arguments.begin(), VmValue::Ref(group));
+            const auto outcome = vm.interpreter.Call(vm.linker.Class(owner).vtable[*slot], arguments);
+            REQUIRE(outcome.exception.IsValid());
+            return vm.linker.Class(vm.model.ObjectClass(outcome.exception)).descriptor;
+        };
+        CHECK(count() == 0);
+        CHECK_FALSE(at(0).IsValid());
+        vm.CallOn(vm.activity, "setContentView", "(Landroid/view/View;)V", {VmValue::Ref(group)});
+        for (const auto view : {first, surface, second})
+            vm.CallOn(group, "addView", "(Landroid/view/View;)V", {VmValue::Ref(view)});
+        const auto holder = vm.CallOn(surface, "getHolder", "()Landroid/view/SurfaceHolder;").ref;
+        const auto callback = vm.interpreter.NewIntrinsicInstance("LContentSurfaceCallback;");
+        vm.CallOn(holder, "addCallback", "(Landroid/view/SurfaceHolder$Callback;)V", {VmValue::Ref(callback)});
+        CHECK(count() == 3);
+        CHECK(at(0) == first);
+        CHECK(at(2) == second);
+        CHECK_FALSE(at(-1).IsValid());
+        CHECK_FALSE(at(3).IsValid());
+        CHECK(index_of(surface) == 1);
+        CHECK(index_of(outsider) == -1);
+        CHECK(index_of(VmObjectRef{}) == -1);
+        vm.CallOn(first, "bringToFront", "()V");
+        CHECK(index_of(first) == 2);
+
+        // removeViewAt shares removeView retirement: focus, Surface, layout.
+        vm.CallOn(second, "setFocusable", "(Z)V", {VmValue::Int(1)});
+        REQUIRE(vm.CallOn(second, "requestFocus", "()Z").AsInt() == 1);
+        auto& tree = vm.context->ui_tree;
+        tree.ClearLayoutDirty();
+        tree.ClearDrawDirty();
+        CHECK(thrown("removeViewAt", "(I)V", {VmValue::Int(3)}) == "Ljava/lang/NullPointerException;");
+        CHECK(count() == 3);
+        CHECK_FALSE(tree.Get(tree.Root())->layout_dirty);
+        vm.CallOn(group, "removeViewAt", "(I)V", {VmValue::Int(index_of(second))});
+        CHECK(vm.CallOn(second, "isFocused", "()Z").AsInt() == 0);
+        CHECK_FALSE(vm.CallOn(second, "getParent", "()Landroid/view/ViewParent;").ref.IsValid());
+        CHECK(tree.Get(tree.Root())->layout_dirty);
+        const int destroyed_before = vm.content_surface_destroys;
+        vm.CallOn(group, "removeViewAt", "(I)V", {VmValue::Int(index_of(surface))});
+        CHECK(vm.content_surface_destroys == destroyed_before + 1);
+        CHECK(count() == 1);
+
+        // InLayout variants keep layout requests untouched.
+        vm.CallOn(group, "addView", "(Landroid/view/View;)V", {VmValue::Ref(second)});
+        tree.ClearLayoutDirty();
+        vm.CallOn(group, "removeViewsInLayout", "(II)V", {VmValue::Int(1), VmValue::Int(1)});
+        CHECK(count() == 1);
+        CHECK_FALSE(tree.Get(tree.Root())->layout_dirty);
+        CHECK(thrown("removeViewsInLayout", "(II)V", {VmValue::Int(1), VmValue::Int(1)}) ==
+              "Ljava/lang/IndexOutOfBoundsException;");
+        vm.CallOn(group, "removeAllViewsInLayout", "()V");
+        CHECK(count() == 0);
+        CHECK_FALSE(tree.Get(tree.Root())->layout_dirty);
+        vm.CallOn(group, "removeAllViewsInLayout", "()V");
+        for (const auto view : {first, second})
+            vm.CallOn(group, "addView", "(Landroid/view/View;)V", {VmValue::Ref(view)});
+        vm.CallOn(group, "removeAllViews", "()V");
+        CHECK(count() == 0);
+        CHECK(tree.Get(tree.Root())->layout_dirty);
+        vm.CallOn(group, "addView", "(Landroid/view/View;)V", {VmValue::Ref(first)});
+        CHECK(at(0) == first); // removed Views remain reusable
+
+        // Public hooks dispatch virtually like API 19.
+        const auto remove_all = vm.interpreter.NewIntrinsicInstance("LRemoveAllProbe;");
+        vm.CallOn(remove_all, "addView", "(Landroid/view/View;)V", {VmValue::Ref(outsider)});
+        vm.CallOn(remove_all, "removeAllViews", "()V");
+        CHECK(vm.remove_all_in_layout_requests == 1);
+        CHECK(vm.CallOn(remove_all, "getChildCount", "()I").AsInt() == 1);
+        const auto layout_probe = vm.interpreter.NewIntrinsicInstance("LRemovalLayoutProbe;");
+        vm.CallOn(layout_probe, "addView", "(Landroid/view/View;)V", {VmValue::Ref(second)});
+        vm.CallOn(layout_probe, "removeViewAt", "(I)V", {VmValue::Int(0)});
+        CHECK(vm.removal_layout_requests == 1);
+        const auto owner = vm.linker.ResolveDescriptor("Landroid/view/ViewGroup;");
+        for (const auto& [name, signature] : {
+                 std::pair{"getChildCount", "()I"}, std::pair{"getChildAt", "(I)Landroid/view/View;"},
+                 std::pair{"indexOfChild", "(Landroid/view/View;)I"}, std::pair{"removeViewAt", "(I)V"},
+                 std::pair{"removeView", "(Landroid/view/View;)V"}, std::pair{"removeViews", "(II)V"},
+                 std::pair{"removeViewsInLayout", "(II)V"}, std::pair{"removeAllViews", "()V"},
+                 std::pair{"removeAllViewsInLayout", "()V"}}) {
+            const auto slot = vm.linker.FindVtableIndex(owner, name, signature);
+            REQUIRE_MESSAGE(slot, name);
+            const auto& method = vm.linker.Method(vm.linker.Class(owner).vtable[*slot]);
+            CHECK((method.access_flags & kAccPublic) != 0);
+            CHECK((method.access_flags & kAccFinal) == 0);
+        }
+    }
+}
+
 TEST_CASE("direct View window focus callback does not dispatch descendants") {
     ClickVm vm;
     const auto root = vm.interpreter.NewIntrinsicInstance(
@@ -2108,6 +2309,63 @@ TEST_CASE("DVM-245 Window append preserves Surface and destruction reentry stops
         CHECK_FALSE(vm.CallOn(overlay, "getParent", "()Landroid/view/ViewParent;").ref.IsValid());
         CHECK_FALSE(vm.context->active_surface_holders.contains(holder.Value()));
         CHECK(vm.context->ui_content_mutation_depth == 0);
+    }
+}
+
+TEST_CASE("managed dynamic SurfaceView attach exposes its holder at the next traversal") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        ClickVm vm(backend);
+        vm.context->activity = vm.activity;
+        vm.context->managed_host_surface_open = true;
+        vm.context->defer_content_surface_callbacks = true;
+        const auto group = vm.interpreter.NewIntrinsicInstance("Landroid/widget/FrameLayout;");
+        const auto group_root = vm.interpreter.ProtectReferences(std::array{group});
+        vm.CallOn(vm.activity, "setContentView", "(Landroid/view/View;)V", {VmValue::Ref(group)});
+        const auto window = ActivityContentRoot(*vm.context);
+        CHECK(SurfaceTraversalPending(*vm.context, *FindViewUiNode(*vm.context, group.Value())));
+        const auto traverse = [&] {
+            const auto error = AttachSurfaceViewSubtree(vm.interpreter, *vm.context, window);
+            REQUIRE_MESSAGE(!error, error.value_or(""));
+        };
+        traverse();
+        CHECK(vm.context->surface_traversal_pending.empty());
+
+        // API19: addView, then getHolder/addCallback in the same message, still
+        // observe surfaceCreated because the Surface is made at traversal.
+        const auto make_surface = [&] {
+            const auto surface = vm.interpreter.NewIntrinsicInstance("Landroid/view/SurfaceView;");
+            vm.CallDirect(surface, "Landroid/view/SurfaceView;", "<init>", "(Landroid/content/Context;)V",
+                {VmValue::Ref(vm.activity)});
+            return surface;
+        };
+        const auto surface = make_surface();
+        const auto surface_root = vm.interpreter.ProtectReferences(std::array{surface});
+        vm.CallOn(group, "addView", "(Landroid/view/View;)V", {VmValue::Ref(surface)});
+        const auto holder = vm.CallOn(surface, "getHolder", "()Landroid/view/SurfaceHolder;").ref;
+        const auto callback = vm.interpreter.NewIntrinsicInstance("LContentSurfaceCallback;");
+        vm.CallOn(holder, "addCallback", "(Landroid/view/SurfaceHolder$Callback;)V", {VmValue::Ref(callback)});
+        CHECK(vm.content_surface_creates == 0);
+        CHECK_FALSE(vm.context->active_surface_holders.contains(holder.Value()));
+        CHECK(SurfaceTraversalPending(*vm.context, *FindViewUiNode(*vm.context, surface.Value())));
+        traverse();
+        CHECK(vm.content_surface_creates == 1);
+        CHECK(vm.context->active_surface_holders.contains(holder.Value()));
+        CHECK(vm.context->surface_traversal_pending.empty());
+        traverse();
+        CHECK(vm.content_surface_creates == 1);
+
+        // After a traversal, a late holder observer misses the past creation.
+        const auto late = make_surface();
+        const auto late_root = vm.interpreter.ProtectReferences(std::array{late});
+        vm.CallOn(group, "addView", "(Landroid/view/View;)V", {VmValue::Ref(late)});
+        traverse();
+        const auto late_holder = vm.CallOn(late, "getHolder", "()Landroid/view/SurfaceHolder;").ref;
+        vm.CallOn(late_holder, "addCallback", "(Landroid/view/SurfaceHolder$Callback;)V", {VmValue::Ref(callback)});
+        CHECK(vm.context->active_surface_holders.contains(late_holder.Value()));
+        CHECK(vm.content_surface_creates == 1);
+        CHECK_FALSE(RetireSurfaceHolderGeneration(vm.interpreter, *vm.context));
+        CHECK(vm.content_surface_destroys == 2);
+        CHECK(vm.context->surface_traversal_pending.empty());
     }
 }
 

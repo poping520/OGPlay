@@ -1062,8 +1062,32 @@ std::optional<std::string> AttachSurfaceViewSubtree(
         error.has_value()) {
         return error;
     }
-    return DispatchHolderCallbacks(vm, context, holders,
-                                   SurfaceHolderPhase::changed);
+    if (const auto error = DispatchHolderCallbacks(
+            vm, context, holders, SurfaceHolderPhase::changed);
+        error.has_value()) {
+        return error;
+    }
+    // This traversal created every pending Surface inside the subtree.
+    std::erase_if(context.surface_traversal_pending, [&](const ui::UiNodeId node) {
+        for (auto cursor = std::optional{node}; cursor;) {
+            if (*cursor == subtree) return true;
+            const auto* state = context.ui_tree.Get(*cursor);
+            cursor = state ? state->parent : std::nullopt;
+        }
+        return false;
+    });
+    return std::nullopt;
+}
+
+bool SurfaceTraversalPending(const DexVmAndroidContext& context,
+                             const ui::UiNodeId node) {
+    if (context.surface_traversal_pending.empty()) return false;
+    for (auto cursor = std::optional{node}; cursor;) {
+        if (context.surface_traversal_pending.contains(*cursor)) return true;
+        const auto* state = context.ui_tree.Get(*cursor);
+        cursor = state ? state->parent : std::nullopt;
+    }
+    return false;
 }
 
 std::optional<std::string> DetachSurfaceViewSubtree(
@@ -1090,6 +1114,7 @@ std::optional<std::string> RetireSurfaceHolderGeneration(
     context.surface_holders.clear();
     context.active_surface_holders.clear();
     context.surface_callback_sizes.clear();
+    context.surface_traversal_pending.clear();
     context.managed_host_surface_open = false;
     return std::nullopt;
 }

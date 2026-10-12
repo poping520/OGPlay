@@ -45,8 +45,13 @@
   普通 MediaPlayer 本地视频已通过双解释器/真实制品/无 AudioTrack 会话验证。
   最新 Windows Release 原 APK、无 Profile/survey：f=160 presented=2，
   实际 Appstore required 提示已核验，外部服务缺席保持真实失败。
-  **最新首错**：视频 Runnable 已越过 setZOrderMediaOverlay，停于
-  `TextView.bringToFront()V`，dex_pc=226；完整视频/按钮退出未验收。
+  View.bringToFront/ViewGroup.bringChildToFront 已接 UiTree 同父重排；受管生命周期动态挂载的
+  SurfaceView 延至下一 traversal 创建，addView 后注册的 holder 回调可收 surfaceCreated（均定向通过）。
+  macOS Release 复现：视频 holder created/changed→StopVideo removeView 收 destroyed，视频 Surface 未创建的停滞消失。
+  ViewGroup 子节点访问/移除 API 按 API19 对齐（定向通过）；复现越过 StopVideo，guestFault=null。
+  **当前阻塞（停滞）**：视频结束后 UE3 仍发 GLES（MapBuffer/BindBuffer），presented 停在 2，
+  画面停于启动图；Kiwi Appstore 提示框已呈现但无新帧不可见，原因未定位。视频画面/音频及按钮退出
+  未验收。证据 `.local/surface-traversal-20261012/`、`.local/viewgroup-children-20261012/`。
   MCP shutdown 后故障退出 1，进程/listener 已关闭；本次无 `unknown guest thread id`，
   但该历史问题曾重现，未声明修复；SDK 曾捕获 resolveService flags，崩溃报告曾触发 LocaleData 初始化失败。
   证据 `.local/surface-media-fix-20261012/`；前置能力及过程见任务单。

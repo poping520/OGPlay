@@ -158,11 +158,17 @@ AttributeSet/theme、Factory/反射。属性按默认/textAppearance/ProgressBar
 未知 style 失败；LinearLayout(Context,null) 默认水平、null Context NPE、非空 AttributeSet 构造失败。
 
 removeViewInLayout 为 public virtual，复用普通移除的退役/层级/焦点；只失效绘制、不调
-requestLayout/invalidate，普通移除仍虚派 requestLayout。callback 后复核节点/parent，快照保活、
+requestLayout/invalidate，普通移除仍虚派 requestLayout。ViewGroup 子节点 API 按 API19 public virtual，以 UiTree children
+为 mChildren 唯一事实：getChildCount/getChildAt（越界 null）/indexOfChild（缺席 -1）；removeView/
+removeViewAt（越界 NPE）/removeViews 走普通移除并虚派 requestLayout/invalidate，*InLayout 变体保留
+layout，removeAllViews 虚派 removeAllViewsInLayout；区间越界 IndexOutOfBounds。内部查找不经可覆盖
+getChildAt/indexOfChild；无 onViewAdded/onViewRemoved、addViewInLayout/detach/attach 系列。callback 后复核节点/parent，快照保活、
 不销毁可复挂 View；无 disappearing animation/accessibility/hierarchy listener。尺寸在 root guest
 线程按已解析 frame 交付 onSizeChanged，带上次尺寸、未变不重发，detached/GONE 不派发，destroy/reset
 清缓存。RootScope 保活并逐项复核 binding/attachment，换内容停止旧遍历，重排≤8 轮、不收敛失败；
 动态 attach/Surface creation 先尺寸再 Surface 回调，重入延后新 Surface，缓存只记已交付尺寸。
+受管生命周期内 setContentView/addContentView/addView 新挂载子树登记 pending，于下一 owner traversal
+统一 created/changed（API19 updateWindow）；pending 内 getHolder 不视为已创建，traversal 后才按 late holder。
 
 SurfaceHolder 按 attach/host generation 执行 created→changed→destroyed，detached 不提前收事件/
 关闭 host surface。getSurfaceFrame 为稳定 Java Rect：初始零、回调前/late holder 写真实 managed
@@ -171,6 +177,8 @@ setFixedSize 仅物理托管尺寸、保存请求，setSizeFromLayout 解除固�
 SurfaceView(Context,null) 复用 View 初始化，null Context NPE、非空 AttributeSet/三参数 defStyle
 不支持；注册 XML 沿 Context 构造及既有属性投影。层序唯一归 UiTree，setZOrderMediaOverlay/
 setZOrderOnTop 后调用覆盖前调用；compositor 即时消费，不承诺 WMS 重建/任意 GLES 多层。
+View.bringToFront 虚派 UiTree 父 ViewParent.bringChildToFront，合成 root 按 ViewRootImpl 空操作；
+ViewGroup.bringChildToFront 忽略非子节点/null，移至末尾后虚派 requestLayout/invalidate。
 setKeepScreenOn(false) 清空请求、true 记账拒绝；Canvas/Bitmap 为 ARGB，post 发软件帧，Surface 返回限制见 session。
 
 NativeActivity/NativeContentView 执行原 Java，private native 经 NativeActivityRuntime 接进程；

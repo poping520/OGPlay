@@ -1296,7 +1296,8 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
         const auto roots = bindings_.bridge->Vm().ProtectReferences(std::array{content});
         const bool layout_dirty = context.ui_tree.Get(context.ui_tree.Root())->layout_dirty;
         const bool layout_changed=runtime::DispatchAndroidViewSizes(bindings_.bridge->Vm(),context);
-        if (!content_changed && !layout_changed && !layout_dirty) return;
+        if (!content_changed && !layout_changed && !layout_dirty &&
+            context.surface_traversal_pending.empty()) return;
         // A virtual size callback may replace its own content. Reconcile the
         // replacement next frame; never attach the retired subtree.
         if (context.content_view != content || context.ui_content_revision != content_revision ||
@@ -1306,6 +1307,9 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
             const auto error = runtime::AttachSurfaceViewSubtree(
                 bindings_.bridge->Vm(), context, *node);
             if (error.has_value()) Fail(*error);
+            // Subtrees outside the foreground window wait for their own
+            // visibility/layout traversal, as in API19.
+            context.surface_traversal_pending.clear();
         }
         if (content_changed || layout_changed) {
             runtime::DispatchAndroidGlobalLayout(bindings_.bridge->Vm(), context);

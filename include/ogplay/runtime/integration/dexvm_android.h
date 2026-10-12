@@ -322,9 +322,14 @@ struct DexVmAndroidContext final {
   bool dialog_pointer_active{};
   std::optional<ui::UiNodeId> dialog_pressed_button;
   std::unordered_set<std::int32_t> dialog_keys_down;
-  // A managed lifecycle sizes a newly installed content root before exposing
-  // its SurfaceHolder callbacks at the next owner-thread traversal.
+  // A managed lifecycle sizes a newly installed content root or dynamically
+  // added subtree before exposing its SurfaceHolder callbacks at the next
+  // owner-thread traversal (API19 creates Surfaces in updateWindow, after the
+  // attaching message returns).
   bool defer_content_surface_callbacks{};
+  // Attached subtree roots whose SurfaceViews await that traversal; getHolder
+  // inside them must not mark the Surface as already created.
+  std::unordered_set<ui::UiNodeId, ui::UiNodeIdHash> surface_traversal_pending;
 
   // Shared guest filesystem: the single world view for Java File I/O and
   // native fopen alike (external mounts, APK assets, and the per-title
@@ -1134,6 +1139,9 @@ DispatchSurfaceHolderCallbacks(dexvm::Interpreter &vm,
 [[nodiscard]] std::optional<std::string>
 AttachSurfaceViewSubtree(dexvm::Interpreter &vm, DexVmAndroidContext &context,
                          ui::UiNodeId subtree);
+// True while node or an ancestor was attached after the last Surface traversal.
+[[nodiscard]] bool SurfaceTraversalPending(const DexVmAndroidContext &context,
+                                           ui::UiNodeId node);
 [[nodiscard]] std::optional<std::string>
 DetachSurfaceViewSubtree(dexvm::Interpreter &vm, DexVmAndroidContext &context,
                          ui::UiNodeId subtree);

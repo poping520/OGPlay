@@ -234,6 +234,10 @@ public:
                 std::optional<std::size_t> index = std::nullopt);
     void Detach(UiNodeId child,
                 DetachLayoutPolicy layout = DetachLayoutPolicy::request_layout);
+    // API19 ViewGroup.bringChildToFront array move: keeps attachment/focus,
+    // returns false when child is not a direct child of parent. Only draw
+    // dirty is marked; callers dispatch requestLayout/invalidate themselves.
+    [[nodiscard]] bool BringChildToFront(UiNodeId parent, UiNodeId child);
     void DestroySubtree(UiNodeId node);
     void Reset();
 

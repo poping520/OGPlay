@@ -78,6 +78,41 @@ TEST_CASE("UI tree preserves hierarchy order and attached id lookup") {
     CHECK(tree.FindByAndroidId(100) == first);
 }
 
+TEST_CASE("UI tree brings a child to front without detaching it") {
+    ui::UiTree tree;
+    const auto parent = tree.CreateNode(ui::UiClass::FrameLayout);
+    const auto first = tree.CreateNode(ui::UiClass::Button);
+    const auto second = tree.CreateNode(ui::UiClass::TextView);
+    const auto third = tree.CreateNode(ui::UiClass::View);
+    const auto outsider = tree.CreateNode(ui::UiClass::View);
+    tree.Get(first)->focusable = true;
+    tree.SetAndroidId(first, 5);
+    tree.SetAndroidId(third, 5); // duplicate id: lookup follows child order
+    tree.Attach(tree.Root(), parent);
+    for (const auto child : {first, second, third}) tree.Attach(parent, child);
+    REQUIRE(tree.RequestFocus(first, false));
+    CHECK(tree.FindByAndroidId(5) == first);
+    tree.ClearLayoutDirty();
+    tree.ClearDrawDirty();
+
+    REQUIRE(tree.BringChildToFront(parent, first));
+    CHECK(tree.Get(parent)->children ==
+          std::vector<ui::UiNodeId>{second, third, first});
+    CHECK(tree.Get(first)->parent == parent);
+    CHECK(tree.IsAttached(first));
+    CHECK(tree.Focused() == first);
+    CHECK(tree.FindByAndroidId(5) == third);
+    CHECK(tree.Get(tree.Root())->draw_dirty);
+    CHECK_FALSE(tree.Get(tree.Root())->layout_dirty); // caller requests layout
+
+    tree.ClearDrawDirty();
+    CHECK_FALSE(tree.BringChildToFront(parent, outsider));
+    CHECK_FALSE(tree.BringChildToFront(tree.Root(), first));
+    CHECK(tree.Get(parent)->children ==
+          std::vector<ui::UiNodeId>{second, third, first});
+    CHECK_FALSE(tree.Get(tree.Root())->draw_dirty);
+}
+
 TEST_CASE("UI tree updates ids visibility and dirty propagation") {
     ui::UiTree tree;
     const auto child = tree.CreateNode(ui::UiClass::TextView);

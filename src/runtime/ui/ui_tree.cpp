@@ -99,6 +99,17 @@ void UiTree::Detach(const UiNodeId child, const DetachLayoutPolicy layout) {
     MarkAncestors(parent, layout == DetachLayoutPolicy::request_layout, true);
 }
 
+bool UiTree::BringChildToFront(const UiNodeId parent, const UiNodeId child) {
+    auto& siblings = Require(parent).children;
+    static_cast<void>(Require(child));
+    const auto found = std::find(siblings.begin(), siblings.end(), child);
+    if (found == siblings.end()) return false;
+    std::rotate(found, found + 1, siblings.end());
+    if (IsAttached(parent)) RebuildIndex();
+    MarkAncestors(parent, false, true);
+    return true;
+}
+
 void UiTree::DestroySubtree(const UiNodeId node) {
     if (node == root_) {
         throw std::runtime_error("UI content root cannot be destroyed");

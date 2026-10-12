@@ -1029,7 +1029,8 @@ Decl Declare_android_view_SurfaceView(const Context& context) {
                 const auto node = FindViewUiNode(
                     *context, call.receiver.Value());
                 if (context->managed_host_surface_open && node.has_value() &&
-                    context->ui_tree.IsAttached(*node)) {
+                    context->ui_tree.IsAttached(*node) &&
+                    !SurfaceTraversalPending(*context, *node)) {
                     // The platform holder exists before callbacks are added.
                     // A late observer does not receive past created/changed,
                     // but it must observe the eventual destroyed event.
@@ -1156,6 +1157,9 @@ Decl Declare_android_view_ViewParent(const Context&) {
         "Landroid/view/ViewParent;");
     builder.UnimplementedVirtual(
         "getParent", "()Landroid/view/ViewParent;",
+        dx::kAccPublic | dx::kAccAbstract);
+    builder.UnimplementedVirtual(
+        "bringChildToFront", "(Landroid/view/View;)V",
         dx::kAccPublic | dx::kAccAbstract);
     return std::move(builder).Build();
 }
@@ -1419,6 +1423,21 @@ Decl Declare_android_view_View(const Context& context) {
             // exact guest object that performed addView/inflation.
             return dx::VmValue::Ref(
                 ViewObjectForUiNode(*context, *parent));
+        });
+    builder.VirtualMethod("bringToFront", "()V",
+        [context](dx::IntrinsicContext& call) {
+            const auto node = FindViewUiNode(*context, call.receiver.Value());
+            const auto parent_node = node.has_value()
+                ? context->ui_tree.Get(*node)->parent : std::nullopt;
+            // The synthetic root stands in for ViewRootImpl, whose API 19
+            // bringChildToFront is empty; only guest ViewParents dispatch.
+            const auto parent = parent_node.has_value()
+                ? ViewObjectForUiNode(*context, *parent_node) : dx::VmObjectRef{};
+            if (!parent.IsValid()) return dx::VmValue::Void();
+            const auto roots = call.vm.ProtectReferences(std::array{call.receiver, parent});
+            static_cast<void>(CallAndroidMethod(call.vm, parent, "bringChildToFront",
+                "(Landroid/view/View;)V", {dx::VmValue::Ref(call.receiver)}));
+            return dx::VmValue::Void();
         });
     builder.VirtualMethod("post", "(Ljava/lang/Runnable;)Z",
         [context](dx::IntrinsicContext& call) {
@@ -2026,16 +2045,47 @@ void RemoveChild(dx::IntrinsicContext& call, const Context& context,
         DispatchViewFocusChange(call.vm, focus_object, false);
 }
 
-void RequestRemovalLayout(dx::IntrinsicContext& call) {
+void RequestLayoutAndInvalidate(dx::IntrinsicContext& call) {
     static_cast<void>(CallAndroidMethod(call.vm, call.receiver, "requestLayout", "()V", {}));
     static_cast<void>(CallAndroidMethod(call.vm, call.receiver, "invalidate", "()V", {}));
+}
+
+dx::VmObjectRef ChildObject(const Context& context, const ui::UiNodeId node) {
+    const auto child = ViewObjectForUiNode(*context, node);
+    if (!child.IsValid())
+        throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;",
+                              "ViewGroup child has no live guest binding"};
+    return child;
+}
+
+// Shared by removeViews/removeViewsInLayout/removeAllViewsInLayout.
+void RemoveChildRange(dx::IntrinsicContext& call, const Context& context,
+                      const std::int32_t start, const std::int32_t count,
+                      const ui::DetachLayoutPolicy layout) {
+    const auto parent = NodeFor(call, context, call.receiver);
+    const auto children = context->ui_tree.Get(parent)->children;
+    if (start < 0 || count < 0 ||
+        static_cast<std::size_t>(start) > children.size() ||
+        static_cast<std::size_t>(count) >
+            children.size() - static_cast<std::size_t>(start)) {
+        throw dx::VmJavaThrow{"Ljava/lang/IndexOutOfBoundsException;",
+                              "removeViews range is outside children"};
+    }
+    std::vector<dx::VmObjectRef> removed;
+    removed.reserve(static_cast<std::size_t>(count));
+    for (std::int32_t offset = 0; offset < count; ++offset)
+        removed.push_back(ChildObject(context,
+            children[static_cast<std::size_t>(start + offset)]));
+    const auto roots = call.vm.ProtectReferences(removed);
+    for (auto child = removed.rbegin(); child != removed.rend(); ++child)
+        RemoveChild(call, context, *child, layout);
 }
 
 dx::IntrinsicHandler RemoveViewHandler(const Context& context,
                                       const ui::DetachLayoutPolicy layout) {
     return [context, layout](dx::IntrinsicContext& call) {
         RemoveChild(call, context, call.arguments[0].ref, layout);
-        if (layout == ui::DetachLayoutPolicy::request_layout) RequestRemovalLayout(call);
+        if (layout == ui::DetachLayoutPolicy::request_layout) RequestLayoutAndInvalidate(call);
         return dx::VmValue::Void();
     };
 }
@@ -2061,10 +2111,12 @@ dx::IntrinsicHandler AddHandler(const Context& context, const bool has_index,
             throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;",
                                   error.what()};
         }
-        if (const auto error = context->ui_content_mutation_depth != 0
-                ? std::optional<std::string>{} : AttachSurfaceViewSubtree(
-                call.vm, *context, child_node);
-            error.has_value()) {
+        // Window content mutation owns its own Surface exposure.
+        if (context->ui_content_mutation_depth != 0) return dx::VmValue::Void();
+        if (context->defer_content_surface_callbacks) {
+            context->surface_traversal_pending.insert(child_node);
+        } else if (const auto error = AttachSurfaceViewSubtree(
+                       call.vm, *context, child_node)) {
             throw dx::VmJavaThrow{"Ljava/lang/RuntimeException;", *error};
         }
         return dx::VmValue::Void();
@@ -2169,37 +2221,99 @@ Decl Declare_android_view_ViewGroup(const Context& context) {
     builder.FinalMethod(
         "addView", "(Landroid/view/View;Landroid/view/ViewGroup$LayoutParams;)V",
         AddHandler(context, false, true));
-    builder.FinalMethod("removeView", "(Landroid/view/View;)V",
+    builder.VirtualMethod("removeView", "(Landroid/view/View;)V",
         RemoveViewHandler(context, ui::DetachLayoutPolicy::request_layout));
     builder.VirtualMethod("removeViewInLayout", "(Landroid/view/View;)V",
         RemoveViewHandler(context, ui::DetachLayoutPolicy::preserve_layout));
-    builder.FinalMethod("removeViews", "(II)V",
+    builder.VirtualMethod("bringChildToFront", "(Landroid/view/View;)V",
+        [context](dx::IntrinsicContext& call) {
+            // API 19: a non-child (including null) is ignored; a moved child
+            // keeps attachment, focus and Surface lifecycle.
+            const auto child = call.arguments[0].ref;
+            const auto parent = FindViewUiNode(*context, call.receiver.Value());
+            const auto node = child.IsValid()
+                ? FindViewUiNode(*context, child.Value()) : std::nullopt;
+            if (!parent.has_value() || !node.has_value() ||
+                !context->ui_tree.BringChildToFront(*parent, *node)) {
+                return dx::VmValue::Void();
+            }
+            RequestLayoutAndInvalidate(call);
+            return dx::VmValue::Void();
+        });
+    // API 19 child access/removal: UiTree children are the mChildren
+    // authority; requestLayout/invalidate and the public hooks stay virtual.
+    builder.VirtualMethod("getChildCount", "()I",
         [context](dx::IntrinsicContext& call) {
             const auto parent = NodeFor(call, context, call.receiver);
-            const auto start = call.arguments[0].AsInt();
-            const auto count = call.arguments[1].AsInt();
-            const auto children = context->ui_tree.Get(parent)->children;
-            if (start < 0 || count < 0 ||
-                static_cast<std::size_t>(start) > children.size() ||
-                static_cast<std::size_t>(count) >
-                    children.size() - static_cast<std::size_t>(start)) {
-                throw dx::VmJavaThrow{"Ljava/lang/IndexOutOfBoundsException;",
-                                      "removeViews range is outside children"};
-            }
-            std::vector<dx::VmObjectRef> removed;
-            removed.reserve(static_cast<std::size_t>(count));
-            for (std::int32_t offset = 0; offset < count; ++offset) {
-                const auto child = ViewObjectForUiNode(*context,
-                    children[static_cast<std::size_t>(start + offset)]);
-                if (!child.IsValid())
-                    throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;",
-                                          "ViewGroup child has no live guest binding"};
-                removed.push_back(child);
-            }
-            const auto roots = call.vm.ProtectReferences(removed);
-            for (auto child = removed.rbegin(); child != removed.rend(); ++child)
-                RemoveChild(call, context, *child, ui::DetachLayoutPolicy::request_layout);
-            RequestRemovalLayout(call);
+            return dx::VmValue::Int(static_cast<std::int32_t>(
+                context->ui_tree.Get(parent)->children.size()));
+        });
+    builder.VirtualMethod("getChildAt", "(I)Landroid/view/View;",
+        [context](dx::IntrinsicContext& call) {
+            const auto parent = NodeFor(call, context, call.receiver);
+            const auto& children = context->ui_tree.Get(parent)->children;
+            const auto index = call.arguments[0].AsInt();
+            if (index < 0 || static_cast<std::size_t>(index) >= children.size())
+                return dx::VmValue::Ref(dx::VmObjectRef{});
+            return dx::VmValue::Ref(
+                ChildObject(context, children[static_cast<std::size_t>(index)]));
+        });
+    builder.VirtualMethod("indexOfChild", "(Landroid/view/View;)I",
+        [context](dx::IntrinsicContext& call) {
+            const auto child = call.arguments[0].ref;
+            const auto parent = FindViewUiNode(*context, call.receiver.Value());
+            const auto node = child.IsValid()
+                ? FindViewUiNode(*context, child.Value()) : std::nullopt;
+            if (!parent.has_value() || !node.has_value()) return dx::VmValue::Int(-1);
+            const auto& children = context->ui_tree.Get(*parent)->children;
+            const auto found = std::find(children.begin(), children.end(), *node);
+            return dx::VmValue::Int(found == children.end() ? -1
+                : static_cast<std::int32_t>(found - children.begin()));
+        });
+    builder.VirtualMethod("removeViewAt", "(I)V",
+        [context](dx::IntrinsicContext& call) {
+            const auto parent = NodeFor(call, context, call.receiver);
+            const auto& children = context->ui_tree.Get(parent)->children;
+            const auto index = call.arguments[0].AsInt();
+            // API 19 dereferences the null getChildAt result.
+            if (index < 0 || static_cast<std::size_t>(index) >= children.size())
+                throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;",
+                                      "removeViewAt index has no child"};
+            const auto child = ChildObject(context, children[static_cast<std::size_t>(index)]);
+            const auto roots = call.vm.ProtectReferences(std::array{child});
+            RemoveChild(call, context, child, ui::DetachLayoutPolicy::request_layout);
+            RequestLayoutAndInvalidate(call);
+            return dx::VmValue::Void();
+        });
+    builder.VirtualMethod("removeViews", "(II)V",
+        [context](dx::IntrinsicContext& call) {
+            RemoveChildRange(call, context, call.arguments[0].AsInt(),
+                             call.arguments[1].AsInt(),
+                             ui::DetachLayoutPolicy::request_layout);
+            RequestLayoutAndInvalidate(call);
+            return dx::VmValue::Void();
+        });
+    builder.VirtualMethod("removeViewsInLayout", "(II)V",
+        [context](dx::IntrinsicContext& call) {
+            RemoveChildRange(call, context, call.arguments[0].AsInt(),
+                             call.arguments[1].AsInt(),
+                             ui::DetachLayoutPolicy::preserve_layout);
+            return dx::VmValue::Void();
+        });
+    builder.VirtualMethod("removeAllViewsInLayout", "()V",
+        [context](dx::IntrinsicContext& call) {
+            const auto parent = NodeFor(call, context, call.receiver);
+            const auto count = context->ui_tree.Get(parent)->children.size();
+            if (count != 0)
+                RemoveChildRange(call, context, 0, static_cast<std::int32_t>(count),
+                                 ui::DetachLayoutPolicy::preserve_layout);
+            return dx::VmValue::Void();
+        });
+    builder.VirtualMethod("removeAllViews", "()V",
+        [](dx::IntrinsicContext& call) {
+            static_cast<void>(CallAndroidMethod(call.vm, call.receiver,
+                "removeAllViewsInLayout", "()V", {}));
+            RequestLayoutAndInvalidate(call);
             return dx::VmValue::Void();
         });
     builder.FinalMethod(
@@ -2486,9 +2600,10 @@ Decl Declare_android_view_Window(const Context& context) {
             context->content_view = children.empty() ? dx::VmObjectRef{} : ViewObjectForUiNode(*context, children.front());
             static_cast<void>(CallAndroidMethod(call.vm, activity, "onContentChanged", "()V"));
             if (!current()) return dx::VmValue::Void();
-            if (!context->defer_content_surface_callbacks) {
-                if (const auto error = AttachSurfaceViewSubtree(call.vm, *context, node))
-                    throw dx::VmJavaThrow{"Ljava/lang/RuntimeException;", *error};
+            if (context->defer_content_surface_callbacks) {
+                context->surface_traversal_pending.insert(node);
+            } else if (const auto error = AttachSurfaceViewSubtree(call.vm, *context, node)) {
+                throw dx::VmJavaThrow{"Ljava/lang/RuntimeException;", *error};
             }
             return dx::VmValue::Void();
         });

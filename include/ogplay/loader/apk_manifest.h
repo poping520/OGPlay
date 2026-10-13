@@ -160,6 +160,8 @@ struct AndroidManifestFacts final {
     bool application_enabled{true};
     std::vector<AndroidManifestServiceComponent> service_components;
     std::vector<AndroidManifestReceiverComponent> receiver_components;
+    // Top-level supports-gl-texture android:name, in first-declaration order.
+    std::vector<std::string> supported_gl_textures;
 };
 
 [[nodiscard]] std::string NormalizeAndroidManifestClassName(

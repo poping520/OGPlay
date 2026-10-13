@@ -803,7 +803,7 @@ note = "M5 WU-0218 严格解析二进制 Manifest 的 UTF-8/UTF-16 string pool �
 [loader.apk_startup_manifest]
 status = "complete"
 test = "tests/loader/apk_manifest_tests.cpp"
-note = "APS-1 按 API 19 PackageParser 规则发布默认/自定义 Application 类、声明序 Activity/activity-alias、enabled 与逐 intent-filter 事实；launcher 确定性选择且 no-launcher/非法 alias 以 typed error 失败，不依赖 Title Profile；同名 Activity/alias 按声明序保留独立过滤器，组件名查询取最后声明，alias theme/launchMode 封存首个先前目标的配置"
+note = "APS-1 按 API 19 PackageParser 规则发布默认/自定义 Application 类、声明序 Activity/activity-alias、enabled 与逐 intent-filter 事实；launcher 确定性选择且 no-launcher/非法 alias 以 typed error 失败，不依赖 Title Profile；同名 Activity/alias 按声明序保留独立过滤器，组件名查询取最后声明，alias theme/launchMode 封存首个先前目标的配置；BND-54 保留顶层 supports-gl-texture android:name 的首次声明序及未知扩展，缺/空/非法名称拒绝，格式策略归上层"
 
 [loader.apk_arm_native_catalog]
 status = "complete"
@@ -1094,6 +1094,11 @@ note = "WU-0331 按 Khronos ETC1 block 规范闭合 individual/differential、se
 status = "complete"
 test = "tests/gles/atc_tests.cpp; tests/gles/angle_frame_tests.cpp: ATC; tests/runtime/boundary/integration/android_boundary_hle_tests.cpp: BND50"
 note = "BND-50 固定上游 RGB block decoder 与 alpha 适配层，覆盖 ATC RGB/显式及插值 alpha，受检输出 RGBA8；统一扩展/格式数组/计数/查询长度，PBO 有界回读与 share-group 格式同步，非法子图更新保留 GL error。macOS 定向验证；Windows/Linux 实跑未验收"
+
+[runtime.gles_compressed_texture_policy]
+status = "partial"
+test = "tests/runtime/boundary/integration/android_boundary_hle_tests.cpp: BND54; tests/gles/angle_frame_tests.cpp: BND54; tests/dexvm/egl_facade_tests.cpp: WU-3 EGL14; tests/loader/apk_manifest_tests.cpp: supports-gl-texture; tests/runtime/native_library_loader_tests.cpp: BND54; tools.title_profiles_current; tools.quirk_registry_current"
+note = "BND-54/ADR-0128：进程创建前固定 all/atc/pvrtc，Context 首次 current 冻结 native/software/available/published；native/Java/GLES1/2/3 字符串、索引、格式数组/数量/输出长度及2D/3D/PBO/存储校验共用策略，隐藏格式 GL_INVALID_ENUM。厂商选择保留 ETC1 与实际 GLES3 核心 ETC2/EAC；通用 APK 启动仅从 Manifest 单一已知厂商声明选择，无/未知/歧义声明保持 all，Profile 不提供纹理格式覆盖。macOS 定向及原 APK 启动场景纹理恢复、guestFault=null/GL errors=0/正常退出；Windows/Linux、正式 title gate/完整游戏未验收。"
 
 [gles.pvrtc1_decode_fallback]
 status = "complete"

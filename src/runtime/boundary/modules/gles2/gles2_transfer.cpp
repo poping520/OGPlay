@@ -146,8 +146,9 @@ std::uint32_t Gles2Module::GetBooleanv(const A32CallFrame& call) {
         graphics_.RequireFrame("glGetBooleanv").StateQueryCount(arguments[0]));
     auto prepared = Prepare(calls_, graphics_, 58U, call);
     auto& output = OnlyPointer(prepared);
-    const auto values =
-        graphics_.RequireFrame("glGetBooleanv").GetBooleans(arguments[0], output.Size());
+    const auto values = arguments[0] == 0x821DU
+        ? std::vector<std::uint8_t>{static_cast<std::uint8_t>(!GuestGlesExtensions(graphics_.RequireFrame("glGetBooleanv")).empty())}
+        : graphics_.RequireFrame("glGetBooleanv").GetBooleans(arguments[0], output.Size());
     WriteBooleans(output, values);
     return 0U;
 }

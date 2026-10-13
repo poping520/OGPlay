@@ -1,6 +1,6 @@
 # 当前状态
 
-更新：2026-10-12。
+更新：2026-10-13。
 
 能力见
 [capabilities.toml](../../capabilities.toml)，契约见各模块 MODULE；历史及证据明细见
@@ -48,10 +48,17 @@
   View.bringToFront/ViewGroup.bringChildToFront 已接 UiTree 同父重排；受管生命周期动态挂载的
   SurfaceView 延至下一 traversal 创建，addView 后注册的 holder 回调可收 surfaceCreated（均定向通过）。
   macOS Release 复现：视频 holder created/changed→StopVideo removeView 收 destroyed，视频 Surface 未创建的停滞消失。
-  ViewGroup 子节点访问/移除 API 按 API19 对齐（定向通过）；复现越过 StopVideo，guestFault=null。
-  **当前阻塞（停滞）**：视频结束后 UE3 仍发 GLES（MapBuffer/BindBuffer），presented 停在 2，
-  画面停于启动图；Kiwi Appstore 提示框已呈现但无新帧不可见，原因未定位。视频画面/音频及按钮退出
-  未验收。证据 `.local/surface-traversal-20261012/`、`.local/viewgroup-children-20261012/`。
+  ViewGroup 子节点访问/移除 API 按 API19 对齐（定向通过）。启动图停滞根因为 JNI 构造的 FileDescriptor
+  （NDK asset fd）被 MediaPlayer 拒绝→MovieError 级联撤销第二段影片，UE3 停在“影片播放中”不渲染；
+  现按 int descriptor 解析 guest VFS fd（定向通过）。macOS Release 复现：两段开场影片 Surface 完整创建/销毁，
+  presented 5833+ 进入 3D 场景，guestFault=null；Kiwi Appstore 提示框可见，点击 OK 后仍显示（原因未查）。
+  影片画面在 UE3 不 swap 期间应不可见（据宿主仅随 guest 帧合成推断，未实测）；音频/按钮退出未验收。
+  证据 `.local/lili-stall-20261012/`、`.local/lili-fd-20261012/`。
+  macOS 3D 发白根因已定位：同时发布 ATC/PVRTC 时，UE3 缓存文件名选 ATITC，纹理反序列化选 PVRTC；
+  [BND-54](../tasks/boundary/BND-54.md) 已实现通用压缩格式策略，依据原 APK 的 supports-gl-texture 声明选择 ATC，无 Profile；
+  macOS Release 原 APK profile=none、family=atc source=manifest，纹理/颜色恢复，presented=3536、guestFault=null、边界 GL errors=0、退出 0。
+  查询/上传/Context/Java/Profile 定向通过；Windows/Linux、完整游戏及正式 title gate 未验收。
+  根因证据 `.local/lili-white-20261013/`，修复证据 `.local/lili-manifest-texture-20261013/`。
   MCP shutdown 后故障退出 1，进程/listener 已关闭；本次无 `unknown guest thread id`，
   但该历史问题曾重现，未声明修复；SDK 曾捕获 resolveService flags，崩溃报告曾触发 LocaleData 初始化失败。
   证据 `.local/surface-media-fix-20261012/`；前置能力及过程见任务单。

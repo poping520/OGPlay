@@ -797,10 +797,12 @@ TEST_CASE("WU-3 EGL14 arrays pbuffer and shared context use native registry") {
     const ogplay::loader::Elf32ModuleInput module{
         "libc.so", libc, ogplay::memory::GuestAddress{0x10000000U}};
     VirtualFileSystem filesystem;
-    auto session = AndroidGuestCallSession::Start(
-        {19, "libc.so", std::span{&module, 1},
-         {kNativeRenderer, ogplay::gles::AngleDevice::hardware}, 4, 3,
-         1000, 1, &filesystem, {}});
+    AndroidGuestCallSessionRequest request{
+        19, "libc.so", std::span{&module, 1},
+        {kNativeRenderer, ogplay::gles::AngleDevice::hardware}, 4, 3,
+        1000, 1, &filesystem, {}};
+    request.boundary_options.compressed_texture_family = ogplay::gles::CompressedTextureFamily::atc;
+    auto session = AndroidGuestCallSession::Start(request);
     EglVm vm(InterpreterBackend::switch_dispatch, session.get());
     const auto display = vm.CallStatic(
         "Landroid/opengl/EGL14;", "eglGetDisplay",
@@ -896,6 +898,35 @@ TEST_CASE("WU-3 EGL14 arrays pbuffer and shared context use native registry") {
         "(Landroid/opengl/EGLDisplay;Landroid/opengl/EGLSurface;Landroid/opengl/EGLSurface;Landroid/opengl/EGLContext;)Z",
         {VmValue::Ref(display), VmValue::Ref(surface), VmValue::Ref(surface),
          VmValue::Ref(first)}).AsInt() == 1);
+    // BND54: interpreted Java strings, indexed strings and native query counts agree.
+    const auto extensions_value = vm.CallStatic("Landroid/opengl/GLES20;", "glGetString",
+        "(I)Ljava/lang/String;", {VmValue::Int(0x1F03)}).ref;
+    const auto gl_extensions = vm.interpreter.StringUtf8(extensions_value);
+    CHECK(gl_extensions.find("GL_AMD_compressed_ATC_texture") != std::string::npos);
+    CHECK(gl_extensions.find("GL_IMG_texture_compression_pvrtc") == std::string::npos);
+    const auto extension_query = vm.IntArray({0});
+    static_cast<void>(vm.CallStatic("Landroid/opengl/GLES30;", "glGetIntegerv", "(I[II)V",
+        {VmValue::Int(0x821D), VmValue::Ref(extension_query), VmValue::Int(0)}));
+    const auto num_extensions = vm.model.GetPrimitiveElement(extension_query, 0);
+    std::string indexed_extensions;
+    for (std::uint32_t index = 0; index < num_extensions; ++index) {
+        const auto value = vm.CallStatic("Landroid/opengl/GLES30;", "glGetStringi",
+            "(II)Ljava/lang/String;", {VmValue::Int(0x1F03), VmValue::Int(static_cast<std::int32_t>(index))}).ref;
+        indexed_extensions += vm.interpreter.StringUtf8(value); indexed_extensions.push_back(' ');
+    }
+    CHECK(indexed_extensions == gl_extensions);
+    static_cast<void>(vm.CallStatic("Landroid/opengl/GLES20;", "glGetIntegerv", "(I[II)V",
+        {VmValue::Int(0x86A2), VmValue::Ref(extension_query), VmValue::Int(0)}));
+    const auto num_formats = vm.model.GetPrimitiveElement(extension_query, 0);
+    REQUIRE(num_formats > 0U); REQUIRE(num_formats < 128U);
+    const auto format_query = vm.IntArray(std::vector<std::int32_t>(num_formats, 0));
+    static_cast<void>(vm.CallStatic("Landroid/opengl/GLES20;", "glGetIntegerv", "(I[II)V",
+        {VmValue::Int(0x86A3), VmValue::Ref(format_query), VmValue::Int(0)}));
+    for (std::uint32_t index = 0; index < num_formats; ++index) {
+        const auto format = vm.model.GetPrimitiveElement(format_query, static_cast<JniSize>(index));
+        CHECK_FALSE((format >= 0x8c00U && format <= 0x8c03U));
+    }
+    CHECK(vm.CallStatic("Landroid/opengl/GLES20;", "glGetError", "()I").AsInt() == 0);
     const auto thread_id = static_cast<std::uint64_t>(
         std::hash<std::thread::id>{}(std::this_thread::get_id()));
     CHECK(session->InvokeManagedGles(

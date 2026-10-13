@@ -18,6 +18,8 @@ namespace ogplay::memory {
 class AddressSpace;
 }
 
+namespace ogplay::core { class Logger; }
+
 namespace ogplay::runtime {
 
 inline constexpr std::array<std::string_view, 4> kGuestGlesExtensions{
@@ -28,6 +30,7 @@ inline constexpr std::array<std::string_view, 4> kGuestGlesExtensions{
 
 [[nodiscard]] std::vector<std::string_view> GuestGlesExtensions(gles::AngleFrame& frame);
 [[nodiscard]] std::vector<std::string_view> GuestGlesExtensions(std::string_view native_extensions);
+void LogCompressedTextureCapabilities(gles::AngleFrame& frame, core::Logger* logger);
 class GuestGlContext;
 class BufferMappingService;
 class A32CallFrame;

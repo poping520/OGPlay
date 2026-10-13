@@ -77,6 +77,11 @@ public:
     using std::runtime_error::runtime_error;
 };
 
+// A sole known vendor family in APK declarations narrows automatic exposure.
+// Absent, ambiguous or unknown facts keep all.
+[[nodiscard]] gles::CompressedTextureFamily ResolveManifestCompressedTextureFamily(
+    const loader::AndroidManifestFacts& manifest);
+
 // Owns the complete generic APK startup chain. Create prepares the rootless
 // native shell, dynamic loader and DexVM; Java execution remains explicit.
 class AndroidAppProcess final {

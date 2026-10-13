@@ -50,6 +50,8 @@ struct GraphicsBoundaryContext final {
     void (*activate_context)(void*){};
     void (*retire_share_group)(void*, std::uint32_t){};
     BufferMappingService* buffer_mappings{};
+    gles::CompressedTextureFamily compressed_texture_family{gles::CompressedTextureFamily::all};
+    core::Logger* logger{};
 
     [[nodiscard]] gles::AngleFrame& RequireFrame(
         const std::string_view operation) const {

@@ -15,6 +15,7 @@
 #include <vector>
 
 #include "ogplay/cpu/cpu.h"
+#include "ogplay/core/logger.h"
 #include "ogplay/gles/angle_frame.h"
 #include "ogplay/gles/atc.h"
 #include "ogplay/gles/gles_call_preparation.h"
@@ -149,6 +150,12 @@ std::uint32_t QueryStringOffset(const std::uint32_t parameter) {
 
 std::vector<std::string_view> GuestGlesExtensions(gles::AngleFrame& frame) {
     auto values = GuestGlesExtensions(frame.GetString(0x1F03U));
+    const auto& compressed = frame.TextureCapabilities();
+    std::erase_if(values, [&compressed](const std::string_view value) {
+        const bool compression = value == "GL_OES_compressed_ETC1_RGB8_texture" ||
+            value == "GL_IMG_texture_compression_pvrtc" || value == "GL_AMD_compressed_ATC_texture";
+        return compression && std::find(compressed.extensions.begin(), compressed.extensions.end(), value) == compressed.extensions.end();
+    });
     if (frame.ClientVersion() >= 3 && std::ranges::find(values, "GL_OES_mapbuffer") == values.end())
         values.push_back("GL_OES_mapbuffer");
     return values;
@@ -179,6 +186,30 @@ std::vector<std::string_view> GuestGlesExtensions(const std::string_view native_
         if (supports("GL_OES_texture_float_linear")) values.push_back("GL_OES_texture_float_linear");
     }
     return values;
+}
+
+void LogCompressedTextureCapabilities(gles::AngleFrame& frame, core::Logger* logger) {
+    if (logger == nullptr) return;
+    const auto& capabilities = frame.TextureCapabilities();
+    const auto list = [](const auto& formats) {
+        std::string result;
+        for (const auto format : formats) {
+            if (!result.empty()) result.push_back(',');
+            result += std::to_string(format);
+        }
+        return result;
+    };
+    std::vector<std::int32_t> masked;
+    for (const auto format : capabilities.available_formats) {
+        if (std::find(capabilities.formats.begin(), capabilities.formats.end(), format) == capabilities.formats.end())
+            masked.push_back(format);
+    }
+    logger->Write(core::LogLevel::info, "runtime.gles.capabilities", "compressed texture snapshot", {},
+        {{"context", static_cast<std::uint64_t>(frame.NativeContext())},
+         {"family", std::string(gles::CompressedTextureFamilyName(capabilities.family))},
+         {"native_formats", list(capabilities.native_formats)}, {"software_formats", list(capabilities.software_formats)},
+         {"available_formats", list(capabilities.available_formats)}, {"published_formats", list(capabilities.formats)},
+         {"masked_formats", list(masked)}}, {core::RateLimitMode::none});
 }
 
 class AndroidBoundaryGles::Impl final {

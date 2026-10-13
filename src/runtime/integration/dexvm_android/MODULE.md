@@ -241,6 +241,9 @@ MediaPlayer/VideoView 仅受检资源/路径/逻辑 FD 区间，复用 decoder/m
 播放器；EncodedMusicMixer 按实例、JavaSoundPoolMixer 按池隔离。音乐增量读 window/lease，短音效
 才全量读取；来源原子捕获、关闭 FD 不影响区间、同路径替换不复用旧缓存。STORED 媒体完整 CRC
 校验一次后借 payload，APK 随 context 保活且不变；Deflate 沿逐窗口校验、损坏失败。
+MediaPlayer/SoundPool 的 FileDescriptor：平台登记者沿原来源；其余按 API19 jniGetFDFromFileDescriptor
+读 int descriptor 为 guest VFS fd（含 NDK AAsset_openFileDescriptor），dup 式租约截取区间，offset≥size/
+无效或非普通文件 IOException、length 截至文件尾。
 
 普通 MediaPlayer prepare 优先纯音频 decoder，失败后交共享视频工厂，同一来源仅一个后端播放；
 owner 为播放器，setDisplay/setSurface 仅绑定 active managed holder 的 View，未知/失效拒绝、双

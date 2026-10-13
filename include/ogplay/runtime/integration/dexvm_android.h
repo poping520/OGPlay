@@ -1024,6 +1024,14 @@ LoadEncodedAudioSource(DexVmAndroidContext &context,
 [[nodiscard]] std::uint64_t
 CaptureEncodedAudioWindow(DexVmAndroidContext &context,
                           audio::EncodedAudioSource &source);
+// API19 MediaPlayerService FD source over a guest VFS descriptor: dup-like
+// lease of [offset, offset+length), length clipped to the file size. Returns
+// the failure reason instead of a lease when the descriptor cannot be read.
+[[nodiscard]] std::optional<std::string>
+CaptureDescriptorAudioWindow(DexVmAndroidContext &context,
+                             std::int32_t descriptor, std::uint64_t offset,
+                             std::uint64_t length,
+                             audio::EncodedAudioSource &source);
 
 // Widget click dispatch uses the UiTree's resolved geometry and refreshes a
 // dirty traversal before hit-test. The full gesture contract lands in LUI-9.

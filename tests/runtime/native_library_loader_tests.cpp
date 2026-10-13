@@ -500,7 +500,8 @@ struct OrchestratedApp final {
                                      ogplay::runtime::dexvm::InterpreterBackend::switch_dispatch,
                              const std::string& application_class = "android.app.Application",
                              std::function<void()> pump_host_events = {},
-                             ogplay::runtime::ui::UiMetrics viewport = {64, 36}) {
+                             ogplay::runtime::ui::UiMetrics viewport = {64, 36},
+                             std::vector<std::string> gl_textures = {}) {
         if (activity == "android.app.NativeActivity" || activity == "fixture.NativeTakeoverActivity") native_a = NativeActivityElf();
         context->apk_bytes = {
             std::byte{0x50}, std::byte{0x4b}, std::byte{0x03}, std::byte{0x04}};
@@ -510,6 +511,7 @@ struct OrchestratedApp final {
         if (with_native) libraries.push_back(Library("liba.so", native_a));
         ogplay::session::AndroidAppProcessRequest request;
         request.manifest = AppManifest(activity, has_launcher);
+        request.manifest.supported_gl_textures = std::move(gl_textures);
         // Handoff fixtures must declare their destination, like a sealed APK.
         if (activity == "fixture.WindowFocusActivity" ||
             activity == "fixture.TaskRootLauncherActivity") {
@@ -7996,4 +7998,38 @@ TEST_CASE("DVM-236 guest process exit and runtime fault forbid Activity callback
         CHECK(f.app->NativeProcess().AttachedJniThreadCount() == 0);
       }
     }
+}
+
+
+TEST_CASE("BND54 APK texture declarations choose a vendor family without a Profile") {
+    using namespace ogplay;
+    using Family = gles::CompressedTextureFamily;
+    loader::AndroidManifestFacts facts;
+    CHECK(session::ResolveManifestCompressedTextureFamily(facts) == Family::all);
+    facts.supported_gl_textures = {"GL_AMD_compressed_ATC_texture"};
+    CHECK(session::ResolveManifestCompressedTextureFamily(facts) == Family::atc);
+    facts.supported_gl_textures.push_back("GL_OES_compressed_ETC1_RGB8_texture");
+    CHECK(session::ResolveManifestCompressedTextureFamily(facts) == Family::atc);
+    facts.supported_gl_textures.push_back("GL_IMG_texture_compression_pvrtc");
+    CHECK(session::ResolveManifestCompressedTextureFamily(facts) == Family::all);
+    facts.supported_gl_textures = {"GL_IMG_texture_compression_pvrtc"};
+    CHECK(session::ResolveManifestCompressedTextureFamily(facts) == Family::pvrtc);
+    facts.supported_gl_textures.push_back("GL_UNKNOWN_texture_compression");
+    CHECK(session::ResolveManifestCompressedTextureFamily(facts) == Family::all);
+    facts.supported_gl_textures = {"GL_OES_compressed_ETC1_RGB8_texture"};
+    CHECK(session::ResolveManifestCompressedTextureFamily(facts) == Family::all);
+
+    OrchestratedApp fixture{"fixture.MainActivity", true, false, {}, {}, true,
+        runtime::dexvm::InterpreterBackend::switch_dispatch, "android.app.Application", {}, {64, 36},
+        {"GL_AMD_compressed_ATC_texture"}};
+    REQUIRE(fixture.context->session != nullptr);
+    fixture.context->session->OpenManagedSurface();
+    const auto extensions = fixture.context->session->ManagedGlString(0x1F03);
+    CHECK(extensions.find("GL_AMD_compressed_ATC_texture") != extensions.npos);
+    CHECK(extensions.find("GL_IMG_texture_compression_pvrtc") == extensions.npos);
+    const auto records = fixture.logger.Snapshot(core::LogLevel::info, "session.app_process");
+    REQUIRE(records.size() == 1U);
+    CHECK(fixture.logger.RenderText(records.front()).find("source=manifest") != std::string::npos);
+    fixture.context->session->CloseManagedSurface();
+    static_cast<void>(fixture.app->Stop());
 }

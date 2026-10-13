@@ -46,6 +46,9 @@
   `meta-data`；exported 缺省取决于 intent-filter 是否存在。receiver 不混入 Activity 列表。
   receiver 同样逐个保存 intent-filter，不合并 action/category；共用过滤器事实还保留
   signed priority、label/icon，供上层查询返回与排序。
+  Manifest 顶层 supports-gl-texture 的 android:name 保留为 supported_gl_textures，按首次
+  声明序去重，未知扩展原样保留；缺名/空名/非法属性明确失败，非顶层声明不投影。
+  本层不选择纹理格式、不探测 GPU 或读取游戏资源，策略归上层启动装配。
 - `ParseBinaryXmlElements`：受检遍历通用 Android binary XML，按文档序返回标签、父索引
   与 generic typed attributes；每个 attribute 保留 namespace/name、value type/data 与
   raw/typed string。旧布局字段暂作单向兼容 adapter，新 widget 语义不得进入 loader。

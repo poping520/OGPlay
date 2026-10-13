@@ -151,6 +151,26 @@ void SetNativeContext(dx::IntrinsicContext& call, const std::int32_t token) {
         throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;",
                               "offset and length must be non-negative"};
     }
+    // Platform-created descriptors keep their registered source (openFd has
+    // no process fd). Others follow jniGetFDFromFileDescriptor: the int field
+    // names a guest VFS descriptor, e.g. NDK AAsset_openFileDescriptor.
+    if (call.vm.IO().FindDescriptor(fd) == nullptr) {
+        const auto field = call.vm.Linker().FindFieldRecursive(
+            call.vm.Model().ObjectClass(fd), "descriptor", "I");
+        if (!field) {
+            throw dx::DexVmError(dx::DexVmErrorReason::internal_invariant,
+                                 "FileDescriptor.descriptor field is missing");
+        }
+        const auto value = static_cast<std::int32_t>(call.vm.Model().InstanceSlots(fd)[
+            call.vm.Linker().Field(*field).slot].bits);
+        audio::EncodedAudioSource source;
+        const auto error = value < 0
+            ? std::optional<std::string>{"file descriptor is closed or was never opened"}
+            : CaptureDescriptorAudioWindow(*context, value,
+                  static_cast<std::uint64_t>(offset), static_cast<std::uint64_t>(length), source);
+        if (error) throw dx::VmJavaThrow{"Ljava/io/IOException;", *error};
+        return source;
+    }
     dx::IoRuntime::DescriptorState* descriptor{};
     try {
         descriptor = &call.vm.IO().Descriptor(fd);

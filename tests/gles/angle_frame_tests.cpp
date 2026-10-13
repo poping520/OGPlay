@@ -521,3 +521,17 @@ TEST_CASE("BND53 RGB565 uses real storage across contexts and isolates framebuff
     first.BindSurfaces(b,b);CHECK(first.ReadRgba8()==red); // An unshared context sees the same surface.
     first.ReleaseCurrent();second.ReleaseCurrent();
 }
+
+TEST_CASE("BND54 compressed policy preserves reported GLES3 core formats") {
+    using namespace ogplay::gles;
+    const std::array<std::int32_t, 5> native{0x9270, 0x9278, 0x9278, 0x83f0, 0x8c00};
+    const auto atc = BuildCompressedTextureCapabilities(native, CompressedTextureFamily::atc, 3);
+    CHECK(std::count(atc.formats.begin(), atc.formats.end(), 0x9270) == 1);
+    CHECK(std::count(atc.formats.begin(), atc.formats.end(), 0x9278) == 1);
+    CHECK(std::count(atc.formats.begin(), atc.formats.end(), 0x9279) == 0);
+    CHECK(std::count(atc.formats.begin(), atc.formats.end(), 0x83f0) == 0);
+    CHECK(std::count(atc.formats.begin(), atc.formats.end(), 0x8c00) == 0);
+    const auto all = BuildCompressedTextureCapabilities(native, CompressedTextureFamily::all, 3);
+    CHECK(std::count(all.formats.begin(), all.formats.end(), 0x83f0) == 1);
+    CHECK(std::count(all.formats.begin(), all.formats.end(), 0x8c00) == 1);
+}

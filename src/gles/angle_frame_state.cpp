@@ -290,30 +290,73 @@ std::size_t AngleFrame::StateQueryCount(const std::uint32_t pname) {
     }
 }
 
-std::vector<std::int32_t> AngleFrame::CompressedTextureFormats() {
-#if OGPLAY_HAS_ANGLE
-    GLint count{};
-    glGetIntegerv(GL_NUM_COMPRESSED_TEXTURE_FORMATS, &count);
-    RequireNoError("glGetIntegerv compressed format count");
-    if (count < 0 || count > 16384) throw std::length_error("GLES compressed format count exceeds limit");
-    std::vector<std::int32_t> formats(static_cast<std::size_t>(count));
-    if (count != 0) {
-        glGetIntegerv(GL_COMPRESSED_TEXTURE_FORMATS, formats.data());
-        RequireNoError("glGetIntegerv compressed formats");
-    }
-    // All software-backed formats are accepted by the same upload path.
+CompressedTextureCapabilities BuildCompressedTextureCapabilities(
+    const std::span<const std::int32_t> native_formats,
+    const CompressedTextureFamily family, const int client_version) {
+    if (family != CompressedTextureFamily::all && family != CompressedTextureFamily::atc &&
+        family != CompressedTextureFamily::pvrtc)
+        throw std::invalid_argument("invalid compressed texture family");
+    CompressedTextureCapabilities result;
+    result.family = family;
+    result.native_formats.assign(native_formats.begin(), native_formats.end());
+    result.available_formats = result.native_formats;
     constexpr std::array<std::int32_t, 8> decoded{
         0x8d64, 0x8c00, 0x8c01, 0x8c02, 0x8c03,
         kAtcRgb, kAtcRgbaExplicit, kAtcRgbaInterpolated};
-    for (const auto format : decoded)
-        if (std::find(formats.begin(), formats.end(), format) == formats.end())
-            formats.push_back(format);
-    std::sort(formats.begin(), formats.end());
-    formats.erase(std::unique(formats.begin(), formats.end()), formats.end());
-    return formats;
+    result.software_formats.assign(decoded.begin(), decoded.end());
+    result.available_formats.insert(result.available_formats.end(), decoded.begin(), decoded.end());
+    const auto unique = [](auto& formats) {
+        std::sort(formats.begin(), formats.end());
+        formats.erase(std::unique(formats.begin(), formats.end()), formats.end());
+    };
+    unique(result.native_formats);
+    unique(result.software_formats);
+    unique(result.available_formats);
+    for (const auto format : result.available_formats) {
+        const bool common = format == 0x8d64 ||
+            (client_version >= 3 && format >= 0x9270 && format <= 0x9279);
+        const bool selected = (family == CompressedTextureFamily::atc &&
+                (format == kAtcRgb || format == kAtcRgbaExplicit || format == kAtcRgbaInterpolated)) ||
+            (family == CompressedTextureFamily::pvrtc && format >= 0x8c00 && format <= 0x8c03);
+        if (family == CompressedTextureFamily::all || common || selected)
+            result.formats.push_back(format);
+    }
+    result.extensions.push_back("GL_OES_compressed_ETC1_RGB8_texture");
+    if (family != CompressedTextureFamily::atc)
+        result.extensions.push_back("GL_IMG_texture_compression_pvrtc");
+    if (family != CompressedTextureFamily::pvrtc)
+        result.extensions.push_back("GL_AMD_compressed_ATC_texture");
+    return result;
+}
+
+const CompressedTextureCapabilities& AngleFrame::TextureCapabilities() {
+#if OGPLAY_HAS_ANGLE
+    if (!texture_capabilities_) {
+        GLint count{};
+        glGetIntegerv(GL_NUM_COMPRESSED_TEXTURE_FORMATS, &count);
+        RequireNoError("glGetIntegerv compressed format count");
+        if (count < 0 || count > 16384) throw std::length_error("GLES compressed format count exceeds limit");
+        std::vector<std::int32_t> formats(static_cast<std::size_t>(count));
+        if (count != 0) {
+            glGetIntegerv(GL_COMPRESSED_TEXTURE_FORMATS, formats.data());
+            RequireNoError("glGetIntegerv compressed formats");
+        }
+        texture_capabilities_ = BuildCompressedTextureCapabilities(formats, texture_family_, ClientVersion());
+    }
+    return *texture_capabilities_;
 #else
     throw EglLifecycleError(EglOperation::unavailable, 0);
 #endif
+}
+
+std::vector<std::int32_t> AngleFrame::CompressedTextureFormats() {
+    return TextureCapabilities().formats;
+}
+
+void AngleFrame::ValidateCompressedTextureFormat(const std::uint32_t format) {
+    const auto& formats = TextureCapabilities().formats;
+    if (std::find(formats.begin(), formats.end(), static_cast<std::int32_t>(format)) == formats.end())
+        throw GlesApiError("compressed texture format is not published", 0x0500U);
 }
 
 std::vector<std::int32_t> AngleFrame::GetIntegers(
@@ -396,16 +439,28 @@ std::string AngleFrame::GetString(const std::uint32_t parameter) {
     const auto* value = glGetString(parameter); RequireNoError("glGetString");
     if (value == nullptr) throw std::runtime_error("glGetString returned null");
     auto result = std::string(reinterpret_cast<const char*>(value));
-    constexpr std::uint32_t kGlExtensions = 0x1f03U;
-    constexpr std::string_view kPvrtc =
-        "GL_IMG_texture_compression_pvrtc";
-    if (parameter == kGlExtensions && !HasExtensionToken(result, kPvrtc)) {
-        if (!result.empty()) result.push_back(' ');
-        result.append(kPvrtc);
-    }
-    if (parameter == kGlExtensions && !HasExtensionToken(result, "GL_AMD_compressed_ATC_texture")) {
-        if (!result.empty()) result.push_back(' ');
-        result.append("GL_AMD_compressed_ATC_texture");
+    if (parameter == 0x1f03U) {
+        const auto& capabilities = TextureCapabilities();
+        if (capabilities.family != CompressedTextureFamily::all) {
+            std::string filtered;
+            std::size_t begin = 0;
+            while ((begin = result.find_first_not_of(" \t\r\n", begin)) != std::string::npos) {
+                const auto end = result.find_first_of(" \t\r\n", begin);
+                const auto token = std::string_view(result).substr(begin, end - begin);
+                const bool compression = token.find("compressed_") != token.npos ||
+                    token.find("texture_compression_") != token.npos || token.find("pvrtc") != token.npos;
+                if (!compression) { filtered.append(token); filtered.push_back(' '); }
+                if (end == std::string::npos) break;
+                begin = end;
+            }
+            result = std::move(filtered);
+        }
+        for (const auto extension : capabilities.extensions) {
+            if (!HasExtensionToken(result, extension)) {
+                if (!result.empty() && result.back() != ' ') result.push_back(' ');
+                result.append(extension);
+            }
+        }
     }
     return result;
 #else

@@ -19,3 +19,6 @@ RGB565 仅在真实存储探测通过后发布；Metal fallback 为 5/6/5/0，de
 Surface 图像导入探测可为 D24S8（否则 D0/S0），GLES1 compatibility/GLES2；
 纹理 binding/mipmap 与 fallback GLES3 失败，完整驱动配置集合未发布。
 依据 [ADR-0106](../../../../../docs/adr/media.md#adr-0106)；Java/native 共用格式事实。实现依据 [ADR-0090](../../../../../docs/adr/media.md#adr-0090)。
+
+每个 native/managed Context 创建时继承进程已冻结的压缩纹理策略；share 参数不覆盖策略。
+首次合法绑定可生成并记录能力快照，切换线程、Surface 或重建 Context 不改变策略。

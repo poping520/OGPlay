@@ -88,7 +88,7 @@
   lossy-decode 扩展；两者都不可用时才由通用 ETC1 解码器转为 RGBA8 后调用 ANGLE
   `glTexImage2D`。其他压缩格式不得借此伪造支持。
 - PVRTC1 上传优先使用 ANGLE 原生 `GL_IMG_texture_compression_pvrtc`；无原生扩展时，
-  仅因官方 2bpp/4bpp 软件解码器真实可用而向 guest 发布该扩展，并转为 RGBA8 调用
+  在兼容策略允许且官方 2bpp/4bpp 软件解码器真实可用时向 guest 发布该扩展，并转为 RGBA8 调用
   `glTexImage2D`。未知压缩枚举不得借该回退伪造成功。
 - IDL 标量不得携带搬运元数据；所有指针必须具有 direction/nullable/count，禁止生成器
   猜测 guest 内存长度。
@@ -231,3 +231,10 @@ binding 查询归一化且不允许 guest 改写默认附件。存储独立于 C
 fallback 经真实导入探测可公开 D24S8（否则 D0/S0）；Surface 拥有独立 depth/stencil
 Metal texture/EGLImage，非共享 Context 私有 FBO 导入同一内容。无 MSAA、仅 GLES1
 compatibility/GLES2，不支持 GLES3、texture binding/mipmap；见 ADR-0110。
+
+压缩纹理以 AngleFrame 首次 current 查询冻结的 CompressedTextureCapabilities 为事实：
+原生枚举与已实现软件解码形成 available，进程传入的 all/atc/pvrtc 策略只能收窄 published。
+格式数组、数量、动态输出长度与 CPU/PBO 的 2D/3D 上传及存储校验共用 published；
+隐藏格式返回 GL_INVALID_ENUM。选择厂商族时保留 ETC1 与实际支持的 GLES3 核心 ETC2/EAC。
+策略创建时固定，无 setter；共享/重建 Context 由上层传入同一策略，不读取 Profile。
+原生解码路径不受其他 Context 策略影响。见 ADR-0128。

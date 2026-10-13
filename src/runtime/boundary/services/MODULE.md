@@ -42,3 +42,9 @@ FrameService 的 async_present_readback 为显式实时选项，默认 false；�
 context/surface/尺寸变更、软件帧、覆盖及关闭退役旧读回代际，旧 callback 不得覆盖新帧。
 回调只锁 frame store，不查询 UI/guest；Reset/析构不持有此锁 join。显式路径传播 worker
 错误，析构仅兜底清理；同步和不具备实际能力的路径保持原完成语义。
+
+压缩纹理的扩展发布取自 AngleFrame 压缩能力快照，native、Java 及 GLES1/2/3 的
+扩展/格式查询共用策略结果；GLES1 的其他固定功能扩展保持独立支持边界。
+GraphicsBoundaryContext 承接创建前固定的强类型厂商格式策略与 Logger，不读取 Profile。
+每个首次绑定的 Context 记录 native/software/available/published/masked 格式，查询日志
+不要求跨线程执行 GL；未绑定仍遵守原错误与 null 语义。见 ADR-0128。

@@ -898,6 +898,15 @@ AndroidManifestFacts ParseAndroidBinaryManifest(const std::span<const std::byte>
                 }
                 facts.defined_permissions.push_back(std::move(definition));
                 current_permission = facts.defined_permissions.size() - 1U;
+            } else if (elements.size() == 1 && name == "supports-gl-texture") {
+                const auto* texture_name = FindAttribute(attributes, "name", kAndroidNamespace);
+                if (texture_name == nullptr)
+                    throw std::runtime_error("binary AndroidManifest supports-gl-texture has no name");
+                const auto texture = ReadStringAttribute(*texture_name, strings, "supports-gl-texture name");
+                if (texture.empty())
+                    throw std::runtime_error("binary AndroidManifest supports-gl-texture name is empty");
+                if (std::find(facts.supported_gl_textures.begin(), facts.supported_gl_textures.end(), texture) == facts.supported_gl_textures.end())
+                    facts.supported_gl_textures.push_back(texture);
             } else if (elements.size() == 1 && name == "uses-permission") {
                 const auto* permission_name =
                     FindAttribute(attributes, "name", kAndroidNamespace);

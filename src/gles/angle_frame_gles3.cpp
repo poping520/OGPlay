@@ -36,6 +36,13 @@ void AngleFrame::BindEglImage(const std::uint32_t target, const std::uintptr_t i
 
 void AngleFrame::TransferPixelBuffer(const PixelBufferOperation operation,
                                      const std::span<const std::uint32_t> a) {
+    switch (operation) {
+    case PixelBufferOperation::compressed2d:
+    case PixelBufferOperation::compressed3d: ValidateCompressedTextureFormat(a[2]); break;
+    case PixelBufferOperation::compressed_sub2d: ValidateCompressedTextureFormat(a[6]); break;
+    case PixelBufferOperation::compressed_sub3d: ValidateCompressedTextureFormat(a[8]); break;
+    default: break;
+    }
     const auto pointer = [](const std::uint32_t offset) {
         return reinterpret_cast<void*>(static_cast<std::uintptr_t>(offset));
     };
@@ -116,8 +123,16 @@ std::uint32_t AngleFrame::InvokeGles3Scalar(
     case 71: glResumeTransformFeedback(); break;
     case 72: glSamplerParameterf(a[0], a[1], f(a[2])); break;
     case 74: glSamplerParameteri(a[0], a[1], i(a[2])); break;
-    case 77: glTexStorage2D(a[0], i(a[1]), a[2], i(a[3]), i(a[4])); break;
-    case 78: glTexStorage3D(a[0], i(a[1]), a[2], i(a[3]), i(a[4]), i(a[5])); break;
+    case 77:
+        if (const auto& available = TextureCapabilities().available_formats;
+            std::find(available.begin(), available.end(), static_cast<std::int32_t>(a[2])) != available.end())
+            ValidateCompressedTextureFormat(a[2]);
+        glTexStorage2D(a[0], i(a[1]), a[2], i(a[3]), i(a[4])); break;
+    case 78:
+        if (const auto& available = TextureCapabilities().available_formats;
+            std::find(available.begin(), available.end(), static_cast<std::int32_t>(a[2])) != available.end())
+            ValidateCompressedTextureFormat(a[2]);
+        glTexStorage3D(a[0], i(a[1]), a[2], i(a[3]), i(a[4]), i(a[5])); break;
     case 81: glUniform1ui(i(a[0]), a[1]); break;
     case 83: glUniform2ui(i(a[0]), a[1], a[2]); break;
     case 85: glUniform3ui(i(a[0]), a[1], a[2], a[3]); break;
@@ -219,6 +234,10 @@ std::uint32_t AngleFrame::GetUniformBlockIndex(const std::uint32_t program,
 std::vector<std::int64_t> AngleFrame::GetGles3Integer64(
     const std::uint16_t id, const std::span<const std::uint32_t> a,
     const std::size_t count) {
+    if (id == 42U && (a[0] == 0x86A2U || a[0] == 0x86A3U)) {
+        const auto values = GetIntegers(a[0], count);
+        return {values.begin(), values.end()};
+    }
     std::vector<GLint64> values(count);
     switch (id) {
     case 38: glGetBufferParameteri64v(a[0], a[1], values.data()); break;
@@ -235,12 +254,14 @@ void AngleFrame::InvokeGles3Bytes(const std::uint16_t id,
                                   const std::span<const std::byte> bytes) {
     switch (id) {
     case 13:
+        ValidateCompressedTextureFormat(a[2]);
         glCompressedTexImage3D(a[0], static_cast<GLint>(a[1]), a[2],
             static_cast<GLsizei>(a[3]), static_cast<GLsizei>(a[4]),
             static_cast<GLsizei>(a[5]), static_cast<GLint>(a[6]),
             static_cast<GLsizei>(a[7]), bytes.data());
         break;
     case 14:
+        ValidateCompressedTextureFormat(a[8]);
         glCompressedTexSubImage3D(a[0], static_cast<GLint>(a[1]),
             static_cast<GLint>(a[2]), static_cast<GLint>(a[3]),
             static_cast<GLint>(a[4]), static_cast<GLsizei>(a[5]),

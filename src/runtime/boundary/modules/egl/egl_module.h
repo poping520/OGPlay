@@ -73,6 +73,7 @@ private:
         std::unique_ptr<gles::AngleFrame> frame;
         std::uint32_t share_group{};
         bool viewport_initialized{};
+        bool capabilities_reported{};
         GuestGlContext guest_state;
         std::unique_ptr<detail::AndroidBoundaryGles1State> gles1_state;
         detail::AndroidBoundaryGles1DrawState gles1_draw;

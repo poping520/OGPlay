@@ -531,7 +531,7 @@ std::uint32_t EglModule::ExecuteExport(const A32CallFrame& call) {
             if (!native_display_) native_display_ = gles::EglDisplayResources::Create(graphics.backend);
             const auto share_native = args[2] == 0U ? 0U : contexts_.at(args[2]).frame->NativeContext();
             state.frame = std::make_unique<gles::AngleFrame>(gles::AngleFrame::CreateContext(
-                native_display_, static_cast<int>(version == 1U ? 2U : version), share_native, ColorFormat(args[1])));
+                native_display_, static_cast<int>(version == 1U ? 2U : version), share_native, ColorFormat(args[1]), graphics.compressed_texture_family));
         } catch (const gles::EglLifecycleError& error) {
             threads_[tid].error = error.NativeError(); return 0U;
         }
@@ -596,6 +596,10 @@ std::uint32_t EglModule::ExecuteExport(const A32CallFrame& call) {
                     threads_[tid].error = error.NativeError(); return 0U;
                 } catch (const gles::GlesApiError& error) {
                     threads_[tid].error = error.Code() == 0x0505U ? 0x3003U : kEglBadMatch; return 0U;
+                }
+                if (!target.capabilities_reported) {
+                    LogCompressedTextureCapabilities(*target.frame, graphics.logger);
+                    target.capabilities_reported = true;
                 }
                 if (!target.viewport_initialized) {
                     const auto& surface = surfaces_.at(args[1]);

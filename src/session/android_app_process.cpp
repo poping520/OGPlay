@@ -6,6 +6,7 @@
 #include <unordered_map>
 #include <utility>
 
+#include "ogplay/core/logger.h"
 #include "ogplay/runtime/bionic/bionic_profile.h"
 #include "ogplay/runtime/debug/stall_diagnostics.h"
 #include "ogplay/runtime/dexvm/vm_monitors.h"
@@ -84,6 +85,20 @@ std::string_view WaitStateName(const runtime::dexvm::VmThreadWaitState state) {
 
 }  // namespace
 
+gles::CompressedTextureFamily ResolveManifestCompressedTextureFamily(
+    const loader::AndroidManifestFacts& manifest) {
+    using Family = gles::CompressedTextureFamily;
+    auto selected = Family::all;
+    for (const auto& extension : manifest.supported_gl_textures) {
+        if (extension == "GL_OES_compressed_ETC1_RGB8_texture") continue;
+        const auto family = extension == "GL_AMD_compressed_ATC_texture" ? Family::atc :
+            extension == "GL_IMG_texture_compression_pvrtc" ? Family::pvrtc : Family::all;
+        if (family == Family::all || (selected != Family::all && selected != family)) return Family::all;
+        selected = family;
+    }
+    return selected;
+}
+
 class AndroidAppProcess::Impl final {
 public:
     explicit Impl(AndroidAppProcessRequest request)
@@ -134,6 +149,20 @@ public:
         const auto android_id = request.platform.android_id;
         const auto strict_webview_errors =
             request.platform.strict_webview_errors;
+        request.boundary_options.compressed_texture_family =
+            ResolveManifestCompressedTextureFamily(manifest);
+        if (request.logger != nullptr) {
+            std::string declarations;
+            for (const auto& extension : manifest.supported_gl_textures) {
+                if (!declarations.empty()) declarations.push_back(' ');
+                declarations += extension;
+            }
+            const auto family = request.boundary_options.compressed_texture_family;
+            request.logger->Write(core::LogLevel::info, "session.app_process", "compressed texture policy", {},
+                {{"family", std::string(gles::CompressedTextureFamilyName(family))},
+                 {"source", family != gles::CompressedTextureFamily::all ? "manifest" : "default"},
+                 {"declared_extensions", declarations}}, {core::RateLimitMode::none});
+        }
         request.boundary_options.logger = request.logger;
         if (!request.sound_resource_loader && context != nullptr) {
             const auto android_context = context;

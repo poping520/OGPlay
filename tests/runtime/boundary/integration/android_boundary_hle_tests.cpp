@@ -59,7 +59,8 @@ public:
         const ogplay::runtime::BionicDynamicLinkHooks dynamic_link = {},
         const bool allow_single_stage_texcoord_fallback = true,
         ogplay::runtime::AndroidLooperHooks loopers = {},
-        const bool async_readback = false)
+        const bool async_readback = false,
+        const ogplay::gles::CompressedTextureFamily texture_family = ogplay::gles::CompressedTextureFamily::all)
         : bus(memory), cpu(bus), boundary(memory,
               {kNativeRenderer,
                ogplay::gles::AngleDevice::hardware}, 4, 3,
@@ -88,7 +89,8 @@ public:
                                ->push_back(callback);
                        }
                    }}, .loopers = std::move(loopers),
-               .async_present_readback = async_readback}) {
+               .async_present_readback = async_readback,
+               .compressed_texture_family = texture_family}) {
         memory.Map({stack, memory.PageSize()},
                    ogplay::memory::PageProtection::read |
                        ogplay::memory::PageProtection::write);
@@ -7437,4 +7439,121 @@ TEST_CASE("BND53 EGL registry exposes RGB565 storage consistently and preserves 
     CHECK(f.Call("libEGL.so","eglGetCurrentSurface",{0x3059})==surface);
     REQUIRE(f.Call("libEGL.so","eglMakeCurrent",{1,0,0,0})==1U);
     REQUIRE(f.Call("libEGL.so","eglDestroyContext",{1,ctx})==1U);
+}
+
+TEST_CASE("BND54 texture family avoids conflicting consumer priorities") {
+    if (!ogplay::gles::IsNativeAngleEglAvailable()) return;
+    using ogplay::gles::CompressedTextureFamily;
+    for (const auto family : {CompressedTextureFamily::all, CompressedTextureFamily::atc}) {
+        BoundaryFixture f(1, nullptr, {}, true, {}, false, family);
+        REQUIRE(f.Call("libEGL.so", "eglInitialize", {1}) == 1U);
+        const auto context = AuditContext(f, 2), surface = AuditSurface(f);
+        AuditBind(f, context, surface);
+        const auto pointer = AuditGl(f, "glGetString", {0x1F03});
+        const ogplay::memory::GuestAddress address{pointer};
+        std::string extensions(f.memory.CStringLength(address, 4096, 1), '\0');
+        f.memory.Read(address, std::as_writable_bytes(std::span(extensions)), 1);
+        const bool atc = extensions.find("GL_AMD_compressed_ATC_texture") != extensions.npos;
+        const bool pvrtc = extensions.find("GL_IMG_texture_compression_pvrtc") != extensions.npos;
+        // A consumer whose file and resource selectors have opposite vendor priorities.
+        const auto file_family = atc ? 4U : pvrtc ? 2U : 8U;
+        const auto resource_family = pvrtc ? 2U : atc ? 4U : 8U;
+        if (family == CompressedTextureFamily::all) CHECK(file_family != resource_family);
+        else { CHECK(file_family == resource_family); CHECK(file_family == 4U); }
+        REQUIRE(f.Call("libEGL.so", "eglMakeCurrent", {1, 0, 0, 0}) == 1U);
+        REQUIRE(f.Call("libEGL.so", "eglDestroyContext", {1, context}) == 1U);
+        REQUIRE(f.Call("libEGL.so", "eglDestroySurface", {1, surface}) == 1U);
+    }
+}
+
+TEST_CASE("BND54 texture family queries uploads and context lifetimes agree") {
+    if (!ogplay::gles::IsNativeAngleEglAvailable()) return;
+    using ogplay::gles::CompressedTextureFamily;
+    for (const auto family : {CompressedTextureFamily::atc, CompressedTextureFamily::pvrtc}) {
+        BoundaryFixture f(1, nullptr, {}, true, {}, false, family);
+        REQUIRE(f.Call("libEGL.so", "eglInitialize", {1}) == 1U);
+        const auto surface = AuditSurface(f);
+        const auto read_string = [&](std::uint32_t pointer) {
+            const ogplay::memory::GuestAddress address{pointer};
+            std::string value(f.memory.CStringLength(address, 4096, 1), '\0');
+            f.memory.Read(address, std::as_writable_bytes(std::span(value)), 1);
+            return value;
+        };
+        std::uint32_t previous{};
+        for (const auto version : {1U, 2U, 3U, 3U}) {
+            const auto context = AuditContext(f, version, version == 3U ? previous : 0U);
+            AuditBind(f, context, surface);
+            const auto gl = [&](std::string_view library, std::string_view name,
+                                std::initializer_list<std::uint32_t> arguments = {}) {
+                const auto entry = f.boundary.Symbols().Lookup(library, name); REQUIRE(entry);
+                return BoundaryCallAddress(f, entry->Value(), {arguments.begin(), arguments.size()});
+            };
+            for (const auto library : {"libGLESv1_CM.so", "libGLESv2.so"}) {
+                CAPTURE(version); CAPTURE(library);
+                const auto extensions = read_string(gl(library, "glGetString", {0x1F03}));
+                CHECK((extensions.find("GL_AMD_compressed_ATC_texture") != extensions.npos) == (family == CompressedTextureFamily::atc));
+                CHECK((extensions.find("GL_IMG_texture_compression_pvrtc") != extensions.npos) == (family == CompressedTextureFamily::pvrtc));
+                CHECK(extensions.find("GL_OES_compressed_ETC1_RGB8_texture") != extensions.npos);
+                if (std::string_view(library) == "libGLESv2.so")
+                    CHECK(f.boundary.ManagedGlString(0x1F03) == extensions);
+                gl(library, "glGetIntegerv", {0x86A2, f.output.Value()});
+                const auto count = f.bus.Read32(f.output, 1); REQUIRE(count > 0U); REQUIRE(count < 128U);
+                const auto output = f.output.Add(64), sentinel = output.Add(count * 4U);
+                f.bus.Write32(sentinel, 0xdeadbeef, 1);
+                gl(library, "glGetIntegerv", {0x86A3, output.Value()});
+                std::vector<std::uint32_t> formats;
+                for (std::uint32_t i = 0; i < count; ++i) formats.push_back(f.bus.Read32(output.Add(i * 4U), 1));
+                CHECK(f.bus.Read32(sentinel, 1) == 0xdeadbeef);
+                CHECK(std::count(formats.begin(), formats.end(), 0x8d64U) == 1);
+                for (const auto format : {0x8c92U, 0x8c93U, 0x87eeU})
+                    CHECK((std::count(formats.begin(), formats.end(), format) == 1) == (family == CompressedTextureFamily::atc));
+                for (const auto format : {0x8c00U, 0x8c01U, 0x8c02U, 0x8c03U})
+                    CHECK((std::count(formats.begin(), formats.end(), format) == 1) == (family == CompressedTextureFamily::pvrtc));
+                gl(library, "glGetFloatv", {0x86A3, output.Value()});
+                for (std::uint32_t i = 0; i < count; ++i)
+                    CHECK(std::bit_cast<float>(f.bus.Read32(output.Add(i * 4U), 1)) == static_cast<float>(formats[i]));
+                gl(library, "glGetBooleanv", {0x86A3, output.Value()});
+                for (std::uint32_t i = 0; i < count; ++i) CHECK(f.bus.Read8(output.Add(i), 1) == 1U);
+                CHECK(gl(library, "glGetError") == 0U);
+                if (version == 3U && std::string_view(library) == "libGLESv2.so") {
+                    gl(library, "glGetInteger64v", {0x86A3, output.Value()});
+                    for (std::uint32_t i = 0; i < count; ++i) CHECK(f.bus.Read64(output.Add(i * 8U), 1) == formats[i]);
+                    gl(library, "glGetIntegerv", {0x821D, f.output.Value()});
+                    const auto extension_count = f.bus.Read32(f.output, 1);
+                    std::string indexed;
+                    for (std::uint32_t i = 0; i < extension_count; ++i) {
+                        indexed += read_string(gl(library, "glGetStringi", {0x1F03, i})); indexed.push_back(' ');
+                    }
+                    CHECK(indexed == extensions);
+                    const auto hidden = family == CompressedTextureFamily::atc ? 0x8c02U : 0x8c92U;
+                    gl(library, "glCompressedTexImage3D", {0x806F, 0, hidden, 4, 4, 1, 0, 32, output.Value()});
+                    CHECK(gl(library, "glGetError") == 0x0500U);
+                    gl(library, "glTexStorage2D", {0x0DE1, 1, hidden, 4, 4});
+                    CHECK(gl(library, "glGetError") == 0x0500U);
+                    gl(library, "glGenBuffers", {1, f.output.Value()});
+                    gl(library, "glBindBuffer", {0x88EC, f.bus.Read32(f.output, 1)});
+                    gl(library, "glBufferData", {0x88EC, 32, 0, 0x88E4});
+                    gl(library, "glCompressedTexImage2D", {0x0DE1, 0, hidden, 4, 4, 0, 32, 0});
+                    CHECK(gl(library, "glGetError") == 0x0500U);
+                    gl(library, "glBindBuffer", {0x88EC, 0});
+                }
+                gl(library, "glGenTextures", {1, f.output.Value()});
+                gl(library, "glBindTexture", {0x0DE1, f.bus.Read32(f.output, 1)});
+                const auto bytes = f.output.Add(1024);
+                const std::array<std::byte, 32> data{}; f.memory.Write(bytes, data, 1);
+                const auto visible = family == CompressedTextureFamily::atc ? 0x8c92U : 0x8c02U;
+                const auto hidden = family == CompressedTextureFamily::atc ? 0x8c02U : 0x8c92U;
+                gl(library, "glCompressedTexImage2D", {0x0DE1, 0, visible, 8, 8, 0, 32, bytes.Value()});
+                CHECK(gl(library, "glGetError") == 0U);
+                gl(library, "glCompressedTexImage2D", {0x0DE1, 0, hidden, 8, 8, 0, 32, bytes.Value()});
+                CHECK(gl(library, "glGetError") == 0x0500U);
+            }
+            REQUIRE(f.Call("libEGL.so", "eglMakeCurrent", {1, 0, 0, 0}) == 1U);
+            if (previous != 0U) REQUIRE(f.Call("libEGL.so", "eglDestroyContext", {1, previous}) == 1U);
+            previous = version >= 2U ? context : 0U;
+            if (version == 1U) REQUIRE(f.Call("libEGL.so", "eglDestroyContext", {1, context}) == 1U);
+        }
+        REQUIRE(f.Call("libEGL.so", "eglDestroyContext", {1, previous}) == 1U);
+        REQUIRE(f.Call("libEGL.so", "eglDestroySurface", {1, surface}) == 1U);
+    }
 }

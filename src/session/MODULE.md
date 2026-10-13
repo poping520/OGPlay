@@ -271,3 +271,7 @@ DVM-218/236、ADR-0095/0115：进程 Stop 显式区分 host shutdown、guest exi
 Java/native 进程退出事实发布后不再调用 guest 生命周期或 JNI 清理；原生
 exit/exit_group 的真实退出码与展开规则保持。Stop 失败仍 join、flush、detach、关闭 surface；
 取消不冒充卸载，native finalization 失败仍报告。
+
+AndroidAppProcess 在 native 创建前由封存 Manifest 的 supports-gl-texture 决定默认厂商
+压缩族：明确的单一已支持 ATC/PVRTC 声明（可伴 ETC1）收窄发布，无/未知/多厂商声明
+保持 all。记录声明及策略来源，Profile 不提供纹理格式覆盖，不按名称猜资源。

@@ -1030,3 +1030,49 @@ TEST_CASE("DVM-223 Manifest retains launch modes and rejects invalid values") {
     activity.launch_mode = 4U;
     CHECK_THROWS(static_cast<void>(ogplay::loader::ParseAndroidBinaryManifest(StartupManifest(std::nullopt, {activity}))));
 }
+
+namespace {
+std::vector<std::byte> TextureManifest(
+    const std::vector<std::string>& declarations, const bool utf8,
+    const bool nested = false, const std::optional<std::vector<Attribute>>& override_names = {}) {
+    std::vector<std::string> strings{"manifest", "application", "package", "versionCode", "name",
+        "supports-gl-texture", "http://schemas.android.com/apk/res/android", "org.example.game"};
+    strings.insert(strings.end(), declarations.begin(), declarations.end());
+    std::vector<std::byte> bytes;
+    Append16(bytes, 0x0003); Append16(bytes, 8); Append32(bytes, 0);
+    Append(bytes, StringPool(strings, utf8));
+    Append(bytes, StartElement(0, {{2, 7, 0x03, 7}, {3, 0xffffffffU, 0x10, 1, 6}}));
+    if (nested) Append(bytes, StartElement(1, {}));
+    for (std::uint32_t index = 0; index < declarations.size(); ++index) {
+        const auto attributes = override_names.value_or(
+            std::vector<Attribute>{{4, 8U + index, 0x03, 8U + index, 6}});
+        Append(bytes, StartElement(5, attributes)); Append(bytes, EndElement(5));
+    }
+    if (!nested) Append(bytes, StartElement(1, {}));
+    Append(bytes, EndElement(1)); Append(bytes, EndElement(0));
+    Set32(bytes, 4, static_cast<std::uint32_t>(bytes.size()));
+    return bytes;
+}
+}
+
+TEST_CASE("binary Manifest preserves top-level supports-gl-texture declarations") {
+    const std::vector<std::string> declarations{"GL_AMD_compressed_ATC_texture", "GL_UNKNOWN_format",
+        "GL_IMG_texture_compression_pvrtc", "GL_AMD_compressed_ATC_texture"};
+    for (const bool utf8 : {false, true}) {
+        const auto facts = ogplay::loader::ParseAndroidBinaryManifest(TextureManifest(declarations, utf8));
+        CHECK(facts.supported_gl_textures == std::vector<std::string>(declarations.begin(), declarations.begin() + 3));
+        CHECK(ogplay::loader::ParseAndroidBinaryManifest(TextureManifest(declarations, utf8, true)).supported_gl_textures.empty());
+        CHECK(ogplay::loader::ParseAndroidBinaryManifest(TextureManifest({}, utf8)).supported_gl_textures.empty());
+    }
+}
+
+TEST_CASE("binary Manifest rejects malformed supports-gl-texture names") {
+    const std::vector<std::string> declarations{""};
+    for (const auto& attributes : {std::vector<Attribute>{},
+        std::vector<Attribute>{{4, 8, 0x03, 8, 6}},
+        std::vector<Attribute>{{4, 8, 0x03, 8, 0xffffffffU}},
+        std::vector<Attribute>{{4, 0xffffffffU, 0x10, 7, 6}}}) {
+        CHECK_THROWS_AS(static_cast<void>(ogplay::loader::ParseAndroidBinaryManifest(
+            TextureManifest(declarations, true, false, attributes))), std::runtime_error);
+    }
+}

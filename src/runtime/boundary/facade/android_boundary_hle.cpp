@@ -123,6 +123,8 @@ public:
                             options.open_sles_callbacks),
           libc_override_module_(call_services_),
           libdl_override_module_(call_services_, options.dynamic_link) {
+        graphics_context_.compressed_texture_family = options.compressed_texture_family;
+        graphics_context_.logger = options.logger;
         detail::BindAndroidBoundaryGles1Core(
             gles1_dispatch_, gles1_state_, address_space_, layout_.factor,
             [this](const std::string_view operation) -> gles::AngleFrame& {
@@ -163,12 +165,12 @@ public:
                 case 0x1F03U: {
                     auto result = std::string{
                         "GL_OES_texture_cube_map "
-                        "GL_OES_compressed_ETC1_RGB8_texture "
-                        "GL_IMG_texture_compression_pvrtc "
                         "GL_OES_matrix_palette "
                         "GL_OES_framebuffer_object "
-                        "GL_OES_rgb8_rgba8 "
-                        "GL_AMD_compressed_ATC_texture "};
+                        "GL_OES_rgb8_rgba8 "};
+                    for (const auto extension : RequireFrame("glGetString").TextureCapabilities().extensions) {
+                        result.append(extension); result.push_back(' ');
+                    }
                     const auto extensions = GuestGlesExtensions(RequireFrame("glGetString"));
                     if (std::ranges::find(extensions, "GL_OES_mapbuffer") != extensions.end())
                         result += "GL_OES_mapbuffer ";
@@ -244,7 +246,9 @@ public:
                 "Android boundary already has a current ANGLE frame");
         }
         angle_frame_.emplace(gles::AngleFrame::CreatePbuffer(
-            backend_, layout_.render_width, layout_.render_height));
+            backend_, layout_.render_width, layout_.render_height, 2, 0,
+            graphics_context_.compressed_texture_family));
+        LogCompressedTextureCapabilities(*angle_frame_, graphics_context_.logger);
         gl_owner_ = std::this_thread::get_id();
         InitializeGuestGlDefaults();
         managed_surface_ = true;
@@ -272,7 +276,15 @@ public:
         return managed_surface_ && angle_frame_.has_value();
     }
     [[nodiscard]] std::string ManagedGlString(const std::uint32_t parameter) {
-        return RequireFrame("managed glGetString").GetString(parameter);
+        auto& frame = RequireFrame("managed glGetString");
+        if (parameter == 0x1F03U) {
+            std::string value;
+            for (const auto extension : GuestGlesExtensions(frame)) {
+                value.append(extension); value.push_back(' ');
+            }
+            return value;
+        }
+        return frame.GetString(parameter);
     }
     [[nodiscard]] std::string ManagedEglString(const std::uint32_t parameter) {
         return egl_module_.QueryStringValue(parameter);

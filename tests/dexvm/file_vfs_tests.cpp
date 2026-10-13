@@ -2432,6 +2432,85 @@ TEST_CASE("MediaPlayer FD lease survives close and path replacement") {
     }));
 }
 
+TEST_CASE("MediaPlayer resolves a JNI-built FileDescriptor through its guest VFS descriptor") {
+    FileVm vm;
+    vm.vfs.CreateDirectory("/sdcard");
+    const auto fixture_path = std::filesystem::path{OGPLAY_SOURCE_DIR} /
+                              "tests/fixtures/audio/short-vorbis.ogg";
+    std::ifstream fixture(fixture_path, std::ios::binary);
+    REQUIRE(fixture.good());
+    const std::vector<char> chars{std::istreambuf_iterator<char>(fixture), {}};
+    // Like an APK asset: payload at a non-zero offset inside a larger file.
+    std::vector<std::byte> pack(13U, std::byte{0x5a});
+    for (const auto value : chars) pack.push_back(static_cast<std::byte>(value));
+    const auto payload = static_cast<std::int64_t>(chars.size());
+    pack.insert(pack.end(), 7U, std::byte{0x5a});
+    vm.vfs.PutFile("/sdcard/pack.bin", pack, true);
+    ogplay::audio::EncodedMusicMixer music;
+    vm.context->encoded_music = &music;
+    VmThreadRuntime threads(vm.interpreter);
+    vm.context->threads = &threads;
+
+    // JNI idiom: NewObject(FileDescriptor) then SetIntField("descriptor").
+    const auto jni_fd = [&](const std::int32_t value) {
+        const auto fd = vm.interpreter.NewIntrinsicInstance("Ljava/io/FileDescriptor;");
+        vm.CallOn(fd, "<init>", "()V");
+        vm.CallOn(fd, "setInt$", "(I)V", {VmValue::Int(value)});
+        return fd;
+    };
+    const auto new_player = [&] {
+        const auto player = vm.interpreter.NewIntrinsicInstance("Landroid/media/MediaPlayer;");
+        vm.CallOn(player, "<init>", "()V");
+        return player;
+    };
+    const auto set_source = [&](VmObjectRef player, VmObjectRef fd, std::int64_t offset,
+                                std::int64_t length) {
+        return vm.CallOnOutcome(player, "setDataSource", "(Ljava/io/FileDescriptor;JJ)V",
+            {VmValue::Ref(fd), VmValue::Long(offset), VmValue::Long(length)});
+    };
+    const auto exception_class = [&](const VmCallOutcome& outcome) {
+        REQUIRE(outcome.exception.IsValid());
+        return vm.linker.Class(vm.model.ObjectClass(outcome.exception)).descriptor;
+    };
+
+    const auto native = vm.vfs.Open("/sdcard/pack.bin", {.read = true});
+    const auto fd = jni_fd(native);
+    const auto player = new_player();
+    const auto roots = vm.interpreter.ProtectReferences(std::array{fd, player});
+    REQUIRE_FALSE(set_source(player, fd, 13, payload).exception.IsValid());
+    const auto& source = vm.context->media_players.at(player.Value()).source;
+    CHECK(source.name == "/proc/self/fd/" + std::to_string(native));
+    CHECK(source.offset == 13U);
+    CHECK(source.length == static_cast<std::uint64_t>(payload));
+    CHECK(source.lease != 0U);
+    // The lease is a dup: closing and replacing the file keeps the window.
+    vm.vfs.Close(native);
+    vm.vfs.RemoveFile("/sdcard/pack.bin");
+    vm.CallOn(player, "prepare", "()V");
+    vm.CallOn(player, "start", "()V");
+    std::vector<std::int16_t> pcm(512U * 2U);
+    std::vector<std::int64_t> accumulator(pcm.size());
+    music.MixIntoAccumulator(accumulator, 48000U);
+    ogplay::audio::SaturateStereoPcm16(accumulator, pcm);
+    CHECK(std::ranges::any_of(pcm, [](const std::int16_t sample) { return sample != 0; }));
+
+    // MediaPlayerService clips length to the file and rejects bad windows.
+    vm.vfs.PutFile("/sdcard/pack.bin", pack, true);
+    const auto again = vm.vfs.Open("/sdcard/pack.bin", {.read = true});
+    const auto clipped = new_player();
+    const auto clip_roots = vm.interpreter.ProtectReferences(std::array{clipped});
+    REQUIRE_FALSE(set_source(clipped, jni_fd(again), 13, 0x7ffffffffffffffLL).exception.IsValid());
+    CHECK(vm.context->media_players.at(clipped.Value()).source.length == pack.size() - 13U);
+    CHECK(exception_class(set_source(new_player(), jni_fd(again),
+        static_cast<std::int64_t>(pack.size()), 1)) == "Ljava/io/IOException;");
+    CHECK(exception_class(set_source(new_player(), jni_fd(-1), 0, 1)) == "Ljava/io/IOException;");
+    vm.vfs.Close(again);
+    CHECK(exception_class(set_source(new_player(), jni_fd(again), 0, 1)) == "Ljava/io/IOException;");
+    const auto directory = vm.vfs.OpenDirectory("/sdcard");
+    CHECK(exception_class(set_source(new_player(), jni_fd(directory), 0, 1)) == "Ljava/io/IOException;");
+    vm.vfs.Close(directory);
+}
+
 TEST_CASE("AssetManager list returns sorted unique direct children") {
     FileVm vm;
     for (const auto& name : {

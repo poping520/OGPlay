@@ -13,6 +13,7 @@
 #include <unordered_map>
 
 #include "ogplay/gles/egl_lifecycle.h"
+#include "ogplay/gles/compressed_texture_capabilities.h"
 
 namespace ogplay::gles {
 
@@ -65,16 +66,19 @@ public:
     void BindEglImage(std::uint32_t target, std::uintptr_t image, bool renderbuffer);
     static AngleFrame CreateContext(std::shared_ptr<EglDisplayResources> display,
                                    int client_version, EglHandle share_context = 0,
-                                   bool rgb = false);
+                                   bool rgb = false,
+                                   CompressedTextureFamily family = CompressedTextureFamily::all);
     static AngleFrame CreateContext(std::shared_ptr<EglDisplayResources> display,
-                                   int client_version, EglHandle share_context, EglColorFormat format);
+                                   int client_version, EglHandle share_context, EglColorFormat format,
+                                   CompressedTextureFamily family = CompressedTextureFamily::all);
     void BindSurfaces(std::shared_ptr<EglSurfaceResources> draw,
                       std::shared_ptr<EglSurfaceResources> read);
     static AngleFrame CreatePbuffer(AngleBackend backend,
                                     std::uint32_t width,
                                     std::uint32_t height,
                                     int client_version = 2,
-                                    EglHandle share_context = 0);
+                                    EglHandle share_context = 0,
+                                    CompressedTextureFamily family = CompressedTextureFamily::all);
 
     ~AngleFrame();
     AngleFrame(const AngleFrame&) = delete;
@@ -292,6 +296,7 @@ public:
                                   std::uint32_t depth_fail,
                                   std::uint32_t depth_pass);
     void Flush();
+    [[nodiscard]] const CompressedTextureCapabilities& TextureCapabilities();
     [[nodiscard]] std::vector<std::int32_t> CompressedTextureFormats();
     [[nodiscard]] std::vector<std::int32_t> GetIntegers(
         std::uint32_t parameter, std::size_t count);
@@ -376,7 +381,9 @@ public:
 
 private:
     AngleFrame(std::unique_ptr<EglApi> api, EglLifecycle lifecycle,
-               std::uint32_t width, std::uint32_t height) noexcept;
+               std::uint32_t width, std::uint32_t height,
+               CompressedTextureFamily family) noexcept;
+    void ValidateCompressedTextureFormat(std::uint32_t format);
     void RequireNoError(const char* operation) const;
     void BindPackedDefault(EglHandle draw_image, EglHandle read_image, EglHandle draw_depth, EglHandle read_depth);
     std::uint32_t ResolveFramebuffer(std::uint32_t target, std::uint32_t guest, bool create);
@@ -385,6 +392,8 @@ private:
 
     std::unique_ptr<EglApi> api_;
     EglLifecycle lifecycle_;
+    CompressedTextureFamily texture_family_;
+    std::optional<CompressedTextureCapabilities> texture_capabilities_;
     std::uint32_t width_{};
     std::uint32_t height_{};
     std::uint64_t clear_count_{};

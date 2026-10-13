@@ -13,6 +13,7 @@
 #include "ogplay/cpu/cpu.h"
 #include "ogplay/core/gpu_state.h"
 #include "ogplay/gles/angle_backend.h"
+#include "ogplay/gles/compressed_texture_capabilities.h"
 #include "ogplay/gles/gles_dispatch.h"
 #include "ogplay/runtime/bionic/bionic_profile.h"
 #include "ogplay/runtime/boundary/opensles_callback.h"
@@ -122,6 +123,7 @@ struct AndroidBoundaryOptions final {
     OpenSlesCallbackSink open_sles_callbacks{};
     AndroidLooperHooks loopers{};
     bool async_present_readback{};
+    gles::CompressedTextureFamily compressed_texture_family{gles::CompressedTextureFamily::all};
 };
 
 struct FrameReadbackFilter final {

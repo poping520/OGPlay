@@ -90,25 +90,28 @@ AngleFrame AngleFrame::CreatePbuffer(const AngleBackend backend,
                                      const std::uint32_t width,
                                      const std::uint32_t height,
                                      const int client_version,
-                                     const EglHandle share_context) {
+                                     const EglHandle share_context,
+                                     const CompressedTextureFamily family) {
     auto api = CreateNativeAngleEglApi();
     auto lifecycle = EglLifecycle::CreatePbuffer(
         *api, backend, width, height, client_version, share_context);
-    return AngleFrame(std::move(api), std::move(lifecycle), width, height);
+    return AngleFrame(std::move(api), std::move(lifecycle), width, height, family);
 }
 
 AngleFrame AngleFrame::CreateContext(std::shared_ptr<EglDisplayResources> display,
-    const int client_version, const EglHandle share_context, const bool rgb) {
+    const int client_version, const EglHandle share_context, const bool rgb,
+    const CompressedTextureFamily family) {
     auto lifecycle = EglLifecycle::CreateContext(std::move(display), client_version,
                                                  share_context, rgb);
-    return AngleFrame(nullptr, std::move(lifecycle), 0U, 0U);
+    return AngleFrame(nullptr, std::move(lifecycle), 0U, 0U, family);
 }
 
 AngleFrame AngleFrame::CreateContext(std::shared_ptr<EglDisplayResources> display,
-    const int client_version,const EglHandle share_context,const EglColorFormat format) {
+    const int client_version,const EglHandle share_context,const EglColorFormat format,
+    const CompressedTextureFamily family) {
     const bool packed=format==EglColorFormat::rgb565 && display->UsesPackedRgbFramebuffer();
     auto lifecycle=EglLifecycle::CreateContext(std::move(display),client_version,share_context,format);
-    AngleFrame result(nullptr,std::move(lifecycle),0,0);result.packed_default_=packed;return result;
+    AngleFrame result(nullptr,std::move(lifecycle),0,0,family);result.packed_default_=packed;return result;
 }
 
 void AngleFrame::BindSurfaces(std::shared_ptr<EglSurfaceResources> draw,
@@ -138,9 +141,10 @@ void AngleFrame::BindSurfaces(std::shared_ptr<EglSurfaceResources> draw,
 
 AngleFrame::AngleFrame(std::unique_ptr<EglApi> api, EglLifecycle lifecycle,
                        const std::uint32_t width,
-                       const std::uint32_t height) noexcept
+                       const std::uint32_t height,
+                       const CompressedTextureFamily family) noexcept
     : api_(std::move(api)), lifecycle_(std::move(lifecycle)),
-      width_(width), height_(height) {}
+      texture_family_(family), width_(width), height_(height) {}
 
 AngleFrame::~AngleFrame() = default;
 AngleFrame::AngleFrame(AngleFrame&&) noexcept = default;
@@ -818,6 +822,7 @@ void AngleFrame::CompressedTextureImage2D(
     const std::int32_t height, const std::int32_t border,
     const std::span<const std::byte> data) {
 #if OGPLAY_HAS_ANGLE
+    ValidateCompressedTextureFormat(internal_format);
     if (IsAtcFormat(internal_format)) {
         if (width < 0 || height < 0 || level < 0 || border != 0)
             throw GlesApiError("ATC image dimensions", GL_INVALID_VALUE);
@@ -941,6 +946,7 @@ void AngleFrame::CompressedTextureSubImage2D(
     const std::int32_t width, const std::int32_t height,
     const std::uint32_t format, const std::span<const std::byte> data) {
 #if OGPLAY_HAS_ANGLE
+    ValidateCompressedTextureFormat(format);
     if (IsAtcFormat(format))
         throw GlesApiError("ATC compressed sub-image", GL_INVALID_OPERATION);
     constexpr std::uint32_t kPvrtcRgb4 = 0x8c00U;

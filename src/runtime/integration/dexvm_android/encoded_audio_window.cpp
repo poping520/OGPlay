@@ -2,6 +2,8 @@
 
 #include <algorithm>
 #include <limits>
+#include <optional>
+#include <string>
 #include <stdexcept>
 
 #include "ogplay/audio/encoded_audio.h"
@@ -172,6 +174,37 @@ std::uint64_t CaptureEncodedAudioWindow(DexVmAndroidContext& context,
     context.encoded_audio_leases[lease] = std::move(data);
     source.lease = lease;
     return lease;
+}
+
+std::optional<std::string> CaptureDescriptorAudioWindow(
+    DexVmAndroidContext& context, const std::int32_t descriptor,
+    const std::uint64_t offset, const std::uint64_t length,
+    audio::EncodedAudioSource& source) {
+    if (context.vfs == nullptr) return "guest file system is unavailable";
+    try {
+        const auto info = context.vfs->DescriptorInfo(descriptor);
+        if (info.is_directory || info.is_character_device)
+            return "descriptor is not a regular file";
+        // MediaPlayerService::setDataSource(fd): offset error, then clip.
+        if (offset >= info.size) return "offset is beyond the end of the file";
+        const auto window = std::min(length, info.size - offset);
+        if (window > audio::kMaximumEncodedAudioBytes)
+            return "descriptor window exceeds the encoded media budget";
+        auto lease = context.vfs->CaptureReadLease(descriptor, offset, window);
+        source = {};
+        source.kind = audio::EncodedAudioSource::Kind::vfs_path;
+        source.name = "/proc/self/fd/" + std::to_string(descriptor);
+        source.offset = offset;
+        source.length = window;
+        source.revision = info.generation;
+        const auto handle = context.next_encoded_audio_lease++;
+        context.encoded_audio_leases[handle] =
+            std::make_shared<LeaseAudioSource>(std::move(lease));
+        source.lease = handle;
+        return std::nullopt;
+    } catch (const runtime::VfsError& error) {
+        return error.what();
+    }
 }
 
 }  // namespace ogplay::runtime

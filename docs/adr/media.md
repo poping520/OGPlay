@@ -591,3 +591,30 @@ FFmpeg 内部队列仍 ≤64 帧，另有一张 pending，两者像素 backing �
 降低未来帧的 RGBA 存储与无效转换成本，允许主帧拉取暂时为空、随后交付后台结果。
 供给不足或压力下仍可能跳帧；不承诺完整影音同步、任意片源/分辨率实时性能。
 媒体主时钟改造与跨平台/title gate 留待后续，不新增 Android 系统媒体服务或游戏分支。
+
+<a id="adr-0128"></a>
+
+## ADR-0128 · 压缩纹理能力快照与 Manifest 声明
+
+- 状态：Accepted
+- 日期：2026-10-13
+- 实施：[BND-54](../tasks/boundary/BND-54.md)
+
+ANGLE 原生能力与已有软件解码共同形成实际支持集合。每个 AngleFrame 在首次合法
+current 查询时冻结压缩纹理快照；扩展、格式数组、数量、查询长度和上传校验使用同一
+发布集合。普通与 PBO、2D/3D 上传不得接受策略隐藏的可选格式；拒绝保留 GLES 错误。
+GLES1/2/3 与 Java 查询复用这一压缩能力事实，不透传宿主全部扩展。
+
+进程创建前接收强类型 all/atc/pvrtc 策略，创建及重建 Context 时继承，运行中不修改。
+all 保持现有行为；atc/pvrtc 只保留指定厂商格式族、ETC1 与当前 GLES3 核心 ETC2/EAC。
+策略只能收窄实际能力，不能伪造设备身份或开启未实现能力。native/software/available/
+published 格式以结构化日志可查询，不因没有纹理上传就伪造错误或替代 guest 判断。
+
+通用 APK 启动保留 Manifest 顶层 supports-gl-texture 的 android:name 原始声明。
+仅当声明明确落在一个已支持厂商族（ATC 或 PVRTC，可伴随 ETC1）
+才收窄发布；无声明、多个厂商族或未知声明保持 all，不把发行过滤元数据冒充完整 GPU
+能力协商。选择及声明来源在 native 初始化前冻结并记录，上层依据 APK 事实向 boundary
+注入策略，下层不读取 Manifest/Profile、不识别游戏、引擎或包名。
+
+Profile 不提供压缩纹理格式覆盖。无声明或无法明确选择时保持默认支持边界；
+不修改 APK/SO，不以 guest PC 补丁修正引擎，不全局撤掉 PVRTC，也不按文件名猜测。

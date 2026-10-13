@@ -31,7 +31,8 @@
 #include "ogplay/hal/audio.h"
 #include "ogplay/hal/clock.h"
 #include "ogplay/hal/window_input.h"
-#include "ogplay/input/touch_mapper.h"
+#include "ogplay/input/control_mapper.h"
+#include "ogplay/session/control_config.h"
 #include "ogplay/loader/apk.h"
 #include "ogplay/runtime/bionic/bionic_profile.h"
 #include "ogplay/runtime/integration/android_guest_call_session.h"
@@ -242,6 +243,7 @@ int RunApkCommand(const int argc, const char* const argv[],
     std::optional<std::filesystem::path> sandbox_directory;
     std::optional<std::string> installation_id;
     bool ephemeral_sandbox{};
+    std::optional<session::ControlLayer> user_controls;
     for (int index = 3; index < argc; ++index) {
         const std::string_view option{argv[index]};
         if (option == "--profiles-dir" && index + 1 < argc) {
@@ -356,6 +358,11 @@ int RunApkCommand(const int argc, const char* const argv[],
             installation_id = argv[++index];
         } else if (option == "--preflight") {
             preflight = true;
+        } else if (option == "--input-config" && index + 1 < argc) {
+            if (user_controls.has_value()) {
+                throw std::invalid_argument("run-apk accepts --input-config only once");
+            }
+            user_controls = session::LoadControlOverride(std::filesystem::path{argv[++index]});
         } else if (option == "--survey-gaps" && index + 1 < argc) {
             if (survey_gaps_output.has_value()) {
                 throw std::invalid_argument(
@@ -415,6 +422,16 @@ int RunApkCommand(const int argc, const char* const argv[],
     const auto& profile = selected_profile != nullptr
                               ? *selected_profile
                               : generic_profile;
+    // Input configuration errors (unknown template, unplaced or oversized zones) stop the
+    // launch before the guest starts.
+    const auto control_config = session::BuildControlConfig(
+        profile.input.has_value() ? &*profile.input : nullptr,
+        user_controls.has_value() ? &*user_controls : nullptr,
+        bundled_data.input_templates_directory);
+    if (profile.runtime.surface.width != 0 && profile.runtime.surface.height != 0) {
+        input::ControlMapper probe(control_config);
+        probe.SetSurface(profile.runtime.surface.width, profile.runtime.surface.height);
+    }
     bool has_obb_mount{};
     bool requires_obb{};
     if (profile.data.has_value()) {
@@ -560,7 +577,8 @@ int RunApkCommand(const int argc, const char* const argv[],
             window->SetTitle(FrameRateTitle(base_title, *fps));
         }
     };
-    input::TouchMapper touch_mapper;
+    input::ControlMapper control_mapper(control_config);
+    if (guest_width != 0 && guest_height != 0) control_mapper.SetSurface(guest_width, guest_height);
     McpPointerDispatcher mcp_pointer;
     {
         std::shared_ptr<runtime::DexVmAndroidContext> dex_context;
@@ -905,6 +923,7 @@ int RunApkCommand(const int argc, const char* const argv[],
                 window->PresentRgba8(frame->rgba8, frame->width, frame->height);
                 guest_width = frame->width;
                 guest_height = frame->height;
+                control_mapper.SetSurface(guest_width, guest_height);
                 ++presented;
                 did_present = true;
                 update_frame_rate();
@@ -924,7 +943,7 @@ int RunApkCommand(const int argc, const char* const argv[],
                 if (event.type == Type::quit) {
                     quit = true;
                 } else if (event.type == Type::input_reset || event.type == Type::app_background) {
-                    touch_mapper.Reset();
+                    control_mapper.Reset();
                     mcp_pointer.Cancel(mcp_inputs.get());
                     if (!failure) driver.cancel_input();
                     if (event.type == Type::app_background) {
@@ -946,14 +965,10 @@ int RunApkCommand(const int argc, const char* const argv[],
                         host_suspended_session = false;
                         publish_session();
                     }
-                } else if (mcp_pointer.SuppressWindowEvent(event.type)) {
-                    continue;
                 } else if (mcp_lifecycle == agent::McpLifecycleState::suspended || failure) {
                     continue;
-                } else if (const auto touch = touch_mapper.Map(event, window->State(), guest_width, guest_height)) {
-                    driver.queue_input(session::MapAndroidTouch(*touch));
-                } else if (event.type == Type::key) {
-                    if (const auto input = session::MapAndroidInput(event)) driver.queue_input(*input);
+                } else {
+                    control_mapper.Accept(event, window->State());
                 }
             }
             bool frame_presented = false;
@@ -967,7 +982,7 @@ int RunApkCommand(const int argc, const char* const argv[],
                         } else if (!failure && command->type == Command::Type::step) {
                             permitted_steps += command->frames;
                         } else if (!failure && command->type == Command::Type::suspend) {
-                            touch_mapper.Reset();
+                            control_mapper.Reset();
                             mcp_pointer.Cancel(mcp_inputs.get());
                             if (mcp_lifecycle == agent::McpLifecycleState::running)
                                 static_cast<void>(driver.suspend());
@@ -998,9 +1013,9 @@ int RunApkCommand(const int argc, const char* const argv[],
                     std::this_thread::sleep_for(std::chrono::milliseconds(1));
                     continue;
                 }
-                if (const auto input = mcp_pointer.TakeNext(
-                        mcp_inputs.get(), touch_mapper.Active()); input.has_value()) {
-                    driver.queue_input(*input);
+                mcp_pointer.Pump(mcp_inputs.get(), control_mapper);
+                for (const auto& output : control_mapper.Flush()) {
+                    if (const auto input = session::MapControlOutput(output)) driver.queue_input(*input);
                 }
                 active_frame = driver.state().frame + 1U;
                 static_cast<void>(driver.step());

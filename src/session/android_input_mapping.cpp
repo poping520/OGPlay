@@ -152,6 +152,25 @@ runtime::AndroidBoundaryInput MapAndroidTouch(const input::TouchSnapshot& touch)
     return runtime::NormalizeAndroidInput(std::move(result));
 }
 
+runtime::AndroidBoundaryInput MapAndroidKey(const input::AndroidKeyOutput& key) {
+    return runtime::AndroidBoundaryInput{
+        .type = runtime::AndroidBoundaryInputType::key,
+        .code = key.key_code,
+        .pressed = key.pressed,
+        .device_id = static_cast<std::int32_t>(key.device_id),
+        .meta_state = AndroidMetaState(key.modifiers),
+    };
+}
+
+std::optional<runtime::AndroidBoundaryInput> MapControlOutput(const input::ControlOutput& output) {
+    switch (output.kind) {
+    case input::ControlOutput::Kind::touch: return MapAndroidTouch(output.touch);
+    case input::ControlOutput::Kind::passthrough_key: return MapAndroidInput(output.passthrough);
+    case input::ControlOutput::Kind::android_key: return MapAndroidKey(output.android_key);
+    }
+    return std::nullopt;
+}
+
 std::optional<runtime::AndroidBoundaryInput> AndroidInputTimeline::Stamp(
     runtime::AndroidBoundaryInput input, std::int64_t now_ns) {
     if (now_ns < last_time_ns_) throw std::invalid_argument("input Clock moved backwards");

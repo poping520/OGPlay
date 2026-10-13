@@ -2,6 +2,7 @@
 
 #include <optional>
 #include <map>
+#include "ogplay/input/control_mapper.h"
 #include "ogplay/input/touch_mapper.h"
 
 #include "ogplay/hal/window_input.h"
@@ -13,6 +14,12 @@ namespace ogplay::session {
     const hal::InputEvent& event);
 
 [[nodiscard]] runtime::AndroidBoundaryInput MapAndroidTouch(const input::TouchSnapshot& touch);
+
+[[nodiscard]] runtime::AndroidBoundaryInput MapAndroidKey(const input::AndroidKeyOutput& key);
+
+// Projects one ControlMapper output; passthrough events that carry no Android meaning yield none.
+[[nodiscard]] std::optional<runtime::AndroidBoundaryInput> MapControlOutput(
+    const input::ControlOutput& output);
 
 // Session Clock owns timestamps; host timestamps never become guest uptime.
 class AndroidInputTimeline final {

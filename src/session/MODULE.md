@@ -118,6 +118,8 @@ Dex activity 每帧在 guest 回调前泵送主 Looper，到帧尾只通过
   touch CANCEL 与 key UP，UI listener、深层 View 与 Activity 均接收完整触点快照。
   `MapAndroidTouch` 将平台无关 TouchSnapshot 转为 API19 的 DOWN/POINTER_DOWN/
   MOVE/POINTER_UP/UP/CANCEL 与 action index；坐标变换不在这里重复执行。
+  `MapAndroidKey` 把 `ControlMapper` 的 Android keycode 输出投影为 key 事件；
+  `MapControlOutput` 统一投影触摸、直通键与 keycode 三类输出。
   Activity 转换在 VM execution lock 下消费 FIFO 命令，以每实例返回栈保留调用方、
   Intent/普通内容树/焦点与待结果；旧内容 detach 后不参与 draw/input，结束时仅退役该子树。
   恢复原实例时 restart/start、结果虚派后 resume；栈/命令/结果由 session GC roots 保活。
@@ -172,8 +174,15 @@ Dex activity 每帧在 guest 回调前泵送主 Looper，到帧尾只通过
   `ResolveProfileWorkingDirectory` 为普通 Android 进程提供 `/` 默认 guest cwd，Profile
   显式数据目录仍优先；
   `FlushProfileVfsAtLifecycleBoundary` 是 pause/clean stop 共用的 `FlushAll` 适配点。
-- `ApplyProfileInput` / `ApplyProfileAudio` / `ResolveProfileSoundPoolPath`：只消费 Profile
-  的通用 input id、source/path 与资源占位符，不按标题猜测。
+- `ApplyProfileAudio` / `ResolveProfileSoundPoolPath`：只消费 Profile 的通用 source/path
+  与资源占位符，不按标题猜测。
+- `BuildControlConfig` / `LoadControlTemplate` / `LoadControlOverride`（ADR-0133）：Profile
+  `[input]`（template、zone、binding）、`data/input/templates/<id>.toml` 类型模板与用户覆盖
+  文件共用一套解码；按“内置默认 → 模板 → Profile → 用户覆盖”合并为
+  `input::ControlConfig`，用户覆盖的 template 取代 Profile 的选择。后层绑定替换同模式
+  （或 `*`）中共享输入源的前层绑定，`action = "none"` 只解除；区域按名称替换。
+  模板只声明区域名称，引用了未放置区域的绑定明确失败。模板与覆盖文件 schema 为 1、
+  不超过 200 行；用户覆盖文件独立于 GUI 的 `settings.toml`。
 - `QuirkRegistry::Load/LoadPackaged/Validate`：严格加载 `data/quirks.toml` 并交叉验证
   Profile 引用；源码模式额外验证测试文件/用例存在，发行模式保留测试引用形状验证。
 - `ProfileAssetBundle`：拥有已导入 VFS/audio 字节并拒绝非规范路径、大小写歧义、重复项

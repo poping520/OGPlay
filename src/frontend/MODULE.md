@@ -62,9 +62,15 @@
   控制请求在 worker 只排队。manual-step 必须启用 transport，且不能与 preflight 共用；无许可不得推进
   Clock、输入、frame 或 present。
 - MCP 发布唯一 lifecycle/frame/ticks/presented-frame/movie/exit/fault 快照；fault 不冒充
-  stop/success，截图只读已 present 的 RGBA8。`McpPointerDispatcher` 在 guest 主线程映射输入，
-  并与窗口鼠标/原生触摸手势互斥。输入重置时取消 session 中的按住状态，并清空
-  MCP 当前和待处理手势；后台暂停仅在对应前台通知后自动恢复，不覆盖手动暂停。
+  stop/success，截图只读已 present 的 RGBA8。`McpPointerDispatcher` 每个 guest step 把一个
+  MCP 手势阶段作为外部触点交给 `ControlMapper`，与窗口鼠标、原生触摸和绑定按键触点并存。
+  输入重置时取消 session 中的按住状态，静默清空 `ControlMapper` 并清空 MCP 当前和待处理
+  手势；后台暂停仅在对应前台通知后自动恢复，不覆盖手动暂停。
+- 操控映射（ADR-0133）：`run-apk` 在启动前用 Profile `[input]`、`--input-config <file>`
+  用户覆盖与 payload `input/templates` 构建 `ControlConfig`，并按 Profile surface 校验区域；
+  配置错误在 guest 启动前明确失败。窗口事件全部交给 `ControlMapper`，每个 guest step 前
+  `Flush` 并经 `session::MapControlOutput` 入队；呈现尺寸变化时更新 surface。GUI 在实例
+  目录存在 `input.toml` 时以 `--input-config` 传入，该文件独立于 `settings.toml`。
 - pointer 按最新 guest frame 与等比内容区映射；黑边不开始手势，既有 release 必须闭合。
   窗口 FPS 使用独立 `RealtimeClock`，不改变 guest Clock。
 - 音频只消费已解析的 resid/APK/VFS 字节区间；解码归 audio，补充有界，退出停止设备。

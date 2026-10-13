@@ -29,6 +29,7 @@
 - 门禁：boundary 架构违规与 `architecture.dexvm_intrinsic_layout` 媒体清单缺项未闭合
   （[DVM-190](../tasks/dexvm/DVM-190.md)）；全 BootDex 类链接因 MediaPlayer overlay/类数断言
   失败，未整体复验。
+- `--ephemeral-sandbox` 下 Dungeon Hunter 约 106 帧抛 `Invalid path: /sdcard`；持久沙盒不复现。
 - 跨平台：近期修复多只在 macOS 实跑；[VFS-07](../tasks/vfs/VFS-07.md) macOS 待验证；
   Dead Trigger 第 0 帧停滞修复 Windows/Linux 未实跑。
 
@@ -40,6 +41,8 @@
 - 图形：实际 context-loss、多窗口/透明 Activity 未验收；GLES1 vertex-array 首错未重达。
 - 音视频（[DVM-189](../tasks/dexvm/DVM-189.md)）：raw-resource 完整链、手动音频写入、custom
   AVIO 真实解码、媒体主时钟与影音同步未验收。
+- PC 操控映射（[Input 设计](../design/input/README.md)）：P0 的 ControlMapper、配置合并与 run-apk/MCP/GUI
+  接线已完成（[INP-1..3](../tasks/input/README.md)）；提示叠加层、游戏键位数据与实机按键验收待 INP-4。
 - WebView 仅基础配置与回调（[DVM-187](../tasks/dexvm/DVM-187.md)/[188](../tasks/dexvm/DVM-188.md)），
   页面、JavaScript、TextToSpeech 未实现。
 - 不支持 NDK Looper callback 与非 pipe fd；TLS-03、完整 mmap/lock、系统 CA 未验收。

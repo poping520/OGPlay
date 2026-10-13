@@ -405,14 +405,11 @@ void RequireUnique(const std::vector<Value>& values, const std::string_view fiel
 }
 
 [[nodiscard]] ProfileInput DecodeInput(const detail::TomlValue& value) {
-    const auto& table = AsTable(value, "input");
-    ExactKeys(table, "input", {"profile"}, {"profile"});
-    ProfileInput result{
-        AsString(Require(table, "profile", "input.profile"), "input.profile")};
-    if (!core::IsValidLowercaseIdentifier(result.profile)) {
-        throw TitleProfileError("input.profile is not a valid template id");
+    try {
+        return detail::DecodeControlLayer(AsTable(value, "input"), "input");
+    } catch (const input::ControlConfigError& error) {
+        throw TitleProfileError(error.what());
     }
-    return result;
 }
 
 [[nodiscard]] std::size_t LineCount(const std::string_view text) {

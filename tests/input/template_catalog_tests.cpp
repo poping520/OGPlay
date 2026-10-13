@@ -3,7 +3,7 @@
 
 #include <doctest/doctest.h>
 
-#include "ogplay/session/profile_input.h"
+#include "ogplay/input/template_catalog.h"
 
 namespace {
 
@@ -60,25 +60,6 @@ TEST_CASE("input template catalog applies immutable code-defined mappers") {
     REQUIRE(pointer.size() == 2);
     CHECK(pointer[0].type == ogplay::hal::InputEventType::pointer_motion);
     CHECK(pointer[1].type == ogplay::hal::InputEventType::pointer_button);
-}
-
-TEST_CASE("Profile input selects an exact template or the explicit default") {
-    const auto catalog = Catalog();
-    const auto events = Events();
-    ogplay::session::TitleProfile profile;
-
-    CHECK(ogplay::session::ApplyProfileInput(profile, catalog, events).size() ==
-          events.size());
-    profile.input = ogplay::session::ProfileInput{"pointer_only"};
-    CHECK(ogplay::session::ApplyProfileInput(profile, catalog, events).size() ==
-          2);
-
-    profile.input = ogplay::session::ProfileInput{"missing"};
-    CHECK_THROWS_WITH_AS(
-        static_cast<void>(
-            ogplay::session::ApplyProfileInput(profile, catalog, events)),
-        "input template is not registered: missing",
-        ogplay::input::InputTemplateError);
 }
 
 TEST_CASE("input template catalog rejects invalid ambiguous definitions") {

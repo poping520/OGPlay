@@ -192,6 +192,7 @@ add_library(ogplay_input
     src/input/mouse_touch_mapper.cpp
     src/input/touch_mapper.cpp
     src/input/template_catalog.cpp
+    src/input/control_mapper.cpp
 )
 add_library(OGPlay::Input ALIAS ogplay_input)
 target_link_libraries(ogplay_input PUBLIC OGPlay::Hal OGPlay::Core)
@@ -650,6 +651,7 @@ add_library(ogplay_session
     src/session/session.cpp
     src/session/title_profile.cpp
     src/session/title_profile_toml.cpp
+    src/session/control_config.cpp
 )
 add_library(OGPlay::Session ALIAS ogplay_session)
 target_link_libraries(ogplay_session PUBLIC
@@ -760,6 +762,11 @@ add_custom_target(ogplay_stage_data ALL
         "${CMAKE_CURRENT_SOURCE_DIR}/data/profiles"
         "$<TARGET_FILE_DIR:ogplay>/data/profiles"
     COMMAND ${CMAKE_COMMAND} -E remove_directory
+        "$<TARGET_FILE_DIR:ogplay>/data/input"
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        "${CMAKE_CURRENT_SOURCE_DIR}/data/input"
+        "$<TARGET_FILE_DIR:ogplay>/data/input"
+    COMMAND ${CMAKE_COMMAND} -E remove_directory
         "$<TARGET_FILE_DIR:ogplay>/data/bionic"
     COMMAND ${CMAKE_COMMAND} -E remove_directory
         "$<TARGET_FILE_DIR:ogplay>/data/android"
@@ -821,6 +828,8 @@ install(DIRECTORY data/profiles
     DESTINATION ${CMAKE_INSTALL_BINDIR}/data)
 install(DIRECTORY data/android
     DESTINATION ${CMAKE_INSTALL_BINDIR}/data)
+install(DIRECTORY data/input
+    DESTINATION ${CMAKE_INSTALL_BINDIR}/data)
 
 if(OGPLAY_BUILD_TESTS)
     include(CTest)
@@ -869,6 +878,8 @@ if(OGPLAY_BUILD_TESTS)
         tests/input/template_catalog_tests.cpp
         tests/input/mouse_touch_mapper_tests.cpp
         tests/input/touch_mapper_tests.cpp
+        tests/input/control_mapper_tests.cpp
+        tests/session/control_config_tests.cpp
         tests/memory/address_tests.cpp
         tests/memory/address_space_tests.cpp
         tests/memory/bus_tests.cpp

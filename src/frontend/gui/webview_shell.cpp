@@ -177,7 +177,7 @@ int RunGuiCommand(int argc, const char* const argv[], core::Logger& logger) {
                         if (!names.empty()) names += ", "; names += name;
                     }
                     facts["Profile quirk 列表"] = names.empty() ? "无" : names;
-                    facts["Profile 输入模板"] = profile.input ? profile.input->profile : "未指定";
+                    facts["Profile 输入模板"] = profile.input && profile.input->template_id ? *profile.input->template_id : "未指定";
                 }
             }
             return facts;

@@ -22,6 +22,7 @@
 - [APK Startup · Manifest 驱动的应用进程启动](design/apk-startup/README.md)
 - [DexVM · 有界 DEX 解释器方案设计](design/dexvm/README.md)
 - [Diagnostics · 通用停滞诊断能力设计](design/diagnostics/README.md)
+- [Input · 通用 PC 操控映射方案设计](design/input/README.md)
 - [方案：Profile 驱动的启动作用域裁剪](design/entry-scope/README.md)
 - [OGPlay 主界面 + 设置页 设计（GUI v2）](design/gui/README.md)
 - [Launcher · 主面板（游戏启动器）方案设计](design/launcher/README.md)

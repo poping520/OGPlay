@@ -1066,6 +1066,13 @@ if(OGPLAY_BUILD_TESTS)
     set_tests_properties(architecture.capabilities_monotonic PROPERTIES LABELS architecture)
 
     add_test(
+        NAME tools.capabilities_current
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/capabilities.py check
+    )
+    set_tests_properties(tools.capabilities_current PROPERTIES LABELS tools)
+
+    add_test(
         NAME architecture.platform_boundaries
         COMMAND ${CMAKE_COMMAND}
             -DROOT=${CMAKE_CURRENT_SOURCE_DIR}

@@ -10,9 +10,9 @@
 - [ADR-0031 · API 19 Unsafe 逻辑位置与原子性](#adr-0031)
 - [ADR-0032 · API 19 日期格式化数据与平台边界](#adr-0032)
 - [ADR-0033 · 集合 BootDex 所有权与弱引用边界](#adr-0033)
-- [ADR-0034 · 后续 Luni 与平台边界](#adr-0034)
-- [ADR-0035 · Cipher AES 与 guest OpenSSL](#adr-0035)
-- [ADR-0036 · Certificate 与 guest OpenSSL 验签](#adr-0036)
+- [ADR-0034 · 普通流与后续 Luni 家族的 BootDex 所有权](#adr-0034)
+- [ADR-0035 · Cipher AES 使用 BootDex Conscrypt 与 guest OpenSSL](#adr-0035)
+- [ADR-0036 · Certificate 使用 Harmony Java 与 guest OpenSSL 验签](#adr-0036)
 - [ADR-0037 · guest 生产源码与 crypto 制品来源](#adr-0037)
 - [ADR-0038 · framework 值类归 BootDex，Activity 保持窄平台边界](#adr-0038)
 - [ADR-0039 · UUID 与摘要归 BootDex，mutable native token 归普通字段](#adr-0039)
@@ -25,7 +25,18 @@
 - [ADR-0046 · Java 布局参数与 UI 布局输入分工](#adr-0046)
 - [ADR-0047 · Typeface Java 与字体后端描述符](#adr-0047)
 - [ADR-0048 · 文本外观的 Java 值对象与有界样式事实](#adr-0048)
+- [ADR-0049 · ICU 归 API 19 guest 并统一 JNI 桥](#adr-0049)
+- [ADR-0050 · guest ICU 桥按 pinned libcore 语义收紧](#adr-0050)
+- [ADR-0051 · 有界控件默认样式与 compound drawable](#adr-0051)
+- [ADR-0052 · PreferenceManager Java 入口与偏好编辑提交边界](#adr-0052)
+- [ADR-0053 · API 19 guest 环境以 Bionic `environ` 为进程权威](#adr-0053)
+- [ADR-0054 · `ANDROID_ID` 归沙盒平台身份配置所有](#adr-0054)
+- [ADR-0055 · 已迁移平台类的 JNI 与 Java 共用 VM 所有者](#adr-0055)
 - [ADR-0056 · Runtime hook 状态归 BootDex，显式退出归 guest 进程边界](#adr-0056)
+- [ADR-0057 · Builder 字段唯一所有权与 String 快照边界](#adr-0057)
+- [ADR-0058 · 地址对象归 BootDex，网络资源归受控宿主边界](#adr-0058)
+- [ADR-0059 · URI 普通值语义归固定 API 19 BootDex](#adr-0059)
+- [ADR-0060 · DexVM 堆采用 Dalvik 式目标增长而非固定预算](#adr-0060)
 - [ADR-0064 · 通用 KeyStore 使用自有 BKS Provider 与既有 guest crypto](#adr-0064)
 - [ADR-0065 · NativeCrypto 类身份归固定 BootDex，native 按类显式准入](#adr-0065)
 - [ADR-0066 · TLS 保留 AOSP API，采用自有 Provider 与进程内底座](#adr-0066)
@@ -33,6 +44,7 @@
 - [ADR-0068 · SQLite Java 栈归 BootDex，host 引擎只经唯一 VFS](#adr-0068)
 - [ADR-0075 · 原版 NativeActivity Java 与当前进程 NDK 桥](#adr-0075)
 - [ADR-0077 · BootDex 自带系统资源 ID 映射](#adr-0077)
+- [ADR-0089 · DEX 注解按唯一数据解析并分层计量](#adr-0089)
 
 <a id="adr-0017"></a>
 
@@ -637,6 +649,7 @@ enabled，由 AndroidAppProcess 注入唯一 context；没有注入时保持未�
 虚假的服务对象、发出连接成功回调或加入游戏包名/action 特判。
 
 <a id="adr-0043"></a>
+
 ## ADR-0043 · Throwable 协议归 BootDex，栈捕获归 VM
 
 日期：2026-09-08；状态：采用。Supersedes：ADR-0029 中 Throwable 消息/cause 由宿主
@@ -664,6 +677,7 @@ GC、禁用 suppression/栈、错误参数；对象流在真实 guest SHA 后端
 KitKat 原版循环 cause 打印行为与其余 Java 递归一样受 VM 栈/执行预算约束。
 
 <a id="adr-0044"></a>
+
 ## ADR-0044 · BackupManager 保留 Java 无服务路径
 
 日期：2026-09-08；状态：采用。
@@ -684,6 +698,7 @@ beginRestoreSession 返回 null。通知返回不表示备份成功；恢复失�
 或这些未选入类型的反射能力。远程备份、恢复和传输器仍未实现。
 
 <a id="adr-0045"></a>
+
 ## ADR-0045 · Bundle 与 Intent extras 归 Java 对象图
 
 日期：2026-09-08；状态：采用。Supersedes：既有 Bundle/Intent extra 宿主类型分表存储。
@@ -703,6 +718,7 @@ Parcel 保持既有进程内 typed atom 契约，Bundle 只覆盖 writeToParcel/
 ArrayMap 碰撞和活视图、Intent/Parcel GC 边、CREATOR 数组实际类型以及旧 API 回归。
 
 <a id="adr-0046"></a>
+
 ## ADR-0046 · Java 布局参数与 UI 布局输入分工
 
 日期：2026-09-08；状态：采用。Supersedes：LayoutParams 由宿主 ui_layout_params
@@ -721,6 +737,7 @@ RelativeLayout gravity 在原有 sibling/parent 解析之后整体平移子节�
 布局参数算法在 Java，真实显示行为继续归既有 UI 引擎，不迁入整个 framework View 系统。
 
 <a id="adr-0047"></a>
+
 ## ADR-0047 · Typeface Java 与字体后端描述符
 
 2026-09-08，接受，DVM-120。
@@ -735,6 +752,7 @@ intrinsic 创建没有状态的 Typeface 占位对象。其 native 边界返回�
 Java nativeUnref 验证描述符后没有分配需要释放。Canvas/Paint 的完整字体 API 不在本次范围。
 
 <a id="adr-0048"></a>
+
 ## ADR-0048 · 文本外观的 Java 值对象与有界样式事实
 
 2026-09-08，接受，DVM-121。
@@ -753,6 +771,7 @@ selector 与 stateful 渲染、完整 theme 和文本特效不得伪造成功。
 可预判的类型/特性错误在发布 UI 外观前失败，guest override 自身异常保留原语义。
 
 <a id="adr-0049"></a>
+
 ## ADR-0049 · ICU 归 API 19 guest 并统一 JNI 桥
 
 2026-09-08，接受，DVM-122。Supersedes：ADR-0033 的 host ICU 构建、嵌入数据与
@@ -772,6 +791,7 @@ DT_NEEDED；payload validator 对 manifest 事实复核。禁止恢复 `libogpla
 标准六字符集解码和受限 Locale 大小写可保留宿主有界实现，但不得依赖 host ICU。
 
 <a id="adr-0050"></a>
+
 ## ADR-0050 · guest ICU 桥按 pinned libcore 语义收紧
 
 2026-09-08，接受，DVM-122 补验。整数 formatter 继续只用 ICU 51 C ABI：按字段重复格式化并在
@@ -784,6 +804,7 @@ integer 区间识别所有 grouping symbol，禁止调用 ICU C++ `FieldPosition
 具名时区库仍不交付；任何非 GMT/UTC/custom-offset ID 明确失败，禁止静默降级为 GMT。
 
 <a id="adr-0051"></a>
+
 ## ADR-0051 · 有界控件默认样式与 compound drawable
 
 2026-09-08，接受，DVM-121。延续 ADR-0048，不引入完整 framework-res 或 View framework。
@@ -800,6 +821,7 @@ compound drawable 的 Java API 形状归 TextView；integration 解析资源并�
 完整滚动与推广网络内容不属于初始化验收，后续按真实触发补齐。
 
 <a id="adr-0052"></a>
+
 ## ADR-0052 · PreferenceManager Java 入口与偏好编辑提交边界
 
 2026-09-08，接受，DVM-121。PreferenceManager 与 SharedPreferences 三接口使用
@@ -812,6 +834,7 @@ store；getAll 返回独立快照。Editor 缓冲随 guest owner GC 清理。app
 支持，明确失败并记账；默认文件名及 Context 虚派交给 BootDex Java。
 
 <a id="adr-0053"></a>
+
 ## ADR-0053 · API 19 guest 环境以 Bionic `environ` 为进程权威
 
 2026-09-08，接受，DVM-127。
@@ -830,6 +853,7 @@ Java 形成旧快照。无参查询使用 AOSP `System$SystemEnvironment` 保持
 `BOOTCLASSPATH`、ASEC、loop 或宿主 `LD_LIBRARY_PATH`。
 
 <a id="adr-0054"></a>
+
 ## ADR-0054 · `ANDROID_ID` 归沙盒平台身份配置所有
 
 2026-09-09，接受，DVM-128。
@@ -847,6 +871,7 @@ DexVM 的共同装配事实，DexVM 只保存只读 secure 子集。当前只实
 本决定扩张。禁止用完整 framework Settings/ContentProvider 或静默占位替代该边界。
 
 <a id="adr-0055"></a>
+
 ## ADR-0055 · 已迁移平台类的 JNI 与 Java 共用 VM 所有者
 
 2026-09-09，接受，DVM-130。
@@ -861,8 +886,8 @@ JNI registry 只承担成员与身份映射，字段、服务 singleton、PCM pl
 本次不迁移无对应 VM 实现的 ViewRoot、应用兼容回调及独立 headless 契约 HLE，也不扩张
 Android 系统服务范围。定向测试通过不替代游戏 gate 或跨平台验收。
 
-
 <a id="adr-0056"></a>
+
 ## ADR-0056 · Runtime hook 状态归 BootDex，显式退出归 guest 进程边界
 
 2026-09-12，接受，DVM-150。
@@ -882,8 +907,8 @@ Runtime.exit 按原版先启动全部 hook 再 join；halt 跳过 hook。无限�
 复用既有串行 deadline 补时机制；不创建新计时源，也不让正常 runnable root 下的 worker
 自行推进时间。验证包括真实 LogManager Handler 清理、timed hook 与 Activity/Application 退出。
 
-
 <a id="adr-0057"></a>
+
 ## ADR-0057 · Builder 字段唯一所有权与 String 快照边界
 
 2026-09-12，接受，DVM-151。
@@ -901,6 +926,7 @@ Builder 的 shared 标志、detach、capacity 与 count 均由原版 Java 决定
 不得靠双写恢复影子数组。本次保留 builder 字段引用的精确 GC 强边和对象流原版序列化格式。
 
 <a id="adr-0058"></a>
+
 ## ADR-0058 · 地址对象归 BootDex，网络资源归受控宿主边界
 
 2026-09-12，接受，DVM-152。
@@ -914,6 +940,7 @@ NetworkPolicy/NetworkTransport 授权的名称查询及确定性 guest uname。�
 DNS 或网卡；未支持的 Posix、NetworkInterface ioctl 和可达性路径明确失败。
 
 <a id="adr-0059"></a>
+
 ## ADR-0059 · URI 普通值语义归固定 API 19 BootDex
 
 2026-09-12，接受，DVM-153。
@@ -924,6 +951,7 @@ URL 尚未迁移，继续执行现有有界 intrinsic；它仍使用的 ParseUri
 状态，保留到 URL 后续迁移。URI 新闭包没有 native 或宿主网络边界。
 
 <a id="adr-0060"></a>
+
 ## ADR-0060 · DexVM 堆采用 Dalvik 式目标增长而非固定预算
 
 2026-09-13，接受。Supersedes ADR-0017 中“默认 64 MiB 固定预算”和 GC-B 设计中的
@@ -940,6 +968,7 @@ DexVM 堆区分初始目标、普通增长上限与绝对安全上限。64 MiB �
 大数组豁免绕过该状态机。
 
 <a id="adr-0064"></a>
+
 ## ADR-0064 · 通用 KeyStore 使用自有 BKS Provider 与既有 guest crypto
 
 - 状态：Accepted（架构方向确认，实施尚未开始）
@@ -977,6 +1006,7 @@ KeyStore 不承担 PKIX、系统 CA 或 TLS；网络链另行验收，保持默�
 上线 TLS 的后端版本与维护策略需要独立设计，不自动继承旧版离线 crypto 的选择。
 
 <a id="adr-0065"></a>
+
 ## ADR-0065 · NativeCrypto 类身份归固定 BootDex，native 按类显式准入
 
 - 状态：Accepted
@@ -993,8 +1023,8 @@ KeyStore 不承担 PKIX、系统 CA 或 TLS；网络链另行验收，保持默�
 不引入 libjavacrypto/libssl 或据 TLS 名称表发布 TLS。字段型 native token 的资源规则在 VM
 统一装配，OGPlay 私有验签放在独立私有类，不污染原版 ABI。
 
-
 <a id="adr-0066"></a>
+
 ## ADR-0066 · TLS 保留 AOSP API，采用自有 Provider 与进程内底座
 
 - 状态：Accepted（架构方向；TLS 能力尚未实现）
@@ -1025,8 +1055,8 @@ AndroidCAStore 采用可追溯版本化 CA 包和 API19 只读视图；AndroidKe
 先交付显式/默认信任，再交付本地 TLS/HTTPS，最后受控在线；完整 PKIX、AndroidKeyStore、
 SSLEngine 与 server TLS 独立记账。本记录不把任何未实现能力提升为 complete。
 
-
 <a id="adr-0067"></a>
+
 ## ADR-0067 · 受限注解运行时由 DEX 元数据与每 VM 实现类构成
 
 - 状态：Accepted
@@ -1063,6 +1093,7 @@ Method/Constructor/参数注解、通用 Proxy 与完整反射仍明确未实现
 `Class.forName` 可见，但不作为应用可定义类型或动态 classpath。
 
 <a id="adr-0068"></a>
+
 ## ADR-0068 · SQLite Java 栈归 BootDex，host 引擎只经唯一 VFS
 
 - 状态：Accepted
@@ -1162,6 +1193,8 @@ API19 ROM 的内部资源 ID 不同。DVM-194 将受审 ID 编译进宿主，导
 
 宿主完成一次升级后，ROM 资源 ID 变化只需重建 BootDex；不需要设备在线或完整 framework-res。
 旧 BootDex 缺少映射时显式失败，需要重新生成。任意厂商类/native 改动仍须单独适配。
+
+<a id="adr-0089"></a>
 
 ## ADR-0089 · DEX 注解按唯一数据解析并分层计量
 

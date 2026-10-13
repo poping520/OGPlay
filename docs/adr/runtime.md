@@ -1191,3 +1191,24 @@ Surface 销毁先撤销绑定及旧画面，再执行 guest 回调；解码/音�
 
 支持本地来源、循环和现有 transport；不伪造解码完成或外部商店/授权。范围与证据见
 [DVM-248](../tasks/dexvm/DVM-248.md)、[DVM-249](../tasks/dexvm/DVM-249.md)。
+
+<a id="adr-0128"></a>
+
+## ADR-0128 · 同包有界 task 与 Activity 复用
+
+扩展 ADR-0104 的单任务边界：当前 APK/default affinity 下保存进程内 task 身份，
+以连续分组的 Activity 记录表示各 task 栈，task 分组按前台历史排序；末尾记录仍为唯一前台。
+单窗口、每 Activity 现有 UiTree/renderer/Surface owner、GC roots 与 FIFO 命令机制不变。
+最多 32 个 live Activity，任务 ID 为进程内正整数，不假装系统全局 AMS task ID。
+
+遵循 API19 ActivityStackSupervisor 的可观察分支：singleInstance 独占 task、其发起的
+其他组件启动离开该 task；singleTask 按真实目标类查找已有实例，清除同 task 上方实例；
+singleTop 只复用目的 task 顶部匹配实例。无匹配实例才新建，复用交付 onNewIntent 后恢复，
+不自动覆盖 Activity.getIntent，setIntent 仍由应用决定。task 前台切换只重排分组，
+finish 退役实际 owner，返回最近保留的 task/栈顶，不新建调用方。
+
+affinity 匹配限同包默认值、无复杂显式 flags/options；自定义/空 affinity 的匹配及
+跨 task/复用实例结果请求记账拒绝。普通同 task 启动不匹配 affinity；既有自定义 affinity
+窗口不被选作默认 affinity 目的 task。保留任务是游戏进程的直接调用能力，不实现多进程、系统 Recents、桌面 HOME、
+完整 ActivityManager、Binder 或 system_server。隐式 task 规则不改写 APK/Profile。
+验收及边界见 [DVM-250](../tasks/dexvm/DVM-250.md)。

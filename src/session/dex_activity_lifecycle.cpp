@@ -6,6 +6,8 @@
 
 #include <exception>
 #include <algorithm>
+#include <limits>
+#include <ranges>
 #include <cmath>
 #include <condition_variable>
 #include <mutex>
@@ -311,15 +313,17 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
         requested_window_focus_ = requested;
         auto& context = *bindings_.context;
         const bool has_focus = requested && !runtime::HasAndroidModalDialog(context);
-        if (!has_focus && state_ == LifecycleRunState::running) {
-            CancelInput();
-        }
         const auto activity = context.activity;
         if (!activity.IsValid()) Fail("window focus has no Activity owner");
         const auto owner = activity.Value();
         if (context.window_has_focus.load() == has_focus &&
             context.window_focus_activity.load() == owner) {
             return;
+        }
+
+        // Repeated modal focus synchronization must not cancel the modal's gesture.
+        if (!has_focus && state_ == LifecycleRunState::running) {
+            CancelInput();
         }
 
         // ViewRootImpl updates AttachInfo before dispatch. Keep the same
@@ -403,11 +407,14 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
                 *activity_class, linker.Class(*activity_class).instance_slots);
             context.activity = activity;
             context.activity_stack.push_back({activity});
+            if (const auto* component = loader::FindAndroidManifestActivityComponent(
+                    context.activity_components, bindings_.launcher_component_name)) {
+                context.activity_stack.back().package_affinity = !component->task_affinity ||
+                    *component->task_affinity == context.package_name;
+                context.activity_stack.back().launch_mode = component->launch_mode;
+            }
             context.activity_stack_depth.store(context.activity_stack.size());
             context.window_focus_activity.store(activity.Value());
-            // The manifest launcher opened the process's single task, so it
-            // stays the task root across later startActivity handoffs.
-            context.task_root_activity = activity.Value();
             RequireOutcome(
                 vm,
                 vm.Call(*init, std::vector<dx::VmValue>{
@@ -489,6 +496,7 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
         }
         try {
             initial_focus_pending_ = false;
+            CancelInput();
             SetWindowFocus(false);
             CallActivity("onPause", "()V", {});
             if (bindings_.flush_persistent_state) {
@@ -1040,7 +1048,7 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
             CallOnView(view, "onWindowVisibilityChanged", "(I)V", {dx::VmValue::Int(visible ? 0 : 4)});
     }
 
-    void DexActivityLifecycle::RestoreActivity() {
+    void DexActivityLifecycle::RestoreActivity(const dx::VmObjectRef new_intent) {
         auto& context = *bindings_.context;
         auto& record = context.activity_stack.back();
         context.activity = record.object;
@@ -1058,6 +1066,11 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
         SetActivityWindowVisible(record.object, true);
         if (record.focused_node && context.ui_tree.Get(*record.focused_node))
             static_cast<void>(context.ui_tree.RequestFocus(*record.focused_node, false));
+        if (new_intent.IsValid()) {
+            CallActivity("onNewIntent", "(Landroid/content/Intent;)V", {dx::VmValue::Ref(new_intent)});
+            record.intent = CallOnView(record.object, "getIntent", "()Landroid/content/Intent;", {}).ref;
+            context.current_intent = record.intent;
+        }
         DeliverActivityResults();
         StartCurrentActivity();
         SynchronizeContentView();
@@ -1085,6 +1098,9 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
                 record.content = context.content_view;
                 record.focused_node = context.ui_tree.Focused();
                 record.focused_edit_text = context.focused_edit_text;
+                record.render_view = context.gl_surface_renderer_view;
+                record.resumed = false;
+                record.stopped = record.started;
             }
             if (context.window_surface_callback.IsValid()) {
                 if (const auto error = runtime::RetireSurfaceHolderGeneration(vm, context)) Fail(*error);
@@ -1098,6 +1114,35 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
             sized_content_view_ = dx::VmObjectRef{}; sized_content_node_.reset();
             gesture_candidate_ = 0; gesture_click_eligible_ = false; gesture_touch_consumed_ = false; deep_touch_handle_ = 0;
             activity_started_ = false; activity_resumed_ = false;
+        };
+        const auto destroy_instance = [&](const dx::VmObjectRef object,
+                                          const std::int32_t result_code,
+                                          const dx::VmObjectRef result_intent) {
+            const auto found = std::find_if(context.activity_stack.begin(), context.activity_stack.end(),
+                [&](const auto& record) { return record.object == object; });
+            if (found == context.activity_stack.end()) return;
+            const auto old = *found;
+            if (old.started && !old.stopped) CallOnView(old.object, "onStop", "()V", {});
+            if (old.window_root) {
+                if (const auto error = runtime::DetachSurfaceViewSubtree(vm, context, *old.window_root)) Fail(*error);
+            }
+            StopRendererThread(old.render_view);
+            CallOnView(old.object, "onDestroy", "()V", {});
+            runtime::DismissAndroidActivityDialogs(vm, context, old.object);
+            if (old.window_root) runtime::RetireViewUiSubtree(context, *old.window_root);
+            else if (old.content.IsValid()) {
+                if (const auto node = runtime::FindViewUiNode(context, old.content.Value()))
+                    runtime::RetireViewUiSubtree(context, *node);
+            }
+            context.activity_stack.erase(found);
+            if (old.request_code >= 0 && old.caller.IsValid()) {
+                const auto caller = std::find_if(context.activity_stack.begin(), context.activity_stack.end(),
+                    [&](const auto& record) { return record.object == old.caller; });
+                if (caller != context.activity_stack.end())
+                    caller->results.push_back({old.request_code, result_code, result_intent});
+            }
+            auto finishing = object.Value();
+            context.finishing_activity.compare_exchange_strong(finishing, 0U);
         };
         std::size_t serviced{};
         while (!context.activity_commands.empty()) {
@@ -1132,31 +1177,62 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
                     found->render_view = context.gl_surface_renderer_view;
                 }
                 if (top) retire_active();
-                const auto old = *found;
-                StopRendererThread(old.render_view);
-                // Background finish destroys that instance without changing foreground identity.
-                CallOnView(old.object, "onDestroy", "()V", {});
-                runtime::DismissAndroidActivityDialogs(vm, context, old.object);
-                if (old.window_root) {
-                    runtime::RetireViewUiSubtree(context, *old.window_root);
-                } else if (old.content.IsValid()) {
-                    const auto node = runtime::FindViewUiNode(context, old.content.Value());
-                    if (node) runtime::RetireViewUiSubtree(context, *node);
-                }
-                context.activity_stack.erase(found);
-                if (old.request_code >= 0 && old.caller.IsValid()) {
-                    const auto caller = std::find_if(context.activity_stack.begin(), context.activity_stack.end(),
-                        [&](const auto& record) { return record.object == old.caller; });
-                    if (caller != context.activity_stack.end())
-                        caller->results.push_back({old.request_code, command.result_code, command.intent});
-                }
-                auto finishing = command.owner.Value();
-                context.finishing_activity.compare_exchange_strong(finishing, 0U);
+                destroy_instance(command.owner, command.result_code, command.intent);
                 refresh();
                 if (top) RestoreActivity();
                 continue;
             }
-            if (context.activity_stack.size() >= 32) Fail("Activity stack limit exceeded");
+            const auto source_mode = context.activity_stack.back().launch_mode;
+            std::int32_t task_id = context.activity_stack.back().task_id;
+            dx::VmObjectRef reuse;
+            const auto matches = [&](const auto& record) {
+                return vm.Linker().Class(vm.Model().ObjectClass(record.object)).descriptor == command.descriptor &&
+                    std::ranges::none_of(context.activity_commands, [&](const auto& pending) {
+                        return pending.kind == Command::Kind::finish && pending.owner == record.object;
+                    });
+            };
+            // All regular tasks use the package affinity in this bounded model.
+            // singleInstance tasks are never eligible affinity destinations.
+            if (command.launch_mode == 3) {
+                const auto existing = std::find_if(context.activity_stack.begin(), context.activity_stack.end(), matches);
+                if (existing != context.activity_stack.end()) { reuse = existing->object; task_id = existing->task_id; }
+                else task_id = 0;
+            } else if (command.launch_mode == 2 || source_mode == 3) {
+                const auto existing = std::find_if(context.activity_stack.rbegin(), context.activity_stack.rend(),
+                    [](const auto& record) { return record.launch_mode != 3 && record.package_affinity; });
+                task_id = existing == context.activity_stack.rend() ? 0 : existing->task_id;
+            }
+            if (command.launch_mode == 2) {
+                const auto existing = std::find_if(context.activity_stack.begin(), context.activity_stack.end(),
+                    [&](const auto& record) { return record.task_id == task_id && matches(record); });
+                if (existing != context.activity_stack.end()) reuse = existing->object;
+            } else if (command.launch_mode == 1) {
+                const auto top = std::find_if(context.activity_stack.rbegin(), context.activity_stack.rend(),
+                    [&](const auto& record) { return record.task_id == task_id; });
+                if (top != context.activity_stack.rend() && matches(*top)) reuse = top->object;
+            }
+            if (reuse.IsValid() && command.request_code >= 0) {
+                if (auto* ledger = vm.Ledger()) ledger->RecordUnimplemented("dexvm.activity_result", 0);
+                Fail("Activity result delivery to a reused instance is unsupported");
+            }
+            if (reuse == context.activity) {
+                // ActivityThread.performNewIntents temporarily pauses a resumed
+                // receiver; its original Intent remains unless guest calls setIntent.
+                if (activity_resumed_) CallActivity("onPause", "()V", {});
+                activity_resumed_ = false;
+                context.activity_stack.back().resumed = false;
+                CallActivity("onNewIntent", "(Landroid/content/Intent;)V", {dx::VmValue::Ref(command.intent)});
+                context.activity_stack.back().intent = CallOnView(context.activity, "getIntent", "()Landroid/content/Intent;", {}).ref;
+                context.current_intent = context.activity_stack.back().intent;
+                StartCurrentActivity();
+                refresh();
+                continue;
+            }
+            if (!reuse.IsValid() && context.activity_stack.size() >= 32) Fail("Activity stack limit exceeded");
+            if (task_id == 0) {
+                if (context.next_task_id == std::numeric_limits<std::int32_t>::max()) Fail("Activity task id limit exceeded");
+                task_id = context.next_task_id++;
+            }
             const bool retiring = std::ranges::any_of(context.activity_commands, [&](const auto& item) {
                 return item.kind == Command::Kind::finish && item.owner == context.activity;
             });
@@ -1197,6 +1273,33 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
                     activity_resumed_ = false;
                 }
             }
+            if (reuse.IsValid() && command.launch_mode == 2) {
+                std::vector<dx::VmObjectRef> above;
+                bool past_target = false;
+                for (const auto& record : context.activity_stack) {
+                    if (record.object == reuse) { past_target = true; continue; }
+                    if (past_target && record.task_id == task_id) above.push_back(record.object);
+                }
+                for (const auto object : std::views::reverse(above))
+                    destroy_instance(object, 0, dx::VmObjectRef{});
+            }
+            // Move the destination task as a group. Relative order within other
+            // tasks is preserved, and all live instances retain their identities.
+            const auto task_begin = std::find_if(context.activity_stack.begin(), context.activity_stack.end(),
+                [&](const auto& record) { return record.task_id == task_id; });
+            if (task_begin != context.activity_stack.end()) {
+                const auto task_end = std::find_if(task_begin, context.activity_stack.end(),
+                    [&](const auto& record) { return record.task_id != task_id; });
+                std::rotate(task_begin, task_end, context.activity_stack.end());
+            }
+            if (reuse.IsValid()) {
+                RestoreActivity(command.intent);
+                if (!retiring && source != reuse)
+                    window_handoffs_.push_back({source, reuse, source_started});
+                refresh();
+                CompleteWindowHandoffs();
+                continue;
+            }
             auto& linker = vm.Linker();
             const auto type = linker.FindClass(command.descriptor);
             if (!type) Fail("startActivity target is not in the dex: " + command.descriptor);
@@ -1207,6 +1310,12 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
             context.activity = activity; context.current_intent = command.intent;
             context.activity_stack.push_back({activity, command.intent, dx::VmObjectRef{},
                 command.request_code >= 0 ? command.owner : dx::VmObjectRef{}, command.request_code});
+            context.activity_stack.back().task_id = task_id;
+            context.activity_stack.back().launch_mode = command.launch_mode;
+            const auto task_root = std::find_if(context.activity_stack.begin(), context.activity_stack.end(),
+                [&](const auto& record) { return record.task_id == task_id; });
+            context.activity_stack.back().package_affinity = task_root->object == activity
+                ? command.package_affinity : task_root->package_affinity;
             refresh();
             context.window_focus_activity.store(activity.Value());
             RequireOutcome(vm, vm.Call(*init, std::array{dx::VmValue::Ref(activity)}), "activity <init>");
@@ -1307,9 +1416,6 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
             const auto error = runtime::AttachSurfaceViewSubtree(
                 bindings_.bridge->Vm(), context, *node);
             if (error.has_value()) Fail(*error);
-            // Subtrees outside the foreground window wait for their own
-            // visibility/layout traversal, as in API19.
-            context.surface_traversal_pending.clear();
         }
         if (content_changed || layout_changed) {
             runtime::DispatchAndroidGlobalLayout(bindings_.bridge->Vm(), context);
@@ -1782,7 +1888,7 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
         if (egl_pacer_attached_) runtime::ShutdownEglSwapPacer(*bindings_.context);
         phase("teardown.guest_callbacks");
         if (was_running && activity_started_ && !suspended_) {
-            guest([&] { SetWindowFocus(false); });
+            guest([&] { CancelInput(); SetWindowFocus(false); });
             guest([&] { CallActivity("onPause", "()V", {}); });
         }
         if (was_running) {

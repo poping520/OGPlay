@@ -55,6 +55,7 @@ std::shared_ptr<DexVmAndroidContext::GlSurfaceRuntime> GlRuntime(const Context& 
         state = std::make_shared<DexVmAndroidContext::GlSurfaceRuntime>();
         state->view = call.receiver;
         state->owner = CallAndroidMethod(call.vm, call.receiver, "getContext", "()Landroid/content/Context;").ref;
+        state->surface_available = SurfaceViewReadyForRendering(*context, call.receiver);
     }
     return state;
 }
@@ -65,7 +66,7 @@ Decl Declare_android_opengl_GLSurfaceView(const Context& context) {
     builder.ConstantInt("RENDERMODE_WHEN_DIRTY", "I", 0)
         .ConstantInt("RENDERMODE_CONTINUOUSLY", "I", 1);
     builder.Constructor("(Landroid/content/Context;)V",
-        ViewInitHandler(context));
+        SurfaceViewInitHandler(context));
     // API19 stores this preference on the View, independently of renderer
     // creation. It is a request, not evidence that an EGL context survived.
     const auto preserve_context = builder.BoundInstanceField(

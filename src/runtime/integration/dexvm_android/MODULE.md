@@ -35,9 +35,12 @@ Window/attributes/decor 按实例持有，decor 焦点由 owner 判定；Intent/
 启动/结束经 private native 提交 FIFO 命令，Intent 用原复制构造器。同包显式启动受检；隐式仅
 匹配 sealed APK 中 action/category、无 data/type、含 DEFAULT 的唯一 enabled Activity。
 零匹配 ActivityNotFoundException，多匹配/潜在 data 匹配失败。重复过滤器独立匹配、组件名去重；
-同名查询/启动取最后配置，alias 保留身份、实例化 target，launchMode 用解析时继承值。
+同名查询/启动取最后配置，alias 保留身份、实例化 target，launchMode/taskAffinity 用解析时继承值。
 无跨包 resolver/chooser/Instrumentation/完整 ActivityManager。非空 options、for-result 非零 flags、
-非前台调用、跨包结果、需复用/task 的 launchMode、后台改前台内容记账失败；非栈顶 singleTop 可新建。
+非前台调用、跨包/跨 task 结果、向复用实例请求结果、非默认 affinity 匹配、后台改前台内容记账失败。
+普通同 task 启动不匹配 affinity，不能因该元数据拒绝普通启动。
+默认 affinity 下按 standard/singleTop/singleTask/singleInstance 提交 mode 快照；task ID/root 查询
+来自 live task 分组。复用交付 onNewIntent，原 Intent 仅由应用 setIntent 改写；不实现完整 AMS。
 
 返回栈/命令/待结果为 GC roots，退出线程仅读 atomic 深度；挂起实例查自身内容，UiTree reset
 只清前台、后台保持附着及独立可见性。关闭拒绝新 launch/finish；自进程 Process.killProcess/
@@ -168,8 +171,10 @@ getChildAt/indexOfChild；无 onViewAdded/onViewRemoved、addViewInLayout/detach
 清缓存。RootScope 保活并逐项复核 binding/attachment，换内容停止旧遍历，重排≤8 轮、不收敛失败；
 动态 attach/Surface creation 先尺寸再 Surface 回调，重入延后新 Surface，缓存只记已交付尺寸。
 受管生命周期内 setContentView/addContentView/addView 新挂载子树登记 pending，于下一 owner traversal
-统一 created/changed（API19 updateWindow）；pending 内 getHolder 不视为已创建，traversal 后才按 late holder。
+统一 created/changed（API19 updateWindow）；首次启动使用相同 holder 激活/尺寸发布规则，
+只消费已遍历子树的 pending，回调中新挂载子树等待后续遍历。
 
+SurfaceView 构造时登记稳定 holder，getHolder 只返回对象、不激活 Surface。
 SurfaceHolder 按 attach/host generation 执行 created→changed→destroyed，detached 不提前收事件/
 关闭 host surface。getSurfaceFrame 为稳定 Java Rect：初始零、回调前/late holder 写真实 managed
 像素尺寸、destroyed 保留末值，旧 holder 不随新代更新；不从 View bounds 推导独立 buffer。
@@ -220,6 +225,7 @@ mapped Buffer/active/uniform-block/transform-feedback/String[] 专用编组。GL
 SHADING_LANGUAGE_VERSION，GLUtils 按四种 Bitmap.Config 编码；GLU 用 API19 数学/GL10 虚派，不入 native 目录、失败不回写。
 
 GLSurfaceView 版本/config/driver/事件/EGL wrapper 归稳定 per-View runtime，foreground 仅投影。
+EGL/renderer 初始化等待所属 holder 已激活并发布正尺寸，暂停与可见性仍独立限制绘制。
 GLThread 为真实 Java Thread，经显式 hook 接 session，不自动 prepare Looper；queueEvent 唤醒并
 保活 Runnable，在 current GL 线程、renderer 前 FIFO 执行、不依赖绘帧。requestRender/WHEN_DIRTY
 单次消费；PreserveEGLContextOnPause 默认 false、Java 字段/可覆盖方法、可先于 renderer 设置。

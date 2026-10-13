@@ -354,6 +354,7 @@ struct ComponentFixture final {
     bool single_user{};
     bool service_meta_data{};
     std::optional<std::uint32_t> launch_mode;
+    std::optional<std::string> task_affinity;
 };
 
 std::vector<std::byte> StartupManifest(
@@ -362,14 +363,15 @@ std::vector<std::byte> StartupManifest(
     const bool application_enabled = true,
     std::optional<std::uint32_t> theme = std::nullopt,
     const std::optional<std::string> application_process = std::nullopt,
-    const std::optional<std::string> application_permission = std::nullopt) {
+    const std::optional<std::string> application_permission = std::nullopt,
+    const std::optional<std::string> application_affinity = std::nullopt) {
     std::vector<std::string> strings{
         "manifest", "package", "versionCode", "application", "name",
         "enabled", "targetActivity", "activity", "activity-alias",
         "intent-filter", "action", "category", "service", "data", "theme", "exported", "org.example.game",
         "http://schemas.android.com/apk/res/android", "process", "permission",
         "stopWithTask", "isolatedProcess", "singleUser", "meta-data",
-        "launchMode", "value", "resource", "service.string", "service.bool", "service.int",
+        "launchMode", "taskAffinity", "value", "resource", "service.string", "service.bool", "service.int",
         "service.value-ref", "service.resource", "ready"};
     const auto add = [&](const std::string& value) {
         if (std::find(strings.begin(), strings.end(), value) == strings.end()) {
@@ -379,11 +381,13 @@ std::vector<std::byte> StartupManifest(
     if (application_name.has_value()) add(*application_name);
     if (application_process) add(*application_process);
     if (application_permission) add(*application_permission);
+    if (application_affinity) add(*application_affinity);
     for (const auto& component : components) {
         add(component.name);
         if (component.target.has_value()) add(*component.target);
         if (component.process) add(*component.process);
         if (component.permission) add(*component.permission);
+        if (component.task_affinity) add(*component.task_affinity);
         for (const auto& filter : component.filters) {
             for (const auto& value : filter) add(value);
         }
@@ -424,12 +428,18 @@ std::vector<std::byte> StartupManifest(
             {index("permission"), index(*application_permission), 0x03,
              index(*application_permission), android_namespace});
     }
+    if (application_affinity) {
+        application_attributes.push_back({index("taskAffinity"), index(*application_affinity), 0x03,
+                                         index(*application_affinity), android_namespace});
+    }
     Append(result, StartElement(index("application"), application_attributes));
     for (const auto& component : components) {
         std::vector<Attribute> attributes{
             {index("name"), index(component.name), 0x03,
              index(component.name), android_namespace}};
         if (component.launch_mode) attributes.push_back({index("launchMode"), 0xffffffffU, 0x10, *component.launch_mode, android_namespace});
+        if (component.task_affinity) attributes.push_back({index("taskAffinity"), index(*component.task_affinity), 0x03,
+                                                         index(*component.task_affinity), android_namespace});
         if (component.theme) attributes.push_back({index("theme"), 0xffffffffU, 0x01, *component.theme, android_namespace});
         if (!component.enabled) {
             attributes.push_back({index("enabled"), 0xffffffffU, 0x12, 0,
@@ -1029,6 +1039,27 @@ TEST_CASE("DVM-223 Manifest retains launch modes and rejects invalid values") {
     }
     activity.launch_mode = 4U;
     CHECK_THROWS(static_cast<void>(ogplay::loader::ParseAndroidBinaryManifest(StartupManifest(std::nullopt, {activity}))));
+}
+
+TEST_CASE("DVM-250 Manifest task affinity inherits application and alias snapshots") {
+    ComponentFixture activity;
+    activity.name = ".Root";
+    ComponentFixture alias;
+    alias.tag = "activity-alias"; alias.name = ".Alias"; alias.target = ".Root";
+    const auto parse = [&](std::optional<std::string> application_affinity = std::nullopt) {
+        return ogplay::loader::ParseAndroidBinaryManifest(StartupManifest(
+            std::nullopt, {activity, alias}, true, std::nullopt, std::nullopt, std::nullopt, application_affinity));
+    };
+    auto facts = parse();
+    CHECK(facts.activity_components[0].task_affinity == "org.example.game");
+    CHECK(facts.activity_components[1].task_affinity == "org.example.game");
+    facts = parse("org.example.custom");
+    CHECK(facts.activity_components[0].task_affinity == "org.example.custom");
+    CHECK(facts.activity_components[1].task_affinity == "org.example.custom");
+    activity.task_affinity = "";
+    facts = parse("org.example.custom");
+    CHECK(facts.activity_components[0].task_affinity == "");
+    CHECK(facts.activity_components[1].task_affinity == "");
 }
 
 namespace {

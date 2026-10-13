@@ -737,6 +737,41 @@ dx::IntrinsicHandler ViewNullAttributeSetInitHandler(const Context& context) {
     });
 }
 
+dx::VmObjectRef SurfaceHolderForView(dx::Interpreter& vm,
+                                   DexVmAndroidContext& context,
+                                   const dx::VmObjectRef view) {
+    auto& holder = context.surface_holders[view.Value()];
+    if (!holder.IsValid())
+        holder = vm.NewIntrinsicInstance("Landroid/view/SurfaceHolder$Impl;");
+    return holder;
+}
+
+dx::IntrinsicHandler SurfaceViewInitHandler(const Context& context,
+                                           const bool with_attributes) {
+    const auto initialize = with_attributes ? ViewNullAttributeSetInitHandler(context)
+                                            : ViewInitHandler(context);
+    return [context, initialize](dx::IntrinsicContext& call) {
+        const auto result = initialize(call);
+        // API19 SurfaceView owns its holder before attachment. Creation of the
+        // underlying Surface belongs to traversal, never to getHolder().
+        static_cast<void>(SurfaceHolderForView(call.vm, *context, call.receiver));
+        return result;
+    };
+}
+
+bool SurfaceViewReadyForRendering(const DexVmAndroidContext& context,
+                                  const dx::VmObjectRef view) {
+    const auto node = FindViewUiNode(context, view.Value());
+    const auto holder = context.surface_holders.find(view.Value());
+    if (!context.managed_host_surface_open || !node ||
+        !context.ui_tree.IsAttached(*node) || !context.ui_tree.IsVisible(*node) ||
+        holder == context.surface_holders.end() ||
+        !context.active_surface_holders.contains(holder->second.Value())) return false;
+    const auto size = context.surface_callback_sizes.find(holder->second.Value());
+    return size != context.surface_callback_sizes.end() &&
+           size->second.first > 0 && size->second.second > 0;
+}
+
 dx::IntrinsicHandler ViewSetIdHandler(const Context& context) {
     return dx::IntrinsicHandler([context](dx::IntrinsicContext& call) {
         const auto node = EnsureViewUiNode(

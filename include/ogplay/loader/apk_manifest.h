@@ -102,6 +102,9 @@ struct AndroidManifestActivityComponent final {
     std::optional<bool> exported;
     std::vector<AndroidManifestMetaData> meta_data{};
     std::uint32_t launch_mode{};
+    // Absent in synthetic inventories means the package default; binary
+    // Manifest parsing snapshots application inheritance (including empty).
+    std::optional<std::string> task_affinity;
 };
 
 [[nodiscard]] inline bool AndroidManifestActivityExported(

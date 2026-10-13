@@ -6,35 +6,37 @@ Work Unit 按所属里程碑或语义化专项存放，创建后不因完成状�
 本表定位。跨里程碑或具有独立语义的专项使用自身缩写编号，例如 DexVM 的 `DVM-N`
 和持久沙盒的 `SBX-N`。
 
-| 里程碑 | 编号范围 | 状态 | 目录 | 验收记录 |
-| --- | --- | --- | --- | --- |
-| M0 | WU-0001..0014 | 完成 | [`m0/`](m0/) | [`M0-ACCEPTANCE.md`](../state/M0-ACCEPTANCE.md) |
-| M1 | WU-0015..0040 | 完成 | [`m1/`](m1/) | [`M1-ACCEPTANCE.md`](../state/M1-ACCEPTANCE.md) |
-| M2 | WU-0041..0103 | 完成 | [`m2/`](m2/) | [`M2-ACCEPTANCE.md`](../state/M2-ACCEPTANCE.md) |
-| M3 | WU-0104..0149 | 完成 | [`m3/`](m3/) | [`M3-ACCEPTANCE.md`](../state/M3-ACCEPTANCE.md) |
-| M4 | WU-0150..0198 | 完成 | [`m4/`](m4/) | [`M4-ACCEPTANCE.md`](../state/M4-ACCEPTANCE.md) |
-| M5 | WU-0199..0327 | 能力范围已封板，待里程碑验收 | [`m5/`](m5/) | 三批拆分见 [`m5/README.md`](m5/README.md) |
-| M6 | 从 WU-0328 开始 | 下一阶段：AI 自动化测试 | [`m6/`](m6/) | 规划见 [`m6/README.md`](m6/README.md) |
-| M8 | WU-0360..0379、WU-M8-001.. | 兼容性冲刺 | [`m8/`](m8/) | 批次索引见 [`m8/README.md`](m8/README.md) |
-| M9 | DVM-1..41 | DexVM 有界解释执行；DVM-40/41 已完成，后续任务按索引推进 | [`dexvm/`](dexvm/) | 索引见 [`dexvm/README.md`](dexvm/README.md) |
+早期里程碑 M0..M4 已完成，验收记录见 [docs/state](../state/)（`M<N>-ACCEPTANCE.md`）。
+各目录的进度与在办项见其 README 或 [CURRENT](../state/CURRENT.md)。新增目录或编号前缀时
+同步更新下表的编号范围。
 
-跨里程碑的专项方案按方案编号自成目录，同样创建后不移动、不重编号：
-
-| 专项 | 编号 | 状态 | 目录 | 设计 |
-| --- | --- | --- | --- | --- |
-| 每游戏持久沙盒 | SBX-1..12 | 完成（用户级存档演示待 title 深入） | [`sandbox/`](sandbox/) | [ADR-0020](../adr/session.md#adr-0020) |
-| 主面板启动器 | GUI-1..7 | GUI-1..5 完成 | [`launcher/`](launcher/) | [设计](../design/launcher/README.md) |
-| GUI v2（WebView） | GUI-1..7 | Windows 按阶段推进 | [`gui/`](gui/README.md) | [设计](../design/gui/README.md) |
-| Layout UI | LUI-1..16 | 完成 | [`layoutui/`](layoutui/) | [设计](../design/layout-ui/README.md) |
-| 基础工具维护 | UTIL-1.. | 进行中 | [`maintenance/`](maintenance/README.md) | 跨模块纯基础设施收敛 |
-| VFS 宿主文件资源 | VFS-07 | Windows/Linux 已验证，macOS 待验证 | [`vfs/VFS-07.md`](vfs/VFS-07.md) | [ADR-0110](../adr/runtime.md#adr-0110) |
+| 目录 | 编号 | 数量 | 说明 |
+| --- | --- | --- | --- |
+| [`apk-startup/`](apk-startup/) | APS-1..9 | 9 | [APK Startup WU 任务书归档](apk-startup/README.md) |
+| [`boundary/`](boundary/) | BND-1..54 | 54 | — |
+| [`dexvm/`](dexvm/) | DVM-1..250 | 244 | [DexVM · 有界 DEX 解释执行](dexvm/README.md) |
+| [`diagnostics/`](diagnostics/) | DIAG-1..3 | 3 | — |
+| [`gui/`](gui/) | DASH-01..05、GUI-1..8 | 13 | [GUI · WebView 启动器](gui/README.md) |
+| [`launcher/`](launcher/) | GUI-1..18 | 18 | [Launcher · 主面板（游戏启动器）](launcher/README.md) |
+| [`layoutui/`](layoutui/) | LUI-1..17 | 17 | [Layout UI · 有界 Android XML UI](layoutui/README.md) |
+| [`m0/`](m0/) | WU-0001..0014 | 14 | — |
+| [`m1/`](m1/) | WU-0015..0040 | 26 | — |
+| [`m2/`](m2/) | WU-0041..0103 | 63 | — |
+| [`m3/`](m3/) | WU-0104..0149 | 46 | [M3 Work Unit](m3/README.md) |
+| [`m4/`](m4/) | WU-0150..0198 | 49 | — |
+| [`m5/`](m5/) | WU-0199..0327 | 129 | [M5 Work Unit 拆分索引](m5/README.md) |
+| [`m6/`](m6/) | WU-0328..0359 | 32 | [M6 · AI 自动化测试](m6/README.md) |
+| [`m8/`](m8/) | WU-0360..0379、WU-M8-001..011 | 31 | [M8 · 兼容性冲刺](m8/README.md) |
+| [`maintenance/`](maintenance/) | UTIL-1..3 | 3 | [基础工具维护工作单](maintenance/README.md) |
+| [`optimization/`](optimization/) | WU-GLCTX-01..05、WU-HLE-01..04、WU-PERF-01..15 | 24 | — |
+| [`sandbox/`](sandbox/) | SBX-1..15 | 15 | [沙盒 · 每游戏持久沙盒（ADR-0020）](sandbox/README.md) |
+| [`vfs/`](vfs/) | VFS-04..08 | 5 | — |
 
 ## 规则
 
 - 一个 Work Unit 在一次会话内形成一句话目标、显式依赖和机器可判定验收。
-- 新任务直接创建在当前里程碑目录，例如 M8 的下一项任务使用 `docs/tasks/m8/WU-M8-008.md`。
-- DexVM 新任务在 `docs/tasks/dexvm/` 中按 `DVM-N.md` 递增编号。
-- Layout UI 新任务在 `docs/tasks/layoutui/` 中按 `LUI-N.md` 递增编号。
+- 新任务创建在所属目录，按上表中该目录前缀的最大编号递增，例如 DexVM 使用
+  `docs/tasks/dexvm/DVM-N.md`、里程碑使用 `docs/tasks/m8/WU-M8-NNN.md`。
 - `CURRENT.md` 只保留正在进行和最近完成的少量 WU；完整历史保留在本目录、里程碑
   验收文档和 Git 中。
 - 查找任务可使用 `rg --files docs/tasks | rg 'WU-0105.md'`，不要假定 WU 位于根目录。

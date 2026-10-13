@@ -230,7 +230,7 @@ binding 查询归一化且不允许 guest 改写默认附件。存储独立于 C
 临时导入成功后才提交，失败恢复 binding/currency；探测实际 bit/量化/alpha 后才发布。
 fallback 经真实导入探测可公开 D24S8（否则 D0/S0）；Surface 拥有独立 depth/stencil
 Metal texture/EGLImage，非共享 Context 私有 FBO 导入同一内容。无 MSAA、仅 GLES1
-compatibility/GLES2，不支持 GLES3、texture binding/mipmap；见 ADR-0110。
+compatibility/GLES2，不支持 GLES3、texture binding/mipmap；见 ADR-0130。
 
 压缩纹理以 AngleFrame 首次 current 查询冻结的 CompressedTextureCapabilities 为事实：
 原生枚举与已实现软件解码形成 available，进程传入的 all/atc/pvrtc 策略只能收窄 published。

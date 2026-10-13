@@ -7,6 +7,7 @@
 - [ADR-0022 · Profile 启动作用域与 v2-only 迁移](#adr-0022)
 - [ADR-0071 · VFS backing、资源 lease 与安装实例沙盒](#adr-0071)
 - [ADR-0074 · CLI 数据输入独立于 Profile 挂载声明](#adr-0074)
+- [ADR-0086 · 跨宿主输入与 Android guest 快照](#adr-0086)
 
 <a id="adr-0020"></a>
 
@@ -174,7 +175,6 @@ guest 看不到标准路径下的原 `.obb` 文件。
 
 无 Profile 的 APK 可使用显式外部目录和标准 OBB 路径。Profile 保留特殊数据布局职责；
 本决定不为任意外部目录猜测游戏专属路径，也不扩大到多个 OBB 的 CLI 输入。
-
 
 <a id="adr-0086"></a>
 

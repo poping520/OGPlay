@@ -8,20 +8,52 @@
 - [ADR-0004 · 真线程与统一时钟从内核建立](#adr-0004)
 - [ADR-0009 · Bionic 基线改为 API 19/22/23](#adr-0009)
 - [ADR-0010 · pthread 保留 Bionic ABI并在 syscall 边界映射宿主线程](#adr-0010)
-- [ADR-0011：固定 4 KiB guest 页并分离宿主后备粒度](#adr-0011)
+- [ADR-0011 · 固定 4 KiB guest 页并分离宿主后备粒度](#adr-0011)
 - [ADR-0013 · Runtime 子模块边界](#adr-0013)
 - [ADR-0016 · 受保护的 Dynarmic 数据页表](#adr-0016)
 - [ADR-0018 · Runtime 拆出 jni_guest 与 boundary 子模块](#adr-0018)
 - [ADR-0076 · API 19 ARM32 linker 元数据视图](#adr-0076)
-
 - [ADR-0078 · Guest proc 文件的按打开映射快照](#adr-0078)
 - [ADR-0079 · 进程内 ARM guest 信号投递](#adr-0079)
+- [ADR-0080 · 进程统一拥有虚拟 CPU 查询事实](#adr-0080)
+- [ADR-0081 · 独立于硬件查询的原生 CPU 执行预算](#adr-0081)
+- [ADR-0082 · 有界协处理器支持与指令能力缺口隔离](#adr-0082)
+- [ADR-0083 · 线程 Looper 身份与有界事件轮询](#adr-0083)
+- [ADR-0084 · 当前 APK 内的显式绑定服务](#adr-0084)
+- [ADR-0085 · intrinsic GLSurfaceView 的独立渲染线程](#adr-0085)
+- [ADR-0087 · JNI 字符串正文预算与按需副本](#adr-0087)
+- [ADR-0088 · 进程级 guest 代码缓存一致性](#adr-0088)
 - [ADR-0092 · 有界 WifiLock 客户端 Java 与进程内租约](#adr-0092)
 - [ADR-0093 · WifiManager 两类锁共享租约与逐对象释放](#adr-0093)
 - [ADR-0096 · 分离 JIT 数据读取与写入页表](#adr-0096)
 - [ADR-0097 · ARM64 受保护页内的 inline exclusive](#adr-0097)
 - [ADR-0098 · A32 JIT Run 内保留累积 FPSR](#adr-0098)
 - [ADR-0101 · ARM64 exclusive 读侧版本校验](#adr-0101)
+- [ADR-0102 · NDK Bitmap 通过 Virtual SO 访问唯一像素 backing](#adr-0102)
+- [ADR-0103 · NFC 保留 Java 契约并明确报告无设备](#adr-0103)
+- [ADR-0104 · Activity 命令队列与有界进程内返回栈](#adr-0104)
+- [ADR-0105 · 无通知发布能力时支持已知空集合取消](#adr-0105)
+- [ADR-0107 · Java GL 接口与实例状态归 BootDex](#adr-0107)
+- [ADR-0108 · PrintStream 算法归 BootDex，日志只作为 System 输出目标](#adr-0108)
+- [ADR-0109 · 通知值对象独立于系统模板与发布能力](#adr-0109)
+- [ADR-0110 · 宿主文件按需打开与有界句柄保活](#adr-0110)
+- [ADR-0111 · ActivityManager 内存查询共用 guest 事实](#adr-0111)
+- [ADR-0114 · 每实例窗口与可逆图形生命周期](#adr-0114)
+- [ADR-0115 · 实例销毁与进程终止分离](#adr-0115)
+- [ADR-0117 · API 独立导出与共用 GLES buffer mapping](#adr-0117)
+- [ADR-0118 · Debug 当前进程内存统计的显式模型](#adr-0118)
+- [ADR-0119 · 封存单包已安装清单](#adr-0119)
+- [ADR-0120 · 离线逻辑网络类型与原版状态值](#adr-0120)
+- [ADR-0121 · JNI AllocObject 由 VM 分配](#adr-0121)
+- [ADR-0122 · guest 沙盒配额卷统计](#adr-0122)
+- [ADR-0123 · Java 图片协议与有界 native 解码](#adr-0123)
+- [ADR-0124 · 窗口内容容器与全部子树遍历](#adr-0124)
+- [ADR-0125 · guest Dialog 协议与受控模态投影](#adr-0125)
+- [ADR-0126 · 动态 XML 构建与窗口内容安装分离](#adr-0126)
+- [ADR-0127 · Surface 层序与共享本地视频底座](#adr-0127)
+- [ADR-0129 · VFS 随机字符设备与 HAL 安全随机源](#adr-0129)
+- [ADR-0131 · 进程级 APK Asset 身份与资源区间](#adr-0131)
+- [ADR-0132 · 同包有界 task 与 Activity 复用](#adr-0132)
 
 <a id="adr-0001"></a>
 
@@ -403,6 +435,7 @@ ABI 依据本地 AOSP 4.4.4 bionic 的 arch-arm syscall 与 asm/{signal,ucontext
 及 user_vfp 布局。定向双后端测试和 APK 首错推进分别记证据，后者不等于完整 GC/游戏验收。
 
 <a id="adr-0080"></a>
+
 ## ADR-0080：进程统一拥有虚拟 CPU 查询事实
 
 日期：2026-09-29。状态：接受。任务：[BND-42](../tasks/boundary/BND-42.md)。
@@ -434,7 +467,9 @@ CLI 与单游戏设置接入同一启动配置；全局设备预设仍保持数�
 覆盖配置范围、VFS 快照/隔离/只读/撤销、ARM 与 Thumb fallback、Java 与 GUI 传递，
 再复现同一 APK 首错。后续真实并行度、负载统计与速度控制需要独立设计及验证；
 CPU coprocessor 首错也不并入本工作单。
+
 <a id="adr-0081"></a>
+
 ## ADR-0081：独立于硬件查询的原生 CPU 执行预算
 
 日期：2026-09-29。状态：接受。任务：[BND-43](../tasks/boundary/BND-43.md)。
@@ -466,6 +501,7 @@ CLI/GUI 参数及启动日志区分查询核数、标称 MHz、并发限制和�
 扩展为完整 Android 调度器、CPU 热插拔、负载统计或 `/proc/stat`。首错复现仍与兼容验收分开。
 
 <a id="adr-0082"></a>
+
 ## ADR-0082：有界协处理器支持与指令能力缺口隔离
 
 日期：2026-09-29。状态：接受。任务：[BND-44](../tasks/boundary/BND-44.md)。
@@ -494,6 +530,7 @@ TPIDRURO 仍只读。普通 VFP/NEON 保留原解码路径，不把所有协处�
 覆盖 A32/T32、新旧屏障、条件跳过、IT 状态、TLS、协处理器操作族和精确失败副作用。
 实际游戏仅以原故障消失及下一首错作为 reached-fault 证据，不据此宣布游戏兼容。
 
+<a id="adr-0083"></a>
 
 ## ADR-0083：线程 Looper 身份与有界事件轮询
 
@@ -512,6 +549,8 @@ shutdown 与线程退出均可中断等待。callback 与非 pipe fd 暂明确�
 
 选择有界进程能力，避免引入 Binder/system_server 或复制 Android epoll/MessageQueue。
 
+<a id="adr-0084"></a>
+
 ## ADR-0084：当前 APK 内的显式绑定服务
 
 状态：接受（2026-09-29）。任务：[DVM-202](../tasks/dexvm/DVM-202.md)。
@@ -525,6 +564,8 @@ shutdown 与线程退出均可中断等待。callback 与非 pipe fd 暂明确�
 
 这是游戏进程直接调用的对象生命周期，不引入 Binder IPC、system_server、外部安装包
 或支付实现。已有本地 Binder Java 对象仅作为 onBind 的原样返回值，禁止伪造连接成功。
+
+<a id="adr-0085"></a>
 
 ## ADR-0085：intrinsic GLSurfaceView 的独立渲染线程
 
@@ -541,7 +582,11 @@ renderer、queueEvent、EGL 创建/current/swap/释放统一归属 GLThread；�
 保留 GLThread，Activity 切换/停止时先退出并完成 native detach，再释放引用。
 不替换 guest 自带 GLSurfaceView，不扩展多 View 并行渲染、EGL 暂停重建或 NDK 事件 API。
 
-## ADR-0086：VFS 随机字符设备与 HAL 安全随机源
+<a id="adr-0129"></a>
+
+## ADR-0129：VFS 随机字符设备与 HAL 安全随机源
+
+> 编号更正（2026-10-13）：原误记为 ADR-0086，与 session.md 中的 ADR-0086 重复；正文未改。
 
 状态：接受（2026-09-30）。任务：[VFS-06](../tasks/vfs/VFS-06.md)。
 
@@ -555,6 +600,8 @@ O_NONBLOCK 不改变该策略，OS 失败返回 EIO；没有额外 readiness/pol
 只读权限、字符设备类型与 rdev 明确发布；seek/pread、lease、fsync 和修改设备的操作
 分别受 VFS 契约限制。注册撤销同步等待 reader，已有描述符保留身份但读取明确失败。
 dup 复用同一打开状态与操作锁，不复制随机内容。支付服务不在本能力范围。
+
+<a id="adr-0087"></a>
 
 ## ADR-0087：JNI 字符串正文预算与按需副本
 
@@ -570,6 +617,8 @@ dup 复用同一打开状态与操作锁，不复制随机内容。支付服务�
 副本发布绑定现有 semantic access token，release 解除映射并归还预算，失败完整回滚。
 析构只清理 guest 映射，不反向访问可能先销毁的 string store。成功观察接口仅供上层
 记录长度与调用帧，观察失败不得替换运行结果，不记录正文或修改游戏数据。
+
+<a id="adr-0088"></a>
 
 ## ADR-0088：进程级 guest 代码缓存一致性
 
@@ -590,7 +639,6 @@ DynarmicExecutionContext 登记所有存活 JIT，注册、范围发布和退役
 回调不得重入映射变更或订阅管理。JIT 仍只排队失效，由执行线程更新缓存；此边界不承诺直接数据访问与并发卸载的完整
 quiescence 协议。窗口长帧等待另经显式宿主回调泵消息，保留 SDL owner 线程与 guest
 事件分派边界。
-
 
 <a id="adr-0092"></a>
 
@@ -621,7 +669,6 @@ GC sweep 和线程停止后的 bridge teardown 清理租约；不可 Cloneable �
 
 持锁只表示应用租约成立，不表示连接成功，也不改变离线查询；各宿主共用同一 Java/CPP 路径。
 WorkSource、MulticastLock、手机无线/电源服务仍为未支持范围；本能力验收不等于 title 可玩。
-
 
 <a id="adr-0093"></a>
 
@@ -948,6 +995,8 @@ availMem < HOME+(CACHED-HOME)/2，查询策略不执行进程清理。其他机�
 与配置相同的时候复用，冲突拒绝。manager 按当前进程缓存，ContextWrapper 委托 base，
 Context 字段及 GC roots 保持实例寿命。后续动态统计必须同时升级快照来源与 proc 表达。
 
+<a id="adr-0114"></a>
+
 ## ADR-0114 · 每实例窗口与可逆图形生命周期
 
 采用 AOSP API19 每 Activity 的生命周期/Window 事实与窗口可见性语义，在 OGPlay
@@ -969,6 +1018,8 @@ fallback glyph，保留已有 ASCII 像素/布局路径。stb_truetype 1.26 固�
 直接传入字体；缓存最多 128 个字形。shaping/bidi、补充平面及任意 app font 不在范围。
 字体随受审 payload 发布，缺失或校验失败明确失败，不依赖宿主安装字体，不删除字幕。
 
+<a id="adr-0115"></a>
+
 ## ADR-0115 · 实例销毁与进程终止分离
 
 Activity.finish 是实例生命周期；宿主 close/shutdown、guest exit 与运行 fault 是进程终止。
@@ -988,7 +1039,11 @@ Java 与原生退出共用显式终止事实和 finalization 准入，重复 Sto
 范围与验证见 [DVM-236](../tasks/dexvm/DVM-236.md)。不实现完整 Android 进程管理；
 不把 native fini 失败或其他开放退出首错标为成功。
 
-## ADR-0116 · 进程级 APK Asset 身份与资源区间
+<a id="adr-0131"></a>
+
+## ADR-0131 · 进程级 APK Asset 身份与资源区间
+
+> 编号更正（2026-10-13）：原误记为 ADR-0116，与 media.md 中的 ADR-0116 重复；正文未改。
 
 NDK Asset 不附属于某个 Activity。`AAssetManager_fromJava` 经显式 bridge hooks
 解析真实 JNI env/thread/object，同一 Java 对象返回同一 opaque guest manager；
@@ -1006,6 +1061,8 @@ Java openFd/raw-resource FD 使用同一 STORED 校验事实，保留现有逻�
 APK 来源在 source 存活期间不可变；不在本单改造整个 APK 装载器或实现完整 Android
 AssetManager。支持范围与分阶段验收见 [DVM-237](../tasks/dexvm/DVM-237.md)。
 
+<a id="adr-0117"></a>
+
 ## ADR-0117 · API 独立导出与共用 GLES buffer mapping
 
 GLES2 扩展以单独 subset 配方发布，不改固定 core 集合。OES 三项在 GLES1/2 各有
@@ -1019,6 +1076,8 @@ buffer 身份来自 current ANGLE Context 的绑定与 EGL share group；删除�
 guest 权限/范围查询使用原请求；明确 flush 的映射只回写已声明范围，unmap 不再次全量
 覆盖。UNSYNCHRONIZED 写映射保留合法 host flags，必要旧内容单独预取；不承诺额外性能。
 支持范围与验证见 [DVM-238](../tasks/dexvm/DVM-238.md)。
+
+<a id="adr-0118"></a>
 
 ## ADR-0118 · Debug 当前进程内存统计的显式模型
 
@@ -1041,6 +1100,8 @@ virtual-private-committed 模型：当前 VM 堆账本按 KiB 向上取整计 da
 分类时另加 provider，不悄悄改变既有模型。缺 provider/快照忙则明确失败，不返回假零。
 所有统计校验先于结果对象修改，bridge 析构撤销自有 provider；范围见 [DVM-239](../tasks/dexvm/DVM-239.md)。
 
+<a id="adr-0119"></a>
+
 ## ADR-0119 · 封存单包已安装清单
 
 OGPlay 的 guest 安装世界仅包含本次加载的 APK。session 在装配 Manifest/安装路径
@@ -1054,6 +1115,8 @@ enabled=false 的条目；meta-data 按 flags 物化。未知 flags、缺安装�
 记账并抛 Java UOE。范围不扩展到宿主应用、Launcher 库、多包/多用户/卸载残留状态；
 后续直接调用的包查询继续共用这份封存事实，不引入 PMS/Binder/system_server。
 验证与边界见 [DVM-240](../tasks/dexvm/DVM-240.md)。
+
+<a id="adr-0120"></a>
 
 ## ADR-0120 · 离线逻辑网络类型与原版状态值
 
@@ -1070,6 +1133,8 @@ ConnectivityManager 只保留有界 Java 查询和原版类型常量/范围算�
 不让调用方修改影响平台目录。在线 provider、广播/监听、完整 ConnectivityService 与
 无线网络控制另属能力；验证见 [DVM-241](../tasks/dexvm/DVM-241.md)。
 
+<a id="adr-0121"></a>
+
 ## ADR-0121 · JNI AllocObject 由 VM 分配
 
 AllocObject 绑定只传递调用线程与强类型 jclass 引用；JniEnvironment 不依赖 VM，
@@ -1084,6 +1149,8 @@ clinit 与 OOME 保留真实 Java throwable，返回 null、置 JNI pending；�
 发布失败移除 registry 映射，未发布实例无资源、无永久根，由常规 GC 回收。local/
 global/weak 生命周期沿用原机制；回调只在 guest worker/资源清理结束后撤销。
 该工作不改变 NewObject 的构造路径或扩大模拟器范围；验证见 [DVM-242](../tasks/dexvm/DVM-242.md)。
+
+<a id="adr-0122"></a>
 
 ## ADR-0122 · guest 沙盒配额卷统计
 
@@ -1104,6 +1171,8 @@ backing-name 约束；转义/辅助文件的额外限制仍可能提前失败，
 沙盒卷；其他 provider、fstatvfs 与 ARM statfs ABI 按实际触达另加，共用同一事实类型。
 支持与验证见 [DVM-243](../tasks/dexvm/DVM-243.md)。
 
+<a id="adr-0123"></a>
+
 ## ADR-0123 · Java 图片协议与有界 native 解码
 
 BitmapFactory.Options 保留 API19 源码，普通参数/资源密度/关闭协议放在有界 Java
@@ -1119,6 +1188,8 @@ BitmapFactory.Options 保留 API19 源码，普通参数/资源密度/关闭协�
 stream 保留；已知资源/格式/IO 失败 null，未支持 Options/NinePatch 记账 UOE，resource
 wrapper 特意保留 UOE，不吞成假成功/静默 null。在线/动画/完整 Skia 与其他模式另属能力。
 范围和验证见 [DVM-244](../tasks/dexvm/DVM-244.md)。
+
+<a id="adr-0124"></a>
 
 ## ADR-0124 · 窗口内容容器与全部子树遍历
 
@@ -1136,6 +1207,8 @@ renderer、Surface、焦点或查询的子树边界；这些遍历每实例窗�
 
 支持普通内容/叠层与 onContentChanged，不引入完整 Decor/主题/ActionBar、远程窗口服务
 或透明多窗口。范围与验证见 [DVM-245](../tasks/dexvm/DVM-245.md)。
+
+<a id="adr-0125"></a>
 
 ## ADR-0125 · guest Dialog 协议与受控模态投影
 
@@ -1156,6 +1229,8 @@ pause/stop 或 Surface 退役。owner 窗口隐藏则隐藏提示，实例结束
 封存目录。没有外部服务时诚实返回 null；不伪造商店、授权、购买或网络成功。
 范围与证据见 [DVM-246](../tasks/dexvm/DVM-246.md)。
 
+<a id="adr-0126"></a>
+
 ## ADR-0126 · 动态 XML 构建与窗口内容安装分离
 
 按 API19 LayoutInflater 的 root/attach/merge 协议提供有界 guest Java 客户端。
@@ -1173,6 +1248,8 @@ merge 仅允许非空 root 且 attach，返回给定 root；空 merge 合法。�
 失败只回收本次节点/绑定，不 reset 窗口、Dialog 或其他树；callback 身份/代次受检，
 已执行的 guest 回调不回滚。detached Surface 不提前收到宿主事件。解析器重载、完整
 主题、Factory/反射控件及系统服务不在本轮范围。见 [DVM-247](../tasks/dexvm/DVM-247.md)。
+
+<a id="adr-0127"></a>
 
 ## ADR-0127 · Surface 层序与共享本地视频底座
 
@@ -1192,9 +1269,11 @@ Surface 销毁先撤销绑定及旧画面，再执行 guest 回调；解码/音�
 支持本地来源、循环和现有 transport；不伪造解码完成或外部商店/授权。范围与证据见
 [DVM-248](../tasks/dexvm/DVM-248.md)、[DVM-249](../tasks/dexvm/DVM-249.md)。
 
-<a id="adr-0128"></a>
+<a id="adr-0132"></a>
 
-## ADR-0128 · 同包有界 task 与 Activity 复用
+## ADR-0132 · 同包有界 task 与 Activity 复用
+
+> 编号更正（2026-10-13）：原误记为 ADR-0128，与 media.md 中的 ADR-0128 重复；正文未改。
 
 扩展 ADR-0104 的单任务边界：当前 APK/default affinity 下保存进程内 task 身份，
 以连续分组的 Activity 记录表示各 task 栈，task 分组按前台历史排序；末尾记录仍为唯一前台。

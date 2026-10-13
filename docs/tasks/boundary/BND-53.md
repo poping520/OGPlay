@@ -44,7 +44,7 @@ Windows Release 构建及 DVM-229/UI/EGL 定向 8 项/429 断言通过，新增�
 证据 `.local/drawable-egl-complete-{build,tests}.log`、
 `.local/drawable-egl-game-20261009-190837/`；资源链与下一阻塞详见 DVM-229。
 
-macOS 后续（2026-10-09，[ADR-0110](../../adr/media.md#adr-0110)）：为 packed Surface
+macOS 后续（2026-10-09，[ADR-0130](../../adr/media.md#adr-0130)）：为 packed Surface
 增加独立 HAL depth/stencil storage/EGLImage，在 ANGLE 按 GL_DEPTH24_STENCIL8 导入；
 本机实际查询 24/8、FBO complete。颜色/深度/模板资源均归 Surface，非共享 Context
 导入同一 backing，私有 renderbuffer names 删除后附件保活。临时探测通过才公开 D24S8，

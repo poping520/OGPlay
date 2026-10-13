@@ -9,6 +9,8 @@
 - [ADR-0025 · teardown 使用单向图形退役与独立取消事实](#adr-0025)
 - [ADR-0026 · 停滞诊断使用有界部分快照与外部宿主栈](#adr-0026)
 - [ADR-0095 · 退出清理准入与 native 退出控制](#adr-0095)
+- [ADR-0112 · 不安全 native 状态隔离与析构墙钟预算](#adr-0112)
+- [ADR-0113 · 有界协作停止先于强制退役](#adr-0113)
 
 <a id="adr-0006"></a>
 
@@ -230,6 +232,8 @@ detach、monitor shutdown 并保持幂等；不跳过单个 guest 析构器或�
 有限 tick 预算沿用统一 CPU 预算，宿主阻塞仍通过既有 drain/wake 协议退出。跨平台
 实现共用状态协议，实跑证据分别记录。
 
+<a id="adr-0112"></a>
+
 ## ADR-0112 · 不安全 native 状态隔离与析构墙钟预算
 
 - 状态：Accepted
@@ -246,6 +250,8 @@ detach、monitor shutdown 并保持幂等；不跳过单个 guest 析构器或�
 超出剩余预算时在睡眠前明确失败，SVC/slice/返回也核对 deadline。
 超时不发布成功卸载；完成 host retirement 后报告清理失败，保留运行首错。
 此边界不承诺抢占任意 Java 回调或宿主库内部等待，不引入完整 Android 退出模型。
+
+<a id="adr-0113"></a>
 
 ## ADR-0113 · 有界协作停止先于强制退役
 

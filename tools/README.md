@@ -1,5 +1,20 @@
 # 开发工具
 
+## 能力账本
+
+`capabilities.py` 查询和校验 [`capabilities.toml`](../capabilities.toml)，字段与 test 入口格式见账本文件头：
+
+```text
+python3 tools/capabilities.py list dexvm --status partial   # 按 id 前缀/状态列出
+python3 tools/capabilities.py show runtime.vfs              # 查看条目（也接受 id 前缀）
+python3 tools/capabilities.py find WebView                  # 搜索 id/note/test
+python3 tools/capabilities.py check                         # 格式、note 长度与 test 入口校验
+python3 tools/capabilities.py verify runtime.ui_inflater --build-dir build/dev
+```
+
+`verify` 按条目的 test 入口运行 doctest 过滤、ctest、tools 命令或 vitest；`--dry-run` 只打印命令，
+多配置生成器用 `--config`。`check` 由 ctest `tools.capabilities_current` 执行。
+
 ## API 19 BootDex
 
 `bootdex/build_bootdex.py` 根据 [`bootdex/api19.json`](bootdex/api19.json) 从 API 19 ROM/AOSP jar

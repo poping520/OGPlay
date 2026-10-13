@@ -8,6 +8,8 @@
 - [ADR-0021 · VideoView 真实播放与 FFmpeg 运行时加载](#adr-0021)
 - [ADR-0027 · AudioTrack stream 按构造缓冲字节回压](#adr-0027)
 - [ADR-0061 · EGL 对象 registry 与每 Context 图形状态](#adr-0061)
+- [ADR-0062 · API 19 GLES3 边界与扩展发布规则](#adr-0062)
+- [ADR-0063 · EGL 对象独立所有权与受检扩展](#adr-0063)
 - [ADR-0069 · 音频 Java 协议、宿主执行与会话输出边界](#adr-0069)
 - [ADR-0070 · 有界音乐增量解码与音源分流增益](#adr-0070)
 - [ADR-0090 · EGL 配置由真实表面格式决定](#adr-0090)
@@ -15,7 +17,10 @@
 - [ADR-0094 · 本地 VideoView 的 Java 生命周期与真实视频事件](#adr-0094)
 - [ADR-0099 · 实时视频解码与音频消费隔离](#adr-0099)
 - [ADR-0100 · 实时窗口有界异步读回](#adr-0100)
+- [ADR-0106 · RGB565 真实颜色存储与默认 framebuffer 映射](#adr-0106)
 - [ADR-0116 · 原生视频图片缓存与到期转换](#adr-0116)
+- [ADR-0128 · 压缩纹理能力快照与 Manifest 声明](#adr-0128)
+- [ADR-0130 · Metal packed 表面的深度/模板存储归 Surface](#adr-0130)
 
 <a id="adr-0003"></a>
 
@@ -232,7 +237,6 @@ ES1/ES2 Context 继续只接受各自版本允许的调用和版本字符串。E
 catalog 名称完整不能替代 Native/Java 行为验收。proc-address 可为已接通的 ES3 core 返回稳定
 forwarder，并在调用时按当前线程 Context 版本路由。
 
-
 <a id="adr-0063"></a>
 
 ## ADR-0063 · EGL 对象独立所有权与受检扩展
@@ -398,7 +402,6 @@ RGBA8 增加存储成本，单次解码受搬运预算约束。ATC 禁止的子�
 未知格式仍明确失败。上游源码/头文件/许可证固定哈希，算法差异只进入适配层。
 参考向量、实际纹理采样和原 APK 首错复现分别记录；平台实跑与 title gate 独立验收。
 
-
 <a id="adr-0094"></a>
 
 ## ADR-0094 · 本地 VideoView 的 Java 生命周期与真实视频事件
@@ -528,9 +531,11 @@ mipmap 与 GLES3；其他 host native 路径按实际属性。缺少真实支持
 来源：[固定 ANGLE ImageMtl](https://github.com/google/angle/blob/c24d9971269a878a221238a5923abdcc933fa2e9/src/libANGLE/renderer/metal/ImageMtl.mm)，
 [Metal texture client buffer 扩展](https://github.com/google/angle/blob/c24d9971269a878a221238a5923abdcc933fa2e9/extensions/EGL_ANGLE_metal_texture_client_buffer.txt)。
 
-<a id="adr-0110"></a>
+<a id="adr-0130"></a>
 
-## ADR-0110 · Metal packed 表面的深度/模板存储归 Surface
+## ADR-0130 · Metal packed 表面的深度/模板存储归 Surface
+
+> 编号更正（2026-10-13）：原误记为 ADR-0110，与 runtime.md 中的 ADR-0110 重复；正文未改。
 
 - 状态：Accepted
 - 日期：2026-10-09
@@ -545,7 +550,6 @@ ANGLE EGLImage。使用 ANGLE 的 GL_DEPTH24_STENCIL8 图像导入/逻辑格式�
 Surface lifetime/current/deferred destroy 继承 EGL registry；深度/模板和颜色一起绑定，
 失败仍保留旧 binding/currency。纹理绑定、MSAA 与 packed fallback GLES3 边界不扩充，
 原生配置仍优先；不更改 ANGLE SDK 或引入系统窗口/图形服务。
-
 
 <a id="adr-0116"></a>
 

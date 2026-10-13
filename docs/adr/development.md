@@ -6,7 +6,7 @@
 - [ADR-0005 · CMake、固定依赖与 doctest](#adr-0005)
 - [ADR-0007 · 第三方源码依赖统一使用 Git submodule](#adr-0007)
 - [ADR-0008 · 里程碑出口不得依赖后续阶段能力](#adr-0008)
-- [ADR-0012：有界 CURRENT 与里程碑任务归档](#adr-0012)
+- [ADR-0012 · 有界 CURRENT 与里程碑任务归档](#adr-0012)
 - [ADR-0014 · ANGLE 预编译 SDK 交付](#adr-0014)
 - [ADR-0015 · ANGLE 维护者工作区归属](#adr-0015)
 - [ADR-0072 · Web UI 使用固定 Node 构建链，产物按生成制品交付](#adr-0072)

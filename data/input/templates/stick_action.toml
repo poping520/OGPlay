@@ -1,0 +1,35 @@
+# 虚拟摇杆加动作按钮的类型模板；区域位置由游戏 Profile 的 [[input.zone]] 填写。
+# 格式见 docs/design/input/README.md 第 8 节。
+schema = 1
+id = "stick_action"
+summary = "虚拟摇杆 + 动作按钮：WASD 移动，J 主动作，K/L 技能，P 暂停"
+zones = ["move", "primary", "skill_1", "skill_2", "pause"]
+
+[[binding]]
+source = "keys:w,a,s,d"
+action = "stick"
+zone = "move"
+
+[[binding]]
+source = "key:j"
+action = "button"
+zone = "primary"
+press = "hold"
+
+[[binding]]
+source = "key:k"
+action = "button"
+zone = "skill_1"
+press = "tap"
+
+[[binding]]
+source = "key:l"
+action = "button"
+zone = "skill_2"
+press = "tap"
+
+[[binding]]
+source = "key:p"
+action = "button"
+zone = "pause"
+press = "tap"

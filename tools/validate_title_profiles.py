@@ -228,12 +228,55 @@ def _validate_quirks(value: Any) -> None:
                             f"quirks.{quirk}")
 
 
+INPUT_ANCHORS = {"top_left", "top", "top_right", "left", "center", "right",
+                 "bottom_left", "bottom", "bottom_right"}
+INPUT_BINDING_FIELDS = {
+    "none": set(),
+    "button": {"zone", "press", "repeat_frames"},
+    "stick": {"zone", "radius", "settle_frames", "ramp_frames"},
+    "key": {"key"},
+    "mode": {"target", "switch"},
+}
+
+
+def _number(value: Any, field: str) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ProfileError(f"{field} must be a number")
+    return float(value)
+
+
 def _validate_input(value: Any) -> None:
+    # Structure only; source names, key codes and merging are checked by the C++ loader.
     table = _table(value, "input")
-    _keys(table, "input", {"profile"}, {"profile"})
-    profile = _string(table["profile"], "input.profile")
-    if ID_PATTERN.fullmatch(profile) is None:
-        raise ProfileError("input.profile must be a template id")
+    _keys(table, "input", {"template", "zone", "binding"}, set())
+    if "template" in table and ID_PATTERN.fullmatch(
+            _string(table["template"], "input.template")) is None:
+        raise ProfileError("input.template must be a template id")
+    names: set[str] = set()
+    for index, item in enumerate(_array(table.get("zone", []), "input.zone")):
+        field = f"input.zone[{index}]"
+        zone = _table(item, field)
+        _keys(zone, field, {"name", "anchor", "x", "y", "w", "h", "r"}, {"name", "anchor"})
+        name = _string(zone["name"], f"{field}.name")
+        if ID_PATTERN.fullmatch(name) is None or name in names:
+            raise ProfileError(f"{field}.name must be a unique zone id")
+        names.add(name)
+        if _string(zone["anchor"], f"{field}.anchor") not in INPUT_ANCHORS:
+            raise ProfileError(f"{field}.anchor is not a known anchor")
+        for key in ("x", "y", "w", "h", "r"):
+            if key in zone:
+                _number(zone[key], f"{field}.{key}")
+        if ("r" in zone) == ("w" in zone or "h" in zone) or ("w" in zone) != ("h" in zone):
+            raise ProfileError(f"{field} needs either r or both w and h")
+    for index, item in enumerate(_array(table.get("binding", []), "input.binding")):
+        field = f"input.binding[{index}]"
+        binding = _table(item, field)
+        action = _string(binding.get("action"), f"{field}.action")
+        if action not in INPUT_BINDING_FIELDS:
+            raise ProfileError(f"{field}.action is not a known action")
+        _keys(binding, field, {"source", "action", "mode"} | INPUT_BINDING_FIELDS[action],
+              {"source", "action"})
+        _string(binding["source"], f"{field}.source")
 
 
 def _validate_runtime(value: Any, schema: int) -> None:
@@ -496,7 +539,9 @@ enabled = ["legacy_reads"]
 range = ["0x1000", "0x2000"]
 
 [input]
-profile = "generic_touch"
+template = "stick_action"
+zone = [{{ name = "move", anchor = "bottom_left", x = 20, y = -20, r = 80 }}]
+binding = [{{ source = "key:p", action = "none" }}]
 """
 
 

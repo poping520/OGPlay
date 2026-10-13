@@ -11,6 +11,8 @@
 #include <variant>
 #include <vector>
 
+#include "ogplay/session/control_config.h"
+
 namespace ogplay::session {
 
 class QuirkRegistry;
@@ -139,9 +141,8 @@ struct ProfileQuirks final {
     std::map<std::string, ProfileValue::Table, std::less<>> parameters;
 };
 
-struct ProfileInput final {
-    std::string profile;
-};
+// [input]: template id, zones and bindings; merged by BuildControlConfig.
+using ProfileInput = ControlLayer;
 
 struct TitleProfile final {
     std::uint32_t schema{};

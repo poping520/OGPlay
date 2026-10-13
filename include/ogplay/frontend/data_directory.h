@@ -9,6 +9,7 @@ struct BundledDataPaths final {
     std::filesystem::path root;
     std::filesystem::path profiles_directory;
     std::filesystem::path quirk_registry;
+    std::filesystem::path input_templates_directory;
 };
 
 // Resolves a complete launcher/runtime payload, including the bundled API 19

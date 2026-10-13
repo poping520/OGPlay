@@ -49,7 +49,7 @@ int Usage() {
                   "[--mcp-manual-step] "
                   "[--diag] [--diag-dir <dir>] "
                   "[--diag-on-teardown-timeout <seconds>] "
-                  "[--dexvm-interpreter <switch|threaded>] "
+                  "[--dexvm-interpreter <switch|threaded>] [--input-config <file>] "
                   "[--sandbox-dir <host-dir> --installation-id <id> | --ephemeral-sandbox]\n");
     return 2;
 }

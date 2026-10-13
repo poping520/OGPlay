@@ -94,6 +94,8 @@ Dex activity 每帧在 guest 回调前泵送主 Looper，到帧尾只通过
   GLThread/native detach 完成再清空引用；onPause 的渲染握手先于该停止。
   内容同步先调用 integration 的附着子树尺寸派发，再交付 Surface creation/global layout；
   未变尺寸不重复，callback 替换内容后仅在后续同步处理新 root，不启动旧子树。
+  初次启动与动态挂载均在 holder 激活/尺寸发布后开放 intrinsic renderer 的 EGL 初始化；
+  pending 由所属遍历消费，不清除其他窗口或回调中新挂载子树的请求。
   intrinsic renderer 消费已登记 EGL chooser/factory 或默认 config/client version，
   经 Java EGL10 facade 创建并绑定 registry Context/Surface；回调传真实 GL/config wrapper，
   绘制后由该 surface swap 发布。其 EGL wrapper 持有 GC roots，Activity 切换/退出时解除
@@ -119,7 +121,12 @@ Dex activity 每帧在 guest 回调前泵送主 Looper，到帧尾只通过
   Activity 转换在 VM execution lock 下消费 FIFO 命令，以每实例返回栈保留调用方、
   Intent/普通内容树/焦点与待结果；旧内容 detach 后不参与 draw/input，结束时仅退役该子树。
   恢复原实例时 restart/start、结果虚派后 resume；栈/命令/结果由 session GC roots 保活。
-  单任务/单前台窗口、standard 和非栈顶 singleTop 新实例；每实例内容在唯一 UiTree
+  同包/default affinity/单前台窗口，task 以连续分组按前台历史排序；末尾为前台栈顶。
+  standard 新建，singleTop 仅复用目的 task 顶部，singleTask 清除匹配实例的同 task 上方实例，
+  singleInstance 独占 task，其启动的其他组件进入默认 affinity task。任务分组切换保留身份，
+  onNewIntent 在 resume 前交付，getIntent 不自动改写；finishing 实例不复用。
+  自定义 affinity 匹配/跨 task 结果/向复用实例请求结果/复杂 flags/options 失败；普通同 task
+  启动不匹配 affinity，非默认 affinity 分组不被选作默认目的 task。每实例内容在唯一 UiTree
   的窗口 root 下保持附着，后台以独立 window visibility 隐藏，Surface 按子树派发。
   稳定内容容器下的全部兄弟子树共同参与 renderer/Surface 遍历、隐藏与恢复；
   content_view/record.content 仅作首个内容 View 投影。内容代次在尺寸回调后核对，

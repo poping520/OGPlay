@@ -220,6 +220,8 @@ TEST_CASE("GLSurfaceView subclasses inherit a stable holder and initialized View
                       {VmValue::Ref(view), VmValue::Ref(context)});
         CHECK(vm.CallOn(view, "getContext", "()Landroid/content/Context;").ref == context);
         CHECK(FindViewUiNode(*vm.context, view.Value()).has_value());
+        REQUIRE(vm.context->surface_holders.contains(view.Value()));
+        CHECK(vm.context->active_surface_holders.empty());
         const auto holder = vm.CallOn(view, "getHolder", "()Landroid/view/SurfaceHolder;").ref;
         REQUIRE(holder.IsValid());
         CHECK(vm.CallOn(view, "getHolder", "()Landroid/view/SurfaceHolder;").ref == holder);
@@ -444,7 +446,7 @@ TEST_CASE("SurfaceHolder frame publishes before callbacks and retains per-holder
         CHECK(observations[0].width == static_cast<int>(vm.context->surface_width));
         CHECK(observations[0].height == static_cast<int>(vm.context->surface_height));
         CHECK(observations[1].phase == 1);
-        // A late-created holder publishes geometry without replaying callbacks.
+        // Holder identity exists before attachment; getHolder cannot activate it.
         const auto late = make_view();
         const auto late_node = FindViewUiNode(*vm.context, late.Value());
         REQUIRE(late_node.has_value());
@@ -452,6 +454,9 @@ TEST_CASE("SurfaceHolder frame publishes before callbacks and retains per-holder
         const auto late_holder = vm.CallOn(late, "getHolder", "()Landroid/view/SurfaceHolder;").ref;
         const auto late_frame = read(late_holder);
         CHECK(late_frame != frame);
+        CHECK_FALSE(vm.context->active_surface_holders.contains(late_holder.Value()));
+        shape(late_frame, 0, 0);
+        REQUIRE_FALSE(AttachSurfaceViewSubtree(vm.interpreter, *vm.context, *late_node));
         shape(late_frame, static_cast<int>(vm.context->surface_width),
                           static_cast<int>(vm.context->surface_height));
         CHECK(observations.size() == 2);
@@ -463,8 +468,10 @@ TEST_CASE("SurfaceHolder frame publishes before callbacks and retains per-holder
         shape(frame, 1024, 600);
         shape(late_frame, 1024, 600);
         vm.context->surface_width = 0x80000000U;
-        CHECK_THROWS_AS(static_cast<void>(DispatchSurfaceHolderCallbacks(
-            vm.interpreter, *vm.context, SurfaceHolderPhase::changed)), VmJavaThrow);
+        const auto invalid_size = DispatchSurfaceHolderCallbacks(
+            vm.interpreter, *vm.context, SurfaceHolderPhase::changed);
+        REQUIRE(invalid_size.has_value());
+        CHECK(invalid_size->find("IllegalArgumentException") != std::string::npos);
         shape(frame, 1024, 600);
         vm.context->surface_width = 1024;
         REQUIRE_FALSE(DetachSurfaceViewSubtree(vm.interpreter, *vm.context, *node).has_value());
@@ -492,7 +499,63 @@ TEST_CASE("SurfaceHolder frame publishes before callbacks and retains per-holder
         const auto replacement = vm.CallOn(view, "getHolder", "()Landroid/view/SurfaceHolder;").ref;
         CHECK(replacement != holder);
         CHECK(read(replacement) != frame);
+        shape(read(replacement), 0, 0);
+        REQUIRE_FALSE(AttachSurfaceViewSubtree(vm.interpreter, *vm.context, *node));
         shape(read(replacement), 320, 240);
+    }
+}
+
+TEST_CASE("Surface traversal retains a SurfaceView attached inside its creation callback") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        EglVm* active = nullptr;
+        VmObjectRef parent, owner, added, listener;
+        int created = 0;
+        auto callback = IntrinsicClassBuilder::Class("Lfixture/ReentrantSurfaceCallback;", "Ljava/lang/Object;",
+            {"Landroid/view/SurfaceHolder$Callback;"});
+        callback.VirtualMethod("surfaceCreated", "(Landroid/view/SurfaceHolder;)V", [&](IntrinsicContext&) {
+            ++created;
+            if (!added.IsValid()) {
+                added = active->interpreter.NewIntrinsicInstance("Landroid/view/SurfaceView;");
+                active->CallStatic("Landroid/view/SurfaceView;", "<init>", "(Landroid/content/Context;)V",
+                    {VmValue::Ref(added), VmValue::Ref(owner)});
+                active->CallOn(parent, "addView", "(Landroid/view/View;)V", {VmValue::Ref(added)});
+                const auto holder = active->CallOn(added, "getHolder", "()Landroid/view/SurfaceHolder;").ref;
+                active->CallOn(holder, "addCallback", "(Landroid/view/SurfaceHolder$Callback;)V", {VmValue::Ref(listener)});
+            }
+            return VmValue::Void();
+        });
+        callback.VirtualMethod("surfaceChanged", "(Landroid/view/SurfaceHolder;III)V", [](IntrinsicContext&) {
+            return VmValue::Void();
+        });
+        callback.VirtualMethod("surfaceDestroyed", "(Landroid/view/SurfaceHolder;)V", [](IntrinsicContext&) {
+            return VmValue::Void();
+        });
+        EglVm vm(backend, nullptr, nullptr, {std::move(callback).Build()});
+        active = &vm;
+        vm.context->defer_content_surface_callbacks = true;
+        owner = vm.interpreter.NewIntrinsicInstance("Landroid/content/Context;");
+        parent = vm.interpreter.NewIntrinsicInstance("Landroid/widget/FrameLayout;");
+        vm.CallStatic("Landroid/widget/FrameLayout;", "<init>", "(Landroid/content/Context;)V",
+            {VmValue::Ref(parent), VmValue::Ref(owner)});
+        const auto first = vm.interpreter.NewIntrinsicInstance("Landroid/view/SurfaceView;");
+        vm.CallStatic("Landroid/view/SurfaceView;", "<init>", "(Landroid/content/Context;)V",
+            {VmValue::Ref(first), VmValue::Ref(owner)});
+        vm.CallOn(parent, "addView", "(Landroid/view/View;)V", {VmValue::Ref(first)});
+        vm.context->ui_tree.Attach(vm.context->ui_tree.Root(), *FindViewUiNode(*vm.context, parent.Value()));
+        listener = vm.interpreter.NewIntrinsicInstance("Lfixture/ReentrantSurfaceCallback;");
+        const auto holder = vm.CallOn(first, "getHolder", "()Landroid/view/SurfaceHolder;").ref;
+        vm.CallOn(holder, "addCallback", "(Landroid/view/SurfaceHolder$Callback;)V", {VmValue::Ref(listener)});
+        REQUIRE_FALSE(DispatchSurfaceHolderCallbacks(vm.interpreter, *vm.context, SurfaceHolderPhase::created));
+        REQUIRE_FALSE(DispatchSurfaceHolderCallbacks(vm.interpreter, *vm.context, SurfaceHolderPhase::changed));
+        CHECK(created == 1);
+        REQUIRE(added.IsValid());
+        const auto added_holder = vm.context->surface_holders.at(added.Value());
+        CHECK_FALSE(vm.context->active_surface_holders.contains(added_holder.Value()));
+        CHECK(SurfaceTraversalPending(*vm.context, *FindViewUiNode(*vm.context, added.Value())));
+        REQUIRE_FALSE(AttachSurfaceViewSubtree(vm.interpreter, *vm.context, vm.context->ui_tree.Root()));
+        CHECK(created == 2);
+        CHECK(vm.context->active_surface_holders.contains(added_holder.Value()));
+        CHECK(vm.context->surface_traversal_pending.empty());
     }
 }
 
@@ -540,15 +603,18 @@ TEST_CASE("GLSurfaceView retains linked EGL policy identities") {
         view, "setEGLConfigChooser",
         "(Landroid/opengl/GLSurfaceView$EGLConfigChooser;)V",
         {VmValue::Ref(policy)}));
-    CHECK(vm.context->egl_context_factory == policy);
-    CHECK(vm.context->egl_config_chooser == policy);
+    const auto runtime = vm.context->gl_surface_runtimes.at(view.Value());
+    CHECK(runtime->egl_context_factory == policy);
+    CHECK(runtime->egl_config_chooser == policy);
+    CHECK_FALSE(vm.context->egl_context_factory.IsValid());
+    CHECK_FALSE(vm.context->egl_config_chooser.IsValid());
 
     static_cast<void>(vm.CallOn(
         view, "setEGLContextFactory",
         "(Landroid/opengl/GLSurfaceView$EGLContextFactory;)V",
         {VmValue::Ref(VmObjectRef{})}));
-    CHECK_FALSE(vm.context->egl_context_factory.IsValid());
-    CHECK(vm.context->egl_config_chooser == policy);
+    CHECK_FALSE(runtime->egl_context_factory.IsValid());
+    CHECK(runtime->egl_config_chooser == policy);
 }
 
 TEST_CASE("GLSurfaceView preserves the EGL pause preference per instance before renderer setup") {

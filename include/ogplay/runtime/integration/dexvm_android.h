@@ -249,14 +249,22 @@ struct DexVmAndroidContext final {
     std::optional<ui::UiNodeId> window_root;
     bool resumed{}, visible{}, stopped{};
     dexvm::VmObjectRef render_view{};
+    std::int32_t task_id{1};
+    std::uint32_t launch_mode{};
+    bool package_affinity{true};
   };
   struct ActivityCommand final {
     enum class Kind { launch, finish } kind{Kind::launch};
     dexvm::VmObjectRef owner{}, intent{};
     std::string descriptor, component;
     std::int32_t request_code{-1}, result_code{};
+    std::uint32_t launch_mode{};
+    bool package_affinity{true};
   };
   std::vector<ActivityRecord> activity_stack;
+  // Contiguous task groups ordered by foreground history, back() is current.
+  // One default-affinity group and independent singleInstance groups.
+  std::int32_t next_task_id{2};
   std::atomic<std::size_t> activity_stack_depth{};
   std::deque<ActivityCommand> activity_commands;
   // DexActivityLifecycle is the sole writer of main-window focus. Queries
@@ -264,11 +272,6 @@ struct DexVmAndroidContext final {
   // Activity instances from observing the replacement window's focus.
   std::atomic<bool> window_has_focus{false};
   std::atomic<std::uint32_t> window_focus_activity{0};
-  // Handle of the launcher activity that opened the process's single
-  // task; Activity.isTaskRoot() answers against it. Stored as a plain
-  // handle (not the ref) so a retired handoff shell keeps answering
-  // for its own token, matching the platform.
-  std::uint32_t task_root_activity{0};
   // Process-lifetime Application root and its attached package Context.
   // application_descriptor is published only after onCreate succeeds;
   // the object itself is provisionally visible during onCreate, matching
@@ -327,8 +330,8 @@ struct DexVmAndroidContext final {
   // owner-thread traversal (API19 creates Surfaces in updateWindow, after the
   // attaching message returns).
   bool defer_content_surface_callbacks{};
-  // Attached subtree roots whose SurfaceViews await that traversal; getHolder
-  // inside them must not mark the Surface as already created.
+  // Attached subtree roots whose SurfaceViews await their owner traversal.
+  // getHolder only returns the stable object; traversal owns activation.
   std::unordered_set<ui::UiNodeId, ui::UiNodeIdHash> surface_traversal_pending;
 
   // Shared guest filesystem: the single world view for Java File I/O and

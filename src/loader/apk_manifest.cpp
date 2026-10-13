@@ -497,6 +497,7 @@ AndroidManifestFacts ParseAndroidBinaryManifest(const std::span<const std::byte>
     bool saw_manifest{};
     bool saw_application{};
     bool saw_uses_sdk{};
+    std::optional<std::string> application_task_affinity;
     std::optional<std::size_t> current_component;
     std::optional<std::size_t> current_service;
     std::optional<std::size_t> current_receiver;
@@ -539,6 +540,8 @@ AndroidManifestFacts ParseAndroidBinaryManifest(const std::span<const std::byte>
                         "binary AndroidManifest contains duplicate application");
                 }
                 saw_application = true;
+                if (const auto* affinity = FindAttribute(attributes, "taskAffinity", kAndroidNamespace))
+                    application_task_affinity = ReadStringAttribute(*affinity, strings, "application taskAffinity");
                 if (const auto* enabled =
                         FindAttribute(attributes, "enabled", kAndroidNamespace)) {
                     facts.application_enabled =
@@ -667,6 +670,9 @@ AndroidManifestFacts ParseAndroidBinaryManifest(const std::span<const std::byte>
                         ReadBooleanAttribute(*exported, name + " exported");
                 }
                 if (component.kind == AndroidManifestComponentKind::activity) {
+                    component.task_affinity = application_task_affinity.value_or(facts.package);
+                    if (const auto* affinity = FindAttribute(attributes, "taskAffinity", kAndroidNamespace))
+                        component.task_affinity = ReadStringAttribute(*affinity, strings, "activity taskAffinity");
                     if (const auto* mode = FindAttribute(attributes, "launchMode", kAndroidNamespace)) {
                         component.launch_mode = ReadIntegerAttribute(*mode, "activity launchMode");
                         if (component.launch_mode > 3)
@@ -704,6 +710,7 @@ AndroidManifestFacts ParseAndroidBinaryManifest(const std::span<const std::byte>
                     }
                     component.theme = target_activity->theme;
                     component.launch_mode = target_activity->launch_mode;
+                    component.task_affinity = target_activity->task_affinity;
                 }
                 facts.activity_components.push_back(std::move(component));
                 current_component = facts.activity_components.size() - 1U;

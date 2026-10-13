@@ -271,6 +271,12 @@ bool ApplyTextEdit(dx::Interpreter& vm, DexVmAndroidContext& context,
 [[nodiscard]] dx::IntrinsicHandler TelephonyEmptyStringHandler();
 [[nodiscard]] dx::IntrinsicHandler TelephonyFalseHandler();
 [[nodiscard]] dx::IntrinsicHandler ViewInitHandler(const Context& context);
+[[nodiscard]] dx::VmObjectRef SurfaceHolderForView(
+    dx::Interpreter& vm, DexVmAndroidContext& context, dx::VmObjectRef view);
+[[nodiscard]] dx::IntrinsicHandler SurfaceViewInitHandler(
+    const Context& context, bool with_attributes = false);
+[[nodiscard]] bool SurfaceViewReadyForRendering(
+    const DexVmAndroidContext& context, dx::VmObjectRef view);
 // Programmatic View(Context, AttributeSet) with attrs == null. Non-null
 // AttributeSet is an explicit XML/theme gap, not a silent default.
 [[nodiscard]] dx::IntrinsicHandler ViewNullAttributeSetInitHandler(

@@ -147,7 +147,7 @@ private:
     void ServiceActivitySwitch();
     void StartCurrentActivity();
     void DeliverActivityResults();
-    void RestoreActivity();
+    void RestoreActivity(runtime::dexvm::VmObjectRef new_intent = runtime::dexvm::VmObjectRef{});
     void CompleteWindowHandoffs();
     void SetActivityWindowVisible(runtime::dexvm::VmObjectRef activity, bool visible);
     void SynchronizeContentView();

@@ -639,6 +639,31 @@ Decl Declare_android_view_MotionEvent(const Context& context) {
     static_cast<void>(context);
     using Layout = MotionSnapshotLayout;
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/view/MotionEvent;", "Ljava/lang/Object;");
+    // API19 action constants must also be declared for JNI field lookup.
+    for (const auto& [name, value] : std::array{
+        std::pair{"ACTION_MASK", 0xff},
+        std::pair{"ACTION_DOWN", 0},
+        std::pair{"ACTION_UP", 1},
+        std::pair{"ACTION_MOVE", 2},
+        std::pair{"ACTION_CANCEL", 3},
+        std::pair{"ACTION_OUTSIDE", 4},
+        std::pair{"ACTION_POINTER_DOWN", 5},
+        std::pair{"ACTION_POINTER_UP", 6},
+        std::pair{"ACTION_HOVER_MOVE", 7},
+        std::pair{"ACTION_SCROLL", 8},
+        std::pair{"ACTION_HOVER_ENTER", 9},
+        std::pair{"ACTION_HOVER_EXIT", 10},
+        std::pair{"ACTION_POINTER_INDEX_MASK", 0xff00},
+        std::pair{"ACTION_POINTER_INDEX_SHIFT", 8},
+        std::pair{"ACTION_POINTER_1_DOWN", 5},
+        std::pair{"ACTION_POINTER_2_DOWN", 0x105},
+        std::pair{"ACTION_POINTER_3_DOWN", 0x205},
+        std::pair{"ACTION_POINTER_1_UP", 6},
+        std::pair{"ACTION_POINTER_2_UP", 0x106},
+        std::pair{"ACTION_POINTER_3_UP", 0x206},
+        std::pair{"ACTION_POINTER_ID_MASK", 0xff00},
+        std::pair{"ACTION_POINTER_ID_SHIFT", 8}})
+        builder.ConstantInt(name, "I", value, dx::kAccPublic | dx::kAccStatic | dx::kAccFinal);
     // API19 symbolic names for the already-supported 64-axis snapshot ABI.
     for (const auto& [name, value] : std::array{
         std::pair{"AXIS_X", 0},
@@ -1016,29 +1041,13 @@ namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_view_SurfaceView(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/view/SurfaceView;", "Landroid/view/View;");
-    builder.Constructor("(Landroid/content/Context;)V", ViewInitHandler(context));
+    builder.Constructor("(Landroid/content/Context;)V", SurfaceViewInitHandler(context));
     builder.Constructor(
         "(Landroid/content/Context;Landroid/util/AttributeSet;)V",
-        ViewNullAttributeSetInitHandler(context));
+        SurfaceViewInitHandler(context, true));
     builder.FinalMethod("getHolder", "()Landroid/view/SurfaceHolder;",
         [context](dx::IntrinsicContext& call) {
-            auto& holder = context->surface_holders[call.receiver.Value()];
-            if (!holder.IsValid()) {
-                holder = call.vm.NewIntrinsicInstance(
-                    "Landroid/view/SurfaceHolder$Impl;");
-                const auto node = FindViewUiNode(
-                    *context, call.receiver.Value());
-                if (context->managed_host_surface_open && node.has_value() &&
-                    context->ui_tree.IsAttached(*node) &&
-                    !SurfaceTraversalPending(*context, *node)) {
-                    // The platform holder exists before callbacks are added.
-                    // A late observer does not receive past created/changed,
-                    // but it must observe the eventual destroyed event.
-                    context->active_surface_holders.insert(holder.Value());
-                    PublishSurfaceHolderFrame(call.vm, *context, holder);
-                }
-            }
-            return dx::VmValue::Ref(holder);
+            return dx::VmValue::Ref(SurfaceHolderForView(call.vm, *context, call.receiver));
         });
     builder.VirtualMethod("setZOrderOnTop", "(Z)V",
         [context](dx::IntrinsicContext& call) {

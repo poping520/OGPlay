@@ -337,6 +337,9 @@ Decl Declare_android_app_Activity(const Context& context) {
                                                              call.arguments[0].ref);
                               return dx::VmValue::Void();
                           });
+    // API19's default onNewIntent is an empty application callback.
+    builder.VirtualMethod("onNewIntent", "(Landroid/content/Intent;)V",
+        [](dx::IntrinsicContext&) { return dx::VmValue::Void(); }, dx::kAccProtected);
     // API 19 Activity runs inline only on the main thread. Calls from a guest
     // worker (notably GLSurfaceView.GLThread) are posted to the main Looper and
     // dispatched by the lifecycle safe-point pump.
@@ -436,17 +439,24 @@ Decl Declare_android_app_Activity(const Context& context) {
             }
             return dx::VmValue::Void();
         }, dx::kAccPrivate | dx::kAccNative);
-    // AOSP Activity.isTaskRoot: whether this activity is the first one of
-    // its task. OGPlay runs one task per process; the manifest launcher
-    // opened it, in-process startActivity handoffs did not. The retired
-    // shell of a handoff keeps answering true for its own handle, as its
-    // token would on the platform.
+    // Task groups have independent roots; foreground ordering is not task identity.
     builder.FinalMethod("isTaskRoot", "()Z",
         [context](dx::IntrinsicContext& call) {
-            return dx::VmValue::Int(
-                call.receiver.Value() == context->task_root_activity ? 1
-                                                                     : 0);
+            const auto found = std::find_if(context->activity_stack.begin(), context->activity_stack.end(),
+                [&](const auto& record) { return record.object == call.receiver; });
+            if (found == context->activity_stack.end())
+                return dx::VmValue::Int(0);
+            const auto root = std::find_if(context->activity_stack.begin(), context->activity_stack.end(),
+                [&](const auto& record) { return record.task_id == found->task_id; });
+            return dx::VmValue::Int(root == found ? 1 : 0);
         });
+    builder.FinalMethod("getTaskId", "()I", [context](dx::IntrinsicContext& call) {
+        const auto found = std::find_if(context->activity_stack.begin(), context->activity_stack.end(),
+            [&](const auto& record) { return record.object == call.receiver; });
+        if (found == context->activity_stack.end())
+            return dx::VmValue::Int(-1); // API19 getTaskForActivity: no live token.
+        return dx::VmValue::Int(found->task_id);
+    });
     builder.FinalMethod("getWindowManager", "()Landroid/view/WindowManager;",
         [context](dx::IntrinsicContext& call) {
             return dx::VmValue::Ref(
@@ -784,7 +794,8 @@ void SetGlSurfaceAvailability(DexVmAndroidContext& context, const ui::UiNodeId s
         nodes.insert(nodes.end(), state->children.begin(), state->children.end());
         const auto view = ViewObjectForUiNode(context, node);
         if (const auto runtime = context.gl_surface_runtimes.find(view.Value()); runtime != context.gl_surface_runtimes.end()) {
-            runtime->second->surface_available = available && context.ui_tree.IsVisible(node);
+            runtime->second->surface_available = available &&
+                android_intrinsics::SurfaceViewReadyForRendering(context, view);
             if (runtime->second->surface_available && runtime->second->stopped) {
                 runtime->second->stopped = false;
                 runtime->second->paused = false;
@@ -816,6 +827,35 @@ std::vector<std::uint32_t> SubtreeHolderHandles(
                        state->children.rend());
     }
     return holders;
+}
+
+void CompleteSurfaceTraversal(DexVmAndroidContext& context,
+    const ui::UiNodeId subtree,
+    const std::unordered_set<ui::UiNodeId, ui::UiNodeIdHash>& pending) {
+    // A callback can attach another subtree which must wait for the next traversal.
+    for (const auto node : pending) {
+        if (!context.ui_tree.Get(node) || !context.ui_tree.IsAttached(node) ||
+            !context.ui_tree.IsVisible(node)) continue;
+        bool incomplete = false;
+        for (const auto holder : SubtreeHolderHandles(context, node)) {
+            // A creation callback can attach a new SurfaceView before the
+            // subsequent changed phase; it has not joined this traversal.
+            if (!context.active_surface_holders.contains(holder) ||
+                !context.surface_callback_sizes.contains(holder)) {
+                incomplete = true;
+                break;
+            }
+        }
+        if (incomplete) continue;
+        for (auto cursor = std::optional{node}; cursor;) {
+            if (*cursor == subtree) {
+                context.surface_traversal_pending.erase(node);
+                break;
+            }
+            const auto* state = context.ui_tree.Get(*cursor);
+            cursor = state ? state->parent : std::nullopt;
+        }
+    }
 }
 
 std::vector<std::uint32_t> AttachedHolderHandles(
@@ -1019,10 +1059,10 @@ void SetWindowSurfaceCallback(dexvm::Interpreter& vm, DexVmAndroidContext& conte
 std::optional<std::string> DispatchSurfaceHolderCallbacks(
     dexvm::Interpreter& vm, DexVmAndroidContext& context,
     const SurfaceHolderPhase phase) {
+    const auto pending = context.surface_traversal_pending;
     std::vector<std::uint32_t> holders;
     if (phase == SurfaceHolderPhase::created) {
         context.managed_host_surface_open = true;
-        SetGlSurfaceAvailability(context, context.ui_tree.Root(), true);
         try { static_cast<void>(DispatchAndroidViewSizes(vm,context)); }
         catch (const dexvm::VmJavaThrow& error) { return error.descriptor + ": " + error.message; }
         holders = AttachedHolderHandles(context);
@@ -1041,7 +1081,12 @@ std::optional<std::string> DispatchSurfaceHolderCallbacks(
                        context.active_surface_holders.end());
         std::ranges::sort(holders);
     }
-    return DispatchHolderCallbacks(vm, context, holders, phase);
+    const auto error = DispatchHolderCallbacks(vm, context, holders, phase);
+    if (!error && phase == SurfaceHolderPhase::changed) {
+        CompleteSurfaceTraversal(context, ActivityContentRoot(context), pending);
+        SetGlSurfaceAvailability(context, context.ui_tree.Root(), true);
+    }
+    return error;
 }
 
 std::optional<std::string> AttachSurfaceViewSubtree(
@@ -1052,10 +1097,10 @@ std::optional<std::string> AttachSurfaceViewSubtree(
         return std::nullopt;
     }
     if (context.ui_layout_dispatching) return std::nullopt;
-    SetGlSurfaceAvailability(context, subtree, true);
     try { static_cast<void>(DispatchAndroidViewSizes(vm,context)); }
     catch (const dexvm::VmJavaThrow& error) { return error.descriptor + ": " + error.message; }
     if (!context.ui_tree.IsAttached(subtree)) return std::nullopt;
+    const auto pending = context.surface_traversal_pending;
     const auto holders = SubtreeHolderHandles(context, subtree);
     if (const auto error = DispatchHolderCallbacks(
             vm, context, holders, SurfaceHolderPhase::created);
@@ -1067,15 +1112,8 @@ std::optional<std::string> AttachSurfaceViewSubtree(
         error.has_value()) {
         return error;
     }
-    // This traversal created every pending Surface inside the subtree.
-    std::erase_if(context.surface_traversal_pending, [&](const ui::UiNodeId node) {
-        for (auto cursor = std::optional{node}; cursor;) {
-            if (*cursor == subtree) return true;
-            const auto* state = context.ui_tree.Get(*cursor);
-            cursor = state ? state->parent : std::nullopt;
-        }
-        return false;
-    });
+    CompleteSurfaceTraversal(context, subtree, pending);
+    SetGlSurfaceAvailability(context, subtree, true);
     return std::nullopt;
 }
 

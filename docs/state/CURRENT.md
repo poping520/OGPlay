@@ -51,7 +51,14 @@
   ViewGroup 子节点访问/移除 API 按 API19 对齐（定向通过）。启动图停滞根因为 JNI 构造的 FileDescriptor
   （NDK asset fd）被 MediaPlayer 拒绝→MovieError 级联撤销第二段影片，UE3 停在“影片播放中”不渲染；
   现按 int descriptor 解析 guest VFS fd（定向通过）。macOS Release 复现：两段开场影片 Surface 完整创建/销毁，
-  presented 5833+ 进入 3D 场景，guestFault=null；Kiwi Appstore 提示框可见，点击 OK 后仍显示（原因未查）。
+  presented 5833+ 进入 3D 场景，guestFault=null；Kiwi Appstore 提示框可见。
+  OK 跨帧手势被每帧重复失焦同步取消已修复；点击/Enter/暂停与输入重置双解释器定向通过。
+  macOS 原 APK 两次 OK 分别关闭 SDK 排队提示；后续 UE3 输入查询缺失的 MotionEvent `ACTION_*`
+  静态常量已按 API19 补齐，双解释器 ARM JNI/输入定向通过；原 APK 点击 Tap to Start 到 START 菜单，
+  guestFault=null、MCP shutdown 退出 0。证据 `.local/lili-dialog-fix-20261013/`、
+  `.local/lili-motion-constants-fix-20261013/`，不作完整游戏验收。
+  通用 Surface 时序修复后 macOS 原 APK 再次完成两段影片和两次 OK，进入 CONTINUE 存档菜单，
+  presented=4649、guestFault=null、退出 0；证据 `.local/surface-lifecycle-fix-20261013/`。
   影片画面在 UE3 不 swap 期间应不可见（据宿主仅随 guest 帧合成推断，未实测）；音频/按钮退出未验收。
   证据 `.local/lili-stall-20261012/`、`.local/lili-fd-20261012/`。
   macOS 3D 发白根因已定位：同时发布 ATC/PVRTC 时，UE3 缓存文件名选 ATITC，纹理反序列化选 PVRTC；
@@ -65,6 +72,22 @@
 
 - **Angry Birds 2.3.0**：[DVM-186](../tasks/dexvm/DVM-186.md) 无 Profile/空沙盒运行
   5000 呈现帧，滚动条解析错消失、无新致命首错，背景音乐获确认；绘制/完整兼容未验收。
+
+- **Asphalt 5 1.1.3（SamsungApps）**：[DVM-19](../tasks/dexvm/DVM-19.md) 既有支持发生启动回归：
+  `44f9e343` 延迟 Surface traversal 与 intrinsic GLSurfaceView 首次启动顺序冲突，首次 getHolder
+  仍 pending、未激活，EGL10 拒绝并报 `12299`（BAD_NATIVE_WINDOW）。现按 API19 构造时登记
+  holder、getHolder 只读、遍历完成激活/尺寸发布后开放 renderer；冷启动、动态挂载、回调重入、
+  暂停恢复、窗口切换及媒体 Surface 双解释器定向通过。macOS 原 APK 到语言选择界面，
+  presented=1096、guestFault=null、MCP shutdown 退出 0；未重跑正式 title gate/全关卡。
+  证据 `.local/asphalt5-egl-analysis-20261013/`、`.local/surface-lifecycle-fix-20261013/`。
+
+- **Dungeon Hunter（Samsung P1000，versionCode 355）**：既有安装器→主游戏跳转发生回归；
+  `2202a3561` 新增 launchMode 解析及 blanket 拒绝，原 APK 安装器为 singleInstance、主游戏为
+  singleTask，GameInstaller.run 中 startActivity 被拒绝。[DVM-250](../tasks/dexvm/DVM-250.md)
+  已按 API19 补齐同包有界 task/实例复用及 onNewIntent；双解释器/既有结果、GL/Surface、
+  metadata 定向通过。macOS 原 APK/既有 Profile/外部数据、沙盒副本完成安装器→主游戏→
+  开场视频→原游戏恢复，呈现 240 帧、退出 0，未出现新的致命首错；跨平台/title gate/全关卡未验收。
+  证据 `.local/dungeonhunter-launchmode-analysis-20261013/`、`.local/activity-task-fix-20261013/`。
 
 ## 通用底座与保留缺口
 
@@ -81,7 +104,8 @@
   NDK Looper callback/非 pipe fd 不支持，native-attached 参数/反射长尾未验收。
 - GC 全周期、直接写入 ABA 跟踪、直接访存卸载 quiescence 及其他退出顺序风险未验收。
   全 BootDex 类链接曾因 MediaPlayer overlay/过期类数断言失败，尚未整体复验；多 ROM 未验收。
-  两项旧 EGL 回归仍失败，boundary 架构违规及 `architecture.dexvm_intrinsic_layout` 媒体清单缺项
+  两项旧 EGL 回归断言已按错误返回/per-View 契约维护并定向通过；boundary 架构违规及
+  `architecture.dexvm_intrinsic_layout` 媒体清单缺项
   未闭合，见 [DVM-190](../tasks/dexvm/DVM-190.md)。
 - [DVM-189](../tasks/dexvm/DVM-189.md) 音频 worker/增量解码/MediaPlayer/AudioTrack 通知定向通过；
   raw-resource 完整链、手动音频写入、custom AVIO 真实解码及完整游戏音频未验收。

@@ -1437,3 +1437,236 @@
     invoke-virtual {v1}, Landroid/app/Activity;->finish()V
     return-void
 .end method
+
+# Dialog callbacks observed through the real lifecycle and owner Looper.
+.class public Lfixture/DialogClickObserver;
+.super Ljava/lang/Object;
+.implements Landroid/content/DialogInterface$OnClickListener;
+.implements Landroid/content/DialogInterface$OnDismissListener;
+.field public static clicks:I
+.field public static dismisses:I
+.field public static which:I
+.method public constructor <init>()V
+.registers 1
+    invoke-direct {v0}, Ljava/lang/Object;-><init>()V
+    return-void
+.end method
+.method public onClick(Landroid/content/DialogInterface;I)V
+.registers 4
+    sget v0, Lfixture/DialogClickObserver;->clicks:I
+    add-int/lit8 v0, v0, 1
+    sput v0, Lfixture/DialogClickObserver;->clicks:I
+    sput v3, Lfixture/DialogClickObserver;->which:I
+    return-void
+.end method
+.method public onDismiss(Landroid/content/DialogInterface;)V
+.registers 3
+    sget v0, Lfixture/DialogClickObserver;->dismisses:I
+    add-int/lit8 v0, v0, 1
+    sput v0, Lfixture/DialogClickObserver;->dismisses:I
+    return-void
+.end method
+.method public static getClicks()I
+.registers 1
+    sget v0, Lfixture/DialogClickObserver;->clicks:I
+    return v0
+.end method
+.method public static getDismisses()I
+.registers 1
+    sget v0, Lfixture/DialogClickObserver;->dismisses:I
+    return v0
+.end method
+.method public static getWhich()I
+.registers 1
+    sget v0, Lfixture/DialogClickObserver;->which:I
+    return v0
+.end method
+
+# A renderer installed in onCreate, before the first Surface traversal.
+.class public Lfixture/ColdSurfaceActivity;
+.super Landroid/app/Activity;
+.implements Landroid/opengl/GLSurfaceView$Renderer;
+.field static public view:Landroid/opengl/GLSurfaceView;
+.field static public created:I
+.field static public changed:I
+.field static public draws:I
+.field static public width:I
+.field static public height:I
+.method public constructor <init>()V
+.registers 1
+    invoke-direct {v0}, Landroid/app/Activity;-><init>()V
+    return-void
+.end method
+.method public onCreate(Landroid/os/Bundle;)V
+.registers 4
+    invoke-super {v2, v3}, Landroid/app/Activity;->onCreate(Landroid/os/Bundle;)V
+    new-instance v0, Landroid/opengl/GLSurfaceView;
+    invoke-direct {v0, v2}, Landroid/opengl/GLSurfaceView;-><init>(Landroid/content/Context;)V
+    sput-object v0, Lfixture/ColdSurfaceActivity;->view:Landroid/opengl/GLSurfaceView;
+    const/4 v1, 2
+    invoke-virtual {v0, v1}, Landroid/opengl/GLSurfaceView;->setEGLContextClientVersion(I)V
+    invoke-virtual {v0, v2}, Landroid/opengl/GLSurfaceView;->setRenderer(Landroid/opengl/GLSurfaceView$Renderer;)V
+    invoke-virtual {v2, v0}, Landroid/app/Activity;->setContentView(Landroid/view/View;)V
+    return-void
+.end method
+.method protected onPause()V
+.registers 2
+    sget-object v0, Lfixture/ColdSurfaceActivity;->view:Landroid/opengl/GLSurfaceView;
+    invoke-virtual {v0}, Landroid/opengl/GLSurfaceView;->onPause()V
+    invoke-super {v1}, Landroid/app/Activity;->onPause()V
+    return-void
+.end method
+.method protected onResume()V
+.registers 2
+    invoke-super {v1}, Landroid/app/Activity;->onResume()V
+    sget-object v0, Lfixture/ColdSurfaceActivity;->view:Landroid/opengl/GLSurfaceView;
+    invoke-virtual {v0}, Landroid/opengl/GLSurfaceView;->onResume()V
+    return-void
+.end method
+.method public onSurfaceCreated(Ljavax/microedition/khronos/opengles/GL10;Ljavax/microedition/khronos/egl/EGLConfig;)V
+.registers 4
+    sget v0, Lfixture/ColdSurfaceActivity;->created:I
+    add-int/lit8 v0, v0, 1
+    sput v0, Lfixture/ColdSurfaceActivity;->created:I
+    return-void
+.end method
+.method public onSurfaceChanged(Ljavax/microedition/khronos/opengles/GL10;II)V
+.registers 5
+    sput v3, Lfixture/ColdSurfaceActivity;->width:I
+    sput v4, Lfixture/ColdSurfaceActivity;->height:I
+    sget v0, Lfixture/ColdSurfaceActivity;->changed:I
+    add-int/lit8 v0, v0, 1
+    sput v0, Lfixture/ColdSurfaceActivity;->changed:I
+    return-void
+.end method
+.method public onDrawFrame(Ljavax/microedition/khronos/opengles/GL10;)V
+.registers 3
+    sget v0, Lfixture/ColdSurfaceActivity;->draws:I
+    add-int/lit8 v0, v0, 1
+    sput v0, Lfixture/ColdSurfaceActivity;->draws:I
+    return-void
+.end method
+.method static public getCreated()I
+.registers 1
+    sget v0, Lfixture/ColdSurfaceActivity;->created:I
+    return v0
+.end method
+.method static public getChanged()I
+.registers 1
+    sget v0, Lfixture/ColdSurfaceActivity;->changed:I
+    return v0
+.end method
+.method static public getDraws()I
+.registers 1
+    sget v0, Lfixture/ColdSurfaceActivity;->draws:I
+    return v0
+.end method
+.method static public getWidth()I
+.registers 1
+    sget v0, Lfixture/ColdSurfaceActivity;->width:I
+    return v0
+.end method
+.method static public getHeight()I
+.registers 1
+    sget v0, Lfixture/ColdSurfaceActivity;->height:I
+    return v0
+.end method
+
+# API19 task reuse: callback observes the original Intent unless it calls setIntent.
+.class public Lfixture/TaskActivity;
+.super Lfixture/ResultCaller;
+.field public received:Landroid/content/Intent;
+.field public original:Landroid/content/Intent;
+.field static public newIntents:I
+.field static public destroys:I
+.field static public trace:I
+.field static public replaceIntent:I
+.method public constructor <init>()V
+.registers 1
+    invoke-direct {v0}, Lfixture/ResultCaller;-><init>()V
+    return-void
+.end method
+.method protected onPause()V
+.registers 2
+    sget v0, Lfixture/TaskActivity;->trace:I
+    mul-int/lit8 v0, v0, 10
+    add-int/lit8 v0, v0, 1
+    sput v0, Lfixture/TaskActivity;->trace:I
+    invoke-super {v1}, Lfixture/ResultCaller;->onPause()V
+    return-void
+.end method
+.method protected onResume()V
+.registers 2
+    sget v0, Lfixture/TaskActivity;->trace:I
+    mul-int/lit8 v0, v0, 10
+    add-int/lit8 v0, v0, 3
+    sput v0, Lfixture/TaskActivity;->trace:I
+    invoke-super {v1}, Lfixture/ResultCaller;->onResume()V
+    return-void
+.end method
+.method protected onNewIntent(Landroid/content/Intent;)V
+.registers 3
+    iput-object v2, v1, Lfixture/TaskActivity;->received:Landroid/content/Intent;
+    invoke-virtual {v1}, Landroid/app/Activity;->getIntent()Landroid/content/Intent;
+    move-result-object v0
+    iput-object v0, v1, Lfixture/TaskActivity;->original:Landroid/content/Intent;
+    sget v0, Lfixture/TaskActivity;->newIntents:I
+    add-int/lit8 v0, v0, 1
+    sput v0, Lfixture/TaskActivity;->newIntents:I
+    sget v0, Lfixture/TaskActivity;->trace:I
+    mul-int/lit8 v0, v0, 10
+    add-int/lit8 v0, v0, 2
+    sput v0, Lfixture/TaskActivity;->trace:I
+    sget v0, Lfixture/TaskActivity;->replaceIntent:I
+    if-eqz v0, :keep
+    invoke-virtual {v1, v2}, Landroid/app/Activity;->setIntent(Landroid/content/Intent;)V
+:keep
+    return-void
+.end method
+.method protected onDestroy()V
+.registers 2
+    invoke-super {v1}, Lfixture/ResultCaller;->onDestroy()V
+    sget v0, Lfixture/TaskActivity;->destroys:I
+    add-int/lit8 v0, v0, 1
+    sput v0, Lfixture/TaskActivity;->destroys:I
+    return-void
+.end method
+.method public getReceived()Landroid/content/Intent;
+.registers 1
+    iget-object v0, v0, Lfixture/TaskActivity;->received:Landroid/content/Intent;
+    return-object v0
+.end method
+.method public getOriginal()Landroid/content/Intent;
+.registers 1
+    iget-object v0, v0, Lfixture/TaskActivity;->original:Landroid/content/Intent;
+    return-object v0
+.end method
+.method static public getNewIntents()I
+.registers 1
+    sget v0, Lfixture/TaskActivity;->newIntents:I
+    return v0
+.end method
+.method static public getDestroys()I
+.registers 1
+    sget v0, Lfixture/TaskActivity;->destroys:I
+    return v0
+.end method
+.method static public getTrace()I
+.registers 1
+    sget v0, Lfixture/TaskActivity;->trace:I
+    return v0
+.end method
+.class public Lfixture/TaskChild;
+.super Lfixture/TaskActivity;
+.method public constructor <init>()V
+.registers 1
+    invoke-direct {v0}, Lfixture/TaskActivity;-><init>()V
+    return-void
+.end method
+.class public Lfixture/TaskIsolated;
+.super Lfixture/TaskActivity;
+.method public constructor <init>()V
+.registers 1
+    invoke-direct {v0}, Lfixture/TaskActivity;-><init>()V
+    return-void
+.end method

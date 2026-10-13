@@ -355,18 +355,31 @@ dx::VmValue StartAndroidActivity(dx::IntrinsicContext& call, const Context& cont
               "(Landroid/content/ComponentName;)Landroid/content/Intent;",
               {dx::VmValue::Ref(resolved_component)}));
         }
+        std::uint32_t launch_mode{};
+        bool package_affinity = true;
         if (context->activity_inventory_known) {
           const auto* target = loader::FindAndroidManifestActivityComponent(
               context->activity_components, component_name);
           if (target != nullptr) {
+            launch_mode = target->launch_mode;
+            package_affinity = !target->task_affinity || *target->task_affinity == context->package_name;
+            const auto source = std::find_if(context->activity_stack.begin(), context->activity_stack.end(),
+                [&](const auto& record) { return record.object == call.receiver; });
             auto descriptor = "L" + activity_class + ";";
             std::replace(descriptor.begin(), descriptor.end(), '.', '/');
             const bool same_top = context->activity.IsValid() &&
                 call.vm.Linker().Class(call.vm.Model().ObjectClass(context->activity)).descriptor == descriptor;
-            if (target->launch_mode > 1 || (target->launch_mode == 1 && same_top)) {
+            const bool source_isolated = source != context->activity_stack.end() && source->launch_mode == 3;
+            // Affinity is irrelevant to ordinary same-task starts and to
+            // singleInstance's component-based identity. Reject only a request
+            // which actually needs an unsupported affinity match.
+            if ((!package_affinity && (launch_mode == 2 || (source_isolated && launch_mode != 3))) ||
+                (request_code >= 0 && (launch_mode > 1 ||
+                    (launch_mode == 1 && same_top) ||
+                    (source != context->activity_stack.end() && source->launch_mode == 3)))) {
               if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.activity_result", 0);
               throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
-                  "Activity launch mode requires unsupported reuse or task semantics"};
+                  "Activity custom affinity or cross-task results are unsupported"};
             }
           }
         }
@@ -384,7 +397,7 @@ dx::VmValue StartAndroidActivity(dx::IntrinsicContext& call, const Context& cont
             [&](const auto& record) { return record.object == call.receiver; })
             ? call.receiver : context->activity;
         context->activity_commands.push_back({DexVmAndroidContext::ActivityCommand::Kind::launch,
-            owner, copy, "L" + activity_class + ";", component_name, request_code, 0});
+            owner, copy, "L" + activity_class + ";", component_name, request_code, 0, launch_mode, package_affinity});
         context->pending_activity_descriptor = context->activity_commands.back().descriptor;
         context->pending_activity_component_name = context->activity_commands.back().component;
         context->activity_switch_pending = true;
@@ -2830,6 +2843,9 @@ MakeActivityInfo(dx::IntrinsicContext &call, const Context &context,
       context->application_process_name, std::nullopt, application_info);
   const auto roots = call.vm.ProtectReferences(std::array{info});
   SetInt(call, info, "launchMode", static_cast<std::int32_t>(component.launch_mode));
+  const auto affinity = component.task_affinity.value_or(context->package_name);
+  SetRef(call, info, "taskAffinity", "Ljava/lang/String;",
+         affinity.empty() ? dx::VmObjectRef{} : String(call, affinity));
   if (component.kind == loader::AndroidManifestComponentKind::activity_alias &&
       component.target_activity.has_value()) {
     SetRef(call, info, "targetActivity", "Ljava/lang/String;",

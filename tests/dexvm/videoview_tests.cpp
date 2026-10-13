@@ -237,7 +237,8 @@ struct VideoVm final {
         context->ui_tree.Get(node)->layout.width.mode = ui::SizeMode::MatchParent;
         context->ui_tree.Get(node)->layout.height.mode = ui::SizeMode::MatchParent;
         context->managed_host_surface_open = true;
-        static_cast<void>(CallOn(view, "getHolder", "()Landroid/view/SurfaceHolder;"));
+        const auto error = AttachSurfaceViewSubtree(interpreter, *context, node);
+        REQUIRE_MESSAGE(!error, error.value_or(""));
         return view;
     }
 

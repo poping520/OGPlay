@@ -3506,6 +3506,182 @@ TEST_CASE("DVM-223 Activity result stack restores caller identity and content") 
     }
 }
 
+TEST_CASE("DVM-250 task reuse preserves instance Intent and independent singleInstance roots") {
+    using namespace ogplay;
+    using namespace runtime::dexvm;
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        OrchestratedApp f("fixture.TaskActivity", true, false, {}, {}, true, backend);
+        f.context->activity_components.front().launch_mode = 2;
+        for (const auto& [name, mode] : std::array{std::pair{"fixture.TaskChild", 0U}, std::pair{"fixture.TaskIsolated", 3U}}) {
+            loader::AndroidManifestActivityComponent component;
+            component.name = name; component.launch_mode = mode;
+            f.context->activity_components.push_back(std::move(component));
+        }
+        f.app->StartApplication();
+        REQUIRE(f.app->StartLauncherActivity().state == session::LifecycleRunState::running);
+        auto& vm = f.app->DexVm().Vm();
+        auto& lifecycle = f.app->ActivityLifecycle();
+        const auto on = [&](VmObjectRef object, const char* name, const char* signature, std::vector<VmValue> args = {}) {
+            return runtime::android_intrinsics::CallAndroidMethod(vm, object, name, signature, std::move(args));
+        };
+        const auto intent = [&](const char* target) {
+            const auto object = vm.NewIntrinsicInstance("Landroid/content/Intent;");
+            const auto root = vm.ProtectReferences(std::array{object});
+            const auto ctor = vm.Linker().FindDirectMethod(vm.Linker().ResolveDescriptor("Landroid/content/Intent;"), "<init>", "()V");
+            REQUIRE(ctor); REQUIRE_FALSE(vm.Call(*ctor, std::array{VmValue::Ref(object)}).exception.IsValid());
+            on(object, "setClassName", "(Ljava/lang/String;Ljava/lang/String;)Landroid/content/Intent;",
+                {VmValue::Ref(vm.NewStringUtf8("fixture")), VmValue::Ref(vm.NewStringUtf8(target))});
+            return object;
+        };
+        const auto request = [&](const char* target) {
+            const auto requested = intent(target);
+            on(f.context->activity, "startActivity", "(Landroid/content/Intent;)V", {VmValue::Ref(requested)});
+            return requested;
+        };
+        const auto step = [&] { REQUIRE(lifecycle.StepFrame().state == session::LifecycleRunState::running); };
+        const auto count = [&](const char* method) { return f.CallStaticInt("Lfixture/TaskActivity;", method); };
+        const auto main = f.context->activity;
+        const auto content = f.context->content_view;
+        const auto initial = on(main, "getIntent", "()Landroid/content/Intent;").ref;
+        const auto main_task = on(main, "getTaskId", "()I").AsInt();
+        CHECK(on(main, "isTaskRoot", "()Z").AsInt() == 1);
+        vm.SetStaticFieldBits("Lfixture/TaskActivity;", "trace", "I", 0);
+        const auto supplied = request("fixture.TaskActivity");
+        const auto supplied_root = vm.ProtectReferences(std::array{supplied});
+        static_cast<void>(vm.CollectGarbage("task-queued-intent"));
+        step();
+        CHECK(f.context->activity == main);
+        CHECK(f.context->activity_stack.size() == 1);
+        CHECK(count("getNewIntents") == 1);
+        CHECK(count("getTrace") == 123); // temporary pause -> new Intent -> resume
+        CHECK(on(main, "getOriginal", "()Landroid/content/Intent;").ref == initial);
+        CHECK(on(main, "getIntent", "()Landroid/content/Intent;").ref == initial);
+        CHECK(on(main, "getReceived", "()Landroid/content/Intent;").ref != supplied);
+        vm.SetStaticFieldBits("Lfixture/TaskActivity;", "replaceIntent", "I", 1);
+        request("fixture.TaskActivity"); step();
+        CHECK(on(main, "getIntent", "()Landroid/content/Intent;").ref == on(main, "getReceived", "()Landroid/content/Intent;").ref);
+        vm.SetStaticFieldBits("Lfixture/TaskActivity;", "replaceIntent", "I", 0);
+
+        request("fixture.TaskChild"); step();
+        const auto first_child = f.context->activity;
+        request("fixture.TaskChild"); step();
+        CHECK(f.context->activity != first_child); // standard creates again
+        CHECK(on(f.context->activity, "getTaskId", "()I").AsInt() == main_task);
+        CHECK(on(f.context->activity, "isTaskRoot", "()Z").AsInt() == 0);
+        request("fixture.TaskActivity"); step();
+        CHECK(f.context->activity == main);
+        CHECK(f.context->activity_stack.size() == 1); // clear above only this task
+        CHECK(count("getDestroys") == 2);
+        CHECK(f.context->content_view == content);
+        CHECK(count("getNewIntents") == 3);
+
+        request("fixture.TaskIsolated"); step();
+        const auto isolated = f.context->activity;
+        const auto isolated_root = vm.ProtectReferences(std::array{isolated});
+        const auto isolated_task = on(isolated, "getTaskId", "()I").AsInt();
+        CHECK(isolated_task != main_task);
+        CHECK(on(isolated, "isTaskRoot", "()Z").AsInt() == 1);
+        request("fixture.TaskChild"); step(); // leaves the isolated task
+        const auto normal = f.context->activity;
+        CHECK(on(normal, "getTaskId", "()I").AsInt() == main_task);
+        CHECK(on(normal, "isTaskRoot", "()Z").AsInt() == 0);
+        CHECK(f.context->activity_stack.size() == 3);
+        request("fixture.TaskIsolated"); step();
+        CHECK(f.context->activity == isolated);
+        CHECK(f.context->activity_stack.size() == 3);
+        CHECK(on(isolated, "getTaskId", "()I").AsInt() == isolated_task);
+        CHECK(count("getNewIntents") == 4);
+        on(isolated, "finish", "()V"); step();
+        CHECK(f.context->activity == normal);
+        CHECK(on(isolated, "getTaskId", "()I").AsInt() == -1);
+        CHECK(on(isolated, "isTaskRoot", "()Z").AsInt() == 0);
+        on(normal, "finish", "()V"); step();
+        CHECK(f.context->activity == main);
+
+        // Video-style return: launch the retained singleTask, then finish owner.
+        request("fixture.TaskIsolated"); step();
+        const auto video = f.context->activity;
+        CHECK(on(video, "getTaskId", "()I").AsInt() != isolated_task);
+        request("fixture.TaskActivity");
+        on(video, "finish", "()V");
+        static_cast<void>(vm.CollectGarbage("task-return"));
+        step();
+        CHECK(f.context->activity == main);
+        CHECK(f.context->activity_stack.size() == 1);
+        CHECK(f.context->content_view == content);
+        CHECK(f.CallStaticInt("Lfixture/ResultCaller;", "getInstances") == 6);
+        const auto custom = std::find_if(f.context->activity_components.begin(), f.context->activity_components.end(),
+            [](const auto& component) { return component.name == "fixture.TaskChild"; });
+        REQUIRE(custom != f.context->activity_components.end());
+        custom->task_affinity = "fixture.custom";
+        custom->launch_mode = 2;
+        const auto unsupported_intent = intent("fixture.TaskChild");
+        const auto slot = vm.Linker().FindVtableIndex(vm.Model().ObjectClass(main), "startActivity", "(Landroid/content/Intent;)V");
+        REQUIRE(slot);
+        const auto rejected = vm.Call(vm.Linker().Class(vm.Model().ObjectClass(main)).vtable[*slot],
+            std::array{VmValue::Ref(main), VmValue::Ref(unsupported_intent)});
+        REQUIRE(rejected.exception.IsValid());
+        CHECK(vm.Linker().Class(rejected.exception_class).descriptor == "Ljava/lang/UnsupportedOperationException;");
+        CHECK(f.context->activity_commands.empty());
+        custom->launch_mode = 0;
+        request("fixture.TaskChild"); step(); // ordinary starts do not consult affinity
+        CHECK(on(f.context->activity, "getTaskId", "()I").AsInt() == main_task);
+        static_cast<void>(f.app->Stop());
+    }
+}
+
+TEST_CASE("DVM-250 singleTop and singleInstance reuse their foreground instance") {
+    using namespace ogplay;
+    using namespace runtime::dexvm;
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+      for (const auto mode : {1U, 3U}) {
+        OrchestratedApp f("fixture.TaskActivity", true, false, {}, {}, true, backend);
+        f.context->activity_components.front().launch_mode = mode;
+        f.app->StartApplication();
+        REQUIRE(f.app->StartLauncherActivity().state == session::LifecycleRunState::running);
+        auto& vm = f.app->DexVm().Vm();
+        const auto object = f.context->activity;
+        const auto command_intent = runtime::android_intrinsics::CallAndroidMethod(vm, object, "getIntent", "()Landroid/content/Intent;").ref;
+        runtime::android_intrinsics::CallAndroidMethod(vm, object, "startActivity", "(Landroid/content/Intent;)V", {VmValue::Ref(command_intent)});
+        REQUIRE(f.app->ActivityLifecycle().StepFrame().state == session::LifecycleRunState::running);
+        CHECK(f.context->activity == object);
+        CHECK(f.context->activity_stack.size() == 1);
+        CHECK(f.CallStaticInt("Lfixture/ResultCaller;", "getInstances") == 1);
+        CHECK(f.CallStaticInt("Lfixture/TaskActivity;", "getNewIntents") == 1);
+        if (mode == 1) {
+            loader::AndroidManifestActivityComponent child_component;
+            child_component.name = "fixture.TaskChild";
+            f.context->activity_components.push_back(std::move(child_component));
+            const auto child_intent = vm.NewIntrinsicInstance("Landroid/content/Intent;");
+            const auto roots = vm.ProtectReferences(std::array{child_intent});
+            const auto ctor = vm.Linker().FindDirectMethod(vm.Linker().ResolveDescriptor("Landroid/content/Intent;"), "<init>", "()V");
+            REQUIRE(ctor); REQUIRE_FALSE(vm.Call(*ctor, std::array{VmValue::Ref(child_intent)}).exception.IsValid());
+            const auto on = [&](VmObjectRef receiver, const char* name, const char* signature, std::vector<VmValue> args = {}) {
+                return runtime::android_intrinsics::CallAndroidMethod(vm, receiver, name, signature, std::move(args));
+            };
+            on(child_intent, "setClassName", "(Ljava/lang/String;Ljava/lang/String;)Landroid/content/Intent;",
+                {VmValue::Ref(vm.NewStringUtf8("fixture")), VmValue::Ref(vm.NewStringUtf8("fixture.TaskChild"))});
+            on(object, "startActivity", "(Landroid/content/Intent;)V", {VmValue::Ref(child_intent)});
+            static_cast<void>(f.app->ActivityLifecycle().StepFrame());
+            on(f.context->activity, "startActivity", "(Landroid/content/Intent;)V", {VmValue::Ref(command_intent)});
+            static_cast<void>(f.app->ActivityLifecycle().StepFrame());
+            CHECK(f.context->activity != object);
+            CHECK(f.context->activity_stack.size() == 3); // non-top singleTop creates
+            CHECK(f.CallStaticInt("Lfixture/ResultCaller;", "getInstances") == 3);
+            CHECK(f.CallStaticInt("Lfixture/TaskActivity;", "getNewIntents") == 1);
+        } else {
+            runtime::android_intrinsics::CallAndroidMethod(vm, object, "startActivity", "(Landroid/content/Intent;)V", {VmValue::Ref(command_intent)});
+            runtime::android_intrinsics::CallAndroidMethod(vm, object, "finish", "()V", {});
+            REQUIRE(f.app->ActivityLifecycle().StepFrame().state == session::LifecycleRunState::running);
+            CHECK(f.context->activity != object); // finishing instances cannot be reused
+            CHECK(f.context->activity_stack.size() == 1);
+            CHECK(f.CallStaticInt("Lfixture/ResultCaller;", "getInstances") == 2);
+        }
+        static_cast<void>(f.app->Stop());
+      }
+    }
+}
+
 TEST_CASE("DVM-235 live Surface window is hidden and restored without losing registrations") {
     using namespace ogplay;
     using namespace runtime::dexvm;
@@ -3666,9 +3842,15 @@ TEST_CASE("DVM-246 ARM JNI Dialog preserves Surface owner focus modal pixels and
         construct(builder, "(Landroid/content/Context;)V", {VmValue::Ref(owner)});
         call(builder, "setTitle", "(Ljava/lang/CharSequence;)Landroid/app/AlertDialog$Builder;", {VmValue::Ref(vm.NewStringUtf8("Confirm"))});
         call(builder, "setMessage", "(Ljava/lang/CharSequence;)Landroid/app/AlertDialog$Builder;", {VmValue::Ref(vm.NewStringUtf8("Visible modal"))});
+        const auto observer_type = linker.ResolveDescriptor("Lfixture/DialogClickObserver;");
+        REQUIRE_FALSE(vm.EnsureClassInitialized(observer_type).exception.IsValid());
+        const auto observer = vm.Model().NewInstance(observer_type, linker.Class(observer_type).instance_slots);
+        const auto observer_root = vm.ProtectReferences(std::array{observer});
+        construct(observer, "()V", {});
         call(builder, "setNeutralButton", "(Ljava/lang/CharSequence;Landroid/content/DialogInterface$OnClickListener;)Landroid/app/AlertDialog$Builder;",
-             {VmValue::Ref(vm.NewStringUtf8("OK")), VmValue::Ref(VmObjectRef{})});
+             {VmValue::Ref(vm.NewStringUtf8("OK")), VmValue::Ref(observer)});
         const auto dialog = call(builder, "create", "()Landroid/app/AlertDialog;").ref;
+        call(dialog, "setOnDismissListener", "(Landroid/content/DialogInterface$OnDismissListener;)V", {VmValue::Ref(observer)});
         auto& guest = bridge.Session(); auto& process = guest.Process(); auto& env = guest.Environment();
         const auto memory = process.GuestMemoryAccess(); const auto scratch = memory.allocate(256);
         env.PushLocalFrame(1, 32);
@@ -3687,12 +3869,30 @@ TEST_CASE("DVM-246 ARM JNI Dialog preserves Surface owner focus modal pixels and
         const auto show = method("show", "()V");
         const auto showing = method("isShowing", "()Z");
         const auto motion_class = bridge.PublishLocal(vm.Model().ClassObject(linker.ResolveDescriptor("Landroid/view/MotionEvent;")));
-        for (const auto& [name, expected] : std::array{std::pair{"AXIS_X", 0U}, std::pair{"AXIS_Y", 1U}, std::pair{"AXIS_GENERIC_16", 47U}}) {
+        // API19 public action fields: native callers need metadata even when Java
+        // bytecode has inlined these constants. Include deprecated pointer aliases.
+        for (const auto& [name, expected] : std::array{
+            std::pair{"ACTION_MASK", 0xffU},
+            std::pair{"ACTION_DOWN", 0U}, std::pair{"ACTION_UP", 1U},
+            std::pair{"ACTION_MOVE", 2U}, std::pair{"ACTION_CANCEL", 3U},
+            std::pair{"ACTION_OUTSIDE", 4U},
+            std::pair{"ACTION_POINTER_DOWN", 5U}, std::pair{"ACTION_POINTER_UP", 6U},
+            std::pair{"ACTION_HOVER_MOVE", 7U}, std::pair{"ACTION_SCROLL", 8U},
+            std::pair{"ACTION_HOVER_ENTER", 9U}, std::pair{"ACTION_HOVER_EXIT", 10U},
+            std::pair{"ACTION_POINTER_INDEX_MASK", 0xff00U},
+            std::pair{"ACTION_POINTER_INDEX_SHIFT", 8U},
+            std::pair{"ACTION_POINTER_1_DOWN", 5U}, std::pair{"ACTION_POINTER_2_DOWN", 0x105U},
+            std::pair{"ACTION_POINTER_3_DOWN", 0x205U},
+            std::pair{"ACTION_POINTER_1_UP", 6U}, std::pair{"ACTION_POINTER_2_UP", 0x106U},
+            std::pair{"ACTION_POINTER_3_UP", 0x206U},
+            std::pair{"ACTION_POINTER_ID_MASK", 0xff00U}, std::pair{"ACTION_POINTER_ID_SHIFT", 8U},
+            std::pair{"AXIS_X", 0U}, std::pair{"AXIS_Y", 1U}, std::pair{"AXIS_GENERIC_16", 47U}}) {
             std::array<std::byte, 256> data{};
             std::memcpy(data.data(), name, std::strlen(name) + 1); data[64] = std::byte{'I'}; memory.write(scratch, data);
             const auto field = invoke("GetStaticFieldID", {process.GuestEnvironment().Value(), motion_class.Value(), scratch.Value(), scratch.Add(64).Value()});
             REQUIRE(field != 0); REQUIRE_FALSE(env.ExceptionCheck(1));
             CHECK(invoke("GetStaticIntField", {process.GuestEnvironment().Value(), motion_class.Value(), field, 0}) == expected);
+            REQUIRE_FALSE(env.ExceptionCheck(1));
         }
         static_cast<void>(invoke("CallVoidMethodA", {process.GuestEnvironment().Value(), ref.Value(), show, 0}));
         REQUIRE_FALSE(env.ExceptionCheck(1));
@@ -3717,6 +3917,57 @@ TEST_CASE("DVM-246 ARM JNI Dialog preserves Surface owner focus modal pixels and
         call(f.context->activity, "finish", "()V"); static_cast<void>(lifecycle.StepFrame());
         CHECK(f.context->activity == owner); CHECK(f.context->ui_tree.IsVisible(modal_root));
         CHECK_FALSE(f.context->window_has_focus.load());
+        const auto counter = [&](const char* method_name) {
+            return f.CallStaticInt("Lfixture/DialogClickObserver;", method_name);
+        };
+        const auto pointer = [&](int action) {
+            const auto button = *f.context->dialog_presentations.front().buttons[2];
+            const auto rect = f.context->ui_tree.Get(button)->screen_frame;
+            lifecycle.QueueInput({.type=runtime::AndroidBoundaryInputType::pointer_button,
+                .x=static_cast<float>(rect.left + 2), .y=static_cast<float>(rect.top + 2),
+                .pressed=action==0});
+        };
+        const auto key = [&](int action) {
+            lifecycle.QueueInput({.type=runtime::AndroidBoundaryInputType::key,
+                .code=66, .pressed=action==0, .action=action});
+        };
+        // A real mouse/MCP click spans frames. Unchanged modal focus must not cancel it.
+        pointer(0); static_cast<void>(lifecycle.StepFrame());
+        CHECK(f.context->dialog_pressed_button.has_value());
+        static_cast<void>(lifecycle.StepFrame());
+        CHECK(f.context->dialog_pressed_button.has_value()); CHECK(counter("getClicks") == 0);
+        pointer(1); static_cast<void>(lifecycle.StepFrame());
+        CHECK(counter("getClicks") == 1); CHECK(counter("getWhich") == -3);
+        CHECK(counter("getDismisses") == 1); REQUIRE(f.context->dialog_presentations.empty());
+        CHECK(f.context->window_has_focus.load());
+        CHECK(call(holder, "getSurface", "()Landroid/view/Surface;").ref == backing);
+
+        static_cast<void>(invoke("CallVoidMethodA", {process.GuestEnvironment().Value(), ref.Value(), show, 0}));
+        static_cast<void>(lifecycle.StepFrame());
+        key(0); static_cast<void>(lifecycle.StepFrame());
+        static_cast<void>(lifecycle.StepFrame()); CHECK(f.context->dialog_keys_down.contains(66));
+        key(1); static_cast<void>(lifecycle.StepFrame());
+        CHECK(counter("getClicks") == 2); CHECK(counter("getDismisses") == 2);
+        REQUIRE(f.context->dialog_presentations.empty());
+
+        // Actual pause and host input reset still cancel, even while Activity focus is false.
+        static_cast<void>(invoke("CallVoidMethodA", {process.GuestEnvironment().Value(), ref.Value(), show, 0}));
+        static_cast<void>(lifecycle.StepFrame());
+        pointer(0); static_cast<void>(lifecycle.StepFrame()); REQUIRE(f.context->dialog_pressed_button);
+        static_cast<void>(lifecycle.Suspend()); CHECK_FALSE(f.context->dialog_pressed_button);
+        CHECK_FALSE(f.context->dialog_pointer_active);
+        static_cast<void>(lifecycle.Resume());
+        pointer(1); static_cast<void>(lifecycle.StepFrame());
+        CHECK(counter("getClicks") == 2); CHECK(counter("getDismisses") == 2);
+        REQUIRE(f.context->dialog_presentations.size() == 1U);
+        key(0); static_cast<void>(lifecycle.StepFrame()); REQUIRE(f.context->dialog_keys_down.contains(66));
+        static_cast<void>(lifecycle.Suspend()); CHECK(f.context->dialog_keys_down.empty());
+        static_cast<void>(lifecycle.Resume());
+        key(1); static_cast<void>(lifecycle.StepFrame()); CHECK(counter("getClicks") == 2);
+        pointer(0); static_cast<void>(lifecycle.StepFrame()); REQUIRE(f.context->dialog_pressed_button);
+        lifecycle.CancelInput(); CHECK_FALSE(f.context->dialog_pressed_button);
+        pointer(1); static_cast<void>(lifecycle.StepFrame()); CHECK(counter("getClicks") == 2);
+
         const auto dismiss = method("dismiss", "()V");
         static_cast<void>(invoke("CallVoidMethodA", {process.GuestEnvironment().Value(), ref.Value(), dismiss, 0}));
         REQUIRE_FALSE(env.ExceptionCheck(1));
@@ -7035,6 +7286,42 @@ TEST_CASE("InputDevice production directory agrees with dispatched keyboard iden
     static_cast<void>(fixture.app->Stop());
 }
 
+
+TEST_CASE("DVM-197 cold renderer waits for its registered holder and first Surface traversal") {
+    using namespace ogplay;
+    using namespace runtime::dexvm;
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        OrchestratedApp f("fixture.ColdSurfaceActivity", true, false, {}, {}, true, backend);
+        f.app->StartApplication();
+        REQUIRE(f.app->StartLauncherActivity().state == session::LifecycleRunState::running);
+        auto& c = *f.context;
+        auto& lifecycle = f.app->ActivityLifecycle();
+        const auto view = c.gl_surface_renderer_view;
+        REQUIRE(view.IsValid());
+        REQUIRE(c.surface_holders.contains(view.Value()));
+        const auto holder = c.surface_holders.at(view.Value());
+        CHECK(c.active_surface_holders.contains(holder.Value()));
+        CHECK(c.surface_traversal_pending.empty());
+        CHECK(c.gl_surface_runtimes.at(view.Value())->surface_available);
+        CHECK(f.CallStaticInt("Lfixture/ColdSurfaceActivity;", "getCreated") == 1);
+        CHECK(f.CallStaticInt("Lfixture/ColdSurfaceActivity;", "getChanged") == 1);
+        CHECK(f.CallStaticInt("Lfixture/ColdSurfaceActivity;", "getWidth") == 64);
+        CHECK(f.CallStaticInt("Lfixture/ColdSurfaceActivity;", "getHeight") == 36);
+        REQUIRE(lifecycle.StepFrame().state == session::LifecycleRunState::running);
+        CHECK(f.CallStaticInt("Lfixture/ColdSurfaceActivity;", "getDraws") == 1);
+        static_cast<void>(lifecycle.Suspend());
+        CHECK_FALSE(c.gl_surface_runtimes.at(view.Value())->renderer_surface.IsValid());
+        CHECK(c.surface_holders.at(view.Value()) == holder);
+        static_cast<void>(lifecycle.Resume());
+        REQUIRE(lifecycle.StepFrame().state == session::LifecycleRunState::running);
+        CHECK(f.CallStaticInt("Lfixture/ColdSurfaceActivity;", "getCreated") == 2);
+        CHECK(f.CallStaticInt("Lfixture/ColdSurfaceActivity;", "getChanged") == 2);
+        CHECK(f.CallStaticInt("Lfixture/ColdSurfaceActivity;", "getDraws") == 2);
+        CHECK(c.surface_holders.at(view.Value()) == holder);
+        static_cast<void>(f.app->Stop());
+        CHECK(f.app->State() == session::AndroidAppProcessState::stopped);
+    }
+}
 
 TEST_CASE("DVM-197 renderer EGL policies establish current context before events and callbacks") {
     using namespace ogplay;

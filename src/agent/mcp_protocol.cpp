@@ -737,4 +737,9 @@ std::optional<std::string> McpProtocolAdapter::Handle(
     }
 }
 
+std::vector<std::uint8_t> EncodeFrameJpeg(const FrameSnapshot& frame) {
+    auto encoded = EncodeFrame(frame, CaptureFormat::kJpeg);
+    return {encoded.bytes.begin(), encoded.bytes.end()};
+}
+
 }  // namespace ogplay::agent

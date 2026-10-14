@@ -457,3 +457,41 @@ TEST_CASE("INP-1 invalid control configurations fail explicitly") {
     CHECK(input::ParseAnchor("bottom_right") == input::Anchor::bottom_right);
     CHECK_THROWS_AS(static_cast<void>(input::ParseAnchor("middle")), input::ControlConfigError);
 }
+
+TEST_CASE("INP-5 reconfigure validates first then cancels the old layout") {
+    input::ControlMapper mapper(ActionConfig());
+    mapper.SetSurface(800, 480);
+    mapper.Accept(Key("j", true), kWindow);
+    REQUIRE(mapper.Flush().size() == 1);
+
+    auto oversized = ActionConfig();
+    oversized.zones[1].radius = 400;
+    CHECK_THROWS_AS(static_cast<void>(mapper.Reconfigure(oversized)), input::ControlConfigError);
+    CHECK(mapper.Layout().size() == 3);
+    CHECK(mapper.Flush().empty());  // the old layout keeps running after a rejected change
+
+    auto moved = ActionConfig();
+    moved.zones[1].x = -100;
+    const auto outputs = mapper.Reconfigure(moved);
+    REQUIRE(outputs.size() == 1);
+    CHECK(outputs[0].touch.phase == TouchPhase::cancel);
+    const auto layout = mapper.Layout();
+    REQUIRE(layout.size() == 3);
+    CHECK(layout[1].name == "attack");
+    CHECK(layout[1].center_x == 650);
+    CHECK(layout[1].circle);
+    CHECK_FALSE(layout[2].circle);
+    CHECK(mapper.Config().zones[1].x == -100);
+    mapper.Accept(Key("j", false), kWindow);
+    mapper.Accept(Key("j", true), kWindow);
+    CHECK(mapper.Flush()[0].touch.points[0].x == 650);
+}
+
+TEST_CASE("INP-5 input sources format back to their names") {
+    for (const char* name : {"key:w", "key:0", "key:7", "key:f11", "key:space", "key:left_shift",
+                             "mouse:left", "mouse:x2"}) {
+        CHECK(input::FormatInputSource(input::ParseInputSource(name)) == name);
+    }
+    CHECK_THROWS_AS(static_cast<void>(input::FormatInputSource({input::SourceKind::key, 200})),
+                    input::ControlConfigError);
+}

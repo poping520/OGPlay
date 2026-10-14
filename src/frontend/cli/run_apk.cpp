@@ -19,17 +19,21 @@
 #include <thread>
 #include <vector>
 
+#include "ogplay/agent/control_editor.h"
 #include "ogplay/agent/mcp_protocol.h"
 #include "ogplay/agent/mcp_session_control.h"
 #include "ogplay/agent/dashboard.h"
+#include "ogplay/core/encoding.h"
 #include "ogplay/core/logger.h"
 #include "ogplay/core/text.h"
+#include "ogplay/frontend/control_requests.h"
 #include "ogplay/frontend/mcp_http_server.h"
 #include "ogplay/frontend/mcp_input_dispatch.h"
 #include "ogplay/frontend/data_directory.h"
 #include "ogplay/frontend/run_apk_progress.h"
 #include "ogplay/hal/audio.h"
 #include "ogplay/hal/clock.h"
+#include "ogplay/hal/host_environment.h"
 #include "ogplay/hal/window_input.h"
 #include "ogplay/input/control_mapper.h"
 #include "ogplay/session/control_config.h"
@@ -65,8 +69,10 @@ constexpr hal::AudioStreamConfig kDesktopAudioOutputSpec{
 constexpr core::RateLimitPolicy kUnrestrictedLog{
     .mode = core::RateLimitMode::none};
 
+// Status lines (ready endpoints, editor token) must reach a redirected stdout immediately.
 void Write(const std::string_view text) {
     static_cast<void>(std::fwrite(text.data(), sizeof(char), text.size(), stdout));
+    static_cast<void>(std::fflush(stdout));
 }
 
 std::vector<std::byte> ReadBytes(const std::filesystem::path& path) {
@@ -243,7 +249,7 @@ int RunApkCommand(const int argc, const char* const argv[],
     std::optional<std::filesystem::path> sandbox_directory;
     std::optional<std::string> installation_id;
     bool ephemeral_sandbox{};
-    std::optional<session::ControlLayer> user_controls;
+    std::optional<std::filesystem::path> input_config_path;
     for (int index = 3; index < argc; ++index) {
         const std::string_view option{argv[index]};
         if (option == "--profiles-dir" && index + 1 < argc) {
@@ -359,10 +365,11 @@ int RunApkCommand(const int argc, const char* const argv[],
         } else if (option == "--preflight") {
             preflight = true;
         } else if (option == "--input-config" && index + 1 < argc) {
-            if (user_controls.has_value()) {
+            if (input_config_path.has_value()) {
                 throw std::invalid_argument("run-apk accepts --input-config only once");
             }
-            user_controls = session::LoadControlOverride(std::filesystem::path{argv[++index]});
+            input_config_path = std::filesystem::path{argv[++index]};
+            if (input_config_path->empty()) throw std::invalid_argument("--input-config requires a file path");
         } else if (option == "--survey-gaps" && index + 1 < argc) {
             if (survey_gaps_output.has_value()) {
                 throw std::invalid_argument(
@@ -422,16 +429,6 @@ int RunApkCommand(const int argc, const char* const argv[],
     const auto& profile = selected_profile != nullptr
                               ? *selected_profile
                               : generic_profile;
-    // Input configuration errors (unknown template, unplaced or oversized zones) stop the
-    // launch before the guest starts.
-    const auto control_config = session::BuildControlConfig(
-        profile.input.has_value() ? &*profile.input : nullptr,
-        user_controls.has_value() ? &*user_controls : nullptr,
-        bundled_data.input_templates_directory);
-    if (profile.runtime.surface.width != 0 && profile.runtime.surface.height != 0) {
-        input::ControlMapper probe(control_config);
-        probe.SetSurface(profile.runtime.surface.width, profile.runtime.surface.height);
-    }
     bool has_obb_mount{};
     bool requires_obb{};
     if (profile.data.has_value()) {
@@ -475,6 +472,22 @@ int RunApkCommand(const int argc, const char* const argv[],
     const auto sandbox =
         OpenSandbox({sandbox_directory, ephemeral_sandbox, installation_id}, manifest.package,
                     manifest.version_code);
+    // User key layout (ADR-0134): --input-config, else beside the persistent sandbox; an
+    // ephemeral sandbox edits in memory only. A missing file is an empty layout.
+    if (!input_config_path.has_value() && sandbox.store != nullptr)
+        input_config_path = sandbox.root / (sandbox.installation_id + ".input.toml");
+    auto user_controls = input_config_path.has_value()
+                             ? session::LoadControlOverrideIfPresent(*input_config_path)
+                             : session::ControlLayer{};
+    // Input configuration errors (unknown template, unplaced or oversized zones) stop the
+    // launch before the guest starts.
+    const auto control_config = session::BuildControlConfig(
+        profile.input.has_value() ? &*profile.input : nullptr, &user_controls,
+        bundled_data.input_templates_directory);
+    if (profile.runtime.surface.width != 0 && profile.runtime.surface.height != 0) {
+        input::ControlMapper probe(control_config);
+        probe.SetSurface(profile.runtime.surface.width, profile.runtime.surface.height);
+    }
     runtime::VirtualFileSystem filesystem;
     MountApkArchive(profile, apk_bytes, archive, filesystem);
     if (obb_path.has_value()) {
@@ -816,6 +829,10 @@ int RunApkCommand(const int argc, const char* const argv[],
         }
         // Stop/join the HTTP worker before app_process unbinds diagnostic providers.
         // All Dashboard sources below outlive this scope-owned transport.
+        // The channel outlives the server so no worker waits on a destroyed queue.
+        auto control_channel = std::make_shared<agent::ControlEditorChannel>();
+        std::string control_token;
+        bool control_frozen{};
         std::unique_ptr<McpHttpServer> mcp_server;
         if (mcp_port) {
             agent::DashboardSources sources;
@@ -841,11 +858,28 @@ int RunApkCommand(const int argc, const char* const argv[],
             DashboardHttpConfig dashboard{
                 std::make_shared<agent::DashboardService>(std::move(sources)),
                 bundled_data.root / "webui" / "dashboard"};
+            // The launcher passes its token through the environment (never argv); a bare CLI
+            // run gets a fresh one printed for the user.
+            const char* inherited_token = std::getenv("OGPLAY_CONTROL_TOKEN");
+            const bool generated_token = inherited_token == nullptr || *inherited_token == '\0';
+            if (generated_token) {
+                std::array<std::byte, 16> entropy{};
+                hal::FillSecureRandom(entropy);
+                control_token = core::EncodeHex(entropy, core::HexCase::lower);
+            } else {
+                control_token = inherited_token;
+            }
+            ControlHttpConfig controls{control_channel, control_token};
             if (mcp_manual_step || diagnostics_enabled)
-                mcp_server = McpHttpServer::Start(*mcp_port, *mcp_frames, *mcp_inputs, *mcp_session, std::move(dashboard));
-            else mcp_server = McpHttpServer::Start(*mcp_port, *mcp_frames, *mcp_inputs, std::move(dashboard));
+                mcp_server = McpHttpServer::Start(*mcp_port, *mcp_frames, *mcp_inputs, *mcp_session, std::move(dashboard),
+                                                  std::move(controls));
+            else mcp_server = McpHttpServer::Start(*mcp_port, *mcp_frames, *mcp_inputs, std::move(dashboard),
+                                                   std::move(controls));
             Write("OGPlay: MCP ready at " + mcp_server->Endpoint() + "\n");
             Write("OGPlay: Dashboard ready at http://127.0.0.1:" + std::to_string(mcp_server->Port()) + "/dash/\n");
+            Write("OGPlay: key editor endpoint at http://127.0.0.1:" + std::to_string(mcp_server->Port()) +
+                  "/controls/rpc" + (generated_token ? " token=" + control_token : std::string(" token=<inherited>")) +
+                  "\n");
         }
         auto* guest = &app_process->NativeProcess();
         auto* dex_lifecycle = &app_process->ActivityLifecycle();
@@ -965,12 +999,34 @@ int RunApkCommand(const int argc, const char* const argv[],
                         host_suspended_session = false;
                         publish_session();
                     }
-                } else if (mcp_lifecycle == agent::McpLifecycleState::suspended || failure) {
+                } else if (mcp_lifecycle == agent::McpLifecycleState::suspended || failure || control_frozen) {
                     continue;
                 } else {
                     control_mapper.Accept(event, window->State());
                 }
             }
+            control_channel->ServePending([&](const std::string_view method, const core::JsonValue params) {
+                return HandleControlRequest(method, params, {
+                    .mapper = control_mapper,
+                    .frozen = control_frozen,
+                    .user = user_controls,
+                    .profile_input = profile.input.has_value() ? &*profile.input : nullptr,
+                    .templates_directory = bundled_data.input_templates_directory,
+                    .config_path = input_config_path,
+                    .frames = mcp_frames.get(),
+                    .surface_width = guest_width,
+                    .surface_height = guest_height,
+                    .freeze = [&] {
+                        control_mapper.Reset();
+                        mcp_pointer.Cancel(mcp_inputs.get());
+                        if (!failure) driver.cancel_input();
+                    },
+                    .deliver = [&](const std::vector<input::ControlOutput>& outputs) {
+                        for (const auto& output : outputs)
+                            if (const auto input = session::MapControlOutput(output)) driver.queue_input(*input);
+                    },
+                });
+            });
             bool frame_presented = false;
             try {
                 if (audio_pump) audio_pump->RethrowWorkerFailure();
@@ -1002,7 +1058,7 @@ int RunApkCommand(const int argc, const char* const argv[],
                         }
                     }
                 }
-                const bool advance = !failure &&
+                const bool advance = !failure && !control_frozen &&
                     mcp_lifecycle == agent::McpLifecycleState::running &&
                     (!mcp_manual_step || permitted_steps != 0U);
                 if (!advance || quit) {
@@ -1072,6 +1128,7 @@ int RunApkCommand(const int argc, const char* const argv[],
                 std::this_thread::sleep_for(std::chrono::milliseconds(1));
             }
         }
+        control_channel->Close();
         ReleaseCapturedFrame(mcp_frames.get(), *guest);
         if (audio_pump) audio_pump->Stop();
         logger.Write(core::LogLevel::info, "frontend.run_apk",

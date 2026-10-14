@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <doctest/doctest.h>
 #include <atomic>
 #include <chrono>
@@ -241,7 +242,9 @@ TEST_CASE("GUI RPC serializes model facts and enforces launch eligibility") {
     auto started = Decode(fixture.rpc.Handle(launch));
     CHECK(started.Root().Member("result").has_value());
     REQUIRE(fixture.plan.has_value());
-    CHECK(fixture.plan->argv.back() == "org.example.game");
+    const auto id = std::find(fixture.plan->argv.begin(), fixture.plan->argv.end(), "--installation-id");
+    REQUIRE(id + 1 < fixture.plan->argv.end());
+    CHECK(*(id + 1) == "org.example.game");
     CHECK(fixture.plan->log_path == fixture.root / "library/org.example.game/last-run.log");
     fixture.context.running_packages = {"org.example.game"};
     CHECK(Decode(fixture.rpc.Handle(launch)).Root().Member("error").has_value());

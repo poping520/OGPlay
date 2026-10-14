@@ -183,6 +183,10 @@ Dex activity 每帧在 guest 回调前泵送主 Looper，到帧尾只通过
   （或 `*`）中共享输入源的前层绑定，`action = "none"` 只解除；区域按名称替换。
   模板只声明区域名称，引用了未放置区域的绑定明确失败。模板与覆盖文件 schema 为 1、
   不超过 200 行；用户覆盖文件独立于 GUI 的 `settings.toml`。
+  `FormatControlLayer`/`SaveControlLayer` 把用户层写回 TOML（坐标保留 0.01，写前校验可读回，
+  经同目录临时文件替换）；`DecodeControlLayerJson`/`WriteControlLayerJson` 以与 TOML 同形的
+  JSON 与编辑器交换，解码复用同一校验；`LoadControlOverrideIfPresent` 视缺失文件为空层；
+  `ListControlTemplates` 按 id 列出模板。
 - `QuirkRegistry::Load/LoadPackaged/Validate`：严格加载 `data/quirks.toml` 并交叉验证
   Profile 引用；源码模式额外验证测试文件/用例存在，发行模式保留测试引用形状验证。
 - `ProfileAssetBundle`：拥有已导入 VFS/audio 字节并拒绝非规范路径、大小写歧义、重复项

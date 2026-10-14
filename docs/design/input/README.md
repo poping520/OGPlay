@@ -19,9 +19,10 @@
 
 1. 键鼠和手柄可以同时、多点地驱动 guest 触屏，满足“边走边打”。
 2. 用一组封闭、通用的**操控原语**覆盖手机触屏游戏的常见交互形态。
-3. 配置分四级：内置默认 → 类型模板 → 游戏配置 → 用户覆盖；后一级只写差异。
+3. 配置分级：内置默认 → 类型模板 → 用户配置；后一级只写差异。具体游戏的键位由玩家在
+   编辑器中配置，项目不逐款维护（ADR-0134）。
 4. 合成在统一 Clock 的帧边界上进行，可确定地测试、录制和回放。
-5. 玩家能看到当前键位（提示叠加层），并能自行修改（GUI 编辑器）。
+5. 玩家能看到当前键位（提示叠加层），并能在真实画面上自行修改（按键编辑器）。
 
 **非目标**
 
@@ -135,8 +136,8 @@ Java 对象或画面像素。
 | --- | --- | --- | --- |
 | 内置默认 | `src/input` 代码常量 | 鼠标直通、滚轮→`pinch`（以光标为心）、Esc→`KEYCODE_BACK`、其余键直通 | 项目 |
 | 类型模板 | `data/input/templates/<id>.toml` | 按玩法预置的模式、绑定与区域占位，如摇杆动作、跑酷滑动、双摇杆射击、塔防 | 项目 |
-| 游戏配置 | `data/profiles/*.profile.toml` 的 `[input]` | 选用模板并填写区域、增删绑定 | 项目/社区 |
-| 用户覆盖 | 安装实例目录中的 `input.toml`（`run-apk --input-config`），不并入 GUI 的 `settings.toml` | 用户改键、调灵敏度 | 玩家（经 GUI 编辑器） |
+| Profile `[input]` | `data/profiles/*.profile.toml` | 选用模板并填写区域、增删绑定；仅供本地实验，项目不随 Profile 发布游戏键位（ADR-0134） | — |
+| 用户配置 | 安装实例目录中的 `input.toml`（`run-apk --input-config`），不并入 GUI 的 `settings.toml` | 选择模板、放置区域、改键与调参 | 玩家（经按键编辑器） |
 
 合并规则：按“模式 + 输入源”覆盖；后一级可以显式解除绑定（`action = "none"`）；
 区域按名称覆盖。合并结果在会话启动时固定，运行中修改需重新载入并先取消全部触点。
@@ -156,7 +157,7 @@ name = "attack"; anchor = "bottom_right"; x = -60; y = -60; r = 50
 source = "key:k"; action = "button"; zone = "skill_1"; mode = "default"; press = "hold"
 ```
 
-模板只声明绑定与区域**名称**，区域位置由游戏配置填写；缺少必填区域时装载明确失败。
+模板只声明绑定与区域**名称**，区域位置由用户配置（或本地 Profile）填写；缺少必填区域时装载明确失败。
 现有 `input.profile`（模板 id）字段没有任何 Profile 使用，由新的 `[input]` 结构替代；
 schema 与 `tools/validate_title_profiles.py` 同步更新。
 
@@ -169,13 +170,31 @@ schema 与 `tools/validate_title_profiles.py` 同步更新。
 | 倾斜 `tilt` | 虚拟加速度计 | 现状发布“无传感器”。改为发布虚拟设备会改变 guest 可见的设备事实，需另立 ADR |
 | 文本输入 | 输入法会话 | `dexvm.input_method_sessions` 尚无 InputConnection；落地后定义“输入法激活期间键盘直通” |
 
-## 10. 提示叠加层与编辑器
+## 10. 提示叠加层与按键编辑器
 
-- 按热键（默认 F1，可改）显示半透明按键提示：在每个区域上标注绑定的键名和当前模式。
-- 叠加层由 frontend 在 guest 画面合成之后绘制，不进入 guest 帧，也不进入 MCP
-  `frame_capture` 的默认截图（可按参数请求带叠加层的截图）。
-- GUI 编辑器（P3）在当前帧截图上拖放区域、绑定按键，写入用户覆盖文件，并可导入/导出
-  与他人共享。
+决策见 [ADR-0134](../../adr/session.md#adr-0134)。
+
+- **提示叠加层**：F1 切换。frontend 在 guest 画面合成之后绘制半透明的区域与键名，不进入
+  guest 帧，也不进入 MCP `frame_capture` 的默认截图。
+- **宿主快捷键**：F1、F2 及带 Cmd/Ctrl 的组合键保留给宿主，不传入 guest。
+- **按键编辑器是 Web 应用，由游戏进程提供**：run-apk 在既有 loopback HTTP 服务（与
+  Dashboard 同一服务）上提供编辑器页面和 `control.*` JSON-RPC：
+
+  | 方法 | 作用 |
+  | --- | --- |
+  | `control.get` | 当前合并结果、用户层、可选模板、guest surface 尺寸 |
+  | `control.freeze` / `control.resume` | 宿主停止/恢复 guest 推进与输入投递，不触发 Android 生命周期 |
+  | `control.frame` | 冻结时的当前画面（复用帧快照） |
+  | `control.apply` | 校验用户层，热应用到 `ControlMapper` 并写回 `input.toml` |
+
+  写操作需要每次启动生成的令牌，loopback 与 Origin 限制沿用现有服务。
+- **编辑器交互**：以冻结画面为背景，选择模板或新建按钮/摇杆，拖动与缩放圆框，选中后
+  在页面内按键绑定（使用 `KeyboardEvent.code` 物理键码，与物理键名一一对应）；冲突当场
+  标出；摇杆可直接拖出行程；“应用”即生效，“继续”恢复游戏试玩。锚点由编辑器按离边距离
+  自动选择。
+- **入口**：GUI 实例详情的“按键设置”以独立 WebView 窗口打开编辑器（同 Dashboard 窗口）；
+  游戏内 F2 请求打开，有 GUI 时由 GUI 打开，无 GUI 时用系统浏览器打开同一地址。
+- 第一版要求游戏运行中编辑，不含导入导出与社区预设。
 
 ## 11. 验证
 
@@ -190,13 +209,13 @@ schema 与 `tools/validate_title_profiles.py` 同步更新。
 
 | 阶段 | 内容 | 验收边界 |
 | --- | --- | --- |
-| P0 | `ContactAllocator`（含 MCP 并存）、`direct`/`button`/`stick`/`key`/`mode`、按键直通规则、cancel 规则、`[input]` schema 与模板目录、F1 提示叠加层 | 单元与端到端测试通过；一款摇杆动作类游戏用模板 + 区域数据可完整操控 |
+| P0 | `ContactAllocator`（含 MCP 并存）、`direct`/`button`/`stick`/`key`/`mode`、按键直通规则、cancel 规则、`[input]` schema 与模板目录 | 单元测试通过；一款摇杆动作类游戏用模板 + 区域数据可完整操控（INP-1..3 已完成） |
+| P0.5 | F1 提示叠加层与宿主快捷键、`control.*` 会话接口、Web 按键编辑器、GUI 与 F2 入口 | 玩家不改文件，在运行中的游戏上完成配置并试玩（INP-4..7） |
 | P1 | hal 滚轮与相对鼠标、`look`/`swipe`/`pinch`、手柄接入 | 3D 视角、跑酷、缩放类各一款验证 |
 | P2 | `tilt`（依赖加速度计 ADR）、更多类型模板 | 倾斜类游戏可用键盘/摇杆驾驶 |
-| P3 | GUI 编辑器、用户覆盖、导入导出 | 玩家不改文件即可为新游戏配置键位 |
+| P3 | 离线编辑（参考截图）、导入导出与社区预设 | 未运行游戏也可编辑；配置可分享 |
 
 ## 13. 未决问题
 
-1. 提示热键与游戏自身 F1 用法冲突时的默认值。
-2. 菜单场景下手柄的导航方式（虚拟光标 vs 区域跳转）。
-3. 是否允许 Profile 按 Activity 类名声明默认模式（属于数据，但会引入状态依赖）。
+1. 菜单场景下手柄的导航方式（虚拟光标 vs 区域跳转）。
+2. 是否允许 Profile 按 Activity 类名声明默认模式（属于数据，但会引入状态依赖）。

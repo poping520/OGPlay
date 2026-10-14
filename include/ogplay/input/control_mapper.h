@@ -77,7 +77,17 @@ struct ControlConfig final {
 // "key:<name>" with physical key names such as w, space, escape, f1, left_shift, up;
 // "mouse:left|middle|right|x1|x2".
 [[nodiscard]] InputSource ParseInputSource(std::string_view text);
+// Inverse of ParseInputSource: "key:w", "mouse:right".
+[[nodiscard]] std::string FormatInputSource(const InputSource& source);
 [[nodiscard]] Anchor ParseAnchor(std::string_view text);
+[[nodiscard]] std::string_view AnchorName(Anchor anchor);
+
+// A zone resolved against the current guest surface.
+struct ResolvedZoneView final {
+    std::string name;
+    float center_x{}, center_y{}, half_width{}, half_height{};
+    bool circle{};
+};
 
 struct AndroidKeyOutput final {
     std::int32_t key_code{};
@@ -118,6 +128,13 @@ public:
     void Cancel();
     // Drops all state silently when the host already cancelled the guest input stream.
     void Reset() noexcept;
+    // Validates the new configuration against the current surface before replacing the old
+    // one; returns the old configuration's CANCEL and key releases to deliver.
+    [[nodiscard]] std::vector<ControlOutput> Reconfigure(ControlConfig config);
+
+    [[nodiscard]] const ControlConfig& Config() const noexcept;
+    // Empty until SetSurface; zone order follows the configuration.
+    [[nodiscard]] std::vector<ResolvedZoneView> Layout() const;
 
     [[nodiscard]] bool Active() const noexcept;
     [[nodiscard]] std::string_view Mode() const noexcept;

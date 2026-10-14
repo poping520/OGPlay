@@ -137,7 +137,7 @@ TEST_CASE("GUI LaunchPlan emits only the documented run-apk arguments") {
     const auto plan = ogplay::frontend::BuildLaunchPlan(
         cli, temporary.path, Entry(entry_dir, external),
         {.profiles_dir = profiles});
-    REQUIRE(plan.argv.size() == 15);
+    REQUIRE(plan.argv.size() == 17);
     CHECK(plan.argv[1] == "run-apk");
     CHECK(plan.argv[3] == "--profiles-dir");
     CHECK(plan.argv[5] == "--external-dir");
@@ -151,21 +151,19 @@ TEST_CASE("GUI LaunchPlan emits only the documented run-apk arguments") {
               .generic_string());
     CHECK(plan.argv[13] == "--installation-id");
     CHECK(plan.argv[14] == "org.example.game");
+    CHECK(plan.argv[15] == "--input-config");
     CHECK(plan.package == "org.example.game");
     CHECK(plan.log_path == std::filesystem::absolute(entry_dir / "last-run.log"));
 }
 
-TEST_CASE("INP-3 GUI LaunchPlan forwards the instance input override file") {
+TEST_CASE("INP-5 GUI LaunchPlan always names the instance key layout file") {
     TemporaryDirectory temporary;
     const auto cli = temporary.path / "bin" / "ogplay";
     const auto entry_dir = temporary.path / "library" / "org.example.game";
     const auto external = temporary.path / "external";
     Write(cli, "exe"); Write(entry_dir / "game.apk", "apk");
     std::filesystem::create_directories(external);
-    auto plan = ogplay::frontend::BuildLaunchPlan(cli, temporary.path, Entry(entry_dir, external), {});
-    CHECK(std::find(plan.argv.begin(), plan.argv.end(), "--input-config") == plan.argv.end());
-    Write(entry_dir / "input.toml", "schema = 1\n");
-    plan = ogplay::frontend::BuildLaunchPlan(cli, temporary.path, Entry(entry_dir, external), {});
+    const auto plan = ogplay::frontend::BuildLaunchPlan(cli, temporary.path, Entry(entry_dir, external), {});
     REQUIRE(plan.argv.size() >= 2);
     CHECK(plan.argv[plan.argv.size() - 2] == "--input-config");
     CHECK(plan.argv.back() ==

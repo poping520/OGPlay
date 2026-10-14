@@ -103,6 +103,23 @@ std::optional<std::string_view> JsonValue::String() const noexcept {
     return std::string_view(yyjson_get_str(value), yyjson_get_len(value));
 }
 
+std::optional<double> JsonValue::Number() const noexcept {
+    auto* const value = static_cast<yyjson_val*>(value_);
+    if (!value || !yyjson_is_num(value)) return std::nullopt;
+    return yyjson_get_num(value);
+}
+
+std::vector<std::string_view> JsonValue::Keys() const {
+    std::vector<std::string_view> keys;
+    auto* const value = static_cast<yyjson_val*>(value_);
+    if (!value || !yyjson_is_obj(value)) return keys;
+    yyjson_obj_iter iterator = yyjson_obj_iter_with(value);
+    while (auto* key = yyjson_obj_iter_next(&iterator)) {
+        keys.emplace_back(yyjson_get_str(key), yyjson_get_len(key));
+    }
+    return keys;
+}
+
 std::optional<JsonValue> JsonValue::Member(const std::string_view name) const noexcept {
     auto* const value = static_cast<yyjson_val*>(value_);
     if (!value) return std::nullopt;

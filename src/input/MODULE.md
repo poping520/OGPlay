@@ -22,7 +22,9 @@
   MOVE。原语为 `direct`、`button`（tap/hold/repeat）、`stick`（四键组、固定原点、8 向）、
   `key`（Android keycode）、`mode`（toggle/hold）。`ControlConfig` 为已解析的数据；
   `DefaultControlConfig` 为内置默认（鼠标/触摸直通、Esc→`KEYCODE_BACK`）；
-  `ParseInputSource`/`ParseAnchor` 解析物理键名、鼠标键名与九宫格锚点。
+  `ParseInputSource`/`ParseAnchor` 解析物理键名、鼠标键名与九宫格锚点，`FormatInputSource`/
+  `AnchorName` 为其逆。`Reconfigure` 先以新配置构造并按当前 surface 校验，成功后才取消旧
+  布局并返回其 CANCEL 与按键释放；`Layout` 返回按当前 surface 解析的区域（ADR-0134）。
 - M6 在此基础上定义完整映射 schema、逻辑/物理坐标转换与录制回放。
 
 ## 不变量

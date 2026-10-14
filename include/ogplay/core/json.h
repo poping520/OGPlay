@@ -5,6 +5,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace ogplay::core {
 
@@ -37,7 +38,11 @@ public:
     [[nodiscard]] std::optional<std::int64_t> Integer() const noexcept;
     [[nodiscard]] std::optional<std::uint64_t> UnsignedInteger() const noexcept;
     [[nodiscard]] std::optional<std::string_view> String() const noexcept;
+    // Integers and reals as double; other kinds yield none.
+    [[nodiscard]] std::optional<double> Number() const noexcept;
     [[nodiscard]] std::optional<JsonValue> Member(std::string_view name) const noexcept;
+    // Object member names in document order; empty for non-objects.
+    [[nodiscard]] std::vector<std::string_view> Keys() const;
     [[nodiscard]] std::optional<JsonValue> Element(std::size_t index) const noexcept;
     [[nodiscard]] std::size_t Size() const noexcept;
 

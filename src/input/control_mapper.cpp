@@ -217,16 +217,39 @@ InputSource ParseInputSource(const std::string_view text) {
     throw ControlConfigError("unknown input source: " + std::string{text});
 }
 
-Anchor ParseAnchor(const std::string_view text) {
-    constexpr std::array names{
+std::string FormatInputSource(const InputSource& source) {
+    if (source.kind == SourceKind::mouse_button) {
+        for (const auto& entry : kMouseNames)
+            if (entry.code == source.code) return "mouse:" + std::string(entry.name);
+        throw ControlConfigError("unknown mouse button " + std::to_string(source.code));
+    }
+    const auto code = source.code;
+    if (code >= 4 && code <= 29) return "key:" + std::string(1, static_cast<char>('a' + code - 4));
+    if (code >= 30 && code <= 38) return "key:" + std::string(1, static_cast<char>('1' + code - 30));
+    if (code == 39) return "key:0";
+    if (code >= 58 && code <= 69) return "key:f" + std::to_string(code - 57);
+    for (const auto& entry : kKeyNames) if (entry.code == code) return "key:" + std::string(entry.name);
+    throw ControlConfigError("key scancode has no name: " + std::to_string(code));
+}
+
+namespace {
+constexpr std::array kAnchorNames{
         std::pair{"top_left", Anchor::top_left}, std::pair{"top", Anchor::top},
         std::pair{"top_right", Anchor::top_right}, std::pair{"left", Anchor::left},
         std::pair{"center", Anchor::center}, std::pair{"right", Anchor::right},
         std::pair{"bottom_left", Anchor::bottom_left}, std::pair{"bottom", Anchor::bottom},
         std::pair{"bottom_right", Anchor::bottom_right},
-    };
-    for (const auto& [name, anchor] : names) if (text == name) return anchor;
+};
+}  // namespace
+
+Anchor ParseAnchor(const std::string_view text) {
+    for (const auto& [name, anchor] : kAnchorNames) if (text == name) return anchor;
     throw ControlConfigError("unknown zone anchor: " + std::string{text});
+}
+
+std::string_view AnchorName(const Anchor anchor) {
+    for (const auto& [name, value] : kAnchorNames) if (value == anchor) return name;
+    throw ControlConfigError("unknown zone anchor");
 }
 
 struct ControlMapper::State final {
@@ -769,6 +792,30 @@ void ControlMapper::Reset() noexcept {
     state.contacts.clear();
     state.rejected_owners.clear();
     state.pending_cancel = false;
+}
+
+std::vector<ControlOutput> ControlMapper::Reconfigure(ControlConfig config) {
+    ControlMapper next(std::move(config));
+    if (state_->SurfaceReady()) next.SetSurface(state_->width, state_->height);
+    state_->Cancel();
+    auto outputs = state_->Flush();
+    next.state_->frame = state_->frame;
+    std::swap(state_, next.state_);
+    return outputs;
+}
+
+const ControlConfig& ControlMapper::Config() const noexcept { return state_->config; }
+
+std::vector<ResolvedZoneView> ControlMapper::Layout() const {
+    std::vector<ResolvedZoneView> layout;
+    const auto& state = *state_;
+    if (!state.SurfaceReady()) return layout;
+    for (std::size_t i = 0; i < state.config.zones.size(); ++i) {
+        const auto& zone = state.zones[i];
+        layout.push_back({state.config.zones[i].name, zone.center_x, zone.center_y,
+                          zone.half_width, zone.half_height, state.config.zones[i].radius > 0});
+    }
+    return layout;
 }
 
 bool ControlMapper::Active() const noexcept {

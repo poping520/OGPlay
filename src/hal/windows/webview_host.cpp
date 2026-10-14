@@ -7,6 +7,8 @@
 #include <shlwapi.h>
 #include <wrl.h>
 #include <WebView2.h>
+#include <algorithm>
+#include <cctype>
 #include <iterator>
 #include <map>
 #include <stdexcept>
@@ -37,6 +39,7 @@ public:
         if (active_ == this) active_ = nullptr;
         if (timer_) KillTimer(nullptr, timer_);
         dashboards_.clear();
+        key_editors_.clear();
         if (view_) webview_destroy(view_);
     }
 
@@ -97,43 +100,21 @@ public:
     }
     void OpenDashboard(std::string_view instance, std::uint16_t port) override {
         if (!port || instance.empty()) throw std::invalid_argument("Dashboard instance and port are required");
-        if (window_operation_) throw std::runtime_error("Dashboard window operation is already in progress");
-        const auto previous = window_operation_; window_operation_ = true;
-        struct Reset { bool& flag; bool previous; ~Reset() { flag = previous; } } reset{window_operation_, previous};
-        auto found = dashboards_.find(std::string(instance));
-        if (found != dashboards_.end()) {
-            const auto window = static_cast<HWND>(webview_get_native_handle(found->second.get(), WEBVIEW_NATIVE_HANDLE_KIND_UI_WINDOW));
-            if (window && IsWindow(window)) { ShowWindow(window, SW_RESTORE); SetForegroundWindow(window); return; }
-            dashboards_.erase(found);
-        }
-        const auto url = "http://127.0.0.1:" + std::to_string(port) + "/dash/";
-        DashboardWindow child(webview_create(0, nullptr));
-        if (!child) throw std::runtime_error("Cannot create Dashboard WebView2 window");
-        CheckWeb(webview_set_title(child.get(), ("OGPlay Dashboard · " + std::string(instance)).c_str()));
-        CheckWeb(webview_set_size(child.get(), 960, 640, WEBVIEW_HINT_MIN));
-        CheckWeb(webview_set_size(child.get(), 1280, 800, WEBVIEW_HINT_NONE));
-        auto* controller = static_cast<ICoreWebView2Controller*>(webview_get_native_handle(child.get(), WEBVIEW_NATIVE_HANDLE_KIND_BROWSER_CONTROLLER));
-        if (!controller) throw std::runtime_error("Dashboard WebView2 controller unavailable");
-        Microsoft::WRL::ComPtr<ICoreWebView2> browser; Check(controller->get_CoreWebView2(&browser));
-        const std::wstring allowed(url.begin(), url.end());
-        EventRegistrationToken token{};
-        Check(browser->add_NavigationStarting(Microsoft::WRL::Callback<ICoreWebView2NavigationStartingEventHandler>(
-            [allowed](ICoreWebView2*, ICoreWebView2NavigationStartingEventArgs* args) -> HRESULT {
-                LPWSTR target{}; const auto result = args->get_Uri(&target);
-                const bool permitted = SUCCEEDED(result) && target && allowed == target;
-                CoTaskMemFree(target); return args->put_Cancel(permitted ? FALSE : TRUE);
-            }).Get(), &token));
-        Check(browser->add_NewWindowRequested(Microsoft::WRL::Callback<ICoreWebView2NewWindowRequestedEventHandler>(
-            [](ICoreWebView2*, ICoreWebView2NewWindowRequestedEventArgs* args) -> HRESULT { return args->put_Handled(TRUE); }).Get(), &token));
-        // No webview_bind: runtime content cannot invoke launcher operations.
-        CheckWeb(webview_navigate(child.get(), url.c_str()));
-        dashboards_.emplace(instance, std::move(child));
+        OpenLoopbackWindow(dashboards_, instance, "http://127.0.0.1:" + std::to_string(port) + "/dash/",
+                           "OGPlay Dashboard · " + std::string(instance), {});
     }
-    void CloseDashboard(std::string_view instance) override {
-        const auto previous = window_operation_; window_operation_ = true;
-        struct Reset { bool& flag; bool previous; ~Reset() { flag = previous; } } reset{window_operation_, previous};
-        dashboards_.erase(std::string(instance));
+    void CloseDashboard(std::string_view instance) override { CloseLoopbackWindow(dashboards_, instance); }
+    void OpenKeyEditor(std::string_view instance, std::uint16_t port, std::string_view token) override {
+        if (!port || instance.empty()) throw std::invalid_argument("key editor instance and port are required");
+        if (token.size() < 16 || !std::all_of(token.begin(), token.end(), [](const char c) { return std::isxdigit(static_cast<unsigned char>(c)) != 0; }))
+            throw std::invalid_argument("key editor token must be hexadecimal");
+        // The page reads its token from session storage, so the address carries no secret
+        // and the navigation allowlist stays an exact URL.
+        OpenLoopbackWindow(key_editors_, instance, "http://127.0.0.1:" + std::to_string(port) + "/controls/",
+                           "OGPlay 按键设置 · " + std::string(instance),
+                           "try{sessionStorage.setItem('ogplay.controls.token','" + std::string(token) + "')}catch(e){}");
     }
+    void CloseKeyEditor(std::string_view instance) override { CloseLoopbackWindow(key_editors_, instance); }
     std::future<std::optional<std::filesystem::path>> PickPath(bool directory) override {
         const auto owner = static_cast<HWND>(webview_get_native_handle(view_, WEBVIEW_NATIVE_HANDLE_KIND_UI_WINDOW));
         // A separate STA keeps modal Shell UI out of the WebView message callback.
@@ -192,7 +173,7 @@ private:
         try {
             const auto main_window = static_cast<HWND>(webview_get_native_handle(self.view_, WEBVIEW_NATIVE_HANDLE_KIND_UI_WINDOW));
             if (!main_window || !IsWindow(main_window)) {
-                self.dashboards_.clear(); static_cast<void>(webview_terminate(self.view_)); return;
+                self.dashboards_.clear(); self.key_editors_.clear(); static_cast<void>(webview_terminate(self.view_)); return;
             }
             self.callbacks_.poll();
             if (self.options_.smoke_responses && self.lists_ >= *self.options_.smoke_responses && !self.smoke_capture_requested_)
@@ -221,7 +202,49 @@ private:
     }
     struct DashboardDeleter { void operator()(void* window) const { if (window) webview_destroy(window); } };
     using DashboardWindow = std::unique_ptr<void, DashboardDeleter>;
-    std::map<std::string, DashboardWindow> dashboards_;
+    using LoopbackWindows = std::map<std::string, DashboardWindow>;
+    // Independent runtime windows on a game's loopback service; never bound to the launcher rpc.
+    void OpenLoopbackWindow(LoopbackWindows& windows, std::string_view instance, const std::string& url,
+                            const std::string& title, const std::string& init_script) {
+        if (window_operation_) throw std::runtime_error("Runtime window operation is already in progress");
+        const auto previous = window_operation_; window_operation_ = true;
+        struct Reset { bool& flag; bool previous; ~Reset() { flag = previous; } } reset{window_operation_, previous};
+        auto found = windows.find(std::string(instance));
+        if (found != windows.end()) {
+            const auto window = static_cast<HWND>(webview_get_native_handle(found->second.get(), WEBVIEW_NATIVE_HANDLE_KIND_UI_WINDOW));
+            if (window && IsWindow(window)) { ShowWindow(window, SW_RESTORE); SetForegroundWindow(window); return; }
+            windows.erase(found);
+        }
+        DashboardWindow child(webview_create(0, nullptr));
+        if (!child) throw std::runtime_error("Cannot create runtime WebView2 window");
+        CheckWeb(webview_set_title(child.get(), title.c_str()));
+        CheckWeb(webview_set_size(child.get(), 960, 640, WEBVIEW_HINT_MIN));
+        CheckWeb(webview_set_size(child.get(), 1280, 800, WEBVIEW_HINT_NONE));
+        auto* controller = static_cast<ICoreWebView2Controller*>(webview_get_native_handle(child.get(), WEBVIEW_NATIVE_HANDLE_KIND_BROWSER_CONTROLLER));
+        if (!controller) throw std::runtime_error("Runtime WebView2 controller unavailable");
+        Microsoft::WRL::ComPtr<ICoreWebView2> browser; Check(controller->get_CoreWebView2(&browser));
+        const std::wstring allowed(url.begin(), url.end());
+        EventRegistrationToken token{};
+        Check(browser->add_NavigationStarting(Microsoft::WRL::Callback<ICoreWebView2NavigationStartingEventHandler>(
+            [allowed](ICoreWebView2*, ICoreWebView2NavigationStartingEventArgs* args) -> HRESULT {
+                LPWSTR target{}; const auto result = args->get_Uri(&target);
+                const bool permitted = SUCCEEDED(result) && target && allowed == target;
+                CoTaskMemFree(target); return args->put_Cancel(permitted ? FALSE : TRUE);
+            }).Get(), &token));
+        Check(browser->add_NewWindowRequested(Microsoft::WRL::Callback<ICoreWebView2NewWindowRequestedEventHandler>(
+            [](ICoreWebView2*, ICoreWebView2NewWindowRequestedEventArgs* args) -> HRESULT { return args->put_Handled(TRUE); }).Get(), &token));
+        if (!init_script.empty()) CheckWeb(webview_init(child.get(), init_script.c_str()));
+        // No webview_bind: runtime content cannot invoke launcher operations.
+        CheckWeb(webview_navigate(child.get(), url.c_str()));
+        windows.emplace(instance, std::move(child));
+    }
+    void CloseLoopbackWindow(LoopbackWindows& windows, std::string_view instance) {
+        const auto previous = window_operation_; window_operation_ = true;
+        struct Reset { bool& flag; bool previous; ~Reset() { flag = previous; } } reset{window_operation_, previous};
+        windows.erase(std::string(instance));
+    }
+    LoopbackWindows dashboards_;
+    LoopbackWindows key_editors_;
     inline static NativeWebView* active_{};
     WebViewHostOptions options_;
     WebViewHostCallbacks callbacks_;

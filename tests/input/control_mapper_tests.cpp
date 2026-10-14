@@ -495,3 +495,36 @@ TEST_CASE("INP-5 input sources format back to their names") {
     CHECK_THROWS_AS(static_cast<void>(input::FormatInputSource({input::SourceKind::key, 200})),
                     input::ControlConfigError);
 }
+
+TEST_CASE("INP-4 hints list zones of bindings active in the current modes") {
+    auto config = ActionConfig();
+    config.bindings.push_back(Button("key:k", "attack"));
+    auto menu = Button("key:m", "menu");
+    menu.mode = "map";
+    config.bindings.push_back(menu);
+    input::Binding hold_map;
+    hold_map.action = input::ActionKind::mode;
+    hold_map.mode = std::string(input::kEveryMode);
+    hold_map.sources = {input::ParseInputSource("key:tab")};
+    hold_map.target_mode = "map";
+    hold_map.mode_switch = input::ModeSwitch::hold;
+    config.bindings.push_back(hold_map);
+    input::ControlMapper mapper(config);
+    CHECK(mapper.Hints().empty());  // no surface yet
+    mapper.SetSurface(800, 480);
+    auto hints = mapper.Hints();
+    REQUIRE(hints.size() == 2);
+    CHECK(hints[0].zone.name == "move");
+    CHECK(hints[0].stick);
+    CHECK(hints[0].sources.size() == 4);
+    CHECK(hints[1].zone.name == "attack");
+    CHECK(hints[1].sources == std::vector{input::ParseInputSource("key:j"), input::ParseInputSource("key:k")});
+    CHECK(hints[1].zone.center_x == 800 - 40 - 50);
+
+    mapper.Accept(Key("tab", true), kWindow);
+    static_cast<void>(mapper.Flush());
+    hints = mapper.Hints();
+    REQUIRE(hints.size() == 3);
+    CHECK(hints[2].zone.name == "menu");
+    CHECK_FALSE(hints[2].zone.circle);
+}

@@ -689,7 +689,9 @@ ogplay_set_project_warnings(ogplay_agent)
 
 add_library(ogplay_frontend
     src/frontend/data_directory.cpp
+    src/frontend/control_overlay.cpp
     src/frontend/control_requests.cpp
+    src/frontend/host_shortcuts.cpp
     src/frontend/mcp_http_server.cpp
     src/frontend/mcp_input_dispatch.cpp
     src/frontend/run_apk_progress.cpp
@@ -789,10 +791,14 @@ if(OGPLAY_ENABLE_SDL3 AND WIN32)
             "$<TARGET_FILE_DIR:ogplay>/data/webui/gui"
         COMMAND ${CMAKE_COMMAND} -E copy_directory
             "${CMAKE_CURRENT_SOURCE_DIR}/data/webui/dashboard"
-            "$<TARGET_FILE_DIR:ogplay>/data/webui/dashboard")
+            "$<TARGET_FILE_DIR:ogplay>/data/webui/dashboard"
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+            "${CMAKE_CURRENT_SOURCE_DIR}/data/webui/controls"
+            "$<TARGET_FILE_DIR:ogplay>/data/webui/controls")
     add_dependencies(ogplay_stage_webui ogplay_check_webui)
     add_dependencies(ogplay ogplay_stage_webui)
-    install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/data/webui/gui" "${CMAKE_CURRENT_SOURCE_DIR}/data/webui/dashboard" DESTINATION data/webui)
+    install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/data/webui/gui" "${CMAKE_CURRENT_SOURCE_DIR}/data/webui/dashboard"
+        "${CMAKE_CURRENT_SOURCE_DIR}/data/webui/controls" DESTINATION data/webui)
     install(FILES "${OGPLAY_WEBVIEW2_SDK}/LICENSE.txt"
         DESTINATION data/webui/gui RENAME WEBVIEW2-SDK-LICENSE.txt)
     set_target_properties(ogplay-gui PROPERTIES
@@ -884,6 +890,7 @@ if(OGPLAY_BUILD_TESTS)
         tests/session/control_config_tests.cpp
         tests/agent/control_editor_tests.cpp
         tests/frontend/control_requests_tests.cpp
+        tests/frontend/key_hints_tests.cpp
         tests/memory/address_tests.cpp
         tests/memory/address_space_tests.cpp
         tests/memory/bus_tests.cpp
@@ -1137,7 +1144,11 @@ if(OGPLAY_BUILD_TESTS)
         add_test(NAME frontend.dashboard_manifest
             COMMAND ${CMAKE_COMMAND} -DWEBUI_ROOT=${CMAKE_CURRENT_SOURCE_DIR}/data/webui/dashboard
                 -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/CheckWebUi.cmake)
-        set_tests_properties(frontend.dashboard_http frontend.dashboard_manifest PROPERTIES LABELS "unit;frontend" TIMEOUT 30)
+        add_test(NAME frontend.key_editor_manifest
+            COMMAND ${CMAKE_COMMAND} -DWEBUI_ROOT=${CMAKE_CURRENT_SOURCE_DIR}/data/webui/controls
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/CheckWebUi.cmake)
+        set_tests_properties(frontend.dashboard_http frontend.dashboard_manifest frontend.key_editor_manifest
+            PROPERTIES LABELS "unit;frontend" TIMEOUT 30)
         add_test(
             NAME frontend.gui_webui_manifest
             COMMAND ${CMAKE_COMMAND} -DWEBUI_ROOT=${CMAKE_CURRENT_SOURCE_DIR}/data/webui/gui

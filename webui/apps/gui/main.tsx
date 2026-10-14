@@ -7,7 +7,7 @@ import { GameSettingsPage } from './game-settings-page';
 import { resolvedTheme, type Settings } from './settings';
 import { ImportWizard } from './import-wizard';
 import '../../packages/ui-kit/theme.css';
-interface DashboardInfo { installation_id: string; process_id: number; port: number | null; status: string; detail: string }
+interface DashboardInfo { installation_id: string; process_id: number; port: number | null; status: string; detail: string; key_editor_status: string; key_editor_detail: string }
 
 function GameIcon({ item, glow = false }: { item: LibraryItem; glow?: boolean }) {
   const canvas = useRef<HTMLCanvasElement>(null);
@@ -210,8 +210,9 @@ function App() {
         <div class="drawer-scroll"><div class="hero"><GameIcon item={item} /><div><h2>{item.display_name}</h2><p class="mono">{item.package || '包名不可用'}</p><small>{versionLabel(item)}</small></div></div>
           <div class="detail-status"><Status item={item} />{item.running && item.status !== 'running' && <span class="badge running">运行中</span>}</div>
           <button class="primary launch-button" disabled={busy || !item.can_launch} onClick={() => void act('library.launch', item)}>{item.running ? '游戏运行中' : '▶ 启动游戏'}</button><p class="condition-detail">{item.detail}</p>
-          <div class="detail-actions"><button disabled={busy || importing} onClick={() => setGameSettingsId(item.installation_id)}>游戏设置</button><button disabled={busy || !dashboards.some(instance => instance.installation_id === item.installation_id && instance.status === 'ready')} title={dashboards.find(instance => instance.installation_id === item.installation_id)?.detail ?? '游戏尚未运行'} onClick={() => void act('dashboard.open', item)}>打开 Dashboard</button><button disabled={busy} onClick={() => void act('library.open_dir', item, 'sandbox')}>打开沙盒目录</button><button disabled={busy} onClick={() => void act('library.open_dir', item, 'log')}>打开日志目录</button></div>
+          <div class="detail-actions"><button disabled={busy || importing} onClick={() => setGameSettingsId(item.installation_id)}>游戏设置</button><button disabled={busy || !dashboards.some(instance => instance.installation_id === item.installation_id && instance.status === 'ready')} title={dashboards.find(instance => instance.installation_id === item.installation_id)?.detail ?? '游戏尚未运行'} onClick={() => void act('dashboard.open', item)}>打开 Dashboard</button><button disabled={busy || dashboards.find(instance => instance.installation_id === item.installation_id)?.key_editor_status !== 'ready'} title={dashboards.find(instance => instance.installation_id === item.installation_id)?.key_editor_detail ?? '启动游戏后可在运行中的画面上设置按键；游戏内也可按 F2。'} onClick={() => void act('controls.open', item)}>按键设置</button><button disabled={busy} onClick={() => void act('library.open_dir', item, 'sandbox')}>打开沙盒目录</button><button disabled={busy} onClick={() => void act('library.open_dir', item, 'log')}>打开日志目录</button></div>
           <p class="condition-detail">Dashboard：{dashboards.find(instance => instance.installation_id === item.installation_id)?.detail ?? '游戏尚未运行'}</p>
+          <p class="condition-detail">按键设置：{dashboards.find(instance => instance.installation_id === item.installation_id)?.key_editor_detail ?? '先启动游戏；运行中按 F1 查看键位、F2 打开按键设置。'}</p>
           <button disabled={busy || importing || item.running} onClick={() => requestRemoval(item)}>移除库中实例</button>
           <p class="condition-detail">删除该实例的库内 APK、设置和日志；保留沙盒存档、外部数据包及原始 APK。</p>
           <h3>安装信息</h3><dl><dt>安装实例</dt><dd class="mono">{item.installation_id}</dd><dt>Profile</dt><dd>{item.profile.value}<small>{item.profile.detail}</small></dd><dt>数据包</dt><dd>{item.external.value}<small>{item.external.detail}</small></dd><dt>沙盒路径</dt><dd class="mono">{item.sandbox_path}</dd><dt>日志目录</dt><dd class="mono">{item.log_directory}</dd><dt>导入时间</dt><dd>{item.imported_at || '未记录'}</dd></dl>
@@ -233,6 +234,7 @@ function App() {
         <p class="mono">PID {instance.process_id} · {instance.port ? `端口 ${instance.port}` : 'MCP 未启用'}</p>
         <p>{instance.detail}</p>
         <button disabled={instance.status !== 'ready'} onClick={() => void rpc('dashboard.open', { installation_id: instance.installation_id }).catch(report)}>打开 Dashboard</button>
+        <button disabled={instance.key_editor_status !== 'ready'} title={instance.key_editor_detail} onClick={() => void rpc('controls.open', { installation_id: instance.installation_id }).catch(report)}>按键设置</button>
       </section>)}
     </Modal>}
     {!importing && errors.length > 0 && <Modal title="操作提示" onDismiss={() => setErrors(queue => queue.slice(1))}><pre>{errors[0]}</pre></Modal>}

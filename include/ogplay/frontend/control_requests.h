@@ -32,10 +32,15 @@ struct ControlRequestContext final {
     std::function<void()> freeze;
     // Queues mapper outputs (the old layout's CANCEL and key releases) to the guest.
     std::function<void(const std::vector<input::ControlOutput>&)> deliver;
+    // Running count of in-game F2 presses handed to a launcher; reported by control.status.
+    std::uint64_t edit_requests{};
+    // Called for every valid request; true for a launcher poll (control.status with
+    // client "launcher"), false for editor traffic, which keeps a freeze alive.
+    std::function<void(bool launcher)> seen;
 };
 
-// control.get / freeze / resume / frame / apply. Configuration errors are JSON-RPC error
-// -32010 with the loader's message; the running layout is unchanged on any failure.
+// control.get / freeze / resume / frame / apply / status. Configuration errors are JSON-RPC
+// error -32010 with the loader's message; the running layout is unchanged on any failure.
 [[nodiscard]] agent::ControlResponse HandleControlRequest(std::string_view method,
                                                           core::JsonValue params,
                                                           const ControlRequestContext& context);

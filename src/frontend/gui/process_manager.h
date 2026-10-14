@@ -6,6 +6,8 @@
 #include <future>
 #include "ogplay/frontend/gui_dashboard.h"
 #include <memory>
+#include <optional>
+#include <string>
 #include <string_view>
 #include <vector>
 
@@ -32,6 +34,11 @@ public:
     [[nodiscard]] std::vector<GuiDashboard> Dashboards() const;
     [[nodiscard]] std::uint16_t DashboardPort(std::string_view instance) const;
     [[nodiscard]] std::vector<std::string> TakeAutoOpen();
+    // Key editor of a running instance (ADR-0134); throws while it is not ready.
+    struct KeyEditorAddress final { std::uint16_t port{}; std::string token; };
+    [[nodiscard]] KeyEditorAddress KeyEditor(std::string_view instance) const;
+    // Instances whose game asked for the editor with F2 since the last call.
+    [[nodiscard]] std::vector<std::string> TakeKeyEditorRequests();
 
 private:
     struct Active final {
@@ -41,11 +48,18 @@ private:
         std::future<DashboardProbe> probe;
         std::uint64_t next_probe{};
         bool auto_open{};
+        std::optional<std::uint16_t> editor_port;
+        std::string control_token;
+        std::future<KeyEditorProbe> editor_probe;
+        std::uint64_t next_editor_probe{};
+        std::uint64_t edit_requests{};
+        bool editor_requested{};
     };
     core::Logger& logger_;
     LaunchTracker tracker_;
     std::vector<Active> active_;
     std::vector<std::future<DashboardProbe>> retired_probes_;
+    std::vector<std::future<KeyEditorProbe>> retired_editor_probes_;
 };
 
 [[nodiscard]] std::filesystem::path FindSiblingCliExecutable();

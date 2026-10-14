@@ -258,10 +258,15 @@ status = "partial"
 test = "tests/session/control_config_tests.cpp; tests/frontend/gui_launch_tests.cpp#INP-5; tools.title_profiles_current; tools.title_profile_validator_self_test"
 note = "INP-2/ADR-0133：Profile [input]、data/input/templates 类型模板与用户覆盖文件共用解码，按内置默认、模板、Profile、用户覆盖合并为 ControlConfig；源冲突替换、none 解绑、未放置区域与非法字段明确失败。run-apk 以 --input-config 装载用户覆盖并在启动前校验区域，GUI 传入实例 input.toml。"
 
+[frontend.key_hints]
+status = "partial"
+test = "tests/frontend/key_hints_tests.cpp; tests/input/control_mapper_tests.cpp#INP-4"
+note = "INP-4/ADR-0134：F1 在呈现副本上绘制当前模式有效区域与键名（内置 5×7 ASCII 字形），guest 帧、MCP 与编辑器截图不含叠加层；F1、F2、Cmd/Win 及 Ctrl/Cmd 组合键由宿主截留，按下与抬起归属一致。切换在下一帧生效；游戏窗口内实按未在本机自动化验证。"
+
 [frontend.key_editor_session]
 status = "partial"
-test = "tests/frontend/control_requests_tests.cpp; tests/agent/control_editor_tests.cpp; tests/frontend/mcp_http_server_tests.cpp#INP-5; tests/session/control_config_tests.cpp#INP-5"
-note = "INP-5/ADR-0134：run-apk 在 loopback 服务的 /controls/rpc 提供 control.get/freeze/resume/frame/apply，Bearer 令牌（环境变量或随机生成）与 loopback Host 校验；请求在 guest 主循环执行，冻结不触发生命周期，apply 校验失败不改运行布局，成功热应用并原子写回用户键位文件。仅在 loopback 服务启用时可用；Web 编辑器与 GUI/F2 入口（INP-6/7）未做。"
+test = "tests/frontend/control_requests_tests.cpp; tests/agent/control_editor_tests.cpp; tests/frontend/mcp_http_server_tests.cpp#INP-5; tests/frontend/mcp_http_server_tests.cpp#INP-6; tests/frontend/mcp_http_server_tests.cpp#INP-7; tests/frontend/gui_launch_tests.cpp#INP-7; tests/frontend/gui_rpc_tests.cpp#INP-7; tests/session/control_config_tests.cpp#INP-5; webui/apps/controls/controls.test.ts; frontend.key_editor_manifest; frontend.run_apk_options"
+note = "INP-5..7/ADR-0134：/controls/ Web 编辑器与 control.* 接口随 MCP 端口、--key-editor-port 或首次 F2 懒启动；Bearer 令牌经环境变量或 URL 片段/sessionStorage 交给页面。冻结编辑、拖放缩放、物理键绑定、冲突标红、热应用并原子写回；编辑器心跳中断 8 秒自动恢复。GUI 每局生成令牌与端口，按钮或 F2 打开窗口；无 GUI 时 F2 用浏览器。Windows GUI 未实跑。"
 
 [input.mouse_touch_mapper]
 status = "complete"

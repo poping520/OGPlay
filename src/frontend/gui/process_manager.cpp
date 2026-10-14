@@ -51,6 +51,26 @@ void SetNumber(const SDL_PropertiesID properties, const char* name,
     }
 }
 
+// The child gets the launcher's environment plus the key editor token; SDL takes the
+// environment as the process's entire environment.
+class ChildEnvironment final {
+public:
+    explicit ChildEnvironment(const std::string& control_token) : value_(SDL_CreateEnvironment(true)) {
+        if (value_ == nullptr) ThrowSdl("SDL_CreateEnvironment");
+        if (!control_token.empty() &&
+            !SDL_SetEnvironmentVariable(value_, "OGPLAY_CONTROL_TOKEN", control_token.c_str(), true)) {
+            SDL_DestroyEnvironment(value_);
+            ThrowSdl("SDL_SetEnvironmentVariable");
+        }
+    }
+    ~ChildEnvironment() { SDL_DestroyEnvironment(value_); }
+    ChildEnvironment(const ChildEnvironment&) = delete;
+    ChildEnvironment& operator=(const ChildEnvironment&) = delete;
+    [[nodiscard]] SDL_Environment* Get() const noexcept { return value_; }
+private:
+    SDL_Environment* value_{};
+};
+
 }  // namespace
 
 GuiProcessManager::GuiProcessManager(core::Logger& logger) : logger_(logger) {}
@@ -84,6 +104,8 @@ void GuiProcessManager::Launch(const LaunchPlan& plan) {
                   SDL_PROCESS_STDIO_REDIRECT);
         SetPointer(properties.Get(), SDL_PROP_PROCESS_CREATE_STDERR_POINTER,
                    error_stream);
+        const ChildEnvironment environment(plan.control_token);
+        SetPointer(properties.Get(), SDL_PROP_PROCESS_CREATE_ENVIRONMENT_POINTER, environment.Get());
         auto* process = SDL_CreateProcessWithProperties(properties.Get());
         static_cast<void>(SDL_CloseIO(error_stream));
         error_stream = nullptr;
@@ -94,6 +116,10 @@ void GuiProcessManager::Launch(const LaunchPlan& plan) {
         active.dashboard.process_id = static_cast<std::uint64_t>(SDL_GetNumberProperty(SDL_GetProcessProperties(process), SDL_PROP_PROCESS_PID_NUMBER, 0));
         active.auto_open = plan.dashboard_auto_open;
         if (plan.mcp_port) { active.dashboard.status = "starting"; active.dashboard.detail = "等待 Dashboard 服务启动。"; }
+        active.editor_port = plan.key_editor_port; active.control_token = plan.control_token;
+        if (plan.key_editor_port && !plan.control_token.empty()) {
+            active.dashboard.editor_status = "starting"; active.dashboard.editor_detail = "等待按键设置服务启动。";
+        }
         active_.push_back(std::move(active));
         logger_.Write(core::LogLevel::info, "frontend.gui.launch",
                       "game process started", {},
@@ -108,6 +134,7 @@ void GuiProcessManager::Launch(const LaunchPlan& plan) {
 
 std::vector<GameExit> GuiProcessManager::Poll() {
     std::erase_if(retired_probes_, [](auto& probe) { return probe.wait_for(std::chrono::seconds(0)) == std::future_status::ready; });
+    std::erase_if(retired_editor_probes_, [](auto& probe) { return probe.wait_for(std::chrono::seconds(0)) == std::future_status::ready; });
     std::vector<GameExit> exits;
     for (auto iterator = active_.begin(); iterator != active_.end();) {
         int exit_code{};
@@ -124,6 +151,20 @@ std::vector<GameExit> GuiProcessManager::Poll() {
                 const auto port = *active.dashboard.port; const auto pid = active.dashboard.process_id;
                 active.probe = std::async(std::launch::async, [port, pid] { return ProbeDashboard(port, pid); });
             }
+            // The editor poll doubles as the launcher heartbeat that routes in-game F2 here.
+            if (active.editor_probe.valid() && active.editor_probe.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
+                const auto result = active.editor_probe.get();
+                active.dashboard.editor_status = result.ready ? "ready" : "unavailable";
+                active.dashboard.editor_detail = result.detail;
+                if (result.ready && result.edit_requests > active.edit_requests) active.editor_requested = true;
+                if (result.ready) active.edit_requests = result.edit_requests;
+                active.next_editor_probe = now + 500000000ULL;
+            }
+            if (active.editor_port && !active.control_token.empty() && !active.editor_probe.valid() &&
+                now >= active.next_editor_probe) {
+                const auto port = *active.editor_port; const auto token = active.control_token;
+                active.editor_probe = std::async(std::launch::async, [port, token] { return ProbeKeyEditor(port, token); });
+            }
             ++iterator;
             continue;
         }
@@ -136,6 +177,7 @@ std::vector<GameExit> GuiProcessManager::Poll() {
                        {"log_path", PathUtf8(result.log_path)}});
         exits.push_back(std::move(result));
         if (iterator->probe.valid()) retired_probes_.push_back(std::move(iterator->probe));
+        if (iterator->editor_probe.valid()) retired_editor_probes_.push_back(std::move(iterator->editor_probe));
         iterator = active_.erase(iterator);
     }
     return exits;
@@ -164,6 +206,20 @@ std::vector<std::string> GuiProcessManager::TakeAutoOpen() {
     std::vector<std::string> result;
     for (auto& active : active_) if (active.auto_open && active.dashboard.status == "ready") {
         active.auto_open = false; result.push_back(active.package);
+    }
+    return result;
+}
+
+GuiProcessManager::KeyEditorAddress GuiProcessManager::KeyEditor(const std::string_view instance) const {
+    const auto found = std::find_if(active_.begin(), active_.end(), [&](const auto& active) { return active.package == instance; });
+    if (found == active_.end()) throw std::runtime_error("实例已退出，请重新启动。");
+    if (found->dashboard.editor_status != "ready" || !found->editor_port) throw std::runtime_error(found->dashboard.editor_detail);
+    return {*found->editor_port, found->control_token};
+}
+std::vector<std::string> GuiProcessManager::TakeKeyEditorRequests() {
+    std::vector<std::string> result;
+    for (auto& active : active_) if (active.editor_requested) {
+        active.editor_requested = false; result.push_back(active.package);
     }
     return result;
 }

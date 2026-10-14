@@ -18,6 +18,10 @@ struct LaunchPlan final {
     std::filesystem::path log_path;
     std::optional<std::uint16_t> mcp_port;
     bool dashboard_auto_open{};
+    // Key editor service (ADR-0134): the MCP port when MCP is on, else --key-editor-port.
+    std::optional<std::uint16_t> key_editor_port;
+    // Per-launch editor token, handed to the game as OGPLAY_CONTROL_TOKEN and never in argv.
+    std::string control_token;
 };
 enum class GuiLaunchMode { normal, preflight, diagnostic };
 

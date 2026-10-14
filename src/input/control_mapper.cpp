@@ -818,6 +818,28 @@ std::vector<ResolvedZoneView> ControlMapper::Layout() const {
     return layout;
 }
 
+std::vector<ControlHint> ControlMapper::Hints() const {
+    std::vector<ControlHint> hints;
+    const auto& state = *state_;
+    if (!state.SurfaceReady()) return hints;
+    const auto layout = Layout();
+    for (std::size_t i = 0; i < state.config.bindings.size(); ++i) {
+        const auto& binding = state.config.bindings[i];
+        if (!state.IsActive(binding) || binding.zone.empty()) continue;
+        const auto& zone = layout[state.binding_zone[i]];
+        const bool stick = binding.action == ActionKind::stick;
+        auto found = std::ranges::find_if(hints, [&](const auto& hint) {
+            return hint.zone.name == zone.name && hint.stick == stick;
+        });
+        if (found == hints.end() || stick) {
+            hints.push_back({zone, stick, binding.sources});
+        } else {
+            found->sources.insert(found->sources.end(), binding.sources.begin(), binding.sources.end());
+        }
+    }
+    return hints;
+}
+
 bool ControlMapper::Active() const noexcept {
     const auto& state = *state_;
     if (!state.contacts.empty() || state.mouse.held || !state.touches.empty() ||

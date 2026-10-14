@@ -8,7 +8,7 @@
   },
   "scripts": {
     "check": "tsc --noEmit && vitest run",
-    "build": "npm run check && vite build && vite build --config vite.dashboard.config.ts && node scripts/manifest.mjs"
+    "build": "npm run check && vite build && vite build --config vite.dashboard.config.ts && vite build --config vite.controls.config.ts && node scripts/manifest.mjs"
   },
   "dependencies": {
     "preact": "10.29.8",

@@ -2,12 +2,13 @@ import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { copyFileSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-for (const app of ['gui', 'dashboard']) {
+for (const app of ['gui', 'dashboard', 'controls']) {
 const root = resolve(`../data/webui/${app}`);
 copyFileSync(`apps/${app}/index.html`, resolve(root, 'index.html'));
 writeFileSync(resolve(root, 'THIRD-PARTY-LICENSES.txt'),
   'Preact\n\n' + readFileSync('node_modules/preact/LICENSE', 'utf8') +
-  (app === 'gui' ? '\n\nwebview\n\n' + readFileSync('../third_party/webview/LICENSE', 'utf8') : '\n\nuPlot\n\n' + readFileSync('node_modules/uplot/LICENSE', 'utf8')));
+  (app === 'gui' ? '\n\nwebview\n\n' + readFileSync('../third_party/webview/LICENSE', 'utf8') :
+   app === 'dashboard' ? '\n\nuPlot\n\n' + readFileSync('node_modules/uplot/LICENSE', 'utf8') : ''));
 const files = readdirSync(root).filter(name => name !== 'manifest.json').sort().map(path => {
   const bytes = readFileSync(resolve(root, path));
   return { path, size: bytes.length, sha256: createHash('sha256').update(bytes).digest('hex') };

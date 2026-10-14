@@ -144,4 +144,7 @@ public:
 [[nodiscard]] std::unique_ptr<WindowInput> CreateSdlWindowInput(
     VideoBackend backend = VideoBackend::automatic);
 
+// Opens an http(s) URL in the user's default browser; failure throws.
+void OpenUrlInBrowser(std::string_view url);
+
 }  // namespace ogplay::hal

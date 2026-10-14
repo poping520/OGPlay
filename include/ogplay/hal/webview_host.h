@@ -32,6 +32,10 @@ public:
     // Independent loopback window; never binds the launcher's rpc bridge.
     virtual void OpenDashboard(std::string_view instance, std::uint16_t port) = 0;
     virtual void CloseDashboard(std::string_view instance) = 0;
+    // Key editor window (ADR-0134) on the game's loopback service; the token is handed to the
+    // page through session storage, never in the URL.
+    virtual void OpenKeyEditor(std::string_view instance, std::uint16_t port, std::string_view token) = 0;
+    virtual void CloseKeyEditor(std::string_view instance) = 0;
     virtual std::future<std::optional<std::filesystem::path>> PickPath(bool directory) = 0;
 };
 [[nodiscard]] std::unique_ptr<WebViewHost> CreateWebViewHost(

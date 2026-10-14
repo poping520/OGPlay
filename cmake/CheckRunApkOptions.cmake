@@ -38,6 +38,7 @@ endfunction()
 set(_base run-apk "${_missing_apk}")
 expect_usage("[--mcp | --mcp-port <1..65535>]")
 expect_usage("[--mcp-manual-step]")
+expect_usage("[--key-editor-port <1..65535>]")
 expect_failure(removed_system_dir
     "unknown or incomplete run-apk option: --system-dir"
     ${_base} --system-dir old-bionic)
@@ -109,3 +110,11 @@ expect_failure(sandbox_conflict_reversed
     ${_base} --sandbox-dir saves --ephemeral-sandbox)
 expect_failure(sandbox_valid "cannot open" ${_base} --sandbox-dir saves)
 expect_failure(ephemeral_valid "cannot open" ${_base} --ephemeral-sandbox)
+expect_failure(key_editor_zero "--key-editor-port requires an integer in 1..65535"
+    ${_base} --key-editor-port 0)
+expect_failure(key_editor_duplicate "run-apk accepts --key-editor-port only once"
+    ${_base} --key-editor-port 3000 --key-editor-port 3001)
+expect_failure(key_editor_with_mcp "--key-editor-port cannot be combined with MCP"
+    ${_base} --key-editor-port 3000 --mcp)
+expect_failure(key_editor_preflight "--key-editor-port cannot be combined with --preflight"
+    ${_base} --key-editor-port 3000 --preflight)
